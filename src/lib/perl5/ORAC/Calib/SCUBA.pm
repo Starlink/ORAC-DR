@@ -685,7 +685,13 @@ sub gain {
 
     # Now ask for the 'best' gain observation
     # This means closest in time
-    my $best = $self->gainsindex->choosebydt('ORACTIME', $self->thing,0);
+    my $best = $self->gainsindex->choosebydt('ORACTIME', $self->thing,1);
+
+    unless (defined $best) {
+      orac_err "No suitable gain calibration could be found\n";
+      die 'Aborting...';
+    }
+
 
     # Now retrieve the entry itself
     my $entref = $self->gainsindex->indexentry($best);
