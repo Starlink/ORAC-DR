@@ -32,9 +32,6 @@ use strict;
 use Carp;
 use vars qw/$VERSION/;
 
-# Need to read the header from the file
-use NDF;
-
 
 $VERSION = undef; # -w protection
 $VERSION = '0.10';
