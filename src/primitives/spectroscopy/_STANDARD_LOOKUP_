@@ -167,6 +167,11 @@ unless ( ( defined $Grp->uhdr( "TEMPERATURE" ) &&
    # Find the spectral type from SIMBAD.
 
    if ( (!defined($temperature)) && (defined(&LWP::Simple::get)) ) {
+
+     # Bring in Astro::Coords::Angle;
+     use Astro::Coords::Angle;
+     use Astro::Coords::Angle::Hour;
+
       orac_print "Object not found in Bright Star Catalogue.\n";
       orac_print "Querying SIMBAD for spectral type...\n";
 
@@ -175,9 +180,19 @@ unless ( ( defined $Grp->uhdr( "TEMPERATURE" ) &&
 
       my $meanra = $Frm->uhdr( "ORAC_RA_BASE" );
       my $meandec = $Frm->uhdr( "ORAC_DEC_BASE" );
-      
-      my ( $radeg, $ramin, $rasec ) = dectodms( $meanra );
-      my ( $decdeg, $decmin, $decsec ) = dectodms( $meandec );
+
+     my $ra_ang = new Astro::Coords::Angle::Hour( $meanra, units => 'deg' );
+     bless( $ra_ang, "Astro::Coords::Angle" );
+     my $dec_ang = new Astro::Coords::Angle( $meandec, units => 'deg' );
+     my @ra_comp = $ra_ang->components;
+     my @dec_comp = $dec_ang->components;
+
+     my $radeg = $ra_comp[1];
+     my $ramin = $ra_comp[2];
+     my $rasec = $ra_comp[3];
+     my $decdeg = $dec_comp[1];
+     my $decmin = $dec_comp[2];
+     my $decsec = $dec_comp[3];
 
       foreach my $simbadurl (@simbadurls) {
         last if (defined($temperature));
@@ -187,10 +202,10 @@ unless ( ( defined $Grp->uhdr( "TEMPERATURE" ) &&
         # Set up the URL.
         my $URL1 = $simbadurl . "sim-id.pl?protocol=html&Ident=".$radeg."+".$ramin."+";
         my $URL2;
-        if ( $decdeg > 0 ) {
+        if ( $dec_comp[0] eq '+' ) {
            $URL2 = $rasec."+%2B".$decdeg."+".$decmin."+".$decsec."&NbIdent=1&Radius=10&Radius.unit";
         } else {
-           $URL2 = $rasec."+".$decdeg."+".$decmin."+".$decsec."&NbIdent=1&Radius=10&Radius.unit";
+           $URL2 = $rasec."+-".$decdeg."+".$decmin."+".$decsec."&NbIdent=1&Radius=10&Radius.unit";
         }
         my $URL3 = "=arcmin&CooFrame=FK5&CooEpoch=2000&CooEqui=2000&output.max=";
         my $URL4 = "all&o.catall=on&output.mesdisp=N&Bibyear1=1983&Bibyear2=1999&Frame1=FK5";
@@ -231,14 +246,12 @@ unless ( ( defined $Grp->uhdr( "TEMPERATURE" ) &&
 	         # Obtain the standard's equatorial co-ordinates.
                  my @simcoord = split ' ', $array[ 2 ];
                  my $format = "%2d %2d %4.2f";
-                 my $rastring = sprintf( $format, $radeg, $ramin, $rasec );
-                 my $decstring = sprintf( $format, $decdeg, $decmin, $decsec );
                 my $srastring = sprintf( $format, $simcoord[ 0 ], $simcoord[ 1 ], $simcoord[ 2 ] );
                 my $sdecstring = sprintf( $format, $simcoord[ 3 ], $simcoord[ 4 ], $simcoord[ 5 ] );
 
   	       # Keep the user informed.
-                 orac_print "    Header RA: $rastring Decl: $decstring.\n";
-                 orac_print "    SIMBAD RA: $srastring Decl: $sdecstring.\n";
+                 orac_print "    Header RA: $ra_ang Decl: $dec_ang\n";
+                 orac_print "    SIMBAD RA: $srastring Decl: $sdecstring\n";
                  orac_print "    Object is spectral type $spectype.\n";
                  $temperature = $spectotemp{$spectype};
                  orac_print "    Setting temperature to $temperature K.\n";
