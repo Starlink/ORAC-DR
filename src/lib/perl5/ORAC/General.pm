@@ -33,7 +33,7 @@ use 5.006;
 require Exporter;
 @ISA = (Exporter);
 @EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist cosdeg
-	      dectodms
+	      dectodms deg2rad rad2deg
 	    );
 
 use Carp;
@@ -47,7 +47,7 @@ use vars qw/$VERSION/;
 # Use POSIX so that I can get log10 support
 # I realise that I can create a log10 function via natural logs
 use POSIX qw//;
-use Math::Trig qw/ deg2rad /;
+use Math::Trig qw/ deg2rad rad2deg /;
 
 =head1 SUBROUTINES
 
@@ -60,7 +60,7 @@ Return the cosine of the angle. The angle must be in degrees.
 =cut
 
 sub cosdeg {
-  cos($_[0] * 3.14159265359 / 180);
+  cos( deg2rad($_[0]) );
 }
 
 =item B<dectodms>
