@@ -9,10 +9,13 @@
 # =========
 
 # This should only be performed on OBJECT frames.
-    if ($Frm->hdr(OBSTYPE) =~ /OBJECT/) {
+    if ( $Frm->hdr(OBSTYPE) eq "OBJECT" || 
+         $Frm->hdr(OBSTYPE) eq "SKY" ) {
+#    if ( $Frm->hdr(OBSTYPE) eq "OBJECT" ) {
 
-# Can generate a mosaic when there are at least three object frames.
-       if ($Grp->num >= 2 ) {
+# Test whether or not it is time to make a mosaic.
+       $makemos = $Frm->hdr( "MAKE_MOSAIC" );
+       if ( $makemos ) {
 
 # Specify the mosaic suffix.
           $osuffix = "_mos";
@@ -26,49 +29,43 @@
           $objlist = join(",", @$inref);
           $outlist= join(",", @$outref);
 
-# Inquire the number of files to be processed.
-          $numfiles = @$inref;
-
 # Create text files to hold the list of input and output files, one per line.
 # This is needed because expanded lists of files may make the command line
 # too long for the ADAM message system.
-          unlink ("tranndf.inlist", "tranndf.outlist");
-          open (INLIST, ">tranndf.inlist");
-          open (OUTLIST, ">tranndf.outlist");
-          for ( $i = 0; $i < $numfiles; $i++ ) {
-             print INLIST @$inref[$i],"\n";
-             print OUTLIST @$outref[$i],"\n";
-          }
+          unlink ("tranndf.inlist$$", "tranndf.outlist$$");
+
+          open (INLIST, ">tranndf.inlist$$");
+          print INLIST join( "\n", @$inref ), "\n";
           close (INLIST);
+
+          open (OUTLIST, ">tranndf.outlist$$");
+          print OUTLIST join( "\n", @$outref ), "\n";
           close (OUTLIST);
 
 # Concatenate rotation to transformation
 # ======================================
 
 # Specify the other parameters for the TRANJOIN stage.
-          $hidden = "in2=".$Cal->rotation." dest=first"; 
+#          $hidden = "in2=".$Cal->rotation." dest=first"; 
 
 # Join the rotation transformation to each of the CCDPACK extensions.
 # The rotation transformation follows the shift-of-origin and is stored
 # in the '_ff' frame.  Unfortunately, CCDEDIT doesn't support joining
 # transformations, and KAPPA/TRANJOIN does operate on lists of files.
 # Write the input file names to the text files.
-          foreach $flatted (@$inref) {
-             $header = "in1=${flatted}.more.ccdpack.transform";
-             $Mon{"kappa_mon"}->obeyw("tranjoin","$header $user $hidden accept");
-          }
+#          foreach $flatted (@$inref) {
+#             $header = "in1=${flatted}.more.ccdpack.transform";
+#             $Mon{"kappa_mon"}->obeyw("tranjoin","$header $hidden accept");
+#          }
 
 # Report the status.
-          orac_print "Orac says: Rotation transformation joined\n";
-
-# Reset KAPPA parameters.
-          $ORAC_STATUS = $Mon{"kappa_mon"}->control('par_reset');
+#          orac_print "Orac says: Rotation transformation joined\n";
 
 # Resampling
 # ==========
 
 # Assign the other parameters.  Use the original bounds.
-          $header = "in='^tranndf.inlist' out='^tranndf.outlist'";
+          $header = "in='^tranndf.inlist$$' out='^tranndf.outlist$$'";
           $hidden = "shape=auto method=linint";
 
 # Shift and resample the flat-field object frames.  This determines
@@ -79,21 +76,18 @@
 # Report the processing status.
           orac_print "Orac says: Frames $objlist resampled\n";
 
-# Reset CCDPACK registration parameters.
-          $ORAC_STATUS = $Mon{"ccdpack_reg"}->control('par_reset');
-
 # Assign other parameters.  The scale might become a user parameter.
 # We should presumably set the Grp output name when we construct
 # $outname.  Do not change the output name if we have already
 # appended the output suffix the previous time around.
           $outname = $Grp->file . $osuffix unless $Grp->file =~ /$osuffix$/;
-          $header = "in='^tranndf.outlist' out='$outname' title=Mosaic";
-          $hidden = "zero";
+          $header = "in='^tranndf.outlist$$' out='$outname' title=Mosaic";
+          $hidden = "zero optov=8";
 #         $user = "scale";
 
 # Make the mosaic correcting for differences in offset.
           $Mon{"ccdpack_reg"}->obeyw("makemos","$header $hidden");
-          unlink ("tranndf.inlist", "tranndf.outlist");
+          unlink ("tranndf.inlist$$", "tranndf.outlist$$");
 
 # Set the group name in the Group object...
           $Grp->file($outname);

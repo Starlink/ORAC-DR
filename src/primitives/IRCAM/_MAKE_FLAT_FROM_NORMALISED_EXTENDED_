@@ -1,7 +1,7 @@
 # _MAKE_FLAT_FROM_NORMALISED_EXTENDED_    -*- perl -*-
 #
 # Forms a flat-field from a group of object frames.  Each member of the
-# group is expected to be of blaank sky and be zero-point normalised to
+# group is expected to be of blank sky and be zero-point normalised to
 # one of the frames.  The primitive uses a median to combine pre-normalised
 # frames pixel by pixel.
 #
@@ -12,25 +12,20 @@
 #       The median value of the reference sky frame.
 
 # This should only be performed on object frames.
-    if ( $Frm->hdr(OBSTYPE) =~ /OBJECT/ || $Frm->hdr(OBSTYPE) =~ /SKY/ ) {
+    if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ||
+         $Frm->hdr( "OBSTYPE" ) eq "SKY" ) {
 
-# Obtain the cycle frequency of skies.  A value of 2 means the object and
-# sky frames alternate.
-       $cycle = $Frm->hdr( "SKY_FREQ" );
-       
-# Test whether or not this is an object frame or a sky frame. 
-       $class = $Frm->hdr( "TARGET_OR_SKY" );
+# Obtain the row number.
+       $ext_row = $Frm->hdr( "EXTENDED_ROW" );
 
-# Test whether or not this is a target frame or a sky frame.   This
-# assumes a sequence: cycle-1 target frames, sky frame, cycle-1 target
-# frames, sky frame,...  We can generate a flat field when the frame
-# group includes at least three blank-sky frames.
-       if ( $class =~ /sky/ && ($Grp->num + 1) >= 3 * $cycle ) {
+# Determine whether it is time to make a flat.
+       $makeflat = $Frm->hdr( "MAKE_FLAT" );
+       if ( $makeflat ) {
 
 # Form a list of the blank-sky file names for CCDPACK tasks by using a
 # subgroup.
-          $skygrp = $Grp->subgrp( TARGET_OR_SKY => "sky" );
-          $numfiles = $skygrp->num + 1;
+          $skygrp = $Grp->subgrp( TARGET_OR_SKY => "sky",
+                                  EXTENDED_ROW => $ext_row );
 
 # Form a list of input file names for MAKECAL from the other members
 # of the group.  This is not as obvious as it sounds since we are
@@ -51,34 +46,33 @@
 # Create text file to hold the list of input files, one per line.  This
 # is needed because expanded lists of files may make the command line too
 # long for the ADAM message system.
-          unlink ("objlist.inlist");
-          open (INLIST, ">objlist.inlist");
-          for ( my $i = 0; $i < $numfiles; $i++ ) {
-             print INLIST @objects[$i],"\n";
-          }
+          unlink ("objlist.inlist$$");
+          open (INLIST, ">objlist.inlist$$");
+          print INLIST join( "\n", @objects ), "\n";
           close (INLIST);
 
 # Assign the other parameters.  Note that output flat is hardwired for
 # the moment.
           $uflat = $Grp->name."_uflat";
-          $header = "in='^objlist.inlist' out=$uflat";
+          $header = "in='^objlist.inlist$$' out=$uflat";
           $hidden = "sigmas=2.0 expose=1 reset accept"; 
           $user = "method=median";
 
 # Median filter the intra-normalised sky frames to produce an un-normalised
 # flatfield.
           $Mon{"ccdpack_red"}->obeyw("makecal","$header $user $hidden");
-          unlink ("objlist.inlist");
+          unlink ("objlist.inlist$$");
 
-# Obtain the mean of the combined frame.
+# Obtain the ordered statistics of the combined frame.
           $Mon{"kappa_mon"}->obeyw("histat","ndf=$uflat");
 
-# Extract the mean of the frame.  Export the value for later sky subtraction.
+# Extract the median of the frame.  Export the value for later sky
+# subtraction.
           ($ORAC_STATUS, $median) = $Mon{"kappa_mon"}->get("histat","median");
           $_MAKE_FLAT_FROM_NORMALISED_EXTENDED_{FLAT_MEDIAN} = $median;
 
 # Assign the parameters.  Note that output flat is hardwired for the moment.
-          $out = $Grp->name."_flat";
+          $out = $Grp->name."_".$ext_row."_flat";
           $header = "in=$uflat out=$out scalar=$median title=\'Flat field\'";
 
 # Normalise the flat field to have a mean of one.
