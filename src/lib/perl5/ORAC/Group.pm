@@ -34,8 +34,12 @@ use Carp;
 use strict;
 use vars qw/$VERSION/;
 
-$VERSION = undef; # -w protection
 $VERSION = '0.10';
+
+# Derive some methods from the base Frame class
+
+@ORAC::Group::ISA = qw/ORAC::Frame/;
+
 
 # Setup the object structure
 
