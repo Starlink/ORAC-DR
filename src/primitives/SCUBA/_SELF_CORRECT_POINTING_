@@ -1,0 +1,149 @@
+=head1 NAME
+
+_SELF_CORRECT_POINTING_ - determine pointing error and apply it
+
+=head1 DESCRIPTION
+
+For bright sources that are known to be centred on the array
+(eg maps of calibrators or pointing observations) it is possible
+to determine a pointing error and apply it to the data without
+referring to additional pointing observations. This allows 
+calibrator maps to be coadded without smearing the beam (assuming
+the beam is not changing shape due to dish warming).
+
+This primitive rebins some data in AZ coordinates, determines 
+the centroid offsets and then stores the offsets in the frame
+for subsequent use when rebinning.
+
+It does not attempt to rebin each integration separately
+in order to account for pointing drifts within a single 
+observation. This is only relevant for long observations
+(usually bright sources are only observed for a long time
+when we are testing the track model).
+
+=head1 TASKS
+
+=over 4
+
+=item SURF
+
+CHANGE_POINTING
+
+=back
+
+=head1 PRIMITIVES
+
+Uses these primitives:
+
+=over 4
+
+=item _REBIN_FRAME_
+
+=item _CENTROID_FRAME_
+
+=back
+
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+=head COPYRIGHT
+
+Copyright (C) 2001 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+
+=cut
+
+
+# We need to rebin the frame without it messing with the
+# main frame object - easiest to simply store the filenames
+# as they exist now and then fix them later
+# It is overkill to use the frame object to store its state
+# since we are not leaving this primitive
+
+my @files = $Frm->files;
+
+# Rebin in AZ cooridnates
+_REBIN_FRAME_ PIXEL_SIZE=3.0 REBIN_METHOD=LINEAR COORDS=AZ
+
+# Determine offsets without writing them to a file
+_CENTROID_FRAME_ LOGFILE=0
+
+# Correct for the file names due to rebinning
+$Frm->files(@files);
+
+# Loop over each file, applying the offsets
+for my $i (1.. $Frm->nfiles) {
+
+  my $in = $Frm->file($i);
+
+  # Read the result from the centroid
+  my ($dx, $dy, $vpeak) = @{ $_CENTROID_FRAME_{RESULTS}->[$i] };
+
+  # Make sure we have good pixels
+  if (defined $dx && defined $dy) {
+
+    # Apply the corrections
+    # As of V1.6-6 we can't use CHANGE_POINTING from SURF because
+    # it annuls the parameter before exit (in order to allow you
+    # to specify ranges. It needs to be modified to allow arrays
+    # of [time,daz,del] to be supplied
+    # $Mon{surf_mon}->obeyw("change_pointing"," ");
+
+    # Do it "by hand"
+    use NDF;
+
+    ndf_begin;
+    my $status = &NDF::SAI__OK;
+
+    # Open the file
+    ndf_open(&NDF::DAT__ROOT(), $in, 'UPDATE', 'OLD', my $indf, 
+	     my $place, $status);
+
+    ndf_xstat($indf, 'REDS', my $there, $status);
+
+    # Find the SCUBA extension
+    ndf_xloc($indf, 'REDS', 'UPDATE', my $xloc, $status);
+
+    # This is simple because we are just adding a single value
+    # A vector array of size one
+    my @dims = (1);
+
+    # Create the extensions [they can't be hear already else the
+    # pipeline is doing something strange]
+    cmp_mod($xloc,"POINT_LST", "_DOUBLE", 1, @dims, $status);
+    cmp_mod($xloc,"POINT_DEL", "_REAL", 1, @dims, $status);
+    cmp_mod($xloc,"POINT_DAZ", "_REAL", 1, @dims, $status);
+
+    # Update the values
+    my @val = ( $dx );
+    cmp_putvd($xloc, "POINT_DAZ", 1, @val, $status);
+
+    @val = ( $dy );
+    cmp_putvd($xloc, "POINT_DEL", 1, @val, $status);
+
+    # LST we have to get from the header and translate to decimal
+    # radians
+    my $lst = $Frm->hdr("STSTART");
+
+    # Should be standard function for converting this but we know
+    # it is a poisitive value in hours
+    $lst =~ s/:/ /g;
+    my @lst = split(" ",$lst);
+    $lst = $lst[0] + ( $lst[1] / 60 ) + ( $lst[2] / 3600 );
+    $lst *= 15;
+    $lst *= 3.141592654 / 180;
+    @val = ( $lst );
+    cmp_putvd($xloc, "POINT_LST", 1, @val, $status);
+
+    dat_annul($xloc, $status);
+    ndf_annul($indf, $status);
+    ndf_end($status);
+
+    # Update orac status
+    my $ORAC_STATUS = $status;
+
+  }
+
+}
