@@ -202,7 +202,6 @@ Return (or set) the name of the current arlines.lis file - no checking
 
   $arlines = $Cal->arlinesname;
 
-
 =cut
 
 sub arlinesname {
@@ -232,20 +231,16 @@ sub arlines {
   return $self->arlinesname if $ok;
 
   if (defined $ok) {
-
     my $arlines = $self->arlinesindex->choosebydt('ORACTIME',$self->thing);
 
     unless (defined $arlines) {
-
       # Nothing suitable, give up...
       croak "No suitable arlines file was found in index file"
     }
-
     # Store the good value
     $self->arlinesname($arlines);
 
   } else {
-
     # All fall down....
     croak("Error in determining arlines file - giving up");
   }
@@ -303,7 +298,6 @@ Returns the name of a suitable Iarc file.
 
 
 sub iar {
-
   my $self = shift;
   if (@_) {
     return $self->iarname(shift);
@@ -315,20 +309,16 @@ sub iar {
   return $self->iarname if $ok;
 
   if (defined $ok) {
-
     my $iar = $self->iarindex->choosebydt('ORACTIME',$self->thing);
 
     unless (defined $iar) {
-
       # Nothing suitable, give up...
       croak "No suitable Iarc file was found in index file"
     }
-
     # Store the good value
     $self->iarname($iar);
 
   } else {
-
     # All fall down....
     croak("Error in determining Iarc file - giving up");
   }
@@ -343,7 +333,6 @@ Returns the index object associated with the iar file.
 =cut
 
 sub iarindex {
-
     my $self = shift;
     if (@_) { $self->{IarIndex} = shift; }
     
@@ -358,82 +347,78 @@ sub iarindex {
 
 
 
-=item B<grismname>
 
-Return (or set) the name of the current grism data file - no checking
+=item B<offsetval>
 
-  $arlines = $Cal->grismname;
+Return (or set) the current offset value - no checking
+
+  $iar = $Cal->offset;
 
 
 =cut
 
-sub grismname {
+sub offsetval {
   my $self = shift;
-  if (@_) { $self->{Grism} = shift; }
-  return $self->{Grism};
+  if (@_) { $self->{Offset} = shift; }
+  return $self->{Offset};
 }
 
 
-=item B<grism>
+=item B<offset>
 
-Returns the name of a suitable grism data file.
+Returns the appropriate y-offset value.
 
 =cut
 
 
-sub grism {
+sub offset {
 
   my $self = shift;
   if (@_) {
-    return $self->grismname(shift);
+    return $self->offsetval(shift);
   };
 
-  my $ok = $self->grismindex->verify($self->grismname,$self->thing);
+  my $ok = $self->offsetindex->verify($self->offsetval,$self->thing);
 
   # happy ending
-  return $self->grismname if $ok;
+  return $self->offsetval if $ok;
 
   if (defined $ok) {
+    my $offset = $self->offsetindex->choosebydt('ORACTIME',$self->thing);
 
-    my $grism = $self->grismindex->choosebydt('ORACTIME',$self->thing);
-
-    unless (defined $grism) {
-
+    unless (defined $offset) {
       # Nothing suitable, give up...
-      croak "No suitable grism data file was found in index file"
+      croak "No suitable offset value was found in index file"
     }
 
     # Store the good value
-    $self->grismname($grism);
+    $self->offsetval($offset);
 
   } else {
-
     # All fall down....
-    croak("Error in determining grism data file - giving up");
+    croak("Error in determining offset value - giving up");
   }
 }
 
 
 
-=item B<grismindex>
+=item B<offsetindex>
 
-Returns the index object associated with the grism index file. Index is 
-static therefore in calibration directory.
+Returns the index object associated with the offset values. 
 
 =cut
 
-sub grismindex {
-
+sub offsetindex {
     my $self = shift;
-    if (@_) { $self->{GrismIndex} = shift; }
+    if (@_) { $self->{OffsetIndex} = shift; }
     
-    unless (defined $self->{GrismIndex}) {
-	my $indexfile = $ENV{ORAC_DATA_CAL}."/index.grism";
-	my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.grism";
-	$self->{GrismIndex} = new ORAC::Index($indexfile,$rulesfile);
+    unless (defined $self->{OffsetIndex}) {
+	my $indexfile = "index.offset";
+	my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.offset";
+	$self->{OffsetIndex} = new ORAC::Index($indexfile,$rulesfile);
     }
 
-    return $self->{GrismIndex}; 
+    return $self->{OffsetIndex}; 
 }
 
 
