@@ -30,7 +30,7 @@ use ORAC::Print;
 
 use POSIX qw/tmpnam/;  # For unique keys
 
-$VERSION = '0.10';
+$VERSION = '0.11';
 
 =head1 PUBLIC METHODS
 
@@ -460,7 +460,7 @@ sub verify {
     unless ($ok) {
       if ($warn) {
 	orac_warn("$name not a suitable calibration: failed $key $rules{$key}\n");
-	print "Header:-",$Hdr{$key},"--","Calvalue:-$CALVALUE-\n";
+	orac_warn "Header:-",$Hdr{$key},"--","Calvalue:-$CALVALUE-\n";
       }
       return 0;
     };
@@ -628,7 +628,8 @@ sub choosebydt_generic {
     } elsif ($type eq 'POSITIVE') {
       $dthash{$key} = $delta if $delta > 0;
     } elsif ($type eq 'NEGATIVE') {
-      $dthash{$key} = $delta if $delta < 0;
+      # Need to invert sense to keep the sorting correct
+      $dthash{$key} = -1 * $delta if $delta < 0;
     } else {
       croak "choosebydt_generic: Unrecognised flag: $type\n";
     }
