@@ -1,14 +1,39 @@
 # -*- perl -*-
 
-for my $n (1..$Frm->nfiles) {
+    my $beama;
+    for my $n (1..$Frm->nfiles) {
 
-  my $beamain = $Frm->file( $n );
-  (my $beamaout = $beamain) =~ s/\./_/;
-  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$beamain out=$beamaout");
+# Obtain the beam.  Note this was one all NDF components, now only
+# I<n>BEAMA or I<n>BEAMB.
+       my $beamain = $Frm->file( $n );
+
+# Turn the structure delimiter into underscore to avoid confusing
+# HDS.
+       (my $beamout = $beamain) =~ s/\./_/;
+       $Mon{ndfpack_mon}->obeyw( "ndfcopy", "in=$beamain out=$beamout" );
   
-  # if FITS file exists delete it otherwise convert will fail
-  unlink "$beamaout.fits";
-  $Mon{'ndf2fits'}->obeyw("ndf2fits","in=$beamaout out=$beamaout.fits profits proexts prohis");
-  orac_print "$beamaout converted to FITS\n";
+# Convert the NDF to FITS.  If FITS file exists delete it, otherwise
+# the conversion will fail.
+       unlink "$beamout.fits";
+       $Mon{'ndf2fits'}->obeyw( "ndf2fits", "in=$beamout out=$beamout.fits profits proexts prohis" );
+       orac_print "$beamout converted to FITS.\n";
 
-}
+# Assume that there is only BEAMA and BEAMB.  Record the first beam so
+# that it can be differenced with the second beam.
+       if ( $n % 2 == 1 ) {
+          $beama = $beamout;
+
+# Difference the signals from the two beams.  Remove the beam from the
+# name, such that it will has a _I<n> suffix.
+       } else {
+          (my $diffout = $beamout) =~ s/BEAM[AB]//;
+          $Mon{'kappa_mon'}->obeyw( "sub", "in1=$beama in2=$beamout out=$diffout" );
+          orac_print "Beams differenced in $diffout.\n";
+
+# Difference the two beams.
+          unlink "${diffout}.fits";
+          $Mon{'ndf2fits'}->obeyw( "ndf2fits", "in=$diffout out=$diffout.fits profits proexts prohis" );
+          orac_print "$diffout converted to FITS.\n";
+       }
+    }
+    orac_print "\n";
