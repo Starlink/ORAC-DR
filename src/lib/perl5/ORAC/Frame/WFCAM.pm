@@ -31,6 +31,7 @@ use warnings;
 use vars qw/$VERSION/;
 use ORAC::Constants;
 use ORAC::Frame::MEF;
+use ORAC::Print;
 
 # Let the object know that it is derived from ORAC::Frame::MEF;
 use base qw/ORAC::Frame::MEF/;
@@ -549,6 +550,38 @@ sub jgrp {
     }
     return($self->{jgrpname});
 }
+
+=item B<isgood>
+
+Decide whether you have a good image or not...Returns true if the frame is
+good and false if not.
+
+    $good = $Frm->isgood;
+
+=cut
+
+sub isgood {
+    my $self = shift;
+
+    # Are you trying to set it. If so, then set and return the value.
+
+    if (@_) {
+        $self->{IsGood} = shift;
+        return($self->{IsGood});
+    }
+
+    # Otherwise, look for sources of problems. First look for the camera power
+
+    my $good = $self->{IsGood};
+    if ($good && $self->hdr("CAMPOWER") ne "On") {
+        $good = 0;
+        my $line = "Frame " . $self->file . " will be ignored. Camera power is off\n";
+        orac_warn($line);
+    }
+    $self->{IsGood} = $good;
+    return ($good);
+}
+
 
 =item B<findgroup>
  
