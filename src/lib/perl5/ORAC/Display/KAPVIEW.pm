@@ -547,11 +547,6 @@ sub select_section {
   # (Else we will have to generate a section
   return $file if ($auto_all && $ndim <= $max_requested);
 
-  
-#  print "Ndims = $ndim\n";
-#  print "Lower bounds are: ", join(":",@lbnd),"\n";
-#  print "Upper bounds are: ", join(":",@ubnd),"\n";
-
   # If we are going to CUT the image two things need to be true
   # 1, the requested CUT dimensions (the significant dimension)
   #    needs to be present in NDIMS (ie no use cutting on dim 3
@@ -590,7 +585,6 @@ sub select_section {
       # if there is a match set cuts[index] to 1 (ie significant)
       # else set it to 0.
       foreach my $index (0..$ndim-1) {
-	print "Index=$index and Cut=$cut Lookup=$lookup[$index]\n";
 	if ($cut =~ /$lookup[$index]/i) {
 	  $cuts[$index] = 1;
 	  $cutting = 1;   # We are doing a cut since one matches
@@ -600,7 +594,7 @@ sub select_section {
     }
 
   }
-  print "CUTS now contains: ",join("::",@cuts) ,"\n";
+  # print "CUTS now contains: ",join("::",@cuts) ,"\n";
 
   # This is an array describing the section for each dimension
   my @sects = ();
@@ -610,8 +604,6 @@ sub select_section {
   # the sectioning information
   my @min   = @lbnd; # Lower bounds of section for each dim
   my @max   = @ubnd; # upper bounds of section for each dim
-
-  print "Cutting= $cutting\n";
 
   # Loop over all valid dimensions
   for my $dim (1..$ndim) {
@@ -701,9 +693,9 @@ sub select_section {
       # If count is TOO high we need to start from the high end
       # and start setting values to zero - assume highest dimension
       # is least significant.
-      print "Need to loop $count\n";
+
       for (my $i=$ndim-1; $i>=0; $i--) {
-	print "I is $i\n";
+
 	if ($cuts[$i] = 1) {
 	  $cuts[$i] = 0;
 	  $count--;
@@ -727,7 +719,7 @@ sub select_section {
     # Loop over $ndim constructing COMPRESS key
     my @compress;
     for my $index (0..$ndim-1) {
-      print "YYY\n";
+
       # If significant - just put a factor of 1
       if ($cuts[$index]) {
 	push(@compress,1);
@@ -738,20 +730,38 @@ sub select_section {
       }
     }
 
-    print "COMPRESS=@compress\n";
-    my $compress = '[' . join(",",@compress) . ']';
+    # If the compression ratios are 1 for all dimensions then
+    # we dont actually need to run compave. We can just return
+    # the section as stored in $input
 
-    my $out = "secave$$"; 
-    my $compargs = "WLIM=0.1 in=$input out=$out compress=$compress";
+    # Check @compress
+    my $use_compave = 0;
+    foreach (@compress) {
+      if ($_ != 1) {
+	$use_compave = 1;
+	last;
+      }
+    }
 
-    # Run compave
-    my $status = $self->kappa->obeyw("compave","$compargs");
-    print "Status = $status\n";
-    print "Args: $compargs\n";
+    # If we need to run compave...
 
-    return undef unless $status == ORAC__OK;
-    # Now reset $input to be the output of compave
-    $input = $out;
+    if ($use_compave) {
+      my $compress = '[' . join(",",@compress) . ']';
+
+      my $out = "secave$$"; 
+      my $compargs = "WLIM=0.1 in=$input out=$out compress=$compress";
+
+      # Run compave
+      my $status = $self->kappa->obeyw("compave","$compargs");
+
+      if ($status != ORAC__OK) {
+	orac_err("Error running COMPAVE $compargs\n");
+	return undef;
+      }
+
+      # Now reset $input to be the output of compave
+      $input = $out;
+    }
 
   }
 
@@ -837,9 +847,10 @@ sub image {
     # Using MODE=SCALE
     
     if ($options{ZAUTOSCALE} == 0) {
-      # We are specifying a min and max
-      $optstring .= " low=$options{ZMIN} " if exists $options{ZMIN};
-      $optstring .= " high=$options{ZMAX} " if exists $options{ZMAX};
+      # We are specifying a min and max (check with defined rather
+      # than exists since ZMIN=undef is still not helpful)
+      $optstring .= " low=$options{ZMIN} " if defined $options{ZMIN};
+      $optstring .= " high=$options{ZMAX} " if defined $options{ZMAX};
 
     }
   }
@@ -962,9 +973,9 @@ sub graph {
     } else {
       # Set the Y range
       my $min = 0;
-      my $max = 0;
-      $min = $options{ZMIN} if exists $options{ZMIN};
-      $max = $options{ZMAX} if exists $options{ZMAX};
+      my $max = 1;
+      $min = $options{ZMIN} if defined $options{ZMIN};
+      $max = $options{ZMAX} if defined $options{ZMAX};
       $range = "axlim=true abslim=! ordlim=[$min,$max]";
     }
   }
@@ -1200,9 +1211,9 @@ sub datamodel {
     } else {
       # Set the Y range
       my $min = 0;
-      my $max = 0;
-      $min = $options{ZMIN} if exists $options{ZMIN};
-      $max = $options{ZMAX} if exists $options{ZMAX};
+      my $max = 1;
+      $min = $options{ZMIN} if defined $options{ZMIN};
+      $max = $options{ZMAX} if defined $options{ZMAX};
       $range = "axlim=true abslim=! ordlim=[$min,$max]";
     }
   }
@@ -1317,9 +1328,9 @@ sub histogram {
     } else {
       # Set the Y range
       my $min = 0;
-      my $max = 0;
-      $min = $options{ZMIN} if exists $options{ZMIN};
-      $max = $options{ZMAX} if exists $options{ZMAX};
+      my $max = 1;
+      $min = $options{ZMIN} if defined $options{ZMIN};
+      $max = $options{ZMAX} if defined $options{ZMAX};
       $range = "range=[$min,$max]";
     }
   }
