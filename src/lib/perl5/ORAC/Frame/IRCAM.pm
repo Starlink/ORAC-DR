@@ -102,6 +102,35 @@ sub new {
   return $self;
 }
 
+=item B<flag_from_bits>
+
+Determine the name of the flag file given the variable
+component parts. A prefix (usually UT) and observation number
+should be supplied
+
+  $flag = $Frm->flag_from_bits($prefix, $obsnum);
+
+This particular method returns back the flag file associated with
+UFTI.
+
+=cut
+
+
+
+sub flag_from_bits {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $obsnum = shift;
+  
+  # flag files for IRCAM of the type .42_ok
+  
+  my $flag = ".".$obsnum."_ok";
+
+}
+
+
+
 =back
 
 =head1 REQUIREMENTS
