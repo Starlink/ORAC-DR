@@ -344,7 +344,7 @@ sub findrecipe {
   } elsif ($self->hdr('MODE') eq 'PHOTOM') {
     $recipe = 'SCUBA_STD_PHOTOM';
   } elsif ($self->hdr('MODE') eq 'ALIGN') {
-    $recipe = 'SCUBA_STD_ALIGN';
+    $recipe = 'SCUBA_ALIGN';
   } elsif ($self->hdr('MODE') eq 'MAP') {
     if ($self->hdr('SAM_MODE') eq 'JIGGLE') {
       $recipe = 'SCUBA_JIGMAP';
