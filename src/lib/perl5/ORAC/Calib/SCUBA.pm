@@ -1316,6 +1316,30 @@ sub tau {
       $tau = undef;
     }
 
+  } elsif ($sys eq 'WVM') {
+    # see if it has already been read
+    my $wvm = $self->thing->{ORAC_WVM_TAU};
+    my $wvm_err = $self->thing->{ORAC_WVM_TAU_STDEV};
+
+    if ($wvm) {
+      orac_print( sprintf("WVM data located in frame: %.4f +/- %.4f\n",
+			  $wvm, $wvm_err));
+
+      ($tau, $status) = get_tau($filt, 'CSO', $wvm);
+
+      # Check status
+      if ($status == -1) {
+	orac_warn("Error converting a WVM tau of $sys to an opacity for filter $filt\n");
+	orac_warn("Setting tau to 0\n");
+	$tau = 0.0;
+      }
+
+    } else {
+      # look up in archive
+      orac_err( " WVM opacity calibration requested but no WVM data found. Unable to process request\n");
+      $tau = undef;
+    }
+
   } else {
     orac_err(" tausys is non-standard ($sys)\n");
     $tau = undef;
