@@ -1,0 +1,106 @@
+=head1 NAME
+
+_EXTRACT_ADD_BEAMS_
+
+=head1 DESCRIPTION
+
+Takes the extracted beams from _EXTRACT_ALL_BEAMS_ and adds them together,
+adter inverting the sign of the negative beam, and doing a cross-correlation
+and shift if necessary to correct for curved / slanting slits
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+=cut
+
+# We should have a "NUMBER_OF_BEAMS" header from _EXTRACT_FIND_ROWS_
+my $nbeams = $Grp->uhdr("NUMBER_OF_BEAMS");
+
+my $base = $Grp->raw;
+my $inbase = $Grp->file;
+my $in=$inbase;
+
+if($nbeams == 1) {
+   # Only one beam. Just copy it
+   my $in=$inbase.".beam1";
+   my $out = $base."_sp";
+   $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$out title=$out");
+
+   # Update the Grp object
+   $Grp->file($out);
+
+} elsif ($nbeams == 2) {
+   # Two beams.
+   my $mainbeam = $inbase.".beam1";
+   my $offsbeam = $inbase.".beam2";
+   my $out = $base."_sp";   
+
+   # Multiply offset beam by -1 into temp file
+   my $tmp = new ORAC::TempFile;
+   my $tmpfile=$tmp->file;
+   $Mon{'kappa_mon'}->obeyw("cmult", "in=$offsbeam scalar=-1 out=$tmpfile");
+
+   # Cross correlate spectra with scross
+   my $ccf = $base."_ccf";
+   $Mon{'figaro1'}->obeyw("scross", "spectrum=$tmpfile template=$mainbeam record cross=$ccf xstart=min xend=max");
+   (my $ORAC_STATUS, my $shift) = $Mon{'figaro1'}->get("scross", "shift");
+   orac_print "$ccf: Cross correlation Function of main and offset beams\n";
+
+   # Do a stats on the ccf
+   $Mon{'kappa_mon'}->obeyw("stats", "ndf=$ccf");
+   ($ORAC_STATUS, my $maximum) = $Mon{'kappa_mon'}->get("stats", "maximum");
+   ($ORAC_STATUS, my $maxpos) = $Mon{'kappa_mon'}->get("stats", "maxpos");
+
+   my $string = sprintf ("%4.1f", 100*$maximum);
+
+   my $atmp=new ORAC::TempFile;
+   my $atmpfile=$atmp->file;
+      
+   if($maximum > 0.9) {
+      # OK, we'll use it
+      orac_print "Peak of CCF (at $string %) indicates a shift of: $shift - Accepted\n";
+      my $shtmp=new ORAC::TempFile;
+      my $shfile = $shtmp->file;
+      $Mon{'figaro1'}->obeyw("ishift", "image=$tmpfile xshift=$shift xsplit=20 ysplit=1 yshift=0 output=$shfile");
+      # Need a little hack here to shift the variance array too
+      my $a = new ORAC::TempFile;
+      my $afile = $a->file;
+      my $b = new ORAC::TempFile;
+      my $bfile = $b->file;
+
+      $Mon{'figaro1'}->obeyw("creobj", "type=ndf dims=0 object=$afile");
+      $Mon{'figaro1'}->obeyw("creobj", "type=ndf dims=0 object=$bfile");
+      $Mon{'figaro1'}->obeyw("copobj", "source=$tmpfile.VARIANCE object=$afile.DATA_ARRAY");
+      $Mon{'figaro1'}->obeyw("ishift", "image=$afile xshift=$shift xsplit=20 ysplit=1 yshift=0 output=$bfile");
+      $Mon{'figaro1'}->obeyw("copobj", "source=$bfile.DATA_ARRAY object=$shfile.VARIANCE");
+
+      orac_print "Applied shift of $shift pixels to offset beam\n";
+      $Mon{'kappa_mon'}->obeyw("add", "in1=$shfile in2=$mainbeam out=$atmpfile");
+      $Mon{'kappa_mon'}->obeyw("cdiv", "in=$atmpfile scalar=$nbeams out=$out title=$out");
+      orac_print "Main and (shifted) offset beam summed into $out\n";
+   } else {
+      # Add without the shift
+      orac_print "Peak of CCF (at $string %) indicates a shift of: $shift - Rejected\n";
+      $Mon{'kappa_mon'}->obeyw("add", "in1=$tmpfile in2=$mainbeam out=$atmpfile");
+      $Mon{'kappa_mon'}->obeyw("cdiv", "in=$atmpfile scalar=$nbeams out=$out title=$out");
+      orac_print "Main and (unshifted) offset beam coadded into $out\n";
+   }
+
+# Normalise to 1 second exposure time
+
+my $etime = $Frm->uhdr("ORAC_EXPOSURE_TIME");
+$in=$out;
+$out=$base."_nsp";
+$Mon{'kappa_mon'}->obeyw("cdiv", "in=$in scalar=$etime out=$out title=$out");
+orac_print "$in to $out: Normalised to 1 second exposure time\n";
+
+# Update the group object
+$Grp->file($out);
+      
+} else {
+   orac_print "Invalid number of beams.\n";
+}
+
+orac_print "\n";
+   

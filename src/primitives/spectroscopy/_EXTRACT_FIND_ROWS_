@@ -1,0 +1,133 @@
+=head1 NAME
+
+_EXTRACT_FIND_ROWS_
+
+=head1 DESCRIPTION
+
+Finds the rows in a group image at which to centre the spectra 
+extraction windows.
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+=cut
+
+# Get the input filename. We won't actually use $out here - we just add
+# some entries to the group uhdr.
+my $in=$Grp->raw;
+
+# Variables we're going to set:
+
+# Number of beams. Add to this as we find them. Normally 1 or 2, depending
+# whether you're nodding to sky or along slit.
+
+my $nbeams=0;
+
+# Central rows of each beam
+my @row;
+
+# The methodolgy of this is as follows: 
+#   1) try to detect beams simply by looking at the frame image
+#      If we detect them with sufficient confindence, we use them
+#      otherwise we fall back to:
+#   2) Consult index.rows 
+#      If this fails:
+#   3) Can we determine where the beams should be from the headers
+#      - this includes pair reduction where we know the offset.
+#      If not, we fall back to:
+#      If this fails, we fall back to the last resort:
+#   4) Assume rows 102 and 140.
+
+
+# First, try to detect beams in the image.
+
+# Collapse the image along the dispersion axis into a tmp file
+my $col = new ORAC::TempFile;
+my $colfile = $col->file;
+$Mon{'kappa_mon'}->obeyw("collapse", "in=$in out=$colfile axis=1");
+
+# Now do a kappa histat on the collapsed spectrum
+$Mon{'kappa_mon'}->obeyw("histat", "ndf=$colfile percentiles=80");
+my $ORAC_STATUS;
+($ORAC_STATUS, my $median) = $Mon{'kappa_mon'}->get("histat", "median");
+($ORAC_STATUS, my $mean) = $Mon{'kappa_mon'}->get("histat", "mean");
+($ORAC_STATUS, my $maximum) = $Mon{'kappa_mon'}->get("histat", "maximum");
+($ORAC_STATUS, my $minimum) = $Mon{'kappa_mon'}->get("histat", "minimum");
+($ORAC_STATUS, my $maxpos) = $Mon{'kappa_mon'}->get("histat", "maxpos");
+($ORAC_STATUS, my $minpos) = $Mon{'kappa_mon'}->get("histat", "minpos");
+($ORAC_STATUS, my $perval) = $Mon{'kappa_mon'}->get("histat", "perval");
+
+# Detection threshold. We assume the 80% percentile is in the noise.
+my $sigma = $perval - $median;
+
+# Did we detect a +ve beam?
+if(($maximum - $median) > 3*$sigma) {
+    # Yes
+    $nbeams++;
+    $row[$nbeams]=$maxpos;
+    orac_print "Detected +ve spectrum at row: $maxpos\n";
+
+    # Did we detect a -ve beam also?
+    if(($median - $minimum) > 3*$sigma) {
+       # Yes
+       $nbeams++;
+       $row[$nbeams]=$minpos;
+       orac_print "Detected -ve spectrum at row: $minpos\n";
+    }
+}
+
+if ($nbeams == 0) {
+   # Didn't find any beams so far. fall back to rows calibration
+   my @rows = $Cal->rows;
+   if (defined $rows[0]) {
+      $nbeams++;
+      $row[$nbeams] = $rows[0];
+   }
+   if (defined $rows[1]) {
+      $nbeams++;
+      $row[$nbeams] = $rows[1];
+   }
+}
+
+if ($nbeams == 0) {
+   # Didn't find any beams so far. fall back to guessing
+   
+   # The main beam is probably at row 96
+   $nbeams++;
+   $row[$nbeams]=96;
+
+   # is this a pairwise sequence?
+   if (defined ($Frm->uhdr("PAIR_COMPLETE"))) {
+      # Yes, it's pairwise
+
+      # Is the sky position close?
+      # This should really compare the angle to the slit angle too
+      # And look at the slit length...
+
+      my $skyraoff=$Grp->uhdr("SKY_RAOFF");
+      my $skydecoff=$Grp->uhdr("SKY_DECOFF");  
+      my $noddist = sqrt($skyraoff * $skyraoff * $skydecoff * $skydecoff);
+      if ($noddist < 50) {
+         # Chances are we're on the slit
+	 # Guess the pixel scale for now
+	 my $pixsize = 0.6;
+	 my $offset = $noddist / $pixsize;
+	 $nbeams++;
+	 $row[$nbeams] = 96+$offset;
+       }
+   } else {
+     # No, it's not pairwise
+     # Assume there's no offset beam.
+   }
+}
+
+# Write beam positions into group uhdr
+$Grp->uhdr("NUMBER_OF_BEAMS", $nbeams);
+
+foreach my $i (1..$nbeams) { 
+   my $header = "BEAM_POSITION_".$i;
+   $Grp->uhdr($header, $row[$i]);
+}
+
+orac_print "\n";

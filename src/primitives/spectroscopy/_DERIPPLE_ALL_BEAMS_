@@ -1,0 +1,52 @@
+=head1 NAME
+
+_DERIPPLE_ALL_BEAMS_
+
+=head1 DESCRIPTION
+
+Exactly what it says on the can.
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+=cut
+
+# We should have a "NUMBER_OF_BEAMS" header from _EXTRACT_FIND_ROWS_
+my $nbeams = $Grp->uhdr("NUMBER_OF_BEAMS");
+
+my $detincr = $Frm->uhdr("ORAC_SCAN_INCREMENT");
+my $period = nint (1/$detincr);
+
+my $base = $Grp->raw;
+my $inbase = $Grp->file;
+my $rifbase = $base."_rif";
+my $dribase = $base."_dri";
+$Mon{'figaro1'}->obeyw("creobj", "type=structure dims=0 object=$rifbase");
+$Mon{'figaro1'}->obeyw("creobj", "type=structure dims=0 object=$dribase");
+
+foreach my $i (1..$nbeams) {
+
+   # Create a ripple flat field
+   
+   my $in = $inbase.".beam$i";
+   my $rif = $rifbase.".beam$i";
+   orac_print "Ignore this grief from irflat, and winge at Starlink to fix it\n";
+   $Mon{'figaro2'}->obeyw("irflat", "spectrum=$in xstart=min xend=max more=false period=$period output=$rif");
+   # Need to create a zero variance array on the fipple flat field
+   $Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$rif variance=0"); 
+   orac_print "$in to $rif: Ripple Flat field created\n";
+   $Mon{'kappa_mon'}->obeyw("stats", "ndf=$rif");
+   (my $ORAC_STATUS, my $sigma) = $Mon{'kappa_mon'}->get("stats", "sigma");
+   my $string = sprintf ("%5.2f", 100*$sigma);
+   orac_print "$rif: Ripple amplitude is $string%\n";
+
+   # Do the de-ripple
+   my $dri = $dribase.".beam$i";
+   $Mon{'kappa_mon'}->obeyw("div", "in1=$in in2=$rif out=$dri title=$dri");
+   orac_print "$in to $dri: Derippled with ripple-flat $rif\n";
+   # Update the group object
+   $Grp->file($dribase);
+}
+
+orac_print "\n";
