@@ -528,6 +528,23 @@ sub lastmember {
 }
 
 
+=item reduce
+
+Method to return all members of the group that should be processed
+during the current pipeline loop. Currently this always returns
+the last member of the group (ie most recent addition).
+The intention is that this method is modified when necessary so that
+it returns a list of all frames that should be rereduced
+
+=cut
+
+sub reduce {
+  my $self = shift;
+
+  return $self->frame($self->num);
+
+}
+
 
 =back
 
