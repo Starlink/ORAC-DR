@@ -12,15 +12,20 @@ Paul Hirst <p.hirst@jach.hawaii.edu>
 
 =cut
 
-# We should have a "NUMBER_OF_BEAMS" header from _EXTRACT_FIND_ROWS_
-my $nbeams = $Grp->uhdr("NUMBER_OF_BEAMS");
+# We should have a "NBEAMS" header from _EXTRACT_DETERMINE_NBEAMS_
+my $nbeams = $Grp->uhdr("NBEAMS");
 
-# Get the beam positions
+# Get the beam positions and multipliers
 my @row;
+my @mult;
 foreach my $i (1..$nbeams) {
    # We should have BEAM_POSITION_$i headers
-   my $header = "BEAM_POSITION_".$i;   
-   $row[$i] = $Grp->uhdr($header);
+   my $keyword = "BEAM_POSITION_".$i;   
+   $row[$i] = $Grp->uhdr($keyword);
+
+   # And BEAM_MULT_$i headers
+   $keyword = "BEAM_MULT_".$i;
+   $mult[$i] = $Grp->uhdr($keyword);
 }
 
 # Get the input file
@@ -48,6 +53,9 @@ my $oep = $base."_oep";
 my $oer = $base."_oer";
 my $oes = $base."_oes";
 
+my $tmp = new ORAC::TempFile;
+my $tmpfile = $tmp->file;
+
 $Mon{'figaro1'}->obeyw("creobj", "type=structure dims=0 object=$oep");
 $Mon{'figaro1'}->obeyw("creobj", "type=structure dims=0 object=$oer");
 $Mon{'figaro1'}->obeyw("creobj", "type=structure dims=0 object=$oes");
@@ -67,14 +75,20 @@ foreach my $i (1..$nbeams) {
    my $yend = ($row[$i]+$window > $ubound) ? $ubound : $row[$i]+$window;
 
    # Do the profile
-    $Mon{'figaro1'}->obeyw("profile", "image=$in ystart=$ystart yend=$yend degree=3 profile=$oep residual=$oer weight nreject=0");
+   $Mon{'figaro1'}->obeyw("profile", "image=$in ystart=$ystart yend=$yend degree=3 profile=$oep residual=$oer weight nreject=0");
    orac_print "$in to $oep: Opt-Extract profile over window: $ystart:$yend\n";
    orac_print "$in to $oer: Opt-Extract residuals from $oep\n";
 
    # Do the opt extract - (optimally extracted spectra)
+   # Actually, go via a temp file if the multiplier for the beam != 1 and divide by it otherwise
    $oes = $base."_oes".".beam$i";
-   $Mon{'figaro1'}->obeyw("optextract", "image=$in profile=$oep weight spectrum=$oes");
-   orac_print "$in to $oes: Optimally extracted using profile: $oep\n";
+   if ($mult[$i] == 1) {
+      $Mon{'figaro1'}->obeyw("optextract", "image=$in profile=$oep weight spectrum=$oes");
+   } else {
+      $Mon{'figaro1'}->obeyw("optextract", "image=$in profile=$oep weight spectrum=$tmpfile");
+      $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tmpfile scalar=$mult[$i] out=$oes");
+   }
+   orac_print "$in to $oes: Optimally extracted using profile: $oep and divisor: $mult[$i]\n";
 
    # Update the group object
    $oes = $base."_oes";

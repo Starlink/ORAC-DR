@@ -19,13 +19,14 @@ my $in=$Grp->raw;
 
 # Variables we're going to set:
 
-# Number of beams. Add to this as we find them. Normally 1 or 2, depending
-# whether you're nodding to sky or along slit.
-
-my $nbeams=0;
-
 # Central rows of each beam
 my @row;
+
+# We get the number of beams there should be from the Grp->uhdr - should have been put
+# there by _EXTRACT_DETERMINE_NBEAMS_
+
+my $nbeams = $Grp->uhdr("NBEAMS");
+
 
 # The methodolgy of this is as follows: 
 #   1) try to detect beams simply by looking at the frame image
@@ -43,40 +44,56 @@ my @row;
 # First, try to detect beams in the image.
 
 # Collapse the image along the dispersion axis into a tmp file
-my $col = new ORAC::TempFile;
-my $colfile = $col->file;
+
+my $colfile = $in."_ypr";
 $Mon{'kappa_mon'}->obeyw("collapse", "in=$in out=$colfile axis=1");
 
-# Now do a kappa histat on the collapsed spectrum
-$Mon{'kappa_mon'}->obeyw("histat", "ndf=$colfile percentiles=80");
-my $ORAC_STATUS;
-($ORAC_STATUS, my $median) = $Mon{'kappa_mon'}->get("histat", "median");
-($ORAC_STATUS, my $mean) = $Mon{'kappa_mon'}->get("histat", "mean");
-($ORAC_STATUS, my $maximum) = $Mon{'kappa_mon'}->get("histat", "maximum");
-($ORAC_STATUS, my $minimum) = $Mon{'kappa_mon'}->get("histat", "minimum");
-($ORAC_STATUS, my $maxpos) = $Mon{'kappa_mon'}->get("histat", "maxpos");
-($ORAC_STATUS, my $minpos) = $Mon{'kappa_mon'}->get("histat", "minpos");
-($ORAC_STATUS, my $perval) = $Mon{'kappa_mon'}->get("histat", "perval");
+# Send the Y PRofile file off to display
+my $yprFrm = new $Frm;
+$yprFrm->file($colfile);
+$Display->display_data( $yprFrm ) if defined $Display;
 
-# Detection threshold. We assume the 80% percentile is in the noise.
-my $sigma = $perval - $median;
+my $ncol = new ORAC::TempFile;
+my $ncolfile = $ncol->file;
+$Mon{'kappa_mon'}->obeyw("cmult", "in=$colfile scalar=-1 out=$ncolfile");
 
-# Did we detect a +ve beam?
-if(($maximum - $median) > 3*$sigma) {
-    # Yes
-    $nbeams++;
-    $row[$nbeams]=$maxpos;
-    orac_print "Detected +ve spectrum at row: $maxpos\n";
+# We do +ve beams first.
+# How many +ve beams should there be?
+my $posbeams=0;
+$posbeams=1 if ($nbeams==1);
+$posbeams=1 if ($nbeams==2);
+$posbeams=1 if ($nbeams==3);
+$posbeams=2 if ($nbeams==4);
 
-    # Did we detect a -ve beam also?
-    if(($median - $minimum) > 3*$sigma) {
-       # Yes
-       $nbeams++;
-       $row[$nbeams]=$minpos;
-       orac_print "Detected -ve spectrum at row: $minpos\n";
-    }
+# the beam multiplier
+my $mult = 1;
+$mult = 2 if($nbeams==3);
+
+if($posbeams) {
+   # Call figaro emlt on the collapsed file
+   $Mon{'figaro2'}->obeyw("emlt", "spectrum=$colfile xstart=min xend=max lines=$posbeams");
+
+   # Do not put a semi-colon on the end of the following line
+   _PARSE_EMLT_LIS_ FIRST=1 NLINES=$posbeams MULT=$mult
 }
 
+# Now do the -ve beams;
+my $negbeams=0;
+$negbeams=0 if($nbeams==1);
+$negbeams=1 if($nbeams==2);
+$negbeams=2 if($nbeams==3);
+$negbeams=2 if($nbeams==4);
+$mult = -1;
+
+if($negbeams) {
+   # Call figaro emlt on the negated collapsed file
+   $Mon{'figaro2'}->obeyw("emlt", "spectrum=$ncolfile xstart=min xend=max lines=$negbeams");
+
+   my $first = $posbeams+1;
+   # Do not put a semi-colon on the end of the following line
+   _PARSE_EMLT_LIS_ FIRST=$first NLINES=$negbeams MULT=$mult
+}
+   
 if ($nbeams == 0) {
    # Didn't find any beams so far. fall back to rows calibration
    my @rows = $Cal->rows;
@@ -120,14 +137,6 @@ if ($nbeams == 0) {
      # No, it's not pairwise
      # Assume there's no offset beam.
    }
-}
-
-# Write beam positions into group uhdr
-$Grp->uhdr("NUMBER_OF_BEAMS", $nbeams);
-
-foreach my $i (1..$nbeams) { 
-   my $header = "BEAM_POSITION_".$i;
-   $Grp->uhdr($header, $row[$i]);
 }
 
 orac_print "\n";
