@@ -158,7 +158,7 @@ sub engine {
   if (@_) {
     my $name = shift;
 
-    # If we have a second argument we are expecting 
+    # If we have a second argument we are expecting
     # to store a value
     if (@_) {
       my $obj = shift;
@@ -504,7 +504,7 @@ standard hash C<delete> command:
 
   delete $Mon{"polpack_mon"};
 
-C<exists>, C<clear>, C<keys> and C<each> are supported.
+C<exists>, C<keys> and C<each> are supported.
 
 In addition, it is possible to explicitly set entries in the hash. A
 rudimentary check is made to check that the stored entry is an object

@@ -31,6 +31,7 @@ use Carp;
 
 use ORAC::Constants qw/ :status /;
 use ORAC::Print;
+use ORAC::Msg::EngineLaunch;   # In order to dynamic load
 
 use vars qw/ $DEBUG /;
 
@@ -212,62 +213,47 @@ but are not part of the external published interface.
 
 =item B<_launch_algorithm_engines>
 
-Launches the algorithm engines as specified in a hash with the
- structure:
+Launches the specified algorithm engines.
 
+  $hashref = $inst->_launch_algorithm_engines( @engines );
 
-  %algeng = (
-	     kappa_mon => {
-			   CLASS => 'ORAC::Msg::ADAM::Task',
-			   PATH  => "$ENV{KAPPA_DIR}/kappa_mon"
-			   REQUIRED => 1,
-			  },
-	     ccdpack_reg => {
-			     ...
-			    }
-	    );
-
-The C<REQUIRED> flag indicates whether a fatal error should be
-raised if the engine could not be launched.
-
-  %Mon = _launch_algorithm_engines( %EngDef );
-
-Returns a hash containing the object. The method dies if a required
-engine could not be launched.
+Returns a reference to a tied hash containing the engines
+and associated objects. The method checks that all
+engines are contactable and croaks if any can not be contacted.
 
 =cut
 
 sub _launch_algorithm_engines {
   my $self = shift;
 
+  my @engines = @_;
+
   my %Mon;
-  my %EngDef = @_;
 
-  for my $eng (keys %EngDef ) {
+  # Create new object for launching
+  my $launch = new ORAC::Msg::EngineLaunch;
 
-    my $info = $EngDef{$eng};
+  # Launch all the engines at once for efficiency
+  my %launched = $launch->launch( @engines );
 
-    # Launch it if we can find the path
-    my $obj = $info->{CLASS}->new($eng . "_$$",
-				  $info->{PATH} )
-      if ( -e $info->{PATH} );
+  # Now we need to wait for them all
+  my ($ok, $nok) = $launch->contact_all;
 
-    # If $obj is not defined but required we hae a fatal error
-    croak "Unable to launch engine $eng using ".$info->{PATH} .
-      "\nAborting since this engine is required\n"
-      if ($info->{REQUIRED} && ! defined $obj);
-
-    # Store the object
-    $Mon{$eng} = $obj if defined $obj;
-
+  # Raise an error if we were unable to launch them all
+  if (@$nok) {
+    my $fail = join(",", @$nok);
+    croak "Unable to launch the following engines: $fail\n".
+      "Aborting since these engines are required\n";
   }
 
-  # Store the hash
+  # Tie the hash to the launch object
+  tie %Mon, ref($launch), $launch;
+
+  # Store them in this object for backwards compatibility
   %{ $self->_algeng } = %Mon;
 
-  # Return the hash
-  return %Mon;
-
+  # Return the hash reference
+  return \%Mon;
 }
 
 =back

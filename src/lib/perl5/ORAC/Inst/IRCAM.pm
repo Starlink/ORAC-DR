@@ -32,7 +32,7 @@ use base qw/ ORAC::Inst::ADAM /;
 # Status handling
 use ORAC::Constants qw/:status/;
 
-use ORAC::Inst::Defn qw/ orac_determine_algorithm_engines /;
+use ORAC::Inst::Defn qw/ orac_determine_initial_algorithm_engines /;
 
 
 =head1 METHODS
@@ -57,10 +57,10 @@ sub start_algorithm_engines {
   my $self = shift;
 
   # Retrieve algorithm requirements
-  my $algref = orac_determine_algorithm_engines( 'IRCAM' );
+  my @engines = orac_determine_initial_algorithm_engines( 'IRCAM' );
 
   # Now launch them
-  return $self->_launch_algorithm_engines( %$algref );
+  return $self->_launch_algorithm_engines( @engines );
 
 }
 

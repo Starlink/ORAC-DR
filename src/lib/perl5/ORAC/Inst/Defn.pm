@@ -33,7 +33,7 @@ use vars qw/ @ISA @EXPORT_OK $VERSION /;
 @ISA = qw/ Exporter /;
 @EXPORT_OK = qw/ 
   orac_determine_inst_classes
-  orac_determine_algorithm_engines
+  orac_determine_initial_algorithm_engines
   orac_determine_recipe_search_path
   orac_determine_primitive_search_path
   orac_engine_description
@@ -46,66 +46,82 @@ use vars qw/ @ISA @EXPORT_OK $VERSION /;
 
 my %MonolithDefns = (
 		     kappa_mon => {
+				   MESSYS => 'ORAC::Msg::ADAM::Control',
 				   CLASS => 'ORAC::Msg::ADAM::Task',
 				   PATH => $ENV{KAPPA_DIR}."/kappa_mon",
 				  },
 		     surf_mon => {
+				   MESSYS => 'ORAC::Msg::ADAM::Control',
 				   CLASS => 'ORAC::Msg::ADAM::Task',
 				   PATH => "$ENV{SURF_DIR}/surf_mon",
 				  },
 		     polpack_mon => {
+				   MESSYS => 'ORAC::Msg::ADAM::Control',
 				   CLASS => 'ORAC::Msg::ADAM::Task',
 				   PATH => "$ENV{POLPACK_DIR}/polpack_mon",
 				  },
 		     ccdpack_reg => {
+				   MESSYS => 'ORAC::Msg::ADAM::Control',
 				   CLASS => 'ORAC::Msg::ADAM::Task',
 				   PATH => "$ENV{CCDPACK_DIR}/ccdpack_reg",
 				  },
 		     ccdpack_red => {
+				   MESSYS => 'ORAC::Msg::ADAM::Control',
 				   CLASS => 'ORAC::Msg::ADAM::Task',
 				   PATH => "$ENV{CCDPACK_DIR}/ccdpack_red",
 				  },
 		     ccdpack_res => {
+				   MESSYS => 'ORAC::Msg::ADAM::Control',
 				   CLASS => 'ORAC::Msg::ADAM::Task',
 				   PATH => "$ENV{CCDPACK_DIR}/ccdpack_res",
 				  },
 		     catselect => {
+				   MESSYS => 'ORAC::Msg::ADAM::Control',
 				   CLASS => 'ORAC::Msg::ADAM::Task',
 				   PATH => "$ENV{CURSA_DIR}/catselect",
 				  },
 		     ndf2fits => {
+				   MESSYS => 'ORAC::Msg::ADAM::Control',
 				   CLASS => 'ORAC::Msg::ADAM::Task',
 				   PATH => "$ENV{CONVERT_DIR}/ndf2fits",
 				  },
 		     kapview_mon => {
+				   MESSYS => 'ORAC::Msg::ADAM::Control',
 				   CLASS => 'ORAC::Msg::ADAM::Task',
 				   PATH => $ENV{KAPPA_DIR}."/kapview_mon",
 				  },
 		     ndfpack_mon => {
+				   MESSYS => 'ORAC::Msg::ADAM::Control',
 				   CLASS => 'ORAC::Msg::ADAM::Task',
 				   PATH => $ENV{KAPPA_DIR}."/ndfpack_mon",
 				  },
 		     figaro1 => {
+				   MESSYS => 'ORAC::Msg::ADAM::Control',
 				   CLASS => 'ORAC::Msg::ADAM::Task',
 				   PATH => $ENV{FIG_DIR}."/figaro1",
 				  },
 		     figaro2 => {
+				   MESSYS => 'ORAC::Msg::ADAM::Control',
 				   CLASS => 'ORAC::Msg::ADAM::Task',
 				   PATH => $ENV{FIG_DIR}."/figaro2",
 				  },
 		     figaro4 => {
+				   MESSYS => 'ORAC::Msg::ADAM::Control',
 				   CLASS => 'ORAC::Msg::ADAM::Task',
 				   PATH => $ENV{FIG_DIR}."/figaro4",
 				  },
 		     pisa_mon => {
+				   MESSYS => 'ORAC::Msg::ADAM::Control',
 				   CLASS => 'ORAC::Msg::ADAM::Task',
 				   PATH => "$ENV{PISA_DIR}/pisa_mon",
 				  },
 		     photom_mon => {
+				   MESSYS => 'ORAC::Msg::ADAM::Control',
 				   CLASS => 'ORAC::Msg::ADAM::Task',
 				   PATH => "$ENV{PHOTOM_DIR}/photom_mon",
 				  },
 		     test_mon   => {
+				    MESSYS => 'ORAC::Msg::ADAM::Control',
 				    CLASS => 'ORAC::Msg::ADAM::Task',
 				    PATH => "this/is/junk",
 				   },
@@ -285,98 +301,47 @@ sub orac_determine_primitive_search_path {
 }
 
 
-=item B<orac_determine_algorithm_engines>
+=item B<orac_determine_initial_algorithm_engines>
 
-For the supplied instrument name, returns a reference to a hash
-containing keys of the name of the engine and values of an anonymous
-hash with the location and type of the engine and whether the engine
-is optional or required. An example structure is:
+For the supplied instrument name, returns a list containing the names
+of engines to be launched by the pipeline prior to executing any
+recipes. This is used so that engines that are always used will be
+available at the start of execution rather than being launched on
+demand. This approach provides a slight efficiency gain over starting
+each engine on demand.
 
-  %algeng = (
-	     kappa_mon => {
-			   CLASS => 'ORAC::Msg::ADAM::Task',
-			   PATH  => "$ENV{KAPPA_DIR}/kappa_mon"
-			   REQUIRED => 1,
-			  },
-	     ccdpack_reg => {
-			     ...
-			    }
-	    );
+  @engines = orac_determine_initial_algorithm_engines( $instrument)
 
-  $algeng = orac_determine_algorithm_engines( $instrument );
-
-It is possible that this information may be moved to the specific
-instrument frame class. Once engine-launch-on-demand is implemented
-this routine will most likely become obsolete.
+In principal this list can be empty if no pre-launching is required.
 
 =cut
 
-sub orac_determine_algorithm_engines {
+sub orac_determine_initial_algorithm_engines {
   my $inst = uc($_[0]);
 
-  # internally, set up a simple hash where the keys are the
-  # alg engine names and the value is whether the engine is
-  # mandatory or not. Then translate this hash to the required 
-  # format by merging with the monolith definitions from the start
-  # of the file. Really need launch-on-demand
-
-  my %alg;
+  # Array of mandatory engines
+  my @AlgEng;
   if ($inst eq 'SCUBA') {
 
-    %alg = (
-	    surf_mon => 1,
-	    kappa_mon => 1,
-	    kapview_mon => 1,
-	    ndfpack_mon => 1,
-	    ndf2fits => 0,
-	    polpack_mon => 0,
-	    ccdpack_reg => 0,
-	    catselect => 0,
-	   );
+    @AlgEng = qw/ surf_mon ndfpack_mon /;
 
   } elsif ($inst eq 'CGS4') {
 
-    %alg = (
-	    figaro1 => 1,
-	    figaro2 => 1,
-	    figaro4 => 1,
-	    ndf2fits => 1,
-	    ccdpack_reg => 1,
-	    kappa_mon => 1,
-	    ndfpack_mon => 1,
-	   );
+    @AlgEng = qw/ figaro1 figaro2 figaro4 kappa_mon ndfpack_mon
+      ccdpack_reg /;
 
 
   } elsif ($inst eq 'IRCAM') {
 
-    %alg = (
-	    photom_mon => 1,
-	    ccdpack_red => 1,
-	    ccdpack_reg => 1,
-	    ccdpack_res => 1,
-	    kappa_mon => 1,
-	    ndfpack_mon => 1,
-	    pisa_mon => 1,
-	    polpack_mon => 1,
-	    catselect => 1,
-	   );
+    @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg
+      ccdpack_res /
 
   } else {
     croak "Do not know which engines are required for instrument $inst";
   }
 
-  # Now generate the required return hash
-  my %AlgEng;
-  for my $eng (keys %alg) {
-
-    $AlgEng{$eng} = {
-		     %{ $MonolithDefns{$eng} },
-		     REQUIRED => $alg{$eng},
-		    };
-  }
-
   # Return the hash reference
-  return \%AlgEng;
+  return @AlgEng;
 }
 
 =item B<orac_engine_description>
@@ -388,7 +353,26 @@ Returns the details for a specified algorithm engine.
 The hash that is returned contains information on the
 class to be used to launch the engine and the location
 of the engine. In future it may also return the messaging
-system required for the engine to function.
+system required for the engine to function. The hash currently
+has the following keys
+
+=over 4
+
+=item CLASS
+
+The name of the class to be used for this engine.
+(e.g. C<ORAC::Msg::ADAM::Task>).
+
+=item PATH
+
+The location of the engine in the file system.
+
+=item MESSYS
+
+The message system class required to contact the engine.
+[not used at present]
+
+=back
 
 Returns an empty list on error.
 
