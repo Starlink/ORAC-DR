@@ -65,6 +65,7 @@ my @ORAC_INTERNAL_HEADERS = qw/
   RA_BASE 
   RA_SCALE
   RA_TELESCOPE_OFFSET
+  RECIPE
   ROTATION 
   SCAN_INCREMENT
   SLIT_ANGLE
@@ -949,23 +950,38 @@ sub file_from_bits {
 
 =item B<findgroup>
 
-Method to determine the group to which the observation belongs.
-The default method is to look for a "GRPNUM" entry in the header.
-
-  $group = $Frm->findgroup;
-
-The object is automatically updated via the group() method.
+Returns group name from header.  If we can't find anything sensible,
+we return 0.  The group name stored in the object is automatically
+updated using this value.
 
 =cut
 
 sub findgroup {
+
   my $self = shift;
 
-  # Simplistic routine that simply returns the GRPNUM
-  # entry in the header
-  my $group = $self->hdr->{GRPNUM};
-  $self->group($group);
-  return $group;
+  my $hdrgrp = $self->hdr('GRPNUM');
+  my $amiagroup;
+
+
+  if ($self->hdr('GRPMEM')) {
+    $amiagroup = 1;
+  } elsif (!defined $self->hdr('GRPMEM')){
+    $amiagroup = 1;
+  } else {
+    $amiagroup = 0;
+  }
+
+  # Is this group name set to anything useful
+  if (!$hdrgrp || !$amiagroup ) {
+    # if the group is invalid there is not a lot we can do
+    # so we just assume 0
+    $hdrgrp = 0;
+  }
+
+  $self->group($hdrgrp);
+
+  return $hdrgrp;
 
 }
 
@@ -991,9 +1007,9 @@ sub findnsubs {
 
 =item B<findrecipe>
 
-Method to determine the recipe name that should be used to reduce
-the observation.
-The default method is to look for a "RECIPE" entry in the header.
+Method to determine the recipe name that should be used to reduce the
+observation.  The default method is to look for an "ORAC_RECIPE" entry
+in the user header. If one cannot be found, we assume QUICK_LOOK.
 
   $recipe = $Frm->findrecipe;
 
@@ -1005,10 +1021,19 @@ The object is automatically updated to reflect this recipe.
 sub findrecipe {
   my $self = shift;
 
-  # Simplistic routine that simply returns the RECIPE
-  # entry in the header
-  my $recipe = $self->hdr->{RECIPE};
+  my $recipe = $self->uhdr('ORAC_RECIPE');
+
+  # Check to see whether there is something there
+  # if not try to make something up
+
+  if (!defined($recipe) or $recipe !~ /./) {
+    orac_warn "Cannot determine recipe - defaulting to QUICK_LOOK\n";
+    $recipe = 'QUICK_LOOK';
+  }
+
+  # Update
   $self->recipe($recipe);
+
   return $recipe;
 }
 
