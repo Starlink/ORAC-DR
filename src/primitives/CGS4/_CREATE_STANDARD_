@@ -1,0 +1,412 @@
+# _CREATE_STANDARD_          -*- perl -*-
+#
+# creates a standard image
+
+=head1 NAME
+
+CREATE_STANDARD - creates and files a standard image
+
+=head1 DESCRIPTION
+
+Takes a reduced group file for an observed standard, extracts a spectrum,
+divides that spectrum by a blackbody spectrum of the same temperature as
+the standard, then grows the divided spectrum into an image with the same
+dimensions as the original observations. The resulting image is then filed
+as a standard calibration file.
+
+=head1 PARAMETER
+
+=over 4
+
+=item TEMP
+
+Defines the temperature of the standard star, in Kelvins.  If this parameter
+is not defined by the user, the primitive first tries to determine the spectral
+type of the standard from the Bright Standard Catalogue, then from querying
+the SIMBAD astronomical database, then defaults to setting the temperature
+to 6000 K. See NOTES below.
+
+=item ROW
+
+Defines the row to extract as the standard spectrum.  Defaults to 96.
+
+=back
+
+=head1 ORAC
+
+=head2 Engines referenced
+
+KAPPA, FIGARO
+
+=head2 Tasks called
+
+=over 4
+
+=item kappa_mon
+
+cdiv, cmult, div
+
+=item figaro1
+
+extract, growx
+
+=item figaro2
+
+fwconv
+
+=item figaro4
+
+bbody
+
+=item ndfpack_mon
+
+axlabel, axunits, ndftrace, settitle
+
+=back
+
+=head2 Objects addressed
+
+$Grp
+
+=head1 NOTES
+
+If the spectral type of the standard cannot be found in the Bright Star Catalogue (which 
+should exist in the $ORAC_DATA_CAL directory), this primitive queries the SIMBAD 
+astronomical database. As this query requires a network connection of some sort, it will
+fail if no network connection exists.  The timeout for this query is currently set to
+20 seconds; this can be modified if it is found that this timeout is too short (for flaky
+network connections) or too long (for no network connection at all).  
+
+In addition to the previous note, it must also be noted that this primitive parses the 
+web page one receives from SIMBAD. As this web page is likely to change in the future, 
+this primitive must also change in how it parses the web page. The format of this web 
+page may be seen by going to the SIMBAD web site ( http://simbad.harvard.edu/Simbad or
+http://simbad.u-strasbg.fr/Simbad ) and doing a sample query.
+
+This primitive uses a conversion chart between spectral type and temperature as found on 
+the web page at http://huey.jpl.nasa.gov/~gerard/q_refs/sptype_temp.html  This web page
+obtained this information from Dyck et al. (1996) and Allen (1976).  Checking this 
+information against a third reference (Lang, 1991) showed a good correspondence.
+
+=head2 REVISION
+
+  $Id$
+
+=head1 AUTHOR
+
+b.cavanagh@jach.hawaii.edu
+
+=cut
+
+sub dectodms {
+# Convert decimal RA/Dec. to degrees/minutes/seconds.
+# Takes a decimal number.
+# Returns an array $array[0] = degrees
+#                  $array[1] = minutes
+#                  $array[2] = seconds
+  my $dec = shift;
+  my @dms;
+  my $neg = 0;
+  if($dec < 0) {
+    $neg = 1;
+    $dec = - $dec;
+  }
+  $dms[0] = int($dec);
+  $dms[1] = int(($dec - int($dec))*60);
+  $dms[2] = (($dec - $dms[0]) * 60 - int(($dec - $dms[0]) * 60)) * 60;
+  if($neg) { $dms[0] = - $dms[0] }
+  return @dms;
+# end subroutine dectodms
+}
+
+my $fullname = $Grp->file . $Grp->filesuffix;
+my $groupname = $Grp->file;
+if(!(-e $fullname)) {
+  orac_warn("Reduced group file $groupname does not exist.\n");
+  orac_warn("Cannot create standard.\n");
+} else {
+
+# get temperature parameter
+# if the temperature parameter is not defined, check configuration table
+# for spectral type. If that fails, check SIMBAD for spectral type.
+# if SIMBAD fails, default to 6000.
+
+  my $temperature = ($_CREATE_STANDARD_{TEMP} || undef);
+  my $spectype;
+  my $vmag;
+  my %spectotemp = (
+		    O5 => 40000,
+		    O6 => 37000,
+		    O7 => 35000,
+		    O8 => 34000,
+		    O9 => 33000,
+		    B0 => 30000,
+		    B1 => 25400,
+		    B2 => 22000,
+		    B3 => 18700,
+		    B4 => 17000,
+		    B5 => 15400,
+		    B6 => 14000,
+		    B7 => 13000,
+		    B8 => 11900,
+		    B9 => 10500,
+		    A0 => 9520,
+		    A1 => 9230,
+		    A2 => 8970,
+		    A3 => 8720,
+		    A4 => 8500,
+		    A5 => 8200,
+		    A6 => 8000,
+		    A7 => 7850,
+		    A8 => 7580,
+		    A9 => 7400,
+		    F0 => 7200,
+		    F1 => 7000,
+		    F2 => 6890,
+		    F3 => 6700,
+		    F4 => 6500,
+		    F5 => 6440,
+		    F6 => 6350,
+		    F7 => 6275,
+		    F8 => 6200,
+		    F9 => 5900,
+		    G0 => 5930,
+		    G1 => 5880,
+		    G2 => 5830,
+		    G3 => 5785,
+		    G4 => 5740,
+		    G5 => 5680,
+		    G6 => 5620,
+		    G7 => 5525,
+		    G8 => 5430,
+		    G9 => 5335,
+		    K0 => 5240,
+		    K1 => 5125,
+		    K2 => 5010,
+		    K3 => 4785,
+		    K4 => 4560,
+		    K5 => 4340,
+		    K6 => 4185,
+		    K7 => 4030,
+		    K8 => 3950,
+		    K9 => 3875,
+		    M0 => 3800,
+		    M1 => 3680,
+		    M2 => 3530,
+		    M3 => 3380,
+		    M4 => 3180,
+		    M5 => 3030,
+		    M6 => 2850,
+		   );
+  
+  # first check the calibration table for spectral type
+
+  if(!defined($temperature)) {
+    
+    my $type;
+    my $objname = $Frm->hdr->{'OBJECT'};
+    
+    orac_print "Searching Bright Star Catalogue for $objname\n";
+    
+    if($objname =~ /bs\s?([0-9]{1,4})/i) {
+      my $bsnum = $1;
+      my $calfile = $ENV{'ORAC_DATA_CAL'} . "/bsc5.dat";
+      my $template = "a4a10a2a9a6a6a4a1a1a1a5a2a9a2a2a4a1a2a2a2a2a2a4a1a2a2a2a6a6a5a1a1a5a1a5a1a5a1a20a1a6a6a1a5a4a4a2a3a1a4a6a4a2a1\n";
+      open BSFILE, $calfile;
+      while (<BSFILE>) {
+	my @data = unpack($template,$_);
+	# $data[0] == BS#, $data[38] == spectral type
+	if($1 == $data[0]) {
+	  # remove the first two characters from $data[38]
+	  my $revdata = reverse $data[38];
+	  chop $revdata;
+	  chop $revdata;
+	  $data[38] = reverse $revdata;
+	  # determine the spectral type from the first two characters
+	  if($data[38] =~ /^([a-z][0-9])/i) {
+	    $spectype = $1;
+	    orac_print "Object is spectral type $spectype\n";
+	    ($vmag = $data[29]) =~ s/\s+//g;
+	    $temperature = $spectotemp{$spectype};
+	    orac_print "Setting temperature to $temperature K.\n";
+	    orac_print "V magnitude is $vmag \n";
+	  }
+	  last;
+	}
+      }
+      close BSFILE;
+    }
+  }
+
+  if((!defined($temperature)) && (defined(&LWP::Simple::get))) {
+    
+    orac_print "Object not found in Bright Star Catalogue.\n";
+    orac_print "Querying SIMBAD for spectral type...\n";
+    my $meanra = $Frm->hdr("MEANRA");
+    my $meandec = $Frm->hdr("MEANDEC");
+    
+    my ($radeg, $ramin, $rasec) = dectodms($meanra);
+    my ($decdeg, $decmin, $decsec) = dectodms($meandec);
+    
+    # set up the URL
+    my $URL1 = "http://simbad.harvard.edu/sim-id.pl?protocol=html&Ident=" . $radeg . "+" . $ramin . "+";
+    my $URL2;
+    if($decdeg > 0) {
+      $URL2 = $rasec . "+%2B" . $decdeg . "+" . $decmin . "+" . $decsec . "&NbIdent=1&Radius=10&Radius.unit";
+    } else {
+      $URL2 = $rasec . "+" . $decdeg . "+" . $decmin . "+" . $decsec . "&NbIdent=1&Radius=10&Radius.unit";
+    }
+    my $URL3 = "=arcmin&CooFrame=FK5&CooEpoch=2000&CooEqui=2000&output.max=";
+    my $URL4 = "all&o.catall=on&output.mesdisp=N&Bibyear1=1983&Bibyear2=1999&Frame1=FK5";
+    my $URL5 = "&Frame2=none&Frame3=none&Epoch1=2000.0&Epoch2=1950.0&Epoch3=2000.0&Equi1";
+    my $URL6 = "=2000.0&Equi2=1950.0&Equi3=2000.0";
+    my $URL = $URL1 . $URL2 . $URL3 . $URL4 . $URL5 . $URL6;
+    
+    $LWP::Simple::ua->timeout(20);       # set timeout to 20 seconds
+    my @content = split '\n', LWP::Simple::get($URL);
+    if(!defined($content[0])) {
+      orac_print "Unable to connect to SIMBAD database.\n";
+    } else {
+      my $found = 0;
+      # if the SIMBAD results page changes, this will need to change as well.
+      foreach my $string (@content) { 
+	my @array = ();
+	@array = split '\|', $string;
+	if((defined($array[4])) && ($array[4] =~ /([a-z][0-9])/i) && ($found == 0)) { 
+	  $spectype = $1;
+	  my @simcoord = split ' ', $array[2];
+	  my $format = "%2d %2d %4.2f";
+	  my $rastring = sprintf($format,$radeg,$ramin,$rasec);
+	  my $decstring = sprintf($format,$decdeg,$decmin,$decsec);
+	  my $srastring = sprintf($format,$simcoord[0],$simcoord[1],$simcoord[2]);
+	  my $sdecstring = sprintf($format,$simcoord[3],$simcoord[4],$simcoord[5]);
+	  orac_print "Header RA: $rastring Decl: $decstring\n";
+	  orac_print "SIMBAD RA: $srastring Decl: $sdecstring\n";
+	  orac_print "Object is spectral type $spectype\n";
+	  $temperature = $spectotemp{$spectype};
+	  orac_print "Setting temperature to $temperature K.\n";
+	  $found = 1;
+	  $array[3] =~ /([\d\.]+)\s+([\d\.]+)/;
+	  $vmag = $2;
+	  orac_print "V magnitude is $vmag \n";
+	}
+      }
+      if($found == 0) {
+	my $format = "%2d %2d %4.2f";
+	my $rastring = sprintf($format,$radeg,$ramin,$rasec);
+	my $decstring = sprintf($format,$decdeg,$decmin,$decsec);
+	orac_print "Object at RA: $rastring Decl: $decstring not classified in SIMBAD\n";
+      }
+    }
+  }
+
+# if SIMBAD failed to set the temperature, default to 6000
+
+  ($temperature) || ($temperature = 6000);
+
+# get extraction row
+# if the extraction row is not defined, default to 96(?)
+
+  my $extractrow = ($_CREATE_STANDARD_{ROW} || undef);
+  ($extractrow) || ($extractrow = 96);
+
+# get reference wavelengh
+# blackbody flux will be normalized to the flux at this wavelength
+
+  my $refwave = $Frm->hdr("GLAMBDA") / 1000000;   # units in meters
+
+# get y-dimensions
+
+  my $ORAC_STATUS;
+  
+  $Mon{'ndfpack_mon'}->obeyw("ndftrace","ndf=$groupname"); 
+
+  ($ORAC_STATUS, my @lbound) = $Mon{'ndfpack_mon'}->get('ndftrace','lbound');
+  ($ORAC_STATUS, my @ubound) = $Mon{'ndfpack_mon'}->get('ndftrace','ubound');
+  my $ymin = $lbound[1];
+  my $ymax = $ubound[1];
+  my $ydim = $ymax - $ymin + 1;
+
+# start the processing
+
+  my $in = $Grp->file;
+  my $out = "std_" . $Grp->name;
+  
+# if the spectral type is known, set the SPECTYPE header
+  
+  if($spectype) {
+    _SET_GROUP_FITS_ITEM_ KEY=SPECTYPE VALUE=$spectype COMMENT=spectral|type
+  }
+
+  if($vmag) {
+    _SET_GROUP_FITS_ITEM_ KEY=VMAG VALUE=$vmag COMMENT=V|magnitude
+  }
+
+# extract the row specified above into $specname
+
+  my $spec = new ORAC::TempFile;
+  my $specname = $spec->file;
+  $Mon{'figaro1'}->obeyw("extract","image=$in ystart=$extractrow yend=$extractrow spectrum=$specname");
+
+# set axis information (assuming wavelength units are microns)
+
+  $Mon{'ndfpack_mon'}->obeyw("axlabel","ndf=$specname label=wavelength dim=1");
+  $Mon{'ndfpack_mon'}->obeyw("axunits","ndf=$specname units=micron dim=1");
+
+# create a blackbody in $bbname using axis information from $specname
+
+  my $bb = new ORAC::TempFile;
+  my $bbname = $bb->file;
+  $Mon{'figaro4'}->obeyw("bbody","logar=no temp=$temperature in=$specname out=$bbname");
+
+# convert the blackbody units from F-nu to F-lambda
+
+  $Mon{'figaro2'}->obeyw("fwconv","spectrum=$bbname flux_unit=erg output=$bbname");
+
+# convert the blackbody units from CGS F-lambda to MKS F-lambda
+
+  my $bbmks = new ORAC::TempFile;
+  my $bbmksname = $bbmks->file;
+  $Mon{'kappa_mon'}->obeyw("cmult","in=$bbname scalar=0.1 out=$bbmksname");
+
+# calculate the flux at the reference wavelength (flux units are Jy/sr)
+
+  my $const1 = 1.1910439e-16;
+  my $const2 = 0.01438769;
+  my $refflux = ($const1 / ($refwave ** 5)) / (exp($const2 / ($refwave * $temperature)) - 1);
+
+# normalize the blackbody by the reference flux
+
+  my $normbb = new ORAC::TempFile;
+  my $normbbname = $normbb->file;
+  $Mon{'kappa_mon'}->obeyw("cdiv","in=$bbmksname out=$normbbname scalar=$refflux");
+
+# divide the extracted spectrum by the normalized blackbody spectrum
+
+  my $div = new ORAC::TempFile;
+  my $divname = $div->file;
+  $Mon{'kappa_mon'}->obeyw("div","in1=$specname in2=$normbbname out=$divname");
+
+# grow the blackbody-normalized spectrum into 2D
+
+  $Mon{'figaro1'}->obeyw("growx","spectrum=$divname image=$out ystart=$ymin yend=$ymax ysize=$ydim new=true");
+
+# set the title of the output image
+
+  $Mon{'ndfpack_mon'}->obeyw("settitle","ndf=$out title=$out");
+
+# print congratulatory message
+
+  orac_print "Orac says: $in to $out: Standard created\n";
+
+# file the standard
+
+  $Cal->standard($out);
+
+  orac_print "$out filed as the current standard\n";
+
+  $Cal->standardindex->add($out, $Grp->hdr);
+  
+  orac_print "$out added to index file\n";
+
+}
