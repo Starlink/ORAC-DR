@@ -48,7 +48,6 @@ use Starlink::HDSPACK qw/copobj/;
 # Translation tables for CGS4 should go here.
 my %hdr = (
             CONFIGURATION_INDEX  => "CNFINDEX",
-            DEC_TELESCOPE_OFFSET => "DECOFF",
             DETECTOR_INDEX       => "DINDEX",
             DETECTOR_READ_TYPE   => "MODE",
             EXPOSURE_TIME        => "DEXPTIME",
@@ -58,8 +57,7 @@ my %hdr = (
             GRATING_ORDER        => "GORDER",
             GRATING_WAVELENGTH   => "GLAMBDA",
             NSCAN_POSITIONS      => "DETNINCR",
-            RA_TELESCOPE_OFFSET  => "RAOFF",
-	    RECIPE               => "DRRECIPE",
+            RECIPE               => "DRRECIPE",
             SCAN_INCREMENT       => "DETINCR",
             SLIT_ANGLE           => "SANGLE",
             SLIT_NAME            => "SLIT",
@@ -99,6 +97,66 @@ sub _from_UTSTART {
   "RUTSTART", $_[0]->uhdr("ORAC_UTSTART");
 }
 
+sub _to_DEC_TELESCOPE_OFFSET {
+  my $self = shift;
+  my $return;
+  my $hdr;
+  if( exists( $self->hdr->{1} ) ) {
+    $hdr = $self->hdr->{1};
+  } else {
+    $hdr = $self->hdr;
+  }
+
+  my $ut = $hdr->{IDATE};
+  if( $ut < 20050315 ) {
+    $return = $self->hdr->{DECOFF};
+  } else {
+    $return = $self->hdr->{TDECOFF};
+  }
+  return $return;
+}
+
+sub _from_DEC_TELESCOPE_OFFSET {
+  my $self = shift;
+  my %return;
+  if( $self->uhdr("ORACUT") < 20050315 ) {
+    $return{"DECOFF"} = $self->uhdr("ORAC_DEC_TELESCOPE_OFFSET");
+  } else {
+    $return{"TDECOFF"} = $self->uhdr("ORAC_DEC_TELESCOPE_OFFSET");
+  }
+  return %return;
+}
+
+sub _to_RA_TELESCOPE_OFFSET {
+  my $self = shift;
+  my $return;
+  my $hdr;
+  if( exists( $self->hdr->{1} ) ) {
+    $hdr = $self->hdr->{1};
+  } else {
+    $hdr = $self->hdr;
+  }
+
+  my $ut = $hdr->{IDATE};
+  if( $ut < 20050315 ) {
+    $return = $self->hdr->{RAOFF};
+  } else {
+    $return = $self->hdr->{TRAOFF};
+  }
+
+  return $return;
+}
+
+sub _from_RA_TELESCOPE_OFFSET {
+  my $self = shift;
+  my %return;
+  if( $self->uhdr("ORACUT") < 20050315 ) {
+    $return{"RAOFF"} = $self->uhdr("ORAC_RA_TELESCOPE_OFFSET");
+  } else {
+    $return{"TRAOFF"} = $self->uhdr("ORAC_RA_TELESCOPE_OFFSET");
+  }
+  return %return;
+}
 
 =head1 PUBLIC METHODS
 
