@@ -637,6 +637,7 @@ sub calc_orac_headers {
                    SLIT_NAME
                    SPEED_GAIN 
                    STANDARD
+                   TELESCOPE
                    UTDATE
                    UTEND 
                    UTSTART
