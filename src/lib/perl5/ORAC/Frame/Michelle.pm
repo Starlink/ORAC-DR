@@ -93,7 +93,9 @@ sub new {
   # the hash member name
   $self->rawfixedpart('M');
   $self->rawsuffix('.sdf');
- 
+  $self->rawformat('UKIRTio');
+  $self->format('HDS');
+
   # If arguments are supplied then we can configure the object
   # Currently the argument will be the filename.
   # If there are two args this becomes a prefix and number

@@ -29,7 +29,7 @@ to B<ORAC::Frame::CGS4> objects. Some additional methods are supplied.
 use 5.004;
 use ORAC::Frame::UKIRT;
 use ORAC::Print;
- 
+
 # Let the object know that it is derived from ORAC::Frame;
 #@ORAC::Frame::CGS4::ISA = qw/ORAC::Frame::UKIRT/;
 use base  qw/ORAC::Frame::UKIRT/;
@@ -91,9 +91,11 @@ sub new {
   # Configure initial state - could pass these in with
   # the class initialisation hash - this assumes that I know
   # the hash member name
-  $self->rawfixedpart('c');
+  $self->rawfixedpart('o');
   $self->rawsuffix('.sdf');
- 
+  $self->rawformat('UKIRTio');
+  $self->format('HDS');
+
   # If arguments are supplied then we can configure the object
   # Currently the argument will be the filename.
   # If there are two args this becomes a prefix and number
@@ -194,6 +196,27 @@ sub configure {
   return 1;
 }
 
+=item B<file_from_bits>
+
+Determine the raw data filename given the variable component
+parts. A prefix (usually UT) and observation number should
+be supplied.
+
+  $fname = $Frm->file_from_bits($prefix, $obsnum);
+
+=cut
+
+sub file_from_bits {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $obsnum = shift;
+
+  # CGS4 form is  FIXED PREFIX _ NUM SUFFIX
+  return $self->rawfixedpart . $prefix . '_' . $obsnum . $self->rawsuffix;
+
+}
+
 =item B<findnsubs>
 
 This method returns the number of NDFs found in an HDS container.
@@ -235,6 +258,33 @@ sub findnsubs {
   $self->nsubs($ncomp);
   
   return $ncomp;
+
+}
+
+=item B<flag_from_bits>
+
+Determine the name of the flag file given the variable
+component parts. A prefix (usually UT) and observation number
+should be supplied
+
+  $flag = $Frm->flag_from_bits($prefix, $obsnum);
+
+This particular method returns back the flag file associated with
+IRCAM.
+
+=cut
+
+
+
+sub flag_from_bits {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $obsnum = shift;
+  
+  # flag files for CGS4 of the type .42_ok
+  
+  my $flag = ".".$obsnum."_ok";
 
 }
 

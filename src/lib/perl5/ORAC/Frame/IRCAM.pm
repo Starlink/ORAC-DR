@@ -93,6 +93,8 @@ sub new {
   # the hash member name
   $self->rawfixedpart('ro');
   $self->rawsuffix('.sdf');
+  $self->rawformat('NDF');
+  $self->format('NDF');
  
   # If arguments are supplied then we can configure the object
   # Currently the argument will be the filename.
@@ -100,6 +102,33 @@ sub new {
   $self->configure(@_) if @_;
  
   return $self;
+}
+
+=back
+
+=head2 General Methods
+
+=over 4
+
+=item B<file_from_bits>
+
+Determine the raw data filename given the variable component
+parts. A prefix (usually UT) and observation number should
+be supplied.
+
+  $fname = $Frm->file_from_bits($prefix, $obsnum);
+
+=cut
+
+sub file_from_bits {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $obsnum = shift;
+
+  # IRCAM form is  FIXED PREFIX _ NUM SUFFIX
+  return $self->rawfixedpart . $prefix . '_' . $obsnum . $self->rawsuffix;
+
 }
 
 =item B<flag_from_bits>
@@ -111,7 +140,7 @@ should be supplied
   $flag = $Frm->flag_from_bits($prefix, $obsnum);
 
 This particular method returns back the flag file associated with
-UFTI.
+IRCAM.
 
 =cut
 

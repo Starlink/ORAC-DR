@@ -93,6 +93,8 @@ sub new {
   # the hash member name
   $self->rawfixedpart('f');
   $self->rawsuffix('.fits');
+  $self->rawformat('FITS');
+  $self->format('NDF');
  
   # If arguments are supplied then we can configure the object
   # Currently the argument will be the filename.
@@ -108,54 +110,6 @@ sub new {
 =head2 General Methods
 
 =over 4
-
-=item B<file_from_bits>
-
-Determine the raw data filename given the variable component
-parts. A prefix (usually UT) and observation number should
-be supplied.
-
-  $fname = $Frm->file_from_bits($prefix, $obsnum);
-
-=cut
-
-sub file_from_bits {
-  my $self = shift;
-
-  my $prefix = shift;
-  my $obsnum = shift;
-
-  # pad with leading zeroes - 5(!) digit obsnum
-  my $padnum = '0'x(5-length($obsnum)) . $obsnum;
-
-  # UFTI naming
-  return $self->rawfixedpart . $prefix . '_' . $padnum . $self->rawsuffix;
-}
-
-
-=item B<findrecipe>
-
-Find the recipe name. If the recipe name can not be found (using
-the 'RECIPE' keyword), 'QUICK_LOOK' is returned by default.
-
-The recipe name is updated in the Frame object.
-
-=cut
-
-sub findrecipe {
-
-  my $self = shift;
-
-  my $recipe = $self->hdr('RECIPE');
-
-  $recipe = 'QUICK_LOOK' unless ($recipe =~ /\w/);
-
-
-  # Update
-  $self->recipe($recipe);
-
-  return;
-}
 
 =item B<calc_orac_headers>
 
@@ -202,6 +156,85 @@ sub calc_orac_headers {
 }
 
 
+=item B<file_from_bits>
+
+Determine the raw data filename given the variable component
+parts. A prefix (usually UT) and observation number should
+be supplied.
+
+  $fname = $Frm->file_from_bits($prefix, $obsnum);
+
+=cut
+
+sub file_from_bits {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $obsnum = shift;
+
+  # pad with leading zeroes - 5(!) digit obsnum
+  my $padnum = '0'x(5-length($obsnum)) . $obsnum;
+
+  # UFTI naming
+  return $self->rawfixedpart . $prefix . '_' . $padnum . $self->rawsuffix;
+}
+
+=item B<findrecipe>
+
+Find the recipe name. If the recipe name can not be found (using
+the 'RECIPE' keyword), 'QUICK_LOOK' is returned by default.
+
+The recipe name is updated in the Frame object.
+
+=cut
+
+sub findrecipe {
+
+  my $self = shift;
+
+  my $recipe = $self->hdr('RECIPE');
+
+  $recipe = 'QUICK_LOOK' unless ($recipe =~ /\w/);
+
+
+  # Update
+  $self->recipe($recipe);
+
+  return;
+}
+
+
+
+=item B<flag_from_bits>
+
+Determine the name of the flag file given the variable
+component parts. A prefix (usually UT) and observation number
+should be supplied
+
+  $flag = $Frm->flag_from_bits($prefix, $obsnum);
+
+This particular method returns back the flag file associated with
+UFTI.
+
+=cut
+
+sub flag_from_bits {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $obsnum = shift;
+  
+  # It is almost possible to derive the flag name from the 
+  # file name but not quite. In the UFTI case the flag name
+  # is  .UT_obsnum.fits.ok but the filename is fUT_obsnum.fits
+
+  # Retrieve the data file name
+  my $raw = $self->file_from_bits($prefix, $obsnum);
+
+  # Replace the 'f' with a '.' and append '.fits'
+  substr($raw,0,1) = '.';
+  $raw .= '.ok';
+}
 
 
 

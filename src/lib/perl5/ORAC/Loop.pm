@@ -639,8 +639,16 @@ sub link_and_read {
   # Have to remember to do this everywhere we need $CONVERT since
   # we are not using a global constructor.
   unless (defined $CONVERT) { $CONVERT = new ORAC::Convert; }
-  $fname = $CONVERT->convert($ENV{ORAC_DATA_IN} ."/$fname", { OUT => 'NDF', OVERWRITE => 0});
 
+  # Read the Input and Output formats from the Frame object
+  my $infmt = $Frm->rawformat;
+  my $outfmt = $Frm->format;
+
+  # Ask for the filename (converted if required)
+  $fname = $CONVERT->convert($ENV{ORAC_DATA_IN} ."/$fname", { IN => $infmt, 
+							      OUT => $outfmt, 
+							      OVERWRITE => 0
+							    });
 
   # Check state of $fname
   unless (defined $fname) {

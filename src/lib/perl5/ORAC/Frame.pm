@@ -270,7 +270,8 @@ sub files {
 =item B<format>
 
 Data format associated with the current file().
-Usually one of 'NDF' or 'FITS'.
+Usually one of 'NDF' or 'FITS'. This format should be
+recognisable by C<ORAC::Convert>.
 
 =cut
 
@@ -556,6 +557,21 @@ sub rawfixedpart {
   if (@_) { $self->{RawFixedPart} = shift; }
   return $self->{RawFixedPart};
 }
+
+=item B<rawformat>
+
+Data format associated with the raw() data file.
+Usually one of 'NDF' or 'FITS'. This format should be
+recognisable by C<ORAC::Convert>.
+
+=cut
+
+sub rawformat {
+  my $self = shift;
+  if (@_) { $self->{RawFormat} = shift; }
+  return $self->{RawFormat};
+}
+
 
 =item B<rawsuffix>
 
@@ -921,34 +937,18 @@ should be supplied
 
   $flag = $Frm->flag_from_bits($prefix, $obsnum);
 
-This particular method returns back the flag file associated with
-UFTI.
+This method should be implemented by a sub-class.
 
 =cut
-
-# Note - I don't agree that the base class should consist
-# of a mishmash of code related to many different instruments
-# depending on which sub came first. The file_from_bits
-# base method returns back the IRCAM specification and the flag_from_bits
-# base method returns a value in the UFTI style!!! (TimJ)
-# They only work together if the sub-classing is taken into account!
 
 sub flag_from_bits {
   my $self = shift;
 
   my $prefix = shift;
   my $obsnum = shift;
+
+  die "The base class version of flag_from_bits() should not be used\n -- please subclass this method\n";
   
-  # It is almost possible to derive the flag name from the 
-  # file name but not quite. In the UFTI case the flag name
-  # is  .UT_obsnum.fits.ok but the filename is fUT_obsnum.fits
-
-  # Retrieve the data file name
-  my $raw = $self->file_from_bits($prefix, $obsnum);
-
-  # Replace the 'f' with a '.' and append '.fits'
-  substr($raw,0,1) = '.';
-  $raw .= '.ok';
 }
 
 

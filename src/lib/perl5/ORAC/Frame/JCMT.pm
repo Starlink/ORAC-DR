@@ -97,6 +97,8 @@ sub new {
   # the hash member name
   $self->rawfixedpart('_dem_');
   $self->rawsuffix('.sdf');
+  $self->rawformat('NDF');
+  $self->format('NDF');
  
   # If arguments are supplied then we can configure the object
   # Currently the argument will be the filename.

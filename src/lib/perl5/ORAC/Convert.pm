@@ -21,13 +21,22 @@ ORAC::Convert - Methods for converting data formats
 =head1 
 
 Provide a system for converting data formats. Currently the
-only output format supported is NDF. The only input formats supported
-are NDF (!) and FITS.
+only output format supported are:
 
-NDF format is used as the intermediate  format for all conversions
-(should probably use PDLs as the intermediate format....)
+  NDF     - simple NDF files
+  HDS     - HDS containers with .HEADER and .Inn NDFs
 
-Uses the Starlink CONVERT package (via monoliths).
+The only input formats supported are:
+
+  NDF     - simple NDF files
+  FITS    - FITS file
+  UKIRTIO - UKIRT I/O file
+
+In many cases the NDF format is used as the intermediate format for
+all conversions (should probably use PDLs as the intermediate
+format....)
+
+Uses the Starlink CONVERT package (via monoliths) where necessary.
 
 Can be used to convert from instrument specific NDF files (eg
 multi-frame CGS4 data or I- and O- frames for IRCAM) to HDS formats
@@ -187,7 +196,7 @@ will be set to NDF.
 
 Recogised keywords in the hash are:
 
-  IN  => input format (NDF, UKIRTmultindf or FITS)
+  IN  => input format (NDF, UKIRTio or FITS)
   OUT => desired output format (NDF or HDS)
 
 If 'IN' is not specified it will try to derive the format from
@@ -251,11 +260,25 @@ sub convert {
   $self->overwrite($options{OVERWRITE}) if exists $options{OVERWRITE};
 
   my $outfile = undef;
-  # Now ask the relevant routine to convert first to NDF
-  if ($options{'IN'} eq 'FITS') {
+
+  # Since the options are somewhat limited by the current instrument
+  # selection -- do not implement a generic conversion system using
+  # intermediates for all formats. Simply make some specific conversion
+  # routines to do the obvious conversions and worry about it later.
+
+  # Implement FITS2NDF
+  if ($options{'IN'} eq 'FITS' && $options{'OUT'} eq 'NDF') {
     orac_print("Converting from FITS to NDF...\n");
     $outfile = $self->fits2ndf;
     orac_print("...done\n");
+  } elsif ($options{'IN'} eq 'UKIRTIO' && $options{OUT} eq 'HDS') {
+    # Implement UKIRTio2HDS
+    orac_print "Converting from UKIRT I/O files to HDS container...\n";
+    $outfile = $self->UKIRTio2hds;
+    orac_print "...done\n";
+  } else {
+    orac_err "Error finding a conversion routine to handle $options{IN} -> $options{OUT}\n";
+    return undef;
   }
 
   # Now from NDF convert to the desired output format
@@ -414,14 +437,14 @@ sub fits2ndf {
 }
 
 
-=item B<UKIRTmultindf2hds>
+=item B<UKIRTio2hds>
 
 Converts observations that are taken as a header file plus multiple
 NDFs into a single HDS container that contains a .HEADER NDF and
 .Inn NDFs for each of the nn data files. This is the scheme used for
 IRCAM and CGS4 data at UKIRT.
 
-  $hdsfile = $Cvt->UKIRTmultindf2hds;
+  $hdsfile = $Cvt->UKIRTio2hds;
 
 This routine assumes the old UKIRT data acquisition system (at least for
 IRCAM and CGS4) is generating the data files. The name of the header
@@ -437,7 +460,7 @@ Returns undef on error.
 
 =cut
 
-sub UKIRTmultindf2hds {
+sub UKIRTio2hds {
   my $self = shift;
 
   # Get the directory name and file name from the infile()
@@ -475,6 +498,7 @@ sub UKIRTmultindf2hds {
   # and whether we can overwrite it.
   if (-e $output.'.sdf' && ! $self->overwrite) {
     # Return early
+    $output .= '.sdf';
     orac_warn "The converted file ($output) already exists - won't convert again\n";
     return $output;
   }
@@ -484,7 +508,7 @@ sub UKIRTmultindf2hds {
 
   # Read in a list of the O-files
   opendir(IDIR, $idir) || do {
-    orac_err "ORAC::Convert::UKIRTmultindf2hds: Error opening IDIR: $idir\n";
+    orac_err "ORAC::Convert::UKIRTio2hds: Error opening IDIR: $idir\n";
     return undef;
   };
 
@@ -492,12 +516,13 @@ sub UKIRTmultindf2hds {
   # ie change 'o' to 'i' and use the root
   my $root;
   ($root = $ofile) =~ s/^o/i/;
+  $root .= '_';  # add underscore to constrain pattern match
 
   # Read all the Ifiles that look like they are related to the O file
   my @ifiles = grep /^$root/, readdir IDIR;
   closedir IDIR;
 
-  print "IFILES: @ifiles\n";
+  # print "IFILES: @ifiles\n";
 
   # Check that we have found some files
   if ($#ifiles == -1) {
@@ -560,8 +585,8 @@ sub UKIRTmultindf2hds {
     return undef;
   }
 
-  # Everything okay - return the file name
-  return $output;
+  # Everything okay - return the file name (with .sdf)
+  return $output . ".sdf";
 
 
 }
