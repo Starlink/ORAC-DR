@@ -220,6 +220,30 @@ sub findnsubs {
 
 Copes with non-existence of HDS container and handles NDF subframes
 
+The following logic is applied:
+
+ - If a '.' is present
+
+   NFILES > 1
+       The new suffix is attached before the dot.
+       An HDS container is created (based on the root) to
+       receive the expected NDF.
+
+   NFILES = 1
+       We remove the dot and append the suffix as normal
+       (by removing the old suffix first).
+       This ensures that when NFILES=1 we will no longer
+       be using HDS containers
+
+ - If no '.' is present
+  
+       This is the standard behaviour. Simply remove after
+       last underscore and replace with new suffix.
+
+If you want to retain the HDS container syntax, this routine has to be
+fooled into thinking that nfiles is greater than 1 (eg by adding a dummy
+file name to the frame).
+
 =cut
 
 sub inout {
@@ -234,14 +258,12 @@ sub inout {
   
   my $infile = $self->file($num);
 
+  # Split infile into a root and a tail
+  my ($root, $rest) = $self->split_name($infile);
 
   # Chop off at last underscore
   # Must be able to do this with a clever pattern match
   # Want to use s/_.*$// but that turns a_b_c to a and not a_b
-
-  my ($root,$rest) = split(/\./,$infile,2);
-
-
   # instead split on underscore and recombine using underscore
   # but ignoring the last member of the split array
   my (@junk) = split(/_/,$root);
@@ -258,14 +280,21 @@ sub inout {
     $outfile = $root;
   }
 
+  # Find out how many files we have
+  my $nfiles = $self->nfiles;
+
   # Now append the suffix to the outfile
   $outfile .= $suffix;
-  if (defined $rest) {
+
+  # If we had a suffix (eg .i1) now need to
+  # reattach it and create an HDS container *IF* NFILES is greater than 1
+  # If NFILES equals 1 
+  if (defined $rest && $nfiles > 1) {
     unless (-e $outfile.".sdf") {
       my ($loc,$status);
       my @null = (0);
       
-      hds_new ($outfile,substr($outfile,0,8),"MICHELLE_HDS",0,@null,$loc,$status);
+      hds_new ($outfile,substr($outfile,0,9),"MICHELLE_HDS",0,@null,$loc,$status);
       dat_annul($loc, $status);
       orac_err("Failed to create HDS container!") if $status != &NDF::SAI__OK;
     }
@@ -277,6 +306,93 @@ sub inout {
 }
 
 
+=item gui_id
+
+Calculate the ID for the display system. Uses the last suffix
+as a key (not including dots). If nfiles>1 an 's' followed
+by a number (reflecting the file number requested) is prepended
+to the string.
+
+ eg s2dk from c19991231_1_dk.i2
+
+If only one underscore is found (ie a raw number with no data
+reduction suffix) 'num' is returned along with the image
+identifier if multiple sub-frames are present
+
+ eg  s2num from c19991231_1.i2
+     s3num from c19991231_1.i3
+
+Argument: sub-frame number
+
+=cut
+
+sub gui_id {
+  my $self = shift;
+  # Read the number
+  my $num = 1;
+  if (@_) { $num = shift; }
+
+  # Retrieve the Nth file name (start counting at 1)
+  my $fname = $self->file($num);
+
+  # Split infile into a root and a tail
+  my ($root, $rest) = $self->split_name($fname);
+
+  # Split on underscore
+  my (@split) = split(/_/,$root);
+
+  # If there are > 2 chunks then we have a real suffix
+  # else we have a raw data
+  my $id;
+  if ($#split > 1) {
+    $id = $split[-1];
+  } else {
+    $id = 'num';
+  }
+
+  # Find out how many files we have 
+  my $nfiles = $self->nfiles;
+
+  # Prepend with s$num if nfiles > 1
+  $id = "s$num" . $id if $nfiles > 1;
+
+  return $id;
+
+}
+
+=back
+
+=head1 PRIVATE METHODS
+
+=over 4
+
+=item split_name
+
+Internal routine to split a 'file' name into an actual
+filename (the HDS container) and the NDF name (the
+thing inside the container).
+
+Splits on '.'
+
+Argument: string to split (eg test.i1)
+Returns:  root name, ndf name (eg 'test' and 'i1')
+
+NDF name is undef if there are no 'sub-frames'.
+
+This routine is so simple that it may not be worth the effort.
+
+=cut
+
+sub split_name {
+  my $self = shift;
+  my $file  = shift;
+
+  # Split on '.'
+  my ($root, $rest) = split(/\./, $file, 2);
+
+  return ($root, $rest);
+}
+
 
 
 =back
@@ -287,7 +403,7 @@ Currently this module requires the NDF module.
 
 =head1 SEE ALSO
 
-L<ORAC::Group>
+L<ORAC::Frame::UKIRT>
 
 =head1 AUTHORS
 
