@@ -68,6 +68,11 @@
 
 #  History:
 #     $Log$
+#     Revision 1.15  2004/01/09 01:57:43  frossie
+#
+#     Modified to avoid any hard-coded machine names. Warning is issued on
+#     NFS mounted ORAC_DATA_OUT regardless. Tested on Solaris and Linux only.
+#
 #     Revision 1.14  2002/10/11 21:09:07  timj
 #     Tweak a mamo comment
 #
@@ -114,6 +119,11 @@
 #     Council. All Rights Reserved.
 
 #-
+setenv OS `uname -s`
+
+if ($OS == 'SunOS') then
+        alias df /usr/ucb/df
+endif
 
 
 # Calibration root
@@ -158,7 +168,7 @@ if !($?ORAC_DATA_ROOT) then
   # There are 3 possibilities. We are in Hilo, we are at the JCMT
   # or we are somewhere else. 
 
-  # At the JCMT we need to set ORAC_DATA_ROOT to /jcmtarchive
+  # At the JCMT we need to set ORAC_DATA_ROOT to /jcmtdata
   # In this case the current UT date is the sensible choice
  
   # In Hilo we need to set DATADIR to /scuba/Semester/UTdate/
@@ -265,32 +275,46 @@ if ($ORAC_DATA_ROOT == /jcmtdata ) then
    # guarantees correct group ownership
    mkdir $ORAC_DATA_OUT
 
-   # Sticky bit set plus group write
-   # The sticky bit can not be set on a nfs disk
-   # so this does not work unless we are on kolea
-   if (`hostname` != 'kolea') then
-     echo Setting write permissions on directory by using rsh to mamo
-     echo -n Please wait....
-     ssh kolea chmod g+rws $ORAC_DATA_OUT
-     echo complete.
-   else
-     # simply chmod
-     chmod g+rws $ORAC_DATA_OUT
-   endif
+   # Set the sticky bit for group write 
+   # Need to rsh to the NFS server of the partition of it is not local
+
+    # check if ORAC_DATA_OUT is an NFS-mounted partition - 
+
+    set df_out = `df -t nfs $ORAC_DATA_OUT | wc -l`
+
+    # if it is 1 that's just the df header, so we're local
+    # if it is 3 we're NFS
+    # if it is anything else, the df format is not what we thought it was
+
+    if ($df_out == 1) then
+
+	chmod g+rws $ORAC_DATA_OUT
+
+    else if ($df_out > 1) then
+
+	# get the name of the NFS host
+	set nfs_host  = `df -t nfs $ORAC_DATA_OUT | head -2 | tail -1 | awk -F: '{print $1}'`
+	# do the deed
+	rsh $nfs_host chmod g+rws $ORAC_DATA_OUT
+	# whinge to user
+	echo '***************************************************'
+	echo '* Your ORAC_DATA_OUT is not local to your machine  '
+	echo '* If you intend to run ORAC-DR you should be       '
+	echo "* using $nfs_host instead, which is where          "
+	echo "* $ORAC_DATA_OUT is located *"
+	echo '***************************************************'
+    else 
+
+	echo Unable to establish whether $ORAC_DATA_OUT is local or remote
+	echo Please report this error to the JAC software group
+
+    endif
 
  endif
 
  # Change umask so that we will create files that are writable
  # by group
  umask 002
-
- # If we are not on mamo print a warning
- set orachost = `hostname`
- if ($orachost != 'kolea') then
-   echo '***************************************************'
-   echo '**** PLEASE USE KOLEA FOR ORAC-DR DATA REDUCTION ***'
-   echo '***************************************************'
- endif
 
  # We are at the summit so we want to force -skip -loop flag
  set oracdr_args = "$oracdr_args -loop flag -skip"
@@ -310,15 +334,26 @@ setenv ORAC_SUN  231
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
 
-# Print additional warning if required
-if ($?orachost) then 
-   # csh does not short circuit so we cant combine the ifs
-   if ($orachost != 'kolea') then
-       echo '***************************************************'
-       echo '**** PLEASE USE KOLEA FOR ORAC-DR DATA REDUCTION ***'
-       echo '***************************************************'
-   endif
+
+# warn again
+
+set df_out = `df -t nfs $ORAC_DATA_OUT | wc -l`
+
+if ($df_out == 2) then
+
+	# get the name of the NFS host
+	set nfs_host  = `df -t nfs $ORAC_DATA_OUT | head -2 | tail -1 | awk -F: '{print $1}'`
+	# do the deed
+	rsh $nfs_host chmod g+rws $ORAC_DATA_OUT
+	# whinge to user
+	echo '***************************************************'
+	echo '*  Your ORAC_DATA_OUT is not local to your machine  '
+	echo '*  If you intend to run ORAC-DR you should be       '
+	echo "*  using $nfs_host instead, which is where          "
+	echo "*  $ORAC_DATA_OUT is located "
+	echo '***************************************************'
 endif
+
 
 
 
@@ -330,4 +365,5 @@ unset orac_dname
 unset oracmm
 unset oracdd
 unset oracyy
-if ($?orachost) unset orachost
+unset nfs_host
+unset df_out
