@@ -44,18 +44,27 @@ use vars qw/$VERSION/;
 # First the imaging...
 my %hdr = (
             DECSCALE  => "PIXELSIZ",
-            EXP_TIME  => "DEXPTIME",
+            EXP_TIME  => "EXP_TIME",
             GAIN      => "DEPERDN",
             RASCALE   => "PIXELSIZ",
             TDECOFF   => "DECOFF",
             TRAOFF    => "RAOFF",
 
 # then the spectroscopy.
-            NSCAN_POSITIONS => "DETNINCR",
-            SCAN_INCREMENT  => "DETINCR",
+            CONFIGURATION_INDEX => "CNFINDEX",
+            DETECTOR_INDEX  => "DINDEX",
+            DETECTOR_MODE   => "DETMODE",
             DIM1            => "DCOLUMNS",
             DIM2            => "DROWS",
-            DETECTOR_INDEX  => "DINDEX"
+            GRATING_NAME    => "GRATNAME",
+            GRATING_ORDER   => "GRATORD",
+            GRATING_WAVELENGTH => "GRATPOS",
+            NSCAN_POSITIONS => "DETNINCR",
+            NUMBER_OF_EXPOSURES => "NEXP",
+            SCAN_INCREMENT  => "DETINCR",
+            SLIT_ANGLE      => "SLITANG",
+            SLIT_NAME       => "SLITNAME",
+            UTDATE          => "TBD"
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed by
