@@ -249,7 +249,7 @@ sub launch {
   my $timegap_to_launch = 20; # in units of $timegap_to_check
 
  # First attempt to simply connect
-  my $sock = &_open_gaia_socket();
+  my $sock = $self->_open_gaia_socket();
 
   if ($sock) {
     $self->sock( $sock );
@@ -257,7 +257,7 @@ sub launch {
   }
 
   # Now launch a new gaia
-  &_launch_new_gaia();
+  $self->_launch_new_gaia();
 
   my $tries = 0;
   while ($tries < $MAX_TRIES) {
@@ -271,7 +271,7 @@ sub launch {
       sleep $timegap_to_check;
 
       # Check for connection
-      my $sock = &_open_gaia_socket;
+      my $sock = $self->_open_gaia_socket;
 
       if ($sock) {
 	# Store it and return
@@ -282,7 +282,7 @@ sub launch {
     }
 
     # Okay - didn't work, launch a new gaia (this is not a method)
-    &_launch_new_gaia();
+    $self->_launch_new_gaia();
 
     # increment counter
     $tries++;
@@ -294,15 +294,18 @@ sub launch {
 }
 
 
-# internal routine to open the socket
+# internal method to open the socket
 # no arguments. Looks for .rtd-remote file in home directory
 # Returns a socket object if successful, otherwise returns undef
 # Does not update the object state
+
+# $sock = $self->_open_gaia_socket;
 
 # Reads .rtd_remote file and attempts to connect
 
 sub _open_gaia_socket {
 
+  my $self = shift;
   my $fh;
 
   # Attempt to open .rtd-remote file
@@ -334,6 +337,10 @@ sub _open_gaia_socket {
 
 # internal sub to launch a new gaia process
 # no args. Returns ORAC status
+
+# This is a Class method (does not require an object)
+
+#  $status = ORAC::Display::GAIA->_launch_new_gaia;
 
 sub _launch_new_gaia {
 
