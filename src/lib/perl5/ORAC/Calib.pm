@@ -91,6 +91,7 @@ sub new {
   $obj->{Sky} = undef;
   $obj->{Standard} = undef;
   $obj->{Zeropoint} = undef;
+  $obj->{Seeing} = undef;
 
   $obj->{ArcIndex} = undef;
   $obj->{BaseShiftIndex} = undef;
@@ -104,6 +105,7 @@ sub new {
   $obj->{SkyIndex} = undef;
   $obj->{StandardIndex} = undef;
   $obj->{ZeropointIndex} = undef;
+  $obj->{SeeingIndex} = undef;
 
   $obj->{ArcNoUpdate} = 0;
   $obj->{BaseShiftNoUpdate} = 0;
@@ -116,6 +118,7 @@ sub new {
   $obj->{ReferenceShiftNoUpdate} = 0;
   $obj->{SkyNoUpdate} = 0;
   $obj->{ZeropointNoUpdate} = 0;
+  $obj->{SeeingNoUpdate} = undef;
 
   # Used in UIST IFU reduction
   $obj->{Arlines} = undef;
@@ -655,6 +658,56 @@ sub zeropoint {
 
 }
 
+=item B<seeing>
+
+Determine the seeing to be used for the current observation.
+This method returns a number rather than a particular file even
+though it uses an index file.
+
+Croaks if it was not possible to determine a valid seeing.
+
+  $seeing = $Cal->seeing;
+
+The index file is queried every time unless the noupdate flag is true.
+
+If the noupdate flag is set there is no verification that the seeing
+meets the specified rules (this is because the command-line override
+uses a value rather than a file).
+
+The index file must include a column named SEEING.
+
+=cut
+
+sub seeing {
+  my $self = shift;
+
+  # Handle arguments
+  return $self->seeingcache(shift) if @_;
+
+  # If noupdate is in effect we should return the cached value
+  # unless it is not defined. This effectively allows the command-line
+  # value to be used to override without verifying its suitability
+  if ($self->seeingnoupdate) {
+    my $cache = $self->seeingcache;
+    return $cache if defined $cache;
+  }
+
+  # Now we are looking for a value from the index file
+  my $seeingfile = $self->seeingindex->choosebydt('ORACTIME',$self->thing);
+  croak "No suitable seeing value found in index file"
+    unless defined $seeingfile;
+
+  # This gives us the filename, we now need to get the actual value
+  # of the readnoise.
+  my $seeingref = $self->seeingindex->indexentry( $seeingfile );
+  if (exists $seeingref->{SEEING}) {
+    return $seeingref->{SEEING};
+  } else {
+    croak "Unable to obtain SEEING from index file entry $seeingfile\n";
+  }
+
+}
+
 # *name methods
 # -------------
 # Used when a file name is required.
@@ -812,7 +865,7 @@ sub referenceoffsetcache {
   } else {
      @values = ( $_[0] );
   }
-                  
+
   if (@_) { $self->{ReferenceOffset} = \@values unless $self->referenceoffsetnoupdate; }
   return $self->{ReferenceOffset};
 }
@@ -827,6 +880,18 @@ sub zeropointcache {
   my $self = shift;
   if (@_) { $self->{Zeropoint} = shift unless $self->zeropointnoupdate; }
   return $self->{Zeropoint};
+}
+
+=item B<seeingcache>
+
+Cached value of the seeing. Only used when noupdate is in effect.
+
+=cut
+
+sub seeingcache {
+  my $self = shift;
+  if (@_) { $self->{Seeing} = shift unless $self->seeingnoupdate; }
+  return $self->{Seeing};
 }
 
 
@@ -990,6 +1055,20 @@ sub zeropointnoupdate {
   my $self = shift;
   if (@_) { $self->{ZeropointNoUpdate} = shift; }
   return $self->{ZeropointNoUpdate};
+}
+
+=item B<seeingnoupdate>
+
+Stops seeing object from updating itself with more recent data.
+
+Used when using a command-line override to the pipeline.
+
+=cut
+
+sub seeingnoupdate {
+  my $self = shift;
+  if (@_) { $self->{SeeingNoUpdate} = shift; }
+  return $self->{SeeingNoUpdate};
 }
 
 
@@ -1230,6 +1309,26 @@ sub zeropointindex {
   };
 
   return $self->{ZeropointIndex};
+}
+
+=item B<seeingindex>
+
+Return (or set) the index object associated with the seeing index file.
+
+=cut
+
+sub seeingindex {
+
+  my $self = shift;
+  if (@_) { $self->{SeeingIndex} = shift; }
+
+  unless (defined $self->{SeeingIndex}) {
+    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.seeing" );
+    my $rulesfile = $self->find_file( "rules.seeing" );
+    $self->{SeeingIndex} = new ORAC::Index($indexfile,$rulesfile);
+  };
+
+  return $self->{SeeingIndex};
 }
 
 
