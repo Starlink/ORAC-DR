@@ -107,9 +107,10 @@ sub start_algorithm_engines {
   $Mon{ccdpack_red} = new ORAC::Msg::ADAM::Task("ccdpack_red_$$",$ENV{CCDPACK_DIR}."/ccdpack_red");
   $Mon{ccdpack_res} = new ORAC::Msg::ADAM::Task("ccdpack_res_$$",$ENV{CCDPACK_DIR}."/ccdpack_res");
   $Mon{ccdpack_reg} = new ORAC::Msg::ADAM::Task("ccdpack_reg_$$",$ENV{CCDPACK_DIR}."/ccdpack_reg");
-  $Mon{kappa_mon} = new ORAC::Msg::ADAM::Task("kappa_mon_$$",$ENV{KAPPA_DIR}."/kappa_mon");
   $Mon{pisa_mon} = new ORAC::Msg::ADAM::Task("pisa_mon_$$",$ENV{PISA_DIR}."/pisa_mon");
-  $Mon{psf_mon} = new ORAC::Msg::ADAM::Task("psf_mon_$$",$ENV{PSF_DIR}."/psf");
+  $Mon{psf_mon} = new ORAC::Msg::ADAM::Task("psf_mon_$$",$ENV{PSF_DIR}."/psf",{TASKTYPE=>'I'});
+  $Mon{kappa_mon} = new ORAC::Msg::ADAM::Task("kappa_mon_$$",$ENV{KAPPA_DIR}."/kappa_mon");
+
 
   return %Mon;
 }
