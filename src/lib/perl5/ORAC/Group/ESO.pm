@@ -286,6 +286,10 @@ sub _to_WAVEPLATE_ANGLE {
     return $polangle;
 }
 
+sub _from_WAVEPLATE_ANGLE {
+   "HIERARCH.ESO.ADA.POSANG",  $_[0]->uhdr( "ORAC_WAVEPLATE_ANGLE" );
+}
+
 # Use the nominal reference pixel if correctly supplied, failing that
 # take the average of the bounds, and if these headers are also absent,
 # use a default which assumes the full array.
