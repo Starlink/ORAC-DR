@@ -24,10 +24,10 @@ to B<ORAC::Group::IRCAM> objects.
 
 # A package to describe a IRCAM group object for the
 # ORAC pipeline
- 
+
 use 5.004;
 use ORAC::Group::NDF;
- 
+
 # Let the object know that it is derived from ORAC::Frame;
 @ORAC::Group::IRCAM::ISA = qw/ORAC::Group::NDF/;
 
@@ -36,11 +36,11 @@ use vars qw/$VERSION/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 
- 
+
 # standard error module and turn on strict
 use Carp;
 use strict;
- 
+
 =head1 PUBLIC METHODS
 
 The following methods are available in this class in addition to
@@ -61,7 +61,7 @@ name of the new group. The object identifier is returned.
 
 This method calls the base class constructor but initialises
 the group with a file suffix of '.sdf' and a fixed part
-of 'rg'.
+of 'gi'.
 
 =cut
 
