@@ -1,23 +1,38 @@
-# _GENERATE_OFFSETS_QUADRANT_JITTER_       -*- perl -*-
+# _GENERATE_OFFSETS_QUADRANT_JITTER       -*- perl -*-
 #
 # Find the offsets between the frames. 
 #
 # TASK: CCDPACK - FINDOBJ, FINDOFF, REGISTER
 #
+# Arguments:
+#    COMPLETE = REAL (Given)
+#       Completeness of matched features for registration between two frames
+#       to be accepted.  It must be in the range 0.2 to 1.0. [0.4]
+#    MINPIX = INTEGER (Given)
+#       Minimum number of contguous pixels above the PERCENTILE level
+#       to be considered a registration feature.  It must be at least 6. [6]
+#    PERCENTILE = REAL (Given)
+#       Percentile threshold for locating objects to register frames. 
+#       It must be in the range 75 to 99.9. [96]
 
 # Selection
 # =========
 
 # This should only be performed on OBJECT frames.
-    if ($Frm->hdr(OBSTYPE) =~ /OBJECT/) {
+    if ( $Frm->hdr(OBSTYPE) eq "OBJECT" || $Frm->hdr(OBSTYPE) eq "SKY" ) {
 
-# Can generate a mosaic when there are at a multiple of four object frames.
-       if ( ( $Grp->num + 1 ) % 4 == 0 ) {
+# Test whether or not it is time to make a mosaic.
+       $makemos = $Frm->hdr( "MAKE_MOSAIC" );
+       if ( $makemos ) {
 
-# Form a list of input file names for CCDPACK tasks.  Inquire the number
-# of files to be processed.
-          @objects = $Grp->membernames;
-          $numfiles = $Grp->num + 1;
+# Obtain the cycle number from the header.
+          $cycleno = $Frm->hdr( "CYCLE_NUMBER" );
+
+# Select those members in the current cycle.
+          $cyclegrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+
+# Form a list of input file names for CCDPACK tasks.
+          @objects = $cyclegrp->membernames;
 
 # Convert list to comma-separated list.
           $objlist = join(",", @objects);
@@ -25,49 +40,89 @@
 # Create text file to hold the list of input files, one per line.  This
 # is needed because expanded lists of files may make the command line too
 # long for the ADAM message system.
-          unlink ("objlist.inlist");
-          open (INLIST, ">objlist.inlist");
-          for ( $i = 0; $i < $numfiles; $i++ ) {
-             print INLIST @objects[$i],"\n";
-          }
+          unlink ("objlist.inlist$$");
+          open (INLIST, ">objlist.inlist$$");
+          print INLIST join( "\n", @objects ), "\n";
           close (INLIST);
 
 # Find objects
 # ============
 
-# Specify the other parameters for the FINDOBJ stage.
-          $header = "in='^objlist.inlist' outlist=\'*.find\'";
-          $user = "minpix=6";
+# Obtain the parameters for the detection.
+          $percentile = ( $_GENERATE_OFFSETS_QUADRANT_JITTER_{PERCENTILE} || 96 );
+          $minpix = ( $_GENERATE_OFFSETS_QUADRANT_JITTER_{MINPIX} || 6 );
 
-# Locate and centroid the objects above a threshold (96 percentile)
+# Specify the other parameters for the FINDOBJ stage.
+          $header = "in=^objlist.inlist$$ outlist=\'*.find\'";
+          $hidden = "percentile=$percentile minpix=$minpix";
+
+# Remove existing .find and .off files.
+          foreach $file ( @objects ) {
+             unlink( $file . ".find" );
+             unlink( $file . ".off" );
+          }
+
+# Locate and centroid the objects with connected pixels above a threshold
 # in all the flat-fielded object frames.  Write their co-ordinates and
-# peak values into .find text files.
-          $ORAC_STATUS = $Mon{'ccdpack_reg'}->control('par_reset');
-          $Mon{"ccdpack_reg"}->obeyw("findobj","$header $user accept");
+# peak values into .find text files.  The exact values of threshold
+# percentile and minpix requires some tuning and FINDOBJ to continue
+# when no objects are found in any of the list of input data.
+          $Mon{"ccdpack_reg"}->obeyw("findobj","$header $hidden accept");
 
 # Derive offsets
 # ==============
-          $header = "inlist='^objlist.inlist' outlist=\'*.off\'";
-          $hidden = "error=1 minmatch=2"; 
+
+# Obtain the parameter for the detection.
+          $complete = ( $_GENERATE_OFFSETS_QUADRANT_JITTER_{COMPLETE} || 0.4 );
+          $complete = max( 0.2, min( 1.0, $complete) );
+
+# Specify the other parameters for the FINDOFF stage.  Set a lower
+# threshold for completeness due to spurious images on UFTI.
+          $header = "inlist=^objlist.inlist$$ outlist=\'*.off\'";
+          $hidden = "error=1 complete=$complete"; 
 
 # Pattern match using the co-ordinate lists.  It uses a fast algorithm
 # first, but resorts to a slower one, if patterns aren't matched.
 # Store the offsets in .off text files.
-          $ORAC_STATUS = $Mon{'ccdpack_reg'}->control('par_reset');
-          $Mon{"ccdpack_reg"}->obeyw("findoff","$header $hidden accept");
+          $go_status =  $Mon{"ccdpack_reg"}->obeyw("findoff","$header $hidden accept");
+
+# See if a partial solution was used.  For the moment look for the presence
+# of .off files.  Some will be missing for a partial solution.
+          $partsolution = 0;
+          foreach $file ( @objects ) {
+             $offfile = $file . ".off";
+             if ( ! -e $offfile ) {
+                $partsolution = 1;
+             }
+          }
+
+# Test whether or not registration was achieved.
+          if ( $go_status != ORAC__OK || $partsolution ) {
+
+# Find the offsets between the four members of the current group.
+
+# As we can't pass a group as an argument, for now use the fixed group name
+# of reggrp expected by _FIND_APPROX_OFFSETS_.  
+#            _FIND_APPROX_OFFSETS_ GROUP=$Grp
+             $reggrp = $cyclegrp;
+
+# No registration, so find approximate offsets from the headers.  At some
+# point add an option within _FAO_ to set the box centred on a quadrant.
+             _FIND_APPROX_OFFSETS_ SEARCH_BOX=TRUE
+
+          }
 
 # Register
 # ========
 
 # Specify the other parameters for the REGISTER stage.
-          $header = "inlist='^objlist.inlist'";
+          $header = "inlist='^objlist.inlist$$'";
           $hidden = "fittype=1"; 
 
 # Register the frames using a shift of origin.  Create the CCDPACK
 # TRANSFORM extensions.
-          $ORAC_STATUS = $Mon{'ccdpack_reg'}->control('par_reset');
           $Mon{"ccdpack_reg"}->obeyw("register","$header $hidden accept");
-          unlink ("objlist.inlist");
+          unlink ("objlist.inlist$$");
 
 # Report processing status.
           orac_print "Orac says: frames $objlist registered\n";
