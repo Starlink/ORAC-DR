@@ -29,13 +29,15 @@
 #        If no value is specified, the current UT is used.
 #     $ORAC_DATA_ROOT = Environment Variable (Given)
 #        Root location of the data input and output directories.
-#        If no value is set, "/ukirtdata" is assumed.
+#        If no value is set, current directory is assumed unless
+#        the script is running at the JAC, in which case the root
+#        directory points to the location of the SCUBA archive.
 #     $ORAC_CAL_ROOT = Environment Variable (Given)
 #        Root location of the calibration files. $ORAC_DATA_CAL
 #        is derived from this variable by adding the appropriate
 #        value of $ORAC_INSTRUMENT. In this case $ORAC_DATA_CAL
 #        is set to $ORAC_CAL_ROOT/ufti. If ORAC_CAL_ROOT is not
-#        defined it defaults to "/ukirt_sw/oracdr_cal".
+#        defined it defaults to "/jcmt_sw/oracdr_cal".
 
 
 #  Examples:
@@ -67,6 +69,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.2  2000/02/03 08:13:16  timj
+#     Replace /ukirt with /jcmt
+#
 #     Revision 1.1  2000/02/03 04:53:23  timj
 #     First version
 #
