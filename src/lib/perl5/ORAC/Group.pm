@@ -191,3 +191,18 @@ sub num {
   return $#{$self->aref};
 
 }
+
+# Private method for removing file extensions from the filename strings
+
+sub stripfname {
+
+  my $self = shift;
+
+  my $name = shift;
+
+  # Strip everything after the first dot
+  $name =~ s/\..*//;
+  
+  return $name;
+
+}
