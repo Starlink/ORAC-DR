@@ -439,13 +439,21 @@ the outhdl() method.
 
 sub out {
   my $self = shift;
+  return unless @_; # Return if no second argument
   my $text = shift;
 
   my $col = $self->outcol;
   if (@_) { $col = shift; }
 
   my $fh = $self->outhdl;
-  print $fh colored($self->prefix . $self->outpre . $text ,$col);
+  return unless defined $fh;
+
+  my $prefix = $self->prefix;
+  $prefix = '' unless defined $prefix;
+  my $outpre = $self->outpre;
+  $outpre = '' unless defined $outpre;
+
+  print $fh colored($prefix . $outpre . $text ,$col);
 
   # There is a chance that we have just updated 
   # a Tk text widget. On the off-chance that we have,
@@ -464,13 +472,21 @@ the warhdl() method.
 
 sub war {
   my $self = shift;
+  return unless @_; # Return if nothing to print
   my $text = shift;
 
   my $col = $self->warncol;
   if (@_) { $col = shift; }
 
   my $fh = $self->warhdl;
-  print $fh colored($self->prefix . $self->warpre .$text,$col);
+  return unless defined $fh;
+
+  my $prefix = $self->prefix;
+  $prefix = '' unless defined $prefix;
+  my $warpre = $self->warpre;
+  $warpre = '' unless defined $warpre;
+
+  print $fh colored($prefix . $warpre .$text,$col);
 
   # There is a chance that we have just updated 
   # a Tk text widget. On the off-chance that we have,
@@ -489,13 +505,21 @@ method.
 
 sub err {
   my $self = shift;
+  return unless @_; # Return if nothing to print
   my $text = shift;
 
   my $col = $self->errcol;
   if (@_) { $col = shift; }
 
   my $fh = $self->errhdl;
-  print $fh colored($self->prefix . $self->errpre . $text,$col);
+  return unless defined $fh;
+
+  my $prefix = $self->prefix;
+  $prefix = '' unless defined $prefix;
+  my $errpre = $self->errpre;
+  $errpre = '' unless defined $errpre;
+
+  print $fh colored($prefix . $errpre . $text,$col);
 
   # There is a chance that we have just updated 
   # a Tk text widget. On the off-chance that we have,
@@ -520,6 +544,7 @@ sub debug {
 
     # Read the filehandle
     my $fh = $self->debughdl;
+    return unless defined $fh;
     print $fh "DEBUG:$text";
 
     # There is a chance that we have just updated 
