@@ -55,7 +55,6 @@ my %hdr = (
            RA_BASE                => "CRVAL1",
            RA_TELESCOPE_OFFSET    => "TRAOFF",
            SPEED_GAIN             => "SPEED",
-           UTDATE                 => "UTDATE",
            X_LOWER_BOUND          => "DETECXS",
            X_UPPER_BOUND          => "DETECXE",
            Y_LOWER_BOUND          => "DETECYS",
@@ -85,6 +84,10 @@ sub _to_AIRMASS_END {
 
 sub _from_AIRMASS_END {
   "ZDEND", acos( $_[0]->uhdr("AIRMASS_END") );
+}
+
+sub _to_GAIN {
+  5.2; # hardwire in gain for now
 }
 
 sub _to_UTEND {
