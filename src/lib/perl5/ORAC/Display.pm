@@ -9,18 +9,18 @@ ORAC::Display - Top level interface to ORAC display tools
   use ORAC::Display;
 
   $Display = new ORAC::Display;
-  $Display->useshm(1);
-  $Display->setupfile(filename);
+  $Display->usenbs(1);
+  $Display->filename(filename);
   $Display->display_data('frame/group object');
-  
+
 =head1 DESCRIPTION
 
-This module provides an OO-interface to the ORAC display manager.
-The display object reads device information from a file or notice
-board (shared memory), determines whether the supplied frame object
-matches the criterion for display, if it does it instructs the 
-relevant device object to send to the selected window (creating
-a new device object if necessary)
+This module provides an OO-interface to the ORAC display manager.  The
+display object reads device information from a file or notice board
+(shared memory) [NBS not implemented], determines whether the supplied
+frame object matches the criterion for display, if it does it
+instructs the relevant device object to send to the selected window
+(creating a new device object if necessary)
 
 =cut
 
