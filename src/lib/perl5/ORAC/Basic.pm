@@ -27,7 +27,9 @@ use Proc::Simple;
 
 @EXPORT = qw/orac_launch_display orac_connect_display
 orac_kill_display orac_execute_recipe orac_read_recipe
-orac_parse_recipe orac_exit_normally orac_exit_abnormally/;
+orac_parse_recipe orac_exit_normally orac_exit_abnormally
+orac_parse_obslist
+/;
 
 
 
@@ -36,6 +38,9 @@ orac_parse_recipe orac_exit_normally orac_exit_abnormally/;
 # RECIPES beware!! Don't stomp on these:
 
 *Mon = *main::Mon;
+
+
+# Display specific code
 
 sub orac_launch_display {
 
@@ -291,6 +296,50 @@ sub orac_check_obey_status {
 
 #------------------------------------------------------------------------
 
+# Argument disentanglement
+
+# Parse the observation list that is entered with the -list
+# option. This is a comma separated list of numbers.
+# Ranges can be specified with colons
+
+# Returns an array of observation numbers.
+
+sub orac_parse_obslist {
+
+  my $obslist = shift;
+  my @obs = ();
+
+  # Split on the comma
+  @obs = split(",",$obslist);
+
+  # Now go through each entry and see if we can expand on :
+  # a:b expands to a..b.
+  for (my $i = 0; $i <= $#obs; $i++) {
+
+    $obs[$i] =~ /:/ && do {
+      my ($start, $end) = split ( /:/, $obs[$i]);
+ 
+      # Generate the range
+      my @junk = $start..$end;
+
+      # Splice into @obs
+      splice(@obs, $i, 1, @junk);
+
+      # Increment the counter to take into account the
+      # new additions (since we know that @junk does not contain
+      # colons. We dont need this - especially if we want to parse
+      # The expanded array
+      $i += $#junk;
+
+    }
+
+  }
+
+  return @obs;
+}
+
+
+
 
 
 #------------------------------------------------------------------------
@@ -300,31 +349,37 @@ sub orac_check_obey_status {
 
 sub orac_exit_normally {
 
-    $message = shift(@_);
-    orac_kill_display;
-    print colored ("Orac says: $message - Exiting...\n","red");
+  $message = shift(@_);
+  orac_kill_display;
+  print colored ("Orac says: $message - Exiting...\n","red");
 
-    &orac_kill_display;		# Destroy display
+  &orac_kill_display;		# Destroy display
 
-    print colored ("\nOrac says: Goodbye\n","red");
-    exit;
+  print colored ("\nOrac says: Goodbye\n","red");
+  exit;
 };
 
 sub orac_exit_abnormally {
 
-my $signal = shift;
+  my $signal = shift;
 
-rmtree $ENV{'ADAM_USER'};             # delete process-specific adam dir
-&orac_kill_display;		# Destroy display
-die;
-# die "\n --Signal $signal received--\n";	
+  rmtree $ENV{'ADAM_USER'};             # delete process-specific adam dir
+  &orac_kill_display;		# Destroy display
+  die;
+  # die "\n --Signal $signal received--\n";	
 
 };
+
+
+
 
 
 1;
 
 #$Log$
+#Revision 1.18  1998/05/21 06:26:54  timj
+#Add support for ranges in -list by adding orac_parse_obslist
+#
 #Revision 1.17  1998/05/21 04:05:01  timj
 #Remove debug print statements from connect_display
 #
