@@ -1306,7 +1306,7 @@ sub template {
   $template =~ s/_\d+_/_${num}_/;
 
   # Update the filename
-  $self->file($template, $fnum);
+  $self->file($fnum, $template);
 
 }
 
