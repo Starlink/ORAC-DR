@@ -6,11 +6,14 @@ CENTROID_FRAME
 
 Find the centroid(s) of the current frame(s).
 Assumes that the centroid is near the origin in axis
-coordinates. Errors will be reported.
+coordinates. [Errors not reported until the KAPPA
+centroid task writes them to a parameter].
 
 =head1 TASKS
 
 Uses the KAPPA CENTROID task.
+Uses the KAPPA STATS task to retrieve the peak
+signal in the map
 
 =head1 ARGUMENTS
 
@@ -24,15 +27,20 @@ KLUGE ALERT!!!!!!!!!!!!!!!!!!!!1
 THIS PRIMITIVE ASSUMES THAT IT IS RUN AFTER _REBIN_FRAME_
 (since centroid is meaningless without an image) AND
 THAT _REBIN_FRAME_ USED A SUFFIX OF '_reb' (since REBIN_FRAME
-does not update the Frame object).
+does not update the Frame object) AND THAT REBIN_FRAME WAS
+RUN WITH AN AZ REGRID OPTION
 
 It may be necessary to merge this with a new REBIN_FRAME....
+
+This primitive also writes the pointing result to an
+index file.
 
 =cut
 
 
 $box = ( $_CENTROID_FRAME_{BOX} || 9 );
 
+@filters = $Frm->filters;
 
 foreach my $i (1..$Frm->nfiles) {
   
@@ -46,5 +54,27 @@ foreach my $i (1..$Frm->nfiles) {
   ($ORAC_STATUS, @centre) = $Mon{kappa_mon}->get("centroid","centre");
  
   orac_print "Centroid position: $centre[0], $centre[1]\n";
+
+
+  # Store the peak signal in the image (might be useful
+  # for measuring flux changes in blazars
+
+  # Run stats on an NDF section of the pixel at the centroid position
+
+  $Mon{kappa_mon}->obeyw("stats","NDF=$out($centre[0],$centre[1])");
+
+  ($ORAC_STATUS, $max) = $Mon{kappa_mon}->get("stats","maximum");
+
+  # Now write the result to the index file
+  # Put in the DAZ and DEL from the centroid
+  my %hdr = %{$Frm->header};
+  $hdr{DAZ} = $centre[0];
+  $hdr{DEL} = $centre[1];
+  $hdr{FILTER} = $filters[$i-1];
+  $hdr{PEAK}   = $max;
+
+  # Add the entry to the index file  
+  $Cal->pointingindex->add($out,\%hdr);
+  orac_print $filters[$i-1]." pointing information written to index file\n";
 
 }
