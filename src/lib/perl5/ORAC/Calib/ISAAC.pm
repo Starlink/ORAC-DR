@@ -68,7 +68,7 @@ sub flatindex {
   my $mode = uc( $self->thing->{"HIERARCH.ESO.DPR.TECH"} );
   if ( $mode eq "IMAGE" || $mode eq "POLARIMETRY" ) {
     $self->flatindex_im( $self->{FlatIndex} );
-  } elsif ( $mode eq "SPECTRUM" ) {
+  } elsif ( $mode =~ /SPECTRUM/ ) {
     $self->flatindex_sp( $self->{FlatIndex} );
   }
 
