@@ -25,14 +25,14 @@ use NDF qw/:hds :dat/;
  
 # Check that we are a PHOTOM observation
  
-if ($Frm->hdr(MODE) eq "PHOTOM") {
+if ($Frm->hdr('MODE') eq "PHOTOM") {
 
   # Print header 
   # Print welcome message
   orac_print "\n\nRESULTS of CURRENT PHOTOMETRY OBSERVATION\n",'clear';
   orac_print "-----------------------------------------\n\n", 'clear';
  
-  orac_print "Source name: " . $Frm->hdr(OBJECT) ."\n", 'clear';
+  orac_print "Source name: " . $Frm->hdr('OBJECT') ."\n", 'clear';
   orac_print "Observation number: " . join(",",$Frm->number) ."\n", 'clear';
   orac_print "\n",'clear';
 
@@ -46,22 +46,25 @@ if ($Frm->hdr(MODE) eq "PHOTOM") {
 	 "--------------------------------------------------------------------------------");
 
   # Retieve sub-inst and filter names
-  @subs = $Frm->subs;
-  @filters = $Frm->filters;
- 
+  my @subs = $Frm->subs;
+  my @filters = $Frm->filters;
+  my $ORAC_STATUS; 
+
   # loop over sub instruments
-  for ($i = 0; $i < $Frm->nsubs; $i++) {
+  for (my $i = 0; $i < $Frm->nsubs; $i++) {
 
     # Now need to find the NDFs in the output HDS file
-    $status = &NDF::SAI__OK;
+    my $status = &NDF::SAI__OK;
+    my ($loc,$ncomp);
     hds_open($Frm->file($i+1), 'READ', $loc, $status);
  
-    $ORAC_STATUS = ORAC__ERROR unless $status == &NDF::SAI__OK;
+    $ORAC_STATUS = ($status == &NDF::SAI__OK ? ORAC__OK : ORAC__ERROR);
  
     dat_ncomp($loc, $ncomp, $status);
  
-    @names = ();
-    for $comp (1..$ncomp) {
+    my @names = ();
+    for my $comp (1..$ncomp) {
+      my ($name, $nloc);
       dat_index($loc, $comp, $nloc, $status);
       dat_name($nloc, $name, $status);
       dat_annul($nloc, $status);
@@ -69,21 +72,23 @@ if ($Frm->hdr(MODE) eq "PHOTOM") {
     }
     
     dat_annul($loc, $status);
-    $ORAC_STATUS = ORAC__ERROR unless $status == &NDF::SAI__OK;
- 
+    $ORAC_STATUS = ($status == &NDF::SAI__OK ? ORAC__OK : ORAC__ERROR);
+
     # All the NDFs are now in @names
     # Loop over bolometers and run stats
  
-    foreach $subndf (@names) {
+    foreach my $subndf (@names) {
 
       my $ndf = $Frm->file($i+1) . ".$subndf";
       $Mon{kappa_mon}->obeyw("stats","ndf=$ndf");
  
-      ($ORAC_STATUS, $mean) = $Mon{kappa_mon}->get("stats","mean");
-      ($ORAC_STATUS, $sigma) = $Mon{kappa_mon}->get("stats","sigma");
-      ($ORAC_STATUS, $ngood) = $Mon{kappa_mon}->get("stats","numgood");
+      $ORAC_STATUS;
+      ($ORAC_STATUS, my $mean) = $Mon{kappa_mon}->get("stats","mean");
+      ($ORAC_STATUS, my $sigma) = $Mon{kappa_mon}->get("stats","sigma");
+      ($ORAC_STATUS, my $ngood) = $Mon{kappa_mon}->get("stats","numgood");
       
       # Print results
+      my ($errmean,$signoise);
       if ($ngood > 0) {
 	$errmean = $sigma / sqrt($ngood);
       } else {
@@ -135,6 +140,4 @@ if ($Frm->hdr(MODE) eq "PHOTOM") {
     }
   }
 
-  close $logfh;
-  
 }

@@ -33,7 +33,7 @@ use NDF;
 
 # Need to loop over sub-instruments
 
-@filter = $Frm->filters;
+my @filter = $Frm->filters;
 
 
 # Loop over sub-instruments
@@ -41,15 +41,17 @@ use NDF;
 for my $i (0..$Frm->nfiles-1) {
 
   # Now need to find the NDFs in the output HDS file
-  $status = &NDF::SAI__OK;
+  my $status = &NDF::SAI__OK;
+  my ($loc,$ncomp);
   hds_open($Frm->file($i+1), 'READ', $loc, $status);
  
-  $ORAC_STATUS = ORAC__ERROR unless $status == &NDF::SAI__OK;
- 
-    dat_ncomp($loc, $ncomp, $status);
+  my $ORAC_STATUS = ($status == &NDF::SAI__OK ? ORAC__OK : ORAC__ERROR);
+
+  dat_ncomp($loc, $ncomp, $status);
   
-  @names = ();
-  for $comp (1..$ncomp) {
+  my @names = ();
+  for my $comp (1..$ncomp) {
+    my ($nloc, $name);
     dat_index($loc, $comp, $nloc, $status);
     dat_name($nloc, $name, $status);
     dat_annul($nloc, $status);
@@ -57,7 +59,8 @@ for my $i (0..$Frm->nfiles-1) {
   }
   
   dat_annul($loc, $status);
-  $ORAC_STATUS = ORAC__ERROR unless $status == &NDF::SAI__OK;
+  $ORAC_STATUS = ($status == &NDF::SAI__OK ? ORAC__OK : ORAC__ERROR);
+
   
   # All the NDFs are now in @names
   
@@ -71,23 +74,23 @@ for my $i (0..$Frm->nfiles-1) {
   if ($Cal->iscalsource($Frm->hdr("OBJECT"), $filter[$i])) {
     
     # Use one bolometer
-    $subndf = $names[0];
+    my $subndf = $names[0];
     
     # Get statistics
     my $ndf = $Frm->file($i+1) . ".$subndf";
     $Mon{kappa_mon}->obeyw("stats","ndf=$ndf");
     
     # Answer in mV
-    ($ORAC_STATUS, $mean) = $Mon{kappa_mon}->get("stats","mean");
+    my ($ORAC_STATUS, $mean) = $Mon{kappa_mon}->get("stats","mean");
     
     # Find current flux of source (could be undef)
-    $flux = $Cal->fluxcal($Frm->hdr("OBJECT"), $filter[$i]);
+    my $flux = $Cal->fluxcal($Frm->hdr("OBJECT"), $filter[$i]);
     
     # Calculate gain
     if (abs($mean) > 0.0 && defined $flux) {
       
       # Calculate new gain
-      $gain = $flux / $mean;
+      my $gain = $flux / $mean;
       
       # Announce the new gain
       # (Cannot compare with previous since that is no longer
@@ -113,21 +116,21 @@ for my $i (0..$Frm->nfiles-1) {
   # object. This will calibrate our data in Jy and then
   # if we multiply by an extra 1000 we get mJy
   # Assume the gain is constant for each bolometer....
-  $gain = $Cal->gain($filter[$i]) * 1000.0;
+  my $gain = $Cal->gain($filter[$i]) * 1000.0;
 
   # Say what gain is being used.
   my $lgain = $gain / 1000.0;
   orac_print "Using gain=$lgain Jy/V for filter $filter[$i]\n";
 
 
-  foreach $subndf (@names) {
+  foreach my $subndf (@names) {
             
     # Big kludge here since cmult won't work in place
     # And I am using NDF files inside HDS containers!
-    $in = $Frm->file($i+1) . ".$subndf";
+    my $in = $Frm->file($i+1) . ".$subndf";
 
-    $out = "junk_$$";
-    $args = "scalar=$gain";
+    my $out = "junk_$$";
+    my $args = "scalar=$gain";
     
     # Multiply by the gain
     $Mon{kappa_mon}->obeyw("cmult","in=$in out=$out $args");
@@ -140,8 +143,9 @@ for my $i (0..$Frm->nfiles-1) {
     hds_open($Frm->file($i+1), 'UPDATE', $loc, $status);
     dat_erase($loc, $subndf, $status);
     dat_annul($loc, $status);
-    $ORAC_STATUS = ORAC__ERROR unless $status == &NDF::SAI__OK;
-    
+    my $ORAC_STATUS = ($status == &NDF::SAI__OK ? ORAC__OK : ORAC__ERROR);
+
+
     # Now copy the NDF back into the HDS container
     # Could probably just use DAT_COPY since I already have
     # a locator to the main file.

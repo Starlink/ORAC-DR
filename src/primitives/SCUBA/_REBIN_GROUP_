@@ -17,6 +17,8 @@ REBIN_METHOD - Method to use for regrid. Allowed options are
                BESSEL, LINEAR, GAUSSIAN, SPLINE1, SPLINE2, MEDIAN
 
 PIXEL_SIZE   - Pixel size in arcseconds
+COORDS - Output coords. Default is PL for planets, else RJ
+
 
 =cut
 
@@ -32,36 +34,49 @@ if ($Grp->lastmember($Frm) && $Grp->num >=1) {
 	
  
   # Loop over sub instruments that are found in the current frame
-  foreach $sub ($Frm->subs) {
-
+  foreach my $sub ($Frm->subs) {
 
     # Now need to find all the input frames for this sub-instrument
     # that are part of this group
  
-    @members = $Grp->membernamessub($sub);
+    my @members = $Grp->membernamessub($sub);
 
     # Create a text file containing lists of all files to be
     # Rebinned. Also add SHIFTS and WEIGHTS although we assume
     # that the weight and shifts are always 1 0 0 respectively
 
-    $infile = "rebin_$$.lis";
-    open (INPUT, "> $infile") || die "Error opening scratch file $!";
-    map { print INPUT "$_ 1 0 0\n"; } @members;
-    close INPUT;
+    my $infile = "rebin_$$.lis";
+    my $input = new IO::File("> $infile")
+      or die "Error opening scratch file $!";
+    map { print $input "$_ 1 0 0\n"; } @members;
+    close $input;
 
     # Now construct arguments for rebin
     # Read input arguments
-    $method = ($_REBIN_GROUP_{REBIN_METHOD} || "gaussian");
-    $pixsize = ($_REBIN_GROUP_{PIXEL_SIZE} || "3.0");
+    my $method = ($_REBIN_GROUP_{REBIN_METHOD} || "gaussian");
+    my $pixsize = ($_REBIN_GROUP_{PIXEL_SIZE} || "3.0");
 
     # Output filename
-    $out = $Grp->grpoutsub($sub);
+    my $out = $Grp->grpoutsub($sub);
 
     # Output coords
     # Should use PL for planets
+    # First check the supplied COORDS argument
+    my $coords;
+    if (exists $_REBIN_FRAME_{COORDS}) {
+      $coords = $_REBIN_FRAME_{COORDS};
+    } else {
+      # Else use RJ unless we have a planet
+      my @planets = qw/MERCURY VENUS MARS JUPITER SATURN NEPTUNE URANUS PLUTO/;
+      my $src = $Frm->hdr('OBJECT');
+      if (grep {/$src/i } @planets) {
+	$coords = 'PL';
+      } else {
+	$coords = 'RJ';
+      }
+    }
 
-
-    $args = "REBIN_METHOD=$method PIXSIZE_OUT=$pixsize noloop";
+    my $args = "REBIN_METHOD=$method OUT_COORDS=$coords PIXSIZE_OUT=$pixsize noloop";
 
     # Print informative message
     orac_print ("ORAC says: GRP: Rebinning sub-instrument $sub\n",'magenta');
