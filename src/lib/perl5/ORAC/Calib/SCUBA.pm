@@ -34,7 +34,7 @@ uses the thing() method).
 
 use strict;
 use Carp;
-use vars qw/$VERSION %DEFAULT_GAINS %PHOTFLUXES @PLANETS $DEBUG/;
+use vars qw/$VERSION %DEFAULT_FCFS %PHOTFLUXES @PLANETS $DEBUG/;
 
 use Cwd;          # Directory change
 use File::Path;   # rmtree function
@@ -50,7 +50,13 @@ use ORAC::Msg::ADAM::Control;  # For fluxes monolith - messaging
 use ORAC::Msg::ADAM::Task;     # For fluxes monolith
 
 
-use JCMT::Tau;    # Tau conversion
+# External modules
+
+use JCMT::Tau;         # Tau conversion
+use JCMT::Tau::CsoFit; # Fits to CSO data
+
+use Starlink::Config;  # Need to know where fluxes is
+
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
@@ -59,18 +65,28 @@ use JCMT::Tau;    # Tau conversion
 use base qw/ORAC::Calib/;
 
 $DEBUG = 0; # Turn off debugging mode
- 
-# Define default SCUBA gains
 
-%DEFAULT_GAINS = (
-		  '2000' => 650,
-		  '1350' => 130,
-		  '1100' => 1,
-		  '850'  => 240,
-		  '750'  => 310,
-		  '450'  => 800,
-		  '350'  => 1200
-		 );
+# Define default SCUBA gains
+# These vary with a number of things including filter, and observing
+# mode. Map calibration can also be done using Jy/arcsec2 or Jy/beam.
+# Additionally there is the possibility of time dependent changes
+# due to improvements in throughput (not necessarily a change in filter)
+
+# These are currently photometry Jy/beam/V FCFs
+
+%DEFAULT_FCFS = (
+		 '2000' => 650,
+		 '1350' => 130,
+		 '1100' => 1,  # This filter has never worked
+		 '850'  => 240,
+		 '750'  => 310,
+		 '450'  => 800,
+		 '350'  => 1200,
+		 '850N' => 240,
+		 '450N' => 800,
+		 '850W' => 197,
+		 '450W' => 384,
+		);
 
 # Should probably put calibrator flux information in a different
 # file
@@ -82,12 +98,12 @@ $DEBUG = 0; # Turn off debugging mode
 
 
 %PHOTFLUXES = (
-	       'IRC+10216' => {
-			       '850' => 6.12,
-			       '750' => 7.11,
-			       '450' => 13.1,
-			       '350' => 17.7,
-			      },
+#	       'IRC+10216' => {
+#			       '850' => 6.12,
+#			       '750' => 7.11,
+#			       '450' => 13.1,
+#			       '350' => 17.7,
+#			      },
 	       'HLTAU' => {
 			   '850' => 2.32,
 			   '450' => 10.4,
@@ -154,7 +170,8 @@ sub new {
 	     SkydipIndex => undef,
 	     TauSys => undef,        # Tau system
 	     TauSysNoUpdate => 0,
-	     Thing => {},
+	     Thing => {},            # Header of current frame
+	     CsoFit => undef,        # Polynomial tau fits
 	    };
 
   bless($obj, $class);
@@ -223,14 +240,14 @@ sub badbolsindex {
 
   my $self = shift;
   if (@_) { $self->{BadBolsIndex} = shift; }
- 
+
   unless (defined $self->{BadBolsIndex}) {
     my $indexfile = $ENV{ORAC_DATA_OUT}."/index.badbols";
     my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.badbols";
     $self->{BadBolsIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
- 
-  return $self->{BadBolsIndex}; 
+
+  return $self->{BadBolsIndex};
 }
 
 
@@ -276,7 +293,9 @@ sub fluxes_mon {
 
     # Start FLUXES - this requires some environment variables to be defined
     # This should use a $FLUXES_DIR env variable
-    $ENV{FLUXES} = '/star/bin/fluxes';
+    unless (exists $ENV{FLUXES}) {
+	$ENV{FLUXES} = $StarConfig{Star_Bin} ."/fluxes";
+    }
 
     # Should chdir to /tmp, create the soft link, launch fluxes
     # and then chdir back to wherever we happen to be.
@@ -291,16 +310,15 @@ sub fluxes_mon {
 
     chdir($tmpdir) || croak "Could not change directory to $tmpdir: $!";
 
-    # Hard-wire in the location of JPLEPH - note that 
-    # we assume /star is available as /star!!!!
+    # Hard-wire in the location of JPLEPH
     # Probably could do with $JPL_DIR as well.
     # Create soft link to JPLEPH
 
     # If the JPLEPH file is there already then assume it is okay
     unless (-f "JPLEPH") {
       unlink "JPLEPH";
-      symlink "/star/etc/jpl/jpleph.dat", "JPLEPH"
-	|| croak "Could not create link to JPL ephemeris";
+      symlink $StarConfig{Star}."/etc/jpl/jpleph.dat", "JPLEPH"
+	or croak "Could not create link to JPL ephemeris";
     }
 
     # Set FLUXPWD variable
@@ -369,14 +387,14 @@ sub gainsindex {
 
   my $self = shift;
   if (@_) { $self->{GainsIndex} = shift; }
- 
+
   unless (defined $self->{GainsIndex}) {
     my $indexfile = $ENV{ORAC_DATA_OUT}."/index.gains";
     my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.gains";
     $self->{GainsIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
- 
-  return $self->{GainsIndex}; 
+
+  return $self->{GainsIndex};
 }
 
 =item B<gainsnoupdate>
@@ -404,14 +422,14 @@ sub skydipindex {
 
   my $self = shift;
   if (@_) { $self->{SkydipIndex} = shift; }
- 
+
   unless (defined $self->{SkydipIndex}) {
     my $indexfile = $ENV{ORAC_DATA_OUT}."/index.skydip";
     my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.skydip";
     $self->{SkydipIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
- 
-  return $self->{SkydipIndex}; 
+
+  return $self->{SkydipIndex};
 }
 
 
@@ -457,6 +475,26 @@ sub tausysnoupdate {
   return $self->{TauSysNoUpdate};
 }
 
+=item B<csofit>
+
+Object containing all the tau fitting information.
+The object is configured the first time the information
+is requested. The fitting data are located in
+C<ORAC_DATA_CAL/csofit.dat>
+
+=cut
+
+sub csofit {
+  my $self = shift;
+  if (@_) { $self->{CsoFit} = shift; }
+
+  unless (defined $self->{CsoFit}) {
+    my $file = $ENV{ORAC_DATA_CAL}."/csofit.dat";
+    $self->{CsoFit} = new JCMT::Tau::CsoFit($file);
+  };
+
+  return $self->{CsoFit};
+}
 
 
 =back
@@ -545,7 +583,15 @@ sub badbol_list {
 
 Return the flux of a calibrator source
 
-  $flux = $Cal->fluxcal("sourcename", "filter");
+  $flux = $Cal->fluxcal("sourcename", "filter", $ismap);
+
+The optional third argument is used to specify whether a map
+flux (ie total integrated flux) is required (true), or 
+simply a flux in beam (used for photometry). Default is to
+return flux in beam. This should return the same answer if the
+calibrator is a point source.
+
+Currently, all secondary calibrators are assumed to be point like.
 
 Returns undef if the flux could not be determined.
 
@@ -556,6 +602,7 @@ sub fluxcal {
   my $self = shift;
   my $source = uc(shift);
   my $filter = shift;
+  my $ismap = shift;
 
   # Start off being pessimistic
   my $flux = undef;
@@ -609,7 +656,11 @@ sub fluxcal {
     # At this point we dont know whether we want the flux in the beam
     # or the total flux
 
-    ($status, $flux) = $self->fluxes_mon->get("","F_BEAM");
+    if (defined $ismap && $ismap) {
+      ($status, $flux) = $self->fluxes_mon->get("","F_TOTAL");
+    } else {
+      ($status, $flux) = $self->fluxes_mon->get("","F_BEAM");
+    }
     if ($status != ORAC__OK || $flux == -1) {
       orac_err "Error retrieving flux for filter $filter and planet $source\n";
       return undef;
@@ -632,7 +683,10 @@ for the specified filter that is usable for the current frame.
   $gain = $Cal->gain($filter);
 
 If gains() is set to DEFAULT then this method will simply return
-the current canonical gain for this filter.
+the current canonical gain for this filter (first trying a specific
+filter [eg C<450w>] then trying a generic filter name [eg C<450>]).
+This value will not take into account observing mode (eg scan map
+gain is lower than jiggle map gain).
 
 If gains() is set to INDEX the index will be searched for a calibration
 observation that matches the observation mode (ie Chop throw, sample
@@ -667,9 +721,16 @@ sub gain {
   my $gain;
 
   if ($sys eq 'DEFAULT') {
-    
-    if (exists $DEFAULT_GAINS{$filt}) {
-      $gain = $DEFAULT_GAINS{$filt};
+
+    # Generate the generic filter name from the specific (eg 450w)
+    # filter name in case one has not been specified.
+    my $generic;
+    ($generic = $filt ) =~ s/\D+$//;
+
+    if (exists $DEFAULT_FCFS{$filt}) {
+      $gain = $DEFAULT_FCFS{$filt};
+    } elsif (exists $DEFAULT_FCFS{$generic}) {
+      $gain = $DEFAULT_FCFS{$generic};
     } else {
       orac_err "No gain exists for the specified filter ($filt)\n";
       $gain = undef;
@@ -686,7 +747,7 @@ sub gain {
 
     # Now ask for the 'best' gain observation
     # This means closest in time
-    my $best = $self->gainsindex->choosebydt('ORACTIME', $self->thing,1);
+    my $best = $self->gainsindex->choosebydt('ORACTIME', $self->thing,0);
 
     unless (defined $best) {
       orac_err "No suitable gain calibration could be found\n";
@@ -703,7 +764,7 @@ sub gain {
       $gain = $entref->{GAIN};
     } else {
       orac_err("Error reading entry $best from Gains index");
-      $gain = undef;      
+      $gain = undef;
     }
 
   } else {
@@ -725,6 +786,10 @@ information is availble return true (1) else return (0).
 
   $yesno = $Cal->iscalsource("source_name","filter");
 
+If filter is not supplied, it is assumed we are simply asking
+whether the source is a calibrator independent of whether we
+actually have a calibration value for it....
+
 =cut
 
 # Can not yet handle planets or differing observing modes.
@@ -745,7 +810,9 @@ sub iscalsource {
   if (exists $PHOTFLUXES{$source}) {
     # Source exists in calibrator list
 
-    if (exists $PHOTFLUXES{$source}{$filter}) {
+    # If filter is defined check that it is in the list
+    # if it is not defined simply return true
+    if (!defined($filter) || exists $PHOTFLUXES{$source}{$filter}) {
       $iscal = 1;
     }
 
@@ -793,8 +860,7 @@ sub tau {
 
   croak 'Usage: tau(filter)' if (scalar(@_) != 1);
 
-  # Get the filter (this could be sub-instrument but it is probably
-  # easier to use filter than to query the header for the sub name).
+  # Get the filter name for this sub-instrument
   my $filt = uc(shift);
 
   # Declare local variables
@@ -811,18 +877,26 @@ sub tau {
 
     ($tau, $status) = get_tau($filt, 'CSO', $csotau);
 
-    orac_warn("Error converting a CSO tau of $csotau to an opacity for filter $filt\n") if $status == -1;
+    if ($status == -1) {
+      orac_warn("Error converting a CSO tau of $csotau to an opacity for filter $filt\n");
+      orac_warn("Setting tau to 0\n");
+      $tau = 0.0;
+    }
+
 
   } elsif ($sys =~ /^\d+\.?\d*$/) {
     # We check for a number - note that this pattern does not match
     # numbers that start with a decimal point.
-
+    # This number is a specific CSO tau
     ($tau, $status) = get_tau($filt, 'CSO', $sys);
 
     # Check status
-    orac_warn("Error converting a CSO tau of $sys to an opacity for filter $filt\n") if $status == -1;
+    if ($status == -1) {
+      orac_warn("Error converting a CSO tau of $sys to an opacity for filter $filt\n");
+      orac_warn("Setting tau to 0\n");
+      $tau = 0.0;
+    }
 
-    
   } elsif ($sys =~ /DIP/ || $sys eq 'INDEX') {
 
     # Skydips have been selected (using index files)
@@ -838,8 +912,10 @@ sub tau {
     # Now set the filter name in this hash so that
     # we know what filter we are searching for
     # Special case for a 850 skydip only search
+    # but we don't know whether we should be searching for 850W
+    # or 850N
     if ($sys =~ /850/) {
-      $hdr{FILTER} = '850';
+      $hdr{FILTER} = '850W';
     } else {
       $hdr{FILTER} = $filt;
     }
@@ -858,8 +934,8 @@ sub tau {
     my $too_old = 3.0/24.0; # 3 hours as a day fraction
 
     # Check that SYS matches 'interp' (interpolation)
-    # and ask for two index searches [inefficient???] 
-    # Might want to use a index routine that searches for high and 
+    # and ask for two index searches [inefficient???]
+    # Might want to use a index routine that searches for high and
     # low at the same time
     if ($sys =~ /INTERP/) {
       my $high = $self->skydipindex->chooseby_positivedt('ORACTIME', \%hdr, 0);
@@ -936,10 +1012,10 @@ sub tau {
 
 
     } else {
-      
+
       # Retrieve the closest in time
       my $nearest = $self->skydipindex->choosebydt('ORACTIME', \%hdr,0);
-      
+
       # Check return value
       if (defined $nearest) {
 
@@ -984,6 +1060,8 @@ sub tau {
 
     }
 
+    # Need to configure the fallback options to enable the
+    # adoption of a CSO tau to be optional
     # If $tau has not yet been set (ie the index lookup failed)
     # revert to a CSO tau lookup
     unless (defined $tau) {
@@ -998,6 +1076,25 @@ sub tau {
 	orac_warn("Error converting a CSO tau of $csotau to an opacity for filter $filt\n");
 	$tau = undef;
       }
+    }
+  } elsif ($sys eq 'CSOFIT') {
+
+    # Retrieve the tau for the required time
+    my $csotau = $self->csofit->tau( $self->thing->{ORACTIME});
+
+    if (defined $csotau) {
+
+      # Convert it to the required filter
+      ($tau, $status) = get_tau($filt, 'CSO', $csotau);
+
+      if ($status == -1) {
+	orac_warn("Error converting a CSO tau of $csotau to an opacity for filter $filt\n");
+	$tau = undef;
+      }
+
+    } else {
+      orac_warn "No fit present for this date\n";
+      $tau = undef;
     }
 
   } else {
