@@ -1,0 +1,284 @@
+#+
+# Name:
+#    _SUBTRACT_SKY_CHOP_SKY_
+#
+# Purpose:
+#    Subtracts a sky background for CHOP_SKY_JITTER recipes.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive subtracts a sky background from the target frames, 
+#    in the whole observation.  Each sky background is interpolated
+#    between the levels of the bracketing sky frames about each target
+#    frame using the time of observation.  It reports each successful
+#    sky subtraction, the frames concerned, and the value of the
+#    background subtracted.
+#
+# Notes:
+#    -  This primitive is suitable for SOFI in imaging mode.
+#    -  Processing only occurs for object and sky frames, and when the
+#    steering header SUBTRACT_SKY is true.
+#    -  All the target frames within the current cycle, as given by
+#    steering header CYCLE_NUMBER, are sky-subtracted.
+#    -  The sky levels are stored by reference in the SKY_LEVELS user
+#    header of the reference frame.
+#    -  The observation numbers of each target is compared with the list
+#    of sky-frame observation numbers to determine the indices of the
+#    bracketting sky frames, whose sky levels are interpolated.  Thus
+#    shuffling the order in which frames are processed on the command
+#    line will be ignored as far as sky subtractuion is concerned.
+#    -  The time used to interpolate comes from user header 
+#    ORAC_UTSTART.
+#    -  There is no interpolation between sky values for the
+#    target frame which start or end the observation.
+#    -  The subtraction assumes the same exposure time for the sky and
+#    object frame.
+#    -  Each sky-subtracted image can be displayed.
+#    -  The frames' titles are each propagated.
+#
+# Output Data:
+#    -  Sky-subtracted target frames each inheriting its corresponding
+#    input frame's name but with the _ss suffix.
+#
+# Tasks:
+#    KAPPA: CSUB.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC/Starlink)
+#
+# Copyright:
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ) {
+
+# Test whether or not it is time to subtract sky values.  Note this should
+# only be set in the steering file when creating a mosaic.
+       my $skysub = $Frm->uhdr( "SUBTRACT_SKY" );
+       if ( $skysub ) {
+
+# Obtain the cycle number.  Default to zero if undefined, so that recipes
+# which do not support this feature will continue to work.
+          my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+          $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+# Form a subgroup comprising all the target frames within the current
+# cycle.
+          my $tarGrp = $Grp->subgrp( TARGET_OR_SKY => "target",
+                                     CYCLE_NUMBER => $cycleno );
+
+# Form a subgroup comprising all the sky frames within the current
+# cycle.
+          my $skyGrp = $Grp->subgrp( TARGET_OR_SKY => "sky",
+                                     CYCLE_NUMBER => $cycleno );
+          my $maxsky = $skyGrp->num;
+
+# Obtain the observation numbers of the sky frames.
+          my @sky_numbers = $skyGrp->membernumbers;
+
+# Form a list of the input and output target frames.
+          ( my $inref, my $outref ) = $tarGrp->inout( "_ss" );
+
+# Form the group comprising the reference frames for each recipe cycle.
+# Find the reference frame for this cycle, and obtain a reference
+# to the sky-levels array.
+          my $refGrp = $Grp->subgrp( REFERENCE_FRAME => 1 );
+          my $refFrm = $refGrp->frame( $cycleno );
+          my $skyref = $refFrm->uhdr( "SKY_LEVELS" );
+
+# Used to define the indices of the bracketting sky frames.
+          my $index_after = 0;
+          my $index_before;
+
+# Process each target file in turn so the bracketted sky levels can be
+# obtained and interpolated.
+          foreach my $frame ( $tarGrp->members ) {
+
+# Generate the input and output file names.
+             ( my $in, my $out ) = $frame->inout( "_ss" );
+
+# Obtain the target frame number and original observation number.
+             my $target_number = $frame->uhdr( "TARGET_NUMBER" );
+             my $target_obsnum = $frame->number;
+
+# Import the sky levels of the sky frames which just bracket the current
+# observation.  This cannot be done for the first or final target frame if
+# there was no bracketing sky frame, so merely subtract the following
+# or preceding sky level respectively.
+
+# Find the indices of the bracketing, if possible, sky frames.  Note
+# that this means that shuffling the order of the frames supplied on the
+# command line would be ignored.
+             until ( $index_after > $maxsky ||
+                     $sky_numbers[ $index_after ] > $target_obsnum ) {
+                $index_after++;
+             }
+
+# Ends with a target frame, so no bracketting sky.
+             if ( $index_after > $maxsky ) {
+                $index_after--;
+                $index_before = $index_after;
+
+# Begins with a target frame, so no bracketting sky.
+             } elsif ( $index_after == 0 ) {
+                $index_before = $index_after;
+             } else {
+                $index_before = $index_after - 1;
+             }
+
+# Obtain the bracketing sky levels.  These may be the same for the
+# first or last target frames.
+             my $sky_before = $skyref->[$index_before];
+             my $sky_after = $skyref->[$index_after];
+
+# Determine the times of each sky and the target for interpolation.
+# Allow for the observations to go through midnight.
+             my $time_before = $skyGrp->frame( $index_before )->uhdr( "ORAC_UTSTART" );
+             my $time_after = $skyGrp->frame( $index_after )->uhdr( "ORAC_UTSTART" );
+             $time_after += 24  if $time_after < $time_before;
+
+             my $time_target = $frame->uhdr( "ORAC_UTSTART" );
+
+# Derive the sky level for the current object frame by linear interpolation
+# between the modal sky values of the pair which most closely bracket the
+# object frame.  Interpolate using the times.  For unbracketted targets,
+# the fraction is defined to be zero as there is no interpolation.
+             my $fraction;
+             if ( ( $time_after - $time_before ) < 1E-6 ) {
+                $fraction = 0.0;
+             } else {
+                $time_target += 24 if ( $time_target - $time_before ) < 1E-6;
+                $fraction = ( $time_target - $time_before ) / 
+                            ( $time_after - $time_before );
+             }
+             my $sky_level = $sky_before + $fraction * ( $sky_after - $sky_before );
+
+# Specify the parameters.
+             my $param1 = "in=$in scalar=$sky_level out=$out";
+
+# Note all sky frames and data frames should have the same exposure time.
+# In theory we could take care of by the Cal object and the headers.
+             $Mon{ "kappa_mon" }->obeyw( "csub", "$param1" );
+
+# Format to a sensible number of decimal places.  Report the processing status.
+             my $fs_sky = sprintf( "%12.4f", $sky_level );
+             $fs_sky =~ s/ //g;
+             orac_print "$in to $out: Sky ($fs_sky) subtracted\n";
+
+# Display the image.
+             _DISPLAY_FRAME_IMAGE_
+
+# Start the search for the bracketting sky frames from where we found
+# the previous pair.
+              $index_after = $index_before;
+          }
+
+# Update the target group.
+          $tarGrp->membernames( @$outref );
+          orac_print "\n";
+
+       }
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_SUBTRACT_SKY_CHOP_SKY_ -- Subtracts a sky background for CHOP_SKY_JITTER recipes.
+
+=head1 DESCRIPTION
+
+This primitive subtracts a sky background from the target frames, 
+in the whole observation.  Each sky background is interpolated
+between the levels of the bracketing sky frames about each target
+frame using the time of observation.  It reports each successful
+sky subtraction, the frames concerned, and the value of the
+background subtracted.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for SOFI in imaging mode.
+
+=item *
+
+Processing only occurs for object and sky frames, and when the
+steering header SUBTRACT_SKY is true.
+
+=item *
+
+All the target frames within the current cycle, as given by steering
+header CYCLE_NUMBER, are sky-subtracted.
+
+=item *
+
+The sky levels are stored by reference in the SKY_LEVELS user header
+of the reference frame.
+
+=item *
+
+The observation numbers of each target is compared with the list
+of sky-frame observation numbers to determine the indices of the
+bracketting sky frames, whose sky levels are interpolated.  Thus
+shuffling the order in which frames are processed on the command
+line will be ignored as far as sky subtractuion is concerned.
+
+=item *
+
+The time used to interpolate comes from user header ORAC_UTSTART.
+
+=item *
+
+There is no interpolation between sky values for the
+target frame which start or end the observation.
+
+=item *
+
+The subtraction assumes the same exposure time for the sky and
+object frame.
+
+=item *
+
+Each sky-subtracted image can be displayed.
+
+=item *
+
+The frames' titles are each propagated.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Sky-subtracted target frames each inheriting its corresponding
+input frame's name but with the _ss suffix.
+
+=back
+
+=head1 TASKS
+
+KAPPA: CSUB.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC/Starlink)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
