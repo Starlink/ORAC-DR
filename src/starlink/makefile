@@ -236,6 +236,9 @@
 #           Since ORAC-DR requires non-standard handling and is not built
 #           in the traditional sense, this makefile has been cut down from
 #           the full version.
+#     09-OCT-2000 (TIMJ):
+#        ORAC-DR V1.1-0. Add SUN/233
+#        Now uses $COMPRESS to support gzip or compress
 #     {enter_further_changes_here}
 #
 #  Bugs:
@@ -359,6 +362,14 @@ LINK = ln
 TAR_IN = tar cvhf
 TAR_OUT = tar xf
 
+#  Command to compress the tar files and the suffix used for the
+#  compression system. The compress command must send the output
+#  to standard out.
+
+COMPRESS = gzip -c -v --best
+COMPSFX  = gz
+
+
 #  Location of Starlink Perl installation or a Perl installation that
 #  provides all the correct modules.
 
@@ -394,7 +405,7 @@ PKG_LINK = ORACDR
 #  be incremented for other minor changes (bug fixes, etc.) which do
 #  not merit documentation changes.
 
-PKG_VERS = 1.0-0
+PKG_VERS = 1.1-0
 
 #  List of files comprising the distributed source-only system.  This
 #  defines the minimum set of files required to rebuild completely the
@@ -427,9 +438,11 @@ LATEX_DOCS = \
    sun231.tex \
    sun231_disp.eps sun231_logo.eps sun231_sculogo.eps \
    sun232.tex \
-   sun232_logo.eps
+   sun232_logo.eps \
+   sun233.tex \
+   sun233_logo.eps sun233_train.eps
 
-HYPERTEXT_DOCS = sun230.htx sun231.htx sun232.htx
+HYPERTEXT_DOCS = sun230.htx sun231.htx sun232.htx sun233.htx
 
 #  List of documentation files.
 
@@ -883,19 +896,19 @@ do_test:
 #  The export target depends on the resulting compressed tar file being
 #  up to date.
 
-export: $(EXPORT)/$(PKG_NAME)_$(SYSTEM).tar.Z
+export: $(EXPORT)/$(PKG_NAME)_$(SYSTEM).tar.$(COMPSFX)
 	@ echo
 	@ echo \
 '*** Export copy of the built $(PACK_NAME) package is in the compressed'
 	@ echo \
-'    tar file $(EXPORT)/$(PKG_NAME)_$(SYSTEM).tar.Z'
+'    tar file $(EXPORT)/$(PKG_NAME)_$(SYSTEM).tar.$(COMPSFX)'
 	@ echo
 
 #  The compressed tar file is up to date if it exists and is more
 #  recent than all the source files and the date stamp file (which
 #  records the time of the last build which modified any files).
 
-$(EXPORT)/$(PKG_NAME)_$(SYSTEM).tar.Z: $(SOURCE_FILES) $(DATE_STAMP)
+$(EXPORT)/$(PKG_NAME)_$(SYSTEM).tar.$(COMPSFX): $(SOURCE_FILES) $(DATE_STAMP)
 #
 #  Issue a warning if the package has not been tested.
 	@ if [ ! -f .TESTED_$(SYSTEM) ] ; then \
@@ -905,10 +918,10 @@ $(EXPORT)/$(PKG_NAME)_$(SYSTEM).tar.Z: $(SOURCE_FILES) $(DATE_STAMP)
         else :; fi
 #
 #  Remove any pre-existing tar files before creating new ones.
-	if [ -f $(EXPORT)/$(PKG_NAME)_$(SYSTEM).tar.Z ] ; then \
-           rm -f $(EXPORT)/$(PKG_NAME)_$(SYSTEM).tar.Z; else :; fi
+	if [ -f $(EXPORT)/$(PKG_NAME)_$(SYSTEM).tar.$(COMPSFX) ] ; then \
+           rm -f $(EXPORT)/$(PKG_NAME)_$(SYSTEM).tar.$(COMPSFX); else :; fi
 	$(TAR_IN) - $(SOURCE_FILES) $(BUILT_FILES) $(DATE_STAMP) .BUILT \
-           | compress -v > $(EXPORT)/$(PKG_NAME)_$(SYSTEM).tar.Z
+           | $(COMPRESS) > $(EXPORT)/$(PKG_NAME)_$(SYSTEM).tar.$(COMPSFX)
 
 #  export_run: Export the built system (without source).
 #  -----------------------------------------------------
@@ -918,19 +931,19 @@ $(EXPORT)/$(PKG_NAME)_$(SYSTEM).tar.Z: $(SOURCE_FILES) $(DATE_STAMP)
 #  The export_run target depends on the resulting compressed tar file being
 #  up to date.
 
-export_run: $(EXPORT)/$(PKG_NAME)_$(SYSTEM)_run.tar.Z
+export_run: $(EXPORT)/$(PKG_NAME)_$(SYSTEM)_run.tar.$(COMPSFX)
 	@ echo
 	@ echo \
 '*** Export copy of the "runtime" $(PACK_NAME) package is in the compressed'
 	@ echo \
-'    tar file $(EXPORT)/$(PKG_NAME)_$(SYSTEM)_run.tar.Z'
+'    tar file $(EXPORT)/$(PKG_NAME)_$(SYSTEM)_run.tar.$(COMPSFX)'
 	@ echo
 
 #  The compressed tar file is up to date if it exists and is more
 #  recent than all the source files and the date stamp file (which
 #  records the time of the last build which modified any files).
 
-$(EXPORT)/$(PKG_NAME)_$(SYSTEM)_run.tar.Z: $(SOURCE_FILES) $(DATE_STAMP)
+$(EXPORT)/$(PKG_NAME)_$(SYSTEM)_run.tar.$(COMPSFX): $(SOURCE_FILES) $(DATE_STAMP)
 #
 #  Issue a warning if the package has not been tested.
 	@ if [ ! -f .TESTED_$(SYSTEM) ] ; then \
@@ -940,11 +953,11 @@ $(EXPORT)/$(PKG_NAME)_$(SYSTEM)_run.tar.Z: $(SOURCE_FILES) $(DATE_STAMP)
         else :; fi
 #
 #  Remove any pre-existing tar files before creating new ones.
-	if [ -f $(EXPORT)/$(PKG_NAME)_$(SYSTEM)_run.tar.Z ] ; then \
-           rm -f $(EXPORT)/$(PKG_NAME)_$(SYSTEM)_run.tar.Z; else :; fi
+	if [ -f $(EXPORT)/$(PKG_NAME)_$(SYSTEM)_run.tar.$(COMPSFX) ] ; then \
+           rm -f $(EXPORT)/$(PKG_NAME)_$(SYSTEM)_run.tar.$(COMPSFX); else :; fi
 	$(TAR_IN) - mk makefile $(DOCUMENTATION) $(BUILT_FILES) \
            $(INSTALL_SOURCES) $(DATE_STAMP) .BUILT \
-           | compress -v > $(EXPORT)/$(PKG_NAME)_$(SYSTEM)_run.tar.Z
+           | $(COMPRESS) > $(EXPORT)/$(PKG_NAME)_$(SYSTEM)_run.tar.$(COMPSFX)
 
 #  export_source: Export the source.
 #  --------------------------------
@@ -954,24 +967,24 @@ $(EXPORT)/$(PKG_NAME)_$(SYSTEM)_run.tar.Z: $(SOURCE_FILES) $(DATE_STAMP)
 #  This target depends on the resulting compressed tar file being up to
 #  date.
 
-export_source: $(EXPORT)/$(PKG_NAME).tar.Z
+export_source: $(EXPORT)/$(PKG_NAME).tar.$(COMPSFX)
 	@ echo
 	@ echo \
 '*** Export copy of the $(PACK_NAME) package source is in the compressed'
 	@ echo \
-'    tar file $(EXPORT)/$(PKG_NAME).tar.Z'
+'    tar file $(EXPORT)/$(PKG_NAME).tar.$(COMPSFX)'
 	@ echo
 
 #  The compressed tar file is up to date if it exists and is more
 #  recent than all the source files.
 
-$(EXPORT)/$(PKG_NAME).tar.Z: $(SOURCE_FILES)
+$(EXPORT)/$(PKG_NAME).tar.$(COMPSFX): $(SOURCE_FILES)
 #
 #  Remove any pre-existing tar files before creating new ones.
-	if [ -f $(EXPORT)/$(PKG_NAME).tar.Z ] ; then \
-           rm -f $(EXPORT)/$(PKG_NAME).tar.Z; else :; fi
+	if [ -f $(EXPORT)/$(PKG_NAME).tar.$(COMPSFX) ] ; then \
+           rm -f $(EXPORT)/$(PKG_NAME).tar.$(COMPSFX); else :; fi
 	$(TAR_IN) - $(SOURCE_FILES) \
-           | compress -v > $(EXPORT)/$(PKG_NAME).tar.Z
+           | $(COMPRESS) > $(EXPORT)/$(PKG_NAME).tar.$(COMPSFX)
 
 #  clean: Clean up the source directory.
 #  ------------------------------------
