@@ -35,8 +35,9 @@ Requires the JCMT::SCUBA model for the theoretical NEFD calculation.
 
 =cut
 
-use JCMT::SCUBA;
+#use JCMT::SCUBA;
 use JCMT::Tau;
+use Math::Trig;
 
 # Check that we have a photom observation
 
@@ -124,103 +125,155 @@ if ($Frm->hdr('MODE') eq "PHOTOM") {
 	  # in fact -- the NEFD calculation is not particularly helpful
 	  # unless the observation has at least 20 integrations, equivalent
 	  # to an integration time of 360 seconds
-	  if ($totint > 180) {
+	  if ($totint >= 320) {
 
 	    # Calculate NEFD (include sigma/sqrt(n))
 	    # Note independent of ngood
 	    my $nefd = $sigma * sqrt($totint) / sqrt($ngood);
-	    $nefd = sprintf "%4d", $nefd;
+	    $nefd = sprintf "%5.0f", $nefd;
 
 	    orac_print "NEFD for bolometer $bolometer (filter $filters[$i]): $nefd\n";
+
+
+            # Check whether the user has access to SLALIB.  This affects 
+            # whether the chop pa (if defined in local coordinates) can 
+            # be transformed to the az-el coordinate system.  The chop pa 
+            # and its associated error will only be written into the log 
+            # file if SLALIB is accessible.
+
+            my $sla_avail = 0;
+            eval "use Astro::SLA";
+            if ($@) {
+               orac_print "Slalib not available";
+            } else {
+               $sla_avail = 1;
+            }
 
 	    # Now need to write the log file
 	    my $log = new ORAC::LogFile('log.nefd');
 
 	    # Write header
 	    my $time = gmtime();
-	    $log->header("# NEFD log file - written on $time",
-			 "\nUT        Obs  HST   Source     Time Bol  Thr Filter  WLen  Tau   CSO   See FCF Trans eNEFD NEFD",
-			 "#-----------------------------------------------------------------------------------------------",
+
+
+	    if ($sla_avail == 0) {
+            $log->header("# NEFD log file - written on $time",
+                         "\nUT                HST   Obs Source       Mode     T_int  Filter Thr El CSO    Tau   Seeing  FCF  NEFD",
+	     "#--------------------------------------------------------------------------------------------------------------",
 		  );
+            } else {
+            $log->header("# NEFD log file - written on $time",
+	                 "\nUT                HST   Obs Source       Mode     T_int  Filter Thr   PA  dPA   El CSO    Tau   Seeing  FCF  NEFD",
+	     "#-------------------------------------------------------------------------------------------------------------------------",
+	    );
+            }
 
 	    my $status;
 	    # Now retrieve all the bits from the header
 	    # cf. _CALIBRATE_PHOTOM_DATA_
 	    # FRom FITS header need
-	    # FILTER (+filter[$i])
-	    my $flt    = $Frm->hdr("FILTER");
-	    my $wav    = $filters[$i];
+
+
 	    # ORACUT
 	    my $utdate = $Frm->hdr('ORACUT');
-	    # RUN
-	    my $run    = sprintf "%4d", $Frm->hdr('RUN');
+            my $uttime = sprintf "%8.7f", $Frm->hdr('ORACTIME');
+
 	    # HSTSTART (no decimal places)
 	    my $hst    = $Frm->hdr('HSTSTART');
 	    my (@hst)  = split(/:/, $hst);
 	    $hst = sprintf '%5s', $hst[0] . ":" . $hst[1];
+
+	    # RUN
+	    my $run    = sprintf "%4d", $Frm->hdr('RUN');
+
 	    # OBJECT
-	    my $src    = uc($Frm->hdr('OBJECT'));
-	    $src    = sprintf "%-10s", $src;
+            my $src    = substr((sprintf "%-12s", uc($Frm->hdr('OBJECT'))),0,12);
+
+	    # MODE
+	    my $mode = &construct_mode;
+	    $mode = sprintf "%-7s", $mode;
+
+	    # Number of Integrations
+	    my $n_int = sprintf "%4d", $Frm->hdr('N_INT');
+
+	    # FILTER (+filter[$i])
+	    my $flt    = $Frm->hdr("FILTER");
+	    my $wav    = $filters[$i];
+
+	    # Chop throw
+	    my $thr = sprintf "%4.0f", $Frm->hdr('CHOP_THR');
+
+	    # Chop pa in az-el coordinates if slalib is available. 
+	    my $chop_pa_azel;
+	    my $chop_pa_azel_err;
+	    if ($sla_avail == 1) {
+	        ($chop_pa_azel, $chop_pa_azel_err) = &calc_chop_pa_azel;
+	    }
+	    $chop_pa_azel = sprintf '%4.0f', $chop_pa_azel;
+	    $chop_pa_azel_err = sprintf '%3.0f', $chop_pa_azel_err;
+
 	    # Average of END_ELD and STRT_ELD -> airmass
 	    my $el     = ($Frm->hdr('END_ELD') + $Frm->hdr('STRT_ELD'))/ 2.0;
-	    $el        = sprintf "%2d", $el;
-	    # airmass set to zero with bad status
-	    (my $airmass, $status) = JCMT::Tau::airmass($el);
+	    $el        = sprintf "%2.0f", $el;
+
+#	    # airmass set to zero with bad status
+#	    (my $airmass, $status) = JCMT::Tau::airmass($el);
 
 	    # TAU from calibration object
-	    my $tau = sprintf "%5.2f", $Cal->tau($filters[$i]); 
-	    
+	    my $tau = sprintf "%5.2f", $Cal->tau($filters[$i]);
+
 	    # Use that tau to calculate CSO
 	    (my $cso, $status) = JCMT::Tau::get_tau('CSO',$filters[$i], $tau);
 	    if ($status != 0) {
 	      $cso = "*****";
 	    } else {
-	      $cso = sprintf "%5.2f", $cso;
+	      $cso = sprintf "%5.3f", $cso;
 	    }
 
-	    # Chop throw
-	    my $thr = sprintf "%3d", $Frm->hdr('CHOP_THR');
-
 	    # Seeing
-	    my $see = sprintf "%4.2f", $Frm->hdr('SEEING');
+	    my $see = sprintf "%5.2f", $Frm->hdr('SEEING');
 
 	    # Now retrieve the gain from the calibration object
 	    my $gain = $Cal->gain($filters[$i]);
-	    $gain   = sprintf "%4d", int($gain+0.5);
+	    $gain   = sprintf "%4.0f", int($gain+0.5);
 
-	    # Need to calculate atmospheric transmission
-	    (my $trans, $status) = JCMT::Tau::transmission($airmass, $tau);
+#	    # Need to calculate atmospheric transmission
+#	    (my $trans, $status) = JCMT::Tau::transmission($airmass, $tau);
 
-	    # Check status -- if status is bad we cant calculate expected
-	    # nefd
-	    my $expNEFD;
-	    if ($status == 0) {
-	      # Now need to calculate the expected NEFD
-	      # Use JCMT::SCUBA for that
-	      ($expNEFD, $status) = JCMT::SCUBA::scunefd($filters[$i],
-							       $trans);
-	      $trans = sprintf "%4.2f", $trans;
-	      if ($status == -1) {
-		# Out of range
-		$expNEFD = '-----';
-	      } elsif ($status == -2) {
-		$expNEFD = '*****';
-	      } else {
-		$expNEFD = sprintf "%4d", $expNEFD;
-	      }
-	      
-	    } else {
-	      $expNEFD = '*****';
-	      $airmass    = '***';
-	      $trans   = '****';
-	    }
+#	    # Check status -- if status is bad we cant calculate expected
+#	    # nefd
+#	    my $expNEFD;
+#	    if ($status == 0) {
+#	      # Now need to calculate the expected NEFD
+#	      # Use JCMT::SCUBA for that
+#	      ($expNEFD, $status) = JCMT::SCUBA::scunefd($filters[$i],
+#							       $trans);
+#	      $trans = sprintf "%4.2f", $trans;
+#	      if ($status == -1) {
+#		# Out of range
+#		$expNEFD = '-----';
+#	      } elsif ($status == -2) {
+#		$expNEFD = '*****';
+#	      } else {
+#		$expNEFD = sprintf "%4d", $expNEFD;
+#	      }
+#	      
+#	    } else {
+#	      $expNEFD = '*****';
+#	      $airmass    = '***';
+#	      $trans   = '****';
+#	    }
 
 	    # Format remainder
-	    $totint = sprintf "%5d", $totint;
+	    $totint = sprintf "%5.0f", $totint;
 
 
 	    # Now write the entry
-	    $log->addentry("$utdate $run $hst $src $totint $bolometer $thr $flt $wav $tau $cso $see $gain $trans $expNEFD $nefd");
+            if ($sla_avail == 0) {
+	        $log->addentry("$uttime $hst $run $src $mode  $totint   $wav $thr $el $cso $tau $see   $gain $nefd");
+            } else {
+	        $log->addentry("$uttime $hst $run $src $mode  $totint   $wav $thr $chop_pa_azel  $chop_pa_azel_err   $el $cso $tau $see   $gain $nefd");
+            }
 
 
 	  } else {
@@ -241,9 +294,247 @@ if ($Frm->hdr('MODE') eq "PHOTOM") {
 }
 
 
+# Given information in the fits header, construct a sensible name for
+# the observing mode.
+
+sub construct_mode {
+
+my $mode = $Frm->hdr('MODE');
+my $sam_mode = $Frm->hdr('SAM_MODE');
+my $jigl_cnt = $Frm->hdr('JIGL_CNT');
+my $sam_dx = $Frm->hdr('SAM_DX');
+
+if ($mode =~ /map/i && $sam_mode =~ /jiggle/i) {
+  $mode = 'JIGMAP_'.$jigl_cnt;
+} elsif ($mode =~ /point/i) {
+  $mode = 'POINTING_'.$jigl_cnt;
+} elsif ($mode =~ /map/i && $sam_mode =~ /raster/i) {
+  $mode = 'SCANMAP_'.$sam_dx;
+}
+
+return $mode;
+
+}
+
+
+
+# Calculate the chop position angle in Az-El coordinates.  If the chop
+# is originally specified in Az-El coordinates, this is trivial.  The
+# position angle just needs to be read from the fits header.  If the
+# chop is originally specified in LO coordinates, the position angle
+# needs to be transformed from one coordinate frame to the other.
+# Furthermore, the chop will rotate in the Az-El frame as the
+# observation proceeds.  The average position angle and associated
+# error are hence calculated in this case.
+
+sub calc_chop_pa_azel {
+ 
+    my $chop_crd = $Frm->hdr('CHOP_CRD'); 
+
+    my ($chop_pa_azel, $chop_pa_azel_err);
+    if ($chop_crd =~ /az/i) {
+
+        $chop_pa_azel = $Frm->hdr('CHOP_PA');
+        $chop_pa_azel_err = 0;
+
+    } elsif ($chop_crd =~ /lo/i) {
+
+        # Calculate apparent ra and dec in radians
+	# Subroutine arguments are fits header and ut clock error (assume = 0)
+        my ($ra_app, $dec_app) = calc_apparent( scalar($Frm->hdr), '0' );
+
+        # latitude of observatory in radians
+	my $lat_obs = deg2rad($Frm->hdr('LAT-OBS'));
+
+        # Read LST from header and convert string to radians
+        # Second argument in subroutine call sets format hh:mm:ss
+        my $lst_start = string2rad($Frm->hdr('STSTART'),1);
+        my $lst_end = string2rad($Frm->hdr('STEND'),1);
+
+        # Calculate hour angle in radians
+        my $ha_start = $lst_start - $ra_app;
+        my $ha_end = $lst_end - $ra_app;
+
+        # Calculate parallactic angle in radians
+        my $para_start = Astro::SLA::slaPa($ha_start,$dec_app,$lat_obs);
+        my $para_end = Astro::SLA::slaPa($ha_end,$dec_app,$lat_obs);
+
+        # Convert parallactic angle to degrees
+        my $para_start_deg = rad2deg($para_start);
+        my $para_end_deg = rad2deg($para_end);
+
+        # Read in chop pa in local coordinates, convert to az-el, units = deg
+        my $chop_pa_azel_start = $para_start_deg - $Frm->hdr('CHOP_PA');
+        my $chop_pa_azel_end = $para_end_deg - $Frm->hdr('CHOP_PA');
+
+        # Average chop pa and error
+        $chop_pa_azel = ($chop_pa_azel_start + $chop_pa_azel_end) / 2.0;
+        $chop_pa_azel_err = abs($chop_pa_azel - $chop_pa_azel_start);
+
+    }
+
+    return ($chop_pa_azel, $chop_pa_azel_err);
+
+}
+
+
+
+
+# Calculate the apparent ra/dec from the SCUBA header information.
+# Currently can only handle RJ, RB, GA and PLANET, RD
+# Expects a hash with SCUBA headers. Calculates it for the supplied
+# UTSTART, UTDATE  values (which are used to derive MJD)
+# Returns apparent ra/dec or an empty list.
+
+# The second argument is the error in the times found in the headers
+# in seconds. It is required for the MJD calculation.
+
+sub calc_apparent ($$) {
+    my $hdr = shift;
+    my $uterr = shift;
+
+    # Read all the header info we require
+    my $coord_type = $hdr->{CENT_CRD};
+
+    # Copy some values to save typing later
+    my $long;
+    if ($coord_type =~ /^[REP]/) { # RA,RJ,EQ,PL
+	# We have a right ascension
+	$long = string2rad($hdr->{LONG},1);
+    } else {
+	# We have degrees
+	$long = string2rad($hdr->{LONG},0);
+    }
+    my $long2= string2rad($hdr->{LONG2},1);
+    my $lat  = string2rad($hdr->{LAT},0);
+    my $lat2 = string2rad($hdr->{LAT2},0);
+    my $mjd1 = $hdr->{MJD1};
+    my $mjd2 = $hdr->{MJD2};
+
+    # Calculate the MJD
+    my $mjd = calc_mjd( $hdr->{UTDATE}, $hdr->{UTSTART}, $uterr);
+    if ($DEBUG) {
+	print "MJD = $mjd Cord = $coord_type\n";
+	print "String inputs: ", $hdr->{LONG} , ",", $hdr->{LAT},"\n";
+	print "Input coords: $long, $lat\n";
+    }
+
+    # First convert from the input frame to RJ
+    if ($coord_type eq 'RB' || $coord_type eq 'RJ' || $coord_type eq 'GA') {
+	# Initialise J2000 RA/DEc variables
+	my ($raj, $decj) = ($long, $lat);
+	if ($coord_type eq 'RB') {
+	    # RB -> RJ
+	    Astro::SLA::slaFk45z( $raj, $decj, 1950.0, $raj, $decj);
+	} elsif ($coord_type eq 'GA') {
+	    # GA -> RJ
+	    Astro::SLA::slaGaleq( $raj, $decj, $raj, $decj);
+	}
+
+	# Now convert to apparent
+	Astro::SLA::slaMap( $raj, $decj, 0.0, 0.0, 0.0, 0.0, 2000.0, $mjd,
+		my $ra_app, my $dec_app);
+
+	return ($ra_app, $dec_app);
+
+    } elsif ($coord_type eq 'RD') {
+
+	# Do nothing
+	return ($long, $lat);
+
+    } elsif ($coord_type eq 'PLANET') {
+	# Need to interpolate to current MJD
+	if ($mjd1 == $mjd2) {
+	    # ASsume a constant
+	    return ($long, $lat);
+	} else {
+	    # interpolate
+	    my $ra_app = $long + ( $long2 - $long ) * ( $mjd - $mjd1 ) /
+		($mjd2 - $mjd1);
+	    my $dec_app =$lat  + ( $lat2  - $lat  ) * ( $mjd - $mjd1 ) /
+		($mjd2 - $mjd1);
+	    return ($ra_app, $dec_app);
+	}
+
+    }
+
+    # Return empty list on error
+    return ();
+}
+
+
+
+# Convert string of form  hh:mm:ss.s or dd:mm:ss.s
+# to radians. Returns undef on error.
+# Second argument indicates whether it is a time (1) or an angle (0)
+#  $rad = string2rad("18:15:22.0", 1);
+
+sub string2rad ($$) {
+    my $ra = shift;
+    my $istime = shift;
+
+    # Replace : with space
+    $ra =~ s/:/ /g;
+
+    # Convert the RA from the header to radians
+    my $pos = 1;
+    Astro::SLA::slaDafin($ra, $pos, my $reslt, my $jf);
+    $reslt *= 15.0 if $istime;
+
+    return ( $jf == 0 ?  $reslt : undef);
+}
+
+
+
+
+# Calculate modified julian date from SCUBA UTSTART and UTDATE
+# returns undef on error. An optional offset in seconds can be
+# supplied to this routine (usually zero) indicating an
+# error in the UTSTART string [with SCUBA the times are written
+# before we are on source so there is a discrepancy]
+# The offset is added to the MJD and can be negative or positive.
+
+sub calc_mjd ($$$) {
+    # Split the date string into parts
+    my @date = split(/:/, $_[0]);
+
+    # Now convert the time to radians so we can determine
+    # the fraction of day
+    my $pos = 1;
+    my $uttime = $_[1];
+    $uttime =~ s/:/ /g;
+    Astro::SLA::slaDafin($uttime, $pos, my $reslt, my $jf);
+    return undef if $jf != 0;
+
+    # Convert the result to a time in radians
+    $reslt *= 15.0;
+
+    # Add the error (in seconds converted to radians)
+    $reslt += &Astro::SLA::DS2R * $_[2];
+
+    # And convert the result to fraction of day
+    my $frac = $reslt / &Astro::SLA::D2PI;
+
+    # Calculate the MJD from the date
+    Astro::SLA::slaCldj( $date[0], $date[1], $date[2], my $mjd, my $status);
+    return undef if $status != 0;
+
+    # Add on the fraction
+    $mjd += $frac;
+    return $mjd;
+}
+
+
+
+
 # COPYRIGHT
 #
 #   Copyright (C) 1998-2000 Particle Physics and Astronomy Research
 #   Council. All Rights Reserved.
+
+
+
+
+
 
 
