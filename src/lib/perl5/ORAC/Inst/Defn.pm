@@ -117,138 +117,138 @@ my %MonolithDefns = (
            CLASS => 'ORAC::Msg::Task::ADAM',
            PATH => "/export/data/timj/scd/phot/progs/javelin",
           },
-		     kappa_mon => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => $ENV{KAPPA_DIR}."/kappa_mon",
-				  },
-		     surf_mon => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => "$ENV{SURF_DIR}/surf_mon",
-				  },
-		     polpack_mon => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => "$ENV{POLPACK_DIR}/polpack_mon",
-				  },
-		     ccdpack_reg => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => "$ENV{CCDPACK_DIR}/ccdpack_reg",
-				  },
-		     ccdpack_red => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => "$ENV{CCDPACK_DIR}/ccdpack_red",
-				  },
-		     ccdpack_res => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => "$ENV{CCDPACK_DIR}/ccdpack_res",
-				  },
-		     catselect => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => "$ENV{CURSA_DIR}/catselect",
-				  },
-		     ndf2fits => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => "$ENV{CONVERT_DIR}/ndf2fits",
-				  },
-		     fits2ndf => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => "$ENV{CONVERT_DIR}/fits2ndf",
-				 },
-		     convert_mon => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => "$ENV{CONVERT_DIR}/convert_mon",
-				 },
-		     kapview_mon => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => $ENV{KAPPA_DIR}."/kapview_mon",
-				  },
-		     ndfpack_mon => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => $ENV{KAPPA_DIR}."/ndfpack_mon",
-				  },
-		     figaro1 => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => $ENV{FIG_DIR}."/figaro1",
-				  },
-		     figaro2 => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => $ENV{FIG_DIR}."/figaro2",
-				  },
-		     figaro3 => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => $ENV{FIG_DIR}."/figaro3",
-				  },
-		     figaro4 => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => $ENV{FIG_DIR}."/figaro4",
-				  },
-		     figaro5 => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => $ENV{FIG_DIR}."/figaro5",
-				  },
+         kappa_mon => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => $ENV{KAPPA_DIR}."/kappa_mon",
+          },
+         surf_mon => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => "$ENV{SURF_DIR}/surf_mon",
+          },
+         polpack_mon => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => "$ENV{POLPACK_DIR}/polpack_mon",
+          },
+         ccdpack_reg => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => "$ENV{CCDPACK_DIR}/ccdpack_reg",
+          },
+         ccdpack_red => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => "$ENV{CCDPACK_DIR}/ccdpack_red",
+          },
+         ccdpack_res => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => "$ENV{CCDPACK_DIR}/ccdpack_res",
+          },
+         catselect => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => "$ENV{CURSA_DIR}/catselect",
+          },
+         ndf2fits => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => "$ENV{CONVERT_DIR}/ndf2fits",
+          },
+         fits2ndf => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => "$ENV{CONVERT_DIR}/fits2ndf",
+         },
+         convert_mon => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => "$ENV{CONVERT_DIR}/convert_mon",
+         },
+         kapview_mon => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => $ENV{KAPPA_DIR}."/kapview_mon",
+          },
+         ndfpack_mon => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => $ENV{KAPPA_DIR}."/ndfpack_mon",
+          },
+         figaro1 => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => $ENV{FIG_DIR}."/figaro1",
+          },
+         figaro2 => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => $ENV{FIG_DIR}."/figaro2",
+          },
+         figaro3 => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => $ENV{FIG_DIR}."/figaro3",
+          },
+         figaro4 => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => $ENV{FIG_DIR}."/figaro4",
+          },
+         figaro5 => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => $ENV{FIG_DIR}."/figaro5",
+          },
          extractor =>{
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => "$ENV{EXTRACTOR_DIR}/extractor",
-				  },
-		     pisa_mon => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => "$ENV{PISA_DIR}/pisa_mon",
-				  },
-		     photom_mon => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => "$ENV{PHOTOM_DIR}/photom_mon",
-				  },
-		     atools_mon => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-				   PATH => "$ENV{ATOOLS_DIR}/atools_mon",
-				  },
-		     p4         => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-			     PATH => \&p4_helper,
-			    },
-		     fluxes => {
-				   MESSYS => 'AMS',
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => "$ENV{EXTRACTOR_DIR}/extractor",
+          },
+         pisa_mon => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => "$ENV{PISA_DIR}/pisa_mon",
+          },
+         photom_mon => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => "$ENV{PHOTOM_DIR}/photom_mon",
+          },
+         atools_mon => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => "$ENV{ATOOLS_DIR}/atools_mon",
+          },
+         p4         => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => \&p4_helper,
+          },
+         fluxes => {
+           MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
            PATH => \&fluxes_helper,
           },
-		     test_mon   => {
-				   MESSYS => 'AMS',
-				   CLASS => 'ORAC::Msg::Task::ADAM',
-			     PATH => "this/is/junk",
-			    },
+         test_mon   => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => "this/is/junk",
+          },
        );
 
 # Message system definitions
 my %MessageSystemDefns = (
-			  AMS => {
-				  CLASS => 'ORAC::Msg::Control::AMS',
-				 },
-			  ADAMShell => {
-					# shell does not require messaging
-					CLASS => 'ORAC::Msg::Control::ADAMShell',
-				 },
-			 );
+        AMS => {
+          CLASS => 'ORAC::Msg::Control::AMS',
+         },
+        ADAMShell => {
+          # shell does not require messaging
+          CLASS => 'ORAC::Msg::Control::ADAMShell',
+         },
+       );
 
 =head1 FUNCTIONS
 
@@ -1007,7 +1007,7 @@ sub orac_configure_for_instrument {
       $orac_cal_root = "/ukirt_sw/oracdr_cal"
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"cgs4");
-				
+        
       # Recipe and Primitive
       #undef $ENV{"ORAC_RECIPE_DIR"}
       #       if defined $ENV{"ORAC_RECIPE_DIR"};
@@ -1115,7 +1115,7 @@ sub orac_configure_for_instrument {
       $orac_cal_root = "/ukirt_sw/oracdr_cal"
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"ircam");
-				
+        
       # Recipe and Primitive
       #undef $ENV{"ORAC_RECIPE_DIR"}
       #        if defined $ENV{"ORAC_RECIPE_DIR"};
@@ -1152,7 +1152,7 @@ sub orac_configure_for_instrument {
       $orac_cal_root = "/ukirt_sw/oracdr_cal"
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"ircam");
-				
+        
       # Recipe and Primitive
       #undef $ENV{"ORAC_RECIPE_DIR"}
       #        if defined $ENV{"ORAC_RECIPE_DIR"};
@@ -1198,7 +1198,7 @@ sub orac_configure_for_instrument {
       } else {
         $location = 'elsewhere';
       }
-				
+        
       # Recipe and Primitives
       #undef $ENV{"ORAC_RECIPE_DIR"}
       #       if defined $ENV{"ORAC_RECIPE_DIR"};
@@ -1227,7 +1227,7 @@ sub orac_configure_for_instrument {
             $orac_data_root = "/jcmtdata";
           } elsif ( $location eq 'hilo' ) {
             $orac_data_root = "/scuba";
-	        }
+          }
         }
 
       # input data directory
@@ -1333,7 +1333,7 @@ sub orac_configure_for_instrument {
       $orac_cal_root = File::Spec->catdir("ukirt_sw","oracdr_cal")
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"ufti");
-				
+        
       # Recipe and Primitive
       #undef $ENV{"ORAC_RECIPE_DIR"}
       #        if defined $ENV{"ORAC_RECIPE_DIR"};
@@ -1441,7 +1441,7 @@ sub orac_configure_for_instrument {
       $orac_cal_root = File::Spec->catdir("ukirt_sw","oracdr_cal")
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"wfcam");
-				
+        
       # Recipie and Primitive
       #undef $ENV{"ORAC_RECIPE_DIR"}
       #        if defined $ENV{"ORAC_RECIPE_DIR"};
@@ -1511,7 +1511,7 @@ sub orac_configure_for_instrument {
       $orac_cal_root = "/ukirt_sw/oracdr_cal"
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"ingrid");
-				
+        
       # Recipe and Primitive
       #undef $ENV{"ORAC_RECIPE_DIR"}
       #        if defined $ENV{"ORAC_RECIPE_DIR"};
@@ -1580,7 +1580,7 @@ sub orac_configure_for_instrument {
       $orac_cal_root = "/ukirt_sw/oracdr_cal"
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"isaac");
-				
+        
       # data directories
       $orac_data_root = "/ukirtdata"
         unless defined $orac_data_root;
@@ -1607,7 +1607,7 @@ sub orac_configure_for_instrument {
       $orac_cal_root = "/ukirt_sw/oracdr_cal"
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"naco");
-				
+        
       # data directories
       $orac_data_root = "/ukirtdata"
         unless defined $orac_data_root;
@@ -1634,7 +1634,7 @@ sub orac_configure_for_instrument {
       $orac_cal_root = "/ukirt_sw/oracdr_cal"
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"sofi");
-				
+        
       # data directories
       $orac_data_root = "/ukirtdata"
         unless defined $orac_data_root;
@@ -1661,7 +1661,7 @@ sub orac_configure_for_instrument {
       $orac_cal_root = "/ukirt_sw/oracdr_cal"
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"michelle");
-				
+        
       # Recipe and Primitive
       #undef $ENV{"ORAC_RECIPE_DIR"}
       #       if defined $ENV{"ORAC_RECIPE_DIR"};
@@ -1897,7 +1897,7 @@ sub fluxes_helper {
 
     # Determine location of ephemeris file
     my $ephdir = ( $ENV{JPL_DIR} ||
-		   File::Spec->catdir($StarConfig{Star},"etc","jpl") );
+       File::Spec->catdir($StarConfig{Star},"etc","jpl") );
 
     my $jpleph = File::Spec->catfile($ephdir, "jpleph.dat");
 
@@ -1974,7 +1974,7 @@ sub p4_helper {
   unless (-e File::Spec->catfile($ENV{P4_CONFIG}, "default.p4")) {
     orac_print("Creating a default P4 startup file\n",'blue');
     copy (File::Spec->catfile($ENV{P4_ROOT}, "default.p4"),
-	  File::Spec->catfile($ENV{P4_CONFIG}, "default.p4"));
+    File::Spec->catfile($ENV{P4_CONFIG}, "default.p4"));
   }
 
   # No cleanup
