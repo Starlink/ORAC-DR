@@ -28,6 +28,7 @@ to ORAC::Frame::JCMT objects. Some additional methods are supplied.
 
 use 5.004;
 use ORAC::Frame;
+use ORAC::Constants;
 
 # Let the object know that it is derived from ORAC::Frame;
 @ORAC::Frame::JCMT::ISA = qw/ORAC::Frame/;
@@ -80,6 +81,7 @@ sub new {
   $frame->{Header} = undef;
   $frame->{Group} = undef;
   $frame->{Files} = [];
+  $frame->{NoKeepArr} = [];
   $frame->{Recipe} = undef;
   $frame->{Nsubs} = undef;
   $frame->{Subs} = [];
@@ -104,9 +106,47 @@ sub new {
   }
  
   return $frame;
- 
+  
 }
 
+
+=item erase
+
+Erase the current file from disk.
+
+  $Frm->erase($i);
+
+The optional argument specified the file number to be erased.
+The argument is identical to that given to the file() method.
+Returns ORAC__OK if successful, ORAC__ERROR otherwise.
+
+Note that the file() method is not modified to reflect the
+fact the the file associated with it has been removed from disk.
+
+This method is usually called automatically when the file()
+method is used to update the current filename and the nokeep()
+flag is set to true. In this way, temporary files can be removed
+without explicit use of the erase() method. (Just need to
+use the nokeep() method after the file() method has been used
+to update the current filename).
+
+=cut
+
+sub erase {
+  my $self = shift;
+
+  # Retrieve the necessary frame name
+  my $file = $self->file(@_);
+
+  # Append the .sdf if required
+  $file .= '.sdf' unless $file =~ /\.sdf$/;
+ 
+  my $status = unlink $file;
+
+  return ORAC__ERROR if $status == 0;
+  return ORAC__OK;
+
+}
 
 =item configure
 
@@ -350,16 +390,32 @@ sub findrecipe {
 Method to return the current input filename and the 
 new output filename given a suffix and a sub-instrument
 number.
-Currently the suffix is simply appended to the input.
 
 Returns $in and $out in an array context:
 
   ($in, $out) = $Frm->inout($suffix, $num);
 
+Returns $out in a scalar context:
+
+  $out = $Frm->inout($suffix, $num);
+
 The second argument indicates the sub-instrument number
 and is optional (defaults to first sub-instrument).
 If only one file is present then that is used as $infile.
 (handled by the file() method.)
+
+Currently, the output filename is constructed by removing
+everything after the last underscore and appending the suffix.
+If no underscore is found the suffix is appended without chopping.
+If the string after the last underscore is simply a number,
+it is not removed.
+
+Some examples (suffix = '_trn'):
+
+If input equals "o65" the output filename will be "o65_trn".
+If input equals "o65_flat" the output filename will be "o65_trn".
+If input equals "19980123_dem_0065" the output filename will be
+"19980123_dem_0065_trn".
 
 =cut
 
@@ -370,18 +426,40 @@ sub inout {
 
   my $suffix = shift;
 
-  # Find the sub-instrument
+  # Find the sub-instrument number
   if (@_) { 
     $num = shift;
   } else {
     $num = 1;
   }
 
+  # Read the current file name
   my $infile = $self->file($num);
-  my $outfile = $infile . $suffix;
 
-  return ($infile, $outfile);
+  # Split on underscore
+  my @junk = split(/_/, $infile);
 
+  # Now construct the root for outfile
+  # Keep the original root if we have only 1 component
+  # or the last component is a number.
+  # Else throw away the last one
+  
+  my $outfile;
+  if ($#junk == 0 || $junk[-1] =~ /^\d+$/) {
+    $outfile = $infile;
+  } else {
+    # Recombine array all except last entry
+    $outfile = join("_",@junk[0..$#junk-1]);  
+  }
+  
+  $outfile .= $suffix;
+
+  # Generate a warning if output file equals input file
+  orac_warn("inout - output filename equals input filename ($outfile)")
+    if ($outfile eq $infile);
+
+  return ($infile, $outfile) if wantarray;
+  return $outfile;      
 }
 
 
