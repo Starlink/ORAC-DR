@@ -40,6 +40,7 @@ foreach my $line (<MASTER>) {
     } elsif ($key=~/PRIMITIVE/) {
 
       copy ($ENV{ORAC_DIR}."/primitives/".$ENV{ORAC_INSTRUMENT}."/".$doc,"$doc$pod");
+      copy ($ENV{ORAC_DIR}."/primitives/spectroscopy/".$doc,"$doc$pod");
 
     } elsif ($key=~/BIN/) {
 
@@ -48,6 +49,11 @@ foreach my $line (<MASTER>) {
     } elsif ($key=~/RECIPE/) {
 
       copy ($ENV{ORAC_DIR}."/recipes/".$ENV{ORAC_INSTRUMENT}."/".$doc,"$doc$pod");
+      copy ($ENV{ORAC_DIR}."/recipes/spectroscopy/".$doc,"$doc$pod");
+
+    } else {
+
+      print "broken key\n";
 
     }
 
@@ -59,8 +65,8 @@ foreach my $line (<MASTER>) {
 
     print "Done $doc\n";
 
-    unlink "$doc$pod";
-    unlink "$doc.tex";
+#    unlink "$doc$pod";
+#    unlink "$doc.tex";
 
   }
 
