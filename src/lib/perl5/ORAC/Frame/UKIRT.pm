@@ -172,6 +172,8 @@ Returns a hash containing the FITS key(s) and value(s).
 
    %fits = $Frm->_from_AIRMASS_START();
 
+The method name does not include the ORAC_ prefix.
+
 =item B<_to_*>
 
 Methods to translate standard FITS headers to ORAC_ headers.
@@ -181,6 +183,8 @@ Returns the translated value.
 
   $val = $Frm->_to_AIRMASS_START();
 
+The method name does not include the ORAC_ prefix.
+
 =cut
 
 # For UKIRT the translation is simple
@@ -189,26 +193,44 @@ Returns the translated value.
 # This method generates all the internal methods
 # Expects a hash ref as argument and simply does a name
 # translation without any data processing
-# The hash is keyed by the ORAC_ name (without the ORAC_ prefix)
+# The hash is keyed by the ORAC_ name (without the ORAC_ prefix
+# (although that will be removed if it appears)
 # This is a class method (no object required)
 sub _generate_orac_lookup_methods {
   my $class = shift;
   my $lut = shift;
 
+  # Have to go into a different package
+  my $p = "{\n package $class;\n";
+  my $ep = "\n}"; # close the scope
+
   # Loop over the keys to the hash
   for my $key (keys %$lut) {
-    my $ohdr = "ORAC_$key";
+
+    # Get the original FITS header name
     my $fhdr = $lut->{$key};
+
+    # Remove leading ORAC_ if it is there since the method
+    # should not include it
+    $key =~ s/^ORAC_//;
+
+    # prepend ORAC_ for the actual key name
+    my $ohdr = "ORAC_$key";
+
     # print "Processing $key and $ohdr and $fhdr\n";
 
     # First generate the code to generate ORAC_ headers
-    my $sub = qq/ sub _to_$key { \$_[0]->hdr(\"$fhdr\"); } /;
+    my $subname = "_to_$key";
+    my $sub = qq/ $p sub $subname { \$_[0]->hdr(\"$fhdr\"); } $ep /;
     eval "$sub";
 
     # Now the from 
-    $sub = qq/ sub _from_$key { (\"$fhdr\", \$_[0]->uhdr(\"$ohdr\")); } /;
+    $subname = "_from_$key";
+    $sub = qq/ $p sub $subname { (\"$fhdr\", \$_[0]->uhdr(\"$ohdr\")); } $ep/;
     eval "$sub";
+
   }
+
 }
 
 =back
