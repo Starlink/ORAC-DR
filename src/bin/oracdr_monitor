@@ -1,0 +1,447 @@
+#!/usr/bin/perl -w
+
+=head1 NAME
+
+oracdr_monitor - monitor the orac-dr pipeline output
+
+=head1 SYNOPSIS
+
+  oracdr_monitor
+
+=head1 DESCRIPTION
+
+This program monitors the output from ORAC-DR log files in the
+ORAC_DATA_OUT directory. If a new log file is created (e.g. by a
+restart of ORAC-DR) the program will automatically begin monitoring
+the new one.
+
+If an X-display is running it sends the output to an Xwindow
+similar to the standard ORAC-DR logging window. If there is no
+display the output is sent to standard output.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<--help>
+
+List help text. This prints a summary of this document.
+
+=item B<--man>
+
+Print the full documentation.
+
+=item B<--version>
+
+Print the version number.
+
+=item B<--tty>
+
+This sends the output to the current xterm. It is automatically
+selected if the DISPLAY environment variable is unset.
+
+=back
+
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2001 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+=cut
+
+use strict;
+require 5.006;
+use vars qw/ $VERSION /;
+
+# H A N D L E  V E R S I O N ----------------------------------------------- 
+
+#  Version number - do this before anything else so that we dont have to 
+#  wait for all the modules to load - very quick
+BEGIN {
+  $VERSION = sprintf "%d.%03d", q$Revision$ =~ /(\d+)\.(\d+)/;
+
+  #  Check for version number request - do this before real options handling
+  foreach (@ARGV) {
+    if (/-vers/) {
+      print " oracdr_monitor: ORAC-DR monitor version $VERSION\n";
+      print " Using PERL version: $]\n";
+      exit;
+    }
+  }
+}
+
+# No point continuing if ORAC_DATA_OUT is not set
+BEGIN {
+  unless (exists $ENV{ORAC_DATA_OUT} && defined $ENV{ORAC_DATA_OUT}) {
+    print STDERR "ORAC_DATA_OUT must be set before running this program\n";
+    exit(1);
+  }
+}
+
+
+use File::Spec;
+use Getopt::Long;
+use Pod::Usage;
+
+use Tk;
+use Tk::IO;
+use Tk::TextANSIColor;
+
+
+# Parse options
+my ($opt_help, $opt_man, $opt_tty);
+
+my $status = GetOptions(
+			"help" => \$opt_help,
+			"man"  => \$opt_man,
+			"tty"  => \$opt_tty,
+		       );
+
+pod2usage(1) if $opt_help;
+pod2usage(-exitstatus => 0, -verbose => 2) if $opt_man;
+
+# If the display is not set use tty
+unless (exists $ENV{DISPLAY}) {
+  $opt_tty  = 1;
+}
+
+
+# This is the current file name
+my $CURRENT;
+
+# The current filehandle
+my $CURRENT_FH;
+
+# New Tk window
+my $MW = new MainWindow;
+
+my %hdls;
+
+# If we are running on a tty
+if ($opt_tty) {
+  # We dont want a main window
+  $MW->withdraw;
+
+  # our filehandles
+  %hdls = (
+	   Message => \*STDOUT,
+	   Warning => \*STDOUT,
+	   Error   => \*STDERR,
+	  );
+
+} else {
+
+  $MW->protocol('WM_DELETE_WINDOW' => [\&Cancel, $MW, \$CURRENT_FH]);
+
+  # Create the text widgets for receiving the data and tie them to
+  # an ORAC::Print object
+
+# This requires some code repetition from ORAC::Xorac but for now
+# I do this because
+# 1 - I don't want the pause button
+# 2 - I want the exit button to do something different
+# Not very good reasons on the whole
+
+# New frame for the top messages
+my $frame = $MW->Frame->pack(-padx => 0, -pady => 5);
+
+# Create easy exit button
+$frame->Button( -text=>'Exit ORAC-DR monitor',
+		-font=>'Arial',
+		-activeforeground => 'white',
+		-activebackground => 'blue',
+		-command => [\&Cancel, $MW, \$CURRENT_FH])->pack(-side =>"left");
+
+my $textw1 = $MW->Scrolled('TextANSIColor',
+			   -scrollbars=>'w',
+			   -background=>'#555555',
+			   -foreground=>'white',
+			   -height => 30,
+			   -width  => 90,
+			   -font    => 'Arial'
+			  )->pack;
+$textw1->tagConfigure('ANSIfgmagenta', -foreground => '#ccccff');
+$textw1->tagConfigure('ANSIfgblue', -foreground => '#33ff33');
+$textw1->insert('end',"ORAC-DR status log\n");
+tie *TEXT1,  "Tk::TextANSIColor", $textw1;
+
+# ORAC_WARN messages
+my $lab2   = $MW->Label(-text=>'Warnings',-font=>'Arial')->pack;
+my $textw2 = $MW->Scrolled('TextANSIColor',
+			   -scrollbars=>'w',
+			   -background=>'#555555',
+			   -foreground=>'white',
+			   -height => 5,
+			   -width  => 90,
+			   -font    => 'Arial'
+			  )->pack;
+$textw2->insert('end',"ORAC-DR warning messages\n");
+tie *TEXT2,  "Tk::TextANSIColor", $textw2;
+
+# ORAC Error messages
+my $lab1   = $MW->Label(-text=>'Errors',-font=>'Arial')->pack;
+my $textw3 = $MW->Scrolled('TextANSIColor',
+			   -scrollbars=>'w',
+			   -background=>'#555555',
+			   -foreground=>'white',
+			   -height => 5,
+			   -width  => 90,
+			   -font    => 'Arial'
+			  )->pack;
+$textw3->insert('end',"ORAC-DR error messages\n");
+$textw3->tagConfigure('ANSIfgred', -foreground => '#ffcccc');
+tie *TEXT3,  "Tk::TextANSIColor", $textw3;
+
+
+# Store the tied filehandles so they can be passed to the callback
+%hdls = (
+	 Message => \*TEXT1,
+	 Warning => \*TEXT2,
+	 Error   => \*TEXT3,
+	);
+
+}
+
+
+
+# Setup a repeating callback that checks for the newest file
+# and then sets up a fileevent on it. This allows for people killing
+# and restarting the pipeline without having to restart the monitor
+
+# Start it first - there is a problem with this if we end
+# up displaying all the contents of the file before the text widget
+# is displayed. The "end" is not shown so the scrolling does not follow
+# the end of the text. The kluge is either to delay this for the 
+# repeat to kick in (but that could take 5 seconds or more) or
+# we display the text widget immediately using update 
+# and then configure the fileevent
+$MW->update;
+check_file_using_fileevent( $MW, \$CURRENT, \$CURRENT_FH, \%hdls);
+
+# Then register repeat every 5 seconds
+my $id = $MW->repeat(5000, [\&check_file_using_fileevent, $MW,
+			    \$CURRENT, \$CURRENT_FH, \%hdls]);
+
+# Start the event loop
+MainLoop;
+
+exit;
+
+# Cancel everything and exit
+
+sub Cancel {
+  my $w = shift;
+  my $fhref = shift;
+  my $fh = $$fhref;
+
+  # A Tk::IO object
+  if (defined $fh && $fh->can("kill")) {
+    $fh->kill("TERM");
+    $$fhref = undef; # clear it
+  }
+
+  # Remove window
+  $MW->destroy;
+
+}
+
+# Check to see which file is currently in use. If we find a new one,
+# reconfigure Tk::IO using tail -f
+# This is neater than using a fileevent on the logging file (because
+# of EOF problems) but does rely on an external process
+
+# Also it only shows the last few lines of a currently active log file
+# and has problems shutting down the pipe when we exit
+# Not recommended.
+
+sub check_file_using_tail {
+  my ($w, $nref, $fhref, $hdls) = @_;
+
+  my $fh  = $$fhref;
+  my $name= $$nref;
+
+  # Uses globals for the file handle and filename
+  # if we subroutine-ize this then just pass them in from the repeat
+  # + $MW
+
+  # Get the newest filename
+  my $newest = &find_log_file();
+
+  # No file there, return
+  return unless defined $newest;
+
+  # Is it different
+  if (!defined $name or $newest ne $name) {
+
+    # Close the old one
+    $fh->kill("TERM") if defined $fh;;
+
+    # Need to open it
+    $fh = new Tk::IO( -linecommand => [\&deal_with_line, $hdls] );
+    $fh->exec("tail -f $newest");
+
+    # Store the object
+    $$fhref = $fh;
+
+    # Store the new filename
+    $$nref = $newest;
+
+  }
+
+  return;
+}
+
+# Check to see which file is currently in use. If we find a new one,
+# reconfigure fileevent. If we have an EOF disable the fileevent
+# and try again in XX seconds
+sub check_file_using_fileevent {
+  my ($w, $nref, $fhref, $hdls) = @_;
+
+  my $fh  = $$fhref;
+  my $name= $$nref;
+
+  # Get the newest filename
+  my $newest = &find_log_file();
+
+  # No file there, return
+  return unless defined $newest;
+
+  # Is it different
+  if (!defined $name or $newest ne $name) {
+
+    # Close the old one
+    close($fh) if defined $fh; # dont care about status
+
+    # Need to open it
+    open( $fh, "< $newest") or return;
+
+    # Mention that we are using a new file
+    foreach (keys %$hdls) {
+      my $fh  =$hdls->{$_};
+      print $fh "Monitoring file $newest\n";
+    }
+
+    # Store it
+    $$fhref = $fh;
+
+    # Associate with a fileevent
+    &restart_fileevent( $w, $fhref, $hdls );
+
+    # Store the new filename
+    $$nref = $newest;
+
+  }
+
+  return;
+}
+
+
+# Subroutine to read a line from a filehandle and print it to somewhere
+sub deal_with_line {
+  my $hdls = shift;
+  my $line = shift;
+
+  if ($line =~ /^Err/) {
+    my $hdl = $hdls->{"Error"};
+    print $hdl $line;
+  } elsif ($line =~ /^Warn/) {
+    my $hdl = $hdls->{"Warning"};
+    print $hdl $line;
+  } else {
+    my $hdl = $hdls->{"Message"};
+    print $hdl $line;
+  }
+
+}
+
+# Callback for filevent. Given a widget, and ref to filehandle and
+# hash of filehandles as args
+# called by fileevent
+
+sub deal_with_fileevent {
+  my $w = shift;
+  my $fhref = shift;
+  my $fh = $$fhref;
+  my $hdls = shift;
+
+  my $line = <$fh>;
+
+  my $length;
+  if (defined $line) {
+    $length = length($line);
+  } else {
+    $length = 0;
+  }
+
+  if ($length > 0) {
+    deal_with_line($hdls, $line);
+  } else {
+    # Disable the fileevent
+    $w->fileevent($fh, 'readable', '');
+
+    # Restart it in 2 seconds. Need to make sure we only restart 
+    # fileevent if one is not currently registered. This lets us
+    # deal with the case where we have opened a new file in the meantime
+    $w->after(500, [ \&restart_fileevent, $w, $fhref, $hdls]);
+  }
+
+}
+
+# Restart the fileeevent monitoring if there is no fileevent 
+# currently associated with this filehandle.
+# recieves a widget object and ref to a filehandle.
+sub restart_fileevent {
+  my $w = shift;
+  my $fhref = shift;
+  my $hdls = shift;
+
+  my $current = $w->fileevent( $$fhref, 'readable' );
+  unless ($current) {
+    $w->fileevent( $$fhref, 'readable', [\&deal_with_fileevent, 
+					 $w, $fhref, $hdls]);
+  }
+
+}
+
+# Find the most recent oracdr log file in ORAC_DATA_OUT
+# Returns the name of the file, including the directory name
+
+# Returns undef if the data directory is not there or if no
+# log file exists
+
+sub find_log_file {
+
+  # Check the data dir exists
+  return undef unless (exists $ENV{ORAC_DATA_OUT} 
+		       && defined $ENV{ORAC_DATA_OUT}
+		       && -d $ENV{ORAC_DATA_OUT});
+
+  my $datadir = $ENV{ORAC_DATA_OUT};
+
+  # Read the directory
+  opendir(DIR, $datadir) or return undef;
+  my @files = grep /^\.oracdr_.*\.log$/, readdir(DIR);
+  closedir(DIR) or return undef;
+
+  # No point continuing
+  return undef unless @files;
+
+  # generate the full path [this only works on unix unless
+  # we first split $datadir into chunks]
+  @files = map { File::Spec->catfile($datadir, $_) } @files;
+
+  # Run stat on each of the files and store the result in an array
+  # ref along with the filename
+  my @stat = map { [ $_, stat($_) ] } @files;
+
+  # See which of these files is the newest
+  my @sorted = sort { $a->[10] <=> $b->[10] } @stat;
+
+  # Newest is at the end of the sorted array
+
+  return $sorted[-1]->[0];
+}
