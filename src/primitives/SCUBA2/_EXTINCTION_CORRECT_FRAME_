@@ -1,3 +1,5 @@
+# -*-perl-*-
+
 =head1 NAME
 
 _EXTINCTION_CORRECT_FRAME_
@@ -8,8 +10,10 @@ _EXTINCTION_CORRECT_FRAME_
 
 =head1 DESCRIPTION
 
-This primitive corrects each frame for extinction. The following
-information is required:
+This primitive corrects each frame for extinction. It can be run on
+a single mosaicked frame or with aligned subarray frames.
+
+The following information is required:
 
 =over 4
 
@@ -21,22 +25,20 @@ reading stored in the file. [wvm]
 
 =item airmass
 
-Average airmass of this frame
+Average airmass of this frame. This is read from the FITS headers.
 
 =item angle
 
 The angle between Nasmyth North and elevation axis. This is just
-the elevation angle.
+the elevation angle. The elevation is obtained from the FITS headers.
 
 =back
-
-
 
 =head1 ARGUMENTS
 
 =over 4
 
-=item EXTCOR_MODE
+=item B<EXTCOR_MODE>
 
 EXTCOR_MODE determines which extinction correction is applied. If set
 to QUICK then the image is corrected assuming a single value for the
@@ -46,13 +48,51 @@ pixels.
 
 =back
 
+=head1 KNOWN ISSUES
+
+Currently the primitive does not check whether images have been
+aligned to RA/DEC and the primitive assumes that the Y axis corresponds
+to declination and that the angle between the Y axis and the elevation
+axis is given by the elevation.
+
+To be accurate the mean tau and airmass should be read from each
+subframe rather than a mean for the entire observation. This also
+requires that the extinction correction occurs before mosaicking
+in the non-QuickLook recipe.
+
+=head1 ALGORITHMS
+
+In QUICK mode the extinction correction is calculated as a single value
+and is applied using the KAPPA CMULT routine.
+
+In FULL mode KAPPA MATHS is used to apply the extinction on a per-pixel
+basis.
+
+=head1 FILE SUFFIX
+
+Creates output files with a '_ext' suffix.
+
 =head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-=head1 TODO
+Copyright (C) 2004-2005 University of British Columbia and the
+Particle Physcis and Astronomy Research Council. All Rights Reserved.
 
-Check whether images have been aligned to RA/DEC
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
@@ -62,7 +102,9 @@ my $extcor_mode = uc( $_EXTINCTION_CORRECT_FRAME_{EXTCOR_MODE} || 'FULL');
 my @out;
 
 # Does this return tau_183 or scaled to obs wavelength?
-#my $tau = 0.1; # $Cal->tau(); 
+#my $tau = 0.1; # $Cal->tau();
+orac_warn( "Assuming tau and airmass. Not reading from frame header\n");
+my $tau = 1; #
 
 my $airmass = 1.41;
 #0.5*($Frm->uhdr("AIRMASS_START") + $Frm->uhdr("AIRMASS_END"));
@@ -70,8 +112,6 @@ my $airmass = 1.41;
 my $elevation = 45; # Should get this from $airmass or elevation in header
 
 # now use MATHS
-
-my $tau = 1; # 
 
 if ($extcor_mode eq 'FULL') {
 
@@ -90,7 +130,7 @@ if ($extcor_mode eq 'FULL') {
     push(@out, $out);
 
     $Mon{kappa_mon}->obeyw("maths","exp=".$exp." FA=".$fa." FB=".$fb." PA=".$elevation." PT=".$tau." PD=".$pd." PI=".$pi." PX=".$pixelscale." IA=".$in." out=".$out);
-  
+
   }
 } elsif ($extcor_mode eq 'QUICK') {
 
@@ -107,10 +147,10 @@ if ($extcor_mode eq 'FULL') {
 } else {
   orac_err("Unrecognized EXTCOR_MODE ($extcor_mode).");
   my $ORAC_STATUS = ORAC__ERROR;
-  
+
 }
 
 # register new file names
 $Frm->files( @out );
 
-orac_print "Extinction corrected using mode $extcor_mode \n";
+orac_print "Extinction corrected with tau = $tau using mode $extcor_mode \n";
