@@ -44,7 +44,7 @@ sub image_ui {
 	);
 	my($label_10) = $root->Label (
 		-foreground => 'black',
-		-text => 'Section:',
+		-text => 'Region:',
 	);
 	my($regionmenu) = $root->Menubutton (
 		-relief => 'ridge',
@@ -383,13 +383,7 @@ sub image_ui {
 	$frame_1->gridColumnconfigure(8, -weight => 0, -minsize => 32);
 
 	# additional interface code
-
-create_menu($windowmenu, 'IMAGE','WINDOW');
-create_menu($toolmenu, 'IMAGE', 'TOOL');
-create_menu($regionmenu, 'IMAGE', 'REGION');
-
-
-
+	create_menus('IMAGE', $toolmenu, $windowmenu, $regionmenu);
 
 	# end additional interface code
 }

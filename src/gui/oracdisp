@@ -1,4 +1,4 @@
-#!/usr/local/bin/perl -w
+#!/usr/bin/perl -w
 #
 #  oracdisp
 #
@@ -12,6 +12,16 @@
 #
 #  History:
 #     $Log$
+#     Revision 1.3  1998/07/19 00:02:30  timj
+#     Up date oracdisp so that it recognises command line options for the
+#     input and output files.
+#
+#     The menus have been changed so that the TOOL can not be selected
+#     with incompatible REGIONs or WINDOWs. The UIs have been updated
+#     to relfect the required change.
+#
+#     Section has been renamed Region in the UIs.
+#
 #     Revision 1.2  1998/07/15 03:10:13  timj
 #     Now works with four display types.
 #     Can add and delete display entries.
@@ -22,6 +32,20 @@
 #
 #
 
+BEGIN {
+  unless (exists $ENV{ORAC_DIR}) {
+    print "Warning: The ORAC_DIR environment variable is not defined.\n";
+    print "         This may cause problems. (setting to /tmp)\n";
+    $ENV{ORAC_DIR} = "/tmp"; # Turn of -w warnings
+  }
+}
+
+	  
+
+# Make sure that UI files can be read
+use lib "$ENV{ORAC_DIR}/gui";
+
+
 use strict;
 
 use subs qw/update_status image_ui spectrum_ui datamodel_ui sigma_ui/;
@@ -30,13 +54,17 @@ use subs qw/update_status image_ui spectrum_ui datamodel_ui sigma_ui/;
 use vars qw/$MW $VERSION $BAR $TKSTATUS $TOPLEVEL/;
 
 # Menus
-use vars qw/ %MENUS /;
+use vars qw/ %TOOL_TYPES %TOOLS /;
 
 # Variables related to global state of sytem
-use vars qw/%STATUS %DEFAULTS @SELECT_LIST @UNDOBUFFER/;
+use vars qw/%STATUS %DEFAULTS @SELECT_LIST @UNDOBUFFER $CURRENT/;
 
 # Widgets
 use vars qw/ $UNDO_but /;
+
+# Variables related to definition file
+use vars qw/ $InDefnFile $OutDefnFile $DefaultDefnFile/;
+
 
 # Start up Tk early and put up a status bar
 
@@ -64,18 +92,42 @@ BEGIN {
 # Read file reader
 use IO::File;
 
-# Menu options
+# Options handling
+use Getopt::Long;
 
-%MENUS = (
-	  WINDOW => [ 0..4 ],
-	  TOOL   => [ qw/ KAPVIEW P4/ ],
-	  REGION => [ 0..8 ]
+
+
+# Tool options
+%TOOLS = (
+	  KAPVIEW => {
+		      WINDOW => [ 0..4 ],
+		      REGION => [ 0..8 ]
+		     },
+	  P4 => {
+		 WINDOW => [ 0..4 ],
+		 REGION => [ 0..8 ]
+		},
+	  GAIA => {
+		   WINDOW => [ 0..3 ],
+		   REGION => [ 0 ]
+		  }
 	 );
 
-# Name of definition file
-# this should also be read from the command line
-# as an option.
-my $DefnFile = "$ENV{ORAC_DIR}/disp.dat";
+
+# Allows tools per type
+
+%TOOL_TYPES = (
+	       IMAGE => [ qw / KAPVIEW P4 GAIA/],
+	       GRAPH => [ qw /KAPVIEW P4/],
+	       SIGMA => [ qw /KAPVIEW/],
+	       DATAMODEL => [ qw / KAPVIEW / ]
+	      );
+
+
+# Default Name of definition file
+# this can also be read from the command line
+# as an option in order to override this default.
+$DefaultDefnFile = "$ENV{ORAC_DIR}/disp.dat";
 
 # This is the actual display definition as stored in memory
 # It is an array of hashes
@@ -157,6 +209,58 @@ require 'spectrum.ui.pl';
 require 'datamodel.ui.pl';
 require 'sigma.ui.pl';
 
+
+# Before we start packing frames we should examine the options
+# First thing to do is read command line options so that
+# the input and output files can be set up
+update_status('Processing command line options..', 45);
+use vars qw/$help $version $optin $optout/;
+
+my $result = GetOptions("help" => \$help,
+			"version" => \$version,
+			"in=s" => \$optin,
+			"out=s" => \$optout
+		       );
+
+$help = 1 unless $result == 1; # Print help if unknown option
+
+# Version reporting
+# Put up aboutwindow and exit
+if ($version) {
+  &aboutwin;
+  exit;
+}
+
+# Help window
+# DO i make a window for this or just dump some text?
+if ($help) {
+  print qq/
+ Usage:
+\toracdisp [-h] [-v] [-in=file] [-out=file]
+ Options:
+   -h[elp]\tThis message
+   -v[ersion]\tVersion number
+   -in=f\tName of input display definition file
+   -out=f\tName of output display definition file
+/;
+  exit;
+}
+
+# Configure the input and output display definition files
+if (defined $optin) {
+  $InDefnFile = $optin;
+} else {
+  $InDefnFile = $DefaultDefnFile;
+}
+
+if (defined $optout) {
+  $OutDefnFile = $optout;
+} else {
+  $OutDefnFile = $InDefnFile;
+}
+
+
+
 # 1 - Create frames in top window
 # 2 - Create frames inside these and pack
 # 3 - Pack all the toplevel frames into the MainWindow
@@ -231,7 +335,7 @@ sub create_topmenu {
   my $about;
   $about = $frame->Button(-text=>'About',
 			    -relief=>'raised',
-			    -command=>sub{&aboutwin(\$about)})->pack(-side=>'right');
+			    -command=>sub{&aboutwin($about)})->pack(-side=>'right');
 
   my $quit = $frame->Button(-text=>'Exit',
 			     -relief=>'raised',
@@ -250,15 +354,16 @@ sub create_notebook {
   $NB = $frame->NoteBook(-ipadx => 6, -ipady => 6);
   
   # Now declare the entries
-  $NB_image = $NB->add("image", -label => "Image", -underline => 0);
-  $NB_graph = $NB->add("graph", -label => "Graph", -underline => 0);
-  $NB_sigma = $NB->add("sigma", -label => "Sigma", -underline => 0);
-  $NB_datamodel = $NB->add("datamodel", -label => "DataModel", -underline => 0);
-
-
-  # Create the menu buttons
-#  $WINDOW_NAME = ;
-
+  # and set up a raise command
+  $NB_image = $NB->add("image", -label => "Image", -underline => 0,
+		       -raisecmd => \&onNBraise);
+  $NB_graph = $NB->add("graph", -label => "Graph", -underline => 0,
+		       -raisecmd => \&onNBraise);
+  $NB_sigma = $NB->add("sigma", -label => "Sigma", -underline => 0,
+		       -raisecmd => \&onNBraise);
+  $NB_datamodel = $NB->add("datamodel", -label => "DataModel", 
+			   -underline => 0,
+			   -raisecmd => \&onNBraise);
 
   # Now fill the entries with 'stuff'
   image_ui $NB_image;
@@ -323,6 +428,19 @@ sub create_state {
 
 }
   
+# This sub is invoked every time the NoteBook entry is raised
+# to the front. It makes sure that the 'update' button is disabled
+# and that the current selection is unset.
+# This is necessary so that a selection can be updated only when
+# it is current (ie when an entry is selected in the listbox 
+# we keep track of the update unless another image type is selected.
+# this means that everything can be configured except the display type.
+# This may not be good. Will need to discuss
+
+sub onNBraise {
+  undef $CURRENT;
+}
+
 
 
 # This sub inserts text into a widget and sets a tag
@@ -369,7 +487,7 @@ sub aboutwin {
   my $aboutbut = shift;
 
   # Turn off the button that called this
-  $$aboutbut->configure(-state=>'disabled');
+  $aboutbut->configure(-state=>'disabled') if defined $aboutbut;
 
   my $f = $MW->DialogBox(-title => 'About oracdisp', -buttons => ["OK"]);
 
@@ -380,7 +498,10 @@ sub aboutwin {
   # widgets
   my $result = $f->Show;
 
-  $$aboutbut->configure(-state=>'normal') if $result;
+  if ($result && defined $aboutbut) {
+    $aboutbut->configure(-state=>'normal');
+  }
+  
 
 }
 
@@ -402,7 +523,7 @@ sub update_status {
 }
 
 # Subroutine to read the current definition from disk
-# The name of the file is stored in the global variable $DefnFile
+# The name of the file is stored in the global variable $InDefnFile
 # This routine is almost exactly the same as the reader in
 # ORAC::Display::parse_file_defn
 
@@ -412,7 +533,7 @@ sub read_defn {
   @DispDefn = ();
 
   # Open the file
-  my $file = new IO::File("< $DefnFile");
+  my $file = new IO::File("< $InDefnFile");
 
   # If the file is okay....
   if (defined $file) {
@@ -435,7 +556,7 @@ sub read_defn {
     }
 
   } else {
-    warn ("Definition file ($DefnFile) could not be opened");
+    warn ("Definition file ($InDefnFile) could not be opened");
   }
 
   return;
@@ -543,7 +664,7 @@ sub write_defn {
 
   # Open the file for writing
   # Open the file
-  my $file = new IO::File("> $DefnFile");
+  my $file = new IO::File("> $OutDefnFile");
 
   # If the file is okay....
   if (defined $file) {
@@ -574,7 +695,7 @@ sub write_defn {
     # Dialog box
     my $f = $MW->DialogBox(-title => 'Update', -buttons => ["OK"]);
     $f->Label(-bitmap => 'error')->pack;
-    $f->Label(-text => "Error writing configuration to disk\nFile: $DefnFile\n$!\n")->pack;
+    $f->Label(-text => "Error writing configuration to disk\nFile: $OutDefnFile\n$!\n")->pack;
     $f->Show;
 
   }
@@ -707,25 +828,81 @@ sub reflect_defn {
 }
 
 
-## Create a menu item of a given type. This is used to avoid
-# repeats of code in the User-Interface 
+# Create menus. The TOOL is a special menu since the contents
+# of window and region depend on tool.
 #
-#  Args: menubutton widget, Display type (IMAGE, GRAPH etc), menu type
-#         (TOOL, WINDOW, REGION - governs source
+#  Args: display type (IMAGE, GRAPH, etc), tool menu button, remainder
+#   The menubutton widgets are for the TOOL (the main one), window
+#   and section
 
-sub create_menu {
+sub create_menus {
+  my ($type, $toolw, $winw, $regw) = @_;
 
-  my ($w, $TYPE, $SOURCE) = @_;
+  $type = uc($type);
   
-  $TYPE = uc($TYPE);
-  $SOURCE = uc($SOURCE);
+  
+  foreach my $entry (@{$TOOL_TYPES{$type}}) {
+    
+    # Create tool menu
+    # When the command is exectued, the variable is updated and
+    # the WINDOW and REGION windows are updated.
+    $toolw->command(-label => $entry,
+		    -command => sub {
+		      $STATUS{$type}{TOOL} = $entry;
+		      &reconfig_menu($winw, $type, $entry, 'WINDOW');
+		      &reconfig_menu($regw, $type, $entry, 'REGION');
+		    } );
 
-  foreach my $item (@{$MENUS{$SOURCE}}) {
+    # Special case - disable the GAIA item
+    $toolw->menu->entryconfigure('end', -state => 'disabled')
+       if $entry eq 'GAIA';
+    
+  }
+
+  # Now setup the WINDOW menu using the current state of type
+  &reconfig_menu($winw, $type, $STATUS{$type}{TOOL}, 'WINDOW');
+  &reconfig_menu($regw, $type, $STATUS{$type}{TOOL}, 'REGION');
+
+}
+
+
+# reconfig_menu($w, $type, $tool, $menu)
+#   Configures menu $w (name $menu - WINDOW,REGION...), 
+#   in type $type (IMAGE,GRAPH..) so that it is oncistent
+#   with tool $tool (could use the global variable for this)
+#  If the current state of the menubutton does not match any 
+#  of the menu entries the value is changed to the first menu
+#  entry.
+
+sub reconfig_menu {
+
+  my ($w, $type, $tool, $menu) = @_;
+  
+  $type = uc($type);
+  $tool = uc($tool);
+  $menu = uc($menu);
+  
+
+  # Need to clear the menu
+  $w->menu->delete(0,'end');
+
+  my $okay = 0;
+  
+  # Now create a new one
+  foreach my $item (@{$TOOLS{$tool}{$menu}}) {
 
     $w->command( -label   => $item,
-		 -command => sub { $STATUS{$TYPE}{$SOURCE} = $item }
+		 -command => sub { $STATUS{$type}{$menu} = $item }
 	       );
+
+    # Compare current state with each item
+    $okay = 1 if $item eq $STATUS{$type}{$menu};
   }
+
+  # If nothing matched the current state, change the current state
+  $STATUS{$type}{$menu} = $ {$TOOLS{$tool}{$menu}}[0]
+     unless $okay;
+ 
 }
 
 

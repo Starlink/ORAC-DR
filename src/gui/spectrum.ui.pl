@@ -44,7 +44,7 @@ sub spectrum_ui {
 	);
 	my($label_10) = $root->Label (
 		-foreground => 'black',
-		-text => 'Section:',
+		-text => 'Region:',
 	);
 	my($regionmenu) = $root->Menubutton (
 		-relief => 'ridge',
@@ -319,9 +319,7 @@ sub spectrum_ui {
 
 	# additional interface code
 
-create_menu($windowmenu, 'GRAPH','WINDOW');
-create_menu($toolmenu, 'GRAPH', 'TOOL');
-create_menu($regionmenu, 'GRAPH','REGION');
+create_menus('GRAPH', $toolmenu, $windowmenu, $regionmenu);
 
 	# end additional interface code
 }

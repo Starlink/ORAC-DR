@@ -44,7 +44,7 @@ sub datamodel_ui {
 	);
 	my($label_10) = $root->Label (
 		-foreground => 'black',
-		-text => 'Section:',
+		-text => 'Region:',
 	);
 	my($regionmenu) = $root->Menubutton (
 		-relief => 'ridge',
@@ -319,9 +319,7 @@ sub datamodel_ui {
 
 	# additional interface code
 
-create_menu($windowmenu, 'DATAMODEL','WINDOW');
-create_menu($toolmenu, 'DATAMODEL', 'TOOL');
-create_menu($regionmenu, 'DATAMODEL','REGION');
+create_menus('DATAMODEL', $toolmenu, $windowmenu, $regionmenu);
 
 	# end additional interface code
 }

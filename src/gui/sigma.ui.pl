@@ -44,7 +44,7 @@ sub sigma_ui {
 	);
 	my($label_10) = $root->Label (
 		-foreground => 'black',
-		-text => 'Section:',
+		-text => 'Region:',
 	);
 	my($regionmenu) = $root->Menubutton (
 		-relief => 'ridge',
@@ -288,9 +288,8 @@ sub sigma_ui {
 
 	# additional interface code
 
-create_menu($windowmenu, 'SIGMA','WINDOW');
-create_menu($toolmenu, 'SIGMA', 'TOOL');
-create_menu($regionmenu, 'SIGMA','REGION');
+create_menus('SIGMA', $toolmenu, $windowmenu, $regionmenu);
+
 
 	# end additional interface code
 }
