@@ -32,6 +32,7 @@ use ORAC::Print;
 use ORAC::Msg::ADAM::Task;
 use ORAC::Msg::ADAM::Control;
 use ORAC::Display;
+use ORAC::LogFile;  # For log file generation
 
 use Term::ANSIColor;  # Need this until the primitives can get rid of color
 use ORAC::General; # General subroutines given to the recipes
@@ -601,6 +602,9 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.29  1999/03/15 19:37:52  timj
+#Use ORAC::Logifle
+#
 #Revision 1.28  1999/02/18 03:11:29  timj
 #Add $Batch.
 #Change 'local' to 'my'
