@@ -1,0 +1,225 @@
+#+
+# Name:
+#    _MAKE_FLAT_FP_
+#
+# Purpose:
+#    Makes a flat from the current of offline FP frames.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive makes a self flat from the current cycle of offline
+#    FP frames in the current group.  It uses a median to combine the
+#    frames pixel by pixel, and then divides the resultant image by its
+#    mean form the flat field.  The primitive files the resultant flat
+#    in its calibration index. 
+#
+# Arguments:
+#    CLEAN = LOGICAL (Given)
+#       If true (1), the frames are cleaned using a box filter to remove
+#       any small blemishes.  Pixels deviating by more than 3 standard
+#       deviations from its 15x15 pixel neighbourhood are rejected.  This
+#       is done iteratively, three times.  If false (0), no cleaning is
+#       performed.  [1]
+#
+# Notes:
+#    -  This primitive is suitable for both UFTI and IRCAM.
+#    -  Processing only occurs for object and sky frames, and when the
+#    steering header MAKE_FLAT is true.
+#    -  The offline frames are selected using the steering headers
+#    ON_OR_OFF (set to "off"), and the CYCLE_NUMBER matching the current
+#    recipe cycle.
+#    -  The flat is displayed.
+#
+# Tasks:
+#    CCDPACK: MAKEFLAT.
+#
+# Output Data:
+#    The flat field.  It is called is "flat_<groupnumber>" for the first
+#    cycle, and "flat_<groupnumber>_<cyclenumber>" for subsequent
+#    cycles, where <groupnumber> is the frame number of the group, and
+#    <cyclenumber> is the cycle number derived from steering header
+#    CYCLE_NUMBER.
+
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Selection
+# =========
+#
+# This should only be performed on OBJECT frames.
+    if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ||
+         $Frm->hdr( "OBSTYPE" ) eq "SKY" ) {
+
+# Test whether or not it is time to make a flat.
+       my $makeflat = $Frm->hdr( "MAKE_FLAT" );
+       if ( $makeflat ) {
+
+# Obtain the cycle number.  Default to zero if undefined, so that recipes
+# which do not support this feature will continue to work.  We use
+# defined because the default is zero.
+          my $cycleno = $Frm->hdr( "CYCLE_NUMBER" );
+          $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+# Select those members in the current cycle.
+          my $flatGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno,
+                                      ON_OR_OFF => "off" );
+
+# Form a list of input file names for MAKEFLAT from the other members
+# of the group.  This is not as obvious as it sounds since we are
+# trying to do this by looking at the current file values for each
+# Frame object in the loop.  First time around everything is fine.
+# Second time around we realise that the previous frames now have the
+# wrong names since they have been flat-fielded etc.  We now have to
+# construct the input names from the template.  The template is the
+# current frame name.
+          $flatGrp->template( $Frm->file );
+
+# Arguments
+# =========
+
+# Determine whether or not to clean the data before combination.
+# Assign the other parameters.
+          my $clean = $_MAKE_FLAT_FP_{CLEAN};
+          $clean = defined( $clean ) ? $clean : 1;
+
+# Make lists of files to process
+# ==============================
+
+# Form a list of input file names for CCDPACK tasks.  Set up the object
+# list assuming that everything in the Group members list contains the
+# file pointer to pre-flatfielded data.
+          my @objects = $flatGrp->membernames;
+          my $objlist = join( ",", @objects );
+
+# Create text file to hold the list of input files, one per line.  This
+# is needed because expanded lists of files may make the command line too
+# long for the ADAM message system.
+          unlink( "objlist.inlist$$" );
+          open( INLIST, ">objlist.inlist$$" );
+          print INLIST join( "\n", @objects ), "\n";
+          close( INLIST );
+
+# Make a normalised flat
+# ======================
+
+# Form the flat's name using the cycle number.
+          my ( $header, $hidden, $out );
+          if ( $cycleno > 0 ) {
+             $out = "flat_" . $Grp->name . $cycleno;
+          } else {
+             $out = "flat_" . $Grp->name;
+          }
+
+# Assign the other parameters.
+          if ( $clean ) {
+             $hidden = "method=median sigmas=2.0 reset accept"; 
+          } else {
+             $hidden = "clean=f method=median sigmas=2.0 reset accept"; 
+          }
+
+# Assign the remaining parameters.  Note that output flat is hardwired.
+          $header = "in='^objlist.inlist$$' out=$out title=\'Flat field\'";
+
+# Median filter of the debiassed and dark-corrected object frames to
+# produce the flatfield.
+          $Mon{"ccdpack_red"}->obeyw("makeflat","$header $hidden");
+          unlink( "objlist.inlist$$" );
+
+# Record and display the flat
+# ===========================
+
+# Set the current flat in the calibration object.
+          _FILE_FLAT_ NAME=$out
+
+# Report the status of the processing.
+          orac_print "Orac says: frames $objlist used for flat\n";
+
+# Display the image.
+          _DISPLAY_FLAT_IMAGE_
+
+       }
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+MAKE_FLAT_FP -- Makes a flat from the current of offline FP frames.
+
+=head1 DESCRIPTION
+
+This primitive makes a self flat from the current cycle of offline
+FP frames in the current group.  It uses a median to combine the
+frames pixel by pixel, and then divides the resultant image by its
+mean form the flat field.  The primitive files the resultant flat
+in its calibration index. 
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item CLEAN = LOGICAL (Given)
+
+If true (1), the frames are cleaned using a box filter to remove any
+small blemishes.  Pixels deviating by more than 3 standard deviations
+from its 15x15 pixel neighbourhood are rejected.  This is done
+iteratively, three times.  If false (0), no cleaning is performed. [1]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for both UFTI and IRCAM.
+
+=item *
+
+Processing only occurs for object and sky frames, and when the
+steering header MAKE_FLAT is true.
+
+=item *
+
+The offline frames are selected using the steering headers
+ON_OR_OFF (set to "off"), and the CYCLE_NUMBER matching the current
+recipe cycle.
+
+=item *
+
+The flat is displayed.
+
+=back
+
+=head1 TASKS
+
+CCDPACK: MAKEFLAT.
+
+=head1 OUTPUT DATA
+
+The flat field.  It is called is "flat_<groupnumber>" for the first
+cycle, and "flat_<groupnumber>_<cyclenumber>" for subsequent cycles,
+where <groupnumber> is the frame number of the group, and
+<cyclenumber> is the cycle number derived from steering header
+CYCLE_NUMBER.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

@@ -1,0 +1,242 @@
+#+
+# Name:
+#    _FP_STEER_
+#
+# Purpose:
+#    Steers processing for FP recipes.
+#
+# Language:
+#    Perl5
+#
+# Description: 
+#    This primitive control processing for FP recipes through
+#    steering headers listed below.
+#
+# Steering Headers:
+#    CYCLE_NUMBER = INTEGER
+#       Number of the cycle, a cycle being a set of frames to complete a
+#       pass through the recipe.  The first cycle is 0.
+#    DIFFERENCE_PAIR = LOGICAL
+#       Whether or not to subtract pairs.  It is true every second frame.
+#    DO_APHOT = LOGICAL
+#       Whether or not perform aperture photometry.  Photometry occurs
+#       after the mosaic is made.
+#    FLAT_DIVIDE = LOGICAL
+#       Whether or not to flat field.  Flat-fielding occurs at the
+#       completion of each cycle of NUMBER frames.
+#    MAKE_FLAT = LOGICAL
+#       Whether or not to make the flat.  The flat is made when all
+#       the jittered frames in the first cycle are available.
+#    MAKE_MOSAIC = LOGICAL
+#       Whether or not register the frames and make the mosaic.  The mosaic
+#       is made once all the jittered frames in a cycle are available.
+#    MASK_OBJECTS = LOGICAL
+#       Whether or not to mask the objects.  Masking occurs when all the
+#       jittered frames in a cycle are available.
+#    ON_OR_OFF = LOGICAL
+#       Set to "on" when the frame is on the line, and to "off" whien it
+#       is off the line.
+#    PAIR_ORDER = LOGICAL
+#       Pair subtraction order, true means take second from the first,
+#       and false means take the first from the second.  The pattern
+#       alternates true-false every fourth frame.
+#    TARGET_OR_SKY = CHARACTER
+#       This is "target" for a target frame, and "sky" for a sky calibration
+#       frame.
+#
+# Arguments:
+#    NUMBER = INTEGER (Given)
+#       The number of frames in the jitter.  It must be a multiple of 8
+#       otherwise 8 is assumed.  [8]
+#
+# Notes:
+#    -  This primitive is suitable for both UFTI and IRCAM.
+#    -  Processing only occurs for object and sky frames.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ||
+         $Frm->hdr( "OBSTYPE" ) eq "SKY" ) {
+
+# Obtain the number of frames in the jitter pattern.
+       my $number = max( 8, ( $_FP_STEER_{NUMBER} || 8 ) );
+       if ( $number % 8 != 0 ) {
+          $number = 8; 
+       }
+
+# Specify during processing of which frames should the pairs be subtracted.
+       my $fn = $Grp->num;
+       if ( ( $fn + 1 ) % 2 == 0 ) {
+          $Frm->hdr( "DIFFERENCE_PAIR", 1 );
+
+# A difference is to be made, but in what order.  PAIR_ORDER = 1 means
+# take the second from the first of the pair.  PAIR_ORDER = 0 is the
+# reverse.  Put another way, the order is ABBA as the B is always taken
+# from the A.
+          if ( ( $fn + 1 ) % 4 == 0 ) {
+             $Frm->hdr( "PAIR_ORDER", 0 );
+          } else {
+             $Frm->hdr( "PAIR_ORDER", 1 );
+          }
+          
+       } else {
+          $Frm->hdr( "DIFFERENCE_PAIR", 0 );
+       }
+
+# Specify during processing of which frames should the flat be created.
+# Just use the first flat for all cycles.  This will save time.
+       if ( ( $fn + 1 ) == $number ) {
+          $Frm->hdr( "MAKE_FLAT", 1 );
+       } else {
+          $Frm->hdr( "MAKE_FLAT", 0 );
+       }
+
+# Specify during processing of which frames should the flat be applied
+# a mosaic created, and aperture photometry performed.
+       if ( ( $fn + 1 ) % $number == 0 ) {
+          $Frm->hdr( "FLAT_DIVIDE", 1 );
+          $Frm->hdr( "MAKE_MOSAIC", 1 );
+          $Frm->hdr( "MASK_OBJECTS", 1 );
+          $Frm->hdr( "DO_APHOT", 1 );
+       
+       } else {
+          $Frm->hdr( "FLAT_DIVIDE", 0 );
+          $Frm->hdr( "MAKE_MOSAIC", 0 );
+          $Frm->hdr( "MASK_OBJECTS", 0 );
+          $Frm->hdr( "DO_APHOT", 0 );
+       }
+
+# Insert the cycle number of the set of frames. 
+       $Frm->hdr( "CYCLE_NUMBER", int( $fn / $number ) );
+
+# Insert the number of frames in the jitter.
+       $Frm->hdr( "JITTER_NUMBER", $number );
+
+# All frames are `target'.  Some more-general primitives need to select 
+# targets from sky frames.
+       if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ) {
+          $Frm->hdr( "TARGET_OR_SKY", "target" );
+       } else {
+          $Frm->hdr( "TARGET_OR_SKY", "sky" );
+       }
+
+# Distinguish between on and off source.  Sequence is on-off-off-on
+# repeated.
+       if ( int( ( $fn + 1 ) / 2 ) % 2 == 0 ) {
+          $Frm->hdr( "ON_OR_OFF", "on" );
+       } else {
+          $Frm->hdr( "ON_OR_OFF", "off" );
+       } 
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+FP_STEER -- Steers processing for FP recipes.
+
+=head1 DESCRIPTION
+
+This primitive control processing for FP recipes through
+steering headers listed below.
+
+=head1 STEERING HEADERS
+
+=over 4
+
+=item CYCLE_NUMBER = INTEGER
+
+Number of the cycle, a cycle being a set of frames to complete a
+pass through the recipe.  The first cycle is 0.
+
+=item DIFFERENCE_PAIR = LOGICAL
+
+Whether or not to subtract pairs.  It is true every second frame.
+
+=item DO_APHOT = LOGICAL
+
+Whether or not perform aperture photometry.  Photometry occurs
+after the mosaic is made.
+
+=item FLAT_DIVIDE = LOGICAL
+
+Whether or not to flat field.  Flat-fielding occurs at the
+completion of each cycle of NUMBER frames.
+
+=item MAKE_FLAT = LOGICAL
+
+Whether or not to make the flat.  The flat is made when all
+the jittered frames in the first cycle are available.
+
+=item MAKE_MOSAIC = LOGICAL
+
+Whether or not register the frames and make the mosaic.  The mosaic
+is made once all the jittered frames in a cycle are available.
+
+=item MASK_OBJECTS = LOGICAL
+
+Whether or not to mask the objects.  Masking occurs when all the
+jittered frames in a cycle are available.
+
+=item ON_OR_OFF = LOGICAL
+
+Set to "on" when the frame is on the line, and to "off" whien it
+is off the line.
+
+=item PAIR_ORDER = LOGICAL
+
+Pair subtraction order, true means take second from the first,
+and false means take the first from the second.  The pattern
+alternates true-false every fourth frame.
+
+=item TARGET_OR_SKY = CHARACTER
+
+This is "target" for a target frame, and "sky" for a sky calibration
+frame.
+
+=back
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item NUMBER = INTEGER (Given)
+
+The number of frames in the jitter.  It must be a multiple of 8
+otherwise 8 is assumed.  [8]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for both UFTI and IRCAM.
+
+=item *
+
+Processing only occurs for object frames.
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
