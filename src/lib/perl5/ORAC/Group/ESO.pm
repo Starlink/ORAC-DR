@@ -48,10 +48,6 @@ my %hdr = (
             RA_SCALE             => "CDELT2",
 
 # then the spectroscopy...
-            CONFIGURATION_INDEX  => "HIERARCH.ESO.INS.GRAT.ENC",
-            GRATING_NAME         => "HIERARCH.ESO.INS.GRAT.NAME",
-            GRATING_ORDER        => "HIERARCH.ESO.INS.GRAT.ORDER",
-            GRATING_WAVELENGTH   => "HIERARCH.ESO.INS.GRAT.WLEN",
             SLIT_NAME            => "HIERARCH.ESO.INS.OPTI1.ID",
             X_DIM                => "HIERARCH.ESO.DET.WIN.NX",
             Y_DIM                => "HIERARCH.ESO.DET.WIN.NY",
@@ -98,6 +94,15 @@ sub _to_AIRMASS_START {
 
 sub _from_AIRMASS_START {
    "HIERARCH.ESO.TEL.AIRM.START", $_[0]->uhdr( "ORAC_AIRMASS_START" );
+}
+
+sub _to_CONFIGURATION_INDEX {
+    my $self = shift;
+    my $instindex = 0;
+    if ( exists $self->hdr->{"HIERARCH.ESO.INS.GRAT.ENC"} ) {
+       $instindex = $self->hdr->{"HIERARCH.ESO.INS.GRAT.ENC"};
+    }
+    return $instindex;
 }
 
 sub _to_DEC_BASE {
@@ -149,6 +154,33 @@ sub _to_EQUINOX {
    return $equinox;
 }
 
+sub _to_GRATING_NAME{
+   my $self = shift;
+   my $name = "UNKNOWN";
+   if ( exists $self->hdr->{"HIERARCH.ESO.INS.GRAT.NAME"} ) {
+      $name = $self->hdr->{"HIERARCH.ESO.INS.GRAT.NAME"};
+   }
+   return $name;
+}
+
+sub _to_GRATING_ORDER{
+   my $self = shift;
+   my $order = 1;
+   if ( exists $self->hdr->{"HIERARCH.ESO.INS.GRAT.ORDER"} ) {
+      $order = $self->hdr->{"HIERARCH.ESO.INS.GRAT.ORDER"};
+   }
+   return $order;
+}
+
+sub _to_GRATING_WAVELENGTH{
+   my $self = shift;
+   my $wavelength = 0;
+   if ( exists $self->hdr->{"HIERARCH.ESO.INS.GRAT.WLEN"} ) {
+      $wavelength = $self->hdr->{"HIERARCH.ESO.INS.GRAT.WLEN"};
+   }
+   return $wavelength;
+}
+
 # Sampling is always 1x1, and therefore there are no headers with
 # these values.
 sub _to_NSCAN_POSITIONS {
@@ -182,7 +214,7 @@ sub _to_OBSERVATION_TYPE {
    my $self = shift;
    my $type = $self->hdr->{"HIERARCH.ESO.DPR.TYPE"};
    $type = exists( $self->hdr->{"HIERARCH.ESO.DPR.TYPE"} ) ? $self->hdr->{"HIERARCH.ESO.DPR.TYPE"} : "OBJECT";
-   if ( uc( $type ) =~ /STD/ ) {
+   if ( uc( $type ) eq "STD" ) {
       $type = "OBJECT";
    } elsif ( uc( $type ) eq "SKY,FLAT" || uc( $type ) eq "FLAT,SKY" ) {
       $type = "SKY";
@@ -238,7 +270,7 @@ sub _to_STANDARD {
    my $self = shift;
    my $standard = 0;
    my $type = $self->hdr->{"HIERARCH.ESO.DPR.TYPE"};
-   if ( uc( $type ) eq "STD" ) {
+   if ( uc( $type ) =~ /STD/ ) {
       $standard = 1;
    }
    return $standard;
