@@ -124,6 +124,13 @@ method. If a FITS header object has been set via the C<fits>
 method, a new header hash will be created automatically if one
 does not exist already (via a tie).
 
+If there were two headers in the original FITS header only the
+last header is returned (in scalar context). All headers are returned
+in list context.
+
+  @all = $Frm->hdr("COMMENT");
+  $last = $Frm->hdr("HISTORY");
+
 =cut
 
 sub hdr {
@@ -142,7 +149,19 @@ sub hdr {
     if (scalar(@_) == 1) {
       # Return the value if we have a single argument
       my $key = shift;
-      return $hdr->{$key};
+      my $value = $hdr->{$key};
+      if (ref($value) == 'ARRAY') {
+	# multi-valued
+	if (wantarray) {
+	  return @$value;
+	} else {
+	  # Return the last element since that is what you
+	  # would get if you read the header as a hash
+	  return $value->[-1];
+	}
+      } else {
+	return $value;
+      }
     } else {
 
       # Since in most cases we will be processing fewer
