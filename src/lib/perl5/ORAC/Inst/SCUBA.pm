@@ -90,6 +90,10 @@ routine is called).
 SCUBA uses SURF (surf_mon)
 and  KAPPA (kapview_mon, kappa_mon, ndfpack_mon)
 
+As well as some less frequently used monoliths from
+CCDPACK (ccdpack_ref), POLPACK (polpack_mon), CURSA (catselect)
+[for polarimetry] and CONERT (ndf2fits) for FITS conversion.
+
 =cut
 
 sub start_algorithm_engines {
@@ -109,6 +113,10 @@ sub start_algorithm_engines {
   $Mon{catselect} = new ORAC::Msg::ADAM::Task("catselect_$$",
          "$ENV{CURSA_DIR}/catselect") 
     if -e "$ENV{CURSA_DIR}/catselect";
+
+  $Mon{ndf2fits} = new ORAC::Msg::ADAM::Task("ndf2fits_$$",
+         "$ENV{CONVERT_DIR}/ndf2fits") 
+    if -e "$ENV{CONVERT_DIR}/ndf2fits";
 
  
   $Mon{kapview_mon} = new ORAC::Msg::ADAM::Task("kapview_mon_$$",$ENV{KAPPA_DIR}."/kapview_mon");
