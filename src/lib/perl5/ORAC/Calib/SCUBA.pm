@@ -54,7 +54,7 @@ $DEBUG = 0; # Turn off debugging mode
 # Define default SCUBA gains
 
 %DEFAULT_GAINS = (
-		  '2000' => 775,
+		  '2000' => 650,
 		  '1350' => 130,
 		  '1100' => 1,
 		  '850'  => 240,
@@ -318,7 +318,8 @@ side of the frame are reported and used to find the current tau.
 Also, we might want to add a system where the high frequency tau is derived
 from the closest low-frequency skydip.....
 
-undef is returned if an error occurred.
+undef is returned if an error occurred [eg the CSO is so high that the
+tau can not be calculated using the linear relationship].
 
 =cut
 
@@ -341,14 +342,21 @@ sub tau {
   if ($sys eq 'CSO') {
 
     # Read the value from the header of thing
-    my $csotau = $ {$self->thing}{'TAU_225'};
+    my $csotau = $self->thing->{'TAU_225'};
 
     ($tau, $status) = get_tau($filt, 'CSO', $csotau);
 
-  } elsif ($sys =~ /^\d+$/) {
+    orac_warn("Error converting a CSO tau of $csotau to an opacity for filter $filt\n") if $status == -1;
+
+  } elsif ($sys =~ /^\d+\.?\d*$/) {
+    # We check for a number - note that this pattern does not match
+    # numbers that start with a decimal point.
 
     ($tau, $status) = get_tau($filt, 'CSO', $sys);
-    # Should check status....
+
+    # Check status
+    orac_warn("Error converting a CSO tau of $sys to an opacity for filter $filt\n") if $status == -1;
+
     
   } elsif ($sys eq 'SKYDIP') {
 
@@ -359,7 +367,7 @@ sub tau {
     # should be used by the system. (usually a hard-wired CSO is enough)
 
     # First add/modify the FILTER keyword in the current frame
-    $ {$self->thing}{FILTER} = $filt;
+    $self->thing->{FILTER} = $filt;
 
     # Now ask for the best skydip
     # (Closest in time)
