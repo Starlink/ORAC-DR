@@ -204,35 +204,52 @@ sub configure {
 
   $self->raw($fname);
 
-  # We have as many files as there are NDF compenents, minus the header component
+  # The number of sub frames is difficult. The .HEADER should not be
+  # included but in chopped observations we want to use .INBEAMA/B 
+  # instead of just .I1. To get around this problem findubs() populates
+  # an internal data structure that will contain all the names we are
+  # interested in.
   $self->findnsubs;
 
- # Populate the header
+  # Read the internal data structure
+  my @Components = @{ $self->{_Components} };
+
+  # Populate the header
   # for hds container set header NDF to be in the .header extension
   my $hdr_ext = $self->file.".header";
 
   $self->readhdr($hdr_ext);
 
   # now read the subheaders 
+  my $i = 1;
+  foreach my $comp (@Components) {
+    # Read the header associated with the subframe
+    # KLUGE - Michelle chop data does not have a fits header
+    # in the .I1BEAMA components so we need to put in a nasty hack
+    # here
+    # Skip if we are in beamB
+    next if $comp =~ /BEAMB$/;
 
-  foreach my $i (1..$self->nsubs) {
-    my ($href, $status) = fits_read_header($self->file . ".i$i");
-     $self->hdr->{$i} = $href;
-    # (same as $self->hdr($i, $href);)
+    # Strip the chop information
+    (my $kluge = $comp) =~ s/BEAM[AB]$//;
+
+    my ($href, $status) = fits_read_header($rootfile . ".$kluge");
+    # Store the header associated with this subframe
+    $self->hdr->{$i} = $href if $status == &NDF::SAI__OK;
+
+    $i++;
   }
 
   # ....and make sure calc_orac_headers is up-to-date after this
   $self->calc_orac_headers;
 
-  # populate file method
-
-  for my $i (1..$self->nsubs) {
-
-    # Set the filename
-
-    $self->file($i,$rootfile.".i$i");
-
-  };
+  # Filenames
+  $i = 1;
+  foreach my $comp (@Components) {
+    # Update the filename
+    $self->file($i,$rootfile.".$comp");
+    $i++;
+  }
 
   # Find the group name and set it
   $self->findgroup;
@@ -284,6 +301,11 @@ because Michelle stored extra NDFs in the container.
 
 The header is updated.
 
+Additionally, the names of the components are stored in an internal
+data structure so that configure() can access them. This is because
+in Michelle the chopped observations should not use .I1 but rather
+the chopped frames themselves.
+
 =cut
 
 sub findnsubs {
@@ -291,7 +313,7 @@ sub findnsubs {
 
   my $file = shift;
 
-  my ($loc,$status,$ncomp);
+  my ($loc,$status);
 
   unless (defined $file) {
     $file = $self->file;
@@ -302,37 +324,63 @@ sub findnsubs {
   hds_open($file, 'READ', $loc, $status);
 
   # Need to rely on status being good before proceeding
+  my @comps;
   if ($status == &NDF::SAI__OK) {
 
-    # Loop until we get an error
-    my $there = 1;
-    $ncomp = 0;
-    while ($there && $status == &NDF::SAI__OK) {
+    # Find out how many we have
+    dat_ncomp($loc, my $ncomp, $status);
 
-      # increment counter
-      $ncomp++;
+    # Get all the component names
+    for my $i (1..$ncomp) {
 
-      # Check for the .I?? component
-      dat_there($loc, "I$ncomp", $there, $status );
+      # Get locator to component
+      dat_index($loc, $i, my $cloc, $status);
 
+      # Find its name
+      dat_name($cloc, my $name, $status);
+      push(@comps, $name) if $status == &NDF::SAI__OK;
+
+      # Release locator
+      dat_annul($cloc, $status);
+
+      last if $status != &NDF::SAI__OK;
     }
-
-    # ncomp will be one too large since we have to check
-    # for 1 higher
-    $ncomp--;
 
   }
 
-  # Loop until 
+  # Close file
   dat_annul($loc, $status);
 
   unless ($status == &NDF::SAI__OK) {
-    orac_err("Can't open $file for nsubs\n");
+    orac_err("Can't open $file for nsubs or error reading components\n");
     return 0;
   }
 
-  if ($ncomp == 0) {
-    orac_err "Could not find .I1 NDF component in file $file\n";
+  # Now need to go through component names looking for useful names
+  my (@IN, @INBEAM);
+  for my $comp (@comps) {
+    if ($comp =~ /^I\d+$/) {
+      push(@IN, $comp);
+    } elsif ($comp =~ /^I\d+BEAM/) {
+      push(@INBEAM, $comp);
+    }
+  }
+
+  # Now see what we have
+  my ($ncomp, @result);
+  if (@INBEAM) {
+    # Chopped observation
+    @result = @INBEAM;
+  } elsif (@IN) {
+    # Standard HDS observation
+    @result = @IN;
+  }
+
+  $ncomp = scalar(@result);
+  $self->{_Components} = [@result];
+
+  unless (defined $ncomp) {
+    orac_err "Could not find .I1?? NDF component in file $file\n";
     return 0;
   }
 
@@ -456,7 +504,7 @@ sub inout {
 
   # If we had a suffix (eg .i1) now need to
   # reattach it and create an HDS container *IF* NFILES is greater than 1
-  # If NFILES equals 1 
+  # If NFILES equals 1 we don't need to do anything
   if (defined $rest && $nfiles > 1) {
 
     my ($loc,$status);
@@ -615,10 +663,9 @@ Tim Jenness (t.jenness@jach.hawaii.edu)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
 
- 
 1;
