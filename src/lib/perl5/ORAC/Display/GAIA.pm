@@ -339,7 +339,7 @@ sub send_to_gaia {
   my $sock = $self->sock();
 
   # Check socket
-  my $timeout = 30.0;
+  my $timeout = 10.0; # no point waiting longer than 10 seconds
   my $res = $self->sel->can_write($timeout);
 
   # have a problem if returns undef from can_write
@@ -370,7 +370,8 @@ sub send_to_gaia {
     # Receive the first status string (should be a status and a list of bytes
     # terminated with a \n
     while (!($reply2 =~ /[\n]/)) {
-      recv ($sock, $reply2, 1, 0);
+      recv ($sock, $reply2, 1, 0)
+	or return (ORAC__ERROR, 'Error reading intial byte stream from GAIA socket');
       $a.=$reply2;
     }
     $result = $a;
@@ -379,13 +380,15 @@ sub send_to_gaia {
     ($status, my $byte) = split / /, $result,2;
     while ($byte > 4096) {
       print "bytes are huge!!\n" if $DEBUG;
-      recv ($sock, $reply2, 4096, 0); 
+      recv ($sock, $reply2, 4096, 0) 
+	or return (ORAC__ERROR, 'Error reading data from GAIA socket');
       $byte -=4096;
       $message .= $reply2;
     }
     print "prepping to receive actual data...\n" if $DEBUG;
     
-    recv ($sock, $reply, $byte, 0);
+    recv ($sock, $reply, $byte, 0)
+	or return (ORAC__ERROR, 'Error reading data from GAIA socket');
     $message .= $reply;
     push (@results, $message);
     print "results received: $message\n" if $DEBUG;
@@ -499,6 +502,8 @@ sub image {
   # clone from gaia
   my ($status, $image) = $self->send_to_gaia("$device get_image");
 
+  # Should be able to check the error message from herre and attempt
+  # to relaunch a missing window.
   if ($status != ORAC__OK) {
     orac_err "ORAC::Display::GAIA - Error retrieving image id\n";
     orac_err "Error: $image\n";
