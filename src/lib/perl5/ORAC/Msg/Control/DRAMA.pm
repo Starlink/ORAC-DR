@@ -235,7 +235,16 @@ sub init {
   return if $self->running;
   my $name = "oracdr_$$";
 
+  # Buffer sizes
+  $DRAMA::BUFSIZE = 300000;
+
+  # Override the space for receiving parameters
+  # This limits replies to 80kB
+  $DRAMA::REPLYBYTES   = 80000;
+  $DRAMA::MAXREPLIES   = 1;
+
   DPerlInit( $name );
+
   $self->running(1);
   return ORAC__OK;
 }
