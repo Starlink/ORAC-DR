@@ -1,0 +1,208 @@
+#+
+# Name:
+#    _ARRAY_TESTS_STATISTICS_
+#
+# Purpose:
+#    Determines the state of the Michelle detector for the ARRAY_TESTS
+#    recipe.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive awaits a proper array tests sequence in the normal
+#    sense (e.g. to calculate the the dark current, and to assess
+#    whether or not both it and the readnoise are within acceptable
+#    limits; and to log the results).  For the moment it calculates a
+#    mean bias frame and files it to the calibration system; and derives
+#    and files the readnoise.  It uses the last two of four
+#    minimum-exposure bias frames.
+#
+#    The primitive expects sets of four frames.  In each set the first
+#    two refresh frames are ignored.
+#
+# Notes:
+#    -  A warning is issued if the exposure time exceeds the minimum
+#    (10ms) so is a dark rather than a bias.  The exposure time comes
+#    from the ORAC_EXPOSURE_TIME header.   The ADU comes from the user
+#    header ORAC_GAIN header.  If header is undefined, it defaults to
+#    500e/ADU.
+#    -  The script exits if a frame is not a BIAS or DARK.
+#    -  The bias frame is the average of the third and fourth frames.
+#    Its user and external observation-type headers become "BIAS".
+#    -  The noise is the standard deviation per frame of the third and
+#    fourth frames subtracted, and converted from counts to electrons.
+#
+# Output Data:
+#    -  Mean bias frame, bias_<frame_number>, where <frame_number> is
+#    the last frame number.
+#
+# Tasks:
+#    KAPPA: FITSMOD, MATHS, STATS, SUB.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Selection and validation
+# ========================
+
+# This should only be performed on DARK (or BIAS) frames.
+    if ( ! ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "DARK" ||
+             $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "BIAS" ) ) {
+        orac_throw "Frame " . $Frm->file . " is not a DARK or BIAS\n";
+    }
+
+# Validate the exposure time of the last two frames in the set.
+    if ( $Grp->num % 4 >= 2 ) {
+       my $exptime = $Frm->uhdr( "ORAC_EXPOSURE_TIME" );
+       if ( $exptime > 0.011 ) {
+          orac_warn $Frm->file . " is not a minimum-exposure time dark.  So the " .
+                    "the bias level may be overestimated.\n"
+       }
+    }
+
+# Wait until all the array tests are completed.  Should be four frames.
+    if ( ( $Grp->num + 1 ) % 4 == 0 ) {
+
+# Create bias frame
+# =================
+
+# Obtain the names of the group members.
+       my @frames = $Grp->membernames;
+
+# Average the third and fourth frames.
+       my $param = "ia=$frames[2] ib=$frames[3] out=array_test exp='0.5*(IA+IB)'";
+       $Mon{ "kappa_mon" }->obeyw( "maths", "$param" );
+       orac_print "Minimum exposure bias frames $frames[2] and $frames[3] " . 
+                  "averaged to form bias frame.\n";
+
+# Edit the OBSTYPE of the frame to be BIAS.  Note this is done to the physical file
+# as well as the ORAC-DR internal header.
+       my $obstype_name = "ORAC_OBSERVATION_TYPE";
+       my %keywords = $Frm->translate_hdr( $obstype_name );
+       my @obstype_key = keys( %keywords );
+       $Frm->uhdr( $obstype_name, "BIAS" );
+       $param = "ndf=array_test keyword=$obstype_key[ 0 ] edit=update value=BIAS position=!";
+       $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$param comment=\\\$C" );
+
+# Update the current frame.
+       $Frm->file( "array_test" );
+
+# File the bias frame.
+       _FILE_BIAS_
+
+# Compute the statistics.
+# =======================
+
+# Obtain the gain.  If it's not defined, use a default.
+       my $adu = ( $Frm->uhdr( "ORAC_GAIN" ) || 500 );
+
+# Difference the two frames. 
+       $param = "in1=$frames[1] in2=$frames[2] out=array_test";
+       $Mon{ "kappa_mon" }->obeyw( "sub", "$param" );
+
+# Find the standard deviation of the difference frame after a 3-sigma clipping.
+       $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=array_test clip=3" );
+       ( my $ORAC_STATUS, my $sigma ) = $Mon{ "kappa_mon" }->get( "stats", "sigma" );
+       my $rn = $sigma / sqrt( 2.0 ) * $adu;
+
+# Remove the temporary file.
+       _DELETE_A_FRAME_ FRAME=array_test
+
+# Output the results.
+# ===================
+
+# Format the result.
+       my $fs_rn = sprintf( "%.2f", $rn );
+
+# Report the results to the user.
+       orac_print "\n";
+       orac_print "Michelle readout noise (e-) = $fs_rn\n";
+       orac_print "\n";
+
+# File the readnoise in the calibration system.
+# =============================================
+
+# The value needs to be in a hash.  Use the current frame as a reference
+# for this, as it has the same readout mode and speed/well depth as the
+# others.
+       my %hash = ( %{ $Frm->hdr }, READNOISE => $rn );
+       $Cal->readnoiseindex->add( $Frm->file, \%hash );
+
+       orac_print "Readnoise filed with the calibration system.\n\n";
+
+     }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_ARRAY_TESTS_STATISTICS_ -- Determines the state of the Michelle detector for the ARRAY_TESTS recipe.
+
+=head1 DESCRIPTION
+
+This primitive awaits a proper array tests sequence in the normal
+sense (e.g. to calculate the the dark current, and to assess
+whether or not both it and the readnoise are within acceptable
+limits; and to log the results).  For the moment it calculates a
+mean bias frame and files it to the calibration system; and derives
+and files the readnoise.  It uses the last two of four
+minimum-exposure bias frames.
+
+The primitive expects sets of four frames.  In each set the first
+two refresh frames are ignored.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+A warning is issued if the exposure time exceeds the minimum
+(10ms) so is a dark rather than a bias.  The exposure time comes
+from the ORAC_EXPOSURE_TIME header.   The ADU comes from the user
+header ORAC_GAIN header.  If header is undefined, it defaults to
+500e/ADU.
+
+=item *
+
+The script exits if a frame is not a BIAS or DARK.
+
+=item *
+
+The bias frame is the average of the third and fourth frames.
+Its user and external observation-type headers become "BIAS".
+
+=item *
+
+The noise is the standard deviation per frame of the third and
+fourth frames subtracted, and converted from counts to electrons.
+
+=back
+
+=head1 OUTPUT DATA
+
+Mean bias frame, F<bias_E<lt>frame_numberE<gt>, where
+E<lt>frame_numberE<gt> is the last frame number.
+
+=head1 TASKS
+
+KAPPA: FITSMOD, MATHS, STATS, SUB.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998--2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
