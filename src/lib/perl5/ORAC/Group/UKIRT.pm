@@ -1,4 +1,5 @@
 package ORAC::Group::UKIRT;
+
 =head1 NAME
 
 ORAC::Group::UKIRT - UKIRT class for dealing with observation groups in ORACDR
