@@ -1,0 +1,115 @@
+=head1 NAME
+
+_READNOISE_ANALYSIS_
+
+=head1 DESCRIPTION
+
+A CGS4 readnoise analysis primitive
+
+Engineering only
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+=cut
+
+# The group file
+my $base = $Grp->raw;
+
+# Our output files
+my $sum = $base."_sum";
+my $mean = $base."_mean";
+
+my $sumsq = $base."_sumsq";
+my $sigma = $base."_sigma";
+
+# The input file
+my $in = $Frm->file;
+
+# Do the output files exist?
+$Grp->file($sum);
+if(!($Grp->file_exists)) {
+   # Create the sum and sumsq files
+   $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$sum");
+   $Mon{'kappa_mon'}->obeyw("mult", "in1=$in in2=$in out=$sumsq");
+
+   # Add the group user header
+   $Grp->uhdr("NUMFILES", 1);
+   orac_print "Group now contains 1 file\n";
+
+} else {
+   # The group files do allready exist.
+
+   # Update the sum.
+   my $foo = new ORAC::TempFile;
+   my $foofile=$foo->file;
+   $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$sum out=$foofile");
+   $Mon{'kappa_mon'}->obeyw("add", "in1=$foofile in2=$in out=$sum");
+
+   # Update the sumsq, using a tmp file
+   my $tmp = new ORAC::TempFile;
+   my $tmpfile = $tmp->file;
+
+   $Mon{'kappa_mon'}->obeyw("mult", "in1=$in in2=$in out=$tmpfile");
+   $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$sumsq out=$foofile");
+   $Mon{'kappa_mon'}->obeyw("add", "in1=$foofile in2=$tmpfile out=$sumsq");
+
+   # Update the group header
+   my $num = $Grp->uhdr("NUMFILES");
+   $num++;
+   $Grp->uhdr("NUMFILES", $num);
+   orac_print "Group now contains $num files\n";
+}
+
+# Now update the mean and sigma files, but only if we've got 3 or more files.
+
+my $num = $Grp->uhdr("NUMFILES");
+
+if ($num > 2) {
+   # The mean file is simple
+   $Mon{'kappa_mon'}->obeyw("cdiv", "in=$sum scalar=$num out=$mean");
+
+   # The sigma file is fairly simple
+   my $tmp = new ORAC::TempFile;
+   my $tmpfile = $tmp->file;
+   $Mon{'kappa_mon'}->obeyw("cdiv", "in=$sumsq scalar=$num out=$tmpfile");
+
+   my $temp = new ORAC::TempFile;
+   my $tempfile = $temp->file;
+   $Mon{'kappa_mon'}->obeyw("mult", "in1=$mean in2=$mean out=$tempfile");
+
+   my $var = new ORAC::TempFile;
+   my $varfile = $var->file;
+   $Mon{'kappa_mon'}->obeyw("sub", "in1=$tmpfile in2=$tempfile out=$varfile");
+   # This is the sample variance
+
+   my $pvar = new ORAC::TempFile;
+   my $pvarfile = $pvar->file;
+   my $factor = $num/($num-1);
+   $Mon{'kappa_mon'}->obeyw("cmult", "in=$varfile scalar=$factor out=$pvarfile");
+
+   # Square root 
+   $Mon{'kappa_mon'}->obeyw("maths", "exp=sqrt(IA) out=$sigma IA=$pvarfile");
+
+   # Get the stats
+   my $ORAC_STATUS;
+   $Mon{'kappa_mon'}->obeyw("stats", "ndf=$mean");
+   ($ORAC_STATUS, my $meanadu) = $Mon{'kappa_mon'}->get("stats", "mean");
+
+   my $time=$Frm->uhdr("ORAC_EXPOSURE_TIME");
+
+   $Mon{'kappa_mon'}->obeyw("stats", "ndf=$sigma");
+   ($ORAC_STATUS, my $sigmaadu) = $Mon{'kappa_mon'}->get("stats", "mean");
+
+   orac_print("Mean: $meanadu; Sigma: $sigmaadu\n");
+
+   my $log = new ORAC::LogFile("readnoise");
+
+   my $header = "Frame Mode      Exptime  Num DarkADUs DarkADU Readnois\n";
+   $log->header($header);
+   my $entry = sprintf("%5d %8s %8f %3d %8f %8f %8f", $Frm->number, $Frm->uhdr("ORAC_DETECTOR_MODE"), $Frm->uhdr("ORAC_EXPOSURE_TIME"), $num, $meanadu, $meanadu/$time, $sigmaadu);
+   $log->addentry($entry);
+ 
+}
+
