@@ -68,6 +68,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.14  2002/10/11 21:09:07  timj
+#     Tweak a mamo comment
+#
 #     Revision 1.13  2002/10/11 01:16:25  timj
 #     SCUBA can now use -flag
 #
@@ -264,7 +267,7 @@ if ($ORAC_DATA_ROOT == /jcmtdata ) then
 
    # Sticky bit set plus group write
    # The sticky bit can not be set on a nfs disk
-   # so this does not work unless we are on mamo
+   # so this does not work unless we are on kolea
    if (`hostname` != 'kolea') then
      echo Setting write permissions on directory by using rsh to mamo
      echo -n Please wait....
