@@ -166,22 +166,22 @@ sub header {
 # The recipe name can not be set automatically since it relies
 # on the members of the group.
 
-=item recipe
+#=item recipe
+#
+#Set or retrieve the name of the recipe being used to reduce the
+#group.
+#
+#    $Grp->recipe("recipe_name");
+#    $recipe_name = $Grp->recipe;
+#
+#=cut
 
-Set or retrieve the name of the recipe being used to reduce the
-group.
 
-    $Grp->recipe("recipe_name");
-    $recipe_name = $Grp->recipe;
-
-=cut
-
-
-sub recipe {
-  my $self = shift;
-  if (@_) { $self->{Recipe} = shift;}
-  return $self->{Recipe};
-}
+#sub recipe {
+#  my $self = shift;
+#  if (@_) { $self->{Recipe} = shift;}
+#  return $self->{Recipe};
+#}
 
 
 # Method to set/return all members of the group
@@ -338,6 +338,56 @@ sub num {
 }
 
 
+=item membernumbers
+
+Return a list of all the observation numbers associated with
+the group. This is achieved by invoking the number() method for
+each object stored in the Members array.
+For this to work each member must be an object capable of invoking
+numbers() (e.g. ORAC::Frame). Currently the routine does not check
+to make sure this is possible - the program will die if you try
+to use a SCALAR.
+
+=cut
+
+sub membernumbers {
+
+  my $self = shift;
+
+  my @list = ();
+  foreach my $member ($self->members) {
+
+    push(@list, $member->number);
+
+  }
+  return @list;
+}
+
+=item membernames
+
+Return a list of all the files associated with
+the group. This is achieved by invoking the file() method for
+each object stored in the Members array.
+For this to work each member must be an object capable of invoking
+numbers() (e.g. ORAC::Frame). Currently the routine does not check
+to make sure this is possible - the program will die if you try
+to use a SCALAR.
+
+=cut
+
+sub membernames {
+
+  my $self = shift;
+
+  my @list = ();
+  foreach my $member ($self->members) {
+
+    push(@list, $member->file);
+
+  }
+  return @list;
+}
+
 =back
 
 =head1 PRIVATE METHODS
@@ -382,6 +432,6 @@ L<ORAC::Frame>
 =head1 AUTHORS
 
 Tim Jenness (t.jenness@jach.hawaii.edu)
-    
+and Frossie Economou  (frossie@jach.hawaii.edu)
 
 =cut
