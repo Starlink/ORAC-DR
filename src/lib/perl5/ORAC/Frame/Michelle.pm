@@ -47,8 +47,8 @@ my %hdr = (
             EXP_TIME  => "EXP_TIME",
             GAIN      => "DEPERDN",
             RASCALE   => "PIXELSIZ",
-            TDECOFF   => "DECOFF",
-            TRAOFF    => "RAOFF",
+            TDECOFF   => "TDECOFF",
+            TRAOFF    => "TRAOFF",
 
 # then the spectroscopy.
             CONFIGURATION_INDEX => "CNFINDEX",
