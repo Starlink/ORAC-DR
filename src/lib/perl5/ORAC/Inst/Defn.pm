@@ -600,6 +600,7 @@ sub orac_determine_primitive_search_path {
   my $ifu_root     =  File::Spec->catdir( $root, "ifu" );
   my $het_root     =  File::Spec->catdir( $root, "heterodyne" );
   my $general_root =  File::Spec->catdir( $root, "general" );
+  my $casu_root    =  File::Spec->catdir( $root, "casu");
 
   if ($inst eq 'SCUBA') {
     push( @path, File::Spec->catdir( $root, 'SCUBA' ) );
@@ -630,14 +631,14 @@ sub orac_determine_primitive_search_path {
 
   } elsif ($inst eq 'UFTI_CASU') {
     push( @path, File::Spec->catdir( $root, "UFTI_CASU" ) );
-    push( @path, File::Spec->catdir( $imaging_root, "UFTI_CASU" ) );
-    push( @path, $imaging_root );
+    push( @path, File::Spec->catdir( $casu_root, "UFTI_CASU" ) );
+    push( @path, $casu_root );
     push( @path, $general_root );
 
   } elsif ($inst =~ /^WFCAM/) {
     push( @path, File::Spec->catdir( $root, "WFCAM" ) );
-    push( @path, File::Spec->catdir( $imaging_root, "WFCAM" ) );
-    push( @path, $imaging_root );
+    push( @path, File::Spec->catdir( $casu_root, "WFCAM" ) );
+    push( @path, $casu_root );
     push( @path, $general_root );
 
   } elsif ($inst eq 'MICHELLE' or $inst eq 'MICHTEMP') {
