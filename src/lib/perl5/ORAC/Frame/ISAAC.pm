@@ -112,16 +112,18 @@ sub _to_FILTER {
 # the readout mode.
 sub _to_GAIN {
    my $self = shift;
-   my $gain;
-   my $mode = $self->hdr->{"HIERARCH.ESO.INS.MODE"};
-   if ( $mode =~ /SW/ ) {
-      $gain = 4.6;
-   } else {
-      my $readout_mode = $self->hdr->{"HIERARCH.ESO.DET.MODE.NAME"};
-      if ( $readout_mode =~ /LowBias/ ) {
-         $gain = 8.7;
+   my $gain = 4.6;
+   if ( exists $self->hdr->{"HIERARCH.ESO.INS.MODE"} ) {
+      if ( $self->hdr->{"HIERARCH.ESO.INS.MODE"} =~ /SW/ ) {
+         $gain = 4.6;
       } else {
-         $gain = 7.8;
+         if ( exists $self->hdr->{"HIERARCH.ESO.DET.MODE.NAME"} ) {
+            if ( $self->hdr->{"HIERARCH.ESO.DET.MODE.NAME"} =~ /LowBias/ ) {
+               $gain = 8.7;
+            } else {
+               $gain = 7.8;
+            }
+         }
       }
    }
    return $gain;
@@ -318,16 +320,17 @@ sub _to_RECIPE {
 sub _to_SPEED_GAIN {
    my $self = shift;
    my $spd_gain = "Normal";
-   my $mode = $self->hdr->{"HIERARCH.ESO.INS.MODE"};
-   my $mode = exists( $self->hdr->{"HIERARCH.ESO.INS.MODE"}
-   if ( $mode =~ /SW/ ) {
-      $spd_gain = "Normal";
-   } else {
-      my $detector_mode = $self->hdr->{"HIERARCH.ESO.DET.MODE.NAME"};
-      if ( $detector_mode =~ /LowBias/ ) {
-         $spd_gain = "HiGain";
-      } else {
+   if ( exists $self->hdr->{"HIERARCH.ESO.INS.MODE"} ) {
+      if ( $self->hdr->{"HIERARCH.ESO.INS.MODE"} =~ /SW/ ) {
          $spd_gain = "Normal";
+      } else {
+         if ( exists $self->hdr->{"HIERARCH.ESO.DET.MODE.NAME"} ) {
+            if ( $self->hdr->{"HIERARCH.ESO.DET.MODE.NAME"} =~ /LowBias/ ) {
+               $spd_gain = "HiGain";
+            } else {
+               $spd_gain = "Normal";
+            }
+         }
       }
    }
    return $spd_gain;
