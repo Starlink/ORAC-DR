@@ -1,6 +1,6 @@
 =head1 NAME
 
-_WAVELENGTH_CALIBRATION_BY_ESTIMATION_
+_WAVELENGTH_CALIBRATION_BY_ESTIMATION_ -- Applies an approximate wavelength scale.
 
 =head1 DESCRIPTION
 
@@ -12,6 +12,19 @@ extimated wavelength scale.
 =over 4
 
 none
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item
+
+Uses internal header ORIGINAL_SPECTROSCOPIC_DIMENSION to obtain the
+dimension of the spectroscopic (x) axis before the stretching from
+interleaving, and hence correct the nominal wavelength scale, given
+in the frame headers, to the actual scale in the interleaved data.
 
 =back
 
@@ -50,64 +63,57 @@ Paul Hirst <p.hirst@jach.hawaii.edu>
 
 =cut
 
-#    -  Uses internal header ORIGINAL_SPECTROSCOPIC_DIMENSION to obtain
-#    the dimension of the spectroscopic (x) axis before the stretching
-#    from interleaving, and hence correct the nominal wavelength scale,
-#    given in the frame headers, to the actual scale in the interleaved
-#    data.
+# Process each of the sub-files.
+    foreach my $i ( 1..$Frm->nfiles ) {
 
-foreach my $i ( 1..$Frm->nfiles ) {
+# Generate the input and output filenames.
+       my ( $in, $out ) = $Frm->inout( "_wce", $i );
 
-  # Generate the input and output filenames.
-  my ( $in, $out ) = $Frm->inout( "_wce", $i );
+# Get the dimensions of the data.
+       my $xdim = $Frm->uhdr( "ORAC_X_DIM" );
 
-  # Get the dimensions of the data.
-  my $xdim=$Frm->uhdr("ORAC_X_DIM");
+# Get the header information.  First the dimensions of the original
+# data, to derive the expansion in the axis from interleaving.
+       my $oxdim = $Frm->uhdr( "ORIGINAL_SPECTROSCOPIC_DIMENSION" );
+       my $factor = $oxdim / $xdim;
 
-  # Get the header information.  First the dimensions of the original
-  # data, to derive the expansion in the axis from interleaving.
+# Get the effective dispersion, and the reference wavelength.
+       my $dispersion = $Frm->uhdr( "ORAC_GRATING_DISPERSION" ) * $factor;
+       my $refwave = $Frm->uhdr( "ORAC_GRATING_WAVELENGTH" );
 
-  my $oxdim = $Frm->uhdr( "ORIGINAL_SPECTROSCOPIC_DIMENTION" );
+# Determine the extreme wavelengths.
+       my $firstwave = $refwave - ( $xdim / 2 ) * $dispersion;
+       my $lastwave = $refwave + ( $xdim / 2 ) * $dispersion;
 
-  my $factor = $oxdim / $xdim;
-
-  # Get the effective dispersion, and the reference wavelength.
-  my $dispersion = $Frm->uhdr( "ORAC_GRATING_DISPERSION" ) * $factor;
-  my $refwave = $Frm->uhdr( "ORAC_GRATING_WAVELENGTH" );
-
-  # Determine the extreme wavelengths.
-  my $firstwave = $refwave - ( $xdim / 2 ) * $dispersion;
-  my $lastwave = $refwave + ( $xdim / 2 ) * $dispersion;
-
-  # Check that the range is valid.
-  if ( abs( $firstwave - $lastwave ) < 0.001 ) {
-    orac_err "Estimated wavelength range was 0 microns.  Something has gone wrong.\n";
-    orac_err "$in cannot be wavelength calibrated.";
+# Check that the range is valid.
+       if ( abs( $firstwave - $lastwave ) < 0.001 ) {
+          orac_err "Estimated wavelength range was 0 microns.  Something has gone wrong.\n";
+          orac_err "$in cannot be wavelength calibrated.";
           my $ORAC_STATUS = ORAC__ERROR;
-  }
+       }
 
-  # Set the AXIS wavelength scale.
-  $Mon{'figaro1'}->obeyw( "lxset", "image=$in output=$out wstart=$firstwave wend=$lastwave log=false" );
+# Set the AXIS wavelength scale.
+      $Mon{'figaro1'}->obeyw( "lxset", "image=$in output=$out wstart=$firstwave wend=$lastwave log=false" );
 
-  # Set the AXIS label.
-  $Mon{'ndfpack_mon'}->obeyw( "axlabel", "ndf=$out label=\'Estimated wavelength\' dim=1 " );
-  $Mon{'ndfpack_mon'}->obeyw( "axlabel", "ndf=$out label='detector row' dim=2" );
+# Set the AXIS label.
+      $Mon{'ndfpack_mon'}->obeyw( "axlabel", "ndf=$out label=\'Estimated wavelength\' dim=1 " );
+      $Mon{'ndfpack_mon'}->obeyw( "axlabel", "ndf=$out label='detector row' dim=2" );
 
-  # Set the AXIS units.
-  $Mon{'ndfpack_mon'}->obeyw( "axunits", "ndf=$out units=micron dim=1" );
-  $Mon{'ndfpack_mon'}->obeyw( "axunits", "ndf=$out units=pixel dim=2" );
+# Set the AXIS units.
+      $Mon{'ndfpack_mon'}->obeyw( "axunits", "ndf=$out units=micron dim=1" );
+      $Mon{'ndfpack_mon'}->obeyw( "axunits", "ndf=$out units=pixel dim=2" );
 
-  # Set the NDF title
-  $Mon{'ndfpack_mon'}->obeyw( "settitle", "ndf=$out title=$out" );
+# Set the NDF title.
+      $Mon{'ndfpack_mon'}->obeyw( "settitle", "ndf=$out title=$out" );
 
-  # Update the Frame object,
-  $Frm->file( $i, $out );
+# Update the Frame object.
+      $Frm->file( $i, $out );
 
-  # Display the wavelength calibrated array
-  $Display->display_data( $Frm ) if defined $Display;
+# Display the wavelength calibrated array.
+      $Display->display_data( $Frm ) if defined $Display;
 
-  # Print congratulatory message
-  orac_print "\n$in to $out: wavelength calibrated by estimation.\n";
-}
+# Print congratulatory message.
+      orac_print "\n$in to $out: wavelength calibrated by estimation.\n";
+   }
 
-orac_print "\n";
+   orac_print "\n";
