@@ -34,6 +34,7 @@ use ORAC::Calib::CGS4;			# use base class
 use ORAC::Print;
 
 use File::Spec;
+use File::Copy;
 
 use base qw/ORAC::Calib::CGS4/;
 
@@ -191,19 +192,17 @@ sub mask {
     return $self->maskname(shift);
   };
 
+  return $self->maskname if $self->masknoupdate;
+
   my $ok = $self->maskindex->verify($self->maskname,$self->thing);
 
   # happy ending
   return $self->maskname if $ok;
 
-  croak ("Override mask is not suitable! Giving up") if $self->masknoupdate;
-
   if (defined $ok) {
 
-    my $mask = $self->maskindex->choosebydt('ORACTIME',$self->thing);
-
+    my $mask = $self->maskindex->chooseby_negativedt('ORACTIME',$self->thing);
     unless (defined $mask) {
-
       # Nothing suitable, default to fallback position
       # Check that exists and be careful not to set this as the
       # maskname() value since it has no corresponding index enrty
@@ -213,7 +212,7 @@ sub mask {
       # $uhdrref is a reference to the Frame uhdr hash
       my $uhdrref=$self->thingtwo;
       if ($uhdrref->{'ORAC_OBSERVATION_MODE'} eq 'spectroscopy') {
-	$defmask = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "bpm_sp" ) ;
+        $defmask = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "bpm_sp" ) ;
       }
 
       return $defmask if -e $defmask . ".sdf";
@@ -222,8 +221,11 @@ sub mask {
       croak "No suitable bad pixel mask was found in index file"
     }
 
+    # Replace tokens if necessary.
+    $mask =~ s/\+(\w+)\+/$ENV{$1}/eg;
+
     # Store the good value
-    $self->maskname($mask);
+    $self->maskname( $mask );
 
   } else {
 
@@ -233,7 +235,37 @@ sub mask {
 
 }
 
+=item B<maskindex>
 
+Returns the index object associated with the mask index file. The mask
+index file is date-dependant if we don't already have a mask index file
+in $ORAC_DATA_OUT.
+
+=cut
+
+sub maskindex {
+  my $self = shift;
+  if( @_ ) { $self->{MaskIndex} = shift; }
+
+  unless( defined( $self->{MaskIndex} ) ) {
+
+# Copy the index file from ORAC_DATA_CAL into ORAC_DATA_OUT, unless
+# it already exists there. Then use the one in ORAC_DATA_OUT.
+    if( ! -e File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" ) ) {
+      copy( File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "index.mask" ),
+            File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" ) );
+    }
+    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" );
+#    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "index.mask" );
+# The rules file is always in $ORAC_DATA_CAL.
+    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.mask" );
+
+    $self->{MaskIndex} = new ORAC::Index( $indexfile, $rulesfile );
+  }
+
+  return $self->{MaskIndex};
+
+}
 
 =head2 New methods
 
