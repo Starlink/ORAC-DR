@@ -181,7 +181,7 @@ sub configure {
   # Need to retrieve the name of the default window from
   # gaia itself using the get_image command.
 
-  my $gaia_objects = $self->send_to_gaia("SkyCat::get_skycat_images");
+  my $gaia_objects = $self->send_to_gaia("get_skycat_images");
 
   # Now we need to split this return string on spaces and 
   # get the first image name
@@ -195,9 +195,11 @@ sub configure {
   my $dispwid = $self->send_to_gaia("$default get_image");
   $self->send_to_gaia("$dispwid autocut -percent 100");
 
-  # Note that this is of the form .rtdn.image
-  # We need to store the .rtdn bit
-  $default = substr($default, 0,5);
+  # Expect $default to have the form .xxxn.image where 
+  # .nnn is .rtdN for older gaias and .gaiaN for newer
+  # versions (those with contouring >= 2.3-0). Split on second '.'
+  # Use split rather than substr since we cant guarantee the length
+  $default = "." . (split(/\./,$default))[1];
 
   # If the result contains something then this indicates an error
   # So return ORAC__ERROR
