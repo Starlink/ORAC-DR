@@ -40,7 +40,8 @@ use strict;
 use vars qw/$VERSION/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
-# Translation tables for Michelle shouldr go here
+# Translation tables for Michelle should go here.
+# First the imaging...
 my %hdr = (
             DECSCALE  => "PIXELSIZ",
             EXP_TIME  => "DEXPTIME",
@@ -48,16 +49,25 @@ my %hdr = (
             RASCALE   => "PIXELSIZ",
             TDECOFF   => "DECOFF",
             TRAOFF    => "RAOFF",
-	    DETINCR   => "DETINCR"
+
+# then the spectroscopy.
+            NSCAN_POSITIONS => "DETNINCR",
+            SCAN_INCREMENT  => "DETINCR",
+            DIM1            => "DCOLUMNS",
+            DIM2            => "DROWS",
+            DETECTOR_INDEX  => "DINDEX"
 	  );
 
-# Take this lookup table and generate methods that can
-# be sub-classed by other instruments
-# Have to use the inherited version so that the new subs appear in 
-# this class
+# Take this lookup table and generate methods that can be sub-classed by
+# other instruments.  Have to use the inherited version so that the new
+# subs appear in this class.
 ORAC::Frame::Michelle->_generate_orac_lookup_methods( \%hdr );
 
-# These translation methods make use 
+# Certain headers appear in each .In sub-frame.  Special translation
+# rules are required to represent the combined image, and thus should
+# not appear in the above hash.  For example, the start time is that of
+# the first sub-image, and the end time that of the sub-image.  These
+# translation methods make use 
 
 sub _to_UTEND {
   my $self = shift;
@@ -123,7 +133,7 @@ sub new {
   # Configure initial state - could pass these in with
   # the class initialisation hash - this assumes that I know
   # the hash member name
-  $self->rawfixedpart('m');
+  $self->rawfixedpart('M');
   $self->rawsuffix('.sdf');
 #  $self->rawformat('UKIRTio');
   $self->rawformat('HDS');
