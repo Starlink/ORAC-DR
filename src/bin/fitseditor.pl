@@ -138,16 +138,24 @@ my ( $working_directory, $old_directory, $file_select, @file_list );
 my ( %opt, $font );
 my $status = GetOptions("dir=s" => \$opt{"dir"},
                         "file=s" => \$opt{"file"},
+			"fnt=s" => \$opt{"font"},
                         "pt=s"  => \$opt{"pt"});
 
 # Current working directory
 $working_directory = $opt{"dir"} if defined $opt{"dir"};
 
 # Change font size
-if ( defined $opt{"pt"} ) { 
-   $font = "Helvetica $opt{pt}";
+if ( defined $opt{"font"} ) { 
+   $font = $opt{"font"};
 } else { 
-   $font = "Helvetica 8"; 
+   $font = "Helvetica"; 
+}
+
+# Change font size
+if ( defined $opt{"pt"} ) { 
+   $font = "$font $opt{pt}";
+} else { 
+   $font = "$font 10"; 
 }
 
 # B U I L D  M E N U  B A R -------------------------------------------------
@@ -1016,6 +1024,9 @@ MainLoop();
 # T I M E   A T   T H E   B A R  -------------------------------------------
 
 # $Log$
+# Revision 1.4  2001/10/24 19:52:43  allan
+# Quick fix to the font problem
+#
 # Revision 1.3  2001/10/24 14:35:24  allan
 # Re-integrate FITS Editor into ORAC-DR tree post-ADASS XI
 #
