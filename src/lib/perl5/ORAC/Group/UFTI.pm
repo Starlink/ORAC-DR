@@ -88,8 +88,7 @@ sub new {
 =item B<readhdr>
 
 Reads the header from the reduced group file (the filename is stored
-in the Group object) and sets the Group header. The reference to the
-header hash is returned. This method sets the
+in the Group object) and sets the Group header.  This method sets the
 header in the object from the file.
 
     $Grp->readhdr;
@@ -100,7 +99,7 @@ the read an empty hash is stored.
 Currently this method assumes that the reduced group is stored in
 NDF format. Only the FITS header is retrieved from the NDF.
 
-There are no input arguments.
+There are no input arguments or return arguments.
 
 =cut
 
@@ -115,9 +114,9 @@ sub readhdr {
   $ref = {} if ($status != &NDF::SAI__OK);
 
   # Set the header in the group 
-  $self->header($ref);
+  %{$self->hdr} = %$ref;
 
-  return $ref;
+  return;
 
 }
 
@@ -151,28 +150,6 @@ sub stripfname {
   
   return $name;
 
-}
-
-
-=item fixedpart
-
-Set or retrieve the part of the group filename that does not
-change between invocation. The output filename can be derived using
-this. Defaults to 'g'
-
-    $Grp->fixedpart("g");
-    $prefix = $Grp->fixedpart;
-
-=cut
-
-
-sub fixedpart {
-  my $self = shift;
-  if (@_) { $self->{FixedPart} = shift;};
-  unless (defined $self->{FixedPart}) {
-    $self->{FixedPart} = 'g';
-  };
-  return $self->{FixedPart};
 }
 
 
