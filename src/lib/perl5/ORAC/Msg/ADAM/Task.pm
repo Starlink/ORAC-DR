@@ -214,6 +214,14 @@ sub get {
     push(@values, $result);
   }
 
+  # DOUBLE precision values are not handled by perl as numbers
+  # We need to change all parameters values of form "numberD+-number"
+  # to "numberE+-number"
+  # not clear whether I should be doing this in the ADAM module
+  # itself or here. For now do it in the ORAC interface
+
+  map { s/(\d)D(\+|-\d)/${1}E$2/g; } @values;
+
   # Convert from ADAM to ORAC status
   # Probably should put in a subroutine
   if ($status == $SAI__OK) {
