@@ -1,0 +1,55 @@
+
+my $num = $_GROUP_MOSAIC_{NUMBER};
+$num = 5 if (!defined $num);
+
+my $gnum = $#{$Grp->members};
+$gnum++;
+
+if ($num != $gnum) {
+   orac_print "Group not complete yet - $gnum members, expecting $num\n";
+} else {
+
+my $inlist="";
+my $trnlist="";
+
+foreach my $f ($Grp->members) {
+  foreach my $i (1..$f->nfiles) {
+    (my $in, my $out) = $f->inout("_trn", $i);
+    $inlist .= "," if ($inlist ne "");
+    $trnlist .= "," if ($trnlist ne "");
+    $inlist .= $in;
+    $trnlist .=$out;
+  }
+}
+
+my $x = new ORAC::TempFile;
+my $infile = $x->file;
+open FOO, ">".$infile;
+print FOO $inlist;
+close FOO;
+
+my $y = new ORAC::TempFile;
+my $trnfile = $y->file;
+open BAR, ">".$trnfile;
+print BAR $trnlist;
+close BAR;
+
+
+orac_print "Registering subframes from WCS\n";
+$Mon{'ccdpack_reg'}->obeyw("wcsreg", "in=^$infile, refpos=2, domains=SKY USESET=FALSE, outdomain=CCD_WCSREG");
+
+orac_print "Re-sampling images: $inlist into $trnlist\n";
+
+$Mon{'ccdpack_reg'}->obeyw("tranndf", "in=^$infile out=^$trnfile");
+
+
+my $out = $Grp->raw ."_mos";
+
+orac_print "Forming mosaic $out from: $trnlist\n";
+
+$Mon{'ccdpack_reg'}->obeyw("makemos", "in=^$trnfile out=$out");
+
+$Grp->file($out);
+$Display->display_data($Grp) if (defined $Display);
+
+}
