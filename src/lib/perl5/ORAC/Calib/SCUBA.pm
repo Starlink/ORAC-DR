@@ -192,10 +192,47 @@ $DEBUG = 0; # Turn off debugging mode
 		     BEAM  => 255.0,
 		    },
 		    {
-		     START => 20030301, # Open ended
+		     START => 20030301,
+		     END   => 20030407,
 		     ARCSEC=> 0.98,
 		     BEAM  => 230,
 		    },
+		    {
+		     START => 20030508,
+		     END   => 20030517,
+		     ARCSEC=> 0.83,
+		     BEAM  => 213,
+		    },
+		    {
+		     START => 20030518,
+		     END   => 20030630,
+		     ARCSEC=> 0.87,
+		     BEAM  => 212,
+		    },
+		    {
+		     START => 20030701,
+		     END   => 20030726,
+		     ARCSEC=> 0.83,
+		     BEAM  => 206,
+		    },
+		    {
+		     START => 20030727,
+		     END   => 20030822,
+		     ARCSEC=> 0.86,
+		     BEAM  => 218,
+		    },
+		    {
+		     START => 20030823,
+		     END   => 20030916,
+		     ARCSEC=> 0.79,
+		     BEAM  => 196,
+		    },
+		    {
+		     START => 20030917, # Open ended
+		     ARCSEC=> 0.81,
+		     BEAM  => 203,
+		    },
+
 		   ],
 	 '450N' => [
 		    {
@@ -240,10 +277,41 @@ $DEBUG = 0; # Turn off debugging mode
 		     BEAM => 400,
 		    },
 		    {
-		     START => 20030301,
+		     START  => 20030301,
+		     END    => 20030407,
 		     ARCSEC => 2.85,
 		     BEAM => 330,
-		    }
+		    },
+		    {
+		     START  => 20030408,
+		     END    => 20030517,
+		     ARCSEC => 2.24,
+		     BEAM => 270,
+		    },
+		    {
+		     START  => 20030518,
+		     END    => 20030630,
+		     ARCSEC => 2.76,
+		     BEAM => 302,
+		    },
+		    {
+		     START  => 20030701,
+		     END    => 20030726,
+		     ARCSEC => 2.61,
+		     BEAM => 284,
+		    },
+		    {
+		     START  => 20030727,
+		     END    => 20030822,
+		     ARCSEC => 2.33,
+		     BEAM => 245,
+		    },
+		    {
+		     START  => 20030823,
+		     ARCSEC => 2.77,
+		     BEAM => 286,
+		    },
+
 		   ],
 	);
 
