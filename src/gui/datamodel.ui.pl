@@ -83,24 +83,24 @@ sub datamodel_ui {
 	);
 	my($label_13) = $root->Label (
 		-foreground => 'black',
-		-text => 'Y: ',
+		-text => 'Z: ',
 	);
 	my($radiobutton_3) = $root->Radiobutton (
 		-text => 'Autoscale',
 		-value => '1',
-		-variable => \$STATUS{DATAMODEL}{YAUTOSCALE},
+		-variable => \$STATUS{DATAMODEL}{ZAUTOSCALE},
 	);
 	my($radiobutton_6) = $root->Radiobutton (
 		-text => 'Set:',
 		-value => '0',
-		-variable => \$STATUS{DATAMODEL}{YAUTOSCALE},
+		-variable => \$STATUS{DATAMODEL}{ZAUTOSCALE},
 	);
 	my($label_16) = $root->Label (
 		-foreground => 'black',
 		-text => 'ymin',
 	);
 	my($entry_3) = $root->Entry (
-		-textvariable => \$STATUS{DATAMODEL}{YMIN},
+		-textvariable => \$STATUS{DATAMODEL}{ZMIN},
 		-width => '12',
 	);
 	my($label_19) = $root->Label (
@@ -108,7 +108,7 @@ sub datamodel_ui {
 		-text => 'ymax',
 	);
 	my($entry_6) = $root->Entry (
-		-textvariable => \$STATUS{DATAMODEL}{YMAX},
+		-textvariable => \$STATUS{DATAMODEL}{ZMAX},
 		-width => '12',
 	);
 	my($button_8) = $root->Button (
