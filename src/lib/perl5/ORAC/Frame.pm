@@ -97,7 +97,7 @@ sub new {
 
 # Method to return/set the filename of the raw data
 # Initially this is the same as {File}
-# Use stripfname to decide on whether to strip a .sdf
+
 
 =item raw
 
@@ -111,7 +111,7 @@ associated with this object.
 
 sub raw {
   my $self = shift;
-  if (@_) { $self->{RawName} = $self->stripfname(shift); }
+  if (@_) { $self->{RawName} = shift; }
   return $self->{RawName};
 }
 
@@ -126,6 +126,7 @@ method is used for the raw (ie unprocessed) data file.
 This method can be used to determine the current state of the
 object. Primitive writers can set this to the current output
 name whenever they process a data file associated with this object.
+The stripfname method is invoked on the file. 
 
   $Obs->file("new_dark");
   $current = $Obs->file;
@@ -401,6 +402,36 @@ sub number {
 
   return $number;
 
+}
+
+
+=item inout
+
+Method to return the current input filename and the 
+new output filename given a suffix.
+For the base class the suffix is simply appended to the
+input name.
+
+Note that this method does not set the new 
+output name in this object. This must still be done by the
+user.
+
+Returns $in and $out in an array context:
+
+   ($in, $out) = $Obs->inout($suffix);
+
+=cut
+
+sub inout {
+
+  my $self = shift;
+ 
+  my $suffix = shift;
+  
+  my $infile = $self->file;
+  my $outfile = $self->file . $suffix;
+
+  return ($infile, $outfile);
 }
 
 
