@@ -770,6 +770,21 @@ sub configure {
   return 1;
 }
 
+=item B<data_detection_tasks>
+
+When the 'task' looping scheme is enabled, this method returns the name
+of the remote task that should be queried for new data. These task names
+must be registered with the C<ORAC::Inst::Defn> module.
+
+  @tasks = $Frm->data_detection_tasks();
+
+Returns an empty list in the base class.
+
+=cut
+
+sub data_detection_tasks {
+  return ();
+}
 
 =item B<erase>
 

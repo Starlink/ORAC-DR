@@ -190,6 +190,27 @@ sub configure {
   return 1;
 }
 
+=item B<data_detection_tasks>
+
+Returns the names of the DRAMA tasks that should be queried for new
+raw data.
+
+  @tasks = $Frm->data_detection_tasks();
+
+These tasks must be registered with the C<ORAC::Inst::Defn> module.
+
+=cut
+
+sub data_detection_tasks {
+  my $self = shift;
+  return ("QLSIM");
+  my $pre = $self->_wavelength_prefix();
+  my @codes = $self->_dacodes();
+
+  # The task names will depend on the wavelength
+  return map { "SCU2_$pre" . uc($_) } @codes;
+}
+
 =item B<file_from_bits>
 
 Determine the raw data filename given the variable component
