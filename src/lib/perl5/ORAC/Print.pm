@@ -15,6 +15,8 @@ ORAC::Print - ORAC output message printing
   orac_print("some text");
   orac_warn("some warning");
 
+  $value = orac_read("Prompt");
+
   $prt = new ORAC::Print;
   $prt->out("Message","colour");
   $prt->err("Error message"); 
@@ -37,23 +39,33 @@ Tk->update() method is run whenever the orac_* commands are executed.
 This can be used to keep a Tk log window updating even though no
 X-events are being processed.
 
+A simplified interface to Term::ReadLine is provided for use with
+the orac_read command. This can only be used on STDIN/STDOUT and
+is not object-oriented.
+
 =cut
 
 
 use 5.004;
 use Carp;
 use strict;
-use vars qw/$VERSION $DEBUG $CURRENT @ISA @EXPORT $TKMW/;
+use vars qw/$VERSION $DEBUG $CURRENT @ISA @EXPORT $TKMW $RDHDL/;
 use subs qw/__curr_obj/;
 
-$VERSION = '0.10';
+$VERSION = '0.11';
 $DEBUG = 0;
 
 require Exporter;
 @ISA = qw/Exporter/;
-@EXPORT = qw/orac_print orac_err orac_warn orac_debug/;
+@EXPORT = qw/orac_print orac_err orac_warn orac_debug orac_read/;
 
 $TKMW = undef;
+
+# Create a Term::ReadLine handle
+# For read on STDIN and output on STDOUT
+# Create one handle for the process. Note this can be overridden
+# externally
+$RDHDL = new Term::ReadLine 'orac_read';
 
 use IO::File;
 use IO::Tee;
@@ -120,6 +132,32 @@ sub orac_debug {
   my $prt = __curr_obj;
   $prt->debug(@_);
 }
+
+=item orac_read(prompt)
+
+Read a value from standard input. This is simply a layer
+on top of Term::ReadLine.
+
+  $value = orac_read($prompt);
+
+There is no Object-oriented version of this routine. It always
+uses STDIN for input and STDOUT for output.
+
+=cut
+
+sub orac_read {
+  my $prompt = '';
+  $prompt = shift if @_;
+
+  # Retrieve the readline object
+  return undef unless defined $RDHDL;
+
+  # If TKMW is defined set tkrunning
+  $RDHDL->tkRunning(1) if defined $TKMW;
+
+  return $RDHDL->readline($prompt);
+}
+
 
 
 
@@ -420,7 +458,6 @@ sub debughdl {
   return $self->{DebugHdl};
 }
 
-
 # Methods that do things...
 
 =back
@@ -584,6 +621,8 @@ to set the default output stream. Allowed values are 'out',
 'war' and 'err'. These correspond directly to the orac_print,
 orac_warn and orac_err commands. Default is to use orac_print
 for all tied filehandles.
+
+It is not possible to read from this tied filehandle.
 
 =cut
 
