@@ -18,10 +18,11 @@ use sigtrap qw/die normal-signals error-signals/;
 
 
 use lib $ENV{ORAC_PERL5LIB};
-use ORAC::Basic;
+use ORAC::Basic;    # Recipe parsing/execution routines
 use ORAC::General;
 use ORAC::Loop;     # Loop control
 use ORAC::Print;    # Printing messages or errors
+use ORAC::Core;     # Core pipeline routines
 
 &orac_exit_normally("No starlink login") unless exists $ENV{STAR_LOGIN};
 
@@ -87,7 +88,7 @@ die "Error importing $instmodule:\n$@\n" if ($@);
 # command line arguments
 #
 
-my $status = GetOptions("nodisplay","debug!","quiet!","calib=s","from=i","to=i","ut=i","list=s","loop=s","h");
+my $status = GetOptions("nodisplay","debug!","quiet!","calib=s","from=i","to=i","ut=i","list=s","loop=s","h","batch");
 
 ($opt_h) && do {
 print qq|
@@ -123,7 +124,11 @@ Options:
 	      (data is reduced and we wait for new data)
              -loop inf does not wait for data 
 	      (data is reduced and new data is assumed to be available)
-              
+             -loop flag waits for completion files to appear before
+              procesing (data is reduced and we wait for new data
+	      via the flag)
+  -batch     Run in batch mode. Precalculate groups before proceesing
+             data. 'wait' loop mode should not be used with this option.
   |;
 exit;
 }
@@ -336,112 +341,121 @@ $Override_Recipe = shift(@ARGV); # this will default to the RECIPE File method
 
 
 ################# D A T A   L O O P ###############################
-# Loop forever
+# 
+# There are two approaches to the data processing:
+#
+# 1 - The default processing method where data are read in 
+#     and processed as it arrives and Groups are extended as needed.
+#     This has the advantage that the data is processed as it is
+#     taken, has very good feedback to the user in real time. The down
+#     side is that Groups are processed as soon as possible and in an
+#     off-line batch processing envrionment this is very wasteful
+#     (why work out the flatfield every time a frame arrives when you
+#     simply want to work out the flatfield from the entire group).
+# 2 - The 'batch' method where the data are analysed in two passes.
+#     First the groups are setup, secondly the frames are processed in
+#     each group in turn. This has the advantage that frames can be coadded
+#     into a group only once and is the most efficient way of processing
+#     data off-line. Note that this presupposes that the primitives are
+#     written in such a way that they can spot the last member of the group
+#     (via the lastmember method). Grp Primitives without this check will
+#     probably fail since the some of the members will not have been 
+#     processed even though the group contains many members.
+#     One other issue is
+#     calibration -- in principal all calibration groups should be processed
+#     before observation groups and currently this is not supported.
+#     (only important when calibrations are taken after the observation).
+#
+#     Batch mode can be summarised as
+#       - Read in all frames and allocate groups
+#       - Loop over all groups
+#            Loop over all frames in group
+#               process frames
+#
+#    Default mode is
+#      - Loop over all frames
+#         - Allocate groups
+#            - process frames
 
-while (1) {
+#   Batch mode can be turned on with the -batch switch.
+#   
 
-# foreach $obsno (@obs) {
-  #------------------------------------------------------------------------
-  #
 
-  # Return back the current frame
-  # This will also configure the frame object
-  $Frm = &{$loop}($frameobject, $opt_ut, \@obs);
+# Default is to process data in order of arrival
+unless ($opt_batch) {
 
-  # If frame is undefined then we assume that the data loop
-  # should be stopped
-  last unless defined $Frm;
+  # Loop forever
+  %Groups = ();
 
-  orac_print ("REDUCING: ".$Frm->raw."\n","yellow");
+  while (1) {
+
+    # Return back the current frame
+    # This will also configure the frame object
+    $Frm = &{$loop}($frameobject, $opt_ut, \@obs);
+
+    # If frame is undefined then we assume that the data loop
+    # should be stopped
+    last unless defined $Frm;
+
+    orac_print ("REDUCING: ".$Frm->raw."\n","yellow");
   
-  # query Frame for its group
-  
-  $grpname = $Frm->group;
-  
-  # create a new group object and remove the previous file
-  # unless such an object already exists
-  # note that the "existence" of this group is only meaningful
-  # over the lifetime of the pipeline
-  
-  do {
-    
-    $Grp = new $groupobject($grpname);
-    $Grp->file($Grp->file_from_bits($opt_ut, $Frm->number));
-    unlink($Grp->file); # wont work since .sdf is not included
-    $Groups{$grpname} = $Grp;		# store group object
-    orac_print ("A new group ".$Grp->file." has been created\n","blue");
+    # Store the Frame in the Group
+    $Grp = orac_store_frm_in_correct_grp($Frm, $groupobject, \%Groups, undef, 
+				      $opt_ut);
 
-  } unless (exists $Groups{$grpname});
+    # Actually process the observation
+    orac_process_frame($Frm, $Grp, $Cal, $Override_Recipe, $instrument);
 
-  # Select current group
-  $Grp = $Groups{$grpname};
 
-  # push current Frame onto Group
-
-  $Grp->push($Frm);
-  orac_print ("This observation is part of group ".$Grp->file."\n","blue");
-
-  # let the calibration object know what thing it is using (to determine
-  # suitability etc. In this case we do it on a frame-by-frame basis, so
-  # we pass it the header hash of the current frame
-
-  $Cal->thing($Frm->header);
-
-  #
-  # at this point the recipe method should be queried if it hasn't
-  # been explicitly set
-  # Query frame for a recipe
-
-  my $frmrecipe = $Frm->recipe;
-
-  # KLUDGE: If recipe is not defined take the one specified on the command
-  # Line. Else use the one instructed by the frame.
-  # This needs to be changed such that we override all recipes except for
-  # calibrators
-  if ($frmrecipe !~ /./) {
-    $Recipe = $Override_Recipe;
-  } else {
-    $Recipe = $frmrecipe;
   }
 
-orac_print "Using recipe $Recipe\n";
+} else {
+  # Batch mode mode
 
-  # Read in the selected recipe - note that this returns an array reference
-  $recipe_ref = orac_read_recipe($Recipe, $instrument);	# read recipe
+  # First loop over frames
+  @Groups = ();
+  %Groups = ();
+
+  while (1) {
+    # Return back the current frame
+    # This will also configure the frame object
+    $Frm = &{$loop}($frameobject, $opt_ut, \@obs);
+
+    # If frame is undefined then we assume that the data loop
+    # should be stopped
+    last unless defined $Frm;
+
+    orac_print ("Storing: ".$Frm->raw."\n","yellow");
   
-  # In order to save time here we should not be 
-  # passing an enormous array around (can contain hundereds of lines
-  # of code). Instead pass around an array reference
-  # Since we use a reference to a array we dont need to explicitly
-  # return it either.
-  while (grep /^\s*_/,@$recipe_ref) {	# while it contains other recipes
-    $recipe_ref = orac_parse_recipe($recipe_ref, $instrument); # keep parsing recipes
-  };
+    # Store the Frame in the Group
+    orac_store_frm_in_correct_grp($Frm, $groupobject, \%Groups, \@Groups, 
+				  $opt_ut);
 
-  # Now that the recipe is parsed, insert code for automatic error
-  # checking, etc
+  }
 
-  $recipe_ref = orac_add_code_to_recipe($recipe_ref);
-  
-  orac_execute_recipe($recipe_ref,$Frm,$Grp,$Cal); # execute parsed recipe
-
-  # delete symlink to raw data file
-  unlink($Frm->raw) if (-l $Frm->raw);
+  # Now loop over groups and frames
+  foreach $Grp (@Groups) {
+    foreach $Frm ($Grp->members) {
+      # Actually process the observation
+      orac_print ("REDUCING: ".$Frm->raw."\n","yellow");
+      orac_process_frame($Frm, $Grp, $Cal, $Override_Recipe, $instrument);
+    }
+  }
 
 
-};				# end data loop
-
-
-
+}
 
 &orac_exit_normally;
 
 # exit 
 
-
 #------------------------------------------------------------------------
 
 # $Log$
+# Revision 1.42  1998/09/25 03:35:31  timj
+# Add -batch option.
+# Remove data processing routines to ORAC::Core
+#
 # Revision 1.41  1998/09/23 23:42:48  frossie
 # Take out some print debug lines.
 #
