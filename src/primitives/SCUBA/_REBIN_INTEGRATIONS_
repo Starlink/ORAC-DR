@@ -29,6 +29,13 @@ SIZE         - Size of output map. Useful if you intend to
 SMOOTH       - Smoothing size of convolution function. Default is undef.
                [For GAUSSIAN this is the HWHM]
 
+GRPCENT      - Flag to determine whether integrations should be 
+               regridded relative to the position of the first
+               member of the grid. Default is true.
+
+TRIM         - Region around edge to be trimmed off. Should be in arcseconds.
+               Default is 0.
+
 =head1 NOTES
 
 The frame object is updated at the end of this primitive. The out
@@ -43,7 +50,41 @@ what they are dealing with!!!
 my $method  = ($_REBIN_INTEGRATIONS_{REBIN_METHOD} || "gaussian");
 my $pixsize = ($_REBIN_INTEGRATIONS_{PIXEL_SIZE} || "3.0");
 my $size    = ($_REBIN_INTEGRATIONS_{SIZE} || undef);
-my $smooth = ( $_REBIN_INTEGRATIONS_{SMOOTH} || undef);
+my $smooth  = ($_REBIN_INTEGRATIONS_{SMOOTH} || undef);
+my $trim    = ($_REBIN_INTEGRATIONS_{TRIM}   || 0);
+
+my $grpcent = 1;
+if (exists $_REBIN_INTEGRATIONS_{GRPCENT}) {
+  $grpcent = $_REBIN_INTEGRATIONS_{GRPCENT};
+}
+
+# If necessary, find reference map center from the first group
+# member
+my $mappos = '';
+if ($grpcent) {
+  my $first = $Grp->frame(0);
+  my $outcoords = $first->hdr('CENT_CRD');
+  $outcoords = 'PL' if $first->hdr('CENT_CRD') eq 'PLANET';
+
+  $mappos = " OUT_COORDS=$outcoords ";
+
+  if ($outcoords ne 'PL') {
+    # Read centre (ignore centre coords!)
+    my $long = $first->hdr('LONG');
+    my $lat = $first->hdr('LAT');
+    
+    # Replace : with space
+    $long =~ s/:/ /g;
+    $lat =~ s/:/ /g;
+  
+    $mappos .= " LAT_OUT='$lat' LONG_OUT='$long' ";
+  orac_print "Regridding to map centre $long, $lat ($outcoords)\n";
+
+  }
+
+
+} 
+
 
 my @subs = $Frm->subs;
 
@@ -59,7 +100,8 @@ for my $i (1..$Frm->nfiles) {
 
   # Generate an image per integration
   my $args = "noguard noloop rebin_method=$method pixsize_out=$pixsize ";
- 
+  $args .= "$mappos trim=$trim";
+
   $args .= " size=[$size,$size]" if defined $size;
   $args .= " scale=$smooth" if defined $smooth;
 

@@ -15,12 +15,13 @@ created separately and displayed if required.
 =head1 ARGUMENTS
 
 BIN - number of pixels to bin vectors [default is 2x2]
+S2N - signal to noise criterion for vectors (default is 2)
 
 =head1 SUFFIXES
 
 The following suffixes are generated:
 
-- _pol - I image with P,THETA extensions
+- _pol - I image with P,THETA extensions and catalogue
 - _p   - P image
 - _theta - Theta image
 
@@ -29,6 +30,8 @@ The following suffixes are generated:
 The following tasks are used:
 
  POLPACK: POLVEC to generate P and THETA from Q and U
+
+ CURSA: CATSELECT to select good vectors
 
  KAPPA: THRESH is used to threshold the P vectors
 
@@ -57,6 +60,17 @@ engine, this routine generates an I image  along with P and theta
 images. In addition, if we are using POLPACK, a CATALOGUE is generated
 with the same name as the I image (except for a .FIT extension).
 
+The catalogue supports signal to noise clipping. The
+selection is
+
+   i>0 & p<15 & p/dp > S2N
+
+where S2N can be supplied as an argument.
+
+Since the KAPVIEW vector display uses kapview and optionally
+POLPACK -- the catalogue is used in preference to the P and THETA
+images for display if one exists.
+
 =head1 NOTES
 
 This primitive does not update the frame object. This is because the
@@ -71,11 +85,13 @@ current.
 my $P_frm = $Frm->new;
 my $Theta_frm = $Frm->new;
 my $I_frm = $Frm->new;
+my $S2N_frm = $Frm->new;
 
 # Read the arguments
 my $bin = ($_CALCULATE_POLARISATION_FROM_CUBE_FRAME_{'BIN'} || 2);
+my $Sig2N = ($_CALCULATE_POLARISATION_FROM_CUBE_FRAME_{'S2N'} || 2);
 
-my ($in, @iout, @pout, @ptemp, @thout);
+my ($in, @iout, @pout, @ptemp, @thout, @catout);
 
 # Check for POLPACK
 if (exists $Mon{polpack_mon}) {
@@ -88,16 +104,35 @@ if (exists $Mon{polpack_mon}) {
     ($in, $pout[$i]) = $Frm->inout('_p',$i);
     ($in, $ptemp[$i]) = $Frm->inout('_ptemp',$i);
     ($in, $thout[$i]) = $Frm->inout('_theta',$i);
+    ($in, $catout[$i]) = $Frm->inout('_cat', $i);
 
     # unlink an existing catalogue (assume .FIT)
     # Since POLVEC will not overwrite
-    unlink "$iout[$i].FIT";
+    unlink "$iout[$i].FIT", "$catout[$i].FIT";
 
     orac_print "Binning at $bin pixels\n" if $bin > 1;
     # Just run POLVEC
-    $Mon{polpack_mon}->obeyw('polvec',"in=$in cat=$iout[$i] ang=$thout[$i] p=$ptemp[$i] i=$iout[$i] box=$bin method=mean");
+    $Mon{polpack_mon}->obeyw('polvec',"in=$in cat=$catout[$i] ang=$thout[$i] p=$ptemp[$i] i=$iout[$i] box=$bin method=mean");
 
-    # We will smooth the catalogue here....
+    # Set the I image to be the slice from the cube rather than
+    # the binned image (for now) until we decide whether POLVEC
+    # will bin up or not
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in(,,1) out=$iout[$i] title='Stokes I image'");
+
+
+    # Turn history recording back on
+    $Mon{ndfpack_mon}->obeyw("hisset","ndf=$iout[$i] mode=normal");
+    $Mon{ndfpack_mon}->obeyw("hisset","ndf=$thout[$i] mode=normal");
+    $Mon{ndfpack_mon}->obeyw("hisset","ndf=$ptemp[$i] mode=normal");
+
+
+    # Binning should be done in POLBIN but can be done in POLVEC
+    # so long as we dont use the binned I image
+    # Main reason not to is that we are keeping support for KAPPA
+    # fallback mode and VECPLOT display. VECPLOT does not support
+    # p/theta images different size to the I image
+
+
     # The p image is thresholded later on.
 
 
@@ -121,15 +156,15 @@ if (exists $Mon{polpack_mon}) {
     # We can use compave to bin the cube as a whole by [$bin,$bin,1]
     # and then use SQORST to expand it. There is every likelihood
     # that WCS are lost during this. Origin information will be lost
-    # when SQORST is used
+    # when SQORST is used - only compress for now
 
+    my $avout;
     if ($bin > 1) {
       orac_print "Binning at $bin pixels\n";
-      my $f = $Frm->file($i);
-      ($in,my $avout) = $Frm->inout('_compave',$i);
-      $Mon{kappa_mon}->obeyw('compave',"in=$in out=$avout compress=[$bin,$bin,1]");
+      $avout = new ORAC::TempFile(0);
+      $Mon{kappa_mon}->obeyw('compave',"in=$in out=".$avout->file." compress=[$bin,$bin,1]");
       # Use the compave output as the in
-      $in = $avout;
+      $in = $avout->file;
     }
 
     # Need to extract the I Q and U images from the cube
@@ -166,14 +201,43 @@ if (exists $Mon{polpack_mon}) {
 # Loop over nfiles again
 for my $i (1..$Frm->nfiles) {
 
-  # Dont need to recaculate output names since we stored them in
-  # arrays
+  # At this pont we have I, P and THETA images
+  # Also, with POLPACK we will have a FITS catalogue
+  # We have already binned up using POLVEC with POLPACK
+
+  # When we dont have CURSA the only thing we can really do
+  # is threshold P and throw away the large values
+
+  if (exists $Mon{catselect} && exists $Mon{polpack_mon}) {
+
+    # threshold catalogue on I>0 && p/dp> 3
+    # and write it to a catalogue of the same name as the I image
+    unlink "$iout[$i].FIT";
+    $Mon{catselect}->obeyw("catselect"," catin=$catout[$i] catout=$iout[$i] rejcat=no seltyp=e expr='i>0 & p<15 & p>0.001 & p/dp>$Sig2N'");
+
+    orac_print "Clipping vectors below signal-to-noise of $Sig2N\n";
+
+    # Convert the catalogue to an image in P so that we can generate
+    # a signal to noise map
+
+    my $pimag = new ORAC::TempFile(0);
+    $Mon{polpack_mon}->obeyw("polimage"," in=$iout[$i] coldat=p colvar='dp**2' method=mean shape=true out=" . $pimag->file);
+
+    my $s2n = $Frm->inout('_s2n',$i);
+    $Mon{kappa_mon}->obeyw("maths","exp='ia/sqrt(va)' ia=".$pimag->file ." out=$s2n title='p S/N'");
+
+    $S2N_frm->file($i, $s2n);
+
+  } else {
+    orac_print "CURSA/POLPACK not available -- can only threshold p\n";
+  }
 
   # Just threshold the P
-  $Mon{kappa_mon}->obeyw("thresh", "in=$ptemp[$i] out=$pout[$i] thrlo=0.0 thrhi=10.0 newlo=BAD newhi=BAD");
+  $Mon{kappa_mon}->obeyw("thresh", "in=$ptemp[$i] out=$pout[$i] thrlo=0.001 thrhi=15.0 newlo=BAD newhi=BAD");
 
   # Erase ptemp
   $Mon{ndfpack_mon}->obeyw("erase","object=$ptemp[$i] ok=true");
+
 
   # Create an .ORAC extension
   ndf_begin;
@@ -182,6 +246,8 @@ for my $i (1..$Frm->nfiles) {
   ndf_open(&NDF::DAT__ROOT(), $iout[$i],'UPDATE','OLD', $indf, $place,$status);
   ndf_xnew($indf, 'ORAC', 'ORAC_EXT', 0, @null, $xloc, $status);
   dat_annul($xloc, $status);
+  my @lines = ( "Add ORAC extension");
+  ndf_hput('NORMAL', "$ORAC_PRIMITIVE (ORAC-DR)", 1, 1, @lines,0,0,0,$indf,$status);
   ndf_annul($indf, $status);
   ndf_end($status);
   if ($status != &NDF::SAI__OK) {
@@ -208,6 +274,7 @@ for my $i (1..$Frm->nfiles) {
 $Display->display_data($P_frm) if defined $Display;
 $Display->display_data($Theta_frm) if defined $Display;
 $Display->display_data($I_frm) if defined $Display;
+$Display->display_data($S2N_frm) if defined $Display;
 
 # Now undef the temporary frames
 $P_frm = undef;
