@@ -24,10 +24,10 @@ to B<ORAC::Group::Michelle> objects.
 
 # A package to describe a Michelle group object for the
 # ORAC pipeline
- 
+
 use 5.004;
 use ORAC::Group::NDF;
- 
+
 # Let the object know that it is derived from ORAC::Frame;
 @ORAC::Group::Michelle::ISA = qw/ORAC::Group::NDF/;
 
@@ -36,7 +36,7 @@ use vars qw/$VERSION/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 
- 
+
 # standard error module and turn on strict
 use Carp;
 use strict;
