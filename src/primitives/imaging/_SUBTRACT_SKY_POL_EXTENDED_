@@ -130,8 +130,15 @@
 # Remove any existing quadrant files.
        unlink( "esky.ard", "osky.ard" );
 
+# At version 0.18 of KAPPA we need to specify the domain as pixels, as
+# ARDMASK no longer supports the COSYS parameter, previously set to W.
+       my $coframe =  ! starversion_lt( "KAPPA", 'V0.18' );
+
 # e-beam.  Defines bad pixels which are not in either rectangle.
        open( ARDFILE, ">esky.ard" );
+       if ( $coframe ) {
+          print ARDFILE "COFRAME( PIXEL )\n";
+       }
        print ARDFILE "OFFSET( -0.5, -0.5 )\n";
        print ARDFILE ".NOT . ( RECT($esbounds[ 0 ],$esbounds[ 1 ],$esbounds[ 2 ]," .
          "$esbounds[ 3 ]) .OR. RECT($etbounds[ 0 ],$etbounds[ 1 ],$etbounds[ 2 ]," .
@@ -140,6 +147,9 @@
 
 # o-beam.  Defines bad pixels which are not in either rectangle.
        open( ARDFILE, ">osky.ard" );
+       if ( $coframe ) {
+          print ARDFILE "COFRAME( PIXEL )\n";
+       }
        print ARDFILE "OFFSET( -0.5, -0.5 )\n";
        print ARDFILE ".NOT . ( RECT($osbounds[ 0 ],$osbounds[ 1 ],$osbounds[ 2 ]," .
          "$osbounds[ 3 ]) .OR. RECT($otbounds[ 0 ],$otbounds[ 1 ],$otbounds[ 2 ]," .
@@ -148,32 +158,36 @@
 
 # Determine whether the NDF supports variance.
 # ============================================
-       $Mon{"ndfpack_mon"}->obeyw("ndftrace","ndf=$in");
-       ( my $ORAC_STATUS, my $variance ) = $Mon{"ndfpack_mon"}->get("ndftrace","variance");
+       $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$in" );
+       ( my $ORAC_STATUS, my $variance ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "variance" );
 
 # Mask the sky frame.
 # ===================
 
-# Specify the parameters.
+# Specify the parameters.  When the COSYS parameter is unavailable, the
+# ARD file created above specifies "COFRAME PIXEL".
        my $param1 = "in=$insky out=esky_$$ title=\'o-beam regions masked\'";
-       my $param2 = "ardfile=esky.ard cosys=w";
+       my $param2 = "ardfile=esky.ard";
+       if ( starversion_lt( "KAPPA", 'V0.18-0' ) ) {
+          $param2 = $param2 . " cosys=w";
+       }
 
 # Mask the object ellipses with bad pixels.
-       $Mon{"kappa_mon"}->obeyw("ardmask","$param1 $param2");
+       $Mon{ "kappa_mon" }->obeyw( "ardmask", "$param1 $param2" );
 
 # Specify the parameters.
        $param1 = "in=$insky out=osky_$$ title=\'e-beam regions masked\'";
        $param2 = "ardfile=osky.ard cosys=w";
 
 # Mask the object ellipses with bad pixels.
-       $Mon{"kappa_mon"}->obeyw("ardmask","$param1 $param2");
+       $Mon{ "kappa_mon" }->obeyw( "ardmask", "$param1 $param2" );
 
 # Find the modal skies.
 # =====================
 
 # Calculate and extract the clipped mean of the e-beam sections of sky.
-       $Mon{"kappa_mon"}->obeyw("stats","ndf=esky_$$ clip=[2,3,3]");
-       ( $ORAC_STATUS, my $esky ) = $Mon{"kappa_mon"}->get("stats","mean");
+       $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=esky_$$ clip=[2,3,3]" );
+       ( $ORAC_STATUS, my $esky ) = $Mon{ "kappa_mon" }->get( "stats", "mean" );
 
 # Format for later output.
        my $fs_sky = sprintf( "%11.3f", $esky );
@@ -183,8 +197,8 @@
 # to calculate the statistics if there is a variance area.
        my ( $ecount, $esigma, $emeanerr ); 
        if ( $variance eq "TRUE" ) {
-          ( $ORAC_STATUS, $esigma ) = $Mon{"kappa_mon"}->get("stats","sigma");
-          ( $ORAC_STATUS, $ecount ) = $Mon{"kappa_mon"}->get("stats","numgood");
+          ( $ORAC_STATUS, $esigma ) = $Mon{ "kappa_mon "}->get( "stats", "sigma" );
+          ( $ORAC_STATUS, $ecount ) = $Mon{ "kappa_mon" }->get( "stats", "numgood" );
 
 # Prevent divide-by zero, although it seems impossible to get zero good pixels.
           if ( $ecount == 0 ) {
@@ -210,8 +224,8 @@
 
 # Now repeat for the o-beam.  Calculate and extract the clipped mean of the
 # section.
-       $Mon{"kappa_mon"}->obeyw("stats","ndf=osky_$$ clip=[2,3,3]");
-       ( $ORAC_STATUS, my $osky ) = $Mon{"kappa_mon"}->get("stats","mean");
+       $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=osky_$$ clip=[2,3,3]" );
+       ( $ORAC_STATUS, my $osky ) = $Mon{ "kappa_mon" }->get( "stats", "mean" );
 
 # Format for later output.
        $fs_sky = sprintf( "%11.3f", $osky );
@@ -221,8 +235,8 @@
 # to calculate the statistics if there is a variance area.
        my ( $ocount, $osigma, $omeanerr ); 
        if ( $variance eq "TRUE" ) {
-          ( $ORAC_STATUS, $osigma ) = $Mon{"kappa_mon"}->get("stats","sigma");
-          ( $ORAC_STATUS, $ocount ) = $Mon{"kappa_mon"}->get("stats","numgood");
+          ( $ORAC_STATUS, $osigma ) = $Mon{ "kappa_mon" }->get( "stats", "sigma" );
+          ( $ORAC_STATUS, $ocount ) = $Mon{ "kappa_mon" }->get( "stats", "numgood" );
 
 # Prevent divide-by zero, although it seems impossible to get zero good pixels.
           if ( $ocount == 0 ) {
@@ -269,15 +283,15 @@
 # in the expression.  The accept is to take the default data type.
           $param1 = "exp='$esky+0*xa+0*xb' lbound=[$etbounds[ 0 ],$etbounds[ 2 ]]";
           $param2 = "out=esky_$$ ubound=[$etbounds[ 1 ],$etbounds[ 3 ]] accept";
-          $Mon{"kappa_mon"}->obeyw("maths","$param1 $param2");
+          $Mon{ "kappa_mon" }->obeyw( "maths", "$param1 $param2" );
 
           my $evar = $emeanerr * $emeanerr;
-          $Mon{"ndfpack_mon"}->obeyw("setvar","ndf=esky_$$ variance=$evar");
+          $Mon{ "ndfpack_mon" }->obeyw( "setvar", "ndf=esky_$$ variance=$evar" );
 
 # Subtract the newly created constant frame from the NDF.
           $param1 = "in1=$in($etbounds[ 0 ]:$etbounds[ 1 ],$etbounds[ 2 ]:$etbounds[ 3 ])";
           $param2 = "in2=esky_$$ out=$e_out";
-          $Mon{"kappa_mon"}->obeyw("sub","$param1 $param2");
+          $Mon{ "kappa_mon" }->obeyw( "sub", "$param1 $param2" );
 
 # We're finished with the constant frame.  It's only role is propagate the
 # variance correctly.
@@ -288,7 +302,7 @@
 # Subtract the sky from the required section about the target in the e-beam.
           $param1 = "in=$in($etbounds[ 0 ]:$etbounds[ 1 ],$etbounds[ 2 ]:$etbounds[ 3 ])";
           $param2 = "out=$e_out scalar=$esky";
-          $Mon{"kappa_mon"}->obeyw("csub","$param1 $param2");
+          $Mon{ "kappa_mon" }->obeyw( "csub", "$param1 $param2" );
        }
 
        orac_print "E-beam of $in sky subtracted to make $e_out\n";
@@ -331,15 +345,15 @@
 # in the expression.  The accept is to take the default data type.
           $param1 = "exp='$osky+0*xa+0*xb' lbound=[$otbounds[ 0 ],$otbounds[ 2 ]]";
           $param2 = "out=osky_$$ ubound=[$otbounds[ 1 ],$otbounds[ 3 ]] accept";
-          $Mon{"kappa_mon"}->obeyw("maths","$param1 $param2");
+          $Mon{ "kappa_mon" }->obeyw( "maths", "$param1 $param2" );
 
           my $ovar = $omeanerr * $omeanerr;
-          $Mon{"ndfpack_mon"}->obeyw("setvar","ndf=osky_$$ variance=$ovar");
+          $Mon{ "ndfpack_mon" }->obeyw( "setvar", "ndf=osky_$$ variance=$ovar" );
 
 # Subtract the newly created constant frame from the NDF.
           $param1 = "in1=$in($otbounds[ 0 ]:$otbounds[ 1 ],$otbounds[ 2 ]:$otbounds[ 3 ])";
           $param2 = "in2=osky_$$ out=$o_out";
-          $Mon{"kappa_mon"}->obeyw("sub","$param1 $param2");
+          $Mon{ "kappa_mon" }->obeyw( "sub", "$param1 $param2" );
 
 # We're finished with the constant frame.  It's only role is propagate the
 # variance correctly.
@@ -350,7 +364,7 @@
 # Subtract the sky from the required section about the target in the e-beam.
           $param1 = "in=$in($otbounds[ 0 ]:$otbounds[ 1 ],$otbounds[ 2 ]:$otbounds[ 3 ])";
           $param2 = "out=$o_out scalar=$osky";
-          $Mon{"kappa_mon"}->obeyw("csub","$param1 $param2");
+          $Mon{ "kappa_mon" }->obeyw( "csub", "$param1 $param2" );
        }
 
        orac_print "O-beam of $in sky subtracted to make $o_out\n";
