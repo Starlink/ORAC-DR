@@ -1,0 +1,164 @@
+#+
+# Name:
+#    _CORRECT_WAVEPLATE_ANGLE_HEADER_
+#
+# Purpose:
+#    Corrects values of the polarimetry waveplate angle.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive corrects values of the polarimetry waveplate
+#    angle for an observation.  In particular, it sets a default
+#    value of 0 degrees when ORAC_WAVEPLATE_ANGLE internal header
+#    is undefined, or corrects the value to be modulo 180.  The
+#    new value is stored in the user header and replaces the value
+#    in the FITS header.
+#
+# Notes:
+#    -  This primitive is suitable for Michelle and UIST in imaging
+#    mode.
+#    -  Accessing the FITS airlock in a multi-NDF observation is
+#    not possible in an OO fashion.  So the structure names are
+#    hardwired.
+#    -  If after the modulo-180 correction the angle is zero degrees,
+#    it is written as the string "0.0" in the header so that it
+#    matches what dhspool writes, permitting subgrp selection later.
+#
+# Tasks:
+#    KAPPA: FITSMOD.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Specify the NDF.
+    my $in = $Frm->file;
+    my ( %keywords, $param1, @wplakey );
+
+# ***** Kludge Alert ******
+#
+# There is currently no means of accessing the FITS airlock in the
+# multi-NDF container file generically, forced to assumed the
+# the data structure for now.  So hardwire the name.
+    ( my $inheader = $in ) =~ s/I1BEAMA/HEADER/;
+    
+# See if WPLANGLE has a value.
+    if ( !defined( $Frm->uhdr( "ORAC_WAVEPLATE_ANGLE" ) ) ) {
+
+# Set the internal hash for WPLANGLE to value 0.  This will allow the
+# flat-field rules to work even if WPLANGLE had no value in the raw
+# frame.
+       $Frm->uhdr( "ORAC_WAVEPLATE_ANGLE", 0 );
+
+# The data also need to be changed so that the flat can be filed.
+# Thus correct the FITS airlock value too.  This assumes that there
+# is a keyword corresponding to the ORAC_WAVEPLATE_ANGLE.  Note that
+# the input file name remains the same.  The implied wildcarding of
+# the multi-NDF file by KAPPA would deal with this at one time.
+# However, now due to changes in the DR conversion from raw frames, 
+# there is only one set of user and external headers per Frm.   Hence
+# there is no looping over the integrations.  The current frame is the
+# first integration, so we have to access the header NDF.  
+       %keywords =  $Frm->translate_hdr( "ORAC_WAVEPLATE_ANGLE" );
+       @wplakey = keys( %keywords );
+       $param1 = "edit=update keyword=$wplakey[ 0 ] value=0.0 comment=\\\$C position=!"; 
+       $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "ndf=$inheader $param1" );
+
+# Correct the waveplate angle to modulo 180 degrees.
+# ==================================================
+
+    } elsif ( $Frm->uhdr( "ORAC_WAVEPLATE_ANGLE" ) > 179.99 ) {
+
+# For the polarimetry reductions the waveplate angles are 0, 45, 22.5,
+# and 67.5.  Values 180, 225, 202.5, and 247.5 are equivalent.
+       my $wplangle = $Frm->uhdr( "ORAC_WAVEPLATE_ANGLE" );
+       my $newangle = $wplangle % 180;
+
+# For some reason the orientation angle zero is written by dhspool as
+# 0.0 rather than 0 (unlike say 45).  Therefore a 180-degree waveplate
+# angle mod 180 becomes "0" when written by FITSMOD, thus will not be
+# matched by various invocations of the subgrp method in the
+# polarimetry code.  So make 0 into 0.0 before storing in the user
+# header.  Make it a string to force the trailing 0 to appear in the
+# user header.
+       if ( abs( $newangle ) < 1E-4 ) {
+          $newangle = "0.0";
+       } 
+
+# Store the revised value.
+       $Frm->uhdr( "ORAC_WAVEPLATE_ANGLE", $newangle );
+
+# The data also need to be changed so that the mosaic will inherit it.
+# Thus correct the FITS airlock value too.  This assumes that
+# there is a keyword corresponding to the ORAC_WAVEPLATE_ANGLE.  Note
+# that the input file name remains the same.  Again we are forced to
+# the header-NDF kludge for now.  See the earlier FITSMOD comments for
+# more details.
+       %keywords =  $Frm->translate_hdr( "ORAC_WAVEPLATE_ANGLE" );
+       @wplakey = keys( %keywords );
+       $param1 = "edit=update keyword=$wplakey[ 0 ] value=$newangle comment=\\\$C position=!"; 
+       $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "ndf=$inheader $param1" );
+
+# Report the processing status.
+       orac_print "Frame $in has waveplate angle changed from " .
+                  "$wplangle to $newangle (modulo 180).\n";
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_CORRECT_WAVEPLATE_ANGLE_HEADER_ -- Corrects values of the polarimetry waveplate angle.
+
+=head1 DESCRIPTION
+
+This primitive corrects values of the polarimetry waveplate angle for
+an observation.  In particular, it sets a default value of 0 degrees
+when ORAC_WAVEPLATE_ANGLE internal header is undefined, or corrects
+the value to be modulo 180.  The new value is stored in the user
+header and replaces the value in the FITS header.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for Michelle and UIST in imaging mode.
+
+=item *
+
+Accessing the FITS airlock in a multi-NDF observation is
+not possible in an OO fashion.  So the structure names are
+hardwired.
+
+=item *
+
+If after the modulo-180 correction the angle is zero degrees,
+it is written as the string "0.0" in the header so that it
+matches what dhspool writes, permitting subgrp selection later.
+
+=back
+
+=head1 TASKS
+
+KAPPA: FITSMOD.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
