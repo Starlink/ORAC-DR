@@ -39,11 +39,7 @@ use strict;
 use Carp;
 use vars qw/$VERSION/;
 
-
-$VERSION = undef; # -w protection
 $VERSION = '0.10';
-
-
 
 
 # Setup the object structure
@@ -59,7 +55,7 @@ The following methods are available in this class.
 Create a new instance of a ORAC::Calib object.
 The object identifier is returned.
 
-  $Obs = new ORAC::Calib;
+  $Cal = new ORAC::Calib;
 
 =cut
 
@@ -75,6 +71,8 @@ sub new {
   $obj->{Bias} = undef;
   $obj->{Dark} = undef;
   $obj->{Flat} = undef;
+  $obj->{Mask} = undef;
+  $obj->{Rotation} = undef;
   $obj->{Arc} = undef;
   $obj->{Standard} = undef;
 
@@ -117,6 +115,37 @@ sub bias {
   if (@_) { $self->{Bias} = shift; }
   return $self->{Bias};
 }
+
+=item mask
+
+Return (or set) the name of the bad pixel mask
+
+  $mask = $Cal->mask;
+
+=cut
+
+
+sub mask {
+  my $self = shift;
+  if (@_) { $self->{Mask} = shift; }
+  return $self->{Mask};
+}
+
+=item rotation
+
+Return (or set) the name of the rotation transformation matrix
+
+  $rotation = $Cal->rotation;
+
+=cut
+
+
+sub rotation {
+  my $self = shift;
+  if (@_) { $self->{Rotation} = shift; }
+  return $self->{Rotation};
+}
+
 
 =item flat
 
