@@ -28,6 +28,7 @@ use warnings;
 use vars qw/$VERSION/;
 use ORAC::Print;
 
+use Data::Dumper;      # For serialization of arrays and hashes
 use POSIX qw/tmpnam/;  # For unique keys
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
@@ -260,6 +261,28 @@ sub slurpindex {
       my ($name,@data)=split(/\s+/,$line); # Split on spaces
       next unless defined $name;	   # skip blank lines
 
+      # Look for array or hash references that have been
+      # serialised
+      for my $entry (@data) {
+	# REF{ and REF[ should be fairly unique
+	if ($entry =~ /^REF(\[|\{)/) {
+	  # Strip the leading REF
+	  my $code = $entry;
+	  $code =~ s/^REF//;
+	  # First make sure it evals okay
+	  my $ref = eval "$code";
+
+	  # if everything is okay store the reference
+	  # otherwise we just keep it as is
+	  if ($@) {
+	    orac_warn "Error in eval reading index file: $entry\n";
+	  } else {
+	    $entry = $ref;
+	  }
+
+	}
+      }
+
       # If we are using the key from the file then we
       # have that as $name. Else we have to create a new $name
       # for the hash
@@ -431,12 +454,31 @@ writing to an index file. Called by writeindex() and append_to_index()
 Returns the text string (including the entry name but no carriage 
 return).
 
+ARRAY or HASH references are serialised (although the current output
+format restricts the use of spaces).
+
 =cut
 
 sub index_to_text {
   my $self = shift;
   my $entry = shift;
-  return $entry . " " . join(" ",@{$self->indexref->{$entry}});
+
+  # Convert references to strings
+  my @entries = map {
+
+    if (ref($_)) {
+      my $serial = Dumper($_);
+      $serial =~ s/\s//g; # remove whitespace
+      $serial = "REF". substr($serial,6); # Remove $VAR1=
+      $serial;
+    } else {
+      $_
+    }
+
+  } @{$self->indexref->{$entry}};
+
+
+  return $entry . " " . join(" ",@entries);
 }
 
 
