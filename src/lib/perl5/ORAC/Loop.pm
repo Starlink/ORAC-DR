@@ -546,8 +546,14 @@ sub orac_loop_file {
   # Create a new frame in class
   my $Frm = $class->new;
 
-  _convert_and_link( $Frm, $fname)
-    && return $Frm;
+  # and convert it if required
+  my $status = _convert_and_link( $Frm, $fname);
+
+  if ($status) {
+    orac_print "\nFound\n";
+    return $Frm;
+  }
+  return;
 }
 
 =back
