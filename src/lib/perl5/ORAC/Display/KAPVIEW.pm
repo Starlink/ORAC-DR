@@ -1278,7 +1278,7 @@ sub graph {
   # Should probably set the options
   # If we are autoscaling then we dont need any axis setting
   # default is not to send any axis control information
-  my $range;
+  my $range = ' ';
   if (exists $options{ZAUTOSCALE}) {
     if ($options{ZAUTOSCALE}) {
       if ($KAPPA13) {
@@ -1700,7 +1700,7 @@ sub datamodel {
   return $status if $status != ORAC__OK;
 
   # Calculate the range setting parameters
-  my $range;
+  my $range = ' ';
   if (exists $options{ZAUTOSCALE}) {
     if ($options{ZAUTOSCALE}) {
       if ($KAPPA13) {
