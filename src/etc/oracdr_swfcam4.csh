@@ -64,6 +64,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.2  2004/11/06 01:08:26  bradc
+#     set ORAC_INSTRUMENT to SWFCAMn
+#
 #     Revision 1.1  2004/09/14 21:17:37  bradc
 #     initial addition for SWFCAM
 #
@@ -119,7 +122,7 @@ endif
 
 set oracdr_args = "-ut $oracut"
 
-setenv ORAC_INSTRUMENT WFCAM4
+setenv ORAC_INSTRUMENT SWFCAM4
 setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/wfcam4/$oracut
 setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/wfcam4/$oracut
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/wfcam
