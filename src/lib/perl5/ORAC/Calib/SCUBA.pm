@@ -189,8 +189,7 @@ sub fluxes_mon {
 
     # Start FLUXES - this requires some environment variables to be defined
     # This should use a $FLUXES_DIR env variable
-    # $ENV{FLUXES} = '/star/bin/fluxes';
-    $ENV{FLUXES} = '/home/timj/tmp/fluxes';
+    $ENV{FLUXES} = '/star/bin/fluxes';
 
     # Should chdir to /tmp, create the soft link, launch fluxes
     # and then chdir back to wherever we happen to be.
