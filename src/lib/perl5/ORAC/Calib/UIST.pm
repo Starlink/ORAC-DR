@@ -30,7 +30,7 @@ use Carp;
 use warnings;
 use strict;
 
-use ORAC::Calib::CGS4;			# use base class
+use ORAC::Calib::CGS4;                   # use base class
 use ORAC::Print;
 
 use File::Spec;
@@ -82,8 +82,8 @@ sub flatindex_im {
   if( @_ ) { $self->{FlatIndex} = shift; }
 
   unless ( defined $self->{FlatIndex} ) {
-    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.flat_im";
-    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.flat_im";
+    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.flat_im" );
+    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.flat_im" );
     $self->{FlatIndex} = new ORAC::Index( $indexfile, $rulesfile );
   }
 
@@ -96,8 +96,8 @@ sub flatindex_sp {
   if( @_ ) { $self->{FlatIndex} = shift; }
 
   unless( defined $self->{FlatIndex} ) {
-    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.flat_sp";
-    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.flat_sp";
+    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.flat_sp" );
+    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.flat_sp" );
     $self->{FlatIndex} = new ORAC::Index( $indexfile, $rulesfile );
   }
 
@@ -106,7 +106,7 @@ sub flatindex_sp {
 
 =item B<skyindex>
 
-Uses F<rules.sky_im> and <rules.sky_sp>
+Uses F<rules.sky_im> and <rules.sky_sp>.
 
 =cut
 
@@ -166,7 +166,7 @@ sub mask {
       # Nothing suitable, default to fallback position
       # Check that exists and be careful not to set this as the
       # maskname() value since it has no corresponding index enrty
-      my $defmask = $ENV{ORAC_DATA_CAL} . "/bpm";
+      my $defmask = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "bpm" );
       return $defmask if -e $defmask . ".sdf";
 
       # give up...
@@ -301,9 +301,9 @@ sub arlinesindex {
     if (@_) { $self->{ArlinesIndex} = shift; }
     
     unless (defined $self->{ArlinesIndex}) {
-	my $indexfile = $ENV{ORAC_DATA_CAL}."/index.arlines";
-	my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.arlines";
-	$self->{ArlinesIndex} = new ORAC::Index($indexfile,$rulesfile);
+        my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "index.arlines" );
+        my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.arlines" );
+        $self->{ArlinesIndex} = new ORAC::Index($indexfile,$rulesfile);
     }
 
     return $self->{ArlinesIndex}; 
@@ -358,8 +358,8 @@ sub calibratedarcindex {
   if ( @_ ) { $self->{CalibratedArcIndex} = shift; }
 
   unless ( defined( $self->{CalibratedArcIndex} ) ) {
-    my $indexfile = $ENV{ORAC_DATA_CAL} . "/index.calibratedarc";
-    my $rulesfile = $ENV{ORAC_DATA_CAL} . "/rules.calibratedarc";
+    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "index.calibratedarc" );
+    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.calibratedarc" );
     $self->{CalibratedArcIndex} = new ORAC::Index( $indexfile, $rulesfile );
   }
   return $self->{CalibratedArcIndex};
@@ -442,9 +442,9 @@ sub iarindex {
     if (@_) { $self->{IarIndex} = shift; }
     
     unless (defined $self->{IarIndex}) {
-	my $indexfile = "index.iar";
-	my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.iar";
-	$self->{IarIndex} = new ORAC::Index($indexfile,$rulesfile);
+        my $indexfile = "index.iar";
+        my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.iar" );
+        $self->{IarIndex} = new ORAC::Index($indexfile,$rulesfile);
     }
 
     return $self->{IarIndex}; 
@@ -518,9 +518,9 @@ sub offsetindex {
     if (@_) { $self->{OffsetIndex} = shift; }
     
     unless (defined $self->{OffsetIndex}) {
-	my $indexfile = "index.offset";
-	my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.offset";
-	$self->{OffsetIndex} = new ORAC::Index($indexfile,$rulesfile);
+        my $indexfile = "index.offset";
+        my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.offset" );
+        $self->{OffsetIndex} = new ORAC::Index($indexfile,$rulesfile);
     }
 
     return $self->{OffsetIndex}; 
