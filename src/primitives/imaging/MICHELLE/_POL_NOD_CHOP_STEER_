@@ -20,7 +20,9 @@
 #       Number of the cycle, a cycle being a set of frames to complete a
 #       pass through the recipe.  The first cycle is 0.
 #    DIFFERENCE_PAIR = LOGICAL
-#       Whether or not to subtract pairs.  It is true every second frame.
+#       Whether or not to subtract pairs.  The pattern of values depends
+#       on argument JITTER_BEFORE_ANGLE.  In the simplest case when
+#       JITTER_BEFORE_ANGLE=1, DIFFERENCE_PAIR is true every second frame.
 #    DO_APHOT = LOGICAL
 #       Whether or not perform aperture photometry.  Photometry is
 #       performed once the polarisation maps are made.
@@ -65,7 +67,9 @@
 #       The selects the ordering of the frames.  If true (1), the
 #       jittering occurs at all positions before the waveplate is
 #       turned.  If false (0), all waveplate angles are observed at
-#       a given offset.  [1]
+#       a given offset.  If set to 2, then the waveplate is turned in
+#       pairs before dithering, so as to determine Stokes Q and U 
+#       parameters as quickly as possible. [1]
 #    NUMBER = INTEGER (Given)
 #       The number of frames in the jitter.  If absent, the number of
 #       offsets, as given by internal header ORAC_NUMBER_OF_OFFSETS, minus
@@ -80,10 +84,10 @@
 #    -  Processing only occurs for object and sky frames.
 #
 # Authors:
-#    MJC: Malcolm J. Currie (JAC)
+#    MJC: Malcolm J. Currie (JAC, Starlink)
 #
 # Copyright:
-#    Copyright (C) 2001 Particle Physics and Astronomy Research
+#    Copyright (C) 2001--2004 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 #
 #-
@@ -155,22 +159,36 @@
           $Grp->uhdr( "MOSAIC_GROUP", $mosGrp );
        }
 
+# Create useful variables
+# =======================
+
+# There are four waveplate angles.  $totframe is the total number of
+# frames in a recipe cycle.
+       my $nangle = 4;
+       my $totframe = $nangle * $number;
+
+# A pair is a pair.
+       my $pair = 2;
+       my $pair_angle = $pair * $nangle;
+
 # Assign the steering headers.
 # ============================
 
+# Jitter before rotating waveplate
+# --------------------------------
 # Specify during processing of which frames should the pairs be subtracted.
 # Deal with the easier case first.  That's when the jitter comes first, so 
 # the data can be processed sequentially, and differenced every other frame
 # in the normal fashion.
-       if ( $ jitter_first ) {
-          if ( $fn % 2 == 0 ) {
+       if ( $jitter_first && $jitter_first != 2 ) {
+          if ( $fn % $pair == 0 ) {
              $Frm->uhdr( "DIFFERENCE_PAIR", 1 );
 
 # A difference is to be made, but in what order.  PAIR_ORDER = 1 means
 # take the second from the first of the pair.  PAIR_ORDER = 0 is the
 # reverse.  Put another way, the order is ABBA as the B is always taken
 # from the A.
-             if ( $fn % 4 == 0 ) {
+             if ( $fn % $nangle == 0 ) {
                 $Frm->uhdr( "PAIR_ORDER", 0 );
              } else {
                 $Frm->uhdr( "PAIR_ORDER", 1 );
@@ -180,11 +198,13 @@
              $Frm->uhdr( "DIFFERENCE_PAIR", 0 );
           }
 
+# Rotate waveplate before jittering
+# ---------------------------------
 # Where the waveplate angle varies first, adjacent frames can't be
 # differenced.  Instead it is frame numbers separated by four, e.g.
 # first and fifth, second and sixth.
-       } else {
-          if ( int( ( $fn - 1 ) / 4 ) % 2 ) {
+       } elsif ( ! $jitter_first ) {
+          if ( int( ( $fn - 1 ) / $nangle ) % $pair ) {
              $Frm->uhdr( "DIFFERENCE_PAIR", 1 );
 
 # A difference is to be made, but in what order.  PAIR_ORDER = 1 means
@@ -193,10 +213,35 @@
 # from the A.  However, there is the gap for each waveplate angle
 # iteration.  We need PAIR_ORDER = 1 for 5th to 8th and PAIR_ORDER = 0
 # for 13th to 16th frames in each cycle.
-             if ( int( $fn - 1 ) / 8  % 2 == 0 ) {
+             if ( int( ( $fn - 1 ) / $pair_angle ) % $pair == 0 ) {
                 $Frm->uhdr( "PAIR_ORDER", 1 );
              } else {
                 $Frm->uhdr( "PAIR_ORDER", 0 );
+             }
+
+          } else {
+             $Frm->uhdr( "DIFFERENCE_PAIR", 0 );
+          }
+          
+# Rotate waveplate in pairs before jittering
+# ------------------------------------------
+# Where the waveplate angle varies first even only in pairs, adjacent
+# frames can't be differenced.  Instead it is frame numbers separated
+# by two, e.g. first and third, second and fourth.
+       } else {
+          if ( int( ( $fn - 1 ) / $pair ) % $pair ) {
+             $Frm->uhdr( "DIFFERENCE_PAIR", 1 );
+
+# A difference is to be made, but in what order.  PAIR_ORDER = 1 means
+# take the second from the first of the pair.  PAIR_ORDER = 0 is the
+# reverse.  Put another way, the order is ABBA as the B is always taken
+# from the A.  However, there is the gap for each paired waveplate angle
+# iteration.  We need PAIR_ORDER = 0 for 3rd, 4th, 11th, and 12th; and
+# PAIR_ORDER = 1 for 7th, 8th, 15th, and  16th frames in each cycle.
+             if ( int( ( ( $fn - 1 ) % $pair_angle ) / $pair ) % ( $nangle - 1 ) == 0 ) {
+                $Frm->uhdr( "PAIR_ORDER", 0 );
+             } else {
+                $Frm->uhdr( "PAIR_ORDER", 1 );
              }
 
           } else {
@@ -206,11 +251,6 @@
 
 # Using data variance or not applies to all frames.
        $Frm->uhdr( "USE_VARIANCE", $usevar ); 
-
-# There are four waveplate angles.  $totframe is the total number of
-# frames in a recipe cycle.
-       my $nangle = 4;
-       my $totframe = $nangle * $number;
 
 # Specify the first frame as the frame whose mode will be the
 # reference for the normalisation of frames.
@@ -237,14 +277,22 @@
 # is completed.  When all waveplate angles are observed at each jitter,
 # a mosaic for a waveplate angle can be found once the last jitter
 # position for it has been observed.
-       if ( $jitter_first ) {
+       if ( $jitter_first && $jitter_first != 2 ) {
           if ( $fn % $number == 0 ) {
              $Frm->uhdr( "MAKE_MOSAIC", 1 );
           } else {
              $Frm->uhdr( "MAKE_MOSAIC", 0 );
           }
-       } else {
+
+       } elsif ( ! $jitter_first ) {
           if ( $Grp->num % $totframe >= ( $totframe - $nangle ) ) {
+             $Frm->uhdr( "MAKE_MOSAIC", 1 );
+          } else {
+             $Frm->uhdr( "MAKE_MOSAIC", 0 );
+          }
+          
+       } else {
+          if ( $Grp->num % ( $totframe / 2 ) >= ( $totframe - $nangle ) / 2 ) {
              $Frm->uhdr( "MAKE_MOSAIC", 1 );
           } else {
              $Frm->uhdr( "MAKE_MOSAIC", 0 );
@@ -292,7 +340,9 @@ pass through the recipe.  The first cycle is 0.
 
 =item DIFFERENCE_PAIR = LOGICAL
 
-Whether or not to subtract pairs.  It is true every second frame.
+Whether or not to subtract pairs.  The pattern of values depends
+on argument JITTER_BEFORE_ANGLE.  In the simplest case when
+JITTER_BEFORE_ANGLE=1, DIFFERENCE_PAIR is true every second frame.
 
 =item DO_APHOT = LOGICAL
 
@@ -362,7 +412,9 @@ MOSAIC_GROUP's file has the same name as the main group's file.
 The selects the ordering of the frames.  If true (1), the
 jittering occurs at all positions before the waveplate is
 turned.  If false (0), all waveplate angles are observed at
-a given offset.  [1]
+a given offset.  If set to 2, then the waveplate is turned in
+pairs before dithering, so as to determine Stokes Q and U 
+parameters as quickly as possible. [1]
 
 =item NUMBER = INTEGER (Given)
 
@@ -393,11 +445,11 @@ Processing only occurs for object and sky frames.
 
 =head1 AUTHORS
 
-MJC: Malcolm J. Currie (JAC)
+Malcolm J. Currie <mjc@star.rl.ac.uk>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2001 Particle Physics and Astronomy Research
+Copyright (C) 2001--2004 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
