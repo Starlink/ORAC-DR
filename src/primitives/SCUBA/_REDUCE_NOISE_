@@ -29,11 +29,16 @@ my $thresh = ($_REDUCE_NOISE_{THRESHOLD} || 100.0);
 # Input file (assume only one sub-frame)
 my ($in, $out) = $Frm->inout('_noise');
 
-# Temp file name
-my $temp = "noise_$$.dat";
+# Create temporary file object - note that reduce_noise
+# will not overwrite an existing file..... so we need to unlink
+# it first - this could cause problems if the temporary file
+# is reallocated in the meantime.
+my $temp = new ORAC::TempFile(0);
+my $fname = $temp->file;
 
 # Run the task
-$Mon{surf_mon}->obeyw("reduce_noise","in=$in out=$out file=$temp");
+unlink $fname; # kluge until reduce_noise can overwrite
+$Mon{surf_mon}->obeyw("reduce_noise","in=$in out=$out file=$fname");
 
 # Note that the output from reduce_noise is 2-Dimensional
 # with the chop error stored in the variance array in the first
@@ -52,24 +57,25 @@ $Display->display_data($Frm) if defined $Display;
 # noise error greater than 100nV
 
 {
-  my $fh = new IO::File("< $temp");
+  my $fh = new IO::File("< $fname");
   my @badbols = (); # Store the bad bolometers list
   orac_print "Noisy bolometers (>$thresh nV):\n";
 
-  foreach my $line (<$fh>) {
-
-    # Check that line starts with a bolometer name
-    if ($line =~ /^[A-I]/) {
-      my @bits = split(/\s+/, $line);
-      if ($bits[2] > $thresh) {
-	orac_print "\t$bits[0]:\t$bits[2] nV\n",'clear'; 
-	# Store the bolometer name
-	push(@badbols, $bits[0]);
+  if (defined $fh) {
+    foreach my $line (<$fh>) {
+      # Check that line starts with a bolometer name
+      if ($line =~ /^[A-I]/) {
+	my @bits = split(/\s+/, $line);
+	if ($bits[2] > $thresh) {
+	  orac_print "\t$bits[0]:\t$bits[2] nV\n",'clear'; 
+	  # Store the bolometer name
+	  push(@badbols, $bits[0]);
+	}
       }
-    }
 
+    }
+    close($fh);
   }
-  close($fh);
 
   # Write the information to the index file
   # Making sure that the THRESHOLD and BADBOLS information
@@ -86,6 +92,3 @@ $Display->display_data($Frm) if defined $Display;
   $Cal->badbolsindex->add($out, \%hdr);
   orac_print "Adding noise observation to index file\n";
 }
-
-# remove the temporary file
-unlink $temp;
