@@ -87,8 +87,6 @@ use ORAC::Error qw/ :try /;
 # General modules
 #
 use Tk; 
-use Tk::TextANSIColor;
-use Error qw/ :try /;
 
 #
 # Routines for export

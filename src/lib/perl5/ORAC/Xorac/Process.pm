@@ -66,16 +66,6 @@ All Rights Reserved.
 
 # L O A D  M O D U L E S --------------------------------------------------- 
 
-
-#
-# General modules
-#
-use Sys::Hostname;
-use Net::Domain;    
-use File::Spec;  
-use Cwd;      
-use Error qw/ :try /;
-
 #
 #  ORAC modules
 #
@@ -124,6 +114,7 @@ sub xorac_start_process {
   use ORAC::Constants; # ORAC__OK et al
   use ORAC::Xorac;
   use ORAC::Inst::Defn qw/ orac_determine_inst_classes /;
+  use Tk;
 
   ####### C H E C K  E N V I R O N M E N T  V A R I A B L E S ################
 
@@ -153,15 +144,7 @@ sub xorac_start_process {
        eval "use diagnostics;";
     }
   }
-  
-  ############### S I G N A L  H A N D L E R S ##############################
-
-  # signals and perl variables
-  $|=1;					# make unbuffered
-
-  $SIG{'INT'} = \&xorac_exit_abnormally;
-  $SIG{'PIPE'} = 'IGNORE';
-
+ 
   ########## O R A C - D R  C O N F I G U R A T I O N ########################
 
   unless (exists $ENV{"ORAC_DIR"}) 
@@ -169,8 +152,6 @@ sub xorac_start_process {
      orac_err(" ORAC_DIR environment variable not defined. Aborting.");
      return;
   }
-
-  my $orac_dir = $ENV{"ORAC_DIR"} . "/";  # main orac directory (contains bin)
 
   ######## C H A N G E   T O   O U T P U T   D I R E C TO R Y  ###############
 
@@ -219,7 +200,6 @@ sub xorac_start_process {
   # create a new toplevel window for the log frames 
   if ( $log_options =~ /x/ )
   {
-      eval "use Tk; use Tk::TextANSIColor;";
       $TL = ORAC::Event->query("Tk")->Toplevel();
       ORAC::Event->register("TL"=>$TL);
       $win_str = "TL";   

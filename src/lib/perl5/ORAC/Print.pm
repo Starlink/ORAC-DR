@@ -73,7 +73,6 @@ use IO::File;
 use IO::Tee;
 use Term::ANSIColor;
 use Term::ReadLine;
-use Error qw/ :try /;
 
 =head1 NON-OO INTERFACE
 
@@ -514,23 +513,8 @@ sub out {
   $outpre = '' unless defined $outpre;
 
   print $fh colored($prefix . $outpre . $text ,$col);
-
-  # There is a chance that we have just updated 
-  # a Tk text widget. On the off-chance that we have,
-  # we should do a Tk update
-  try {
-     ORAC::Event->update("Tk");
-  }
-  catch ORAC::Error::FatalError with
-  {
-     my $Error = shift;
-     $Error->throw;    
-  }
-  catch ORAC::Error::UserAbort with
-  {
-     my $Error = shift;
-     $Error->throw;
-  };
+  
+  tk_update();
   
 }
 
@@ -560,22 +544,7 @@ sub war {
 
   print $fh colored($prefix . $warpre .$text,$col);
 
-  # There is a chance that we have just updated 
-  # a Tk text widget. On the off-chance that we have,
-  # we should do a Tk update
-  try {
-     ORAC::Event->update("Tk");
-  }
-  catch ORAC::Error::FatalError with
-  {
-     my $Error = shift;
-     $Error->throw;    
-  }
-  catch ORAC::Error::UserAbort with
-  {
-     my $Error = shift;
-     $Error->throw;
-  };
+  tk_update();
   
 }
 
@@ -608,22 +577,8 @@ sub err {
   # Beep if required
   print STDOUT chr(7) if $self->errbeep;
 
-  # There is a chance that we have just updated 
-  # a Tk text widget. On the off-chance that we have,
-  # we should do a Tk update
-  try {
-     ORAC::Event->update("Tk");
-  }
-  catch ORAC::Error::FatalError with
-  {
-     my $Error = shift;
-     $Error->throw;    
-  }
-  catch ORAC::Error::UserAbort with
-  {
-     my $Error = shift;
-     $Error->throw;
-  };  
+  tk_update();
+  
 }
 
 =item debug (text)
@@ -644,24 +599,35 @@ sub debug {
     my $fh = $self->debughdl;
     return unless defined $fh;
     print $fh "DEBUG:$text";
-
-    # There is a chance that we have just updated 
-    # a Tk text widget. On the off-chance that we have,
-    # we should do a Tk update
-    try {
-       ORAC::Event->update("Tk");
-    }
-    catch ORAC::Error::FatalError with
-    {
-       my $Error = shift;
-       $Error->throw;    
-    }
-    catch ORAC::Error::UserAbort with
-    {
-       my $Error = shift;
-       $Error->throw;
-    };    
   }
+  tk_update();
+
+}
+
+=item tk_update ( )
+
+Does an Tk update on the Main Window widget
+
+=cut
+
+sub tk_update {
+
+  # There is a chance that we have just updated 
+  # a Tk text widget. On the off-chance that we have,
+  # we should do a Tk update
+  try {
+     ORAC::Event->update("Tk");
+  }
+  catch ORAC::Error::FatalError with
+  {
+     my $Error = shift;
+     $Error->throw;    
+  }
+  catch ORAC::Error::UserAbort with
+  {
+     my $Error = shift;
+     $Error->throw;
+  };
 
 }
 

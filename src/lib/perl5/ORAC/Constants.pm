@@ -12,7 +12,8 @@ ORAC::Constants - Constants available to the ORAC system
 
 =head1 DESCRIPTION
 
-Provide access to ORAC constants.
+Provide access to ORAC constants, necessary to use this module if you wish
+to return an ORAC__ABORT or ORAC__FATAL status using ORAC::Error.
 
 =cut
 
