@@ -1,0 +1,76 @@
+# -*-perl-*-
+# Hey emacs, we're Perl!
+
+# Get a list of all the files in the Group.
+my @members = $Grp->members;
+
+if( scalar( @members ) > 1 ) {
+
+  # Create a list of input and output images.
+  my $inputlist = "inlist.list$$";
+  my $outputlist = "outlist.list$$";
+  unlink( $inputlist, $outputlist );
+
+  open( my $fh_inlist, ">$inputlist" ) ||
+    orac_throw "Unable to open $inputlist to create a list of spectra to align. Error: $!\n";
+  open( my $fh_outlist, ">$outputlist" ) ||
+    orac_throw "Unable to open $outputlist to create a list of spectra to align. Error: $!\n";
+
+  # Write filenames to the two lists and create the parameter list for
+  # subsequent coaddition.
+  my $maths_list = '';
+  my $maths_eq = 'exp=\'(';
+  my $maths_index = "a";
+  foreach my $member (@members) {
+
+    my $infile = $member->file;
+    my $outfile;
+    ( $outfile = $infile ) =~ s/_([a-zA-Z]+)$/_align/;
+
+    print $fh_inlist $infile, "\n";
+    print $fh_outlist $outfile, "\n";
+
+    orac_print "$infile to $outfile: Aligning spectrum.\n";
+
+    $maths_list .= "i" . $maths_index . "=$outfile ";
+    $maths_eq .= "i" . $maths_index . "+";
+    $maths_index = chr( ord($maths_index) + 1 );
+
+  }
+
+  # Close the filehandles.
+  close( $fh_inlist );
+  close( $fh_outlist );
+
+  # Set up the parameters for WCSALIGN.
+  my $param1 = "in='^$inputlist' out='^$outputlist' lbnd=! accept";
+
+  # Do the align.
+  $Mon{'kappa_mon'}->obeyw( "wcsalign", "$param1" );
+
+  # Remove the file lists.
+  unlink( $inputlist, $outputlist );
+
+  # Now average together the output files.
+  my $out = $Grp->file;
+  $maths_eq =~ s/\+$/)/;
+  $maths_eq .= "/" . scalar( @members ) . "'";
+  $Mon{'kappa_mon'}->obeyw( "maths", "$maths_eq $maths_list out=$out" );
+
+  # Report.
+  orac_print( "Group members averaged to form $out.\n" );
+
+} else {
+
+  # Simply copy the one file into the group file.
+  my $in = $Frm->file;
+  my $out = $Grp->file;
+  $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$out" );
+
+  # Report.
+  orac_print( "$in copied to form $out.\n" );
+
+}
+
+# Tidy up output.
+orac_print "\n";

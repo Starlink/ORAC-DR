@@ -1,0 +1,73 @@
+# -*-perl-*-
+# Hey emacs, we're Perl!
+
+# Load in PDL and associated modules.
+use PDL::Lite;
+use PDL::IO::GSD;
+use PDL::IO::NDF;
+use PDL::IO::Misc;
+use JCMT::DAS qw/ das_merge /;
+
+my( $in, $out ) = $Frm->inout( "_mrg" );
+
+my $filename = $ENV{'ORAC_DATA_IN'} . "/" . $Frm->file;
+
+# Read in the GSD file as a PDL
+my $pdl = rgsd( $filename );
+
+# Grab the first spectrum from the PDL.
+my $spectrum = $pdl->slice(":,(0),0");
+
+# Get the header information from the PDL.
+my $hdr = $pdl->gethdr;
+
+# Get the centre frequencies and frequency increments from the header.
+my $centfrqs = $hdr->{C12CF};
+my $frqincs = $hdr->{C12FR};
+
+# Form arrays from the PDLs to pass to das_merge.
+my @spectrum = list $spectrum;
+my @f_cen = list $centfrqs;
+my @f_inc = list $frqincs;
+
+# Perform the das_merge.
+my ( $out_s, $frq_s, $vel_s ) = das_merge( \@spectrum,
+                                           \@f_cen,
+                                           \@f_inc,
+                                           merge => 1,
+                                         );
+
+# Form PDLs from the array references.
+my $outpdl = pdl $out_s;
+my $velpdl = pdl $vel_s;
+
+# Add the relative velocity.
+$velpdl += $hdr->{C7VR};
+
+# Convert the output PDL into an NDF.
+$outpdl->wndf( $out );
+
+# Open a temporary file to hold the velocity information.
+unlink( "vel.dat$$" );
+open( my $fh_vel, ">vel.dat$$" ) ||
+  orac_throw "Unable to open vel.dat$$ to create a frequency axis: $!.\n";
+wcols $velpdl, $fh_vel;
+close( $fh_vel );
+
+# Import this file as the AXIS component of the data NDF.
+my $param1 = "ndf=$out mode=file file=vel.dat$$";
+$Mon{'ndfpack_mon'}->obeyw( "setaxis", "$param1" );
+
+# Convert the AXIS into a SpecFrame.
+$param1 = "ndf=$out frame=axis maptype=unit frmtype=spec";
+my $param2 = "domain=SPECTRUM attrs=\'System=vrad,Unit=km/s\'";
+$Mon{'ndfpack_mon'}->obeyw( "wcsadd", "$param1 $param2" );
+
+# Remove the temporary file.
+unlink( "vel.dat$$" );
+
+# Update the Frm object.
+$Frm->file( $out );
+
+# Tell the user.
+orac_print "$in to $out: Performed das_merge.\n\n";
