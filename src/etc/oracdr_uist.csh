@@ -3,7 +3,7 @@
 #     oracdr_uist
 
 #  Purpose:
-#     Initialise ORAC-DR environment for use with Michelle
+#     Initialise ORAC-DR environment for use with UIST
 
 #  Language:
 #     C-shell script
@@ -13,7 +13,7 @@
 
 #  Description:
 #     This script initialises the environment variables and command
-#     aliases required to run the ORAC-DR pipeline with Michelle data.
+#     aliases required to run the ORAC-DR pipeline with UIST data.
 #     An optional argument is the UT date.  This is used to configure
 #     the input and output data directories but assumes a UKIRT
 #     style directory configuration.
@@ -61,6 +61,10 @@
 
 #  History:
 #     $Log$
+#     Revision 1.2  2001/12/01 02:13:46  timj
+#     - s/Michelle/UIST/g
+#     - Quote ???
+#
 #     Revision 1.1  2001/07/04 02:07:55  timj
 #     Add UIST
 #
@@ -109,7 +113,7 @@ setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/uist
 # screen things
 setenv ORAC_PERSON ATC
 setenv ORAC_LOOP flag
-setenv ORAC_SUN  ???
+setenv ORAC_SUN  '???'
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
