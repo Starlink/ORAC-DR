@@ -61,28 +61,52 @@ my $oes = $base."_oes";
 my $tmp = new ORAC::TempFile;
 my $tmpfile = $tmp->file;
 
-$Mon{'figaro1'}->obeyw("creobj", "type=structure dims=0 object=$oep");
-$Mon{'figaro1'}->obeyw("creobj", "type=structure dims=0 object=$oer");
-$Mon{'figaro1'}->obeyw("creobj", "type=structure dims=0 object=$oes");
+# If we're using Cal system profiles, get them now
+if ((defined $_EXTRACT_ALL_BEAMS_{PROFILE}) && ($_EXTRACT_ALL_BEAMS_{PROFILE} eq 'LOAD')) {
+   $oep = $Cal->profile;
+} else {
+   # Profile the group image
+
+   $Mon{'figaro1'}->obeyw("creobj", "type=structure dims=0 object=$oep");
+   $Mon{'figaro1'}->obeyw("creobj", "type=structure dims=0 object=$oer");
+   $Mon{'figaro1'}->obeyw("creobj", "type=structure dims=0 object=$oes");
+
+   for (my $i=1; $i<=$nbeams; $i++) {
+      # Get the filename for the opt-extract profile
+      $oep = $base."_oep".".beam$i";
+   
+      # And the profile residuals
+      $oer = $base."_oer".".beam$i";
+
+      # Set ystart and yend
+
+      # Need to subtract the ndflbound off everything that goes to figaro-profile...
+      $Mon{'ndfpack_mon'}->obeyw("ndftrace", "ndf=$in");
+      (my $ORAC_STATUS, my @ndflbound) = $Mon{'ndfpack_mon'}->get("ndftrace", "lbound");
+
+      my $lbound = $Frm->uhdr("ORAC_Y_LOWER_BOUND");
+      my $ystart = ($row[$i]-$window < $lbound) ? $lbound : $row[$i]-$window;
+      $ystart -= $ndflbound[1];
+
+      my $ubound = $Frm->uhdr("ORAC_Y_UPPER_BOUND");
+      my $yend = ($row[$i]+$window > $ubound) ? $ubound : $row[$i]+$window;
+      $yend -= $ndflbound[1];
+
+      # Do the profile
+      $Mon{'figaro1'}->obeyw("profile", "image=$in ystart=$ystart yend=$yend degree=3 profile=$oep residual=$oer weight nreject=0");
+      orac_print "$in to $oep: Opt-Extract profile over window: $ystart:$yend\n";
+      orac_print "$in to $oer: Opt-Extract residuals from $oep\n";
+
+      # Now we have the profiles, push them into the profile calibration system if we were asked to.
+      if((defined $_EXTRACT_ALL_BEAMS_{PROFILE}) && ($_EXTRACT_ALL_BEAMS_{PROFILE} eq 'SAVE')) {
+         $Cal->profile($oep);
+         $Cal->profileindex->add($oep, {%{$Frm->hdr}, %{$Frm->uhdr}}); # Hmmm. dodgy maybe
+         orac_print "Opt-Extract profile: $oep filed with Calibration system\n";
+      }
+   }
+}
 
 for (my $i=1; $i<=$nbeams; $i++) {
-   # Get the filename for the opt-extract profile
-   $oep = $base."_oep".".beam$i";
-   
-   # And the profile residuals
-   $oer = $base."_oer".".beam$i";
-
-   # Set handy limits
-   my $lbound = $Frm->uhdr("ORAC_Y_LOWER_BOUND");
-   my $ystart = ($row[$i]-$window < $lbound) ? $lbound : $row[$i]-$window;
-
-   my $ubound = $Frm->uhdr("ORAC_Y_UPPER_BOUND");
-   my $yend = ($row[$i]+$window > $ubound) ? $ubound : $row[$i]+$window;
-
-   # Do the profile
-   $Mon{'figaro1'}->obeyw("profile", "image=$in ystart=$ystart yend=$yend degree=3 profile=$oep residual=$oer weight nreject=0");
-   orac_print "$in to $oep: Opt-Extract profile over window: $ystart:$yend\n";
-   orac_print "$in to $oer: Opt-Extract residuals from $oep\n";
 
    # Do the opt extract - (optimally extracted spectra)
    # Actually, go via a temp file if the multiplier for the beam != 1 and divide by it otherwise
