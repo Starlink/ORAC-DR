@@ -12,7 +12,7 @@ ORAC::Msg::ADAM::Task - load and control ADAM tasks
   
   $status           = $kap->obeyw("task", "params");
   $status           = $kap->set("task", "param","value");
-  ($value, $status) = $kap->get("task", "param");
+  ($status, @values) = $kap->get("task", "param");
   ($dir, $status)   = $kap->control("default","dir");
   $kap->control("par_reset");
   $kap->resetpars;
