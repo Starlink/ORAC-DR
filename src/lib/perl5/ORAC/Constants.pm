@@ -119,7 +119,7 @@ The constants can be used as if they are subroutines.
 For example, if I want to print the value of ORAC__ERROR I can
 
   use ORAC::Constants;
-  print ORAC_ERROR;
+  print ORAC__ERROR;
 
 or
 
