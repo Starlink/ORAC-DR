@@ -1,0 +1,73 @@
+# _GENERATE_OFFSETS_JITTER_       -*- perl -*-
+#
+# Function:
+#    Find the offsets between the frames in a JITTER_SELF_FLAT recipes.
+#
+# Primitives Called:
+#    _GENERATE_OFFSETS_
+#
+# Arguments:
+#    COMPLETE = REAL (Given)
+#       Completeness of matched features for registration between two
+#       frames to be accepted.  It must be in the range 0.2 to 1.0. [0.4]
+#    MINPIX = INTEGER (Given)
+#       Minimum number of contiguous pixels above the PERCENTILE level
+#       to be considered a registration feature.  It must be at least 6.
+#       [9]
+#    PERCENTILE = REAL (Given)
+#       Percentile threshold for locating objects to register frames. 
+#       It must be in the range 75 to 99.9. [98]
+
+# Selection
+# =========
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ||
+         $Frm->hdr( "OBSTYPE" ) eq "SKY" ) {
+
+# Test whether or not it is time to make a mosaic.
+       $makemos = $Frm->hdr( "MAKE_MOSAIC" );
+       if ( $makemos ) {
+
+# Obtain the cycle number from the header.
+          $cycleno = ( $Frm->hdr( "CYCLE_NUMBER" ) || 0 );
+
+# Select those members in the current cycle.
+          $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+
+# For the first cycle of a single cycle mosaic, make a local $Grp
+# containing just the current cycle.  Note the { to start a new context.
+          my $tempGrp;
+          if ( $cycleno == 0 ) {
+             $tempGrp = $cycleGrp;
+
+# On later cycles a mosaic file should exist, and we shall to register
+# with that as the reference frame.  So place the file into a temporary
+# frame pushed onto a temporary $Grp-like group.  Then append the members
+# of the subgroup.  
+          } else {
+             my $tempFrm = new $Frm( $Grp->file );
+             $tempGrp = new $Grp;
+             $tempGrp->push( $tempFrm );
+             $tempGrp->push( $cycleGrp->members );
+          }
+
+# Generate the offsets
+# ====================
+
+# Obtain the parameters for the detection.
+          $percentile = ( $_GENERATE_OFFSETS_JITTER_{PERCENTILE} || 98 );
+          $minpix = ( $_GENERATE_OFFSETS_JITTER_{MINPIX} || 9 );
+          $complete = ( $_GENERATE_OFFSETS_JITTER_{COMPLETE} || 0.4 );
+
+# Call the generic primitive which does most of the work.  Use central
+# source as a backup.  Use the reference mosaic's co-ordinate system so ensure
+# that central-source offsets are with respect to that.
+          {
+             my $Grp = $tempGrp;
+             _GENERATE_OFFSETS_ PERCENTILE=$percentile MINPIX=$minpix COMPLETE=$complete CENTRAL_SOURCE=TRUE
+
+# End of scope of local $Grp aka $tempGrp.
+          }
+       }
+    }
