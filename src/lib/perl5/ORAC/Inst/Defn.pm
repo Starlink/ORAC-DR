@@ -315,12 +315,12 @@ sub orac_determine_inst_classes {
   } elsif ($inst eq 'UFTI') {
     $groupclass = "ORAC::Group::UFTI";
     $frameclass = "ORAC::Frame::UFTI";
-    $calclass   = "ORAC::Calib::IRCAM";
+    $calclass   = "ORAC::Calib::UFTI";
     $instclass  = "ORAC::Inst::IRCAM";
   } elsif ($inst eq 'UFTI2') {
     $groupclass = "ORAC::Group::UFTI";
     $frameclass = "ORAC::Frame::UFTI2";
-    $calclass   = "ORAC::Calib::IRCAM";
+    $calclass   = "ORAC::Calib::UFTI";
     $instclass  = "ORAC::Inst::IRCAM";
     $inst = 'UFTI'; # to pick UFTI recipes and primitives as they are
   } elsif ($inst eq 'UFTI_CASU') {
