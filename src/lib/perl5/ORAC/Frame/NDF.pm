@@ -41,7 +41,7 @@ use vars qw/$VERSION/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 # We need to read NDF files
-use NDF;
+use NDF 1.44;
 
 =head1 PUBLIC METHODS
 
