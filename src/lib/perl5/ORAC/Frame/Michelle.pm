@@ -93,7 +93,8 @@ sub new {
   # the hash member name
   $self->rawfixedpart('M');
   $self->rawsuffix('.sdf');
-  $self->rawformat('UKIRTio');
+#  $self->rawformat('UKIRTio');
+  $self->rawformat('HDS');
   $self->format('HDS');
 
   # If arguments are supplied then we can configure the object
