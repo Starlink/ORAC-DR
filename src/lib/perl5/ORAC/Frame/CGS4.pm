@@ -401,7 +401,9 @@ sub findrecipe {
 =item B<mergehdr>
 
 Method to propagate the FITS header from an HDS container to an NDF
+Run after updating $Frm.
 
+ $Frm->files($out);
  $Frm->mergehdr;
 
 =cut
