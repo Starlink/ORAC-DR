@@ -15,14 +15,18 @@
 #    reports these statistics, indicating whether or not they are
 #    nominal.  At UKIRT, the results are also logged to a text file,
 #    /ukirt_sw/logs/ufti_array_tests.log, to monitor secular trends.
+#    The ND_STARE readnoise is written to the calibration index.
 #
 #    The primitive expects sets of four frames.  In each set the first
 #    refresh frame is ignored, then come two ND_STARE frames, followed
 #    by a dark.
 #
 # Notes:
-#    -  An exposure time of 60 seconds is assumed.  The ADU comes from
-#    the user header ORAC_GAIN header.
+#    -  The exposure time comes from the ORAC_EXPOSURE_TIME header,
+#    defaulting to 60.0s if the header is undefined.  The ADU comes
+#    from the user header ORAC_GAIN header.  If header is undefined,
+#    it defaults to 7.0 for data taken before 2001 February 27, and
+#    5.798 otherwise.
 #    -  If the log file does not exist, a new one is created containing
 #    a two-line heading, and the fact is reported.
 #    -  The log file stores the results in a fixed columnar format.
@@ -76,28 +80,45 @@
 # Wait until all the array tests are completed.  Should be four frames.
 # Change to be "every four frames" rather than "four frames" to
 # compensate for current lack of implementation of UFTI groups.
-#     if ( $Grp->num == 3 ) {
-     if ( ( $Grp->num + 1 ) % 4 ==0 ) {
+     if ( ( $Grp->num + 1 ) % 4 == 0 ) {
 
-# Set some parameters.
-        my $exptime = 60.0;
+# Obtain the exposure time of the last and current frame.
+        my $exptime = $Frm->uhdr( "ORAC_EXPOSURE_TIME" );
+        $exptime = defined( $exptime ) ? $exptime : 60.0;
+
+# Obtain the gain.  If it's not defined, use a default.
+# The default depends on the date.  Prior to 2001 February 27
+# or for a non-existent date use the value of the former
+# controller, viz. 7 electrons per ADU.  The date has hyphens;
+# remove thses for easier comparison.
         my $adu = $Frm->uhdr( "ORAC_GAIN" );
+        if ( !defined( $adu ) ) {
+           $adu = 7.0;
+           my $utdate = $Frm->uhdr( "ORAC_UTDATE" );
+           if ( defined( $utdate ) ) {
+              $utdate =~ s/-//;
+              if ( $utdate > 20010226 ) {
+                 $adu = 5.798;
+              }
+           }
+        }
 
 # Obtain the names of the group members.
         my @frames = $Grp->membernames;
 
 # Difference the first two (ND_STARE) frames.  The first ARRAY_TESTS frame
 # is ignored.
-        $Mon{"kappa_mon"}->obeyw("sub","in1=$frames[1] in2=$frames[2] out=array_test");
+        my $param = "in1=$frames[1] in2=$frames[2] out=array_test";
+        $Mon{ "kappa_mon" }->obeyw( "sub", "$param" );
 
 # Find the standard deviation of the difference frame after a 3-sigma clipping.
-        $Mon{"kappa_mon"}->obeyw("stats","ndf=array_test clip=3");
-        ( my $ORAC_STATUS, my $nd_stare_sigma ) = $Mon{"kappa_mon"}->get("stats","sigma");
+        $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=array_test clip=3" );
+        ( my $ORAC_STATUS, my $nd_stare_sigma ) = $Mon{ "kappa_mon" }->get( "stats", "sigma" );
         my $nd_stare_rn = $nd_stare_sigma / sqrt( 2.0 ) * $adu;
 
 # Find the clipped mean of the fourth frame, a dark frame.
-        $Mon{"kappa_mon"}->obeyw("stats","ndf=$frames[3] clip=3");
-        ( $ORAC_STATUS, my $mean ) = $Mon{"kappa_mon"}->get("stats","mean");
+        $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$frames[3] clip=3" );
+        ( $ORAC_STATUS, my $mean ) = $Mon{ "kappa_mon" }->get( "stats", "mean" );
         my $dark = $mean / $exptime * $adu;
 
 # Obtain the date.
@@ -145,12 +166,25 @@
 # Dark current.  May need to make the nominal value a parameter.  Negative allows for
 # noise and possible small systematic bias. 
         if ( $dark < -1.0 ) {
-           orac_warn "Dark current is NEGATIVE, weird; nominal is -1 to 1e-/sec\n\n";
+           orac_warn "Dark current is NEGATIVE, weird; nominal is -1 to 1e-/sec\n";
         } elsif ( $dark > 1.0 ) {
-           orac_warn "Dark current is HIGH with respect to nominal 0 to 1e-/sec\n\n";
+           orac_warn "Dark current is HIGH with respect to nominal 0 to 1e-/sec\n";
         } else {
-           orac_print "** Dark current is nominal **\n\n";
+           orac_print "** Dark current is nominal **\n";
         }
+        orac_print "\n";
+
+# File the readnoise in the calibration system.
+# =============================================
+
+# The value needs to be in a hash.  Use the current frame as a reference
+# for this, as it has the same readout mode and speed/well depth as the
+# others.
+        my %hash = ( %{ $Frm->hdr }, READNOISE => $nd_stare_rn );
+        $Cal->readnoiseindex->add( $Frm->file, \%hash );
+
+        orac_print "Readnoise filed with the calibration system.\n\n";
+
      }
 
 # Podule
@@ -167,6 +201,7 @@ dark current in electrons per second for UFTI.  The script also
 reports these statistics, indicating whether or not they are
 nominal.  At UKIRT, the results are also logged to a text file,
 F</ukirt_sw/logs/ufti_array_tests.log>, to monitor secular trends.
+The ND_STARE readnoise is written to the calibration index.
 
 The primitive expects sets of four frames.  In each set the first
 refresh frame is ignored, then come two ND_STARE frames, followed
@@ -178,8 +213,11 @@ by a dark.
 
 =item *
 
-An exposure time of 60 seconds is assumed.  The ADU comes from
-the ORAC_GAIN user header.
+The exposure time comes from the ORAC_EXPOSURE_TIME header,
+defaulting to 60.0s if the header is undefined.  The ADU comes
+from the user header ORAC_GAIN header.  If header is undefined,
+it defaults to 7.0 for data taken before 2001 February 27, and
+5.798 otherwise.
 
 =item *
 
