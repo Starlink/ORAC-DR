@@ -81,7 +81,8 @@ sub flatindex_im {
 
   if( @_ ) { $self->{FlatIndex} = shift; }
 
-  unless ( defined $self->{FlatIndex} ) {
+  if( !defined( $self->{FlatIndex} ) ||
+      $self->{FlatIndex}->indexfile !~ /_im$/ ) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.flat_im" );
     my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.flat_im" );
     $self->{FlatIndex} = new ORAC::Index( $indexfile, $rulesfile );
@@ -95,7 +96,8 @@ sub flatindex_sp {
 
   if( @_ ) { $self->{FlatIndex} = shift; }
 
-  unless( defined $self->{FlatIndex} ) {
+  if( !defined( $self->{FlatIndex} ) ||
+      $self->{FlatIndex}->indexfile !~ /_sp$/ ) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.flat_sp" );
     my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.flat_sp" );
     $self->{FlatIndex} = new ORAC::Index( $indexfile, $rulesfile );
