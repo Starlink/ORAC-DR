@@ -1,0 +1,141 @@
+=head1 NAME
+
+CALIBRATE_PHOTOM_DATA
+
+=head1 DESCRIPTION
+
+Multiply SCUBA data by the gain.
+The value for the gain depends on the filter.
+This is a Frame operation and should be used before
+group operations.
+
+Unlike _CALIBRATE_DATA_ this primitive operates on the output
+of _CALC_PHOT_RESULT_ and therefore must query the current
+file for the *_PEAK ndf files.
+
+I do this so that I can check the gain on reduced data before
+I multiply by the gain. This allows me to calculate the
+new gain from calibrator observations (stored in the CAL
+object for later retrieval).
+
+Otherwise I have to compare the calibrated calibrator with
+the known flux of the calibrator and derive the new gain from
+it. Obviously this is all a lot easier if I am working with
+uncalibrated data.
+
+=head1 TASKS
+
+Kappa: CMULT, STATS, NDFCOPY
+
+=cut
+
+use NDF;
+
+# Need to loop over sub-instruments
+
+@filter = $Frm->filters;
+
+
+# Loop over sub-instruments
+for ($i = 0; $i < $Frm->nsubs; $i++) {
+
+  # Now need to find the NDFs in the output HDS file
+  $status = &NDF::SAI__OK;
+  hds_open($Frm->file($i+1), 'READ', $loc, $status);
+ 
+  $ORAC_STATUS = ORAC__ERROR unless $status == &NDF::SAI__OK;
+ 
+    dat_ncomp($loc, $ncomp, $status);
+  
+  @names = ();
+  for $comp (1..$ncomp) {
+    dat_index($loc, $comp, $nloc, $status);
+    dat_name($nloc, $name, $status);
+    dat_annul($nloc, $status);
+    push(@names, $name) if $name =~ /_PEAK$/;
+  }
+  
+  dat_annul($loc, $status);
+  $ORAC_STATUS = ORAC__ERROR unless $status == &NDF::SAI__OK;
+  
+  # All the NDFs are now in @names
+  
+  # Check if we have a calibrator or not
+  # If we have then we should recalculate the gain and
+  # store it
+  
+  # Should have a different gain for each bolometer
+  # for now assume that this is not an issue so have it 
+  # outside the loop over bolometers
+  if ($Cal->iscalsource($Frm->hdr("OBJECT"), $filter[$i])) {
+    
+    # Use one bolometer
+    $subndf = $names[0];
+    
+    # Get statistics
+    my $ndf = $Frm->file($i+1) . ".$subndf";
+    $Mon{kappa_mon}->obeyw("stats","ndf=$ndf");
+    
+    # Answer in mV
+    ($ORAC_STATUS, $mean) = $Mon{kappa_mon}->get("stats","mean");
+    
+    # Find current flux of source (could be undef)
+    $flux = $Cal->fluxcal($Frm->hdr("OBJECT"), $filter[$i]);
+    
+    # Calculate gain
+    if (abs($mean) > 0.0 && defined $flux) {
+      
+      # Calculate new gain
+      $gain = $flux / $mean;
+      
+      print colored("Using new gain for $filter[$i]: $gain Jy/V (old value=".
+		    $Cal->gain($filter[$i]) . ")\n",'yellow'); 
+      
+      # Set the current gain for this filter
+      $Cal->gain($filter[$i], $gain);
+    }
+  }
+  
+  
+  # Loop over bolometers and run stats
+  
+  foreach $subndf (@names) {
+        
+    # Retrieve the current gain value from the calibration
+    # object. This will calibrate our data in Jy and then
+    # if we multiply by an extra 1000 we get mJy
+    $gain = $Cal->gain($filter[$i]) * 1000.0;
+    
+    # Big kludge here since cmult won't work in place
+    # And I am using NDF files inside HDS containers!
+    $in = $Frm->file($i+1) . ".$subndf";
+
+    $out = "junk_$$";
+    $args = "scalar=$gain";
+    
+    # Multiply by the gain
+    $Mon{kappa_mon}->obeyw("cmult","in=$in out=$out $args");
+    
+    # At this point need to copy the NDF back inside the container
+    # file
+
+    # First delete the existing NDF
+    $status = &NDF::SAI__OK;
+    hds_open($Frm->file($i+1), 'UPDATE', $loc, $status);
+    dat_erase($loc, $subndf, $status);
+    dat_annul($loc, $status);
+    $ORAC_STATUS = ORAC__ERROR unless $status == &NDF::SAI__OK;
+    
+    # Now copy the NDF back into the HDS container
+    # Could probably just use DAT_COPY since I already have
+    # a locator to the main file.
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$out out=$in");
+
+    # Remove the scratch file
+    unlink($out . ".sdf"); # Assume .sdf
+    
+  }
+
+}  
+
+print colored ("ORAC says: Data calibrated in mJy\n", 'magenta');

@@ -1,0 +1,82 @@
+=head1 NAME
+
+CONCAT_PHOTOM_DATA
+
+=head1 DESCRIPTION
+
+Combine the photometry observations into one result.
+
+=head1 TASKS
+
+SURF: SCUCAT
+
+=cut
+
+
+# Check that we are processing the last frame of the group
+if ($Grp->lastmember($Frm)) {
+
+  # Loop over sub instruments that are found in the current frame
+  foreach $sub ($Frm->subs) {
+
+    # Now need to find all the input frames for this sub-instrument
+    # that are part of this group
+
+    @members = $Grp->membernamessub($sub);
+
+    # Generate comma separated list for SCUCAT
+    # A comma separated list becomes too large when
+    # we have more than one or two files (especially with
+    # the super-long file names we are generating.
+    # Need to create a scratch file to hold everythin in
+
+    $infile = "input_$$.lis";
+    open (INPUT, "> $infile") || die "Error opening scratch file $!";
+    map { print INPUT "$_\n"; } @members;
+    close INPUT;
+
+    # Run SCUCAT to concatenate
+    # Output filename now becomes a problem
+    # Need to label by sub-instrument
+    # Also, SCUCAT creates a file per bolometer
+
+    $args = "noloop method=catall reset ";
+    
+    # The output filename is simply the group file name
+    # with the sub-instrument (lower case) added.
+    $out = $Grp->grpoutsub($sub);
+
+    $Mon{surf_mon}->obeyw("scucat","in='^$infile' out=$out $args");
+
+    # Remove the scratch text file
+    unlink ($infile);
+
+    # Store the file name in the group
+#    $Grp->file($i, $out);
+
+    # Reset SURF parameters. See comment at end of primitive
+    # For more complete description of reason for doing this
+    $Mon{surf_mon}->resetpars;
+    
+
+  }
+
+
+}
+
+# Reset the parameters in the surf monolith:
+# need to do this because otherwise I get the following
+# error message every time I call a task from SURF after
+# running SCUCAT.
+# This is possibly related to the GRP library since the
+# only other place this happens with is for CCDPACK
+# Error message is:
+#!! HDS locator invalid: value=' ', length=15 (possible programming error).
+#!  DAT_COPY: Error copying an HDS object to a new structure component.
+#!! DAT__LOCIN: Locator invalid
+#
+# And this occurs after the task has finished during the
+# fixed part.
+
+
+

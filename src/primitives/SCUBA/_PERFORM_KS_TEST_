@@ -1,0 +1,137 @@
+=head1 NAME
+
+PERFORM_KS_TEST
+
+=head1 DESCRIPTION
+
+Perform a KS test to check for self-consistency of the
+photometry data. This is a GROUP operation.
+
+Only runs if there are more than 75 points available for the 
+test.
+
+=head1 TASKS
+
+Kappa: KSTEST, FLIP, HISLIST
+
+=head1 INPUT ARGUMENTS
+
+None
+
+=cut
+
+use NDF;
+
+# Check that we are processing the last frame of the group
+if ($Grp->lastmember($Frm)) {
+ 
+  # Loop over sub instruments that are found in the current frame
+  foreach $sub ($Frm->subs) {
+ 
+    # Generate input group name from sub-instrumnet
+    $in = $Grp->grpoutsub($sub);
+
+    # Open file and find out how many points it has
+    $status = &NDF::SAI__OK;
+    ndf_begin;
+    ndf_find(&NDF::DAT__ROOT(), $in, $indf, $status);
+    ndf_size($indf, $npix, $status);
+    ndf_annul($indf, $status);
+    ndf_end($status);
+
+    $ORAC_STATUS = ORAC__ERROR unless $status == &NDF::SAI__OK;
+
+    # Arguments for KS test
+    # Calculate number of samples from the size of the input set
+
+    # Dont bother unless have at least 75 data points
+
+    if ($npix > 75) {
+
+      # Have 25 points per sample minimum but at least 2 sub-samples
+      # but no more than 20 (maximum for KSTEST)
+      $nsample = min( 20.0, max ($npix / 25.0, 3) );
+
+      $args = " nsample=$nsample reset accept";
+
+      # Scratch output file
+      $out = "scratch_$$";
+
+      # Turn off history recording (KSTEST cant handle the
+      # long input filename when it writes the history
+      # to the output file.
+      $Mon{ndfpack_mon}->obeyw("hisset","ndf=$in mode=disabled");
+
+      # Run KSTEST
+      $Mon{kappa_mon}->obeyw("kstest","in=$in out=$out $args");
+
+
+      # Check that an output file was created (if it wasnt
+      # then all subsamples were rejected)
+
+      if (-e $out . ".sdf") {
+
+	# Turn history recording back on
+	$Mon{ndfpack_mon}->obeyw("hisset","ndf=$out mode=normal");
+
+	# Rename the output file (which is now self-consistent
+	# to the input file
+	# Assume .sdf extension for now!
+	rename($out . ".sdf", $in . ".sdf") || die "Error renaming $out to $in";
+
+	print colored("ORAC says: K-S test okay on sub $sub\n",'magenta');
+      
+      } else {
+      
+	print colored("ORAC says: K-S test failed on sub $sub\n", 'red');
+	print colored("ORAC says: Trying K-S test on reversed data\n", 'magenta');
+
+	# Flip the data file
+	$Mon{kappa_mon}->obeyw("flip","in=$in out=$out accept");
+
+	# Generate a new output file name (so that I know KSTEST worked
+	# without removing the group file
+	$outb = $out . "_$$";
+
+	# Run KSTEST again
+	$Mon{kappa_mon}->obeyw("kstest","in=$out out=$outb $args");
+
+	# Check for output file
+      
+	if (-e $outb . ".sdf") {
+
+	  # Set history recording
+	  # Turn history recording back on
+	  $Mon{ndfpack_mon}->obeyw("hisset","ndf=$outb mode=normal");
+	  
+	  # Flip the data back
+	  print "flip: in=$outb out=$in\n";
+	  $Mon{kappa_mon}->obeyw("flip","in=$outb out=$in accept");
+
+	  print colored("ORAC says: K-S test successful after reversing data\n",
+			'magenta');
+
+
+	} else {
+
+	  print colored("ORAC says: K-S test failed on reversed data\n", 'red');
+	  print colored("ORAC says: Data are suspect -- keeping all regardless\n", 'red');
+	  
+	  # Set history recording
+	  # Turn history recording back on
+	  $Mon{ndfpack_mon}->obeyw("hisset","ndf=$in mode=normal");
+	
+	}
+
+	# Remove the intermediate file
+	unlink($out . ".sdf") || die "Error removing intermediate file: $!\n";
+      
+
+      }
+
+    }
+
+  }
+
+}
+

@@ -1,0 +1,90 @@
+=head1 NAME
+
+PRINT_RESULTS_PHOTOM_FRAME
+
+=head1 DESCRIPTION
+
+Print photometry results for an individual observation.
+Can have multiple bolometers reported.
+
+=head1 TASKS
+
+KAPPA: STATS
+
+=head1 NOTES
+
+Uses the NDF perl module.
+
+=cut
+
+
+# Import NDF
+use NDF qw/:hds :dat/;
+ 
+# Check that we are a PHOTOM observation
+ 
+if ($Frm->hdr(MODE) eq "PHOTOM") {
+
+  # Print header 
+  # Print welcome message
+  print "\n\nRESULTS of CURRENT PHOTOMETRY OBSERVATION\n";
+  print "-----------------------------------------\n\n";
+ 
+  print "Source name: " . $Frm->hdr(OBJECT) ."\n";
+  print "Observation number: " . join(",",$Frm->number) ."\n";
+  print "\n";
+
+  @subs = $Frm->subs;
+ 
+  # loop over sub instruments
+  for ($i = 0; $i < $Frm->nsubs; $i++) {
+
+    # Now need to find the NDFs in the output HDS file
+    $status = &NDF::SAI__OK;
+    hds_open($Frm->file($i+1), 'READ', $loc, $status);
+ 
+    $ORAC_STATUS = ORAC__ERROR unless $status == &NDF::SAI__OK;
+ 
+    dat_ncomp($loc, $ncomp, $status);
+ 
+    @names = ();
+    for $comp (1..$ncomp) {
+      dat_index($loc, $comp, $nloc, $status);
+      dat_name($nloc, $name, $status);
+      dat_annul($nloc, $status);
+      push(@names, $name) if $name =~ /_PEAK$/;
+    }
+    
+    dat_annul($loc, $status);
+    $ORAC_STATUS = ORAC__ERROR unless $status == &NDF::SAI__OK;
+ 
+    # All the NDFs are now in @names
+    # Loop over bolometers and run stats
+ 
+    foreach $subndf (@names) {
+
+      my $ndf = $Frm->file($i+1) . ".$subndf";
+      $Mon{kappa_mon}->obeyw("stats","ndf=$ndf");
+ 
+      ($ORAC_STATUS, $mean) = $Mon{kappa_mon}->get("stats","mean");
+      ($ORAC_STATUS, $sigma) = $Mon{kappa_mon}->get("stats","sigma");
+      ($ORAC_STATUS, $ngood) = $Mon{kappa_mon}->get("stats","numgood");
+      
+      # Print results
+      if ($ngood > 0) {
+	$errmean = $sigma / sqrt($ngood);
+      }
+
+      $subndf =~ s/_peak//i;
+
+      print "Results for bolometer $subndf ($subs[$i] sub-instrument):\n";
+      print "\tN integrations = $ngood\n";
+      printf "\tSignal         = %10.3f +/- %10.3f\n", $mean, $errmean;
+      if ($errmean > 0.0) {
+	$signoise = $mean / $errmean;
+	printf "\tS/N            = %5.2f\n\n", $signoise;
+      }
+ 
+    }
+  }
+}
