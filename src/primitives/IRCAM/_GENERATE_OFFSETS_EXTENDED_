@@ -1,0 +1,99 @@
+# _GENERATE_OFFSETS_EXTENDED_       -*- perl -*-
+#
+# Find the offsets between the frames using the headers. 
+#
+# TASK: CCDPACK - FINDOBJ, FINDOFF, REGISTER
+#
+
+# Selection
+# =========
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ||
+         $Frm->hdr( "OBSTYPE" ) eq "SKY") {
+
+# Determine whether it is time to make a mosaic.
+       $makemosaic = $Frm->hdr( "MAKE_MOSAIC" );
+       $grandmosaic = $Frm->hdr( "MAKE_GRAND_MOSAIC" );
+       if ( $makemosaic || $grandmosaic ) {
+
+# Determine whether the full mosaic is required, otherwise make the
+# mosaic for the current row.
+          if ( $grandmosaic ) {
+
+# Form a subgroup comprising all the target frames.
+             $targrp = $Grp->subgrp( TARGET_OR_SKY => "target" );
+
+          } else {
+
+# Obtain the current row number.
+             $ext_row = $Frm->hdr( "EXTENDED_ROW" );
+
+# Form a subgroup comprising all the target frames in the current row.
+             $targrp = $Grp->subgrp( TARGET_OR_SKY => "target",
+                                     EXTENDED_ROW => $ext_row );
+          }
+
+# Form a list of input file names for CCDPACK tasks
+          @objects = $targrp->membernames;
+
+# Form a comma-separated list of the target frames.
+          $objlist = join(",", @objects);
+
+# Create text file to hold the list of input files, one per line.  This
+# is needed because expanded lists of files may make the command line too
+# long for the ADAM message system.
+          unlink ("objlist.inlist$$");
+          open (INLIST, ">objlist.inlist$$");
+          print INLIST join( "\n", @objects ), "\n";
+          close (INLIST);
+
+# Find objects
+# ============
+
+# Specify the other parameters for the FINDOBJ stage.
+          $header = "in='^objlist.inlist$$' outlist=\'*.find\'";
+
+# Locate and centroid the objects above a threshold (96 percentile)
+# in all the flat-fielded object frames.  Write their co-ordinates and
+# peak values into .find text files.
+          $Mon{"ccdpack_reg"}->obeyw("findobj","$header minpix=12 accept");
+
+# Derive offsets
+# ==============
+
+# Specify the other parameters for the FINDOFF stage.
+           $header = "inlist='^objlist.inlist$$' outlist=\'*.off\'";
+           $hidden = "error=1"; 
+
+# Pattern match using the co-ordinate lists.  It uses a fast algorithm
+# first, but resorts to a slower one, if patterns aren't matched.
+# Store the offsets in .off text files.
+           $go_status =  $Mon{"ccdpack_reg"}->obeyw("findoff","$header $hidden accept");
+
+# Test whether or not registration was achieved.  If not find approximate
+# offsets from the headers.  As we can't pass a group as an argument, for
+# now use the fixed group name of reggrp expected by _FIND_APPROX_OFFSETS_.
+          if ( $go_status != ORAC__OK ) {
+#             _FIND_APPROX_OFFSETS_ GROUP=$targrp
+             $reggrp = $targrp;
+             _FIND_APPROX_OFFSETS_ SEARCH_BOX=FALSE
+          }
+
+# Register
+# ========
+
+# Specify the other parameters for the REGISTER stage.
+          $header = "inlist='^objlist.inlist$$'";
+          $hidden = "fittype=1"; 
+
+# Register the frames using a shift of origin.  Create the CCDPACK
+# TRANSFORM extensions.
+          $Mon{"ccdpack_reg"}->obeyw("register","$header $hidden accept");
+          unlink ("objlist.inlist$$");
+
+# Report processing status.
+          orac_print "Orac says: frames $objlist registered\n";
+
+       };
+    };
