@@ -176,7 +176,7 @@ sub orac_loop_inf {
 =item orac_loop_wait
 
 Waits for the specified file to appear in the directory.
-A timeout of 10 minutes is hard-wired in initially -- undef
+A timeout of 60 minutes is hard-wired in initially -- undef
 is returned if the timeout is exceeded.
 
 The first member of the array is used to keep track of the
@@ -192,6 +192,11 @@ supplied array contains undef in the first entry.
 The skip flag is used to indicate whether the loop should skip
 forward if the current observation number can not be found
 but a higher numbered observation is present.
+
+If no data can be found, the directory is scanned every few seconds
+(hard-wired into the routine). A dot is printed to the screen after
+a specified number of scans (default is 1 dot per scan and one scan every
+2 seconds).
 
 =cut
 
@@ -732,7 +737,7 @@ sub orac_sleep {
     # Tk friendly....
     my $now = time();
     while (time() - $now < $pause) {
-      my $id = Tk->after($pause, sub { } );
+      my $id = Tk->after(1000*$pause, sub { } );
       # Process events - the after makes sure that an event does
       # actually occur
       &Tk::DoOneEvent(0);
