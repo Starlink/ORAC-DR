@@ -8,31 +8,61 @@ EDICTs data frames have units of ADU per second when in and ND mode
 This primitive multiplies such frames by their exposure times to get them
 into total ADU which is what the rest of the downstream pipeline expects.
 
+This primitive also divides by the number of reads to get the total
+ADU per exposure.
+
 =head1 AUTHOR
 
 Paul Hirst <p.hirst@jach.hawaii.edu>
 
 =cut
 
-# ND mode frames are in ADU/sec with Edict. Convert to total ADU
+foreach my $i ( 1 .. $Frm->nfiles ) {
 
-# Only ND frames mind.
-my $mode = $Frm->uhdr("ORAC_DETECTOR_READ_TYPE");
-if(substr($mode, 0, 2) eq 'ND') {
-   # We're in an ND mode.
-   orac_print("Mode is $mode; therefor multiply by exposure time to get units of ADU\n");
-   my $nfiles = $Frm->nfiles;
-   my $exptime = $Frm->uhdr("ORAC_EXPOSURE_TIME");
-   foreach my $i (1 .. $nfiles) {
-      (my $in, my $out) = $Frm->inout("_adu", $i);
-      $Mon{'kappa_mon'}->obeyw("cmult", "in=$in scalar=$exptime out=$out title=$out");
-      orac_print("$in to $out: Multipiled by exposure time $exptime\n");
+  my ( $in, $out ) = $Frm->inout( "_adu", $i );
 
-      # Update the Frame object
-      $Frm->file($i, $out);
+  my $nreads = ( defined( $Frm->hdr( "MULTIRDS" ) ) ? $Frm->hdr( "MULTIRDS" ) : 1 );
 
-   }
-   
-   # Keep the output tidy
-   orac_print "\n";
+# The exposure time correction only applies to NDSTARE and NDCHOP modes.
+  if ( substr( $Frm->uhdr( "ORAC_DETECTOR_READ_TYPE" ), 0, 2 ) eq "ND" ) {
+
+# The data are in ADU/s, which is not the UKIRT standard.  So obtain
+# the exposure time and multiply the data by this factor.
+    my $exp_time = $Frm->uhdr( "ORAC_EXPOSURE_TIME" );
+
+# Create a temporary file.
+    my $tmp = new ORAC::TempFile;
+
+# Scale the data.
+    $Mon{ "kappa_mon" }->obeyw( "cmult", "in=$in scalar=$exp_time out=$tmp" );
+
+# Report the processing status.
+    orac_print "$in to $tmp: Scaled data by the exposure time " .
+               "($exp_time) to make the units ADUs.\n";
+
+# Divide by the number of reads.
+    $Mon{ "kappa_mon" }->obeyw( "cdiv", "in=$tmp scalar=$nreads out=$out" );
+
+# Report the processing status.
+    orac_print "$tmp to $out: Divided by number of reads ($nreads) to get " .
+               "ADUs per exposure.\n";
+
+  } else {
+
+# Divide by the number of reads.
+    $Mon{ "kappa_mon" }->obeyw( "cdiv", "in=$in scalar=$nreads out=$out" );
+
+# Report the processing status.
+    orac_print "$in to $out: Divided by number of reads ($nreads) to get " .
+               "ADUs per exposure.\n";
+
+  }
+
+# And update the Frm object.
+  $Frm->file( $i, $out );
+
 }
+
+# Keep the output tidy.
+
+orac_print "\n";
