@@ -45,8 +45,6 @@ Modifications to standard ORAC::Frame methods.
 
 =over 4
 
-=cut
-
 =item new
 
 Create a new instance of a ORAC::Frame::JCMT object.
@@ -316,6 +314,34 @@ sub findgroup {
   return $group;
 
 }
+
+=item findrecipe
+
+Return the recipe associated with the frame.
+Currently returns undef for all frames except 
+skydips. This is because it is not yet decided
+how the command line override facility (provided
+in the pipeline manager) will know what it can override
+and what it can leave alone.
+
+In future we may want to have a separate text file containing
+the mapping between observing mode and recipe so that
+we dont have to hard wire the relationship.
+
+=cut
+
+sub findrecipe {
+  my $self = shift;
+
+  my $recipe = undef;
+
+  if ($self->hdr('MODE') eq 'SKYDIP') {
+    $recipe = 'SCUBA_SKYDIP';
+  }
+
+  return $recipe;
+}
+
 
 
 =item inout
