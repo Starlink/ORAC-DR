@@ -9,6 +9,7 @@ Rebin all the group data.
 =head1 TASKS
 
 SURF: REBIN
+NDFPACK: SETTITLE
 
 =head1 INPUT ARGUMENTS
 
@@ -21,7 +22,14 @@ PIXEL_SIZE   - Pixel size in arcseconds
 
 
 # Check that we are processing the last frame of the group
-if ($Grp->lastmember($Frm)) {
+# and that there are some frames to coadd
+if ($Grp->lastmember($Frm) && $Grp->num >=1) {
+
+  # Update the Grp name so that it reflects the obs type
+  # This makes it possible for the display system to specify
+  # group results based on suffix
+  $Grp->file($Grp->file . '_reb') unless $Grp->file =~ /_reb$/;
+	
  
   # Loop over sub instruments that are found in the current frame
   foreach $sub ($Frm->subs) {
@@ -49,17 +57,32 @@ if ($Grp->lastmember($Frm)) {
     # Output filename
     $out = $Grp->grpoutsub($sub);
 
+    # Output coords
+    # Should use PL for planets
+
+
     $args = "REBIN_METHOD=$method PIXSIZE_OUT=$pixsize noloop";
 
     # Print informative message
-    print colored ("ORAC says: Rebinning sub-instrument $sub\n",'magenta');
+    orac_print ("ORAC says: GRP: Rebinning sub-instrument $sub\n",'magenta');
 
     # Run rebin
-    $Mon{surf_mon}->obeyw("rebin","ref=$infile out=$out $args accept");
+    # Need to reset the parameters so that the regridding parameters
+    # are not remembered. Also the size parameter is remembered.
+    $Mon{surf_mon}->resetpars;
+    $Mon{surf_mon}->obeyw("rebin","ref=$infile out=$out $args accept reset");
    
     # Remove the scratch file
     unlink $infile;
 
+    # Update the title
+    my $title = 'GRP ' . $Frm->hdr('OBJECT') . ":$sub"; 
+    $Mon{ndfpack_mon}->obeyw("settitle","ndf=$out title='$title'");
+
+
   }
+
+  # Display
+  $Display->display_data($Grp) if defined $Display;
 
 }
