@@ -74,17 +74,29 @@ Council.  All Rights Reserved.
 
 =cut
 
-
-
-use File::Copy; 
+use File::Copy;
 
 my $in = $Frm->file();
+
+# Get the number of slices so we can determine the central row.
+my $n_slices = $Frm->uhdr("IFU_slices");
+unless (defined $n_slices) {
+  orac_throw("uhdr IFU_slices undefined.\n");
+}
+my $row = ( ($Frm->uhdr("IFU_start")->[int($n_slices/2)-1]) +
+            ($Frm->uhdr("IFU_end")->[int($n_slices/2)-1]));
+$row = int($row/2);
+
+# Find out what the shift is between our input image and the reference
+# spectrum using cross-correlation.
+_CROSS_CORRELATE_
+my $shift = $_CROSS_CORRELATE_{SHIFT};
 
 # Get the appropriate arlines file from the calibration system. Note that
 # these are intended to be static and therefore the arlines files and the
 # arlines.index file are stored in the $ORAC_DATA_CAL directory.
 
-my $arlines = $ENV{ORAC_DATA_CAL} . "/" . $Cal->arlines; 
+my $arlines = $ENV{ORAC_DATA_CAL} . "/" . $Cal->arlines;
 orac_print "Using arlines file: $arlines \n";
 
 # Iarc always uses arlines.lis in the current directory, so need to copy
@@ -92,22 +104,12 @@ orac_print "Using arlines file: $arlines \n";
 
 copy ("$arlines", "arlines.lis");
 
-
 # Do the Iarc, starting from the centre of a central slice
-# Get number of slices and check that the user headers have been defined 
+orac_print "Running IARC on $in, starting at row $row.\n";
 
-my $n_slices = $Frm->uhdr("IFU_slices");
-unless (defined $n_slices) {die "uhdr IFU_slices undefined.\n";}
-
-my $row = ( ($Frm->uhdr("IFU_start")->[int($n_slices/2)-1]) +
-	    ($Frm->uhdr("IFU_end")->[int($n_slices/2)-1]));
-$row = int($row/2);
-
-
-orac_print "Running Iarc, starting at row $row.\n";
-
-my $param = "image=$in rstart=$row rwidth=1 rsigma=6 spread=t file=$in.iar lock=f xcorr=f gap=1 sigmin=5";
-$Mon{'figaro3'}->obeyw("iarc", "$param"); 
+my $param1 = "image=$in rstart=$row file=$in.iar chanshift=$shift";
+my $param2 = "rwidth=1 rsigma=3 spread=t lock=f xcorr=f gap=1 sigmin=5";
+$Mon{'figaro3'}->obeyw("iarc", "$param1 $param2");
 
 # Look to see how good Iarc thought the fit was
 
@@ -116,14 +118,14 @@ open (my $iar, "$in.iar") or die "Cannot open $in.iar\n";
 while (<$iar>) {
     if (m/Number of rows that could not be fitted =\s*(\d+)/) {
 	if ($1 > 0) {
-	    orac_warn("Iarc has failed to fit $1 rows of the spectrum.\nExamine the scrunched arc spectrum to see what effect this has had.\n");
+	    orac_warn("IARC has failed to fit $1 rows of the spectrum.\nExamine the scrunched arc spectrum to see what effect this has had.\n");
 	}
     }
 
     if (m/Maximum RMS error =\s*([\d\.]+)/) {
 	# This number might need refining, but 1 seems a reasonable guess
 	if ($1 > 1.0) {
-	    orac_warn("Maximum RMS error of $1 reported by Iarc seems rather high.\nExamine the scrunched arc spectrum to see what effect this has had.\n");
+	    orac_warn("Maximum RMS error of $1 reported by IARC seems rather high.\nExamine the scrunched arc spectrum to see what effect this has had.\n");
 	}
     } 
 }  
@@ -139,5 +141,5 @@ $Cal->iar( "$in.iar:$min:$max" );
 $Cal->iarindex->add("$in.iar:$min:$max", {%{$Frm->hdr}, %{$Frm->uhdr}} );
 
 # Report the processing status.
-orac_print "in.iar filed as the current Iarc.\n";
+orac_print "in.iar filed as the current IARC calibration.\n\n";
 
