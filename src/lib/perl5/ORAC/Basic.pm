@@ -743,7 +743,8 @@ sub orac_exit_normally {
 
   orac_print ("$message - Exiting...\n","red");
 
-  rmtree $ENV{'ADAM_USER'};             # delete process-specific adam dir
+  rmtree $ENV{'ADAM_USER'}             # delete process-specific adam dir
+    if defined $ENV{ADAM_USER};
 
   # Ring a bell when exiting if required
   if ($Beep) {
@@ -835,6 +836,9 @@ Council. All Rights Reserved.
 
 
 #$Log$
+#Revision 1.54  2001/01/09 03:35:30  timj
+#Only rmtree ADAM_USER dir if the env var is defined
+#
 #Revision 1.53  2000/10/10 02:59:08  timj
 #Remove documentation for $KAPPA_* since Starlink::VERSIONS does that now.
 #
