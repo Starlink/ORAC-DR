@@ -1,0 +1,184 @@
+#+
+# Name:
+#    _GET_PLATE_SCALE_
+#
+# Purpose:
+#    Finds the pixel scales measured in arcseconds per pixel for the
+#    current Frame.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive obtains the pixel increments from the headers of the
+#    current frame in arcseconds per pixel units.  The scales are returned
+#    in three arguments.
+#
+# Arguments:
+#    DECSCALE = REAL (Returned)
+#       The increment along the declination axis of the current
+#       frame measured in arcseconds per pixel.  This is positive.
+#    PLATESCALE = REAL (Returned)
+#       The geometric-mean plate scale, i.e. the average of the absolute
+#       values of DECSCALE and RASCALE.
+#    RASCALE = REAL (Returned)
+#       The increment along the right-ascension axis of the current
+#       frame measured in arcseconds per pixel.  This may be negative.
+#
+# Notes:
+#    -  This primitive is suitable for INGRID.
+#    -  Processing only occurs for object and sky frames.
+#    -  The platescale internal headers are ORAC_RA_SCALE and
+#    ORAC_DEC_SCALE.  Should a header be undefined first the products of
+#    headers INGPSCAL and CCD[XY]PIXE times [-+]1000 are tried instead, and
+#    failing that default values of are substituted for right ascension and
+#    declination respectively.  The defaults depends on the UT date (from
+#    user header ORAC_UTDATE):
+#       2000 May 1 to 2001 Feb 28: -0.242,  0.242
+#       other dates              : -0.2387, 0.2387
+#
+#    http://www.ing.iac.es/Astronomy/instruments/ingrid/ingrid_detector.html
+#    http://www.ing.iac.es/Astronomy/instruments/ingrid/ingrid_detector_history.html
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC, Starlink)
+#
+# Copyright:
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ) {
+
+# Obtain the plate scales for the instrument from the headers.
+       my $ra_pixelscale = $Frm->uhdr( "ORAC_RA_SCALE" );
+       my $dec_pixelscale = $Frm->uhdr( "ORAC_DEC_SCALE" );
+
+# If not defined, use the headers to evaluate values.  It's acceptable to do this
+# because this primitive is INGRID specific.
+       $ra_pixelscale = defined( $ra_pixelscale ) ? $ra_pixelscale : 
+                        $Frm->hdr( "INGPSCAL" ) * -1000.0 *  $Frm->hdr( "CCDXPIXE" );
+       $dec_pixelscale = defined( $dec_pixelscale ) ? $dec_pixelscale :
+                        $Frm->hdr( "INGPSCAL" ) * 1000.0 *  $Frm->hdr( "CCDYPIXE" );
+
+# Obtain the UT date to override the latest default for historic data
+# where the foreoptics changed.
+       my $date = $Frm->uhdr( "ORAC_UTDATE" );
+       my $defscale = 0.2387;
+       if ( defined( $date ) ) {
+          if ( $date >= 20010501 && $date <= 20010228 ) {
+            $defscale = 0.242;
+          }
+       }
+
+# Validate the right ascension scale in case the reserve header is
+# also absent.
+       if ( defined( $ra_pixelscale ) ) {
+
+# Allow for D notation, which is not recognised by Perl, so that
+# supplied strings are valid numbers.
+          $ra_pixelscale =~ s/D/E/;
+
+# Supply a default value.
+       } else {
+          $ra_pixelscale = -$defscale;
+       }
+
+# Validate the declination scale.
+       if ( defined( $dec_pixelscale ) ) {
+
+# Allow for D notation, which is not recognised by Perl, so that
+# supplied strings are valid numbers.
+          $dec_pixelscale =~ s/D/E/;
+
+# Supply a default value.
+       } else {
+          $dec_pixelscale = $defscale;
+       }
+
+# Derive the geometric-mean platescale.
+       my $platescale = sqrt( abs( $ra_pixelscale * $dec_pixelscale ) );
+
+# Set the returned arguments.
+       $_GET_PLATE_SCALE_{RASCALE} = $ra_pixelscale;
+       $_GET_PLATE_SCALE_{DECSCALE} = $dec_pixelscale;
+       $_GET_PLATE_SCALE_{PLATESCALE} = $platescale;
+
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_GET_PLATE_SCALE_ -- Finds the pixel scales measured in arcseconds per pixel for the current Frame.
+
+=head1 DESCRIPTION
+
+This primitive obtains the pixel increments from the headers of the
+current frame in arcseconds per pixel units.  The scales are returned
+in three arguments.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item DECSCALE = REAL (Returned)
+
+The increment along the declination axis of the current
+frame measured in arcseconds per pixel.  This is positive.
+
+=item PLATESCALE = REAL (Returned)
+
+The geometric-mean plate scale, i.e. the average of the absolute values
+of DECSCALE and RASCALE.
+
+=item RASCALE = REAL (Returned)
+
+The increment along the right-ascension axis of the current
+frame measured in arcseconds per pixel.  This may be negative.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for INGRID.
+
+=item 4
+
+Processing only occurs for object and sky frames.
+
+=item *
+
+-  The platescale internal headers are ORAC_RA_SCALE and
+ORAC_DEC_SCALE.  Should a header be undefined first the products of
+headers INGPSCAL and CCD[XY]PIXE times [-+]1000 are tried instead, and
+failing that default values of are substituted for right ascension and
+declination respectively.  The defaults depends on the UT date (from
+user header ORAC_UTDATE):
+
+    2000 May 1 to 2001 Feb 28: -0.242,  0.242
+    other dates              : -0.2387, 0.2387
+
+L<http://www.ing.iac.es/Astronomy/instruments/ingrid/ingrid_detector.html|http://www.ing.iac.es/Astronomy/instruments/ingrid/ingrid_detector.html>
+L<http://www.ing.iac.es/Astronomy/instruments/ingrid/ingrid_detector_history.html|http://www.ing.iac.es/Astronomy/instruments/ingrid/ingrid_detector_history.html>
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC, Starlink)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
