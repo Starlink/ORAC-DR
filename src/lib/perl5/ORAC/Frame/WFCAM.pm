@@ -131,6 +131,18 @@ my %rawfixedparts = ('1' => 'w',
 
 my $projp3 = 220.0;
 
+# Image sections to be used in determining the scale factor to use in 
+# dark subtraction.
+
+my @offsect = ("[10:19,951:960]",
+	       "[2030:2039,1089:1098]",
+	       "[1089:1098,10:19]",
+	       "[951:960,2030:2039]");
+my @onsect = ("[10:19,1089:1098]",
+	      "[2030:2039,951:960]",
+	      "[951:960,10:19]",
+              "[1089:1098,2030:2039]");
+
 =head1 PUBLIC METHODS
 
 The following methods are available in this class in addition to
@@ -502,6 +514,23 @@ sub projp3 {
     my $self = shift;
 
     return($projp3);
+}
+
+=item B<onoffsects>
+
+Get a list of the off and on sections to be used in determining the scaleing
+factor we need to subtract the dark frame. The returned values are references
+to arrays containing the image sections to be used in the testing of the
+reset anomaly regions.
+
+    ($offsectref,$onsectref) = $Frm->onoffsects;
+
+=cut
+
+sub onoffsects {
+    my $self = shift;
+
+    return(\@offsect,\@onsect);
 }
 
 =item B<hdrkeys>
