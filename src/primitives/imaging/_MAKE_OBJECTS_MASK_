@@ -42,9 +42,8 @@
 #       This value will be constrained to between 1.0 and 1.5. [1.0]
 #
 # Notes:
-#    -  This primitive is suitable for both UFTI, IRCAM, and Michelle
-#    in imaging mode.
-#    -  Processing only occurs for object and sky frames.
+#    -  This primitive is suitable for infrared imagers.
+#    -  Processing only occurs for object, sky, or lamp frames.
 #    -  $Frm->file is updated during an pre-processing for the
 #    inventory.  It is not reset to its value on entry.
 #    -  The statistics of the input frame are found to derive the
@@ -83,7 +82,7 @@
 #    KAPPA: CSUB, GLITCH, HISTAT, MATHS, STATS; EXTRACTOR
 #
 # Authors:
-#    MJC: Malcolm J. Currie (JAC)
+#    MJC: Malcolm J. Currie (JAC, Starlink)
 #
 # Copyright:
 #    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
@@ -96,7 +95,8 @@
 
 # This should only be performed on OBJECT frames.
     if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
-         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ) {
+         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ||
+         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "LAMP" ) {
 
 # Arguments
 # =========
@@ -166,13 +166,33 @@
 # the name and format of the results catalogue is fixed (to match PISA) and is
 # in the ASCII file ${ORAC_DATA_CAL}/extractor_mask.param.
        my $resfile = "object_mask.cat";
-       $param1 = "image=$in config=$ENV{ORAC_DATA_CAL}/extractor_mask.sex";
+       my $parfile = "$ENV{ORAC_DATA_CAL}/extractor_mask.sex";
+
+# Read the EXTRACTOR parameter file line by line until the DETECT_THRESH
+# parameter is encountered.  Extract its value.  Note the
+# parameter file is whitespace separated.
+       open( my $fh_parfile, "< $parfile" ) ||
+         orac_throw "Unable to open $parfile to read the source inventory.  Error: $!.\n";
+       my $found = 0;
+       my $sigma = 1.0;
+       my $line;
+       while ( defined( $line = <$fh_parfile> ) && ! $found ) {
+           if ( $line =~ /^DETECT_THRESH/ ) {
+              $found = 1;
+              my @words = split( /\s+/, $line );
+              $sigma = $words[ 1 ];
+           }
+       }
+
+# Finished with the parameter file.
+       close( $fh_parfile );
 
 # Report the processing status.
        orac_print "Detecting objects in $in with at least $minpix connected pixels\n";
-       orac_print "   at 1.1 times sky noise above sky.\n";
+       orac_print "   at $sigma times sky noise above sky.\n";
 
 # Derive an inventory of the images in $resfile.
+       $param1 = "image=$in config=$parfile";
        my $extractor_status = $Mon{ "extractor" }->obeyw( "extract", "$param1" );
 
 # We can handle a failure here by making a null ARD file.  So we test a
@@ -308,12 +328,11 @@ value will be constrained to between 1.0 and 1.5. [1.0]
 
 =item *
 
-This primitive is suitable for both UFTI, IRCAM, and Michelle
-in imaging mode.
+This primitive is suitable for infrared imagers.
 
 =item *
 
-Processing only occurs for object and sky frames.
+Processing only occurs for object, sky, or lamp frames.
 
 =item *
 
@@ -393,7 +412,7 @@ KAPPA: CSUB, GLITCH, HISTAT, MATHS, STATS; EXTRACTOR.
 
 =head1 AUTHORS
 
-MJC: Malcolm J. Currie (JAC)
+Malcolm J. Currie (JAC, Starlink) <mjc@star.rl.ac.uk>
 
 =head1 COPYRIGHT
 
