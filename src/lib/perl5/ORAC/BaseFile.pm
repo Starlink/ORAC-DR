@@ -146,7 +146,7 @@ sub hdr {
     # recursion loops.
     my $hdr = $self->hdr();
 
-    if (scalar(@_) eq 1) {
+    if (scalar(@_) == 1) {
       # Return the value if we have a single argument
       my $key = shift;
       my $value = $hdr->{$key};
