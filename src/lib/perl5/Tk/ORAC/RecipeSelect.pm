@@ -106,6 +106,10 @@ sub Populate {
   push ( @dir_list, $ENV{"ORAC_RECIPE_DIR"} ) 
                      if defined $ENV{"ORAC_RECIPE_DIR"};
 
+  # Make sure all directories exist (allows us to remove ORAC_DATA_OUT
+  # if it is not set yet)
+  @dir_list = grep { -d $_ } @dir_list;
+
   # Scrolled listbox
   my $scrollbar = $lbox_frame->Scrollbar();
   		   
