@@ -413,7 +413,15 @@ sub config_region {
 This method converts a file name and options hash into
 a filename with an attached NDF section.
 
-  $newfile = $Display->select_section($file, \%options);
+  $newfile = $Display->select_section($file, \%options, $dimensionality);
+
+An optional 3rd argument can be used to specify the required 
+dimensionality. If the number of dimensions in the data file is
+greater than that requested, sections in higher dimensions
+are set to 1 (with the assumption that KAPPA will discard axes
+with 1 pixel). If the number of dimensions in the data file
+is fewer than that requested, a warning message is printed
+but we continue in the hope that KAPPA will work something out....
 
 The return value is the original filename with the
 NDF section attached.
@@ -454,11 +462,15 @@ sub select_section {
 
   return $file if ref($options) ne 'HASH';
 
+  # Maximum number of allowed dimensions for an NDF
+  my $maxdim = 7;  
+
+  # Read the dimensionality (default to 7)
+  my $max_requested = $maxdim;
+  $max_requested = shift if @_;
+
   # Take a copy of the options hash
   my %options = %{$options};
-
-
-  my $maxdim = 7;  # Maximum number of allowed dimensions
 
   # Define lookup table of prefix (allow up to 7 dimensions)
   my @lookup = ( "X", "Y", 3..$maxdim);
@@ -476,9 +488,6 @@ sub select_section {
     $auto_all = 0 unless $autosc; 
   }
 
-  # Return the filename if all the autoscale flags are true
-  return $file if ($auto_all);
-
   # Now query the file for its bounds to make sure that the pixel
   # index bounds supplied to not exceed the bounds of the file
   # Could do this by opening the file using NDF or by using the
@@ -495,6 +504,12 @@ sub select_section {
     orac_err("Error reading bounds from input file: $file");
     return undef;
   }
+
+  # Return the filename if all the autoscale flags are true
+  # and the dimensionality does not exceed to maximum requested
+  # (Else we will have to generate a section
+  return $file if ($auto_all && $ndim <= $max_requested);
+
   
 #  print "Ndims = $ndim\n";
 #  print "Lower bounds are: ", join(":",@lbnd),"\n";
@@ -506,6 +521,12 @@ sub select_section {
   # Loop over all valid dimensions
   for my $dim (1..$ndim) {
     my $index = $dim-1;
+
+    # If dim is greater than max_requested - set section to 1
+    if ($dim > $max_requested) {
+      $sects[$index] = 1;
+      next;
+    }
 
     # Check that this dim is mentioned in the lookup table
     if (defined $lookup[$index]) {
@@ -603,7 +624,7 @@ sub image {
   $file =~ s/\.sdf$//;  # Strip .sdf
 
   # Calculate NDF section
-  $file = $self->select_section($file,\%options);
+  $file = $self->select_section($file,\%options,2);
 
   # Construct the parameter string for DISPLAY
   my $optstring = " ";
@@ -653,7 +674,8 @@ sub image {
 
 Display a 1-D plot.
 
-Currently the data input must be 1-D.
+If the data are not 1-D, a section is taken that assures
+1-D (eg NDF section= :,1,1,1 for 4D data)
 
 Takes a file name and arguments stored in a hash.
 Note that currently it does not take a format argument
@@ -665,8 +687,11 @@ Display keywords:
   XAUTOSCALE - Autoscale pixel range?
   YMIN/YMAX  - Y-range of graph (in data units)
   YAUTOSCALE - Autoscale Y-axis
+  COMP       - Component to display (Data (default), or Error)
 
 Default is to autoscale.
+
+Need to add way of controlling line style (eg replace with symbols)
 
 =cut
 
@@ -699,7 +724,7 @@ sub graph {
   $file =~ s/\.sdf$//;  # Strip .sdf
 
   # Calculate the NDF section
-  $file = $self->select_section($file,\%options);
+  $file = $self->select_section($file,\%options,1);
 
   # A resetpars also seems to be necessary to instruct kappa to
   # update its current frame for plotting. Without this the new PICDEF
@@ -729,8 +754,14 @@ sub graph {
   # Construct string for linplot options
   my $args = "clear mode=line $range";
 
+  # Select component
+  if (exists $options{COMP}) {
+    $args .= " COMP=$options{COMP}";
+  }
+
+
   # Run linplot
-  $status = $self->obj->obeyw("linplot","ndf=$file device=$device $args");
+  $status = $self->obj->obeyw("linplot","ndf=$file device=$device $args reset");
   if ($status != ORAC__OK) {
     orac_err("Error displaying graph\n");
     orac_err("Trying to execute: linplot ndf=$file device=$device $args\n");
@@ -758,6 +789,11 @@ keywords.
 Takes a file name and arguments stored in a hash.
 Note that currently it does not take a format argument
 and NDF is assumed.
+
+MAY WANT TO CONERT THE NDF INTO 1-D BEFORE PLOTTING
+(SINCE WE ARE ONLY INTERESTED IN THE SCATTER)
+KAPPA 0.13 HAS A RESHAPE COMMAND - put this in when I upgrade
+to 0.13.
 
 =cut
 
@@ -894,6 +930,10 @@ Option keywords:
 
 Default is to autoscale on the data (the model may not be visible).
 
+If the input file is greater than 1-D, the section is automatically
+converted to 1-D by selecting the 1 slice from each of the
+higher axes
+
 =cut
 
 sub datamodel {
@@ -925,7 +965,7 @@ sub datamodel {
   $file =~ s/\.sdf$//;  # Strip .sdf
 
   # Calculate NDF section
-  $file = $self->select_section($file,\%options);
+  $file = $self->select_section($file,\%options,1);
 
   # Probably should try to find out whether the array is 1 or 2 dimensional
   # since currently linplot fails if the data is not 1-D
@@ -953,7 +993,7 @@ sub datamodel {
   my $model = $file . "_model";
 
   # Calculate the NDF section of the model
-  $model = $self->select_section($model,\%options);
+  $model = $self->select_section($model,\%options,1);
 
   if (-e $model . ".sdf") {  # Assume .sdf extension!!!!
 
