@@ -1,0 +1,128 @@
+#-*-perl-*-
+#
+
+=head1 NAME
+
+_EMISSIVITY_ - calculates emissivity results
+
+=head1 DESCRIPTION
+
+Expects to be run on a SKY frame (taken pointing at the sky) and an
+OBJECT frame (taken pointing at the mirror covers ie dome).
+
+File extensions created:
+
+Frames:
+_ess: Emissivity Sky Spectrum
+_eds: Emissivity Dome Spectrum
+
+Group:
+Group file contains ratio of sky and dome spectra
+_sm: Smoothed by $box pixels - used to select region
+
+
+Spectra are extracted from both files and divided by the magic 
+numbers (whose ratio = the ratio of the exposure times (hard coded).
+
+The "emissivity" spectrum is the ratio of these two.
+
+The emissivity spectrum is smoothed with a box of 5 pixels. The
+location of the minimum of the smoothed spectrum is found, and a
+5 pixel window centred at this point is extracted from the sky and
+dome spectra. The mean values of these two windows are calculated and
+printed. The ratio of these 2 mean values is printed as the emissivity.
+
+=head2 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+=cut
+
+# orac_print("PRIMITIVE: EMISSIVITY\n");
+
+my $in;
+my $out;
+
+# the start and end rows for the extraction
+my $start = 50;
+my $end = 150;
+
+# magic numbers
+# I got these from the old emis script. I don't know where they come from
+# maybe Tom Kerr knows... The ratio of these numbers = the ratio of the
+# exposure times. - 70.75 used to be 50.5
+
+my %magic = ('SKY', 303.0, 'OBJECT', 70.75);
+
+# set user headers in the group file
+
+if ($Frm->hdr->{'OBSTYPE'} eq 'SKY') {
+  ($in, $out) = $Frm->inout("_ess", $Frm->file);
+  $Grp->uhdr('EMIS_SKY', $out);
+} else {
+  ($in, $out) = $Frm->inout("_eds", $Frm->file);
+  $Grp->uhdr('EMIS_DOME', $out);
+}
+
+# extract the spectrum.
+$Mon{'figaro1'}->obeyw("extract","image=$in spectrum=$out ystart=$start yend=$end");
+
+# divide it by the magic number
+$Mon{'figaro1'}->obeyw("icdiv","image=$out factor=$magic{$Frm->hdr->{'OBSTYPE'}} output=$out");
+
+orac_print("Orac says: $in to $out: Spectrum Extracted and divided.\n");
+
+# only do this bit once we've got both frames
+
+if(defined $Grp->uhdr('EMIS_SKY') && defined $Grp->uhdr('EMIS_DOME')) {
+  my $emis_sky = $Grp->uhdr('EMIS_SKY');
+  my $emis_dome = $Grp->uhdr('EMIS_DOME');
+  my $group_file = $Grp->file;
+
+  $Mon{'figaro1'}->obeyw("idiv", "image=$emis_sky image1=$emis_dome output=$group_file");
+
+  orac_print("Orac says: Emissivity spectrum calculated: $group_file\n");
+
+  # now we do a box smooth on the emissivity spectrum, and find the lowest point.
+  # we then generate statistics about that point from the unsmoothed spectrum.
+
+  $in = $group_file;
+  $out = $in . "_sm";
+  my $box = 5; # number of pixels in the box. Better be odd
+
+  $Mon->{'kappa_mon'}->obeyw("block", "in=$in out=$out estimator=mean box=$box");
+  $Mon->{'kappa_mon'}->obeyw("stats", "ndf=$out");
+  my ($ORAC_STATUS, $wlen) = $Mon{'kappa_mon'}->get("stats", "mincoord");
+  my ($ORAC_STATUS, $wlenpix) = $Mon{'kappa_mon'}->get("stats", "minpos");
+
+  # now we know the pixel area to work on. Do the stats.
+  # Chop out the area into temp files and use stats I guess
+
+  my $tmp = new ORAC::TempFile;
+  my $tmpfile = $tmp->file;
+
+  $Mon->{'ndfpack_mon'}->obeyw("ndfcopy", "in=$emis_sky($wlenpix~$box) out=$tmpfile");
+  $Mon->{'kappa_mon'}->obeyw("stats", "ndf=$tmpfile");
+  my ($ORAC_STATUS, $sky_val) = $Mon{'kappa_mon'}->get("stats", "mean");
+
+  $Mon->{'ndfpack_mon'}->obeyw("ndfcopy", "in=$emis_dome($wlenpix~$box) out=$tmpfile");
+  $Mon->{'kappa_mon'}->obeyw("stats", "ndf=$tmpfile");
+  my ($ORAC_STATUS, $dome_val) = $Mon{'kappa_mon'}->get("stats", "mean");  
+
+#  Calculate Emissivity from sky and dome values just obtained
+
+  my $emissivity = 100.0 * $sky_val / $dome_val;
+  $emissivity = sprintf "%.2f", $emissivity;
+
+  $wlen = sprintf "%.4f", $wlen;
+  $sky_val = sprintf "%.2f", $sky_val;
+  $dome_val = sprintf "%.2f", $dome_val;
+  orac_print("Orac says: Emissivity measured from $box pixels centered at: $wlen um\n");
+  orac_print("Orac says: Sky value: $sky_val; Dome value: $dome_val\n");
+  orac_print("Orac says: Emissivity = $emissivity %\n");
+
+
+} else {
+#  orac_print("Orac says: Don't have both SKY and DOME yet.\n");
+}
+
