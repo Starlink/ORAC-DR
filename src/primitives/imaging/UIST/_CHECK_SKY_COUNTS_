@@ -1,0 +1,109 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CHECK_SKY_COUNTS_ - Examine the sky counts and throw a warning if they're
+too low.
+
+=head1 DESCRIPTION
+
+This primitive takes statistics on the current frame and throws a warning
+if the clipped median is below a certain threshhold that depends on the
+filter.
+
+The threshold depends on both the camera used and the filter. For the
+0.06 arcsecond/pixel camera, the thresholds for J98, H98, K98, Lp98, and
+Mp98 filters are 2 * 0.4 * exposure time, 17 * 40 * exposure time, 12 *
+60 * exposure time, 2.6e4 * 60 * exposure time, and 5.7e4 * 60 * exposure
+time, respectively. For the 0.12 arcsecon/pixel camera, the thresholds for
+J98, H98, K98, Lp98, and Mp98 filters are 0.6 * 0.4 * exposure time, 4 *
+40 * exposure time, 3 * 60 * exposure time, 6e3 * 60 * exposure time, and
+1.4e4 * 60 * exposure time, respectively.
+
+=head1 ARGUMENT
+
+=over 4
+
+=item CLIP = STRING (Given)
+
+The clip levels used to determine the median. This parameter
+should be of the form N,N, where clip levels are integers separated
+by commas. [2,2,3]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is only suitable for UIST.
+
+=item *
+
+Processing only occurs for object frames.
+
+=back
+
+=head1 AUTHORS
+
+Brad Cavanagh (JAC) <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# Get clipping levels and set a default.
+my $cliplevels = $_CHECK_SKY_COUNTS_{CLIP} || "2,2,3";
+if( $cliplevels !~ /[\d,]/ ) {
+  $cliplevels = "2,2,3";
+}
+
+# Determine the camera lens.
+my $camlens = $Frm->hdr('CAMLENS');
+$camlens =~ s/^[\d\.]//g;
+
+# Set up the thresholds.
+my %threshold = ( '0.12J98' => 0.8,     #     2 * 0.4
+                  '0.12H98' => 6.8,     #    17 * 0.4
+                  '0.12K98' => 7.2,     #    12 * 0.6
+                  '0.12Lp98' => 15600,  # 2.6e4 * 0.6
+                  '0.12Mp98' => 34200,  # 5.7e4 * 0.6
+                  '0.06J98' => 0.24,    #   0.6 * 0.4
+                  '0.06H98' => 1.6,     #     4 * 0.4
+                  '0.06K98' => 1.8,     #     3 * 0.6
+                  '0.06Lp98' => 3600,   #   6e3 * 0.6
+                  '0.06Mp98' => 8400,   # 1.4e4 * 0.6
+                );
+
+# Obtain filter and exposure time.
+my $filter = $Frm->uhdr("ORAC_FILTER");
+my $exp_t = $Frm->uhdr("ORAC_EXPOSURE_TIME");
+
+# Set up a filter/camera lens combination for threshold lookup.
+my $lookup = $camlens . $filter;
+
+( my $in, my $out ) = $Frm->inout("_junk");
+
+# Only do this for OBJECT or SKY frames.
+if( $Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "OBJECT" ||
+    $Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "SKY" ) {
+
+# Run the clipped stats.
+  $Mon{'kappa_mon'}->obeyw("stats", "ndf=$in clip=[$cliplevels]" );
+  ( my $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get("stats", "mean");
+
+  my $p_mean = sprintf("%0.2f", $mean);
+
+  if( exists( $threshold{$filter} ) ) {
+
+    if( $mean < ( $threshold{$filter} * $exp_t ) ) {
+
+      orac_warn "Mean sky counts in $in are $p_mean, which is below the threshold of " . ( $threshold{$filter} * $exp_t ) . ". Possible cause is closed shutter.\n";
+    }
+  }
+}
