@@ -93,6 +93,11 @@ sub start_algorithm_engines {
 
   %Mon = ();
 
+  $Mon{figaro1} = new ORAC::Msg::ADAM::Task("figaro1_$$",$ENV{FIG_DIR}."/figaro1");
+  $Mon{figaro2} = new ORAC::Msg::ADAM::Task("figaro2_$$",$ENV{FIG_DIR}."/figaro2");
+  $Mon{figaro4} = new ORAC::Msg::ADAM::Task("figaro4_$$",$ENV{FIG_DIR}."/figaro4");
+  # special emlt binary that writes results into parameters
+  $Mon{emlt} = new ORAC::Msg::ADAM::Task("emlt_$$",$ENV{FIG_DIR}."/emlt",{TASKTYPE=>"I"});
   $Mon{ndfpack_mon} = new ORAC::Msg::ADAM::Task("ndfpack_mon_$$",$ENV{KAPPA_DIR}."/ndfpack_mon");
   $Mon{kappa_mon} = new ORAC::Msg::ADAM::Task("kappa_mon_$$",$ENV{KAPPA_DIR}."/kappa_mon");
 
