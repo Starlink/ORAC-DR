@@ -114,22 +114,42 @@ $DEBUG = 0; # Turn off debugging mode
 	       'HLTAU' => {
 			   '850' => 2.32,
 			   '450' => 10.4,
+			   '850W' => 2.32,
+			   '450W' => 10.4,
+			   '850N' => 2.32,
+			   '450N' => 10.4,
 			  },
 	       'CRL618' => {
 			    '850' => 4.57,
 			    '450' => 11.9,
+			    '850W' => 4.57,
+			    '450W' => 11.9,
+			    '850N' => 4.57,
+			    '450N' => 11.9,
 			   },
 	       'CRL2688' => {
 			     '850' => 5.88,
 			     '450' => 24.8,
+			     '850W' => 5.88,
+			     '450W' => 24.8,
+			     '850N' => 5.88,
+			     '450N' => 24.8,
 			    },
 	       '16293-2422' => {
 				'850' => 16.3,
 				'450' => 78.1,
+				'850W' => 16.3,
+				'450W' => 78.1,
+				'850N' => 16.3,
+				'450N' => 78.1,
 			       },
 	       'OH231.8' => {
 			     '850' => 2.52,
 			     '450' => 10.53,
+			     '850W' => 2.52,
+			     '450W' => 10.53,
+			     '850N' => 2.52,
+			     '450N' => 10.53,
 			    }
 	      );
 
@@ -838,7 +858,7 @@ actually have a calibration value for it....
 sub iscalsource {
   my $self = shift;
   my $source = uc(shift);
-  my $filter = shift;
+  my $filter = uc(shift);
 
   # If we match a planet straightaway then it is a calibrator
   # regardless of filter (unless the filter is not available in fluxes)
