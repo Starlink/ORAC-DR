@@ -1,11 +1,12 @@
 =head1 NAME
 
-REBIN_EM2_GROUP
+_REBIN_EM2_GROUP_ - Emerson2 scan map data reduction
 
 =head1 DESCRIPTION
 
 This group method combines scan map data taken with different chop
-throws and removes the dual beam signature using FFTs
+throws and removes the dual beam signature using FFTs. It uses
+the Emerson 2 technique.
 
 =head1 TASKS
 
@@ -96,10 +97,21 @@ final map.
 
 In fact we choose to use option 1 (REBIN without an output file).
 
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
 =cut
 
+# Should be modified to make use of ORAC::TempFile
+# rather than having explicit unlinking
 
-# Need to make sure that in -offline mode we don't try to 
+# Need to make sure that in -offline mode we don't try to
 # coadd data before it is processed. Obviously it would be
 # better to generate the map for each sub group as each sub grp
 # completes but it is simpler to just delay the use of this
@@ -250,7 +262,6 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 
 	$outlong = join(" ",&$dec2deg($longsum));
 	$outlat = join(" ",&$dec2deg($latsum));
-      
 
       } else {
 	# Just copy the variable
@@ -268,7 +279,7 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 
 
     orac_print "*********OUTLONG: $outlong OUTLAT: $outlat **********\n",'clear';
-    
+
     # Set up the map centre and store in $coords
     # Map coords
     my $coords;
@@ -381,16 +392,16 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 
     # We now have a group derived from $Grp but that only includes
     # frames that are related.
-    
+
     # Loop over subgroups
     foreach my $subgrp (@subgrps) {
 
       # Counter for REMDBM
       $cnt++;
-      
+
       my $chop_pa = $subgrp->frame(0)->hdr('CHOP_PA');
       my $chop_thr = $subgrp->frame(0)->hdr('CHOP_THR');
-      
+
       orac_print "..processing Chop throw: $chop_thr, PA: $chop_pa\n";
 
       #####################################################
@@ -413,10 +424,10 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 
       # Calculate the total weight (so that we can remove the files
       # when they are no longer needed
- 
+
       # if this is first time round then simply rename weight to weight
       # else add to weight and rename
- 
+
       if ($cnt > 1) {
 	# Add to previous
 	$Mon{kappa_mon}->obeyw("add","in1=$totwt in2=$outwt out=junk$$ title='Total_Weight' reset ");
@@ -433,11 +444,11 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
       #####################################################
 
       # Set a name for the group
-      $subgrp->file($Grp->file .'_'. $chop_pa . '-' . $chop_thr);  
-      
+      $subgrp->file($Grp->file .'_'. $chop_pa . '-' . $chop_thr);
+
       # Loop over the different sub-instruments
       # in the current frame
-      
+
       foreach my $sub ($subgrp->subs) {
 	
 	orac_print("Combining data for sub $sub\n");
@@ -492,10 +503,10 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 	# by -1
 	# This probably implies that I have got the weights inverted for
 	# this chop position angle.
- 
+
 	my $string;
 	if ($chop_pa == 0) {
- 
+
 	  $Mon{kappa_mon}->obeyw("cmult","in=$out scalar=-1.0 out=junk$$ reset");
 	  $string = "in=junk$$";
 	} else {
@@ -506,19 +517,19 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 	# Do the FFT
 	my $realout = "re_" . $chop_pa . '_' . $chop_thr;
 	my $imout = "im_" . $chop_pa . '_' . $chop_thr;
- 
+
 	orac_print ("Forward Fourier transforming $sub : $chop_thr $chop_pa\n");
 	$Mon{kappa_mon}->resetpars;
 	$Mon{kappa_mon}->obeyw("fourier","$string realout=$realout imagout=$imout hermout=! reset");
 
- 
+
 	# Remove junk.sdf
 	unlink "junk$$"."$ext" if (-e "junk$$"."$ext");
 
 	# We now need to divide this by the FT of the chop and multiply
-	# by the weight of the chop 
+	# by the weight of the chop
 	# Call the FT of the chop iF, then we have (chop is purely imaginary)
-	# 
+	#
 	# New = (x + iy) * F**2 / iF
 	#     = (x + iy) F / i
 	#     = ( x + iy ) F *  i 
@@ -526,7 +537,7 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 	#           i           i
 	#
 	#     = F ( y - ix)
- 
+
 	# This means we multiply the imaginary part by the FT of the chop
 	# to generate the new real component, and the real by -F to generate
 	# the new imaginary component
@@ -539,7 +550,7 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 	$Mon{ndfpack_mon}->obeyw("setorigin","ndf=$outft like=$realout");
 
 	# Imaginary REAL -> IM
-	my $string = " -1.0*ia*ib out=imtemp ia=$realout ib=$outft";
+	$string = " -1.0*ia*ib out=imtemp ia=$realout ib=$outft";
 	$Mon{kappa_mon}->obeyw("maths","$string reset novariance");
 
 	# REAL
@@ -554,11 +565,11 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 	if ($cnt > 1) {
 	  $Mon{kappa_mon}->obeyw("add","in1=imtemp in2=$imroot$sub out=junk$$ reset");
 	  rename ("junk$$"."$ext", "$imroot$sub$ext");
- 
+
 	  $Mon{kappa_mon}->obeyw("add","in1=retemp in2=$reroot$sub out=junk$$ reset");
 	  rename ("junk$$"."$ext", "$reroot$sub$ext");
 	  unlink "imtemp$ext", "retemp$ext";
- 
+
 	} else {
 	  # else rename files
 	  rename ("retemp$ext", "$reroot$sub$ext");
@@ -579,7 +590,7 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 
       # Remove the chop FT weight
       unlink "$outft$ext";
-      
+
       #####################################################
       ################### END REMDBM ######################
       #####################################################
@@ -601,13 +612,13 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 
     # Now we have the total weight, and the processed real and imaginary
     # components.
- 
+
     # Remove all the zeroes from the weights array and replace with a small
     # number. This is a kludge to prevent DIV from doing weird things
     # and crashing on the alpha
-    
+
     $Mon{kappa_mon}->obeyw("substitute","in=$totwt out=s$totwt oldval=0.0 newval=0.00001");
- 
+
     unlink "$totwt$ext";
 
     # Update the Grp name so that it reflects the obs type
@@ -630,13 +641,13 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
       $Mon{ndfpack_mon}->obeyw("setorigin","ndf=s$totwt like=$reroot$sub");
 
       # Divide real and imaginary by the total weight
-      
+
       $Mon{kappa_mon}->obeyw("div","in1=$reroot$sub in2=s$totwt out=rediv$$ reset");
       $Mon{kappa_mon}->obeyw("div","in1=$imroot$sub in2=s$totwt out=imdiv$$ reset");
- 
+
       # Remove the FFTs for the current sub
       unlink "$reroot$sub$ext", "$imroot$sub$ext";
- 
+
       # Mask the high frequencies using ardmask
       # Calculate radius for each axis
       my $wavfrm = $Grp->members->[0];
@@ -676,13 +687,13 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 
       # Inverse fourier
       $Mon{kappa_mon}->obeyw("fourier","inverse realin=rediv_ard$$ imagin=imdiv_ard$$ out=sbeam$$ reset");
- 
+
       # Remove the final junk files
       unlink "rediv_ard$$".$ext, "imdiv_ard$$".$ext;
 
       # Now propogate the mask and axis information from the
       # first file in the group - could do this with copobj
-      my $args = " exp='IA*0+IB' novariance ib=sbeam$$ out=$out reset";
+      $args = " exp='IA*0+IB' novariance ib=sbeam$$ out=$out reset";
       $args .= " ia=". $subgrps[0]->grpoutsub($sub);
       $Mon{kappa_mon}->obeyw("maths","$args");
 
@@ -701,19 +712,10 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
     #####################################################
     ################### END REMDBM ######################
     #####################################################
-    
+
   }
-  
-  
-}
- 
+
 }
 
-
-
-# COPYRIGHT
-#
-#   Copyright (C) 1998-2000 Particle Physics and Astronomy Research
-#   Council. All Rights Reserved.
-
+}
 
