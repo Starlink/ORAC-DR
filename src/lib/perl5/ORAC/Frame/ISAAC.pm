@@ -71,7 +71,6 @@ my %hdr = (
             NUMBER_OF_EXPOSURES  => "HIERARCH.ESO.DET.NDIT",
             NUMBER_OF_READS      => "HIERARCH.ESO.DET.NCORRS",
             OBSERVATION_NUMBER   => "OBSNUM",
-            WAVEPLATE_ANGLE      => "HIERARCH.ESO.SEQ.ROT.OFFANGLE",
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed by
@@ -520,6 +519,17 @@ sub _to_UTSTART {
 
 # Obtain the start time in seconds.
    return $self->get_UT_hours();
+}
+
+sub _to_WAVEPLATE_ANGLE {
+    my $self = shift;
+    my $polangle = 0.0;
+    if ( exists $self->hdr->{"HIERARCH.ESO.SEQ.ROT.OFFANGLE"} ) {
+       $polangle = $self->hdr->{"HIERARCH.ESO.SEQ.ROT.OFFANGLE"};
+    } elsif ( exists $self->hdr->{CROTA1} ) {
+       $polangle = abs( $self->hdr->{CROTA1} );
+    }
+    return $polangle;
 }
 
 # Use the nominal reference pixel if correctly supplied, failing that
