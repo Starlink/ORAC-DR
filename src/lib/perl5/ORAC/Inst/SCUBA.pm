@@ -8,8 +8,9 @@ ORAC::Inst::SCUBA - ORAC description of SCUBA
 
   use ORAC::Inst::SCUBA;
 
-  &start_msg_sys;
-  &start_algorithm_engines;
+  @messys = &start_msg_sys;
+  %Mon = &start_algorithm_engines;
+  $status = &wait_for_algorithm_engines;
 
 =head1 DESCRIPTION
 
@@ -22,7 +23,7 @@ monoliths.
 require Exporter;
 
 @ISA = (Exporter);
-@EXPORT = qw(start_algorithm_engines
+@EXPORT = qw(start_algorithm_engines wait_for_algorithm_engines
 	    start_msg_sys);
 
 use Carp;
@@ -94,10 +95,33 @@ sub start_algorithm_engines {
   $Mon{ndfpack_mon} = new ORAC::Msg::ADAM::Task("ndfpack_mon_$$",$ENV{KAPPA_DIR}."/ndfpack_mon");
 
   $Mon{kappa_mon} = new ORAC::Msg::ADAM::Task("kappa_mon_$$",$ENV{KAPPA_DIR}."/kappa_mon");
-  $Mon{kappa_mon}->contactw;	# wait for last monolith
 
   return %Mon;
 }
+
+
+
+=item wait_for_algorithm_engines
+
+Check to see that at least one of the algorithm engines has 
+started. Wait until contact can be made or timeout is reached.
+Return ORAC__OK if everything works; ORAC__ERROR if
+a timeout.
+
+The messaging system must be running and the algorithm engine objects
+must have been created via start_algorithm_engines().
+
+=cut
+
+sub wait_for_algorithm_engines {
+
+  if ( $Mon{kappa_mon}->contactw ) {
+    return ORAC__OK;
+  } else {
+    return ORAC__ERROR;
+  }
+}
+
 
 
 
