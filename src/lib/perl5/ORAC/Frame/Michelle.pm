@@ -49,9 +49,12 @@ my %hdr = (
             DEC_TELESCOPE_OFFSET => "TDECOFF",
             RA_SCALE             => "PIXELSIZ",
             RA_TELESCOPE_OFFSET  => "TRAOFF",
+            UTSTART              => "UTSTART",
+            UTEND                => "UTEND",
 
 # then the spectroscopy...
             CONFIGURATION_INDEX  => "CNFINDEX",
+            DETECTOR_INDEX       => "DINDEX",
             GRATING_DISPERSION   => "GRATDISP",
             GRATING_NAME         => "GRATNAME",
             GRATING_ORDER        => "GRATORD",
