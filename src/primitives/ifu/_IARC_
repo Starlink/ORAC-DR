@@ -1,0 +1,173 @@
+# 		-*-perl-*-
+
+#+
+# Name:
+# _IARC_
+#
+# Purpose:
+#    Runs Iarc on an approximately straightened IFU arc spectrum
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive runs Iarc on an IFU arc spectrum in order to find the 
+#    wavelength calibration which should be applied to each row of subsequent
+#    IFU frames.
+#
+#    The input frame should have been approximately straightened (to a pixel
+#    or so), probably by the _EXTRACT_SLICES_ primitive. A previously
+#    generated arlines file, listing the wavelengths of the spectral lines for
+#    the appropriate lamp, grism etc is obtained via the calibration system
+#    and copied to the current directory for use with Iarc.
+#
+#    The resulting .iar file is filed with the calibration system for use
+#    with subsequent IFU frames.
+#
+# Notes:
+#    - This primitive is written for the UIST IFU.
+#    - The frame should previously have been approximately straightened.
+#    - The fitting starts from the central row of a central slice, obtained 
+#      from the user headers IFU_start, IFU_end, IFU_xshift and IFU_yshift.
+#    - the number of slices should be in the IFU_slices user header.
+#    - The arlines calibration files are intended to be static. They are 
+#      stored in $ORAC_DATA_CAL/arcs/ and the index file is in $ORAC_DATA_CAL.
+#
+# Output Data:
+#    - No output frame is produced, and no changes are made to the input frame.
+#    - The only output is a .iar file for use in calibrating subsequent IFU
+#      data. This is filed with the calibration system.
+#
+# Tasks:
+#    figaro3: iarc
+#
+# Authors:
+#    SPT: Stephen P. Todd (Edinburgh University/UKATC)
+#
+# Copyright:
+#    Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+
+use File::Copy; 
+
+my $in = $Frm->file;
+
+# Get the appropriate arlines file from the calibration system. Note that
+# these are intended to be static and therefore the arlines files and the
+# arlines.index file are stored in the $ORAC_DATA_CAL directory.
+my $arlines = $ENV{ORAC_DATA_CAL} . "/" . $Cal->arlines; 
+orac_print "Using arlines file: $arlines \n";
+
+# Iarc always uses arlines.lis in the current directory, so need to copy
+# correct arlines file to here
+copy ("$arlines", "arlines.lis");
+
+# Do the Iarc, starting from the centre of a central slice
+# Get number of slices and check that the user headers have been defined 
+my $n_slices = $Frm->uhdr("IFU_slices");
+unless (defined $n_slices) {die "uhdr IFU_slices undefined.\n";}
+
+my $row = int( ($Frm->uhdr("IFU_start")->[int($n_slices/2)]) +
+	       ($Frm->uhdr("IFU_start")->[int($n_slices/2)]) ) / 2;
+
+orac_print "Running Iarc, starting at row $row.\n";
+
+my $param = "image=$in rstart=$row rwidth=1 file=$in.iar lock=f xcorr=f gap=5";
+$Mon{'figaro3'}->obeyw("iarc", "$param"); 
+
+# File it as the Iar file
+$Cal->iar("$in.iar");
+  
+# Report the processing status.
+orac_print "$in.iar filed as the current Iarc.\n";
+  
+# Add this frame to the index of iar frames.
+$Cal->iarindex->add("$in.iar", {%{$Frm->hdr}, %{$Frm->uhdr}} );
+  
+# Report the processing status.
+orac_print "$in.iar added to index file.\n\n";
+
+
+# Podule
+# ======
+
+=head1 NAME
+
+_IARC_ -- Runs Iarc on an approximately straightened IFU arc spectrum.
+
+=head1 DESCRIPTION
+
+This primitive runs Iarc on an IFU arc spectrum in order to find the 
+wavelength calibration which should be applied to each row of subsequent
+IFU frames.
+
+The input frame should have been approximately straightened (to a pixel
+or so), probably by the _EXTRACT_SLICES_ primitive. A previously
+generated arlines file, listing the wavelengths of the spectral lines for
+the appropriate lamp, grism etc is obtained via the calibration system
+and copied to the current directory for use with Iarc.
+
+The resulting .iar file is filed with the calibration system for use
+with subsequent IFU frames.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is written for the UIST IFU.
+
+=item *
+
+The frame should previously have been approximately straightened.
+
+=item *
+
+The fitting starts from the central row of a central slice, obtained 
+from the user headers IFU_start, IFU_end, IFU_xshift and IFU_yshift.
+
+=item *
+
+The number of slices should be in the IFU_slices user header.
+
+=item *
+
+The arlines calibration files are intended to be static. They are 
+stored in $ORAC_DATA_CAL/arcs/ and the index file is in $ORAC_DATA_CAL.
+
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+No output frame is produced, and no changes are made to the input frame.
+
+=item *
+
+The only output is a .iar file for use in calibrating subsequent IFU
+data. This is filed with the calibration system.
+
+=back
+
+=head1 TASKS
+
+figaro3: iarc
+
+=head1 AUTHORS
+
+SPT: Stephen P. Todd (Edinburgh University/UKATC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
