@@ -162,28 +162,131 @@ sub orac_execute_recipe {
 
 #------------------------------------------------------------------------
 
-=item orac_read_recipe(recipe)
+=item orac_read_recipe(recipe, instrument)
 
 Reads the specified recipe from the recipe directory.
-An array containing the recipe is returned.
+An array reference containing the recipe is returned.
+
+The second argument specifies the name of the instrument specific
+directory that should be searched.
+
+The location of the recipe is determined first by looking in the
+directory specified with $ENV{ORAC_RECIPE_DIR} and if none exists
+the ORAC repository is searched ($ENV{ORAC_DIR}/recipes/instrument).
+If the recipe can be found in neither location the program aborts.
 
 =cut
 
 sub orac_read_recipe {
 
+  use strict; # For Frossie :-)
+
+  croak 'Usage: orac_read_recipe(recipe_name, instrument_name)'
+    unless scalar(@_) == 2;
+
   my $recipe = shift;
-  my  (@arguments) = @_;
+  my $instrument = shift;
+  
+  # Since this is the only routine that needs to know the recipe
+  # directory we can implement search paths
 
-  open(RECIPE,${main::recipe_dir}.$recipe) || croak "No such recipe $recipe\n";;
+  my $recipe_dir = undef; # Keep track of what we have found
 
-  my (@recipe) = <RECIPE>;
+  # First see if the environment variable $ORAC_RECIPE_DIR has been
+  # set - we should look here first.
+  if (exists $ENV{ORAC_RECIPE_DIR}) {
+    $recipe_dir = $ENV{ORAC_RECIPE_DIR} if -e "$ENV{ORAC_RECIPE_DIR}/$recipe";
+  } 
 
-  close(RECIPE);
+  # Now look in ORAC_DIR for recipes
+  if (exists $ENV{ORAC_DIR} && ! defined $recipe_dir) {
 
-  return(@recipe);
+    my $tmp = "$ENV{ORAC_DIR}/recipes/$instrument";
+    $recipe_dir = $tmp if -e "$tmp/$recipe";
+
+  } 
+
+  # No environment variables found - check in current directory
+  # This shouldnt happen in oracdr
+  $recipe_dir = '.' if (-e $recipe  && ! defined $recipe_dir);
+
+  # If recipe dir is still set to NONE then we could not find the file
+  croak "Error - could not find recipe $recipe in any of the recipe search paths"
+    unless defined $recipe_dir;
+
+#  open(RECIPE,${main::recipe_dir}.$recipe) || croak "No such recipe $recipe\n";;
+  my $fh = new IO::File("< $recipe_dir/$recipe") || 
+    croak "Error opening $recipe_dir/$recipe : $!";
+
+  my @recipe = <$fh>;
+
+  return(\@recipe);
 
 };
 
+#------------------------------------------------------------------------
+
+
+=item orac_read_primitive(primitive, instrument)
+
+Reads the specified primitive from the recipe directory.
+An array reference containing the primitive is returned.
+
+The second argument specifies the name of the instrument specific
+directory that should be searched.
+
+The location of the recipe is determined first by looking in the
+directory specified with $ENV{ORAC_PRIMITIVE_DIR} and if none exists
+the ORAC repository is searched ($ENV{ORAC_DIR}/primitives/instrument).
+If the recipe can be found in neither location the program aborts.
+
+=cut
+
+sub orac_read_primitive {
+
+  use strict; # For Frossie :-)
+
+  croak 'Usage: orac_read_primitive(primitive_name, instrument_name)'
+    unless scalar(@_) == 2;
+
+  my $primitive = shift;
+  my $instrument = shift;
+  
+  # Since this is the only routine that needs to know the recipe
+  # directory we can implement search paths
+
+  my $prim_dir = undef; # Keep track of what we have found
+
+  # First see if the environment variable $ORAC_PRIMITIVE_DIR has been
+  # set - we should look here first.
+  if (exists $ENV{ORAC_PRIMITIVE_DIR}) {
+    $prim_dir = $ENV{ORAC_PRIMITIVE_DIR} if -e "$ENV{ORAC_PRIMITIVE_DIR}/$primitive";
+  } 
+
+  # Now look in ORAC_DIR for primitives
+  if (exists $ENV{ORAC_DIR} && ! defined $prim_dir) {
+
+    my $tmp = "$ENV{ORAC_DIR}/primitives/$instrument";
+    $prim_dir = $tmp if -e "$tmp/$primitive";
+
+  } 
+
+  # No environment variables found - check in current directory
+  # This shouldnt happen in oracdr
+  $prim_dir = '.' if (-e $primitive  && ! defined $prim_dir);
+
+  # If recipe dir is still set to NONE then we could not find the file
+  croak "Error - could not find primitive $primitive in any of the primitive search paths"
+    unless defined $prim_dir;
+
+  my $fh = new IO::File("< $prim_dir/$primitive") || 
+    croak "Error opening $prim_dir/$primitive : $!";
+
+  my @primitive = <$fh>;
+
+  return(\@primitive);
+
+};
 
 #------------------------------------------------------------------------
 
@@ -195,7 +298,7 @@ Parses argument lists on primitive calls.
 
 sub orac_parse_arguments {
 
-  local($line) = shift(@_);
+  my $line = shift;
 
   ($macro,my @arguments) = split(/\s+/,$line);
 
@@ -209,34 +312,49 @@ sub orac_parse_arguments {
 
 #------------------------------------------------------------------------
 
-=item orac_parse_recipe(array)
+=item orac_parse_recipe(array_reference, instrument)
 
 Parses a recipe, reading in the necessary primitives and
 adding automatic error checking code.
-An array containing the full recipe is returned.
+
+The recipe is parsed in place (ie using the array reference).
+The instrument name is supplied so that the directory name
+containing the primitives can be constructed.
+
+An array reference to the parsed array is returned.
 
 =cut
 
 sub orac_parse_recipe {
-  
-  local(@recipe) = @_;
-  my(@parsed);
+
+  croak 'Usage: orac_parse_recipe(\@recipe, instrument_name)'
+    unless scalar(@_) == 2;
+
+  croak 'orac_parse_recipe: First argument must be an array reference!'
+    unless ref($_[0]) eq 'ARRAY';
+
+
+  my $recipe = shift;
+  my $instrument = shift;
+
+  my @parsed = (); # Create output array
   
   my ($line);
   
-  foreach $line (@recipe) {
+  foreach $line (@$recipe) {
     
     if ($line =~ /^\s*_/) {
       $line =~ s/^\s+//g;	# zap leading blanks
       ($macro,@rest) = split(/\s+/,$line);
-      # read in primitive
-      open(DICTIONARY,$ {main::dictionary_dir}.$macro) || 
-	croak "No translation for $line\n";    
-      @lines = <DICTIONARY>;
-      close(DICTIONARY);
-      $parse = join(" ",$macro,@rest);
+
+      # Should we be using $line here rather than joining
+      # the string back together again???
+      $parse = join(" ",$macro,@rest); 
       push(@parsed,"orac_parse_arguments(\"$parse\");\n");
     
+      # read in primitive
+      my $lines_ref = orac_read_primitive($macro, $instrument);
+
     #       # store arguments
     #       %$macro = ();
     #       foreach $argument (@arguments) {
@@ -244,7 +362,7 @@ sub orac_parse_recipe {
     #         $$macro{$key}=$value;
     #       };
     
-      push(@parsed,@lines);
+      push(@parsed,@$lines_ref);
       
 
       } else {
@@ -255,19 +373,35 @@ sub orac_parse_recipe {
 
   }
 
-  return(@parsed);
+  return(\@parsed);
 
 }
+
+=item orac_add_code_to_recipe(\@recipe)
+
+Post processes the recipe adding status checking code.
+
+Argument is a reference to an array containing the recipe
+and the return argument is a reference to an array containing
+the processed recipe.
+
+=cut
 
 
 sub orac_add_code_to_recipe {
   
-  local(@recipe) = @_;
-  my(@processed);
+  croak 'Usage: orac_add_code_to_recipe(\@recipe)'
+    if scalar(@_) != 1;
+
+  croak 'orac_add_code_to_recipe: First argument must be an array reference!'
+    unless ref($_[0]) eq 'ARRAY';
+
+  my $recipe = shift;
+  my @processed = ();
   
   my ($line);
   
-  foreach $line (@recipe) {
+  foreach $line (@$recipe) {
     
     if ($line =~ /->obeyw(.*)/) {
       
@@ -307,7 +441,7 @@ sub orac_add_code_to_recipe {
   
   };
 
-  return(@processed);
+  return(\@processed);
 }
 
 
@@ -444,6 +578,10 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.26  1998/09/17 03:28:46  timj
+#- Use array references throughout recipe parsing and execution
+#- Support ORAC_RECIPE_DIR and ORAC_PRIMITIVE_DIR
+#
 #Revision 1.25  1998/09/15 12:28:47  frossie
 #Remove debug line
 #
