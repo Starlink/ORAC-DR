@@ -250,6 +250,11 @@ sub convert {
     return ($filename,undef);
   }
 
+  if (!-e $filename) {
+    orac_err("Provided filename '$filename' does not exist and so can not convert it\n");
+    return ($filename, undef);
+  }
+
   # If the input format is the same as the output just return
   if ($options{'IN'} eq $options{OUT}) {
 
