@@ -270,16 +270,24 @@ foreach ( qw/File Display Options Recipe Help/ )
 # Help menu
 $menus[4]->pack( -side => 'right' );
 $help_menu = $menus[4]->Menu( -tearoff => 0, -font => 'Arial' );
-
 $menus[4]->configure( -menu => $help_menu );
-$menus[4]->menu()->add( "command", -label => "ORAC-DR pipeline",
-                        -command => sub { 
-          xorac_help($MW, $ENV{"ORAC_DIR"}."/howto/", "Introduction");
-			                } );
-$menus[4]->menu()->add( "command", -label => "The display system",
-                        -command => sub { 
-	  xorac_help($MW, $ENV{"ORAC_DIR"}."/howto/", "DisplaySystem");
-			                } );					
+
+# Compile list of HOWTO files in $ORAC_DIR/howto/
+my ( @howto_files );
+if ( opendir (DIR, $ENV{"ORAC_DIR"} . "/howto/" ) ) {
+   @howto_files = grep !/^\./, readdir *DIR;
+   closedir DIR;
+} else {
+   orac_err(" Cannot find ORAC HOWTO directory to build help menu\n");
+}
+
+# Automatically generate the help menu from the list of HOWTO files
+foreach ( @howto_files) {
+   my $file = $_;
+   $menus[4]->menu()->add( "command", -label => $file, -command => 
+		sub { xorac_help($MW, $ENV{"ORAC_DIR"}."/howto/", $file); } );
+}
+				
 $menus[4]->menu()->add( "separator" );
 $menus[4]->menu()->add( "command", -label => "About XORAC-DR",
                         -command => [ \&xorac_about, $VERSION ] );
@@ -399,6 +407,7 @@ $menus[2]->menu()->add( "command",
 # Calls Xorac::xorac_calib() to do user defined calibration stuff
 $menus[2]->menu()->add( "command",
                         -label   => "Calibration Options",
+			-state   => 'disabled',
                         -command => sub { xorac_calib(\%options); 
 			});
 				
@@ -550,20 +559,49 @@ my $configure_instrument =
 		$go_button->configure( -state => 'normal' );
  
 		if( defined $ENV{"ORAC_INSTRUMENT"} ) {
-		   $recipe_menu->entryconfigure(4, -state => 'normal'); }
+		   # configure recipe editor menu item
+		   $recipe_menu->entryconfigure(4, -state => 'normal'); 
 		   $recipe_menu->entryconfigure(4, -label =>
 		                        "Edit $$inst_select[0] Recipes");
-	           $recipe_menu->entryconfigure(3, -state => 'normal');
+	           
+		   # configure override recipe menu item
+		   $recipe_menu->entryconfigure(3, -state => 'normal');
 		   $recipe_menu->entryconfigure(3, -label =>
 		                        "Override $$inst_select[0] Recipe");
 
-                $ENV{"ORAC_RECIPE_DIR"} = $ENV{"ORAC_DATA_OUT"}
-		   unless defined $ENV{"ORAC_RECIPE_DIR"};
-	        unless (-d $ENV{"ORAC_RECIPE_DIR"}) { 
-		   $recipe_menu->entryconfigure(4, -state => 'disabled'); 
-	           $recipe_menu->entryconfigure(3, -state => 'disabled');
-		   undef $ENV{"ORAC_RECIPE_DIR"};
+		   # configure calibrations menu item			
+		   $menus[2]->menu()->entryconfigure(10, -state => 'normal' );
+                   my ($frameclass, $groupclass, $calclass, $instclass) =
+                      orac_determine_inst_classes( $ENV{"ORAC_INSTRUMENT"} );
+
+		   # undef all calibration options which aren't applicable
+		   # to the new instrument, this lets us change instruments
+		   # and not have error messages pop up to tell the user
+		   # that the they are trying to use calibration options
+		   # that don't exist for this instrument
+                   if ( ref($options{"calib"}) ) {
+		     my $flag;
+                     foreach my $key (keys %{$options{"calib"}}) {
+                        foreach ( $instclass->return_possible_calibrations ) {
+			   if ( $_ eq $key ) {
+			      $flag = 1; 
+			   } 
+			}
+			delete ${$options{"calib"}}{$key} unless defined $flag;
+			undef $flag if defined $flag;
+		    }	   
+			    
+	          }
+		 
+                  $ENV{"ORAC_RECIPE_DIR"} = $ENV{"ORAC_DATA_OUT"}
+		     unless defined $ENV{"ORAC_RECIPE_DIR"};
+	          unless (-d $ENV{"ORAC_RECIPE_DIR"}) { 
+		     $recipe_menu->entryconfigure(4, -state => 'disabled'); 
+	             $recipe_menu->entryconfigure(3, -state => 'disabled');
+		     undef $ENV{"ORAC_RECIPE_DIR"};
+		  }
 		}
+		
                 # If we have changed the loop type during setup, the interface
 		# will be in a bad state, we need to correct this...
 		
@@ -1149,6 +1187,9 @@ catch ORAC::Error::UserAbort with
 # R E V I S I O N  L O G ----------------------------------------------------
 
 # $Log$
+# Revision 1.6  2001/02/28 20:51:29  allan
+# GUI fixes
+#
 # Revision 1.5  2001/02/28 04:09:16  allan
 # -honour -ut options for Xoracdr and a non-functioning Override Recipe widget
 #

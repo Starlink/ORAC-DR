@@ -1097,6 +1097,8 @@ sub xorac_calib {
   
   my ( $options ) = @_;
 
+  use ORAC::Inst::Defn qw/ orac_determine_inst_classes /;
+
   # create pop-up widget
   my $popup = ORAC::Event->query("Tk")->Toplevel();
   $popup->title("User Calibration");
@@ -1124,17 +1126,21 @@ sub xorac_calib {
                    
   # create the calibration hash
   my %calib;
-  
-  if ( defined %{${$options}{"calib"}} )
-  {
+
+  my ($frameclass, $groupclass, $calclass, $instclass) =
+           orac_determine_inst_classes( $ENV{"ORAC_INSTRUMENT"} );  
+
+  if ( defined %{${$options}{"calib"}} ) {
       foreach my $key (keys %{${$options}{"calib"}}) {
           %calib = ( %calib, $key => ${${$options}{"calib"}}{$key} ); }
-  }
-  else
-  {    
-      foreach ( qw/ gains tausys badbols flat dark bias  / ) {
+      foreach ( $instclass->return_possible_calibrations ) {
           %calib = ( %calib, $_ => ${${$options}{"calib"}}{$_} ); }
-  }
+  } elsif ( defined $ENV{"ORAC_INSTRUMENT"} ) {
+      foreach ( $instclass->return_possible_calibrations ) {
+          %calib = ( %calib, $_ => ${${$options}{"calib"}}{$_} ); }
+  } else {    
+      foreach ( qw/ gains tausys badbols flat dark bias  / ) {
+          %calib = ( %calib, $_ => ${${$options}{"calib"}}{$_} ); } }
 
   # Declare variables 
   my ( @labels, @entries );
@@ -1236,7 +1242,7 @@ sub xorac_select_filelist {
     unless scalar(@_) == 1 ;
 
   my ( $obs ) = @_;
-  
+    
   unless ( defined $ENV{"ORAC_DATA_IN"} ) {
      throw ORAC::Error::FatalError( " \$ENV{'ORAC_DATA_IN'} not defined ",
                                     ORAC__FATAL ); } 	
@@ -1312,7 +1318,18 @@ sub xorac_select_filelist {
   @contents = ();
   @contents =  grep !/^\./, readdir *DIR;
   closedir DIR;
-    
+   
+  # if we already have selected files remove them from the left hand box
+  if ( defined @$obs ) {
+     for ( my $i = 0; $i < scalar(@contents); $i++ ) {
+        for( my $j = 0; $j < scalar(@$obs); $j++ ) {
+           if( $contents[$i] eq $$obs[$j] ) {
+	      splice @contents, $i, 1;
+	   } 
+	} 
+     } 
+  }
+	      
   # scrolled listbox
   my $scrollbar = $left_frame->Scrollbar();  		   
   my $lbox = $left_frame->Listbox(-borderwidth         => 1,
@@ -1348,6 +1365,7 @@ sub xorac_select_filelist {
 				  -yscrollcommand      => ['set'=>$scrollbar2]);
 
   $scrollbar2->configure( -command => [ 'yview' => $lbox2 ]);
+  $lbox2->insert('end', @$obs);
 
   tie $remove_hash, "Tk::Listbox", $lbox2, %options;
   tie @files, "Tk::Listbox", $lbox2;
@@ -1371,8 +1389,7 @@ sub xorac_select_filelist {
 			push( @files, @element ); 
 		        my @deleted_indices = reverse sort { $a <=> $b } @index;
 		        delete @contents[@deleted_indices]; 
-			@contents = sort @contents;
-			@files = sort @files; } );
+			@contents = sort @contents; } );
   $add_button->grid( -column => 0, -row => 0, -sticky => 'we' );
     
   # remove button
@@ -1389,9 +1406,34 @@ sub xorac_select_filelist {
 			push( @contents, @element ); 
 			my @deleted_indices = reverse sort { $a <=> $b } @index;
 		        delete @files[@deleted_indices]; 
-			@contents = sort @contents;
-			@files = sort @files; } );
+			@contents = sort @contents; } );
   $remove_button->grid( -column => 0, -row => 1, -sticky => 'we' );
+
+  # add and remove ALL files buttons
+
+  # add all button
+  my $addall_button = $middle_frame->Button( -text    => "Add all",
+                                            -font    => 'Arial',
+					    -activeforeground => 'white',
+                                            -activebackground => 'blue',
+                                            -command => sub { 
+			# push selected files into contents of RH listbox
+			push( @files, @contents ); 
+			@contents = (); } );
+  $addall_button->grid( -column => 0, -row => 2, -sticky => 'we' );
+    
+  # remove button
+  my $removeall_button = $middle_frame->Button( -text    => "Remove all",
+                                         -font    => 'Arial',
+					 -activeforeground => 'white',
+                                         -activebackground => 'blue',
+                                         -command => sub {  
+		        # push de-selected files into contents of LH listbox
+			push( @contents, @files ); 
+			@contents = sort @contents;
+			@files = (); } );
+  $removeall_button->grid( -column => 0, -row => 3, -sticky => 'we' );
+
 
   # cancel and okay buttons      
    

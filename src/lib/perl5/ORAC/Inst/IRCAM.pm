@@ -8,9 +8,7 @@ ORAC::Inst::IRCAM - ORAC description of IRCAM
 
   use ORAC::Inst::IRCAM;
 
-  @messys = $inst->start_msg_sys;
   %Mon = $inst->start_algorithm_engines;
-  $status = $inst->wait_for_algorithm_engines;
 
 =head1 DESCRIPTION
 
@@ -64,6 +62,18 @@ sub start_algorithm_engines {
 
 }
 
+=item B<return_possible_calibrations>
+
+Returns an array containing a list of the possible calibrations
+for this instrument.
+
+=cut
+
+sub return_possible_calibrations {
+  my $self = shift;
+  return ( "bias", "dark", "flat" );
+
+}
 
 =back
 

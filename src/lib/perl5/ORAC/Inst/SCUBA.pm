@@ -10,9 +10,7 @@ ORAC::Inst::SCUBA - ORAC description of SCUBA
 
   $inst = new ORAC::Inst::SCUBA;
 
-  @messys = $inst->start_msg_sys;
   %Mon = $inst->start_algorithm_engines;
-  $status = $inst->wait_for_algorithm_engines;
 
 =head1 DESCRIPTION
 
@@ -67,6 +65,19 @@ sub start_algorithm_engines {
 
 }
 
+=item B<return_possible_calibrations>
+
+Returns an array containing a list of the possible calibrations
+for this instrument.
+
+=cut
+
+sub return_possible_calibrations {
+  my $self = shift;
+  return ( "badbols", "gains", "tausys" );
+
+}
+
 =back
 
 =head1 SEE ALSO
@@ -79,7 +90,8 @@ $Id$
 
 =head1 AUTHORS
 
-Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
+Alasdair Allan E<lt>aa@astro.ex.ac.ukE<gt>
 
 =head1 COPYRIGHT
 

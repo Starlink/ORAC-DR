@@ -308,8 +308,10 @@ sub orac_process_frame {
   };
     
   # delete symlink to raw data file
-  # Only want to do this if we created it initially....
-  unlink($Frm->raw) if (-l $Frm->raw);
+  # Only want to do this if we created it initially and if ORAC_DATA_IN
+  # is not the same directory as ORAC_DATA_OUT
+  if ( $ENV{"ORAC_DATA_IN"} ne $ENV{"ORAC_DATA_OUT"} ) {
+  unlink($Frm->raw) if (-l $Frm->raw); }
 
   # Set the Xoracdr status bar to have the current recipe name
   $$CURRENT_RECIPE = "Currently doing: ";
@@ -832,6 +834,7 @@ sub orac_process_arguement_list {
    elsif (defined $opt_list) 
    {
       @$obs = parse_obslist($opt_list);
+      $loop = 'orac_loop_list';
 
    } 
    elsif (defined $opt_to) 

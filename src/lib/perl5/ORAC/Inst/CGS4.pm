@@ -8,9 +8,7 @@ ORAC::Inst::CGS4 - ORAC description of CGS4
 
   use ORAC::Inst::CGS4;
 
-  @messys = $inst->start_msg_sys;
   %Mon = $inst->start_algorithm_engines;
-  $status = $inst->wait_for_algorithm_engines;
 
 =head1 DESCRIPTION
 
@@ -59,6 +57,19 @@ sub start_algorithm_engines {
 
   # Now launch them
   return $self->_launch_algorithm_engines( @engines );
+
+}
+
+=item B<return_possible_calibrations>
+
+Returns an array containing a list of the possible calibrations
+for this instrument.
+
+=cut
+
+sub return_possible_calibrations {
+  my $self = shift;
+  return ( "bias", "dark", "flat" );
 
 }
 
