@@ -1,0 +1,99 @@
+=head1 NAME
+_REDUCE_SINGLE_FRAME_ - reduces a single IFU frame
+
+=head1 DESCRIPTION
+
+Intended to be the first primitive run on all IFU frames. When used
+on OBJECT or SKY frames it will produce a wavelength calibrated, flat-fielded
+datacube. It can also be used on FLAT and ARC calibration frame by using the
+NOFLAT, NOARC and NOCUBE parameters to disable parts of the sequence.
+
+=head1 PARAMETERS
+
+All parameters are optional and can be used to disable parts of the sequence.
+
+=over 4
+
+=item NOFLAT
+Disables flat fielding. This is used when reducing a flat field frame
+
+=item NOARC
+Disables wavelength calibration and scrunching to a linear wavelength scale
+common to all slices. This is used when reducing a flat-field  or arc 
+calibration frame
+
+=item NOCUBE
+Disables formation of a datacube. Likely to be most useful for calibration
+frames.
+
+=item NOBIAS
+Disables use of a bias frame.If we are not in an ND mode, this means that we 
+cannot form a sensible variance array, or of course, subtract a BIAS frame  
+from the data.
+
+=back
+
+=head1 AUTHORS
+
+Stephen Todd <spt@roe.ac.uk>>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council.  All Rights Reserved. 
+
+=cut
+
+
+# Handle parameters
+my $nobias = ($_REDUCE_SINGLE_FRAME_{NOBIAS}) ? 1 : 0;
+my $noflat = ($_REDUCE_SINGLE_FRAME_{NOFLAT}) ? 1 : 0;
+my $noarc = ($_REDUCE_SINGLE_FRAME_{NOARC}) ? 1 : 0;
+my $nocube = ($_REDUCE_SINGLE_FRAME_{NOCUBE}) ? 1 : 0;
+
+# Deduce a NEEDBIAS flag.
+my $needbias = (substr(($Frm->uhdr("ORAC_DETECTOR_READ_TYPE")), 0, 2) ne "ND" ) ? 1 : 0;
+
+
+_IFU_HELLO_
+
+# Use some standard spectroscopy primitives
+_SPECTROSCOPY_MODE_
+_MASK_BAD_PIXELS_
+
+if ($nobias && $needbias) {
+    orac_print "Need a BIAS but have been told NOBIAS, therefore cannot form a variance array or subtract bias\n";
+} else {
+    _ADD_READNOISE_VARIANCE_
+    _SUBTRACT_BIAS_
+    _ADD_POISSON_VARIANCE_
+}
+
+# Back to IFU mode to locate and extract the slice spectra
+_IFU_MODE_
+_LOCATE_SLICES_
+_EXTRACT_SLICES_
+
+# Do we want to flat field it?
+if ($noflat) {
+   orac_print "NOFLAT option specified - will not flat field\n";
+} else {
+    _SPECTROSCOPY_MODE_
+    _DIVIDE_BY_FLAT_
+    _IFU_MODE_
+}
+
+# Do we have an arc file to wavelength calibrate and scrunch it?
+if ($noarc) {
+   orac_print "NOARC option specified - will not wavelength calibrate and scrunch\n";
+} else {
+    _SCRUNCH_TO_COMMON_WAVELENGTH_SCALE_
+}
+
+# Do we want to form a datacube?
+if ($nocube) {
+   orac_print "NOCUBE option specified - will not form datacube\n";
+} else {
+    _FORM_DATACUBE_
+}
+

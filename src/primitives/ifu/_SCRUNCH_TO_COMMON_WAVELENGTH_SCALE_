@@ -1,0 +1,154 @@
+# 		-*-perl-*-
+
+=head1 NAME
+
+_SCRUNCH_TO_COMMON_WAVELENGTH_SCALE_ -- Straightens and wavelength calibrates an IFU frame.
+
+=head1 DESCRIPTION
+
+This primitive scrunches an IFU frame, simultaneously straightening
+the spectra and applying a wavelength calibration to them. The .iar
+file used for the calibration should have been previously generated
+from an IFU arc spectrum and filed in the calibration system
+
+The input frame should have been approximately straightened (to a pixel
+or so), probably by the _EXTRACT_SLICES_ primitive. The wavelength range
+to which the frame should be scrunched is obtained from the grism data
+file returned by the calibration system. 
+
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is written for the UIST IFU.
+
+=item *
+
+The frame should previously have been approximately straightened.
+
+=item *
+
+The wavelength calibrations previously measured from an arc spectrum
+are applied, and simultaneously straighten the spectra.
+
+=item *
+
+The wavelength range to which the frame should be scrunched is obtained
+from the grism data file returned by the calibration system.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The output frame is scrunched to a linear wavelength scale, common to
+all slices. The output file has a suffix of _scr.
+
+=back
+
+=head1 TASKS
+
+figaro1: creobj, copobj
+figaro3: iscrunch
+ndfpack_mon: ndftrace, ndfcopy
+kappa_mon: thresh
+
+=head1 AUTHORS
+
+SPT: Stephen P. Todd (Edinburgh University/UKATC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+
+# We're going to need some temporary files
+use ORAC::TempFile;
+use FileHandle;
+
+(my $in, my $out) = $Frm->inout( "_scr" );
+ 
+# get the appropriate iar file
+my $iarfile = $Cal->iar;
+
+orac_print "Using $iarfile to wavelength calibrate and straighten frame \n"; 
+
+my $numpix = 1024;
+
+
+
+# Determine the wavelength range required from the grism data file
+
+my $grism_file = $ENV{ORAC_DATA_CAL} . "/" . $Cal->grism;
+orac_print "Getting wavelength range from $grism_file \n";
+
+my $min;
+my $max;
+
+# And read the file looking for the line which begins Range:
+my $file = new FileHandle;
+open($file, $grism_file) || die "Could not open $grism_file \n";
+
+while (my $str = <$file>) {
+    next unless ($str =~ /^Range:\s(\d+)\s(\d+)/);
+    $min = $1;
+    $max = $2
+}
+close $file;
+
+orac_print "Scrunching to $numpix pixels from $min to $max Angstroms.\n";
+
+
+# And scrunch it
+my $param = "image=$in file=$iarfile wstart=$min wend=$max bins=$numpix output=$out log=f linear=t density=f";
+$Mon{'figaro3'}->obeyw("iscrunch", "$param"); 
+
+orac_print "Scrunched, now in $out\n";
+
+# We need to copy the variance array and scrunch it separately
+$Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$in" );
+(my $ORAC_STATUS, my $variance) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "variance" );
+
+orac_print "Variance = $variance\n";
+
+if ( $variance eq "TRUE" ) {
+# create some temporary files
+    orac_print "Scrunching variance array.\n";
+    
+    my $tmpfile1 = new ORAC::TempFile;
+    my $tmpfile2 = new ORAC::TempFile;
+
+    my $tmp = $tmpfile1->file;
+    my $tmp2 = $tmpfile2->file;
+
+    $Mon{'figaro1'}->obeyw("creobj", "type=NDF dims=0 object=$tmp");
+
+    $Mon{'figaro1'}->obeyw("copobj", "source=$in.variance object=$tmp.data_array"); 
+
+    my $param = "image=$tmp file=$iarfile wstart=$min wend=$max bins=$numpix output=$tmp2 log=f quad=t density=f";
+    $Mon{'figaro3'}->obeyw("iscrunch", "$param"); 
+    
+    $Mon{'figaro1'}->obeyw("copobj", "source=$tmp2.data_array object=$out.variance");
+
+    $Mon{'ndfpack_mon' }->obeyw("ndfcopy", "$out $tmp");
+    $Mon{'kappa_mon'}->obeyw("thresh", "in=$tmp comp=Variance out=$out thrlo=0 newlo=bad thrhi=1E6 newhi=bad");
+}
+
+# Set the name of the output frame
+$Frm->file( $out );
+
+# And display it
+$Display->display_data($Frm) if defined $Display;
+
+
+
+
