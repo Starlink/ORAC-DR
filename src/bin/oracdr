@@ -1,4 +1,4 @@
-#!/bin/perl -s
+#!/usr/local/bin/perl -s
 #
 # Change log is at the end of this file
 #
@@ -6,6 +6,10 @@
 #------------------------------------------------------------------------
 # check for starlink login
 # 
+
+use ORAC::Basic;
+
+
 &orac_exit_normally("No starlink login") unless exists $ENV{STAR_LOGIN};
 
 # 
@@ -13,9 +17,7 @@
 #
 use Carp;				# perl -MCarp=verbose for backtrace
 use NDF;				# to access NDF headers
-use File::Path;				# rmtree
 use Starlink::ADAMTASK;			# monolith access
-use Starlink::NBS;			# noticeboard access
 #
 # command line arguments
 #
@@ -30,15 +32,19 @@ $|=1;					# make unbuffered
 $SIG{'INT'} = \&orac_exit_abnormally;
 $SIG{'PIPE'} = \&orac_exit_abnormally;
 #
-# constants
+# constants - for the module
 #
 $orac_dir = $ENV{ORAC_DIR};		# main orac directory (contains bin)
 $recipe_dir = $orac_dir."recipes/";	# recipes
 $dictionary_dir = $orac_dir."primitives/"; # primitives
-$data_in = $ENV{ORAC_DATA_IN};		# source of data
-$data_out = $ENV{ORAC_DATA_OUT};	# data output
-$cal_dir = $ENV{ORAC_AUX};		# auxiliarry data (calibration etc)
-chdir($data_out);
+#
+# constants - for the pipeline
+#
+$In = $ENV{ORAC_DATA_IN};		# source of data
+$Out = $ENV{ORAC_DATA_OUT};	# data output
+$Cal = $ENV{ORAC_AUX};		# auxiliarry data (calibration etc)
+#
+chdir($Out);
 #
 # various ADAM-related constants & parameters
 #
@@ -68,34 +74,34 @@ print "ORAC says: Starting up monoliths...";
 adamtask_init;
 &orac_connect_display unless ($nodisplay);
 #$Orac{Mon_p4} = new Starlink::ADAMTASK("33672p4",$ENV{CGS4DR_ROOT}."/p4");
-$Orac{Mon_ccdpack_red} = new Starlink::ADAMTASK("ccdpack_red_$$",$ENV{CCDPACK_DIR}."/ccdpack_red");
-$Orac{Mon_ccdpack_res} = new Starlink::ADAMTASK("ccdpack_res_$$",$ENV{CCDPACK_DIR}."/ccdpack_res");
-$Orac{Mon_ccdpack_reg} = new Starlink::ADAMTASK("ccdpack_reg_$$",$ENV{CCDPACK_DIR}."/ccdpack_reg");
-$Orac{Mon_kappa_mon} = new Starlink::ADAMTASK("kappa_mon_$$",$ENV{KAPPA_DIR}."/kappa_mon");
-$Orac{Mon_kappa_mon}->contactw;	# wait for last monolith
+$Mon{ccdpack_red} = new Starlink::ADAMTASK("ccdpack_red_$$",$ENV{CCDPACK_DIR}."/ccdpack_red");
+$Mon{ccdpack_res} = new Starlink::ADAMTASK("ccdpack_res_$$",$ENV{CCDPACK_DIR}."/ccdpack_res");
+$Mon{ccdpack_reg} = new Starlink::ADAMTASK("ccdpack_reg_$$",$ENV{CCDPACK_DIR}."/ccdpack_reg");
+$Mon{kappa_mon} = new Starlink::ADAMTASK("kappa_mon_$$",$ENV{KAPPA_DIR}."/kappa_mon");
+$Mon{kappa_mon}->contactw;	# wait for last monolith
 print "Done\n";
 #
 #------------------------------------------------------------------------
 # Data detection loop goes here
 #------------------------------------------------------------------------
 #
-$Orac{'Recipe'} = shift(@ARGV);
+$Recipe = shift(@ARGV);
 @objects=();
 $isuffix = "";
-$root = 'ro970815_';
+$Root = 'ro970815_';
 foreach $obsno (9,26..30) {
 #------------------------------------------------------------------------
 #
 # %Orac holds key=value pairs relevant to data reduction
 #
 # we expect to get these two from the header
-$Orac{'File'} = $root.$obsno;
+$File = $Root.$obsno;
 #
 #  Read the FITS header of the file
 #
-$file  = $data_in.$Orac{'File'};
+$file = $In.$File;
 ($headerref, $status) = fits_read_header($file);
-%Header = %$headerref;
+%Hdr = %$headerref;
 
 #
 # Make sure that we successfully read a header
@@ -114,7 +120,7 @@ if ($status != &NDF::SAI__OK) {
 #
 #
 @recipe = ();
-@recipe = orac_read_recipe($Orac{'Recipe'});	# read recipe
+@recipe = orac_read_recipe($Recipe);	# read recipe
 
 while (grep /^_/,@recipe) {		# while it contains other recipes
   @recipe = orac_parse_recipe(@recipe);	# keep parsing recipes
@@ -129,171 +135,13 @@ $oracref = orac_execute_recipe(\@recipe,\%Orac);	# execute parsed recipe
 
 # exit 
 
-#------------------------------------------------------------------------
-# THE END(s)
-#------------------------------------------------------------------------
-
-sub orac_exit_normally {
-
-    $message = shift(@_);
-    print "Orac says: $message - Exiting...\n";
-
-    adamtask_exit;		# Shut down the messaging system
-    &orac_kill_display;		# Destroy display
-
-    print "\nOrac says: Goodbye\n";
-    exit;
-};
-
-sub orac_exit_abnormally {
-
-my $signal = shift;
-$Starlink::ADAMTASK::message_hide = 1; # turn off messages
-
-adamtask_exit;                        # Shut down the messaging system
-rmtree $ENV{'ADAM_USER'};             # delete process-specific adam dir
-&orac_kill_display;		# Destroy display
-die;
-# die "\n --Signal $signal received--\n";	
-
-};
-
-#------------------------------------------------------------------------
-# subs (to be moduled)
-#
-#  Once this is stuff is in an ORAC module it becomes far more flexible
-#
-#   - The same code can be used for the data reduction pipeline (with an auto-detection
-#      component) and for off-line reduction (where the script is simply given a directory 
-#      to process)
-#
-#------------------------------------------------------------------------
-sub orac_launch_display {
-
-
-# launch display, classic fork trick
-    unless ($toolpid = fork) {
-	unless (fork) {
-    $ENV{PID} = "$$";
-print "DEBUG $orac_dir/p4/p4_tcl $data_out 970815 ndf";
-	    exec "$orac_dir/p4/p4_tcl $data_out 970815 ndf";
-	    die "no exec: $!";
-	    exit 0;
-	}
-	exit 0;
-    }
-    waitpid($toolpid,0);
-};
-#------------------------------------------------------------------------
-
-sub orac_connect_display {
-
-#    chomp($toolpid = <>);
-    $toolpid = scalar reverse ($toolpid+1);
-    $toolname = $toolpid."_p4";
-    $toolnbname = "p".$toolpid."_plotnb";
-    $Display = new Starlink::ADAMTASK($toolname);
-    $Display->contactw;		# ensure contact is made
-    $Nbs = new Starlink::NBS ($toolnbname);
-};
-
-#------------------------------------------------------------------------
-
-sub orac_kill_display {
-#    kill(9,$toolpid+1);
-#    system("$orac_dir/bin/cgs4dr_nuke");
-};
-#------------------------------------------------------------------------
-
-sub nbspeek {
-    local($item) = shift(@_);
-    $what = $Nbs->find($item);
-    ($ok,$value) = $where->get;
-    return $value;
-};
-
-#------------------------------------------------------------------------
-
-sub nbspoke {
-    local($item,$value) = @_;
-    $what = $Nbs->find($item);
-    $ok = $what->put($value);
-};
-
-#------------------------------------------------------------------------
-sub orac_execute_recipe {
-
-local($reciperef,$argsref) = @_;
-local(@recipe) = @$reciperef;		# dereference recipe
-local(%args) = %$argsref;		# dereference arguments
-
-$block = join("",@recipe);
-eval $block;
-print "Orac says: RECIPE ERROR: $@" if ($@);
-return \%args;
-
-};
-
-
-#------------------------------------------------------------------------
-sub orac_read_recipe {
-
-local $recipe = shift(@_);
-local (@arguments) = @_;
-
-open(RECIPE,$recipe_dir.$recipe) || croak "No such recipe $recipe\n";;
-
-my (@recipe) = <RECIPE>;
-
-close(RECIPE);
-
-return(@recipe);
-
-};
-
-
-#------------------------------------------------------------------------
-
-sub orac_parse_recipe {
-  
-  local(@recipe) = @_;
-  my(@parsed);
-  
-  foreach $line (@recipe) {
-
-    if ($line =~ /^_/) {
-      ($macro,@arguments)=split(/\s+/,$line);
-      # read in primitive
-      open(DICTIONARY,$dictionary_dir.$macro) || croak "No translation for $line\n";    
-      @lines = <DICTIONARY>;
-      close(DICTIONARY);
-      push(@parsed,@lines);
-      # store arguments
-      %$macro = ();
-      foreach $argument (@arguments) {
-	  ($key,$value)=split("=",$argument);
-	  $$macro{$key}=$value;
-      };
-      
-    } else {
-      
-      push(@parsed,$line);
-
-  }
-
-};
-
-return(@parsed);
-};
-
-
-#------------------------------------------------------------------------
-
-
 
 #------------------------------------------------------------------------
 
 # $Log$
+# Revision 1.4  1998/02/24 09:13:34  frossie
+# Pipeline now does only basic control
+#
 # Revision 1.3  1998/02/20 06:43:55  frossie
 # Static variables pulled out as shell ENVs.
 #
