@@ -14,28 +14,27 @@
 #  Description:
 #     This script initialises the environment variables and command
 #     aliases required to run the ORAC-DR pipeline with Michelle data.
-#     An optional argument is the UT date. This is used to configure
+#     An optional argument is the UT date.  This is used to configure
 #     the input and output data directories but assumes a UKIRT
 #     style directory configuration.
 
 #  ADAM Parameters:
 #     UT = INTEGER (Given)
-#        UT date of interest. This should be in YYYYMMDD format.
-#        It is used to set the location of the input and output
-#        data directories. Assumes that the data are located in 
-#        a directory structure similar to that used at UKIRT.
-#        Also sets an appropriate alias for ORAC-DR itself.
-#        If no value is specified, the current UT is used.
-#     $ORAC_DATA_ROOT = Environment Variable (Given)
-#        Root location of the data input and output directories.
-#        If no value is set, "/ukirtdata" is assumed.
-#     $ORAC_CAL_ROOT = Environment Variable (Given)
-#        Root location of the calibration files. $ORAC_DATA_CAL
-#        is derived from this variable by adding the appropriate
-#        value of $ORAC_INSTRUMENT. In this case $ORAC_DATA_CAL
-#        is set to $ORAC_CAL_ROOT/michelle. If ORAC_CAL_ROOT is not
+#        The UT date of interest.  This should be in YYYYMMDD format.
+#        It is used to set the location of the input and output data
+#        directories.  This assumes that the data are located in a
+#        directory structure similar to that used at UKIRT.  The UT date
+#        also sets an appropriate alias for ORAC-DR itself.  If no value
+#        is specified, the current UT date is used.
+#     $ORAC_DATA_ROOT = Environment Variable (Given & Returned)
+#        The root location of the data input and output directories.
+#        If no value is set, $ORAC_DATA_ROOT is set to "/ukirtdata".
+#     $ORAC_CAL_ROOT = Environment Variable (Given & Returned)
+#        The root location of the calibration files.  $ORAC_DATA_CAL is
+#        derived from this variable by adding the appropriate value of
+#        $ORAC_INSTRUMENT.  In this case $ORAC_DATA_CAL is set to
+#        $ORAC_CAL_ROOT/michelle.  If ORAC_CAL_ROOT is not defined
 #        defined it defaults to "/ukirt_sw/oracdr_cal".
-
 
 #  Examples:
 #     oracdr_michelle
@@ -44,11 +43,11 @@
 #        Use UT data 19991015
 
 #  Notes:
-#     - The environment variables $ORAC_RECIPE_DIR and $ORAC_PRIMITIVE_DIR
+#     - The environment variables ORAC_RECIPE_DIR and ORAC_PRIMITIVE_DIR
 #     are unset by this routine if they have been set.
-#     - The data directories are assumed to be in directories "raw"
-#     (for input) and "reduced" (for output) from root
-#     $ORAC_DATA_ROOT/michelle_data/UT
+#     - The data directories are assumed to be:
+#     $ORAC_DATA_ROOT/raw/michelle/<UT> for the "raw" data, and
+#     $ORAC_DATA_ROOT/reduced/michelle/<UT> for the "reduced" data.
 #     - $ORAC_DATA_OUT and $ORAC_DATA_IN will have to be
 #     set manually if the UKIRT directory structure is not in use.
 #     - aliases are set in the oracdr_start.csh script sourced by
@@ -57,41 +56,18 @@
 #  Authors:
 #     Frossie Economou (frossie@jach.hawaii.edu)
 #     Tim Jenness (t.jenness@jach.hawaii.edu)
+#     MJC: Malcolm J. Currie (mjc@jach.hawaii.edu)
 #     {enter_new_authors_here}
 
 #  History:
-#     $Log$
-#     Revision 1.2  2001/03/20 21:06:24  timj
-#     Remove some left over CGS4 references
-#
-#     Revision 1.1  2001/03/17 01:27:15  timj
-#     first version
-#
-#     Revision 1.2  2000/08/05 07:36:25  frossie
-#     ORAC style
-#
-#     Revision 1.1  2000/05/02 02:24:28  frossie
-#     Initial version
-#
-#     Revision 1.2  2000/02/03 03:43:38  timj
-#     Correct doc typo
-#
-#     Revision 1.1  2000/02/03 02:50:45  timj
-#     Starlink startup scripts
-#
-#     02 Jun 1999 (frossie)
-#        Original Version
-
-#  Revision:
-#     $Id$
+#     2001 March 3 (MJC):
+#        Original version based upon CGS4 equivalent.
 
 #  Copyright:
-#     Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+#     Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.
 
 #-
-
-
 
 # orac things
 if !($?ORAC_DATA_ROOT) then
@@ -122,14 +98,14 @@ endif
 set oracdr_args = "-ut $oracut"
 
 setenv ORAC_INSTRUMENT MICHELLE
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/michelle/$oracut
-setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/michelle/$oracut
+setenv ORAC_DATA_IN  $ORAC_DATA_ROOT/raw/michelle/$oracut
+setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/michelle/$oracut
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/michelle
 
 # screen things
 setenv ORAC_PERSON mjc
 setenv ORAC_LOOP flag
-setenv ORAC_SUN  236
+setenv ORAC_SUN  234
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
