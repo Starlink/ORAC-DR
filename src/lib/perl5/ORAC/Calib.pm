@@ -192,7 +192,7 @@ sub dark {
       unless defined $dark;
     $self->darkname($dark);
   } else {
-    croak("Error in calibration checking - giving up");
+    croak("Error in dark calibration checking - giving up");
   };
 };
 
@@ -297,7 +297,7 @@ sub bias {
       unless defined $bias;
     $self->biasname($bias);
   } else {
-    croak("Error in calibration checking - giving up");
+    croak("Error in bias calibration checking - giving up");
   };
 };
 
@@ -381,7 +381,7 @@ sub flat {
       unless defined $flat;
     $self->flatname($flat);
   } else {
-    croak("Error in calibration checking - giving up");
+    croak("Error in flat calibration checking - giving up");
   };
 };
 
@@ -428,7 +428,7 @@ sub sky {
       unless defined $sky;
     $self->flatname($sky);
   } else {
-    croak("Error in calibration checking - giving up");
+    croak("Error in sky frame calibration checking - giving up");
   };
 };
 
@@ -463,7 +463,7 @@ sub standard {
       unless defined $standard;
     $self->flatname($standard);
   } else {
-    croak("Error in calibration checking - giving up");
+    croak("Error in standard calibration checking - giving up");
   };
 
 }
