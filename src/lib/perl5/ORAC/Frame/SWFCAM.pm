@@ -43,7 +43,10 @@ use strict;
 # Translation tables for WFCAM should go here.
 
 my %hdr = (
+            AIRMASS_START        => "AMSTART",
+            AIRMASS_END          => "AMEND",
             DEC_BASE             => "DECBASE",
+            DEC_SCALE            => "PIXLSIZE",
             DEC_TELESCOPE_OFFSET => "TDECOFF",
             DETECTOR_READ_TYPE   => "READOUT",
             EQUINOX              => "EQUINOX",
@@ -58,6 +61,7 @@ my %hdr = (
             OBSERVATION_NUMBER   => "OBSNUM",
             OBSERVATION_TYPE     => "OBSTYPE",
             RA_BASE              => "RABASE",
+            RA_SCALE             => "PIXLSIZE",
             RA_TELESCOPE_OFFSET  => "TRAOFF",
             RECIPE               => "RECIPE",
             STANDARD             => "STANDARD",
@@ -85,12 +89,21 @@ sub _to_NUMBER_OF_OFFSETS {
 
 }
 
-sub _to_DEC_SCALE {
-  return 0.4;
-}
+sub _to_ROTATION {
+  my $self = shift;
+  my $cd11 = $self->hdr->{CD1_1};
+  my $cd12 = $self->hdr->{CD1_2};
+  my $cd21 = $self->hdr->{CD2_1};
+  my $cd22 = $self->hdr->{CD2_2};
+  my $sgn;
+  if( ( $cd11 * $cd22 - $cd12 * $cd21 ) < 0 ) { $sgn = -1; } else { $sgn = 1; }
+  my $cdelt1 = $sgn * sqrt( $cd11**2 + $cd21**2 );
+  my $sgn2;
+  if( $cdelt1 < 0 ) { $sgn2 = -1; } else { $sgn2 = 1; }
+  my $rad = 57.2957795131;
+  my $rotation = $rad * atan2( -$cd21 / $rad, $sgn2 * $cd11 / $rad );
 
-sub _to_RA_SCALE {
-  return 0.4;
+  return $rotation;
 }
 
 # Set the raw fixed parts for the four chips.
