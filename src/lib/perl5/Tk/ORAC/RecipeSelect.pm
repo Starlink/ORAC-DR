@@ -85,7 +85,6 @@ sub Populate {
   my $label_text = "Choose a directory: ";  
   my $label = $self->Label( -textvariable    => \$label_text,
 			    -relief  => 'flat',
-	  	            -font    => 'Arial', 
 		            -justify => 'left',
 			    -anchor  => 'w',
 		            -borderwidth => 5 );
@@ -114,9 +113,8 @@ sub Populate {
                                    -selectbackground    => 'blue',
 	 		           -selectforeground    => 'white',
 			           -selectmode          => 'single',
-				   -font                => 'Arial',
 				   -height              => 10,
-				   -width               => 25,
+				   -width               => 35,
 				   -yscrollcommand      => ['set'=>$scrollbar]);
   $lbox->insert('end',sort @dir_list);
 
@@ -132,7 +130,6 @@ sub Populate {
   # Cancel button
   # --------------
   my $cancel_button = $self->Button( -text             =>'Cancel',
-	                             -font             =>'Arial',	
 			             -activeforeground => 'white',
                                      -activebackground => 'blue',
 	 	                     -command => [ "Cancel", $self ] );
@@ -141,7 +138,6 @@ sub Populate {
   # OK button
   # ---------
   my $ok_button = $self->Button( -text             => 'OK',
-	                         -font             => 'Arial',	
 			         -activeforeground => 'white',
                                  -activebackground => 'blue' );
 
