@@ -82,10 +82,8 @@ sub new {
   my $status = ORAC__OK;
   # This check is a bit dodgy. I add it to stop the error message
   # occuring concerning whether the AMS is currently running or not.
-  if ($ORAC::Msg::ADAM::Control::RUNNING == 0) {
-    $conv->{AMS} = new ORAC::Msg::ADAM::Control;
-    $status = $conv->{AMS}->init;
-  } 
+  $conv->{AMS} = new ORAC::Msg::ADAM::Control;
+  $status = $conv->{AMS}->init;
 
   return undef if $status != ORAC__OK;
   return $conv;
@@ -167,7 +165,9 @@ sub mon {
     return $ {$self->objref}{$name};
   } else {
     # Create a new one
-    $obj = new ORAC::Msg::ADAM::Task($name, "$ENV{CONVERT_DIR}/$mon");
+    $obj = new ORAC::Msg::ADAM::Task($name, "$ENV{CONVERT_DIR}/$mon",
+				     { MONOLITH => "$mon"}
+				    );
     if ($obj->contactw) {
       $ {$self->objref}{$name} = $obj;
     } else {
