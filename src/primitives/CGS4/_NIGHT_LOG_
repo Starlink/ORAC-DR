@@ -18,7 +18,7 @@ The following arguments are available:
 =item OUT
 
 When set (to any value) the log file is written to C<ORAC_DATA_OUT>
-rather than to the default location.
+rather than to C<ORAC_DATA_IN>.
 
 =back
 
@@ -32,8 +32,17 @@ The text log file $ORAC_DATA_IN/E<lt>dateE<gt>.nightlog, where
 E<lt>dateE<gt> is the UT date.
 This should be 132 columns or less wide
 
+=item *
+
 The file is in $ORAC_DATA_OUT if the OUT argument is set, so we
-can build a seperate on-the-fly log
+can build a seperate on-the-fly log.
+
+The on-the-fly log in ORAC_DATA_OUT is allways appended to, being
+created only if it doesn't exist. Thus multiple entries for the same
+observation may exist in the on-the-fly log if the pipeline is rerun.
+
+The "clean" log file in ORAC_DATA_IN is re-started if the observation
+number equals 1 and is appended to otherwise, being created as necessary.
 
 =back
 
@@ -53,19 +62,14 @@ names are required..
 
 No external algorithm engines are required by this primitive.
 
-=item *
-
-If the observation number is 1 the nightlog is always removed
-before adding new entries. If it the number is greater than 1
-the entry is appended to the existing log (even if that means the
-observation is entered multiple times when the pipeline is rerun).
-
 =back
 
 =head1 AUTHORS
 
 Frossie Economou (JAC)
-Paul Hirst (JAC)
+
+Paul Hirst (JAC) <p.hirst@jach.hawaii.edu>
+
 Tim Jenness (JAC)
 
 =head1 COPYRIGHT
@@ -103,19 +107,19 @@ if (defined $_NIGHT_LOG_{OUT}) {
   # ORAC_DATA_OUT is the current directory and the default location for
   # log files
   $nightlog = "${obsdate}.nightlog";
+  # if we're working in ORAC_DATA_OUT, allways append to the file, creating
+  # it if it doesn't exist.
 } else {
   # A non-standard location so full path is required
   $nightlog = $ENV{ "ORAC_DATA_IN" } . "/${obsdate}.nightlog";
+  # if we're working in ORAC_DATA_IN, start fresh if this is frame 1
+  unlink $nightlog if $obsnum == 1;
+  # we don't care about the return value from unlink.
 }
 
-# If this is the first observation of the night it should remove
-# an existing logfile, else append [do not check the return value
-# of the unlink since we dont actually care]
-unlink $nightlog if $obsnum == 1;
-
-# Flag to indicate whether the log was there already
-my $was_there;
-$was_there = ( -e $nightlog ? 1 : 0);
+# Flag to indicate whether the log is there already
+my $is_there;
+$is_there = ( -e $nightlog ? 1 : 0);
 
 # Create a new log object
 my $log = new ORAC::LogFile( $nightlog );
@@ -123,15 +127,18 @@ my $log = new ORAC::LogFile( $nightlog );
 # Only proceed if we have a valid object
 if (defined $log) {
 
-  orac_print "Orac says: Log created as $nightlog\n"
-    unless $was_there;
-
+  if ($is_there) {
+    orac_print "Orac says: appending to Log: $nightlog\n";
+  } else {
+    orac_print "Orac says: Log created as $nightlog\n";
+  }
+ 
   # Print the header.
   $log->header(
-	       " Obs | Grp  M|   Object  Std|Obstype|Slit   PA  |RAoff|DECof| UT     | AM |DExpT |Num|Filtr|Grating Ord|Glambda|   DR Recipe    |",
-	       "-----|-------|--------------|-------|----|------|-----|-----|--------|----|------|---|-----|-----------|-------|----------------|");
+	       " Obs | Grp  M|   Object  Std|Obstype|Slit   PA  |RAoff|DECof| UT     | AM |DExpT |Num|Filtr|Grating Ord|Glmda|   DR Recipe    |",
+	       "-----|-------|--------------|-------|----|------|-----|-----|--------|----|------|---|-----|-----------|-----|----------------|");
 
-#              "12345|12345|1|123456789012|1|1234567|1234|123456|12345|12345|12345678|1234|123456|123|12345|12345678|12|1234567|1234567890123456|";
+#              "12345|12345|1|123456789012|1|1234567|1234|123456|12345|12345|12345678|1234|123456|123|12345|12345678|12|12345|1234567890123456|";
 
 #               0        1         2         3         4         5         6         7         8         9         0         1         2         3
 #               123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012
@@ -178,7 +185,7 @@ if (defined $log) {
   $ut = sprintf "%02d:%02d:%02d", $uthours, $utmins, $utsecs;
 
   # Define the Perl format for each entry in the log.
-  my $format = "%5d %5d %1s %12.12s %1s %7s %4s %6.1f %5.1f %5.1f %8s %4.2f %6.2f %3d %5s %8.8s %2d %7.3f %-16s";
+  my $format = "%5d %5d %1s %12.12s %1s %7s %4s %6.1f %5.1f %5.1f %8s %4.2f %6.2f %3d %5s %8.8s %2d %5.3f %-16s";
 
   # Write the record using the prescribed format.
   $log->addentry( sprintf($format,
