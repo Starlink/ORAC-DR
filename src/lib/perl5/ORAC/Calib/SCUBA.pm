@@ -144,9 +144,15 @@ $DEBUG = 0; # Turn off debugging mode
 		     BEAM  => 216.0,
 		    },
 		    {
-		     START => 20010516, # Beginning of SCUBA history
+		     START => 20010516, # Strange increase in FCF
+		     END => 20010601,
 		     ARCSEC=> 1.13,
 		     BEAM  => 280.0,
+		    },
+		    {
+		     START => 20010602, # Not checked
+		     ARCSEC=> 0.88,
+		     BEAM  => 216.0,
 		    },
 		   ],
 	 '450N' => [
