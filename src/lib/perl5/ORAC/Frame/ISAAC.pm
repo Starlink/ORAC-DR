@@ -53,7 +53,6 @@ my %hdr = (
 
 # then the spectroscopy...
             CONFIGURATION_INDEX  => "HIERARCH.ESO.INS.GRAT.ENC",
-            GRATING_DISPERSION   => "CDELT1",
             GRATING_NAME         => "HIERARCH.ESO.INS.GRAT.NAME",
             GRATING_ORDER        => "HIERARCH.ESO.INS.GRAT.ORDER",
             GRATING_WAVELENGTH   => "HIERARCH.ESO.INS.GRAT.WLEN",
@@ -217,6 +216,69 @@ sub _to_GAIN {
    }
    return $gain;
 }
+
+sub _to_GRATING_DISPERSION {
+   my $self = shift;
+   my $dispersion = 0.0;
+   if ( exists $self->hdr->{CDELT1} ) {
+      $dispersion = $self->hdr->{CDELT1};
+   } else {
+      if ( exists $self->hdr->{"HIERARCH.ESO.INS.GRAT.NAME"} &&
+           exists $self->hdr->{"HIERARCH.ESO.INS.GRAT.ORDER"} ) {
+         my $order = $self->hdr->{"HIERARCH.ESO.INS.GRAT.ORDER"};
+         if ( $self->hdr->{"HIERARCH.ESO.INS.GRAT.NAME"} eq "LR" ) {
+            if ( $order == 6 ) {
+               $dispersion = 2.4e-4;
+            } elsif ( $order == 5 ) {
+               $dispersion = 2.9e-4;
+            } elsif ( $order == 4 ) {
+               $dispersion = 3.6e-4;
+            } elsif ( $order == 3 ) {
+               $dispersion = 4.8e-4;
+            } elsif ( $order == 2 ) {
+               $dispersion = 7.2e-4;
+            } elsif ( $order == 1 ) {
+               if ( exists $self->hdr->{"HIERARCH.ESO.INS.FILT1.ID"} ) {
+                  my $filter = $self->hdr->{"HIERARCH.ESO.INS.FILT1.ID"};
+                  if ( $filter =~/SL/ ) {
+                     $dispersion = 1.4e-3;
+                  } else {
+                     $dispersion = 1.5e-3;
+                  }
+               } else {
+                 $dispersion = 1.45e-3;
+               }
+            }
+
+# Medium dispersion
+         } elsif ( $self->hdr->{"HIERARCH.ESO.INS.GRAT.NAME"} eq "MR" ) {
+            if ( $order == 6 ) {
+               $dispersion = 3.8e-5;
+            } elsif ( $order == 5 ) {
+               $dispersion = 4.6e-5;
+            } elsif ( $order == 4 ) {
+               $dispersion = 5.9e-5;
+            } elsif ( $order == 3 ) {
+               $dispersion = 7.9e-5;
+            } elsif ( $order == 2 ) {
+               $dispersion = 1.22e-4;
+            } elsif ( $order == 1 ) {    
+               if ( exists $self->hdr->{"HIERARCH.ESO.INS.FILT1.ID"} ) {       
+                  my $filter = $self->hdr->{"HIERARCH.ESO.INS.FILT1.ID"};
+                  if ( $filter =~/SL/ ) {
+                     $dispersion = 2.55e-4;
+                  } else {       
+                     $dispersion = 2.37e-4;
+                  }
+               } else {
+                 $dispersion = 2.46e-4;
+               }
+            }   
+         }
+      }
+   }
+   return $dispersion;
+}     
 
 # Sampling is always 1x1, and therefore there are no headers with
 # these values.
