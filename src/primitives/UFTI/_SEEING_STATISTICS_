@@ -229,12 +229,12 @@ print LOGFILE "C IDATE   INTEGER  1 EXFMT=I8    TBLFMT=I8   COMMENTS='yyyymmdd'\
 print LOGFILE "C UT      REAL    10 EXFMT=F9.6  TBLFMT=F9.6 COMMENTS='UT at start of observation'\n";
 print LOGFILE ":         UNITS='hours'\n";
 print LOGFILE "C FILTER  CHAR*6  20 EXFMT=A6    TBLFMT=A6   COMMENTS='Filter name'\n";
-print LOGFILE "C AIRMASS REAL    27 EXFMT=F9.6  TBLFMT=F9.6 COMMENTS='Airmass at start of observation'\n";
-print LOGFILE "C FOCUS   REAL    37 EXFMT=F7.2  TBLFMT=F7.2 COMMENTS='Telescope focus'\n";
-print LOGFILE "C FWHM    REAL    45 EXFMT=F6.3  TBLFMT=F6.3 COMMENTS='Average FWHM for the full profile'\n";
+print LOGFILE "C AIRMASS REAL    27 EXFMT=F7.4  TBLFMT=F7.4 COMMENTS='Airmass at start of observation'\n";
+print LOGFILE "C FOCUS   REAL    35 EXFMT=F7.2  TBLFMT=F7.2 COMMENTS='Telescope focus'\n";
+print LOGFILE "C FWHM    REAL    43 EXFMT=F6.3  TBLFMT=F6.3 COMMENTS='Average FWHM for the full profile'\n";
 print LOGFILE ":         UNITS='arcsec'\n";
-print LOGFILE "C GAMMA   REAL    52 EXFMT=F5.3  TBLFMT=F5.3 COMMENTS='Radial fall-off parameter'\n";
-print LOGFILE "C AXISR   REAL    58 EXFMT=F5.3  TBLFMT=F5.3 COMMENTS='Axis ratio'\n";
+print LOGFILE "C GAMMA   REAL    50 EXFMT=F6.3  TBLFMT=F5.3 COMMENTS='Radial fall-off parameter'\n";
+print LOGFILE "C AXISR   REAL    57 EXFMT=F6.3  TBLFMT=F5.3 COMMENTS='Axis ratio'\n";
 print LOGFILE "C PA      REAL    64 EXFMT=F6.2  TBLFMT=F6.2 COMMENTS='Position angle of major axis'\n";
 print LOGFILE ":         UNITS='degrees'\n";
 print LOGFILE "C SFWHM   REAL    71 EXFMT=F6.3  TBLFMT=F6.3 COMMENTS='Average FWHM after Hanning filter applied'\n";
@@ -251,6 +251,7 @@ print LOGFILE "C SWIDTH  REAL   109 EXFMT=F6.3  TBLFMT=F6.3 COMMENTS='Strehl wid
 print LOGFILE " \n";
 print LOGFILE "D POSITION='CHARACTER'\n";
 print LOGFILE " \n";
+print LOGFILE "# Date       UT    Filter  Airmass Focus  FWHM   Gamma  Axisr   PA   SmFWHM CoFWHM Cor EED50  EED80 Strehl  Width\n";
 print LOGFILE "BEGINTABLE\n";
 
 # Append to the file if it exists.
@@ -316,18 +317,28 @@ print LOGFILE "BEGINTABLE\n";
 
 # Calculate the psf, using the star alone.  Make an image of the psf, which goes
 # to a very low signal.  It's needed to compute the light beyond the aperture.
-       $Mon{"kappa_mon"}->obeyw("psf","$header $hidden");
+       $psf_status = $Mon{"kappa_mon"}->obeyw("psf","$header $hidden");
+
+# Use null values if PSF fails to converge.
+       if ( $psf_status != ORAC__OK ) {
+          $fwhm = "<null>";
+          $axisratio = "<null>";
+          $gamma = "<null>";
+          $pa = "<null>"
+
+       } else {
 
 # Obtain the fit parameters of the point-spread function.
-       ($ORAC_STATUS, $fwhm) = $Mon{"kappa_mon"}->get("psf","fwhm");
-       ($ORAC_STATUS, $axisratio) = $Mon{"kappa_mon"}->get("psf","axisr");
-       ($ORAC_STATUS, $gamma) = $Mon{"kappa_mon"}->get("psf","gamma");
-       ($ORAC_STATUS, $orient) = $Mon{"kappa_mon"}->get("psf","orient");
+          ($ORAC_STATUS, $fwhm) = $Mon{"kappa_mon"}->get("psf","fwhm");
+          ($ORAC_STATUS, $axisratio) = $Mon{"kappa_mon"}->get("psf","axisr");
+          ($ORAC_STATUS, $gamma) = $Mon{"kappa_mon"}->get("psf","gamma");
+          ($ORAC_STATUS, $orient) = $Mon{"kappa_mon"}->get("psf","orient");
 
 # Derive desired values from the results, namely the average FWHM
 # and the position angle.
-       $fwhm = $fwhm * sqrt( $axisratio );
-       $pa = $orient + 90.0;
+          $fwhm = $fwhm * sqrt( $axisratio );
+          $pa = $orient + 90.0;
+       }
 
 # Find core-PSF Gaussian
 # ======================
@@ -337,21 +348,39 @@ print LOGFILE "BEGINTABLE\n";
 # can be obtained by concentrating on the core.
 
 # Find the core size in pixels.  It's 1.5 times the FWHM or five pixels,
-# whichever is larger.
-       $coresize = max( 5, int( 2.0 * int( 0.75 * $fwhm ) ) + 1 );
+# whichever is larger.  When there's been an error, it's usually because
+# of a poor focus, but not always.  So stick with the default.
+# It might be best to remove the core FWHM altogether.
+       if ( $psf_status != ORAC__OK ) {
+          $coresize = 5;
+       } else {
+          $coresize = max( 5, int( 2.0 * int( 0.75 * $fwhm ) ) + 1 );
+       }
 
 # Specify the other parameters for the PSF stage.
        $header = "in=$ndf gauss isize=$coresize";
        $hidden = "device=! out=! cofile=centre$$.dat";
 
 # Derive the average core FWHM.
-       $Mon{"psf_mon"}->obeyw("psf","$header $hidden");
+       $core_status = $Mon{"psf_mon"}->obeyw("psf","$header $hidden");
 
 # Extract the core FWHM and axis ratio.
-#       ($ORAC_STATUS, $corefwhm) = $Mon{"psf_mon"}->get("psf","fwhm");
-#       ($ORAC_STATUS, $coreaxisratio) = $Mon{"psf_mon"}->get("psf","axisr");
+       if ( $core_status != ORAC__OK ) {
+          $corefwhm = "<null>";
+          $coreaxisratio = "<null>";
 
-       $corefwhm = $corefwhm * sqrt( $coreaxisratio );
+       } else {
+          ($ORAC_STATUS, $corefwhm) = $Mon{"psf_mon"}->get("psf","fwhm");
+          ($ORAC_STATUS, $coreaxisratio) = $Mon{"psf_mon"}->get("psf","axisr");
+
+          $corefwhm = $corefwhm * sqrt( $coreaxisratio );
+
+# Protect against nonsense values affecting the tabulation.
+          if ( $corefwhm > 99.999 ) {
+             $corefwhm = "<null>";
+             $core_status = -1;
+          }
+       }
 
 # Find the smoothed FWHM
 # ======================
@@ -365,15 +394,28 @@ print LOGFILE "BEGINTABLE\n";
 
 # Calculate the psf, using the standard star alone.  Make an image of
 # the psf, which goes to a very low signal.
-       $Mon{"kappa_mon"}->obeyw("psf","$header $hidden");
+       $smo_status = $Mon{"kappa_mon"}->obeyw("psf","$header $hidden");
        unlink ( "smooth$$.sdf" );
 
 # Extract the smoothed image's core FWHM and axis ratio.
-       ($ORAC_STATUS, $smofwhm) = $Mon{"kappa_mon"}->get("psf","fwhm");
-       ($ORAC_STATUS, $smoaxisratio) = $Mon{"kappa_mon"}->get("psf","axisr");
+       if ( $smo_status != ORAC__OK ) {
+          $smofwhm = "<null>";
+          $smoaxisratio = "<null>";
+
+       } else {
+          ($ORAC_STATUS, $smofwhm) = $Mon{"kappa_mon"}->get("psf","fwhm");
+          ($ORAC_STATUS, $smoaxisratio) = $Mon{"kappa_mon"}->get("psf","axisr");
 
 # Derive the average FWHM after smoothing
-       $smofwhm = $smofwhm * sqrt( $smoaxisratio );
+          $smofwhm = $smofwhm * sqrt( $smoaxisratio );
+
+# Protect against nonsense values affecting the tabulation.
+          if ( $smofwhm > 99.999 ) {
+             $smofwhm = "<null>";
+             $smo_status = -1;
+          }
+
+       }
 
 # Set radial limits.
 # ==================
@@ -389,8 +431,22 @@ print LOGFILE "BEGINTABLE\n";
        $outer = min( 5.0, max( $inner + 0.3, $outer, 1.5 ) * 0.5 * $aperture_factor );
 
 # In order to keep the aperture correction small (like well under 1
-# percent), choose an aperture many times the FWHM of the psf.
-       $aperture = max( $fwhm, $corefwhm ) * $aperture_factor;
+# percent), choose an aperture many times the FWHM of the psf.   In the
+# case where the FWHM is not known, we give it a value adequate for most
+# data.  This can be tuned as required.
+       if ( $psf_status != ORAC__OK && $core_status != ORAC__OK ) {
+          $aperture = 12.0;
+
+       } elsif ( $psf_status != ORAC__OK ) {
+          $aperture = $corefwhm * $aperture_factor;
+
+       } elsif ( $core_status != ORAC__OK ) {
+          $aperture = $fwhm * $aperture_factor;
+
+       } else {
+          $aperture = max( $fwhm, $corefwhm ) * $aperture_factor;
+       }
+
        $int_aperture = nint( $aperture + 0.5 ) + 1;
 
 # Form sky-subtracted image
@@ -599,28 +655,52 @@ print LOGFILE "BEGINTABLE\n";
 # ================================
 
 # Convert the lengths from pixels to arcseconds.
-       $fwhm = $fwhm * $scale;
-       $corefwhm = $corefwhm * $scale;
-       $smofwhm = $smofwhm * $scale;
+       if ( $psf_status == ORAC__OK ) { $fwhm = $fwhm * $scale };
+       if ( $core_status == ORAC__OK ) { $corefwhm = $corefwhm * $scale };
+       if ( $smo_status == ORAC__OK ) { $smofwhm = $smofwhm * $scale };
        $eed50 = $eed50 * $scale;
        $eed80 = $eed80 * $scale;
 
-# Trim the values to the appropriate number of significant figures, and
-# remove leading blanks.
-       $fs_fwhm = sprintf( "%6.3f", $fwhm );
-       $fs_fwhm =~ s/ //;
-       $fs_corefwhm = sprintf( "%6.3f", $corefwhm );
-       $fs_corefwhm =~ s/ //;
-       $fs_smofwhm = sprintf( "%6.3f", $smofwhm );
-       $fs_smofwhm =~ s/ //;
+# Trim the standard PSF values to the appropriate number of significant
+# figures, and remove leading blanks.
+       if ( $psf_status == ORAC__OK ) {
+          $fs_fwhm = sprintf( "%6.3f", $fwhm );
+          $fs_fwhm =~ s/ //;
+          $fs_gamma = sprintf( "%6.3f", $gamma );
+          $fs_gamma =~ s/ //;
+          $fs_axisratio = sprintf( "%6.3f", $axisratio );
+          $fs_axisratio =~ s/ //;
+          $fs_pa = sprintf( "%6.2f", $pa );
+          $fs_pa =~ s/ //;
 
-       $fs_gamma = sprintf( "%6.3f", $gamma );
-       $fs_gamma =~ s/ //;
-       $fs_axisratio = sprintf( "%6.3f", $axisratio );
-       $fs_axisratio =~ s/ //;
-       $fs_pa = sprintf( "%6.2f", $pa );
-       $fs_pa =~ s/ //;
+       } else {
+          $fs_fwhm = "<null>";
+          $fs_gamma = "<null>";
+          $fs_axisratio = "<null>";
+          $fs_pa = "<null>";
+       }
 
+# Trim the core PSF values to the appropriate number of significant
+# figures, and remove leading blanks.
+       if ( $core_status == ORAC__OK ) {
+          $fs_corefwhm = sprintf( "%6.3f", $corefwhm );
+          $fs_corefwhm =~ s/ //;
+  
+       } else {
+          $fs_corefwhm = "<null>";
+       }
+
+# Trim the smoothed PSF values to the appropriate number of significant
+# figures, and remove leading blanks.
+       if ( $smo_status == ORAC__OK ) {
+          $fs_smofwhm = sprintf( "%6.3f", $smofwhm );
+          $fs_smofwhm =~ s/ //;
+  
+       } else {
+          $fs_smofwhm = "<null>";
+       }
+
+# Format the remaining statistics.
        $fs_eed50 = sprintf( "%6.3f", $eed50 );
        $fs_eed50 =~ s/ //;
        $fs_eed80 = sprintf( "%6.3f", $eed80 );
@@ -654,12 +734,32 @@ print LOGFILE "BEGINTABLE\n";
 # ===========================
        if ( $logging ) {
 
+# Specify formats for the CURSA table.  Note we have increased the width of
+# elements 6 and 7 to allow for the <null> text.
+          @formats = qw( %8s %9.6f %6s %7.4f %6.3f %6.3f %6.3f %6.3f %6.2f
+                         %6.3f %6.3f %2d %6.3f %6.3f %6.4f %6.3f );
+          if ( $psf_status != ORAC__OK ) {
+             $formats[5] = "%6s";
+             $formats[6] = "%6s";
+             $formats[7] = "%6s";
+             $formats[8] = "%6s";
+          }
+          if ( $smo_status != ORAC__OK ) {
+             $formats[9] = "%6s";
+          }
+          if ( $core_status != ORAC__OK ) {
+             $formats[10] = "%6s";
+          }
+
+# Convert array to a space-separated list.
+          $formatlist = join( " ", @formats );
+
 # Use sprintf to format the statistics in the specified formats for the columns
 # of the table.  Append the formatted row to the logging file.  Note
 # in case some of the header information is null, output the results as
 # strings rather than integer or real; and assume a fixed format in
 # the FITS headers matching the STL format when the keywords are present.
-          printf LOGFILE ( "%8s %9.6f %6s %9.6f %6.3f %6.3f %5.3f %5.3f %6.2f %6.3f %6.3f %2d %6.3f %6.3f %6.4f %6.3f \n",
+          printf LOGFILE ( "$formatlist \n",
             $idate, $ut, $filter, $airmass, $focus, $fwhm, $gamma, $axisratio, $pa, 
             $smofwhm, $corefwhm, $coresize, $eed50, $eed80, $strehl_ratio, $strehl_width );
           close ( LOGFILE );
