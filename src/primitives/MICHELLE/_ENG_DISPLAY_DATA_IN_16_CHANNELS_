@@ -1,0 +1,142 @@
+# ENG DISPLAY DATA IN 16 CHANNELS -*-perl-*-
+
+
+=head1 NAME
+
+ENG DISPLAY DATA IN 16 CHANNELS - displays and stats Michelle channel data
+
+=head1 DESCRIPTION
+
+This primitive displays histograms and statistics for each one of 16
+channels of the MICHELLE array, where each channel is 20 contiguous
+columns. Therefore the first channel is columnes 1 to 20, the second
+21 to 40, and so on till 301..320.
+
+=head1 NOTES FOR USERS
+
+Given the requirement to display 16 plots, you may find the result
+difficult to read. You can create a larger GWM window by specifying
+its size in your .Xdefaults file in the following manner, choosing
+values appropriate for your size of display:
+
+*Gwm*Height: 768
+*Gwm*Width: 1024
+
+=head1 NOTES FOR DEVELOPERS
+
+Like a few other engineering primitives, this one addresses the
+display system directly, rather than depending on the user
+configuration file disp.dat. This is done because the author judges
+that the engineering function of this primitive would be severely
+impaired without the display being configured in a specific manner,
+and therefore should not be left to the user.
+
+In most situations however, direct manipulation of the Display object
+is frowned upon, and a baseball bat will be employed to discourage its
+use in astronomical primitives.
+
+
+=head1 ORAC
+
+=head2 Engines referenced
+
+KAPPA
+
+=head2 Tasks called
+
+=over 4
+
+=item kappa_mon
+
+stats
+
+=back
+
+=head2 Objects addressed
+
+$Frm, $Display
+
+=head2 Other files
+
+Logs to $ORAC_DATA_OUT/log.channel
+
+=head2 REVISION
+
+$Id$
+
+
+=head1 AUTHOR
+
+frossie@jach.hawaii.edu
+
+=cut
+
+# log object for this primitive
+my $log = new ORAC::LogFile("log.channel");
+
+# with this header
+my @headers = ("Frame               Channel   Mean       Min        Max      Std    ",
+               "--------------------------------------------------------------------");
+
+# write header to log file
+$log->header(@headers);
+
+# write header to screen
+orac_print(join("\n",@headers)."\n");
+
+# use this format
+my $format = "%-20s %2d    %10.4e %10.4e %10.4e %10.4e";
+
+# status
+my $ORAC_STATUS;
+
+# rock and roll little lizard [Gex, 1998]
+
+for my $channel (0..15) {
+
+  # set xmin xmax to be 1..20, 21..40, ... , 301-320
+  my ($xmin, $xmax) = (($channel*20)+1,($channel+1)*20);
+  # construct corresponding NDF section
+  my $ndfsection = "($xmin:$xmax,)";
+  
+  my $frame = $Frm->file;
+  
+  # run stats
+
+  $Mon{'kappa_mon'}->obeyw("stats","ndf=$frame$ndfsection");
+
+  # get the parameters from stats
+  ($ORAC_STATUS, my $mean) = $Mon{"kappa_mon"}->get("stats","mean");
+  ($ORAC_STATUS, my $min) = $Mon{"kappa_mon"}->get("stats","minimum");
+  ($ORAC_STATUS, my $max) = $Mon{"kappa_mon"}->get("stats","maximum");
+  ($ORAC_STATUS, my $std) = $Mon{"kappa_mon"}->get("stats","sigma");
+
+  # generate reporting string
+  my $string = sprintf($format,$frame,$channel+1,$mean,$min,$max,$std);
+  
+  # write string to log and screen
+  orac_print("$string\n");
+  $log->addentry($string);
+
+  # Show histogram is display is active
+
+
+if (defined $Display) {
+  $Display->display_data($Frm,{REGION=>$channel+17, 
+                               TYPE=>'HISTOGRAM',
+                               NBINS=>48,
+                               XAUTOSCALE=>0,
+			       XMIN=>$xmin,
+			       XMAX=>$xmax,
+                               YAUTOSCALE=>1,
+                               ZAUTOSCALE=>1,
+                               TOOL=>'KAPVIEW',
+                               WINDOW=>0
+                              },
+			0);
+};
+
+
+
+
+}
