@@ -432,7 +432,7 @@ sub findrecipe {
 
   # Check to see whether there is something there
   # if not try to make something up
-  if ($recipe !~ /./) {
+  if (! defined $recipe || length($recipe) == 0) {
     $recipe = 'QUICK_LOOK';
   } 
 
