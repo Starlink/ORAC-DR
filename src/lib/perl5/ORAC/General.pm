@@ -222,13 +222,10 @@ value. 0.5 is rounded up.
 =cut
 
 sub nint {
-    my $value = shift;
+  my $value = shift;
 
-    if ($value >= 0) {
-        return (int($value + 0.5));
-    } else {
-        return (int($value - 0.5));
-    }
+  return int($value + 0.5);
+
 };
 
 =item B<utdate>
@@ -287,13 +284,10 @@ sub parse_keyvalues {
 
   my $current_key = $split[0];
 
-  print "Input string: $string\n";
   for my $i (1..$#split) {
 
     my $value;
     my $next_key;
-
-    print "Processing string: $split[$i]\n";
 
     # Count the number of commas
     my $ncomma = ( $split[$i] =~ tr|,|,|);
@@ -349,13 +343,9 @@ sub parse_keyvalues {
     }
 
     # Store the current value and set the next key
-    print "Extracted value: $value and next key $next_key\n";
     $hash{lc($current_key)} = $value;
     $current_key = $next_key;
   }
-
-  use Data::Dumper;
-  print Dumper( \%hash );
 
   return %hash;
 }
