@@ -568,13 +568,21 @@ sub verify {
     $rules{$key} =~ s/$key(?!(\}|([\'\"]\})))/$CALVALUE/gx;
 
     # Now check the rule against the header values
-    my $ok = eval("'$CALVALUE' $rules{$key}");
-    if ($@) {
-      orac_err "Eval error - check the syntax in your rules file\n";
-      orac_err "Rules was: '$CALVALUE' $rules{$key}\n";
-      orac_err "Error was: $@ \n";
-      return undef;
-    };
+    # We sometimes get "useless use of ... in boid context" when
+    # we are using complex rules. Ssually ones that look like:
+    #       XXXX; something eq $x
+    # Just turn off that warning
+    my $ok;
+    {
+      no warnings "void";
+      $ok = eval("'$CALVALUE' $rules{$key}");
+      if ($@) {
+	orac_err "Eval error - check the syntax in your rules file\n";
+	orac_err "Rules was: '$CALVALUE' $rules{$key}\n";
+	orac_err "Error was: $@ \n";
+	return undef;
+      }
+    }
     unless ($ok) {
       if ($warn) {
 	orac_warn("$name not a suitable calibration: failed $key $rules{$key}\n");
