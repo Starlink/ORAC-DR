@@ -578,6 +578,47 @@ sub inout {
   return $outfile;                            # Scalar context
 }
 
+=item B<template>
+
+Method to change the current filename of the frame (file())
+so that it matches a template. e.g.:
+
+  $Frm->template("something_number_flat");
+
+Would change the first file to match "something_number_flat".
+Essentially this simply means that the number in the template
+is changed to the number of the current frame object.
+
+  $Frm->template("something_number_dark", 2);
+
+would change the second filename to match "something_number_dark".
+The base method assumes that the filename matches the form:
+prefix_number_suffix. This must be modified by the derived
+classes since in general the filenaming convention is telescope
+and instrument specific.
+
+The Nth filename is modified (ie file(N)).
+There are no return arguments.
+
+=cut
+
+sub template {
+  my $self = shift;
+  my $template = shift;
+
+  my $fnum = 1;
+  if (@_) { $fnum = shift; };
+
+  my $num = $self->number;
+  my $padnum = '0'x(4-length($num)) . $num;
+  # Change the first number
+#  $template =~ s/_\d+_/_${num}_/;
+  $template =~ s/^(\w{5})(\d{4})_/$1${padnum}_/;
+
+  # Update the filename
+  $self->file($fnum, $template);
+
+}
 
 =back
 
