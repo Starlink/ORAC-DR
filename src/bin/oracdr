@@ -5,6 +5,9 @@
 # Usage: oracdr <recipe_name>
 #------------------------------------------------------------------------
 
+use strict;
+use vars qw/$VERSION/;
+
 # Version number - do this before anything else
 # so that we dont have to wait for all the modules to load
 # - very quick
@@ -45,8 +48,6 @@ use ORAC::Constants; # ORAC__OK et al
 # 
 # general modules
 #
-use Carp;				# perl -MCarp=verbose for backtrace
-use Term::ANSIColor;			# color output
 use Getopt::Long;                       # command line arguments
 use Sys::Hostname;                      # For logfile
 
@@ -69,6 +70,8 @@ unless (exists $ENV{ORAC_INSTRUMENT}) {
   orac_err("No intrument specified in \$ORAC_INSTRUMENT. Please set to one of IRCAM, UFTI, SCUBA\n");
   exit;
 }
+
+my ($instrument, $groupobject, $instmodule, $frameobject, $calobject);
 
 $instrument = uc($ENV{ORAC_INSTRUMENT});
 
@@ -126,10 +129,30 @@ die "Error importing $instmodule:\n$@\n" if ($@);
 #
 
 # Store them first so that we can print out the log message
-@ORAC_ARGS = @ARGV;
+my @ORAC_ARGS = @ARGV;
 
 # Now parse the args
-my $status = GetOptions("nodisplay","debug!","quiet!","calib=s","from=i","to=i","ut=i","list=s","loop=s","help","batch","skip","noeng","log=s");
+my ($opt_nodisplay, $opt_debug, $opt_quiet, $opt_calib, $opt_from,
+    $opt_to, $opt_ut, $opt_list, $opt_help, $opt_batch, $opt_skip,
+    $opt_warn, $opt_skip, $opt_noeng, $opt_log, $opt_loop
+   );
+
+my $status = GetOptions("nodisplay" => \$opt_nodisplay,
+			"debug!"    => \$opt_debug,
+			"quiet!"    => \$opt_quiet,
+			"calib=s"   => \$opt_calib,
+			"from=i"    => \$opt_from,
+			"to=i"      => \$opt_to,
+			"ut=i"      => \$opt_ut,
+			"list=s"    => \$opt_list,
+			"loop=s"    => \$opt_loop,
+			"help"      => \$opt_help,
+			"batch"     => \$opt_batch,
+			"skip"      => \$opt_skip,
+			"noeng"     => \$opt_noeng,
+			"log=s"     => \$opt_log,
+			"warn"      => \$opt_warn,
+		       );
 
 ($opt_help) && do {
 print qq|
@@ -210,7 +233,7 @@ unless (exists $ENV{ORAC_DIR}) {
   &orac_exit_normally;
 }
 
-$orac_dir = $ENV{ORAC_DIR} . "/";	# main orac directory (contains bin)
+my $orac_dir = $ENV{ORAC_DIR} . "/";	# main orac directory (contains bin)
 
 ######################## Change to Output directory ####################
 
@@ -249,6 +272,8 @@ if ($opt_debug) {
 # Always print error messages to STDERR  + optionally, the logfile
 # Default is to use 'sf'
 
+my ($log_options, $MW, $ORAC_MESSAGE, $msg1, $lab1, $textw1, $textw2,
+    $textw3, $lab2);
 if (defined $opt_log) {
   # User is overriding logging options
   # Lower case the options
@@ -261,9 +286,9 @@ if (defined $opt_log) {
 if ($log_options ne 's') {
 
   # Initialise file handle arrays
-  @out_hdl = ();
-  @err_hdl = (\*STDERR);
-  @war_hdl = ();
+  my @out_hdl = ();
+  my @err_hdl = (\*STDERR);
+  my @war_hdl = ();
 
   # Request for an X-window (experimental)
   # Put this first so that we can fall back to 
@@ -339,7 +364,7 @@ if ($log_options ne 's') {
   }
   # Request for file - must have already chdir'ed to ORAC_DATA_OUT
   if ($log_options =~ /f/) {
-    $logfh = new IO::File(">.oracdr_$$.log") || 
+    my $logfh = new IO::File(">.oracdr_$$.log") || 
       do { orac_err "Error opening logfile: $!"; orac_exit_normally;};
     $logfh->autoflush(1);
 
@@ -399,12 +424,12 @@ if ($log_options ne 's') {
 # This routine creates and initialies the message systems.
 # Also allows us to store the message objects since on
 # undef everything goes away
-(@messys) = start_msg_sys;
+my (@messys) = start_msg_sys;
 
 
 ######################## A L G.   E N G I N E S #############################
 
-
+my %Mon;
 unless ($opt_noeng) {
   
   # start algorithm engines
@@ -477,7 +502,7 @@ foreach my $msg (@messys) {
 ######################## C A L I B R A T I O N #############################
 
 # Create calibration object
-$Cal = new $calobject;
+my $Cal = new $calobject;
 
 #
 # Calibration frame overrides
@@ -485,9 +510,9 @@ $Cal = new $calobject;
   
 if (defined $opt_calib) {
   
-  %calibs = parse_keyvalues($opt_calib);
+  my %calibs = parse_keyvalues($opt_calib);
 
-  foreach $key (keys %calibs) {
+  foreach my $key (keys %calibs) {
 
     if ($Cal->can($key)) {		# set appropriate method
 
@@ -513,8 +538,9 @@ if (defined $opt_calib) {
 # Generate list of observation numbers to be processed
 # This is related to looping scheme
 
-$loop = 'orac_loop_list'; # Default loop scheme unless -from 
+my $loop = 'orac_loop_list'; # Default loop scheme unless -from 
 
+my @obs;
 if (defined $opt_from) {
 
   if (defined $opt_to) {
@@ -577,7 +603,7 @@ $loop = "orac_loop_" . $opt_loop if defined $opt_loop;
 
 
 # Read recipe name
-$Override_Recipe = shift(@ARGV); # this will default to the RECIPE File method
+my $Override_Recipe = shift(@ARGV); # this will default to the RECIPE File method
 
 
 
@@ -628,12 +654,14 @@ $Override_Recipe = shift(@ARGV); # this will default to the RECIPE File method
 unless ($opt_batch) {
 
   # Loop forever
-  %Groups = ();
+  my %Groups = ();
 
   while (1) {
 
     # Return back the current frame
     # This will also configure the frame object
+    # Turn off strict
+    no strict 'refs';
     my $Frm = &{$loop}($frameobject, $opt_ut, \@obs, $opt_skip);
 
     # If frame is undefined then we assume that the data loop
@@ -671,13 +699,13 @@ unless ($opt_batch) {
   $ORAC::Basic::Batch = 1;
 
   # First loop over frames
-  @Groups = ();
-  %Groups = ();
+  my @Groups = ();
+  my %Groups = ();
 
   while (1) {
     # Return back the current frame
     # This will also configure the frame object
-    $Frm = &{$loop}($frameobject, $opt_ut, \@obs, $opt_skip);
+    my $Frm = &{$loop}($frameobject, $opt_ut, \@obs, $opt_skip);
 
     # If frame is undefined then we assume that the data loop
     # should be stopped
@@ -692,8 +720,8 @@ unless ($opt_batch) {
   }
 
   # Now loop over groups and frames
-  foreach $Grp (@Groups) {
-    foreach $Frm ($Grp->members) {
+  foreach my $Grp (@Groups) {
+    foreach my $Frm ($Grp->members) {
       orac_print ("REDUCING: ".$Frm->raw."\n","yellow");
       # Set the ORAC::Print prefix
       my $fnumber = $Frm->number;
@@ -739,6 +767,9 @@ if (defined $MW) {
 #------------------------------------------------------------------------
 
 # $Log$
+# Revision 1.58  1999/04/21 02:18:00  timj
+# use strict
+#
 # Revision 1.57  1999/04/21 00:50:23  timj
 # Pass %Mon through rather than knowing the namespace
 #
