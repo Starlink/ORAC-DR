@@ -1,0 +1,59 @@
+=head1 NAME
+
+_ALIGN_SPECTRUM_TO_STD_ - Cross correlate and shift before divide by std
+
+=head1 DESCRIPTION
+
+Cross correlates the spectrum with the standard star spectrum and shifts
+it, so as to get better atmospheric cancelation if the instrument has
+flexed between the standard and the target observations.
+
+Takes a STANDARD parameter telling it the name of the std to use.
+
+Doesn't do anything unless the group NDIMS is 1
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+=cut
+
+my $ORAC_STATUS;
+my $ndims = $Grp->uhdr("NDIMS");
+
+if($ndims == 1) {
+
+   my $std = $_ALIGN_SPECTRUM_TO_STD_{STANDARD};
+
+   if (!defined $std) {
+      die "Called _ALIGN_SPECTRUM_TO_STD_ with no std parameter\n";
+   }
+
+   my $in = $Grp->file;
+   my $base = $Grp->raw;
+   my $out = $base."_aws";    # Aligned with std
+   my $ccf = $base."_scf";    # Std cross correlation function
+
+   $Mon{'figaro1'}->obeyw("scross", "spectrum=$in template=$std record cross=$ccf xstart=min xend=max");
+
+   ($ORAC_STATUS, my $shift) = $Mon{'figaro1'}->get("scross", "shift");
+   orac_print "$ccf: Cross Correlation Function of target and standard spectra\n";
+
+   # Do a stats on the ccf
+   $Mon{'kappa_mon'}->obeyw("stats", "ndf=$ccf(~100)");
+   ($ORAC_STATUS, my $maximum) = $Mon{'kappa_mon'}->get("stats", "maximum");
+   my $string = sprintf ("%4.1f", 100*$maximum);
+   
+   # Is it reasonable
+   if ($maximum > 0.6 && $maximum < 1 && $shift < 2) {
+      # OK, we'll use it
+      orac_print "Peak of CCF (at $string %) indicates a shift of: $shift - Accepted\n";
+      $shift *= -1;
+      $Mon{'figaro1'}->obeyw("ishift", "image=$in xshift=$shift xsplit=20 ysplit=1 yshift=0 output=$out");
+      orac_print "$in to $out: shifted by $shift\n";
+      $Grp->file($out);
+   } else {
+      # We'll reject the shift - simply don't file $out as the group file
+      orac_print "Peak of CCF (at $string %) indicates a shift of: $shift - Rejected\n";
+   }
+}
