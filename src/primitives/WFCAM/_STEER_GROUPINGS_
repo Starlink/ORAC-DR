@@ -6,14 +6,16 @@
     my $ustep_i = $Frm->hdr("USTEP_I");
     my $ustep_finished = ($nustep == $ustep_i);
     $Grp->uhdr("USTEP_FINISHED",$ustep_finished);
+    $Frm->uhdr("FIRST_MEMBER_OF_CURRENT_MICROSTEP",0);
     if ($ustep_i == 1) {
         $Grp->uhdr("USTEPNUM",$Frm->hdr("OBSNUM"));
+	$Frm->uhdr("FIRST_MEMBER_OF_CURRENT_MICROSTEP",1);
     }
     $Frm->uhdr("USTEPNUM",$Grp->uhdr("USTEPNUM"));
     my $line = sprintf("This is frame: %d of %d in microstep sequence %05d\n",
-	$ustep_i,$nustep,$Grp->uhdr("USTEPNUM"));
-    $line .= "***This microstep sequence is complete!\n" if ($ustep_finished);
-    orac_print($line);
+	$ustep_i,$nustep,$Grp->uhdr("USTEPNUM")) if ($nustep > 1);
+    $line .= "***This microstep sequence is complete!\n";
+    orac_print($line) if ($ustep_finished && $nustep > 1);
 
     # Work out where you are in the current jitter sequence.  Set a flag if
     # this frame is the last one of the current jitter sequence.  NB: we have
@@ -24,11 +26,17 @@
 
     my $njitter = $Frm->hdr("NJITTER");
     my $jitter_i = $Frm->hdr("JITTER_I");
-    my $jitter_finished = ($njitter == $jitter_i && $ustep_finished);
-    $Grp->uhdr("JITTER_FINISHED",$jitter_finished);
+    my $jitter_complete = ($njitter == $jitter_i && $ustep_finished);
+    $Grp->uhdr("JITTER_COMPLETE",$jitter_complete);
+    $Frm->uhdr("FIRST_MEMBER_OF_CURRENT_JITTER",0);
+    if ($jitter_i == 1) {
+	$Grp->uhdr("JITTERNUM",$Frm->hdr("OBSNUM"));
+	$Frm->uhdr("FIRST_MEMBER_OF_CURRENT_JITTER",1);
+    }
+    $Frm->uhdr("JITTERNUM",$Frm->hdr("OBSNUM"));
     $line = sprintf("Frame in position %d of %d in jitter sequence: %05d\n",
 	$jitter_i,$njitter,$Frm->hdr("GRPNUM"));
-    $line .= "***This jitter sequence is complete!\n" if ($jitter_finished);
+    $line .= "***This jitter sequence is complete!\n" if ($jitter_complete);
     orac_print($line);
 
     # Is this the first frame of a new tile? If so then set up a counter
@@ -36,25 +44,28 @@
     # but it _is_ the first frame of a new jitter, then increment the jitter
     # counter.
 
-    my $obsnum = $Frm->hdr("OBSNUM");
     my $tilenum = $Frm->hdr("TILENUM");
-    if ($obsnum == $tilenum) {
-        $Grp->uhdr("JITTER_NUMBER",1);
-	$line = sprintf("Start of new tile: %05d\n",$Frm->hdr("TILENUM"));
-        orac_print($line);	
+    if ($tilenum == 0) {
+        $Grp->uhdr("TLEVEL",0);
     } else {
-        if ($jitter_i == 1) {
-            my $jnum = $Grp->uhdr("JITTER_NUMBER");
-            $Grp->uhdr("JITTER_NUMBER",++$jnum);
+	$Grp->uhdr("TLEVEL",1);
+	my $obsnum = $Frm->hdr("OBSNUM");
+        $Frm->uhdr("FIRST_MEMBER_OF_CURRENT_TILE",0);
+        if ($obsnum == $tilenum) {
+  	    $Grp->uhdr("JITTER_NUMBER",1);
+            $line = sprintf("Start of new tile: %05d\n",$Frm->hdr("TILENUM"));
+            orac_print($line);
+	    $Frm->uhdr("FIRST_MEMBER_OF_CURRENT_TILE",1);
+        } else {
+	    if ($Frm->uhdr("FIRST_MEMBER_OF_CURRENT_JITTER")) {
+	        my $jnum = $Grp->uhdr("JITTER_NUMBER");
+	        $Grp->uhdr("JITTER_NUMBER",++$jnum);
+	    }
         }
-    }
-
-    # If this is the fourth jitter and it's complete, then the tile is
-    # officially complete.
-
-    my $tile_finished = ($Grp->uhdr("JITTER_NUMBER") == 4 && $jitter_finished);
-    $Grp->uhdr("TILE_FINISHED",$tile_finished);
-    orac_print("***This tile sequence is complete\n") if ($tile_finished);
+        my $tile_finished = ($Grp->uhdr("JITTER_NUMBER") == 4 && $jitter_complete);
+        $Grp->uhdr("TILE_FINISHED",$tile_finished);
+        orac_print("***This tile sequence is complete\n") if ($tile_finished);
+    }    
 
 =head1 NAME
  
@@ -90,7 +101,7 @@ If set, then the current frame completes the current microstep sequence.
 The run number of the first frame in the current microstep sequence. This is
 also set in the $Frm->uhdr structure.
 
-=item JITTER_FINISHED = int
+=item JITTER_COMPLETE = int
 
 If set, then the current frame completes the current jitter (dither) sequence.
 
