@@ -1,0 +1,102 @@
+
+    # Are we allowed to continue and make the flat now?
+
+    if ($Frm->uhdr("JITTER_COMPLETE")) {
+    
+        # Do background stats on the images and scale find the relevant scale
+        # factors for the imcombine
+
+        foreach my $frm ($Grp->allmembers) {
+            my $Frm = $frm;
+            _IMSTAT_ HDRUP=1
+        }
+        _ICSCALE_
+
+	# Get some header keywords...
+
+	my $readkey = $Frm->hdrkeys("READNOISE");
+	my $gainkey = $Frm->hdrkeys("GAIN");
+	my $expkey = $Frm->hdrkeys("EXPOSURE_TIME");
+
+        # Output file name
+
+        my $outfile = "FLAT_" . $Grp->name . $Frm->rawsuffix;
+
+        # Now loop for each image extension
+
+        my $nextn = $Frm->findnsubs;
+        my $i;
+        for ($i = 1; $i <= $nextn; $i++) {
+
+            # Get a temporary file
+
+            my $tmpfil = new ORAC::TempFile;
+            my $fh = $tmpfil->handle;
+
+            # Write the names of the input files to the temporary file
+
+            foreach my $frm ($Grp->allmembers) {
+                print $fh $frm->getasubframe($i)->file . "\n";
+            }
+            $fh->close;
+
+            # Output file name specification
+
+            my $outf = sprintf("%s[%d]",$outfile,$i);
+
+            # Do the combination now...
+
+            my ($retval,$errmsg);
+            $errmsg = "";
+            $retval = cir_imcombine($tmpfil->file,$outf,"","",MEDIANCALC,0,0,
+                1,NOBPM,REJPOISSON,1,1,1,3.0,3.0,$readkey,$gainkey,$expkey,
+                $errmsg);
+            if ($retval != CIR_OK) {
+                orac_err("CIR_IMCOMBINE: failed in _TEST_WFCAM_CIRSI_FLATCOMBINE_\n$errmsg\n");
+	        return(ORAC__ERROR);
+            }
+
+            $tmpfil->DESTROY;
+        }
+
+        # Now normalise the flats to the common mean...
+
+        my $flatfrm = $Frm->new($outfile);
+        {
+            my $Frm = $flatfrm;
+            _IMSTAT_ HDRUP=1
+        }
+        my $sum = 0.0;
+        foreach $i (1 .. $nextn) {
+            $sum += $flatfrm->getasubframe($i)->uhdr("CIRMED");
+        }
+        $sum /= $nextn;
+        foreach $i (1 .. $nextn) {
+            my $errmsg = "";
+            my $retval = cir_imdivk($flatfrm->getasubframe($i)->file,
+                $sum,$errmsg);
+            if ($retval != CIR_OK) {
+                orac_err("CIR_IMDIVK: failed in _TEST_WFCAM_CIRSI_FLATCOMBINE_\n$errmsg\n");
+                return(ORAC__ERROR);
+            }
+        }
+
+        # Write some stuff to the PHU
+
+        $flatfrm->update_header("CCDMEAN",TFLOAT,$sum,"Ensemble mean background");
+        $flatfrm->update_header("WFRTYPE",TSTRING,CALFLAT,"Calibration frame type");
+        {
+            my $Frm = $flatfrm;
+            _FILE_FLAT_
+        }
+
+        # Make the CPM
+        
+        {
+            my $Frm = $flatfrm;
+            my $cpmfile = sprintf("CPM_%d%s",$Grp->name,$Frm->rawsuffix);
+            _MAKE_CONFIDENCE_MAP_ OUT=$cpmfile THRESH=5.0 NITER=2 WINDOW=1
+        }
+        
+    }
+            

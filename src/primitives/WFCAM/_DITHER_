@@ -1,0 +1,109 @@
+    # Are we ready to do this?
+
+    my $candither = $Frm->uhdr("JITTER_COMPLETE");
+
+    # If we have all the files for a dither, then let's get on with this...
+
+    if ($candither) {
+        my $dith = sprintf("dith_%d%s",$Grp->name,$Frm->rawsuffix);
+        my $dithc = sprintf("dithc_%d%s",$Grp->name,$Frm->rawsuffix);
+
+        # Do an image detection now.  
+
+	my $dstat = 0;
+        my $prefix = "t";
+	_APM_ PREFIX=$prefix PNOP=25 THRESH=-2.0 GRID=32
+
+        # Loop now for each extension and find the offsets
+
+        foreach my $i (1 .. $Frm->findnsubs) {
+
+            # Make a list of the extensions in the current group
+
+            my @current_list = ();
+            foreach my $frm ($Grp->allmembers) {
+                push @current_list,$frm->getasubframe($i);
+            }
+            my $subgrp = $Grp->new("extngrp");
+            $subgrp->allmembers(@current_list);
+
+ 	    # Get the offsets relative to the first in the list from
+ 	    # the rough WCS that _should_ be in the header by now! This
+	    # can be used as backup in case the image detection isn't 
+	    # very successful
+
+	    my (@xoffswcs,@yoffswcs);
+ 	    {
+	        my $Grp = $subgrp;
+	        _DIFFXY_WCS_
+	    }
+
+ 	    # If the image detection went OK, then match up the detected
+	    # stars to get the offsets
+
+	    my (@xoffs,@yoffs);
+	    if ($dstat == 0) {
+	        my $Grp = $subgrp;
+	        _DIFFXY_OBJS_
+	    }
+
+  	    # If there were any problems along the way, then just substitute
+	    # the offsets that we got from the WCS...
+
+	    if ($dstat) {
+	        @xoffs = @xoffswcs;
+	        @yoffs = @yoffswcs;
+	    }
+
+ 	    # Reset the offsets by the minima and add them to the headers
+	    # of the input images
+
+	    my $minx = min(@xoffs);
+	    my $miny = min(@yoffs);
+            my $i = -1;
+            foreach my $frm ($subgrp->allmembers) {
+                $i++;
+	        my $xoff = $xoffs[$i] - $minx;
+	        my $yoff = $yoffs[$i] - $miny;
+	        $frm->update_header("CIR_XOFF",TFLOAT,$xoff,"Dither offset X");
+	        $frm->update_header("CIR_YOFF",TFLOAT,$yoff,"Dither offset Y");
+                unlink $frm->uhdr("OBJTAB");
+	    }
+        }
+
+        # Now do the combination for the whole file
+
+        _DITH_COMBINE_ OUT=$dith OUTC=$dithc
+
+        # Update the WCS header of the dither to take into account the 
+        # dither shift of the first file in the list...
+
+	my $tmpFrm = $Frm->new($dith);
+        foreach my $i (1 .. $tmpFrm->findnsubs) {
+            my $ttt = $tmpFrm->getasubframe($i);
+  	    my $crpix1 = $ttt->hdr("CRPIX1");
+	    my $crpix2 = $ttt->hdr("CRPIX2");
+	    my $xoff = $ttt->hdr("CIR_XOFF");
+ 	    my $yoff = $ttt->hdr("CIR_YOFF");
+	    $crpix1 += $xoff;
+	    $crpix2 += $yoff;
+	    $ttt->update_header("CRPIX1",TDOUBLE,$crpix1,""); 
+	    $ttt->update_header("CRPIX2",TDOUBLE,$crpix2,""); 
+        }
+
+        # Put the names of the dither frames into the header structure.
+
+        $Frm->uhdr("DITHER_FRAME",$dith);
+        $Frm->uhdr("DITHER_CPM",$dithc);
+
+        # Get rid of the object tables...
+
+	foreach my $frm ($Grp->allmembers) {
+	    unlink $frm->uhdr("OBJTAB") if (-e $frm->uhdr("OBJTAB"));
+	}
+    }
+
+        
+        
+
+

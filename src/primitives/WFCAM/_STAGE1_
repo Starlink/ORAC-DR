@@ -1,0 +1,72 @@
+    # Read some parameters
+
+    my $doflat = (defined $_STAGE1_{FLATCOR} ? $_STAGE1_{FLATCOR} : 0);
+    my $dolin = (defined $_STAGE1_{LINCOR} ? $_STAGE1_{LINCOR} : 0);
+    my $dodark = (defined $_STAGE1_{DARKCOR} ? $_STAGE1_{DARKCOR} : 0);
+    my $doreset = (defined $_STAGE1_{RESETCOR} ? $_STAGE1_{RESETCOR} : 0);
+
+    # Get the file name and the number of extensions
+
+    my $fname = $Frm->file;
+    my $nextn = $Frm->findnsubs;
+
+    # Get an output file name. Delete it so that CFITSIO can start afresh...
+
+    my $tmpfil = ORAC::TempFile->new(0);
+    my $outf = $tmpfil->file;
+    unlink $outf;
+
+    # Loop for each of the extensions now...
+
+    foreach my $i (1 .. $nextn) {
+        my $subfr = $Frm->getasubframe($i);
+        my $sfname = $subfr->file;
+        my $soutf = sprintf("%s[%d]",$outf,$i);
+
+        # Set up some flags...
+
+        my $resetsrc = NORESET;
+        my ($flatsrc,$linsrc,$darksrc);
+        $flatsrc = "";
+        if ($doflat) {
+            if (! defined $subfr->hdr("FLATCOR") || $subfr->hdr("FLATCOR") !~ /^Done/) {
+                $flatsrc = sprintf("%s[%d]",$Cal->flat,$i);
+            } 
+        }
+	$linsrc = "";
+	if ($dolin) {
+	    if (! defined $subfr->hdr("LINCOR") || $subfr->hdr("LINCOR") !~ /^Done/) {
+		$linsrc = sprintf("%s[%d]",$Cal->lintab,$i);
+	    } 
+	}
+	$darksrc = "";
+	if ($dodark) {
+	    if (! defined $subfr->hdr("DARKCOR") || $subfr->hdr("DARKCOR") !~ /^Done/) {
+		$darksrc = sprintf("%s[%d]",$Cal->dark,$i);
+	    } 
+	}
+
+        # Add the name of the confidence map to the header as well...
+
+        my $cpm = sprintf("%s[%d]",$Cal->CPM,$i);
+        $subfr->update_header("CIR_CPM",TSTRING,$cpm,"Name of confidence map");
+
+	# Run stage1 one the frame
+
+	my $errmsg = "";
+	my $retval = cir_stage1($sfname,$resetsrc,$linsrc,$flatsrc,$darksrc,
+            1.0,$soutf,$errmsg);
+	if ($retval == CIR_FATAL) {
+	    orac_err("CIR_STAGE1: failed in _STAGE1_\n$errmsg\n");
+	    return(ORAC__ERROR);
+	}
+
+    }
+
+    # Now if it all went well, then swap the temporary file for the real one
+
+    if (-e $outf) {
+        unlink $Frm->file;
+        rename($outf,$Frm->file);
+    }
+

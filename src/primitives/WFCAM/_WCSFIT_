@@ -1,0 +1,192 @@
+    # Do this on a dither by dither basis...
+
+    my $got_em_all = $Frm->uhdr("JITTER_COMPLETE");
+    if ($got_em_all) {
+
+        # Get some parameters
+
+        my $catsrc = (defined $_WCSFIT_{CATSRC} ? $_WCSFIT_{CATSRC} : "usno");
+        my $catpath = (defined $_WCSFIT_{CATPATH} ? $_WCSFIT_{CATPATH} : "");
+        my $equinox = (defined $_WCSFIT_{EQUINOX} ? $_WCSFIT_{EQUINOX} : 2000);
+        my $override = (defined $_WCSFIT_{OVERRIDE} ? $_WCSFIT_{OVERRIDE} : 0);
+        my $pass = (defined $_WCSFIT_{PASS} ? $_WCSFIT_{PASS} : 2);
+
+	# Set some WCS parameter names
+
+	my %wcsparms = ('CRVAL1' => TDOUBLE,
+		        'CRVAL2' => TDOUBLE,
+  		        'CRPIX1' => TDOUBLE,
+		        'CRPIX2' => TDOUBLE,
+		        'CD1_1' => TDOUBLE,
+ 		        'CD1_2' => TDOUBLE,
+		        'CD2_1' => TDOUBLE,
+		        'CD2_2' => TDOUBLE,
+		        'CUNIT1' => TSTRING,
+		        'CUNIT2' => TSTRING,
+		        'CTYPE1' => TSTRING,
+		        'CTYPE2' => TSTRING,
+		        'WCSPASS' => TINT,
+		        'NUMBRMS' => TINT,
+		        'STDCRMS' => TDOUBLE,
+		        'PROJP1' => TFLOAT,
+		        'PROJP3' => TFLOAT
+                        'PV2_0' => TFLOAT
+                        'PV2_1' => TFLOAT
+                        'PV2_2' => TFLOAT
+                        'PV2_3' => TFLOAT);
+    
+	# Form the name of the dither file and see what sort of WCS is
+	# already present in the header.
+
+	my $dithfile = $Frm->uhdr("DITHER_FRAME");
+	my $tmpFrm = $Frm->new($dithfile);
+
+        # Loop for each image extension...
+
+        foreach my $j (1 .. $tmpFrm->findnsubs) {
+            my $ttt = $tmpFrm->getasubframe($j);
+            my $dsfile = $ttt->file;
+            my ($catbase,$retval,$ctmp);
+
+            # Does this frame have a WCS already?
+
+  	    my $wcspass = $ttt->hdr("WCSPASS");
+            $wcspass = (defined $wcspass ? $wcspass : -1);
+
+	    # Check whether to override the current WCS. If not, then
+	    # skip this image.
+
+            if ($override || ($wcspass < $pass)) {
+
+	        # If this is a first pass WCS, then do an image detection...
+
+	        my $errmsg = "";
+ 	        if ($pass == 1) {
+                    $ctmp = ORAC::TempFile->new(0);
+ 	            $catbase = $ctmp->file;
+                    unlink $catbase;
+		    $retval = cir_apm($dsfile,$catbase,"","",0,25,
+                        -2.0,64,0,$errmsg);
+		    if ($retval != CIR_OK) {
+		        orac_err("CIR_APM: Failed in _WCSFIT_ for $dsfile\n$errmsg\n");
+		        next;
+ 		    }
+	        } else {
+		    $catbase = $ttt->uhdr("DITHCAT");
+		    if (! defined $catbase) {
+                        my @fspec = $ttt->parsefname;
+		        $catbase = sprintf("%s_cat%s[%d]",$fspec[0],
+			    $fspec[2],$fspec[3]);
+		    }
+	        }
+
+	        # Dump the XY info into a temporary file
+
+                my $tmpxy = ORAC::TempFile->new;
+	        my $status = 0;
+	        my $fptr = Astro::FITS::CFITSIO::open_file($catbase,READONLY,
+                    $status);
+  	        my ($hdutype,$nrows,$col,@xval,@yval,@tval,@elval,$anynul);
+	        $fptr->movabs_hdu(2,$hdutype,$status) if ($pass == 1);
+ 	        $fptr->get_num_rows($nrows,$status);
+	        $fptr->get_colnum(CASEINSEN,"X_coordinate",$col,$status);
+	        $fptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@xval,$anynul,$status);
+	        $fptr->get_colnum(CASEINSEN,"Y_coordinate",$col,$status);
+	        $fptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@yval,$anynul,$status);
+	        $fptr->get_colnum(CASEINSEN,"Total_flux",$col,$status);
+	        $fptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@tval,$anynul,$status);
+	        $fptr->get_colnum(CASEINSEN,"Ellipticity",$col,$status);
+	        $fptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@elval,$anynul,$status);
+	        $fptr->close_file($status);
+	        $ctmp->DESTROY if ($pass == 1);
+	        if ($status != 0) {
+		    orac_err("_WCSFIT_ can't read table $catbase: status = $status\n");
+		    next;
+	        }
+                my $fh = $tmpxy->handle;
+                my $xyfile = $tmpxy->file;
+	        my $i;
+	        for ($i = 0; $i < $nrows; $i++) {
+		    next if ($elval[$i] > 0.5);
+		    print $fh "$xval[$i] $yval[$i] $tval[$i]\n";
+  	        }
+	        $tmpxy->handle->close;
+
+		# Now get some standard stars 
+
+                my $tmpstds = ORAC::TempFile->new(0);
+                my $stdsfile = $tmpstds->file;
+		unlink $stdsfile if (-e $stdsfile); 
+		$retval = cir_getstds($dsfile,$stdsfile,$catsrc,$catpath,
+		    $equinox,$errmsg);
+		if ($retval != CIR_OK) {
+		    orac_err("CIR_GETSTDS: Failed in _WCSFIT_\n$errmsg\n");
+		    next;
+		}
+
+		# Now matchem up...
+
+		my $maxsize = max($ttt->hdr("NAXIS1"),$ttt->hdr("NAXIS2"));
+		my $srad = int(0.25*$maxsize);
+                my $tmpmatch = ORAC::TempFile->new(0);
+                my $matchfile = $tmpmatch->file;
+		unlink $matchfile if (-e $matchfile);
+		my $nmatch = 0;
+		$retval = cir_matchstds($xyfile,$stdsfile,$srad,
+		    $ttt->hdr("NAXIS1"),$ttt->hdr("NAXIS2"),$matchfile,
+		    $nmatch,$errmsg);
+		if ($retval != CIR_OK) {
+		    unlink $xyfile;
+		    unlink $stdsfile;
+		    unlink $matchfile;
+		    orac_err("CIR_MATCHSTDS: Failed in _WCSFIT_\n$errmsg\n");
+		    next;
+		} elsif ($nmatch == 0) {
+		    unlink $xyfile;
+		    unlink $stdsfile;
+		    unlink $matchfile;
+		    orac_err("CIR_MATCHSTDS: Failed in _WCSFIT_\nNo objects matched\n");
+		    next;
+		}   
+
+		# Intermediate tidying
+
+                $tmpxy->DESTROY;
+                $tmpstds->DESTROY;
+
+		# Now do a plate solution
+
+		$retval = cir_platesol($dsfile,$matchfile,6,$pass,1,$errmsg);
+		if ($retval != CIR_OK) {
+		    orac_err("CIR_PLATESOL: Failed in _WCSFIT_\n$errmsg");
+		    unlink $matchfile;
+		    next;
+		}
+                $tmpmatch->DESTROY;
+
+		# If this is a second pass WCS, then update the catalogue headers
+
+		if ($pass == 2) {
+		    my $tmpFrm2 = $Frm->new($dsfile);
+		    $status = 0;
+		    my $tptr = Astro::FITS::CFITSIO::open_file($catbase,
+                        READWRITE,$status);
+		    foreach my $parm (keys %wcsparms) {
+			$status = 0;
+			my $val = $tmpFrm2->hdr($parm);
+			next if (! defined $val);
+			$tptr->update_key($wcsparms{$parm},$parm,$val,"",$status);
+		    }
+		    $tptr->close_file($status);
+		}
+	    }
+        }
+
+	# Right, now just do the WCS offsets to the individual frames...
+
+	foreach my $fr ($Grp->allmembers) {
+	    my $Frm = $fr;
+	    _WCS_OFFSETS_ DITH=$dithfile
+	}       
+    }
+
