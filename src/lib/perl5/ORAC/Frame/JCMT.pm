@@ -164,7 +164,18 @@ sub calc_orac_headers {
 
   my $ut = $date + ( $time / 24.0 );
 
+  # WVM data from header if it is there
+  my ($wvm, $wvmstdev);
+  eval {
+    require SCUBA::WVM;
+    my $file = $self->file;
+    $file .= ".sdf" unless $file =~ /sdf$/; # bizarrely
+   ($wvm, $wvmstdev) = SCUBA::WVM::wvmtau( $file );
+  };
+
   # Update the header
+  $self->uhdr( 'ORAC_WVM_TAU', $wvm );
+  $self->uhdr( 'ORAC_WVM_TAU_STDEV', $wvmstdev );
   $self->hdr('ORACTIME', $ut);
   $self->hdr('ORACUT',   $date);
 
