@@ -179,6 +179,15 @@ sub wait_for_algorithm_engines {
   } else {
     return ORAC__ERROR;
   }
+
+  if ( $Mon{ndfpack_mon}->contactw ) {
+    return ORAC__OK;
+  } else {
+    return ORAC__ERROR;
+  }
+
+
+
 }
 
 
