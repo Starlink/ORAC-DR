@@ -30,6 +30,7 @@ use strict;
 use warnings;
 use vars qw/$VERSION/;
 use ORAC::Group::UKIRT;
+use ORAC::General;
 
 # Set inheritance
 use base qw/ ORAC::Group::UKIRT /;
@@ -44,9 +45,9 @@ my %hdr = (
             GAIN                 => "GAIN",
             RA_SCALE             => "CDELT1",
             RA_TELESCOPE_OFFSET  => "TRAOFF",
-            UTDATE               => "DATE",
+            UTDATE               => "DATE-OBS",
             UTEND                => "UTEND",
-            UTSTART              => "UTSTART"
+            UT_START              => "UT"
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed
@@ -87,7 +88,7 @@ sub new {
   my $group = $class->SUPER::new(@_);
 
   # Configure it
-  $group->fixedpart('gf');
+  $group->fixedpart('gN');
   $group->filesuffix('.sdf');
 
   # return the new object
@@ -129,7 +130,8 @@ sub calc_orac_headers {
   # ORACTIME
   # For NIRI the keyword is simply UTSTART
   # Just return it (zero if not available)
-  my $time = $self->hdr('UTSTART');
+  my $time = $self->hdr('UT');
+  $time=hmstodec($time);
   $time = 0 unless (defined $time);
   $self->hdr('ORACTIME', $time);
 

@@ -19,6 +19,7 @@ use vars qw/$VERSION/;
 use ORAC::Frame::NIRI;
 use ORAC::Constants;
 use ORAC::Print;
+use ORAC::General;
 use NDF;
 use Starlink::HDSPACK qw/copobj/;
 
@@ -143,6 +144,27 @@ sub configure {
 
   # Hack
   $self->uhdr("ORAC_OBSERVATION_MODE", "imaging");
+  my $filter = $self->hdr("FILTER1");
+  $self->uhdr("ORAC_FILTER", $filter);
+
+  my $dec1 = $self->hdr("DEC");
+  my $dec2 = $self->hdr("CRVAL2");
+  my $decoff = $dec2 - $dec1;
+  $decoff *= 3600;
+
+  my $ra1 = $self->hdr("RA");
+  my $ra2 = $self->hdr("CRVAL1");
+  my $raoff = $ra2 - $ra1;
+  $raoff /= 15*cosdeg($dec1);
+  $raoff *= 3600;
+
+  $self->uhdr("ORAC_RA_TELESCOPE_OFFSET", $raoff);
+  $self->uhdr("ORAC_DEC_TELESCOPE_OFFSET", $decoff);
+
+  my $et = $self->hdr("EXPTIME");
+  my $co = $self->hdr("COADDS");
+  $et *= $co;
+  $self->uhdr("ORAC_EXPOSURE_TIME", $et);
 
   # Find the group name and set it
   $self->findgroup;
@@ -382,6 +404,38 @@ sub template {
 
 }
 
+=item B<findrecipe>
+
+I subclass this so that I don't have to have the no recipe warning each time...
+
+Method to determine the recipe name that should be used to reduce the
+observation.  The default method is to look for an "ORAC_RECIPE" entry
+in the user header. If one cannot be found, we assume QUICK_LOOK.
+
+  $recipe = $Frm->findrecipe;
+
+The object is automatically updated to reflect this recipe.
+
+=cut
+
+
+sub findrecipe {
+  my $self = shift;
+
+  my $recipe = $self->uhdr('ORAC_RECIPE');
+
+  # Check to see whether there is something there
+  # if not try to make something up
+
+  if (!defined($recipe) or $recipe !~ /./) {
+    $recipe = 'QUICK_LOOK';
+  }
+
+  # Update
+  $self->recipe($recipe);
+
+  return $recipe;
+}
 =item B<mergehdr>
 
 Method to propagate the FITS header from an HDS container to an NDF
