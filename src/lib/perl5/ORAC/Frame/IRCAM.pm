@@ -54,6 +54,7 @@ my %hdr = (
             GAIN                 => "DEPERDN",
             RA_SCALE             => "PIXELSIZ",
             RA_TELESCOPE_OFFSET  => "RAOFF",
+	    RECIPE               => "DRRECIPE",
             UTDATE               => "IDATE",
             UTEND                => "RUTEND",
             UTSTART              => "RUTSTART"
