@@ -60,9 +60,20 @@ CGS4 uses the ADAM messaging system. (ORAC::Msg::ADAM::Control)
 sub start_msg_sys {
 
   # Set ADAM environment variables
-#  $ENV{'HDS_SCRATCH'} = "/tmp";           # fix ndf2fits (etc ?)  "feature"
-$ENV{HDS_SCRATCH} = $ENV{ORAC_DATA_OUT} unless exists $ENV{HDS_SCRATCH}; 
-$ENV{'ADAM_USER'} = "/tmp/adam$$";      # process-specific adam dir
+  # process-specific adam dir
+  # use /tmp/adam$$ unless $ORAC_DATA_OUT is set
+  $ENV{'ADAM_USER'} = "/tmp/adam$$";
+  if (exists $ENV{'ORAC_DATA_OUT'} && defined $ENV{ORAC_DATA_OUT}
+      && -d $ENV{ORAC_DATA_OUT}) {
+    $ENV{'ADAM_USER'} = $ENV{'ORAC_DATA_OUT'}."/adam$$";      
+  }
+
+  # Set HDS_SCRATCH -- unless it is defined already
+  # Want to modify this variable so that we can fix some ndf2fits
+  # feature (etc ?) -- I think the problem came up when trying to convert
+  # files from one directory to another when the input directory is 
+  # read-only...
+  $ENV{HDS_SCRATCH} = $ENV{ORAC_DATA_OUT} unless exists $ENV{HDS_SCRATCH};
 
   # Create object
   my $adam = new ORAC::Msg::ADAM::Control;
