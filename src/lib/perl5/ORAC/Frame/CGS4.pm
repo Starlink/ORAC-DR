@@ -48,22 +48,23 @@ use Starlink::HDSPACK qw/copobj/;
 # Translation tables for CGS4 should go here.
 my %hdr = (
             CONFIGURATION_INDEX => "CNFINDEX",
-            DETECTOR_INDEX  => "DINDEX",
-            DETECTOR_MODE   => "DETMODE",
-            DIM1            => "DCOLUMNS",
-            DIM2            => "DROWS",
-            EXP_TIME        => "DEXPTIME",
-            GRATING_NAME    => "GRATING",
-            GRATING_ORDER   => "GORDER",
-            GRATING_WAVELENGTH => "GLAMBDA",
-            NSCAN_POSITIONS => "DETNINCR",
+            DETECTOR_INDEX      => "DINDEX",
+            DETECTOR_MODE       => "DETMODE",
+            DIM1                => "DCOLUMNS",
+            DIM2                => "DROWS",
+            EXP_TIME            => "DEXPTIME",
+            GRATING_DISPERSION  => "GDISP",
+            GRATING_NAME        => "GRATING",
+            GRATING_ORDER       => "GORDER",
+            GRATING_WAVELENGTH  => "GLAMBDA",
+            NSCAN_POSITIONS     => "DETNINCR",
             NUMBER_OF_EXPOSURES => "NEXP",
-            SCAN_INCREMENT  => "DETINCR",
-            SLIT_ANGLE      => "SANGLE",
-            SLIT_NAME       => "SLIT",
-            TDECOFF         => "DECOFF",
-            TRAOFF          => "RAOFF",
-            UTDATE          => "IDATE"
+            SCAN_INCREMENT      => "DETINCR",
+            SLIT_ANGLE          => "SANGLE",
+            SLIT_NAME           => "SLIT",
+            TDECOFF             => "DECOFF",
+            TRAOFF              => "RAOFF",
+            UTDATE              => "IDATE"
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed by
