@@ -69,7 +69,13 @@ sub findgroup {
   my $hdrgrp = $self->hdr('GRPNUM');
   my $amiagroup;
 
-  $amiagroup = 1 if ($self->hdr('GRPMEM') =~/T/);
+  if ($self->hdr('GRPMEM') =~/T/) {
+    $amiagroup = 1;
+  } elsif (!defined $self->hdr('GRPMEM')){
+    $amiagroup = 1;
+  }
+
+    
 
   # Is this group name set to anything useful
   if ($hdrgrp == 0 || $amiagroup == 0) {
@@ -78,7 +84,7 @@ sub findgroup {
     # we know are the only members of their group (eg DARK)
 
 #    if ($self->hdr('OBJECT') eq 'DARK') {
-       $hdrgrp = $self->hdr(0);
+       $hdrgrp = 0;
 #    }
 
   }
