@@ -155,24 +155,6 @@ sub _to_RA_TELESCOPE_OFFSET {
 }
 
 
-sub rotation{
-   my $self = shift;
-   my $rotangle;
-
-# Define degrees to radians conversion.
-   my $dtor = atan2( 1, 1 ) / 45.0;
-
-   if ( exists $self->hdr->{PC001001} ) {
-      my $pc11 = $self->hdr->{PC001001};
-      my $pc21 = $self->hdr->{PC002001};
-      $rotangle = $dtor * atan2( -$pc21 / $dtor, $pc11 / $dtor );
-   } else {
-      $rotangle = 180.0;
-   }
-   return $rotangle;
-}
-
-
 # This is guesswork at present.
 sub _to_DETECTOR_READ_TYPE {
    my $self = shift;
@@ -406,6 +388,21 @@ sub _from_STANDARD {
    "STANDARD",  $_[0]->uhdr( "ORAC_STANDARD" );
 }
 
+# Translate to the SLALIB name for reference frame in spectroscopy.
+sub _to_TELESCOPE {
+   my $self = shift;
+   my $telescope = "VLT1";
+   if ( exists $self->hdr->{TELESCOP} ) {
+      my $scope = $self->hdr->{TELESCOP};
+      if ( defined( $scope ) ) {
+         $telescope = $scope;
+         $telescope =~ s/ESO-//;
+         $telescope =~ s/-U//g;
+      }
+   }
+   return $telescope;
+}
+
 sub _to_UTDATE {
    my $self = shift;
 
@@ -500,6 +497,10 @@ sub _to_Y_UPPER_BOUND {
    return $self->hdr->{"HIERARCH.ESO.DET.WIN.STARTY"} - 1 + $self->hdr->{"HIERARCH.ESO.DET.WIN.NY"};
 }
 
+# Supplementary methods for the translations
+# ------------------------------------------
+
+# Returns the UT time of observation in decimal hours.
 sub get_UT_hours {
    my $self = shift;
 
@@ -518,6 +519,24 @@ sub get_UT_hours {
 
 # Convert from seconds to decimal hours.
    return $startsec / 3600.0;
+}
+
+# Derives the rotation angle from the rotation matrix.
+sub rotation{
+   my $self = shift;
+   my $rotangle;
+
+# Define degrees to radians conversion.
+   my $dtor = atan2( 1, 1 ) / 45.0;
+
+   if ( exists $self->hdr->{PC001001} ) {
+      my $pc11 = $self->hdr->{PC001001};
+      my $pc21 = $self->hdr->{PC002001};
+      $rotangle = $dtor * atan2( -$pc21 / $dtor, $pc11 / $dtor );
+   } else {
+      $rotangle = 180.0;
+   }
+   return $rotangle;
 }
 
 
