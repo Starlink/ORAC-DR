@@ -40,7 +40,7 @@ use vars qw/$VERSION/;
 
 # Use POSIX so that I can get log10 support
 # I realise that I can create a log10 function via natural logs
-use POSIX qw/log10/;
+use POSIX qw//;
 
 
 =head1 SUBROUTINES
