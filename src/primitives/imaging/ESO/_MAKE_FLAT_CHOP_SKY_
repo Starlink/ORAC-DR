@@ -18,10 +18,9 @@
 # Notes:
 #    -  This primitive is suitable for ESO near infra-red imagers.
 #    -  Processing only occurs when the steering header TARGET_OR_SKY
-#    is "sky".
-#    -  The work is done by _MASK_DEVIANTS_, _NORMALISE_TO_MODE_EXTENDED_,
-#    and _MAKE_FLAT_FROM_NORMALISED_CHOP_SKY_ primitives to make the
-#    unmasked flat.
+#    is "sky", and when the flat has not be specified already.
+#    -  Primitives _MASK_DEVIANTS_, _NORMALISE_TO_MODE_EXTENDED_, and
+#    _MAKE_FLAT_FROM_NORMALISED_CHOP_SKY_ make the unmasked flat.
 #    -  For masking frame normalisation is with respect to a reference
 #    level of the first frame, stored in the first frame's internal header 
 #    REFERENCE_LEVEL.  If this is not defined, as would be the case on
@@ -35,17 +34,22 @@
 #    be reset at the end, for determining sky levels.  After masking
 #    the original sky frames are restored for determining correct sky
 #    levels.
+#    -  The original bad pixels in the initial flat are retained and
+#    later combined with the object masking.
 #
 # Output Data:
-#    None.  However, the invoked primitives do create new frames.  The
-#    bottom line is that a flat field frame is filed and indexed.
-#    Various intermediate frames are normally removed by a tidy primitive.
+#    -  The invoked primitives create new frames.  The bottom line is that
+#    a flat field frame is filed and indexed.  Various intermediate frames
+#    are normally removed by a tidy primitive.
+#    -  A map of the original bad pixels in the flat, and a flat with
+#    original bad pixels and objects masked, having the name of the flat
+#    with _bpm and _fm suffices respectively.
 
 # Authors:
 #    MJC: Malcolm J. Currie (JAC, Starlink)
 #
 # Copyright:
-#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 #
 #-
@@ -67,9 +71,6 @@
 # Test whether or not this is an object frame or a sky frame. 
     my $class = $Frm->uhdr( "TARGET_OR_SKY" );
 
-# Only perform this on sky frames.  This is an added check for all but
-# _MASK_DEVIANTS_.  The other primitives called ought to do this for
-# themselves.
     my ( @sky_names, $template );
 
 # Select the sky frame members in the current cycle.
@@ -78,9 +79,16 @@
     my $skyGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno,
                             TARGET_OR_SKY => "sky" );
 
+# Determine whether or not there is a predefined flat frame specified.
+    my $create_flat = $Cal->flatnoupdate();
+
 # Prepare frames before combination.
 # ==================================
-    if ( $class eq "sky" ) {
+
+# Only perform this on sky frames.  This is an added check for all but
+# _MASK_DEVIANTS_.  The other primitives called ought to do this for
+# themselves.
+    if ( $class eq "sky" & $create_flat ) {
 
 # Mask deviant pixels, such as cosmic rays, from the sky frame.
        _MASK_DEVIANTS_
@@ -99,6 +107,7 @@
 
 # Make the initial flat field.  
 # ============================
+    if ( $create_flat ) {
 
 # Any faint sources present will bias the initial flat field.  These
 # are allowed for later.
@@ -108,19 +117,19 @@
 # flat, irrespective of whether  the last frame is of the sky or of the
 # target, we have to use the last sky-group frame temporarily, and ensure
 # that its MAKE_FLAT flag is enabled. 
-    if ( $Frm->uhdr( "MAKE_FLAT" ) ) {
-       my $Frm = $skyGrp->frame( -1 );
-       $Frm->uhdr( "MAKE_FLAT", 1 );
-       _MAKE_FLAT_FROM_NORMALISED_CHOP_SKY_
-    }
+       if ( $Frm->uhdr( "MAKE_FLAT" ) ) {
+          my $Frm = $skyGrp->frame( -1 );
+          $Frm->uhdr( "MAKE_FLAT", 1 );
+          _MAKE_FLAT_FROM_NORMALISED_CHOP_SKY_
+       }
 
 # Define the reference level for object masking.
 # ==============================================
-    my $_NORMALISE_TO_MODE_refmode;
+       my $_NORMALISE_TO_MODE_refmode;
 
 # Test whether or not it is time to mask objects.  Use global
 # argument first, then frame by frame.
-    if ( $mask_obj && $Frm->uhdr( "MAKE_FLAT" ) ) {
+       if ( $mask_obj && $Frm->uhdr( "MAKE_FLAT" ) ) {
 
 # If object masking is applied, biases can be introduced in the flat,
 # as the objects move to different locations on the detector each with
@@ -147,123 +156,124 @@
 # _NORMALISE_TO_MODE_refmode includes the _NORMALISE_TO_MODE_ primitive,
 # and so we don't have to pass parameters down two levels.  The name
 # is therefore chosen to avoid potential clashes.
-       if ( $skyGrp->num > 0 ) {
+          if ( $skyGrp->num > 0 ) {
 
 # Recall the reference level from the reference frame within the group.
-          my $refFrm = $skyGrp->frame( 0 );
-          $_NORMALISE_TO_MODE_refmode = $refFrm->uhdr( "REFERENCE_LEVEL" );
+             my $refFrm = $skyGrp->frame( 0 );
+             $_NORMALISE_TO_MODE_refmode = $refFrm->uhdr( "REFERENCE_LEVEL" );
 
 # Find the clipped mean (effectively the mode) for the reference
 # frame if it's not already determined.  Make the reference frame the
 # current frame temporarily.  Store the value for later frames.
-          if ( ! ( defined $_NORMALISE_TO_MODE_refmode ) ) {
-             my $Frm = $refFrm;
-             _CLIPPED_STATS_
-             $_NORMALISE_TO_MODE_refmode = $_CLIPPED_STATS_{MEAN};
-          }
+             if ( ! ( defined $_NORMALISE_TO_MODE_refmode ) ) {
+                my $Frm = $refFrm;
+                _CLIPPED_STATS_
+                $_NORMALISE_TO_MODE_refmode = $_CLIPPED_STATS_{MEAN};
+             }
 
 # We need now to restore the sky filenames as they were prior to
 # normalisation.  Recall the template sky name for this.
-          $template = $Grp->uhdr( "SKY_TEMPLATE" );
-          $skyGrp->template( $template );
-       }
+             $template = $Grp->uhdr( "SKY_TEMPLATE" );
+             $skyGrp->template( $template );
+          }
 
 # Mask objects.
 # =============
 
 # Record the group members at this point.
-       @sky_names = $skyGrp->membernames;
+          @sky_names = $skyGrp->membernames;
 
 # The group for the primitives below becomes the group of sky frames.
-       my $Grp = $skyGrp;
+          my $Grp = $skyGrp;
 
 # Apply the self-flat field to the sky frames.
-       _DIVIDE_BY_FLAT_FROM_GROUP_
+          _DIVIDE_BY_FLAT_FROM_GROUP_
 
 # Obtain the bad pixels in the flat.
-       my $inflat = $Cal->flat;
-       my $flatmask = $inflat . "_bpm";
-       my $param = "in=$inflat out=$flatmask scalar=0 title=!";
-       $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
+          my $inflat = $Cal->flat;
+          my $flatmask = $inflat . "_bpm";
+          my $param = "in=$inflat out=$flatmask scalar=0 title=!";
+          $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
 
 # Report the processing status.
-       orac_print "Made a mask of bad pixels in the original flat.\n";
+          orac_print "Made a mask of bad pixels in the original flat.\n";
 
-       my $maskobjects = 1;
-       my ( @maskfiles, @masked_names, $maskfile, $file );
-       if ( $maskobjects ) {
+          my $maskobjects = 1;
+          my ( @maskfiles, @masked_names, $maskfile, $file );
+          if ( $maskobjects ) {
 
 # Create an array to store the names of the mask files. 
-          @maskfiles = ();
+             @maskfiles = ();
 
 # Compute a mask of the objects for each member of the sky flat-field
 # group, using a local $Frm.
-          foreach $Frm ( $Grp->members ) {
-             _MAKE_OBJECTS_MASK_
+             foreach $Frm ( $Grp->members ) {
+                _MAKE_OBJECTS_MASK_
 
 # Record the mask filename into an array.
-             push ( @maskfiles, $_MAKE_OBJECTS_MASK_{MASKFILE} );
-          }
+                push ( @maskfiles, $_MAKE_OBJECTS_MASK_{MASKFILE} );
+             }
 
 # Create an array to store the names of the masked datasets. 
-          @masked_names = ();
+             @masked_names = ();
 
 # Mask the objects in each frame.  Make a copy of the @sky_names
 # so we can shift its elements.  Again use a local $Frm.
-          my @local_sky_names = @sky_names;
-          foreach $Frm ( $Grp->members ) {
-             $file = shift( @local_sky_names );
-             $maskfile = shift( @maskfiles );
-             $Frm->file( $file );
+             my @local_sky_names = @sky_names;
+             foreach $Frm ( $Grp->members ) {
+                $file = shift( @local_sky_names );
+                $maskfile = shift( @maskfiles );
+                $Frm->file( $file );
 
 # Normalise the frames to each other.
-             _NORMALISE_TO_MODE_
+                _NORMALISE_TO_MODE_
 
 # Mask the objects.  Use a 120% enlargement factor.
-             _MASK_OBJECTS_ MASKFILE=$maskfile ENLARGE=1.2
+                _MASK_OBJECTS_ MASKFILE=$maskfile ENLARGE=1.2
 
 # Add the mask which comprises bad pixels and zero elsewhere.
 # Apply bad-pixel mask of the first flat field.
-             ( my $in, my $out ) = $Frm->inout( "_fm" );
-             my $param = "in1=$in out=$out in2=$flatmask title=!";
-             $Mon{ "kappa_mon" }->obeyw( "add", "$param" );
+                ( my $in, my $out ) = $Frm->inout( "_fm" );
+                my $param = "in1=$in out=$out in2=$flatmask title=!";
+                $Mon{ "kappa_mon" }->obeyw( "add", "$param" );
 
 # Report the processing status.
-             orac_print "Applied the bad pixels in the original flat to make $out.\n\n";
+                orac_print "Applied the bad pixels in the original flat to make $out.\n\n";
 
 # Record the new file name in the frame object.
-             $Frm->file( $out );
+                $Frm->file( $out );
 
 # Record the masked (or unmasked file if the masking has failed)
 # filename into an array.
-             push ( @masked_names, $Frm->file );
-          }
+                push ( @masked_names, $Frm->file );
+             }
 
 # Remove the flat-field bad-pixel mask.
-          _DELETE_A_FRAME_ FRAME=$flatmask
+             _DELETE_A_FRAME_ FRAME=$flatmask
 
 # Set the group names to be the masked ones to form improved flat field.
-          $Grp->membernames( @masked_names );
+            $Grp->membernames( @masked_names );
 
-# Make and apply the improved flat field.
-# =======================================
+# Make the improved flat field.
+# =============================
 
 # Generate the new flat field using the jittered masked frames.
 # _MAKE_FLAT_FROM_NORMALISED_GROUP_ will expect steering header
 # MAKE_FLAT to be true, but here it's not because we're dealing
 # with the sky frames, not target.  Perhaps the steering primitive
 # can be improved.
-          {
-             my $Frm = $skyGrp->frame( $skyGrp->num );
-             $Frm->uhdr( "MAKE_FLAT", 1 );
-             _MAKE_FLAT_FROM_NORMALISED_GROUP_ 
+             {
+                my $Frm = $skyGrp->frame( $skyGrp->num );
+                $Frm->uhdr( "MAKE_FLAT", 1 );
+                _MAKE_FLAT_FROM_NORMALISED_GROUP_ 
+             }
           }
        }
-    }
    
 # Restore the sky filenames as they were prior to normalisation.
-    if ( $mask_obj && $Frm->uhdr( "MAKE_FLAT" ) ) {
-       $skyGrp->membernames( @sky_names );
+       if ( $mask_obj && $Frm->uhdr( "MAKE_FLAT" ) ) {
+          $skyGrp->membernames( @sky_names );
+       }
     }
 
 # Podule
@@ -291,14 +301,15 @@ This primitive is suitable for ESO near infra-red imagers.
 
 =item *
 
-Processing only occurs when the steering header TARGET_OR_SKY is "sky".
+Processing only occurs when the steering header TARGET_OR_SKY is
+"sky", and when the flat has not be specified already.
 
 =item *
 
-The work is done by L<_MASK_DEVIANTS_|_MASK_DEVIANTS_>,
+Primitives L<_MASK_DEVIANTS_|_MASK_DEVIANTS_>,
 L<_NORMALISE_TO_MODE_EXTENDED_|_NORMALISE_TO_MODE_EXTENDED_>, and
 L<_MAKE_FLAT_FROM_NORMALISED_CHOP_SKY_|_MAKE_FLAT_FROM_NORMALISED_CHOP_SKY_>
-primitives to make the unmasked flat.
+make the unmasked flat.
 
 =item *
 
@@ -324,13 +335,30 @@ be reset at the end, for determining sky levels.  After masking
 the original sky frames are restored for determining correct sky
 levels.
 
+=item *
+
+The original bad pixels in the initial flat are retained and
+later combined with the object masking.
+
 =back
 
 =head1 OUTPUT DATA
 
-None.  However, the invoked primitives do create new frames.  The
-bottom line is that a flat field frame is filed and indexed.
-Various intermediate frames are normally removed by a tidy primitive.
+=over 4
+
+=item *
+
+The invoked primitives create new frames.  The bottom line is that
+a flat field frame is filed and indexed.  Various intermediate frames
+are normally removed by a tidy primitive.
+
+=item *
+
+A map of the original bad pixels in the flat, and a flat with
+original bad pixels and objects masked, having the name of the flat
+with _bpm and _fm suffices respectively.
+
+=back
 
 =head1 AUTHORS
 
@@ -338,7 +366,7 @@ MJC: Malcolm J. Currie (JAC, Starlink)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
