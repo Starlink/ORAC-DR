@@ -33,7 +33,9 @@ use vars qw/$VERSION @EXPORT @ISA $CONVERT/;
 @ISA = qw/Exporter/;
 @EXPORT = qw/orac_process_frame orac_store_frm_in_correct_grp /;
 
-$VERSION = '0.10';
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+
+
 
 =head1 SUBROUTINES
 
@@ -42,16 +44,16 @@ The following subroutines are available:
 =over 4
 
 
-=item orac_store_frm_in_correct_grp
+=item B<orac_store_frm_in_correct_grp>
 
 Stores the supplied frame into a Grp (usually specified in the Frame),
 creating a new Group object if necessary. The Group objects are stored
 in a hash (reference supplied) and, optionally, an array (unless undef).
 This is so that Groups can be retrieved in the order in which they
 were created. The GrpType specifies the type of Group that should be
-created (eg ORAC::Group::UFTI, ORAC::Group::JCMT etc). The UT
-is supplied purely so that the Group can be named (using the file_from_bits
-method).
+created (eg B<ORAC::Group::UFTI>, B<ORAC::Group::JCMT> etc). The UT
+is supplied purely so that the Group can be named (using the 
+file_from_bits() method).
 
   orac_store_frm_in_correct_grp($Frm, $GrpType, \%Groups, \@Groups, $ut);
   orac_store_frm_in_correct_grp($Frm, $GrpType, \%Groups, undef, $ut);
@@ -122,9 +124,9 @@ sub orac_store_frm_in_correct_grp {
 }
 
 
-=item orac_process_frame
+=item B<orac_process_frame>
 
-This is the core ORAC-DR pipeline processing routine.
+This is the core B<ORAC-DR> pipeline processing routine.
 It processes the supplied frame object that belongs to the group object,
 using the supplied calibration object. The instrument name and default
 recipe are required for recipe/primitive reading since recipes and
@@ -155,7 +157,7 @@ sub orac_process_frame {
     unless ref($Mon) eq 'HASH';
 
   # Store the header of the current frame in the calibration object
-  $Cal->thing($Frm->header);
+  $Cal->thing($Frm->hdr);
 
   #
   # at this point the recipe method should be queried if it hasn't
@@ -207,6 +209,10 @@ sub orac_process_frame {
 }
 
 =back
+
+=head1 REVISION
+
+$Id$
 
 =head1 AUTHORS
 
