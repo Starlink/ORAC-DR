@@ -627,8 +627,108 @@ sub reduce {
   my $self = shift;
 
   return $self->frame($self->num);
+  
+}
+
+
+=item subgrp
+
+Method to return a new group (ie a subgrp of the existing
+group) that contains all members of the main group matching
+certain header values.
+
+Arguments is a hash that is used for comparison with each
+frame.
+
+  $subgrp = $Grp->subgrp(NAME => 'CRL618', CHOP=> 60.0);
+
+The new subgrp is blessed into the same class as $Grp.
+
+This method is generally used where access to members of the
+group by some search criterion is required.
+
+It is possible that the returned group will contain no 
+members....
+
+=cut
+
+sub subgrp {
+  my $self = shift;
+
+  # Read the input hash
+  my %hash = @_;
+
+  # Create a new grp
+  my $subgrp = $self->new($self->name . "subgrp");  
+
+  # Now loop over all members of the group and compare with
+  # the hash
+  foreach my $member (@{$self->aref}) {
+
+    my $match = 1;  # Assume a match
+
+    # We are doing a string comparison
+    foreach my $key (%hash) {
+      unless ($hash{$key} eq $member->hdr($key)) {
+        $match = 0;
+        last;
+      }
+    }
+
+    # If we have matched all keys then we push onto subgrp
+    $subgrp->push($member) if $match;
+
+  }
+
+  return $subgrp;
 
 }
+
+
+=item subgrps
+
+Returns frames grouped by the supplied header keys.
+A frame can not be in more than one subgroup.
+
+   @grps = $Grp->subgrps(@keys);
+
+The groups in @grps are blessed into the same class as $Grp.
+For example, if @keys = ('MODE','CHOP') then you can gurantee
+that the members of each sub group will have the same values
+for MODE and CHOP. 
+
+=cut
+
+sub subgrps {
+  my $self = shift;
+  my @keys = @_;
+  
+  # We can create a unique key in a hash for the header values
+  # specified. So create a temporary hash.
+  my %store = ();
+  
+  # Loop over all members of current group
+
+  foreach my $member (@{$self->aref}) {
+    # Create a key
+    my $key = "";
+    foreach my $hdr (@keys) {
+      $key .= $member->hdr($hdr);
+    }
+
+    # Now see whether this key already exists in the hash
+    # if it doesnt we populate it with a group object
+    $store{$key} = $self->new() unless exists $store{$key};
+    
+    # Store the frame
+    $store{$key}->push($member);
+    
+  }
+
+  # Return the values
+  return values %store;  
+}
+
 
 
 =back
