@@ -1,0 +1,187 @@
+# Name:
+#    _FORM_SKY_LEVELS_
+#
+# Purpose:
+#    Determines the modal sky level for the sky frames in the current
+#    group.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive is for EXTENDED_nxm and CHOP_SKY_JITTER recipes.
+#    For each sky frame in the current group, it stores the modal
+#    sky level in an array called SKY_LEVELS stored by reference
+#    within the reference frame for the current cycle.  This array
+#    is created for first sky frame in a cycle of the recipe.  The
+#    levels stored in SKY_LEVELS are used by primitive
+#    _SUBTRACT_SKY_EXTENDED_ and _SUBTRACT_SKY_CHOP_SKY_ to
+#    interpolate sky contributions in the target frames.
+
+# Notes:
+#    -  This primitive is suitable for infrared imaging.
+#    -  Processing only occurs for object and sky frames, and when the
+#    steering header SUBTRACT_SKY is true.
+#    -  The SKY_LEVELS array is initialiased in the reference frame,
+#    losing any existing SKY_LEVELS array as may have been used for
+#    flat-field creation.
+#    -  The mode is calculated for all the sky frames within the
+#    current cycle, as given by steering headers TARGET_OR_SKY='sky' 
+#    and CYCLE_NUMBER respectively.
+#    -  The reference frame is given by the group steering header
+#    REFERENCE_FRAME for thre current recipe cycle.
+#    -  Clips at 2, 2.5, 3, and 3 sigma to derive the mode.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Imports:
+#    _CLIPPED_STATS_                      : RESULT
+#
+# Copyright:
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Selection
+# =========
+
+# Test whether or not this is an object or sky frame.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ) {
+
+# Test whether or not it is time to subtract sky values.  Note this should
+# only be set in the steering file when creating a mosaic.
+       my $skysub = $Frm->uhdr( "SUBTRACT_SKY" );
+       if ( $skysub ) {
+
+# Obtain the cycle number.  Default to zero if undefined, so that recipes
+# which do not support this feature will continue to work.
+          my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+          $cycleno = defined( $cycleno ) ? $cycleno : 0;
+                    
+# Form a subgroup comprising all the sky frames within the current
+# cycle.
+          my $skyGrp = $Grp->subgrp( TARGET_OR_SKY => "sky",
+                                     CYCLE_NUMBER => $cycleno );
+
+# Find the reference frame for this cycle.
+# ========================================
+
+# Form the group comprising the reference frames for all recipe cycles.
+          my $refGrp = $Grp->subgrp( REFERENCE_FRAME => 1 );
+
+# Obtain the reference Frame for the curent cycle.
+          my $refFrm = $refGrp->frame( $cycleno );
+
+# Reinitialise the SKY_LEVELS array.
+          my $skyref = $refFrm->uhdr( "SKY_LEVELS" );
+          $skyref = [];
+          $refFrm->uhdr( "SKY_LEVELS", $skyref );
+
+# Determine the mode for all the sky frame sin the current cycle.
+# ===============================================================
+          foreach $Frm ( $skyGrp->members ) {
+             my $in = $Frm->file;
+
+# Find the clipped mean (effectively the mode) for the frame.
+             _CLIPPED_STATS_ CLIP=2,2.5,3,3
+             my $mode = $_CLIPPED_STATS_{MEAN};
+
+# Format to a sensible number of decimal places for output.
+             my $fs_mode = sprintf( "%.4f", $mode );
+
+# Determine whether or not this is the first sky frame, and hence whether or
+# not a reference mode is needed.  We need a global variable to store
+# this value, and the only one we have available for the first frame
+# is the frame header.  There is no group header.
+             my $refframe = $Frm->uhdr( "REFERENCE_FRAME" );
+             if ( $refframe ) {
+                $Frm->uhdr( "REFERENCE_SKY", $mode );
+                orac_print "Mode for reference frame $in is $fs_mode\n";
+
+             } else {
+
+# Report the processing status.
+                orac_print "Modal sky for frame $in is $fs_mode\n";
+             }
+
+# Record the sky level for later sky subtraction.  Need to retain a reference
+# to the hash to preserve it between frames.  Create the array as
+# needed.
+             my $skyref = $refFrm->uhdr( "SKY_LEVELS" );
+             unless ( defined $skyref ) {
+                $skyref = [];
+                $refFrm->uhdr( "SKY_LEVELS", $skyref );
+             }
+             push( @$skyref, $mode );
+          }
+       }
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_FORM_SKY_LEVELS_ -- Determines the modal sky level for the sky frames in the current group.
+
+=head1 DESCRIPTION
+
+This primitive is for EXTENDED_I<n>xI<m> and CHOP_SKY_JITTER recipes.
+For each sky frame in the current group, it stores the modal
+sky level in an array called SKY_LEVELS stored by reference
+within the reference frame for the current cycle.  This array
+is created for first sky frame in a cycle of the recipe.  The
+levels stored in SKY_LEVELS are used by primitive
+L<_SUBTRACT_SKY_CHOP_EXTENDED_|_SUBTRACT_SKY_CHOP_EXTENDED_> and
+L<_SUBTRACT_SKY_CHOP_SKY_|_SUBTRACT_SKY_CHOP_SKY_> to
+interpolate sky contributions in the target frames.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for infrared imaging.
+
+=item *
+
+Processing only occurs for object and sky frames, and when the
+steering header SUBTRACT_SKY is true. 
+
+=item *
+
+The SKY_LEVELS array is initialiased in the reference frame,
+losing any existing SKY_LEVELS array as may have been used for
+flat-field creation.
+
+=item *
+
+The mode is calculated for all the sky frames within the
+current cycle, as given by steering headers TARGET_OR_SKY='sky'
+and CYCLE_NUMBER respectively.
+
+=item *
+
+The reference frame is given by the group steering header
+REFERENCE_FRAME for thre current recipe cycle.
+
+=item *
+
+Clips at 2, 2.5, 3, and 3 sigma to derive the mode.
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
