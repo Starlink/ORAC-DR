@@ -495,6 +495,7 @@ sub orac_loop_flag {
   if ($@) {
     # that failed. This may indicate a sync issue so pause
     # for a couple of seconds and retry without the eval
+    orac_warn "Error loading file for observation $obsno. Sleeping for 2 seconds...\n";
     orac_sleep(2);
     $Frm = link_and_read($class, $utdate, $obsno, 1);
   }
