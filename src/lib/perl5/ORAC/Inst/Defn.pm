@@ -972,6 +972,10 @@ sub orac_determine_initial_algorithm_engines {
     @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg
       ccdpack_res /;
 
+  } elsif ($inst =~ /^WFCAM/) {
+
+    @AlgEng = qw/ convert_mon /;
+
   } elsif ($inst eq 'INGRID') {
 
     @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg

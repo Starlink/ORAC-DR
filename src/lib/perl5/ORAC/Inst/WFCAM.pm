@@ -44,12 +44,14 @@ WFCAM uses only cirdr routines, so no algorithm engines are needed.
 =cut
 
 sub start_algorithm_engines {
-    my ($null);
-
-    # Just return a null string
-
-    $null = {};
-    return $null;
+  my $self = shift;
+ 
+  # Retrieve algorithm requirements.
+  my @engines = orac_determine_initial_algorithm_engines("WFCAM");
+ 
+  # And launch them.
+  return $self->_launch_algorithm_engines( @engines );
+ 
 
 }
 
