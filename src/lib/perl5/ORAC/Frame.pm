@@ -705,6 +705,7 @@ sub calc_orac_headers {
   # First attempt is to use Astro::FITS::HdrTrans
   my %trans;
   eval {
+    die "HdrTrans not yet enabled\n";
     # we do have the advantage over HdrTrans in that we know
     # the instrument translation table to use via ORAC_INSTRUMENT
     # and this frame class. We may need to add a Frame instrument method
