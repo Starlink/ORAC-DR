@@ -8,9 +8,10 @@ ORAC::Inst::IRCAM - ORAC description of IRCAM
 
   use ORAC::Inst::IRCAM;
 
-  start_msg_sys;
-  start_algorithm_engines;
-
+  @messys = start_msg_sys;
+  %Mon = start_algorithm_engines;
+  $status = &wait_for_algorithm_engines;
+ 
 
 =head1 DESCRIPTION
 
@@ -53,7 +54,7 @@ Starts the messaging system infrastructure so that monoliths
 can be contacted. Returns an array of objects associated
 with the messaging systems.
 
-SCUBA uses the ADAM messaging system. (ORAC::Msg::ADAM::Control)
+IRCAM uses the ADAM messaging system. (ORAC::Msg::ADAM::Control)
 
 =cut
 
@@ -109,7 +110,8 @@ started. Wait until contact can be made or timeout is reached.
 Return ORAC__OK if everything works; ORAC__ERROR if
 a timeout.
 
-The messaging system must be running.
+The messaging system must be running and the algorithm engine objects
+must have been created via start_algorithm_engines().
 
 =cut
 
