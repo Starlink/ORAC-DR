@@ -1,50 +1,128 @@
 # -*- perl -*-
+
 #+
+# Name:
 # _IFU_EXTRACT_SLICES_
 #
-# Extracts the slices from a raw IFU frame and shifts them in x
-# to the nearest pixel or so using the positions and shifts written
-# into the headers by _IFU_LOCATE_SLICES_
+# Purpose:
+#    Extracts, re-orders and approximately aligns slices from an IFU frame
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive takes an IFU frame with user headers giving the position 
+#    of each slice and the shifts that need to be applied to each slice to 
+#    align them in the spectral and spatial (y) direction. The individual 
+#    slices are extracted and shifted in x (spectral direction) to the nearest
+#    pixel (no resampling). The slices are read and written into the new array
+#    in the order in which they are given in the headers which (for correct 
+#    construction of the data cube later in the pipeline) should be the order 
+#    that they are in on the sky rather than the order of the slice images on 
+#    the array.
+#
+# Notes:
+#    - This primitive is written for the UIST IFU.
+#    - The locations of the slices and the shifts which should be applied are
+#      obtained from the user headers ifu_start, ifu_end, ifu_xshift and
+#      ifu_yshift. Each of these is an array with an element for each slice
+#    - the number of slices should be in the IFU_slices user header.
+#    - The alignment is done only to the nearest pixel, so no resampling.
+#
+# Output Data:
+#    - Frame with all the slices aligned in the x (dispersion) direction to
+#      within ~1 pixel and reordered to reflect their spatial location rather
+#      than the order of the slice images on the array. The new slice 
+#      positions, x-shifts of 0 and the y-shifts are written into the output
+#      frame user header.
+#    - Output frame has _ifu suffix
+#
+# Tasks:
+#    ndfpack_mon: ndfcopy, setorigin, erase, setbound, ndftrace
+#    kappa_mon: paste
+#
+# Authors:
+#    SPT: Stephen P. Todd (Edinburgh University/UKATC)
+#
+# Copyright:
+#    Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
 #-
 
 (my $in, my $out) = $Frm->inout( "_ifu" );
 
-# Number of slices
-my $n_slices = $Frm->uhdr("IFU_slices");
-
-
 # We're going to need some temporary files
 use ORAC::TempFile;
 
-# Initialise some variables
-my $param;
-my $y_off = 1;
-my $slice;
-my $flag = 0;
+# Initialise some variables. 
 
-# and some temporary files
-my $tmp1=new ORAC::TempFile;
-my $tmp_paste = $tmp1->file;
-my $tmp2 = new ORAC::TempFile;
-my $tmp_slice = $tmp2->file;
+# param just used to pass parametets to tasks
+my $param;
+
+# y_off stores the y origin which should be used to paste the
+# next slice into the final frame. Initially y_off = 1
+my $y_off = 1; 
+
+# We'll put the new ystart and yend values into @y1 and @y2 respectively, 
+# then write them into the output frame.
 my @y1;
 my @y2;
+
+# We'll put the yshifts into @yshift, then write them back into the
+# output frame (they don't change)
 my @yshift;
 
-for (my $n = 1; $n <= $n_slices; $n++) {
-    # Find the nth slice
+# and create some temporary files
+my $tmp_paste = new ORAC::TempFile->file;
+my $tmp_slice = new ORAC::TempFile->file;
 
-    my $ystart = $Frm->uhdr("IFU_start_$n");
-    my $yend = $Frm->uhdr("IFU_end_$n");
-    my $xshift = $Frm->uhdr("IFU_xshift_$n");
-    $yshift[$n] = $Frm->uhdr("IFU_yshift_$n");
-    
+
+
+# Get number of slices and check that the user headers have been defined 
+my $n_slices = $Frm->uhdr("IFU_slices");
+unless (defined $n_slices) {
+    orac_throw "uhdr IFU_slices undefined.\n" .
+	"This should probably have been written by _LOCATE_SLICES_.\n";
+}
+
+
+# Loop over all slices
+for my $n (0..($n_slices-1)) {
+    # Find the start, end, xshift and yshift of each slice from the uhdr which 
+    # should have been written by _LOCATE_SLICES_ (and check that they're 
+    # defined).
+
+    my $ystart = $Frm->uhdr->{"IFU_start"}->[$n];
+    unless (defined $ystart) {
+	orac_throw "uhdr IFU_start[$n] undefined.\n" .
+	    "Something wrong in _LOCATE_SLICES_ ?\n";
+    }
+
+    my $yend = $Frm->uhdr->{"IFU_end"}->[$n];
+    unless (defined $yend) {
+	orac_throw "uhdr IFU_yend[$n] undefined.\n" .
+	    "Something wrong in _LOCATE_SLICES_ ?\n";
+    }
+
+    my $xshift = $Frm->uhdr->{"IFU_xshift"}->[$n];
+    unless (defined $xshift) {
+	orac_throw "uhdr IFU_xshift[$n] undefined.\n" .
+	    "Something wrong in _LOCATE_SLICES_ ?\n";
+    }
+
+    $yshift[$n] = $Frm->uhdr->{"IFU_yshift"}->[$n];
+    unless (defined $yshift[$n]) {
+	orac_throw "uhdr IFU_yshift[$n] undefined.\n" .
+	    "Something wrong in _LOCATE_SLICES_ ?\n";
+    }
+
     # Keep the user aware of progress
     orac_print "Extracting slice. y1=$ystart  y2=$yend \n";
     
     # Copy the area of the input frame containing the required slice
     # to a temporary file.
-    $param = "in=$in(1:1024,$ystart:$yend) out=$tmp_slice title=IFU";
+    $param = "in=$in(1:1024,$ystart:$yend) out=$tmp_slice";
     $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
    
     # Set its origin so that we can paste it into our output frame
@@ -55,7 +133,7 @@ for (my $n = 1; $n <= $n_slices; $n++) {
     # If this is not the first slice then paste it onto what we've
     # already got (stored in the other temporary file) and write it
     # to $out.
-    if ($flag) { 
+    if ($n > 0) { 
         $param = "$tmp_paste $tmp_slice out=$out";
         $Mon{"kappa_mon"}->obeyw("paste", "$param");
 
@@ -67,7 +145,6 @@ for (my $n = 1; $n <= $n_slices; $n++) {
 	# ready for use next time round and set $flag to true.
         $param = "in=$tmp_slice out=$tmp_paste";
         $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
-	$flag = 1;
     }
 
     $y1[$n] = $y_off;
@@ -81,20 +158,21 @@ for (my $n = 1; $n <= $n_slices; $n++) {
 
 }
 
+
 # The end. Set the name of the output frame
 $Frm->file( $out );
 $Mon{"ndfpack_mon"}->obeyw("erase", "$out.axis ok=true");
 $Mon{"ndfpack_mon"}->obeyw("setbound", "$out(0:,)");
 
+
 # Write the new positions of the slice images into the headers for 
 # later use (xshift is now set to 0 because we've done that now).
 
-for (my $n=1 ; $n <= $n_slices; $n++) {
-    $Frm->uhdr( "IFU_start_$n" => "$y1[$n]",
-		"IFU_end_$n" => "$y2[$n]",	
-		"IFU_xshift_$n" => "0",
-		"IFU_yshift_$n" => "$yshift[$n]");
-}
+# Write the arrays to the uhdr
+$Frm->uhdr( "IFU_start" => \@y1,
+	    "IFU_end" => \@y2,	
+	    "IFU_xshift" => [map {0} 1..$n_slices],
+	    "IFU_yshift" => \@yshift);
 
 $Mon{'ndfpack_mon'}->obeyw("ndftrace", "$out");
 (my $ORAC_STATUS, my @dims) = $Mon{'ndfpack_mon'}->get("ndftrace", "dims");
@@ -102,6 +180,83 @@ $Mon{'ndfpack_mon'}->obeyw("ndftrace", "$out");
 $Frm->uhdr("ORAC_X_DIM" => "$dims[0]", 
            "ORAC_Y_DIM" => "$dims[1]"); 
 
+
+# Podule
+# ======
+
+=head1 NAME
+
+_IFU_EXTRACT_SLICES_ -- Extracts and aligns slices from an IFU frame.
+
+=head1 DESCRIPTION
+
+This primitive takes an IFU frame with user headers giving the position 
+of each slice and the shifts that need to be applied to each slice to 
+align them in the spectral and spatial (y) direction. The individual 
+slices are extracted and shifted in x (spectral direction) to the nearest
+pixel (no resampling). The slices are read and written into the new array
+in the order in which they are given in the headers which (for correct 
+construction of the data cube later in the pipeline) should be the order 
+that they are in on the sky rather than the order of the slice images on 
+the array.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is written for the UIST IFU.
+
+=item *
+
+The locations of the slices and the shifts which should be applied are
+obtained from the user headers ifu_start, ifu_end, ifu_xshift and
+ifu_yshift. Each of these is an array with an element for each slice
+
+=item *
+
+The number of slices should be in the IFU_slices user header.
+
+=item *
+
+The alignment is done only to the nearest pixel, so no resampling.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Frame with all the slices aligned in the x (dispersion) direction to
+within ~1 pixel and reordered to reflect their spatial location rather
+than the order of the slice images on the array. The new slice 
+positions, x-shifts of 0 and the y-shifts are written into the output
+frame user header.
+
+=item *
+
+Output frame has _ifu suffix
+
+=back
+
+=head1 TASKS
+
+ndfpack_mon: ndfcopy, setorigin, erase, setbound, ndftrace
+kappa_mon: paste
+
+=head1 AUTHORS
+
+SPT: Stephen P. Todd (Edinburgh University/UKATC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
 
 
 
