@@ -34,9 +34,10 @@ if (!$gain) {
 }
 
 # Get the readnoise, in electrons
+# this is for a single read
 my $rne = $Cal->readnoise;
 
-# This is for a single read. Divide it down for nreads
+# Divide it down for nreads
 my $n = $Frm->uhdr("NREADS");
 # This factor is apparently the way that least-sqares fit noise scales.
 my $factor = 1;
@@ -44,41 +45,45 @@ if ($n > 1) {
    $factor = sqrt(($n*($n+1))/(12*($n-1)));
 }
 $rne /= $factor;
+# rne is now the readnoise per exposure, in electrons.
 
-# Get the number of coadds (NEXP)
+# Get the number of coadds (NEXP) - ie number if exposures per integration.
 my $nexp = $Frm->uhdr("ORAC_NUMBER_OF_EXPOSURES");
 
-# Get the variance in electrons^2 per coadd
+# Get the variance in electrons^2 per exposure
 my $vare = $rne * $rne;
 
-# The variance on n coadds (in electrons) is thus n * vare
+# The variance on the sum of N exposures (in electrons) is thus N * vare
 # (each coadd is an independent sample of the random variable)
+# But we need the variance on the mean of N exposures = (N * vare) / N^2
+# variance of mean of N exposures (in electrons) = vare / N
 
-my $nvare = $vare * $nexp;
+# Now convert this into ADU. Note that electrons = ADU * Gain,
+# thus ADU = electrons / Gain. Thus
+# variance of mean of N exposures (in ADU) = (vare / N)/Gain^2
 
-# Gonna need a temp file for this
-my $tmp=new ORAC::TempFile;
-my $tmpfile=$tmp->file;
+my $var = ($vare / $nexp) / ($gain*$gain);
+
+# Note that (mean of N exposures (in ADU)) is actually the value in
+# the data frame. Thus $var is the variance of the data frame.
 
 # Loop through the sub-files
 foreach my $i (1 .. $Frm->nfiles) {
 	# Generate the input and output file names
 	my ($in, $out) = $Frm->inout ("_rnv", $i);
 
-	# Multiply up the data array to be total electrons (ie * gain * nexp)
-	my $factor = $gain * $nexp;
-	$Mon{'kappa_mon'}->obeyw("cmult", "in=$in scalar=$factor out=$tmpfile");
+	# Copy the data frame to the output name
+	$Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$out title=$out");
 
-	# Set the variance on that to be what we calculated ($nvare)
-	$Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$tmpfile variance=$nvare");
-
-	# Divide back into DN per coadd.
-	$Mon{'kappa_mon'}->obeyw("cdiv", "in=$tmpfile scalar=$factor out=$out");
+	# Set the variance on that to be what we calculated ($var)
+	$Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$out variance=$var");
 
 	# Update Frame object
 	$Frm->file($i, $out);
-	my $string = sprintf ("%.1f", $rne);
-	orac_print("$in to $out: Read Noise variance added: $string electrons\n");
+	my $electrons = sprintf ("%.1f", $rne);
+	my $adu = sqrt($var);
+	$adu = sprintf ("%.2g", $adu);
+	orac_print("$in to $out: Read Noise variance added: $electrons electrons => $adu Data Numbers\n");
 }
 
 orac_print "\n";
