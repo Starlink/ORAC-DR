@@ -91,7 +91,9 @@ ORAC::Frame::Michelle->_generate_orac_lookup_methods( \%hdr );
 
 sub _to_DETECTOR_INDEX {
   my $self = shift;
-  $self->hdr->{ $self->nfiles }->{DINDEX};
+  if( exists( $self->hdr->{ $self->nfiles }->{DINDEX} ) ) {
+    $self->hdr->{ $self->nfiles }->{DINDEX};
+  }
 }
 
 sub _from_DETECTOR_INDEX {
@@ -100,7 +102,9 @@ sub _from_DETECTOR_INDEX {
 
 sub _to_UTEND {
   my $self = shift;
-  $self->hdr->{ $self->nfiles }->{UTEND};
+  if( exists( $self->hdr->{ $self->nfiles }->{UTEND} ) ) {
+    $self->hdr->{ $self->nfiles }->{UTEND};
+  }
 }
 
 sub _from_UTEND {
@@ -109,7 +113,9 @@ sub _from_UTEND {
 
 sub _to_UTSTART {
   my $self = shift;
-  $self->hdr->{ 1 }->{UTSTART};
+  if( exists( $self->hdr->{ 1 }->{UTSTART} ) ) {
+    $self->hdr->{ 1 }->{UTSTART};
+  }
 }
 
 sub _from_UTSTART {
