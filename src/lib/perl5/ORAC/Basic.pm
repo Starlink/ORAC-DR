@@ -26,6 +26,7 @@ use warnings;
 require Exporter;
 use File::Path;
 use File::Copy;
+use File::Spec;
 
 use ORAC::Print;
 use ORAC::Display;
@@ -108,10 +109,9 @@ sub orac_setup_display {
   # but preferably there is an instrument-specific in ORAC_DATA_CAL
   # designed by the support scientist
 
-  my $systemdisp = $ENV{ORAC_DIR}."/disp.dat";
-  my $defaultdisp = $ENV{ORAC_DATA_CAL}."/disp.dat";
-  my $dispdef = $ENV{ORAC_DATA_OUT}."/disp.dat";
-
+  my $systemdisp = File::Spec->catfile($ENV{'ORAC_DIR'}, "disp.dat");
+  my $defaultdisp = File::Spec->catfile($ENV{'ORAC_DATA_CAL'}, "disp.dat");
+  my $dispdef = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, "disp.dat");
 
   unless (-e $defaultdisp) {$defaultdisp = $systemdisp};
 
@@ -216,7 +216,7 @@ Alasdair Allan E<lt>aa@astro.ex.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
