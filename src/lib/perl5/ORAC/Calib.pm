@@ -93,6 +93,7 @@ sub new {
   $obj->{OffsetIndex} = undef
 
   $obj->{BaseShift} = undef;
+  $obj->{ReferenceOffset} = undef;
 
   $obj->{DarkIndex} = undef;
   $obj->{FlatIndex} = undef;
@@ -110,6 +111,7 @@ sub new {
   $obj->{BiasNoUpdate} = 0;
   $obj->{SkyNoUpdate} = 0;
   $obj->{ReadNoiseNoUpdate} = 0;
+  $obj->{RerefenceShiftNoUpdate} = 0;
   $obj->{BaseShiftNoUpdate} = 0;
   $obj->{EmissivityNoUpdate} = 0;
 
@@ -198,6 +200,18 @@ sub baseshiftcache {
   my $self = shift;
   if (@_) { $self->{BaseShift} = shift unless $self->baseshiftnoupdate; }
   return $self->{BaseShift};
+}
+
+=item B<referenceoffsetcache>
+
+Cached value of the referenceoffset.  Only used when noupdate is in effect.
+
+=cut
+
+sub referenceoffsetcache {
+  my $self = shift;
+  if (@_) { $self->{ReferenceOffset} = shift unless $self->referenceoffsetnoupdate; }
+  return $self->{ReferenceOffset};
 }
 
 
@@ -306,9 +320,10 @@ sub readnoise {
 
 Determine the pixel indices of the base position to be used for the
 current observation.  This allows for incorrect instrument apertures.
-In theory a 0,0 offset should place a source at the base position.
-This method returns a comma separated doublet "x,y" string rather
-than a particular file even though it uses an index file.
+In theory a 0;0 offset should place a source at the base position.
+This method returns a semicolon-separated doublet "x;y" string rather
+than a particular file even though it uses an index file.  Semicolon
+is used to avoid problems with command-line parsing.
 
 Croaks if it was not possible to determine a valid base location
 (usually indicating that a standard has not been observed).
@@ -333,8 +348,8 @@ sub baseshift {
   return $self->baseshiftcache(shift) if @_;
 
   # If noupdate is in effect we should return the cached value
-  # unless it is not defined. This effectively allows the command-line
-  # value to be used to override without verifying its suitability
+  # unless it is not defined.  This effectively allows the command-line
+  # value to be used to override without verifying its suitability.
   if ($self->baseshiftnoupdate) {
     my $cache = $self->baseshiftcache;
     return $cache if defined $cache;
@@ -352,6 +367,68 @@ sub baseshift {
     return $baseref->{BASESHIFT};
   } else {
     croak "Unable to obtain BASESHIFT from index file entry $basefile.\n";
+  }
+
+}
+
+=item B<referenceoffset>
+
+Determine the pixel offsets of the reference pixel with respect to the
+frame centre to be used for the current observation.  This allows for 
+the source to be placed away from the centre avoiding defects and the
+joins of quadrants.
+
+This method returns a semicolon-separated doublet "x;y" string rather than
+a particular file even though it uses an index file.  Semicolon is
+used to avoid problems with command-line parsing.
+
+In theory a 0;0 offset should place the reference position at the
+centre of the frame.  When this is not the case because of say poor
+co-ordinates of the source, or incorrect instrument apertures,
+calibration baseshift may be used, which in essence, measures the
+displacement of the reference position from nominal.
+
+Croaks if it was not possible to determine a valid reference pixel.
+
+  $shift = $Cal->referenceoffset;
+
+The index file is queried every time (usually not a problem since the
+index is cached in memory) unless the noupdate flag is true.
+
+If the noupdate flag is set there is no verification that the base
+location meets the specified rules (this is because the command-line
+override uses a value rather than a file).
+
+The index file must include a column named REFERENCEOFFSET.
+
+=cut
+
+sub referenceoffset {
+  my $self = shift;
+
+  # Handle arguments
+  return $self->referenceoffsetcache(shift) if @_;
+
+  # If noupdate is in effect we should return the cached value
+  # unless it is not defined.  This effectively allows the command-line
+  # value to be used to override without verifying its suitability.
+  if ($self->referenceoffsetnoupdate) {
+    my $cache = $self->referenceoffsetcache;
+    return $cache if defined $cache;
+  }
+
+  # Now we are looking for a value from the index file.
+  my $refofffile = $self->referenceoffsetindex->choosebydt('ORACTIME',$self->thing);
+  croak "No suitable offset of the reference pixel found in index file."
+    unless defined $refofffile;
+
+  # This gives us the filename, we now need to get the actual value
+  # of the pixel offsets of the reference pixel.
+  my $refoffref = $self->referenceoffsetindex->indexentry( $refofffile );
+  if (exists $refoffref->{REFERENCEOFFSET}) {
+    return $refoffref->{REFERENCEOFFSET};
+  } else {
+    croak "Unable to obtain REFERENCEOFFSET from index file entry $refofffile.\n";
   }
 
 }
@@ -468,6 +545,20 @@ sub baseshiftnoupdate {
   my $self = shift;
   if (@_) { $self->{BaseShiftNoUpdate} = shift; }
   return $self->{BaseShiftNoUpdate};
+}
+
+=item B<referenceoffsetnoupdate>
+
+Stops referenceoffset object from updating itself with more recent data.
+
+Used when using a command-line override to the pipeline.
+
+=cut
+
+sub referenceoffsetnoupdate {
+  my $self = shift;
+  if (@_) { $self->{ReferenceOffsetNoUpdate} = shift; }
+  return $self->{ReferenceOffsetNoUpdate};
 }
 
 =item B<bias>
@@ -833,6 +924,26 @@ sub baseshiftindex {
   };
 
   return $self->{BaseShiftIndex};
+}
+
+=item B<referenceoffsetindex>
+
+Return (or set) the index object associated with the referenceoffset index file.
+
+=cut
+
+sub referenceoffsetindex {
+
+  my $self = shift;
+  if (@_) { $self->{ReferenceOffsetIndex} = shift; }
+
+  unless (defined $self->{ReferenceOffsetIndex}) {
+    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.referenceoffset";
+    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.referenceoffset";
+    $self->{ReferenceOffsetIndex} = new ORAC::Index($indexfile,$rulesfile);
+  };
+
+  return $self->{ReferenceOffsetIndex};
 }
 
 
