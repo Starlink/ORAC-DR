@@ -110,7 +110,7 @@ the camera mode of Michelle.
 
 Returns the index object.
 
-=back
+=cut
 
 sub _set_index_rules {
 
