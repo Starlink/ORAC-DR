@@ -443,7 +443,7 @@ sub findrecipe {
 
   my $self = shift;
 
-  my $recipe = $self->hdr('RECIPE');
+  my $recipe = $self->hdr('DRRECIPE');
 
   # Check to see whether there is something there
   # if not try to make something up

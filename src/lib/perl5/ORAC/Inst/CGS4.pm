@@ -148,7 +148,9 @@ sub start_algorithm_engines {
   $Mon{figaro2} = new ORAC::Msg::ADAM::Task("figaro2_$$",$ENV{FIG_DIR}."/figaro2");
   $Mon{figaro4} = new ORAC::Msg::ADAM::Task("figaro4_$$",$ENV{FIG_DIR}."/figaro4");
   # special emlt binary that writes results into parameters
-  $Mon{emlt} = new ORAC::Msg::ADAM::Task("emlt_$$",$ENV{FIG_DIR}."/emlt",{TASKTYPE=>"I"});
+#  $Mon{emlt} = new ORAC::Msg::ADAM::Task("emlt_$$",$ENV{FIG_DIR}."/emlt",{TASKTYPE=>"I"});
+#  $Mon{emlt} = new ORAC::Msg::ADAM::Task("emlt_$$","/data/frossie/temp/s/emlt",{TASKTYPE=>"I"});
+
   $Mon{ndf2fits} = new ORAC::Msg::ADAM::Task("ndf2fits_$$",$ENV{CONVERT_DIR}."/ndf2fits");
   $Mon{ndfpack_mon} = new ORAC::Msg::ADAM::Task("ndfpack_mon_$$",$ENV{KAPPA_DIR}."/ndfpack_mon");
   $Mon{ccdpack_reg} = new ORAC::Msg::ADAM::Task("ccdpack_reg_$$",$ENV{CCDPACK_DIR}."/ccdpack_reg");
