@@ -13,71 +13,14 @@
 #     source ${ORAC_DIR}/etc/oracdr_wfcam.csh
 
 #  Description:
-#     This script initialises the environment variables and command
-#     aliases required to run the ORAC-DR pipeline with WFCAM data.
-#     An optional argument is the UT date. This is used to configure
-#     the input and output data directories but assumes a UKIRT
-#     style directory configuration.
+#     This script simply looks to see if we're on a wfdr machine, and
+#     sources the appropriate oracdr_wfcam?.csh file
 
-#  ADAM Parameters:
-#     UT = INTEGER (Given)
-#        UT date of interest. This should be in YYYYMMDD format.
-#        It is used to set the location of the input and output
-#        data directories. Assumes that the data are located in 
-#        a directory structure similar to that used at UKIRT.
-#        Also sets an appropriate alias for ORAC-DR itself.
-#        If no value is specified, the current UT is used.
-#     $ORAC_DATA_ROOT = Environment Variable (Given)
-#        Root location of the data input and output directories.
-#        If no value is set, "/ukirtdata" is assumed.
-#     $ORAC_CAL_ROOT = Environment Variable (Given)
-#        Root location of the calibration files. $ORAC_DATA_CAL
-#        is derived from this variable by adding the appropriate
-#        value of $ORAC_INSTRUMENT. In this case $ORAC_DATA_CAL
-#        is set to $ORAC_CAL_ROOT/wfcam. If ORAC_CAL_ROOT is not
-#        defined it defaults to "/ukirt_sw/oracdr_cal".
-
-
-#  Examples:
-#     oracdr_wfcam
-#        Will set the variables assuming the current UT date.
-#     oracdr_wfcam 19991015
-#        Use UT data 19991015
-
-#  Notes:
-#     - The environment variables $ORAC_RECIPE_DIR and $ORAC_PRIMITIVE_DIR
-#     are unset by this routine if they have been set.
-#     - The data directories are assumed to be in directories "raw"
-#     (for input) and "reduced" (for output) from root
-#     $ORAC_DATA_ROOT/wfcamdata/UT
-#     - $ORAC_DATA_OUT and $ORAC_DATA_IN will have to be
-#     set manually if the UKIRT directory structure is not in use.
-#     - aliases are set in the oracdr_start.csh script sourced by
-#     this routine.
+#  Parameters:
+      # Parameters are simply passed on to the oracdr_wfcam?.csh
 
 #  Authors:
-#     Frossie Economou (frossie@jach.hawaii.edu)
-#     Tim Jenness (t.jenness@jach.hawaii.edu)
-#     Jim Lewis (jrl@ast.cam.ac.uk)
-#     {enter_new_authors_here}
-
-#  History:
-#     $Log$
-#     Revision 1.2  2004/05/05 11:38:57  jrl
-#     Modified to add ORAC_DATA_CASU definition and a small tidy
-#
-#     Revision 1.1  2003/06/30 09:43:05  jrl
-#     initial entry into CVS
-#
-#     Revision 1.1  2003/01/22 11:54:49  jrl
-#     Initial Entry
-#
-#
-#     21 Jan 2003 (jrl)
-#        Original Version based on oracdr_wfcam.csh
-
-#  Revision:
-#     $Id$
+#     Paul Hirst <p.hirst@jach.hawaii.edu>
 
 #  Copyright:
 #     Copyright (C) 1998-2002 Particle Physics and Astronomy Research
@@ -86,49 +29,24 @@
 #-
 
 
+set hostname = `/bin/hostname`
 
-# orac things
-if !($?ORAC_DATA_ROOT) then
-    setenv ORAC_DATA_ROOT /ukirtdata
+set script = "/bin/false"
+
+if ($hostname == "wfdr1") then
+    set script = oracdr_wfcam1.csh
 endif
 
-if !($?ORAC_CAL_ROOT) then
-    setenv ORAC_CAL_ROOT /ukirt_sw/oracdr_cal
+if ($hostname == "wfdr2") then
+    set script = oracdr_wfcam2.csh
 endif
 
-if ($?ORAC_RECIPE_DIR) then
-    echo "Warning: resetting ORAC_RECIPE_DIR"
-    unsetenv ORAC_RECIPE_DIR
+if ($hostname == "wfdr3") then
+    set script = oracdr_wfcam3.csh
 endif
 
-if ($?ORAC_PRIMITIVE_DIR) then
-    echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unsetenv ORAC_PRIMITIVE_DIR
+if ($hostname == "wfdr4") then
+    set script = oracdr_wfcam4.csh
 endif
 
-
-if ($1 != "") then
-    set oracut = $1
-else
-    set oracut = `\date -u +%Y%m%d`
-endif
-
-set oracdr_args = "-ut $oracut"
-
-setenv ORAC_INSTRUMENT WFCAM
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/wfcam/$oracut
-setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/wfcam/$oracut
-setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/wfcam
-setenv ORAC_DATA_CASU $ORAC_DATA_OUT/casu
-
-# screen things
-setenv ORAC_PERSON jrl
-setenv ORAC_LOOP flag
-setenv ORAC_SUN
-
-# Source general alias file and print welcome screen
-source $ORAC_DIR/etc/oracdr_start.csh
-
-# Tidy up
-unset oracut
-unset oracdr_args
+source ${ORAC_DIR}/etc/$script $1 $2 $3 $4
