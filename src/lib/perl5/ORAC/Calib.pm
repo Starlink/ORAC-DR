@@ -154,6 +154,35 @@ sub darknoupdate {
   return $self->{DarkNoUpdate};
 }
 
+=item flatnoupdate
+
+Stops flat object from updating itself with more recent data
+
+Used when using a command-line override to the pipeline
+
+=cut
+
+sub flatnoupdate {
+  my $self = shift;
+  if (@_) { $self->{FlatNoUpdate} = shift; }
+  return $self->{FlatNoUpdate};
+}
+
+=item biasnoupdate
+
+Stops bias object from updating itself with more recent data
+
+Used when using a command-line override to the pipeline
+
+=cut
+
+sub biasnoupdate {
+  my $self = shift;
+  if (@_) { $self->{BiasNoUpdate} = shift; }
+  return $self->{BiasNoUpdate};
+}
+
+
 =item bias
 
 Return (or set) the name of the current bias.
@@ -276,6 +305,52 @@ sub darkindex {
 
 
   return $self->{DarkIndex}; 
+
+
+};
+
+=item flatindex 
+
+Return (or set) the index object associated with the flat index file
+
+=cut
+
+sub flatindex {
+
+  my $self = shift;
+  if (@_) { $self->{FlatIndex} = shift; }
+
+  unless (defined $self->{FlatIndex}) {
+    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.flat";
+    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.flat";
+    $self->{FlatIndex} = new ORAC::Index($indexfile,$rulesfile);
+  };
+
+
+  return $self->{FlatIndex}; 
+
+
+};
+
+=item biasindex 
+
+Return (or set) the index object associated with the bias index file
+
+=cut
+
+sub biasindex {
+
+  my $self = shift;
+  if (@_) { $self->{BiasIndex} = shift; }
+
+  unless (defined $self->{BiasIndex}) {
+    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.bias";
+    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.bias";
+    $self->{BiasIndex} = new ORAC::Index($indexfile,$rulesfile);
+  };
+
+
+  return $self->{BiasIndex}; 
 
 
 };
