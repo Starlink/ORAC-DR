@@ -645,7 +645,7 @@ sub hds2mef {
         $iptr->get_hdrspace($nh,$junk,$fitstatus);
         for $i (1 .. $nh) {
 	    $iptr->read_record($i,$card,$fitstatus);
-            if (fits_get_keyclass($card) == TYP_WCS_KEY) {
+            if (fits_get_keyclass($card) == TYP_WCS_KEY || $card =~ /^PV/ || $card =~ /^CRUNIT/) {
 		if ($ifileno == 0) {
 		    push @wcscards,$card;
                 } else {
