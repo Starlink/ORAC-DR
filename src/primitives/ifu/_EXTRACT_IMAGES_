@@ -1,0 +1,161 @@
+# -*- perl -*-
+
+# Podule
+# ======
+
+=head1 NAME
+
+_EXTRACT_IMAGES_ -- Extract images from a datacube
+
+=head1 DESCRIPTION
+
+Extract images from a datacube, subtract a continuum image if required
+and display the image. The wavelength ranges to be extracted are given
+in a file named extract.images in the reduced data directory. This file
+hase the following format:
+
+=over 4
+
+=item *
+
+Blank lines and lines starting with a # are ignored.
+
+=item *
+
+Lines with the format: 
+    ext lambda_1 lambda_2 
+will result in an image formed by collapsing the datacube from lambda_1 to
+lambda_2 in a file with the extension _ext.
+
+=item *
+
+Lines with the format: 
+    ext lambda_1 lambda_2 lambda_3 lambda_4 
+will result in a continuum subtracted image where the line emission is
+in the range lambda_1 to lambda2 and the continuum image is in the range
+lambda_3 to lambda_4. The file will have an extension of _ext.
+
+=back
+
+=head1 TASKS
+
+kappa_mon: collapse, sub
+
+=head1 AUTHORS
+
+Stephen P. Todd <spt@roe.ac.uk> (Edinburgh University/UKATC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+
+# We're going to need some temporary files
+use ORAC::TempFile;
+
+my $data_file = "extract.images";
+
+if (-e $data_file) {
+    open (my $FILE, $data_file) or 
+	die "$data_file exists but cannot be read.\n";
+    
+    my $line = 0;
+
+    while (<$FILE>) {
+	$line++;      
+
+	# Skip this line if it starts with a # (comment) or contains nothing
+	# but blank space.
+	next if (m/^\#/);
+	next if (m/^\s*$/);
+
+	my ($ext, @lambda) = split;
+
+	my $error_flag = 0;
+
+	# Check that the file extension is defined and consists only of 
+	# characters alphanumeric.
+	next unless (defined ($ext));
+	unless ($ext =~ m/^\w+$/) {
+	    orac_print "$ext is not a suitable file extension.\nIt should contain only alphanumeric characters.\n";
+	    $error_flag++;
+	}
+
+	# Check that lambda contains 2 or 4 wavelengths, and that they are
+	# within the range of wavelengths of the datacube.
+	
+	if (@lambda == 2 or @lambda == 4) {
+	    foreach (@lambda) {
+		unless ($_ >= $Frm->uhdr("lambda_min") and 
+			$_ <= $Frm->uhdr("lambda_max")) {
+		    orac_print "$_ is outside the wavelength range of this datacube\n(line $line of $data_file).\n";
+		    $error_flag++;
+		}
+	    }
+	} else {    
+	    orac_print "Each line of $data_file should contain two or four wavelengths.\n";
+	    $error_flag++;
+	}
+	     
+
+	# Skip to the next line if we've found any problems.
+	if ($error_flag > 0) {
+	    orac_print "Problems with line $line of $data_file. Ignoring.\n";
+	    next;
+	}
+	
+	my ($in, $out) = $Frm->inout("_$ext");
+	
+	if (@lambda == 2) {
+	    # We have two wavelengths - just extract an image
+
+	    orac_print "Forming image with wavelengths $lambda[0] to $lambda[1]\n";
+	    my $param = "in=$in out=$out axis=3 low=$lambda[0] high=$lambda[1]";
+	    $Mon{'kappa_mon' }->obeyw("collapse", "$param");
+	    orac_print "Written to $out.\n\n";
+
+	    $Frm->file( $out );
+	    $Display->display_data($Frm) if defined $Display;
+	    $Frm->file( $in );
+
+	} elsif (@lambda == 4) {
+	    # We have four wavelengths. Extract two images and subtract the 
+	    # second from the first.
+
+	    # and create some temporary files
+	    my $tmp_file1 = new ORAC::TempFile;
+	    my $tmp_file2 = new ORAC::TempFile;
+	    my $file1 = $tmp_file1->file;
+	    my $file2 = $tmp_file2 ->file;
+
+	    orac_print "Forming image with wavelengths $lambda[0] to $lambda[1]\n";
+	    my $param = "in=$in out=$file1 axis=3 low=$lambda[0] high=$lambda[1]";
+	    $Mon{'kappa_mon' }->obeyw("collapse", "$param");
+
+	    my $param = "in=$in out=$file2 axis=3 low=$lambda[2] high=$lambda[3]";
+	    $Mon{'kappa_mon' }->obeyw("collapse", "$param");
+
+	    orac_print "subtracting continuum with wavelengths $lambda[2] to $lambda[3]\n";
+
+	    my $param = "$file1 $file2 $out";
+	    $Mon{'kappa_mon' }->obeyw("sub", "$param");
+
+
+	    orac_print "Written to $out.\n\n";
+
+	    $Frm->file( $out );
+	    $Display->display_data($Frm) if defined $Display;
+	    $Frm->file( $in );
+	} 
+    }
+
+    close $FILE;
+
+
+} else {
+    orac_print "$data_file not found. No images will be extracted from the datacube.\n\n";
+}
+
