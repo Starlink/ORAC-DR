@@ -604,6 +604,9 @@ standard hash C<delete> command:
 
 C<exists>, C<keys> and C<each> are supported.
 
+Note that C<exists> will I<not> launch a monolith. It can only
+be used to check that one has already been launched.
+
 In addition, it is possible to explicitly set entries in the hash. A
 rudimentary check is made to check that the stored entry is an object
 that can invoke a "contactw" method but it is not possible to check
@@ -661,6 +664,7 @@ sub EXISTS {
 sub DELETE {
   my $self = shift;
   my $key = shift;
+  print "*********** REMOVING $key **************\n" if $DEBUG;
   $self->detach( $key );
 }
 
