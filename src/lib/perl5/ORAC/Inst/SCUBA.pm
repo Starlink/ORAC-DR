@@ -28,13 +28,14 @@ require Exporter;
 
 use Carp;
 use strict;
-use vars qw/$VERSION $TAIL/;
-$VERSION = undef; # -w protection
+use vars qw/$VERSION $TAIL %Mon/;
 $VERSION = '0.10';
 
 use ORAC::Msg::ADAM::Control;
 use ORAC::Msg::ADAM::Task;
 
+# Status handling
+use ORAC::Constants qw/:status/;
 
 # Use .sdf extension
 $TAIL = ".sdf";
@@ -87,7 +88,7 @@ and  KAPPA (kapview_mon, kappa_mon, ndfpack_mon)
 
 sub start_algorithm_engines {
 
-  my %Mon = ();
+  %Mon = ();
 
   $Mon{surf_mon} = new ORAC::Msg::ADAM::Task("surf_mon_$$", "/jcmt_sw/scuba/redsdir/surf_mon");
  
