@@ -102,7 +102,7 @@ sub start_algorithm_engines {
          "$ENV{POLPACK_DIR}/polpack_mon") 
     if -e "$ENV{POLPACK_DIR}/polpack_mon";
 
-  $Mon{ccdpack_reg} = new ORAC::Msg::ADAM::Task("polpack_reg_$$",
+  $Mon{ccdpack_reg} = new ORAC::Msg::ADAM::Task("ccdpack_reg_$$",
          "$ENV{CCDPACK_DIR}/ccdpack_reg") 
     if -e "$ENV{CCDPACK_DIR}/ccdpack_reg";
 
