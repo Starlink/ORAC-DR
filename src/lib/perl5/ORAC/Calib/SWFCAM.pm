@@ -160,6 +160,76 @@ sub interleavemask {
   }
 }
 
+=item B<dark>
+
+Return (or set) the name of the current dark - checks suitability on return.
+This is subclassed for SWFCAM so that the warning messages when going through
+the list of possible darks are suppressed.
+
+=cut
+
+sub dark {
+  my $self = shift;
+  if (@_) {
+    # if we are setting, accept the value and return
+    return $self->darkname(shift);
+  };
+
+  my $ok = $self->darkindex->verify($self->darkname,$self->thing);
+
+  # happy ending - frame is ok
+  if ($ok) {return $self->darkname};
+
+  croak("Override dark is not suitable! Giving up") if $self->darknoupdate;
+
+  # not so good
+  if (defined $ok) {
+    my $dark = $self->darkindex->choosebydt('ORACTIME',$self->thing, 0);
+    croak "No suitable dark calibration was found in index file"
+      unless defined $dark;
+    $self->darkname($dark);
+  } else {
+    croak("Error in dark calibration checking - giving up");
+  };
+};
+
+=item B<flat>
+
+Return (or set) the name of the current flat.
+
+  $flat = $Cal->flat;
+
+This method is subclassed for SWFCAM so that the warning messages when
+going through the list of possible flats are suppressed.
+
+=cut
+
+
+sub flat {
+  my $self = shift;
+  if (@_) {
+    # if we are setting, accept the value and return
+    return $self->flatname(shift);
+  };
+
+  my $ok = $self->flatindex->verify($self->flatname,$self->thing);
+
+  # happy ending - frame is ok
+  if ($ok) {return $self->flatname};
+
+  croak("Override flat is not suitable! Giving up") if $self->flatnoupdate;
+
+  # not so good
+  if (defined $ok) {
+    my $flat = $self->flatindex->choosebydt('ORACTIME',$self->thing, 0);
+    croak "No suitable flat was found in index file"
+      unless defined $flat;
+    $self->flatname($flat);
+  } else {
+    croak("Error in flat calibration checking - giving up");
+  };
+};
+
 =back
 
 =head1 REVISION
@@ -172,7 +242,7 @@ Brad Cavangh (b.cavanagh@jach.hawaii.edu)
 
 =head1 COPYRIGHT
 
-Copyright (C) 2004 Particle Physics and Astronomy Research
+Copyright (C) 2004-2005 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
