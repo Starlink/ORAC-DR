@@ -255,7 +255,7 @@ sub xorac_start_process {
   my $Mon;
   
   try {
-     $Mon = orac_start_algorithim_engines( ${$options}{"noeng"}, $InstObj );
+     $Mon = orac_start_algorithm_engines( ${$options}{"noeng"}, $InstObj );
   }
   catch ORAC::Error::FatalError with 
   {
@@ -292,7 +292,7 @@ sub xorac_start_process {
   # Generate list of observation numbers to be processed
   # This is related to looping scheme
   my $loop =  
-    orac_process_arguement_list( ${$options}{"from"}, ${$options}{"to"},
+    orac_process_argument_list( ${$options}{"from"}, ${$options}{"to"},
                                  ${$options}{"skip"}, ${$options}{"list"},
                                  $frameclass, $obs );
  
@@ -307,7 +307,6 @@ sub xorac_start_process {
   my $Use_Recipe;
   if ( defined ${$options}{"override"} == 1 ) {
      $Use_Recipe = $$Override_Recipe;
-     print "Recipe: $$Override_Recipe\n";
   } else {
      undef $Use_Recipe; 
   }

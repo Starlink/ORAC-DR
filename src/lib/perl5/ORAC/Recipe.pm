@@ -14,7 +14,8 @@ ORAC::Recipe - Recipe parsing and execution
   $r->read_recipe(RECIPE => $recipe,
                   INSTRUMENT => $instrument);
   $r->parse( $PRIMITIVE_LIST );
-  $r->execute( $Frm, $Grp, $Cal, $Display, \%Mon);
+  $r->execute( \$CURRENT_PRIMITIVE, \$PRIMITIVE_LIST,
+               $Frm, $Grp, $Cal, $Display, \%Mon);
 
 =head1 DESCRIPTION
 
@@ -222,7 +223,11 @@ sub check_syntax {
 
   # Dummy variables
   my ($Frm,$Grp,$Cal,$Display,%Mon);
-  $self->execute($Frm, $Grp, $Cal, $Display, \%Mon, {SYNTAX => 1});
+  my $CURRENT_PRIMITIVE;
+  my $PRIMITIVE_LIST = [];
+  
+  $self->execute( \$CURRENT_PRIMITIVE, \$PRIMITIVE_LIST, 
+                  $Frm, $Grp, $Cal, $Display, \%Mon, {SYNTAX => 1});
 }
 
 
@@ -232,7 +237,8 @@ Executes the recipes stored in the object.
 Also needs the current frame, group and calibration objects
 as well as the hash containing all the messaging objects.
 
-  $rec->execute( \@CURRENT_PRIMITIVE, $Frm, $Grp, $Cal, $Display, \%Mon);
+  $rec->execute( \$CURRENT_PRIMITIVE, \$PRIMITIVE_LIST, 
+                 $Frm, $Grp, $Cal, $Display, \%Mon);
 
 The following classes are avaiable to primitive writers:
 
@@ -306,7 +312,9 @@ sub execute {
 
   my $self = shift;
 
-  # Read all args so that the only thing left will be the hidden arg
+  # Read all args so that the only thing left will be the hidden arg,
+  # note that $CURRENT_PRIMITIVE is passed since its used by the recipe
+  # viewer window and added to the recipe code itself.
   my $CURRENT_PRIMITIVE = shift;
   my $PRIMITIVE_LIST =shift;
   my $Frm = shift;
@@ -345,8 +353,7 @@ sub execute {
   }
   
   # Execute the recipe
-  my $status = ORAC::Recipe::Execution::orac_execute_recipe(
-                                                             $CURRENT_PRIMITIVE,
+  my $status = ORAC::Recipe::Execution::orac_execute_recipe( $CURRENT_PRIMITIVE,
                                                              $block,$Frm,
 	  						     $Grp, $Cal,
 							     $Display, $Mon,

@@ -20,7 +20,7 @@ ORAC::Core - core routines for data pipelining
     
   orac_message_launch( $opt_nomsgtmp, $opt_verbose );
   
-  orac_start_algorithim_engines( $opt_noeng, $InstObj );
+  orac_start_algorithm_engines( $opt_noeng, $InstObj );
   
   orac_start_display( $nodisplay );
 
@@ -28,7 +28,7 @@ ORAC::Core - core routines for data pipelining
   
   orac_parse_files( $opt_files );
 
-  orac_process_arguement_list( $opt_from, $opt_to, $opt_skip, $opt_list,
+  orac_process_argument_list( $opt_from, $opt_to, $opt_skip, $opt_list,
                                $frameclass );
 			       
   orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume, $opt_skip, 
@@ -75,8 +75,8 @@ use vars qw/$VERSION @EXPORT @ISA /;
 @ISA = qw/Exporter/;
 @EXPORT = qw/orac_process_frame orac_store_frm_in_correct_grp 
              orac_print_configuration orac_message_launch
-	     orac_start_algorithim_engines orac_start_display
-	     orac_calib_override orac_process_arguement_list 
+	     orac_start_algorithm_engines orac_start_display
+	     orac_calib_override orac_process_argument_list 
 	     orac_main_data_loop orac_parse_files /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
@@ -299,7 +299,8 @@ sub orac_process_frame {
   
   # Execute the recipe
   try {
-     $recipe->execute( $CURRENT_PRIMITIVE, $PRIMITIVE_LIST, $Frm, $Grp, $Cal, $Display, $Mon );
+     $recipe->execute( $CURRENT_PRIMITIVE, $PRIMITIVE_LIST, $Frm, 
+                       $Grp, $Cal, $Display, $Mon );
   }
   catch ORAC::Error::FatalError with
   {
@@ -572,19 +573,19 @@ sub orac_message_launch {
 
 }
 
-=item B<orac_start_algorithim_engines>
+=item B<orac_start_algorithm_engines>
 
 This routine pre-launches the relevant algorithim engines which are always required by the instrument
 
-   my ( $Mon )  = orac_start_algorithim_engines( $opt_noeng, $InstObj );
+   my ( $Mon )  = orac_start_algorithm_engines( $opt_noeng, $InstObj );
 
 it returns a reference to the algorithim engine hash, $Mon.
 
 =cut
  
-sub orac_start_algorithim_engines {
+sub orac_start_algorithm_engines {
 
-  croak 'Usage: orac_start_algorithim_engines( $opt_noeng, $InstObj)'
+  croak 'Usage: orac_start_algorithm_engines( $opt_noeng, $InstObj)'
     unless scalar(@_) == 2 ;
 
   # Predeclare subroutines that are read in after the standard perl pre-
@@ -763,13 +764,13 @@ sub orac_parse_files {
   return ( @obs );
 }
 
-=item B<orac_process_arguement_list>
+=item B<orac_process_argument_list>
 
 This routine checks that your data exists and decides which data 
 loop approach to use.
 
  my $loop =  
-     orac_process_arguement_list( $opt_from, $opt_to, $opt_skip, $opt_list,
+     orac_process_argument_list( $opt_from, $opt_to, $opt_skip, $opt_list,
                                   $frameclass, \@obs );
 
 it returns the looping scheme and a list of observations if one does not
@@ -777,9 +778,9 @@ already exist.
 
 =cut
 
-sub orac_process_arguement_list {
+sub orac_process_argument_list {
 
-  croak 'Usage: orac_process_arguement_list($opt_from, $opt_to, $opt_skip, $opt_list, $frameclass, \@obs)'
+  croak 'Usage: orac_process_argument_list($opt_from, $opt_to, $opt_skip, $opt_list, $frameclass, \@obs)'
     unless scalar(@_) == 6;
 
   # Read the argument list

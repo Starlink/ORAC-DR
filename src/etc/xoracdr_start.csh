@@ -32,6 +32,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.3  2001/03/02 05:06:37  allan
+#     Working SelectRecipe widget used for Edit Recipe and Override Recipe menu items, plus minor GUI tweaks and a couple of bug fixes
+#
 #     Revision 1.2  2001/02/24 03:07:24  allan
 #     Merged main line with Xoracdr branch
 #
@@ -102,7 +105,7 @@ if (-e $STARPERL ) then
   echo " "
   echo " ORAC Data Reduction Pipeline -- (ORAC-DR Version ${pkgvers})"
   echo " "
-  echo " Please wait, spawning Xoracdr ${oracdr_args}..."
+  echo " Please wait, spawning Xoracdr${oracdr_args}..."
   $STARPERL  ${ORAC_DIR}/bin/Xoracdr ${oracdr_args}
 
 else

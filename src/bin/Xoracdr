@@ -217,9 +217,7 @@ use Getopt::Long;
 # Tk modules
 #
 require Tk::Menu;
-require Tk::Menubutton;
-require Tk::DialogBox;
-require Tk::ROText;
+require Tk::ORAC::RecipeSelect;
 
 xorac_update_progress('Loaded Tk Modules', 10);
 
@@ -432,32 +430,9 @@ $menus[3]->menu()->add( "separator" );
 
 
 # Calls Xorac::xorac_override_recipe to put up a popup to set the override
-my $Override_Recipe ="SCUBA_ALIGN";
-print \$Override_Recipe ."\n";
 $menus[3]->menu()->add( "command",
                         -label   => "Set Override Recipe",
-			-state   => 'disabled',
-                        -command => sub { 
-			         try {
-		         	   my $directory;
-				  ($directory, $Override_Recipe) =
-				     xorac_select_recipe( \$recipe_menu );
-				  
-				   print "stuff\n";
-				   
-				   $menus[3]->menu()->entryconfigure(3,
-				                         -state => 'normal');
-				   $menus[3]->menu()->entryconfigure(1,
-				                         -state => 'normal');
-				 }
-		                 catch ORAC::Error::FatalError with
-		                 {
-	                            print "Fatal Error caught by Xoracdr GUI\n";
-		                 }
-		                 catch ORAC::Error::UserAbort with
-		                 {
-	                            print "User Abort caught by Xoracdr GUI\n";
-	       	                 }; } );
+			-state   => 'disabled');
 
 # Calls Xorac::xorac_edit_recipe() to pull up the recipe editor
 $menus[3]->menu()->add( "command",
@@ -465,8 +440,11 @@ $menus[3]->menu()->add( "command",
 			-state   => 'disabled',
                         -command => sub { 
 			         try {
-		         	    my ($directory, $recipe ) =
-				       xorac_select_recipe( 1 );
+		         	    my ($directory, $filename ) =
+				       xorac_select_recipe( );
+				    if (defined $directory && 
+				                     defined $filename) {   
+				       xorac_editor( $directory, $filename ) } 
 				 }
 		                 catch ORAC::Error::FatalError with
 		                 {
@@ -486,7 +464,7 @@ my $main_frame = ORAC::Event->query("Tk")->Frame( -relief      => 'flat',
 
 # I N S T R U M E N T   L I S T ---------------------------------------------
 
-# Declate variables
+# Declare variables
 my ( $inst_select );
 
 # Build instrument list
@@ -756,6 +734,9 @@ xorac_update_progress('Packed Text Entries', 55);
 
 # B I N D I N G  B U T T O N ,  T E X T  E N R T Y  &  L I S T B O X ---------
 
+# Declare pre-used variables
+my $Override_Recipe;			
+
 # Bind the left mouse button click to the Tk::Listbox to setup the instrument
 $instruments->bind( "<ButtonPress>", sub { &$configure_instrument; } );
 
@@ -782,7 +763,7 @@ $go_button->bind( "<ButtonPress>",
        	        $menus[0]->menu()->entryconfigure( 0, -state => 'normal' );
        	        $menus[0]->menu()->entryconfigure( 1, -state => 'normal' );
 		try {
-	           xorac_start_process (\%options, $inst_select, 
+	           xorac_start_process (\%options, $ENV{"ORAC_INSTRUMENT"}, 
 		                        \$CURRENT_RECIPE, \$Override_Recipe, 
 					\@obs);
 		}
@@ -803,6 +784,39 @@ $go_button->bind( "<ButtonPress>",
 		ORAC::Error->flush if defined $error;
 
 	     } } );
+
+# bind the override recipe stuff
+$menus[3]->menu()->entryconfigure(3, 			
+  -command => sub { 
+	         try {  # Get the directory and filename from the use 
+			my $top_level = $MW->ORACRecipeSelect( 
+			                -instrument => $ENV{"ORAC_INSTRUMENT"});
+  			$top_level->title("Select Recipe");
+  			$top_level->positionfrom("user");
+  			$top_level->geometry("+80+80");  
+ 			$top_level->configure( -cursor => "tcross" );
+			
+		        my $directory;
+			($directory, $Override_Recipe) = $top_level->Show;
+			
+			if( defined $directory && defined $Override_Recipe ) {
+                           $menus[3]->menu()->entryconfigure(3,
+			                                  -state => 'normal');
+		           $menus[3]->menu()->entryconfigure(1,
+				       -label => "Override: $Override_Recipe");
+		           $menus[3]->menu()->entryconfigure(1,
+			                                  -state => 'normal');
+		        }
+		      }
+		      catch ORAC::Error::FatalError with
+		      {
+	                 print "Fatal Error caught by Xoracdr GUI\n";
+		      }
+		      catch ORAC::Error::UserAbort with
+		      {
+	                 print "User Abort caught by Xoracdr GUI\n";
+	       	      }; } );
+
 
 xorac_update_progress('Bound events to widgets', 60);
 
@@ -843,7 +857,10 @@ my $file_checkbutton = $sub_log_frame->Checkbutton( -anchor      => 'w',
                                                     -font        => 'Arial',
 						    -text        => 'File',
 						    -selectcolor => 'blue',
-				           -variable => \$options{"log_file"} );
+				           -variable => \$options{"log_file"},
+					   -command => sub {
+			 $recipe_menu->entryconfigure(0, -state => 'disabled' ) 
+	                             unless $options{"log_xwin"} == 1; }  );
 $file_checkbutton->grid( -column => 0, -row => 1, -sticky => 'ew' );
 
 # Screen Option checkbutton
@@ -851,7 +868,10 @@ my $screen_checkbutton = $sub_log_frame->Checkbutton( -anchor      => 'w',
                                                       -font        => 'Arial',
 						      -text        => 'Screen',
 						      -selectcolor => 'blue', 
-					 -variable => \$options{"log_screen"} );
+					 -variable => \$options{"log_screen"},
+					 -command => sub {
+			 $recipe_menu->entryconfigure(0, -state => 'disabled' ) 
+	                             unless $options{"log_xwin"} == 1; } );
 $screen_checkbutton->grid( -column => 0, -row => 2, -sticky => 'ew' );
 
 # X-Window Option checkbutton
@@ -859,8 +879,17 @@ my $xwin_checkbutton = $sub_log_frame->Checkbutton( -anchor      => 'w',
                                                     -font        => 'Arial',
 						    -text        => 'X-Windows',
 						    -selectcolor => 'blue',
-				           -variable => \$options{"log_xwin"} );
+				           -variable => \$options{"log_xwin"});
 $xwin_checkbutton->grid( -column => 0, -row => 3, -sticky => 'ew' );  
+
+# need to toggle "Show Current Recipe" checkbox 
+$xwin_checkbutton->configure( -command => 
+   sub {
+           if( $options{"log_xwin"} == 1 ) {
+              $recipe_menu->entryconfigure(0, -state => 'normal' ); 
+	   } else {
+	      $recipe_menu->entryconfigure(0, -state => 'disabled' ); }
+       } );
 
 xorac_update_progress('Packed Log Options', 65);
 
@@ -1187,6 +1216,9 @@ catch ORAC::Error::UserAbort with
 # R E V I S I O N  L O G ----------------------------------------------------
 
 # $Log$
+# Revision 1.7  2001/03/02 05:06:36  allan
+# Working SelectRecipe widget used for Edit Recipe and Override Recipe menu items, plus minor GUI tweaks and a couple of bug fixes
+#
 # Revision 1.6  2001/02/28 20:51:29  allan
 # GUI fixes
 #

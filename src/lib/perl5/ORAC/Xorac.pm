@@ -92,6 +92,7 @@ use ORAC::Constants qw/:status/;    # ORAC__ABORT ORAC__FATAL
 #
 use Tk;
 use Tk::TextANSIColor;
+use Tk::ORAC::RecipeSelect;
 
 #
 # Routines for export
@@ -773,8 +774,8 @@ current recipe search path.
 
 sub xorac_select_recipe {
 
-  croak 'Usage: xorac_select_recipe( $edit )'
-    unless scalar(@_) == 1 ;
+  croak 'Usage: xorac_select_recipe( )'
+    unless scalar(@_) == 0 ;
    
   my ( $edit, $options ) = @_;
     
@@ -809,143 +810,19 @@ sub xorac_select_recipe {
   }
   
   # top level frame
-  my $top_level = ORAC::Event->query("Tk")->Toplevel();
-  ORAC::Event->register("RE"=>$top_level);
+  my $MW = ORAC::Event->query("Tk");
+
+  # Get the directory and filename from the user
+  my $top_level = $MW->ORACRecipeSelect( -instrument => $instrument );
   $top_level->title("Select Recipe");
   $top_level->positionfrom("user");
   $top_level->geometry("+80+80");  
   $top_level->configure( -cursor => "tcross" );
-
-  # Get the directory from the user
-  xorac_select_file( $instrument, $edit );
-
-}
-
-# xorac_select_file
-
-sub xorac_select_file {
-
-  croak 'Usage: xorac_select_file($instrument, $edit )'
-    unless scalar(@_) == 2;
-  
-  use ORAC::Inst::Defn qw/ orac_determine_recipe_search_path /;
-  
-  my ( $instrument, $edit ) = @_; 
+    
+  my ($directory, $filename ) = $top_level->Show;
    
-  my $top_level = ORAC::Event->query("RE");
-                  
-  # label
-  my $label_text = "Choose a directory: ";
-  my $label = $top_level->Label( -textvariable    => \$label_text,
-			         -relief  => 'flat',
-	  	                 -font    => 'Arial', 
-		                 -justify => 'left',
-			         -anchor  => 'w',
-		                 -borderwidth => 5 );
-  $label->grid( -column => 0 ,-row => 0, -columnspan => 2, -sticky => 'nsew' );		                       
-  # listbox frame
-  my $lbox_frame = $top_level->Frame(  -relief      => 'flat',
-                                       -borderwidth => 2 );
-  $lbox_frame->grid( -column => 0, -row => 1, 
-                     -columnspan => 2, -sticky => 'nsew' );
-  
-  # listbox
-  my ( $selected, @contents );
-  
-  my @dir_list = orac_determine_recipe_search_path($instrument);
-  push ( @dir_list, $ENV{"ORAC_RECIPE_DIR"} ) 
-                        if defined $ENV{"ORAC_RECIPE_DIR"};
-
-  # scrolled listbox
-  my $scrollbar = $lbox_frame->Scrollbar();
-  		   
-  my $lbox = $lbox_frame->Listbox(-borderwidth         => 1,
-                                 -selectbackground    => 'blue',
-			         -selectforeground    => 'white',
-			         -selectmode          => 'single',
-				 -font                => 'Arial',
-				 -height              => 10,
-				 -width               => 25,
-				 -yscrollcommand      => ['set'=>$scrollbar]);
-  $lbox->insert('end',sort @dir_list);
-
-  $scrollbar->configure( -command => [ 'yview' => $lbox ]);
-
-  tie $selected, "Tk::Listbox", $lbox;
-  tie @contents, "Tk::Listbox", $lbox;
- 
-  # pack the listbox frame, pack scrollbar first!
-  $scrollbar->grid( -column => 1, -row => 0, -sticky => 'ns' );
-  $lbox->grid( -column => 0, -row => 0 , -sticky => 'nsew');
-  
-  # Cancel button
-  my $cancel_button = $top_level->Button( -text             =>'Cancel',
-	                                  -font             =>'Arial',	
-			                  -activeforeground => 'white',
-                                          -activebackground => 'blue',
-	 	                          -command => sub { 
-					        ORAC::Event->destroy("RE");
-				                ORAC::Event->unregister("RE");  
-					        } );
-  $cancel_button->grid( -column => 0 ,-row => 2, -sticky => 'e' );	
-  
-  # OK button
-  my $ok_button = $top_level->Button( -text             => 'OK',
-	                              -font             => 'Arial',	
-			              -activeforeground => 'white',
-                                      -activebackground => 'blue' );
-
-  my ( $flag, $filename, $directory );
-  $ok_button->configure( -command => sub {
-                   if ( defined $$selected[0] ) {
-                           # label text
-                           $label_text = "Choose a recipe: ";
- 
-                           # access the directory
-                           $directory = $$selected[0];
-                           opendir ( DIR, $directory) or 
-                           throw ORAC::Error::FatalError( 
-			               " Directory $$selected[0] not found",
-                                       ORAC__FATAL );
-  
-                           # directory listing
-                           @contents = ();
-                           @contents = grep !/^\./, readdir *DIR;
-                           closedir DIR;
-  
-                           # re-configure the OK button 
-                           $ok_button->configure( -command => sub {
-			     if ( defined $$selected[0] ) {
-			        # get the filename
-			        $filename = $$selected[0];
-			        # untie variables
-			        untie @contents;
-			        untie $selected; 
-			        # destroy widgets
-			        ORAC::Event->destroy("RE");
-			        ORAC::Event->unregister("RE");
-
-				if ( $edit == 1 ) {
-		  	           # create editor window
-  				   xorac_editor( $directory, $filename );
-				} elsif ( ref($edit) ) {
-				   # or set menu entry and return
-				   $$edit->entryconfigure(1, 
-				             -label => "Override: $filename");
-		                   print "1 directory = $directory\n";
-				   print "1 filename = $filename\n";
-				}    
-			     }}); 
-                   } } );
-  $ok_button->grid( -column => 1 ,-row => 2, -sticky => 'we' );	
-
-  print "flag = $flag\n";
-  $top_level->waitVariable($filename);
-  print "flag = $flag\n";
- 		                   print "2 directory = $directory\n";
-				   print "2 filename = $filename\n"; 
-  return( $directory, $filename );
-
+  return ($directory, $filename);
+		               
 }
 
 # xorac_editor() -----------------------------------------------------------
