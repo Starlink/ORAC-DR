@@ -57,7 +57,12 @@
 #        Sky estimations method as per AUTOPHOTOM parameter SKYEST.  The
 #        default is the mode, so as to exclude contaminating sources.
 #        1 is the mean; 2 is the average of values within two standard
-#        deviations of the mean; 3 is the mode.  [3]
+#        deviations of the mean; 3 is the mode from PHOTOM, 4 is a 
+#        multiply clipped mean emulating the mode but without involving
+#        the median.  The option is to cope with self-flat frames
+#        with a spike artifact in the histogram thus giving the wrong
+#        median, and hence biased mode.  The default is used should 
+#        the supplied value not be one of the allowed options. [3]
 #     SUFFIX = CHARACTER (Given)
 #        Suffix to be applied to the name of the frame in the log of
 #        the results.  It is usually not set.  The NOD recipes need it
@@ -152,6 +157,10 @@
 
 # Obtain the sky-estimation-method index.
        my $skyest = ( $_FIXED_APERTURE_PHOTOMETRY_{SKY_EST} || 3 );
+       if ( $skyest !~ /^[+]?\d$/ || $skyest < 1 || $skyest > 4 ) {
+          orac_warn "Invalid sky estimation ($skyest).  Should be 1, 2, 3, or 4.  Using the PHOTOM mode.\n";
+          $skyest = 3;
+       }
 
 # Selection
 # =========
@@ -402,42 +411,91 @@
                 next;
              }
 
-# Get the reference to the centre co-ordinates/
+# Get the reference to the centre co-ordinates.
              my $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
 
 # Gaussian FWHM
 # =============
 
 # Store the located centroid within a text file of the format PSF expects.
-       unlink ( "centre$$.dat" );
-       open ( PSFIN, ">centre$$.dat" );
-       print PSFIN "@$centre\n";
-       close ( PSFIN );
+             unlink ( "centre$$.dat" );
+             open ( PSFIN, ">centre$$.dat" );
+             print PSFIN "@$centre\n";
+             close ( PSFIN );
 
 # Specify the other parameters for the PSF stage.  Read from an old-style
 # file not a table.  Increase the box size to include several arcseconds.
-       my $ndf = $Frm->file;
-       my $header = "in=$ndf gauss device=! incat=! cofile=centre$$.dat isize=101";
+             my $ndf = $Frm->file;
+             my $header = "in=$ndf gauss device=! incat=! cofile=centre$$.dat isize=101";
 
 # Calculate the best-fitting Gaussian psf, using the star alone.  
-       my $psf_status = $Mon{"kappa_mon"}->obeyw("psf","$header");
+             my $psf_status = $Mon{"kappa_mon"}->obeyw("psf","$header");
 
 # Use null values if PSF fails to converge.
-       my ( $axisratio, $gfwhm, $ORAC_STATUS );
-       if ( $psf_status != ORAC__OK ) {
-          $gfwhm = "<null>";
+             my ( $axisratio, $gfwhm, $ORAC_STATUS ); 
+             if ( $psf_status != ORAC__OK ) {
+                $gfwhm = "<null>";
 
-       } else {
+             } else {
 
 # Obtain the fit parameters of the point-spread function.
-          ( $ORAC_STATUS, $gfwhm ) = $Mon{"kappa_mon"}->get("psf","fwhm");
-          ( $ORAC_STATUS, $axisratio ) = $Mon{"kappa_mon"}->get("psf","axisr");
+                ( $ORAC_STATUS, $gfwhm ) = $Mon{"kappa_mon"}->get("psf","fwhm");
+                ( $ORAC_STATUS, $axisratio ) = $Mon{"kappa_mon"}->get("psf","axisr");
 
 # Derive desired values from the results, namely the average FWHM
 # Protect against nonsense axis ratios.  Convert to arcseocnds.
-          $gfwhm = $gfwhm * sqrt( min( 10, $axisratio ) ) * $pixelscale;
-       }
-       unlink "centre$$.dat";
+                $gfwhm = $gfwhm * sqrt( min( 10, $axisratio ) ) * $pixelscale;
+             }
+             unlink "centre$$.dat";
+
+# Determine sky level by clipping.
+# ================================
+
+# This is a workaround the fact that there is no multiple clipping in
+# PHOTOM's sky estimators.  This assumes a circular aperture.
+             my ( $skymode, $skysigma );
+             if ( $skyest == 4 ) {
+
+# First find the radii of the sky annulus radii in pixels, then the
+# diameter of the annulus in pixels.  The latter assumes that we know the
+# centroid's position.
+                my $innerrad = 0.5 * $inner * $as_aperture / $pixelscale;
+                my $outerrad = 0.5 * $outer * $as_aperture / $pixelscale;
+                my $pannulus = int( 2.0 * $outerrad ) + 1;
+
+# Copy the annulus section to a temporary frame. 
+                my $annbox = "annulus_box$$";
+                my $param = "in=$ndf" . "(" . "$$centre[ 0 ]~$pannulus," .
+                            "$$centre[ 1 ]~$pannulus" . ")";
+                $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param out=$annbox" );
+
+# Create an ARD file to define the annulus whose statistics we want.
+# Remove any existing annulus ARD definition file.
+                unlink( "annulus.ard" );
+
+# Defines pixels which are not in the annulus.  Work in pixel co-ordinates,
+# not pixel indices.
+                open( ARDFILE, ">annulus.ard" );
+                print ARDFILE ".NOT. ( CIRCLE( $$centre[ 0 ], $$centre[ 1 ], $outerrad ) .AND. .NOT. CIRCLE( $$centre[ 0 ], $$centre[ 1 ], $innerrad ) )\n";
+                close( ARDFILE );
+
+# Mask all the pixels except those within the annulus.
+                my $annout = "annulus$$";
+                $param = "in=$annbox out=$annout ardfile=annulus.ard cosys=w";
+                $Mon{"kappa_mon"}->obeyw("ardmask","$param");
+
+# Create a temporary frame just enclosing the sky annulus.
+                my $Frm = $Frm->new( $annout );
+
+# Find the clipped mean (effectively the mode) for the annulus.
+                _CLIPPED_STATS_ CLIP=2,2,2.5,3
+                $skymode = $_CLIPPED_STATS_{MEAN};
+                $skysigma = $_CLIPPED_STATS_{SIGMA};
+
+# Remove temporary frames.
+                _DELETE_A_FRAME_ FRAME=$annbox
+                _DELETE_A_FRAME_ FRAME=$annout
+            }
 
 # Automatic photometry
 # ====================
@@ -456,7 +514,12 @@
 
 # Specify the user parameters.
              my $zp = 0.0;
-             my $user = "skyest=$skyest skymag=$zp";
+             my $user;
+             if ( $skyest == 4 ) {
+                $user = "skyest=$skyest skymag=$zp sky=$skymode skysig=$skysigma";
+             } else {
+                $user = "skyest=$skyest skymag=$zp ";
+             }
  
 # Specify the other parameters for AUTOPHOTOM.  Strictly we should check the
 # headers for the readout mode
@@ -686,7 +749,12 @@ negative.  [1]
 Sky estimations method as per AUTOPHOTOM parameter SKYEST.  The
 default is the mode, so as to exclude contaminating sources.
 1 is the mean; 2 is the average of values within two standard
-deviations of the mean; 3 is the mode.  [3]
+deviations of the mean; 3 is the mode from PHOTOM, 4 is a 
+multiply clipped mean emulating the mode but without involving
+the median.  The option is to cope with self-flat frames
+with a spike artifact in the histogram thus giving the wrong
+median, and hence biased mode.   The default is used should 
+the supplied value not be one of the allowed options. [3]
 
 =item SUFFIX = CHARACTER (Given)
 
