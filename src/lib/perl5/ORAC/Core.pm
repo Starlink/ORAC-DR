@@ -403,49 +403,49 @@ sub orac_print_configuration {
     # Request for an X-window, put this first so that we can fall 
     # back to using the screen if Tk is not found
     if ($log_options =~ /x/) {
-    
+
       # Delay X-loading until now
       eval "use Tk; use Tk::TextANSIColor; use ORAC::Xorac;";
       if ($@) {
         print STDERR "Error loading Tk modules - X logging not available\n";
         print STDERR "Using screen instead\n";
         print STDERR "Error was: $@\n";
-        $$log_options .= 's'; # Make sure we print to screen now
+        $log_options .= 's'; # Make sure we print to screen now
 	
         # $PRIMITIVE_LIST is a reference to an array
         $PRIMITIVE_LIST = [ ];
 	# $CURRENT_PRIMITIVE is a reference to a reference to an array
 	my $ARRAY = [ ]; $CURRENT_PRIMITIVE = \$ARRAY;
- 
-      } else {     
+
+      } else {
         # Create the Tk log window
 	# Routine returns references to packed Tk variable and
 	# references to output, warning and error file handles
         ( $ORAC_MESSAGE, $TEXT1, $TEXT2, $TEXT3 ) = 
-	       xorac_log_window( $win_str, \$orac_prt );
-	  
+	       ORAC::Xorac::xorac_log_window( $win_str, \$orac_prt );
+
 	# Create the Tk recipe window
 	if ($opt_showcurrent) {
 	   # Routine returns a reference to a tied array (listbox contents)
-       	   ( $PRIMITIVE_LIST, $CURRENT_PRIMITIVE ) = 
-	                  xorac_recipe_window( $win_str, $CURRENT_RECIPE );
+       	   ( $PRIMITIVE_LIST, $CURRENT_PRIMITIVE ) =
+	                  ORAC::Xorac::xorac_recipe_window( $win_str, $CURRENT_RECIPE );
         } else {
 	   # otherwise use an anonymous arrays
-	   
+
 	   # $PRIMITIVE_LIST is a reference to an array
 	   $PRIMITIVE_LIST = [ ];
 	   # $CURRENT_PRIMITIVE is a reference to a reference to an array
 	   my $ARRAY = [ ]; $CURRENT_PRIMITIVE = \$ARRAY;
 	}
-	      
-        # Update and draw the screen 
+
+        # Update and draw the screen
 	try {
            ORAC::Event->update("Tk");
         }
 	catch ORAC::Error::FatalError with
 	{
 	   my $Error = shift;
-           $Error->throw;    
+           $Error->throw;
 	}
         catch ORAC::Error::UserAbort with
         {
