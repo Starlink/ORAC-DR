@@ -146,7 +146,10 @@ sub Populate {
                                  -activebackground => 'blue' );
 
   my ( $flag, $filename, $directory );
-  $ok_button->configure( -command => sub {
+  
+  # ok_button subroutines
+  my ( $sub_ok1, $sub_ok2 );
+  $sub_ok1 =  sub {
                    if ( defined $$selected[0] ) {
                            # label text
                            $label_text = "Choose a recipe: ";
@@ -160,21 +163,31 @@ sub Populate {
   
                            # directory listing
                            @contents = ();
-                           @contents = grep !/^\./, readdir *DIR;
-                           closedir DIR;
+                           foreach ( readdir DIR ) {
+                              push( @contents, $_ ) 
+                                          if -T File::Spec->
+		                              catfile($self->{Directory},$_); }
+                            closedir DIR;
   
                            # re-configure the OK button 
-                           $ok_button->configure( -command => sub {
-			     if ( defined $$selected[0] ) {
+                           $ok_button->configure(-command => sub { &$sub_ok2;});
+			   # reconfigure double click
+			   $lbox->bind("<Double-Button-1>", sub { &$sub_ok2; });
+                   } };
+
+   $sub_ok2 = sub { if ( defined $$selected[0] ) {
 			        # get the filename
 			        $self->{Filename} = $$selected[0];
 			        # untie variables
 			        untie @contents;
-			        untie $selected; 
-			     }}); 
-                   } } );
+			        untie $selected; }};
+				 		  
+   $ok_button->configure( -command => sub { &$sub_ok1; } );
    $ok_button->grid( -column => 1 ,-row => 2, -sticky => 'we' );	
 
+   # Bind Double-Button-1 'cause Tim wants it so...
+   $lbox->bind("<Double-Button-1>", sub { &$sub_ok1; } );
+   
    # Composite widget
    # ----------------
    

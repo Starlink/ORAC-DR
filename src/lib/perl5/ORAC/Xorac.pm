@@ -913,12 +913,15 @@ sub xorac_editor {
   my $save_button = $button_frame->Button( -text=>'Save Recipe',
 	                       -font=>'Arial',	
 			       -activeforeground => 'white',
-                               -activebackground => 'blue' );
+                               -activebackground => 'blue',
+			       -state => 'disabled' );
 
   $save_button->configure( -command => sub { 
+                                if ( $save_button->cget( -state) eq 'active' ) 
+                                {
                                     xorac_save_recipe( $recipe,\$text );
                                     $label_text = "Editing recipe: " . $recipe; 
-                                    } );
+                                } } );
   $save_button->grid( -column => 1 ,-row => 0, -sticky => 'we' );	
 
   # pack the frames
@@ -935,6 +938,7 @@ sub xorac_editor {
   # bind any key input to add (modified) onto the recipe string
   $text->bind("<Key>", sub { 
                  unless ( $label_text =~ "modified" ) {
+                    $save_button->configure(-state => 'normal' );
 		    $label_text = $label_text . " (modified)"; } } );
   
 } 
@@ -1368,10 +1372,12 @@ Tk::MainWindow cleaning using ORAC::Event->destroy("Tk")
 
 =cut
 
-sub xorac_exit_normally () {
+sub xorac_exit_normally {
+  my $signal = '';
+  $signal = shift if @_;
 
   # exit
-  &orac_exit_normally;
+  orac_exit_normally( $signal );;
  
 }
 

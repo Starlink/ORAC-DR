@@ -38,6 +38,8 @@
 
 # ---------------------------------------------------------------------------
 
+require 5.006;
+
 use strict;
 use vars qw/$VERSION/;
 
@@ -283,10 +285,13 @@ $menus[4]->pack( -side => 'right' );
 $help_menu = $menus[4]->Menu( -tearoff => 0, -font => 'Arial' );
 $menus[4]->configure( -menu => $help_menu );
 
-# Compile list of HOWTO files in $ORAC_DIR/howto/
+# Compile list of HOWTO files in $ORAC_DIR/howto/ have to pay close
+# attention to what directory we're in!
 my ( @howto_files );
-if ( opendir (DIR, $ENV{"ORAC_DIR"} . "/howto/" ) ) {
-   @howto_files = grep !/^\./, readdir *DIR;
+if ( opendir (DIR, File::Spec->catdir($ENV{"ORAC_DIR"},"howto" ) ) ) {
+   foreach ( readdir DIR ) {
+      push( @howto_files, $_ ) 
+              if -T File::Spec->catfile($ENV{"ORAC_DIR"},"howto",$_); }
    closedir DIR;
 } else {
    orac_err(" Cannot find ORAC HOWTO directory to build help menu\n");
@@ -350,8 +355,18 @@ $menus[0]->menu()->add( "command", -label => "Exit",
 		   } );
 
 # Display menu
+my ( $pid, $dead );
 $menus[1]->pack( -side => 'left' );
-$display_menu = $menus[1]->Menu( -tearoff => 0, -font => 'Arial' );
+$display_menu = $menus[1]->Menu( -tearoff => 0, -font => 'Arial',
+                                 -postcommand => sub {
+				        $dead = waitpid ($pid, &WNOHANG);
+                                        if ( $dead == 0 ) {
+					   $menus[1]->menu()->entryconfigure(2,
+			                                  -state => 'disabled');
+                                        } else {
+					   $menus[1]->menu()->entryconfigure(2,
+			                                  -state => 'normal');
+				        } } );
 
 $menus[1]->configure( -menu => $display_menu );
 $menus[1]->menu()->add( "checkbutton",
@@ -361,8 +376,6 @@ $menus[1]->menu()->add( "checkbutton",
 $menus[1]->menu()->add( "separator" );
 
 # fork() ORACDISP and check the pid so we don't start two copies 
-my ( $pid, $dead );
-
 $menus[1]->menu()->add( "command",
                         -label   => "Configure Display",
                         -command => 
@@ -390,6 +403,7 @@ $menus[1]->menu()->add( "command",
 	  }
        }    
      });   
+
 
 # Options menu
 $menus[2]->pack( -side => 'left' );
@@ -1210,7 +1224,7 @@ xorac_update_progress('Packed Everything Else', 80);
 # If we have ORAC_INSTRUMENT defined then do an instrument setup,
 # not really GUI code, shouldn't be here, but it has to go somewhere
 if ( defined $ENV{"ORAC_INSTRUMENT"} ) {
-   $inst_select = [ $ENV{"ORAC_INSTRUMENT"} ];
+   $inst_select = [ uc($ENV{"ORAC_INSTRUMENT"}) ];
    &$configure_instrument; }
 
 xorac_update_progress('Configuring the interface', 85);
@@ -1286,6 +1300,9 @@ catch ORAC::Error::UserAbort with
 # R E V I S I O N  L O G ----------------------------------------------------
 
 # $Log$
+# Revision 1.12  2001/03/06 02:05:19  allan
+# Bunch of GUI changes in response to Hilo initial install
+#
 # Revision 1.11  2001/03/03 06:27:46  allan
 # Quick fix for selected instrument menu problem
 #
