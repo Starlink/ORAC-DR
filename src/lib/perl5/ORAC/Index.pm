@@ -573,14 +573,28 @@ sub verify {
   croak("Argument is not a hash") unless ref($hashref) eq "HASH";
   return 0 unless defined $name;
 
-  unless (exists $ {$self->indexref}{$name}) {
+  # Replace tokens in the index if necessary.
+  my %temp_index;
+  foreach my $key ( keys %{$self->indexref} ) {
+    ( my $newkey = $key ) =~ s/\+(\w+)\+/$ENV{$1}/eg;
+    $temp_index{$newkey} = ${$self->indexref}{$key};
+  }
+
+  unless (exists ${$self->indexref}{$name} || exists $temp_index{$name}) {
     orac_err "$name is unknown to oracdr and may not be used as calibration\n";
     orac_err "Make sure it is reduced by oracdr\n";
     return 0;
   };
 
-  # take local copy of the calibration data index entry
-  my @calibdata = @{ $self->indexref->{$name} };
+  # Take a local copy of the calibration data index entry, depending
+  # on if we're looking at the untokenized one or not.
+  my @calibdata;
+  if( exists( $temp_index{$name} ) ) {
+    @calibdata = @{ $temp_index{$name} };
+  } else {
+    @calibdata = @{ $self->indexref->{$name} };
+  }
+
   # take local copy the rules
   my %rules = %{$self->rulesref};
   # take local copy of the object header hash
