@@ -30,6 +30,7 @@ use strict;
 use warnings;
 
 use ORAC::Group::UKIRT;
+use ORAC::General;
 
 # Set inheritance
 use base qw/ORAC::Group::UKIRT/;
@@ -50,31 +51,39 @@ my %hdr = (
             GRATING_NAME         => "HIERARCH.ESO.INS.GRAT.NAME",
             GRATING_ORDER        => "HIERARCH.ESO.INS.GRAT.ORDER",
             GRATING_WAVELENGTH   => "HIERARCH.ESO.INS.GRAT.WLEN",
-            SLIT_ANGLE           => "HIERARCH.ESO.ADA.POSANG",
             SLIT_NAME            => "HIERARCH.ESO.INS.SLIT",
             X_DIM                => "HIERARCH.ESO.DET.WIN.NX",
             Y_DIM                => "HIERARCH.ESO.DET.WIN.NY",
 
 # then the general.
-            AIRMASS_START        => "HIERARCH.ESO.TEL.AIRM.START",
             AIRMASS_END          => "HIERARCH.ESO.TEL.AIRM.END",
             CHOP_ANGLE           => "HIERARCH.ESO.SEQ.CHOP.POSANGLE",
             CHOP_THROW           => "HIERARCH.ESO.SEQ.CHOP.THROW",
             DEC_BASE             => "DEC",
             EXPOSURE_TIME        => "EXPTIME",
-            FILTER               => "HIERARCH.ESO.INS.FILT1.ID",
             NUMBER_OF_EXPOSURES  => "HIERARCH.ESO.DET.NDIT",
             NUMBER_OF_READS      => "HIERARCH.ESO.DET.NCORRS",
             OBSERVATION_NUMBER   => "OBSNUM",
             WAVEPLATE_ANGLE      => "HIERARCH.ESO.SEQ.ROT.OFFANGLE",
-            X_LOWER_BOUND        => "HIERARCH.ESO.DET.WIN.STARTX",
-            Y_LOWER_BOUND        => "HIERARCH.ESO.DET.WIN.STARTY"
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed by
 # other instruments.  Have to use the inherited version so that the new
 # subs appear in this class.
 ORAC::Group::ISAAC->_generate_orac_lookup_methods( \%hdr );
+
+sub _to_AIRMASS_START {
+   my $self = shift;
+   my $start_airmass = 1.0;
+   if ( exists $self->hdr->{"HIERARCH.ESO.TEL.AIRM.START"} ) {
+      $start_airmass =  $self->hdr->{"HIERARCH.ESO.TEL.AIRM.START"};
+   }
+   return $start_airmass;
+}
+
+sub _from_AIRMASS_START {
+   "HIERARCH.ESO.TEL.AIRM.START", $_[0]->uhdr( "ORAC_AIRMASS_START" );
+}
 
 # If the telescope ofset exists in arcsec, then use it.  Otherwise
 # convert the Cartesian offsets to equatorial offsets.
@@ -130,7 +139,7 @@ sub _to_RA_TELESCOPE_OFFSET {
       my $sinrot = sin( $rotangle * $dtor );
 
 # Apply the rotation matrix to obtain the equatorial pixel offset.
-      $raoffset = $x_as * $cosrot + $y_as * $sinrot;
+      $raoffset = -$x_as * $cosrot + $y_as * $sinrot;
    }
               
 # The sense is reversed compared with UKIRT, as these measure the
@@ -179,6 +188,18 @@ sub _to_DETECTOR_READ_TYPE {
    return $read_type;
 }
 
+# Filter positions 1 and 2 used for SW and 3 & 4 for LW.
+sub _to_FILTER {
+   my $self = shift;
+   my $filter = "Ks";
+   if ( exists $self->hdr->{"HIERARCH.ESO.INS.FILT1.ID"} ) {
+      $filter = $self->hdr->{"HIERARCH.ESO.INS.FILT1.ID"};
+   } elsif ( exists $self->hdr->{"HIERARCH.ESO.INS.FILT3.ID"} ) {
+      $filter = $self->hdr->{"HIERARCH.ESO.INS.FILT3.ID"};
+   }
+   return $filter;
+}
+
 # Fixed values for the gain depend on the camera (SW or LW), and for LW
 # the readout mode.
 sub _to_GAIN {
@@ -212,8 +233,8 @@ sub _to_NUMBER_OF_OFFSETS {
 }
             
 sub _from_NUMBER_OF_OFFSETS {
-#   "HIERARCH.ESO.TPL.NEXP",  $_[0]->uhdr( "ORAC_NUMBER_OF_OFFSETS" ) - 1;
-   "NEXP",  $_[0]->uhdr( "ORAC_NUMBER_OF_OFFSETS" ) - 1;
+   "HIERARCH.ESO.TPL.NEXP",  $_[0]->uhdr( "ORAC_NUMBER_OF_OFFSETS" ) - 1;
+#   "NEXP",  $_[0]->uhdr( "ORAC_NUMBER_OF_OFFSETS" ) - 1;
 }
 
 sub _to_OBSERVATION_MODE {
@@ -228,8 +249,8 @@ sub _to_OBSERVATION_MODE {
 }
 
 sub _from_OBSERVATION_MODE {
-#   "HIERARCH.ESO.DPR.TECH",  $_[0]->uhdr( "ORAC_OBSERVATION_MODE" );
-   "DPRTECH",  $_[0]->uhdr( "ORAC_OBSERVATION_MODE" );
+   "HIERARCH.ESO.DPR.TECH",  $_[0]->uhdr( "ORAC_OBSERVATION_MODE" );
+#   "DPRTECH",  $_[0]->uhdr( "ORAC_OBSERVATION_MODE" );
 }
 
 sub _to_OBSERVATION_TYPE {
@@ -244,8 +265,8 @@ sub _to_OBSERVATION_TYPE {
 }
 
 sub _from_OBSERVATION_TYPE {
-#   "HIERARCH.ESO.DPR.TYPE",  $_[0]->uhdr( "ORAC_OBSERVATION_TYPE" );
-   "DPRTYPE",  $_[0]->uhdr( "ORAC_OBSERVATION_TYPE" );
+   "HIERARCH.ESO.DPR.TYPE",  $_[0]->uhdr( "ORAC_OBSERVATION_TYPE" );
+#   "DPRTYPE",  $_[0]->uhdr( "ORAC_OBSERVATION_TYPE" );
 }
 
 sub _to_RA_BASE {
@@ -254,24 +275,67 @@ sub _to_RA_BASE {
    return $ra / 15.0;
 }
 
-# Here the effective rotation is that evaluated from the PC matrix.
-
+# Derive the translation between observing template and recipe name.
 sub _to_RECIPE {
    my $self = shift;
    my $recipe = "QUICK_LOOK";
-   my $template = $self->hdr->{"HIERARCH.ESO.TPL.ID"};
 
-   if ( $template eq "ISAACSW_img_obs_AutoJitter" ||
-        $template eq "ISAACSW_img_obs_GenericOffset" ) {
+# Obtain the observing template.  These are equivalent
+# to the UKIRT OT science programmes and their tied DR recipes.
+# However, there are some wrinkles and variations to be tested.
+   my $template = $self->hdr->{"HIERARCH.ESO.TPL.ID"};
+   my $seq = $self->hdr->{"HIERARCH.ESO.TPL.PRESEQ"};
+
+   if ( $template =~ /ISAAC[SL]W_img_obs_AutoJitter/ ||
+        $template =~ /ISAAC[SL]W_img_obs_GenericOffset/ ) {
       $recipe = "JITTER_SELF_FLAT";
-   } elsif ( $template eq "ISAACSW_img_cal_StandardStar" ) {
+
+   } elsif ( $template eq "ISAACSW_img_cal_StandardStar" ||
+             $template eq "ISAACLW_img_cal_StandardStarOff" ||
+             $template eq "ISAACSW_img_tec_Zp" ||
+             $template eq "ISAACLW_img_tec_ZpNoChop" ||
+             $seq eq "ISAAC_img_cal_StandardStar" ||
+             $seq eq "ISAACLW_img_cal_StandardStarOff" ) {
       $recipe = "JITTER_SELF_FLAT_APHOT";
-   } elsif ( $template eq "ISAACSW_img_obs_AutoJitterOffset" ) {
+
+   } elsif ( $template eq "ISAACSW_img_cal_StandardStar" ||
+             $template eq "ISAACLW_img_cal_StandardStarOff" ) {
+      $recipe = "JITTER_SELF_FLAT_APHOT";
+
+   } elsif ( $template =~ /ISAAC[SL]W_img_obs_AutoJitterOffset/ ) {
       $recipe = "CHOP_SKY_JITTER";
+
+   } elsif ( $template eq "ISAACLW_img_obs_AutoChopNod" ||
+             $seq eq "ISAACLW_img_obs_AutoChopNod" ) {
+      $recipe = "NOD_SELF_FLAT_NO_MASK";
+
+   } elsif ( $template eq "ISAACLW_img_cal_Standard_Star" ||
+             $template =~ /^ISAACSW_img_tec_Zp/ ||
+             $seq eq "ISAACLW_img_cal_Standard_Star" ) {
+      $recipe = "NOD_SELF_FLAT_NO_MASK_APHOT";
+
+   } elsif ( $template =~ /ISAAC[SL]W_img_cal_TwFlats/ ) {
+       $recipe = "SKY_FLAT_MASKED";
+
+# Spectroscopy.  EXTENDED_SOURCE may be more appropriate for
+# the ISAACSW_spec_obs_GenericOffset template.
+   } elsif ( $template =~ /ISAAC[SL]W_spec_obs_AutoNodOnSlit/ ||
+             $template =~ /ISAAC[SL]W_spec_obs_GenericOffset/ ||
+             $template eq "ISAACLW_spec_obs_AutoChopNod" ) {
+      $recipe = "POINT_SOURCE";
+
+   } elsif ( $template =~ /ISAAC[SL]W_spec_cal_StandardStar/ ||
+             $template eq "ISAACLW_spec_cal_StandardStarNod" ) {
+      $recipe = "STANDARD_STAR";
+
+   } elsif ( $template =~ /ISAAC[SL]W_spec_cal_NightCalib/ ) {
+      $recipe = "REDUCE_SINGLE_FRAME";
+
+   } elsif ( $template =~ /ISAAC[SL]W_spec_cal_Flats/ ) {
+      $recipe = "LAMP_FLAT";
    }
    return $recipe;
 }
-
 
 sub _to_ROTATION {
    my $self = shift;
@@ -284,6 +348,19 @@ sub _to_SCAN_INCREMENT {
 
 sub _from_SCAN_INCREMENT {
    "DETINCR", 1;
+}
+
+sub _to_SLIT_ANGLE {
+   my $self = shift;
+   my $slitangle = 0.0;
+   if ( exists $self->hdr->{"HIERARCH.ESO.ADA.POSANG"} ) {
+      $slitangle =  $self->hdr->{"HIERARCH.ESO.ADA.POSANG"};
+   }
+   return $slitangle;
+}
+
+sub _from_SLIT_ANGLE {
+   "HIERARCH.ESO.ADA.POSANG",  $_[0]->uhdr( "ORAC_SLIT_ANGLE" );
 }
 
 # Fixed values for the gain depend on the camera (SW or LW), and for LW
@@ -329,12 +406,14 @@ sub _to_UTDATE {
    return substr( $dateobs, 0, 4 ) . substr( $dateobs, 5, 2 ) . substr( $dateobs, 8, 2 )
 }
 
-
 sub _to_UTEND {
    my $self = shift;
 
-# This is approximate UT in seconds.
-   my $endsec = $self->hdr->{UTC} + $self->hdr->{EXPTIME};
+# Obtain the start time in seconds.
+   my $startsec = 3600.0 * $self->get_UT_hours();
+
+# This is approximate end UT in seconds.
+   my $endsec = $startsec + $self->hdr->{EXPTIME};
 
 # Convert from seconds to decimal hours.
    return $endsec / 3600.0;
@@ -343,11 +422,8 @@ sub _to_UTEND {
 sub _to_UTSTART {
    my $self = shift;
 
-# This is approximate.
-   my $startsec  = $self->hdr->{UTC};
-
-# Convert from seconds to decimal hours.
-   return $startsec / 3600.0;
+# Obtain the start time in seconds.
+   return $self->get_UT_hours();
 }
 
 # Use the nominal reference pixel if correctly supplied, failing that
@@ -394,6 +470,16 @@ sub _from_Y_REFERENCE_PIXEL {
    "CRPIX2", $_[0]->uhdr("ORAC_Y_REFERENCE_PIXEL");
 }
 
+sub _to_X_LOWER_BOUND {
+   my $self = shift;
+   return nint( $self->hdr->{"HIERARCH.ESO.DET.WIN.STARTX"} );
+}
+
+sub _to_Y_LOWER_BOUND {
+   my $self = shift;
+   return nint( $self->hdr->{"HIERARCH.ESO.DET.WIN.STARTY"} );
+}
+
 sub _to_X_UPPER_BOUND {
    my $self = shift;
    return $self->hdr->{"HIERARCH.ESO.DET.WIN.STARTX"} - 1 + $self->hdr->{"HIERARCH.ESO.DET.WIN.NX"};
@@ -402,6 +488,26 @@ sub _to_X_UPPER_BOUND {
 sub _to_Y_UPPER_BOUND {
    my $self = shift;
    return $self->hdr->{"HIERARCH.ESO.DET.WIN.STARTY"} - 1 + $self->hdr->{"HIERARCH.ESO.DET.WIN.NY"};
+}
+
+sub get_UT_hours {
+   my $self = shift;
+
+# This is approximate.  UTC is time in seconds.
+   my $startsec = 0.0;
+   if ( exists ( $self->hdr->{UTC} ) ) {
+      $startsec  = $self->hdr->{UTC};
+
+# Use the backup of the observation start header, which is encoded in
+# FITS data format, i.e. yyyy-mm-ddThh:mm:ss.  So convert ot seconds.
+   } elsif ( exists( $self->hdr->{"HIERARCH.ESO.OBS.START"} ) ) {
+      my $t = $self->hdr->{"HIERARCH.ESO.OBS.START"};
+      $startsec = substr( $t, 11, 2 ) * 3600.0 +
+                  substr( $t, 14, 2 ) * 60.0 + substr( $t, 17, 2  );
+   }
+
+# Convert from seconds to decimal hours.
+   return $startsec / 3600.0;
 }
 
 =head1 PUBLIC METHODS
@@ -424,7 +530,7 @@ name of the new group. The object identifier is returned.
 
 This method calls the base class constructor but initialises
 the group with a file suffix of '.sdf' and a fixed part
-of 'rg'.
+of 'gisaac'.
 
 =cut
 
@@ -458,13 +564,13 @@ pipeline by using values stored in the header.
 Required ORAC extensions are:
 
 ORACTIME: should be set to a decimal time that can be used for
-comparing the relative start times of frames. For IRCAM this
+comparing the relative start times of frames.  For UKIRT this
 number is decimal hours, for SCUBA this number is decimal
 UT days.
 
 ORACUT: This is the UT day of the frame in YYYYMMDD format.
 
-This method should be run after a header is set. Currently the readhdr()
+This method should be run after a header is set.  Currently the readhdr()
 method calls this whenever it is updated.
 
 This method updates the frame header.
@@ -483,7 +589,7 @@ sub calc_orac_headers {
   # ORACTIME
   # For ISAAC this is the UTC header value converted to decimal hours
   # and a 12-hour offset to avoid worrying about midnight UT.
-  my $time = $self->hdr( "UTC" ) / 3600.0 + 12.0;
+  my $time = $self->get_UT_hours() + 12.0;
   # Just return it (zero if not available)
   $time = 0 unless (defined $time);
   $self->hdr('ORACTIME', $time);
@@ -492,7 +598,7 @@ sub calc_orac_headers {
 
   # ORACUT
   # For ISAAC this is the UTC header value converted to decimal hours.
-  my $ut = $self->hdr( "UTC" ) / 3600.0;
+  my $ut =  $self->get_UT_hours();
   $ut = 0 unless defined $ut;
   $self->hdr('ORACUT', $ut);
 
@@ -516,7 +622,7 @@ Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
