@@ -86,34 +86,6 @@ sub indexfile {
 };
 
 
-=item filehandle
-
-Return (or set) the filehandle of the index file
-
-$FILE = $Index->filehandle;
-
-=cut
-
-
-sub filehandle {
-  my $self = shift;
-  
-  
-  if (@_) {				# if Joe is trying to set this...
-    my $handle = shift;
-    
-    
-    if (UNIVERSAL::isa($handle,"IO")) {	# ... and it IS a file handle object...
-      $self->{IndexFileHandle} = $handle; # ... do it..
-    } else {				# ... otherwise barf
-      carp "$handle is not a filehandle object: attempt to set ignored";
-    };
-    
-  };
-  return $self->{IndexFileHandle};
-};
-
-
 =item indexrulesfile
 
 Return (or set) the filename of the rules file
@@ -198,13 +170,14 @@ sub slurprules {
     
     foreach my $line (<$handle>) {
       
-      next if $line =~ /^\s*		#/;
-      
+      next if $line =~ /^\s*\#/;
+
       $line =~ s/^\s+//g;		# zap leading blanks
       my ($header,$rule)=split(/\s+/,$line,2);
       
       next unless defined $header;	# skip blank lines
-      $rules{$header} = $rule;
+      chomp($rule);                     # Remove carriage return
+      $rules{$header} = $rule;   
       
     };
     
@@ -430,7 +403,7 @@ sub verify {
     };
     unless ($ok) {
       orac_warn("$name not a suitable calibration: failed $key $rules{$key}\n");
-      print "Header:-",$Hdr{$key},"-\n","Calvalue:-$calvalue-\n";
+      print "Header:-",$Hdr{$key},"--","Calvalue:-$calvalue-\n";
       return 0;
     };
     
