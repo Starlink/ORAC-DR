@@ -4,15 +4,27 @@ _CALCULATE_SNR_ - Display the Signal to Noise Ratio for a frame
 
 =head1 DESCRIPTION
 
-Calculates and optionally displays the signal to noise ration for a frame.
+Calculates and optionally displays the signal to noise ratio for a frame.
 
-=head1 AUTHOR
+=head1 NOTES
+
+=over 4
+
+=item *
+
+The signal-to-noise ratio is only calculated if the Group object has
+a VARIANCE component.
+
+=back
+
+=head1 AUTHORS
 
 Paul Hirst <p.hirst@jach.hawaii.edu>
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
@@ -21,61 +33,71 @@ if ($Frm->uhdr("PAIR_COMPLETE")) {
 
   my $in = $Grp->file;
 
-  # Simply add an _snr to the filename to denote signal to noise ratio
-  my $out = $in ."_snr";
+  # Only do this if the file actually has a VARIANCE component.
+  $Mon{'ndfpack_mon'}->obeyw("ndftrace", "ndf=$in");
+  my ( $ORAC_STATUS, $variance ) = $Mon{'ndfpack_mon'}->get("ndftrace", "variance");
+  if( $variance eq "TRUE" ) {
 
-  # A generic temp file
-  my $tmp = new ORAC::TempFile;
-  my $tmpfile = $tmp->file;
-  
-  # A temp file to store the variance
-  my $var = new ORAC::TempFile;
-  my $varfile = $var->file;
-  
-  # A temp file to store the standard-deviation
-  my $sd = new ORAC::TempFile;
-  my $sdfile = $sd->file;
-  
-  # Another temp file to store the signal
-  my $sig = new ORAC::TempFile;
-  my $sigfile = $sig->file;
-  
-  # Patent-Pending horrible hack
-  my $ORAC_STATUS = ( create_hdsobj( $varfile, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
-  $ORAC_STATUS = ( copy_hdsobj( "$in.VARIANCE", "$varfile.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
+    # Simply add an _snr to the filename to denote signal to noise ratio
+    my $out = $in ."_snr";
 
-  $ORAC_STATUS = ( create_hdsobj( $sigfile, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
-  $ORAC_STATUS = ( copy_hdsobj( "$in.DATA_ARRAY", "$sigfile.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
-  $Mon{'ndfpack_mon'}->obeyw("setbad", "ndf=$sigfile");
+    # A generic temp file
+    my $tmp = new ORAC::TempFile;
+    my $tmpfile = $tmp->file;
 
-  # Form the standard deviation as the square root of the variance
-  $Mon{'kappa_mon'}->obeyw("pow", "in=$varfile power=0.5 out=$sdfile");
- 
-  # Form the signal to noise ratio
-  $Mon{'kappa_mon'}->obeyw("div", "in1=$sigfile in2=$sdfile out=$out");
-  $Mon{'ndfpack_mon'}->obeyw("native", "object=$out");  
+    # A temp file to store the variance
+    my $var = new ORAC::TempFile;
+    my $varfile = $var->file;
 
-  # Copy in an axis component etc
-  $Mon{'ndfpack_mon'}->obeyw("setaxis", "ndf=$out like=$in");
-  $Mon{'ndfpack_mon'}->obeyw("setbad", "ndf=$out");
-  orac_print "Signal-to-Noise Ratio spectrum of $in: $out\n";  
+    # A temp file to store the standard-deviation
+    my $sd = new ORAC::TempFile;
+    my $sdfile = $sd->file;
 
-  # Determine the statistics
-  $Mon{'kappa_mon'}->obeyw("stats", "ndf=$out");
-  ($ORAC_STATUS, my $mean) = $Mon{'kappa_mon'}->get("stats", "mean");
-  ($ORAC_STATUS, my $max) = $Mon{'kappa_mon'}->get("stats", "maximum");
+    # Another temp file to store the signal
+    my $sig = new ORAC::TempFile;
+    my $sigfile = $sig->file;
 
-  $mean = sprintf("%.2f", $mean);
-  $max = sprintf("%.2f", $max);
+    # Patent-Pending horrible hack
+    $ORAC_STATUS = ( create_hdsobj( $varfile, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+    $ORAC_STATUS = ( copy_hdsobj( "$in.VARIANCE", "$varfile.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
 
-  orac_print "S/N ratio of $in: Mean=$mean, maximum=$max\n";
+    $ORAC_STATUS = ( create_hdsobj( $sigfile, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+    $ORAC_STATUS = ( copy_hdsobj( "$in.DATA_ARRAY", "$sigfile.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
+    $Mon{'ndfpack_mon'}->obeyw("setbad", "ndf=$sigfile");
 
-  my $tmpGrp = new $Grp;
-  $tmpGrp->file($out);
-   
-  # Display the snr spectrum
-  $Display->display_data( $tmpGrp ) if defined $Display;
+    # Form the standard deviation as the square root of the variance
+    $Mon{'kappa_mon'}->obeyw("pow", "in=$varfile power=0.5 out=$sdfile");
+
+    # Form the signal to noise ratio
+    $Mon{'kappa_mon'}->obeyw("div", "in1=$sigfile in2=$sdfile out=$out");
+    $Mon{'ndfpack_mon'}->obeyw("native", "object=$out");
+
+    # Copy in an axis component etc
+    $Mon{'ndfpack_mon'}->obeyw("setaxis", "ndf=$out like=$in");
+    $Mon{'ndfpack_mon'}->obeyw("setbad", "ndf=$out");
+    orac_print "Signal-to-Noise Ratio spectrum of $in: $out\n";
+
+    # Determine the statistics
+    $Mon{'kappa_mon'}->obeyw("stats", "ndf=$out");
+    ($ORAC_STATUS, my $mean) = $Mon{'kappa_mon'}->get("stats", "mean");
+    ($ORAC_STATUS, my $max) = $Mon{'kappa_mon'}->get("stats", "maximum");
+
+    $mean = sprintf("%.2f", $mean);
+    $max = sprintf("%.2f", $max);
+
+    orac_print "S/N ratio of $in: Mean=$mean, maximum=$max\n";
+
+    my $tmpGrp = new $Grp;
+    $tmpGrp->file($out);
+
+    # Display the snr spectrum
+    $Display->display_data( $tmpGrp ) if defined $Display;
+
+  } else {
+
+    orac_print "$in has no VARIANCE information. Signal-to-noise ratio cannot be calculated.\n";
+
+  }
 
   orac_print "\n";
-
 }
