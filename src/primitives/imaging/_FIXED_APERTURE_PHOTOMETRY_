@@ -459,6 +459,7 @@
 # We must set the WCS to pixels.
              my ( $frameno, $param1, $ORAC_STATUS );
              my $ndf = $Frm->file;
+             my $badpix = 0;
              if ( starversion_gt( "KAPPA", 'V0.13-6' ) ) {
 
 # Record the current WCS domain number.
@@ -563,6 +564,44 @@
                 _DELETE_A_FRAME_ FRAME=$annout
              }
 
+# Replace bad pixels
+# ==================
+
+# Create temporary files to store the cleaned frames.
+            my $tmp1 = new ORAC::TempFile;
+            my $tmpfile1 = $tmp1->file;
+            my $tmp = new ORAC::TempFile;
+            my $tmpfile = $tmp->file;
+
+# We could invoke STATS to find out if there are any bad pixels, but 
+# GLITCH will be faster even if there are no replacements to make.
+# Only mosaics may be devoid of bad pixels anyway.
+
+# This first pass gets rid of most bad pixels beyond the frame
+# periphery, where blocks of bad pixels exist, but should not affect
+# the photometry.
+            if ( starversion_lt( "KAPPA", 'V0.15-0' ) ) {
+               $param1 = "inpic=$ndf outpic=$tmpfile1 where=bad";
+            } else {
+               $param1 = "in=$ndf out=$tmpfile1 mode=bad";
+            }
+            $Mon{ "kappa_mon" }->obeyw( "glitch", "$param1" );
+
+# A second pass should remove virtually all the bad pixels in the
+# aperture.
+            if ( starversion_lt( "KAPPA", 'V0.15-0' ) ) {
+               $param1 = "inpic=$tmpfile1 outpic=$tmpfile where=bad";
+            } else {
+               $param1 = "in=$tmpfile1 out=$tmpfile mode=bad";
+            }
+            $Mon{ "kappa_mon" }->obeyw( "glitch", "$param1" );
+
+
+# The outside world will not see the above as the output still refers
+# to the original frame.  Just issue an inoformational message.
+            orac_print "Most bad pixels replaced in $ndf by median of eight neighbours\n";
+            orac_print "   for aperture photometry.\n";
+
 # Automatic photometry
 # ====================
 #
@@ -593,7 +632,7 @@
 # present when USE_VARIANCE is true.  PHOTON=2 uses sky variance to
 # estimate the photometric error, whereas PHOTON=3 uses the data
 # variance.
-             $param1 = "in=$ndf infile=photom$$.dat outfile=photom$$.res";
+             $param1 = "in=$tmpfile infile=photom$$.dat outfile=photom$$.res";
              my $photon = 2;
              if ( $Frm->uhdr( "USE_VARIANCE" ) ) {
                 orac_warn "$ndf using variance\n";
