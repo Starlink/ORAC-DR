@@ -51,7 +51,8 @@ foreach my $line (<MASTER>) {
 
     }
 
-    system("/local/perl-5.6/bin/perl /home/timj/perlmods/Pod/LaTeX/pod2latex --modify $doc$pod");
+    system("/local/perl-5.6/bin/perl /home/timj/perlmods/Pod/LaTeX/pod2latex --modify $doc$pod")
+	&& die "Error running pod2latex: $!";
     open (LATEX,"$doc.tex");
 
     print SUN <LATEX>;
