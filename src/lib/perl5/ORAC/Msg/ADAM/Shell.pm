@@ -251,13 +251,16 @@ sub obeyw {
   $args =~ s/~/\\~/g;
 
   # Now try to replace single quotes with a "' '" combination
-  # and only do this for strings containing commas
-  # Probably will not work if we have a '{xx,xx}' combination 
+  # This just deals with quoting arrays (comma-separated lists)
+  #  $args =~ s/\'(\w+,\w+)+\'/\"$&\"/g;
+  # A more general answer using minimal matching is
 
-  $args =~ s/\'(\w+,\w+)+\'/\"$&\"/g;
+  # dont know what happens if you didnt want your single quote quoted :-)
+  $args =~ s/\'(.*?)\'/\"$&\"/g; 
 
   my $exstat = system("$command $args");
 
+  
   # Now change directory back again
   chdir($cwd) || croak "Error changing back to current directory\n";
 
