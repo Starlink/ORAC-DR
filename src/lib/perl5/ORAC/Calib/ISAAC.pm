@@ -182,7 +182,7 @@ sub _set_index_rules {
   my $current = $index->indexrulesfile;
 
   # Now change the rules file
-  if (uc($self->thing->{DPRTECH}) eq 'IMAGE') {
+  if (uc($self->thing->{"HIERARCH.ESO.DPR.TECH"}) eq 'IMAGE') {
     $index->indexrulesfile($im)
       unless $im eq $current;
   } else {
