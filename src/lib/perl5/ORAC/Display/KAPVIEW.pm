@@ -45,10 +45,11 @@ use ORAC::General;                      # Max and min
 
 use base qw/ ORAC::Display::Base /;     # Base class
 
-use vars qw/$VERSION $DEBUG $AGI_USER $AGI_NODE/;
+use vars qw/$VERSION $DEBUG $AGI_USER $AGI_NODE $KAPPA13/;
 
 $VERSION = '0.10';
 $DEBUG = 0;
+$KAPPA13 = 0;  # True if we are using KAPPA 0.13
 
 =head1 PUBLIC METHODS
 
@@ -75,7 +76,8 @@ sub new {
   # Create a new instance from the base class
   my $disp = $class->SUPER::new(Obj => undef,    # Messaging object
 				AMS => undef,    # Adam message system
-				Kappa => undef  # Kappa_mon object
+				Kappa => undef,  # Kappa_mon object
+				Ndfpack=> undef, # Ndfpack_mon object
 			       );
 
   # Start message system (should just return if already started)
@@ -174,6 +176,44 @@ sub kappa {
   }
 
   return $self->{Kappa};
+}
+
+=item ndfpack
+
+Messaging object associated with the ndfpack_mon monolith.
+This is used by some of the modes in order to reshape
+date arrays (eg in SIGMA mode - reshape is run to convert
+to 1-d)
+
+A NdfPack messaging object is created if the object is undefined.
+
+=cut
+
+sub ndfpack {
+  my $self = shift;
+  if (@_) { $self->{Ndfpack} = shift; }
+
+  # Start kappa if needed
+  unless (defined $self->{Ndfpack}) {
+    orac_print ("Creating Ndfpack_mon object.............\n",'cyan') if $DEBUG;
+
+    # Note that a MONOLITH name is supplied as an option.
+    # This is so that if a path to the monolith exists and it
+    # is an A-task [note that we dont specify task type - if a
+    # kappa monolith is already running on this path as an I-task
+    # then parameter retrieval will fail. It is possible that in the
+    # future the objects will be stored so that if a monolith is started
+    # by the same process in a different piece of code a copy of the
+    # task object will be returned rather than creating a new one.)
+    # Currently this is still a bit of a kluge and requires some knowledge
+    # of the way that the kappa monolith used by the recipes was started.
+    $self->{Ndfpack} = new ORAC::Msg::ADAM::Task("ndfpack_mon_$$", 
+					       "$ENV{KAPPA_DIR}/ndfpack_mon",
+					       { MONOLITH => 'ndfpack_mon' }
+					      ); 
+  }
+
+  return $self->{Ndfpack};
 }
 
 
@@ -327,7 +367,7 @@ sub configure {
 
   # Ask Kapview to display
   $status = $self->obj->resetpars;
-  $status = $self->obj->obeyw("display", "in=$data mode=sc device=$device accept");
+  $status = $self->obj->obeyw("display", "in=$data mode=sc device=$device noaxes accept");
   if ($status != ORAC__OK) {
     orac_err("Error displaying startup image\n");
     orac_err("Trying to execute: display in=$data\n");
@@ -822,7 +862,7 @@ sub image {
 
   # If device is now undef we have a problem
   unless (defined $device) {
-    orac_err("Error configuring display. Possible invalid region designation\n");
+    orac_err("Error configuring display for IMAGE. Possible invalid region designation\n");
     return ORAC__ERROR;
   }
 
@@ -875,7 +915,7 @@ sub image {
   $status = $self->obj->obeyw("display", "device=$device in=$file axes clear=true $optstring accept");
   if ($status != ORAC__OK) {
     orac_err("Error displaying image\n");
-    orac_err("Trying to execute: display device=$device axes in=$file\n");
+    orac_err("Trying to execute: display device=$device axes clear=true $optstring in=$file\n");
   }
   return $status;
 
@@ -945,7 +985,7 @@ sub graph {
 
   # If device is now undef we have a problem
   unless (defined $device) {
-    orac_err("Error configuring display. Possible invalid region designation\n");
+    orac_err("Error configuring display for GRAPH. Possible invalid region designation\n");
     return ORAC__ERROR;
   }
 
@@ -969,14 +1009,22 @@ sub graph {
   my $range;
   if (exists $options{ZAUTOSCALE}) {
     if ($options{ZAUTOSCALE}) {
-      $range = "axlim=false";
+      if ($KAPPA13) {
+	$range = ' ';
+      } else {
+	$range = "axlim=false";
+      }
     } else {
       # Set the Y range
       my $min = 0;
       my $max = 1;
       $min = $options{ZMIN} if defined $options{ZMIN};
       $max = $options{ZMAX} if defined $options{ZMAX};
-      $range = "axlim=true abslim=! ordlim=[$min,$max]";
+      if ($KAPPA13) {
+	$range = "ytop=$max ybot=$min";
+      } else {
+	$range = "axlim=true abslim=! ordlim=[$min,$max]";
+      }
     }
   }
 
@@ -1003,6 +1051,117 @@ sub graph {
 }
 
 
+=item contour
+
+Display contours of a 2-D data set.
+
+Recognised options:
+
+  XMIN/XMAX - X pixel max and min values
+  YMIN/YMAX - Y pixel max and min values
+  XAUTOSCALE - Use autoscaling for X?
+  YAUTOSCALE - Use autoscaling for Y?
+  ZMIN/ZMAX  - Z-range of greyscale (data units)
+  ZAUTOSCALE - Autoscale Z?
+  NCONT      - Number of contours
+
+Default is to autoscale.
+
+
+=cut
+
+sub contour {
+
+  my $self = shift;
+ 
+  my $file = shift;
+
+  my $opt;
+  my %options = ();
+  if (@_) {
+    $opt = shift;
+    if (ref($opt) eq 'HASH') {
+      %options = %{$opt};
+    }
+  }
+
+  # Configure the display on the basis of REGION specifier
+  # ..and return the selected device.
+  # Return undef if something went wrong.
+  my $device = $self->config_region(%options);
+
+  # If device is now undef we have a problem
+  unless (defined $device) {
+    orac_err("Error configuring display for CONTOUR. Possible invalid region designation\n");
+    return ORAC__ERROR;
+  }
+
+
+  # Options handling can not be taken out into a sub since every
+  # kapview command has subtly different parameter names,
+
+  # Set the data file name
+  $file =~ s/\.sdf$//;  # Strip .sdf
+
+  # Calculate NDF section
+  $file = $self->select_section($file,\%options,2);
+
+  # Construct the parameter string for DISPLAY
+  my $optstring = " axes clear";
+
+  # Autoscaling is a special case
+  my $ncont = $options{NCONT};
+  $ncont = 6 if $ncont < 1;
+
+  if (exists $options{ZAUTOSCALE}) {
+    # Kappa contour can autoscale if required
+    # Using MODE=AU
+    
+    if ($options{ZAUTOSCALE}) {
+      # Set default scaling
+      $optstring .= " mode=au ";
+    } else {
+
+      # Need to calculate the first contour (ZMIN) +
+      # the spacing between contours
+      # Use mode=linear
+      $optstring .= " mode=lin ";
+
+      if (defined $options{ZMIN}) {
+        $optstring .= " firstcnt=$options{ZMIN} ";
+      } else {
+        $optstring .= " firstcnt=0 ";
+      }
+ 
+      # Calculate the increment (stepcnt)
+      my $inc = ($options{ZMAX} - $options{ZMIN}) / $ncont;
+      $optstring .= " stepcnt=$inc ";
+    }
+  } else {
+    # Set default scaling
+    $optstring .= " mode=au ";
+  }
+  $optstring .= " ncont=$ncont ";  
+
+  my $status;
+
+  # A resetpars seems to be necessary to instruct kappa to
+  # update its current frame for plotting. Without this the new PICDEF
+  # regions are not picked up correctly.
+
+  $status = $self->obj->resetpars;
+  return $status if $status != ORAC__OK;
+  
+  # Do the obeyw
+  $status = $self->obj->obeyw("contour", "device=$device ndf=$file $optstring accept ");
+  if ($status != ORAC__OK) {
+    orac_err("Error displaying contour\n");
+    orac_err("Trying to execute: contour device=$device ndf=$file $optstring\n");
+  }
+  return $status;
+
+}
+
 =item sigma
 
 Display a scatter plot of the data with Y range of N-sigma (sigma
@@ -1019,10 +1178,10 @@ Takes a file name and arguments stored in a hash.
 Note that currently it does not take a format argument
 and NDF is assumed.
 
-MAY WANT TO CONERT THE NDF INTO 1-D BEFORE PLOTTING
-(SINCE WE ARE ONLY INTERESTED IN THE SCATTER)
-KAPPA 0.13 HAS A RESHAPE COMMAND - put this in when I upgrade
-to 0.13.
+If we are running KAPPA 0.13, the NDF is converted
+to 1-DIM with the kappa RESHAPE command before 
+displaying.
+
 
 =cut
 
@@ -1047,18 +1206,46 @@ sub sigma {
 
   # If device is now undef we have a problem
   unless (defined $device) {
-    orac_err("Error configuring display. Possible invalid region designation\n");
+    orac_err("Error configuring display for SIGMA. Possible invalid region designation\n");
     return ORAC__ERROR;
   }
 
   # Set the data file name
   $file =~ s/\.sdf$//;  # Strip .sdf
+  my $tempfile; # Temp file if we reshape
 
-  # Probably should try to find out whether the array is 1 or 2 dimensional
-  # since currently linplot fails if the data is not 1-D
-  # would have to use NDFTRACE from NDFPACK OR use my NDF module
-  # to do it directly
-  # Cant be bothered at the moment...
+  # Convert to 1-D using kappa RESHAPE (if we are using KAPPA0.13)
+  # First find out the number of dimensions
+  if ($KAPPA13) {
+    my ($indf, $ndimx, $ndim, @dim);
+    my $status = &NDF::SAI__OK;
+    ndf_find(&NDF::DAT__ROOT, $file, $indf, $status);
+    ndf_dim($indf, 7, @dim, $ndim, $status);
+    if ($status != &NDF::SAI__OK) {
+      err_annul($status);
+      orac_err("Error reading num dims from input file: $file");
+      return undef;
+    }
+    if ($ndim > 1) {
+      # Reshape the NDF
+      if ($self->ndfpack->contactw) {
+	$tempfile = "dr_reshape$$";
+
+	$status = $self->ndfpack->obeyw("reshape","in=$file out=$tempfile vectorize");
+	if ($status != ORAC__OK) {
+	  orac_err("Error reshaping data file to 1D\n");
+	  return $status;
+	}
+	# Copy to $file
+	$file = $tempfile;
+
+      } else {
+	orac_err("Error contacting ndfpack_mon\n");
+	return ORAC__ERROR
+      }
+
+    }
+  }
 
   # First thing to do is calculate the relevant statistics of the
   # input file.
@@ -1112,7 +1299,12 @@ sub sigma {
   return $status if $status != ORAC__OK;
 
   # Construct string for linplot options
-  my $args = "clear mode=2 axlim=true ordlim=[$min,$max] abslim=!";
+  my $args;
+  if ($KAPPA13) {
+    $args = "clear mode=mark marker=2 ytop=$max ybot=$min";
+  } else {
+    $args = "clear mode=2 axlim=true ordlim=[$min,$max] abslim=!";
+  }
 
   # Run linplot
   $status = $self->obj->obeyw("linplot","ndf=$file device=$device $args");
@@ -1131,6 +1323,9 @@ sub sigma {
     orac_err("Trying to execute: drawsig device=$device $args\n");
     return $status;
   }
+
+  # unlink the tempfile
+  unlink $tempfile .".sdf" if defined $tempfile;
 
   return $status;
 }
@@ -1186,7 +1381,7 @@ sub datamodel {
 
   # If device is now undef we have a problem
   unless (defined $device) {
-    orac_err("Error configuring display. Possible invalid region designation\n");
+    orac_err("Error configuring display for datamodel. Possible invalid region designation\n");
     return ORAC__ERROR;
   }
 
@@ -1207,19 +1402,36 @@ sub datamodel {
   my $range;
   if (exists $options{ZAUTOSCALE}) {
     if ($options{ZAUTOSCALE}) {
-      $range = "axlim=false";
+      if ($KAPPA13) {
+	$range = " ";
+      } else {
+	$range = "axlim=false";
+      }
     } else {
       # Set the Y range
       my $min = 0;
       my $max = 1;
       $min = $options{ZMIN} if defined $options{ZMIN};
       $max = $options{ZMAX} if defined $options{ZMAX};
-      $range = "axlim=true abslim=! ordlim=[$min,$max]";
+      if ($KAPPA13) {
+	$range = "ytop=$max ybot=$min";
+      } else {
+	$range = "axlim=true abslim=! ordlim=[$min,$max]";
+      }    
     }
   }
 
+
+  # Construct args
+  my $args;
+  if ($KAPPA13) {
+    $args = "mode=mark marker=2 style='colour(marker)=white'";
+  } else {
+    $args = "cosys=data mode=2 symcol=white";
+  }
+  $args .= " clear $range";
+
   # Now plot the data
-  my $args = "clear mode=2 symcol=white $range";
   $status = $self->obj->obeyw("linplot","ndf=$file device=$device $args");
   if ($status != ORAC__OK) {
     orac_err("Error displaying data file\n");
@@ -1236,7 +1448,12 @@ sub datamodel {
   if (-e $model . ".sdf") {  # Assume .sdf extension!!!!
 
     # Construct the arguments
-    $args = "noclear mode=line lincol=red pltitl='' ordlab=''";
+    if ($KAPPA13) {
+      $args = "mode=line style='colour(lines)=red'";
+    } else {
+      $args = "cosys=data mode=line lincol=red pltitl='' ordlab=''";
+    }
+    $args .= " noclear";
 
     # Run linplot
     $status = $self->obj->obeyw("linplot","ndf=$model device=$device $args");
@@ -1295,7 +1512,7 @@ sub histogram {
 
   # If device is now undef we have a problem
   unless (defined $device) {
-    orac_err("Error configuring display. Possible invalid region designation\n");
+    orac_err("Error configuring display for histogram.\n Possible invalid region designation\n");
     return ORAC__ERROR;
   }
 
@@ -1394,7 +1611,7 @@ sub vector {
 
   # If device is now undef we have a problem
   unless (defined $device) {
-    orac_err("Error configuring display. Possible invalid region designation\n");
+    orac_err("Error configuring display for VECTORS. Possible invalid region designation\n");
     return ORAC__ERROR;
   }
 
@@ -1439,7 +1656,7 @@ sub DESTROY {
 
 
 =back
- 
+
 =head1 SEE ALSO
 
 L<ORAC::Display>, L<ORAC::Display::GAIA>
