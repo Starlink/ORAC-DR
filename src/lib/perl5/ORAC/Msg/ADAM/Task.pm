@@ -49,9 +49,8 @@ use Starlink::ADAM ();
 use vars qw/$VERSION $DTASK__ACTCOMPLETE $SAI__OK/;
 
 # Access the AMS task code
-use Starlink::AMS::Task;
+use Starlink::AMS::Task '1.00';
  
-$VERSION = undef;
 $VERSION = '0.01';
 
 
@@ -72,6 +71,8 @@ Create a new instance of a ORAC::Msg::ADAM::Task object.
  
   $obj = new ORAC::Msg::ADAM::Task;
   $obj = new ORAC::Msg::ADAM::Task("name_in_message_system","monolith");
+  $obj = new ORAC::Msg::ADAM::Task("name_in_message_system","monolith"
+                                    { TASKTYPE => 'A'} );
  
 If supplied with arguments (matching those expected by load() ) the
 specified task will be loaded upon creating the object. If the load()
@@ -123,13 +124,19 @@ sub obj {
 Load a monolith and set up the name in the messaging system.
 This task is called by the 'new' method.
 
-  $status = $obj->load("name","monolith_binary");
+  $status = $obj->load("name","monolith_binary",{ TASKTYPE => 'A' });
 
 If the second argument is omitted it is assumed that the binary
 is already running and can be called by "name".   
 
 If a path to a binary with name "name" already exists then the monolith
 is not loaded.
+
+Options (in the form of a hash reference) can be supplied
+in order to configure the monolith. Currently supported options
+are
+
+  TASKTYPE  - can be 'A' for A-tasks or 'I' for I-tasks
 
 =cut
 
@@ -183,9 +190,6 @@ Obtain the value of a parameter
 
  ($status, @values) = $obj->get("task", "param");
 
-Note that this is a different order to that returned by the
-Standard ADAM interface and follows the ORAC definition.
-
 =cut
 
 sub get {
@@ -201,34 +205,7 @@ sub get {
   my $task = shift;
   my $param = shift;
 
-  my $arg = $task .":" . $param;
-
-  my ($result, $status) = $self->obj->get($arg);
-
-  # Convert $result to an array
-  my @values = ();
-
-  # an array of values if we have a square bracket at the start
-  # something and a square bracket at the end 
-
-  if ($result =~ /^\s*\[.*\]\s*$/) {
-    # Remove the brackets
-    $result =~ s/^\s*\[(.*)]\s*/$1/;
-  
-    # Now split on comma
-    @values = split(/,/, $result);
-
-  } else {
-    push(@values, $result);
-  }
-
-  # DOUBLE precision values are not handled by perl as numbers
-  # We need to change all parameters values of form "numberD+-number"
-  # to "numberE+-number"
-  # not clear whether I should be doing this in the ADAM module
-  # itself or here. For now do it in the ORAC interface
-
-  map { s/(\d)D(\+|-\d)/${1}E$2/g; } @values;
+  my ($status,@values) = $self->obj->get($task, $param);
 
   # Convert from ADAM to ORAC status
   # Probably should put in a subroutine
@@ -261,9 +238,7 @@ sub set {
   my $param = shift;
   my $value = shift;
 
-  my $arg = $task .":" . $param;
-
-  my $status = $self->obj->set($arg, $value);
+  my $status = $self->obj->set($task, $param, $value);
 
   # Convert from ADAM to ORAC status
   # Probably should put in a subroutine
