@@ -604,7 +604,7 @@ sub orac_message_launch {
   # Send the configuration options
   $MessysLaunch->config(
 	# This timeout is not used for monolith launching
-	timeout => 600,
+	timeout => 6000,
 	paramrep => sub {
 	      orac_warn "Sending auto abort in response to parameter request\n";
 	      return "!!"
