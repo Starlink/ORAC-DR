@@ -3,14 +3,15 @@
 #    _MAKE_FLAT_FROM_GROUP_
 #
 # Purpose:
-#    Makes a flat from the current group of frames.
+#    Makes flats from the current group of frames.
 #
 # Language:
 #    Perl5
 #
 # Description:
-#    This primitive makes a self flat from the current group.  It uses
-#    a median to combine the frames pixel by pixel, and then divides the
+#    This primitive makes self flats from the current group, one for
+#    each distinct observation filter.  For eacg flat it uses a
+#    median to combine the frames pixel by pixel, and then divides the
 #    resultant image by its mean form the flat field.  The primitive
 #    files the resultant flat in its calibration index. 
 #
@@ -21,6 +22,12 @@
 #       deviations from its 15x15 pixel neighbourhood are rejected.  This
 #       is done iteratively, three times.  If false (0), no cleaning is
 #       performed.  [1]
+#    FILTER = CHARACTER (Given)
+#       If supplied only make a flat for the named filter.  Otherwise
+#       create flats for each filter stored in the FILTER_LIST group
+#       user header.  This parameter is intended for use where the loop
+#       through a series of filters is performed by a calling primitive,
+#       such as one that masks objects.  []
 #    METHOD = CHARACTER (Given)
 #       The method used to combine frames to form the flat.  See
 #       parameter METHOD of CCDPACK/MAKEFLAT (SUN/139) for the options.
@@ -37,6 +44,10 @@
 #    -  This primitive is suitable for infrared imaging instruments.
 #    -  Processing only occurs for object, sky, or calibration-lamp
 #    frames, and when the steering header MAKE_FLAT is true.
+#    -  The list of filters present in the group is listed in an array
+#    stored by reference in the group user header FILTER_LIST.  If this
+#    is undefined, only a single flat is made for filter stored in the
+#    current Frame's user header ORAC_FILTER.
 #    -  There is special behaviour for a combined polarimetry flat
 #    (see "Output Data").  The string "pol" in the filter name is used
 #    to indicate polarimetry data.
@@ -76,26 +87,69 @@
 # Selection
 # =========
 #
-# This should only be performed on OBJECT, SKY or calibration LAMP frames.
-    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
-         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ||
-         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "LAMP" ) {
+# This should only be performed on OBJECT, SKY or calibration LAMP
+# frames, when it's time make a flat.
+    if ( ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+           $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ||
+           $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "LAMP" ) &&
+           $Frm->uhdr( "MAKE_FLAT" ) ) {
 
-# Test whether or not it is time to make a flat.
-       my $makeflat = $Frm->uhdr( "MAKE_FLAT" );
-       if ( $makeflat ) {
+# Record the current file, to be restored at the conclusion.
+# The current frame will normally be the last group member, but
+# this may not be the Frm needed if there are multiple filters
+# represented.
+       my $inputfile = $Frm->file;
 
 # Get the cycle number.  Supply a default for recipes not supporting
 # this yet.  Defined because the default is zero.
-          my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
-          $cycleno = defined( $cycleno ) ? $cycleno : 0;
+       my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+       $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+# Arguments
+# =========
+
+# Determine whether or not to clean the data before combination.
+       my $clean = $_MAKE_FLAT_FROM_GROUP_{CLEAN};
+       $clean = defined( $clean ) ? $clean : 1;
+
+# Obtain the value for the combination method.
+       my $method = ( $_MAKE_FLAT_FROM_GROUP_{METHOD} || "broadened" );
+
+# Determine whether or not to clean the data before combination.
+       my $usefilter = $_MAKE_FLAT_FROM_GROUP_{FILTER};
+       my $onefilter = defined( $usefilter );
+
+# List of filters to process.
+# ===========================
+
+# Obtain the list of filters present within the group.  It defaults
+# the current frame's filter in case the list of filters is not
+# yet supported in private code, to give compatibility with former
+# standard behaviour.
+       my @filters = ( $Frm->uhdr( "ORAC_FILTER" ) );
+       if ( ! $onefilter ) {
+          @filters = ( $Frm->uhdr( "ORAC_FILTER" ) );
+          if ( defined $Grp->uhdr( "FILTER_LIST" ) ) {
+             my $filterref = $Grp->uhdr( "FILTER_LIST" );
+             @filters = @$filterref;
+          }
+
+# Being invoked from another primitive, so only process a single flat.
+       } else {
+          @filters = ( $usefilter );
+       }
+
+# Make a flat for each filter within the group.
+       foreach my $filter ( @filters ) {
+          orac_print "Making flat for filter $filter\n" unless $#filters == 0;
 
 # Extract from the main group those frames belonging to this group.
-          my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+          my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno,
+                                       ORAC_FILTER => $filter );
 
 # Make this the main group for this context.
           {
-             $Grp = $cycleGrp;
+             my $Grp = $cycleGrp;
 
 # Form a list of input file names for MAKEFLAT from the other members
 # of the group.  This is not as obvious as it sounds since we are
@@ -107,15 +161,8 @@
 # current frame name.
              $Grp->template( $Frm->file );
 
-# Arguments
-# =========
-
-# Determine whether or not to clean the data before combination.
-             my $clean = $_MAKE_FLAT_FROM_GROUP_{CLEAN};
-             $clean = defined( $clean ) ? $clean : 1;
-
-# Obtain the value for the combination method.
-             my $method = ( $_MAKE_FLAT_FROM_GROUP_{METHOD} || "broadened" );
+# Set a new current file with the same filter.
+             my $Frm = $Grp->frame( 0 );
 
 # Make lists of files to process
 # ==============================
@@ -138,9 +185,8 @@
 # Generate the flat's name.
 # =========================
 
-# Obtain the filter name.  Remove []() or replace characters which would
-# confuse HDS.
-             my $filter = $Frm->uhdr( "ORAC_FILTER" );
+# Remove []() or replace characters which would confuse HDS from the
+# filter name.
              $filter =~ s/\./p/g;
              $filter =~ tr/\(\)\[\]/d/;
 
@@ -293,6 +339,10 @@
              _DISPLAY_FLAT_IMAGE_
 
           }
+
+# Restore the original Frame file.
+          $Frm->file( $inputfile );
+
           orac_print "\n";
        }
     }
@@ -302,12 +352,13 @@
 
 =head1 NAME
 
-_MAKE_FLAT_FROM_GROUP_ -- Makes a flat from the current group of frames.
+_MAKE_FLAT_FROM_GROUP_ -- Makes flats from the current group of frames.
 
 =head1 DESCRIPTION
 
-This primitive makes a self flat from the current group.  It uses
-a median to combine the frames pixel by pixel, and then divides the
+This primitive makes self flats from the current group, one for
+each distinct observation filter.  For eacg flat it uses a
+median to combine the frames pixel by pixel, and then divides the
 resultant image by its mean form the flat field.  The primitive
 files the resultant flat in its calibration index. 
 
@@ -321,6 +372,14 @@ If true (1), the frames are cleaned using a box filter to remove any
 small blemishes.  Pixels deviating by more than 3 standard deviations
 from its 15x15 pixel neighbourhood are rejected.  This is done
 iteratively, three times.  If false (0), no cleaning is performed. [1]
+
+=item FILTER = CHARACTER (Given)
+
+If supplied only make a flat for the named filter.  Otherwise
+create flats for each filter stored in the FILTER_LIST group
+user header.  This parameter is intended for use where the loop
+through a series of filters is performed by a calling primitive,
+such as one that masks objects.  []
 
 =item METHOD = CHARACTER (Given)
 
@@ -349,6 +408,13 @@ This primitive is suitable for infrared imaging instruments.
 
 Processing only occurs for object, sky, or calibration-lamp
 frames, and when the steering header MAKE_FLAT is true.
+
+=item *
+
+The list of filters present in the group is listed in an array
+stored by reference in the group user header FILTER_LIST.  If this
+is undefined, only a single flat is made for filter stored in the
+current Frame's user header ORAC_FILTER.
 
 =item *
 
