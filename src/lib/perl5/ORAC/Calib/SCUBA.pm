@@ -75,17 +75,24 @@ $DEBUG = 0; # Turn off debugging mode
 # These are currently photometry Jy/beam/V FCFs
 
 %DEFAULT_FCFS = (
-		 '2000' => 650,
-		 '1350' => 130,
-		 '1100' => 1,  # This filter has never worked
-		 '850'  => 240,
-		 '750'  => 310,
-		 '450'  => 800,
-		 '350'  => 1200,
-		 '850N' => 240,
-		 '450N' => 800,
-		 '850W' => 197,
-		 '450W' => 384,
+		 BEAM => {
+			  '2000' => 650,
+			  '1350' => 130,
+			  '1100' => 1,  # This filter has never worked
+			  '850'  => 240,
+			  '750'  => 310,
+			  '450'  => 800,
+			  '350'  => 1200,
+			  '850N' => 240,
+			  '450N' => 800,
+			  '850W' => 197,
+			  '450W' => 384,
+			 },
+		 ARCSEC => {
+			    '450W' => 2.6,
+			    '850W' => 0.87,
+			    '850N' => 1.00,
+			   }
 		);
 
 # Should probably put calibrator flux information in a different
@@ -561,7 +568,7 @@ sub badbol_list {
 
   } else {
     # Look for bolometers in $sys itself
-    # Split on commas - for now do not check whether the names
+    # Split on colons - for now do not check whether the names
     # are sensible. If we were to do that we should do the check
     # outside this 'if' and before we return the list
     # Currently this check is done in the primitive at the same time
@@ -604,6 +611,11 @@ sub fluxcal {
   my $filter = shift;
   my $ismap = shift;
 
+  # Fluxes requires that the filter name does not include any non
+  # numbers
+  $filter =~ s/\D+//g;
+
+
   # Start off being pessimistic
   my $flux = undef;
 
@@ -621,7 +633,7 @@ sub fluxcal {
     # Construct argument string for fluxes
     my $hidden = "pos=n flu=y screen=n ofl=n msg_filter=quiet outfile=fluxes.dat apass=n now=n";
 
-    # Now we need to know the date for fluxes (the time is pretty 
+    # Now we need to know the date for fluxes (the time is pretty
     # immaterial for the flux)
     # FLUXES needs the date in DD MM YY format
     # of course SCUBA uses YYYY:MM:DD format
@@ -680,7 +692,12 @@ sub fluxcal {
 Method to return the current gain (aka 'flux conversion factor') 
 for the specified filter that is usable for the current frame.
 
-  $gain = $Cal->gain($filter);
+C<undef> is returned if no gain can be determined.
+
+  $gain = $Cal->gain($filter, $units);
+
+The units must be either BEAM (for Jy/beam/V) or ARCSEC (for
+Jy/arcsec**2/V). If no units are supplied the default is BEAM.
 
 If gains() is set to DEFAULT then this method will simply return
 the current canonical gain for this filter (first trying a specific
@@ -696,24 +713,29 @@ The current index system refuses to continue if a calibration can
 not be found. In future this may well be changed so that the
 DEFAULT values are used if no calibration is available.
 
-Returns the gain (undef if no gain could be found or error).
-
 It may also be useful if the gains either side of current observation
-are retrieved so that the gain can be interpolated.
-
-This would use the same method call that may be added for handling
-skydips either side. (chooseby_positivedt/negativedt)
+are retrieved so that the gain can be interpolated (as for tau
+calculation).
 
 =cut
 
 sub gain {
   my $self = shift;
 
-  croak 'Usage: gain(filter)' if (scalar(@_) != 1);
+  croak 'Usage: gain(filter,[units])'
+    if (scalar(@_) != 1 && scalar(@_) != 2);
 
   # Get the filter (this could be sub-instrument but it is probably
   # easier to use filter than to query the header for the sub name).
   my $filt = uc(shift);
+
+  # Get the units if there
+  my $units = ( @_ ? uc(shift) : 'BEAM');
+
+  # Check units
+  if ($units ne 'BEAM' && $units ne 'ARCSEC') {
+    croak "Units must be BEAM or ARCSEC, not '$units'\n";
+  }
 
   # Query the gain system to use
   my $sys = $self->gains;
@@ -727,10 +749,10 @@ sub gain {
     my $generic;
     ($generic = $filt ) =~ s/\D+$//;
 
-    if (exists $DEFAULT_FCFS{$filt}) {
-      $gain = $DEFAULT_FCFS{$filt};
-    } elsif (exists $DEFAULT_FCFS{$generic}) {
-      $gain = $DEFAULT_FCFS{$generic};
+    if (exists $DEFAULT_FCFS{$units}{$filt}) {
+      $gain = $DEFAULT_FCFS{$units}{$filt};
+    } elsif (exists $DEFAULT_FCFS{$units}{$generic}) {
+      $gain = $DEFAULT_FCFS{$units}{$generic};
     } else {
       orac_err "No gain exists for the specified filter ($filt)\n";
       $gain = undef;
@@ -740,22 +762,21 @@ sub gain {
 
     # Now look in the index file
 
-    # Need to configure the header such that the FILTER keyword
-    # is set -- try to be a good citizen so reset it afterwards
-    my $oldfilt = $self->thing->{FILTER};
-    $self->thing->{FILTER} = $filt;
+    # We are going to modify the header so take a copy
+    my %hdr = %{ $self->thing };
+
+    # Set search parameters
+    $hdr{FILTER} = $filt;
+    $hdr{UNITS}  = $units;
 
     # Now ask for the 'best' gain observation
     # This means closest in time
-    my $best = $self->gainsindex->choosebydt('ORACTIME', $self->thing,0);
+    my $best = $self->gainsindex->choosebydt('ORACTIME', \%hdr, 0);
 
     unless (defined $best) {
-      orac_err "No suitable gain calibration could be found\n";
-      die 'Aborting...';
+      orac_err "No suitable gain calibration could be found for filter $filt ($units)\n";
+      croak 'Aborting...';
     }
-
-    # Reset the FILTER keyword
-    $self->thing->{FILTER} = $oldfilt;
 
     # Now retrieve the entry itself
     my $entref = $self->gainsindex->indexentry($best);
