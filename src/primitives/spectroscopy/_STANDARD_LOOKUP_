@@ -8,8 +8,9 @@ Looks up standard star parameters - from file, SIMBAD, etc. This primitive
 first checks a configuration table (bsc5.dat in $ORAC_DATA_CAL) for the
 spectral type and V magnitude. If the star is not found in the catalogue,
 a search on the SIMBAD database is performed. If the star is not found in
-SIMBAD, then default values are used: 6000K for temperature, -1000 for V
-magnitude, and UNKNOWN for spectral type.
+SIMBAD, then values are set to undef so two things happen: flux calibration
+is skipped, and the next time this primitive is run it will attempt to 
+find the star parameters again (in case of network failure, for example).
 
 =head1 AUTHOR
 
@@ -34,9 +35,12 @@ Council. All Rights Reserved.
 
 
 my ( $vmag, $temperature, $spectype );
-unless ( defined $Grp->uhdr( "TEMPERATURE" ) && 
-         defined $Grp->uhdr( "VMAG" ) && 
-         defined $Grp->uhdr( "SPECTYPE" ) ) {
+unless ( ( defined $Grp->uhdr( "TEMPERATURE" ) && 
+           defined $Grp->uhdr( "VMAG" ) && 
+           defined $Grp->uhdr( "SPECTYPE" ) ) &&
+         ( $Grp->uhdr("TEMPERATURE") ne 'UNKNOWN'  &&
+           $Grp->uhdr("VMAG") ne 'UNKNOWN' &&
+           $Grp->uhdr("SPECTYPE") ne 'UNKNOWN' ) ) {
    # Get the temperature parameter.
    # If the temperature parameter is not defined, check configuration table
    # for spectral type.  If that fails, inquire SIMBAD for the spectral type.
@@ -160,8 +164,8 @@ unless ( defined $Grp->uhdr( "TEMPERATURE" ) &&
       orac_print "Object not found in Bright Star Catalogue.\n";
       orac_print "Querying SIMBAD for spectral type...\n";
 
-      my @simbadurls = qw( http://simbad.harvard.edu/
-                           http://simbad.u-strasbg.fr/ );
+      my @simbadurls = qw( http://simbad.harvard.edua/
+                           http://simbad.u-strasbg.fra/ );
 
       my $meanra = $Frm->uhdr( "ORAC_RA_BASE" );
       my $meandec = $Frm->uhdr( "ORAC_DEC_BASE" );
@@ -194,11 +198,13 @@ unless ( defined $Grp->uhdr( "TEMPERATURE" ) &&
         # set timeout to 20 seconds
         $LWP::Simple::ua->timeout(20);
  
-        my @content = split '\n', LWP::Simple::get( $URL );
-        if ( !defined( $content[ 0 ] ) ) {
+        my $get = LWP::Simple::get( $URL );
+        if ( !defined( $get ) ) {
            orac_print "Unable to connect to SIMBAD database.\n";
         } else {
            my $found = 0;
+
+           my @content = split '\n', $get;
 
   	 # If the SIMBAD results page changes, this will need to change as well.
 	   # For each line, split the fields into an array.
@@ -256,33 +262,37 @@ unless ( defined $Grp->uhdr( "TEMPERATURE" ) &&
 
   }
 
-   # Use defaults if other methods have failed.
+   # Set user headers or throw warnings, depending on if
+   # parameters are set or not.
 
-   # If SIMBAD failed to set the temperature, default to 6000
-   unless (defined $temperature) {
-      $temperature = 6000.0;
-      orac_print "    Temperature could not be determined. Defaulting to $temperature K.\n";
+   if ( defined $temperature ) {
+      $Grp->uhdr( "TEMPERATURE", $temperature );
+   } else {
+      orac_print "    Temperature or standard could not be determined.\n";
+      $Grp->uhdr("TEMPERATURE", "UNKNOWN");
    }
 
-   # Write a obviously wrong V magnitude, if not set.
-   unless ( defined $vmag ) {
-      $vmag = -1000.0;
-      orac_warn "    Could not determine the V magnitude.\n";
+   if ( defined $vmag ) {
+      $Grp->uhdr( "VMAG", $vmag );
+      $Frm->uhdr("VMAG", $vmag);
+      _SET_GROUP_FITS_ITEM_ KEY=VMAG VALUE=$vmag COMMENT=V|magnitude
+   } else {
+      orac_print "    V magnitude of standard could not be determined.\n";
+      $Grp->uhdr("VMAG", "UNKNOWN");
+      $Frm->uhdr("VMAG", "UNKNOWN");
+      _SET_GROUP_FITS_ITEM_ KEY=VMAG VALUE=UNKNOWN COMMENT=V|magnitude
    }
 
-   # Default the spectral type.
-   unless ( defined $spectype ) {
-      $spectype = "UNKNOWN";
-      orac_warn "Could not determine spectral type.\n";
+   if ( defined $spectype ) {
+      $Grp->uhdr( "SPECTYPE", $spectype );
+      $Frm->uhdr("SPECTYPE", $spectype);
+      _SET_GROUP_FITS_ITEM_ KEY=SPECTYPE VALUE=$spectype COMMENT=spectral|type
+   } else {
+      orac_print "    Spectral type of standard could not be determined.\n";
+      $Grp->uhdr("SPECTYPE", "UNKNOWN");
+      $Frm->uhdr("SPECTYPE", "UNKNOWN");
+      _SET_GROUP_FITS_ITEM_ KEY=SPECTYPE VALUE=UNKNOWN COMMENT=spectral|type
    }
-
-   # Store or read values to or from the headers.
-
-
-   # Store the values in the header.
-   $Grp->uhdr( "VMAG", $vmag );
-   $Grp->uhdr( "TEMPERATURE", $temperature );
-   $Grp->uhdr( "SPECTYPE", $spectype );
 
 } else {
    # Values are already stored, so access them.
@@ -293,7 +303,3 @@ unless ( defined $Grp->uhdr( "TEMPERATURE" ) &&
    orac_print "Using previously determined values of Vmag=$vmag, SPECTYPE=$spectype, TEMP=$temperature.\n";
 }
 
-_SET_GROUP_FITS_ITEM_ KEY=SPECTYPE VALUE=$spectype COMMENT=spectral|type
-_SET_GROUP_FITS_ITEM_ KEY=VMAG VALUE=$vmag COMMENT=V|magnitude
-$Frm->uhdr("VMAG", $vmag);
-$Frm->uhdr("SPECTYPE", $spectype);
