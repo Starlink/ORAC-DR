@@ -138,6 +138,7 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
     # regardless of the centre coords frame unless they are a moving frame
     # For now, simply use CENT_CRD since I do not want to have to
     # convert RB to RJ coordinates later on when I calculate the map centre
+    # Also, the error is not going to be very large (<0.5 degree)
     # my $outcoords = ($Frm->hdr('CENT_CRD') eq 'PLANET' ? 'PL' : 'RJ');
     my $outcoords = $Frm->hdr('CENT_CRD');
     $outcoords = 'PL' if $Frm->hdr('CENT_CRD') eq 'PLANET';
@@ -173,9 +174,17 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 	  # use the SLA routine
 	  my @long = split(':',$long);
 	  my @lat = split(':',$lat);
-	
+
+	  # Check for negative
+	  my $neg = 0;
+	  if ($lat[0] < 0) {
+	    $lat[0] *= -1;
+	    $neg = 1;
+	  }
+	  # Calculate decimal form
 	  my $dlat = $lat[0] + ($lat[1]/60) + ($lat[2]/3600);
 	  my $dlong = $long[0] + ($long[1]/60) + ($long[2]/3600);
+	  $dlat *= -1 if $neg; # Correct for negative dec
 
 	  $longsum += $dlong;
 	  $latsum  += $dlat;
@@ -193,10 +202,15 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 	my $dec2deg = sub {
 	  # This is a pain - use SLALIB!
 	  my $num = shift;
+	  my $sign = '';
+	  if ($num < 0) {  # Correct for negative values
+	    $num *= -1;
+	    $sign = '-';
+	  }
 	  my $hour = int($num);
 	  my $minute = int(($num-$hour) * 60.0);
-	  my $sec = 3600 * ($num - ($hour + ($minute / 60))) ;
-	  return ($hour, $minute, $sec);
+	  my $sec = sprintf("%.2f",3600 * ($num - ($hour + ($minute / 60))));
+	  return ($sign . $hour, $minute, $sec);
 	};
 
 	$outlong = join(" ",&$dec2deg($longsum));
@@ -240,7 +254,8 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 
     # Write text file with contents of first group and first sub
     my @jsubs = $subgrps[0]->subs;
-    my @junk = $subgrps[0]->membernamessub($jsubs[0]);
+#    my @junk = $subgrps[0]->membernamessub($jsubs[0]);
+    my @junk = $Grp->membernamessub($jsubs[0]);
     my $infile = "emregrid_$$.lis";
     local(*INPUT);
     open (INPUT, "> $infile") || die "Error opening scratch file $!";
@@ -275,43 +290,43 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
     # Note that it is not clear whether the FOURIER routines
     # require 2**N square for best results
 
-#    my $min = 32;  # Minimum size of output map
+    my $min = 32;  # Minimum size of output map
 
-#    my @nsize = ();
-#    foreach my $sz (@size) {
+    my @nsize = ();
+    foreach my $sz (@size) {
       # Try to get to closest power of 2
-#      my $pow = log($sz) / log(2);
+      my $pow = log($sz) / log(2);
       # Choose the power nearest to an integer
       # with a bias to larger grids
-#      $pow = int($pow + 0.6);
+      $pow = int($pow + 0.6);
 
-#      my $val = 2 ** $pow;
+      my $val = 2 ** $pow;
 
       # Check for minimum size
-#      $val = $min if $val < $min;
+      $val = $min if $val < $min;
 
       # No longer matters if actual size = requested size since
       # I can set REFPIX in SURF 1.4
 
       # Store the value
-#      push(@nsize, $val);
-#    }
+      push(@nsize, $val);
+    }
 
     # Retrieve size array and generate the string for REBIN
-    my $size = "size=[" . join(",",@size) ."]";
-#    orac_print "Regridding map of size: $size\n";
+    my $size = "size=[" . join(",",@nsize) ."]";
+    orac_print "Regridding map of size: $size\n";
 
     # The reference pixel should be in the same location
     # (proportionately) as it was before we just changed the size
 
-#    my @nrefpix = ();
-#    foreach my $i (0..1) {
-#      $nrefpix[$i] = int(($refpix[$i] / $size[$i]) * $nsize[$i]);
-#    }
+    my @nrefpix = ();
+    foreach my $i (0..1) {
+      $nrefpix[$i] = int(($refpix[$i] / $size[$i]) * $nsize[$i]);
+    }
 
     # Set the refpix directive
-    my $refpix = " refpix=[".join(",",@refpix)."]";
-#    orac_print "Setting reference pixel to $refpix\n";
+    my $refpix = " refpix=[".join(",",@nrefpix)."]";
+    orac_print "Setting reference pixel to $refpix\n";
 
     #####################################################
     ####################### REMDBM ######################
@@ -597,12 +612,19 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
       my $xrad = int (($size[0] * $fixed) + 1);
       my $yrad = int (($size[1] * $fixed) + 1);
 
+      # Calculate the centre pixel (should be the middle of the array
+      # not the reference pixel). This should not be necessary
+      # here since we choose the map centre to be the average anyway
+      my $xcen = int( (1 + $size[0]) / 2 - $refpix[0] );
+      my $ycen = int( (1 + $size[1]) / 2 - $refpix[1] );
+
       orac_print "Filtering high frequencies\n";
+      orac_print "Centre: $xcen $ycen $xrad $yrad\n";
 
       # Create ARD file
       my $ardfile = new ORAC::TempFile || die "_REBIN_EM2_GROUP_: Error creating temp file for ardmask\n";
 
-      print {$ardfile->handle} ".NOT.ELLIPSE(0,0,$xrad,$yrad,0)\n";
+      print {$ardfile->handle} ".NOT.ELLIPSE($xcen,$ycen,$xrad,$yrad,0)\n";
       $ardfile->handle->close || die "Error closing ARD file\n";
 
       my $args = "cosys=world ardfile=".$ardfile->file;
