@@ -1045,6 +1045,11 @@ unless ($opt_batch) {
 
   while (1) {
 
+    if (exists $ENV{ORAC_NOGROUPS}) {
+      orac_print "Group management disabled\n";
+      %Groups = ();
+    }
+
     # Return back the current frame
     # This will also configure the frame object
     # Turn off strict
