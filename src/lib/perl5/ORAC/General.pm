@@ -10,7 +10,9 @@ ORAC::General - Simple perl subroutines that may be useful for primitives
 
   $max = max(@values);
   $min = min(@values);
-  $result = log10(10);
+  $result = log10($value);
+  $result = nint($value);
+  $yyyymmdd = utdate;
 
 =head1 DESCRIPTION
 
@@ -22,7 +24,7 @@ from standard perl. These are available to all ORAC primitive writers
 
 require Exporter;
 @ISA = (Exporter);
-@EXPORT = qw( max min log10 nint);
+@EXPORT = qw( max min log10 nint utdate);
 
 use Carp;
 use strict;
@@ -110,6 +112,21 @@ sub nint {
   my $value = shift;
 
   return int($value + 0.5);
+
+}
+
+=item utdate
+
+Return the UT date (strictly, GMT) date in the format yyyymmdd
+
+=cut
+
+sub utdate {
+ 
+my ($day,$month,$year) = (gmtime)[3..5];
+$month++;
+$year += 1900;
+my $yyyymmdd = $year . '0'x (2-length($month)) . $month . '0'x (2-length($day)) . $day;
 
 }
 
