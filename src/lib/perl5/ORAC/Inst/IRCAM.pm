@@ -17,7 +17,7 @@ ORAC::Inst::IRCAM - ORAC description of IRCAM
 
 This module provides subroutines for determining instrument
 specific behaviour of ORAC. This includes deciding which 
-monoliths.
+monoliths. This file is for the UKIRT IRCAM instrument.
 
 =cut
 
