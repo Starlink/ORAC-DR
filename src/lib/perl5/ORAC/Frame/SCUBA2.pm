@@ -60,23 +60,23 @@ The following are modifications to standard ORAC::Frame methods.
 
 =item B<new>
 
-Create a new instance of a B<ORAC::Frame::SCUBA2> object.
-This method also takes optional arguments:
-if 1 argument is  supplied it is assumed to be the name
-of the raw file associated with the observation. If 2 arguments
-are supplied they are assumed to be the raw file prefix and
-observation number. In any case, all arguments are passed to
-the configure() method which is run in addition to new()
-when arguments are supplied.
-The object identifier is returned.
+Create a new instance of a B<ORAC::Frame::SCUBA2> object.  This method
+also takes optional arguments: if 1 argument is supplied it is assumed
+to be the name of the raw file associated with the observation but if
+a reference to an array is supplied, each file listed in the array is
+used. If 2 arguments are supplied they are assumed to be the raw file
+prefix and observation number. In any case, all arguments are passed
+to the configure() method which is run in addition to new() when
+arguments are supplied.  The object identifier is returned.
 
    $Frm = new ORAC::Frame::SCUBA2;
    $Frm = new ORAC::Frame::SCUBA2("file_name");
+   $Frm = new ORAC::Frame::SCUBA2(\@files);
    $Frm = new ORAC::Frame::SCUBA2("UT","number");
 
 This method runs the base class constructor and then modifies
-the rawsuffix and rawfixedpart to be '.sdf' and '_dem_'
-respectively.
+the rawsuffix and rawfixedpart to be '.sdf' and 's4' or 's8'
+(depending on instrument designation) respectively.
 
 =cut
 
