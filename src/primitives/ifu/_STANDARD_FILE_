@@ -1,66 +1,137 @@
+# -*-perl-*-
+
 =head1 NAME
 
 _STANDARD_FILE_
 
 =head1 DESCRIPTION
 
-Takes a std spectrum in, files it, grows it, and files that too.
+This primitive takes the current group, copies it into a standard spectrum,
+files that, grows that into a standard image, files that, then grows
+the spectrum into a standard cube and files that as well.
 
-=head1 AUTHOR
+=head1 ARGUMENTS
+
+=over 4
+
+=item CUBE_XDIM = INTEGER (Read)
+
+The size of the x-dimension in the final standard cube. [14]
+
+=item CUBE_YDIM = INTEGER (Read)
+
+The size of the y-dimension in the final standard cube. [54]
+
+=item IMAGE_YDIM = INTEGER (Read)
+
+The size of the y-dimension in the final standard image. [658]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UIST in IFU mode.
+
+=item *
+
+Negative data are thresholded to bad pixels before filing with the calibration system.
+
+=back
+
+=head1 AUTHORS
 
 Paul Hirst <p.hirst@jach.hawaii.edu>
 Stephen Todd <spt@roe.ac.uk>
+Brad Cavanagh (JAC) <b.cavanagh@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
 
-my $in=$Grp->file;
-my $base=$Grp->raw;
+# Grab the parameters.
+my $cube_xdim = ( $_STANDARD_FILE_{CUBE_XDIM} || 14 );
+my $cube_ydim = ( $_STANDARD_FILE_{CUBE_YDIM} || 54 );
+my $image_ydim = ( $_STANDARD_FILE_{IMAGE_YDIM} || 658 );
 
-my $num=$Frm->group;
+my $in = $Grp->file;
+my $base = $Grp->raw;
 
-my $std = "std_".$num."_sp";
+my $num = $Frm->group;
+my $ndims = $Frm->uhdr( "NDIMS" );
 
-# Copy the spectrum to the std_ file, threaholding to remove negative values
-#$Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$std");
-$Mon{'kappa_mon'}->obeyw("thresh", "in=$in out=$std thrlo=0 newlo=bad accept");
+my $std = "std_" . $num . "_sp";
 
+# Copy the spectrum to the std_ file, thresholding to remove negative values
+$Mon{'kappa_mon'}->obeyw( "thresh", "in=$in out=$std thrlo=0 newlo=bad accept" );
 orac_print "$in copied to $std\n";
 
-$Frm->uhdr("NDIMS", 1);
+$Frm->hdr("NDIMS", 1);
 
 # Add to index
 $Cal->standardindex->add($std, {%{$Frm->hdr}, %{$Frm->uhdr}});
 orac_print "$std added to standard calibration index.\n";
 
-# Grow into an image.
-my $stdimage = "std_" . $num . "_im";
+# Grow into an image. To do this we'll first copy the spectrum into a
+# temporary file, then set the bounds of that file so that it'll have
+# a second dimension, then pixdupe into the full image size.
 
-my $param = "new=t in=$in expand=[0,1] stapix=[0,1] endpix=[0,658] size=[0,658] out=$stdimage";
-$Mon{'figaro4'}->obeyw("grow", $param);
-$Frm->uhdr("NDIMS", 2);
-$Cal->standardindex->add($stdimage, {%{$Frm->hdr}, %{$Frm->uhdr}});
-orac_print "$stdimage added to standard calibration index.\n";
+# Form the name of the output image.
+my $std_im = "std_" . $num . "_im";
 
-# Grow into a datacube
-my $stdcube = "std_".$num."_cube";
+# Get the dimensions of the spectrum.
+$Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
+my ( $ORAC_STATUS, @dims ) = $Mon{'ndfpack_mon'}->get( 'ndftrace', 'dims' );
+my $wavelen = $dims[ 0 ];
 
-$param = "new=t in=$in expand=[1,1,0] stapix=[1,1,0] endpix=[14,54,0] size=[14,54,0] out=$stdcube";
-$Mon{'figaro4'}->obeyw("grow", $param);
+# Set up a temporary file.
+my $tempfile = new ORAC::TempFile;
+my $tempspec = $tempfile->file;
 
+# Do the processing.
+$Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$tempspec" );
+$Mon{'ndfpack_mon'}->obeyw( "setbound", "ndf=$tempspec(1:$wavelen,1:1)" );
+$Mon{'kappa_mon'}->obeyw( "pixdupe", "in=$tempspec out=$std_im expand=[1,$image_ydim]" );
 
-$Frm->uhdr("NDIMS", 3);
+orac_print "$in grown to ($wavelen, $image_ydim) and stored in $std_im.\n";
 
-$Cal->standardindex->add($stdcube, {%{$Frm->hdr}, %{$Frm->uhdr}});
-orac_print "$stdcube added to standard calibration index.\n";
+# File the image with the calibration system.
+$Frm->hdr( "NDIMS", 2 );
+$Cal->standardindex->add( $std_im, {%{$Frm->hdr}, %{$Frm->uhdr}} );
+orac_print "$std_im added to standard calibration index.\n";
 
+# Grow into a cube. To do this we'll first copy the spectrum into a
+# temporary file, then set the bounds of that file so that it'll have
+# a third dimension, then pixdupe into the full cube size.
 
-# File the spectrum as the current standard
-$Cal->standard($std);
-orac_print "$std filed as current standard.\n";
+# Form the name of the output cube.
+my $std_cube = "std_" . $num . "_cube";
 
+# Set up another temporary file.
+my $tempfile2 = new ORAC::TempFile;
+my $tempspec2 = $tempfile2->file;
+
+# Do the processing.
+$Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$tempspec" );
+$Mon{'ndfpack_mon'}->obeyw( "setbound", "ndf=$tempspec(1:$wavelen,1:1,1:1)" );
+$Mon{'kappa_mon'}->obeyw( "permaxes", "in=$tempspec out=$tempspec2 perm=[3,2,1] title=!" );
+$Mon{'kappa_mon'}->obeyw( "pixdupe", "in=$tempspec2 out=$std_cube expand=[$cube_xdim,$cube_ydim,1]" );
+
+orac_print "$in grown to ($cube_xdim,$cube_ydim,$wavelen) and stored in $std_cube.\n";
+
+# File the cube with the calibration system.
+$Frm->hdr( "NDIMS", 3 );
+$Cal->standardindex->add( $std_cube, {%{$Frm->hdr}, %{$Frm->uhdr}} );
+orac_print "$std_cube added to standard calibration index.\n";
+
+# Reset the Frm uhdr.
+$Frm->hdr( "NDIMS", $ndims );
+
+# Tidy up output.
 orac_print "\n";
