@@ -1,0 +1,151 @@
+#+
+# Name:
+#    _MAKE_LAMP_FLAT_
+#
+# Purpose:
+#    Makes calibration-lamp flats from the current group of frames.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive makes lamp flats from the DIFFERENCE_GROUP group, one
+#    for each combination of filter.  This routine selects the group
+#    for the current recipe cycle, and passes it to the generic
+#    _MAKE_FLAT_FROM_GROUP_ primitive.  The list of filters within the
+#    main Grp is copied to the DIFFERENCE_GROUP group, as is the Grp
+#    name.  The current frame is reselected from the DIFFERENCE_GROUP
+#    and its MAKE_FLAT flag set to on.
+#
+# Arguments:
+#    CLEAN = LOGICAL (Given)
+#       If true (1), the frames are cleaned using a box filter to remove
+#       any small blemishes.  Pixels deviating by more than 3 standard
+#       deviations from its 15x15 pixel neighbourhood are rejected.  This
+#       is done iteratively, three times.  If false (0), no cleaning is
+#       performed.  [0]
+#
+# Notes:
+#    -  This primitive is suitable for ESO imaging infrared cameras
+#    with a calibration lamp.
+#    -  Processing only occurs for lamp-type frames, and when the
+#    steering header MAKE_FLAT is true.
+#    -  The reference to the difference group is stored in the internal
+#    group header DIFFERENCE_GROUP.
+#
+# Output Data:
+#    The flat fields.  See _MAKE_FLAT_FROM_GROUP_ for further details.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC, Starlink)
+#
+# Copyright:
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Selection
+# =========
+#
+# This should only be performed on OBJECT frames, when it's time to
+# make a flat.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "LAMP" && 
+         $Frm->uhdr( "MAKE_FLAT" ) ) {
+
+# Arguments
+# =========
+       my $clean = $_MAKE_LAMP_FLAT_{CLEAN};
+       $clean = defined( $clean ) ? $clean : 0;
+
+# Selection within groups
+# =======================
+
+# Obtain the group of difference frames.
+       if ( ! ( defined $Grp->uhdr( "DIFFERENCE_GROUP" ) ) ) {
+          orac_err "Group header DIFFERENCE_GROUP does not exist.  Programming error. " .
+                   "_MAKE_LAMP_FLAT_ primitive requires _DIFFERENCE_PAIRS_ to be invoked too.\n";  
+       }
+       my $diffGrp = $Grp->uhdr( "DIFFERENCE_GROUP" );
+
+# Propagate the filter list from the original group.
+       $diffGrp->uhdr( "FILTER_LIST", $Grp->uhdr( "FILTER_LIST" ) );
+       $diffGrp->name( $Grp->name );
+
+# Make this the main group for this context.
+       {
+          my $Grp = $diffGrp;
+
+# Want to work with the difference-pair frames, not the current frame.
+# Without this the templating in _MAKE_FLAT_FROM_GROUP_ will go back
+# to the pre-differenced frames.  Also ensure that the now current frame
+# inherits the flag to indicate that it is time to make a flat.
+          my $Frm = $Grp->frame( $Grp->num );
+          $Frm->uhdr( "MAKE_FLAT", 1 );
+
+# Make the flat(s).
+          _MAKE_FLAT_FROM_GROUP_ CLEAN=$clean
+       }
+
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_MAKE_LAMP_FLAT_ -- Makes calibration-lamp flats from the current group of frames.
+
+=head1 DESCRIPTION
+
+This primitive makes lamp flats from the DIFFERENCE_GROUP group, one
+for each combination of filter.  This routine selects the group for
+the current recipe cycle, and passes it to the generic
+L<_MAKE_FLAT_FROM_GROUP_|_MAKE_FLAT_FROM_GROUP_> primitive.  The list
+of filters within the main Grp is copied to the DIFFERENCE_GROUP
+group, as is the Grp name.  The current frame is reselected from the
+DIFFERENCE_GROUP and its MAKE_FLAT flag set to on.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item CLEAN = LOGICAL (Given)
+
+If true (1), the frames are cleaned using a box filter to remove any
+small blemishes.  Pixels deviating by more than 3 standard deviations
+from its 15x15 pixel neighbourhood are rejected.  This is done
+iteratively, three times.  If false (0), no cleaning is performed. [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ESO imaging infrared cameras
+with a calibration lamp.
+
+=item *
+
+Processing only occurs for lamp frames, and when the steering header
+MAKE_FLAT is true.
+
+=back
+
+=head1 OUTPUT DATA
+
+The flat fields.  See L<_MAKE_FLAT_FROM_GROUP_|_MAKE_FLAT_FROM_GROUP_> for further details.
+
+=head1 AUTHORS
+
+Malcolm J. Currie (Starlink) <mjc@star.rl.ac.uk>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
