@@ -61,7 +61,9 @@ my %hdr = (
            RA_BASE                => "CRVAL1",
            RA_TELESCOPE_OFFSET    => "TRAOFF",
            RECIPE                 => "RECIPE",
+	   SLIT_ANGLE             => "TEL_PA",
            SPEED_GAIN             => "SPEED",
+           TELESCOPE              => "TELESCOP",
            X_DIM                  => "NAXIS1",
            Y_DIM                  => "NAXIS2",
            X_LOWER_BOUND          => "DETECXS",
@@ -155,12 +157,19 @@ sub _to_GRATING_DISPERSION {
   $grism =~ s/ //g;
   $filter =~ s/ //g;
   if ( $grism =~ /^(sap|sil)/i ) {
+# SDR: Revised this section. Dispersion is only a function of grism
+#      and blocking filter used, but need to allow for various choices
+#      of blocking filter
     if ( uc($filter) eq 'K' || uc($filter) eq 'KS' ) {
-      $return = 0.000445;
-    } elsif ( uc($filter) eq 'J' ) {
-      $return = 0.000233;
+      $return = 0.0004423;
+    } elsif ( uc($filter) eq 'JS' ) {
+      $return = 0.0002322;
+    } elsif ( uc($filter) eq 'J' || uc($filter) eq 'JL' ) {
+      $return = 0.0002251;
+    } elsif ( uc($filter) eq 'H' || uc($filter) eq 'HS' || uc($filter) eq 'HL' ) {
+	$return = 0.0003413;
     }
-  }
+}
   return $return;
 }
 
@@ -178,12 +187,21 @@ sub _to_GRATING_WAVELENGTH {
   $grism =~ s/ //g;
   $filter =~ s/ //g;
   if ( $grism =~ /^(sap|sil)/i ) {
+# SDR: Revised this section. Central wavelength is a function of grism
+#      + blocking filter + slit used. Assume offset slit used for H/Hs
+#      and Jl, otherwise centre slit is used. Central wavelengths computed
+#      for pixel 513, to match calculation used in
+#      _WAVELENGTH_CALIBRATE_BY_ESTIMATION_
     if ( uc( $filter ) eq 'K' || uc( $filter ) eq 'KS' ) {
-      $return = 2.222835;
-    } elsif ( uc( $filter ) eq 'J' ) {
-      $return = 1.205480;
-    }
+      $return = 2.249388;
+    } elsif ( uc($filter) eq 'JS' ) {
+      $return = 1.157610;
+    } elsif ( uc($filter) eq 'J' || uc($filter) eq 'JL' ) {
+      $return = 1.219538;
+    } elsif ( uc($filter) eq 'H' || uc($filter) eq 'HS' || uc($filter) eq 'HL' ) {
+      $return = 1.636566;
   }
+}
   return $return;
 }
 
