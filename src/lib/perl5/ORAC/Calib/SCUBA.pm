@@ -680,7 +680,8 @@ sub gain {
     # Now look in the index file
 
     # Need to configure the header such that the FILTER keyword
-    # is set
+    # is set -- try to be a good citizen so reset it afterwards
+    my $oldfilt = $self->thing->{FILTER};
     $self->thing->{FILTER} = $filt;
 
     # Now ask for the 'best' gain observation
@@ -692,6 +693,8 @@ sub gain {
       die 'Aborting...';
     }
 
+    # Reset the FILTER keyword
+    $self->thing->{FILTER} = $oldfilt;
 
     # Now retrieve the entry itself
     my $entref = $self->gainsindex->indexentry($best);
