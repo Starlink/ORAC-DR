@@ -499,7 +499,8 @@ sub orac_determine_recipe_search_path {
     push( @path, $het_root );
 
   } elsif ($inst eq 'ACSIS') {
-    push( @path, File::Spec->catdir( $root, 'ACSIS' ) );
+    push( @path, File::Spec->catdir( $het_root, 'ACSIS' ) );
+    push( @path, $het_root );
 
   } elsif ($inst eq 'CGS4' or $inst eq 'OCGS4') {
     push( @path, File::Spec->catdir( $root, 'CGS4' ) );
@@ -655,7 +656,8 @@ sub orac_determine_primitive_search_path {
     push( @path, $general_root );
 
   } elsif( $inst eq 'ACSIS' ) {
-    push( @path, File::Spec->catdir( $root, 'ACSIS' ) );
+    push( @path, File::Spec->catdir( $het_root, 'ACSIS' ) );
+    push( @path, $het_root );
     push( @path, $general_root );
 
   } elsif ($inst eq 'CGS4' or $inst eq 'OCGS4') {
