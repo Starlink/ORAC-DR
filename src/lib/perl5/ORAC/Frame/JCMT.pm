@@ -376,7 +376,8 @@ are keyed by observing mode:
  JIGMAP (phot) => 'SCUBA_JIGPHOTMAP'
  EM2_SCAN => 'SCUBA_EM2SCAN'
  EKH_SCAN => 'SCUBA_EKHSCAN'
- POLMAP => 'SCUBA_JIGPOLMAP'
+ JIGPOLMAP => 'SCUBA_JIGPOLMAP'
+ SCANPOLMAP => 'SCUBA_SCANPOLMAP'
  ALIGN  => 'SCUBA_ALIGN'
  FOCUS  => 'SCUBA_FOCUS'
 
@@ -410,7 +411,13 @@ sub findrecipe {
   } elsif ($mode eq 'FOCUS') {
     $recipe = 'SCUBA_FOCUS';
   } elsif ($mode eq 'POLMAP' || $mode eq 'POLPHOT') {
-    $recipe = 'SCUBA_JIGPOLMAP';
+     if ($self->hdr('SAM_MODE') eq 'JIGGLE') {
+       $recipe = 'SCUBA_JIGPOLMAP';
+     } else {
+       # Scanning polarimetry
+       $recipe = 'SCUBA_SCANPOLMAP';
+     }
+
   } elsif ($mode eq 'MAP') {
     if ($self->hdr('SAM_MODE') eq 'JIGGLE') {
 
