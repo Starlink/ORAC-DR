@@ -17,7 +17,7 @@ ORAC::Msg::ADAM::Shell - Run ADAM tasks from unix shell
   $kap->control("par_reset");
   $kap->resetpars;
   $kap->cwd("dir");
-  $cwd = $kap->cwd;
+  ($cwd, $status) = $kap->cwd;
 
 =head1 DESCRIPTION
 
@@ -82,8 +82,7 @@ sub new {
   $task->{Path}  = undef;
   
   # Set to current directory when initialised
-  $task->{Cwd} = cwd;
-
+  $task->{Cwd} = getcwd;
 
   # Bless task into class
   bless($task, $class);
@@ -135,15 +134,31 @@ should operate.
   ($cwd, $status) = $obj->cwd("newdir")
   ($cwd, $status) = $obj->cwd;
 
+If the specified directory does not exist, bad status is 
+returned and the cwd is not changed.
+
 =cut
 
 sub cwd {
   my $self = shift;
-  if (@_) { $self->{Cwd} = shift; }
+  my $status = $ORAC__OK;
+
+  # Supply an argument
+  if (@_) { 
+    my $cwd = shift;
+
+    # Check that the directory exists
+    if (-d $cwd) {
+      $self->{Cwd} = $cwd; 
+    } else {
+      $status = -1;
+    }
+
+  }
 
   # Need to return a status since this is part of the
   # standard interface
-  return ($self->{Cwd}, $ORAC__OK);
+  return ($self->{Cwd}, $status);
 
 }
 
@@ -177,7 +192,7 @@ sub load {
     # Check for a path. If current directory
     # then expand since I have no other idea
     if ($path eq "./") {
-      $path = cwd;
+      $path = getcwd;
     }
 
     $self->path($path);
@@ -220,16 +235,15 @@ sub obeyw {
 
   # Change to the current working directory before running
   # This probably has some overhead
-  my $cwd = cwd;
+  my $cwd = getcwd;
 
   my ($mondir, $junk) = $self->cwd;
   chdir($mondir) || croak "Error changing directory to $mondir";
 
-  print "Current directory: ". &cwd ." and $cwd and $mondir \n";
   my $exstat = system("$command $args");
 
   # Now change directory back again
-  chdir($cwd);
+  chdir($cwd) || croak "Error changing back to current directory\n";
 
   return $ORAC__OK if $exstat == 0;
   return $exstat;
