@@ -922,6 +922,7 @@ sub _parse_recursively {
          "\n{\nmy \$ORAC_PRIMITIVE=\"$primitive_name\";\n",
 	 "\$\$CURRENT_PRIMITIVE=[ \$ORAC_PRIMITIVE ];\n",
 	 "ORAC::Event->update(\"Tk\");\n\n",
+	 "#line ",(($depth-1)*1000)  ," $primitive_name\n",
          @$lines_ref,
          "\n}\n");	
 	
