@@ -293,7 +293,7 @@ sub orac_determine_inst_classes {
   } elsif ($inst eq 'MICHELLE') {
     $groupclass = "ORAC::Group::Michelle";
     $frameclass = "ORAC::Frame::Michelle";
-    $calclass = "ORAC::Calib::CGS4";
+    $calclass = "ORAC::Calib::Michelle";
     $instclass = "ORAC::Inst::CGS4";
   } else {
     orac_err("Instrument $inst is not currently supported in ORAC-DR\n");
