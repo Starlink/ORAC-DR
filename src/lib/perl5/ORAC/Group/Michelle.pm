@@ -45,26 +45,27 @@ my %hdr = (
             EXP_TIME  => "EXP_TIME",
             GAIN      => "DEPERDN",
             RASCALE   => "PIXELSIZ",
-            TDECOFF   => "DECOFF",
-            TRAOFF    => "RAOFF",
+            TDECOFF   => "TDECOFF",
+            TRAOFF    => "TRAOFF",
             UTEND     => "UTEND",
             UTSTART   => "UTSTART",
 
 # then the spectroscopy.
             CONFIGURATION_INDEX => "CNFINDEX",
-            DETECTOR_INDEX  => "DINDEX",
-            DETECTOR_MODE   => "DETMODE",
-            DIM1            => "DCOLUMNS",
-            DIM2            => "DROWS",
-            GRATING_NAME    => "GRATNAME",
-            GRATING_ORDER   => "GRATORD",
-            GRATING_WAVELENGTH => "GRATPOS",
-            NSCAN_POSITIONS => "DETNINCR",
+            DETECTOR_INDEX      => "DINDEX",
+            DETECTOR_MODE       => "DETMODE",
+            DIM1                => "DCOLUMNS",
+            DIM2                => "DROWS",
+            GRATING_DISPERSION  => "GRATDISP",
+            GRATING_NAME        => "GRATNAME",
+            GRATING_ORDER       => "GRATORD",
+            GRATING_WAVELENGTH  => "GRATPOS",
+            NSCAN_POSITIONS     => "DETNINCR",
             NUMBER_OF_EXPOSURES => "NEXP",
-            SCAN_INCREMENT  => "DETINCR",
-            SLIT_ANGLE      => "SLITANG",
-            SLIT_NAME       => "SLITNAME",
-            UTDATE          => "TBD"
+            SCAN_INCREMENT      => "DETINCR",
+            SLIT_ANGLE          => "SLITANG",
+            SLIT_NAME           => "SLITNAME",
+            UTDATE              => "UTDATE"
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed by
