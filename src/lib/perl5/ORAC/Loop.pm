@@ -225,11 +225,13 @@ sub orac_loop_wait {
 
   my $timeout = 3600;  # 60 minutes time out
   my $timer = 0.0;
-  my $pause = 2.0;   # Pause for 2 seconds
+  my $pause = 2.0;   # Time between checks
+  my $dot   = 1;     # Number of pauses for each dot printed
 
   my $actual = $ENV{ORAC_DATA_IN} . "/$fname";
 
   my $old = 0;   # Initial size of the file
+  my $npauses = 0; # number of pauses so far (reset each time dot printed)
 
   # was looping with
   #  while (! -e $actual) {
@@ -300,6 +302,7 @@ sub orac_loop_wait {
 
     # Sleep for a bit
     $timer += sleep($pause);
+    $npauses++;
 
     # Return bad status if timer hits timeout
     if ($timer > $timeout) {
@@ -309,7 +312,14 @@ sub orac_loop_wait {
     }
 
     # Show that we are thinking
-    orac_print ".";
+    # Print a dot every time $npauses equals the number specified in $dot
+    # This is so that the checking cycle can be different from the dot
+    # drawing cycle
+    if ($npauses >= $dot) {
+      orac_print ".";
+      $npauses = 0;
+    }
+
 
   }
   orac_print "\nFound\n";
