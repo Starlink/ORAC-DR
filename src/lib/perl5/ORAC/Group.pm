@@ -170,11 +170,11 @@ sub subgrp {
   # If we do it this way we do not have to check group membership
   # (Since we know the frames are valid since they came from the
   # members() method)
-  # but we do have to set members_ref as well as allmembers_ref
-  
-  $subgrp->allmembers_ref(\@subgrp);
-  $subgrp->members_ref(\@subgrp);
+  # but we do have to set members as well as allmembers
 
+  @{ $subgrp->allmembers } = @subgrp;
+  @{ $subgrp->members }    = @subgrp;
+  
   return $subgrp;
 
 }
