@@ -16,6 +16,7 @@ Available options are:
 IMAGE - display image using DISPLAY
 GRAPH - display graph using LINPLOT
 SIGMA - display scatter plot with a Y-range of +/-N sigma.
+DATAMODEL - Display data (as points) with a model overlaid
 
 =cut
 
@@ -576,14 +577,14 @@ sub image {
   # Set default scaling
   $optstring .= " mode=scale ";
   # Autoscaling is a special case
-  if (exists $options{AUTOSCALE}) {
+  if (exists $options{ZAUTOSCALE}) {
     # Kappa display can autoscale if required
     # Using MODE=SCALE
     
-    if ($options{AUTOSCALE} == 0) {
+    if ($options{ZAUTOSCALE} == 0) {
       # We are specifying a min and max
-      $optstring .= " low=$options{MIN} " if exists $options{MIN};
-      $optstring .= " high=$options{MAX} " if exists $options{MAX};
+      $optstring .= " low=$options{ZMIN} " if exists $options{ZMIN};
+      $optstring .= " high=$options{ZMAX} " if exists $options{ZMAX};
 
     }
   }
@@ -668,15 +669,15 @@ sub graph {
   # If we are autoscaling then we dont need any axis setting
   # default is not to send any axis control information
   my $range;
-  if (exists $options{AUTOSCALE}) {
-    if ($options{AUTOSCALE}) {
+  if (exists $options{YAUTOSCALE}) {
+    if ($options{YAUTOSCALE}) {
       $range = "axlim=false";
     } else {
       # Set the Y range
       my $min = 0;
       my $max = 0;
-      $min = $options{LOW} if exists $options{LOW};
-      $max = $options{HIGH} if exists $options{HIGH};
+      $min = $options{YMIN} if exists $options{YMIN};
+      $max = $options{YMAX} if exists $options{YMAX};
       $range = "axlim=true abslim=! ordlim=[$min,$max]";
     }
   }
@@ -812,6 +813,94 @@ sub sigma {
 
   return $status;
 }
+
+
+=item datamodel
+
+Display mode where the supplied filename is plotted as individual
+points and a model is overlaid as a solid line. This can be used
+to determine the goodness of fit of data and model.
+
+The model filename is derived from the input filename (a _model
+extension is expected). The data is displayed if the model
+file can not be found.
+
+Takes a file name and arguments stored in a hash.
+Note that currently it does not take a format argument
+and NDF is assumed.
+
+=cut
+
+sub datamodel {
+
+  my $self = shift;
+ 
+  my $file = shift;
+
+  my %options = ();
+  if (@_) {
+    my $opt = shift;
+    if (ref($opt) eq 'HASH') {
+      %options = %{$opt};
+    }
+  }
+
+  # Configure the display on the basis of REGION specifier
+  # ..and return the selected device.
+  # Return undef if something went wrong.
+    my $device = $self->config_region(%options);
+
+  # If device is now undef we have a problem
+  unless (defined $device) {
+    orac_err("Error configuring display. Possible invalid region designation\n");
+    return ORAC__ERROR;
+  }
+
+  # Set the data file name
+  $file =~ s/\.sdf$//;  # Strip .sdf
+
+  # Probably should try to find out whether the array is 1 or 2 dimensional
+  # since currently linplot fails if the data is not 1-D
+  # would have to use NDFTRACE from NDFPACK OR use my NDF module
+  # to do it directly
+  # Cant be bothered at the moment...
+    
+  # A resetpars also seems to be necessary to instruct kappa to
+  # update its current frame for plotting. Without this the new PICDEF
+  # regions are not picked up correctly.
+
+  my $status = $self->obj->resetpars;
+  return $status if $status != ORAC__OK;
+
+  # Now plot the data
+  my $args = "clear mode=2 symcol=white axlim=false";
+  $status = $self->obj->obeyw("linplot","ndf=$file(1,) device=$device $args");
+  if ($status != ORAC__OK) {
+    orac_err("Error displaying data file\n");
+    orac_err("Trying to execute: linplot ndf=$file device=$device $args$\n");
+    return $status;
+  }
+
+  # Now plot overlay the model if it is available
+  my $model = $file . "_model";
+
+  if (-e $model . ".sdf") {  # Assume .sdf extension!!!!
+
+    # Construct the arguments
+    $args = "noclear mode=line lincol=red pltitl='' ordlab=''";
+
+    # Run linplot
+    $status = $self->obj->obeyw("linplot","ndf=$model(1,) device=$device $args");
+    if ($status != ORAC__OK) {
+      orac_err("Error overlaying model\n");
+      orac_err("Trying to execute: linplot ndf=$model device=$device $args$\n");
+      return $status;
+    }
+  }
+
+
+}
+
 
 
 # DESTROY
