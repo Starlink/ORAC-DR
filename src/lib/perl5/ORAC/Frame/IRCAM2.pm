@@ -44,13 +44,13 @@ use strict;
 # Translation tables for UFTI shouldr go here
 my %hdr = (
             DEC_SCALE            => "PIXELSIZ",
-            DEC_TELESCOPE_OFFSET => "TDECOFF",
+            DEC_TELESCOPE_OFFSET => "DECOFF",
             DETECTOR_BIAS        => "DET_BIAS",
             EXPOSURE_TIME        => "DEXPTIME",
             GAIN                 => "DEPERDN",
             RA_SCALE             => "PIXELSIZ",
-            RA_TELESCOPE_OFFSET  => "TRAOFF",
-            UTDATE               => "DATE",
+            RA_TELESCOPE_OFFSET  => "RAOFF",
+            UTDATE               => "IDATE",
             UTEND                => "RUTEND",
             UTSTART              => "RUTSTART"
 	  );
