@@ -561,7 +561,7 @@ context.
 sub raw {
   my $self = shift;
   if (@_) { $self->{RawName} = \@_; }
-  return wantarray ? $self->{RawName} : $self->{RawName}->[0];
+  return wantarray ? @{$self->{RawName}} : $self->{RawName}->[0];
 }
 
 
