@@ -1,0 +1,133 @@
+# _MAKE_MOSAIC_EXTENDED_     -*- perl -*-
+#
+# Forms a mosaic for Quadrant jittering.
+#
+# TASK: KAPPA - TRANJOIN; CCDPACK - TRANLIST, MAKEMOS
+#
+
+# Selection
+# =========
+
+# This should only be performed on OBJECT frames.
+    if ($Frm->hdr(OBSTYPE) =~ /OBJECT/ || $Frm->hdr(OBSTYPE) =~ /SKY/) {
+
+# Obtain the cycle frequency of skies.  A value of 2 means the object and
+# sky frames alternate.
+       $cycle = $Frm->hdr( "SKY_FREQ" );
+       
+# Test whether or not this is an object frame or a sky frame. 
+       $class = $Frm->hdr( "TARGET_OR_SKY" );
+
+# Test whether or not this is an object frame or a sky frame.   This
+# assumes a sequence: cycle-1 object frames, sky frame, cycle-1 object
+# frames, sky frame,...  Want to form a mosaic just after obtaining a sky,
+# as then the flat field can be derived and sky subtraction performed.
+# The criterion for these is that there are at least three blank-sky
+# frames.
+       if ( $class =~ /sky/ && ($Grp->num + 1) >= 3 * $cycle ) {
+
+# Form a subgroup comprising the target frames.
+          $targrp = $Grp->subgrp( TARGET_OR_SKY => "target" );
+          $numfiles = $targrp->num + 1;
+
+# Form a list of the input and ouptut target file names for CCDPACK tasks.
+          ( $inref, $outref ) = $targrp->inout( "_trn" );
+
+# Specify the mosaic suffix.
+          $osuffix = "_mos";
+
+# Convert the list to a comma-separated list as needed by CCDPACK (GRP).
+          $inlist = join(",", @$inref);
+          $outlist= join(",", @$outref);
+
+# Concatenate rotation to transformation
+# ======================================
+
+# Specify the other parameters for the TRANJOIN stage.  Note that the
+# rotation occurs first and the translation seconds as we are using 
+# offsets measured in equatorial not Cartesian co-ordinates.
+          $hidden = "in1=".$Cal->rotation." dest=second"; 
+
+# Join the rotation transformation to each of the CCDPACK extensions.
+# The rotation transformation follows the shift-of-origin and is stored
+# in the input frame.  Unfortunately, CCDEDIT doesn't support joining
+# transformations, and KAPPA/TRANJOIN does operate on lists of files.
+# Write the input file names to the text files.
+          foreach $flatted (@$inref) {
+             $header = "in2=${flatted}.more.ccdpack.transform";
+             $Mon{"kappa_mon"}->obeyw("tranjoin","$header $hidden accept");
+          }
+
+# Report the status.
+          orac_print "Orac says: Rotation transformation joined\n";
+
+# Reset KAPPA parameters.
+          $ORAC_STATUS = $Mon{"kappa_mon"}->control('par_reset');
+
+
+# Resampling
+# ==========
+
+# Create text files to hold the list of input and output files, one per line.
+# This is needed because the command may be long for a four-cycle quadrant
+# jitter.  Expanded lists of files may make the command line too long for the
+# ADAM message system.
+          unlink ("tranndf.inlist", "tranndf.outlist");
+          open (INLIST, ">tranndf.inlist");
+          open (OUTLIST, ">tranndf.outlist");
+          for ( $i = 0; $i < $numfiles; $i++ ) {
+             print INLIST @$inref[$i],"\n";
+             print OUTLIST @$outref[$i],"\n";
+          }
+          close (INLIST);
+          close (OUTLIST);
+
+# Assign the other parameters.  Determime the bounds automatically.  It takes
+# the origin from the first target frame.
+          $header = "in='^tranndf.inlist' out='^tranndf.outlist'";
+          $hidden = "shape=auto method=linint";
+
+# Shift and resample the flat-field object frames.  This determines
+# the bounds automatically.  It takes the origin from the first object
+# frame.
+          $Mon{"ccdpack_reg"}->obeyw("tranndf","$header $hidden");
+
+# Report the processing status.
+          orac_print "Orac says: Frames $inlist resampled\n";
+
+# Reset CCDPACK registration parameters.
+          $ORAC_STATUS = $Mon{"ccdpack_reg"}->control('par_reset');
+
+# Make mosaic.
+# ============
+
+# Derive a reasonable number of overlaps to generate a mosaic, yet not
+# make all the possible comparisons for efficiency.
+          $optov = 9;
+
+# Assign other parameters.  The scale might become a user parameter.
+# We should presumably set the Grp output name when we construct
+# $outname.  Do not change the output name if we have already
+# appended the output suffix the previous time around.
+          $outname = $Grp->file . $osuffix unless $Grp->file =~ /$osuffix$/;
+          $header = "in='^tranndf.outlist' out=$outname title=Mosaic";
+          $hidden = "zero optov=$optov";
+
+# Make the mosaic correcting for differences in offset.
+          $Mon{"ccdpack_reg"}->obeyw("makemos","$header $hidden");
+          unlink ("tranndf.inlist", "tranndf.outlist");
+
+# Set the group name in the Group object...
+          $Grp->file($outname);
+
+# ...and read the header.
+          $Grp->header($Grp->readhdr);
+
+# Report the processing status.
+          orac_print "Orac says: mosaic $outname formed\n";
+
+# Display the resultant mosaic.
+          _DISPLAY_GROUP_IMAGE_
+
+       };
+    };

@@ -1,0 +1,75 @@
+# _NORMALISE_TO_MODE_EXTENDED_  -*-perl-*-
+#
+# Normalises frames to the mode of a reference frame.
+#
+# TASK: KAPPA - CADD
+#
+# Arguments:
+#    SKY_OFFSET() = REAL (Returned)
+#       The offsets of the blank sky frames with respect to the reference
+#       sky frame.  The first (zeroth) element is zero, by definition; it
+#       corresponds to an imaginary blank sky preceding the object frames.
+
+
+# This should only be performed on OBJECT frames.
+    if ($Frm->hdr(OBSTYPE) =~ /OBJECT/ || $Frm->hdr(OBSTYPE) =~ /SKY/) {
+
+# Obtain the cycle frequency of skies.  A value of 2 means the object and
+# sky frames alternate.
+       $cycle = $Frm->hdr( "SKY_FREQ" );
+       
+# Test whether or not this is an object frame or a sky frame. 
+       $class = $Frm->hdr( "TARGET_OR_SKY" );
+
+# Test whether or not this is a target frame or a sky frame.   This
+# assumes a sequence: cycle-1 target frames, sky frame, cycle-1 target
+# frames, sky frame,...  He we use the sky frames.
+       if ( $class =~ /sky/ ) {
+
+# Find the clipped mean (effectively the mode) for the frame.
+          _CLIPPED_MEAN_ CLIP=[2,2.5,3,3]
+          $mode = $_CLIPPED_MEAN_{RESULT};
+
+# Generate the input and output filenames.
+          ($in, $out) = $Frm->inout("_nm");
+
+# Determine whether or not this is the first sky frame, and hence whether or
+# not a reference mode is needed.  Set a dummy offset for an imaginary sky
+# observation so there is no interpolation.  The second value will, by
+# definition, also be zero.
+          if ( $Grp->num + 1 == $cycle ) {
+             $refmode = $mode;
+             orac_print "Orac says: Mode for reference sky frame $in is $refmode\n";
+             @_NORMALISE_TO_MODE_EXTENDED_{SKY_OFFSET} = ( 0.0 );
+          }
+
+# Evaluate the normalisation factor.  
+          if ( $mode > 1.0E-7 ) {
+             $sky_offset = $refmode - $mode;
+             orac_print "Orac says: Mode for frame $in is $mode\n";
+             orac_print "Orac says: Offset for frame $in is $sky_offset\n\n";
+
+          } else {
+             orac_err "Unable to normalise frame $in.  Mode ($mode) is too small.\n";
+          };
+
+# Normalise the current frame to the current reference frame.
+          $header = "in=$in out=$out scalar=$sky_offset title=\'Normalised to mode\'";
+          $Mon{"kappa_mon"}->obeyw("cadd","$header");
+
+# Record the offset for later sky subtraction.  Just retain the current and
+# previous offsets, i.e the ones that span the object frames.  For the first
+# set, there is no sky frame before, hence the earlier initialisation of the
+# first value to zero to prevent later interpolation.
+          @_NORMALISE_TO_MODE_EXTENDED_{SKY_OFFSET} = ( @_NORMALISE_TO_MODE_EXTENDED_{SKY_OFFSET}, $sky_offset );
+
+# Report the processing.
+          orac_print "Orac says: $in to $out: Data normalised \n";
+
+# Record the new file name in the frame object.
+          $Frm->file($out);                         # obligatory update step
+
+# Display the image.
+          _DISPLAY_FRAME_IMAGE_
+       }
+    };
