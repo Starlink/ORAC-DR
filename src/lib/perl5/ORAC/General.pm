@@ -222,10 +222,13 @@ value. 0.5 is rounded up.
 =cut
 
 sub nint {
-  my $value = shift;
+    my $value = shift;
 
-  return int($value + 0.5);
-
+    if ($value >= 0) {
+        return (int($value + 0.5));
+    } else {
+        return (int($value - 0.5));
+    }
 };
 
 =item B<utdate>
