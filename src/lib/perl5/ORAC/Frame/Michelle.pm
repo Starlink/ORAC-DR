@@ -68,8 +68,8 @@ my %hdr = (
             Y_DIM                => "DROWS",
 
 # then the general.
-            CHOP_ANGLE           => "CHPANGLE',
-            CHOP_THROW           => "CHPTHROW',
+            CHOP_ANGLE           => "CHPANGLE",
+            CHOP_THROW           => "CHPTHROW",
             DETECTOR_READ_TYPE   => "DETMODE",
             NUMBER_OF_READS      => "NREADS",
             OBSERVATION_MODE     => "CAMERA"
