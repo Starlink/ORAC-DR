@@ -1,0 +1,280 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CREATE_SPECTRUM_WCS_ -- Corrects the headers of spectral data to create an
+FITS-convention World Co-ordinate System.
+
+=head1 DESCRIPTION
+
+This primitive converts astrometric and spectroscopic information in a
+spectral frame into an FITS-convention World Co-ordinate System. This is
+acheived by editing the headers in the FITS airlock.
+
+The changes are listed below.
+
+a) Put wavelength information in CTYPE1, CRVAL1, CRPIX1, etc., as per
+FITS Paper III (Greisen et al., 2004)
+
+b) Delete CTYPE2/3, etc.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item FRAME = BOOLEAN (Given)
+
+If this argument is true, then the current Frame object is used. If it
+is false, then the current Group object is used. [1]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Following a successful introduction of a WCS, the current AST Frame
+is SPECTRUM. Any existing WCS Frames besides the default three -- PIXEL,
+GRID, AXIS -- are lost.
+
+=item *
+
+If an AXIS structure exists for wavelength (i.e. from a previous
+wavelength calibration) then information in that AXIS structure will
+be used to define the FITS headers for the wavelength axis. Otherwise,
+the existing wavelength FITS headers will be used.
+
+=back
+
+=head1 AUTHORS
+
+Brad Cavanagh (JAC) <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# Parse parameters
+
+my $frame = $_CREATE_SPECTRUM_WCS_{FRAME};
+if( ! defined( $frame ) ) {
+  $frame = 1;
+}
+
+my $ndf;
+my $obj;
+if( $frame ) {
+  $obj = $Frm;
+  $ndf = $Frm->file;
+} else {
+  $obj = $Grp;
+  $ndf = $Grp->file;
+}
+
+# Pick out the currently-existing headers.
+my $old_ctype1 = $obj->hdr("CTYPE1");
+my $old_ctype2 = $obj->hdr("CTYPE2");
+my $old_ctype3 = $obj->hdr("CTYPE3");
+
+my $old_crval1 = $obj->hdr("CRVAL1");
+my $old_cunit1 = $obj->hdr("CUNIT1");
+my $old_cdelt1 = $obj->hdr("CDELT1");
+my $old_crpix1 = $obj->hdr("CRPIX1");
+
+# Obtain the new wavelength information from internal headers
+# that were set during _WAVELENGTH_CALIBRATE_.
+my $min = $Frm->uhdr( "LAMBDA_MIN" );
+my $max = $Frm->uhdr( "LAMBDA_MAX" );
+
+my $new_ctype1 = "WAVE";
+my $new_cdelt1 = ( $max - $min ) / 1023;
+my $new_crval1 =  $min + 512 * $new_cdelt1;
+my $new_crpix1 = 512;
+my $new_cunit1 = "um";
+
+# Create the FITSMOD steering file.
+my $table = "fitsmod$$.lis";
+#unlink( $table );
+
+open( my $fh_steering, ">$table" ) ||
+  orac_throw "Unable to open $table of WCS editing instructions. Error: $!.\n";
+
+print $fh_steering "D CTYPE2\n";
+print $fh_steering "D CRVAL2\n";
+print $fh_steering "D CUNIT2\n";
+print $fh_steering "D CDELT2\n";
+print $fh_steering "D CRPIX2\n";
+
+print $fh_steering "D CTYPE3\n";
+print $fh_steering "D CRVAL3\n";
+print $fh_steering "D CUNIT3\n";
+print $fh_steering "D CDELT3\n";
+print $fh_steering "D CRPIX3\n";
+
+print $fh_steering "D PC2_2\n";
+print $fh_steering "D PC3_2\n";
+
+print $fh_steering "U CTYPE1 $new_ctype1 Wavelength axis with no distortion\n";
+print $fh_steering "U CRVAL1 $new_crval1 [um] Wavelength value at the reference pixel\n";
+print $fh_steering "U CUNIT1 $new_cunit1 Unit of wavelength co-ordinates\n";
+print $fh_steering "U CDELT1 $new_cdelt1 [/pixel] Wavelength co-ordinate increment\n";
+print $fh_steering "U CRPIX1 $new_crpix1 [pixel] Reference pixel along wavelength axis\n";
+
+print $fh_steering "U WCSAXES 1 Number of axes in world co-ordinate system\n";
+
+close( $fh_steering );
+
+# Edit the headers.
+$Mon{'ndfpack_mon'}->obeyw( "fitsmod", "ndf=$ndf mode=file table=$table" );
+#unlink( $table );
+
+if( starversion_gt( 'kappa', '1.1-1' ) ) {
+
+  # Remove an existing WCS component, so that later when a new WCS is made,
+  # it will include a SKY co-ordinate frame. As there may not already be a
+  # WCS component, make one with wcsframe.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=$ndf frame=pixel" );
+  $Mon{'ndfpack_mon'}->obeyw( "erase", "object=${ndf}.WCS ok" );
+
+  # Create the AST SpecFrame.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=$ndf frame=\!" );
+  orac_print "AST SpecFrame created in $ndf.\n";
+
+  # Fix up some of the parameters for the wavelength axis: the latitude and
+  # longitude of observation. To do this we'll create an Astro::Telescope
+  # object, which gives us the lat and long as object methods.
+  require Astro::Telescope;
+  my $tel = new Astro::Telescope( $obj->uhdr("ORAC_TELESCOPE") );
+  my $lat = $tel->lat("s");
+  my $long = $tel->long("s");
+
+  my $params = "ndf=$ndf mode=set name=\'geolat\(1\)\' newval=\'$lat\' remap=no";
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "$params" );
+
+  $params = "ndf=$ndf mode=set name=\'geolon\(1\)\' newval=\'$long\' remap=no";
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "$params" );
+
+  $params = "ndf=$ndf mode=set name=\'stdofrest\(1\)\' newval=\'topo\' remap=no";
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "$params" );
+
+  orac_print "AST SpecFrame updated in $ndf.\n";
+
+} elsif( starversion_gt('atools','1.5-0') ) {
+
+  # We can create the SpecFrame manually.
+
+  my @keywords = qw/ CTYPE1 CRVAL1 CUNIT1 CDELT1 CRPIX1 /;
+
+  # First, copy the spatial FITS header into a text file.
+  my $fits_header = new Astro::FITS::Header::NDF( File => $ndf );
+
+  my $spectral_header = "spectral$$.head";
+  unlink( $spectral_header );
+
+  open( my $fh_spectral, ">$spectral_header" ) ||
+    orac_throw "Unable to open $spectral_header to write spectral FITS header.  Error: $!.\n";
+
+  foreach my $keyword ( @keywords ) {
+
+    my $item = $fits_header->itembyname( $keyword );
+    print $fh_spectral $item, "\n";
+
+  }
+
+  close( $fh_spectral );
+
+  # Create a frame to describe the spectral axis.
+  require Astro::Telescope;
+  my $tel = new Astro::Telescope( $obj->uhdr("ORAC_TELESCOPE") );
+  my $lat = $tel->lat("s");
+  my $long = $tel->long("s");
+
+  #  Now build the epoch from internal headers.
+  my $utdate = $obj->uhdr("ORAC_UTDATE");
+  my $uttime = $obj->uhdr("ORAC_UTSTART");
+  $utdate =~ /(\d{4})(\d\d)(\d\d)/;
+  my $year = $1;
+  my $month = $2;
+  my $day = $3;
+  my $hour = int( $uttime );
+  my $minute = int( ( $uttime - $hour ) * 60 );
+  my $second = int( ( ( ( $uttime - $hour ) * 60 ) - $minute ) * 60 );
+
+  my $epoch = "$year-$month-$day $hour:$minute:$second";
+
+  # Convert decimal right ascension to sexagesimal.
+  my $basera = $obj->uhdr("ORAC_RA_BASE");
+  my $radeg = int( $basera );
+  my $ramin = int( ( $basera - $radeg ) * 60 );
+  my $rasec = sprintf("%0.2f",( ( ( $basera - $radeg ) * 60 ) - $ramin ) * 60);
+
+  # Convert decimal declination to sexagesimal.
+  my $basedec = $obj->uhdr("ORAC_DEC_BASE");
+  my $decsign = "+";
+  if ( $basedec < 0 ) {
+    $decsign = "-";
+  }
+  my $decres = abs( $basedec );
+  my $decdeg = int( $decres );
+  $decres = $decres - $decdeg;
+  my $decmin = int( 60.0 * $decres );
+  $decres -= $decmin / 60.0;
+  my $decsec = sprintf("%0.2f",3600.0 * $decres);
+
+  # Put the RA/Dec in proper format (dd:mm:ss.ss).
+  my $ra = "$radeg:$ramin:$rasec";
+  my $dec = "$decsign$decdeg:$decmin:$decsec";
+
+  my $param1 = "options='system=wave,unit=um,stdofrest=topo,refra=$ra,refdec=$dec' result=specframe$$.ast";
+  $Mon{'atools_mon'}->obeyw( "astspecframe", "$param1 " );
+  $param1 = "this=specframe$$.ast attrib=epoch value='$epoch' result=specframe$$.ast";
+  $Mon{'atools_mon'}->obeyw( "astset", "$param1" );
+  $param1 = "this=specframe$$.ast attrib=geolat value='$lat' result=specframe$$.ast";
+  $Mon{'atools_mon'}->obeyw( "astset", "$param1" );
+  $param1 = "this=specframe$$.ast attrib=geolon value='$long' result=specframe$$.ast";
+  $Mon{'atools_mon'}->obeyw( "astset", "$param1" );
+
+  # Create a linear Mapping from grid coordinates to wavelength
+  # in microns. We need to get the start and end wavelengths for
+  # this, and luckily they're stored in the calibration system.
+  # They're stored in Angstroms, so we'll have to divide by
+  # 10,000 to get microns.
+  my ($iarfile, $wmin, $wmax) = split(':', $Cal->iar);
+  $wmin /= 10000;
+  $wmax /= 10000;
+  my $pixelmax = 1024; # Number of pixels.
+  $param1 = "ncoord=1 ina=1 inb=$pixelmax outa=$wmin outb=$wmax options=! result=winmap$$.ast";
+  $Mon{'atools_mon'}->obeyw( "astwinmap", "$param1" );
+
+  # Combine this linear Mapping in parallel with the skymap.ast Mapping.
+  $param1 = "map1=skymap$$.ast map2=winmap$$.ast series=f options=! result=cmpmap$$.ast";
+  $Mon{'atools_mon'}->obeyw( "astcmpmap", "$param1" );
+
+  # Create a 3D Frame to represent grid coordinates.
+  $param1 = "naxes=1 options=\'Domain=GRID\' result=grid$$.ast";
+  $Mon{'atools_mon'}->obeyw( "astframe", "$param1" );
+
+  # Create a FrameSet holding this Frame.
+  $param1 = "frame=grid$$.ast options=! result=wcs$$.ast";
+  $Mon{'atools_mon'}->obeyw( "astframeset", "$param1" );
+
+  # Add the CmpFrame into the FrameSet, using the CmpMap to connect
+  # it to the grid frame, and store it as the WCS component of the cube.
+  $param1 = "this=wcs$$.ast iframe=ast__base map=cmpmap$$.ast frame=cmpframe$$.ast result=$ndf";
+  $Mon{'atools_mon'}->obeyw( "astaddframe", "$param1" );
+
+  # Report.
+  orac_print( "WCS created in $ndf.\n" );
+
+  # Remove all of the .ast frames.
+  unlink glob( "*$$.ast" );
+
+}
+
+# Tidy up output.
+orac_print "\n";
