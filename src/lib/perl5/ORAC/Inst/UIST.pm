@@ -8,7 +8,7 @@ ORAC::Inst::UIST - ORAC description of UIST
 
   use ORAC::Inst::UIST;
 
-  %Mon = $inst->return_possible_calibrations;
+  %Mon = $inst->start_algorithm_engines;
 
 =head1 DESCRIPTION
 
