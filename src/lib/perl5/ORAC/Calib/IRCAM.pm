@@ -80,3 +80,15 @@ sub mask {
 
   return $self->{Mask}; 
 };
+
+=back
+
+=head1 AUTHORS
+
+Frossie Economou (frossie@jach.hawaii.edu) and
+Tim Jenness (t.jenness@jach.hawaii.edu)
+
+=cut
+
+
+1;
