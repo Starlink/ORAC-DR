@@ -1,0 +1,194 @@
+#+
+# Name:
+#    _STANDARD_MAGNITUDE_
+#
+# Purpose:
+#    Obtains the catalogue magnitude of a standard for SOFI.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive reads faint-standard catalogues to obtain the
+#    catalogue magnitude of a standard.  A case- and space-insensitive
+#    comparison of the supplied object name with the entries in the
+#    tables provides a catalogue magnitude in J, H, K for a standard star.
+#    The catalogue magnitude is returned through an argument.
+#
+# Arguments:
+#    CATMAG = REAL (Returned)
+#       The catalogue magnitude for the object and current frame's filter.
+#       This is set to the NULLMAG if no magnitude is available.
+#    CATNAME = CHARACTER (Returned)
+#       The object name in the catalogue.  This has superfluous
+#       characters removed from the supplied NAME.
+#    NAME = CHARACTER (Given).
+#       The object name.  This can be the Persson catalogue
+#       number or the ARNICA catalogue name.
+#    NULLMAG = REAL (Given)
+#       A null magnitude when the object has no magnitude for the filter.
+#       [99.999]
+#    WAVEBAND = CHARACTER (Given)
+#       The name of the waveband.  It may be J, H, K.  Z is accepted but
+#       returns the NULLMAG magnitude because the catalogues of standards
+#       used by SOFI do not tabulate Z magnitudes.  It comes from
+#       _GET_FILTER_PARAMETERS_.  ["K"]
+#
+# Notes:
+#    -  This primitive is suitable for the SOFI near-infra-red imager.
+#    -  Processing should only occur when it is time to perform
+#    photometry, i.e. when the steering header DO_APHOT is true,
+#    however, this primitive does not make that check.  That is to
+#    permit photometry of all the contributing frames of a mosaic.
+#    -  An error occurs when the waveband is not one of the allowed
+#    options.
+#    -  Invokes _PERSSON_STANDARD_MAGNITUDE_ and if that fails to identify
+#     the standard, it calls _ARNICA_STANDARD_MAGNITUDE_ to obtain the
+#    magnitude and catalogue name.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC, Starlink)
+#
+# Copyright:
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Arguments
+# =========
+
+# Obtain the suffix value for the file name in the log.  Used
+# for NOD positive and negative images, but normally set to null.
+    my $objname = ( defined( $_STANDARD_MAGNITUDE_{NAME} ) ?
+                     $_STANDARD_MAGNITUDE_{NAME} : "" );
+    if ( $objname eq "" ) {
+       orac_err "Programming error: _STANDARD_MAGNITUDE_ not " .
+                "supplied an object name.\n";
+    }
+
+# Obtain the waveband for the magnitude.
+    my $waveband = ( defined( $_STANDARD_MAGNITUDE_{WAVEBAND} ) ?
+                   $_STANDARD_MAGNITUDE_{WAVEBAND} : "K" );
+    if ( $waveband !~ /^[ZJHK]/ ) {
+       orac_err "Programming error: _STANDARD_MAGNITUDE_ " .
+                "supplied $waveband, which is not a valid waveband. " .
+                "Allowed options are Z, J, H, K.\n";
+    }
+
+# Obtain the column name for the magnitude.
+    my $defnullmag = 99.999;
+    my $nullmag = ( defined( $_STANDARD_MAGNITUDE_{NULLMAG} ) ? 
+                    $_STANDARD_MAGNITUDE_{NULLMAG} : $defnullmag );
+    
+# Extract the system magnitude of the standard.
+# =============================================
+
+# Documented catalogues at the SOFI web site do not have Z tabulated.
+# There set the brightness to the null value and export the supplied
+# object name.
+    if ( $waveband eq "Z" ) {
+       $_STANDARD_MAGNITUDE_{CATMAG} = $nullmag;
+       $_STANDARD_MAGNITUDE_{CATNAME} = $objname
+    } else {
+
+# First try the Persson JHK standards.
+       _PERSSON_STANDARD_MAGNITUDE_ NAME=$objname WAVEBAND=$waveband NULLMAG=$nullmag
+ 
+# Return the catalogue magnitude.
+       my $catmag = $_PERSSON_STANDARD_MAGNITUDE_{CATMAG};
+       $_STANDARD_MAGNITUDE_{CATNAME} = $_PERSSON_STANDARD_MAGNITUDE_{CATNAME};
+       if ( abs( $catmag - $nullmag ) < 1E-5 && $waveband =~ /^[JHK]/ ) {
+
+# Try the ANICA JHK standards.
+          _ARNICA_STANDARD_MAGNITUDE_ NAME=$objname WAVEBAND=$waveband NULLMAG=$nullmag
+ 
+# Return the catalogue magnitude.
+          $_STANDARD_MAGNITUDE_{CATMAG} = $_PERSSON_STANDARD_MAGNITUDE_{CATMAG};
+          $_STANDARD_MAGNITUDE_{CATNAME} = $_PERSSON_STANDARD_MAGNITUDE_{CATNAME};
+
+       } else {
+          $_STANDARD_MAGNITUDE_{CATMAG} = $catmag;
+       }
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_STANDARD_MAGNITUDE_ -- Obtains the catalogue magnitude of a standard.
+
+=head1 DESCRIPTION
+
+This primitive reads faint-standard catalogues to obtain the catalogue
+magnitude of a standard.  A case- and space-insensitive comparison of
+the supplied object name with the entries in the tables provides a
+catalogue magnitude in I<J>, I<H>, I<K> for a standard star. The
+catalogue magnitude is returned through an argument.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item CATMAG = REAL (Returned)
+
+The catalogue magnitude for the object and current frame's filter.
+
+=item CATNAME = CHARACTER (Returned)
+
+The object name in the catalogue.  This has superfluous
+characters removed from the supplied NAME.
+
+=item NAME = CHARACTER (Given).
+
+The object name.  This can be the Persson catalogue
+number or the ARNICA catalogue name.
+
+=item NULLMAG = REAL (Given)
+
+A null magnitude when the object has no magnitude for the filter.
+[99.999]
+
+=item WAVEBAND = CHARACTER (Given)
+
+The name of the waveband.  It may be I, Z, J, H, K, L, or M.
+It comes from L<_GET_FILTER_PARAMETERS_|_GET_FILTER_PARAMETERS_>.  ["K"]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ESO near-infra-red imagers.
+
+=item *
+
+Processing only occurs when it is time to perform photometry,
+i.e. when the steering header DO_APHOT is true.
+
+=item *
+
+An error occurs when the waveband is not one of the allowed
+options.
+
+=item *
+
+Invokes L<_UKIRT_STANDARD_MAGNITUDE_|_UKIRT_STANDARD_MAGNITUDE_>, 
+and if that fails to identify the standard, it calls 
+L<_PERSSON_STANDARD_MAGNITUDE_|_PERSSON_STANDARD_MAGNITUDE_> to obtain the
+magnitude and catalogue name.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC, Starlink)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
