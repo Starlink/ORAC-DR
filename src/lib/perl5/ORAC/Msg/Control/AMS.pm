@@ -42,13 +42,16 @@ use vars qw/$VERSION $RUNNING/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
+BEGIN {
+  $ENV{ADAM_NOPROMPT} = '1';
+}
+
+
 # This needs to Starlink module
 use Starlink::AMS::Init '1.00';
 
 # Derive all methods from the Starlink module since this
 # behaves in exactly the same way.
-
-#@ORAC::Msg::Control::AMS::ISA = qw/Starlink::AMS::Init/;
 
 use base qw/Starlink::AMS::Init/;
 
