@@ -203,7 +203,9 @@ sub _to_OBSERVATION_TYPE {
    my $cat = $self->hdr->{"HIERARCH.ESO.DPR.CATG"};
    $cat = exists( $self->hdr->{"HIERARCH.ESO.DPR.CATG"} ) ? $self->hdr->{"HIERARCH.ESO.DPR.CATG"} : "SCIENCE";
 
-   if ( uc( $type ) eq "STD" || uc( $cat ) eq "SCIENCE" ) {
+   if ( uc( $cat ) eq "TEST" ) {
+      $type = "TEST";
+   } elsif ( uc( $type ) eq "STD" || uc( $cat ) eq "SCIENCE" ) {
       $type = "OBJECT";
    } elsif ( uc( $type ) eq "SKY,FLAT" || uc( $type ) eq "FLAT,SKY" ||
              uc( $cat ) eq "OTHER" ) {
@@ -301,10 +303,11 @@ sub _to_RECIPE {
              $seq eq "SOFI_img_cal_Darks" ) {
       $recipe = "REDUCE_DARK";
 
-   } elsif ( $template eq "SOFI_img_cal_DomeFlats" ||
-             $template eq "SOFI_img_cal_DomeFlats" ||
-             $template eq "SOFI_img_cal_SpecialDomeFlats" ) {
-      $recipe = "SKY_FLAT";
+   } elsif ( $template eq "SOFI_img_cal_DomeFlats" ) {
+      $recipe = "DOME_FLAT";
+
+   } elsif ( $template eq "SOFI_img_cal_SpecialDomeFlats" ) {
+      $recipe = "SPECIAL_DOME_FLAT";
 
 # Imaging spectroscopy.  There appears to be no distinction
 # for flats from target, hence no division into POL_JITTER and
