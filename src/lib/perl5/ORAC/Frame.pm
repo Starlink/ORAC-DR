@@ -941,16 +941,9 @@ be supplied.
 =cut
 
 sub file_from_bits {
-  my $self = shift;
 
-  my $prefix = shift;
-  my $obsnum = shift;
-
-  # In this case (since this is generic) simply return
-  # a combination. Use the IRCAM model by default
-  # since this is a UKIRT designed system (<duck> - timj)
-  return $self->rawfixedpart . $prefix . '_' . $obsnum . $self->rawsuffix;
-
+  # Tim decrees that this must be subclassed.
+  die "The base class version of file_from_bits() should not be used\n -- please subclass this method\n";
 }
 
 
