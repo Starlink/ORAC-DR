@@ -1546,7 +1546,7 @@ sub fluxes_helper {
     if (exists $ENV{FLUXES_DIR}) {
       $ENV{FLUXES} = $ENV{FLUXES_DIR};
     } else { # Guess by looking at the location of starlink
-      $ENV{FLUXES} = $StarConfig{Star_Bin} ."/fluxes";	
+      $ENV{FLUXES} = File::Spec->catdir($StarConfig{Star_Bin},"fluxes");
     }
   }
 
@@ -1563,7 +1563,7 @@ sub fluxes_helper {
   # oracdr is running fluxes and we want to make sure that
   # the JPLEPH file is not removed when THAT oracdr finishes!
   # Should probably be using File::Temp::tempdir
-  my $tmpdir = "/tmp/fluxes_$$";
+  my $tmpdir = File::Spec->catdir(File::Spec->tmpdir,"fluxes_$$");
 
   # Register this with a cleanup END block
   # Set up an END block to remove the directory on shutdown
@@ -1588,9 +1588,10 @@ sub fluxes_helper {
     unlink "JPLEPH"; # should be nothing here
 
     # Determine location of ephemeris file
-    my $ephdir = ( $ENV{JPL_DIR} || $StarConfig{Star}."/etc/jpl" );
+    my $ephdir = ( $ENV{JPL_DIR} ||
+		   File::Spec->catdir($StarConfig{Star},"etc","jpl") );
 
-    my $jpleph = $ephdir . "/jpleph.dat";
+    my $jpleph = File::Spec->catfile($ephdir, "jpleph.dat");
 
     # Check that the file exists first
     croak "Could not find JPLEPH file at $jpleph" unless -f $jpleph;
@@ -1630,16 +1631,16 @@ sub p4_helper {
     orac_err('CGS4DR_ROOT environment variable not defined. Cannot find P4.\n');
     return undef;
   }
-  $ENV{P4_CONFIG} = $ENV{HOME} . "/.oracdr";
+  $ENV{P4_CONFIG} = File::Spec->catdir($ENV{HOME}, ".oracdr");
   $ENV{P4_HOME} = $ENV{P4_ROOT};
   $ENV{P4_EXE}  = $ENV{P4_ROOT};
   $ENV{P4_ICL}  = $ENV{P4_ROOT};
   if (exists $ENV{ORAC_DATA_OUT}) {
     $ENV{P4_DATA} = $ENV{ORAC_DATA_OUT};
   } else {
-    $ENV{P4_DATA} = '/tmp';
+    $ENV{P4_DATA} = File::Spec->tmpdir;
   }
-  $ENV{P4_CT}   = $ENV{P4_ROOT} . "/ndf";
+  $ENV{P4_CT}   = File::Spec->catdir($ENV{P4_ROOT}, "ndf");
   $ENV{P4_HC}   = cwd;
   $ENV{P4_DATE} = '19980804';  # irrelevant (I hope)
   $ENV{RGDIR}   = $ENV{P4_DATA};
@@ -1662,9 +1663,10 @@ sub p4_helper {
 
   # Do P4 startup - copy in a default file
   # unless one is there already.
-  unless (-e $ENV{P4_CONFIG} . "/default.p4") {
+  unless (-e File::Spec->catfile($ENV{P4_CONFIG}, "default.p4")) {
     orac_print("Creating a default P4 startup file\n",'blue');
-    copy ($ENV{P4_ROOT} . "/default.p4", $ENV{P4_CONFIG} . "/default.p4");
+    copy (File::Spec->catfile($ENV{P4_ROOT}, "default.p4"),
+	  File::Spec->catfile($ENV{P4_CONFIG}, "default.p4"));
   }
 
   # No cleanup
@@ -1687,10 +1689,14 @@ Given a date string of form YYYYMMDD derive the semster.
 The returned string does not include the prefix. It just includes
 the "02a", "02b".
 
+Returns empty string if there are fewer than 8 digits in the
+supplied year.
+
 =cut
 
 sub _determine_semester {
   my $ut = shift;
+  return '' if length($ut) < 8;
 
   my $sem;
 
