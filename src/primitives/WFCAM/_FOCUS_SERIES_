@@ -1,3 +1,5 @@
+    my $log = new ORAC::LogFile("focus.log");
+
     # Do flat field correction and dark correction
 
     _STAGE1_SPECIAL_ FLATCOR=1 DARKCOR=1
@@ -13,6 +15,7 @@
     my $cpm = $Cal->CPM;
     my $cpmfr = sprintf("%s[1]",$cpm);
     my ($errmsg,$retval);
+    $Frm->uhdr("CATFILE",$outfile);
     foreach my $i (1 .. $Frm->findnsubs) {
         my $snum = $Frm->getasubframe($i)->subfrmnumber;
         $retval = cir_update_hdr($Frm->getasubframe($i)->file,"CIR_CPM",
@@ -24,31 +27,58 @@
         my $inf = $Frm->getasubframe($i)->file;
         my $outf = sprintf("%s[%d]",$outfile,$i);
         my $ellf = "";
-        $retval = cir_imcore($inf,$cpmfr,25,3.0,0,3.5,64,$outf,$ellf,
-	    0,3,$errmsg);
+        $retval = cir_imcore($inf,$cpmfr,50,2.0,0,3.5,64,$outf,$ellf,
+	    0,1,$errmsg);
+        $Frm->getasubframe($i)->uhdr("CATFILE",$outf);
         if ($retval != CIR_OK) {
             orac_throw "CIR_IMCORE: failed in _IMCORE_\n$errmsg\n";
         }
     }
 
-    # Now extract the useful info out of the header of each catalogue...
+    # Do the image classification
 
-    my $logfile = "focus.log";
-    my $log = new ORAC::LogFile($logfile);
-    $log->header("#Focus, fwhm");
+    _CLASSIFY_
 
-    foreach my $i (1 .. $Frm->findnsubs) {
-        my $catfile = sprintf("%s[%d]",$outfile,$i);
-	my $tmpCat = $Frm->new($catfile);
-        my $seeing = $tmpCat->hdr("SEEING");
-        my $foc_i = $tmpCat->hdr("FOC_I");
-        my $foc_off = $tmpCat->hdr("FOC_OFFS");
-        my $line = sprintf("Frame %02d: offset = %g, seeing = %g\n",$foc_i,
-	    $foc_off,$seeing);
-        orac_print($line);
-        my $logline = sprintf("%g, %g", $foc_off, $seeing);
-	$log->addentry($logline);
-    }
+    # Dump some stuff from the catalogue and get the relevant info
+
+    my @allcols = ('X_coordinate','Y_coordinate','Ellipticity',
+	'Gaussian_sigma','Classification');
+    my $fwhm=0;
+    my $nsamp=0;
+    foreach my $i ($Frm->findnsubs) {
+        my $nxl = $Frm->getasubframe($i)->hdr("NAXIS1") - 25.0;
+        my $nyl = $Frm->getasubframe($i)->hdr("NAXIS2") - 25.0;
+        my $tab = $Frm->getasubframe($i)->uhdr("CATFILE");
+        my $tmpfile = ORAC::TempFile->new(0);
+        $retval = cir_tabledump($tab,$tmpfile->file,\@allcols,5,$errmsg);
+        my $fh = $tmpfile->handle;
+        open $fh,$tmpfile->file;
+        while (<$fh>) {
+            chomp;
+            my @a = split /\s+/;
+            $a[3] *= 2.235;
+    
+            # Calculate mean FWHM for class=-1 objects that are away from the
+            # the edges
+
+            if(($a[0] > 25.0 && $a[1] > 25.0 && $a[0] < $nxl && $a[1] < $nyl) 
+		&& $a[2] < 0.25) {
+                $nsamp++;
+                $fwhm+=$a[3];
+            }
+        }
+	$fh->close;
+        $tmpfile->DESTROY;
+        if ($nsamp > 0) {
+	    $fwhm /= $nsamp;
+            $fwhm = sprintf("%8.2f", $fwhm);
+            my $foc = $Frm->hdr("FOC_OFFS");
+            orac_print("Mean FWHM of objects is: $fwhm, at foc_posn $foc\n");
+            orac_print("$foc, $fwhm # FOC, FWHM\n");
+            $log->header("#Foc, fwhm");
+            $log->addentry("$foc, $fwhm");
+        }
+    }      
 
 =head1 NAME
 
