@@ -29,6 +29,15 @@ to 6000 K. See NOTES below.
 =item ROW
 
 Defines the row to extract as the standard spectrum.  Defaults to 96.
+If SEARCH is greater than 1 this will be used to specify the center
+of a region to be searched in order to find the best row to use.
+
+=item SEARCH
+
+Number of rows to search in order to determine the best row to extract.
+Best is defined as brightest row.
+Defaults to 1 (i.e., no searching just take the specified row).
+
 
 =back
 
@@ -44,7 +53,7 @@ KAPPA, FIGARO
 
 =item kappa_mon
 
-cdiv, cmult, div
+cdiv, cmult, div, ndfcopy, pixdupe
 
 =item figaro1
 
@@ -70,27 +79,33 @@ $Grp
 
 =head1 NOTES
 
-If the spectral type of the standard cannot be found in the Bright Star Catalogue (which 
-should exist in the $ORAC_DATA_CAL directory), this primitive queries the SIMBAD 
-astronomical database. As this query requires a network connection of some sort, it will
-fail if no network connection exists.  The timeout for this query is currently set to
-20 seconds; this can be modified if it is found that this timeout is too short (for flaky
-network connections) or too long (for no network connection at all).  
+If the spectral type of the standard cannot be found in the Bright
+Star Catalogue (which should exist in the $ORAC_DATA_CAL directory),
+this primitive queries the SIMBAD astronomical database. As this query
+requires a network connection of some sort, it will fail if no network
+connection exists.  The timeout for this query is currently set to 20
+seconds; this can be modified if it is found that this timeout is too
+short (for flaky network connections) or too long (for no network
+connection at all).
 
-In addition to the previous note, it must also be noted that this primitive parses the 
-web page one receives from SIMBAD. As this web page is likely to change in the future, 
-this primitive must also change in how it parses the web page. The format of this web 
-page may be seen by going to the SIMBAD web site ( http://simbad.harvard.edu/Simbad or
-http://simbad.u-strasbg.fr/Simbad ) and doing a sample query.
+In addition to the previous note, it must also be noted that this
+primitive parses the web page one receives from SIMBAD. As this web
+page is likely to change in the future, this primitive must also
+change in how it parses the web page. The format of this web page may
+be seen by going to the SIMBAD web site (
+http://simbad.harvard.edu/Simbad or http://simbad.u-strasbg.fr/Simbad
+) and doing a sample query.
 
-This primitive uses a conversion chart between spectral type and temperature as found on 
-the web page at http://huey.jpl.nasa.gov/~gerard/q_refs/sptype_temp.html  This web page
-obtained this information from Dyck et al. (1996) and Allen (1976).  Checking this 
-information against a third reference (Lang, 1991) showed a good correspondence.
+This primitive uses a conversion chart between spectral type and
+temperature as found on the web page at
+http://huey.jpl.nasa.gov/~gerard/q_refs/sptype_temp.html This web page
+obtained this information from Dyck et al. (1996) and Allen (1976).
+Checking this information against a third reference (Lang, 1991)
+showed a good correspondence.
 
 =head2 REVISION
 
-  $Id$
+ $Id$
 
 =head1 AUTHOR
 
@@ -114,7 +129,7 @@ sub dectodms {
   $dms[0] = int($dec);
   $dms[1] = int(($dec - int($dec))*60);
   $dms[2] = (($dec - $dms[0]) * 60 - int(($dec - $dms[0]) * 60)) * 60;
-  if($neg) { $dms[0] = - $dms[0] }
+  if($neg) { $dms[0] *= -1 }
   return @dms;
 # end subroutine dectodms
 }
@@ -288,7 +303,14 @@ if(!(-e $fullname)) {
 	  $found = 1;
 	  $array[3] =~ /([\d\.]+)\s+([\d\.]+)/;
 	  $vmag = $2;
-	  orac_print "V magnitude is $vmag \n";
+	  if (defined $vmag) {
+	    orac_print "V magnitude is $vmag (from $array[3])\n";
+	  } else {
+	    orac_warn "V magnitude information did not match the expected pattern\n";
+	    orac_warn "Got: $array[3] expected  'NumberSpaceNumber'\n";
+	    orac_warn "V magnitude could not be determined\n";
+	  }
+
 	}
       }
       if($found == 0) {
@@ -307,8 +329,14 @@ if(!(-e $fullname)) {
 # get extraction row
 # if the extraction row is not defined, default to 96(?)
 
-  my $extractrow = ($_CREATE_STANDARD_{ROW} || undef);
-  ($extractrow) || ($extractrow = 96);
+  my $defrow = 96;
+  my $extractrow = ($_CREATE_STANDARD_{ROW} || $defrow);
+
+# Get the search box (make sure it is at least size 1)
+  my $search = (exists $_CREATE_STANDARD_{SEARCH} &&
+		defined $_CREATE_STANDARD_{SEARCH} &&
+		$_CREATE_STANDARD_{SEARCH} > 1
+	        ? $_CREATE_STANDARD_{SEARCH} : 1 );
 
 # get reference wavelengh
 # blackbody flux will be normalized to the flux at this wavelength
@@ -319,13 +347,20 @@ if(!(-e $fullname)) {
 
   my $ORAC_STATUS;
   
-  $Mon{'ndfpack_mon'}->obeyw("ndftrace","ndf=$groupname"); 
+  $Mon{'ndfpack_mon'}->obeyw("ndftrace","ndf=$groupname quiet=true");
 
   ($ORAC_STATUS, my @lbound) = $Mon{'ndfpack_mon'}->get('ndftrace','lbound');
   ($ORAC_STATUS, my @ubound) = $Mon{'ndfpack_mon'}->get('ndftrace','ubound');
   my $ymin = $lbound[1];
   my $ymax = $ubound[1];
   my $ydim = $ymax - $ymin + 1;
+
+# Complain if row is outside the bounds
+  if ($extractrow > $ymax) {
+    orac_warn "Extraction row is larger than Y size of array";
+    orac_warn "Setting extraction row to the default of $defrow";
+    $extractrow = $defrow;
+  }
 
 # start the processing
 
@@ -334,22 +369,50 @@ if(!(-e $fullname)) {
   
 # if the spectral type is known, set the SPECTYPE header
   
-  if($spectype) {
+  if(defined $spectype) {
     _SET_GROUP_FITS_ITEM_ KEY=SPECTYPE VALUE=$spectype COMMENT=spectral|type
   }
 
-  if($vmag) {
+  if(defined $vmag) {
     _SET_GROUP_FITS_ITEM_ KEY=VMAG VALUE=$vmag COMMENT=V|magnitude
   }
+
+# if the search box is larger than 1 we need to run stats on a section
+# of the array to determine the brightest line
+
+  if ($search > 1) {
+    my $min = $extractrow - int( ($search +1)/ 2 );
+    my $max = $extractrow + int( ($search +1)/ 2 );
+    $Mon{'kappa_mon'}->obeyw("stats","ndf=$in(,$min:$max)");
+
+    # Read the stats 
+    my ($ORAC_STATUS, @maxpos) = $Mon{'kappa_mon'}->get("stats","maxpos");
+
+    # And we want the second number
+    orac_print "Extraction row calculated to be at row $maxpos[1] (cf $extractrow originally)\n";
+    $extractrow = $maxpos[1];
+
+  }
+
 
 # extract the row specified above into $specname
 
   my $spec = new ORAC::TempFile;
   my $specname = $spec->file;
-  $Mon{'figaro1'}->obeyw("extract","image=$in ystart=$extractrow yend=$extractrow spectrum=$specname");
+#  $Mon{'figaro1'}->obeyw("extract","image=$in ystart=$extractrow yend=$extractrow spectrum=$specname");
+  $Mon{'ndfpack_mon'}->obeyw("ndfcopy","in=$in(,$extractrow) out=$specname");
+
+# One problem with ndfcopy is that currently it retains the pixel coordinates
+# of the section even if a 1-D slice is extracted. This is expected to
+# be configurable in the next version of kappa (0.15). For now need to
+# change the pixel coordinates so that the Y slice is at 1
+# Simply set the pixel origin to 1,1
+  $Mon{'ndfpack_mon'}->obeyw("setorigin","ndf=$specname origin=[1,1]");
 
 # set axis information (assuming wavelength units are microns)
-
+# Do not need to set the units since they are inherited from the ndfcopy.
+# Do need to set the axlabel though since that is not recognised if
+# it contains 'estimated wavelength' rather than 'wavelength'
   $Mon{'ndfpack_mon'}->obeyw("axlabel","ndf=$specname label=wavelength dim=1");
   $Mon{'ndfpack_mon'}->obeyw("axunits","ndf=$specname units=micron dim=1");
 
@@ -364,7 +427,8 @@ if(!(-e $fullname)) {
   $Mon{'figaro2'}->obeyw("fwconv","spectrum=$bbname flux_unit=erg output=$bbname");
 
 # convert the blackbody units from CGS F-lambda to MKS F-lambda
-
+# Would probably be more efficient to calculate the multiplication factor
+# once so that we dont have to run cmult and then cdiv
   my $bbmks = new ORAC::TempFile;
   my $bbmksname = $bbmks->file;
   $Mon{'kappa_mon'}->obeyw("cmult","in=$bbname scalar=0.1 out=$bbmksname");
@@ -389,7 +453,14 @@ if(!(-e $fullname)) {
 
 # grow the blackbody-normalized spectrum into 2D
 
-  $Mon{'figaro1'}->obeyw("growx","spectrum=$divname image=$out ystart=$ymin yend=$ymax ysize=$ydim new=true");
+# Note that this is now truly a 1-D spectrum (and not a 2-D image of size
+# 1 in the second dimension (which is what it was after the extraction if
+# ndfcopy is used)). We need to turn it into a 2-D image again before
+# pixdupe will work [why not simply keep on using figaro you may ask??]
+# Would be better if pixdupe assumed you wanted to add the extra dim]
+#  $Mon{'figaro1'}->obeyw("growx","spectrum=$divname image=$out ystart=$ymin yend=$ymax ysize=$ydim new=true");
+  $Mon{'ndfpack_mon'}->obeyw("setbound","ndf=$divname(,1)");
+  $Mon{'kappa_mon'}->obeyw("pixdupe","in=$divname out=$out expand=[1,$ydim]");
 
 # set the title of the output image
 
