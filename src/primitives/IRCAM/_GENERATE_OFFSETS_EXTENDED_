@@ -4,7 +4,7 @@
 #    Find the offsets between the frames in an EXTENDED_nxm recipe.
 #
 # Primitives Called:
-#    _GENERATE_OFFSETS_
+#    _GENERATE_OFFSETS_, _TELE_OFFSETS_
 #
 # Arguments:
 #    COMPLETE = REAL (Given)
@@ -17,13 +17,31 @@
 #    PERCENTILE = REAL (Given)
 #       Percentile threshold for locating objects to register frames. 
 #       It must be in the range 75 to 99.9. [96]
+#    TELEOFF = LOGICAL (Given)
+#       If true (1), it will just use the telescope offsets to register.
+#       If false (0), it will attempt automatic registration.
+
+# Arguments
+# =========
+
+# Determine whether or not telescope offsets should only be used.
+    my $usetele = $_GENERATE_OFFSETS_EXTENDED_{TELEOFF};
+    $usetele = defined( $usetele ) ? $usetele : 0;
+
+# Obtain the parameters for the detection.
+    my ( $complete, $minpix, $percentile );
+    if ( ! $usetele ) {
+       $percentile = ( $_GENERATE_OFFSETS_EXTENDED_{PERCENTILE} || 96 );
+       $minpix = ( $_GENERATE_OFFSETS_EXTENDED_{MINPIX} || 12 );
+       $complete = ( $_GENERATE_OFFSETS_EXTENDED_{COMPLETE} || 0.5 );
+    }
 
 # Selection
 # =========
 
 # This should only be performed on OBJECT frames.
     if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ||
-         $Frm->hdr( "OBSTYPE" ) eq "SKY") {
+         $Frm->hdr( "OBSTYPE" ) eq "SKY" ) {
 
 # Determine whether it is time to make a mosaic.
        my $makemosaic = $Frm->hdr( "MAKE_MOSAIC" );
@@ -48,19 +66,57 @@
                                      EXTENDED_ROW => $ext_row );
           }
 
+# Telescope offsets
+# =================
+          if ( $usetele ) {
 
 # Make a local $Grp containing just the target frames within the current
 # row.
-          {
              my $Grp = $tarGrp;
+
+# Form a list of input file names for CCDPACK tasks.
+             my @objects = $Grp->membernames;
+
+# Convert list to comma-separated list.
+             my $objlist = join( ",", @objects );
+
+# Create text file to hold the list of input files, one per line.  This
+# is needed because expanded lists of files may make the command line too
+# long for the ADAM message system.
+             unlink( "objlist.inlist$$" );
+             open( INLIST, ">objlist.inlist$$" );
+             print INLIST join( "\n", @objects ), "\n";
+             close( INLIST );
+
+# Use telescope offsets from the headers.
+             _TELE_OFFSETS_
+
+# Register
+# ========
+
+# Specify the other parameters for the REGISTER stage.
+             my $header = "inlist='^objlist.inlist$$'";
+             my $hidden = "fittype=1"; 
+
+# Register the frames using a shift of origin.  Create the CCDPACK
+# TRANSFORM extensions.
+             $Mon{"ccdpack_reg"}->obeyw("register","$header $hidden accept");
+             unlink( "objlist.inlist$$" );
+
+# Report processing status.
+             orac_print "Orac says: frames $objlist registered\n";
+
+# Attempt automatic registration
+# ==============================
+          } else {
 
 # Generate the offsets
 # ====================
 
-# Obtain the parameters for the detection.
-             my $percentile = ( $_GENERATE_OFFSETS_EXTENDED_{PERCENTILE} || 96 );
-             my $minpix = ( $_GENERATE_OFFSETS_EXTENDED_{MINPIX} || 12 );
-             my $complete = ( $_GENERATE_OFFSETS_EXTENDED_{COMPLETE} || 0.5 );
+# Make a local $Grp containing just the target frames within the current
+# row.  It's the same as for telescope offsets but repeating the code
+# saves indenting one context level.
+             my $Grp = $tarGrp;
 
 # Call the generic primitive which does most of the work.
              _GENERATE_OFFSETS_ PERCENTILE=$percentile MINPIX=$minpix COMPLETE=$complete CENTRAL_SOURCE=FALSE
