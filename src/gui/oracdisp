@@ -12,6 +12,11 @@
 #
 #  History:
 #     $Log$
+#     Revision 1.2  1998/07/15 03:10:13  timj
+#     Now works with four display types.
+#     Can add and delete display entries.
+#     Can write to disk.
+#
 #     Revision 1.1  1998/07/14 21:24:44  timj
 #     First demo release
 #
@@ -19,7 +24,7 @@
 
 use strict;
 
-use subs qw/update_status image_ui spectrum_ui/;
+use subs qw/update_status image_ui spectrum_ui datamodel_ui sigma_ui/;
 
 # Generic variables
 use vars qw/$MW $VERSION $BAR $TKSTATUS $TOPLEVEL/;
@@ -28,7 +33,10 @@ use vars qw/$MW $VERSION $BAR $TKSTATUS $TOPLEVEL/;
 use vars qw/ %MENUS /;
 
 # Variables related to global state of sytem
-use vars qw/%STATUS/;
+use vars qw/%STATUS %DEFAULTS @SELECT_LIST @UNDOBUFFER/;
+
+# Widgets
+use vars qw/ $UNDO_but /;
 
 # Start up Tk early and put up a status bar
 
@@ -79,34 +87,58 @@ my @DispDefn = ();
 
 
 # Configure the default behaviour
-$STATUS{IMAGE} = {
-		  TOOL => 'KAPVIEW',
-		  REGION => 0,
-		  WINDOW => 0,
-		  SUFFIX => 'RAW',
-		  XAUTOSCALE => 1,
-		  YAUTOSCALE => 1,
-		  ZAUTOSCALE => 1,
-		  XMIN => 0,
-		  YMIN => 0,
-		  ZMIN => 0,
-		  XMAX => 100,
-		  YMAX => 100,
-		  ZMAX => 100
-		 };
+%DEFAULTS = (
+	     'IMAGE' => {
+			 TOOL => 'KAPVIEW',
+			 REGION => 0,
+			 WINDOW => 0,
+			 SUFFIX => 'RAW',
+			 XAUTOSCALE => 1,
+			 YAUTOSCALE => 1,
+			 ZAUTOSCALE => 1,
+			 XMIN => 0,
+			 YMIN => 0,
+			 ZMIN => 0,
+			 XMAX => 100,
+			 YMAX => 100,
+			 ZMAX => 100
+			},
+	     'GRAPH' => {
+			 TOOL => 'KAPVIEW',
+			 REGION => 0,
+			 WINDOW => 0,
+			 SUFFIX => 'RAW',
+			 XAUTOSCALE => 1,
+			 YAUTOSCALE => 1,
+			 XMIN => 0,
+			 YMIN => 0,
+			 XMAX => 100,
+			 YMAX => 100
+			},
+	     'DATAMODEL' => {
+			     TOOL => 'KAPVIEW',
+			     REGION => 0,
+			     WINDOW => 0,
+			     SUFFIX => 'RAW',
+			     XAUTOSCALE => 1,
+			     YAUTOSCALE => 1,
+			     XMIN => 0,
+			     YMIN => 0,
+			     XMAX => 100,
+			     YMAX => 100
+			    },
+	     'SIGMA' => {
+			 TOOL => 'KAPVIEW',
+			 REGION => 0,
+			 WINDOW => 0,
+			 SUFFIX => 'RAW',
+			 RANGE  => 5,
+			 DASHED => 3	   
+			}
+	     );
 
-$STATUS{GRAPH} = {
-		  TOOL => 'KAPVIEW',
-		  REGION => 0,
-		  WINDOW => 0,
-		  SUFFIX => 'RAW',
-		  XAUTOSCALE => 1,
-		  YAUTOSCALE => 1,
-		  XMIN => 0,
-		  YMIN => 0,
-		  XMAX => 100,
-		  YMAX => 100,
-		 };
+# Now configure the widget default values
+&set_default_status(keys %DEFAULTS);
 
 
 # Okay now we are really starting
@@ -122,7 +154,8 @@ require Tk::DialogBox;
 update_status('Reading notebook definitions..', 40);
 require 'image.ui.pl';
 require 'spectrum.ui.pl';
-
+require 'datamodel.ui.pl';
+require 'sigma.ui.pl';
 
 # 1 - Create frames in top window
 # 2 - Create frames inside these and pack
@@ -141,7 +174,8 @@ my $CurrDefn; # The listbox widget that contains the current definitions
 my $NB;       # The notebook widget
 my $NB_image; # The image notebook widget
 my $NB_graph; # The graph notebook widget
-
+my $NB_datamodel; # The DataModel notebook widget
+my $NB_sigma; # The Sigma notebook widget
 
 
 
@@ -218,6 +252,9 @@ sub create_notebook {
   # Now declare the entries
   $NB_image = $NB->add("image", -label => "Image", -underline => 0);
   $NB_graph = $NB->add("graph", -label => "Graph", -underline => 0);
+  $NB_sigma = $NB->add("sigma", -label => "Sigma", -underline => 0);
+  $NB_datamodel = $NB->add("datamodel", -label => "DataModel", -underline => 0);
+
 
   # Create the menu buttons
 #  $WINDOW_NAME = ;
@@ -226,6 +263,8 @@ sub create_notebook {
   # Now fill the entries with 'stuff'
   image_ui $NB_image;
   spectrum_ui $NB_graph;
+  sigma_ui $NB_sigma;
+  datamodel_ui $NB_datamodel;
 
   # And pack the pages into the required frame
   $NB->pack(-expand => 'yes',
@@ -251,6 +290,28 @@ sub create_state {
 			       -width =>30
 			      )->pack(-side =>'top',-fill => 'both');
   $CurrDefn->bindtags(qw/widget_demo/); # Remove all bindings except dummy
+
+  # Add a button that will write the state to file
+  my $configure_but = $frame->Button(-text => 'Configure',
+				     -relief => 'raised',
+				     -command => \&write_defn
+				    )->pack(-side=>'left');
+
+  # A button to delete highlighted entries
+  # Looks in the global variable @SELECT_LIST for a list of indices to
+  # remove
+  my $delete_but = $frame->Button(-text => 'Delete',
+				  -relief => 'raised',
+				  -command => \&delete_entry_from_defn
+				 )->pack(-side=>'left');
+
+  # An undo button. Uses @UNDOBUFFER
+  # Global so that we can change the state
+  $UNDO_but = $frame->Button(-text => 'Undo',
+			     -relief => 'raised',
+			     -state  => 'disabled',
+			     -command => \&undo_delete
+			    )->pack(-side => 'left');
   
   # Now fill the widget with the contents of the default state
   # Read in the default configuration from file
@@ -282,6 +343,7 @@ sub insert_text {
 
   # Remove all tags on this position
   foreach my $tag ($w->tag('names', $start)) {
+    # Im not sure this does anything at all :-)
     $w->tag('remove', $tag, $start, 'insert');
   }
 
@@ -395,6 +457,12 @@ sub update_defn {
   # Clear the widget
   $CurrDefn->delete('1.0', 'end');
 
+  # Clear all tags
+#  foreach my $tag ($CurrDefn->tag('names')) {
+#    $CurrDefn->tag('delete', $tag);
+#  }
+    $CurrDefn->tag('delete', $CurrDefn->tag('names'));
+
   # Now loop through @DispDefn
   for (my $i =0; $i <= $#DispDefn; $i++) {
 
@@ -409,7 +477,7 @@ sub update_defn {
     next unless defined $text;
 
     # And insert this text into the widget and tag it with $i
-    &insert_text($CurrDefn, "$text\n", $tag);
+    &insert_text($CurrDefn, "$text\n", $tag, 'normal', 'selected');
 
     # Now configure this tag so that it recongises when 
     # the mouse arrives and leaves
@@ -423,7 +491,6 @@ sub update_defn {
 
     $CurrDefn->tag('bind', $tag, '<Any-Leave>' => 
 		   sub {shift->tag('configure', $tag,
-				   -foreground => undef, 
 				   -background => undef
 				  )}
 		  );
@@ -436,11 +503,81 @@ sub update_defn {
 		   '<Double-1>' => sub {&reflect_defn($defn);}
 		  );
 
+    # Configure the Single Button release such that it can
+    # turn on or off selection
+    $CurrDefn->tag('bind', $tag,
+		   '<ButtonRelease-1>' =>
+		   sub { my $index = substr($tag, 1);
+			 my $widg = shift;
+
+			 # Check to see whether the index is
+			 # already stored
+			 if (grep(/^$index$/,@SELECT_LIST) > 0) {
+			   # Already in so remove it
+			   @SELECT_LIST = grep(!/^$index$/,@SELECT_LIST);
+			   $widg->tag('configure',$tag,
+				     -foreground => undef);
+			 } else {
+			   push(@SELECT_LIST, $index);
+			   $widg->tag('configure',$tag,
+				     -foreground => 'blue');
+			 }
+
+		       }
+		  );
+
   }
 
   # Disable the box so that people cant write in it
   $CurrDefn->configure(-state => 'disabled');
 
+
+}
+
+# WRITE_DEFN
+#   Write a display definition to disk
+#   More or less the sames as update_defn
+#   except we write to a file
+
+sub write_defn {
+
+  # Open the file for writing
+  # Open the file
+  my $file = new IO::File("> $DefnFile");
+
+  # If the file is okay....
+  if (defined $file) {
+    
+    # Now loop through @DispDefn
+    for (my $i =0; $i <= $#DispDefn; $i++) {
+
+      my $defn = $DispDefn[$i];
+    
+      # Convert to a string
+      my $text = Disp_HtoText($defn);
+      
+      next unless defined $text;
+
+      # Print to the file
+      print $file $text . "\n";
+
+    }
+
+    # Dialog box
+    my $f = $MW->DialogBox(-title => 'Update', -buttons => ["OK"]);
+    $f->Label(-bitmap => 'info')->pack;
+    $f->Label(-text => "Display configuration written to disk")->pack;
+    $f->Show;
+
+  } else {
+
+    # Dialog box
+    my $f = $MW->DialogBox(-title => 'Update', -buttons => ["OK"]);
+    $f->Label(-bitmap => 'error')->pack;
+    $f->Label(-text => "Error writing configuration to disk\nFile: $DefnFile\n$!\n")->pack;
+    $f->Show;
+
+  }
 
 }
 
@@ -524,30 +661,48 @@ sub Disp_TextToH {
 sub reflect_defn {
   my $href = shift;
 
-  print "Process: ". Disp_HtoText($href) . "\n";
+#  print "Process: ". Disp_HtoText($href) . "\n";
 
-  # Raise the required NoteBook entry
-  $NB->raise("graph");
-  
-  # Now it gets a bit complicated
-  # We know which frame we are interested in eg 'graph'
-  # It seems that what we really need is an array of widget names
-  # and variables for each type (a hash of hashes obviously :-) )
-  # ie %TYPES would contain $TYPES{GRAPH}, $TYPES{IMAGE} etc.
-  # The $TYPES{thingy} would contain the linked variables
-  # and the entry widget IDs
-  # This makes it difficult when using specPerl since we need to store
-  # the names of entry widgets....
-  # ie %TYPES = (  GRAPH => { AUTOSCALE => 1/0, SUFFIX_WIDGET => $Widg })
+  # Now we need to process the line to decide on the required
+  # NoteBook entry and then set the variables
 
-  my @child = $NB_image->children;
-  print join(" ",@child) . "\n";
+  # Take a copy of the entry hash
+  my %defn = %$href;
 
-  foreach (@child) {
-    print $_->name . "\n";
+  # First display type
+  # If TYPE does not exist then we are in trouble
+  if (exists $defn{TYPE}) {
+
+    my $type = $defn{TYPE};
+    
+    # Raise it
+    $NB->raise(lc($type));
+
+    # TYPE is upper case in the STATUS hash
+    $type = uc($type);
+
+    # Do it the long way first
+    $STATUS{$type}{SUFFIX} = $defn{ID} if exists $defn{ID};
+    $STATUS{$type}{XAUTOSCALE} = $defn{XAUTOSCALE} if exists $defn{XAUTOSCALE};
+    $STATUS{$type}{YAUTOSCALE} = $defn{YAUTOSCALE} if exists $defn{YAUTOSCALE};
+    $STATUS{$type}{ZAUTOSCALE} = $defn{ZAUTOSCALE} if exists $defn{ZAUTOSCALE};
+    $STATUS{$type}{TOOL} = uc($defn{TOOL}) if exists $defn{TOOL};
+    $STATUS{$type}{REGION} = $defn{REGION} if exists $defn{REGION};
+    $STATUS{$type}{WINDOW} = $defn{WINDOW} if exists $defn{WINDOW};
+    $STATUS{$type}{XMIN} = $defn{XMIN} if exists $defn{XMIN};
+    $STATUS{$type}{XMAX} = $defn{XMAX} if exists $defn{XMAX};
+    $STATUS{$type}{YMIN} = $defn{YMIN} if exists $defn{YMIN};
+    $STATUS{$type}{YMAX} = $defn{YMAX} if exists $defn{YMAX};
+    $STATUS{$type}{ZMIN} = $defn{ZMIN} if exists $defn{ZMIN};
+    $STATUS{$type}{ZMAX} = $defn{ZMAX} if exists $defn{ZMAX};
+    $STATUS{$type}{RANGE} = $defn{RANGE} if exists $defn{RANGE};
+    $STATUS{$type}{DASHED} = $defn{DASHED} if exists $defn{DASHED};
+
+
+  } else {
+    print "Display type is not available.....:\n";
+    print Disp_HtoText($href) . "\n";
   }
-
-  print "SUFFIX is $STATUS{IMAGE}{SUFFIX}\n";
 
 }
 
@@ -573,3 +728,242 @@ sub create_menu {
   }
 }
 
+
+# Sub to create and entry in the definition table from 
+# the GUI
+
+sub add_image_entry {
+
+  my $href = &read_image;
+
+  # Now store this in the array
+  push(@DispDefn, $href);
+
+  # Now update the list box
+  update_defn;
+
+}
+
+sub add_graph_entry {
+
+  my $href = &read_graph;
+
+  # Now store this in the array
+  push(@DispDefn, $href);
+
+  # Now update the list box
+  update_defn;
+
+}
+
+sub add_datamodel_entry {
+
+  my $href = &read_datamodel;
+
+  # Now store this in the array
+  push(@DispDefn, $href);
+
+  # Now update the list box
+  update_defn;
+
+}
+
+sub add_sigma_entry {
+
+  my $href = &read_sigma;
+
+  # Now store this in the array
+  push(@DispDefn, $href);
+
+  # Now update the list box
+  update_defn;
+
+}
+
+
+
+
+# Sub to read the image widget and store the information in a hash
+# A hash reference is returned.
+
+sub read_image {
+
+  # Create the hash to store all this in
+  my %values = ();
+
+  $values{TYPE} = 'IMAGE';
+
+  # Now read the widget state into the hash
+  $values{ID} = $STATUS{IMAGE}{SUFFIX};
+  $values{TOOL} = $STATUS{IMAGE}{TOOL};
+  $values{WINDOW} = $STATUS{IMAGE}{WINDOW};
+  $values{REGION} = $STATUS{IMAGE}{REGION};
+
+  $values{XAUTOSCALE} = $STATUS{IMAGE}{XAUTOSCALE};  
+  $values{YAUTOSCALE} = $STATUS{IMAGE}{YAUTOSCALE};  
+  $values{ZAUTOSCALE} = $STATUS{IMAGE}{ZAUTOSCALE};  
+
+  $values{XMIN} = $STATUS{IMAGE}{XMIN};
+  $values{XMAX} = $STATUS{IMAGE}{XMAX};
+  $values{YMIN} = $STATUS{IMAGE}{YMIN};
+  $values{YMAX} = $STATUS{IMAGE}{YMAX};
+  $values{ZMIN} = $STATUS{IMAGE}{ZMIN};
+  $values{ZMAX} = $STATUS{IMAGE}{ZMAX};
+
+  return \%values;
+
+}
+
+# Sub to read the graph widget and store the information in a hash
+# A hash reference is returned.
+
+sub read_graph {
+
+  # Create the hash to store all this in
+  my %values = ();
+
+  $values{TYPE} = 'GRAPH';
+
+  # Now read the widget state into the hash
+  $values{ID} = $STATUS{GRAPH}{SUFFIX};
+  $values{TOOL} = $STATUS{GRAPH}{TOOL};
+  $values{WINDOW} = $STATUS{GRAPH}{WINDOW};
+  $values{REGION} = $STATUS{GRAPH}{REGION};
+
+  $values{XAUTOSCALE} = $STATUS{GRAPH}{XAUTOSCALE};  
+  $values{YAUTOSCALE} = $STATUS{GRAPH}{YAUTOSCALE};  
+
+  $values{XMIN} = $STATUS{GRAPH}{XMIN};
+  $values{XMAX} = $STATUS{GRAPH}{XMAX};
+  $values{YMIN} = $STATUS{GRAPH}{YMIN};
+  $values{YMAX} = $STATUS{GRAPH}{YMAX};
+
+  return \%values;
+
+}
+
+# Sub to read the datamodel widget and store the information in a hash
+# A hash reference is returned.
+
+sub read_datamodel {
+
+  # Create the hash to store all this in
+  my %values = ();
+
+  $values{TYPE} = 'DATAMODEL';
+
+  # Now read the widget state into the hash
+  $values{ID} = $STATUS{DATAMODEL}{SUFFIX};
+  $values{TOOL} = $STATUS{DATAMODEL}{TOOL};
+  $values{WINDOW} = $STATUS{DATAMODEL}{WINDOW};
+  $values{REGION} = $STATUS{DATAMODEL}{REGION};
+
+  $values{XAUTOSCALE} = $STATUS{DATAMODEL}{XAUTOSCALE};  
+  $values{YAUTOSCALE} = $STATUS{DATAMODEL}{YAUTOSCALE};  
+
+  $values{XMIN} = $STATUS{DATAMODEL}{XMIN};
+  $values{XMAX} = $STATUS{DATAMODEL}{XMAX};
+  $values{YMIN} = $STATUS{DATAMODEL}{YMIN};
+  $values{YMAX} = $STATUS{DATAMODEL}{YMAX};
+
+  return \%values;
+
+}
+
+# Sub to read the sigma widget and store the information in a hash
+# A hash reference is returned.
+
+sub read_sigma {
+
+  # Create the hash to store all this in
+  my %values = ();
+
+  $values{TYPE} = 'SIGMA';
+
+  # Now read the widget state into the hash
+  $values{ID} = $STATUS{SIGMA}{SUFFIX};
+  $values{TOOL} = $STATUS{SIGMA}{TOOL};
+  $values{WINDOW} = $STATUS{SIGMA}{WINDOW};
+  $values{REGION} = $STATUS{SIGMA}{REGION};
+
+  $values{RANGE} = $STATUS{SIGMA}{RANGE};
+  $values{DASHED} = $STATUS{SIGMA}{DASHED};
+
+  return \%values;
+
+}
+
+# This subroutine copies the default values to the STATUS array
+# It is run during initialisation and whenever the REVERT button is
+# pushed
+#
+#  Arguments is TYPE {GRAPH|IMAGE|SIGMA|etc}
+
+sub set_default_status {
+
+  my @types = @_;
+
+  # Cant just copy the new hashref in since this would change the
+  # scalar references inside the hash that are linked to the widgets
+  # Do it long hand setting each in turn
+
+  foreach my $type (@types) {
+    foreach my $key (keys %{$DEFAULTS{$type}}) {
+      $STATUS{$type}{$key} = $DEFAULTS{$type}{$key};
+    }
+  }
+
+}
+
+
+# Sub to delete the specified entries from DispDefn
+# Uses the contents of @SELECT_LIST to provide the indices
+
+sub delete_entry_from_defn {
+
+  # Set up a local copy
+  my @local = ();
+
+  # Reset the UNDO buffer
+  @UNDOBUFFER = ();
+
+  # Need to work out which indices ARE allowed
+  # ie those that are not in @SELECT_LIST
+  for (my $i=0; $i <= $#DispDefn; $i++) {
+    # Copy it across if the index is not in the selected list
+    if (grep(/^$i$/,@SELECT_LIST) == 0) {
+      push(@local, $DispDefn[$i]);
+    } else {
+      # Store in the UNDO buffer
+      push(@UNDOBUFFER, $DispDefn[$i]);
+      
+      # Enable the undo button
+      $UNDO_but->configure(-state => 'normal');
+    }
+  }
+
+  # Copy back to DispDefn
+  @DispDefn = @local;
+
+  # The selection list should be reset after a deletion
+  @SELECT_LIST = ();
+
+  # Redraw the listbox
+  &update_defn;
+
+}
+
+
+# UNDO a delete from the list box
+
+sub undo_delete {
+  # Now need to copy the contents of the UNDO buffer back onto
+  # the DispDefn
+  push(@DispDefn, @UNDOBUFFER);
+
+  # Disable the button
+  $UNDO_but->configure(-state => 'disabled');
+
+  # Update the window
+  &update_defn;
+}
