@@ -29,6 +29,8 @@ ORAC::Calib::UKIRT objects.
 use ORAC::Calib;			# use base class
 use ORAC::Print;
 
+use File::Spec;       # for catfile
+
 use base qw/ORAC::Calib/;
 
 use vars qw/$VERSION/;
@@ -115,8 +117,8 @@ sub maskindex {
   my $self = shift;
   if (@_) { $self->{MaskIndex} = shift; }
   unless (defined $self->{MaskIndex}) {
-     my $indexfile = $ENV{ORAC_DATA_OUT}."/index.bpm";
-     my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.bpm";
+     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.bpm" );
+     my $rulesfile = $self->find_file("rules.bpm");
      $self->{MaskIndex} = new ORAC::Index($indexfile,$rulesfile);
    };
 
@@ -206,9 +208,9 @@ sub profileindex {
   my $self = shift;
   if (@_) { $self->{ProfileIndex} = shift; }
   unless (defined $self->{ProfileIndex}) {
-     my $indexfile = $ENV{ORAC_DATA_OUT}."/index.profile";
-     my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.profile";
-     $self->{ProfileIndex} = new ORAC::Index($indexfile,$rulesfile);
+    my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, "index.profile");
+    my $rulesfile = $self->find_file("rules.profile");
+    $self->{ProfileIndex} = new ORAC::Index($indexfile,$rulesfile);
    };
 
   return $self->{ProfileIndex};
@@ -263,8 +265,8 @@ sub rowindex {
   if (@_) { $self->{RowIndex} = shift; }
 
   unless (defined $self->{RowIndex}) {
-    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.row";
-    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.row";
+    my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, "index.row");
+    my $rulesfile = $self->find_file("rules.row");
     $self->{RowIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -320,7 +322,7 @@ sub mask {
       # Nothing suitable, default to fallback position
       # Check that exists and be careful not to set this as the
       # maskname() value since it has no corresponding index enrty
-      my $defmask = $ENV{ORAC_DATA_CAL} . "/fpa46_long";
+      my $defmask = $self->find_file("fpa46_long");
       return $defmask if -e $defmask . ".sdf";
 
       # give up...
@@ -410,10 +412,11 @@ $Id$
 
 Frossie Economou (frossie@jach.hawaii.edu) and
 Tim Jenness (t.jenness@jach.hawaii.edu)
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut

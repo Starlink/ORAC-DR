@@ -40,6 +40,8 @@ use vars qw/$VERSION/;
 use Carp;
 use strict;
 
+use File::Spec;
+
 =head1 METHODS
 
 The following methods are available:
@@ -103,7 +105,7 @@ sub lintabname {
     my $self = shift;
     if (@_) { $self->{Lintab} = shift unless $self->lintabnoupdate; }
     return $self->{Lintab}; 
-};
+}
 
 
 =item B<lintabindex>
@@ -119,17 +121,17 @@ is run.
 
 sub lintabindex {
 
-    my $self = shift;
-    if (@_) { $self->{LintabIndex} = shift; }
-    unless (defined $self->{LintabIndex}) {
-        my $indexfile = $ENV{ORAC_DATA_OUT}."/index.lintab";
-        my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.lintab";
-        $self->{LintabIndex} = new ORAC::Index($indexfile,$rulesfile);
-    };
+  my $self = shift;
+  if (@_) { $self->{LintabIndex} = shift; }
+  unless (defined $self->{LintabIndex}) {
+    my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, "index.lintab");
+    my $rulesfile = $self->find_file("rules.lintab");
+    $self->{LintabIndex} = new ORAC::Index($indexfile,$rulesfile);
+  }
 
-    return $self->{LintabIndex};
+  return $self->{LintabIndex};
 
-};
+}
 
 =item B<lintabnoupdate>
 
@@ -161,9 +163,8 @@ confidence map is required.
 sub CPMname {
     my $self = shift;
     if (@_) { $self->{CPM} = shift unless $self->CPMnoupdate; }
-    return $self->{CPM}; 
-};
-
+    return $self->{CPM};
+}
 
 =item B<CPMindex>
 
@@ -178,17 +179,17 @@ is run.
 
 sub CPMindex {
 
-    my $self = shift;
-    if (@_) { $self->{CPMIndex} = shift; }
-    unless (defined $self->{CPMIndex}) {
-        my $indexfile = $ENV{ORAC_DATA_OUT}."/index.cpm";
-        my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.cpm";
-        $self->{CPMIndex} = new ORAC::Index($indexfile,$rulesfile);
-    };
+  my $self = shift;
+  if (@_) { $self->{CPMIndex} = shift; }
+  unless (defined $self->{CPMIndex}) {
+    my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, "index.cpm");
+    my $rulesfile = $self->find_file("rules.cpm");
+    $self->{CPMIndex} = new ORAC::Index($indexfile,$rulesfile);
+  }
 
-    return $self->{CPMIndex};
+  return $self->{CPMIndex};
 
-};
+}
 
 =item B<CPMnoupdate>
 
@@ -234,17 +235,17 @@ is run.
 
 sub photomindex {
 
-    my $self = shift;
-    if (@_) { $self->{PhotomIndex} = shift; }
-    unless (defined $self->{PhotomIndex}) {
-        my $indexfile = $ENV{ORAC_DATA_OUT}."/index.photom";
-        my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.photom";
-        $self->{PhotomIndex} = new ORAC::Index($indexfile,$rulesfile);
-    };
+  my $self = shift;
+  if (@_) { $self->{PhotomIndex} = shift; }
+  unless (defined $self->{PhotomIndex}) {
+    my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, "index.photom");
+    my $rulesfile = $self->find_file("rules.photom");
+    $self->{PhotomIndex} = new ORAC::Index($indexfile,$rulesfile);
+  }
 
-    return $self->{PhotomIndex};
+  return $self->{PhotomIndex};
 
-};
+}
 
 =item B<photomnoupdate>
 
@@ -277,7 +278,7 @@ sub astromname {
     my $self = shift;
     if (@_) { $self->{Astrom} = shift unless $self->astromnoupdate; }
     return $self->{Astrom}; 
-};
+}
 
 =item B<astromindex>
 
@@ -292,17 +293,17 @@ is run.
 
 sub astromindex {
 
-    my $self = shift;
-    if (@_) { $self->{AstromIndex} = shift; }
-    unless (defined $self->{AstromIndex}) {
-        my $indexfile = $ENV{ORAC_DATA_OUT}."/index.astrom";
-        my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.astrom";
-        $self->{AstromIndex} = new ORAC::Index($indexfile,$rulesfile);
-    };
+  my $self = shift;
+  if (@_) { $self->{AstromIndex} = shift; }
+  unless (defined $self->{AstromIndex}) {
+    my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'},"index.astrom");
+    my $rulesfile = $self->find_file("rules.astrom");
+    $self->{AstromIndex} = new ORAC::Index($indexfile,$rulesfile);
+  }
 
-    return $self->{AstromIndex};
+  return $self->{AstromIndex};
 
-};
+}
 
 =item B<astromnoupdate>
 
@@ -540,30 +541,30 @@ sub dark {
 };
 
 =item B<dqcindex>
- 
+
 Return or set the index object associated with the DQC table
- 
+
   $index = $Cal->dqcindex;
- 
+
 An index object is created automatically the first time this method
 is run.
- 
+
 =cut
- 
+
 sub dqcindex {
- 
-    my $self = shift;
-    if (@_) { $self->{DQCIndex} = shift; }
-    unless (defined $self->{DQCIndex}) {
-        my $indexfile = $ENV{ORAC_DATA_OUT}."/index.dqc";
-        my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.dqc";
-        $self->{DQCIndex} = new ORAC::Index($indexfile,$rulesfile);
-    };
- 
-    return $self->{DQCIndex};
- 
-};
- 
+
+  my $self = shift;
+  if (@_) { $self->{DQCIndex} = shift; }
+  unless (defined $self->{DQCIndex}) {
+    my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'},"index.dqc");
+    my $rulesfile = $self->find_file("rules.dqc");
+    $self->{DQCIndex} = new ORAC::Index($indexfile,$rulesfile);
+  }
+
+  return $self->{DQCIndex};
+
+}
+
 
 =back
 
@@ -577,7 +578,7 @@ Jim Lewis (jrl@ast.cam.ac.uk)
 
 =head1 COPYRIGHT
 
-Copyright (C) 2002-2003 Cambridge Astronomy Survey Unit
+Copyright (C) 2002-2004 Cambridge Astronomy Survey Unit
 All Rights Reserved.
 
 =cut

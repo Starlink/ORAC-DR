@@ -121,10 +121,10 @@ sub maskindex {
   my $self = shift;
   if (@_) { $self->{MaskIndex} = shift; }
   unless (defined $self->{MaskIndex}) {
-     my $indexfile = $ENV{ORAC_DATA_OUT}."/index.bpm";
-     my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.bpm";
-     $self->{MaskIndex} = new ORAC::Index($indexfile,$rulesfile);
-   };
+    my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'},"index.bpm");
+    my $rulesfile = $self->find_file("rules.bpm");
+    $self->{MaskIndex} = new ORAC::Index($indexfile,$rulesfile);
+  };
 
   return $self->{MaskIndex};
 
@@ -212,10 +212,10 @@ sub profileindex {
   my $self = shift;
   if (@_) { $self->{ProfileIndex} = shift; }
   unless (defined $self->{ProfileIndex}) {
-     my $indexfile = $ENV{ORAC_DATA_OUT}."/index.profile";
-     my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.profile";
-     $self->{ProfileIndex} = new ORAC::Index($indexfile,$rulesfile);
-   };
+    my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'},"index.profile");
+    my $rulesfile = $self->find_file("rules.profile");
+    $self->{ProfileIndex} = new ORAC::Index($indexfile,$rulesfile);
+  };
 
   return $self->{ProfileIndex};
 
@@ -269,8 +269,8 @@ sub rowindex {
   if (@_) { $self->{RowIndex} = shift; }
 
   unless (defined $self->{RowIndex}) {
-    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.row";
-    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.row";
+    my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'},"index.row");
+    my $rulesfile = $self->find_file("rules.row");
     $self->{RowIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -419,8 +419,11 @@ sub mask {
       # Nothing suitable, default to fallback position
       # Check that exists and be careful not to set this as the
       # maskname() value since it has no corresponding index entry
-      my $defmask = $ENV{ORAC_DATA_CAL} . "/bpm";
-      return $defmask if -e $defmask . ".sdf";
+      my $defmask = $self->find_file("bpm.sdf");
+      if( defined( $defmask ) ) {
+        $defmask =~ s/\.sdf$//;
+        return $defmask;
+      }
 
       # give up...
       croak "No suitable bad pixel mask was found in index file"
@@ -465,9 +468,9 @@ sub _set_index_rules {
 
   # Prefix ORAC_DATA_CAL if required
   # This is non-portable (kluge)
-  $im = File::Spec->catfile($ENV{ORAC_DATA_CAL}, $im)
+  $im = $self->find_file($im)
     unless $im =~ /\//;
-  $sp = File::Spec->catfile($ENV{ORAC_DATA_CAL}, $sp)
+  $sp = $self->find_file($sp)
     unless $sp =~ /\//;
 
   # Get the current name of the rules file in case we don't need to
@@ -497,11 +500,12 @@ $Id$
 =head1 AUTHORS
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
-adapted for IRIS2 by S Ryder (Jan 2004)
+Stuart Ryder E<lt>sdr@aaoepp.aao.gov.auE<gt>
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut

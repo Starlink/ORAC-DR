@@ -52,6 +52,8 @@ use ORAC::Msg::EngineLaunch; # To launch fluxes monolith
 use JCMT::Tau;         # Tau conversion
 use JCMT::Tau::CsoFit; # Fits to CSO data
 
+use File::Spec;
+
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 # Let the object know that it is derived from ORAC::Frame;
@@ -542,8 +544,8 @@ sub badbolsindex {
   if (@_) { $self->{BadBolsIndex} = shift; }
 
   unless (defined $self->{BadBolsIndex}) {
-    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.badbols";
-    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.badbols";
+    my $indexfile = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.badbols" );
+    my $rulesfile = $self->find_file("rules.badbols");
     $self->{BadBolsIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -635,8 +637,8 @@ sub gainsindex {
   if (@_) { $self->{GainsIndex} = shift; }
 
   unless (defined $self->{GainsIndex}) {
-    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.gains";
-    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.gains";
+    my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, "index.gains");
+    my $rulesfile = $self->find_file("rules.gains");
     $self->{GainsIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -670,8 +672,8 @@ sub skydipindex {
   if (@_) { $self->{SkydipIndex} = shift; }
 
   unless (defined $self->{SkydipIndex}) {
-    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.skydip";
-    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.skydip";
+    my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, "index.skydip");
+    my $rulesfile = $self->find_file("rules.skydip");
     $self->{SkydipIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -754,7 +756,7 @@ sub csofit {
   if (@_) { $self->{CsoFit} = shift; }
 
   unless (defined $self->{CsoFit}) {
-    my $file = $ENV{ORAC_DATA_CAL}."/csofit.dat";
+    my $file = $self->find_file("csofit.dat");
     $self->{CsoFit} = new JCMT::Tau::CsoFit($file);
   };
 
@@ -809,7 +811,7 @@ sub badbol_list {
 
   } elsif ($sys eq 'FILE') {
     # Look for bolometers in badbol.lis file
-    my $file = "$ENV{ORAC_DATA_OUT}/badbol.lis";
+    my $file = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, "badbol.lis");
     if (-e $file) {
       my $fh = new IO::File("< $file");
 
