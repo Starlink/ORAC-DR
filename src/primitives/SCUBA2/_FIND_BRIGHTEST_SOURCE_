@@ -1,0 +1,172 @@
+=head1 NAME
+
+FIND_BRIGHTEST_SOURCE
+
+=head1 DESCRIPTION
+
+Find the position of the brightest source in the current frame.
+Makes no assumption that the centroid is near the origin in axis
+coordinates. [Errors not reported until the KAPPA centroid task writes
+them to a parameter].
+
+Assumes that the peak value in the map is the value of the pixel at
+the centroid position. This is not necessarily true though if the
+centroid position contains a spike. 
+
+FUTURE: Iterates if the peak pixel is a spike.
+
+This primitive is designed to work on a single image and will fail if
+the current Frame object contains more than one file.
+
+=head1 TASKS
+
+Uses the KAPPA STATS task to determine the peak pixel position in the
+image.
+
+Uses the KAPPA CENTROID task to determine the emission centroid
+associated with the peak pixel.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item BOX
+
+Size of search box in each dimension. Default is 9 pixels.
+
+=item WCSFRAME
+
+WCS frame to use. Default is PIXEL if none specified.
+
+=back
+
+The frame object is not updated.
+
+=head1 OUTPUT DATA
+
+On completion the primitive hash C<%_FIND_BRIGHTEST_SOURCE_> contains
+the following keys:
+
+=over 4
+
+=item RESULTS
+
+An array containing the X, Y position of the brightest source in the
+file. Contains C<undef> if no sources were found. Starts counting at 1
+(same as for the file() method). Each element in the array contains a
+2 element array with the X and Y offsets. The units are determined by
+the current WCS frame.
+
+=item WCSFRAME
+
+A string denoting the WCS frame used so that the RESULTS can be
+correctly interpreted. 
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright (C) 2005 Particle Physics and Astronomy Research
+Council and University of British Columbia. All Rights Reserved.
+
+=cut
+
+# First check that we only have one file in the Frame
+unless ($Frm->nfiles == 1) {
+    orac_throw "Error: _FIND_BRIGHTEST_SOURCE_ must be run after frames have been combined\n";
+}
+
+my $ORAC_STATUS;
+my $box = ( $_FIND_BRIGHTEST_SOURCE_{BOX} || 9 );
+
+# initialise the results array
+$_FIND_BRIGHTEST_SOURCE_{RESULTS} = [];
+
+# Determine whether the WCS frame was supplied as an argument, else
+# set it to pixel.
+my $wcsframe = (exists $_FIND_BRIGHTEST_SOURCE_{WCSFRAME} && 
+		defined $_FIND_BRIGHTEST_SOURCE_{WCSFRAME} ) ? 
+    lc($_FIND_BRIGHTEST_SOURCE_{WCSFRAME}) : "pixel";
+
+# Test that it's a valid frame
+unless ($wcsframe =~ /axis|pixel|grid|sky/) {
+    orac_throw "Unknown WCS frame, $wcsframe ";
+}
+
+# Check whether older versions of kappa are being used.
+if (starversion_lt('kappa','V0.14-0')) {
+    $wcsframe = "axis" if ($wcsframe eq "sky"); # No SKY frame in older kappa
+}
+
+# Get file
+my $in = $Frm->file(1);
+
+# Future version: create image catalogue, sort catalogue by flux and
+# pick out coords of brightest object
+# Create SCUBA2 catalogue. 10-sigma probably overkill: 5-7 works well too.
+#_CREATE_IMAGE_CATALOGUE_ FORMAT=SCUBA2 DETECT_SIGMA=10
+#_CREATE_IMAGE_CATALOGUE_ DETECT_SIGMA=10
+_FIND_SOURCES_ DETECT_SIGMA=10
+# Pick out the brightest source from a catalogue
+#_GET_CATALOGUE_NAME_
+#my $catalogue = $_GET_CATALOGUE_NAME_{NAME};
+# Open catalogue
+# Sort entries by flux - ignore first 3 lines.
+# my @sources = ...
+# Centre returned as RA and Dec.
+# my @centre = ($sources[0]->[2],  $sources[0]->[3]);
+
+### In the meantime... ###
+
+# Set the WCS frame
+$Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=$wcsframe");
+#  Run stats on the input frame
+$Mon{kappa_mon}->obeyw("stats","NDF=$in");
+
+# Retrieve the maxpos: an array containing coordinates of x, y
+# values for peak
+my @maxpos;
+($ORAC_STATUS, @maxpos) = $Mon{kappa_mon}->get("stats","maxcoord");
+my ($xpix, $ypix) = @maxpos;
+
+# Need to check for kappa 0.14 or higher -- use the KAPVERSION_MINOR
+# global variable
+my $args;
+if (starversion_lt('kappa','V0.14-0')) {
+    $args = " cosys=d init=[$xpix,$ypix]";
+} else {
+    $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=$wcsframe");
+    $args = " init='$xpix,$ypix' ";
+}
+
+# Now run centroid to determine the position of the emission
+# centroid close to the peak found by stats
+$args .= " mode=i cerror=true search=$box";
+#$Mon{kappa_mon}->obeyw("centroid","ndf=$in $args");
+
+# Read the result
+my @centre = ($xpix, $ypix);
+
+# KAPPA 14 returns the centre pos as a string, earlier versions
+# return an array -- just use XCEN and YCEN with two adam calls
+#($ORAC_STATUS, $centre[0]) = $Mon{kappa_mon}->get("centroid","xcen");
+#($ORAC_STATUS, $centre[1]) = $Mon{kappa_mon}->get("centroid","ycen");
+
+###
+
+# Check for bad pixels
+unless ($centre[0] > -1e38 && $centre[1] > -1e38 && $centre[0] < 1e6
+	&& $centre[1] < 1e6) {
+    # Use undef
+    @centre = ( undef, undef);
+    $ORAC_STATUS = ORAC__ERROR;
+}
+
+# Store the results as ref to array
+$_FIND_BRIGHTEST_SOURCE_{RESULTS} = [@centre];
+$_FIND_BRIGHTEST_SOURCE_{WCSFRAME} = $wcsframe;
+
+# COPYRIGHT
+#
+#   Copyright (C) 2005 Particle Physics and Astronomy Research
+#   Council and University of British Columbia. All Rights Reserved.
