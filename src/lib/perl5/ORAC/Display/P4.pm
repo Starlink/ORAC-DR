@@ -28,6 +28,8 @@ use Cwd;
 use ORAC::Print;
 use ORAC::Constants qw/:status/;        #  Constants
 
+use base qw/ ORAC::Display::Base /;     # Base class
+
 use vars qw/$VERSION $DEBUG/;
 
 $VERSION = '0.10';
@@ -56,15 +58,11 @@ sub new {
   my $proto = shift;
   my $class = ref($proto) || $proto;
 
-  my $disp = {};  # Anonymous hash
-
-  $disp->{Obj} = undef;  # Messaging object
-  $disp->{AMS} = undef;  # Adam message system storage
-  $disp->{NBS} = undef;  # Notice board location
-  $disp->{Dev} = {};     # Device list
-
-  bless ($disp, $class);
-
+ # Create a new instance from the base class
+  my $disp = $class->SUPER::new(Obj => undef,    # Messaging object
+				AMS => undef,    # Adam message system
+				NBS => undef     # Notice board location
+			       );
 
   # Start message system (should just return if already started)
   my $status = ORAC__OK;
@@ -127,148 +125,6 @@ sub nbs {
 }
 
 
-=item devref(\%hash)
-
-Returns (or sets) the reference to the hash containing the current
-mapping from display device to display window.
-
-  $Display->devref(\%device);
-  $hashref = $Display->devref
-
-=cut
-
-sub devref {
-  my $self = shift;
-
-  if (@_) { 
-    my $arg = shift;
-    croak("Argument is not a hash") unless ref($arg) eq "HASH";
-    $self->{Dev} = $arg;
-  }
-
-  return $self->{Dev};
-}
-
-
-
-=item display_devices(%hash)
-
-Returns (or sets) a hash containing the current lookup of display device
-to window.
-For example:
-
-   $P4->display_devices(%devs);
-   %devs = $P4->display_devices;
- 
-where %tools could look like:
-
-     '0' => 'xwindows;345_0xwin',
-     '1' => 'xwindows;345_1xwin'
-
-etc.
-
-=cut
-
-sub display_devices {
-  my $self = shift;
-  if (@_) {
-    my %junk = @_;
-    $self->devref(\%junk);
-  }
-  return %{$self->devref};
-}
-
-
-=item dev(win)
-
-Returns the current display device associated with 'win'.
-Returns undef if win does not exist.
-
-=cut
-
-sub dev {
-  my $self = shift;
-  my $win = shift;
-
-  if (@_) {
-    my $val = shift;
-    $ {$self->devref}{$win} = $val;
-  }
-
-  if (exists $ {$self->devref}{$win} ) {
-    return $ {$self->devref}{$win};
-  } else {
-    return undef;
-  }
-
-}
-
-
-=item window_dev(win)
-
-Returns the device id (in this case GWM device name)
-associated with window win. If 'win' is undefined a new
-GWM window is started, the id stored in the hash and the
-new id returned. (see the launch_dev() method). If this
-is the first time the routine is called (ie the only window
-name present is 'default', the name of the default window
-is associated with window win.). We go through this hoop
-so that P4 will open a window before we start plotting.
-
-=cut
-
-sub window_dev {
-  my $self = shift;
-  my $win = shift;
-  my ($dev,$status);
-  $status = ORAC__OK;
-
-  # If the key exists already just return the value
-  if (defined $self->dev($win)) {
-    return $self->dev($win);
-  }
-
-  # Find out how many keys we have in the devices hash
-  my $ndev = scalar keys %{$self->devref};
-
-  # If there are zero keys (-1) we have to come up with a new name
-  # if there is 1 key AND it is called 'default' then we need to return
-  # this device and associate the new window with that device
-
-  if ($ndev == 1) {
-    # We already have a device open.
-    # but this window does not map to it
-    
-    # If the 'default' exists then return that one and associate new
-    # window with it
-    if (defined $self->dev('default')){
-      $self->dev($win, $self->dev('default'));
-    } else {
-      # get a new device and use that
-      # New device
-      $dev = $self->newdev($win);
-      # Now set it in the object
-      $self->dev($win, $dev);
-      # and launch it...
-      $status = $self->launch_dev($win);
-
-    }  
-  } else {
-    # Need to create a new device
-    # New device
-    $dev = $self->newdev($win);
-    # Now set it in the object
-    $self->dev($win, $dev);
-    # and launch it..
-    $status = $self->launch_dev($win);
-
-
-  }
-
-
-  return $self->dev($win);
-
-}
 
 =item newdev(win)
 
@@ -286,7 +142,7 @@ sub newdev {
 }
 
 
-=item launch_dev(win)
+=item create_dev(win)
 
 Start the GWM window associated with the supplied window.
 In general this is used by the startup configuration.
@@ -309,7 +165,7 @@ setting fails (ie the device is no good to us).
 
 =cut
 
-sub launch_dev {
+sub create_dev {
   my $self = shift;
   my $window = shift;
 
