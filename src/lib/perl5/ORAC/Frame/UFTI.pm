@@ -274,14 +274,13 @@ sub new {
 This method calculates header values that are required by the
 pipeline by using values stored in the header.
 
-An example is ORACTIME that should be set to the time of the
-observation in hours. Instrument specific frame objects
-are responsible for setting this value from their header.
+Calculates ORACUT, ORACTIME and ORACDATETIME.
 
-Should be run after a header is set. Currently the hdr()
-method calls this whenever it is updated.
+ORACUT is the UT date in YYYYMMDD format.
 
-Calculates ORACUT and ORACTIME
+ORACTIME is the UT date with decimal days.
+
+ORACDATETIME is the UT date in ISO8601 format: YYYY-MM-DDThh:mm:ss.
 
 This method updates the frame header.
 Returns a hash containing the new keywords.
@@ -319,7 +318,7 @@ sub calc_orac_headers {
   $self->hdr('ORACUT', $date );
   $new{'ORACUT'} = $date;
 
-  # And set up the ORACUTDATE header too.
+  # And set up the ORACDATETIME header too.
   $self->hdr('ORACDATETIME', $dateobs);
   $new{'ORACDATETIME'} = $dateobs;
 
