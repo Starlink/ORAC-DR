@@ -20,7 +20,7 @@ Provides the routines for parsing and executing recipes.
 =cut
 
 use Carp;
-use vars qw($VERSION @ISA @EXPORT $Display $Batch $DEBUG);
+use vars qw($VERSION @ISA @EXPORT $Display $Batch $DEBUG $Display);
 
 use strict;
 
@@ -51,9 +51,7 @@ use Cwd; # Current working directory
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
-my $Display = undef;# Display object - only configured if we have a display
-                    # Make this a lexical so that it can not be altered
-                    # outside the class (use orac_setup_display)
+$Display = undef;# Display object - only configured if we have a display
                     # may want to turn this into an argument from a highre
                     # level (eg like %Mon)
 
@@ -653,6 +651,15 @@ externally:
 
 =over 4
 
+=item * $Display
+
+The object associated with the ORAC Display system. This
+is of class ORAC::Display. The display system has not been
+initialised if this variable has a value of undef. Primitives
+should check to see that the variable is defined before
+attempting to use it. This variable is set via the 
+orac_setup_display() subroutine. Do not modify this variable.
+
 =item * $DEBUG
 
 This flag can be used to turn on some debugging features.
@@ -680,6 +687,9 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.36  1999/05/10 23:32:29  timj
+#Make $Display a package global
+#
 #Revision 1.35  1999/05/10 19:35:30  timj
 #Small documentation update
 #
