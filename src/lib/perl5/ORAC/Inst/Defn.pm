@@ -329,6 +329,11 @@ sub orac_determine_inst_classes {
     $frameclass = "ORAC::Frame::UIST";
     $calclass = "ORAC::Calib::UIST";
     $instclass = "ORAC::Inst::CGS4";
+  } elsif ($inst eq 'GMOS') {
+    $groupclass = "ORAC::Group::GMOS";
+    $frameclass = "ORAC::Frame::GMOS";
+    $calclass = "ORAC::Calib::UIST";
+    $instclass = "ORAC::Inst::GMOS";
   } else {
     orac_err("Instrument $inst is not currently supported in ORAC-DR\n");
     return ();
@@ -450,6 +455,15 @@ sub orac_determine_recipe_search_path {
     push( @path, $imaging_root );
     push( @path, $spectro_root );
 
+  } elsif ($inst eq 'GMOS') {
+    push( @path, File::Spec->catdir( $root, "GMOS" ) );
+    push( @path, File::Spec->catdir( $ifu_root, "GMOS" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "GMOS" ) );
+    push( @path, File::Spec->catdir( $spectro_root, "GMOS" ) );
+    push( @path, $ifu_root );
+    push( @path, $imaging_root );
+    push( @path, $spectro_root );
+
   } else {
     croak "Recipes: Unrecognised instrument: $inst\n";
   }
@@ -531,6 +545,16 @@ sub orac_determine_primitive_search_path {
     push( @path, $spectro_root );
     push( @path, $general_root );
 
+  } elsif ($inst eq 'GMOS') {
+    push( @path, File::Spec->catdir( $root, "GMOS" ) );
+    push( @path, File::Spec->catdir( $ifu_root, "GMOS" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "GMOS" ) );
+    push( @path, File::Spec->catdir( $spectro_root, "GMOS" ) );
+    push( @path, $ifu_root );
+    push( @path, $imaging_root );
+    push( @path, $spectro_root );
+    push( @path, $general_root );
+
   } else {
     croak "Primitives: Unrecognised instrument: $inst\n";
   }
@@ -573,6 +597,11 @@ sub orac_determine_initial_algorithm_engines {
 
     @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg
       ccdpack_res /
+
+  } elsif ($inst eq 'GMOS') {
+
+    @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg
+     ccdpack_res /
 
   } else {
     croak "Do not know which engines are required for instrument $inst";
