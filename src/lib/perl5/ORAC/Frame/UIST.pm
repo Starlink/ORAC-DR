@@ -313,9 +313,9 @@ sub mergehdr {
       ndf_xdel($indf,'FITS', $status);
     }
 
-		# Remove duplicate headers
-		my %f = map { $_, undef } @fitsA;
-		@fitsB = grep { !exists $f{$_} } @fitsB;
+    # Remove duplicate headers
+    my %f = map { $_, undef } @fitsA;
+    @fitsB = grep { !exists $f{$_} } @fitsB;
 		
     # Merge arrays
     push(@fitsA, @fitsB);
