@@ -7,8 +7,10 @@
 #
 # TASK: KAPPA - CENTROID, NDFTRACE, STATS
 #
-# Exports:
-#    Reference to @CENTRE
+#  Exports:
+#    Reference to @CENTRE  the centroid co-ordinates.
+#                 @INIT    the initial co-ordinates
+#                 $FOUND   whether or not a centroid was found.
 #
 #  Arguments:
 #     ANGLE = REAL (Given)
@@ -73,9 +75,6 @@
 # Define the size of the box in arcseconds, and hence pixels. 
        my $boxsize = ($_FIND_SOURCE_CENTROID_{BOXSIZE} || 5 );
 
-# Obtain 
-       my $pixelscale =  $Frm->hdr( "PIXELSIZ" );
-
 # Obtain the approximate (telescope) offsets and the plate scale.
        my ( $xoffh, $yoffh, $pixelscale );
        if ( $Frm->hdr( "INSTRUME" ) =~ /^UFTI/ ) {
@@ -100,6 +99,10 @@
        my $xcentre = int( $xmid + $xoff );
        my $ycentre = int( $ymid + $yoff );
 
+# Store the initial centre position for use by calling script.
+       my @init = ( $xcentre, $ycentre );
+       $_FIND_SOURCE_CENTROID_{INIT} = \@init;
+
 # Find the boxsize in pixels.
        my $pixbox = nint( $boxsize / $pixelscale );
 
@@ -109,7 +112,7 @@
 # Locate the main object within a central box.
        $Mon{"kappa_mon"}->obeyw("stats", "$ndfsect");
 
-       my ( $hidden, @maxpos, @minpos, $ndfsect );
+       my ( $hidden, @maxpos, @minpos, $ndfsect, $centroid_status );
        if ( $positive ) {
 
 # Extract the location of the maximum pixel bounds of the frame.
@@ -126,7 +129,7 @@
 # Find the centroid of the object.  For the moment start the search at
 # the frame centre.  The standard position may be displaced from this,
 # and should be written to the headers.
-          $Mon{"kappa_mon"}->obeyw("centroid","$header $hidden");
+          $centroid_status = $Mon{"kappa_mon"}->obeyw("centroid","$header $hidden");
 
        } else {
 
@@ -144,15 +147,35 @@
 # Find the centroid of the object.  For the moment start the search at
 # the frame centre.  The standard position may be displaced from this,
 # and should be written to the headers.
-          $Mon{"kappa_mon"}->obeyw("centroid","$header $hidden");
+          $centroid_status = $Mon{"kappa_mon"}->obeyw("centroid","$header $hidden");
 
        }
+
+# Check that a centroid has been found.
+orac_warn "centroid status = $centroid_status\n";
+       my $found = 1;
+       if ( $centroid_status != ORAC__OK ) {
+          orac_err "Unable to find a centroid within a box of $boxsize arcseconds centred at ($xcentre,$ycentre).\n";
+          $found = 0;
+
+       } else {
 
 # Store the located centroid within a text file of the format PSF expects.
 # (There should be some rationalisation in KAPPA and CCDPACK to use
 # Clive Davenhall's small tables.  In that case this would be altered.)
-       ($ORAC_STATUS, my @centre ) = $Mon{"kappa_mon"}->get("centroid","centre");
+          ($ORAC_STATUS, my @centre ) = $Mon{"kappa_mon"}->get("centroid","centre");
+
+# Check that the centre is not bad.
+          if ( $centre[ 0 ] < -1.0E38 || $centre[ 1 ] < -1.0E38 ) {
+             $found = 0;
+             orac_err "Unable to find a centroid within a box of $boxsize arcseconds centred at ($xcentre,$ycentre).\n";
+          }
 
 # Store the centre information for use by calling script.
-       $_FIND_SOURCE_CENTROID_{CENTRE} = \@centre;
+          $_FIND_SOURCE_CENTROID_{CENTRE} = \@centre;
+        
+       }
+
+# Return whether or not a centroid was found.
+       $_FIND_SOURCE_CENTROID_{FOUND} = \$found;
     }
