@@ -21,11 +21,11 @@
  
     %catalogues = (
                    '2mass' => {
-                       'location' => "/scratch/jim/2mass",
-                       'accessmethod' => "searchlocal",
+                       'location' => "viz2mass",
+                       'accessmethod' => "searchinternet",
                        'columns' => ['Jmag','Hmag','Kmag'],
                        'vars' => ['Jmag','Hmag','Kmag'],
-                       'vizcat' => '2mass'
+                       'vizcat' => 'viz2mass'
                        }
                   );
 
