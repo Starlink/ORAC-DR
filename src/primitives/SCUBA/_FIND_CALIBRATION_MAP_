@@ -17,6 +17,11 @@ of the calibrator:
 
 This value is then stored in the index file C<index.gains>.
 
+Additionally, the peak response is calculated by finding the
+peak flux and the fitted peak signal.
+
+  fcf = V_peak / S_peak
+
 =head1 EXTERNAL TASKS
 
 None.
@@ -31,7 +36,7 @@ None.
 
 =head1 OUTPUT DATA
 
-Entry in C<index.gains> log file if the frame is a calibrator.
+Entry in C<index.fcf> log file if the frame is a calibrator.
 
 =cut
 
@@ -65,72 +70,23 @@ if ($Cal->iscalsource($Frm->hdr("OBJECT"))) {
 
       print "Flux: $flux, ". $results->[$i]. "\n";
       # Calculate the new gain
-      my $gain = $flux / $results->[$i];
+      my $fcf = $flux / $results->[$i];
 
       # Announce the new gain
-      orac_print("Storing new gain for ".$filter[$i-1].": $gain Jy/V\n",'yellow');
+      orac_print("Storing new gain for ".$filter[$i-1].": $fcf Jy/V\n",'yellow');
 
       # Set the current gain - add to index file
       # This means that we have to create a hash with the
       # new keyword GAIN and the selected filter FILTER
       my %hdr = %{$Frm->hdr};
-      $hdr{GAIN} = $gain;
+      $hdr{GAIN} = $fcf;
       $hdr{FILTER} = uc($filter[$i-1]);
 
       $Cal->gainsindex->add($Frm->file($i), \%hdr);
 
       # Additionally it seems that a user-friendly logfile is
       # a requirement
-      my $log = new ORAC::LogFile("log.fcf");
-      # Write header to logfile
-      my $time = gmtime();
-      $log->header("# Flux conversion factor log file - created on $time",
-                   "\nUT        Obs  HST   Source    Thr El Filter    WLen  Tau  CSO  See   FCF",
-                   "#------------------------------------------------------------------------",
-                  );
-
-
-      # FRom FITS header need
-      # FILTER (+filter[$i])
-      my $flt    = $Frm->hdr("FILTER");
-      my $wav    = $filter[$i-1];
-      # ORACUT
-      my $utdate = $Frm->hdr('ORACUT');
-      my $uttime = $Frm->hdr('ORACTIME');
-      # RUN
-      my $run    = sprintf "%4d", $Frm->hdr('RUN');
-      # HSTSTART (no decimal places)
-      my $hst    = $Frm->hdr('HSTSTART');
-      my (@hst)  = split(/:/, $hst);
-      $hst = sprintf '%5s', $hst[0] . ":" . $hst[1];
-
-      # Chop throw
-      my $thr = sprintf "%3d", $Frm->hdr('CHOP_THR');
-
-      # OBJECT
-      my $src    = uc($Frm->hdr('OBJECT'));
-      $src    = sprintf "%-10s", $src;
-      # Average of END_ELD and STRT_ELD
-      my $el     = ($Frm->hdr('END_ELD') + $Frm->hdr('STRT_ELD'))/ 2.0;
-      $el        = sprintf "%2d", $el;
-      # TAU from calibration object
-      my $tau = sprintf "%5.2f", $Cal->tau($filter[$i-1]);
-
-      # Use that tau to calculate CSO
-      my ($cso, $status) = JCMT::Tau::get_tau('CSO',$filter[$i-1], $tau);
-      if ($status != 0) {
-        $cso = "*****";
-      } else {
-        $cso = sprintf "%5.2f", $cso;
-      }
-
-      # Seeing
-      my $see = sprintf "%4.2f", $Frm->hdr('SEEING');
-
-      # GAIN
-      $gain   = sprintf "%5.3f", $gain;
-
-      $log->addentry("$utdate $run $hst $src $thr $el $flt $wav $tau $cso $see $gain $uttime");
+      _ADD_FCF_LOG_ENTRY_ FILTER=$filter[$i-1] FCF=$fcf UNITS=ARCSEC
 
     }
 

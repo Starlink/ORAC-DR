@@ -34,7 +34,6 @@ Kappa: CMULT, STATS, NDFCOPY
 =cut
 
 use NDF;
-use JCMT::Tau;
 
 # Need to loop over sub-instruments
 
@@ -49,11 +48,11 @@ for my $i (0..$Frm->nfiles-1) {
   my $status = &NDF::SAI__OK;
   my ($loc,$ncomp);
   hds_open($Frm->file($i+1), 'READ', $loc, $status);
- 
+
   my $ORAC_STATUS = ($status == &NDF::SAI__OK ? ORAC__OK : ORAC__ERROR);
 
   dat_ncomp($loc, $ncomp, $status);
-  
+
   my @names = ();
   for my $comp (1..$ncomp) {
     my ($nloc, $name);
@@ -62,41 +61,41 @@ for my $i (0..$Frm->nfiles-1) {
     dat_annul($nloc, $status);
     push(@names, $name) if $name =~ /_PEAK$/;
   }
-  
+
   dat_annul($loc, $status);
   $ORAC_STATUS = ($status == &NDF::SAI__OK ? ORAC__OK : ORAC__ERROR);
 
-  
+
   # All the NDFs are now in @names
-  
+
   # Check if we have a calibrator or not
   # If we have then we should recalculate the gain and
   # store it
-  
+
   # Should have a different gain for each bolometer
-  # for now assume that this is not an issue so have it 
+  # for now assume that this is not an issue so have it
   # outside the loop over bolometers
   if ($Cal->iscalsource($Frm->hdr("OBJECT"), $filter[$i])) {
-    
+
     # Use one bolometer
     my $subndf = $names[0];
-    
+
     # Get statistics
     my $ndf = $Frm->file($i+1) . ".$subndf";
     $Mon{kappa_mon}->obeyw("stats","ndf=$ndf");
-    
+
     # Answer in mV
     my ($ORAC_STATUS, $mean) = $Mon{kappa_mon}->get("stats","mean");
-    
+
     # Find current flux of source (could be undef)
     my $flux = $Cal->fluxcal($Frm->hdr("OBJECT"), $filter[$i]);
-    
+
     # Calculate gain
     if (abs($mean) > 0.0 && defined $flux) {
-      
+
       # Calculate new gain
       my $gain = $flux / $mean;
-      
+
       # Announce the new gain
       # (Cannot compare with previous since that is no longer
       # a valid thing to do - if this is a calibrator there may
@@ -109,64 +108,18 @@ for my $i (0..$Frm->nfiles-1) {
       my %hdr = %{$Frm->hdr};
       $hdr{GAIN} = $gain;
       $hdr{FILTER} = uc($filter[$i]);
+      $hdr{UNITS} = "BEAM";
       $Cal->gainsindex->add($Frm->file($i+1), \%hdr);
+
 
       # Additionally it seems that a user-friendly logfile is
       # a requirement
-      my $log = new ORAC::LogFile("log.fcf");
-      # Write header to logfile
-      my $time = gmtime();
-      $log->header("# Flux conversion factor log file - created on $time",
-		   "\nUT        Obs  HST   Source    Thr El Filter    WLen  Tau  CSO  See   FCF",
-		   "#------------------------------------------------------------------------",
-		  );
-
-      # FRom FITS header need
-      # FILTER (+filter[$i])
-      my $flt    = $Frm->hdr("FILTER");
-      my $wav    = $filter[$i];
-      # ORACUT
-      my $utdate = $Frm->hdr('ORACUT');
-      # RUN
-      my $run    = sprintf "%4d", $Frm->hdr('RUN');
-      # HSTSTART (no decimal places)
-      my $hst    = $Frm->hdr('HSTSTART');
-      my (@hst)  = split(/:/, $hst);
-      $hst = sprintf '%5s', $hst[0] . ":" . $hst[1];
-
-      # Chop throw
-      my $thr = sprintf "%3d", $Frm->hdr('CHOP_THR');
-
-      # OBJECT
-      my $src    = uc($Frm->hdr('OBJECT'));
-      $src    = sprintf "%-10s", $src;
-      # Average of END_ELD and STRT_ELD
-      my $el     = ($Frm->hdr('END_ELD') + $Frm->hdr('STRT_ELD'))/ 2.0;
-      $el        = sprintf "%2d", $el;
-      # TAU from calibration object
-      my $tau = sprintf "%5.2f", $Cal->tau($filter[$i]); 
-
-      # Use that tau to calculate CSO
-      my ($cso, $status) = JCMT::Tau::get_tau('CSO',$filter[$i], $tau);
-      if ($status != 0) {
-	$cso = "*****";
-      } else {
-	$cso = sprintf "%5.2f", $cso;
-      }
-
-      # Seeing
-      my $see = sprintf "%4.2f", $Frm->hdr('SEEING');
-
-      # GAIN
-      $gain   = sprintf "%4d", int($gain+0.5);
-
-
-      $log->addentry("$utdate $run $hst $src $thr $el $flt $wav $tau $cso $see $gain");
+      _ADD_FCF_LOG_ENTRY_ FILTER=$filter[$i] FCF=$gain UNITS=BEAM
 
     }
   }
-  
-  
+
+
   # Loop over bolometers and run stats
 
   # Retrieve the current gain value from the calibration
@@ -181,14 +134,14 @@ for my $i (0..$Frm->nfiles-1) {
 
 
   foreach my $subndf (@names) {
-            
+
     # Big kludge here since cmult won't work in place
     # And I am using NDF files inside HDS containers!
     my $in = $Frm->file($i+1) . ".$subndf";
 
     my $out = "junk_$$";
     my $args = "scalar=$gain";
-    
+
     # Multiply by the gain
     $Mon{kappa_mon}->obeyw("cmult","in=$in out=$out $args");
 
@@ -213,10 +166,10 @@ for my $i (0..$Frm->nfiles-1) {
 
     # Remove the scratch file
     unlink($out . ".sdf"); # Assume .sdf
-    
+
   }
 
-}  
+}
 
 orac_print ("ORAC says: Data calibrated in mJy\n");
 
