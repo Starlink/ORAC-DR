@@ -56,6 +56,7 @@ my %hdr = (
            NUMBER_OF_EXPOSURES    => "CYCLES",
            NUMBER_OF_OFFSETS      => "NOFFSETS",
            NUMBER_OF_READS        => "READS",
+           OBJECT                 => "OBJECT",
            OBSERVATION_NUMBER     => "RUN",
            OBSERVATION_TYPE       => "OBSTYPE",
            RA_BASE                => "CRVAL1",
