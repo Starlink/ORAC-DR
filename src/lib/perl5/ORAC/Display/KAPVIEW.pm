@@ -38,6 +38,7 @@ use File::Copy;
 use Cwd;
 
 use NDF;  # To read image bounds
+use Starlink::Versions qw/ :Funcs /; # Need to know which kappa version
 
 use ORAC::Print;
 use ORAC::Constants qw/:status/;        #  Constants
@@ -45,30 +46,11 @@ use ORAC::General;                      # Max and min
 
 use base qw/ ORAC::Display::Base /;     # Base class
 
-use vars qw/$VERSION $DEBUG $AGI_USER $AGI_NODE $KAPPA13 $KAPPA14/;
+use vars qw/$VERSION $DEBUG $AGI_USER $AGI_NODE /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 $DEBUG = 0;
-
-# The KAPPA13 variable is true if we are using Kappa v0.13
-# and false otherwise. Dynamically check which version
-# by looking in the KAPPA_DIR directory
-
-if (-e "$ENV{KAPPA_DIR}/style.def") {
-  $KAPPA13 = 1;
-} else {
-  $KAPPA13 = 0;
-}
-
-# Also, this test changes for KAPPA0.14
-if (-e "$ENV{KAPPA_DIR}/kappa_style.def") {
-  $KAPPA14 = 1;
-  $KAPPA13 = 1;
-} else {
-  $KAPPA14 = 0;
-}
-
 
 =head1 PUBLIC METHODS
 
@@ -188,7 +170,7 @@ sub kappa {
     $self->{Kappa} = new ORAC::Msg::ADAM::Task("kappa_mon_$$", 
 					       "$ENV{KAPPA_DIR}/kappa_mon",
 					       { MONOLITH => 'kappa_mon' }
-					      ); 
+					      );
   }
 
   return $self->{Kappa};
@@ -226,7 +208,7 @@ sub ndfpack {
     $self->{Ndfpack} = new ORAC::Msg::ADAM::Task("ndfpack_mon_$$", 
 					       "$ENV{KAPPA_DIR}/ndfpack_mon",
 					       { MONOLITH => 'ndfpack_mon' }
-					      ); 
+					      );
   }
 
   return $self->{Ndfpack};
@@ -445,7 +427,7 @@ sub launch {
 
   # Start kapview
   orac_print ("Starting KAPVIEW........................\n",'cyan') if $DEBUG;
-  my $display = new ORAC::Msg::ADAM::Task("kapview_mon_$$", "$ENV{KAPPA_DIR}/kapview_mon"); 
+  my $display = new ORAC::Msg::ADAM::Task("kapview_mon_$$", "$ENV{KAPPA_DIR}/kapview_mon");
 
   # Store the object
   $self->obj($display);
@@ -1289,10 +1271,10 @@ sub graph {
   my $range = ' ';
   if (exists $options{ZAUTOSCALE}) {
     if ($options{ZAUTOSCALE}) {
-      if ($KAPPA13) {
-	$range = ' ';
-      } else {
+      if (starversion_lt('kappa','0.13-0')) {
 	$range = "axlim=false";
+      } else {
+	$range = ' ';
       }
     } else {
       # Set the Y range
@@ -1300,10 +1282,12 @@ sub graph {
       my $max = 1;
       $min = $options{ZMIN} if defined $options{ZMIN};
       $max = $options{ZMAX} if defined $options{ZMAX};
-      if ($KAPPA13) {
-	$range = "ytop=$max ybot=$min";
-      } else {
+      if (starversion_lt('kappa','0.13-0')) {
+	# Kappa 0.12 and older used this to specify range
 	$range = "axlim=true abslim=! ordlim=[$min,$max]";
+      } else {
+	# New form to specify range of Y axis
+	$range = "ytop=$max ybot=$min";	
       }
     }
   }
@@ -1502,9 +1486,9 @@ sub sigma {
   $file =~ s/\.sdf$//;  # Strip .sdf
   my $tempfile; # Temp file if we reshape
 
-  # Convert to 1-D using kappa RESHAPE (if we are using KAPPA0.13)
+  # Convert to 1-D using kappa RESHAPE (if we are using KAPPA0.13 or above)
   # First find out the number of dimensions
-  if ($KAPPA13) {
+  if (starversion_gt('kappa','0.12-99')) { # really need ge 0.13-0
     my ($indf, $ndimx, $ndim, @dim);
     my $status = &NDF::SAI__OK;
     ndf_find(&NDF::DAT__ROOT, $file, $indf, $status);
@@ -1594,10 +1578,10 @@ sub sigma {
   return $status if $status != ORAC__OK;
 
   # Construct string for linplot options
-  if ($KAPPA13) {
-    $args = "clear mode=mark marker=2 ytop=$max ybot=$min";
-  } else {
+  if (starversion_lt('kappa','0.13-0')) {
     $args = "clear mode=2 axlim=true ordlim=[$min,$max] abslim=!";
+  } else {
+    $args = "clear mode=mark marker=2 ytop=$max ybot=$min";
   }
 
   # Select component
@@ -1613,12 +1597,11 @@ sub sigma {
     return $status;
   }
 
- 
   # create args
-  if ($KAPPA14) {
-    $args = " style='colour(curve)=red,style(curve)=2'";
+  if (starversion_lt('kappa','0.14-0')) {
+    $args = "linestyle=2 sigcol=red";
   } else {
-   $args = "linestyle=2 sigcol=red";
+    $args = " style='colour(curve)=red,style(curve)=2'";
   }
   $args .= " nsigma=[0,$dashed] ";
 
@@ -1717,10 +1700,10 @@ sub datamodel {
   my $range = ' ';
   if (exists $options{ZAUTOSCALE}) {
     if ($options{ZAUTOSCALE}) {
-      if ($KAPPA13) {
-	$range = " ";
-      } else {
+      if (starversion_lt('kappa','0.13-0')) {
 	$range = "axlim=false";
+      } else {
+	$range = ' ';
       }
     } else {
       # Set the Y range
@@ -1728,21 +1711,23 @@ sub datamodel {
       my $max = 1;
       $min = $options{ZMIN} if defined $options{ZMIN};
       $max = $options{ZMAX} if defined $options{ZMAX};
-      if ($KAPPA13) {
-	$range = "ytop=$max ybot=$min";
-      } else {
+      if (starversion_lt('kappa','0.13-0')) {
+	# Kappa 0.12 and older used this to specify range
 	$range = "axlim=true abslim=! ordlim=[$min,$max]";
-      }    
+      } else {
+	# New form to specify range of Y axis
+	$range = "ytop=$max ybot=$min";	
+      }
     }
   }
 
 
   # Construct args
   my $args;
-  if ($KAPPA13) {
-    $args = "mode=mark marker=2 style='colour(marker)=white'";
-  } else {
+  if (starversion_lt('kappa','0.13-0')) {
     $args = "cosys=data mode=2 symcol=white";
+  } else {
+    $args = "mode=mark marker=2 style='colour(marker)=white'";
   }
   $args .= " clear $range";
 
@@ -1768,10 +1753,10 @@ sub datamodel {
   if (-e $model . ".sdf") {  # Assume .sdf extension!!!!
 
     # Construct the arguments
-    if ($KAPPA13) {
-      $args = "mode=line style='colour(lines)=red'";
-    } else {
+    if (starversion_lt('kappa','0.14-0')) {
       $args = "cosys=data mode=line lincol=red pltitl='' ordlab=''";
+    } else {
+      $args = "mode=line style='colour(lines)=red,drawtitle=no'";
     }
     $args .= " noclear";
 
@@ -1822,7 +1807,7 @@ ORAC status is returned.
 
 sub histogram {
   my $self = shift;
- 
+
   my $file = shift;
 
   my %options = ();
@@ -1865,17 +1850,26 @@ sub histogram {
   # default is not to send any axis control information
   # Just do Z-range for now
 
-  my $range = "range=!";
+  # Set default range
+  my $range;
+  if (starversion_gt('kappa','0.15-3')) {
+    $range = "range=range";
+  } else {
+    $range = "range=!";
+  }
+
   if (exists $options{ZAUTOSCALE}) {
-    if ($options{ZAUTOSCALE}) {
-      $range = "range=!";
-    } else {
+    unless ($options{ZAUTOSCALE}) {
       # Set the Y range
       my $min = 0;
       my $max = 1;
       $min = $options{ZMIN} if defined $options{ZMIN};
       $max = $options{ZMAX} if defined $options{ZMAX};
-      $range = "range=[$min,$max]";
+      if (starversion_gt('kappa','0.15-3')) { # Histogram changed at 0.15-4
+	$range = "range=$min,$max";
+      } else {
+	$range = "range=[$min,$max]";
+      }
     }
   }
   my $nbins = " NUMBIN=20";
@@ -1954,11 +1948,16 @@ sub vector {
   $file =~ s/\.sdf$//;  # Strip .sdf
 
   # Run the image method with all arguments
-  $self->image($file, \%options);
+  my $status = $self->image($file, \%options);
+  if ($status != ORAC__OK) {
+    orac_err "Error displaying I image\n";
+    return $status;
+  }
 
-  my $status;
+  my ($command);
   # Look for a catalogue of the same name with a .FIT extension
   if (-e "$file.FIT" && defined $self->polpack) {
+
     # Using POLPLOT
 
     my $args = "clear=no axes=no ";
@@ -1967,12 +1966,19 @@ sub vector {
     }
 
     $status = $self->polpack->obeyw("polplot","cat=$file $args device=$device");
+    $command = "polplot cat=$file $args device=$device";
 
   } else {
     # Using VECPLOT
 
     # Select component
-    my $args = "clear=no veccol=red step=2 vscale=10 pltitl=' '";
+    my $args;
+    if (starversion_lt('kappa','0.14-0')) {
+      $args = "clear=no veccol=red step=2 vscale=10 pltitl=' '";
+    } else {
+      # need drawtitle=no so that it doesnt overwrite previous title
+      $args = "clear=no vscale=10 style='colour(vectors)=red,drawtitle=0'";
+    }
     if (exists $options{ANGROT} && defined $options{ANGROT}) {
       $args .= " ANGROT=$options{ANGROT}";
     }
@@ -1980,11 +1986,13 @@ sub vector {
     # Now run VECPLOT
     $status = $self->obj->obeyw("vecplot","ndf1=${file}.more.orac.p ndf2=${file}.more.orac.theta device=$device $args");
 
+    $command = "vecplot ndf1=${file}.more.orac.p ndf2=${file}.more.orac.theta device=$device $args";
+
   }
 
   if ($status != ORAC__OK) {
     orac_err("Error displaying vectors\n");
-    orac_err("Trying to execute: ndf1=${file}.more.orac.p ndf2=${file}.more.orac.theta clear=no device=$device veccol=red step=2 vscale=10\n");
+    orac_err("Trying to execute: $command\n");
     return $status;
   }
 
@@ -1997,10 +2005,10 @@ sub vector {
 
 sub DESTROY {
    my $self = shift;
-  
+
    # Construct the name of the AGI file
    my $fname = $AGI_USER . "/agi_" . $AGI_NODE . ".sdf";
-   
+
    # Remove it
    unlink($fname);
 
