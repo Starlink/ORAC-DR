@@ -7,44 +7,43 @@
         $nfile++;
         my $tabname = $frm->uhdr("OBJTAB");
 
-        # Open the table and read the relevant columns.
+        # Read the relevant columns from the object table into a text file
 
-        my $status = 0;
-        my $fptr = Astro::FITS::CFITSIO::open_file($tabname,READONLY,$status);
-        my ($hdutype,$nrows,$col,@xval,@yval,@tval,@elval,$anynul);
-        $fptr->get_num_rows($nrows,$status);
-	$fptr->get_colnum(CASEINSEN,"X_coordinate",$col,$status);
-	$fptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@xval,$anynul,$status);
-	$fptr->get_colnum(CASEINSEN,"Y_coordinate",$col,$status);
-	$fptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@yval,$anynul,$status);
-	$fptr->get_colnum(CASEINSEN,"Total_flux",$col,$status);
-	$fptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@tval,$anynul,$status);
-	$fptr->get_colnum(CASEINSEN,"Ellipticity",$col,$status);
-	$fptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@elval,$anynul,$status);
-	$fptr->close_file($status);
-        if ($status != 0) {
-            orac_err("_DIFFXY_OBJS_ can't read table $tabname: status = $status\n");
+        my ($retval,$errmsg);
+        my $tmpfile = ORAC::TempFile->new(0);
+        unlink $tmpfile->file;
+        $retval = cir_tabledump($tabname,$tmpfile->file,
+            ["X_coordinate","Y_coordinate","Total_flux","Ellipticity"],4,
+            $errmsg); 
+        if ($retval != CIR_OK) {
+            orac_err("CIR_DUMPTABLE: Failed in _DIFFXY_OBJS_\n$errmsg\n");
             $dstat = 1;
+            $tmpfile->DESTROY;
             last;
         }
 
-        # Create a file with these entries in.  Ditch all that are not
-        # circular enough
+        # Now read the temporary file and update the xy coordinates with
+        # the WCS offsets.  Write a new temporary file
 
-        my $tmpfile = ORAC::TempFile->new;
         my $fh = $tmpfile->handle;
-        for my $i (0 .. $nrows-1) {
-            next if ($elval[$i] > 0.5);
-            my $xv = $xval[$i] + $frm->uhdr("XOFF_WCS");
-            my $yv = $yval[$i] + $frm->uhdr("YOFF_WCS");
-            print $fh "$xv $yv $tval[$i]\n";
+        open $fh,$tmpfile->file;
+        my $tmpfile2 = ORAC::TempFile->new;
+        my $fh2 = $tmpfile2->handle;
+        my ($xval,$yval,$tval,$elval);
+        while (<$fh>) {
+            ($xval,$yval,$tval,$elval) = split /\s+/;
+            $xval += $frm->uhdr("XOFF_WCS");
+            $yval += $frm->uhdr("YOFF_WCS");
+            print $fh2 "$xval $yval $tval\n";
         }
-        $tmpfile->handle->close;
+        $fh->close;
+        $tmpfile->DESTROY;
+        $fh2->close;
 
         # If this is the first file in the list, then make it the template
 
         if ($nfile == 1) {
-            $template = $tmpfile;
+            $template = $tmpfile2;
             $frm->uhdr("XOFF_OBJS",0.0);
             $frm->uhdr("YOFF_OBJS",0.0);
             next;
@@ -59,10 +58,10 @@
         # Ok, now match 'em up
 
         my $srad = 10.0;
-        my ($errmsg,$xoffset,$yoffset,$nmatch);
-        my $retval = cir_matchxy($tmpfile->file,$template->file,$srad,$nx,$ny,
+        my ($xoffset,$yoffset,$nmatch);
+        $retval = cir_matchxy($tmpfile2->file,$template->file,$srad,$nx,$ny,
             $xoffset,$yoffset,$nmatch,$errmsg);
-        $tmpfile->DESTROY;
+        $tmpfile2->DESTROY;
         if ($retval != CIR_OK || $nmatch == 0) {
             orac_err("CIR_MATCHXY: Failed in _DIFFXY_OBJS_\n$errmsg\n");
             $dstat = 1;

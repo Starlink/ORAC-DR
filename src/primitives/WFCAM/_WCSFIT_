@@ -94,6 +94,7 @@
 		    orac_err("CIR_APM: Failed in _WCSFIT_ for $dsfile\n$errmsg\n");
 		    next;
 		}
+                $catbase .= "[1]";
 	    } else {
 		$catbase = $frm->uhdr("CATFILE");
 		if (! defined $catbase) {
@@ -102,38 +103,6 @@
 			$fspec[2],$fspec[3]);
 		}
 	    }
-
-	    # Dump the XY info into a temporary file
-
-	    my $tmpxy = ORAC::TempFile->new;
-	    my $status = 0;
-	    my $fptr = Astro::FITS::CFITSIO::open_file($catbase,READONLY,
-		$status);
-	    my ($hdutype,$nrows,$col,@xval,@yval,@tval,@elval,$anynul);
-	    $fptr->movabs_hdu(2,$hdutype,$status) if ($pass == 1);
-	    $fptr->get_num_rows($nrows,$status);
-	    $fptr->get_colnum(CASESEN,"X_coordinate",$col,$status);
-	    $fptr->read_col(TFLOAT,$col,1,1,$nrows,undef,\@xval,$anynul,$status);
-	    $fptr->get_colnum(CASESEN,"Y_coordinate",$col,$status);
-	    $fptr->read_col(TFLOAT,$col,1,1,$nrows,undef,\@yval,$anynul,$status);
-	    $fptr->get_colnum(CASESEN,"Total_flux",$col,$status);
-	    $fptr->read_col(TFLOAT,$col,1,1,$nrows,undef,\@tval,$anynul,$status);
-	    $fptr->get_colnum(CASESEN,"Ellipticity",$col,$status);
-	    $fptr->read_col(TFLOAT,$col,1,1,$nrows,undef,\@elval,$anynul,$status);
-	    $fptr->close_file($status);
-	    $ctmp->DESTROY if ($pass == 1);
-	    if ($status != 0) {
-		orac_err("_WCSFIT_ can't read table $catbase: status = $status\n");
-		next;
-	    }
-	    my $fh = $tmpxy->handle;
-	    my $xyfile = $tmpxy->file;
-	    my $i;
-	    for ($i = 0; $i < $nrows; $i++) {
-		next if ($elval[$i] > 0.5);
-		print $fh "$xval[$i] $yval[$i] $tval[$i]\n";
-	    }
-	    $tmpxy->handle->close;
 
 	    # Now get some standard stars 
 
@@ -146,34 +115,7 @@
 		orac_err("CIR_GETSTDS: Failed in _WCSFIT_\n$errmsg\n");
 		next;
 	    }
-
-	    # Now dump these to a text file
-
-	    my $tmpstds2 = ORAC::TempFile->new;
-	    my $stdstxt = $tmpstds2->file;
-	    $fptr = Astro::FITS::CFITSIO::open_file($stdsfile,READONLY,$status);
-	    $fptr->movabs_hdu(2,$hdutype,$status);
-	    $fptr->get_num_rows($nrows,$status);
-	    $fptr->get_colnum(CASESEN,"X_coordinate",$col,$status);
-	    $fptr->read_col(TFLOAT,$col,1,1,$nrows,undef,\@xval,$anynul,$status);
-	    $fptr->get_colnum(CASESEN,"Y_coordinate",$col,$status);
-	    $fptr->read_col(TFLOAT,$col,1,1,$nrows,undef,\@yval,$anynul,$status);
-	    my (@raval,@decval);
-	    $fptr->get_colnum(CASESEN,"ra",$col,$status);
-	    $fptr->read_col(TFLOAT,$col,1,1,$nrows,undef,\@raval,$anynul,$status);
-	    $fptr->get_colnum(CASESEN,"dec",$col,$status);
-	    $fptr->read_col(TFLOAT,$col,1,1,$nrows,undef,\@decval,$anynul,$status);
-	    $fptr->close_file($status);
-	    if ($status != 0) {
-		orac_err("_WCSFIT_ can't read table $catbase: status = $status\n");
-		next;
-	    }
-	    $fh = $tmpstds2->handle;
-	    for ($i = 0; $i < $nrows; $i++) {
-		print $fh "$xval[$i] $yval[$i] $raval[$i] $decval[$i]\n";
-	    }
-	    $fh->close;
-	    $tmpstds->DESTROY;
+            $stdsfile .= "[1]";
 
 	    # Now matchem up...
 
@@ -181,29 +123,26 @@
 	    my $srad = int(0.25*$maxsize);
 	    my $tmpmatch = ORAC::TempFile->new(0);
 	    my $matchfile = $tmpmatch->file;
-	    unlink $matchfile if (-e $matchfile);
-	    my $nmatch = 0;
-	    $retval = cir_matchstds($xyfile,$stdstxt,$srad,
+	    unlink $matchfile;
+	    my $nmatch;
+	    $retval = cir_matchstds($catbase,$stdsfile,$srad,
 		$frm->hdr("NAXIS1"),$frm->hdr("NAXIS2"),$matchfile,
 		$nmatch,$errmsg);
 	    if ($retval != CIR_OK) {
-                $tmpxy->DESTROY;
-                $tmpstds2->DESTROY;
                 $tmpmatch->DESTROY;
+                $ctmp->DESTROY if ($pass == 1);
+                $tmpstds->DESTROY;
 		orac_err("CIR_MATCHSTDS: Failed in _WCSFIT_\n$errmsg\n");
 		next;
 	    } elsif ($nmatch == 0) {
-		$tmpxy->DESTROY;
-		$tmpstds2->DESTROY;
 		$tmpmatch->DESTROY;
+                $ctmp->DESTROY if ($pass == 1);
+                $tmpstds->DESTROY;
 		orac_err("CIR_MATCHSTDS: Failed in _WCSFIT_\nNo objects matched\n");
 		next;
 	    }   
-
-	    # Intermediate tidying
-
-	    $tmpxy->DESTROY;
-	    $tmpstds2->DESTROY;
+            $ctmp->DESTROY if ($pass == 1);
+            $tmpstds->DESTROY;
 
 	    # Now do a plate solution
 
@@ -220,7 +159,6 @@
 	    if ($pass == 2) {
 		my $frm = $Frm->new($Frm->file)->getasubframe($j);
 		foreach my $parm (keys %wcsparms) {
-		    $status = 0;
 		    my $val = $frm->hdr($parm);
 		    next if (! defined $val);
                     $retval = cir_update_hdr($catbase,$parm,$wcsparms{$parm},
