@@ -59,6 +59,7 @@ my %hdr = (
            RA_TELESCOPE_OFFSET    => "TRAOFF",
            RECIPE                 => "RECIPE",
            SPEED_GAIN             => "SPEED",
+           UTEND                  => "UTEND",
            X_DIM                  => "NAXIS1",
            Y_DIM                  => "NAXIS2",
            X_LOWER_BOUND          => "DETECXS",
@@ -182,23 +183,6 @@ sub _to_GRATING_WAVELENGTH {
     }
   }
   return $return;
-}
-
-sub _to_UTEND {
-  my $self = shift;
-  my ($hour, $minute, $second) = split( /:/, $self->hdr->{UTEND} );
-  $hour + ($minute / 60) + ($second / 3600);
-}
-
-sub _from_UTEND {
-  my $dechour = $_[0]->uhdr("ORAC_UTEND");
-  my ($hour, $minute, $second);
-  $hour = int( $dechour );
-  $minute = int( ( $dechour - $hour ) * 60 );
-  $second = int( ( ( ( $dechour - $hour ) * 60 ) - $minute ) * 60 );
-  "UTEND", ( join ':', $hour,
-                       '0'x(2-length($minute)) . $minute,
-                       '0'x(2-length($second)) . $second );
 }
 
 sub _to_UTSTART {
