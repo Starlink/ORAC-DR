@@ -285,9 +285,9 @@ sub findgroup {
   # NB: Test for GRPMEM is not 'T' as it used to be.  FITS header reader
   # now silently converts boolean values to 1 or 0.
 
-  if ($self->hdr('GRPMEM') eq "1") {
+  if (!defined $self->hdr('GRPMEM')){
     $amiagroup = 1;
-  } elsif (!defined $self->hdr('GRPMEM')){
+  } elsif ($self->hdr('GRPMEM') eq "1") {
     $amiagroup = 1;
   } else {
     $amiagroup = 0;
@@ -333,6 +333,9 @@ Copyright (C) 2003-2006 Cambridge Astronomy Survey Unit. All Rights Reserved.
 #
 #
 # $Log$
+# Revision 1.2  2003/09/17 13:13:32  jrl
+# Small updates to error handling and to cope with extra processing steps
+#
 # Revision 1.1  2003/06/30 09:40:17  jrl
 # Initial entry into CVS
 #

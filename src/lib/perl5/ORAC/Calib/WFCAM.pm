@@ -68,6 +68,7 @@ sub new {
     $obj->{Lintab} = undef;
     $obj->{LintabIndex} = undef;
     $obj->{LintabNoUpdate} = 0;
+    $obj->{DQCIndex} = undef;
   
     return $obj;
 
@@ -197,6 +198,31 @@ sub CPMnoupdate {
     return $self->{CPMNoUpdate};
 
 }
+
+=item B<dqcindex>
+
+Return or set the index object associated with the DQC table
+
+  $index = $Cal->dqcindex;
+
+An index object is created automatically the first time this method
+is run.
+
+=cut
+
+sub dqcindex {
+
+    my $self = shift;
+    if (@_) { $self->{DQCIndex} = shift; }
+    unless (defined $self->{DQCIndex}) {
+        my $indexfile = $ENV{ORAC_DATA_OUT}."/index.dqc";
+        my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.dqc";
+        $self->{DQCIndex} = new ORAC::Index($indexfile,$rulesfile);
+    };
+
+    return $self->{DQCIndex};
+
+};
 
 =back
 
