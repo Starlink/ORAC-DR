@@ -111,6 +111,49 @@ sub graph_ui {
 		-textvariable => \$STATUS{GRAPH}{YMAX},
 		-width => '12',
 	);
+	my($label_14) = $root->Label (
+		-foreground => 'black',
+		-text => 'Z: ',
+	);
+	my($radiobutton_4) = $root->Radiobutton (
+		-text => 'Autoscale',
+		-value => '1',
+		-variable => \$STATUS{GRAPH}{ZAUTOSCALE},
+	);
+	my($radiobutton_7) = $root->Radiobutton (
+		-text => 'Set:',
+		-value => '0',
+		-variable => \$STATUS{GRAPH}{ZAUTOSCALE},
+	);
+	my($label_17) = $root->Label (
+		-foreground => 'black',
+		-text => 'zmin',
+	);
+	my($entry_4) = $root->Entry (
+		-textvariable => \$STATUS{GRAPH}{ZMIN},
+		-width => '12',
+	);
+	my($label_20) = $root->Label (
+		-foreground => 'black',
+		-text => 'zmax',
+	);
+	my($entry_7) = $root->Entry (
+		-textvariable => \$STATUS{GRAPH}{ZMAX},
+		-width => '12',
+	);
+	my($label_21) = $root->Label (
+		-text => 'Cut:',
+	);
+	my($radiobutton_8) = $root->Radiobutton (
+		-text => 'X',
+		-value => 'X',
+		-variable => \$STATUS{GRAPH}{CUT},
+	);
+	my($radiobutton_9) = $root->Radiobutton (
+		-text => 'Y',
+		-value => 'Y',
+		-variable => \$STATUS{GRAPH}{CUT},
+	);
 	my($button_8) = $root->Button (
 		-text => 'Modify',
 	);
@@ -125,7 +168,7 @@ sub graph_ui {
 	# widget commands
 
 	$button_8->configure(
-		-command => sub { modify_current('GRAPH') }
+		-command => sub { &modify_current('GRAPH') }
 	);
 	$button_4->configure(
 		-command => sub { &set_default_status('GRAPH'); }
@@ -267,6 +310,56 @@ sub graph_ui {
 		-column => '7',
 		-row => '2'
 	);
+	$label_14->grid(
+		-in => $frame_2,
+		-column => '1',
+		-row => '3'
+	);
+	$radiobutton_4->grid(
+		-in => $frame_2,
+		-column => '2',
+		-row => '3'
+	);
+	$radiobutton_7->grid(
+		-in => $frame_2,
+		-column => '3',
+		-row => '3'
+	);
+	$label_17->grid(
+		-in => $frame_2,
+		-column => '4',
+		-row => '3'
+	);
+	$entry_4->grid(
+		-in => $frame_2,
+		-column => '5',
+		-row => '3'
+	);
+	$label_20->grid(
+		-in => $frame_2,
+		-column => '6',
+		-row => '3'
+	);
+	$entry_7->grid(
+		-in => $frame_2,
+		-column => '7',
+		-row => '3'
+	);
+	$label_21->grid(
+		-in => $frame_2,
+		-column => '1',
+		-row => '4'
+	);
+	$radiobutton_8->grid(
+		-in => $frame_2,
+		-column => '2',
+		-row => '4'
+	);
+	$radiobutton_9->grid(
+		-in => $frame_2,
+		-column => '3',
+		-row => '4'
+	);
 	$button_8->grid(
 		-in => $frame_4,
 		-column => '1',
@@ -305,17 +398,17 @@ sub graph_ui {
 
 	# container $frame_4 (columns)
 	$frame_4->gridColumnconfigure(1, -weight => 0, -minsize => 30);
-	$frame_4->gridColumnconfigure(2, -weight => 0, -minsize => 2);
+	$frame_4->gridColumnconfigure(2, -weight => 0, -minsize => 37);
 	$frame_4->gridColumnconfigure(3, -weight => 0, -minsize => 2);
-	$frame_4->gridColumnconfigure(4, -weight => 0, -minsize => 35);
+	$frame_4->gridColumnconfigure(4, -weight => 0, -minsize => 30);
 
 	# container $root (rows)
 	$root->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
 	$root->gridRowconfigure(2, -weight  => 0, -minsize  => 33);
-	$root->gridRowconfigure(3, -weight  => 1, -minsize  => 30);
+	$root->gridRowconfigure(3, -weight  => 0, -minsize  => 30);
 
 	# container $root (columns)
-	$root->gridColumnconfigure(1, -weight => 1, -minsize => 34);
+	$root->gridColumnconfigure(1, -weight => 0, -minsize => 34);
 
 	# container $frame_1 (rows)
 	$frame_1->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
@@ -333,6 +426,7 @@ sub graph_ui {
 	# additional interface code
 
 create_menus('GRAPH', $toolmenu, $windowmenu, $regionmenu);
+
 
 
 	# end additional interface code
