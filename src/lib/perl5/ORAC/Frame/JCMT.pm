@@ -27,14 +27,14 @@ to B<ORAC::Frame::JCMT> objects. Some additional methods are supplied.
 # ORAC pipeline
 
 use 5.004;
-use ORAC::Frame;
+use ORAC::Frame::NDF;
 use ORAC::Constants;
 use ORAC::Print;
 
 use vars qw/$VERSION/;
 
 # Let the object know that it is derived from ORAC::Frame;
-@ORAC::Frame::JCMT::ISA = qw/ORAC::Frame/;
+@ORAC::Frame::JCMT::ISA = qw/ORAC::Frame::NDF/;
 
 # Use base doesn't seem to work...
 #use base qw/ ORAC::Frame /;
@@ -45,8 +45,6 @@ use vars qw/$VERSION/;
 # standard error module and turn on strict
 use Carp;
 use strict;
-
-use NDF; # For fits reading
 
 =head1 PUBLIC METHODS
 
@@ -115,6 +113,7 @@ The following methods are provided for manipulating
 B<ORAC::Frame::JCMT> objects. These methods override those
 provided by B<ORAC::Frame>.
 
+=over 4
 
 =item B<calc_orac_headers>
 
@@ -207,43 +206,6 @@ sub configure {
   return 1;
 }
 
-=item B<erase>
-
-Erase the current file from disk.
-
-  $Frm->erase($i);
-
-The optional argument specified the file number to be erased.
-The argument is identical to that given to the file() method.
-Returns ORAC__OK if successful, ORAC__ERROR otherwise.
-
-Note that the file() method is not modified to reflect the
-fact the the file associated with it has been removed from disk.
-
-This method is usually called automatically when the file()
-method is used to update the current filename and the nokeep()
-flag is set to true. In this way, temporary files can be removed
-without explicit use of the erase() method. (Just need to
-use the nokeep() method after the file() method has been used
-to update the current filename).
-
-=cut
-
-sub erase {
-  my $self = shift;
-
-  # Retrieve the necessary frame name
-  my $file = $self->file(@_);
-
-  # Append the .sdf if required
-  $file .= '.sdf' unless $file =~ /\.sdf$/;
- 
-  my $status = unlink $file;
-
-  return ORAC__ERROR if $status == 0;
-  return ORAC__OK;
-
-}
 
 =item B<file_from_bits>
 
@@ -542,45 +504,6 @@ sub inout {
 
   return ($infile, $outfile) if wantarray;
   return $outfile;      
-}
-
-
-=item B<readhdr>
-
-Reads the header from the observation file (the filename is stored in
-the object).  This methods does set the header in the object and is
-usually called by configure().
-
-    $Frm->readhdr;
-
-All exisiting header information is lost. The calc_orac_headers()
-method is invoked once the header information is read.
-If there is an error during the read an empty header will be stored.
-
-Currently this method assumes that the reduced group is stored in
-NDF format. Only the FITS header is retrieved from the NDF.
-
-There are no input or return arguments.
-
-=cut
-
-sub readhdr {
- 
-  my $self = shift;
-  
-  # Just read the NDF fits header
-  my ($ref, $status) = fits_read_header($self->file);
- 
-  # Return an empty hash if bad status
-  $ref = {} if ($status != &NDF::SAI__OK);
- 
-  # Update the contents
-  %{$self->hdr} = %$ref;
-
-  # calc derived headers
-  $self->calc_orac_headers;
-
-  return;
 }
 
 
@@ -906,45 +829,9 @@ sub sub2file {
 
 =back
 
-=head1 PRIVATE METHODS
-
-The following methods are intended for use inside the module.
-They are included here so that authors of derived classes are 
-aware of them.
-
-=over 4
-
-=item stripfname
-
-Method to strip file extensions from the filename string. This method
-is called by the file() method. For JCMT we strip all extensions of the
-form ".sdf", ".sdf.gz" and ".sdf.Z" since Starlink tasks do not require
-the extension when accessing the file name.
-
-=cut
-
-sub stripfname {
- 
-  my $self = shift;
- 
-  my $name = shift;
- 
-  # Strip everything after the first dot
-  $name =~ s/\.(sdf)(\.gz|\.Z)?$//;
-  
-  return $name;
-}
- 
-
-=back
-
-=head1 REQUIREMENTS
-
-This module requires the NDF module.
-
 =head1 SEE ALSO
 
-L<ORAC::Frame>
+L<ORAC::Frame>, L<ORAC::Frame::NDF>
 
 =head1 REVISION
 
@@ -955,8 +842,5 @@ $Id$
 Tim Jenness (t.jenness@jach.hawaii.edu)
 
 =cut
-
-
-
 
 1;
