@@ -23,6 +23,8 @@ my $SITE = $$VAR1{site};
 my $CATPATH = $$VAR1{catpath};
 my $FINFO = $$VAR1{finfo};
 my $CINFO = $$VAR1{cinfo};
+my $jitter_number = $$VAR1{jitter};
+my $oractime = $$VAR1{oractime};
 my $infiles = $$VAR1{infiles};
 my @allfiles = @$infiles;
 	     
@@ -68,9 +70,16 @@ my $nf = @allfiles;
 # Open a file to put messages...
 
 our $msg_fh = new FileHandle;
-$msg_fh->open(">jitter_$$");
+$msg_fh->open(">jitter_$jitter_number.log");
 $msg_fh->autoflush;
 print $msg_fh "Begin work on files: @allfiles\n";
+
+# Get a global hash for DQC
+
+our %DQC = ();
+our @skydqc = ('SKYLEVEL','SKYNOISE','SEEING','ELLIPTIC');
+our @alldqc = ('ORACTIME','CAMNUM','SKYLEVEL','SKYNOISE','SEEING','ELLIPTIC',
+	       'MAGZPT','MAGZRR','RAZP','DECZP','STDCRMS','NUMBRMS');
 
 # If there aren't enough, then there isn't much point in being here...
 
@@ -261,6 +270,7 @@ foreach $fname (@allfiles) {
 # bias the input images.
 
 foreach $j (1 .. $nhdu) {
+    %DQC = ();
     my %allvals = ();
     my $value;
     my %fnamesubs = ();
@@ -375,6 +385,14 @@ foreach $j (1 .. $nhdu) {
 	print $msg_fh "Continuing with the current WCS\n";
     }
     unlink $tmp;
+    $fptr = Astro::FITS::CFITSIO::open_file($outd,READONLY,$status);
+    my ($junk,$stdcrms,$numbrms);
+    $fptr->read_key(TFLOAT,"STDCRMS",$stdcrms,$junk,$status);
+    $fptr->read_key(TINT,"NUMBRMS",$numbrms,$junk,$status);
+    $fptr->close_file($status);
+    $DQC{'STDCRMS'} = $stdcrms;
+    $DQC{'NUMBRMS'} = $numbrms;
+    printf $msg_fh "WCS fit to %d stars with RMS %g\n",$numbrms,$stdcrms;
 
     # Work out WCS zeropoint shift and write it to the header.
 
@@ -387,14 +405,8 @@ foreach $j (1 .. $nhdu) {
     }
     $raref2 = ($raref2 - $raref)*3600.0;
     $decref2 = ($decref2 - $decref)*3600.0;
-    my $outkey = "RAZP20";
-    my $outcom = "[arcsec] Ref RA shift pass 2 to 0 (new - old)";
-    $retval = cir_update_hdr($outd,$outkey,"FLOAT",$raref2,$outcom,
-			     $errmsg);
-    $outkey = "DECZP20";
-    $outcom = "[arcsec] Ref DEC shift pass 2 to 0 (new - old)";
-    $retval = cir_update_hdr($outd,$outkey,"FLOAT",$decref2,$outcom,
-			     $errmsg);
+    $DQC{'RAZP'} = $raref2;
+    $DQC{'DECZP'} = $decref2;
  
     # Copy the WCS information to the header of the catalogue 
 
@@ -413,6 +425,7 @@ foreach $j (1 .. $nhdu) {
 	    print $msg_fh "CIR_WCSOFFSET: Failed on $outd and $fnamesub\n$errmsg\n";
 	}
     }
+    print $msg_fh "WCS of input images updated\n";
 
     # Classify the objects...
 
@@ -420,10 +433,32 @@ foreach $j (1 .. $nhdu) {
     if ($retval != CIR_OK) {
 	print $msg_fh "CIR_CLASSIFY: Failed on $outcat\n$errmsg\n";
     }
+    print $msg_fh "Catalogue $outcat objects are classified\n";
 
     # Do the photometry now
 
     $retval = do_photom($outd,$outcat);
+
+    # Update the image header
+
+    $status = 0;
+    $fptr = Astro::FITS::CFITSIO::open_file($outcat,READONLY,$status);
+    foreach my $kk (@skydqc) {
+	my ($value,$junk);
+        $fptr->read_key(TFLOAT,$kk,$value,$junk,$status);
+        $DQC{$kk} = $value;
+    }
+    $fptr->close_file($status);
+    $fptr = Astro::FITS::CFITSIO::open_file($outd,READWRITE,$status);
+    foreach my $kk (@skydqc) {
+	$fptr->update_key(TFLOAT,$kk,$DQC{$kk},"",$status);
+    }
+    $fptr->update_key(TFLOAT,"RAZP20",$DQC{'RAZP'},
+		      "[arcsec] Ref RA shift pass 2 to 0 (new - old)",$status);
+    $fptr->update_key(TFLOAT,"DECZP20",$DQC{'DECZP'},
+		      "[arcsec] Ref Dec shift pass 2 to 0 (new - old)",$status);
+    $fptr->read_key(TINT,"CAMNUM",$DQC{'CAMNUM'},$junk,$status);
+    $fptr->close_file($status); 
 
     # Process the history records
 
@@ -432,10 +467,37 @@ foreach $j (1 .. $nhdu) {
 	$fnamesub = $fnamesubs{$fname};
         cir_prochist($fnamesub);
     }
+
+    # Write out the dqc index
+
+    $DQC{'ORACTIME'} = $oractime;
+    write_dqc($outd);
         
 }
 
 exit 0;
+
+sub write_dqc {
+    my ($outd) = @_;
+    my $kk;
+
+    # Open the index file. See if it exists first...
+
+    my $indfile = "index.dqc";
+    my $newfile = (! -f $indfile);
+    my $fh = new FileHandle;
+    $fh->open(">>$indfile");
+    if ($newfile) {
+        my $line = "#" . join ' ',sort @alldqc;
+        print $fh "$line\n";
+    }
+
+    # Now write the results out
+    
+    my @vars = map {sprintf "$DQC{$_}"} sort keys %DQC;
+    print $fh "$outd @vars\n";
+    close $fh;
+}  
 
 sub do_photom {
     my ($imagefile,$catfile) = @_;
@@ -443,7 +505,7 @@ sub do_photom {
 
     # If the photometric info is defined, then continue on...
 
-    my ($sumzp,$sumzp4,$sumnzp,$sumvar,$sumvar4,$anynul);
+    my ($sumzp,$sumzp4,$sumnzp,$sumvar,$sumvar4,$anynul,$imatch);
     if (defined $FINFO && defined $CINFO) {
 	no strict 'refs';
 	no strict 'vars';
@@ -478,6 +540,7 @@ sub do_photom {
 	$sumnzp = 0;
 	$sumvar = 0.0;
 	$sumvar4 = 0.0;
+        $imatch = 0;
 
 	# Right, get some photometric standards that should appear on the
 	# current image
@@ -573,7 +636,6 @@ sub do_photom {
 	# Loop over each of the standard stars and see if you can find
 	# a matching star in the object catalogue
 
-	my $imatch = 0;
 	my @zp = ();
 	my @zp4 = ();
 NR:	foreach my $j (1 .. $nrows) {
@@ -714,7 +776,13 @@ NR:	foreach my $j (1 .. $nrows) {
         $sumvar4 = 0.0;
     
     }
-    
+
+    # A little message...
+
+    printf $msg_fh "Photometry fit to %d stars\n",$imatch;
+    printf $msg_fh "   Zeropoint 1: %g +/- %g\n",$sumzp,$sumvar;
+    printf $msg_fh "   Zeropoint 2: %g +/- %g\n",$sumzp4,$sumvar4;
+
     # Finally, write these results to the extension headers...
 
     my ($retval,$errmsg);
@@ -727,6 +795,8 @@ NR:	foreach my $j (1 .. $nrows) {
 	"Photometric ZP(mags) for default extinction (core4_flux)",$errmsg);
     $retval = cir_update_hdr($imagefile,"MAGZRR4","FLOAT",$sumvar4,
 	"Photometric ZP error(mags) (core4_flux)",$errmsg);   
+    $DQC{'MAGZPT'} = $sumzp;
+    $DQC{'MAGZRR'} = $sumvar;
 
     # And to the catalogues
 
