@@ -1,0 +1,82 @@
+=head1 NAME
+
+DELETE_TEMP_FILES
+
+=head1 DESCRIPTION
+
+Generic primitive to handle end of recipe tidy up of intermediate
+files stored with groups and can only be deleted when the entire
+group has been used.
+
+=head1 ARGUMENTS
+
+DELETE - comma-separated list of suffices for files that are
+         to be deleted.
+
+If DELETE is not supplied, no files are removed.
+
+ DELETE=_trn,_flat
+
+This would erase all files ending in _trn and _flat associated with
+the current frame (group files do not count).
+
+=head1 NOTES
+
+In some cases the GROUP primitives require certain intermediate files
+to be available in order for the recipe to proceed (e.g. recipes
+involving the re-calculation of flatfields will want to retain the
+pre-flatfielded data on disk so that the flatfielded images can be
+regenerated).  This script is intended to be used for their removal.
+This means that some care must be taken to remove the files at the
+correct time.  The recommended approach is to use steering information
+associated with a recipe in a <recipe>_TIDY primitive.
+
+=head1 PRIOR REQUIREMENTS
+
+The primitive uses $Grp, the $Frm->inout and $Grp->template methods to
+make a list of frames to delete.  Thus if the frames are only a subset
+of $Grp at the time this primitive is called, make a local $Grp which
+is the subgrp.
+
+#       $mosgrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+#       {
+#          my $Grp = $mosgrp;
+#          _DELETE_TEMP_GROUP_FILES_ DELETE=_qm,_dk,_om
+#          undef $Grp;
+#       }
+
+=head1 TASKS
+
+No external tasks called by this primitive.
+
+=cut
+
+# Obtain the DELETE argument's value.
+    my $remove = $_DELETE_TEMP_GROUP_FILES_{DELETE};
+
+# Generate the array of extensions.
+    my @extensions = split( /,/, $remove );
+
+# If the extensions array contains something, proceed.
+    if ( $#extensions > -1 ) {
+       orac_print "Removing temporary group files with suffices $remove...\n";
+
+# Loop through the extensions.
+       foreach my $extension ( @extensions ) {
+
+# Use the current frame to make a template name.
+          (my $in, my $out) = $Frm->inout( $extension );
+
+# Change the group members to match the template.
+          $Grp->template( $out );
+
+# Erase all the frames in the group. 
+          foreach my $Frm ( $Grp->members ) {
+            $Frm->erase;
+          }
+       }
+
+    } else {
+       orac_warn "Primitive _DELETE_TEMP_GROUP_FILES_ called without specifying any files to be deleted\nNot deleting any temporary files....\n";
+
+    }
