@@ -31,7 +31,7 @@
 
 set hostname = `/bin/hostname`
 
-set script = "/bin/false"
+set script = "none"
 
 if ($hostname == "wfdr1") then
     set script = oracdr_wfcam1.csh
@@ -49,4 +49,9 @@ if ($hostname == "wfdr4") then
     set script = oracdr_wfcam4.csh
 endif
 
-source ${ORAC_DIR}/etc/$script $1 $2 $3 $4
+if ($script == "none") then
+    echo "You must be logged onto a wfcamdr machine for oracdr_wfcam to work"
+    echo "Otherwise, use oracdr_wfcamN where N=camera number"
+else 
+   source ${ORAC_DIR}/etc/$script $1 $2 $3 $4
+endif
