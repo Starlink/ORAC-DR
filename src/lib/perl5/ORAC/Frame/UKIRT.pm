@@ -27,7 +27,7 @@ to B<ORAC::Frame::UKIRT> objects.
 # ORAC pipeline
  
 use 5.004;
-use vars qw/$VERSION/
+use vars qw/$VERSION/;
 use ORAC::Frame;
 use ORAC::Constants;
  
