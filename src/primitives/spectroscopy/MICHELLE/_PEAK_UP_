@@ -13,21 +13,30 @@ my ($in, $ypr) = $Frm->inout("_ypr");
 
 # Collapse the image along the dispersion axis into a ypr file
 
-$Mon{'kappa_mon'}->obeyw("collapse", "in=$in(,80:110) out=$ypr axis=1");
+orac_print "collapsing $in(,40:110) to $ypr and fixing zero-offset\n";
+my $tmp = new ORAC::TempFile;
+my $tmpfile = $tmp->file;
+
+$Mon{'kappa_mon'}->obeyw("collapse", "in=$in(,40:110) out=$tmpfile axis=1");
+
+# Also need to correct for bias, sky shifts... - Try to find the mode...
+$Mon{'kappa_mon'}->obeyw("stats", "ndf=$tmpfile clip=[3,3]");
+my $ORAC_STATUS;
+($ORAC_STATUS, my $mean)=$Mon{'kappa_mon'}->get("stats", "mean");
+
+$Mon{'kappa_mon'}->obeyw("csub", "in=$tmpfile scalar=$mean out=$ypr");
 
 my $tmpFrm = new $Frm;
 $tmpFrm->file($ypr);
 
 $Display->display_data($tmpFrm) if defined $Display;
 
-my $tmp = new ORAC::TempFile;
-my $tmpfile = $tmp->file;
-my $ORAC_STATUS;
 
 # Need to thresh to only see the +ve half
 $Mon{'kappa_mon'}->obeyw("thresh", "in=$ypr out=$tmpfile thrlo=0 newlo=0 thrhi=1000000 newhi=1000000"); 
 
 # Call figaro emlt on the +ve half of the collapsed file
+orac_print "finding +ve beams\n";
 $Mon{'figaro2'}->obeyw("emlt", "spectrum=$tmpfile xstart=min xend=max lines=1");
 
 my $posbeamsfound=0;
@@ -41,7 +50,35 @@ my @peak = $Mon{'figaro2'}->get("emlt", "EMLT_PEAK");
 my $thepix = $pix[1];
 my $thepeak = $peak[1];
 
-orac_print "Beam position = pixel $thepix, strength = $thepeak\n";
+orac_print "Positive Beam position = pixel $thepix, strength = $thepeak\n";
+
+# Now look for the -ve beam.
+# Need to thresh to only see the -ve half
+my $temp = new ORAC::TempFile;
+my $tempfile = $temp->file;
+
+$Mon{'kappa_mon'}->obeyw("cmult", "in=$ypr out=$tempfile scalar=-1");
+$Mon{'kappa_mon'}->obeyw("thresh", "in=$tempfile out=$tmpfile thrlo=0 newlo=0 thrhi=1000000 newhi=1000000"); 
+
+# Call figaro emlt on the +ve half of the collapsed file
+orac_print "finding -ve beams\n";
+$Mon{'figaro2'}->obeyw("emlt", "spectrum=$tmpfile xstart=min xend=max lines=1");
+
+my $negbeamsfound=0;
+
+($ORAC_STATUS, $negbeamsfound) = $Mon{'figaro2'}->get("emlt", "EMLT_LINES");
+orac_print "Detected $negbeamsfound of 1 negative beams\n";
+
+my @npix = $Mon{'figaro2'}->get("emlt", "EMLT_POS");
+my @npeak = $Mon{'figaro2'}->get("emlt", "EMLT_PEAK");
+
+my $nthepix = $npix[1];
+my $nthepeak = $npeak[1];
+
+orac_print "Negative Beam position = pixel $nthepix, strength = $nthepeak\n";
+
+my $ratio = $thepeak / $nthepeak;
+orac_print "Beam ratio (+ve / -ve) is $ratio\n";
 
 my $raoff = $Frm->uhdr("ORAC_RA_TELESCOPE_OFFSET");
 my $decoff = $Frm->uhdr("ORAC_DEC_TELESCOPE_OFFSET");
