@@ -1,0 +1,164 @@
+    # If we're microstepping...
+
+    if ($Grp->uhdr("SKYSUBLEVEL") eq "USTEP") {
+
+        # If we're allowed to interleave, then do the sky subtraction and
+        # interleaving now.
+
+        if ($Grp->uhdr("ALLOWED_TO_INTERLEAVE")) {
+	    orac_print("Begining ustep sky subtraction and microstepping\n");
+
+	    # Get the group number.
+
+    	    my $doconf = 1;
+	    my $unum = $Frm->ugrp;
+	    my $jgrp = $Frm->jgrp;
+	    my $grp = $Grp->findugroup($unum);
+
+	    # Now create a list of files
+
+	    my @allfrms = $grp->members;
+	    my $nf = @allfrms;
+	    my $cpm = $Frm->hdr("CIR_CPM");
+
+	    # We're not flat fielding and dark subtracting here...
+
+	    my $flatframe = "";
+	    my $darkframe = "";
+
+            # Get an appropriate sky file
+
+            my $skyname = $Cal->sky;
+
+	    # Now for a superframe name and confidence map
+
+	    my ($outf,$outc);
+	    $outc = "";
+	    my ($basename,$dir,$suffix,$extn) = $allfrms[0]->parsefname;
+	    $outf = sprintf("%s_sf%s",$basename,$suffix);
+	    $outc = sprintf("%s_sf_conf%s",$basename,$suffix) if ($doconf);
+	    my $noff = int(sqrt($Frm->hdr("NUSTEP")));
+
+	    # We don't want an output catalolgue.
+
+	    my $catout = "";
+
+	    # Right, now cycle through the extensions...
+
+	    my $outconf = "";
+	    my $indark = "";
+	    my $inflat = "";
+	    foreach my $i (1 .. $Frm->findnsubs) {
+		my @insubs = ();
+		foreach my $frm (@allfrms) {
+		    push @insubs,$frm->getasubframe($i)->file;
+		}
+		my $sky = sprintf("%s[%d]",$skyname,$i);
+		my $outfile = sprintf("%s[%d]",$outf,$i);
+		$outconf = sprintf("%s[%d]",$outc,$i) if ($doconf);
+		my $inconf = sprintf("%s[%d]",$cpm,$i);
+		$indark = sprintf("%s[%d]",$darkframe,$i) if ($darkframe);
+		$inflat = sprintf("%s[%d]",$flatframe,$i) if ($flatframe);
+
+		# Right, here we go...
+
+		my ($retval,$errmsg);
+
+		$retval = cir_wfcam_ustep_pt1(\@insubs,$nf,$inconf,$indark,
+		    $inflat,$sky,$catout,$outfile,$outconf,3.0,$noff,50,7.0,0,3.5,
+		    256,3,$errmsg);
+		if ($retval != CIR_OK) {
+		    orac_throw "CIR_WFCAM_USTEP_PT1: Failed in _USTEP_PT1_BIG\n$errmsg\n";
+		}
+	    }
+
+	    # File some stuff away...
+
+	    _FILE_SKY_ NAME=$skyname
+
+	    # Store this stuff away...
+
+	    my $dFrm = $Frm->new($outf);
+	    $grp->uhdr("SUPERFRAME",$dFrm);
+
+            # Store the name of the superframe away for later when you need
+            # to jitter.
+    
+            $Grp->sfgroup->push($dFrm);
+	    if ($doconf) {
+		$dFrm = $Frm->new($outc);
+		$grp->uhdr("SUPERFRAME_CONF",$dFrm);
+	    }
+    
+	}
+    
+        # Now, if the latest jitter sequence is finished, then group all the
+        # superfames together and jitter them.
+    
+        if ($Grp->uhdr("ALLOWED_TO_DITHER")) {
+            my $jgrp = $Frm->jgrp;
+    	    my $sfg = $Grp->sfgroup;
+            {
+                $Grp = $sfg;
+                $Grp->uhdr("ALLOWED_TO_DITHER",1);
+                _DITHER_FACTORY_ IPIX=5 THRESH=1.5 ICROWD=0 RCORE=3.5
+            }
+        }
+    
+    # Right, here's the bit for the situation where we're not interleaving...
+    
+    } elsif ($Grp->uhdr("SKYSUBLEVEL") eq "JITTER") {
+        $Grp->sfgroup->push($Frm);
+
+        # If we're allowed to jitter then do the sky subtraction first 
+        # and then go straight to the jitter factory.
+
+        if ($Grp->uhdr("ALLOWED_TO_DITHER")) {
+
+            # Find the current jitter group and the group corresponding to
+            # all the 'superframes' for this jitter group. NB: superframes
+	    # can either be the product of the interleaving above, or in the
+	    # case where no interleaving is being done, just the individual
+	    # jitter sequence images.
+
+	    my $unum = $Frm->ugrp;
+            my $jgrp = $Frm->jgrp;
+            my $sfg = $Grp->sfgroup->sfjgrp($jgrp);
+	    my @allfrms = $sfg->members;
+
+            # Get a file name for the output mean sky frame
+
+	    my $skyname = sprintf("sky_%s_%05d%s",$Frm->hdr("ORACUT"),
+		$jgrp,$Frm->fitssuffix);
+
+            # Loop for each image extension
+
+            foreach my $i (1 .. $allfrms[0]->findnsubs) {
+	        my @allfiles = ();
+	        foreach my $frm (@allfrms) {
+		    push @allfiles,$frm->getasubframe($i)->file;
+                }
+	        my $nf = @allfiles;
+		my $sky = sprintf("%s[%d]",$skyname,
+    		    $Frm->getasubframe($i)->subfrmnumber);
+    	        my ($retval,$errmsg);
+                $retval = cir_wfcam_mskysubt(\@allfiles,$nf,$sky,5.0,$errmsg);
+	        if ($retval != CIR_OK) {
+	            orac_throw("CIR_WFCAM_MSKYSUB: failed in _STAGE2_\n$errmsg\n");
+	        }
+            }
+
+            # File the sky frame
+    
+	    _FILE_SKY_ NAME=$skyname
+
+            # Do the combination now...
+
+            {    
+	        $Grp = $sfg;
+                $Grp->uhdr("ALLOWED_TO_DITHER",1);
+                _DITHER_FACTORY_ IPIX=5 THRESH=1.5 ICROWD=0 RCORE=3.5
+            }
+        }
+    }
+    
