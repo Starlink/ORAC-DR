@@ -18,6 +18,14 @@
 #    For a moving target, the first frame of the whole observation is
 #    the first member of the group after the first cycle.
 #
+#    In the case of a series of mosaics in a scan, the test is for the
+#    first recipe cycle at a given scan position.  On the second and
+#    subsequent cycles, the new group commences with the mosaic
+#    for the current scan position.  Similarly, for a (fast) moving
+#    target the reference frame of the new group is the first frame
+#    at the current scan position, thus each mosaic is treated
+#    separately.
+#
 #    When argument TELEOFF is true, _GENERATE_TELE_OFFSETS_ is invoked
 #    and the derived offsets are used to register with a shift of origin;
 #    otherwise _GENERATE_OFFSETS_ is the work horse.
@@ -48,7 +56,14 @@
 #    in imaging mode.
 #    -  Processing only occurs for object and sky frames, and when 
 #    steering header MAKE_MOSAIC is true.
-#    -  The steering header CYCLE_NUMBER specifies the cycle number.
+#    -  The steering header CYCLE_NUMBER specifies the recipe-cycle
+#    number. 
+#    -  Steering header SCAN_INDEX specifies whether or not there is
+#    a scan; if defined, this provides the index of the scan position.
+#    This in turn is used to obtain the scan cycle number from
+#    the array accessed by reference in the user header SCAN_CYCLES.
+#    -  The group of mosaics is accessed through user header
+#    MOSAIC_GROUP.
 #    -  The _GENERATE_OFFSETS_ argument CENTRAL_SOURCE is TRUE.
 #    Thus matching the centroids of a central source is attempted if
 #    automatic registration fails.
@@ -60,7 +75,7 @@
 #    MJC: Malcolm J. Currie (JAC)
 #
 # Copyright:
-#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Copyright (C) 1998-2002 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 #
 #-
@@ -95,27 +110,50 @@
        my $makemos = $Frm->uhdr( "MAKE_MOSAIC" );
        if ( $makemos ) {
 
+# Obtain the cycle number.  Default to zero if undefined, so that recipes
+# which do not support this feature will continue to work.
+          my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+          $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+# Determine whether this is part of a scan.
+          my $scanindex = $Frm->uhdr( "SCAN_INDEX" );
+
+# Obtain the scan cycle number.  This is the number of cycles of
+# the recipe at the current scan position.
+          my ( $scan_cycleno, $mosGrp );
+          if ( defined( $scanindex ) ) {
+             my $scan_cycleref = $Grp->uhdr( "SCAN_CYCLES" );
+             $scan_cycleno = @$scan_cycleref[ $scanindex ];
+
+# Obtain the group of mosaics.
+             $mosGrp = $Grp->uhdr( "MOSAIC_GROUP" );
+
+# The main test below is now for scan index.  Thus for non-scanned
+# data, we substitute the original recipe-cycle number.
+          } else {
+             $scan_cycleno = $cycleno;
+          }
+
 # Make a local $Grp containing just the differenced pairs.
           {
              my $Grp = $Grp->uhdr( "DIFFERENCE_GROUP" );
 
-# Obtain the cycle number.  Default to zero if undefined, so that recipes
-# which do not support this feature will continue to work.
-             my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
-             $cycleno = defined( $cycleno ) ? $cycleno : 0;
-
-# Select those members in the current cycle.
+# Select those members in the current recipe cycle.
              my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
 
 # Form the group to process.
 # ==========================
 
+# First cycle
+# -----------
 # For the first cycle of a single cycle mosaic, make a local $Grp
 # containing just the current cycle.  Note the { to start a new context.
-             my ( $tempGrp, $tempFrm );
-             if ( $cycleno == 0 ) {
+             my ( $tempGrp, $tempFrm, $scanGrp );
+             if ( $scan_cycleno == 0 ) {
                 $tempGrp = $cycleGrp;
 
+# Moving target, later cycles
+# ---------------------------
 # For a moving target we want to register to the first frame, because
 # it is the reference frame for the moving target.  The motions are
 # calculated with respect to its time of observation.  We do not
@@ -127,40 +165,70 @@
 # It's a two step process...
              } elsif ( $moving_target ) {
 
-# First step is to create a frame which is first differenced pair.
-# NB this suffix should not be tidied in _NOD_..._TIDY_ scripts.
-# This is something of a kludge, but with all the various groups,
-# some temporary, it's hard know what frames are available.  It needs a
-# method which finds the first created frame which exists for a given
-# frame number.  Any will do.  It's the header information which is needed.
-# An alternative might be to create differently named user headers in the
-# master group to record the times.
+# First step is to create a frame, which is first differenced pair,
+# along with its associated headers.  N.B. this suffix should not be
+# tidied in _NOD_..._TIDY_ scripts.  This is something of a kludge, but
+# with all the various groups, some temporary, it's hard know what
+# frames are available.  It needs a method which finds the first
+# created frame which exists for a given frame number.  Any will do. 
+# It's the header information which is needed.  An alternative might be
+# to create differently named user headers in the master group to record
+# the times.  For a scan map, obtain the appropriate frame using the 
+# scan index.
                 $tempFrm = new $Frm;
-                $tempFrm->file( $Grp->frame( 0 )->file );
+                if ( defined( $scanindex ) ) {
+                   $scanGrp = $Grp->subgrp( "SCAN_INDEX" => $scanindex );
+                   $tempFrm->file( $scanGrp->frame( 0 )->file );
+                } else {
+                   $tempFrm->file( $Grp->frame( 0 )->file );
+                }
+
+# Here's the aforementioned kludge, testing for a suitable reference
+# frame's existence.
                 my ( $tin, $tout ) = $tempFrm->inout( "_dp" );
                 $tempFrm->file( $tout );
                 if ( ! $tempFrm->file_exists() ) {
                    orac_throw "Reference frame $tout for moving target does not exist.\n";
                 }
-                %{ $tempFrm->hdr } = %{ $Grp->frame( 0 )->hdr };
-                %{ $tempFrm->uhdr } = %{ $Grp->frame( 0 )->uhdr };
 
-# Create the temporary group and insert the reference frame and the
-# current cycle's members.
+# Copy the headers once the reference frame is known.
+                if ( defined( $scanindex ) ) {
+                   %{ $tempFrm->hdr } = %{ $scanGrp->frame( 0 )->hdr };
+                   %{ $tempFrm->uhdr } = %{ $scanGrp->frame( 0 )->uhdr };
+                } else {
+                   %{ $tempFrm->hdr } = %{ $Grp->frame( 0 )->hdr };
+                   %{ $tempFrm->uhdr } = %{ $Grp->frame( 0 )->uhdr };
+                }
+
+# The second step is to create the temporary group and insert the
+# reference frame and the current recipe cycle's members.
                 $tempGrp = new $Grp;
                 $tempGrp->push( $tempFrm );
                 $tempGrp->push( $cycleGrp->members );
- 
-# On later cycles a mosaic file should exist, and we shall to register
+
+# Later cycles
+# ------------
+# On later cycles a mosaic file should exist, and we shall register
 # with that as the reference frame.  So place the file into a temporary
 # frame pushed onto a temporary $Grp-like group.  Copy its headers
 # across to the temporary frame too.  Then append the members of the
-# subgroup.  
+# subgroup.  For a scan map, obtain the appropriate mosaic using the
+# scan index.
              } else {
                 $tempFrm = new $Frm;
-                $tempFrm->file( $Grp->file );
-                %{ $tempFrm->hdr } = %{ $Grp->hdr };
-                %{ $tempFrm->uhdr } = %{ $Grp->uhdr };
+                if ( defined( $scanindex ) ) {
+                    $scanGrp = $mosGrp->subgrp( "SCAN_INDEX" => $scanindex );
+                    $tempFrm->file( $scanGrp->frame( 0 )->file );
+                    %{ $tempFrm->hdr } = %{ $scanGrp->frame( 0 )->hdr };
+                    %{ $tempFrm->uhdr } = %{ $scanGrp->frame( 0 )->uhdr };
+                } else {
+                    $tempFrm->file( $Grp->file );
+                    %{ $tempFrm->hdr } = %{ $Grp->hdr };
+                    %{ $tempFrm->uhdr } = %{ $Grp->uhdr };
+                }
+
+# Create the temporary group and insert the reference frame and the current
+# recipe cycle's members.
                 $tempGrp = new $Grp;
                 $tempGrp->push( $tempFrm );
                 $tempGrp->push( $cycleGrp->members );
@@ -215,6 +283,13 @@ mosaics can be co-added.  For a moving target, the first frame of the
 whole observation is the first member of the group after the first
 cycle.
 
+In the case of a series of mosaics in a scan, the test is for the
+first recipe cycle at a given scan position.  On the second and
+subsequent cycles, the new group commences with the mosaic for the
+current scan position.  Similarly, for a (fast) moving target the
+reference frame of the new group is the first frame at the current
+scan position, thus each mosaic is treated separately.
+
 When argument TELEOFF is true,
 L<_GENERATE_TELE_OFFSETS_|_GENERATE_TELE_OFFSETS_> is invoked and the
 derived offsets are used to register with a shift of origin; otherwise
@@ -267,7 +342,18 @@ steering header MAKE_MOSAIC is true.
 
 =item *
 
-The steering header CYCLE_NUMBER specifies the cycle number.
+The steering header CYCLE_NUMBER specifies the recipe-cycle number.
+
+=item *
+
+Steering header SCAN_INDEX specifies whether or not there is
+a scan; if defined, this provides the index of the scan position.
+This in turn is used to obtain the scan cycle number from
+the array accessed by reference in the user header SCAN_CYCLES.
+
+=item *
+
+The group of mosaics is accessed through user header MOSAIC_GROUP.
 
 =item *
 
@@ -292,7 +378,7 @@ MJC: Malcolm J. Currie (JAC)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
