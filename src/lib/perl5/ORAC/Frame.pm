@@ -544,18 +544,22 @@ sub nsubs {
 
 =item B<raw>
 
-This method returns (or sets) the name of the raw data file
+This method returns (or sets) the name of the raw data file(s)
 associated with this object.
 
   $Frm->raw("raw_data");
   $filename = $Frm->raw;
 
+This method returns the first raw data file if called in scalar
+context, or a list of all the raw data files if called in list
+context.
+
 =cut
 
 sub raw {
   my $self = shift;
-  if (@_) { $self->{RawName} = shift; }
-  return $self->{RawName};
+  if (@_) { $self->{RawName} = \@_; }
+  return wantarray ? $self->{RawName} : $self->{RawName}->[0];
 }
 
 
@@ -1161,6 +1165,24 @@ sub number {
 
   return $number;
 
+}
+
+=item B<pattern_from_bits>
+
+Determine the pattern for the raw filename given the variable component
+parts. A prefix (usually UT) and observation number should
+be supplied.
+
+  $pattern = $Frm->pattern_from_bits($prefix, $obsnum);
+
+Returns a regular expression object.
+
+=cut
+
+sub pattern_from_bits {
+
+  # Tim decrees that this must be subclassed.
+  die "The base class version of pattern_from_bits() should not be used\n -- please subclass this method\n";
 }
 
 =item B<tagset>
