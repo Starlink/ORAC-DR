@@ -25,21 +25,18 @@ to B<ORAC::Group::Michelle> objects.
 # A package to describe a Michelle group object for the
 # ORAC pipeline
 
-use 5.004;
-use ORAC::Group::NDF;
+use 5.006;
+use strict;
+use warnings;
 
-# Let the object know that it is derived from ORAC::Frame;
-@ORAC::Group::Michelle::ISA = qw/ORAC::Group::NDF/;
+use ORAC::Group::UKIRT;
+
+# set inheritance
+use base qw/ORAC::Group::UKIRT/;
 
 use vars qw/$VERSION/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
-
-
-
-# standard error module and turn on strict
-use Carp;
-use strict;
 
 =head1 PUBLIC METHODS
 
@@ -112,7 +109,10 @@ Returns a hash containing the new keywords.
 sub calc_orac_headers {
   my $self = shift;
 
-  my %new = ();  # Hash containing the derived headers
+  # Run the base class first since that does the ORAC
+  # headers
+  my %new = $self->SUPER::calc_orac_headers;
+
 
   # ORACTIME
   # For IRCAM the keyword is simply RUTSTART
@@ -144,11 +144,11 @@ $Id$
 
 =head1 AUTHORS
 
-Tim Jenness (t.jenness@jach.hawaii.edu)
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut

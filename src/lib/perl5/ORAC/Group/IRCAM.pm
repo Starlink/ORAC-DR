@@ -25,11 +25,15 @@ to B<ORAC::Group::IRCAM> objects.
 # A package to describe a IRCAM group object for the
 # ORAC pipeline
 
-use 5.004;
-use ORAC::Group::NDF;
+use 5.006;
+use Carp;
+use warnings;
+use strict;
 
-# Let the object know that it is derived from ORAC::Frame;
-@ORAC::Group::IRCAM::ISA = qw/ORAC::Group::NDF/;
+use ORAC::Group::UKIRT;
+
+# Set inheritance
+use base qw/ ORAC::Group::UKIRT /;
 
 use vars qw/$VERSION/;
 
@@ -38,8 +42,7 @@ use vars qw/$VERSION/;
 
 
 # standard error module and turn on strict
-use Carp;
-use strict;
+
 
 =head1 PUBLIC METHODS
 
@@ -112,7 +115,9 @@ Returns a hash containing the new keywords.
 sub calc_orac_headers {
   my $self = shift;
 
-  my %new = ();  # Hash containing the derived headers
+  # Run the base class first since that does the ORAC_
+  # headers
+  my %new = $self->SUPER::calc_orac_headers;
 
   # ORACTIME
   # For IRCAM the keyword is simply RUTSTART
@@ -136,7 +141,7 @@ sub calc_orac_headers {
 
 =head1 SEE ALSO
 
-L<ORAC::Group::NDF>, L<ORAC::Group>
+L<ORAC::Group::UKIRT>, L<ORAC::Group>
 
 =head1 REVISION
 
@@ -144,14 +149,13 @@ $Id$
 
 =head1 AUTHORS
 
-Tim Jenness (t.jenness@jach.hawaii.edu)
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
 
- 
 1;

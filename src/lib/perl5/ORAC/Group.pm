@@ -654,42 +654,6 @@ sub uhdr {
   }
 }
 
-##################################################################
-# Deprecated methods - provide warning message
-
-sub header {
-  my $self = shift;
-  carp 'The Group header() method is no longer supported - use hdr() instead';
-  return $self->{Header};
-}
-
-sub uheader {
-  my $self = shift;
-  carp 'The Group uheader() method is no longer supported - use uhdr() instead';
-  return $self->{UHeader};
-}
-
-sub allmembers_ref {
-  my $self = shift;
-  warn "allmembers_ref() method is deprectaed - use allmembers() in a scalar context";
-  return $self->{AllMembers};
-}
-
-
-# For backwards compatibility.
-sub aref {
-  my $self = shift;
-  warn "Use of aref() is deprecated - use allmembers() from a scalar context\n";
-  return scalar($self->allmembers);
-}
-
-sub members_ref {
-  my $self = shift;
-  warn "members_ref() method is deprectaed - use members() in a scalar context";
-  return $self->{Members};
-}
-
-##############################################################################
 
 =back
 
@@ -717,12 +681,43 @@ ORACUT: This is the UT day of the frame in YYYYMMDD format.
 This method should be run after a header is set. Currently the header()
 method calls this whenever it is updated.
 
-This is an abstract method and should be defined by a sub-class.
+The base class automatically generates the ORAC_ headers and 
+should be invoked by sub-classes.
 
 =cut
 
 sub calc_orac_headers {
-  print "This is an abstract method. Should be defined in a subclass\n";
+  my $self = shift;
+
+  my %new = ();  # Hash containing the derived headers
+
+  # Now create all the ORAC_ headers
+  # go through an array of headers and translate the
+  # ones we can find with associated methods
+  my @ORAC_ = (qw/
+               AIRMASS_START  AIRMASS_END DECBASE
+               FILTER INSTRUMENT LBNDX LBNDY
+               NOFFSETS OBJECT OBSTYPE RABASE READMODE
+               ROTATION SPD_GAIN UBNDX UBNDY WPLANGLE
+               DECSCALE DET_BIAS EXP_TIME GAIN RASCALE
+               TDECOFF TRAOFF UTEND UTSTART
+               /);
+
+  # Loop over all the headers
+  # Do nothing if a translation method does not exist
+  # This makes it safe for everyone
+  for my $key ( @ORAC_ ) {
+    my $method = "_to_$key";
+    #print "Trying method $method\n";
+    if ($self->can($method)) {
+      #print "Running method $method\n";
+      # This returns a single value
+      $new{"ORAC_$key"} = $self->$method();
+      $self->uhdr("ORAC_$key", $new{"ORAC_$key"});
+    }
+  }
+
+  return %new;
 }
 
 =item B<check_membership>
@@ -1416,6 +1411,50 @@ sub nfiles {
 }
 
 
+=item B<translate_hdr>
+
+Translates an ORAC-DR specific header (such as ORAC_TIME)
+to the equivalent FITS header(s).
+
+  %fits = $Grp->translate_hdr( "ORAC_TIME" );
+
+In some cases a single ORAC-DR header can be decomposed into 
+multiple FITS headers (for example for SCUBA, ORAC_TIME is
+a combination of the UTDATE and UTSTART). The hash returned
+by translate_hdr() will include all the key/value pairs required
+to generate the ORAC header.
+
+This method will be called automatically to update hdr() values
+ORAC_ keywords are updated via uhdr().
+
+Returns an empty list if no translation is available.
+
+=cut
+
+sub translate_hdr {
+  my $self = shift;
+  my $key = shift;
+  return () unless defined $key;
+
+  # Remove leading ORAC_
+  $key =~ s/^ORAC_//;
+
+  # Each translation is performed by an individual method
+  # This adds a overhead for method lookups but hopefully
+  # will lend itself to subclassing
+  # The translate_hdr() method itself will then not need to be 
+  # subclassed at all
+  my $method = "_from_$key";
+  # print "trying method translate $method\n";
+  if ($self->can($method)) {
+    return $self->$method();
+
+  } else {
+    return ();
+  }
+}
+
+
 
 =back
 
@@ -1464,12 +1503,12 @@ $Id$
 
 =head1 AUTHORS
 
-Tim Jenness (t.jenness@jach.hawaii.edu)
-and Frossie Economou  (frossie@jach.hawaii.edu)
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+and Frossie Economou  E<lt>frossie@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 
