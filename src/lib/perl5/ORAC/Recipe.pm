@@ -299,7 +299,13 @@ and may change at any time.
 sub execute {
 
   my $self = shift;
-  my ($Frm,$Grp,$Cal,$Display,$Mon) = @_;
+
+  # Read all args so that the only thing left will be the hidden arg
+  my $Frm = shift;
+  my $Grp = shift;
+  my $Cal = shift;
+  my $Display = shift;
+  my $Mon = shift;
 
   croak "Recipe has not been parsed!" unless $self->have_parsed;
 
@@ -1025,7 +1031,19 @@ our ($BATCH, $DEBUG);
 sub orac_execute_recipe {
   my ($recipe, $Frm, $Grp, $Cal, $Display, $Mon);
   ($recipe, $Frm, $Grp, $Cal, $Display, $Mon, $DEBUG, $BATCH) = @_;
-  my %Mon    = %{$Mon};  # Dereference monolith hash
+
+  # We need to take into account that %Mon might be a tied object
+  # since we can not copy a hash and retain the tie
+  # The recipes expect %Mon and not \%Mon (which is what we have)
+  # If it is not tied we can proceed as before.
+  my %Mon;
+  if (tied %Mon) {
+    my $obj = tied %Mon;
+    tie %Mon, ref($obj), $obj; # re-tie
+  } else {
+    %Mon = %$Mon;
+  }
+
   return eval $recipe;
 }
 
