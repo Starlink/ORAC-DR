@@ -100,6 +100,7 @@ sub start_algorithm_engines {
   $Mon{emlt} = new ORAC::Msg::ADAM::Task("emlt_$$",$ENV{FIG_DIR}."/emlt",{TASKTYPE=>"I"});
   $Mon{ndf2fits} = new ORAC::Msg::ADAM::Task("ndf2fits_$$",$ENV{CONVERT_DIR}."/ndf2fits");
   $Mon{ndfpack_mon} = new ORAC::Msg::ADAM::Task("ndfpack_mon_$$",$ENV{KAPPA_DIR}."/ndfpack_mon");
+  $Mon{ccdpack_reg} = new ORAC::Msg::ADAM::Task("ccdpack_reg_$$",$ENV{CCDPACK_DIR}."/ccdpack_reg");
   $Mon{kappa_mon} = new ORAC::Msg::ADAM::Task("kappa_mon_$$",$ENV{KAPPA_DIR}."/kappa_mon");
 
 
