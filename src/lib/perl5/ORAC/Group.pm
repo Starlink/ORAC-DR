@@ -65,6 +65,11 @@ name of the new group. The object identifier is returned.
    $Grp = new ORAC::Group;
    $Grp = new ORAC::Group("group_name");
 
+The base class constructor should be invoked by sub-class constructors.
+If this method is called with the last argument as a reference to
+a hash it is assumed that this hash contains extra configuration
+information ('instance' information) supplied by sub-classes.
+
 =cut
 
 # NEW - create new instance of Frame
@@ -74,30 +79,34 @@ sub new {
   my $proto = shift;
   my $class = ref($proto) || $proto;
 
-  my $group = {};  # Anon hash
+  # Check last arg for a hash
+  my %subclass = ();
+  %subclass = %{ pop(@_) } if (ref($_[-1]) eq 'HASH');
 
-  $group->{Name} = undef;
-  $group->{AllMembers} = [];
-  $group->{Members} = [];
-  $group->{Header} = {};
-  $group->{UHeader} = {};
-  $group->{File} = undef;
-  $group->{Recipe} = undef;
-  $group->{FixedPart} = undef;
-  $group->{FileSuffix} = undef;
-  $group->{BadObsIndex} = undef;
+  # Define the initial state plus include any hash information
+  # from a sub-class
+  my $group = {
+	       AllMembers => [],
+	       BadObsIndex => undef,
+	       File => undef,
+	       FileSuffix => undef,
+	       FixedPart => undef,
+	       Header => {},
+	       Members => [],
+	       Name => undef,
+	       Recipe => undef,
+	       UHeader => {},
+	       %subclass,
+	      };
 
   bless($group, $class);
 
   # If an arguments are supplied then we can configure the object
   # Currently the argument will simply be the group name (ID)
 
-  if (@_) { 
-    $group->name(shift);
-  }
+  $group->name(shift) if @_;
 
   return $group;
-
 }
 
 =item B<subgrp>
@@ -250,6 +259,9 @@ Return (or set) the index object associate with the bad observation
 index file. A index of class B<ORAC::Index::Extern> is used since 
 this index is modified by an external user/program.
 
+The index is created automatically the first time this method
+is invoked.
+
 =cut
 
 sub badobs_index {
@@ -358,12 +370,6 @@ reduced group.
 sub filesuffix {
   my $self = shift;
   if (@_) { $self->{FileSuffix} = shift;};
-
-  # Default to .sdf
-  unless (defined $self->{FileSuffix}) {
-    $self->{FileSuffix} = '.sdf';
-  }
-
   return $self->{FileSuffix};
 }
 
@@ -371,7 +377,7 @@ sub filesuffix {
 
 Set or retrieve the part of the group filename that does not
 change between invocation. The output filename can be derived using
-this. Defaults to 'rg'.
+this.
 
     $Grp->fixedpart("rg");
     $prefix = $Grp->fixedpart;
@@ -382,9 +388,6 @@ this. Defaults to 'rg'.
 sub fixedpart {
   my $self = shift;
   if (@_) { $self->{FixedPart} = shift;};
-  unless (defined $self->{FixedPart}) {
-    $self->{FixedPart} = 'rg';
-  };
   return $self->{FixedPart};
 }
 
@@ -703,6 +706,13 @@ variable part (eg UT) and a group designator (usually obs
 number). The full filename is returned (including suffix).
 
   $file = $Grp->file_from_bits("UT","num");
+
+For the base class the return string is of the format
+
+  fixedpart . prefix . '_' . number . suffix
+
+For example, with IRCAM using a UT date of 980104 and observation
+number 25 the returned string would be 'rg980104_25.sdf'.
 
 =cut
 

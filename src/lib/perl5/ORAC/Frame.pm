@@ -58,6 +58,11 @@ are supplied.  The object identifier is returned.
    $Frm = new ORAC::Frame("file_name");
    $Frm = new ORAC::Frame("UT", "number");
 
+The base class constructor should be invoked by sub-class constructors.
+If this method is called with the last argument as a reference to
+a hash it is assumed that this hash contains extra configuration
+information ('instance' information) supplied by sub-classes.
+
 =cut
 
 
@@ -68,38 +73,37 @@ sub new {
   my $proto = shift;
   my $class = ref($proto) || $proto;
 
-  my $frame = {};  # Anon hash
+  # Check last arg for a hash
+  my %subclass = ();
+  %subclass = %{ pop(@_) } if (ref($_[-1]) eq 'HASH');
 
-  $frame->{RawName} = undef;
-  $frame->{RawSuffix} = undef;
-  $frame->{RawFixedPart} = undef; 
-  $frame->{Header} = {};
-  $frame->{Group} = undef;
-  $frame->{Files} = [];
-  $frame->{NoKeepArr} = [];
-  $frame->{Nsubs} = undef;
-  $frame->{Recipe} = undef;
-  $frame->{UHeader} = {};
-  $frame->{Format} = undef;
-  $frame->{IsGood} = 1;
-  $frame->{Intermediates} = [];
+  # Define the initial state plus include any hash information
+  # from a sub-class
+  my $frame = {
+	       Files => [],
+	       Format => undef,
+	       Group => undef,
+	       Header => {},
+	       Intermediates => [],
+	       IsGood => 1,
+	       NoKeepArr => [],
+	       Nsubs => undef,
+	       RawFixedPart => undef,
+	       RawName => undef,
+	       RawSuffix => undef,
+	       Recipe => undef,
+	       UHeader => {},
+	       %subclass
+	      };
 
   bless($frame, $class);
 
   # If arguments are supplied then we can configure the object
   # Currently the argument will be the filename.
   # If there are two args this becomes a prefix and number
-  # This could be extended to include a reference to a hash holding the
-  # header info but this may well compromise the object since
-  # the best way to generate the header (including extensions) is to use the
-  # readhdr method.
-
-  if (@_) { 
-    $frame->configure(@_);
-  }
+  $frame->configure(@_) if @_;
 
   return $frame;
-
 }
 
 =back
