@@ -183,7 +183,7 @@ sub overwrite {
 
 Convert a file to the format specified by options.
 
-  @files = $Cvt->convert;
+  ($infile, $outfile) = $Cvt->convert;
   @files = $Cvt->convert($oldfile, { IN => 'FITS', OUT => 'NDF' });
 
 File is optional - uses infile() to retrieve the name if not specified.
@@ -208,6 +208,8 @@ Output filename is written to the current working directory of the
 CONVERT monoliths (defaults to the CWD of the program when the
 monoliths were launched - no attempt is made to correct the
 CWD of the monoliths before conversion).
+
+Will return an undefined output file if the conversion failed.
 
 =cut
 
@@ -245,7 +247,7 @@ sub convert {
   # if that is the case return undef and raise an error
   unless (defined $options{'IN'}) {
     orac_err("Could not determine data format of $filename\n");
-    return undef;
+    return ($filename,undef);
   }
 
   # If the input format is the same as the output just return
@@ -253,12 +255,27 @@ sub convert {
 
     my $outfile = basename( $filename );
 
+    if (-l $outfile && !-e $outfile) {
+      orac_err("Error reading input file '$filename'\n");
+      orac_err("Link exists in output directory but it does not point to an existing file\n");
+      my $pointee = readlink( $outfile );
+      if (defined $pointee) {
+	if ($filename eq $pointee) {
+	  orac_err("The link does point to the correct place but the file at the other end is missing\n");
+	} else {
+	  orac_err("The link does not point to the correct place. Please remove ORAC_DATA_OUT/$outfile and retry ['$filename' ne '$pointee']\n");
+	}
+      }
+
+      return ($filename,undef);
+    }
+
     unless( -e $outfile ) {
       symlink( $filename, $outfile ) ||
       do {
         orac_err("Error creating symlink from ORAC_DATA_OUT to '$filename'\n");
         orac_err("$!\n");
-        return undef;
+        return ($filename,undef);
       };
     } else {
       orac_warn("Symlink from ORAC_DATA_OUT to $filename already exists. Continuing...\n");
@@ -340,7 +357,7 @@ sub convert {
 
   } else {
     orac_err "Error finding a conversion routine to handle $options{IN} -> $options{OUT}\n";
-    return undef;
+    return ($filename,undef);
   }
 
   # Now from NDF convert to the desired output format
@@ -1127,8 +1144,21 @@ Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Copyright (C) 1998-2005 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
