@@ -2,7 +2,19 @@
 #
 
 # Create a group based upon the current frame name.
-    $Grp->template($Frm->file);
+    $Grp->template( $Frm->file );
+
+# Record the group identifier.
+    $mainGrp = $Grp;
+
+# Specify the cycle number.
+    $cycleno = int( $Grp->num / 4 );
+
+# Extract from the main group those frames belonging to this group.
+    $cyclegrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+
+# Make this the main group for the moment.
+    $Grp = $cyclegrp;
 
 # Record the group members at this point.
     @quad_names = $Grp->membernames;
@@ -11,7 +23,7 @@
     _MAKE_FLAT_QUADRANT_JITTER_
 
 # Reset the group names to be the ones to flat field.
-    $Grp->membernames(@quad_names);
+    $Grp->membernames( @quad_names );
 
 # Apply the flat field.
     _DIVIDE_BY_FLAT_FROM_GROUP_
@@ -26,11 +38,14 @@
 # Compute a mask of the objects for each member of the flat-field
 # group, using a local $Frm.
        foreach $Frm ( $Grp->members ) {
-          _MAKE_OBJECTS_MASK_
+          _MAKE_OBJECTS_MASK_ OCCULT=17
 
 # Record the mask filename into an array.
-          push (@maskfiles, $_MAKE_OBJECTS_MASK_{MASKFILE});
+          push( @maskfiles, $_MAKE_OBJECTS_MASK_{MASKFILE} );
        }
+
+# Create an array to store the names of the masked datasets. 
+       @masked_names = ();
 
 # Mask the objects in each frame.  Make a copy of the @quad_names
 # so we can shift its elements.  Again use a local $Frm.
@@ -40,19 +55,26 @@
           $maskfile = shift( @maskfiles );
           $Frm->file( $file );
           _MASK_OBJECTS_ MASKFILE=$maskfile
+
+# Record the masked (or unmasked file if the masking has failed)
+# filename into an array.
+          push ( @masked_names, $Frm->file );
        }
 
-# Use the last frame created (the one with objects masked) as a template
-# to form the group.
-       $Grp->template($file);
+# Set the group names to be the masked ones to form improved flat field.
+       $Grp->membernames( @masked_names );
 
 # Generate the new flat field using the jittered masked frames.
        _MAKE_FLAT_FROM_GROUP_ 
 
 # Reset the group names to be the ones to flat field.
-       $Grp->membernames(@quad_names);
+       $Grp->membernames( @quad_names );
 
 # Apply the better flat field.
        _DIVIDE_BY_FLAT_FROM_GROUP_
 
     }
+
+# Restore the original group.
+    $Grp = $mainGrp;
+    $Grp->template( $Frm->file );
