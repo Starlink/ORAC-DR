@@ -1,0 +1,110 @@
+=head1 NAME
+
+_ARRAY_TESTS_STATISTICS_
+
+=head1 DESCRIPTION
+
+Does the array tests statistics for CGS4.
+
+=head1 AUTHOR 
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+=cut
+
+if ($Frm->uhdr("ARRAY_TESTS_STATISTICS") eq "GO") {
+
+   orac_print "Calculating Array Statistics:\n";
+
+   # Get the frame file names from the group
+   my @file = $Grp->membernames;
+
+   # Get the BPM
+   my $mask = $Cal->mask;
+
+   # Get the Gain
+   my $gain = $Frm->uhdr("ORAC_GAIN");
+
+   # Difference Frames 3 and 4 - the 1 sec NDSTARE Darks
+   my $temp1 = new ORAC::TempFile;
+   my $t1file = $temp1->file;
+
+   $Mon{'kappa_mon'}->obeyw("sub", "in1=$file[2] in2=$file[3] out=$t1file");
+
+   # Apply a bad pixel mask (Why not indeed)
+   my $temp2 = new ORAC::TempFile;
+   my $t2file = $temp2->file;
+   
+   $Mon{'kappa_mon'}->obeyw("add", "in1=$t1file in2=$mask out=$t2file");
+
+   # Call stats on the masked frame
+   $Mon{'kappa_mon'}->obeyw("stats", "ndf=$t2file");
+
+   # Value of interest is the sigma
+   (my $ORAC_STATUS, my $ndsigma) = $Mon{'kappa_mon'}->get("stats", "sigma");
+
+   # calculate the readnoise
+   my $rn = $ndsigma * $gain / sqrt(2);
+
+   # Print the readnoise
+   my $rnstring = sprintf ("%4.1f", $rn);
+   orac_print ("Double correlated readnoise = $rnstring electrons ");
+   if ($rn < 30.0) {
+      orac_print "is low\n";
+   } elsif ($rn < 38) {
+      orac_print "is most excelent\n";
+   } elsif ($rn < 42) {
+      orac_print "is Nominal\n";
+   } elsif ($rn < 50) {
+      orac_print "is a little on the high side\n";
+   } else {
+      orac_print "is HIGH \n";
+   }
+
+   # Difference the 5th and 6th frames (stare mode darks)
+   $Mon{'kappa_mon'}->obeyw("sub", "in1=$file[5] in2=$file[4] out=$t1file");
+
+   # Might aswell do a bad pixel mask
+   $Mon{'kappa_mon'}->obeyw("add", "in1=$t1file in2=$mask out=$t2file");
+
+   # Do a HISTATS
+   $Mon{'kappa_mon'}->obeyw("histat", "ndf=$t2file");
+
+   # Get the Mode and median
+   ($ORAC_STATUS, my $mode) = $Mon{'kappa_mon'}->get("histat", "mode");
+   ($ORAC_STATUS, my $median) = $Mon{'kappa_mon'}->get("histat", "median");
+
+
+   # get the difference in times
+   my @frames = $Grp->members;
+
+   my $tdiff = ($frames[5]->uhdr("ORAC_EXPOSURE_TIME")) - ($frames[4]->uhdr("ORAC_EXPOSURE_TIME"));
+
+   # Calculate the dark current
+   my $dcmedian = $median * $gain / $tdiff;
+   my $dcmode = $mode * $gain / $tdiff;
+
+   # Print the Dark currents
+   my $dcmedstring = sprintf ("%5.2f", $dcmedian);
+   my $dcmodstring = sprintf ("%5.2f", $dcmode);
+
+   orac_print ("Median Dark current = $dcmedstring ");
+   if ( $dcmedian < -0.5) {
+      orac_print "is low\n";
+   } elsif ( $dcmedian > 2.0) {
+      orac_print "is high\n";
+   } else {
+      orac_print "is nominal\n";
+   }
+
+   orac_print ("Modal Dark current = $dcmodstring ");
+   if ( $dcmode < -0.5) {
+      orac_print "is low\n";
+   } elsif ( $dcmode > 2.0) {
+      orac_print "is high\n";
+   } else {
+      orac_print "is nominal\n";
+   }
+
+   orac_print "\n";
+}
