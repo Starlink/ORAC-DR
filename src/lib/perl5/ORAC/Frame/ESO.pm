@@ -191,6 +191,8 @@ sub _to_OBSERVATION_TYPE {
       $type = "OBJECT";
    } elsif ( uc( $type ) eq "SKY,FLAT" || uc( $type ) eq "FLAT,SKY" ) {
       $type = "SKY";
+   } elsif ( uc( $type ) eq "LAMP,FLAT" || uc( $type ) eq "FLAT,LAMP" ) {
+      $type = "LAMP";
    } elsif ( uc( $type ) eq "LAMP" ) {
       $type = "ARC";
    }
