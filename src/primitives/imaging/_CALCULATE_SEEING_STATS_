@@ -1,0 +1,168 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CALCULATE_SEEING_STATS_ -- Extract objects and determine
+the average FWHM, ellipticity, and position angle across a
+field.
+
+=head1 DESCRIPTION
+
+For the group file, this primitive finds good sources in the
+field and calculates the average FWHM, ellipticity, and position
+angle. It then displays these averages along with errors.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item MINPIX = INTEGER (Given)
+
+The minimum number of connected pixels needed before a set
+of pixels can be considered as an object. [12]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item * Currently uses SEXTRACTOR for source extraction.
+
+=item * The SEXTRACTOR configuration file is found in
+$ORAC_DATA_CAL/extractor_seeing_stats.sex.
+
+=item * This primitive runs only when the CALCULATE_SEEING_STATS
+internal header is true.
+
+=item * This primitive only operates on the current Group file.
+
+=back
+
+=head1 AUTHOR
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+=cut
+
+# Do only if it's time to create a catalogue.
+if( $Frm->uhdr("CALCULATE_SEEING_STATS")) {
+
+# Obtain the minimum number of pixels in the objects.
+  my $minpix = ( $_CALCULATE_SEEING_STATS_{MINPIX} || 12 );
+
+# Set the name of the results catalogue. Note that this is
+# also defined in the SExtractor sex file, so if you're going
+# to change it here, change it there too or things will mess up.
+  my $resfile = "seeing.cat";
+
+# Perform inventory on the field
+#
+# Specify the EXTRACTOR parameters.  Can't change the default minimum area
+# in pixels without editing the sex file...  Other parameters like the
+# saturation level and plate scale should be edited in the sex file.  Also
+# the name and format of the results catalogue is fixed  and is
+# in the ASCII file ${ORAC_DATA_CAL}/extractor_seeing_stats.param.
+  my $in = $Grp->file;
+  my $config = $Cal->find_file("extractor_seeing_stats.sex");
+  my $param1 = "image=$in config=$config";
+
+# Report the processing status.
+  orac_print "Detecting objects in $in with at least $minpix connected pixels\n";
+  orac_print "   at 5.0 times sky noise above sky.\n";
+
+# Derive an inventory of the images in $resfile.
+  my $extractor_status = $Mon{ "extractor" }->obeyw( "extract", "$param1" );
+
+# We can handle a failure here by making a null ARD file.  So we test a
+# local status rather than let ORAC go on to the next file.
+  if ( $extractor_status == ORAC__OK ) {
+
+# Read the results file into an array.  Obtain the number of objects.
+# Remove the results file.
+    open( my $fh_resfile, "< $resfile" ) ||
+      orac_throw "Unable to open $resfile to read the source inventory.  Error: $!.\n";
+    my @lines = <$fh_resfile>;
+    my $numobject = $#lines + 1;
+    close( $fh_resfile );
+    unlink ( $resfile );
+
+# What's pi?
+    my $pi = atan2( 1, 1 ) * 4;
+
+# Set up running sums and counts of good objects.
+    my $fwhm_sum = 0;
+    my $fwhm_sum_squ = 0;
+    my $ell_sum = 0;
+    my $ell_sum_squ = 0;
+    my $posang_sum = 0;
+    my $posang_sum_squ = 0;
+    my $count = 0;
+
+# Obtain statistics for each good object.
+    foreach my $line (@lines) {
+
+      my @fields = split /\s+/, $line;
+
+      my $ea = sqrt( $fields[4] / $pi /
+                     max( ( 1.0 - $fields[5] ), 0.99999 ) );
+      $ea = min( $ea, 0.5 * $fields[4] );
+      my $eb = $ea * ( 1.0 - $fields[5] );
+
+# Test for objects too small.  This is important, as EXTRACTOR can throw
+# out objects of zero size.
+      next if ( ( sqrt( max( 1.0E-7, $ea * $eb ) ) * $pi ) < $minpix );
+
+# Reject objects that have flags that aren't zero. These are typically
+# blended doubles or other "bad" detections that could skew the results.
+      next if( $fields[8] != 0 );
+
+# Add the FWHM, ellipticity and position angle to the sum and sum-squared
+# running stats.
+      $fwhm_sum += $fields[7];
+      $fwhm_sum_squ += $fields[7] * $fields[7];
+      $ell_sum += $fields[5];
+      $ell_sum_squ += $fields[5] * $fields[5];
+      $posang_sum += $fields[6];
+      $posang_sum_squ += $fields[6] * $fields[6];
+
+      $count++;
+
+    }
+
+# Get the plate scale so we can display the FWHM in arcseconds.
+    _GET_PLATE_SCALE_
+    my $platescale = $_GET_PLATE_SCALE_{PLATESCALE};
+
+# Do the calculations.
+    my $fwhm_mean = $fwhm_sum / $count;
+    my $fwhm_var = sqrt($fwhm_sum_squ / $count - $fwhm_mean * $fwhm_mean);
+    my $ell_mean = $ell_sum / $count;
+    my $ell_var = sqrt($ell_sum_squ / $count - $ell_mean * $ell_mean);
+    my $posang_mean = $posang_sum / $count;
+    my $posang_var = sqrt($posang_sum_squ / $count - $posang_mean * $posang_mean);
+
+    $fwhm_mean = sprintf("%.3f", $fwhm_mean * $platescale);
+    $fwhm_var = sprintf("%.3f", $fwhm_var * $platescale);
+    $ell_mean = sprintf("%.5f", $ell_mean);
+    $ell_var = sprintf("%.5f", $ell_var);
+    $posang_mean = sprintf("%.3f", $posang_mean);
+    $posang_var = sprintf("%.3f", $posang_var);
+
+# Output to the user.
+    orac_print "$count objects used for the following statistics.\n";
+    orac_print "Average FWHM: $fwhm_mean +/- $fwhm_var arcseconds.\n";
+    orac_print "Average ellipticity: $ell_mean +/- $ell_var (0 is best, lower is better).\n";
+    orac_print "Average position angle: $posang_mean +/- $posang_var degrees (CCW from pos X axis).\n";
+
+  }
+
+# Tidy output.
+  orac_print "\n";
+
+}
