@@ -1154,7 +1154,7 @@ sub _concat_all_relevant_files {
 	  # If statement
 	  # This is really going to confuse the line counting
 	  push(@$contents, 
-	       'croak("There were ambiguities in file selection and ORAC_OBSERVATION_MODE header was not set") unless defined $Frm->uhdr("ORAC_OBSERVATION_MODE");',
+	       'die("There were ambiguities in file selection and ORAC_OBSERVATION_MODE header was not set") unless defined $Frm->uhdr("ORAC_OBSERVATION_MODE");',
 	       "if (defined \$Frm->uhdr(\"ORAC_OBSERVATION_MODE\") && \$Frm->uhdr(\"ORAC_OBSERVATION_MODE\") eq \"$mode\") {\n");
 	  push(@$contents, "#line 0 $best{$mode}\n");
 	  # The primitive/recipe
