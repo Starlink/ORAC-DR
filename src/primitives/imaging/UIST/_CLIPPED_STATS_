@@ -1,0 +1,162 @@
+#+
+# Name:
+#    _CLIPPED_STATS_
+#
+# Purpose:
+#    Finds the clipped mean and standard deviation of a frame.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    Use progressive sigma-clipping to find a representative mean and
+#    standard deviation of a frame.  The default clipping thresholds
+#    give a reasonable approximation to the mode.
+#
+#    This variant is needed because vignetting in the UIST data can lead
+#    to extreme values which despite multiple clips still biases the
+#    standard deviation.  It uses the central 90% (linear) of the frame
+#    to avoid the aberrant pixels if the axis length is 512 or 1024,
+#    i.e. is not a mosaic.
+#
+# Arguments:
+#    CLIP = CHARACTER (Read)
+#       The clipping limits as a comma-separated list. ["2,3,3"]
+#    MEAN = REAL (Write)
+#       The calculated clipped mean.
+#    SIGMA = REAL (Write)
+#       The calculated clipped standard deviation.
+#    NUMBER = INTEGER (Write)
+#       The number of good pixels used to derive the statistics.
+#
+# Notes:
+#    -  This primitive is suitable for the UIST instrument.
+#    -  Only operates on OBJECT, SKY, DARK, and FLAT frames.
+#
+# Tasks:
+#    KAPPA: NDFTRACE, STATS.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC, Starlink)
+#
+# Copyright:
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Test whether or not this is an object frame.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ||
+         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "DARK" ||
+         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "FLAT" ) {
+
+# Derive the section size.
+# ========================
+
+# Obtain the dimensions of the supplied frame.
+       my $ndf = $Frm->file;
+       $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$ndf" );
+       my ( $ORAC_STATUS, @dims ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "dims" );
+
+# Check that it is not a mosaic.
+       my $bounds = "";
+       my $scale = 0.9;
+       if ( ( $dims[ 0 ] == 512 || $dims[ 0 ] == 1024 ) &&
+            ( $dims[ 1 ] == 512 || $dims[ 1 ] == 1024 ) ) {
+           my $xsize = int( $scale * $dims[ 0 ] );
+           my $ysize = int( $scale * $dims[ 1 ] );
+           $bounds = "(~${xsize},~${ysize})";
+       }
+
+# Obtain the statistics.
+# ======================
+
+# Specify the parameters for the statistics task.
+       my $clip = ( $_CLIPPED_STATS_{CLIP} || "2,3,3" );
+       my $param1 = "ndf=$ndf$bounds";
+       my $param2 = "clip=[" . $clip . "]";
+
+# Calculate the clipped mean of the frame.
+       $Mon{ "kappa_mon" }->obeyw( "stats", "$param1 $param2" );
+
+# Extract the clipped mean and standard deviation of the frames.
+       ( my $ORAC_STATUS, my $clipmean ) = $Mon{ "kappa_mon" }->get( "stats", "mean" );
+       ( $ORAC_STATUS, my $clipsigma ) = $Mon{ "kappa_mon" }->get( "stats", "sigma" );
+       ( $ORAC_STATUS, my $numgood ) = $Mon{ "kappa_mon" }->get( "stats", "numgood" );
+
+# Export the values.
+       $_CLIPPED_STATS_{MEAN} = $clipmean;
+       $_CLIPPED_STATS_{SIGMA} = $clipsigma;
+       $_CLIPPED_STATS_{NUMBER} = $numgood;
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_CLIPPED_STATS_ -- Finds the clipped mean and standard deviation of a frame.
+
+=head1 DESCRIPTION
+
+Use progressive sigma-clipping to find a representative mean and
+standard deviation of a frame.  The default clipping thresholds
+give a reasonable approximation to the mode.
+
+This variant is needed because vignetting in the UIST data can lead
+to extreme values which despite multiple clips still biases the
+standard deviation.  It uses the central 90% (linear) of the frame
+to avoid the aberrant pixels if the axis length is 512 or 1024,
+I<i.e.> is not a mosaic.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item CLIP = CHARACTER (Read)
+
+The clipping limits as a comma-separated list. ["2,3,3"]
+
+=item MEAN = REAL (Write)
+
+The calculated clipped mean.
+
+=item SIGMA = REAL (Write)
+
+The calculated clipped standard deviation.
+
+=item NUMBER = INTEGER (Write)
+
+The number of good pixels used to derive the statistics.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for the UIST instrument.
+
+=item *
+
+Only operates on OBJECT, SKY, DARK, and FLAT frames.
+
+=back
+
+=head1 TASKS
+
+KAPPA: NDFTRACE, STATS.
+
+=head1 AUTHORS
+
+Malcolm J. Currie (JAC, Starlink) <mjc@star.rl.ac.uk>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
