@@ -45,6 +45,56 @@ use strict;
 use NDF;
 use Starlink::HDSPACK qw/copobj/;
 
+# Translation tables for CGS4 should go here.
+my %hdr = (
+            CONFIGURATION_INDEX => "CNFINDEX",
+            DETECTOR_INDEX  => "DINDEX",
+            DETECTOR_MODE   => "DETMODE",
+            DIM1            => "DCOLUMNS",
+            DIM2            => "DROWS",
+            EXP_TIME        => "DEXPTIME",
+            GRATING_NAME    => "GRATING",
+            GRATING_ORDER   => "GORDER",
+            GRATING_WAVELENGTH => "GLAMBDA",
+            NSCAN_POSITIONS => "DETNINCR",
+            NUMBER_OF_EXPOSURES => "NEXP",
+            SCAN_INCREMENT  => "DETINCR",
+            SLIT_ANGLE      => "SANGLE",
+            SLIT_NAME       => "SLIT",
+            TDECOFF         => "DECOFF",
+            TRAOFF          => "RAOFF",
+            UTDATE          => "IDATE"
+	  );
+
+# Take this lookup table and generate methods that can be sub-classed by
+# other instruments.  Have to use the inherited version so that the new
+# subs appear in this class.
+ORAC::Frame::CGS4->_generate_orac_lookup_methods( \%hdr );
+
+# Certain headers appear in each .In sub-frame.  Special translation
+# rules are required to represent the combined image, and thus should
+# not appear in the above hash.  For example, the start time is that of
+# the first sub-image, and the end time that of the sub-image.  These
+# translation methods make use 
+
+sub _to_UTEND {
+  my $self = shift;
+  $self->hdr->{ $self->nfiles }->{UTEND};
+}
+
+sub _from_UTEND {
+  "UTEND", $_[0]->uhdr("ORAC_UTEND");
+}
+
+sub _to_UTSTART {
+  my $self = shift;
+  $self->hdr->{ 1 }->{UTSTART};
+}
+
+sub _from_UTSTART {
+  "UTSTART", $_[0]->uhdr("ORAC_UTSTART");
+}
+
 
 =head1 PUBLIC METHODS
 
