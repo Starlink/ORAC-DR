@@ -52,9 +52,7 @@ ORAC::Xorac - routines called from the Xoracdr launcher GUI
   xorac_recipe_window( );
   xorac_calib( \%options );
   xorac_select_recipe(  );
-  xorac_editor( $diectory, $recipe );
-  xorac_exit_normally;
-  xorac_exit_abnormally;
+  xorac_editor( $diectory, $recipe );x
 
 =head1 DESCRIPTION
 
@@ -104,8 +102,7 @@ use vars qw/$VERSION @EXPORT @ISA /;
 @EXPORT = qw/ xorac_update_progress
               xorac_setenv xorac_log_window xorac_recipe_window
               xorac_about xorac_pause xorac_help xorac_select_recipe
-	      xorac_calib xorac_select_filelist xorac_editor
-	      xorac_exit_normally xorac_exit_abnormally /;
+	      xorac_calib xorac_select_filelist xorac_editor /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
@@ -1366,49 +1363,6 @@ sub xorac_select_filelist {
 					  } );
   $ok_button->grid( -column => 1, -row => 0, -sticky => 'e' );
   
-}
-
- 
-# xorac_exit_normally() ---------------------------------------------------
-
-=item B<xorac_exit_normally>
-
-This subroutine is a wrapper for orac_exit_normally which destroys the
-Tk::MainWindow cleaning using ORAC::Event->destroy("Tk")
-
-  &xorac_exit_normally;
-
-=cut
-
-sub xorac_exit_normally {
-  my $signal = '';
-  $signal = shift if @_;
-
-  # exit
-  orac_exit_normally( $signal );;
- 
-}
-
-# xorac_exit_abnormally() ---------------------------------------------------
-
-=item B<xorac_exit_normally>
-
-This subroutine is a wrapper for orac_exit_abnormally which destroys the
-Tk::MainWindow cleaning using ORAC::Event->destroy("Tk")
-
-  &xorac_exit_abnormally;
-
-=cut
-
-sub xorac_exit_abnormally {
-  
-  # pass signal
-  my $signal = '';
-  $signal = shift if @_;
-  
-  # exit
-  &orac_exit_abnormally( $signal );
- 
 }
 
 

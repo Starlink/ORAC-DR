@@ -13,8 +13,8 @@ ORAC::Basic - some implementation subroutines
   use ORAC::Basic;
 
   $Display = orac_setup_display;
-  orac_exit_normally;
-  orac_exit_abnormally;
+  orac_exit_normally($message);
+  orac_exit_abnormally($message);
 
 =head1 DESCRIPTION
 
@@ -32,6 +32,8 @@ use File::Copy;
 
 use ORAC::Print;
 use ORAC::Display;
+use ORAC::Error qw/:try/;
+use ORAC::Constants qw/:status/;
 
 @ISA = qw(Exporter);
 
@@ -113,7 +115,7 @@ Exit handler for oracdr.
 
 sub orac_exit_normally {
   my $message = '';
-  $message = shift if @_;
+  ( $message ) = shift if @_;
 
   # We are dying, and don't care about any further outstanding errors
   # flush the queue so we have a clean exit.
@@ -140,6 +142,8 @@ sub orac_exit_normally {
   ORAC::Event->destroy("Tk");
   ORAC::Event->unregister("Tk");
 
+  # Flush the error stack if all we have is an ORAC::Error::UserAbort  
+ 
   orac_print ("\nOrac says: $message","red") if $message ne '';
   orac_print ("\nOrac says: Goodbye\n","red");
   exit;
