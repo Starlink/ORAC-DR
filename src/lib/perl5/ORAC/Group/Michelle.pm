@@ -41,9 +41,9 @@ use vars qw/$VERSION/;
 # Translation tables for Michelle should go here.
 # First the imaging...
 my %hdr = (
-            DEC_SCALE            => "PIXELSIZ",
+            DEC_SCALE            => "CDELT2",
             DEC_TELESCOPE_OFFSET => "TDECOFF",
-            RA_SCALE             => "PIXELSIZ",
+            RA_SCALE             => "CDELT1",
             RA_TELESCOPE_OFFSET  => "TRAOFF",
 
 # then the spectroscopy.

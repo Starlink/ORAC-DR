@@ -45,9 +45,9 @@ use vars qw/$VERSION/;
 # First the imaging...
 my %hdr = (
             RECIPE               => "RECIPE",
-            DEC_SCALE            => "PIXELSIZ",
+            DEC_SCALE            => "CDELT2",
             DEC_TELESCOPE_OFFSET => "TDECOFF",
-            RA_SCALE             => "PIXELSIZ",
+            RA_SCALE             => "CDELT1",
             RA_TELESCOPE_OFFSET  => "TRAOFF",
 
 # then the spectroscopy...
