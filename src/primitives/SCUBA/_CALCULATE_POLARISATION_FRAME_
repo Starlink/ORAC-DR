@@ -41,6 +41,10 @@ THETA in an ORAC extension if an _I suffix is found
 A _I suffix should be associated with TYPE=VECTOR if
 required.  [A VECTOR plot displays P and THETA over an I image]
 
+Additionally, the P and theta components will be sent to the
+display system separately (P and THETA suffices) - this is primarily
+intended for HISTOGRAM output.
+
 Currently it is not possible to display the Q and U images
 automatically.
 
@@ -59,6 +63,10 @@ use NDF; # Import HDS commands
 
 # Read arguments
 $smooth = ( $_CALCULATE_POLARISATION_FRAME_{SMOOTH} || 5.0);
+
+# Create dummy frame object to store P and THETA output
+$P_frm = $Frm->new;
+$Theta_frm = $Frm->new;
 
 # Loop over files
 
@@ -308,8 +316,34 @@ for my $i (1..$Frm->nfiles) {
   # Update the Frame object
   $Frm->file($i, $out);
 
+  # In order to display P and THETA independently as histograms
+  # I need to populate some dummy frames and copy the images to
+  # separate files
+
+  ($junk, $nout) = $Frm->inout('_theta',$i);
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=${iqu_out}.theta out=${nout}");
+  $Theta_frm->file($i, "${nout}");
+  ($junk, $nout) = $Frm->inout('_p',$i);
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=${out}.more.orac.p out=${nout}");
+  $P_frm->file($i, "${nout}");
+
 }
 
-# Display
+
+# Display P and theta
+$Display->display_data($P_frm) if defined $Display;
+$Display->display_data($Theta_frm) if defined $Display;
+
+
+# Tidy up the P and theta arrays since they are superfluous
+foreach my $file ($P_frm->files, $Theta_frm->files) {
+  $Mon{ndfpack_mon}->obeyw("erase","object=$file ok=true");   
+}
+
+# Now undef the temporary frames
+$P_frm = undef;
+$Theta_frm = undef;
+
+# Display the main image
 
 $Display->display_data($Frm) if defined $Display;
