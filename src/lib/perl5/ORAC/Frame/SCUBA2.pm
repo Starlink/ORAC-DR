@@ -43,9 +43,6 @@ use base qw/ ORAC::Frame::NDF /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
-# Alias file_from_bits as pattern_from_bits.
-*pattern_from_bits = \&file_from_bits;
-
 # standard error module and turn on strict
 use Carp;
 use strict;
@@ -235,9 +232,10 @@ be supplied.
 
 Returns multiple file names (one for each array) and
 throws an exception if called in a scalar context. The filename
-returned will include the path relative to ORAC_DATA_ROOT.
+returned will include the path relative to ORAC_DATA_IN, where
+ORAC_DATA_IN is the directory containing the flag files.
 
-The format is "ok/YYYYMMDD/sxYYYYMMDD_NNNNN.ok", where "x" is
+The format is "sxYYYYMMDD_NNNNN.ok", where "x" is
 a-d for SCUBA2_LONG and e-h for SCUBA2_SHORT.
 
 =cut
@@ -248,13 +246,13 @@ sub flag_from_bits {
   my $prefix = shift;
   my $obsnum = shift;
 
-  croak "file_from_bits returns more than one flag file name and does not support scalar context (For debugging reasons)" unless wantarray;
+  croak "flag_from_bits returns more than one flag file name and does not support scalar context (For debugging reasons)" unless wantarray;
 
   # pad with leading zeroes
   my $padnum = $self->_padnum( $obsnum );
 
   my @flags = map {
-    "ok/$prefix/s". $_ . $prefix . "_$padnum" . ".ok"
+    "s". $_ . $prefix . "_$padnum" . ".ok"
   } ( $self->_dacodes );
 
   # SCUBA naming
