@@ -54,15 +54,54 @@ object.
 
 =item B<flatindex>
 
-Uses F<rules.flat_im> and <rules.flat_sp>
+Uses F<rules.flat_im> and <rules.flat_sp>, and sets the index
+file for imaging mode to be F<index.flat_im> and for spectroscopy
+and IFU to be F<index.flat_sp>.
 
 =cut
 
 
 sub flatindex {
   my $self = shift;
-  my $index = $self->SUPER::flatindex;
-  $self->_set_index_rules($index, 'rules.flat_im', 'rules.flat_sp');
+
+  if (@_) { $self->{FlatIndex} = shift; }
+
+  if( uc($self->thing->{INSTMODE}) eq 'IMAGING' ) {
+    $self->flatindex_im( $self->{FlatIndex} );
+  } else {
+    $self->flatindex_sp( $self->{FlatIndex} );
+  }
+
+  return $self->{FlatIndex};
+
+}
+
+sub flatindex_im {
+  my $self = shift;
+
+  if( @_ ) { $self->{FlatIndex} = shift; }
+
+  unless ( defined $self->{FlatIndex} ) {
+    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.flat_im";
+    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.flat_im";
+    $self->{FlatIndex} = new ORAC::Index( $indexfile, $rulesfile );
+  }
+
+  return $self->{FlatIndex};
+}
+
+sub flatindex_sp {
+  my $self = shift;
+
+  if( @_ ) { $self->{FlatIndex} = shift; }
+
+  unless( defined $self->{FlatIndex} ) {
+    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.flat_sp";
+    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.flat_sp";
+    $self->{FlatIndex} = new ORAC::Index( $indexfile, $rulesfile );
+  }
+
+  return $self->{FlatIndex};
 }
 
 =item B<skyindex>
