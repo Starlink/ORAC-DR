@@ -521,6 +521,11 @@ sub verify {
     unless (scalar(@_)==2 || scalar(@_)== 3);
 
   my $name = shift;
+
+  # Return 0 if name is undefined since it obviously doesnt
+  # agree with the rules
+  return 0 unless defined $name;
+
   my $hashref = shift;
   
   my $warn = 1;
