@@ -13,27 +13,14 @@ Jim Lewis <jrl@ast.cam.ac.uk>
 
 =cut
 
-# oracdr will blow away the group file if this is the first frame
-# anyway (I think)
-
-# Orrible hack until Jim puts this in the Group/WFCAM.pm
-# Ditto below with the readnoise file
-#my $groupname;
-#if ($Grp->name != 0) {
-#    $groupname = $Grp->name;
-#} else {
-#    $groupname = ($Grp->members)[0]->hdr("GRPNUM");
-#}
 my $groupname = sprintf("%s_%05d",$Frm->hdr("ORACUT"),$Grp->name);
-
-
-#my $groupfile = $Grp->file;
 my $groupfile = "pixstats_" . $groupname . ".fit";
 my $filename = $Frm->file;
 
+_DISPLAY_IMAGE_
 _PIXSTATS_
 
-my $num = 1 + $Grp->num;
+my $num = 1 + $Grp->subgrp("OBSTYPE"=>"DARK")->num;
 if ($num > 2) {
 
     # Extract the relevant plane from the pixstats cube (variance)
@@ -74,6 +61,12 @@ if ($num > 2) {
 
     # Loop for each channel and get the read noise
 
+    my $logopen = ">readnoise_" . $groupname . ".log";
+    my $logit = 1;
+    if (! open LOG,$logopen) {
+	orac_warn("Can't open readnoise log!!\n");
+        $logit = 0;
+    }
     open $fh,$tmpfile->file;
     my $mean = 0;
     my $sig = 0;
@@ -87,7 +80,7 @@ if ($num > 2) {
 
         $line = sprintf("Channel %d [%d:%d,%d:%d] readnoise is: %5.2f +/- %5.2f electrons\n",$channum,$ixmin,$ixmax,$iymin,$iymax,$mean,$sig);
         orac_print($line);
-#        print LOG $line;
+        print LOG $line if ($logit);
     }
 
     # Now do the stat for the whole map...
@@ -96,11 +89,16 @@ if ($num > 2) {
     if ($retval != CIR_OK) {
         orac_throw("CIR_MEANSIG: Failed in _READNOISE_\n$errmsg\n");
     }
-
+    my $tmpfrm = $Frm->new($rnfile);
+    {
+	my $Frm = $tmpfrm;
+        _DISPLAY_IMAGE_
+    }
     $line = sprintf("Overall Readnoise is: %5.2f +/- %5.2f electrons\n",
         $mean,$sig);
     orac_print($line);
-#    print LOG $line;
+    print LOG $line if ($logit);
+    close LOG if ($logit);
 
-    _FILE_READNOISE_
+    _FILE_READNOISE_ VALUE=$mean
 }
