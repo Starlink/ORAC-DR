@@ -1,0 +1,71 @@
+# _NOD_APHOT_MAG_         -*- perl -*-
+# 
+# Computes photometry for the individual frmaes and mosaic of a NOD
+# jitter.  It computes photometry for both the positive and negative
+# point sources.
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->hdr( "OBSTYPE" ) =~ /OBJECT/ ) {
+
+# Determine whether it is time to do aperture photometry.
+       my $do_aphot = $Frm->hdr( "DO_APHOT" );
+       if ( $do_aphot ) {
+
+# Make the difference group the current standard group by starting a new context.
+          my $Grp = $Grp->uhdr( "DIFFERENCE_GROUP" );
+
+# Obtain the instrument name, and hence the header keywords for the
+# telescope offsets.  
+          my ( $raname, $decname, $xoff, $yoff );
+          if ( $Grp->hdr( "INSTRUME" ) =~ /^UFTI/ ) {
+             $raname = "TRAOFF";
+             $decname = "TDECOFF";
+          } else {
+             $raname = "RAOFF";
+             $decname = "DECOFF";
+          }
+
+# Set the group offsets to be zero.  Leave the position and comment unchanged.
+          my $file = $Grp->file;
+          my $header = "ndf=$file keyword=$raname edit=update value=0 position=!";
+          $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$header comment=\\\$C" );
+          $header = "ndf=$file keyword=$decname edit=update value=0 position=!";
+          $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$header comment=\\\$C" );
+
+# Also update the header values.
+          $Grp->hdr( $raname, 0 );
+          $Grp->hdr( $decname, 0 );
+
+# Obtain the offsets between the offset centre and positive images.  Note that this is about
+# the centre for the mosaic.
+          my $xoff = 0.5 * $Grp->frame( 0 )->hdr( "XOFFSET_DIFFERENCE" );
+          my $yoff = 0.5 * $Grp->frame( 0 )->hdr( "YOFFSET_DIFFERENCE" );
+
+# Obtain the cycle number.  Default to zero if undefined, so that recipes
+# which do not support this feature will continue to work.
+          my $cycleno = $Frm->hdr( "CYCLE_NUMBER" );
+          $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+# Select those members in the current cycle.
+          my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+
+# Not sure why but the group file is not propagated to the subgrp (subgrp of a subgrp?),
+# so copy the group file.
+          $cycleGrp->file( $Grp->file );
+
+# Start a new Grp context.
+          {
+             my $Grp = $cycleGrp;
+
+# Measure the positive images.
+             _FIXED_APERTURE_PHOTOMETRY_ POSITIVE=1 APERTURE=5.0 INNER=1.2 OUTER=1.5 XOFF=$xoff YOFF=$yoff SUFFIX=_pos
+
+# Obtain the offsets between the offset centre and positive images.
+             $xoff = -$xoff;
+             $yoff = -$yoff;
+
+# Measure the negative images.
+             _FIXED_APERTURE_PHOTOMETRY_ POSITIVE=0 APERTURE=5.0 INNER=1.2 OUTER=1.5 XOFF=$xoff YOFF=$yoff SUFFIX=_neg
+          }
+       }
+    }

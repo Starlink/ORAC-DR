@@ -1,0 +1,72 @@
+# _NOD_SELF_FLAT_STEER_
+#
+# Control processing for NOD_SELF_FLAT recipes, in particular when to
+# subtract pairs, make a flat, register/mosaic the nodded frames, and
+# perform aperture photometry.
+#
+# Arguments:
+#    NUMBER = INTEGER (Given)
+#       The number of frames in the jitter.  It must be a multiple of 4
+#       otherwise 4 is assumed.  [4]
+#
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ) {
+
+# Obtain the number of frames in the jitter pattern.
+       my $number = max( 4, ( $_NOD_SELF_FLAT_STEER_{NUMBER} || 4 ) );
+       if ( $number % 4 != 0 ) {
+          $number = 4; 
+       }
+
+# Specify during processing of which frames should the pairs be subtracted.
+       if ( ( $Grp->num + 1 ) % 2 == 0 ) {
+          $Frm->hdr( "DIFFERENCE_PAIR", 1 );
+
+# A difference is to be made, but in what order.  PAIR_ORDER = 1 means
+# take the second from the first of the pair.  PAIR_ORDER = 0 is the
+# reverse.  Put another way, the order is ABBA as the B is always taken
+# from the A.
+          if ( ( $Grp->num + 1 ) % 4 == 0 ) {
+             $Frm->hdr( "PAIR_ORDER", 0 );
+          } else {
+             $Frm->hdr( "PAIR_ORDER", 1 );
+          }
+          
+       } else {
+          $Frm->hdr( "DIFFERENCE_PAIR", 0 );
+       }
+
+# Specify during processing of which frames should the flat be created.
+# Just use the first flat for all cycles.  This will save time.
+       if ( ($Grp->num + 1) == $number ) {
+          $Frm->hdr( "MAKE_FLAT", 1 );
+       } else {
+          $Frm->hdr( "MAKE_FLAT", 0 );
+       }
+
+# Specify during processing of which frames should the flat be applied
+# a mosaic created, and aperture photometry performed.
+       if ( ( $Grp->num + 1 ) % $number == 0 ) {
+          $Frm->hdr( "FLAT_DIVIDE", 1 );
+          $Frm->hdr( "MAKE_MOSAIC", 1 );
+          $Frm->hdr( "MASK_OBJECTS", 1 );
+          $Frm->hdr( "DO_APHOT", 1 );
+       
+       } else {
+          $Frm->hdr( "FLAT_DIVIDE", 0 );
+          $Frm->hdr( "MAKE_MOSAIC", 0 );
+          $Frm->hdr( "MASK_OBJECTS", 0 );
+          $Frm->hdr( "DO_APHOT", 0 );
+       }
+
+# Insert the cycle number of the set of frames. 
+       $Frm->hdr( "CYCLE_NUMBER", int( $Grp->num / $number ) );
+
+# Insert the number of frames in the jitter.
+       $Frm->hdr( "JITTER_NUMBER", $number );
+
+# All frames are target.  Some more-general primitives need to select 
+# targets from sky frames.
+       $Frm->hdr( "TARGET_OR_SKY", "target" );
+    }
