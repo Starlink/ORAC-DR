@@ -1,21 +1,23 @@
-
-
 # _IRCAM_HELLO_
 #
 # Every IRCAM recipe must do this.
     _DISPLAY_FRAME_IMAGE_
 
-# Apply non-linearity correction.
-# ==============================
+# Copy the original data.
+# =======================
+
+# IRCAM raw data are in the same directory as the reduced data, and are protected
+# against all but read access.  Thus to switch on history recording and set the 
+# origin we have to work on an output copy of the array.
 
 # Generate list of input and output filenames.
-    ($in, $out) = $Frm->inout("_nl");
+    ($in, $out) = $Frm->inout("_cl");
 
-# Evaluate the expression.
-    $Mon{"kappa_mon"}->obeyw("maths","out=$out ia=$in exp='IA+3.3E-06*IA*IA'");
+# Copy the data.
+    $Mon{"ndfpack_mon"}->obeyw("ndfcopy","in=$in out=$out");
 
 # Report the processing status.
-    orac_print "Orac says: frame $in has non-linearity correction applied in $out\n";
+    orac_print "Orac says: frame $in copied to $out\n";
 
 # Now update the output filename in the Frame object.
     $Frm->file($out);
@@ -24,8 +26,8 @@
 # ==========================
 
 # Read readout bounds from the headers.
-    $x1 = $Frm->hdr(RDOUT_X1);
-    $y1 = $Frm->hdr(RDOUT_Y1);
+    $x1 = $Frm->hdr( "RDOUT_X1" );
+    $y1 = $Frm->hdr( "RDOUT_Y1" );
 
 # Set the parameters for the task.
     $in = $Frm->file;
@@ -44,6 +46,31 @@
 # Report the processing status.
     orac_print "Orac says: frame $in has history recording enabled\n";
 
-# Report processing status.
-    orac_print "\nGlobal IRCAM tasks performed\n\n";
+# Apply non-linearity correction.
+# ===============================
 
+# Non-linearity correction should only be applied a defined DET_BIAS value.
+    $det_bias = $Frm->hdr( "DET_BIAS" );
+    if ( $det_bias > 0.61 && $det_bias < 0.63 ) {
+
+# Generate list of input and output filenames.
+       ($in, $out) = $Frm->inout("_nl");
+
+# Evaluate the expression.
+       $Mon{"kappa_mon"}->obeyw("maths","out=$out ia=$in exp='IA+3.3E-06*IA*IA'");
+
+# Correct the FITS header indicating that a linearity correction has been applied.
+       $header = "ndf=$out edit=update";
+       $hidden = "keyword=LINEAR value=F comment='Linearisation enabled' position=LINEAR"; 
+       $Mon{"ndfpack_mon"}->obeyw("fitsmod","$header $hidden");
+
+# Report the processing status.
+       orac_print "Orac says: frame $in has non-linearity correction applied in $out\n";
+
+# Now update the output filename in the Frame object.
+       $Frm->file($out);
+
+    }
+
+# Report processing status.
+    orac_print "Global IRCAM tasks performed\n";
