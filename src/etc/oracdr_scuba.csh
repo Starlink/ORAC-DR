@@ -68,6 +68,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.7  2000/08/08 21:40:08  timj
+#     Realise that csh if's do not short circuit ($orachost)
+#
 #     Revision 1.6  2000/04/07 20:02:25  timj
 #     Force -loop wait -skip at JCMT
 #
@@ -296,10 +299,13 @@ setenv ORAC_SUN  231
 source $ORAC_DIR/etc/oracdr_start.csh
 
 # Print additional warning if required
-if ($?orachost && $orachost != 'mamo') then
-   echo '***************************************************'
-   echo '**** PLEASE USE MAMO FOR ORAC-DR DATA REDUCTION ***'
-   echo '***************************************************'
+if ($?orachost) then 
+   # csh does not short circuit so we cant combine the ifs
+   if ($orachost != 'mamo') then
+       echo '***************************************************'
+       echo '**** PLEASE USE MAMO FOR ORAC-DR DATA REDUCTION ***'
+       echo '***************************************************'
+   endif
 endif
 
 
