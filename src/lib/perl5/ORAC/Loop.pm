@@ -15,7 +15,7 @@ ORAC::Loop - data loops for ORACDR
   $frm = orac_loop_wait($class, $utdate, \@list, $skip);
 
   $frm = orac_loop_flag($class, $utdate, \@list, $skip);
-  
+
   $frm = orac_loop_file($class, \@list );
 
 =head1 DESCRIPTION
@@ -141,7 +141,7 @@ sub orac_loop_list {
       # that that's a filename. Just check to see if that file exists.
       # If it does, exit out of this loop via 'last', otherwise skip
       # to the next observation number.
-      last if -e "$ENV{ORAC_DATA_IN}/$pattern";
+      last if -e File::Spec->catfile($ENV{ORAC_DATA_IN},$pattern);
       orac_warn("Input file $pattern not found -- skipping\n");
     }
 
@@ -265,7 +265,7 @@ sub orac_loop_wait {
   my $pause = 2.0;   # Time between checks
   my $dot   = 1;     # Number of pauses for each dot printed
 
-  my $actual = $ENV{ORAC_DATA_IN} . "/$fname";
+  my $actual = File::Spec->catfile($ENV{ORAC_DATA_IN},"$fname");
 
   my $old = 0;   # Initial size of the file
   my $npauses = 0; # number of pauses so far (reset each time dot printed)
@@ -325,7 +325,8 @@ sub orac_loop_wait {
           # Create new filename. We can do this string concatenation
           # straight off because we know that pattern_from_bits()
           # won't return a regex, since we checked for that above.
-          $actual = $ENV{ORAC_DATA_IN} . "/" . $Frm->pattern_from_bits($utdate, $next);
+          $actual = File::Spec->catfile($ENV{ORAC_DATA_IN},
+					$Frm->pattern_from_bits($utdate,$next));
 
           orac_print("Next available observation is number $obsno");
 
@@ -408,11 +409,17 @@ sub orac_loop_flag {
   # Create a new frame in class
   my $Frm = $class->new;
 
-  # Construct the flag name from the observation number
-  my $fname = $Frm->flag_from_bits($utdate, $obsno);
+  # Construct the flag name(s) from the observation number
+  my @fnames = $Frm->flag_from_bits($utdate, $obsno);
 
   # Now check for the file
-  orac_print("Checking for next data file via flag: $fname");
+  my $text;
+  if (@fnames > 1) {
+    $text = "$fnames[0] to $fnames[-1]";
+  } else {
+    $text = $fnames[0];
+  }
+  orac_print("Checking for next data file via flag: $text");
 
   # Now loop until the file appears
 
@@ -420,12 +427,12 @@ sub orac_loop_flag {
   my $timer = 0.0;
   my $pause = 2.0;   # Pause for 2 seconds
 
-  my $actual = $ENV{ORAC_DATA_IN} . "/$fname";
+  my @actual = map {File::Spec->catfile($ENV{ORAC_DATA_IN},$_)} @fnames;
 
   my $old = 0;   # Initial size of the file
 
   # Dont need to worry about file size
-  while (! -e $actual) {
+  while (! &_files_there( @actual ) ) {
 
     if ($skip) {
 
@@ -444,7 +451,7 @@ sub orac_loop_flag {
       # Check to see if something was found
       if (defined $next) {
 
-        # This indicates that an observation iss available
+        # This indicates that an observation is available
         # Now need to modify the name of the file that the loop is
         # searching for ($actual) [this is done many times in the loop and
         # twice in this routine!]. Do not need to reset the timer since
@@ -452,14 +459,15 @@ sub orac_loop_flag {
 
         if ($next != $obsno) {
 
-          orac_print ("\nFile $fname appears to be missing\n");
+          orac_print ("\nFile $fnames[0] appears to be missing\n");
 
           # Okay - it wasnt the expected observation number
           $obsno = $next;
           $obsref->[0] = $obsno;  # And set the array value
 
-          # Create new filename
-          $actual = $ENV{ORAC_DATA_IN} . "/" . $Frm->flag_from_bits($utdate, $next);
+          # Create new filenames
+	  @actual = map { File::Spec->catfile( $ENV{ORAC_DATA_IN}, $_ ) }
+	                  $Frm->flag_from_bits($utdate, $next);
 
           orac_print("Next available observation is number $obsno");
 
@@ -476,7 +484,7 @@ sub orac_loop_flag {
     # Return bad status if timer hits timeout
     if ($timer > $timeout) {
       orac_print "\n";
-      orac_err("Timeout whilst waiting for next data file: $fname\n");
+      orac_err("Timeout whilst waiting for next data file: $fnames[0]\n");
       return undef;
     }
 
@@ -507,15 +515,17 @@ sub orac_loop_flag {
 
 }
 
-=item B<orac_loop_list>
+=item B<orac_loop_file>
 
 Takes a list of files and returns back a frame object
-for each file (one frame object per call)
+for the first  file, removing it from the input array.
 
   $Frm = orac_loop_file($class, \@array, $skip );
 
 undef is returned on error or when all members of the
 list have been returned.
+
+Call repeatedly to retrieve all the frame objects.
 
 =cut
 
@@ -528,101 +538,16 @@ sub orac_loop_file {
 
   # grab a filname from the observation array
   my $fname = shift(@$obsref);
-  my $oname; # original filename.
 
   # If filename is undef return undef
   return undef unless defined $fname;
+  orac_print("Checking for next data file: $fname");
 
   # Create a new frame in class
   my $Frm = $class->new;
 
-  # Now we have to decide whether we have a FITS file or not
-  # Just ask it for the NDF file name
-  # If the converted file already exists  then do nothing.
-  # If the input format matches the output format just return the
-  # name.
-  # Have to remember to do this everywhere we need $CONVERT since
-  # we are not using a global constructor.
-  unless (defined $CONVERT) { $CONVERT = new ORAC::Convert; }
-
-  # Read the Input and Output formats from the Frame object
-  my $infmt = $Frm->rawformat;
-  my $outfmt = $Frm->format;
-
-  # Ask for the filename (converted if required)
-  ( $oname, $fname ) = $CONVERT->convert($ENV{ORAC_DATA_IN} ."/$fname", { IN => $infmt,
-                                                                          OUT => $outfmt,
-                                                                          OVERWRITE => 0
-                                                                        });
-
-  # Check state of $fname
-  unless (defined $fname) {
-    orac_err("Error in data conversion tool\n");
-    return undef;
-  }
-
-  # Try to do this in a more structured way so that we can tell
-  # Why something fails
-
-  # If the file exists in the current directory then we dont care
-  # what happens (eg it has been converted or a link of the correct
-  # name exists with a file at the other end
-
-  # We have to make sure the file is here else the Frame configuration
-  # will not work correctly.
-
-  unless (-e $fname) {
-
-    # Now check in the ORAC_DATA_IN directory to make sure it is there
-    unless (-e $ENV{ORAC_DATA_IN} ."/$fname") {
-      orac_err("Requested file ($fname) can not be found in ORAC_DATA_IN\n");
-      return undef;
-    }
-
-    # Now if there is a link already in ORAC_DATA_OUT we need to
-    # read it to find out where it is pointing (we will only get
-    # to this point if the link does not point to anything at the
-    # other end since -e follows links
-    if (-l $fname) {
-      my $nowhere = readlink($fname);
-      unless (defined $nowhere) {
-        orac_err("Error reading through link from ORAC_DATA_OUT/$fname:\n");
-        orac_err("$!\n");
-      } else {
-        orac_err("File $fname does exist in ORAC_DATA_OUT but is a link\n");
-        orac_err("pointing to nowhere. It points to: $nowhere\n");	
-      }
-      return undef;
-    }
-
-    # Now we should try to create a symlink and say something
-    # if it fails
-    symlink($ENV{ORAC_DATA_IN} . "/$fname", $fname) ||
-      do {
-        orac_err("Error creating symlink from ORAC_DATA_OUT to '$ENV{ORAC_DATA_IN}/$fname'\n");
-        orac_err("$!\n");
-        return undef;
-      };
-
-    # Note that -e checks through symlinks
-    # This final check SHOULD work else something really wacky is 
-    # going on
-    unless (-e $fname) {
-      orac_err("File ($fname) can not be found through link from\n");
-      orac_err("ORAC_DATA_OUT to ORAC_DATA_IN\n");
-      return undef;
-    }
-
-  }
-
-  # Now configure the frame object
-  # This will fail if the file can not be opened in the current directory.
-
-  $Frm->configure($fname);
-
-  # Return success
-  return $Frm;
-
+  _convert_and_link( $Frm, $fname)
+    && return $Frm;
 }
 
 =back
@@ -667,8 +592,6 @@ number than required (NOT YET IMPLEMENTED).
 
 sub orac_check_data_dir {
 
-  local (*DATADIR);
-
   croak 'Usage check_data_dir(ClassName, CurrentObs, Flag)'
     unless scalar(@_) == 3;
 
@@ -678,10 +601,11 @@ sub orac_check_data_dir {
   my $DummyFrm = $class->new();
 
   # Now retrieve the pattern
+
   # The most general implementation (and most robust) would
   # be to query the frame object for a pattern that can be used
   # to match files.
-  # For now, we will make a guest at the pattern. This could
+  # For now, we will make a guess at the pattern. This could
   # throw us off the scent in some special cases [eg the directory
   # contains more than one night of data, DR files which match
   # the generic pattern....]
@@ -695,8 +619,8 @@ sub orac_check_data_dir {
   if ($flag) {
     # This only works for flag files that end in .ok
     # so get a dummy flag file
-    my $dflag = $DummyFrm->flag_from_bits('p',1);
-    if ($dflag =~ /\.ok$/) {
+    my @dflags = $DummyFrm->flag_from_bits('p',1);
+    if ($dflags[0] =~ /\.ok$/) {
       $pattern = '^\..*\.ok$';   # ' - dummy quote for emacs colour
     } else {
       # look for a hidden file that starts with a . and has
@@ -719,7 +643,7 @@ sub orac_check_data_dir {
   }
 
   # Now open the directory
-  opendir(DATADIR, "$ENV{ORAC_DATA_IN}") 
+  opendir(my $DATADIR, "$ENV{ORAC_DATA_IN}") 
     or die "Error opening ORAC_DATA_IN: $!";
 
   # Read the directory, extract the number and sort the list
@@ -728,11 +652,11 @@ sub orac_check_data_dir {
 
   my @sort = sort { $a <=> $b }
                map { $DummyFrm->raw($_); $DummyFrm->number }
-                 grep { /$pattern/ } readdir(DATADIR);
+                 grep { /$pattern/ } readdir($DATADIR);
 
 
   # Close data directory
-  closedir DATADIR;
+  closedir $DATADIR;
 
   # Now need to compare with the supplied observation number
   # Go through the sorted list until we find a number that is 
@@ -787,6 +711,8 @@ and creating a Frame object.
 
 The four parameters are:
 
+=over 8
+
 =item class - class of Frame object
 
 =item ut - UT date in YYYYMMDD
@@ -794,6 +720,8 @@ The four parameters are:
 =item obsnum - observation number
 
 =item flag - if filename(s) is to come from flag file
+
+=back
 
 undef is returned on error.
 A configured Frame object is returned if everything is okay
@@ -809,32 +737,36 @@ sub link_and_read {
 
   my $Frm = $class->new();
 
-  my $flagname;
+  my @flagnames;
   if( $flag ) {
 
-    # Get the flagname.
-    $flagname = File::Spec->catfile( $ENV{'ORAC_DATA_IN'},
-                                     $Frm->flag_from_bits($ut, $num) );
+    # Get the flagname(s).
+    @flagnames = map { File::Spec->catfile( $ENV{'ORAC_DATA_IN'}, $_ ) }
+      $Frm->flag_from_bits($ut, $num);
   }
 
   # List for raw filenames.
   my @names;
 
   # If we have a flagfile and it's non-zero size...
-  if( $flag && -s $flagname ) {
-    open( my $flagfile, $flagname ) or croak "Unable to open flag file $flagname: $!";
+  if( $flag && &_files_nonzero(@flagnames) ) {
+    for my $flagname (@flagnames) {
+      open( my $flagfile, $flagname ) 
+	or orac_throw "Unable to open flag file $flagname: $!";
 
-    # Read the filenames from the file.
-    @names = <$flagfile>;
+      # Read the filenames from the file.
+      push(@names, grep /\w/, <$flagfile> );
+
+      # Close the file.
+      close $flagfile;
+    }
 
     # add $ORAC_DATA_IN to path if not absolute
     @names = map { $_ = File::Spec->catfile( $ENV{ORAC_DATA_IN}, $_ )
-		   unless File::Spec->file_name_is_absolute($_);
+		     unless File::Spec->file_name_is_absolute($_);
 		   $_;
 		 } @names;
 
-    # Close the file.
-    close $flagfile;
   } else {
 
     my $pattern = $Frm->pattern_from_bits( $ut, $num );
@@ -850,7 +782,7 @@ sub link_and_read {
 
       # It's not a regex, so it must be a string (brilliant logic there!)
       # Prepend $ORAC_DATA_IN.
-      push @names, $ENV{'ORAC_DATA_IN'} . "/" . $pattern;
+      push @names, File::Spec->catfile($ENV{'ORAC_DATA_IN'},$pattern);
 
     }
 
@@ -862,8 +794,109 @@ sub link_and_read {
     return undef;
   }
 
+  # Now we need to convert the files
+  # and/or link them to ORAC_DATA_OUT and create the corresponding
+  # frame object
+  _convert_and_link( $Frm, @names ) && return $Frm;
+
+}
+
+=item B<orac_sleep>
+
+Pause the checking for new data files by the specified number of seconds.
+
+  $time = orac_sleep($pause);
+
+Where $pause is the number of seconds to wait and $time is the number
+of seconds actually waited (see the sleep() command for more details).
+
+If the Tk system is loaded this routine will actually do a Tk event loop
+for the required number of seconds. This is so that the X screen will
+be refreshed. Currently the only test is the Tk is loaded, not that
+we are actually using Tk.....
+
+=cut
+
+sub orac_sleep {
+
+  my $pause = shift;
+  my $actual;
+
+  if (defined &Tk::DoOneEvent) {
+    # Tk friendly....
+    my $now = time();
+    while (time() - $now < $pause) {
+      # Process events (Dont wait if there were none)
+      &Tk::DoOneEvent(&Tk::DONT_WAIT);
+
+      # Pause for a fraction of a second to stop us going into
+      # a CPU intensive loop for no reason Not the best solution since
+      # it does make the Tk events a bit unresponsive
+      select undef,undef,undef,0.2;
+
+    }
+    # Calculate actual elapsed time
+    $actual = time() - $now;
+
+  } else {
+    # Do a standard sleep
+    $actual = sleep($pause);
+
+  }
+
+  return $actual;
+
+}
+
+=item B<_files_there>
+
+Return true if all the specified files are present.
+
+ if (!_files_there( @files ) {
+   ...
+ }
+
+=cut
+
+sub _files_there {
+  for my $f (@_) {
+    return 0 unless -e $f;
+  }
+  return 1;
+}
+
+=item B<_files_nonzero>
+
+Return true if all the specified files are present with
+a size greater than 0 bytes
+
+ if (_files_nonzero( @files ) {
+   ...
+ }
+
+=cut
+
+sub _files_nonzero {
+  for my $f (@_) {
+    return 0 unless -s $f;
+  }
+  return 1;
+}
+
+=item B<_convert_and_link>
+
+Given the supplied file names, convert and link each file to ORAC_DATA_OUT.
+Returns true if successful.
+
+  _convert_and_link( $Frm, @files ) && return $Frm;
+
+=cut
+
+sub _convert_and_link {
+  my $Frm = shift;
+
   # Sort the list.
-  @names = sort @names;
+  my @names = sort @_;
 
   # Right. Now we have a list of raw filenames in @names. These filenames
   # include the full path to the file.
@@ -882,7 +915,8 @@ sub link_and_read {
 
     # Remember, $file here is relative to $ORAC_DATA_IN...
     $file =~ s/\n$//;
-    orac_print "Converting $file from $infmt to $outfmt...\n";
+    orac_print "Converting $file from $infmt to $outfmt...\n"
+      if $infmt ne $outfmt;
     my( $infile, $outfile ) = $CONVERT->convert( $file,
                                                  { IN => $infmt,
                                                    OUT => $outfmt,
@@ -941,7 +975,7 @@ sub link_and_read {
 
       # Now we should try to create a symlink and say something
       # if it fails
-      symlink($ENV{ORAC_DATA_IN} . "/$fname", $bname) ||
+      symlink(File::Spec->catfile($ENV{ORAC_DATA_IN},$fname), $bname) ||
       do {
         orac_err("Error creating symlink named $bname from ORAC_DATA_OUT to '$ENV{ORAC_DATA_IN}/$fname'\n");
         orac_err("$!\n");
@@ -974,58 +1008,9 @@ sub link_and_read {
     $Frm->configure(\@bname);
   }
 
-  # And return the configured Frame object.
-  return $Frm;
-
+  # And indicate success
+  return 1;
 }
-
-=item B<orac_sleep>
-
-Pause the checking for new data files by the specified number of seconds.
-
-  $time = orac_sleep($pause);
-
-Where $pause is the number of seconds to wait and $time is the number
-of seconds actually waited (see the sleep() command for more details).
-
-If the Tk system is loaded this routine will actually do a Tk event loop
-for the required number of seconds. This is so that the X screen will
-be refreshed. Currently the only test is the Tk is loaded, not that
-we are actually using Tk.....
-
-=cut
-
-sub orac_sleep {
-
-  my $pause = shift;
-  my $actual;
-
-  if (defined &Tk::DoOneEvent) {
-    # Tk friendly....
-    my $now = time();
-    while (time() - $now < $pause) {
-      # Process events (Dont wait if there were none)
-      &Tk::DoOneEvent(&Tk::DONT_WAIT);
-
-      # Pause for a fraction of a second to stop us going into
-      # a CPU intensive loop for no reason Not the best solution since
-      # it does make the Tk events a bit unresponsive
-      select undef,undef,undef,0.2;
-
-    }
-    # Calculate actual elapsed time
-    $actual = time() - $now;
-
-  } else {
-    # Do a standard sleep
-    $actual = sleep($pause);
-
-  }
-
-  return $actual;
-
-}
-
 
 =back
 
@@ -1035,13 +1020,13 @@ $Id$
 
 =head1 AUTHORS
 
-Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>
-Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>,
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
 Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Copyright (C) 1998-2005 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
