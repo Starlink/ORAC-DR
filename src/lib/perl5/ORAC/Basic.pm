@@ -1,12 +1,12 @@
 #------------------------------------------------------------------------
-# ORAC module
+# ORAC recipe parsing module
 #------------------------------------------------------------------------
 
 package ORAC::Basic;
 
 =head1 NAME
 
-ORAC::Basic - generic ORAC subroutines
+ORAC::Basic - recipe parsing and execution subroutines
 
 =head1 SYNOPSIS
 
@@ -20,7 +20,7 @@ Provides the routines for parsing and executing recipes.
 =cut
 
 use Carp;
-use vars qw($VERSION @ISA @EXPORT $Display $Nbs $Batch $DEBUG);
+use vars qw($VERSION @ISA @EXPORT $Display $Batch $DEBUG);
 
 use strict;
 
@@ -49,16 +49,34 @@ use Cwd; # Current working directory
   orac_add_code_to_recipe
   /;
 
-$VERSION = '0.10';
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
-$Display = undef;   # Display object - only configured if we have a display
+my $Display = undef;# Display object - only configured if we have a display
+                    # Make this a lexical so that it can not be altered
+                    # outside the class (use orac_setup_display)
+                    # may want to turn this into an argument from a highre
+                    # level (eg like %Mon)
 
 $Batch   = 0;       # True if we are running in batch mode
 $DEBUG   = 0;       # True for extra debugging
 
 #------------------------------------------------------------------------
 
+=head1 FUNCTIONS
+
+The following functions are provided:
+
 =over 4
+
+=item B<orac_setup_display>
+
+Create a new Display object for use by the recipes. This includes
+the association of this object with a specific display configuration
+file (F<disp.dat>). If a configuration file is not in $ORAC_DATA_OUT
+one will be copied there from $ORAC_DATA_CAL (or $ORAC_DIR
+if no file exists in $ORAC_DATA_CAL).
+
+There are no return arguments.
 
 =cut
 
@@ -107,7 +125,7 @@ sub nbspoke {
 
 #------------------------------------------------------------------------
 
-=item orac_execute_recipe(reciperef, Frame, Group, Cal, Mon)
+=item B<orac_execute_recipe>(reciperef, Frame, Group, Cal, Mon)
 
 Executes the recipes stored in $reciperef (an Array reference).
 Also needs the current frame, group and calibration objects
@@ -628,6 +646,32 @@ sub orac_exit_abnormally {
 
 =back
 
+=head1 GLOBAL VARIABLES
+
+This module has the following package variables that can be modified
+externally:
+
+=over 4
+
+=item * $DEBUG
+
+This flag can be used to turn on some debugging features.
+
+=item * $Batch
+
+Flag to indicate whether the groups have been populated before
+the recipe is executed (ie whether the pipeline is running in
+batch mode or not).
+
+=back
+
+These variables are visible to recipes but should not be modified
+by them.
+
+=head1 REVISION
+
+$Id$
+
 =head1 AUTHORS
 
 Frossie Economou and Tim Jenness
@@ -636,6 +680,9 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.35  1999/05/10 19:35:30  timj
+#Small documentation update
+#
 #Revision 1.34  1999/04/28 18:54:32  timj
 #Fix so that ORAC_DEBUG is not used for commented obeyw's
 #
