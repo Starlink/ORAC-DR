@@ -55,27 +55,46 @@ with the messaging systems.
 
 IRCAM uses the ADAM messaging system. (ORAC::Msg::ADAM::Control)
 
+Scratch files are written to ORACDR_TMP directory if defined,
+else ORAC_DATA_OUT is used.
+
 =cut
 
 sub start_msg_sys {
 
-
   # Set ADAM environment variables
   # process-specific adam dir
-  # use /tmp/adam$$ unless $ORAC_DATA_OUT is set
-  $ENV{'ADAM_USER'} = "/tmp/adam$$";
-  if (exists $ENV{'ORAC_DATA_OUT'} && defined $ENV{ORAC_DATA_OUT}
-      && -d $ENV{ORAC_DATA_OUT}) {
-    $ENV{'ADAM_USER'} = $ENV{'ORAC_DATA_OUT'}."/adam$$";      
+  
+  # Use ORACDR_TMP, then ORAC_DATA_OUT else /tmp as ADAM_USER directory.
+  my $dir = "adam_$$";  
+  if (exists $ENV{ORACDR_TMP} && defined $ENV{ORACDR_TMP}
+      && -d $ENV{ORACDR_TMP}) {
+    
+    $ENV{'ADAM_USER'} = $ENV{ORACDR_TMP}."/$dir";      
+
+  } elsif (exists $ENV{'ORAC_DATA_OUT'} && defined $ENV{ORAC_DATA_OUT}
+	   && -d $ENV{ORAC_DATA_OUT}) {
+
+    $ENV{'ADAM_USER'} = $ENV{ORAC_DATA_OUT} . "/$dir";
+
+  } else {
+    $ENV{'ADAM_USER'} = "/tmp/$dir";
   }
 
-
   # Set HDS_SCRATCH -- unless it is defined already
+  # Do not need to set to ORAC_DATA_OUT since this is cwd.
+
   # Want to modify this variable so that we can fix some ndf2fits
   # feature (etc ?) -- I think the problem came up when trying to convert
   # files from one directory to another when the input directory is 
   # read-only...
-  $ENV{HDS_SCRATCH} = $ENV{ORAC_DATA_OUT} unless exists $ENV{HDS_SCRATCH};
+
+  unless (exists $ENV{HDS_SCRATCH}) {
+    if (exists $ENV{ORACDR_TMP} && defined $ENV{ORACDR_TMP}
+	&& -d $ENV{ORACDR_TMP}) {
+      $ENV{HDS_SCRATCH} = $ENV{ORACDR_TMP};
+    }
+  }
 
   # Create object
   my $adam = new ORAC::Msg::ADAM::Control;
@@ -97,7 +116,7 @@ The routine returns when all the last monolith can be contacted
 routine is called).
 
 IRCAM uses PHOTOM (photom_mon), CCDPACK (ccdpack_red, ccdpack_res, 
-ccdpack_reg), FIGARO (figaro1), KAPPA (kappa_mon), and PISA (pisa_mon).
+ccdpack_reg), KAPPA (kappa_mon), and PISA (pisa_mon).
 
 =cut
 
@@ -106,16 +125,12 @@ sub start_algorithm_engines {
 
   %Mon = ();
 
-#  ($ENV{PSF_DIR} = '/star/local/bin') unless (exists $ENV{PSF_DIR});
-
   $Mon{photom_mon} = new ORAC::Msg::ADAM::Task("photom_mon_$$",$ENV{PHOTOM_DIR}."/photom_mon");
-  $Mon{figaro1} = new ORAC::Msg::ADAM::Task("figaro1_$$",$ENV{FIG_DIR}."/figaro1");
   $Mon{ndfpack_mon} = new ORAC::Msg::ADAM::Task("ndfpack_mon_$$",$ENV{KAPPA_DIR}."/ndfpack_mon");
   $Mon{ccdpack_red} = new ORAC::Msg::ADAM::Task("ccdpack_red_$$",$ENV{CCDPACK_DIR}."/ccdpack_red");
   $Mon{ccdpack_res} = new ORAC::Msg::ADAM::Task("ccdpack_res_$$",$ENV{CCDPACK_DIR}."/ccdpack_res");
   $Mon{ccdpack_reg} = new ORAC::Msg::ADAM::Task("ccdpack_reg_$$",$ENV{CCDPACK_DIR}."/ccdpack_reg");
   $Mon{pisa_mon} = new ORAC::Msg::ADAM::Task("pisa_mon_$$",$ENV{PISA_DIR}."/pisa_mon");
-#  $Mon{psf_mon} = new ORAC::Msg::ADAM::Task("psf_mon_$$",$ENV{PSF_DIR}."/psf",{TASKTYPE=>'I'});
   $Mon{kappa_mon} = new ORAC::Msg::ADAM::Task("kappa_mon_$$",$ENV{KAPPA_DIR}."/kappa_mon");
 
 
@@ -143,6 +158,25 @@ sub wait_for_algorithm_engines {
   }
 }
 
+
+=back
+
+=head1 ENVIRONMENT
+
+The following environment variables are used by this module:
+
+=over 4
+
+=item B<ORACDR_TMP>
+
+Location of temporary files. If not defined C<ORAC_DATA_OUT>
+is used instead. ADAM files and HDS scratch files are written
+to this directory. It is recommended that this directory
+is on a local disk.
+
+=item B<ORAC_DATA_OUT>
+
+Used as a fallback if C<ORACDR_TMP> is not defined.
 
 =back
 
