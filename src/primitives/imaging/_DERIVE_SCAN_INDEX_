@@ -1,0 +1,206 @@
+#+
+# Name:
+#    _DERIVE_SCAN_INDEX_
+#
+# Purpose:
+#    Finds the scan index for the current frame.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive obtains a scan index for a unique pair of telescope
+#    offsets, using an array to store the offsets in string form.
+#    The offsets of the current frame are compared with the entries
+#    in the array.  If the offsets are not already present, the scan
+#    index is increment, and the new offsets appended to the array.
+#    Also an array of the number of recipe cycles at a given scan
+#    position is maintained.  At each new scan position a new element of
+#    0 is pushed on to the array, and at existing positions the count
+#    is incremented.
+#    
+#    The scan index, and whether or not it is a new index, are returned
+#    in two arguments.
+#
+# Arguments:
+#    FIRST = LOGICAL (Given)
+#       Whether or not this is the first frame to test.  If true (1),
+#       the array of offsets is created, and argument NEW is returned
+#       true and argument INDEX is 1.  [0]
+#    NEW = LOGICAL (Returned)
+#       Whether or not this is a new scan index.
+#    INDEX = INTEGER (Returned)
+#       The scan index of unique telescope offsets, counting from 0.
+#
+# Notes:
+#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
+#    in imaging mode.
+#    -  The string form of offset is "<raoffset>,<decoffset>".
+#    -  The array of scan offsets, stored in string form, is stored
+#    by reference in the group user header SCAN_OFFSETS.
+#    -  The array of scan cycle numbers is stored by reference in the
+#    group user header SCAN_CYCLES.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Is this the first offset?
+    my $first = $_DERIVE_SCAN_INDEX_{FIRST};
+    $first = defined( $first ) ? $first: 0;
+
+# Obtain the offsets to the nearest arcsecond for every last frame in
+# the cycle.  Use the integer versions so that any rounding errors don't
+# appear to be a new position in the scan, since a string is used in
+# the array of distinct positions.  Note that it must be the final
+# and not the first frame, since the mosaic is made when the former
+# is the current frame.
+    my $new = 0;
+    my ( @scanoffs, @scan_cycles, $scanindex, $scan_cycleref, $scanref );
+    my ( $matchoff, $oldoff );
+    my $decoffset = int( $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" ) + 0.5 );
+    my $raoffset = int( $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" ) + 0.5 );
+
+# Create a new offsets array for the first cycle of the group, and store
+# it by reference in the group.
+    if ( $first ) {
+       @scanoffs = ( "$raoffset,$decoffset" );
+       $Grp->uhdr( "SCAN_OFFSETS", \@scanoffs );
+
+# Do likewise for the number of cycles per scan position.
+       @scan_cycles = ( 0 );
+       $Grp->uhdr( "SCAN_CYCLES", \@scan_cycles );
+
+# Set the initial scan index and cycle, and new flag.
+       $scanindex = 0;
+       $new = 1;
+
+# For later cycles obtain the array of offset strings by reference.
+    } else {
+       my $offstring = "$raoffset,$decoffset";
+       $scanref = $Grp->uhdr( "SCAN_OFFSETS" );
+       @scanoffs = @$scanref;
+
+# Likewise obtain the array of recipes ycles per scan index.
+       $scan_cycleref = $Grp->uhdr( "SCAN_CYCLES" );
+       @scan_cycles = @$scan_cycleref;
+
+# Compare the offsets with previous values looking for a match.
+       my $i = -1;
+       my $matchoff = 0;
+       do {
+          $i++;
+          $oldoff = $scanoffs[ $i ];
+          if ( "$offstring" eq "$oldoff" ) {
+             $matchoff = 1;
+
+# Set the scan index and cycle_number for the index.
+             $scanindex = $i;
+             $scan_cycles[ $i ] = $scan_cycles[ $i ] + 1;
+          }
+             
+       } while !$matchoff && $i < $#scanoffs;
+
+# If there was no match, we need to append this offset to the array of
+# scan positions and cycles.
+       if ( !$matchoff ) {
+          push( @scanoffs, $offstring );
+          push( @scan_cycles, 0 );
+
+# Store the new offsets array.
+          $Grp->uhdr( "SCAN_OFFSETS", \@scanoffs );
+
+# Set the scan index.
+          $scanindex = $#scanoffs;
+          $new = 1;
+       }
+
+# Store the update scan cycles array.
+       $Grp->uhdr( "SCAN_CYCLES", \@scan_cycles );
+    }
+
+# Set the returned arguments.
+    $_DERIVE_SCAN_INDEX_{NEW} = $new;
+    $_DERIVE_SCAN_INDEX_{INDEX} = $scanindex;
+
+# Podule
+# ======
+
+=head1 NAME
+
+_DERIVE_SCAN_INDEX_ -- Finds the scan index for the current frame.
+
+=head1 DESCRIPTION
+
+This primitive obtains a scan index for a unique pair of telescope
+offsets, using an array to store the offsets in string form.
+The offsets of the current frame are compared with the entries
+in the array.  If the offsets are not already present, the scan
+index is increment, and the new offsets appended to the array.
+Also an array of the number of recipe cycles at a given scan
+position is maintained.  At each new scan position a new element of
+0 is pushed on to the array, and at existing positions the count
+is incremented.
+
+The scan index, and whether or not it is a new index, are returned
+in two arguments.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item FIRST = LOGICAL (Given)
+
+Whether or not this is the first frame to test.  If true (1),
+the array of offsets is created, and argument NEW is returned
+true and argument INDEX is 1.  
+
+=item NEW = LOGICAL (Returned)
+
+Whether or not this is a new scan index.
+
+=item INDEX = INTEGER (Returned)
+
+The scan index of unique telescope offsets, counting from 0.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UFTI, IRCAM, and Michelle in imaging mode.
+
+=item *
+
+The string form of offset is "E<lt>raoffsetE<gt>,E<lt>decoffsetE<gt>".
+
+=item *
+
+The array of scan offsets, stored in string form, is stored
+by reference in the group user header SCAN_OFFSETS.
+
+=item *
+
+The array of scan cycle numbers is stored by reference in the
+group user header SCAN_CYCLES.
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

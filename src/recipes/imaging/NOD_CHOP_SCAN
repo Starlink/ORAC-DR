@@ -1,0 +1,325 @@
+#+
+# Name:
+#    NOD_CHOP_SCAN
+
+# Purpose:
+#    Reduces a chopped and nodded observation in a scan pattern.
+
+# Language:
+#    Perl5
+
+# Description:
+#    This script reduces chopped and nodded observation, currently
+#    just for Michelle data.  It takes an imaging observation comprising
+#    a multiple-of-four object frames at a series of scan offset
+#    positions to make calibrated, untrimmed mosaics at each scan
+#    position automatically.
+
+#    It performs a null debiassing, creation and propagation of data
+#    variance, difference the integrations for each AB chop beam pair,
+#    bad-pixel masking, difference adjacent nodded pairs, registers the
+#    frames, and forms a mosaic at each scan position.  See the "Notes"
+#    for further information.
+
+# Notes:
+#    -  A variance array is created for each beam, first using the read
+#    noise, and once the bias is removed, Poisson noise is added.
+#    -  A bias frame selected from the calibration system is removed from
+#    each beam in CHOP read mode.  If no bias frame is available
+#    in the CHOP mode, the recipe subtracts a null bias, so the errors
+#    will be overestimated in the CHOP read mode; the data array will
+#    be unaffected once the beams are differenced.  The ARRAY_TESTS
+#    recipe files a suitable short-exposure dark as a bias in the
+#    calibration system.
+#    -  The integrations of the two beams are differenced, the first
+#    subtracted from the second in each pair.
+#    -  A World Co-ordinate System (WCS) using the AIPS convention is 
+#    created in the headers should no WCS already exist.
+#    -  The bad pixel mask applied is $ORAC_DATA_CAL/bpm.
+#    -  The telescope offsets of the first frame in each multiple-of-four
+#    frames define scan position.  The recipe creates a mosaic at each
+#    distinct pair of offsets.
+#    -  Registration is performed using the telescope offsets
+#    transformed to pixels.
+#    -  The resampling applies integer shifts of origin.   There is no
+#    rotation to align the Cartesian axes with the cardinal directions.
+#    -  The recipe makes the mosaics by applying offsets in intensity
+#    to give the most consistent result amongst the overlapping regions.
+#    The mosaic is not trimmed to the dimensions of a single frame, thus
+#    the noise will be greater in the peripheral areas having received
+#    less exposure time.  The mosaic is not normalised by its exposure
+#    time (that being the exposure time of a single frame).
+#    -  For each cycle of object frames at each distinct scan position,
+#    the recipe creates a mosaic, which has its bad pixels filled and is
+#    then added into a master mosaic of improving signal to noise for
+#    that scan position.  The exposure time is also summed and stored in
+#    the mosaic's corresponding header.  Likewise the end airmass and end
+#    UT headers are updated to match that of the last-observed frame
+#    contributing to the mosaic.
+#    -  Intermediate frames are deleted except for the differenced pairs
+#    _dp suffix) frames.
+
+# Output Data:
+#    -  The integrated mosaics in <m><date>_<group_number>_o<scan>_mos,
+#    where <m> is "gm" for Michelle, <group_number> is the number of
+#    group, and <scan> is the index number of the distinct scan
+#    position counting from 0.
+#    -  A mosaic for each cycle of object frames in
+#    <m><date>_<group_number>_o<scan>_mos<cycle_number>, where <cycle_number>
+#    counts from 0.
+#    -  The differenced pairs in <i><date>_<obs_number>_dp,
+#    where <i> is "m" for Michelle. 
+
+# Configurable Steering Parameters:
+#    NUMBER = INTEGER
+#       The number of frames in the nod pattern.  If absent, the number
+#       of offsets, as given by header NOFFSETS, minus one is used.  If
+#       neither is available, 4 is used.  An error state arises if
+#       the number of jittered frames is fewer than 4 and not a
+#       multiple of 4.  []
+#    USEVAR = LOGICAL
+#       Whether or not to create and propagate variance arrays.  [1]
+
+# Timing:
+#    {timing_information}
+
+# Implementation Status:
+#    -  The processing engines are from the Starlink packages: CCDPACK,
+#    FIGARO, and KAPPA.
+#    -  Uses the Starlink NDF format and multi-NDF HDS container files.
+#    -  History is recorded within the data files.
+#    -  The title of the data is propagated through intermediate files
+#    to the mosaic.
+#    -  Error propagation is controlled by the USEVAR parameter.
+
+# Related Recipes:
+#    NOD_CHOP, NOD_CHOP_APHOT, NOD_SELF_FLAT_NO_MASK
+
+# Authors:
+#   MJC: Malcolm J. Currie (JAC)
+
+# Copyright:
+#    Copyright (C) 2001-2002 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Startup
+# =======
+
+# Imaging-specific preliminaries, such as switching on history
+# recording.
+    _IMAGING_HELLO_
+
+# Recipe-specific initialisation.  Set up steering control of the
+# processing, namely when to difference pairs and make a mosaic.
+# Create WCS, if needed.
+    _NOD_CHOP_HELLO_ USEVAR=1 SCAN=1 NUMBER=4
+
+# Calibration
+# ===========
+
+# Difference pairs of frames.
+    _DIFFERENCE_PAIR_
+
+# Mosaicking
+# ==========
+
+# Determine the linear offsets between the object frames in the group
+# by pattern matching common features.  If that fails use the telescope
+# offsets.  Register the frames using a shift of pixel origin.
+    _GENERATE_OFFSETS_NOD_ TELEOFF=1
+
+# Adjust origins of each frame.  Make a mosaic which is not trimmed
+# to the dimensions of an input frame.
+    _MAKE_MOSAIC_NOD_ RESAMPLE=0 FILLBAD=1
+
+# Remove intermediate data files.
+    _NOD_CHOP_TIDY_
+
+# Podule
+# ======
+
+=head1 NAME
+
+NOD_CHOP_SCAN -- Reduces a chopped and nodded observation in a scan pattern.
+
+
+=head1 DESCRIPTION
+
+This script reduces chopped and nodded observation, currently
+just for Michelle data.  It takes an imaging observation comprising
+a multiple-of-four object frames at a series of scan offset
+positions to make calibrated, untrimmed mosaics at each scan
+position automatically.
+
+It performs a null debiassing, creation and propagation of data
+variance, difference the integrations for each AB chop beam pair,
+bad-pixel masking, difference adjacent nodded pairs, registers the
+frames, and forms a mosaic at each scan position.  See the L<"NOTES">
+for further information.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+A variance array is created for each beam, first using the read
+noise, and once the bias is removed, Poisson noise is added.
+
+=item *
+
+A bias frame selected from the calibration system is removed from each
+beam in CHOP read mode.  If no bias frame is available in the CHOP
+mode, the recipe subtracts a null bias, so the errors will be
+overestimated in the CHOP read mode; the data array will be unaffected
+once the beams are differenced.  The L<ARRAY_TESTS|ARRAY_TESTS> recipe
+files a suitable short-exposure dark as a bias in the calibration
+system.
+
+=item *
+
+The integrations of the two beams are differenced, the first
+subtracted from the second in each pair.
+
+=item *
+
+A World Co-ordinate System (WCS) using the AIPS convention is 
+created in the headers should no WCS already exist.
+
+=item *
+
+The bad pixel mask applied is F<$ORAC_DATA_CAL/bpm>.
+
+=item *
+
+The telescope offsets of the first frame in each multiple-of-four
+frames define scan position.  The recipe creates a mosaic at each
+distinct pair of offsets.
+
+=item *
+
+Registration is performed using the telescope offsets
+transformed to pixels.
+
+=item *
+
+The resampling applies integer shifts of origin.   There is no
+rotation to align the Cartesian axes with the cardinal directions.
+
+=item *
+
+The recipe makes the mosaics by applying offsets in intensity
+to give the most consistent result amongst the overlapping regions.
+The mosaic is not trimmed to the dimensions of a single frame, thus
+the noise will be greater in the peripheral areas having received
+less exposure time.  The mosaic is not normalised by its exposure
+time (that being the exposure time of a single frame).
+
+=item *
+
+For each cycle of object frames at each distinct scan position,
+the recipe creates a mosaic, which has its bad pixels filled and is
+then added into a master mosaic of improving signal to noise for
+that scan position.  The exposure time is also summed and stored in
+the mosaic's corresponding header.  Likewise the end airmass and end
+UT headers are updated to match that of the last-observed frame
+contributing to the mosaic.
+
+=item *
+
+Intermediate frames are deleted except for the differenced pairs
+_dp suffix) frames.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The integrated mosaic in
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_oE<lt>scanE<gt>_mos, where
+E<lt>mE<gt> is "gm" for Michelle, E<lt>group_numberE<gt> is the number
+of group, and E<lt>scanE<gt> is the index number of the distinct scan
+position counting from 0.
+
+=item *
+
+A mosaic for each cycle of object frames in
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_oE<lt>scanE<gt>_mos_cE<lt>cycle_numberE<gt>,
+where E<lt>cycle_numberE<gt> counts from 0.
+
+
+=item *
+
+The differenced pairs in
+E<lt>iE<gt>E<lt>dateE<gt>_E<lt>obs_numberE<gt>_dp, where E<lt>iE<gt>
+is "m" for Michelle.
+
+=back
+
+=head1 CONFIGURABLE STEERING PARAMETERS
+
+=over 4
+
+=item NUMBER = INTEGER
+
+The number of frames in the nod pattern.  If absent, the number
+of offsets, as given by header NOFFSETS, minus one is used.  If
+neither is available, 4 is used.  An error state arises if
+the number of jittered frames is fewer than 4 and not a
+multiple of 4.  []
+
+=item USEVAR = LOGICAL
+
+Whether or not to create and propagate variance arrays.  [1]
+
+=back
+
+=head1 IMPLEMENTATION STATUS
+
+=over 4
+
+=item *
+
+The processing engines are from the Starlink packages: CCDPACK,
+FIGARO, and KAPPA.
+
+=item *
+
+Uses the Starlink NDF format and multi-NDF HDS container files.
+
+=item *
+
+History is recorded within the data files.
+
+=item *
+
+The title of the data is propagated through intermediate files
+to the mosaic.
+
+=item *
+
+Error propagation is controlled by the USEVAR parameter.
+
+=back
+
+=head1 RELATED RECIPES
+
+L<NOD_CHOP|NOD_CHOP>,
+L<NOD_CHOP_APHOT|NOD_CHOP_APHOT>,
+L<NOD_SELF_FLAT_NO_MASK|NOD_SELF_FLAT_NO_MASK>
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC) (mjc@jach.hawaii.edu)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2001-2002 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
