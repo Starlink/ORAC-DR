@@ -88,9 +88,8 @@ sub new {
   $obj->{ArlinesIndex} = undef;
   $obj->{Iar} = undef;
   $obj->{IarIndex} = undef;
-  $obj->{Grism} = undef;
-  $obj->{GrismIndex} = undef;
-
+  $obj->{Offset} = undef;
+  $obj->{OffsetIndex} = undef
 
   $obj->{BaseShift} = undef;
 
