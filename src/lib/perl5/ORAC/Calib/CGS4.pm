@@ -27,6 +27,7 @@ ORAC::Calib::UKIRT objects.
 =cut
 
 use ORAC::Calib;			# use base class
+use ORAC::Print;
 
 use base qw/ORAC::Calib/;
 
@@ -221,6 +222,9 @@ of the negative.
 
   my ($posrow, $negrow) = $Cal->rows;
 
+Returns undef and prints a warning if the row can not be determined
+from the index file.
+
 Can not be used to set the name of the index key. Use the C<rowname>
 method for that.
 
@@ -237,23 +241,36 @@ sub rows {
   unless ($ok) {
 
     $rowname = $self->rowindex->choosebydt('ORACTIME', $self->thing);
-    croak "No suitable row could be found in index file"
-      unless defined $rowname;
 
-    # Store it
-    $self->rowname( $rowname );
+    if (defined $rowname) {
+      # Store it
+      $self->rowname( $rowname );
+    } else {
+      orac_warn "No suitable row could be found in index file";
+    }
+
   }
 
   # Retrieve the POSROW and NEGROW from the index
-  my $entry = $self->rowindex->indexentry($rowname);
+  my ($prow, $nrow);
+  if (defined $rowname) {
+    my $entry = $self->rowindex->indexentry($rowname);
+  
+    # Sanity check
+    croak "POSROW could not be found in index entry $rowname\n"
+      unless (exists $entry->{POSROW});
+    croak "NEGROW could not be found in index entry $rowname\n"
+      unless (exists $entry->{NEGROW});
 
-  # Sanity check
-  croak "POSROW could not be found in index entry $rowname\n"
-    unless (exists $entry->{POSROW});
-  croak "NEGROW could not be found in index entry $rowname\n"
-    unless (exists $entry->{NEGROW});
+    $prow = $entry->{POSROW};
+    $nrow = $entry->{NEGROW};
 
-  return ( $entry->{POSROW}, $entry->{NEGROW} );
+  } else {
+    # Could not find it
+    $prow = $nrow = undef;
+  }
+
+  return ( $prow, $nrow );
 }
 
 
