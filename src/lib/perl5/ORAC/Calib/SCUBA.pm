@@ -25,7 +25,7 @@ for SCUBA.
 
 use strict;
 use Carp;
-use vars qw/$VERSION %DEFAULT_GAINS/;
+use vars qw/$VERSION %DEFAULT_GAINS %PHOTFLUXES/;
 
 # Derive from standard Calib class (even though nothing in common
 # for now)
@@ -50,6 +50,39 @@ $VERSION = '0.10';
 		  '350'  => 1200
 		 );
 
+# Should probably put calibrator flux information in a different
+# file
+
+# Need to store fluxes for each filter
+# Use Jy
+# Note that the 350/750 fluxes are MADE UP NUMBERS using
+# extrapolation from 450/850
+
+
+%PHOTFLUXES = (
+	       'IRC+10216' => {
+			       '850' => 6.12,
+			       '750' => 7.11,
+			       '450' => 13.1,
+			       '350' => 17.7,
+			      },
+	       'HL Tau' => {
+			   '850' => 2.32,
+			   '450' => 10.4,
+			  },
+	       'CRL618' => {
+			    '850' => 4.57,
+			    '450' => 11.9,
+			   },
+	       'CRL2688' => {
+			     '850' => 5.88,
+			     '450' => 24.8,
+			    },
+	       '16293-2422' => {
+				'850' => 16.3,
+				'450' => 78.1,
+			       }
+	      );
 
 
 
@@ -142,6 +175,72 @@ sub gain {
   if (@_) { ${$self->gains}{$keyword} = shift; }
  
   return ${$self->gains}{$keyword};
+
+}
+
+
+=item iscalsource
+
+Given the source name and filter, work out whether we have calibration
+information on this source (ie we know the flux for this filter). If
+information is availble return true (1) else return (0).
+
+  $yesno = $Cal->iscalsource("source_name","filter");
+
+=cut
+
+# Can not yet handle planets or differing observing modes.
+
+sub iscalsource {
+  my $self = shift;
+  my $source = uc(shift);
+  my $filter = shift;
+
+  # Start off being pessimistic
+  my $iscal = 0;
+  if (exists $PHOTFLUXES{$source}) {
+    # Source exists in calibrator list
+
+    if (exists $PHOTFLUXES{$source}{$filter}) {
+      $iscal = 1;
+    }
+
+  }
+
+  return $iscal;
+
+}
+
+=item fluxcal
+
+Return the flux of a calibrator source
+
+  $flux = $Cal->fluxcal("sourcename", "filter");
+
+Can not currently handle planets.
+
+=cut
+
+sub fluxcal {
+
+  my $self = shift;
+  my $source = uc(shift);
+  my $filter = shift;
+
+  # Start off being pessimistic
+  my $flux = undef;
+
+  if (exists $PHOTFLUXES{$source}) {
+    # Source exists in calibrator list
+
+    if (exists $PHOTFLUXES{$source}{$filter}) {
+      $flux = $PHOTFLUXES{$source}{$filter};
+    }
+
+  }
+
+  return $flux;
+
 
 }
 
