@@ -1,4 +1,4 @@
-package ORAC::Calib::GMOS
+package ORAC::Calib::GMOS;
 
 =head1 NAME
 
