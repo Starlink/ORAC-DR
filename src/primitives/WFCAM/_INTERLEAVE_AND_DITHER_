@@ -8,34 +8,33 @@
     if ($Grp->uhdr("ALLOWED_TO_INTERLEAVE")) {
 
         # Assuming we get here, we now need a list of all the micro-step
-        # sequences that exist in the current group. These names should
-        # have been added into the uhdr of each frame under "USTEPNUM"
-	# by the steering primitive.
+        # sequences that exist in the current group.
 
-        my %junk = ();
-        foreach my $frm ($Grp->uhdr("COMB_GROUP")->allmembers) {
-            $junk{$frm->uhdr("USTEPNUM")} = 1;
-        }
-        my @allusteps = sort {$a <=> $b} keys %junk;
+        my @allugrps = $Grp->allugroups;
+	@allugrps = sort {$a->name <=> $b->name} @allugrps;
 
         # Right now cycle through each of these
 
         my @allsuperframes = ();
-        foreach my $ustep (@allusteps) {
-            my $ustepgrp = $Grp->subgrp(USTEPNUM=>$ustep);
-	    my $ustepgrpname = $ustep;
+        foreach my $ustepgrp (@allugrps) {
+	    next if ($ustepgrp->uhdr("SUPERFRAME"));
+	    my $ustepgrpname = $ustepgrp->name;
 	    my @a = $ustepgrp->allmembers;
 	    my $n = @a;
 
 	    orac_print("Interleaving microstep sequence $ustepgrpname $n\n") if ($n > 1);
+	    my ($superframe,$jnum);
             {
                 my $Grp = $ustepgrp;
                 my $Frm = ($Grp->allmembers)[0];
                 _INTERLEAVE_
-                push @allsuperframes,$Frm->uhdr("SUPERFRAME");
+                $superframe = $Grp->uhdr("SUPERFRAME");
+	        $jnum = $Frm->jgrp;
+	        $superframe->jgrp($jnum);
+		$superframe->ugrp($Frm->ugrp);
             }
+            $Grp->sfgroup->push($superframe);
         }
-        push @{$Grp->uhdr("SUPERFRAMES")},@allsuperframes;    
     }
 
     # Are we allowed to dither yet?
@@ -43,24 +42,24 @@
     if ($Grp->uhdr("ALLOWED_TO_DITHER")) {
 
         # Find out how many jitters there are in the current group.
- 
-        my %junk = ();
-        my $iGrp = $Grp->new("superframes");
-        $iGrp->allmembers(@{$Grp->uhdr("SUPERFRAMES")});
-	foreach my $frm ($iGrp->allmembers) {
-	    $junk{$frm->hdr("GRPNUM")} = 1;
-        }
-        my @alljitters = sort {$a <=> $b} keys %junk;
 
+        my @alljgroups = $Grp->alljgroups;
+        @alljgroups = sort {$a->name <=> $b->name} @alljgroups;
+ 
         # Loop for each jitter.  See how many files in each jitter group.
 
-        foreach my $curjitter (@alljitters) {
+        foreach my $cjgrp (@alljgroups) {
+	    my $curjitter = $cjgrp->name;
+	    next if ($cjgrp->uhdr("DITHER_FRAME"));
+            my $sfg = $Grp->sfjgrp($curjitter);
 	    orac_print("Dithering jitter sequence $curjitter\n");
-	    my $Grp = $iGrp->subgrp("GRPNUM"=>$curjitter);
-	    $Grp->name($curjitter);
-            my $Frm = ($Grp->allmembers)[0];
-            $Frm->uhdr("JITTER_COMPLETE",1);
-            _DITHER_AND_CATALOGUE_ IPIX=$ipix THRESH=$thresh ICROWD=$icrowd RCORE=$rcore
+            {
+	        my $Grp = $sfg;
+                my $Frm = ($Grp->allmembers)[0];
+                $Frm->uhdr("JITTER_COMPLETE",1);
+                _DITHER_AND_CATALOGUE_ IPIX=$ipix THRESH=$thresh ICROWD=$icrowd RCORE=$rcore
+	        $cjgrp->uhdr("DITHER_FRAME",$Frm->uhdr("DITHER_FRAME"));
+	    }
         }
     }
 
