@@ -91,9 +91,9 @@ sub new {
   # Configure initial state - could pass these in with
   # the class initialisation hash - this assumes that I know
   # the hash member name
-  $self->rawfixedpart('o');
+  $self->rawfixedpart('c');
   $self->rawsuffix('.sdf');
-  $self->rawformat('UKIRTio');
+  $self->rawformat('HDS');
   $self->format('HDS');
 
   # If arguments are supplied then we can configure the object
