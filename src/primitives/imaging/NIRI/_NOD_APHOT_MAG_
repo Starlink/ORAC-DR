@@ -1,0 +1,282 @@
+#+
+# Name:
+#    _NOD_APHOT_MAG_
+#
+# Purpose:
+#    Performs aperture photometry for NOD recipes.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive computes photometry for the individual frames and
+#    mosaic of a NOD jitter.  It invokes _FIXED_APERTURE_PHOTOMETRY_
+#    to derive aperture photometry for both the positive and negative
+#    point sources.  Photometry is performed for each frame of the
+#    current cycle in the difference group, and the group mosaic frame.
+#
+#  Arguments:
+#     APERTURE = REAL (Given)
+#        The aperture in arcseconds for the photometry.  [3.0]
+#     INNER = REAL (Given)
+#        The ratio of the diameters of inner ring of the sky annulus to
+#        that of the object aperture (APERTURE).  It is constrained
+#        to be in the range 1.1 to 3.0.  The mode of the pixel values in 
+#        the annulus is used to subtract the sky for statistics 3) and
+#        4) listed above.  [1.3]
+#     SKY_EST = INTEGER (Given)
+#        Sky estimations method as per AUTOPHOTOM parameter SKYEST.  The
+#        default is the mode, so as to exclude contaminating sources.
+#        1 is the mean; 2 is the average of values within two standard
+#        deviations of the mean; 3 is the mode from PHOTOM, 4 is a 
+#        multiply clipped mean emulating the mode but without involving
+#        the median.  It is supplied as a constant to AUTOPHOTOM (hence
+#        option 4).  The final option is to cope with self-flat frames
+#        with a spike artifact in the histogram thus giving the wrong
+#        median, and hence biased mode.  The default is used should 
+#        the supplied value not be one of the allowed options. [4]
+#     OUTER = REAL (Given)
+#        The ratio of the diameters of outer ring of the sky annulus to
+#        that of the object aperture (APERTURE).  It is constrained to
+#        be in the range 1.4 to 5.0 and be at least 0.3 greater than the
+#        inner scale factor of the annulus.  [2.0]
+#
+# Notes:
+#    -  This primitive is suitable for NIRI in imaging mode.
+#    -  Processing only occurs when it is time to perform photometry,
+#    i.e. when the steering header DO_APHOT is true, and only on object
+#    frames.
+#    -  The steering header CYCLE_NUMBER specifies the recipe cycle
+#    number.
+#    -  The reference to the difference group is stored in the internal
+#    group header DIFFERENCE_GROUP.
+#    -  To discriminate between the various results, in the results
+#    file the positive images have suffix "_pos" after the frame name
+#    and the negative images have a "_neg" suffix.
+#    -  The primitive sets the telescope offsets of the mosaic to be zero
+#    both in the physical frame and in the group header.  It then finds
+#    the displacements of the positive and negative images about the centre
+#    of each frame.  The displacements are half of the reference (first)
+#    frame's internal headers RA_OFFSET_DIFFERENCE and DEC_OFFSET_DIFFERENCE.
+#
+# Tasks:
+#    KAPPA: FITSMOD.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Arguments
+# =========
+
+# Obtain the aperture diameter in arcseconds.
+    my $aperture = ( $_NOD_APHOT_MAG_{APERTURE} || 3 );
+
+#  Set outer default.  This default routine assumes the smaller field
+#  size of an instrument like IRCAM or Michelle (less than half of even
+#  the UFTI sub-array), and the NOD type recipes move the star images
+#  closer to the frame edge, hence the smaller outer limit.  For
+#  instruments with a larger field of view, create an instrument-specific
+#  version of this primitive.
+    my $defouter = 2.0;
+
+# Calculate the radius of the inner and outer extent of the aperture.
+    my $inner = ( $_NOD_APHOT_MAG_{INNER} || 1.3 );
+    my $outer = ( $_NOD_APHOT_MAG_{OUTER} || $defouter );
+    $inner = min( 3.0, max( $inner, 1.1 ) );
+    $outer = min( 5.0, max( $inner + 0.3, $outer, 1.4 ) );
+
+# Obtain the sky-estimation-method index.
+    my $skyest = ( $_NOD_APHOT_MAG_{SKY_EST} || 4 );
+    if ( $skyest !~ /^[+]?\d$/ || $skyest < 1 || $skyest > 4 ) {
+       orac_warn "Invalid sky estimation ($skyest).  Should be 1, 2, 3, or 4.  Using multiply clipped mean.\n";
+       $skyest = 4;
+    }
+
+# Selection
+# =========
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT/ ) {
+
+# Determine whether it is time to do aperture photometry.
+       my $do_aphot = $Frm->uhdr( "DO_APHOT" );
+       if ( $do_aphot ) {
+
+# Make the difference group the current standard group by starting a new context.
+          my $Grp = $Grp->uhdr( "DIFFERENCE_GROUP" );
+
+# Obtain the cycle number.  Default to zero if undefined, so that recipes
+# which do not support this feature will continue to work.
+          my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+          $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+# Select those members in the current cycle.
+          my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+
+# Not sure why but the group file is not propagated to the subgrp (subgrp of a subgrp?),
+# so copy the group file.
+          $cycleGrp->file( $Grp->file );
+
+# Find the offsets to images.
+# ===========================
+
+# Obtain the header keywords for the telescope offsets.  
+          my ( $raoff, $decoff );
+          my $raname = "ORAC_RA_TELESCOPE_OFFSET";
+          my $decname = "ORAC_DEC_TELESCOPE_OFFSET";
+          my %keywords = $Frm->translate_hdr( $raname );
+          my @rakey = keys( %keywords );
+          %keywords = $Frm->translate_hdr( $decname );
+          my @deckey = keys( %keywords );
+
+# Set the group offsets to be zero.  Leave the position and comment unchanged.
+          my $file = $Grp->file;
+          my $param1 = "ndf=$file keyword=$rakey[ 0 ] edit=update value=0 position=!";
+          $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$param1 comment=\\\$C" );
+          $param1 = "ndf=$file keyword=$deckey[ 0 ] edit=update value=0 position=!";
+          $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$param1 comment=\\\$C" );
+
+# Also update the header values.
+          $Grp->uhdr( $raname, 0 );
+          $Grp->uhdr( $decname, 0 );
+
+# Obtain the offsets between the offset centre and positive images.  Note that 
+# this is about the centre for the mosaic.
+          $raoff = 0.5 * $Grp->frame( 0 )->uhdr( "RA_OFFSET_DIFFERENCE" );
+          $decoff = 0.5 * $Grp->frame( 0 )->uhdr( "DEC_OFFSET_DIFFERENCE" );
+
+# Perform photometry.
+# ===================
+
+# Start a new Grp context.
+          {
+             my $Grp = $cycleGrp;
+
+# Measure the positive images.
+             _FIXED_APERTURE_PHOTOMETRY_ POSITIVE=1 APERTURE=$aperture INNER=$inner OUTER=$outer SKY_EST=$skyest RAOFF=$raoff DECOFF=$decoff SUFFIX=_pos
+
+# Obtain the offsets between the offset centre and negative images.
+# The images are arranged symmetrically.
+             $raoff = -$raoff;
+             $decoff = -$decoff;
+
+# Measure the negative images.
+             _FIXED_APERTURE_PHOTOMETRY_ POSITIVE=0 APERTURE=$aperture INNER=$inner OUTER=$outer SKY_EST=$skyest RAOFF=$raoff DECOFF=$decoff SUFFIX=_neg
+          }
+       }
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_NOD_APHOT_MAG_ -- Performs aperture photometry for NOD recipes.
+
+=head1 DESCRIPTION
+
+This primitive computes photometry for the individual frames and
+mosaic of a NOD jitter.  It invokes 
+L<_FIXED_APERTURE_PHOTOMETRY_|_FIXED_APERTURE_PHOTOMETRY_>
+to derive aperture photometry for both the positive and negative
+point sources.  Photometry is performed for each frame of the
+current cycle in the difference group, and the group mosaic frame.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item APERTURE = REAL (Given)
+
+The aperture in arcseconds for the photometry.  [3.0]
+
+=item INNER = REAL (Given)
+
+The ratio of the diameters of inner ring of the sky annulus to
+that of the object aperture (APERTURE).  It is constrained
+to be in the range 1.1 to 3.0.  The mode of the pixel values in 
+the annulus is used to subtract the sky for statistics 3) and
+4) listed above.  [1.3]
+
+=item SKY_EST = INTEGER (Given)
+
+Sky estimations method as per AUTOPHOTOM parameter SKYEST.  The
+default is the mode, so as to exclude contaminating sources.
+1 is the mean; 2 is the average of values within two standard
+deviations of the mean; 3 is the mode from PHOTOM, 4 is a 
+multiply clipped mean emulating the mode but without involving
+the median.  It is supplied as a constant to AUTOPHOTOM (hence
+option 4).  The final option is to cope with self-flat frames
+with a spike artifact in the histogram thus giving the wrong
+median, and hence biased mode.   The default is used should 
+the supplied value not be one of the allowed options. [4]
+
+=item OUTER = REAL (Given)
+
+The ratio of the diameters of outer ring of the sky annulus to
+that of the object aperture (APERTURE).  It is constrained to
+be in the range 1.4 to 5.0 and be at least 0.3 greater than the
+inner scale factor of the annulus.  [2.0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for NIRI in imaging mode.
+
+=item *
+
+Processing only occurs when it is time to perform photometry,
+i.e. when the steering header DO_APHOT is true, and only on object
+frames.
+
+=item *
+
+The steering header CYCLE_NUMBER specifies the recipe cycle
+number.
+
+=item *
+
+The reference to the difference group is stored in the internal
+group header DIFFERENCE_GROUP.
+
+=item *
+
+To discriminate between the various results, in the results
+file the positive images have suffix "_pos" after the frame name
+and the negative images have a "_neg" suffix.
+
+=item *
+
+The primitive sets the telescope offsets of the mosaic to be zero
+both in the physical frame and in the group header.  It then finds
+the displacements of the positive and negative images about the centre
+of each frame.  The displacements are half of the reference (first)
+frame's internal headers RA_OFFSET_DIFFERENCE and DEC_OFFSET_DIFFERENCE.
+
+=back
+
+=head1 TASKS
+
+KAPPA: FITSMOD.
+
+=head1 AUTHORS
+
+Malcolm J. Currie (mjc@star.rl.ac.uk)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
