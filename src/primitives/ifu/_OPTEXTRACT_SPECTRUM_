@@ -1,0 +1,85 @@
+# We're going to need some temporary files
+use ORAC::TempFile;
+
+
+my $in = $Grp->file;
+my $out = $Grp->raw . "_sp";
+
+my $nbeams = $_OPTEXTRACT_SPECTRUM_{NBEAMS} || 1;
+
+orac_print "Extracting $nbeams beams from $in\n";
+
+if ($nbeams != 1 and $nbeams != 2) {
+    orac_err("Number of beams to be extracted must be 1 or 2, not $nbeams\n");
+}
+
+
+# Go through once for each beam to be extracted
+for my $n (1..$nbeams) {
+
+    # and create some temporary files
+    my $tmp0 = new ORAC::TempFile;
+    my $positive = $tmp0->file;
+
+    my $tmp1 = new ORAC::TempFile;
+    my $file1 = $tmp1->file;
+
+    my $tmp2 = new ORAC::TempFile;
+    my $file2 = $tmp2->file;
+
+    my $tmp3 = new ORAC::TempFile;
+    my $file3 = $tmp3->file;
+
+    # If it's the 2nd beam then multiply by -1, otherwise just copy it
+    if ($n == 2) {
+	$Mon{'kappa_mon'}->obeyw("cmult", "in=$in out=$positive scalar=-1");
+	orac_print "2d spectrum multiplied by -1 -> $file1\n";
+    } else {
+	$Mon{'ndfpack_mon' }->obeyw("ndfcopy", "$in $positive");
+	orac_print "$in copied to $positive\n";
+    }
+
+
+    # Threshold out all negative values (get rid of the other beam)
+    $Mon{'kappa_mon'}->obeyw("thresh", "in=$positive out=$file1 thrlo=0 newlo=0 thrhi=1E6 newhi=bad");
+    orac_print "Negative values removed by thresholding\n";
+
+
+    # Make optimal extraction profile
+    my $ystart = $Frm->uhdr("ORAC_Y_LOWER_BOUND");
+    my $yend = $Frm->uhdr("ORAC_Y_UPPER_BOUND");
+
+    $ystart =1;
+    $yend = 658;
+
+    $Mon{'figaro1'}->obeyw("profile", "image=$file1 ystart=$ystart yend=$yend degree=2 profile=$file2 residual=$file3 weight nreject=50");
+
+    orac_print "Optimal extraction profile generated over rows $ystart to $yend\n";
+
+
+    # Extract spectrum
+    $Mon{'figaro1'}->obeyw("optextract", "image=$positive profile=$file2 weight spectrum=$file1");
+
+    orac_print "Spectrum extracted, now in $file1\n";
+
+    # If it's the first one then copy it to the output file, otherwise
+    # average it with the existing output file
+    if ($n == 1) {
+	$Mon{'ndfpack_mon' }->obeyw("ndfcopy", "$file1 $out");
+	orac_print "$file1 copied to $out\n";
+    } else {
+	$Mon{'kappa_mon'}->obeyw("add", "in1=$out in2=$file1 out=$file2");
+	$Mon{'kappa_mon'}->obeyw("cdiv", "in=$file2 out=$out scalar=2");
+
+	orac_print "$file2 averaged into $out\n";
+    }
+}
+
+
+$Grp->file($out);
+$Display->display_data($Grp) if defined $Display;
+
+# At this point, the group is 1 dimentional
+$Grp->uhdr("NDIMS", 1);
+
+orac_print "\n";
