@@ -122,6 +122,7 @@ sub orac_store_frm_in_correct_grp {
     if ($Grp->file_exists) {
       if ($resume) {
 	$Grp->coaddsread;
+	$Grp->readhdr;
       } else {
 	$Grp->erase;
       }
