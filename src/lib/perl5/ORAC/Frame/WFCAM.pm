@@ -183,6 +183,12 @@ sub new {
       $self->{chipname} = ["a","b","c","d"];
   }
 
+  # Add in places where you can define which jitter or microstep sequence
+  # this frame belongs to...
+
+  $self->{ugrpname} = undef;
+  $self->{jgrpname} = undef;
+
   # Configure initial state - could pass these in with
   # the class initialisation hash - this assumes that I know
   # the hash member name
@@ -507,6 +513,40 @@ sub hdrkeys {
     my $key = shift;
 
     return($hdr{$key});
+}
+
+=item B<ugrp>
+
+Sets/returns the microstep sequence ID that this frame is part of
+
+    $Frm->ugrp($ugrp);
+    $ugrp = $Frm->ugrp;
+
+=cut
+
+sub ugrp {
+    my $self = shift;
+    if (@_) {
+	$self->{ugrpname} = shift;
+    }
+    return($self->{ugrpname});
+}
+
+=item B<jgrp>
+
+Sets/returns the jitter sequence ID that this frame is part of
+
+    $Frm->jgrp($jgrp);
+    $jgrp = $Frm->jgrp;
+
+=cut
+
+sub jgrp {
+    my $self = shift;
+    if (@_) {
+	$self->{jgrpname} = shift;
+    }
+    return($self->{jgrpname});
 }
 
 =item B<findgroup>
