@@ -34,6 +34,11 @@ It may be necessary to merge this with a new REBIN_FRAME....
 
 This primitive also writes results to a logfile (log.pointing)
 
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
 =cut
 
 
@@ -51,17 +56,44 @@ $log->header("Pointing log file - created on $time",
 	     "------------------------------------------------------------------"
 	    );
 
+# Need to check for kappa 0.14 or higher
+# Do this by looking for kapversion -- need to know since arguments to
+# CENTROID have changed.
+my $KAPPA14;
+if (-e "$ENV{KAPPA_DIR}/kapversion") {
+  $KAPPA14 = 1;
+} else {
+  $KAPPA14 = 0;
+}
+
 # Loop over frames
 foreach my $i (1..$Frm->nfiles) {
   
   my ($in, $out) = $Frm->inout('_reb',$i);
+  my $args;
 
-  my $args = " cosys=d mode=i cerror=true search=$box";
+  # If we have KAPPA14 we have to first make sure the wcsframe
+  # is AXIS so that we can start searching from the
+  # coordinate centre
+  if ($KAPPA14) {
+    $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$out frame=axis");
+    $args = " init='0,0' ";
+  } else {
+    $args = " cosys=d init=[0,0]"
+  }
 
-  $Mon{kappa_mon}->obeyw("centroid","ndf=$out init=[0,0] $args");
+  $args .= " mode=i cerror=true search=$box";
+
+  $Mon{kappa_mon}->obeyw("centroid","ndf=$out $args");
 
   # Read the result
-  my ($ORAC_STATUS, @centre) = $Mon{kappa_mon}->get("centroid","centre");
+  my (@centre, $ORAC_STATUS);
+  
+  # KAPPA 14 returns the centre pos as a string, earlier versions
+  # return an array -- just use XCEN and YCEN with two adam calls
+
+  ($ORAC_STATUS, $centre[0]) = $Mon{kappa_mon}->get("centroid","xcen");
+  ($ORAC_STATUS, $centre[1]) = $Mon{kappa_mon}->get("centroid","ycen");
 
   # Check for bad pixels
   my ($daz, $del, $max);
