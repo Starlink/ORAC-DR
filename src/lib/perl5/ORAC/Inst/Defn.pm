@@ -950,7 +950,7 @@ sub orac_configure_for_instrument {
                $orac_data_root = cwd;
                if (Net::Domain->domainname =~ "jcmt"  ) {
                    $orac_data_root = "/jcmtarchive";
-                } elsif (Net::Domain->domainname =~ "jach"  ) {
+                } elsif (Net::Domain->domainname =~ "Hilo"  ) {
                    $orac_data_root = "/scuba";
 	        }
              }
