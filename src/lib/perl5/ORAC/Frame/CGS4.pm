@@ -26,12 +26,12 @@ to B<ORAC::Frame::CGS4> objects. Some additional methods are supplied.
 # A package to describe a UKIRT group object for the
 # ORAC pipeline
 
-use 5.004;
+use 5.006;
+use warnings;
 use ORAC::Frame::UKIRT;
 use ORAC::Print;
 
 # Let the object know that it is derived from ORAC::Frame;
-#@ORAC::Frame::CGS4::ISA = qw/ORAC::Frame::UKIRT/;
 use base  qw/ORAC::Frame::UKIRT/;
 
 use vars qw/$VERSION/;
@@ -169,6 +169,9 @@ sub configure {
      $self->hdr->{$i} = $href;
     # (same as $self->hdr($i, $href);)
   }
+
+  # ....and make sure calc_orac_headers is up-to-date after this
+  $self->calc_orac_headers;
 
   # populate file method
 
