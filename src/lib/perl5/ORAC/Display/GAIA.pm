@@ -190,6 +190,11 @@ sub configure {
   # Load the startup image
   my $result = $self->send_to_gaia("$default configure -file $startup");
 
+  # Get the id associated with the actual display widget
+  # so that we can cut
+  my $dispwid = $self->send_to_gaia("$default get_image");
+  $self->send_to_gaia("$dispwid autocut -percent 100");
+
   # Note that this is of the form .rtdn.image
   # We need to store the .rtdn bit
   $default = substr($default, 0,5);
@@ -289,8 +294,8 @@ Takes a file name and arguments stored in a hash.
   $disp->image("filename", \%options)
 
 
-Currently no image manipulation options are supported.
-(ie no image sectioning or setting of display range).
+Currently no image sectioning is supported.
+Display range can be adjusted with ZAUTOSCALE, ZMIN and ZMAX.
 
 =cut
 
@@ -342,8 +347,27 @@ sub image {
   $self->send_to_gaia("$image configure -file $file");
 
   # Other options go here for dealing with ZAUTOSCALE etc
+  # To adjust cut levels we need to find the name of the display widget
+  # rather than the Gaia window
+#  my $ctrlimg = $self->send_to_gaia("$image get_image");
+  my $dispwid = $self->send_to_gaia("$image get_image");
 
+  # Now can modify cut levels
+  if ($options{ZAUTOSCALE}) {
+    # Set autocut to 100
+    $self->send_to_gaia("$dispwid autocut -percent 100");
+  } else {
+    # No autoscaling
+    my $min = $options{ZMIN};
+    my $max = $options{ZMAX};
+    if (defined $min && defined $max) {
+      $self->send_to_gaia("$dispwid cut $min $max");
+    }
+  }
 
+  # Ask the panel to reflect any changes
+  my $panel = $self->send_to_gaia("$image component info");
+  $self->send_to_gaia("$panel updateValues");
 }
 
 =back
