@@ -89,7 +89,7 @@ sub new {
   $frame->{RawFixedPart} = 'ro'; 
   $frame->{UserHeader} = {};
   $frame->{NoKeepArr} = [];
-
+  $frame->{Intermediates} = [];
 
   bless($frame, $class);
 

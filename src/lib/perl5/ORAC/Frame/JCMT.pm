@@ -90,6 +90,7 @@ sub new {
   $frame->{RawSuffix} = ".sdf";
   $frame->{RawFixedPart} = '_dem_'; 
   $frame->{UserHeader} = {};
+  $frame->{Intermediates} = [];
 
   bless($frame, $class);
  
