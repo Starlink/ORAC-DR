@@ -1,0 +1,200 @@
+#-*-perl-*-
+#
+
+=head1 NAME
+
+_EMISSIVITY_ - calculates emissivity results
+
+=head1 DESCRIPTION
+
+Expects to be run on a SKY frame (taken pointing at the sky) and an
+OBJECT frame (taken pointing at the mirror covers ie dome).
+
+File extensions created:
+
+Frames:
+
+_ess: Emissivity Sky Spectrum
+
+_eds: Emissivity Dome Spectrum
+
+Group:
+
+Group file contains ratio of sky and dome spectra
+
+_sm: Smoothed by 5 pixels - used to select region
+
+
+Spectra are extracted from both files and divided by the exposure time
+for that frame.
+
+The "emissivity" spectrum is the ratio of these two spectra.
+
+The emissivity spectrum is smoothed with a box of 5 pixels.  The
+location of the minimum of the smoothed spectrum is found, and a
+5-pixel window centred at this point is extracted from the sky and
+dome spectra.  The mean values of these two windows are calculated and
+printed.  The ratio of these two mean values is printed as the
+emissivity.
+
+=head1 PARAMETERS
+
+=item START
+The row from which to start extracting.
+
+=item END
+The row at which to end extracting.
+
+=head1 ORAC
+
+Engines referenced: KAPPA
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+=cut
+
+# orac_print("PRIMITIVE: EMISSIVITY\n");
+
+# Arguments
+# =========
+
+# Obtain the start and end rows for the extraction.  Used hard-coded
+# defaults for the minute, but maybe we should be clever about this;
+# often there's structure here (possibly from stars flying past).
+    my $start = ( $_EMISSIVITY_{START} || 50 );
+    my $end = ( $_EMISSIVITY_{END} || 150 );
+
+# Define file names.
+# ==================
+
+# Define the name of the sky or dome spectrum, and store it and
+# the observation number as user headers in the group file.
+# The first header is used to determine whether or not both
+# frames have each been converted to a spectrum---a requirment
+# before the emissivity can be calculated.  The latter is used
+# in the tabulated results.
+    my ( $in, $out );
+    if ( $Frm->uhdr( "ORAC_OBSTYPE" ) eq "SKY" ) {
+       ( $in, $out ) = $Frm->inout( "_ess", $Frm->file );
+       $Grp->uhdr( "EMIS_SKY", $out );
+       $Grp->uhdr( "EMIS_SKN", $Frm->number );
+    } else {
+       ( $in, $out ) = $Frm->inout( "_eds", $Frm->file );
+       $Grp->uhdr( "EMIS_DOME", $out );
+       $Grp->uhdr( "EMIS_DMN", $Frm->number );
+    }
+
+# Create spectrum per unit time.
+# ==============================
+
+# Report on progress.
+    orac_print "Orac says: extracting rows $start to $end.\n";
+
+# Extract the spectrum (with row averaging rather than summing)
+# into a temporary file.  This is the same for sky and dome.
+    my $tmp = new ORAC::TempFile;
+    my $tmpfile = $tmp->file;
+    my $param = "axis=2 in=$in out=$tmpfile low=$start high=$end estimator=mean";
+    $Mon{'kappa_mon'}->obeyw( "collapse", "$param" );
+
+# Divide it by the exposure time.
+    my $exptime = ( $Frm->uhdr( "ORAC_EXP_TIME" ) );
+    $Mon{'kappa_mon'}->obeyw( "cdiv", "in=$tmpfile scalar=$exptime out=$out" );
+
+# Destroy the temporary file.
+    undef $tmp;
+    undef $tmpfile;
+
+# Report on progress.
+    orac_print "Orac says: $in to $out: Spectrum extracted and divided.\n";
+
+# Calculate the emissivity.
+# =========================
+
+# Can only proceed once we've got both frames.
+    if ( defined $Grp->uhdr( "EMIS_SKY" ) &&
+         defined $Grp->uhdr( "EMIS_DOME" ) ) {
+
+# Obtain the emmissivity of the sky (i.e. sky and telescope) and the dome.
+       my $emis_sky = $Grp->uhdr( "EMIS_SKY" );
+       my $emis_dome = $Grp->uhdr( "EMIS_DOME" );
+       my $group_file = $Grp->file;
+
+# Divide the sky frame by the dome to remove the sky contribution,
+# thus leaving the telescope emission. 
+       $param = "in1=$emis_sky in2=$emis_dome out=$group_file";
+       $Mon{'kappa_mon'}->obeyw("div", "$param" );
+
+# Report on progress.
+       orac_print "Orac says: Emissivity spectrum calculated: $group_file.\n";
+
+# Now we do a 5x5-pixel box smooth on the emissivity spectrum, and find
+# the lowest point.  The lowest point will have the least sky
+# contribution.  Note that the box size must be odd.
+       $in = $group_file;
+       $out = $in . "_sm";
+       my $box = 5;
+       $param = "in=$in out=$out estimator=mean box=$box";
+       $Mon->{'kappa_mon'}->obeyw( "block", "$param" );
+
+# Determine the position of that minimum point in the unsmoothed spectrum
+# measured in pixel indices and axis co-ordinates (wavelength).
+       $Mon->{'kappa_mon'}->obeyw( "stats", "ndf=$out" );
+       my $ORAC_STATUS;
+       ( $ORAC_STATUS, my $wlenpix ) = $Mon{'kappa_mon'}->get( "stats", "minpos" );
+       ( $ORAC_STATUS, my $wlen ) = $Mon{'kappa_mon'}->get( "stats", "mincoord" );
+
+# Determine the average sky and dome pixel values in a $box-wide
+# window centred on the minimum pixel.
+       $Mon->{'kappa_mon'}->obeyw( "stats", "ndf=$emis_sky($wlenpix~$box)" );
+       ( $ORAC_STATUS, my $sky_val ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+
+       $Mon->{'kappa_mon'}->obeyw( "stats", "ndf=$emis_dome($wlenpix~$box)" );
+       ( $ORAC_STATUS, my $dome_val ) = $Mon{'kappa_mon'}->get( "stats", "mean" );  
+
+# Calculate the emissivity from sky and dome values just obtained.
+       my $emissivity = 100.0 * $sky_val / $dome_val;
+
+# Format results for output.
+       $emissivity = sprintf "%.2f", $emissivity;
+       $wlen = sprintf "%.4f", $wlen;
+       $sky_val = sprintf "%.2f", $sky_val;
+       $dome_val = sprintf "%.2f", $dome_val;
+
+       orac_print "Orac says: Emissivity measured from $box pixels centered at: $wlen um.\n";
+       orac_print "Orac says: Sky value: $sky_val; Dome value: $dome_val.\n";
+       orac_print "Orac says: Emissivity = $emissivity %.\n";
+
+# Tabulate the results.
+# =====================
+
+# Log the results into a file...
+       my $log = new ORAC::LogFile( "emissivity.log" );
+
+# with this header
+       my @headers = ( "UTDATE   Grating  Frames  Sky    Dome     Emissivity",
+                       "----------------------------------------------------" );
+
+# Write the headerss to the file...
+       $log->header( @headers );
+
+# and to the screen as well for now.
+       orac_print join( "\n", @headers ). "\n";
+
+# Prepare some output.
+       my $utdate = $Frm->uhdr( "ORAC_UTDATE" );
+       my $grating = $Frm->uhdr( "ORAC_GRATING_NAME" );
+       my $string = sprintf("%-8s %8.8s %3.3d,%3.3d %6.2f %6.2f %6.2f",
+                             $utdate, $grating, $Grp->uhdr( "EMIS_SKN" ),
+                             $Grp->uhdr( "EMIS_DMN" ), $sky_val,
+                             $dome_val, $emissivity );
+
+# Send to row of statistics to the logfile and the screen.
+       $log->addentry( $string );
+       orac_print "$string\n";
+
+    } else {
+#       orac_print "Orac says: Don't have both SKY and DOME observed yet.\n";
+    }
