@@ -53,11 +53,8 @@ my %hdr = (
             GRATING_NAME         => "GRATNAME",
             GRATING_ORDER        => "GRATORD",
             GRATING_WAVELENGTH   => "GRATPOS",
-            NSCAN_POSITIONS      => "DETNINCR",
-            SCAN_INCREMENT       => "DETINCR",
             SLIT_ANGLE           => "SLITANG",
             SLIT_NAME            => "SLITNAME",
-            UTDATE               => "UTDATE",
             X_DIM                => "DCOLUMNS",
             Y_DIM                => "DROWS",
 
@@ -77,6 +74,99 @@ my %hdr = (
 # other instruments.  Have to use the inherited version so that the new
 # subs appear in this class.
 ORAC::Group::Michelle->_generate_orac_lookup_methods( \%hdr );
+
+# Cater for early data with missing headers.
+sub _to_NUMBER_OF_OFFSETS {
+   my $self = shift;
+
+# It's normally a ABBA pattern.  Add one for the final offset to 0,0.
+   my $noffsets = 5;
+
+# Look for a defined header containing integers.
+   if ( exists $self->hdr->{NOFFSETS} ) {
+      my $noff = $self->hdr->{NOFFSETS};
+      if ( defined $noff && $noff =~ /\d+/ ) {
+         $noffsets = $noff;
+      }
+   }
+   return $noffsets;
+}
+
+# Cater for early data with missing values.
+sub _to_NSCAN_POSITIONS {
+   my $self = shift;
+
+# Number of scan positions.
+   my $nscan = undef;
+   if ( exists $self->hdr->{DETNINCR} ) {
+      $nscan = $self->hdr->{DETNINCR};
+      if ( $nscan =~ /scan positions/ ) {
+         $nscan = undef;
+      }
+   }
+   return $nscan;
+}
+
+# Cater for early data with missing values.
+sub _to_SCAN_INCREMENT {
+   my $self = shift;
+
+# Number of scan positions.
+   my $sincr = undef;
+   if ( exists $self->hdr->{DETINCR} ) {
+      $sincr = $self->hdr->{DETINCR};
+      if ( $sincr =~ /[a-z]+/ ) {
+         $sincr = undef;
+      }
+   }
+   return $sincr;
+}
+
+# Cater for early data with missing values.
+sub _to_OBJECT {
+   my $self = shift;
+
+# Number of scan positions.
+   my $object = undef;
+   if ( exists $self->hdr->{OBJECT} ) {
+      $object = $self->hdr->{OBJECT};
+      if ( $object =~ /^Object Name/ ) {
+         $object = undef;
+      }
+   }
+   return $object;
+}
+
+
+# Cater for early data with missing values.
+sub _to_STANDARD {
+   my $self = shift;
+
+# Whether or not observation is of a standard.
+   my $standard = undef;
+   if ( exists $self->hdr->{STANDARD} ) {
+      $standard = $self->hdr->{STANDARD};
+      if ( $standard !~ /[TF10]/ ) {
+         $standard = undef;
+      }
+   }
+   return $standard;
+}
+
+# Cater for early data with missing values.
+sub _to_UTDATE {
+   my $self = shift;
+
+# This is UT start and time.
+   my $utdate = undef;
+   if ( exists $self->hdr->{UTDATE} ) {
+      $utdate = $self->hdr->{UTDATE};
+      if ( $utdate =~ /yyyymmdd/ ) {
+         $utdate = undef;
+      }
+   }
+   return $utdate;
+}
 
 =head1 PUBLIC METHODS
 
@@ -160,7 +250,7 @@ sub calc_orac_headers {
   # Return zero if not available.
   my $time;
   my $epoch = $self->hdr('DATE-OBS');
-  if ( defined $epoch ) {
+  if ( defined $epoch && $epoch =~ /:/ ) {
     my @hms = split( /:/, substr( $epoch, index( $epoch, "T" ) + 1 ) );
     $hms[ 2 ] =~ s/Z//;
     $time = $hms[ 0 ] + $hms[ 1 ] / 60.0 + $hms[ 2 ] / 3600.0;
