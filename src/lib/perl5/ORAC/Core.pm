@@ -55,8 +55,16 @@ created (eg B<ORAC::Group::UFTI>, B<ORAC::Group::JCMT> etc). The UT
 is supplied purely so that the Group can be named (using the 
 file_from_bits() method).
 
-  orac_store_frm_in_correct_grp($Frm, $GrpType, \%Groups, \@Groups, $ut);
-  orac_store_frm_in_correct_grp($Frm, $GrpType, \%Groups, undef, $ut);
+  orac_store_frm_in_correct_grp($Frm, $GrpType, \%Groups, \@Groups,
+        $ut, $resume);
+  orac_store_frm_in_correct_grp($Frm, $GrpType, \%Groups, undef, 
+        $ut, $resume);
+
+The resume flag is used to determine the behaviour of the group when
+it is first created. If resume is false, any existing Group file is 
+removed before proceeding; if it is true, the Group file is retained
+and any coadd information is read using the coaddsread() Group
+method.
 
 The current Grp (ie the Group associated with the supplied Frm)
 is returned.
@@ -66,14 +74,14 @@ is returned.
 
 sub orac_store_frm_in_correct_grp {
 
-  croak 'Usage: orac_store_frm_in_correct_grp($Frm, $GrpType, $GrpHash, $GrpArr,$ut)'
-    unless scalar(@_) == 5;
+  croak 'Usage: orac_store_frm_in_correct_grp($Frm, $GrpType, $GrpHash, $GrpArr,$ut, $resume)'
+    unless scalar(@_) == 6;
 
   # Variable declaration - Frossie loves this stuff :-)
   my ($use_arr, $Grp);
 
   # Read the argument list
-  my ($Frm, $GrpObjectType, $GrpHash, $GrpArr, $ut) = @_;
+  my ($Frm, $GrpObjectType, $GrpHash, $GrpArr, $ut, $resume) = @_;
 
   # Check that we have a hash reference
   croak 'orac_store_frm_in_correct_grp: 3rd arg must be hash reference'
@@ -102,13 +110,22 @@ sub orac_store_frm_in_correct_grp {
     
     $Grp = new $GrpObjectType($grpname);
     $Grp->file($Grp->file_from_bits($ut, $Frm->number));
-    $Grp->name($grpname);
     unlink($Grp->file); # wont work since .sdf is not included
     $GrpHash->{$grpname} = $Grp;		# store group object
     orac_print ("A new group ".$Grp->file." has been created\n","blue");
 
     # Store the Grp on the array as well
     push(@$GrpArr, $Grp) if $use_arr;
+
+    # Deal with the resume flag
+    # Only relevant if the Group file already exists
+    if ($Grp->file_exists) {
+      if ($resume) {
+	$Grp->coaddsread;
+      } else {
+	$Grp->erase;
+      }
+    }
 
   } unless (exists $GrpHash->{$grpname});
 

@@ -42,6 +42,7 @@ use vars qw/$VERSION/;
 # Associated classes
 use ORAC::Print;          # Print statements
 use ORAC::Index::Extern;  # For bad observation index list
+use ORAC::Constants;
 
 # Setup the object structure
 
@@ -88,6 +89,7 @@ sub new {
   my $group = {
 	       AllMembers => [],
 	       BadObsIndex => undef,
+	       Coadds => [],
 	       File => undef,
 	       FileSuffix => undef,
 	       FixedPart => undef,
@@ -255,31 +257,6 @@ The following methods are available for accessing the
 # With args they set the values
 # Without args they only retrieve values
 
-=item B<badobs_index>
-
-Return (or set) the index object associate with the bad observation
-index file. A index of class B<ORAC::Index::Extern> is used since 
-this index is modified by an external user/program.
-
-The index is created automatically the first time this method
-is invoked.
-
-=cut
-
-sub badobs_index {
-
-  my $self = shift;
-  if (@_) { $self->{BadObsIndex} = shift }
-
-  # If undef we can create a new index object
-  unless (defined $self->{BadObsIndex}) {
-    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.badobs";
-    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.badobs";
-    $self->{BadObsIndex} = new ORAC::Index::Extern($indexfile,$rulesfile);
-  };
-
-  return $self->{BadObsIndex}; 
-}
 
 =item B<allmembers>
 
@@ -323,6 +300,68 @@ sub allmembers {
     return $self->{AllMembers};
   }
 }
+
+=item B<badobs_index>
+
+Return (or set) the index object associate with the bad observation
+index file. A index of class B<ORAC::Index::Extern> is used since 
+this index is modified by an external user/program.
+
+The index is created automatically the first time this method
+is invoked.
+
+=cut
+
+sub badobs_index {
+
+  my $self = shift;
+  if (@_) { $self->{BadObsIndex} = shift }
+
+  # If undef we can create a new index object
+  unless (defined $self->{BadObsIndex}) {
+    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.badobs";
+    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.badobs";
+    $self->{BadObsIndex} = new ORAC::Index::Extern($indexfile,$rulesfile);
+  };
+
+  return $self->{BadObsIndex}; 
+}
+
+
+=item B<coadds>
+
+Return (or set) the array containing the list of frame numbers that have
+been coadded into the current group. This is not necessarily the same
+as the return of the membernumbers() method since that can return numbers
+for all the members of the group even if the full coaddition has not
+taken place or the pipeline has been resumed partway through a coaddition
+(in which case the coadds array will contain more numbers than are in the
+group).
+
+  @coadds = $Grp->coadds;
+  $coaddref = $Grp->coadds;
+  $Grp->coadds(@numbers);
+
+Returns an array reference in a scalar context, an array in an
+array context.
+
+The contents of this array are not automatically written to the 
+group file when changed, see the coaddspush() or coaddswrite() methods
+for further information on object persistence. The array is simply
+meant as a storage area for the pipeline.
+
+=cut
+
+sub coadds {
+  my $self = shift;
+  if (@_) { @{$self->{Coadds}} = @_; }
+  if (wantarray()) {
+    return @{$self->{Coadds}};
+  } else {
+    return $self->{Coadds};
+  }
+}
+
 
 =item B<file>
 
@@ -721,6 +760,119 @@ sub check_membership {
   $self->members(@good);
 
 }
+
+=item B<coaddspush>
+
+Used to push observation numbers onto the coadds() array. Automatically
+runs coaddswrite() to update to sync the file contents with the coadds()
+array.
+
+  $Grp->coaddspush(@numbers);
+
+=cut
+
+sub coaddspush {
+  my $self = shift;
+  if (@_) {
+    push( @{$self->coadds}, @_);
+    $self->coaddswrite;
+  }
+}
+
+=item B<coaddspresent>
+
+Compares the contents of the coadds() array with the supplied (single)
+argument. Returns true if the argument is present in the coadds()
+array, false otherwise. Also, returns false if no arguments are supplied
+or if the argument is undef.
+
+  $present = $Grp->coaddspresent($number);
+
+=cut
+
+sub coaddspresent {
+  my $self = shift;
+  if (@_) {
+    my $arg = shift;
+    if (defined $arg) {
+      # Use grep to search through the coadds array
+      # return true if the number is present
+      # else return false at the end of the routine
+      return 1 if grep { /^$arg$/ } @{$self->coadds};
+    }
+  }
+  return 0;
+}
+
+=item B<coaddsread>
+
+Reads the coadds() information from the current group file and stores
+it in the group using the coadds() method.
+Should return ORAC__OK if the coadds information was read successfully,
+else returns ORAC__ERROR.
+
+This is an abstract method and should be defined by a subclass.
+
+=cut
+
+sub coaddsread {
+  print "ERROR: ATTEMPTING TO READ COADDS ARRAY USING BASE CLASS\n";
+}
+
+=item B<coaddswrite>
+
+Method to write the contents of the coadds() array to the current
+group file. Should return ORAC__OK if the coadds information was written
+successfully, else returns ORAC__ERROR.
+
+If coadds() contains no entries, all coadds information is removed from
+the group file if present.
+
+This is an abstract method and should be defined by a subclass.
+
+=cut
+
+sub coaddswrite {
+  print "ERROR: ATTEMPTING TO WRITE COADDS ARRAY USING BASE CLASS\n";
+}
+
+=item B<erase>
+
+Erases the group file from disk.
+
+   $Grp->erase;
+
+Returns ORAC__OK if successful, ORAC__ERROR otherwise.
+
+=cut
+
+sub erase {
+  my $self = shift;
+  my $status = unlink $self->file;
+
+  return ORAC__ERROR if $status == 0;
+  return ORAC__OK;
+}
+
+
+=item B<file_exists>
+
+Method to determine whether the group file() exists on disk or not.
+Returns true if the file is there, false otherwise. Effectively
+equivalent to using -e but allows for the possibility that the
+information stored in file() does not directly relate to the
+file as stored on disk (e.g. a .sdf extension).
+
+=cut
+
+sub file_exists {
+  my $self = shift;
+  if (-e $self->file) {
+    return 1;
+  }
+  return 0;
+}
+
 
 =item B<file_from_bits>
 
