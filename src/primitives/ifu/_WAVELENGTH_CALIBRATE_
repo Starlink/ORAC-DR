@@ -74,7 +74,7 @@ Council.  All Rights Reserved.
 
 use File::Copy; 
 
-my ($in, $out) = $Frm->inout( "_cln" );
+my $in = $Frm->file();
 
 # Get the appropriate arlines file from the calibration system. Note that
 # these are intended to be static and therefore the arlines files and the
@@ -86,9 +86,6 @@ orac_print "Using arlines file: $arlines \n";
 # correct arlines file to here
 copy ("$arlines", "arlines.lis");
 
-# Clean bad pixels
-my $param = "image=$in crsig=5 crfact=1 crminv=20 sharpness=t crsharpness=10 direction=0 autorow=f nbrows=0 fix=t degfix=3 textfile=f output=$out";
-$Mon{'figaro1'}->obeyw("bclean", "$param"); 
 
 # Do the Iarc, starting from the centre of a central slice
 # Get number of slices and check that the user headers have been defined 
@@ -102,26 +99,38 @@ $row = int($row/2);
 
 orac_print "Running Iarc, starting at row $row.\n";
 
-my $param = "image=$out rstart=$row rwidth=1 rsigma=2 spread=t file=$out.iar lock=f xcorr=f gap=1";
+my $param = "image=$in rstart=$row rwidth=1 rsigma=2 spread=t file=$in.iar lock=f xcorr=f gap=1";
 $Mon{'figaro3'}->obeyw("iarc", "$param"); 
+
+
+# Look to see how good Iarc thought the fit was
+open (my $iar, "$in.iar") or die "Cannot open $in.iar\n";
+while (<$iar>) {
+    if (m/Number of rows that could not be fitted =\s*(\d+)/) {
+	if ($1 > 0) {
+	    orac_warn("Iarc has failed to fit $1 rows of the spectrum.\nExamine the scrunched arc spectrum to see what effect this has had.\n");
+	}
+    }
+
+    if (m/Maximum RMS error =\s*([\d\.]+)/) {
+	# This number might need refining, but 1 seems a reasonable guess
+	if ($1 > 1.0) {
+	    orac_warn("Maximum RMS error of $1 reported by Iarc seems rather high.\nExamine the scrunched arc spectrum to see what effect this has had.\n");
+	}
+    } 
+}  
 
 
 _CALCULATE_WAVELENGTH_RANGE_
 
-
 my $min = $Frm->uhdr( "lambda_min");
 my $max = $Frm->uhdr( "lambda_max");
 
-# Set the name of the output frame
-$Frm->file( $out );
 
 # Add this frame to the index of iar frames.
-$Cal->iar( "$out.iar:$min:$max" );
-$Cal->iarindex->add("$out.iar:$min:$max", {%{$Frm->hdr}, %{$Frm->uhdr}} );
+$Cal->iar( "$in.iar:$min:$max" );
+$Cal->iarindex->add("$in.iar:$min:$max", {%{$Frm->hdr}, %{$Frm->uhdr}} );
 
 # Report the processing status.
-orac_print "$out.iar filed as the current Iarc.\n";
-
-# And display it
-$Display->display_data($Frm) if defined $Display;
+orac_print "in.iar filed as the current Iarc.\n";
 
