@@ -3,7 +3,8 @@
 #    _GENERATE_OFFSETS_QUADRANT_JITTER_
 #
 # Purpose:
-#    Finds the offsets between the frames in a QUADRANT_JITTER recipe.
+#    Finds the offsets between the frames in a QUADRANT_JITTER recipe,
+#    and registers the frames.
 #
 # Description:
 #    This primitive finds the pixel offsets between the target frames  
@@ -11,8 +12,8 @@
 #    itself forms a subgroup of the current cycle members to be
 #    registered by other primitives.  
 #    
-#    When argument TELEOFF is true, _TELE_OFFSETS_ is invoked and
-#    the derived offsets are used to register with a shift of origin;
+#    When argument TELEOFF is true, _GENERATE_TELE_OFFSETS_ is invoked
+#    and the derived offsets are used to register with a shift of origin;
 #    otherwise _GENERATE_OFFSETS_ is the work horse.
 #
 # Language:
@@ -57,9 +58,6 @@
 #    Thus matching the centroids of a central source is attempted if
 #    automatic registration fails.
 #    -  The frames registered using telescope offsets are reported.
-#
-# Tasks:
-#    CCDPACK: REGISTER; KAPPA: WCSFRAME.
 #
 # Authors:
 #    MJC: Malcolm J. Currie (JAC)
@@ -107,7 +105,9 @@
 # Select those members in the current cycle.
           my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
 
-# Make a local $Grp containing just the current cycle.
+# Make a local $Grp containing just the current cycle.  Assumes that
+# the offsets are the same for each cycle.  Hence there is no reference
+# frame to pass to the registrations tasks.
           {
              my $Grp = $cycleGrp;
 
@@ -115,53 +115,9 @@
 # =================
              if ( $usetele ) {
 
-# Form a list of input file names for CCDPACK tasks.
-                my @objects = $Grp->membernames;
-
-# Convert list to comma-separated list.
-                my $objlist = join( ",", @objects );
-
-# Create text file to hold the list of input files, one per line.  This
-# is needed because expanded lists of files may make the command line too
-# long for the ADAM message system.
-                unlink( "objlist.inlist$$" );
-                open( INLIST, ">objlist.inlist$$" );
-                print INLIST join( "\n", @objects ), "\n";
-                close( INLIST );
-
 # Use telescope offsets from the headers.  Correct those offsets for a
-# moving target, requested to do so.
-                _TELE_OFFSETS_ MOVING_TARGET=$moving_target
-
-# Set the co-ordinate system to pixels.
-# =====================================
-
-# This is needed because CCDPACK v3.0, which is in the same release
-# as KAPPA v0.14-3 uses the WCS.  CCDPACK/REGISTER has a new USEWCS
-# parameter which defaults to true, meaning convert the pixel
-# co-ordinates in the .off files into the current co-ordinate system
-# of each NDF.  We use pixel co-ordinates throughout.  By making the
-# change here the REGISTER command line remains unchanged.
-                my ( $param1, $param2 );
-                if ( starversion_gt( "KAPPA", 'V0.13-6' ) ) {
-                   $param1 = "ndf='^objlist.inlist$$' frame=pixel";
-                   $Mon{"ndfpack_mon"}->obeyw( "wcsframe", "$param1" );
-                }
-
-# Register
-# ========
-
-# Specify the other parameters for the REGISTER stage.
-                $param1 = "inlist='^objlist.inlist$$'";
-                $param2 = "fittype=1";
-
-# Register the frames using a shift of origin.  Create the CCDPACK
-# TRANSFORM extensions.
-                $Mon{"ccdpack_reg"}->obeyw( "register", "$param1 $param2 accept" );
-                unlink( "objlist.inlist$$" );
-
-# Report processing status.
-                orac_print "Frames $objlist registered.\n\n";
+# moving target, requested to do so.  Register the frames.
+                _GENERATE_TELE_OFFSETS_ MOVING_TARGET=$moving_target
 
              } else {
 
@@ -186,7 +142,7 @@
 
 =head1 Name:
 
-_GENERATE_OFFSETS_QUADRANT_JITTER_  -- Finds the offsets between the frames in a QUADRANT_JITTER recipe.
+_GENERATE_OFFSETS_QUADRANT_JITTER_  -- Finds the offsets between the frames in a QUADRANT_JITTER recipe, and registers the frames.
 
 =head1 DESCRIPTION
 
@@ -195,10 +151,10 @@ in the current $Grp of a QUADRANT_JITTER recipe.  The primitive
 itself forms a subgroup of the current cycle members to be
 registered by other primitives.  
 
-When argument TELEOFF is true, L<_TELE_OFFSETS_|_TELE_OFFSETS_> is
-invoked and the derived offsets are used to register with a shift of
-origin; otherwise L<_GENERATE_OFFSETS_|_GENERATE_OFFSETS_> is the work
-horse.
+When argument TELEOFF is true,
+L<_GENERATE_TELE_OFFSETS_|_GENERATE_TELE_OFFSETS_> is invoked and the
+derived offsets are used to register with a shift of origin; otherwise
+L<_GENERATE_OFFSETS_|_GENERATE_OFFSETS_> is the work horse.
 
 =head1 ARGUMENTS
 
@@ -255,10 +211,6 @@ automatic registration fails.
 The frames registered using telescope offsets are reported.
 
 =back
-
-=head1 TASKS
-
-CCDPACK: REGISTER; KAPPA: WCSFRAME.
 
 =head1 AUTHORS
 

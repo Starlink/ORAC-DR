@@ -3,7 +3,8 @@
 #    _GENERATE_OFFSETS_CHOP_SKY_
 #
 # Purpose:
-#    Finds the offsets between the frames in an CHOP_SKY_JITTER recipe.
+#    Finds the offsets between the frames in an CHOP_SKY_JITTER recipe,
+#    and registers the frames.
 #
 # Description:
 #    This primitive finds the pixel offsets between the target frames in
@@ -15,7 +16,7 @@
 #    and that mosaics can be added.  The primitive then passes the new
 #    group to primitive _GENERATE_OFFSETS_ to do the bulk of the work.
 #
-#    When argument TELEOFF is true, _TELE_OFFSETS_ is invoked and
+#    When argument TELEOFF is true, _GENERATE_TELE_OFFSETS_ is invoked and
 #    the derived offsets are used to register with a shift of origin;
 #    otherwise _GENERATE_OFFSETS_ is the work horse.
 #
@@ -52,9 +53,6 @@
 #    -  The _GENERATE_OFFSETS_ argument CENTRAL_SOURCE is FALSE.
 #    Thus matching the centroids of a central source is not attempted
 #    if automatic registration fails.
-#
-# Tasks:
-#    CCDPACK: REGISTER; KAPPA: WCSFRAME.
 #
 # Authors:
 #    MJC: Malcolm J. Currie (JAC)
@@ -126,52 +124,8 @@
 # Make a local $Grp.
              my $Grp = $tempGrp;
 
-# Form a list of input file names for CCDPACK tasks.
-             my @objects = $Grp->membernames;
-
-# Convert list to comma-separated list.
-             my $objlist = join( ",", @objects );
-
-# Create text file to hold the list of input files, one per line.  This
-# is needed because expanded lists of files may make the command line too
-# long for the ADAM message system.
-             unlink( "objlist.inlist$$" );
-             open( INLIST, ">objlist.inlist$$" );
-             print INLIST join( "\n", @objects ), "\n";
-             close( INLIST );
-
-# Use telescope offsets from the headers.
-             _TELE_OFFSETS_
-
-# Set the co-ordinate system to pixels.
-# =====================================
-
-# This is needed because CCDPACK v3.0, which is in the same release
-# as KAPPA v0.14-3 uses the WCS.  CCDPACK/REGISTER has a new USEWCS
-# parameter which defaults to true, meaning convert the pixel
-# co-ordinates in the .off files into the current co-ordinate system
-# of each NDF.  We use pixel co-ordinates throughout.  By making the
-# change here the REGISTER command line remains unchanged.
-             my ( $param1, $param2 );
-             if ( starversion_gt( "KAPPA", 'V0.13-6' ) ) {
-                $param1 = "ndf='^objlist.inlist$$' frame=pixel";
-                $Mon{"ndfpack_mon"}->obeyw( "wcsframe", "$param1" );
-             }
-
-# Register
-# ========
-
-# Specify the other parameters for the REGISTER stage.
-             $param1 = "inlist='^objlist.inlist$$'";
-             $param2 = "fittype=1";
-
-# Register the frames using a shift of origin.  Create the CCDPACK
-# TRANSFORM extensions.
-             $Mon{"ccdpack_reg"}->obeyw( "register", "$param1 $param2 accept" );
-             unlink( "objlist.inlist$$" );
-
-# Report processing status.
-             orac_print "Frames $objlist registered.\n\n";
+# Use telescope offsets from the headers to register the frames.
+             _GENERATE_TELE_OFFSETS_ MOVING_TARGET=0
 
 # Attempt automatic registration
 # ==============================
@@ -199,7 +153,7 @@
 
 =head1 NAME
 
-_GENERATE_OFFSETS_CHOP_SKY_ -- Finds the offsets between the frames in a CHOP_SKY_JITTER recipe.
+_GENERATE_OFFSETS_CHOP_SKY_ -- Finds the offsets between the frames in a CHOP_SKY_JITTER recipe, and registers the frames.
 
 =head1 DESCRIPTION
 
@@ -212,10 +166,10 @@ current cycle, so that there is a common registration and that mosaics
 can be added.  The primitive then passes the new group to primitive
 L<_GENERATE_OFFSETS_|_GENERATE_OFFSETS_> to do the bulk of the work.
 
-When argument TELEOFF is true, L<_TELE_OFFSETS_|_TELE_OFFSETS_> is
-invoked and the derived offsets are used to register with a shift of
-origin; otherwise L<_GENERATE_OFFSETS_|_GENERATE_OFFSETS_> is the work
-horse.
+When argument TELEOFF is true,
+L<_GENERATE_TELE_OFFSETS_|_GENERATE_TELE_OFFSETS_> is invoked and the
+derived offsets are used to register with a shift of origin; otherwise
+L<_GENERATE_OFFSETS_|_GENERATE_OFFSETS_> is the work horse.
 
 =head1 ARGUMENTS
 
@@ -274,10 +228,6 @@ Thus matching the centroids of a central source is not attempted
 if automatic registration fails.
 
 =back
-
-=head1 TASKS
-
-CCDPACK: REGISTER, KAPPA: WCSFRAME.
 
 =head1 AUTHORS
 

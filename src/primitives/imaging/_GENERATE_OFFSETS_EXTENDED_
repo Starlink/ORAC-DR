@@ -3,7 +3,8 @@
 #    _GENERATE_OFFSETS_EXTENDED_
 #
 # Purpose:
-#    Finds the offsets between the frames in an EXTENDED_nxm recipe.
+#    Finds the offsets between the frames in an EXTENDED_nxm recipe,
+#    and registers the frames.
 #
 # Description:
 #    This primitive finds the pixel offsets between the target frames  
@@ -12,9 +13,9 @@
 #    all the target frames in a recipe cycle, if steering headers
 #    MAKE_MOSAIC or MAKE_GRAND_MOSAIC are true respectively.  It then
 #    passes the subgroups to other primitives to do the bulk of the
-#    work.  When argument TELEOFF is true, _TELE_OFFSETS_ is invoked
-#    and the derived offsets are used to register with a shift of 
-#    origin; otherwise _GENERATE_OFFSETS_ is the work horse.
+#    work.  When argument TELEOFF is true, _GENERATE_TELE_OFFSETS_ is 
+#    invoked and the derived offsets are used to register with a shift
+#    of origin; otherwise _GENERATE_OFFSETS_ is the work horse.
 #
 # Language:
 #    Perl5
@@ -42,9 +43,6 @@
 #    -  Steering header CYCLE_NUMBER specifies the recipe cycle.
 #    -  The _GENERATE_OFFSETS_ argument CENTRAL_SOURCE is FALSE.
 #    -  The frames registered using telescope offsets are reported.
-#
-# Tasks:
-#    CCDPACK: REGISTER; KAPPA: WCSFRAME.
 #
 # Authors:
 #    MJC: Malcolm J. Currie (JAC)
@@ -115,52 +113,8 @@
 # row.
              my $Grp = $tarGrp;
 
-# Form a list of input file names for CCDPACK tasks.
-             my @objects = $Grp->membernames;
-
-# Convert list to comma-separated list.
-             my $objlist = join( ",", @objects );
-
-# Create text file to hold the list of input files, one per line.  This
-# is needed because expanded lists of files may make the command line too
-# long for the ADAM message system.
-             unlink( "objlist.inlist$$" );
-             open( INLIST, ">objlist.inlist$$" );
-             print INLIST join( "\n", @objects ), "\n";
-             close( INLIST );
-
-# Use telescope offsets from the headers.
-             _TELE_OFFSETS_
-
-# Set the co-ordinate system to pixels.
-# =====================================
-
-# This is needed because CCDPACK v3.0, which is in the same release
-# as KAPPA v0.14-3 uses the WCS.  CCDPACK/REGISTER has a new USEWCS
-# parameter which defaults to true, meaning convert the pixel
-# co-ordinates in the .off files into the current co-ordinate system
-# of each NDF.  We use pixel co-ordinates throughout.  By making the
-# change here the REGISTER command line remains unchanged.
-             my ( $param1, $param2 );
-             if ( starversion_gt( "KAPPA", 'V0.13-6' ) ) {
-                $param1 = "ndf='^objlist.inlist$$' frame=pixel";
-                $Mon{"ndfpack_mon"}->obeyw( "wcsframe", "$param1" );
-             }
-
-# Register
-# ========
-
-# Specify the other parameters for the REGISTER stage.
-             $param1 = "inlist='^objlist.inlist$$'";
-             $param2 = "fittype=1"; 
-
-# Register the frames using a shift of origin.  Create the CCDPACK
-# TRANSFORM extensions.
-             $Mon{"ccdpack_reg"}->obeyw( "register", "$param1 $param2 accept" );
-             unlink( "objlist.inlist$$" );
-
-# Report processing status.
-             orac_print "Frames $objlist registered.\n\n";
+# Use telescope offsets from the headers.  Register the frames.
+             _GENERATE_TELE_OFFSETS_ MOVING_TARGET=0
 
 # Attempt automatic registration
 # ==============================
@@ -187,19 +141,19 @@
 
 =head1 NAME
 
-_GENERATE_OFFSETS_EXTENDED_ -- Find the offsets between the frames in an EXTENDED_I<n>xI<m> recipe.
+_GENERATE_OFFSETS_EXTENDED_ -- Find the offsets between the frames in an EXTENDED_I<n>xI<m> recipe, and registers the frames.
 
 =head1 DESCRIPTION
 
-This primitive finds the pixel offsets between the target frames  
-in the current $Grp of an EXTENDED_I<n>xI<m> recipe.  The primitive
-itself forms subgroups of either the target frames in a row or
-all the target frames in a recipe cycle, if steering headers
-MAKE_MOSAIC or MAKE_GRAND_MOSAIC are true respectively.  It then
-passes the subgroups to other primitives to do the bulk of the
-work.  When argument TELEOFF is true, L<_TELE_OFFSETS_|_TELE_OFFSETS_>
-is invoked and the derived offsets are used to register with a shift of 
-origin; otherwise _GENERATE_OFFSETS_ is the work horse.
+This primitive finds the pixel offsets between the target frames in
+the current $Grp of an EXTENDED_I<n>xI<m> recipe.  The primitive
+itself forms subgroups of either the target frames in a row or all the
+target frames in a recipe cycle, if steering headers MAKE_MOSAIC or
+MAKE_GRAND_MOSAIC are true respectively.  It then passes the subgroups
+to other primitives to do the bulk of the work.  When argument TELEOFF
+is true, L<_GENERATE_TELE_OFFSETS_|_GENERATE_TELE_OFFSETS_> is invoked
+and the derived offsets are used to register with a shift of origin;
+otherwise L<_GENERATE_OFFSETS_|_GENERATE_OFFSETS_> is the work horse.
 
 =head1 ARGUMENTS
 
@@ -264,10 +218,6 @@ See L<_FIND_APPROX_OFFSETS_|_FIND_APPROX_OFFSETS_> for more information.
 The frames registered using telescope offsets are reported.
 
 =back
-
-=head1 TASKS
-
-CCDPACK: REGISTER; KAPPA: WCSFRAME.
 
 =head1 AUTHORS
 
