@@ -502,7 +502,10 @@ sub number {
 Method to return the current input filename and the 
 new output filename given a suffix.
 For the base class the input filename is chopped
-at the last underscore and the suffix appended.
+at the last underscore and the suffix appended when the name
+contains at least 2 underscores. The suffix is simply appended if
+there is only one underscore. This prevents numbers being chopped
+when the name is of the form ut_num.
 
 Note that this method does not set the new 
 output name in this object. This must still be done by the
@@ -513,7 +516,8 @@ Returns $in and $out in an array context:
    ($in, $out) = $Obs->inout($suffix);
 
 Therefore if in=file_db and suffix=_ff then out would
-become file_ff
+become file_db_ff but if in=file_db_ff and suffix=dk then
+out would be file_db_dk.
 
 =cut
 
@@ -532,7 +536,18 @@ sub inout {
   # instead split on underscore and recombine using underscore
   # but ignoring the last member of the split array
   my (@junk) = split(/_/,$infile);
-  my $outfile = join("_", @junk[0..$#junk-1]);
+
+  # We only want to drop the SECOND underscore. If we only have
+  # two components we simply append. If we have more we drop the last
+  # This prevents us from dropping the observation number in 
+  # ro970815_28
+
+  my $outfile;
+  if ($#junk > 1) {
+    $outfile = join("_", @junk[0..$#junk-1]);
+  } else {
+    $outfile = $infile;
+  }
 
   # Now append the suffix to the outfile
   $outfile .= $suffix;
