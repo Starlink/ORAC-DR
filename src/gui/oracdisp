@@ -1,0 +1,575 @@
+#!/usr/local/bin/perl -w
+#
+#  oracdisp
+#
+#     - Controls the ORACDR display environment
+#     - This program is run from the ORACDR pipeline
+#     
+#
+#  Authors:
+#     Frossie Economou (JAC)
+#     Tim Jenness (JAC)
+#
+#  History:
+#     $Log$
+#     Revision 1.1  1998/07/14 21:24:44  timj
+#     First demo release
+#
+#
+
+use strict;
+
+use subs qw/update_status image_ui spectrum_ui/;
+
+# Generic variables
+use vars qw/$MW $VERSION $BAR $TKSTATUS $TOPLEVEL/;
+
+# Menus
+use vars qw/ %MENUS /;
+
+# Variables related to global state of sytem
+use vars qw/%STATUS/;
+
+# Start up Tk early and put up a status bar
+
+BEGIN {
+
+  use Tk;
+  use Tk::ProgressBar;
+  '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+
+  # Create a new main window
+  $MW = MainWindow->new;
+  $MW->positionfrom('user');
+  $MW->geometry('+40+40');
+  $MW->title('ORACDR display configuration utility');
+  $MW->iconname('ORACdisp');
+
+  $TKSTATUS = $MW->Label(qw(-width 40 -anchor w -foreground blue),
+		       -text => "Obslog $VERSION ...");
+  $TKSTATUS->grid(-row => 0, -column => 0, -sticky => 'w'); 
+  $BAR = $MW->ProgressBar->grid(-sticky => 's');
+  $BAR->configure(-step => 0, -max => 100);
+  $MW->update;
+}
+
+# Read file reader
+use IO::File;
+
+# Menu options
+
+%MENUS = (
+	  WINDOW => [ 0..4 ],
+	  TOOL   => [ qw/ KAPVIEW P4/ ],
+	  REGION => [ 0..8 ]
+	 );
+
+# Name of definition file
+# this should also be read from the command line
+# as an option.
+my $DefnFile = "$ENV{ORAC_DIR}/disp.dat";
+
+# This is the actual display definition as stored in memory
+# It is an array of hashes
+# The ID entry in each hash is 'suffix'
+# use &update_defn to update the status widget
+# use &write_defn to write the defn to a file
+# could treat this as an object....(cf ORAC::Index)
+my @DispDefn = ();
+
+
+# Configure the default behaviour
+$STATUS{IMAGE} = {
+		  TOOL => 'KAPVIEW',
+		  REGION => 0,
+		  WINDOW => 0,
+		  SUFFIX => 'RAW',
+		  XAUTOSCALE => 1,
+		  YAUTOSCALE => 1,
+		  ZAUTOSCALE => 1,
+		  XMIN => 0,
+		  YMIN => 0,
+		  ZMIN => 0,
+		  XMAX => 100,
+		  YMAX => 100,
+		  ZMAX => 100
+		 };
+
+$STATUS{GRAPH} = {
+		  TOOL => 'KAPVIEW',
+		  REGION => 0,
+		  WINDOW => 0,
+		  SUFFIX => 'RAW',
+		  XAUTOSCALE => 1,
+		  YAUTOSCALE => 1,
+		  XMIN => 0,
+		  YMIN => 0,
+		  XMAX => 100,
+		  YMAX => 100,
+		 };
+
+
+# Okay now we are really starting
+
+update_status('Reading NoteBook module..', 10);
+require Tk::NoteBook;
+update_status('Reading Tk::Menu module..', 20);
+require Tk::Menu;
+
+update_status('Reading DialogBox module..', 25);
+require Tk::DialogBox;
+
+update_status('Reading notebook definitions..', 40);
+require 'image.ui.pl';
+require 'spectrum.ui.pl';
+
+
+# 1 - Create frames in top window
+# 2 - Create frames inside these and pack
+# 3 - Pack all the toplevel frames into the MainWindow
+# 4 - Start event loop
+
+update_status('Configure toplevel frames...', 60);
+
+# Declare all the frame variables
+my $MBar_f; # The Top row of menu buttons
+my $NB_f;   # The notebook frame
+my $State_f; # The listbox containing the current state
+
+# Global widgets
+my $CurrDefn; # The listbox widget that contains the current definitions
+my $NB;       # The notebook widget
+my $NB_image; # The image notebook widget
+my $NB_graph; # The graph notebook widget
+
+
+
+
+# Actually create the frame objects
+$MBar_f = $MW->Frame(-relief =>'flat', -borderwidth => 2);
+$NB_f   = $MW->Frame( -relief => 'groove', -borderwidth => 2);
+$State_f = $MW->Frame(-relief => 'groove', -borderwidth => 2);
+
+# Now create the top level menu bar
+update_status 'Creating menubar...', 60;
+&create_topmenu($MBar_f);
+
+# Now create the notebook widget
+update_status 'Creating notebook entries...', 70;
+&create_notebook($NB_f);
+
+# Now create the lower window containing the current state
+# of the settings
+update_status 'Creating lower window...', 80;
+&create_state($State_f);
+
+# Update the bar to show that we have finished loading (No startup time!)
+update_status 'Complete', 99;
+
+# Now that we have created all the widgets we can pack them into the
+# main window
+
+# Remove the STATUS and BAR
+$TKSTATUS->destroy if defined $TKSTATUS;
+$BAR->destroy if defined $BAR;
+
+# Pack the frames into the mainwindow
+$MBar_f->grid(-sticky => 'nswe');
+$NB_f->grid(-sticky => 'nsew');
+$State_f->grid(-sticky => 'nsew');
+
+# Start the event loop
+MainLoop;
+
+
+############################# S U B S ################################
+
+# Subroutines abound....
+
+# create_topmenu
+#  This routine creates the row of buttons along the top
+# of the main window.
+# contains things such as Exit and About buttons
+
+sub create_topmenu {
+  my $frame = shift;
+
+  my $about;
+  $about = $frame->Button(-text=>'About',
+			    -relief=>'raised',
+			    -command=>sub{&aboutwin(\$about)})->pack(-side=>'right');
+
+  my $quit = $frame->Button(-text=>'Exit',
+			     -relief=>'raised',
+			     -command=>sub{&close_oracdisp})->pack(-side=>'left');
+
+}
+
+# This routine formats and packs the NoteBook
+# Argument is the frame in which it should be packed
+# Assumes that the UI frame code has been 'required' earlier
+
+sub create_notebook {
+  my $frame = shift;
+
+  # Create the notebook
+  $NB = $frame->NoteBook(-ipadx => 6, -ipady => 6);
+  
+  # Now declare the entries
+  $NB_image = $NB->add("image", -label => "Image", -underline => 0);
+  $NB_graph = $NB->add("graph", -label => "Graph", -underline => 0);
+
+  # Create the menu buttons
+#  $WINDOW_NAME = ;
+
+
+  # Now fill the entries with 'stuff'
+  image_ui $NB_image;
+  spectrum_ui $NB_graph;
+
+  # And pack the pages into the required frame
+  $NB->pack(-expand => 'yes',
+	    -fill => 'both',
+	    -padx => 5, -pady => 5,
+	    -side => 'top');
+}
+
+# Sub to create the list widget at the bottom of the screen that 
+# contains the current display configuration
+
+sub create_state {
+  my $frame = shift;
+
+  # Create a text widget for the data with an attached Scroll bar
+  # This becomes a Global variable so that
+  # we can always access the widget for updating entired
+  $CurrDefn = $frame->Scrolled('Text',
+			       -scrollbars => 'se',
+			       -wrap => 'none',
+			       -setgrid => 1,
+			       -height=>5,
+			       -width =>30
+			      )->pack(-side =>'top',-fill => 'both');
+  $CurrDefn->bindtags(qw/widget_demo/); # Remove all bindings except dummy
+  
+  # Now fill the widget with the contents of the default state
+  # Read in the default configuration from file
+  # This sets the state in the defn array
+  &read_defn;
+
+  # Now run the task that fills the text widget with entries
+  &update_defn;
+
+}
+  
+
+
+# This sub inserts text into a widget and sets a tag
+# Carriage returns are not appended.
+#
+# args:  Window object, text, list of tags to associate with line
+
+sub insert_text {
+
+  my $w = shift;
+  my $text = shift;
+
+  # Get the start position from the current state of the object
+  my $start = $w->index('insert');
+
+  # Insert the text
+  $w->insert('insert', $text);
+
+  # Remove all tags on this position
+  foreach my $tag ($w->tag('names', $start)) {
+    $w->tag('remove', $tag, $start, 'insert');
+  }
+
+  # If a list has been supplied then set the tags
+  if (@_) {
+    my @tags = @_;
+    foreach my $tag (@tags) {
+      $w->tag('add', $tag, $start, 'insert');
+    }
+  }
+
+}
+
+
+# This routine closes down the GUI
+sub close_oracdisp {
+  $MW->destroy if defined $MW;
+}
+
+# This routine pops up a window telling us all abour oracdisp
+
+sub aboutwin {
+  my $aboutbut = shift;
+
+  # Turn off the button that called this
+  $$aboutbut->configure(-state=>'disabled');
+
+  my $f = $MW->DialogBox(-title => 'About oracdisp', -buttons => ["OK"]);
+
+  $f->Label(-text =>"ORACDISP\n\nBy: Frossie Economou and Tim Jenness\n\nVersion: $VERSION")->pack;
+
+  # One problem with using a dialog box is that the window
+  # grabs focus. If this is a pain I will rewrite using my own
+  # widgets
+  my $result = $f->Show;
+
+  $$aboutbut->configure(-state=>'normal') if $result;
+
+}
+
+
+# This subroutine updates the display widget on startup
+
+sub update_status {
+ 
+    my($status_text, $something) = @_;
+ 
+    $TKSTATUS->configure(-text => "$status_text ...");
+    $BAR->configure(-step=>$something);
+    if (defined $TOPLEVEL) {
+      $TOPLEVEL->update;
+    } else {
+      $MW->update;
+    }
+ 
+}
+
+# Subroutine to read the current definition from disk
+# The name of the file is stored in the global variable $DefnFile
+# This routine is almost exactly the same as the reader in
+# ORAC::Display::parse_file_defn
+
+sub read_defn {
+
+  # Reset the current definition
+  @DispDefn = ();
+
+  # Open the file
+  my $file = new IO::File("< $DefnFile");
+
+  # If the file is okay....
+  if (defined $file) {
+    
+    # Probably want to skip all lines containing comments
+    foreach my $line (<$file>) {
+
+      chop $line;  # Get rid of carriage return
+
+      next unless defined $line;
+      next unless $line =~ /./;
+
+      # Parse the line and convert to hash
+      my $href = Disp_TextToH($line);
+
+      next unless defined $href;
+      # Now store the hash on the stack
+      push(@DispDefn, $href);
+
+    }
+
+  } else {
+    warn ("Definition file ($DefnFile) could not be opened");
+  }
+
+  return;
+}
+
+# update_defn 
+#   This routine takes the definition array and copies it into
+#   the status widget
+# The global defintion is stored in @DispDefn
+
+sub update_defn {
+
+  # This routine simply runs through @DispDefn and constructs a 
+  # string that is then displayed 
+
+  # Allow modification in the widget
+  $CurrDefn->configure(-state => 'normal');
+
+  # Clear the widget
+  $CurrDefn->delete('1.0', 'end');
+
+  # Now loop through @DispDefn
+  for (my $i =0; $i <= $#DispDefn; $i++) {
+
+    my $defn = $DispDefn[$i];
+    
+    # Tag name
+    my $tag = "d$i";
+    
+    # Convert to a string
+    my $text = Disp_HtoText($defn);
+
+    next unless defined $text;
+
+    # And insert this text into the widget and tag it with $i
+    &insert_text($CurrDefn, "$text\n", $tag);
+
+    # Now configure this tag so that it recongises when 
+    # the mouse arrives and leaves
+    $CurrDefn->tag('bind', $tag, '<Any-Enter>' => 
+		   sub {shift->tag('configure', $tag,
+				   -background => '#ff0000',
+				   -relief => 'raised',
+				   -borderwidth => 1
+				  )}
+		  );
+
+    $CurrDefn->tag('bind', $tag, '<Any-Leave>' => 
+		   sub {shift->tag('configure', $tag,
+				   -foreground => undef, 
+				   -background => undef
+				  )}
+		  );
+
+    # Now we should configure it so that something happens when 
+    # we double click
+    # All we really need to do is associate the command with
+    # the 
+    $CurrDefn->tag('bind', $tag, 
+		   '<Double-1>' => sub {&reflect_defn($defn);}
+		  );
+
+  }
+
+  # Disable the box so that people cant write in it
+  $CurrDefn->configure(-state => 'disabled');
+
+
+}
+
+
+# Routine to take an entry in @DispDefn and convert it to a string
+# suitable for display or writing to a file
+# Expects a hash reference as input
+
+sub Disp_HtoText {
+  # First arg is the hash reference
+  my $href = shift;
+
+  die 'Not a hash reference' unless ref($href) eq 'HASH';
+
+  my %hash = %{$href};
+
+  # Now the first bit of the string is just the ID
+  my $string;
+  if (exists $hash{'ID'}) {
+    $string = $hash{'ID'};
+  } else {
+    print "GUI_Error::: ID key is missing\n";
+    return undef;
+  }
+  
+  foreach my $key (keys %hash) {
+    next if $key eq 'ID';
+    $string .= " " . $key . "=$hash{$key}";
+  }
+
+  # Return the string
+  return $string;
+}
+
+# Routine to convert a text line (as stored on the text widget or
+# in a Definition File and convert it to a hash
+
+sub Disp_TextToH {
+  my $text = shift;
+
+  # Return immediately if there was nothing there
+  return undef unless defined $text;
+
+  # Strip leading spaces
+  $text =~ s/^\s+//;
+
+  # Skip  blank lines
+  return undef  unless defined $text;
+  
+  # Skip comments 
+  return if $text =~ /^\#/;
+      
+  # Now we need to split up the line
+  my @bits = split(/\s+/, $text);
+
+  # We are generating a hash
+  my %hash = ();
+
+  # We know the first key
+  $hash{'ID'} = shift(@bits);
+
+  return unless defined $text;
+
+  # Now loop through the remainder and split on equals
+  foreach my $key (@bits) {
+    my ($hkey, $value) = split(/=/,$key);
+    $hkey = uc($hkey);
+    $hash{$hkey} = $value;
+  }
+
+  return \%hash;
+
+}
+
+
+# Routine to update the NoteBook item so that it reflects the
+# selected Defintion entry.
+# Args:  Hash reference (might change this to a number since that would
+#           be the obvious OO interface)
+
+sub reflect_defn {
+  my $href = shift;
+
+  print "Process: ". Disp_HtoText($href) . "\n";
+
+  # Raise the required NoteBook entry
+  $NB->raise("graph");
+  
+  # Now it gets a bit complicated
+  # We know which frame we are interested in eg 'graph'
+  # It seems that what we really need is an array of widget names
+  # and variables for each type (a hash of hashes obviously :-) )
+  # ie %TYPES would contain $TYPES{GRAPH}, $TYPES{IMAGE} etc.
+  # The $TYPES{thingy} would contain the linked variables
+  # and the entry widget IDs
+  # This makes it difficult when using specPerl since we need to store
+  # the names of entry widgets....
+  # ie %TYPES = (  GRAPH => { AUTOSCALE => 1/0, SUFFIX_WIDGET => $Widg })
+
+  my @child = $NB_image->children;
+  print join(" ",@child) . "\n";
+
+  foreach (@child) {
+    print $_->name . "\n";
+  }
+
+  print "SUFFIX is $STATUS{IMAGE}{SUFFIX}\n";
+
+}
+
+
+## Create a menu item of a given type. This is used to avoid
+# repeats of code in the User-Interface 
+#
+#  Args: menubutton widget, Display type (IMAGE, GRAPH etc), menu type
+#         (TOOL, WINDOW, REGION - governs source
+
+sub create_menu {
+
+  my ($w, $TYPE, $SOURCE) = @_;
+  
+  $TYPE = uc($TYPE);
+  $SOURCE = uc($SOURCE);
+
+  foreach my $item (@{$MENUS{$SOURCE}}) {
+
+    $w->command( -label   => $item,
+		 -command => sub { $STATUS{$TYPE}{$SOURCE} = $item }
+	       );
+  }
+}
+
