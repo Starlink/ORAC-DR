@@ -698,6 +698,7 @@ sub calc_orac_headers {
                AIRMASS_START
                AIRMASS_END
                DECBASE
+               EQUINOX
                FILTER 
                INSTRUMENT 
                LBNDX 
