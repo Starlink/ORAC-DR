@@ -58,14 +58,38 @@ for my $i (0..$#input_files) {
   my $temp2file = $temp2->file;
   $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$outfile(1,,2) out=$temp2file trim");
 
+
+  # Now we want to correct for possible nod errors by removing
+  # the average for each nod.
+  my $jpers = $Frm->hdr("J_PER_S");
+
+  # First find the average value over each nod
+  my $temp3 = new ORAC::TempFile;
+  my $temp3file = $temp3->file;
+  $Mon{kappa_mon}->obeyw("compave", "COMPRESS=$jpers in=$temp2file out=$temp3file");
+
+  # Now duplicate the pixels and fix the origin
+  my $temp4 = new ORAC::TempFile;
+  my $temp4file = $temp4->file;
+  $Mon{kappa_mon}->obeyw("pixdupe","EXPAND=$jpers in=$temp3file out=$temp4file");
+  $Mon{ndfpack_mon}->obeyw("setorigin","ORIGIN=1 NDF=$temp4file");
+
+  # And subtract the two
+  my $temp5 = new ORAC::TempFile;
+  my $temp5file = $temp5->file;
+  $Mon{kappa_mon}->obeyw("sub","IN1=$temp2file IN2=$temp4file OUT=$temp5file");
+
   # Now we want to get some statistics on it
-  $Mon{kappa_mon}->obeyw("stats","ndf=$temp2file");
+  $Mon{kappa_mon}->obeyw("stats","ndf=$temp5file");
 
   # The results. We are interested in the standard deviation, and DC offset
-  my ($ORAC_STATUS, $mean) = $Mon{kappa_mon}->get("stats","mean");
-  ($ORAC_STATUS, my $stdev) = $Mon{kappa_mon}->get("stats","sigma");
+  (my $ORAC_STATUS, my $stdev) = $Mon{kappa_mon}->get("stats","sigma");
   ($ORAC_STATUS, my $ngood) = $Mon{kappa_mon}->get("stats","numgood");
 
+  # We also would like to know just how bad the nod contribution
+  # was
+  $Mon{kappa_mon}->obeyw("stats","ndf=$temp3file");
+  ($ORAC_STATUS, my $stdev_nod) = $Mon{kappa_mon}->get("stats","sigma");
 
   # Logfile
   my $log = new ORAC::LogFile("log.sky");
@@ -102,12 +126,12 @@ for my $i (0..$#input_files) {
 
   if ($sla_avail == 0) {
     $log->header("# NEFD log file - written on $time",
-		 "\nUT                HST   Obs Source       Mode     T_int  Filter Thr El CSO    Tau   Seeing  SkyMean  SkyNoise",
+		 "\nUT                HST   Obs Source       Mode     T_int  Filter Thr El CSO    Tau   Seeing  SkyNoise NodNoise",
 		 "#--------------------------------------------------------------------------------------------------------------",
 		  );
   } else {
     $log->header("# NEFD log file - written on $time",
-		 "\nUT                HST   Obs Source       Mode     T_int  Filter Thr   PA  dPA   El CSO    Tau   Seeing  SkyMean  SkyNoise",
+		 "\nUT                HST   Obs Source       Mode     T_int  Filter Thr   PA  dPA   El CSO    Tau   Seeing  SkyNoise NodNoise",
 		 "#-------------------------------------------------------------------------------------------------------------------------",
 		);
   }
@@ -183,9 +207,9 @@ for my $i (0..$#input_files) {
 
   # Now write the entry
   if ($sla_avail == 0) {
-    $log->addentry("$uttime $hst $run $src $mode  $totint   $wav $thr $el $cso $tau $see   $mean $stdev");
+    $log->addentry("$uttime $hst $run $src $mode  $totint   $wav $thr $el $cso $tau $see   $stdev $stdev_nod");
   } else {
-    $log->addentry("$uttime $hst $run $src $mode  $totint   $wav $thr $chop_pa_azel  $chop_pa_azel_err   $el $cso $tau $see   $mean $stdev");
+    $log->addentry("$uttime $hst $run $src $mode  $totint   $wav $thr $chop_pa_azel  $chop_pa_azel_err   $el $cso $tau $see   $stdev $stdev_nod");
   }
 
 }
@@ -196,7 +220,7 @@ for my $i (0..$#input_files) {
 
 # Given information in the fits header, construct a sensible name for
 # the observing mode.
-
+no warnings 'redefine';
 sub construct_mode {
 
 my $mode = $Frm->hdr('MODE');
@@ -271,6 +295,12 @@ sub calc_chop_pa_azel {
         $chop_pa_azel = ($chop_pa_azel_start + $chop_pa_azel_end) / 2.0;
         $chop_pa_azel_err = abs($chop_pa_azel - $chop_pa_azel_start);
 
+    } else {
+
+        # We dont know - probably NA chop
+        $chop_pa_azel = 0;
+        $chop_pa_azel_err = 360;
+
     }
 
     return ($chop_pa_azel, $chop_pa_azel_err);
@@ -333,7 +363,7 @@ sub calc_apparent ($$) {
 
 	# Now convert to apparent
 	Astro::SLA::slaMap( $raj, $decj, 0.0, 0.0, 0.0, 0.0, 2000.0, $mjd,
-		my $ra_app, my $dec_app);
+			    my $ra_app, my $dec_app);
 
 	return ($ra_app, $dec_app);
 
