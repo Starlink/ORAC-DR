@@ -28,6 +28,8 @@ use strict;
 use vars qw/$VERSION/;
 use ORAC::Print;
 
+use POSIX qw/tmpnam/;  # For unique keys
+
 $VERSION = '0.10';
 
 =head1 PUBLIC METHODS
@@ -192,15 +194,33 @@ sub slurprules {
 };
 
 
-=item slurpindex
+=item slurpindex(usekey)
 
 Sets up the index data in the object. Croaks if it fails.
+The supplied argument is used to control the behaviour of the
+read. If the 'usekey' flag is true the first string in each
+row (space separated) is used as a key for the index hash.
+
+If 'usekey' is false the key for each row is created 
+automatically. This is useful for indexes where the contents 
+of the index is more important than any particular key.
+
+  $index->slurpindex(0); # Auto-generate keys
+
+Default behaviour (ie no args) is to read the key from the
+index file (ie usekey=1).
 
 =cut
 
 sub slurpindex {
   
   my $self = shift;
+
+  # Read arguments
+  my $usekey = 1;
+  if (@_) { $usekey = shift; }
+
+  # Look for index file
   my $file = $self->indexfile;
   return unless (-e $file);
   
@@ -214,23 +234,39 @@ sub slurpindex {
       
       next if $line =~ /^\s*#/; 
 
-      $line =~ s/^\s+//g;		# zap leading blanks
-      my ($name,@data)=split(/\s+/,$line);
+      $line =~ s/^\s+//g;		   # zap leading blanks
+      my ($name,@data)=split(/\s+/,$line); # Split on spaces
+      next unless defined $name;	   # skip blank lines
+
+      # If we are using the key from the file then we
+      # have that as $name. Else we have to create a new $name
+      # for the hash
+
+      unless ($usekey) {
+        # Put $name back onto the index array
+        unshift (@data, $name);
+  
+        # Create a new key
+        $name = tmpnam;
+      }
       
-      next unless defined $name;	# skip blank lines
+      # Store index entry in hash
       $index{$name} = \@data;
       
     };
     
   } else {
     
-    croak("Couldn't open rules index $file : $!");
+    croak("Couldn't open index file $file : $!");
     
   };
   
   $self->indexref(\%index);
   
 };
+
+
+
 
 =item writeindex
 
@@ -350,7 +386,12 @@ sub indexentry {
 
 =item verify
 
-verifies a frame against a (calibration) index entry
+verifies a frame (in the form of a hash reference) against a 
+(calibration) index entry (ie by supplying the hash key to the index
+entry). An optional third argument is available to turn off warning 
+messages -- default is for warning messages to be turned on (true)
+
+  $result = $index->verify(indexkey, \%hash, $warn);
 
 Returns undef (error), 0 (not suitable), or 1 (suitable)
 
@@ -360,9 +401,14 @@ sub verify {
 
   my $self=shift;
   # expect the name of the calibration file and the object header hash
-  croak('Usage: verify($calibration,$hashref)') unless (scalar(@_)==2);
+  croak('Usage: verify($calibration,$hashref)') 
+    unless (scalar(@_)==2 || scalar(@_)== 3);
+
+  my $name = shift;
+  my $hashref = shift;
   
-    my ($name,$hashref) = @_;
+  my $warn = 1;
+  if (@_) { $warn = shift; }
 
   croak("Argument is not a hash") unless ref($hashref) eq "HASH";  
   return 0 unless defined $name;
@@ -374,7 +420,7 @@ sub verify {
   };
 
   # take local copy of the calibration data index entry
-  my @calibdata = @{$ {$self->indexref}{$name}};
+  my @calibdata = @{ $self->indexref->{$name} };
   # take local copy the rules
   my %rules = %{$self->rulesref};
   # take local copy of the object header hash
@@ -402,8 +448,10 @@ sub verify {
       return undef;
     };
     unless ($ok) {
-      orac_warn("$name not a suitable calibration: failed $key $rules{$key}\n");
-      print "Header:-",$Hdr{$key},"--","Calvalue:-$calvalue-\n";
+      if ($warn) {
+	orac_warn("$name not a suitable calibration: failed $key $rules{$key}\n");
+	print "Header:-",$Hdr{$key},"--","Calvalue:-$calvalue-\n";
+      }
       return 0;
     };
     
@@ -425,51 +473,94 @@ frame from the index hash
 
 sub choosebydt {
 
-my $self=shift;
+  my $self=shift;
 
- my ($timekey,$hashref) = @_;
+  my ($timekey,$hashref) = @_;
 
   croak("Argument is not a hash") unless ref($hashref) eq "HASH";  
 
   my %Hdr = %$hashref;
 
-croak("Key $timekey unknown to orac - this should not happen\n") 
- unless exists $Hdr{$timekey};
+  croak("Key $timekey unknown to orac - this should not happen\n") 
+    unless exists $Hdr{$timekey};
 
-my %index = %{$self->indexref};
+  my %index = %{$self->indexref};
+  
+  my $pos = -1;
 
-my $pos = -1;
+  foreach my $key (sort keys %{$self->rulesref}) {
+    $pos++;
+    last if $key eq $timekey;
+  };
 
-foreach my $key (sort keys %{$self->rulesref}) {
-$pos++;
-last if $key eq $timekey;
-};
+  ($pos < 0) && croak("Key $timekey not in rules - how can I be expected to work under these conditions?");
 
-($pos < 0) && croak("Key $timekey not in rules - how can I be expected to work under these conditions?");
-
-my %dthash = (); # this is the hash for the keys and the associated time differences
+  my %dthash = (); # this is the hash for the keys and the associated time differences
   foreach my $key (keys %index) {
-   # calculate the absolute value of the time difference wrt to the object
-   $dthash{$key} = abs($ {$index{$key}}[$pos]-$Hdr{$timekey});
+    # calculate the absolute value of the time difference wrt to the object
+    $dthash{$key} = abs($ {$index{$key}}[$pos]-$Hdr{$timekey});
   };
    
-# sort index keys by value (delta-tee)
-# as described by Economou (1997) TPJ 2 2 :-) :-)
-my @timesorted = sort {$dthash{$a} <=> $dthash{$b}} keys %dthash;
+  # sort index keys by value (delta-tee)
+  # as described by Economou (1997) TPJ 2 2 :-) :-)
+  my @timesorted = sort {$dthash{$a} <=> $dthash{$b}} keys %dthash;
 
-foreach my $calibration (@timesorted) {
+  foreach my $calibration (@timesorted) {
 
-  my $ok = $self->verify($calibration,\%Hdr);
+    my $ok = $self->verify($calibration,\%Hdr);
 
-  return $calibration if ($ok);
+    return $calibration if ($ok);
+  };
+  
+  # If we get to this point, we didn't find any suitable ones
+
+  croak("No suitable calibrations were found in index file. Sorry.");
+  
 };
 
-# If we get to this point, we didn't find any suitable ones
 
-croak("No suitable calibrations were found in index file. Sorry.");
+=item cmp_with_hash
 
-};
+Compares each index entry with the values in the supplied hash
+(supplied as a hash reference). The key to the first matching 
+index entry is returned. undef is returned if no match could be 
+found.
 
+  $key = $index->cmp_with_hash(\%hash);
+  $key = $index->cmp_with_hash({ key1 => 'value',
+                                 key2 => 'value2'});
+
+Use the indexentry() method to convert this key into the actual
+index entry. Note that warning messages are turned off during the
+verification stage since we are not interested in failed matches.
+
+=cut
+
+sub cmp_with_hash {
+
+  my $self = shift;
+
+  # Read the has
+  my $hashref = shift;
+
+  croak("cmp_with_hash: Argument is not a hash") 
+    unless ref($hashref) eq "HASH";  
+
+  # Get a copy of the index
+  my %index = %{ $self->indexref };
+
+  # Go through all the keys in the index comparing
+  # the index entry with the supplied hash using the rules
+
+  for my $entry (keys %index) {
+    my $ok = $self->verify($entry, $hashref, 0);
+
+    return $entry if ($ok);
+  }
+
+  # If we get this far we have no match
+  return undef;
+}
 
 
 =back
