@@ -34,6 +34,8 @@ use base qw/ ORAC::Frame::UFTI /;
 
 '$Revision$' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
+*pattern_from_bits = \&file_from_bits;
+
 # standard error module and turn on strict
 use Carp;
 use strict;
