@@ -6,7 +6,7 @@ ORAC::Inst::IRCAM - ORAC description of IRCAM
 
 =head1 SYNOPSIS
 
-  use ORAC::Inst::SCUBA;
+  use ORAC::Inst::IRCAM;
 
   start_msg_sys;
   start_algorithm_engines;
@@ -95,7 +95,7 @@ sub start_algorithm_engines {
   $Mon{ccdpack_res} = new ORAC::Msg::ADAM::Task("ccdpack_res_$$",$ENV{CCDPACK_DIR}."/ccdpack_res");
   $Mon{ccdpack_reg} = new ORAC::Msg::ADAM::Task("ccdpack_reg_$$",$ENV{CCDPACK_DIR}."/ccdpack_reg");
   $Mon{kappa_mon} = new ORAC::Msg::ADAM::Task("kappa_mon_$$",$ENV{KAPPA_DIR}."/kappa_mon");
-  $Mon{kappa_mon}->contactw;	# wait for last monolith
+#  $Mon{kappa_mon}->contactw;	# wait for last monolith
 
   return %Mon;
 }
