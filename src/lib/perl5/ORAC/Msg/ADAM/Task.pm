@@ -173,7 +173,10 @@ sub obeyw {
 
 Obtain the value of a parameter
 
- ($value, $status) = $obj->get("task", "param");
+ ($status, @values) = $obj->get("task", "param");
+
+Note that this is a different order to that returned by the
+Standard ADAM interface and follows the ORAC definition.
 
 =cut
 
@@ -194,13 +197,30 @@ sub get {
 
   my ($result, $status) = $self->obj->get($arg);
 
+  # Convert $result to an array
+  my @values = ();
+
+  # an array of values if we have a square bracket at the start
+  # something and a square bracket at the end 
+
+  if ($result =~ /^\s*\[.*\]\s*$/) {
+    # Remove the brackets
+    $result =~ s/^\s*\[(.*)]\s*/$1/;
+  
+    # Now split on comma
+    @values = split(/,/, $result);
+
+  } else {
+    push(@values, $result);
+  }
+
   # Convert from ADAM to ORAC status
   # Probably should put in a subroutine
   if ($status == $SAI__OK) {
     $status = ORAC__OK;
   }
 
-  return ($result, $status);
+  return ($status, @values);
 }
 
 =item set

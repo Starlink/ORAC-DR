@@ -271,14 +271,11 @@ sub obeyw {
 
 Retrieve the current value of a parameter
 
-  ($value, $status) = $obj->get("task", "param");
+  ($status, @values) = $obj->get("task", "param");
 
-Array parameters are returned "," separated. Should consider
-reversing the order such that status is returned first 
-and array values after. Currently square brackets 
-are put round array values -- this is to match the syntax
-used by the ADAM parameter system. The ORAC interface should
-probably be a bit cleverer about this!
+The first argument returned is the ORAC status. All
+subsequent arguments are the parameter values (in an array
+context)
 
 =cut
 
@@ -286,24 +283,15 @@ probably be a bit cleverer about this!
 sub get {
   my $self = shift;
 
-  my $values;
-
   my $task = shift;
   my $param = shift;
   my $status = &NDF::SAI__OK;
 
   my (@values) = par_get($param, $task, \$status);
 
-  # If we have more than one return value
-  if ($#values > 0) {
-    $values = "[".join(",", @values)."]";
-  } else {
-    $values = $values[0];
-  }
-
   $status = ORAC__OK if ($status == &NDF::SAI__OK);
 
-  return ($values, $status);
+  return ($status, @values);
 }
 
 
