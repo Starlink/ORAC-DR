@@ -1,0 +1,159 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_TRIGGER_ESTAR_ - Send photometry results back to eSTAR embedded agent
+
+=head1 DESCRIPTION
+
+If the data are associated with a trigger from the eSTAR network,
+this primitive sends the photometry results back to the user agent.
+The results are tagged with the particular eSTAR trigger ID and
+includes a catalogue of photometry results and the reduced group.
+
+This primitive is skipped automatically if the headers do not
+indicate this is an eSTAR observation.
+
+If this trigger has already been handled by the eSTAR agent
+the results will be ignored. It is possible that the agent
+will not be running. If this is the case, a warning is issued
+but the pipeline does not stop processing.
+
+=head1 TODO
+
+ - Triggers must be disabled if the pipeline is not running
+   on a UKIRT machine.
+
+ - A log file of triggers should be created. This should indicate
+   whether the trigger was accepted by the embedded agent.
+
+=head1 AUTHOR
+
+Brad Cavanagh, Tim Jenness, Alasdair Allan.
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+=cut
+
+if( $Frm->uhdr("DO_ESTAR_TRIGGER") ) {
+
+  orac_print "Doing eSTAR trigger.\n";
+#orac_throw "Throwing so we don't do eSTAR trigger\n";
+
+  # Load these in the primitive rather than in the pipeline
+  # infrastructure since we do not want the shipped pipeline
+  # to have these dependencies.
+  use SOAP::Lite;
+  use Digest::MD5 qw/ md5_hex /;
+  use URI;
+  use HTTP::Cookies;
+
+  # Hard-wired for the moment. Probably okay for now since we
+  # should be checking for UKIRT domain. Probably do not want the
+  # password in the shipped pipeline.
+  my $host = "uluhe.jach.hawaii.edu";
+  my $port = 8080;
+  my $user = "agent";
+  my $password = "InterProcessCommunication";
+
+  # -----------------------------------------------------------------------
+  # Quick hack to send multiple messages on trigger, need both 'update' and
+  # 'observation' messages. Brad, read carefully before making further changes. 
+  # 
+  # -- AALLAN (21-JUL-03)
+  #
+  # Note that there are two types of alert the ORAC-DR pipeline should
+  # send to the eSTAR agent. An 'update' alert and an 'observation' alert.
+  # An update alert is currently ignored by the agent, but should come at
+  # the end of each observation frame, a 'observation' alert comes at the
+  # end of all processing pointing to the final data products. For now
+  # lets hardwire the sending of both alerts, after all we've just finished
+  # a frame, and then (since the observation currently only consists of
+  # a single frame) we need an update message to say that frame is done and
+  # then immediately an observation message to say the observation is
+  # done.
+  # ------------------------------------------------------------------------
+
+  # The embedded agent is responsible for copying this to a public
+  # location
+
+  _CONVERT_GROUP_TO_FITS_
+  my $filename = $_CONVERT_GROUP_TO_FITS_{FILENAME};
+
+  my %hash = ( ID => $Frm->uhdr("ESTAR_ID"),
+               FITS => "file://" . $ENV{'ORAC_DATA_OUT'} . "/" . $filename,
+               Catalog => "file://" . $ENV{'ORAC_DATA_OUT'} . "/estar_cat.txt"
+             );
+
+  my $endpoint = "http://" . $host . ":" . $port;
+  my $uri = new URI($endpoint);
+
+  # This is an inline version of Alasdair's make_cookie
+  # routine from ESTAR
+  my $cookie = $user . "::" . md5_hex( $password );
+  $cookie =~ s/(.)/sprintf("%%%02x", ord($1))/ge;
+  $cookie =~ s/%/%25/g;
+  # end make_cookie
+
+  # put the cookie in an object suitable for SOAP transport
+  my $cookie_jar = HTTP::Cookies->new();
+  $cookie_jar->set_cookie( 0, user => $cookie, '/', $uri->host(), $uri->port());
+
+  # we are now going to connect to the SOAP agent
+  my $soap = new SOAP::Lite();
+  my $urn = "urn:/node_agent";
+
+  $soap->uri($urn);
+  $soap->proxy( $endpoint, cookie_jar => $cookie_jar );
+
+  # UPDATE MESSAGE
+  # --------------
+  
+  $hash{AlertType} = "update";
+  
+  orac_print( "Sending SOAP message:\n");
+  for my $key (sort keys %hash) {
+     orac_print "        $key: $hash{$key}\n";
+  }
+
+  my $result;
+  eval { $result = $soap->handle_data( %hash ) };
+  if( $@ ) {
+    orac_throw "Unable to handle SOAP request: $@";
+  }
+
+  # The result of the SOAP request.
+  unless( $result->fault() ) {
+    orac_print "SOAP Result: " . $result->result() . "\n";
+  } else {
+    orac_warn "SOAP Fault Code: " . $result->faultcode() . "\n";
+    orac_warn "SOAP Fault String: " . $result->faultstring() . "\n";
+  }
+
+  # OBSERVATION MESSAGE
+  # -------------------
+
+  $hash{AlertType} = "observation";
+  
+  orac_print( "Sending SOAP message:\n");
+  for my $key (sort keys %hash) {
+     orac_print "        $key: $hash{$key}\n";
+  }
+
+  eval { $result = $soap->handle_data( %hash ) };
+  if( $@ ) {
+    orac_throw "Unable to handle SOAP request: $@";
+  }
+
+  # The result of the SOAP request.
+  unless( $result->fault() ) {
+    orac_print "SOAP Result: " . $result->result() . "\n";
+  } else {
+    orac_warn "SOAP Fault Code: " . $result->faultcode() . "\n";
+    orac_warn "SOAP Fault String: " . $result->faultstring() . "\n";
+  }
+
+}
