@@ -42,6 +42,7 @@ my %hdr = (
             OBSERVATION_NUMBER  => "OBSNUM",
             OBSERVATION_TYPE    => "OBSTYPE",
             RA_BASE             => "RABASE",
+	    RECIPE              => "RECIPE",
             ROTATION            => "CROTA2",
             SPEED_GAIN          => "SPD_GAIN",
             STANDARD            => "STANDARD",
@@ -137,72 +138,6 @@ sub flag_from_bits {
   my $flag = ".".$raw.".ok";
 
 }
-
-=item B<findgroup>
-
-Returns group name from header.  If we can't find anything sensible,
-we return 0.  The group name stored in the object is automatically
-updated using this value.
-
-=cut
-
-sub findgroup {
-
-  my $self = shift;
-
-  my $hdrgrp = $self->hdr('GRPNUM');
-  my $amiagroup;
-
-
-  if ($self->hdr('GRPMEM')) {
-    $amiagroup = 1;
-  } elsif (!defined $self->hdr('GRPMEM')){
-    $amiagroup = 1;
-  } else {
-    $amiagroup = 0;
-  }
-
-  # Is this group name set to anything useful
-  if (!$hdrgrp || !$amiagroup ) {
-    # if the group is invalid there is not a lot we can do
-    # so we just assume 0
-    $hdrgrp = 0;
-  }
-
-  $self->group($hdrgrp);
-
-  return $hdrgrp;
-
-}
-
-=item B<findrecipe>
-
-Find the recipe name. If no recipe can be found from the
-'DRRECIPE' FITS keyword'QUICK_LOOK' is returned by default.
-
-The recipe name stored in the object is automatically updated using 
-this value.
-
-=cut
-
-sub findrecipe {
-
-  my $self = shift;
-
-  my $recipe = $self->hdr('DRRECIPE');
-
-  # Check to see whether there is something there
-  # if not try to make something up
-  if (!defined($recipe) or $recipe !~ /./) {
-    $recipe = 'QUICK_LOOK';
-  }
-
-  # Update
-  $self->recipe($recipe);
-
-  return $recipe;
-}
-
 
 =back
 
