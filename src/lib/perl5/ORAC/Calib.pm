@@ -517,7 +517,7 @@ sub sky {
     my $sky= $self->skyindex->choosebydt('ORACTIME',$self->thing);
     croak "No suitable sky frame was found in index file"
       unless defined $sky;
-    $self->flatname($sky);
+    $self->skyname($sky);
   } else {
     croak("Error in sky frame calibration checking - giving up");
   };
