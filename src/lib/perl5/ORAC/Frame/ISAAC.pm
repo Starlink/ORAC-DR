@@ -306,7 +306,13 @@ sub _to_RECIPE {
       $recipe = "STANDARD_STAR";
 
    } elsif ( $template =~ /ISAAC[SL]W_spec_cal_NightCalib/ ) {
-      $recipe = "REDUCE_SINGLE_FRAME";
+      if ( $self->_to_OBSERVATION_TYPE() eq "LAMP" ) {
+         $recipe = "LAMP_FLAT";
+      } elsif ( $self->_to_OBSERVATION_TYPE() eq "ARC" ) {
+         $recipe = "REDUCE_ARC";
+      } else {
+         $recipe = "REDUCE_SINGLE_FRAME";
+      }
 
    } elsif ( $template =~ /ISAAC[SL]W_spec_cal_Arcs/ ||
              $seq eq "ISAAC_spec_cal_Arcs" ) {
