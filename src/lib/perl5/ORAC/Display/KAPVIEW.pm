@@ -1905,7 +1905,16 @@ sub vector {
       $args .= " ANGROT=$options{ANGROT}";
     }
 
-    $status = $self->polpack->obeyw("polplot","cat=$file $args device=$device");
+    # Run it twice. Once with vectors that are wide and once with narrow
+    # vectors. This will make the vectors standout.
+    my @style = (
+		 "style='width(vec)=3.0,colour(vec)=blue'",
+		 "style='width(vec)=1.0,colour(vec)=yellow'",
+		);
+
+    for my $stylearg (@style) {
+      $status = $self->polpack->obeyw("polplot","cat=$file $stylearg $args device=$device");
+    }
     $command = "polplot cat=$file $args device=$device";
 
   } else {
