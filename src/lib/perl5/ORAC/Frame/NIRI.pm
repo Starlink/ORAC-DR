@@ -21,6 +21,7 @@ use ORAC::Constants;
 use ORAC::Print;
 use ORAC::General;
 use NDF;
+use Astro::SLA;
 use Starlink::HDSPACK qw/copobj/;
 
 # Let the object know that it is derived from ORAC::Frame::GEMINI;
@@ -68,74 +69,47 @@ sub _to_OBSERVATION_NUMBER {
    return $obsnum;
 }
 
-# Convert the CD matrix to an average rotation.  Equations here are from 
-# FITS-WCS Paper II Section 6.2, 191 and 192.
+# Convert the CD matrix to an average rotation.
 
 sub _to_ROTATION {
    my $self = shift;
-   my $rotation;
+   my $rotation = 0.0;
    if ( exists( $self->hdr->{CD1_1} ) ) {
+
+# Access the CD matrix.
       my $cd11 = $self->hdr("CD1_1");
       my $cd12 = $self->hdr("CD1_2");
       my $cd21 = $self->hdr("CD2_1");
       my $cd22 = $self->hdr("CD2_2");
 
+# Determine the orientation using SLALIB routine.  This has the
+# advantage of not assuming perpendicular axes (i.e. allows for
+# shear).
+      my ( $xz, $yz, $xs, $ys, $perp, $orient );
+      my @coeffs = ( 0.0, $cd11, $cd21, 0.0, $cd12, $cd22 );
+      slaDcmpf( @coeffs, $xz, $yz, $xs, $ys, $perp, $rotation );
+
 # Radians to degrees conversion.
       my $rtod = 45 / atan2( 1, 1 );
+      $rotation *= $rtod;
 
-# Determine the sense of the scales.
-      my $sgn_a;
-      if ( $cd21 < 0 ) { $sgn_a = -1; } else { $sgn_a = 1; }
-      my $sgn_b;
-      if ( $cd12 < 0 ) { $sgn_b = -1; } else { $sgn_b = 1; }
-
-# Form first rotation estimate.  Zero off-diagonal term implies zero
-# rotation.
-      my $nrot = 0;
-      my $rho_a = 0;
-      if ( abs( $cd21 / $cd11 ) > 1E-6 ) {
-         $rho_a = atan2( $sgn_a * $cd21 / $rtod, $sgn_a * $cd11 / $rtod );
-         $nrot++
-      }
-
-# Form first rotation estimate.  Zero off-diagonal term implies zero
-# rotation.
-      my $rho_b = 0;
-      if ( abs( $cd12 / $cd22 ) > 1E-6 ) {
-         $rho_b = atan2( $sgn_b * $cd12 / $rtod, -$sgn_b * $cd22 / $rtod );
-         $nrot++
-      }
-
-# Average the estimates of the rotation.  This needs a further check
-# that the two values are compatible based upon the signs of pairs of the
-# four elements.
-      if ( $nrot > 0 ) {
-         $rotation = $rtod * ( $rho_a + $rho_b ) / $nrot;
-      }
-   
 # The actual WCS matrix has errors and sometimes the angle which
-# should be near 180 degrees for the f/32 camera, can be out by 90 
-# degrees.  So for this camera we hardwired the main rotation and
-# merely apply the small deviation from the cardinal orientations.
-      if ( defined( $self->hdr( "INPORT" ) ) && $self->hdr( "INPORT" ) == 3 ) {
+# should be near 0 degrees, can be out by 90 degrees.  So for this
+# case we hardwire the main rotation and merely apply the small
+# deviation from the cardinal orientations.
+      if ( abs( abs( $rotation ) - 90 ) < 2 ) {
          my $delta_rho = 0.0;
-         if ( defined( $rotation ) ) {
-            $delta_rho = $rotation - ( 90 * int( $rotation / 90 ) );
-         }
+         
+         $delta_rho = $rotation - ( 90 * int( $rotation / 90 ) );
          $delta_rho -= 90 if ( $delta_rho > 45 );
          $delta_rho += 90 if ( $delta_rho < -45 );
 
-# Setting to 180 is a fudge because the CD matrix appears is wrong
-# occasionally by 90 degrees for port 3, the f/32 camera, judging by the
-# telescope offsets, CTYPEn, and the support astronomer.  This has not
-# been corrected despite MJC's report.
+# Setting to near 180 is a fudge because the CD matrix appears is wrong
+# occasionally by 90 degrees, judging by the telescope offsets, CTYPEn, and
+# the support astronomer.
          $rotation = 180.0 + $delta_rho;
-
-# Guess a reasonable default if the CD matrix fails to generate
-# a rotation angle.
-      } elsif( ! defined( $rotation ) ) {
-         $rotation = 0;
       }
+         
    }
    return $rotation;
 }
