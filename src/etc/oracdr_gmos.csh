@@ -63,6 +63,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.2  2002/09/14 00:55:54  phirst
+#     add pre-alpha warning
+#
 #     Revision 1.1  2002/06/05 21:18:50  phirst
 #     Initial GMOS support
 #
@@ -132,6 +135,16 @@ setenv ORAC_SUN  XXX
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
+
+echo "Warning: GMOS suport in oracdr is pre-alpha / highly experimental."
+echo "Although it basically works, it has not been refined or verified to be"
+echo "scientifically valid. GMOS support was added to oracdr basically as a"
+echo "demonstration of the ease of adding support for a new telescope and"
+echo "instrumentation suite."
+echo "Contact Paul Hirst <p.hirst@jach.hawaii.edu> for more info."
+echo ""
+
+
 
 # Tidy up
 unset oracut
