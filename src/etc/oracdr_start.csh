@@ -32,9 +32,14 @@
 #     will not be set correctly and an error will result.
 #     - $ORAC_PERLBIN environment variable can be used to override
 #     the use of Starlink PERL.
+#     - $ORACDR_VERSION environment variable can be used to override
+#     the package version set during the installation.
 
 #  History:
 #     $Log$
+#     Revision 1.2  2000/02/03 03:14:18  timj
+#     Add ORACDR_VERSION
+#
 #     Revision 1.1  2000/02/03 02:50:45  timj
 #     Starlink startup scripts
 #
@@ -67,6 +72,15 @@ else if ( -e STAR_PERL ) then
 else
   set starperl = NONE
 endif
+
+# Set up back door for the version number
+
+if ($?ORACDR_VERSION) then
+  set pkgvers = $ORACDR_VERSION
+else
+  set pkgvers = PKG_VERS
+endif
+
 
 # These are perl programs
 
@@ -104,7 +118,7 @@ alias oracman     'csh ${ORAC_DIR}/bin/oracman'
 # Start up message
 
 echo " "
-echo "     ORAC Data Reduction Pipeline -- (ORAC-DR Version PKG_VERS)"
+echo "     ORAC Data Reduction Pipeline -- (ORAC-DR Version $pkgvers)"
 echo "     Configured for instrument $ORAC_INSTRUMENT"
 echo " "
 echo '     Type "oracdr -h" for usage'
