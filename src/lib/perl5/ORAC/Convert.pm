@@ -49,6 +49,9 @@ multi-frame CGS4 data or I- and O- frames for IRCAM) to HDS formats
 usable by the pipeline (either as HDS containers or NDFs with combined
 I and O information).
 
+The output filename is always related to the input filename
+(usually simply with a change of suffix).
+
 =cut
 
 
@@ -455,6 +458,9 @@ sub fits2ndf {
 }
 
 =item B<ndf2fits>
+
+Convert an NDF file to a FITS file.
+
 =cut
 
 sub ndf2fits {
@@ -913,17 +919,17 @@ sub hds2ndf {
 
     # Find out how many entries we have
     dat_shape($xloc, $maxdim, @dim, $ndim, $status);
-    
+
     # Must be 1D
     if ($status == &NDF::SAI__OK && scalar(@dim) > 1) {
       $status = &NDF::SAI__ERROR;
       err_rep(' ',"hds2ndf: Dimensionality of .HEADER FITS array should be 1 but is $ndim",$status);
     }
-    
+
     # Read the second FITS array
     dat_get1c($xloc, $dim[0], @fitsB, $nfits, $status)
       if $status == &NDF::SAI__OK; # -w protection
-    
+
     # Annul the locator
     dat_annul($xloc, $status);
     ndf_xdel($indf,'FITS', $status);
@@ -983,8 +989,6 @@ Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
-
-
 
 1;
 
