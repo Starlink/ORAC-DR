@@ -82,7 +82,8 @@ sub new {
     # the base class
 
     my %newitems = (SubFrmNo    => undef,
-                    SubFrms     => []
+                    SubFrms     => [],
+		    FitsSuffix  => undef
 		    );
 
     # Now call the base class constructor
@@ -96,6 +97,7 @@ sub new {
     $self->rawsuffix('.fit');
     $self->rawformat('FITS');
     $self->format('FITS');
+    $self->fitssuffix('.fit');
 
     # If arguments are supplied then we can configure the object
     # Currently the argument will be the filename.
@@ -114,6 +116,20 @@ The following methods are available for accessing the 'instance' data.
 =over 4
 
 =cut
+
+=item B<fitssuffix>
+
+Return or set the file name suffix for the converted FITS files.
+
+    $suffix = $self->fitssuffix;
+
+=cut
+
+sub fitssuffix {
+    my $self = shift;
+    if (@_) {$self->{FitsSuffix} = shift;}
+    return ($self->{FitsSuffix});
+}
 
 =item B<subfrmnumber>
 
@@ -397,6 +413,9 @@ Copyright (C) 2003-2006 Cambridge Astronomy Survey Unit. All Rights Reserved.
 #
 #
 # $Log$
+# Revision 1.6  2004/05/05 11:41:58  jrl
+# Added routine fitssuffix
+#
 # Revision 1.5  2003/10/24 08:48:49  jrl
 # Modifed to use new version Astro::FITS::Header
 #
