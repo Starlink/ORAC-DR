@@ -1,4 +1,4 @@
-# _FIXED__APERTURE_PHOTOMETRY_         -*- perl -*-
+# _FIXED_APERTURE_PHOTOMETRY_         -*- perl -*-
 #
 # Perform aperture photometry on a standard star.
 #
@@ -13,12 +13,15 @@
 # We have to specify this since we have to decide whether we
 # are using $Frm or $Grp and in general this routine is run
 # on reduced images.
-    $do_aphot = $Frm->hdr( "DO_APHOT" );
+    my $do_aphot = $Frm->hdr( "DO_APHOT" );
     if ( $do_aphot ) {
 
 # This should only be performed on OBJECT frames.
        if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ) {
-          $incflag = "T";
+          my $incflag = "T";
+
+# Define a useful variable for a null catalogue magnitude.
+          my $nullmag = 999.99;
 
 # Form new group
 # ==============
@@ -32,33 +35,34 @@
 # mosaic.  There's a bug/feature that requires a header to have been read
 # in before it is accessed.  So cannot use file method to associate
 # the group frame; do it with the new method.
-          $tmpfrm = $Frm->new( $Grp->file );
+          my $tmpFrm = $Frm->new( $Grp->file );
 
 # Create a temporary group object as used by _FAO_.  Use the new method
 # rather than new ORAC::Group for generality to inherit from the current
 # group.
-          $photgrp = $Grp->new;
+          my $phoGrp = $Grp->new;
 
 # Push the members of the existing group into the temporary group.  Exclude
 # any sky frames.
-          $targrp = $Grp->subgrp( TARGET_OR_SKY => "target" );
-          $photgrp->push( $targrp->members );
+          my $targrp = $Grp->subgrp( TARGET_OR_SKY => "target" );
+          $phoGrp->push( $targrp->members );
 
 # Push the temporary frame into the temporary group.  Note that the
 # Orac::Group class can contain anything.  However in ORAC-DR we want
 # to stick with Frame objects for generality.  So now $reggrp is a
 # group consisting of the current group members and group file.
-          $photgrp->push( $tmpfrm );
+          $phoGrp->push( $tmpFrm );
 
 # Perform photometry for all the individual jitter frames and the final
 # mosaic.
-          foreach $Frm ( $photgrp->members ) {
+          my ( $catmag, $fs_magdif_ext, $magdif, $magdif_ext );
+          foreach $Frm ( $phoGrp->members ) {
 
 # Open the results file
 # =====================
 
 # Create log file if necessary.
-             $logfile = "aphot_results.txt";
+             my $logfile = "aphot_results.txt";
              if ( ! -e $logfile ) {
                 _MAKE_PHOTOMETRY_TABLE_ FILE=$logfile
              }
@@ -70,10 +74,11 @@
 # ================================
 
 # Obtain the filter from the FITS headers.
-             $filter = $Frm->hdr( "FILTER" );
+             my $filter = $Frm->hdr( "FILTER" );
 
 # Obtain the mean extinction coefficient.  Specify the corresponding catalogue
 # column number for the filter.
+             my ( $catcol, $extinction );
              SWITCH: {
                 if ( $filter =~ /^J/ ) {
                    $extinction = 0.102; $catcol = 0; last SWITCH;
@@ -87,30 +92,37 @@
                 $extinction = 0.0; $catcol = -1;
              }
 
+
 # Obtain the airmass from the FITS headers.  Find the approximate
 # mean airmass from the start and end values.  This should be
 # adequate unless it is a long integration with the source crossing
 # the meridian.
-             $amstart = $Frm->hdr( "AMSTART" );
-             $amend   = $Frm->hdr( "AMEND" );
-             $airmass = 0.5 * ( $amstart + $amend );
-             $extcor = $airmass * $extinction;
+# *** IRCAM specific code ***
+             my $amstart = $Frm->hdr( "AMSTART" );
+             my $amend   = $Frm->hdr( "AMEND" );
+             my $airmass = 0.5 * ( $amstart + $amend );
+             my $extcor = $airmass * $extinction;
 
 # Obtain the object name, exposure time, time of observation, the
 # pixelscale, and the number of electrons per data number.
-             $exptime = $Frm->hdr( "DEXPTIME" );
-             $objname = $Frm->hdr( "OBJECT" );
-             $ut = $Frm->hdr( "RUTSTART" );
-             $pixelscale = $Frm->hdr( "PIXELSIZ" );
-             $padu =  $Frm->hdr( "DEPERDN" );
+# *** IRCAM specific code ***
+             my $exptime = $Frm->hdr( "DEXPTIME" );
+             my $objname = $Frm->hdr( "OBJECT" );
+             my $ut = $Frm->hdr( "RUTSTART" );
+             my $pixelscale = $Frm->hdr( "PIXELSIZ" );
+             my $padu =  $Frm->hdr( "DEPERDN" );
 
 # Extract the system magnitude of faint standards
 # ===============================================
 
+# Remove spaces from the name, and convert to uppercase for later
+# comparison.
+             ( my $starname = uc( $objname ) ) =~ s/ //g;
+
 # Faint standards have name FSn, where n is the number.  Only JHK
 # magnitudes are tabulated.
-             if ( substr( $objname, 0, 2 ) =~ /FS/i && $catcol > -1 ) {
-                $stdno = substr( $objname, 2, 2 );
+             if ( substr( $starname, 0, 2 ) eq "FS" && $catcol > -1 ) {
+                my $fs_standards;
 
 # Open the faint-standards file and store its records in an array.
                 if (  -e "/ukirt_sw/ircamdr/fs.dat" ) {
@@ -120,23 +132,43 @@
                 }
                 open( FS_STANDARDS, "<$fs_standards" ) || 
                       die "JHK Standards file not found";
-                @stds = <FS_STANDARDS>;
+                my @stds = <FS_STANDARDS>;
 
-# Assume the ordered but non-relational format rather than searching for
-# lines with the object name, and using the next line.
-                $recno = 2 * $stdno + 1;
+# Remove trailing blanks and newline.
+                for ( @stds ) {
+                   chomp;
+                   s/\s+$//;
+                }
 
-# Extract the magnitudes.
-                @mags = split( / +/, $stds[ $recno ] );
+# Search through the table finding a line containing the object name.  The
+# file currently consists of some headings, then alternating lines of
+# star name and the magnitudes.  So we can exit at the last but one line.
+                my $recno = 0;
+                until ( $stds[ $recno ] =~ /$starname/ ||
+                        $recno >= $#stds ) {
+                   $recno++;
+                }
+
+# Check that a match has been found.  Use a speical value to indicate
+# a null magnitude.
+                if ( $recno >= $#stds ) {
+                   orac_warn "Standard $objname has no tabulated JHK magnitudes in $fs_standards\n";
+                   $catmag = $nullmag;
+                } else {
+
+# Extract the magnitudes.  Note that these are in the line following the
+# name.
+                   my @mags = split( / +/, $stds[ $recno + 1 ] );
 
 # Obtain the desired magnitude.
-                $catmag = $mags[ $catcol ];
+                   $catmag = $mags[ $catcol ];
+                }
 
 # Close the stamdards data file.
                 close( FS_STANDARDS );
 
              } else {
-                $catmag = 999.99;
+                $catmag = $nullmag;
              }
 
 # Find location and dimensions of the aperture and annulus
@@ -144,14 +176,14 @@
 
 # Locate the image centre.
              _FIND_SOURCE_CENTROID_
-             $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
+             my $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
 
 # Obtain the aperture diameter in arcseconds.
-             $as_aperture = ( $_FIXED_APERTURE_PHOTOMETRY_{APERTURE} || 6 );
+             my $as_aperture = ( $_FIXED_APERTURE_PHOTOMETRY_{APERTURE} || 6 );
  
 # Calculate the radius of the inner and outer extent of the aperture.
-             $inner = ( $_FIXED_APERTURE_PHOTOMETRY_{INNER} || 1.5 );
-             $outer = ( $_FIXED_APERTURE_PHOTOMETRY_{OUTER} || 2.5 );
+             my $inner = ( $_FIXED_APERTURE_PHOTOMETRY_{INNER} || 1.5 );
+             my $outer = ( $_FIXED_APERTURE_PHOTOMETRY_{OUTER} || 2.5 );
              $inner = min( 3.0, max( $inner, 1.2 ) );
              $outer = min( 5.0, max( $inner + 0.3, $outer, 1.5 ) );
 
@@ -164,21 +196,21 @@
 # we could use parameters for these in a hierarchy of scripts.  We have a
 # circular aperture obtaining the sky from an annulus between the INNER
 # and OUTER times the diameter of the main aperture.
-             $rapture = 0.5 * $as_aperture / $pixelscale;
+             my $rapture = 0.5 * $as_aperture / $pixelscale;
              open ( PHOTOM, ">photom$$.dat" );
              print PHOTOM "#ANN 1 $inner $outer\n";
              print PHOTOM "1 @$centre 0.0 0.0 0.0 0.0 OK $rapture 0.0 0.0 annulus circle\n";
              close ( PHOTOM );
 
 # Specify the user parameters.
-             $skyest = ( $_FIXED_APERTURE_PHOTOMETRY_{SKY_EST} || "3" );
-             $zp = ( $_FIXED_APERTURE_PHOTOMETRY_{ZP} || "0.0" );
-             $user = "skyest=$skyest skymag=$zp";
+             my $skyest = ( $_FIXED_APERTURE_PHOTOMETRY_{SKY_EST} || "3" );
+             my $zp = ( $_FIXED_APERTURE_PHOTOMETRY_{ZP} || "0.0" );
+             my $user = "skyest=$skyest skymag=$zp";
  
 # Specify the other parameters for AUTOPHOTOM.  Strictly we should check the
 # headers for the readout mode
-             $header = "in=".$Frm->file." infile=photom$$.dat outfile=photom$$.res";
-             $hidden = "nocentro padu=$padu biasle=0 photon=2 positive sature=12000 nousemask";
+             my $header = "in=".$Frm->file." infile=photom$$.dat outfile=photom$$.res";
+             my $hidden = "nocentro padu=$padu biasle=0 photon=2 positive sature=12000 nousemask";
 
 # Perform the photometry, however, for this case compute a centroid
 # about which to integrate.
@@ -190,7 +222,7 @@
 # The magnitude and error are the fourth and fifth fields in the output
 # file.  The sky estimate is the sixth.  The error code is the eighth.
              open ( PHOTOM, "photom$$.res" );
-             @results = map { (split)[3..7] } <PHOTOM>;
+             my @results = map { (split)[3..7] } <PHOTOM>;
              close ( PHOTOM );
 
 # Use more lucid variable names for the results.  Normalise by the
@@ -198,19 +230,20 @@
 # using the expression -2.5log10( photons/s ).  However, the UKIRT
 # standard is to use -2.5log10( counts/s ), so correct the instrumental
 # magnitude by the ADU factor, and convert the sky level back to counts.
-             $magnorm = $results[0] + 2.5 * log10( $exptime * $padu );
-             $magerr = $results[1];
-             $sky_level = $results[2] / $padu;
-             $errcode = $results[4];
+             my $magnorm = $results[0] + 2.5 * log10( $exptime * $padu );
+             my $magerr = $results[1];
+             my $sky_level = $results[2] / $padu;
+             my $errcode = $results[4];
 
 # Correct for the mean extinction.
-             $magext = $magnorm - $extcor;
+             my $magext = $magnorm - $extcor;
 
 # Convert annulus radii into arcseconds.
              $inner = $inner * $as_aperture;
              $outer = $outer * $as_aperture;
 
 # Format the results to give a sensible number of significant figures.
+             my ( $fs_mag, $fs_sky, $fs_airmass, $fs_apdiam, $fs_inner, $fs_outer );
              $fs_mag = sprintf( "%7.3f", $magnorm );
              $fs_mag =~ s/ //g;
              $fs_sky = sprintf( "%9.3f", $sky_level );
@@ -222,7 +255,8 @@
              $fs_inner =~ s/ //g;
              $fs_outer =  sprintf( "%5.2f", $outer );
              $fs_outer =~ s/ //g;
-             if ( $catmag < 999 ) {
+
+             if ( $catmag < $nullmag ) {
                 $magdif = $catmag - $magnorm;
                 $magdif_ext = $catmag - $magext;
                 $fs_magdif_ext =  sprintf( "%6.3f", $magdif_ext );
@@ -238,7 +272,7 @@
                 orac_print "Instrumental Magnitude: $fs_mag +/- $magerr\n";
              }
              orac_print "Airmass correction:     $fs_airmass\n";
-             if ( $catmag < 999 ) {
+             if ( $catmag < $nullmag ) {
                 orac_print "Catalogue Magnitude:    $catmag\n";
                 orac_print "Calculated zeropoint:   $fs_magdif_ext\n"
              }

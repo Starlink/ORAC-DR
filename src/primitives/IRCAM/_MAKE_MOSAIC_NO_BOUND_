@@ -9,16 +9,17 @@
 # =========
 
 # This should only be performed on OBJECT frames.
-    if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" || 
-         $Frm->hdr( "OBSTYPE" ) eq "SKY" ) {
+    if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ||
+         $Frm->hdr( "OBSTYPE" ) eq "SKY") {
 
 # Test whether or not it is time to make a mosaic.
-       $makemos = $Frm->hdr( "MAKE_MOSAIC" );
+       my $makemos = $Frm->hdr( "MAKE_MOSAIC" );
        if ( $makemos ) {
 
 # Obtain the cycle number.  Default to zero if undefined, so that recipes
 # which do not support this feature will continue to work.
-          my $cycleno = ( $Frm->hdr( "CYCLE_NUMBER" ) || 0 );
+          my $cycleno = $Frm->hdr( "CYCLE_NUMBER" );
+          $cycleno = defined( $cycleno ) ? $cycleno : 0;
 
 # Obtain the cycle period.  Default to 9 if undefined, so that recipes
 # which do not support this feature will continue to work.  This assumes
@@ -26,24 +27,26 @@
           my $period = $Frm->hdr( "JITTER_NUMBER" || 9 );
 
 # Select those members in the current cycle.
-          $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+          my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
 
 # Specify the mosaic suffix.
-          $osuffix = "_mos";
+          my $osuffix = "_mos";
 
 # Form a list of input file names for the CCDPACK tasks.  We need to
 # generate an input list for TRANJOIN and TRANNDF and an output list
-# using a hard-wired suffix of '_trn'
-          ($inref, $outref) = $cycleGrp->inout('_trn');
+# using a hard-wired suffix of "_trn".
+          ( my $inref, my $outref ) = $cycleGrp->inout( "_trn" );
 
 # Convert the list to a comma-separated list as needed by CCDPACK (GRP).
-          $objlist = join(",", @$inref);
-          $outlist= join(",", @$outref);
+          my $objlist = join( ",", @$inref );
+          my $outlist= join( ",", @$outref );
 
 # Concatenate rotation to transformation
 # ======================================
 
+
 # Specify the other parameters for the TRANJOIN stage.
+#          my ( $header, $hidden );
 #          $hidden = "in2=".$Cal->rotation." dest=first"; 
 
 # Join the rotation transformation to each of the CCDPACK extensions.
@@ -76,8 +79,8 @@
           close (OUTLIST);
 
 # Assign the other parameters.  Use the original bounds.
-          $header = "in='^tranndf.inlist$$' out='^tranndf.outlist$$'";
-          $hidden = "shape=auto method=linint";
+          my $header = "in='^tranndf.inlist$$' out='^tranndf.outlist$$'";
+          my $hidden = "shape=auto method=linint";
 
 # Shift and resample the flat-field object frames.  This determines
 # the bounds automatically.  It takes the origin from the first object
@@ -96,11 +99,15 @@
 # region.  As non-overlaps will not be included, it's probably better to
 # err on the high side.  So here we've assumed that all the jittered
 # frames could overlap.
-          $optov = $period - 1;
+          my $optov = $period - 1;
 
 # Define the mosaic name.
+          my ( $grproot, $outname );
           if ( $cycleno == 0 ) {
              $grproot = $Grp->file;
+
+          } else {
+             $grproot = $Grp->hdr( "ROOT_NAME" );
           }
           $outname = $grproot . "_mu"; 
 
@@ -110,7 +117,7 @@
 
 # Make the mosaic correcting for differences in offset.
           $Mon{"ccdpack_reg"}->obeyw("makemos","$header $hidden");
-          unlink ("tranndf.inlist$$", "tranndf.outlist$$");
+          unlink( "tranndf.inlist$$", "tranndf.outlist$$" );
 
 # Report the processing status.
           orac_print "Orac says: mosaic $outname formed\n";
@@ -127,7 +134,7 @@
 # The first cycle mosaic becomes the main mosaic.  Subsequent mosaics of
 # four are co-add (after registration) into the main mosaic, hence these
 # require a different name.
-          $mosname = $Grp->file . $osuffix unless $Grp->file =~ /$osuffix$/;
+          my $mosname = $Grp->file . $osuffix unless $Grp->file =~ /$osuffix$/;
           if ( $cycleno > 0 ) {
              $mosname = $Grp->file . "_" . $cycleno;
           }
@@ -139,17 +146,25 @@
 # Report the processing status.
           orac_print "Orac says: Bad pixels filled in mosaic $outname to form $mosname\n";
 
+# Discard the intermediate group file.
+          _DELETE_A_FRAME_ FRAME=$outname
+
 # Set the group name in the Group object...
+          my $mosaic_origin;
           if ( $cycleno == 0 ) {
              $Grp->file( $mosname );
 
 # ...and read the header.
              $Grp->header( $Grp->readhdr );
 
+# Store the root name.
+             $Grp->hdr( "ROOT_NAME", $grproot );
+
 # Obtain its bounds, and hence an NDF origin string.
-             $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$mosname" );
-             ( $ORAC_STATUS, @mosaic_lbnd ) = $Mon{"ndfpack_mon"}->get("ndftrace","lbound");
-             $mosaic_origin = join( ",", @mosaic_lbnd );
+#             $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$mosname" );
+              my $ORAC_STATUS;
+#             ( $ORAC_STATUS, @mosaic_lbnd ) = $Mon{"ndfpack_mon"}->get("ndftrace","lbound");
+#             $mosaic_origin = join( ",", @mosaic_lbnd );
           }
 
 # Display the resultant mosaic.
@@ -160,12 +175,12 @@
           if ( $cycleno > 0 ) {
 
 # Make a duplicate of the main mosaic.
-             $tmpmos = "mainmos$$";
+             my $tmpmos = "mainmos$$";
              $header = "in=" . $Grp->file . " out=$tmpmos";
              $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$header" );
 
 # Change the bounds of the new mosaic to match that of the grand mosaic.
-             $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=$mosname origin=[$mosaic_origin]" );
+#             $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=$mosname origin=[$mosaic_origin]" );
 
 # Co-add the frames.
              $header = "in1=$tmpmos in2=$mosname out=" . $Grp->file;
