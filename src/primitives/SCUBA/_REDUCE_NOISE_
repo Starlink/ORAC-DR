@@ -1,0 +1,68 @@
+=head1 NAME
+
+REDUCE_NOISE - Reduce a noise observation
+
+=head1 DESCRIPTION
+
+Process a noise observation and produce a 1-D data file.
+Noisy bolometers are reported.
+
+=head1 PARAMETERS
+
+THRESHOLD - reports bolometers with threshold above this value
+            (default value= 100nV).
+
+=head1 TASKS
+
+Uses the SURF REDUCE_NOISE task
+
+=cut
+
+
+# Read the arguments
+$thresh = ($_REDUCE_NOISE_{THRESHOLD} || 100.0);
+
+# Input file (assume only one sub-frame)
+my ($in, $out) = $Frm->inout('_noise');
+
+# Temp file name
+my $temp = "noise_$$.dat";
+
+# Run the task
+$Mon{surf_mon}->obeyw("reduce_noise","in=$in out=$out file=$temp");
+
+# Note that the output from reduce_noise is 2-Dimensional
+# with the chop error stored in the variance array in the first
+# slice of the second axis (ie comp=err section=(,1))
+# The graph subsystem could be made to do this (the data range needs
+# to be set with ZMIN/ZMAX and not YMIN/YMAX.) but it may be simpler
+# to extract the variance array and make a temporary NDF.
+
+# Update Frame
+$Frm->file($out);
+
+# Display if required
+$Display->display_data($Frm);
+
+# Now read in temp text file, and extract lines that have 
+# noise error greater than 100nV
+
+{
+  my $fh = new IO::File("< $temp");
+
+  orac_print "Noisy bolometers (>$thresh nV):\n";
+
+  foreach my $line (<$fh>) {
+
+    # Check that line starts with a bolometer name
+    if ($line =~ /^[A-I]/) {
+      my @bits = split(/\s+/, $line);
+      print "\t$bits[0]:\t$bits[2] nV\n" if $bits[2] > $thresh; 
+    }
+
+  }
+  close($fh);
+}
+
+# remove the temporary file
+unlink $temp;
