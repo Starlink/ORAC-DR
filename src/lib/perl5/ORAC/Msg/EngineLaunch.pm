@@ -39,6 +39,12 @@ use Carp;
 use vars qw/ $DEBUG /;
 $DEBUG = 1;
 
+# Use package variable to store the object name so that
+# it can be reused. This will of course delay object desctruction
+# until interpreter shutdown.
+
+use vars qw/ $THIS /;
+
 # For now, the algorithm engine definitions are stored in
 # ORAC::Inst::Defn. This is for historical reasons and to
 # provide a single file for all instrument and engine
@@ -67,6 +73,17 @@ Object constructors.
 
 Instantiate a new object ready for launching.
 
+  $launch = new ORAC::Msg::EngineLaunch( $unique );
+
+Since, in general, it is convenient for all parts of the code
+to have access to previously launched engines, the default
+behaviour is for the constructor to return the same object reference
+each time it is called. If it is required for a completely new object
+to be created each time the argument must be set to true.
+
+ORAC-DR usually requires that access is provided to all previously
+launched engines for efficiency (and to prevent name clashes).
+
 =cut
 
 sub new {
@@ -74,13 +91,30 @@ sub new {
   my $proto = shift;
   my $class = ref($proto) || $proto;
 
-  my $obj = {
-	     Engines => {},
-	     EngineID => {},
-	     };
+  # Read uniqueness argument
+  my $unq = shift;
 
-  # bless into the correct class
-  bless( $obj, $class);
+  my $obj;
+
+  # If uniqueness flag is true we need a brand new object
+  # We also need a new object is one has not been stored previously
+  if ($unq || !defined $THIS) {
+
+    $obj = {
+	    Engines => {},
+	    EngineID => {},
+	   };
+
+    # bless into the correct class
+    bless( $obj, $class);
+
+    # If we are not unique, store the object
+    $THIS = $obj unless $unq;
+
+  } else {
+    # We need to retrieve $THIS from the package variable
+    $obj = $THIS;
+  }
 
   return $obj;
 }
@@ -204,6 +238,62 @@ sub engine_id {
 
 =over 4
 
+=item B<contact_all>
+
+Runs the C<contactw> method on each registered engine. Can be used
+to make sure that all the registered engines are okay.
+If an engine can not be contacted it is removed from the object.
+
+Returns two arrays, one for engines that could be contacted and
+one for engines that could not be contacted.
+
+  ($okay, $notokay) = $launch->contact_all;
+
+In a scalar context simply returns true if all engines could be
+contacted. Also returns true if there are no registered engines.
+
+  $all_okay = $launch->contact_all;
+
+=cut
+
+sub contact_all {
+  my $self = shift;
+
+  my (@okay, @notokay);
+
+  # Loop over all engines
+  my %engines = %{ $self->engine };
+
+  # Loop over each engine
+  for my $eng (keys %engines) {
+
+    print "Waiting for engine $eng..."
+      if $DEBUG;
+
+    # Wait for contact and store in correct array
+    if ($engines{$eng}->contactw) {
+      push(@okay, $eng);
+    } else {
+      print " not " if $DEBUG;
+      push(@notokay, $eng);
+      $self->detach($eng);
+    }
+    print "okay\n" if $DEBUG;
+
+  }
+
+  if (wantarray) {
+    return (\@okay, \@notokay);
+  } else {
+    if (@notokay) {
+      return 0;
+    } else {
+      return 1;
+    }
+  }
+}
+
+
 =item B<detach>
 
 Disassociate the named engine from the object. This can be used
@@ -238,58 +328,121 @@ them but it is the price paid for launching on demand.
 
 This overhead can be overcome by pre-launching engines that are
 known to be required and launching optional engines on demand.
-If the engines are launched outside this infrastructure they
-can be registered with the object using the C<engine> method.
+If multiple engine names are supplied to this method they will
+all be launched at once without waiting for each one in turn.
+A hash is returned containing all the objects that were launched.
+
+  %obj = $launch->launch( $engine1, $engine2 );
+
+If multiple engines are launched simultaneously, the status of the
+engines must then be checked explicitly using the C<contact_all>
+method.
+
+If the engines are launched outside this infrastructure they can be
+registered with the object using the C<engine> method for the object,
+and C<engine_id> method to register the messaging name (if
+appropriate).
+
+If a request is made to launch an engine that has been launched
+previously the request returns the current engine object. Use 
+C<detach> to force a reload.
 
 =cut
 
 sub launch {
   my $self = shift;
-  my $engine = shift;
+  my @engines = @_;
 
-  # Retrieve the engine parameters
-  my %pars = orac_engine_description( $engine );
+  my %objs;  # Somewhere to store the results
 
-  # Check that we have something
-  if ( %pars ) {
+  # Loop over all the engines
+  for my $engine (@engines) {
 
-    # The hash specifies CLASS as object type
-    # PATH as location to the particular monolith
-    # (assumed to be an actual file on disk)
-    # This assumption may have to be addressed in future
-    # extensions
-
-    # Make sure the messaging class is available
-    eval "use $pars{CLASS}";
-    if ($@) { 
-      carp "Unable to load class $pars{CLASS} for engine $engine\n";
-      croak "$@";
+    # Check to see if the object already exists.
+    # Can not use the engine method directly since if the engine does
+    # exist, then nothing will happen, but if it doesn't exist
+    # the engine method will launch this method which will then
+    # check to see whether the engine exists, ad infinitum
+    # Have to assume knowledge of the implementation of this object
+    if (exists $self->engine->{$engine}) {
+      $objs{$engine} = $self->engine( $engine );
+      next;
     }
 
-    # Launch it if we can find the path
-    # The object identifier should be different each time
-    # this is called to protect against systems that can not
-    # reuse system identifiers
-    my $obj = $pars{CLASS}->new($self->engine_inc( $engine ),
-				$pars{PATH} )
-      if ( -e $pars{PATH} );
 
-    # check that we have something
-    if (defined $obj) {
+    # Retrieve the engine parameters
+    my %pars = orac_engine_description( $engine );
 
-      # Make sure we can talk to it
-      return undef unless $obj->contactw;
+    # Check that we have something
+    if ( %pars ) {
 
-      # Store the result
-      $self->engine( $engine, $obj);
+      # The hash specifies CLASS as object type
+      # PATH as location to the particular monolith
+      # (assumed to be an actual file on disk)
+      # This assumption may have to be addressed in future
+      # extensions
 
-    } else {
-      return undef;
+      # Make sure the messaging class is available
+      eval "use $pars{CLASS}";
+      if ($@) { 
+	carp "Unable to load class $pars{CLASS} for engine $engine\n";
+	croak "$@";
+      }
+
+      # Launch it if we can find the path
+      # The object identifier should be different each time
+      # this is called to protect against systems that can not
+      # reuse system identifiers
+      my $obj = $pars{CLASS}->new($self->engine_inc( $engine ),
+				  $pars{PATH} )
+	if ( -e $pars{PATH} );
+
+      # check that we have something
+      if (defined $obj) {
+
+	# Flag to use to indicate that engine is okay
+	# assume it is
+	my $isokay = 1;
+
+	# Some things only happen when launching a single engine
+	# for efficiency
+	if ($#engines == 0) {
+
+	  # Make sure we can talk to it
+	  print "Waiting for engine $engine..."
+	    if $DEBUG;
+	  $isokay = ( $obj->contactw ? 1 : 0);
+	  if ($DEBUG) {
+	    print "not " unless $isokay;
+	    print "okay\n";
+	  }
+
+	}
+
+	# store it if it looks okay
+	if ($isokay) {
+	  # Store the result
+	  $self->engine( $engine, $obj);
+
+	  # ...and in local hash
+	  $objs{ $engine } = $obj;
+
+	}
+
+      }
+
     }
 
-  } else {
-    return undef;
   }
+
+  # Now should have a hash of launched engines
+  # in scalar context return the first
+  if (wantarray) {
+    return %objs;
+  } else {
+    return $objs{ $engines[0] };
+  }
+
 }
 
 =item B<engine_inc>
