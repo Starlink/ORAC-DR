@@ -287,134 +287,166 @@ sub orac_determine_inst_classes {
     $frameclass = "ORAC::Frame::IRCAM";
     $calclass   = "ORAC::Calib::IRCAM";
     $instclass  = "ORAC::Inst::IRCAM";
+
   } elsif ($inst eq 'IRCAM2') {
     $groupclass = "ORAC::Group::IRCAM";
     $frameclass = "ORAC::Frame::IRCAM2";
     $calclass   = "ORAC::Calib::IRCAM";
     $instclass  = "ORAC::Inst::IRCAM";
     $inst  = 'IRCAM'; # to pick up IRCAM recipes
+
   } elsif ($inst eq 'INGRID') {
     $groupclass = "ORAC::Group::INGRID";
     $frameclass = "ORAC::Frame::INGRID";
     $calclass   = "ORAC::Calib::INGRID";
     $instclass  = "ORAC::Inst::INGRID";
+
   } elsif ($inst eq 'IRIS2') {
     $groupclass = "ORAC::Group::IRIS2";
     $frameclass = "ORAC::Frame::IRIS2";
     $calclass   = "ORAC::Calib::IRIS2";
     $instclass  = "ORAC::Inst::IRIS2";
+
   } elsif ($inst eq 'ISAAC') {
     $groupclass = "ORAC::Group::ISAAC";
     $frameclass = "ORAC::Frame::ISAAC";
     $calclass   = "ORAC::Calib::ISAAC";
     $instclass  = "ORAC::Inst::ISAAC";
+
   } elsif ($inst eq 'NACO') {
     $groupclass = "ORAC::Group::NACO";
     $frameclass = "ORAC::Frame::NACO";
     $calclass   = "ORAC::Calib::NACO";
     $instclass  = "ORAC::Inst::NACO";
+
   } elsif ($inst eq 'SOFI') {
     $groupclass = "ORAC::Group::SOFI";
     $frameclass = "ORAC::Frame::SOFI";
     $calclass   = "ORAC::Calib::SOFI";
     $instclass  = "ORAC::Inst::SOFI";
+
   } elsif ($inst eq 'UFTI') {
     $groupclass = "ORAC::Group::UFTI";
     $frameclass = "ORAC::Frame::UFTI";
     $calclass   = "ORAC::Calib::UFTI";
     $instclass  = "ORAC::Inst::IRCAM";
+
   } elsif ($inst eq 'UFTI2') {
     $groupclass = "ORAC::Group::UFTI";
     $frameclass = "ORAC::Frame::UFTI2";
     $calclass   = "ORAC::Calib::UFTI";
     $instclass  = "ORAC::Inst::IRCAM";
     $inst = 'UFTI'; # to pick UFTI recipes and primitives as they are
+
   } elsif ($inst eq 'UFTI_CASU') {
     $groupclass = "ORAC::Group::UFTI_CASU";
     $frameclass = "ORAC::Frame::UFTI_CASU";
     $calclass   = "ORAC::Calib::UFTI_CASU";
     $instclass  = "ORAC::Inst::UFTI_CASU";
+
   } elsif ($inst =~ /^WFCAM/) {
     $groupclass = "ORAC::Group::WFCAM";
     $frameclass = "ORAC::Frame::WFCAM";
     $calclass   = "ORAC::Calib::WFCAM";
     $instclass  = "ORAC::Inst::WFCAM";
+
   } elsif ($inst =~ /^SWFCAM/) {
     $groupclass = "ORAC::Group::SWFCAM";
     $frameclass = "ORAC::Frame::SWFCAM";
     $calclass   = "ORAC::Calib::SWFCAM";
     $instclass  = "ORAC::Inst::SWFCAM";
+
   } elsif ($inst eq 'CGS4') {
     $groupclass = "ORAC::Group::CGS4";
     $frameclass = "ORAC::Frame::CGS4";
     $calclass   = "ORAC::Calib::CGS4";
     $instclass  = "ORAC::Inst::CGS4";
+
   } elsif ($inst eq 'OCGS4') {
     $groupclass = "ORAC::Group::CGS4";
     $frameclass = "ORAC::Frame::OCGS4";
     $calclass   = "ORAC::Calib::CGS4";
     $instclass  = "ORAC::Inst::CGS4";
     $inst = 'CGS4'; # to pick up CGS4 recipes and primitives
+
   } elsif ($inst eq 'SCUBA') {
     $groupclass = "ORAC::Group::JCMT";
     $frameclass = "ORAC::Frame::JCMT";
     $calclass   = "ORAC::Calib::SCUBA";
     $instclass  = "ORAC::Inst::SCUBA";
+
   } elsif ($inst =~ /^SCUBA2/) {
     $groupclass = "ORAC::Group::SCUBA2";
     $frameclass = "ORAC::Frame::SCUBA2";
     $calclass   = "ORAC::Calib::SCUBA";
     $instclass  = "ORAC::Inst::SCUBA";
+
   } elsif ($inst eq 'MICHTEMP') {
     $groupclass = "ORAC::Group::Michelle";
     $frameclass = "ORAC::Frame::MichTemp";
     $calclass = "ORAC::Calib::CGS4";
     $instclass = "ORAC::Inst::CGS4";
+
   } elsif ($inst eq 'MICHELLE') {
     $groupclass = "ORAC::Group::Michelle";
     $frameclass = "ORAC::Frame::Michelle";
     $calclass = "ORAC::Calib::Michelle";
     $instclass = "ORAC::Inst::Michelle";
+
   } elsif ($inst eq 'MICHGEM') {
     $groupclass = "ORAC::Group::MichGem";
     $frameclass = "ORAC::Frame::MichGem";
     $calclass = "ORAC::Calib::Michelle";
     $instclass = "ORAC::Inst::Michelle";
+
   } elsif ($inst eq 'UIST') {
     $groupclass = "ORAC::Group::UIST";
     $frameclass = "ORAC::Frame::UIST";
     $calclass = "ORAC::Calib::UIST";
     $instclass = "ORAC::Inst::UIST";
+
   } elsif ($inst eq 'GMOS') {
     $groupclass = "ORAC::Group::GMOS";
     $frameclass = "ORAC::Frame::GMOS";
     $calclass = "ORAC::Calib::UIST";
     $instclass = "ORAC::Inst::GMOS";
+
   } elsif ($inst eq 'NIRI') {
     $groupclass = "ORAC::Group::NIRI";
     $frameclass = "ORAC::Frame::NIRI";
     $calclass = "ORAC::Calib::NIRI";
     $instclass = "ORAC::Inst::NIRI";
+
   } elsif ($inst eq 'NIRI2') {
     $groupclass = "ORAC::Group::NIRI";
     $frameclass = "ORAC::Frame::NIRI2";
     $calclass = "ORAC::Calib::NIRI";
     $instclass = "ORAC::Inst::NIRI";
+
   } elsif ($inst eq 'CLASSICCAM') {
     $groupclass = "ORAC::Group::ClassicCam";
     $frameclass = "ORAC::Frame::ClassicCam";
     $calclass   = "ORAC::Calib::ClassicCam";
     $instclass  = "ORAC::Inst::ClassicCam";
+
+  } elsif ($inst eq 'SPEX') {
+    $groupclass = "ORAC::Group::SPEX";
+    $frameclass = "ORAC::Frame::SPEX";
+    $calclass   = "ORAC::Calib::SPEX";
+    $instclass  = "ORAC::Inst::SPEX";
+
   } elsif( $inst eq 'JCMT_DAS') {
     $groupclass = "ORAC::Group::JCMT_DAS";
     $frameclass = "ORAC::Frame::JCMT_DAS";
     $calclass = "ORAC::Calib";
     $instclass = "ORAC::Inst::JCMT_DAS";
+
   } elsif( $inst eq 'ACSIS') {
     $groupclass = "ORAC::Group::ACSIS";
     $frameclass = "ORAC::Frame::ACSIS";
     $calclass = "ORAC::Calib";
     $instclass = "ORAC::Inst::ACSIS";
+
   } else {
     orac_err("Instrument $inst is not currently supported in ORAC-DR\n");
     return ();
@@ -618,6 +650,11 @@ sub orac_determine_recipe_search_path {
     push( @path, File::Spec->catdir( $imaging_root, "CLASSICCAM" ) );
     push( @path, $imaging_root );
 
+  } elsif ($inst eq 'SPEX') {
+    push( @path, File::Spec->catdir( $root, "SPEX" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "SPEX" ) );
+    push( @path, $imaging_root );
+
   } else {
     croak "Recipes: Unrecognised instrument: $inst\n";
   }
@@ -796,6 +833,12 @@ sub orac_determine_primitive_search_path {
     push( @path, $imaging_root );
     push( @path, $general_root );
 
+  } elsif ($inst eq 'SPEX') {
+    push( @path, File::Spec->catdir( $root, "SPEX" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "SPEX" ) );
+    push( @path, $imaging_root );
+    push( @path, $general_root );
+
   } else {
     croak "Primitives: Unrecognised instrument: $inst\n";
   }
@@ -906,6 +949,10 @@ sub orac_determine_calibration_search_path {
     push( @path, File::Spec->catdir( $root, 'classiccam' ) );
     push( @path, $general_ir_root );
 
+  } elsif( $inst eq 'SPEX' ) {
+    push( @path, File::Spec->catdir( $root, 'spex' ) );
+    push( @path, $general_ir_root );
+
   } else {
 
     croak "Calibration directories: Unrecognised instrument: $inst\n";
@@ -1012,6 +1059,11 @@ sub orac_determine_initial_algorithm_engines {
       ccdpack_res /
 
   } elsif ($inst eq 'CLASSICCAM') {
+
+    @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg
+      ccdpack_res /
+
+  } elsif ($inst eq 'SPEX') {
 
     @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg
       ccdpack_res /
