@@ -1,0 +1,585 @@
+# _FLUX_CALIBRATE_SPECTRUM_ -*-perl-*-
+#
+# flux calibrate a divided-by-standard image/spectrum.
+
+=head1 NAME
+
+_FLUX_CALIBRATE_SPECTRUM_ - flux-calibrates a divided-by-standard image
+
+=head1 DESCRIPTION
+
+Calibrate the current group by dividing by the flux standard.
+
+For pair reduction, this primitive does nothing unless a completed pair
+is available.
+
+=head1 REVISION
+
+ $Id$
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+=cut
+
+# Define reference data.
+# ======================
+
+# Reference flux in units of Janskies
+    my %reffluxjan = (
+                       V => 3540,
+                       J => 1600,
+                       H => 1020,
+                       K => 657,
+                       L => 290,
+                       Lprime => 252,
+                       M => 163,
+                       N => 39.8,
+                       Q => 10.4,
+                     );
+
+# Reference flux in units of W/m^2/um.
+    my %reffluxmic = (
+                       V => 3.34e-8,
+                       I => 8.25e-9,
+                       J => 3.07e-9,
+                       H => 1.12e-9,
+                       K => 4.07e-10,
+                       L => 7.30e-11,
+                       Lprime => 5.24e-11,
+                       M => 2.12e-11,
+                       N => 1.17e-12,
+                       Q => 7.80e-14,
+                     );
+
+# Wavelength bands, centres in microns.
+    my %waveband = (
+                     V => 0.5556,
+                     J => 1.25,
+                     H => 1.65, 
+                     K => 2.20,
+                     L => 3.45,
+                     Lprime => 3.80,
+                     M => 4.80,
+                     N => 10.1,
+                     Q => 20.0,
+                   );
+
+# (V-I) colours by spectral type.
+    my %vminusi = (
+                    B8 => -0.15,
+                    A0 => 0.00,
+                    A2 => 0.06,
+                    A5 => 0.27,
+                    A7 => 0.24,
+                    F0 => 0.33,
+                    F2 => 0.40,
+                    F5 => 0.62,
+                    F7 => 0.62,
+                    G0 => 0.66,
+                    G2 => 0.68,
+                    G4 => 0.71,
+                    G6 => 0.75,
+                    K0 => 0.88,
+                    K2 => 0.98,
+                    K4 => 1.15,
+                    K5 => 1.22,
+                    K7 => 1.45,
+                    M0 => 1.80,
+                    M1 => 1.96,
+                    M2 => 2.14,
+                    M3 => 2.47,
+                    M4 => 2.86,
+                    M5 => 3.39,
+                    M6 => 4.18,
+                  );
+
+# (V-K) colour
+    my %vminusk = (
+                    O6 => -0.91,
+                    O7 => -0.91,
+                    O8 => -0.91,
+                    O9 => -0.87,
+                    B0 => -0.83,
+                    B1 => -0.74,
+                    B2 => -0.66,
+                    B3 => -0.56,
+                    B4 => -0.49,
+                    B5 => -0.42,
+                    B6 => -0.36,
+                    B7 => -0.29,
+                    B8 => -0.24,
+                    B9 => -0.13,
+                    A0 => 0.00,
+                    A1 => 0.01,
+                    A2 => 0.02,
+                    A3 => 0.14,
+                    A4 => 0.26,
+                    A5 => 0.38,
+                    A6 => 0.44,
+                    A7 => 0.50,
+                    A8 => 0.56,
+                    A9 => 0.62,
+                    F0 => 0.70,
+                    F1 => 0.76,
+                    F2 => 0.82,
+                    F3 => 0.91,
+                    F4 => 1.00,
+                    F5 => 1.10,
+                    F6 => 1.21,
+                    F7 => 1.32,
+                    F8 => 1.35,
+                    F9 => 1.38,
+                    G0 => 1.41,
+                    G1 => 1.43,
+                    G2 => 1.46,
+                    G3 => 1.49,
+                    G4 => 1.53,
+                    G5 => 1.58,
+                    G6 => 1.64,
+                    G7 => 1.72,
+                    G8 => 1.80,
+                    G9 => 1.88,
+                    K0 => 1.96,
+                    K1 => 2.09,
+                    K2 => 2.22,
+                    K3 => 2.43,
+                    K4 => 2.63,
+                    K5 => 2.85,
+                    K6 => 3.01,
+                    K7 => 3.16,
+                    K8 => 3.30,
+                    K9 => 3.45,
+                    M0 => 3.65,
+                    M1 => 3.87,
+                    M2 => 4.11,
+                    M3 => 4.65,
+                    M4 => 5.28,
+                    M5 => 6.17,
+                    M6 => 7.37,
+                  );
+
+# (J-H) colour by spectral type.
+    my %jminush = (
+                    O6 => -0.16,
+                    O7 => -0.16,
+                    O8 => -0.16,
+                    O9 => -0.14,
+                    B0 => -0.12,
+                    B1 => -0.10,
+                    B2 => -0.09,
+                    B3 => -0.08,
+                    B4 => -0.07,
+                    B5 => -0.06,
+                    B6 => -0.05,
+                    B7 => -0.03,
+                    B8 => -0.03,
+                    B9 => -0.01,
+                    A0 => 0.00,
+                    A1 => 0.00,
+                    A2 => 0.01,
+                    A3 => 0.03,
+                    A4 => 0.05,
+                    A5 => 0.06,
+                    A6 => 0.07,
+                    A7 => 0.09,
+                    A8 => 0.10,
+                    A9 => 0.12,
+                    F0 => 0.13,
+                    F1 => 0.15,
+                    F2 => 0.17,
+                    F3 => 0.19,
+                    F4 => 0.21,
+                    F5 => 0.23,
+                    F6 => 0.26,
+                    F7 => 0.29,
+                    F8 => 0.29,
+                    F9 => 0.30,
+                    G0 => 0.31,
+                    G1 => 0.31,
+                    G2 => 0.32,
+                    G3 => 0.32,
+                    G4 => 0.33,
+                    G5 => 0.35,
+                    G6 => 0.37,
+                    G7 => 0.40,
+                    G8 => 0.42,
+                    G9 => 0.44,
+                    K0 => 0.45,
+                    K1 => 0.47,
+                    K2 => 0.50,
+                    K3 => 0.54,
+                    K4 => 0.58,
+                    K5 => 0.61,
+                    K6 => 0.63,
+                    K7 => 0.66,
+                    K8 => 0.66,
+                    K9 => 0.67,
+                    M0 => 0.67,
+                    M1 => 0.66,
+                    M2 => 0.66,
+                    M3 => 0.64,
+                    M4 => 0.62,
+                    M5 => 0.62,
+                    M6 => 0.66,
+                  );
+
+# (H-K) colour by spectral type.
+    my %hminusk = (
+                    O6 => -0.04,
+                    O7 => -0.04,
+                    O8 => -0.04,
+                    O9 => -0.04,
+                    B0 => -0.04,
+                    B1 => -0.03,
+                    B2 => -0.03,
+                    B3 => -0.02,
+                    B4 => -0.02,
+                    B5 => -0.01,
+                    B6 => -0.01,
+                    B7 => -0.01,
+                    B8 => 0.00,
+                    B9 => 0.00,
+                    A0 => 0.00,
+                    A1 => 0.01,
+                    A2 => 0.01,
+                    A3 => 0.01,
+                    A4 => 0.01,
+                    A5 => 0.02,
+                    A6 => 0.02,
+                    A7 => 0.03,
+                    A8 => 0.03,
+                    A9 => 0.03,
+                    F0 => 0.03,
+                    F1 => 0.04,
+                    F2 => 0.04,
+                    F3 => 0.04,
+                    F4 => 0.04,
+                    F5 => 0.04,
+                    F6 => 0.04,
+                    F7 => 0.05,
+                    F8 => 0.05,
+                    F9 => 0.05,
+                    G0 => 0.05,
+                    G1 => 0.05,
+                    G2 => 0.05,
+                    G3 => 0.05,
+                    G4 => 0.06,
+                    G5 => 0.06,
+                    G6 => 0.06,
+                    G7 => 0.06,
+                    G8 => 0.07,
+                    G9 => 0.07,
+                    K0 => 0.08,
+                    K1 => 0.08,
+                    K2 => 0.09,
+                    K3 => 0.10,
+                    K4 => 0.11,
+                    K5 => 0.11,
+                    K6 => 0.13,
+                    K7 => 0.15,
+                    K8 => 0.16,
+                    K9 => 0.17,
+                    M0 => 0.17,
+                    M1 => 0.18,
+                    M2 => 0.20,
+                    M3 => 0.23,
+                    M4 => 0.27,
+                    M5 => 0.33,
+                    M6 => 0.38,
+                  );
+
+# (K-L) colour by spectral type.
+    my %kminusl = (
+                    O6 => -0.07,
+                    O7 => -0.07,
+                    O8 => -0.07,
+                    O9 => -0.06,
+                    B0 => -0.06,
+                    B1 => -0.05,
+                    B2 => -0.05,
+                    B3 => -0.05,
+                    B4 => -0.05,
+                    B5 => -0.04,
+                    B6 => -0.04,
+                    B7 => -0.04,
+                    B8 => -0.03,
+                    B9 => -0.02,
+                    A0 => 0.00,
+                    A1 => 0.00,
+                    A2 => 0.01,
+                    A3 => 0.01,
+                    A4 => 0.02,
+                    A5 => 0.02,
+                    A6 => 0.02,
+                    A7 => 0.03,
+                    A8 => 0.03,
+                    A9 => 0.03,
+                    F0 => 0.03,
+                    F1 => 0.03,
+                    F2 => 0.03,
+                    F3 => 0.03,
+                    F4 => 0.04,
+                    F5 => 0.04,
+                    F6 => 0.04,
+                    F7 => 0.04,
+                    F8 => 0.04,
+                    F9 => 0.05,
+                    G0 => 0.05,
+                    G1 => 0.05,
+                    G2 => 0.05,
+                    G3 => 0.05,
+                    G4 => 0.05,
+                    G5 => 0.05,
+                    G6 => 0.05,
+                    G7 => 0.05,
+                    G8 => 0.06,
+                    G9 => 0.06,
+                    K0 => 0.06,
+                    K1 => 0.07,
+                    K2 => 0.07,
+                    K3 => 0.08,
+                    K4 => 0.09,
+                    K5 => 0.10,
+                    K6 => 0.10,
+                    K7 => 0.11,
+                    K8 => 0.12,
+                    K9 => 0.13,
+                    M0 => 0.14,
+                    M1 => 0.15,
+                    M2 => 0.16,
+                    M3 => 0.20,
+                    M4 => 0.23,
+                    M5 => 0.29,
+                    M6 => 0.36,
+                  );
+
+# (K-L') colour by spectral type.
+    my %kminuslprime = (
+                         A0 => 0.00,
+                         A1 => 0.00,
+                         A2 => 0.01,
+                         A3 => 0.01,
+                         A4 => 0.02,
+                         A5 => 0.02,
+                         A6 => 0.02,
+                         A7 => 0.03,
+                         A8 => 0.03,
+                         A9 => 0.03,
+                         F0 => 0.03,
+                         F1 => 0.03,
+                         F2 => 0.03,
+                         F3 => 0.03,
+                         F4 => 0.04,
+                         F5 => 0.04,
+                         F6 => 0.04,
+                         F7 => 0.04,
+                         F8 => 0.04,
+                         F9 => 0.05,
+                         G0 => 0.05,
+                         G1 => 0.05,
+                         G2 => 0.05,
+                         G3 => 0.05,
+                         G4 => 0.05,
+                         G5 => 0.05,
+                         G6 => 0.05,
+                         G7 => 0.06,
+                         G8 => 0.06,
+                         G9 => 0.06,
+                         K0 => 0.06,
+                         K1 => 0.07,
+                         K2 => 0.07,
+                         K3 => 0.08,
+                         K4 => 0.10,
+                         K5 => 0.11,
+                         K6 => 0.12,
+                         K7 => 0.13,
+                         K8 => 0.15,
+                         K9 => 0.16,
+                         M0 => 0.17,
+                         M1 => 0.21,
+                         M2 => 0.23,
+                         M3 => 0.32,
+                         M4 => 0.37,
+                         M5 => 0.42,
+                         M6 => 0.48,
+                       );
+
+# (K-M) colour spectral type.
+    my %kminusm = (
+                    A0 => 0.00,
+                    A1 => 0.01,
+                    A2 => 0.01,
+                    A3 => 0.02,
+                    A4 => 0.02,
+                    A5 => 0.03,
+                    A6 => 0.03,
+                    A7 => 0.03,
+                    A8 => 0.03,
+                    A9 => 0.03,
+                    F0 => 0.03,
+                    F1 => 0.03,
+                    F2 => 0.03,
+                    F3 => 0.03,
+                    F4 => 0.02,
+                    F5 => 0.02,
+                    F6 => 0.02,
+                    F7 => 0.02,
+                    F8 => 0.02,
+                    F9 => 0.01,
+                    G0 => 0.01,
+                    G1 => 0.01,
+                    G2 => 0.01,
+                    G3 => 0.01,
+                    G4 => 0.01,
+                    G5 => 0.01,
+                    G6 => 0.00,
+                    G7 => 0.00,
+                    G8 => 0.00,
+                    G9 => -0.01,
+                    K0 => -0.01,
+                    K1 => -0.02,
+                    K2 => -0.02,
+                    K3 => -0.03,
+                    K4 => -0.04,
+                  );
+
+# Validate
+# ========
+
+# No need to bother if this is a pair reduction and we don't yet have
+# a pair.  Proceed regardless for non-pair reduction.
+    my $reduce_group = $Frm->uhdr( "PAIR_COMPLETE" );
+    $reduce_group = defined( $reduce_group ) ? $reduce_group : 1;
+
+# If we are processing the group, proceed.
+    if ( $reduce_group ) {
+
+# Now that all those have been set up, get information from the standard
+# that was used.
+       if ( $Grp->file_exists ) {
+
+# We need to make sure that we are comparing with a group rather than
+# a frame, so we need to change the hash stored in the Cal object.
+          my $thing = $Cal->thing;
+
+# Set up a new hash that with which we wish to compare.
+          my %hdr = %{ $thing };
+
+# Copy in the NDIMS header...
+          $hdr{NDIMS} = $Grp->uhdr( "NDIMS" );
+
+# and store the headers in the Cal object.
+          $Cal->thing( \%hdr );
+
+# Get standard information & exposure times.
+# ==========================================
+
+# Obtain the name of the standard.
+          my $standard = $Cal->standard;
+
+# Now reset the hash in the Cal object.
+          $Cal->thing( $thing );
+
+# Obtain the index entry for the particular standard, and obtain
+# the V magnitude and spectral type stored there.
+          my $stdidx = $Cal->standardindex->indexentry( $standard );
+          my $stdvmag = $stdidx->{'VMAG'};
+          my $stdspec = $stdidx->{'SPECTYPE'};
+
+# Obtain the keyword associated with the ORAC_EXP_TIME user
+# header, corresponding to the exposure time.  It is this key which
+# is used by the standard index.  Hence find the exposure time for
+# the standard.
+          my $exptimename = "ORAC_EXP_TIME";
+          my %keywords = $Frm->translate_hdr( $exptimename );
+          my @exptimekey = keys( %keywords );
+          my $stdexp = $stdidx->{$exptimekey[ 0 ]};
+
+# Obtain the waveband.
+# ====================
+
+# Give up now if the SPECTYPE does not exist in the %vminusk hash 
+# and that the V magnitude is reasonable.
+          if ( exists $vminusk{$stdspec} && $stdvmag > -50 ) {
+
+# Determine the wavelength band from the wavelength.
+             my $refwave = $Grp->uhdr( "ORAC_GRATING_WAVELENGTH" );
+#      print "DEBUG: refwave: $refwave\n";
+
+             my $wband;
+             foreach my $band ( keys %waveband ) {
+                if ( abs( $waveband{ $band } - $refwave ) < 0.15 ) {
+                   $wband = $band;
+                }
+             }
+
+# Flux correct the spectrum.
+# ==========================
+
+# Calculate magnitude flux in this band.
+             my $mag;
+             if ( $wband eq "J" ) {
+                $mag = $stdvmag - $vminusk{$stdspec} + $hminusk{$stdspec} +
+                       $jminush{$stdspec};
+             } elsif ( $wband eq "H") {
+                $mag = $stdvmag - $vminusk{$stdspec} + $hminusk{$stdspec};
+             } elsif ( $wband eq "K") {
+                $mag = $stdvmag - $vminusk{$stdspec};
+             } elsif ( $wband eq "L") {
+                $mag = $stdvmag - $vminusk{$stdspec} - $kminusl{$stdspec};
+             } elsif ( $wband eq "Lprime") {
+                $mag = $stdvmag - $vminusk{$stdspec} - $kminuslprime{$stdspec};
+             } elsif ( $wband eq "M") {
+                $mag = $stdvmag - $vminusk{$stdspec} - $kminusm{$stdspec};
+             } else {
+                orac_warn "Flux calibration not performed---too far off from band centre.\n";
+             }
+
+# Get the flux in this band in units of W/m^2/um.
+             my $flux = $reffluxmic{$wband};
+
+# Take the exposure times into account.
+             my $grpexp = $Grp->uhdr( "ORAC_EXP_TIME" );
+             my $ratio_exp = $grpexp / $stdexp;
+
+# Calculate the flux from the standard in this band.
+             my $stdflux = 10**( -0.4 * $mag ) * $flux / $ratio_exp;
+
+# Apply the calibration, and tell the user.
+             my $in = $Grp->file;
+             my $out = $Grp->raw . "_fc";
+             orac_print "Observation is in $wband band.\n";
+             orac_print "$in will be multiplied by $stdflux to give $out\n";
+             my $param = "out=$out scalar=$stdflux title=$out";
+             $Mon{'kappa_mon'}->obeyw( "cmult", "in=$in $param" );
+
+# Change the label and units of the data.
+             $Mon{'ndfpack_mon'}->obeyw( "setlabel", "ndf=$out label='approx. flux'" );
+             $Mon{'ndfpack_mon'}->obeyw( "setunits", "ndf=$out units=W/m^2/micron" );
+
+# Housekeeping
+# ============
+
+# Update the $Grp object.
+             $Grp->file( $out );
+
+# Display the flux-calibrated spectrum.
+             $Display->display_data( $Grp ) if defined $Display;
+
+# Give the user the bad news.
+          } else {
+             orac_warn "Either the spectral type of standard was unknown ". 
+                       "or the V magnitude was out of range.\n";
+             orac_warn "Values were SPECTYPE=$stdspec VMAG=$stdvmag.\n";
+             orac_warn "Data have not been flux calibrated.\n";
+          }
+       }
+    }
