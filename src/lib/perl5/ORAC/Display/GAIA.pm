@@ -26,6 +26,8 @@ use 5.004;
 use Carp;
 use strict;
 
+use base qw/ ORAC::Display::Base /;  # Base class
+
 use ORAC::Print;
 use ORAC::Constants qw/:status/;
 
@@ -36,7 +38,7 @@ use Cwd qw/ cwd /;         # To get current working directory
 use vars qw/ $VERSION $DEBUG /;
 
 $VERSION = '0.10';
-$DEBUG   = 1;
+$DEBUG   = 0;
 
 
 =head1 PUBLIC METHODS
@@ -58,13 +60,10 @@ sub new {
   my $proto = shift;
   my $class = ref($proto) || $proto;
 
-  my $disp = {};  # Anonymous hash
-
-  $disp->{Dev} = {};      # Device list
-  $disp->{Sock} = undef;  # Socket object 
-
-  # Bless the reference
-  bless $disp, $class;
+  # Create a new instance from the base class
+  # Dont allow any arguments.
+  # Probably should turn off -w here
+  my $disp = $class->SUPER::new(Sock => undef);
 
   # Now try to launch Gaia
 
@@ -92,7 +91,35 @@ sub sock {
   my $self = shift;
   $self->{SOCK} = shift if @_;
   return $self->{SOCK};
-}    
+}
+
+=item create_dev(win)
+
+Clone a new GAIA window and associate it with 'win'. This is different
+to launching a new display device (ie running up GAIA itself).
+
+=cut
+
+sub create_dev {
+
+  my $self = shift;
+  my $win = shift;
+
+  # We launch with the ORAC display image
+  my $image = "$ENV{ORAC_DIR}/images/orac_start.sdf";
+
+  # Need to clone from the default window (called default)
+  my $base = $self->dev('default');
+
+  # Now clone the window and grab the result
+  my $clone = $self->send_to_gaia("$base clone {} $image");
+
+  # Now store the clone window
+  $self->dev($win, $clone);
+
+}
+
+
 
 
 =item launch
@@ -110,7 +137,7 @@ sub launch {
     my $fh;
     if ($fh = new IO::File($ENV{HOME}.'/.rtd-remote')) {
       my ($pid, $host, $port) = split (/\s+/, <$fh>);
-      print "host = $host,   pid = $pid,    port = $port\n";
+      print "host = $host,   pid = $pid,    port = $port\n" if $DEBUG;
       close $fh;
       my $sock = IO::Socket::INET->new( 
            Proto => "tcp",
@@ -151,13 +178,30 @@ sub configure {
   
   my $startup = "$ENV{ORAC_DIR}/images/orac_start.sdf";
 
-  my $result = $self->send_to_gaia("SkyCat::load_image $startup");
+  # Need to retrieve the name of the default window from
+  # gaia itself using the get_image command.
+
+  my $gaia_objects = $self->send_to_gaia("SkyCat::get_skycat_images");
+
+  # Now we need to split this return string on spaces and 
+  # get the first image name
+  my $default = (split(/\s+/,$gaia_objects))[0];
+
+  # Load the startup image
+  my $result = $self->send_to_gaia("$default configure -file $startup");
+
+  # Note that this is of the form .rtdn.image
+  # We need to store the .rtdn bit
+  $default = substr($default, 0,5);
 
   # If the result contains something then this indicates an error
   # So return ORAC__ERROR
   if ($result) {
     return ORAC__ERROR;
   } else {
+    # Everything okay so store the name of the GAIA window
+    $self->dev('default', $default);
+
     return ORAC__OK;
   }
 
@@ -236,6 +280,8 @@ If an image name does not include an extension then '.sdf' is appended.
 
 Takes a file name and arguments stored in a hash.
 
+  $disp->image("filename", \%options)
+
 
 =cut
 
@@ -244,6 +290,7 @@ sub image {
 
   my $self = shift;
   my $file = shift;
+
 
   # Check file for extension
   # Assume that an extension is a . followed by letters but not a /
@@ -259,11 +306,34 @@ sub image {
     $file = "$cwd/$file";
   }
 
+  # Read the options hash
+  my $opt;
+  my %options = ();
+  if (@_) {
+    $opt = shift;
+    if (ref($opt) eq 'HASH') {
+      %options = %{$opt};
+    }
+  }
 
-  # Forget options handling for the moment.
-  # Just send to GAIA
 
-  $self->send_to_gaia("SkyCat::load_image $file");
+  # Get the window name from the options hash
+  my $window = 'default';
+  if (exists $options{WINDOW}) {
+    $window = $options{WINDOW};
+  }
+  # and convert it into a device id
+  my $device = $self->window_dev($window);
+  
+  # We now need to retrieve the image id associated with this
+  # clone from gaia
+  my $image = $self->send_to_gaia("$device get_image");
+
+  # Just send to GAIA - configure the new file
+  $self->send_to_gaia("$image configure -file $file");
+
+  # Other options go here for dealing with ZAUTOSCALE etc
+
 
 }
 
