@@ -48,15 +48,15 @@
           my @objects = $Grp->membernames;
 
 # Convert list to comma-separated list.
-          my $objlist = join(",", @objects);
+          my $objlist = join( ",", @objects );
 
 # Create text file to hold the list of input files, one per line.  This
 # is needed because expanded lists of files may make the command line too
 # long for the ADAM message system.
-          unlink ("objlist.inlist$$");
-          open (INLIST, ">objlist.inlist$$");
+          unlink ( "objlist.inlist$$" );
+          open( INLIST, ">objlist.inlist$$" );
           print INLIST join( "\n", @objects ), "\n";
-          close (INLIST);
+          close( INLIST );
 
 # Create a new group to hold the reference frame and any other frames
 # for which registration fails.  Start it with the reference frame.
@@ -90,7 +90,13 @@
 
 # Initialise the status.
           my $findoff_status = ORAC__ERROR;
-          my ( $file, $frame, $offfile, $partfind, $partsolution );
+          my ( $file, $frame, $offfile, $morereg, $partfind, $partsolution );
+
+# Initialise flags which describe if only part of the find and part of
+# the offsets are found.
+          $partfind = 0;
+          $partsolution = 0;
+          $morereg = 0;
 
 # Specify the other parameters for the FINDOBJ stage.
           my $header = "in='^objlist.inlist$$' outlist=\'*.find\'";
@@ -123,7 +129,6 @@
 # which there will be no .find file created. 
           } else {
              my @od_objects = ();
-             $partfind = 0;
 
              foreach $frame ( @frames ) {
                 $file = $frame->file;
@@ -134,9 +139,10 @@
 # Record any observation without a .find file in the registration group
 # so that another means of registration can be determined for the frame
 # later.  Switch the flag to indicate that there is some more
-# registration to do.
+# registration to do and a possible partial solution.
                    $regGrp->push( $frame );
                    $partfind = 1;
+                   $morereg = 1;
 
 # FINDOFF will exit with an error if any of the .find files contains fewer
 # than three objects.  To prevent losing valid registration data from
@@ -162,6 +168,7 @@
 # to do.
                    if ( $objcount < 3 ) {
                       $partfind = 1;
+                      $morereg = 1;
                       $regGrp->push( $frame );
 
 # This observation has sufficient objects in the .find file.  Record
@@ -174,14 +181,19 @@
                    }
                 }
              }
+
 # There is no point supplying fewer than two frames for FINDOFF to register.
 # Look for the special case of only one frame with sufficient objects.  
 # Transfer the single frame to the registration group.  The initialised bad
 # findoff_status will select _FIND_APPROX_OFFSETS later.
              if ( $#od_objects < 1 ) {
+
                 if ( $odGrp->num == 0 ) {
                    $regGrp->push( $odGrp->frame( 0 ) );
                 }
+
+# There is now no partial find.
+                $partfind = 0;
 
 # Form a new list of frames to process at the find offset stage.
 # Again this is a text file, with one frame written per line.  This
@@ -228,18 +240,90 @@
 # of .off files.  Some will be missing for a partial solution.  Only
 # search the group of frames where objects were detected.  Again update
 # the group of unregistered frames where no offset could be determined.
-# Record when a partial solution was returned.
-                $partsolution = 0;
+# Record when a partial solution was returned. 
+                my $numbertoreg = 0;
                 foreach $frame ( $odGrp->members ) {
                    $file = $frame->file;
                    $offfile = $file . ".off";
 
                    if ( ! -e $offfile ) {
                       $partsolution = 1;
+                      $morereg = 1;
                       $regGrp->push( $frame );
+
+# Keep a count of the frames to be registered.
+                      $numbertoreg++
+                   }
+                }
+
+# When all the frames failed to register, there is no partial solution.
+# All will be registered by telescope or central-source offsets.
+                if ( $numbertoreg == ( $odGrp->num + 1 ) ) {
+                   $partsolution = 0;
+                }
+             }
+          }
+
+# Tie into a single co-ordinate system
+# ------------------------------------
+
+# If there are some frames registered using stars and others using
+# telescope offsets, we need to tie them together.  The obvious way is
+# through the telescope offset of the first (reference) frame of
+# those registered automatically, comparing it to the centroid of its
+# first source.  In _FIND_APPROX_OFFSETS_ we will then apply this offset
+# to the first (and only) entry to the .off files it creates.
+          my ( $xoffref, $yoffref, $xshift_toref, $yshift_toref );
+          if ( $partfind || $partsolution ) { 
+
+# Obtain the first frame already registered.
+             my $refFrm = $odGrp->frame( 0 );
+
+# Get its telescope offsets in arcsec.
+             $xoffref = $refFrm->hdr( "TRAOFF" );
+             $yoffref = $refFrm->hdr( "TDECOFF" );
+
+# Obtain the plate scales for the instrument from the headers.
+             my ( $xpixelscale, $ypixelscale );
+             my $instrument = $refFrm->hdr( "INSTRUME" );
+             if ( $instrument =~ /^UFTI/ ) {
+                $xpixelscale = $refFrm->hdr( "CDELT1" );
+                $ypixelscale = $refFrm->hdr( "CDELT2" );
+             } else {
+                $xpixelscale = $refFrm->hdr( "PIXELSIZ" );
+                $ypixelscale = $xpixelscale;
+             }
+ 
+# Convert telescope offsets to pixels.
+             $xoffref = $xoffref / $xpixelscale;
+             $yoffref = $yoffref / $ypixelscale;
+
+# Read its corresponding offset file until the identifier 1 object
+# is located.
+             my $offfile = $refFrm->file . ".off";
+             my @words = ( 0, 0, 0 );
+             if ( -e $offfile ) {
+                open( OFFFILE, "< $offfile" );
+                foreach my $line ( <OFFFILE> ) {
+
+# Match 1 followed by a space in case there are more than nine
+# objects, unlikely but possible.
+                   if ( $line =~ /^1\s/ ) {
+                      @words = split( /\s+/, $line );
+                      last;
                    }
                 }
              }
+             close( OFFFILE );
+
+# Find the Cartesian displacements between the two co-ordinate systems.
+             $xshift_toref = $words[1] - $xoffref;
+             $yshift_toref = $words[2] - $yoffref;
+
+# There is no change of co-ordinates required so, the offsets are zero.
+          } else {
+             $xshift_toref = 0;
+             $yshift_toref = 0;
           }
 
 # Use other options to determine offsets.
@@ -255,12 +339,12 @@
 # Obtain a parameter to decide whether or not to attempt central-source
 # search.
           if ( $findoff_status != ORAC__OK || $findobj_status != ORAC__OK ||
-               $partsolution || $ partfind ) {
+               $morereg ) {
 
              {
                 my $Grp = $regGrp;
                 my $central_source = ( $_GENERATE_OFFSETS_{CENTRAL_SOURCE} || "TRUE" );
-                _FIND_APPROX_OFFSETS_ SEARCH_BOX=$central_source
+                _FIND_APPROX_OFFSETS_ SEARCH_BOX=$central_source XSHIFT=$xshift_toref YSHIFT=$yshift_toref
              }
           }
 
