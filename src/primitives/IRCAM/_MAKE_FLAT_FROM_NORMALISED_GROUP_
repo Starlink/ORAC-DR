@@ -22,10 +22,13 @@
 #    -  This primitive is suitable for both UFTI and IRCAM.
 #    -  Processing only occurs for object and sky frames, and when the
 #    steering header MAKE_FLAT is true.
+#    -  There is special behaviour for a combined polarimetry flat
+#    (see "Output Data").  The string "pol" in the filter name is used
+#    to indicate polarimetry data.
 #    -  The flat is displayed.
 #
 # Tasks:
-#    CCDPACK: MAKECAL; KAPPA: CDIV, STATS.
+#    CCDPACK: MAKECAL; KAPPA: CDIV, FITSMOD, NDFCOPY, STATS.
 #
 # Output Data:
 #    The flat field.  It is called is "flat_<filter>_<groupnumber>" for 
@@ -34,13 +37,17 @@
 #    the group, <filter> is the filter name, and <cyclenumber> is the
 #    cycle number derived from steering header CYCLE_NUMBER. 
 #
-#    An exception is for polarimetric data with steering header
-#    WAVEPLATE_FLAT set to true (1), where the name becomes
+#    An exception is for polarimetric data, where the name becomes
 #    flat_<filter>_pol<waveplate_angle>_<groupnumber>.  The
 #    <waveplate_angle> is the integer part of the angle, e.g. 22, 67,
 #    from header WPLANGLE.  Subsequent cycles for polarimetry also
 #    have the "_c<cyclenumber>" suffix, but the cycle comes from
-#    steering header POL_CYCLE_NUMBER.
+#    steering header POL_CYCLE_NUMBER.  When steering header
+#    WAVEPLATE_FLAT is false (0), copies of the flat are made, one
+#    for each angle, using the above nomenclature.  Each has its
+#    WPLANGLE set to its nominal angle.  This allows a single
+#    WPLANGLE rule entry irrespective of whether all waveplate 
+#    angles were combined to make a flat or not.
 
 # Authors:
 #    MJC: Malcolm J. Currie (JAC)
@@ -107,6 +114,15 @@
 # Generate the flat's name.
 # =========================
 
+# Obtain the filter name.  Remove []() or replace characters which would
+# confuse HDS.
+          my $filter = $Frm->hdr( "FILTER" );
+          $filter =~ s/\./p/g;
+          $filter =~ tr/\(\)\[\]/d/;
+
+# Is this a polarimetric frame?
+          my $poldata = $filter =~ /pol/;
+
 # See if this is polarimetry data requiring separate flats for each waveplate
 # angle, from the steering header.  May also need eventually to put in a filter
 # name.
@@ -121,16 +137,10 @@
 # Get the polarimetry cycle number.  Supply a default for recipes not
 # supporting this yet.  Can't use ( || ) syntax because 0 could be the
 # default, inherited from the oridnary cycle number.
-          if ( $waveplate_flat ) {
+          if ( $poldata ) {
              my $pol_cycleno = $Frm->hdr( "POL_CYCLE_NUMBER" );
              $cycleno = defined( $pol_cycleno ) ? $pol_cycleno : $cycleno;
           }
-
-# Obtain the filter name.  Remove []() or replace characters which would
-# confuse HDS.
-          my $filter = $Frm->hdr( "FILTER" );
-          $filter =~ s/\./p/g;
-          $filter =~ tr/\(\)\[\]/d/;
 
 # Obtain the flat number.  This may have an _subgrp suffix.  Since we take care
 # of different cycles in the naming, we remove the ugly _subgrp strings.
@@ -143,9 +153,9 @@
              $cyclesuffix = "_c" . $cycleno;
           }
  
-# Here the flats are grouped by waveplate angle.
+# There is a different naming rule for polarimetry data.
           my $out;
-          if ( $waveplate_flat ) {
+          if ( $poldata ) {
 
 # Obtain the integer part of the waveplate angle for the current group.
 # No need to had pol in the name twice, so remove it from the filter name.
@@ -153,8 +163,17 @@
              my $int_wplangle = int( $wplangle + 0.1 );
              $filter =~ s/\+pol//;
 
-# Generate the polarimetry flat's name.
-             $out = "flat_${filter}_pol${int_wplangle}_$flatno$cyclesuffix";
+# Generate the polarimetry flat's name.  Here the flats are grouped by
+# waveplate angle.
+             if ( $waveplate_flat ) {
+                $out = "flat_${filter}_pol${int_wplangle}_$flatno$cyclesuffix";
+
+# Since all angles are combined just set the first to a nominal 0 degrees.
+# Copies for other angles are made later.  They rely on the pol0 being
+# present to change the name for each flat.
+             } else {
+                $out = "flat_${filter}_pol0_$flatno$cyclesuffix";
+             }
 
           } else {
 
@@ -187,7 +206,66 @@
           _FILE_FLAT_ NAME=$out
      
 # Report the status of the processing.
-          orac_print "Orac says: frames $objlist used for flat\n";
+          orac_print "Orac says: Frames $objlist used for flat\n";
+
+# Polarimetry special case
+# ========================
+
+# WAVEPLATE_FLAT is true means that the calling primitives will
+# already invoke this script for each waveplate angle.  To retain
+# a common rules file for flats, there must be flats at each angle
+# independent of the value of the WAVEPLATE_FLAT switch.  So when
+# WAVEPLATE_FLAT is false, we have to make and store frames for
+# the other three polarimetry angles.  This is achieved by file
+# copying and editing the WPLANGLE header.
+          if ( $poldata && ! $waveplate_flat ) {
+             orac_print "Orac says: Copying flats for the other waveplate angles.\n";
+
+# First correct the waveplate angle header of the saved flat, in
+# case it was not 0 matching the assigned name.
+             $header = "ndf=$out keyword=WPLANGLE edit=update value=0 position=!";
+             $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$header comment=\\\$C" );
+
+# 45 degrees
+# ----------
+# Generate a new name and copy the frame.
+             my $in = $out;
+             $out =~ s/pol0/pol45/;
+             $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$in out=$out" );
+
+# Correct its WPLANGLE header.
+             $header = "ndf=$out keyword=WPLANGLE edit=update value=45 position=!";
+             $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$header comment=\\\$C" );
+
+# Set the current flat in the calibration object.
+             _FILE_FLAT_ NAME=$out
+
+# 22.5 degrees
+# ------------
+# Generate a new name and copy the frame.
+             $out =~ s/pol45/pol22/;
+             $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$in out=$out" );
+
+# Correct its WPLANGLE header.
+             $header = "ndf=$out keyword=WPLANGLE edit=update value=22.5 position=!";
+             $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$header comment=\\\$C" );
+
+# Set the current flat in the calibration object.
+             _FILE_FLAT_ NAME=$out
+
+# 67.5 degrees
+# ------------
+# Generate a new name and copy the frame.
+             $out =~ s/pol22/pol67/;
+             $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$in out=$out" );
+
+# Correct its WPLANGLE header.
+             $header = "ndf=$out keyword=WPLANGLE edit=update value=67.5 position=!";
+             $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$header comment=\\\$C" );
+
+# Set the current flat in the calibration object.
+             _FILE_FLAT_ NAME=$out
+          }
 
 # Display the image.
           _DISPLAY_FLAT_IMAGE_
@@ -228,13 +306,19 @@ steering header MAKE_FLAT is true.
 
 =item *
 
+There is special behaviour for a combined polarimetry flat
+(see L<"OUTPUT DATA">).  The string "pol" in the filter name is used
+to indicate polarimetry data.
+
+=item *
+
 The flat is displayed.
 
 =back
 
 =head1 TASKS
 
-CCDPACK: MAKECAL; KAPPA: CDIV, STATS.
+CCDPACK: MAKECAL; KAPPA: CDIV, FITSMOD, NDFCOPY, STATS.
 
 =head1 OUTPUT DATA
 
@@ -246,13 +330,16 @@ of the group, E<lt>filterE<gt> is the filter name, and
 E<lt>cyclenumberE<gt> is the cycle number derived from steering header
 CYCLE_NUMBER.
 
-An exception is for polarimetric data with steering header
-WAVEPLATE_FLAT set to true (1), where the name becomes
+An exception is for polarimetric data, where the name becomes
 flat_E<lt>filterE<gt>_polE<lt>waveplate_angleE<gt>_E<lt>groupnumberE<gt>.
 The E<lt>waveplate_angleE<gt> is the integer part of the angle, e.g.
 22, 67, from header WPLANGLE.  Subsequent cycles for polarimetry also
 have the "_cE<lt>cyclenumberE<gt>" suffix, but the cycle comes from
-steering header POL_CYCLE_NUMBER.
+steering header POL_CYCLE_NUMBER.  When steering header WAVEPLATE_FLAT
+is false (0), copies of the flat are made, one for each angle, using
+the above nomenclature.  Each has its WPLANGLE set to its nominal
+angle.  This allows a single WPLANGLE rule entry irrespective of
+whether all waveplate angles were combined to make a flat or not.
 
 =head1 AUTHORS
 
