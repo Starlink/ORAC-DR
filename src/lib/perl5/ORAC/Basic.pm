@@ -140,7 +140,7 @@ sub orac_exit_normally {
   ORAC::Event->destroy("Tk");
   ORAC::Event->unregister("Tk");
 
-  orac_print ("\nOrac says: $message\n","red") if $message ne '';
+  orac_print ("\nOrac says: $message","red") if $message ne '';
   orac_print ("\nOrac says: Goodbye\n","red");
   exit;
 };
