@@ -232,13 +232,11 @@ sub orac_connect_display {
   if ($status != ORAC__OK) {
     print colored("Error displaying startup image\n",'red');
     print colored("Trying to execute: display data=$data\n",'red');
-    return;
   }
 
   $status = $Display->obeyw("status");
   if ($status != ORAC__OK) {
     print colored("Error determining P4 status\n",'red');
-    return;
   }
 
   nbspoke(".port_0.plot_axes", "1");
@@ -562,9 +560,10 @@ sub orac_exit_abnormally {
 
   my $signal = shift;
 
-  rmtree $ENV{'ADAM_USER'};             # delete process-specific adam dir
-  &orac_kill_display;		# Destroy display
-  die;
+  # Dont delete tree since this routine is called from INSIDE recipes
+#  rmtree $ENV{'ADAM_USER'};             # delete process-specific adam dir
+#  &orac_kill_display;		# Destroy display
+  die "\nAborting from ORACDR - $signal received";
   # die "\n --Signal $signal received--\n";	
 
 };
@@ -586,6 +585,11 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.21  1998/06/29 05:20:31  timj
+#Cause orac_exit_abnormally to tell us that it is being called.
+#Make sure that noticeboard is reset even if display fails to
+#start properly.
+#
 #Revision 1.20  1998/06/29 04:17:27  timj
 #Startup P4 directly.
 #Remove orac_parse_obslist
