@@ -1,0 +1,118 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_FIX_FITS_HEADERS_ -- Corrects the headers of UIST IFU cube data.
+
+=head1 DESCRIPTION
+
+This primitive corrects incorrect WCS headers, specifically PC2_2, PC2_3,
+PC3_2, and PC3_3 headers, for IFU cube data for UIST.
+
+=head1 PARAMETERS
+
+=over 4
+
+=item FRAME = BOOLEAN (Read)
+
+If this parameter is true, then the current Frame object will have
+its FITS headers corrected. Otherwise, the current Group object will
+be corrected. [1]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Following a successful introduction of a WCS, the current AST Frame
+is SKY. Any existing WCS Frames besides the default three---PIXEL,
+GRID, AXIS---are lost.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The modified NDF.
+
+=back
+
+=head1 TASKS
+
+KAPPA: ERASE, FITSMOD, WCSFRAME.
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu> (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+my $frame = $_FIX_FITS_HEADERS_{FRAME};
+if( ! defined( $frame ) ) {
+  $frame = 1;
+}
+
+my $ndf;
+my $obj;
+if( $frame ) {
+  $obj = $Frm;
+  $ndf = $Frm->file;
+} else {
+  $obj = $Grp;
+  $ndf = $Grp->file;
+}
+
+# Get the rotation angle. This defines what the PC matrix values
+# will be.
+my $rotang_deg = $obj->uhdr("ORAC_SLIT_ANGLE");
+my $rotang_rad = $rotang_deg * ( atan2( 1, 1 ) * 4 ) / 180.0;
+
+# Define the rotation matrix.
+my $pc2_2 = cos( $rotang_rad );
+my $pc2_3 = sin( $rotang_rad );
+my $pc3_2 = -1.0 * sin( $rotang_rad );
+my $pc3_3 = cos( $rotang_rad );
+
+# Create the FITSMOD steering file.
+my $table = "cubefitsmod$$.lis";
+unlink( $table );
+
+open( my $fh_steering, ">$table" ) ||
+  orac_throw "Unable to open $table of WCS editing instructions. Error: $!.\n";
+
+# Write the headers to the steering file.
+print $fh_steering "U PC2_2 $pc2_2 \$C\n";
+print $fh_steering "W PC2_3 $pc2_3 Transformation matrix element\n";
+print $fh_steering "U PC3_2 $pc3_2 \$C\n";
+print $fh_steering "W PC3_3 $pc3_3 Transformation matrix element\n";
+
+close( $fh_steering );
+
+# Edit the headers.
+$Mon{'ndfpack_mon'}->obeyw( "fitsmod", "ndf=$ndf mode=file table=$table" );
+unlink( $table );
+
+# Report progress.
+orac_print "Corrected PC matrix headers in $ndf.\n";
+
+# Remove an existing WCS component, so that later when a new WCS is made,
+# it will include a SKY co-ordinate frame.  As there may not already be a
+# WCS component, make one with wcsframe.
+$Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$ndf frame=pixel" );
+$Mon{ "ndfpack_mon" }->obeyw( "erase", "object=${ndf}.WCS ok" );
+
+# Create the SKY frame in the WCS component.
+$Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$ndf frame=sky" );
+orac_print "Astrometry SKY co-ordinate frame created in $ndf.\n";
+orac_print "\n";
