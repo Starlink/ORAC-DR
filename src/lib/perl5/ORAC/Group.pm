@@ -348,6 +348,8 @@ numbers() (e.g. ORAC::Frame). Currently the routine does not check
 to make sure this is possible - the program will die if you try
 to use a SCALAR.
 
+  @numbers = $Grp->membernumbers;
+
 =cut
 
 sub membernumbers {
@@ -373,12 +375,34 @@ numbers() (e.g. ORAC::Frame). Currently the routine does not check
 to make sure this is possible - the program will die if you try
 to use a SCALAR.
 
+If an argument list is given the file names for each member of the
+group are updated. This will only be attempted if the number of 
+arguments given matches the number of members in the group.
+
+  $Grp->membernames(@newnames);
+  @names = $Grp->membernames;
+
 =cut
 
 sub membernames {
 
   my $self = shift;
 
+  # If arguments are supplied use the values to update the
+  # filenames in each frame
+  if (@_) {
+    # Only attempt this if the number of arguments supplied matches
+    # The number of members in the group
+    if ($self->num == $#_) {
+      foreach my $member ($self->members) {
+	my $newname = shift;
+	$member->file($newname);
+      }
+    }
+
+  }
+
+  # Now return the list of names associated with each member
   my @list = ();
   foreach my $member ($self->members) {
 
@@ -387,6 +411,79 @@ sub membernames {
   }
   return @list;
 }
+
+=item inout
+
+Method to return the current filenames for each frame in the
+group (similar to the membernames() method) and a set of output
+names for each file. This is achieved by calling the inout()
+method for each frame in turn. This will fail if the members of the
+group do not possess the inout() method.
+
+This method takes one argument (the new suffix) and 
+returns references to two arrays.
+
+  ($inref, $outref) = $Grp->inout("suffix");
+
+=cut
+
+sub inout {
+
+  my $self = shift;
+
+  # Find the suffix
+  my $suffix = shift;
+
+  # Initialise the output arrays
+  my @in = ();
+  my @out = ();
+
+  # Now loop over the members
+  foreach my $member ($self->members) {
+
+    # Retrieve the input and output names of these files
+    my ($in, $out) = $member->inout($suffix);
+    push(@in, $in);
+    push(@out, $out);
+
+  }
+
+  # Return the array references
+  return \@in, \@out;
+
+}
+
+=item updateout
+
+This method updates the current filename of each member of the group
+when supplied with a suffix. The inout() method (of the individual frame)
+is invoked for each member to generate the output name.
+
+  $Grp->updateout("suffix");
+
+This can be used to update the member filenames after an operation
+has been applied to every file in the group. Alternatively the 
+membernames() method can be invoked with the output of the inout()
+method.
+
+=cut
+
+sub updateout {
+  my $self = shift;
+
+  my $suffix = shift;
+  
+  # Now loop over the members
+  foreach my $member ($self->members) {
+
+    my ($in, $out) = $member->inout($suffix);
+    $member->file($out);
+  }
+
+  return 1;
+}
+
+
 
 =back
 
