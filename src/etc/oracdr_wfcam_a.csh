@@ -63,6 +63,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.2  2004/05/05 11:38:56  jrl
+#     Modified to add ORAC_DATA_CASU definition and a small tidy
+#
 #     Revision 1.1  2003/06/30 09:43:05  jrl
 #     initial entry into CVS
 #
@@ -113,14 +116,15 @@ endif
 set oracdr_args = "-ut $oracut"
 
 setenv ORAC_INSTRUMENT WFCAM_A
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/wfcam/$oracut/
-setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/wfcam/$oracut/
+setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/wfcam/$oracut
+setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/wfcam/$oracut
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/wfcam
+setenv ORAC_DATA_CASU $ORAC_DATA_OUT/casu
 
 # screen things
 setenv ORAC_PERSON jrl
 setenv ORAC_LOOP flag
-setenv ORAC_SUN  ???
+setenv ORAC_SUN
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
