@@ -1,5 +1,3 @@
-# Must be an ARC observation for CGS4
-# Note that this isnt necessarily true for Michelle
 # Leave this in for UIST for now.
 ORAC_OBSERVATION_TYPE eq 'ARC'
 
@@ -7,7 +5,9 @@ ORAC_OBSERVATION_TYPE eq 'ARC'
 # but it's nice to have it in the index file
 ORAC_DETECTOR_READ_TYPE
 
-# Do NOT requre a match on filter
+# Match on the filter and grating name.
+ORAC_GRATING_NAME eq $Hdr{"ORAC_GRATING_NAME"}
+ORAC_FILTER eq $Hdr{"ORAC_FILTER"}
 
 # CNFINDEX must match, unconditionally (PH,THK)
 #ORAC_CONFIGURATION_INDEX eq $Hdr{"ORAC_CONFIGURATION_INDEX"}
