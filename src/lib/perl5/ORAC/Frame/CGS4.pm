@@ -59,6 +59,7 @@ my %hdr = (
             GRATING_WAVELENGTH   => "GLAMBDA",
             NSCAN_POSITIONS      => "DETNINCR",
             RA_TELESCOPE_OFFSET  => "RAOFF",
+	    RECIPE               => "DRRECIPE",
             SCAN_INCREMENT       => "DETINCR",
             SLIT_ANGLE           => "SANGLE",
             SLIT_NAME            => "SLIT",
