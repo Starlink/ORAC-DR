@@ -1,4 +1,3 @@
-
 #+
 #  Name:
 #     oracdr_ufti
@@ -69,6 +68,10 @@
 
 #  History:
 #     $Log$
+#     Revision 1.5  2000/04/03 20:09:56  timj
+#     Use rsh to mamo to set write permissions.
+#     Add -skip to ORAC_LOOP
+#
 #     Revision 1.4  2000/03/23 22:48:03  timj
 #     Set sticky bit and umask
 #
@@ -247,7 +250,15 @@ if ($ORAC_DATA_ROOT == /jcmtarchive ) then
    # Sticky bit set plus group write
    # The sticky bit can not be set on a nfs disk
    # so this does not work unless we are on mamo
-   chmod g+rws $ORAC_DATA_OUT
+   if (`hostname` != 'mamo') then
+     echo Setting write permissions on directory by using rsh to mamo
+     echo -n Please wait....
+     ssh mamo chmod g+rws $ORAC_DATA_OUT
+     echo complete.
+   else
+     # simply chmod
+     chmod g+rws $ORAC_DATA_OUT
+   endif
 
  endif
 
@@ -271,7 +282,7 @@ endif
 
 # screen things
 setenv ORAC_PERSON timj
-setenv ORAC_LOOP wait
+setenv ORAC_LOOP 'wait -skip'
 setenv ORAC_SUN  231
 
 # Source general alias file and print welcome screen
