@@ -845,6 +845,7 @@ Recognised options:
   YAUTOSCALE - Use autoscaling for Y?
   ZMIN/ZMAX  - Z-range of greyscale (data units)
   ZAUTOSCALE - Autoscale Z?
+  COMP       - Component to display (Data (default), Variance or Error)
 
 Default is to autoscale.
 
@@ -905,7 +906,11 @@ sub image {
     }
   }
 
-  
+  # Select component
+  if (exists $options{COMP} && defined $options{COMP}) {
+    $optstring .= " COMP=$options{COMP}";
+  }
+
   my $status;
 
   # Get weird errors without the resetpars:
@@ -953,7 +958,7 @@ Display keywords:
   CUT        - Decide which direction is the primary axis
                Can be X,Y,3,4,5 (for higher-dimensional data sets)
                For a 1-D data set (or section), this value is ignored
-  COMP       - Component to display (Data (default), or Error)
+  COMP       - Component to display (Data (default), Variance or Error)
   
 
 Default is to autoscale. Note that the X/Y cuts are converted
@@ -1042,7 +1047,7 @@ sub graph {
   my $args = "clear mode=line $range";
 
   # Select component
-  if (exists $options{COMP}) {
+  if (exists $options{COMP} && defined $options{COMP}) {
     $args .= " COMP=$options{COMP}";
   }
 
@@ -1074,6 +1079,7 @@ Recognised options:
   ZMIN/ZMAX  - Z-range of greyscale (data units)
   ZAUTOSCALE - Autoscale Z?
   NCONT      - Number of contours
+  COMP       - Component to display (Data (default), Variance or Error)
 
 Default is to autoscale.
 
@@ -1152,6 +1158,11 @@ sub contour {
     $optstring .= " mode=au ";
   }
   $optstring .= " ncont=$ncont ";  
+
+  # Select component
+  if (exists $options{COMP} && defined $options{COMP}) {
+    $optstring .= " COMP=$options{COMP}";
+  }
 
   my $status;
 
@@ -1260,9 +1271,16 @@ sub sigma {
   # First thing to do is calculate the relevant statistics of the
   # input file.
   # Use kappa STATS
+
+  # Select component
+  my $args = '';
+  if (exists $options{COMP} && defined $options{COMP}) {
+    $args .= " COMP=$options{COMP}"; 
+  }
+
   my $status;
   if ($self->kappa->contactw) {
-    $status = $self->kappa->obeyw("stats","ndf=$file");
+    $status = $self->kappa->obeyw("stats","ndf=$file $args");
     if ($status != ORAC__OK) {
       orac_err("Error calculating statistics of data file\n");
       return $status;
@@ -1309,11 +1327,15 @@ sub sigma {
   return $status if $status != ORAC__OK;
 
   # Construct string for linplot options
-  my $args;
   if ($KAPPA13) {
     $args = "clear mode=mark marker=2 ytop=$max ybot=$min";
   } else {
     $args = "clear mode=2 axlim=true ordlim=[$min,$max] abslim=!";
+  }
+
+  # Select component
+  if (exists $options{COMP} && defined $options{COMP}) {
+    $args .= " COMP=$options{COMP}";
   }
 
   # Run linplot
@@ -1325,8 +1347,15 @@ sub sigma {
   }
 
  
-  # Run drawsig
+  # create args
   $args = "linestyle=2 sigcol=red nsigma=[0,$dashed]";
+
+  # Select component
+  if (exists $options{COMP} && defined $options{COMP}) {
+    $args .= " COMP=$options{COMP}";
+  }
+
+  # run drawsig
   $status = $self->obj->obeyw("drawsig","device=$device $args");
   if ($status != ORAC__OK) {
     orac_err("Error overlaying lines\n");
@@ -1361,6 +1390,7 @@ Option keywords:
   XAUTOSCALE - Autoscale pixel range?
   ZMIN/ZMAX  - Y-range of graph (in data units)
   ZAUTOSCALE - Autoscale Y-axis
+  COMP       - Component to display (Data (default), Variance or Error)
 
 Default is to autoscale on the data (the model may not be visible).
 
@@ -1441,6 +1471,11 @@ sub datamodel {
   }
   $args .= " clear $range";
 
+  # Select component
+  if (exists $options{COMP} && defined $options{COMP}) {
+    $args .= " COMP=$options{COMP}";
+  }
+
   # Now plot the data
   $status = $self->obj->obeyw("linplot","ndf=$file device=$device $args");
   if ($status != ORAC__OK) {
@@ -1464,6 +1499,11 @@ sub datamodel {
       $args = "cosys=data mode=line lincol=red pltitl='' ordlab=''";
     }
     $args .= " noclear";
+
+    # Select component
+    if (exists $options{COMP} && defined $options{COMP}) {
+      $args .= " COMP=$options{COMP}";
+    }
 
     # Run linplot
     $status = $self->obj->obeyw("linplot","ndf=$model device=$device $args");
@@ -1489,13 +1529,14 @@ and NDF is assumed.
 
 Arguments:
 
-  XMIN/MAX - minimum/maximum x-pixel value
+  XMIN/MAX   - minimum/maximum x-pixel value
   XAUTOSCALE - Use full X-range
-  YMIN/YMAX - minimum/maximum x-pixel value
+  YMIN/YMAX  - minimum/maximum x-pixel value
   YAUTOSCALE - use full Y-range
-  ZMIN/ZMAX - Z range of histogram (data units)
+  ZMIN/ZMAX  - Z range of histogram (data units)
   ZAUTOSCALE - use full Z-range
-  NBINS - Number of bins to be used for histogram calculation
+  NBINS      - Number of bins to be used for histogram calculation
+  COMP       - Component to display (Data (default), Variance or Error)
 
 Default is for autoscaling and for NBINS=20.
 
@@ -1567,6 +1608,11 @@ sub histogram {
   # Construct string for linplot options
   my $args = "$range $nbins";
 
+  # Select component
+  if (exists $options{COMP} && defined $options{COMP}) {
+    $args .= " COMP=$options{COMP}";
+  }
+
   # Run histogram
   $status = $self->kappa->obeyw("histogram","in=$file device=$device $args accept");
   if ($status != ORAC__OK) {
@@ -1590,12 +1636,13 @@ to be stored in the ORAC extension of the supplied file
 
 Recognised options:
 
-  XMIN/XMAX - X pixel max and min values
-  YMIN/YMAX - Y pixel max and min values
+  XMIN/XMAX  - X pixel max and min values
+  YMIN/YMAX  - Y pixel max and min values
   XAUTOSCALE - Use autoscaling for X?
   YAUTOSCALE - Use autoscaling for Y?
   ZMIN/ZMAX  - Z-range of greyscale (data units)
   ZAUTOSCALE - Autoscale Z?
+  ANGROT     - angle to add to all vectors
 
 Default is to autoscale.
 
@@ -1631,10 +1678,15 @@ sub vector {
   # Run the image method with all arguments
   $self->image($file, \%options);
 
+  # Select component
+  my $args = "clear=no veccol=red step=2 vscale=10 pltitl=' '";
+  if (exists $options{ANGROT} && defined $options{ANGROT}) {
+    $args .= " ANGROT=$options{ANGROT}";
+  }
 
 
   # Now run VECPLOT
-  my $status = $self->obj->obeyw("vecplot","ndf1=${file}.more.orac.p ndf2=${file}.more.orac.theta clear=no device=$device veccol=red step=2 vscale=10 pltitl=' '");
+  my $status = $self->obj->obeyw("vecplot","ndf1=${file}.more.orac.p ndf2=${file}.more.orac.theta device=$device $args");
 
   if ($status != ORAC__OK) {
     orac_err("Error displaying vectors\n");
