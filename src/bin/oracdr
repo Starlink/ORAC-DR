@@ -15,7 +15,8 @@ use subs qw(start_msg_sys start_algorithm_engines wait_for_algorithm_engines);
 use lib $ENV{ORAC_PERL5LIB};
 use ORAC::Basic;
 use ORAC::General;
-use ORAC::Loop;
+use ORAC::Loop;     # Loop control
+use ORAC::Print;    # Printing messages or errors
 
 &orac_exit_normally("No starlink login") unless exists $ENV{STAR_LOGIN};
 
@@ -32,7 +33,7 @@ use Getopt::Long;                       # command line arguments
 
 # Simply exit if the environment variable is not set.
 unless (exists $ENV{ORAC_INSTRUMENT}) {
-  print colored("No intrument specified in \$ORAC_INSTRUMENT. Please set to one of IRCAM, CGS4, SCUBA\n",'red');
+  orac_err("No intrument specified in \$ORAC_INSTRUMENT. Please set to one of IRCAM, UFTI, SCUBA\n");
   exit;
 }
 
@@ -54,7 +55,7 @@ if ($instrument eq 'IRCAM') {
   $calobject   = "ORAC::Calib::SCUBA";
   $instmodule  = "ORAC::Inst::SCUBA";
 } else {
-  print colored("Instrument $instrument is not currently supported in ORACDR\n",'red');
+  orac_err("Instrument $instrument is not currently supported in ORACDR\n");
   exit;
 }
 
@@ -117,11 +118,7 @@ exit;
 }
 ;
 
-
-# -nodisplay suppresses display,
-#
-print colored ("Orac says: No display will be used\n","blue") if ($opt_nodisplay);
-
+############### S I G N A L  H A N D L E R S ###########################
 #
 # signals and perl variables
 $|=1;					# make unbuffered
@@ -130,33 +127,49 @@ $SIG{'INT'} = \&orac_exit_abnormally;
 #$SIG{'PIPE'} = \&orac_exit_abnormally;
 $SIG{'PIPE'} = sub {};
 
+#########################  ORAC DR Configuration #######################
 #
 # constants - for the module
 #
+# Check for ORAC_DIR
+unless (exists $ENV{ORAC_DIR}) {
+  orac_err("ORAC_DIR environment variable not defined. Aborting.");
+  &orac_exit_normally;
+}
+
 $orac_dir = $ENV{ORAC_DIR} . "/";	# main orac directory (contains bin)
 $recipe_dir = $orac_dir."recipes/";	# recipes
 $dictionary_dir = $orac_dir . "primitives/$instrument/"; # primitives
 
-#
-# constants - for the pipeline
-#
-$In = $ENV{ORAC_DATA_IN} . '/';	# source of data
-$Out = $ENV{ORAC_DATA_OUT};	# data output
-$CalDir = $ENV{ORAC_DATA_CAL};	# auxiliarry data (calibration etc)
+######################## Change to Output directory ####################
 
+if (exists $ENV{ORAC_DATA_OUT}) {
+
+  # change to output  dir
+  chdir($ENV{ORAC_DATA_OUT}) || 
+    do { 
+      orac_err("Could not change directory to ORAC_DATA_OUT: $!");
+      &orac_exit_normally;
+    };
+
+} else {
+  orac_err("ORAC_DATA_OUT environment variable not set. Aborting");
+  &orac_exit_normally;
+}
+
+#########################   U  T    D A T E #############################
 # if no UT date has been provided, default to current.
 #
 !($opt_ut) && do {
 
   $opt_ut = utdate;
 
-  print colored ("Orac says: No UT date supplied, using $opt_ut\n","blue");
+  orac_print ("Orac says: No UT date supplied, using $opt_ut\n","blue");
 
 };
 
 
-
-chdir($Out);				# change to output  dir
+######################## M E S S A G E  SYSTEMS #############################
 
 # Start the messaging system(s) and initialise them
 # This routine creates and initialies the message systems.
@@ -165,38 +178,52 @@ chdir($Out);				# change to output  dir
 (@messys) = start_msg_sys;
 
 
-#
-# launch display
-do {
-  print colored ("Orac says: Launching display...","blue");
-  &orac_launch_display;
-  print colored ("Orac says: Done\n","blue");
-} unless $opt_nodisplay;
-
-#
-
+######################## A L G.   E N G I N E S #############################
 
 # start algorithm engines
 #
-print colored ("ORAC says: Starting up monoliths...","blue");
+orac_print("ORAC says: Starting up monoliths...","blue");
 #
 
 %Mon = start_algorithm_engines;
 $status = wait_for_algorithm_engines;
 
 if ($status != ORAC__OK) {
-  print colored("Error contacting monoliths. Aborting.\n",'red');
+  orac_err("Error contacting monoliths. Aborting.\n");
   orac_exit_normally;
 }
 
-print colored ("Done\n","blue");
-
-# Now see if we can talk to the display
-&orac_connect_display unless ($opt_nodisplay);
+orac_print ("Done\n","blue");
 
 
+
+
+######################## I N I T  D I S P L A Y #############################
+#
+# launch display
+# -nodisplay suppresses display,
+#
+if ($opt_nodisplay) {
+  orac_print("Orac says: No display will be used\n","blue");
+} else {
+
+  orac_print("Orac says: Launching display...","blue");
+  &orac_launch_display;
+  
+#  orac_print ("Setting up display infrastructure (display tools will not be started until necessary)...", 'blue');
+#  &orac_setup_display;
+  orac_print ("Done\n","blue");
+
+  &orac_connect_display unless ($opt_nodisplay);
+
+}
+
+
+######################## MESSYS CONFIG #############################
 # Messaging system seems to be working okay so configure it.
 # Now we set our overrides to the messaging systems.
+# Dont do this earlier since we dont want to wait 600 seconds for
+# a timeout to find that we couldn't even talk to a monolith
 
 foreach my $msg (@messys) {
 
@@ -207,20 +234,10 @@ foreach my $msg (@messys) {
 }
 
 
-
-#
-#------------------------------------------------------------------------
-# Data detection loop goes here
-#------------------------------------------------------------------------
-#
-$Override_Recipe = shift(@ARGV); # this will default to the RECIPE File method
-
+######################## C A L I B R A T I O N #############################
 
 # Create calibration object
 $Cal = new $calobject;
-
-# temporary fudge
-#$Cal->dark("ro970815_9_bp_db") if $instrument eq 'IRCAM';
 
 #
 # Calibration frame overrides
@@ -240,17 +257,18 @@ if (defined $opt_calib) {
       my $noupdate = $key."noupdate";
       $Cal->$noupdate(1) if $Cal->can($noupdate);
 
-      print colored ("ORAC says: Calibration $key set to $calibs{$key}\n","blue");
+      orac_print("ORAC says: Calibration $key set to $calibs{$key}\n","blue");
 
     } else {				# complain but continue
 
-      print colored ("ORAC says: Calibration $key unknown by this instrument. Ignored\n","red");
+      orac_err ("Calibration $key unknown by this instrument. Ignored\n");
 
     };
   };
 
 };
 
+############################# L O O P I N G  S C H E M E ###############
 # Decide on a looping scheme
 
 $loop = "orac_loop_list"; # Default is too use list to cycle through obs
@@ -258,8 +276,12 @@ if (defined $opt_loop) {
   $loop = "orac_loop_" . $opt_loop;
 }
 
+# Read recipe name
+$Override_Recipe = shift(@ARGV); # this will default to the RECIPE File method
 
 
+
+############## Process argument list ###############################3
 # Generate list of observation numbers to be processed
  
 if (defined $opt_from) {
@@ -276,6 +298,8 @@ if (defined $opt_from) {
 
 }
 
+
+################# D A T A   L O O P ###############################
 # Loop forever
 
 while (1) {
@@ -292,7 +316,7 @@ while (1) {
   # should be stopped
   last unless defined $Frm;
 
-  print colored ("REDUCING: ".$Frm->raw."\n","yellow");
+  orac_print ("REDUCING: ".$Frm->raw."\n","yellow");
   
   # query Frame for its group
   
@@ -309,7 +333,7 @@ while (1) {
     $Grp->file($Grp->file_from_bits($opt_ut, $Frm->number));
     unlink($Grp->file); # wont work since .sdf is not included
     $Groups{$grpname} = $Grp;		# store group object
-    print colored ("A new group ".$Grp->file." has been created\n","blue");
+    orac_print ("A new group ".$Grp->file." has been created\n","blue");
 
   } unless (exists $Groups{$grpname});
 
@@ -319,7 +343,7 @@ while (1) {
   # push current Frame onto Group
 
   $Grp->push($Frm);
-  print colored ("This observation is part of group ".$Grp->file."\n","blue");
+  orac_print ("This observation is part of group ".$Grp->file."\n","blue");
 
   # let the calibration object know what thing it is using (to determine
   # suitability etc. In this case we do it on a frame-by-frame basis, so
@@ -371,6 +395,10 @@ while (1) {
 #------------------------------------------------------------------------
 
 # $Log$
+# Revision 1.32  1998/07/08 23:21:05  timj
+# Tidy up.
+# Use orac_print
+#
 # Revision 1.31  1998/07/08 05:08:18  frossie
 # Change UFTI section to use UFTI Frame subclass
 #
