@@ -75,7 +75,7 @@ All Rights Reserved.
 #
 use Tk;
 use Astro::FITS::Header::CFITSIO; 
-use Astro::FITS::Header::NDF;
+use Astro::FITS::Header::NDF 0.02 ();
 use NDF;
 use File::Spec;
 
@@ -242,51 +242,19 @@ sub editor_open_header {
   # create appropriate header
   if ( $file_type eq "NDF" ) {
 
-     # Store the definition of good locally
-     my $status = &NDF::SAI__OK;
-     my $good = $status; 
-         
-     # check whether the NDF has a FITS extension associated with it
-     err_begin( $status );
-     ndf_begin();
-     
-     my $tmp = $filename;
-     $tmp =~ s/\.sdf//;
-     ndf_open(&NDF::DAT__ROOT(), $tmp, 'READ', 'UNKNOWN',
-	      my $ndfid, my $place, $status);
-    
-     # KLUGE : need to get NDF__NOID from the NDF module at some point
-     if ($ndfid == 0 && $status == $good) {
-        $status = &NDF::SAI__ERROR;
-        err_rep(' ',"File $filename does not exist", $status);
-        return undef;
-     }
- 
-     # Now need to find out whether we have a FITS header in the
-     # file already
-     ndf_xstat( $ndfid, 'FITS', my $there, $status);     
-      
-     if ( $there ) {
+     eval {
         $header = new Astro::FITS::Header::NDF( File => $filename );
-     } else {
+     };
+
+     if ($@) {
 
         $MW->Dialog( -title => 'Error',
-   		-text => "NDF File $filename does not have a FITS extension\n",
+   		-text => "Error opening NDF: $@\n",
    	        -bitmap => 'error',
 		-font => $font)->Show;
         return;
      }
-     
-     ndf_end($status);
-     if ($status != $good) {
-        err_flush($status);
-       $MW->Dialog( -title => 'Error',
-   		  -text => "Error trying to read FITS extension from NDF\n",
-   	          -bitmap => 'error',
-		  -font => $font)->Show;
-     }
-     err_end($status);    
-        
+
   } elsif ( $file_type eq "FIT" ) {
      $header = new Astro::FITS::Header::CFITSIO( File => $filename );
   } else {
