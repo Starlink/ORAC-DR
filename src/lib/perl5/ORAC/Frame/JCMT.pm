@@ -71,8 +71,9 @@ The object identifier is returned.
    $Frm = new ORAC::Frame::JCMT("file_name");
    $Frm = new ORAC::Frame::JCMT("UT","number");
 
-
-This object has additional support for multiple sub-instruments.
+This method runs the base class constructor and then modifies
+the rawsuffix and rawfixedpart to be '.sdf' and '_dem_'
+respectively.
 
 =cut
 
@@ -81,39 +82,29 @@ sub new {
   my $proto = shift;
   my $class = ref($proto) || $proto;
 
-  my $frame = {};  # Anon hash
- 
-  $frame->{RawName} = undef;
-  $frame->{Header} = {};
-  $frame->{Group} = undef;
-  $frame->{Files} = [];
-  $frame->{NoKeepArr} = [];
-  $frame->{Recipe} = undef;
-  $frame->{Nsubs} = undef;
-  $frame->{Subs} = [];
-  $frame->{Filters} = [];
-  $frame->{WaveLengths} = [];
-  $frame->{RawSuffix} = ".sdf";
-  $frame->{RawFixedPart} = '_dem_'; 
-  $frame->{UHeader} = {};
-  $frame->{Intermediates} = [];
+  # Run the base class constructor with a hash reference
+  # defining additions to the class
+  # Do not supply user-arguments yet.
+  # This is because if we do run configure via the constructor
+  # the rawfixedpart and rawsuffix will be undefined.
+  my $self = $class->SUPER::new({
+				 Subs => [],
+				 Filters => [],
+				 Wavelengths => [],
+				});
 
-  bless($frame, $class);
+  # Configure initial state - could pass these in with
+  # the class initialisation hash - this assumes that I know
+  # the hash member name
+  $self->rawfixedpart('_dem_');
+  $self->rawsuffix('.sdf');
  
   # If arguments are supplied then we can configure the object
   # Currently the argument will be the filename.
   # If there are two args this becomes a prefix and number
-  # This could be extended to include a reference to a hash holding the
-  # header info but this may well compromise the object since
-  # the best way to generate the header (including extensions) is to use the
-  # readhdr method.
+  $self->configure(@_) if @_;
  
-  if (@_) { 
-    $frame->configure(@_);
-  }
- 
-  return $frame;
-  
+  return $self;
 }
 
 

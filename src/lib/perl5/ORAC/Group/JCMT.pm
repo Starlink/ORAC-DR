@@ -48,6 +48,42 @@ use NDF;
 The following methods are available in this class in addition to
 those available from B<ORAC::Group>.
 
+=head2 Constructor
+
+=over 4
+
+=item B<new>
+
+Create a new instance of a B<ORAC::Group::JCMT> object.
+This method takes an optional argument containing the
+name of the new group. The object identifier is returned.
+
+   $Grp = new ORAC::Group::JCMT;
+   $Grp = new ORAC::Group::JCMT("group_name");
+
+This method calls the base class constructor but initialises
+the group with a file suffix of '.sdf' and a fixed part
+of '_grp_'.
+
+=cut
+
+sub new {
+  my $proto = shift;
+  my $class = ref($proto) || $proto;
+
+  # Do not pass objects if the constructor required
+  # knowledge of fixedpart() and filesuffix()
+  my $group = $class->SUPER::new(@_);
+
+  # Configure it
+  $group->fixedpart('_grp_');
+  $group->filesuffix('.sdf');
+
+  # return the new object
+  return $group;
+}
+
+
 =head2 General Methods
 
 =over 4
@@ -137,28 +173,6 @@ sub file_from_bits {
 
   return $prefix . $self->fixedpart . $padnum . $self->filesuffix;
 
-}
-
-
-=item B<fixedpart>
-
-Set or retrieve the part of the group filename that does not
-change between invocation. The output filename can be derived using
-this. Defaults to '_grp_'
-
-    $Grp->fixedpart("_grp_");
-    $prefix = $Grp->fixedpart;
-
-=cut
-
-
-sub fixedpart {
-  my $self = shift;
-  if (@_) { $self->{FixedPart} = shift;};
-  unless (defined $self->{FixedPart}) {
-    $self->{FixedPart} = '_grp_';
-  };
-  return $self->{FixedPart};
 }
 
 =item B<readhdr>
@@ -340,6 +354,8 @@ Returns an array containing all the sub instruments present
 in the group (some frames may only have one sub-instrument)
 
   @subs = $Grp->subs;
+
+The frames should be able to invoke the subs() method.
 
 =cut
 
