@@ -35,7 +35,7 @@ use File::Spec;
 use File::Path;
 use Cwd;
 use Sys::Hostname;
-use Net::Domain;    
+use Net::Domain;
 use ORAC::Print;
 use ORAC::Constants qw/ :status /;
 
@@ -264,6 +264,11 @@ sub orac_determine_inst_classes {
     $calclass   = "ORAC::Calib::IRCAM";
     $instclass  = "ORAC::Inst::IRCAM";
     $inst  = 'IRCAM'; # to pick up IRCAM recipes
+  } elsif ($inst eq 'IRIS2') {
+    $groupclass = "ORAC::Group::IRIS2";
+    $frameclass = "ORAC::Frame::IRIS2";
+    $calclass   = "ORAC::Calib::Michelle";
+    $instclass  = "ORAC::Inst::CGS4";
   } elsif ($inst eq 'UFTI') {
     $groupclass = "ORAC::Group::UFTI";
     $frameclass = "ORAC::Frame::UFTI";
@@ -371,6 +376,13 @@ sub orac_determine_recipe_search_path {
     push( @path, $imaging_root );
     push( @path, $spectro_root );
 
+  } elsif ($inst eq 'IRIS2') {
+    push( @path, File::Spec->catdir( $root, "IRIS2" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "IRIS2" ) );
+    push( @path, File::Spec->catdir( $spectro_root, "IRIS2" ) );
+    push( @path, $imaging_root );
+    push( @path, $spectro_root );
+
   } else {
     croak "Recipes: Unrecognised instrument: $inst\n";
   }
@@ -429,6 +441,14 @@ sub orac_determine_primitive_search_path {
     push( @path, File::Spec->catdir( $root, "MICHELLE" ) );
     push( @path, File::Spec->catdir( $imaging_root, "MICHELLE" ) );
     push( @path, File::Spec->catdir( $spectro_root, "MICHELLE" ) );
+    push( @path, $imaging_root );
+    push( @path, $spectro_root );
+    push( @path, $general_root );
+
+  } elsif ($inst eq 'IRIS2') {
+    push( @path, File::Spec->catdir( $root, "IRIS2" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "IRIS2" ) );
+    push( @path, File::Spec->catdir( $spectro_root, "IRIS2" ) );
     push( @path, $imaging_root );
     push( @path, $spectro_root );
     push( @path, $general_root );
@@ -544,7 +564,7 @@ sub orac_configure_for_instrument {
              $ENV{"ORAC_SUN"} = "230";
              if (Net::Domain->domainname =~ "ukirt"  ) {
                   $options->{"loop"} = "flag";
-             }        
+             }
 
              last SWITCH; }
 
@@ -802,6 +822,39 @@ sub orac_configure_for_instrument {
              }           
 
              last SWITCH; }
+
+     if ( $instrument eq "IRIS2" ) {
+
+             # Instrument
+             $ENV{"ORAC_INSTRUMENT"} = "IRIS2";
+
+             # Calibration information
+             $orac_cal_root = "/ukirt_sw/oracdr_cal"
+                    unless defined $orac_cal_root;
+             $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"iris2");
+
+             # data directories
+             $orac_data_root = "/irisdata"
+                    unless defined $orac_data_root;
+
+	     # Data directories must be YYMMDD rather than YYYYMMDD
+	     $oracut = substr($oracut, 2);
+
+             $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+	                                                "raw","iris2",$oracut);
+             $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir( $orac_data_root,
+							 "reduced","iris2",$oracut)
+				     unless defined $$options{"honour"};
+
+             # misc
+             $ENV{"ORAC_PERSON"} = "oracdr_iris2";
+             $ENV{"ORAC_SUN"} = "???";
+             if (Net::Domain->domainname =~ "aat"  ) {
+                  $options->{"loop"} = "wait";
+             }
+
+             last SWITCH; }
+
 
      orac_err(" Instrument $instrument is not currently supported by Xoracdr\n");
 
