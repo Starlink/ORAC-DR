@@ -408,7 +408,7 @@ PKG_LINK = ORACDR
 #  be incremented for other minor changes (bug fixes, etc.) which do
 #  not merit documentation changes.
 
-PKG_VERS = 4.0
+PKG_VERS = 4.0-1
 
 #  List of files comprising the distributed source-only system.  This
 #  defines the minimum set of files required to rebuild completely the
@@ -445,9 +445,10 @@ LATEX_DOCS = \
    sun233.tex \
    sun233_logo.eps sun233_train.eps \
    sun236.tex \
-   sun236_logo.eps
+   sun236_logo.eps \
+   sun246.tex sun246_logo.eps sun246_ifu_schematic.eps
 
-HYPERTEXT_DOCS = sun230.htx sun231.htx sun232.htx sun233.htx sun236.htx
+HYPERTEXT_DOCS = sun230.htx sun231.htx sun232.htx sun233.htx sun236.htx sun246.htx
 
 #  List of documentation files.
 
