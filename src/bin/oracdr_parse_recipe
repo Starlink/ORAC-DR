@@ -80,10 +80,12 @@ All Rights Reserved.
 =cut
 
 use strict;
-use lib $ENV{ORAC_PERL5LIB};
+use lib $ENV{"ORAC_PERL5LIB"};
 use Pod::Usage;
 use Getopt::Long;
 use ORAC::Recipe;
+use ORAC::Error qw / :try /;
+use ORAC::Constants qw / :status /;
 
 #use Time::HiRes qw/ gettimeofday tv_interval /;
 
@@ -104,8 +106,6 @@ GetOptions(\%options,
 pod2usage(1)  if ($options{help});
 pod2usage(-verbose => 2)  if ($options{man});
 
-
-
 # Read the recipe name
 unless (@ARGV) {
   die "Usage: oracdr_parse_recipe RECIPE_NAME\n";
@@ -125,19 +125,33 @@ my $instrument = uc($ENV{ORAC_INSTRUMENT});
 # Read and parse recipe
 
 # Create new recipe object
-my $recipe = new ORAC::Recipe( NAME => $RecipeName,
+my $recipe;
+try {
+   $recipe = new ORAC::Recipe( NAME => $RecipeName,
 			       INSTRUMENT => $instrument);
+   $recipe->debug(1) if $options{debug};
+   $recipe->parse;
 
-$recipe->debug(1) if $options{debug};
+   if ($options{syntax}) {
+      $recipe->check_syntax;
+      print "Recipe Syntax OK\n" or die "Error printing success message\n";
+   } else {
+      print @{ $recipe->_recipe };
+   }
 
-# parse the recipe
-$recipe->parse;
-
-# print the result using an internal method
-if ($options{syntax}) {
-  $recipe->check_syntax;
-  print "Recipe Syntax OK\n" or die "Error printing success message\n";
-} else {
-  print @{ $recipe->_recipe };
 }
+catch ORAC::Error::FatalError with
+{
+   my $Error = shift;
+   print "Error: $Error\n";
+   exit;
+}
+otherwise
+{
+   my $Error = shift;
+   print "Error: $Error\n";
+   exit;
+};
+
+
 

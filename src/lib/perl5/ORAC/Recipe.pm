@@ -90,7 +90,6 @@ sub new {
       catch ORAC::Error::FatalError with
       {
          my $Error = shift;
-	 print "re-throwing error $Error\n";
          $Error->throw;
       }
       otherwise
@@ -240,9 +239,21 @@ sub check_syntax {
   my ($Frm,$Grp,$Cal,$Display,%Mon);
   my $CURRENT_PRIMITIVE;
   my $PRIMITIVE_LIST = [];
-  
-  $self->execute( \$CURRENT_PRIMITIVE, \$PRIMITIVE_LIST, 
-                  $Frm, $Grp, $Cal, $Display, \%Mon, {SYNTAX => 1});
+
+  try {
+    $self->execute( \$CURRENT_PRIMITIVE, \$PRIMITIVE_LIST, 
+                    $Frm, $Grp, $Cal, $Display, \%Mon, {SYNTAX => 1});
+  }
+  catch ORAC::Error::FatalError with
+  {
+     my $Error = shift;
+     $Error->throw;
+  }
+  otherwise
+  {
+     my $Error = shift;
+     throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
+  };  
 }
 
 
