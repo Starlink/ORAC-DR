@@ -1,3 +1,5 @@
+#-*-perl-*-
+
 =head1 NAME
 
 _MEASURE_DARK_CURRENT_ - measure the dark current for a given frame.
@@ -11,13 +13,18 @@ in ADU.
 If this primitive is run at UKIRT, the dark current will be stored
 in a logfile at /ukirt_sw/logs/uist_array_tests.log
 
+For data taken after 20040301, dark current will be calculated for four
+columns of the array. The dark current is reported as nominal if it is
+less than 0.2 e-/sec, questionable if it is between 0.2 and 1.0 e-/sec,
+and high if it is higher than 1.0 e-/sec.
+
 =head1 AUTHOR
 
 Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
@@ -48,7 +55,7 @@ Council. All Rights Reserved.
 
 # Return the dark current to the user, formatted nicely.
   my $o_dark = sprintf( "%9.3f", $dark );
-  orac_print "Dark current is $o_dark e-/sec.\n\n";
+  orac_print "Full frame dark current is $o_dark e-/sec.\n\n";
 
   # Create a results file if one does not exist.
   my $results = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "uist_array_tests.log" );
@@ -70,3 +77,48 @@ Council. All Rights Reserved.
   printf $fh_results "%10s                                %16s\n", $utdate, $o_dark;
   close( $fh_results );
 
+my $ut = $Frm->uhdr( "ORAC_UTDATE" );
+if( defined( $ut ) ) {
+  $ut =~ s/-//g;
+} else {
+  orac_warn "UT date not set in header. Dark current calculations will probably be incorrect.\n";
+  $ut = 0;
+}
+
+if( $ut > 20040301 ) {
+
+  my %x_centre = ( 1 => 128,
+                   2 => 384,
+                   3 => 640,
+                   4 => 896 );
+  my %y_centre = ( 1 => 512,
+                   2 => 512,
+                   3 => 512,
+                   4 => 512 );
+
+  for( 1..4 ) {
+    my $channel = $_;
+
+    my $x_centre = $x_centre{$channel};
+    my $y_centre = $y_centre{$channel};
+
+    my $param = "ndf=$in($x_centre~236,$y_centre~1004)";
+    $Mon{ "kappa_mon" }->obeyw( "stats", "$param" );
+    ( $ORAC_STATUS, $mean ) = $Mon{ "kappa_mon" }->get( "stats", "mean" );
+
+    # Calculate the dark current.
+    my $dark = $mean * $gain / $exptime;
+
+    # Return the dark current to the user, formatted nicely.
+    my $o_dark = sprintf( "%9.3f", $dark );
+    orac_print "Dark current in column $channel is $o_dark e-/sec.\n";
+
+    if( $dark < 0.2 ) {
+      orac_print "** Dark current in column $channel is nominal.\n";
+    } elsif( $dark > 0.2 && $dark < 1.0 ) {
+      orac_warn "** Dark current in column $channel is questionable.\n";
+    } else {
+      orac_warn "** Dark current in column $channel is high.\n";
+    }
+  }
+}

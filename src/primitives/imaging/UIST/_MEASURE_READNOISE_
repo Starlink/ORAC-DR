@@ -1,3 +1,5 @@
+# -*-perl-*-
+
 =head1 NAME
 
 _MEASURE_READNOISE_ - measures readnoise for an array tests sequence
@@ -43,11 +45,18 @@ read interval multiplied by the gain and divided by the number of
 multiple reads. Otherwise, the readnoise is calculated as the
 square root of the mean multiplied by the gain.
 
+=item * If the images were taken after UT 2004-03-01, the readnoise
+is calculated for four equally-sized columns for four quarters of
+the array.
+
 =back
 
 =item *
 
-The readnoise is nominal if it falls between 38 and 45 e-/seconds.
+The readnoise is nominal if it falls between 38 and 45 e-/seconds, for
+data taken prior to 2004-03-01. For data taken after 2004-03-01 the
+readnoise is nominal if it is less than 39 e-/second, questionable between
+39 and 45 e-/second, and bad if greater than 45 e-/second.
 
 =back
 
@@ -154,6 +163,21 @@ if ( $Frm->uhdr( "MEASURE_READNOISE" ) ) {
   # Copy the variance to the Variance array
   my $ORAC_STATUS = ( copy_hdsobj( "$tfile2name.DATA_ARRAY", "$out.VARIANCE" ) ? ORAC__OK : ORAC__ERROR );
 
+  my $utdate = $Frm->uhdr( "ORAC_UTDATE" );
+  if( defined( $utdate ) ) {
+    $utdate =~ s/-//g;
+  } else {
+    orac_warn "UT date not set in header. Readnoise calculations will probably be incorrect.\n";
+    $utdate = 0;
+  }
+
+  # Get observation parameters.
+  my $nreads = $Frm->uhdr( "ORAC_NUMBER_OF_READS" ) || 2;
+  my $readint = $Frm->hdr( "READINT" ) || 1.0;
+  _GET_GAIN_
+  my $gain = $_GET_GAIN_{GAIN};
+  my $multirds = $Frm->hdr( "MULTIRDS" ) || 1;
+
   # Obtain the mean of the variance frame
   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$out comp=Variance clip=3" );
 
@@ -161,28 +185,16 @@ if ( $Frm->uhdr( "MEASURE_READNOISE" ) ) {
 
   $mean = sqrt( $mean );
 
-  my $nreads = $Frm->uhdr( "ORAC_NUMBER_OF_READS" ) || 2;
-  my $readint = $Frm->hdr( "READINT" ) || 1.0;
-  _GET_GAIN_
-  my $gain = $_GET_GAIN_{GAIN};
-  my $multirds = $Frm->hdr( "MULTIRDS" ) || 1;
-
-  my $utdate = $Frm->uhdr( "ORAC_UTDATE" );
   my $readnoise;
-  if( defined( $utdate ) ) {
-    $utdate =~ s/-//g;
-    if( $utdate < 20021202 ) {
-      $readnoise = $mean * ( $nreads - 1 ) * $readint * $gain / ( $multirds );
-    } else {
-      $readnoise = $mean * $gain;
-    }
+  if( $utdate < 20021202 ) {
+    $readnoise = $mean * ( $nreads - 1 ) * $readint * $gain / ( $multirds );
   } else {
     $readnoise = $mean * $gain;
   }
 
   # Format the output for easier display.
   my $o_readnoise = sprintf( "%9.3f", $readnoise );
-  orac_print "NDSTARE readnoise is: $o_readnoise e-/sec.\n";
+  orac_print "Total array NDSTARE readnoise is: $o_readnoise e-/sec.\n";
 
   # And get an error in the mean as well.
   ( $ORAC_STATUS, my $meanerr ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
@@ -191,15 +203,17 @@ if ( $Frm->uhdr( "MEASURE_READNOISE" ) ) {
 
   # Format the output for easier display.
   my $o_meanerr = sprintf( "%9.3f", $meanerr );
-  orac_print "NDSTARE readnoise standard deviation is: $o_meanerr e-/sec.\n\n";
+  orac_print "Total array NDSTARE readnoise standard deviation is: $o_meanerr e-/sec.\n\n";
 
   # Report if low, nominal, or high.
-  if( $readnoise < 38.0 ) {
-    orac_warn "Readout noise is LOW with respect to nominal 40 e-/sec.\n";
-  } elsif ( $readnoise > 45.0 ) {
-    orac_warn "Readout noise is HIGH with respect to nominal 45 e-/sec.\n";
-  } else {
-    orac_print "** Readout noise is nominal **\n";
+  if( $utdate < 20040301 ) {
+    if( $readnoise < 38.0 ) {
+      orac_warn "Readout noise is LOW with respect to nominal 40 e-/sec.\n";
+    } elsif ( $readnoise > 45.0 ) {
+      orac_warn "Readout noise is HIGH with respect to nominal 45 e-/sec.\n";
+    } else {
+      orac_print "** Readout noise is nominal **\n";
+    }
   }
 
   # Write to the log file.
@@ -211,9 +225,47 @@ if ( $Frm->uhdr( "MEASURE_READNOISE" ) ) {
   # Needs to be in a hash
   my %calhash = (%{$Frm->hdr}, READNOISE=>$readnoise);
   $Cal->readnoiseindex->add($Frm->file, \%calhash);
-  orac_print "Readnoise filed with the calibration system.\n";
-  
+  orac_print "Readnoise filed with the calibration system.\n\n";
+
   # Remove temporary text file.
   unlink( "makecal.inlist$$" );
 
+  if( $utdate > 20040301 ) {
+
+    my %x_centre = ( 1 => 128,
+                     2 => 384,
+                     3 => 640,
+                     4 => 896 );
+    my %y_centre = ( 1 => 512,
+                     2 => 512,
+                     3 => 512,
+                     4 => 512 );
+
+    for( 1..4 ) {
+      my $channel = $_;
+
+      my $x_centre = $x_centre{$channel};
+      my $y_centre = $y_centre{$channel};
+      my $param = "ndf=$out($x_centre~236,$y_centre~1004) comp=Variance clip=3";
+
+      $Mon{'kappa_mon'}->obeyw("stats", "$param");
+      ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+
+      $mean = sqrt( $mean );
+
+      $readnoise = $mean * $gain;
+
+      # Format the output for easier display.
+      my $o_readnoise = sprintf( "%9.3f", $readnoise );
+      orac_print "Readnoise in column $channel is $o_readnoise e-/sec.\n";
+
+      if( $readnoise < 38.0 ) {
+        orac_print "** Readnoise in column $channel is nominal.\n";
+      } elsif ( $readnoise > 38.0 && $readnoise < 45.0 ) {
+        orac_warn "** Readnoise in column $channel is questionable.\n";
+      } else {
+        orac_warn "** Readnoise in column $channel is high.\n";
+      }
+    }
+  }
 }
