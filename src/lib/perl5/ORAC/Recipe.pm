@@ -392,6 +392,10 @@ sub execute {
   $status = ORAC__OK unless defined $status;
   $status = ORAC__OK if $status eq '';
 
+  # We must grab $@ immediately because the debug code will reset
+  # its value, causing us to lose errors. As do ref() and isa()
+  my $error = $@;
+
   # Some extra info
   if ($self->debug) {
     orac_debug "***** Recipe '$recipe_name' completed with status $status *****\n";
@@ -400,10 +404,7 @@ sub execute {
   # Check for an error from perl (eg a croak), but evaluate in string 
   # context so that thrown errors are caught, they should all have values
   # attached (e.g. ORAC__ABORT or ORAC__FATAL) but don't take chances
-  if ("$@") {
-
-    # Checking ref() and isa() clears $@
-    my $error = $@;
+  if ("$error") {
 
     # Check for previously thrown UserAbort errors	
     if ( ref($error) && $error->isa("Error") )
