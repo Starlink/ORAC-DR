@@ -34,7 +34,7 @@
                        'vizcat' => 'viz2mass'
                        },
                    'fs' => {
-		       'location'=>"$ENV{'ORAC_DATA_CAL'}/fs_izjhklm.dat",
+		       'location'=>"$ENV{'ORAC_DATA_CAL'}/fs_izjhklm.fit",
 		       'accessmethod' => "searchfits",
 		       'columns' => ['imag','zmag'],
 		       'vars' => ['imag','zmag'],
