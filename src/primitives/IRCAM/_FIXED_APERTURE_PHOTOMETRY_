@@ -27,10 +27,10 @@
 #    XOFF and YOFF for the location of the aperture.
 #
 #    A case- and space-insensitive comparison of the object name 
-#    with the entries in a table provides a catalogue magnitude in J,
-#    H, or K for a standard star.  Also a mean extinction is applied
-#    for the mean of the start and end airmasses.  Thus the primitive
-#    calculates an approximate zero point.
+#    with the entries in a table provides a catalogue magnitude in I,
+#    Z, J, H, K, L, or M for a standard star.  Also a mean extinction is 
+#    applied for the mean of the start and end airmasses.  Thus the
+#    primitive calculates an approximate zero point.
 #
 #    The primitive also finds the best-fitting two-dimensional Gaussian
 #    as an indicator of the seeing.
@@ -100,19 +100,23 @@
 #    Gaussian to the source.
 #    -  A saturation level is set at 14000 counts for UFTI; 16000
 #    for IRCAM in a STARE mode, and 32000 in Deepwell mode.
-#    -  The mean extinction coefficients are: J: 0.08; H: 0.03; K:0.07;
-#    L: 0.10; and M: 0.10.  Zero extinction applies to any other filter.
+#    -  The mean extinction coefficients are: I: 0.07, Z: 0.03, J: 0.08;
+#    H: 0.03; K: 0.07; L: 0.10; L':0.09, and M: 0.30.  Zero extinction
+#    applies to any other filter.
 #    -  A warning appears should the object not be found in the
 #    standards file.
 #    -  Where a value is unknown or cannot be computed, its entry in the
 #    table is "<null>".
-#    -  The faint-standard catalogue used is $ORAC_DATA_CAL/fs2000.dat.
+#    -  The standard-star catalogue used is $ORAC_DATA_CAL/fs2001.dat.
+#    However, if this file is unavailable, the script accesses the old
+#    $ORAC_DATA_CAL/fs2000.dat, but only for JHK data.  An error
+#    results a catalogue cannot be opened.
 #    -  The ADU factor and exposure time stored in frame header are
 #    validated.  Non-positive values cause a warning message to appear,
 #    but the primitive continues defaulting the header value to 1.
 #
 # Tasks:
-#    PHOTOM: AUTOPHOTOM.
+#    KAPPA: ARDMASK, NDFCOPY, PSF; PHOTOM: AUTOPHOTOM.
 #
 # Authors:
 #    MJC: Malcolm J. Currie (JAC)
@@ -236,22 +240,28 @@
              my ( $catcol, $extinction );
              SWITCH: {
                 if ( $filter =~ /^J/ ) {
-                   $extinction = 0.08; $catcol = 0; last SWITCH;
+                   $extinction = 0.08; $catcol = 2; last SWITCH;
                 }
                 if ( $filter =~ /^H/ ) { 
-                   $extinction = 0.03; $catcol = 1; last SWITCH;
+                   $extinction = 0.03; $catcol = 3; last SWITCH;
                 }
                 if ( $filter =~ /^K/ ) {
-                   $extinction = 0.07; $catcol = 2; last SWITCH;
+                   $extinction = 0.07; $catcol = 4; last SWITCH;
                 }
                 if ( $filter =~ /^L'/ ) {
-                   $extinction = 0.10; $catcol = 4; last SWITCH;
+                   $extinction = 0.09; $catcol = 5; last SWITCH;
                 }
                 if ( $filter =~ /^L/ ) {
-                   $extinction = 0.10; $catcol = 3; last SWITCH;
+                   $extinction = 0.10; $catcol = 5; last SWITCH;
                 }
                 if ( $filter =~ /^M/ ) {
-                   $extinction = 0.10; $catcol = 5; last SWITCH;
+                   $extinction = 0.30; $catcol = 6; last SWITCH;
+                }
+                if ( $filter =~ /^I/ ) {
+                   $extinction = 0.07; $catcol = 0; last SWITCH;
+                }
+                if ( $filter =~ /^Z/ ) {
+                   $extinction = 0.03; $catcol = 1; last SWITCH;
                 }
                 $extinction = 0.0; $catcol = -1;
              }
@@ -330,17 +340,36 @@
 # Faint standards have name FSn, where n is the number.  Only JHK
 # magnitudes are tabulated.
              if ( $catcol > -1 ) {
-                my $fs_standards;
+                my $standards_file;
+                my $jhk = 1;
+
+# Define the character to indicate a null value in the standrds' table.
+                my $nullcol = "&";
 
 # Open the faint-standards file and store its records in an array.
                 my $catpath = $ENV{ "ORAC_DATA_CAL" };
-                $fs_standards = $catpath . "/fs2000.dat";
-                if ( !-e $fs_standards ) {
-                   $fs_standards = "fs2000.dat";
+                $standards_file = $catpath . "/fs2001.dat";
+
+# For IZLM the raw file must be fs2001.
+                if ( $filter =~ /^[LMIZ]/ ) {
+                   open( STANDARDS, "<$standards_file" ) || 
+                         die "Standards file $standards_file not found";
+
+# Record the fact that we are reading the new-format IZJHKLM file, not
+# the old file of just JHK data.
+                   $jhk = 0;
+
+# Try the old JHK file incase the latest standards compilation is not
+# available.
+                } elsif ( !-e $standards_file ) {
+                   $standards_file = $catpath . "/fs2000.dat";
+                   if ( !-e $standards_file ) {
+                      $standards_file = "fs2000.dat";
+                   }
+                   open( STANDARDS, "<$standards_file" ) || 
+                         die "JHK Standards file $standards_file not found";
                 }
-                open( FS_STANDARDS, "<$fs_standards" ) || 
-                      die "JHK Standards file not found";
-                my @stds = <FS_STANDARDS>;
+                my @stds = <STANDARDS>;
 
 # Remove trailing blanks and newline.
                 for ( @stds ) {
@@ -350,8 +379,8 @@
 
 # Search through the table finding a line containing the object name.  The
 # file currently consists of some column headings, then a relational table.
-# Columns in the table include the star name, K magnitudes, (J-H) and (H-K)
-# colours.
+# Columns in the table include the star name, and the various magnitudes
+# or (J-H) and (H-K) colours in the old-format.
 
 # Look at each line.  Extract the name, stripping the blanks.  Proceed
 # until an uppercase match is found.
@@ -361,8 +390,15 @@
                 until ( uc( $name ) eq $starname || $recno > $#stds ||
                         uc( $othername ) eq $starname ) {
                    $recno++;
-                   $name = substr( $stds[ $recno ], 0, 6 );
-                   $othername = substr( $stds[ $recno ], 8, 8 );
+
+# New file does not have FS prefix in the first column.
+                   if ( $jhk ) {
+                      $name = substr( $stds[ $recno ], 0, 6 );
+                      $othername = substr( $stds[ $recno ], 8, 9 );
+                   } else {
+                      $name = "FS" . substr( $stds[ $recno ], 0, 3 );
+                      $othername = substr( $stds[ $recno ], 5,11 );
+                   }
                    $name =~ s/ //g;
                    $othername =~ s/ //g;
                 }
@@ -370,27 +406,53 @@
 # Check that a match has been found.  Use a special value to indicate
 # a null magnitude.
                 if ( $recno > $#stds ) {
-                   orac_warn "Standard $objname has no tabulated $filter magnitude in $fs_standards\n";
+                   orac_warn "Standard $objname has no tabulated $filter magnitude in $standards_file\n";
                    $catmag = $nullmag;
                 } else {
 
 # Extract the columns.
                    my @fields = split( / +/, $stds[ $recno ] );
+                   if ( $jhk ) {
 
 # Extract and evaluate the magnitudes from the colours.  This could be done
 # more succinctly, but use more friendly intermediate variables.
-                   my $Kmag = $fields[ 9 ];
-                   my $Hmag = $Kmag + $fields[ 15 ];
-                   my $Jmag = $Hmag + $fields[ 12 ];
-                   my @mags = ( $Jmag, $Hmag, $Kmag );
+                      my $Kmag = $fields[ 9 ];
+                      my $Hmag = $Kmag + $fields[ 15 ];
+                      my $Jmag = $Hmag + $fields[ 12 ];
+                      my @mags = ( $Jmag, $Hmag, $Kmag );
+
+# Obtain the desired magnitude.  Subtract the two because I and Z are
+# omitted.
+                      $catmag = $mags[ $catcol - 2 ];
+
+# Extract the IZJHKLM magnitudes.
+                   } else {
+                      my $Imag = $fields[ 8 ];
+                      my $Zmag = $fields[ 11 ];
+                      my $Jmag = $fields[ 14 ];
+                      my $Hmag = $fields[ 17 ];
+                      my $Kmag = $fields[ 20 ];
+                      my $Lmag = $fields[ 23 ];
+                      my $Mmag = $fields[ 26 ];
+
+                      my @mags = ( $Imag, $Zmag, $Jmag, $Hmag, $Kmag, $Lmag, $Mmag );
 
 # Obtain the desired magnitude.
-                   $catmag = $mags[ $catcol ];
+                      $catmag = $mags[ $catcol ];
+                   }
                 }
 
 # Close the stamdards data file.
-                close( FS_STANDARDS );
+                close( STANDARDS );
 
+# Set a null magnitude if there is no value in the table for the
+# chosen star and waveband.
+                if ( $catmag eq $nullcol ) {
+                   $catmag = $nullmag;
+                }
+
+# Since we could not locate or open the standards file, the magnitude
+# is null.
              } else {
                 $catmag = $nullmag;
              }
@@ -605,8 +667,18 @@
              if ( $catmag < $nullmag ) {
                 $magdif = $catmag - $magnorm;
                 $magdif_ext = $catmag - $magext;
-                $fs_catmag = sprintf( "%6.3f", $catmag );
-                $fs_magdif_ext =  sprintf( "%6.3f", $magdif_ext );
+
+# IZLM only have two decimal places.  Some may be less than ten, so
+# strip leading blanks.
+                if ( $filter =~ /^[LMIZ]/ ) {
+                   $fs_catmag = sprintf( "%5.2f", $catmag );
+                   $fs_magdif_ext =  sprintf( "%5.2f", $magdif_ext );
+                } else {
+                   $fs_catmag = sprintf( "%6.3f", $catmag );
+                   $fs_magdif_ext =  sprintf( "%6.3f", $magdif_ext );
+                }
+                $fs_catmag =~ s/ //g;
+                $fs_magdif_ext =~ s/ //g;
              }
 
              if ( $gfwhm ne "<null>" ) {
@@ -711,11 +783,11 @@ negative sources can be measured too.
 The source must lie within the specified aperture.  See arguments
 XOFF and YOFF for the location of the aperture.
 
-A case- and space-insensitive comparison of the object name 
-with the entries in a table provides a catalogue magnitude in I<J>,
-I<H>, or I<K> for a standard star.  Also a mean extinction is applied
-for the mean of the start and end airmasses.  Thus the primitive
-calculates an approximate zero point.
+A case- and space-insensitive comparison of the object name with the
+entries in a table provides a catalogue magnitude in I<I>, I<Z>, I<J>,
+I<H>, I<K>, I<L>, or I<M> for a standard star.  Also a mean extinction
+is applied for the mean of the start and end airmasses.  Thus the
+primitive calculates an approximate zero point.
 
 =head1 ARGUMENTS
 
@@ -821,8 +893,9 @@ A saturation level is set at 12000 counts.
 
 =item *
 
-The mean extinction coefficients are: I<J>: 0.08; I<H>: 0.03; I<K>:0.07;
-I<L>: 0.10; and I<M>: 0.10.  Zero extinction applies to any other filter.
+The mean extinction coefficients are: I<I>: 0.07, I<Z>: 0.03, I<J>:
+0.08; I<H>: 0.03; I<K>: 0.07; I<L>: 0.10; I<L'>:0.09, and I<M>: 0.30.
+Zero extinction applies to any other filter.
 
 =item *
 
@@ -836,7 +909,10 @@ table is "E<lt>nullE<lt>".
 
 =item *
 
-The faint-standard catalogue used is F<$ORAC_DATA_CAL/fs2000.dat>.
+The standard-star catalogue used is F<$ORAC_DATA_CAL/fs2001.dat>.
+However, if this file is unavailable, the script accesses the old
+F<$ORAC_DATA_CAL/fs2000.dat>, but only for JHK data.  An error
+results a catalogue cannot be opened.
 
 =item *
 
@@ -848,7 +924,7 @@ but the primitive continues defaulting the header value to 1.
 
 =head1 TASKS
 
-PHOTOM: AUTOPHOTOM.
+KAPPA: ARDMASK, NDFCOPY, PSF; PHOTOM: AUTOPHOTOM.
 
 =head1 AUTHORS
 
@@ -856,7 +932,7 @@ MJC: Malcolm J. Currie (JAC)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
