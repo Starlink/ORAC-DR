@@ -61,8 +61,9 @@ CGS4 uses the ADAM messaging system. (ORAC::Msg::ADAM::Control)
 sub start_msg_sys {
 
   # Set ADAM environment variables
-  $ENV{'HDS_SCRATCH'} = "/tmp";           # fix ndf2fits (etc ?)  "feature"
-  $ENV{'ADAM_USER'} = "/tmp/adam$$";      # process-specific adam dir
+#  $ENV{'HDS_SCRATCH'} = "/tmp";           # fix ndf2fits (etc ?)  "feature"
+$ENV{HDS_SCRATCH} = $ENV{ORAC_DATA_OUT} unless exists $ENV{HDS_SCRATCH}; 
+$ENV{'ADAM_USER'} = "/tmp/adam$$";      # process-specific adam dir
 
   # Create object
   my $adam = new ORAC::Msg::ADAM::Control;
