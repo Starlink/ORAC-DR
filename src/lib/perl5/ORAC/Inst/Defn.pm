@@ -302,6 +302,11 @@ sub orac_determine_inst_classes {
     $frameclass = "ORAC::Frame::ISAAC";
     $calclass   = "ORAC::Calib::ISAAC";
     $instclass  = "ORAC::Inst::ISAAC";
+  } elsif ($inst eq 'NACO') {
+    $groupclass = "ORAC::Group::NACO";
+    $frameclass = "ORAC::Frame::NACO";
+    $calclass   = "ORAC::Calib::NACO";
+    $instclass  = "ORAC::Inst::NACO";
   } elsif ($inst eq 'UFTI') {
     $groupclass = "ORAC::Group::UFTI";
     $frameclass = "ORAC::Frame::UFTI";
@@ -507,6 +512,13 @@ sub orac_determine_recipe_search_path {
     push( @path, $imaging_root );
     push( @path, $spectro_root );
 
+  } elsif ($inst eq 'NACO') {
+    push( @path, File::Spec->catdir( $root, "NACO" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "NACO" ) );
+    push( @path, File::Spec->catdir( $spectro_root, "NACO" ) );
+    push( @path, $imaging_root );
+    push( @path, $spectro_root );
+
   } elsif ($inst eq 'GMOS') {
     push( @path, File::Spec->catdir( $root, "GMOS" ) );
     push( @path, File::Spec->catdir( $ifu_root, "GMOS" ) );
@@ -632,6 +644,14 @@ sub orac_determine_primitive_search_path {
     push( @path, $spectro_root );
     push( @path, $general_root );
 
+  } elsif ($inst eq 'NACO') {
+    push( @path, File::Spec->catdir( $root, "NACO" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "NACO" ) );
+    push( @path, File::Spec->catdir( $spectro_root, "NACO" ) );
+    push( @path, $imaging_root );
+    push( @path, $spectro_root );
+    push( @path, $general_root );
+
   } elsif ($inst eq 'GMOS') {
     push( @path, File::Spec->catdir( $root, "GMOS" ) );
     push( @path, File::Spec->catdir( $ifu_root, "GMOS" ) );
@@ -711,6 +731,11 @@ sub orac_determine_initial_algorithm_engines {
       ccdpack_res /
 
   } elsif ($inst eq 'ISAAC') {
+
+    @AlgEng = qw/ figaro1 figaro2 figaro4 kappa_mon ndfpack_mon
+      ccdpack_red ccdpack_reg /;
+
+  } elsif ($inst eq 'NACO') {
 
     @AlgEng = qw/ figaro1 figaro2 figaro4 kappa_mon ndfpack_mon
       ccdpack_red ccdpack_reg /;
@@ -799,6 +824,8 @@ sub orac_determine_loop_behaviour {
   } elsif( uc($instrument) eq 'INGRID' ) {
       $behaviour = 'wait';
   } elsif( uc($instrument) eq 'ISAAC' ) {
+      $behaviour = 'wait';
+  } elsif( uc($instrument) eq 'NACO' ) {
       $behaviour = 'wait';
     }
 
@@ -1371,12 +1398,6 @@ sub orac_configure_for_instrument {
                      unless defined $orac_cal_root;
              $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"isaac");
 				
-             # Recipe and Primitive
-             #undef $ENV{"ORAC_RECIPE_DIR"} 
-             #        if defined $ENV{"ORAC_RECIPE_DIR"};
-             #undef $ENV{"ORAC_PRIMITIVE_DIR"} 
-             #        if defined $ENV{"ORAC_PRIMITIVE_DIR"};
-
              # data directories
              $orac_data_root = "/ukirtdata"
                      unless defined $orac_data_root;
@@ -1390,9 +1411,33 @@ sub orac_configure_for_instrument {
              # misc
              $ENV{"ORAC_PERSON"} = "mjc";
              $ENV{"ORAC_SUN"} = "232,236";
-             if ( $domain =~ /ukirt/i  ) {
-                $options->{"loop"} = "flag";
-             }
+             $options->{"skip"} = 0;
+
+             last SWITCH; }
+
+     if ( $instrument eq "NACO" ) {
+
+             # Instrument
+             $ENV{"ORAC_INSTRUMENT"} = "NACO";
+
+             # Calibration information
+             $orac_cal_root = "/ukirt_sw/oracdr_cal"
+                     unless defined $orac_cal_root;
+             $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"naco");
+				
+             # data directories
+             $orac_data_root = "/ukirtdata"
+                     unless defined $orac_data_root;
+
+             $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+	                                                "raw","naco", $oracut);
+             $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir($orac_data_root,
+	                                             "reduced","naco",$oracut)
+				     unless defined $$options{"honour"};
+
+             # misc
+             $ENV{"ORAC_PERSON"} = "mjc";
+             $ENV{"ORAC_SUN"} = "232,236";
              $options->{"skip"} = 0;
 
              last SWITCH; }
