@@ -29,6 +29,8 @@ All instrument dependencies are specified in this module.
 
 =cut
 
+use 5.006;
+use warnings;
 use strict;
 use Carp;
 use File::Spec;
@@ -55,6 +57,7 @@ $DEBUG = 0;
   orac_engine_description
   orac_messys_description
   orac_configure_for_instrument
+  orac_list_generic_observing_modes
   /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
@@ -330,6 +333,40 @@ sub orac_determine_inst_classes {
   # Return the class names
   return ($frameclass, $groupclass, $calclass, $instclass);
 }
+
+
+=item B<orac_list_generic_observing_modes>
+
+Returns a list of the standard observing modes supported
+by ORAC-DR. Currently the list includes just "imaging"
+and "spectroscopy" (implicitly assumed to be near-infrared).
+
+Specific instruments always have their own modes.
+
+The list is determined by looking in the recipe directory for
+directories that contain all lower case characters.  Upper case
+characters imply a specific instrument rather than a generic
+mode. This is probably over-the-top given that the search path
+functions (below) have to assume that they know the answer.
+
+=cut
+
+sub orac_list_generic_observing_modes {
+  # Steal from recipe_search_path
+  # Could share the code...
+  my $root;
+  if (exists $ENV{ORAC_DIR}) {
+    $root = File::Spec->catdir( $ENV{ORAC_DIR}, "recipes" );
+  } else {
+    croak "Unable to determine ORAC_DIR location";
+  }
+
+  # Open the directory and look for directory names that are
+  # lower case
+  opendir( my $dh, $root) or croak "Unable to open dir $root: $!";
+  return grep /^[a-z]+$/, readdir($dh);
+}
+
 
 =item B<orac_determine_recipe_search_path>
 

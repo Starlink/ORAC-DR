@@ -39,7 +39,7 @@ use ORAC::Print;
 use ORAC::Basic;
 use ORAC::Error qw/ :try /; 
 use ORAC::Inst::Defn qw/ orac_determine_recipe_search_path
-  orac_determine_primitive_search_path /;
+  orac_determine_primitive_search_path orac_list_generic_observing_modes/;
 
 =head1 METHODS
 
@@ -224,7 +224,7 @@ to exit immediately after perl parses the recipe.
 
 The return status is identical to that from C<execute> method
 in that the process may die after syntax checking. If this
-is not required and eval block should be used.
+is not required an eval block should be used.
 
   $rec->check_syntax;
 
@@ -255,7 +255,7 @@ sub check_syntax {
   {
      my $Error = shift;
      throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
-  };  
+  };
 }
 
 
@@ -604,7 +604,11 @@ sub read_recipe {
   # print Dumper(\@path),"\n";
 
   # Now search the directory structure for NAME
-  my $fh = $self->_search_path( \@path, $name);
+  my $path = $self->_search_path( \@path, $name);
+
+  # and open the file
+  my $fh;
+  $fh = new IO::File("< $path") if defined $path;
 
   if (defined $fh) {
 
@@ -1071,28 +1075,103 @@ sub _read_primitive {
   @path = ( File::Spec->curdir ) unless @path;
 
   # Now search the directory structure for primitive name
-  my $fh = $self->_search_path( \@path, $name);
+  my @found = $self->_search_path( \@path, $name);
 
-  my @contents;
-  if (defined $fh) {
+  # We now have an array of all possible primitives that match
+  # this name. If we only have one match we can read it without
+  # further ado or confusion. If we don't have any we can raise an exception
 
-    @contents = <$fh>;
+  my $contents = [];
+  if (@found) {
+
+    if ($#found == 0) {
+
+      $contents = $self->_slurp_file($found[0]);
+
+    } else {
+      # If we have primitives in multiple places we have to decide
+      # whether we want them. We only want one primitive from each
+      # type of observation mode. If there is a primitive that is
+      # entirely instrument related (no observing mode) we need to
+      # select that one and only that one regardless of its position.
+
+      # instrument directories are upper case. Mode directories are
+      # lower case.
+
+      my %best;
+      my @modes = orac_list_generic_observing_modes();
+      for my $path (@found) {
+
+	# Determine mode.
+	my $thismode;
+	for my $mode (@modes) {
+	  # Check for match over word boundary
+	  if ($path =~ /\b$mode\b/) {
+	    $thismode = $mode;
+	    last;
+	  }
+	}
+	
+	# if it did not match a generic mode it must be a
+	# specific observation - call it INST
+	$thismode = "INST" unless defined $thismode;
+
+	# If it is a specific instrument in a generic directory
+	# we will only choose it if it is first in the search path
+	# Store path in hash associated with mode (or INST)
+	# unless we have already done so (since we are going through
+	# the paths in priority order)
+	$best{$thismode} = $path unless exists $best{$thismode};
+
+      }
+
+      # We now have a hash of possible choices. If the INST key was
+      # set we use it without any messing about
+      if (exists $best{INST}) {
+	$contents = $self->_slurp_file($best{INST});
+      } else {
+	# Else we have a choice of observing modes
+	# So we have to add code to help the recipe along
+	for my $mode (keys %best) {
+
+	  # If statement
+	  # This is really going to confuse the line counting
+	  push(@$contents, 
+	       'croak("There were ambiguities in primitive selection and ORAC_OBSERVATION_MODE header was not set") unless defined $Frm->uhdr("ORAC_OBSERVATION_MODE");',
+	       "if (defined \$Frm->uhdr(\"ORAC_OBSERVATION_MODE\") && \$Frm->uhdr(\"ORAC_OBSERVATION_MODE\") eq \"$mode\") {");
+	  # The primitive
+	  push(@$contents, @{ $self->_slurp_file($best{$mode}) });
+	  # Closing
+	  push(@$contents, "}\n");
+
+	}
+
+
+      }
+
+    }
+
 
   } else {
+    # If we can't find any we raise an exception
     my $str = join("\n", @path);
-    throw ORAC::Error::FatalError( "Could not find and open primitive $name in any of:\n\n$str\n", ORAC__FATAL);
+    throw ORAC::Error::FatalError( "Could not find primitive named $name in any of:\n\n$str\n", ORAC__FATAL);
   }
 
-  return \@contents;
+  return $contents;
 
 }
 
 =item B<_search_path>
 
-Search for file in search path and open it for read. Return
-the file handle or C<undef> on error.
+Search for file in search path. Return an array of all the files
+which match the name in the order in which they are located. In 
+scalar context return the first name.
 
-  my $fh = $rec->_search_path( \@path, $name );
+  $first = $rec->_search_path( \@path, $name );
+  @found = $rec->_search_path( \@path, $name );
+
+Returns an empty list or undef on error depending on context.
 
 The search path is specified as a reference to an array of directories.
 
@@ -1101,14 +1180,37 @@ The search path is specified as a reference to an array of directories.
 sub _search_path {
   my $self = shift;
 
+  my @found;
   for my $dir ( @{ $_[0] } ) {
     my $file = File::Spec->catfile($dir, $_[1]);
     if (-e $file) {
-      my $fh = new IO::File( "< $file");
-      return $fh if defined $fh;
+      push(@found, $file);
+      return $file unless wantarray();
     }
   }
-  return undef;
+  # this is correct in scalar and array context since we have
+  # already returned the first one we found if we are in a scalar
+  # context
+  return @found;
+}
+
+=item B<_slurp_file>
+
+Open file, read all lines, close it.
+
+  $linesref = $Cal->_slurp_file($path);
+
+Returns an array reference.
+
+=cut
+
+sub _slurp_file {
+  my $self = shift;
+  my $file = shift;
+  my $fh = new IO::File("< $file");
+  my @contents;
+  @contents = <$fh> if defined $fh;
+  return \@contents;
 }
 
 =item B<_split_path_env_var>
