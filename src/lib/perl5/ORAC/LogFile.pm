@@ -25,8 +25,7 @@ use Carp;
 use IO::File;
 
 use vars qw/ $VERSION /;
-
-$VERSION = '0.10';
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 =head1 PUBLIC METHODS
 
@@ -34,7 +33,7 @@ The following methods are available:
 
 =over 4
 
-=item new()
+=item B<new()>
 
 Create a new instance of ORAC::LogFile and associate it with the 
 specified log file.
@@ -69,7 +68,7 @@ sub new {
   return $log;
 }
 
-=item logfile
+=item B<logfile>
 
 Return or set the name of the logfile associated with
 this instance. Usually set directly by the constructor.
@@ -85,7 +84,7 @@ sub logfile {
   return $self->{LogFile};
 }
 
-=item timestamp
+=item B<timestamp>
 
 Control whether a timestamp is prepended to each entry
 written to the logfile. Default is to not print a timestamp.
@@ -103,7 +102,7 @@ sub timestamp {
   return $self->{TimeStamp};
 }
 
-=item header
+=item B<header>
 
 Write header information to the file. Header information is only
 written if the logfile does not previously exist (since if the file
@@ -145,7 +144,7 @@ sub header {
   return;
 }
 
-=item addentry
+=item B<addentry>
 
 Add a log entry. Multiple lines can be supplied (eg as an array).
 Each line is appended to the logfile (appending a newline "\n"
