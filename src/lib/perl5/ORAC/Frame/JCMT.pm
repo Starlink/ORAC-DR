@@ -167,7 +167,7 @@ sub calc_orac_headers {
 
 }
 
-=item configure
+=item B<configure>
 
 This method is used to configure the object. It is invoked
 automatically if the new() method is invoked with an argument. The
@@ -206,7 +206,7 @@ sub configure {
   return 1;
 }
 
-=item erase
+=item B<erase>
 
 Erase the current file from disk.
 
@@ -273,8 +273,13 @@ Return the group associated with the Frame. This group is constructed
 from header information. The group name is automatically updated in
 the object via the group() method.
 
-Currently the group name is constructed from the MODE, OBJECT and
-FILTER keywords. This may cause problems in the following cases:
+The group membership can be set using the DRGROUP keyword in the
+header. If this keyword exists and is not equal to 'UNKNOWN' the
+contents will be returned.
+
+Alternatively, if DRGROUP is not specified the group name is
+constructed from the MODE, OBJECT and FILTER keywords. This may cause
+problems in the following cases:
 
  - The chop throw changes and the data should not be coadded
  [in general this is true except for LO chopping scan maps
@@ -337,17 +342,23 @@ figures changing depending on the position tolerance.
 sub findgroup {
 
   my $self = shift;
+  my $group;
 
-  # construct group name
-  my $group = $self->hdr('MODE') . 
-    $self->hdr('OBJECT'). 
-      $self->hdr('FILTER');
+  if (exists $self->hdr->{DRGROUP} && $self->hdr->{DRGROUP} ne 'UNKNOWN'
+      && $self->hdr->{DRGROUP} =~ /./) {
+    $group = $self->hdr->{DRGROUP};
+  } else {
+    # construct group name
+    $group = $self->hdr('MODE') . 
+      $self->hdr('OBJECT'). 
+	$self->hdr('FILTER');
  
-  # If we are doing an EMII scan map we need to make sure
-  # the group is different from a normal map
-  if ($self->hdr('SAM_MODE') eq 'RASTER' && $self->hdr('CHOP_CRD') eq 'LO') {
-    $group .= 'emII';
-  } 
+    # If we are doing an EMII scan map we need to make sure
+    # the group is different from a normal map
+    if ($self->hdr('SAM_MODE') eq 'RASTER' && $self->hdr('CHOP_CRD') eq 'LO') {
+      $group .= 'emII';
+    }
+  }
 
   # Update $group
   $self->group($group);
@@ -383,11 +394,23 @@ Return the recipe associated with the frame.
 The state of the object is automatically updated via the
 recipe() method.
 
-Currently returns undef for all frames except 
-skydips. This is because it is not yet decided
-how the command line override facility (provided
-in the pipeline manager) will know what it can override
-and what it can leave alone.
+The recipe is determined by looking in the FITS header
+of the frame. If the 'DRRECIPE' is present and not
+set to 'UNKNOWN' then that is assumed to specify the recipe
+directly. Otherwise, header information is used to try
+to guess at the reduction recipe. The default recipes
+are keyed by observing mode:
+
+ SKYDIP => 'SCUBA_SKYDIP'
+ NOISE  => 'SCUBA_NOISE'
+ POINTING => 'SCUBA_POINTING'
+ PHOTOM => 'SCUBA_STD_PHOTOM'
+ JIGMAP => 'SCUBA_JIGMAP'
+ EM2_SCAN => 'SCUBA_EM2SCAN'
+ EKH_SCAN => 'SCUBA_EKHSCAN'
+ POLMAP => 'SCUBA_JIGPOLMAP'
+ ALIGN  => 'SCUBA_ALIGN'
+ FOCUS  => 'SCUBA_FOCUS'
 
 In future we may want to have a separate text file containing
 the mapping between observing mode and recipe so that
@@ -399,20 +422,28 @@ sub findrecipe {
   my $self = shift;
 
   my $recipe = undef;
+  my $mode = $self->hdr('MODE');
 
-  if ($self->hdr('MODE') eq 'SKYDIP') {
+  # Check for DRRECIPE. Have to make sure it contains something (anything)
+  # other thant UNKNOWN.
+  if (exists $self->hdr->{DRRECIPE} && $self->hdr->{DRRECIPE} ne 'UNKNOWN'
+      && $self->hdr->{DRRECIPE} =~ /./) {
+    $recipe = $self->hdr->{DRRECIPE};
+  } elsif ($mode eq 'SKYDIP') {
     $recipe = 'SCUBA_SKYDIP';
-  } elsif ($self->hdr('MODE') eq 'NOISE') {
+  } elsif ($mode eq 'NOISE') {
     $recipe = 'SCUBA_NOISE';
-  } elsif ($self->hdr('MODE') eq 'POINTING') {
+  } elsif ($mode eq 'POINTING') {
     $recipe = 'SCUBA_POINTING';
-  } elsif ($self->hdr('MODE') eq 'PHOTOM') {
+  } elsif ($mode eq 'PHOTOM') {
     $recipe = 'SCUBA_STD_PHOTOM';
-  } elsif ($self->hdr('MODE') eq 'ALIGN') {
+  } elsif ($mode eq 'ALIGN') {
     $recipe = 'SCUBA_ALIGN';
-  } elsif ($self->hdr('MODE') eq 'FOCUS') {
+  } elsif ($mode eq 'FOCUS') {
     $recipe = 'SCUBA_FOCUS';
-  } elsif ($self->hdr('MODE') eq 'MAP') {
+  } elsif ($mode eq 'POLMAP') {
+    $recipe = 'SCUBA_JIGPOLMAP';
+  } elsif ($mode eq 'MAP') {
     if ($self->hdr('SAM_MODE') eq 'JIGGLE') {
       $recipe = 'SCUBA_JIGMAP';
 
@@ -885,7 +916,7 @@ aware of them.
 =item stripfname
 
 Method to strip file extensions from the filename string. This method
-is called by the file() method. For UKIRT we strip all extensions of the
+is called by the file() method. For JCMT we strip all extensions of the
 form ".sdf", ".sdf.gz" and ".sdf.Z" since Starlink tasks do not require
 the extension when accessing the file name.
 
