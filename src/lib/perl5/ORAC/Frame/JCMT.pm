@@ -348,6 +348,10 @@ sub findrecipe {
   } elsif ($self->hdr('MODE') eq 'MAP') {
     if ($self->hdr('SAM_MODE') eq 'JIGGLE') {
       $recipe = 'SCUBA_JIGMAP';
+    } else {
+      if ($self->hdr('CHOP_CRD') eq 'LO') {
+	$recipe = 'SCUBA_EM2SCAN';
+      }
     }
   }
 
@@ -431,7 +435,6 @@ sub template {
   # Get the observation number
   my $num = $self->number;
 
-
   # loop through each file
   # (assumes that we actually have the same number of files as subs
   # Not the case before EXTINCTION  
@@ -441,14 +444,15 @@ sub template {
     # Do nothing if sub is defined but not equal to the current
     if (defined $sub) { next unless $sub eq $subs[$i]; }
 
-    # Okay we get to here if the subs match of if sub was not
+    # Okay we get to here if the subs match or if sub was not
     # defined
     # Now repeat the code in the base class
     # Could we use SUPER::template here? No - since the base
     # class does not understand numbers passed to file
     
     # Change the first number
-    $template =~ s/_\d+_/_${num}_/;
+    # Wont work if 0004 replaced by 45
+    $template =~ s/\d+_/${num}_/;
 
     # Update the filename
     $self->file($i+1, $template);
