@@ -18,13 +18,18 @@
 #    secular trends.
 #
 #    The primitive expects sets of eight frames.  In each set the first
-#    refresh frame is ignored, then come two STARE and two ND_STARE
-#    frames, followed by a dark, an ignored refresh frame, and another
-#    a dark.
+#    refresh frame is ignored, then come two STARE and two ND_STARE-mode
+#    frames all of one-second duration, followed by a long (60s)
+#    STARE-mode dark, an ignored refresh frame, and another one-second
+#    STARE dark.
 #
 # Notes:
-#    -  An exposure time of 59 seconds and an ADU factor of 6 are
-#    assumed.
+#    -  The exposure times used to normalise the dark current to
+#    electrons per second comes from the ORAC_EXPOSURE_TIME header in
+#    the sixth and eighth frames, defaulting to 60 and 1 second
+#    respectively if the associated header is undefined.  The ADU comes
+#    from the user header ORAC_GAIN header, defaulting to 6.0 if the
+#    header is undefined.
 #    -  If the log file does not exist, a new one is created containing
 #    a two-line heading, and the fact is reported.
 #    -  The log file stores the results in a fixed columnar format.
@@ -34,7 +39,7 @@
 #    fourth and fifth frames.
 #    -  The dark current is the median of the dark count normalised to
 #    unit time and converted to electrons.
-#    -  The nominal STARE and NDF_STARE readout noises are 56 and 38
+#    -  The nominal STARE and ND_STARE readout noises are 56 and 38
 #    electrons respectively, and the nominal dark current is 0 to 5
 #    electron per second.
 #
@@ -80,44 +85,60 @@
 
 # Wait until all the array tests are completed.  Should be eight frames.
 # Change to be "every eight frames" rather than "eight frames".
-#     if ( $Grp->num == 7 ) {
-     if ( ( $Grp->num + 1 ) % 8 ==0 ) {
+     if ( ( $Grp->num + 1 ) % 8 == 0 ) {
 
-# Set some parameters, currently assigned the IRCAMDR values.
-        my $scale = 59.0;
-        my $adu = 6.0;
+# Obtain gain (electrons/ADU), the date and time.
+        my $adu = $Frm->uhdr( "ORAC_GAIN" );
+        $adu = defined( $adu ) ? $adu : 6.0;
+        my $utdate = $Frm->uhdr( "ORAC_UTDATE" );
+        my $uthour = $Frm->uhdr( "ORAC_UTSTART" );
 
 # Obtain the names of the group members.
         my @frames = $Grp->membernames;
 
 # Difference the first two useable frames.  The first array_test frame
 # is ignored.
-        $Mon{"kappa_mon"}->obeyw("sub","in1=$frames[1] in2=$frames[2] out=array_test");
+        my $param = "in1=$frames[1] in2=$frames[2] out=array_test";
+        $Mon{ "kappa_mon" }->obeyw( "sub", "$param" );
 
 # Find the standard deviation of the difference frame.
-        $Mon{"kappa_mon"}->obeyw("stats","ndf=array_test");
-        ( my $ORAC_STATUS, my $stare_sigma ) = $Mon{"kappa_mon"}->get("stats","sigma");
-        my $stare_rn = $stare_sigma / sqrt(2.0) * $adu;
+        $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=array_test" );
+        ( my $ORAC_STATUS, my $stare_sigma ) = $Mon{ "kappa_mon" }->get( "stats", "sigma" );
+        my $stare_rn = $stare_sigma / sqrt( 2.0 ) * $adu;
 
 # Difference the next two (ND_STARE) frames.
-        $Mon{"kappa_mon"}->obeyw("sub","in1=$frames[3] in2=$frames[4] out=array_test");
+        $param = "in1=$frames[3] in2=$frames[4] out=array_test";
+        $Mon{ "kappa_mon" }->obeyw( "sub", "$param" );
 
 # Find the standard deviation of the difference frame.
-        $Mon{"kappa_mon"}->obeyw("stats","ndf=array_test");
-        ( $ORAC_STATUS, my $nd_stare_sigma ) = $Mon{"kappa_mon"}->get("stats","sigma");
-        my $nd_stare_rn = $nd_stare_sigma / sqrt(2.0) * $adu;
+        $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=array_test" );
+        ( $ORAC_STATUS, my $nd_stare_sigma ) = $Mon{ "kappa_mon" }->get( "stats", "sigma" );
+        my $nd_stare_rn = $nd_stare_sigma / sqrt( 2.0 ) * $adu;
 
 # Difference the next two useable frames.
-        $Mon{"kappa_mon"}->obeyw("sub","in1=$frames[5] in2=$frames[7] out=array_test");
+        $param = "in1=$frames[5] in2=$frames[7] out=array_test";
+        $Mon{ "kappa_mon" }->obeyw( "sub", "$param" );
 
 # Find the median of the difference frame.
-        $Mon{"kappa_mon"}->obeyw("histat","ndf=array_test");
-        ($ORAC_STATUS, my $median) = $Mon{"kappa_mon"}->get("histat","median");
-        my $dark = $median / $scale * $adu;
+        $Mon{ "kappa_mon" }->obeyw( "histat", "ndf=array_test" );
+        ( $ORAC_STATUS, my $median ) = $Mon{ "kappa_mon" }->get( "histat", "median" );
 
-# Obtain the date and time.
-        my $utdate = $Frm->uhdr( "ORAC_UTDATE" );
-        my $uthour = $Frm->uhdr( "ORAC_UTSTART" );
+# Obtain the exposure times of the final pair of useable frames.
+        my $lexptime = $Grp->frame(5)->uhdr( "ORAC_EXPOSURE_TIME" );
+        $lexptime = defined( $lexptime ) ? $lexptime : 60.0;
+        my $sexptime = $Grp->frame(7)->uhdr( "ORAC_EXPOSURE_TIME" );
+        $sexptime = defined( $sexptime ) ? $sexptime : 1.0;
+
+# Protect against divide-by-zero accidents and other erroneous times.
+        my $dark = "-999.999";
+        if ( $lexptime - $sexptime < 9 ) {
+           orac_warn "Exposure times for the final two frames, $lexptime " .
+                     "and $sexptime, are too similar.\n";
+
+# Derive the average dark current in electrons per second.
+        } else {
+           $dark = $median / ( $lexptime - $sexptime ) * $adu;
+        }
 
 # Remove the temporary file.
         _DELETE_A_FRAME_ FRAME=array_test
@@ -126,18 +147,14 @@
 # ===================
 
 # Write the results to the engineering file, which is then closed.
-        printf RESULTS "%8s %5.2f %10.3f %13.3f %14.3f\n", $utdate, $uthour, $stare_rn, $nd_stare_rn, $dark;
+        printf RESULTS "%8s %5.2f %10.3f %13.3f %14.3f\n",
+                       $utdate, $uthour, $stare_rn, $nd_stare_rn, $dark;
         close( RESULTS );
 
 # Format the results to give a sensible number of decimal places.
-# Make the format sufficiently large and then remove any leading
-# spaces.
-        my $fs_stare_rn = sprintf( "%10.3f", $stare_rn );
-        $fs_stare_rn =~ s/ //g;
-        my $fs_nd_stare_rn = sprintf( "%10.3f", $nd_stare_rn );
-        $fs_nd_stare_rn =~ s/ //g;
-        my $fs_dark = sprintf( "%10.3f", $dark );
-        $fs_dark =~ s/ //g;
+        my $fs_stare_rn = sprintf( "%.3f", $stare_rn );
+        my $fs_nd_stare_rn = sprintf( "%.3f", $nd_stare_rn );
+        my $fs_dark = sprintf( "%.3f", $dark );
 
 # Report the results to the user.
         orac_print "\n";
@@ -145,6 +162,23 @@
         orac_print "ND_STARE mode readout noise (e-) = $fs_nd_stare_rn\n";
         orac_print "Dark current (e-/sec)            = $fs_dark\n";
         orac_print "\n";
+
+# File the readnoises in the calibration system.
+# ==============================================
+
+# First store the nd_stare readnoise.  The value needs to be in a hash. 
+# Use the fourth frame as a reference for this, as it has the same readout
+# mode and speed/well depth as the others.
+        my $tempFrm = $Grp->frame(3);
+        my %hash = ( %{ $tempFrm->hdr }, READNOISE => $nd_stare_rn );
+        $Cal->readnoiseindex->add( $tempFrm->file, \%hash );
+        orac_print "ND_STARE readnoise filed with the calibration system.\n";
+
+# Do likewise for the STARE read noise.  This time use the second frame.
+        $tempFrm = $Grp->frame(1);
+        %hash = ( %{ $tempFrm->hdr }, READNOISE => $stare_rn );
+        $Cal->readnoiseindex->add( $tempFrm->file, \%hash );
+        orac_print "STARE readnoise filed with the calibration system.\n";
 
 # Report upon the status of the results.
 # ======================================
@@ -169,12 +203,13 @@
 
 # Dark current.  May need to make the nominal value a parameter.
         if ( $dark < 0.0 ) {
-           orac_warn "Dark current is NEGATIVE, wierd; nominal is 0 to 5e-/sec\n\n";
+           orac_warn "Dark current is NEGATIVE, wierd; nominal is 0 to 5e-/sec\n";
         } elsif ( $dark > 10.0 ) {
-           orac_warn "Dark current is HIGH with respect to nominal 0 to 5e-/sec\n\n";
+           orac_warn "Dark current is HIGH with respect to nominal 0 to 5e-/sec\n";
         } else {
-           orac_print "** Dark current is nominal **\n\n";
+           orac_print "** Dark current is nominal **\n";
         }
+        orac_print "\n";
      }
 
 # Podule
@@ -194,9 +229,10 @@ text file, F</ukirt_sw/logs/ircam3_array_tests.log>, to monitor
 secular trends.
 
 The primitive expects sets of eight frames.  In each set the first
-refresh frame is ignored, then come two STARE and two ND_STARE
-frames, followed by a dark, an ignored refresh frame, and another
-a dark.
+refresh frame is ignored, then come two STARE and two ND_STARE-mode
+frames all of one-second duration, followed by a long (60s)
+STARE-mode dark, an ignored refresh frame, and another one-second
+STARE dark.
 
 =head1 NOTES
 
@@ -204,8 +240,11 @@ a dark.
 
 =item *
 
-An exposure time of 59 seconds and an ADU factor of 6 are
-assumed.
+The exposure times used to normalise the dark current to electrons per
+second comes from the ORAC_EXPOSURE_TIME header in the sixth and
+eighth frames, defaulting to 60 and 1 second respectively if the
+associated header is undefined.  The ADU comes from the user header
+ORAC_GAIN header, defaulting to 6.0 if the header is undefined.
 
 =item *
 
@@ -230,7 +269,7 @@ unit time and converted to electrons.
 
 =item *
 
-The nominal STARE and NDF_STARE readout noises are 56 and 38
+The nominal STARE and ND_STARE readout noises are 56 and 38
 electrons respectively, and the nominal dark current is 0 to 5
 electron per second.
 
