@@ -86,7 +86,8 @@ BEGIN { # A kluge - for some reason kapview does not pick up the
   # dont understand since the environment is passed to the forked
   # process...
   # Need the second arg in perl versions prior to 5.6.0
-  mkdir File::Spec->catdir(File::Spec->tmpdr,"oracdragi"),0777;
+  mkdir File::Spec->catdir(File::Spec->tmpdir,"oracdragi"),0777
+    or croak "Could not make AGI temp directory: $!";
   $ENV{'AGI_USER'} = "/tmp/oracdragi";
   $ENV{'AGI_NODE'} = "orac_kapview$$";
 }
