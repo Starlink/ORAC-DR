@@ -40,7 +40,7 @@ appear in the scrunched frame).
 =head1 OUTPUT DATA
 
 No output frame is produced. The minimum and maximum wavelengths are
-put into the headers lambda_min and lambda_max of the current frame.
+put into the headers LAMBDA_MIN and LAMBDA_MAX of the current frame.
 
 =back
 
@@ -62,53 +62,52 @@ Council.  All Rights Reserved.
 
 if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "ARC") {
 
-    # Determine the wavelength range required from the arlines.lis file
-    my $arlines_file = $ENV{ORAC_DATA_CAL} . "/" . $Cal->arlines; 
-    orac_print "Getting wavelength range from $arlines_file \n";
+  # Determine the wavelength range required from the arlines.lis file
+  my $arlines_file = $ENV{ORAC_DATA_CAL} . "/" . $Cal->arlines; 
+  orac_print "Getting wavelength range from $arlines_file.\n";
 
+  my $order;      # The order of the wavelength calibration
+  my $fit = "";   # The coefficients as read from the arlines.lis file
+  my @coeffs;     # The coefficients converted to a more useful form
 
-    my $order;      # The order of the wavelength calibration
-    my $fit = "";   # The coefficients as read from the arlines.lis file
-    my @coeffs;     # The coefficients converted to a more useful form
+  # Read the arlines.lis file
+  open(my $file, $arlines_file) || orac_throw "Could not open $arlines_file: $!.\n";
 
-    # Read the arlines.lis file
-    open(my $file, $arlines_file) || orac_throw "Could not open $arlines_file: $!.\n";
-
-    while (<$file>) {
-	# We are only interested in the bit after the Order of fit line really
-	if (defined $order) {
+  while (<$file>) {
+    # We are only interested in the bit after the Order of fit line really
+    if (defined $order) {
 	    chomp;
-	    $fit .= $_; 
-	}
-
-	# Find the order of the fit
-	if (/Order of fit:\s+(\d+)/) {$order = $1}
+	    $fit .= $_;
     }
-    close $file;
-    
-    # Substitute E for D in the scientific form numbers (Fortran->Perl)
-    $fit =~ s/D/E/g;
 
-    # Read the coefficients into @coeffs (in reverse order, as they appear
-    # in the arlines.lis file)
-    while ($fit =~ /(-? [\d\.]+ E[+-]\d\d)/gx) {push @coeffs, $1}
+    # Find the order of the fit
+    if (/Order of fit:\s+(\d+)/) {$order = $1}
+  }
+  close $file;
 
-    # Use the coeficients to calculate the maximum and minimum wavelengths.
-    # It seems to be useful to knock 100 Ang or so off each end of the range
-    # otherwise Iscrunch doesn't behave very well
-    my $min = 0;
-    for my $n (0..$order) {$min += $coeffs[-1-$n] * 1024**$n;}
+  # Substitute E for D in the scientific form numbers (Fortran->Perl)
+  $fit =~ s/D/E/g;
 
-    $min = int($min) + 100;
-    my $max = int($coeffs[-1]) - 100;
+  # Read the coefficients into @coeffs (in reverse order, as they appear
+  # in the arlines.lis file)
+  while ($fit =~ /(-? [\d\.]+ E[+-]\d\d)/gx) {push @coeffs, $1}
 
-    # Check that min and max are the right way round (otherwise Iscrunch
-    # does nothing).
-    if ($min > $max) {($min, $max) = ($max, $min)}
+  # Use the coeficients to calculate the maximum and minimum wavelengths.
+  # It seems to be useful to knock 100 Ang or so off each end of the range
+  # otherwise Iscrunch doesn't behave very well
+  my $min = 0;
+  for my $n (0..$order) {$min += $coeffs[-1-$n] * 1024**$n;}
 
-    $Frm->uhdr( "lambda_min" => "$min");
-    $Frm->uhdr( "lambda_max" => "$max");
+  $min = int($min) + 100;
+  my $max = int($coeffs[-1]) - 100;
+
+  # Check that min and max are the right way round (otherwise Iscrunch
+  # does nothing).
+  if ($min > $max) {($min, $max) = ($max, $min)}
+
+  $Frm->uhdr( "LAMBDA_MIN" => "$min");
+  $Frm->uhdr( "LAMBDA_MAX" => "$max");
 
 } else {
-    orac_print "Can only obtain wavelength range for arc frames. Ignoring.\n";
+  orac_print "Can only obtain wavelength range for arc frames. Ignoring.\n";
 }
