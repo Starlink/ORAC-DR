@@ -19,13 +19,16 @@ adds the two together to give a final spectrum.
 
 =item PROW
 
-Defines the centre row of the positive spectrum.  Defaults to 96.
+Defines the centre row of the positive spectrum.  If not defined
+this value is obtained from the row index file. If a value can not
+be determined from the index file the default is to use row 96.
 
 =item NROW
 
-Defines the centre row of the negative spectrum.  If this parameter is not defined, the primitive
-will calculate where the negative spectrum is, using offset information in the reduced group file
-headers.
+Defines the centre row of the negative spectrum.  If this parameter is
+not defined, this value will be retrieved from the index file.
+If the parameter can not be determined from the index file it will
+be calculated from the offset information in the header.
 
 =back
 
@@ -55,9 +58,11 @@ $Grp
 
 =head1 NOTES
 
-If the COADD_PAIRS_AND_GROUP primitive is modified so that the headers from the OBJECT observation
-are written to the reduced group file, the negative row calculations will be incorrect.  See the
-NOTES and comments for the COADD_PAIRS_AND_GROUP primitive for further clarification.
+If the COADD_PAIRS_AND_GROUP primitive is modified so that the headers
+from the OBJECT observation are written to the reduced group file, the
+negative row calculations will be incorrect.  See the NOTES and
+comments for the COADD_PAIRS_AND_GROUP primitive for further
+clarification.
 
 =head2 REVISION
 
@@ -77,15 +82,28 @@ my $out = $Grp->raw . "_sp";
 my $groupfile = $group . $Grp->filesuffix;
 my $outfile = $out . $Grp->filesuffix;
 
-if(((-e $groupfile) && (!(-e $outfile))) || ((-e $outfile) && ((stat($groupfile))[9] > (stat($outfile))[9]))) {
+if((($Grp->file_exists) && (!(-e $outfile))) || ((-e $outfile) && ((stat($groupfile))[9] > (stat($outfile))[9]))) {
 
   # obtain the rows to extract
 
+  # First look in the arguments
   my $prow = ($_OPTIMALLY_EXTRACT_SPECTRUM_{PROW} || undef);
   my $nrow = ($_OPTIMALLY_EXTRACT_SPECTRUM_{NROW} || undef);
 
-  ($prow) || ($prow = 96);
-  
+  # If prow or nrow are not defined we go and get it from the index file
+  unless (defined $prow && defined $nrow) {
+    my @rows = $Cal->rows;
+    unless (defined $prow) {
+      if (defined $rows[0]) {
+	$prow = $rows[0];
+      } else {
+	$prow = 96; # take the default
+      }
+    }
+    $nrow = $rows[0] unless defined $nrow;
+  }
+
+  # If we could not find a negative row calculate it
   if(!defined($nrow)) {
     # if the user hasn't stated the negative row as a parameter, we need to calculate it
       my $raoff = $Grp->hdr("RAOFF");
@@ -153,5 +171,8 @@ if(((-e $groupfile) && (!(-e $outfile))) || ((-e $outfile) && ((stat($groupfile)
 # update group object
 
   $Grp->file($out);
+
+  # And update group header to indicate that we now have a 1-D spectrum
+  $Grp->uhdr("NDIMS", 1);
 
 }
