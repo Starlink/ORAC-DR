@@ -69,7 +69,7 @@ sub findgroup {
   my $hdrgrp = $self->hdr('GRPNUM');
   my $amiagroup;
 
-  if ($self->hdr('GRPMEM') =~/T/) {
+  if ($self->hdr('GRPMEM') !~/F/) {
     $amiagroup = 1;
   } elsif (!defined $self->hdr('GRPMEM')){
     $amiagroup = 1;
