@@ -99,12 +99,12 @@ sub new {
   $self->rawsuffix('.sdf');
   $self->rawformat('NDF');
   $self->format('NDF');
- 
+
   # If arguments are supplied then we can configure the object
   # Currently the argument will be the filename.
   # If there are two args this becomes a prefix and number
   $self->configure(@_) if @_;
- 
+
   return $self;
 }
 
@@ -137,7 +137,7 @@ sub calc_orac_headers {
   my $self = shift;
 
   my %new = ();  # Hash containing the derived headers
- 
+
   # ORACTIME
 
   # First get the time of day
@@ -160,11 +160,11 @@ sub calc_orac_headers {
   }
 
   my $ut = $date + ( $time / 24.0 );
-  
+
   # Update the header
   $self->hdr('ORACTIME', $ut);
   $self->hdr('ORACUT',   $date);
- 
+
   $new{'ORACTIME'} = $ut;
   return %new;
 
@@ -194,7 +194,7 @@ sub configure {
 
   # Run base class configure
   $self->SUPER::configure(@_);
- 
+
   # Find number of sub-instruments from header
   # Nsubs is already run in the base class.
   # and store this value along with all sub-instrument info.
@@ -315,10 +315,10 @@ sub findgroup {
     $group = $self->hdr->{DRGROUP};
   } else {
     # construct group name
-    $group = $self->hdr('MODE') . 
-      $self->hdr('OBJECT'). 
+    $group = $self->hdr('MODE') .
+      $self->hdr('OBJECT').
 	$self->hdr('FILTER');
- 
+
     # If we are doing an EMII scan map we need to make sure
     # the group is different from a normal map
     if ($self->hdr('SAM_MODE') eq 'RASTER' && $self->hdr('CHOP_CRD') eq 'LO') {
@@ -482,7 +482,7 @@ sub inout {
   my $suffix = shift;
 
   # Find the sub-instrument number
-  if (@_) { 
+  if (@_) {
     $num = shift;
   } else {
     $num = 1;
@@ -498,15 +498,15 @@ sub inout {
   # Keep the original root if we have only 1 component
   # or the last component is a number.
   # Else throw away the last one
-  
+
   my $outfile;
   if ($#junk == 0 || $junk[-1] =~ /^\d+$/) {
     $outfile = $infile;
   } else {
     # Recombine array all except last entry
-    $outfile = join("_",@junk[0..$#junk-1]);  
+    $outfile = join("_",@junk[0..$#junk-1]);
   }
-  
+
   $outfile .= $suffix;
 
   # Generate a warning if output file equals input file
@@ -514,7 +514,7 @@ sub inout {
     if ($outfile eq $infile);
 
   return ($infile, $outfile) if wantarray;
-  return $outfile;      
+  return $outfile;
 }
 
 
@@ -571,7 +571,7 @@ sub template {
     # Now repeat the code in the base class
     # Could we use SUPER::template here? No - since the base
     # class does not understand numbers passed to file
-    
+
     # Change the first number
     # Wont work if 0004 replaced by 45
 
@@ -619,7 +619,7 @@ in the frame.
 
 sub filters {
   my $self = shift;
-  
+
   if (@_) {
     @{$self->{Filters}} = @_;
   }
@@ -637,7 +637,7 @@ with the frame.
 
 sub subs {
   my $self = shift;
-  
+
   if (@_) {
     @{$self->{Subs}} = @_;
   }
@@ -656,7 +656,7 @@ in the frame.
 
 sub wavelengths {
   my $self = shift;
-  
+
   if (@_) {
     @{$self->{WaveLengths}} = @_;
   }
@@ -692,13 +692,13 @@ to make sure that subs() tracks changes to files().
 sub file2sub {
   my $self = shift;
   my $index = shift;
-  
+
   # Look through subs()
   my @subs = $self->subs;
-  
+
   # Decrement $index so that it matches an array lookup
   $index--;
-  
+
   if ($index > $#subs) {
     return $subs[0];
   } else {
@@ -709,8 +709,12 @@ sub file2sub {
 =item B<findfilters>
 
 Forces the object to determine the names of all sub-instruments
-associated with the data by looking in the hdr(). 
-The result is stored in the object using filters().
+associated with the data by looking in the hdr().
+
+The result is stored in the object using filters(). The sub-inst filter
+name is made to match the filter name such that a filter of '450w:850w'
+has filter names of '450W' and '850W' despite the entries in the header
+being simply '450' and '850'. Photometry filter names are not modified.
 
 Unlike findgroup() this method will always search the header for
 the current state.
@@ -724,15 +728,36 @@ sub findfilters {
   # Dont use the nsubs method (derive all from header)
   my $nsubs = $self->hdr('N_SUBS');
 
-  my @filter = ();
-  for (my $i =1; $i <= $nsubs; $i++) {
-    my $key = 'FILT_' . $i;
+  # Get the FILTER name
+  my $filtname = uc($self->hdr('FILTER'));
+  my ($part1, $part2) = split(/:/,$filtname, 2);
 
-    push(@filter, $self->hdr($key));
+  my @filter = ();
+  for my $i (1..$nsubs) {
+
+    # Retrieve the filter name from the header
+    my $filter = $self->hdr('FILT_'.$i);
+
+    # Loop around searching for the filter part that
+    # contains the FILT_N substring
+    # If not found, simply insert the FILT_N name itself
+    # ( that covers 850S:PHOT )
+    my $found = 0;
+    for my $part ($part1, $part2) {
+      print "Looking for $filter in $part\n";
+      if ($part =~ /$filter/) { # grep is overkill
+	push(@filter, $part);
+	$found = 1;
+	last;
+      }
+    }
+
+    # Could not find it so store the actual filter name
+    push(@filter, $filter) unless $found;
   }
 
   $self->filters(@filter);
-
+  print "FILTERS: ",join(", ",@filter),"\n";
   return @filter;
 }
 
@@ -755,7 +780,7 @@ sub findsubs {
   my $nsubs = $self->hdr('N_SUBS');
 
   my @subs = ();
-  for (my $i =1; $i <= $nsubs; $i++) {
+  for my $i (1..$nsubs) {
     my $key = 'SUB_' . $i;
 
     push(@subs, $self->hdr($key));
@@ -789,7 +814,7 @@ sub findwavelengths {
   my $nsubs = $self->hdr('N_SUBS');
 
   my @wave = ();
-  for (my $i =1; $i <= $nsubs; $i++) {
+  for my $i (1..$nsubs) {
     my $key = 'WAVE_' . $i;
 
     push(@wave, $self->hdr($key));
@@ -821,19 +846,19 @@ Assumes that changes in subs() are reflected in files().
 sub sub2file {
   my $self = shift;
   my $sub = lc(shift);
-  
+
   # The index can be found by going thourgh @subs until
   # we find a match
   my @subs = $self->subs;
-  
+
   my $index = 1; # return first file name at least
-  for (my $i = 0; $i <= $#subs; $i++) {
+  for my $i (0..$#subs) {
     if ($sub eq lc($subs[$i])) {
       $index = $i + 1;
       last;
     }
   }
-  
+
   return $index;
 }
 
