@@ -26,6 +26,12 @@
 #
 #-
 
+# Determine whether the NDFs support variance.  Any of the NDFs should
+# do.
+    my $file = $Frm->file;
+    $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$file" );
+    ( my $ORAC_STATUS, my $variance ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "variance" );
+
 # Removed intermediate files stored $Frm->file method.
     _DELETE_TEMP_FILES_ KEEP=_th,_om,_ff
 
@@ -45,15 +51,24 @@
     my $filterGrp = $Grp->uhdr( $filter . "_GROUP" );
 
 # Remove the remaining files from this cycle used to make the flat.
+# Note each 
     my $mosGrp;
     if ( $madeflat ) {
        $mosGrp = $filterGrp->subgrp( CYCLE_NUMBER => $cycleno );
        {
           my $Grp = $mosGrp;
           _DELETE_TEMP_GROUP_FILES_ DELETE=_th,_om,_sbp,_sc,_dg,_nm,_fm
+          if ( $variance eq "TRUE" ) {
+             _DELETE_TEMP_GROUP_FILES_ DELETE=_bgl,_pov,_rnv
+          }
           undef $mosGrp;
        }
     }
+
+# Record the group file name for the current filter, and the first frame
+# of that group.
+    my $grpname = $filterGrp->file;
+    my $Frm0 = $filterGrp->frame( 0 );
 
 # Remove the remaining files from this cycle used to make the mosaic.
     if ( $mademosaic ) {
@@ -62,9 +77,16 @@
           my $Grp = $mosGrp;
           _DELETE_TEMP_GROUP_FILES_ DELETE=_trn
 
+# Select the frames that should be tidied.  On the second and subsequent
+# cycles the first frame is used to register with the later cycles.
+          my @list = $Grp->members;
+          if ( $cycleno > 0 ) {
+             push ( @list, $Frm0 );
+          }
+          foreach $Frm ( @list ) {
+
 # Obtain the last syllable, i.e. parts of the name broken by underscore,
 # for each frame.
-          foreach $Frm ( $Grp->members ) {
              my @syllables = split( /_/, $Frm->file );
              my $suffix = $syllables[ $#syllables ];
 
@@ -78,13 +100,14 @@
 
 # Remove the group offset and object-inventory text files.
           if ( $cycleno > 0 ) {
-             unlink( $Grp->file . ".off", $Grp->file . ".find" );
-             unlink( $Grp->file . ".res" );
+             unlink( $grpname . ".off", $grpname . ".find" );
+             unlink( $grpname . ".res" );
           }
 
           undef $mosGrp;
        }
     }
+    orac_print "\n\n";
 
 # Podule
 # ======
