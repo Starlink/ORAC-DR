@@ -68,8 +68,9 @@
 
 #  History:
 #     $Log$
-#     Revision 1.9  2002/04/02 03:04:52  mjc
-#     Use \date command to override aliases.
+#     Revision 1.10  2002/08/02 01:23:05  frossie
+#     Change summit disk and machine locations
+#     These really ought to be parametrised at the top!
 #
 #     Revision 1.8  2001/05/01 00:14:45  timj
 #     Update semester determination so it works with 20010122
@@ -101,7 +102,7 @@
 #     $Id$
 
 #  Copyright:
-#     Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+#     Copyright (C) 1998-2000 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.
 
 #-
@@ -128,7 +129,7 @@ endif
 if ($1 != "") then
     set oracut = $1
 else
-    set oracut = `\date -u +%Y%m%d`
+    set oracut = `date -u +%Y%m%d`
 endif
 
 set oracdr_args = "-ut $oracut"
@@ -165,7 +166,7 @@ if !($?ORAC_DATA_ROOT) then
 
   if ($orac_dname == 'JAC.jcmt') then
 
-    setenv ORAC_DATA_ROOT /jcmtarchive
+    setenv ORAC_DATA_ROOT /jcmtdata
 
   else if ($orac_dname == 'JAC.Hilo') then
 
@@ -229,15 +230,15 @@ endif
 # First start with input directory - $ORAC_DATA_ROOT is set up
 # depending on location (domainname) if not set explicitly.
 
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/$orac_sem$oracut/
+setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/scuba/$orac_sem$oracut/
 
 # Output data directory is more problematic.
 # If we are at JCMT set it to ORAC_DATA_ROOT/rodir/$oracut
 # Else Set to current directory
 
-if ($ORAC_DATA_ROOT == /jcmtarchive ) then
+if ($ORAC_DATA_ROOT == /jcmtdata ) then
 
- setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/orac/$oracut
+ setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/scuba/$oracut
 
  # Check for the directory and create it
  if (! -d $ORAC_DATA_OUT) then
@@ -250,10 +251,10 @@ if ($ORAC_DATA_ROOT == /jcmtarchive ) then
    # Sticky bit set plus group write
    # The sticky bit can not be set on a nfs disk
    # so this does not work unless we are on mamo
-   if (`hostname` != 'mamo') then
+   if (`hostname` != 'kolea') then
      echo Setting write permissions on directory by using rsh to mamo
      echo -n Please wait....
-     ssh mamo chmod g+rws $ORAC_DATA_OUT
+     ssh kolea chmod g+rws $ORAC_DATA_OUT
      echo complete.
    else
      # simply chmod
@@ -268,9 +269,9 @@ if ($ORAC_DATA_ROOT == /jcmtarchive ) then
 
  # If we are not on mamo print a warning
  set orachost = `hostname`
- if ($orachost != 'mamo') then
+ if ($orachost != 'kolea') then
    echo '***************************************************'
-   echo '**** PLEASE USE MAMO FOR ORAC-DR DATA REDUCTION ***'
+   echo '**** PLEASE USE KOLEA FOR ORAC-DR DATA REDUCTION ***'
    echo '***************************************************'
  endif
 
@@ -295,9 +296,9 @@ source $ORAC_DIR/etc/oracdr_start.csh
 # Print additional warning if required
 if ($?orachost) then 
    # csh does not short circuit so we cant combine the ifs
-   if ($orachost != 'mamo') then
+   if ($orachost != 'kolea') then
        echo '***************************************************'
-       echo '**** PLEASE USE MAMO FOR ORAC-DR DATA REDUCTION ***'
+       echo '**** PLEASE USE KOLEA FOR ORAC-DR DATA REDUCTION ***'
        echo '***************************************************'
    endif
 endif
