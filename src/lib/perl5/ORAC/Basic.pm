@@ -107,10 +107,11 @@ sub nbspoke {
 
 #------------------------------------------------------------------------
 
-=item orac_execute_recipe(reciperef, Frame, Group, Cal)
+=item orac_execute_recipe(reciperef, Frame, Group, Cal, Mon)
 
 Executes the recipes stored in $reciperef (an Array reference).
-Also needs the current frame, group and calibration objects.
+Also needs the current frame, group and calibration objects
+as well as the hash containing all the messaging objects.
 
 =cut
 
@@ -451,19 +452,20 @@ sub orac_add_code_to_recipe {
       
       $arguments =~ s/\"/ /g;
 
-      # Debug line if DEBUG is true
-      push(@processed,"orac_debug(\"$arguments\n\");\n")
-	if $DEBUG;
 
-      #    } elsif ($line =~ /={0}.+->obeyw/) { # old line
-      
+      # Add the following debug line if the obeyw is not commented out
+      # Debug line if DEBUG is true
+      if ($DEBUG && $line !~ /\#.+->obeyw/) {
+	push(@processed,"orac_debug(\"$arguments\n\");\n")
+      }
+
       # Now check to see whether it starts with a comment character
-      # Note that the xemacs syntac recognition does not understand #
-      # in a pattern match
+      # (Note that the xemacs syntax recognition does not understand #
+      # in a pattern match)
       # or if somebody has put an equals sign in and is checking it
       # themselves.
       if ($line !~ /(\#|=).+?->obeyw/x) {
-	
+
 	# Now add the OBEYW status checking lines
 	# prepending the OBEYW_STATUS line
 	# Put it in a block of its own to prevent warnings
@@ -634,6 +636,9 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.34  1999/04/28 18:54:32  timj
+#Fix so that ORAC_DEBUG is not used for commented obeyw's
+#
 #Revision 1.33  1999/04/22 22:48:44  timj
 #Fix some -w warnings.
 #Allow -w in recipes
