@@ -131,7 +131,7 @@ This task is called by the 'new' method.
   $status = $obj->load("name","monolith_binary",{ TASKTYPE => 'A' });
 
 If the second argument is omitted it is assumed that the binary
-is already running and can be called by "name".   
+is already running and can be called by "name".
 
 If a path to a binary with name "name" already exists then the monolith
 is not loaded.
@@ -154,11 +154,7 @@ sub load {
 
   # Convert from ADAM to ORAC status
   # Probably should put in a subroutine
-  if ($status == $SAI__OK) {
-    $status = ORAC__OK;
-  }
-
-  return $status;
+  return $self->_to_orac_status($status);
 }
 
 
@@ -180,12 +176,7 @@ sub obeyw {
 
   # Should now change status from the obeyw (DTASK__ACTCOMPLETE)
   # to good ORAC status
-  if ($status == $DTASK__ACTCOMPLETE) {
-    $status = ORAC__OK;
-  }
-
-  return $status;
-
+  return $self->_to_orac_status($status,1);
 }
 
 
@@ -213,12 +204,7 @@ sub get {
   my ($status,@values) = $self->obj->get($task, $param);
 
   # Convert from ADAM to ORAC status
-  # Probably should put in a subroutine
-  if ($status == $SAI__OK) {
-    $status = ORAC__OK;
-  }
-
-  return ($status, @values);
+  return $self->_to_orac_status($status);
 }
 
 =item B<set>
@@ -246,12 +232,7 @@ sub set {
   my $status = $self->obj->set($task, $param, $value);
 
   # Convert from ADAM to ORAC status
-  # Probably should put in a subroutine
-  if ($status == $SAI__OK) {
-    $status = ORAC__OK;
-  }
-
-  return $status;
+  return $self->_to_orac_status($status);
 }
 
 
@@ -283,10 +264,7 @@ sub control {
     ($value, $status) = $self->obj->control(@_);
 
     # Convert from ADAM to ORAC status
-    # Probably should put in a subroutine
-    if ($status == $SAI__OK) {
-      $status = ORAC__OK;
-    }
+    $status = $self->_to_orac_status($status);
   }
   return ($value, $status);
 }
@@ -312,13 +290,7 @@ sub resetpars {
   my ($junk, $status) = $self->obj->control("par_reset");
 
   # Convert from ADAM to ORAC status
-  # Probably should put in a subroutine
-  if ($status == $SAI__OK) {
-    $status = ORAC__OK;
-  }
-
-  return $status;
-
+  return $self->_to_orac_status($status);
 }
 
 
@@ -337,12 +309,7 @@ sub cwd {
   my ($value, $status) = $self->obj->control("default", $newdir);
 
   # Convert from ADAM to ORAC status
-  # Probably should put in a subroutine
-  if ($status == $SAI__OK) {
-    $status = ORAC__OK;
-  }
-  return $status;
-
+  return $self->_to_orac_status($status);
 }
 
 
@@ -414,18 +381,51 @@ $Id$
 
 =head1 AUTHORS
 
-Tim Jenness (t.jenness@jach.hawaii.edu)
-and Frossie Economou (frossie@jach.hawaii.edu)    
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
+and Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 
 =cut
 
 # private methods
+
+# internal routine to translate returned status to ORAC status
+# Two arguments:
+#   - the Starlink status
+#   - whether this was from an obey (optional)
+
+# Currently, good status (SAI__OK) are translated to ORAC__OK
+# Status due to engine death are translated to ORAC__BADENG
+# All others remain unchanged since ORAC-DR will treat them
+# as bad anyway and the actual status value is sometimes useful
+
+# Need to insert these error codes into Starlink::ADAM
+
+sub _to_orac_status {
+  my $self = shift;
+  my $status = shift;
+  my $isobey = shift;
+
+  # Check good status
+  if ($status == $SAI__OK) {
+    # standard okay
+    return ORAC__OK;
+  } elsif ($isobey && $status == $DTASK__ACTCOMPLETE) {
+    # An obey completed successfully
+    return ORAC__OK;
+  } elsif ($status == 141460275 || # MESSYS__NOTFOUND
+	   $status == 141460291 || # MESSYS__TIMEOUT
+	   $status == 141460379 || # MESSYS__TOOLONG
+	   $status == 159809544 ) {  # SOCK__READSOCK
+    return ORAC__BADENG;
+  }
+  return $status;
+}
 
 
 1;

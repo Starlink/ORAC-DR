@@ -335,7 +335,8 @@ sub execute {
 							    $Display, $Mon,
 							    $self->debug,
 							    $self->batch);
-  # Check for an error
+  # Check for an error from perl
+  # (eg a croak)
   if ($@) {
 
     # Since we have an error we can not trust the current
@@ -396,8 +397,6 @@ sub execute {
     # Do this until we debug everything
     orac_exit_normally("Exiting due to error executing recipe");
   }
-
-
 
 }
 
@@ -665,6 +664,11 @@ in recipes.
 
   $string = $rec->_check_obey_status_string( $obey_line );
 
+Checks also for the special case of ORAC__BADENG as the 
+return value. In that case, the monolith is removed from
+the message system so that next time it is required
+a new one is launched.
+
 =cut
 
 sub _check_obey_status_string {
@@ -694,6 +698,10 @@ sub _check_obey_status_string {
 		     '  my $obeyw_args = "'. $args . '";',
 		     '  orac_print("Arguments were: ","blue");',
                      '  orac_print("$obeyw_args\n\n","red"); ',
+		     '  if ($OBEYW_STATUS == ORAC__BADENG) {',
+		     "    orac_print(\"Monolith $monolith seems to be dead. Removing it...\\n\")",
+		     "    delete \$Mon{$monolith};",
+		     '  }',
 		     '  return $OBEYW_STATUS;',
 		     '}'
 		    );

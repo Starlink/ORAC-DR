@@ -23,10 +23,10 @@ require Exporter;
 
 @ISA = qw/Exporter/;
 
-@EXPORT_OK = qw/ORAC__OK ORAC__ERROR/;
+@EXPORT_OK = qw/ORAC__OK ORAC__ERROR ORAC__BADENG/;
 
 %EXPORT_TAGS = (
-		'status'=>[qw/ ORAC__OK ORAC__ERROR/]
+		'status'=>[qw/ ORAC__OK ORAC__ERROR ORAC__BADENG/]
 	       );
 
 Exporter::export_tags('status');
@@ -57,6 +57,17 @@ use constant ORAC__ERROR => -1;
 # Did want to try implementing constants like this but
 # is easier to use the constant module.
 # *ORAC__OK = \0;
+
+=item B<ORAC__BADENG>
+
+An algorithm engine has returned with a status that indicates
+that the engine is no longer valid. This can be used to
+indicate that an engine has crashed and that a new one should be
+launched.
+
+=cut
+
+use constant ORAC__BADENG => 2;
 
 
 =back
