@@ -699,7 +699,7 @@ sub _check_obey_status_string {
 		     '  orac_print("Arguments were: ","blue");',
                      '  orac_print("$obeyw_args\n\n","red"); ',
 		     '  if ($OBEYW_STATUS == ORAC__BADENG) {',
-		     "    orac_print(\"Monolith $monolith seems to be dead. Removing it...\\n\")",
+		     "    orac_print(\"Monolith $monolith seems to be dead. Removing it...\\n\");",
 		     "    delete \$Mon{$monolith};",
 		     '  }',
 		     '  return $OBEYW_STATUS;',
