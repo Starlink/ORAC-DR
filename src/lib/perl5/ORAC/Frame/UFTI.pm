@@ -269,7 +269,7 @@ sub flag_from_bits {
 
 # Supply a method to return the number associated with the observation
 
-=item B<number>
+#=item B<number>
 
 # Method to return the number of the observation. This is the
 # number stored in the OBSNUM header
