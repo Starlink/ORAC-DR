@@ -172,7 +172,10 @@ sub dark {
 
   # not so good
   if (defined $ok) {
-    $self->darkname($self->darkindex->choosebydt('ORACTIME',$self->thing));
+    my $dark = $self->darkindex->choosebydt('ORACTIME',$self->thing);
+    croak "No suitable dark calibration was found in index file"
+      unless defined $dark;
+    $self->darkname($dark);
   } else {
     croak("Error in calibration checking - giving up");
   };
@@ -260,7 +263,10 @@ sub bias {
 
   # not so good
   if (defined $ok) {
-    $self->biasname($self->biasindex->choosebydt('ORACTIME',$self->thing));
+    my $bias = $self->biasindex->choosebydt('ORACTIME',$self->thing);
+    croak "No suitable bias calibration was found in index file"
+      unless defined $bias;
+    $self->biasname($bias);
   } else {
     croak("Error in calibration checking - giving up");
   };
@@ -341,7 +347,10 @@ sub flat {
 
   # not so good
   if (defined $ok) {
-    $self->flatname($self->flatindex->choosebydt('ORACTIME',$self->thing));
+    my $flat = $self->flatindex->choosebydt('ORACTIME',$self->thing);
+    croak "No suitable flat was found in index file"
+      unless defined $flat;
+    $self->flatname($flat);
   } else {
     croak("Error in calibration checking - giving up");
   };
@@ -385,7 +394,10 @@ sub sky {
 
   # not so good
   if (defined $ok) {
-    $self->skyname($self->skyindex->choosebydt('ORACTIME',$self->thing));
+    my $sky= $self->skyindex->choosebydt('ORACTIME',$self->thing);
+    croak "No suitable sky frame was found in index file"
+      unless defined $sky;
+    $self->flatname($sky);
   } else {
     croak("Error in calibration checking - giving up");
   };
