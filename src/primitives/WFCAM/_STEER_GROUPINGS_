@@ -1,23 +1,117 @@
-    # Work out where you are in the current microstep sequence
+    # Work out where you are in the current microstep sequence.  Set a flag
+    # if this frame is the last one in the current sequence. Set a value in
+    # the frame header saying which microstep group this is.
 
     my $nustep = $Frm->hdr("NUSTEP");
     my $ustep_i = $Frm->hdr("USTEP_I");
-    my $ustep_finished = ($nustemp == $ustep_i);
+    my $ustep_finished = ($nustep == $ustep_i);
+    $Grp->uhdr("USTEP_FINISHED",$ustep_finished);
+    if ($ustep_i == 1) {
+        $Grp->uhdr("USTEPNUM",$Frm->hdr("OBSNUM"));
+    }
+    $Frm->uhdr("USTEPNUM",$Grp->uhdr("USTEPNUM"));
+    my $line = sprintf("This is frame: %d of %d in microstep sequence %05d\n",
+	$ustep_i,$nustep,$Grp->uhdr("USTEMPNUM"));
+    $line .= "***This microstep sequence is complete!\n" if ($ustep_finished);
+    orac_print($line);
 
-    # Work out where you are in the current jitter sequence
+    # Work out where you are in the current jitter sequence.  Set a flag if
+    # this frame is the last one of the current jitter sequence.  NB: we have
+    # to check also that this is the last frame of the current microstep
+    # sequence. If we have a situation where we are just microstepping and
+    # not dithering then $njitter always equals $jitter_i and we'd have a
+    # finished flag before we'd finished the microstep sequence.
 
     my $njitter = $Frm->hdr("NJITTER");
     my $jitter_i = $Frm->hdr("JITTER_I");
-    my $jitter_finished = ($njitter == $jitter_i);
+    my $jitter_finished = ($njitter == $jitter_i && $ustep_finished);
+    $Grp->uhdr("JITTER_FINISHED",$jitter_finished);
+    $line = sprintf("Frame in position %d of %d in jitter sequence: %05d\n",
+	$jitter_i,$njitter,$Frm->hdr("GRPNUM"));
+    $line .= "***This jitter sequence is complete!\n" if ($jitter_finished);
+    orac_print($line);
 
-    # Work out where you are in the current tile sequence
+    # Is this the first frame of a new tile? If so then set up a counter
+    # for the number of jitters. If this isn't the first frame of a new tile,
+    # but it _is_ the first frame of a new jitter, then increment the jitter
+    # counter.
 
     my $obsnum = $Frm->hdr("OBSNUM");
     my $tilenum = $Frm->hdr("TILENUM");
-    $Grp->uhdr("TILE_COMPLETE",0)
     if ($obsnum == $tilenum) {
-        my $current_jitter = 1;
-    } elsif ($jitter_i == 1) {
-        
+        $Grp->uhdr("JITTER_NUMBER",1);
+        orac_print("Start of new tile: %05d\n",$Frm->hdr("TILENUM"));	
+    } else {
+        if ($jitter_i == 1) {
+            my $jnum = $Grp->uhdr("JITTER_NUMBER");
+            $Grp->uhdr("JITTER_NUMBER",$jnum++);
+        }
+    }
 
+    # If this is the fourth jitter and it's complete, then the tile is
+    # officially complete.
+
+    my $tile_finished = ($Grp->uhdr("JITTER_NUMBER") == 4 && $jitter_finished);
+    $Grp->uhdr("TILE_FINISHED",$tile_finished);
+    orac_print("***This tile sequence is complete\n") if ($tile_finished);
+
+=head1 NAME
+ 
+_STEER_GROUPINGS_ -- Set up flags to show where in the grouping hierarchy
+the current frame resides.
+
+ 
+=head1 DESCRIPTION
+ 
+WFCAM data is observed in a hierarchy of groupings.  These are (in order) 
+microstep sequences, dither (jitter) sequences and tile sequences.  This 
+primitive uses the current frame's header information as well as existing 
+group information to determine where the current frame is in each of the
+hierarchy levels.  This is important as some processing can not proceed until
+all the frames are available for a particular level.
+ 
+=head1 ARGUMENTS
+ 
+None
+ 
+=head1 NOTES
+ 
+Sets the following flags in the $Grp->uhdr structure:
+
+=over 4
+
+=item USTEP_FINISHED = int
+
+If set, then the current frame completes the current microstep sequence.
+
+=item USTEPNUM = int
+
+The run number of the first frame in the current microstep sequence. This is
+also set in the $Frm->uhdr structure.
+
+=item JITTER_FINISHED = int
+
+If set, then the current frame completes the current jitter (dither) sequence.
+
+=item JITTER_NUMBER = int
+
+Nominally a tile consists of four jitter sequences. This takes on the values
+1, 2, 3 or 4 to show where you are in the current tile sequence.
+
+=item TILE_FINISHED = int
+
+If set, then the current frame completes the current tile sequence.
+
+=back
+
+=head1 AUTHORS
+ 
+JRL: Jim Lewis (CASU, IoA)
+ 
+=head1 COPYRIGHT
+ 
+Copyright (C) 2004-2007 Cambridge Astronomy Survey Unit.
+All Rights Reserved
+ 
+=cut
     
