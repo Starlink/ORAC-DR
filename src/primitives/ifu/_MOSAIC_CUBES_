@@ -1,0 +1,69 @@
+# The group file name - we use the ->raw one here, as subsequent steps
+# (eg extraction) will update the ->file and we want none of that here
+my $groupfile = $Grp->raw;
+
+
+# Get the filename for the sky subtracted pair (ignore $out)
+my ($in, $out) = $Frm->inout("_junk");
+my $obsnum = $Frm->number;
+
+# If it doesn't exist, create the group file
+if (!(-e $groupfile)) {
+   # Create the group file by copying the sky subtracted pair into it
+   orac_print "Creating group $groupfile with $in\n";
+   $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$groupfile title=$groupfile");
+      
+
+} else {
+   # The group file does exist. Coadd the current pair into it
+
+   # We use a tmp file to do the unaveraging
+   my $ua=new ORAC::TempFile;
+   my $uafile= $ua->file;
+
+   # Need to know how many pairs are in the group
+   my $nobs=scalar(@{ scalar($Grp->coadds) } );
+      
+   # Do the unaverage
+   $Mon{'kappa_mon'}->obeyw("cmult", "in=$groupfile scalar=$nobs out=$uafile");
+
+   # Use a tmp file to do the addition
+   my $add=new ORAC::TempFile;
+   my $addfile = $add->file;
+   $Mon{'kappa_mon'}->obeyw("add", "in1=$uafile in2=$in out=$addfile");
+
+   # Average back into the group file
+   $nobs++;
+   orac_print "$in coadded to $groupfile\n";
+   orac_print "Group $groupfile now contains $nobs pairs\n";
+   $Mon{'kappa_mon'}->obeyw("cdiv", "in=$addfile scalar=$nobs out=$groupfile title=$groupfile");
+
+   # Now update the FITS header to reflect the new end airmass, using the
+   # value from the current frame.  Using the internal header, obtain the
+   # name of the external keyword.
+
+   my $amendname = "ORAC_AIRMASS_END";
+   my $amend  = $Frm->uhdr( $amendname );
+   my %keywords = $Frm->translate_hdr( $amendname );
+   my @amendkey = keys( %keywords );
+   no warnings 'misc';
+   _SET_GROUP_FITS_ITEM_ KEY=$amendkey[ 0 ] VALUE=$amend
+
+   # Do likewise for the end UT time.
+   my $utendname = "ORAC_UTEND";
+   my $utend  = $Frm->uhdr( $utendname );
+   %keywords = $Frm->translate_hdr( $utendname );
+   my @utendkey = keys( %keywords );
+   _SET_GROUP_FITS_ITEM_ KEY=$utendkey[ 0 ] VALUE=$utend
+}
+
+# Update the group object
+$Grp->coaddspush($obsnum);
+$Grp->file($groupfile);
+
+orac_print "Coadded into group file $groupfile\n";
+
+orac_print "\n";
+
+_EXTRACT_IMAGES_
+
