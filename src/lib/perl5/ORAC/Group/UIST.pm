@@ -89,20 +89,31 @@ sub _from_NSCAN_POSITIONS {
 # UKIRT instruments this was not the case, the rotation being defined
 # in CROTA2.  Here the effective rotation is that evaluated from the
 # PC matrix with a 90-degree counter-clockwise rotation for the rotated
-# axes.
+# axes. If there is a PC3_2 header, we assume that we're in spectroscopy
+# mode and use that instead.
 
 sub _to_ROTATION {
   my $self = shift;
   my $rotation;
-  if ( exists($self->hdr->{PC1_1}) && exists($self->hdr->{PC2_1})) {
-     my $pc11 = $self->hdr->{PC1_1};
-     my $pc21 = $self->hdr->{PC2_1};
-     my $rad = 57.2957795131;
-     $rotation = $rad * atan2( -$pc21 / $rad, $pc11 / $rad ) + 90.0;
+  if ( exists( $self->hdr->{PC1_1} ) && exists( $self->hdr->{PC2_1}) ) {
+    my $pc11;
+    my $pc21;
+    if ( exists ($self->hdr->{PC3_2} ) && exists( $self->hdr->{PC2_2} ) ) {
+
+      # We're in spectroscopy mode.
+      $pc11 = $self->hdr->{PC3_2};
+      $pc21 = $self->hdr->{PC2_2};
+    } else {
+      # We're in imaging mode.
+      $pc11 = $self->hdr->{PC1_1};
+      $pc21 = $self->hdr->{PC2_1};
+    }
+    my $rad = 57.2957795131;
+    $rotation = $rad * atan2( -$pc21 / $rad, $pc11 / $rad ) + 90.0;
   } elsif ( exists $self->hdr->{CROTA2} ) {
-     $rotation =  $self->hdr->{CROTA2} + 90.0;
+    $rotation =  $self->hdr->{CROTA2} + 90.0;
   } else {
-     $rotation = 90.0;
+    $rotation = 90.0;
   }
   return $rotation;
 }
@@ -170,9 +181,8 @@ pipeline by using values stored in the header.
 Required ORAC extensions are:
 
 ORACTIME: should be set to a decimal time that can be used for
-comparing the relative start times of frames. For IRCAM this
-number is decimal hours, for SCUBA this number is decimal
-UT days.
+comparing the relative start times of frames.  For UIST this
+is decimal UT days.
 
 ORACUT: This is the UT day of the frame in YYYYMMDD format.
 
