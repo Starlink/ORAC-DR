@@ -81,6 +81,10 @@
     my $tmpprofile = new ORAC::TempFile;
     my $profile = $tmpprofile->file;
 
+# For the base profile.
+    my $tmpprofile_b = new ORAC::TempFile;
+    my $profile_b = $tmpprofile_b->file;
+
 # For the lower profile.
     my $tmpprofile_l = new ORAC::TempFile;
     my $profile_l = $tmpprofile_l->file;
@@ -132,27 +136,28 @@
 
 # The ghosting is the sum of the nth and 512+nth pixels in the profile.
 
-# Make two copies of the profile.
-    $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$profile out=$profile_l" );
-    $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$profile out=$profile_u" );
+# Make three copies of the profile.
+    $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$profile out=$profile_l trim" );
+    $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$profile out=$profile_u trim" );
+    $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$profile out=$profile_b trim" );
 
 # Set the pixel origins to ensure we match appropriate pixels to sum.
-    $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=$profile origin=1" );
+    $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=$profile_b origin=1" );
     $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=$profile_u origin=513" );
     $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=$profile_l origin=-511" );
 
 # Paste the two halves over the original profile confined to the
 # bounds of the original profile.  Fudge for now to circumvent
 # "paste confine" bug.
-    $param = "in=$profile p1=$profile_l(1:512) p2=$profile_u(513:1024) out=$swapprofile";
+    $param = "in=$profile_b p1=$profile_l(1:512) p2=$profile_u(513:1024) out=$swapprofile";
     $Mon{ "kappa_mon" }->obeyw( "paste", "$param confine=f" );
 
 # Add the swapped halves to the original profile, retaining the
 # original bounds, and scale by the ghosting factor.  Fudge scaling
 # for now until COMPADD fix is available, assuming four bad pixels per
 # row.
-    $param = "ia=$profile ib=$swapprofile out=$ghostprofile";
-    $Mon{ "kappa_mon" }->obeyw( "maths", "exp='1.35E-5*(IA+IB)*508' $param" );
+    $param = "ia=$profile_b ib=$swapprofile out=$ghostprofile";
+    $Mon{ "kappa_mon" }->obeyw( "maths", "exp='1.35E-5*(IA+IB)' $param" );
 
 # Subtract ghost profile from the original image.
 # ==============================================
