@@ -4,7 +4,7 @@
 #     oracdr_niri
 
 #  Purpose:
-#     Initialise ORAC-DR environment for use with niri
+#     Initialises ORAC-DR environment for use with NIRI.
 
 #  Language:
 #     C-shell script
@@ -59,10 +59,14 @@
 #     Paul Hirst <p.hirst@jach.hawaii.edu>
 #     Frossie Economou (frossie@jach.hawaii.edu)
 #     Tim Jenness (t.jenness@jach.hawaii.edu)
+#     Malcolm J. Currie (mjc@star.rl.ac.uk)
 #     {enter_new_authors_here}
 
 #  History:
 #     $Log$
+#     Revision 1.3  2004/05/28 21:09:46  mjc
+#     Changed support to mjc.  Revise caveat.
+#
 #     Revision 1.2  2002/09/14 00:55:50  phirst
 #     add pre-alpha warning
 #
@@ -91,7 +95,7 @@
 #     $Id$
 
 #  Copyright:
-#     Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+#     Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.
 
 #-
@@ -131,23 +135,24 @@ setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/niri/$oracut/
 setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/niri/$oracut/
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/niri
 
-# screen things
-setenv ORAC_PERSON p.hirst
+# Set screen things
+setenv ORAC_PERSON mjc
 setenv ORAC_LOOP flag
-setenv ORAC_SUN  XXX
+setenv ORAC_SUN  232
 
-# Source general alias file and print welcome screen
+# Source general alias file and print welcome screen.
 source $ORAC_DIR/etc/oracdr_start.csh
 
-echo "Warning: NIRI suport in oracdr is pre-alpha / experimental."
-echo "Although it basically works, it has not been refined or verified to be"
-echo "scientifically valid. NIRI support was added to oracdr basically as a"
-echo "demonstration of the ease of adding support for a new telescope and"
-echo "instrumentation suite."
-echo "Contact Paul Hirst <p.hirst@jach.hawaii.edu> for more info."
+echo "Warning: NIRI support in oracdr is alpha / experimental."
+echo "Although it reduces data, it has not been refined or verified to"
+echo "be scientifically valid.  NIRI support was added to ORAC-DR as a"
+echo "demonstration of the ease of adding support for a new telescope"
+echo "and instrumentation suite."
+echo "Contact Paul Hirst <p.hirst@jach.hawaii.edu> or"
+              Malcolm Currie <mjc@star.rl.ac.uk> for more info."
 echo ""
 
 
-# Tidy up
+# Tidy up.
 unset oracut
 unset oracdr_args
