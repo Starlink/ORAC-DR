@@ -61,8 +61,12 @@ IRCAM uses the ADAM messaging system. (ORAC::Msg::ADAM::Control)
 sub start_msg_sys {
 
   # Set ADAM environment variables
-  $ENV{'HDS_SCRATCH'} = "/tmp";           # fix ndf2fits (etc ?)  "feature"
   $ENV{'ADAM_USER'} = "/tmp/adam$$";      # process-specific adam dir
+
+  # Set HDS_SCRATCH -- unless it is defined already
+  unless (exists $ENV{HDS_SCRATCH}) {
+    $ENV{'HDS_SCRATCH'} = "$ENV{ORAC_DATA_OUT}"; # fix ndf2fits (etc ?)  "feature"
+  }
 
   # Create object
   my $adam = new ORAC::Msg::ADAM::Control;
