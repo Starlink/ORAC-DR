@@ -30,6 +30,7 @@ use strict;
 use warnings;
 use vars qw/$VERSION/;
 use ORAC::Group::UKIRT;
+use ORAC::General;
 
 # Set inheritance
 use base qw/ ORAC::Group::UKIRT /;
@@ -53,6 +54,46 @@ my %hdr = (
 # by other instruments.  Have to use the inherited version so that the
 # new subs appear in this class.
 ORAC::Group::UFTI->_generate_orac_lookup_methods( \%hdr );
+
+# Use the nominal reference pixel if correctly supplied, failing that
+# take the average of the bounds, and if these headers are also absent,
+# use a default which assumes the full array.
+sub _to_X_REFERENCE_PIXEL{
+  my $self = shift;
+  my $xref;
+  if ( exists $self->hdr->{RDOUT_X1} && exists $self->hdr->{RDOUT_X2} ) {
+    my $xl = $self->hdr->{RDOUT_X1} - 1;
+    my $xu = $self->hdr->{RDOUT_X2};
+    $xref = nint( ( $xl + $xu ) / 2 );
+  } else {
+    $xref = 512;
+  }
+  return $xref;
+}
+
+sub _from_X_REFERENCE_PIXEL {
+  "CRPIX1", $_[0]->uhdr("ORAC_X_REFERENCE_PIXEL");
+}
+
+# Use the nominal reference pixel if correctly supplied, faiing that
+# take the average of the bounds, and if these headers are also absent,
+# use a default which assumes the full array.
+sub _to_Y_REFERENCE_PIXEL{
+  my $self = shift;
+  my $yref;
+  if ( exists $self->hdr->{RDOUT_Y1} && exists $self->hdr->{RDOUT_Y2} ) {
+    my $yl = $self->hdr->{RDOUT_Y1} - 1;
+    my $yu = $self->hdr->{RDOUT_Y2};
+    $yref = nint( ( $yl + $yu ) / 2 );
+  } else {
+    $yref = 512;
+  }
+  return $yref;
+}
+
+sub _from_Y_REFERENCE_PIXEL {
+  "CRPIX2", $_[0]->uhdr("ORAC_Y_REFERENCE_PIXEL");
+}
 
 =head1 PUBLIC METHODS
 
