@@ -505,7 +505,7 @@ sub UKIRTio2hds {
   $status = &NDF::SAI__OK;
   my @dims = ();
   hds_new($output, substr($output, 0, &NDF::DAT__SZNAM),'ORAC_HDS', 0,
-	  @dims, my $floc, $status);
+    @dims, my $floc, $status);
 
   # Then open the header file  
   hds_open(File::Spec->catfile($odir,$ofile), 'READ', my $oloc, $status);
@@ -591,8 +591,8 @@ sub hds2ndf {
   # Read the input file - we only want the basename (we know .sdf suffix)
   my ($base, $dir, $suffix) = fileparse($self->infile, '.sdf');
 
-	# The HDS file for HDS system in sthe base name and directory but no suffix
-	my $hdsfile = File::Spec->catfile($dir, $base);
+  # The HDS file for HDS system in sthe base name and directory but no suffix
+  my $hdsfile = File::Spec->catfile($dir, $base);
 
   # Construct the output file name. This is just the input with _raw
   # appended (no .sdf)
@@ -636,14 +636,14 @@ sub hds2ndf {
   if ($status == &NDF::SAI__OK && scalar(@dim) > 1) {
     $status = &NDF::SAI__ERROR;
     err_rep(' ',"hsd2ndf: Dimensionality of .HEADER FITS array should be 1 but is $ndim",
-	    $status);
+      $status);
   }
 
   # Read the FITS array
   my @fitsA = ();
   my $nfits;
   dat_get1c($xloc, $dim[0], @fitsA, $nfits, $status)
-	  if $status == &NDF::SAI__OK; # -w protection
+    if $status == &NDF::SAI__OK; # -w protection
 
   # Close the NDF file
   dat_annul($xloc, $status);
@@ -651,33 +651,33 @@ sub hds2ndf {
 
   # Now we need to open the input file and modify the FITS entries
   ndf_open(&NDF::DAT__ROOT, $outfile, 'UPDATE', 'OLD', $indf, my $place,
-	   $status);
+           $status);
 
-	# Check to see if there is a FITS component in the output file
-	ndf_xstat($indf, 'FITS', my $there, $status);
-	my @fitsB = ();
-	if (($status == &NDF::SAI__OK) && ($there)) {
+  # Check to see if there is a FITS component in the output file
+  ndf_xstat($indf, 'FITS', my $there, $status);
+  my @fitsB = ();
+  if (($status == &NDF::SAI__OK) && ($there)) {
 
-		# Get the fits locator (note the deja vu)
-		ndf_xloc($indf, 'FITS', 'UPDATE', $xloc, $status);
+    # Get the fits locator (note the deja vu)
+    ndf_xloc($indf, 'FITS', 'UPDATE', $xloc, $status);
 
-		# Find out how many entries we have
-		dat_shape($xloc, $maxdim, @dim, $ndim, $status);
-		
-		# Must be 1D
-		if ($status == &NDF::SAI__OK && scalar(@dim) > 1) {
-			$status = &NDF::SAI__ERROR;
-			err_rep(' ',"hds2ndf: Dimensionality of .HEADER FITS array should be 1 but is $ndim",$status);
-		}
-		
-		# Read the second FITS array
-		dat_get1c($xloc, $dim[0], @fitsB, $nfits, $status)
-  	  if $status == &NDF::SAI__OK; # -w protection
-		
-		# Annul the locator
-		dat_annul($xloc, $status);
-		ndf_xdel($indf,'FITS', $status);
-	}
+    # Find out how many entries we have
+    dat_shape($xloc, $maxdim, @dim, $ndim, $status);
+    
+    # Must be 1D
+    if ($status == &NDF::SAI__OK && scalar(@dim) > 1) {
+      $status = &NDF::SAI__ERROR;
+      err_rep(' ',"hds2ndf: Dimensionality of .HEADER FITS array should be 1 but is $ndim",$status);
+    }
+    
+    # Read the second FITS array
+    dat_get1c($xloc, $dim[0], @fitsB, $nfits, $status)
+      if $status == &NDF::SAI__OK; # -w protection
+    
+    # Annul the locator
+    dat_annul($xloc, $status);
+    ndf_xdel($indf,'FITS', $status);
+  }
 
   # Merge arrays
   push(@fitsA, @fitsB);
