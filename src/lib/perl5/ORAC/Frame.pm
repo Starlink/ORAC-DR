@@ -251,7 +251,7 @@ string (especially when setting the value, for example the automatic
 deletion of temporary files).
 
 =cut
- 
+
 sub files {
   my $self = shift;
   if (@_) { @{ $self->{Files} } = @_;}
@@ -259,7 +259,7 @@ sub files {
   if (wantarray) {
 
     # In an array context, return the array itself
-    return @{ $self->{Files} } if wantarray();
+    return @{ $self->{Files} };
  
   } else {
     # In a scalar context, return the reference to the array
