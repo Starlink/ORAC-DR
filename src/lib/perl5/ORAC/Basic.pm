@@ -24,7 +24,10 @@ Provides the routines for parsing and executing recipes.
 =cut
 
 use Carp;
-use vars qw($VERSION @ISA @EXPORT $Display $Batch $DEBUG $Display $Beep);
+use vars qw($VERSION @ISA @EXPORT $Display $Batch $DEBUG $Display $Beep
+	    $KAPVERSION $KAPVERSION_MAJOR $KAPVERSION_MINOR
+	    $KAPVERSION_PATCHLEVEL
+	   );
 
 use strict;
 
@@ -70,6 +73,30 @@ $Display = undef;# Display object - only configured if we have a display
 $Batch   = 0;       # True if we are running in batch mode
 $DEBUG   = 0;       # True for extra debugging
 $Beep    = 0;       # True if ORAC should make noises
+
+
+#  ------------- KLUGE ----------------
+# Set the Kappa version numbers
+# This is required for recipes so that they can know
+# which version of kappa they are using for backwards compatibility
+# Currently, only sets MINOR release number since this is the
+# most important
+# Eventually, will use separate Starlink::VERSION module to import
+# these variables
+# Do not ever make this module dependent on Starlink KAPPA being
+# available.
+
+$KAPVERSION = 'V0.0-0';
+$KAPVERSION_MAJOR = 0;
+$KAPVERSION_PATCHLEVEL = 0;
+
+if (-e "$ENV{KAPPA_DIR}/style.def") {
+  $KAPVERSION_MINOR = 13;
+} elsif (-e "$ENV{KAPPA_DIR}/kappa_style.def") {
+  $KAPVERSION_MINOR = 14;
+} else {
+  $KAPVERSION_MINOR = 12;
+}
 
 #------------------------------------------------------------------------
 
@@ -714,6 +741,21 @@ Flag to indicate whether the groups have been populated before
 the recipe is executed (ie whether the pipeline is running in
 batch mode or not).
 
+=item * $KAPVERSION
+
+A set of version variables are available for support of different
+Starlink KAPPA versions as a convenience to recipe writers. These
+variables are only defined if KAPPA is present on the
+system. Variables are present for the version string ($KAPVERSION),
+the major version ($KAPVERSION_MAJOR), minor version
+($KAPVERSION_MINOR) and patchlevel ($KAPVERSION_PATCHLEVEL). Currently
+only the KAPPA major version is set to something useful. This
+behaviour may change in a future release but not in such a way that
+KAPPA will be required for running recipes.
+
+For example, if $KAPVERSION is 'V0.14-3', the major version
+is 0, minor version is 14 and patchlevel is 3.
+
 =back
 
 These variables are visible to recipes but should not be modified
@@ -736,6 +778,9 @@ Council. All Rights Reserved.
 
 
 #$Log$
+#Revision 1.45  2000/02/01 02:49:26  timj
+#Add $KAPVERSION
+#
 #Revision 1.44  2000/01/29 02:29:11  timj
 #Brings pods up to release standard.
 #
