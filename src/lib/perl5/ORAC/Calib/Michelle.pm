@@ -128,6 +128,14 @@ sub mask {
       # Check that exists and be careful not to set this as the
       # maskname() value since it has no corresponding index enrty
       my $defmask = $ENV{ORAC_DATA_CAL} . "/bpm";
+
+      # If we're in spectroscopy mode, over-ride this to be bpm_sp
+      # $uhdrref is a reference to the Frame uhdr hash
+      my $uhdrref=$self->thingtwo;
+      if ($uhdrref->{'ORAC_OBSERVATION_MODE'} eq 'spectroscopy') {
+	$defmask = $ENV{ORAC_DATA_CAL} . "/bpm_sp";
+      }
+
       return $defmask if -e $defmask . ".sdf";
 
       # give up...
