@@ -1,0 +1,152 @@
+# -*- perl -*-
+
+
+# Podule
+# ======
+
+=head1 NAME
+
+_COADD_PAIR_TO_GROUP_ - Coadds a pair to its group.
+
+=head1 DESCRIPTION
+
+This primitive coadds the current pair to its group. If the group file
+does not exist, the current pair is copied into the appropriate file.
+
+Coaddition is done using CCDPACK/MAKECAL, and as such, any of the
+combination methods for CCDPACK/MAKECAL can be used. This primitive
+defaults to using a broadened median method, which is suitable for
+normal operations.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item METHOD = CHARACTER (Given)
+
+The method for combining pairs. This parameter can be any of the methods
+listed for frame combination in CCDPACK/MAKECAL (see SUN/139). [broadened]
+
+=back
+
+=head1 AUTHORS
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+Stephen Todd <spt@roe.ac.uk>
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+
+if ($Frm->uhdr("PAIR_COMPLETE")) {
+
+  # Obtain the value for the combination method.
+  my $method = ( $_COADD_PAIR_TO_GROUP_{METHOD} || "broadened" );
+
+  # The group file name - we use the ->raw one here, as subsequent steps
+  # (eg extraction) will update the ->file and we want none of that here
+  my $groupfile = $Grp->raw;
+  $Grp->file($groupfile);
+
+  # Get the filename for the sky subtracted pair (ignore $out)
+  my ($in, $out) = $Frm->inout("_junk");
+  my $obsnum = $Frm->number;
+
+  # Flag this file as being the one that was median combined.
+  $Frm->tagretrieve( 'PAIR_COMBINE' );
+  $Frm->tagset( 'PAIR_COMBINE' );
+
+  # If it doesn't exist, create the group file
+  if (!($Grp->file_exists)) {
+    # Create the group file by copying the sky subtracted pair into it
+    orac_print "Creating group $groupfile with $in\n";
+    $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$groupfile title=$groupfile");
+
+  } else {
+    # The group file does exist. Coadd the current pair into it.
+
+    # Get a list of the group members so far, and only use those that
+    # have the 'PAIR_COMPLETE' uhdr set to 1.
+    my $subgrp = $Grp->subgrp(PAIR_COMPLETE => 1);
+
+    my @members = $subgrp->members;
+
+    # We want to combine all of the members of $subgrp into the
+    # output file. These need to be written into a temporary file
+    # so that the command-line for makemos doesn't get too large.
+    my $inputlist = "inlist.list$$";
+    unlink( $inputlist );
+    open( my $fh_inlist, ">$inputlist" ) ||
+      orac_throw "Unable to open $inputlist to create a list of frames to coadd. Error: $!\n";
+    foreach my $member (@members) {
+      $member->tagretrieve( 'PAIR_COMBINE' );
+      $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=" . $member->file . " frame=GRID" );
+      print $fh_inlist $member->file, "\n";
+    }
+    close( $fh_inlist );
+
+    # Set up the parameters for MAKECAL.
+    my $param1 = "in='^$inputlist' out=$groupfile title=!";
+    my $param2 = "method=$method alpha=0 expose=1 keepin=true";
+
+    # Delete the existing output file.
+    unlink( $groupfile );
+
+    # Combine the images.
+    $Mon{'ccdpack_red'}->obeyw("makecal", "$param1 $param2");
+
+#    unlink( $inputlist );
+
+    # Reset the WCS to AXIS.
+    foreach my $member (@members) {
+      $member->tagretrieve( 'PAIR_COMBINE' );
+      $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=" . $member->file . " frame=AXIS" );
+    }
+    $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=" . $groupfile . " frame=AXIS" );
+
+    # Need to know how many pairs are in the group
+    my $nobs = scalar( @{ scalar($Grp->coadds) } ) + 1;
+	
+    # Report to the user.
+    orac_print "$in coadded to $groupfile by $method method.\n";
+    orac_print "Group $groupfile now contains $nobs pairs: ";
+
+    my $membersstring = join ", ", ( map { $_->file } @members );
+
+    orac_print "$membersstring\n";
+
+    # Now update the FITS header to reflect the new end airmass, using the
+    # value from the current frame.  Using the internal header, obtain the
+    # name of the external keyword.
+	
+    my $amendname = "ORAC_AIRMASS_END";
+    my $amend  = $Frm->uhdr( $amendname );
+    my %keywords = $Frm->translate_hdr( $amendname );
+    my @amendkey = keys( %keywords );
+    no warnings 'misc';
+    _SET_GROUP_FITS_ITEM_ KEY=$amendkey[ 0 ] VALUE=$amend
+
+    # Do likewise for the end UT time.
+    my $utendname = "ORAC_UTEND";
+    my $utend  = $Frm->uhdr( $utendname );
+    %keywords = $Frm->translate_hdr( $utendname );
+    my @utendkey = keys( %keywords );
+    _SET_GROUP_FITS_ITEM_ KEY=$utendkey[ 0 ] VALUE=$utend
+  }
+
+  # Update the group object
+  $Grp->coaddspush($obsnum);
+  $Grp->file($groupfile);
+
+  # Display if necessary.
+  $Display->display_data($Grp) if defined $Display;
+
+  # Tidy up output.
+  orac_print "\n";
+
+}
