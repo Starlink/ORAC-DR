@@ -1100,10 +1100,11 @@ sub tau {
 
     if (defined $tau && $sys =~ /850/) {
 
-      orac_print "Using 850 tau of ".sprintf("%6.3f",$tau)." to generate tau for filter $filt\n";
+      orac_print "Using 850W tau of ".sprintf("%6.3f",$tau)." to generate tau for filter $filt\n";
 
       # Now convert this tau to the requested filter
-      ($tau, $status) = get_tau($filt, '850', $tau);
+      # This must be changed to work for 850N as well
+      ($tau, $status) = get_tau($filt, '850W', $tau);
 
       # On error - report conversion error then set tau to undef
       # so that we can try to adopt a CSO value
