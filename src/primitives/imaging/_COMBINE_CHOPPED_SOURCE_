@@ -12,15 +12,41 @@
 #    This primitive forms a combined source file from the current group
 #    file.  It expects the group file to be an integrated chopped and
 #    nodded image, in which the source appears as two positive and two
-#    negative images.  The primitive locates the centroid of each source,
-#    and extracts a symmetric region about each source.  These regions
-#    are added or subtracted to create an image of the source of twice
-#    the signal-to-noise of a single image, but normalised to yield the
-#    average signal of a single image.  This maintains the scaling of
-#    flux per unit exposure time.
+#    negative images.  The primitive optionally locates the centroid of
+#    each source, and extracts a symmetric region about each source. 
+#    These regions are combined (see argument METHOD) to create an image
+#    of the source of twice the signal-to-noise of a single image, but
+#    normalised to yield the average signal of a single image.  This
+#    maintains the scaling of flux per unit exposure time.
+#
+# Arguments:
+#    CENTROID = LOGICAL (Given)
+#       If true (1), centroid on the source in each sub-frame before
+#       combining.  If successful, the resultant combined file has the
+#       source centred.  Centroiding is not suitable for objects near
+#       the detection limit.  Setting CENTROID to false (0), means
+#       the combined file is centred about the expected position of
+#       the source.  [1] 
+#    METHOD = CHARACTER (Given)
+#       The method used to combine frames, once all have the same
+#       polarity.  See parameter METHOD of CCDPACK/MAKEMOS (SUN/139) for
+#       the options.  The main two in practice will be "Median" or
+#       "Mean".  The former excludes outliers but has problems in good
+#       seeing where the registration is poor, as it biases against the
+#       peak values of the steepening profile near the core, and hence
+#       underestimate the flux.  In this circumstance the mean blurs the
+#       psf profile, making it more of a plateau than a sharp peak.
+#       However, the mean preserves the flux, at the cost of the odd
+#       rogue value affecting the result.  ["Mean"]
+#    SMOOTH = INTEGER (Given)
+#       If greater than 1 apply block smoothing with a square block size
+#       equal to SMOOTH to the combined image.  For all other values, 
+#       there is no smoothing.  [0]
 #
 # Notes:
 #    -  This primitive is suitable for Michelle in imaging mode.
+#    -  Processing only occurs for object frames, and when the
+#    steering header MAKE_MOSAIC is true.
 #    -  The file to be combined may be specified through group user 
 #    header MOSAIC_FRAME, if $Grp->file is not the file from which to
 #    combine images.
@@ -29,6 +55,13 @@
 #    from the centre of the mosaic, and using a search window equal
 #    to the larger absolute telescope offset.  The telescope offsets are
 #    derived from the first and second frames in the current-cycle group.
+#    -  The average offsets of the centroid positions from the nominal
+#    source locations are found; the nearest-integer offsets are stored
+#    in $Cal->baseshift.  When argument CENTROID is false,
+#    $Cal->baseshift is accessed, and if there is a valid shift vector,
+#    the script offsets the nominal position of each region by this
+#    vector.  This is to allow for misplaced instrument apertures
+#    whenever the weak flux prevents centroiding. 
 #    -  The regions are made as large as possible such that there is no
 #    duplication of pixels from the original group file.  In other words
 #    the regions extend to the midpoints of the chop throw and nod
@@ -49,13 +82,13 @@
 #
 # Output Data:
 #    -  Combined source frame inheriting the group file's name but with the
-#    _cab suffix.
+#    _cab suffix.  The smoothed version has a _scab suffix.
 #    -  The extracted sections about image within the mosaic, inheriting
 #    the group file's name but with the suffices _Ap, _An, _Bp, _Bn for
 #    the positive (p) and negative (n) images in the A and B beams.
 #
 # Tasks:
-#    KAPPA: MATHS, NDFCOPY, SETORIGIN.
+#    CCDPACK: MAKEMOS; KAPPA: BLOCK, MATHS, NDFCOPY, SETORIGIN.
 #
 # Deficiencies:
 #    -  Assumes an ABBA pattern comprising two positive and two negative
@@ -70,7 +103,7 @@
 #    MJC: Malcolm J. Currie (JAC)
 #
 # Copyright:
-#    Copyright (C) 2001 Particle Physics and Astronomy Research
+#    Copyright (C) 2001--2002 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 #
 #-
@@ -79,7 +112,8 @@
 # =========
 
 # This should only be performed on OBJECT frames.
-    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT/ ) {
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT/ &&
+         $Frm->uhdr( "MAKE_MOSAIC" ) ) {
 
 # Obtain the cycle number.  Default to zero if undefined, so that recipes
 # which do not support this feature will continue to work.
@@ -89,15 +123,32 @@
 # Select those members in the current cycle.
        my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
 
+# Arguments
+# =========
+# Obtain the value for the combination method.
+       my $method = ( lc( $_COMBINE_CHOPPED_SOURCE_{METHOD} ) || "mean" );
+
+# Determine whether or not to fill bad pixels.
+       my $centroid = $_COMBINE_CHOPPED_SOURCE_{CENTROID};
+       $centroid = defined( $centroid ) ? $centroid : 1;
+
+# Determine whether or not to fill bad pixels.
+       my $smoothbox = $_COMBINE_CHOPPED_SOURCE_{SMOOTH};
+       $smoothbox = defined( $smoothbox ) ? int( $smoothbox ) : 0;
+
+       my $aperture;
+       if ( $centroid ) {
+
 # Specify the aperture.  Want to approximate it to the size of the symmetric
 # non-overlapping region about a source.  Place a lower limit to ensure
 # that there is a window to find an object with poor co-ordinates.  Since
 # the signals of the same sign are diametrically opposite this can be moderately
 # large, but set it lower in case the chops and nods are small for a reason.
-       my $aperture = max( abs( $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" ) ), 
-                      abs( $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" ) ) );
-       $aperture = min( $Frm->uhdr( "ORAC_CHOP_THROW" ), 2.0 * $aperture );
-       $aperture = max( $aperture, 3 );
+          $aperture = max( abs( $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" ) ), 
+                           abs( $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" ) ) );
+          $aperture = min( $Frm->uhdr( "ORAC_CHOP_THROW" ), 2.0 * $aperture );
+          $aperture = max( $aperture, 3 );
+       }
 
 # Frame preliminaries.
 # ====================
@@ -200,91 +251,174 @@
        my ( $sectionAp, $sectionAn, $sectionBp, $sectionBn );
 
        {
-          my $centre;
 
 # Want to find centroids within the mosaic.
           my $Frm = $mosFrm;
 
+          if ( $centroid ) {
+
+# Initialise displacement measures.
+             my ( $centre, $init );
+             my $xdisp = 0;
+             my $ydisp = 0;
+             my $num_centroid = 0;
+
 # Locate the centroid of the A positive image.  This uses the telescope
 # offsets to locate the source.  Hence first set the telescope offsets
 # to those of the A beam.
-          $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET", $A_raoff  );
-          $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET", $A_decoff );
+             $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET", $A_raoff  );
+             $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET", $A_decoff );
 
-          _FIND_SOURCE_CENTROID_ POSITIVE=1 BOXSIZE=$aperture
+             _FIND_SOURCE_CENTROID_ POSITIVE=1 BOXSIZE=$aperture
 
 # It is possible that no centroid was found.  Get a reference to the flag,
 # test the status, and report an error where centroiding failed.
 # In this case give a warning but carry on with nominal position.
 # Update the position with the centroid's co-ordinates.
-          my $found = $_FIND_SOURCE_CENTROID_{FOUND};
-          if ( $$found ) {
-             $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
-             $xpA = $$centre[ 0 ];
-             $ypA = $$centre[ 1 ];
-          } else {
-             orac_err "Unable to locate positive A-beam source for " .
-                      "aperture photometry.\n";
-          }
+             my $found = $_FIND_SOURCE_CENTROID_{FOUND};
+             if ( $$found ) {
+                $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
+                $xpA = $$centre[ 0 ];
+                $ypA = $$centre[ 1 ];
+
+# Find the pixel displacement between the source and its expected
+# location and add to the sum of the displacements.
+                $init = $_FIND_SOURCE_CENTROID_{INIT};
+                $xdisp += $$centre[ 0 ] - $$init[ 0 ];
+                $ydisp += $$centre[ 1 ] - $$init[ 1 ];
+                $num_centroid++; 
+
+             } else {
+                orac_err "Unable to locate positive A-beam source for " .
+                         "aperture photometry.\n";
+             }
 
 # Locate the centroid of the negative A beam.  This is approximately
 # displaced from the A positive by the chop throw.
-          _FIND_SOURCE_CENTROID_ POSITIVE=0 BOXSIZE=$aperture RAOFF=-$Ara_chop_offset DECOFF=-$Adec_chop_offset
+             _FIND_SOURCE_CENTROID_ POSITIVE=0 BOXSIZE=$aperture RAOFF=-$Ara_chop_offset DECOFF=-$Adec_chop_offset
 
 # It is possible that no centroid was found.  Get a reference to the flag,
 # test the status, and report an error where centroiding failed.
 # In this case give a warning but carry on with nominal position.
 # Update the position with the centroid's co-ordinates.
-          $found = $_FIND_SOURCE_CENTROID_{FOUND};
-          if ( $$found ) {
-             $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
-             $xnA = $$centre[ 0 ];
-             $ynA = $$centre[ 1 ];
+             $found = $_FIND_SOURCE_CENTROID_{FOUND};
+             if ( $$found ) {
+                $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
+                $xnA = $$centre[ 0 ];
+                $ynA = $$centre[ 1 ];
 
-          } else {
-             orac_err "Unable to locate negative A-beam source for " .
-                      "aperture photometry.\n";
-          }
+# Find the pixel displacement between the source and its expected
+# location and add to the sum of the displacements.
+                $init = $_FIND_SOURCE_CENTROID_{INIT};
+                $xdisp += $$centre[ 0 ] - $$init[ 0 ];
+                $ydisp += $$centre[ 1 ] - $$init[ 1 ];
+                $num_centroid++; 
 
+             } else {
+                orac_err "Unable to locate negative A-beam source for " .
+                         "aperture photometry.\n";
+             }
 
 # Locate the centroid of the B negative image.  This uses the telescope
 # offsets to locate the source.  Hence first set the telescope offsets
 # to those of the B beam.
-          $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET", $B_raoff  );
-          $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET", $B_decoff );
+             $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET", $B_raoff  );
+             $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET", $B_decoff );
 
-          _FIND_SOURCE_CENTROID_ POSITIVE=0 BOXSIZE=$aperture
+             _FIND_SOURCE_CENTROID_ POSITIVE=0 BOXSIZE=$aperture
 
 # It is possible that no centroid was found.  Get a reference to the flag,
 # test the status, and report an error where centroiding failed.
 # In this case give a warning but carry on with nominal position.
 # Update the position with the centroid's co-ordinates.
-          $found = $_FIND_SOURCE_CENTROID_{FOUND};
-          if ( $$found ) {
-             $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
-             $xnB = $$centre[ 0 ];
-             $ynB = $$centre[ 1 ];
-          } else {
-             orac_err "Unable to locate negative B-beam source for " .
-                      "aperture photometry.\n";
-          }
+             $found = $_FIND_SOURCE_CENTROID_{FOUND};
+             if ( $$found ) {
+                $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
+                $xnB = $$centre[ 0 ];
+                $ynB = $$centre[ 1 ];
+
+# Find the pixel displacement between the source and its expected
+# location and add to the sum of the displacements.
+                $init = $_FIND_SOURCE_CENTROID_{INIT};
+                $xdisp += $$centre[ 0 ] - $$init[ 0 ];
+                $ydisp += $$centre[ 1 ] - $$init[ 1 ];
+                $num_centroid++; 
+
+             } else {
+                orac_err "Unable to locate negative B-beam source for " .
+                         "aperture photometry.\n";
+             }
 
 # Locate the centroid of the positive A beam.  This is approximately
 # displaced from the B negative by the chop throw.
-          _FIND_SOURCE_CENTROID_ POSITIVE=1 BOXSIZE=$aperture RAOFF=-$Bra_chop_offset DECOFF=-$Bdec_chop_offset
+             _FIND_SOURCE_CENTROID_ POSITIVE=1 BOXSIZE=$aperture RAOFF=-$Bra_chop_offset DECOFF=-$Bdec_chop_offset
 
 # It is possible that no centroid was found.  Get a reference to the flag,
 # test the status, and report an error where centroiding failed.
 # In this case give a warning but carry on with nominal position.
 # Update the position with the centroid's co-ordinates.
-          $found = $_FIND_SOURCE_CENTROID_{FOUND};
-          if ( $$found ) {
-             $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
-             $xpB = $$centre[ 0 ];
-             $ypB = $$centre[ 1 ];
+             $found = $_FIND_SOURCE_CENTROID_{FOUND};
+             if ( $$found ) {
+                $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
+                $xpB = $$centre[ 0 ];
+                $ypB = $$centre[ 1 ];
+
+# Find the pixel displacement between the source and its expected
+# location and add to the sum of the displacements.
+                $init = $_FIND_SOURCE_CENTROID_{INIT};
+                $xdisp += $$centre[ 0 ] - $$init[ 0 ];
+                $ydisp += $$centre[ 1 ] - $$init[ 1 ];
+                $num_centroid++; 
+
+             } else {
+                orac_err "Unable to locate positive B-beam source for " .
+                         "aperture photometry.\n";
+             }
+
+# Determine the mean displacements from the nominal positions, and
+# report the displacements.
+             if ( $num_centroid > 0 ) {
+                $xdisp /= $num_centroid;
+                $ydisp /= $num_centroid;
+                
+                orac_print "Target displaced ($xdisp,$ydisp) pixels from " .
+                           "nominal position.\n";
+
+# For storage correct to the nearest pixel.
+                my $xbase = nint( $xdisp );
+                my $ybase = nint( $ydisp );
+                my $base = "$xbase,$ybase";
+
+# File the base location in the calibration system.
+# =================================================
+
+# The value needs to be in a hash.  Use the current frame as a reference
+# for this, as it has the same readout mode and speed/well depth as the
+# others.
+                my %hash = ( %{ $Frm->hdr }, BASESHIFT => $base );
+                $Cal->baseshiftindex->add( $Frm->file, \%hash );
+
+                orac_print "Base shift filed with the calibration system.\n";
+             }
+
+# Obtain the displacement from the calibration.
           } else {
-             orac_err "Unable to locate positive B-beam source for " .
-                      "aperture photometry.\n";
+
+# First attempt to obtain the value from the calibration system.
+# If it's successful extract the x and y displacements, and shift the
+# nominal positions, otherwise use the current values.
+             my $base = eval { $Cal->baseshift };
+             if ( !$@ ) {
+                my @disp = split( ",", $base );
+                $xpA += $disp[ 0 ];
+                $ypA += $disp[ 1 ];
+                $xnA += $disp[ 0 ];
+                $ynA += $disp[ 1 ];
+                $xpB += $disp[ 0 ];
+                $ypB += $disp[ 1 ];
+                $xnB += $disp[ 0 ];
+                $ynB += $disp[ 1 ];
+             }
           }
 
 # Find bounds of regions about images.
@@ -401,17 +535,72 @@
 
 # At present there's no sub-pixel registration.
        ( $in, my $out ) = $mosFrm->inout( "_cab" );
-       $param = "exp='0.25*(IA-IB+IC-ID)' out=$out " .
-                "ia=$Ap_name ib=$An_name ic=$Bp_name id=$Bn_name"; 
-       $Mon{ "kappa_mon" }->obeyw( "maths", "$param" );
-       orac_print "Source images combined and averaged in $out\n\n";
 
+# Mean is easy.
+       if ( $method eq "mean" ) {
+          $param = "exp='0.25*(IA-IB+IC-ID)' out=$out " .
+                   "ia=$Ap_name ib=$An_name ic=$Bp_name id=$Bn_name"; 
+          $Mon{ "kappa_mon" }->obeyw( "maths", "$param" );
+          orac_print "Source images combined and averaged in $out\n";
+
+# Other methods are for MAKEMOS.
+       } else {
+
+# First need to make two temporary frames change the polarity of the
+# negative sources.
+          my $tempAfile = new ORAC::TempFile;
+          my $tempApos = $tempAfile->file;
+          $param = "in=$An_name out=$tempApos scalar=-1";
+          $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
+
+          my $tempBfile = new ORAC::TempFile;
+          my $tempBpos = $tempBfile->file;
+          $param = "in=$Bn_name out=$tempBpos scalar=-1";
+          $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
+
+# Combine the now all positive frames using the chosen method.
+# Assign other parameters.
+          my $param1 = "in='$Ap_name,$tempApos,$Bp_name,$tempBpos' title=!";
+          $param = "out=$out zero optov=4 method=$method";
+
+# Make the mosaic correcting for differences in offset.
+          $Mon{ "ccdpack_reg" }->obeyw( "makemos", "$param1 $param" );
+
+          orac_print "Source images combined using the $method method in $out\n";
+       }
+    
 # Update the frame.
        $mosFrm->file( $out );
 
+# Display the combined frame.
+       $Display->display_data( $mosFrm ) if ( defined $Display );
+
+# Smooth the combined image.
+# ==========================
+       if ( $smoothbox > 1 ) {
+
+# At present there's no sub-pixel registration.
+          ( $in, $out ) = $mosFrm->inout( "_scab" );
+
+# Block-averaged smooth using the supplied box size.
+          $param = "in=$in out=$out box=$smoothbox accept";
+          $Mon{ "kappa_mon" }->obeyw( "block", "$param" );
+
+          orac_print "Combined image ${smoothbox}-pixel block smoothed in $out\n\n";
+
+# Update the frame.
+          $mosFrm->file( $out );
+
+# Display the combined frame.
+          $Display->display_data( $mosFrm ) if ( defined $Display );
+       
+       }
+       
 # Store the frame for other primitives (e.g. photometry, polarimetry)
 # requiring it.
        $Grp->uhdr( "COMBINED_SOURCE_FRAME", $mosFrm );
+
+       orac_print "\n";
     }
 
 # Podule
@@ -426,12 +615,46 @@ _COMBINE_CHOPPED_SOURCE_ -- Combines chopped and nodded images for NOD_CHOP reci
 This primitive forms a combined source file from the current group
 file.  It expects the group file to be an integrated chopped and
 nodded image, in which the source appears as two positive and two
-negative images.  The primitive locates the centroid of each source,
-and extracts a symmetric region about each source.  These regions
-are added or subtracted to create an image of the source of twice
-the signal-to-noise of a single image, but normalised to yield the
-average signal of a single image.  This maintains the scaling of
-flux per unit exposure time.
+negative images.  The primitive optionally locates the centroid of
+each source, and extracts a symmetric region about each source. These
+regions are combined (see argument METHOD) to create an image of the
+source of twice the signal-to-noise of a single image, but normalised
+to yield the average signal of a single image.  This maintains the
+scaling of flux per unit exposure time.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item CENTROID = LOGICAL (Given)
+
+If true (1), centroid on the source in each sub-frame before
+combining.  If successful, the resultant combined file has the
+source centred.  Centroiding is not suitable for objects near
+the detection limit.  Setting CENTROID to false (0), means
+the combined file is centred about the expected position of
+the source.  [1] 
+
+=item METHOD = CHARACTER (Given)
+
+The method used to combine frames, once all have the same
+polarity.  See parameter METHOD of CCDPACK/MAKEMOS (SUN/139) for
+the options.  The main two in practice will be "Median" or
+"Mean".  The former excludes outliers but has problems in good
+seeing where the registration is poor, as it biases against the
+peak values of the steepening profile near the core, and hence
+underestimate the flux.  In this circumstance the mean blurs the
+psf profile, making it more of a plateau than a sharp peak.
+However, the mean preserves the flux, at the cost of the odd
+rogue value affecting the result.  ["Mean"]
+
+=item SMOOTH = INTEGER (Given)
+
+If greater than 1 apply block smoothing with a square block size
+equal to SMOOTH to the combined image.  For all other values, 
+there is no smoothing. [0]
+
+=back
 
 =head1 NOTES
 
@@ -440,6 +663,11 @@ flux per unit exposure time.
 =item *
 
 This primitive is suitable for Michelle in imaging mode.
+
+=item *
+
+Processing only occurs for object frames, and when the steering header
+MAKE_MOSAIC is true.
 
 =item *
 
@@ -454,6 +682,16 @@ the telescope offset in Cartesian co-ordinates for each nod position
 from the centre of the mosaic, and using a search window equal
 to the larger absolute telescope offset.  The telescope offsets are
 derived from the first and second frames in the current-cycle group.
+
+=item *
+
+The average offsets of the centroid positions from the nominal
+source locations are found; the nearest-integer offsets are stored
+in $Cal-E<gt>baseshift.  When argument CENTROID is false,
+$Cal-E<gt>>baseshift is accessed, and if there is a valid shift vector,
+the script offsets the nominal position of each region by this
+vector.  This is to allow for misplaced instrument apertures
+whenever the weak flux prevents centroiding. 
 
 =item *
 
@@ -495,7 +733,7 @@ header called COMBINED_SOURCE_FRAME.
 =item *
 
 Combined source frame inheriting the group file's name but with the
-_cab suffix.
+_cab suffix.  The smoothed version has a _scab suffix.
 
 =item *
 
@@ -507,7 +745,7 @@ the positive (p) and negative (n) images in the A and B beams.
 
 =head1 TASKS
 
-KAPPA: MATHS, NDFCOPY, SETORIGIN.
+CCDPACK: MAKEMOS; KAPPA: BLOCK, MATHS, NDFCOPY, SETORIGIN.
 
 =head1 DEFICIENCIES
 
@@ -534,7 +772,7 @@ MJC: Malcolm J. Currie (JAC)
 
 =head1 COPYRIGHT
 
-Copyright (C) 2001 Particle Physics and Astronomy Research
+Copyright (C) 2001--2002 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
