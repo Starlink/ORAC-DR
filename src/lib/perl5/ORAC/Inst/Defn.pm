@@ -505,7 +505,7 @@ sub orac_configure_for_instrument {
      if ( $instrument eq "IRCAM" ) {
 
              # Instrument
-             $ENV{"ORAC_INSTRUMENT"} = "IRCAM";
+             $ENV{"ORAC_INSTRUMENT"} = "IRCAM2";
 
              # Calibration information
              $orac_cal_root = "/ukirt_sw/oracdr_cal"
