@@ -1,0 +1,523 @@
+#+
+# Name:
+#    POL_ANGLE_JITTER_NO_FLAT
+
+# Purpose:
+#    Reduces an imaging polarimetry observation, where waveplate angle
+#    iterates at each jitter position.
+
+# Language:
+#    Perl5
+
+# Description:
+#    This script reduces a polarimetry observation with UKIRT imaging
+#    data.  It takes an imaging observation comprising object frames
+#    at the four waveplate angles 0, 45, 22.5, 67.5 degrees for each of
+#    of a series of jitter positions offset in Right Ascension; and a
+#    dark frame to make calibrated polarisation images and vectors
+#    automatically.  See "Output Data" for a list of these images.
+#
+#    It performs a null debiassing, bad-pixel masking, and dark
+#    subtraction on all frames.  Next the sections of the frame
+#    representing the e- and o-beam target and sky regions are extracted,
+#    and the target frames sky-subtracted.  The resultant frames undergo
+#    registration and resampling to form a mosaic for each waveplate angle
+#    and beam.  Once all eight mosaics are formed they are registered and
+#    resampled, and then combined to form the various polarisation images.
+#    The polarisation data are binned and noisy data excluded from
+#    a final catalogue of vectors.  See the "Notes" for details.
+#
+#    This recipe works well for point sources, and for extended sources
+#    whose sizes in Right Ascension and Declination are less than about
+#    35 and 15 arcseconds respectively for UFTI, or 9 and 4 arcseconds
+#    for IRCAM.  Objects which would appear in both the target and
+#    sky regions, i.e. Declination extents south of the centre
+#    larger than 35 arcseconds (UFTI) or 8 arcseconds (IRCAM), should
+#    use recipe POL_EXTENDED for best results.
+
+# Notes: 
+#    -  A World Co-ordinate System (WCS) using the AIPS convention is 
+#    created in the headers should no WCS already exist.
+#    -  For IRCAM, old headers are reordered and structured with
+#    headings before groups of related keywords.  The comments have
+#    units added or appear in a standard format.  Four deprecated
+#    deprecated are removed.  FITS-violating headers are corrected.
+#    Spurious instrument names are changed to IRCAM3.
+#    -  Data errors are propagated through all processing steps.
+#    The initial values are found by applying the nominal ADU conversion
+#    and read noise.
+#    -  The bad-pixel mask applied is $ORAC_DATA_CAL/bpm.
+#    -  Each dark-subtracted frame has thresholds applied beyond which
+#    pixels are flagged as bad.  The lower limit is 5 standard 
+#    deviations below the mode, but constrained to the range -100 to 1.
+#    The upper limit is 1000 above the saturation limit for the detector
+#    in the mode used.
+#    -  The target regions are 30% to 70% of the frame width about
+#    the Right-ascension centre, i.e. roughly centred on the source.
+#    The current sky limits are 1% to 99% of the frame width along the
+#    Right-ascension axis.  The Declination pixel limits are instrument
+#    dependent, and are as follows.  For UFTI, o sky: 69--264;
+#    e sky: 320--484; o target: 601--764; e target: 824--988.  For
+#    IRCAM, o sky: 12--52; e sky: 67--107; o target: 152--192;
+#    e target: 207--247.
+#    -  The sky subtraction for a beam uses a constant modal sky level
+#    from the corresponding sky region.
+#    -  Registration is performed using common point sources in the
+#    overlap regions.  If the recipe cannot identify sufficient common
+#    objects for automatic registration, the recipe matches the centroid
+#    of central source within an 8-arcsecond box.  Should that fail for
+#    the jittered e- and o-beam sections, the recipe resorts to using the
+#    telescope offsets transformed to pixels.  However, the final option
+#    for registering the e and o-beam mosaics at different waveplate
+#    angles, uses the beam offsets in arcseconds for the current filter 
+#    converted to pixels.
+#    -  The resampling applies non-integer shifts of origin using
+#    bilinear interpolation.  There is no rotation to align the
+#    Cartesian axes with the cardinal directions.
+#    -  The recipe makes the mosaics by applying offsets in intensity
+#    to give the most consistent result amongst the overlapping regions.
+#    The mosaic is not trimmed to the dimensions of a single frame, thus
+#    the noise will be greater in the few pixels in the peripheral areas
+#    having received less exposure time.  The mosaic is not normalised by
+#    its exposure time (that being the exposure time of a single frame).
+#    -  For each cycle of twelve frames, the recipe creates mosaics
+#    for each beam and waveplate angle.  Each mosaic has its bad pixels
+#    filled and after the first cycle is then added into its own master
+#    mosaic of improving signal to noise.  The exposure time is also
+#    summed and stored in each master mosaic's corresponding header. 
+#    Likewise the end airmass and end UT headers are updated to match
+#    that of the last-observed frame contributing to the mosaic.
+#    -  The polarised intensity is corrected for the statistical bias
+#    of the noise by subtracting the variance of Q or U.
+#    -  An offset of 6.3 degrees clockwise is applied to the rotation
+#    angle for the orientation of the analyser with respect to north.
+#    -  The polarisation data for each pixel are also stored in
+#    catalogues.  See "Output Data".
+#    -  The intensity image may be displayed with vectors overlaid. 
+#    Steps are taken to reduce the number of noisy or insignificant
+#    pixels, as well as clutter.  First, the polarisation catalogue data
+#    are averaged in 3-by-3-pixel bins.  Second, a binned pixel is
+#    rejected if its polarisation is greater than 50% or is not positive,
+#    or its polarisation signal to noise less than 3, or its polarisation
+#    error is greater 5%.  The bin size and thresholds can readily be
+#    changed by supplying arguments to the _CALC_STOKES_ primitive.
+#    -  At the end of each cycle, the grand mosaics are registered, and
+#    new polarisation maps and catalogues constructed.
+#    -  Intermediate frames are deleted except for the flat-fielded (_ff
+#    suffix) frames and the mosaics (_mos or _mos_c<cycle_number> suffix).
+
+# Output Data:
+#    -  The integrated mosaic in <m><date>_<group_number>_<beam><angle>_mos,
+#    where <m> is "gf" for UFTI and "gi" for IRCAM.  Before 2000 August these
+#    were "g" and "rg" respectively.  Token <beam> is "e" or "o";
+#    and <angle> is "0", "22", "45", or "67".
+#    -  A mosaic for each cycle of jittered frames per beam and angle in
+#    <m><date>_<group_number>_<beam><angle>_mos_c<cycle_number>, where
+#    <cycle_number> counts from 0.
+#    -  The individual flat-fielded frames in <i><date>_<obs_number>_ff,
+#    where <i> is "f" for UFTI and "i" for IRCAM.  Before 2000 August
+#    IRCAM frames had prefix "ro".
+#    -  Polarisation frames <m><date>_<group_number>_<suffix>, each with a
+#    different suffix for the each parameter.  The suffices are:
+#        I   intensity
+#        P   percentage polarisation
+#        PI  polarisation intensity
+#        Q   Stokes Q
+#        TH  polarisation angle
+#        U   Stokes U
+#    -  A FITS binary-table catalogue of the binned and culled
+#    polarisation data, called <m><date>_<group_number>_I.FIT.  For
+#    each point it tabulates the x-y co-ordinates, the total intensity,
+#    the Stokes parameters, the percentage polarisation, the polarisation
+#    angle and intensity.  There are additional columns giving the
+#    standard deviation on each of the tabulated values (excluding the
+#    co-ordinates).  Likewise <m><date>_<group_number>_all.FIT and
+#    <m><date>_<group_number>_bin.FIT store the full and binned catalogues
+#    respectively.
+
+# Configurable Steering Parameters:
+#    NUMBER = INTEGER
+#       The number of frames in the jitter pattern, per waveplate angle.
+#       If this is not set, the number of offsets, as given by FITS
+#       header NOFFSETS, minus one is used.  If neither is available, 3
+#       is the default.  An error state arises if the number of jittered
+#       frames is fewer than 3.  For observations prior to the
+#       availability of full ORAC, header NOFFSETS will be absent.  []
+#    USEVAR = LOGICAL
+#       Whether or not to create and propagate variance arrays.  [1]
+
+# Timing:
+#    {timing_information}
+
+# Implementation Status:
+#    -  The processing engines are from the Starlink packages: CCDPACK,
+#    KAPPA, POLPACK, FIGARO, and CURSA.
+#    -  Uses the Starlink NDF format.
+#    -  History is recorded within the data files.
+#    -  The title of the data is propagated through intermediate files
+#    to the mosaics.  The polarisation maps have new titles as follows
+#    using the suffices described in "Output Data".  I: "Intensity"; 
+#    P: "Polarisation"; PI: "Polarised Intensity"; Q: "Stokes Q"; 
+#    TH: "Polarisation Angle"; U: "Stokes U".
+#    -  The origins of the generated polarisation maps are set to [1,1].
+#    The WCS current frame is unchanged.
+#    -  The units are set for the frames with suffices (see "Output Data")
+#    P to "%", and TH to "degrees".
+
+# Related Recipes:
+#    POL_EXTENDED, POL_JITTER, SKY_FLAT_POL, SKY_FLAT_POL_ANGLE.
+
+# References:
+#    A.Chryststomou, 1997, "Imaging Polarimetry with IRCAM3", IRPOL/2.2.
+#    D.S.Berry & T.M.Gledhill, 1999, "POLPACK Users Manual Version 2.0",
+#       SUN/223.3.
+
+# Authors:
+#   MJC: Malcolm J. Currie (UKATC/JAC)
+
+# Copyright:
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Startup
+# =======
+
+# Imaging-specific preliminaries, such as switching on history
+# recording.
+    _IMAGING_HELLO_
+
+# Recipe-specific initialisation of data and tasks.  Set up steering
+# control of the processing, namely when to divide by a flat, make
+# a mosaic, and calculate the Stokes parameters.  Iterate waveplate
+# angle for each offset.  Create WCS, if needed.  Create data variance.
+    _POL_JITTER_HELLO_ JITTER_BEFORE_ANGLE=0 USEVAR=1
+
+# Calibration
+# ===========
+
+# Subtract the dark frame.
+    _SUBTRACT_DARK_
+
+# Sky subtract each of the frames forming new groups.
+    _SUBTRACT_SKY_POL_
+
+# Mosaicking
+# ==========
+
+# Determine the linear offsets between the object frames in the group
+# by pattern matching central source or telescope offsets.
+    _GENERATE_OFFSETS_JITTER_POL_
+
+# Resample each frame, and tesselate.  The mosaic is trimmed
+# to the dimensions of an input frame.
+    _MAKE_MOSAIC_POL_ RESAMPLE=1 INT_METHOD=linint FILLBAD=1
+
+# Registration of mosaics
+# =======================
+# Determine the linear offsets between the eight mosaic frames by
+# pattern matching central source or telescope offsets.
+    _GENERATE_OFFSETS_POL_
+
+# Resample the eight mosaic frames in pixel co-ordinates.
+    _RESAMPLE_MOSAICS_
+
+# Calculate the Stokes-parameter images.
+    _CALC_STOKES_
+
+# Remove intermediate data files.
+    _POL_JITTER_TIDY_
+
+# Podule
+# ======
+
+=head1 NAME
+
+POL_ANGLE_JITTER_NO_FLAT -- Reduces an imaging polarimetry observation, where waveplate angle iterates at each jitter position.
+
+=head1 DESCRIPTION
+
+This script reduces a polarimetry observation with UKIRT imaging
+data.  It takes an imaging observation comprising object frames
+at the four waveplate angles 0, 45, 22.5, 67.5 degrees for each of
+of a series of jitter positions offset in Right Ascension; and a
+dark frame to make calibrated polarisation images and vectors
+automatically.  See L<"OUTPUT DATA"> for a list of these images.
+
+It performs a null debiassing, bad-pixel masking, and dark
+subtraction on all frames.  Next the sections of the frame
+representing the e- and o-beam target and sky regions are extracted,
+and the target frames sky-subtracted.  The resultant frames undergo
+registration and resampling to form a mosaic for each waveplate angle
+and beam.  Once all eight mosaics are formed they are registered and
+resampled, and then combined to form the various polarisation images.
+The polarisation data are binned and noisy data excluded from
+a final catalogue of vectors.  See the L<"NOTES"> for details.
+
+This recipe works well for point sources, and for extended sources
+whose sizes in Right Ascension and Declination are less than about
+35 and 15 arcseconds respectively for UFTI, or 9 and 4 arcseconds
+for IRCAM.  Objects which would appear in both the target and
+sky regions, i.e. Declination extents south of the centre
+larger than 35 arcseconds (UFTI) or 8 arcseconds (IRCAM), should
+use recipe L<POL_EXTENDED|POL_EXTENDED> for best results.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+A World Co-ordinate System (WCS) using the AIPS convention is 
+created in the headers should no WCS already exist.
+
+=item * 
+
+For IRCAM, old headers are reordered and structured with
+headings before groups of related keywords.  The comments have
+units added or appear in a standard format.  Four deprecated
+deprecated are removed.  FITS-violating headers are corrected.
+Spurious instrument names are changed to IRCAM3.
+
+=item *
+
+Data errors are propagated through all processing steps.
+The initial values are found by applying the nominal ADU conversion
+and read noise.
+
+=item *
+
+The bad-pixel mask applied is F<$ORAC_DATA_CAL/bpm>.
+
+=item * 
+
+Each dark-subtracted frame has thresholds applied beyond which
+pixels are flagged as bad.  The lower limit is 5 standard 
+deviations below the mode, but constrained to the range -100 to 1.
+The upper limit is 1000 above the saturation limit for the detector
+in the mode used.
+
+=item *
+
+The target regions are 30% to 70% of the frame width about
+the Right-ascension centre, i.e. roughly centred on the source.
+The current sky limits are 1% to 99% of the frame width along the
+Right-ascension axis.  The Declination pixel limits are instrument
+dependent, and are as follows.  For UFTI, o sky: 69--264;
+e sky: 320--484; o target: 601--764; e target: 824--988.  For
+IRCAM, o sky: 12--52; e sky: 67--107; o target: 152--192;
+e target: 207--247.
+
+=item *
+
+The sky subtraction for a beam uses a constant modal sky level
+from the corresponding sky region.
+
+=item *
+
+Registration is performed using common point sources in the
+overlap regions.  If the recipe cannot identify sufficient common
+objects for automatic registration, the recipe matches the centroid
+of central source within an 8-arcsecond box.  Should that fail for
+the jittered e- and o-beam sections, the recipe resorts to using the
+telescope offsets transformed to pixels.  However, the final option
+for registering the e and o-beam mosaics at different waveplate
+angles, uses the beam offsets in arcseconds for the current filter 
+converted to pixels.
+
+=item *
+
+The resampling applies non-integer shifts of origin using
+bilinear interpolation.  There is no rotation to align the
+Cartesian axes with the cardinal directions.
+
+=item *
+
+The recipe makes the mosaics by applying offsets in intensity
+to give the most consistent result amongst the overlapping regions.
+The mosaic is not trimmed to the dimensions of a single frame, thus
+the noise will be greater in the few pixels in the peripheral areas
+having received less exposure time.  The mosaic is not normalised by
+its exposure time (that being the exposure time of a single frame).
+
+=item *
+
+For each cycle of twelve frames, the recipe creates mosaics for each
+beam and waveplate angle.  Each mosaic has its bad pixels filled and
+after the first cycle is then added into its own master mosaic of
+improving signal to noise.  The exposure time is also summed and
+stored in each master mosaic's corresponding header.  Likewise the end
+airmass and end UT headers are updated to match that of the
+last-observed frame contributing to the mosaic.
+
+=item *
+
+The polarised intensity is corrected for the statistical bias
+of the noise by subtracting the variance of Q or U.
+
+=item *
+
+An offset of 6.3 degrees clockwise is applied to the rotation
+angle for the orientation of the analyser with respect to north.
+
+=item *
+
+The polarisation data for each pixel are also stored in
+catalogues.  See L<"OUTPUT DATA">.
+
+=item *
+
+The intensity image may be displayed with vectors overlaid. 
+Steps are taken to reduce the number of noisy or insignificant
+pixels, as well as clutter.  First, the polarisation catalogue data
+are averaged in 3-by-3-pixel bins.  Second, a binned pixel is
+rejected if its polarisation is greater than 50% or is not positive,
+or its polarisation signal to noise less than 3, or its polarisation
+error is greater 5%.  The bin size and thresholds can readily be
+changed by supplying arguments to the L<_CALC_STOKES_|_CALC_STOKES_>
+primitive.
+
+=item *
+
+At the end of each cycle, the grand mosaics are registered, and
+new polarisation maps and catalogues constructed.
+
+=item *
+
+Intermediate frames are deleted except for the flat-fielded (_ff
+suffix) frames and the mosaics (_mos, or _mos_cE<lt>cycle_numberE<gt>
+suffix).
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The integrated mosaic in
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_E<lt>beamE<gt>E<lt>angleE<gt>_mos,
+where E<lt>mE<gt> is "gf" for UFTI and "gi" for IRCAM.  Before 2000 August these
+were "g" and "rg" respectively.  Token E<lt>beamE<gt>
+is "e" or "o"; and E<lt>angleE<gt> is "0", "22", "45", or "67".
+
+=item *
+
+A mosaic for each cycle of jittered frames per beam and angle in
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_E<lt>beamE<gt>E<lt>angleE<gt>_mos_cE<lt>cycle_numberE<gt>,
+where <cycle_number> counts from 0.
+
+=item *
+
+The individual flat-fielded frames in E<lt>iE<gt>E<lt>dateE<gt>_E<lt>obs_numberE<gt>_ff,
+where E<lt>iE<gt> is "f" for UFTI and "i" for IRCAM.  Before 2000 August
+IRCAM frames had prefix "ro".
+
+=item *
+
+Polarisation frames E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_E<lt>suffixE<gt>,
+each with a different suffix for the each parameter.  The suffices are:
+    I   intensity
+    P   percentage polarisation
+    PI  polarisation intensity
+    Q   Stokes Q
+    TH  polarisation angle
+    U   Stokes U
+
+=item *
+
+A FITS binary-table catalogue of the binned and culled polarisation
+data, called E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_I.FIT.  For each
+point it tabulates the I<x>-I<y> co-ordinates, the total intensity,
+the Stokes parameters, the percentage polarisation, the polarisation
+angle and intensity.  There are additional columns giving the standard
+deviation on each of the tabulated values (excluding the
+co-ordinates).  Likewise
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_all.FIT and
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_bin.FIT store the full and
+binned catalogues respectively.
+
+=back
+
+=head1 CONFIGURABLE STEERING PARAMETERS
+
+=over 4
+
+=item NUMBER = INTEGER
+
+The number of frames in the jitter pattern, per waveplate angle.
+If this is not set, the number of offsets, as given by FITS
+header NOFFSETS, minus one is used.  If neither is available, 3
+is the default.  An error state arises if the number of jittered
+frames is fewer than 3.  For observations prior to the
+availability of full ORAC, header NOFFSETS will be absent.  []
+
+=item USEVAR = LOGICAL
+
+Whether or not to create and propagate variance arrays.  [1]
+
+=back
+
+=head1 IMPLEMENTATION STATUS
+
+=over 4
+
+=item *
+
+The processing engines are from the Starlink packages: CCDPACK,
+KAPPA, POLPACK, FIGARO, and CURSA.
+
+=item *
+
+Uses the Starlink NDF format.
+
+=item *
+
+History is recorded within the data files.
+
+=item *
+
+The title of the data is propagated through intermediate files
+to the mosaics.  The polarisation maps have new titles as follows
+using the suffices described in L<"OUTPUT DATA">.  I: "Intensity"; 
+P: "Polarisation"; PI: "Polarised Intensity"; Q: "Stokes Q"; 
+TH: "Polarisation Angle"; U: "Stokes U".
+
+=item *
+
+The origins of the generated polarisation maps are set to [1,1].
+The WCS current frame is unchanged.
+
+=item *
+
+The units are set for the frames with suffices (see L<"OUTPUT DATA">)
+P to "%", and TH to "degrees".
+
+=back
+
+=head1 RELATED RECIPES
+
+L<POL_EXTENDED|POL_EXTENDED>,
+L<POL_JITTER|POL_JITTER>,
+L<SKY_FLAT_POL|SKY_FLAT_POL>,
+L<SKY_FLAT_POL_ANGLE|SKY_FLAT_POL_ANGLE>.
+
+=head1 REFERENCES
+
+A.Chryststomou, 1997, "I<Imaging Polarimetry with IRCAM3>", IRPOL/2.2.
+
+D.S.Berry & T.M.Gledhill, 1999, "I<POLPACK Users Manual Version 2.0>",
+SUN/223.3.
+
+=head1 AUTHORS
+
+Malcolm J. Currie (UKATC/JAC) (mjc@jach.hawaii.edu)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut 
