@@ -1039,6 +1039,7 @@ sub xorac_calib {
 	  	                    -font    => 'Arial', 
 		                    -justify => 'left',
 			            -anchor  => 'w',
+				    -width   => 15,
 		                    -borderwidth => 2 ) );
      push ( @entries, $popup->Entry( -exportselection     => 1,
                                      -font                => 'Arial',
@@ -1059,24 +1060,24 @@ sub xorac_calib {
   }
  
   # additional calibration stuff
-  my ( $add_key, $add_val );
+  #my ( $add_key, $add_val );
   
-  my $key_entry = $popup->Entry( -exportselection     => 1,
-                                 -font                => 'Arial',
-		                 -selectbackground    => 'blue',
-		                 -selectforeground    => 'white',
-			         -justify             => 'left',
-			         -textvariable        =>\$add_key,
-			         -width               => 15 );
-  $key_entry->grid( -column => 0, -row => $i+1, -sticky => 'ew' );
-  my $val_entry = $popup->Entry( -exportselection     => 1,
-                                 -font                => 'Arial',
-		                 -selectbackground    => 'blue',
-		                 -selectforeground    => 'white',
-			         -justify             => 'left',
-			         -textvariable        =>\$add_val,
-			         -width               => 15 );
-  $val_entry->grid( -column => 1, -row => $i+1, -sticky => 'ew' );
+  #my $key_entry = $popup->Entry( -exportselection     => 1,
+  #                               -font                => 'Arial',
+  #	                          -selectbackground    => 'blue',
+  #	                          -selectforeground    => 'white',
+  #		                  -justify             => 'left',
+  #		                  -textvariable        =>\$add_key,
+  # 		                  -width               => 15 );
+  #$key_entry->grid( -column => 0, -row => $i+1, -sticky => 'ew' );
+  #my $val_entry = $popup->Entry( -exportselection     => 1,
+  #                               -font                => 'Arial',
+  #		                 -selectbackground    => 'blue',
+  #		                 -selectforeground    => 'white',
+  #			         -justify             => 'left',
+  #			         -textvariable        =>\$add_val,
+  #			         -width               => 15 );
+  #$val_entry->grid( -column => 1, -row => $i+1, -sticky => 'ew' );
 
   # button frame
   my $button_frame = $popup->Frame( -relief      => 'flat',
@@ -1084,34 +1085,41 @@ sub xorac_calib {
   $button_frame->grid( -column => 1, -row => $i+2, -sticky => 'nse' );
 
   # add button
-  my $add_button = $button_frame->Button( -text    => "Add",
-                                          -font    => 'Arial',
-			                  -activeforeground => 'white',
-                                          -activebackground => 'blue',
-                                          -command => sub { 
+  #my $add_button = $button_frame->Button( -text    => "Add",
+  #                                        -font    => 'Arial',
+  #			                   -activeforeground => 'white',
+  #                                        -activebackground => 'blue',
+  #                                        -command => sub { 
 
-  # push new key and value onto %calib and call recursively	
-  if ( $add_key ne "" && $add_val ne "" )
-  {
-     %calib = ( %calib, $add_key => $add_val );	
-     ${$options}{"calib"} = \%calib;
-     $popup->destroy;
-     xorac_calib($options);
-  } } );
-  
-  $add_button->grid( -column => 0, -row => 0, -sticky => 'e' );
-       
+   # push new key and value onto %calib and call recursively	
+  #if ( $add_key ne "" && $add_val ne "" )
+  #{
+  #   %calib = ( %calib, $add_key => $add_val );	
+  #   ${$options}{"calib"} = \%calib;
+  #   $popup->destroy;
+  #   xorac_calib($options);
+  #} } );
+  #
+  #$add_button->grid( -column => 0, -row => 0, -sticky => 'e' );
  
-  # close button
-  my $close_button = $button_frame->Button( -text    => "Close",
+  # cancel button
+  my $cancel_button = $button_frame->Button( -text    => "Cancel",
+                                            -font    => 'Arial',
+			                    -activeforeground => 'white',
+                                            -activebackground => 'blue',
+                                            -command => sub {
+                                         $popup->destroy; } );
+  $cancel_button->grid( -column => 0, -row => 0, -sticky => 'e' );
+     
+  # apply button
+  my $apply_button = $button_frame->Button( -text    => "Apply",
                                             -font    => 'Arial',
 			                    -activeforeground => 'white',
                                             -activebackground => 'blue',
                                             -command => sub { 
 				         ${$options}{"calib"} = \%calib;
                                          $popup->destroy; } );
-  $close_button->grid( -column => 1, -row => 0, -sticky => 'e' );
-     
+  $apply_button->grid( -column => 1, -row => 0, -sticky => 'e' );     
 }
 
 # xorac_select_filelist() ----------------------------------------------
