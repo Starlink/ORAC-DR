@@ -12,6 +12,10 @@
 #
 #  History:
 #     $Log$
+#     Revision 1.11  1999/03/01 01:35:01  timj
+#     Add VECTOR
+#     Start simplifaction of TYPE code
+#
 #     Revision 1.10  1999/02/23 03:24:27  timj
 #     Add histogram mode
 #
@@ -120,7 +124,8 @@ use lib "$ENV{ORAC_DIR}/gui";
 
 use strict;
 
-use subs qw/update_status image_ui spectrum_ui datamodel_ui sigma_ui histogram_ui/;
+use subs qw/update_status image_ui graph_ui datamodel_ui sigma_ui 
+  histogram_ui vector_ui /;
 
 # Generic variables
 use vars qw/$MW $BAR $TKSTATUS $TOPLEVEL/;
@@ -193,7 +198,8 @@ use IO::File;
 	       GRAPH => [ qw /KAPVIEW P4/],
 	       SIGMA => [ qw /KAPVIEW/],
 	       DATAMODEL => [ qw / KAPVIEW / ],
-	       HISTOGRAM => [ qw / KAPVIEW / ]
+	       HISTOGRAM => [ qw / KAPVIEW / ],
+	       VECTOR    => [ qw / KAPVIEW / ]
 	      );
 
 
@@ -276,6 +282,21 @@ my @DispDefn = ();
 			     ZMAX => 100,
 			     NBINS => 20
 			    },
+	     'VECTOR' => {
+			  TOOL => 'KAPVIEW',
+			  REGION => 0,
+			  WINDOW => 0,
+			  SUFFIX => 'RAW',
+			  XAUTOSCALE => 1,
+			  YAUTOSCALE => 1,
+			  ZAUTOSCALE => 1,
+			  XMIN => 0,
+			  YMIN => 0,
+			  ZMIN => 0,
+			  XMAX => 100,
+			  YMAX => 100,
+			  ZMAX => 100,
+			 },
 	     );
 
 # Now configure the widget default values
@@ -294,10 +315,11 @@ require Tk::DialogBox;
 
 update_status('Reading notebook definitions..', 40);
 require 'image.ui.pl';
-require 'spectrum.ui.pl';
+require 'graph.ui.pl';
 require 'datamodel.ui.pl';
 require 'sigma.ui.pl';
 require 'histogram.ui.pl';
+require 'vector.ui.pl';
 
 
 # Configure the input and output display definition files
@@ -330,6 +352,8 @@ my $State_f; # The listbox containing the current state
 # Global widgets
 my $CurrDefn; # The listbox widget that contains the current definitions
 my $NB;       # The notebook widget
+my %NB_pages; # The notebook pages
+
 my $NB_image; # The image notebook widget
 my $NB_graph; # The graph notebook widget
 my $NB_datamodel; # The DataModel notebook widget
@@ -409,29 +433,20 @@ sub create_notebook {
   
   # Now declare the entries
   # and set up a raise command
-  $NB_image = $NB->add("image", -label => "Image", -underline => 0,
-		       -raisecmd => \&onNBraise);
-  $NB_graph = $NB->add("graph", -label => "Graph", -underline => 0,
-		       -raisecmd => \&onNBraise);
-  $NB_sigma = $NB->add("sigma", -label => "Sigma", -underline => 0,
-		       -raisecmd => \&onNBraise);
-  $NB_datamodel = $NB->add("datamodel", -label => "DataModel", 
-			   -underline => 0,
-			   -raisecmd => \&onNBraise);
-  $NB_histogram = $NB->add("histogram", -label => "Histogram", 
-			   -underline => 0,
-			   -raisecmd => \&onNBraise);
+
+  foreach my $page (keys %TOOL_TYPES) {
+
+    $NB_pages{$page} = $NB->add(lc($page), -label => ucfirst(lc($page)), -underline => 0,
+				-raisecmd => \&onNBraise);
+
+    # Populate the page
+    my $sub = lc($page) . '_ui';
+    no strict 'refs';
+    &{$sub}($NB_pages{$page});    
+  }
 
 
-
-  # Now fill the entries with 'stuff'
-  image_ui $NB_image;
-  spectrum_ui $NB_graph;
-  sigma_ui $NB_sigma;
-  datamodel_ui $NB_datamodel;
-  histogram_ui $NB_histogram;
-
-  # And pack the pages into the required frame
+  # Pack the pages into the required frame
   $NB->pack(-expand => 'yes',
 	    -fill => 'both',
 	    -padx => 5, -pady => 5,
@@ -538,7 +553,7 @@ sub insert_text {
 
 # This routine closes down the GUI
 sub close_oracdisp {
-  $MW->destroy if defined $MW;
+  $MW->destroy if Exists($MW);
 }
 
 # This routine pops up a window telling us all abour oracdisp
@@ -680,7 +695,9 @@ sub update_defn {
     # All we really need to do is associate the command with
     # the 
     $CurrDefn->tag('bind', $tag, 
-		   '<Double-1>' => sub {&reflect_defn($defn);}
+		   '<Double-1>' => sub {&reflect_defn($defn);
+					$CURRENT = $defn;
+				      }
 		  );
 
     # Configure the Single Button release such that it can
@@ -879,7 +896,6 @@ sub reflect_defn {
     $STATUS{$type}{DASHED} = $defn{DASHED} if exists $defn{DASHED};
     $STATUS{$type}{NBINS} = $defn{NBINS} if exists $defn{NBINS};
 
-
   } else {
     print "Display type is not available.....:\n";
     print Disp_HtoText($href) . "\n";
@@ -966,7 +982,35 @@ sub reconfig_menu {
 }
 
 
-# Sub to create and entry in the definition table from 
+# Sub to modify the current entry. Usually called by the 'Modify'
+# button present on each notebook page
+
+sub modify_entry {
+
+  # The assumption is that we are modifying the $CURRENT definition
+  # This is similar to add_entry except that we dont create a new one
+
+}
+
+# subroutine to add entries to the display list.
+# Argument is the page name (eg histogram, image)
+# so that we know which to read.
+
+sub add_entry {
+  my $page = shift;
+
+  my $href = &read_page($page);
+
+  # Now store this in the array
+  push(@DispDefn, $href);
+
+  # Now update the list box
+  update_defn;
+
+
+}
+
+# Sub to create an entry in the definition table from 
 # the GUI
 
 sub add_image_entry {
@@ -1020,6 +1064,18 @@ sub add_sigma_entry {
 sub add_histogram_entry {
 
   my $href = &read_histogram;
+
+  # Now store this in the array
+  push(@DispDefn, $href);
+
+  # Now update the list box
+  update_defn;
+
+}
+
+sub add_vector_entry {
+
+  my $href = &read_vector;
 
   # Now store this in the array
   push(@DispDefn, $href);
@@ -1170,6 +1226,37 @@ sub read_histogram {
   $values{ZMAX} = $STATUS{HISTOGRAM}{ZMAX};
 
   $values{NBINS} = $STATUS{HISTOGRAM}{NBINS};
+
+  return \%values;
+
+}
+
+# Sub to read the image widget and store the information in a hash
+# A hash reference is returned.
+
+sub read_vector {
+
+  # Create the hash to store all this in
+  my %values = ();
+
+  $values{TYPE} = 'VECTOR';
+
+  # Now read the widget state into the hash
+  $values{ID} = $STATUS{VECTOR}{SUFFIX};
+  $values{TOOL} = $STATUS{VECTOR}{TOOL};
+  $values{WINDOW} = $STATUS{VECTOR}{WINDOW};
+  $values{REGION} = $STATUS{VECTOR}{REGION};
+
+  $values{XAUTOSCALE} = $STATUS{VECTOR}{XAUTOSCALE};  
+  $values{YAUTOSCALE} = $STATUS{VECTOR}{YAUTOSCALE};  
+  $values{ZAUTOSCALE} = $STATUS{VECTOR}{ZAUTOSCALE};  
+
+  $values{XMIN} = $STATUS{VECTOR}{XMIN};
+  $values{XMAX} = $STATUS{VECTOR}{XMAX};
+  $values{YMIN} = $STATUS{VECTOR}{YMIN};
+  $values{YMAX} = $STATUS{VECTOR}{YMAX};
+  $values{ZMIN} = $STATUS{VECTOR}{ZMIN};
+  $values{ZMAX} = $STATUS{VECTOR}{ZMAX};
 
   return \%values;
 
