@@ -71,54 +71,69 @@ sub _to_OBSERVATION_NUMBER {
 
 sub _to_ROTATION {
    my $self = shift;
-   my $cd11 = $self->hdr("CD1_1");
-   my $cd12 = $self->hdr("CD1_2");
-   my $cd21 = $self->hdr("CD2_1");
-   my $cd22 = $self->hdr("CD2_2");
+   my $rotation;
+   if ( exists( $self->hdr->{CD1_1} ) ) {
+      my $cd11 = $self->hdr("CD1_1");
+      my $cd12 = $self->hdr("CD1_2");
+      my $cd21 = $self->hdr("CD2_1");
+      my $cd22 = $self->hdr("CD2_2");
 
 # Radians to degrees conversion.
-   my $rtod = 45 / atan2( 1, 1 );
+      my $rtod = 45 / atan2( 1, 1 );
 
 # Determine the sense of the scales.
-   my $sgn_a;
-   if ( $cd21 < 0 ) { $sgn_a = -1; } else { $sgn_a = 1; }
-   my $sgn_b;
-   if ( $cd12 < 0 ) { $sgn_b = -1; } else { $sgn_b = 1; }
+      my $sgn_a;
+      if ( $cd21 < 0 ) { $sgn_a = -1; } else { $sgn_a = 1; }
+      my $sgn_b;
+      if ( $cd12 < 0 ) { $sgn_b = -1; } else { $sgn_b = 1; }
 
 # Form first rotation estimate.  Zero off-diagonal term implies zero
 # rotation.
-   my $nrot = 0;
-   my $rho_a = 0;
-   if ( abs( $cd21 / $cd11 ) > 1E-6 ) {
-      $rho_a = atan2( $sgn_a * $cd21 / $rtod, $sgn_a * $cd11 / $rtod );
-      $nrot++
-   }
+      my $nrot = 0;
+      my $rho_a = 0;
+      if ( abs( $cd21 / $cd11 ) > 1E-6 ) {
+         $rho_a = atan2( $sgn_a * $cd21 / $rtod, $sgn_a * $cd11 / $rtod );
+         $nrot++
+      }
 
 # Form first rotation estimate.  Zero off-diagonal term implies zero
 # rotation.
-   my $rho_b = 0;
-   if ( abs( $cd12 / $cd22 ) > 1E-6 ) {
-      $rho_b = atan2( $sgn_b * $cd12 / $rtod, -$sgn_b * $cd22 / $rtod );
-      $nrot++
-   }
+      my $rho_b = 0;
+      if ( abs( $cd12 / $cd22 ) > 1E-6 ) {
+         $rho_b = atan2( $sgn_b * $cd12 / $rtod, -$sgn_b * $cd22 / $rtod );
+         $nrot++
+      }
 
-# Average the estimates of the rotation.
-   my $rotation = $rtod * ( $rho_a + $rho_b ) / $nrot;
-
+# Average the estimates of the rotation.  This needs a further check
+# that the two values are compatible based upon the signs of pairs of the
+# four elements.
+      if ( $nrot > 0 ) {
+         $rotation = $rtod * ( $rho_a + $rho_b ) / $nrot;
+      }
+   
 # The actual WCS matrix has errors and sometimes the angle which
 # should be near 180 degrees for the f/32 camera, can be out by 90 
 # degrees.  So for this camera we hardwired the main rotation and
 # merely apply the small deviation from the cardinal orientations.
-   if ( defined( $self->hdr( "INPORT" ) ) && $self->hdr( "INPORT" ) == 3 ) {
-      my $delta_rho = $rotation - ( 90 * int( $rotation / 90 ) );
-      $delta_rho -= 90 if ( $delta_rho > 45 );
-      $delta_rho += 90 if ( $delta_rho < -45 );
+      if ( defined( $self->hdr( "INPORT" ) ) && $self->hdr( "INPORT" ) == 3 ) {
+         my $delta_rho = 0.0;
+         if ( defined( $rotation ) ) {
+            $delta_rho = $rotation - ( 90 * int( $rotation / 90 ) );
+         }
+         $delta_rho -= 90 if ( $delta_rho > 45 );
+         $delta_rho += 90 if ( $delta_rho < -45 );
 
 # Setting to 180 is a fudge because the CD matrix appears is wrong
 # occasionally by 90 degrees for port 3, the f/32 camera, judging by the
 # telescope offsets, CTYPEn, and the support astronomer.  This has not
 # been corrected despite MJC's report.
-      $rotation = 180.0 + $delta_rho  
+         $rotation = 180.0 + $delta_rho;
+
+# Guess a reasonable default if the CD matrix fails to generate
+# a rotation angle.
+      } elsif( ! defined( $rotation ) ) {
+         $rotation = 0;
+      }
    }
    return $rotation;
 }
