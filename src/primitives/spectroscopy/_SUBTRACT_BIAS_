@@ -4,67 +4,70 @@ _SUBTRACT_BIAS_ - subtract the bias frame from the current frame
 
 =head1 DESCRIPTION
 
-This primitive subtracts the bias from the current frame.
-Nothing happens if the observation is of type ND_STARE.
+This primitive subtracts a bias frame from the current frame.
+
+If the detector mode starts with the string "ND", nothing
+happens. This is so that BIASes do not get subtracted from ND_STARE or
+ND_CHOP data.
+
+The bias frame is obtained from the calibration system - processing
+will stop if no suitable bias frame can be found.
+
+=head1 ARGUMENTS
+=over 4
+None.
+=back
+
+=head1 TASKS
+
+=over 4
+KAPPA
+
+=over 8
+Sub
+
+=back
+=back
 
 =head1 OUTPUT FILES
 
 The following files are created:
 
-=over 4
+=item _db - the Be-Biased file
 
-=item C<_db>
-
-Debiased file.
-
-=back
-
-=head1 EXTERNAL TASKS
-
-The following external tasks are used:
-
-=over 4
-
-=item KAPPA
-
-C<sub>
-
-=head1 AUTHOR
+=head1 AUTHORS
 
 Frossie Economou
 Paul Hirst <p.hirst@jach.hawaii.edu>
 
 =cut
 
-# Skip if actually a BIAS frame.
-unless ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "BIAS" ) {
+# Bias subtraction is applicable to CHOP and STARE - ie not ND_STARE
 
-  # Bias subtraction is only applicable to STARE mode
+my $mode = $Frm->uhdr("ORAC_DETECTOR_MODE");
+if (substr($mode, 0, 2) ne "ND" ) {
 
-  if ( $Frm->uhdr( "ORAC_DETECTOR_MODE" ) eq "STARE" ) {
+  # Obtain the bias frame.
+  my $bias = $Cal->bias;
 
-    # Obtain the bias frame.
-    my $bias = $Cal->bias;
-
-    # Process all the sub-files.
-    foreach my $i ( 1..$Frm->nfiles ) {
+  # Process all the sub-files.
+  foreach my $i ( 1..$Frm->nfiles ) {
       
-      # Generate the input and output filenames.
-      my ( $in, $out ) = $Frm->inout( "_db", $i );
+    # Generate the input and output filenames.
+    my ( $in, $out ) = $Frm->inout( "_db", $i );
       
-      # Subtract the bias.
-      $Mon{"kappa_mon"}->obeyw( "sub", "in1=$in out=$out in2=$bias title=$out" );
+    # Subtract the bias.
+    $Mon{"kappa_mon"}->obeyw( "sub", "in1=$in out=$out in2=$bias title=$out" );
       
-      # Report the processing status.
-      orac_print "$in to $out: bias: $bias subtracted\n";
+    # Report the processing status.
+    orac_print "$in to $out: bias: $bias subtracted\n";
       
-      # Record the new file name in the frame object.
-      $Frm->file( $i, $out );
-    }
-    
-  } else {
-    orac_print "Not a STARE mode observation; therefore no bias subtracted.\n";
+    # Record the new file name in the frame object.
+    $Frm->file( $i, $out );
   }
+    
+} else {
+  orac_print "$mode mode observation; therefore no bias subtracted.\n";
 }
 
 orac_print "\n";
