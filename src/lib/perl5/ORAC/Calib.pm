@@ -72,7 +72,8 @@ sub new {
   my $class = ref($proto) || $proto;
 
   my $obj = {};  # Anon hash reference
-  $obj->{Thing} = {};		# ditto
+  $obj->{Thing1} = {};		# ditto
+  $obj->{Thing2} = {};		# ditto
 
   $obj->{Arc} = undef;
   $obj->{BaseShift} = undef;

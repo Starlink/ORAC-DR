@@ -469,7 +469,8 @@ sub new {
 	     TauSys => undef,        # Tau system
 	     TauSysNoUpdate => 0,
              TauCache => {},         # Cache for tau result
-	     Thing => {},            # Header of current frame
+	     Thing1 => {},            # Header of current frame
+	     Thing2 => {},            # Header of current frame
 	     CsoFit => undef,        # Polynomial tau fits
 	    };
 
@@ -902,7 +903,7 @@ sub fluxcal {
       $scudate = "$d $m $y";
 
     } else {
-      $scudate = '0 1 1';
+      $scudate = '1 1 1';
     }
 
     # Get the time as well - I'm pretty sure that the flux will hardly
