@@ -63,6 +63,7 @@ $DEBUG = 0;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
+
 # Cleanup END blocks. Useful if helper tasks create temporary
 # files or directories and dont use File::Temp
 # In future should make File::Temp mandatory
@@ -399,6 +400,11 @@ sub orac_determine_inst_classes {
     $frameclass = "ORAC::Frame::JCMT_DAS";
     $calclass = "ORAC::Calib";
     $instclass = "ORAC::Inst::JCMT_DAS";
+  } elsif( $inst eq 'ACSIS') {
+    $groupclass = "ORAC::Group::ACSIS";
+    $frameclass = "ORAC::Frame::ACSIS";
+    $calclass = "ORAC::Calib";
+    $instclass = "ORAC::Inst::ACSIS";
   } else {
     orac_err("Instrument $inst is not currently supported in ORAC-DR\n");
     return ();
@@ -486,6 +492,9 @@ sub orac_determine_recipe_search_path {
   } elsif ($inst eq 'JCMT_DAS') {
     push( @path, File::Spec->catdir( $het_root, "JCMT_DAS" ) );
     push( @path, $het_root );
+
+  } elsif ($inst eq 'ACSIS') {
+    push( @path, File::Spec->catdir( $root, 'ACSIS' ) );
 
   } elsif ($inst eq 'CGS4' or $inst eq 'OCGS4') {
     push( @path, File::Spec->catdir( $root, 'CGS4' ) );
@@ -638,6 +647,10 @@ sub orac_determine_primitive_search_path {
   } elsif( $inst eq 'JCMT_DAS' ) {
     push( @path, File::Spec->catdir( $het_root, 'JCMT_DAS') );
     push( @path, $het_root );
+    push( @path, $general_root );
+
+  } elsif( $inst eq 'ACSIS' ) {
+    push( @path, File::Spec->catdir( $root, 'ACSIS' ) );
     push( @path, $general_root );
 
   } elsif ($inst eq 'CGS4' or $inst eq 'OCGS4') {
@@ -903,6 +916,10 @@ sub orac_determine_initial_algorithm_engines {
 
     @AlgEng = qw/ ndfpack_mon kappa_mon /;
 
+  } elsif ($inst eq 'ACSIS') {
+
+    @AlgEng = qw/ ndfpack_mon kappa_mon /;
+
   } elsif ($inst eq 'CGS4') {
 
     @AlgEng = qw/ figaro1 figaro2 figaro4 kappa_mon ndfpack_mon
@@ -1014,6 +1031,8 @@ sub orac_determine_loop_behaviour {
       $behaviour = 'flag';
     } elsif ( uc($instrument) eq 'JCMT_DAS' ) {
       $behaviour = 'wait';
+    } elsif( uc($instrument) eq 'ACSIS' ) {
+      $behaviour = 'flag';
     }
 
   } elsif ( $dname eq 'JAC.ukirt' ) {
@@ -1385,11 +1404,40 @@ sub orac_configure_for_instrument {
                                                   $oracut )
         unless defined $$options{"honour"};
 
-      # Miscellaneous.
-      $ENV{"ORAC_PERSON"} = "bradc";
-      $ENV{"ORAC_SUN"} = "230";
+       # Miscellaneous.
+       $ENV{"ORAC_PERSON"} = "bradc";
+       $ENV{"ORAC_SUN"} = "230";
 
-      last SWITCH; }
+       last SWITCH; }
+
+     if ( $instrument eq 'ACSIS' ) {
+
+       # Instrument.
+       $ENV{'ORAC_INSTRUMENT'} = 'ACSIS';
+
+       # Calibration information.
+       $orac_cal_root = File::Spec->('jcmt_sw', 'oracdr_cal')
+         unless defined $orac_cal_root;
+       $ENV{'ORAC_DATA_CAL'} = File::Spec->catdir( $orac_cal_root, 'acsis' );
+
+       # Data directories.
+       $orac_data_root = "/jcmtdata"
+         unless defined $orac_data_root;
+       $ENV{'ORAC_DATA_IN'} = File::Spec->catdir( $orac_data_root,
+                                                  "raw",
+                                                  "acsis",
+                                                );
+       $ENV{'ORAC_DATA_OUT'} = File::Spec->catdir( $orac_data_root,
+                                                   "reduced",
+                                                   "acsis",
+                                                   $oracut )
+         unless defined $$options{"honour"};
+
+       # Miscellaneous.
+       $ENV{"ORAC_PERSON"} = "jleech";
+       $ENV{"ORAC_SUN"} = "000";
+
+       last SWITCH; }
 
     if ( $instrument eq "UFTI" or $instrument eq "UFTI2") {
 
