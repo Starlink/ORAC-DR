@@ -21,6 +21,9 @@ my $tmpfile=$tmp->file;
 my $temp = new ORAC::TempFile;
 my $tempfile=$temp->file;
 
+my $tmprn = new ORAC::TempFile;
+my $tmprnfile = $tmprn->file;
+
 # Get the gain.
 my $gain = $Frm->uhdr("ORAC_GAIN");
 
@@ -47,7 +50,27 @@ foreach my $i (1 .. $Frm->nfiles) {
 
 	# Now convert the tmpfile back to DN per coadd
         $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tmpfile scalar=$factor out=$tempfile");
-	# tempfile is now in DN per coadd, with poisson (only) variance
+	# tempfile is now in DN per coadd, with poisson (only) variance in both
+	# the data and variance arrays
+
+	# Now work out how background limited we were
+	# copy the readnoise variance from $in into the tmprnfile
+	$Mon{'figaro1'}->obeyw("creobj", "type=NDF dims=0 object=$tmprnfile");
+	$Mon{'figaro1'}->obeyw("copobj", "source=$in.VARIANCE object=$tmprnfile.DATA_ARRAY");
+
+	# Subtract the readnoise variance from the posiison variance
+	$Mon{'kappa_mon'}->obeyw("sub", "in1=$tempfile in2=$tmprnfile out=$tmpfile");
+	
+	# Now, +ve pixels in tmpfile were background limited, -ve ones were not.
+	$Mon{'kappa_mon'}->obeyw("thresh", "in=$tmpfile out=$tmprnfile thrhi=0 thrlo=0 newhi=1 newlo=0");
+	$Mon{'ndfpack_mon'}->obeyw("setbad", "ndf=$tmprnfile value=TRUE");
+	
+	$Mon{'kappa_mon'}->obeyw("stats", "ndf=$tmprnfile");
+	(my $ORAC_STATUS, my $mean) = $Mon{'kappa_mon'}->get("stats", "mean");
+	$Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$tmprnfile out=foo");
+
+	$mean *=100;
+	$mean = sprintf ("%.1f", $mean);	
 
         # Now, we need to add the variance array of the temp file to that of
         # the $in file, and call it $out.
@@ -61,6 +84,7 @@ foreach my $i (1 .. $Frm->nfiles) {
         # Update Frame object
         $Frm->file($i, $out);
         orac_print("$in to $out: Poisson variance added\n");
+	orac_print "  $mean% of the pixels in $in were background limited\n";
 }
 
 orac_print "\n";
