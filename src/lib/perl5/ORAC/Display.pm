@@ -30,7 +30,7 @@ use 5.004;
 use Carp;
 use strict;
 
-use IO::File;    
+use IO::File;
 use ORAC::Print;
 
 use ORAC::Display::P4;
@@ -186,7 +186,7 @@ An empty array is returned if the suffix can not be matched.
 
 sub definition {
   my $self = shift;
- 
+
   if (@_) {
     my $id = shift;
     $self->idstring($id);
@@ -378,11 +378,7 @@ sub display_data {
 	# Change this so that the file methods know to discard numbers
 	# The base classes have been modified....
 	my $fname;
-#	if ($n == 1) {
-#	  $fname = $frm->file;
-#	} else {
-	  $fname = $frm->file($n);
-#	}
+	$fname = $frm->file($n);
 
 	# May want to pass in a merged hash at this point
 	# ie a mixture of the display_info options as defined
@@ -394,7 +390,7 @@ sub display_data {
 	orac_err("Can't display type '$display_info{TYPE}' on $display_info{TOOL}");
       }
 
-    }   
+    }
 
   }
 
@@ -443,7 +439,7 @@ sub parse_file_defn {
 
   # Initialise the defintion hash
   my @defn = ();
-  my $id = $self->idstring;
+  my $id = lc($self->idstring);
 
   # Try to open file
   my $file = $self->filename;
@@ -491,7 +487,7 @@ sub parse_file_defn {
 	  if ($RAW == 1) {
 	    orac_print("Display device determined (NUM:$test)\n",'blue');
 	  } else {
-	    orac_print("Display device determined ($test)\n",'blue');	  
+	    orac_print("Display device determined ($test)\n",'blue');
 	  }
 	}
 
@@ -520,7 +516,7 @@ sub parse_file_defn {
     orac_err("Error opening device definition:$!");
   }
   return @defn;
-  
+
 }
 
 
