@@ -1160,7 +1160,7 @@ sub membernumbers {
 
 =item B<num>
 
-Return the number of frame in a group minus one.
+Return the number of frames in a group minus one.
 This is identical to the $# construct.
 
   $number_of_frames = $Grp->num;
