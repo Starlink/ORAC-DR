@@ -206,14 +206,14 @@ sub findnsubs {
   # Now need to find the NDFs in the output HDS file
   $status = &NDF::SAI__OK;
   hds_open($file, 'READ', $loc, $status);
-  
-  orac_err("Can't open $file for nsubs") unless $status == &NDF::SAI__OK;
-  
   dat_ncomp($loc, $ncomp, $status);
+  dat_annul($loc, $status);
+
+  orac_err("Can't open $file for nsubs") unless $status == &NDF::SAI__OK;
   
   return $ncomp;
   
-  dat_annul($loc, $status);
+
 }
 
 =item inout
