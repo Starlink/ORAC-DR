@@ -521,17 +521,13 @@ sub orac_parse_recipe {
     # special case =cut
     if ($line =~ /^=cut\n/) {
       $inpod = 0;
-      next; # dont want the =cut to be in on its own
     } elsif ($line =~ /^=/) {
       $inpod = 1;
     }
 
-    # if we are in pod then we should simply skip to the next line
-    # as there is nothing to parse
-    next if $inpod;
-    
     # Check for primitive insert directives
-    if ($line =~ /^\s*_/) {
+    # only check if we are not in a pod section (=cut will not match anyway)
+    if (! $inpod && $line =~ /^\s*_/ ) {
       $line =~ s/^\s+//;	# zap leading blanks
       $line =~ s/\s*$//;        # Zap trailing blanks
       my ($macro,$rest) = split(/\s+/,$line,2);
@@ -853,6 +849,9 @@ Council. All Rights Reserved.
 
 
 #$Log$
+#Revision 1.50  2000/04/04 21:06:45  timj
+#Pods were not being included into recipes. Fixed.
+#
 #Revision 1.49  2000/04/04 03:07:35  timj
 #recipe parsing is now recursive (with recursion depth limits).
 #PODs are now ignored.
