@@ -10,8 +10,9 @@ ORAC::Msg::EngineLaunch - Launch engines on demand
 
   $eng = new ORAC::Msg::EngineLaunch;
 
-  $obj = $eng->get("polpack_mon");
+  $obj = $eng->engine("polpack_mon");
   $eng->detach("polpack_mon");
+  (@ok, @nok) = $eng->contact_all;
 
   tie %Mon, "ORAC::Msg::EngineLaunch";
   $obj = $Mon{"polpack_mon"};
@@ -37,7 +38,10 @@ use strict;
 use Carp;
 
 use vars qw/ $DEBUG /;
-$DEBUG = 1;
+$DEBUG = 0;
+
+# Time to wait for contact to algorithm engines
+my $WAIT = 20; # seconds
 
 # Use package variable to store the object name so that
 # it can be reused. This will of course delay object desctruction
@@ -58,6 +62,7 @@ use vars qw/ $THIS /;
 # well.
 
 use ORAC::Inst::Defn qw/ orac_engine_description /;
+use ORAC::Msg::MessysLaunch;
 
 =head1 METHODS
 
@@ -103,6 +108,7 @@ sub new {
     $obj = {
 	    Engines => {},
 	    EngineID => {},
+	    MessysLaunch => new ORAC::Msg::MessysLaunch(),
 	   };
 
     # bless into the correct class
@@ -232,6 +238,22 @@ sub engine_id {
   return $self->{EngineID};
 }
 
+=item B<messys_launch_object>
+
+Returns the C<ORAC::Msg::MessysLaunch> object that can be used
+to initialise message systems as required by the particular
+algorithm engines.
+
+ $messys = $self->messys_launch_object;
+
+=cut
+
+sub messys_launch_object {
+  my $self = shift;
+  return $self->{MessysLaunch};
+}
+
+
 =back
 
 =head2 General Methods
@@ -254,6 +276,11 @@ contacted. Also returns true if there are no registered engines.
 
   $all_okay = $launch->contact_all;
 
+The message system timeout is reduced to 30 seconds whilst
+waiting for contact. It is subsequently reset afterwards. This
+allows the pipeline configuration of timeout to vary from that
+required simply to check that the monolith can be contacted.
+
 =cut
 
 sub contact_all {
@@ -267,6 +294,10 @@ sub contact_all {
   # Loop over each engine
   for my $eng (keys %engines) {
 
+    my $messys = $self->_get_engine_messys_object( $eng );
+    my $timeout = $messys->timeout;
+    $messys->timeout($WAIT);
+
     print "Waiting for engine $eng..."
       if $DEBUG;
 
@@ -279,6 +310,7 @@ sub contact_all {
       $self->detach($eng);
     }
     print "okay\n" if $DEBUG;
+    $messys->timeout($timeout);
 
   }
 
@@ -369,7 +401,6 @@ sub launch {
       next;
     }
 
-
     # Retrieve the engine parameters
     my %pars = orac_engine_description( $engine );
 
@@ -384,9 +415,23 @@ sub launch {
 
       # Make sure the messaging class is available
       eval "use $pars{CLASS}";
-      if ($@) { 
+      if ($@) {
 	carp "Unable to load class $pars{CLASS} for engine $engine\n";
 	croak "$@";
+      }
+
+      my $messys = $self->_get_engine_messys_object( $engine )
+	or return undef;
+
+      # First check to see if PATH is a coderef
+      my ($path, $cleanup);
+      if (ref($pars{PATH}) eq 'CODE') {
+	# Execute it
+	print "Executing helper task for $engine..." if $DEBUG;
+	($path, $cleanup) = $pars{PATH}->();
+	print "okay\n" if $DEBUG;
+      } else {
+	$path = $pars{PATH};
       }
 
       # Launch it if we can find the path
@@ -394,8 +439,11 @@ sub launch {
       # this is called to protect against systems that can not
       # reuse system identifiers
       my $obj = $pars{CLASS}->new($self->engine_inc( $engine ),
-				  $pars{PATH} )
-	if ( -e $pars{PATH} );
+				  $path )
+	if ( -e $path );
+
+      # Execute the cleanup routine immediately if defined
+      $cleanup->() if defined $cleanup;
 
       # check that we have something
       if (defined $obj) {
@@ -411,7 +459,16 @@ sub launch {
 	  # Make sure we can talk to it
 	  print "Waiting for engine $engine..."
 	    if $DEBUG;
+
+	  # Prior to running contactw we need to shorten the
+	  # timeout
+	  my $timeout = $messys->timeout;
+	  $messys->timeout($WAIT);
+
 	  $isokay = ( $obj->contactw ? 1 : 0);
+
+	  $messys->timeout($timeout);
+
 	  if ($DEBUG) {
 	    print "not " unless $isokay;
 	    print "okay\n";
@@ -479,6 +536,47 @@ sub engine_inc {
 }
 
 =back
+
+=begin __PRIVATE__
+
+=head2 Private Methods
+
+=over 4
+
+=item B<_get_engine_messys_object>
+
+Determines the object associated with the messaging system
+that is required for using the named algorithm engine.
+
+  $messys = $launch->_get_messys_object;
+
+=cut
+
+sub _get_engine_messys_object {
+  my $self = shift;
+  my $engine = shift;
+
+  # Retrieve the engine parameters
+  my %pars = orac_engine_description( $engine );
+
+  if ( %pars ) {
+
+    # Make sure that the message system is initialised
+    my $messys = $self->messys_launch_object->messys( $pars{MESSYS} )
+      or croak "Unable to access message system $pars{MESSYS} for engine $engine\n";
+
+    return $messys;
+
+  } else {
+    return undef;
+  }
+
+}
+
+
+=back
+
+=end __PRIVATE__
 
 =head1 TIED INTERFACE
 

@@ -1,28 +1,26 @@
-package ORAC::Inst::InitMsg;
+package ORAC::Inst;
 
 =head1 NAME
 
-ORAC::Inst::InitMsg - Base class for initialising instrument message system
+ORAC::Inst - Base class for initialising instruments
 
 =head1 SYNOPSIS
 
-  use ORAC::Inst::InitMsg;
+  use ORAC::Inst;
 
-  $inst = new ORAC::Inst::InitMsg;
+  $inst = new ORAC::Inst;
 
-  $inst->start_msg_sys;
-  $inst->start_algorithm_engines;
-  $inst->wait_for_algorithm_engines;
-
-  @messobj = retrieve_msg_objects;
-  %Mon  = retrieve_algorithm_engines;
+  %Mon = $inst->start_algorithm_engines;
+  $status = $inst->wait_for_algorithm_engines;
 
 
 =head1 DESCRIPTION
 
-This class initialises the messaging system for an ORAC instrument.
-In practice the specifics are dealt with in a sub class and this
-class only provides a generic interfacce.
+This class is responsible for instrument specific initialisations.
+Currently this simply involves prestarting certain algorithm
+engines and returning a tied hash contianing those objects.
+
+This base class should be extended as required.
 
 =cut
 
@@ -45,7 +43,7 @@ The following constructors are provided:
 
 =item B<new>
 
-Create a new instance of B<InitMsg>.
+Create a new instance of C<ORAC::Inst>.
 
 =cut
 
@@ -55,7 +53,6 @@ sub new {
   my $class = ref($proto) || $proto;
 
   my $inst = {
-	      MsgSys => [],
 	      AlgEng => {},
 	     };
 
@@ -76,47 +73,32 @@ The following accessor methods are provided:
 =item B<_algeng>
 
 Low level access to the algorithm engine objects instantiated
-by this object. Returns a hash reference.
+by this object. Returns a hash reference. This reference may be
+tied.
+
+If this hash is tied it could be possible for it to contain
+all active engines not just those that were started by this
+class (it will include those launched dynamically).
+It is possible that this hash will be 
 
 =cut
 
 sub _algeng {
-  return $_[0]->{AlgEng};
-}
-
-=item B<_msgsys>
-
-Low level access to the message system objects instantiated
-by this object. Returns an array reference.
-
-=cut
-
-sub _msgsys {
-  return $_[0]->{MsgSys};
+  my $self = shift;
+  if (@_) { $self->{AlgEng}; }
+  return $self->{AlgEng};
 }
 
 =item B<retrieve_algorithm_engines>
 
-Returns a hash of all the algorithm engine objects instantiated
-by this class.
+Returns a hash of all the algorithm engine objects that are 
+currently active.
 
 =cut
 
 sub retrieve_algorithm_engines {
   return %{ $_[0]->_algeng };
 }
-
-=item B<retrieve_msg_objects>
-
-Returns an array of all the message system objects instantiated
-by this class.
-
-=cut
-
-sub retrieve_msg_objects {
-  return @{ $_[0]->_msgsys };
-}
-
 
 =back
 
@@ -143,19 +125,6 @@ sub start_algorithm_engines {
   return ();
 }
 
-
-=item B<start_msg_sys>
-
-Starts the message system and returns an array of objects
-(one for each message system that was started).
-
-Returns an empty list on error. The base class does nothing.
-
-=cut
-
-sub start_msg_sys {
-  return ();
-}
 
 =item B<wait_for_algorithm_engines>
 
@@ -250,7 +219,8 @@ sub _launch_algorithm_engines {
   tie %Mon, ref($launch), $launch;
 
   # Store them in this object for backwards compatibility
-  %{ $self->_algeng } = %Mon;
+  # Store the tied hash reference
+  $self->_algeng(\%Mon);
 
   # Return the hash reference
   return \%Mon;

@@ -32,14 +32,13 @@ use Carp;
 use strict;
 
 use Starlink::NBS;
-use ORAC::Msg::ADAM::Task;
-use ORAC::Msg::ADAM::Control;
 
 use File::Copy;
 use Cwd;
 
 use ORAC::Print;
 use ORAC::Constants qw/:status/;        #  Constants
+use ORAC::Msg::EngineLaunch;
 
 use base qw/ ORAC::Display::Base /;     # Base class
 
@@ -75,15 +74,11 @@ sub new {
 
  # Create a new instance from the base class
   my $disp = $class->SUPER::new(Obj => undef,    # Messaging object
-				AMS => undef,    # Adam message system
+				EngineLaunch => new ORAC::Msg::EngineLaunch,
 				NBS => undef     # Notice board location
 			       );
 
-  # Start message system (should just return if already started)
   my $status = ORAC__OK;
-  $disp->{AMS} = new ORAC::Msg::ADAM::Control;
-  $status = $disp->{AMS}->init;
-
   # Split the launching and configuration into separate subroutines
 
   if ($status == ORAC__OK) {
@@ -120,6 +115,21 @@ sub new {
 =head2 Accessor Methods
 
 =over 4
+
+=item B<engine_launch_object>
+
+Returns the C<ORAC::Msg::EngineLaunch> object that can be used
+to launch algorithm engines as required by the particular
+conversion.
+
+ $messys = $self->messys_launch_object;
+
+=cut
+
+sub engine_launch_object {
+  my $self = shift;
+  return $self->{EngineLaunch};
+}
 
 =item B<obj>
 
@@ -234,57 +244,14 @@ Set up P4 environment variables, launch a P4 process
 sub launch {
   my $self = shift;
 
-  # Set some P4 environment variables
-  if (exists $ENV{CGS4DR_ROOT}) {
-    $ENV{P4_ROOT} = $ENV{CGS4DR_ROOT};
-  } else {
-    orac_err('CGS4DR_ROOT environment variable not defined. Cannot find P4.\n');
-    return undef;
-  }
-  $ENV{P4_CONFIG} = $ENV{HOME} . "/.oracdr";
-  $ENV{P4_HOME} = $ENV{P4_ROOT};
-  $ENV{P4_EXE}  = $ENV{P4_ROOT};
-  $ENV{P4_ICL}  = $ENV{P4_ROOT};
-  if (exists $ENV{ORAC_DATA_OUT}) {
-    $ENV{P4_DATA} = $ENV{ORAC_DATA_OUT};
-  } else {
-    $ENV{P4_DATA} = '/tmp';
-  }
-  $ENV{P4_CT}   = $ENV{P4_ROOT} . "/ndf";
-  $ENV{P4_HC}   = cwd;
-  $ENV{P4_DATE} = '19980804';  # irrelevant (I hope)
-  $ENV{RGDIR}   = $ENV{P4_DATA};
-  $ENV{RODIR}   = $ENV{P4_DATA};
-  $ENV{RIDIR}   = $ENV{P4_DATA};
-  $ENV{ODIR}   = $ENV{P4_DATA};
-  $ENV{IDIR}   = $ENV{P4_DATA};
-
-  # Make the CGS4DR scratch directories
-  unless (-d $ENV{P4_CONFIG}) {
-    unlink $ENV{P4_CONFIG};       # naughty!
-    my $status = mkdir($ENV{P4_CONFIG}, 0770);
-    if ($status) {
-      orac_print("Creating ORACDR configuration directory...\n");
-    } else {
-      orac_err("Error creating ORACDR config dir: $!\n");
-      return undef;
-    }
-  }
- 
-  # Do P4 startup - copy in a default file
-  # unless one is there already.
-  unless (-e $ENV{P4_CONFIG} . "/default.p4") {
-    orac_print("Creating a default P4 startup file\n",'blue');
-    copy ($ENV{P4_ROOT} . "/default.p4", $ENV{P4_CONFIG} . "/default.p4");
-  }
-
   # Start P4
   orac_print("Starting P4.............................\n",'cyan') if $DEBUG;
-  my $display = new ORAC::Msg::ADAM::Task("p4_$$", "$ENV{CGS4DR_ROOT}/p4"); 
+
+  my $display = $self->engine_launch_object->engine("p4");
 
   # Store the object
-  $self->obj($display);
-
+  $self->obj($display) if defined $display;
+  return;
 }
 
 

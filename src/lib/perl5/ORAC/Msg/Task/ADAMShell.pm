@@ -1,14 +1,15 @@
-package ORAC::Msg::ADAM::Shell;
+package ORAC::Msg::Task::ADAMShell;
 
 =head1 NAME
 
-ORAC::Msg::ADAM::Shell - Run ADAM tasks from unix shell
+ORAC::Msg::Task::ADAMShell - Run ADAM tasks from unix shell
 
 =head1 SYNOPSIS
 
-  use ORAC::Msg::ADAM::Shell;
+  use ORAC::Msg::Task::ADAMShell;
 
-  $kap = new ORAC::Msg::ADAM::Task("kappa","/star/bin/kappa/kappa_mon");
+  $kap = new ORAC::Msg::Task::ADAMShell("kappa",
+            "/star/bin/kappa/kappa_mon");
 
   $status           = $kap->obeyw("task", "params");
   $status           = $kap->set("task", "param","value");
@@ -61,10 +62,10 @@ use vars qw/$VERSION/;
 
 =item B<new>
 
-Create a new instance of a ORAC::Msg::ADAM::Shell object.
+Create a new instance of a ORAC::Msg::Task::ADAMShell object.
 
-  $obj = new ORAC::Msg::ADAM::Task;
-  $obj = new ORAC::Msg::ADAM::Task("name_in_message_system","monolith");
+  $obj = new ORAC::Msg::Task::ADAMShell;
+  $obj = new ORAC::Msg::Task::ADAMShell("name_in_message_system","monolith");
 
 If supplied with arguments (matching those expected by load() ) the
 specified task will be loaded upon creating the object. If the load()
@@ -75,14 +76,14 @@ fails then undef is returned (which will not be an object reference).
 sub new {
   my $proto = shift;
   my $class = ref($proto) || $proto;
- 
+
   my $task = {};  # Anon hash
- 
+
   # Need to store some information
   $task->{Name} = undef;
   $task->{Monolith} = undef;
   $task->{Path}  = undef;
-  
+
   # Set to current directory when initialised
   $task->{Cwd} = getcwd;
 
@@ -92,7 +93,7 @@ sub new {
   # If we have arguments then we are trying to do a load
   # as well
   if (@_) { $task->load(@_); };
- 
+
   return $task;
 }
 
@@ -207,7 +208,7 @@ sub load {
 
     # Need to separate monolith name from the path
     my ($mon, $path, $junk) = fileparse($monolith);
-    
+
     # Check for a path. If current directory
     # then expand since I have no other idea
     if ($path eq "./") {
@@ -218,7 +219,7 @@ sub load {
     $self->mon($mon);
 
   }
-  
+
   # Have to return a status
   return ORAC__OK;
 }
@@ -279,7 +280,7 @@ sub obeyw {
 
   my $exstat = system("$command $args");
 
-  
+
   # Now change directory back again
   chdir($cwd) || croak "Error changing back to current directory\n";
 
@@ -360,7 +361,7 @@ sub control {
 
   if ($type eq "default") {
     my $newdir = shift;
-    
+
     # An argument was passed
     if (defined $newdir) {
       $self->cwd($newdir);
@@ -377,7 +378,7 @@ sub control {
   } else {
     croak "Unrecognised control type. Should be \'default\' or '\par_reset\'";
   }
-   
+
 }
 
 
@@ -394,8 +395,7 @@ Do nothing for now!
 
 sub resetpars {
   my $self = shift;
-  
-  
+
   return ORAC__OK;
 }
 
@@ -448,7 +448,7 @@ Requires the C<NDF>, C<Cwd> and C<File::Basename> modules.
 =head1 SEE ALSO
 
 L<perl>, 
-L<ORAC::Msg::ADAM::Task>
+L<ORAC::Msg::Task::ADAM>
 
 =head1 COPYRIGHT
 

@@ -31,9 +31,6 @@ use 5.004;
 use Carp;
 use strict;
 
-use ORAC::Msg::ADAM::Task;
-use ORAC::Msg::ADAM::Control;
-
 use File::Copy;
 use Cwd;
 
@@ -43,6 +40,8 @@ use Starlink::Versions qw/ :Funcs /; # Need to know which kappa version
 use ORAC::Print;
 use ORAC::Constants qw/:status/;        #  Constants
 use ORAC::General;                      # Max and min
+
+use ORAC::Msg::EngineLaunch;
 
 use base qw/ ORAC::Display::Base /;     # Base class
 
@@ -77,41 +76,17 @@ sub new {
   my $class = ref($proto) || $proto;
 
   # Create a new instance from the base class
-  my $disp = $class->SUPER::new(Obj => undef,    # Messaging object
-				AMS => undef,    # Adam message system
-				Kappa => undef,  # Kappa_mon object
-				Ndfpack=> undef, # Ndfpack_mon object
-				Polpack => undef, # Polpack mon object
+  my $disp = $class->SUPER::new(
+				Obj => undef, # kapview object
+				EngineLaunch => new ORAC::Msg::EngineLaunch,
 				Regions => {},
 			       );
 
-  # Start message system (should just return if already started)
-  my $status = ORAC__OK;
-  $disp->{AMS} = new ORAC::Msg::ADAM::Control;
-  $status = $disp->{AMS}->init;
-
-  # Configure the AGI environment variables
-  # Should tidy this up when we finish
-  BEGIN { # A kluge - for some reason kapview does not pick up the
-          # correct environment if I leave out the BEGIN block
-          # dont understand since the environment is passed to the forked
-          # process...
-    $ENV{'AGI_USER'} = "/tmp";
-    $ENV{'AGI_NODE'} = "orac_kapview$$";
-  }
-
-  # Store these values so that I know what file to remove 
-  # independent of whether some other module has redefined them
-  $AGI_USER = $ENV{AGI_USER};
-  $AGI_NODE = $ENV{AGI_NODE};
-
   # Split the launching and configuration into separate subroutines
-  if ($status == ORAC__OK) {
-    $disp->launch;
-    $status = $disp->configure;
-  }
+  $disp->launch;
+  my $status = $disp->configure;
 
-  # There has been an error launching kapview. We have no choice
+  # If There has been an error launching kapview. We have no choice
   # but to die at this point since as soon as the current object
   # goes out of scope the kapview monolith will be killed.
   # The assumption is that if the kapview monolith had problems there
@@ -125,7 +100,7 @@ sub new {
   if ($status != ORAC__OK) {
     die "Error launching Kapview. It is unlikely that this can be fixed by retrying from within ORACDR. Please rerun either with the display switched off or with a different display device selected.";
   }
-  
+
   return $disp;
 }
 
@@ -134,6 +109,22 @@ sub new {
 =head2 Accessor Methods
 
 =over 4
+
+
+=item B<engine_launch_object>
+
+Returns the C<ORAC::Msg::EngineLaunch> object that can be used
+to launch algorithm engines as required by the particular
+conversion.
+
+ $messys = $self->messys_launch_object;
+
+=cut
+
+sub engine_launch_object {
+  my $self = shift;
+  return $self->{EngineLaunch};
+}
 
 =item B<kappa>
 
@@ -151,29 +142,7 @@ rather than in the KAPVIEW monolith.
 
 sub kappa {
   my $self = shift;
-  if (@_) { $self->{Kappa} = shift; }
-
-  # Start kappa if needed
-  unless (defined $self->{Kappa}) {
-    orac_print ("Creating Kappa_mon object.............\n",'cyan') if $DEBUG;
-
-    # Note that a MONOLITH name is supplied as an option.
-    # This is so that if a path to the monolith exists and it
-    # is an A-task [note that we dont specify task type - if a
-    # kappa monolith is already running on this path as an I-task
-    # then parameter retrieval will fail. It is possible that in the
-    # future the objects will be stored so that if a monolith is started
-    # by the same process in a different piece of code a copy of the
-    # task object will be returned rather than creating a new one.)
-    # Currently this is still a bit of a kluge and requires some knowledge
-    # of the way that the kappa monolith used by the recipes was started.
-    $self->{Kappa} = new ORAC::Msg::ADAM::Task("kappa_mon_$$", 
-					       "$ENV{KAPPA_DIR}/kappa_mon",
-					       { MONOLITH => 'kappa_mon' }
-					      );
-  }
-
-  return $self->{Kappa};
+  return $self->engine_lanch_object->engine("kappa_mon");
 }
 
 =item B<ndfpack>
@@ -189,29 +158,7 @@ A NdfPack messaging object is created if the object is undefined.
 
 sub ndfpack {
   my $self = shift;
-  if (@_) { $self->{Ndfpack} = shift; }
-
-  # Start ndfpack if needed
-  unless (defined $self->{Ndfpack}) {
-    orac_print ("Creating Ndfpack_mon object.............\n",'cyan') if $DEBUG;
-
-    # Note that a MONOLITH name is supplied as an option.
-    # This is so that if a path to the monolith exists and it
-    # is an A-task [note that we dont specify task type - if a
-    # kappa monolith is already running on this path as an I-task
-    # then parameter retrieval will fail. It is possible that in the
-    # future the objects will be stored so that if a monolith is started
-    # by the same process in a different piece of code a copy of the
-    # task object will be returned rather than creating a new one.)
-    # Currently this is still a bit of a kluge and requires some knowledge
-    # of the way that the kappa monolith used by the recipes was started.
-    $self->{Ndfpack} = new ORAC::Msg::ADAM::Task("ndfpack_mon_$$", 
-					       "$ENV{KAPPA_DIR}/ndfpack_mon",
-					       { MONOLITH => 'ndfpack_mon' }
-					      );
-  }
-
-  return $self->{Ndfpack};
+  return $self->engine_lanch_object->engine("ndfpack_mon");
 }
 
 
@@ -232,36 +179,7 @@ Returns undef if polpack_mon is not available.
 
 sub polpack {
   my $self = shift;
-  if (@_) { $self->{Polpack} = shift; }
-
-  # Start polpack if needed
-  unless (defined $self->{Polpack}) {
-    if (-e "$ENV{POLPACK_DIR}/polpack_mon") {
-
-      orac_print ("Creating Polpack_mon object.............\n",'cyan')
-	if $DEBUG;
-
-      # Note that a MONOLITH name is supplied as an option.
-      # This is so that if a path to the monolith exists and it
-      # is an A-task [note that we dont specify task type - if a
-      # kappa monolith is already running on this path as an I-task
-      # then parameter retrieval will fail. It is possible that in the
-      # future the objects will be stored so that if a monolith is started
-      # by the same process in a different piece of code a copy of the
-      # task object will be returned rather than creating a new one.)
-      # Currently this is still a bit of a kluge and requires some knowledge
-      # of the way that the kappa monolith used by the recipes was started.
-      $self->{Polpack} = new ORAC::Msg::ADAM::Task("polpack_mon_$$", 
-						   "$ENV{POLPACK_DIR}/polpack_mon",
-						   { MONOLITH => 'polpack_mon' }
-						  );
-      # Wait for it to start if necessary
-      unless ($self->{Polpack}->contactw) {
-	return undef;
-      }	
-    }
-  }
-  return $self->{Polpack};
+  return $self->engine_lanch_object->engine("polpack_mon");
 }
 
 
@@ -427,11 +345,11 @@ sub launch {
 
   # Start kapview
   orac_print ("Starting KAPVIEW........................\n",'cyan') if $DEBUG;
-  my $display = new ORAC::Msg::ADAM::Task("kapview_mon_$$", "$ENV{KAPPA_DIR}/kapview_mon");
+  my $display = $self->engine_launch_object->engine("kapview_mon");
 
   # Store the object
-  $self->obj($display);
-
+  $self->obj($display) if defined $display;
+  return;
 }
 
 

@@ -27,8 +27,17 @@ All instrument dependencies are specified in this module.
 use strict;
 use Carp;
 use File::Spec;
+use File::Path;
+use Cwd;
+
+use ORAC::Print;
+
+use Starlink::Config;  # Need to know where fluxes is
+
 require Exporter;
-use vars qw/ @ISA @EXPORT_OK $VERSION /;
+use vars qw/ @ISA @EXPORT_OK $VERSION $DEBUG/;
+
+$DEBUG = 0;
 
 @ISA = qw/ Exporter /;
 @EXPORT_OK = qw/ 
@@ -37,96 +46,171 @@ use vars qw/ @ISA @EXPORT_OK $VERSION /;
   orac_determine_recipe_search_path
   orac_determine_primitive_search_path
   orac_engine_description
+  orac_messys_description
   /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+
+# Cleanup END blocks. Useful if helper tasks create temporary
+# files or directories and dont use File::Temp
+# In future should make File::Temp mandatory
+
+# Two lexical array, one for files and one for directories
+my (@FILES_TO_UNLINK, @DIRS_TO_UNLINK);
+
+# This code comes directly from File::Temp
+
+END {
+  # Files
+  foreach my $file (@FILES_TO_UNLINK) {
+
+    if (-f $file->[1]) {  # file name is [1]
+      unlink $file->[1] or warn "Error removing ".$file->[1];
+    }
+  }
+  # Dirs
+  foreach my $dir (@DIRS_TO_UNLINK) {
+    if (-d $dir) {
+      rmtree($dir, $DEBUG, 1);
+    }
+  }
+}
+
+# The kappa display system requires
+# us to set the AGI environment variables
+# These should be set to directories that have been created
+# by File::Temp so that they will be tidied automatically
+
+BEGIN { # A kluge - for some reason kapview does not pick up the
+  # correct environment if I leave out the BEGIN block
+  # dont understand since the environment is passed to the forked
+  # process...
+  mkdir "/tmp/oracdragi";
+  $ENV{'AGI_USER'} = "/tmp/oracdragi";
+  $ENV{'AGI_NODE'} = "orac_kapview$$";
+}
+
+push( @DIRS_TO_UNLINK, "/tmp/oracdragi");
+
+
 
 # Internal definitions of algoirthm engine definitions
 # Used to construct instrument recipe dependencies
 
 my %MonolithDefns = (
 		     kappa_mon => {
-				   MESSYS => 'ORAC::Msg::ADAM::Control',
-				   CLASS => 'ORAC::Msg::ADAM::Task',
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
 				   PATH => $ENV{KAPPA_DIR}."/kappa_mon",
 				  },
 		     surf_mon => {
-				   MESSYS => 'ORAC::Msg::ADAM::Control',
-				   CLASS => 'ORAC::Msg::ADAM::Task',
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
 				   PATH => "$ENV{SURF_DIR}/surf_mon",
 				  },
 		     polpack_mon => {
-				   MESSYS => 'ORAC::Msg::ADAM::Control',
-				   CLASS => 'ORAC::Msg::ADAM::Task',
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
 				   PATH => "$ENV{POLPACK_DIR}/polpack_mon",
 				  },
 		     ccdpack_reg => {
-				   MESSYS => 'ORAC::Msg::ADAM::Control',
-				   CLASS => 'ORAC::Msg::ADAM::Task',
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
 				   PATH => "$ENV{CCDPACK_DIR}/ccdpack_reg",
 				  },
 		     ccdpack_red => {
-				   MESSYS => 'ORAC::Msg::ADAM::Control',
-				   CLASS => 'ORAC::Msg::ADAM::Task',
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
 				   PATH => "$ENV{CCDPACK_DIR}/ccdpack_red",
 				  },
 		     ccdpack_res => {
-				   MESSYS => 'ORAC::Msg::ADAM::Control',
-				   CLASS => 'ORAC::Msg::ADAM::Task',
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
 				   PATH => "$ENV{CCDPACK_DIR}/ccdpack_res",
 				  },
 		     catselect => {
-				   MESSYS => 'ORAC::Msg::ADAM::Control',
-				   CLASS => 'ORAC::Msg::ADAM::Task',
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
 				   PATH => "$ENV{CURSA_DIR}/catselect",
 				  },
 		     ndf2fits => {
-				   MESSYS => 'ORAC::Msg::ADAM::Control',
-				   CLASS => 'ORAC::Msg::ADAM::Task',
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
 				   PATH => "$ENV{CONVERT_DIR}/ndf2fits",
 				  },
+		     fits2ndf => {
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
+				   PATH => "$ENV{CONVERT_DIR}/fits2ndf",
+				 },
+		     convert_mon => {
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
+				   PATH => "$ENV{CONVERT_DIR}/convert_mon",
+				 },
 		     kapview_mon => {
-				   MESSYS => 'ORAC::Msg::ADAM::Control',
-				   CLASS => 'ORAC::Msg::ADAM::Task',
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
 				   PATH => $ENV{KAPPA_DIR}."/kapview_mon",
 				  },
 		     ndfpack_mon => {
-				   MESSYS => 'ORAC::Msg::ADAM::Control',
-				   CLASS => 'ORAC::Msg::ADAM::Task',
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
 				   PATH => $ENV{KAPPA_DIR}."/ndfpack_mon",
 				  },
 		     figaro1 => {
-				   MESSYS => 'ORAC::Msg::ADAM::Control',
-				   CLASS => 'ORAC::Msg::ADAM::Task',
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
 				   PATH => $ENV{FIG_DIR}."/figaro1",
 				  },
 		     figaro2 => {
-				   MESSYS => 'ORAC::Msg::ADAM::Control',
-				   CLASS => 'ORAC::Msg::ADAM::Task',
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
 				   PATH => $ENV{FIG_DIR}."/figaro2",
 				  },
 		     figaro4 => {
-				   MESSYS => 'ORAC::Msg::ADAM::Control',
-				   CLASS => 'ORAC::Msg::ADAM::Task',
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
 				   PATH => $ENV{FIG_DIR}."/figaro4",
 				  },
 		     pisa_mon => {
-				   MESSYS => 'ORAC::Msg::ADAM::Control',
-				   CLASS => 'ORAC::Msg::ADAM::Task',
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
 				   PATH => "$ENV{PISA_DIR}/pisa_mon",
 				  },
 		     photom_mon => {
-				   MESSYS => 'ORAC::Msg::ADAM::Control',
-				   CLASS => 'ORAC::Msg::ADAM::Task',
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
 				   PATH => "$ENV{PHOTOM_DIR}/photom_mon",
 				  },
+		     p4         => {
+				    MESSYS => 'AMS',
+				    CLASS => 'ORAC::Msg::Task::ADAM',
+				    PATH => \&p4_helper,
+				   },
+		     fluxes => {
+				MESSYS => 'AMS',
+				CLASS => 'ORAC::Msg::Task::ADAM',
+				PATH => \&fluxes_helper,
+				   },
 		     test_mon   => {
-				    MESSYS => 'ORAC::Msg::ADAM::Control',
-				    CLASS => 'ORAC::Msg::ADAM::Task',
+				    MESSYS => 'AMS',
+				    CLASS => 'ORAC::Msg::Task::ADAM',
 				    PATH => "this/is/junk",
 				   },
 );
 
+
+# Message system definitions
+my %MessageSystemDefns = (
+			  AMS => {
+				  CLASS => 'ORAC::Msg::Control::AMS',
+				 },
+			  ADAMShell => {
+					# shell does not require messaging
+					CLASS => '',
+				       }
+			 );
 
 =head1 FUNCTIONS
 
@@ -361,16 +445,21 @@ has the following keys
 =item CLASS
 
 The name of the class to be used for this engine.
-(e.g. C<ORAC::Msg::ADAM::Task>).
+(e.g. C<ORAC::Msg::Task::ADAM>).
 
 =item PATH
 
-The location of the engine in the file system.
+The location of the engine in the file system. If this
+is a code reference it should be executed immediately
+prior to launching the monolith to configure associated
+parameters correctly and to return the actual path.
+Additionally, if the helper task is executed it returns
+a reference to a cleanup subroutine. See L<"HELPER TASKS">.
 
 =item MESSYS
 
-The message system class required to contact the engine.
-[not used at present]
+The name of the message system required to contact the engine.
+See L<"orac_messys_description">.
 
 =back
 
@@ -388,6 +477,204 @@ sub orac_engine_description {
   }
 }
 
+=item B<orac_messys_description>
+
+Returns the details for a specified message system.
+
+  %details = orac_messys_description("AMS");
+
+The hash that is returned contains information on the
+class to be used to initialise the message system.
+It has the following keys
+
+=over 4
+
+=item CLASS
+
+The name of the class to be used for this message system
+(e.g. C<ORAC::Msg::ADAM::Control>).
+
+=back
+
+Returns an empty list on error.
+
+=cut
+
+sub orac_messys_description {
+  my $engine = shift;
+
+  if (exists $MessageSystemDefns{$engine}) {
+    return %{ $MessageSystemDefns{$engine} };
+  } else {
+    return ();
+  }
+}
+
+=back
+
+=head1 HELPER TASKS
+
+Some algorithm engines need to be configured in a slighlty more complex
+way than providing a simple path to the engine. This section
+describes specific functions that return the name of the path whilst
+also configuring the program before launch. For example, can be used
+to create a temporary directory for special output. The helper tasks
+accept no arguments and are required to return a path to an
+engine and a reference to a subroutine to be exected when the
+object has been launched. This allows for cleanup code to be executed
+and are usually closures.
+
+=over 4
+
+=item B<fluxes_helper>
+
+This function configures the fluxes specific environment variables
+and creates a temporary output directory for use by fluxes.
+
+ ($path, $callback) = fluxes_mon_helper;
+
+Returns the path to the monolith and a cleanup function.
+The cleanup function is required to change directory back to the
+directory that we need to be in (since Fluxes requires the directory
+to have special files in it).
+
+=cut
+
+sub fluxes_helper {
+
+  # To start FLUXES requires some environment variables to be defined
+  # Fluxes should be changed to use $FLUXES_DIR rather than $FLUXES
+  # Some of these are historical. Newer versions are much easier
+  unless (exists $ENV{FLUXES}) {
+    # FLUXES_DIR is set on recent starlink releases
+    if (exists $ENV{FLUXES_DIR}) {
+      $ENV{FLUXES} = $ENV{FLUXES_DIR};
+    } else { # Guess by looking at the location of starlink
+      $ENV{FLUXES} = $StarConfig{Star_Bin} ."/fluxes";	
+    }
+  }
+
+  # Now check that FLUXES directory really does exist
+  croak "Error locating fluxes directory. $ENV{FLUXES} does not exist"
+    unless -d $ENV{FLUXES};
+
+  # Should chdir to /tmp, create the soft link, launch fluxes
+  # and then chdir back to wherever we happen to be.
+
+  my $cwd = cwd; # Store current dir
+
+  # Create temp directory - this is needed in case another
+  # oracdr is running fluxes and we want to make sure that
+  # the JPLEPH file is not removed when THAT oracdr finishes!
+  # Should probably be using File::Temp::tempdir
+  my $tmpdir = "/tmp/fluxes_$$";
+
+  # Register this with a cleanup END block
+  # Set up an END block to remove the directory on shutdown
+  # This is the only way to tidy up in a non-object-oriented
+  # approach, especially if there is no way of supplying this
+  # information to the caller.
+  push (@DIRS_TO_UNLINK, $tmpdir);
+
+
+  # Create them
+  mkdir $tmpdir,0777 || croak "Could not make directory $tmpdir: $!";
+
+  chdir($tmpdir) || croak "Could not change directory to $tmpdir: $!";
+
+  # Hard-wire in the location of JPLEPH
+  # $JPL_DIR is available on newer systems
+  # Create soft link to JPLEPH
+
+  # If the JPLEPH file is there already then assume it is okay
+  # not sure how that can happen given that we just made the directory!
+  unless (-f "JPLEPH") {
+    unlink "JPLEPH"; # should be nothing here
+
+    # Determine location of ephemeris file
+    my $ephdir = ( $ENV{JPL_DIR} || $StarConfig{Star}."/etc/jpl" );
+
+    my $jpleph = $ephdir . "/jpleph.dat";
+
+    # Check that the file exists first
+    croak "Could not find JPLEPH file at $jpleph" unless -f $jpleph;
+
+    # Create the soft link required for JPLEPH software to run
+    symlink $jpleph, "JPLEPH"
+      or croak "Could not create link to JPL ephemeris";
+  }
+
+  # Set FLUXPWD variable, required by FLUXES
+  $ENV{'FLUXPWD'} = cwd;
+
+  # Create cleanup sub
+  my $cleanup = sub { chdir $cwd; };
+
+  # Create path to monolith
+  my $path = File::Spec->catfile($ENV{FLUXES}, "fluxes");
+
+  # Need to return the path and the closure
+  return ( $path, $cleanup );
+}
+
+=item B<p4_helper>
+
+Helper task for the CGS4-DR P4 display system.
+
+  ($path, $cleanup) = p4_helper;
+
+=cut
+
+sub p4_helper {
+
+  # Set some P4 environment variables
+  if (exists $ENV{CGS4DR_ROOT}) {
+    $ENV{P4_ROOT} = $ENV{CGS4DR_ROOT};
+  } else {
+    orac_err('CGS4DR_ROOT environment variable not defined. Cannot find P4.\n');
+    return undef;
+  }
+  $ENV{P4_CONFIG} = $ENV{HOME} . "/.oracdr";
+  $ENV{P4_HOME} = $ENV{P4_ROOT};
+  $ENV{P4_EXE}  = $ENV{P4_ROOT};
+  $ENV{P4_ICL}  = $ENV{P4_ROOT};
+  if (exists $ENV{ORAC_DATA_OUT}) {
+    $ENV{P4_DATA} = $ENV{ORAC_DATA_OUT};
+  } else {
+    $ENV{P4_DATA} = '/tmp';
+  }
+  $ENV{P4_CT}   = $ENV{P4_ROOT} . "/ndf";
+  $ENV{P4_HC}   = cwd;
+  $ENV{P4_DATE} = '19980804';  # irrelevant (I hope)
+  $ENV{RGDIR}   = $ENV{P4_DATA};
+  $ENV{RODIR}   = $ENV{P4_DATA};
+  $ENV{RIDIR}   = $ENV{P4_DATA};
+  $ENV{ODIR}   = $ENV{P4_DATA};
+  $ENV{IDIR}   = $ENV{P4_DATA};
+
+  # Make the CGS4DR scratch directories
+  unless (-d $ENV{P4_CONFIG}) {
+    unlink $ENV{P4_CONFIG};       # naughty!
+    my $status = mkdir($ENV{P4_CONFIG}, 0770);
+    if ($status) {
+      orac_print("Creating ORACDR configuration directory...\n");
+    } else {
+      orac_err("Error creating ORACDR config dir: $!\n");
+      return undef;
+    }
+  }
+
+  # Do P4 startup - copy in a default file
+  # unless one is there already.
+  unless (-e $ENV{P4_CONFIG} . "/default.p4") {
+    orac_print("Creating a default P4 startup file\n",'blue');
+    copy ($ENV{P4_ROOT} . "/default.p4", $ENV{P4_CONFIG} . "/default.p4");
+  }
+
+  # No cleanup
+  # Return it all
+  return ("$ENV{CGS4DR_ROOT}/p4", undef);
+}
 
 =back
 

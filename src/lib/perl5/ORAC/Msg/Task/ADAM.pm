@@ -1,14 +1,14 @@
-package  ORAC::Msg::ADAM::Task;
+package  ORAC::Msg::Task::ADAM;
 
 =head1 NAME
 
-ORAC::Msg::ADAM::Task - load and control ADAM tasks
+ORAC::Msg::Task::ADAM - load and control ADAM tasks
 
 =head1 SYNOPSIS
 
-  use ORAC::Msg::ADAM::Task;
+  use ORAC::Msg::Task::ADAM;
 
-  $kap = new ORAC::Msg::ADAM::Task("kappa","/star/bin/kappa/kappa_mon");
+  $kap = new ORAC::Msg::Task::ADAM("kappa","/star/bin/kappa/kappa_mon");
 
   $status           = $kap->obeyw("task", "params");
   $status           = $kap->set("task", "param","value");
@@ -52,7 +52,7 @@ use vars qw/$VERSION $DTASK__ACTCOMPLETE $SAI__OK/;
 
 # Access the AMS task code
 use Starlink::AMS::Task '1.00';
- 
+
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 
@@ -67,11 +67,11 @@ $SAI__OK = &Starlink::ADAM::SAI__OK;
 
 =item B<new>
 
-Create a new instance of a ORAC::Msg::ADAM::Task object.
+Create a new instance of a ORAC::Msg::Task::ADAM object.
 
-  $obj = new ORAC::Msg::ADAM::Task;
-  $obj = new ORAC::Msg::ADAM::Task("name_in_message_system","monolith");
-  $obj = new ORAC::Msg::ADAM::Task("name_in_message_system","monolith"
+  $obj = new ORAC::Msg::Task::ADAM;
+  $obj = new ORAC::Msg::Task::ADAM("name_in_message_system","monolith");
+  $obj = new ORAC::Msg::Task::ADAM("name_in_message_system","monolith"
                                     { TASKTYPE => 'A'} );
 
 If supplied with arguments (matching those expected by load() ) the
@@ -84,7 +84,7 @@ fails then undef is returned (which will not be an object reference).
 sub new {
   my $proto = shift;
   my $class = ref($proto) || $proto;
- 
+
   my $task = {};  # Anon hash
 
   my $status; # Status from load
@@ -93,7 +93,7 @@ sub new {
   # Since we are really simply handling another object
   # Create the new object (Starlink::AMS::Task) and store it.
   $task->{Obj} = new Starlink::AMS::Task;  # Name in AMS
- 
+
   # Bless task into class
   bless($task, $class);
 
@@ -145,7 +145,7 @@ are
 =cut
 
 sub load {
-  
+
   my $self = shift;
   # initialise
   my $status = $SAI__OK;
@@ -206,7 +206,7 @@ sub get {
   my $self = shift;
 
   # Now need to construct the arguments for the AMS layer
-  
+
   my $task = shift;
   my $param = shift;
 
@@ -238,7 +238,7 @@ sub set {
   my $self = shift;
 
   # Now need to construct the arguments for the AMS layer
-  
+
   my $task = shift;
   my $param = shift;
   my $value = shift;
@@ -278,7 +278,7 @@ sub control {
 
   my ($value, $status);
   my $self = shift;
-  
+
   if (@_) { 
     ($value, $status) = $self->obj->control(@_);
 

@@ -1,15 +1,15 @@
-package ORAC::Msg::ADAM::Control;
+package ORAC::Msg::Control::AMS;
 
 
 =head1 NAME
 
-ORAC::Msg::ADAM::Control - control and initialise ADAM messaging from ORAC
+ORAC::Msg::Control::AMS - control and initialise ADAM messaging from ORAC
 
 =head1 SYNOPSIS
 
-  use ORAC::Msg::ADAM::Control;
+  use ORAC::Msg::Control::AMS;
 
-  $ams = new ORAC::Msg::ADAM::Control(1);
+  $ams = new ORAC::Msg::Control::AMS(1);
   $ams->init;
 
   $ams->messages(0);
@@ -48,7 +48,7 @@ use Starlink::AMS::Init '1.00';
 # Derive all methods from the Starlink module since this
 # behaves in exactly the same way.
 
-#@ORAC::Msg::ADAM::Control::ISA = qw/Starlink::AMS::Init/;
+#@ORAC::Msg::Control::AMS::ISA = qw/Starlink::AMS::Init/;
 
 use base qw/Starlink::AMS::Init/;
 
@@ -139,14 +139,86 @@ A relay task is spawned in order to test that the messaging system
 is functioning correctly. The relay itself is not necessary for the
 non-event loop implementation. If this command hangs then it is
 likely that the messaging system is not running correctly (eg
-because the system was shutdown uncleanly - try removing named pipes
-from the ~/adam directory).
+because the system was shutdown uncleanly.
+
+  $ams->init( $preserve );
+
+For ORAC-DR the message system directories are set to
+values that will allow multiple oracdr pipelines to run
+without interfering with each other.
+
+Scratch files are written to ORACDR_TMP directory if defined,
+else ORAC_DATA_OUT is used. By default ADAM_USER is set
+to be a directory in the scratch file directory. This can be
+overridden by supplying an optional flag.
+
+If C<$preserve> is true, ADAM_USER will be left untouched. This
+enables the pipeline to talk to tasks created by other applications
+but does mean that the users ADAM_USER may be filled with unwanted
+temporary files. It also has the added problem that on shutdown
+the ADAM_USER directory is removed by ORAC-DR, this should not happen
+if C<$preserve> is true but is not currently guaranteed.
+
+
+=cut
+
+sub init {
+  my $self = shift;
+
+  # Read flag to control private invocation of message system
+  my $preserve = 0;
+  $preserve = shift if @_;
+
+  # Set ADAM environment variables
+  # process-specific adam dir
+
+  # Use ORACDR_TMP, then ORAC_DATA_OUT else /tmp as ADAM_USER directory.
+  # Unless we are instructed to preserve ADAM_USER
+  my $dir = "adam_$$";
+
+  unless ($preserve) {
+
+    if (exists $ENV{ORACDR_TMP} && defined $ENV{ORACDR_TMP}
+        && -d $ENV{ORACDR_TMP}) {
+
+      $ENV{'ADAM_USER'} = $ENV{ORACDR_TMP}."/$dir";
+
+    } elsif (exists $ENV{'ORAC_DATA_OUT'} && defined $ENV{ORAC_DATA_OUT}
+             && -d $ENV{ORAC_DATA_OUT}) {
+
+      $ENV{'ADAM_USER'} = $ENV{ORAC_DATA_OUT} . "/$dir";
+
+    } else {
+      $ENV{'ADAM_USER'} = "/tmp/$dir";
+    }
+
+  }
+
+  # Set HDS_SCRATCH -- unless it is defined already
+  # Do not need to set to ORAC_DATA_OUT since this is cwd.
+
+  # Want to modify this variable so that we can fix some ndf2fits
+  # feature (etc ?) -- I think the problem came up when trying to convert
+  # files from one directory to another when the input directory is
+  # read-only...
+
+  unless (exists $ENV{HDS_SCRATCH}) {
+    if (exists $ENV{ORACDR_TMP} && defined $ENV{ORACDR_TMP}
+        && -d $ENV{ORACDR_TMP}) {
+      $ENV{HDS_SCRATCH} = $ENV{ORACDR_TMP};
+    }
+  }
+
+  # Start messaging by calling base class
+  $self->SUPER::init;
+}
+
 
 =back
 
 =head1 VARIABLES
 
-The ORAC::Msg::ADAM::Control::RUNNING variable can be 
+The ORAC::Msg::Control::AMS::RUNNING variable can be 
 used to determine whether the message system is running or not.
 (Multiple message system objects can be created although only
 the first will actually start the message system - an error is raised

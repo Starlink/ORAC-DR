@@ -59,8 +59,7 @@ use NDF;
 use Starlink::HDSPACK qw/copobj/; # copobj
 
 use ORAC::Print;
-use ORAC::Msg::ADAM::Control;
-use ORAC::Msg::ADAM::Task;
+use ORAC::Msg::EngineLaunch; # To launch convert monolith
 use ORAC::Constants qw/:status/;        #  Constants
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
@@ -88,11 +87,10 @@ sub new {
 
   my $proto = shift;
   my $class = ref($proto) || $proto;
- 
+
   my $conv = {};  # Anon hash
-  
-  $conv->{AMS} = undef;        # Messaging
-  $conv->{ConvObjects} = {};   # Conversion objects - 1 per convert monolith
+
+  $conv->{EngineLaunch} = new ORAC::Msg::EngineLaunch;
   $conv->{InFile} = undef;
   $conv->{OverWrite} = 0;      # Do not overwrite files of same name
 
@@ -104,15 +102,9 @@ sub new {
     return undef;
   }
 
+  # Message system will start on demand
 
-  # Start message system (should just return if already started)
-  my $status = ORAC__OK;
-  # This check is a bit dodgy. I add it to stop the error message
-  # occuring concerning whether the AMS is currently running or not.
-  $conv->{AMS} = new ORAC::Msg::ADAM::Control;
-  $status = $conv->{AMS}->init;
-
-  return undef if $status != ORAC__OK;
+  # Return the object
   return $conv;
 
 }
@@ -127,6 +119,22 @@ The following methods are available for accessing the
 
 =over 4
 
+=item B<engine_launch_object>
+
+Returns the C<ORAC::Msg::EngineLaunch> object that can be used
+to launch algorithm engines as required by the particular
+conversion.
+
+ $messys = $self->messys_launch_object;
+
+=cut
+
+sub engine_launch_object {
+  my $self = shift;
+  return $self->{EngineLaunch};
+}
+
+
 =item B<infile>
 
 Method for storing or retreiving the current input filename.
@@ -140,28 +148,6 @@ sub infile {
   my $self = shift;
   if (@_) { $self->{InFile} = shift;  }
   return $self->{InFile};
-}
-
-=item B<objref>
-
-Hash containing convert task objects. These are the actual
-ORAC::Msg::ADAM::Task objects related to each Starlink CONVERT
-monolith that is required.
-
-  $mon = $Cvt->objref->{monolith_name};
-
-=cut
-
-sub objref {
-  my $self = shift;
- 
-  if (@_) { 
-    my $arg = shift;
-    croak("Argument is not a hash") unless ref($arg) eq "HASH";
-    $self->{ConvObjects} = $arg;
-  }
- 
-  return $self->{ConvObjects};
 }
 
 =item B<overwrite>
@@ -239,7 +225,7 @@ sub convert {
   } else {
     $filename = $self->infile($filename);
   }
-  
+
   unless (exists $options{IN}) {
     # Input format not specified
     # guess from name
@@ -313,7 +299,7 @@ filename.
 
 sub guessformat {
   my $self = shift;
-  
+
   my $name;
   if (@_) {
     $name = shift;
@@ -337,48 +323,24 @@ sub guessformat {
 
 =item B<mon>
 
-Returns a ORAC::Msg::ADAM::Task object using a path of name_$$
-in the messaging system.
+Returns the algorithm engine object, launching it if required.
 
   $object = $Cvt->mon($name);
 
 Returns undef if a monolith can not be contacted or fails to start.
-
-Populates the object using the objref() method.
+This is launched using C<ORAC::Msg::LaunchEngine>.
 
 =cut
 
 sub mon {
   my $self = shift;
-  
+
   croak "Usage: Convert->mon(name)" unless scalar (@_) == 1;
 
   # Get the name
   my $mon = shift;
-  
-  # Append pid
-  my $name = $mon . "_$$";
 
-  # Now look up object in the message storage area
-  my $obj;
-  if (exists $ {$self->objref}{$name}) {
-    return $ {$self->objref}{$name};
-  } else {
-
-    # Find the full path to the monolith
-    my $fullname = File::Spec->catfile($ENV{CONVERT_DIR}, $mon);
-
-    # Create a new object
-    $obj = new ORAC::Msg::ADAM::Task($name, $fullname,
-				     { MONOLITH => "$mon"}
-				    );
-    if ($obj->contactw) {
-      $ {$self->objref}{$name} = $obj;
-    } else {
-      return undef;
-    }
-
-  }
+  return $self->engine_launch_object->engine( $mon );
 
 }
 
@@ -402,7 +364,7 @@ method.
 
 sub fits2ndf {
   my $self = shift;
-  
+
   my $name;
   if (@_) {
     $name = shift;
@@ -501,7 +463,7 @@ sub UKIRTio2hds {
   # Calculate the output filename from the FITS header information
   my $num = 0 x (5 - length($href->{OBSNUM})) . $href->{OBSNUM};
   my $output = 'c' . $href->{IDATE} . "_$num";
-  
+
   # Check for the existence of the output file in the current dir
   # and whether we can overwrite it.
   if (-e $output.'.sdf' && ! $self->overwrite) {
@@ -543,13 +505,13 @@ sub UKIRTio2hds {
   my @dims = ();
   hds_new($output, substr($output, 0, &NDF::DAT__SZNAM),'ORAC_HDS', 0,
 	  @dims, my $floc, $status);
-  
+
   # Then open the header file  
   hds_open(File::Spec->catfile($odir,$ofile), 'READ', my $oloc, $status);
 
   # Copy the header NDF
   dat_copy($oloc, $floc, 'HEADER', $status);
-  
+
   # Close the header file
   dat_annul($oloc, $status);
 
@@ -622,10 +584,10 @@ sub hds2ndf {
     orac_err "Input filename (".$self->infile.") does not exist -- can not convert\n";
     return undef;
   }
-  
+
   # Read the input file - we only want the basename (we know .sdf suffix)
   my ($base, $dir, $suffix) = fileparse($self->infile, '.sdf');
- 
+
   # Construct the output file name. This is just the basename with _raw
   # appended (no .sdf)
   my $outfile = $base . '_raw';
@@ -645,7 +607,7 @@ sub hds2ndf {
   # Start new error context
   my $status = &NDF::SAI__OK;
   err_begin($status);
-  
+
   # Copy the .header to a new NDF
   copobj($hdsfile . '.header', $outfile, $status);
 
@@ -659,11 +621,11 @@ sub hds2ndf {
     err_end($status);
     return undef;
   }
-  
+
   err_end($status);
   return $outfile .'.sdf';
 }
-  
+
 
 # This is some demo code that was written to merge header from a
 # HDS container. It takes the contents of the .HEADER FITS headers
@@ -703,7 +665,7 @@ sub hds2ndf_demo {
   # Start new error context
   my $status = &NDF::SAI__OK;
   err_begin($status);
-  
+
   # Copy the base frame (.i1) to the output name
   copobj($hdsfile . '.i1', $outfile, $status);
 
@@ -775,7 +737,7 @@ sub hds2ndf_demo {
 
   # Upload the FITS entries
   dat_put1c($xloc, $nfits, @fitsA, $status);
-  
+
   # Shutdown
   dat_annul($xloc, $status);
   ndf_annul($indf, $status);
@@ -787,7 +749,7 @@ sub hds2ndf_demo {
     err_end($status);
     return undef;
   }
-  
+
   err_end($status);
   return $outfile .'.sdf';
 

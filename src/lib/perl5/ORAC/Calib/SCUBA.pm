@@ -37,7 +37,6 @@ use Carp;
 use vars qw/$VERSION %DEFAULT_FCFS %PHOTFLUXES @PLANETS $DEBUG/;
 
 use Cwd;          # Directory change
-use File::Path;   # rmtree function
 
 # Derive from standard Calib class (even though nothing in common
 # for now)
@@ -45,18 +44,12 @@ use ORAC::Calib;  # We are a Calib class
 use ORAC::Index;  # Use index file
 use ORAC::Print;  # Standardised printing
 use ORAC::Constants; # ORAC__OK
-
-use ORAC::Msg::ADAM::Control;  # For fluxes monolith - messaging
-use ORAC::Msg::ADAM::Task;     # For fluxes monolith
-
+use ORAC::Msg::EngineLaunch; # To launch fluxes monolith
 
 # External modules
 
 use JCMT::Tau;         # Tau conversion
 use JCMT::Tau::CsoFit; # Fits to CSO data
-
-use Starlink::Config;  # Need to know where fluxes is
-
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
@@ -186,11 +179,9 @@ sub new {
   my $class = ref($proto) || $proto;
 
   my $obj = {
-	     AMS => undef,           # ADAM messaging object
 	     BadBols => undef,       # Bad bolometers
 	     BadBolsNoUpdate => 0,
-	     FluxesObj => undef,     # Fluxes monolith
-	     FluxesTmpDir => undef,
+             EngineLaunch => new ORAC::Msg::EngineLaunch,
 	     Gains => undef,         # Gains (flux conversion factors)
 	     GainsIndex => undef,
 	     GainsNoUpdate => 0,
@@ -292,19 +283,31 @@ sub badbolsnoupdate {
   return $self->{BadBolsNoUpdate};
 }
 
+=item B<engine_launch_object>
+
+Returns the C<ORAC::Msg::EngineLaunch> object that can be used
+to initialise message systems as required by the particular
+algorithm engines.
+
+ $engobj = $self->engine_launch_object;
+
+=cut
+
+sub engine_launch_object {
+  my $self = shift;
+  return $self->{EngineLaunch};
+}
+
+
 =item B<fluxes_mon>
 
-Retrieves the ORAC::Msg::ADAM::Task object associated with
+Retrieves the algorithm engine object associated with
 the Starlink fluxes monolith.
 
 A new object is created if the value is undefined.
 
 Relies on the Adam messaging system being available.
-ADAM messaging is initialised if not present.
-
-Currently this routine also assumes that no other fluxes
-objects are started by this process (since there are a number
-of things that must be configured before starting the monolith).
+ADAM messaging will be initialised if not present.
 
 =cut
 
@@ -312,101 +315,14 @@ sub fluxes_mon {
   my $self = shift;
   my $status;
 
-  unless (defined $self->{FluxesObj}) {
-    # Start AMS
-    $self->{AMS} = new ORAC::Msg::ADAM::Control;
-    $status = $self->{AMS}->init;
-    croak 'ORAC::Calib::SCUBA::fluxes_mon: Error starting ADAM messaging system'
-      unless $status == ORAC__OK;
+  my $obj = $self->engine_launch_object->engine('fluxes');
 
-    # Start FLUXES - this requires some environment variables to be defined
-    # Fluxes should be changed to use $FLUXES_DIR rather than $FLUXES
-    unless (exists $ENV{FLUXES}) {
-      # FLUXES_DIR is set on recent starlink releases
-      if (exists $ENV{FLUXES_DIR}) {
-	$ENV{FLUXES} = $ENV{FLUXES_DIR};
-      } else { # Guess by looking at the location of starlink
-	$ENV{FLUXES} = $StarConfig{Star_Bin} ."/fluxes";	
-      }
-    }
-
-    # Now check that FLUXES directory really does exist
-    croak "Error locating fluxes directory. $ENV{FLUXES} does not exist"
-      unless -d $ENV{FLUXES};
-
-    # Should chdir to /tmp, create the soft link, launch fluxes
-    # and then chdir back to wherever we happen to be.
-
-    my $cwd = cwd; # Store current dir
-
-    # Create temp directory - this is needed in case another
-    # oracdr is running fluxes and we want to make sure that
-    # the JPLEPH file is not removed when THAT oracdr finishes!
-    # Should probably be using File::Temp::tempdir
-    my $tmpdir = "/tmp/fluxes_$$";
-    mkdir $tmpdir,0777 || croak "Could not make directory $tmpdir: $!";
-
-    chdir($tmpdir) || croak "Could not change directory to $tmpdir: $!";
-
-    # Hard-wire in the location of JPLEPH
-    # Probably could do with $JPL_DIR as well.
-    # Create soft link to JPLEPH
-
-    # If the JPLEPH file is there already then assume it is okay
-    # not sure how that can happen given that we just made the directory!
-    unless (-f "JPLEPH") {
-      unlink "JPLEPH"; # should be nothing here
-
-      # Determine location of ephemeris file
-      my $ephdir = ( $ENV{JPL_DIR} || $StarConfig{Star}."/etc/jpl" );
-
-      my $jpleph = $ephdir . "/jpleph.dat";
-
-      # Check that the file exists first
-      croak "Could not find JPLEPH file at $jpleph" unless -f $jpleph;
-
-      # Create the soft link required for JPLEPH software to run
-      symlink $jpleph, "JPLEPH"
-	or croak "Could not create link to JPL ephemeris";
-    }
-
-    # Set FLUXPWD variable, required by FLUXES
-    $ENV{'FLUXPWD'} = cwd;
-
-    # Now we can try and launch fluxes
-    my $obj = new ORAC::Msg::ADAM::Task("fluxes_$$",
-				       "$ENV{FLUXES}/fluxes");
-
-    # Now we can chdir back to our real working directory
-    chdir $cwd or croak "Could not change back to $cwd: $!";
-
-    # Wait and See if we can contact
-    if ($obj->contactw) {
-      # Store the object
-      $self->{FluxesObj} = $obj;
-      $self->fluxes_tmp_dir($tmpdir);
-    } else {
-      croak 'Error launching fluxes monolith. Aborting.';
-    }
-
+  if (defined $obj) {
+    return $obj;
+  } else {
+    croak 'Error launching fluxes monolith. Aborting.';
   }
 
-  return $self->{FluxesObj};
-
-}
-
-
-=item B<fluxes_tmp_dir>
-
-Name of temporary directory created for the fluxes monolith.
-(set or retrieve)
-
-=cut
-
-sub fluxes_tmp_dir {
-  my $self = shift;
-  if (@_) { $self->{FluxesTmpDir} = shift; }
-  return $self->{FluxesTmpDir};
 }
 
 
@@ -1146,19 +1062,12 @@ sub tau {
 Removes any directories that may have been created by this
 calibration class (eg by starting fluxes).
 
-Assumes that only this object is interested in the fluxes monolith
-associated with this object since we are about to remove the
-temporary directory containing the JPL ephemeris file.
+Currently does nothing.
 
 =cut
 
 sub DESTROY {
   my $self = shift;
-  if ($self->fluxes_tmp_dir) {
-    rmtree $self->fluxes_tmp_dir;    
-    orac_print "Removing temporary directory containing JPLEPH\n"
-      if $DEBUG;
-  }
 }
 
 

@@ -47,6 +47,10 @@ use ORAC::Core;     # Core pipeline routines
 use ORAC::Constants; # ORAC__OK et al
 use ORAC::Inst::Defn qw/ orac_determine_inst_classes /;
 
+# Need to use this class so that we can pre-configure the
+# message systems on the basis of command line switches
+use ORAC::Msg::MessysLaunch;
+
 #
 # general modules
 #
@@ -58,7 +62,7 @@ use Sys::Hostname;                      # For logfile
 # optional module
 
 # check for starlink login
-# 
+#
 &orac_exit_normally("No starlink login") unless exists $ENV{STAR_LOGIN};
 
 
@@ -452,6 +456,19 @@ if ($log_options ne 's') {
 
 }
 
+# Generate tied filehandle for subsequent use by systems
+# that require a filehandle rather than use of ORAC::Print
+# The message system is one example
+
+# First generate a filehandle tied to the orac_print system
+tie *MSG, 'ORAC::Print', $msg_prt;
+$msg_prt->outcol('clear'); # Cyan color for all messages
+
+# Tie a filehandle to the error messages from the alogrithm
+# engines and redirect to orac_err
+tie *MSGERR, 'ORAC::Print', $msgerr_prt, 'err';
+
+
 #########################   U  T    D A T E #############################
 # if no UT date has been provided, default to current.
 #
@@ -466,11 +483,45 @@ if ($log_options ne 's') {
 
 ######################## M E S S A G E  SYSTEMS #############################
 
-# Start the messaging system(s) and initialise them
-# This routine creates and initialies the message systems.
-# Also allows us to store the message objects since on
-# undef everything goes away
-my (@messys) = $InstObj->start_msg_sys($opt_nomsgtmp);
+# Create a message system launch object and configure it
+# The message system itself will be initialised when it is
+# required rather than at the start. If we know there is one
+# messsys and we know that it will always be the same one then
+# we can configure it here explicitly. The main reason for doing
+# that is to make sure that it works before starting recipe
+# processing
+
+my $MessysLaunch = new ORAC::Msg::MessysLaunch;
+
+# Need to make sure we respect the -nomsgtmp command line
+# option. This is only useful if no other place has started
+# a message system already.
+
+# Check that we are not too late
+if ($MessysLaunch->messys_active && $opt_nomsgtmp) {
+  orac_err "Can not preserve message system state. Unable to use -nomsgtmp";
+  orac_err "Can not continue. Sorry.\n";
+  orac_exit_normally "A message system has already been started\n";
+}
+
+$MessysLaunch->preserve( $opt_nomsgtmp );
+
+# Send the configuration options
+$MessysLaunch->config(
+		      # This timeout is not used for monolith launching
+		      timeout => 600,
+		      paramrep => sub {
+			orac_warn "Sending auto abort in response to parameter request\n";
+			return "!!"
+		      },
+		      messages => ( $opt_verbose ? 1 : 0 ),
+		      stdout => \*MSG,
+		      stderr => \*MSGERR,
+		     );
+
+# Just in case we are too late, configure the exisiting message
+# systems. 
+$MessysLaunch->configure_all;
 
 ######################## A L G.   E N G I N E S #############################
 
@@ -479,14 +530,15 @@ unless ($opt_noeng) {
 
   # start algorithm engines
   #
-  orac_print("Orac says: Starting up monoliths...","blue");
+  orac_print("Orac says: Pre-starting mandatory monoliths...","blue");
   #
 
-  $Mon = $InstObj->start_algorithm_engines;
-  $status = $InstObj->wait_for_algorithm_engines;
+  # Pre-launch. This will fail if we can not contact the
+  # engines so need to eval it
+  eval { $Mon = $InstObj->start_algorithm_engines; };
 
-  if ($status != ORAC__OK) {
-    orac_err("Error contacting monoliths. Aborting.\n");
+  if ($@) {
+    orac_err("Error contacting monoliths. Aborting.\n$@\n");
     MainLoop() if defined $MW;
     orac_exit_normally;
   }
@@ -498,6 +550,8 @@ unless ($opt_noeng) {
   orac_print("Orac says: No algorithm engines will be started (-noeng option)\n","blue");
 
 }
+
+####################### BEEPING ###############################
 
 # Beeping
 if ($opt_beep) {
@@ -522,35 +576,6 @@ if ($opt_nodisplay) {
   orac_print ("Done\n","blue");
 
   # Could configure debug option in $Display at this point
-
-}
-
-
-######################## MESSYS CONFIG #############################
-# Messaging system seems to be working okay so configure it.
-# Now we set our overrides to the messaging systems.
-# Dont do this earlier since we dont want to wait 600 seconds for
-# a timeout to find that we couldn't even talk to a monolith
-
-# First generate a filehandle tied to the orac_print system
-tie *MSG, 'ORAC::Print', $msg_prt;
-$msg_prt->outcol('clear'); # Cyan color for all messages
-
-# Tie a filehandle to the error messages from the alogrithm
-# engines and redirect to orac_err
-tie *MSGERR, 'ORAC::Print', $msgerr_prt, 'err';
-
-# Now loop over each message system and configure it
-foreach my $msg (@messys) {
-
-  # -quiet option supresses Starlink non-error messages
-  $opt_verbose ? $msg->messages(1) : $msg->messages(0);
-  $msg->timeout(600);	# task timeout
-  $msg->paramrep(sub {orac_warn "Sending auto abort in response to parameter request\n";return "!!"});
-
-  # Filehandle
-  $msg->stdout(\*MSG);
-  $msg->stderr(\*MSGERR);
 
 }
 
@@ -1113,6 +1138,10 @@ All Rights Reserved.
 
 
 # $Log$
+# Revision 1.88  2001/01/12 00:31:23  timj
+# Implement full dynamic loading of algorithm engines and
+# of messaging systems.
+#
 # Revision 1.87  2001/01/11 02:02:40  timj
 # First attempt at dynamic loading. Doesn't quite work but mostly
 # there

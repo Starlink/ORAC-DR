@@ -27,7 +27,7 @@ use strict;
 use vars qw/$VERSION/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
-use base qw/ ORAC::Inst::ADAM /;
+use base qw/ ORAC::Inst /;
 
 # Status handling
 use ORAC::Constants qw/:status/;
