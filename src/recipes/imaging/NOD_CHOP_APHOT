@@ -1,0 +1,358 @@
+#+
+# Name:
+#    NOD_CHOP_APHOT
+
+# Purpose:
+#    Reduces a chopped and nodded observation, and performs aperture
+#    photometry.
+
+# Language:
+#    Perl5
+
+# Description:
+#    This script reduces a chopped and nodded observation, currently
+#    just for Michelle data.  It takes an imaging observation comprising
+#    a multiple-of-four object frames to make a calibrated, untrimmed
+#    mosaic automatically.
+
+#    It performs a null debiassing, creation and propagation of data
+#    variance, difference the integrations for each AB chop beam pair,
+#    bad-pixel masking, difference adjacent nodded pairs, registers the
+#    frames, and forms a mosaic.  See the "Notes" for further information.
+
+#    The script combines and registers the various chopped and nodded
+#    images of the point source and neighbouring background to form
+#    to form a single image with four times the signal.  Photometry of
+#    the point source using a fixed 3-arcsecond aperture is then
+#    calculated.  The results appear in $ORAC_DATA_OUT/aphot_results.txt in
+#    the form of a Starlink small text list.  The analysis of each star is
+#    appended to this file.
+
+# Notes:
+#    -  A variance array is created for each beam, first using the read
+#    noise, and once the bias is removed, Poisson noise is added.
+#    -  The bias removed from each beam is currently a null bias, so the
+#    errors will be overestimated in the CHOP read mode.  The data
+#    array will be unaffected once the beams are differenced.  Using
+#    a bias frame awaits the ARRAY_TESTS recipe to file a suitable
+#    short-exposure dark as a bias in the calibration system.
+#    -  The integrations of the two beams are differenced, the first
+#    subtracted from the second in each pair.
+#    -  A World Co-ordinate System (WCS) using the AIPS convention is 
+#    created in the headers should no WCS already exist.
+#    -  The bad pixel mask applied is $ORAC_DATA_CAL/bpm.
+#    -  Registration is performed using the telescope offsets
+#    transformed to pixels.
+#    -  The resampling applies integer shifts of origin.   There is no
+#    rotation to align the Cartesian axes with the cardinal directions.
+#    -  The recipe makes the mosaics by applying offsets in intensity
+#    to give the most consistent result amongst the overlapping regions.
+#    The mosaic is not trimmed to the dimensions of a single frame, thus
+#    the noise will be greater in the peripheral areas having received
+#    less exposure time.  The mosaic is not normalised by its exposure
+#    time (that being the exposure time of a single frame).
+#    -  For each cycle of object frames, the recipe creates a mosaic, 
+#    which has its bad pixels filled and is then added into a master
+#    mosaic of improving signal to noise.  The exposure time is also
+#    summed and stored in the mosaic's corresponding header.  Likewise
+#    the end airmass and end UT headers are updated to match that of the
+#    last-observed frame contributing to the mosaic.
+#    -  The combined source image is made by taking symmetrical areas
+#    about each source, such that no pixels are duplicated.  Thus the
+#    divisions occur at midpoints of the chop throw and the nod
+#    separations.  These are registered using the source centroids.
+#    -  The photometry tabulation includes the file name, source name,
+#    time, filter, airmass, the catalogue magnitude and estimates of
+#    the zero-point with and without the application of a mean
+#    extinction.  There are headings at the top of each column.
+#    -  The photometry uses a multiply clipped (2,2,2.5,3 standard 
+#    deviations) mean to estimate the sky mode in an annulus about the
+#    source.  The inner annulus diameter is 2.0 times that of the
+#    aperture (6.0 arcsec); the outer annulus is 3.0 times (9 arcsec)
+#    for Michelle.  The errors are internal, based on the sky noise.
+#    -  Intermediate frames are deleted except for the differenced pairs
+#    _dp suffix) frames.
+
+# Output Data:
+#    -  The integrated mosaic in <m><date>_<group_number>_mos, where <m>
+#    is "gm" for Michelle.
+#    -  A mosaic for each cycle of object frames in
+#    <m><date>_<group_number>_mos<cycle_number>, where <cycle_number>
+#    counts from 0.
+#    -  The differenced pairs in <i><date>_<obs_number>_dp,
+#    where <i> is "m" for Michelle. 
+
+# Configurable Steering Parameters:
+#    NUMBER = INTEGER
+#       The number of frames in the nod pattern.  If absent, the number
+#       of offsets, as given by header NOFFSETS, minus one is used.  If
+#       neither is available, 4 is used.  An error state arises if
+#       the number of jittered frames is fewer than 4 and not a
+#       multiple of 4.  []
+#    USEVAR = LOGICAL
+#       Whether or not to create and propagate variance arrays.  [1]
+
+# Timing:
+#    {timing_information}
+
+# Implementation Status:
+#    -  The processing engines are from the Starlink packages: CCDPACK
+#    FIGARO, and KAPPA.
+#    -  Uses the Starlink NDF format and multi-NDF HDS container files.
+#    -  History is recorded within the data files.
+#    -  The title of the data is propagated through intermediate files
+#    to the mosaic.
+#    -  Error propagation is controlled by the USEVAR parameter.
+
+# Related Recipes:
+#    NOD_CHOP, BRIGHT_POINT_SOURCE_APHOT, JITTER_SELF_FLAT_APHOT.
+
+# Authors:
+#   MJC: Malcolm J. Currie (JAC)
+
+# Copyright:
+#    Copyright (C) 2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Startup
+# =======
+
+# Imaging-specific preliminaries, such as switching on history
+# recording.
+    _IMAGING_HELLO_
+
+# Recipe-specific initialisation.  Set up steering control of the
+# processing, namely when to difference pairs and make a mosaic.
+# Create WCS, if needed.
+    _NOD_CHOP_HELLO_ USEVAR=1
+
+# Calibration
+# ===========
+
+# Difference pairs of frames.
+    _DIFFERENCE_PAIR_
+
+# Mosaicking
+# ==========
+
+# Determine the linear offsets between the object frames in the group
+# by pattern matching common features.  If that fails use the telescope
+# offsets.  Register the frames using a shift of pixel origin.
+    _GENERATE_OFFSETS_NOD_ TELEOFF=1
+
+# Adjust origins of each frame.  Make a mosaic which is not trimmed
+# to the dimensions of an input frame.
+    _MAKE_MOSAIC_NOD_ RESAMPLE=0 FILLBAD=1
+
+# Compute approximate magnitude using aperture photometry on the
+# combined image.  Use the standard zero point, and extinction
+# coefficient for the filter.  Use the multiply clipped mean to
+# estimate the backgruond.
+    _NOD_CHOP_APHOT_MAG_ SKY_EST=4 APERTURE=3
+
+# Remove intermediate data files.
+    _NOD_CHOP_TIDY_
+
+# Podule
+# ======
+
+=head1 NAME
+
+NOD_CHOP_APHOT -- Reduces a chopped and nodded observation, and performs aperture photometry.
+
+=head1 DESCRIPTION
+
+This script reduces a chopped and nodded observation, currently
+just for Michelle data.  It takes an imaging observation comprising
+a multiple-of-four object frames to make a calibrated, untrimmed
+mosaic automatically.
+
+It performs a null debiassing, creation and propagation of data
+variance, difference the integrations for each AB chop beam pair,
+bad-pixel masking, difference adjacent nodded pairs, registers the
+frames, and forms a mosaic.  See the L<"NOTES"> for further information.
+
+The script combines and registers the various chopped and nodded
+images of the point source and neighbouring background to form to form
+a single image with four times the signal.  Photometry of the point
+source using a fixed 3-arcsecond aperture is then calculated.  The
+results appear in F<$ORAC_DATA_OUT/aphot_results.txt> in the form of a
+Starlink small text list.  The analysis of each star is appended to
+this file.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+A variance array is created for each beam, first using the read
+noise, and once the bias is removed, Poisson noise is added.
+
+=item *
+
+The bias removed from each beam is currently a null bias, so the
+errors will be overestimated in the CHOP read mode.  The data
+array will be unaffected once the beams are differenced.  Using
+a bias frame awaits the ARRAY_TESTS recipe to file a suitable
+short-exposure dark as a bias in the calibration system.
+
+=item *
+
+The integrations of the two beams are differenced, the first
+subtracted from the second in each pair.
+
+=item *
+
+A World Co-ordinate System (WCS) using the AIPS convention is 
+created in the headers should no WCS already exist.
+
+=item *
+
+The bad pixel mask applied is F<$ORAC_DATA_CAL/bpm>.
+
+=item *
+
+Registration is performed using the telescope offsets
+transformed to pixels.
+
+=item *
+
+The resampling applies integer shifts of origin.   There is no
+rotation to align the Cartesian axes with the cardinal directions.
+
+=item *
+
+The recipe makes the mosaics by applying offsets in intensity
+to give the most consistent result amongst the overlapping regions.
+The mosaic is not trimmed to the dimensions of a single frame, thus
+the noise will be greater in the peripheral areas having received
+less exposure time.  The mosaic is not normalised by its exposure
+time (that being the exposure time of a single frame).
+
+=item *
+
+For each cycle of object frames, the recipe creates a mosaic, which
+has its bad pixels filled and is then added into a master mosaic of
+improving signal to noise.  The exposure time is also summed and
+stored in the mosaic's corresponding header.  Likewise the end airmass
+and end UT headers are updated to match that of the last-observed
+frame contributing to the mosaic.
+
+=item *
+
+The combined source image is made by taking symmetrical areas
+about each source, such that no pixels are duplicated.  Thus the
+divisions occur at midpoints of the chop throw and the nod
+separations.  These are registered using the source centroids.
+
+=item *
+
+The photometry tabulation includes the file name, source name,
+time, filter, airmass, the catalogue magnitude and estimates of
+the zero-point with and without the application of a mean
+extinction.  There are headings at the top of each column.
+
+=item *
+
+-  The photometry uses a multiply clipped (2,2,2.5,3 standard 
+deviations) mean to estimate the sky mode in an annulus about the
+source.  The inner annulus diameter is 2.0 times that of the
+aperture (6 arcsec); the outer annulus is 3.0 times (9 arcsec)
+for Michelle.  The errors are internal, based on the sky noise.
+
+=item *
+
+Intermediate frames are deleted except for the differenced pairs
+_dp suffix) frames.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The integrated mosaic in
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_mos, where
+E<lt>mE<gt> is "gm" for Michelle.
+
+=item *
+
+A mosaic for each cycle of object frames in
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_mos_cE<lt>cycle_numberE<gt>,
+where E<lt>cycle_numberE<gt> counts from 0.
+
+=item *
+
+The differenced pairs in
+E<lt>iE<gt>E<lt>dateE<gt>_E<lt>obs_numberE<gt>_dp, where E<lt>iE<gt>
+is "m" for Michelle.
+
+=back
+
+=head1 CONFIGURABLE STEERING PARAMETERS
+
+=over 4
+
+=item NUMBER = INTEGER
+
+The number of frames in the nod pattern.  If absent, the number
+of offsets, as given by header NOFFSETS, minus one is used.  If
+neither is available, 4 is used.  An error state arises if
+the number of jittered frames is fewer than 4 and not a
+multiple of 4.  []
+
+=item USEVAR = LOGICAL
+
+Whether or not to create and propagate variance arrays.  [1]
+
+=back
+
+=head1 IMPLEMENTATION STATUS
+
+=over 4
+
+=item *
+
+The processing engines are from the Starlink packages: CCDPACK
+FIGARO, and KAPPA.
+
+=item *
+
+Uses the Starlink NDF format and multi-NDF HDS container files.
+
+=item *
+
+History is recorded within the data files.
+
+=item *
+
+The title of the data is propagated through intermediate files
+to the mosaic.
+
+=item *
+
+Error propagation is controlled by the USEVAR parameter.
+
+=back
+
+=head1 RELATED RECIPES
+
+L<NOD_CHOP|NOD_CHOP>, 
+L<BRIGHT_POINT_SOURCE_APHOT|BRIGHT_POINT_SOURCE_APHOT>,
+L<JITTER_SELF_FLAT_APHOT|JITTER_SELF_FLAT_APHOT>.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC) (mjc@jach.hawaii.edu)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
