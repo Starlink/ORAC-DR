@@ -858,7 +858,8 @@ actually have a calibration value for it....
 sub iscalsource {
   my $self = shift;
   my $source = uc(shift);
-  my $filter = uc(shift);
+  my $filter;
+  $filter = uc(shift) if @_;
 
   # If we match a planet straightaway then it is a calibrator
   # regardless of filter (unless the filter is not available in fluxes)
