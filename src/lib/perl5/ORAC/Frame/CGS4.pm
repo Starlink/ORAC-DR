@@ -28,6 +28,7 @@ to B<ORAC::Frame::CGS4> objects. Some additional methods are supplied.
  
 use 5.004;
 use ORAC::Frame::UKIRT;
+use ORAC::Print;
  
 # Let the object know that it is derived from ORAC::Frame;
 #@ORAC::Frame::CGS4::ISA = qw/ORAC::Frame::UKIRT/;
@@ -42,6 +43,7 @@ use strict;
  
 # For reading the header
 use NDF;
+use Starlink::HDSPACK qw/copobj/;
 
 
 =head1 PUBLIC METHODS
@@ -344,6 +346,10 @@ sub inout {
       hds_new ($outfile,substr($outfile,0,9),"MICHELLE_HDS",0,@null,$loc,$status);
       dat_annul($loc, $status);
       orac_err("Failed to create HDS container!") if $status != &NDF::SAI__OK;
+      
+      # propagate header
+      $status = copobj($root.".header",$outfile.".header",$status);
+      orac_err("Failed to propagate header!") if $status != &NDF::SAI__OK;
     }
   
     $outfile .= ".".$rest;
