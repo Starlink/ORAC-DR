@@ -680,7 +680,7 @@ UT days.
 
 ORACUT: This is the UT day of the frame in YYYYMMDD format.
 
-This method should be run after a header is set. Currently the header()
+This method should be run after a header is set. Currently the readhdr()
 method calls this whenever it is updated.
 
 This method updates the frame header.
