@@ -12,6 +12,7 @@ ORAC::Display - Top level interface to ORAC display tools
   $Display->usenbs(1);
   $Display->filename(filename);
   $Display->display_data('frame/group object');
+  $Display->display_data('frame/group object',{WINDOW=>1});
 
 =head1 DESCRIPTION
 
@@ -164,8 +165,14 @@ sub idstring {
 This is the main method to be used for displaying data.  The supplied
 object must contain a method for determining the filename and the
 display ID (so that it can be compared with the information stored in
-the device definition file). The available methods are file()
-and  gui_id()
+the device definition file). It should support the file()
+and  gui_id() methods.
+
+The optional hash can be used to override certain entries in the
+display definition file (or in fact do away with the definition file
+completely). Note that the contents of the options hash will be used
+even if no display definition can be found to match the current 
+gui_id.
 
 =cut
 
@@ -181,7 +188,13 @@ sub display_data {
   }
 
   # Read the options hash
-  my $optref = shift if (@_);
+  my $optref;
+  if (@_) {
+    $optref = shift;
+    croak 'Options were not supplied as a hash reference'
+      unless ref($optref) eq 'HASH';
+  }
+
 
   # We are going to generalise here.
   # We intend to loop over all images stored in the current object
@@ -227,12 +240,20 @@ sub display_data {
 #    my %display_info = $self->definition;
     my @defn = $self->definition;
 
+    # If there are no definitions but we have provided an options
+    # hash we can use that
+    $defn[0] = $optref if (defined $optref && scalar(@defn) == 0);
+
     # Now need to loop over all members of @defn
     # This will just jump out if there are no matches stored in the array
     foreach my $defref (@defn) {
 
       # Create a new hash for convenience
       my %display_info = %$defref;
+
+      # Merge with the supplied options (if defined)
+      # This might happen twice if there were no matching entries
+      %display_info = (%display_info, %$optref) if defined $optref;
 
       # Next if we dont have a key describing the display tool
       next unless exists $display_info{'TOOL'};
