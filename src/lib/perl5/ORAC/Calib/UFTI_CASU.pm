@@ -68,6 +68,13 @@ sub new {
     $obj->{Lintab} = undef;
     $obj->{LintabIndex} = undef;
     $obj->{LintabNoUpdate} = 0;
+    $obj->{DQCIndex} = undef;
+    $obj->{Photom} = undef;
+    $obj->{PhotomIndex} = undef;
+    $obj->{PhotomNoUpdate} = 0;
+    $obj->{Astrom} = undef;
+    $obj->{AstromIndex} = undef;
+    $obj->{AstromNoUpdate} = 0;
   
     return $obj;
 
@@ -143,7 +150,7 @@ sub lintabnoupdate {
 
 Return (or set) the name of the current confidence map.
 
-  $mask = $Cal->CPMname;
+  $cpm = $Cal->CPMname;
 
 The C<CPM()> method should be used if a test for suitability of the
 confidence map is required.
@@ -195,6 +202,120 @@ sub CPMnoupdate {
     my $self = shift;
     if (@_) { $self->{CPMNoUpdate} = shift; }
     return $self->{CPMNoUpdate};
+
+}
+
+=item B<photomname>
+
+Return (or set) the name of the current photometric standard source.
+
+  $photom = $Cal->photomname;
+
+
+=cut
+
+
+sub photomname {
+    my $self = shift;
+    if (@_) { $self->{Photom} = shift unless $self->photomnoupdate; }
+    return $self->{Photom}; 
+};
+
+=item B<photomindex>
+
+Return or set the index object associated with the photometry source
+
+  $index = $Cal->photomindex;
+
+An index object is created automatically the first time this method
+is run.
+
+=cut
+
+sub photomindex {
+
+    my $self = shift;
+    if (@_) { $self->{PhotomIndex} = shift; }
+    unless (defined $self->{PhotomIndex}) {
+        my $indexfile = $ENV{ORAC_DATA_OUT}."/index.photom";
+        my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.photom";
+        $self->{PhotomIndex} = new ORAC::Index($indexfile,$rulesfile);
+    };
+
+    return $self->{PhotomIndex};
+
+};
+
+=item B<photomnoupdate>
+
+Stops object from updating itself with more recent data.
+Used when overrding the default photometry source from the command-line.
+
+=cut
+
+sub photomnoupdate {
+
+    my $self = shift;
+    if (@_) { $self->{PhotomNoUpdate} = shift; }
+    return $self->{PhotomNoUpdate};
+
+}
+
+=back
+
+=item B<astromname>
+
+Return (or set) the name of the current astrometric standard source.
+
+  $astrom = $Cal->astromname;
+
+
+=cut
+
+
+sub astromname {
+    my $self = shift;
+    if (@_) { $self->{Astrom} = shift unless $self->astromnoupdate; }
+    return $self->{Astrom}; 
+};
+
+=item B<astromindex>
+
+Return or set the index object associated with the astrometry source
+
+  $index = $Cal->astromindex;
+
+An index object is created automatically the first time this method
+is run.
+
+=cut
+
+sub astromindex {
+
+    my $self = shift;
+    if (@_) { $self->{AstromIndex} = shift; }
+    unless (defined $self->{AstromIndex}) {
+        my $indexfile = $ENV{ORAC_DATA_OUT}."/index.astrom";
+        my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.astrom";
+        $self->{AstromIndex} = new ORAC::Index($indexfile,$rulesfile);
+    };
+
+    return $self->{AstromIndex};
+
+};
+
+=item B<astromnoupdate>
+
+Stops object from updating itself with more recent data.
+Used when overrding the default astrometry source from the command-line.
+
+=cut
+
+sub astromnoupdate {
+
+    my $self = shift;
+    if (@_) { $self->{AstromNoUpdate} = shift; }
+    return $self->{AstromNoUpdate};
 
 }
 
@@ -275,7 +396,7 @@ sub CPM {
 
     return $self->CPMname if $ok;
 
-    croak ("Override confidence map is not suitable! Giving up") 
+    croak("Override confidence map is not suitable! Giving up") 
         if $self->CPMnoupdate;
 
     if (defined $ok) {
@@ -293,6 +414,48 @@ sub CPM {
         # All fall down....
 
         croak("Error in determining confidence map - giving up");
+    }
+}
+
+=item B<photom>
+
+Return (or set) the name of the current photometry source.  No guarantee of
+suitability is made currently -- we just hope the user knows what he/she/it
+is doing (hope springs eternal).
+
+    $photom = $Cal->photom;
+    $Cal->photom($newphotom);
+
+=cut
+
+sub photom {
+    my $self = shift;
+
+    if (@_) {
+        return $self->photomname(shift);
+    } else {
+        return $self->photomname;
+    }
+}
+
+=item B<astrom>
+
+Return (or set) the name of the current astrometry source.  No guarantee of
+suitability is made currently -- we just hope the user knows what he/she/it
+is doing (hope springs eternal).
+
+    $astrom = $Cal->astrom;
+    $Cal->astrom($newastrom);
+
+=cut
+
+sub astrom {
+    my $self = shift;
+
+    if (@_) {
+        return $self->astromname(shift);
+    } else {
+        return $self->astromname;
     }
 }
 
@@ -375,6 +538,32 @@ sub dark {
         croak("Error in dark calibration checking - giving up");
     };
 };
+
+=item B<dqcindex>
+ 
+Return or set the index object associated with the DQC table
+ 
+  $index = $Cal->dqcindex;
+ 
+An index object is created automatically the first time this method
+is run.
+ 
+=cut
+ 
+sub dqcindex {
+ 
+    my $self = shift;
+    if (@_) { $self->{DQCIndex} = shift; }
+    unless (defined $self->{DQCIndex}) {
+        my $indexfile = $ENV{ORAC_DATA_OUT}."/index.dqc";
+        my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.dqc";
+        $self->{DQCIndex} = new ORAC::Index($indexfile,$rulesfile);
+    };
+ 
+    return $self->{DQCIndex};
+ 
+};
+ 
 
 =back
 
