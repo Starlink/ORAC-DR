@@ -64,6 +64,11 @@
 #       INT_METHOD.  If false (0), use integer offsets and changes of
 #       origin to register the frames.  The latter is many times
 #       faster and is recommended for pipeline operation.  [1]
+#    SKYWCS = LOGICAL (Given)
+#       If true (1), the mosaic file has its world co-ordinate frame
+#       set to sky domain, thus appear on supported graphics, provided
+#       a sky frame exists.  Otherwise the frame will be unchanged,
+#       presumably set to domain PIXEL or CCD_REG. [1]
 #    TRIM = LOGICAL (Given)
 #       If true (1), the resampling limits the frame bounds to their
 #       original limits, so the mosaic has the dimensions of a single
@@ -102,7 +107,7 @@
 #
 # Tasks:
 #    CCDPACK: MAKEMOS, TRANNDF; KAPPA: ADD, FILLBAD, FITSMOD, NDFCOPY,
-#    SETORIGIN.
+#    NDFTRACE, SETORIGIN, WCSFRAME.
 #
 # Output Data:
 #    -  The grand mosaic, which is called is "<groupname>_mos", where
@@ -141,6 +146,10 @@
 # Determine whether or not to resample.
     my $resample = $_MAKE_MOSAIC_{RESAMPLE};
     $resample = defined( $resample ) ? $resample : 1;
+
+# Determine whether or not to resample.
+    my $skywcs = $_MAKE_MOSAIC_{SKYWCS};
+    $skywcs = defined( $skywcs ) ? $skywcs : 1;
 
 # Determine whether or not to trim.
     my $trim = $_MAKE_MOSAIC_{TRIM};
@@ -207,7 +216,7 @@
 # Write the input file names to the text files.
 #             foreach $flatted (@$inref) {
 #                $param1 = "in1=${flatted}.more.ccdpack.transform";
-#                $Mon{"kappa_mon"}->obeyw("tranjoin","$param1 $param2 accept");
+#                $Mon{"kappa_mon"}->obeyw( "tranjoin", "$param1 $param2 accept" );
 #             }
 
 # Report the status.
@@ -256,11 +265,11 @@
 # Shift and resample the flat-field object frames.  This determines
 # the bounds automatically.  It takes the origin from the first object
 # frame.
-             $Mon{"ccdpack_reg"}->obeyw("tranndf","$param1 $param2");
+             $Mon{"ccdpack_reg"}->obeyw( "tranndf", "$param1 $param2" );
 
 # Report the processing status.
-             orac_print "Frames $objlist resampled\n";
-             orac_print "Resampled frames are $outlist\n";
+             orac_print "Frames $objlist resampled.\n";
+             orac_print "Resampled frames are $outlist.\n";
 
           } else {
 
@@ -344,7 +353,7 @@
                 shift( @yoffsets );
 
 # Apply change of origin to the current frame.
-                $Mon{"ndfpack_mon"}->obeyw("setorigin","$param1");
+                $Mon{"ndfpack_mon"}->obeyw( "setorigin", "$param1" );
              }
 
 # Create text files to hold the list of 'output' files, one per line.
@@ -380,11 +389,11 @@
           $param2 = "zero optov=$optov method=$method";
 
 # Make the mosaic correcting for differences in offset.
-          $Mon{"ccdpack_reg"}->obeyw("makemos","$param1 $param2");
+          $Mon{"ccdpack_reg"}->obeyw( "makemos", "$param1 $param2" );
           unlink( "tranndf.inlist$$", "tranndf.outlist$$" );
 
 # Report the processing status.
-          orac_print "Mosaic $outname formed\n";
+          orac_print "Mosaic $outname formed.\n";
 
 # Remove bad pixels
 # =================
@@ -411,7 +420,7 @@
              $Mon{ "kappa_mon" }->obeyw( "fillbad", "$param1" );
 
 # Report the processing status.
-             orac_print "Bad pixels filled in mosaic $outname to form $mosname\n";
+             orac_print "Bad pixels filled in mosaic $outname to form $mosname.\n";
 
 # We need to keep the names matching so make a copy of mosaic containing
 # bad pixels.
@@ -422,6 +431,23 @@
 
 # Discard the intermediate group file.
           _DELETE_A_FRAME_ FRAME=$outname
+
+# Set the world co-ordinate system to sky.
+# ========================================
+          if ( $skywcs ) {
+
+# Determine whether or there is a SKY frame present.  First obtain a
+# list of the frames' domains.  See if there is a domain "SKY" ignoring
+# case.
+             $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$mosname fullwcs" );
+             ( my $ORAC_STATUS, my @domain ) = $Mon{"ndfpack_mon"}->get( "ndftrace", "fdomain" );
+             if ( join( " ", @domain ) =~ /\sSKY\s/i ) {
+
+# Select the SKY frame in the WCS component.
+                $Mon{"ndfpack_mon"}->obeyw( "wcsframe", "ndf=$mosname frame=sky" );
+                orac_print "Astrometry SKY co-ordinate frame selected in $mosname.\n";
+             }
+          }
 
 # Define the group file and headers.
 # ==================================
@@ -508,12 +534,13 @@
              }
              _DELETE_A_FRAME_ FRAME=$tmpmos
 
-             orac_print "Frame $mosname added into main mosaic " . $Grp->file . "\n";
+             orac_print "Frame $mosname added into main mosaic " . $Grp->file . ".\n";
 
 # Display the main mosaic.
              _DISPLAY_GROUP_IMAGE_
           }
        }
+       orac_print "\n";
     }
 
 # Podule
@@ -592,6 +619,13 @@ INT_METHOD.  If false (0), use integer offsets and changes of
 origin to register the frames.  The latter is many times
 faster and is recommended for pipeline operation.  [1]
 
+=item SKYWCS = LOGICAL (Given)
+
+If true (1), the mosaic file has its world co-ordinate frame
+set to sky domain, thus appear on supported graphics, provided
+a sky frame exists.  Otherwise the frame will be unchanged,
+presumably set to domain PIXEL or CCD_REG. [1]
+
 =item TRIM = LOGICAL (Given)
 
 If true (1), the resampling limits the frame bounds to their
@@ -663,7 +697,8 @@ data.
 
 =head1 TASKS
 
-CCDPACK: MAKEMOS, TRANNDF; KAPPA: ADD, FILLBAD, FITSMOD, NDFCOPY, SETORIGIN.
+CCDPACK: MAKEMOS, TRANNDF; KAPPA: ADD, FILLBAD, FITSMOD, NDFCOPY, 
+NDFTRACE, SETORIGIN, WCSFRAME.
 
 =head1 OUTPUT DATA
 
