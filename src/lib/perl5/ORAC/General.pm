@@ -16,6 +16,7 @@ ORAC::General - Simple perl subroutines that may be useful for primitives
   %hash = parse_keyvalues($string);
   @obs = parse_obslist($string);
   $result = cosdeg( 45.0 );
+  $result = sindeg( 45.0) ;
   @dms = dectodms( $dec );
 
   print "Is a number" if is_numeric( $number );
@@ -35,7 +36,7 @@ use 5.006;
 require Exporter;
 @ISA = (Exporter);
 @EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist cosdeg
-	      dectodms deg2rad rad2deg is_numeric
+	      sindeg dectodms deg2rad rad2deg is_numeric
 	    );
 
 use Carp;
@@ -63,6 +64,16 @@ Return the cosine of the angle. The angle must be in degrees.
 
 sub cosdeg {
   cos( deg2rad($_[0]) );
+}
+
+=item B<sindeg>
+
+Return the sine of the angle. The angle must be in degrees.
+
+=cut
+
+sub sindeg {
+  sin( deg2rad($_[0]) );
 }
 
 =item B<dectodms>
