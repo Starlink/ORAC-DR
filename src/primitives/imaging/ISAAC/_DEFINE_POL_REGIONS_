@@ -1,0 +1,328 @@
+#+
+# Name:
+#    _DEFINE_POL_REGIONS_
+#
+# Purpose:
+#    Determine the extents of object and sky regions of an ISAAC polarimetry frame.
+#
+# Language:
+#    Perl5
+
+# Description:
+#    A polarimetry frame is divided into six sections: three e- and o-beam
+#    pairs with the source normally in the central pair.  This primitive
+#    returns the extents of these regions for subsequent extraction and
+#    sky subtraction.  The various regions are aligned along Cartesian
+#    axes, with the x-axis dividing the various regions, and the
+#    jittering is along the y axis.  Also the order of the regions from
+#    left to right is deemded to be o sky, e sky, o target,
+#    e target, o secondary sky, and e secondary sky.  
+#
+#    At present fixed limits are used, but sigma-clipped profiling is
+#    possible to determine where each region starts and ends along the
+#    x axis.
+#
+#    The current target limits are 30% to 70% of the frame width about
+#    the jittered y-axis centre using the telescope offsets, or
+#    10% to 90% if argument EXTENDED is true.  Thus the limits define a
+#    section 40% or 80% of the height of the frame roughly centred on
+#    the source.  The restriction is to make mosaics with few pixels not
+#    derived from all contributing jittered frames, since there are usually
+#    only three jitter positions, and to allow a reasonable jitter step.  If
+#    the jitter size was restricted, the limits could be expanded for
+#    extended sources.
+#
+#    The current sky limits are 1% to 99% of the frame height.
+#
+# Arguments:
+#    ESBOUNDS( 4 ) = INTEGER (Returned)
+#       The pixel bounds defining the e-beam sky region in a raw
+#       polarisation frame.
+#    ETBOUNDS( 4 ) = INTEGER (Returned)
+#       The pixel bounds defining the e-beam target region in a raw
+#       polarisation frame.
+#    EZBOUNDS( 4 ) = INTEGER (Returned)
+#       The pixel bounds defining the secondary e-beam sky region in
+#       a raw polarisation frame.
+#    EXTENDED = LOGICAL (Given)
+#       If true (1), wider declination limits are used for the
+#       target regions, 10% to 90%, instead of 30% to 70%. [0]
+#    OSBOUNDS( 4 ) = INTEGER (Returned)
+#       The pixel bounds defining the o-beam sky region in a raw
+#       polarisation frame.
+#    OTBOUNDS( 4 ) = INTEGER (Returned)
+#       The pixel bounds defining the o-beam target region in a raw
+#       polarisation frame.
+#    OZBOUNDS( 4 ) = INTEGER (Returned)
+#       The pixel bounds defining the secondary o-beam sky region in
+#       a raw polarisation frame.
+#
+# Notes:
+#    -  This primitive is suitable for ISAAC.
+#    -  It only operates on object frames.
+#    -  Assumes a full array.
+#    -  Fractional pixel limits are rounded to the next lower integer.
+#    -  The x pixel limits for the sections when using the
+#    full array are as follows.
+#    o sky: 86--216; e sky: 230--360; o target: 382--512; e target: 
+#    526--656, o secondary sky: 678--808; e secondary sky: 820--950.
+#
+# Tasks:
+#    KAPPA: NDFTRACE.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ) {
+
+# Find the width limits in right ascension of the target regions.
+       my $extended = $_DEFINE_POL_REGIONS_{EXTENDED};
+       $extended = defined( $extended ) ? $extended: 0;
+
+       my ( $frac_l, $frac_u );
+       if ( $extended ) {
+          $frac_l = 0.10; $frac_u = 0.90;
+       } else {
+          $frac_l = 0.30; $frac_u = 0.70;
+       }
+
+# Obtain the rotation angle in degrees.
+       my $rotangle = $Frm->uhdr( "ORAC_ROTATION" );
+       $rotangle = defined( $rotangle ) ? $rotangle : 0.0;
+
+# Find the offsets in pixels.
+       _GET_CARTESIAN_TELESCOPE_OFFSETS_
+       my $xoffset = $_GET_CARTESIAN_TELESCOPE_OFFSETS_{XOFF};
+       my $yoffset = $_GET_CARTESIAN_TELESCOPE_OFFSETS_{YOFF};
+
+# Obtain the midpoint of a band.
+# ==============================
+
+# Obtain the frame dimensions by tracing the NDF.
+       my $param1 = "ndf=".$Frm->file;
+       my $ORAC_STATUS;
+       $Mon{"ndfpack_mon"}->obeyw("ndftrace", "$param1");
+
+# Extract the bounds of the frame.
+       ( $ORAC_STATUS, my @dims ) = $Mon{"ndfpack_mon"}->get( "ndftrace", "dims" );
+
+# Obtain the dimensions.
+       my $xdim = $dims[ 0 ];
+       my $ydim = $dims[ 1 ];
+
+# Define fractional limits.
+# =========================
+
+# Scale the ofset to fractions of the array height.
+       my $off_f = $yoffset / $ydim;
+
+# Set the limits of the e- and o-beam target and sky as percentages
+# of the image, along the axis perpendicular to the bands
+# (y direction).  The field orientation changes, not the polariser, 
+# therefore equatorial co-ordinates onlt confuse matters.
+       my ( @et_lbnd_f, @et_ubnd_f, @ot_lbnd_f, @ot_ubnd_f );
+       my ( @es_lbnd_f, @es_ubnd_f, @os_lbnd_f, @os_ubnd_f );
+       my ( @ez_lbnd_f, @ez_ubnd_f, @oz_lbnd_f, @oz_ubnd_f );
+
+# We're using the full array.  Assume that the regions are strips in y.
+       @ot_lbnd_f = ( 0.373, $frac_l + $off_f );
+       @ot_ubnd_f = ( 0.500, $frac_u + $off_f );
+       @et_lbnd_f = ( 0.514, $frac_l + $off_f );
+       @et_ubnd_f = ( 0.641, $frac_u + $off_f );
+
+       @os_lbnd_f = ( 0.084, 0.01 );
+       @os_ubnd_f = ( 0.211, 0.99 );
+       @es_lbnd_f = ( 0.225, 0.01 );
+       @es_ubnd_f = ( 0.449, 0.99 );
+
+       @oz_lbnd_f = ( 0.662, 0.01 );
+       @oz_ubnd_f = ( 0.789, 0.99 );
+       @ez_lbnd_f = ( 0.801, 0.01 );
+       @ez_ubnd_f = ( 0.928, 0.99 );
+
+# Finally ensure the lower bound is is indeed lower than the upper.
+# e-beam, target
+       my ( $et_x_l, $et_x_u, $et_y_l, $et_y_u );
+       $et_x_l = int( min( $et_lbnd_f[ 0 ], $et_ubnd_f[ 0 ] ) * $xdim );
+       $et_x_u = int( max( $et_lbnd_f[ 0 ], $et_ubnd_f[ 0 ] ) * $xdim );
+       $et_y_l = int( min( $et_lbnd_f[ 1 ], $et_ubnd_f[ 1 ] ) * $ydim );
+       $et_y_u = int( max( $et_lbnd_f[ 1 ], $et_ubnd_f[ 1 ] ) * $ydim );
+
+# o-beam, target
+       my ( $ot_x_l, $ot_x_u, $ot_y_l, $ot_y_u );
+       $ot_x_l = int( min( $ot_lbnd_f[ 0 ], $ot_ubnd_f[ 0 ] ) * $xdim );
+       $ot_x_u = int( max( $ot_lbnd_f[ 0 ], $ot_ubnd_f[ 0 ] ) * $xdim );
+       $ot_y_l = int( min( $ot_lbnd_f[ 1 ], $ot_ubnd_f[ 1 ] ) * $ydim );
+       $ot_y_u = int( max( $ot_lbnd_f[ 1 ], $ot_ubnd_f[ 1 ] ) * $ydim );
+
+# e-beam, sky
+       my ( $es_x_l, $es_x_u, $es_y_l, $es_y_u );
+       $es_x_l = int( min( $es_lbnd_f[ 0 ], $es_ubnd_f[ 0 ] ) * $xdim );
+       $es_x_u = int( max( $es_lbnd_f[ 0 ], $es_ubnd_f[ 0 ] ) * $xdim );
+       $es_y_l = int( min( $es_lbnd_f[ 1 ], $es_ubnd_f[ 1 ] ) * $ydim );
+       $es_y_u = int( max( $es_lbnd_f[ 1 ], $es_ubnd_f[ 1 ] ) * $ydim );
+
+# o-beam, sky
+       my ( $os_x_l, $os_x_u, $os_y_l, $os_y_u );
+       $os_x_l = int( min( $os_lbnd_f[ 0 ], $os_ubnd_f[ 0 ] ) * $xdim );
+       $os_x_u = int( max( $os_lbnd_f[ 0 ], $os_ubnd_f[ 0 ] ) * $xdim );
+       $os_y_l = int( min( $os_lbnd_f[ 1 ], $os_ubnd_f[ 1 ] ) * $ydim );
+       $os_y_u = int( max( $os_lbnd_f[ 1 ], $os_ubnd_f[ 1 ] ) * $ydim );
+
+# e-beam, secondary sky
+       my ( $ez_x_l, $ez_x_u, $ez_y_l, $ez_y_u );
+       $ez_x_l = int( min( $ez_lbnd_f[ 0 ], $ez_ubnd_f[ 0 ] ) * $xdim );
+       $ez_x_u = int( max( $ez_lbnd_f[ 0 ], $ez_ubnd_f[ 0 ] ) * $xdim );
+       $ez_y_l = int( min( $ez_lbnd_f[ 1 ], $ez_ubnd_f[ 1 ] ) * $ydim );
+       $ez_y_u = int( max( $ez_lbnd_f[ 1 ], $ez_ubnd_f[ 1 ] ) * $ydim );
+
+# o-beam, secondary sky
+       my ( $oz_x_l, $oz_x_u, $oz_y_l, $oz_y_u );
+       $oz_x_l = int( min( $oz_lbnd_f[ 0 ], $oz_ubnd_f[ 0 ] ) * $xdim );
+       $oz_x_u = int( max( $oz_lbnd_f[ 0 ], $oz_ubnd_f[ 0 ] ) * $xdim );
+       $oz_y_l = int( min( $oz_lbnd_f[ 1 ], $oz_ubnd_f[ 1 ] ) * $ydim );
+       $oz_y_u = int( max( $oz_lbnd_f[ 1 ], $oz_ubnd_f[ 1 ] ) * $ydim );
+
+# Calculate and store the e-target bounds.
+# ========================================
+       my ( @etbounds, @otbounds, @esbounds, @osbounds, @ezbounds, @ozbounds  );
+
+       @etbounds = ( $et_x_l, $et_x_u, $et_y_l, $et_y_u );
+       $_DEFINE_POL_REGIONS_{ETBOUNDS} = \@etbounds;
+
+       @otbounds = ( $ot_x_l, $ot_x_u, $ot_y_l, $ot_y_u );
+       $_DEFINE_POL_REGIONS_{OTBOUNDS} = \@otbounds;
+
+       @esbounds = ( $es_x_l, $es_x_u, $es_y_l, $es_y_u );
+       $_DEFINE_POL_REGIONS_{ESBOUNDS} = \@esbounds;
+
+       @osbounds = ( $os_x_l, $os_x_u, $os_y_l, $os_y_u );
+       $_DEFINE_POL_REGIONS_{OSBOUNDS} = \@osbounds;
+
+       @ezbounds = ( $ez_x_l, $ez_x_u, $ez_y_l, $ez_y_u );
+       $_DEFINE_POL_REGIONS_{EZBOUNDS} = \@ezbounds;
+
+       @ozbounds = ( $oz_x_l, $oz_x_u, $oz_y_l, $oz_y_u );
+       $_DEFINE_POL_REGIONS_{OZBOUNDS} = \@ozbounds;
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_DEFINE_POL_REGIONS_ -- Determine the extents of object and sky regions of an ISAAC polarimetry frame.
+
+=head1 DESCRIPTION
+
+A polarimetry frame is divided into six sections: three e- and o-beam
+pairs with the source normally in the central pair.  This primitive
+returns the extents of these regions for subsequent extraction and
+sky subtraction.  The various regions are aligned along Cartesian
+axes, with the I<x>-axis dividing the various regions, and the
+jittering is along the I<y> axis.  Also the order of the regions from
+left to right is deemded to be I<o> sky, I<e> sky, I<o> target,
+I<e> target, I<o> secondary sky, and I<e> secondary sky.  
+
+At present fixed limits are used, but sigma-clipped profiling is
+possible to determine where each region starts and ends along the
+I<x> axis.
+
+The current target limits are 30% to 70% of the frame width about the
+jittered y-axis centre using the telescope offsets, or 10% to 90% if
+argument EXTENDED is true.  Thus the limits define a section 40% or
+80% of the width of the frame roughly centred on the source.  The
+restriction is to make mosaics with few pixels not derived from all
+contributing jittered frames, since there are usually only three
+jitter positions, and to allow a reasonable jitter step.  If the
+jitter size was restricted, the limits could be expanded for extended
+sources.
+
+The current sky limits are 1% to 99% of the frame height.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item ESBOUNDS( 4 ) = INTEGER (Returned)
+
+The pixel bounds defining the e-beam sky region in a raw
+polarisation frame.
+
+=item ETBOUNDS( 4 ) = INTEGER (Returned)
+
+The pixel bounds defining the e-beam target region in a raw
+polarisation frame.
+
+=item EZBOUNDS( 4 ) = INTEGER (Returned)
+
+The pixel bounds defining the secondary e-beam sky region in a raw
+polarisation frame.
+
+=item OSBOUNDS( 4 ) = INTEGER (Returned)
+
+The pixel bounds defining the o-beam sky region in a raw
+polarisation frame.
+
+=item OTBOUNDS( 4 ) = INTEGER (Returned)
+
+The pixel bounds defining the o-beam target region in a raw
+polarisation frame.
+
+=item OZBOUNDS( 4 ) = INTEGER (Returned)
+
+The pixel bounds defining the o-beam secondary sky region in a raw
+polarisation frame.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ISAAC.
+
+=item *
+
+It only operates on object frames.
+
+=item *
+
+Assumes a full array.
+
+=item *
+
+Fractional pixel limits are rounded to the next lower integer.
+
+=item *
+
+The I<x> pixel limits for the sections when using the
+full array are as follows.
+I<o> sky: 86--216; I<e> sky: 230--360; I<o> target: 382--512; I<e> target: 
+526--656, I<o> secondary sky: 678--808; I<e> secondary sky: 820--950.
+
+=back
+
+=head1 TASKS
+
+KAPPA: NDFTRACE.
+
+=head1 AUTHORS
+
+Malcolm J. Currie (JAC, Starlink) <mjc@star.rl.ac.uk>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
