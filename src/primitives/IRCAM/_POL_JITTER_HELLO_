@@ -11,12 +11,14 @@
 # Description:
 #    Sets up CCDPACK-related global parameters for POL_JITTER
 #    recipes.  The settings are as follows.
-# 
 #    -  The readout bounds in the frame headers RDOUT_X1, RDOUT_Y1,
 #    RDOUT_X2, RDOUT_Y2 define the pixel limits for processing, i.e. there
 #    are no bias strips and interpolation direction.  
-#    -  Error processing is disabled so the readout noise and
-#    analogue-to-digital conversions are not specified.
+#    -  Error processing is enabled.  The analogue-to-digital conversion
+#    is obtained from the header: GAIN for UFTI and DEPERDN for IRCAM.
+#    The readout noise is taken from the tabulated values given on the
+#    instrument Web sites, depending on the readout mode given by header
+#    MODE, and by the speed given by header SPD_GAIN for UFTI.
 #    -  There is no deferred charge.
 #    -  Position list processing tasks expect to find the names of lists
 #    stored within NDFs. 
@@ -47,8 +49,53 @@
     my $y2 = $Frm->hdr( "RDOUT_Y2" );
     my $header = "extent=[$x1,$x2,$y1,$y2]";
 
+# Obtain the instrument and mode header values.
+    my $mode = $Frm->hdr( "MODE" );
+    my ( $enoise, $padu, $rnoise, $speed );
+    if ( $Frm->hdr( "INSTRUME" ) =~ /^UFTI/ ) {
+
+# Obtain the number of electrons per data number, and the readout
+# speed.
+       $padu = $Frm->hdr( "GAIN" );
+       $speed = $Frm->hdr( "SPD_GAIN" );
+
+# Set the electron noise using typical values documented in the
+# IRCAM Web pages.
+       $enoise = 56;
+       if ( $speed =~ /^Normal/ ) {
+          if ( $mode =~ /^NDSTARE/ ) {
+             $enoise = 26;
+          } elsif ( $mode =~ /^10_NDSTARE/ ) {  
+             $enoise = 12;
+          }
+
+       } elsif ( $speed =~ /^Fast/ ) {
+         $enoise = 24;
+
+       } elsif ( $speed =~ /^Higain/ ) {
+          $enoise = 20;
+          if ( $mode =~ /^10_NDSTARE/ ) {
+             $enoise = 10;
+          }
+       }
+
+# Likewise from IRCAM equivalent headers.
+    } else {
+       $padu = $Frm->hdr( "DEPERDN" );
+
+# Set the electron noise using typical values documented in the
+# IRCAM Web pages.
+       $enoise = 56;
+       if ( $mode =~ /^NDSTARE/ ) {
+          $enoise = 47;
+       }
+    }
+
+# Derive the read noise in ADU.
+    $rnoise = $enoise / $padu;
+
 # Define the hidden variables for CCDPACK setup.
-    my $hidden = "saturate=no preserve=yes genvar=no restore=no logto=terminal adc=! rnoise=! bounds=! direction=! deferred=! ndfnames=yes save=no";
+    my $hidden = "saturate=no preserve=yes genvar=yes restore=no logto=terminal adc=$padu rnoise=$rnoise bounds=! direction=! deferred=! ndfnames=yes save=no";
 
 # Execute commands.
     my $ORAC_STATUS = $Mon{'ccdpack_res'}->control('par_reset');
@@ -76,8 +123,11 @@ are no bias strips and interpolation direction.
 
 =item *
 
-Error processing is disabled so the readout noise and
-analogue-to-digital conversions are not specified.
+Error processing is enabled.  The analogue-to-digital conversion
+is obtained from the header: GAIN for UFTI and DEPERDN for IRCAM.
+The readout noise is taken from the tabulated values given on the
+instrument Web sites, depending on the readout mode given by header
+MODE, and by the speed given by header SPD_GAIN for UFTI.
 
 =item *
 
