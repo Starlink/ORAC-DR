@@ -43,7 +43,8 @@ ORAC::Xorac:: - process launcher routines called from Xoracdr
 
   use ORAC::Xorac::Process
   
-  xorac_start_process( \%options, $inst_select );
+  xorac_start_process( \%options, $inst_select, \$CURRENT_RECIPE,
+                       \$Override_Recipe, \@obs, $fatal_dialog   );
 
 =head1 DESCRIPTION
 
@@ -103,11 +104,12 @@ The following subroutines are available:
 
 sub xorac_start_process {
 
-  croak 'Usage: xorac_start_process( \%options, $inst_select, \$CURRENT_RECIPE, \$Override_Recipe, \@obs )'
-    unless scalar(@_) == 5;
+  croak 'Usage: xorac_start_process( \%options, $inst_select, \$CURRENT_RECIPE, \$Override_Recipe, \@obs, $fatal_dialog )'
+    unless scalar(@_) == 6;
 
   # Read the argument list
-  my ( $options, $inst_select, $CURRENT_RECIPE, $Override_Recipe, $obs ) = @_;
+  my ( $options, $inst_select, $CURRENT_RECIPE, 
+       $Override_Recipe, $obs, $fatal_dialog ) = @_;
 
   use ORAC::Print;     # Printing messages or errors
   use ORAC::Core;      # Core pipeline routines
@@ -305,7 +307,7 @@ sub xorac_start_process {
  
   # Over ride recipe 
   my $Use_Recipe;
-  if ( defined ${$options}{"override"} == 1 ) {
+  if ( ${$options}{"override"} == 1 ) {
      $Use_Recipe = $$Override_Recipe;
   } else {
      undef $Use_Recipe; 
@@ -324,18 +326,13 @@ sub xorac_start_process {
   }
   catch ORAC::Error::FatalError with 
   {
-     my $Error = shift;
-
-     print "Fatal Error in Xorac::Process Main Loop\n";
-     print "Error was: $Error\n";
-    
+     my $error = shift;
+     $fatal_dialog->configure( -text => "Error: $error" );
+     $fatal_dialog->Show;
      return;
   }
   catch ORAC::Error::UserAbort with
   {
-     my $Error = shift;
-     
-     print "User Abort in Xorac::Process Main Loop\n";
      return;
   }
 

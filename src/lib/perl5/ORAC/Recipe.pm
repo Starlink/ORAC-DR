@@ -83,7 +83,17 @@ sub new {
   if ( @_ ) {
     my %args = @_;
     if (exists $args{NAME} && exists $args{INSTRUMENT}) {
-      $rec->read_recipe(%args);
+    
+      try {
+         $rec->read_recipe(%args);
+      } 
+      catch ORAC::Error::FatalError with
+      {
+         my $Error = shift;
+	 print "re-throwing error $Error\n";
+         $Error->throw;
+      };
+    
     } elsif (exists $args{NAME}) {
       $rec->recipe_name( $args{NAME} );
     } elsif (exists $args{INSTRUMENT}) {
@@ -353,6 +363,7 @@ sub execute {
   }
   
   # Execute the recipe
+  
   my $status = ORAC::Recipe::Execution::orac_execute_recipe( $CURRENT_PRIMITIVE,
                                                              $block,$Frm,
 	  						     $Grp, $Cal,
@@ -372,7 +383,7 @@ sub execute {
   # context so that thrown errors are caught, they should all have values
   # attached (e.g. ORAC__ABORT or ORAC__FATAL) but don't take chances
   if ("$@") {
-
+  
     # Checking ref() and isa() clears $@
     my $error = $@;
 
@@ -543,7 +554,7 @@ sub read_recipe {
   } elsif (defined $self->recipe_name) {
     $name = $self->recipe_name;
   } else {
-    croak "read_recipe: No recipe NAME supplied. Aborting";
+    throw ORAC::Error::FatalError( "read_recipe: No recipe NAME supplied. Aborting", ORAC__FATAL);
   }
   if ( exists $args{INSTRUMENT} ) {
     $inst = $args{INSTRUMENT};
@@ -551,7 +562,7 @@ sub read_recipe {
   } elsif (defined $self->instrument) {
     $inst = $self->instrument;
   } else {
-    croak "read_recipe: No recipe INSTRUMENT supplied. Aborting";
+    throw ORAC::Error::FatalError( "read_recipe: No recipe INSTRUMENT supplied. Aborting", ORAC__FATAL);
   }
 
   # Arguments are okay. Now need to determine search path.
@@ -582,7 +593,7 @@ sub read_recipe {
 
   } else {
     my $str = join("\n", @path);
-    croak "Could not find and/or open recipe $name in any of:\n$str\n";
+    throw ORAC::Error::FatalError( "Could not find and/or open recipe $name in any of:\n$str\n", ORAC__FATAL);
   }
 
   # print Dumper( $self->_recipe );
@@ -886,6 +897,7 @@ sub _parse_recursively {
 
       
       # Store lines - making sure we DO NOT create a separate scope
+      # for the $$CURRENT_PRIMITIVE variable
       push(@parsed,
          "\n{\nmy \$ORAC_PRIMITIVE=\"$primitive_name\";\n",
 	 "\$\$CURRENT_PRIMITIVE=[ \$ORAC_PRIMITIVE ];\n",
@@ -938,8 +950,8 @@ sub _read_primitive {
   my $instrument = $self->instrument;
 
   # Check that it is defined
-  croak "_read_primitive: Instrument not defined in UKIRT."
-    unless defined $instrument;
+  throw ORAC::Error::FatalError( "_read_primitive: Instrument not defined.",
+                                 ORAC__FATAL) unless defined $instrument;
 
   # Create the search path [very similar to read_recipe method]
   my @path;
@@ -964,7 +976,7 @@ sub _read_primitive {
 
   } else {
     my $str = join("\n", @path);
-    croak "Could not find and open primitive $name in any of\n$str\n";
+    throw ORAC::Error::FatalError( "Could not find and open primitive $name in any of:\n\n$str\n", ORAC__FATAL);
   }
 
   return \@contents;

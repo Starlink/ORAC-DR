@@ -916,7 +916,8 @@ sub xorac_editor {
                                -activebackground => 'blue' );
 
   $save_button->configure( -command => sub { 
-                                    xorac_save_recipe( $recipe,\$text ); 
+                                    xorac_save_recipe( $recipe,\$text );
+                                    $label_text = "Editing recipe: " . $recipe; 
                                     } );
   $save_button->grid( -column => 1 ,-row => 0, -sticky => 'we' );	
 
@@ -931,6 +932,11 @@ sub xorac_editor {
   }
   close(FH);
 
+  # bind any key input to add (modified) onto the recipe string
+  $text->bind("<Key>", sub { 
+                 unless ( $label_text =~ "modified" ) {
+		    $label_text = $label_text . " (modified)"; } } );
+  
 } 
 
 # xorac_save_recipe
