@@ -284,17 +284,21 @@ sub get {
   # we are interested in the "$param" key
   return (wantarray ? (ORAC__ERROR) : undef ) if !exists $tie{$param};
 
+  # Now take a deep clone of this tie since the Sds structure
+  # will be DESTROYED when we exit this routine
+  my $clone = $result->toperl;
+
   # now handle scalar vs list context
   if (!wantarray) {
-    return $tie{$param};
+    return $clone->{$param};
   } else {
     my @retvals;
-    if (ref($tie{$param}) eq 'HASH') {
-      @retvals = %{ $tie{$param} };
-    } elsif (ref($tie{$param}) eq 'ARRAY') {
-      @retvals = @{ $tie{$param} };
+    if (ref($clone->{$param}) eq 'HASH') {
+      @retvals = %{ $clone->{$param} };
+    } elsif (ref($clone->{$param}) eq 'ARRAY') {
+      @retvals = @{ $clone->{$param} };
     } else {
-      @retvals = ( $tie{$param} );
+      @retvals = ( $clone->{$param} );
     }
     return (ORAC__OK, @retvals);
   }
