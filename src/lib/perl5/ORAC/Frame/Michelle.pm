@@ -215,6 +215,16 @@ sub findnsubs {
   $status = &NDF::SAI__OK;
   hds_open($file, 'READ', $loc, $status);
   dat_ncomp($loc, $ncomp, $status);
+  my $ifiles = 0;
+  foreach my $i (1..$ncomp) {
+    dat_index($loc, $i, my $outloc, $status);
+    dat_name($outloc, my $name, $status);
+    dat_annul($outloc, $status);
+
+    # Increment the I file counter if the name is Inumber
+    $ifiles++ if $name =~ /^I\d+$/;
+    print "Found NDF $name\n"; # debug line
+  }
   dat_annul($loc, $status);
 		  
   unless ($status == &NDF::SAI__OK) {
@@ -222,12 +232,9 @@ sub findnsubs {
     return 0;
   }
 
-  $ncomp--;
-
-
-  $self->nsubs($ncomp);
+  $self->nsubs($ifiles);
   
-  return $ncomp;
+  return $ifiles;
 
 }
 
