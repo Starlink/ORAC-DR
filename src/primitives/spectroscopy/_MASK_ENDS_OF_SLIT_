@@ -1,0 +1,75 @@
+=head1 NAME
+
+_MASK_ENDS_OF_SLIT_ - Flags areas of the frame off the end of the slit as bad.
+
+=head1 DESCRIPTION
+
+Marks as bad pixels those areas of the frame off the end of the slit.
+Collapses the frame along the axis parallel to the slit, marks rows
+which are less than 95% illuminated as bad.
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# Loop through sub-files
+foreach my $i (1 .. $Frm->nfiles) {
+
+   my ($in, $out) = $Frm->inout("_mnf", $i);
+
+   # need a tmp file to hold the spectrum
+   my $tmp = new ORAC::TempFile;
+   my $tmpfile = $tmp->file;
+
+   # Collapse the frame in to the tmp file
+   # Use compave rather than collapse as we want a 2D (1xN) image, not a 
+   # 1D spectrum. Need to know the x size
+   $Mon{'ndfpack_mon'}->obeyw("ndftrace", "ndf=$in");
+   my $ORAC_STATUS;
+   ($ORAC_STATUS, my @ndflbound) = $Mon{'ndfpack_mon'}->get("ndftrace", "lbound");   
+   ($ORAC_STATUS, my @ndfubound) = $Mon{'ndfpack_mon'}->get("ndftrace", "ubound");   
+
+   my $xstart = $ndflbound[0];
+   my $xend = $ndfubound[0];
+   my $xdim = $xend-$xstart+1;
+
+   $Mon{'kappa_mon'}->obeyw("compave", "in=$in out=$tmpfile align=first compress=[$xdim,1]");
+
+   # Get the median value in the spectrum
+   $Mon{'kappa_mon'}->obeyw("stats", "ndf=$tmpfile clip=3");
+   ($ORAC_STATUS, my $cmean)=$Mon{'kappa_mon'}->get("stats", "mean");
+
+   # need another temp file
+   my $temp = new ORAC::TempFile;
+   my $tempfile = $temp->file;
+
+   my $thrlo=0.95*$cmean;
+   my $thrhi=10*$cmean;
+
+   # Do the thresh
+   $Mon{'kappa_mon'}->obeyw("thresh", "in=$tmpfile thrlo=$thrlo thrhi=$thrhi newlo=bad newhi=bad out=$tempfile");
+
+   # Do another thresh to get all the good values to 1
+   $Mon{'kappa_mon'}->obeyw("thresh", "in=$tempfile thrlo=1 thrhi=1 newlo=1 newhi=1 out=$tmpfile");
+
+   # Expand the spectrum back into an image
+   $Mon{'kappa_mon'}->obeyw("pixdupe", "in=$tmpfile out=$tempfile expand=[$xdim,1]");
+
+   # Multiply the input file by that image to get the output file
+   $Mon{'kappa_mon'}->obeyw("mult", "in1=$in in2=$tempfile out=$out title=$out");
+
+   # Update the Frm object
+   $Frm->file($out, $i);
+
+   orac_print "$in to $out: Masked off ends of slit\n";
+}
+
+# Display the frame
+$Display->display_data( $Frm ) if defined $Display;
