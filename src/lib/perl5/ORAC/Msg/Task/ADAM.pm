@@ -48,7 +48,9 @@ use ORAC::Constants qw/:status/;
 use Starlink::ADAM ();
 
 
-use vars qw/$VERSION $DTASK__ACTCOMPLETE $SAI__OK/;
+use vars qw/$VERSION $DTASK__ACTCOMPLETE $SAI__OK $DEBUG/;
+
+$DEBUG = 0;
 
 # Access the AMS task code
 use Starlink::AMS::Task '1.00';
@@ -204,7 +206,7 @@ sub get {
   my ($status,@values) = $self->obj->get($task, $param);
 
   # Convert from ADAM to ORAC status
-  return $self->_to_orac_status($status);
+  return ($self->_to_orac_status($status),@values);
 }
 
 =item B<set>
@@ -309,7 +311,7 @@ sub cwd {
   my ($value, $status) = $self->obj->control("default", $newdir);
 
   # Convert from ADAM to ORAC status
-  return $self->_to_orac_status($status);
+  return ($value, $self->_to_orac_status($status));
 }
 
 
@@ -360,7 +362,7 @@ sub pid {
     return $pid;
   } else {
     return $pid->{'pid'};
-  } 
+  }
 
 }
 
@@ -411,19 +413,25 @@ sub _to_orac_status {
   my $status = shift;
   my $isobey = shift;
 
+  print "ADAM Status: $status\n" if $DEBUG;
+
   # Check good status
   if ($status == $SAI__OK) {
     # standard okay
+    print "ORAC_STATUS OK\n" if $DEBUG;
     return ORAC__OK;
   } elsif ($isobey && $status == $DTASK__ACTCOMPLETE) {
     # An obey completed successfully
+    print "ORAC STATUS FROM OBEY OKAY\n" if $DEBUG;
     return ORAC__OK;
   } elsif ($status == 141460275 || # MESSYS__NOTFOUND
 	   $status == 141460291 || # MESSYS__TIMEOUT
 	   $status == 141460379 || # MESSYS__TOOLONG
 	   $status == 159809544 ) {  # SOCK__READSOCK
+    print "BAD ENGINE STATUS\n" if $DEBUG;
     return ORAC__BADENG;
   }
+  print "Generic bad status\n" if $DEBUG;
   return $status;
 }
 
