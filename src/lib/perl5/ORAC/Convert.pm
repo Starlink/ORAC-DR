@@ -577,7 +577,7 @@ sub hds2mef {
 
         # Do the conversion
 
-        $status = $self->mon('ndf2fits')->obeyw("ndf2fits","in=$hdsfile out=$fitsfile profits");
+        $status = $self->mon('ndf2fits')->obeyw("ndf2fits","in=$hdsfile out=$fitsfile profits encoding=\'FITS-IRAF\'");
     }
 
     # Check to make sure this succeeded
@@ -607,6 +607,7 @@ sub hds2mef {
     # Now loop for each of the temporary files...
 
     my $ifileno;
+    my @wcscards = ();
     for ($ifileno = 0; $ifileno < $ntmp; $ifileno++) {
         my ($naxis,@naxes,$bitpix);
 
@@ -644,10 +645,23 @@ sub hds2mef {
         $iptr->get_hdrspace($nh,$junk,$fitstatus);
         for $i (1 .. $nh) {
 	    $iptr->read_record($i,$card,$fitstatus);
+            if (fits_get_keyclass($card) == TYP_WCS_KEY) {
+		if ($ifileno == 0) {
+		    push @wcscards,$card;
+                } else {
+		    next;
+                }
+            } 
 	    if (fits_get_keyclass($card) > TYP_CMPRS_KEY && $card !~ /^HDUCLAS/) {
-		$optr->write_record($card,$status);
+		$optr->write_record($card,$fitstatus);
 	    }
 	}
+        if ($ifileno != 0) {
+            my $nwcs = @wcscards;
+            for $i (1 .. $nwcs) {
+		$optr->write_record($wcscards[$i-1],$fitstatus);
+            }
+        }
 
         # Close up the input file
 
