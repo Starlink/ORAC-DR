@@ -329,12 +329,27 @@ sub execute {
   # when evaluating recipes - control via the -warn parameter
   # local $^W = 0;
 
+  # Info message for debugging
+  my $recipe_name = $self->recipe_name;
+  if ($self->debug) {
+    orac_debug "***** Starting recipe '$recipe_name' *****\n";
+  }
+
   # Execute the recipe
   my $status = ORAC::Recipe::Execution::orac_execute_recipe($block,$Frm,
 							    $Grp, $Cal,
 							    $Display, $Mon,
 							    $self->debug,
 							    $self->batch);
+
+  $status = ORAC__OK unless defined $status;
+  $status = ORAC__OK if $status eq '';
+
+  # Some extra info
+  if ($self->debug) {
+    orac_debug "***** Recipe '$recipe_name' completed with status $status *****\n";
+  }
+
   # Check for an error from perl
   # (eg a croak)
   if ($@) {
@@ -397,6 +412,14 @@ sub execute {
     # Do this until we debug everything
     orac_exit_normally("Exiting due to error executing recipe");
   }
+
+  # Check for bad status from the recipe (this is a bda status
+  # without a croak - we continue)
+  if ($status) {
+    orac_err "Recipe completed with error status = $status\n";
+    orac_err "Continuing but this may cause problems during group processing\n";
+  }
+
 
 }
 
@@ -699,7 +722,7 @@ sub _check_obey_status_string {
 		     '  orac_print("Arguments were: ","blue");',
                      '  orac_print("$obeyw_args\n\n","red"); ',
 		     '  if ($OBEYW_STATUS == ORAC__BADENG) {',
-		     "    orac_print(\"Monolith $monolith seems to be dead. Removing it...\\n\");",
+		     "    orac_err(\"Monolith $monolith seems to be dead. Removing it...\\n\");",
 		     "    delete \$Mon{$monolith};",
 		     '  }',
 		     '  return $OBEYW_STATUS;',
