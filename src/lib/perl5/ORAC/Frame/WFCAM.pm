@@ -143,6 +143,34 @@ my @onsect = ("[10:19,1089:1098]",
 	      "[951:960,10:19]",
               "[1089:1098,2030:2039]");
 
+# Keywords for primary header unit
+
+my @phukeys = ("DATE","ORIGIN","TELESCOP","INSTRUME","DHSVER","HDTFILE",
+	       "OBSERVER","USERID","OBSREF","PROJECT","SURVEY","SURVEY_I",
+	       "MSBID","RMTAGENT","AGENTID","OBJECT","RECIPE","OBSTYPE",
+	       "OBSNUM","GRPNUM","GRPMEM","TILENUM","STANDARD","NJITTER",
+	       "JITTER_I","JITTER_X","JITTER_Y","NUSTEP","USTEP_I","USTEP_X",
+	       "USTEP_Y","FILTER","UTDATE","UTSTART","UTEND","DATE-OBS",
+	       "DATE-END","MJD-OBS","WCSAXES","RADESYS","EQUINOX","TRACKSYS",
+	       "RABASE","DECBASE","TRAOFF","TDECOFF","AMSTART","AMEND","TELRA",
+	       "TELDEC","GSRA","GSDEC","READOUT","EXP_TIME","NEXP","READINT",
+	       "NREADS","AIRTEMP","BARPRESS","DEWPOINT","DOMETEMP","HUMIDITY",
+	       "MIRR_NE","MIRR_NW","MIRR_SE","MIRR_SW","MIRRBTNW","MIRRTPNW",
+	       "SECONDAR","TOPAIRNW","TRUSSENE","TRUSSWSW","WIND_DIR",
+	       "WIND_SPD","CSOTAU","TAUDATE","TAUSRC","M2_X","M2_Y","M2_Z",
+	       "M2_U","M2_V","M2_W","TCS_FOC","FOC_POSN","FOC_ZERO","FOC_OFFS",
+	       "FOC_FOFF","FOC_I","FOC_OFF","NFOC","NFOCSCAN");
+
+# Keywords for extension header unit
+
+my @ehukeys = ("INHERIT","DETECTOR","DETECTID","NINT","DROWS","DCOLUMNS",
+	       "RDOUT_X1","RDOUT_X2","RDOUT_Y1","RDOUT_Y2","PIXLSIZE","GAIN",
+	       "CAMNUM","HDTFILE2","DET_TEMP","CNFINDEX","PCSYSID","SDSUID",
+	       "READMODE","CAPPLICN","CAMROLE","CAMPOWER","RUNID","CTYPE1",
+	       "CTYPE2","CRPIX1","CRPIX2","CRVAL1","CRVAL2","CRUNIT1",
+	       "CRUNIT2","CD1_1","CD1_2","CD2_1","CD2_2","PV2_1","PV2_2",
+	       "PV2_3");
+
 =head1 PUBLIC METHODS
 
 The following methods are available in this class in addition to
@@ -604,7 +632,7 @@ sub isgood {
     # Otherwise, look for sources of problems. First look for the camera power
 
     my $good = $self->{IsGood};
-    if ($good && $self->hdr("CAMPOWER") ne "On") {
+    if ($good && $self->getasubframe(1)->hdr("CAMPOWER") ne "On") {
         $good = 0;
         my $line = "Frame " . $self->file . " will be ignored. Camera power is off\n";
         orac_warn($line);
@@ -613,6 +641,31 @@ sub isgood {
     return ($good);
 }
 
+=item B<phukeys>
+
+Returns the list of primary header unit keywords 
+    @phukeys = $Frm->phukeys;
+
+=cut
+
+sub phukeys {
+    my $self = shift;
+
+    return(@phukeys);
+}
+
+=item B<ehukeys>
+
+Returns the list of extension header unit keywords 
+    @ehukeys = $Frm->ehukeys;
+
+=cut
+
+sub ehukeys {
+    my $self = shift;
+
+    return(@ehukeys);
+}
 
 =item B<findgroup>
  
