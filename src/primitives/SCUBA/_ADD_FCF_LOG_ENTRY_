@@ -1,0 +1,205 @@
+=head1 NAME
+
+_ADD_FCF_LOG_ENTRY_ - Write an FCF log entry to disk
+
+=head1 SYNOPSIS
+
+ _ADD_FCF_LOG_ENTRY_ FILTER=450W FCF=52.5 UNITS=ARCSEC
+
+=head1 DESCRIPTION
+
+Write a single log entry containing the results of an
+Flux Conversion Factor calculation.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item FILTER
+
+The filter name associated with the result.
+
+=item FCF
+
+The Flux conversion factor to write to the log file.
+
+=item UNITS
+
+The units of the FCF. This can be either ARCSEC (for jansky per
+square arcseconds) or BEAM (jansky per beam).
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+FILTER and FCF must be supplied to this primitive (since that
+is the only way to pass the result into the primitive).
+
+=item *
+
+One entry is written each time this primitive is called. If multiple
+files are to be processed, this primitive should be called multiple
+times.
+
+=item *
+
+Obtains header values from the current frame.
+
+=back
+
+=head1 FORMAT
+
+The logfile has the following columns:
+
+=over 4
+
+=item UT
+
+The UT date in C<YYYYMMDD.frac> format.
+
+=item Obs
+
+The observation number.
+
+=item HST
+
+The time of the observation in Hawaii.
+
+=item Source
+
+The source name.
+
+=item Chop throw
+
+The chop throw of the observation.
+
+=item Elevation
+
+The elevation of the observation.
+
+=item FilterName
+
+The filtername (xxx:yyy format)
+
+=item Filter
+
+The specific filter associated with the fcf result.
+
+=item Tau
+
+The tau value used for the reduction.
+
+=item CSO
+
+Equivalent CSO tau derived from the tau used to reduce
+the observation.
+
+=item See
+
+The seeing value as stored in the header.
+
+=item FCF
+
+The flux conversion factor
+
+=item Units
+
+The units of the FCF. Can be BEAM (Jy/beam/V) or ARCSEC
+(Jy/arcsec**2/V).
+
+=item ORACTIME
+
+The date and time of the observation in C<YYYYMMDD.frac> format.
+
+=back
+
+=head1 FILES
+
+C<log.fcf> - the log file
+
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+Copyright (C) 2000 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+=cut
+
+use JCMT::Tau;
+
+# Check the arguments
+my $filter;
+my $fcf;
+my $units;
+foreach (qw/FILTER UNITS FCF/) {
+  unless (exists $_ADD_FCF_LOG_ENTRY_{$_}) {
+    orac_err("ADD_FCF_LOG_ENTRY: $_ must be specified as an argument");
+    my $ORAC_STATUS = ORAC__ERROR;
+  }
+}
+$filter = $_ADD_FCF_LOG_ENTRY_{FILTER};
+$units  = $_ADD_FCF_LOG_ENTRY_{UNITS};
+$fcf    = $_ADD_FCF_LOG_ENTRY_{FCF};
+
+# Create the log file object
+my $log = new ORAC::LogFile("log.fcf");
+# Write header to logfile
+my $time = gmtime();
+$log->header("# Flux conversion factor log file - created on $time",
+	     "\nUT        Obs  HST   Source    Thr El Filter    WLen  Tau   CSO  See    FCF     Units  OracTime",
+	     "#--------------------------------------------------------------------------------------------------------",
+	    );
+
+
+# FRom FITS header need
+my $flt= $Frm->hdr("FILTER");
+
+# ORACUT
+my $utdate = $Frm->hdr('ORACUT');
+my $uttime = $Frm->hdr('ORACTIME');
+
+# RUN
+my $run    = sprintf "%4d", $Frm->hdr('RUN');
+
+# HSTSTART (no decimal places)
+my $hst    = $Frm->hdr('HSTSTART');
+my (@hst)  = split(/:/, $hst);
+$hst = sprintf '%5s', $hst[0] . ":" . $hst[1];
+
+# Chop throw
+my $thr = sprintf "%3d", $Frm->hdr('CHOP_THR');
+
+# OBJECT
+my $src    = uc($Frm->hdr('OBJECT'));
+$src    = sprintf "%-10s", $src;
+
+# Average of END_ELD and STRT_ELD
+my $el     = ($Frm->hdr('END_ELD') + $Frm->hdr('STRT_ELD'))/ 2.0;
+$el        = sprintf "%2d", $el;
+# TAU from calibration object
+my $tau = sprintf "%5.2f", $Cal->tau($filter);
+
+# Use that tau to calculate CSO
+my ($cso, $status) = JCMT::Tau::get_tau('CSO',$filter, $tau);
+if ($status != 0) {
+  $cso = "*****";
+} else {
+  $cso = sprintf "%5.2f", $cso;
+}
+
+# Seeing
+my $see = sprintf "%4.2f", $Frm->hdr('SEEING');
+
+# GAIN
+$fcf   = sprintf "%8.3f", $fcf;
+
+# Units
+$units = sprintf "%6s", $units;
+
+# Add the entry
+$log->addentry("$utdate $run $hst $src $thr $el $flt $filter $tau $cso $see $fcf $units $uttime");
