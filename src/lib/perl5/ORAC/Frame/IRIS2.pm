@@ -44,6 +44,8 @@ use ORAC::Constants;
 # Bring in Math::Trig::acos for the header translation tables.
 use Math::Trig qw/ acos /;
 
+*pattern_from_bits = \&file_from_bits;
+
 # Translation headers for IRIS2 should go here
 my %hdr = (
            DEC_BASE               => "CRVAL2",

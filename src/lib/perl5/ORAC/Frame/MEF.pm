@@ -218,7 +218,7 @@ sub configure {
     if (scalar(@_) == 1) {
         $fname = shift;
     } elsif (scalar(@_) == 2) {
-	$fname = $self->file_from_bits(@_);
+	$fname = $self->pattern_from_bits(@_);
     } else {
 	croak 'Wrong number of arguments to configure: 1 or 2 args only';
     }
@@ -413,6 +413,12 @@ Copyright (C) 2003-2006 Cambridge Astronomy Survey Unit. All Rights Reserved.
 #
 #
 # $Log$
+# Revision 1.7  2004/09/22 21:49:12  bradc
+# merge from acsis-dev-20040607, use pattern_from_bits()
+#
+# Revision 1.6.2.1  2004/06/30 23:25:01  bradc
+# alias file_from_bits as pattern_from_bits
+#
 # Revision 1.6  2004/05/05 11:41:58  jrl
 # Added routine fitssuffix
 #

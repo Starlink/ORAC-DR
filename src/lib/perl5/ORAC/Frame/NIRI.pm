@@ -23,9 +23,11 @@ use ORAC::General;
 use NDF;
 use Starlink::HDSPACK qw/copobj/;
 
-
 # Let the object know that it is derived from ORAC::Frame::GEMINI;
 use base qw/ORAC::Frame::GEMINI/;
+
+# Alias file_from_bits as pattern_from_bits.
+*pattern_from_bits = \&file_from_bits;
 
 # standard error module and turn on strict
 use Carp;
@@ -279,7 +281,7 @@ sub configure {
   if (scalar(@_) == 1) {
     $fname = shift;
   } elsif (scalar(@_) == 2) {
-    $fname = $self->file_from_bits(@_);
+    $fname = $self->pattern_from_bits(@_);
   } else {
     croak 'Wrong number of arguments to configure: 1 or 2 args only';
   }
@@ -455,7 +457,7 @@ sub flag_from_bits {
   # is  .UT_obsnum.fits.ok but the filename is fUT_obsnum.fits
 
   # Retrieve the data file name
-  my $raw = file_from_bits($prefix, $obsnum);
+  my $raw = pattern_from_bits($prefix, $obsnum);
 
   # Replace prepend  '.', drop the suffix and append '.ok'
   my $suffix = $self->rawsuffix;
@@ -512,6 +514,9 @@ parts. A prefix (usually UT) and observation number should
 be supplied.
 
 $fname = $Frm->file_from_bits($prefix, $obsnum);
+
+pattern_from_bits() is currently an alias for file_from_bits(),
+and both can be used interchangably for the NIRI subclass.
 
 =cut
 

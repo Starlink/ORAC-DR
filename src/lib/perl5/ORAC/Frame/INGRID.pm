@@ -46,6 +46,8 @@ use strict;
 use vars qw/$VERSION/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
+*pattern_from_bits = \&file_from_bits;
+
 # Translation tables for INGRID should go here.
 # First the imaging...
 my %hdr = (
@@ -596,6 +598,9 @@ INGRID file name convention is
 where NNNNNN is the observation number. e.g
 
   r597816.fit
+
+pattern_from_bits() is currently an alias for file_from_bits(),
+and the two may be used interchangably for INGRID.
 
 =cut
 

@@ -40,6 +40,9 @@ use base qw/ORAC::Frame::UKIRT/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
+# Alias file_from_bits as pattern_from_bits.
+*pattern_from_bits = \&file_from_bits;
+
 # Translation headers for ClassicCam should go here.
 my %hdr = (
            AIRMASS_END            => "AIRMASS",

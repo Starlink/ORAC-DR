@@ -41,7 +41,8 @@ use base  qw/ORAC::Frame::CGS4/;
 use vars qw/$VERSION/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
-
+# Alias file_from_bits as pattern_from_bits.
+*pattern_from_bits = \&file_from_bits;
 
 =head1 PUBLIC METHODS
 
@@ -123,6 +124,9 @@ where the number is NOT 0 padded.
 
 We get passed the prefix as YYYYMMDD, so have to strip off the 1st 2
 digits.
+
+pattern_from_bits() is currently an alias for file_from_bits(),
+and the two can be used interchangably for the OCGS4 subclass.
 
 =cut
 

@@ -27,6 +27,9 @@ use 5.006;
 use strict;
 use warnings;
 
+# Set pattern_from_bits() to be the same as file_from_bits()
+*pattern_from_bits = \&file_from_bits;
+
 # These are the UKIRT generic lookup tables
 my %hdr = (
             AIRMASS_START       => "AMSTART",
@@ -105,6 +108,9 @@ be supplied.
   $fname = $Frm->file_from_bits($prefix, $obsnum);
 
 The $obsnum is zero padded to 5 digits.
+
+pattern_from_bits() is currently an alias for file_from_bits(),
+and both can be used interchangably in the UKIRT subclass.
 
 =cut
 

@@ -38,6 +38,9 @@ use base qw/ORAC::Frame::IRCAM/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
+# Alias file_from_bits as pattern_from_bits.
+*pattern_from_bits = \&file_from_bits;
+
 # standard error module and turn on strict
 use Carp;
 use strict;
@@ -122,6 +125,9 @@ For TUFTI/IRCAM3 the raw filename is of the form:
 
 where the number is 0 padded.
 
+pattern_from_bits() is currently an alias for file_from_bits(),
+and the two may be used interchangably for IRCAM2.
+
 =cut
 
 sub file_from_bits {
@@ -163,9 +169,11 @@ sub flag_from_bits {
 
   my $prefix = shift;
   my $obsnum = shift;
-  
-  # flag files for IRCAM2 of the type .iYYYYMMDD_NNNNN.ok
-  my $raw = $self->file_from_bits($prefix, $obsnum);
+
+  # Flag files for IRCAM2 are of the type .iYYYYMMDD_NNNNN.ok
+  # We can use pattern_from_bits because we know this will
+  # return a string for IRCAM2.
+  my $raw = $self->pattern_from_bits($prefix, $obsnum);
 
   # raw includes the .sdf so we have to strip it
   $raw = $self->stripfname($raw);

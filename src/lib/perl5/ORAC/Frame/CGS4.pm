@@ -189,7 +189,8 @@ sub configure {
   if (scalar(@_) == 1) {
     $fname = shift;
   } elsif (scalar(@_) == 2) {
-    $fname = $self->file_from_bits(@_);
+    # For CGS4 pattern_from_bits() returns a string, so this is okay.
+    $fname = $self->pattern_from_bits(@_);
   } else {
     croak 'Wrong number of arguments to configure: 1 or 2 args only';
   }

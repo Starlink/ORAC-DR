@@ -42,6 +42,8 @@ use vars qw/$VERSION/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
+# Alias file_from_bits as pattern_from_bits.
+*pattern_from_bits = \&file_from_bits;
 
 # standard error module and turn on strict
 use Carp;
@@ -218,6 +220,9 @@ parts. A prefix (usually UT) and observation number should
 be supplied.
 
   $fname = $Frm->file_from_bits($prefix, $obsnum);
+
+pattern_from_bits() is currently an alias for file_from_bits(),
+and both can be used interchangably for SCUBA.
 
 =cut
 

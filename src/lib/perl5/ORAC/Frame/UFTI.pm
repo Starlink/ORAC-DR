@@ -55,6 +55,9 @@ my %hdr = (
             UTSTART              => "UTSTART"
 	  );
 
+# Alias file_from_bits as pattern_from_bits.
+*pattern_from_bits = \&file_from_bits;
+
 # Take this lookup table and generate methods that can be sub-classed
 # by other instruments.  Have to use the inherited version so that the
 # new subs appear in this class.
@@ -321,6 +324,9 @@ be supplied.
 
   $fname = $Frm->file_from_bits($prefix, $obsnum);
 
+pattern_from_bits() is currently an alias for file_from_bits(),
+and both can be used interchangably for the UFTI subclass.
+
 =cut
 
 sub file_from_bits {
@@ -360,7 +366,7 @@ sub flag_from_bits {
   # is  .UT_obsnum.fits.ok but the filename is fUT_obsnum.fits
 
   # Retrieve the data file name
-  my $raw = $self->file_from_bits($prefix, $obsnum);
+  my $raw = $self->pattern_from_bits($prefix, $obsnum);
 
   # Replace the 'f' with a '.' and append '.ok'
   substr($raw,0,1) = '.';

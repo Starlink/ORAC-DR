@@ -37,6 +37,9 @@ use base qw/ ORAC::Frame::GSD /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
+# Alias file_from_bits as pattern_from_bits.
+*pattern_from_bits = \&file_from_bits;
+
 # Standard error module and turn on strict.
 use Carp;
 use strict;
@@ -190,6 +193,9 @@ parts. A prefix (usually UT) and observation number should
 be supplied. For DAS observations the prefix is ignored.
 
   $fname = $Frm->file_from_bits($prefix, $obsnum);
+
+pattern_from_bits() is currently an alias for file_from_bits(),
+and the two may be used interchangably for JCMT_DAS.
 
 =cut
 

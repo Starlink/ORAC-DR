@@ -39,6 +39,9 @@ use base qw/ORAC::Frame::UKIRT/;
  
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
+# Create an alias for file_from_bits().
+*pattern_from_bits = \&file_from_bits;
+
 # standard error module and turn on strict
 use Carp;
 use strict;
@@ -186,6 +189,9 @@ parts. A prefix (usually UT) and observation number should
 be supplied.
 
   $fname = $Frm->file_from_bits($prefix, $obsnum);
+
+pattern_from_bits() is currently an alias for file_from_bits(),
+and the two may be used interchangably for IRCAM.
 
 =cut
 
