@@ -67,75 +67,63 @@ b.cavanagh@jach.hawaii.edu
 =cut
 
 # Obtain the parameters.
-    my $order = ( $_NORMALIZE_FLAT_BY_POLY_{ORDER} || 5 );
+my $order = ( $_NORMALIZE_FLAT_BY_POLY_{ORDER} || 5 );
 
 # Process all the sub-files.
-    foreach my $i ( 1..$Frm->nfiles ) {
+foreach my $i ( 1..$Frm->nfiles ) {
 
-# Generate the input and output filenames.
-       my ( $in, $out ) = $Frm->inout( "_nf", $i );
+  # Generate the input and output filenames.
+  my ( $in, $out ) = $Frm->inout( "_nf", $i );
   
-# Get the dimensions of the input image.
-       my $xdim = $Frm->uhdr( "ORAC_X_DIM" );
-       my $ydim = $Frm->uhdr( "ORAC_Y_DIM" );
+  # Get the dimensions of the input image.
+  my $xdim = $Frm->uhdr( "ORAC_X_DIM" );
+  my $ydim = $Frm->uhdr( "ORAC_Y_DIM" );
 
-# Cope with the missing headers by accessing the array dimensions of
-# the frame.
-       my $param = "ndf=" . $Frm->file;
-       my $ORAC_STATUS;
-       $Mon{"ndfpack_mon"}->obeyw( "ndftrace", "$param" );
-       if ( !( defined $xdim && defined $ydim ) ) {
+  # Collapse the 2-D image to a work 1-D spectrum.  Use available variance
+  # information in the combination and to generate variance of the
+  # 1-D array.  Task XTRACT aborts if there is no variance present
+  # when VARUSE is set to true.  So first determine whether or not there
+  # is a VARIANCE array.  Without the VARIANCE array, variance is
+  # derived from the scatter of values along the Y axis for the given X
+  # pixel.
+  ( $ORAC_STATUS, my $varpresent ) = $Mon{"ndfpack_mon"}->get( "ndftrace", "variance");
+  my $spec = new ORAC::TempFile;
+  my $specname = $spec->file;
+  $param = "out=$specname colaps=\[0,1\] info=no varuse=$varpresent";
+  $Mon{'figaro4'}->obeyw( "xtract", "in=$in $param" );
 
-# Extract the dimensions of the frame.
-          ( $ORAC_STATUS, my @dims ) = $Mon{"ndfpack_mon"}->get( "ndftrace", "dims" );
-          $xdim = $dims[ 0 ];
-          $ydim = $dims[ 1 ];
-       }
-
-# Collapse the 2-D image to a work 1-D spectrum.  Use available variance
-# information in the combination and to generate variance of the
-# 1-D array.  Task XTRACT aborts if there is no variance present
-# when VARUSE is set to true.  So first determine whether or not there
-# is a VARIANCE array.  Without the VARIANCE array, variance is
-# derived from the scatter of values along the Y axis for the given X
-# pixel.
-       ( $ORAC_STATUS, my $varpresent ) = $Mon{"ndfpack_mon"}->get( "ndftrace", "variance");
-       my $spec = new ORAC::TempFile;
-       my $specname = $spec->file;
-       $param = "out=$specname colaps=\[0,1\] info=no varuse=$varpresent";
-       $Mon{'figaro4'}->obeyw( "xtract", "in=$in $param" );
-
-# Fit a polynomial to the 1-D spectrum and create another temporary 
-# spectrum from that polynomial.  The polynomial is fit to the log of
-# the values to mimic CGS4DR.  
-# **** Currently errors to the fit are not calculated. ****
-       my $polyspec = new ORAC::TempFile;
-       my $polyspecname = $polyspec->file;
-       $param = "output=$polyspecname order=$order logs=false";
-       $Mon{'figaro1'}->obeyw( "sfit", "spectrum=$specname $param" );
+  # Fit a polynomial to the 1-D spectrum and create another temporary 
+  # spectrum from that polynomial.  The polynomial is fit to the log of
+  # the values to mimic CGS4DR.  
+  # **** Currently errors to the fit are not calculated. ****
+  my $polyspec = new ORAC::TempFile;
+  my $polyspecname = $polyspec->file;
+  $param = "output=$polyspecname order=$order logs=false";
+  $Mon{'figaro1'}->obeyw( "sfit", "spectrum=$specname $param" );
   
-# Grow the polynomial spectrum into a 2-D temporary image.  Figaro/GROWX
-# being simpler works, but doesn't support WCS.  For KAPPA there is a
-# need to set the bounds and origin.
-       my $polyimage = new ORAC::TempFile;
-       my $polyimagename = $polyimage->file;
-#       $param = "image=$polyimagename ystart=1 yend=$ydim ysize=$ydim new=true";
-#       $Mon{'figaro1'}->obeyw( "growx", "spectrum=$polyspecname $param");
-       $Mon{'ndfpack_mon'}->obeyw( "setbound", "ndf=$polyspecname(,1)" );
-       $param = "in=$polyspecname out=$polyimagename expand=[1,$ydim]";
-       $Mon{'kappa_mon'}->obeyw( "pixdupe", "$param" );
-       $Mon{'ndfpack_mon'}->obeyw( "setorigin", "$polyimagename origin=[1,1]" );
+  # Grow the polynomial spectrum into a 2-D temporary image.  Figaro/GROWX
+  # being simpler works, but doesn't support WCS.  For KAPPA there is a
+  # need to set the bounds and origin.
+  my $polyimage = new ORAC::TempFile;
+  my $polyimagename = $polyimage->file;
+  #       $param = "image=$polyimagename ystart=1 yend=$ydim ysize=$ydim new=true";
+  #       $Mon{'figaro1'}->obeyw( "growx", "spectrum=$polyspecname $param");
+  $Mon{'ndfpack_mon'}->obeyw( "setbound", "ndf=$polyspecname(,1)" );
+  $param = "in=$polyspecname out=$polyimagename expand=[1,$ydim]";
+  $Mon{'kappa_mon'}->obeyw( "pixdupe", "$param" );
+  $Mon{'ndfpack_mon'}->obeyw( "setorigin", "$polyimagename origin=[1,1]" );
 
-# Divide the flat field by the polynomial image.
-       $param = "in2=$polyimagename out=$out title=$out";
-       $Mon{'kappa_mon'}->obeyw( "div", "in1=$in $param" );
+  # Divide the flat field by the polynomial image.
+  $param = "in2=$polyimagename out=$out title=$out";
+  $Mon{'kappa_mon'}->obeyw( "div", "in1=$in $param" );
 
-# Update the Frame object for the current sub-file.
-       $Frm->file( $i, $out );
+  # Update the Frame object for the current sub-file.
+  $Frm->file( $i, $out );
 
-# Print a congratulatory message.
-       orac_print "$in to $out: flat normalized.\n";
+  # Print a congratulatory message.
+  orac_print "$in to $out: flat normalized.\n";
 
-# Have the option to display the normalised flat. 
-       $Display->display_data( $Frm ) if ( defined $Display );
-    }
+}
+
+# Display the frame
+$Display->display_data( $Frm ) if defined $Display;
