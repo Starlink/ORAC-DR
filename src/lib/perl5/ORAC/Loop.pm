@@ -621,6 +621,9 @@ sub orac_loop_task {
     # somewhere to flag newness
     my %tstatus;
 
+    # and cache the timestamps for easy ordering
+    my @timestamps;
+
     # by convention we are looking for a "QL" parameter in that task
     for my $t (@tasks) {
       # get the task object
@@ -638,6 +641,9 @@ sub orac_loop_task {
       if (exists $current{$t}->{TIMESTAMP}
 	 && defined $current{$t}->{TIMESTAMP}) {
 	$tstatus{$t} = ( $current{$t}->{TIMESTAMP} > $reftime ? 1 : 0 );
+
+	# store the timestamp
+	push(@timestamps, $current{$t}->{TIMESTAMP});
       } else {
 	$tstatus{$t} = 0;
       }
@@ -652,7 +658,7 @@ sub orac_loop_task {
     # all timestamps are newer, so abort from the loop
     # Also make sure we update reftime
     if ($ok) {
-      my @sorted = sort values %tstatus;
+      my @sorted = sort @timestamps;
       $reftime = $sorted[-1];
       last;
     }
@@ -691,9 +697,9 @@ sub orac_loop_task {
   my @files;
   for my $t (keys %current) {
 
-    if (exists $current{FILENAME}) {
+    if (exists $current{$t}->{FILENAME}) {
       # simple filename relative to ORAC_DATA_IN
-      my $fname =  _to_abs_path( $current{FILENAME} );
+      my $fname =  _to_abs_path( $current{$t}->{FILENAME} );
 
       # and convert to ORAC_DATA_OUT
       my ($cname) = _convert_and_link_nofrm( $infmt, $outfmt, $fname );
@@ -701,21 +707,21 @@ sub orac_loop_task {
 
       push(@files, $cname );
 
-    } elsif (exists $current{IMAGE}) {
+    } elsif (exists $current{$t}->{IMAGE}) {
       # need to choose a filename. Make one up for the moment
       # it needs to be unique per task so use the task name and
       # the 
-      my $fname = lc($t) . '_' . $current{TIMESTAMP};
+      my $fname = lc($t) . '_' . $current{$t}->{TIMESTAMP};
 
       if ($infmt eq 'NDF') {
 	# write the DATA_ARRAY out as a piddle
 	# defer depending on PDL::IO::NDF
 	require PDL::IO::NDF;
-	$current{IMAGE}->{DATA_ARRAY}->wndf( $fname );
+	$current{$t}->{IMAGE}->{DATA_ARRAY}->wndf( $fname );
 
 	# and write the FITS header
 	require Astro::FITS::Header::NDF;
-	my $hdr = new Astro::FITS::Header::NDF( Cards => $current{IMAGE}->{FITS} );
+	my $hdr = new Astro::FITS::Header::NDF( Cards => $current{$t}->{IMAGE}->{FITS} );
 	$hdr->writehdr( File => $fname );
 
 	push(@files, $fname);
@@ -1091,13 +1097,16 @@ Convert a filename(s) relative to ORAC_DATA_IN to an absolute path.
 
 Does not affect absolute paths.
 
+In scalar context, returns the first path.
+
 =cut
 
 sub _to_abs_path {
-  return map { $_ = File::Spec->catfile( $ENV{ORAC_DATA_IN}, $_ )
-		 unless File::Spec->file_name_is_absolute($_);
-	       $_;
-	     } @_;
+  my @out = map { $_ = File::Spec->catfile( $ENV{ORAC_DATA_IN}, $_ )
+		    unless File::Spec->file_name_is_absolute($_);
+		  $_;
+		} @_;
+  return (wantarray ? @out : $out[0] );
 }
 
 =item B<_convert_and_link>
