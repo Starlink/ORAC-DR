@@ -1,0 +1,54 @@
+    my $norder = (defined $_LINEARITY_CURVE_{NORDER} ? $_LINEARITY_CURVE_{NORDER} : 4);
+
+    # Check the group membership and see if we have enough images to proceed.
+
+    $Grp->check_membership;
+    my @allf = $Grp->members;
+    my $n = @allf;
+
+    # If there are enough and the current frame is in the list, then go
+    # to it...
+
+    if ($n > 5 && $allf[-1]->file eq $Frm->file) {
+
+        # Get the channel table...
+
+	$ENV{'ORAC_INSTRUMENT'} =~ /^WFCAM(\d)/;
+	my $wfcamno = $1;
+	my $fname = "wfcam_chan" . $wfcamno . ".fit";
+	my $chantab = File::Spec->catfile($ENV{'ORAC_DATA_CAL'},$fname);
+        $chantab .= "[1]";
+
+        # Set the name of the output table
+    
+        my $outtab = sprintf("lintab_%d.fit",$Frm->hdr("ORACUT"));
+        my $addit = 1;
+        if (-f $outtab) {
+    	    unlink $outtab;
+	    $addit = 0;
+        }
+
+        # Get a list of file names
+
+        my @allfiles = ();
+        foreach my $ff (@allf) {
+            push @allfiles,$ff->file;
+        }
+
+        # Call the routine. Hard code the readout information until we have
+        # that information in the header.
+
+        my ($retval,$errmsg);
+        my $expkey = $Frm->hdrkeys("EXPOSURE_TIME");
+        $retval = cir_lincoefs_postreset(\@allfiles,$n,$chantab,$norder,
+	    $expkey,0.01,0.65,$outtab,$errmsg);
+        if ($retval != CIR_OK) {
+	    orac_throw "CIR_LINCOEFS_POSTRESET: Failed in _LINEARITY_CURVE_\n$errmsg\n";
+        }
+
+        # Now file this...
+
+        if ($addit) {
+            _FILE_LINTAB_ NAME=$outtab
+        }
+    }

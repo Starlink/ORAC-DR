@@ -1,0 +1,44 @@
+    # Correct the non-linearity for the current frame.  First get the 
+    # linearity table and the channel table.
+
+    my $lintab = $Cal->lintab;
+    $ENV{'ORAC_INSTRUMENT'} =~ /^WFCAM(\d)/;
+    my $wfcamno = $1;
+    my $fname = "wfcam_chan" . $wfcamno . ".fit";
+    my $chantab = File::Spec->catfile($ENV{'ORAC_DATA_CAL'},$fname);
+    
+    # Now cycle through the headers and see if the linearity has already
+    # been done...
+
+    my $doit = 1;
+    foreach my $i (1 .. $Frm->findnsubs) {
+        my $frm = $Frm->getasubframe($i);
+        if (defined($frm->hdr("LINCOR")) && ($frm->hdr("LINCOR") =~ /^Done/)) {
+	    $doit = 0;
+	    last;
+        }
+    }
+
+    # If it needs doing, then let's go now... NB: read time and reset time
+    # hard coded until we can get this settled in the header...
+
+    if ($doit) {
+        my ($retval,$errmsg);
+        my $expkey = $Frm->hdrkeys("EXPOSURE_TIME");
+        $retval = cir_lincorrect_postreset($Frm->file,$chantab,$lintab,
+	    $expkey,0.65,0.01,$errmsg);
+        if ($retval != CIR_OK) {
+            orac_throw "CIR_LINCORRECT_POSTRESET failed in _CORRECT_NONLIN_\n$errmsg\n";
+	}
+	
+        # Put a flag in each header to say that we've done it...
+
+        my $line = sprintf "Done with chantab = %s and lintab = %s\n",
+	    $chantab,$lintab;
+        foreach my $i (1 .. $Frm->filensubs) {
+            my $frm = $Frm->getasubframe($i);
+            $retval = cir_update_hdr($frm->file,"LINCOR","STRING",$line,
+	        "",$errmsg);
+        }
+    }
+

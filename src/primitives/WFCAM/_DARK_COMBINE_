@@ -1,20 +1,26 @@
-    # How many frames?
+    # Redefine object frames with the blank filter as DARK frames
 
     if ($Frm->hdr("OBSTYPE") eq "OBJECT" && $Frm->hdr("FILTER") eq "Blank") {
 	$Frm->hdr("OBSTYPE"=>"DARK");
     }
+
+    # Of course skip any frames that aren't dark...
+
     if ($Frm->hdr("OBSTYPE") eq "DARK") {
-	my $subgrp = $Grp->subgrp("EXP_TIME"=>$Frm->hdr("EXP_TIME"),"OBSTYPE"=>"DARK");
+
+        # Get a subgroup that includes all of the exposure parameters of 
+        # the current frame.
+
+	my $subgrp = $Grp->subgrp("EXP_TIME"=>$Frm->hdr("EXP_TIME"),
+	    "OBSTYPE"=>"DARK","READMODE"=>$Frm->hdr("READMODE"),
+	    "NEXP"=>$Frm->hdr("NEXP"));
 	my @f = $subgrp->members;
 	my $nf = @f;
-	if ($nf == 0) {
-	    orac_throw("No members of current group are available for combining!\n");
-	}
 
 	# Output file name
 
-	my $outfile;
-	$outfile = sprintf("dark_%s_%d%s",$Grp->name,$Frm->hdr("EXP_TIME"),
+        my $outfile = sprintf("dark_%s_%d_%s_%d%s",$Grp->name,
+	    $Frm->hdr("EXP_TIME"),$Frm->hdr("NEXP"),$Frm->hdr("READMODE"),
 	    $Frm->fitssuffix);
 
 	# If the output file already exists, then just delete it and do the
@@ -46,29 +52,19 @@
  	        _ICSCALE_
             }
 
-	    # Get some header keywords...
-
-	    my $readkey = $Frm->hdrkeys("READNOISE");
-	    my $gainkey = $Frm->hdrkeys("GAIN");
-	    my $expkey = $Frm->hdrkeys("EXPOSURE_TIME");
-
 	    # Now loop for each image extension
 
 	    my $nextn = $Frm->findnsubs;
 	    my $i;
 	    for ($i = 1; $i <= $nextn; $i++) {
 
-		# Get a temporary file
+                # Make a list of the files...
 
-		my $tmpfil = new ORAC::TempFile;
-		my $fh = $tmpfil->handle;
-
-		# Write the names of the input files to the temporary file
-
+	        my @allf = ();
 		foreach my $frm ($subgrp->members) {
-		    print $fh $frm->getasubframe($i)->file . "\n";
+		    push @allf,$frm->getasubframe($i)->file;
 		}
-		$fh->close;
+	        my $nf = @allf;
 
 		# Output file name specification
 
@@ -77,23 +73,22 @@
 		# Do the combination now...
 
 		my ($retval,$errmsg);
-		$retval = cir_imcombine($tmpfil->file,$outf,"","",MEDIANCALC,0,1,
-		    0,NOBPM,REJPOISSON,1,1,1,3.0,3.0,$readkey,$gainkey,$expkey,
-		    $errmsg);
+		$retval = cir_imcombine_lite(\@allf,$nf,MEDIANCALC,1,0,5.0,
+		    $outf,$errmsg);
 		if ($retval != CIR_OK) {
-		    orac_throw "CIR_IMCOMBINE: failed in _DARK_COMBINE_\n$errmsg\n";
+		    orac_throw "CIR_IMCOMBINE_LITE: failed in _DARK_COMBINE_\n$errmsg\n";
 		}
-		$tmpfil->DESTROY;
 	    }
 	}
 
 	# Write some stuff to the PHU
 
 	my $darkfrm = $Frm->new($outfile);
-	$darkfrm->update_header("WFRTYPE",TSTRING,CALDARK,"Calibration frame type");
+	$darkfrm->update_header("WFRTYPE",TSTRING,CALDARK,
+	    "Calibration frame type");
 	if ($addit) {
 	    _FILE_DARK_ NAME=$outfile
-	}
+	} 
 
 	# Display it
 
