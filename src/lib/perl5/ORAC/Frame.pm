@@ -1108,7 +1108,8 @@ sub number {
   # (since the extension has already been removed)
   # Leading zeroes are dropped
 
-  if ($self->raw =~ /(\d+)(\.\w+)?$/) {
+  my $raw = $self->raw;
+  if (defined $raw && $raw =~ /(\d+)(\.\w+)?$/) {
     # Drop leading 00
     $number = $1 * 1;
   } else {
