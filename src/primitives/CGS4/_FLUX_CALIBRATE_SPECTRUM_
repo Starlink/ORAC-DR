@@ -4,9 +4,28 @@
 
 =head1 NAME
 
-FLUX_CALIBRATE_SPECTRUM - flux-calibrates a divided-by-standard image
+_FLUX_CALIBRATE_SPECTRUM_ - flux-calibrates a divided-by-standard image
 
 =head1 DESCRIPTION
+
+Calibrate the group by dividing by the flux standard.
+
+For pair reduction, this primitive does nothing unless a completed pair
+is available.
+
+=head1 REVISION
+
+ $Id$
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
 
 =cut
 
@@ -428,111 +447,127 @@ my %kminusm = (
 		   );
 
 
-# now that all those have been set up, get information from the standard that was used
-
-if($Grp->file_exists) {
-
-
- # We need to make sure that we are comparing with a group rather than
-  # a frame so we need to change the hash stored in the cal object
-  my $thing = $Cal->thing;
-
-  # Set up a new hash that we wish to compare with
-  my %hdr = %{ $thing };
-
-  # and copy in the NDIMS header
-  $hdr{NDIMS} = $Grp->uhdr("NDIMS");
-
-  # and store it in the Cal object
-  $Cal->thing( \%hdr );
-
-  # get standard information & exposure times
-
-  my $standard = $Cal->standard;
-
-  # Now reset the hash in the Cal object
-  $Cal->thing( $thing );
-
-
-  my $stdidx = $Cal->standardindex->indexentry($standard);
-  my $stdvmag = $stdidx->{'VMAG'};
-  my $stdspec = $stdidx->{'SPECTYPE'};
-  my $stdexp = $stdidx->{'DEXPTIME'};
-
-  # Give up now if the SPECTYPE does not exist in the %vminusk hash 
-  # and that the v magnitude is reasonable
-  if (exists $vminusk{$stdspec} && $stdvmag > -50) {
-
-    # figure out the wavelength band
-  
-    my $refwave = $Grp->hdr->{'GLAMBDA'};
-    print "DEBUG: refwave: $refwave\n";
-    my $wband;
-    foreach my $band (keys %waveband) {
-      if(abs($waveband{$band} - $refwave) < 0.15 ) {
-	$wband = $band;
-      }
-    }
-  
-    # calculate magnitude in this band
-  
-    my $mag;
-  
-    if($wband eq "J") {
-      $mag = $stdvmag - $vminusk{$stdspec} + $hminusk{$stdspec} + $jminush{$stdspec};
-    } elsif($wband eq "H") {
-      $mag = $stdvmag - $vminusk{$stdspec} + $hminusk{$stdspec};
-    } elsif($wband eq "K") {
-      $mag = $stdvmag - $vminusk{$stdspec};
-    } elsif($wband eq "L") {
-      $mag = $stdvmag - $vminusk{$stdspec} - $kminusl{$stdspec};
-    } elsif($wband eq "Lprime") {
-      $mag = $stdvmag - $vminusk{$stdspec} - $kminuslprime{$stdspec};
-    } elsif($wband eq "M") {
-      $mag = $stdvmag - $vminusk{$stdspec} - $kminusm{$stdspec};
-    } else {
-      orac_err "Unable to flux calibrate in $wband band.\n";
-    }
-  
-    # get the flux in this band in units of W/m^2/um
-  
-    my $flux = $reffluxmic{$wband};
-  
-    # take exposure times into account
-  
-    my $grpexp = $Grp->hdr->{'DEXPTIME'};
-    my $ratio_exp = $grpexp / $stdexp;
-  
-    # calculate the flux from the standard in this band
-    
-    my $stdflux = 10**(- $mag / 2.5) * $flux / $ratio_exp;
-  
-    # do the multiplication and tell the user
-    
-    my $in = $Grp->file;
-    my $out = $Grp->raw . "_fc";
-    orac_print "Observation is in $wband band.\n";
-    orac_print "$in will be multiplied by $stdflux to give $out\n";
-    $Mon{'kappa_mon'}->obeyw("cmult","in=$in out=$out scalar=$stdflux title=$out");
-  
-    # change the units of the data
-
-    $Mon{'ndfpack_mon'}->obeyw("setlabel","ndf=$out label=approx.flux");
-    $Mon{'ndfpack_mon'}->obeyw("setunits","ndf=$out units=W/m^2/micron");
-    
-    # update the $Grp object
-  
-    $Grp->file($out);
-
-    # and display
-
-    $Display->display_data($Grp) if defined $Display;
-  
+# No need to bother if this is a pair reduction and we dont yet have
+# a pair. Proceed regardless for non-pair reduction
+my $reduce_group = 1;
+if (defined $Frm->uhdr("PAIR_COMPLETE")) {
+  if ($Frm->uhdr("PAIR_COMPLETE")) {
+    $reduce_group = 1; # we can reduce the pair
   } else {
-    orac_warn "Either spectral type of standard was unknown or V magnitude was out of range\n";
-    orac_warn "Values were SPECTYPE=$stdspec VMAG=$stdvmag\n";
-    orac_warn "Data have not been flux calibrated\n";
+    $reduce_group = 0;
+  }
+}
+
+
+
+if( $reduce_group ) {
+
+  # now that all those have been set up, get information from the standard that was used
+
+  if($Grp->file_exists) {
+
+
+    # We need to make sure that we are comparing with a group rather than
+    # a frame so we need to change the hash stored in the cal object
+    my $thing = $Cal->thing;
+
+    # Set up a new hash that we wish to compare with
+    my %hdr = %{ $thing };
+
+    # and copy in the NDIMS header
+    $hdr{NDIMS} = $Grp->uhdr("NDIMS");
+
+    # and store it in the Cal object
+    $Cal->thing( \%hdr );
+
+    # get standard information & exposure times
+
+    my $standard = $Cal->standard;
+
+    # Now reset the hash in the Cal object
+    $Cal->thing( $thing );
+
+
+    my $stdidx = $Cal->standardindex->indexentry($standard);
+    my $stdvmag = $stdidx->{'VMAG'};
+    my $stdspec = $stdidx->{'SPECTYPE'};
+    my $stdexp = $stdidx->{'DEXPTIME'};
+
+    # Give up now if the SPECTYPE does not exist in the %vminusk hash 
+    # and that the v magnitude is reasonable
+    if (exists $vminusk{$stdspec} && $stdvmag > -50) {
+
+      # figure out the wavelength band
+
+      my $refwave = $Grp->hdr->{'GLAMBDA'};
+      print "DEBUG: refwave: $refwave\n";
+      my $wband;
+      foreach my $band (keys %waveband) {
+	if(abs($waveband{$band} - $refwave) < 0.15 ) {
+	  $wband = $band;
+	}
+      }
+
+      # calculate magnitude in this band
+
+      my $mag;
+
+      if($wband eq "J") {
+	$mag = $stdvmag - $vminusk{$stdspec} + $hminusk{$stdspec} + $jminush{$stdspec};
+      } elsif($wband eq "H") {
+	$mag = $stdvmag - $vminusk{$stdspec} + $hminusk{$stdspec};
+      } elsif($wband eq "K") {
+	$mag = $stdvmag - $vminusk{$stdspec};
+      } elsif($wband eq "L") {
+	$mag = $stdvmag - $vminusk{$stdspec} - $kminusl{$stdspec};
+      } elsif($wband eq "Lprime") {
+	$mag = $stdvmag - $vminusk{$stdspec} - $kminuslprime{$stdspec};
+      } elsif($wband eq "M") {
+	$mag = $stdvmag - $vminusk{$stdspec} - $kminusm{$stdspec};
+      } else {
+	orac_err "Unable to flux calibrate in $wband band.\n";
+      }
+
+      # get the flux in this band in units of W/m^2/um
+
+      my $flux = $reffluxmic{$wband};
+
+      # take exposure times into account
+
+      my $grpexp = $Grp->hdr->{'DEXPTIME'};
+      my $ratio_exp = $grpexp / $stdexp;
+
+      # calculate the flux from the standard in this band
+
+      my $stdflux = 10**(- $mag / 2.5) * $flux / $ratio_exp;
+
+      # do the multiplication and tell the user
+
+      my $in = $Grp->file;
+      my $out = $Grp->raw . "_fc";
+      orac_print "Observation is in $wband band.\n";
+      orac_print "$in will be multiplied by $stdflux to give $out\n";
+      $Mon{'kappa_mon'}->obeyw("cmult","in=$in out=$out scalar=$stdflux title=$out");
+
+      # change the units of the data
+
+      $Mon{'ndfpack_mon'}->obeyw("setlabel","ndf=$out label=approx.flux");
+      $Mon{'ndfpack_mon'}->obeyw("setunits","ndf=$out units=W/m^2/micron");
+
+      # update the $Grp object
+
+      $Grp->file($out);
+
+      # and display
+
+      $Display->display_data($Grp) if defined $Display;
+
+    } else {
+      orac_warn "Either spectral type of standard was unknown or V magnitude was out of range\n";
+      orac_warn "Values were SPECTYPE=$stdspec VMAG=$stdvmag\n";
+      orac_warn "Data have not been flux calibrated\n";
+    }
+
   }
 
 }
-
