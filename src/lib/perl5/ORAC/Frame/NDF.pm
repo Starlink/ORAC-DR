@@ -39,6 +39,8 @@ use warnings;
 use strict;
 use Carp;
 use ORAC::Constants qw/:status/;
+use Starlink::HDSPACK 1.7 qw/ delete_hdsobj /;
+use NDF;
 
 use vars qw/$VERSION/;
 
@@ -72,6 +74,9 @@ without explicit use of the erase() method. (Just need to
 use the nokeep() method after the file() method has been used
 to update the current filename).
 
+Can support paths to HDS objects. If the last object is removed from
+an HDS container file, the entire container file is removed.
+
 =cut
 
 sub erase {
@@ -80,10 +85,88 @@ sub erase {
   # Retrieve the necessary frame name
   my $file = $self->file(@_);
 
-  # Append the .sdf if required
-  $file .= '.sdf' unless $file =~ /\.sdf$/;
- 
-  my $status = unlink $file;
+  # First we have to decide whether we are removing
+  # an HDS object or a file
+  my $status;
+  if (-e $file) {
+    # File exists
+    $status = unlink $file;
+  } elsif ($file !~ /\./) {
+    # No suffix at all, try appending an '.sdf'
+    $file .= '.sdf';
+    $status = unlink $file;
+  } else {
+    # Okay, we have dots in the filename and the file
+    # does not exist. Assume HDS path
+    $status = delete_hdsobj( $file );
+
+    # if this went okay we have to make sure that 
+    # we remove the parent file if this has resulted
+    # in an empty HDS container. Only worth checking if
+    # we have only 1 dot in the name
+    my $ndot = ( $file =~ tr[.][.]);
+
+    if ($status && $ndot == 1) {
+      # Open the file. Need status.
+      my $hdsstat = &NDF::SAI__OK;
+      my @bits = split(/\./,$file);
+      my $hdsfile = $bits[0];
+
+      # Should we unlink the file?
+      my $dounlink = 0;
+
+      # Begin error context
+      err_begin($hdsstat);
+
+      # Should probably factor this code out of here and ORAC::Frame::CGS4
+      hds_open($hdsfile, 'READ', my $loc, $hdsstat);
+      if ($hdsstat == &NDF::SAI__OK) {
+	
+	# Find out how many we have
+	dat_ncomp($loc, my $ncomp, $hdsstat);
+
+	if ($ncomp == 0) {
+	  # always unlink if we have nothing left
+	  $dounlink = 1;
+	} elsif ($ncomp == 1) {
+	  # Need to special case when we have a .HEADER
+	  # Get locator to component
+	  dat_index($loc, 1, my $cloc, $hdsstat);
+
+	  # Find its name
+	  dat_name($cloc, my $name, $hdsstat);
+
+	  # Delete file if this is .HEADER
+	  $dounlink = 1 if $name eq 'HEADER';
+
+	  # Release locator
+	  dat_annul( $cloc, $hdsstat);
+
+	}
+
+      }
+
+      # Close the file
+      dat_annul($loc, $hdsstat);
+
+      # Remove the file if HDS status is good
+      if ($hdsstat == &NDF::SAI__OK) {
+	$hdsfile .= ".sdf";
+	$status = unlink($hdsfile) if $dounlink;
+      } else {
+	# Annul hds status
+	err_annul($status);
+
+	# Set status to bad
+	$status = 0;
+      }
+
+      # End error context
+      err_end($hdsstat);
+
+    }
+
+  }
 
   return ORAC__ERROR if $status == 0;
   return ORAC__OK;
