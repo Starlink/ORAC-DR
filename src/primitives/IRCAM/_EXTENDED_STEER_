@@ -1,0 +1,81 @@
+# _EXTENDED_STEER         -*- perl -*-
+#
+# Control processing for EXTENDED_nxm recipes, in particular which frames
+# are target and which are blank sky; when to make a flat, make a mosaic
+# of a row, and to create the final mosaic; and which is the reference
+# frame for normalisation.  It also keeps a count of the target frames for
+# interpolation between sky measurements.
+#
+# N.B. The target and sky alternate for these recipes.  There is no
+# SKY_FREQ argument.
+#
+# Arguments:
+#    NROW = INTEGER (Given)
+#       The number of target frames in a row of the mosaic.  It's the n
+#       in EXTENDED_nxm.  The minimum is 3 because this number of
+#       blank skies are needed to form a flat field. [5]
+#    NCOL = INTEGER (Given)
+#       The number of target frames in a column of the mosaic.  It's the
+#       m in EXTENDED_nxm.  The minimum is 2. [5]
+#
+
+# Obtain the shape of the mosaic in terms of the number of frames
+# per row and the number of rows.
+    $nrow = max( 3, ( $_CLASSIFY_EXTENDED_{NROW} || 5 ) );
+    $ncol = max( 2, ( $_CLASSIFY_EXTENDED_{NROW} || 5 ) );
+
+# Define a handy variable.
+    $fn = $Grp->num;
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ||
+         $Frm->hdr( "OBSTYPE" ) eq "SKY") {
+
+# Specify the first frame as the frame whose mode will be the
+# reference for the normalisation of the sky frames.
+       if ( $fn == 0 ) {
+          $Frm->hdr( "REFERENCE_FRAME", 1 );
+       } else {
+          $Frm->hdr( "REFERENCE_FRAME", 0 );
+       }
+
+# Classify this frame as either a target or blank-sky object frame.
+       if ( $fn % 2 == 0 ) {
+          $Frm->hdr( "TARGET_OR_SKY", "sky" );
+          $filename = $Frm->file;
+          orac_print "Orac says: $filename is of blank sky.\n";
+
+# Also include the frame number.
+       } else {
+          $Frm->hdr( "TARGET_OR_SKY", "target" );
+          $Frm->hdr( "TARGET_NUMBER", int( $fn / 2 ) );
+          $filename = $Frm->file;
+          orac_print "Orac says: $filename is of the target.\n";
+       }
+
+# Specify during processing of which frames should the flat be created,
+# flat-field creation with objects masked, and a mosaic created.
+       if ( $fn % ( $nrow * 2 ) == 0 && $fn != 0 ) {
+          $Frm->hdr( "MAKE_FLAT", 1 );
+          $Frm->hdr( "MAKE_MOSAIC", 1 );
+
+       } else {
+          $Frm->hdr( "MAKE_FLAT", 0 );
+          $Frm->hdr( "MAKE_MOSAIC", 0 );
+       }
+
+# Specify during processing when the final mosaic is to be generated.
+       if ( $fn % ( $nrow * 2 * $ncol ) == 0 && $fn != 0 ) {
+          $Frm->hdr( "MAKE_GRAND_MOSAIC", 1 );
+          $Frm->hdr( "SUBTRACT_SKY", 1 );
+       } else {
+          $Frm->hdr( "MAKE_GRAND_MOSAIC", 0 );
+          $Frm->hdr( "SUBTRACT_SKY", 0 );
+       }
+
+# Record the row number for making flats and selecting strips to mosaic.
+# Note it applies to both sky and target frames.
+       $row_no = int( ( $fn - 1 ) / $nrow / 2 );
+       $Frm->hdr( "EXTENDED_ROW", $row_no );
+       orac_print "Current frame is part of row $row_no\n";
+    }
