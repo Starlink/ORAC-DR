@@ -64,6 +64,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.3  2004/11/12 01:22:02  phirst
+#      setenv RTD_REMOTE_DIR and HDS_MAP
+#
 #     Revision 1.2  2004/11/10 02:31:49  bradc
 #     ORAC_DATA_CAL is in swfcam, not wfcam now
 #
@@ -126,6 +129,10 @@ setenv ORAC_INSTRUMENT SWFCAM2
 setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/wfcam2/$oracut
 setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/wfcam2/$oracut
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/swfcam
+
+# some other things
+setenv HDS_MAP 0
+setenv RTD_REMOTE_DIR $ORAC_DATA_OUT
 
 # screen things
 setenv ORAC_PERSON bradc

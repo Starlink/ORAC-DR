@@ -64,6 +64,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.3  2004/11/12 01:22:02  phirst
+#      setenv RTD_REMOTE_DIR and HDS_MAP
+#
 #     Revision 1.2  2004/11/06 01:08:26  bradc
 #     set ORAC_INSTRUMENT to SWFCAMn
 #
@@ -129,6 +132,10 @@ setenv ORAC_INSTRUMENT SWFCAM5
 setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/wfcam5/$oracut
 setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/wfcam5/$oracut
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/wfcam
+
+# some other things
+setenv HDS_MAP 0
+setenv RTD_REMOTE_DIR $ORAC_DATA_OUT
 
 # screen things
 setenv ORAC_PERSON bradc

@@ -64,6 +64,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.3  2004/11/12 01:22:02  phirst
+#      setenv RTD_REMOTE_DIR and HDS_MAP
+#
 #     Revision 1.2  2004/11/10 02:31:49  bradc
 #     ORAC_DATA_CAL is in swfcam, not wfcam now
 #
@@ -131,6 +134,10 @@ setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/swfcam
 setenv ORAC_PERSON bradc
 setenv ORAC_LOOP flag
 setenv ORAC_SUN
+
+# some other things
+setenv HDS_MAP 0
+setenv RTD_REMOTE_DIR $ORAC_DATA_OUT
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
