@@ -1,11 +1,74 @@
-# _SET_FRAME_FITS_ITEM_   -*-perl-*-
-#
-# adds or modifies a fits header for the file given in the FILE parameter
+# -*-perl-*-
+
+=head1 NAME
+
+_SET_FRAME_FITS_ITEM_
+
+=head1 SYNOPSIS
+
+  _SET_FRAME_FITS_ITEM_  FILE=$file KEY=OBJECT VALUE=TEST
+
+=head1 DESCRIPTION
+
+Adds or modifies a fits header for the file given in the FILE parameter
+
+=head1 PARAMETERS
+
+=over 4
+
+=item B<FILE>
+
+The name of the file to be modified. This parameter is mandatory and is
+not derived automatically.
+
+=item B<KEY>
+
+=item B<VALUE>
+
+=item B<COMMENT>
+
+If not defined, the current comment will be retained.
+
+=item B<STRING>
+
+Boolean. If true, the header item will be forced to a string, if false
+(but defined) the item will be forced to a numeric value. If not defined,
+the new item will be a string if the item already exist and is currently
+a string, else the default FITSMOD behaviour will be used.
+
+=back
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.edE<gt>,
+Malcolm Currie E<lt>mjc@STAR.RL.AC.UKE<gt>,
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2001-2005 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
+
+=cut
 
 my $file = ($_SET_FILE_FITS_ITEM_{'FILE'} || undef);
 my $key = ($_SET_FILE_FITS_ITEM_{'KEY'} || undef);
 my $value = ($_SET_FILE_FITS_ITEM_{'VALUE'} || undef);
 my $comment = ($_SET_FILE_FITS_ITEM_{'COMMENT'} || undef);
+my $isstring = ($_SET_FILE_FITS_ITEM_{'STRING'} || undef );
 
 if( !defined( $file ) ) {
   orac_warn "Must supply file that will have FITS header modified.\n";
@@ -14,8 +77,7 @@ if( !defined( $file ) ) {
 } else {
 
   # get the fits header
-
-  my ($hashref, $status) = NDF::fits_read_header($file);
+  my $hdr = new Astro::FITS::Header::NDF( File => $file );
 
   # modify the comment (set to null if undefined, replace | with a space,
   # put single quotes around it)
@@ -24,18 +86,34 @@ if( !defined( $file ) ) {
   $comment =~ s/\|/ /g;
   $comment = "\'" . $comment . "\'";
 
-  if(exists($$hashref{$key})) {
+  my $item = $hdr->itembyname($key);
+  if(defined $item) {
+
+    # force a string if the existing item is a string, unless we have
+    # an override
+    my $string;
+    if (defined $isstring) {
+      $string = ($isstring ? 'TRUE' : 'FALSE' );
+    } else {
+      $string = ($item->type eq 'STRING' ? 'TRUE' : 'FALSE' );
+    }
 
     # the key exists, so update with the new value (and comment if necessary)
 
-    my $pars = "edit=update position=! string=false";
-    $Mon{'ndfpack_mon'}->obeyw("fitsmod","ndf=$file keyword=$key value=$value comment=$comment $pars");
+    my $pars = "edit=update position=! string=$string";
+    $Mon{'ndfpack_mon'}->obeyw("fitsmod","ndf=$file keyword=$key value=$value comment=$comment string=$string $pars");
 
   } else {
 
+    # if isstring is defined we use it, else we allow fitsmod to default
+    my $string = '';
+    if (defined $isstring) {
+      $string = "string=". ($isstring ? "TRUE" : 'FALSE' );
+    }
+
     # the key doesn't exist, so add the new value (and comment if necessary)
 
-    my $pars = "edit=write position=! string=false";
+    my $pars = "edit=write position=! $string";
     $Mon{'ndfpack_mon'}->obeyw("fitsmod","ndf=$file keyword=$key value=$value comment=$comment $pars");
 
   }
