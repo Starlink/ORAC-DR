@@ -59,14 +59,6 @@ setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/wfcam
 setenv ORAC_DATA_CASU $ORAC_DATA_OUT/casu
 setenv RTD_REMOTE_DIR $ORAC_DATA_OUT
 
-# Hack ORAC_DATA_OUT etc on the wfdr machines to use the non NFS path
-set hostname = `/bin/hostname`
-if ($hostname == "wfdr3") then
-   setenv ORAC_DATA_OUT /export/data/reduced/$oracut
-   setenv ORAC_DATA_CASU $ORAC_DATA_OUT/casu
-   setenv RTD_REMOTE_DIR $ORAC_DATA_OUT
-endif
-
 # screen things
 setenv ORAC_PERSON jrl
 setenv ORAC_LOOP flag
