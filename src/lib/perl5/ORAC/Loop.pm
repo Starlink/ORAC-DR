@@ -710,8 +710,11 @@ sub orac_loop_task {
     } elsif (exists $current{$t}->{IMAGE}) {
       # need to choose a filename. Make one up for the moment
       # it needs to be unique per task so use the task name and
-      # the 
-      my $fname = lc($t) . '_' . $current{$t}->{TIMESTAMP};
+      # the timestamp. We may benefit from a simple counter
+      # in the remote parameter.
+      my $tstr = sprintf("%.2f",$current{$t}->{TIMESTAMP});
+      $tstr =~ s/\./_/;
+      my $fname = lc($t) . '_' . $tstr;
 
       if ($infmt eq 'NDF') {
 	# write the DATA_ARRAY out as a piddle
