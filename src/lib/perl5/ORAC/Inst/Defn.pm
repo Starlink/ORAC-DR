@@ -339,23 +339,40 @@ sub orac_determine_recipe_search_path {
 
   my $root;
   if (exists $ENV{ORAC_DIR}) {
-    $root = File::Spec->catdir($ENV{ORAC_DIR}, "recipes");
+    $root = File::Spec->catdir( $ENV{ORAC_DIR}, "recipes" );
   } else {
     croak "Unable to determine ORAC_DIR location";
   }
+  my $imaging_root =  File::Spec->catdir( $root, "imaging" );
+  my $spectro_root =  File::Spec->catdir( $root, "spectroscopy" );
 
   if ($inst eq 'SCUBA') {
-    push(@path, File::Spec->catdir( $root, 'SCUBA'));
+    push( @path, File::Spec->catdir( $root, 'SCUBA' ) );
+
   } elsif ($inst eq 'CGS4' or $inst eq 'OCGS4') {
-    push(@path, File::Spec->catdir( $root, 'CGS4'));
+    push( @path, File::Spec->catdir( $spectro_root, "CGS4" ) );
+    push( @path, $spectro_root );
+    push( @path, File::Spec->catdir( $root, 'CGS4' ) );
+
   } elsif ($inst eq 'IRCAM' or $inst eq 'IRCAM2') {
-    push(@path, File::Spec->catdir( $root, "IRCAM"));
+    push( @path, File::Spec->catdir( $imaging_root, "IRCAM" ) );
+    push( @path, $imaging_root );
+    push( @path, File::Spec->catdir( $root, "IRCAM" ) );
+
   } elsif ($inst eq 'UFTI' or $inst eq 'UFTI2') {
-    push(@path, File::Spec->catdir( $root, "UFTI"));
+    push( @path, File::Spec->catdir( $imaging_root, "UFTI" ) );
+    push( @path, $imaging_root );
+    push( @path, File::Spec->catdir( $root, "UFTI" ) );
+
   } elsif ($inst eq 'MICHELLE' or $inst eq 'MICHTEMP') {
-    push(@path, File::Spec->catdir( $root, "MICHELLE"));
+    push( @path, File::Spec->catdir( $imaging_root, "MICHELLE" ) );
+    push( @path, File::Spec->catdir( $spectro_root, "MICHELLE" ) );
+    push( @path, $imaging_root );
+    push( @path, $spectro_root );
+    push( @path, File::Spec->catdir( $root, "MICHELLE" ) );
+
   } else {
-    croak "recipes: Unrecognised instrument: $inst\n";
+    croak "Recipes: Unrecognised instrument: $inst\n";
   }
 
   return @path;
@@ -379,23 +396,40 @@ sub orac_determine_primitive_search_path {
 
   my $root;
   if (exists $ENV{ORAC_DIR}) {
-    $root = File::Spec->catdir($ENV{ORAC_DIR}, "primitives");
+    $root = File::Spec->catdir( $ENV{ORAC_DIR}, "primitives" );
   } else {
     croak "Unable to determine ORAC_DIR location";
   }
+  my $imaging_root =  File::Spec->catdir( $root, "imaging" );
+  my $spectro_root =  File::Spec->catdir( $root, "spectroscopy" );
 
   if ($inst eq 'SCUBA') {
-    push(@path, File::Spec->catdir( $root, 'SCUBA'));
+    push( @path, File::Spec->catdir( $root, 'SCUBA' ) );
+
   } elsif ($inst eq 'CGS4' or $inst eq 'OCGS4') {
-    push(@path, File::Spec->catdir( $root, 'CGS4'));
+    push( @path, File::Spec->catdir( $spectro_root, "CGS4" ) );
+    push( @path, $spectro_root );
+    push( @path, File::Spec->catdir( $root, 'CGS4' ) );
+
   } elsif ($inst eq 'IRCAM' or $inst eq 'IRCAM2') {
-    push(@path, File::Spec->catdir( $root, "IRCAM"));
+    push( @path, File::Spec->catdir( $imaging_root, "IRCAM" ) );
+    push( @path, $imaging_root );
+    push( @path, File::Spec->catdir( $root, "IRCAM" ) );
+
   } elsif ($inst eq 'UFTI' or $inst eq 'UFTI2') {
-    push(@path, File::Spec->catdir( $root, "UFTI"));
+    push( @path, File::Spec->catdir( $imaging_root, "UFTI" ) );
+    push( @path, $imaging_root );
+    push( @path, File::Spec->catdir( $root, "UFTI" ) );
+
   } elsif ($inst eq 'MICHELLE' or $inst eq 'MICHTEMP') {
-    push(@path, File::Spec->catdir( $root, "MICHELLE"));
+    push( @path, File::Spec->catdir( $imaging_root, "MICHELLE" ) );
+    push( @path, File::Spec->catdir( $spectro_root, "MICHELLE" ) );
+    push( @path, $imaging_root );
+    push( @path, $spectro_root );
+    push( @path, File::Spec->catdir( $root, "MICHELLE" ) );
+
   } else {
-    croak "primitives: Unrecognised instrument: $inst\n";
+    croak "Primitives: Unrecognised instrument: $inst\n";
   }
 
   return @path;
