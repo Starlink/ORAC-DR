@@ -360,6 +360,11 @@ sub orac_determine_inst_classes {
     $frameclass = "ORAC::Frame::JCMT";
     $calclass   = "ORAC::Calib::SCUBA";
     $instclass  = "ORAC::Inst::SCUBA";
+  } elsif ($inst =~ /^SCUBA2/) {
+    $groupclass = "ORAC::Group::SCUBA2";
+    $frameclass = "ORAC::Frame::SCUBA2";
+    $calclass   = "ORAC::Calib::SCUBA";
+    $instclass  = "ORAC::Inst::SCUBA";
   } elsif ($inst eq 'MICHTEMP') {
     $groupclass = "ORAC::Group::Michelle";
     $frameclass = "ORAC::Frame::MichTemp";
@@ -493,6 +498,9 @@ sub orac_determine_recipe_search_path {
 
   if ($inst eq 'SCUBA') {
     push( @path, File::Spec->catdir( $root, 'SCUBA' ) );
+
+  } elsif ($inst eq 'SCUBA2') {
+    push( @path, File::Spec->catdir( $root, "SCUBA2" ) );
 
   } elsif ($inst eq 'JCMT_DAS') {
     push( @path, File::Spec->catdir( $het_root, "JCMT_DAS" ) );
@@ -648,6 +656,10 @@ sub orac_determine_primitive_search_path {
 
   if ($inst eq 'SCUBA') {
     push( @path, File::Spec->catdir( $root, 'SCUBA' ) );
+    push( @path, $general_root );
+
+  } elsif( $inst eq 'SCUBA2' ) {
+    push( @path, File::Spec->catdir( $root, 'SCUBA2') );
     push( @path, $general_root );
 
   } elsif( $inst eq 'JCMT_DAS' ) {
@@ -824,6 +836,10 @@ sub orac_determine_calibration_search_path {
 
   } elsif( $inst eq 'JCMT_DAS' ) {
     push( @path, File::Spec->catdir( $root, 'jcmt_das' ) );
+    push( @path, $general_submm_root );
+
+  } elsif( $inst eq 'SCUBA2' ) {
+    push( @path, File::Spec->catdir( $root, 'scuba2' ) );
     push( @path, $general_submm_root );
 
   } elsif( $inst eq 'CGS4' or $inst eq 'OCGS4' ) {
