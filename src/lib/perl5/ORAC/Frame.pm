@@ -749,9 +749,9 @@ sub calc_orac_headers {
   # This makes it safe for everyone
   for my $key ( @ORAC_ ) {
     my $method = "_to_$key";
-    print "Trying method $method\n";
+    #print "Trying method $method\n";
     if ($self->can($method)) {
-      print "Running method $method\n";
+      #print "Running method $method\n";
       # This returns a single value
       $new{"ORAC_$key"} = $self->$method();
       $self->uhdr("ORAC_$key", $new{"ORAC_$key"});
@@ -1028,7 +1028,7 @@ sub gui_id {
   # Split on underscore
   my (@split) = split(/_/,$fname);
   my ($junk, $fsuffix) = $self->_split_fname( $fname );
-  my @split = @$junk;
+  @split = @$junk;
 
   my $id = $split[-1];
 
@@ -1344,7 +1344,7 @@ sub translate_hdr {
   # The translate_hdr() method itself will then not need to be 
   # subclassed at all
   my $method = "_from_$key";
-  print "trying method translate $method\n";
+  # print "trying method translate $method\n";
   if ($self->can($method)) {
     return $self->$method();
 
