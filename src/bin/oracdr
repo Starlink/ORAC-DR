@@ -12,6 +12,11 @@
 # via an eval)
 use subs qw(start_msg_sys start_algorithm_engines wait_for_algorithm_engines);
 
+# Make sure we catch as many signals as possible
+# so that the END{} blocks work correctly and tidy up
+use sigtrap qw/die normal-signals error-signals/;
+
+
 use lib $ENV{ORAC_PERL5LIB};
 use ORAC::Basic;
 use ORAC::General;
@@ -144,8 +149,6 @@ unless (exists $ENV{ORAC_DIR}) {
 }
 
 $orac_dir = $ENV{ORAC_DIR} . "/";	# main orac directory (contains bin)
-$recipe_dir = $orac_dir."recipes/$instrument/";	# recipes
-$dictionary_dir = $orac_dir . "primitives/$instrument/"; # primitives
 
 ######################## Change to Output directory ####################
 
@@ -279,28 +282,23 @@ if (defined $opt_calib) {
 
 };
 
-############################# L O O P I N G  S C H E M E ###############
-# Decide on a looping scheme
-
-$loop = "orac_loop_list"; # Default is too use list to cycle through obs
-if (defined $opt_loop) {
-  $loop = "orac_loop_" . $opt_loop;
-}
-
-# Read recipe name
-$Override_Recipe = shift(@ARGV); # this will default to the RECIPE File method
-
-
 
 ############## Process argument list ###############################3
 # Generate list of observation numbers to be processed
- 
+# This is related to looping scheme
+
+$loop = 'orac_loop_list'; # Default loop scheme unless -from 
+
 if (defined $opt_from) {
 
   if (defined $opt_to) {
     @obs = $opt_from .. $opt_to
   } else {
     @obs = ($opt_from);  # Used for data detection loops etc
+
+    # Set default loop scheme to 'inf'
+    # if there is no 'to'
+    $loop = 'orac_loop_inf';
   }
  
 } elsif (defined $opt_list) {
@@ -308,6 +306,18 @@ if (defined $opt_from) {
   @obs = parse_obslist($opt_list);
 
 }
+
+############################# L O O P I N G  S C H E M E ###############
+# Decide on a looping scheme
+
+$loop = "orac_loop_" . $opt_loop if defined $opt_loop;
+
+
+# Read recipe name
+$Override_Recipe = shift(@ARGV); # this will default to the RECIPE File method
+
+
+
 
 
 ################# D A T A   L O O P ###############################
@@ -379,19 +389,24 @@ while (1) {
   }
 
 
-  # Read in the selected recipe  
-  @recipe = orac_read_recipe($Recipe);	# read recipe
+  # Read in the selected recipe - note that this returns an array reference
+  $recipe_ref = orac_read_recipe($Recipe, $instrument);	# read recipe
   
-  while (grep /^\s*_/,@recipe) {	# while it contains other recipes
-    @recipe = orac_parse_recipe(@recipe); # keep parsing recipes
+  # In order to save time here we should not be 
+  # passing an enormous array around (can contain hundereds of lines
+  # of code). Instead pass around an array reference
+  # Since we use a reference to a array we dont need to explicitly
+  # return it either.
+  while (grep /^\s*_/,@$recipe_ref) {	# while it contains other recipes
+    $recipe_ref = orac_parse_recipe($recipe_ref, $instrument); # keep parsing recipes
   };
 
   # Now that the recipe is parsed, insert code for automatic error
   # checking, etc
 
-  @recipe = orac_add_code_to_recipe(@recipe);
+  $recipe_ref = orac_add_code_to_recipe($recipe_ref);
   
-  $oracref = orac_execute_recipe(\@recipe,$Frm,$Grp,$Cal); # execute parsed recipe
+  orac_execute_recipe($recipe_ref,$Frm,$Grp,$Cal); # execute parsed recipe
 
   # delete symlink to raw data file
   unlink($Frm->raw) if (-l $Frm->raw);
@@ -410,6 +425,11 @@ while (1) {
 #------------------------------------------------------------------------
 
 # $Log$
+# Revision 1.38  1998/09/17 03:32:05  timj
+# - Change recipe parsing so that it handles array references
+# - Fix -from behaviour looping
+# - use sigtrap so that we can try to trap most signals
+#
 # Revision 1.37  1998/09/16 03:21:14  frossie
 # Pick up recipes form inst-specific dirs
 #
