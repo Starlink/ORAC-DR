@@ -1,4 +1,4 @@
- # -*-perl-*-
+# -*-perl-*-
 
 =head1 NAME
 
@@ -6,7 +6,7 @@ _CREATE_SPECFRAME_ - Adds a SpecFrame to a spectrum.
 
 =head1 DESCRIPTION
 
-Using information stored in the header, this primitive adds a
+Using information stored in the AXIS structure, this primitive adds a
 SpecFrame to the group image, allowing for transformations between
 standards of references, frequence/wavelength, units, etc.
 
@@ -14,7 +14,10 @@ standards of references, frequence/wavelength, units, etc.
 
 =over 4
 
-None.
+=item GROUP = LOGICAL
+
+Whether or not to add the SpecFrame to the current Group item. If false,
+this primitive will add the SpecFrame to the current Frame item. [1]
 
 =back
 
@@ -32,17 +35,29 @@ Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2003 Particle Physics and Astronomy Research Council.
+Copyright (C) 2003-2004 Particle Physics and Astronomy Research Council.
 All Rights Reserved.
 
 =cut
 
-# Check to make sure we have a 1D spectrum (for now).
+# Read parameters.
+my $group = $_CREATE_SPECFRAME_{GROUP};
+if( ! defined( $group ) ) {
+  $group = 1;
+}
 
-#$Grp->readhdr;
-my $ndims = $Grp->uhdr("NDIMS");
+# Set $item, which will be either $Grp or $Frm, depending on $group.
+my $item;
+if( $group ) {
+  $item = $Grp;
+} else {
+  $item = $Frm;
+}
 
-my $grp = $Grp->file;
+# Check to make sure we have a 1D spectrum.
+
+my $ndims = $item->uhdr("NDIMS");
+my $file = $item->file;
 
 if( $ndims != 1 ) {
 
@@ -60,21 +75,20 @@ if( $ndims != 1 ) {
 
     # Get the telescope's position on Earth. We'll use Astro::Telescope
     # for this.
-    if( !defined( $Grp->uhdr("ORAC_TELESCOPE") ) ) {
+    if( !defined( $Frm->uhdr("ORAC_TELESCOPE") ) ) {
       orac_warn("Telescope not defined. Will not add SpecFrame for wavelength axis.\n");
     } else {
 
       # Bring in Astro::Telescope.
       use Astro::Telescope;
-#      use Data::Dumper;
-#print Dumper $Grp->uhdr;
-      my $tel = new Astro::Telescope( $Grp->uhdr("ORAC_TELESCOPE") );
+
+      my $tel = new Astro::Telescope( $Frm->uhdr("ORAC_TELESCOPE") );
       my $lat = $tel->lat("s");
       my $long = $tel->long("s");
 
       #  Now build the epoch from internal headers.
-      my $utdate = $Grp->uhdr("ORAC_UTDATE");
-      my $uttime = $Grp->uhdr("ORAC_UTSTART");
+      my $utdate = $Frm->uhdr("ORAC_UTDATE");
+      my $uttime = $Frm->uhdr("ORAC_UTSTART");
       $utdate =~ /(\d{4})(\d\d)(\d\d)/;
       my $year = $1;
       my $month = $2;
@@ -86,13 +100,13 @@ if( $ndims != 1 ) {
       my $epoch = "$year-$month-$day $hour:$minute:$second";
 
       # Convert decimal right ascension to sexagesimal.
-      my $basera = $Grp->uhdr("ORAC_RA_BASE");
+      my $basera = $Frm->uhdr("ORAC_RA_BASE");
       my $radeg = int( $basera );
       my $ramin = int( ( $basera - $radeg ) * 60 );
       my $rasec = sprintf("%0.2f",( ( ( $basera - $radeg ) * 60 ) - $ramin ) * 60);
 
       # Convert decimal declination to sexagesimal.
-      my $basedec = $Grp->uhdr("ORAC_DEC_BASE");
+      my $basedec = $Frm->uhdr("ORAC_DEC_BASE");
       my $decsign = "+";
       if ( $basedec < 0 ) {
          $decsign = "-";
@@ -109,30 +123,30 @@ if( $ndims != 1 ) {
       my $dec = "$decsign$decdeg:$decmin:$decsec";
 
       # Add a SpecFrame.
-      my $params = "ndf=$grp frame=axis maptype=unit frmtype=spec domain=SPECTRUM";
+      my $params = "ndf=$file frame=axis maptype=unit frmtype=spec domain=SPECTRUM";
       $Mon{'ndfpack_mon'}->obeyw( "wcsadd", "$params attrs=\'System=wave,Unit=um\'" );
 
       # Set the corresponding WCS attributes.
-      $params = "ndf=$grp remap=no mode=set name=StdOfRest newval=topo";
+      $params = "ndf=$file remap=no mode=set name=StdOfRest newval=topo";
       $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "$params" );
 
-      $params = "ndf=$grp remap=no mode=set name=RefRA newval=\'$ra\'";
+      $params = "ndf=$file remap=no mode=set name=RefRA newval=\'$ra\'";
       $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "$params" );
 
-      $params = "ndf=$grp remap=no mode=set name=RefDec newval=\'$dec\'";
+      $params = "ndf=$file remap=no mode=set name=RefDec newval=\'$dec\'";
       $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "$params" );
 
-      $params = "ndf=$grp remap=no mode=set name=Epoch newval=\'$epoch\'";
+      $params = "ndf=$file remap=no mode=set name=Epoch newval=\'$epoch\'";
       $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "$params" );
 
-      $params = "ndf=$grp remap=no mode=set name=GeoLat newval=\'$lat\'";
+      $params = "ndf=$file remap=no mode=set name=GeoLat newval=\'$lat\'";
       $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "$params" );
 
-      $params = "ndf=$grp remap=no mode=set name=GeoLon newval=\'$long\'";
+      $params = "ndf=$file remap=no mode=set name=GeoLon newval=\'$long\'";
       $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "$params" );
 
       # Report to the user.
-      orac_print("SpecFrame added for wavelength axis on $grp.\n");
+      orac_print("SpecFrame added for wavelength axis on $file.\n");
     }
   }
 }
