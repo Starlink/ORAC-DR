@@ -697,6 +697,8 @@ sub calc_orac_headers {
   my @ORAC_ = ( qw/
                    AIRMASS_START
                    AIRMASS_END
+                   CHOP_ANGLE
+                   CHOP_THROW
                    CONFIGURATION_INDEX
                    DEC_BASE
                    DEC_SCALE 
