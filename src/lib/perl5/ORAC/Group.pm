@@ -1047,6 +1047,34 @@ sub lastmember {
   return 0;
 }
 
+=item B<memberindex>
+
+Given a frame, determines what position this frame has in the
+group. This is useful in Batch mode processing where the
+groups are pre-populated.
+
+  $index = $Grp->memberindex( $Frm );
+
+Index starts counting at 0 (see the C<frame> method)
+and refers only to valid members rather than all members.
+If the frame is not in the group, returns undef.
+
+=cut
+
+sub memberindex {
+  my $self = shift;
+  my $member = shift;
+
+  my $index;
+  for my $i (0..$self->num) {
+    if ($member eq $self->frame( $i )) {
+      $index = $i;
+      last;
+    }
+  }
+  return $index;
+}
+
 =item B<membernames>
 
 Return a list of all the files associated with the group. This is
