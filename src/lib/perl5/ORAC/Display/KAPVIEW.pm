@@ -293,7 +293,7 @@ sub create_dev {
   # Pause so that GWM window can be contacted immediately
   # sleep 2;
 
-  # The problem here is that if 'gwmname' matches an exisiting gwm
+  # The problem here is that if 'gwmname' matches an existing gwm
   # window then the gwm command crashes. This should be okay if  I
   # can hide the error message. Otherwise I need to check to see whether
   # the window is there beforehand (eg with the ps command)
@@ -1853,6 +1853,7 @@ Recognised options:
   ZMIN/ZMAX  - Z-range of greyscale (data units)
   ZAUTOSCALE - Autoscale Z?
   ANGROT     - angle to add to all vectors
+  MULTIVECTOR- Plot multi-coloured vectors (yellow with blue trim)?
 
 Default is to autoscale.
 
@@ -1894,7 +1895,7 @@ sub vector {
     return $status;
   }
 
-  my ($command);
+  my ( $command, $param );
   # Look for a catalogue of the same name with a .FIT extension
   if (-e "$file.FIT" && defined $self->polpack) {
 
@@ -1905,17 +1906,31 @@ sub vector {
       $args .= " ANGROT=$options{ANGROT}";
     }
 
+    # Single or multi-coloured/multi-width vectors?
+    $param = "cat=$file $args device=$device";
+    $command = "polplot $param";
+    if ( exists $options{MULTIVECTOR} ) {
+       if ( $options{MULTIVECTOR} ) {
+
     # Run it twice. Once with vectors that are wide and once with narrow
     # vectors. This will make the vectors standout.
-    my @style = (
-		 "style='width(vec)=3.0,colour(vec)=blue'",
-		 "style='width(vec)=1.0,colour(vec)=yellow'",
-		);
+          my @style = (
+                        "style='width(vec)=3.0,colour(vec)=blue'",
+                        "style='width(vec)=1.0,colour(vec)=yellow'",
+                      );
 
-    for my $stylearg (@style) {
-      $status = $self->polpack->obeyw("polplot","cat=$file $stylearg $args device=$device");
+          for my $stylearg (@style) {
+             $status = $self->polpack->obeyw( "polplot", "$param $stylearg" );
+             $command = "polplot $param $stylearg";
+          }
+       
+# Vectors drawn as single lines, the default.
+       } else {
+          $status = $self->polpack->obeyw( "polplot", "$param" );
+       }
+    } else {
+       $status = $self->polpack->obeyw( "polplot", "$param" );
     }
-    $command = "polplot cat=$file $args device=$device";
 
   } else {
     # Using VECPLOT
