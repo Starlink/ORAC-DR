@@ -435,8 +435,6 @@ sub orac_loop_flag {
   # Get a full path to the flag files
   my @actual = _to_abs_path( @fnames );
 
-  my $old = 0;   # Initial size of the file
-
   # Dont need to worry about file size
   while (! &_files_there( @actual ) ) {
 
