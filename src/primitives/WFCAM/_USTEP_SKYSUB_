@@ -1,0 +1,87 @@
+    # Are we allowed to do this step yet?
+
+    if ($Grp->uhdr("USTEP_COMPLETE")) {
+        orac_print("Begining ustep sky subtraction\n");
+
+	# OK, we have all the observations for the ustep sequence. Make
+	# the sky frame now.
+
+        my $unum = $Frm->ugrp;
+        my $grp = $Grp->findugroup($unum);
+        my $skyname = sprintf("sky_%s_%05d%s",$Frm->hdr("ORACUT"),
+            $unum,$Frm->fitssuffix);
+        orac_print("Creating sky file $skyname for ustep sequence $unum\n");
+        {
+            my $Grp = $grp;
+  	    _SKYCOMBINE_ OUT=$skyname
+        }
+	my $skyfrm = $Frm->new($skyname);
+	_FILE_SKY_ NAME=$skyname
+
+        # Right, now cycle through each of the files in the ustep sequence.
+
+        foreach my $frm ($grp->allmembers) {
+            my $fname = $frm->file;
+            orac_print("Subtracting sky from $fname using $skyname\n");
+
+            # Cycle through each extension 
+
+            my $nextn = $frm->findnsubs;
+            foreach my $i (1 .. $nextn) {
+            
+                # Get the subframe names and then do the subtraction
+
+                my $subfrm = $frm->getasubframe($i)->file;
+	        my $subskyfrm = $skyfrm->getasubframe($i)->file;
+	        my ($retval,$errmsg);
+	        $retval = cir_imsubt($subfrm,$subskyfrm,$errmsg);
+	        if ($retval != CIR_OK) {
+		    orac_err("CIR_IMSUBT: Failed in _USTEP_SKYSUB__\n$errmsg\n");
+		    next;
+		}
+
+                # Update the header to show that the sky subtraction is 
+		# now done.
+
+                my $line = sprintf("Done _USTEP_SKYSUB_: %s",
+		    $subskyfrm);
+		$retval = cir_update_hdr($subfrm,'SKYSUB','STRING',$line,
+		    "",$errmsg);
+            }
+        }
+    }
+
+
+=head1 NAME
+
+_USTEP_SKYSUB_ -- Estimate and subtract sky estimates by combining images
+from all images from a microstep sequence
+
+=head1 DESCRIPTION
+
+This routine only is invoked once we have all the images for a particular 
+ustep sequence. Once we do, all of the files in the ustep sequence are used
+to form a mean sky frame. We cycle through the list of images in the 
+sequence and subtract the mean sky from them.
+
+=head1 ARGUMENTS
+
+None
+
+=head1 NOTES
+
+This will be pretty ropey as the standard number of images in a microstep
+sequence is only four. Still, it might be useful for testing purposes.
+
+=head1 AUTHORS
+
+JRL: Jim Lewis (CASU, IoA)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004-2007 Cambridge Astronomy Survey Unit. 
+All Rights Reserved
+
+=cut
+
+
