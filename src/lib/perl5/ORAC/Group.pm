@@ -727,6 +727,7 @@ sub calc_orac_headers {
                DETECTOR_MODE
                DIM1
                DIM2
+               GRATING_DISPERSION
                GRATING_NAME
                GRATING_ORDER
                GRATING_WAVELENGTH
