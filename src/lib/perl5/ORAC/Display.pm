@@ -38,7 +38,7 @@ use ORAC::Display::KAPVIEW;
 use vars qw/$VERSION $DEBUG/;
 
 $VERSION = '0.10';
-$DEBUG = 1;
+$DEBUG = 0;
 
 =head1 PUBLIC METHODS
 
@@ -164,7 +164,7 @@ This is the main method to be used for displaying data.  The supplied
 object must contain a method for determining the filename and the
 display ID (so that it can be compared with the information stored in
 the device definition file). The available methods are file()
-and  guisuffix()
+and  gui_id()
 
 =cut
 
@@ -213,6 +213,8 @@ sub display_data {
 
     # Set the current suffix in the object
     $self->idstring($frm_suffix);
+
+    orac_print("Checking display tool for entry matching $frm_suffix\n",'blue');
 
     # Now we need to search through the display definition and
     # decide whether our suffix can be displayed anywhere.
@@ -408,7 +410,11 @@ sub parse_file_defn {
       # Strip leading space
       $line =~ s/^\s+//;
 
+      # Next if the line is empty
       next if length($line) == 0;
+
+      # next if the line starts with a #
+      next if $line =~ /^\#/;
 
       # Split on space
       my @junk = split(/\s+/,$line);
@@ -417,8 +423,21 @@ sub parse_file_defn {
       # case insensitive
       my $test = lc($junk[0]);
 
+      # There is a special case for numbers.
+      # Numbers usually indicate RAW data
+      # so the test is also true if $test= 'NUM' and $id is a \d+
+      # RAW is an allowed synonym
+      if ($test eq 'num' || $test eq 'raw') {
+	# Now if id is a number then the test is true
+	if ($id =~ /\d+/) {
+	  $test = $id;  # fool the following test
+	}
+      }
+
+      # Do test
       if ($test eq $id) {
 
+	orac_print("Display device determined ($test)",'blue');
 	orac_print("ID:$id LINE:$line\n",'cyan') if $DEBUG;
 
 	# Create a new hash
