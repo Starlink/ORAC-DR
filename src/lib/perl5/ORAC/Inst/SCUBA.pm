@@ -122,7 +122,7 @@ must have been created via start_algorithm_engines().
 
 sub wait_for_algorithm_engines {
 
-  if ( $Mon{kappa_mon}->contactw ) {
+  if ( $Mon{surf_mon}->contactw ) {
     return ORAC__OK;
   } else {
     return ORAC__ERROR;
