@@ -486,11 +486,12 @@ sub split_name {
 
 =head1 REQUIREMENTS
 
-Currently this module requires the NDF module.
+Currently this module requires the L<NDF> and L<Starlink::HDSPACK>
+modules.
 
 =head1 SEE ALSO
 
-L<ORAC::Group>
+L<ORAC::Frame::UKIRT>
 
 =head1 REVISION
 
