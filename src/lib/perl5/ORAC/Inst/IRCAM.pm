@@ -8,21 +8,22 @@ ORAC::Inst::IRCAM - ORAC description of IRCAM
 
   use ORAC::Inst::SCUBA;
 
-  $file = file_from_num($num);
+  start_msg_sys;
+  start_algorithm_engines;
+
 
 =head1 DESCRIPTION
 
 This module provides subroutines for determining instrument
 specific behaviour of ORAC. This includes deciding which 
-monoliths to use and how to create a filename from an 
-observation number
+monoliths.
 
 =cut
 
 require Exporter;
 
 @ISA = (Exporter);
-@EXPORT = qw(file_from_num group_from_num start_algorithm_engines
+@EXPORT = qw(start_algorithm_engines
 	    start_msg_sys);
 
 use Carp;
@@ -42,39 +43,6 @@ $TAIL = ".sdf";
 =head1 SUBROUTINES
 
 =over 4
-
-=item file_from_num(ut, number)
-
-Returns the filename given a number and UT date in form
-YYMMDD. Includes any file extensions.
-
-=cut
-
-sub file_from_num {
-  my $ut  = shift;
-  my $num = shift;
-
-  my $prefix = "ro". $ut . '_';
-  return $prefix . $num . $TAIL;
-
-}
-
-
-=item group_from_num(ut, number)
-
-Returns the name of the group file given the UT date and 
-observations number.
-
-=cut
-
-sub group_from_num {
-  my $ut  = shift;
-  my $num = shift;
-
-  my $prefix = "rg" . $ut . '_';
-  return $prefix . $num . $TAIL;
-
-}
 
 =item start_msg_sys
 
