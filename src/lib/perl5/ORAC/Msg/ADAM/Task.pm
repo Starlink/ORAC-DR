@@ -85,7 +85,10 @@ sub new {
   my $class = ref($proto) || $proto;
  
   my $task = {};  # Anon hash
- 
+
+  my $status; # Status from load
+  $status  = ORAC__OK; # Default good status
+
   # Since we are really simply handling another object
   # Create the new object (Starlink::AMS::Task) and store it.
   $task->{Obj} = new Starlink::AMS::Task;  # Name in AMS
@@ -95,8 +98,13 @@ sub new {
 
   # If we have arguments then we are trying to do a load
   # as well
-  if (@_) { $task->load(@_); };
- 
+
+  if (@_) { $status = $task->load(@_); };
+
+  if ($status != ORAC__OK) {
+    carp "Error creating new object (Status=$status)";
+  }
+
   return $task;
 }
 
