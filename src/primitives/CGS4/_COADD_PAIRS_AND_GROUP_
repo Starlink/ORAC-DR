@@ -1,0 +1,136 @@
+# _COADD_PAIRS_AND_GROUP_  -*-perl-*-
+
+=head1 NAME
+
+COADD_PAIRS_AND_GROUP - coadd observations taken in OBJECT/SKY pairs into group file
+
+=head1 DESCRIPTION
+
+Coadds observations taken in the standard OBJECT/SKY pairs and adds the result to
+a group file.
+
+=head1 PARAMETERS
+
+=over 4
+
+none
+
+=back
+
+=head1 ORAC
+
+=head2 Engines referenced
+
+KAPPA
+
+=head2 Tasks called
+
+=over 4
+
+=item kappa_mon
+
+sub, cmult, add, cdiv
+
+=item ndfpack_mon
+
+erase
+
+=back
+
+=head2 Objects addressed
+
+$Frm, $Grp
+
+=head1 NOTES
+
+This primitive is meant to act on observations taken in the standard OBJECT/SKY pairing.
+It does not assume that the pairings come in any specific order, only that for each pair
+of observations, one is OBJECT and one is SKY (i.e. observations taken in OSSOOSSO are
+reduced properly, whereas observations taken in OSOOSO are not).
+
+To determine whether an observation is OBJECT or SKY, this primitives relies on correct
+telescope offset information being placed in the header.  More specifically, OBJECT
+observations have R.A. and Dec. offsets of zero, and SKY observations have either R.A., 
+Decl., or both set as non-zero.  If these offsets are set incorrectly, the primitive
+will not work correctly.
+
+Also note that the test on if the observation is either OBJECT or SKY relies on the offset
+being exactly zero.  If the offset comes back as a floating point number, this equality
+may not happen, even though the offset is technically zero (this is due to the way computers
+handle floating point numbers -- 0.0 may not necessarily be equal to zero).  If, for some 
+reason, the test fails, this strict equality check may need to be modified to check within
+a range around zero.
+
+=head2 REVISION
+
+  $Id$
+
+=head1 AUTHOR
+
+b.cavanagh@jach.hawaii.edu
+
+=cut
+
+my $groupnum = $Frm->findgroup;
+my $obsnum = $Frm->number;
+
+my $diff = $obsnum - $groupnum;
+
+my $groupname = $Grp->file;
+
+if(($diff % 2) == 1) {
+  my @membernames = $Grp->membernames;
+  my $raoff = $Frm->hdr("RAOFF");
+  my $decoff = $Frm->hdr("DECOFF");
+  my $fullname = $groupname . $Grp->filesuffix;
+  if((-e $fullname) && ($diff == 1)) {
+    $Mon{'ndfpack_mon'}->obeyw("erase","object=$groupname ok=true");
+  };
+  if(($raoff == 0) && ($decoff == 0)) {
+    # pair is SKY-OBJECT
+    orac_print "Subtracting $membernames[$diff-1] (SKY) from $membernames[$diff] (OBJECT) and adding to group $groupname\n";
+    if($diff == 1) {
+      # This is the first OBJECT-SKY pair
+      $Mon{'kappa_mon'}->obeyw("sub","in1=$membernames[$diff] in2=$membernames[$diff-1] out=$groupname title=$groupname");
+    } else {
+      # This is -not- the first OBJECT-SKY pair
+      my $temp = new ORAC::TempFile;
+      my $tempname = $temp->file;
+      $Mon{'kappa_mon'}->obeyw("sub","in1=$membernames[$diff] in2=$membernames[$diff-1] out=$tempname");
+      my $temp2 = new ORAC::TempFile;
+      my $temp2name = $temp2->file;
+      my $temp3 = new ORAC::TempFile;
+      my $temp3name = $temp3->file;
+      my $grpmult = int($diff/2);
+      my $grpavg = $diff - $grpmult;
+      $Mon{'kappa_mon'}->obeyw("cmult","in=$groupname scalar=$grpmult out=$temp2name");
+      $Mon{'kappa_mon'}->obeyw("add","in1=$temp2name in2=$tempname out=$temp3name");
+      $Mon{'ndfpack_mon'}->obeyw("erase","object=$groupname ok=true");
+      $Mon{'kappa_mon'}->obeyw("cdiv","in=$temp3name out=$groupname scalar=$grpavg");
+    }
+  } else {
+    # pair is OBJECT-SKY
+    orac_print "Subtracting $membernames[$diff] (SKY) from $membernames[$diff-1] (OBJECT) and adding to group $groupname\n";
+    if($diff == 1) {
+      # This is the first OBJECT-SKY pair
+      $Mon{'kappa_mon'}->obeyw("sub","in1=$membernames[$diff-1] in2=$membernames[$diff] out=$groupname title=$groupname");
+    } else {
+      # This is -not- the first OBJECT-SKY pair
+      my $temp = new ORAC::TempFile;
+      my $tempname = $temp->file;
+      $Mon{'kappa_mon'}->obeyw("sub","in1=$membernames[$diff-1] in2=$membernames[$diff] out=$tempname");
+      my $temp2 = new ORAC::TempFile;
+      my $temp2name = $temp2->file;
+      my $temp3 = new ORAC::TempFile;
+      my $temp3name = $temp3->file;
+      my $grpmult = int($diff/2);
+      my $grpavg = $diff - $grpmult;
+      $Mon{'kappa_mon'}->obeyw("cmult","in=$groupname scalar=$grpmult out=$temp2name");
+      $Mon{'kappa_mon'}->obeyw("add","in1=$temp2name in2=$tempname out=$temp3name");
+      $Mon{'ndfpack_mon'}->obeyw("erase","object=$groupname ok=true");
+      $Mon{'kappa_mon'}->obeyw("cdiv","in=$temp3name out=$groupname scalar=$grpavg");
+    } 
+  }
+}
+
+
