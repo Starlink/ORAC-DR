@@ -2,7 +2,7 @@ package ORAC::Group::JCMT;
 
 =head1 NAME
 
-ORAC::Group::JCMT - JCMT class for dealing with observation groups in ORACDR
+ORAC::Group::JCMT - JCMT class for dealing with observation groups in ORAC-DR
 
 =head1 SYNOPSIS
 
@@ -16,9 +16,9 @@ ORAC::Group::JCMT - JCMT class for dealing with observation groups in ORACDR
 =head1 DESCRIPTION
 
 This module provides methods for handling group objects that
-are specific to JCMT. It provides a class derived from ORAC::Group.
-All the methods available to ORAC::Group objects are available
-to ORAC::Group::JCMT objects. Some additional methods are supplied.
+are specific to JCMT. It provides a class derived from B<ORAC::Group>.
+All the methods available to B<ORAC::Group> objects are available
+to B<ORAC::Group::JCMT> objects. Some additional methods are supplied.
 
 =cut
  
@@ -30,6 +30,9 @@ use ORAC::Group;
 
 # Let the object know that it is derived from ORAC::Frame;
 @ORAC::Group::JCMT::ISA = qw/ORAC::Group/;
+
+use vars qw/$VERSION/;
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
  
 # standard error module and turn on strict
@@ -43,38 +46,16 @@ use NDF;
 =head1 PUBLIC METHODS
 
 The following methods are available in this class in addition to
-those available from ORAC::Group.
+those available from B<ORAC::Group>.
+
+=head2 General Methods
 
 =over 4
 
 =cut
 
 
-=item fixedpart
-
-Set or retrieve the part of the group filename that does not
-change between invocation. The output filename can be derived using
-this. Defaults to '_grp_'
-
-    $Grp->fixedpart("_grp_");
-    $prefix = $Grp->fixedpart;
-
-=cut
-
-
-sub fixedpart {
-  my $self = shift;
-  if (@_) { $self->{FixedPart} = shift;};
-  unless (defined $self->{FixedPart}) {
-    $self->{FixedPart} = '_grp_';
-  };
-  return $self->{FixedPart};
-}
-
-
-
-
-=item file
+=item B<file>
 
 This is an extension to the default file() method.
 This method accepts a root name for the group file
@@ -130,44 +111,7 @@ sub file {
   return $self->{File};
 }
 
-
-
-=item readhdr
-
-Reads the header from the reduced group file (the filename is stored
-in the Group object) and sets the Group header. The reference to the
-header hash is returned.
-
-    $hashref = $Grp->readhdr;
-
-If there is an error during the read a reference to an empty hash is 
-returned.
-
-Currently this method assumes that the reduced group is stored in
-NDF format. Only the FITS header is retrieved from the NDF.
-
-There are no input arguments.
-
-=cut
-
-sub readhdr {
-
-  my $self = shift;
-  
-  # Just read the NDF fits header
-  my ($ref, $status) = fits_read_header($self->file);
-
-  # Return an empty hash if bad status
-  $ref = {} if ($status != &NDF::SAI__OK);
-
-  # Set the header in the group 
-  $self->header($ref);
-
-  return $ref;
-
-}
-
-=item file_from_bits
+=item B<file_from_bits>
 
 Method to return the group filename derived from a fixed
 variable part (eg UT) and a group designator (usually obs
@@ -196,63 +140,70 @@ sub file_from_bits {
 }
 
 
-=item template
+=item B<fixedpart>
 
-A reimplementation of Grp::template() recoded so that the
-sub-instrument is a recognised option. This means that
-only the files relating to the selected sub-instrument are
-affected.
+Set or retrieve the part of the group filename that does not
+change between invocation. The output filename can be derived using
+this. Defaults to '_grp_'
 
-The is very similar to the base class method except that all
-args are passed to the template method of frame rather than
-just the first arg. It is probably better to make the base class
-more general the the sub-class.....
+    $Grp->fixedpart("_grp_");
+    $prefix = $Grp->fixedpart;
 
 =cut
 
-sub template {
+
+sub fixedpart {
+  my $self = shift;
+  if (@_) { $self->{FixedPart} = shift;};
+  unless (defined $self->{FixedPart}) {
+    $self->{FixedPart} = '_grp_';
+  };
+  return $self->{FixedPart};
+}
+
+=item B<readhdr>
+
+Reads the header from the reduced group file (the filename is stored
+in the Group object) and sets the Group header.
+
+    $Grp->readhdr;
+
+If there is an error during the read a reference to an empty hash is 
+returned.
+
+Currently this method assumes that the reduced group is stored in
+NDF format. Only the FITS header is retrieved from the NDF.
+
+There are no input arguments.
+
+=cut
+
+sub readhdr {
+
   my $self = shift;
   
-  # Loop over the members  
-    foreach my $member ($self->members) {
-    $member->template(@_);
-  }
+  # Just read the NDF fits header
+  my ($ref, $status) = fits_read_header($self->file);
+
+  # Return an empty hash if bad status
+  $ref = {} if ($status != &NDF::SAI__OK);
+
+  # Set the header in the group 
+  $self->header($ref);
+
+  return $ref;
 
 }
 
+=item B<gui_id>
 
-
-=item nfiles
-
-This method returns the number of files currently associated
-with the group. What this in fact means is that it returns
-the number of files associated with the last member of the 
-group (since that is how I construct output names in the
-first place). grpoutsub() method is responsible for 
-converting this number into a filename via the file() method.
-
-=cut
-
-sub nfiles {
-  my $self = shift;
-
-  # Find last frame
-  my $frm = $self->frame($self->num);
-
-  # Now get the number of files from that
-  return $frm->nfiles;
-}
-
-
-=item gui_id
-
-The file identification for comparison with the ORAC::Display
+The file identification for comparison with the B<ORAC::Display>
 system. Input argument is the file number (starting from 1).
 
 This routine calculates the current suffix from the group file
 name base and prepends a string 'gN' signifying that this is
 a group observation and the Nth frame is requested (N is less than
-or equal to num_files()).
+or equal to nfiles()).
 
 The assumption is that file() returns a root name (ie without
 a sub-instrument designation). This then allows us to create an
@@ -287,6 +238,27 @@ sub gui_id {
 
 }
 
+=item B<nfiles>
+
+This method returns the number of files currently associated
+with the group. What this in fact means is that it returns
+the number of files associated with the last member of the 
+group (since that is how I construct output names in the
+first place). grpoutsub() method is responsible for 
+converting this number into a filename via the file() method.
+
+=cut
+
+sub nfiles {
+  my $self = shift;
+
+  # Find last frame
+  my $frm = $self->frame($self->num);
+
+  # Now get the number of files from that
+  return $frm->nfiles;
+}
+
 
 
 
@@ -299,37 +271,7 @@ JCMT implementation of ORAC::Group.
 
 =over 4
 
-=item membernamessub
-
-Return list of file names associated with the specified
-sub instrument.
-
-  @names = $Grp->membernamessub($sub)
-
-=cut
-
-sub membernamessub {
-
-  my $self = shift;
-  my $sub = lc(shift);
-
-  my @list = ();
-
-  # Loop through each frame
-  foreach my $frm ($self->members) {
-
-    # Loop through each sub instrument
-    my @subs = $frm->subs;
-    for (my $i=0; $i < $frm->nsubs; $i++) {
-      push (@list, $frm->file($i+1)) if $sub eq lc($subs[$i]);
-    }
-  }
-
-  return @list;
-
-}
-
-=item grpoutsub
+=item B<grpoutsub>
 
 Method to determine the group filename associated with
 the supplied sub-instrument.
@@ -360,7 +302,39 @@ sub grpoutsub {
 }
 
 
-=item subs 
+=item B<membernamessub>
+
+Return list of file names associated with the specified
+sub instrument.
+
+  @names = $Grp->membernamessub($sub)
+
+=cut
+
+sub membernamessub {
+
+  my $self = shift;
+  my $sub = lc(shift);
+
+  my @list = ();
+
+  # Loop through each frame
+  foreach my $frm ($self->members) {
+
+    # Loop through each sub instrument
+    my @subs = $frm->subs;
+    for (my $i=0; $i < $frm->nsubs; $i++) {
+      push (@list, $frm->file($i+1)) if $sub eq lc($subs[$i]);
+    }
+  }
+
+  return @list;
+
+}
+
+
+
+=item B<subs>
 
 Returns an array containing all the sub instruments present
 in the group (some frames may only have one sub-instrument)
@@ -434,6 +408,10 @@ Currently this module requires the NDF module.
 =head1 SEE ALSO
 
 L<ORAC::Group>
+
+=head1 REVISION
+
+$Id$
 
 =head1 AUTHORS
 

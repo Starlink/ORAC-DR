@@ -57,20 +57,18 @@ those available from B<ORAC::Group>.
 =item B<readhdr>
 
 Reads the header from the reduced group file (the filename is stored
-in the Group object) and sets the Group header. The reference to the
-header hash is returned.
+in the Group object) and sets the Group header. This method sets the
+header in the object.
 
-    $hashref = $Grp->readhdr;
+    $Grp->readhdr;
 
-All exisiting header information is lost. The calc_orac_headers()
-method is invoked once the header information is read.
-If there is an error during the read a reference to an empty hash is 
-returned.
+All exisiting header information is lost.  If there is an error during
+the read an empty hash is stored in the header.
 
 Currently this method assumes that the reduced group is stored in
 NDF format. Only the FITS header is retrieved from the NDF.
 
-There are no input arguments.
+There are no input or return arguments.
 
 =cut
 
@@ -87,7 +85,7 @@ sub readhdr {
   # Set the header in the group 
   %{$self->hdr} = %$ref;
 
-  return $ref;
+  return;
 
 }
 

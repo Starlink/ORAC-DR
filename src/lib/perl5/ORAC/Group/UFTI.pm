@@ -2,7 +2,7 @@ package ORAC::Group::UFTI;
 
 =head1 NAME
 
-ORAC::Group::UKIRT - UKIRT class for dealing with observation groups in ORACDR
+ORAC::Group::UKIRT - UKIRT class for dealing with observation groups in ORAC-DR
 
 =head1 SYNOPSIS
 
@@ -16,9 +16,9 @@ ORAC::Group::UKIRT - UKIRT class for dealing with observation groups in ORACDR
 =head1 DESCRIPTION
 
 This module provides methods for handling group objects that
-are specific to UKIRT. It provides a class derived from ORAC::Group.
+are specific to UFTI. It provides a class derived from B<ORAC::Group>.
 All the methods available to ORAC::Group objects are available
-to ORAC::Group::UKIRT objects. Some additional methods are supplied.
+to B<ORAC::Group::UFTI> objects.
 
 =cut
  
@@ -26,11 +26,13 @@ to ORAC::Group::UKIRT objects. Some additional methods are supplied.
 # ORAC pipeline
  
 use 5.004;
+use vars qw/$VERSION/;
 use ORAC::Group;
  
 # Let the object know that it is derived from ORAC::Frame;
 @ORAC::Group::UFTI::ISA = qw/ORAC::Group/;
- 
+
+ '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
  
 # standard error module and turn on strict
 use Carp;
@@ -47,18 +49,17 @@ those available from ORAC::Group.
 
 =over 4
 
-
-
-=item readhdr
+=item B<readhdr>
 
 Reads the header from the reduced group file (the filename is stored
 in the Group object) and sets the Group header. The reference to the
-header hash is returned.
+header hash is returned. This method sets the
+header in the object from the file.
 
-    $hashref = $Grp->readhdr;
+    $Grp->readhdr;
 
-If there is an error during the read a reference to an empty hash is 
-returned.
+All exisiting header information is lost.  If there is an error during
+the read an empty hash is stored.
 
 Currently this method assumes that the reduced group is stored in
 NDF format. Only the FITS header is retrieved from the NDF.
@@ -94,7 +95,7 @@ aware of them.
 
 =over 4
 
-=item stripfname
+=item B<stripfname>
 
 Method to strip file extensions from the filename string. This method
 is called by the file() method. For UFTI we strip all extensions of the
@@ -140,12 +141,6 @@ sub fixedpart {
 
 
 
-
-
-
-
-
-
 =back
 
 =head1 REQUIREMENTS
@@ -155,6 +150,10 @@ Currently this module requires the NDF module.
 =head1 SEE ALSO
 
 L<ORAC::Group>
+
+=head1 REVISION
+
+$Id$
 
 =head1 AUTHORS
 

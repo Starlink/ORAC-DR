@@ -2,24 +2,24 @@ package ORAC::Frame::CGS4;
 
 =head1 NAME
 
-ORAC::Frame::UKIRT - UKIRT class for dealing with observation files in ORACDR
+ORAC::Frame::UKIRT - CGS4 class for dealing with observation files in ORAC-DR
 
 =head1 SYNOPSIS
 
-  use ORAC::Frame::UKIRT;
+  use ORAC::Frame::CGS4;
 
-  $Obs = new ORAC::Frame::CGS4("filename");
-  $Obs->file("file")
-  $Obs->readhdr;
-  $Obs->configure;
-  $value = $Obs->hdr("KEYWORD");
+  $Frm = new ORAC::Frame::CGS4("filename");
+  $Frm->file("file")
+  $Frm->readhdr;
+  $Frm->configure;
+  $value = $Frm->hdr("KEYWORD");
 
 =head1 DESCRIPTION
 
 This module provides methods for handling Frame objects that
-are specific to UKIRT. It provides a class derived from ORAC::Frame.
-All the methods available to ORAC::Frame objects are available
-to ORAC::Frame::UKIRT objects. Some additional methods are supplied.
+are specific to CGS4. It provides a class derived from B<ORAC::Frame::UKIRT>.
+All the methods available to B<ORAC::Frame::UKIRT> objects are available
+to B<ORAC::Frame::CGS4> objects. Some additional methods are supplied.
 
 =cut
  
@@ -27,12 +27,15 @@ to ORAC::Frame::UKIRT objects. Some additional methods are supplied.
 # ORAC pipeline
  
 use 5.004;
-use ORAC::Frame;
+use ORAC::Frame::UKIRT;
  
 # Let the object know that it is derived from ORAC::Frame;
 #@ORAC::Frame::CGS4::ISA = qw/ORAC::Frame::UKIRT/;
 use base  qw/ORAC::Frame::UKIRT/;
- 
+
+use vars qw/$VERSION/;
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+
 # standard error module and turn on strict
 use Carp;
 use strict;
@@ -44,14 +47,14 @@ use NDF;
 =head1 PUBLIC METHODS
 
 The following methods are available in this class in addition to
-those available from ORAC::Frame.
+those available from ORAC::Frame::UKIRT.
+
+=head2 Constructor
 
 =over 4
 
-=cut
- 
-=item new
- 
+=item B<new>
+
 Create a new instance of a ORAC::Frame::UKIRT object.
 This method also takes optional arguments:
 if 1 argument is  supplied it is assumed to be the name
@@ -61,10 +64,10 @@ observation number. In any case, all arguments are passed to
 the configure() method which is run in addition to new()
 when arguments are supplied.
 The object identifier is returned.
- 
-   $Obs = new ORAC::Frame::CGS4;
-   $Obs = new ORAC::Frame::CGS4("file_name");
-   $Obs = new ORAC::Frame::CGS4("UT","number");
+
+   $Frm = new ORAC::Frame::CGS4;
+   $Frm = new ORAC::Frame::CGS4("file_name");
+   $Frm = new ORAC::Frame::CGS4("UT","number");
 
 The constructor hard-wires the '.sdf' rawsuffix and the
 'ro' prefix although these can be overriden with the 
@@ -80,13 +83,13 @@ sub new {
   my $frame = {};  # Anon hash
 
   $frame->{RawName} = undef;
-  $frame->{Header} = undef;
+  $frame->{Header} = {};
   $frame->{Group} = undef;
   $frame->{Files} = [];
   $frame->{Recipe} = undef;
   $frame->{RawSuffix} = ".sdf";
   $frame->{RawFixedPart} = 'c'; 
-  $frame->{UserHeader} = {};
+  $frame->{UHeader} = {};
 
   bless($frame, $class);
 
@@ -105,208 +108,26 @@ sub new {
   return $frame;
 
 }
-
-=item configure
-
-This method is used to configure the object. It is invoked
-automatically if the new() method is invoked with an argument. The
-file(), raw(), readhdr(), header(), group() and recipe() methods are
-invoked by this command. Arguments are required.
-If there is one argument it is assumed that this is the
-raw filename. If there are two arguments the filename is
-constructed assuming that arg 1 is the prefix and arg2 is the
-observation number.
-
-  $Obs->configure("fname");
-  $Obs->configure("UT","num");
-
-=cut
-
-sub configure {
-  my $self = shift;
-
-  # If two arguments (prefix and number) 
-  # have to find the raw filename first
-  # else assume we are being given the raw filename
-  my $fname;
-  if (scalar(@_) == 1) {
-    $fname = shift;
-  } elsif (scalar(@_) == 2) {
-    $fname = $self->file_from_bits(@_);
-  } else {
-    croak 'Wrong number of arguments to configure: 1 or 2 args only';
-  }
-
-  # Set the filename
-
-  $self->file($fname);
-
-  # Set the raw data file name
-
-  $self->raw($fname);
-
-  # Populate the header
-  # for hds container set
-  my $hdr_ext = $self->file.".header";
-
-  $self->header($self->readhdr($hdr_ext));
-
-  # Find the group name and set it
-  $self->group($self->findgroup);
-
-  # Find the recipe name
-  $self->recipe($self->findrecipe);
-
-  # Return something
-  return 1;
-}
-
-
-
 
 
 =back
 
-=head1 REQUIREMENTS
-
-Currently this module requires the NDF module.
-
-=head1 SEE ALSO
-
-L<ORAC::Group>
-
-=head1 AUTHORS
-
-Frossie Economou (frossie@jach.hawaii.edu)
-Tim Jenness (t.jenness@jach.hawaii.edu)
-    
-
-=cut
-
- 
-1;
-package ORAC::Frame::CGS4;
-
-=head1 NAME
-
-ORAC::Frame::UKIRT - UKIRT class for dealing with observation files in ORACDR
-
-=head1 SYNOPSIS
-
-  use ORAC::Frame::UKIRT;
-
-  $Obs = new ORAC::Frame::CGS4("filename");
-  $Obs->file("file")
-  $Obs->readhdr;
-  $Obs->configure;
-  $value = $Obs->hdr("KEYWORD");
-
-=head1 DESCRIPTION
-
-This module provides methods for handling Frame objects that
-are specific to UKIRT. It provides a class derived from ORAC::Frame.
-All the methods available to ORAC::Frame objects are available
-to ORAC::Frame::UKIRT objects. Some additional methods are supplied.
-
-=cut
- 
-# A package to describe a UKIRT group object for the
-# ORAC pipeline
- 
-use 5.004;
-use ORAC::Frame;
- 
-# Let the object know that it is derived from ORAC::Frame;
-#@ORAC::Frame::CGS4::ISA = qw/ORAC::Frame::UKIRT/;
-use base  qw/ORAC::Frame::UKIRT/;
- 
-# standard error module and turn on strict
-use Carp;
-use strict;
- 
-# For reading the header
-use NDF;
-
-
-=head1 PUBLIC METHODS
-
-The following methods are available in this class in addition to
-those available from ORAC::Frame.
+=head2 General Methods
 
 =over 4
 
-=cut
- 
-=item new
- 
-Create a new instance of a ORAC::Frame::UKIRT object.
-This method also takes optional arguments:
-if 1 argument is  supplied it is assumed to be the name
-of the raw file associated with the observation. If 2 arguments
-are supplied they are assumed to be the raw file prefix and
-observation number. In any case, all arguments are passed to
-the configure() method which is run in addition to new()
-when arguments are supplied.
-The object identifier is returned.
- 
-   $Obs = new ORAC::Frame::CGS4;
-   $Obs = new ORAC::Frame::CGS4("file_name");
-   $Obs = new ORAC::Frame::CGS4("UT","number");
-
-The constructor hard-wires the '.sdf' rawsuffix and the
-'ro' prefix although these can be overriden with the 
-rawsuffix() and rawfixedpart() methods.
-
-=cut
-
-sub new {
-
-  my $proto = shift;
-  my $class = ref($proto) || $proto;
-
-  my $frame = {};  # Anon hash
-
-  $frame->{RawName} = undef;
-  $frame->{Header} = undef;
-  $frame->{Group} = undef;
-  $frame->{Files} = [];
-  $frame->{Recipe} = undef;
-  $frame->{RawSuffix} = ".sdf";
-  $frame->{RawFixedPart} = 'c'; 
-  $frame->{UserHeader} = {};
-  $frame->{Nsubs} = {};
-
-  bless($frame, $class);
-
-  # If arguments are supplied then we can configure the object
-  # Currently the argument will be the filename.
-  # If there are two args this becomes a prefix and number
-  # This could be extended to include a reference to a hash holding the
-  # header info but this may well compromise the object since
-  # the best way to generate the header (including extensions) is to use the
-  # readhdr method.
-
-  if (@_) { 
-    $frame->configure(@_);
-  }
-
-  return $frame;
-
-}
-
-=item configure
+=item B<configure>
 
 This method is used to configure the object. It is invoked
 automatically if the new() method is invoked with an argument. The
-file(), raw(), readhdr(), header(), group() and recipe() methods are
-invoked by this command. Arguments are required.
-If there is one argument it is assumed that this is the
-raw filename. If there are two arguments the filename is
-constructed assuming that arg 1 is the prefix and arg2 is the
-observation number.
+file(), raw(), readhdr(), findgroup(), findnsubs() and findrecipe()
+methods are invoked by this command. Arguments are required.  If there
+is one argument it is assumed that this is the raw filename. If there
+are two arguments the filename is constructed assuming that arg 1 is
+the prefix and arg2 is the observation number.
 
-  $Obs->configure("fname");
-  $Obs->configure("UT","num");
+  $Frm->configure("fname");
+  $Frm->configure("UT","num");
 
 =cut
 
@@ -337,45 +158,36 @@ sub configure {
   # for hds container set header NDF to be in the .header extension
   my $hdr_ext = $self->file.".header";
 
-  $self->header($self->readhdr($hdr_ext));
+  $self->readhdr($hdr_ext);
 
   # Find the group name and set it
-  $self->group($self->findgroup);
+  $self->findgroup;
 
   # Find the recipe name
-  $self->recipe($self->findrecipe);
+  $self->findrecipe;
 
   # Set the file method to the various components
-  $self->nsubs($self->findnsubs - 1);
-  
+  $self->findnsubs;
 
   # Return something
   return 1;
 }
-=item nsubs
-
-Set or return the number of data frames associated with the object
-
-=cut
-
-sub nsubs {
-  my $self = shift;
-
-  if (@_) { $self->{Nsubs} = shift; };
-
-  return $self->{Nsubs};
-
-}
 
 
-=item findnsubs
+=item B<findnsubs>
 
-This method returns the number of NDFs found in an HDS container
+This method returns the number of NDFs found in an HDS container.
+This method assumes that there is a .HEADER component and removes
+1 from the total count.
+
+  $ncomp = $Frm->findnsubs;
+
+The header is updated.
 
 =cut
 
 sub findnsubs {
-  
+		  
   my $self = shift;
   
   my $file = shift;
@@ -386,21 +198,23 @@ sub findnsubs {
     $file = $self->file;
   }
   
-  
   # Now need to find the NDFs in the output HDS file
   $status = &NDF::SAI__OK;
   hds_open($file, 'READ', $loc, $status);
-  
-  orac_err("Can't open $file for nsubs") unless $status == &NDF::SAI__OK;
-  
   dat_ncomp($loc, $ncomp, $status);
+  dat_annul($loc, $status);
+		  
+  unless ($status == &NDF::SAI__OK) {
+    orac_err("Can't open $file for nsubs");
+    return 0;
+  }
+
+  $ncomp--;
+  $self->nsubs($ncomp);
   
   return $ncomp;
-  
-  dat_annul($loc, $status);
+
 }
-
-
 
 
 =back
@@ -412,6 +226,10 @@ Currently this module requires the NDF module.
 =head1 SEE ALSO
 
 L<ORAC::Group>
+
+=head1 REVISION
+
+$Id$
 
 =head1 AUTHORS
 

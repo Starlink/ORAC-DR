@@ -8,11 +8,11 @@ ORAC::Frame::UKIRT - UKIRT class for dealing with observation files in ORAC-DR
 
   use ORAC::Frame::UKIRT;
 
-  $Obs = new ORAC::Frame::UKIRT("filename");
-  $Obs->file("file")
-  $Obs->readhdr;
-  $Obs->configure;
-  $value = $Obs->hdr("KEYWORD");
+  $Frm = new ORAC::Frame::UKIRT("filename");
+  $Frm->file("file")
+  $Frm->readhdr;
+  $Frm->configure;
+  $value = $Frm->hdr("KEYWORD");
 
 =head1 DESCRIPTION
 
@@ -171,7 +171,6 @@ sub findgroup {
 
   my $hdrgrp = $self->hdr('GRPNUM');
 
-
   # Is this group name set to anything useful
   if ($hdrgrp == 0) {
     # if the group is invalid there is not a lot we can do about
@@ -225,7 +224,12 @@ Reads the header from the observation file (the filename is stored in
 the object).  This method sets the header in the object (in general
 that is done by configure() ).
 
-    $hashref = $Frm->readhdr;
+    $Frm->readhdr;
+
+The filename can be supplied if the one stored in the object
+is not required:
+
+    $Frm->readhdr($file);
 
 All exisiting header information is lost. The calc_orac_headers()
 method is invoked once the header information is read.

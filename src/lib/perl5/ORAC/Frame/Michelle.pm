@@ -2,24 +2,24 @@ package ORAC::Frame::Michelle;
 
 =head1 NAME
 
-ORAC::Frame::Michelle - Michelle class for dealing with observation files in ORACDR
+ORAC::Frame::Michelle - Michelle class for dealing with observation files in ORAC-DR
 
 =head1 SYNOPSIS
 
   use ORAC::Frame::Michelle;
 
-  $Obs = new ORAC::Frame::Michelle("filename");
-  $Obs->file("file")
-  $Obs->readhdr;
-  $Obs->configure;
-  $value = $Obs->hdr("KEYWORD");
+  $Frm = new ORAC::Frame::Michelle("filename");
+  $Frm->file("file")
+  $Frm->readhdr;
+  $Frm->configure;
+  $value = $Frm->hdr("KEYWORD");
 
 =head1 DESCRIPTION
 
-This module provides methods for handling Frame objects that
-are specific to Michelle. It provides a class derived from ORAC::Frame.
-All the methods available to ORAC::Frame objects are available
-to ORAC::Frame::Michelle objects. Some additional methods are supplied.
+This module provides methods for handling Frame objects that are
+specific to Michelle. It provides a class derived from
+B<ORAC::Frame::UKIRT>.  All the methods available to B<ORAC::Frame::UKIRT>
+objects are available to B<ORAC::Frame::Michelle> objects.
 
 =cut
  
@@ -36,7 +36,10 @@ use base  qw/ORAC::Frame::UKIRT/;
 # standard error module and turn on strict
 use Carp;
 use strict;
- 
+
+use vars qw/$VERSION/;
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+
 # For reading the header
 use NDF;
 
@@ -46,12 +49,12 @@ use NDF;
 The following methods are available in this class in addition to
 those available from ORAC::Frame.
 
+=head2 Constructor
+
 =over 4
 
-=cut
- 
-=item new
- 
+=item B<new>
+
 Create a new instance of a ORAC::Frame::Michelle object.
 This method also takes optional arguments:
 if 1 argument is  supplied it is assumed to be the name
@@ -61,10 +64,10 @@ observation number. In any case, all arguments are passed to
 the configure() method which is run in addition to new()
 when arguments are supplied.
 The object identifier is returned.
- 
-   $Obs = new ORAC::Frame::Michelle;
-   $Obs = new ORAC::Frame::Michelle("file_name");
-   $Obs = new ORAC::Frame::Michelle("UT","number");
+
+   $Frm = new ORAC::Frame::Michelle;
+   $Frm = new ORAC::Frame::Michelle("file_name");
+   $Frm = new ORAC::Frame::Michelle("UT","number");
 
 The constructor hard-wires the '.sdf' rawsuffix and the
 'c' prefix although these can be overriden with the 
@@ -82,12 +85,12 @@ sub new {
   $frame->{RawName} = undef;
   $frame->{RawSuffix} = '.sdf';
   $frame->{RawFixedPart} = 'c'; 
-  $frame->{Header} = undef;
+  $frame->{Header} = {};
   $frame->{Group} = undef;
   $frame->{Files} = [];
   $frame->{Nsubs} = undef;
   $frame->{Recipe} = undef;
-  $frame->{UserHeader} = {};
+  $frame->{UHeader} = {};
   $frame->{NoKeepArr} = [];
   $frame->{Format} = undef;
   $frame->{IsGood} = 1;
@@ -111,19 +114,24 @@ sub new {
 
 }
 
-=item configure
+=back
+
+=head2 General Methods
+
+=over 4
+
+=item B<configure>
 
 This method is used to configure the object. It is invoked
 automatically if the new() method is invoked with an argument. The
-file(), raw(), readhdr(), header(), group() and recipe() methods are
-invoked by this command. Arguments are required.
-If there is one argument it is assumed that this is the
-raw filename. If there are two arguments the filename is
-constructed assuming that arg 1 is the prefix and arg2 is the
-observation number.
+file(), raw(), readhdr(), findgroup(), findrecipe and findnsubs()
+methods are invoked by this command. Arguments are required.  If there
+is one argument it is assumed that this is the raw filename. If there
+are two arguments the filename is constructed assuming that arg 1 is
+the prefix and arg2 is the observation number.
 
-  $Obs->configure("fname");
-  $Obs->configure("UT","num");
+  $Frm->configure("fname");
+  $Frm->configure("UT","num");
 
 =cut
 
@@ -145,21 +153,21 @@ sub configure {
 
   # set the filename
 
-   $self->file($fname);
+  $self->file($fname);
   my $rootfile = $self->file;
 
  # Populate the header
   # for hds container set header NDF to be in the .header extension
   my $hdr_ext = $self->file.".header";
 
-  $self->header($self->readhdr($hdr_ext));
+  $self->readhdr($hdr_ext);
 
   # Set the raw data file name
 
   $self->raw($fname);
 
   # We have as many files as there are NDF compenents, minus the header component
-  $self->nsubs($self->findnsubs - 1);
+  $self->findnsubs;
 
   # populate file method
 
@@ -174,25 +182,29 @@ sub configure {
 
 
   # Find the group name and set it
-  $self->group($self->findgroup);
+  $self->findgroup;
 
   # Find the recipe name
-  $self->recipe($self->findrecipe);
-
-  
+  $self->findrecipe;
 
   # Return something
   return 1;
 }
 
-=item findnsubs
+=item B<findnsubs>
 
-This method returns the number of NDFs found in an HDS container
+This method returns the number of NDFs found in an HDS container.
+This method assumes that there is a .HEADER component and removes
+1 from the total count.
+
+  $ncomp = $Frm->findnsubs;
+
+The header is updated.
 
 =cut
 
 sub findnsubs {
-  
+		  
   my $self = shift;
   
   my $file = shift;
@@ -203,23 +215,84 @@ sub findnsubs {
     $file = $self->file;
   }
   
-  
   # Now need to find the NDFs in the output HDS file
   $status = &NDF::SAI__OK;
   hds_open($file, 'READ', $loc, $status);
   dat_ncomp($loc, $ncomp, $status);
   dat_annul($loc, $status);
+		  
+  unless ($status == &NDF::SAI__OK) {
+    orac_err("Can't open $file for nsubs");
+    return 0;
+  }
 
-  orac_err("Can't open $file for nsubs") unless $status == &NDF::SAI__OK;
+  $ncomp--;
+  $self->nsubs($ncomp);
   
   return $ncomp;
-  
 
 }
 
-=item inout
+=item B<gui_id>
 
-Copes with non-existence of HDS container and handles NDF subframes
+Calculate the ID for the display system. Uses the last suffix
+as a key (not including dots). If nfiles>1 an 's' followed
+by a number (reflecting the file number requested) is prepended
+to the string.
+
+ eg s2dk from c19991231_1_dk.i2
+
+If only one underscore is found (ie a raw number with no data
+reduction suffix) 'num' is returned along with the image
+identifier if multiple sub-frames are present
+
+ eg  s2num from c19991231_1.i2
+     s3num from c19991231_1.i3
+
+Argument: sub-frame number
+
+=cut
+
+sub gui_id {
+  my $self = shift;
+  # Read the number
+  my $num = 1;
+  if (@_) { $num = shift; }
+
+  # Retrieve the Nth file name (start counting at 1)
+  my $fname = $self->file($num);
+
+  # Split infile into a root and a tail
+  my ($root, $rest) = $self->split_name($fname);
+
+  # Split on underscore
+  my (@split) = split(/_/,$root);
+
+  # If there are > 2 chunks then we have a real suffix
+  # else we have a raw data
+  my $id;
+  if ($#split > 1) {
+    $id = $split[-1];
+  } else {
+    $id = 'num';
+  }
+
+  # Find out how many files we have 
+  my $nfiles = $self->nfiles;
+
+  # Prepend with s$num if nfiles > 1
+  $id = "s$num" . $id if $nfiles > 1;
+
+  return $id;
+
+}
+
+
+=item B<inout>
+
+Method to return the current input filename and the new output
+filename given a suffix.  Copes with non-existence of HDS container
+and handles NDF subframes
 
 The following logic is applied:
 
@@ -244,6 +317,14 @@ The following logic is applied:
 If you want to retain the HDS container syntax, this routine has to be
 fooled into thinking that nfiles is greater than 1 (eg by adding a dummy
 file name to the frame).
+
+Returns $out in a scalar context:
+
+   $out = $Frm->inout($suffix);
+
+Returns $in and $out in an array context:
+
+   ($in, $out) = $Frm->inout($suffix);
 
 =cut
 
@@ -303,63 +384,11 @@ sub inout {
     $outfile .= ".".$rest;
   }
 
-  return ($infile, $outfile);
+  return ($infile, $outfile) if wantarray();  # Array context
+  return $outfile;                            # Scalar context
 }
 
 
-=item gui_id
-
-Calculate the ID for the display system. Uses the last suffix
-as a key (not including dots). If nfiles>1 an 's' followed
-by a number (reflecting the file number requested) is prepended
-to the string.
-
- eg s2dk from c19991231_1_dk.i2
-
-If only one underscore is found (ie a raw number with no data
-reduction suffix) 'num' is returned along with the image
-identifier if multiple sub-frames are present
-
- eg  s2num from c19991231_1.i2
-     s3num from c19991231_1.i3
-
-Argument: sub-frame number
-
-=cut
-
-sub gui_id {
-  my $self = shift;
-  # Read the number
-  my $num = 1;
-  if (@_) { $num = shift; }
-
-  # Retrieve the Nth file name (start counting at 1)
-  my $fname = $self->file($num);
-
-  # Split infile into a root and a tail
-  my ($root, $rest) = $self->split_name($fname);
-
-  # Split on underscore
-  my (@split) = split(/_/,$root);
-
-  # If there are > 2 chunks then we have a real suffix
-  # else we have a raw data
-  my $id;
-  if ($#split > 1) {
-    $id = $split[-1];
-  } else {
-    $id = 'num';
-  }
-
-  # Find out how many files we have 
-  my $nfiles = $self->nfiles;
-
-  # Prepend with s$num if nfiles > 1
-  $id = "s$num" . $id if $nfiles > 1;
-
-  return $id;
-
-}
 
 =back
 

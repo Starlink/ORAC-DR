@@ -528,7 +528,7 @@ Reads the header from the observation file (the filename is stored in
 the object).  This methods does set the header in the object and is
 usually called by configure().
 
-    $hashref = $Frm->readhdr;
+    $Frm->readhdr;
 
 All exisiting header information is lost. The calc_orac_headers()
 method is invoked once the header information is read.
