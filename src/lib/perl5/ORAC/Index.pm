@@ -821,12 +821,12 @@ $Id$
 
 =head1 AUTHORS
 
-Frossie Economou (frossie@jach.hawaii.edu) and
-Tim Jenness (t.jenness@jach.hawaii.edu)
+Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt> and
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 

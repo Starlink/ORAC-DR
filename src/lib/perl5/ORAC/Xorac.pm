@@ -32,6 +32,7 @@ package ORAC::Xorac;
 # ---------------------------------------------------------------------------
 
 use strict;          # smack! Don't do it again!
+use warnings;
 use Carp;            # Transfer the blame to someone else
 
 # P O D  D O C U M E N T A T I O N ------------------------------------------
@@ -65,8 +66,8 @@ $Id$
 
 =head1 AUTHORS
 
-Alasdair Allan (aa@astro.ex.ac.uk),
-Tim Jenness (t.jenness@jach.hawaii.edu)
+Alasdair Allan E<lt>aa@astro.ex.ac.ukE<gt>,
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 

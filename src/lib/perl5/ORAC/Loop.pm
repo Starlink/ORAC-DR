@@ -44,6 +44,7 @@ number (eg observation 10 appears before observation 9!)
 =cut
 
 use strict;
+use warnings;
 use Carp;
 
 use ORAC::Print;
@@ -156,7 +157,7 @@ flag is ignored in this loop.
 =cut
 
 sub orac_loop_inf {
-  
+
   croak 'Wrong number of args: orac_loop_inf(class, ut, arr_ref)'
     unless (scalar(@_) == 3 || scalar(@_) == 4);
 
@@ -222,7 +223,7 @@ sub orac_loop_wait {
 
   # Create a new frame in class
   my $Frm = $class->new;
-  
+
   # Construct the filename from the observation number
   # Note that this loop MUST work on the raw data.
   # I am not going to try to write a data detection loop
@@ -259,7 +260,7 @@ sub orac_loop_wait {
       # open a file that is in the process of being copied.
       # This assumes that the file length will not stay constant
       # over the length of our sleep.
- 
+
       my $length = (stat $actual)[7];
 
       last if ($length == $old && $length > 0);
@@ -307,7 +308,7 @@ sub orac_loop_wait {
 	  next;
 
 	}
-      
+
       }
 
 
@@ -387,7 +388,7 @@ sub orac_loop_flag {
 
   # Create a new frame in class
   my $Frm = $class->new;
-  
+
   # Construct the flag name from the observation number
   my $fname = $Frm->flag_from_bits($utdate, $obsno);
 
@@ -431,7 +432,7 @@ sub orac_loop_flag {
 	# we already know that we have a file. 
 
 	if ($next != $obsno) {
-	  
+
 	  orac_print ("\nFile $fname appears to be missing\n");
 
 	  # Okay - it wasnt the expected observation number
@@ -475,9 +476,9 @@ sub orac_loop_flag {
 
   # Now need to increment obsnum for next time round
   $$obsref[0]++;
-  
+
   return $Frm;
-  
+
 }
 
 =item B<orac_loop_list>
@@ -501,7 +502,7 @@ sub orac_loop_file {
 
   # grab a filname from the observation array
   my $fname = shift(@$obsref);
-  
+
   # If filename is undef return undef
   return undef unless defined $fname;
 
@@ -566,7 +567,7 @@ sub orac_loop_file {
       }
      return undef;
     }
-    
+
     # Now we should try to create a symlink and say something
     # if it fails
     symlink($ENV{ORAC_DATA_IN} . "/$fname", $fname) ||
@@ -589,7 +590,7 @@ sub orac_loop_file {
 
   # Now configure the frame object
   # This will fail if the file can not be opened in the current directory.
-  
+
   $Frm->configure($fname);
 
   # Return success
@@ -677,7 +678,7 @@ sub orac_check_data_dir {
       $DummyFrm->rawsuffix . '$';  # ' dummy quote again
 
   }
-  
+
   # Now open the directory
   opendir(DATADIR, "$ENV{ORAC_DATA_IN}") 
     or die "Error opening ORAC_DATA_IN: $!";
@@ -724,7 +725,7 @@ sub orac_check_data_dir {
   } else {
     # We are in a scalar context - just return the next value
     return $next;
-    
+
   }
 
 }
@@ -759,7 +760,7 @@ sub link_and_read {
 
   # Create a new frame in class
   my $Frm = $class->new;
-  
+
   # Construct the filename from the observation number
   my $fname = $Frm->file_from_bits($ut, $num);
 
@@ -821,7 +822,7 @@ sub link_and_read {
       }
      return undef;
     }
-    
+
     # Now we should try to create a symlink and say something
     # if it fails
     symlink($ENV{ORAC_DATA_IN} . "/$fname", $fname) ||
@@ -844,7 +845,7 @@ sub link_and_read {
 
   # Now configure the frame object
   # This will fail if the file can not be opened in the current directory.
-  
+
   $Frm->configure($fname);
 
   # Return success
@@ -908,14 +909,13 @@ $Id$
 
 =head1 AUTHORS
 
-Frossie Economou (frossie@jach.hawaii.edu) and 
-Tim Jenness (t.jenness@jach.hawaii.edu)
+Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt> and 
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
-
 
 =cut
 

@@ -17,6 +17,9 @@ to return an ORAC__ABORT or ORAC__FATAL status using ORAC::Error.
 
 =cut
 
+use strict;
+use warnings;
+
 use vars qw/ $VERSION /;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
@@ -24,11 +27,11 @@ require Exporter;
 
 @ISA = qw/Exporter/;
 
-@EXPORT_OK = qw/ORAC__OK ORAC__ERROR ORAC__BADENG  
+@EXPORT_OK = qw/ORAC__OK ORAC__ERROR ORAC__BADENG
                 ORAC__ABORT ORAC__FATAL/;
 
 %EXPORT_TAGS = (
-		'status'=>[qw/ ORAC__OK ORAC__ERROR ORAC__BADENG 
+		'status'=>[qw/ ORAC__OK ORAC__ERROR ORAC__BADENG
 		               ORAC__ABORT ORAC__FATAL/]
 	       );
 
@@ -133,8 +136,8 @@ $Id$
 
 =head1 AUTHOR
 
-Tim Jenness (t.jenness@jach.hawaii.edu) and
-Frossie Economou (frossie@jach.hawaii.edu)
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt> and
+Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>
 
 =head1 REQUIREMENTS
 
@@ -143,7 +146,7 @@ perl package.
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut

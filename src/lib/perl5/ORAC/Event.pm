@@ -34,6 +34,7 @@ package ORAC::Event;
 # ---------------------------------------------------------------------------
 
 use strict;          # smack! Don't do it again!
+use warnings;
 use Carp;            # Transfer the blame to someone else
 
 # P O D  D O C U M E N T A T I O N ------------------------------------------
@@ -67,7 +68,7 @@ $Id$
 
 =head1 AUTHORS
 
-Alasdair Allan (aa@astro.ex.ac.uk)
+Alasdair Allan E<lt>aa@astro.ex.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
@@ -127,7 +128,7 @@ sub register {
    # Read the argument list
    my $self = shift;
    %hash = (%hash, @_);
-   
+
 }
 
 =item B<update>
@@ -147,7 +148,7 @@ sub update {
    my ( $key ) = @_;
 
    my ( $error );
-   
+
    # Pre-flush the error stack
    $error = ORAC::Error->prior;
    ORAC::Error->flush if defined $error;
@@ -155,7 +156,7 @@ sub update {
 
    # Call Tk::update on the widget
    $hash{$key}->update if defined $hash{$key};
-      
+
    # Post-flush the error stack
    $error = ORAC::Error->prior;
    ORAC::Error->flush if defined $error;
@@ -177,7 +178,7 @@ sub query {
    # Read the argument list
    my $self = shift;
    my ( $key ) = @_;
-   
+
    return $hash{$key} if exists $hash{$key} and defined $hash{$key};
 }
 
@@ -209,11 +210,11 @@ where $key is the key to the widget entry in the hash table.
 =cut
 
 sub unregister {
-   
+
    # Read the argument list
    my $self = shift;
    my ( $key ) = @_;
-   
+
    delete $hash{$key} if exists $hash{$key};
 }
 
@@ -229,7 +230,7 @@ where $key is the key to the widget entry in the hash table.
 =cut
 
 sub destroy {
-   
+
    # Read the argument list
    my $self = shift;
    my ( $key ) = @_;

@@ -43,6 +43,7 @@ in a different ADAM_USER directory.
 =cut
 
 use strict;
+use warnings;
 
 # ORAC modules
 
@@ -103,7 +104,7 @@ sub orac_proc_kill {
   } else {
     # Digital Unix PS
     $cmd = '/bin/ps -ef';
-    $pos = 1;      
+    $pos = 1;
   }
 
   my @processes = `$cmd`;
@@ -140,7 +141,7 @@ sub orac_proc_kill {
       }
 
     }
-    
+
   }
 
 }
@@ -200,9 +201,9 @@ $Id$
 
 =head1 AUTHORS
 
-Frossie Economou (frossie@jach.hawaii.edu),
-Tim Jenness (t.jenness@jach.hawaii.edu),
-Alasdair Allan (aa@astro.ex.ac.uk)
+Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>,
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
+Alasdair Allan E<lt>aa@astro.ex.ac.ukE<gt>
 
 =head1 COPYRIGHT
 

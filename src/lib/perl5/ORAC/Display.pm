@@ -26,9 +26,10 @@ instructs the relevant device object to send to the selected window
 =cut
 
 
-use 5.004;
+use 5.006;
 use Carp;
 use strict;
+use warnings;
 
 use IO::File;
 use ORAC::Print;
@@ -544,12 +545,12 @@ $Id$
 
 =head1 AUTHORS
 
-Tim Jenness (t.jenness@jach.hawaii.edu)
-and Frossie Economou  (frossie@jach.hawaii.edu)
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+and Frossie Economou  E<lt>frossie@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 

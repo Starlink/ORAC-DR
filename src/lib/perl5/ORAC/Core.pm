@@ -47,6 +47,7 @@ inital pipeline configuration and algorithim engine startup.
 =cut
 
 use strict;
+use warnings;
 use Carp;
 
 # ORAC modules

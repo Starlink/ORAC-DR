@@ -49,6 +49,7 @@ is not object-oriented.
 
 use 5.004;
 use Carp;
+use warnings;
 use strict;
 use vars qw/$VERSION $DEBUG $CURRENT @ISA @EXPORT $RDHDL/;
 use subs qw/__curr_obj/;
@@ -718,13 +719,13 @@ $Id$
 
 =head1 AUTHORS
 
-Tim Jenness (t.jenness@jach.hawaii.edu),
-Frossie Economou  (frossie@jach.hawaii.edu),
-Alasdair Allan (aa@astro.ex.ac.uk)
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
+Frossie Economou  E<lt>frossie@jach.hawaii.eduE<gt>,
+Alasdair Allan E<lt>aa@astro.ex.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut

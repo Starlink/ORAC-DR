@@ -1,7 +1,3 @@
-#------------------------------------------------------------------------
-# ORAC recipe parsing module
-#------------------------------------------------------------------------
-
 package ORAC::Basic;
 
 =head1 NAME
@@ -18,13 +14,14 @@ ORAC::Basic - some implementation subroutines
 
 =head1 DESCRIPTION
 
-Provides the routines for parsing and executing recipes.
+Routines that do not have a home elsewhere.
 
 =cut
 
 use Carp;
 use vars qw($VERSION @EXPORT $Beep @ISA);
 use strict;
+use warnings;
 
 require Exporter;
 use File::Path;
@@ -125,11 +122,11 @@ sub orac_exit_normally {
   # redefine the ORAC::Print bindings
   my $msg_prt  = new ORAC::Print; # For message system
   my $msgerr_prt = new ORAC::Print; # For errors from message system
-  my $orac_prt = new ORAC::Print; # For general orac_print 
-   
+  my $orac_prt = new ORAC::Print; # For general orac_print
+
   # Debug info
   orac_print ("Exiting...\n","red");
-  
+
   rmtree $ENV{'ADAM_USER'}             # delete process-specific adam dir
     if defined $ENV{ADAM_USER};
 
@@ -142,12 +139,12 @@ sub orac_exit_normally {
   ORAC::Event->destroy("Tk");
   ORAC::Event->unregister("Tk");
 
-  # Flush the error stack if all we have is an ORAC::Error::UserAbort  
- 
+  # Flush the error stack if all we have is an ORAC::Error::UserAbort
+
   orac_print ("\nOrac says: $message","red") if $message ne '';
   orac_print ("\nOrac says: Goodbye\n","red");
   exit;
-};
+}
 
 =item B<orac_exit_abnormally>
 
@@ -158,18 +155,17 @@ Exit handler when a problem has been encountered.
 sub orac_exit_abnormally {
   my $signal = '';
   $signal = shift if @_;
- 
+
   # redefine the ORAC::Print bindings
   my $msg_prt  = new ORAC::Print; # For message system
   my $msgerr_prt = new ORAC::Print; # For errors from message system
-  my $orac_prt = new ORAC::Print; # For general orac_print 
-     
+  my $orac_prt = new ORAC::Print; # For general orac_print
+
   # Try and cleanup, untested, I can't get it to exit abnormally
   ORAC::Event->destroy("Tk");
   ORAC::Event->unregister("Tk");
-  
+
   # Dont delete tree since this routine is called from INSIDE recipes
-  #  rmtree $ENV{'ADAM_USER'};             
 
   # ring my bell, baby
   if ($Beep) {
@@ -177,10 +173,8 @@ sub orac_exit_abnormally {
   }
 
   die "\n\nAborting from ORACDR - $signal recieved";
-     
-  # die "\n --Signal $signal received--\n";	
 
-};
+}
 
 =back
 
@@ -200,7 +194,7 @@ Alasdair Allan E<lt>aa@astro.ex.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut

@@ -27,6 +27,7 @@ shown in the SYNOPSIS.
 
 use strict;
 use 5.006;
+use warnings;
 use Carp;
 use File::Spec;  # For pedants everywhere
 use IO::File;    # until perl5.6 is guaranteed
@@ -84,10 +85,10 @@ sub new {
   if ( @_ ) {
     my %args = @_;
     if (exists $args{NAME} && exists $args{INSTRUMENT}) {
-    
+
       try {
          $rec->read_recipe(%args);
-      } 
+      }
       catch ORAC::Error::FatalError with
       {
          my $Error = shift;
@@ -98,7 +99,7 @@ sub new {
          my $Error = shift;
          throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
       };
-    
+
     } elsif (exists $args{NAME}) {
       $rec->recipe_name( $args{NAME} );
     } elsif (exists $args{INSTRUMENT}) {
@@ -349,7 +350,7 @@ sub execute {
   my $Cal = shift;
   my $Display = shift;
   my $Mon = shift;
- 
+
   croak "Recipe has not been parsed!" unless $self->have_parsed;
 
   # Hidden options are passed in using a hash ref at the end
@@ -371,36 +372,36 @@ sub execute {
   # Want to make sure that perl warnings are turned off
   # when evaluating recipes - control via the -warn parameter
   # local $^W = 0;
-  
+
   # Info message for debugging
-  
+
   my $recipe_name = $self->recipe_name;
   if ($self->debug) {
      orac_debug "***** Starting recipe '$recipe_name' *****\n";
   }
-  
+
   # Execute the recipe
-  
+
   my $status = ORAC::Recipe::Execution::orac_execute_recipe( $CURRENT_PRIMITIVE,
                                                              $block,$Frm,
 	  						     $Grp, $Cal,
 							     $Display, $Mon,
 							     $self->debug,
 							     $self->batch);
-							     
+
   $status = ORAC__OK unless defined $status;
   $status = ORAC__OK if $status eq '';
- 
+
   # Some extra info
   if ($self->debug) {
     orac_debug "***** Recipe '$recipe_name' completed with status $status *****\n";
   }
-    					      
+
   # Check for an error from perl (eg a croak), but evaluate in string 
   # context so that thrown errors are caught, they should all have values
   # attached (e.g. ORAC__ABORT or ORAC__FATAL) but don't take chances
   if ("$@") {
-  
+
     # Checking ref() and isa() clears $@
     my $error = $@;
 
@@ -420,16 +421,16 @@ sub execute {
     # to bad so that it will be removed from Groups
     # Turn this feature off for now - more discussion required
     # $Frm->isgood(0);
-        
+
     # Report error
     orac_err ("RECIPE ERROR: $error","blue");
- 
+
     # Create an array that matches the line numbers returned by
     # the error message.
     # Note that this line number relates to $block and
     # not @recipe. Need to split $block on new line
     my @new = split(/\n/, $block);
-    
+
     # If this was a syntax error print out the recipe, string context!
     if ("$error" =~ /syntax error|object method/) {
 
@@ -468,7 +469,7 @@ sub execute {
 	orac_err("Recipe contents dumped to ORACDR_RECIPE.dump\n")
       }
     }
-    
+
     # Check for previously thrown non-UserAbort errors	
     if ( ref($error) && $error->isa("Error") )
     {
@@ -1081,6 +1082,7 @@ execution from recipe naming.
 =cut
 
 use strict;
+use warnings;
 use ORAC::Print;
 use ORAC::LogFile;
 use ORAC::General;

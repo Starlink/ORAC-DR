@@ -21,6 +21,7 @@ of seeing statistics, photometry results or pointing logs).
 =cut
 
 use strict;
+use warnings;
 use Carp;
 use IO::File;
 
@@ -54,11 +55,11 @@ sub new {
 
   # Use anon hash
   my $log = {};
-  
+
   # initialise
   $log->{LogFile} = undef;
   $log->{TimeStamp} = 0;  # No timestamping by default
- 
+
   bless $log, $class;
 
   # Set the logfile name if one is specified
@@ -192,11 +193,11 @@ sub addentry {
       }
     }
 
-    print $fh join("\n", @entries) . "\n";  
+    print $fh join("\n", @entries) . "\n";
   } else {
     croak "Unable to open $logfile: $!\n";
   }
-  
+
   return;
 }
 
@@ -210,12 +211,12 @@ $Id$
 
 =head1 AUTHORS
 
-Tim Jenness (t.jenness@jach.hawaii.edu) and
-Frossie Economou (frossie@jach.hawaii.edu)
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt> and
+Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut

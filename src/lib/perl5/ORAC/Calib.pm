@@ -36,6 +36,7 @@ Note this version: Index files not implemented
 # Calibration object for the ORAC pipeline
 
 use strict;
+use warnings;
 use Carp;
 use vars qw/$VERSION/;
 use ORAC::Index;
@@ -626,13 +627,13 @@ $Id$
 
 =head1 AUTHORS
 
-Tim Jenness (t.jenness@jach.hawaii.edu) and 
-Frossie Economou (frossie@jach.hawaii.edu)
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt> and
+Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>
 
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
