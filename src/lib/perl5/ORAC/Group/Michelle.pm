@@ -61,7 +61,6 @@ my %hdr = (
             GRATING_ORDER       => "GRATORD",
             GRATING_WAVELENGTH  => "GRATPOS",
             NSCAN_POSITIONS     => "DETNINCR",
-            NUMBER_OF_EXPOSURES => "NEXP",
             SCAN_INCREMENT      => "DETINCR",
             SLIT_ANGLE          => "SLITANG",
             SLIT_NAME           => "SLITNAME",

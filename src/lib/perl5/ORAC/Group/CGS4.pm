@@ -51,7 +51,6 @@ my %hdr = (
             GRATING_ORDER       => "GORDER",
             GRATING_WAVELENGTH  => "GLAMBDA",
             NSCAN_POSITIONS     => "DETNINCR",
-            NUMBER_OF_EXPOSURES => "NEXP",
             SCAN_INCREMENT      => "DETINCR",
             SLIT_ANGLE          => "SANGLE",
             SLIT_NAME           => "SLIT",
