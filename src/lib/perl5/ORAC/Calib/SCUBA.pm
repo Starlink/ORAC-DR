@@ -440,13 +440,13 @@ sub tau {
       # - only high is found - use it [warn if too new]
       # - only low is found - use it [warn if too old]
       # - nothing found - revert to using CSO tau
- 
+
       # Check the HIGH
       if (defined $high_ent) {
 	# Okay - see how old it is
 	my $age = abs($high_ent->{ORACTIME} - $hdr{ORACTIME});
         if ($age > $too_old) {
-	  orac_warn(" the closest skydip (from above) was too new [".sprintf('%5.2f',$age*24.0)." hours]\nUsing this value anyway...\n");
+	  orac_warn(" the closest skydip (from above: $high) was too new [".sprintf('%5.2f',$age*24.0)." hours]\nUsing this value anyway...\n");
 	}
       }
 
@@ -455,7 +455,7 @@ sub tau {
 	# Okay - see how old it is
 	my $age = abs($low_ent->{ORACTIME} - $hdr{ORACTIME});
         if ($age > $too_old) {
-	  orac_warn(" the closest skydip (from below) was too old [".sprintf('%5.2f',$age*24.0)." hours]\nUsing this value anyway...\n");
+	  orac_warn(" the closest skydip (from below: $low) was too old [".sprintf('%5.2f',$age*24.0)." hours]\nUsing this value anyway...\n");
 	}
       }
 
@@ -478,6 +478,8 @@ sub tau {
 	# Calculate tau at time $framet
 	# This is not as good as returning both tau values
         # and times to the caller
+
+	orac_print "Calculating interpolated tau value....\n";
 
 	$tau = $lowz + ($framet - $lowt) * ($highz-$lowz) / ($hight - $lowt);
 
