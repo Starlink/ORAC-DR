@@ -149,7 +149,7 @@ $DEBUG = 0; # Turn off debugging mode
 		     BEAM  => 280.0,
 		    },
 		   ],
-	 '450W' => [
+	 '450N' => [
 		    {
 		     ARCSEC => 6.9,
 		     BEAM   => 855,
