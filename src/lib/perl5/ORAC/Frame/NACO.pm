@@ -49,6 +49,19 @@ use vars qw/$VERSION/;
 # Instrument-specific translations.
 # =================================
 
+sub _to_DEC_SCALE {
+   my $self = shift;
+   my $scale;
+   my $scale_def = 0.0271;
+   if ( exists ( $self->hdr->{CDELT2} ) ) {
+      $scale = 3600.0 * $self->hdr->{CDELT2};
+   } elsif ( exists ( $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"} ) ) {
+      $scale = $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
+   }
+   $scale = defined( $scale ) ? $scale: $scale_def; 
+   return $scale;
+}
+
 # If the telescope ofset exists in arcsec, then use it.  Otherwise
 # convert the Cartesian offsets to equatorial offsets.
 sub _to_DEC_TELESCOPE_OFFSET {
@@ -152,6 +165,19 @@ sub _to_GRATING_DISPERSION {
       }
    }
    return $dispersion;
+}
+
+sub _to_RA_SCALE {
+   my $self = shift;
+   my $scale;
+   my $scale_def = -0.0271;
+   if ( exists ( $self->hdr->{CDELT1} ) ) {
+      $scale = 3600.0 * $self->hdr->{CDELT1};
+   } elsif ( exists ( $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"} ) ) {
+      $scale = - $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
+   }
+   $scale = defined( $scale ) ? $scale: $scale_def; 
+   return $scale;
 }
 
 # If the telescope offset exists in arcsec, then use it.  Otherwise
