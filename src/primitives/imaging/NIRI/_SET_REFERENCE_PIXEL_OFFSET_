@@ -1,0 +1,204 @@
+#+
+# Name:
+#    _SET_REFERENCE_PIXEL_OFFSET_
+#
+# Purpose:
+#    Sets the offsets of the reference pixel of the current frame.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive determines the displacements of the reference pixel
+#    with respect to the centre of the current frame and stores the
+#    displacements in the referenceoffset calibration system.  The
+#    reference pixel is where a star would be placed for photometry
+#    or the centre of a chopped and nodded pattern.
+#
+#    The initial reference pixel is specified by the ORAC_X_REFERENCE_PIXEL
+#    and ORAC_Y_REFERENCE_PIXEL internal headers in the frame.  It is not
+#    the reference offset of the source, but of some arbitrary point.
+#    Therefore the displacements between the source and initial reference
+#    position, allowing for the telescope offsets, are determined in
+#    equatorial then pixel co-ordinates.  This enables the reference
+#    position of the source to be determined, and hence its displacement
+#    from the frame centre.
+
+#    If either of the initial reference pixel co-ordinates does not exist
+#    or is undefined, then the reference offset is zero for both axes.
+#
+# Notes:
+#    - This primitive is suitable for NIRI in imaging mode.
+#    - There is an information report giving the reference offset
+#    for non-zero shifts.
+#    - Should be called only from _IMAGING_HELLO_.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 2002-2004 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Set the default reference offsets.
+    my $xshift = 0;
+    my $yshift = 0;
+
+# Check whether or not the reference-pixel headers exist.
+# The default origin of (1,1) will be used.
+    if ( exists $Frm->uhdr->{ "ORAC_X_REFERENCE_PIXEL" } &&
+         exists $Frm->uhdr->{ "ORAC_Y_REFERENCE_PIXEL" } ) {
+
+# Obtain the location of the reference pixel from the headers.
+       my $xref = $Frm->uhdr( "ORAC_X_REFERENCE_PIXEL" );
+       my $yref = $Frm->uhdr( "ORAC_Y_REFERENCE_PIXEL" );
+
+       my $radisp_p = 0.0;
+       my $decdisp_p = 0.0;
+       if ( defined( $Frm->hdr( "RA" ) ) &&
+            defined( $Frm->hdr( "DEC" ) ) &&
+            defined( $Frm->hdr( "CRVAL1" ) ) &&
+            defined( $Frm->hdr( "CRVAL2" ) ) ) {
+
+# Obtain the location of the source.
+          my $ra = $Frm->hdr( "RA" );
+          my $dec = $Frm->hdr( "DEC" );
+
+# Obtain the equatorial co-ordinates of the reference point. 
+          my $raref = $Frm->hdr( "CRVAL1" );
+          my $decref = $Frm->hdr( "CRVAL2" );
+
+# Obtain the telescope offsets.
+          my $raoff = $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" );
+          my $decoff = $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" );
+
+# Obtain the plate scale and pixel increments along the sky co-ordinate axes.
+          _GET_PLATE_SCALE_
+          my $ra_pixelscale = $_GET_PLATE_SCALE_{RASCALE};
+          my $dec_pixelscale = $_GET_PLATE_SCALE_{DECSCALE};
+
+# The precise declination for the scaling should not matter for the
+# nearest pixel we desire.
+          my $radisp = 3600.0 * cosdeg( $dec ) * ( $ra - $raref ) - $raoff;
+          my $decdisp = 3600.0 * ( $dec - $decref ) - $decoff;
+
+# Convert to pixels.
+          $radisp_p = $radisp / $ra_pixelscale;
+          $decdisp_p = $decdisp / $dec_pixelscale;
+       } 
+
+# Allow for old Michelle data where the headers were not available.
+       if ( defined( $xref ) && defined( $yref ) ) {
+
+# Find the central pixel.  To avoid yet another NDFTRACE call,
+# merely use the bounds internal headers where available.
+          my ( $xmid, $ymid );
+          if ( exists $Frm->uhdr->{ "ORAC_X_LOWER_BOUND" } &&
+               exists $Frm->uhdr->{ "ORAC_X_UPPER_BOUND" } &&
+               exists $Frm->uhdr->{ "ORAC_Y_LOWER_BOUND" } &&
+               exists $Frm->uhdr->{ "ORAC_Y_UPPER_BOUND" } ) {
+
+              $xmid = nint( ( $Frm->uhdr( "ORAC_X_UPPER_BOUND" ) +
+                      $Frm->uhdr( "ORAC_X_LOWER_BOUND" ) ) / 2 );
+              $ymid = nint( ( $Frm->uhdr( "ORAC_Y_UPPER_BOUND" ) +
+                      $Frm->uhdr( "ORAC_Y_LOWER_BOUND" ) ) / 2 );
+
+          } else {
+
+# Obtain the central pixel.
+             _GET_FRAME_CENTRE_
+             $xmid = $_GET_FRAME_CENTRE_{XCENTRE};
+             $ymid = $_GET_FRAME_CENTRE_{YCENTRE};
+          }
+
+# Derive the shift in pixels.  Add displacements to the reference pixels. 
+# This should bring us to the UKIRT convention of the star being at the
+# reference position.
+          $xshift = $xref - $xmid + $radisp_p;
+          $yshift = $yref - $ymid + $decdisp_p;
+       }
+    }
+
+# For storage correct to the nearest pixel.
+#   my $xoffset = nint( $xshift );
+#   my $yoffset = nint( $yshift );
+
+# Temporary fudge.  The sky co-ordinates of the source and its location on the detector
+# are incompatible with a comparison of the reference pixel location.  These were
+# determined empirically.  For good pointing and object co-ordinates, these values
+# should not matter.
+    my $xoffset = 21;
+    my $yoffset = -18;
+    my @offsets = ( $xoffset, $yoffset );
+
+# File the base location in the calibration system.
+# =================================================
+
+# The value needs to be in a hash.  Use the current frame as a reference
+# for this.
+    my %hash = ( %{ $Frm->hdr }, REFERENCEOFFSET => \@offsets );
+    $Cal->referenceoffsetindex->add( $Frm->file, \%hash );
+
+    if ( $xshift != 0 || $yshift != 0 ) {
+       orac_print "Reference pixel offset of $xoffset, $yoffset pixels with respect to the frame centre filed\n" .
+                  "    with the calibration system.\n";
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_SET_REFERENCE_PIXEL_OFFSET_ -- Sets the offsets of the reference pixel of the current frame.
+
+=head1 DESCRIPTION
+
+This primitive determines the displacements of the reference pixel
+with respect to the centre of the current frame and stores the
+displacements in the referenceoffset calibration system.   The
+reference pixel is where a star would be placed for photometry
+or the centre of a chopped and nodded pattern.
+
+The initial reference pixel is specified by the ORAC_X_REFERENCE_PIXEL
+and ORAC_Y_REFERENCE_PIXEL internal headers in the frame.  It is not
+the reference offset of the source, but of some arbitrary point.
+Therefore the displacements between the source and initial reference
+position, allowing for the telescope offsets, are determined in
+equatorial then pixel co-ordinates.  This enables the reference
+position of the source to be determined, and hence its displacement
+from the frame centre.
+
+If either of the initial reference pixel co-ordinates does not exist
+or is undefined, then the reference offset is zero for both axes.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for NIRI in imaging mode.
+
+=item *
+
+There is an information report giving the reference offset for non-zero
+shifts.
+
+=item *
+
+Should be called only from L<_IMAGING_HELLO_|_IMAGING_HELLO_>.
+
+=back
+
+=head1 AUTHORS
+
+Malcolm J. Currie (mjc@star.rl.ac.uk)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2002-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
