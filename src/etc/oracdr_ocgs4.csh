@@ -62,6 +62,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.2  2001/05/01 00:05:52  timj
+#     Paul Hirst is now "in charge" of CGS4
+#
 #     Revision 1.1  2001/04/30 21:46:46  phirst
 #     Support for old-stlye cgs4 data
 #
@@ -125,7 +128,7 @@ setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/cgs4/$oracut
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/cgs4
 
 # screen things
-setenv ORAC_PERSON frossie
+setenv ORAC_PERSON phirst
 setenv ORAC_LOOP flag
 setenv ORAC_SUN  230
 
