@@ -11,40 +11,74 @@
 
 # Find the clipped mean (effectively the mode) for the frame.
        _CLIPPED_MEAN_
-       $mode = $_CLIPPED_MEAN_{RESULT};
+       my $mode = $_CLIPPED_MEAN_{RESULT};
 
 # Generate the input and output filenames.
-       ($in,$out) = $Frm->inout("_nm");
+       ( my $in, my $out) = $Frm->inout( "_nm" );
 
 # Determine whether or not this is the first frame, and hence whether or
-# not a reference mode is needed.
+# not a reference mode is needed.  We need a global variable to store
+# this value, and the only one we have available for the first frame
+# is the frame header.  There is no group header.
        my $refframe = $Frm->hdr( "REFERENCE_FRAME" );
+       my $norm_factor;
        if ( $refframe ) {
-          $refmode = $mode;
-          orac_print "Orac says: Mode for reference frame $in is $refmode\n";
+          $Frm->hdr( "REFERENCE_LEVEL", $mode );
+          orac_print "Orac says: Mode for reference frame $in is $mode\n";
        }
 
-# Evaluate the normalisation factor.  
+# Define the reference mode for the reference frame.
        if ( $mode > 1.0E-7 ) {
+          my $refmode;
+          if ( $refframe ) {
+             $refmode = $mode;
+
+# Recall the reference level from the most-recent reference frame within
+# the group.  We know that the current frame is not a reference frame so
+# start searching from the previous frame.
+          } else {
+             my $refFrm;
+             my $numframe = $Grp->num + 1;
+             $refframe = 0;
+             until ( $refframe || $numframe == 0 ) {
+                $numframe--;
+                $refFrm = $Grp->frame( $numframe );
+                $refframe = $refFrm->hdr( "REFERENCE_FRAME" );
+             }
+
+# Check that reference frame has been located.  If not fudge the
+# reference level for now so the recipe completes, albeit with a poorer
+# mosaic.
+             if ( ! $refframe ) {
+                orac_warn "There is no reference frame from which to obtain ".
+                          "a reference level.  Assume a constant level.\n";
+                $refmode = $mode;
+
+             } else {
+                $refmode = $refFrm->hdr( "REFERENCE_LEVEL" );
+             }
+          }
+
+# Evaluate the normalisation factor.
           $norm_factor = $refmode / $mode;
           orac_print "Orac says: Mode for frame $in is $mode\n";
           orac_print "Orac says: Normalisation for frame $in is $norm_factor\n\n";
 
        } else {
           orac_err "Unable to normalise frame $in.  Mode ($mode) is too small.\n";
-       };
+       }
 
 # Normalise the current frame to the current reference frame.
-       $header = "in=$in out=$out scalar=$norm_factor title=\'Normalised to mode\'";
+       my $header = "in=$in out=$out scalar=$norm_factor title=\'Normalised to mode\'";
        $Mon{"kappa_mon"}->obeyw("cmult","$header");
 
 # Report the processing.
        orac_print "Orac says: $in to $out: Data normalised \n";
 
 # Record the new file name in the frame object.
-       $Frm->file($out);                         # obligatory update step
+       $Frm->file( $out );                      # obligatory update step
 
 # Display the image.
        _DISPLAY_FRAME_IMAGE_
 
-    };
+    }

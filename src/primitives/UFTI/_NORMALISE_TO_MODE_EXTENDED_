@@ -16,42 +16,88 @@
          $Frm->hdr( "OBSTYPE" ) eq "SKY" ) {
 
 # Test whether or not this is an object frame or a sky frame. 
-       $class = $Frm->hdr( "TARGET_OR_SKY" );
+       my $class = $Frm->hdr( "TARGET_OR_SKY" );
 
 # Test whether or not this is a target frame or a sky frame.
        if ( $class eq "sky" ) {
 
 # Find the clipped mean (effectively the mode) for the frame.
           _CLIPPED_MEAN_ CLIP=[2,2.5,3,3]
-          $mode = $_CLIPPED_MEAN_{RESULT};
+          my $mode = $_CLIPPED_MEAN_{RESULT};
 
 # Generate the input and output filenames.
-          ($in, $out) = $Frm->inout("_nm");
+          ( my $in, my $out ) = $Frm->inout( "_nm" );
 
 # Determine whether or not this is the first sky frame, and hence whether or
-# not a reference mode is needed.  By definition the first offset is zero.
+# not a reference mode is needed.  We need a global variable to store
+# this value, and the only one we have available for the first frame
+# is the frame header.  There is no group header.
           my $refframe = $Frm->hdr( "REFERENCE_FRAME" );
+          my ( $refindex, $sky_offset );
           if ( $refframe ) {
-             $refmode = $mode;
-             orac_print "Orac says: Mode for reference frame $in is $refmode\n";
+             $Frm->hdr( "REFERENCE_SKY", $mode );
+             orac_print "Orac says: Mode for reference frame $in is $mode\n";
           }
 
-# Evaluate the normalisation factor.  
+# Define the reference mode for the reference frame.  Record the index
+# of the reference frame.
           if ( $mode > 1.0E-7 ) {
+             my $refmode;
+             if ( $refframe ) {
+                $refmode = $mode;
+                $refindex = $Grp->num;
+
+# Recall the reference level from the most-recent reference frame within
+# the group.  We know that the current frame is not a reference frame so
+# start searching from the previous frame.
+             } else {
+                my $refFrm;
+                my $numframe = $Grp->num + 1;
+                $refframe = 0;
+                until ( $refframe || $numframe == 0 ) {
+                   $numframe--;
+                   $refFrm = $Grp->frame( $numframe );
+                   $refframe = $refFrm->hdr( "REFERENCE_FRAME" );
+                }
+
+# Check that reference frame has been located.  If not fudge the
+# sky level for now so the recipe completes, albeit with a poorer
+# mosaic.
+                if ( ! $refframe ) {
+                   orac_warn "There is no reference frame from which to obtain ".
+                             "a reference sky level.  Assume a constant level.\n";
+                   $refmode = $mode;
+                   $refindex = 0;
+
+                } else {
+                   $refmode = $refFrm->hdr( "REFERENCE_SKY" );
+                   $refindex = $numframe;
+
+                }
+             }
+
+# Evaluate the normalisation offset.
              $sky_offset = $refmode - $mode;
-             orac_print "Orac says: Mode for frame $in is $mode\n";
+             orac_print "Orac says: Modal sky for frame $in is $mode\n";
              orac_print "Orac says: Offset for frame $in is $sky_offset\n\n";
 
           } else {
              orac_err "Unable to normalise frame $in.  Mode ($mode) is too small.\n";
-          };
+          }
 
 # Normalise the current frame to the current reference frame.
-          $header = "in=$in out=$out scalar=$sky_offset title=\'Normalised to mode\'";
+          my $header = "in=$in out=$out scalar=$sky_offset title=\'Normalised to mode\'";
           $Mon{"kappa_mon"}->obeyw("cadd","$header");
 
-# Record the sky level for later sky subtraction.
-          push( @_NORMALISE_TO_MODE_EXTENDED_SKY_LEVEL, $mode );
+# Record the sky level for later sky subtraction.  Need to retain a reference
+# to the hash to preserve it between frames.
+          my $refFrm = $Grp->frame( $refindex );
+          my $skyref = $refFrm->hdr( "SKY_LEVELS" );
+          unless ( defined $skyref ) {
+             $skyref = [];
+             $refFrm->hdr( "SKY_LEVELS", $skyref );
+          }
+          push( @$skyref, $mode );
 
 # Report the processing.
           orac_print "Orac says: $in to $out: Data normalised \n";
@@ -61,5 +107,6 @@
 
 # Display the image.
           _DISPLAY_FRAME_IMAGE_
+
        }
-    };
+    }

@@ -12,34 +12,38 @@
     if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ||
          $Frm->hdr( "OBSTYPE" ) eq "SKY") {
 
+# Obtain the current row number.
+       my $ext_row = $Frm->hdr( "EXTENDED_ROW" );
+
 # Determine whether it is time to make a mosaic.
-       $makemosaic = $Frm->hdr( "MAKE_MOSAIC" );
-       $grandmosaic = $Frm->hdr( "MAKE_GRAND_MOSAIC" );
+       my $makemosaic = $Frm->hdr( "MAKE_MOSAIC" );
+       my $grandmosaic = $Frm->hdr( "MAKE_GRAND_MOSAIC" );
        if ( $makemosaic || $grandmosaic ) {
 
 # Determine whether the full mosaic is required, otheriwse make the
 # mosaic for the current row.
-          if ( $Frm->hdr( "MAKE_GRAND_MOSAIC" ) ) {
+          my $tarGrp;
+          if ( $grandmosaic ) {
 
 # Form a subgroup comprising all the target frames.
-             $targrp = $Grp->subgrp( TARGET_OR_SKY => "target" );
+             $tarGrp = $Grp->subgrp( TARGET_OR_SKY => "target" );
 
           } else {
 
 # Form a subgroup comprising all the target frames in the current row.
-             $targrp = $Grp->subgrp( TARGET_OR_SKY => "target",
+             $tarGrp = $Grp->subgrp( TARGET_OR_SKY => "target",
                                      EXTENDED_ROW => $ext_row );
           }
 
 # Form a list of the input and ouptut target file names for CCDPACK tasks.
-          ( $inref, $outref ) = $targrp->inout( "_trn" );
+          ( my $inref, my $outref ) = $tarGrp->inout( "_trn" );
 
 # Specify the mosaic suffix.
-          $osuffix = "_mos";
+          my $osuffix = "_mos";
 
 # Convert the list to a comma-separated list as needed by CCDPACK (GRP).
-          $inlist = join(",", @$inref);
-          $outlist= join(",", @$outref);
+          my $inlist = join(",", @$inref);
+          my $outlist= join(",", @$outref);
 
 # Concatenate rotation to transformation
 # ======================================
@@ -47,6 +51,7 @@
 # Specify the other parameters for the TRANJOIN stage.  Note that the
 # rotation occurs first and the translation seconds as we are using 
 # offsets measured in equatorial not Cartesian co-ordinates.
+          my ( $header, $hidden );
 #          $hidden = "in1=".$Cal->rotation." dest=second"; 
 
 # Join the rotation transformation to each of the CCDPACK extensions.
@@ -68,15 +73,15 @@
 # Create text files to hold the list of input and output files, one per line.
 # This is needed because expanded lists of files may make the command line
 # too long for the ADAM message system.
-          unlink ("tranndf.inlist$$", "tranndf.outlist$$");
+          unlink( "tranndf.inlist$$", "tranndf.outlist$$" );
 
-          open (INLIST, ">tranndf.inlist$$");
+          open( INLIST, ">tranndf.inlist$$" );
           print INLIST join( "\n", @$inref ), "\n";
-          close (INLIST);
+          close( INLIST );
 
-          open (OUTLIST, ">tranndf.outlist$$");
+          open( OUTLIST, ">tranndf.outlist$$" );
           print OUTLIST join( "\n", @$outref ), "\n";
-          close (OUTLIST);
+          close( OUTLIST );
 
 # Assign the other parameters.  Determime the bounds automatically.  It takes
 # the origin from the first target frame.
@@ -96,6 +101,7 @@
 
 # Derive a reasonable number of overlaps to generate a mosaic, yet not
 # make all the possible comparisons for efficiency.
+          my $optov;
           if ( $grandmosaic ) {
              $optov = 6;
           } else {
@@ -106,19 +112,27 @@
 # We should presumably set the Grp output name when we construct
 # $outname.  Do not change the output name if we have already
 # appended the output suffix the previous time around.
-          $outname = $Grp->file . $osuffix unless $Grp->file =~ /$osuffix$/;
+          my $outname;
+          if ( $grandmosaic ) {
+             $outname = $Grp->file . $osuffix unless $Grp->file =~ /$osuffix$/;
+          } else {
+             $outname = $Grp->file . $osuffix . "_" . $ext_row;
+          }
+
           $header = "in='^tranndf.outlist$$' out=$outname title=Mosaic";
           $hidden = "zero optov=$optov";
 
 # Make the mosaic correcting for differences in offset.
           $Mon{"ccdpack_reg"}->obeyw("makemos","$header $hidden");
-          unlink ("tranndf.inlist$$", "tranndf.outlist$$");
+          unlink( "tranndf.inlist$$", "tranndf.outlist$$" );
 
 # Set the group name in the Group object...
-          $Grp->file( $outname );
+          if ( $grandmosaic ) {
+             $Grp->file( $outname );
 
 # ...and read the header.
-          $Grp->header( $Grp->readhdr );
+             $Grp->header( $Grp->readhdr );
+          }
 
 # Report the processing status.
           orac_print "Orac says: mosaic $outname formed\n";
@@ -126,5 +140,5 @@
 # Display the resultant mosaic.
           _DISPLAY_GROUP_IMAGE_
 
-       };
-    };
+       }
+    }
