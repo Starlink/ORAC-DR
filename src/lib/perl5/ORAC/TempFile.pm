@@ -35,9 +35,10 @@ use Carp;
 use IO::File;
 use vars qw/$VERSION $DEBUG/;
 
-#use POSIX qw/tmpnam/;
-use File::MkTemp qw/mktemp/;
-
+# Allow for different temporary filename generation
+# Using require - so no importing of functions
+eval { require POSIX; };
+eval { require File::MkTemp; };
 
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
@@ -222,8 +223,20 @@ sub Initialise {
   # Try new temporary files until we get one that didnt already exist
   # This assumes we keep on trying to open the file....
   do { 
-#    $file = tmpnam();
-    $file = mktemp('oractempXXXXXX', $ENV{ORAC_DATA_OUT});
+
+    # Preference is given to File::MkTemp
+    if (defined &File::MkTemp::mktemp) {
+      $file = &File::MkTemp::mktemp("$ENV{ORAC_DATA_OUT}/oractempXXXXXX", $ENV{ORAC_DATA_OUT});
+
+    } elsif (defined &POSIX::tmpnam) {
+      # POSIX is not as configurable since it tells us what dir
+      # to use and does not allow use to specify a root name
+      $file = &POSIX::tmpnam();
+
+    } else {
+      croak "No temporary file generation subroutines available.\n Please install either the File::MkTemp or POSIX modules\n";
+    }
+
     $file =~ s/\./_/g;  # Remove dots since NDF does not like them
   } until $fh = IO::File->new($file, O_RDWR|O_CREAT|O_EXCL);
 
