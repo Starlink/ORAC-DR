@@ -17,7 +17,11 @@
 #    These regions are combined (see argument METHOD) to create an image
 #    of the source of twice the signal-to-noise of a single image, but
 #    normalised to yield the average signal of a single image.  This
-#    maintains the scaling of flux per unit exposure time.
+#    maintains the scaling of flux per unit exposure time. 
+#
+#    The primitive also forms a quality map indicating the contributions
+#    from each image of the source to help interpret the final combined
+#    frame.
 #
 # Arguments:
 #    CENTROID = LOGICAL (Given)
@@ -43,6 +47,8 @@
 #       psf profile, making it more of a plateau than a sharp peak.
 #       However, the mean preserves the flux, at the cost of the odd
 #       rogue value affecting the result.  ["Mean"]
+#    QMAP = LOGICAL (Given)
+#       If true (1), a quality map is generated. [0]
 #    SMOOTH = INTEGER (Given)
 #       If greater than 1 apply block smoothing with a square block size
 #       equal to SMOOTH to the combined image.  For all other values, 
@@ -80,6 +86,14 @@
 #    cycle.  Those coupled with the chop throw and angle, and the mosaic
 #    centre specify the approximate locations of the sources for the
 #    centroid locating.
+#    -  The quality map is derived from the four sub-frames, with
+#    recommended smoothing if argument SMOOTH=1.  It is the sum of the 
+#    pixel values divided by their abslute values, after changing sign
+#    for the negative sources.  In the map +4 indicates that a pixel had 
+#    positive contributions from the positive images and negative signal
+#    from the negative images.  Thus it helps to discriminate from sources
+#    which have been chopped into view, for which there are no positive
+#    or negative counterparts (values +/-2) or noise (0, +/-2).
 #    -  The steering header CYCLE_NUMBER specifies the recipe cycle
 #    number. 
 #    -  The name of the combined frame is stored is the group user
@@ -88,6 +102,8 @@
 # Output Data:
 #    -  Combined source frame inheriting the group file's name but with the
 #    _cab suffix.  The smoothed version has a _scab suffix.
+#    -  The quality map inheriting the group file's name but with the
+#    _qcab suffix.
 #    -  The extracted sections about image within the mosaic, inheriting
 #    the group file's name but with the suffices _Ap, _An, _Bp, _Bn for
 #    the positive (p) and negative (n) images in the A and B beams.
@@ -140,6 +156,10 @@
 # Determine whether or not to filter column and row patterns.
        my $clean = $_COMBINE_CHOPPED_SOURCE_{CLEAN};
        $clean = defined( $clean ) ? $clean : 0;
+
+# Determine whether or not to generate a quality map.
+       my $qmap = $_COMBINE_CHOPPED_SOURCE_{QMAP};
+       $qmap = defined( $qmap ) ? $qmap : 0;
 
 # Determine whether or not to fill bad pixels.
        my $smoothbox = $_COMBINE_CHOPPED_SOURCE_{SMOOTH};
@@ -562,11 +582,56 @@
        $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param" );
        orac_print "Positive B-beam image extracted in $Bn_name\n";
 
+# Form quality map.
+# =================
+
+# Smooth the combined image.
+# ==========================
+       my $out;
+       if ( $qmap ) {
+          if ( $smoothbox > 1 ) {
+
+# Block-averaged smooth using the supplied box size for each
+# positive and negative section, and assign each new name to the
+# corresponding original variable.
+             $in = $Ap_name;
+             $out = $in . "_sm";
+             $param = "in=$in out=$out box=$smoothbox accept";
+             $Mon{ "kappa_mon" }->obeyw( "block", "$param" );
+             $Ap_name = $out;
+
+             $in = $Bp_name;
+             $out = $in . "_sm";
+             $param = "in=$in out=$out box=$smoothbox accept";
+             $Mon{ "kappa_mon" }->obeyw( "block", "$param" );
+             $Bp_name = $out;
+
+             $in = $An_name;
+             $out = $in . "_sm";
+             $param = "in=$in out=$out box=$smoothbox accept";
+             $Mon{ "kappa_mon" }->obeyw( "block", "$param" );
+             $An_name = $out;
+
+             $in = $Bn_name;
+             $out = $in . "_sm";
+             $param = "in=$in out=$out box=$smoothbox accept";
+             $Mon{ "kappa_mon" }->obeyw( "block", "$param" );
+             $Bn_name = $out;
+          }
+
+# Generate name Quality of Combined A and B signals
+          ( $in, $out ) = $mosFrm->inout( "_qcab" );
+          $param = "exp='IA/abs(IA)+IB/abs(IB)-IC/abs(IC)-ID/abs(ID)' out=$out " .
+                   "ia=$Ap_name ib=$Bp_name ic=$An_name id=$Bn_name"; 
+          $Mon{ "kappa_mon" }->obeyw( "maths", "$param" );
+          orac_print "Source images combined to form quality map in $out\n";
+       }
+
 # Combine the images.
 # ===================
 
 # At present there's no sub-pixel registration.
-       ( $in, my $out ) = $mosFrm->inout( "_cab" );
+       ( $in, $out ) = $mosFrm->inout( "_cab" );
 
 # Mean is easy.
        if ( $method eq "mean" ) {
@@ -594,7 +659,7 @@
 # This is needed because expanded lists of files may make the command line
 # too long for the ADAM message system.
           unlink( "combine.list$$" );
-          my @names = ( $Ap_name,$tempApos,$Bp_name,$tempBpos);
+          my @names = ( $Ap_name,$tempApos,$Bp_name,$tempBpos );
 
           open( INLIST, ">combine.list$$" ) ||
             orac_throw "Unable to open combine.list$$ to create a list of frames to combine.  Error: $!.\n";
@@ -666,6 +731,10 @@ source of twice the signal-to-noise of a single image, but normalised
 to yield the average signal of a single image.  This maintains the
 scaling of flux per unit exposure time.
 
+The primitive also forms a quality map indicating the contributions
+from each image of the source to help interpret the final combined
+frame.
+
 =head1 ARGUMENTS
 
 =over 4
@@ -698,6 +767,10 @@ underestimate the flux.  In this circumstance the mean blurs the
 psf profile, making it more of a plateau than a sharp peak.
 However, the mean preserves the flux, at the cost of the odd
 rogue value affecting the result.  ["Mean"]
+
+=item QMAP = LOGICAL (Given)
+
+If true (1), a quality map is generated. [0]
 
 =item SMOOTH = INTEGER (Given)
 
@@ -767,6 +840,18 @@ centroid locating.
 
 =item *
 
+The quality map is derived from the four sub-frames, with
+recommended smoothing if argument SMOOTH=1.  It is the sum of the 
+pixel values divided by their abslute values, after changing sign
+for the negative sources.  In the map +4 indicates that a pixel had 
+negative sources.  In the map +4 indicates that a pixel had 
+positive contributions from the positive images and negative signal
+from the negative images.  Thus it helps to discriminate from sources
+which have been chopped into view, for which there are no positive
+or negative counterparts (values +/-2) or noise (0, +/-2).
+
+=item *
+
 The steering header CYCLE_NUMBER specifies the recipe cycle
 number. 
 
@@ -785,6 +870,11 @@ header called COMBINED_SOURCE_FRAME.
 
 Combined source frame inheriting the group file's name but with the
 _cab suffix.  The smoothed version has a _scab suffix.
+
+=item *
+
+The quality map inheriting the group file's name but with the
+_qcab suffix.
 
 =item *
 
