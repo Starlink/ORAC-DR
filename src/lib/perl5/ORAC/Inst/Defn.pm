@@ -239,6 +239,55 @@ my %MonolithDefns = (
            CLASS => 'ORAC::Msg::Task::ADAM',
            PATH => "this/is/junk",
           },
+	 scu2fts => {
+           MESSYS => 'DRAMA',
+           CLASS => 'ORAC::Msg::Task::DRAMA',
+           PATH => (exists $ENV{SCU2FTS_DIR} ? $ENV{SCU2FTS_DIR}. "/scu2fts" :
+		                                 "not_defined"),
+         },
+	 # SCUBA-2 Acquisition Tasls
+	 QLSIM => { # we never start QLSIM
+		   MESSYS => 'DRAMA',
+		   CLASS => 'ORAC::Msg::Task::DRAMA',
+		  },
+	 scu2_8a => {
+		     MESSYS => 'DRAMA',
+		     CLASS => 'ORAC::Msg::Task::DRAMA'
+		     },
+	 scu2_8b => {
+		     MESSYS => 'DRAMA',
+		     CLASS => 'ORAC::Msg::Task::DRAMA'
+		     },
+	 scu2_8c => {
+		     MESSYS => 'DRAMA',
+		     CLASS => 'ORAC::Msg::Task::DRAMA'
+		     },
+         scu2_8d => {
+		     MESSYS => 'DRAMA',
+		     CLASS => 'ORAC::Msg::Task::DRAMA'
+		     },
+	 scu2_4a => {
+		     MESSYS => 'DRAMA',
+		     CLASS => 'ORAC::Msg::Task::DRAMA'
+		     },
+	 scu2_4b => {
+		     MESSYS => 'DRAMA',
+		     CLASS => 'ORAC::Msg::Task::DRAMA'
+		     },
+	 scu2_4c => {
+		     MESSYS => 'DRAMA',
+		     CLASS => 'ORAC::Msg::Task::DRAMA'
+		     },
+	 scu2_4d => {
+		     MESSYS => 'DRAMA',
+		     CLASS => 'ORAC::Msg::Task::DRAMA'
+		     },
+         # Testing
+	 CSOMON => {
+           MESSYS => 'DRAMA',
+           CLASS => 'ORAC::Msg::Task::DRAMA',
+           PATH => '/tmp/getcso.pl',
+         },
        );
 
 # Message system definitions
@@ -250,6 +299,9 @@ my %MessageSystemDefns = (
           # shell does not require messaging
           CLASS => 'ORAC::Msg::Control::ADAMShell',
          },
+	DRAMA => {
+	  CLASS => 'ORAC::Msg::Control::DRAMA',
+	},
        );
 
 =head1 FUNCTIONS
@@ -379,7 +431,7 @@ sub orac_determine_inst_classes {
     $groupclass = "ORAC::Group::SCUBA2";
     $frameclass = "ORAC::Frame::SCUBA2";
     $calclass   = "ORAC::Calib::SCUBA";
-    $instclass  = "ORAC::Inst::SCUBA";
+    $instclass  = "ORAC::Inst::SCUBA2";
 
   } elsif ($inst eq 'MICHTEMP') {
     $groupclass = "ORAC::Group::Michelle";
@@ -985,6 +1037,10 @@ sub orac_determine_initial_algorithm_engines {
   if ($inst eq 'SCUBA') {
 
     @AlgEng = qw/ surf_mon ndfpack_mon kappa_mon /;
+
+  } elsif ($inst =~ /^SCUBA2/) {
+
+    @AlgEng = (); # none at the moment
 
   } elsif ($inst eq 'JCMT_DAS') {
 
@@ -1957,7 +2013,6 @@ Returns an empty list on error.
 
 sub orac_engine_description {
   my $engine = shift;
-
   if (exists $MonolithDefns{$engine}) {
     return %{ $MonolithDefns{$engine} };
   } else {
