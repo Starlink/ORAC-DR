@@ -101,7 +101,29 @@ sub orac_execute_recipe {
 
   # If this was a syntax error print out the recipe
   if ($@ =~ /syntax error/) {
-    print @recipe;
+    # Extract info from the error message
+    $@ =~ /line (\d+),/ && do {
+      $num = $1;
+      print colored("Error in line $num\n", 'red');
+      print colored("Relevant recipe lines (with numbers):\n\n", 'red');
+
+      # Note that this line number relates to $block and
+      # not @recipe. Need to split $block on new line
+      my @new = split(/\n/, $block);
+
+      # Calculate number of lines to print
+      $inc = 10;
+      $start = ($num > $inc ? $num - $inc : 0 );
+      $end   = ($num < $#recipe - $inc ? $num + $inc : $#recipe);
+
+      # Print out the relevant chunk with line numbers
+      for (my $i=$start; $i < $end; $i++) {
+	print colored("$i: ", 'blue') . colored("$new[$i]\n", 'red');
+      }
+      print colored("End recipe dump\n\n",'blue');
+    };
+
+    orac_exit_normally; # Do this until we debug everything
   }
 
 };
@@ -274,6 +296,12 @@ die;
 1;
 
 #$Log$
+#Revision 1.14  1998/04/21 23:44:00  timj
+#Dump incorrect lines to screen when a syntax error is encountered
+#in a recipe.
+#
+#Also shut down pipeline when syntax error encountered.
+#
 #Revision 1.13  1998/04/17 19:28:42  timj
 #Make fix to the orac_parse_arguments push (ie add a \n
 #to the line pushed onto the recipe).
