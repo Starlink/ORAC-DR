@@ -483,6 +483,28 @@ sub updateout {
   return 1;
 }
 
+=item template()
+
+Method to change all the current filenames in the group so that they
+match the supplied template. This method invokes the template
+method for each member of the group.
+
+  $Grp->template("filename_template");
+
+There are no return arguments. The intelligence for this method resides
+in the individual frame objects.
+
+=cut
+
+sub template {
+  my $self = shift;
+  my $template = shift;
+
+  # Loop over the members
+  foreach my $member ($self->members) {
+    $member->template($template);
+  }
+}
 
 
 =back
