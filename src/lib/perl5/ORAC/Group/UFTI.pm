@@ -80,6 +80,56 @@ sub new {
 
 =back
 
+=head2 General Methods
+
+=over 4
+
+=item B<calc_orac_headers>
+
+This method calculates header values that are required by the
+pipeline by using values stored in the header.
+
+An example is ORACTIME that should be set to the time of the
+observation in hours. Instrument specific frame objects
+are responsible for setting this value from their header.
+
+Should be run after a header is set. Currently the hdr()
+method calls this whenever it is updated.
+
+Calculates ORACUT and ORACTIME
+
+This method updates the frame header.
+Returns a hash containing the new keywords.
+
+=cut
+
+sub calc_orac_headers {
+  my $self = shift;
+
+  my %new = ();  # Hash containing the derived headers
+
+  # ORACTIME
+  # For UFTI the keyword is simply UTSTART
+  # Just return it (zero if not available)
+  my $time = $self->hdr('UTSTART');
+  $time = 0 unless (defined $time);
+  $self->hdr('ORACTIME', $time);
+
+  $new{'ORACTIME'} = $time;
+
+  # Calc ORACUT:
+  my $ut = $self->hdr('DATE');
+  $ut = 0 unless defined $ut;
+  $ut =~ s/-//g;  #  Remove the intervening minus sign
+
+  $self->hdr('ORACUT', $ut);
+  $new{ORACUT} = $ut;
+
+  return %new;
+}
+
+=back
+
 =head1 SEE ALSO
 
 L<ORAC::Group>, L<ORAC::Group::NDF>

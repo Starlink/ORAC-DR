@@ -84,7 +84,19 @@ sub new {
 
 =over 4
 
+=item B<calc_orac_headers>
+
+Calculate ORAC-specific headers from instrument specific FITS 
+keywords.
+
+Does nothing for JCMT (group headers are not used).
+
 =cut
+
+sub calc_orac_headers {
+
+  return ();
+}
 
 
 =item B<file>

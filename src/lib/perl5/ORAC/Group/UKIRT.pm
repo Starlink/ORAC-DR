@@ -83,6 +83,55 @@ sub new {
 
 =back
 
+=head2 General Methods
+
+=over 4
+
+This method calculates header values that are required by the
+pipeline by using values stored in the header.
+
+Required ORAC extensions are:
+
+ORACTIME: should be set to a decimal time that can be used for
+comparing the relative start times of frames. For IRCAM this
+number is decimal hours, for SCUBA this number is decimal
+UT days.
+
+ORACUT: This is the UT day of the frame in YYYYMMDD format.
+
+This method should be run after a header is set. Currently the readhdr()
+method calls this whenever it is updated.
+
+This method updates the frame header.
+Returns a hash containing the new keywords.
+
+=cut
+
+sub calc_orac_headers {
+  my $self = shift;
+
+  my %new = ();  # Hash containing the derived headers
+
+  # ORACTIME
+  # For IRCAM the keyword is simply RUTSTART
+  # Just return it (zero if not available)
+  my $time = $self->hdr('RUTSTART');
+  $time = 0 unless (defined $time);
+  $self->hdr('ORACTIME', $time);
+
+  $new{'ORACTIME'} = $time;
+
+  # ORACUT
+  # For IRCAM this is simply the IDATE header value
+  my $ut = $self->hdr('IDATE');
+  $ut = 0 unless defined $ut;
+  $self->hdr('ORACUT', $ut);
+
+  return %new;
+}
+
+=back
+
 =head1 SEE ALSO
 
 L<ORAC::Group::NDF>, L<ORAC::Group>

@@ -264,6 +264,9 @@ sub readhdr {
   # Set the header in the group 
   %{$self->hdr} = %$ref;
 
+  # generate orac specific headers
+  $self->calc_orac_headers;
+
   return;
 
 }
