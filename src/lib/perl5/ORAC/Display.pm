@@ -222,6 +222,12 @@ gui_id.
 
   $Display->display_data($Frm) if defined $Display;
   $Display->display_data($Frm, { TOOL => 'GAIA'});
+  $Display->display_data($Frm, { TOOL => 'GAIA'}, $usedisp);
+
+A third optional argument can be used in conjunction with the
+options hash to indicate whether these options should be used
+instead of the display definition file (false) or in addition
+to (true - the default) 
 
 =cut
 
@@ -238,10 +244,12 @@ sub display_data {
 
   # Read the options hash
   my $optref;
+  my $usedisp = 1;
   if (@_) {
     $optref = shift;
     croak 'Options were not supplied as a hash reference'
       unless ref($optref) eq 'HASH';
+    $usedisp = shift if @_;
   }
 
 
@@ -286,8 +294,10 @@ sub display_data {
     # This allows a single file to be displayed on multiple
     # devices
   
-#    my %display_info = $self->definition;
-    my @defn = $self->definition;
+    # Do not read the disp.dat if we are only using the supplied 
+    # values
+    my @defn;
+    @defn = $self->definition if $usedisp;
 
     # push additional entries onto the definition array
     push (@defn,$optref) if (defined $optref);
