@@ -45,6 +45,13 @@ use ORAC::TempFile;
 use IO::File;  # Open and close files
 use Cwd; # Current working directory
 
+eval 'use LWP::Simple qw/$ua get is_success status_message/';
+if ($@) {
+  orac_warn("The LWP::Simple module is not installed in your perl distribution\n");
+  orac_warn("Features of the pipeline requiring HTTP access will not be available\n");
+};
+
+
 @ISA = qw(Exporter);
 
 @EXPORT = qw/
@@ -712,6 +719,9 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.40  1999/07/27 00:12:40  timj
+#Add LWP::Simple
+#
 #Revision 1.39  1999/06/25 02:26:45  timj
 #Improve debugging output in add_code_to_recipe.
 #Add $ORAC_PRIMITIVE to recipe code.
