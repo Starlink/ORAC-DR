@@ -67,7 +67,7 @@ sub _to_DEC_TELESCOPE_OFFSET {
          $expno = $self->hdr->{"HIERARCH.ESO.TPL.EXPNO"};
       }
       my ( $x_as, $y_as );
-      my $mode = uc( $self->hdr->{"HIERARCH.ESO.DPR.TECH"} );
+      my $mode = uc( $self->get_instrument_mode() );
       if ( $expno == 1 && ( $mode eq "IMAGE" || $mode eq "POLARIMETRY" ) ) {
          $x_as = 0.0;
          $y_as = 0.0;
@@ -88,7 +88,7 @@ sub _to_DEC_TELESCOPE_OFFSET {
    }
               
 # The sense is reversed compared with UKIRT, as these measure the
-# places on the sky, not the motion of the telescope.
+# place on the sky, not the motion of the telescope.
    return -1.0 * $decoffset;
 }
 
@@ -211,7 +211,7 @@ sub _to_RA_TELESCOPE_OFFSET {
          $expno = $self->hdr->{"HIERARCH.ESO.TPL.EXPNO"};
       }
       my ( $x_as, $y_as );
-      my $mode = uc( $self->hdr->{"HIERARCH.ESO.DPR.TECH"} );
+      my $mode = uc( $self->get_instrument_mode() );
       if ( $expno == 1 && ( $mode eq "IMAGE" || $mode eq "POLARIMETRY" ) ) {
          $x_as = 0.0;
          $y_as = 0.0;
@@ -257,10 +257,6 @@ sub _to_RECIPE {
              $template eq "ISAACLW_img_tec_ZpNoChop" ||
              $seq eq "ISAAC_img_cal_StandardStar" ||
              $seq eq "ISAACLW_img_cal_StandardStarOff" ) {
-      $recipe = "JITTER_SELF_FLAT_APHOT";
-
-   } elsif ( $template eq "ISAACSW_img_cal_StandardStar" ||
-             $template eq "ISAACLW_img_cal_StandardStarOff" ) {
       $recipe = "JITTER_SELF_FLAT_APHOT";
 
    } elsif ( $template =~ /ISAAC[SL]W_img_obs_AutoJitterOffset/ ) {
