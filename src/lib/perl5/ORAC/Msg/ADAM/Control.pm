@@ -18,7 +18,6 @@ ORAC::Msg::ADAM::Control - control and initialise ADAM messaging from ORAC
   $ams->stderr(\*ERRHANDLE);
   $ams->stdout(\*MSGHANDLE);
   $ams->paramrep( sub { return "!" } );
-  
 
 =head1 DESCRIPTION
 

@@ -790,7 +790,7 @@ Returns the following:
   CUT + range + image + one pixel selected
     If the non-cut dimensions have min=max a section is
     sufficient and no averaging required
-  
+
 The temporary files themselves are added to a global class
 array and removed by the destructor.
 
@@ -1222,7 +1222,7 @@ Display keywords:
                Can be X,Y,3,4,5 (for higher-dimensional data sets)
                For a 1-D data set (or section), this value is ignored
   COMP       - Component to display (Data (default), Variance or Error)
-  
+
 
 Default is to autoscale. Note that the X/Y cuts are converted
 to a 1-D slice before displaying by averaging over the section. 

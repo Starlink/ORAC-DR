@@ -24,7 +24,7 @@ B<ORAC::Frame::UKIRT> objects are available to B<ORAC::Frame::MichTemp>
 objects.
 
 =cut
- 
+
 # A package to describe a MichTemp group object for the
 # ORAC pipeline
  

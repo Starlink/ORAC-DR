@@ -9,7 +9,7 @@ ORAC::Msg::ADAM::Task - load and control ADAM tasks
   use ORAC::Msg::ADAM::Task;
 
   $kap = new ORAC::Msg::ADAM::Task("kappa","/star/bin/kappa/kappa_mon");
-  
+
   $status           = $kap->obeyw("task", "params");
   $status           = $kap->set("task", "param","value");
   ($status, @values) = $kap->get("task", "param");
@@ -71,12 +71,12 @@ $SAI__OK = &Starlink::ADAM::SAI__OK;
 =item B<new>
 
 Create a new instance of a ORAC::Msg::ADAM::Task object.
- 
+
   $obj = new ORAC::Msg::ADAM::Task;
   $obj = new ORAC::Msg::ADAM::Task("name_in_message_system","monolith");
   $obj = new ORAC::Msg::ADAM::Task("name_in_message_system","monolith"
                                     { TASKTYPE => 'A'} );
- 
+
 If supplied with arguments (matching those expected by load() ) the
 specified task will be loaded upon creating the object. If the load()
 fails then undef is returned (which will not be an object reference).

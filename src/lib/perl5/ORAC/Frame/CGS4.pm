@@ -22,7 +22,7 @@ All the methods available to B<ORAC::Frame::UKIRT> objects are available
 to B<ORAC::Frame::CGS4> objects. Some additional methods are supplied.
 
 =cut
- 
+
 # A package to describe a UKIRT group object for the
 # ORAC pipeline
  
@@ -310,7 +310,7 @@ The following logic is applied:
        be using HDS containers
 
  - If no '.' is present
-  
+
        This is the standard behaviour. Simply remove after
        last underscore and replace with new suffix.
 
@@ -533,7 +533,6 @@ Tim Jenness (t.jenness@jach.hawaii.edu)
 
 Copyright (C) 1998-2000 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
-    
 
 =cut
 

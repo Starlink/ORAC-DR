@@ -605,7 +605,7 @@ sub orac_add_code_to_recipe {
 Provides the code for automatic status checking of recipes.
 
 =cut
- 
+
 sub orac_check_status {
  
   my @newlines =  (' if ($ORAC_STATUS != ORAC__OK) {' ,
@@ -800,6 +800,9 @@ Council. All Rights Reserved.
 
 
 #$Log$
+#Revision 1.48  2000/03/01 21:56:17  timj
+#Fix pods so that they pass all check with podchecker
+#
 #Revision 1.47  2000/02/02 03:59:14  timj
 #Fix typo in pod
 #

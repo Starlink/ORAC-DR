@@ -7,7 +7,7 @@ ORAC::Loop - data loops for ORACDR
 =head1 SYNOPSIS
 
   use ORAC::Loop;
- 
+
   $frm = orac_loop_list($class, $utdate, \@list, $skip);
 
   $frm = orac_loop_inf($class, $utdate, \@list);

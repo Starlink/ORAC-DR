@@ -7,7 +7,7 @@ ORAC::Frame::NDF - Class for dealing with frames based on NDF files
 =head1 SYNOPSIS
 
   use ORAC::Frame::NDF
-  
+
   $Frm = new ORAC::Frame::NDF;
 
 =head1 DESCRIPTION

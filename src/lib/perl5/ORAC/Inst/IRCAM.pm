@@ -11,7 +11,6 @@ ORAC::Inst::IRCAM - ORAC description of IRCAM
   @messys = start_msg_sys;
   %Mon = start_algorithm_engines;
   $status = &wait_for_algorithm_engines;
- 
 
 =head1 DESCRIPTION
 

@@ -37,7 +37,7 @@ use strict;
 use vars qw/ $VERSION/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
-=over
+=over 4
 
 =item B<rotation>
 

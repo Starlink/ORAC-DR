@@ -21,7 +21,7 @@ All the methods available to B<ORAC::Group> objects are available
 to B<ORAC::Group::JCMT> objects. Some additional methods are supplied.
 
 =cut
- 
+
 # A package to describe a UKIRT group object for the
 # ORAC pipeline
  
@@ -376,7 +376,6 @@ Tim Jenness (t.jenness@jach.hawaii.edu)
 
 Copyright (C) 1998-2000 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
-   
 
 =cut
 

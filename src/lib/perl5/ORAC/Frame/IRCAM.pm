@@ -23,7 +23,7 @@ B<ORAC::Frame::UKIRT> objects are available to B<ORAC::Frame::IRCAM>
 objects. Some additional methods are supplied.
 
 =cut
- 
+
 # A package to describe a UFTI group object for the
 # ORAC pipeline
  
@@ -65,7 +65,7 @@ observation number. In any case, all arguments are passed to
 the configure() method which is run in addition to new()
 when arguments are supplied.
 The object identifier is returned.
- 
+
    $Frm = new ORAC::Frame::IRCAM;
    $Frm = new ORAC::Frame::IRCAM("file_name");
    $Frm = new ORAC::Frame::IRCAM("UT","number");
@@ -183,7 +183,6 @@ Tim Jenness (timj@jach.hawaii.edu)
 
 Copyright (C) 1998-2000 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
-    
 
 =cut
 

@@ -380,7 +380,7 @@ C<$Frm-E<gt>file(2)>]. The order simply reflects the order the files
 were given to the file() method.
 
 =cut
- 
+
 sub intermediates {
   my $self = shift;
   if (@_) { @{ $self->{Intermediates} } = @_;}
@@ -485,7 +485,7 @@ array since it could do extra processing of the
 string.
 
 =cut
- 
+
 sub nokeepArr {
   my $self = shift;
   if (@_) { @{ $self->{NoKeepArr} } = @_;}

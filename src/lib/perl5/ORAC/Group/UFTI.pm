@@ -21,7 +21,7 @@ All the methods available to ORAC::Group objects are available
 to B<ORAC::Group::UFTI> objects.
 
 =cut
- 
+
 # A package to describe a UKIRT group object for the
 # ORAC pipeline
  

@@ -11,7 +11,6 @@ ORAC::Inst::CGS4 - ORAC description of CGS4
   @messys = start_msg_sys;
   %Mon = start_algorithm_engines;
   $status = &wait_for_algorithm_engines;
- 
 
 =head1 DESCRIPTION
 

@@ -7,7 +7,7 @@ ORAC::Group::NDF - Class for dealing with groups based on NDF files
 =head1 SYNOPSIS
 
   use ORAC::Group::NDF
-  
+
   $Grp = new ORAC::Group::NDF;
 
 =head1 DESCRIPTION

@@ -277,7 +277,7 @@ problems in the following cases:
 Bottom line is the following (I think).
 
 In all cases the actual position in RJ coordinates should be calculated
-(taking into account RB-E<gt>RJ and GA-E<gt>>RJ and map_x map_y, local_coords) 
+(taking into account RB-E<gt>RJ and GA-E<gt>RJ and map_x map_y, local_coords) 
 using Astro::SLA. Filter should also be matched as now.
 Planets will be special cases - matching on name rather than position.
 

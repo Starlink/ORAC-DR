@@ -22,7 +22,7 @@ B<ORAC::Frame::UKIRT>.  All the methods available to B<ORAC::Frame::UKIRT>
 objects are available to B<ORAC::Frame::Michelle> objects.
 
 =cut
- 
+
 # A package to describe a Michelle group object for the
 # ORAC pipeline
  
@@ -263,7 +263,7 @@ The following logic is applied:
        be using HDS containers
 
  - If no '.' is present
-  
+
        This is the standard behaviour. Simply remove after
        last underscore and replace with new suffix.
 

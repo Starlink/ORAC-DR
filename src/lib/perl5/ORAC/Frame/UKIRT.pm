@@ -22,7 +22,7 @@ All the methods available to B<ORAC::Frame> objects are available
 to B<ORAC::Frame::UKIRT> objects.
 
 =cut
- 
+
 # A package to describe a UKIRT group object for the
 # ORAC pipeline
  
