@@ -180,15 +180,21 @@ sub subgrp {
       $val2 = '' unless defined $val2;
 
       # Need to use == or eq depending on value
-      if ($val1 =~ /[A-Za-z]/ and $val2 =~ /[A-Za-z]/) {
-	# Compare with the selected key.
-	unless ( ($hash{$key} eq $val1) or ($hash{$key} eq $val2)) {
+      # Only compare as numbers if both are numbers
+      # (rather than only comparing as strings if both
+      # contain letters). This requires use of a
+      # is_numeric function in ORAC::General
+
+      if (is_numeric($val1) and is_numeric($val2)) {
+	# Compare with the selected key as number.
+	unless ( ($hash{$key} == $val1) or ($hash{$key} == $val2)) {
 	  $match = 0;
 	  last;
 	}
       } else {
+	
 	# Compare with the selected key.
-	unless ( ($hash{$key} == $val1) or ($hash{$key} == $val2)) {
+	unless ( ($hash{$key} eq $val1) or ($hash{$key} eq $val2)) {
 	  $match = 0;
 	  last;
 	}

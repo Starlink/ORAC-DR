@@ -18,6 +18,8 @@ ORAC::General - Simple perl subroutines that may be useful for primitives
   $result = cosdeg( 45.0 );
   @dms = dectodms( $dec );
 
+  print "Is a number" if is_numeric( $number );
+
 =head1 DESCRIPTION
 
 This module provides simple perl functions that are not available
@@ -33,7 +35,7 @@ use 5.006;
 require Exporter;
 @ISA = (Exporter);
 @EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist cosdeg
-	      dectodms deg2rad rad2deg
+	      dectodms deg2rad rad2deg is_numeric
 	    );
 
 use Carp;
@@ -88,6 +90,33 @@ sub dectodms {
   if( $neg ) { $dms[0] *= -1 }
   return @dms;
 }
+
+=item B<is_numeric>
+
+Determine whether the supplied argument is a number or not.
+Returns true if it is and false otherwise.
+
+=cut
+
+# See Perl Cookbook example 2.1
+
+sub is_numeric {
+  defined scalar getnum($_[0]);
+}
+
+sub getnum {
+  my $str = shift;
+  $str =~ s/^\s+//;
+  $str =~ s/\s+$//;
+  $!=0;
+  my ($num, $unparsed) = POSIX::strtod($str);
+  if (($str eq '') || ($unparsed != 0) || $!) {
+    return;
+  } else {
+    return $num;
+  }
+}
+
 
 =item B<min>
 
