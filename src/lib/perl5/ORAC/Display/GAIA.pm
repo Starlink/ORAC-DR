@@ -645,7 +645,12 @@ sub image {
   # Check for a leading '/' indicating a full path name
   unless ($file =~ /^\s*\//) {
     my $cwd = cwd;
-    $file = "$cwd/$file";
+    if (defined $cwd && length($cwd) > 0) {
+      $file = "$cwd/$file";
+    } else {
+      orac_warn "ORAC::Display::GAIA: Could not determine current working directory.\n";
+      orac_warn "GAIA may not be able to locate file $file\n";
+    }
   }
 
   # Read the options hash
