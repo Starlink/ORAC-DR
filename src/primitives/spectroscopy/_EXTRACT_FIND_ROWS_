@@ -71,6 +71,7 @@ $mult = 2 if($nbeams==3);
 
 my $tmp = new ORAC::TempFile;
 my $tmpfile = $tmp->file;
+my $ORAC_STATUS;
 
 my $posbeamsfound=0;
 if($posbeams) {
@@ -80,7 +81,7 @@ if($posbeams) {
    # Call figaro emlt on the +ve half of the collapsed file
    $Mon{'figaro2'}->obeyw("emlt", "spectrum=$tmpfile xstart=min xend=max lines=$posbeams");
 
-   $posbeamsfound = $Mon{'figaro2'}->get("emlt", "EMLT_LINES");
+   ($ORAC_STATUS, $posbeamsfound) = $Mon{'figaro2'}->get("emlt", "EMLT_LINES");
    orac_print "Detected $posbeamsfound of $posbeams positive beams\n";
 
    # loop over the detected beams, writing the details to the group user header
@@ -114,7 +115,7 @@ if($negbeams) {
    # Call figaro emlt on the negated collapsed file
    $Mon{'figaro2'}->obeyw("emlt", "spectrum=$tmpfile xstart=min xend=max lines=$negbeams");
 
-   $negbeamsfound = $Mon{'figaro2'}->get("emlt", "EMLT_LINES");
+   ($ORAC_STATUS, $negbeamsfound) = $Mon{'figaro2'}->get("emlt", "EMLT_LINES");
    orac_print "Detected $negbeamsfound of $negbeams negative beams\n";
 
    # loop over the detected beams, writing the details to the group user header
@@ -133,49 +134,13 @@ if($negbeams) {
    }
 }
    
-if ($nbeams == 0) {
-   # Didn't find any beams so far. fall back to rows calibration
-   my @rows = $Cal->rows;
-   if (defined $rows[0]) {
-      $nbeams++;
-      $row[$nbeams] = $rows[0];
-   }
-   if (defined $rows[1]) {
-      $nbeams++;
-      $row[$nbeams] = $rows[1];
-   }
+if (($posbeamsfound + $negbeamsfound) == $nbeams) {
+   # We found all the beams
+} else {
+   # Don't let it do any extraction for now
+   $nbeams = 0;
 }
 
-if ($nbeams == 0) {
-   # Didn't find any beams so far. fall back to guessing
-   
-   # The main beam is probably at row 96
-   $nbeams++;
-   $row[$nbeams]=96;
-
-   # is this a pairwise sequence?
-   if (defined ($Frm->uhdr("PAIR_COMPLETE"))) {
-      # Yes, it's pairwise
-
-      # Is the sky position close?
-      # This should really compare the angle to the slit angle too
-      # And look at the slit length...
-
-      my $skyraoff=$Grp->uhdr("SKY_RAOFF");
-      my $skydecoff=$Grp->uhdr("SKY_DECOFF");  
-      my $noddist = sqrt($skyraoff * $skyraoff * $skydecoff * $skydecoff);
-      if ($noddist < 50) {
-         # Chances are we're on the slit
-	 # Guess the pixel scale for now
-	 my $pixsize = 0.6;
-	 my $offset = $noddist / $pixsize;
-	 $nbeams++;
-	 $row[$nbeams] = 96+$offset;
-       }
-   } else {
-     # No, it's not pairwise
-     # Assume there's no offset beam.
-   }
-}
+$Grp->uhdr("NBEAMS", $nbeams);
 
 orac_print "\n";
