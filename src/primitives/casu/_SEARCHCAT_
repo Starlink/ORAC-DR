@@ -1,0 +1,135 @@
+    my $catname = $_SEARCHCAT_{CATNAME};
+    my $ra = $_SEARCHCAT_{RA};  
+    my $dec = $_SEARCHCAT_{DEC};
+    my $radius = $_SEARCHCAT_{RADIUS};
+
+    # Put the coordinates into radians as this is how they are stored
+    # in the object catalogues
+
+    $ra = deg2rad($ra);
+    $dec = deg2rad($dec);
+    $radius = deg2rad($radius/3600.0);
+
+    # Open a temporary file with the region specification for the RA Dec 
+    # coverage.  Write this in.
+
+    my $regfile = ORAC::TempFile->new;
+    my $fh = $regfile->handle;
+    printf $fh "circle(%g,%g,%g)\n",$ra,$dec,$radius;
+    $fh->close;
+
+    # Now get the catalogue subset. NB this will be a memory file, so there 
+    # will be no need to delete it explicitly when we close it
+
+    my $catsub = sprintf("%s[regfilter(\"%s\",ra,dec)]",$catname,$regfile->file);
+    my $status = 0;
+    my $tptr = Astro::FITS::CFITSIO::open_file($catsub,READONLY,$status);
+    $regfile->DESTROY;
+
+    # Get the number of rows in the subset
+
+    my $nrows;
+    if ($status == 0) {
+        $tptr->get_num_rows($nrows,$status);
+    } else {
+        $tptr = 0;
+        $nrows = 0;
+    }
+
+    # Find the best row (the one closest to the centre)
+
+    my $irem;
+    if ($nrows > 1) {
+        my $radmin = 2.0*$radius;
+        my ($col,@raval,@decval,$rad);
+        $tptr->get_colnum(CASEINSEN,"ra",$col,$status);
+        $tptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@raval,$anynul,$status);
+        $tptr->get_colnum(CASEINSEN,"dec",$col,$status);
+        $tptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@decval,$anynul,
+           $status);
+        for ($i = 0; $i < $nrows; $i++) {
+            $rad = sqrt(($raval[$i] - $ra)**2 + ($decval[$i] - $dec)**2);
+            if ($rad < $radmin) {
+                $radmin = $rad;
+                $irem = $i + 1;
+            }
+        }
+        $irem = 0 if (! defined $irem);
+    } elsif ($nrows == 1) {
+        $irem = 1;
+    } else {
+        $irem = 0;
+    }
+
+    # Now send some of this info back
+
+    $_SEARCHCAT_{CPTR} = $tptr;
+    $_SEARCHCAT_{NTROWS} = $nrows;
+    $_SEARCHCAT_{BESTROW} = $irem;
+
+=head1 NAME
+
+_SEARCHCAT_ -- Search a fits catalogue for objects that are at a given position
+
+=head1 DESCRIPTION
+
+This primitive searches a FITS table for any objects that are within a certain
+radius of an input ra and dec.  
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item CATNAME = char (Given)
+
+The name of the FITS table to search
+
+=item RA = float (Given)
+
+The RA of the search position in decimal degrees
+
+=item DEC = float (Given)
+
+The Dec of the search position in decimal degrees
+
+=item RADIUS = float (Given)
+
+The error radius within which any objects must fall (in arcseconds).
+
+=item CPTR = fitsfile (Returned)
+
+A CFITSIO pointer to a table with all the matching objects
+
+=item NTROWS = int (Returned)
+
+The number of rows in the returned table
+
+=item IREM = int (Returned)
+
+The row of the object that best matches the input position
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+The input catalogue must have at least 2 columns called 'ra' and 'dec'.
+
+=item *
+
+The output table exists only in memory, so doesn't need to be deleted when
+it is closed in the calling routine (which it must be).
+
+=back
+
+=head1 AUTHORS
+
+JRL: Jim Lewis (CASU, IoA)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003-2006 Cambridge Astronomy Survey Unit. 
+All Rights Reserved
+
+=cut

@@ -1,0 +1,127 @@
+    # Read some parameters
+
+    my $doflat = (defined $_STAGE1_{FLATCOR} ? $_STAGE1_{FLATCOR} : 0);
+    my $dolin = (defined $_STAGE1_{LINCOR} ? $_STAGE1_{LINCOR} : 0);
+    my $dodark = (defined $_STAGE1_{DARKCOR} ? $_STAGE1_{DARKCOR} : 0);
+    my $doreset = (defined $_STAGE1_{RESETCOR} ? $_STAGE1_{RESETCOR} : 0);
+    orac_print "Doing STAGE1 processing on " . $Frm->file . "\n";
+
+    # Get the file name and the number of extensions
+
+    my $fname = $Frm->file;
+    my $nextn = $Frm->findnsubs;
+
+    # Get an output file name. Delete it so that CFITSIO can start afresh...
+
+    my $tmpfil = ORAC::TempFile->new(0);
+    my $outf = $tmpfil->file;
+    unlink $outf;
+
+    # Loop for each of the extensions now...
+
+    foreach my $i (1 .. $nextn) {
+        my $subfr = $Frm->getasubframe($i);
+        my $snum = $subfr->subfrmnumber;
+        my $sfname = $subfr->file;
+        my $soutf = sprintf("%s[%d]",$outf,$subfr->subfrmnumber);
+
+        # Set up some flags...
+
+        my $resetsrc = NORESET;
+        my ($flatsrc,$linsrc,$darksrc);
+        $flatsrc = "";
+        if ($doflat) {
+            if (! defined $subfr->hdr("FLATCOR") || $subfr->hdr("FLATCOR") !~ /^Done/) {
+                $flatsrc = sprintf("%s[%d]",$Cal->flat,$snum);
+            } 
+        }
+	$linsrc = "";
+	if ($dolin) {
+	    if (! defined $subfr->hdr("LINCOR") || $subfr->hdr("LINCOR") !~ /^Done/) {
+		$linsrc = sprintf("%s[%d]",$Cal->lintab,$i);
+	    } 
+	}
+	$darksrc = "";
+	if ($dodark) {
+	    if (! defined $subfr->hdr("DARKCOR") || $subfr->hdr("DARKCOR") !~ /^Done/) {
+		$darksrc = sprintf("%s[%d]",$Cal->dark,$snum);
+	    } 
+	}
+
+	# Run stage1 one the frame
+
+	my $errmsg;
+	my $retval = cir_stage1($sfname,$resetsrc,$linsrc,$flatsrc,$darksrc,
+            1.0,$soutf,$errmsg);
+	if ($retval == CIR_FATAL) {
+	    orac_throw "CIR_STAGE1: failed in _STAGE1_\n$errmsg\n";
+	}
+
+    }
+
+    # Now if it all went well, then swap the temporary file for the real one
+
+    if (-e $outf) {
+        unlink $Frm->file;
+        rename($outf,$Frm->file);
+    }
+
+    _DISPLAY_IMAGE_
+
+=head1 NAME
+
+_STAGE1_ -- Do an stage 1 processing on images in a file
+
+=head1 DESCRIPTION
+
+This primitive cycles through all of the image extensions in an input file
+does any or all of flat fielding, linearity correction, dark correction and
+reset correction.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item FLATCOR = int (Given)
+
+If set, then a flat field correction will be done.
+
+=item LINCOR = int (Given)
+
+If set, then a linearity correction will be done.
+
+=item DARKCOR = int (Given)
+
+If set, then a dark correction will be done.
+
+=item RESETCOR = int (Given)
+
+If set, then a reset correction will be done.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+If any of the processing steps have been done already, then they won't be 
+done again.
+
+=item *
+
+Output overwrites the input file
+
+=back
+
+=head1 AUTHORS
+
+JRL: Jim Lewis (CASU, IoA)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003-2006 Cambridge Astronomy Survey Unit. 
+All Rights Reserved
+
+=cut
