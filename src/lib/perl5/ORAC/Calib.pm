@@ -82,6 +82,16 @@ sub new {
   $obj->{Standard} = undef;
   $obj->{Sky} = undef;
   $obj->{ReadNoise} = undef;
+
+  # Used in UIST IFU reduction
+  $obj->{Arlines} = undef;
+  $obj->{ArlinesIndex} = undef;
+  $obj->{Iar} = undef;
+  $obj->{IarIndex} = undef;
+  $obj->{Grism} = undef;
+  $obj->{GrismIndex} = undef;
+
+
   $obj->{BaseShift} = undef;
 
   $obj->{DarkIndex} = undef;
@@ -153,7 +163,6 @@ sub biasname {
 Return (or set) the name of the current sky frame - no checking
 
   $dark = $Cal->skyname;
-
 
 =cut
 
@@ -708,7 +717,6 @@ sub biasindex {
 
 
   return $self->{BiasIndex}; 
-
 
 };
 
