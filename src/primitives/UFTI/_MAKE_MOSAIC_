@@ -15,30 +15,29 @@
        $makemos = $Frm->hdr( "MAKE_MOSAIC" );
        if ( $makemos ) {
 
+# Obtain the cycle number.  Default to zero if undefined, so that recipes
+# which do not support this feature will continue to work.
+          my $cycleno = ( $Frm->hdr( "CYCLE_NUMBER" ) || 0 );
+
+# Obtain the cycle period.  Default to 9 if undefined, so that recipes
+# which do not support this feature will continue to work.  This assumes
+# that nine is the maximum number of jitters.
+          my $period = $Frm->hdr( "JITTER_NUMBER" || 9 );
+
+# Select those members in the current cycle.
+          $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+
 # Specify the mosaic suffix.
           $osuffix = "_mos";
 
 # Form a list of input file names for the CCDPACK tasks.  We need to
 # generate an input list for TRANJOIN and TRANNDF and an output list
 # using a hard-wired suffix of '_trn'
-          ($inref, $outref) = $Grp->inout('_trn');
+          ($inref, $outref) = $cycleGrp->inout('_trn');
 
 # Convert the list to a comma-separated list as needed by CCDPACK (GRP).
           $objlist = join(",", @$inref);
           $outlist= join(",", @$outref);
-
-# Create text files to hold the list of input and output files, one per line.
-# This is needed because expanded lists of files may make the command line
-# too long for the ADAM message system.
-          unlink ("tranndf.inlist$$", "tranndf.outlist$$");
-
-          open (INLIST, ">tranndf.inlist$$");
-          print INLIST join( "\n", @$inref ), "\n";
-          close (INLIST);
-
-          open (OUTLIST, ">tranndf.outlist$$");
-          print OUTLIST join( "\n", @$outref ), "\n";
-          close (OUTLIST);
 
 # Concatenate rotation to transformation
 # ======================================
@@ -62,6 +61,19 @@
 # Resampling
 # ==========
 
+# Create text files to hold the list of input and output files, one per line.
+# This is needed because expanded lists of files may make the command line
+# too long for the ADAM message system.
+          unlink ("tranndf.inlist$$", "tranndf.outlist$$");
+
+          open (INLIST, ">tranndf.inlist$$");
+          print INLIST join( "\n", @$inref ), "\n";
+          close (INLIST);
+
+          open (OUTLIST, ">tranndf.outlist$$");
+          print OUTLIST join( "\n", @$outref ), "\n";
+          close (OUTLIST);
+
 # Inquire the original bounds.
           $xl = $Frm->hdr( "RDOUT_X1" );
           $yl = $Frm->hdr( "RDOUT_Y1" );
@@ -80,30 +92,94 @@
 # Report the processing status.
           orac_print "Orac says: Frames $objlist resampled\n";
 
-# Assign other parameters.  The scale might become a user parameter.
-# We should presumably set the Grp output name when we construct
-# $outname.  Do not change the output name if we have already
-# appended the output suffix the previous time around.
-          $outname = $Grp->file . $osuffix unless $Grp->file =~ /$osuffix$/;
-          $header = "in='^tranndf.outlist$$' out='$outname' title=Mosaic";
-          $hidden = "zero";
-#         $user = "scale";
+# Make mosaic.
+# ============
+
+# Derive a reasonable number of overlaps.  The default is only three
+# but with 9-point jitters it could be as high as 8 for the central
+# region.  As non-overlaps will not be included, it's probably better to
+# err on the high side.  So here we've assumed that all the jittered
+# frames could overlap.
+          $optov = $period - 1;
+
+# Define the mosaic name.
+          if ( $cycleno == 0 ) {
+             $grproot = $Grp->file;
+          }
+          $outname = $grproot . "_mu"; 
+
+# Assign other parameters.
+          $header = "in='^tranndf.outlist$$' out=$outname title=Mosaic";
+          $hidden = "zero optov=$optov";
 
 # Make the mosaic correcting for differences in offset.
           $Mon{"ccdpack_reg"}->obeyw("makemos","$header $hidden");
           unlink ("tranndf.inlist$$", "tranndf.outlist$$");
 
-# Set the group name in the Group object...
-          $Grp->file($outname);
-
-# ...and read the header.
-          $Grp->header($Grp->readhdr);
-
 # Report the processing status.
           orac_print "Orac says: mosaic $outname formed\n";
+
+# Remove bad pixels
+# =================
+
+# Bad pixels can accumulate as the mosaics are co-added.  Thus they need to
+# be removed.
+
+# Assign parameters.  We should presumably set the Grp output name
+# when we construct $mosname.  Do not change the output name if we have
+# already appended the output suffix the previous time around.
+# The first cycle mosaic becomes the main mosaic.  Subsequent mosaics of
+# four are co-add (after registration) into the main mosaic, hence these
+# require a different name.
+          $mosname = $Grp->file . $osuffix unless $Grp->file =~ /$osuffix$/;
+          if ( $cycleno > 0 ) {
+             $mosname = $Grp->file . "_" . $cycleno;
+          }
+          $header = "in=$outname out=$mosname niter=4 size=4";
+
+# Fill in the bad pixels.
+          $Mon{ "kappa_mon" }->obeyw( "fillbad", "$header" );
+
+# Report the processing status.
+          orac_print "Orac says: Bad pixels filled in mosaic $outname to form $mosname\n";
+
+# Set the group name in the Group object...
+          if ( $cycleno == 0 ) {
+             $Grp->file( $mosname );
+
+# ...and read the header.
+             $Grp->header( $Grp->readhdr );
+          }
 
 # Display the resultant mosaic.
           _DISPLAY_GROUP_IMAGE_
 
-       };
-    };
+# On the second and subsequent cycle, we just need to co-add the
+# single-cycle mosaic into the main mosaic.
+          if ( $cycleno > 0 ) {
+
+# Make a duplicate of the main mosaic.
+             $tmpmos = "mainmos$$";
+             $header = "in=" . $Grp->file . " out=$tmpmos";
+             $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$header" );
+
+# Co-add the frames.
+             $header = "in1=$tmpmos in2=$mosname out=" . $Grp->file;
+             $Mon{ "kappa_mon" }->obeyw( "add", "$header" );
+
+# Remove the temporary copy unless its the first.  This leaves the
+# mosaics for each and every individual jitter to be examined later.
+             if ( $cycleno > 1 ) {
+                _DELETE_A_FRAME_ FRAME=$tmpmos
+             } else {
+                $header = "in=$tmpmos out=" . $Grp->file . "_0";
+                $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$header" );
+             }
+
+             orac_print "Orac says: Frame $mosname co-added into main mosaic " . $Grp->file . "\n";
+
+# Display the main mosaic.
+             _DISPLAY_GROUP_IMAGE_
+          }
+       }
+    }
