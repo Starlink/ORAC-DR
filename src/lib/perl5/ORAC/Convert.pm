@@ -457,7 +457,7 @@ sub gmos2hds {
   if (defined $self->mon('fits2ndf')) {
 
     # Do the conversion
-    my $extable="/export/data/phirst/oracdr_cal/gmos/extable.txt";
+    my $extable=$ENV{'ORAC_DATA_CAL'}."/extable.txt";
     orac_print "Using extable: $extable\n";
     $status = $self->mon('fits2ndf')->obeyw("fits2ndf","container=true encodings=FITS-IRAF extable=$extable in=$name out=$out profits=true fmtcnv=true");
 
