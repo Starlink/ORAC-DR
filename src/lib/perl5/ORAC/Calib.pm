@@ -41,6 +41,7 @@ use Carp;
 use vars qw/$VERSION/;
 use ORAC::Index;
 use ORAC::Print;
+use ORAC::Inst::Defn qw/ orac_determine_calibration_search_path /;
 use File::Spec;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
@@ -1008,7 +1009,7 @@ sub arcindex {
 
   unless (defined $self->{ArcIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.arc" );
-    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.arc" );
+    my $rulesfile = $self->find_file("rules.arc");
     $self->{ArcIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1031,7 +1032,7 @@ sub baseshiftindex {
 
   unless (defined $self->{BaseShiftIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.baseshift" );
-    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.baseshift" );
+    my $rulesfile = $self->find_file("rules.baseshift");
     $self->{BaseShiftIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1051,7 +1052,7 @@ sub biasindex {
 
   unless (defined $self->{BiasIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.bias" );
-    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.bias" );
+    my $rulesfile = $self->find_file("rules.bias");
     $self->{BiasIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1073,7 +1074,7 @@ sub darkindex {
 
   unless (defined $self->{DarkIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.dark" );
-    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.dark" );
+    my $rulesfile = $self->find_file("rules.dark");
     $self->{DarkIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1096,7 +1097,7 @@ sub flatindex {
 
   unless (defined $self->{FlatIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.flat" );
-    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.flat" );
+    my $rulesfile = $self->find_file("rules.flat");
     $self->{FlatIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1120,7 +1121,7 @@ sub polrefangindex {
 
   unless (defined $self->{PolRefAngIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "index.polrefang" );
-    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.polrefang" );
+    my $rulesfile = $self->find_file("rules.polrefang");
     $self->{PolRefAngIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1140,7 +1141,7 @@ sub readnoiseindex {
 
   unless (defined $self->{ReadNoiseIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.readnoise" );
-    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.readnoise" );
+    my $rulesfile = $self->find_file("rules.readnoise");
     $self->{ReadNoiseIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1160,7 +1161,7 @@ sub referenceoffsetindex {
 
   unless (defined $self->{ReferenceOffsetIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.referenceoffset" );
-    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.referenceoffset" );
+    my $rulesfile = $self->find_file("rules.referenceoffset");
     $self->{ReferenceOffsetIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1181,7 +1182,7 @@ sub skyindex {
 
   unless (defined $self->{SkyIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.sky" );
-    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.sky" );
+    my $rulesfile = $self->find_file("rules.sky");
     $self->{SkyIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1201,7 +1202,7 @@ sub standardindex {
 
   unless (defined $self->{StandardIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.standard" );
-    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.standard" );
+    my $rulesfile = $self->find_file("rules.standard");
     $self->{StandardIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1224,7 +1225,7 @@ sub zeropointindex {
 
   unless (defined $self->{ZeropointIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.zeropoint" );
-    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.zeropoint" );
+    my $rulesfile = $self->find_file( "rules.zeropoint" );
     $self->{ZeropointIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1299,6 +1300,40 @@ sub thingtwo {
 
 =back
 
+=head2 General Methods
+
+=over 4
+
+=item B<find_file>
+
+Returns the full path and filename of the requested file.
+
+  $filename = $Cal->find_file("fs_izjhklm.dat");
+
+Returns undef if the requested file cannot be found. See
+B<ORAC::Inst::Defn::orac_determine_calibration_search_path>
+for information on setting up calibration directories.
+
+=cut
+
+sub find_file {
+  my $self = shift;
+
+  my $file = shift;
+  return undef if ! defined $file;
+
+  my @directories = orac_determine_calibration_search_path( $ENV{'ORAC_INSTRUMENT'} );
+
+  foreach my $directory (@directories) {
+    if( -e ( File::Spec->catdir( $directory, $file ) ) ) {
+      return File::Spec->catdir( $directory, $file );
+    }
+  }
+
+  return undef;
+}
+
+=back
 
 =head1 SEE ALSO
 
@@ -1312,13 +1347,13 @@ $Id$
 =head1 AUTHORS
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
-Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>, and
-Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
-
+Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>,
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>, and
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
