@@ -40,7 +40,7 @@ use Cwd qw/ getcwd /;         # To get current working directory
 use vars qw/ $VERSION $DEBUG /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
-$DEBUG   = 1;
+$DEBUG   = 0;
 
 # Store the hostname (even though hostname does cache)
 my $localhost = hostname;
