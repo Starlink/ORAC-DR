@@ -539,8 +539,9 @@ sub orac_loop_file {
   # grab a filname from the observation array
   my $fname = shift(@$obsref);
 
-  # If filename is undef return undef
+  # If filename is undef or a blank line return undef
   return undef unless defined $fname;
+  return undef unless $fname =~ /\w/;
   orac_print("Checking for next data file: $fname");
 
   # Create a new frame in class
