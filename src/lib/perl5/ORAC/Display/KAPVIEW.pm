@@ -238,7 +238,7 @@ sub polpack {
   unless (defined $self->{Polpack}) {
     if (-e "$ENV{POLPACK_DIR}/polpack_mon") {
 
-      orac_print ("Creating Polpack_mon object.............\n",'cyan') 
+      orac_print ("Creating Polpack_mon object.............\n",'cyan')
 	if $DEBUG;
 
       # Note that a MONOLITH name is supplied as an option.
@@ -328,7 +328,7 @@ each 'win'.
 sub newdev {
   my $self = shift;
   my $win = shift;
-  
+
   my $dev = "xwindows;" . "$win" ."_oracdrxwin";
 
   return $dev;
@@ -363,8 +363,8 @@ sub create_dev {
   my $self = shift;
   my $window = shift;
 
-  # Get the device - this would enter an infinite loop if 
-  # window_dev failed to return an existing device name 
+  # Get the device - this would enter an infinite loop if
+  # window_dev failed to return an existing device name
   # - since window_dev calls create_dev
   my $device = $self->window_dev($window);
 
@@ -472,8 +472,8 @@ sub configure {
 
   # Replace $ with \$ for eval during obeyw()
   my $data = $startup;
-  $data =~ s/\$/\\\$/g;  
- 
+  $data =~ s/\$/\\\$/g;
+
   # Configure region 0
   $device = $self->select_region( WINDOW=>'default',REGION=>0);
   unless (defined $device) {
@@ -488,9 +488,8 @@ sub configure {
     orac_err("Error displaying startup image\n");
     orac_err("Trying to execute: display in=$data\n");
   }
- 
+
   return $status;
-  
 }
 
 
@@ -591,7 +590,7 @@ sub config_regions {
       orac_print("Looping $i..." ,'cyan') if $DEBUG;
       # To map from bottom-left-corner to top-left you need
       # ( N = number starting from top left)
-      
+
       # KappaN = N - Ntotal - Nx + 
       #                        2 * Nx * (Ny +1 - int( (N + Nx - 1) / Nx ))
 
@@ -678,7 +677,7 @@ sub select_region {
 
   # The mapping of region number to picture name is stored in
   # the region() array
-  
+
   my $picname = $self->regions->{$region};
 
 
@@ -805,7 +804,7 @@ sub select_section {
   my @lookup = ( "X", "Y", 3..$maxdim);
   my @autosc = ();  # Autoscale flags
   my $auto_all = 1; # Flag to keep track of global autoscale
- 
+
   # Read the autoscale flags from the hash
   for my $dim (@lookup) {
     my $autosc = 1;
@@ -871,7 +870,7 @@ sub select_section {
 
     # Strip out dimensions that are not in @lookup[0..$ndim-1]
     # If @cuts contains only 0 then we are not doing a cut
-    
+
     foreach my $cut (@initial_cuts) {
       # Compute $cut with each member of @lookup.
       # if there is a match set cuts[index] to 1 (ie significant)
@@ -943,8 +942,8 @@ sub select_section {
       $sects[$index] = $min[$index];
     }
 
-  }  
-  
+  }
+
   # Construct the section
   my $section = '('. join(",", @sects) . ')';
 
@@ -956,7 +955,7 @@ sub select_section {
     $input = "$file$section";
   }
 
-  # If we are averaging we need to do that now 
+  # If we are averaging we need to do that now
   if ($cutting) {
 
     # @cuts is an array containing a set of 1 and 0 corresponding
@@ -964,7 +963,7 @@ sub select_section {
 
     # If the number of 1's does not equal the max_requested we have
     # to assume that some of the early dimensions are really significant
-    
+
     # count the 1's [we know that $#cuts matches $ndim-1]
     my $count=0;
     foreach my $i (@cuts) {
@@ -988,7 +987,7 @@ sub select_section {
 
       for (my $i=$ndim-1; $i>=0; $i--) {
 
-	if ($cuts[$i] = 1) {
+	if ($cuts[$i] == 1) {
 	  $cuts[$i] = 0;
 	  $count--;
 	  last if $count == $max_requested;
@@ -996,7 +995,7 @@ sub select_section {
       }
 
     }
-    
+
     # need to construct a string for compave
     # Takes the form of
     #   [ factor1, factor2, factor3...factorN] for Ndims
@@ -1006,8 +1005,8 @@ sub select_section {
     # (or section) [ie max-min+1]
 
     # This means that the number of significant dimensions must
-    # equal the final required dimensionality. 
-    
+    # equal the final required dimensionality.
+
     # Loop over $ndim constructing COMPRESS key
     my @compress;
     for my $index (0..$ndim-1) {
@@ -1098,7 +1097,7 @@ ORAC Status is returned.
 sub image {
 
   my $self = shift;
- 
+
   my $file = shift;
 
   my $opt;
@@ -1140,7 +1139,7 @@ sub image {
   if (exists $options{ZAUTOSCALE}) {
     # Kappa display can autoscale if required
     # Using MODE=SCALE
-    
+
     if ($options{ZAUTOSCALE} == 0) {
       # We are specifying a min and max (check with defined rather
       # than exists since ZMIN=undef is still not helpful)
@@ -1161,8 +1160,8 @@ sub image {
   #!! HDS locator invalid: value=' ', length=15 (possible programming error).
   #!  DAT_CLONE: Error cloning (duplicating) an HDS locator.
   #!  DAT__LOCIN, Locator invalid
-  #MODE -- Method to define the scaling limits / 'sc' / > 
- 
+  #MODE -- Method to define the scaling limits / 'sc' / >
+
   # A resetpars also seems to be necessary to instruct kappa to
   # update its current frame for plotting. Without this the new PICDEF
   # regions are not picked up correctly.
@@ -1229,7 +1228,7 @@ ORAC status is returned.
 sub graph {
 
   my $self = shift;
- 
+
   my $file = shift;
 
   my %options = ();
@@ -1339,7 +1338,7 @@ ORAC status is returned.
 sub contour {
 
   my $self = shift;
- 
+
   my $file = shift;
 
   my $opt;
@@ -1382,7 +1381,7 @@ sub contour {
   if (exists $options{ZAUTOSCALE}) {
     # Kappa contour can autoscale if required
     # Using MODE=AU
-    
+
     if ($options{ZAUTOSCALE}) {
       # Set default scaling
       $optstring .= " mode=au ";
@@ -1398,7 +1397,7 @@ sub contour {
       } else {
         $optstring .= " firstcnt=0 ";
       }
- 
+
       # Calculate the increment (stepcnt)
       my $inc = ($options{ZMAX} - $options{ZMIN}) / $ncont;
       $optstring .= " stepcnt=$inc ";
@@ -1422,7 +1421,7 @@ sub contour {
 
   $status = $self->obj->resetpars;
   return $status if $status != ORAC__OK;
-  
+
   # Do the obeyw
   $status = $self->obj->obeyw("contour", "device=$device ndf=$file $optstring accept ");
   if ($status != ORAC__OK) {
@@ -1460,7 +1459,7 @@ ORAC status is returned.
 sub sigma {
 
   my $self = shift;
- 
+
   my $file = shift;
 
   my %options = ();
@@ -1661,7 +1660,7 @@ ORAC status is returned.
 sub datamodel {
 
   my $self = shift;
- 
+
   my $file = shift;
 
   my %options = ();
