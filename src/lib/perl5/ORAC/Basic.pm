@@ -18,6 +18,7 @@ use File::Copy;
 use ORAC::Msg::ADAM::Task;
 
 use ORAC::General; # General subroutines given to the recipes
+use ORAC::Constants qw/:status/;	# 
 
 @ISA = qw(Exporter);
 
@@ -29,16 +30,8 @@ orac_parse_recipe orac_exit_normally orac_exit_abnormally/;
 
 #------------------------------------------------------------------------
 
-use vars qw($ORAC_ACT_COMPLETE $ORAC__OK);
-
-# Set these from the ADAMTASK modules correctly at some point
-$ORAC_ACT_COMPLETE = 142115659;
-$ORAC__OK = 0;
-
-
 # RECIPES beware!! Don't stomp on these:
 
-*Hdr = *main::Header;
 *Mon = *main::Mon;
 
 sub orac_launch_display {
@@ -212,7 +205,7 @@ sub orac_parse_recipe {
  
 sub orac_check_status {
  
-  my @newlines =  (' if ($ORAC_STATUS != $ORAC__OK) {' ,
+  my @newlines =  (' if ($ORAC_STATUS != ORAC__OK) {' ,
 		   '   print colored ("Error in pipeline\n","red"); ' ,
 		   '   return $ORAC_STATUS; ' ,
 		   ' } ');
@@ -231,7 +224,7 @@ sub orac_check_obey_status {
   $line =~ /obeyw\{(\w)\}/ && ($monolith = $1);
 
 
-  my @statuslines = ('  if ($OBEYW_STATUS != $ORAC__OK) {' ,
+  my @statuslines = ('  if ($OBEYW_STATUS != ORAC__OK) {' ,
                   '   print colored ("Error in obeyw to monolith $monolith: $OBEYW_STATUS\n","red"); ' ,
 		  '   return $OBEYW_STATUS; ' ,
 		  ' } ');
@@ -275,6 +268,9 @@ die;
 1;
 
 #$Log$
+#Revision 1.12  1998/04/15 02:41:36  frossie
+#Move ams_init to appropriate place
+#
 #Revision 1.11  1998/04/14 21:39:43  frossie
 #Change launch display to use new Msg hierarchy
 #
