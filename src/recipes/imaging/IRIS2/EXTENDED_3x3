@@ -1,0 +1,217 @@
+=head1 NAME
+
+EXTENDED_3x3 -- Extended-source standard reduction using interpolated sky subtraction.
+
+=head1 DESCRIPTION 
+
+This recipe reduces an extended source using IRIS2 imaging data.
+The data comprise alternating blank-sky and target frames commencing
+and ending with a blank sky.  The target frames are arranged in an
+overlapping (30-50%) grid of 3x3 frames from which the recipe
+makes a sky-subtracted untrimmed mosaic automatically.
+
+The script performs bad-pixel masking, null debiassing, dark
+subtraction, flat-field division, sky subtraction, registration,
+resampling, and mosaicking.  The L<"NOTES"> give more details.
+
+It is suitable for extended objects up to n arcminutes across
+IRIS2.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+A World Co-ordinate System (WCS) using the AIPS convention is 
+created in the headers should no WCS already exist.
+
+=item *
+
+The bad-pixel mask applied is F<$ORAC_DATA_CAL/bpm>.
+
+=item * 
+
+Each dark-subtracted frame has thresholds applied beyond which
+pixels are flagged as bad.  The lower limit is 5 standard 
+deviations below the mode, but constrained to the range -100 to 1.
+The upper limit is 1000 above the saturation limit for the detector
+in the mode used.
+
+=item *
+
+The flat field is derived from the sky frames as follows.  The
+mode (sigma-clipped mean) is used to offset each sky frame's mode
+to that of the first sky frame.  The corrected sky frames are
+combined pixel by pixel using a median of the values in each
+frame.  The resultant frame is normalised by its median to form
+the flat field.  This frame median is subtracted from the source
+frames after they have been flat-fielded.  A flat field is created
+for each row of the grid of target frames, and applied only to
+that row of target frames.
+
+=item *
+
+The sky subtraction comes from linear interpolation of the sky
+modal values of the two sky frames which immediately bracket the
+target frame.
+
+=item *
+
+Registration is performed using common point sources in the
+overlap regions.  If the recipe cannot identify sufficient common
+objects, it matches the centroid of the central source.  If this
+fails, the script resorts to using the telescope offsets
+transformed to pixels.
+
+=item *
+
+The resampling applies non-integer shifts of origin using
+bilinear interpolation.  There is no rotation to align the
+Cartesian axes with the cardinal directions.
+
+=item *
+
+The recipe makes the mosaics by applying offsets in intensity
+to give the most consistent result amongst the overlapping regions.
+The noise will be greater in the mosaic's peripheral areas, having
+received less exposure time.  The mosaic is not normalised by its
+exposure time (that being the exposure time of a single frame).
+
+=item *
+
+Mosaics are made and displayed for each row, except the last. At the
+end of each cycle of 19 frames the full mosaic of nine target frames
+is created and displayed instead.  On the second and subsequent cycles
+the full mosaic is added into a master mosaic of improving signal to
+noise.  The exposure time is also summed and stored in the mosaic's
+corresponding header.  Likewise the end airmass and end UT
+headers are updated to match that of the last-observed frame
+contributing to the mosaic.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The resultant mosaic in
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_mos, where
+E<lt>mE<gt> is "gi" for IRIS2.
+
+=item *
+
+A mosaic for each row in
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_mosE<lt>row_numberE<gt>,
+where E<lt>row_numberE<gt> is 0 or 1.
+
+=item *
+
+The individual flat-fielded frames in
+E<lt>dateE<gt>E<lt>obs_numberE<gt>_ff, where E<lt>dateE<gt>
+is of the form DDMMM.
+
+=back
+
+=head1 CONFIGURABLE STEERING PARAMETERS
+
+=over 4
+
+=item NROW = INTEGER
+
+The number of target frames in a row of the mosaic.  Its
+minimum is 3 because this number of blank skies are needed to
+form a flat field. [3]
+
+=item NCOL = INTEGER
+
+The number of target frames in a column of the mosaic.  Its
+minimum is 2. [3]
+
+=item USEVAR = LOGICAL
+
+Whether or not to create and propagate variance arrays.  [0]
+
+=back
+
+=head1 IMPLEMENTATION STATUS
+
+=over 4
+
+=item *
+
+The processing engines are from the Starlink packages: CCDPACK,
+KAPPA, and FIGARO.
+
+=item *
+
+Uses the Starlink NDF format.
+
+=item *
+
+History is recorded within the data files.
+
+=item *
+
+The title of the data is propagated through intermediate files
+to the mosaic.
+
+=item *
+
+Error propagation is controlled by the USEVAR parameter.
+
+=back
+
+=head1 REFERENCES
+
+"I<Scripts for UFTI>" G.S. Wright & S.K. Leggett, 1997 orac009-ufts, v01.
+
+=head1 RELATED RECIPES
+
+L<EXTENDED_3x3_BASIC|EXTENDED_3x3_BASIC>,
+L<EXTENDED_5x5|EXTENDED_5x5>, L<QUADRANT_JITTER|QUADRANT_JITTER>.
+
+=head1 AUTHORS
+
+Malcolm J. Currie <mjc@jach.hawaii.edu> (UKATC/JAC)
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu> (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+
+# Imaging-specific preliminaries, such as switching on history
+# recording.
+_IMAGING_HELLO_
+
+# Recipe-specific initialisation of data and tasks.
+_EXTENDED_HELLO_ NROW=3 NCOL=3
+
+# Subtract the dark frame.
+_SUBTRACT_DARK_
+
+# Generate the flat field using the extended-source technique.
+_MAKE_FLAT_EXTENDED_
+
+# Apply the flat field.
+_DIVIDE_BY_FLAT_FROM_EXTENDED_
+
+# Subtract the sky using linear interpolation.
+_SUBTRACT_SKY_EXTENDED_
+
+# Determine the linear offsets between the object frames in the group
+# by pattern matching common features, or if that fails use the offsets
+# stored in the headers.  Register the frames using a shift of pixel
+# origin.
+_GENERATE_OFFSETS_EXTENDED_ COMPLETE=0.25
+
+# Resample each frame, and tesselate.  This is either the current row, 
+# or the final mosaic of all the reduced target frames.
+_MAKE_MOSAIC_EXTENDED_ RESAMPLE=1 INT_METHOD=linint
+ 
