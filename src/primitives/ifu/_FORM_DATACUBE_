@@ -12,14 +12,14 @@ _FORM_DATACUBE_ -- Re-formats an IFU frame into a datacube.
 
 The slices are extracted and placed in the datacube in the order in which
 their positions are given in the IFU_start and IFU_end arrays contained
-in the user header of the frame. The number of slices is given by the 
+in the user header of the frame. The number of slices is given by the
 IFU_slices header.
- 
+
 Each area extracted from the input frame becomes one y,lambda plane of
 the datacube (with y->y, x->lambda).
-  
+
 This primitive is intended for use on a straightened, wavelength calibrated
-frame, but the IFU_xshift values are read and used, so it will work any 
+frame, but the IFU_xshift values are read and used, so it will work any
 time after the headers have been written (by _LOCATE_SLICES_). If the
 image has not been scrunched when it is run then the wavelength axis will
 be in pixels (not Angstroms) and there will be small offsets (~1 pixel)
@@ -69,21 +69,20 @@ form the datacube from the current frame. [FALSE]
 
 =head1 TASKS
 
-ndfpack_mon: ndfcopy, setorigin, setbound
-figaro1: ishift, growyt
+ndfpack_mon: ndfcopy, setorigin, setbound, wcsadd
+kappa_mon: slide, paste
 
 =head1 AUTHORS
 
 SPT: Stephen P. Todd (Edinburgh University/UKATC)
+Brad Cavanagh (JAC) <b.cavanagh@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
-
-
 
 # Permaxes only runs from the monolith in Kappa > 1.0, so if we have
 # an older kappa version then we need to user the old Figaro based
@@ -137,11 +136,16 @@ if (starversion_gt('kappa', '1.0-0') ) {
     $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
 	
     # add a third dimension
-    $Mon{"ndfpack_mon"}->obeyw("setbound", "$tmp_slice(,,1:1)");
+    $Mon{"ndfpack_mon"}->obeyw("setbound", "ndf=$tmp_slice(,,1:1)");
 	
     # Set the origin
-    $param = "$tmp_slice [1,1,$pos]";
+    $param = "ndf=$tmp_slice origin=[1,1,$pos]";
     $Mon{"ndfpack_mon"}->obeyw("setorigin", "$param");
+
+    # Add a NEW_AXIS WCS component so later primitives and post-processing
+    # work correctly.
+    $param = "ndf=$tmp_slice frame=axis domain=new_axis maptype=unit attrs=!";
+    $Mon{'ndfpack_mon'}->obeyw( "wcsadd", "$param" );
 	
     if ($expand) {
       $pos += 2;
@@ -157,7 +161,7 @@ if (starversion_gt('kappa', '1.0-0') ) {
     # already got (stored in the other temporary file) and write it
     # to $out.
     if ($n > 0) {
-	    $param = "$tmp_paste $tmp_slice2 out=$out title=ifu_data";
+	    $param = "in=$tmp_paste p1=$tmp_slice2 out=$out title=ifu_data";
 	    $Mon{"kappa_mon"}->obeyw("paste", "$param");
 
 	    # Copy the current $out to $tmp_paste for use next time round.
@@ -185,6 +189,9 @@ if (starversion_gt('kappa', '1.0-0') ) {
   } else {
     $Frm->file( $out );
   }
+
+  # Tell the user what we've done.
+  orac_print "Formed datacube in $out.\n";
 
   # Let following steps know how many dimensions there are.
   $Grp->uhdr("NDIMS", 3);
