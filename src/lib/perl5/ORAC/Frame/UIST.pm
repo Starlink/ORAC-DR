@@ -54,7 +54,7 @@ my %hdr = (
 
 # then the spectroscopy...
             CONFIGURATION_INDEX  => "CNFINDEX",
-            GRATING_DISPERSION   => "DISPERSN",
+            GRATING_DISPERSION   => "CDELT1",
             GRATING_NAME         => "GRISM",
             GRATING_ORDER        => "GRATORD",
             GRATING_WAVELENGTH   => "CENWAVL",
