@@ -55,18 +55,27 @@
 #    -  This primitive is suitable for UIST.
 #    -  It only operates on object frames.
 #    -  Fractional pixel limits are rounded to the next lower integer.
-#    -  The declination pixel limits for the sections are as follows.
+#    -  The declination pixel limits for the sections when using the
+#    full array are as follows.
 #    o sky: 196--342; e sky: 350--496; o target: 584--731; e target: 
 #    737--884.
+#    -  The declination pixel limits for the sections when using the
+#    sub-array are as follows.
+#    o target, sky: 26--230; e target, sky: 282--486.
+#    -  This primitive decides if it is using the subarray by looking
+#    at the size of the array in the x-dimension. If this value is larger
+#    than 1000, then the full array is assumed. Otherwise, the subarray
+#    is assumed.
 #
 # Tasks:
 #    KAPPA: NDFTRACE.
 #
 # Authors:
 #    MJC: Malcolm J. Currie (JAC)
+#    BC: Brad Cavanagh (JAC)
 #
 # Copyright:
-#    Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 #
 #-
@@ -110,12 +119,18 @@
        my $xdim = $ubnd[ 0 ] - $lbnd[ 0 ] + 1;
        my $ydim = $ubnd[ 1 ] - $lbnd[ 1 ] + 1;
 
+# Determine if we're using the subarray.
+      my $subarray = 0;
+      if($xdim < 1000) {
+        $subarray = 1;
+      }
+
 # Find the offset in declination as a fraction of frame width (along
 # axis closely aligned to the declination).  Here we assume that 
 # rotation is either near 0 or +/-90 degrees.  In practice this
 # probably doesn't matter unless a non-square chip is introduced.
        my $dec_off_f;
-       if ( abs( $rotangle ) < 45 ) {
+       if ( abs( $rotangle ) > 45 ) {
           $dec_off_f = $xoffset / $xdim;
        } else {
           $dec_off_f = $yoffset / $ydim;
@@ -128,21 +143,46 @@
 # of the image, along the axis perpendicular to the bands
 # (right-ascension direction).  The offsets are by convention only
 # in right ascension.
-        my @et_lbnd_f = ( $dec_frac_l + $dec_off_f, 0.720 );
-        my @et_ubnd_f = ( $dec_frac_u + $dec_off_f, 0.863 );
-        my @ot_lbnd_f = ( $dec_frac_l + $dec_off_f, 0.570 );
-        my @ot_ubnd_f = ( $dec_frac_u + $dec_off_f, 0.713 );
-        my @es_lbnd_f = ( 0.01, 0.341 );
-        my @es_ubnd_f = ( 0.99, 0.191 );
-        my @os_lbnd_f = ( 0.01, 0.484 );
-        my @os_ubnd_f = ( 0.99, 0.334 );
+        my ( @et_lbnd_f, @et_ubnd_f, @ot_lbnd_f, @ot_ubnd_f );
+        my ( @es_lbnd_f, @es_ubnd_f, @os_lbnd_f, @os_ubnd_f );
+        if( $subarray ) {
+          @et_lbnd_f = ( $dec_frac_l + $dec_off_f, 0.550 );
+          @et_ubnd_f = ( $dec_frac_u + $dec_off_f, 0.730 );
+          @ot_lbnd_f = ( $dec_frac_l + $dec_off_f, 0.250 );
+          @ot_ubnd_f = ( $dec_frac_u + $dec_off_f, 0.430 );
+
+# We need to define different sky regions depending on the offset,
+# since we want to be as far from the source as possible.
+          if( $dec_off_f < 0 ) {
+            @es_lbnd_f = ( 0.05, 0.550 );
+            @es_ubnd_f = ( 0.25, 0.730 );
+            @os_lbnd_f = ( 0.05, 0.270 );
+            @os_ubnd_f = ( 0.25, 0.450 );
+          } else {
+            @es_lbnd_f = ( 0.75, 0.550 );
+            @es_ubnd_f = ( 0.90, 0.730 );
+            @os_lbnd_f = ( 0.75, 0.270 );
+            @os_ubnd_f = ( 0.90, 0.450 );
+          }
+        } else {
+
+# We're using the full array.
+          @et_lbnd_f = ( $dec_frac_l + $dec_off_f, 0.720 );
+          @et_ubnd_f = ( $dec_frac_u + $dec_off_f, 0.863 );
+          @ot_lbnd_f = ( $dec_frac_l + $dec_off_f, 0.570 );
+          @ot_ubnd_f = ( $dec_frac_u + $dec_off_f, 0.713 );
+          @es_lbnd_f = ( 0.01, 0.341 );
+          @es_ubnd_f = ( 0.99, 0.191 );
+          @os_lbnd_f = ( 0.01, 0.484 );
+          @os_ubnd_f = ( 0.99, 0.334 );
+        }
 
 # Allow for positive right-angle rotation, i.e. where the declination axis
 # corresponds to the negative x axis.  To get the same pixel, as we
 # round down, add a half pixel more than 1 in addition to normal one
 # pixel extra to subtract from.  Switch the bounds so that the upper is
 # greater than the lower.
-       if ( $rotangle > 45 ) {
+       if ( $rotangle < 45 ) {
           my $flips = 1.0 + 1.5 / $ydim;
           $et_lbnd_f[ 0 ] = $flips - $et_lbnd_f[ 0 ];
           $et_ubnd_f[ 0 ] = $flips - $et_ubnd_f[ 0 ];
