@@ -86,7 +86,8 @@ sub fits {
       $self->{FitsHdr} =  $fits;
 
       # And force the old header hash to be a tie derived from this
-      # object
+      # object [making sure that multi-valued headers are returned as an array]
+      $fits->tiereturnsref(1);
       tie my %header, ref($fits), $fits;
       $self->{Header} = \%header;
 

@@ -69,6 +69,9 @@ sub readhdr {
   try {
     my $hdr = new Astro::FITS::Header::NDF( File => $file );
 
+    # Mark it suitable for tie with array return of multi-values
+    $hdr->tiereturnsref(1);
+
     # And store it in the object
     $self->fits( $hdr );
   };
