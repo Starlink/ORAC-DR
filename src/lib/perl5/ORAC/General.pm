@@ -16,6 +16,7 @@ ORAC::General - Simple perl subroutines that may be useful for primitives
   %hash = parse_keyvalues($string);
   @obs = parse_obslist($string);
   $result = cosdeg( 45.0 );
+  @dms = dectodms( $dec );
 
 =head1 DESCRIPTION
 
@@ -31,7 +32,9 @@ library in order to run.
 use 5.006;
 require Exporter;
 @ISA = (Exporter);
-@EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist cosdeg);
+@EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist cosdeg
+	      dectodms
+	    );
 
 use Carp;
 use warnings;
@@ -58,6 +61,32 @@ Return the cosine of the angle. The angle must be in degrees.
 
 sub cosdeg {
   cos($_[0] * 3.14159265359 / 180);
+}
+
+=item B<dectodms>
+
+Convert decimal angle (degrees or hours) to degrees, minutes and seconds.
+(or hours).
+
+  ($deg, $min, $sec) = dectodms( $decimal );
+
+=cut
+
+sub dectodms {
+
+  my $dec = shift;
+  my @dms;
+  my $neg = 0;
+  if ( $dec < 0 ) {
+    $neg = 1;
+    $dec = - $dec;
+  }
+  $dms[ 0 ] = int( $dec );
+  $dms[ 1 ] = int( ( $dec - int( $dec ) ) * 60 );
+  $dms[ 2 ] = ( ( $dec - $dms[ 0 ] ) * 60 -
+		int( ( $dec - $dms[ 0 ] ) * 60 ) ) * 60;
+  if( $neg ) { $dms[0] *= -1 }
+  return @dms;
 }
 
 =item B<min>
