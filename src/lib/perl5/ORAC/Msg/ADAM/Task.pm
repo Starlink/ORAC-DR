@@ -56,11 +56,8 @@ use Starlink::AMS::Task '1.00';
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 
-# Local definition of DTASK__ACT_COMPLETE. Probably should
-# try to get it from Starlink::ADAM but currently broken
-
-$DTASK__ACTCOMPLETE = 142115659;
-
+# Local copies of important Starlink constants.
+$DTASK__ACTCOMPLETE = &Starlink::ADAM::DTASK__ACTCOMPLETE;
 $SAI__OK = &Starlink::ADAM::SAI__OK;
 
 
@@ -102,7 +99,6 @@ sub new {
 
   # If we have arguments then we are trying to do a load
   # as well
-
   if (@_) { $status = $task->load(@_); };
 
   if ($status != ORAC__OK) {
@@ -187,6 +183,7 @@ sub obeyw {
   if ($status == $DTASK__ACTCOMPLETE) {
     $status = ORAC__OK;
   }
+
   return $status;
 
 }
