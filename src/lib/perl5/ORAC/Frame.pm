@@ -60,7 +60,11 @@ my @ORAC_INTERNAL_HEADERS = qw/
   TRAOFF 
   UTEND 
   UTSTART
-  DETINCR
+  NSCAN_POSITIONS
+  SCAN_INCREMENT
+  DIM1
+  DIM2
+  DETECTOR_INDEX
 /;
 
 # Setup the object structure
@@ -772,9 +776,9 @@ sub calc_orac_headers {
   # This makes it safe for everyone
   for my $key ( @ORAC_INTERNAL_HEADERS ) {
     my $method = "_to_$key";
-    print "Trying method $method\n";
+#    print "Trying method $method\n";
     if ($self->can($method)) {
-      print "Running method $method\n";
+#      print "Running method $method\n";
       # This returns a single value
       $new{"ORAC_$key"} = $self->$method();
       $self->uhdr("ORAC_$key", $new{"ORAC_$key"});
