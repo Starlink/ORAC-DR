@@ -9,10 +9,19 @@ _CREATE_IMAGE_CATALOGUE__ - source extraction and photometry on all sources
 For the group file, find all the sources and calculate the flux
 of each detected source. Write the results to a catalogue file.
 
-=head1 BUGS
+=head1 ARGUMENTS
 
- - Catalogue is currently given a fixed name rather than a name
-   that changes with the group file (or possibly eSTAR Agent ID)
+=over 4
+
+=item GROUP = BOOLEAN (Given)
+
+If true, use the current group file for source extraction. If false, use
+the current frame. [0]
+
+=item OUTPUT_FORMAT = STRING (Given)
+
+The catalogue output format. The name of the format comes from the
+appropriate C<Astro::Catalog> IO class. ['Cluster']
 
 =head1 NOTES
 
@@ -32,11 +41,25 @@ All Rights Reserved.
 # Do only if it's time to create a catalogue.
 if( $Frm->uhdr("CREATE_CATALOGUE") ) {
 
+# Get the output format.
+  my $output_format = $_CREATE_IMAGE_CATALOGUE_{OUTPUT_FORMAT} || 'Cluster';
+
 # Get the input NDF.
-  my $in = $Grp->file;
+  my $in;
+  my $group = $_CREATE_IMAGE_CATALOGUE_{GROUP};
+  if( defined( $_CREATE_IMAGE_CATALOGUE_{GROUP} ) &&
+      $_CREATE_IMAGE_CATALOGUE_{GROUP} == 0 ) {
+
+    orac_throw "Cannot handle more than one file per Frame object\n" if ( $Frm->nfiles > 1 );
+
+    ( $in, my $out ) = $Frm->inout( "_cat" );
+    $group = $_CREATE_IMAGE_CATALOGUE_{GROUP};
+  } else {
+    $in = $Grp->file;
+    $group = 1;
+  }
 
 # Delay loading so that ORAC-DR does not require these.
-  use lib qw[ /home/bradc/development/perl-install/lib/site_perl/5.8.3/ ];
   require Starlink::Extractor;
   require Astro::WaveBand;
 
@@ -47,16 +70,19 @@ if( $Frm->uhdr("CREATE_CATALOGUE") ) {
   my $minpix = ( $_CREATE_IMAGE_CATALOGUE_{MINPIX} || 12 );
 
 # Obtain the filter.
-  my $filter = $Grp->uhdr("ORAC_FILTER");
+  my $filter = $Frm->uhdr("ORAC_FILTER");
 
 # Report the processing status.
   orac_print "Detecting objects in $in with at least $minpix connected pixels\n";
   orac_print "   at $detect times sky noise above sky.\n";
 
 # Perform inventory on the field
-  my $extractor = new Starlink::Extractor( config => $Cal->find_file("extractor_catalogue.sex" ) );
+  my $conf_file = $Cal->find_file("extractor_catalogue.sex");
+  my $extractor = new Starlink::Extractor( config => $conf_file );
   $extractor->detect_thresh( $detect );
   $extractor->analysis_thresh( 3.0 );
+  $extractor->verbose_type('NORMAL');
+
   my $extracted_catalog = $extractor->extract( frame => $in,
                                        filter => new Astro::WaveBand( Filter => $filter ) );
 
@@ -65,17 +91,18 @@ if( $Frm->uhdr("CREATE_CATALOGUE") ) {
   while ( $extracted_catalog->sizeof > 0 ) {
     my $star = $extracted_catalog->popstar;
     next if ( $star->morphology->area < $minpix );
+
     $filtered_catalog->pushstar( $star );
   }
 
   orac_print $filtered_catalog->sizeof() . " objects detected in $in.\n";
 
 # Dump the catalog to disk.
-  _GET_CATALOGUE_NAME_
+  _GET_CATALOGUE_NAME_ GROUP=$group
   my $catalogue_name = $_GET_CATALOGUE_NAME_{NAME};
   my $cat_file = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, $catalogue_name);
   my $status = $filtered_catalog->write_catalog( file => $cat_file,
-                                                 format => 'Cluster',
+                                                 format => $output_format,
                                                );
 
   orac_print "Wrote catalogue to $cat_file.\n\n";
