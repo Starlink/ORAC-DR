@@ -31,6 +31,9 @@ The only input formats supported are:
   NDF     - simple NDF files
   FITS    - FITS file
   UKIRTIO - UKIRT I/O file
+  HDS     - HDS containers with .HEADER and .Inn NDFs
+            In general this can only be converted to a NDF or FITS
+            output file if there is only one data frame in the container.
 
 In many cases the NDF format is used as the intermediate format for
 all conversions (should probably use PDLs as the intermediate
@@ -53,7 +56,7 @@ use vars qw/$VERSION/;
 use File::Basename;  # Get file suffix
 use File::Spec;      # Not really necessary -- a bit anal I suppose
 use NDF;
-use Starlink::HDSPACK; # copobj
+use Starlink::HDSPACK qw/copobj/; # copobj
 
 use ORAC::Print;
 use ORAC::Msg::ADAM::Control;
@@ -271,6 +274,11 @@ sub convert {
     orac_print("Converting from FITS to NDF...\n");
     $outfile = $self->fits2ndf;
     orac_print("...done\n");
+  } elsif ($options{'IN'} eq 'HDS' && $options{OUT} eq 'NDF') {
+    # Implement UKIRTio2HDS
+    orac_print "Converting from HDS container to merged NDF...\n";
+    $outfile = $self->hds2ndf;
+    orac_print "...done\n";
   } elsif ($options{'IN'} eq 'UKIRTIO' && $options{OUT} eq 'HDS') {
     # Implement UKIRTio2HDS
     orac_print "Converting from UKIRT I/O files to HDS container...\n";
@@ -592,6 +600,199 @@ sub UKIRTio2hds {
 }
 
 
+=item B<hds2ndf>
+
+Converts frames taken as HDS container files (container file with
+.HEADER and .I1) to a simple NDF file. This method only works
+for the first frame (.I1). 
+
+  $ndf = $Cvt->hds2ndf;
+
+The resulting NDF file has the FITS headers from both the .HEADER
+and the .I1 component. No warning is given if more than one component
+exists (all higher numbers are ignored).
+
+=cut
+
+sub hds2ndf {
+  my $self = shift;
+
+  # Check for the input file
+  unless (-e $self->infile) {
+    orac_err "Input filename (".$self->infile.") does not exist -- can not convert\n";
+    return undef;
+  }
+
+  # Read the input file - we only want the basename (we know .sdf suffix)
+  my $hdsfile = basename($self->infile,'.sdf');
+
+  # Construct the output file name. This is just the input with _raw
+  # appended (no .sdf)
+  my $outfile = $hdsfile . '_raw';
+
+  # Check for the existence of the output file in the current dir
+  # and whether we can overwrite it.
+  if (-e $outfile.'.sdf' && ! $self->overwrite) {
+    # Return early
+    $outfile .= '.sdf';
+    orac_warn "The converted file ($outfile) already exists - won't convert again\n";
+    return $outfile;
+  }
+
+
+  # Start new error context
+  my $status = &NDF::SAI__OK;
+  err_begin($status);
+  
+  # Copy the base frame (.i1) to the output name
+  copobj($hdsfile . '.i1', $outfile, $status);
+
+  # Now we can either copy the .HEADER FITS array directly into
+  # the output NDF (and lose any headers that might be there) or 
+  # we can check first and merge the headers if required.
+  # In the first instance, simply copy and overwrite the header
+  copobj($hdsfile.'.header.more.fits', $outfile .'.more.fits', $status);
+
+
+  # End error context and return string
+  if ($status != &NDF::SAI__OK) {
+    err_flush($status);
+    err_end($status);
+    return undef;
+  }
+  
+  err_end($status);
+  return $outfile .'.sdf';
+}
+  
+
+# This is some demo code that was written to merge header from a
+# HDS container. It takes the contents of the .HEADER FITS headers
+# and the .I1 FITS headers and merges them into the output NDF FITS
+# header. The code has not been tested!!!!!!
+# It is similar to the hds2ndf subroutine except that it does not
+# overwrite a FITS header in the output. Note that they could be merged
+# so long as an extra check is added to see whether the .I1 file already
+# has a FITS extension.
+
+sub hds2ndf_demo {
+  my $self = shift;
+
+  # Check for the input file
+  unless (-e $self->infile) {
+    orac_err "Input filename (".$self->infile.") does not exist -- can not convert\n";
+    return undef;
+  }
+
+  # Read the input file - we only want the basename (we know .sdf suffix)
+  my $hdsfile = basename($self->infile,'.sdf');
+
+  # Construct the output file name. This is just the input with _raw
+  # appended (no .sdf)
+  my $outfile = $hdsfile . '_raw';
+
+  # Check for the existence of the output file in the current dir
+  # and whether we can overwrite it.
+  if (-e $outfile.'.sdf' && ! $self->overwrite) {
+    # Return early
+    $outfile .= '.sdf';
+    orac_warn "The converted file ($outfile) already exists - won't convert again\n";
+    return $outfile;
+  }
+
+
+  # Start new error context
+  my $status = &NDF::SAI__OK;
+  err_begin($status);
+  
+  # Copy the base frame (.i1) to the output name
+  copobj($hdsfile . '.i1', $outfile, $status);
+
+  # Now the hard part -- we have to read in the FITS array from the
+  # header and the FITS array from the data and merge them
+  # First open the header (can't use fits_read_header)
+
+  # Begin NDF context
+  ndf_begin();
+
+  # Open the file
+  ndf_find(&DAT__ROOT(), $hdsfile, my $indf, $status);
+
+  # Get the fits locator
+  ndf_xloc($indf, 'FITS', 'READ', my $xloc, $status);
+
+  # Find out how many entries we have
+  my $maxdim = 7;
+  my @dim = ();
+  dat_shape($xloc, $maxdim, @dim, my $ndim, $status);
+
+  # Must be 1D
+  if ($status == &NDF::SAI__OK && scalar(@dim) > 1) {
+    $status = &NDF::SAI__ERROR;
+    err_rep(' ',"hsd2ndf: Dimensionality of .HEADER FITS array should be 1 but is $ndim",
+	    $status);
+  }
+
+  # Read the FITS array
+  my @fitsA = ();
+  dat_get1c($xloc, $dim[0], @fitsA, my $nfits, $status);
+
+  # Close the NDF file
+  dat_annul($xloc, $status);
+  ndf_annul($indf, $status);
+
+  # Now we need to open the input file and modify the FITS entries
+  ndf_open(&NDF::DAT__ROOT, $outfile, 'UPDATE', 'OLD', $indf, my $place, 
+	   $status);
+
+  # Get the fits locator (note the deja vu)
+  ndf_xloc($indf, 'FITS', 'UPDATE', my $xloc, $status);
+
+  # Find out how many entries we have
+  dat_shape($xloc, $maxdim, @dim, $ndim, $status);
+
+  # Must be 1D
+  if ($status == &NDF::SAI__OK && scalar(@dim) > 1) {
+    $status = &NDF::SAI__ERROR;
+    err_rep(' ',"hds2ndf: Dimensionality of .HEADER FITS array should be 1 but is $ndim",
+	    $status);
+  }
+
+  # Read the second FITS array
+  my @fitsB = ();
+  dat_get1c($xloc, $dim[0], @fitsB, $nfits, $status);
+
+  # Merge arrays
+  push(@fitsA, @fitsB);
+
+  # Now resize the FITS extension by deleting and creating
+  # (cmp_modc requires the parent locator)
+  dat_annul($xloc, $status);
+  ndf_xdel($indf,'FITS', $status);
+  $ndim = 1;
+  $nfits = scalar(@fitsA);
+  my @nfits = ($nfits);
+  ndf_xnew($indf, 'FITS', '_CHAR*80', $ndim, @nfits, $xloc, $status);
+
+  # Upload the FITS entries
+  dat_put1c($xloc, $nfits, @fitsA, $status);
+  
+  # Shutdown
+  dat_annul($xloc, $status);
+  ndf_annul($indf, $status);
+  ndf_end($status);
+
+  # End error context and return string
+  if ($status != &NDF::SAI__OK) {
+    err_flush($status);
+    err_end($status);
+    return undef;
+  }
+  
+  err_end($status);
+  return $outfile .'.sdf';
+
+}
 
 =back
 
