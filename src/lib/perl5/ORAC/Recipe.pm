@@ -718,12 +718,15 @@ sub _add_code_to_recipe {
 
     } elsif ($line =~ /\$ORAC_STATUS/ && $line =~ /=/) {
       # Check that it has ORAC_STATUS and that the line has an
-      # assignment (should check that the = is to the left of the
+      # assignment (should check that the ORAC_STATUS is to the left of the
       # = and that ORAC_STATUS is to the left of a #)
       # Put on the current line
       push (@processed, $line);
+
       # Add the status checking code
-      push (@processed, $self->_check_status_string);
+      # unless there is a comment before the ORAC_STATUS
+      push (@processed, $self->_check_status_string)
+	unless $line =~ /\#.+?\$ORAC_STATUS/;
 
     } else {
       push(@processed,$line);
