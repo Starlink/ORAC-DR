@@ -33,6 +33,7 @@ All Rights Reserved.
 if( $Frm->uhdr("CREATE_CATALOGUE") ) {
 
   # Delay loading so that ORAC-DR does not require these.
+
   use Astro::Catalog;
   use Astro::Catalog::Star;
 
@@ -50,8 +51,8 @@ if( $Frm->uhdr("CREATE_CATALOGUE") ) {
 # the name and format of the results catalogue is fixed (to match PISA) and is
 # in the ASCII file ${ORAC_DATA_CAL}/extractor_mask.param.
   my $in = $Grp->file;
-  my $resfile = "object_mask.cat";
-  my $param1 = "image=$in config=$ENV{ORAC_DATA_CAL}/extractor_mask.sex";
+  my $resfile = "object_cat.cat";
+  my $param1 = "image=$in config=$ENV{ORAC_DATA_CAL}/extractor_catalogue.sex";
 
 # Report the processing status.
   orac_print "Detecting objects in $in with at least $minpix connected pixels\n";
@@ -99,10 +100,10 @@ if( $Frm->uhdr("CREATE_CATALOGUE") ) {
 
       my @fields = split /\s+/, $line;
 
-      my $ea = sqrt( $fields[5] / $pi /
-                     max( ( 1.0 - $fields[7] ), 0.99999 ) );
-      $ea = min( $ea, 0.5 * $fields[5] );
-      my $eb = $ea * ( 1.0 - $fields[7] );
+      my $ea = sqrt( $fields[6] / $pi /
+                     max( ( 1.0 - $fields[8] ), 0.99999 ) );
+      $ea = min( $ea, 0.5 * $fields[6] );
+      my $eb = $ea * ( 1.0 - $fields[8] );
 
 # Test for objects too small.  This is important, as EXTRACTOR can throw
 # out objects of zero size.
@@ -123,11 +124,16 @@ if( $Frm->uhdr("CREATE_CATALOGUE") ) {
 
       my $magnitude = -2.5 * log( $fields[4] ) / log( 10 );
 
+# Approximation of error in magnitude is (error in flux) / (flux). It's an
+# approximation but it's good to a few percent.
+      my $mag_err = $fields[5] / $fields[4];
+
 # Create the Astro::Catalog::Star object
 
       my $star = new Astro::Catalog::Star( ID => $id,
                                            Field => 0,
                                            Magnitudes => { $filter => $magnitude },
+                                           MagErr => { $filter => $mag_err },
                                          );
 
 # Push the Astro::Catalog::Star object into the Astro::Catalog object.
@@ -181,7 +187,7 @@ if( $Frm->uhdr("CREATE_CATALOGUE") ) {
       my $ramin = int( ( $ra - $radeg ) * 60 );
       my $rasec = ( ( ( $ra - $radeg ) * 60 ) - $ramin ) * 60;
 
-      my $decsign = $dec < 0 ? "+" : "-";
+      my $decsign = $dec > 0 ? "+" : "-";
       my $decres = abs( $dec );
       my $decdeg = int( $decres );
       $decres = $decres - $decdeg;
@@ -189,16 +195,22 @@ if( $Frm->uhdr("CREATE_CATALOGUE") ) {
       $decres -= $decmin / 60.0;
       my $decsec = 3600.0 * $decres;
 
-      my $ra_string = sprintf("%d %02d %05.2f", $radeg, $ramin, $rasec);
-      my $dec_string = sprintf("%s%d %02d %05.2f", $decsign, $decdeg, $decmin, $decsec);
+      my $ra_string = sprintf("%d:%02d:%05.2f", $radeg, $ramin, $rasec);
+      my $dec_string = sprintf("%s%d:%02d:%05.2f", $decsign, $decdeg, $decmin, $decsec);
+
+# Create an Astro::Coords object.
+      my $coords = new Astro::Coords( ra => $ra_string,
+                                      dec => $dec_string,
+                                      units => 'sexagesimal',
+                                      type => 'J2000',
+                                    );
 
 # Pop the star out of the catalogue.
       my @stars = $catalog->popstarbyid( $id );
       my $star = $stars[0];
 
 # Set its position.
-      $star->ra( $ra_string );
-      $star->dec( $dec_string );
+      $star->coords( $coords );
 
 # And push it back into the catalogue.
       $catalog->pushstar( $star );
@@ -212,7 +224,8 @@ if( $Frm->uhdr("CREATE_CATALOGUE") ) {
     my $cat_file = $ENV{'ORAC_DATA_OUT'} . "/" . $catalogue;
 
     my @filters = ( $filter );
-    my $status = $catalog->write_catalog( $cat_file, \@filters );
+    my $status = $catalog->write_catalog( file => $cat_file,
+                                        );
     orac_print "Wrote catalogue to $cat_file\n\n";
 
   }
