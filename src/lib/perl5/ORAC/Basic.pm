@@ -16,9 +16,12 @@ use File::Path;
 use Term::ANSIColor;
 use File::Copy;
 use ORAC::Msg::ADAM::Task;
+use ORAC::Msg::ADAM::Control;
 
 use ORAC::General; # General subroutines given to the recipes
 use ORAC::Constants qw/:status/;	# 
+
+use Proc::Simple;
 
 @ISA = qw(Exporter);
 
@@ -36,31 +39,33 @@ orac_parse_recipe orac_exit_normally orac_exit_abnormally/;
 
 sub orac_launch_display {
 
+  my $dir = ${main::orac_dir};
+  my $Out = ${main::Out};
 
-# launch display, classic fork trick
-    unless ($toolpid = fork) {
-	unless (fork) {
-    $ENV{PID} = "$$";
-	    exec "${main::orac_dir}/p4/p4_tcl $main::Out 970815 ndf";
-	    die "no exec: $!";
-	    exit 0;
-	}
-	exit 0;
-    }
-    waitpid($toolpid,0);
+  $p4 = new Proc::Simple;
+  $p4->start("${dir}/p4/p4_tcl $Out 970815 ndf");
+  $toolpid = $p4->{'pid'};
+
 };
 #------------------------------------------------------------------------
 
 sub orac_connect_display {
 
 #    chomp($toolpid = <>);
-    $toolpid = scalar reverse ($toolpid+1);
+#    $toolpid = scalar reverse ($toolpid+1);
+    $toolpid = scalar reverse ($toolpid);
     $toolname = $toolpid."_p4";
     $toolnbname = "p".$toolpid."_plotnb";
     print "noticeboard is $toolnbname\n";
     $Display = new ORAC::Msg::ADAM::Task($toolname);
-    $Display->contactw;		# ensure contact is made
-#    $Display->obeyw("verbose") unless ($main::opt_quiet);
+
+    print "Starting wait...";
+    $contact =$Display->contactw;		# ensure contact is made
+    print "Done ($contact)\n";
+    unless ($contact) {
+      print colored("Unable to contact Display before timeout",'red');
+    }
+
     $Nbs = new Starlink::NBS ($toolnbname);
 };
 
@@ -322,6 +327,9 @@ die;
 1;
 
 #$Log$
+#Revision 1.16  1998/05/21 03:50:12  timj
+#Change Display startup to use Proc::Simple
+#
 #Revision 1.15  1998/04/23 01:48:02  timj
 #Improve the OBEYW error checking.
 #
