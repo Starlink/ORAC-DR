@@ -203,7 +203,7 @@ sub orac_loop_inf {
 =item B<orac_loop_wait>
 
 Waits for the specified file to appear in the directory.
-A timeout of 60 minutes is hard-wired in initially -- undef
+A timeout of 12 hours is hard-wired in initially -- undef
 is returned if the timeout is exceeded.
 
   $frm = orac_loop_wait($class, $utdate, \@list, $skip);
@@ -260,7 +260,7 @@ sub orac_loop_wait {
 
   # Now loop until the file appears
 
-  my $timeout = 7200;  # 60 minutes time out
+  my $timeout = 43200;  # 12 hours timeout
   my $timer = 0.0;
   my $pause = 2.0;   # Time between checks
   my $dot   = 1;     # Number of pauses for each dot printed
@@ -416,7 +416,7 @@ sub orac_loop_flag {
 
   # Now loop until the file appears
 
-  my $timeout = 7200;  # 120 minutes time out
+  my $timeout = 43200; # 12 hour timeout
   my $timer = 0.0;
   my $pause = 2.0;   # Pause for 2 seconds
 
