@@ -33,9 +33,10 @@
 #
 # Notes:
 #    -  This primitive is suitable for ISAAC in imaging mode.
-#    -  Processing only occurs for object and sky frames, and when the
-#    steering header MAKE_MOSAIC is true.  Also steering header
-#    RESAMPLE_FRAMES must be undefined or set to true (1).
+#    -  Processing only occurs for object frames, and when the steering
+#    header MAKE_MOSAIC is true.  Also steering header RESAMPLE_FRAMES
+#    must be undefined or set to true (1).  The selected frames are those
+#    in the current cycle whose steering header TARGET_OR_SKY is "target".
 #    -  The distortion mapping comes from the ISAAC "Known Problems"
 #    web page: http://www.eso.org/instruments/isaac/problems_tips.html.
 #    -  The current WCS Frame on input is retained on output.  The
@@ -83,17 +84,19 @@
     $resample = defined( $resample ) ? $resample : 1;
     
 # This should only be performed on OBJECT frames at mosaic-creation time.
-    if ( ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
-         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ) &&
-         $Frm->uhdr( "MAKE_MOSAIC" ) && $resample ) ) {
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" &&
+         $Frm->uhdr( "MAKE_MOSAIC" ) && $resample ) {
 
 # Obtain the cycle number.  Default to zero if undefined, so that recipes
 # which do not support this feature will continue to work.
        my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
        $cycleno = defined( $cycleno ) ? $cycleno : 0;
 
-# Select those members in the current cycle.
-       my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+# Select the target frame members in the current cycle.  At the time
+# of writing no set of sky frames are made into a mosaic, thus to save
+# processing time we ignore any sky frames.
+       my $tarGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno,
+                                  TARGET_OR_SKY => "target" );
 
 # Generate filename lists
 # =======================
@@ -101,7 +104,7 @@
 # Form a list of input file names for the CCDPACK tasks.  We need to
 # generate an input list for TRANNDF and an output list using a
 # hard-wired suffix of "_dta".
-       ( my $inref, my $outref ) = $cycleGrp->inout( "_dta" );
+       ( my $inref, my $outref ) = $tarGrp->inout( "_dta" );
 
 # Convert the list to a comma-separated list as needed by CCDPACK (GRP).
        my $objlist = join( ",", @$inref );
@@ -132,7 +135,7 @@
        ( my $ORAC_STATUS, my $frameno ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "current" );
 
 # Store the distortion mappings in each frame in domain ISAAC_DISTORTION.
-       foreach my $Frm ( $cycleGrp->members ) {
+       foreach my $Frm ( $tarGrp->members ) {
           _DEFINE_DISTORTION_TRANSFORMATION_
        }
 
@@ -234,9 +237,10 @@ This primitive is suitable for ISAAC in imaging mode.
 
 =item *
 
-Processing only occurs for object and sky frames, and when the
-steering header MAKE_MOSAIC is true.  Also steering header
-RESAMPLE_FRAMES must be undefined or set to true (1).
+Processing only occurs for object frames, and when the steering
+header MAKE_MOSAIC is true.  Also steering header RESAMPLE_FRAMES
+must be undefined or set to true (1).  The selected frames are those
+in the current cycle whose steering header TARGET_OR_SKY is "target".
 
 =item *
 
