@@ -1,0 +1,290 @@
+#+
+# Name:
+#    _CROSS_CORR_ALL_BEAMS_
+#
+# Purpose:
+#    Cross correlates and shifts the extracted beams.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive takes the extracted beams from _EXTRACT_ALL_BEAMS_
+#    and cross correlates each beam with the first one, then shifts
+#    each beam, so that they're all shift-aligned with the first beam.
+#    Negative beams are scaled by -1 to assist the cross-correlation
+#    task.
+#
+#    If the maximum value of the cross-correlation function (CCF) is
+#    less than argument PEAKCCF, or if the shift is greater than argument
+#    MAXSHIFT pixels, then the spectra are not aligned and shifted,
+#    merely copied.
+#
+# Arguments:
+#    MAXSHIFT = REAL (Given)
+#       The maximum shift in pixels for an acceptable determination
+#       of the shift.  This must be at least 0.5.  [2]
+#    PEAKCCF = REAL (Given)
+#       The smallest maximum CCF value for an acceptable determination
+#       of the shift.  This must lie in the range 0.4 to 0.99.  [0.6]
+#
+# Notes:
+#    -  The number of beams frames comes from user header NBEAMS.
+#    This must exceed 1 for there to be any shifts.
+#    -  The polarity of the beams comes from an array of hashes stored
+#    by reference in user header BEAMS with key MULT.
+#    -  To test whether the peak of the cross-correlation function
+#    is acceptable, the primitive determines the peak value of the
+#    CCF central 100 pixels.
+#    -  The shift is performed with a linear interpolation.
+#
+# Output Data:
+#    -  The shifted spectra in an HDS container file called <root>_ccs,
+#    where <root> is the group name.  It contains NDF components called
+#    .beam<i>, for the ith beam counting from one.
+#    -  The cross-correlation functions in an HDS container file,
+#    called <root>_ccf.  It contains NDF components called .beam<i>,
+#    for the ith beam counting from one.
+#
+# Tasks:
+#    KAPPA: CMULT, NDFCOPY, SETTITLE, SLIDE, STATS, THRESH;
+#    Figaro: SCROSS.
+#
+# Authors:
+#    PH: Paul Hirst (JAC)
+#    MJC: Malcolm J. Currie (Starlink)
+#
+# Copyright:
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Arguments
+# =========
+
+# These limits and defaults are a bit arbitrary.
+    my $peakccf = min( 0.99, max( 0.4, ( $_CROSS_CORR_ALL_BEAMS_{PEAKCCF} || 0.6 ) ) );
+    my $maxshift = max( 0.5, ( $_CROSS_CORR_ALL_BEAMS_{PEAKCCF} || 2.0 ) );
+
+# Define and create data structures.
+# ==================================
+
+# Obtain the root name and the current group file.
+    my $base = $Grp->raw;
+    my $in = $Grp->file;
+
+# We should have a "NBEAMS" header from _EXTRACT_DETERMINE_NBEAMS_.
+    my $nbeams = $Grp->uhdr( "NBEAMS" );
+
+# If there's only one beam (or no beams), don't bother.
+    if ( $nbeams > 1 ) {
+
+# Get the beam position and multiplier hash, with a dereference.
+       my $ref = $Grp->uhdr( "BEAMS" );
+       my @beams = @$ref;
+
+       my $beamin = $in . ".beam1";
+       my $mainbeam = $beamin;
+
+# Create the output HDS container file---cross-correlation shift.
+       my $out = $base . "_ccs";
+       my $ORAC_STATUS = ( create_hdsobj( $out, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+
+# Create the HDS container file for the cross-correlation function.
+       my $ccf = $base . "_ccf";
+       $ORAC_STATUS = ( create_hdsobj( $ccf, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+
+# Make reference spectrum.
+# ========================
+
+# Copy the first beam, changing the sign of the beam if it is not
+# positive.
+       my $beamout = $out . ".beam1";
+       if ( $beams[ 1 ]{'MULT'} < 0 ) {
+
+# Change the sign of the beam.  Should check whether or not this is
+# needed, but it seems to be in practice.
+          $Mon{ 'kappa_mon' }->obeyw( "cmult", "in=$mainbeam scalar=-1 out=$beamout" );
+
+       } else {
+          $Mon{ 'ndfpack_mon' }->obeyw( "ndfcopy", "in=$mainbeam out=$beamout title=$beamout" );
+          orac_print "Copied $mainbeam to $beamout\n";
+       }
+
+# Determine the shifts.
+# =====================
+
+# Create a temporary file.
+       my $tmp = new ORAC::TempFile;
+       my $tmpbeam = $tmp->file;
+
+# Loop over beams 2 onwards.
+       for ( my $i = 2; $i <= $nbeams; $i++ ) {
+          $beamin = $in . ".beam" . $i;
+          $beamout = $out . ".beam". $i;
+          my $ccfout = $ccf . ".beam" . $i;
+
+          if ( $beams[ $i ]{'MULT'} < 0 ) {
+
+# Change the sign of the beam.  Should check whether or not this is
+# needed, but it seems to be in practice.
+             $Mon{ 'kappa_mon' }->obeyw( "cmult", "in=$beamin scalar=-1 out=$tmpbeam" );
+
+          } else {
+             $Mon{ 'ndfpack_mon' }->obeyw( "ndfcopy", "in=$beamin out=$tmpbeam" );
+          }
+
+# Cross correlate spectra with SCROSS.
+          my $param = "template=$mainbeam record cross=$ccfout xstart=min xend=max";
+          $Mon{ 'figaro1' }->obeyw( "scross", "spectrum=$tmpbeam $param" );
+
+# Obtain the shift output parameter's value.
+          ( my $ORAC_STATUS, my $shift ) = $Mon{ 'figaro1' }->get( "scross", "shift" );
+          orac_print "$ccfout: Cross Correlation Function of main and offset beam $i\n";
+
+# Determine whether or not shift is acceptable.
+# =============================================
+
+# Obtain statistics for the cross-correlation function, namely the
+# maximum value and its location.
+          $Mon{ 'kappa_mon' }->obeyw( "stats", "ndf=$ccfout(~100)" );
+          ( $ORAC_STATUS, my $maximum ) = $Mon{ 'kappa_mon' }->get( "stats", "maximum" );
+          my $string = sprintf( "%4.1f", 100 * $maximum );
+
+# Must pass criteria to be robust.  Need a strong peak and a small pixel shift.
+          if ( $maximum > $peakccf && $maximum < 1 && $shift < $maxshift ) {
+
+# OK, we'll use it
+             orac_print "Peak of CCF (at $string %) indicates a shift of $shift---accepted\n";
+             $shift *= -1;
+
+# Apply shift or not.
+# ===================
+
+# Need a temporary file to fix the broken variances with thresholding.
+             my $tmp=new ORAC::TempFile;
+             my $tmpfile = $tmp->file;
+
+# Shift the spectrum along the first dimension using linear
+# interpolation.
+             $param = "abs=$shift stype=absolute method=linear out=$tmpfile";
+             $Mon{ 'kappa_mon' }->obeyw( "slide", "in=$beamin $param" );
+#             $param = "xshift=$shift xsplit=20 ysplit=1 yshift=0 output=$tmpfile";
+#             $Mon{ 'figaro1' }->obeyw( "ishift", "image=$beamin $param" );
+
+# Fix unreasonable variance values, and set the title to frame name.
+             $param = "comp=Variance out=$beamout thrlo=0 newlo=bad thrhi=1E9 newhi=bad";
+             $Mon{ 'kappa_mon' }->obeyw( "thresh", "in=$tmpfile $param" );
+             $Mon{ 'ndfpack_mon'}->obeyw( "settitle", "ndf=$beamout title=$beamout" );
+             orac_print "$beamin to $beamout: shifted by $shift\n";
+
+          } else {
+
+# We'll reject the shift and simply copy it over.
+             orac_print "Peak of CCF (at $string %) indicates a shift of $shift--rejected\n";
+             $Mon{ 'ndfpack_mon' }->obeyw( "ndfcopy", "in=$beamin out=$beamout" );
+             orac_print "$beamin to $beamout: copied without shifting\n";
+          }
+       }
+
+# Update the group object.
+       $Grp->file( $out );
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_CROSS_CORR_ALL_BEAMS - Cross correlates and shifts the extracted beams.
+
+=head1 DESCRIPTION
+
+This primitive takes the extracted beams from
+L<_EXTRACT_ALL_BEAMS_|_EXTRACT_ALL_BEAMS_> and cross correlates each
+beam with the first one, then shifts each beam, so that they're all
+shift-aligned with the first beam.  Negative beams are scaled by -1 to
+assist the cross-correlation task.
+
+If the maximum value of the cross-correlation function (CCF) is
+less than argument PEAKCCF, or if the shift is greater than argument
+MAXSHIFT pixels, then the spectra are not aligned and shifted,
+merely copied.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item MAXSHIFT = REAL (Given)
+
+The maximum shift in pixels for an acceptable determination
+of the shift.  This must be at least 0.5.  [2]
+
+=item PEAKCCF = REAL (Given)
+
+The smallest maximum CCF value for an acceptable determination
+of the shift.  This must lie in the range 0.4 to 0.99.  [0.6]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+The number of beams frames comes from user header NBEAMS.
+This must exceed 1 for there to be any shifts.
+
+=item *
+
+The polarity of the beams comes from an array of hashes stored
+by reference in user header BEAMS with key MULT.
+
+=item *
+
+To test whether the peak of the cross-correlation function
+is acceptable, the primitive determines the peak value of the
+CCF central 100 pixels.
+
+=item *
+
+The shift is performed with a linear interpolation.
+
+=back 
+
+=head1 OUTPUT dATA
+
+=over 4
+
+=item *
+
+The shifted spectra in an HDS container file called
+E<lt>rootE<gt>_ccs, where E<lt>rootE<gt> is the group name.  It
+contains NDF components called .beamE<lt>iE<gt>, for the I<i>th beam
+counting from one.
+
+=item *
+
+The cross-correlation functions in an HDS container file,
+called E<lt>rootE<gt>_ccf.  It contains NDF components called
+.beamE<lt>iE<gt>, for the I<i>th beam counting from one.
+
+=back 
+
+=head1 TASKS
+
+KAPPA: CMULT, NDFCOPY, SETTITLE, SLIDE, STATS, THRESH; Figaro: SCROSS.
+
+=head1 AUTHOR
+
+Paul Hirst (JAC) <p.hirst@jach.hawaii.edu>
+Malcolm J. Currie (Starlink) <mjc@star.rl.ac.uk>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
