@@ -19,12 +19,21 @@
 #    $diffGrp is created if it does not exist, and a reference to this
 #    new group is recorded in the internal group header DIFFERENCE_GROUP.
 #    Access to this group for further invocations is via DIFFERENCE_GROUP.
+#    The difference frame inherits the headers of the primary frame.
 #
-#    The primitive then evaluates displacements in equatorial
-#    co-ordinates between the two frames and reports them; it records
-#    the displacements in the difference frame as XOFFSET_DIFFERENCE and
-#    YOFFSET_DIFFERENCE headers.  The difference frame inherits the
-#    headers of the primary frame.
+#    When argument DISPLACE is true, as needed for NOD recipes the
+#    following additional steps are made.  The primitive evaluates
+#    displacements in equatorial co-ordinates between the two frames and
+#    reports them; it records the displacements in the difference frame
+#    as XOFFSET_DIFFERENCE and YOFFSET_DIFFERENCE headers.  The mean
+#    offsets of the pair replace those of the primary header.
+#    
+# Arguments:
+#    DISPLACE = LOGICAL (Given)
+#       When true (1), the equatorial displacements between pairs are
+#       recorded as XOFFSET_DIFFERENCE and YOFFSET_DIFFERENCE headers
+#       in the difference frame, and reported.  The mean offsets of
+#       the pair replace those of the primary header.  [1]
 #
 # Notes:
 #    -  This primitive is suitable for both UFTI and IRCAM.
@@ -56,14 +65,20 @@
 #
 #-
 
+# Selection
+# =========
 # This should only be performed on OBJECT frames.
     if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ||
          $Frm->hdr( "OBSTYPE" ) eq "SKY" ) {
 
 # Is it time to difference a pair?
        my $take_difference = $Frm->hdr( "DIFFERENCE_PAIR" );
-
        if ( $take_difference ) {
+
+# Arguments
+# =========
+          my $displace = $_DIFFERENCE_PAIR_{DISPLACE};
+          $displace = defined( $displace ) ? $displace : 1;
 
 # Subtract within the pair.
 # =========================
@@ -85,16 +100,20 @@
           if ( $Frm->hdr( "PAIR_ORDER" ) ) {
              $header = "ib=$previous ia=$in out=$out title=! exp='ib-ia'";
              $Mon{"kappa_mon"}->obeyw( "maths", "$header" );
+
+# Report the processing status.
+             orac_print "Orac says: $in subtracted from $previous to make $out: " .
+                        "Pair differenced\n";
           } else {
 
 # Difference the two frames.
              $header = "in2=$previous in1=$in out=$out title=!";
              $Mon{"kappa_mon"}->obeyw( "sub", "$header" );
-          }
 
 # Report the processing status.
-          orac_print "Orac says: $in subtracted from $previous to make $out: " .
-                     "Pair differenced\n";
+             orac_print "Orac says: $previous subtracted from $in to make $out: " .
+                        "Pair differenced\n";
+          }
 
 # Access or create the group of differenced frames.
 # =================================================
@@ -125,17 +144,19 @@
           }
 
 # Since the frames are combined, we find the average of their offsets.
-          $xoff = 0.5 * ( $previousFrm->hdr( $raname ) +
-                          $Frm->hdr( $raname ) );
-          $yoff = 0.5 * ( $previousFrm->hdr( $decname ) +
-                          $Frm->hdr( $decname ) );
+          if ( $displace ) {
+             $xoff = 0.5 * ( $previousFrm->hdr( $raname ) +
+                             $Frm->hdr( $raname ) );
+             $yoff = 0.5 * ( $previousFrm->hdr( $decname ) +
+                             $Frm->hdr( $decname ) );
 
 # Revise the offsets stored in the FITS extension in the output (differenced
 # pair) image.  Leave the position and comment unchanged.
-          $header = "ndf=$out keyword=$raname edit=update value=$xoff position=!";
-          $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$header comment=\\\$C" );
-          $header = "ndf=$out keyword=$decname edit=update value=$yoff position=!";
-          $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$header comment=\\\$C" );
+             $header = "ndf=$out keyword=$raname edit=update value=$xoff position=!";
+             $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$header comment=\\\$C" );
+             $header = "ndf=$out keyword=$decname edit=update value=$yoff position=!";
+             $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$header comment=\\\$C" );
+          }
 
 # Propagate the start airmass from the earlier of the two frames.  The end
 # airmass comes from the second observation.
@@ -143,28 +164,26 @@
           $header = "ndf=$out keyword=AMSTART edit=update value=$amstart position=!";
           $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$header comment=\\\$C" );
 
-# Report the processing status.
-          orac_print "Orac says: $in subtracted from $previous to make $out: " .
-                     "Pair differenced\n";
-
 # Evaluate the displacements between the positive and negative images.
 # ====================================================================
-
+          
 # Derive the displacement between previous and current frames.  Here we
 # assume symmetry about the centre, so that the pair of images can be located
 # quickly, and hence measured.
           my ( $xdisp, $ydisp );
-          $xdisp = $previousFrm->hdr( $raname ) - $Frm->hdr( $raname );
-          $ydisp = $previousFrm->hdr( $decname ) - $Frm->hdr( $decname );
+          if ( $displace ) {
+             $xdisp = $previousFrm->hdr( $raname ) - $Frm->hdr( $raname );
+             $ydisp = $previousFrm->hdr( $decname ) - $Frm->hdr( $decname );
 
 # Change the sign for the reverse order.
-          if ( ! $Frm->hdr( "PAIR_ORDER" ) ) {
-             $xdisp = -$xdisp;
-             $ydisp = -$ydisp;
-          }
+             if ( ! $Frm->hdr( "PAIR_ORDER" ) ) {
+                $xdisp = -$xdisp;
+                $ydisp = -$ydisp;
+             }
 
 # Report the offsets.
-          orac_print "The offsets between the positive and negative images is ($xdisp,$ydisp).\n";
+             orac_print "The offsets between the positive and negative images is ($xdisp,$ydisp).\n";
+          }
 
 # Store the differenced frame in the group.
 # =========================================
@@ -195,8 +214,10 @@
           $tempFrm->hdr( $decname, $yoff );
 
 # Store the displacements in the differenced frame.
-          $tempFrm->hdr( "XOFFSET_DIFFERENCE", $xdisp );
-          $tempFrm->hdr( "YOFFSET_DIFFERENCE", $ydisp );
+          if ( $displace ) {
+             $tempFrm->hdr( "XOFFSET_DIFFERENCE", $xdisp );
+             $tempFrm->hdr( "YOFFSET_DIFFERENCE", $ydisp );
+          }
 
 # Store the differenced frame in the difference group.
           $diffGrp->push( $tempFrm );
