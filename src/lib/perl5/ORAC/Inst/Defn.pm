@@ -392,6 +392,7 @@ sub orac_determine_recipe_search_path {
   }
   my $imaging_root =  File::Spec->catdir( $root, "imaging" );
   my $spectro_root =  File::Spec->catdir( $root, "spectroscopy" );
+  my $ifu_root     =  File::Spec->catdir( $root, "ifu" );
 
   if ($inst eq 'SCUBA') {
     push( @path, File::Spec->catdir( $root, 'SCUBA' ) );
@@ -420,8 +421,10 @@ sub orac_determine_recipe_search_path {
 
   } elsif ($inst eq 'UIST') {
     push( @path, File::Spec->catdir( $root, "UIST" ) );
+    push( @path, File::Spec->catdir( $ifu_root, "UIST" ) );
     push( @path, File::Spec->catdir( $imaging_root, "UIST" ) );
     push( @path, File::Spec->catdir( $spectro_root, "UIST" ) );
+    push( @path, $ifu_root );
     push( @path, $imaging_root );
     push( @path, $spectro_root );
 
@@ -463,6 +466,7 @@ sub orac_determine_primitive_search_path {
   }
   my $imaging_root =  File::Spec->catdir( $root, "imaging" );
   my $spectro_root =  File::Spec->catdir( $root, "spectroscopy" );
+  my $ifu_root     =  File::Spec->catdir( $root, "ifu" );
   my $general_root =  File::Spec->catdir( $root, "general" );
 
   if ($inst eq 'SCUBA') {
@@ -496,8 +500,10 @@ sub orac_determine_primitive_search_path {
 
   } elsif ($inst eq 'UIST') {
     push( @path, File::Spec->catdir( $root, "UIST" ) );
+    push( @path, File::Spec->catdir( $ifu_root, "UIST" ) );
     push( @path, File::Spec->catdir( $imaging_root, "UIST" ) );
     push( @path, File::Spec->catdir( $spectro_root, "UIST" ) );
+    push( @path, $ifu_root );
     push( @path, $imaging_root );
     push( @path, $spectro_root );
     push( @path, $general_root );
