@@ -1,0 +1,162 @@
+#+
+# Name:
+#    _GENERATE_TELE_OFFSETS_
+#
+# Purpose:
+#    Finds the telescope offsets between the frames, and registers the
+#    frames.
+#
+# Description:
+#    This primitive finds the pixel offsets between the target frames  
+#    in the current $Grp from the telescope offsets, optionally corrected
+#    for a moving target.  It then registers the frames in the PIXEL
+#    domain.
+#
+# Language:
+#    Perl5
+#
+# Arguments:
+#    MOVING_TARGET = LOGICAL (Read)
+#       If true (1), the source is a moving target and frames are to
+#       register the moving target not the fixed stars.  [0]
+#
+# Notes:
+#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
+#    in imaging mode.
+#    -  Processing only occurs for object and sky frames, and when 
+#    steering header MAKE_MOSAIC is true.
+#    -  The frames registered using telescope offsets are reported.
+#
+# Tasks:
+#    CCDPACK: REGISTER; KAPPA: WCSFRAME.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Arguments
+# =========
+
+# Is there a moving target?
+    my $moving_target = $_GENERATE_OFFSETS_NOD_{MOVING_TARGET};
+    $moving_target = defined( $moving_target ) ? $moving_target : 0;
+
+# Selection
+# =========
+
+# This should only be performed on OBJECT or SKY frames, when it's time
+# to make a mosaic.
+    if ( ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+           $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ) &&
+           $Frm->uhdr( "MAKE_MOSAIC" ) ) {
+
+# Form a list of input file names for CCDPACK tasks.
+       my @objects = $Grp->membernames;
+
+# Convert list to comma-separated list.
+       my $objlist = join( ",", @objects );
+
+# Create text file to hold the list of input files, one per line.  This
+# is needed because expanded lists of files may make the command line too
+# long for the ADAM message system.
+       unlink( "objlist.inlist$$" );
+       open( INLIST, ">objlist.inlist$$" );
+       print INLIST join( "\n", @objects ), "\n";
+       close( INLIST );
+
+# Use telescope offsets from the headers.
+       _TELE_OFFSETS_ MOVING_TARGET=$moving_target
+
+# Set the co-ordinate system to pixels.
+# =====================================
+
+# This is needed because CCDPACK v3.0, which is in the same release
+# as KAPPA v0.14-3 uses the WCS.  CCDPACK/REGISTER has a new USEWCS
+# parameter which defaults to true, meaning convert the pixel
+# co-ordinates in the .off files into the current co-ordinate system
+# of each NDF.  We use pixel co-ordinates throughout.  By making the
+# change here the REGISTER command line remains unchanged.
+       my ( $param1, $param2 );
+       if ( starversion_gt( "KAPPA", 'V0.13-6' ) ) {
+          $param1 = "ndf='^objlist.inlist$$' frame=pixel";
+          $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "$param1" );
+       }
+
+# Register
+# ========
+
+# Specify the other parameters for the REGISTER stage.
+       $param1 = "inlist='^objlist.inlist$$'";
+       $param2 = "fittype=1";
+
+# Register the frames using a shift of origin.  Create the CCDPACK
+# TRANSFORM extensions.
+       $Mon{ "ccdpack_reg" }->obeyw( "register", "$param1 $param2 accept" );
+       unlink( "objlist.inlist$$" );
+
+# Report processing status.
+       orac_print "Frames $objlist registered.\n\n";
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_GENERATE_TELE_OFFSETS_ -- Finds the telescope offsets between the frames, and registers the frames.
+
+=head1 DESCRIPTION
+
+This primitive finds the pixel offsets between the target frames in
+the current $Grp from the telescope offsets, optionally corrected for
+a moving target.  It then registers the frames in the PIXEL domain.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item MOVING_TARGET = LOGICAL (Read)
+
+If true (1), the source is a moving target and frames are to
+register the moving target not the fixed stars.  [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UFTI, IRCAM, and Michelle in imaging mode.
+
+=item *
+
+Processing only occurs for object and sky frames, and when 
+steering header MAKE_MOSAIC is true.
+
+=item *
+
+The frames registered using telescope offsets are reported.
+
+=back
+
+=head1 TASKS
+
+CCDPACK: REGISTER; KAPPA: WCSFRAME.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
