@@ -323,7 +323,7 @@ Hash containing all the algorithm engine objects.
 
 This flag can be used to turn on some debugging features.
 
-=item B<$Batch>
+=item B<$BATCH>
 
 Flag to indicate whether the groups have been populated before
 the recipe is executed (ie whether the pipeline is running in
@@ -1342,7 +1342,7 @@ Simple wrapper to eval in this namespace in order to execute recipes
 without fear of possible contamination of the base recipe namespace.
 
   $status = orac_execute_recipe( $CURRENT_PRIMITIVE, $recipe, $Frm, $Grp, 
-                                 $Cal, $Display, $Mon, $Debug, $Batch);
+                                 $Cal, $Display, $Mon, $DEBUG, $BATCH);
 
 The recipe is a string to be evaluated. The basic objects have to
 be supplied since they can not be set inside the recipe prior to
