@@ -474,7 +474,7 @@ of 50 is imposed to deal with out-of-control recipe recursion
 problem for working primitives.
 
 The depth parameter is an integer specifying the current recursion
-depth. This should be set to undef (do not even both to supply is)
+depth. This should be set to undef (do not even bother to supply it)
 when called by a user and is incremented by the routine internally.
 
   $parsed = orac_parse_recipe( $input, $instrument );
@@ -836,6 +836,9 @@ Council. All Rights Reserved.
 
 
 #$Log$
+#Revision 1.55  2001/01/09 09:13:25  timj
+#minor doc typo
+#
 #Revision 1.54  2001/01/09 03:35:30  timj
 #Only rmtree ADAM_USER dir if the env var is defined
 #
