@@ -217,6 +217,37 @@ sub number {
 
 }
 
+=item B<template>
+
+Method to change the current filename of the frame (file())
+so that it matches the current template. e.g.:
+
+  $Frm->template("something_number_flat")
+
+Would change the current file to match "something_number_flat".
+Essentially this simply means that the number in the template
+is changed to the number of the current frame object.
+The number is zero-padded.
+
+=cut
+
+sub template {
+  my $self = shift;
+  my $template = shift;
+
+  my $num = $self->number;
+  # Zero pad the number
+  $obsnum = sprintf("%05d", $obsnum);
+
+  # Change the first number
+  $template =~ s/_\d+_/_${num}_/;
+
+  # Update the filename
+  $self->file($template);
+
+}
+
+
 =back
 
 =head1 SEE ALSO
