@@ -49,36 +49,30 @@ those available from ORAC::Group.
 
 =cut
 
-# Same as for Group.pm except that we use '_dem_' for the fixed part.
-# and .sdf for the suffix
 
-sub new {
+=item fixedpart
 
-  my $proto = shift;
-  my $class = ref($proto) || $proto;
+Set or retrieve the part of the group filename that does not
+change between invocation. The output filename can be derived using
+this. Defaults to '_grp_'
 
-  my $group = {};  # Anon hash
+    $Grp->fixedpart("_grp_");
+    $prefix = $Grp->fixedpart;
 
-  $group->{Name} = undef;
-  $group->{Members} = [];
-  $group->{Header} = undef;
-  $group->{File} = undef;
-  $group->{Recipe} = undef;
-  $group->{FixedPart} = '_grp_';
-  $group->{FileSuffix} = '.sdf';
+=cut
 
-  bless($group, $class);
 
-  # If an arguments are supplied then we can configure the object
-  # Currently the argument will simply be the group name (ID)
-
-  if (@_) { 
-    $group->name(shift);
-  }
-
-  return $group;
-  
+sub fixedpart {
+  my $self = shift;
+  if (@_) { $self->{FixedPart} = shift;};
+  unless (defined $self->{FixedPart}) {
+    $self->{FixedPart} = '_grp_';
+  };
+  return $self->{FixedPart};
 }
+
+
+
 
 =item file
 
