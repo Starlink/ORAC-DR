@@ -326,6 +326,11 @@ sub findrecipe {
   } elsif ($self->hdr('MODE') eq 'MAP') {
     if ($self->hdr('SAM_MODE') eq 'JIGGLE') {
       $recipe = 'SCUBA_JIGMAP';
+
+      if ($self->hdr('OBJ_TYPE') eq 'POLARIMETER') {
+	$recipe = 'SCUBA_JIGPOLMAP';
+      }
+
     } else {
       if ($self->hdr('CHOP_CRD') eq 'LO') {
 	$recipe = 'SCUBA_EM2SCAN';
@@ -446,48 +451,6 @@ sub template {
 }
 
 
-=item gui_id
-
-Return the identification tag that will be used by the display
-system for comparison with a display definition file.
-
-This method accepts an argument that can be used to specify
-the ID associated with the nth file stored in the frame (
-max value is num_files(); counting starts at 1)
-
-The returned ID is therefore a combination of the file number
-and the suffix.
-
-For example, if the frame contains two files named
-
-  o37_sho_ext and o37_lon_ext
-
-The ID returned from N=1 will be  s1ext and when N=2: s2ext
-(ie sN for the sub instrument number followed by the final extension).
-The sub-instrument name is not used since that would result in
-having to setup a display device for each sub-instrument.
-
-THIS CONVENTION MAY CHANGE WITH USAGE.
-
-=cut
-
-sub gui_id {
-
-  my $self = shift;
-
-  my $num = 1;
-  if (@_) { $num = shift; }
-
-  # Retrieve the Nth file  (start counting at 1)
-  my $fname = $self->file($num);
-  
-  # Split on underscore
-  my (@split) = split(/_/,$fname);
- 
-  return "s$num" . $split[-1];
-}
-
-
 =item calc_orac_headers
 
 This method calculates header values that are required by the
@@ -538,6 +501,24 @@ sub calc_orac_headers {
   $new{'ORACTIME'} = $ut;
   return %new;
 
+}
+
+
+=item findnsubs
+
+Forces the object to determine the number of sub-instruments
+associated with the data by looking in the header(). 
+The result can be stored in the object using nsubs().
+
+Unlike findgroup() this method will always search the header for
+the current state.
+
+=cut
+
+sub findnsubs {
+  my $self = shift;
+
+  return $self->hdr('N_SUBS');
 }
 
 
@@ -672,24 +653,6 @@ sub wavelengths {
   return @{$self->{WaveLengths}};
 
 }
-
-=item findnsubs
-
-Forces the object to determine the number of sub-instruments
-associated with the data by looking in the header(). 
-The result can be stored in the object using nsubs().
-
-Unlike findgroup() this method will always search the header for
-the current state.
-
-=cut
-
-sub findnsubs {
-  my $self = shift;
-
-  return $self->hdr('N_SUBS');
-}
-
 
 
 =item findsubs
