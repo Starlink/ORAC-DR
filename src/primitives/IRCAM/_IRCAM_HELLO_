@@ -11,7 +11,7 @@
 # origin we have to work on an output copy of the array.
 
 # Generate list of input and output filenames.
-    ($in, $out) = $Frm->inout("_cl");
+    (my $in, my $out) = $Frm->inout( "_cl" );
 
 # Copy the data.
     $Mon{"ndfpack_mon"}->obeyw("ndfcopy","in=$in out=$out");
@@ -20,18 +20,18 @@
     orac_print "Orac says: frame $in copied to $out\n";
 
 # Now update the output filename in the Frame object.
-    $Frm->file($out);
+    $Frm->file( $out );
 
 # Set the bounds of the NDF.
 # ==========================
 
 # Read readout bounds from the headers.
-    $x1 = $Frm->hdr( "RDOUT_X1" );
-    $y1 = $Frm->hdr( "RDOUT_Y1" );
+    my $x1 = $Frm->hdr( "RDOUT_X1" );
+    my $y1 = $Frm->hdr( "RDOUT_Y1" );
 
 # Set the parameters for the task.
     $in = $Frm->file;
-    $header = "ndf=$in origin=[$x1,$y1]";
+    my $header = "ndf=$in origin=[$x1,$y1]";
 
 # Set the frame origin.
     $Mon{"ndfpack_mon"}->obeyw("setorigin","$header");
@@ -50,25 +50,38 @@
 # ===============================
 
 # Non-linearity correction should only be applied a defined DET_BIAS value.
-    $det_bias = $Frm->hdr( "DET_BIAS" );
+    my $det_bias = $Frm->hdr( "DET_BIAS" );
+    my $mode = $Frm->hdr( "MODE" );
     if ( $det_bias > 0.61 && $det_bias < 0.63 ) {
 
 # Generate list of input and output filenames.
-       ($in, $out) = $Frm->inout("_nl");
+       ($in, $out) = $Frm->inout( "_nl" );
 
-# Evaluate the expression.
-       $Mon{"kappa_mon"}->obeyw("maths","out=$out ia=$in exp='IA+3.3E-06*IA*IA'");
+# If observation was taken in STARE mode, a bias has to be subtracted.
+# A good approximation is to take off a constant bias level.  Even at high
+# fluxes this should at worst give a 0.5% error, and in most circumstances
+# will be much less.
+       if ( $mode =~ /"ND_STARE"/ ) {
+
+# Evaluate the expression with the bias already subtracted.
+          $Mon{"kappa_mon"}->obeyw("maths","out=$out ia=$in exp='IA+3.3E-06*IA*IA'");
+
+# Evaluate the expression without the bias already subtracted (STARE mode).
+       } else {
+          $Mon{"kappa_mon"}->obeyw("maths","out=$out ia=$in exp='IA+3.3E-06*(IA-24460)*(IA-24460)'");
+
+       }
 
 # Correct the FITS header indicating that a linearity correction has been applied.
        $header = "ndf=$out edit=update";
-       $hidden = "keyword=LINEAR value=T comment='Linearisation enabled' position=LINEAR"; 
+       my $hidden = "keyword=LINEAR value=T comment='Linearisation enabled' position=LINEAR"; 
        $Mon{"ndfpack_mon"}->obeyw("fitsmod","$header $hidden");
 
 # Report the processing status.
        orac_print "Orac says: frame $in has non-linearity correction applied in $out\n";
 
 # Now update the output filename in the Frame object.
-       $Frm->file($out);
+       $Frm->file( $out );
 
     }
 
