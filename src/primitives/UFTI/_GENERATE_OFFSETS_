@@ -9,11 +9,12 @@
 #    This primitive finds the pixel offsets between the frames in the 
 #    current $Grp.  It first attempts to find and match common objects
 #    automatically.  Should this fail, approximate offsets are found.
-#    These are either obtained from registering a central source (see
+#    These are obtained from registering a central source (see
 #    argument CENTRAL_SOURCE) or by transforming the equatorial offsets
-#    in the headers.  Partial automatic solutions are allowed; the
-#    unregistered remainder of the frames use the approximate method,
-#    and the two co-ordinate systems are tied to a common origin.
+#    in the headers, or by using supplied polarimetry beam separations.
+#    Partial automatic solutions are allowed; the unregistered remainder
+#    of the frames use the approximate method, and the two co-ordinate
+#    systems are tied to a common origin.
 #
 #    The derived registration can be adjusted for moving targets.
 #
@@ -21,12 +22,16 @@
 #    Perl5
 #
 # Arguments:
+#    BOXSIZE = REAL (Given)
+#       The size in arcseconds of the search box in which to find the
+#       brightest object.  It is only used when CENTRAL_SOURCE is true.
+#       [5.0]
 #    CENTRAL_SOURCE = LOGICAL (Given)
 #       If true, attempt to register using a central source when
-#       automatic registration fails.  It uses a 5-arcsec search box
-#       about the centre of the frame, jittered by the telescope offsets.
-#       Otherwise telescope offsets provide the backup registration.
-#       [TRUE]
+#       automatic registration fails.  It uses a BOXSIZE-arcsec search
+#       box about the centre of the frame, jittered by the telescope
+#       offsets.  Otherwise telescope offsets provide the backup
+#       registration.  [TRUE]
 #    COMPLETE = REAL (Given)
 #       Completeness of matched features for registration between two 
 #       frames to be accepted.  It must be in the range 0.2 to 1.0. [0.4]
@@ -39,12 +44,18 @@
 #    MOVING_TARGET = LOGICAL (Given)
 #       If true (1), the source is a moving target and frames are to
 #       register the moving target not the fixed stars.  [0]
+#    OFFSET_TYPE = CHARACTER (Given)
+#       The type of offsets used as a last resort.  This will normally
+#       be "telescope", but for polarimetry mosaics it will be
+#       "beam-separation".  The string merely appears in informational
+#       messages.  The offsets themselves for polarimetry or any type of
+#       offset should already be stored in the telescope offsets.
+#       ["telescope"]
 #    PERCENTILE = REAL (Given)
 #       Percentile threshold for locating objects to register frames. 
 #       It must be in the range 75 to 99.9.  The default here is for
 #       UFTI and the new IRCAM.  For the original IRCAM3 without the
 #       magnifier, 96 proved to be satisfactory.  [98]
-
 #
 # Notes:
 #    -  This primitive is suitable for both UFTI and IRCAM.
@@ -140,10 +151,10 @@
 # -------------------
 
 # Obtain the parameters for the detection.
-           my $percentile = ( $_GENERATE_OFFSETS_{PERCENTILE} || 98 );
-           my $minpix = ( $_GENERATE_OFFSETS_{MINPIX} || 9 );
-           my $complete = ( $_GENERATE_OFFSETS_{COMPLETE} || 0.4 );
-           $complete = max( 0.2, min( 1.0, $complete) );
+          my $percentile = ( $_GENERATE_OFFSETS_{PERCENTILE} || 98 );
+          my $minpix = ( $_GENERATE_OFFSETS_{MINPIX} || 9 );
+          my $complete = ( $_GENERATE_OFFSETS_{COMPLETE} || 0.4 );
+          $complete = max( 0.2, min( 1.0, $complete) );
 
 # Remove existing .find and .off files for the object frames.  This is
 # needed because the presence of these files will indicate whether or
@@ -250,7 +261,7 @@
 # There is no point supplying fewer than two frames for FINDOFF to register.
 # Look for the special case of only one frame with sufficient objects.  
 # Transfer the single frame to the registration group.  The initialised bad
-# findoff_status will select _FIND_APPROX_OFFSETS later.
+# findoff_status will select _FIND_APPROX_OFFSETS_ later.
              if ( $#od_objects < 1 ) {
 
                 if ( $odGrp->num == 0 ) {
@@ -344,26 +355,11 @@
 # Obtain the first frame already registered.
              my $refFrm = $odGrp->frame( 0 );
 
-# Obtain from the headers the plate scales and telescope offsets in arcsec
-# for the instrument.
-             my ( $xoffref, $yoffref, $xpixelscale, $ypixelscale );
-             my $instrument = $refFrm->hdr( "INSTRUME" );
-             if ( $instrument =~ /^UFTI/ ) {
-                $xoffref = $refFrm->hdr( "TRAOFF" );
-                $yoffref = $refFrm->hdr( "TDECOFF" );
-                $xpixelscale = $refFrm->hdr( "CDELT1" );
-                $ypixelscale = $refFrm->hdr( "CDELT2" );
-
-             } else {
-                $xoffref = $refFrm->hdr( "RAOFF" );
-                $yoffref = $refFrm->hdr( "DECOFF" );
-                $xpixelscale = $refFrm->hdr( "PIXELSIZ" );
-                $ypixelscale = $xpixelscale;
-             }
- 
-# Convert telescope offsets to pixels.
-             $xoffref = $xoffref / $xpixelscale;
-             $yoffref = $yoffref / $ypixelscale;
+# Obtain from the headers the plate scales, rotation, and telescope offsets
+# in arcsec for the instrument, and convert to Cartesian co-ordinates.
+             _GET_CARTESIAN_TELESCOPE_OFFSETS_
+             my $xoffref = $_GET_CARTESIAN_TELESCOPE_OFFSETS_{XOFF};
+             my $yoffref = $_GET_CARTESIAN_TELESCOPE_OFFSETS_{YOFF};
 
 # Read its corresponding offset file until the identifier 1 object
 # is located.
@@ -410,8 +406,14 @@
 
              {
                 my $Grp = $regGrp;
+
+# Obtain parameters for finding approximate offsets.
                 my $central_source = ( $_GENERATE_OFFSETS_{CENTRAL_SOURCE} || "TRUE" );
-                _FIND_APPROX_OFFSETS_ SEARCH_BOX=$central_source XSHIFT=$xshift_toref YSHIFT=$yshift_toref
+                my $boxsize = ( $_GENERATE_OFFSETS_{BOXSIZE} || 5.0 );
+                my $offset_type = $_GENERATE_OFFSETS_{OFFSET_TYPE};
+                $offset_type = defined( $offset_type ) ? $offset_type : "telescope";
+
+                _FIND_APPROX_OFFSETS_ SEARCH_BOX=$central_source BOXSIZE=$boxsize XSHIFT=$xshift_toref YSHIFT=$yshift_toref OFFSET_TYPE=$offset_type
              }
           }
 
@@ -453,11 +455,12 @@ _GENERATE_OFFSETS_ -- Finds the offsets between the frames in the current $Grp.
 This primitive finds the pixel offsets between the frames in the 
 current $Grp.  It first attempts to find and match common objects
 automatically.  Should this fail, approximate offsets are found.
-These are either obtained from registering a central source (see
+These are obtained from registering a central source (see
 argument CENTRAL_SOURCE) or by transforming the equatorial offsets
-in the headers.  Partial automatic solutions are allowed; the
-unregistered remainder of the frames use the approximate method,
-and the two co-ordinate systems are tied to a common origin.
+in the headers, or by using supplied polarimetry beam separations.
+Partial automatic solutions are allowed; the unregistered remainder
+of the frames use the approximate method, and the two co-ordinate
+systems are tied to a common origin.
 
 The derived registration can be adjusted for moving targets.
 
@@ -465,10 +468,15 @@ The derived registration can be adjusted for moving targets.
 
 =over 4
 
+=item BOXSIZE = REAL (Given)
+
+The size in arcseconds of the search box in which to find the
+brightest object.  It is only used when CENTRAL_SOURCE is true. [5.0]
+
 =item CENTRAL_SOURCE = LOGICAL (Given)
 
 If true, attempt to register using a central source when
-automatic registration fails.  It uses a 5-arcsec search box
+automatic registration fails.  It uses a BOXSIZE-arcsec search box
 about the centre of the frame, jittered by the telescope offsets.
 Otherwise telescope offsets provide the backup registration.
 [TRUE]
@@ -489,6 +497,15 @@ without the magnifier, 6 proved to be satisfactory.  [9]
 
 If true (1), the source is a moving target and frames are to
 register the moving target not the fixed stars.  [0]
+
+=item OFFSET_TYPE = CHARACTER (Given)
+
+The type of offsets used as a last resort.  This will normally
+be "telescope", but for polarimetry mosaics it will be
+"beam-separation".  The string merely appears in informational
+messages.  The offsets themselves for polarimetry or any type of
+offset should already be stored in the telescope offsets.
+["telescope"]
 
 =item PERCENTILE = REAL (Given)
 
