@@ -65,14 +65,15 @@ sub _to_DEC_TELESCOPE_OFFSET {
          $pixscale = $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
       }
 
-# Sometimes the first cumulative offsets are non-zero contrary to the
-# documentation.
+# Sometimes the first imaging cumulative offsets are non-zero contrary
+# to the documentation.
       my $expno = 1;
       if ( exists $self->hdr->{"HIERARCH.ESO.TPL.EXPNO"} ) {
          $expno = $self->hdr->{"HIERARCH.ESO.TPL.EXPNO"};
       }
       my ( $x_as, $y_as );
-      if ( $expno == 1 ) {
+      my $mode = uc( $self->get_instrument_mode() );
+      if ( $expno == 1 && ( $mode eq "IMAGE" || $mode eq "POLARIMETRY" ) ) {
          $x_as = 0.0;
          $y_as = 0.0;
       } else {
@@ -208,14 +209,15 @@ sub _to_RA_TELESCOPE_OFFSET {
          $pixscale = $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
       }
 
-# Sometimes the first cumulative offsets are non-zero contrary to the
-# documentation.
+# Sometimes the first imaging cumulative offsets are non-zero contrary
+# to the documentation.
       my $expno = 1;
       if ( exists $self->hdr->{"HIERARCH.ESO.TPL.EXPNO"} ) {
          $expno = $self->hdr->{"HIERARCH.ESO.TPL.EXPNO"};
       }
       my ( $x_as, $y_as );
-      if ( $expno == 1 ) {
+      my $mode = uc( $self->get_instrument_mode() );
+      if ( $expno == 1 && ( $mode eq "IMAGE" || $mode eq "POLARIMETRY" ) ) {
          $x_as = 0.0;
          $y_as = 0.0;
       } else {
