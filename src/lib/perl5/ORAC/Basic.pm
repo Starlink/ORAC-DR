@@ -15,6 +15,7 @@ require Exporter;
 use File::Path;
 use Term::ANSIColor;
 use File::Copy;
+use ORAC::Msg::ADAM::Task;
 
 use ORAC::General; # General subroutines given to the recipes
 
@@ -64,7 +65,7 @@ sub orac_connect_display {
     $toolname = $toolpid."_p4";
     $toolnbname = "p".$toolpid."_plotnb";
     print "noticeboard is $toolnbname\n";
-    $Display = new Starlink::ADAMTASK($toolname);
+    $Display = new ORAC::Msg::ADAM::Task($toolname);
     $Display->contactw;		# ensure contact is made
 #    $Display->obeyw("verbose") unless ($main::opt_quiet);
     $Nbs = new Starlink::NBS ($toolnbname);
@@ -274,6 +275,9 @@ die;
 1;
 
 #$Log$
+#Revision 1.11  1998/04/14 21:39:43  frossie
+#Change launch display to use new Msg hierarchy
+#
 #Revision 1.10  1998/04/14 21:08:28  frossie
 #Change ORAC_ACT_COMPLETE to ORAC_OK for consistency (ADAM module now
 #returns 0 for good status under all circumstances)
