@@ -206,6 +206,7 @@
 
           } else {
              $grproot = $Grp->hdr( "ROOT_NAME" );
+
           }
           $outname = $grproot . "_mu"; 
 
@@ -257,6 +258,8 @@
              $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$header" );
           }
 
+# Define the group file and headers.
+# ==================================
 
 # Set the group name in the Group object...
           my $mosaic_origin;
@@ -279,6 +282,17 @@
 # Display the resultant mosaic.
           _DISPLAY_GROUP_IMAGE_
 
+# Change the end airmass to reflect the last frame included in the mosaic.  Note this
+# is done to the physical file as well as the ORAC-DR internal header.  This will
+# change the grand mosaic only on the first cycle.
+          my $amend = $cycleGrp->frame( $cycleGrp->num )->hdr( "AMEND" );
+          $cycleGrp->hdr( "AMEND", $amend );
+          my $header = "ndf=$mosname keyword=AMEND edit=update value=$amend position=!";
+          $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$header comment=\\\$C" );
+
+# Co-add the current mosaic into the grand mosaic.
+# ================================================
+
 # On the second and subsequent cycle, we just need to co-add the
 # single-cycle mosaic into the main mosaic.
           if ( $cycleno > 0 ) {
@@ -294,6 +308,31 @@
 # Co-add the frames.
              $header = "in1=$tmpmos in2=$mosname out=" . $Grp->file;
              $Mon{ "kappa_mon" }->obeyw( "add", "$header" );
+
+# Obtain the name of the exposure time header.
+             my $exptimename;
+             if ( $Grp->hdr( "INSTRUME" ) =~ /^UFTI/ ) {
+                $exptimename = "EXP_TIME";
+             } else {
+                $exptimename = "DEXPTIME";
+             }
+
+# Change the integration time of the grand mosaic by summing the current
+# value and that of the primary NDF used to make the latest mosaic.  Note
+# this is done to the physical file as well as the ORAC-DR internal header,
+# and only to the coadded (grand) mosaic.
+             my $exptime = $Grp->hdr( $exptimename ) +
+                           $Grp->frame( 0 )->hdr( $exptimename );
+             $Grp->hdr( $exptimename, $exptime );
+             my $header = "ndf=". $Grp->file .
+                          " keyword=$exptimename edit=update value=$exptime position=!";
+             $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$header comment=\\\$C" );
+
+# Change the end airmass to reflect the last frame included in the grand mosaic.  Note this
+# is done to the physical file as well as the ORAC-DR internal header.
+             $Grp->hdr( "AMEND", $amend );
+             my $header = "ndf=" . $Grp->file . " keyword=AMEND edit=update value=$amend position=!";
+             $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$header comment=\\\$C" );
 
 # Remove the temporary copy unless its the first.  This leaves the
 # mosaics for each and every individual jitter to be examined later.
