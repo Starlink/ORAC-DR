@@ -3,4 +3,4 @@
 # group frame, along with the multipliers and nbeams.
 ORACTIME
 BEAM_NUMBER == $Hdr{'BEAM_NUMBER'}
-STANDARD eq 'T'
+ORAC_STANDARD eq 'T'
