@@ -42,7 +42,7 @@ The following packages are used:
 
 =item Kappa
 
-C<compadd>, C<stats>
+C<compave>, C<stats>
 
 =back
 
@@ -55,19 +55,20 @@ There are no output files.
 This primitives processes a coadded pair. It makes sure that the
 group file exists before proceeding.
 
-Also, for very weak sources, it is possible that edge effects
-will dominate. In that case, this primitive may need to be rewritten
-such that it does not try to use the very edge of the array.
+Also, for very weak sources, it is possible that edge effects or the
+presence of hot pixels will dominate. To overcome this the 10 pixels
+around the edge of the array are removed before the rows are
+determined. Hot pixels in the middle of the array can still throw off the
+algorithm (would need to add some form of automatic deglitching).
 
-This primitive should be run after the pairs have been coadded.
-It is best to include this primitive in _COADD_PAIRS_AND_GROUP_
-so that it is guaranteed to be run correctly. Another reason
-for doing this is that the primitive does not check that a complete
-pair has been processed.
+This primitive should be run after the pairs have been coadded.  It is
+best to include this primitive in _COADD_PAIRS_AND_GROUP_ so that it
+is guaranteed to be run correctly.  The primitive does check that a
+complete pair has been processed and that a group file exists.
 
 =head1 AUTHOR
 
-Tim Jenness
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =cut
 
@@ -105,10 +106,39 @@ if ( $Grp->file_exists && $Frm->uhdr("PAIR_COMPLETE") ) {
     $Mon{'ndfpack_mon'}->obeyw("ndftrace","ndf=$group quiet=true");
     my ($ORAC_STATUS, @dims) = $Mon{ndfpack_mon}->get("ndftrace","dims");
 
+    # We also need to find the pixel bounds so that we can remove edge
+    # pixels that sometimes contain hot pixels.
+    ($ORAC_STATUS, my @ub) = $Mon{ndfpack_mon}->get("ndftrace","ubound");
+    ($ORAC_STATUS, my @lb) = $Mon{ndfpack_mon}->get("ndftrace","lbound");
+
+    # Correct the bounds for the edge effect by removing $offpix
+    # pixels from the bounds (use aliases in a for loop)
+    my $offpix = 10;
+    for (@ub) { $_ -= $offpix }
+    for (@lb) { $_ += $offpix }
+
+    # Calculate the ndf section
+    my $sect = "($lb[0]:$ub[0],$lb[1]:$ub[1])";
+    print "Section is $sect\n";
     # Now add up all the columns
-    # In kappa15 we can add the ALIGN parameter
+    # In kappa15 we can add the ALIGN parameter - in fact this is a requirement
+    # since with an NDF section the default of ALIGN=ORIGIN results in the
+    # output containing all bad values since none of the data appear in
+    # bin associated with the pixel origin. Without ALIGN all we can do is 
+    # hope that hot pixels dont get us
     # Use default value of WLIM
-    $Mon{kappa_mon}->obeyw("compave","in=$group out=$addname compress=[$dims[0],1]");
+    if (starversion_gt("kappa","0.15-0")) {
+      # The compression ratio is slightly to high but it doesn't matter since
+      # we get at least one pixel in the output
+      $Mon{kappa_mon}->obeyw("compave","in=$group$sect out=$addname compress=[$dims[0],1] align=first");
+
+    } else {
+
+      orac_warn "Using entire array rather than section since kappa version is older than 0.15\n";
+      orac_warn "This may lead to erroneous detections of extraction rows due to hot pixels\n";
+      $Mon{kappa_mon}->obeyw("compave","in=$group out=$addname compress=[$dims[0],1]");
+
+    }
 
     # Now find the brightest - should probably use a pixels in the middle
     # so as to avoid hot pixels at the edge
@@ -120,18 +150,12 @@ if ( $Grp->file_exists && $Frm->uhdr("PAIR_COMPLETE") ) {
     ($ORAC_STATUS, my $xmax, my $ymax) = $Mon{kappa_mon}->get("stats","maxpos");
     ($ORAC_STATUS, my $xmin, my $ymin) = $Mon{kappa_mon}->get("stats","minpos");
 
-    unless (defined $posrow) {
-      $posrow = $ymax;
-      orac_print "Determined positive extraction row from image...\n";
-    }
+    # Report that we have found the rows from the image
+    $posrow = $ymax;
+    orac_print "Determined positive extraction row from image...($posrow)\n";
 
-
-    unless (defined $negrow) {
-      $negrow = $ymin;
-      orac_print "Determined negative extraction row from image...\n";
-    }
-
-
+    $negrow = $ymin;
+    orac_print "Determined negative extraction row from image...($negrow)\n";
   }
 
   orac_print "Using detector rows (pos=$posrow, neg=$negrow)...";
