@@ -279,14 +279,13 @@ sub format {
 =item B<group>
 
 This method returns the group name associated with the observation.
-If the object has a value of undef (ie a new object) the findgroup()
-method is automatically invoked to determine the group. Subsequent
-invocations of the group method will simply return the current value.
-The group name can be set explicitly but in general the automatic
-lookup should be used.
 
   $group_name = $Frm->group;
   $Frm->group("group");
+
+This can be configured initially using the findgroup() method.
+Alternatively, findgroup() is run automatically by the configure()
+method.
 
 =cut
 
@@ -294,11 +293,6 @@ lookup should be used.
 sub group {
   my $self = shift;
   if (@_) { $self->{Group} = shift;}
-
-  unless (defined $self->{Group}) {
-    $self->findgroup;
-  }
-
   return $self->{Group};
 }
 
@@ -589,14 +583,15 @@ sub rawsuffix {
 =item B<recipe>
 
 This method returns the recipe name associated with the observation.
-If the object has a value of undef (ie a new object) the findrecipe()
-method is automatically invoked to determine the recipe. Subsequent
-invocations of the method will simply return the current value.
-The recipe name can also be set explicitly but in general this behaviour
-would be superceded by B<ORAC::Group> objects.
+The recipe name can be set explicitly but in general should be
+set by the findrecipe() method.
 
   $recipe_name = $Frm->recipe;
   $Frm->recipe("recipe");
+
+This can be configured initially using the findrecipe() method.
+Alternatively, findrecipe() is run automatically by the configure()
+method.
 
 =cut
 
@@ -604,11 +599,6 @@ would be superceded by B<ORAC::Group> objects.
 sub recipe {
   my $self = shift;
   if (@_) { $self->{Recipe} = shift;}
-
-  unless (defined $self->{Recipe}) {
-    $self->findrecipe;
-  }
-
   return $self->{Recipe};
 }
 
