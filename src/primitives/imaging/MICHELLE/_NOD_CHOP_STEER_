@@ -1,0 +1,410 @@
+#+
+# Name:
+#    _NOD_CHOP_STEER_
+#
+# Purpose:
+#    Steers processing for NOD_CHOP recipes.
+#
+# Language:
+#    Perl5
+#
+# Description: 
+#    This primitive controls processing for NOD_CHOP recipes through
+#    steering headers listed below.
+#
+#    In scan mode (see argument SCAN) the primitive also creates a
+#    group to store the separate mosaic at each scan position.  It
+#    pushes a frame into the group for each new scan position, recording
+#    the frame's scan index in the user header.
+#
+# Steering Headers:
+#    CYCLE_NUMBER = INTEGER
+#       Number of the cycle, a cycle being a set of frames to complete a
+#       pass through the recipe.  The first cycle is 0.
+#    DIFFERENCE_PAIR = LOGICAL
+#       Whether or not to subtract pairs.  It is true every second frame.
+#    DO_APHOT = LOGICAL
+#       Whether or not perform aperture photometry.  Photometry occurs
+#       after the mosaic is made.
+#    MAKE_MOSAIC = LOGICAL
+#       Whether or not register the frames and make the mosaic.  The mosaic
+#       is made once all the jittered frames in a cycle are available.
+#    PAIR_ORDER = LOGICAL
+#       Pair subtraction order, true means take second from the first,
+#       and false means take the first from the second.  The pattern
+#       alternates true-false every fourth frame.
+#    SCAN_INDEX = INTEGER
+#       The index of the distinct scan position (only in scan mode),
+#       counting from 0.  This is written to the mosaic group's (see
+#       section Groups) user header too.
+#    SCAN_ROOTNAME = CHARACTER
+#       The rootname for the scan position (only in scan mode).   This
+#       is the original group name followed by "_o<scan_index>", where
+#       <scan_index> is the index of the current scan position.
+#    TARGET_OR_SKY = CHARACTER
+#       This is "target" for a target frame, and "sky" for a sky calibration
+#       frame.  In this recipe it is "target" for all frames.
+#    USE_VARIANCE = LOGICAL
+#       Whether or not variance processing is to occur.  This equates to
+#       argument USEVAR.
+#
+# Groups:
+#    The following group of frames is created in scan mode (see argument
+#    SCAN), retained by storing a reference in the $Grp user header.  It
+#    is listed below by its header name.
+#
+#       MOSAIC_GROUP  Integrating mosaics at each scan position.
+#
+#    It inherits the main group's headers and user headers.  MOSAIC_GROUP's
+#    file has the same name as the main group's file.
+#
+# Arguments:
+#    NUMBER = INTEGER (Given)
+#       The number of frames in the jitter.  If absent, the number of
+#       offsets, as given by internal header ORAC_NUMBER_OF_OFFSETS, minus
+#       one is used.  If neither is available, 4 is used.  An error state 
+#       arises if the number of jittered frames is fewer than 4 and not a
+#       multiple of 4.  For Michelle this argument defaults to 4 if the
+#       date of observation is later than 20040329 and the internal
+#       header ORAC_NUMBER_OF_OFFSETS is equal to 1. []
+#    SCAN = LOGICAL (Given)
+#       If true (1), it requests that the recipe forms a mosaic at each
+#       of the offset positions for the final frame in an ABBA pattern.
+#       It forms a new group to hold the mosaics.  This facility is used
+#       for scans.   This should be set to false (0) for observations at
+#       a single location.  [0]
+#    USEVAR = LOGICAL (Given)
+#       Whether or not to create and propagate variance arrays.  [0]
+#
+# Notes:
+#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
+#    in imaging mode.
+#    -  Processing only occurs for object frames.
+#    -  In scan mode the primitive invokes _DERIVE_SCAN_INDEX_ for the
+#    first frame in each recipe cycle to determine whether or not it is
+#    at a new scan position.  
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ) {
+
+# Obtain the number of frames in the jitter pattern.
+# ==================================================
+
+# First see if a hardwired value has been supplied in the recipe.  This
+# deals with old recipes with fixed numbers and cases where a frame or
+# more is missing.
+       my $number = $_NOD_CHOP_STEER_{NUMBER};
+
+# Otherwise use the ORAC_NUMBER_OF_OFFSETS internal header.  In full
+# ORAC, this stores the total number of offsets used, but ignores repeat
+# iterators.  By convention there is always an offset to the origin at
+# the end, hence the recipe requires ORAC_NUMBER_OF_OFFSETS-1.
+       if ( ! defined ( $number ) ) {
+          $number = $Frm->uhdr( "ORAC_NUMBER_OF_OFFSETS" );
+          if ( defined( $number ) ) {
+             $number--;
+
+# Finally default to the original 4.
+          } else {
+             $number = 4;
+          }
+       }
+
+# Default for Michelle to work around nod "offset" iterator not writing
+# proper values into the header. Default to 4 if the UT date is greater
+# than 20040329 and $number is 0.
+       my $utdate = $Frm->uhdr( "ORAC_UTDATE" );
+       if( defined( $utdate ) ) {
+          $utdate =~ s/-//g;
+
+          if ( $utdate > 20040329 && $number == 0 ) {
+             $number = 4;
+          }
+       }
+
+# Report invalid number of frames.
+# Obtain the number of frames in the jitter pattern.
+       if ( $number % 4 != 0 || $number < 4 ) {
+          orac_throw "The number of jittered frames ($number) is not a " .
+                     "positive multiple of 4.\n";
+       }
+
+# Obtain SCAN argument to see whether or not this part of a scan map.
+       my $scan = $_NOD_CHOP_STEER_{SCAN};
+       $scan = defined( $scan ) ? $scan : 0;
+
+# Set steering headers.
+# =====================
+
+# Obtain the USEVAR argument.  Default to false.
+       my $usevar = $_NOD_CHOP_STEER_{USEVAR};
+       $usevar = defined( $usevar ) ? $usevar : 0;
+       $Frm->uhdr( "USE_VARIANCE", $usevar ); 
+
+# Specify during processing of which frames should the pairs be subtracted.
+       if ( ( $Grp->num + 1 ) % 2 == 0 ) {
+          $Frm->uhdr( "DIFFERENCE_PAIR", 1 );
+
+# A difference is to be made, but in what order.  PAIR_ORDER = 1 means
+# take the second from the first of the pair.  PAIR_ORDER = 0 is the
+# reverse.  Put another way, the order is ABBA as the B is always taken
+# from the A.
+          if ( ( $Grp->num + 1 ) % 4 == 0 ) {
+             $Frm->uhdr( "PAIR_ORDER", 0 );
+          } else {
+             $Frm->uhdr( "PAIR_ORDER", 1 );
+          }
+          
+       } else {
+          $Frm->uhdr( "DIFFERENCE_PAIR", 0 );
+       }
+
+# Specify during processing of which frames should the flat be applied
+# a mosaic created, and aperture photometry performed.
+       if ( ( $Grp->num + 1 ) % $number == 0 ) {
+          $Frm->uhdr( "MAKE_MOSAIC", 1 );
+          $Frm->uhdr( "DO_APHOT", 1 );
+       
+       } else {
+          $Frm->uhdr( "MAKE_MOSAIC", 0 );
+          $Frm->uhdr( "DO_APHOT", 0 );
+       }
+
+# Insert the cycle number of the set of frames. 
+       my $cycleno = int( $Grp->num / $number );
+       $Frm->uhdr( "CYCLE_NUMBER", $cycleno );
+
+# Insert the number of frames in the jitter.
+       $Frm->uhdr( "JITTER_NUMBER", $number );
+
+# All frames are target.  Some more-general primitives need to select 
+# targets from sky frames.
+       $Frm->uhdr( "TARGET_OR_SKY", "target" );
+
+# Create mosaic group.
+# ====================
+
+# This group will store the eight mosaics formed by combining the jittered
+# images.  There are eight because of the two beams and four waveplate
+# angles.
+       if ( $scan ) {
+          my ( $mosFrm, $mosGrp );
+          if ( ! defined( $Grp->uhdr( "MOSAIC_GROUP" ) ) ) {
+
+# Create the mosaic group.
+             $mosGrp = $Grp->new;
+             $mosGrp->file( $Grp->file );
+
+# Propagate the headers to the new group.
+             %{ $mosGrp->hdr } = %{ $Grp->hdr };
+             %{ $mosGrp->uhdr } = %{ $Grp->uhdr };
+
+# Store the pointer to the group in the main Group user header.
+             $Grp->uhdr( "MOSAIC_GROUP", $mosGrp );
+          }
+
+# Store scan index.
+# =================
+
+# Obtain the scan index.  There is one index for each unique scan
+# position on the sky (as determined by the offsets of the first frame
+# in a recipe cycle).  Create or update arrays to hold these unique
+# positions, and the number of cycles of the recipe at each such
+# position.  The arrays are stored by reference in the main group's
+# user header.  Indicate when the first frame of the recipe is
+# processed, so that the arrays may be initialised.  Also
+# determine when to increment the cycle counter; it should increase
+# only once per cycle per position---here's the first position in the
+# cycle.
+          my $first = $Grp->num == 0;
+          my $increment = ( $Grp->num + 1 ) % $number == 1;
+          my $create = 0;
+          my $scanindex;
+          if ( $first || $increment ) {
+             _DERIVE_SCAN_INDEX_ FIRST=$first
+
+# Discover whether or not this was a new offset and obtain the scan
+# index.
+             $create = $_DERIVE_SCAN_INDEX_{NEW};
+             $scanindex = $_DERIVE_SCAN_INDEX_{INDEX};
+
+# For the remaining frames of the cycle obtain the scan index from the
+# first frame of the cycle.
+          } else {
+             $scanindex = $Grp->frame( $cycleno * $number )->uhdr( "SCAN_INDEX" );
+          }
+
+# Store the current scan index in the frame headers.
+          $Frm->uhdr( "SCAN_INDEX", $scanindex );
+
+# Store the root name for this mosaic.
+          my $groupfile;
+          if ( $first ) {
+             $groupfile = $Grp->file . "_o" . $scanindex;  
+          } else {
+             ( $groupfile = $Grp->file ) =~ s/_o\d+//;
+             $groupfile = $groupfile . "_o" . $scanindex;
+          }
+          $Frm->uhdr( "SCAN_ROOTNAME", $groupfile );
+
+# Create an entry in the mosaic group.
+# ====================================
+          $mosGrp = $Grp->uhdr( "MOSAIC_GROUP" );
+          if ( $create ) {
+
+# Form a new file and store its name.
+             $mosFrm = new $Frm;
+             $mosFrm->file( $groupfile );
+
+# Store the scan index, so that the desired mosaic can be selected for
+# co-addition, say for cycles about the loop.
+             $mosFrm->uhdr( "SCAN_INDEX", $scanindex );
+             $mosGrp->push( $mosFrm );
+          }
+       }
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_NOD_CHOP_STEER_ -- Steers processing for NOD_CHOP recipes.
+
+=head1 DESCRIPTION
+
+This primitive controls processing for NOD_CHOP recipes through
+steering headers listed below.
+
+In scan mode (see argument SCAN) the primitive also creates a
+group to store the separate mosaic at each scan position.  It
+pushes a frame into the group for each new scan position, recording
+the frame's scan index in the user header.
+
+=head1 STEERING HEADERS
+
+=over 4
+
+=item CYCLE_NUMBER = INTEGER
+
+Number of the cycle, a cycle being a set of frames to complete a
+pass through the recipe.  The first cycle is 0.
+
+=item DIFFERENCE_PAIR = LOGICAL
+
+Whether or not to subtract pairs.  It is true every second frame.
+
+=item DO_APHOT = LOGICAL
+
+Whether or not perform aperture photometry.  Photometry occurs
+after the mosaic is made.
+
+=item MAKE_MOSAIC = LOGICAL
+
+Whether or not register the frames and make the mosaic.  The mosaic
+is made once all the jittered frames in a cycle are available.
+
+=item PAIR_ORDER = LOGICAL
+
+Pair subtraction order, true means take second from the first,
+and false means take the first from the second.  The pattern
+alternates true-false every fourth frame.
+
+=item SCAN_INDEX = INTEGER
+
+The index of the distinct scan position (only in scan mode),
+counting from 0.
+
+=item SCAN_ROOTNAME = CHARACTER
+
+The rootname for the scan position (only in scan mode).   This
+is the original group name followed by "_oE<lt>scan_indexE<gt>", where
+E<lt>scan_indexE<gt> is the index of the current scan position.
+
+=item TARGET_OR_SKY = CHARACTER
+
+This is "target" for a target frame, and "sky" for a sky calibration
+frame.  In this recipe it is "target" for all frames.
+
+=item USE_VARIANCE = LOGICAL
+
+Whether or not variance processing is to occur.  This equates to
+argument USEVAR.
+
+=back
+
+=head1 GROUPS
+
+The following group of frames is created in scan mode (see argument
+SCAN), retained by storing a reference in the $Grp user header.  It
+is listed below by its header name.
+
+   MOSAIC_GROUP  Mosaics at the each scan position.
+
+It inherits the main group's headers and user headers.  MOSAIC_GROUP's
+file has the same name as the main group's file.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item NUMBER = INTEGER (Given)
+
+The number of frames in the jitter.  If absent, the number of offsets,
+as given by internal header ORAC_NUMBER_OF_OFFSETS, minus one is used.
+If neither is available, 4 is used.  An error state arises if the
+number of jittered frames is fewer than 4 and not a multiple of 4.  []
+
+=item SCAN = LOGICAL (Given)
+
+If true (1), it requests that the recipe forms a mosaic at each
+of the offset positions for the final frame in an ABBA pattern.
+It forms a new group to hold the mosaics.  This facility is used
+for scans.   This should be set to false (0) for observations at
+a single location.  [0]
+
+=item USEVAR = LOGICAL (Given)
+
+Whether or not to create and propagate variance arrays.  [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UFTI, IRCAM, and Michelle in imaging mode.
+
+=item *
+
+Processing only occurs for object frames.
+
+=item *
+
+In scan mode the primitive invokes _DERIVE_SCAN_INDEX_ for the
+first frame in each recipe cycle to determine whether or not it is
+at a new scan position.  
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
