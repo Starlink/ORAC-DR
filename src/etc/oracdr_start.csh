@@ -37,6 +37,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.5  2000/10/11 01:13:51  timj
+#     Add oracdr_parse_recipe
+#
 #     Revision 1.4  2000/02/03 04:52:50  timj
 #     Slight change to startup screen
 #
@@ -104,6 +107,7 @@ if (-e $starperl ) then
   alias oracdr_db   "$starperl -d ${ORAC_DIR}/bin/oracdr"
   alias oracdr_nuke "$starperl  ${ORAC_DIR}/bin/oracdr_nuke"
   alias oracdisp    "$starperl  ${ORAC_DIR}/bin/oracdisp"
+  alias oracdr_parse_recipe "$starperl ${ORAC_DIR}/bin/oracdr_parse_recipe"
 
 else
   echo "************ Starlink perl could not be located. ********"
