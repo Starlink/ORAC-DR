@@ -54,13 +54,13 @@
 #        The diameter of the object aperture in FWHM (seeing) units used
 #        to measure the total flux from star.  A smaller value is faster
 #        but underestimates the flux.   It is constrained to be in the
-#        range 3.0 to 15.0.  [10.0]
+#        range 3.0 to 12.0.  [8.0]
 #     INNER = REAL (Given)
 #        The ratio of the diameters of inner ring of the sky annulus to
-#        that of the object aperture (-a).  It is constrained to be in the
-#        range 1.2 to 3.0.  The mode of the pixel values in the annulus 
-#        is used to subtract the sky for statistics 3) and 4) listed above.
-#        [2.0]
+#        that of the object aperture (OBJECT_APERTURE).  It is constrained
+#        to be in the range 1.2 to 3.0.  The mode of the pixel values in 
+#        the annulus is used to subtract the sky for statistics 3) and 4)
+#        listed above. [2.0]
 #     FILE = CHARACTER (Given)
 #        The name of the small text list to contain the result.  If the
 #        file exists, a record of the statistics is appended.  If it
@@ -70,7 +70,7 @@
 #        [seeing.txt]
 #     OUTER = REAL (Given)
 #        The ratio of the diameters of outer ring of the sky annulus to
-#        that of the object aperture (OBJECT_DIAMETER).  The mode of the pixel
+#        that of the object aperture (OBJECT_APERTURE).  The mode of the pixel
 #        values in the annulus is used to subtract the sky for statistics 3)
 #        and 4) listed above.  It is constrained to be in the range 1.5 to 5.0
 #        and be at least 0.3 greater than the inner scale factor of the annulus.
@@ -153,7 +153,7 @@
 
 # Obtain the argument values.
 # ===========================
-       $aperture_factor = ( $_SEEING_STATISTICS_{OBJECT_APERTURE} || 10.0 );
+       $aperture_factor = ( $_SEEING_STATISTICS_{OBJECT_APERTURE} || 8.0 );
        $inner = ( $_SEEING_STATISTICS_{INNER} || 2.0 );
        $outer = ( $_SEEING_STATISTICS_{OUTER} || 4.0 );
        $logfile = ( $_SEEING_STATISTICS_{FILE} || "seeing.txt" );
@@ -337,8 +337,8 @@ print LOGFILE "BEGINTABLE\n";
           ($ORAC_STATUS, $orient) = $Mon{"kappa_mon"}->get("psf","orient");
 
 # Derive desired values from the results, namely the average FWHM
-# and the position angle.
-          $fwhm = $fwhm * sqrt( $axisratio );
+# and the position angle.  Protect against nonsense axis ratios.
+          $fwhm = $fwhm * sqrt( min( 10, $axisratio ) );
           $pa = $orient + 90.0;
        }
 
@@ -375,7 +375,8 @@ print LOGFILE "BEGINTABLE\n";
           ($ORAC_STATUS, $corefwhm) = $Mon{"psf_mon"}->get("psf","fwhm");
           ($ORAC_STATUS, $coreaxisratio) = $Mon{"psf_mon"}->get("psf","axisr");
 
-          $corefwhm = $corefwhm * sqrt( $coreaxisratio );
+# Protect against nonsense axis ratios.
+          $corefwhm = $corefwhm * sqrt( min( 10.0, $coreaxisratio ) );
 
 # Protect against nonsense values affecting the tabulation.
           if ( $corefwhm > 99.999 ) {
@@ -408,8 +409,8 @@ print LOGFILE "BEGINTABLE\n";
           ($ORAC_STATUS, $smofwhm) = $Mon{"kappa_mon"}->get("psf","fwhm");
           ($ORAC_STATUS, $smoaxisratio) = $Mon{"kappa_mon"}->get("psf","axisr");
 
-# Derive the average FWHM after smoothing
-          $smofwhm = $smofwhm * sqrt( $smoaxisratio );
+# Derive the average FWHM after smoothing.  Protect against nonsense axis ratios.
+          $smofwhm = $smofwhm * sqrt( min( 10, $smoaxisratio ) );
 
 # Protect against nonsense values affecting the tabulation.
           if ( $smofwhm > 99.999 ) {
@@ -426,11 +427,8 @@ print LOGFILE "BEGINTABLE\n";
 # the star image, and an annulus around that where the sky background is
 # to be estimated.
 
-# Constrain supplied apertures.  Variables inner and outer are the radii
-# of the annulus.
-       $aperture_factor = min( 15.0, max( $aperture_factor, 3.0 ) );
-       $inner = min( 3.0, max( $inner, 1.2 ) * 0.5 * $aperture_factor );
-       $outer = min( 5.0, max( $inner + 0.3, $outer, 1.5 ) * 0.5 * $aperture_factor );
+# Constrain supplied apertures.
+       $aperture_factor = min( 12.0, max( $aperture_factor, 3.0 ) );
 
 # In order to keep the aperture correction small (like well under 1
 # percent), choose an aperture many times the FWHM of the psf.   In the
@@ -447,9 +445,17 @@ print LOGFILE "BEGINTABLE\n";
 
        } else {
           $aperture = max( $fwhm, $corefwhm ) * $aperture_factor;
+
        }
 
+# Constrain the aperture in case one of the figures from PSF is silly.
+       $aperture = min( $aperture, 70 );
        $int_aperture = nint( $aperture + 0.5 ) + 1;
+
+# Constrain supplied apertures.  Variables inner and outer are the radii
+# of the annulus.
+       $inner = min( 3.0, max( $inner, 1.2 ) ) * 0.5 * $aperture;
+       $outer = min( 5.0, max( $inner + 0.3, $outer, 1.5 ) ) * 0.5 * $aperture;
 
 # Form sky-subtracted image
 # =========================
@@ -457,10 +463,11 @@ print LOGFILE "BEGINTABLE\n";
 # Create an ARD mask for the annulus.
        unlink ( "seeann$$.ard" );
        open ( SEEANN, ">seeann$$.ard" );
-       print SEEANN "CIRCLE( $centre[0], $centre[1], $inner ) .AND. .NOT. CIRCLE( $centre[0], $centre[1], $outer)\n";
+       print SEEANN "CIRCLE( $centre[0], $centre[1], $inner ) .OR. .NOT. CIRCLE( $centre[0], $centre[1], $outer)\n";
        close ( SEEANN );
 
-# Apply the mask to the image.
+# Apply the mask to the image.  Put in a temporary fix to circumvent ARDMASK bug.
+       $Mon{"ndfpack_mon"}->obeyw("setbad","ndf=$ndf value=true");
        $Mon{"kappa_mon"}->obeyw("ardmask","in=$ndf out=annulus$$ ardfile=seeann$$.ard");
 
 # Estimate the mode of the pixels within the sky annulus by sigma clipping, and
