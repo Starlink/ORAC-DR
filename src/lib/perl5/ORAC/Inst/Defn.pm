@@ -318,6 +318,11 @@ sub orac_determine_inst_classes {
     $frameclass = "ORAC::Frame::UFTI_CASU";
     $calclass   = "ORAC::Calib::UFTI_CASU";
     $instclass  = "ORAC::Inst::UFTI_CASU";
+  } elsif ($inst =~ /^WFCAM/) {
+    $groupclass = "ORAC::Group::UFTI_CASU";
+    $frameclass = "ORAC::Frame::WFCAM";
+    $calclass   = "ORAC::Calib::WFCAM";
+    $instclass  = "ORAC::Inst::WFCAM";
   } elsif ($inst eq 'CGS4') {
     $groupclass = "ORAC::Group::CGS4";
     $frameclass = "ORAC::Frame::CGS4";
@@ -462,6 +467,11 @@ sub orac_determine_recipe_search_path {
     push( @path, File::Spec->catdir( $imaging_root, "UFTI_CASU" ) );
     push( @path, $imaging_root );
 
+  } elsif ($inst =~ /^WFCAM/) {
+    push( @path, File::Spec->catdir( $root, "WFCAM" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "WFCAM" ) );
+    push( @path, $imaging_root );
+
   } elsif ($inst eq 'MICHELLE' or $inst eq 'MICHTEMP') {
     push( @path, File::Spec->catdir( $root, "MICHELLE" ) );
     push( @path, File::Spec->catdir( $imaging_root, "MICHELLE" ) );
@@ -573,6 +583,12 @@ sub orac_determine_primitive_search_path {
   } elsif ($inst eq 'UFTI_CASU') {
     push( @path, File::Spec->catdir( $root, "UFTI_CASU" ) );
     push( @path, File::Spec->catdir( $imaging_root, "UFTI_CASU" ) );
+    push( @path, $imaging_root );
+    push( @path, $general_root );
+
+  } elsif ($inst =~ /^WFCAM/) {
+    push( @path, File::Spec->catdir( $root, "WFCAM" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "WFCAM" ) );
     push( @path, $imaging_root );
     push( @path, $general_root );
 
@@ -768,6 +784,8 @@ sub orac_determine_loop_behaviour {
     } elsif( uc($instrument) eq 'UFTI2' ) {
       $behaviour = 'flag';
     } elsif( uc($instrument) eq 'UFTI_CASU' ) {
+      $behaviour = 'flag';
+    } elsif( uc($instrument) =~ /^WFCAM/ ) {
       $behaviour = 'flag';
     } elsif( uc($instrument) eq 'IRCAM2' ) {
       $behaviour = 'flag';
@@ -1226,6 +1244,42 @@ sub orac_configure_for_instrument {
 	                                                "raw","ufti",$oracut);
              $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir($orac_data_root,
 	                                              "reduced","ufti",$oracut)
+				     unless defined $$options{"honour"};
+
+             # misc
+             $ENV{"ORAC_PERSON"} = "jrl";
+             $ENV{"ORAC_SUN"} = "???";
+             if (Net::Domain->domainname =~ "ukirt"  ) {
+                  $options->{"loop"} = "flag";
+             }           
+             $options->{"skip"} = 0;
+
+             last SWITCH; }
+
+     if ( $instrument =~ /^WFCAM/) {
+
+             # Instrument
+             $ENV{"ORAC_INSTRUMENT"} = $instrument;
+
+             # Calibration information
+             $orac_cal_root = File::Spec->catdir("ukirt_sw","oracdr_cal")
+		     unless defined $orac_cal_root;
+             $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"wfcam");
+				
+             # Recipie and Primitive
+             #undef $ENV{"ORAC_RECIPE_DIR"} 
+             #        if defined $ENV{"ORAC_RECIPE_DIR"};
+             #undef $ENV{"ORAC_PRIMITIVE_DIR"} 
+             #        if defined $ENV{"ORAC_PRIMITIVE_DIR"};
+
+             # data directories
+             $orac_data_root = "/ukirtdata"
+                     unless defined $orac_data_root;
+
+             $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+	                                                "raw","wfcam",$oracut);
+             $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir($orac_data_root,
+                                              "reduced","wfcam",$oracut)
 				     unless defined $$options{"honour"};
 
              # misc
