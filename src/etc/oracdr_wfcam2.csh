@@ -63,6 +63,9 @@ setenv ORAC_PERSON jrl
 setenv ORAC_LOOP flag
 setenv ORAC_SUN
 
+# CASU CIRDR paths
+setenv PERL5LIB /ukirt_sw/cirdr/perlinstall:/ukirt_sw/cirdr/perllib
+
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
 
