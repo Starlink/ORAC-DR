@@ -248,14 +248,13 @@ sub obeyw {
   $args =~ s/\]/\\\]/g;
   $args =~ s/\)/\\\)/g;
   $args =~ s/\(/\\\(/g;
+  $args =~ s/~/\\~/g;
 
   # Now try to replace single quotes with a "' '" combination
-  # Assume only one set of quotes for now
-  #$args =~ s/\'/\"\'/;
-  #$args =~ s/\'/\'\"/;
+  # and only do this for strings containing commas
+  # Probably will not work if we have a '{xx,xx}' combination 
 
-
-  # print "COMMAND WAS: $command $args\n";
+  $args =~ s/\'(\w+,\w+)+\'/\"$&\"/g;
 
   my $exstat = system("$command $args");
 
@@ -276,7 +275,10 @@ Retrieve the current value of a parameter
 
 Array parameters are returned "," separated. Should consider
 reversing the order such that status is returned first 
-and array values after.
+and array values after. Currently square brackets 
+are put round array values -- this is to match the syntax
+used by the ADAM parameter system. The ORAC interface should
+probably be a bit cleverer about this!
 
 =cut
 
@@ -284,13 +286,20 @@ and array values after.
 sub get {
   my $self = shift;
 
+  my $values;
+
   my $task = shift;
   my $param = shift;
   my $status = &NDF::SAI__OK;
 
   my (@values) = par_get($param, $task, \$status);
 
-  my $values = join(",", @values);
+  # If we have more than one return value
+  if ($#values > 0) {
+    $values = "[".join(",", @values)."]";
+  } else {
+    $values = $values[0];
+  }
 
   $status = ORAC__OK if ($status == &NDF::SAI__OK);
 
