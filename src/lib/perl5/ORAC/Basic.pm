@@ -32,6 +32,11 @@ $ORAC_ACT_COMPLETE = 142115659;
 $ORAC__OK = 0;
 
 
+# RECIPES beware!! Don't stomp on these:
+
+*Hdr = *main::Header;
+*Mon = *main::Mon;
+
 sub orac_launch_display {
 
 
@@ -144,7 +149,7 @@ sub orac_parse_recipe {
     push(@parsed,@lines);
     
 
-  } elsif ($line =~ /={1}->obeyw/) {
+  } elsif ($line =~ /={0}->obeyw/) {
 
 	# This is an OBEYW status
 	# and assumes that all OBEYW commands are dealt with
