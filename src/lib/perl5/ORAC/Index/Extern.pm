@@ -88,7 +88,9 @@ sub indexref {
   # that we dont go into an infinite loop of re-reading
   
   my $mtime = (stat $self->indexfile)[9];
-
+  $mtime = 0 unless defined $mtime; # -w fix
+  my $last = $self->last_read;
+  $last = 0 unless defined $last;
   if ($mtime > $self->last_read) {
 
     # Re-read the index file
