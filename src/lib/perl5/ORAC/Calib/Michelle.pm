@@ -194,14 +194,16 @@ sub mask {
 
   return $self->maskname if $self->masknoupdate;
 
-  my $ok = $self->maskindex->verify($self->maskname,$self->thing);
+# Ignore distracting warnings.
+  my $warn = 0;
+  my $ok = $self->maskindex->verify( $self->maskname, $self->thing, $warn );
 
-  # happy ending
+# happy ending
   return $self->maskname if $ok;
 
   if (defined $ok) {
 
-    my $mask = $self->maskindex->chooseby_negativedt('ORACTIME',$self->thing);
+    my $mask = $self->maskindex->chooseby_negativedt( 'ORACTIME', $self->thing, $warn );
     unless (defined $mask) {
       # Nothing suitable, default to fallback position
       # Check that exists and be careful not to set this as the
@@ -210,7 +212,7 @@ sub mask {
 
       # If we're in spectroscopy mode, over-ride this to be bpm_sp
       # $uhdrref is a reference to the Frame uhdr hash
-      my $uhdrref=$self->thingtwo;
+      my $uhdrref = $self->thingtwo;
       if ($uhdrref->{'ORAC_OBSERVATION_MODE'} eq 'spectroscopy') {
         $defmask = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "bpm_sp" ) ;
       }
@@ -251,12 +253,12 @@ sub maskindex {
 
 # Copy the index file from ORAC_DATA_CAL into ORAC_DATA_OUT, unless
 # it already exists there. Then use the one in ORAC_DATA_OUT.
-    if( ! -e File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" ) ) {
+    if ( ! -e File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" ) ) {
       copy( File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "index.mask" ),
             File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" ) );
     }
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" );
-#    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "index.mask" );
+
 # The rules file is always in $ORAC_DATA_CAL.
     my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.mask" );
 
