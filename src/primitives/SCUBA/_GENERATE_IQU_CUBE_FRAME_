@@ -1,0 +1,345 @@
+=head1 NAME
+
+GENERATE_IQU_CUBE_FRAME - generate 3D cube with I,Q and U Stokes images
+
+=head1 DESCRIPTION
+
+Generates a 3D cube containing the I,Q and U Stokes images from
+a set of images taken with different waveplate positions. This
+routine is expected to run after the _REBIN_INTEGRATIONS_  or
+or the _REBIN_MESUREMENTS_ primitive (which generates a stack of 
+images for each waveplate position.)
+
+Automatically loops over all sub-instruments in the frame.
+
+The Q and Us generated are intensities.
+
+=head1 TASKS
+
+Uses the POLPACK POLIMP/POLCAL tasks.
+If these are not available it falls back to using KAPPA CALPOL
+to generate the IQ and U images that are then pasted into a IQU
+cube. This then requires the KAPPA tasks CALOPL, MATHS and GLITCH.
+
+=head1 KLUGE
+
+If POLPACK is not available the IQU cube is generated using KAPPA.
+This is much more inefficient (many more intermediate steps) and
+does not check the order of the waveplate angles. POLPACK should
+be used if at all possible. The kappa implementation also assumes
+the structure of the input image (output of INTREBIN).
+
+
+
+=cut
+
+
+# Check for POLPACK
+if (exists $Mon{polpack_mon}) {
+
+  # Read WEIGHTS and NITER from the argument list
+  $weights = ($_GENERATE_IQU_CUBE_FRAME_{WEIGHTS} || 4);
+  $niter   = ($_GENERATE_IQU_CUBE_FRAME_{NITER}   || 10);
+  
+  # Loop over frames
+  for my $i (1..$Frm->nfiles) {
+
+    # Sub-instrument
+    my $sub = ($Frm->subs)[$i-1];
+ 
+    orac_print "Processing waveplate images for sub-instrument $sub\n";
+
+    # Loop over each frame
+    # Generate the output filename
+    ($in, $out) = $Frm->inout("_iqu", $i);
+
+    # Run POLIMP to import the data into POLPACK
+    # Table definition stored in ORAC_DATA_CAL/scupol_polimp.table
+    $Mon{polpack_mon}->obeyw('polimp',"in=$in table=$ENV{ORAC_DATA_CAL}/scupol_polimp.table quiet");
+
+    # Now run POLCAL to generate the IQU cube
+    # Run with supplied weights and niter
+    $args = "weights=$weights niter=$niter";
+    $Mon{polpack_mon}->obeyw('polcal',"in=$in out=$out $args");
+
+    orac_print "$in converted to I,Q and U image cube\n";
+
+    # Update the frame object
+    $Frm->file($i, $out);
+
+  }
+
+} else {
+  # POLPACK NOT AVAILABLE - need to KLUGE this with KAPPA
+  # Basically take the first half of ACC's SCUPOL.PL as seen
+  # in _CALCULATE_POLARISATION_FRAME_ that generates the IQU
+  # images and then paste them into a CUBE using David Berry's
+  # CSH script as a template
+
+  # This routine does assume that INTREBIN has been run and that the
+  # ndf files are called .Inn in an HDS container.
+
+  use NDF;
+
+  # Loop over files
+ 
+  for my $i (1..$Frm->nfiles) {
+ 
+    # Sub-instrument
+    my $sub = ($Frm->subs)[$i-1];
+ 
+    orac_print "Processing waveplate images for sub-instrument $sub\n";
+ 
+ 
+    # Need to go through the input file (HDS container) and
+    # find out how many images there really were.
+    $status = &NDF::SAI__OK;
+    hds_open($Frm->file($i), 'READ', $loc, $status);
+    dat_ncomp($loc, $ncomp, $status);
+    dat_annul($loc, $status);
+    $ORAC_STATUS = ORAC__ERROR unless $status == &NDF::SAI__OK;
+ 
+    orac_print "$ncomp waveplate positions detected\n";
+ 
+    # Now need to loop over each set of four waveplates
+    # Assume that the waveplate order matches the integration
+    # order. Could really make sure by looking in the header
+    # (but that is something for POLPACK)
+ 
+    # Process four at a time. If we don't have a full set of four
+    # ignore it
+ 
+    my $nloops = int($ncomp/4);
+ 
+    my @null = (0); # For hds_new
+ 
+    # Retrieve the root file name
+    my $root = $Frm->file($i);
+  
+    # Loop round each set of four
+    for my $loop (1..$nloops) {
+
+      orac_print "Calculating I,Q, and U for set $loop\n";
+ 
+      # Calculate start and end integrations
+      my $start = (($loop-1) * 4) + 1;
+      my $end =   $loop * 4;
+ 
+      # READ ROTATION ANGLE ----------
+ 
+      # Read the average fits header of the 2nd integration so that
+      # we can read in the sky rotation angle
+      my $href;
+      ($href, $status) = fits_read_header($root.".i".($start+1));
+      if ($status != &NDF::SAI__OK) {
+	orac_err("Failed to read rotation angle from FITS header!");
+	$ORAC_STATUS = ORAC__ERROR;
+      }
+      
+      # ANGROT is in the header - must subtract 90 degrees for our data
+      # (POLPACK puts rotation angle from X rather than Y)
+ 
+      my $angrot = $href->{ANGROT} - 90.0;
+ 
+ 
+      # DEGLITCHING -------------------
+ 
+      # In order to keep the number of intermediate files down
+      # Create an intermediate HDS container to hold the deglitched
+      # images
+      my ($junk, $out) = $Frm->inout("_gl",$i);
+    
+    
+      # Create if this is the first time round the loop
+      if ($loop == 1) {
+	hds_new ($out,substr($out,0,9),"SURF_HDS",0,@null,$loc,$status);
+	dat_annul($loc, $status);
+	if ($status != &NDF::SAI__OK) {
+	  orac_err("Failed to create HDS container: $out!");
+	  $ORAC_STATUS = ORAC__ERROR;
+	}
+      }
+      
+      # Loop over this set of four
+      foreach $int ($start..$end) {
+	# Deglitch each image
+	$Mon{kappa_mon}->obeyw("glitch", "inpic=${root}.i$int outpic=${out}.i$int where=bad");
+      }
+      $glitch_out = $out;
+      
+      # CALCULATE POLARISATION ----------------------
+      
+      # We are using the deglitched file
+      my $in = $out; 
+      
+      # Create a container file to hold the P and Theta and I
+      
+      ($junk, $out) = $Frm->inout("_temp$loop",$i);
+      
+      hds_new ($out,substr($out,0,9),"SURF_HDS",0,@null,$loc,$status);
+      dat_annul($loc, $status);
+      if ($status != &NDF::SAI__OK) {
+	orac_err("Failed to create HDS container: $out!");
+	$ORAC_STATUS = ORAC__ERROR;
+      }
+      
+      # Just run calpol
+      my $input = "";
+      my $n = 0;
+      for $int ($start..$end) {
+	$n++;
+	$input .= "in$n=${in}.i$int ";
+      }
+      my $args = "i=${out}.i p=${out}.p theta=${out}.theta u=! q=! ip=!";
+      
+      
+      $Mon{kappa_mon}->obeyw("calpol","$input $args debias=false variance=false");
+      
+      # CORRECT FOR SOURCE ROTATION -----------------
+      
+      $in = $out;		# Set input file
+      
+      orac_print "Correcting for sky rotation angle: $angrot\n";
+      
+      # Create a container file to hold the I, Q and U
+      ($junk, $out) = $Frm->inout("_iquTmp$loop",$i);
+      
+      hds_new ($out,substr($out,0,9),"SURF_HDS",0,@null,$loc,$status);
+      dat_annul($loc, $status);
+      if ($status != &NDF::SAI__OK) {
+	orac_err("Failed to create HDS container: $out!");
+	$ORAC_STATUS = ORAC__ERROR;
+      }
+      
+      # Copy the I directly from in to out container
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=${in}.i out=${out}.i title='Intensity'");
+      
+      # Calculate the Q component
+      # Note that the P returned by Calpol is percentage polarisation
+      $Mon{kappa_mon}->obeyw("maths","exp='0.01*ia*cosd(2*(ib+pa))' ia=${in}.p ib=${in}.theta pa=$angrot out=${out}.q");
+ 
+      # Calculate the U component
+      # Note that the P returned by Calpol is percentage polarisation
+      $Mon{kappa_mon}->obeyw("maths","exp='0.01*ia*sind(2*(ib+pa))' ia=${in}.p ib=${in}.theta pa=$angrot out=${out}.u");
+      
+      # Erase the temporary file
+      $Mon{ndfpack_mon}->obeyw("erase","object=$in ok=true");
+  
+    }
+
+    # FIND MEAN I, Q and U --------------------------
+    
+    # We now have the sum of I's, Q's and U's in $iqu_out
+    # in extensions called I,Q and U.
+    
+    # Calculate the mean of the I, Q and U vectors
+    # Currently all the files are stored in files
+    # of name   ....._iqu$loop
+    
+    # Retrieve the output file name that will be used to hold the averaged
+    # I, Q and U
+
+    # Calculate the name for the final IQU HDS container
+    my ($junk, $iqu_out) = $Frm->inout("_iquTmp",$i);
+
+    # Create the output file
+    hds_new ($iqu_out,substr($iqu_out,0,9),"SURF_HDS",0,@null,$loc,$status);
+    dat_annul($loc, $status);
+    if ($status != &NDF::SAI__OK) {
+      orac_err("Failed to create HDS container: $iqu_out!");
+      $ORAC_STATUS = ORAC__ERROR;
+    }
+    
+    # Now need to use Kappa maths to coadd all the frames and average
+    # Need to create a maths string
+
+    # Kappa maths can only combine up to 26 input files
+    if ($nloops > 26) {
+      orac_err("Can only process a maximum of 26 waveplate sets\n");
+      $ORAC_STATUS = ORAC__ERROR;
+    }
+
+    # Loop over each component
+    orac_print "Calculating mean of ";
+    for my $stokes (qw/I Q U/) {
+      orac_print "$stokes...";
+      # Create maths string (not unicode compliant!)
+      # generate "ia + ib + ic .... " expression for kappa maths
+      my $exp = '('.join ("+",grep {$_ = "i".chr($_+96)} (1..$nloops)) . ")/$nloops";
+      
+      # generate "ia=$iqu_out.?  ib=iqu_out.? ic=$iqu_out.? .... " 
+      # expression for input to kappa maths
+      my $args =  join (" ", grep {
+	$_ = "i".chr($_+96)."=${iqu_out}$_".".$stokes";
+      } (1..$nloops));
+      
+      # Run kappa maths
+      $Mon{'kappa_mon'}->obeyw("maths","exp='$exp' out=${iqu_out}.$stokes $args title='$stokes Stokes Parameter'");
+
+    }
+    orac_print "\n";
+
+    # Now we have averaged I,Q and U images (note that we dont have
+    # variance)
+
+    # Generate name of cube
+    $in = $iqu_out;
+    ($junk, $cube_out) = $Frm->inout('_iqu', $i);
+
+    # Generate temp copies of I, Q and U
+    # multiplying the Q and U by I to turn them back into intensities
+    # (Calpol generates normalised Q and U Stokes parameters)
+
+    $ftemp{i} = "${in}.i";
+    $ftemp{q} = "${in}_q";
+    $ftemp{u} = "${in}_u";
+
+    $Mon{kappa_mon}->obeyw("mult","in1=${in}.q in2=${in}.i out=$ftemp{q}");
+    $Mon{kappa_mon}->obeyw("mult","in1=${in}.u in2=${in}.i out=$ftemp{u}");
+
+    # Erase the WCS from each stokes image (not at the moment
+    # since the CALPOL output does not have WCS)
+    # and add a third dimension
+    for (qw/i q u/) {
+#      $Mon{ndfpack_mon}->obeyw("erase","object=${in}.${_}.wcs ok=true");
+      $Mon{ndfpack_mon}->obeyw("setbound","ndf=$ftemp{$_}(,,)");
+    }
+
+    # Get the lower bounds of the Q NDF
+    $Mon{ndfpack_mon}->obeyw("ndftrace","quiet $ftemp{q}");
+    my @lb;
+    ($ORAC_STATUS, @lb) = $Mon{ndfpack_mon}->get("ndftrace","lbound");
+
+    # Shift the origin of Q
+    $Mon{ndfpack_mon}->obeyw("setorigin","ndf=$ftemp{q} origin=[$lb[0],$lb[1],2]");
+
+    # Get the lower bounds of the U NDF
+    $Mon{ndfpack_mon}->obeyw("ndftrace","quiet $ftemp{u}");
+    ($ORAC_STATUS, @lb) = $Mon{ndfpack_mon}->get("ndftrace","lbound");
+
+    # Shift the origin of Q
+    $Mon{ndfpack_mon}->obeyw("setorigin","ndf=$ftemp{u} origin=[$lb[0],$lb[1],3]");
+    
+    # Paste the 3 NDFs into the single Cube
+    $Mon{kappa_mon}->obeyw("paste","transp noconfine in=$ftemp{i} p1=$ftemp{q} p2=$ftemp{u} out=$cube_out title='Stokes cube from CALPOL'");
+
+    # Set up the POLPACK extensions
+    $Mon{ndfpack_mon}->obeyw("setext","ndf=$cube_out xname=polpack xtype=polpack option=put noloop cname=STOKES ctype=_char"."*3 shape=0 cvalue=IQU");
+
+    # Set label of the cube
+    $Mon{ndfpack_mon}->obeyw("setlabel","ndf=$cube_out label='Stokes parameters (I, Q, U)'");
+
+    # Remove the file containing the separate I,Q,U NDF images
+    # and the glitch output image
+#    $Mon{ndfpack_mon}->obeyw("erase","object=$in ok=true");
+    $Mon{ndfpack_mon}->obeyw("erase","object=$glitch_out ok=true");
+    $Mon{ndfpack_mon}->obeyw("erase","object=$ftemp{u} ok=true");
+    $Mon{ndfpack_mon}->obeyw("erase","object=$ftemp{q} ok=true");
+
+    # Update the frame object
+    $Frm->file($i, $cube_out);
+
+
+  }
+
+}
