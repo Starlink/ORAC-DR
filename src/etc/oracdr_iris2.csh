@@ -62,6 +62,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.3  2002/09/10 02:52:46  bradc
+#     Directories changed to match structure at AAT
+#
 #     Revision 1.2  2002/04/02 03:04:51  mjc
 #     Use \date command to override aliases.
 #
@@ -93,14 +96,14 @@
 
 # orac things
 if !($?ORAC_DATA_ROOT) then
-    setenv ORAC_DATA_ROOT /irisdata
+#    setenv ORAC_DATA_ROOT /irisdata
 endif
 
 if !($?ORAC_CAL_ROOT) then
     # Need to choose somewhere sensible although
     # this is a fallback as we normally expect
     # ORAC_CAL_ROOT to be set in the same way as ORAC_DIR
-    setenv ORAC_CAL_ROOT /iris_sw/oracdr_cal
+    setenv ORAC_CAL_ROOT /iris2_soft/oracdr_cal/oracdr_cal
 endif
 
 if ($?ORAC_RECIPE_DIR) then
@@ -127,14 +130,16 @@ set oracdr_args = "-ut $oracut"
 set oracut_cut = `echo $oracut | cut -c 3-8`
 
 setenv ORAC_INSTRUMENT IRIS2
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/iris2/$oracut_cut/
-setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/iris2/$oracut_cut/
+setenv ORAC_DATA_IN /data_vme10/aatobs/iris2_data/$oracut_cut
+setenv ORAC_DATA_OUT /iris2_reduce/iris2red/$oracut_cut
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/iris2
+
+if (! -d ${ORAC_DATA_OUT} ) mkdir ${ORAC_DATA_OUT}
 
 # screen things
 setenv ORAC_PERSON oracdr_iris2
 setenv ORAC_LOOP wait
-setenv ORAC_SUN  ???
+setenv ORAC_SUN 230,232,236
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
