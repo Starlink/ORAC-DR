@@ -77,9 +77,73 @@ sub skyindex {
 }
 
 
-
-
 =back
+
+
+=head2 General Methods
+
+=over 4
+
+=item B<mask>
+
+Return (or set) the name of the current mask. If a mask is to be returned 
+every effrort is made to guarantee that the mask is suitable for use.
+
+  $mask = $Cal->mask;
+  $Cal->mask($newmask);
+
+If no suitable mask can be found from the index file (or the currently
+set mask is not suitable), C<$ORAC_DATA_CAL/bpm> is returned by
+default (so long as the file does exist).  Note that a test for
+suitability can not be performed since there is no corresponding index
+entry for this default mask.
+
+=cut
+
+
+sub mask {
+
+  my $self = shift;
+
+  if (@_) {
+    return $self->maskname(shift);
+  };
+
+  my $ok = $self->maskindex->verify($self->maskname,$self->thing);
+
+  # happy ending
+  return $self->maskname if $ok;
+
+  croak ("Override mask is not suitable! Giving up") if $self->masknoupdate;
+
+  if (defined $ok) {
+
+    my $mask = $self->maskindex->choosebydt('ORACTIME',$self->thing);
+
+    unless (defined $mask) {
+
+      # Nothing suitable, default to fallback position
+      # Check that exists and be careful not to set this as the
+      # maskname() value since it has no corresponding index enrty
+      my $defmask = $ENV{ORAC_DATA_CAL} . "/bpm";
+      return $defmask if -e $defmask . ".sdf";
+
+      # give up...
+      croak "No suitable bad pixel mask was found in index file"
+    }
+
+    # Store the good value
+    $self->maskname($mask);
+
+  } else {
+
+    # All fall down....
+    croak("Error in determining bad pixel mask - giving up");
+  }
+
+}
+
+
 
 =head2 New methods
 
