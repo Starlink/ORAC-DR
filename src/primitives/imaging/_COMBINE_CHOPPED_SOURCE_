@@ -12,12 +12,14 @@
 #    This primitive forms a combined source file from the current group
 #    file.  It expects the group file to be an integrated chopped and
 #    nodded image, in which the source appears as two positive and two
-#    negative images.  The primitive optionally locates the centroid of
+#    negative images, or as a single positive and negative pair of
+#    images.  The primitive optionally locates the centroid of each
 #    each source, and extracts a symmetric region about each source. 
-#    These regions are combined (see argument METHOD) to create an image
-#    of the source of twice the signal-to-noise of a single image, but
-#    normalised to yield the average signal of a single image.  This
-#    maintains the scaling of flux per unit exposure time. 
+#    These regions are combined (see argument METHOD) to create an
+#    image of the source of twice (or root 2 for dual images) the 
+#    signal-to-noise of a single image, but normalised to yield the
+#    average signal of a single image.  This maintains the scaling of
+#    flux per unit exposure time. 
 #
 #    The primitive also forms a quality map indicating the contributions
 #    from each image of the source to help interpret the final combined
@@ -28,9 +30,9 @@
 #       If true (1), centroid on the source in each sub-frame before
 #       combining.  If successful, the resultant combined file has the
 #       source centred.  Centroiding is not suitable for objects near
-#       the detection limit.  Setting CENTROID to false (0), means
-#       the combined file is centred about the expected position of
-#       the source.  [1] 
+#       the detection limit or amorphous extended source.  Setting
+#       CENTROID to false (0), means the combined file is centred about
+#       the expected position of the source.  [1] 
 #    CLEAN = LOGICAL (Given)
 #       If true (1), column then row patterns, say due to pickup or
 #       bias variations, are filtered out by subtracting the median
@@ -78,7 +80,9 @@
 #    the regions extend to the midpoints of the chop throw and nod
 #    offsets.  User header ORAC_CHOP_ANGLE is used to select one of two
 #    orientations (0 or +/-90 degrees) to derive the x-y half-widths of
-#    the regions.
+#    the regions.  The exception occurs when the nodding moves off the 
+#    array, i.e. it results in only two images.  Then the regions are
+#    the full width or height, depending on the chop orientation.
 #    -  Before addition, the origins of each identically sized frame
 #    are set to 0,0.
 #    -  It determines for the current recipe cycle the two nod positions
@@ -91,9 +95,11 @@
 #    pixel values divided by their absolute values, after changing sign
 #    for the negative sources.  In the map +4 indicates that a pixel had 
 #    positive contributions from the positive images and negative signal
-#    from the negative images.  Thus it helps to discriminate from sources
-#    which have been chopped into view, for which there are no positive
-#    or negative counterparts (values +/-2) or noise (0, +/-2).
+#    from the negative images; the desired quality is +2 for double 
+#    images.  Thus it helps to discriminate from sources that have been 
+#    chopped into view, for which there are no positive or negative
+#    counterparts (values +/-2) or noise (0, +/-2) for four sources;
+#    or (0, -2) for two sources.
 #    -  The steering header CYCLE_NUMBER specifies the recipe cycle
 #    number.
 #    -  The smoothed and raw combined images, and the quality map may
@@ -126,7 +132,7 @@
 #    MJC: Malcolm J. Currie (JAC)
 #
 # Copyright:
-#    Copyright (C) 2001--2003 Particle Physics and Astronomy Research
+#    Copyright (C) 2001--2004 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 #
 #-
@@ -151,7 +157,7 @@
 # Obtain the value for the combination method.
        my $method = ( lc( $_COMBINE_CHOPPED_SOURCE_{METHOD} ) || "mean" );
 
-# Determine whether or not to fill bad pixels.
+# Determine whether or not to centroid.
        my $centroid = $_COMBINE_CHOPPED_SOURCE_{CENTROID};
        $centroid = defined( $centroid ) ? $centroid : 1;
 
@@ -244,13 +250,18 @@
           $x_chop_offset = $_GET_CHOP_OFFSETS_{XOFF};
           $y_chop_offset = $_GET_CHOP_OFFSETS_{YOFF};
 
+# Obtain the source positions for the A beam.
+# -------------------------------------------
+
+# The first frame in $tempGrp is in the A beam and the second is in
+# the B beam.
           if ( $first ) {
              $Ara_chop_offset = $_GET_CHOP_OFFSETS_{RAOFF};
              $Adec_chop_offset = $_GET_CHOP_OFFSETS_{DECOFF};
 
 # Since the sense of the chop throw is not provided, we assume the ABBA
-# convention.  Note we have to subtract the offsets to obtain the
-# positions.
+# convention.  Note we have to subtract the chop offsets to obtain the
+# negative positions.
              $xpA = $xmid + $x_nod_offset;
              $ypA = $ymid + $y_nod_offset;
              $xnA = $xpA - $x_chop_offset;
@@ -261,11 +272,16 @@
              $A_decoff = $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" );
              $first = 0;
 
+# Obtain the source positions for the B beam.
+# -------------------------------------------
           } else {
 
              $Bra_chop_offset = $_GET_CHOP_OFFSETS_{RAOFF};
              $Bdec_chop_offset = $_GET_CHOP_OFFSETS_{DECOFF};
 
+# Since the sense of the chop throw is not provided, we assume the ABBA
+# convention.  Note we have to subtract the chop offsets to obtain the
+# positive positions.
              $xnB = $xmid + $x_nod_offset;
              $ynB = $ymid + $y_nod_offset;
              $xpB = $xnB - $x_chop_offset;
@@ -277,9 +293,39 @@
           }
        }
 
+# Validate the positions.
+# =======================
+
+# For certain offsets the counterpart image may be off the array, so
+# instead of four images were are left with only one positive and negative
+# pair.
+
+# Determine the bounds of the array.
+       $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$in" );
+       ( my $ORAC_STATUS, my @lbound ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "lbound" );
+       ( $ORAC_STATUS, my @ubound ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "ubound" );
+
+# Determine if the each of the four images lies within the array.
+# Thus later in the primitive only those images within in the
+# array are porcessed.
+       my $vpA = $xpA > $lbound[ 0 ] && $xpA < $ubound[ 0 ] &&
+                 $ypA > $lbound[ 1 ] && $ypA < $ubound[ 1 ];
+       my $vpB = $xpB > $lbound[ 0 ] && $xpB < $ubound[ 0 ] &&
+                 $ypB > $lbound[ 1 ] && $ypB < $ubound[ 1 ];
+       my $vnA = $xnA > $lbound[ 0 ] && $xnA < $ubound[ 0 ] &&
+                 $ynA > $lbound[ 1 ] && $ynA < $ubound[ 1 ];
+       my $vnB = $xnB > $lbound[ 0 ] && $xnB < $ubound[ 0 ] &&
+                 $ynB > $lbound[ 1 ] && $ynB < $ubound[ 1 ];
+
+# Count the number of sources visible.
+       my $nsource = $vpA + $vnA + $vpB + $vnB;
+
 # Use approximate positions to find the centroids.
 # ================================================
        my ( $sectionAp, $sectionAn, $sectionBp, $sectionBn );
+
+# Initialise displacements from nominal centre of the ABBA pattern.
+       my @disp = ( 0, 0 );
 
        {
 
@@ -289,18 +335,19 @@
           if ( $centroid ) {
 
 # Initialise displacement measures.
-             my ( $centre, $init );
+             my ( $centre, $init, $found );
              my $xdisp = 0;
              my $ydisp = 0;
              my $num_centroid = 0;
 
-# Locate the centroid of the A positive image.  This uses the telescope
-# offsets to locate the source.  Hence first set the telescope offsets
-# to those of the A beam.
-             $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET", $A_raoff  );
-             $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET", $A_decoff );
+# Locate the centroid of the visible positive A image.  This uses the 
+# telescope offsets to locate the source.  Hence first set the telescope 
+# offsets to those of the A beam.
+             if ( $vpA ) {
+                $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET", $A_raoff  );
+                $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET", $A_decoff );
 
-             _FIND_SOURCE_CENTROID_ POSITIVE=1 BOXSIZE=$aperture
+                _FIND_SOURCE_CENTROID_ POSITIVE=1 BOXSIZE=$aperture
 
 # It is possible that no centroid was found.  Get a reference to the flag,
 # test the status, and report an error where centroiding failed.  The
@@ -308,30 +355,32 @@
 # that the position is defined.  When there is no centroid found, give a
 # warning but carry on with nominal position.  Update the position with the
 # centroid's co-ordinates.
-             my $found = $_FIND_SOURCE_CENTROID_{FOUND};
-             $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
+                $found = $_FIND_SOURCE_CENTROID_{FOUND};
+                $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
 
-             if ( $$found && defined( $$centre[ 0 ] ) ) {
-                $xpA = $$centre[ 0 ];
-                $ypA = $$centre[ 1 ];
+                if ( $$found && defined( $$centre[ 0 ] ) ) {
+                   $xpA = $$centre[ 0 ];
+                   $ypA = $$centre[ 1 ];
 
 # Find the pixel displacement between the source and its expected
 # location and add to the sum of the displacements.
-                $init = $_FIND_SOURCE_CENTROID_{INIT};
-                $xdisp += $$centre[ 0 ] - $$init[ 0 ];
-                $ydisp += $$centre[ 1 ] - $$init[ 1 ];
-                $num_centroid++; 
+                   $init = $_FIND_SOURCE_CENTROID_{INIT};
+                   $xdisp += $$centre[ 0 ] - $$init[ 0 ];
+                   $ydisp += $$centre[ 1 ] - $$init[ 1 ];
+                   $num_centroid++; 
 
-             } else {
-                orac_err "Unable to locate positive A-beam source for " .
-                         "aperture photometry.\n";
+                } else {
+                   orac_err "Unable to locate positive A-beam source for " .
+                            "combination.\n";
+                }
              }
 
-# Locate the centroid of the negative A beam.  This is approximately
-# displaced from the A positive by the negative chop throw.
-             my $neg_Ara_chop_offset = -1 * $Ara_chop_offset;
-             my $neg_Adec_chop_offset= -1 * $Adec_chop_offset;
-             _FIND_SOURCE_CENTROID_ POSITIVE=0 BOXSIZE=$aperture RAOFF=$neg_Ara_chop_offset DECOFF=$neg_Adec_chop_offset
+# Locate the centroid of the visible negative A beam.  This is 
+# approximately displaced from the A positive by the negative chop throw.
+             if ( $vnA ) {
+                my $neg_Ara_chop_offset = -1 * $Ara_chop_offset;
+                my $neg_Adec_chop_offset= -1 * $Adec_chop_offset;
+                _FIND_SOURCE_CENTROID_ POSITIVE=0 BOXSIZE=$aperture RAOFF=$neg_Ara_chop_offset DECOFF=$neg_Adec_chop_offset
 
 # It is possible that no centroid was found.  Get a reference to the flag,
 # test the status, and report an error where centroiding failed.  The
@@ -339,31 +388,33 @@
 # that the position is defined.  When there is no centroid found, give a
 # warning but carry on with nominal position.  Update the position with the
 # centroid's co-ordinates.
-             $found = $_FIND_SOURCE_CENTROID_{FOUND};
-             $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
-             if ( $$found && defined( $$centre[ 0 ] ) ) {
-                $xnA = $$centre[ 0 ];
-                $ynA = $$centre[ 1 ];
+                $found = $_FIND_SOURCE_CENTROID_{FOUND};
+                $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
+                if ( $$found && defined( $$centre[ 0 ] ) ) {
+                   $xnA = $$centre[ 0 ];
+                   $ynA = $$centre[ 1 ];
 
 # Find the pixel displacement between the source and its expected
 # location and add to the sum of the displacements.
-                $init = $_FIND_SOURCE_CENTROID_{INIT};
-                $xdisp += $$centre[ 0 ] - $$init[ 0 ];
-                $ydisp += $$centre[ 1 ] - $$init[ 1 ];
-                $num_centroid++; 
+                   $init = $_FIND_SOURCE_CENTROID_{INIT};
+                   $xdisp += $$centre[ 0 ] - $$init[ 0 ];
+                   $ydisp += $$centre[ 1 ] - $$init[ 1 ];
+                   $num_centroid++; 
 
-             } else {
-                orac_err "Unable to locate negative A-beam source for " .
-                         "aperture photometry.\n";
+                } else {
+                   orac_err "Unable to locate negative A-beam source for " .
+                            "combination.\n";
+                }
              }
 
-# Locate the centroid of the B negative image.  This uses the telescope
-# offsets to locate the source.  Hence first set the telescope offsets
-# to those of the B beam.
-             $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET", $B_raoff  );
-             $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET", $B_decoff );
+# Locate the centroid of the visible B negative image.  This uses the 
+# telescope offsets to locate the source.  Hence first set the telescope
+# offsets to those of the B beam.
+             if ( $vnB ) {
+                $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET", $B_raoff  );
+                $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET", $B_decoff );
 
-             _FIND_SOURCE_CENTROID_ POSITIVE=0 BOXSIZE=$aperture
+                _FIND_SOURCE_CENTROID_ POSITIVE=0 BOXSIZE=$aperture
 
 # It is possible that no centroid was found.  Get a reference to the flag,
 # test the status, and report an error where centroiding failed.  The
@@ -371,29 +422,31 @@
 # that the position is defined.  When there is no centroid found, give a
 # warning but carry on with nominal position.  Update the position with the
 # centroid's co-ordinates.
-             $found = $_FIND_SOURCE_CENTROID_{FOUND};
-             $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
-             if ( $$found && defined( $$centre[ 0 ] ) ) {
-                $xnB = $$centre[ 0 ];
-                $ynB = $$centre[ 1 ];
+                $found = $_FIND_SOURCE_CENTROID_{FOUND};
+                $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
+                if ( $$found && defined( $$centre[ 0 ] ) ) {
+                   $xnB = $$centre[ 0 ];
+                   $ynB = $$centre[ 1 ];
 
 # Find the pixel displacement between the source and its expected
 # location and add to the sum of the displacements.
-                $init = $_FIND_SOURCE_CENTROID_{INIT};
-                $xdisp += $$centre[ 0 ] - $$init[ 0 ];
-                $ydisp += $$centre[ 1 ] - $$init[ 1 ];
-                $num_centroid++; 
+                   $init = $_FIND_SOURCE_CENTROID_{INIT};
+                   $xdisp += $$centre[ 0 ] - $$init[ 0 ];
+                   $ydisp += $$centre[ 1 ] - $$init[ 1 ];
+                   $num_centroid++; 
 
-             } else {
-                orac_err "Unable to locate negative B-beam source for " .
-                         "aperture photometry.\n";
+                } else {
+                   orac_err "Unable to locate negative B-beam source for " .
+                            "combination.\n";
+                }
              }
 
-# Locate the centroid of the positive A beam.  This is approximately
-# displaced from the B negative by the negative chop throw.
-             my $neg_Bra_chop_offset = -1 * $Bra_chop_offset;
-             my $neg_Bdec_chop_offset = -1 * $Bdec_chop_offset;
-             _FIND_SOURCE_CENTROID_ POSITIVE=1 BOXSIZE=$aperture RAOFF=$neg_Bra_chop_offset DECOFF=$neg_Bdec_chop_offset
+# Locate the centroid of the visible positive B beam image.  This is 
+# approximately displaced from the B negative by the negative chop throw.
+             if ( $vpB ) {
+                my $neg_Bra_chop_offset = -1 * $Bra_chop_offset;
+                my $neg_Bdec_chop_offset = -1 * $Bdec_chop_offset;
+                _FIND_SOURCE_CENTROID_ POSITIVE=1 BOXSIZE=$aperture RAOFF=$neg_Bra_chop_offset DECOFF=$neg_Bdec_chop_offset
 
 # It is possible that no centroid was found.  Get a reference to the flag,
 # test the status, and report an error where centroiding failed.  The
@@ -401,22 +454,23 @@
 # that the position is defined.  When there is no centroid found, give a
 # warning but carry on with nominal position.  Update the position with the
 # centroid's co-ordinates.
-             $found = $_FIND_SOURCE_CENTROID_{FOUND};
-             $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
-             if ( $$found && defined( $$centre[ 0 ] ) ) {
-                $xpB = $$centre[ 0 ];
-                $ypB = $$centre[ 1 ];
+                $found = $_FIND_SOURCE_CENTROID_{FOUND};
+                $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
+                if ( $$found && defined( $$centre[ 0 ] ) ) {
+                   $xpB = $$centre[ 0 ];
+                   $ypB = $$centre[ 1 ];
 
 # Find the pixel displacement between the source and its expected
 # location and add to the sum of the displacements.
-                $init = $_FIND_SOURCE_CENTROID_{INIT};
-                $xdisp += $$centre[ 0 ] - $$init[ 0 ];
-                $ydisp += $$centre[ 1 ] - $$init[ 1 ];
-                $num_centroid++; 
+                   $init = $_FIND_SOURCE_CENTROID_{INIT};
+                   $xdisp += $$centre[ 0 ] - $$init[ 0 ];
+                   $ydisp += $$centre[ 1 ] - $$init[ 1 ];
+                   $num_centroid++; 
 
-             } else {
-                orac_err "Unable to locate positive B-beam source for " .
-                         "aperture photometry.\n";
+                } else {
+                   orac_err "Unable to locate positive B-beam source for " .
+                            "combination.\n";
+                }
              }
 
 # Determine the mean displacements from the nominal positions, and
@@ -430,10 +484,10 @@
                 orac_print "Target displaced ($fs_x,$fs_y) pixels from " .
                            "nominal position.\n";
 
-# For storage correct to the nearest pixel.
+# For storage correct to the nearest pixel.  Record the displacements.
                 my $xbase = nint( $xdisp );
                 my $ybase = nint( $ydisp );
-                my @base = ( $xbase, $ybase );
+                @disp = ( $xbase, $ybase );
 
 # File the base location in the calibration system.
 # =================================================
@@ -441,7 +495,7 @@
 # The value needs to be in a hash.  Use the current frame as a reference
 # for this, as it has the same readout mode and speed/well depth as the
 # others.
-                my %hash = ( %{ $Frm->hdr }, BASESHIFT => \@base );
+                my %hash = ( %{ $Frm->hdr }, BASESHIFT => \@disp );
                 $Cal->baseshiftindex->add( $Frm->file, \%hash );
 
                 orac_print "Base shift filed with the calibration system.\n";
@@ -453,10 +507,11 @@
 # First attempt to obtain the value from the calibration system.
 # If it's successful extract the x and y displacements, of which there
 # must be two, and shift the nominal positions, otherwise use the current
-# values.
+# values.  Quicker to just apply shifts to all position and not test for
+# visibility.
              my $base = eval { $Cal->baseshift };
              if ( !$@ ) {
-                my @disp = @$base;
+                @disp = @$base;
                 if ( $#disp == 1 ) {
                    $xpA += $disp[ 0 ];
                    $ypA += $disp[ 1 ];
@@ -474,53 +529,267 @@
 # ====================================
 
 # Derive the bounds of four equal-sized rectangles centred on each
-# positive and negative image.  We could access the chop rotation angle
-# but it's simpler to decide on the position (quadrant) of the
-# positive A signal. 
+# positive and negative image for four images, or two equal-sized 
+# rectangles where there are only two images of the source.  We could 
+# access the chop rotation angle, but it's simpler to decide on the
+# position (quadrant) of the positive A signal. 
 #
 # This combination loses sub-pixel registration, but should be adequate
 # for aperture photometry.  This is also somewhat smaller than the
-# telescope pointing errors.  This makes an assumption regarding the
-# orientation, being either 0, or +/-90 degrees.
-# and needs a header.
+# telescope pointing errors.
+
+# The sense of divisions depends on the chop angle.  Below makes an 
+# assumption regarding the orientation, being either 0, or +/-90 degrees.
           my ( $halfx, $halfy );
           my $chopangle = ( $Frm->uhdr( "ORAC_CHOP_ANGLE" ) || 0 );
+
+# Chop orientation 0 degrees.
+# ---------------------------
           if ( abs( $chopangle ) < 45 ) {
-             $halfx = int( 0.5 * abs( $xpA - $xnA ) );
-             $halfy = int( 0.5 * abs( $ypA - $ynB ) );
+
+# Get width for four sources.
+             if ( $vpA && $vnA ) {
+                $halfx = 0.5 * abs( $xpA - $xnA );
+
+# Get width for double source.
+             } else {
+                $halfx = 0.5 * ( $ubound[ 0 ] - $lbound[ 0 ] + 1 );
+             }
+
+# Get height for four sources.
+             if ( $vpA && $vnB ) {
+                $halfy = 0.5 * abs( $ypA - $ynB );
+
+# Get height for two sources.
+             } else {
+                $halfy = 0.5 * ( $ubound[ 1 ] - $lbound[ 1 ] + 1 );
+             }
+
+# Chop orientation +/-90 degrees
+# ------------------------------
           } else {
-             $halfx = int( 0.5 * abs( $xpA - $xnB ) );
-             $halfy = int( 0.5 * abs( $ypA - $ynA ) );
+
+# Get width for four sources.
+             if ( $vpA && $vnB ) {
+                $halfx = 0.5 * abs( $xpA - $xnB );
+
+# Get width for double source.
+             } else {
+                $halfx = 0.5 * ( $ubound[ 0 ] - $lbound[ 0 ] + 1 );
+             }
+
+# Get height for four sources.
+             if ( $vpA && $vnA ) {
+                $halfy = 0.5 * abs( $ypA - $ynA );
+
+# Get height for two sources.
+             } else {
+                $halfy = 0.5 * ( $ubound[ 1 ] - $lbound[ 1 ] + 1 );
+             }
+          }
+
+# For two source images we assume that they divide left-right or
+# top-bottom. 
+          my ( $xmidisp, $ymidisp, $width, $height );
+          if ( $nsource < 4 ) {
+
+# Correct the centre for the displacement obtained from the calibration
+# system or obtained by centroiding.
+             $xmidisp = $xmid + $disp[ 0 ];
+             $ymidisp = $ymid + $disp[ 1 ];
+
+# Have symmetric regions centred on the source's nominal position.
+#             $width = min( $xmidisp - $lbound[ 0 ], $ubound[ 0 ] - $xmidisp );
+#             $height = min( $ymidisp - $lbound[ 1 ], $ubound[ 1 ] - $ymidisp );
+              $width = 2 * int( $halfx );
+              $height = 2 * int( $halfy );
           }
 
 # Create an NDF bounds string for the positive A beam.
+# ----------------------------------------------------
           my ( $x_lbnd, $y_lbnd, $x_ubnd, $y_ubnd );
-          $x_lbnd = int( $xpA - $halfx );
-          $y_lbnd = int( $ypA - $halfy );
-          $x_ubnd = int( $xpA + $halfx );
-          $y_ubnd = int( $ypA + $halfy );
-          $sectionAp = "($x_lbnd:$x_ubnd,$y_lbnd:$y_ubnd)";
+
+# Only define bounds for a visible positive A-beam image of the
+# source.
+          if ( $vpA ) {
+             $x_lbnd = int( $xpA - $halfx );
+             $y_lbnd = int( $ypA - $halfy );
+             $x_ubnd = int( $xpA + $halfx );
+             $y_ubnd = int( $ypA + $halfy );
+
+# Correct the default bounds for two sources.  First for 0-degree
+# chop orientation.  The relative location of the counterpart negative
+# image decides whether the positive image is to the left or right.  The 
+# division between left and right is at the effective (displaced) centre.
+             if ( $nsource == 2 ) {
+                if ( abs( $chopangle ) < 45 ) {
+                   if ( ( ( $xpA > $xnA ) && $vnA ) ||
+                        ( ( $xpA > $xnB ) && $vnB ) ) {
+                      $x_lbnd = $xmidisp;
+                      $x_ubnd = $x_lbnd + $width - 1;
+                   } else {
+                      $x_ubnd = $xmidisp;
+                      $x_lbnd = $x_ubnd - $width + 1;
+                   }
+
+# For +/-90-degree chop orientation.  The relative location of the 
+# counterpart negative image decides whether the positive image is to
+# the top or bottom.  The division between top and bottom is at the 
+# effective (displaced) centre.
+                } else {
+                   if ( ( ( $ypA > $ynA ) && $vnA ) ||
+                        ( ( $ypA > $ynB ) && $vnB ) ) {
+                      $y_lbnd = $ymidisp;
+                      $y_ubnd = $y_lbnd + $height - 1;
+                   } else {
+                      $y_ubnd = $ymidisp;
+                      $y_lbnd = $y_ubnd - $height + 1;
+                   }
+                }
+             }
+
+# Define an NDF section for the positive A beam.
+             $sectionAp = "($x_lbnd:$x_ubnd,$y_lbnd:$y_ubnd)";
+          }
 
 # Create an NDF bounds string for the negative A beam.
-          $x_lbnd = int( $xnA - $halfx );
-          $y_lbnd = int( $ynA - $halfy );
-          $x_ubnd = int( $xnA + $halfx );
-          $y_ubnd = int( $ynA + $halfy );
-          $sectionAn = "($x_lbnd:$x_ubnd,$y_lbnd:$y_ubnd)";
+# ----------------------------------------------------
+
+# Only define bounds for a visible negative A-beam image of the
+# source.
+          if ( $vnA ) {
+             $x_lbnd = int( $xnA - $halfx );
+             $y_lbnd = int( $ynA - $halfy );
+             $x_ubnd = int( $xnA + $halfx );
+             $y_ubnd = int( $ynA + $halfy );
+
+# Correct the default bounds for two sources.  First for 0-degree
+# chop orientation.  The relative location of the counterpart positive
+# image decides whether the negative image is to the left or right.  The 
+# division between left and right is at the effective (displaced) centre.
+             if ( $nsource == 2 ) {
+                if ( abs( $chopangle ) < 45 ) {
+                   if ( ( ( $xnA > $xpA ) && $vpA ) ||
+                        ( ( $xnA > $xpB ) && $vpB ) ) {
+                      $x_lbnd = $xmidisp;
+                      $x_ubnd = $x_lbnd + $width - 1;
+                   } else {
+                      $x_ubnd = $xmidisp;
+                      $x_lbnd = $x_ubnd - $width + 1;
+                   }
+
+# For +/-90-degree chop orientation.  The relative location of the 
+# counterpart positive image decides whether the negative image is to
+# the top or bottom.  The division between top and bottom is at the 
+# effective (displaced) centre.
+                } else {
+                   if ( ( ( $ynA > $ypA ) && $vpA ) ||
+                        ( ( $ynA > $ypB ) && $vpB ) ) {
+                      $y_lbnd = $ymidisp;
+                      $y_ubnd = $y_lbnd + $height - 1;
+                   } else {
+                      $y_ubnd = $ymidisp;
+                      $y_lbnd = $y_ubnd - $height + 1;
+                   }
+                }
+             }
+
+# Define an NDF section for the negative A beam.
+             $sectionAn = "($x_lbnd:$x_ubnd,$y_lbnd:$y_ubnd)";
+          }
 
 # Create an NDF bounds string for the positive B beam.
-          $x_lbnd = int( $xpB - $halfx );
-          $y_lbnd = int( $ypB - $halfy );
-          $x_ubnd = int( $xpB + $halfx );
-          $y_ubnd = int( $ypB + $halfy );
-          $sectionBp = "($x_lbnd:$x_ubnd,$y_lbnd:$y_ubnd)";
+# ----------------------------------------------------
+
+# Only define bounds for a visible positive B-beam image of the
+# source.
+          if ( $vpB ) {
+             $x_lbnd = int( $xpB - $halfx );
+             $y_lbnd = int( $ypB - $halfy );
+             $x_ubnd = int( $xpB + $halfx );
+             $y_ubnd = int( $ypB + $halfy );
+
+# Correct the default bounds for two sources.  First for 0-degree
+# chop orientation.  The relative location of the counterpart negative
+# image decides whether the positive image is to the left or right.  The 
+# division between left and right is at the effective (displaced) centre.
+             if ( $nsource == 2 ) {
+                if ( abs( $chopangle ) < 45 ) {
+                   if ( ( ( $xpB > $xnB ) && $vnB ) ||
+                        ( ( $xpB > $xnA ) && $vnA ) ) {
+                      $x_lbnd = $xmidisp;
+                      $x_ubnd = $x_lbnd + $width - 1;
+                   } else {
+                      $x_ubnd = $xmidisp;
+                      $x_lbnd = $x_ubnd - $width + 1;
+                   }
+
+# For +/-90-degree chop orientation.  The relative location of the 
+# counterpart negative image decides whether the positive image is to
+# the top or bottom.  The division between top and bottom is at the 
+# effective (displaced) centre.
+                } else {
+                   if ( ( ( $ypB > $ynB ) && $vnB ) ||
+                        ( ( $ypB > $ynA ) && $vnA ) ) {
+                      $y_lbnd = $ymidisp;
+                      $y_ubnd = $y_lbnd + $height - 1;
+                   } else {
+
+                      $y_ubnd = $ymidisp;
+                      $y_lbnd = $y_ubnd - $height + 1;
+                   }
+                }
+             }
+
+# Define an NDF section for the positive B beam.
+             $sectionBp = "($x_lbnd:$x_ubnd,$y_lbnd:$y_ubnd)";
+          }
 
 # Create an NDF bounds string for the negative B beam.
-          $x_lbnd = int( $xnB - $halfx );
-          $y_lbnd = int( $ynB - $halfy );
-          $x_ubnd = int( $xnB + $halfx );
-          $y_ubnd = int( $ynB + $halfy );
-          $sectionBn = "($x_lbnd:$x_ubnd,$y_lbnd:$y_ubnd)";
+# ----------------------------------------------------
+
+# Only define bounds for a visible negative B-beam image of the
+# source.
+          if ( $vnB ) {
+             $x_lbnd = int( $xnB - $halfx );
+             $y_lbnd = int( $ynB - $halfy );
+             $x_ubnd = int( $xnB + $halfx );
+             $y_ubnd = int( $ynB + $halfy );
+
+# Correct the default bounds for two sources.  First for 0-degree
+# chop orientation.  The relative location of the counterpart positive
+# image decides whether the negative image is to the left or right.  The 
+# division between left and right is at the effective (displaced) centre.
+             if ( $nsource == 2 ) {
+                if ( abs( $chopangle ) < 45 ) {
+                   if ( ( ( $xnB > $xpB ) && $vpB ) ||
+                        ( ( $xnB > $xpA ) && $vpA ) ) {
+                      $x_lbnd = $xmidisp;
+                      $x_ubnd = $x_lbnd + $width - 1;
+                   } else {
+                      $x_ubnd = $xmidisp;
+                      $x_lbnd = $x_ubnd - $width + 1;
+                   }
+
+# For +/-90-degree chop orientation.  The relative location of the 
+# counterpart positive image decides whether the negative image is to
+# the top or bottom.  The division between top and bottom is at the 
+# effective (displaced) centre.
+                } else {
+                   if ( ( ( $ynB > $ypB ) && $vpB ) ||
+                        ( ( $ynB > $ypA ) && $vpA ) ) {
+                      $y_lbnd = $ymidisp;
+                      $y_ubnd = $y_lbnd + $height - 1;
+                   } else {
+                      $y_ubnd = $ymidisp;
+                      $y_lbnd = $y_ubnd - $height + 1;
+                   }
+                }
+             }
+
+# Define an NDF section for the negative B beam.
+             $sectionBn = "($x_lbnd:$x_ubnd,$y_lbnd:$y_ubnd)";
+          }
 
 # End of new $Frm context.
        }
@@ -537,12 +806,12 @@
           $in = $Frm->file;
        }
 
-# Extract the four sections.
-# ==========================
+# Extract the visible sections.
+# =============================
 
 # There is a problem in that the $Grp user headers contain updated end
 # time, end airmass, and integrated exposure time.  If we update
-# $Frm->file with $in---the group file---that gives # the correct
+# $Frm->file with $in---the group file---that gives the correct
 # steering headers, but lacks the revised group headers.  On the other
 # hand, using the $mosFrm gets the revised data but loses the steering
 # headers.  The former while on the face of it is easier, it does have
@@ -556,36 +825,45 @@
 # which is the section approximately centred about that beam's
 # nominal location.  Set the origin to 1,1 for the arithmetic
 # later.
-       my $Ap_name = $in . "_Ap";
-       my $param = "in=$in$sectionAp out=$Ap_name";
-       $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param" );
-       $param = "ndf=$Ap_name origin=[1,1]";
-       $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param" );
-       orac_print "Positive A-beam image extracted in $Ap_name\n";
+       my ( $param, $Ap_name, $An_name, $Bp_name, $Bn_name );
+       if ( $vpA ) {
+          $Ap_name = $in . "_Ap";
+          $param = "in=$in$sectionAp out=$Ap_name";
+          $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param" );
+          $param = "ndf=$Ap_name origin=[1,1]";
+          $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param" );
+          orac_print "Positive A-beam image extracted in $Ap_name\n";
+       }
 
 # Repeat for the negative A beam.
-       my $An_name = $in . "_An";
-       $param = "in=$in$sectionAn out=$An_name";
-       $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param" );
-       $param = "ndf=$An_name origin=[1,1]";
-       $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param" );
-       orac_print "Negative A-beam image extracted in $An_name\n";
+       if ( $vnA ) {
+          $An_name = $in . "_An";
+          $param = "in=$in$sectionAn out=$An_name";
+          $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param" );
+          $param = "ndf=$An_name origin=[1,1]";
+          $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param" );
+          orac_print "Negative A-beam image extracted in $An_name\n";
+       }
 
 # Repeat for the negative A beam.
-       my $Bp_name = $in . "_Bp";
-       $param = "in=$in$sectionBp out=$Bp_name";
-       $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param" );
-       $param = "ndf=$Bp_name origin=[1,1]";
-       $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param" );
-       orac_print "Positive B-beam image extracted in $Bp_name\n";
+       if ( $vpB ) {
+          $Bp_name = $in . "_Bp";
+          $param = "in=$in$sectionBp out=$Bp_name";
+          $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param" );
+          $param = "ndf=$Bp_name origin=[1,1]";
+          $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param" );
+          orac_print "Positive B-beam image extracted in $Bp_name\n";
+       }
 
 # Repeat for the negative B beam.
-       my $Bn_name = $in . "_Bn";
-       $param = "in=$in$sectionBn out=$Bn_name";
-       $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param" );
-       $param = "ndf=$Bn_name origin=[1,1]";
-       $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param" );
-       orac_print "Negative B-beam image extracted in $Bn_name\n";
+       if ( $vnB ) {
+          $Bn_name = $in . "_Bn";
+          $param = "in=$in$sectionBn out=$Bn_name";
+          $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param" );
+          $param = "ndf=$Bn_name origin=[1,1]";
+          $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param" );
+          orac_print "Negative B-beam image extracted in $Bn_name\n";
+       }
 
 # Form quality map.
 # =================
@@ -596,38 +874,52 @@
        if ( $qmap ) {
           if ( $smoothbox > 1 ) {
 
-# Block-averaged smooth using the supplied box size for each
+# Block-averaged smooth using the supplied box size for each visible
 # positive and negative section, and assign each new name to the
 # corresponding original variable.
-             $in = $Ap_name;
-             $out = $in . "_sm";
-             $param = "in=$in out=$out box=$smoothbox accept";
-             $Mon{ "kappa_mon" }->obeyw( "block", "$param" );
-             $Ap_name = $out;
+             if ( $vpA ) {
+                $in = $Ap_name;
+                $out = $in . "_sm";
+                $param = "in=$in out=$out box=$smoothbox accept";
+                $Mon{ "kappa_mon" }->obeyw( "block", "$param" );
+                $Ap_name = $out;
+             }
 
-             $in = $Bp_name;
-             $out = $in . "_sm";
-             $param = "in=$in out=$out box=$smoothbox accept";
-             $Mon{ "kappa_mon" }->obeyw( "block", "$param" );
-             $Bp_name = $out;
+             if ( $vpB ) {
+                $in = $Bp_name;
+                $out = $in . "_sm";
+                $param = "in=$in out=$out box=$smoothbox accept";
+                $Mon{ "kappa_mon" }->obeyw( "block", "$param" );
+                $Bp_name = $out;
+             }
 
-             $in = $An_name;
-             $out = $in . "_sm";
-             $param = "in=$in out=$out box=$smoothbox accept";
-             $Mon{ "kappa_mon" }->obeyw( "block", "$param" );
-             $An_name = $out;
+             if ( $vnA ) {
+                $in = $An_name;
+                $out = $in . "_sm";
+                $param = "in=$in out=$out box=$smoothbox accept";
+                $Mon{ "kappa_mon" }->obeyw( "block", "$param" );
+                $An_name = $out;
+             }
 
-             $in = $Bn_name;
-             $out = $in . "_sm";
-             $param = "in=$in out=$out box=$smoothbox accept";
-             $Mon{ "kappa_mon" }->obeyw( "block", "$param" );
-             $Bn_name = $out;
+             if ( $vnB ) {
+                $in = $Bn_name;
+                $out = $in . "_sm";
+                $param = "in=$in out=$out box=$smoothbox accept";
+                $Mon{ "kappa_mon" }->obeyw( "block", "$param" );
+                $Bn_name = $out;
+             }
           }
 
 # Generate name Quality of Combined A and B signals
           ( $in, $out ) = $mosFrm->inout( "_qcab" );
-          $param = "exp='IA/abs(IA)+IB/abs(IB)-IC/abs(IC)-ID/abs(ID)' out=$out " .
-                   "ia=$Ap_name ib=$Bp_name ic=$An_name id=$Bn_name"; 
+          my $expr = "exp='0";
+          $expr .= "+IA/abs(IA)" if ( $vpA );
+          $expr .= "+IB/abs(IB)" if ( $vpB );
+          $expr .= "+IC/abs(IC)" if ( $vnA );
+          $expr .= "+ID/abs(ID)" if ( $vnB );
+          $expr .= "'"; 
+          
+          $param = "$expr out=$out ia=$Ap_name ib=$Bp_name ic=$An_name id=$Bn_name"; 
           $Mon{ "kappa_mon" }->obeyw( "maths", "$param" );
           orac_print "Source images combined to form quality map in $out\n";
 
@@ -643,33 +935,64 @@
 # At present there's no sub-pixel registration.
        ( $in, $out ) = $mosFrm->inout( "_cab" );
 
-# Mean is easy.
+# Mean is easy.  Form image expression using visible source images
+# and create a list of parameters for those images.  Normalise by
+# the number of visible source images.
        if ( $method eq "mean" ) {
-          $param = "exp='0.25*(IA-IB+IC-ID)' out=$out " .
-                   "ia=$Ap_name ib=$An_name ic=$Bp_name id=$Bn_name"; 
+          my $expr = "exp='1.0/${nsource}*(";
+          my $namepar = "";
+          if ( $vpA ) {
+             $expr .= "IA";
+             $namepar .= "ia=$Ap_name "
+          } 
+          if ( $vnA ) {
+             $expr .= "-IB";
+             $namepar .= "ib=$An_name "
+          } 
+          if ( $vpB ) {
+             $expr .= "+IC";
+             $namepar .= "ic=$Bp_name "
+          } 
+          if ( $vnB ) {
+             $expr .= "-ID";
+             $namepar .= "id=$Bn_name "
+          }
+          $expr .= ")'";
+
+          $param = "$expr out=$out $namepar";
           $Mon{ "kappa_mon" }->obeyw( "maths", "$param" );
           orac_print "Source images combined and averaged in $out\n";
 
 # Other methods are for MAKEMOS.
        } else {
 
-# First need to make two temporary frames change the polarity of the
-# negative sources.
-          my $tempAfile = new ORAC::TempFile;
-          my $tempApos = $tempAfile->file;
-          $param = "in=$An_name out=$tempApos scalar=-1";
-          $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
+# First need to make a temporary frame change the polarity of the
+# each visible negative source.
+          my ( $tempAfile, $tempApos, $tempBfile, $tempBpos );
+          if ( $vnA ) {
+             $tempAfile = new ORAC::TempFile;
+             $tempApos = $tempAfile->file;
+             $param = "in=$An_name out=$tempApos scalar=-1";
+             $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
+          }
 
-          my $tempBfile = new ORAC::TempFile;
-          my $tempBpos = $tempBfile->file;
-          $param = "in=$Bn_name out=$tempBpos scalar=-1";
-          $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
+          if ( $vnB ) {
+             $tempBfile = new ORAC::TempFile;
+             $tempBpos = $tempBfile->file;
+             $param = "in=$Bn_name out=$tempBpos scalar=-1";
+             $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
+          }
 
-# Create text files to hold the list of input and output files, one per line.
-# This is needed because expanded lists of files may make the command line
-# too long for the ADAM message system.
+# Create text files to hold the list of input and output files, one per
+# line.  This is needed because expanded lists of files may make the 
+# command line too long for the ADAM message system.  Only include the 
+# visible images.
           unlink( "combine.list$$" );
-          my @names = ( $Ap_name,$tempApos,$Bp_name,$tempBpos );
+          my @names = ();
+          push( @names, $Ap_name ) if $vpA;
+          push( @names, $tempApos ) if $vnA;
+          push( @names, $Bp_name ) if $vpB;
+          push( @names, $tempBpos ) if $vnB;
 
           open( my $fh_inlist, ">combine.list$$" ) ||
             orac_throw "Unable to open combine.list$$ to create a list of frames to combine.  Error: $!.\n";
@@ -679,7 +1002,7 @@
 # Combine the now all positive frames using the chosen method.
 # Assign other parameters.
           my $param1 = "in='^combine.list$$' title=!";
-          $param = "out=$out zero optov=4 method=$method";
+          $param = "out=$out zero optov=$nsource method=$method";
 
 # Make the mosaic correcting for differences in offset.
           $Mon{ "ccdpack_reg" }->obeyw( "makemos", "$param1 $param" );
@@ -713,7 +1036,7 @@
 # Display the combined frame.
           $Display->display_data( $mosFrm ) if ( defined $Display );
        }
-       
+
 # Store the frame for other primitives (e.g. photometry, polarimetry)
 # requiring it.
        $Grp->uhdr( "COMBINED_SOURCE_FRAME", $mosFrm );
@@ -733,12 +1056,14 @@ _COMBINE_CHOPPED_SOURCE_ -- Combines chopped and nodded images for NOD_CHOP reci
 This primitive forms a combined source file from the current group
 file.  It expects the group file to be an integrated chopped and
 nodded image, in which the source appears as two positive and two
-negative images.  The primitive optionally locates the centroid of
-each source, and extracts a symmetric region about each source. These
-regions are combined (see argument METHOD) to create an image of the
-source of twice the signal-to-noise of a single image, but normalised
-to yield the average signal of a single image.  This maintains the
-scaling of flux per unit exposure time.
+negative images, or as a single positive and negative pair of
+images.  The primitive optionally locates the centroid of each
+each source, and extracts a symmetric region about each source. 
+These regions are combined (see argument METHOD) to create an
+image of the source of twice (or root 2 for dual images) the 
+signal-to-noise of a single image, but normalised to yield the
+average signal of a single image.  This maintains the scaling of
+flux per unit exposure time. 
 
 The primitive also forms a quality map indicating the contributions
 from each image of the source to help interpret the final combined
@@ -753,9 +1078,9 @@ frame.
 If true (1), centroid on the source in each sub-frame before
 combining.  If successful, the resultant combined file has the
 source centred.  Centroiding is not suitable for objects near
-the detection limit.  Setting CENTROID to false (0), means
-the combined file is centred about the expected position of
-the source.  [1] 
+the detection limit or amorphous extended source.  Setting
+CENTROID to false (0), means the combined file is centred about
+the expected position of the source.  [1] 
 
 =item CLEAN = LOGICAL (Given)
 
@@ -829,10 +1154,13 @@ whenever the weak flux prevents centroiding.
 =item *
 
 The regions are made as large as possible such that there is no
-duplication of pixels from the original group file.  In other words
-the regions extend to the midpoints of the chop throw and nod offsets.
-User header ORAC_CHOP_ANGLE is used to select one of two orientations
-(0 or +/-90 degrees) to derive the x-y half-widths of the regions.
+duplication of pixels from the original group file.  In other words the
+regions extend to the midpoints of the chop throw and nod offsets. User
+header ORAC_CHOP_ANGLE is used to select one of two orientations (0 or
++/-90 degrees) to derive the x-y half-widths of the regions.  The
+exception occurs when the nodding moves off the array, i.e. it results in
+only two images.  Then the regions are the full width or height, depending
+on the chop orientation.
 
 =item *
 
@@ -849,15 +1177,16 @@ centroid locating.
 
 =item *
 
-The quality map is derived from the four sub-frames, with
-recommended smoothing if argument SMOOTH>1.  It is the sum of the 
-pixel values divided by their absolute values, after changing sign
-for the negative sources.  In the map +4 indicates that a pixel had 
-negative sources.  In the map +4 indicates that a pixel had 
-positive contributions from the positive images and negative signal
-from the negative images.  Thus it helps to discriminate from sources
-which have been chopped into view, for which there are no positive
-or negative counterparts (values +/-2) or noise (0, +/-2).
+The quality map is derived from the four sub-frames, with recommended
+smoothing if argument SMOOTH>1.  It is the sum of the pixel values divided
+by their absolute values, after changing sign for the negative sources.  
+In the map +4 indicates that a pixel had negative sources.  In the map +4
+indicates that a pixel had positive contributions from the positive images
+and negative signal from the negative images; the desired quality is +2
+for double images.  Thus it helps to discriminate from sources that have
+been chopped into view, for which there are no positive or negative
+counterparts (values +/-2) or noise (0, +/-2) for four sources; or (0, -2)
+for two sources.
 
 =item *
 
@@ -927,7 +1256,7 @@ MJC: Malcolm J. Currie (JAC)
 
 =head1 COPYRIGHT
 
-Copyright (C) 2001--2003 Particle Physics and Astronomy Research
+Copyright (C) 2001--2004 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
