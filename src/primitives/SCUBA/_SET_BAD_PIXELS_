@@ -1,6 +1,6 @@
 =head1 NAME
 
-SET_BAD_PIXELS
+_SET_BAD_PIXELS_ - Set requested bolometers to bad status
 
 =head1 DESCRIPTION
 
@@ -44,6 +44,9 @@ This means that we have to convert the bolometer name to a
 ADC number and channel number (fairly easy) and then see whether
 this is present in the data before turning it off.
 
+If the bolometer is designated as a number we simply pass it through
+unchanged to CHANGE_QUALITY.
+
 =head1 TASKS
 
 SURF: CHANGE_QUALITY
@@ -51,6 +54,15 @@ SURF: CHANGE_QUALITY
 =head1 NOTES
 
 - Uses NDF calls to read the BOL_CHAN and BOL_ADC extensions!
+
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
 
 =cut
 
@@ -102,28 +114,55 @@ if ($#badbols > -1) {
     my %lut = ( A => 1, B => 2, C => 3, D => 4, E => 5, F => 6,
 		G => 7, H => 8, I => 9);
 
+    # And now the revers lut
+    my %numtoadc;
+    for my $letter (keys %lut) {
+      $numtoadc{$lut{$letter}} = $letter;
+    }
+
     # Now loop over the selected bolometers.
     # so that a CHANGE_QUALITY string can be created
     my @match = (); # Store matching bolometers
     my @mname = (); # Names of matching bolometers
 
     foreach my $bol (@badbols) {
-      my $adc = uc(substr($bol,0,1));
-      my $chan = substr($bol,1);
 
-      # Convert ADC letter to a ADC number
-      my $adcl = $lut{$adc};
+      # If we have a straight number it should always
+      # match (unless it is too large)
+      if ($bol =~ /^\d+$/) {
 
-      # Now need to match the adc and chan with that
-      # read from the file. Can I think of a fast way
-      # to do this with grep? Unfortunately we need to
-      # compare two files and remember the index of the 
-      # unique match
-      for (my $i=0; $i <= $#bolchan; $i++) {
-	if ($adcl == $boladc[$i] && $chan == $bolchan[$i]) {
-	  push(@match, $i+1); # Count from 1 not 0
-	  push(@mname, $bol);
-	  last;
+	# check range
+	if ($bol <= scalar(@boladc) && $bol > 0) {
+
+	  push(@match, $bol);
+
+	  # Translate back to a name
+	  my $index = $bol-1;
+	  my $name = $numtoadc{$boladc[$index]} . $bolchan[$index];
+	  push(@mname, $name);
+
+	}
+
+      } else {
+	
+	# Have a name
+	my $adc = uc(substr($bol,0,1));
+	my $chan = substr($bol,1);
+
+	# Convert ADC letter to a ADC number
+	my $adcl = $lut{$adc};
+
+	# Now need to match the adc and chan with that
+	# read from the file. Can I think of a fast way
+	# to do this with grep? Unfortunately we need to
+	# compare two files and remember the index of the 
+	# unique match
+	for (my $i=0; $i <= $#bolchan; $i++) {
+	  if ($adcl == $boladc[$i] && $chan == $bolchan[$i]) {
+	    push(@match, $i+1); # Count from 1 not 0
+	    push(@mname, $bol);
+	    last;
+	  }
 	}
       }
     }
@@ -132,7 +171,7 @@ if ($#badbols > -1) {
     # a string for CHANGE_QUALITY and set the bolometers bad
     if ($#match > -1) {
       my $in = $Frm->file . '{B' . join(",",@match) . '}';
-      
+
       # Run change_quality
       $Mon{surf_mon}->obeyw("change_quality","in='$in' bad_quality=yes");
 
@@ -144,12 +183,5 @@ if ($#badbols > -1) {
 
   }
 }
-
-
-
-# COPYRIGHT
-#
-#   Copyright (C) 1998-2000 Particle Physics and Astronomy Research
-#   Council. All Rights Reserved.
 
 
