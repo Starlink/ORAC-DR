@@ -23,6 +23,10 @@ the known flux of the calibrator and derive the new gain from
 it. Obviously this is all a lot easier if I am working with
 uncalibrated data.
 
+=head1 OUTPUT
+
+Generates a log file of the flux conversion factors (log.fcf).
+
 =head1 TASKS
 
 Kappa: CMULT, STATS, NDFCOPY
@@ -30,6 +34,7 @@ Kappa: CMULT, STATS, NDFCOPY
 =cut
 
 use NDF;
+use JCMT::Tau;
 
 # Need to loop over sub-instruments
 
@@ -106,6 +111,52 @@ for my $i (0..$Frm->nfiles-1) {
       $hdr{FILTER} = uc($filter[$i]);
       $Cal->gainsindex->add($Frm->file($i+1), \%hdr);
 
+      # Additionally it seems that a user-friendly logfile is
+      # a requirement
+      my $log = new ORAC::LogFile("log.fcf");
+      # Write header to logfile
+      my $time = gmtime();
+      $log->header("# Flux conversion factor log file - created on $time",
+		   "\nUT        Obs  HST   Source    El Filter    WLen  Tau  CSO   FCF",
+		   "#---------------------------------------------------------------",
+		  );
+
+      # FRom FITS header need
+      # FILTER (+filter[$i])
+      my $flt    = $Frm->hdr("FILTER");
+      my $wav    = $filter[$i];
+      # ORACUT
+      my $utdate = $Frm->hdr('ORACUT');
+      # RUN
+      my $run    = sprintf "%4d", $Frm->hdr('RUN');
+      # HSTSTART (no decimal places)
+      my $hst    = $Frm->hdr('HSTSTART');
+      my (@hst)  = split(/:/, $hst);
+      $hst = sprintf '%5s', $hst[0] . ":" . $hst[1];
+
+      # OBJECT
+      my $src    = uc($Frm->hdr('OBJECT'));
+      my $src    = sprintf "%-10s", $src;
+      # Average of END_ELD and STRT_ELD
+      my $el     = ($Frm->hdr('END_ELD') + $Frm->hdr('STRT_ELD'))/ 2.0;
+      $el        = sprintf "%2d", $el;
+      # TAU from calibration object
+      my $tau = sprintf "%5.2f", $Cal->tau($filter[$i]); 
+
+      # Use that tau to calculate CSO
+      my ($cso, $status) = JCMT::Tau::get_tau('CSO',$filter[$i], $tau);
+      if ($status != 0) {
+	$cso = "*****";
+      } else {
+	$cso = sprintf "%5.2f", $cso;
+      }
+
+      # GAIN
+      $gain   = sprintf "%4d", int($gain+0.5);
+
+
+      $log->addentry("$utdate $run $hst $src $el $flt $wav $tau $cso $gain");
+
     }
   }
   
@@ -116,11 +167,11 @@ for my $i (0..$Frm->nfiles-1) {
   # object. This will calibrate our data in Jy and then
   # if we multiply by an extra 1000 we get mJy
   # Assume the gain is constant for each bolometer....
-  my $gain = $Cal->gain($filter[$i]) * 1000.0;
+  my $gain = $Cal->gain($filter[$i]);
+  orac_print "Using gain=$gain Jy/V for filter $filter[$i]\n";
 
-  # Say what gain is being used.
-  my $lgain = $gain / 1000.0;
-  orac_print "Using gain=$lgain Jy/V for filter $filter[$i]\n";
+  # Convert to mJy
+  $gain *= 1000.0;
 
 
   foreach my $subndf (@names) {
@@ -134,7 +185,10 @@ for my $i (0..$Frm->nfiles-1) {
     
     # Multiply by the gain
     $Mon{kappa_mon}->obeyw("cmult","in=$in out=$out $args");
-    
+
+    # Set the units to mJy
+    $Mon{ndfpack_mon}->obeyw("setunits","ndf=$out units=mJy/beam");
+
     # At this point need to copy the NDF back inside the container
     # file
 
