@@ -744,7 +744,6 @@ sub findfilters {
     # ( that covers 850S:PHOT )
     my $found = 0;
     for my $part ($part1, $part2) {
-      print "Looking for $filter in $part\n";
       if ($part =~ /$filter/) { # grep is overkill
 	push(@filter, $part);
 	$found = 1;
@@ -757,7 +756,7 @@ sub findfilters {
   }
 
   $self->filters(@filter);
-  print "FILTERS: ",join(", ",@filter),"\n";
+  # print "FILTERS: ",join(", ",@filter),"\n";
   return @filter;
 }
 
