@@ -1,0 +1,132 @@
+=head1 NAME
+
+_INTERLEAVE_COADD_
+
+=head1 DESCRIPTION
+
+This primitive takes all the integrations (sub-frames) in an observation and
+interleaves and/or co-adds them as necessary to form a single ndf.
+
+=head1 NOTES
+
+This essentially replaces the old primitives 
+_INTERLEAVE_DETECTOR_POSITIONS_ and 
+_COADD_MULTIPLE_EXPOSURES_ 
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+=cut
+
+# OK, we're going to do this by working out what the sampling pattern
+# used was, then looping through all the frames, adding them into the
+# final NDF as appropriate. Thus, we make no assumptions about the
+# number of integrations at each detector position, or about which
+# position is in which integration component of the HDS, instead
+# refereing to the DINDEX header in the integration (ie .Ix) NDF
+# headers.
+
+my $detnincr = $Frm->uhdr("ORAC_NSCAN_POSITIONS");
+my $detincr = $Frm->uhdr("ORAC_SCAN_INCREMENT");
+
+# I'm going to create 2 variables, a and b. As in Sampling = axb eg 3x2
+
+my $a = nint (1/ $detincr);
+my $b = nint ($detnincr * $detincr);
+
+# With 1x1 sampling, we sometimes get strange numbers in detincr
+
+if ($detnincr == 1) {
+   $a = 1;
+   $b = 1;
+}
+
+my $nfiles=$Frm->nfiles;
+
+# Right, report what we think
+orac_print ("Sampling pattern is: $a x $b ; (nincr=$detnincr, incr=$detincr)\n");
+orac_print ("Number of Integrations: $nfiles\n");
+
+# The expansion factor = $a
+
+
+
+if ($nfiles > 1) {
+
+   # OK, here goes
+
+   my $expand = new ORAC::TempFile;
+   my $efile = $expand->file;
+
+   my $ard = new ORAC::TempFile;
+   my $ardfile = $ard->file;
+
+   # Create the ARD file here as there's no need to do this N times.
+   # The ARD file blanks out all but the first out of every $a columns
+   # Only if we're not $a=1
+
+   if ($a != 1) {
+      foreach my $x (1 .. $Frm->uhdr("ORAC_X_DIM")) {
+         foreach my $y (1 .. $a) {
+            if ($y != 1) {
+	        my $eval = $a*$x+$y;
+                print {$ard->handle} "COLUMN( $eval )\n";
+            }
+         }
+      }
+      $ard->handle->close;
+   }
+
+   my $mosparam = "genvar=true usevar=true logto=neither logfile=! method=mean scale=false zero=false in='";
+
+   foreach my $i (1 .. $nfiles) {
+      # Get input and output file names. This is to go to a step ready for mosaicing
+      # ipm = interleave pre-mosaic This is essentially a temp file.
+      my ($in, $out)=$Frm->inout("_ipm", $i);
+
+      # Expand the file in the spectral dimention by a factor $a into a temp file
+      if ($a == 1) {
+         $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$efile");
+      } else {
+         $Mon{'kappa_mon'}->obeyw("pixdupe", "in=$in out=$efile expand=[$a, 1]");
+      }
+
+      # Now blank out all but the first column of expanded pixels
+      if ($a != 1) {
+         $Mon{'kappa_mon'}->obeyw("ardmask", "in=$efile out=$out ardfile=$ardfile");
+      } else {
+         $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$efile out=$out");
+      }
+    
+      # Now shift the image in +x by DINDEX-1 pixels
+      my $origin = $Frm->hdr->{$i}->{DINDEX};
+      $Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$out origin=\[ $origin, 1\]");
+
+      # Add to makemos parameters
+      $mosparam .= "$out";
+      unless ($i == $nfiles) {
+	 $mosparam .= ",";
+      }
+
+      # Report
+      orac_print ("$in to $out: Prepared for interleave-coadd\n");    
+   } 
+
+   # We're going to 1 NDF now, and we're thru with $in
+
+   $Frm->files($Frm->file);
+   $Frm->mergehdr;
+
+   my ($in, $out) = $Frm->inout ("_inc");
+
+   $mosparam .= "' title=$out out=$out";
+
+   $Mon{'ccdpack_reg'}->obeyw("makemos", $mosparam);
+
+   orac_print ("Frames interleaved and coadded into $out\n");
+
+   $Frm->files($out);
+}
+
+orac_print "\n";
