@@ -1,0 +1,278 @@
+#+
+# Name:
+#    _APPLY_DISTORTION_TRANSFORMATION_
+#
+# Purpose:
+#    Applies field distortion correction for ISAAC.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive applies the field-distortion mapping to all the
+#    frames in the current cycle of the current $Grp when it's time
+#    to form a mosaic.  There are two main stages: creating the
+#    WCS mappings, and resampling.
+#
+#    The resampled frames can be trimmed to the bounds of a single
+#    contributing frame or can extend to include all pixels after
+#    transformation (see argument TRIM).  There is a choice of
+#    interpolation methods (see argument INT_METHOD).
+
+# Arguments:
+#    INT_METHOD = CHARACTER (Given)
+#       The interpolation method.  This is either "linint" for bi-linear
+#       interpolation, or "nearest" for nearest neighbour.  The latter
+#       takes about half the time.  ["linint"]
+#    TRIM = LOGICAL (Given)
+#       If true (1), the resampling limits the frame bounds to their
+#       original limits, so the mosaic has the dimensions of a single
+#       contributing frame.  If false (0), the resampling or shifting
+#       imposes no limit to the frame bounds, so the mosaic can extend
+#       to include all pixels in contributing frames.  [0]
+#
+# Notes:
+#    -  This primitive is suitable for ISAAC in imaging mode.
+#    -  Processing only occurs for object and sky frames, and when the
+#    steering header MAKE_MOSAIC is true.  Also steering header
+#    RESAMPLE_FRAMES must be undefined or set to true (1).
+#    -  The distortion mapping comes from the ISAAC "Known Problems"
+#    web page: http://www.eso.org/instruments/isaac/problems_tips.html.
+#    -  The current WCS Frame on input is retained on output.  The
+#    primitive uses the WCS information in current Frm on input and
+#    assumes that this is the same for all frames.
+#    -  The individual resampled frames may be displayed.
+#    -  The frame titles are propagated.
+#
+# Tasks:
+#    CCDPACK: TRANNDF; KAPPA: NDFTRACE, WCSFRAME.
+#
+# Output Data:
+#    -  Resampled frames each inheriting the name of its input frame but
+#    with the _dta (Distortion Transformation Applied) suffix.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+# Arguments
+# =========
+
+# Obtain the value for the interpolation.
+    my $intmethod = ( $_APPLY_DISTORTION_TRANSFORMATION_{INT_METHOD} || "linint" );
+    if ( $intmethod ne "linint" && $intmethod ne "nearest" ) {
+       $intmethod = "linint";
+    }
+
+# Determine whether or not to trim.
+    my $trim = $_APPLY_DISTORTION_TRANSFORMATION_{TRIM};
+    $trim = defined( $trim ) ? $trim : 0;
+
+# Selection
+# =========
+    my $resample = $Frm->uhdr( "RESAMPLE_FRAMES" );
+    $resample = defined( $resample ) ? $resample : 1;
+    
+# This should only be performed on OBJECT frames at mosaic-creation time.
+    if ( ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ) &&
+         $Frm->uhdr( "MAKE_MOSAIC" ) && $resample ) ) {
+
+# Obtain the cycle number.  Default to zero if undefined, so that recipes
+# which do not support this feature will continue to work.
+       my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+       $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+# Select those members in the current cycle.
+       my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+
+# Generate filename lists
+# =======================
+
+# Form a list of input file names for the CCDPACK tasks.  We need to
+# generate an input list for TRANNDF and an output list using a
+# hard-wired suffix of "_dta".
+       ( my $inref, my $outref ) = $cycleGrp->inout( "_dta" );
+
+# Convert the list to a comma-separated list as needed by CCDPACK (GRP).
+       my $objlist = join( ",", @$inref );
+       my $outlist = join( ",", @$outref );
+
+# Create text files to hold the list of input and output files, one per line.
+# This is needed because expanded lists of files may make the command line
+# too long for the ADAM message system.
+       unlink ("tranndf.inlist$$", "tranndf.outlist$$");
+
+       open( my $fh_inlist, ">tranndf.inlist$$" ) || 
+         orac_throw "Unable to open tranndf.inlist$$ to create a list of frames to resample.  Error: $!.\n";
+       print $fh_inlist join( "\n", @$inref ), "\n";
+       close( $fh_inlist );
+
+       open( my $fh_outlist, ">tranndf.outlist$$" ) ||
+         orac_throw "Unable to open tranndf.outlist$$ to create a list of resampled frames.  Error: $!.\n";
+       print $fh_outlist join( "\n", @$outref ), "\n";
+       close( $fh_outlist );
+
+# Create the distortion mapping.
+# ==============================
+
+# Record the current WCS domain number.  This assumes, albeit
+# reasonably, that it is the same for all the frames.
+       my $ndf = $Frm->file;
+       $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$ndf" );
+       ( my $ORAC_STATUS, my $frameno ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "current" );
+
+# Store the distortion mappings in each frame.
+       foreach my $Frm ( $cycleGrp->members ) {
+          _DEFINE_DISTORTION_TRANSFORMATION_
+       }
+
+# Resampling
+# ==========
+       my ( $param1, $param2 );
+
+# Trim the bounds
+# ---------------
+       if ( $trim ) {
+
+# Inquire the original bounds.
+          my $xl = $Frm->uhdr( "ORAC_X_LOWER_BOUND" );
+          my $yl = $Frm->uhdr( "ORAC_Y_LOWER_BOUND" );
+          my $xu = $Frm->uhdr( "ORAC_X_UPPER_BOUND" );
+          my $yu = $Frm->uhdr( "ORAC_Y_UPPER_BOUND" );
+
+# Assign the other parameters.  Use the original bounds.
+          $param2 = "shape=specify lbound=[".$xl.",".$yl."] ubound=[".$xu.",".$yu."]";
+
+       } else {
+
+# Assign the other parameters.  Use the full extent of the contributing
+# pixels.
+          $param2 = "shape=auto";
+       }
+
+# Select the DISTORTION frame in the WCS component.
+       $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf='^tranndf.inlist$$' frame=DISTORTION" );
+
+# Assign the main parameters.
+       my $filelist = "in='^tranndf.inlist$$' out='^tranndf.outlist$$'";
+       $param1 = "$filelist title=! method=$intmethod";
+
+# Shift and resample the flat-field object frames.  This determines
+# the bounds automatically.  It takes the origin from the first object
+# frame.
+       $Mon{ "ccdpack_reg" }->obeyw( "tranndf", "$param1 $param2" );
+
+# Report the processing status.
+       orac_print "Correct for field distortion in frames $objlist .\n";
+       orac_print "Resampled frames are $outlist.\n";
+
+# Restore the former WCS domain.
+# ==============================
+       if ( starversion_gt( "KAPPA", 'V0.13-6' ) ) {
+          $param1 = "ndf='^tranndf.outlist$$' frame=$frameno";
+          $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "$param1" );
+       }
+       
+    }
+
+# Podule
+# ======
+
+=head1 NAME 
+
+_APPLY_DISTORTION_TRANSFORMATION_ -- Applies field distortion correction for ISAAC.
+
+=head1 DESCRIPTION
+
+This primitive applies the field-distortion mapping to all the
+frames in the current cycle of the current $Grp when it's time
+to form a mosaic.  There are two main stages: creating the
+WCS mappings, and resampling.
+
+The resampled frames can be trimmed to the bounds of a single
+contributing frame or can extend to include all pixels after
+transformation (see argument TRIM).  There is a choice of
+interpolation methods (see argument INT_METHOD).
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item INT_METHOD = CHARACTER (Given)
+
+The interpolation method.  This is either "linint" for bi-linear
+interpolation, or "nearest" for nearest neighbour.  The latter
+takes about half the time.  ["linint"]
+
+=item TRIM = LOGICAL (Given)
+
+If true (1), the resampling limits the frame bounds to their
+original limits, so the mosaic has the dimensions of a single
+contributing frame.  If false (0), the resampling or shifting
+imposes no limit to the frame bounds, so the mosaic can extend
+to include all pixels in contributing frames.  [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ISAAC in imaging mode.
+
+=item *
+
+Processing only occurs for object and sky frames, and when the
+steering header MAKE_MOSAIC is true.  Also steering header
+RESAMPLE_FRAMES must be undefined or set to true (1).
+
+=item *
+
+The distortion mapping comes from the ISAAC "Known Problems"
+web page: http://www.eso.org/instruments/isaac/problems_tips.html.
+The current WCS Frame on input is retained on output.  The
+primitive uses the WCS information in current Frm on input and
+assumes that this is the same for all frames.
+
+=item *
+
+The individual resampled frames may be displayed.
+
+=item *
+
+The frame titles are propagated.
+
+=back 
+
+=head1 TASKS
+
+CCDPACK: TRANNDF; KAPPA: NDFTRACE, WCSFRAME.
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Resampled frames each inheriting the name of its input frame but
+with the _dta (Distortion Transformation Applied) suffix.
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
