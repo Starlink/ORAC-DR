@@ -193,19 +193,21 @@ sub calc_orac_headers {
 
 
   # ORACTIME
-  # For UIST the keyword is simply the UTSTART header value.
-  # Just return it (zero if not available)
-  my $time = $self->hdr('UTSTART');
-  $time = 0 unless (defined $time);
-  $self->hdr('ORACTIME', $time);
 
-  $new{'ORACTIME'} = $time;
+  my $date = defined($self->hdr('UTDATE')) ? $self->hdr('UTDATE') : 0;
+  my $time = defined($self->hdr('UTSTART')) ? $self->hdr('UTSTART') / 24 : 0;
+
+  $self->hdr('ORACTIME', $date + $time);
+
+  $new{'ORACTIME'} = $date + $time;
 
   # ORACUT
   # For UIST this is simply the UTDATE header value.
   my $ut = $self->hdr('UTDATE');
   $ut = 0 unless defined $ut;
   $self->hdr('ORACUT', $ut);
+
+  $new{'ORACUT'} = $ut;
 
   return %new;
 }

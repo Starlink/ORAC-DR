@@ -413,8 +413,8 @@ pipeline by using values stored in the header.
 Required ORAC extensions are:
 
 ORACTIME: should be set to a decimal time that can be used for
-comparing the relative start times of frames. For UKIRT instruments this
-number is decimal hours, for SCUBA this number is decimal UT days.
+comparing the relative start times of frames. For UIST this
+is decimal UT days.
 
 ORACUT: This is the UT day of the frame in YYYYMMDD format.
 
@@ -434,22 +434,20 @@ sub calc_orac_headers {
   my %new = $self->SUPER::calc_orac_headers;
 
   # ORACTIME
-  # For UIST the keyword is simply the UTSTART header value.
-  # Just return it (zero if not available)
-  my $time = $self->hdr->{1}->{'UTSTART'};
-  if( !defined( $time ) ) {
-    $time = $self->hdr->{'UTSTART'};
-  }
-  $time = 0 unless (defined $time);
-  $self->hdr('ORACTIME', $time);
+  my $date = defined($self->hdr('UTDATE')) ? $self->hdr('UTDATE') : 0;
+  my $time = defined($self->hdr->{1}->{'UTSTART'}) ? $self->hdr->{1}->{'UTSTART'} / 24 : 0;
 
-  $new{'ORACTIME'} = $time;
+  $self->hdr('ORACTIME', $date + $time);
+
+  $new{'ORACTIME'} = $date + $time;
 
   # ORACUT
   # For UIST this is simply the UTDATE header value.
   my $ut = $self->hdr('UTDATE');
   $ut = 0 unless defined $ut;
   $self->hdr('ORACUT', $ut);
+
+  $new{'ORACUT'} = $ut;
 
   return %new;
 }
