@@ -33,9 +33,10 @@ use strict;
 use IO::File;
 use ORAC::Print;
 
-use ORAC::Display::P4;
-use ORAC::Display::KAPVIEW;
-use ORAC::Display::GAIA;
+# These classes are available. They are loaded on demand
+#use ORAC::Display::P4;
+#use ORAC::Display::KAPVIEW;
+#use ORAC::Display::GAIA;
 
 use vars qw/$VERSION $DEBUG/;
 
@@ -236,7 +237,7 @@ sub display_data {
 
   # Read the name of the supplied object
   my $frm = shift;
-  
+
   # Check that $frm is an object
   unless (ref($frm)) {
     croak 'ORAC::Display::display_data: supplied argument is not a reference';
@@ -269,7 +270,7 @@ sub display_data {
     croak "ORAC::Display::display_data: supplied object can not implement\n".
       " the nfiles() method.";
   }
-  
+
   # Now loop over each input file
   for my $n (1..$nfiles) {
 
@@ -330,25 +331,35 @@ sub display_data {
       unless (exists $self->display_tools->{$display_info{TOOL}}) {
 	orac_print("Creating new object for $display_info{TOOL}\n",'blue');
 
-	my $obj = 'ORAC::Display::' . $display_info{TOOL};
-	#    my $obj = 'ORAC::Display';
+	# Dynamically load the required display class
+	# Very useful when some sites do not have access
+	# to all display systems
+
+	# Class name
+	my $class = 'ORAC::Display::' . $display_info{TOOL};
+	eval "use $class";
+
+	if (@_) {
+	  orac_err "Error loading class $class. Can not even attempt to start this display\n$@";
+	  return;
+	}
 
 	# Check to see that we can create a new display object to
 	# connect to the current tool (maybe that it is simply not
 	# available)
-	if (UNIVERSAL::can($obj, 'new')) {
-	  
-	  $current_tool = $obj->new;	
+	if (UNIVERSAL::can($class, 'new')) {
+
+	  $current_tool = $class->new;	
 
 	  # If the returned value is undef then we had a problem creating
 	  # the tool
 	  unless (defined $current_tool) {
 	    orac_err("Error launching $display_info{TOOL}.\n");
 	    return;
-	  } 
+	  }
 
 	} else {
-	  orac_err("Cant create a $obj object. Maybe an interface to this display\ntool does not exist in ORACDR\n");
+	  orac_err("Cant create a $class object. Maybe an interface to this display\ntool does not exist in ORACDR\n");
 	  return;
 	}
 
