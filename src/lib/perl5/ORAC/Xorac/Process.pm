@@ -325,7 +325,7 @@ sub xorac_start_process {
  
   # Over ride recipe 
   my $Use_Recipe;
-  if ( exists $options->{override} && ${$options}{"override"} == 1 ) {
+  if ( defined $options->{override} && ${$options}{"override"} == 1 ) {
      $Use_Recipe = $$Override_Recipe;
   } else {
      undef $Use_Recipe; 
