@@ -77,17 +77,51 @@ if( $Frm->uhdr("DO_ESTAR_TRIGGER") ) {
   # done.
   # ------------------------------------------------------------------------
 
-  # The embedded agent is responsible for copying this to a public
-  # location
-
-  _CONVERT_GROUP_TO_FITS_
-  my $filename = $_CONVERT_GROUP_TO_FITS_{FILENAME};
-
   _GET_CATALOGUE_NAME_
   my $catalogue = $_GET_CATALOGUE_NAME_{NAME};
 
+  my $fits = "http://omp.jach.hawaii.edu/cgi-bin/staffworf.pl?ut=";
+
+  # If we have an ORACDATETIME header, use that. Otherwise we need to
+  # construct the UT date/time from ORACTIME.
+  if( defined( $Grp->hdr("ORACDATETIME" ) ) ) {
+    my $datetime = $Grp->hdr("ORACDATETIME");
+    $datetime =~ s/[:T]/-/g;
+    $datetime =~ s/Z//;
+    $fits .= $datetime;
+  } else {
+    my $utdate = $Grp->hdr("ORACUT");
+    $utdate =~ /(\d\d\d\d)(\d\d)(\d\d)/;
+    $fits .= $1 . "-" . $2 . "-" . $3 . "-";
+
+    my $uttime = $Grp->hdr("ORACTIME") - $utdate;
+    my $hour = int( $uttime * 60 );
+    my $minute = int( ( $uttime - $hour ) * 60 );
+    my $second = int( ( ( ( $uttime - $hour ) * 60 ) - $minute ) * 60 + 0.5 );
+
+    $fits .= "$hour-$minute-$second";
+  }
+
+  # Get the observation number of the first frame in the group. Note
+  # that this may not necessarily be the group number.
+  my $firstframe = $Grp->allmembers->[0];
+  my $runnr = $firstframe->uhdr("ORAC_OBSERVATION_NUMBER");
+  $fits .= "&runnr=$runnr";
+
+  # Get the instrument name.
+  $fits .= "&inst=" . uc( $Frm->uhdr("ORAC_INSTRUMENT") );
+
+  # Get the suffix.
+  my $filename = $Grp->file;
+  $filename =~ /(_[a-zA-Z]*)(\.sdf)?$/;
+  my $suffix = $1;
+  $fits .= "&suffix=$suffix";
+
+  # And we're a group file.
+  $fits .= "&group=1";
+
   my %hash = ( ID => $Frm->uhdr("ESTAR_ID"),
-               FITS => "file://" . $ENV{'ORAC_DATA_OUT'} . "/" . $filename,
+               FITS => $fits,
                Catalog => "file://" . $ENV{'ORAC_DATA_OUT'} . "/" . $catalogue,
              );
 
