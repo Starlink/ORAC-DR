@@ -88,7 +88,7 @@ die "Error importing $instmodule:\n$@\n" if ($@);
 # command line arguments
 #
 
-my $status = GetOptions("nodisplay","debug!","quiet!","calib=s","from=i","to=i","ut=i","list=s","loop=s","h","batch");
+my $status = GetOptions("nodisplay","debug!","quiet!","calib=s","from=i","to=i","ut=i","list=s","loop=s","h","batch","skip");
 
 ($opt_h) && do {
 print qq|
@@ -129,6 +129,9 @@ Options:
 	      via the flag)
   -batch     Run in batch mode. Precalculate groups before proceesing
              data. 'wait' loop mode should not be used with this option.
+  -skip      Allow the data detection loop to skip missing observations.
+             Default is to stop the loop when a expected file
+	     can not be found.
   |;
 exit;
 }
@@ -299,11 +302,33 @@ if (defined $opt_from) {
   if (defined $opt_to) {
     @obs = $opt_from .. $opt_to
   } else {
-    @obs = ($opt_from);  # Used for data detection loops etc
 
-    # Set default loop scheme to 'inf'
-    # if there is no 'to'
-    $loop = 'orac_loop_inf';
+    # If the skip flag is set to true we can turn the -from..end 
+    # loop into 'list' loop by determining the last observation number.
+    # For historical reasons, the inf loop should be used if the -skip
+    # option is false.
+
+    if ($opt_skip) {
+      my ($next, $high) = orac_check_data_dir($frameobject, $opt_from, 0);
+      if (defined $high) {
+	@obs = ($opt_from..$high);
+      } else {
+	# High not defined -- a problem has occured.
+	# Probably should abort
+	orac_err("The -from option was used even though no data exists above the selected observation number [$opt_from].");
+	orac_exit_normally;
+      }
+
+    } else {
+
+      @obs = ($opt_from);  # Used for data detection loops etc
+
+      # Set default loop scheme to 'inf'
+      # if there is no 'to' and 'skip' is false.
+      $loop = 'orac_loop_inf';
+
+    }
+
     orac_print "Starting at observation $opt_from and looping until no files available\n"
   }
  
@@ -391,7 +416,7 @@ unless ($opt_batch) {
 
     # Return back the current frame
     # This will also configure the frame object
-    $Frm = &{$loop}($frameobject, $opt_ut, \@obs);
+    $Frm = &{$loop}($frameobject, $opt_ut, \@obs, $opt_skip);
 
     # If frame is undefined then we assume that the data loop
     # should be stopped
@@ -419,7 +444,7 @@ unless ($opt_batch) {
   while (1) {
     # Return back the current frame
     # This will also configure the frame object
-    $Frm = &{$loop}($frameobject, $opt_ut, \@obs);
+    $Frm = &{$loop}($frameobject, $opt_ut, \@obs, $opt_skip);
 
     # If frame is undefined then we assume that the data loop
     # should be stopped
@@ -452,6 +477,9 @@ unless ($opt_batch) {
 #------------------------------------------------------------------------
 
 # $Log$
+# Revision 1.43  1998/10/01 22:55:10  timj
+# Add the -skip option
+#
 # Revision 1.42  1998/09/25 03:35:31  timj
 # Add -batch option.
 # Remove data processing routines to ORAC::Core
