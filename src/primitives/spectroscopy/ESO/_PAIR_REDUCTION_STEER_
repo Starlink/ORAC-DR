@@ -1,0 +1,325 @@
+#+
+# Name:
+#    _PAIR_REDUCTION_STEER_ 
+#
+# Purpose:
+#    Steers pair-based spectroscopy recipes.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive controls the overall state of a recipe involving
+#    pair subtraction.  It currently determines whether the current
+#    frame is an OBJECT or a SKY, and whether it is the first or second
+#    observation of a pair.  For ESO instruments a pair constitutes
+#    a pair of equal-sized sets, one comprising observations of a source,
+#    and the other contains off-source observations.  This information is
+#    required by many of the group primitives to determine whether or not
+#    to act.  The primitive also counts the number of on and off observations.
+#    The information is passed through the steering headers listed below,
+#    stored in the frame's user header. 
+#
+#    The primitive reports the nature of the frame, the beam offsets,
+#    and the membership count of the on- and off-source frames in the
+#    group pair.
+#
+# Steering Headers:
+#    Stores information in the user header of the current frame
+#    with the following keys:
+#
+#    NUMBER_OFF = INTEGER
+#       The number of off-source frames in the current `pair'.
+#    NUMBER_ON = INTEGER
+#       The number of on-source frames in the current `pair'.
+#    ON_SOURCE = LOGICAL
+#       True if we are on the object.   False if we are on sky.
+#    PAIR_COMPLETE = LOGICAL
+#       True if the frame is the second of a pair.  It is false otherwise.
+#
+# Notes:
+#    -  Suitable for ESO infrared spectroscopes.
+#    -  Incompatible with the -batch option in ORAC-DR since this primitive
+#    uses the number of frames in the group to determine state.
+#    -  The test to see if the observation is either OBJECT or SKY does
+#    not rely on the offset being exactly zero to allow for dithering along
+#    the slit, as specified by Frame header HIERARCH.ESO.SEQ.JITTER.WIDTH,
+#    or (if this header is undefined) the machine floating point and string
+#    conversion truncation etc.  If the displacement is less than
+#    1 milli-arcsec, we assume it is zero.
+#    -  By definition, the first frame must be on source.  The primitive 
+#    determines that a pair is complete when the number of on-source
+#    frames equals the number of off-source frames.  This will be different 
+#    from the number of members in the instrument's group if the pipeline is
+#    restarted.  It is assumed that the pipeline is restarted at the start of
+#    a `pair' (and the pipeline will fail if this is not the case).
+#     -  The pipeline can not be started reliably from the second observation
+#    of a pair since ORAC-DR will have no knowledge of the previous frame.
+#    -  When a frame is determined to be a SKY the offset information
+#    (frame user headers ORAC_RA_TELESCOPE_OFFSET and ORAC_DEC_TELESCOPE_OFFSET)
+#    are stored in the Group headers SKY_RAOFF and SKY_DECOFF, so that subsequent
+#    primitives can use this information to determine the position of the negative
+#    row.  This is only used if the extraction is done without reducing a standard
+#    and is used to guarantee that the off position can be determined regardless
+#    of the order of the sky-object pair.
+#    -  The pair completeness steering header is also written to a
+#    Group-object user header called PAIR_COMPLETE.
+#    -  Group user header PREVIOUS_OFFSET records the current slit offset
+#    (the ra and dec offsets combined in quadrature) for comparison with the
+#    next frame.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (Starlink)
+#    TJ: Tim Jenness (JAC)
+#    PH: Paul Hirst (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Retrieve the number of frames currently in the group.  This assumes
+# no batch mode.
+    my $num = $Grp->num();
+    my $first = ( $num == 0 );
+    my ( $last_offset, $number_off, $number_on );
+    my ( $pair_complete, $pos, $previous_pos );
+
+# Obtain the dither range of the beams.
+    my $max_dither = 0.001;
+    if ( defined ( $Frm->hdr( "HIERARCH.ESO.SEQ.JITTER.WIDTH" ) ) ) {
+       $max_dither = $Frm->hdr( "HIERARCH.ESO.SEQ.JITTER.WIDTH" );
+    }
+
+# Obtain the telescope offsets.
+    my $raoff = $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" );
+    my $decoff= $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" );
+
+# Set or get the base-shift, i.e. offsets relative to the main-beam
+# position.
+    _SET_BEAMOFFSETS_
+    my $rabo = $Grp->uhdr( "RA_BEAMOFFSETS" );
+    my $decbo = $Grp->uhdr( "DEC_BEAMOFFSETS" );
+
+    $raoff -= $rabo;
+    $decoff -= $decbo;
+
+# Obtain the combined slit offset.
+    my $slit_offset = sqrt( $raoff * $raoff + $decoff * $decoff ); 
+
+# Initialise some header values.  By definition, observations begin on
+# source.
+    if ( $first ) {
+       $last_offset = $slit_offset;
+       $previous_pos = 1;
+       $number_on = 0;
+       $number_off = 0;
+       $pair_complete = 0;
+       
+       $Frm->uhdr( "ON_SOURCE", $previous_pos );
+       $Frm->uhdr( "NUMBER_OFF", $number_off );
+       $Frm->uhdr( "NUMBER_ON", $number_on );
+       $Grp->uhdr( "PAIR_COMPLETE", $pair_complete );
+
+# Retrieve last offset and whether or not the pair is complete from
+# the group user header.
+    } else {
+       $last_offset = $Grp->uhdr( "PREVIOUS_OFFSET" );
+       $pair_complete = $Grp->uhdr( "PAIR_COMPLETE" );
+
+# Retrieve the previous flag indicating whether or not it was on the
+# source.
+       my $preFrm = $Grp->frame( -2 );
+       $previous_pos = $preFrm->uhdr( "ON_SOURCE" );
+
+# Obtain the number of frames in the on-source and off-source positions.  
+# These are reset with the appropriate sign as the AB or BA pattern
+# repeats.
+       if ( $pair_complete ) {
+          $number_on = 0;
+          $number_off = 0;
+       } else {
+          $number_on = $preFrm->uhdr( "NUMBER_ON" );
+          $number_off = $preFrm->uhdr( "NUMBER_OFF" );
+       }
+       $pair_complete = 0;
+    }
+
+# Decide whether we're on the source or not.  The displacement must
+# greater than the dither width.  Set the current position and keep
+# the user informed.  Increment the number of on or off frames.
+    if ( abs( $last_offset - $slit_offset ) < $max_dither ) {
+       $pos = $previous_pos;
+       $Frm->uhdr( "ON_SOURCE", $pos );
+       if ( $pos ) {
+          $number_on++;
+          orac_print "Steerage: This observation is of a main-beam frame: ($raoff, $decoff) from " .
+                     "($rabo, $decbo), number $number_on of a set.\n";
+       } else {
+          $number_off++;
+          orac_print "Steerage: This observation is of an offset-beam frame: ($raoff, $decoff) from " .
+                     "($rabo, $decbo), number $number_off of a set.\n";
+          $Grp->uhdr( "SKY_RAOFF",  $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" ) );
+          $Grp->uhdr( "SKY_DECOFF", $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" ) );
+       }
+
+# Look for the complete matching of a "pair".
+       if ( $number_on == $number_off ) {
+          $pair_complete = 1;
+       }
+
+# It's a nod along the slit.  Set the current position and keep
+# the user informed.  Increment the number of on or off frames.
+    } else {
+       $pos = !$previous_pos;
+       $Frm->uhdr( "ON_SOURCE", $pos );
+       if ( $pos ) {
+          $number_on++;
+          orac_print "Steerage: This observation is of a main-beam frame: ($raoff, $decoff) from " .
+                     "($rabo, $decbo), the first of a set.\n";
+       } else {
+          $number_off++;
+          orac_print "Steerage: This observation is of an offset-beam frame: ($raoff, $decoff) from " .
+                     "($rabo, $decbo), the first of a set.\n";
+          $Grp->uhdr( "SKY_RAOFF",  $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" ) );
+          $Grp->uhdr( "SKY_DECOFF", $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" ) );
+       }
+
+       if ( $number_on == $number_off ) {
+          $pair_complete = 1;
+       }
+    }
+
+# Store the current steering.
+    $Frm->uhdr( "NUMBER_ON", $number_on );
+    $Frm->uhdr( "NUMBER_OFF", $number_off );
+    $Frm->uhdr( "PAIR_COMPLETE", $pair_complete );
+
+    $Grp->uhdr( "PAIR_COMPLETE", $pair_complete );
+    $Grp->uhdr( "PREVIOUS_OFFSET", $slit_offset );
+
+# Podule
+# ======
+
+=head1 NAME
+
+_PAIR_REDUCTION_STEER_  -- Steers pair-based spectroscopy recipes.
+
+=head1 DESCRIPTION
+
+This primitive controls the overall state of a recipe involving
+pair subtraction.  It currently determines whether the current
+frame is an OBJECT or a SKY, and whether it is the first or second
+observation of a pair.  For ESO instruments a pair constitutes
+a pair of equal-sized sets, one comprising observations of a source,
+and the other contains off-source observations.  This information is
+required by many of the group primitives to determine whether or not
+to act.  The primitive also counts the number of on and off observations.
+The information is passed through the steering headers listed below,
+stored in the frame's user header. 
+
+The primitive reports the nature of the frame, the beam offsets,
+and the membership count of the on- and off-source frames in the
+group pair.
+
+=head1 STEERING HEADERS
+
+Stores information in the user header of the current frame
+with the following keys:
+
+=over 4
+
+=item NUMBER_OFF = INTEGER
+
+The number of off-source frames in the current `pair'.
+
+=item NUMBER_ON = INTEGER
+
+The number of on-source frames in the current `pair'.
+
+=item ON_SOURCE
+
+True if we are on the object.  False if we are on sky.
+
+=item PAIR_COMPLETE
+
+True if the frame is the second of a pair.  False otherwise.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Suitable for ESO infrared spectroscopes.
+
+=item *
+
+Incompatible with the C<-batch> option in ORAC-DR since this primitive
+uses the number of frames in the group to determine state.
+
+=item *
+
+The test to see if the observation is either OBJECT or SKY does
+not rely on the offset being exactly zero to allow for dithering along
+the slit, as specified by Frame header HIERARCH.ESO.SEQ.JITTER.WIDTH,
+or (if this header is undefined) the machine floating point and string
+conversion truncation etc.  If the displacement is less than
+1 milli-arcsec, we assume it is zero.
+
+=item *
+
+By definition, the first frame must be on source.  The primitive 
+determines that a pair is complete when the number of on-source
+frames equals the number of off-source frames.  This will be different 
+from the number of members in the instrument's group if the pipeline is
+restarted.  It is assumed that the pipeline is restarted at the start of
+a `pair' (and the pipeline will fail if this is not the case).
+
+=item *
+
+The pipeline can not be started reliably from the second observation
+of a pair since ORAC-DR will have no knowledge of the previous frame.
+
+=item *
+
+When a frame is determined to be a SKY the offset information
+(frame user headers ORAC_RA_TELESCOPE_OFFSET and ORAC_DEC_TELESCOPE_OFFSET)
+are stored in the Group headers SKY_RAOFF and SKY_DECOFF, so that subsequent
+primitives can use this information to determine the position of the negative
+row.  This is only used if the extraction is done without reducing a standard
+and is used to guarantee that the off position can be determined regardless
+of the order of the sky-object pair.
+
+=item *
+
+The pair completeness steering header is also written to a
+Group-object user header called PAIR_COMPLETE.
+
+=item *
+
+Group user header PREVIOUS_OFFSET records the current slit offset
+(the ra and dec offsets combined in quadrature) for comparison with the
+next frame.
+
+=back
+
+=head2 Revision
+
+ $Id$
+
+=head1 AUTHORS
+
+Tim Jenness (JAC) E<lt>t.jenness@jach.hawaii.eduE<gt>
+Paul Hirst (JAC) <p.hirst@jach.hawaii.edu>
+Malcolm J. Currie (Starlink) <mjc@star.rl.ac.uk>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
