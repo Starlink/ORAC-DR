@@ -613,11 +613,11 @@ sub orac_start_algorithm_engines {
   # Predeclare subroutines that are read in after the standard perl pre-
   # processing, i.e. modules included via an eval
   use subs qw( start_algorithim_engines );
-  
+
   # Read the argument list
   my ($opt_noeng, $InstObj) = @_;
-     
-  my $Mon; # Hash reference
+
+  my $Mon = {}; # Hash reference
   unless ($opt_noeng) {
 
   # start algorithm engines
