@@ -154,9 +154,9 @@ The stripfname method is invoked on the file.
 sub file {
   my $self = shift;
   if (@_) { 
-#    my $arg = shift;
-    $self->{File} = $self->stripfname(shift)
-#      unless ($arg =~ /^\d+$/ && $arg != 0); 
+    my $arg = shift;
+    $self->{File} = $self->stripfname($arg)
+      unless ($arg =~ /^\d+$/ && $arg != 0); 
   }
   return $self->{File};
 }
