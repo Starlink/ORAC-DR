@@ -56,9 +56,10 @@
 #    This formulation is satisfactory for the UKIRT's instrument scales
 #    and sizes, and its declination range.  A more-sophisticated
 #    transformation would be needed near the poles or for wide fields.
+#    - Works with either KAPPA V0.13 or V0.14.
 #
 # Tasks:
-#    KAPPA: CENTROID, NDFTRACE, STATS.
+#    KAPPA: CENTROID, NDFTRACE, STATS, WCSFRAME.
 #
 # Authors:
 #    MJC: Malcolm J. Currie (JAC)
@@ -150,6 +151,13 @@
 # Find the boxsize in pixels.
        my $pixbox = nint( $boxsize / $pixelscale );
 
+# Set the co-ordinate system to pixels.
+# =====================================
+       if ( $KAPPA_VERSION_MINOR > 13 ) {
+          $header = "ndf=" . $Frm->file . " frame=pixel";
+          $Mon{"ndfpack_mon"}->obeyw("wcsframe", "$header");
+       }
+
 # Locate the centroid.
 # ====================
 
@@ -163,7 +171,7 @@
        if ( $positive ) {
 
 # Extract the location of the maximum pixel bounds of the frame.
-          ($ORAC_STATUS, @maxpos) = $Mon{"kappa_mon"}->get("stats","maxpos");
+          ( $ORAC_STATUS, @maxpos ) = $Mon{"kappa_mon"}->get("stats","maxpos");
 
 # Shift the search box to be centred on the highest value within the 
 # search box.
@@ -171,7 +179,11 @@
 
 # Specify the other parameters for the CENTROID stage.
           $header = "ndf=$ndfsect";
-          $hidden = "mode=interface init=[$maxpos[0],$maxpos[1]] cosys=w"; 
+          if ( $KAPPA_VERSION_MINOR > 13 ) {
+             $hidden = "mode=interface init='$maxpos[0],$maxpos[1]'"; 
+          } else {
+             $hidden = "mode=interface init='$maxpos[0],$maxpos[1]' cosys=w"; 
+          }
 
 # Find the centroid of the object.  For the moment start the search at
 # the frame centre.  The standard position may be displaced from this,
@@ -181,7 +193,7 @@
        } else {
 
 # Extract the location of the minimum pixel bounds of the frame.
-          ($ORAC_STATUS, @minpos) = $Mon{"kappa_mon"}->get("stats","minpos");
+          ( $ORAC_STATUS, @minpos ) = $Mon{"kappa_mon"}->get("stats","minpos");
 
 # Shift the search box to be centred on the lowest value within the 
 # search box.
@@ -189,7 +201,11 @@
 
 # Specify the other parameters for the CENTROID stage.
           $header = "ndf=$ndfsect nopositive";
-          $hidden = "mode=interface init=[$minpos[0],$minpos[1]] cosys=w"; 
+          if ( $KAPPA_VERSION_MINOR > 13 ) {
+             $hidden = "mode=interface init='$minpos[0],$minpos[1]'"; 
+          } else {
+             $hidden = "mode=interface init='$minpos[0],$minpos[1]' cosys=w"; 
+          }
 
 # Find the centroid of the object.  For the moment start the search at
 # the frame centre.  The standard position may be displaced from this,
@@ -212,7 +228,17 @@
 # Store the located centroid within a text file of the format PSF expects.
 # (There should be some rationalisation in KAPPA and CCDPACK to use
 # Clive Davenhall's small tables.  In that case this would be altered.)
-          ($ORAC_STATUS, my @centre ) = $Mon{"kappa_mon"}->get("centroid","centre");
+# From KAPPA V0.14 the returned value pair is a space-separated string,
+# not an array of numbers.
+          if ( $KAPPA_VERSION_MINOR > 13 ) {
+             ( $ORAC_STATUS, my $centres ) = $Mon{"kappa_mon"}->get("centroid","centre");
+             my @centre = split( /\s+/, $centres );
+
+# For V0.13 and earlier, an array of double-precision numbers are returned.
+          } else {
+             ( $ORAC_STATUS, my @centre ) = $Mon{"kappa_mon"}->get("centroid","centre");
+
+          }
 
 # Check that the centre is not bad.
           if ( $centre[ 0 ] < -1.0E38 || $centre[ 1 ] < -1.0E38 ) {
@@ -222,7 +248,6 @@
 
 # Store the centre information for use by calling script.
           $_FIND_SOURCE_CENTROID_{CENTRE} = \@centre;
-        
        }
 
 # Return whether or not a centroid was found.
@@ -320,11 +345,15 @@ This formulation is satisfactory for the UKIRT's instrument scales
 and sizes, and its declination range.  A more-sophisticated
 transformation would be needed near the poles or for wide fields.
 
+=item *
+
+Works with either KAPPA V0.13 or V0.14.
+
 =back
 
 =head1 TASKS
 
-KAPPA: CENTROID, NDFTRACE, STATS.
+KAPPA: CENTROID, NDFTRACE, STATS, WCSFRAME.
 
 =head1 AUTHORS
 
