@@ -233,6 +233,43 @@ sub calc_orac_headers {
 
 
 
+=item template
+
+Method to change the current filename of the frame (file())
+so that it matches the current template. e.g.:
+
+  $Obs->template("something_number_flat")
+
+Would change the current file to match "something_number_flat".
+Essentially this simply means that the number in the template
+is changed to the number of the current frame object.
+
+The base method assumes that the filename matches the form:
+prefix_number_suffix. This must be modified by the derived
+classes since in general the filenaming convention is telescope
+and instrument specific.
+
+=cut
+
+sub template {
+  my $self = shift;
+  my $template = shift;
+
+  my $num = $self->number;
+  # pad with leading zeroes - 5(!) digit obsnum
+  my $num = '0'x(5-length($num)) . $num;
+
+  # Change the first number
+  $template =~ s/_\d+_/_${num}_/;
+
+  # Update the filename
+  $self->file($template);
+
+}
+
+
+
+
 =back
 
 =head1 PRIVATE METHODS
