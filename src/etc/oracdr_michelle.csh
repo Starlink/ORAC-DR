@@ -1,6 +1,6 @@
 #+
 #  Name:
-#     oracdr_cgs4
+#     oracdr_michelle
 
 #  Purpose:
 #     Initialise ORAC-DR environment for use with Michelle
@@ -9,7 +9,7 @@
 #     C-shell script
 
 #  Invocation:
-#     source ${ORAC_DIR}/etc/oracdr_cgs4.csh
+#     source ${ORAC_DIR}/etc/oracdr_michelle.csh
 
 #  Description:
 #     This script initialises the environment variables and command
@@ -61,6 +61,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.2  2001/03/20 21:06:24  timj
+#     Remove some left over CGS4 references
+#
 #     Revision 1.1  2001/03/17 01:27:15  timj
 #     first version
 #
@@ -118,7 +121,7 @@ endif
 
 set oracdr_args = "-ut $oracut"
 
-setenv ORAC_INSTRUMENT CGS4
+setenv ORAC_INSTRUMENT MICHELLE
 setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/michelle/$oracut
 setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/michelle/$oracut
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/michelle
@@ -126,7 +129,7 @@ setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/michelle
 # screen things
 setenv ORAC_PERSON mjc
 setenv ORAC_LOOP flag
-setenv ORAC_SUN  23??
+setenv ORAC_SUN  236
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
