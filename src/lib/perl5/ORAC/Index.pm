@@ -318,6 +318,63 @@ sub add {
   $self->writeindex;
 };
 
+
+=item indexentry
+
+Returns a hash containing the key value pairs of the
+selected index entry.
+
+Input argument is the index entry name (ie the key in the hash
+that returns the information (in an array).
+
+Returns a hash reference if successful, undef if error.
+
+=cut
+
+sub indexentry {
+  my $self = shift;
+
+  croak('Usage: indexentry(name)') unless (scalar(@_) == 1);
+
+  # Read the name from the input
+  my $name = shift;
+
+  # Check that it exists
+  unless (exists $ {$self->indexref}{$name}) {
+    orac_err "$name is unknown to oracdr and may not be used as calibration\n";
+    orac_err "Make sure it is reduced by oracdr\n";
+    return undef;
+  };
+
+  # take local copy of the calibration data index entry
+  my @calibdata = @{$ {$self->indexref}{$name}};
+  # take local copy the rules
+  my %rules = %{$self->rulesref};
+
+  # check that number of rules match index entries
+  # This should probably be a method???
+  unless ($#calibdata == (scalar(keys %rules) - 1)) {
+    print '$#calibdata is ',$#calibdata,'(scalar(keys %rules) - 1)) is ',(scalar(keys %rules) - 1),"\n";
+    orac_err "Something has gone seriously wrong with the index file\n";
+    orac_err "You will need to regenerate it\n";
+    return undef;
+  };
+
+  # Now construct the entry hash
+  # This is very similar to writing out the values to file
+  my %entry = ();
+
+  # Loop over the rules keys
+  foreach my $key (sort keys %rules) {
+    $entry{$key} = shift(@calibdata);
+  }
+
+  return \%entry;
+
+}
+
+
+
 =item verify
 
 verifies a frame against a (calibration) index entry
@@ -351,6 +408,7 @@ sub verify {
   my %Hdr = %$hashref;
 
   # check that number of rules match index entries
+  # This should probably be a method???
   unless ($#calibdata == (scalar(keys %rules) - 1)) {
     print '$#calibdata is ',$#calibdata,'(scalar(keys %rules) - 1)) is ',(scalar(keys %rules) - 1),"\n";
     orac_err "Something has gone seriously wrong with the index file\n";
@@ -371,8 +429,8 @@ sub verify {
       return undef;
     };
     unless ($ok) {
-      print "\n-",$Hdr{$key},"-\n","-$calvalue-\n";
       orac_warn("$name not a suitable calibration: failed $key $rules{$key}\n");
+      print "Header:-",$Hdr{$key},"-\n","Calvalue:-$calvalue-\n";
       return 0;
     };
     
