@@ -88,7 +88,7 @@ sub _to_AIRMASS_START {
 }
 
 sub _from_AIRMASS_START {
-  "ZDSTART", 180 * acos( 1 / $_[0]->uhdr("AIRMASS_START") ) / 3.14159;
+  "ZDSTART", 180 * acos( 1 / $_[0]->uhdr("ORAC_AIRMASS_START") ) / 3.14159;
 }
 
 sub _to_AIRMASS_END {
@@ -102,7 +102,7 @@ sub _to_AIRMASS_END {
 }
 
 sub _from_AIRMASS_END {
-  "ZDEND", 180 * acos( 1 / $_[0]->uhdr("AIRMASS_END") ) / 3.14159;
+  "ZDEND", 180 * acos( 1 / $_[0]->uhdr("ORAC_AIRMASS_END") ) / 3.14159;
 }
 
 sub _to_GAIN {
@@ -453,16 +453,29 @@ sub findgroup {
 
   my $self = shift;
 
-  my $hdrgrp = $self->hdr('GRPNUM');
   my $amiagroup;
+  my $hdrgrp;
 
-
-  if ($self->hdr('GRPMEM')) {
-    $amiagroup = 1;
-  } elsif (!defined $self->hdr('GRPMEM')){
-    $amiagroup = 1;
+  if( defined $self->hdr('IR2GNUM') ) {
+    $hdrgrp = $self->hdr('IR2GNUM');
+    print "Using IRIS2 user specified IR2GNUM. group=$hdrgrp\n";
+    if ($self->hdr('IR2GMEM')) {
+      $amiagroup = 1;
+    } elsif (!defined $self->hdr('IR2GMEM')){
+      $amiagroup = 1;
+    } else {
+      $amiagroup = 0;
+    }
   } else {
-    $amiagroup = 0;
+    $hdrgrp = $self->hdr('GRPNUM');
+    print "Using usual GRPNUM. group=$hdrgrp\n";
+    if ($self->hdr('GRPMEM')) {
+      $amiagroup = 1;
+    } elsif (!defined $self->hdr('GRPMEM')){
+      $amiagroup = 1;
+    } else {
+      $amiagroup = 0;
+    }
   }
 
   # Is this group name set to anything useful
