@@ -378,12 +378,6 @@ sub stripfname {
 
 =back
 
-=head1 REQUIREMENTS
-
-Currently this module requires the NDF module.
-This is probably a bug...
-
-
 =head1 SEE ALSO
 
 L<ORAC::Frame>
