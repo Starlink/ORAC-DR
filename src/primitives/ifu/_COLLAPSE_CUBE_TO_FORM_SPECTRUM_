@@ -1,0 +1,143 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_COLLAPSE_CUBE_TO_FORM_SPECTRUM_ -- Collapses a cube along spatial
+axes to form a spectrum.
+
+=head1 DESCRIPTION
+
+This primitive takes a datacube consisting of two spatial axes and
+one wavelength axis and collapses it to form a single spectrum. After
+doing so it will correct FITS headers according to FITS Paper III,
+and will also attach an AST SpecFrame.
+
+The primitive can be used for any cube that has two spatial axes.
+However, it must be told which axis is the wavelength (or frequency,
+or time, or...) axis. It will default to the third axis, but this
+can be modified through the AXIS parameter described below.
+
+=head1 PARAMETERS
+
+=over 4
+
+=item AXIS = INTEGER (Given)
+
+This parameter describes which axis is the non-spatial axis. [3]
+
+=item GROUP = BOOLEAN (Given)
+
+If true, form the datacube from the current Group object. Otherwise,
+form the datacube from the current Frame object. [1]
+
+=item METHOD = CHARACTER (Given)
+
+The method used for collapsing along the spatial axes. This parameter
+can be any of the methods listed in KAPPA/COLLAPSE (see SUN/95). [mean]
+
+=back
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# Set up input and output filenames, depending on value of GROUP
+# parameter.
+my ( $in, $out );
+my $group = $_COLLAPSE_CUBE_TO_FORM_SPECTRUM_{GROUP};
+if( !defined( $group ) ) { $group = 1; }
+
+if( $group ) {
+  $in = $Grp->file;
+  $out = $Grp->raw . "_sp";
+} else {
+  ( $in, $out ) = $Frm->inout("_sp");
+}
+
+# Get the wavelength axis.
+my $axis = $_COLLAPSE_CUBE_TO_FORM_SPECTRUM_{AXIS};
+if( !defined( $axis ) || ( $axis > 3 ) || ( $axis < 1 ) ) { $axis = 3; }
+
+# Get the collapse method.
+my $method = $_COLLAPSE_CUBE_TO_FORM_SPECTRUM_{METHOD};
+if( !defined( $method ) ) { $method = "mean"; }
+
+orac_print "Collapsing $in to form $out.\n";
+
+# Need a temporary file.
+my $tmp = new ORAC::TempFile;
+my $tmp_file = $tmp->file;
+
+if( $axis == 1 ) {
+
+  # We're going to collapse along the third axis first, then the
+  # second axis of the resulting 2D image.
+  my $param = "in=$in out=$tmp_file axis=3 estimator=$method";
+  $Mon{'kappa_mon'}->obeyw( "collapse", "$param" );
+
+  # Now the second collapse to form the spectrum.
+  $param = "in=$tmp_file out=$out axis=2 estimator=$method";
+  $Mon{'kappa_mon'}->obeyw( "collapse", "$param" );
+
+} elsif( $axis == 2 ) {
+
+  # We're going to collapse along the third axis first, then the
+  # first axis of the resulting 2D image.
+  my $param = "in=$in out=$tmp_file axis=3 estimator=$method";
+  $Mon{'kappa_mon'}->obeyw( "collapse", "$param" );
+
+  # Now the second collapse to form the spectrum.
+  $param = "in=$tmp_file out=$out axis=1 estimator=$method";
+  $Mon{'kappa_mon'}->obeyw( "collapse", "$param" );
+
+} else {
+
+  # We're going to collapse along the second axis first, then the
+  # first axis of the resulting 2D image.
+  my $param = "in=$in out=$tmp_file axis=2 estimator=$method";
+  $Mon{'kappa_mon'}->obeyw( "collapse", "$param" );
+
+  # Now the second collapse to form the spectrum.
+  $param = "in=$tmp_file out=$out axis=1 estimator=$method";
+  $Mon{'kappa_mon'}->obeyw( "collapse", "$param" );
+}
+
+# Remove the AXIS frame.
+$Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=$out frame=axis" );
+
+if( $group ) {
+
+  # Update the Group object.
+  $Grp->file( $out );
+
+  # Add a WCS.
+  _CREATE_SPECTRUM_WCS_ FRAME=0
+
+  # Display.
+  $Display->display_data($Grp) if defined $Display;
+
+  # Set the NDIMS header to reflect the fact that we have a spectrum.
+  $Grp->uhdr('NDIMS', 1);
+
+} else {
+
+  # Update the Frame object.
+  $Frm->file( $out );
+
+  # Add a WCS.
+  _CREATE_SPECTRUM_WCS_ FRAME=1
+
+  # Display.
+  $Display->display_data($Frm) if defined $Display;
+
+}
+
+# Tidy up output.
+orac_print "\n";
