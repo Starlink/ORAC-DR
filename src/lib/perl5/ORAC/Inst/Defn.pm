@@ -696,7 +696,7 @@ sub orac_determine_loop_behaviour {
     } elsif( uc($instrument) eq 'UIST' ) {
       $behaviour = 'flag';
     }
-  } elsif( $dname =~ "aat" ) {
+  } elsif( $dname =~ /aat/i ) {
     if( uc($instrument) eq 'IRIS2' ) {
       $behaviour = 'wait';
     }
@@ -735,6 +735,10 @@ sub orac_configure_for_instrument {
   my $orac_data_root = $ENV{"ORAC_DATA_ROOT"};
   my $orac_cal_root = $ENV{"ORAC_CAL_ROOT"};
 
+  # We are continually doing domainname lookups so do it once here
+  my $domain = Net::Domain->domainname;
+
+
   SWITCH: {
      if ( $instrument eq "CGS4" ) {
      
@@ -764,9 +768,9 @@ sub orac_configure_for_instrument {
 				     unless defined $$options{"honour"};
 
              # misc
-             $ENV{"ORAC_PERSON"} = "frossie";
-             $ENV{"ORAC_SUN"} = "230";
-             if (Net::Domain->domainname =~ "ukirt"  ) {
+             $ENV{"ORAC_PERSON"} = "phirst";
+             $ENV{"ORAC_SUN"} = "236";
+             if ($domain =~ /ukirt/i  ) {
                   $options->{"loop"} = "flag";
              }
              $options->{"skip"} = 0;
@@ -801,9 +805,9 @@ sub orac_configure_for_instrument {
 				     unless defined $$options{"honour"};
 
              # misc
-             $ENV{"ORAC_PERSON"} = "atc";
+             $ENV{"ORAC_PERSON"} = "bradc";
              $ENV{"ORAC_SUN"} = "???";
-             if (Net::Domain->domainname =~ "ukirt"  ) {
+             if ($domain =~ /ukirt/i  ) {
                   $options->{"loop"} = "flag";
              }
              $options->{"skip"} = 0;
@@ -837,9 +841,9 @@ sub orac_configure_for_instrument {
 				     unless defined $$options{"honour"};
 
              # misc
-             $ENV{"ORAC_PERSON"} = "mjc";
+             $ENV{"ORAC_PERSON"} = "bradc";
              $ENV{"ORAC_SUN"} = "230";
-             if (Net::Domain->domainname =~ "ukirt"  ) {
+             if ($domain =~ /ukirt/i  ) {
                   $options->{"loop"} = "flag";
              }
              $options->{"skip"} = 0;
@@ -873,9 +877,9 @@ sub orac_configure_for_instrument {
 				     unless defined $$options{"honour"};
 
              # misc
-             $ENV{"ORAC_PERSON"} = "mjc";
+             $ENV{"ORAC_PERSON"} = "bradc";
              $ENV{"ORAC_SUN"} = "232";
-             if (Net::Domain->domainname =~ "ukirt"  ) {
+             if ($domain =~ /ukirt/i  ) {
                   $options->{"loop"} = "flag";
              }
              $options->{"skip"} = 0;
@@ -910,9 +914,9 @@ sub orac_configure_for_instrument {
 				     unless defined $$options{"honour"};
 
              # misc
-             $ENV{"ORAC_PERSON"} = "mjc";
+             $ENV{"ORAC_PERSON"} = "bradc";
              $ENV{"ORAC_SUN"} = "232";
-             if (Net::Domain->domainname =~ "ukirt"  ) {
+             if ($domain =~ /ukirt/i  ) {
                   $options->{"loop"} = "wait";
              }
              $options->{"skip"} = 0;
@@ -928,6 +932,16 @@ sub orac_configure_for_instrument {
              $orac_cal_root = "/jcmt_sw/oracdr_cal"
 	             unless defined $orac_cal_root;
              $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"scuba");
+
+	     # Work out once whether we are at the summit, in Hilo or somewhere else
+	     my $location;
+	     if ($domain =~ /jcmt/i) {
+	       $location = 'jcmt';
+	     } elsif ($domain =~ /jach|Hilo/i) {
+	       $location = 'hilo';
+	     } else {
+	       $location = 'elsewhere';
+	     }
 				
              # Recipe and Primitives
              #undef $ENV{"ORAC_RECIPE_DIR"} 
@@ -939,7 +953,7 @@ sub orac_configure_for_instrument {
 	     # possibilities. We are in Hilo, we are at the JCMT or we 
 	     # are somewhere else.
 	     #
-             # At the JCMT we need to set ORAC_DATA_ROOT to /jcmtarchive. 
+             # At the JCMT we need to set ORAC_DATA_ROOT to /jcmtdata/raw/scuba
 	     # In this case the current UT date is the sensible choice
 
              # In Hilo we need to set DATADIR to /scuba/Semester/UTdate/ 
@@ -951,79 +965,64 @@ sub orac_configure_for_instrument {
 
              # Use domainname to work out where we are
              unless ( defined $orac_data_root )
-             { 
+             {
                $orac_data_root = cwd;
-               if (Net::Domain->domainname =~ "jcmt"  ) {
-                   $orac_data_root = "/jcmtdata/raw/scuba";
-                } elsif ( ( Net::Domain->domainname =~ "Hilo" ) ||
-                          ( Net::Domain->domainname =~ "jach" ) ) {
+               if ($location eq "jcmt"  ) {
+                   $orac_data_root = "/jcmtdata";
+                } elsif ( $location eq 'hilo' ) {
                    $orac_data_root = "/scuba";
 	        }
              }
 
-             my $sem;
+             # input data directory
+	     if ( $orac_data_root eq "/scuba" ) {
 
-             if ( $orac_data_root eq "/scuba" )
-             {
-	        # Note that for SCUBA at the JAC we use
-                # use /scuba/semester.
+	       # If we are using /scuba we need to know the semester
+	       my $sem = "m" . &_determine_semester( $oracut );
 
-		# Start by splitting the YYYYMMDD string
-		# year and month/day
-		my $yyyy = substr( $oracut, 0, 4 );
-		my $mmdd = substr( $oracut, 4, 4 );
+	       $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+							  $sem, $oracut );
 
-	        # Calculate previous year
-		my $prev_yyyy = $yyyy - 1;
+             } elsif ($orac_data_root =~ /jcmtdata/ ) {
+	       # Assumes ROOT/reduced/scuba/UTdate/dem - the summit layout
+	       $ENV{"ORAC_DATA_IN"} =  File::Spec->catdir( $orac_data_root,
+							   "raw", "scuba",
+							   $oracut, "dem" );
+	     } else {
+	       # For other locations, simply assume the tar format used by
+	       # the OMP data packaging system. UTdate
+	       $ENV{"ORAC_DATA_IN"} =  File::Spec->catdir( $orac_data_root,
+							   $oracut);
 
-		# Two digit years
-		my $yy = substr( $yyyy, 2, 2);
-		my $prevyy = substr( $prev_yyyy, 2, 2);
-
-		# Need to put the month in the correct
-		# semester. Note that 199?0201 is in the
-		# previous semester, same for 199?0801
-		if ($mmdd > 201 && $mmdd < 802) {
-		   $sem = "m${yy}a";
-		} elsif ($mmdd < 202) {
-		   $sem = "m${prevyy}b";
-		} else {
-		   $sem = "m${yy}b";
-		}
 	     }
 
-             # input data directory
-             if ( defined $sem ) {
-               if ( $orac_data_root eq "/scuba" ) {
-                 $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
-                                                            $sem, $oracut );
-               } else {
-                 $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
-                                                            $sem, $oracut, "dem" );
-               }
-             } else {
-                $ENV{"ORAC_DATA_IN"} =  File::Spec->catdir( $orac_data_root,
-							    $oracut, "dem" );  }
-
              # Output data directory is more problematic.
-             # If we are at JCMT set it to ORAC_DATA_ROOT/reduced/$oracut, 
+             # If we are at JCMT set it to ORAC_DATA_ROOT/reduced/$oracut,
 	     # else set to current directory
-             if ($orac_data_root eq "/jcmtarchive") {
+             if ($orac_data_root =~ /jcmtdata/) {
                 $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir( $orac_data_root,
-		                          "reduced","orac", $oracut) unless
-			                  defined $$options{"honour"};
-                if ( hostname ne "mamo" ) {
-#                   orac_err("Please use mamo for ORAC-DR reduction. Aborting.");
-#                   throw ORAC::Error::FatalError( "Use mamo for reduction",
-#		                                  ORAC__FATAL);
+							    "reduced","scuba",
+							    $oracut)
+		  unless defined $$options{"honour"};
+
+		# We only really want people to do DR on kolea
+                if ( hostname ne "kolea" ) {
+                   orac_err("Please use mamo for ORAC-DR reduction. Aborting.");
+                   throw ORAC::Error::FatalError( "Use kolea for reduction",
+		                                  ORAC__FATAL);
                 }
+
                 unless ( -d $ENV{"ORAC_DATA_OUT"} ) {
-		   # stuff to do with mamo here
+		   # stuff to do with kolea here
                    # Parent directory has sticky group bit set so this
 		   # guarantees correct group ownership
 
-	           # mkdir $ORAC_DATA_OUT
-                   # chmod g+rws $ORAC_DATA_OUT
+	           mkdir $ENV{ORAC_DATA_OUT}
+		     or throw ORAC::Error::FatalError( "unable to create output directory $ENV{ORAC_DATA_OUT}: $!");
+
+		   # Change the group mode
+		   # Use external +rws since we want to set sticky bit
+                   system( "chmod g+rws $ENV{ORAC_DATA_OUT}" );
 
                 }
              } else {
@@ -1033,9 +1032,9 @@ sub orac_configure_for_instrument {
              # Misc stuff
              $ENV{"ORAC_PERSON"} = "timj";
              $ENV{"ORAC_SUN"} = "231";
-             if (Net::Domain->domainname =~ "jcmt"  ) {
-                  $options->{"loop"} = "wait";
-             }            
+             if ($location eq 'jcmt') {
+                  $options->{"loop"} = "flag";
+             }
              $options->{"skip"} = 1;
 
              last SWITCH; }
@@ -1067,9 +1066,9 @@ sub orac_configure_for_instrument {
 				     unless defined $$options{"honour"};
 
              # misc
-             $ENV{"ORAC_PERSON"} = "mjc";
+             $ENV{"ORAC_PERSON"} = "bradc";
              $ENV{"ORAC_SUN"} = "232";
-             if (Net::Domain->domainname =~ "ukirt"  ) {
+             if ($domain =~ /ukirt/i  ) {
                   $options->{"loop"} = "flag";
              }           
              $options->{"skip"} = 0;
@@ -1103,9 +1102,9 @@ sub orac_configure_for_instrument {
 				     unless defined $$options{"honour"};
 
              # misc
-             $ENV{"ORAC_PERSON"} = "mjc";
+             $ENV{"ORAC_PERSON"} = "bradc";
              $ENV{"ORAC_SUN"} = "232";
-             if (Net::Domain->domainname =~ "ukirt"  ) {
+             if ($domain =~ /ukirt/i  ) {
                   $options->{"loop"} = "flag";
              }
              $options->{"skip"} = 0;
@@ -1138,7 +1137,7 @@ sub orac_configure_for_instrument {
              # misc
              $ENV{"ORAC_PERSON"} = "oracdr_iris2";
              $ENV{"ORAC_SUN"} = "???";
-             if (Net::Domain->domainname =~ "aat"  ) {
+             if ($domain =~ /aat/i  ) {
                   $options->{"loop"} = "wait";
              }
              $options->{"skip"} = 0;
@@ -1175,7 +1174,7 @@ sub orac_configure_for_instrument {
              # misc
              $ENV{"ORAC_PERSON"} = "p.hirst";
              $ENV{"ORAC_SUN"} = "XXX";
-             if (Net::Domain->domainname =~ "ukirt"  ) {
+             if ($domain =~ /ukirt/i  ) {
                   $options->{"loop"} = "flag";
              }
              $options->{"skip"} = 0;
@@ -1212,7 +1211,7 @@ sub orac_configure_for_instrument {
              # misc
              $ENV{"ORAC_PERSON"} = "p.hirst";
              $ENV{"ORAC_SUN"} = "XXX";
-             if (Net::Domain->domainname =~ "ukirt"  ) {
+             if ($domain =~ /ukirt/i  ) {
                   $options->{"loop"} = "flag";
              }
              $options->{"skip"} = 0;
@@ -1475,6 +1474,57 @@ sub p4_helper {
 }
 
 =back
+
+=begin __PRIVATE__METHODS__
+
+=over 4
+
+=item B<_determine_semester>
+
+Given a date string of form YYYYMMDD derive the semster.
+
+  $sem = _determine_semester( $yyyymmdd );
+
+The returned string does not include the prefix. It just includes
+the "02a", "02b".
+
+=cut
+
+sub _determine_semester {
+  my $ut = shift;
+
+  my $sem;
+
+  # Start by splitting the YYYYMMDD string
+  # year and month/day
+  my $yyyy = substr( $ut, 0, 4 );
+  my $mmdd = substr( $ut, 4, 4 );
+
+  # Calculate previous year
+  my $prev_yyyy = $yyyy - 1;
+
+  # Two digit years
+  my $yy = substr( $yyyy, 2, 2);
+  my $prevyy = substr( $prev_yyyy, 2, 2);
+
+  # Need to put the month in the correct
+  # semester. Note that 199?0201 is in the
+  # previous semester, same for 199?0801
+  if ($mmdd > 201 && $mmdd < 802) {
+    $sem = "${yy}a";
+  } elsif ($mmdd < 202) {
+    $sem = "${prevyy}b";
+  } else {
+    $sem = "${yy}b";
+  }
+
+  return $sem;
+}
+
+=back
+
+
+=end __PRIVATE__METHODS__
 
 =head1 REVISION
 
