@@ -1,0 +1,253 @@
+#+
+# Name:
+#    _NOD_SELF_FLAT_STEER_
+#
+# Purpose:
+#    Steers processing for NOD_SELF_FLAT recipes.
+#
+# Language:
+#    Perl5
+#
+# Description: 
+#    This primitive control processing for NOD_SELF_FLAT recipes through
+#    steering headers listed below.
+#
+# Steering Headers:
+#    CYCLE_NUMBER = INTEGER
+#       Number of the cycle, a cycle being a set of frames to complete a
+#       pass through the recipe.  The first cycle is 0.
+#    DIFFERENCE_PAIR = LOGICAL
+#       Whether or not to subtract pairs.  It is true every second frame.
+#    DO_APHOT = LOGICAL
+#       Whether or not perform aperture photometry.  Photometry occurs
+#       after the mosaic is made.
+#    FLAT_DIVIDE = LOGICAL
+#       Whether or not to flat field.  Flat-fielding occurs at the
+#       completion of each cycle of NUMBER frames.
+#    MAKE_FLAT = LOGICAL
+#       Whether or not to make the flat.  The flat is made when all
+#       the jittered frames in the first cycle are available.
+#    MAKE_MOSAIC = LOGICAL
+#       Whether or not register the frames and make the mosaic.  The mosaic
+#       is made once all the jittered frames in a cycle are available.
+#    MASK_OBJECTS = LOGICAL
+#       Whether or not to mask the objects.  Masking occurs when all the
+#       jittered frames in a cycle are available.
+#    PAIR_ORDER = LOGICAL
+#       Pair subtraction order, true means take second from the first,
+#       and false means take the first from the second.  The pattern
+#       alternates true-false every fourth frame.
+#    TARGET_OR_SKY = CHARACTER
+#       This is "target" for a target frame, and "sky" for a sky calibration
+#       frame.  In this recipe it is "target" for all frames.
+#
+# Arguments:
+#    NUMBER = INTEGER (Given)
+#       The number of frames in the jitter.  If absent, the number of
+#       offsets, as given by internal header ORAC_NOFFSETS, minus one is
+#       used.  If neither is available, 4 is used.  An error state arises
+#       if the number of jittered frames is fewer than 4 and not a
+#       multiple of 4.  []
+#
+# Notes:
+#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
+#    in imaging mode.
+#    -  Processing only occurs for object frames.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSTYPE" ) eq "OBJECT" ) {
+
+# Obtain the number of frames in the jitter pattern.
+# ==================================================
+
+# First see if a hardwired value has been supplied in the recipe.  This
+# deals with old recipes with fixed numbers and cases where a frame or
+# more is missing.
+       my $number = $_NOD_SELF_FLAT_STEER_{NUMBER};
+
+# Otherwise use the ORAC_NOFFSETS internal header.  In full ORAC, this
+# stores the total number of offsets used, but ignores repeat iterators.
+# By convention there is always an offset to the origin at the end, hence
+# the recipe requires ORAC_NOFFSETS-1.
+       if ( ! defined ( $number ) ) {
+          $number = $Frm->uhdr( "ORAC_NOFFSETS" );
+          if ( defined( $number ) ) {
+             $number--;
+
+# Finally default to the original 4.
+          } else {
+             $number = 4;
+          }
+       }
+
+# Report invalid number of frames.
+# Obtain the number of frames in the jitter pattern.
+       if ( $number % 4 != 0 || $number < 4 ) {
+          orac_err "The number of jittered frames ($number) is not a " .
+                   "positive multiple of 4.\n";
+       }
+
+# Set steering headers.
+# =====================
+
+# Specify during processing of which frames should the pairs be subtracted.
+       if ( ( $Grp->num + 1 ) % 2 == 0 ) {
+          $Frm->uhdr( "DIFFERENCE_PAIR", 1 );
+
+# A difference is to be made, but in what order.  PAIR_ORDER = 1 means
+# take the second from the first of the pair.  PAIR_ORDER = 0 is the
+# reverse.  Put another way, the order is ABBA as the B is always taken
+# from the A.
+          if ( ( $Grp->num + 1 ) % 4 == 0 ) {
+             $Frm->uhdr( "PAIR_ORDER", 0 );
+          } else {
+             $Frm->uhdr( "PAIR_ORDER", 1 );
+          }
+          
+       } else {
+          $Frm->uhdr( "DIFFERENCE_PAIR", 0 );
+       }
+
+# Specify during processing of which frames should the flat be created.
+# Just use the first flat for all cycles.  This will save time.
+       if ( ($Grp->num + 1) == $number ) {
+          $Frm->uhdr( "MAKE_FLAT", 1 );
+       } else {
+          $Frm->uhdr( "MAKE_FLAT", 0 );
+       }
+
+# Specify during processing of which frames should the flat be applied
+# a mosaic created, and aperture photometry performed.
+       if ( ( $Grp->num + 1 ) % $number == 0 ) {
+          $Frm->uhdr( "FLAT_DIVIDE", 1 );
+          $Frm->uhdr( "MAKE_MOSAIC", 1 );
+          $Frm->uhdr( "MASK_OBJECTS", 1 );
+          $Frm->uhdr( "DO_APHOT", 1 );
+       
+       } else {
+          $Frm->uhdr( "FLAT_DIVIDE", 0 );
+          $Frm->uhdr( "MAKE_MOSAIC", 0 );
+          $Frm->uhdr( "MASK_OBJECTS", 0 );
+          $Frm->uhdr( "DO_APHOT", 0 );
+       }
+
+# Insert the cycle number of the set of frames. 
+       $Frm->uhdr( "CYCLE_NUMBER", int( $Grp->num / $number ) );
+
+# Insert the number of frames in the jitter.
+       $Frm->uhdr( "JITTER_NUMBER", $number );
+
+# All frames are target.  Some more-general primitives need to select 
+# targets from sky frames.
+       $Frm->uhdr( "TARGET_OR_SKY", "target" );
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_NOD_SELF_FLAT_STEER_ -- Steers processing for NOD_SELF_FLAT recipes.
+
+=head1 DESCRIPTION
+
+This primitive control processing for NOD_SELF_FLAT recipes through
+steering headers listed below.
+
+=head1 STEERING HEADERS
+
+=over 4
+
+=item CYCLE_NUMBER = INTEGER
+
+Number of the cycle, a cycle being a set of frames to complete a
+pass through the recipe.  The first cycle is 0.
+
+=item DIFFERENCE_PAIR = LOGICAL
+
+Whether or not to subtract pairs.  It is true every second frame.
+
+=item DO_APHOT = LOGICAL
+
+Whether or not perform aperture photometry.  Photometry occurs
+after the mosaic is made.
+
+=item FLAT_DIVIDE = LOGICAL
+
+Whether or not to flat field.  Flat-fielding occurs at the
+completion of each cycle of NUMBER frames.
+
+=item MAKE_FLAT = LOGICAL
+
+Whether or not to make the flat.  The flat is made when all
+the jittered frames in the first cycle are available.
+
+=item MAKE_MOSAIC = LOGICAL
+
+Whether or not register the frames and make the mosaic.  The mosaic
+is made once all the jittered frames in a cycle are available.
+
+=item MASK_OBJECTS = LOGICAL
+
+Whether or not to mask the objects.  Masking occurs when all the
+jittered frames in a cycle are available.
+
+=item PAIR_ORDER = LOGICAL
+
+Pair subtraction order, true means take second from the first,
+and false means take the first from the second.  The pattern
+alternates true-false every fourth frame.
+
+=item TARGET_OR_SKY = CHARACTER
+
+This is "target" for a target frame, and "sky" for a sky calibration
+frame.  In this recipe it is "target" for all frames.
+
+=back
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item NUMBER = INTEGER (Given)
+
+The number of frames in the jitter.  If absent, the number of offsets,
+as given by internal header ORAC_NOFFSETS, minus one is used.  If
+neither is available, 4 is used.  An error state arises if the number
+of jittered frames is fewer than 4 and not a multiple of 4.  []
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UFTI, IRCAM, and Michelle in imaging mode.
+
+=item *
+
+Processing only occurs for object frames.
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

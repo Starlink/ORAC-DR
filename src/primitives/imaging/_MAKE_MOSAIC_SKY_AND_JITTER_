@@ -1,0 +1,196 @@
+#+
+# Name:
+#    _MAKE_MOSAIC_SKY_AND_JITTER_
+#
+# Purpose:
+#    Forms a mosaic for target frames in a SKY_AND_JITTER recipe.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive makes a trimmed mosaic from the target frames in the
+#    current group of a SKY_AND_JITTER recipe.  It merely calls the
+#    standard _MAKE_MOSAIC_ primitive using a subgroup of target
+#    frames instead of the current $Grp.
+#
+# Arguments:
+#    FILLBAD = LOGICAL (Given)
+#       If true (1), replace the bad pixels in the current cycle's
+#       mosaic with a smooth function derived from its neighbours. 
+#       Otherwise, leave the bad pixels unaltered.  [1]
+#    INT_METHOD = CHARACTER (Given)
+#       The interpolation method.  This is either "linint" for bi-linear
+#       interpolation, or "nearest" for nearest neighbour.  The latter
+#       takes about half the time.  ["linint"]
+#    RESAMPLE = LOGICAL (Given)
+#       If true (1), resample the current cycle's frames to the same
+#       Cartesian co-ordinate system using the method given by argument
+#       INT_METHOD.  If false (0), use integer offsets and changes of
+#       origin to register the frames.  The latter is many times
+#       faster and is recommended for pipeline operation. [1]
+#
+# Notes:
+#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
+#    in imaging mode.
+#    -  Processing only occurs when the steering header MAKE_MOSAIC is
+#    true.
+#    -  The resampling limits the frame bounds to their original limits,
+#    so the mosaic has the dimensions of a single contributing frame.
+#    The default optimum number of optimum overlaps is used.
+#    -  The arguments are merely passed to _MAKE_MOSAIC_.  The group
+#    mosaic name is restored to that of the current $Grp, not that of
+#    the sub-group.  The updated headers are also propagated back into
+#    the current $Grp from the sub-group.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Selection
+# =========
+
+# Test whether or not it is time to make a mosaic.
+    my $makemos = $Frm->uhdr( "MAKE_MOSAIC" );
+    if ( $makemos ) {
+
+# Arguments
+# =========
+
+# Obtain the value for the interpolation.
+       my $intmethod = ( $_MAKE_MOSAIC_SKY_AND_JITTER_{INT_METHOD} || "linint" );
+
+# Determine whether or not to fill bad pixels.
+       my $fillbad = $_MAKE_MOSAIC_SKY_AND_JITTER_{FILLBAD};
+       $fillbad = defined( $fillbad ) ? $fillbad : 1;
+
+# Determine whether or not to resample.
+       my $resample = $_MAKE_MOSAIC_SKY_AND_JITTER_{RESAMPLE};
+       $resample = defined( $resample ) ? $resample : 1;
+
+# Make the mosaic.
+# ================
+
+# Make the group of differenced pairs the local version of $Grp within
+# the context delimited by the braces.  The mosaic name is the group
+# name.  Define outside the context so that it persists when the
+# Grp reverts to the main Grp.
+       my ( $mosname, $subGrp );
+       {
+
+# Find the existing group name.
+          my $grpname = $Grp->file;
+
+# Select the target members.  _MAKE_MOSAIC_ deals with selection for
+# the current cycle.
+          my $Grp = $Grp->subgrp( TARGET_OR_SKY => "target" );
+
+# Make a copy of the group identifier which persists outside the current
+# context.  It's needed to propagate the headers.
+          $subGrp = $Grp;
+
+# Set the group name for the subgroup, which behaves like $Grp in
+# _MAKE_MOSAIC_.
+          $Grp->file( $grpname );
+
+# Make a trimmed mosaic using the supplied parameters.  Use the
+# default optimum number of overlaps.
+          _MAKE_MOSAIC_ INT_METHOD=$intmethod FILLBAD=$fillbad RESAMPLE=$resample TRIM=1
+
+# The group name is changed in _MAKE_MOSAIC_ to the mosaic name. 
+# However, that's only for the difference group, not the main Grp.  So 
+# save the name outside this group context, and modify the file
+# associated with main Grp.
+          $mosname = $Grp->file;
+       }
+       $Grp->file( $mosname );
+
+# Propagate the modified headers back to the original group.
+       %{ $Grp->hdr } = %{ $subGrp->hdr };
+       %{ $Grp->uhdr } = %{ $subGrp->uhdr };
+
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_MAKE_MOSAIC_SKY_AND_JITTER_ -- Forms a mosaic for target frames in a SKY_AND_JITTER recipe.
+
+=head1 DESCRIPTION
+
+This primitive makes a trimmed mosaic from the target frames in the
+current group of a SKY_AND_JITTER recipe.  It merely calls the
+standard _MAKE_MOSAIC_ primitive using a subgroup of target
+frames instead of the current $Grp.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item FILLBAD = LOGICAL (Given)
+
+If true (1), replace the bad pixels in the current cycle's
+mosaic with a smooth function derived from its neighbours. 
+Otherwise, leave the bad pixels unaltered.  [1]
+
+=item INT_METHOD = CHARACTER (Given)
+
+The interpolation method.  This is either "linint" for bi-linear
+interpolation, or "nearest" for nearest neighbour.  The latter
+takes about half the time.  ["linint"]
+
+=item RESAMPLE = LOGICAL (Given)
+
+If true (1), resample the current cycle's frames to the same
+Cartesian co-ordinate system using the method given by argument
+INT_METHOD.  If false (0), use integer offsets and changes of
+origin to register the frames.  The latter is many times
+faster and is recommended for pipeline operation.  [1]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UFTI, IRCAM, and Michelle in imaging mode.
+
+=item *
+
+Processing only occurs when the steering header MAKE_MOSAIC is
+true.
+
+=item *
+
+The resampling limits the frame bounds to their original limits,
+so the mosaic has the dimensions of a single contributing frame.
+The default optimum number of optimum overlaps is used.
+
+=item *
+
+The arguments are merely passed to _MAKE_MOSAIC_.  The group mosaic
+name is restored to that of the current $Grp, not that of the
+sub-group.  The updated headers are also propagated back into
+the current $Grp from the sub-group.
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

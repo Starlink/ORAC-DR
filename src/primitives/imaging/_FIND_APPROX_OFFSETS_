@@ -1,0 +1,431 @@
+#+
+# Name:
+#    _FIND_APPROX_OFFSETS_
+#
+# Purpose:
+#    Finds approximate pixel offsets for the frames in the current group.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive finds the jitter offsets for the members of the
+#    current group of frames.  It either uses the frame headers
+#    directly, or registers the central source.  The latter method
+#    assumes that there is a main object situated within a small box
+#    located at the frame centre or displaced by the offsets given
+#    in the frame headers.  The location of the brightest object in
+#    the box is selected.  Objects are read from a CCDPACK/FINDOBJ
+#    ".find" inventory file.
+#
+#    The resultant offsets are written to the corresponding
+#    CCDPACK/FINDOFF ".off" offset file for each frame.  Each
+#    offset file is recorded in its corresponding frame as if the
+#    registration were found automatically.
+#
+#    The offsets and the registration method are reported.
+#
+# Arguments:
+#    ANGLE = REAL (Given)
+#       Rotation angle of the Declination axis with respect to the
+#       frame's y axis measured counter clockwise.  [Value of CROTA2
+#       header or 0.0 if the header does not exist]
+#    BOXSIZE = REAL (Given)
+#       The size in arcseconds of the search box in which to find the
+#       brightest object.  It is only used when SEARCH_BOX is true.
+#    OFFSET_TYPE = CHARACTER (Given)
+#       The type of offsets used as a last resort.  This will normally
+#       be "telescope", but for polarimetry mosaics it will be
+#       "beam-separation".  The string merely appears in informational
+#       messages.  The offsets themselves for polarimetry or any type of
+#       offset should already be stored in the telescope offsets.
+#       ["telescope"]
+#    SEARCH_BOX = LOGICAL (Given)
+#       If set to true (1), attempt to find the offsets from a central
+#       source, otherwise use the telescope offsets.
+#    XSHIFT = REAL (Given)
+#       A shift of x co-ordinate to be added to the stored x offsets.
+#       This is needed if there is a change of co-ordinate frame
+#       resulting from a partial solution. [0.0]
+#    YSHIFT = REAL (Given)
+#       A shift of y co-ordinate to be added to the stored y offsets.
+#       This is needed if there is a change of co-ordinate frame
+#       resulting from a partial solution. [0.0]
+#
+# Notes:
+#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
+#    in imaging mode.
+#    -  Processing only occurs for object frames.
+#    -  User header ORAC_ROTATION---the angle of the chip's y axis with
+#    respect to North (positive is anti-clockwise)---is used to convert
+#    sky-co-ordinate displacements into pixels using a simple rotation
+#    matrix.  If this header is absent, no rotation is assumed.   
+#    This formulation is satisfactory for the UKIRT's instrument scales
+#    and sizes, and its declination range.  A more-sophisticated
+#    transformation would be needed near the poles or for wide fields.
+#
+# Tasks:
+#    CCDPACK: CCDEDIT; KAPPA: NDFTRACE.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSTYPE" ) eq "OBJECT" ||
+         $Frm->uhdr( "ORAC_OBSTYPE" ) eq "SKY" ) {
+
+# Obtain parameter values.
+# ========================
+
+# Determine whether or not to use the central-box search.
+       my $usebox = ( $_FIND_APPROX_OFFSETS_{SEARCH_BOX} || "TRUE" );
+
+# Derive the boxsize in arcseconds.
+       my $boxangle = ( $_FIND_APPROX_OFFSETS_{BOXSIZE} || 5 );
+
+# Obtain the rotation angle in degrees.  The numeric default was UFTI
+# and time specific.  Now the ideal no-rotation is a compromise default.
+       my $defrot = $Frm->uhdr( "ORAC_ROTATION" );
+       $defrot = defined( $defrot ) ? $defrot : 0.0;
+       my $rotangle = ( $_FIND_APPROX_OFFSETS_{ANGLE} || $defrot );
+
+# Obtain any shifts of Cartesian co-ordinates to be applied.
+       my $xshift_toref = defined( $_FIND_APPROX_OFFSETS_{XSHIFT} ) ?
+                          $_FIND_APPROX_OFFSETS_{XSHIFT} : 0;
+
+       my $yshift_toref = defined( $_FIND_APPROX_OFFSETS_{YSHIFT} ) ?
+                          $_FIND_APPROX_OFFSETS_{YSHIFT} : 0;
+
+# Obtain the offset type, using "telescope" as the default string.
+       my $offset_type = $_GENERATE_OFFSETS_{OFFSET_TYPE};
+       $offset_type = defined( $offset_type ) ? $offset_type : "telescope";
+
+# Create text files
+# =================
+
+# Obtain a list of the filenames of the group members.  Exclude the first
+# (reference) frame.
+       my @regnames = $Grp->membernames;
+       my $junk = shift( @regnames );
+
+# Create text file to hold the list of input files, one per line.  This
+# is needed because expanded lists of files may make the command line too
+# long for the ADAM message system.
+       unlink ("faolist.inlist$$" );
+       open( INLIST, ">faolist.inlist$$" );
+       print INLIST join( "\n", @regnames ), "\n";
+       close( INLIST );
+
+# Create a file for storing the filenames of the offset files.
+       my $offlist = "ssoff.lis$$";
+       unlink ( "$offlist" );
+       open( OFFLIST, "> $offlist" );
+
+# Initialise persistent variables outside of the loop through the
+# frames.
+       my $first = 1;
+       my $firstcentral = 1;
+       my ( $xfiducial, $yfiducial, $xorigin, $yorigin );
+
+# Loop through all the frames.
+       foreach my $Frm ( $Grp->members ) {
+
+# Obtain from the headers the plate scales, rotation, and telescope offsets
+# in arcsec for the instrument, and convert to Cartesian co-ordinates.
+# At present this does not try the xhead offsets first, as they're not
+# available.
+          _GET_CARTESIAN_TELESCOPE_OFFSETS_
+          my $xoff = $_GET_CARTESIAN_TELESCOPE_OFFSETS_{XOFF};
+          my $yoff = $_GET_CARTESIAN_TELESCOPE_OFFSETS_{YOFF};
+
+# Set the offset type string for reporting the status.
+          my $offtype = $offset_type;
+
+# The telescope offsets are either the values just found, or for
+# polarisation data they are identical.  Since it is relative positions
+# which matter, set the telescope offsets for polarisation images to a
+# constant.  In practice the original values will normally be zero
+# anyway.
+          my ( $xteloff, $yteloff );
+          if ( $offtype =~ /^beam/ ) {
+             $xteloff = 0.0;
+             $yteloff = 0.0;
+          } else {
+             $xteloff = $xoff;
+             $yteloff = $yoff;
+          }
+
+# Obtain the x plate scale for the instrument from the headers.
+          _GET_PLATE_SCALE_
+          my $xpixelscale = $_GET_PLATE_SCALE_{RASCALE};
+
+# Find the boxsize in pixels.
+          my $boxpix = $boxangle / $xpixelscale;
+
+# Locate the centre of the frame by inquiring the frame's attributes.
+          my $ndf = $Frm->file;
+          $Mon{"ndfpack_mon"}->obeyw("ndftrace","ndf=$ndf");
+          ( my $ORAC_STATUS, my @lbnd ) = $Mon{"ndfpack_mon"}->get("ndftrace","lbound");
+          ( $ORAC_STATUS, my @ubnd ) = $Mon{"ndfpack_mon"}->get("ndftrace","ubound");
+
+# Find the mid points.
+          my $xmid = ( ( $lbnd[0] + $ubnd[0] ) / 2.0 );
+          my $ymid = ( ( $lbnd[1] + $ubnd[1] ) / 2.0 );
+
+# Initialise maximum flux.  It acts as an indicator of whether or not
+# central-source offsets have been found.
+          my $maxflux = 0;
+          my ( $xnear, $ynear );
+          my ( $xoffset, $yoffset, $flux );
+
+# Search in box?  For this the corresponding find file from FINDOBJ must 
+# exist.
+          my $findfile = $ndf . ".find";
+          my $usecentral = $usebox =~ /TRUE/ && -e $findfile;
+          if ( $usecentral && ! $first ) {
+
+# Derive the centre co-ordinates of the box.
+             my $xcentre = $xmid + $xteloff;
+             my $ycentre = $ymid + $yteloff;
+
+# Define pixel limits of the detection box.
+             my $xlbox = $xcentre - 0.5 * $boxpix;
+             my $xubox = $xcentre + 0.5 * $boxpix;
+
+             my $ylbox = $ycentre - 0.5 * $boxpix;
+             my $yubox = $ycentre + 0.5 * $boxpix;
+
+# Open FINDOBJ file.
+             $findfile = $ndf . ".find";
+             open ( FINDFILE, "< $findfile" );
+
+# Find the object nearest to the centre and within the box.
+             my $nearest = 0;
+             my $objnum = 0;
+             foreach my $line ( <FINDFILE> ) {
+
+# Ignore the comments.  Data lines begin with an integer identifier.
+                if ( $line =~ /^[1-9]/ ) {
+
+# Break the space-separated fields.   Obtain the x-y positions.
+                   my @fields = split( /\s+/, $line );
+                   my $xpos = $fields[1];
+                   my $ypos = $fields[2];
+                   my $flux = $fields[3];
+
+# Increment the object count.
+                   $objnum++;
+
+# See if the object is within the box.
+                   if ( $xpos > $xlbox && $xpos < $xubox &&
+                        $ypos > $ylbox && $ypos < $yubox ) {
+
+# Store it if it is the brightest.
+                      if ( $flux > $maxflux ) {
+                         $maxflux = $flux;
+                         $nearest = $objnum;
+                         $xnear = $xpos;
+                         $ynear = $ypos;
+
+                      }
+                   }
+                }
+             }
+             close ( FINDFILE );
+          }
+
+# Need a common origin for the header and central-source offsets.  The chosen
+# origin is the offset of the first frame.  Then adjust the fiducial point for
+# the central offsets to match.  However, that cannot be found here as the
+# centroid's location is not known.  Do not report these offsets or store
+# them in the offset file.
+          if ( $first ) {
+             $xorigin = $xoff;
+             $yorigin = $yoff;
+
+# The next frame is no longer the first.
+             $first = 0;
+
+# Specify the offsets to be used.  If the maximum flux is unchanged
+# just use the headers, otherwise find the displacement.
+          } else {
+             my ( $fs_xoff, $fs_yoff );
+             if ( $maxflux != 0 && $usecentral ) {
+
+# Define the fiducial point to tie into the telescope-offset co-ordinates,
+# using the offset and centroid of the first frame.
+                if ( $firstcentral ) {
+                   $xfiducial = $xnear - $xorigin;
+                   $yfiducial = $ynear - $yorigin;
+
+# Subsequent central-source frames are not the first.
+                   $firstcentral = 0;
+                }
+
+                $xoffset = $xnear - $xfiducial;
+                $yoffset = $ynear - $yfiducial;
+
+# Format the offsets removing leading spaces, using a reasonable number of
+# decimal places.
+                $fs_xoff = sprintf( "%12.3f", $xoffset );
+                $fs_xoff =~ s/ //g;
+                $fs_yoff = sprintf( "%12.3f", $yoffset );
+                $fs_yoff =~ s/ //g;
+                orac_print "Orac says: using central-source offsets ($fs_xoff,$fs_yoff) for frame $ndf\n";
+
+             } else {
+
+# Since the origin is in the same telescope-offset system, the offsets
+# from the headers can be used directly.
+                $xoffset = $xoff;
+                $yoffset = $yoff;
+
+# Format the offsets removing leading spaces, using a reasonable number of
+# decimal places.  This also avoids the E-large numbers which should be
+# zero from appearing.
+                $fs_xoff = sprintf( "%12.3f", $xoffset );
+                $fs_xoff =~ s/ //g;
+                $fs_yoff = sprintf( "%12.3f", $yoffset );
+                $fs_yoff =~ s/ //g;
+                orac_print "Orac says: using $offtype offsets ($fs_xoff,$fs_yoff) for frame $ndf\n";
+             }
+
+# Convert to the required co-ordinate frame.
+             $xoffset = $xoffset + $xshift_toref;
+             $yoffset = $yoffset + $yshift_toref;
+
+# Create an offset file as used by CCDPACK's REGISTER task.  Store the
+# the frame name and offsets within the file.
+             my $off_file = $ndf . ".off";
+             unlink ( "$off_file" );
+             open ( OFFSET, "> $off_file" );
+             print OFFSET "1  $xoffset  $yoffset\n";
+             close ( OFFSET );
+
+# Record the name offset file in GRP indirection file for use by CCDEDIT.
+             print OFFLIST "$off_file\n";
+          }
+       }
+       close ( OFFLIST );
+
+# Specify parameters for editing CCDPACK headers.
+       my $param1 = "in='^faolist.inlist$$' inlist=\'^$offlist\'";
+       my $param2 = "mode=alist"; 
+
+# Associate the position-list files with the current object frames.
+       $Mon{"ccdpack_reg"}->obeyw("ccdedit","$param1 $param2");
+       unlink( "faolist.inlist$$", "$offlist" );
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_FIND_APPROX_OFFSETS_ -- Finds approximate pixel offsets for the frames in the current group.
+
+=head1 DESCRIPTION
+
+This primitive finds the jitter offsets for the members of the
+current group of frames.  It either uses the frame headers
+directly, or registers the central source.  The latter method
+assumes that there is a main object situated within a small box
+located at the frame centre or displaced by the offsets given
+in the frame headers.  The location of the brightest object in
+the box is selected.  Objects are read from a CCDPACK/FINDOBJ
+".find" inventory file.
+
+The resultant offsets are written to the corresponding
+CCDPACK/FINDOFF ".off" offset file for each frame.  Each
+offset file is recorded in its corresponding frame as if the
+registration were found automatically.
+
+The offsets and the registration method are reported.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item ANGLE = REAL (Given)
+
+Rotation angle of the Declination axis with respect to the
+frame's y axis measured counter clockwise.  [Value of CROTA2
+header or 0.0 if the header does not exist]
+
+=item BOXSIZE = REAL (Given)
+
+The size in arcseconds of the search box in which to find the
+brightest object.  It is only used when SEARCH_BOX is true.
+
+=item OFFSET_TYPE = CHARACTER (Given)
+
+The type of offsets used as a last resort.  This will normally
+be "telescope", but for polarimetry mosaics it will be
+"beam-separation".  The string merely appears in informational
+messages.  The offsets themselves for polarimetry or any type of
+offset should already be stored in the telescope offsets.
+["telescope"]
+
+=item SEARCH_BOX = LOGICAL (Given)
+
+If set to true (1), attempt to find the offsets from a central
+source, otherwise use the telescope offsets.
+
+=item XSHIFT = REAL (Given)
+
+A shift of x co-ordinate to be added to the stored x offsets.
+This is needed if there is a change of co-ordinate frame
+resulting from a partial solution. [0.0]
+
+=item YSHIFT = REAL (Given)
+
+A shift of y co-ordinate to be added to the stored y offsets.
+This is needed if there is a change of co-ordinate frame
+resulting from a partial solution. [0.0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UFTI, IRCAM, and Michelle in imaging mode.
+
+=item *
+
+Processing only occurs for object frames.
+
+=item *
+
+User header ORAC_ROTATION---the angle of the chip's y axis with
+respect to North (positive is anti-clockwise)---is used to convert sky
+co-ordinate displacements into pixels using a simple rotation matrix.
+If this header is absent, no rotation is assumed. This formulation is
+satisfactory for the UKIRT's instrument scales and sizes, and its
+declination range.  A more-sophisticated transformation would be
+needed near the poles or for wide fields.
+
+=back
+
+=head1 TASKS
+
+CCDPACK: CCDEDIT; KAPPA: NDFTRACE.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

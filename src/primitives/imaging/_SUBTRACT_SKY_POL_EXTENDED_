@@ -1,0 +1,467 @@
+#+
+# Name:
+#    _SUBTRACT_SKY_POL_EXTENDED_
+#
+# Purpose:
+#    Creates sky-subtracted e- and o-beam images for polarimetry recipes.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive creates sky-subtracted e- and o-beam images.  The
+#    images are subsets of the current frame in the appropriate region.
+#    Modal sky values are determined from e- and o-beam areas within
+#    a paired sky frame.  The sky-subtracted e- and o-beam frames are
+#    stored in two groups, which are created if they do not already exist.
+#    References to the groups are stored in the main $Grp user headers
+#    called EBEAM_GROUP and OBEAM_GROUP.
+#
+#    The primitive reports a successful sky subtraction and the frames
+#    concerned.  It is a variant of _SUBTRACT_SKY_POL_ for extended 
+#    sources where frames alternate between target and sky.
+#
+# Notes:
+#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
+#    in imaging mode.
+#    -  Processing only occurs for object frames or sky frames, and
+#    when the steering header SUBTRACT_SKY is true.
+#    -  Steering header TARGET_OR_SKY being set to "sky" indicates
+#    a sky frame.
+#    -  An ARD mask is used to exclude all but the two e-beam or
+#    o-beam rectangles in the sky frame.
+#    -  If the supplied target frame contains a variance array,
+#    the error in the sky level is incorporated into the 
+#    sky-subtracted frame's variance.
+#    -  The sky-subtracted images can be displayed.
+#    -  The frame title is propagated.
+#
+# Output Data:
+#    -  Sky-subtracted e-beam and o-beam frames inheriting the frame's
+#    name but with the _ess and _oss suffices respectively.
+#
+# Tasks:
+#    KAPPA: ARDMASK, CSUB, NDFTRACE, MATHS, SETVAR, STATS, SUB.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# This should only be performed on OBJECT or SKY frames.
+    if ( ( $Frm->uhdr( "ORAC_OBSTYPE" ) eq "OBJECT" ||
+           $Frm->uhdr( "ORAC_OBSTYPE" ) eq "SKY" ) &&
+           $Frm->uhdr( "SUBTRACT_SKY" ) ) {
+
+# Access the group of e-beam and o-beam frames.
+# =============================================
+
+# Does the group of e-beam frames exist?  If not report the fatal error.
+       my $eGrp = $Grp->uhdr( "EBEAM_GROUP" );
+       if ( ! defined( $eGrp ) ) {
+          orac_err "_SUBTRACT_SKY_POL_EXTENDED_: EBEAM_GROUP does not exist " .
+                   "(probable programming error).\n";
+       }
+
+# Does the group of o-beam frames exist?  If not report the fatal error.
+       my $oGrp = $Grp->uhdr( "OBEAM_GROUP" );
+       if ( ! defined( $oGrp ) ) {
+          orac_err "_SUBTRACT_SKY_POL_EXTENDED_: OBEAM_GROUP does not exist " .
+                   "(probable programming error).\n";
+       }
+
+# Decide which frame is which.
+# ============================
+
+# Need to obtain the sky and target frames.  The former is just used
+# to obtain the sky level.  The latter is needed when making the sky-subtracted
+# and ensuring the target's headers are propagated, not the sky frame's.
+       my ( $tarFrm, $skyFrm );
+       if ( $Frm->uhdr( "TARGET_OR_SKY" ) eq "sky" ) {
+          $skyFrm = $Frm;
+          $tarFrm = $Grp->frame( $Grp->num - 1 );
+       } else {
+          $tarFrm = $Frm;
+          $skyFrm = $Grp->frame( $Grp->num - 1 );
+       }
+
+# Find the frame names for the applications' parameters.
+       my $in = $tarFrm->file;
+       my $insky = $skyFrm->file;
+
+# Obtain bounds of rectangular regions around the target and sky.
+# ===============================================================
+
+# For this we need to use the target frames as the telescope offsets
+# are used.
+       my ( @etbounds, @otbounds, @esbounds, @osbounds );
+       {
+          my $Frm = $tarFrm;
+
+# Compute the pixel bounds of the target and sky e- and o-beam images.
+# Use the wider target region as it is an extended source.
+          _DEFINE_POL_REGIONS_ EXTENDED=1
+
+# Get references to the bounds just calculated.
+          my $etbref = $_DEFINE_POL_REGIONS_{ETBOUNDS};
+          my $otbref = $_DEFINE_POL_REGIONS_{OTBOUNDS};
+          my $esbref = $_DEFINE_POL_REGIONS_{ESBOUNDS};
+          my $osbref = $_DEFINE_POL_REGIONS_{OSBOUNDS};
+
+# Convert references into arrays.
+          @etbounds = @$etbref;
+          @otbounds = @$otbref;
+          @esbounds = @$esbref;
+          @osbounds = @$osbref;
+       }
+
+# Define the sky regions.
+# =======================
+
+# Use an ARD mask to define regions of the sky for each beam.
+# Note that since a separate sky frame is obtained, there are two
+# regions of sky for each beam in the sky frame.  One is the normal
+# sky area, the other is the target region.
+
+# Remove any existing quadrant files.
+       unlink( "esky.ard", "osky.ard" );
+
+# e-beam.  Defines bad pixels which are not in either rectangle.
+       open( ARDFILE, ">esky.ard" );
+       print ARDFILE "OFFSET( -0.5, -0.5 )\n";
+       print ARDFILE ".NOT . ( RECT($esbounds[ 0 ],$esbounds[ 1 ],$esbounds[ 2 ]," .
+         "$esbounds[ 3 ]) .OR. RECT($etbounds[ 0 ],$etbounds[ 1 ],$etbounds[ 2 ]," .
+         "$etbounds[ 3 ]) )\n";
+       close( ARDFILE );
+
+# o-beam.  Defines bad pixels which are not in either rectangle.
+       open( ARDFILE, ">osky.ard" );
+       print ARDFILE "OFFSET( -0.5, -0.5 )\n";
+       print ARDFILE ".NOT . ( RECT($osbounds[ 0 ],$osbounds[ 1 ],$osbounds[ 2 ]," .
+         "$osbounds[ 3 ]) .OR. RECT($otbounds[ 0 ],$otbounds[ 1 ],$otbounds[ 2 ]," .
+         "$otbounds[ 3 ]) )\n";
+       close( ARDFILE );
+
+# Determine whether the NDF supports variance.
+# ============================================
+       $Mon{"ndfpack_mon"}->obeyw("ndftrace","ndf=$in");
+       ( my $ORAC_STATUS, my $variance ) = $Mon{"ndfpack_mon"}->get("ndftrace","variance");
+
+# Mask the sky frame.
+# ===================
+
+# Specify the parameters.
+       my $param1 = "in=$insky out=esky_$$ title=\'o-beam regions masked\'";
+       my $param2 = "ardfile=esky.ard cosys=w";
+
+# Mask the object ellipses with bad pixels.
+       $Mon{"kappa_mon"}->obeyw("ardmask","$param1 $param2");
+
+# Specify the parameters.
+       $param1 = "in=$insky out=osky_$$ title=\'e-beam regions masked\'";
+       $param2 = "ardfile=osky.ard cosys=w";
+
+# Mask the object ellipses with bad pixels.
+       $Mon{"kappa_mon"}->obeyw("ardmask","$param1 $param2");
+
+# Find the modal skies.
+# =====================
+
+# Calculate and extract the clipped mean of the e-beam sections of sky.
+       $Mon{"kappa_mon"}->obeyw("stats","ndf=esky_$$ clip=[2,3,3]");
+       ( $ORAC_STATUS, my $esky ) = $Mon{"kappa_mon"}->get("stats","mean");
+
+# Format for later output.
+       my $fs_sky = sprintf( "%11.3f", $esky );
+       $fs_sky =~ s/ //g;
+
+# Extract the standard deviation of the frame, and number of pixels used 
+# to calculate the statistics if there is a variance area.
+       my ( $ecount, $esigma, $emeanerr ); 
+       if ( $variance eq "TRUE" ) {
+          ( $ORAC_STATUS, $esigma ) = $Mon{"kappa_mon"}->get("stats","sigma");
+          ( $ORAC_STATUS, $ecount ) = $Mon{"kappa_mon"}->get("stats","numgood");
+
+# Prevent divide-by zero, although it seems impossible to get zero good pixels.
+          if ( $ecount == 0 ) {
+             $ORAC_STATUS = ORAC__ERROR;
+             orac_err "All the e-beam sky pixels are bad.\n";
+             return $ORAC_STATUS;
+          }
+
+# Derive the error on the mean.
+          $emeanerr = $esigma / sqrt( $ecount );
+
+# Report the progress.
+          my $fs_err = sprintf( "%11.3f", $emeanerr );
+          $fs_err =~ s/ //g;
+          orac_print "Orac says: modal e-beam sky determined from " .
+                     "$insky is $fs_sky +/- $fs_err.\n";
+
+       } else {
+          orac_print "Orac says: modal e-beam sky determined from " .
+                     "$insky is $fs_sky.\n";
+
+       }
+
+# Now repeat for the o-beam.  Calculate and extract the clipped mean of the
+# section.
+       $Mon{"kappa_mon"}->obeyw("stats","ndf=osky_$$ clip=[2,3,3]");
+       ( $ORAC_STATUS, my $osky ) = $Mon{"kappa_mon"}->get("stats","mean");
+
+# Format for later output.
+       my $fs_sky = sprintf( "%11.3f", $osky );
+       $fs_sky =~ s/ //g;
+
+# Extract the standard deviation of the frame, and number of pixels used 
+# to calculate the statistics if there is a variance area.
+       my ( $ocount, $osigma, $omeanerr ); 
+       if ( $variance eq "TRUE" ) {
+          ( $ORAC_STATUS, $osigma ) = $Mon{"kappa_mon"}->get("stats","sigma");
+          ( $ORAC_STATUS, $ocount ) = $Mon{"kappa_mon"}->get("stats","numgood");
+
+# Prevent divide-by zero, although it seems impossible to get zero good pixels.
+          if ( $ocount == 0 ) {
+             $ORAC_STATUS = ORAC__ERROR;
+             orac_err "All the e-beam sky pixels are bad.\n";
+             return $ORAC_STATUS;
+          }
+
+# Derive the error on the mean.
+          $omeanerr = $osigma / sqrt( $ocount );
+
+# Report the progress.
+          my $fs_err = sprintf( "%11.3f", $omeanerr );
+          $fs_err =~ s/ //g;
+          orac_print "Orac says: modal o-beam sky determined from " .
+                     "$insky is $fs_sky +/- $fs_err.\n";
+
+       } else {
+          orac_print "Orac says: modal o-beam sky determined from " .
+                     "$insky is $fs_sky.\n";
+
+       }
+
+# We're finished with the masked sky frames.  They were only temporary,
+# hence no need to update the $Frm->file.
+       _DELETE_A_FRAME_ FRAME=esky_$$
+       _DELETE_A_FRAME_ FRAME=osky_$$
+       unlink( "esky.ard", "osky.ard" );
+
+# Subtract the sky from the e-beam.
+# =================================
+
+# Define the file suffix.  Note it's the processed target frame we
+# wish to continue along the pipeline
+       ( $in, my $e_out ) = $tarFrm->inout( "_ess" );
+
+       if ( $variance eq "TRUE" ) {
+
+# Form a constant image at the sky level, with the variance set to the
+# square of the uncertainty on the sky level.  Use the bounds of the
+# e-beam target region so that overlap is guaranteed, and the image is
+# no larger than it need be.  Note that dimensionality is set by the
+# number of co-ordinates.  Therefore null xa and xb tokens are included
+# in the expression.  The accept is to take the default data type.
+          $param1 = "exp='$esky+0*xa+0*xb' lbound=[$etbounds[ 0 ],$etbounds[ 2 ]]";
+          $param2 = "out=esky_$$ ubound=[$etbounds[ 1 ],$etbounds[ 3 ]] accept";
+          $Mon{"kappa_mon"}->obeyw("maths","$param1 $param2");
+
+          my $evar = $emeanerr * $emeanerr;
+          $Mon{"ndfpack_mon"}->obeyw("setvar","ndf=esky_$$ variance=$evar");
+
+# Subtract the newly created constant frame from the NDF.
+          $param1 = "in1=$in($etbounds[ 0 ]:$etbounds[ 1 ],$etbounds[ 2 ]:$etbounds[ 3 ])";
+          $param2 = "in2=esky_$$ out=$e_out";
+          $Mon{"kappa_mon"}->obeyw("sub","$param1 $param2");
+
+# We're finished with the constant frame.  It's only role is propagate the
+# variance correctly.
+          _DELETE_A_FRAME_ FRAME=esky_$$
+
+       } else {
+
+# Subtract the sky from the required section about the target in the e-beam.
+          $param1 = "in=$in($etbounds[ 0 ]:$etbounds[ 1 ],$etbounds[ 2 ]:$etbounds[ 3 ])";
+          $param2 = "out=$e_out scalar=$esky";
+          $Mon{"kappa_mon"}->obeyw("csub","$param1 $param2");
+       }
+
+       orac_print "Orac says: e-beam of $in sky subtracted to make $e_out\n";
+
+# Store the sky-subtracted e-beam frame in the group.
+# ===================================================
+
+# Create a new frame to store the differenced pair image.
+       my $eFrm = $Frm->new( $e_out );
+
+# Need to propagate the raw frame as ORAC-DR pattern matches for files
+# ending in a number to set the $Frm->number, which is needed for the
+# template method.
+       $eFrm->raw( $tarFrm->raw );
+
+# Transfer the headers to the differenced frame.
+       %{$eFrm->hdr} = ( %{$tarFrm->hdr} );
+       %{$eFrm->uhdr} = ( %{$tarFrm->uhdr} );
+
+# Store the sky-subtracted e-frame in the e-beam group.
+       $eGrp->push( $eFrm );
+
+# Display the sky-subtracted e-beam frame.
+       $Display->display_data( $eFrm ) if (defined $Display);
+
+# Subtract the sky from the o-beam.
+# =================================
+
+# Define the file suffix.  Note it's the processed target frame we
+# wish to continue along the pipeline.
+       ( $in, my $o_out ) = $tarFrm->inout( "_oss" );
+
+       if ( $variance eq "TRUE" ) {
+
+# Form a constant image at the sky level, with the variance set to the
+# square of the uncertainty on the sky level.  Use the bounds of the
+# o-beam target region so that overlap is guaranteed, and the image is
+# no larger than it need be.  Note that dimensionality is set by the
+# number of co-ordinates.  Therefore null xa and xb tokens are included
+# in the expression.  The accept is to take the default data type.
+          $param1 = "exp='$osky+0*xa+0*xb' lbound=[$otbounds[ 0 ],$otbounds[ 2 ]]";
+          $param2 = "out=osky_$$ ubound=[$otbounds[ 1 ],$otbounds[ 3 ]] accept";
+          $Mon{"kappa_mon"}->obeyw("maths","$param1 $param2");
+
+          my $ovar = $omeanerr * $omeanerr;
+          $Mon{"ndfpack_mon"}->obeyw("setvar","ndf=osky_$$ variance=$ovar");
+
+# Subtract the newly created constant frame from the NDF.
+          $param1 = "in1=$in($otbounds[ 0 ]:$otbounds[ 1 ],$otbounds[ 2 ]:$otbounds[ 3 ])";
+          $param2 = "in2=osky_$$ out=$o_out";
+          $Mon{"kappa_mon"}->obeyw("sub","$param1 $param2");
+
+# We're finished with the constant frame.  It's only role is propagate the
+# variance correctly.
+          _DELETE_A_FRAME_ FRAME=osky_$$
+
+       } else {
+
+# Subtract the sky from the required section about the target in the e-beam.
+          $param1 = "in=$in($otbounds[ 0 ]:$otbounds[ 1 ],$otbounds[ 2 ]:$otbounds[ 3 ])";
+          $param2 = "out=$o_out scalar=$osky";
+          $Mon{"kappa_mon"}->obeyw("csub","$param1 $param2");
+       }
+
+       orac_print "Orac says: o-beam of $in sky subtracted to make $o_out\n";
+
+# Store the sky-subtracted o-beam frame in the group.
+# ===================================================
+
+# Create a new frame to store the differenced pair image.
+       my $oFrm = $Frm->new( $o_out );
+
+# Need to propagate the raw frame as ORAC-DR pattern matches for files
+# ending in a number to set the $Frm->number, which is needed for the
+# template method.
+       $oFrm->raw( $tarFrm->raw );
+
+# Transfer the headers to the differenced frame.
+       %{$oFrm->hdr} = ( %{$tarFrm->hdr} );
+       %{$oFrm->uhdr} = ( %{$tarFrm->uhdr} );
+
+# Store the sky-subtracted o-frame in the o-beam group.
+       $oGrp->push( $oFrm );
+
+# Display the sky-subtracted o-beam frame.
+       $Display->display_data( $oFrm ) if (defined $Display);
+
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+SUBTRACT_SKY_POL_EXTENDED -- Creates sky-subtracted e- and o-beam images for polarimetry recipes.
+
+=head1 DESCRIPTION
+
+This primitive creates sky-subtracted e- and o-beam images.  The
+images are subsets of the current frame in the appropriate region.
+Modal sky values are determined from e- and o-beam areas within
+a paired sky frame.  The sky-subtracted e- and o-beam frames are
+stored in two groups, which are created if they do not already exist.
+References to the groups are stored in the main $Grp user headers
+called EBEAM_GROUP and OBEAM_GROUP.
+
+The primitive reports a successful sky subtraction and the frames
+concerned.  It is a variant of
+L<_SUBTRACT_SKY_POL_|_SUBTRACT_SKY_POL_> for extended sources
+where frames alternate between target and sky.
+
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UFTI, IRCAM, and Michelle in imaging mode.
+
+=item *
+
+Processing only occurs for object or sky frames, and
+when the steering header SUBTRACT_SKY is true.
+
+=item *
+
+Steering header TARGET_OR_SKY being set to "sky" indicates
+a sky frame.
+
+=item *
+
+An ARD mask is used to exclude all but the two e-beam or
+o-beam rectangles in the sky frame.
+
+=item *
+
+If the supplied target frame contains a variance array,
+the error in the sky level is incorporated into the 
+sky-subtracted frame's variance.
+
+=item *
+
+The sky-subtracted images can be displayed.
+
+=item *
+
+The frame title is propagated.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Sky-subtracted e-beam and o-beam frames inheriting the frame's
+name but with the _ess and _oss suffices respectively.
+
+=back
+
+=head1 TASKS
+
+KAPPA: ARDMASK, CSUB, NDFTRACE, MATHS, SETVAR, STATS, SUB.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

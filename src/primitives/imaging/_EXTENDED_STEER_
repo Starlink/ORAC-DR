@@ -1,0 +1,248 @@
+#+
+# Name:
+#    _EXTENDED_STEER_
+#
+# Purpose:
+#    Steers processing for EXTENDED_nxm recipes.
+#
+# Language:
+#    Perl5
+#
+# Description: 
+#    This primitive control processing for EXTENDED_nxm recipes through
+#    steering headers listed below.  It also reports whether each frame is
+#    of the target or of some sky background, and the row number.
+#
+# Steering Headers:
+#    CYCLE_NUMBER = INTEGER
+#       Number of the cycle, a cycle being a set of frames to complete a
+#       pass through the recipe.  The first cycle is 0.
+#    EXTENDED_ROW = INTEGER
+#       The row number of the frame.
+#    MAKE_FLAT = LOGICAL
+#       Whether or not to make the flat.  A flat is made once all the
+#       frames in a row and the bracketing sky are available.
+#    MAKE_GRAND_MOSAIC = LOGICAL
+#       Whether or not register the frames and make the full mosaic.
+#       The grand mosaic is made once all the frames in a cycle are
+#       available.
+#    MAKE_MOSAIC = LOGICAL
+#       Whether or not register the frames and make a row mosaic.  A row
+#       mosaic is made once all the frames in a row and the bracketing
+#       sky are available.
+#    REFERENCE_FRAME = LOGICAL
+#       A true value specifies the reference sky frame to which all
+#       subsequent skies are normalised.  It is true for the first frame
+#       and false for all subsequent frames in the observation.
+#    SUBTRACT_SKY = LOGICAL
+#       Whether or not it is time to subtract the sky.  Sky subtraction
+#       occurs once all the frames in a cycle are available.
+#    TARGET_OR_SKY = CHARACTER
+#       This is "target" for a target frame, and "sky" for a sky calibration
+#       frame.  The target and sky alternate for these recipes.
+#    TARGET_NUMBER = INTEGER
+#       When TARGET_OR_SKY is "target", this counts the target frames,
+#       starting from zero.  It is used for interpolation between sky
+#       measurements.
+#
+# Arguments:
+#    NCOL = INTEGER (Given)
+#       The number of target frames in a column of the mosaic.  It's the
+#       m in EXTENDED_nxm.  The minimum is 2. [5]
+#    NROW = INTEGER (Given)
+#       The number of target frames in a row of the mosaic.  It's the n
+#       in EXTENDED_nxm.  The minimum is 3 because this number of
+#       blank skies are needed to form a flat field. [5]
+#
+# Notes:
+#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
+#    in imaging mode.
+#    -  Processing only occurs for object and sky frames.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Obtain the shape of the mosaic in terms of the number of frames
+# per row and the number of rows.
+    my $nrow = max( 3, ( $_EXTENDED_STEER_{NROW} || 5 ) );
+    my $ncol = max( 2, ( $_EXTENDED_STEER_{NCOL} || 5 ) );
+
+# Define handy variables: the frame number, the total number of
+# frames in a cycle, and the frame number within the cycle.
+    my $fn = $Grp->num;
+    my $totframe = $nrow * 2 * $ncol + 1;
+    my $cycle_fn = $fn % $totframe;
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSTYPE" ) eq "OBJECT" ||
+         $Frm->uhdr( "ORAC_OBSTYPE" ) eq "SKY" ) {
+
+# Specify the first frame as the frame whose mode will be the
+# reference for the normalisation of the sky frames.
+       if ( $fn % $totframe == 0 ) {
+          $Frm->uhdr( "REFERENCE_FRAME", 1 );
+       } else {
+          $Frm->uhdr( "REFERENCE_FRAME", 0 );
+       }
+
+# Classify this frame as either a target or blank-sky object frame.
+# Allow for multiple cycles.
+       my $filename;
+       if ( $cycle_fn % 2 == 0 ) {
+          $Frm->uhdr( "TARGET_OR_SKY", "sky" );
+          $filename = $Frm->file;
+          orac_print "Orac says: $filename is of blank sky.\n";
+
+# Also include the frame number.
+       } else {
+          $Frm->uhdr( "TARGET_OR_SKY", "target" );
+          $Frm->uhdr( "TARGET_NUMBER", int( $cycle_fn / 2 ) );
+          $filename = $Frm->file;
+          orac_print "Orac says: $filename is of the target.\n";
+       }
+
+# Specify during processing of which frames should the flat be created,
+# flat-field creation with objects masked, and a mosaic created.
+       if ( $cycle_fn % ( $nrow * 2 ) == 0 && $cycle_fn != 0 ) {
+          $Frm->uhdr( "MAKE_FLAT", 1 );
+          $Frm->uhdr( "MAKE_MOSAIC", 1 );
+
+       } else {
+          $Frm->uhdr( "MAKE_FLAT", 0 );
+          $Frm->uhdr( "MAKE_MOSAIC", 0 );
+       }
+
+# Specify during processing when the final mosaic is to be generated.
+       if ( $cycle_fn == ( $totframe - 1 ) ) {
+          $Frm->uhdr( "MAKE_GRAND_MOSAIC", 1 );
+          $Frm->uhdr( "SUBTRACT_SKY", 1 );
+       } else {
+          $Frm->uhdr( "MAKE_GRAND_MOSAIC", 0 );
+          $Frm->uhdr( "SUBTRACT_SKY", 0 );
+       }
+
+# Insert the grandmosaic cycle number of the set of NROW * NCOL frames.
+       my $cycle_number =  max( 0, int( ( $fn - 1 ) / $totframe ) );
+       $Frm->uhdr( "CYCLE_NUMBER", $cycle_number );
+
+# Record the row number for making flats and selecting strips to mosaic.
+# Note it applies to both sky and target frames.
+       my $row_no = int( ( $cycle_fn - 1 ) / $ncol / 2 ) + $cycle_number * $nrow;
+       $Frm->uhdr( "EXTENDED_ROW", $row_no );
+       orac_print "Current frame is part of row $row_no\n";
+
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_EXTENDED_STEER_ -- Steers processing for EXTENDED_I<n>xI<m> recipes.
+
+=head1 DESCRIPTION
+
+This primitive control processing for EXTENDED_I<n>xI<m> recipes through
+steering headers listed below.
+
+=head1 STEERING HEADERS
+
+=over 4
+
+=item CYCLE_NUMBER = INTEGER
+
+Number of the cycle, a cycle being a set of frames to complete a
+pass through the recipe.  The first cycle is 0.
+
+=item EXTENDED_ROW = INTEGER
+
+The row number of the frame.
+
+=item MAKE_FLAT = LOGICAL
+
+Whether or not to make the flat.  A flat is made once all the
+frames in a row and the bracketing sky are available.
+
+=item MAKE_GRAND_MOSAIC = LOGICAL
+
+Whether or not register the frames and make the full mosaic.
+The grand mosaic is made once all the frames in a cycle are
+available.
+
+=item MAKE_MOSAIC = LOGICAL
+
+Whether or not register the frames and make a row mosaic.  A row
+mosaic is made once all the frames in a row and the bracketing
+sky are available.
+
+=item REFERENCE_FRAME = LOGICAL
+
+A true value specifies the reference sky frame to which all
+subsequent skies are normalised.  It is true for the first frame
+and false for all subsequent frames in the observation.
+
+=item SUBTRACT_SKY = LOGICAL
+
+Whether or not it is time to subtract the sky.  Sky subtraction
+occurs once all the frames in a cycle are available.
+
+=item TARGET_OR_SKY = CHARACTER
+
+This is "target" for a target frame, and "sky" for a sky calibration
+frame.  The target and sky alternate for these recipes.
+
+=item TARGET_NUMBER = INTEGER
+
+When TARGET_OR_SKY is "target", this counts the target frames,
+starting from zero.  It is used for interpolation between sky
+measurements.
+
+=back
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item NCOL = INTEGER (Given)
+
+The number of target frames in a column of the mosaic.  It's the
+I<m> in EXTENDED_I<n>xI<m>.  The minimum is 2. [5]
+
+=item NROW = INTEGER (Given)
+
+The number of target frames in a row of the mosaic.  It's the I<n>
+in EXTENDED_I<n>xI<m>.  The minimum is 3 because this number of
+blank skies are needed to form a flat field. [5]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UFTI, IRCAM, and Michelle in imaging mode.
+
+=item *
+
+Processing only occurs for object and sky frames.
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

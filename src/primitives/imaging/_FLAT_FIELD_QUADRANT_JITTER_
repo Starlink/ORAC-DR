@@ -1,0 +1,304 @@
+#+
+# Name:
+#    _FLAT_FIELD_QUADRANT_JITTER_
+#
+# Purpose:
+#    Self-flat fields a group of QUADRANT_JITTER-recipe frames.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive creates and applies self-flat field for the current
+#    group of four frames in a QUADRANT_JITTER.  It makes a flat from
+#    the group by masking the quadrant containing the target source,
+#    normalising to the same reference level, before taking the median.
+#    The primitive divides the group members by that flat field.  There
+#    is also optional object masking to make an improved flat; objects
+#    in the flattened frames are detected above brightness and size
+#    thresholds, and the frames combined to make a new flat field.  This
+#    second mask also includes a circular region about the centre of the
+#    target's quadrant to obscure the periphery of the source.  The data
+#    are renormalised before masking before evaluating the median at
+#    each pixel.  The improved flat is then applied to the original
+#    input group.  Six other primitives do most of the work.
+#
+# Notes:
+#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
+#    in imaging mode.
+#    -  The central-source mask has a diameter equal to the length of
+#    a quadrant along its shorter side.
+#    -  Quadrant normalisation is with respect to a reference level
+#    of the first frame, stored in the first frame's internal header
+#    REFERENCE_LEVEL.  The reference mode is then stored in
+#    variable $_NORMALISE_TO_MODE_refmode for the normalising
+#    routine.
+#
+# Arguments:
+#    MASK = LOGICAL (Given)
+#       Perform object masking only if it is true.
+#
+# Output Data:
+#    None.  However, the invoked primitives _MAKE_FLAT_QUADRANT_JITTER_,
+#    _DIVIDE_BY_FLAT_FROM_GROUP_, _MAKE_OBJECTS_MASK_, _MASK_OBJECTS_,
+#    _NORMALISE_TO_MODE_, and _MAKE_FLAT_FROM_NORMALISED_GROUP_ do
+#    create new frames.  The bottom line is that a flat field frame
+#    is filed and indexed, and there are flat-fielded frames each
+#    inheriting the corresponding input frame's name but with an _ff
+#    suffix.  Various intermediate frames are normally removed by a tidy
+#    primitive.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Obtain the reference level.
+# ===========================
+
+# The aim is to make a flat field, first (and perhaps only) by combining
+# four frames, each with a different quadrant masked.  Since there are
+# systematic differences in the flat field between quadrants, merely
+# taking a median at each pixel will preferentially select values
+# from certain frames.  Thus there has to be an allowance for these
+# systematic differences before the data are combined to give
+# representative relative intensities.  We nominate one frame, the first
+# in the group, to be the reference frame against which we scale the
+# modal values of the other three frames.
+
+# As the routine which evaluates the mode (_NORMALISE_TO_MODE_)
+# operates on a sub-group of a cycle of four, after the first cycle it
+# cannot access a reference mode from the reference frame.  Therefore,
+# the reference mode must be obtained before the sub-group is created.
+# If we are processing the reference frame, there will not be a reference
+# mode in its user header yet.  _NORMALISE_TO_MODE_ detects this; it then
+# determines the reference mode and writes it to the user header of the
+# reference frame.  The group header only exists at this point once
+# a first cycle mosaic has been generated, hence the $Grp->uhdr
+# method cannot be used to propagate the reference level.
+
+# Determine whether or not this is the first frame, and hence whether or
+# not a reference mode is needed.  Notice the scope of the variable
+# _NORMALISE_TO_MODE_refmode includes the _NORMALISE_TO_MODE_ primitive,
+# and so we don't have to pass parameters down two levels.  The name
+# is therefore chosen to avoid potential clashes.
+    my $_NORMALISE_TO_MODE_refmode;
+    if ( $Grp->num > 0 ) {
+
+# Recall the reference level from the reference frame within the group.
+       my $refFrm = $Grp->frame( 0 );
+       $_NORMALISE_TO_MODE_refmode = $refFrm->uhdr( "REFERENCE_LEVEL" );
+    }
+
+# Select type of masking.
+# =======================
+
+# Determine whether or not to mask objects as well as quadrants.
+# The default is 1 meaning mask objects as well the quadrants.
+    my $mask_obj = $_FLAT_FIELD_QUADRANT_JITTER_{MASK};
+    $mask_obj = defined( $mask_obj ) ? $mask_obj : 1;
+
+# Group manipulations.
+# ====================
+
+# If we are ready to make a flat field we want to process all the 
+# frames at the same state of processing.  Therefore, create a group
+# based upon the current frame name.
+    $Grp->template( $Frm->file );
+
+# Specify the cycle number.
+    my $cycleno = int( $Grp->num / 4 );
+
+# Extract from the main group those frames belonging to this cycle.
+    my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+
+# Make the sub-group the main group.  Start a new context so that we
+# retain the original full group.
+    {
+       my $Grp = $cycleGrp;
+
+# Record the group members at this point.
+       my @quad_names = $Grp->membernames;
+
+# Make and apply the quadrant-masked flat field.
+# ==============================================
+
+# Make a first pass at a flat using the masked quadrant-jitter technique.
+       _MAKE_FLAT_QUADRANT_JITTER_
+
+# Reset the group names to be the ones to flat field.
+       $Grp->membernames( @quad_names );
+
+# Apply the flat field.
+       _DIVIDE_BY_FLAT_FROM_GROUP_
+
+# Make and apply the object mask.
+# ===============================
+
+# Test whether or not it is time to mask objects.  Use the global
+# argument first, then frame by frame.
+       if ( $mask_obj ) {
+          my $maskobjects = $Frm->uhdr( "MASK_OBJECTS" );
+          my ( @maskfiles, @masked_names, $maskfile, $file );
+          if ( $maskobjects ) {
+
+# Create an array to store the names of the mask files. 
+             @maskfiles = ();
+
+# Estimate size of a quadrant in arcsec.
+# --------------------------------------
+
+# Obtain the pixelscale.
+             my ( $xpixelscale, $ypixelscale );
+             _GET_PLATE_SCALE_
+             $xpixelscale = $_GET_PLATE_SCALE_{RASCALE};
+             $ypixelscale = $_GET_PLATE_SCALE_{DECSCALE};
+
+# Read readout bounds from the headers.
+             my $x1 = $Frm->uhdr( "ORAC_LBNDX" );
+             my $x2 = $Frm->uhdr( "ORAC_UBNDX" );
+             my $y1 = $Frm->uhdr( "ORAC_LBNDY" );
+             my $y2 = $Frm->uhdr( "ORAC_UBNDY" );
+
+# Find the length of a quadrant along its shorter side.
+             my $quadsize = int( min( ( $x2 - $x1 + 1 ) * $xpixelscale,
+                                      ( $y2 - $y1 + 1 ) * $ypixelscale ) * 0.5 );
+             orac_print "Orac says: central circular mask is $quadsize arcseconds\n";
+
+# Compute a mask of the objects for each member of the flat-field
+# group, using a local $Frm.
+             foreach $Frm ( $Grp->members ) {
+                _MAKE_OBJECTS_MASK_ OCCULT=$quadsize
+
+# Record the mask filename into an array.
+                push( @maskfiles, $_MAKE_OBJECTS_MASK_{MASKFILE} );
+             }
+
+# Create an array to store the names of the masked datasets. 
+             @masked_names = ();
+
+# Mask the objects in each frame.  Make a copy of the @quad_names
+# so we can shift its elements.  Again use a local $Frm.
+             my @local_quad_names = @quad_names;
+             foreach $Frm ( $Grp->members ) {
+                $file = shift( @local_quad_names );
+                $maskfile = shift( @maskfiles );
+                $Frm->file( $file );
+
+# Normalise the frames to each other.
+                _NORMALISE_TO_MODE_
+
+# Mask the objects.
+                _MASK_OBJECTS_ MASKFILE=$maskfile
+
+# Record the masked (or unmasked file if the masking has failed)
+# filename into an array.
+                push ( @masked_names, $Frm->file );
+             }
+
+# Set the group names to be the masked ones to form improved flat field.
+             $Grp->membernames( @masked_names );
+
+# Make and apply the improved flat field.
+# =======================================
+
+# Generate the new flat field using the jittered masked frames.
+             _MAKE_FLAT_FROM_NORMALISED_GROUP_ 
+
+# Reset the group names to be the ones to flat field.
+             $Grp->membernames( @quad_names );
+
+# Apply the better flat field.
+             _DIVIDE_BY_FLAT_FROM_GROUP_
+          }
+       }
+
+# Restore the original group.
+    }
+
+# We want the flat-fielded versions of the group's members.
+    $Grp->template( $Frm->file );
+
+# Podule
+# ======
+
+=head1 NAME
+
+_FLAT_FIELD_QUADRANT_JITTER_ -- Self-flat fields a group of QUADRANT_JITTER-recipe frames.
+
+=head1 DESCRIPTION
+
+This primitive creates and applies self-flat field for the current
+group of four frames in a QUADRANT_JITTER.  It makes a flat from the
+group by masking the quadrant containing the target source,
+normalising to the same reference level, before taking the median.
+The primitive divides the group members by that flat field.  There is
+also optional object masking to make an improved flat; objects in the
+flattened frames are detected above brightness and size thresholds,
+and the frames combined to make a new flat field.  This second mask
+also includes a circular region about the centre of the target's
+quadrant to obscure the periphery of the source.  The data are
+renormalised before masking before evaluating the median at each
+pixel.  The improved flat is then applied to the original input group.
+Six other primitives do most of the work.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UFTI, IRCAM, and Michelle in imaging mode.
+
+=item *
+
+The central-source mask has a diameter equal to the length of
+a quadrant along its shorter side.
+
+=item *
+
+Quadrant normalisation is with respect to a reference level
+of the first frame, stored in the first frame's internal header
+REFERENCE_LEVEL.  The reference mode is then stored in
+variable $_NORMALISE_TO_MODE_refmode for the normalising
+routine.
+
+=back
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item MASK = LOGICAL (Given)
+
+Perform object masking only if it is true.
+
+=back
+
+=head1 OUTPUT DATA
+
+None.  However, the invoked primitives
+L<_MAKE_FLAT_QUADRANT_JITTER_|_MAKE_FLAT_QUADRANT_JITTER_>,
+L<_DIVIDE_BY_FLAT_FROM_GROUP_|_DIVIDE_BY_FLAT_FROM_GROUP_>,
+L<_MAKE_OBJECTS_MASK_|_MAKE_OBJECTS_MASK_>, and
+L<_MASK_OBJECTS_|_MASK_OBJECTS_>, L<_NORMALISE_TO_MODE_|_NORMALISE_TO_MODE>,
+and L<_MAKE_FLAT_FROM_NORMALISED_GROUP_|_MAKE_FLAT_FROM_NORMALISED_GROUP_>
+do create new frames. The bottom line is that a flat field frame is
+filed and indexed, and there are flat-fielded frames each inheriting
+the corresponding input frame's name but with an _ff suffix.  Various
+intermediate frames are normally removed by a tidy primitive.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

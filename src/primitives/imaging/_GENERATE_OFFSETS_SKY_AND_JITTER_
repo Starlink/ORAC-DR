@@ -1,0 +1,196 @@
+#+
+# Name:
+#    _GENERATE_OFFSETS_SKY_AND_JITTER
+#
+# Purpose:
+#    Finds the offsets between the frames in an SKY_AND_JITTER recipe.
+#
+# Description:
+#    This primitive finds the pixel offsets between the target in the
+#    current $Grp of a SKY_AND_JITTER recipe.  The primitive itself
+#    forms a new temporary group to be registered.  For the first cycle
+#    of the recipe all its target frames are passed.  On subsequent
+#    cycles the mosaic is inserted into the group before the target
+#    frames in the current cycle, so that there is a common registration
+#    and that mosaics can be added.  The primitive then passes the new
+#    group to primitive _GENERATE_OFFSETS_ to do the bulk of the work.
+#
+# Language:
+#    Perl5
+#
+# Arguments:
+#    COMPLETE = REAL (Given)
+#       Completeness of matched features for registration between two 
+#       frames to be accepted.  It must be in the range 0.2 to 1.0. [0.4]
+#    MINPIX = INTEGER (Given)
+#       Minimum number of contiguous pixels above the PERCENTILE level
+#       to be considered a registration feature.  It must be at least 6.
+#       The default here is for UFTI and the new IRCAM.  For the
+#       original IRCAM3 without the magnifier, 6 proved to be 
+#       satisfactory.  [9]
+#    PERCENTILE = REAL (Given)
+#       Percentile threshold for locating objects to register frames. 
+#       It must be in the range 75 to 99.9.  The default here is for
+#       UFTI and the new IRCAM.  For the original IRCAM3 without the
+#       magnifier, 96 proved to be satisfactory.  [98]
+#
+# Notes:
+#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
+#    in imaging mode.
+#    -  Processing only occurs for object frames, and when the
+#    steering header MAKE_MOSAIC is true.  The selected frames
+#    are those in the current cycle whose steering header
+#    TARGET_OR_SKY is "target".
+#    -  The _GENERATE_OFFSETS_ argument CENTRAL_SOURCE is TRUE.
+#    Thus matching the centroids of a central source is attempted if
+#    automatic registration fails.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Arguments
+# =========
+
+# Obtain the parameters for the detection.
+    my $percentile = ( $_GENERATE_OFFSETS_SKY_AND_JITTER_{PERCENTILE} || 98 );
+    my $minpix = ( $_GENERATE_OFFSETS_SKY_AND_JITTER_{MINPIX} || 9 );
+    my $complete = ( $_GENERATE_OFFSETS_SKY_AND_JITTER_{COMPLETE} || 0.4 );
+
+# Selection
+# =========
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSTYPE" ) eq "OBJECT" ||
+         $Frm->uhdr( "ORAC_OBSTYPE" ) eq "SKY") {
+
+# Test whether or not it is time to make a mosaic.
+       my $makemos = $Frm->uhdr( "MAKE_MOSAIC" );
+       if ( $makemos ) {
+
+# Obtain the cycle number from the header.
+          my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+          $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+# Select the target frame members in the current cycle.
+          my $tarGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno,
+                                     TARGET_OR_SKY => "target" );
+
+# Form the group to process.
+# ==========================
+
+# For the first cycle of a single cycle mosaic, make a local $Grp
+# containing just the current cycle.  Note the { to start a new context.
+          my $tempGrp;
+          if ( $cycleno == 0 ) {
+             $tempGrp = $tarGrp;
+
+# On later cycles a mosaic file should exist, and we shall to register
+# with that as the reference frame.  So place the file into a temporary
+# frame pushed onto a temporary $Grp-like group.  Then append the members
+# of the subgroup.  
+          } else {
+             my $tempFrm = new $Frm( $Grp->file );
+             $tempGrp = new $Grp;
+             $tempGrp->push( $tempFrm );
+             $tempGrp->push( $tarGrp->members );
+          }
+
+# Generate the offsets
+# ====================
+
+# Make a local $Grp.
+          {
+             my $Grp = $tempGrp;
+
+# Call the generic primitive which does most of the work.  Use central
+# source as a backup.
+             _GENERATE_OFFSETS_ PERCENTILE=$percentile MINPIX=$minpix COMPLETE=$complete CENTRAL_SOURCE=TRUE
+
+# End of scope of local $Grp aka $tempGrp.
+          }
+       }
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_GENERATE_OFFSETS_SKY_AND_JITTER_ -- Finds the offsets between the frames in a SKY_AND_JITTER recipe.
+
+=head1 DESCRIPTION
+
+This primitive finds the pixel offsets between the target in the
+current $Grp of a SKY_AND_JITTER recipe.  The primitive itself forms a
+new temporary group to be registered.  For the first cycle of the
+recipe all its target frames are passed.  On subsequent cycles the
+mosaic is inserted into the group before the target frames in the
+current cycle, so that there is a common registration and that mosaics
+can be added.  The primitive then passes the new group to primitive
+L<_GENERATE_OFFSETS_|_GENERATE_OFFSETS_> to do the bulk of the work.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item COMPLETE = REAL (Given)
+
+Completeness of matched features for registration between two 
+frames to be accepted.  It must be in the range 0.2 to 1.0. [0.4]
+
+=item MINPIX = INTEGER (Given)
+
+Minimum number of contiguous pixels above the PERCENTILE level
+to be considered a registration feature.  It must be at least 6.
+The default here is for UFTI and the new IRCAM.  For the
+original IRCAM3 without the magnifier, 6 proved to be 
+satisfactory.  [9]
+
+=item PERCENTILE = REAL (Given)
+
+Percentile threshold for locating objects to register frames. 
+It must be in the range 75 to 99.9.  The default here is for
+UFTI and the new IRCAM.  For the original IRCAM3 without the
+magnifier, 96 proved to be satisfactory.  [98]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UFTI, IRCAM, and Michelle in imaging mode.
+
+=item *
+
+Processing only occurs for object frames, and when the
+steering header MAKE_MOSAIC is true.  The selected frames
+are those in the current cycle whose steering header
+TARGET_OR_SKY is "target".
+
+=item *
+
+The _GENERATE_OFFSETS_ argument CENTRAL_SOURCE is TRUE.
+Thus matching the centroids of a central source is attempted if
+automatic registration fails.
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

@@ -1,0 +1,224 @@
+#+
+# Name:
+#    _SKY_AND_JITTER_STEER_
+#
+# Purpose:
+#    Steers processing for SKY_AND_JITTER recipes.
+#
+# Language:
+#    Perl5
+#
+# Description: 
+#    This primitive control processing for SKY_AND_JITTER recipes through
+#    steering headers listed below.
+#
+# Steering Headers:
+#    CYCLE_NUMBER = INTEGER
+#       Number of the cycle, a cycle being a set of frames to complete a
+#       pass through the recipe.  The first cycle is 0.
+#    DO_APHOT = LOGICAL
+#       Whether or not perform aperture photometry.  Photometry is
+#       performed once the mosaic is made.
+#    FILE_SKY = LOGICAL
+#       Whether or not to file the frame as sky.  This is only true for the
+#       first frame in a cycle.
+#    JITTER_NUMBER = INTEGER
+#       The number of target frames in the jitter.
+#    MAKE_MOSAIC = LOGICAL
+#       Whether or not register the frames and make the mosaic.  The mosaic
+#       is made once all the jittered target frames in a cycle are available.
+#    SUBTRACT_SKY = LOGICAL
+#       Whether or not to subtract the sky from the frame.  This is only
+#       false for the first frame in a cycle.
+#    TARGET_OR_SKY = CHARACTER
+#       This is "target" for a target frame, and "sky" for a sky calibration
+#       frame.  The first frame in the cycle is sky and the remainder
+#       are targets.
+#
+# Arguments:
+#    NUMBER = INTEGER (Given)
+#       The number of frames in the jitter, excluding the sky frame.
+#       If absent, the number of offsets, as given by user header
+#       ORAC_NOFFSETS, minus two is used.  If neither is available, 5 is
+#       used.  An error state arises if the number of jittered frames is
+#       fewer than 3.  []
+#
+# Notes:
+#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
+#    in imaging mode.
+#    -  Processing only occurs for object and sky frames.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSTYPE" ) eq "OBJECT" ||
+         $Frm->uhdr( "ORAC_OBSTYPE" ) eq "SKY" ) {
+
+# Obtain the number of frames in the jitter pattern and sky frequency.
+       my $number = max( 3, ( $_SKY_AND_JITTER_STEER_{NUMBER} || 5 ) );
+
+# Obtain the number of frames in the jitter pattern.
+# ==================================================
+
+# First see if a hardwired value has been supplied in the recipe.  This
+# deals with old recipes with fixed numbers and cases where a frame or
+# more is missing.
+       my $number = $_SKY_AND_JITTER_STEER_{NUMBER};
+
+# Otherwise use the ORAC_NOFFSETS internal header.  In full ORAC, this
+# stores the total number of offsets used, but ignores repeat iterators.
+# By convention there is always an offset to the origin at the end.
+# There is also the sky to exclude.  Hence the recipe requires
+# ORAC_NOFFSETS-2 in the jitter.
+       if ( ! defined ( $number ) ) {
+          $number = $Frm->uhdr( "ORAC_NOFFSETS" );
+          if ( defined( $number ) ) {
+             $number = $number - 2;
+
+# Finally default to the original 5.
+          } else {
+             $number = 5;
+          }
+       }
+
+# Report invalid number of frames.
+       if ( $number < 3 ) {
+          orac_err "The number of jittered frames ($number) is less " .
+                   "than 3.\n";
+       }
+
+# Set steering headers.
+# =====================
+
+# Obtain the number the sky frequency.
+       my $cycle = $number + 1;
+       my $seqnum = $Grp->num % $cycle;
+
+# Specify when to file and subtract the sky frame.  Distinguish sky and
+# target frames for some primitives.  The first frame is sky, followed by
+# NUMBER jitters. 
+       if ( $seqnum == 0 ) {
+          $Frm->uhdr( "FILE_SKY", 1 );
+          $Frm->uhdr( "TARGET_OR_SKY", "sky" );
+          $Frm->uhdr( "SUBTRACT_SKY", 0 );
+       } else {
+          $Frm->uhdr( "FILE_SKY", 0 );
+          $Frm->uhdr( "TARGET_OR_SKY", "target" );
+          $Frm->uhdr( "SUBTRACT_SKY", 1 );
+       }
+
+# Specify during processing of which frames should the objects masked,
+# a mosaic created, and aperture photometry performed.
+       if ( $seqnum == $number ) {
+          $Frm->uhdr( "MAKE_MOSAIC", 1 );
+          $Frm->uhdr( "DO_APHOT", 1 );
+
+       } else {
+          $Frm->uhdr( "MAKE_MOSAIC", 0 );
+          $Frm->uhdr( "DO_APHOT", 0 );
+       }
+
+# Insert the cycle number of the set of NUMBER frames.
+       $Frm->uhdr( "CYCLE_NUMBER", int( $Grp->num / $cycle ) );
+
+# Insert the number of frames in the jitter.
+       $Frm->uhdr( "JITTER_NUMBER", $number );
+
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_SKY_AND_JITTER_STEER_ -- Steers processing for SKY_AND_JITTER recipes.
+
+=head1 DESCRIPTION
+
+This primitive control processing for SKY_AND_JITTER recipes through
+steering headers listed below.
+
+=head1 STEERING HEADERS
+
+=over 4
+
+=item CYCLE_NUMBER = INTEGER
+
+Number of the cycle, a cycle being a set of frames to complete a
+pass through the recipe.  The first cycle is 0.
+
+=item DO_APHOT = LOGICAL
+
+Whether or not perform aperture photometry.
+Photometry is performed once the mosaic is made.
+
+=item FILE_SKY = LOGICAL
+
+Whether or not to file the frame as sky.  This is only true for the
+first frame in a cycle.
+
+=item JITTER_NUMBER = INTEGER
+
+The number of target frames in the jitter.
+
+=item MAKE_MOSAIC = LOGICAL
+
+Whether or not register the frames and make the mosaic.  The mosaic
+is made once all the jittered target frames in a cycle are available.
+
+=item SUBTRACT_SKY = LOGICAL
+
+Whether or not to subtract the sky from the frame.  This is only
+false for the first frame in a cycle.
+
+=item TARGET_OR_SKY = CHARACTER
+
+This is "target" for a target frame, and "sky" for a sky calibration
+frame.  The first frame in the cycle is sky and the remainder are targets.
+
+=back
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item NUMBER = INTEGER (Given)
+
+The number of frames in the jitter, excluding the sky frame. If
+absent, the number of offsets, as given by user header ORAC_NOFFSETS,
+minus two is used.  If neither is available, 5 is used.  An error
+state arises if the number of jittered frames is fewer than 3.  []
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UFTI, IRCAM, and Michelle in imaging mode.
+
+=item *
+
+Processing only occurs for object and sky frames.
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

@@ -1,0 +1,225 @@
+#+
+# Name:
+#    _MAKE_FLAT_FROM_NORMALISED_EXTENDED_
+#
+# Purpose:
+#    Makes a flat from the current row's sky frames in an EXTENDED recipe.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive makes a self flat from the current row's sky frames
+#    in an EXTENDED recipe.  Each member of the group is expected to be 
+#    of blank sky and be zero-point normalised to one of the frames. 
+#    The primitive uses a median to combine pre-normalised frames pixel
+#    by pixel, and then divides the resultant image by its median to
+#    form the flat field.  The primitive files the resultant flat in
+#    its calibration index. 
+#
+# Arguments:
+#    FLAT_MEDIAN = REAL (Returned)
+#       The median value of the reference sky frame.
+#
+# Notes:
+#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
+#    in imaging mode.
+#    -  Processing only occurs for object and sky frames, and when the
+#    steering header MAKE_FLAT is true.
+#    -  The flat is displayed.
+#
+# Tasks:
+#    CCDPACK: MAKECAL, KAPPA: CDIV, HISTAT.
+#
+# Output Data:
+#    The flat field.  It is called is "flat_<filter>_<groupnumber>_<row>",
+#    where <groupnumber> is the frame number of the group, <filter>
+#    is the filter name, and <row> is the row number of the target image
+#    derived from steering header EXTENDED_ROW.
+
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Selection
+# =========
+
+# This should only be performed on object frames.
+    if ( $Frm->uhdr( "ORAC_OBSTYPE" ) eq "OBJECT" ||
+         $Frm->uhdr( "ORAC_OBSTYPE" ) eq "SKY" ) {
+
+# Obtain the row number.
+       my $ext_row = $Frm->uhdr( "EXTENDED_ROW" );
+
+# Determine whether it is time to make a flat.
+       my $makeflat = $Frm->uhdr( "MAKE_FLAT" );
+       if ( $makeflat ) {
+
+# Form a list of the blank-sky file names for CCDPACK tasks by using a
+# subgroup.
+          my $skyGrp = $Grp->subgrp( TARGET_OR_SKY => "sky",
+                                     EXTENDED_ROW => $ext_row );
+
+# Form a list of input file names for MAKECAL from the other members
+# of the group.  This is not as obvious as it sounds since we are
+# trying to do this by looking at the current file values for each
+# Frame object in the loop.  First time around everything is fine.
+# Second time around we realise that the previous frames now have the
+# wrong names since they have been flat-fielded etc.  We now have to
+# construct the input names from the template.  The template is the
+# current sky frame name.
+          $skyGrp->template( $Frm->file );
+
+# Make lists of files to process
+# ==============================
+
+# Obtain an array of the filenames of the sub-group members.
+          my @objects = $skyGrp->membernames;
+
+# Form a comma-separated list of the object frames.
+          my $objlist = join(",", @objects);
+
+# Create text file to hold the list of input files, one per line.  This
+# is needed because expanded lists of files may make the command line too
+# long for the ADAM message system.
+          unlink( "objlist.inlist$$");
+          open( INLIST, ">objlist.inlist$$" );
+          print INLIST join( "\n", @objects ), "\n";
+          close( INLIST );
+
+# Make a flat which is not normalised
+# ===================================
+
+# Assign the other parameters.  Note that output flat is hardwired for
+# the moment.
+          my $uflat = "uflat_" . $Grp->name;
+          my $param1 = "in='^objlist.inlist$$' out=$uflat";
+          my $param2 = "sigmas=2.0 expose=1 logfile=! reset accept"; 
+          my $user = "method=median";
+
+# Median filter the intra-normalised sky frames to produce an un-normalised
+# flatfield.
+          $Mon{"ccdpack_red"}->obeyw("makecal","$param1 $user $param2");
+          unlink( "objlist.inlist$$" );
+
+# Normalise the flat
+# ==================
+
+# Obtain the ordered statistics of the combined frame.
+          $Mon{"kappa_mon"}->obeyw("histat","ndf=$uflat");
+
+# Extract the median of the frame.  Export the value for later sky
+# subtraction.
+          ( my $ORAC_STATUS, my $median ) = $Mon{"kappa_mon"}->get("histat","median");
+          $_MAKE_FLAT_FROM_NORMALISED_EXTENDED_{FLAT_MEDIAN} = $median;
+
+# Obtain the filter name.  Remove []() or replace characters which would
+# confuse HDS.
+          my $filter = $Frm->uhdr( "ORAC_FILTER" );
+          $filter =~ s/\./p/g;
+          $filter =~ tr/\(\)\[\]/d/;
+
+# Obtain the flat number.  This may have an ugly _subgrp suffix, which we
+# remove.
+          my $flatno = $Grp->name;
+          $flatno =~ s/_subgrp//g;
+
+# Assign the parameters.  Note that output flat is hardwired for the moment.
+          my $out = "flat_" . $filter . "_" . $flatno . "_row" . $ext_row;
+          $param1 = "in=$uflat out=$out scalar=$median title=\'Flat field\'";
+
+# Normalise the flat field to have a mean of one.
+          $Mon{"kappa_mon"}->obeyw("cdiv","$param1");
+
+# Delete the non-normalised flat.
+          _DELETE_A_FRAME_ FRAME=$uflat
+
+# Record and display the flat
+# ===========================
+
+# Set the current flat in the calibration object.
+          _FILE_FLAT_ NAME=$out
+     
+# Report the status of the processing.
+          orac_print "Orac says: frames $objlist used for flat\n";
+
+# Display the image.
+          _DISPLAY_FLAT_IMAGE_
+
+       }
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_MAKE_FLAT_FROM_NORMALISED_EXTENDED_ -- Makes a flat from the current row's sky frames in an EXTENDED recipe.
+
+=head1 DESCRIPTION
+
+This primitive makes a self flat from the current row's sky frames
+in an EXTENDED recipe.  Each member of the group is expected to be 
+of blank sky and be zero-point normalised to one of the frames. 
+The primitive uses a median to combine pre-normalised frames pixel
+by pixel, and then divides the resultant image by its median to
+form the flat field.  The primitive files the resultant flat in
+its calibration index. 
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item FLAT_MEDIAN = REAL (Returned)
+
+The median value of the reference sky frame.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UFTI, IRCAM, and Michelle in imaging mode.
+
+=item *
+
+Processing only occurs for object and sky frames, and when the
+steering header MAKE_FLAT is true.
+
+=item *
+
+The flat is displayed.
+
+=back
+
+=head1 TASKS
+
+CCDPACK: MAKECAL, KAPPA: CDIV, HISTAT.
+
+=head1 OUTPUT DATA
+
+The flat field.  It is called is
+"flat_E<lt>filterE<gt>_E<lt>groupnumberE<gt>_E<lt>rowE<gt>", where
+E<lt>groupnumberE<gt> is the frame number of the group,
+E<lt>filter<gt> is the filter name, and E<lt>rowE<gt> is the row
+number of the target image derived from steering header EXTENDED_ROW.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+

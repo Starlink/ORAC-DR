@@ -1,0 +1,315 @@
+#+
+# Name:
+#    _RESAMPLE_MOSAICS_
+#
+# Purpose:
+#    Resamples polarimetry mosaics.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive resamples polarimetry mosaics so that arithmetic can
+#    be performed on the images stored in group MOSAIC_GROUP to evaluate
+#    the polarisations.
+#
+#    The primitive either resamples each frame using the non-integer
+#    Cartesian offsets, or merely finds the offsets between frames to
+#    the nearest pixel and shifts the origin (see argument RESAMPLE).
+#    The mosaic extends to include all pixels in contributing frames.
+#    There should be at most one pixel variation in dimensions.
+
+# Arguments:
+#    INT_METHOD = CHARACTER (Given)
+#       The interpolation method.  This is either "linint" for bi-linear
+#       interpolation, or "nearest" for nearest neighbour.  The latter
+#       takes about half the time.  ["linint"]
+#    RESAMPLE = LOGICAL (Given)
+#       If true (1), resample the current cycle's frames to the same
+#       Cartesian co-ordinate system using the method given by argument
+#       INT_METHOD.  If false (0), use integer offsets and changes of
+#       origin to register the frames.  The latter is many times
+#       faster and is recommended for pipeline operation.  [1]
+#
+# Notes:
+#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
+#    in imaging mode.
+#    -  Processing only occurs for object and sky frames, and when the
+#    steering header REGISTER_IMAGES is true.
+#    -  When RESAMPLE is false, the offset files (.off extension)
+#    associated with each frame are interrogated to find one common
+#    object---the one with identifier 1---as would be the case if
+#    telescope or central-source offsets are used.  For each frame
+#    the read x-y co-ordinates rounded to the nearest integer and
+#    with opposite sign become the new origin.
+#    -  The frame titles are propagated.
+#
+# Tasks:
+#    CCDPACK: TRANNDF. KAPPA: SETORIGIN.
+#
+# Output Data:
+#    -  Resampled frames each inheriting the name of its input frame but
+#    with the _trn suffix, when RESAMPLE is true. 
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Arguments
+# =========
+
+# Obtain the value for the interpolation.
+    my $intmethod = ( $_RESAMPLE_MOSAICS_{INT_METHOD} || "linint" );
+    if ( $intmethod ne "linint" && $intmethod ne "nearest" ) {
+       $intmethod = "linint";
+    }
+
+# Determine whether or not to resample.
+    my $resample = $_RESAMPLE_MOSAICS_{RESAMPLE};
+    $resample = defined( $resample ) ? $resample : 1;
+
+# Selection
+# =========
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSTYPE" ) eq "OBJECT" ||
+         $Frm->uhdr( "ORAC_OBSTYPE" ) eq "SKY") {
+
+# Test whether or not it is time to resample the mosaics.
+       my $register = $Frm->uhdr( "REGISTER_IMAGES" );
+       if ( $register ) {
+
+# Make a local $Grp containing just the mosaic images.
+          my $Grp = $Grp->uhdr( "MOSAIC_GROUP" );
+
+# Obtain the cycle number.  Default to zero if undefined, so that recipes
+# which do not support this feature will continue to work.
+          my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+          $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+# Select those members in the current cycle.
+          my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+
+# Form a list of input file names for the CCDPACK tasks.  We need to
+# generate an input list for TRANJOIN and TRANNDF and an output list
+# using a hard-wired suffix of "_trn".
+          ( my $inref, my $outref ) = $cycleGrp->inout( "_trn" );
+
+# Convert the list to a comma-separated list as needed by CCDPACK (GRP).
+          my $objlist = join( ",", @$inref );
+          my $outlist = join( ",", @$outref );
+
+# Resampling
+# ==========
+          my ( $param1, $param2 );
+          if ( $resample ) {
+
+# Create text files to hold the list of input and output files, one per line.
+# This is needed because expanded lists of files may make the command line
+# too long for the ADAM message system.
+             unlink ("tranndf.inlist$$", "tranndf.outlist$$");
+
+             open( INLIST, ">tranndf.inlist$$" );
+             print INLIST join( "\n", @$inref ), "\n";
+             close( INLIST );
+
+             open( OUTLIST, ">tranndf.outlist$$" );
+             print OUTLIST join( "\n", @$outref ), "\n";
+             close( OUTLIST );
+
+# Assign the other parameters.  Use the full extent of the contributing
+# pixels.
+             $param2 = "shape=auto";
+
+# Assign the main parameters.
+             my $filelist = "in='^tranndf.inlist$$' out='^tranndf.outlist$$'";
+             $param1 = "$filelist title=! method=$intmethod";
+
+# Shift and resample the flat-field object frames.  This determines
+# the bounds automatically.  It takes the origin from the first object
+# frame.
+             $Mon{"ccdpack_reg"}->obeyw("tranndf","$param1 $param2");
+
+# Report the processing status.
+             orac_print "Orac says: Frames $objlist resampled\n";
+             orac_print "Orac says: Resampled frames are $outlist\n";
+
+# Now update the output filenames in the Frame object.
+             foreach $Frm ( $Grp->members ) {
+                my $file = shift( @$outref );
+                $Frm->file( $file );
+             }
+
+             unlink ("tranndf.inlist$$", "tranndf.outlist$$");
+
+          } else {
+
+# Derive the offsets
+# ==================
+
+# Open the offset files and store the co-ordinates.  Note that this
+# assumes central-source or telescope offsets have been used, and that there
+# is but one position in each.
+             my @xoffsets = ();
+             my @yoffsets = ();
+             foreach my $Frame ( $cycleGrp->members ) {
+                my $offfile = $Frame->file . ".off";
+
+                if ( ! -e $offfile ) {
+                   orac_err "Missing $offfile offset text file.\n";
+                }
+                open( OFFFILE, "<$offfile" );
+
+# Store the offsets.
+                my $offfound = 0;
+                foreach my $line ( <OFFFILE> ) {
+
+# Match 1 followed by a space in case there are more than nine
+# objects, unlikely but possible.
+                   my @fields;
+                   if ( $line =~ /^1\s/ ) {
+                      @fields = split( /\s+/, $line );
+                      push( @xoffsets, $fields[1] );
+                      push( @yoffsets, $fields[2] );
+                      $offfound = 1 ;
+                      last;
+                   }
+                }
+                close( OFFFILE );
+
+# Cannot proceed unless the x-y offsets were found.
+                if ( ! $offfound ) {
+                   orac_err "No object #1 in $offfile offset text file.\n";
+                }
+             }
+
+# Convert the offsets to be displacements of the origin to the nearest pixel.
+             my $framecount = 0;
+             foreach my $frame ( @xoffsets ) {
+                $xoffsets[$framecount] = -int( $xoffsets[$framecount] + 0.5 );
+                $yoffsets[$framecount] = -int( $yoffsets[$framecount] + 0.5 );
+                $framecount++;
+             }
+
+# Change of origin
+# ================
+
+# Loop through all the members of the group, as KAPPA task can only handle
+# one data file at a time.
+             foreach my $Frame ( $cycleGrp->members ) {
+                my $frame = $Frame->file;
+
+# Assign the other parameters.  Use the original bounds.  Note we do not
+# resample the main mosaic if one exists.
+                $param1 = "ndf=$frame origin=[$xoffsets[0],$yoffsets[0]]";
+
+# Shift the first item from the lists of displacements.
+                shift( @xoffsets );
+                shift( @yoffsets );
+
+# Apply change of origin to the current frame.
+                $Mon{"ndfpack_mon"}->obeyw("setorigin","$param1");
+             }
+
+# Report the processing status.
+             orac_print "Orac says: Frames $objlist have origin shifted.\n";
+          } 
+       }
+    }
+
+# Podule
+# ======
+
+=head1 NAME 
+
+_RESAMPLE_MOSAICS_ -- Forms a mosaic.
+
+=head1 DESCRIPTION
+
+This primitive resamples polarimetry mosaics so that arithmetic can
+be performed on the images to evaluate the polarisations.
+
+The primitive either resamples each frame using the non-integer
+Cartesian offsets, or merely finds the offsets between frames to
+the nearest pixel and shifts the origin (see argument RESAMPLE).
+The mosaic extends to include all pixels in contributing frames.
+There should be at most one pixel variation in dimensions.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item INT_METHOD = CHARACTER (Given)
+
+The interpolation method.  This is either "linint" for bi-linear
+interpolation, or "nearest" for nearest neighbour.  The latter
+takes about half the time.  ["linint"]
+
+=item RESAMPLE = LOGICAL (Given)
+
+If true (1), resample the current cycle's frames to the same
+Cartesian co-ordinate system using the method given by argument
+INT_METHOD.  If false (0), use integer offsets and changes of
+origin to register the frames.  The latter is many times
+faster and is recommended for pipeline operation.  [1]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UFTI, IRCAM, and Michelle in imaging mode.
+
+=item *
+
+Processing only occurs for object and sky frames, and when the
+steering header REGISTER_IMAGES is true.
+
+=item *
+
+When RESAMPLE is false, the offset files (.off extension)
+associated with each frame are interrogated to find one common
+object---the one with identifier 1---as would be the case if
+telescope or central-source offsets are used.  For each frame
+the read x-y co-ordinates rounded to the nearest integer and
+with opposite sign become the new origin.
+
+=item *
+
+The frame titles are propagated.
+
+=back
+
+=head1 TASKS
+
+CCDPACK: TRANNDF; KAPPA: SETORIGIN.
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Resampled frames each inheriting the name of its input frame but
+with the _trn suffix, when RESAMPLE is true.
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
