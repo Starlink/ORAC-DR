@@ -68,6 +68,10 @@
 
 #  History:
 #     $Log$
+#     Revision 1.16  2004/01/09 02:04:50  frossie
+#
+#     If only all OSes had the -Posix option on df
+#
 #     Revision 1.15  2004/01/09 01:57:43  frossie
 #
 #     Modified to avoid any hard-coded machine names. Warning is issued on
@@ -339,7 +343,7 @@ source $ORAC_DIR/etc/oracdr_start.csh
 
 set df_out = `df -t nfs $ORAC_DATA_OUT | wc -l`
 
-if ($df_out == 2) then
+if ($df_out > 1) then
 
 	# get the name of the NFS host
 	set nfs_host  = `df -t nfs $ORAC_DATA_OUT | head -2 | tail -1 | awk -F: '{print $1}'`
