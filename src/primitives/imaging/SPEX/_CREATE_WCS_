@@ -1,0 +1,351 @@
+#+
+# Name:
+#    _CREATE_WCS_
+
+# Purpose:
+#    Corrects the headers of SPEX imaging data to create an
+#    AIPS-convention World Co-ordinate System.
+
+# Language:
+#    Perl5
+
+# Description:
+#    This primitive converts astrometric information in a SPEX
+#    frame into an AIPS-convention World Co-ordinate System.
+#    This is achieved by editing the headers in the FITS airlock.
+#
+#    The changes are listed below.
+#    a) Put decimal degrees of ORAC_RA_BASE in CRVAL1, and ORAC_DEC_BASE
+#    in CRVAL2.  The comment includes a sexagesimal version of the
+#    co-ordinate.
+#    b) Change CRPIXn to the header-defined or a supplied reference
+#    pixel.
+#    c) Divide CDELTn by 3600 to convert to degrees.  Make CDELT1
+#    negative.
+#    d) Change CTYPE1 to "RA---TAN", CTYPE2 to "DEC--TAN".
+#    e) Revise the comments for the above to adhere to the UKIRT FITS
+#    document, orac0016-fith, e.g. CRVAL1's comment becomes "[deg] RA 
+#    (hh:mm:ss.ss) at reference point" with the sexagesimal
+#    position substituted.
+#
+# Arguments:
+#    XREF = REAL (Given)
+#       The x pixel index corresponding to the base equatorial position.
+#       This defaults to the centre of the array along the RA axis.
+#       If supplied beyond the range 0 to 512, or some non-numeric value
+#       supplied, a warning is issued and the default adopted.  []
+#    YREF = REAL (Given)
+#       The y pixel index corresponding to the base equatorial position.
+#       This defaults to the centre of the array along the Declination
+#       axis.  If supplied beyond the range 0 to 512, or some
+#       non-numeric value supplied, a warning is issued and the default
+#       adopted.  []
+
+# Notes:
+#    -  Editing only occurs for OBJECT and SKY frames, for which
+#    there is no WCS.  This includes all editing steps.
+#    -  The primitive does not multiply the ORAC_RA_SCALE and
+#    ORAC_DEC_SCALE internal headers' values by -1, as these
+#    flips are taken care of by the header translations, to give
+#    the correct sense of the pixel increment.
+#    -  The reference pixel position comes from internal headers
+#    ORAC_X_REFERENCE_PIXEL and ORAC_Y_REFERENCE_PIXEL.  These
+#    do not include provision for polarimetry.
+#    -  The location of the reference pixel is the biggest source
+#    of error, and may vary systematically with telescope operator.
+#    -  Following a successful introduction of a WCS, the current
+#    AST Frame is SKY.  Any existing WCS Frames besides the default
+#    three---PIXEL, GRID, AXIS---are lost. 
+
+# Output Data:
+#    The modified NDF.
+
+# Tasks:
+#    KAPPA: ERASE, FITSMOD, WCSFRAME.
+
+# Authors:
+#    MJC: Malcolm J. Currie (JAC, Starlink)
+#    {enter_new_authors_here}
+
+# Copyright:
+#    Copyright (C) 1998-2005 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+
+#-
+
+# Do headers need editing?
+# ========================
+
+# Do not want to redo a frame already converted, otherwise the scale
+# will erroneously be reduced each pass through this primitive.
+    my $needs_editing = ! defined( $Frm->hdr( "CTYPE1" ) );
+
+# Modify the headers should only be performed on OBJECT or SKY
+# frames, which have not already been converted.  
+    my $correct_obstype = $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+                          $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY";
+    if ( $correct_obstype && $needs_editing ) {
+
+# Set the maximum reference pixel index.
+       my $xmaxref = 512;
+       my $ymaxref = 512;
+
+       my $ndf = $Frm->file;
+
+# Obtain the reference position.
+# ==============================
+
+# First see if the reference positions are supplied as arguments.
+       my $xref = $_CREATE_WCS_{XREF};
+       my $yref = $_CREATE_WCS_{YREF};
+
+# Validate the x position.
+       if ( defined( $xref ) ) {
+          if ( $xref =~ /^-?(?:\d+(?:\.\d*)?|\.\d+)$/ ) {
+             orac_warn "Programming error: x reference pixel '$xref' " .
+                       "is not numeric.  Using default.\n";
+             undef $xref;
+          } elsif ( $xref < 0 || $xref > $xmaxref ) {
+             orac_warn "Programming error: x reference pixel '$xref' " .
+                       "is out of range.  Using default.\n";
+             undef $xref;
+          }
+       }
+
+# Validate the y position.
+       if ( defined( $yref ) ) {
+          if ( $yref =~ /^-?(?:\d+(?:\.\d*)?|\.\d+)$/ ) {
+             orac_warn "Programming error: y reference pixel '$yref' " .
+                       "is not numeric.  Using default.\n";
+             undef $yref;
+          } elsif ( $yref < 0 || $yref > $ymaxref ) {
+             orac_warn "Programming error: y reference pixel '$yref' " .
+                       "is out of range.  Using default.\n";
+             undef $yref;
+          }
+       }
+
+       if ( ! ( defined( $xref ) && defined( $yref ) ) ) {
+ 
+# At least one was not given so define approximate positions with respect
+# to the reference pixel.  Use the values derived from the headers (see
+# ORAC::Frame::SPEX).
+          $xref = $Frm->uhdr( "ORAC_X_REFERENCE_PIXEL" );
+          $yref = $Frm->uhdr( "ORAC_Y_REFERENCE_PIXEL" );
+       }
+
+# Obtain headers.
+# ===============
+
+# First the reference equatorial position.
+       my $rabase = $Frm->uhdr( "ORAC_RA_BASE" );
+       my $decbase = $Frm->uhdr( "ORAC_DEC_BASE" );
+
+# Obtain the plate scales in arcsec/pixel, with a corrected sign (RA)
+# or using defaults if necessary.
+       _GET_PLATE_SCALE_
+       my $incr_ra = $_GET_PLATE_SCALE_{RASCALE};
+       my $incr_dec = $_GET_PLATE_SCALE_{DECSCALE};
+
+# Specify where to insert the FITS cards.  SPEX guider array lacks the WCS headers
+# so insert before another card.  The most obvious is the EQUINOX.
+       my $insert_card = "(EQUINOX)";
+
+# Convert co-ordinate units.
+# ==========================
+
+# Correct the increments from arcseconds to degrees.  Format
+# them so header reading picks up the exponent.
+       $incr_ra /= 3600.0;
+       $incr_dec /= 3600.0;
+       my $fs_incr_ra = sprintf( "%14.6e", $incr_ra );
+       my $fs_incr_dec = sprintf( "%14.6e", $incr_dec );
+
+# Convert RA to Sexagesimal for the comment.
+       my $rah = int( $rabase );
+       my $rares = $rabase - $rah;
+       my $ram = int( 60.0 * $rares );
+       $rares -= $ram / 60.0;
+       my $ras = sprintf( "%5.2f", 3600.0 * $rares );
+       $ram = sprintf( "%02d", $ram );
+       $rah = sprintf( "%02d", $rah );
+
+# Convert Declination to Sexagesimal for the comment.
+       my $decsign = "+";
+       if ( $decbase < 0 ) {
+          $decsign = "-";
+       }
+       my $decres = abs( $decbase );
+       my $decd = int( $decres );
+       $decres = $decres - $decd;
+       my $decm = int( 60.0 * $decres );
+       $decres -= $decm / 60.0;
+       my $decs = sprintf( "%4.1f", 3600.0 * $decres );
+       $decm = sprintf( "%02d", $decm );
+       $decd = sprintf( "%02d", $decd );
+
+# Convert RA from hours to degrees.
+       $rabase *= 15.0;
+       my $fs_rabase = sprintf( "%14.6e", $rabase );
+
+# Create the FITSMOD steering file.
+# =================================
+
+# Specify the temporary file.
+       my $table = "fitsmod$$.lis";
+       unlink( $table );
+
+# Open the steering file of editing instructions.  For SPEX guider array, prepend
+# the WCS-creation editing instructions with a reordering and tidying
+# of the FITS headers into something readable and more pleasing to the
+# human viewer.  Also the WCS headers do not exist so FITSMOD editing
+# command is Write.
+       my $cmd = "W";
+
+# Create the steering file.
+       my $fh_steering;
+       open ( $fh_steering, ">$table" ) ||
+       orac_throw "Unable to open $table of WCS editing instructions.  Error: $!.\n";
+
+       print $fh_steering "$cmd CTYPE1$insert_card 'RA---TAN' Equatorial tangent-plane projection\n";
+       print $fh_steering "$cmd CRPIX1$insert_card $xref Pixel at reference point along axis 1\n";
+       print $fh_steering "$cmd CRVAL1$insert_card $fs_rabase [deg] RA ($rah:$ram:$ras) at reference point\n";
+       print $fh_steering "$cmd CDELT1$insert_card $fs_incr_ra [deg] Increment per pixel at reference point\n";
+       print $fh_steering "$cmd CUNIT1$insert_card 'deg' Physical units of axis 1\n";
+       print $fh_steering "$cmd CTYPE2$insert_card 'DEC--TAN' Equatorial tangent-plane projection\n";
+       print $fh_steering "$cmd CRPIX2$insert_card $yref Pixel at reference point along axis 2\n";
+       print $fh_steering "$cmd CRVAL2$insert_card $decbase [deg] Dec ($decsign$decd:$decm:$decs) at reference point\n";
+       print $fh_steering "$cmd CDELT2$insert_card $fs_incr_dec [deg] Increment per pixel at reference point\n";
+       print $fh_steering "$cmd CUNIT2$insert_card 'deg' Physical units of axis 2\n";
+       close( $fh_steering );
+
+# Edit the headers.
+       $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "ndf=$ndf mode=file table=$table" );
+       unlink( $table );
+
+       orac_print "AIPS-convention world co-ordinate system added " .
+                  "to headers of $ndf.\n   Reference pixel is ($xref,$yref).\n";
+
+# Remove an existing WCS component, so that later when a new WCS is made,
+# it will include a SKY co-ordinate frame.  As there may not already be a
+# WCS component, make one with wcsframe.
+       $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$ndf frame=pixel" );
+       $Mon{ "ndfpack_mon" }->obeyw( "erase", "object=${ndf}.WCS ok" );
+
+# Create the SKY frame in the WCS component.
+       $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$ndf frame=sky" );
+       orac_print "Astrometry SKY co-ordinate frame created in $ndf.\n";
+       orac_print "\n";
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_CREATE_WCS_  -- Corrects the headers of SPEX guider array imaging data to create an AIPS-convention World Co-ordinate System.
+
+=head1 DESCRIPTION
+
+This primitive converts astrometric information in a SPEX
+frame into an AIPS-convention World Co-ordinate System.
+This is achieved by editing the headers in the FITS airlock.
+
+The changes are listed below.
+
+a) Put decimal degrees of ORAC_RA_BASE in CRVAL1, and ORAC_DEC_BASE
+in CRVAL2.  The comment includes a sexagesimal version of the
+co-ordinate.
+
+b) Change CRPIXI<n> to the header-defined or a supplied reference
+pixel.
+
+c) Divide CDELTI<n> by 3600 to convert to degrees.  Make CDELT1
+negative.
+
+d) Change CTYPE1 to "RA---TAN", CTYPE2 to "DEC--TAN".
+
+e) Revise the comments for the above to adhere to the UKIRT FITS
+document, orac0016-fith, e.g. CRVAL1's comment becomes "[deg] RA
+(hh:mm:ss.ss) at reference point" with the sexagesimal
+position substituted.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item XREF = REAL (Given)
+
+The I<x> pixel index corresponding to the base equatorial position.
+This defaults to the centre of the array. If supplied beyond the range
+0 to 512, or some non-numeric value supplied, a warning is issued and
+the default adopted.  []
+
+=item YREF = REAL (Given)
+
+The I<y> pixel index corresponding to the base equatorial position.
+This defaults to the centre of the array. If supplied beyond the range
+0 to 512, or some non-numeric value supplied, a warning is issued and
+the default adopted.  []
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Editing only occurs for OBJECT and SKY frames, for which
+there is no WCS.  This includes all editing steps.
+
+=item *
+
+The primitive does not multiply the ORAC_RA_SCALE and
+ORAC_DEC_SCALE internal headers' values by -1, as these
+flips are taken care of by the header translations, to give
+the correct sense of the pixel increment.
+
+=item *
+
+The reference pixel position comes from internal headers
+ORAC_X_REFERENCE_PIXEL and ORAC_Y_REFERENCE_PIXEL.  These
+do not include provision for polarimetry.
+
+=item *
+
+The location of the reference pixel is the biggest source
+of error, and may vary systematically with telescope operator.
+
+=item *
+
+Following a successful introduction of a WCS, the current
+AST Frame is SKY.  Any existing WCS Frames besides the default
+three---PIXEL, GRID, AXIS---are lost. 
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The modified NDF.
+
+=back
+
+=head1 TASKS
+
+KAPPA: ERASE, FITSMOD, WCSFRAME.
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2005 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
