@@ -1,0 +1,289 @@
+#+
+# Name:
+#    _IMAGING_HELLO_
+#
+# Purpose:
+#    Performs global data-reduction tasks for the IRCAM imaging instrument.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive does the preparatory work for recipes used by IRCAM.
+#
+#    It permits display of the raw data.  It sets the pixel origin, and
+#    switches on history recording in a copy of the raw data.  A copy is
+#    necessary because the raw frame is write protected.  It finally corrects
+#    for non-linearity.
+#
+# Notes:
+#    -  The readout lower bounds in the frame internal headers
+#    ORAC_X_LOWER_BOUND and ORAC_Y_LOWER_BOUND define the pixel origin. 
+#    No origin is set if these do not exist.
+#    -  The IRCAM non-linearity test is only applied when detector bias
+#    internal header ORAC_DETECTOR_BIAS is 0.62.  When internal header
+#    ORAC_DETECTOR_TYPE_MODE is "STARE" a bias of 24400 is subtracted
+#    before applying the non-linearity correction.  This approximation
+#    gives rise to at worse a 0.5% error in the correction and in most
+#    circumstances will be much less.  The correction is 3.3E-06 times
+#    the square of the bias-subtracted signal.  The logical header LINEAR
+#    is set to T to record that the linearity correction has been applied.
+#    -  Whenever user header ORAC_SPEED_GAIN is undefined, the primitive
+#    assigns a value to ORAC_SPEED_GAIN and creates the corresponding FITS
+#    header in the frame.
+#    -  Corrects the acquisition bug which sets ORAC_WAVEPLATE_ANGLE
+#    internal header to be a comment instead of value 0.  It changes both
+#    the actual headers and the $Frm->uhdr hash.
+#
+# Output Data:
+#    -  Copied frame inheriting the current frame's name but with 
+#    the _cl suffix.
+#    -  Linearity-corrected frame inheriting the current frame's name
+#    but with the _nl suffix.
+#
+# Tasks:
+#    KAPPA: FITSMOD, HISSET, MATHS, NDFCOPY, SETORIGIN.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Every imaging recipe must display the raw data.
+    _DISPLAY_FRAME_IMAGE_
+    orac_print "\n";
+
+    my ( $in, $out, $param1, $param2 );
+
+# Copy the original data.
+# =======================
+
+# IRCAM raw data are in the same directory as the reduced data, and are
+# protected against all but read access.  Thus to switch on history
+# recording and set the origin we have to work on an output copy of the
+# array.  Some headers have incorrect names for IRCAM, so can't test for
+# it directly.
+
+# Generate list of input and output filenames.
+    ( $in, $out ) = $Frm->inout( "_cl" );
+
+# Copy the data.
+    $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$in out=$out" );
+
+# Report the processing status.
+    orac_print "$in to $out: Copied NDF component.\n";
+
+# Now update the output filename in the Frame object.
+    $Frm->file( $out );
+
+# Correct the WPLANGLE header.
+# ============================
+
+# Specify the NDF.
+    $in = $Frm->file;
+
+# See if WPLANGLE has a value.
+    if ( !defined( $Frm->uhdr( "ORAC_WAVEPLATE_ANGLE" ) ) ) {
+
+# Set the internal hash for WPLANGLE to value 0.  This will allow the
+# flat-field rules to work even if WPLANGLE had no value in the raw
+# frame.
+       $Frm->uhdr( "ORAC_WAVEPLATE_ANGLE", 0 );
+
+# The data also need to be changed so that the flat can be filed.
+# Thus correct the FITS header WPLANGLE value too.  This assumes that
+# there is a keyword corresponding to the ORAC_WAVEPLATE_ANGLE.  Note
+# that the input file name remains the same.
+       my %keywords =  $Frm->translate_hdr( "ORAC_WAVEPLATE_ANGLE" );
+       my @wplakey = keys( %keywords );
+       $param1 = "edit=update keyword=$wplakey[ 0 ] value=0.0 comment=\\\$C position=!"; 
+       $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "ndf=$in $param1" );
+    }
+
+# Set the bounds of the NDF.
+# ==========================
+
+# Wavefront sensing uses ORAC-DR where readout bounds may not
+# be present.  The default origin of (1,1) will be used.
+    if ( exists $Frm->uhdr->{ "ORAC_X_LOWER_BOUND" } ) {
+
+# Read readout bounds from the headers.
+       my $x1 = $Frm->uhdr( "ORAC_X_LOWER_BOUND" );
+       my $y1 = $Frm->uhdr( "ORAC_Y_LOWER_BOUND" );
+
+# Set the parameters for the task.
+       $param1 = "ndf=$in origin=[$x1,$y1]";
+
+# Set the pixel origin.
+       $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param1" );
+
+# Report the processing status.
+       orac_print "Frame $in has origin set to ($x1,$y1).\n";
+    }
+
+# Initiate history recording.
+# ===========================
+    $Mon{ "ndfpack_mon" }->obeyw( "hisset", "ndf=$in" );
+
+# Report the processing status.
+    orac_print "Frame $in has history recording enabled.\n";
+
+# Apply non-linearity correction.
+# ===============================
+
+# Non-linearity correction should only be applied a defined DET_BIAS value.
+    my $det_bias = $Frm->uhdr( "ORAC_DETECTOR_BIAS" );
+    my $mode = $Frm->uhdr( "ORAC_DETECTOR_READ_TYPE" );
+    if ( $det_bias > 0.61 && $det_bias < 0.63 ) {
+
+# Generate list of input and output filenames.
+       ( $in, $out ) = $Frm->inout( "_nl" );
+
+# If observation was taken in STARE mode, a bias has to be subtracted.
+# A good approximation is to take off a constant bias level.  Even at high
+# fluxes this should at worst give a 0.5% error, and in most circumstances
+# will be much less.
+       if ( $mode eq "ND_STARE" ) {
+
+# Evaluate the expression with the bias already subtracted.
+          $Mon{ "kappa_mon" }->obeyw( "maths", "out=$out ia=$in exp='IA+3.3E-06*IA*IA'" );
+
+# Evaluate the expression without the bias already subtracted (STARE mode).
+       } elsif ( $mode eq "STARE" ) {
+          $Mon{ "kappa_mon" }->obeyw( "maths", "out=$out ia=$in exp='IA+3.3E-06*(IA-24460)*(IA-24460)'" );
+
+       }
+
+# Correct the FITS header indicating that a linearity correction has been applied.
+       $param1 = "ndf=$out edit=update";
+       $param2 = "keyword=LINEAR value=T comment='Linearisation enabled' position=LINEAR"; 
+       $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$param1 $param2" );
+
+# Report the processing status.
+       orac_print "Frame $in has non-linearity correction applied in $out.\n";
+
+# Now update the output filename in the Frame object.
+       $Frm->file( $out );
+
+    }
+
+# Insert the SPD_GAIN header.
+# ===========================
+
+# This only needs to be done for old data before 2000 November 22, where
+# the SPD_GAIN header was not being written.
+    if ( !defined( $Frm->uhdr( "ORAC_SPEED_GAIN" ) ) ) {
+
+# The value depends upon the detector bias, whose two allowed values are
+# 0.62 and 0.8V.
+       my $spd_gain;
+       if ( $det_bias > 0.61 && $det_bias < 0.63 ) {
+          $spd_gain = "Standard";
+       } else {
+          $spd_gain = "Deepwell";
+       }
+
+# Set the internal hash for ORAC_SPEED_GAIN.
+       $Frm->uhdr( "ORAC_SPEED_GAIN", $spd_gain );
+       my %keywords = $Frm->translate_hdr( "ORAC_SPEED_GAIN" );
+       my @spdkey = keys( %keywords );
+
+# Correct the FITS header SPD_GAIN value too.
+       $in = $Frm->file;
+       my $comment = "Readout speed and gain (Standard|Fast|Deepwell)";
+       $param2 = "comment='$comment' position=DEPERDN";
+       $param1 = "edit=write keyword=$spdkey[ 0 ] value=$spd_gain";
+       $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "ndf=$in $param1 $param2" );
+
+# Report the processing status.
+       orac_print "Frame $in has $spdkey[ 0 ] set to $spd_gain.\n";
+    }
+
+# Report processing status.
+    orac_print "Global IRCAM tasks performed.\n\n";
+
+# Podule
+# ======
+
+=head1 NAME
+
+_IMAGING_HELLO_ -- Performs global data-reduction tasks for the IRCAM imaging instrument.
+
+=head1 DESCRIPTION
+
+This primitive does the preparatory work for recipes used by IRCAM.
+
+It permits display of the raw data.  It sets the pixel origin, and
+switches on history recording in a copy of the raw data. A copy is
+necessary because the raw frame is write protected.  It finally
+corrects for non-linearity.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+The readout lower bounds in the frame internal headers
+ORAC_X_LOWER_BOUND and ORAC_Y_LOWER_BOUND define the pixel origin.  No
+origin is set if these do not exist.
+
+=item *
+
+The IRCAM non-linearity test is only applied when detector bias
+internal header ORAC_DETECTOR_BIAS is 0.62.  When internal header
+ORAC_DETECTOR_READ_TYPE is "STARE" a bias of 24400 is subtracted
+before applying the non-linearity correction.  This approximation
+gives rise to at worse a 0.5% error in the correction and in most
+circumstances will be much less.  The correction is 3.3E-06 times the
+square of the bias-subtracted signal.  The logical header LINEAR is
+set to T to record that the linearity correction has been applied.
+
+=item *
+
+Whenever user header ORAC_SPEED_GAIN is undefined, the primitive
+assigns a value to ORAC_SPEED_GAIN and creates the corresponding FITS
+header in the frame.
+
+=item *
+
+Corrects the acquisition bug which sets ORAC_WAVEPLATE_ANGLE internal
+header to be a comment instead of value 0.  It changes both the actual
+headers and the $Frm->uhdr hash.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Copied frame inheriting the current frame's name but with 
+the _cl suffix.
+
+=item *
+
+Linearity-corrected frame inheriting the current frame's name
+but with the _nl suffix.
+
+=back
+
+=head1 TASKS
+
+KAPPA: FITSMOD, HISSET, MATHS, NDFCOPY, SETORIGIN.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
