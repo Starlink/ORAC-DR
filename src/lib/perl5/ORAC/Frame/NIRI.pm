@@ -31,6 +31,241 @@ use base qw/ORAC::Frame::GEMINI/;
 use Carp;
 use strict;
 
+# These header translations may or may not be generic, so place here
+# for the moment.
+my %hdr = (
+            DETECTOR_READ_TYPE   => "MODE",
+#            NUMBER_OF_OFFSETS   => "NOFFSETS",
+            RA_TELESCOPE_OFFSET  => "RAOFFSET",
+            X_REFERENCE_PIXEL    => "CRPIX1",
+            Y_REFERENCE_PIXEL    => "CRPIX2"
+       );
+            
+# Take this lookup table and generate methods.
+ORAC::Frame::NIRI->_generate_orac_lookup_methods( \%hdr );
+
+# Note use list context as there are multiple CD matrices in
+# the header.  We want scalar context.
+sub _to_DEC_SCALE {
+   my $self = shift;
+   my $cd11 = $self->hdr("CD1_1");
+   my $cd12 = $self->hdr("CD1_2");
+   my $cd21 = $self->hdr("CD2_1");
+   my $cd22 = $self->hdr("CD2_2");
+   my $sgn;
+   if ( ( $cd11 * $cd22 - $cd12 * $cd21 ) < 0 ) { $sgn = -1; } else { $sgn = 1; }
+   abs( sqrt( $cd11**2 + $cd21**2 ) * 3600 );
+}
+
+# Have to fudge this for some reason for the long focal-ratio camera.
+sub _to_DEC_TELESCOPE_OFFSET {
+    my $self = shift;
+    my $offset = $self->hdr( "DECOFFSE" );
+    if ( defined( $self->hdr( "INPORT" ) ) &&
+         $self->hdr( "INPORT" ) == 3 ) {
+       $offset = -1.0 * $self->hdr( "DECOFFSE" );
+    }
+    return $offset;
+}
+
+sub _from_DEC_TELESCOPE_OFFSET {
+   "DECOFFSE",  $_[0]->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" );
+}
+
+sub _to_EXPOSURE_TIME {
+   my $self = shift;
+   my $et = $self->hdr->{EXPTIME};
+   my $co = $self->hdr->{COADDS};
+   $et *= $co;
+}
+
+sub _to_FILTER {
+   my $self = shift;
+   my $filter = "";
+   my $filter1 = $self->hdr( "FILTER1" );
+   my $filter2 = $self->hdr( "FILTER2" );
+   my $filter3 = $self->hdr( "FILTER3" );
+
+   if ( $filter1 =~ "open" ) {
+      $filter = $filter2;
+   }
+
+   if ( $filter2 =~ "open" ) {
+      $filter = $filter1;
+   }
+
+   if ( ( $filter1 =~ "blank" ) ||
+        ( $filter2 =~ "blank" ) || 
+        ( $filter3 =~ "blank" ) ) {
+      $filter = "blank";
+   }
+   return $filter;
+}
+
+sub _to_GAIN {
+  12.3; # hardwire in gain for now
+}
+
+sub _to_OBSERVATION_MODE {
+   "imaging";
+}
+
+sub _to_OBSERVATION_NUMBER {
+   my $self = shift;
+   my $obsnum = 0;
+   if ( exists ( $self->hdr->{FRMNAME} ) ) {
+      my $fname = $self->hdr->{FRMNAME};
+      $obsnum = substr( $fname, index( $fname, ":" ) - 4, 4 );
+   }
+   return $obsnum;
+}
+
+sub _to_OBSERVATION_TYPE {
+   my $self = shift;
+   my $type = $self->hdr( "OBSTYPE" );
+   if ( $type eq "SCI" ) {
+      $type = "OBJECT";
+   }
+   return $type;
+}
+
+sub _to_RA_BASE {
+   my $self = shift;
+   my $ra = 0.0;
+   if ( exists ( $self->hdr->{CRPIX1} ) ) {
+      $ra = $self->hdr->{CRPIX1};
+   }
+   $ra = defined( $ra ) ? $ra: 0.0;
+   return $ra / 15.0;
+}
+
+sub _to_RA_SCALE {
+   my $self = shift;
+   my $cd12 = $self->hdr("CD1_2");
+   my $cd22 = $self->hdr("CD2_2");
+   sqrt( $cd12**2 + $cd22**2 ) * 3600;
+}
+
+# ROTATION, DEC_SCALE and RA_SCALE transformations courtesy Micah Johnson, from
+# the cdelrot.pl script supplied for use with XIMAGE.  Extended here to the
+# FITS-WCS Paper II Section 6.2 prescription, averaging the rotation.
+
+sub _to_ROTATION {
+   my $self = shift;
+   my $cd11 = $self->hdr("CD1_1");
+   my $cd12 = $self->hdr("CD1_2");
+   my $cd21 = $self->hdr("CD2_1");
+   my $cd22 = $self->hdr("CD2_2");
+
+# Obtain the plate scales CDELT1 and CDELT2 equivalents as if we hasd a PCi_i matrix.
+   my $sgn;
+   if ( ( $cd11 * $cd22 - $cd12 * $cd21 ) < 0 ) { $sgn = -1; } else { $sgn = 1; }
+   my $cdelt1 = $sgn * sqrt( $cd11**2 + $cd21**2 );
+   my $cdelt2 = $sgn * sqrt( $cd22**2 + $cd12**2 );
+
+# Determine the sense of the scales.
+   my $sgn2;
+   if ( $cd12 < 0 ) { $sgn2 = -1; } else { $sgn2 = 1; }
+   my $sgn3;
+   if ( $cd21 < 0 ) { $sgn3 = -1; } else { $sgn3 = 1; }
+   my $rtod = 45 / atan2( 1, 1 );
+
+# Average the estimates of the rotation.
+   my $rotation = $rtod * 0.5 * ( atan2( $sgn2 * $cd21 / $rtod, $sgn2 * $cd11 / $rtod ) +
+                                  atan2( $sgn3 * $cd12 / $rtod, -$sgn3 * $cd22 / $rtod ) );
+
+# Plus 90 is a fudge because the CD matrix appears is wrong by 90 degrees for port 3,
+# the f/32 camera, judging by the telescope offsets, CTYPEn, and the support astronomer.
+   $rotation += 90  if ( defined( $self->hdr( "INPORT" ) ) && $self->hdr( "INPORT" ) ) == 3;
+
+   return $rotation;
+}
+
+sub _to_SPEED_GAIN {
+   "NA";
+}
+
+sub _to_STANDARD {
+   0; # hardwire for now as all objects not a standard.
+}
+
+sub _to_UTDATE {
+   my $self = shift;
+   return $self->get_UT_date();
+}
+
+sub _to_UTEND {
+   my $self = shift;
+
+# Obtain the UT start time and convert to decimal hours.
+   my $utstring = $self->hdr( "UTEND" );
+   my $utend = $utstring;
+   if ( ! is_numeric( $utstring ) ) {
+      $utend = hmstodec( $utstring );
+   }
+   return $utend;
+}
+
+sub _from_UTEND {
+    my @hms = dectodms( $_[0]->uhdr( "ORAC_UTEND" ) );
+    my $utstring = '0'x(2-length( $hms[ 0 ] ) ) . "$hms[ 0 ]" .
+                   '0'x(2-length( $hms[ 1 ] ) ) . "$hms[ 1 ]" .
+                   sprintf( "%4.1f", $hms[ 2 ] );
+   "UTEND", $utstring;
+}
+
+sub _to_UTSTART {
+   my $self = shift;
+
+# Obtain the UT start time and convert to decimal hours.
+   my $utstring = $self->hdr( "UT" );
+   my $ut = 0.0;
+   if ( defined( $utstring ) && $utstring !~ /\s+/ ) {
+      $ut = hmstodec( $utstring );
+   }
+   return $ut;
+}
+
+sub _to_WAVEPLATE_ANGLE {
+   0; # hardwire angle for now
+}
+
+# Shift the bounds to GRID co-ordinates.
+sub _to_X_LOWER_BOUND {
+   my $self = shift;
+   return nint( $self->hdr->{LOWCOL} + 1 );
+}
+
+sub _to_Y_LOWER_BOUND {
+   my $self = shift;
+   return nint( $self->hdr->{LOWROW} + 1 );
+}
+
+sub _to_X_UPPER_BOUND {
+   my $self = shift;
+   return nint( $self->hdr->{HICOL} + 1 );
+}
+
+sub _to_Y_UPPER_BOUND {
+   my $self = shift;
+   return nint( $self->hdr->{HIROW} + 1 );
+}
+
+# Supplementary methods for the translations
+# ------------------------------------------
+
+# Returns the UT date in YYYYMMDD format.
+sub get_UT_date {
+   my $self = shift;
+
+# This is UT start and time.
+   my $dateobs = $self->hdr->{"DATE-OBS"};
+
+# Extract out the data in yyyymmdd format.
+   return substr( $dateobs, 0, 4 ) . substr( $dateobs, 5, 2 ) . substr( $dateobs, 8, 2 );
+}
+ 
+
 =head1 PUBLIC METHODS
 
 The following methods are available in this class in addition to
@@ -116,6 +351,7 @@ sub configure {
     croak 'Wrong number of arguments to configure: 1 or 2 args only';
   }
 
+
   # set the filename
 
   $self->file($fname);
@@ -143,28 +379,7 @@ sub configure {
   $self->calc_orac_headers;
 
   # Hack
-  $self->uhdr("ORAC_OBSERVATION_MODE", "imaging");
-  my $filter = $self->hdr("FILTER1");
-  $self->uhdr("ORAC_FILTER", $filter);
 
-  my $dec1 = $self->hdr("DEC");
-  my $dec2 = $self->hdr("CRVAL2");
-  my $decoff = $dec2 - $dec1;
-  $decoff *= 3600;
-
-  my $ra1 = $self->hdr("RA");
-  my $ra2 = $self->hdr("CRVAL1");
-  my $raoff = $ra2 - $ra1;
-  $raoff /= 15*cosdeg($dec1);
-  $raoff *= 3600;
-
-  $self->uhdr("ORAC_RA_TELESCOPE_OFFSET", $raoff);
-  $self->uhdr("ORAC_DEC_TELESCOPE_OFFSET", $decoff);
-
-  my $et = $self->hdr("EXPTIME");
-  my $co = $self->hdr("COADDS");
-  $et *= $co;
-  $self->uhdr("ORAC_EXPOSURE_TIME", $et);
 
   # Find the group name and set it
   $self->findgroup;
@@ -301,6 +516,7 @@ sub flag_from_bits {
   my $prefix = shift;
   my $obsnum = shift;
 
+
   # It is almost possible to derive the flag name from the 
   # file name but not quite. In the NIRI case the flag name
   # is  .UT_obsnum.fits.ok but the filename is fUT_obsnum.fits
@@ -372,8 +588,8 @@ sub file_from_bits {
   my $prefix = shift;
   my $obsnum = shift;
 
-  # File numbers are padded to 3 (only!) digits.
-  $obsnum = sprintf("%03d", $obsnum);
+  # File numbers are padded to 4  digits.
+  $obsnum = sprintf("%04d", $obsnum);
 
   return $self->rawfixedpart . $prefix . 'S' . $obsnum . $self->rawsuffix;
 
@@ -393,8 +609,8 @@ sub template {
   my $template = shift;
 
   my $num = $self->number;
-  # pad with leading zeroes - 5(!) digit obsnum
-  $num = '0'x(3-length($num)) . $num;
+  # pad with leading zeroes - 4-digit obsnum
+  $num = '0'x(4-length($num)) . $num;
 
   # Change the first number
   $template =~ s/_\d+_/_${num}_/;
