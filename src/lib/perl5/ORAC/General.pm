@@ -13,6 +13,7 @@ ORAC::General - Simple perl subroutines that may be useful for primitives
   $result = log10($value);
   $result = nint($value);
   $yyyymmdd = utdate;
+  %hash = parse_keyvalue($string)
 
 =head1 DESCRIPTION
 
@@ -24,7 +25,7 @@ from standard perl. These are available to all ORAC primitive writers
 
 require Exporter;
 @ISA = (Exporter);
-@EXPORT = qw( max min log10 nint utdate);
+@EXPORT = qw( max min log10 nint utdate parse_keyvalues);
 
 use Carp;
 use strict;
@@ -58,7 +59,7 @@ sub min {
   my @min = grep((($_ <= $zmin) && ($zmin = $_)),@z);
   ($#min == -1) && push(@min,$zmin);
   my $answer = $min[$#min];
-}
+};
 
 =item max(ARRAY)
 
@@ -77,7 +78,7 @@ sub max {
   my @max = grep((($_ >= $zmax) && ($zmax = $_)),@z);
   ($#max == -1) && push(@max,$zmax);
   my $answer =  $max[$#max];
-}
+};
 
 
 =item log10(scalar)
@@ -98,7 +99,7 @@ sub log10 {
   my $in = shift;
 
   return POSIX::log10($in);
-}
+};
 
 
 =item nint()
@@ -113,7 +114,7 @@ sub nint {
 
   return int($value + 0.5);
 
-}
+};
 
 =item utdate
 
@@ -123,12 +124,37 @@ Return the UT date (strictly, GMT) date in the format yyyymmdd
 
 sub utdate {
  
-my ($day,$month,$year) = (gmtime)[3..5];
-$month++;
-$year += 1900;
-my $yyyymmdd = $year . '0'x (2-length($month)) . $month . '0'x (2-length($day)) . $day;
+  my ($day,$month,$year) = (gmtime)[3..5];
+  $month++;
+  $year += 1900;
+  my $yyyymmdd = $year . '0'x (2-length($month)) . $month . '0'x (2-length($day)) . $day;
 
-}
+};
+
+=item parse_keyvalues
+
+Takes a string of comma-seperated key-value pairs and return a hash.
+
+=cut
+
+
+sub parse_keyvalues {
+
+  my ($string) = shift;
+  my %hash;
+  my @pairs = split(',',$string);
+
+  foreach my $pair (@pairs) {
+    my ($key,$value) = split('=',$pair,2);
+    $key = lc($key);
+    $hash{$key} = $value;
+  };
+
+  return %hash;
+
+};
+
+
 
 
 =back
