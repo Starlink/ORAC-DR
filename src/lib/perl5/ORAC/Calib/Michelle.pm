@@ -33,6 +33,8 @@ use strict;
 use ORAC::Calib::CGS4;			# use base class
 use ORAC::Print;
 
+use File::Spec;
+
 use base qw/ORAC::Calib::CGS4/;
 
 use vars qw/$VERSION/;
@@ -156,6 +158,8 @@ the camera mode of Michelle.
 
   $Cal->_set_index_rules($index, $imaging_rules, $spec_rules);
 
+ORAC_DATA_CAL is prepended if no path is provided.
+
 Returns the index object.
 
 =cut
@@ -166,6 +170,13 @@ sub _set_index_rules {
   my $index = shift;
   my $im = shift;
   my $sp = shift;
+
+  # Prefix ORAC_DATA_CAL if required
+  # This is non-portable (kluge)
+  $im = File::Spec->catfile($ENV{ORAC_DATA_CAL}, $im)
+    unless $im =~ /\//;
+  $sp = File::Spec->catfile($ENV{ORAC_DATA_CAL}, $sp)
+    unless $sp =~ /\//;
 
   # Get the current name of the rules file in case we don't need to
   # update it
