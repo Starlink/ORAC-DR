@@ -26,7 +26,7 @@ use strict;
 use Carp;
 use vars qw/$VERSION/;
 
-use Term::ANSIColor;
+use ORAC::Print;
 
 $VERSION = undef; # -w protection
 $VERSION = '0.10';
@@ -79,6 +79,7 @@ sub new {
   $frame->{File} = undef;
   $frame->{Recipe} = undef;
   $frame->{UserHeader} = {};
+  $frame->{Format} = undef;
 
   bless($frame, $class);
 
@@ -215,6 +216,19 @@ sub rawfixedpart {
   return $self->{RawFixedPart};
 }
 
+
+=item format
+
+Data format associated with the current file().
+Usually one of 'NDF' or 'FITS'.
+
+=cut
+
+sub format {
+  my $self = shift;
+  if (@_) { $self->{Format} = shift; }
+  return $self->{Format};
+}
 
 # Method to return the recipe name
 # If an argument is supplied the recipe is set to that value
@@ -553,8 +567,7 @@ sub inout {
   $outfile .= $suffix;
 
   # Generate a warning if output file equals input file
-  
-  print colored("WARNING: inout - output filename equals input filename",'red')
+  orac_warn("inout - output filename equals input filename")
     if ($outfile eq $infile);
 
   return ($infile, $outfile);
@@ -645,6 +658,48 @@ sub uhdr {
   return ${$self->userheader}{$keyword};
 }
 
+=item gui_id
+
+Returns the identification string that is used to compare the
+current frame with the frames selected for display in the
+display definition file.
+
+In the default case, this method returns everything after the
+last suffix stored in file().
+
+In some derived implementation of this method an argument
+may be used so that multiple IDs can be extracted from objects
+that contain more than one output file per observation.
+
+=cut
+
+sub gui_id {
+  my $self = shift;
+
+  my $fname = $self->file;
+
+  # Split on underscore
+  my (@split) = split(/_/,$fname);
+
+  return $split[-1];
+
+}
+
+
+=item num_files
+
+Number of files associated with the current state of the object 
+and stored in file(). This method lets the
+caller know whether an observation has generated multiple output
+files for a single input. Note that for the base class this method
+always returns 1 since file() can only hold a single value.
+
+=cut
+
+sub num_files {
+  my $self = shift;
+  return 1;
+}
 
 
 # Private method for removing file extensions from the filename strings
