@@ -17,7 +17,7 @@ ORAC::Inst::IRCAM - ORAC description of IRCAM
 
 This module provides subroutines for determining instrument
 specific behaviour of ORAC. This includes deciding which 
-monoliths. This file is for the UKIRT IRCAM instrument.
+monoliths.
 
 =cut
 
@@ -84,7 +84,7 @@ The routine returns when all the last monolith can be contacted
 routine is called).
 
 IRCAM uses PHOTOM (photom_mon), CCDPACK (ccdpack_red, ccdpack_res, 
-ccdpack_reg), FIGARO (figaro1) and KAPPA (kappa_mon).
+ccdpack_reg), FIGARO (figaro1), KAPPA (kappa_mon), and PISA (pisa_mon).
 
 =cut
 
@@ -100,6 +100,7 @@ sub start_algorithm_engines {
   $Mon{ccdpack_res} = new ORAC::Msg::ADAM::Task("ccdpack_res_$$",$ENV{CCDPACK_DIR}."/ccdpack_res");
   $Mon{ccdpack_reg} = new ORAC::Msg::ADAM::Task("ccdpack_reg_$$",$ENV{CCDPACK_DIR}."/ccdpack_reg");
   $Mon{kappa_mon} = new ORAC::Msg::ADAM::Task("kappa_mon_$$",$ENV{KAPPA_DIR}."/kappa_mon");
+  $Mon{pisa_mon} = new ORAC::Msg::ADAM::Task("pisa_mon_$$",$ENV{PISA_DIR}."/pisa_mon");
 
   return %Mon;
 }
