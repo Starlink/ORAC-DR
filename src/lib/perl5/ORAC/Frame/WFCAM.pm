@@ -127,9 +127,17 @@ my %rawfixedparts = ('1' => 'w',
                      '5' => 'v',
                     );
 
-# PROJP3: The cubic distortion coefficient for ZPN projection
+# Cubic distortion term values by filter
 
-my $projp3 = 220.0;
+my %pv2_3 = ('J'       => -50.0,
+	     'H'       => -50.0,
+	     'K'       => -50.0,
+	     'Y'       => -50.0,
+	     'Z'       => -50.0,
+	     'Blank'   => -50.0,
+	     'Brgamma' => -50.0,
+	     'OS1'     => -50.0,
+	     'nominal' => -50.0);
 
 # Image sections to be used in determining the scale factor to use in 
 # dark subtraction.
@@ -153,7 +161,7 @@ my @phukeys = ("DATE","ORIGIN","TELESCOP","INSTRUME","DHSVER","HDTFILE",
 	       "USTEP_Y","FILTER","UTDATE","UTSTART","UTEND","DATE-OBS",
 	       "DATE-END","MJD-OBS","WCSAXES","RADESYS","EQUINOX","TRACKSYS",
 	       "RABASE","DECBASE","TRAOFF","TDECOFF","AMSTART","AMEND","TELRA",
-	       "TELDEC","GSRA","GSDEC","READOUT","EXP_TIME","NEXP","READINT",
+	       "TELDEC","GSRA","GSDEC","READMODE","EXP_TIME","NEXP","READINT",
 	       "NREADS","AIRTEMP","BARPRESS","DEWPOINT","DOMETEMP","HUMIDITY",
 	       "MIRR_NE","MIRR_NW","MIRR_SE","MIRR_SW","MIRRBTNW","MIRRTPNW",
 	       "SECONDAR","TOPAIRNW","TRUSSENE","TRUSSWSW","WIND_DIR",
@@ -166,7 +174,7 @@ my @phukeys = ("DATE","ORIGIN","TELESCOP","INSTRUME","DHSVER","HDTFILE",
 my @ehukeys = ("INHERIT","DETECTOR","DETECTID","NINT","DROWS","DCOLUMNS",
 	       "RDOUT_X1","RDOUT_X2","RDOUT_Y1","RDOUT_Y2","PIXLSIZE","GAIN",
 	       "CAMNUM","HDTFILE2","DET_TEMP","CNFINDEX","PCSYSID","SDSUID",
-	       "READMODE","CAPPLICN","CAMROLE","CAMPOWER","RUNID","CTYPE1",
+	       "READOUT","CAPPLICN","CAMROLE","CAMPOWER","RUNID","CTYPE1",
 	       "CTYPE2","CRPIX1","CRPIX2","CRVAL1","CRVAL2","CRUNIT1",
 	       "CRUNIT2","CD1_1","CD1_2","CD2_1","CD2_2","PV2_1","PV2_2",
 	       "PV2_3");
@@ -530,19 +538,35 @@ sub extra_rot {
     return($extra_rot{$chipid});
 }
 
-=item B<projp3>
 
-Return the value of the cubic distortion coefficient
+=item B<pv2_3> 
+Return the value of the cubic distortion coefficient 
 
-    $Frm->projp3;
+    $Frm->pv2_3
 
 =cut
 
-sub projp3 {
+sub pv2_3 {
     my $self = shift;
 
-    return($projp3);
+    # Get the filter...
+
+    my $filt = $self->hdr("FILTER");
+
+    # If it's defined then return it. If not, then send out a 
+    # nominal value and warn...
+
+    if (defined $pv2_3{$filt}) {
+	return($pv2_3{$filt});
+    } else {
+	my $line = sprintf("Frame: %s -- can't define pv2_3 for filter %s\nUsing a nominal value\n",
+			   $self->file,$filt);
+	orac_warn($line);
+	return($pv2_3{'nominal'});
+    }
 }
+	
+
 
 =item B<onoffsects>
 
