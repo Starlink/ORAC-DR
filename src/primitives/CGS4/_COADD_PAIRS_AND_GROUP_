@@ -71,66 +71,106 @@ b.cavanagh@jach.hawaii.edu
 
 =cut
 
-my $groupnum = $Frm->findgroup;
+my $groupnum = $Frm->group;
 my $obsnum = $Frm->number;
 
 my $diff = $obsnum - $groupnum;
 
-my $groupname = $Grp->file;
+# We're using $Grp->raw so that the primitive will -always- coadd to the base
+# group file. If some other steps were done after this (i.e. ratioing by a 
+# standard), then $Grp->file would be the name of the file after the other
+# steps, thus sending the entire primitive into a pit of despair from which
+# it would be quite difficult to return
+
+my $groupname = $Grp->raw;
 
 if(($diff % 2) == 1) {
-  my @membernames = $Grp->membernames;
+  my $prevobs = $obsnum - 1;
   my $raoff = $Frm->hdr("RAOFF");
   my $decoff = $Frm->hdr("DECOFF");
-  my $fullname = $groupname . $Grp->filesuffix;
-  if((-e $fullname) && ($diff == 1)) {
-    $Mon{'ndfpack_mon'}->obeyw("erase","object=$groupname ok=true");
-  };
+  my ($sky, $object);
   if(($raoff == 0) && ($decoff == 0)) {
-    # pair is SKY-OBJECT
-    orac_print "Subtracting $membernames[$diff-1] (SKY) from $membernames[$diff] (OBJECT) and adding to group $groupname\n";
-    if($diff == 1) {
-      # This is the first OBJECT-SKY pair
-      $Mon{'kappa_mon'}->obeyw("sub","in1=$membernames[$diff] in2=$membernames[$diff-1] out=$groupname title=$groupname");
-    } else {
-      # This is -not- the first OBJECT-SKY pair
-      my $temp = new ORAC::TempFile;
-      my $tempname = $temp->file;
-      $Mon{'kappa_mon'}->obeyw("sub","in1=$membernames[$diff] in2=$membernames[$diff-1] out=$tempname");
-      my $temp2 = new ORAC::TempFile;
-      my $temp2name = $temp2->file;
-      my $temp3 = new ORAC::TempFile;
-      my $temp3name = $temp3->file;
-      my $grpmult = int($diff/2);
-      my $grpavg = $diff - $grpmult;
-      $Mon{'kappa_mon'}->obeyw("cmult","in=$groupname scalar=$grpmult out=$temp2name");
-      $Mon{'kappa_mon'}->obeyw("add","in1=$temp2name in2=$tempname out=$temp3name");
-      $Mon{'ndfpack_mon'}->obeyw("erase","object=$groupname ok=true");
-      $Mon{'kappa_mon'}->obeyw("cdiv","in=$temp3name out=$groupname scalar=$grpavg");
-    }
+
+    # RA and Decl. offsets are zero, so assume that the current
+    # frame is the object frame, and the previous is sky.
+
+    my @membernames = $Grp->membernames;
+    $object = $membernames[$diff];
+    $sky = $membernames[$diff-1];
   } else {
-    # pair is OBJECT-SKY
-    orac_print "Subtracting $membernames[$diff] (SKY) from $membernames[$diff-1] (OBJECT) and adding to group $groupname\n";
-    if($diff == 1) {
-      # This is the first OBJECT-SKY pair
-      $Mon{'kappa_mon'}->obeyw("sub","in1=$membernames[$diff-1] in2=$membernames[$diff] out=$groupname title=$groupname");
-    } else {
-      # This is -not- the first OBJECT-SKY pair
-      my $temp = new ORAC::TempFile;
-      my $tempname = $temp->file;
-      $Mon{'kappa_mon'}->obeyw("sub","in1=$membernames[$diff-1] in2=$membernames[$diff] out=$tempname");
-      my $temp2 = new ORAC::TempFile;
-      my $temp2name = $temp2->file;
-      my $temp3 = new ORAC::TempFile;
-      my $temp3name = $temp3->file;
-      my $grpmult = int($diff/2);
-      my $grpavg = $diff - $grpmult;
-      $Mon{'kappa_mon'}->obeyw("cmult","in=$groupname scalar=$grpmult out=$temp2name");
-      $Mon{'kappa_mon'}->obeyw("add","in1=$temp2name in2=$tempname out=$temp3name");
-      $Mon{'ndfpack_mon'}->obeyw("erase","object=$groupname ok=true");
-      $Mon{'kappa_mon'}->obeyw("cdiv","in=$temp3name out=$groupname scalar=$grpavg");
-    } 
+
+    # RA and/or Decl. offsets are nonzero, so assume that the
+    # current frame is sky, and previous is object.
+
+    my @membernames = $Grp->membernames;
+    $object = $membernames[$diff-1];
+    $sky = $membernames[$diff];
+  }
+  if(!(-e ($groupname . $Grp->filesuffix))) {
+
+    # The group file doesn't exist, so copy the coadded pair into it.
+
+    $Mon{'kappa_mon'}->obeyw("sub","in1=$object in2=$sky out=$groupname title=$groupname");
+    orac_print "Subtracting $sky (SKY) from $object (OBJECT) and adding to group $groupname\n";
+
+    # Update the user header to reflect the addition of the two observations to the group file.
+
+    $Grp->uhdr("AddedPairs" => join(",",$prevobs,$obsnum));
+  } elsif($diff == 1) {
+
+    # The group file does exist, and this is the first pair, so we'll 
+    # erase the group file, and then copy the coadded pair into it.
+
+    $Mon{'ndfpack_mon'}->obeyw("erase","object=$groupname ok=true");
+    $Mon{'kappa_mon'}->obeyw("sub","in1=$object in2=$sky out=$groupname title=$groupname");
+    orac_print "Subtracting $sky (SKY) from $object (OBJECT) and adding to group $groupname\n";
+
+    # Update the user header to reflect the addition of the two observations to the group file.
+
+    $Grp->uhdr("AddedPairs" => join(",",$prevobs,$obsnum));
+  } else {
+
+    # The group file exists and this is not the first pair.  First we need to determine
+    # how many pairs have been added to the group;
+
+    my $added = $Grp->uhdr("AddedPairs");
+    my @added = split(",", $added);
+    my $numobsadded = $#added + 1;
+    my $numpairadded = $numobsadded / 2;
+
+    # Now we need to "unaverage" the group file. A temporary file is needed for this.
+
+    my $unavg = new ORAC::TempFile;
+    my $unavgname = $unavg->file;
+    $Mon{'kappa_mon'}->obeyw("cmult","in=$groupname scalar=$numpairadded out=$unavgname");
+
+    # Now subtract SKY from OBJECT to create the pair. A temp file is needed.
+
+    my $pair = new ORAC::TempFile;
+    my $pairname = $pair->file;
+    $Mon{'kappa_mon'}->obeyw("sub","in1=$object in2=$sky out=$pairname");
+
+    # Now add the pair to the unaveraged group. A temp file is needed.
+
+    my $addgroup = new ORAC::TempFile;
+    my $addgroupname = $addgroup->file;
+    $Mon{'kappa_mon'}->obeyw("add","in1=$unavgname in2=$pairname out=$addgroupname");
+
+    # Now average the result. Erase the original group file first, because kappa will
+    # complain if it tries to overwrite a file.
+
+    $Mon{'ndfpack_mon'}->obeyw("erase","object=$groupname ok=true");
+    my $avgscalar = $numpairadded + 1;
+    $Mon{'kappa_mon'}->obeyw("cdiv","in=$addgroupname scalar=$avgscalar out=$groupname title=$groupname");
+    orac_print "Subtracting $sky (SKY) from $object (OBJECT) and adding to group $groupname\n";
+
+    # Update the user header to reflect the addition of the two observations to the group file.
+
+    my $prevadded = $Grp->uhdr("AddedPairs");
+    $Grp->uhdr("AddedPairs" => join(",",$prevadded,$prevobs,$obsnum));
   }
 }
 
+# update $Grp object
 
+$Grp->file($groupname);
