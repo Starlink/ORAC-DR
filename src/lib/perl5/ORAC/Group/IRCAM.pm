@@ -27,6 +27,8 @@ to B<ORAC::Group::IRCAM> objects.
 
 use 5.006;
 use Carp;
+
+# standard error module and turn on strict
 use warnings;
 use strict;
 
@@ -39,10 +41,23 @@ use vars qw/$VERSION/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
+# Translation tables for IRCAM should. go here.
+my %hdr = (
+            DECSCALE  => "PIXELSIZ",
+            DET_BIAS  => "DET_BIAS",
+            EXP_TIME  => "DEXPTIME",
+            GAIN      => "DEPERDN",
+            RASCALE   => "PIXELSIZ",
+            TDECOFF   => "DECOFF",
+            TRAOFF    => "RAOFF",
+            UTEND     => "RUTEND",
+            UTSTART   => "RUTSTART"
+	  );
 
-
-# standard error module and turn on strict
-
+# Take this lookup table and generate methods that can be sub-classed by
+# other instruments.  Have to use the inherited version so that the new
+# subs appear in this class.
+ORAC::Group::IRCAM->_generate_orac_lookup_methods( \%hdr );
 
 =head1 PUBLIC METHODS
 

@@ -31,12 +31,37 @@ use warnings;
 
 use ORAC::Group::UKIRT;
 
-# set inheritance
+# Set inheritance
 use base qw/ORAC::Group::UKIRT/;
 
 use vars qw/$VERSION/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+
+# Translation tables for Michelle should go here.
+# First the imaging...
+my %hdr = (
+            DECSCALE  => "PIXELSIZ",
+            EXP_TIME  => "DEXPTIME",
+            GAIN      => "DEPERDN",
+            RASCALE   => "PIXELSIZ",
+            TDECOFF   => "DECOFF",
+            TRAOFF    => "RAOFF",
+            UTEND     => "UTEND",
+            UTSTART   => "UTSTART",
+
+# then the spectroscopy.
+            NSCAN_POSITIONS => "DETNINCR",
+            SCAN_INCREMENT  => "DETINCR",
+            DIM1            => "DCOLUMNS",
+            DIM2            => "DROWS",
+            DETECTOR_INDEX  => "DINDEX"
+	  );
+
+# Take this lookup table and generate methods that can be sub-classed by
+# other instruments.  Have to use the inherited version so that the new
+# subs appear in this class.
+ORAC::Group::Michelle->_generate_orac_lookup_methods( \%hdr );
 
 =head1 PUBLIC METHODS
 
