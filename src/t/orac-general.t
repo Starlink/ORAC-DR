@@ -4,7 +4,7 @@
 
 use strict;
 use warnings;
-use Test::More tests => 21;
+use Test::More tests => 38;
 
 
 
@@ -54,13 +54,14 @@ my %keyvals = parse_keyvalues("X=22,Y=hello,Z=[-22]");
 
 is($keyvals{x}, 22);
 is($keyvals{y}, "hello");
-is($keyvals{z}, "[-22]");
+is($keyvals{z}, -22);
 
 # slightly harder
-%keyvals = parse_keyvalues('file=blah,curly={c,d},range="a,b",oops=22,unquot=1,2,wow=c,d,e');
+%keyvals = parse_keyvalues('file=blah,curly={c,d},range="a,b",oopsy=[22],oops=22,unquot=1,2,wow=c,d,e');
 
 is($keyvals{file},"blah");
 is($keyvals{oops},22);
+is($keyvals{oopsy},22);
 is(ref($keyvals{range}),"ARRAY");
 eq_array($keyvals{range},[qw/a b/],"Compare quoted array");
 eq_array($keyvals{curly},[qw/c d/],"Compare curly bracketed array");
