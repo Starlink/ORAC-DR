@@ -214,7 +214,7 @@ sub display_data {
     # Set the current suffix in the object
     $self->idstring($frm_suffix);
 
-    orac_print("Checking display tool for entry matching $frm_suffix\n",'blue');
+    orac_print("Checking display definition for entry matching $frm_suffix\n",'blue');
 
     # Now we need to search through the display definition and
     # decide whether our suffix can be displayed anywhere.
@@ -427,17 +427,26 @@ sub parse_file_defn {
       # Numbers usually indicate RAW data
       # so the test is also true if $test= 'NUM' and $id is a \d+
       # RAW is an allowed synonym
+      my $RAW = 0;
       if ($test eq 'num' || $test eq 'raw') {
 	# Now if id is a number then the test is true
 	if ($id =~ /\d+/) {
 	  $test = $id;  # fool the following test
 	}
+	$RAW = 1;
       }
 
       # Do test
       if ($test eq $id) {
 
-	orac_print("Display device determined ($test)",'blue');
+	# If NUM was selected then we want a slighlt differen
+        # informational message
+	if ($RAW == 1) {
+	  orac_print("Display device determined (NUM:$test)\n",'blue');
+	} else {
+	  orac_print("Display device determined ($test)\n",'blue');	  
+	}
+
 	orac_print("ID:$id LINE:$line\n",'cyan') if $DEBUG;
 
 	# Create a new hash
