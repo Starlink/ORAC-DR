@@ -97,7 +97,7 @@ sub datamodel_ui {
 	);
 	my($label_16) = $root->Label (
 		-foreground => 'black',
-		-text => 'ymin',
+		-text => 'zmin',
 	);
 	my($entry_3) = $root->Entry (
 		-textvariable => \$STATUS{DATAMODEL}{ZMIN},
@@ -105,7 +105,7 @@ sub datamodel_ui {
 	);
 	my($label_19) = $root->Label (
 		-foreground => 'black',
-		-text => 'ymax',
+		-text => 'zmax',
 	);
 	my($entry_6) = $root->Entry (
 		-textvariable => \$STATUS{DATAMODEL}{ZMAX},
