@@ -45,7 +45,6 @@ my %hdr = (
             GAIN                 => "GAIN",
             RA_SCALE             => "CDELT1",
             RA_TELESCOPE_OFFSET  => "TRAOFF",
-            UTDATE               => "DATE",
             UTEND                => "UTEND",
             UTSTART              => "UTSTART"
 	  );
@@ -54,6 +53,32 @@ my %hdr = (
 # by other instruments.  Have to use the inherited version so that the
 # new subs appear in this class.
 ORAC::Group::UFTI->_generate_orac_lookup_methods( \%hdr );
+
+sub _to_UTDATE {
+  my $self = shift;
+  my $utdate;
+  if ( exists $self->hdr->{DATE} ) {
+     $utdate = $self->hdr->{DATE};
+
+# This is a kludge to work with old data which has multiple values of
+# the DATE keyword with the last value being blank (these were early
+# UFTI data).  Return the first value, since the last value can be
+# blank.   If that value is also blank means that the date has
+# to be found elsewhere.   This essentially extracts the yyyymmdd by
+# from the frame name and converts it to the DATE format yyyy-mm-dd.
+     if ( ref( $utdate ) eq 'ARRAY' ) {
+        $utdate = $utdate->[0];
+     } elsif ( $utdate !~ /[0-9]\-]/ ) {
+        my $name = $self->file;
+        $utdate = substr( $name, 0, index( $name, "_" ) );
+        $utdate =~ s/[a-zA-Z]//g;
+        $utdate = substr( $utdate, 0, 4 ) . "-" .
+                  substr( $utdate, 4, 2 ) . "-" . 
+                  substr( $utdate, 6, 4 );
+     }
+  }
+  return $utdate;
+}
 
 # Use the nominal reference pixel if correctly supplied, failing that
 # take the average of the bounds, and if these headers are also absent,
