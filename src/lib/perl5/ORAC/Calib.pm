@@ -198,7 +198,14 @@ Cached value of the baseshift.  Only used when noupdate is in effect.
 
 sub baseshiftcache {
   my $self = shift;
-  if (@_) { $self->{BaseShift} = shift unless $self->baseshiftnoupdate; }
+  my @values;
+  if ( ref($_[0]) eq 'ARRAY' ) {
+     @values = @{ $_[0] };
+  } else {
+     @values = ( $_[0] );
+  }
+                  
+  if (@_) { $self->{BaseShift} = \@values unless $self->baseshiftnoupdate; }
   return $self->{BaseShift};
 }
 
@@ -210,7 +217,14 @@ Cached value of the referenceoffset.  Only used when noupdate is in effect.
 
 sub referenceoffsetcache {
   my $self = shift;
-  if (@_) { $self->{ReferenceOffset} = shift unless $self->referenceoffsetnoupdate; }
+  my @values;
+  if ( ref($_[0]) eq 'ARRAY' ) {
+     @values = @{ $_[0] };
+  } else {
+     @values = ( $_[0] );
+  }
+                  
+  if (@_) { $self->{ReferenceOffset} = \@values unless $self->referenceoffsetnoupdate; }
   return $self->{ReferenceOffset};
 }
 
