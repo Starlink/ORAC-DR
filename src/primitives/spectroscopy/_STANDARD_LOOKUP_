@@ -155,91 +155,101 @@ unless ( defined $Grp->uhdr( "TEMPERATURE" ) &&
       orac_print "Object not found in Bright Star Catalogue.\n";
       orac_print "Querying SIMBAD for spectral type...\n";
 
+      my @simbadurls = qw( http://simbad.harvard.edu/
+                           http://simbad.u-strasbg.fr/ );
+
       my $meanra = $Frm->uhdr( "ORAC_RA_BASE" );
       my $meandec = $Frm->uhdr( "ORAC_DEC_BASE" );
       
       my ( $radeg, $ramin, $rasec ) = dectodms( $meanra );
       my ( $decdeg, $decmin, $decsec ) = dectodms( $meandec );
 
-      # Set up the URL.
-      my $URL1 = "http://simbad.harvard.edu/sim-id.pl?protocol=html&Ident=".$radeg."+".$ramin."+";
-      my $URL2;
-      if ( $decdeg > 0 ) {
-         $URL2 = $rasec."+%2B".$decdeg."+".$decmin."+".$decsec."&NbIdent=1&Radius=10&Radius.unit";
-      } else {
-         $URL2 = $rasec."+".$decdeg."+".$decmin."+".$decsec."&NbIdent=1&Radius=10&Radius.unit";
-      }
-      my $URL3 = "=arcmin&CooFrame=FK5&CooEpoch=2000&CooEqui=2000&output.max=";
-      my $URL4 = "all&o.catall=on&output.mesdisp=N&Bibyear1=1983&Bibyear2=1999&Frame1=FK5";
-      my $URL5 = "&Frame2=none&Frame3=none&Epoch1=2000.0&Epoch2=1950.0&Epoch3=2000.0&Equi1";
-      my $URL6 = "=2000.0&Equi2=1950.0&Equi3=2000.0";
-      my $URL = $URL1 . $URL2 . $URL3 . $URL4 . $URL5 . $URL6;
+      foreach my $simbadurl (@simbadurls) {
+        last if (defined($temperature));
 
-      # Attempt to access the URL.  If successful the information is stored in
-      # the content array with appropriate line breaks.
+        orac_print " Querying $simbadurl\n";
+
+        # Set up the URL.
+        my $URL1 = $simbadurl . "sim-id.pl?protocol=html&Ident=".$radeg."+".$ramin."+";
+        my $URL2;
+        if ( $decdeg > 0 ) {
+           $URL2 = $rasec."+%2B".$decdeg."+".$decmin."+".$decsec."&NbIdent=1&Radius=10&Radius.unit";
+        } else {
+           $URL2 = $rasec."+".$decdeg."+".$decmin."+".$decsec."&NbIdent=1&Radius=10&Radius.unit";
+        }
+        my $URL3 = "=arcmin&CooFrame=FK5&CooEpoch=2000&CooEqui=2000&output.max=";
+        my $URL4 = "all&o.catall=on&output.mesdisp=N&Bibyear1=1983&Bibyear2=1999&Frame1=FK5";
+        my $URL5 = "&Frame2=none&Frame3=none&Epoch1=2000.0&Epoch2=1950.0&Epoch3=2000.0&Equi1";
+        my $URL6 = "=2000.0&Equi2=1950.0&Equi3=2000.0";
+        my $URL = $URL1 . $URL2 . $URL3 . $URL4 . $URL5 . $URL6;
+
+        # Attempt to access the URL.  If successful the information is stored in
+        # the content array with appropriate line breaks.
       
-      # set timeout to 20 seconds
-      $LWP::Simple::ua->timeout(20);
+        # set timeout to 20 seconds
+        $LWP::Simple::ua->timeout(20);
  
-      my @content = split '\n', LWP::Simple::get( $URL );
-      if ( !defined( $content[ 0 ] ) ) {
-         orac_print "Unable to connect to SIMBAD database.\n";
-      } else {
-         my $found = 0;
+        my @content = split '\n', LWP::Simple::get( $URL );
+        if ( !defined( $content[ 0 ] ) ) {
+           orac_print "Unable to connect to SIMBAD database.\n";
+        } else {
+           my $found = 0;
 
-	 # If the SIMBAD results page changes, this will need to change as well.
-	 # For each line, split the fields into an array.
-         foreach my $string ( @content ) { 
-            my @array = ();
-            @array = split '\|', $string;
+  	 # If the SIMBAD results page changes, this will need to change as well.
+	   # For each line, split the fields into an array.
+           foreach my $string ( @content ) { 
+              my @array = ();
+              @array = split '\|', $string;
 
-	    # Extract the spectral type.
-            if ( (defined($array[4])) && ($array[4] =~ /([a-z][0-9])/i ) && ($found == 0) ) { 
-               $spectype = $1;
+  	    # Extract the spectral type.
+              if ( (defined($array[4])) && ($array[4] =~ /([a-z][0-9])/i ) && ($found == 0) ) { 
+                 $spectype = $1;
 
-	       # Obtain the standard's equatorial co-ordinates.
-               my @simcoord = split ' ', $array[ 2 ];
-               my $format = "%2d %2d %4.2f";
-               my $rastring = sprintf( $format, $radeg, $ramin, $rasec );
-               my $decstring = sprintf( $format, $decdeg, $decmin, $decsec );
-               my $srastring = sprintf( $format, $simcoord[ 0 ], $simcoord[ 1 ], $simcoord[ 2 ] );
-               my $sdecstring = sprintf( $format, $simcoord[ 3 ], $simcoord[ 4 ], $simcoord[ 5 ] );
+	         # Obtain the standard's equatorial co-ordinates.
+                 my @simcoord = split ' ', $array[ 2 ];
+                 my $format = "%2d %2d %4.2f";
+                 my $rastring = sprintf( $format, $radeg, $ramin, $rasec );
+                 my $decstring = sprintf( $format, $decdeg, $decmin, $decsec );
+                my $srastring = sprintf( $format, $simcoord[ 0 ], $simcoord[ 1 ], $simcoord[ 2 ] );
+                my $sdecstring = sprintf( $format, $simcoord[ 3 ], $simcoord[ 4 ], $simcoord[ 5 ] );
 
-	       # Keep the user informed.
-               orac_print "    Header RA: $rastring Decl: $decstring.\n";
-               orac_print "    SIMBAD RA: $srastring Decl: $sdecstring.\n";
-               orac_print "    Object is spectral type $spectype.\n";
-               $temperature = $spectotemp{$spectype};
-               orac_print "    Setting temperature to $temperature K.\n";
+  	       # Keep the user informed.
+                 orac_print "    Header RA: $rastring Decl: $decstring.\n";
+                 orac_print "    SIMBAD RA: $srastring Decl: $sdecstring.\n";
+                 orac_print "    Object is spectral type $spectype.\n";
+                 $temperature = $spectotemp{$spectype};
+                 orac_print "    Setting temperature to $temperature K.\n";
 
-	       # Record the match.
-               $found = 1;
+  	       # Record the match.
+                 $found = 1;
 
-	       # Find the V magnitude.  Simply look for the last number surrounded by
-	       # spaces, rather than looking for 'Number Number' which sometimes
-	       # fails since occasionally SIMBAD inserts a character between
-	       # the numbers.
-               $array[ 3 ] =~ /([\d\.]+)\s*$/;
-               $vmag = $1;
-               if ( defined $vmag ) {
-                  orac_print "    V magnitude is $vmag (from $array[ 3 ] ).\n";
-               } else {
-                  orac_warn "V magnitude information did not match the expected pattern.\n";
-                  orac_warn "Got: '$array[ 3 ]' expected  'Number ? Number' (where ? is an optional character).\n";
-                  orac_warn "V magnitude could not be determined.\n";
-               }
-            
-            }
-         }
+  	       # Find the V magnitude.  Simply look for the last number surrounded by
+	         # spaces, rather than looking for 'Number Number' which sometimes
+	         # fails since occasionally SIMBAD inserts a character between
+	         # the numbers.
+                 $array[ 3 ] =~ /([\d\.]+)\s*$/;
+                 $vmag = $1;
+                 if ( defined $vmag ) {
+                    orac_print "    V magnitude is $vmag (from $array[ 3 ] ).\n";
+                } else {
+                    orac_warn "V magnitude information did not match the expected pattern.\n";
+                    orac_warn "Got: '$array[ 3 ]' expected  'Number ? Number' (where ? is an optional character).\n";
+                    orac_warn "V magnitude could not be determined.\n";
+                 }
+              
+              }
+           }
 
-         if ( ! $found  ) {
-            my $format = "%2d %2d %4.2f";
-            my $rastring = sprintf($format,$radeg,$ramin,$rasec);
-            my $decstring = sprintf($format,$decdeg,$decmin,$decsec);
-            orac_print "Object at RA: $rastring Decl: $decstring is not classified in SIMBAD.\n";
-         }
-      }
-   }
+           if ( ! $found  ) {
+              my $format = "%2d %2d %4.2f";
+              my $rastring = sprintf($format,$radeg,$ramin,$rasec);
+              my $decstring = sprintf($format,$decdeg,$decmin,$decsec);
+              orac_print "Object at RA: $rastring Decl: $decstring is not classified in SIMBAD.\n";
+           }
+        }
+     }
+
+  }
 
    # Use defaults if other methods have failed.
 
