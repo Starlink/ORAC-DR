@@ -217,6 +217,11 @@ my %MonolithDefns = (
 				   CLASS => 'ORAC::Msg::Task::ADAM',
 				   PATH => "$ENV{PHOTOM_DIR}/photom_mon",
 				  },
+		     atools_mon => {
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
+				   PATH => "$ENV{ATOOLS_DIR}/atools_mon",
+				  },
 		     p4         => {
 				    MESSYS => 'AMS',
 				    CLASS => 'ORAC::Msg::Task::ADAM',
@@ -758,7 +763,7 @@ sub orac_determine_initial_algorithm_engines {
   } elsif ($inst eq 'ISAAC') {
 
     @AlgEng = qw/ figaro1 figaro2 figaro4 kappa_mon ndfpack_mon
-      ccdpack_red ccdpack_reg /;
+      ccdpack_red ccdpack_reg atools_mon /;
 
   } elsif ($inst eq 'NACO') {
 
