@@ -6,8 +6,8 @@ COADD_PAIRS_AND_GROUP - coadd observations taken in OBJECT/SKY pairs into group 
 
 =head1 DESCRIPTION
 
-Coadds observations taken in the standard OBJECT/SKY pairs and adds the result to
-a group file.
+Coadds observations taken in the standard OBJECT/SKY pairs and adds
+the result to a group file.
 
 =head1 PARAMETERS
 
@@ -64,6 +64,12 @@ floating point numbers -- 0.0 may not necessarily be equal to zero).
 If, for some reason, the test fails, this strict equality check may
 need to be modified to check within a range around zero.
 
+This primitive does work with the C<-resume> flag but does not work
+with the <-batch> flag.
+
+Assumes that by the time this primitive is called, there is only 
+one file associated with the frame object.
+
 =head2 REVISION
 
   $Id$
@@ -77,6 +83,15 @@ b.cavanagh@jach.hawaii.edu
 my $groupnum = $Frm->group;
 my $obsnum = $Frm->number;
 
+# The number of observations in the current group is determined
+# by calculating the difference between the current observation number
+# and the group name. For CGS4 the group name is also the first 
+# observation number in the group and is independent of the actual number
+# of observations in the ORAC-DR Grp.
+
+# This calculation assumes that there are no breaks for calibrators etc
+# within the group.
+
 my $diff = $obsnum - $groupnum;
 
 # We're using $Grp->raw so that the primitive will -always- coadd to the base
@@ -87,8 +102,23 @@ my $diff = $obsnum - $groupnum;
 
 my $groupname = $Grp->raw;
 
+# Now update the groupname with this value so that all the 
+# methods will look in the right place
+
+$Grp->file( $groupname );
+
+# Check whether we have an even number of observations in the group
+
 if(($diff % 2) == 1) {
-  my $prevobs = $obsnum - 1;
+
+  # Calculate the previous observation number
+  # Determine the frame of the previous group member
+  # This assumes we are not using -batch mode
+  my $prevFrm = ($Grp->members)[-2];
+  my $prevobs = $prevFrm->number;
+
+  # Calculate the offsets to determine whether we are 
+  # on sky or on source
   my $raoff = $Frm->hdr("RAOFF");
   my $decoff = $Frm->hdr("DECOFF");
   my ($sky, $object);
@@ -97,19 +127,20 @@ if(($diff % 2) == 1) {
     # RA and Decl. offsets are zero, so assume that the current
     # frame is the object frame, and the previous is sky.
 
-    my @membernames = $Grp->membernames;
-    $object = $membernames[$diff];
-    $sky = $membernames[$diff-1];
+    $object = $Frm->file;
+    $sky = $prevFrm->file;
+
   } else {
 
     # RA and/or Decl. offsets are nonzero, so assume that the
     # current frame is sky, and previous is object.
 
-    my @membernames = $Grp->membernames;
-    $object = $membernames[$diff-1];
-    $sky = $membernames[$diff];
+    $object = $prevFrm->file;
+    $sky    = $Frm->file;
+
   }
-  if(!(-e ($groupname . $Grp->filesuffix))) {
+
+  if( ! ($Grp->file_exists) ) {
 
     # The group file doesn't exist, so copy the coadded pair into it.
 
@@ -117,8 +148,33 @@ if(($diff % 2) == 1) {
     my $tmpname = $tmp->file;
     $Mon{'kappa_mon'}->obeyw("sub","in1=$sky in2=$object out=$tmpname title=$groupname");
     $Mon{'kappa_mon'}->obeyw("cmult","in=$tmpname scalar=-1 out=$groupname");
-    orac_print "Subtracting $sky (SKY) from $object (OBJECT) and adding to group $groupname\n";
+    orac_print "Subtracting $sky (SKY) from $object (OBJECT) and creating group $groupname\n";
+
+    # ...and update the group header
     $Grp->readhdr;
+
+    # This is repeated in a later segment as well.
+    # Since we have coadded a pair we need to store this information
+    # in the group file coadds array
+    $Grp->coaddspush($prevobs, $obsnum);
+  
+    # Now update the FITS header to reflect the new RUTEND  and AMEND
+    # from the current frame
+    my $rutend = $Frm->hdr('RUTEND');
+    my $amend  = $Frm->hdr('AMEND');
+    _SET_GROUP_FITS_ITEM_ KEY=RUTEND VALUE=$rutend
+    _SET_GROUP_FITS_ITEM_ KEY=AMEND VALUE=$amend
+
+    # We should also store RUTSTART and AMSTART
+    # To make sure that the AMSTART of the previous frame
+    # is in the header regardless of the order sky and object were
+    # taken. Only need to do this for the first pair
+    $rutend = $prevFrm->hdr('RUTSTART');
+    $amend  = $prevFrm->hdr('AMSTART');
+    _SET_GROUP_FITS_ITEM_ KEY=RUTEND VALUE=$rutend
+    _SET_GROUP_FITS_ITEM_ KEY=AMEND VALUE=$amend
+    
+
 
 # HUGE COMMENT -- If you're looking through this code and wondering
 # why a sky-object is done, instead of object-sky, here's the reason.
@@ -135,36 +191,32 @@ if(($diff % 2) == 1) {
 # case.  Thus, if we copy in the headers from the sky observations, we
 # preserve the RAOFF and DECOFF values, and can thus correctly
 # calculate the position of the negative row for spectrum extraction.
-# # PLEASE DO NOT CHANGE THIS!  If you change this, then the spectrum
+# PLEASE DO NOT CHANGE THIS!  If you change this, then the spectrum
 # extraction will be broken, much to the dismay of astronomers and
 # support scientists and others who might like to get accurate spectra
 # from their hard-earned observations at UKIRT.
 
-    # Update the user header to reflect the addition of the two
-    # observations to the group file. AddedPairs is an array ref
+  } elsif ($Grp->coaddspresent($obsnum) && $Grp->coaddspresent($prevobs)) {
 
-    $Grp->uhdr("AddedPairs" => [ $prevobs,$obsnum ]);
-  } elsif($diff == 1) {
+    # Already been coadded
 
-    # The group file does exist, and this is the first pair, so we'll 
-    # erase the group file, and then copy the coadded pair into it.
+    orac_print "This pair ($prevobs, $obsnum) have already been coadded. Skipping.\n";
 
-    $Mon{'ndfpack_mon'}->obeyw("erase","object=$groupname ok=true");
-    my $tmp = new ORAC::TempFile;
-    my $tmpname = $tmp->file;
-    $Mon{'kappa_mon'}->obeyw("sub","in1=$sky in2=$object out=$tmpname title=$groupname");
-    $Mon{'kappa_mon'}->obeyw("cmult","in=$tmpname scalar=-1 out=$groupname");
-    orac_print "Subtracting $sky (SKY) from $object (OBJECT) and adding to group $groupname\n";
+  } elsif ($Grp->coaddspresent($obsnum) || $Grp->coaddspresent($prevobs)) {
 
-    # Update the user header to reflect the addition of the two observations to the group file.
+    # This should not happen. The coadds array should not contain
+    # one of the pairs
 
-    $Grp->uhdr("AddedPairs" => [$prevobs,$obsnum]);
+    orac_err "Something has gone wrong. One of the pair [$prevobs,$obsnum], has been coadded without the other!!!!\n";
+    my $ORAC_STATUS = ORAC__ERROR;
+
+
   } else {
 
     # The group file exists and this is not the first pair.  First we need to
     # determine how many pairs have been added to the group;
-
-    my $added = $Grp->uhdr("AddedPairs");
+    # The number of observations added previously is from coadds
+    my $added = $Grp->coadds;
     my $numobsadded = scalar(@$added);
     my $numpairadded = $numobsadded / 2;
 
@@ -189,18 +241,26 @@ if(($diff % 2) == 1) {
     my $addgroupname = $addgroup->file;
     $Mon{'kappa_mon'}->obeyw("add","in1=$unavgname in2=$pairname out=$addgroupname");
 
-    # Now average the result. Erase the original group file first, because kappa will
-    # complain if it tries to overwrite a file.
+    # Now average the result. Erase the original group file first, because
+    # kappa will complain if it tries to overwrite a file (will it?? TIMJ).
 
     $Mon{'ndfpack_mon'}->obeyw("erase","object=$groupname ok=true");
     my $avgscalar = $numpairadded + 1;
     $Mon{'kappa_mon'}->obeyw("cdiv","in=$addgroupname scalar=$avgscalar out=$groupname title=$groupname");
     orac_print "Subtracting $sky (SKY) from $object (OBJECT) and adding to group $groupname\n";
 
-    # Update the user header to reflect the addition of the two observations to the group file.
+    # Print an informative message (I dont think it will ever get here
+    # with only a single pair since the early if should catch it.
+    if ($avgscalar == 1) {
+      orac_print "Group file now contains observations from $avgscalar pair\n";
+    } else {
+      orac_print "Group file now contains observations from $avgscalar pairs\n";
+    }
 
-    push(@$added, $prevobs, $obsnum);
-
+    # Since we have coadded a pair we need to store this information
+    # in the group file coadds array
+    $Grp->coaddspush($prevobs, $obsnum);
+  
     # Now update the FITS header to reflect the new RUTEND  and AMEND
     # from the current frame
     my $rutend = $Frm->hdr('RUTEND');
@@ -208,12 +268,7 @@ if(($diff % 2) == 1) {
     _SET_GROUP_FITS_ITEM_ KEY=RUTEND VALUE=$rutend
     _SET_GROUP_FITS_ITEM_ KEY=AMEND VALUE=$amend
 
-
   }
+      
 }
 
-print "Coadded PAIR AND GROUP ????\n";
-
-# update $Grp object
-
-$Grp->file($groupname);
