@@ -90,7 +90,7 @@ $DEBUG = 0; # Turn off debugging mode
 			 },
 		 ARCSEC => {
 			    '450W' => 2.6,
-			    '850W' => 0.87,
+			    '850W' => 0.80,
 			    '850N' => 1.00,
 			   }
 		);
