@@ -31,7 +31,9 @@ use warnings;
 use ORAC::Group;
 
 # Inherit from ORAC::Group
-use base qw/ORAC::Group/;
+# BaseNDF is ahead of ORAC::Group because we need to use readhdr
+# from the NDF base rather than the file Base.
+use base qw/ORAC::BaseNDF ORAC::Group /;
 
 use strict;
 use Carp;
@@ -86,7 +88,7 @@ sub coaddsread {
 
     # Is there a .ORAC extension?
     ndf_xstat($indf, 'ORAC', my $orac_there, $status);
-    
+
     if ($orac_there) {
 
       # Find the .ORAC extension
@@ -107,7 +109,7 @@ sub coaddsread {
 	  $read_coadds = 1;
 	}
       }
-      
+
       dat_annul($xloc, $status);
     }
 
@@ -234,77 +236,6 @@ sub file_exists {
   }
 }
 
-=item B<readhdr>
-
-Reads the header from the reduced group file (the filename is stored
-in the Group object) and sets the Group header. This method sets the
-header in the object.
-
-    $Grp->readhdr;
-
-All exisiting header information is lost.  If there is an error during
-the read an empty hash is stored in the header.
-
-Currently this method assumes that the reduced group is stored in
-NDF format. Only the FITS header is retrieved from the NDF.
-
-There are no input or return arguments.
-
-=cut
-
-sub readhdr {
-
-  my $self = shift;
-  
-  # Just read the NDF fits header
-  my ($ref, $status) = fits_read_header($self->file);
-
-  # Return an empty hash if bad status
-  $ref = {} if ($status != &NDF::SAI__OK);
-
-  # Set the header in the group 
-  %{$self->hdr} = %$ref;
-
-  # generate orac specific headers
-  $self->calc_orac_headers;
-
-  return;
-
-}
-
-=back
-
-=head1 PRIVATE METHODS
-
-The following methods are intended for use inside the module.
-They are included here so that authors of derived classes are 
-aware of them.
-
-=over 4
-
-=item B<stripfname>
-
-Method to strip file extensions from the filename string. This method
-is called by the file() method. For UKIRT we strip all extensions of the
-form ".sdf", ".sdf.gz" and ".sdf.Z" since Starlink tasks do not require
-the extension when accessing the file name.
-
-=cut
-
-sub stripfname {
-
-  my $self = shift;
-
-  my $name = shift;
-
-  # Strip everything after the first dot
-  $name =~ s/\.(sdf)(\.gz|\.Z)?$//;
-  
-  return $name;
-
-}
-
-
 =back
 
 =head1 REQUIREMENTS
@@ -313,7 +244,7 @@ This module requires the L<NDF> module.
 
 =head1 SEE ALSO
 
-L<ORAC::Group>
+L<ORAC::Group>, L<ORAC::BaseNDF>
 
 =head1 REVISION
 
@@ -321,11 +252,11 @@ $Id$
 
 =head1 AUTHORS
 
-Tim Jenness (t.jenness@jach.hawaii.edu)
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 

@@ -30,6 +30,8 @@ use vars qw/$VERSION/;
 use ORAC::Print;
 use ORAC::Constants;
 
+use base qw/ ORAC::BaseFile /;
+
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 
@@ -369,63 +371,6 @@ sub group {
   return $self->{Group};
 }
 
-=item B<hdr>
-
-This method allows specific entries in the header to be accessed.  In
-general, this header is related to the actual header information
-stored in the Frame file. The input argument should correspond to the
-keyword in the header hash.
-
-  $tel = $Frm->hdr("TELESCOP");
-  $instrument = $Frm->hdr("INSTRUME");
-
-Can also be used to set values in the header.
-A hash can be used to set multiple values (but does not overwrite
-other keys).
-
-  $Frm->hdr("INSTRUME" => "IRCAM");
-  $Frm->hdr("INSTRUME" => "SCUBA", 
-            "TELESCOP" => 'JCMT');
-
-If no arguments are provided, the reference to the header hash
-is returned.
-
-  $Frm->hdr->{INSTRUME} = 'SCUBA';
-
-The header can be populated from the file by using the readhdr()
-method.
-
-=cut
-
-sub hdr {
-  my $self = shift;
-
-  # If we have one argument we should read it and return the associated
-  # value. If we have more than one argument will assume a hash has
-  # been supplied and append it to the existing values.
-  if (@_) {
-    if (scalar(@_) == 1) {
-      my $key = shift;
-      return $self->{Header}->{$key};
-    } else {
-
-      # Assume we are setting keys, append to the existing
-      # hash. Can either do this by merging the two hashes
-      # (inefficient since we have to take an entire copy
-      # of the existing hash) or by looping through the supplied
-      # keys and changing them one by one. The former is more 
-      # efficient for large lists, the latter when only supplying
-      # a few arguments. For programming simplicity will take
-      # the former approach
-
-      %{ $self->{Header} } = ( %{ $self->{Header} }, @_ );
-    }
-  } else {
-    # No arguments, return the header hash reference
-    return $self->{Header};
-  }
-}
-
 =item B<intermediates>
 
 An array containing all the intermediate file names used
@@ -691,63 +636,6 @@ sub tags {
   return $self->{Tags};
 }
 
-
-=item B<uhdr>
-
-This method allows specific entries in the user-defined header to be 
-accessed. The input argument should correspond to the keyword in the header
-hash.
-
-  $tel = $Frm->uhdr("Telescope");
-  $instrument = $Frm->uhdr("Instrument");
-
-Can also be used to set values in the header.
-A hash can be used to set multiple values (but does not overwrite
-other keys).
-
-  $Frm->uhdr("Instrument" => "IRCAM");
-  $Frm->uhdr("Instrument" => "SCUBA", 
-             "Telescope" => 'JCMT');
-
-If no arguments are provided, the reference to the header hash
-is returned.
-
-  $Frm->uhdr->{Instrument} = 'SCUBA';
-
-=cut
-
-
-
-sub uhdr {
-  my $self = shift;
-
-  # If we have one argument we should read it and return the associated
-  # value. If we have more than one argument will assume a hash has
-  # been supplied and append it to the existing values.
-  if (@_) {
-    if (scalar(@_) == 1) {
-      my $key = shift;
-      return $self->{UHeader}->{$key};
-    } else {
-
-      # Assume we are setting keys, append to the existing
-      # hash. Can either do this by merging the two hashes
-      # (inefficient since we have to take an entire copy
-      # of the existing hash) or by looping through the supplied
-      # keys and changing them one by one. The former is more 
-      # efficient for large lists, the latter when only supplying
-      # a few arguments. For programming simplicity will take
-      # the former approach
-
-      %{ $self->{UHeader} } = ( %{ $self->{UHeader} }, @_ );
-    }
-  } else {
-    # No arguments, return the header hash reference
-    return $self->{UHeader};
-  }
-}
-
-
 =back
 
 =head2 General Methods
@@ -952,7 +840,7 @@ sub file_from_bits {
 
 =item B<findgroup>
 
-Returns group name from header.  If we can't find anything sensible,
+Returns group name from header.  If we cannot find anything sensible,
 we return 0.  The group name stored in the object is automatically
 updated using this value.
 
@@ -1271,35 +1159,6 @@ sub number {
 
 }
 
-
-# Method to read header information from the file directly
-# Put it separately so that we do not need to specify how we read
-# header or whether we include NDF extensions
-# Returns reference to hash
-# No input arguments - only assumes that the object knows the name of the
-# file associated with it
-
-=item B<readhdr>
-
-A method that is used to read header information from the current
-file and store that information in the object. For the base class,
-this method does nothing since the base class does not know 
-the format of the file associated with the object. There are
-no return arguments.
-
-  $Frm->readhdr;
-
-The calc_orac_headers() method is called automatically.
-
-=cut
-
-sub readhdr {
-  my $self = shift;
-  $self->calc_orac_headers;
-  return;
-}
-
-
 =item B<tagset>
 
 Associate the current filenames with a key (or tag). Once a tag
@@ -1389,51 +1248,6 @@ sub template {
 
 }
 
-=item B<translate_hdr>
-
-Translates an ORAC-DR specific header (such as ORAC_TIME)
-to the equivalent FITS header(s).
-
-  %fits = $Frm->translate_hdr( "ORAC_TIME" );
-
-In some cases a single ORAC-DR header can be decomposed into 
-multiple FITS headers (for example for SCUBA, ORAC_TIME is
-a combination of the UTDATE and UTSTART). The hash returned
-by translate_hdr() will include all the key/value pairs required
-to generate the ORAC header.
-
-This method will be called automatically to update hdr() values
-ORAC_ keywords are updated via uhdr().
-
-Returns an empty list if no translation is available.
-
-=cut
-
-sub translate_hdr {
-  my $self = shift;
-  my $key = shift;
-  return () unless defined $key;
-
-  # Remove leading ORAC_
-  $key =~ s/^ORAC_//;
-
-  # Each translation is performed by an individual method
-  # This adds a overhead for method lookups but hopefully
-  # will lend itself to subclassing
-  # The translate_hdr() method itself will then not need to be 
-  # subclassed at all
-  my $method = "_from_$key";
-  # print "trying method translate $method\n";
-  if ($self->can($method)) {
-    return $self->$method();
-
-  } else {
-    return ();
-  }
-}
-
-# Private method for removing file extensions from the filename strings
-
 =back
 
 =head1 PRIVATE METHODS
@@ -1450,25 +1264,6 @@ aware of them.
 
 =over 4
 
-=item B<stripfname>
-
-Method to strip file extensions from the filename string. This method
-is called by the file() method. For the base class this method
-does nothing. It is intended for derived classes (e.g. so that ".sdf"
-can be removed). 
-
-=cut
-
-
-sub stripfname {
-
-  my $self = shift;
-
-  my $name = shift;
-
-  return $name;
-
-}
 
 =item B<_split_fname>
 
@@ -1522,78 +1317,6 @@ sub _join_fname {
   return $file;
 }
 
-=item B<_from_*>
-
-Methods to translate ORAC_ private headers to FITS headers
-required by the instrument. This is the reverse of C<_to_*> called
-from C<calc_orac_headers>.
-
-These methods should only be called by C<translate_hdr>
-
-Returns a hash containing the FITS key(s) and value(s).
-
-   %fits = $Frm->_from_AIRMASS_START();
-
-The method name does not include the ORAC_ prefix.
-
-=item B<_to_*>
-
-Methods to translate standard FITS headers to ORAC_ headers.
-These methods should be called just from C<orac_calc_headers>.
-
-Returns the translated value.
-
-  $val = $Frm->_to_AIRMASS_START();
-
-The method name does not include the ORAC_ prefix.
-
-=cut
-
-# Generate the methods automatically from a lookup table
-
-# This method generates all the internal methods
-# Expects a hash ref as argument and simply does a name
-# translation without any data processing
-# The hash is keyed by the ORAC_ name (without the ORAC_ prefix
-# (although that will be removed if it appears)
-# This is a class method (no object required)
-sub _generate_orac_lookup_methods {
-  my $class = shift;
-  my $lut = shift;
-
-  # Have to go into a different package
-  my $p = "{\n package $class;\n";
-  my $ep = "\n}"; # close the scope
-
-  # Loop over the keys to the hash
-  for my $key (keys %$lut) {
-
-    # Get the original FITS header name
-    my $fhdr = $lut->{$key};
-
-    # Remove leading ORAC_ if it is there since the method
-    # should not include it
-    $key =~ s/^ORAC_//;
-
-    # prepend ORAC_ for the actual key name
-    my $ohdr = "ORAC_$key";
-
-    # print "Processing $key and $ohdr and $fhdr\n";
-
-    # First generate the code to generate ORAC_ headers
-    my $subname = "_to_$key";
-    my $sub = qq/ $p sub $subname { \$_[0]->hdr(\"$fhdr\"); } $ep /;
-    eval "$sub";
-
-    # Now the from 
-    $subname = "_from_$key";
-    $sub = qq/ $p sub $subname { (\"$fhdr\", \$_[0]->uhdr(\"$ohdr\")); } $ep/;
-    eval "$sub";
-
-  }
-
-}
-
 =back
 
 =head1 SEE ALSO
@@ -1611,7 +1334,7 @@ Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 

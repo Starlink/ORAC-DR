@@ -28,9 +28,12 @@ sub-class.
 
 use 5.006;
 use ORAC::Frame;
+use ORAC::Error qw/ :try /;
 
-# Inherit from ORAC::Group
-use base qw/ORAC::Frame/;
+# Inherit from ORAC::Frame
+# BaseNDF is ahead of ORAC::Frame because we need to use readhdr
+# from the NDF base rather than the file Base.
+use base qw/ORAC::BaseNDF ORAC::Frame /;
 
 use warnings;
 use strict;
@@ -40,9 +43,6 @@ use ORAC::Constants qw/:status/;
 use vars qw/$VERSION/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
-
-# We need to read NDF files
-use NDF 1.43;
 
 =head1 PUBLIC METHODS
 
@@ -123,105 +123,11 @@ sub file_exists {
   }
 }
 
-=item B<readhdr>
-
-Reads the header from the observation file (the filename is stored in
-the object).  This method sets the header in the object (in general
-that is done by configure() ).
-
-    $Frm->readhdr;
-
-The filename can be supplied if the one stored in the object
-is not required:
-
-    $Frm->readhdr($file);
-
-but the header in $Frm is over-written.
-All exisiting header information is lost. The calc_orac_headers()
-method is invoked once the header information is read.
-If there is an error during the read a reference to an empty hash is 
-returned.
-
-Currently this method assumes that the reduced group is stored in
-NDF format. Only the FITS header is retrieved from the NDF.
-
-There are no return arguments.
-
-=cut
-
-sub readhdr {
-  
-  my $self = shift;
-
-   my ($ref, $status);
-  
-  if (@_) {
-    
-    ($ref, $status) = fits_read_header(shift);
-    
-  } else {
-    
-    # Just read the NDF fits header
-    ($ref, $status) = fits_read_header($self->file);
-    
-  }
-
-  # Return an empty hash if bad status
-  $ref = {} if ($status != &NDF::SAI__OK);
-
-  # Update the contents
-  %{$self->hdr} = %$ref;
-
-  # calc derived headers
-  $self->calc_orac_headers;
-
-  return;
-}
-
-
-
 =back
-
-=head1 PRIVATE METHODS
-
-The following methods are intended for use inside the module.
-They are included here so that authors of derived classes are 
-aware of them.
-
-=over 4
-
-=item B<stripfname>
-
-Method to strip file extensions from the filename string. This method
-is called by the file() method. For UKIRT we strip all extensions of the
-form ".sdf", ".sdf.gz" and ".sdf.Z" since Starlink tasks do not require
-the extension when accessing the file name.
-
-=cut
-
-sub stripfname {
-
-  my $self = shift;
-
-  my $name = shift;
-
-  # Strip everything after the first dot (or .gz as well)
-  $name =~ s/\.(sdf)(\.gz|\.Z)?$//
-    if defined $name;
-
-  return $name;
-}
-
-
-=back
-
-=head1 REQUIREMENTS
-
-Currently this module requires the L<NDF> module.
 
 =head1 SEE ALSO
 
-L<ORAC::Group>
+L<ORAC::Frame>, L<ORAC::BaseNDF>
 
 =head1 REVISION
 
@@ -229,14 +135,13 @@ $Id$
 
 =head1 AUTHORS
 
-Tim Jenness (t.jenness@jach.hawaii.edu)
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
 
- 
 1;

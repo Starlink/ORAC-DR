@@ -45,6 +45,7 @@ use ORAC::Print;          # Print statements
 use ORAC::Index::Extern;  # For bad observation index list
 use ORAC::Constants;
 use ORAC::General;
+use base qw/ ORAC::BaseFile /;
 
 # Setup the object structure
 
@@ -486,65 +487,6 @@ sub fixedpart {
 }
 
 
-
-=item B<hdr>
-
-This method allows specific entries in the header to be accessed.  In
-general, this header is related to the actual header information
-stored in the Group file. The input argument should correspond to the
-keyword in the header hash.
-
-  $tel = $Grp->hdr("TELESCOP");
-  $instrument = $Grp->hdr("INSTRUME");
-
-Can also be used to set values in the header.
-A hash can be used to set multiple values (but does not overwrite
-other keys).
-
-  $Grp->hdr("INSTRUME" => "IRCAM");
-  $Grp->hdr("INSTRUME" => "SCUBA", 
-            "TELESCOP" => 'JCMT');
-
-If no arguments are provided, the reference to the header hash
-is returned.
-
-  $Grp->hdr->{INSTRUME} = 'SCUBA';
-
-The header can be populated from the file by using the readhdr()
-method.
-
-=cut
-
-
-sub hdr {
-  my $self = shift;
-
-  # If we have one argument we should read it and return the associated
-  # value. If we have more than one argument will assume a hash has
-  # been supplied and append it to the existing values.
-  if (@_) {
-    if (scalar(@_) == 1) {
-      my $key = shift;
-      return $self->{Header}->{$key};
-    } else {
-
-      # Assume we are setting keys, append to the existing
-      # hash. Can either do this by merging the two hashes
-      # (inefficient since we have to take an entire copy
-      # of the existing hash) or by looping through the supplied
-      # keys and changing them one by one. The former is more 
-      # efficient for large lists, the latter when only supplying
-      # a few arguments. For programming simplicity will take
-      # the former approach
-
-      %{ $self->{Header} } = ( %{ $self->{Header} }, @_ );
-    }
-  } else {
-    # No arguments, return the header hash reference
-    return $self->{Header};
-  }
-}
-
 =item B<members>
 
 Retrieve the array containing the valid objects within the group
@@ -617,62 +559,6 @@ sub raw {
   if (@_) { $self->{RawName} = shift; }
   return $self->{RawName};
 }
-
-
-=item B<uhdr>
-
-This method allows specific entries in the user-defined header to be 
-accessed. The input argument should correspond to the keyword in the header
-hash.
-
-  $tel = $Grp->uhdr("Telescope");
-  $instrument = $Grp->uhdr("Instrument");
-
-Can also be used to set values in the header.
-A hash can be used to set multiple values (but does not overwrite
-other keys).
-
-  $Grp->uhdr("Instrument" => "IRCAM");
-  $Grp->uhdr("Instrument" => "SCUBA", 
-             "Telescope" => 'JCMT');
-
-If no arguments are provided, the reference to the header hash
-is returned.
-
-  $Grp->uhdr->{Instrument} = 'SCUBA';
-
-=cut
-
-
-sub uhdr {
-  my $self = shift;
-
-  # If we have one argument we should read it and return the associated
-  # value. If we have more than one argument will assume a hash has
-  # been supplied and append it to the existing values.
-  if (@_) {
-    if (scalar(@_) == 1) {
-      my $key = shift;
-      return $self->{UHeader}->{$key};
-    } else {
-
-      # Assume we are setting keys, append to the existing
-      # hash. Can either do this by merging the two hashes
-      # (inefficient since we have to take an entire copy
-      # of the existing hash) or by looping through the supplied
-      # keys and changing them one by one. The former is more 
-      # efficient for large lists, the latter when only supplying
-      # a few arguments. For programming simplicity will take
-      # the former approach
-
-      %{ $self->{UHeader} } = ( %{ $self->{UHeader} }, @_ );
-    }
-  } else {
-    # No arguments, return the header hash reference
-    return $self->{UHeader};
-  }
-}
-
 
 =back
 
@@ -1315,24 +1201,6 @@ sub push {
   }
 }
 
-=item B<readhdr>
-
-A method that is used to read header information from the group
-file. This method does nothing by default since the base
-class does not know the format of the file associated with an
-object.
-
-The calc_orac_headers() method is called automatically.
-
-=cut
-
-
-sub readhdr {
-  my $self = shift;
-  $self->calc_orac_headers;
-  return;
-}
-
 =item B<template>
 
 Method to change all the current filenames in the group so that they
@@ -1386,7 +1254,7 @@ sub updateout {
 
   # Read the file number if supplied
   my $num = (scalar(@_) ? shift : 1);
-  
+
   # Now loop over the members
   foreach my $member ($self->members) {
 
@@ -1471,87 +1339,6 @@ sub nfiles {
   return 1;
 }
 
-
-=item B<translate_hdr>
-
-Translates an ORAC-DR specific header (such as ORAC_TIME)
-to the equivalent FITS header(s).
-
-  %fits = $Grp->translate_hdr( "ORAC_TIME" );
-
-In some cases a single ORAC-DR header can be decomposed into 
-multiple FITS headers (for example for SCUBA, ORAC_TIME is
-a combination of the UTDATE and UTSTART). The hash returned
-by translate_hdr() will include all the key/value pairs required
-to generate the ORAC header.
-
-This method will be called automatically to update hdr() values
-ORAC_ keywords are updated via uhdr().
-
-Returns an empty list if no translation is available.
-
-=cut
-
-sub translate_hdr {
-  my $self = shift;
-  my $key = shift;
-  return () unless defined $key;
-
-  # Remove leading ORAC_
-  $key =~ s/^ORAC_//;
-
-  # Each translation is performed by an individual method
-  # This adds a overhead for method lookups but hopefully
-  # will lend itself to subclassing
-  # The translate_hdr() method itself will then not need to be 
-  # subclassed at all
-  my $method = "_from_$key";
-  # print "trying method translate $method\n";
-  if ($self->can($method)) {
-    return $self->$method();
-
-  } else {
-    return ();
-  }
-}
-
-
-
-=back
-
-=head1 PRIVATE METHODS
-
-The following methods are intended for use inside the module.
-They are included here so that authors of derived classes are 
-aware of them.
-
-=cut
-
-# Private method for removing file extensions from the filename strings
-# In the base class this does nothing. It is up to the derived classes
-# To do something special with this.
-
-=over 4
-
-=item B<stripfname>
-
-Method to strip file extensions from the filename string. This method
-is called by the file() method. For the base class this method
-does nothing. It is intended for derived classes (e.g. so that ".sdf"
-can be removed). Granted that I could simply force the "file" method
-to be modified for derived classes....(which is why this method is
-private).
-
-=cut
-
-sub stripfname {
-
-  my $self = shift;
-  my $name = shift;
-  return $name;
-}
-
-
 =back
 
 =head1 SEE ALSO
@@ -1569,7 +1356,7 @@ and Frossie Economou  E<lt>frossie@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 
