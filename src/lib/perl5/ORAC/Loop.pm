@@ -599,7 +599,7 @@ sub orac_loop_file {
     # if it fails
     symlink($ENV{ORAC_DATA_IN} . "/$fname", $fname) ||
       do {
-        orac_err("Error creating symlink from ORAC_DATA_OUT to $ENV{ORAC_DATA_IN}/$fname\n");
+        orac_err("Error creating symlink from ORAC_DATA_OUT to '$ENV{ORAC_DATA_IN}/$fname'\n");
         orac_err("$!\n");
         return undef;
       };
@@ -827,6 +827,12 @@ sub link_and_read {
     # Read the filenames from the file.
     @names = <$flagfile>;
 
+    # add $ORAC_DATA_IN to path if not absolute
+    @names = map { $_ = File::Spec->catfile( $ENV{ORAC_DATA_IN}, $_ )
+		   unless File::Spec->file_name_is_absolute($_);
+		   $_;
+		 } @names;
+
     # Close the file.
     close $flagfile;
   } else {
@@ -876,7 +882,7 @@ sub link_and_read {
 
     # Remember, $file here is relative to $ORAC_DATA_IN...
     $file =~ s/\n$//;
-    orac_print "Converting $file...\n";
+    orac_print "Converting $file from $infmt to $outfmt...\n";
     my( $infile, $outfile ) = $CONVERT->convert( $file,
                                                  { IN => $infmt,
                                                    OUT => $outfmt,
@@ -937,7 +943,7 @@ sub link_and_read {
       # if it fails
       symlink($ENV{ORAC_DATA_IN} . "/$fname", $bname) ||
       do {
-        orac_err("Error creating symlink from ORAC_DATA_OUT to $ENV{ORAC_DATA_IN}/$fname\n");
+        orac_err("Error creating symlink named $bname from ORAC_DATA_OUT to '$ENV{ORAC_DATA_IN}/$fname'\n");
         orac_err("$!\n");
         return undef;
       };
