@@ -59,14 +59,13 @@ my %hdr = (
             GRATING_WAVELENGTH   => "HIERARCH.ESO.INS.GRAT.WLEN",
             SLIT_NAME            => "HIERARCH.ESO.INS.OPTI1.ID",
 #            SLIT_NAME            => "HIERARCH.ESO.INS.SLIT",
-            X_DIM                => "HIERARCH.ESO.DET.WIN.NX",
+n            X_DIM                => "HIERARCH.ESO.DET.WIN.NX",
             Y_DIM                => "HIERARCH.ESO.DET.WIN.NY",
 
 # then the general.
             AIRMASS_END          => "HIERARCH.ESO.TEL.AIRM.END",
             CHOP_ANGLE           => "HIERARCH.ESO.SEQ.CHOP.POSANGLE",
             CHOP_THROW           => "HIERARCH.ESO.SEQ.CHOP.THROW",
-            DEC_BASE             => "DEC",
             EXPOSURE_TIME        => "EXPTIME",
             NUMBER_OF_EXPOSURES  => "HIERARCH.ESO.DET.NDIT",
             NUMBER_OF_READS      => "HIERARCH.ESO.DET.NCORRS",
@@ -91,7 +90,17 @@ sub _from_AIRMASS_START {
    "HIERARCH.ESO.TEL.AIRM.START", $_[0]->uhdr( "ORAC_AIRMASS_START" );
 }
 
-# If the telescope ofset exists in arcsec, then use it.  Otherwise
+sub _to_DEC_BASE {
+   my $self = shift;
+   my $dec = 0.0;
+   if ( exists ( $self->hdr->{DEC} ) {
+      $dec = $self->hdr->{DEC};
+   }
+   $dec = defined( $dec ) ? $dec: 0.0; 
+   return $dec;
+}
+
+# If the telescope offset exists in arcsec, then use it.  Otherwise
 # convert the Cartesian offsets to equatorial offsets.
 sub _to_DEC_TELESCOPE_OFFSET {
    my $self = shift;
@@ -185,7 +194,6 @@ sub _to_RA_TELESCOPE_OFFSET {
 # place on the sky, not the motion of the telescope.
    return -1.0 * $raoffset;
 }
-
 
 # This is guesswork at present.
 sub _to_DETECTOR_READ_TYPE {
@@ -633,6 +641,7 @@ sub _to_Y_UPPER_BOUND {
    return $self->hdr->{"HIERARCH.ESO.DET.WIN.STARTY"} - 1 + $self->hdr->{"HIERARCH.ESO.DET.WIN.NY"};
 }
 
+
 # Supplementary methods for the translations
 # ------------------------------------------
 
@@ -679,7 +688,7 @@ sub rotation{
 =head1 PUBLIC METHODS
 
 The following methods are available in this class in addition to
-those available from ORAC::Frame.
+those available from B<ORAC::Frame>.
 
 =head2 Constructor
 
@@ -743,6 +752,8 @@ sub new {
 
 =head2 General Methods
 
+=over 4
+
 =item B<calc_orac_headers>
 
 This method calculates header values that are required by the
@@ -793,8 +804,6 @@ sub calc_orac_headers {
 
    return %new;
 }
-
-=over 4
 
 =back
 
