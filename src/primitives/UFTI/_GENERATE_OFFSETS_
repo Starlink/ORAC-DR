@@ -1,0 +1,77 @@
+# _GENERATE_OFFSETS_       -*- perl -*-
+#
+# Find the offsets between the frames. 
+#
+# TASK: CCDPACK - FINDOBJ, FINDOFF, REGISTER
+#
+
+# Selection
+# =========
+
+# This should only be performed on OBJECT frames.
+    if ($Frm->hdr(OBSTYPE) =~ /OBJECT/ || $Frm->hdr(OBSTYPE) =~ /SKY/) {
+
+# Can generate a mosaic when there are at least three
+# object frames.
+       if ($Grp->num >= 2 ) {
+
+# Form a list of input file names for CCDPACK tasks.  Inquire the number
+# of files to be processed.
+          @objects = $Grp->membernames;
+          $numfiles = $Grp->num + 1;
+
+# Convert list to comma-separated list.
+          $objlist = join(",", @objects);
+
+# Create text file to hold the list of input files, one per line.  This
+# is needed because expanded lists of files may make the command line too
+# long for the ADAM message system.
+          unlink ("objlist.inlist");
+          open (INLIST, ">objlist.inlist");
+          for ( $i = 0; $i < $numfiles; $i++ ) {
+             print INLIST @objects[$i],"\n";
+          }
+          close (INLIST);
+
+# Find objects
+# ============
+
+# Specify the other parameters for the FINDOBJ stage.
+          $header = "in='^objlist.inlist' outlist=\'*.find\'";
+
+# Locate and centroid the objects above a threshold (96 percentile)
+# in all the flat-fielded object frames.  Write their co-ordinates and
+# peak values into .find text files.
+          $ORAC_STATUS = $Mon{'ccdpack_reg'}->control('par_reset');
+          $Mon{"ccdpack_reg"}->obeyw("findobj","$header minpix=6 accept");
+
+# Derive offsets
+# ==============
+
+# Specify the other parameters for the FINDOFF stage.
+          $header = "inlist='^objlist.inlist' outlist=\'*.off\'";
+          $hidden = "error=1"; 
+
+# Pattern match using the co-ordinate lists.  It uses a fast algorithm
+# first, but resorts to a slower one, if patterns aren't matched.
+# Store the offsets in .off text files.
+          $Mon{"ccdpack_reg"}->obeyw("findoff","$header $hidden accept");
+
+# Register
+# ========
+
+# Specify the other parameters for the REGISTER stage.
+          $header = "inlist='^objlist.inlist'";
+          $hidden = "fittype=1"; 
+
+# Register the frames using a shift of origin.  Create the CCDPACK
+# TRANSFORM extensions.
+          $ORAC_STATUS = $Mon{'ccdpack_reg'}->control('par_reset');
+          $Mon{"ccdpack_reg"}->obeyw("register","$header $hidden accept");
+          unlink ("objlist.inlist");
+
+# Report processing status.
+          orac_print "Orac says: frames $objlist registered\n";
+
+       };
+    };
