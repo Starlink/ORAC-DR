@@ -114,14 +114,16 @@ sub _from_NSCAN_POSITIONS {
 sub _to_ROTATION {
   my $self = shift;
   my $rotation;
-  if ( exists $self->hdr->{PC1_1} ) {
+  if ( exists( $self->hdr->{PC1_1} ) && exists( $self->hdr->{PC2_1}) ) {
     my $pc11;
     my $pc21;
-    if ( exists $self->hdr->{PC3_2} ) {
+    if ( exists ($self->hdr->{PC3_2} ) && exists( $self->hdr->{PC2_2} ) ) {
+
       # We're in spectroscopy mode.
       $pc11 = $self->hdr->{PC3_2};
       $pc21 = $self->hdr->{PC2_2};
     } else {
+
       # We're in imaging mode.
       $pc11 = $self->hdr->{PC1_1};
       $pc21 = $self->hdr->{PC2_1};
@@ -467,11 +469,12 @@ $Id$
 
 Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>,
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
-Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>,
+Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 
