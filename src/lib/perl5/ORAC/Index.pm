@@ -25,6 +25,7 @@ use 5.006;
 use Carp;
 use strict;
 use warnings;
+use warnings::register;
 use vars qw/$VERSION/;
 use ORAC::Print;
 
@@ -33,6 +34,7 @@ use POSIX qw/tmpnam/;  # For unique keys
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
+use constant NO_RULES => '__NO_RULES__';
 
 
 =head1 PUBLIC METHODS
@@ -65,6 +67,7 @@ sub new {
 	       IndexFileHandle => undef,
 	       IndexRules => {},
 	       IndexRulesFile => undef,
+	       RulesOK => 0,
 	      };
 
   bless($index, $class);
@@ -91,8 +94,9 @@ Takes an index file and a rules file and sets up the index object
 sub configure {
   my $self = shift;
   my ($file,$rules) = @_;
-  $self->indexfile($file);
+  # make sure rules files are read before we read the contents
   $self->indexrulesfile($rules);
+  $self->indexfile($file);
 };
 
 
@@ -115,19 +119,48 @@ sub indexfile {
   return $self->{IndexFile};
 };
 
+=item B<rulesok>
+
+Returns true if we are using a valid set of rules, false
+if the rules were automatically generated from a read of the
+index file (and therefore contain no clauses for verification).
+
+=cut
+
+sub rulesok {
+  my $self = shift;
+  if (@_) {
+    $self->{RulesOK} = shift;
+  }
+  return $self->{RulesOK};
+}
+
 
 =item B<indexrulesfile>
 
 Return (or set) the filename of the rules file
+
+If the rules file has the magic value of ORAC::Index::NO_RULES a lightweight
+version of the object will be instantiated that does not do any
+explicit rules checking. This only works if an index file is being
+read (since the rules column names will be read from the index file),
+rather than being freshly created (there will be no columns in the
+output file!).
 
 =cut
 
 sub indexrulesfile {
   my $self = shift;
   if (@_) {
-    $self->{IndexRulesFile} = shift;
-    $self->slurprules;
-  };
+    my $rfile = shift;
+    if ($rfile ne NO_RULES) {
+      $self->{IndexRulesFile} = $rfile;
+      $self->slurprules;
+      $self->rulesok(1);
+    } else {
+      $self->rulesok(0);
+    }
+  }
   return $self->{IndexRulesFile};
 };
 
@@ -167,6 +200,22 @@ sub indexref {
 
   return $self->{IndexEntries};
 }
+
+=item B<indexkeys>
+
+Return all the keys associated with the index file (ie from C<indexref>
+method. These can then be used in conjunction with C<indexentry> to obtain
+the content of the index.
+
+ @keys = $index->indexkeys;
+
+=cut
+
+sub indexkeys {
+  my $self = shift;
+  return keys %{ $self->indexref };
+}
+
 
 =back
 
@@ -252,6 +301,25 @@ sub slurpindex {
   my $handle = new IO::File "< $file";
 
   if (defined $handle) {
+
+    # if rules are not OK we need to read the first line of the
+    # index file in order to generate a set of dummy rules
+    # (so that we can allow simple look ups of index entries)
+    if (!$self->rulesok) {
+      # get first line
+      my $line = <$handle>;
+      chomp($line);
+
+      # strip off leading #
+      $line =~ s/^\#//;
+
+      # Create pseudo-rules by splitting on space
+      my %rules = map { $_, '' } split(/\s+/,$line);
+
+      # store pseudo rules
+      $self->rulesref( \%rules );
+    }
+
 
     foreach my $line (<$handle>) {
 
@@ -357,6 +425,11 @@ sub add {
   my ($name,$hashref) = @_;
 
   croak("Argument is not a hash") unless ref($hashref) eq "HASH";
+
+  # warn if we have empty rules (rulesok state does not matter in this
+  # case since if we have any rules they will be fine for write)
+  warnings::warnif("No rules specified. Entry will look a bit strange")
+    unless keys %{$self->rulesref};
 
   my @entry = ();
   foreach my $key (sort keys %{$self->rulesref}) {
@@ -594,6 +667,8 @@ sub verify {
   } else {
     @calibdata = @{ $self->indexref->{$name} };
   }
+
+  warnings::warnif("Rules are not valid so this verification step will return erroneous matches") unless $self->rulesok;
 
   # take local copy the rules
   my %rules = %{$self->rulesref};
@@ -876,6 +951,37 @@ sub cmp_with_hash {
 
   # If we get this far we have no match
   return undef;
+}
+
+=item B<scanindex>
+
+Scan the index file for entries that match the supplied constraints.
+Only string equality constraints are supported. For more complex scans,
+consider using the rules system directly.
+
+  @entries = $index->scanindex( UNITS => 'ARCSEC', FILTER => '850W' );
+
+The return entries are not sorted into any particular order.
+
+=cut
+
+sub scanindex {
+  my $self = shift;
+  my %filter = @_;
+
+  # Loop over hash keys in index (random order)
+  my @match;
+  OUTER: for my $key ($self->indexkeys) {
+      my $entry = $self->indexentry($key);
+
+      for my $f (keys %filter) {
+	next OUTER unless $entry->{$f} eq $filter{$f};
+      }
+      push(@match, $entry);
+
+    }
+
+  return @match;
 }
 
 
