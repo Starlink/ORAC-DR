@@ -21,7 +21,7 @@ observation files (frames).
 
 =cut
 
-
+use 5.006;
 use strict;
 use warnings;
 use Carp;
@@ -109,6 +109,11 @@ The base class constructor should be invoked by sub-class constructors.
 If this method is called with the last argument as a reference to
 a hash it is assumed that this hash contains extra configuration
 information ('instance' information) supplied by sub-classes.
+
+Note that the file format expected by this constructor is actually the
+required format of the data (as returned by C<format()> method) and not
+necessarily the raw format.  ORAC-DR will pre-process the data with
+C<ORAC::Convert> prior to passing it to this constructor.
 
 =cut
 
@@ -609,7 +614,7 @@ sub rawfixedpart {
 =item B<rawformat>
 
 Data format associated with the raw() data file.
-Usually one of 'NDF' or 'FITS'. This format should be
+Usually one of 'NDF', 'HDS' or 'FITS'. This format should be
 recognisable by C<ORAC::Convert>.
 
 =cut

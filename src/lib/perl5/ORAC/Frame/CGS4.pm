@@ -108,7 +108,7 @@ those available from ORAC::Frame::UKIRT.
 
 =item B<new>
 
-Create a new instance of a ORAC::Frame::UKIRT object.
+Create a new instance of a ORAC::Frame::CGS4 object.
 This method also takes optional arguments:
 if 1 argument is  supplied it is assumed to be the name
 of the raw file associated with the observation. If 2 arguments

@@ -52,7 +52,7 @@ those available from B<ORAC::Frame::UKIRT>.
 
 =item B<new>
 
-Create a new instance of a B<ORAC::Frame::UFTI> object.
+Create a new instance of a B<ORAC::Frame::UFTI2> object.
 This method also takes optional arguments:
 if 1 argument is  supplied it is assumed to be the name
 of the raw file associated with the observation. If 2 arguments
@@ -66,7 +66,7 @@ The object identifier is returned.
    $Frm = new ORAC::Frame::UFTI("file_name");
    $Frm = new ORAC::Frame::UFTI("UT","number");
 
-The constructor hard-wires the '.fits' rawsuffix and the
+The constructor hard-wires the '.sdf' rawsuffix and the
 'f' prefix although these can be overriden with the 
 rawsuffix() and rawfixedpart() methods.
 
