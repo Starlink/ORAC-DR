@@ -53,10 +53,6 @@ my %hdr = (
             RA_SCALE             => "CDELT2",
 
 # then the spectroscopy...
-            CONFIGURATION_INDEX  => "HIERARCH.ESO.INS.GRAT.ENC",
-            GRATING_NAME         => "HIERARCH.ESO.INS.GRAT.NAME",
-            GRATING_ORDER        => "HIERARCH.ESO.INS.GRAT.ORDER",
-            GRATING_WAVELENGTH   => "HIERARCH.ESO.INS.GRAT.WLEN",
             SLIT_NAME            => "HIERARCH.ESO.INS.OPTI1.ID",
             X_DIM                => "HIERARCH.ESO.DET.WIN.NX",
             Y_DIM                => "HIERARCH.ESO.DET.WIN.NY",
@@ -103,6 +99,15 @@ sub _to_AIRMASS_START {
 
 sub _from_AIRMASS_START {
    "HIERARCH.ESO.TEL.AIRM.START", $_[0]->uhdr( "ORAC_AIRMASS_START" );
+}
+
+sub _to_CONFIGURATION_INDEX {
+    my $self = shift;
+    my $instindex = 0;
+    if ( exists $self->hdr->{"HIERARCH.ESO.INS.GRAT.ENC"} ) {
+       $instindex = $self->hdr->{"HIERARCH.ESO.INS.GRAT.ENC"};
+    }
+    return $instindex;
 }
 
 sub _to_DEC_BASE {
@@ -152,6 +157,33 @@ sub _to_EQUINOX {
       $equinox = $self->hdr->{EQUINOX};
    }
    return $equinox;
+}
+
+sub _to_GRATING_NAME{
+   my $self = shift;
+   my $name = "UNKNOWN";
+   if ( exists $self->hdr->{"HIERARCH.ESO.INS.GRAT.NAME"} ) {
+      $name = $self->hdr->{"HIERARCH.ESO.INS.GRAT.NAME"};
+   }
+   return $name;
+}
+
+sub _to_GRATING_ORDER{
+   my $self = shift;
+   my $order = 1;
+   if ( exists $self->hdr->{"HIERARCH.ESO.INS.GRAT.ORDER"} ) {
+      $order = $self->hdr->{"HIERARCH.ESO.INS.GRAT.ORDER"};
+   }
+   return $order;
+}
+
+sub _to_GRATING_WAVELENGTH{
+   my $self = shift;
+   my $wavelength = 0;
+   if ( exists $self->hdr->{"HIERARCH.ESO.INS.GRAT.WLEN"} ) {
+      $wavelength = $self->hdr->{"HIERARCH.ESO.INS.GRAT.WLEN"};
+   }
+   return $wavelength;
 }
 
 # Sampling is always 1x1, and therefore there are no headers with
@@ -508,6 +540,55 @@ sub calc_orac_headers {
    $new{'ORACUT'} = $ut;
 
    return %new;
+}
+
+# Supply a method to return the number associated with the observation
+
+=item B<number>
+
+Method to return the number of the observation. The number is
+determined by looking for a number at the end of the raw data
+filename.  For example a number can be extracted from strings of the
+form textNNNN.sdf or textNNNN, where NNNN is a number (leading zeroes
+are stripped) but not textNNNNtext (number must be followed by a decimal
+point or nothing at all).
+
+  $number = $Frm->number;
+
+The return value is -1 if no number can be determined.
+
+As an aside, an alternative approach for this method (especially
+in a sub-class) would be to read the number from the header.
+
+=cut
+
+
+sub number {
+
+  my $self = shift;
+
+  my ($number);
+
+  # Get the number from the raw data
+  # Assume there is a number at the end of the string
+  # (since the extension has already been removed)
+  # Leading zeroes are dropped
+
+  my $raw = $self->raw;
+  if ( defined $raw && ref( $raw ) eq "ARRAY" ) {
+     my @raws = @{$raw};
+     $raw = $raws[ 0 ];
+  }
+  if (defined $raw && $raw =~ /(\d+)(\.\w+)?$/) {
+    # Drop leading 00
+    $number = $1 * 1;
+  } else {
+    # No match so set to -1
+    $number = -1;
+  }
+
+  return $number;
+
 }
 
 =over 4
