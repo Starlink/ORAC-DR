@@ -76,68 +76,35 @@ sub new {
 
 =over 4
 
-=item B<mask>
+=item B<maskname>
 
-Return (or set) the name of the bad pixel mask
+Return (or set) the name of the current bad pixel mask
 
-  $mask = $Cal->mask;
+  $mask = $Cal->maskname;
 
-For CGS4 this is set to C<$ORAC_DATA_CAL/fpa46_long> by default
+The C<mask()> method should be used if a test for suitability of the
+mask is required.
 
 =cut
 
 
 sub maskname {
   my $self = shift;
-  if (@_) { $self->{Mask} = shift; }
-
-#  unless (defined $self->{Mask}) {
-#    $self->{Mask} = $ENV{ORAC_DATA_CAL}."/fpa46_long";
-#  };
-
+  if (@_) { $self->{Mask} = shift unless $self->masknoupdate; }
   return $self->{Mask}; 
 };
 
-sub mask {
 
-my $self = shift;
+=item B<maskindex>
 
-if (@_) {
-  return $self->maskname(shift);
-  };
+Return or set the index object associated with the bad pixel mask.
 
-my $ok = $self->maskindex->verify($self->maskname,$self->thing);
+  $index = $Cal->maskindex;
 
-if ($ok) {
+An index object is created automatically the first time this method
+is run.
 
-  return $self->maskname
-
-  } else {
-
-  return  $ENV{ORAC_DATA_CAL}."/fpa46_long";
-
-}
-
-
-
-;
-
-croak ("Override mask is not suitable! Giving up") if $self->masknoupdate;
-
-if (defined $ok) {
-
-  my $mask = $self->maskindex->choosebydt('ORACTIME',$self->thing);
-  croak "No suitable bad pixel mask was found in index file"
-     unless defined $mask;
-  $self->maskname($mask);
-  } else {
-    croak("Error in bad pixel masking - giving up");
-
-  };
-
-
-}
-
+=cut
 
 sub maskindex {
 
@@ -152,6 +119,13 @@ sub maskindex {
   return $self->{MaskIndex};
 
 };
+
+=item B<masknoupdate>
+
+Stops object from updating itself with more recent data.
+Used when overrding the mask file from the command-line.
+
+=cut
 
 sub masknoupdate {
 
@@ -210,6 +184,66 @@ sub rowindex {
 =head2 General Methods
 
 =over 4
+
+=item B<mask>
+
+Return (or set) the name of the current mask. If a mask is to be returned 
+every effrort is made to guarantee that the mask is suitable for use.
+
+  $mask = $Cal->mask;
+  $Cal->mask($newmask);
+
+If no suitable mask can be found from the index file (or the currently
+set mask is not suitable), C<$ORAC_DATA_CAL/fpa46_long> is returned by
+default (so long as the file does exist). Note that a test for
+suitability can not be performed since there is no corresponding index
+entry for this default mask.
+
+=cut
+
+
+sub mask {
+
+  my $self = shift;
+
+  if (@_) {
+    return $self->maskname(shift);
+  };
+
+  my $ok = $self->maskindex->verify($self->maskname,$self->thing);
+
+  # happy ending
+  return $self->maskname if $ok;
+
+  croak ("Override mask is not suitable! Giving up") if $self->masknoupdate;
+
+  if (defined $ok) {
+
+    my $mask = $self->maskindex->choosebydt('ORACTIME',$self->thing);
+
+    unless (defined $mask) {
+
+      # Nothing suitable, default to fallback position
+      # Check that exists and be careful not to set this as the
+      # maskname() value since it has no corresponding index enrty
+      my $defmask = $ENV{ORAC_DATA_CAL} . "/fpa46_long";
+      return $defmask if -e $defmask . ".sdf";
+      
+      # give up...
+      croak "No suitable bad pixel mask was found in index file"
+    }
+
+    # Store the good value
+    $self->maskname($mask);
+
+  } else {
+
+    # All fall down....
+    croak("Error in determining bad pixel mask - giving up");
+  }
+
+}
+
 
 =item B<rows>
 
