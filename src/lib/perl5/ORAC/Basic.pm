@@ -13,7 +13,6 @@ use vars qw($VERSION @ISA @EXPORT);
 use Starlink::NBS;
 require Exporter;
 use File::Path;
-use Starlink::ADAMTASK;
 use Term::ANSIColor;
 use File::Copy;
 
@@ -231,7 +230,7 @@ sub orac_check_obey_status {
   $line =~ /obeyw\{(\w)\}/ && ($monolith = $1);
 
 
-  my @statuslines = ('  if ($OBEYW_STATUS != $ORAC_ACT_COMPLETE) {' ,
+  my @statuslines = ('  if ($OBEYW_STATUS != $ORAC__OK) {' ,
                   '   print colored ("Error in obeyw to monolith $monolith: $OBEYW_STATUS\n","red"); ' ,
 		  '   return $OBEYW_STATUS; ' ,
 		  ' } ');
@@ -263,9 +262,7 @@ sub orac_exit_normally {
 sub orac_exit_abnormally {
 
 my $signal = shift;
-$Starlink::ADAMTASK::message_hide = 1; # turn off messages
 
-adamtask_exit;                        # Shut down the messaging system
 rmtree $ENV{'ADAM_USER'};             # delete process-specific adam dir
 &orac_kill_display;		# Destroy display
 die;
@@ -277,6 +274,12 @@ die;
 1;
 
 #$Log$
+#Revision 1.10  1998/04/14 21:08:28  frossie
+#Change ORAC_ACT_COMPLETE to ORAC_OK for consistency (ADAM module now
+#returns 0 for good status under all circumstances)
+#
+#Remove dependancy on specific messaging system
+#
 #Revision 1.9  1998/04/10 00:27:09  timj
 #Include ORAC::General
 #
