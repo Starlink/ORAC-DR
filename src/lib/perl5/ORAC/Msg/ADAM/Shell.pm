@@ -240,6 +240,23 @@ sub obeyw {
   my ($mondir, $junk) = $self->cwd;
   chdir($mondir) || croak "Error changing directory to $mondir";
 
+  # The Args must be modified so that quotes are escaped
+  # before they go to the shell
+  # Same problem with commas and brackets.
+
+  $args =~ s/\[/\\\[/g;
+  $args =~ s/\]/\\\]/g;
+  $args =~ s/\)/\\\)/g;
+  $args =~ s/\(/\\\(/g;
+
+  # Now try to replace single quotes with a "' '" combination
+  # Assume only one set of quotes for now
+  #$args =~ s/\'/\"\'/;
+  #$args =~ s/\'/\'\"/;
+
+
+  # print "COMMAND WAS: $command $args\n";
+
   my $exstat = system("$command $args");
 
   # Now change directory back again
@@ -379,7 +396,6 @@ sub contact {
 
   my $command = $self->path . "/" . $self->mon;
 
-  print "Command in $command\n";
   # Check that we can actually execute the command
   return 0 unless (-x $command);
 
