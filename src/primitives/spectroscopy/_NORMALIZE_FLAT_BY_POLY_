@@ -1,0 +1,135 @@
+# _NORMALIZE_FLAT_BY_POLY_			-*-perl-*-
+
+=head1 NAME
+
+NORMALIZE_FLAT_BY_POLY - normalizes a 2-D image by using a fitted polynomial
+
+=head1 DESCRIPTION
+
+Normalizes a 2D image (usually a flat-field) and removes any large-scale changes
+with wavelength by applying the following procedure:
+
+1. The 2-D image is collapsed in Y to an average 1-D spectrum.
+
+2. A polynomial is fit to the 1-D spectrum, and a new spectrum is created with this polynomial.
+
+3. The polynomial spectrum is grown in Y to an image with dimensions matching
+the original image.
+
+4. The original image is divided by the polynomial image.
+
+=head1 PARAMETERS
+
+=over 4
+
+=item ORDER
+
+Defines the order of the fitted polynomial.  Defaults to 5.
+
+=back
+
+=head1 ORAC
+
+=head2 Engines referenced
+
+KAPPA, FIGARO
+
+=head2 Tasks called
+
+=over 4
+
+=item kappa_mon
+
+div
+
+=item figaro1
+
+growx, sfit
+
+=item figaro4
+
+xtract
+
+=back
+
+=head2 Objects addressed
+
+$Frm
+
+=head2 REVISION
+
+  $Id$
+
+=head1 AUTHOR
+
+b.cavanagh@jach.hawaii.edu
+
+=cut
+
+# Obtain the parameters.
+    my $order = ($_NORMALIZE_FLAT_BY_POLY_{ORDER} || 5 );
+
+# Process all the sub-files.
+    foreach my $i ( 1..$Frm->nfiles ) {
+
+# Generate the input and output filenames.
+       my ( $in, $out ) = $Frm->inout( "_nf", $i );
+  
+# Get the dimensions of the input image.
+       my $xdim = $Frm->uhdr( "ORAC_DIM1" );
+       my $ydim = $Frm->uhdr( "ORAC_DIM2" );
+
+# Cope with the missing headers by accessing the array dimensions of
+# the frame.
+       my $param = "ndf=" . $Frm->file;
+       my $ORAC_STATUS;
+       $Mon{"ndfpack_mon"}->obeyw( "ndftrace", "$param" );
+       if ( !( defined $xdim && defined $ydim ) ) {
+
+# Extract the dimensions of the frame.
+          ( $ORAC_STATUS, my @dims ) = $Mon{"ndfpack_mon"}->get( "ndftrace", "dims" );
+          $xdim = $dims[ 0 ];
+          $ydim = $dims[ 1 ];
+       }
+
+# Collapse the 2-D image to a work 1-D spectrum.  Use available variance
+# information in the combination and to generate variance of the
+# 1-D array.  Task XTRACT aborts if there is no variance present
+# when VARUSE is set to true.  So first determine whether or not there
+# is a VARIANCE array.  Without the VARIANCE array, variance is
+# derived from the scatter of values along the Y axis for the given X
+# pixel.
+       ( $ORAC_STATUS, my $varpresent ) = $Mon{"ndfpack_mon"}->get( "ndftrace", "variance");
+       my $spec = new ORAC::TempFile;
+       my $specname = $spec->file;
+       $param = "out=$specname colaps=\[0,1\] info=no varuse=$varpresent";
+       $Mon{'figaro4'}->obeyw( "xtract", "in=$in $param" );
+  
+# Fit a polynomial to the 1-D spectrum and create another temporary 
+# spectrum from that polynomial.  The polynomial is fit to the log of
+# the values to mimic CGS4DR.  
+# **** Currently errors to the fit are not calculated. ****
+       my $polyspec = new ORAC::TempFile;
+       my $polyspecname = $polyspec->file;
+       $param = "output=$polyspecname order=$order logs=false";
+       $Mon{'figaro1'}->obeyw( "sfit", "spectrum=$specname $param" );
+  
+# Grow the polynomial spectrum into a 2-D image.
+       my $polyimage = new ORAC::TempFile;
+       my $polyimagename = $polyimage->file;
+       $param = "image=$polyimagename ystart=1 yend=$ydim ysize=$ydim new=true";
+       $Mon{'figaro1'}->obeyw( "growx", "spectrum=$polyspecname $param");
+  
+# Divide the flat field by the polynomial image.
+       $param = "in2=$polyimagename out=$out title=$out";
+       $Mon{'kappa_mon'}->obeyw( "div", "in1=$in $param" );
+
+# Update the Frame object for the current sub-file.
+       $Frm->file( $i, $out );
+
+# Print a congratulatory message.
+       orac_print "Orac says: $in to $out: flat normalized.\n";
+
+# Have the option to display the normalised flat. 
+       $Display->display_data( $Frm ) if ( defined $Display );
+    }
