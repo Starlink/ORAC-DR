@@ -19,8 +19,11 @@ ORAC::General - Simple perl subroutines that may be useful for primitives
 =head1 DESCRIPTION
 
 This module provides simple perl functions that are not available
-from standard perl. These are available to all ORAC primitive writers
-(although there is no reason why this has to be ORAC specific).
+from standard perl. These are available to all ORAC primitive writers,
+but they are general in nature and have no connection to orac. Some of
+these are used in the ORAC infastructure, so ORACDR does require this
+library in order to run.
+
 
 =cut
 

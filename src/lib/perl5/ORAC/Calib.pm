@@ -21,7 +21,14 @@ ORAC::Calib - base class for selecting calibration frames in ORACDR
 =head1 DESCRIPTION
 
 This module provides the basic methods available to all ORAC::Calib
-objects. This class should be used for  selecting calibration frames.
+objects. This class should be used for selecting calibration frames.
+
+Unless specified otherwise, a calibration frame is selected by first,
+the nearest reduced frame; second, explicit specification via the
+-calib command line option (handled by the pipeline); third, by search
+of the appropriate index file.
+
+Note this version: Index files not implemented
 
 =cut
 
@@ -63,7 +70,7 @@ sub new {
   my $proto = shift;
   my $class = ref($proto) || $proto;
 
-  my $obj = {};  # Anon hash
+  my $obj = {};  # Anon hash reference
 
   $obj->{Bias} = undef;
   $obj->{Dark} = undef;
@@ -83,7 +90,10 @@ sub new {
 
 =item dark
 
-Return (or set) the current dark.
+Return (or set) the name of the current dark.
+
+  $dark = $Cal->dark;
+
 
 =cut
 
@@ -95,9 +105,9 @@ sub dark {
 
 =item bias
 
-Return (or set) the current bias.
+Return (or set) the name of the current bias.
 
-  $dark = $Cal->dark;
+  $bias = $Cal->bias;
 
 =cut
 
@@ -110,7 +120,9 @@ sub bias {
 
 =item flat
 
-Return (or set) the current flat.
+Return (or set) the name of the current flat.
+
+  $flat = $Cal->flat;
 
 =cut
 
@@ -124,7 +136,9 @@ sub flat {
 
 =item arc
 
-Return (or set) the current arc.
+Return (or set) the name of the current arc.
+
+  $arc = $Cal->arc;
 
 =cut
 
@@ -136,7 +150,9 @@ sub arc {
 
 =item standard
 
-Return (or set) the current standard.
+Return (or set) the name of the current standard.
+
+  $standard = $Cal->standard;
 
 =cut
 
