@@ -371,6 +371,7 @@ are keyed by observing mode:
  POINTING => 'SCUBA_POINTING'
  PHOTOM => 'SCUBA_STD_PHOTOM'
  JIGMAP => 'SCUBA_JIGMAP'
+ JIGMAP (phot) => 'SCUBA_JIGPHOTMAP'
  EM2_SCAN => 'SCUBA_EM2SCAN'
  EKH_SCAN => 'SCUBA_EKHSCAN'
  POLMAP => 'SCUBA_JIGPOLMAP'
@@ -406,12 +407,19 @@ sub findrecipe {
     $recipe = 'SCUBA_ALIGN';
   } elsif ($mode eq 'FOCUS') {
     $recipe = 'SCUBA_FOCUS';
-  } elsif ($mode eq 'POLMAP') {
+  } elsif ($mode eq 'POLMAP' || $mode eq 'POLPHOT') {
     $recipe = 'SCUBA_JIGPOLMAP';
   } elsif ($mode eq 'MAP') {
     if ($self->hdr('SAM_MODE') eq 'JIGGLE') {
-      $recipe = 'SCUBA_JIGMAP';
 
+      # Check for jiggle maps with phot pixels
+      if ($self->hdr('SUB_1') =~ /P2000|P1350|P1100/) {
+	$recipe = 'SCUBA_JIGPHOTMAP';
+      } else {
+	$recipe = 'SCUBA_JIGMAP';	
+      }
+
+      # old style Polarimetry
       if ($self->hdr('OBJ_TYPE') =~ /^POL/i) {
 	$recipe = 'SCUBA_JIGPOLMAP';
       }
