@@ -368,10 +368,12 @@ sub inout {
 =item B<file_from_bits>
 
 Determine the raw data filename given the variable component
-parts. A prefix (usually UT) and observation number should
+parts. UT (YYYYMMDD) and observation number should
 be supplied.
 
   $fname = $Frm->file_from_bits($prefix, $obsnum);
+
+For Michelle the filename would be like C<M19991015_000034.sdf>
 
 =cut
 
@@ -387,7 +389,6 @@ sub file_from_bits {
   # UFTI naming
   return $self->rawfixedpart . $prefix . '_' . $padnum . $self->rawsuffix;
 }
-
 
 =item B<findrecipe>
 
@@ -416,6 +417,32 @@ sub findrecipe {
 
   return $recipe;
 }
+
+=item B<flag_from_bits>
+
+Determine the flag (.ok) filename given the variable component
+parts. UT (YYYYMMDD) and observation number should
+be supplied.
+
+  $flagname = $Frm->flag_from_bits($prefix, $obsnum);
+
+For Michelle the flag file would be like C<.M19991015_000034.ok>
+
+=cut
+
+sub flag_from_bits {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $obsnum = shift;
+
+  # pad with leading zeroes - 5(!) digit obsnum
+  my $padnum = '0'x(5-length($obsnum)) . $obsnum;
+
+  # UFTI naming
+  return '.' .$self->rawfixedpart . $prefix . '_' . $padnum . '.ok';
+}
+
 
 =back
 
