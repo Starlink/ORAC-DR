@@ -1,188 +1,32 @@
-# -*- perl -*-
-
-# _ARRAY_TESTS_
-#
-# performs array tests for CGS4
-
 =head1 NAME
 
-ARRAY_TESTS - returns the read noise and dark current for an array
+_ARRAY_TESTS_ - CGS4 array tests
 
 =head1 DESCRIPTION
 
-Returns the double correlated read noise, median dark current, and modal
-dark current for an array.
-
-=head1 PARAMETERS
-
-=over 4
-
-none
-
-=back
-
-=head1 ORAC
-
-=head2 Engines referenced
-
-KAPPA
-
-=head2 Tasks called
-
-=over 4
-
-=item kappa_mon
-
-histat, stats, sub, thresh
-
-=back
-
-=head2 Objects addressed
-
-$Frm
-
-=head2 REVISION
-
-  $Id$
+Calculates the readnoise and dark current parameters for the array.
 
 =head1 AUTHOR
 
-b.cavanagh@jach.hawaii.edu
+Paul Hirst <p.hirst@jach.hawaii.edu>
 
 =cut
 
-# Obtain the frames and their names for the current group.
-    my @names = $Grp->membernames;
-    my @frames = $Grp->members;
+_ARRAY_TESTS_STEER_
 
-# Difference the 3rd and 4th frames (NDSTARE DARKs), using a temporary NDF.
-    my $diff1 = new ORAC::TempFile;
-    my $diff1name = $diff1->file;
-    $Mon{'kappa_mon'}->obeyw( "sub", "in1=$names[2] in2=$names[3] out=$diff1name" );
+if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "BIAS") {
+   # This is a copy of REDUCE_BIAS, with a _FIND_BAD_PIXELS_ inserted
+   _REDUCE_BIAS_SPECT_
+   _FIND_BAD_PIXELS_
+   _FILE_BIAS_
+}
 
-# Threshold the difference frame (set limit to +/-50).
-    my $thresh = new ORAC::TempFile;
-    my $threshname = $thresh->file;
+if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "DARK") {
+   # This is similar to REDUCE_DARK_SPECT
+   _SUBTRACT_BIAS_
+   _INTERLEAVE_COADD_
+   _FIND_BAD_PIXELS_
+   _FILE_DARK_SPECT_
+}
 
-    my $param = "out=$threshname newlo=bad newhi=bad thrhi=50 thrlo=-50";
-    $Mon{'kappa_mon'}->obeyw( "thresh", "in=$diff1name $param");
-
-# Find the standard deviation of the thresholded difference frame.
-    $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$threshname" );
-    my $ORAC_STATUS;
-    ( $ORAC_STATUS, my $ndstaresigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
-    ( $ORAC_STATUS, my $maxposx, my $maxposy ) = $Mon{'kappa_mon'}->get( "stats", "maxpos" );
-    ( $ORAC_STATUS, my $minposx, my $minposy ) = $Mon{'kappa_mon'}->get( "stats", "minpos" );
-    ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
-    ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
-    ( $ORAC_STATUS, my $minimum ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
-    ( $ORAC_STATUS, my $maximum ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
-    ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
-
-# Format the floating-point values.
-    my $fs_mean = sprintf( "%9.3f", $mean );
-    $fs_mean =~ s/ //g;
-    my $fs_sigma = sprintf( "%9.3f", $ndstaresigma );
-    $fs_sigma =~ s/ //g;
-
-# Report the results.
-    orac_print "\nEvaluating statistics on dark3 - dark4:\n";
-    orac_print "    High = $maximum at ($maxposx, $maxposy)\n";
-    orac_print "    Low  = $minimum at ($minposx, $minposy)\n";
-    orac_print "    Number of data values = $numpix, Used $numgood\n";
-    orac_print "    Mean   = $fs_mean\n";
-    orac_print "    Sigma  = $fs_sigma\n";
-    orac_print "    Median = \n";
-    orac_print "    Mode   = \n";
-
-# Difference the 5th and 6th frames (STARE DARKs) using a temporary NDF.
-    my $diff2 = new ORAC::TempFile;
-    my $diff2name = $diff2->file;
-    $Mon{'kappa_mon'}->obeyw( "sub", "in1=$names[5] in2=$names[4] out=$diff2name" );
-
-# Determine the special args for HISTAT.  These are version dependent.
-    my $hstatargs;
-    if ( starversion_lt( 'kappa', '0.15-5' ) ) {
-       $hstatargs = ' numbin=50000';
-    } else {
-
-# KAPPA works it out itself in newer versions.
-      $hstatargs = '';
-    }
-
-# Find the median, mode and other statistics of the difference frame.
-    $Mon{'kappa_mon'}->obeyw( "histat", "ndf=$diff2name $hstatargs" );
-    ( $ORAC_STATUS, $minimum ) = $Mon{'kappa_mon'}->get( "histat","minimum" );
-    ( $ORAC_STATUS, $maximum ) = $Mon{'kappa_mon'}->get( "histat","maximum" );
-    ( $ORAC_STATUS, my $staremean ) = $Mon{'kappa_mon'}->get( "histat","mean" );
-    ( $ORAC_STATUS, my $staremedian ) = $Mon{'kappa_mon'}->get( "histat","median" );
-    ( $ORAC_STATUS, my $staremode ) = $Mon{'kappa_mon'}->get( "histat","mode" );
-    ( $ORAC_STATUS, $maxposx, $maxposy ) = $Mon{'kappa_mon'}->get( "histat","maxpos" );
-    ( $ORAC_STATUS, $minposx, $minposy ) = $Mon{'kappa_mon'}->get( "histat","minpos" );
-    ( $ORAC_STATUS, $numpix ) = $Mon{'kappa_mon'}->get( "histat","numpix" );
-    ( $ORAC_STATUS, $numgood ) = $Mon{'kappa_mon'}->get( "histat","numgood" );
-
-# Format the floating-point values.
-    $fs_mean = sprintf( "%9.3f", $staremean );
-    $fs_mean =~ s/ //g;
-    my $fs_median = sprintf( "%9.3f", $staremedian );
-    $fs_median =~ s/ //g;
-    my $fs_mode = sprintf( "%9.3f", $staremode );
-    $fs_mode =~ s/ //g;
-
-# Report the results.
-    orac_print "\nEvaluating statistics on dark6 - dark5:\n";
-    orac_print "    High = $maximum at ($maxposx, $maxposy)\n";
-    orac_print "    Low  = $minimum at ($minposx, $minposy)\n";
-    orac_print "    Number of data values = $numpix, Used $numgood\n";
-    orac_print "    Mean   = $fs_mean\n";
-    orac_print "    Sigma  = \n";
-    orac_print "    Median = $fs_median\n";
-    orac_print "    Mode   = $fs_mode\n";
-
-# Get information from the file headers.
-    my $difftime = $frames[5]->uhdr( "ORAC_EXPOSURE_TIME" ) - 
-                   $frames[4]->uhdr( "ORAC_EXPOSURE_TIME" );
-    my $adu = $frames[0]->uhdr( "ORAC_GAIN" );
-
-# Calculate statistics.
-    my $readnoise = $ndstaresigma * $adu / sqrt(2);
-    my $mediandark = $staremedian * $adu / $difftime;
-    my $modedark = $staremode * $adu / $difftime;
-
-# Format the floating-point values.
-    my $fs_noise = sprintf( "%9.3f", $readnoise );
-    $fs_noise =~ s/ //g;
-    $fs_median = sprintf( "%9.3f", $mediandark );
-    $fs_median =~ s/ //g;
-    $fs_mode = sprintf( "%9.3f", $modedark );
-    $fs_mode =~ s/ //g;
-
-# Output the results and their significance.
-    orac_print "Double correlated read noise = $fs_noise electrons ";
-    if ( $readnoise < 30.0 ) {
-       orac_print "is LOW.\n";
-    } elsif ( $readnoise > 50.0 ) {
-       orac_print "is HIGH.\n";
-    } else {
-       orac_print "is NOMINAL.\n";
-    }
-
-    orac_print "Median dark current = $fs_median electrons/second ";
-    if ( $mediandark < -0.5 ) {
-       orac_print "is LOW.\n";
-    } elsif ( $mediandark > 2.0 ) {
-       orac_print "is HIGH.\n";
-    } else {
-       orac_print "is NOMINAL.\n";
-    }
-
-
-    orac_print "Modal dark current = $fs_mode electrons/second ";
-    if ( $modedark < -0.5 ) {
-        orac_print "is LOW.\n";
-    } elsif ( $modedark > 2.0 ) {
-       orac_print "is HIGH.\n";
-    } else {
-       orac_print "is NOMINAL.\n";
-    }
+_ARRAY_TESTS_STATISTICS_
