@@ -1783,7 +1783,7 @@ sub histogram {
       $min = $options{ZMIN} if defined $options{ZMIN};
       $max = $options{ZMAX} if defined $options{ZMAX};
       if (starversion_gt('kappa','0.15-3')) { # Histogram changed at 0.15-4
-	$range = "range=$min,$max";
+	$range = "range=\"$min,$max\"";
       } else {
 	$range = "range=[$min,$max]";
       }
