@@ -30,6 +30,7 @@ use 5.006;
 use warnings;
 use ORAC::Frame::CGS4;
 use ORAC::Print;
+use ORAC::General;
 
 # Let the object know that it is derived from ORAC::Frame;
 use base  qw/ORAC::Frame::Michelle/;
@@ -98,11 +99,15 @@ sub _to_NSCAN_POSITIONS {
   1;
 }
 
+sub _from_NSCAN_POSITIONS {
+  "DETNINCR", 1;
+}
+
 # ROTATION comprises the rotation matrix with respect to flipped axes,
 # i.e. x corresponds to declination and Y to right ascension.  For other
 # UKIRT instruments this was not the case, the rotation being defined
 # in CROTA2.  Here the effective rotation is that evaluated from the
-# PC matrix with a 90 degree counter-clockwise rotation for the rotated
+# PC matrix with a 90-degree counter-clockwise rotation for the rotated
 # axes.
 
 sub _to_ROTATION {
@@ -119,6 +124,14 @@ sub _to_ROTATION {
      $rotation = 90.0;
   }
   return $rotation;
+}
+
+sub _to_SCAN_INCREMENT {
+  1;
+}
+
+sub _from_SCAN_INCREMENT {
+  "DETINCR", 1;
 }
 
 sub _to_UTEND {
@@ -151,21 +164,52 @@ sub _from_UTSTART {
   "UTSTART", $_[0]->uhdr("ORAC_UTSTART");
 }
 
+# Use the nominal reference pixel if correctly supplied, failing that
+# take the average of the bounds, and if these headers are also absent,
+# use a default which assumes the full array.
+sub _to_X_REFERENCE_PIXEL{
+  my $self = shift;
+  my $xref;
+  if ( exists $self->hdr->{CRPIX1} ) {
+    $xref = $self->hdr->{CRPIX1};
+  } elsif ( exists $self->hdr->{RDOUT_X1} && exists $self->hdr->{RDOUT_X2} ) {
+    my $xl = $self->hdr->{RDOUT_X1};
+    my $xu = $self->hdr->{RDOUT_X2};
+    $xref = nint( ( $xl + $xu ) / 2 );
+  } else {
+    $xref = 480;
+  }
+  return $xref;
+}
+
+sub _from_X_REFERENCE_PIXEL {
+  "CRPIX1", $_[0]->uhdr("ORAC_X_REFERENCE_PIXEL");
+}
+
+# Use the nominal reference pixel if correctly supplied, failing that
+# take the average of the bounds, and if these headers are also absent,
+# use a default which assumes the full array.
+sub _to_Y_REFERENCE_PIXEL{
+  my $self = shift;
+  my $yref;
+  if ( exists $self->hdr->{CRPIX2} ) {
+    $yref = $self->hdr->{CRPIX2};
+  } elsif ( exists $self->hdr->{RDOUT_Y1} && exists $self->hdr->{RDOUT_Y2} ) {
+    my $yl = $self->hdr->{RDOUT_Y1};
+    my $yu = $self->hdr->{RDOUT_Y2};
+    $yref = nint( ( $yl + $yu ) / 2 );
+  } else {
+    $yref = 480;
+  }
+  return $yref;
+}
+
+sub _from_Y_REFERENCE_PIXEL {
+  "CRPIX2", $_[0]->uhdr("ORAC_Y_REFERENCE_PIXEL");
+}
 
 # Sampling is always 1x1, and therefore there are no headers with
 # these values.
-sub _from_NSCAN_POSITIONS {
-  "DETNINCR", 1;
-}
-
-sub _to_SCAN_INCREMENT {
-  1;
-}
-
-sub _from_SCAN_INCREMENT {
-  "DETINCR", 1;
-}
-
 
 =head1 PUBLIC METHODS
 

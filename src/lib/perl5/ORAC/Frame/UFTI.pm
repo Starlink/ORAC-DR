@@ -32,6 +32,7 @@ use warnings;
 use vars qw/$VERSION/;
 use ORAC::Frame::UKIRT;
 use ORAC::Constants;
+use ORAC::General;
 
 # Let the object know that it is derived from ORAC::Frame::UKIRT;
 use base qw/ORAC::Frame::UKIRT/;
@@ -59,6 +60,87 @@ my %hdr = (
 # by other instruments.  Have to use the inherited version so that the
 # new subs appear in this class.
 ORAC::Frame::UFTI->_generate_orac_lookup_methods( \%hdr );
+
+# Specify the reference pixel, which is normally near the frame centre.
+# There may be small displacements to avoid detector joins or for
+# polarimetry using a Wollaston prism.
+sub _to_X_REFERENCE_PIXEL{
+  my $self = shift;
+  my $xref;
+
+# Use the average of the bounds to define the centre and dimension.
+  if ( exists $self->hdr->{RDOUT_X1} && exists $self->hdr->{RDOUT_X2} ) {
+    my $xl = $self->hdr->{RDOUT_X1};
+    my $xu = $self->hdr->{RDOUT_X2};
+    my $xdim = $xu - $xl + 1;
+    my $xmid = nint( ( $xl + $xu ) / 2 );
+
+# UFTI is at the centre for a sub-array along an axis but offset slightly
+# for a sub-array to avoid the joins between the four sub-array sections
+# of the frame.  Ideally these should come through the headers...
+    if ( $xdim == 1024 ) {
+      $xref = $xmid + 20;
+    } else {
+      $xref = $xmid;
+    }
+
+# Correct for IRPOL beam splitting with a 6" E offset.
+    if ( $self->hdr->{FILTER} =~ m/pol/ ) {
+      $xref -= 65.5;
+    }
+
+# Use a default which assumes the full array (slightly offset from the
+# centre).
+  } else {
+    $xref = 533;
+  }
+  return $xref;
+}
+
+sub _from_X_REFERENCE_PIXEL {
+  "CRPIX1", $_[0]->uhdr("ORAC_X_REFERENCE_PIXEL");
+}
+
+# Specify the reference pixel, which is normally near the frame centre.
+# There may be small displacements to avoid detector joins or for
+# polarimetry using a Wollaston prism.
+sub _to_Y_REFERENCE_PIXEL{
+  my $self = shift;
+  my $yref;
+
+# Use the average of the bounds to define the centre and dimension.
+  if ( exists $self->hdr->{RDOUT_Y1} && exists $self->hdr->{RDOUT_Y2} ) {
+    my $yl = $self->hdr->{RDOUT_Y1};
+    my $yu = $self->hdr->{RDOUT_Y2};
+    my $ydim = $yu - $yl + 1;
+    my $ymid = nint( ( $yl + $yu ) / 2 );
+
+# UFTI is at the centre for a sub-array along an axis but offset slightly
+# for a sub-array to avoid the joins between the four sub-array sections
+# of the frame.  Ideally these should come through the headers...
+    if ( $ydim == 1024 ) {
+      $yref = $ymid - 25;
+    } else {
+      $yref = $ymid;
+    }
+
+# Correct for IRPOL beam splitting with a " N offset.
+    if ( $self->hdr->{FILTER} =~ m/pol/ ) {
+      $yref += 253;
+    }
+
+# Use a default which assumes the full array (slightly offset from the
+# centre).
+  } else {
+    $yref = 488;
+  }
+  return $yref;
+}
+
+sub _from_Y_REFERENCE_PIXEL {
+  "CRPIX2", $_[0]->uhdr("ORAC_Y_REFERENCE_PIXEL");
+}
+
 
 =head1 PUBLIC METHODS
 

@@ -30,6 +30,7 @@ use 5.006;
 use warnings;
 use ORAC::Frame::CGS4;
 use ORAC::Print;
+use ORAC::General;
 
 # Let the object know that it is derived from ORAC::Frame;
 use base  qw/ORAC::Frame::CGS4/;
@@ -113,6 +114,52 @@ sub _to_UTSTART {
 
 sub _from_UTSTART {
   "UTSTART", $_[0]->uhdr("ORAC_UTSTART");
+}
+
+# Specify the reference pixel, which is normally near the frame centre.
+# Note that offsets for polarimetry are undefined.
+sub _to_X_REFERENCE_PIXEL{
+  my $self = shift;
+  my $xref;
+
+# Use the average of the bounds to define the centre.
+  if ( exists $self->hdr->{RDOUT_X1} && exists $self->hdr->{RDOUT_X2} ) {
+    my $xl = $self->hdr->{RDOUT_X1};
+    my $xu = $self->hdr->{RDOUT_X2};
+    $xref = nint( ( $xl + $xu ) / 2 );
+
+# Use a default of the centre of the full array.
+  } else {
+    $xref = 161;
+  }
+  return $xref;
+}
+
+sub _from_X_REFERENCE_PIXEL {
+  "CRPIX1", $_[0]->uhdr("ORAC_X_REFERENCE_PIXEL");
+}
+
+# Specify the reference pixel, which is normally near the frame centre.
+# Note that offsets for polarimetry are undefined.
+sub _to_Y_REFERENCE_PIXEL{
+  my $self = shift;
+  my $yref;
+
+# Use the average of the bounds to define the centre.
+  if ( exists $self->hdr->{RDOUT_Y1} && exists $self->hdr->{RDOUT_Y2} ) {
+    my $yl = $self->hdr->{RDOUT_Y1};
+    my $yu = $self->hdr->{RDOUT_Y2};
+    $yref = nint( ( $yl + $yu ) / 2 );
+
+# Use a default of the centre of the full array.
+  } else {
+    $yref = 121;
+  }
+  return $yref;
+}
+
+sub _from_Y_REFERENCE_PIXEL {
+  "CRPIX2", $_[0]->uhdr("ORAC_Y_REFERENCE_PIXEL");
 }
 
 =head1 PUBLIC METHODS
