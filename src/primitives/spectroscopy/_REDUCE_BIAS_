@@ -20,8 +20,18 @@ Paul Hirst <p.hirst@jach.hawaii.edu>
 
 # Sanity check
 unless ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "BIAS") {
-       orac_warn "This is not a bias frame!  Running the wrong recipe?\n";
-       orac_warn "The recipe continues, assuming you know what you're doing.\n";
+  # This isn't a BIAS frame
+  # For anything except Michelle, winge
+  unless ($Frm->uhdr("ORAC_INSTRUMENT") eq "Michelle") {
+    orac_warn "This is not a BIAS frame - Running the wrong recipe?\n";
+    orac_warn "Continuing anyway and assuming this is deliberate\n";
+  } else {
+    # With Michelle it would be acceptable to run this on a DARK
+    unless ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "DARK") {
+      orac_warn "This Michelle data is not a BIAS or a DARK frame - Running the wrong recipe?\n";
+      orac_warn "Continuing anyway and assuming this is deliberate\n";
+    }  
+  }
 }
 
 my $nfiles = $Frm->nfiles;
@@ -49,6 +59,8 @@ $Mon{'kappa_mon'}->obeyw("maths", $param);
 my $tmp = new ORAC::TempFile;
 my $tmpfile = $tmp->file;
 
+orac_print "$out: bias frames coadded\n";
+
 # Calculate the Variance into the tmp file
 if ($nfiles >= 3) {
    # Construct variance frame
@@ -69,12 +81,16 @@ if ($nfiles >= 3) {
    
    $Mon{'figaro1'}->obeyw("copobj", "source=$tmpfile.DATA_ARRAY object=$out.VARIANCE");
 
-} else {
+   $Frm->files($out);
+   $Frm->mergehdr;
+   
+} elsif ((($Frm->uhdr("ORAC_INSTRUMENT")) eq "Michelle" ) && ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "DARK")) {
+   # It's a Michelle DARK being used as a BIAS - simply add the readnoise
+   $Frm->files($out);
+   _ADD_READNOISE_VARIANCE_
+} else  {
    orac_warn("Will not create BIAS variance - less than 3 integrations\n");
 }
 
-orac_print "$out: bias frames coadded\n";
 orac_print "\n";
 
-$Frm->files($out);
-$Frm->mergehdr;
