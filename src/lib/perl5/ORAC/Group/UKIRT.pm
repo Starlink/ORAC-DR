@@ -2,7 +2,7 @@ package ORAC::Group::UKIRT;
 
 =head1 NAME
 
-ORAC::Group::UKIRT - UKIRT class for dealing with observation groups in ORACDR
+ORAC::Group::UKIRT - UKIRT class for dealing with observation groups in ORAC-DR
 
 =head1 SYNOPSIS
 
@@ -16,9 +16,9 @@ ORAC::Group::UKIRT - UKIRT class for dealing with observation groups in ORACDR
 =head1 DESCRIPTION
 
 This module provides methods for handling group objects that
-are specific to UKIRT. It provides a class derived from ORAC::Group.
-All the methods available to ORAC::Group objects are available
-to ORAC::Group::UKIRT objects. Some additional methods are supplied.
+are specific to UKIRT. It provides a class derived from B<ORAC::Group>.
+All the methods available to B<ORAC::Group> objects are available
+to B<ORAC::Group::UKIRT> objects. Some additional methods are supplied.
 
 =cut
  
@@ -30,7 +30,12 @@ use ORAC::Group;
  
 # Let the object know that it is derived from ORAC::Frame;
 @ORAC::Group::UKIRT::ISA = qw/ORAC::Group/;
- 
+
+use vars qw/$VERSION/;
+
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+
+
  
 # standard error module and turn on strict
 use Carp;
@@ -43,11 +48,13 @@ use NDF;
 =head1 PUBLIC METHODS
 
 The following methods are available in this class in addition to
-those available from ORAC::Group.
+those available from B<ORAC::Group>.
 
 =over 4
 
-=item readhdr
+=head2 General Methods
+
+=item B<readhdr>
 
 Reads the header from the reduced group file (the filename is stored
 in the Group object) and sets the Group header. The reference to the
@@ -55,6 +62,8 @@ header hash is returned.
 
     $hashref = $Grp->readhdr;
 
+All exisiting header information is lost. The calc_orac_headers()
+method is invoked once the header information is read.
 If there is an error during the read a reference to an empty hash is 
 returned.
 
@@ -76,7 +85,7 @@ sub readhdr {
   $ref = {} if ($status != &NDF::SAI__OK);
 
   # Set the header in the group 
-  $self->header($ref);
+  %{$self->hdr} = %$ref;
 
   return $ref;
 
@@ -92,7 +101,7 @@ aware of them.
 
 =over 4
 
-=item stripfname
+=item B<stripfname>
 
 Method to strip file extensions from the filename string. This method
 is called by the file() method. For UKIRT we strip all extensions of the
@@ -124,6 +133,10 @@ Currently this module requires the NDF module.
 =head1 SEE ALSO
 
 L<ORAC::Group>
+
+=head1 REVISION
+
+$Id$
 
 =head1 AUTHORS
 
