@@ -9,8 +9,8 @@
 #    Perl5
 
 # Description:
-#    This script reduces a photometry observation with UFTI data.  It
-#    takes an UFTI observation comprising jittered object frames
+#    This script reduces a polarimetry observation with UFTI or IRCAM
+#    data.  It takes an UFTI observation comprising jittered object frames
 #    in Right Ascension at the four waveplate angles 0, 45, 22.5,
 #    67.5 degrees---and a dark frame to make calibrated polarisation
 #    images automatically.  See "Output Data" for a list of these images.
@@ -23,7 +23,7 @@
 #    and beam.  Once all eight mosaics are formed they are registered and
 #    resampled, and then combined to form the various polarisation images.
 #    The polarisation data are binned and noisy data excluded from
-#    a final catalogue of vectors.
+#    a final catalogue of vectors.  See the "Notes" for details.
 #
 #    This recipe works well for point or extended sources less than
 #    about 10 arcseconds diameter.
@@ -31,6 +31,11 @@
 # Notes: 
 #    -  A World Co-ordinate System (WCS) using the AIPS convention is 
 #    created in the headers should no WCS already exist.
+#    -  For IRCAM, old headers are reordered and structured with
+#    headings before groups of related keywords.  The comments have
+#    units added or appear in a standard format.  Four deprecated
+#    deprecated are removed.  FITS-violating headers are corrected.
+#    Spurious instrument names are changed to IRCAM3.
 #    -  Data errors are propagated through all processing steps.
 #    The initial values are found by applying the nominal ADU conversion
 #    and read noise.
@@ -39,9 +44,11 @@
 #    -  The target regions are 30% to 70% of the frame width about
 #    the Right-ascension centre, i.e. roughly centred on the source.
 #    The current sky limits are 1% to 99% of the frame width along the
-#    Right-ascension axis.  The Declination pixel limits are as follows.
-#    o sky: 69--264; e sky: 320--484; o target: 601--764; e target:
-#    824--988.
+#    Right-ascension axis.  The Declination pixel limits are instrument
+#    dependent, and are as follows.  For UFTI, o sky: 69--264;
+#    e sky: 320--484; o target: 601--764; e target: 824--988.  For
+#    IRCAM, o sky: 12--52; e sky: 67--107; o target: 152--192;
+#    e target: 207--247.
 #    -  The sky subtraction for a beam uses a constant modal sky level
 #    from the corresponding sky region.
 #    -  Registration is performed using common point sources in the
@@ -66,9 +73,10 @@
 #    for each beam and waveplate angle.  Each mosaic has its bad pixels
 #    filled and after the first cycle is then added into its own master
 #    mosaic of improving signal to noise.  The exposure time is also
-#    summed and stored in each master mosaic's EXP_TIME header.  Likewise
-#    the end airmass header, AMEND, is updated to match that of the
-#    last-observed frame contributing to the mosaic.
+#    summed and stored in each master mosaic's EXP_TIME (UFTI) or
+#    DEXPTIME (IRCAM) header.  Likewise the end airmass header, AMEND,
+#    is updated to match that of the last-observed frame contributing to
+#    the mosaic.
 #    -  The polarised intensity is corrected for the statistical bias
 #    of the noise by subtracting the variance of Q or U.
 #    -  An offset of 6.3 degrees clockwise is applied to the rotation
@@ -89,13 +97,15 @@
 #    suffix) frames and the mosaics (_mos or _mos_<cycle_number> suffix).
 
 # Output Data:
-#    -  The integrated mosaic in g<date>_<group_number>_<beam><angle>_mos,
-#    where <beam> is "e" or "o" and <angle> is "0", "22", "45", or "67".
+#    -  The integrated mosaic in <m><date>_<group_number>_<beam><angle>_mos,
+#    where <m> is "g" for UFTI and "rg" for IRCAM; <beam> is "e" or "o";
+#    and <angle> is "0", "22", "45", or "67".
 #    -  A mosaic for each cycle of jittered frames per beam and angle in
-#    g<date>_<group_number>_<beam><angle>_mos_<cycle_number>, where
+#    <m><date>_<group_number>_<beam><angle>_mos_<cycle_number>, where
 #    <cycle_number> counts from 0.
-#    -  The individual flat-fielded frames in f<date>_<obs_number>_ff.
-#    -  Polarisation frames g<date>_<group_number>_<suffix>, each with a
+#    -  The individual flat-fielded frames in <i><date>_<obs_number>_ff,
+#    where <i> is "f" for UFTI and "ro" for IRCAM.
+#    -  Polarisation frames <m><date>_<group_number>_<suffix>, each with a
 #    different suffix for the each parameter.  The suffices are:
 #        I   intensity
 #        P   percentage polarisation
@@ -104,13 +114,13 @@
 #        TH  polarisation angle
 #        U   Stokes U
 #    -  A FITS binary-table catalogue of the binned and culled
-#    polarisation data, called g<date>_<group_number>_I.FIT.  For
+#    polarisation data, called <m><date>_<group_number>_I.FIT.  For
 #    each point it tabulates the x-y co-ordinates, the total intensity,
 #    the Stokes parameters, the percentage polarisation, the polarisation
 #    angle and intensity.  There are additional columns giving the
 #    standard deviation on each of the tabulated values (excluding the
-#    co-ordinates).  Likewise g<date>_<group_number>_all.FIT and
-#    g<date>_<group_number>_bin.FIT store the full and binned catalogues
+#    co-ordinates).  Likewise <m><date>_<group_number>_all.FIT and
+#    <m><date>_<group_number>_bin.FIT store the full and binned catalogues
 #    respectively.
 
 # Configurable Steering Parameters:
@@ -161,7 +171,7 @@
 # =======
 #
 # Every recipe must do this.
-    _UFTI_HELLO_
+    _IMAGING_HELLO_
 
 # Set up polarimetry.
     _POL_JITTER_HELLO_
@@ -228,12 +238,12 @@ POL_JITTER -- Reduces a jittered polarimetry observation.
 
 =head1 DESCRIPTION
 
-This script reduces a photometry observation with UFTI data.  It
-takes an UFTI observation comprising twelve object frames---three-
-point jitters in Right Ascension at the four waveplate angles 0,
-45, 22.5, 67.5 degrees---and a dark frame to make calibrated
-polarisation images automatically.  See L<"OUTPUT DATA"> for a list of
-these images.
+This script reduces a polarimetry observation with UFTI or IRCAM data.
+It takes an UFTI observation comprising twelve object frames---three-
+point jitters in Right Ascension at the four waveplate angles 0, 45,
+22.5, 67.5 degrees---and a dark frame to make calibrated polarisation
+images automatically.  See L<"OUTPUT DATA"> for a list of these
+images.
 
 It performs a null debiassing, bad-pixel masking, dark subtraction
 and flat-field division on all frames.  Next the sections of the frame
@@ -243,7 +253,7 @@ registration and resampling to form a mosaic for each waveplate angle
 and beam.  Once all eight mosaics are formed they are registered and
 resampled, and then combined to form the various polarisation images.
 The polarisation data are binned and noisy data excluded from
-a final catalogue of vectors.
+a final catalogue of vectors.  See the "Notes" fro details.
 
 This recipe works well for point or extended sources less than
 about 10 arcseconds diameter.
@@ -256,6 +266,14 @@ about 10 arcseconds diameter.
 
 A World Co-ordinate System (WCS) using the AIPS convention is 
 created in the headers should no WCS already exist.
+
+=item * 
+
+For IRCAM, old headers are reordered and structured with
+headings before groups of related keywords.  The comments have
+units added or appear in a standard format.  Four deprecated
+deprecated are removed.  FITS-violating headers are corrected.
+Spurious instrument names are changed to IRCAM3.
 
 =item *
 
@@ -276,9 +294,11 @@ You should use L<SKY_FLAT_POL|SKY_FLAT_POL> to make the flat field.
 The target regions are 30% to 70% of the frame width about
 the Right-ascension centre, i.e. roughly centred on the source.
 The current sky limits are 1% to 99% of the frame width along the
-Right-ascension axis.  The Declination pixel limits are as follows.
-o sky: 69--264; e sky: 320--484; o target: 601--764; e target:
-824--988.
+Right-ascension axis.  The Declination pixel limits are instrument
+dependent, and are as follows.  For UFTI, o sky: 69--264;
+e sky: 320--484; o target: 601--764; e target: 824--988.  For
+IRCAM, o sky: 12--52; e sky: 67--107; o target: 152--192;
+e target: 207--247.
 
 =item *
 
@@ -314,13 +334,13 @@ its exposure time (that being the exposure time of a single frame).
 
 =item *
 
-For each cycle of twelve frames, the recipe creates mosaics
-for each beam and waveplate angle.  Each mosaic has its bad pixels
-filled and after the first cycle is then added into its own master
-mosaic of improving signal to noise.  The exposure time is also
-summed and stored in each master mosaic's EXP_TIME header.  Likewise
-the end airmass header, AMEND, is updated to match that of the
-last-observed frame contributing to the mosaic.
+For each cycle of twelve frames, the recipe creates mosaics for each
+beam and waveplate angle.  Each mosaic has its bad pixels filled and
+after the first cycle is then added into its own master mosaic of
+improving signal to noise.  The exposure time is also summed and
+stored in each master mosaic's EXP_TIME (UFTI) or DEXPTIME (IRCAM)
+header.  Likewise the end airmass header, AMEND, is updated to match
+that of the last-observed frame contributing to the mosaic.
 
 =item *
 
@@ -357,7 +377,8 @@ new polarisation maps and catalogues constructed.
 =item *
 
 Intermediate frames are deleted except for the flat-fielded (_ff
-suffix) frames and the mosaics (_mos or _mos_E<lt>cycle_numberE<gt> suffix).
+suffix) frames and the mosaics (_mos, or _mos_E<lt>cycle_numberE<gt>
+suffix).
 
 =back
 
@@ -367,22 +388,25 @@ suffix) frames and the mosaics (_mos or _mos_E<lt>cycle_numberE<gt> suffix).
 
 =item *
 
-The integrated mosaic in gE<lt>dateE<gt>_E<lt>group_numberE<gt>_E<lt>beamE<gt>E<lt>angleE<gt>_mos,
-where E<lt>beamE<gt> is "e" or "o" and E<lt>angleE<gt> is "0", "22", "45", or "67".
+The integrated mosaic in
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_E<lt>beamE<gt>E<lt>angleE<gt>_mos,
+where E<lt>mE<gt> is "g" for UFTI and "rg" for IRCAM; E<lt>beamE<gt>
+is "e" or "o"; and E<lt>angleE<gt> is "0", "22", "45", or "67".
 
 =item *
 
 A mosaic for each cycle of jittered frames per beam and angle in
-gE<lt>dateE<gt>_E<lt>group_numberE<gt>_E<lt>beamE<gt>E<lt>angleE<gt>_mos_E<lt>cycle_numberE<gt>, where
-<cycle_number> counts from 0.
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_E<lt>beamE<gt>E<lt>angleE<gt>_mos_E<lt>cycle_numberE<gt>,
+where <cycle_number> counts from 0.
 
 =item *
 
-The individual flat-fielded frames in fE<lt>dateE<gt>_E<lt>obs_numberE<gt>_ff.
+The individual flat-fielded frames in E<lt>iE<gt>E<lt>dateE<gt>_E<lt>obs_numberE<gt>_ff,
+where E<lt>iE<gt> is "f" for UFTI and "ro" for IRCAM.
 
 =item *
 
-Polarisation frames gE<lt>dateE<gt>_E<lt>group_numberE<gt>_E<lt>suffixE<gt>,
+Polarisation frames E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_E<lt>suffixE<gt>,
 each with a different suffix for the each parameter.  The suffices are:
     I   intensity
     P   percentage polarisation
@@ -394,14 +418,14 @@ each with a different suffix for the each parameter.  The suffices are:
 =item *
 
 A FITS binary-table catalogue of the binned and culled polarisation
-data, called gE<lt>dateE<gt>_E<lt>group_numberE<gt>_I.FIT.  For each
+data, called E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_I.FIT.  For each
 point it tabulates the I<x>-I<y> co-ordinates, the total intensity,
 the Stokes parameters, the percentage polarisation, the polarisation
 angle and intensity.  There are additional columns giving the standard
 deviation on each of the tabulated values (excluding the
 co-ordinates).  Likewise
-gE<lt>dateE<gt>_E<lt>group_numberE<gt>_all.FIT and
-gE<lt>dateE<gt>_E<lt>group_numberE<gt>_bin.FIT store the full and
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_all.FIT and
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_bin.FIT store the full and
 binned catalogues respectively.
 
 =back
@@ -442,7 +466,7 @@ History is recorded within the data files.
 
 The title of the data is propagated through intermediate files
 to the mosaics.  The polarisation maps have new titles as follows
-using the suffices described in L<"Output Data">.  I: "Intensity"; 
+using the suffices described in L<"OUTPUT DATA">.  I: "Intensity"; 
 P: "Polarisation"; PI: "Polarised Intensity"; Q: "Stokes Q"; 
 TH: "Polarisation Angle"; U: "Stokes U".
 
@@ -453,7 +477,7 @@ The WCS current frame is unchanged.
 
 =item *
 
-The units are set for the frames with suffices (see L<"Output Data">)
+The units are set for the frames with suffices (see L<"OUTPUT DATA">)
 P to "%", and TH to "degrees".
 
 =back
