@@ -1,0 +1,219 @@
+#+
+# Name:
+#    _GET_CHOP_OFFSETS_
+#
+# Purpose:
+#    Finds the chop offsets for the current frame measured in pixels and
+#    arcseconds.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive obtains the chop throw from the headers of the
+#    current frame, and converts it to Cartesian pixel offsets, and
+#    equatorial offsets in arcseconds.  It applies scaling and the
+#    rotation matrix.  The rotation is the sum of the detector and
+#    the chop position angles.  The offsets are returned in four
+#    arguments.
+#
+# Arguments:
+#    ANGLE = REAL (Given)
+#       Rotation angle of the Declination axis with respect to the
+#       frame's y axis measured counter clockwise.  [Value of
+#       ORAC_ROTATION header or 0.0 if the header does not exist]
+#    DECOFF = REAL (Returned)
+#       The chop offset along the Declination axis of the current frame
+#       measured in aercseconds.
+#    RAOFF = REAL (Returned)
+#       The chop offset along the Right Ascension axis of the current
+#       frame measured in aercseconds.
+#    XOFF = REAL (Returned)
+#       The chop offset along the x axis of the current frame
+#       measured in pixels.
+#    YOFF = REAL (Returned)
+#       The chop offset along the y axis of the current frame
+#       measured in pixels.
+#
+# Notes:
+#    -  This primitive is suitable for Michelle in imaging mode.
+#    -  Processing only occurs for object and sky frames.
+#    -  Internal header ORAC_ROTATION---the angle of the chip's y axis
+#    with respect to North (positive is anti-clockwise)---and
+#    ORAC_CHOP_ANGLE---the position angle of the chop throw---are used
+#    to convert sky co-ordinate displacements into pixels using a simple
+#    rotation matrix.  If either header is absent, its rotation is
+#    assumed to be zero.  This formulation is satisfactory for the
+#    UKIRT's instrument scales and sizes, and its declination range. 
+#    A more-sophisticated transformation would be needed near the poles
+#    or for wide fields.
+#    -  The chop-offset internal header is ORAC_CHOP_THROW.  The
+#    platescale headers come from primitive _GET_PLATE_SCALE_.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ) {
+
+# Obtain the relevant angles, plate scale and chop throw.
+# =======================================================
+
+# Obtain the rotation angle in degrees.  The numeric default is instrument
+# and time specific.
+       my $defchipangle = $Frm->uhdr( "ORAC_ROTATION" );
+       $defchipangle = defined( $defchipangle ) ? $defchipangle : 0.0;
+       my $chipangle = ( $_GET_CHOP_OFFSETS_{ANGLE} || $defchipangle );
+
+# Obtain the chop angle in degrees.  The numeric default is instrument
+# and time specific.
+       my $chopangle = $Frm->uhdr( "ORAC_CHOP_ANGLE" );
+       $chopangle = defined( $chopangle ) ? $chopangle : 0.0;
+
+# It is the effective rotation angle with respect to the Cartesian axes
+# that's needed.
+       my $rotangle = $chipangle + $chopangle;
+
+# Define some useful variables to apply the rotation matrix.
+       my $pi = atan2( 1, 1 ) * 4;
+       my $dtor = $pi / 180.0;
+       my $cosrot = cos( $rotangle * $dtor );
+       my $sinrot = sin( $rotangle * $dtor );
+
+# Obtain the plate scales for the instrument from the headers.
+       _GET_PLATE_SCALE_
+       my $pixelscale = $_GET_PLATE_SCALE_{RASCALE};
+
+# Obtain the chop offset in arcseconds using the internal
+# header.
+       my $chop_off_as = $Frm->uhdr( "ORAC_CHOP_THROW" );
+
+# Derive the Cartesian offsets.
+# =============================
+
+# Convert header offsets in arcseconds to pixel offsets in the
+# Cartesian sense.
+       my $chop_off_p = $chop_off_as / $pixelscale;
+
+# Apply the rotation matrix to obtain Cartesian pixel offsets.
+       my $x_offset = $chop_off_p * $sinrot;
+       my $y_offset = -$chop_off_p * $cosrot;
+
+# Set the returned arguments.
+       $_GET_CHOP_OFFSETS_{XOFF} = $x_offset;
+       $_GET_CHOP_OFFSETS_{YOFF} = $y_offset;
+
+# Derive the equatorial offsets.
+# ==============================
+
+# Now apply the rotation matrix for the equatorial co-ordinates.
+# The chop angle is with respect to north.
+       $cosrot = cos( $chopangle * $dtor );
+       $sinrot = sin( $chopangle * $dtor );
+
+# Apply the rotation matrix to obtain Cartesian pixel offsets.
+       my $ra_offset = $chop_off_as * $sinrot;
+       my $dec_offset = $chop_off_as * $cosrot;
+
+# Set the returned arguments.
+       $_GET_CHOP_OFFSETS_{RAOFF} = $ra_offset;
+       $_GET_CHOP_OFFSETS_{DECOFF} = $dec_offset;
+
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_GET_CHOP_OFFSETS_ -- Finds the chopping offsets for the current frame measured in pixels and arcseconds.
+
+=head1 DESCRIPTION
+
+This primitive obtains the chop throw from the headers of the
+current frame, and converts it to Cartesian pixel offsets, and
+equatorial offsets in arcseconds.  It applies scaling and the
+rotation matrix.  The rotation is the sum of the detector and
+the chop position angles.  The offsets are returned in four
+arguments.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item ANGLE = REAL (Given)
+
+Rotation angle of the Declination axis with respect to the
+frame's y axis measured counter clockwise.  [Value of
+ORAC_ROTATION internal header or 0.0 if the header does not exist]
+
+=item DECOFF = REAL (Returned)
+
+The chop offset along the Declination axis of the current frame
+measured in aercseconds.
+
+=item RAOFF = REAL (Returned)
+
+The chop offset along the Right Ascension axis of the current
+frame measured in aercseconds.
+
+=item XOFF = REAL (Returned)
+
+The chop offset along the x axis of the current frame
+measured in pixels.
+
+=item YOFF = REAL (Returned)
+
+The chop offset along the y axis of the current frame
+measured in pixels.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for Michelle in imaging mode.
+
+=item 4
+
+Processing only occurs for object and sky frames.
+
+=item *
+
+Internal header ORAC_ROTATION---the angle of the chip's y axis
+with respect to North (positive is anti-clockwise)---and
+ORAC_CHOP_ANGLE---the position angle of the chop throw---are used
+to convert sky co-ordinate displacements into pixels using a simple
+rotation matrix.  If either header is absent, its rotation is
+assumed to be zero.  This formulation is satisfactory for the
+UKIRT's instrument scales and sizes, and its declination range. 
+A more-sophisticated transformation would be needed near the poles
+or for wide fields.
+
+=item *
+
+The chop-offset internal header is ORAC_CHOP_THROW.  The
+platescale headers come from primitive _GET_PLATE_SCALE_.
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
