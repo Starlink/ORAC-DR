@@ -56,6 +56,9 @@
 #       It must be in the range 75 to 99.9.  The default here is for
 #       UFTI and the new IRCAM.  For the original IRCAM3 without the
 #       magnifier, 96 proved to be satisfactory.  [98]
+#    SKYREG = LOGICAL (Given)
+#       If true (1), use sky co-ordinates during the registration.
+#       [1]
 #
 # Notes:
 #    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
@@ -128,6 +131,23 @@
 # object detection.
           my $odGrp = new $Grp;
 
+# Set the underlying co-ordinate system.
+# ======================================
+
+# This will either be pixels or sky co-ordinates.  The latter know the
+# approximate locations of the overlap regions, and hence the fraction
+# of feasible matches.  Pixel co-ordinates formed the old system.
+          my $skyreg = $_GENERATE_OFFSETS_{SKYREG};
+          $skyreg = defined( $skyreg ) ? $skyreg : 0;
+
+# Should check whether or not SKY WCS is available...
+          my $skypresent = 1;
+          $skyreg = $skyreg && $skypresent && starversion_gt( "CCDPACK", 'V2.9' );
+          my ( $param1, $param2 );          
+          if ( $skyreg ) {
+             $param1 = "in='^objlist.inlist$$' mode=current frame=sky";
+             $Mon{"ccdpack_reg"}->obeyw( "wcsedit", "$param1" );
+
 # Set the co-ordinate system to pixels.
 # =====================================
 
@@ -138,10 +158,9 @@
 # co-ordinate system of each NDF.  We use pixel co-ordinates
 # throughout.  By making the change here, the FINDOFF and REGISTER
 # command lines remain unchanged.
-          my ( $param1, $param2 );
-          if ( starversion_gt( "KAPPA", 'V0.13-6' ) ) {
+          } elsif ( starversion_gt( "KAPPA", 'V0.13-6' ) ) {
              $param1 = "ndf='^objlist.inlist$$' frame=pixel";
-             $Mon{"ndfpack_mon"}->obeyw("wcsframe", "$param1");
+             $Mon{"ndfpack_mon"}->obeyw( "wcsframe", "$param1" );
           }
 
 # Find objects
@@ -183,7 +202,7 @@
 # peak values into .find text files.  The exact values of threshold
 # percentile and minpix requires some tuning and FINDOBJ to continue
 # when no objects are found in any of the list of input data.
-          my $findobj_status = $Mon{"ccdpack_reg"}->obeyw("findobj","$param1 $param2 accept");
+          my $findobj_status = $Mon{"ccdpack_reg"}->obeyw( "findobj", "$param1 $param2 accept" );
 
 # Remove unwanted test file produced by FINDOBJ.
           unlink( "FINDOBJ.LIS" );
@@ -231,7 +250,10 @@
 # offset.
 
 # So count the number of non-comment lines.  Data lines begin with an integer
-# identifier.
+# identifier.  Sky registration only needs one object, hence only need
+# to check for object file, not its contents for sky-co-ordinate registration.
+# Actually test for sky registration later, so we create the list of
+# frames for FINDOFF in the od_objects array.
                 } else {
                    open( FINDFILE, "< $findfile" );
                    my $objcount = 0;
@@ -245,7 +267,7 @@
 # Place the observation into the group still requiring registration.
 # Switch the flag to indicate that there is some more registration
 # to do.
-                   if ( $objcount < 3 ) {
+                   if ( $objcount < 3 && ! $skyreg ) {
                       $partfind = 1;
                       $morereg = 1;
                       $regGrp->push( $frame );
@@ -265,7 +287,7 @@
 # Look for the special case of only one frame with sufficient objects.  
 # Transfer the single frame to the registration group.  The initialised bad
 # findoff_status will select _FIND_APPROX_OFFSETS_ later.
-             if ( $#od_objects < 1 ) {
+             if ( $#od_objects < 1 && ! $skyreg ) {
 
                 if ( $odGrp->num == 0 ) {
                    $regGrp->push( $odGrp->frame( 0 ) );
@@ -280,9 +302,9 @@
 # too long for the ADAM message system.
               } else {
                 unlink( "odlist.inlist$$" );
-                open (INLIST, ">odlist.inlist$$");
+                open( INLIST, ">odlist.inlist$$" );
                 print INLIST join( "\n", @od_objects ), "\n";
-                close (INLIST);
+                close( INLIST );
 
 # Derive offsets
 # ==============
@@ -293,12 +315,17 @@
 # Specify the other parameters for the FINDOFF stage.  Set a lower
 # threshold for completeness due to spurious images on UFTI.
                 $param1 = "inlist='^odlist.inlist$$' outlist=\'*.off\'";
-                $param2 = "error=1 complete=$complete override=f"; 
+                if ( $skyreg ) {
+                   $param2 = "error=1 complete=$complete override=f restrict maxdisp=12 minmatch=1";
+
+                } else {
+                   $param2 = "error=1 complete=$complete override=f";
+                }
 
 # Pattern match using the co-ordinate lists.  It uses a fast algorithm
 # first, but resorts to a slower one, if patterns aren't matched.
 # Store the offsets in .off text files.
-                $findoff_status =  $Mon{"ccdpack_reg"}->obeyw("findoff","$param1 $param2 accept");
+                $findoff_status =  $Mon{"ccdpack_reg"}->obeyw( "findoff", "$param1 $param2 accept" );
                 unlink( "odlist.inlist$$" );
 
 # Validate the offsets.
@@ -432,6 +459,10 @@
 
 # Register
 # ========
+          if ( $skyreg ) {
+             $param1 = "in='^objlist.inlist$$' mode=current frame=pixel";
+             $Mon{"ccdpack_reg"}->obeyw( "wcsedit", "$param1" );
+          }
 
 # Specify the other parameters for the REGISTER stage.
           $param1 = "inlist='^objlist.inlist$$'";
@@ -439,7 +470,7 @@
 
 # Register the frames using a shift of origin.  Create the CCDPACK
 # TRANSFORM extensions.
-          $Mon{"ccdpack_reg"}->obeyw("register","$param1 $param2 accept");
+          $Mon{"ccdpack_reg"}->obeyw( "register", "$param1 $param2 accept" );
           unlink ("objlist.inlist$$");
 
 # Report processing status.
@@ -518,6 +549,10 @@ Percentile threshold for locating objects to register frames.
 It must be in the range 75 to 99.9.  The default here is for
 UFTI and the new IRCAM.  For the original IRCAM3 without the
 magnifier, 96 proved to be satisfactory.  [98]
+
+=item SKYREG = LOGICAL (Given)
+
+If true (1), use sky co-ordinates during the registration.  [1]
 
 =back
 
