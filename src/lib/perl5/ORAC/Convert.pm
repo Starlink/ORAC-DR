@@ -648,6 +648,7 @@ sub hds2mef {
             if (fits_get_keyclass($card) == TYP_WCS_KEY || $card =~ /^PV/ || $card =~ /^CRUNIT/) {
 		if ($ifileno == 0) {
 		    push @wcscards,$card;
+		    next;
                 } else {
 		    next;
                 }
