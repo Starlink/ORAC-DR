@@ -17,8 +17,8 @@ ORAC::Frame::UFTI - UFTI class for dealing with observation files in ORAC-DR
 =head1 DESCRIPTION
 
 This module provides methods for handling Frame objects that are
-specific to UFTI. It provides a class derived from
-B<ORAC::Frame::UKIRT>.  All the methods available to
+specific to UFTI prior to ORAC delivery. It provides a class derived
+from B<ORAC::Frame::UKIRT>.  All the methods available to
 B<ORAC::Frame::UKIRT> objects are available to B<ORAC::Frame::UFTI>
 objects. Some additional methods are supplied.
 
@@ -41,10 +41,6 @@ use base qw/ORAC::Frame::UKIRT/;
 use Carp;
 use strict;
  
-# For reading the header
-use NDF;
-
-
 =head1 PUBLIC METHODS
 
 The following methods are available in this class in addition to
@@ -231,7 +227,7 @@ sub flag_from_bits {
   # Retrieve the data file name
   my $raw = $self->file_from_bits($prefix, $obsnum);
 
-  # Replace the 'f' with a '.' and append '.fits'
+  # Replace the 'f' with a '.' and append '.ok'
   substr($raw,0,1) = '.';
   $raw .= '.ok';
 }
@@ -275,10 +271,6 @@ sub template {
 
 
 =back
-
-=head1 REQUIREMENTS
-
-Currently this module requires the NDF module.
 
 =head1 SEE ALSO
 
