@@ -7,12 +7,15 @@ _PAIR_STATS_ -- Calculate the standard deviation for a differenced pair.
 =head1 DESCRIPTION
 
 This primitive calculates the standard deviation of a central section
-of a differenced pair. It finds the standard deviation, then divides
+of a differenced pair, along with standard deviations for the four channels
+of the array. It finds the standard deviation, then divides
 that result by sqrt(2) and multiplies by 500 to get the readnoise in
 electrons, then displays that result to the user. It then
 places this value in the E<lt>NE<gt>_STDDEV Group header, where
 E<lt>NE<gt> is the number of the pair in the group (so the first
 pair's standard deviation is stored in the 1_STDDEV Group header).
+Channel standard deviations are stored in E<lt>NE<gt>_STDDEV_E<lt>channelE<gt>,
+where E<lt>channelE<gt> is A, B, C, or D.
 
 =head1 PARAMETERS
 
@@ -21,7 +24,7 @@ pair's standard deviation is stored in the 1_STDDEV Group header).
 =item CENT_PIXELS = INTEGER (Given)
 
 The dimensions of a box centered on the central pixel for which stats
-will be calculated. [100]
+will be calculated. [200]
 
 =item CLIP = INTEGER (Given)
 
@@ -53,7 +56,16 @@ Council.  All Rights Reserved.
 
 if( $Frm->uhdr( "DIFFERENCE_PAIR" ) ) {
 
-  my $cent_pixels = $_PAIR_STATS_{CENT_PIXELS} || 100;
+  my %x_centre = ( A => 40,
+                   B => 120,
+                   C => 200,
+                   D => 280 );
+  my %y_centre = ( A => 120,
+                   B => 120,
+                   C => 120,
+                   D => 120 );
+
+  my $cent_pixels = $_PAIR_STATS_{CENT_PIXELS} || 200;
 
   my $clip = $_PAIR_STATS_{CLIP};
   if( ! defined( $clip ) ) {
@@ -81,6 +93,34 @@ if( $Frm->uhdr( "DIFFERENCE_PAIR" ) ) {
   my $pair = int( ( $Grp->num + 1 ) / 2 );
 
   $Grp->uhdr("${pair}_STDDEV", $sigma);
+
+  for( 'A'..'D' ) {
+
+    my $channel = $_;
+
+    my $x_centre = $x_centre{$channel};
+    my $y_centre = $y_centre{$channel};
+    my $param = "ndf=$in($x_centre~60,$y_centre~200)";
+    if( $clip > 1e-10 ) {
+      $param .= " clip=$clip";
+    }
+
+    $Mon{'kappa_mon'}->obeyw("stats", "$param");
+    ( $ORAC_STATUS, $sigma ) = $Mon{'kappa_mon'}->get("stats", "sigma");
+
+    $sigma /= sqrt( 2 );
+    $sigma *= 500;
+
+    $sigma_print = sprintf("%.3f", $sigma);
+
+    orac_print "Standard deviation for channel $channel is $sigma_print electrons.\n";
+
+    # What pair number are we?
+    $pair = int( ( $Grp->num + 1 ) / 2 );
+
+    $Grp->uhdr("${pair}_STDDEV_${channel}", $sigma);
+
+  }
 
   orac_print "\n";
 
