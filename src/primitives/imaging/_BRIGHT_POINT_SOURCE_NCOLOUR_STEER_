@@ -1,0 +1,300 @@
+#+
+# Name:
+#    _BRIGHT_POINT_SOURCE_NCOLOUR_STEER_
+#
+# Purpose:
+#    Steers processing for BRIGHT_POINT_SOURCE_NCOLOUR recipes.
+#
+# Language:
+#    Perl5
+#
+# Description: 
+#    This primitive control processing for BRIGHT_POINT_SOURCE_NCOLOUR
+#    recipes through steering headers listed below.  It forms a subgroup
+#    by filter name, stored by reference in the $Grp internal headers
+#    as <filter>_GROUP for later efficient access.  Each subgrp has its
+#    own file name giving by the $Grp filename followed by "_<filter>".
+#
+# Steering Headers:
+#    CREATE_CATALOGUE = INTEGER
+#       Whether or not to create an object catalogue. Catalogue creation
+#       is performed once the mosaic is made.
+#    CYCLE_NUMBER = INTEGER
+#       Number of the cycle, a cycle being a set of frames to complete a
+#       pass through the recipe.  The first cycle is 0.
+#    DO_APHOT = LOGICAL
+#       Whether or not perform aperture photometry.  Photometry occurs
+#       after the mosaic is made.
+#    DO_ESTAR_TRIGGER = LOGICAL
+#       Whether or not to send a trigger to the eSTAR network saying
+#       a catalogue has been created. The trigger is sent after
+#       catalogue creation is done.
+#    JITTER_NUMBER = INTEGER
+#       The number of frames in the jitter.
+#    MAKE_MOSAIC = LOGICAL
+#       Whether or not register the frames and make the mosaic.  The mosaic
+#       is made once all the jittered frames in a cycle are available.
+#    TARGET_OR_SKY = CHARACTER
+#       This is "target" for a target frame, and "sky" for a sky calibration
+#       frame.  All frames should be target.
+#    USE_VARIANCE = LOGICAL
+#       Whether or not variance processing is to occur.  This equates to
+#       argument USEVAR.
+#
+# Arguments:
+#    NUMBER = INTEGER (Given)
+#       The number of frames in the jitter.  If absent, the number of
+#       offsets, as given by internal header ORAC_NUMBER_OF_OFFSETS, minus
+#       one is used.  If neither is available, 5 is used.  An error state
+#       arises if the number of jittered frames is fewer than 3.  []
+#    USEVAR = LOGICAL (Given)
+#       Whether or not to create and propagate variance arrays.  [0]
+#
+# Notes:
+#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
+#    in imaging mode.
+#    -  Processing only occurs for object and sky frames.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#    BC: Brad Cavanagh (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ) {
+
+# Form new group by filter.
+# =========================
+
+# Obtain the filter name from the frame header.
+       my $filter = $Frm->uhdr( "ORAC_FILTER" );
+
+# Define a group header to store the name of a group selected by filter.
+       my $grphandle = $filter . "_GROUP";
+
+# Remove []() or replace characters which would confuse HDS when we use the
+# filter in an HDS file name.
+       my $hdsfilter = $filter;
+       $hdsfilter =~ s/\./p/g;
+       $hdsfilter =~ tr/\(\)\[\]/d/;
+
+# Determine whether or not this group is defined/exists.  If it
+# already exists use its current file.
+       my $filterGrp = $Grp->uhdr( $grphandle );
+       {
+          my ( $groupfile, $tempGrp ) ;
+          my $exist = defined( $filterGrp );
+          if ( $exist ) {
+
+# Use the existing file name.  This is needed for the renamed mosaics.
+             $groupfile = $filterGrp->file;
+
+# Make a temporary group to hold the existing header hashes.
+             $tempGrp = $filterGrp;
+
+          } else {
+
+# Give it a new file name.
+             $groupfile = $Grp->file . "_" . $hdsfilter;
+          }
+
+# Form a sub-group by filter name.
+          $filterGrp = $Grp->subgrp( FILTER => $filter );
+
+# Store the sub-group for future reference and hence greater efficiency.
+# The previous smaller subgroup is replaced, but that's what we want.
+          $Grp->uhdr( $grphandle, $filterGrp );
+
+# Give it a file name.
+          $filterGrp->file( $groupfile );
+
+# Transfer the existing group headers.
+          if ( $exist ) {
+
+# Propagate the headers from the earlier filter group to the current one.
+# This allows the ROOT_NAME and the summed exposure time to persist between
+# cycles.
+             %{ $filterGrp->hdr } = %{ $tempGrp->hdr };
+             %{ $filterGrp->uhdr } = %{ $tempGrp->uhdr };
+          }
+       }
+
+
+# Obtain the number of frames in the jitter pattern.
+# ==================================================
+
+# First see if a hardwired value has been supplied in the recipe.  This
+# deals with old recipes with fixed numbers and cases where a frame or
+# more is missing.
+       my $number = $_BRIGHT_POINT_SOURCE_NCOLOUR_STEER_{NUMBER};
+
+# Otherwise use the ORAC_NUMBER_OF_OFFSETS internal header.  In full
+# ORAC, this stores the total number of offsets used, but ignores repeat
+# iterators.  By convention there is always an offset to the origin at
+# the end, hence the recipe requires ORAC_NUMBER_OF_OFFSETS-1.
+       if ( ! defined ( $number ) ) {
+          $number = $Frm->uhdr( "ORAC_NUMBER_OF_OFFSETS" );
+          if ( defined( $number ) ) {
+             $number--;
+
+# Finally default to the original 5.
+          } else {
+             $number = 5;
+          }
+       }
+
+# Report invalid number of frames.
+       if ( $number < 3 ) {
+          orac_throw "The number of jittered frames ($number) is fewer " .
+                     "than 3.\n";
+       }
+
+# Set steering headers.
+# =====================
+
+# Obtain the USEVAR argument.  Default to false.
+       my $usevar = $_BRIGHT_POINT_SOURCE_NCOLOUR_STEER_{USEVAR};
+       $usevar = defined( $usevar ) ? $usevar : 0;
+       $Frm->uhdr( "USE_VARIANCE", $usevar ); 
+
+# Specify during processing of which frames should the mosaic be created
+# and aperture photometry performed.
+       if ( ($Grp->num + 1) % $number == 0 ) {
+          $Frm->uhdr( "MAKE_MOSAIC", 1 );
+          $Frm->uhdr( "DO_APHOT", 1 );
+          $Frm->uhdr( "CREATE_CATALOGUE", 1 );
+
+          if( $Frm->uhdr( "ESTAR" ) ) {
+            $Frm->uhdr( "DO_ESTAR_TRIGGER", 1 );
+          } else {
+            $Frm->uhdr( "DO_ESTAR_TRIGGER", 0 );
+          }
+       
+       } else {
+          $Frm->uhdr( "MAKE_MOSAIC", 0 );
+          $Frm->uhdr( "DO_APHOT", 0 );
+          $Frm->uhdr( "CREATE_CATALOGUE", 0 );
+          $Frm->uhdr( "DO_ESTAR_TRIGGER", 0 ); 
+      }
+
+# All frames are target.  Some more-general primitives need to select 
+# targets from sky frames.
+       $Frm->uhdr( "TARGET_OR_SKY", "target" );
+
+# Insert the cycle number of the set of NUMBER frames.
+       $Frm->uhdr( "CYCLE_NUMBER", int( $filterGrp->num / $number ) );
+
+# Insert the number of frames in the jitter.
+       $Frm->uhdr( "JITTER_NUMBER", $number );
+
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_BRIGHT_POINT_SOURCE_NCOLOUR_STEER_ -- Steers processing for BRIGHT_POINT_SOURCE_NCOLOUR recipes.
+
+=head1 DESCRIPTION
+
+This primitive control processing for BRIGHT_POINT_SOURCE_NCOLOUR recipes
+through steering headers listed below. It forms a subgroup
+by filter name, stored by reference in the $Grp internal headers
+as E<lt>filterE<gt>_GROUP for later efficient access.  Each subgrp has its
+own file name giving by the $Grp filename followed by "_E<lt>filterE<gt>".
+
+=head1 STEERING HEADERS
+
+=over 4
+
+=item CREATE_CATALOGUE = LOGICAL
+
+Whether or not to create an object catalogue. Catalogue creation
+is performed once the mosaic is made.
+
+=item CYCLE_NUMBER = INTEGER
+
+Number of the cycle, a cycle being a set of frames to complete a
+pass through the recipe.  The first cycle is 0.
+
+=item DO_APHOT = LOGICAL
+
+Whether or not perform aperture photometry.  Photometry occurs
+after the mosaic is made.
+
+=item DO_ESTAR_TRIGGER = LOGICAL
+
+Whether or not to send a trigger to the eSTAR network saying
+a catalogue has been created. The trigger is sent after
+catalogue creation is done.
+
+=item JITTER_NUMBER = INTEGER
+
+The number of frames in the jitter.
+
+=item MAKE_MOSAIC = LOGICAL
+
+Whether or not register the frames and make the mosaic.  The mosaic
+is made once all the jittered frames in a cycle are available.
+
+=item TARGET_OR_SKY = CHARACTER
+
+This is "target" for a target frame, and "sky" for a sky calibration
+frame.  All frames should be target.
+
+=item USE_VARIANCE = LOGICAL
+
+Whether or not variance processing is to occur.  This equates to
+argument USEVAR.
+
+=back
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item NUMBER = INTEGER (Given)
+
+The number of frames in the jitter.  If absent, the number of offsets,
+as given by internal header ORAC_NUMBER_OF_OFFSETS, minus one is used.  If
+neither is available, 5 is used.  An error state arises if the number
+of jittered frames is fewer than 3.  []
+
+=item USEVAR = LOGICAL (Given)
+
+Whether or not to create and propagate variance arrays.  [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UFTI, IRCAM, and Michelle in imaging mode.
+
+=item *
+
+Processing only occurs for object and sky frames.
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+BC: Brad Cavanagh (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

@@ -1,0 +1,126 @@
+#+
+# Name:
+#    _BRIGHT_POINT_SOURCE_NCOLOUR_TIDY_
+#
+# Purpose:
+#    Removes unwanted intermediate files for the BRIGHT_POINT_SOURCE_NCOLOUR
+#    recipe and its variants.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    Removes intermediate frames, but retaining those with the _ff suffix.
+#    Files are only removed when they are no longer needed, as guided
+#    by the steering headers MAKE_MOSAIC and CYCLE_NUMBER.  Registration
+#    text files with extensions .find, .off, and .res are also removed.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#    BC: Brad Cavanagh (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Record the group file name.
+    my $grpname = $Grp->file;
+
+# Determine whether the NDFs support variance.  Any of the NDFs should
+# do.
+    my $file = $Frm->file;
+    $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$file" );
+    ( my $ORAC_STATUS, my $variance ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "variance" );
+
+# Removed intermediate files stored $Frm->file method.
+    _DELETE_TEMP_FILES_ KEEP=_ff
+
+# Certain files can only be removed once certain steps are complete,
+# and then only as a group.  So determine if it's time to remove these
+# files, and obtain the cycle number.
+    my $mademosaic = $Frm->uhdr( "MAKE_MOSAIC" );
+    my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" ); 
+
+# Obtain the filter.
+    my $filter = $Frm->uhdr( "ORAC_FILTER" );
+
+# Use the filter sub-group stored by reference in the internal group
+# headers.  This sub-group essentially replaces $Grp in comparison with
+# _GENERATE_OFFSETS_JITTER_.
+    my $filterGrp = $Grp->uhdr( $filter . "_GROUP" );
+
+# Record the group file name for the current filter, and the first frame
+# of that group.
+    my $grpname = $filterGrp->file;
+    my $Frm0 = $filterGrp->frame( 0 );
+
+# Remove the remaining files from this cycle used to make the mosaic.
+    if ( $mademosaic ) {
+       my $mosGrp = $filterGrp->subgrp( CYCLE_NUMBER => $cycleno );
+       {
+          my $Grp = $mosGrp;
+          _DELETE_TEMP_GROUP_FILES_ DELETE=_trn
+          if ( $variance eq "TRUE" ) {
+             _DELETE_TEMP_GROUP_FILES_ DELETE=_bgl,_pov,_rnv
+          }
+
+# Select the frames that should be tidied.  On the second and subsequent
+# cycles the first frame is used to register with the later cycles.
+          my @list = $Grp->members;
+          if ( $cycleno > 0 ) {
+             push ( @list, $Frm0 );
+          }
+          foreach $Frm ( @list ) {
+
+# Obtain the last syllable, i.e. parts of the name broken by underscore,
+# for each frame.
+             my @syllables = split( /_/, $Frm->file );
+             my $suffix = $syllables[ $#syllables ];
+
+# Remove the offset and object-inventory text files.  These are
+# associated with the _ff frames, so switch suffices by reforming
+# the name with the new suffix.
+             my $textfile = join( "_", @syllables[ 0..$#syllables-1 ] ) . "_ff";
+             unlink ( $textfile . ".off", $textfile . ".find", $textfile . ".res" );
+          }
+
+# Remove the group offset and object-inventory text files.
+          if ( $cycleno > 0 ) {
+             unlink( $grpname . ".off", $grpname . ".find" );
+             unlink( $grpname . ".res" );
+          }
+
+          undef $mosGrp;
+       }
+    }
+    orac_print "\n\n";
+
+# Podule
+# ======
+
+=head1 NAME
+
+_BRIGHT_POINT_SOURCE_NCOLOUR_TIDY_ -- Removes unwanted intermediate files for the BRIGHT_POINT_SOURCE_NCOLOUR recipe and its variant.
+
+=head1 DESCRIPTION
+
+Removes intermediate frames, but retaining those with the _ff suffix.
+Files are only removed when they are no longer needed, as guided by
+the steering headers MAKE_MOSAIC and CYCLE_NUMBER. Group tidying
+only applies to the sub-group matching the current frame's filter
+and cycle number.  Registration text files with extensions .find,
+.off, and .res are also removed.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+BC: Brad Cavanagh (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
