@@ -1,0 +1,123 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CROSS_CORR_ALL_BEAMS_POL_ -- Cross correlates and shifts extracted beams
+for polarimetry recipes.
+
+=head1 DESCRIPTION
+
+Takes the extracted beams from _EXTRACT_ALL_BEAMS_POL_ and cross
+correlates each beam with the first one, then shifts each beam, so
+that they're all shift-aligned with the first beam.
+
+The input spectra are found in the POS_E, POS_O, NEG_E, and NEG_O (for
+positive E and O, and negative E and O beams, respectively) components
+in the current $Grp's E<lt>ANGLEE<gt>_GROUP uhdr group, i.e. for
+the 0-degree waveplate angle observations, the Group object referenced
+to in the current $Grp's 0_GROUP uhdr is used.
+
+The resulting spectra are created in an HDS container with a filename
+ending in _ccs, and the cross correlation functions are stored in an
+HDS container with a filename ending in _ccf.
+
+If the maximum value of the cross correlation function is less than
+0.6, or if the shift is greater than 2 pixels, then the spectra are
+not aligned and shifted.
+
+=head1 AUTHORS
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+Brad Cavanagh (JAC) <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# We should have a "NBEAMS" header from _EXTRACT_DETERMINE_NBEAMS_
+my $nbeams = $Grp->uhdr("NBEAMS");
+
+# Obtain the waveplate angle to get the proper group.
+my $pol_angle = $Frm->uhdr("ORAC_WAVEPLATE_ANGLE");
+$pol_angle =~ /(\d+)\./;
+$pol_angle = $1;
+my $group_header = "${pol_angle}_GROUP";
+my $tempGrp = $Grp->uhdr("$group_header");
+
+my $base = $tempGrp->raw;
+my $in = $tempGrp->file;
+
+my $out = $base . "_ccs";
+my $ccf = $base . "_ccf";
+
+# If there's only one beam (or, ahem no beams), don't bother
+if ($nbeams > 1) {
+
+  # Cross-correlate with positive e-beam.
+  my $beamin = $in . ".POS_E";
+  my $mainbeam = $beamin;
+
+  # The output file - Cross correlation shift
+  my $ORAC_STATUS = ( create_hdsobj( $out, 'UKIRT_POL', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+
+  # And the CCF file
+  $ORAC_STATUS = ( create_hdsobj( $ccf, 'CCF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+
+  # Copy the first beam over
+  my $beamout = $out.".POS_E";
+  $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$mainbeam out=$beamout title=$beamout");
+  orac_print "Copied $mainbeam to $beamout\n";
+
+  # Loop over the remaining beams.
+  my @beams = qw/ POS_O NEG_E NEG_O /;
+  foreach my $beam ( @beams ) {
+
+    $beamin = $in . ".$beam";
+    $beamout = $out . ".$beam";
+    my $ccfout = $ccf . ".$beam";
+
+    # Cross correlate spectra with scross
+    $Mon{'figaro1'}->obeyw("scross", "spectrum=$beamin template=$mainbeam record cross=$ccfout xstart=min xend=max"); 
+    (my $ORAC_STATUS, my $shift) = $Mon{'figaro1'}->get("scross", "shift");
+    orac_print "$ccfout: Cross Correlation Function of main and offset beam $beam\n";
+
+    # Do a stats on the ccf
+    $Mon{'kappa_mon'}->obeyw("stats", "ndf=$ccfout(~100)");
+    ($ORAC_STATUS, my $maximum) = $Mon{'kappa_mon'}->get("stats", "maximum");
+    ($ORAC_STATUS, my $maxpos) = $Mon{'kappa_mon'}->get("stats", "maxpos");
+    my $string = sprintf ("%4.1f", 100*$maximum);
+
+    if($maximum > 0.6 && $maximum < 1 && abs( $shift ) < 2) {
+      # OK, we'll use it
+      orac_print "Peak of CCF (at $string %) indicates a shift of: $shift - Accepted\n";
+      $shift *= -1;
+
+      # Need a temp file to fix the broken variances with a thresh
+      my $tmp = new ORAC::TempFile;
+      my $tmpfile = $tmp->file;
+
+      $Mon{'figaro1'}->obeyw("ishift", "image=$beamin xshift=$shift xsplit=20 ysplit=1 yshift=0 output=$tmpfile");
+
+      # Fix unreasonable variance values
+      $Mon{'kappa_mon'}->obeyw("thresh", "in=$tmpfile comp=Variance out=$beamout thrlo=0 newlo=bad thrhi=1E9 newhi=bad");
+
+      $Mon{'ndfpack_mon'}->obeyw("settitle", "ndf=$beamout title=$beamout");
+
+      orac_print "$beamin to $beamout: shifted by $shift\n";
+    } else {
+      # We'll reject the shift and simply copy it over.
+      orac_print "Peak of CCF (at $string %) indicates a shift of: $shift - Rejected\n";
+      $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$beamin out=$beamout");
+      orac_print "$beamin to $beamout: copied without shifting\n";
+    }
+
+  }
+
+  $tempGrp->file($out);
+
+  # Update the group object
+  $Grp->uhdr("$group_header", $tempGrp);
+}
