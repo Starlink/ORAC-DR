@@ -53,7 +53,7 @@ use Carp;
 # ORAC modules
 use ORAC::Basic;                        # Helper routines
 use ORAC::Print;
-use ORAC::Recipe; 
+use ORAC::Recipe;
 use ORAC::Loop;                         # Loop control
 use ORAC::Event;                        # Tk event 
 use ORAC::General;                      # parse_* routines
@@ -286,8 +286,17 @@ sub orac_process_frame {
   	$$CURRENT_PRIMITIVE = []; }
 
   # Create new recipe object
-  my $recipe = new ORAC::Recipe( NAME => $RecipeName,
-				 INSTRUMENT => $args{Instrument});
+  my $recipe;
+  try {
+    $recipe = new ORAC::Recipe( NAME => $RecipeName,
+				INSTRUMENT => $args{Instrument});
+  } catch ORAC::Error::FatalError with {
+    my $Error = shift;
+    $Error->throw;
+  }  otherwise {
+    my $Error = shift;
+    throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
+  };
 
   # Configure debugging and batch flags
   $recipe->debug( $args{Debug} ) if exists $args{Debug};
@@ -377,7 +386,7 @@ sub orac_print_configuration {
   if ($opt{debug}) {
     $orac_prt->debugmsg(1);
     my $fh = new IO::File(">ORACDR.DEBUG") ||
-        do { orac_err "Error opening debug logfile: $!";
+        do { orac_err "Error opening debug logfile in ORAC_DATA_OUT: $!";
 	     throw ORAC::Error::FatalError("Error opening debug logfile",
 	                                   ORAC__FATAL);
 	   };
@@ -490,7 +499,7 @@ sub orac_print_configuration {
     # Request for file - must have already chdir'ed to ORAC_DATA_OUT
     if ($log_options =~ /f/) {
       my $logfh = new IO::File(">.oracdr_$$.log") ||
-        do { orac_err "Error opening logfile: $!";
+        do { orac_err "Error opening ORAC-DR logfile in ORAC_DATA_OUT: $!\n";
 	     throw ORAC::Error::FatalError("Error opening logfile",
 	                                   ORAC__FATAL);
 	   };
