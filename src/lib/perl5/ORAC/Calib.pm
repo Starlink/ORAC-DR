@@ -116,7 +116,7 @@ sub new {
   $obj->{BiasNoUpdate} = 0;
   $obj->{SkyNoUpdate} = 0;
   $obj->{ReadNoiseNoUpdate} = 0;
-  $obj->{RerefenceShiftNoUpdate} = 0;
+  $obj->{ReferenceShiftNoUpdate} = 0;
   $obj->{BaseShiftNoUpdate} = 0;
   $obj->{EmissivityNoUpdate} = 0;
   $obj->{ZeropointNoUpdate} = 0;
