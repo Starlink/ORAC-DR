@@ -199,12 +199,15 @@ The following classes are avaiable to primitive writers:
 
 Other classes can be loaded from within the recipe as needed.
 
-The variables accessible to the recipe are:
+The objects accessible to the recipe are:
 
   $Grp - the current group.
   $Frm - the current frame
   $Cal - the calibration object
   $Display - the display system (undefined if display not required)
+
+The Global variables listed at the end of this document are also
+available.
 
 =cut
 
@@ -290,7 +293,7 @@ sub orac_execute_recipe {
 
 #------------------------------------------------------------------------
 
-=item orac_read_recipe(recipe, instrument)
+=item B<orac_read_recipe>(recipe, instrument)
 
 Reads the specified recipe from the recipe directory.
 An array reference containing the recipe is returned.
@@ -355,7 +358,7 @@ sub orac_read_recipe {
 #------------------------------------------------------------------------
 
 
-=item orac_read_primitive(primitive, instrument)
+=item B<orac_read_primitive>(primitive, instrument)
 
 Reads the specified primitive from the recipe directory.
 An array reference containing the primitive is returned.
@@ -416,7 +419,7 @@ sub orac_read_primitive {
 
 #------------------------------------------------------------------------
 
-=item orac_parse_arguments(line)
+=item B<orac_parse_arguments>(line)
 
 Parses argument lists on primitive calls.
 Converts a string of form 'arg1=value1 arg2=value2...'
@@ -448,7 +451,7 @@ sub orac_parse_arguments {
 
 #------------------------------------------------------------------------
 
-=item orac_parse_recipe(array_reference, instrument)
+=item B<orac_parse_recipe>(array_reference, instrument)
 
 Parses a recipe, reading in the necessary primitives.
 
@@ -510,7 +513,7 @@ sub orac_parse_recipe {
 
 }
 
-=item orac_add_code_to_recipe(\@recipe)
+=item B<orac_add_code_to_recipe>(\@recipe)
 
 Post processes the recipe adding status checking code.
 
@@ -597,7 +600,7 @@ sub orac_add_code_to_recipe {
 # Relies on $ORAC_STATUS being available
 
 
-=item orac_check_status
+=item B<orac_check_status>
 
 Provides the code for automatic status checking of recipes.
 
@@ -619,7 +622,7 @@ sub orac_check_status {
   
 }
 
-=item orac_check_obey_status
+=item B<orac_check_obey_status>
 
 Provides the code for automatic status checking of obeyw()
 in recipes.
@@ -674,7 +677,7 @@ sub orac_check_obey_status {
 #------------------------------------------------------------------------
 
 
-=item orac_exit_normally
+=item B<orac_exit_normally>
 
 Exit handler for oracdr.
 
@@ -697,7 +700,7 @@ sub orac_exit_normally {
   exit;
 };
 
-=item orac_exit_abnormally
+=item B<orac_exit_abnormally>
 
 Exit handler when a problem has been encountered.
 
@@ -760,9 +763,9 @@ batch mode or not).
 A set of version variables are available for support of different
 Starlink KAPPA versions as a convenience to recipe writers. These
 variables are only defined if KAPPA is present on the
-system. Variables are present for the version string ($KAPVERSION),
-the major version ($KAPVERSION_MAJOR), minor version
-($KAPVERSION_MINOR) and patchlevel ($KAPVERSION_PATCHLEVEL). Currently
+system. Variables are present for the version string ($KAPPA_VERSION),
+the major version ($KAPPA_VERSION_MAJOR), minor version
+($KAPPA_VERSION_MINOR) and patchlevel ($KAPPA_VERSION_PATCHLEVEL). Currently
 only the KAPPA major version is set to something useful. This
 behaviour may change in a future release but not in such a way that
 KAPPA will be required for running recipes.
@@ -785,7 +788,8 @@ $Id$
 
 =head1 AUTHORS
 
-Frossie Economou and Tim Jenness
+Frossie Economou (frossie@jach.hawaii.edu),
+Tim Jenness (t.jenness@jach.hawaii.edu)
 
 =head1 COPYRIGHT
 
@@ -796,6 +800,9 @@ Council. All Rights Reserved.
 
 
 #$Log$
+#Revision 1.47  2000/02/02 03:59:14  timj
+#Fix typo in pod
+#
 #Revision 1.46  2000/02/01 03:14:47  timj
 #Add CCDPACK_VERSION
 #Rename KAPVERSION to KAPPA_VERSION
