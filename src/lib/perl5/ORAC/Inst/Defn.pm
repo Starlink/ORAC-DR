@@ -36,6 +36,7 @@ use vars qw/ @ISA @EXPORT_OK $VERSION /;
   orac_determine_algorithm_engines
   orac_determine_recipe_search_path
   orac_determine_primitive_search_path
+  orac_engine_description
   /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
@@ -305,8 +306,8 @@ is optional or required. An example structure is:
   $algeng = orac_determine_algorithm_engines( $instrument );
 
 It is possible that this information may be moved to the specific
-instrument frame class, especially if engine launching on demand
-is implemented.
+instrument frame class. Once engine-launch-on-demand is implemented
+this routine will most likely become obsolete.
 
 =cut
 
@@ -376,6 +377,31 @@ sub orac_determine_algorithm_engines {
 
   # Return the hash reference
   return \%AlgEng;
+}
+
+=item B<orac_engine_description>
+
+Returns the details for a specified algorithm engine.
+
+  %details = orac_engine_description("polpack_mon");
+
+The hash that is returned contains information on the
+class to be used to launch the engine and the location
+of the engine. In future it may also return the messaging
+system required for the engine to function.
+
+Returns an empty list on error.
+
+=cut
+
+sub orac_engine_description {
+  my $engine = shift;
+
+  if (exists $MonolithDefns{$engine}) {
+    return %{ $MonolithDefns{$engine} };
+  } else {
+    return ();
+  }
 }
 
 
