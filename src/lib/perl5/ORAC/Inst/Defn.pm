@@ -335,7 +335,7 @@ sub orac_determine_inst_classes {
     $calclass   = "ORAC::Calib::UFTI_CASU";
     $instclass  = "ORAC::Inst::UFTI_CASU";
   } elsif ($inst =~ /^WFCAM/) {
-    $groupclass = "ORAC::Group::UFTI_CASU";
+    $groupclass = "ORAC::Group::WFCAM";
     $frameclass = "ORAC::Frame::WFCAM";
     $calclass   = "ORAC::Calib::WFCAM";
     $instclass  = "ORAC::Inst::WFCAM";
