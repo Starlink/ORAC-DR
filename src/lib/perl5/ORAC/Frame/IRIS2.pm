@@ -31,6 +31,7 @@ use 5.006;
 use warnings;
 use strict;
 use Carp;
+use ORAC::Print qw/orac_warn/;
 
 our $VERSION;
 
@@ -53,12 +54,16 @@ my %hdr = (
            FILTER                 => "IR2_FILT",
            INSTRUMENT             => "INSTRUME",
            NUMBER_OF_EXPOSURES    => "CYCLES",
+           NUMBER_OF_OFFSETS      => "NOFFSETS",
            NUMBER_OF_READS        => "READS",
+           OBSERVATION_NUMBER     => "RUN",
            OBSERVATION_TYPE       => "OBSTYPE",
            RA_BASE                => "CRVAL1",
            RA_TELESCOPE_OFFSET    => "TRAOFF",
            RECIPE                 => "RECIPE",
            SPEED_GAIN             => "SPEED",
+           X_DIM                  => "NAXIS1",
+           Y_DIM                  => "NAXIS2",
            X_LOWER_BOUND          => "DETECXS",
            X_UPPER_BOUND          => "DETECXE",
            Y_LOWER_BOUND          => "DETECYS",
@@ -72,8 +77,12 @@ ORAC::Frame::IRIS2->_generate_orac_lookup_methods( \%hdr );
 
 sub _to_AIRMASS_START {
   my $self = shift;
+  my $return;
   my $pi = atan2( 1, 1 ) * 4;
-  1 / cos( $self->hdr->{ZDSTART} * $pi / 180 );
+  if(defined($self->hdr->{ZDSTART})) {
+    $return = 1 / cos( $self->hdr->{ZDSTART} * $pi / 180 );
+  }
+  return $return;
 }
 
 sub _from_AIRMASS_START {
@@ -82,8 +91,12 @@ sub _from_AIRMASS_START {
 
 sub _to_AIRMASS_END {
   my $self = shift;
+  my $return;
   my $pi = atan2( 1, 1 ) * 4;
-  1 / cos( $self->hdr->{ZDEND} * $pi / 180 );
+  if(defined($self->hdr->{ZDEND})) {
+    $return = 1 / cos( $self->hdr->{ZDEND} * $pi / 180 );
+  }
+  return $return;
 }
 
 sub _from_AIRMASS_END {
@@ -101,6 +114,50 @@ sub _to_OBSERVATION_MODE {
     $return = "imaging";
   } else {
     $return = "spectroscopy";
+  }
+  $return;
+}
+
+sub _to_NSCAN_POSITIONS {
+  1;
+}
+
+sub _to_SCAN_INCREMENT {
+  1;
+}
+
+sub _to_GRATING_DISPERSION {
+  my $self = shift;
+  my $return;
+
+  my $grism = $self->hdr->{IR2_GRSM};
+  my $filter = $self->hdr->{IR2_FILT};
+  $grism =~ s/ //g;
+  $filter =~ s/ //g;
+  if ( $grism =~ /sapphire_240/i ) {
+    if ( uc($filter) eq 'K' || uc($filter) eq 'KS' ) {
+      $return = 0.000445;
+    } elsif ( uc($filter) eq 'J' ) {
+      $return = 0.000233;
+    }
+  }
+  $return;
+}
+
+sub _to_GRATING_WAVELENGTH {
+  my $self = shift;
+  my $return;
+
+  my $grism = $self->hdr->{IR2_GRSM};
+  my $filter = $self->hdr->{IR2_FILT};
+  $grism =~ s/ //g;
+  $filter =~ s/ //g;
+  if ( $grism =~ /sapphire_240/i ) {
+    if ( uc( $filter ) eq 'K' || uc( $filter ) eq 'KS' ) {
+      $return = 2.222835;
+    } elsif ( uc( $filter ) eq 'J' ) {
+      $return = 1.205480;
+    }
   }
   $return;
 }
@@ -179,7 +236,7 @@ sub _to_DEC_SCALE {
   my $cd22 = $self->hdr->{CD2_2};
   my $sgn;
   if( ( $cd11 * $cd22 - $cd12 * $cd21 ) < 0 ) { $sgn = -1; } else { $sgn = 1; }
-  $sgn * sqrt( $cd11**2 + $cd21**2 ) * 3600;
+  abs( sqrt( $cd11**2 + $cd21**2 ) * 3600 );
 }
 
 sub _to_RA_SCALE {
@@ -235,7 +292,7 @@ sub new {
   # Configure initial state - could pass these in with
   # the class initialisation hash - this assumes that I know
   # the hash member name
-  $self->rawfixedpart('');
+  $self->rawfixedpart('_raw');
   $self->rawsuffix('.fits');
   $self->rawformat('FITS');
   $self->format('NDF');
@@ -549,6 +606,17 @@ sub inout {
 
   return ($infile, $outfile) if wantarray();  # Array context
   return $outfile;                            # Scalar context
+}
+=item B<mergehdr>
+
+Dummy method.
+
+  $frm->mergehdr();
+
+=cut
+
+sub mergehdr {
+
 }
 
 =item B<template>
