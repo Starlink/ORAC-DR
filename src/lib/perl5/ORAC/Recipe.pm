@@ -704,11 +704,12 @@ sub _check_obey_status_string {
 
   # Do the regexp separately so that we can handle the situation
   # where the monolith path is not stored in a hash
-  $line =~ /\{[\'\"]*(\w+)[\'\"]*\}->obeyw/ && ($monolith = $1);
+  $line =~ /\{\s*[\'\"]*(\w+)[\'\"]*\s*\}->obeyw/ && ($monolith = $1);
   $line =~ /->obeyw\(\"(\w+)\"/ && ($task = $1);
   $line =~ /->obeyw\(\"\w+\"\s*,\s*\"(.+)\"/ && ($args = $1);
   $args = '(No arguments)' unless defined $args;
-  $monolith = '(None!!)' unless defined $monolith;
+  my $none = "(None!!)";
+  $monolith = $none unless defined $monolith;
   $task = '(Unknown)' unless defined $task;
 
   # Need to be careful of what gets expanded when the
@@ -720,14 +721,25 @@ sub _check_obey_status_string {
 		     "  orac_err (\"Error in obeyw to monolith $monolith (task=$task): \$OBEYW_STATUS\\n\");" ,
 		     '  my $obeyw_args = "'. $args . '";',
 		     '  orac_print("Arguments were: ","blue");',
-                     '  orac_print("$obeyw_args\n\n","red"); ',
-		     '  if ($OBEYW_STATUS == ORAC__BADENG) {',
-		     "    orac_err(\"Monolith $monolith seems to be dead. Removing it...\\n\");",
-		     "    delete \$Mon{$monolith};",
-		     '  }',
-		     '  return $OBEYW_STATUS;',
-		     '}'
+                     '  orac_print("$obeyw_args\n\n","red"); '
 		    );
+
+  # If we have been unable to determine the monolith name we can not 
+  # add the following - could use splice rather than to pushes
+  if ($monolith ne $none) {
+    push (@statuslines,
+	  '  if ($OBEYW_STATUS == ORAC__BADENG) {',
+	  "    orac_err(\"Monolith $monolith seems to be dead. Removing it...\\n\");",
+	  "    delete \$Mon{$monolith};",
+	  '  }'
+	 );
+  }
+
+  # finish 
+  push (@statuslines,
+	'  return $OBEYW_STATUS;',
+	'}'
+       );
 
   # Add newlines to each line of the text so that it appears
   # correctly when recipe is listed
