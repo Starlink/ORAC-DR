@@ -499,8 +499,6 @@ sub nokeepArr {
 =item B<nsubs>
 
 Return the number of sub-frames associated with this frame.
-If the object has a value of undef (ie a new object) the findnsubs()
-method is automatically invoked to determine the number of sub-frames.
 
 nfiles() should be used to return the current number of sub-frames
 associated with the frame (nsubs usually only reports the number given
@@ -508,18 +506,13 @@ in the header and may or may not be the same as the number of sub-frames
 currently stored)
 
 Usually this value is set as part of the configure() method from
-the header (using findnsubs()).
+the header (using findnsubs()) or by using findnsubs() directly.
 
 =cut
 
 sub nsubs {
   my $self = shift;
   if (@_) { $self->{Nsubs} = shift; };
-
-  unless (defined $self->{Nsubs}) {
-    $self->findnsubs;
-  }
-
   return $self->{Nsubs};
 }
 
