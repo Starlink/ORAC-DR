@@ -1,0 +1,116 @@
+=head1 NAME
+
+_CROSS_CORR_ALL_BEAMS - Cross correlates and shifts the extracted beams.
+
+=head1 DESCRIPTION
+
+Takes the extracted beams from _EXTRACT_ALL_BEAMS_ and cross
+correlates each beam with the first one, then shifts each beam, so
+that they're all shift-aligned with the first beam.
+
+The resulting spectra are created in an HDS container with a filename
+ending in _ccs, and the cross correlation functions are stored in an
+HDS container with a filename ending in _ccf.
+
+If the maximum value of the cross correlation function is less than
+0.6, or if the shift is greater than 2 pixels, then the spectra are
+not aligned and shifted.
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+Stuart Ryder <sdr@aaoepp.aao.gov.au>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# We should have a "NBEAMS" header from _EXTRACT_DETERMINE_NBEAMS_
+my $nbeams = $Grp->uhdr("NBEAMS");
+
+my $base = $Grp->raw;
+my $in = $Grp->file;
+
+# If there's only one beam (or, ahem no beams), don't bother
+if ($nbeams > 1) {
+   my $beamin = $in.".beam1";
+   my $mainbeam = $beamin;
+
+   # The output file - Cross correlation shift   
+   my $out = $base."_ccs";
+  my $ORAC_STATUS = ( create_hdsobj( $out, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+
+   # And the CCF file
+   my $ccf = $base."_ccf";
+   $ORAC_STATUS = ( create_hdsobj( $ccf, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+
+   # Copy the first beam over
+   my $beamout = $out.".beam1";
+   $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$mainbeam out=$beamout title=$beamout");
+   orac_print "Copied $mainbeam to $beamout\n";
+
+   # Loop over beams 2 onwards
+   for(my $i=2; $i<=$nbeams; $i++) {
+      $beamin = $in.".beam".$i;
+      $beamout = $out.".beam".$i;
+      my $ccfout = $ccf.".beam".$i;
+
+      # SDR: To avoid noisy regions on the array outside the filter
+      #      bandpass from disturbing the cross-correlation, we need
+      #      to restrict the wavelength range used, depending on the
+      #      blocking filter used. As of July 2003, all blocking
+      #      filters located in filter wheel, so no need for the
+      #      coldstop wheel check done in IRIS2.pm
+	my $lmin = 0.0;
+	my $lmax = 0.0;
+	my $filter = $Grp->hdr("IR2_FILT");
+	$filter =~ s/ //g;
+    	if ( uc($filter) eq 'K' || uc($filter) eq 'KS' ) {
+      	$lmin = 2.05;
+	$lmax = 2.35;
+    	} elsif ( uc($filter) eq 'J' || uc($filter) eq 'JS' || uc($filter) eq 'JL' ) {
+      	$lmin = 1.15;
+	$lmax = 1.24;
+	} elsif ( uc($filter) eq 'H' || uc($filter) eq 'HS' || uc($filter) eq 'HL' ) {
+	$lmin = 1.50;
+	$lmax = 1.75;
+	}
+
+      # Cross correlate spectra with scross
+      $Mon{'figaro1'}->obeyw("scross", "spectrum=$beamin template=$mainbeam record cross=$ccfout xstart=$lmin xend=$lmax"); 
+      (my $ORAC_STATUS, my $shift) = $Mon{'figaro1'}->get("scross", "shift");
+      orac_print "$ccfout: Cross Correlation Function of main and offset beam $i\n";
+
+      # Do a stats on the ccf
+      $Mon{'kappa_mon'}->obeyw("stats", "ndf=$ccfout(~100)");
+      ($ORAC_STATUS, my $maximum) = $Mon{'kappa_mon'}->get("stats", "maximum");
+      ($ORAC_STATUS, my $maxpos) = $Mon{'kappa_mon'}->get("stats", "maxpos");
+      my $string = sprintf ("%4.1f", 100*$maximum);
+
+      if($maximum > 0.6 && $maximum < 1 && $shift < 2) {
+         # OK, we'll use it
+         orac_print "Peak of CCF (at $string %) indicates a shift of: $shift - Accepted\n";
+	 $shift *= -1;
+	 # Need a temp file to fix the broken variances with a thresh
+	 my $tmp=new ORAC::TempFile;
+	 my $tmpfile = $tmp->file;
+	 $Mon{'figaro1'}->obeyw("ishift", "image=$beamin xshift=$shift xsplit=20 ysplit=1 yshift=0 output=$tmpfile");
+	 # Fix unreasonable variance values
+	 $Mon{'kappa_mon'}->obeyw("thresh", "in=$tmpfile comp=Variance out=$beamout thrlo=0 newlo=bad thrhi=1E9 newhi=bad");
+	 $Mon{'ndfpack_mon'}->obeyw("settitle", "ndf=$beamout title=$beamout");
+	 orac_print "$beamin to $beamout: shifted by $shift\n";
+      } else {
+         # We'll reject the shift and simply copy it over.
+         orac_print "Peak of CCF (at $string %) indicates a shift of: $shift - Rejected\n";
+         $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$beamin out=$beamout");
+	 orac_print "$beamin to $beamout: copied without shifting\n";
+      }
+   }
+
+   # Update the group object
+   $Grp->file($out);
+}

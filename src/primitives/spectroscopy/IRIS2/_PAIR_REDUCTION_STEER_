@@ -1,0 +1,162 @@
+=head1 NAME
+
+_PAIR_REDUCTION_STEER_ - steering file for pair-based recipes.
+
+=head1 DESCRIPTION
+
+This primitive controls the overall state of a recipe involving
+pair subtraction. It currently determines whether we are an OBJECT
+or a SKY and whether we are the first or second observation of a pair.
+This information is required by many of the group primitives to
+determine whether or not to act.
+
+=head1 OUTPUT
+
+Stores information in the user header of the current frame
+with the following keys:
+
+=over 4
+
+=item PAIR_COMPLETE
+
+True if the frame is the second of a pair. False otherwise.
+
+=item ON_SOURCE
+
+True if we are on the object. False if we are on sky.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Incompatible with the C<-batch> option in ORAC-DR since this primitive
+uses the number of frames in the group to determine state.
+
+=item *
+
+The test to see if the observation is either OBJECT or SKY
+is based on the aperture/axis selected - A is assumed to be
+the OBJECT position (source in row 580), while B is assumed
+to be the SKY position (source in row 640).
+
+=item *
+
+Determines that a pair is complete by counting the number of members in
+the ORAC-DR group. This will be different from the number of members
+in the IRIS2 group if the pipeline is restarted. It is
+assumed that the pipeline is restarted at the start of a pair
+(and the pipeline will fail if this is not the case).
+Additionally, the total number of observations in the group so far
+(regardless of the ORAC-DR group) is also calculated to determine
+the state of the pair. If the two answers are different the recipe
+aborts since this is indicative of the pipeline restarting midway
+through a pair reduction.
+
+=item *
+
+The pipeline can not be started from the second observation of a pair
+since ORAC-DR will have no knowledge of the previous frame.
+
+=item *
+
+When a frame is determined to be a SKY the offset information
+(the FITS headers) are stored in the Group object (via the uhdr())
+so that subsequent primitives can use this information to determine
+the position of the negative row. This is only used if the extraction
+is done without reducing a standard and is used to guarantee that
+the off position can be determined regardless of the order of the
+sky-object pair. The FITS headers stored are C<RAOFF>, C<DECOFF>,
+C<RABASE>, C<DECBASE>, C<MEANRA>, C<MEANDEC> and are prefixed by
+C<SKY_> when stored in the user header.
+
+=back
+
+=head2 Revision
+
+ $Id$
+
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+Paul Hirst <p.hirst@jach.hawaii.edu>
+Stuart Ryder <sdr@aaoepp.aao.gov.au>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+
+# Retrieve the number of frames currently in the group.  This assumes
+# no batch mode.
+my $num = $Grp->num();
+
+# Set the PAIR_COMPLETE steering header.
+if ( ($num+1) % 2 == 1 ) {
+   $Frm->uhdr( "PAIR_COMPLETE", 0 );
+   orac_print "Steerage: This observation is the start of a pair\n";
+} else {
+   $Frm->uhdr( "PAIR_COMPLETE", 1 );
+   orac_print "Steerage: This observation completes a pair\n";
+}
+
+# Obtain the telescope offsets.
+# SDR: Telescope offsets are not recorded for spectroscopy as they
+#      are for imaging. Instead, we have to assume Apertures A & B
+#      were defined to put the object in rows 580 and 640, corresponding
+#      to RA & Dec offsets of (0,0) and (26.92,0) arcsec for PA=90.
+# my $raoff = $Frm->uhdr("ORAC_RA_TELESCOPE_OFFSET");
+# my $decoff= $Frm->uhdr("ORAC_DEC_TELESCOPE_OFFSET");
+	my $raoff = 0.0;
+	my $decoff = 0.0;
+	my $axis = $Frm->hdr( "AXIS" );
+	if ( $axis eq "A" ) {
+    	$raoff = 0.0;
+    	} else {
+    	$raoff = 26.92;
+  	}
+
+# Set or get the base-shift - ie the main beam position
+_SET_BEAMOFFSETS_
+
+my $rabo = $Frm->uhdr("RA_BEAMOFFSET");
+my $decbo = $Frm->uhdr("DEC_BEAMOFFSET");
+
+# $raoff -= $rabo;
+# $decoff -= $decbo;
+
+# Now calculate whether we are an object or a sky observation.
+# SDR: Telescope offsets are not recorded for spectroscopy as they
+#      are for imaging. Instead, we have to assume Apertures A & B
+#      were defined to put the object in rows 580 and 640, corresponding
+#      to RA & Dec offsets of (0,0) and (26.92,0) arcsec for PA=90.
+#      If the PA is not 90, then these values will be different, but
+#      in practise it is only the offset between beams on the dectector
+#      we care about.
+# my $raoff = $Frm->uhdr("ORAC_RA_TELESCOPE_OFFSET");
+# my $decoff= $Frm->uhdr("ORAC_DEC_TELESCOPE_OFFSET");
+
+if ( $axis eq "A" ) {
+   $Frm->uhdr( "ON_SOURCE", 1 );
+#   orac_print "Steerage: This observation is of a main-beam frame: ($raoff, $decoff) from ($rabo, $decbo)\n";
+   orac_print "Steerage: This observation is of a main-beam frame\n";
+} else {
+   $Frm->uhdr( "ON_SOURCE", 0 );
+#   orac_print "Steerage: The observation is an offset-beam frame: ($raoff, $decoff) from ($rabo, $decbo)\n";
+   orac_print "Steerage: The observation is an offset-beam frame\n";
+
+   # Store the offset information in the group user header
+#   $Grp->uhdr( "SKY_RAOFF",   $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" ) );
+#   $Grp->uhdr( "SKY_DECOFF",  $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET"  ) );
+#  SDR: We cheat, and just insert these directly, assuming nod along
+#       slit between Apertures A & B.
+   $Grp->uhdr( "SKY_RAOFF",   26.92 );
+   $Grp->uhdr( "SKY_DECOFF",   0.0 );
+
+}

@@ -1,0 +1,135 @@
+=head1 NAME
+
+_WAVELENGTH_CALIBRATION_BY_ESTIMATION_ - Applies an approximate wavelength scale.
+
+=head1 DESCRIPTION
+
+Using information stored in the header, this primitive applies an
+extimated wavelength scale.
+
+=head1 PARAMETERS
+
+=over 4
+
+=item none
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Uses the SAMPLING uhdr to determine the original dimensions of the data
+give or take a pixel or (sampling factor).
+
+=back
+
+=head1 ORAC
+
+=head2 Engines referenced
+
+KAPPA, FIGARO
+
+=head2 Tasks called
+
+=over 4
+
+=item ndfpack_mon
+
+ndftrace, axlabel, axunits
+
+=item figaro1
+
+lxset
+
+=back
+
+=head2 Objects addressed
+
+$Frm
+
+=head2 REVISION
+
+  $Id$
+
+=head1 AUTHOR
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+Paul Hirst <p.hirst@jach.hawaii.edu>
+Stuart Ryder <sdr@aaoepp.aao.gov.au>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# Process each of the sub-files.
+foreach my $i ( 1..$Frm->nfiles ) {
+
+   # Generate the input and output filenames.
+   my ( $in, $out ) = $Frm->inout( "_wce", $i );
+
+   # Get the dimensions of the data.
+   my $xdim = $Frm->uhdr( "ORAC_X_DIM" );
+
+   # Get the sampling
+   # SDR: IRIS2 is always 1x1 sampled, so skip these steps
+   # my $sampling = $Frm->uhdr("SAMPLING");
+   # $sampling =~ m/(\d)x\d/;
+   # my $factor=$1;
+      
+   # Back to original x size - 
+   # deliberately give or take a pixel or $factor
+   # $xdim /= $factor;
+
+   # Get the dispersion, and the reference wavelength.
+   # SDR: IRIS2.pm has been revised to set these correctly
+   my $dispersion = $Frm->uhdr( "ORAC_GRATING_DISPERSION" );
+   my $refwave = $Frm->uhdr( "ORAC_GRATING_WAVELENGTH" );
+
+   # Determine the extreme wavelengths.
+   my $firstwave = $refwave - ( $xdim / 2 ) * $dispersion;
+   # SDR: Calculate $lastwave for pixel 1024, not 1025
+   # my $lastwave = $refwave + ( $xdim / 2 ) * $dispersion;
+   my $lastwave = $refwave + ( ( $xdim / 2 ) - 1 ) * $dispersion;
+
+   # Check that the range is valid.
+   if ( abs( $firstwave - $lastwave ) < 0.001 ) {
+      orac_err "Estimated wavelength range was 0 microns.  Something has gone wrong.\n";
+      orac_err "$in cannot be wavelength calibrated.";
+      my $ORAC_STATUS = ORAC__ERROR;
+   }
+
+   # Set the AXIS wavelength scale.
+   $Mon{'figaro1'}->obeyw( "lxset", "image=$in output=$out wstart=$firstwave wend=$lastwave log=false" );
+
+   # Set the AXIS label.
+   $Mon{'ndfpack_mon'}->obeyw( "axlabel", "ndf=$out label=\'Estimated wavelength\' dim=1 " );
+   $Mon{'ndfpack_mon'}->obeyw( "axlabel", "ndf=$out label='detector row' dim=2" );
+
+   # Set the AXIS units.
+   $Mon{'ndfpack_mon'}->obeyw( "axunits", "ndf=$out units=micron dim=1" );
+   $Mon{'ndfpack_mon'}->obeyw( "axunits", "ndf=$out units=pixel dim=2" );
+
+   # Set the NDF title.
+   $Mon{'ndfpack_mon'}->obeyw( "settitle", "ndf=$out title=$out" );
+
+   # Update the Frame object.
+   $Frm->file( $i, $out );
+
+   # Now copy the axis system into an explic WCS object
+   $Mon{'ccdpack_reg'}->obeyw("wcsedit", "mode=add in=$out domain=axis frame=axis maptype=unit");
+
+   # Display the wavelength calibrated array.
+   $Display->display_data( $Frm ) if defined $Display;
+
+   # Print congratulatory message
+   orac_print "$in to $out: wavelength calibrated by estimation.\n";
+}
+
+# Keep output tidy
+orac_print "\n";

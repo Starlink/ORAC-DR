@@ -1,0 +1,69 @@
+=head1 NAME
+
+_STANDARD_BLACKBODY_ - Divide a standard star spectrum by a blackbody model.
+
+=head1 DESCRIPTION
+
+Creates a blackbody model of the standard, and divides the extracted
+spectrum by it.
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+Based loosely on code by:
+b.cavanagh@jach.hawaii.edu
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# Filenames and things
+my $base = $Grp->raw;
+my $in=$Grp->file;
+
+# Create a blackbody spectrum
+
+my $bb = new ORAC::TempFile;
+my $bbfile = $bb->file;
+
+# Get the temperature
+my $temp = $Grp->uhdr("TEMPERATURE");
+
+# Need a temp file or two
+my $tmp = new ORAC::TempFile;
+my $tmpfile = $tmp->file;
+
+# Copy the input spectrum into a temp file and mess with the axis label
+$Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$tmpfile");
+$Mon{'ndfpack_mon'}->obeyw("axlabel", "ndf=$tmpfile dim=1 label=Wavelength");
+
+# Make the black body spectrum
+$Mon{'figaro4'}->obeyw("bbody", "in=$tmpfile out=$bbfile temp=$temp logar=false");
+
+# This is in silly units (Jy/sr) Convert it to F-lambda back into the tmp file
+$Mon{'figaro2'}->obeyw("fwconv", "spectrum=$bbfile flux_unit=erg output=$tmpfile");
+
+# Normalise it to 1 at the grating wavelength.
+my $gwlen = $Frm->uhdr("ORAC_GRATING_WAVELENGTH");
+
+$Mon{'kappa_mon'}->obeyw("stats", "ndf=$tmpfile($gwlen~1)");
+(my $ORAC_STATUS, my $mean) = $Mon{'kappa_mon'}->get("stats", "mean");
+
+$Mon{'kappa_mon'}->obeyw("cdiv", "in=$tmpfile scalar=$mean out=$bbfile");
+
+# Bodge on a variance component
+$Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$bbfile variance=0");
+
+my $out = $base."_std";
+
+# Divide by the black-body specrum
+$Mon{'kappa_mon'}->obeyw("div", "in1=$in in2=$bbfile out=$out title=$out");
+orac_print "$in to $out: Divided by Black Body Standard Star Model\n";
+
+$Grp->file($out);
+
+orac_print "\n";

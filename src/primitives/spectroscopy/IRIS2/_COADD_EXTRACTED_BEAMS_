@@ -1,0 +1,84 @@
+
+=head1 NAME
+
+_COADD_EXTRACTED_BEAMS_ - Coadds the beams which were previously extracted.
+
+=head1 DESCRIPTION
+
+Adds together the beams in the group file. Normally, these will
+have been aligned using _CROSS_CORR_ALL_BEAMS_ first.
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+Stuart Ryder <sdr@aaoepp.aao.gov.au>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# We should have a "NBEAMS" header from _EXTRACT_DETERMINE_NBEAMS_
+my $nbeams = $Grp->uhdr("NBEAMS");
+
+my $base = $Grp->raw;
+my $in = $Grp->file;
+my $out = $base."_sp";
+
+my $inbeam=$in.".beam1";
+
+if($nbeams == 0) {
+   # No beams to add.
+} elsif($nbeams == 1) {
+   # Only one beam. Just copy it to an NDF
+   $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$inbeam out=$out title=$out");
+
+   orac_print "Copied $inbeam to $out - only one beam present\n";
+   # Update the Grp object
+   $Grp->file($out);
+} else { 
+   # Several beams - sum them into a temp file, then normalise
+   my $tmp = new ORAC::TempFile;
+   my $tmpfile = $tmp->file;
+
+   my $temp = new ORAC::TempFile;
+   my $tempfile = $temp->file;
+
+   $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$inbeam out=$tmpfile");
+   orac_print "Copied $inbeam to output spectrum\n";
+
+   for (my $i=2; $i<=$nbeams; $i++) {
+       $inbeam = $in.".beam".$i;
+       $Mon{'kappa_mon'}->obeyw("add", "in1=$tmpfile in2=$inbeam out=$tempfile");
+       $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$tempfile out=$tmpfile");
+       orac_print "Added $inbeam to output spectrum\n";
+   }
+
+   $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tmpfile scalar=$nbeams out=$out title=$out");
+   orac_print "Normalised output spectrum by $nbeams beams into $out\n";
+}
+
+# Update the group object to the _sp file
+$Grp->file($out);
+
+# Display the _sp file
+$Display->display_data( $Grp ) if defined $Display;
+
+
+# Normalise to 1-second exposure time
+# SDR: In IRIS_MRM mode, the integration period is PERIOD, not
+# EXPOSED, so need to reference this directly
+# my $etime = $Frm->uhdr("ORAC_EXPOSURE_TIME");
+my $etime = $Frm->hdr("PERIOD");
+$in=$out;
+$out=$base."_nsp";
+$Mon{'kappa_mon'}->obeyw("cdiv", "in=$in scalar=$etime out=$out title=$out");
+orac_print "$in to $out: Normalised to 1-second exposure time\n";
+
+# Update the group object
+$Grp->file($out);
+      
+orac_print "\n";

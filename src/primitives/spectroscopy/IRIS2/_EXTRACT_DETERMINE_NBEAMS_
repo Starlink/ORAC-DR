@@ -1,0 +1,102 @@
+=head1 NAME
+
+_EXTRACT_DETERMINE_NBEAMS_ - Determine the number of beams to extract.
+
+=head1 DESCRIPTION
+
+Looks at the chop and offset headers to determine the number of beams
+there should be in the group image. Leaves the result in the NBEAMS
+group user header.
+
+=head1 HEURISTICS
+
+We declare an angle "along the slit" if the angle is within 5 degrees
+of the slit angle. This was chosen as it represents roughly 1
+arcsecond over a 10 arcsecond throw.
+
+At the moment, we do not factor in the slit length, so throws to a
+position off the end of the slit will count as "along slit".
+
+
+Possibilities:
+
+                   OFFSET      nbeams
+                   to-sky      1
+                   along-slit  2
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+Stuart Ryder <sdr@aaoepp.aao.gov.au>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# SDR: Chopping is not an option with IRIS2 - I have removed
+# all references to chopping on or off slit from here on.
+# my $chopping = $Frm->uhdr("CHOPPING");
+
+# Get the slit angle
+my $slitangle = $Frm->uhdr("ORAC_SLIT_ANGLE");
+# Ensure it's in the range 0 <= slitangle < 180;
+$slitangle += 180 if ($slitangle < 0);
+$slitangle -= 180 if ($slitangle >= 180);
+
+# Get the offset angle
+my $rabo = $Frm->uhdr("RA_BEAMOFFSET");
+my $decbo = $Frm->uhdr("DEC_BEAMOFFSET");
+my $raoff = $Grp->uhdr("SKY_RAOFF");
+my $decoff = $Grp->uhdr("SKY_DECOFF");
+$raoff -= $rabo;
+$decoff -= $decbo;
+my $offsangle = atan2($raoff,$decoff);
+# Convert from radians to degrees
+$offsangle = rad2deg($offsangle);
+# Squish to 0 <= x < 180 for now
+$offsangle += 180 if ($offsangle < 0);
+$offsangle -= 180 if ($offsangle >= 180);
+
+# SDR: format the position angle
+my $posang = sprintf ("%.1f", $slitangle);
+orac_print "Slit angle: $posang\n";
+orac_print "Offset angle: $offsangle\n";
+
+# Get the offset throw
+my $offsthrow = sqrt($raoff*$raoff+$decoff*$decoff);
+
+# We declare angles to be the same if they're within 5 degrees
+# - roughly 2" over 20".
+
+my $offsadiff = $offsangle - $slitangle;
+# Ensure in range -90 to 90
+$offsadiff += 180 if ($offsadiff < -90);
+$offsadiff -= 180 if ($offsadiff > 90);
+my $offsonslit = ((abs($offsadiff)) < 5);
+
+if ($offsonslit) {
+   orac_print "Offseting $offsthrow arcsec along the slit\n";
+} else {
+   orac_print "Offseting $offsthrow arcsec to sky\n";
+}
+
+# Now we know the details, determine how many beams there are.
+my $nbeams = 0;
+
+# Not chopping
+   if ($offsonslit) {
+      # Offset along slit
+      $nbeams = 2;
+   } else {
+      # Offset to sky
+      $nbeams = 1;
+   }
+
+orac_print "There should be $nbeams beam(s) in the group image\n";
+
+# Write the result into the Group user header
+$Grp->uhdr("NBEAMS", $nbeams);

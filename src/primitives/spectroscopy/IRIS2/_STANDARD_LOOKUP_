@@ -1,0 +1,334 @@
+=head1 NAME
+
+_STANDARD_LOOKUP_ - Retrieve parameters for a standard star.
+
+=head1 DESCRIPTION
+
+Looks up standard star parameters - from file, SIMBAD, etc. This primitive
+first checks a configuration table (bsc5.dat in $ORAC_DATA_CAL) for the
+spectral type and V magnitude. If the star is not found in the catalogue,
+a search on the SIMBAD database is performed. If the star is not found in
+SIMBAD, then default values are used: 6000K for temperature, -1000 for V
+magnitude, and UNKNOWN for spectral type.
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+Stuart Ryder <sdr@aaoepp.aao.gov.au>
+
+Based on code by:
+
+b.cavanagh@jach.hawaii.edu
+frossie@jach.hawaii.edu
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# We need to get the star parameters.  Since this is sometimes costly
+# we only do this if we have not already done it for this group!
+# This does not force a new determination in the case where the
+# network was down and is now up for this particular star...
+
+
+my ( $vmag, $temperature, $spectype );
+unless ( defined $Grp->uhdr( "TEMPERATURE" ) && 
+         defined $Grp->uhdr( "VMAG" ) && 
+         defined $Grp->uhdr( "SPECTYPE" ) ) {
+   # Get the temperature parameter.
+   # If the temperature parameter is not defined, check configuration table
+   # for spectral type.  If that fails, inquire SIMBAD for the spectral type.
+   # If SIMBAD fails, default to 6000. 
+
+   my %spectotemp = (O5 => 40000, 
+      O6 => 37000, 
+      O7 => 35000, 
+      O8 => 34000,
+      O9 => 33000, 
+      B0 => 30000, 
+      B1 => 25400, 
+      B2 => 22000, 
+      B3 => 18700, 
+      B4 => 17000, 
+      B5 => 15400, 
+      B6 => 14000, 
+      B7 => 13000, 
+      B8 => 11900, 
+      B9 => 10500, 
+      A0 => 9520, 
+      A1 => 9230, 
+      A2 => 8970, 
+      A3 => 8720, 
+      A4 => 8500, 
+      A5 => 8200, 
+      A6 => 8000, 
+      A7 => 7850, 
+      A8 => 7580, 
+      A9 => 7400, 
+      F0 => 7200,
+      F1 => 7000, 
+      F2 => 6890, 
+      F3 => 6700, 
+      F4 => 6500, 
+      F5 => 6440, 
+      F6 => 6350, 
+      F7 => 6275, 
+      F8 => 6200, 
+      F9 => 5900, 
+      G0 => 5930, 
+      G1 => 5880, 
+      G2 => 5830, 
+      G3 => 5785, 
+      G4 => 5740, 
+      G5 => 5680, 
+      G6 => 5620, 
+      G7 => 5525,
+      G8 => 5430, 
+      G9 => 5335, 
+      K0 => 5240, 
+      K1 => 5125, 
+      K2 => 5010, 
+      K3 => 4785, 
+      K4 => 4560, 
+      K5 => 4340, 
+      K6 => 4185, 
+      K7 => 4030, 
+      K8 => 3950, 
+      K9 => 3875, 
+      M0 => 3800, 
+      M1 => 3680, 
+      M2 => 3530, 
+      M3 => 3380, 
+      M4 => 3180,
+      M5 => 3030, 
+      M6 => 2850, );
+
+
+   # Try the Bright Star Catalogue
+
+   # First check the calibration table for spectral type of the standard.
+   if ( !defined( $temperature ) ) {
+      my $type;
+      my $objname = $Frm->uhdr( "ORAC_OBJECT" );
+      orac_print "Searching Bright Star Catalogue for $objname.\n";
+
+      # Name must be bs (case insensitive) followed by zero or one space and
+      # one to four digits.
+      # SDR: We might also have referred to it as "HR????" and not "BS????"
+      if ( ($objname =~ /bs\s?([0-9]{1,4})/i ) || ($objname =~ /hr\s?([0-9]{1,4})/i ) ) {
+         my $bsnum = $1;
+
+	 # Open the catalogue and define a format specifier for it.
+         my $calfile = $ENV{'ORAC_DATA_CAL'} . "/bsc5.dat";
+         open (my $bsfile, $calfile) or orac_throw "Could not open file $calfile: $!";
+         my $template = "a4a10a2a9a6a6a4a1a1a1a5a2a9a2a2a4a1a2a2" .
+                        "a2a2a2a4a1a2a2a2a6a6a5a1a1a5a1a5a1a5a1" .
+                        "a20a1a6a6a1a5a4a4a2a3a1a4a6a4a2a1\n";
+
+         # Read the file and form an array of the values.
+         while ( <$bsfile> ) {
+            my @data = unpack( $template, $_ );
+            if ( $1 == $data[0] ) {
+	       # Remove the first two characters from $data[38] (spectral type).
+               my $revdata = reverse $data[38];
+               chop $revdata;
+               chop $revdata;
+               $data[38] = reverse $revdata;
+
+	       # Determine the spectral type from the first two characters.
+               if ( $data[38] =~ /^([a-z][0-9])/i ) {
+                  $spectype = $1;
+                  orac_print "     Object is spectral type $spectype\n";
+                  ( $vmag = $data[29] ) =~ s/\s+//g;
+
+	          # Hence derive the temperature.
+                  $temperature = $spectotemp{$spectype};
+                  orac_print "     Setting temperature to $temperature K.\n";
+                  orac_print "     V magnitude is $vmag.\n";
+               }
+               last;
+            }
+         }
+         close $bsfile;
+      }
+   }
+
+   # Find the spectral type from SIMBAD.
+
+   if ( (!defined($temperature)) && (defined(&LWP::Simple::get)) ) {
+      orac_print "Object not found in Bright Star Catalogue.\n";
+      orac_print "Querying SIMBAD for spectral type...\n";
+
+      my @simbadurls = qw( http://simbad.harvard.edu/
+                           http://simbad.u-strasbg.fr/ );
+
+      my $meanra = $Frm->uhdr( "ORAC_RA_BASE" );
+      my $meandec = $Frm->uhdr( "ORAC_DEC_BASE" );
+#      my ( $radeg, $ramin, $rasec ) = dectodms( $meanra );
+      my ( $decdeg, $decmin, $decsec ) = dectodms( $meandec );
+# SDR: SIMBAD doesn't seem to like the dms format provided by these,
+#      so go with decimal (not scientific) format
+      my $simformat = "%10.6f";
+      my $simra = sprintf($simformat,$meanra);
+      my $simdec = sprintf($simformat,$meandec);
+      
+
+      foreach my $simbadurl (@simbadurls) {
+        last if (defined($temperature));
+
+        orac_print " Querying $simbadurl\n";
+
+        # Set up the URL.
+#        my $URL1 = $simbadurl . "sim-id.pl?protocol=html&Ident=".$radeg."+".$ramin."+";
+        my $URL1 = $simbadurl . "sim-id.pl?protocol=html&Ident=".$simra."+";
+        my $URL2;
+        if ( $decdeg > 0 ) {
+#           $URL2 = $rasec."+%2B".$decdeg."+".$decmin."+".$decsec."&NbIdent=1&Radius=10&Radius.unit";
+# SDR: Search radius of 1 arcmin ought to be enough
+           $URL2 = "+%2B".$simdec."&NbIdent=1&Radius=1&Radius.unit";
+        } else {
+# SDR: Search radius of 1 arcmin ought to be enough
+           $URL2 = $simdec."&NbIdent=1&Radius=1&Radius.unit";
+        }
+        my $URL3 = "=arcmin&CooFrame=FK5&CooEpoch=2000&CooEqui=2000&output.max=";
+        my $URL4 = "all&o.catall=on&output.mesdisp=N&Bibyear1=1983&Bibyear2=1999&Frame1=FK5";
+        my $URL5 = "&Frame2=none&Frame3=none&Epoch1=2000.0&Epoch2=1950.0&Epoch3=2000.0&Equi1";
+        my $URL6 = "=2000.0&Equi2=1950.0&Equi3=2000.0";
+        my $URL = $URL1 . $URL2 . $URL3 . $URL4 . $URL5 . $URL6;
+#        orac_print "Using URL $URL\n";
+        # Attempt to access the URL.  If successful the information is stored in
+        # the content array with appropriate line breaks.
+      
+        # set timeout to 20 seconds
+        $LWP::Simple::ua->timeout(20);
+ 
+        my @content = split '\n', LWP::Simple::get( $URL );
+        if ( !defined( $content[ 0 ] ) ) {
+           orac_print "Unable to connect to SIMBAD database.\n";
+        } else {
+           my $found = 0;
+
+  	 # If the SIMBAD results page changes, this will need to change as well.
+	   # For each line, split the fields into an array.
+           foreach my $string ( @content ) { 
+              my @array = ();
+              @array = split '\|', $string;
+
+  	    # Extract the spectral type.
+              if ( (defined($array[4])) && ($array[4] =~ /([a-z][0-9])/i ) && ($found == 0) ) { 
+                 $spectype = $1;
+
+	         # Obtain the standard's equatorial co-ordinates.
+                 my @simcoord = split ' ', $array[ 2 ];
+                 my $format = "%2d %2d %4.2f";
+# SDR: We want RA in hms format, not dms
+#                 my $rastring = sprintf( $format, $radeg, $ramin, $rasec );
+  		 my $rahours = ($meanra / 360.0) * 24.0;
+  		 my $hours = int( $rahours );
+  		 my $minute = int( ( $rahours - $hours ) * 60 );
+  		 my $second = int( ( ( ( $rahours - $hours ) * 60 ) - $minute ) * 60 );
+                 my $rastring = sprintf( $format, $hours, $minute, $second );
+                 my $decstring = sprintf( $format, $decdeg, $decmin, $decsec );
+                my $srastring = sprintf( $format, $simcoord[ 0 ], $simcoord[ 1 ], $simcoord[ 2 ] );
+                my $sdecstring = sprintf( $format, $simcoord[ 3 ], $simcoord[ 4 ], $simcoord[ 5 ] );
+
+  	       # Keep the user informed.
+
+		 my $objname = "Fred";
+                 if ( (defined($array[0])) ) {
+# SDR: Strip off all the http://...
+                 my @name1 = split '>', $array[ 0 ];
+# SDR: Strip off the trailing </A>
+		 my @name2 = split '<', $name1[1];
+		 $objname = $name2[0];
+		 }
+		 orac_print "    Position matched to: $objname\n";
+                 orac_print "    Header RA: $rastring Decl: $decstring\n";
+                 orac_print "    SIMBAD RA: $srastring Decl: $sdecstring\n";
+                 orac_print "    Object is spectral type $spectype\n";
+                 $temperature = $spectotemp{$spectype};
+                 orac_print "    Setting temperature to $temperature K\n";
+
+  	       # Record the match.
+                 $found = 1;
+
+  	       # Find the V magnitude.  Simply look for the last number surrounded by
+	         # spaces, rather than looking for 'Number Number' which sometimes
+	         # fails since occasionally SIMBAD inserts a character between
+	         # the numbers.
+                 $array[ 3 ] =~ /([\d\.]+)\s*$/;
+                 $vmag = $1;
+                 if ( defined $vmag ) {
+                    orac_print "    V magnitude is $vmag (from B, V = $array[ 3 ] )\n";
+                } else {
+                    orac_warn "V magnitude information did not match the expected pattern.\n";
+                    orac_warn "Got: '$array[ 3 ]' expected  'Number ? Number' (where ? is an optional character).\n";
+                    orac_warn "V magnitude could not be determined.\n";
+                 }
+              
+              }
+           }
+
+           if ( ! $found  ) {
+              my $format = "%2d %2d %4.2f";
+# SDR: We want RA in hms format, not dms
+#              my $rastring = sprintf($format,$radeg,$ramin,$rasec);
+  	      my $rahours = ($meanra / 360.0) * 24.0;
+  	      my $hours = int( $rahours );
+  	      my $minute = int( ( $rahours - $hours ) * 60 );
+  	      my $second = int( ( ( ( $rahours - $hours ) * 60 ) - $minute ) * 60 );
+              my $rastring = sprintf( $format, $hours, $minute, $second );
+
+              my $decstring = sprintf($format,$decdeg,$decmin,$decsec);
+              orac_print "Object at RA: $rastring Decl: $decstring is not classified in SIMBAD.\n";
+           }
+        }
+     }
+
+  }
+
+   # Use defaults if other methods have failed.
+
+   # If SIMBAD failed to set the temperature, default to 6000
+   unless (defined $temperature) {
+      $temperature = 6000.0;
+      orac_print "    Temperature could not be determined. Defaulting to $temperature K.\n";
+   }
+
+   # Write a obviously wrong V magnitude, if not set.
+   unless ( defined $vmag ) {
+      $vmag = -1000.0;
+      orac_warn "    Could not determine the V magnitude.\n";
+   }
+
+   # Default the spectral type.
+   unless ( defined $spectype ) {
+      $spectype = "UNKNOWN";
+      orac_warn "Could not determine spectral type.\n";
+   }
+
+   # Store or read values to or from the headers.
+
+
+   # Store the values in the header.
+   $Grp->uhdr( "VMAG", $vmag );
+   $Grp->uhdr( "TEMPERATURE", $temperature );
+   $Grp->uhdr( "SPECTYPE", $spectype );
+
+} else {
+   # Values are already stored, so access them.
+   $vmag = $Grp->uhdr( "VMAG" );
+   $temperature = $Grp->uhdr( "TEMPERATURE" );
+   $spectype = $Grp->uhdr( "SPECTYPE" );
+
+   orac_print "Using previously determined values of Vmag=$vmag, SPECTYPE=$spectype, TEMP=$temperature.\n";
+}
+
+_SET_GROUP_FITS_ITEM_ KEY=SPECTYPE VALUE=$spectype COMMENT=spectral|type
+_SET_GROUP_FITS_ITEM_ KEY=VMAG VALUE=$vmag COMMENT=V|magnitude
+$Frm->uhdr("VMAG", $vmag);
+$Frm->uhdr("SPECTYPE", $spectype);

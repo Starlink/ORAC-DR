@@ -1,0 +1,85 @@
+=head1 NAME
+
+_EXTRACT_SPECTRA_ - Extracts spectra from an image.
+
+=head1 DESCRIPTION
+
+Extracts spectra from an image. This primitive only runs if a pair
+has been completed.
+
+=head1 PARAMETERS
+
+This primitive simply passes on parameters to the lower level
+primitives it calls.
+
+Availiable parameters are:
+
+ROWSCAL: [LOAD|SAVE] - instructs the _EXTRACT_FIND_ROWS_ primitive
+whether to load details from the calibration system, save details to
+the calibration system, or neither.
+
+PROFILECAL : [LOAD|SAVE] - instructs the _EXTRACT_ALL_BEAMS_ primitive
+whether to load details from the calibration system, save details to
+the calibration system, or neither.
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+Stuart Ryder <sdr@aaoepp.aao.gov.au>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+if ($Frm->uhdr("PAIR_COMPLETE")) {
+
+   # This now needs an up-to-date figaro - or else beam extraction is hopeless
+   if ( starversion_lt( "FIGARO", 'V5.6-0' )) {
+      orac_err ("Your figaro is too old - versions below 5.6-0 cannot support oracdr beam extraction.\n");
+   } else {
+
+      my $rowscal = $_EXTRACT_SPECTRA_{ROWSCAL};
+      my $profilecal =$_EXTRACT_SPECTRA_{PROFILECAL};
+
+      $rowscal=0 if (!defined $rowscal);
+      $profilecal=0 if (!defined $profilecal);
+
+      _EXTRACT_DETERMINE_NBEAMS_
+
+# SDR: Modified _EXTRACT_FIND_ROWS_ to avoid collapsing entire image,
+#      just use a few columns about the centre of the array.
+      _EXTRACT_FIND_ROWS_ ROWSCAL=$rowscal
+
+      # Should we use an arc
+      # SDR: Don't think we need this
+#      my $noarc = $Frm->uhdr("REDUCE_SINGLE_FRAME_CONFIG_NOARC");
+#      if (!$noarc) {
+#         _EXTRACT_ARC_
+#      }
+
+      # Only proceed if we found all the beams
+      my $nbeams = $Grp->uhdr("NBEAMS");
+      if($nbeams) {
+         _EXTRACT_ALL_BEAMS_ PROFILECAL=$profilecal
+
+# SDR: No derippling necessary, but the primitive will recognise this
+#      and propagate the original spectrum
+         _DERIPPLE_ALL_BEAMS_
+
+# SDR: Cross-correlating and shifting the extracted beams will
+#      be necessary because of the curvature.
+         _CROSS_CORR_ALL_BEAMS_
+
+# SDR: Modify _COADD_EXTRACTED_BEAMS_ to normalise by PERIOD,
+#      rather than ORAC_EXPOSURE_TIME
+         _COADD_EXTRACTED_BEAMS_
+
+         _CREATE_SPECFRAME_
+
+      }
+   }
+}

@@ -1,0 +1,361 @@
+
+=head1 NAME
+
+_NIGHT_LOG_ - Produces a text listing summary of a frame's headers.
+
+=head1 DESCRIPTION
+
+Produces a line of text in a log file summarising the header values of
+the frame. Is used both as part of the general data reduction, so as
+to produce an on-the-fly listing of what has been reduced so far, and
+as part of the NIGHT_LOG recipe to provide a summary of a set (usually
+the whole night's worth) of observations.
+
+=head1 ARGUMENTS
+
+The following arguments are available:
+
+=over 4
+
+=item OUT
+
+When set (to any value) the log file is written to F<$ORAC_DATA_OUT>
+rather than to F<$ORAC_DATA_IN>.
+
+=back
+
+=head1 OUTPUT DATA
+
+The text log file F<E<lt>dateE<gt>.nightlog>, where
+E<lt>dateE<gt> is the UT date.  For the multi-mode instruments UIST,
+Michelle, IRIS2, and ISAAC the file is F<E<lt>dateE<gt>_sp.nightlog>.
+
+The file is in F<$ORAC_DATA_IN> by default, or in F<$ORAC_DATA_OUT> if
+the OUT argument is set.  This primitive is called from
+_SPECTROSCOPY_HELLO_ with the OUT argument set, so the on-the-fly
+nightlog appears in F<$ORAC_DATA_OUT>, and without the argument from
+the NIGHT_LOG recipe, so that we can create a summary of a night's
+observations in F<$ORAC_DATA_IN>.
+
+The on-the-fly log in F<$ORAC_DATA_OUT> is always appended to, being
+created only if it doesn't exist.  Thus multiple entries for the same
+observation may exist in the on-the-fly log if the pipeline is rerun.
+
+The "clean" log file in F<$ORAC_DATA_IN> is re-started if the observation
+number equals 1 and is appended to otherwise, being created as necessary.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+The logfile created by this primitive does not follow the standard
+ORAC-DR naming convention (F<log.xxxx>) since it can be used to write
+log files to directories other than F<$ORAC_DATA_OUT> and unique file
+names are required.
+
+=item *
+
+No external algorithm engines are required by this primitive.
+
+=item *
+
+Run with the oracdr option -resume to prevent deletion of allready existing group files
+
+=item *
+
+Run with the oracdr option -noeng for efficiency
+
+=back
+
+=head1 AUTHORS
+
+Frossie Economou (JAC)
+
+Paul Hirst (JAC) <p.hirst@jach.hawaii.edu>
+
+Tim Jenness (JAC)
+
+Malcolm J. Currie (Starlink) <mjc@star.rl.ac.uk>
+
+Stuart Ryder (AAO) <sdr@aaoepp.aao.gov.au>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# Add DR deduced headers
+_DETERMINE_SAMPLING_
+_FIX_HEADERS_
+_FIX_EXTRA_HEADERS_
+
+# Obtain the frame number and UT date.
+my $obsnum = $Frm->number;
+my $obsdate = $Frm->uhdr( "ORAC_UTDATE" );
+
+# Were we given the LONG option?
+my $long = $_NIGHT_LOG_{"LONG"};
+my $longsuff = "";
+$longsuff = "-long" if ($long);
+
+# For The dual-mode instruments (currently Michelle and Uist)
+my $suffix;
+my $inst = $Frm->uhdr("ORAC_INSTRUMENT");
+if (($inst eq "Michelle") || ($inst eq "UIST") || ($inst eq "IRIS2") ||
+    ($inst eq "ISAAC")) {
+  $suffix = "_sp.nightlog" . $longsuff;
+} else {
+  $suffix = ".nightlog" . $longsuff;
+}
+
+# Specify the location of the nightly log file. [depends on the arguments]
+my $nightlog;
+if ( exists $_NIGHT_LOG_{"OUT"} ) {
+
+  # ORAC_DATA_OUT is the current directory and the default location for
+  # log files.
+  $nightlog = "${obsdate}${suffix}";
+
+  # If we're working in ORAC_DATA_OUT, always append to the file, creating
+  # the logfile if it doesn't exist.
+} else {
+  
+  # A non-standard location so full path is required
+  $nightlog = $ENV{ "ORAC_DATA_IN" } . "/${obsdate}${suffix}";
+  
+  # If we're working in ORAC_DATA_IN, start fresh if this is frame 1
+  # We don't care about the return value from unlink.
+  unlink $nightlog if $obsnum == 1;
+}
+
+# Flag to indicate whether or not the log is there already.
+my $is_there;
+$is_there = ( -e $nightlog ? 1 : 0 );
+
+# Create a new log object.
+my $log = new ORAC::LogFile( $nightlog );
+
+# Only proceed if we have a valid object
+if ( defined $log ) {
+  if ( $is_there ) {
+    orac_print "Appending to Log: $nightlog\n";
+  } else {
+    orac_print "Log created as $nightlog\n";
+  }
+
+ 
+  # Create the empty strings.
+  my $heading1="";
+  my $heading2="";
+  my $entry = "";
+
+  # Observation number
+  # SDR: Not likely to go over 999, so trim down
+  $heading1 .= "Obs |";
+  $heading2 .= "----|";
+  #             1234
+  $entry .= sprintf("%4d ", $obsnum);
+
+  # Group number and flag 
+  # SDR: Not likely to go over 999, so trim down
+  $heading1 .= "Grp |";
+  $heading2 .= "----|";
+  #             1234
+  $entry .= sprintf("%4d ", $Frm->findgroup);
+
+  # Object name and std flag
+  # SDR: IRIS2 doesn't have a "Std" flag, so use the space for
+  #      object name instead.
+  $heading1 .= "   Object     |";
+  $heading2 .= "--------------|";
+  #             12345678901234
+  $entry .= sprintf ("%14.14s ", $Frm->uhdr("ORAC_OBJECT"));
+
+  # Observation Type
+  $heading1 .= "Obstype|";
+  $heading2 .= "-------|";
+  #             1234567
+  $entry .= sprintf("%7.7s ", $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ));
+
+  # Slit and PA
+  # SDR: Adjust these for IRIS2
+  $heading1 .= "Slit    PA  |";
+  $heading2 .= "------------|";
+  #             123456 12345
+  # Present the slit name nicely.
+  # SDR: Both IR2_SLIT and TEL_PA should be translated by IRIS2.pm,
+  #      but since I don't have write permission on that file, just
+  #      call them directly. Set slit name to either "Centre" or
+  #      "Offset".
+  my $slitname = $Frm->hdr( "IR2_SLIT" );
+  $slitname = "Centre" if ( $slitname eq "SLIT_150um" );
+  $slitname = "Offset" if ( $slitname eq "OFF_150um" );
+  
+  $entry .= sprintf("%6.6s  %4.1f ", $slitname, $Frm->hdr( "TEL_PA" ));
+
+  if($long) {
+    # RA
+    $heading1 .= "RA    |";
+    $heading2 .= "------|";
+    #             123456
+    $entry .= sprintf("%6.3f ", $Frm->uhdr( "ORAC_RA_BASE" ));
+
+    # Dec
+    $heading1 .= "Dec    |";
+    $heading2 .= "-------|";
+    #             1234567
+    $entry .= sprintf("%7.3f ", $Frm->uhdr( "ORAC_DEC_BASE" ));
+  }
+
+  # RA offset
+  $heading1 .= "RAoff|";
+  $heading2 .= "-----|";
+  #             12345
+  # SDR: Offsets may not be defined, so check before writing
+  my $ratoff = $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" );
+  $ratoff = defined( $ratoff ) ? $ratoff : 0.0;
+  $entry .= sprintf("%5.1f ", $ratoff );
+
+  # Dec offset
+  $heading1 .= "DECof|";
+  $heading2 .= "-----|";
+  #             12345
+  # SDR: Offsets may not be defined, so check before writing
+  my $decoff = $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" );
+  $decoff = defined( $decoff ) ? $decoff : 0.0;
+  $entry .= sprintf("%5.1f ", $decoff );
+
+  # UT
+  $heading1 .= " UT     |";
+  $heading2 .= "--------|";
+  #             12345678
+  # Format the UT start in hours, minutes, and seconds from decimal hours.
+  my $ut = $Frm->uhdr( "ORAC_UTSTART" );
+  my $uthours = int $ut;
+  $ut -= $uthours;
+  $ut *= 60.0;
+  my $utmins = int $ut;
+  $ut -= $utmins;
+  $ut *= 60.0;
+  # SDR: to avoid rounding problems, add 0.5 before taking int
+  $ut += 0.5;
+  my $utsecs = int $ut;
+  $ut = sprintf("%02d:%02d:%02d", $uthours, $utmins, $utsecs);
+  $entry .= sprintf("%8.8s ", $ut);
+
+  # AirMass
+  $heading1 .= " AM |";
+  $heading2 .= "----|";
+  #             1234
+  $entry .= sprintf("%4.2f ", $Frm->uhdr( "ORAC_AIRMASS_START" ));
+
+  # Exposure time
+  # SDR: Don't need exposure time to 2 decimal places. Also, for MRM
+  # mode, exposure time per integration is given by PERIOD keyword.
+  $heading1 .= " Exp |";
+  $heading2 .= "-----|";
+  #             12345
+  $entry .= sprintf("%5.1f ", $Frm->hdr( "PERIOD" ));
+
+  # Number of reads
+  # SDR: For IRIS2 MRM, we want the number of reads per integration
+  $heading1 .= "NRd|";
+  $heading2 .= "---|";
+  #             123
+  $entry .= sprintf("%3d ", $Frm->uhdr( "ORAC_NUMBER_OF_READS" ));
+
+  # Number of exposures per integration
+  # SDR: For MRM mode, this is the number of CYCLES
+  $heading1 .= "Cyc|";
+  $heading2 .= "---|";
+  #             123
+  $entry .= sprintf("%3d ", $Frm->uhdr( "ORAC_NUMBER_OF_EXPOSURES" ));
+
+  if ($long) { 
+   # Detector mode
+    $heading1 .= "MODE    |";
+    $heading2 .= "--------|";
+    #             12345678
+    $entry .= sprintf("%8.8s ", $Frm->uhdr( "ORAC_DETECTOR_READ_TYPE" ));
+
+    # Sampling
+    # SDR: Irrelevant
+    # $heading1 .= "SAM|";
+    # $heading2 .= "---|";
+    #             123
+    # $entry .= sprintf("%3.3s ", $Frm->uhdr("SAMPLING"));
+
+    # Array size
+    # SDR: Irrelevant
+    # $heading1 .= "rowXcol|";
+    # $heading2 .= "-------|";
+    #             1234567
+    # Obtain the array dimensions.
+    # my $xdim = $Frm->uhdr( "ORAC_X_DIM" );
+    # my $ydim = $Frm->uhdr( "ORAC_Y_DIM" );
+    # my $rowxcol = "${xdim}x${ydim}";
+    # $entry .= sprintf("%7.7s ", $rowxcol);
+    
+    # Filter
+    # SDR: We need this in the short log form as well.
+    # $heading1 .= "Filter|";
+    # $heading2 .= "------|";
+    #             123456
+    # $entry .= sprintf("%6.6s ", $Frm->uhdr( "ORAC_FILTER" ));
+  }
+
+  # Grating and Order
+  # SDR: For IRIS2, we really want the Grism and blocking filter
+  # $heading1 .= "Grating Ord|";
+  # $heading2 .= "-----------|";
+  #             12345678 12
+  # $entry .= sprintf("%8.8s %2d ", $Frm->uhdr( "ORAC_GRATING_NAME" ), $Frm->uhdr( "ORAC_GRATING_ORDER" ));
+
+  # SDR: Use this instead
+  # Grism and blocking filter
+  $heading1 .= "Grism  Filt|";
+  $heading2 .= "-----------|";
+  #             12345678901
+  my $grismname = $Frm->hdr( "IR2_GRSM" );
+  $grismname = "Sap240" if ( $grismname eq "SAPPHIRE_240" );
+  $grismname = "Sap316" if ( $grismname eq "SAPPHIRE_316" );
+  
+  $entry .= sprintf("%6.6s   %2.2s ", $grismname, $Frm->hdr( "IR2_FILT" ));
+
+  # Grating wavelength
+  # SDR: IRIS2 is fixed format, so don't need this
+  # $heading1 .= "Glamda|";
+  # $heading2 .= "------|";
+  #             123456
+  # $entry .= sprintf("%6.3f ", $Frm->uhdr( "ORAC_GRATING_WAVELENGTH" ));
+
+  if ($long) {
+    # Configuration Index
+    # SDR: Irrelevant
+    # $heading1 .= "CNFidx|";
+    # $heading2 .= "------|";
+    #             123456
+    # $entry .= sprintf("%6.6s ", $Frm->uhdr( "ORAC_CONFIGURATION_INDEX" ));
+  }
+
+  # DR recipe
+  $heading1 .= "    DR Recipe   |";
+  $heading2 .= "----------------|";
+  #             1234567890123456
+  $entry .= sprintf("%-16s", $Frm->recipe);
+
+
+  # If we're actually in imaging mode, blow that away and just write "Imaging"
+  # This shouldn't happen often. (ahem)
+
+  $entry = sprintf("%5d - Imaging Mode", $obsnum) if ($Frm->uhdr("ORAC_OBSERVATION_MODE") eq "imaging");
+
+  $log->header($heading1, $heading2);
+  $log->addentry($entry);
+} else {
+  orac_warn "Could not create nightlog $nightlog.\n";
+}

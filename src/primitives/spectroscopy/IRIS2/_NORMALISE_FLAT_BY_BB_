@@ -1,0 +1,96 @@
+=head1 NAME
+
+_NORMALISE_FLAT_BY_BB_ - Normalise a flat field frame with a black body curve.
+
+=head1 DESCRIPTION
+
+Normalises a frame (usually an IRIS2 quartz flat field frame).
+
+This primitive first creates a black body spectrum using an assumed lamp
+temperature of 330 K, grows this to the size of the image, and divides by
+it. It then divides the image by the image's mean pixel value so as to
+normalise its absolute level to 1.
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+Stuart Ryder <sdr@aaoepp.aao.gov.au>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# Loop through sub-files
+foreach my $i (1 .. $Frm->nfiles) {
+
+	# Generate the input and output filenames
+	my ($in, $out) = $Frm->inout("_nf", $i);
+
+	# SDR: IRIS2 doesn't use an integrating sphere, nor do we
+        #      track the lamp temperature. But it doesn't matter
+        #      much what the exact lamp spectral shape is, as it
+        #      is divided into both the object and standard star
+        #      spectra.
+	# Get the Black-Body (CGS4 flat field source) temperature
+	# my $bbtemp = $Frm->hdr("BBTEMP");
+	# if (!defined $bbtemp) {
+	# Assume 330K - an approximation for the michelle integrating sphere
+	my $bbtemp = 330;
+	# }
+
+	# Create a template for the BB spectrum
+	my $bt=new ORAC::TempFile;
+	my $btfile=$bt->file;
+
+	my $ctr = int ($Frm->uhdr("ORAC_Y_DIM") / 2);
+	$Mon{'figaro1'}->obeyw("extract", "image=$in ystart=$ctr yend=$ctr spectrum=$btfile");
+	$Mon{'ndfpack_mon'}->obeyw("axlabel", "ndf=$btfile dim=1 label=wavelength");
+
+	# create a black body model in a file, 
+	# refering to $btfile (ie $in)  for the dispersion axis info
+	my $bb=new ORAC::TempFile;
+	my $bbfile = $bb->file;
+	my $bc=new ORAC::TempFile;
+	my $bcfile=$bc->file;
+
+	$Mon{'figaro4'}->obeyw("bbody", "temp=$bbtemp in=$btfile out=$bcfile");
+	$Mon{'figaro2'}->obeyw("fwconv", "spectrum=$bcfile flux_unit=erg output=$bbfile");
+
+	# Grow the bb file to be 2D
+
+	my $ystart = $Frm->uhdr("ORAC_Y_LOWER_BOUND");
+	my $yend = $Frm->uhdr("ORAC_Y_UPPER_BOUND");
+	my $ydim = $yend;
+
+       $Mon{'figaro1'}->obeyw( "growx", "spectrum=$bbfile image=$bcfile ystart=$ystart yend=$yend ysize=$ydim new=true");
+
+       # Stuff on a zero variance so as not to drop the variance array shortly
+       $Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$bcfile variance=0");
+
+       # Divide the flat by the bbimage, into another temp file
+       my $temp=new ORAC::TempFile;
+       my $tempfile = $temp->file;
+       $Mon{'kappa_mon'}->obeyw("div", "in1=$in in2=$bcfile out=$tempfile");
+
+       # Now normalise the tempfile into another temp file
+       $Mon{'kappa_mon'}->obeyw("stats", "ndf=$tempfile");
+
+       (my $ORAC_STATUS, my $mean)=$Mon{'kappa_mon'}->get("stats", "mean");
+
+       orac_print "Normalisation factor is: $mean\n";
+
+       $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tempfile scalar=$mean out=$out");
+
+       # Update the Frm object
+       $Frm->file($out, $i);
+
+       orac_print("$in to $out: Flat field normalised by Black Body\n");
+
+}
+
+# Display the frame
+$Display->display_data( $Frm ) if defined $Display;

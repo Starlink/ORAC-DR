@@ -1,0 +1,142 @@
+ # -*-perl-*-
+
+=head1 NAME
+
+_CREATE_SPECFRAME_ - Adds a SpecFrame to a spectrum.
+
+=head1 DESCRIPTION
+
+Using information stored in the header, this primitive adds a
+SpecFrame to the group image, allowing for transformations between
+standards of references, frequence/wavelength, units, etc.
+
+=head1 PARAMETERS
+
+=over 4
+
+None.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item * Currently only valid for 1D spectra.
+
+=back
+
+=head1 AUTHOR
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+=cut
+
+# Check to make sure we have a 1D spectrum (for now).
+
+#$Grp->readhdr;
+my $ndims = $Grp->uhdr("NDIMS");
+
+my $grp = $Grp->file;
+
+if( $ndims != 1 ) {
+
+  orac_warn("Cannot currently support adding a SpecFrame to a multi-dimensional image.\n");
+
+} else {
+
+  # If we are running Kappa 1.1 or later, use SpecFrame
+  if( starversion_gt( "KAPPA", "V1.0-99" ) ) {    # could really use ge(v1.1)
+
+    # At this point we are going to convert the AXIS information into
+    # a SpecFrame in the Topocentric standard of rest. To do this we need
+    # the telescope's position on the Earth, the reference RA/Dec, and
+    # the time of observation.
+
+    # Get the telescope's position on Earth. We'll use Astro::Telescope
+    # for this.
+    # SDR: uhdr("ORAC_TELESCOPE") doesn't seem to be recognised, even
+    #      though TELESCOPE => "TELESCOP" added to IRIS2.pm
+    # if( !defined( $Grp->uhdr("ORAC_TELESCOPE") ) ) {
+      if( !defined( $Grp->hdr("TELESCOP") ) ) {
+      orac_warn("Telescope not defined. Will not add SpecFrame for wavelength axis.\n");
+    } else {
+
+      # Bring in Astro::Telescope.
+      use Astro::Telescope;
+#      use Data::Dumper;
+#print Dumper $Grp->uhdr;
+      my $tel = new Astro::Telescope( $Grp->uhdr("ORAC_TELESCOPE") );
+      my $lat = $tel->lat("s");
+      my $long = $tel->long("s");
+
+      #  Now build the epoch from internal headers.
+      my $utdate = $Grp->uhdr("ORAC_UTDATE");
+      my $uttime = $Grp->uhdr("ORAC_UTSTART");
+      $utdate =~ /(\d{4})(\d\d)(\d\d)/;
+      my $year = $1;
+      my $month = $2;
+      my $day = $3;
+      my $hour = int( $uttime );
+      my $minute = int( ( $uttime - $hour ) * 60 );
+      my $second = int( ( ( ( $uttime - $hour ) * 60 ) - $minute ) * 60 );
+
+      my $epoch = "$year-$month-$day $hour:$minute:$second";
+
+      # Convert decimal right ascension to sexagesimal.
+      my $basera = $Grp->uhdr("ORAC_RA_BASE");
+      my $radeg = int( $basera );
+      my $ramin = int( ( $basera - $radeg ) * 60 );
+      my $rasec = ( ( ( $basera - $radeg ) * 60 ) - $ramin ) * 60;
+
+      # Convert decimal declination to sexagesimal.
+      my $basedec = $Grp->uhdr("ORAC_DEC_BASE");
+      my $decsign = "+";
+      if ( $basedec < 0 ) {
+         $decsign = "-";
+      }
+      my $decres = abs( $basedec );
+      my $decdeg = int( $decres );
+      $decres = $decres - $decdeg;
+      my $decmin = int( 60.0 * $decres );
+      $decres -= $decmin / 60.0;
+      my $decsec = 3600.0 * $decres;
+
+      # Put the RA/Dec in proper format (dd:mm:ss.ss).
+      my $ra = "$radeg:$ramin:$rasec";
+      my $dec = "$decsign$decdeg:$decmin:$decsec";
+
+      # Add a SpecFrame.
+      my $params = "ndf=$grp frame=axis maptype=unit frmtype=spec domain=SPECTRUM";
+      $Mon{'ndfpack_mon'}->obeyw( "wcsadd", "$params attrs=\'System=wave,Unit=um\'" );
+
+      # Set the corresponding WCS attributes.
+      $params = "ndf=$grp remap=no mode=set name=StdOfRest newval=topo";
+      $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "$params" );
+
+      $params = "ndf=$grp remap=no mode=set name=RefRA newval=\'$ra\'";
+      $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "$params" );
+
+      $params = "ndf=$grp remap=no mode=set name=RefDec newval=\'$dec\'";
+      $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "$params" );
+
+      $params = "ndf=$grp remap=no mode=set name=Epoch newval=\'$epoch\'";
+      $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "$params" );
+
+      $params = "ndf=$grp remap=no mode=set name=GeoLat newval=\'$lat\'";
+      $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "$params" );
+
+      $params = "ndf=$grp remap=no mode=set name=GeoLon newval=\'$long\'";
+      $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "$params" );
+
+      # Report to the user.
+      orac_print("SpecFrame added for wavelength axis on $grp.\n");
+    }
+  }
+}
+

@@ -1,0 +1,112 @@
+=head1 NAME
+
+_REDUCE_SINGLE_FRAME_ - Reduces a spectroscopy frame.
+
+=head1 DESCRIPTION
+
+Intended to be run on all OBJECT and SKY science data, and also things
+like ARC frames as well.
+
+Contains all the steps necessary to get from raw data to a _wce file.
+Variance should be propogated throughout.
+
+This should be the first major primitive in any recipe handling on-sky
+data.
+
+=head1 PARAMETERS
+
+An optional NOFLAT parameter, that disables flat fielding.
+This is used by the _NOFLAT recipe variants and also when
+reducing a flat field frame
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+Stuart Ryder sdr@aaoepp.aao.gov.au>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+_SPECTROSCOPY_HELLO_
+_MASK_BAD_PIXELS_
+
+# Check to see if the configuration primitive got run - warn if not.
+if(!($Frm->uhdr("REDUCE_SINGLE_FRAME_CONFIG_CONFIGED"))) {
+   orac_warn "_REDUCE_SINGLE_FRAME_ primitived called without being configured with _REDUCE_SINGLE_FRAME_CONFIG_\n";
+}
+
+# If we've been told there's no BIAS and we need one, 
+# we skip the variance and subtract_bias
+# SDR: No bias to subtract from IRIS_DRM or IRIS_MRM modes, so
+#      skip this
+
+# my $needbias = $Frm->uhdr("REDUCE_SINGLE_FRAME_CONFIG_NEEDBIAS");
+# my $nobias = $Frm->uhdr("REDUCE_SINGLE_FRAME_CONFIG_NOBIAS");
+
+# if ($nobias && $needbias) {
+# orac_print "Need a BIAS but have been told NOBIAS, there for cannot form a variance array or subtract bias\n";
+# } else {
+
+   _ADD_READNOISE_VARIANCE_
+
+# SDR: We don't need to subtract any bias with IRIS2, but leave this
+#      step in, and we'll deal with it in our own version of...
+   _SUBTRACT_BIAS_
+
+# SDR: We do however want to subtract a dark frame from any
+#      arc or flatfield frames
+if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "ARC" ) {
+    orac_print "OBSTYPE is ARC - will subtract a dark frame\n";
+    _SUBTRACT_DARK_
+  }
+if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "FLAT" ) {
+    orac_print "OBSTYPE is FLAT - will subtract a dark frame\n";
+    _SUBTRACT_DARK_
+  }
+
+# SDR: Default version of this primitive seems to be OK
+   _ADD_POISSON_VARIANCE_
+
+# }
+
+# SDR: Chopping isn't an option with IRIS2 on the AAT, so skip
+#      these steps
+# _CHOP_SKY_CALIBS_
+#
+# _SUBTRACT_CHOP_
+
+# This needs more work
+# _MASK_DEVIANT_PIXELS_
+
+# SDR: J and K-band spectra, which use the Sap240 grism, all
+#      have wavelength decreasing with pixel number, so want
+#      to flip these about y-axis, using an IRIS2-specific
+#      version of _ORIENT_IMAGE_NORMALLY_
+#      *** This needs to happen before flatfielding, since the
+#      filed flat will already have been flipped ***
+my $reorient=$Frm->uhdr("REDUCE_SINGLE_FRAME_CONFIG_REORIENT");
+if ($reorient) {
+   orac_print "Data taken with Sap240 grism - will flip about y-axis\n";
+   _ORIENT_IMAGE_NORMALLY_
+}
+
+# If we've been told there's no flat field, don't try to use one
+if ($Frm->uhdr("REDUCE_SINGLE_FRAME_CONFIG_NOFLAT")) {
+   orac_print "NOFLAT option specified - will not flat field\n";
+   _INTERLEAVE_COADD_
+} else {
+   _FLATFIELD_COADD_INTERLEAVE_
+}
+
+
+_WAVELENGTH_CALIBRATE_BY_ESTIMATION_
+
+# SDR: No sub-sampling with IRIS2, so no _ipm files created.
+#      But a _reo file may have been created.
+
+_DELETE_THESE_FILES_ FILES=bp,rnv,mraw,pov,reo,bgl,dk
