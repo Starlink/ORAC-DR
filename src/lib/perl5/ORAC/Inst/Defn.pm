@@ -112,6 +112,11 @@ BEGIN {
 # Used to construct instrument recipe dependencies
 
 my %MonolithDefns = (
+		     javelin => {
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
+				   PATH => "/export/data/timj/scd/phot/progs/javelin",
+				  },
 		     kappa_mon => {
 				   MESSYS => 'AMS',
 				   CLASS => 'ORAC::Msg::Task::ADAM',
@@ -671,7 +676,7 @@ sub orac_determine_loop_behaviour {
   if( $dname eq 'JAC.jcmt' ) {
 
     if( uc($instrument) eq 'SCUBA' ) {
-      $behaviour = 'wait';
+      $behaviour = 'flag';
     }
 
   } elsif( $dname eq 'JAC.ukirt' ) {

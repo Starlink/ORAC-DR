@@ -234,6 +234,31 @@ sub file_from_bits {
   return $prefix . $self->rawfixedpart . $padnum . $self->rawsuffix;
 }
 
+=item B<flag_from_bits>
+
+Determine the flag filename given the variable component
+parts. A prefix (usually UT) and observation number should
+be supplied.
+
+  $fname = $Frm->file_from_bits($prefix, $obsnum);
+
+The format is ".20021001_dem_0001"
+
+=cut
+
+sub flag_from_bits {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $obsnum = shift;
+
+  # pad with leading zeroes
+  my $padnum = '0'x(4-length($obsnum)) . $obsnum;
+
+  # SCUBA naming
+  return "." . $prefix . $self->rawfixedpart . $padnum;
+}
+
 =item B<findgroup>
 
 Return the group associated with the Frame. This group is constructed

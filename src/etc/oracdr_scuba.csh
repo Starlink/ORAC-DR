@@ -68,6 +68,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.13  2002/10/11 01:16:25  timj
+#     SCUBA can now use -flag
+#
 #     Revision 1.12  2002/10/07 05:21:43  timj
 #     Should hopefully work in Hilo
 #
@@ -286,8 +289,8 @@ if ($ORAC_DATA_ROOT == /jcmtdata ) then
    echo '***************************************************'
  endif
 
- # We are at the summit so we want to force -skip -loop wait
- set oracdr_args = "$oracdr_args -loop wait -skip"
+ # We are at the summit so we want to force -skip -loop flag
+ set oracdr_args = "$oracdr_args -loop flag -skip"
  echo "Setting default oracdr argument list to $oracdr_args"
 
 else 
@@ -298,7 +301,7 @@ endif
 
 # screen things
 setenv ORAC_PERSON timj
-setenv ORAC_LOOP 'wait -skip'
+setenv ORAC_LOOP 'flag -skip'
 setenv ORAC_SUN  231
 
 # Source general alias file and print welcome screen
