@@ -2,11 +2,13 @@
 
 =head1 NAME
 
-oracdr_monitor - monitor the orac-dr pipeline output
+oracdr_monitor - monitor the ORAC-DR pipeline output
 
 =head1 SYNOPSIS
 
   oracdr_monitor
+
+  oracdr_monitor --tty
 
 =head1 DESCRIPTION
 
@@ -219,12 +221,17 @@ tie *TEXT3,  "Tk::TextANSIColor", $textw3;
 # repeat to kick in (but that could take 5 seconds or more) or
 # we display the text widget immediately using update 
 # and then configure the fileevent
-$MW->update;
-check_file_using_fileevent( $MW, \$CURRENT, \$CURRENT_FH, \%hdls);
 
-# Then register repeat every 5 seconds
-my $id = $MW->repeat(5000, [\&check_file_using_fileevent, $MW,
-			    \$CURRENT, \$CURRENT_FH, \%hdls]);
+$MW->update;
+
+# This calls itself from the mainloop
+# Can either check using "tail -f" or using fileevent
+# Use fileevent by default since it can shows the full log file
+# Use tail -f if you only want to start viewing the log file
+# from the end
+
+#check_file_using_tail( $MW, \$CURRENT, \$CURRENT_FH, \%hdls);
+check_file_using_fileevent( $MW, \$CURRENT, \$CURRENT_FH, \%hdls);
 
 # Start the event loop
 MainLoop;
@@ -287,10 +294,21 @@ sub check_file_using_tail {
     # Store the object
     $$fhref = $fh;
 
+    # Mention that we are using a new file
+    foreach (keys %$hdls) {
+      my $outfh = $hdls->{$_};
+      print $outfh "Monitoring file $newest\n";
+    }
+
     # Store the new filename
     $$nref = $newest;
 
   }
+
+  # Recheck everything again in XX milli seconds
+  $w->after(2000, [\&check_file_using_tail, $w,
+		 $nref, $fhref, $hdls]);
+
 
   return;
 }
@@ -298,6 +316,10 @@ sub check_file_using_tail {
 # Check to see which file is currently in use. If we find a new one,
 # reconfigure fileevent. If we have an EOF disable the fileevent
 # and try again in XX seconds
+
+# The fileevent is very susceptible to race conditions between 
+# starting the fileevent and worrying about EOF
+
 sub check_file_using_fileevent {
   my ($w, $nref, $fhref, $hdls) = @_;
 
@@ -313,28 +335,42 @@ sub check_file_using_fileevent {
   # Is it different
   if (!defined $name or $newest ne $name) {
 
-    # Close the old one
-    close($fh) if defined $fh; # dont care about status
+    if (defined $fh) {
+      # Clear previous fileevent (should happen automatically)
+      $w->fileevent( $fh, 'readable' ,'')
+	if $w->fileevent( $fh, 'readable');
+
+      # Close the old one
+      close($fh); # dont care about status
+      undef $fh;
+
+    }
 
     # Need to open it
     open( $fh, "< $newest") or return;
 
     # Mention that we are using a new file
     foreach (keys %$hdls) {
-      my $fh  =$hdls->{$_};
-      print $fh "Monitoring file $newest\n";
+      my $outfh  = $hdls->{$_};
+      print $outfh "Monitoring file $newest\n";
     }
+    print STDERR "Monitoring file $newest\n";
 
     # Store it
     $$fhref = $fh;
 
     # Associate with a fileevent
-    &restart_fileevent( $w, $fhref, $hdls );
+    $w->fileevent( $$fhref, 'readable', [\&deal_with_fileevent,
+					 $w, $fhref, $hdls]);
 
     # Store the new filename
     $$nref = $newest;
 
   }
+
+  # Recheck everything again in XX milli seconds
+  $w->after(2000, [\&check_file_using_fileevent, $w,
+		 $nref, $fhref, $hdls]);
 
   return;
 }
@@ -345,10 +381,10 @@ sub deal_with_line {
   my $hdls = shift;
   my $line = shift;
 
-  if ($line =~ /^Err/) {
+  if ($line =~ /Error:/) {
     my $hdl = $hdls->{"Error"};
     print $hdl $line;
-  } elsif ($line =~ /^Warn/) {
+  } elsif ($line =~ /Warning:/) {
     my $hdl = $hdls->{"Warning"};
     print $hdl $line;
   } else {
@@ -380,13 +416,13 @@ sub deal_with_fileevent {
   if ($length > 0) {
     deal_with_line($hdls, $line);
   } else {
-    # Disable the fileevent
+    # Disable the fileevent if we have EOF
     $w->fileevent($fh, 'readable', '');
 
-    # Restart it in 2 seconds. Need to make sure we only restart 
+    # Restart it in XX milli seconds. Need to make sure we only restart 
     # fileevent if one is not currently registered. This lets us
     # deal with the case where we have opened a new file in the meantime
-    $w->after(500, [ \&restart_fileevent, $w, $fhref, $hdls]);
+    $w->after(501, [ \&restart_fileevent, $w, $fhref, $hdls, $fh]);
   }
 
 }
@@ -394,13 +430,22 @@ sub deal_with_fileevent {
 # Restart the fileeevent monitoring if there is no fileevent 
 # currently associated with this filehandle.
 # recieves a widget object and ref to a filehandle.
+# + output file handles
+
 sub restart_fileevent {
   my $w = shift;
   my $fhref = shift;
   my $hdls = shift;
+  my $old = shift;
 
-  my $current = $w->fileevent( $$fhref, 'readable' );
-  unless ($current) {
+  return unless defined $$fhref;
+
+  # Only restart this fileevent if the filehandle we have 
+  # now is the same one we were reading when the after() was set up
+  # This seems to be more relaiable test than reading from fileevent
+  # and checking for undef
+  if ($old eq $$fhref) {
+    # Restart fileeevent
     $w->fileevent( $$fhref, 'readable', [\&deal_with_fileevent, 
 					 $w, $fhref, $hdls]);
   }
