@@ -8,19 +8,19 @@ ORAC::Frame::MichTemp - class for dealing with temporary Michelle observation fi
 
   use ORAC::Frame::UKIRT;
 
-  $Obs = new ORAC::Frame::UKIRT("filename");
-  $Obs->file("file")
-  $Obs->readhdr;
-  $Obs->configure;
-  $value = $Obs->hdr("KEYWORD");
+  $Frm = new ORAC::Frame::UKIRT("filename");
+  $Frm->file("file")
+  $Frm->readhdr;
+  $Frm->configure;
+  $value = $Frm->hdr("KEYWORD");
 
 =head1 DESCRIPTION
 
 This module provides methods for handling Frame objects that are
 specific to Michelle. The input files must be NDFs containing a single
 data array (unlike the final Michelle data format).  It provides a
-class derived from B<ORAC::Frame>.  All the methods available to
-B<ORAC::Frame> objects are available to B<ORAC::Frame::MichTemp>
+class derived from B<ORAC::Frame::UKIRT>.  All the methods available to
+B<ORAC::Frame::UKIRT> objects are available to B<ORAC::Frame::MichTemp>
 objects.
 
 =cut
@@ -244,7 +244,7 @@ Currently this module requires the NDF module.
 
 =head1 SEE ALSO
 
-L<ORAC::Group>
+L<ORAC::Group::UKIRT>
 
 =head1 AUTHORS
 
