@@ -35,7 +35,8 @@ The only input formats supported are:
   HDS     - HDS containers with .HEADER and .Inn NDFs
             In general this can only be converted to a NDF or FITS
             output file if there is only one data frame in the container.
-  GMEF    - Gemini Multi Extention FITS.
+  GMEF    - Gemini Multi-Extension FITS.
+  INGMEF  - Isaac Newton Group Multi-Extension FITS.
 
 In many cases the NDF format is used as the intermediate format for
 all conversions (should probably use PDLs as the intermediate
@@ -263,6 +264,7 @@ sub convert {
     orac_print("Converting from FITS to NDF...\n");
     $outfile = $self->fits2ndf;
     orac_print("...done\n");
+
   } elsif ($options{'IN'} eq 'HDS' && $options{'OUT'} eq 'FITS') {
     # Implement HDS2FITS
     orac_print("Converting from HDS to FITS...\n");
@@ -275,31 +277,43 @@ sub convert {
     $outfile = $self->ndf2fits;
     unlink $outfile2;
     orac_print("...done\n");
+
   } elsif ($options{'IN'} eq 'HDS' && $options{OUT} eq 'NDF') {
     # Implement HDS2NDF
     orac_print "Converting from HDS container to merged NDF...\n";
     $outfile = $self->hds2ndf;
     orac_print "...done\n";
+
   } elsif ($options{'IN'} eq 'UKIRTIO' && $options{OUT} eq 'HDS') {
     # Implement UKIRTio2HDS
     orac_print "Converting from UKIRT I/O files to HDS container...\n";
     $outfile = $self->UKIRTio2hds;
     orac_print "...done\n";
+
   } elsif ($options{'IN'} eq 'GMEF' && $options{'OUT'} eq 'HDS') {
     # Implement GMEF2HDS
-    # GMEF is Gemini Multi Extention Fits
-    # fits2ndf can actually handle this, given the right options
+    # GMEF is Gemini Multi-Extension Fits
+    # FITS2NDF can actually handle this, given the right options
     orac_print("Converting from GEMINI ME-FITS to HDS...\n");
     $outfile = $self->gmef2hds;
     orac_print("...done\n");
+
   } elsif ($options{'IN'} eq 'GMEF' && $options{'OUT'} eq 'NDF') {
     # Implement GMEF2NDF
-    # GMEF is Gemini Multi Extention Fits
-    # fits2ndf can actually handle this, given the right options
+    # GMEF is Gemini Multi-Extension Fits
+    # FITS2NDF can actually handle this, given the right options
     orac_print("Converting from GEMINI ME-FITS to NDF...\n");
     $outfile = $self->gmef2hds;
     $self->infile($outfile);
     $outfile = $self->hds2ndf;
+    orac_print("...done\n");
+
+  } elsif ($options{'IN'} eq 'INGMEF' && $options{'OUT'} eq 'HDS') {
+    # Implement INGMEF2HDS
+    # INGMEF is Isaac Newton Group Multi-Extension Fits
+    # FITS2NDF can actually handle this, given the right options
+    orac_print("Converting from ING ME-FITS to HDS...\n");
+    $outfile = $self->ingmef2hds;
     orac_print("...done\n");
 
 
@@ -535,7 +549,62 @@ sub gmef2hds {
     $self->mon('figaro1')->obeyw("creobj", "type=ARRAY dims=0 object=$out.HEADER.DATA_ARRAY");
     $self->mon('figaro1')->obeyw("creobj", "type=_REAL dims=1 object=$out.HEADER.DATA_ARRAY.DATA");
 
-    # Seems need to rename HEADER.FITS to HEADER.MORE.FITS
+    # Move the FITS component of NDF HEADER to the FITS airlock/extension.
+    $self->mon('figaro1')->obeyw("creobj", "type=ARRAY dims=0 object=$out.HEADER.MORE");
+    $self->mon('figaro1')->obeyw("renobj", "source=$out.HEADER.FITS destin=$out.HEADER.MORE.FITS");
+
+  }
+
+  # Return the filename (append .sdf) if everything okay.
+  if ($status == ORAC__OK) {
+    return $hds;
+  } else {
+    return undef;
+  }
+
+}
+
+sub ingmef2hds {
+  my $self = shift;
+
+  my $name;
+  if (@_) {
+    $name = shift;
+  } else {
+    $name = $self->infile;
+  }
+
+  # Generate an outfile
+  # First remove any suffices and retrieve the rootname.  The
+  # basename requires us to know the extension if FITS, FIT, fit etc
+  my $out = (fileparse($name, '\..*'))[0];
+
+  # We know that an HDS ends with .sdf -- append it.
+  my $hds = $out . ".sdf";
+
+  # Check the output file name and whether we are allowed to
+  # overwrite it.
+  if (-e $hds && ! $self->overwrite) {
+    # Return early
+    orac_warn "The converted file ($hds) already exists - won't convert again\n";
+    return $hds;
+  }
+
+  # Check to see if FITS2NDF monolith is running.
+  my $status = ORAC__ERROR;
+  if (defined $self->mon('fits2ndf')) {
+
+    # Do the conversion.
+    my $extable=$ENV{'ORAC_DATA_CAL'}."/extable.txt";
+    orac_print "Using extable: $extable\n";
+    my $param = "container=true encodings=FITS-WCS profits=true fmtcnv=true";
+    $status = $self->mon('fits2ndf')->obeyw("fits2ndf","extable=$extable in=$name out=$out $param");
+
+    # This leaves us with an invalid file as the HEADER doesn't contain a data array
+    $self->mon('figaro1')->obeyw("creobj", "type=ARRAY dims=0 object=$out.HEADER.DATA_ARRAY");
+    $self->mon('figaro1')->obeyw("creobj", "type=_REAL dims=1 object=$out.HEADER.DATA_ARRAY.DATA");
+
+    # Move the FITS component of NDF HEADER to the FITS airlock/extension.
     $self->mon('figaro1')->obeyw("creobj", "type=ARRAY dims=0 object=$out.HEADER.MORE");
     $self->mon('figaro1')->obeyw("renobj", "source=$out.HEADER.FITS destin=$out.HEADER.MORE.FITS");
 
@@ -871,7 +940,7 @@ Jim Lewis E<lt>jrl@ast.cam.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
