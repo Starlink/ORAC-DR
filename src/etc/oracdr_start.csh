@@ -37,6 +37,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.6  2001/03/19 23:33:30  timj
+#     Add oracdr_monitor
+#
 #     Revision 1.5  2000/10/11 01:13:51  timj
 #     Add oracdr_parse_recipe
 #
@@ -108,6 +111,7 @@ if (-e $starperl ) then
   alias oracdr_nuke "$starperl  ${ORAC_DIR}/bin/oracdr_nuke"
   alias oracdisp    "$starperl  ${ORAC_DIR}/bin/oracdisp"
   alias oracdr_parse_recipe "$starperl ${ORAC_DIR}/bin/oracdr_parse_recipe"
+  alias oracdr_monitor "$starperl ${ORAC_DIR}/bin/oracdr_monitor"
 
 else
   echo "************ Starlink perl could not be located. ********"
@@ -117,6 +121,7 @@ else
   alias oracdr_db    echo 'Command not available - needs Starlink PERL'
   alias oracdr_nuke  echo 'Command not available - needs Starlink PERL'
   alias oracdisp     echo 'Command not available - needs Starlink PERL'
+  alias oracdr_monitor echo 'Command not available - needs Starlink PERL'
 
 endif
 
