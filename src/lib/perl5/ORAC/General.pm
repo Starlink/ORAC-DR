@@ -15,6 +15,7 @@ ORAC::General - Simple perl subroutines that may be useful for primitives
   $yyyymmdd = utdate;
   %hash = parse_keyvalues($string);
   @obs = parse_obslist($string);
+  $result = cosdeg( 45.0 );
 
 =head1 DESCRIPTION
 
@@ -27,9 +28,10 @@ library in order to run.
 
 =cut
 
+use 5.006;
 require Exporter;
 @ISA = (Exporter);
-@EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist);
+@EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist cosdeg);
 
 use Carp;
 use warnings;
@@ -42,11 +44,21 @@ use vars qw/$VERSION/;
 # Use POSIX so that I can get log10 support
 # I realise that I can create a log10 function via natural logs
 use POSIX qw//;
-
+use Math::Trig qw/ deg2rad /;
 
 =head1 SUBROUTINES
 
 =over 4
+
+=item B<cosdeg>
+
+Return the cosine of the angle. The angle must be in degrees.
+
+=cut
+
+sub cosdeg {
+  cos($_[0] * 3.14159265359 / 180);
+}
 
 =item B<min>
 
@@ -232,7 +244,8 @@ sub parse_obslist {
 =head1 SEE ALSO
 
 L<POSIX>,
-L<List::Util>
+L<List::Util>,
+L<Math::Trig>
 
 =head1 REVISION
 
