@@ -1,0 +1,139 @@
+#+
+# Name:
+#    _CORRECT_NONLINEARITY_
+#
+# Purpose:
+#    Corrects the raw data for detector non-linearity.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive corrects the raw data frame for non-linearity
+#    applying the low-order polynomial fit on the instrument web page.
+#
+# Notes:
+#    -  This primitive is suitable for IRCAM.
+#    -  The correction is only applied when the detector bias voltage,
+#    as given by user header ORAC_DETECTOR_BIAS, is between 0.61 and
+#    0.63, in STARE or ND_STARE modes.  The mode comes from user header
+#    ORAC_DETECTOR_READ_TYPE.
+#    -  In STARE mode an approximate bias of 24460 is subtracted before
+#    applying the polynomial.  This serves adequately; even at high
+#    fluxes this should at worst give a 0.5% error, and in most
+#    circumstances will be much less.  
+#
+# Output Data:
+#    -  Linearity-corrected frame inheriting the current frame's name
+#    but with the _nl suffix.
+#
+# Tasks:
+#    KAPPA: FITSMOD, MATHS.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Non-linearity correction should only be applied a defined
+# detector-bias value.
+    my $det_bias = $Frm->uhdr( "ORAC_DETECTOR_BIAS" );
+    my $mode = $Frm->uhdr( "ORAC_DETECTOR_READ_TYPE" );
+    if ( $det_bias > 0.61 && $det_bias < 0.63 ) {
+
+# Generate list of input and output filenames.
+       my ( $in, $out ) = $Frm->inout( "_nl" );
+
+# If observation was taken in STARE mode, a bias has to be subtracted.
+# A good approximation is to take off a constant bias level.  Even at high
+# fluxes this should at worst give a 0.5% error, and in most circumstances
+# will be much less.
+       if ( $mode eq "ND_STARE" ) {
+
+# Evaluate the expression with the bias already subtracted.
+          $Mon{ "kappa_mon" }->obeyw( "maths", "out=$out ia=$in exp='IA+3.3E-06*IA*IA'" );
+
+# Evaluate the expression without the bias already subtracted (STARE mode).
+       } elsif ( $mode eq "STARE" ) {
+          $Mon{ "kappa_mon" }->obeyw( "maths", "out=$out ia=$in exp='IA+3.3E-06*(IA-24460)*(IA-24460)'" );
+
+       }
+
+# Correct the FITS header indicating that a linearity correction has been applied.
+       my $param1 = "ndf=$out edit=update";
+       my $param2 = "keyword=LINEAR value=T comment='Linearisation enabled' position=LINEAR"; 
+       $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$param1 $param2" );
+
+# Report the processing status.
+       orac_print "Frame $in has non-linearity correction applied in $out.\n";
+
+# Now update the output filename in the Frame object.
+       $Frm->file( $out );
+
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_CORRECT_NONLINEARITY_ -- Corrects the raw data for detector non-linearity.
+
+=head1 DESCRIPTION
+
+This primitive corrects the raw data frame for non-linearity
+applying the low-order polynomial fit on the instrument web page.
+ 
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for IRCAM.
+
+=item *
+
+The correction is only applied when the detector bias voltage,
+as given by user header ORAC_DETECTOR_BIAS, is between 0.61 and
+0.63, in STARE or ND_STARE modes.  The mode comes from user header
+ORAC_DETECTOR_READ_TYPE.
+
+=item *
+
+In STARE mode an approximate bias of 24460 is subtracted before
+applying the polynomial.  This serves adequately; even at high
+fluxes this should at worst give a 0.5% error, and in most
+circumstances will be much less.  
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Linearity-corrected frame inheriting the current frame's name
+but with the _nl suffix.
+
+=back
+
+=head1 TASKS
+
+KAPPA: FITSMOD, MATHS.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
