@@ -1,0 +1,115 @@
+# -*- perl -*-
+
+# Podule
+# ======
+
+=head1 NAME
+
+_GET_OFFSET_ -- calculate the offset along and across the IFU from the RA and Dec offsets
+
+=head1 DESCRIPTION
+
+The telescope offsets are obtained from the ORAC_RA_TELESCOPE_OFFSET
+and ORAC_DEC_TELESCOPE_OFFSET headers. If the observation type is set
+to OBJECT and the total offset is less than 30 arcsec then this is
+assumed to be an object frame, otherwise it is assumed to be a sky
+frame, so the previous frame must be the object position (complete
+object-sky pair). The offsets and slit position angle are used to
+calculate the offsets along and across the IFU field in pixels, which
+are written into the X_OFFSET and Y_OFFSET headers.
+
+=head1 NOTES
+
+=over 4 
+
+=item *
+
+This primitive is intended to be run on the second frame of a
+sky-object or object-sky pair. In either case the offset of the object
+frame will be calculated.
+
+=item * 
+
+Any observation with an offset greater than 30 arcsec is assumed to be
+the sky position regardless of the observation type.
+
+=item *
+
+If the NOCHECK parameter is set then this will find the offset of the 
+current frame, rather than the object frame in an object sky pair.
+
+=back
+
+=head1 TASKS
+
+None
+
+=head1 AUTHORS
+
+Stephen P. Todd <spt@roe.ac.uk> (Edinburgh University/UKATC)
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu> (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+my $Object;
+
+my $raoff = $Frm->uhdr("ORAC_RA_TELESCOPE_OFFSET");
+my $decoff= $Frm->uhdr("ORAC_DEC_TELESCOPE_OFFSET");
+
+my $offset = sqrt($raoff**2 + $decoff**2);
+
+# If we're on source,
+if (($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "OBJECT" && $offset < 30)
+    or $_GET_OFFSET_{NOCHECK}) {
+
+  # This is the object / main-beam frame
+  $Object = $Frm;
+
+} else {
+
+  # The previous frame is the main beam frame
+  $Object = ($Grp->members)[-2];
+  orac_print "This is not an OBJECT - trying " . $Object->file . "\n";
+  if ($Object->uhdr("ORAC_OBSERVATION_TYPE") ne "OBJECT") {
+
+    # it's not.
+    undef $Object;
+  }
+}
+
+if (defined $Object) {
+
+  $raoff = $Object->uhdr("ORAC_RA_TELESCOPE_OFFSET");
+  $decoff = $Object->uhdr("ORAC_DEC_TELESCOPE_OFFSET");
+
+  my $in = $Frm->file;
+
+  my $angle = $Object->hdr("SLIT_PA") * 2 * 3.1416/360;
+
+  my $yoff = -1.0 * ($decoff * cos($angle) + $raoff * sin($angle));
+  my $xoff = ($raoff * cos($angle) - $decoff * sin($angle));
+
+  orac_print "RA off: $raoff   Dec off: $decoff\n";
+
+  # Convert to pixels
+  _GET_PLATE_SCALE_
+  my $pixelscale = $_GET_PLATE_SCALE_{PLATESCALE};
+  $yoff /= $pixelscale;
+
+  # The pixelsize for UIST in the x-direction is twice that in the y-direction,
+  # so multiply by two.
+  $xoff /= ( $pixelscale * 2 );
+
+  $xoff = sprintf("%.0f", $xoff);
+  $yoff = sprintf("%.0f", $yoff);
+
+  $Frm->uhdr("X_OFFSET" => $xoff);
+  $Frm->uhdr("Y_OFFSET" => $yoff);
+
+  orac_print "Offset: x = $xoff  y = $yoff pixels\n\n";
+}
