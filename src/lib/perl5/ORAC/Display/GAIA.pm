@@ -40,7 +40,7 @@ use Cwd qw/ getcwd /;         # To get current working directory
 use vars qw/ $VERSION $DEBUG /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
-$DEBUG   = 0;
+$DEBUG   = 1;
 
 # Store the hostname (even though hostname does cache)
 my $localhost = hostname;
@@ -646,7 +646,7 @@ sub image {
 
   # Check file for extension
   # Assume that an extension is a . followed by letters but not a /
-  unless ($file =~ /\.\w+$/) {
+  unless ($file =~ /\.\w+$/ || $file =~ /\[\d+\]$/) {
     $file .= ".sdf";
   }
 
