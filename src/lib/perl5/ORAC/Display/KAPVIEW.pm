@@ -1121,7 +1121,8 @@ Display keywords:
                Can be X,Y,3,4,5 (for higher-dimensional data sets)
                For a 1-D data set (or section), this value is ignored
   COMP       - Component to display (Data (default), Variance or Error)
-
+  ERRBAR     - Plot error bars or not (if variance information is
+               present)
 
 Default is to autoscale. Note that the X/Y cuts are converted
 to a 1-D slice before displaying by averaging over the section. 
@@ -1135,9 +1136,9 @@ would display column 5 (ie the whole of Y for X=5).
 
    XAUTOSCALE=YES YMIN=20 YMAX=30 CUT=X
 
-would display the average of rows 20 and 30 for each X.
+would display the average of rows 20 to 30 for each X.
 
-Need to add way of controlling line style (eg replace with symbols)
+Need to add way of controlling line style (e.g. replace with symbols)
 
 ORAC status is returned.
 
@@ -1209,8 +1210,17 @@ sub graph {
     }
   }
 
+  my $errbar = " ";
+  if (exists $options{ERRBAR}) {
+    if ($options{ERRBAR}) {
+       $errbar = "errbar=true shape=bars freq=5 style='Colour(ErrBars)=red'";
+    }
+  } else {
+    orac_warn "ERRBAR option not recognised.\n";
+  }
+       
   # Construct string for linplot options
-  my $args = "clear mode=line $range";
+  my $args = "clear mode=line $range $errbar";
 
   # Select component
   if (exists $options{COMP} && defined $options{COMP}) {
