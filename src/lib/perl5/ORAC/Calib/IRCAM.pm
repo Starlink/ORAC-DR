@@ -45,11 +45,11 @@ use vars qw/ $VERSION/;
 
 =item B<rotation>
 
-Return (or set) the name of the rotation transformation matrix
+Return (or set) the name of the rotation transformation matrix.
 
   $rotation = $Cal->rotation;
 
-For IRCAM this is set to $ORAC_DATA_CAL/ircam3_rotate2eq by default
+For IRCAM this is set to $ORAC_DATA_CAL/ircam3_rotate2eq by default.
 
 =cut
 
@@ -59,8 +59,8 @@ sub rotation {
   if (@_) { $self->{Rotation} = shift; }
 
   unless (defined $self->{Rotation}) {
-    $self->{Rotation} = File::Spec->catfile($ENV{ORAC_DATA_CAL},
-					    "ircam3_rotate2eq");
+    $self->{Rotation} = File::Spec->catfile( $ENV{ORAC_DATA_CAL},
+					    "ircam3_rotate2eq" );
   };
 
 
@@ -73,7 +73,7 @@ Return (or set) the name of the bad-pixel mask.
 
   $mask = $Cal->mask;
 
-For IRCAM this is set to $ORAC_DATA_CAL/bpm by default
+For IRCAM this is set to $ORAC_DATA_CAL/bpm by default.
 
 =cut
 
@@ -83,7 +83,7 @@ sub mask {
   if (@_) { $self->{Mask} = shift; }
 
   unless (defined $self->{Mask}) {
-    $self->{Mask} = File::Spec->catfile($ENV{ORAC_DATA_CAL},"bpm");
+    $self->{Mask} = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "bpm" );
   };
 
 
@@ -106,8 +106,8 @@ sub maskindex {
   my $self = shift;
   if (@_) { $self->{MaskIndex} = shift; }
   unless (defined $self->{MaskIndex}) {
-     my $indexfile = $ENV{ORAC_DATA_OUT}."/index.mask";
-     my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.mask";
+     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" );
+     my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.mask" );
      $self->{MaskIndex} = new ORAC::Index($indexfile,$rulesfile);
    };
 
@@ -128,7 +128,7 @@ Tim Jenness (t.jenness@jach.hawaii.edu)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 
