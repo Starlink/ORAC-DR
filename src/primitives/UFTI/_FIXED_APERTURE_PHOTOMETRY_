@@ -72,7 +72,8 @@
 # Obtain the filter from the FITS headers.
              $filter = $Frm->hdr( "FILTER" );
 
-# Obtain the mean extinction coefficient.
+# Obtain the mean extinction coefficient.  Specify the catalogue column number
+# for the filter.
              SWITCH: {
                 if ( $filter =~ /^J/ ) {
                    $extinction = 0.102; $catcol = 0; last SWITCH;
@@ -95,13 +96,13 @@
              $airmass = 0.5 * ( $amstart + $amend );
              $extcor = $airmass * $extinction;
 
-# Obtain the object name, exposure time, time of observation and the
-# pixelscale.
-             $exptime = $Frm->hdr( "INT_TIME" );
+# Obtain the object name, exposure time, time of observation, the
+# pixelscale, and the number of electrons per data number.
+             $exptime = $Frm->hdr( "DEXPTIME" );
              $objname = $Frm->hdr( "OBJECT" );
-             $ut = $Frm->hdr( "UTSTART" );
-             $pixelscale = $Frm->hdr( "CDELT1" );
-             $padu = 7;
+             $ut = $Frm->hdr( "RUTSTART" );
+             $pixelscale = $Frm->hdr( "PIXELSIZ" );
+             $padu =  $Frm->hdr( "DEPERDN" );
 
 # Extract the system magnitude of faint standards
 # ===============================================
@@ -146,7 +147,7 @@
              $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
 
 # Obtain the aperture diameter in arcseconds.
-             $as_aperture = ( $_FIXED_APERTURE_PHOTOMETRY_{APERTURE} || 7 );
+             $as_aperture = ( $_FIXED_APERTURE_PHOTOMETRY_{APERTURE} || 6 );
  
 # Calculate the radius of the inner and outer extent of the aperture.
              $inner = ( $_FIXED_APERTURE_PHOTOMETRY_{INNER} || 1.5 );
@@ -192,8 +193,12 @@
              @results = map { (split)[3..7] } <PHOTOM>;
              close ( PHOTOM );
 
-# Normalise by the exposure time.  Use more lucid variable names.
-             $magnorm = $results[0] + 2.5 * log10( $exptime );
+# Normalise by the exposure time.  Use more lucid variable names.  The
+# magnitudes returned by AUTOPHOTOM are caculated using the expression
+# -2.5log10( photons/s ).  However, the UKIRT standard is to use
+# -2.5log10( counts/s ), so correct the magnitudes and sky level by
+# the ADU factor.
+             $magnorm = $results[0] + 2.5 * log10( $exptime * $padu );
              $magerr = $results[1];
              $sky_level = $results[2] / $padu;
              $errcode = $results[4];
@@ -218,8 +223,9 @@
              $fs_outer =  sprintf( "%5.2f", $outer );
              $fs_outer =~ s/ //g;
              if ( $catmag < 999 ) {
-                $magdif = $catmag - $magext;
-                $fs_magdif =  sprintf( "%6.3f", $magdif );
+                $magdif = $catmag - $magnorm;
+                $magdif_ext = $catmag - $magext;
+                $fs_magdif_ext =  sprintf( "%6.3f", $magdif_ext );
              }
 
 # Print the results.
@@ -234,7 +240,7 @@
              orac_print "Airmass correction:     $fs_airmass\n";
              if ( $catmag < 999 ) {
                 orac_print "Catalogue Magnitude:    $catmag\n";
-                orac_print "Magnitude difference:   $fs_magdif\n"
+                orac_print "Calculated zeropoint:   $fs_magdif_ext\n"
              }
              orac_print "Sky:                    $fs_sky\n";
              orac_print "Aperture diameter:      $fs_apdiam arcsec\n";
@@ -250,10 +256,11 @@
 # some of the header information is null, output the results as strings
 # rather than integer or real; and assume a fixed format in the FITS headers
 # matching the STL format when the keywords are present.
-             printf LOGFILE ( "%18s %12s %8.5f %7s %5.3f %7.3f %7.3f %6.3f %2s %5.2f %6.3f %5.2f %5.2f %5.2f %8.2f %1s \n",
+             printf LOGFILE ( "%18s %12s %8.5f %7s %5.3f %7.3f %7.3f %6.3f %2s %5.1f".
+                              "%5.1f %5.1f %8.2f %1s %5.2f %6.3f %6.3f %6.3f \n",
              $Frm->file, $objname, $ut, $filter, $airmass, $magnorm,
-             $magext, $magerr, $errcode, $zp, $catmag, $as_aperture, $inner, $outer,
-             $sky_level, $incflag );
+             $magext, $magerr, $errcode, $as_aperture, $inner, $outer,
+             $sky_level, $incflag, $zp, $catmag, $magdif, $magdif_ext );
 
           };
 
