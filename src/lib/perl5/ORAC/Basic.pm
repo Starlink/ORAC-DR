@@ -275,7 +275,7 @@ sub orac_add_code_to_recipe {
       
       $arguments =~ s/\"/ /g;
       push(@processed,"orac_debug(\"$arguments\n\");\n");
-      print "xxxxxxxx: $arguments \n";
+
       #    } elsif ($line =~ /={0}.+->obeyw/) { # old line
       
       # Now check to see whether it starts with a comment character
@@ -444,6 +444,9 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.25  1998/09/15 12:28:47  frossie
+#Remove debug line
+#
 #Revision 1.24  1998/08/07 02:25:52  frossie
 #Add orac_add_code_to_recipe subroutine. Put in it the automatic error
 #checking code, and remove it from orac_parse_recipe so that it is
