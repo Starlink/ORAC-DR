@@ -1,0 +1,60 @@
+# _WAVELENGTH_CALIBRATION_BY_ESTIMATION_          -*- perl -*-
+#
+# wavelength calibrates using header information
+
+foreach my $i (1..$Frm->nfiles) {
+
+  my $frame = $Frm->file($i);
+  # generate the input and output filenames
+  my ($in, $out) = $Frm->inout("_wce",$i);
+
+  # get actual size
+
+  my $ORAC_STATUS;
+
+  $Mon{'ndfpack_mon'}->obeyw("ndftrace","ndf=$in quiet");
+  
+  ($ORAC_STATUS, my @lbound) = $Mon{'ndfpack_mon'}->get('ndftrace','lbound');
+  ($ORAC_STATUS, my @ubound) = $Mon{'ndfpack_mon'}->get('ndftrace','ubound');
+
+  my $actxmin = $lbound[0];
+  my $actymin = $lbound[1];
+  my $actxmax = $ubound[0];
+  my $actymax = $ubound[1];
+
+  # get header information
+
+  my $xdim = $Frm->hdr("DCOLUMNS");
+  my $ydim = $Frm->hdr("DCOLS");
+
+  my $factor = $xdim / $actxmax;
+
+  my $order = $Frm->hdr("GORDER");
+  my $dispersion = $Frm->hdr("GDISP") * $factor / $order;
+  my $refwave = $Frm->hdr("GLAMBDA");
+
+  my $firstwave = $refwave - ($actxmax / 2) * $dispersion;
+  my $lastwave = $refwave + ($actxmax / 2) * $dispersion;
+
+  # set the wavelength scale
+
+  $Mon{'figaro1'}->obeyw("lxset","image=$in wstart=$firstwave wend=$lastwave output=$out log=false");
+
+  # set AXIS label
+
+  $Mon{'ndfpack_mon'}->obeyw("axlabel","ndf=$out label=\'Estimated wavelength\' dim=1");
+
+  # set AXIS units
+
+  $Mon{'ndfpack_mon'}->obeyw("axunits","ndf=$out units=microns dim=1");
+
+  # Update Frame object
+
+  $Frm->file($i,$out);
+
+  # print congratulatory message
+
+  orac_print("Orac says: $in to $out: wavelength calibrated by estimation\n");
+
+}
+
