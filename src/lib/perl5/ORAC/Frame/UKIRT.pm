@@ -78,7 +78,7 @@ sub findgroup {
     # we know are the only members of their group (eg DARK)
 
 #    if ($self->hdr('OBJECT') eq 'DARK') {
-       $hdrgrp = $self->hdr('RUN');
+       $hdrgrp = $self->hdr(0);
 #    }
 
   }
