@@ -16,7 +16,7 @@ ORAC::Group::JCMT - JCMT class for dealing with observation groups in ORAC-DR
 =head1 DESCRIPTION
 
 This module provides methods for handling group objects that
-are specific to JCMT. It provides a class derived from B<ORAC::Group>.
+are specific to JCMT. It provides a class derived from B<ORAC::Group::NDF>.
 All the methods available to B<ORAC::Group> objects are available
 to B<ORAC::Group::JCMT> objects. Some additional methods are supplied.
 
@@ -26,10 +26,10 @@ to B<ORAC::Group::JCMT> objects. Some additional methods are supplied.
 # ORAC pipeline
  
 use 5.004;
-use ORAC::Group;
+use ORAC::Group::NDF;
 
 # Let the object know that it is derived from ORAC::Frame;
-@ORAC::Group::JCMT::ISA = qw/ORAC::Group/;
+@ORAC::Group::JCMT::ISA = qw/ORAC::Group::NDF/;
 
 use vars qw/$VERSION/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
@@ -38,10 +38,6 @@ use vars qw/$VERSION/;
 # standard error module and turn on strict
 use Carp;
 use strict;
-
-# For reading the header
-use NDF;
-
 
 =head1 PUBLIC METHODS
 
@@ -172,40 +168,6 @@ sub file_from_bits {
   my $padnum = '0'x(4-length($num)) . $num;
 
   return $prefix . $self->fixedpart . $padnum . $self->filesuffix;
-
-}
-
-=item B<readhdr>
-
-Reads the header from the reduced group file (the filename is stored
-in the Group object) and sets the Group header.
-
-    $Grp->readhdr;
-
-If there is an error during the read a reference to an empty hash is 
-returned.
-
-Currently this method assumes that the reduced group is stored in
-NDF format. Only the FITS header is retrieved from the NDF.
-
-There are no input arguments.
-
-=cut
-
-sub readhdr {
-
-  my $self = shift;
-  
-  # Just read the NDF fits header
-  my ($ref, $status) = fits_read_header($self->file);
-
-  # Return an empty hash if bad status
-  $ref = {} if ($status != &NDF::SAI__OK);
-
-  # Set the header in the group 
-  $self->header($ref);
-
-  return $ref;
 
 }
 
@@ -383,43 +345,6 @@ sub subs {
 
 
 =back
-
-=head1 PRIVATE METHODS
-
-The following methods are intended for use inside the module.
-They are included here so that authors of derived classes are 
-aware of them.
-
-=over 4
-
-=item stripfname
-
-Method to strip file extensions from the filename string. This method
-is called by the file() method. For UKIRT we strip all extensions of the
-form ".sdf", ".sdf.gz" and ".sdf.Z" since Starlink tasks do not require
-the extension when accessing the file name.
-
-=cut
-
-sub stripfname {
-
-  my $self = shift;
-
-  my $name = shift;
-
-  # Strip everything after the first dot
-  $name =~ s/\.(sdf)(\.gz|\.Z)?$//;
-  
-  return $name;
-
-}
-
-
-=back
-
-=head1 REQUIREMENTS
-
-Currently this module requires the NDF module.
 
 =head1 SEE ALSO
 
