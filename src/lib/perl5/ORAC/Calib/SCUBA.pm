@@ -151,8 +151,32 @@ $DEBUG = 0; # Turn off debugging mode
 		    },
 		    {
 		     START => 20010602, # Not checked
+		     END   => 20020204,
+		     ARCSEC=> 0.86,
+		     BEAM  => 209.0,
+		    },
+		    {
+		     START => 20020205, # Not checked
+		     END   => 20020630,
 		     ARCSEC=> 0.88,
-		     BEAM  => 216.0,
+		     BEAM  => 224.0,
+		    },
+		    {
+		     START => 20020701, # Not checked
+		     END   => 20021231,
+		     ARCSEC=> 1.06,
+		     BEAM  => 276.0,
+		    },
+		    {
+		     START => 20030101, # Not checked
+		     END   => 20030201,
+		     ARCSEC=> 0.84,
+		     BEAM  => 221.0,
+		    },
+		    {
+		     START => 20030202, # Not checked
+		     ARCSEC=> 1.03,
+		     BEAM  => 251.0,
 		    },
 		   ],
 	 '450N' => [
@@ -163,9 +187,21 @@ $DEBUG = 0; # Turn off debugging mode
 		   ],
 	 '450W' => [
 		    {
+		     END => 20003031,
 		     ARCSEC => 3.2,
-		     BEAM   => 340,
+		     BEAM  => 340,
 		    },
+		    {
+		     START => 20010101,
+		     END => 20030131,
+		     ARCSEC => 2.6,
+		     BEAM   => 260,
+		    },
+		    {
+		     START => 20030201,
+		     ARCSEC => 3.02,
+		     BEAM => 350,
+		    }
 		   ],
 	);
 
@@ -1348,26 +1384,16 @@ sub _get_default_fcf {
   # Now we step through the array until we find an entry that 
   # corresponds to the requested time
   my $match;
+  my $infstart = 19900101; # infinity low and high
+  my $infend   = 30000101;
   for my $h (@$details) {
 
-    # if there is no START key then we just take this
-    # entry as a match
-    unless (exists $h->{START}) {
-      $match = $h;
-      last;
-    }
+    # Just force a start and end and then check to see whether
+    # the reference date is inside
+    my $start = (exists $h->{START} ? $h->{START} : $infstart);
+    my $end   = (exists $h->{END}   ? $h->{END}   : $infend);
 
-    # See if we are in range. Might not have an END
-    next if $h->{START} > $ut; # Should leave loop before this
-
-    # if we don't have an END point then this is a match
-    unless (exists $h->{END}) {
-      $match = $h;
-      last;
-    }
-
-    # If we have an END then we need to check range
-    if ($h->{END} >= $ut) {
+    if ($start <= $ut && $end >= $ut) {
       $match = $h;
       last;
     }
