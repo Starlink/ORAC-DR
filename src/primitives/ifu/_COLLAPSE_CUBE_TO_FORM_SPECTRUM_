@@ -17,6 +17,9 @@ However, it must be told which axis is the wavelength (or frequency,
 or time, or...) axis. It will default to the third axis, but this
 can be modified through the AXIS parameter described below.
 
+The collapse is done such that the result is a sum of all of the pixels
+in the cube, and not an average.
+
 =head1 PARAMETERS
 
 =over 4
@@ -34,6 +37,24 @@ form the datacube from the current Frame object. [1]
 
 The method used for collapsing along the spatial axes. This parameter
 can be any of the methods listed in KAPPA/COLLAPSE (see SUN/95). [mean]
+
+=item SUFFIX = CHARACTER (Given)
+
+The suffix to be appended to the raw filename. [_im]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+For IFU cubes, where data is sparse, the mean method is much better than
+median. This is because median collapsing throws away extreme values, and
+for sparse data the extreme values are the ones we want. This comes at
+a price, though, in that hot pixels are not eliminated. It is thus
+recommended that a hot pixel clean is done before collapsing.
 
 =back
 
@@ -54,12 +75,30 @@ my ( $in, $out );
 my $group = $_COLLAPSE_CUBE_TO_FORM_SPECTRUM_{GROUP};
 if( !defined( $group ) ) { $group = 1; }
 
+my $suffix = $_COLLAPSE_CUBE_TO_FORM_SPECTRUM_{SUFFIX};
+if( !defined( $suffix ) ) { $suffix = "_sp"; }
+
 if( $group ) {
   $in = $Grp->file;
-  $out = $Grp->raw . "_sp";
+  $out = $Grp->raw . $suffix;
 } else {
-  ( $in, $out ) = $Frm->inout("_sp");
+  ( $in, $out ) = $Frm->inout($suffix);
 }
+
+# First threshold the variance array so there aren't any pixels
+# with zero variance. This throws off COLLAPSE when done with
+# the 'median' estimator.
+my $tmp = new ORAC::TempFile;
+my $tmp_file = $tmp->file;
+$Mon{'kappa_mon'}->obeyw("thresh", "in=$in out=$tmp_file comp=VARIANCE thrlo=1E-25 newlo=bad thrhi=1e25 newhi=bad");
+
+# Get the dimensions of the input cube so we know how much to
+# multiply by later on.
+$Mon{'ndfpack_mon'}->obeyw("ndftrace", "ndf=$tmp_file");
+my ( $ORAC_STATUS, @dims ) = $Mon{'ndfpack_mon'}->get("ndftrace", "dims");
+
+# Erase the WCS.
+$Mon{'ndfpack_mon'}->obeyw("erase", "object=$tmp_file.WCS ok");
 
 # Get the wavelength axis.
 my $axis = $_COLLAPSE_CUBE_TO_FORM_SPECTRUM_{AXIS};
@@ -71,46 +110,73 @@ if( !defined( $method ) ) { $method = "mean"; }
 
 orac_print "Collapsing $in to form $out.\n";
 
-# Need a temporary file.
-my $tmp = new ORAC::TempFile;
-my $tmp_file = $tmp->file;
+# Need a couple of temporary files.
+my $tmp2 = new ORAC::TempFile;
+my $tmp2_file = $tmp2->file;
+my $tmp3 = new ORAC::TempFile;
+my $tmp3_file = $tmp3->file;
 
 if( $axis == 1 ) {
 
   # We're going to collapse along the third axis first, then the
   # second axis of the resulting 2D image.
-  my $param = "in=$in out=$tmp_file axis=3 estimator=$method";
+  my $param = "in=$tmp_file out=$tmp2_file axis=3 estimator=$method";
   $Mon{'kappa_mon'}->obeyw( "collapse", "$param" );
 
+  # Erase the WCS.
+  $Mon{'ndfpack_mon'}->obeyw("erase", "object=$tmp2_file.WCS ok");
+
   # Now the second collapse to form the spectrum.
-  $param = "in=$tmp_file out=$out axis=2 estimator=$method";
+  $param = "in=$tmp2_file out=$tmp3_file axis=2 estimator=$method";
   $Mon{'kappa_mon'}->obeyw( "collapse", "$param" );
+
+  # And multiply by the spatial dimensions of the original input cube.
+  my $multiplier = $dims[1] * $dims[2];
+  $param = "in=$tmp3_file out=$out scalar=$multiplier";
+  $Mon{'kappa_mon'}->obeyw( "cmult", "$param" );
 
 } elsif( $axis == 2 ) {
 
   # We're going to collapse along the third axis first, then the
   # first axis of the resulting 2D image.
-  my $param = "in=$in out=$tmp_file axis=3 estimator=$method";
+  my $param = "in=$tmp_file out=$tmp2_file axis=3 estimator=$method";
   $Mon{'kappa_mon'}->obeyw( "collapse", "$param" );
 
+  # Erase the WCS.
+  $Mon{'ndfpack_mon'}->obeyw("erase", "object=$tmp2_file.WCS ok");
+
   # Now the second collapse to form the spectrum.
-  $param = "in=$tmp_file out=$out axis=1 estimator=$method";
+  $param = "in=$tmp2_file out=$tmp3_file axis=1 estimator=$method";
   $Mon{'kappa_mon'}->obeyw( "collapse", "$param" );
+
+  # And multiply by the spatial dimensions of the original cube.
+  my $multiplier = $dims[0] * $dims[2];
+  $param = "in=$tmp3_file out=$out scalar=$multiplier";
+  $Mon{'kappa_mon'}->obeyw( "cmult", "$param" );
 
 } else {
 
   # We're going to collapse along the second axis first, then the
   # first axis of the resulting 2D image.
-  my $param = "in=$in out=$tmp_file axis=2 estimator=$method";
+  my $param = "in=$tmp_file out=$tmp2_file axis=2 estimator=$method";
   $Mon{'kappa_mon'}->obeyw( "collapse", "$param" );
 
+  # Erase the WCS.
+  $Mon{'ndfpack_mon'}->obeyw("erase", "object=$tmp2_file.WCS ok");
+
   # Now the second collapse to form the spectrum.
-  $param = "in=$tmp_file out=$out axis=1 estimator=$method";
+  $param = "in=$tmp2_file out=$tmp3_file axis=1 estimator=$method";
   $Mon{'kappa_mon'}->obeyw( "collapse", "$param" );
+
+  # And multiply by the spatial dimensions of the original cube.
+  my $multiplier = $dims[0] * $dims[1];
+  $param = "in=$tmp3_file out=$out scalar=$multiplier";
+  $Mon{'kappa_mon'}->obeyw( "cmult", "$param" );
+
 }
 
 # Remove the AXIS frame.
-$Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=$out frame=axis" );
+#$Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=$out frame=axis" );
 
 if( $group ) {
 
