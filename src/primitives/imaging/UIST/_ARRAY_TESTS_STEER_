@@ -8,9 +8,44 @@ The first step in processing array tests for UIST. This primitive sets
 up internal headers which tells other primitives if they are to perform
 certain tasks - find bad pixels, measure readnoise, etc.
 
+This primitive assumes the following order for an array tests sequence:
+
+=over 4
+
+=item One throwaway frame used to "clean up" the array before statistics
+are done on the remaining frames.
+
+=item A group of frames that will be used to determine bad pixels, then
+used to determine a group bias. These frames are BIAS observations, and
+there are typically five observations in this group.
+
+=item A group of frames that will be used to measure, report, and file
+the readnoise. These frames are DARK observations taken in NDSTARE mode,
+and there are typically five observations in this group.
+
+=item One frame that will be used to measure and report the NDSTARE dark
+current, and to detect hot pixels. This frame is a DARK observation taken
+in NDSTARE mode, and is usually of long (~60 s) exposure time.
+
+=back
+
+The number of BIAS and DARK observations can be modified through parameters,
+and both default to having five observations. There cannot be more than
+nine BIAS or DARK frames.
+
 =head1 ARGUMENTS
 
-None.
+=over 4
+
+=item BIAS_FRAMES = INTEGER (Given)
+
+The number of BIAS frames taken in the array test sequence. [5]
+
+=item DARK_FRAMES = INTEGER (Given)
+
+The number of DARK frames taken in the array test sequence. [5]
+
+=back
 
 =head1 TASKS
 
@@ -33,26 +68,63 @@ my $num = $Grp->num + 1; # num is zero-based, it's easier to deal
                          # with it as one-based, so we can count
                          # frames directly
 
-# In a standard array tests sequence, frame 6 will be the
-# last frame in the group of five to be run through
-# _BIAS_GROUP_, so set the ARRAY_TESTS_BIAS_GROUP internal
-# header to 1 (true). Else, set it to 0 (false).
-if ( $num == 6 ) {
+
+# Grab the argument for number of BIAS frames, if it exists.
+my $bias_frames = $_ARRAY_TESTS_STEER_{BIAS_FRAMES};
+
+# Default the number of BIAS frames to 5 if BIAS_FRAMES is undefined.
+if( !defined( $bias_frames ) ) {
+  $bias_frames = 5;
+}
+
+# Check if the number of BIAS frames is greater than 9. If so, default
+# to 5 and warn the user.
+if( $bias_frames > 9 ) {
+  orac_warn "BIAS_FRAMES argument cannot be greater than 9.\n";
+  orac_warn "Defaulting to 5.\n\n";
+  $bias_frames = 5;
+}
+
+# Grab the argument for number of DARK frames, if it exists.
+my $dark_frames = $_ARRAY_TESTS_STEER_{DARK_FRAMES};
+
+# Default the number of DARK frames to 5 if DARK_FRAMES is undefined.
+if( !defined( $dark_frames ) ) {
+  $dark_frames = 5;
+}
+
+# Check if the number of DARK frames is greater than 9. If so, default
+# to 5 and warn the user.
+if( $dark_frames > 9 ) {
+  orac_warn "DARK_FRAMES argument cannot be greater than 9.\n";
+  orac_warn "Defaulting to 5.\n\n";
+  $dark_frames = 5;
+}
+
+# The total number of frames is 2 + $bias_frames + $dark_frames.
+my $total_frames = 2 + $bias_frames + $dark_frames;
+
+# In an array tests sequence, the last bias frame will be
+# the trigger to run though _BIAS_GROUP_, so set the
+# ARRAY_TESTS_BIAS_GROUP internal header to 1 (true). Else,
+# set it to 0 (false).
+if ( $num == ( $bias_frames + 1 ) ) {
   $Frm->uhdr("ARRAY_TESTS_BIAS_GROUP", 1 );
 } else {
   $Frm->uhdr("ARRAY_TESTS_BIAS_GROUP", 0 );
 }
 
-# In a standard array tests sequence, frames 2-6 and 12 go through
-# _FIND_BAD_PIXELS_, so set the ARRAY_TESTS_FIND_BAD_PIXELS internal
-# header to 1 (true). Else, set it to 0 (false).
-if ( ( ( $num >= 2 ) && ( $num <= 6 ) ) || ( $num == 12 ) ) {
+# In an array tests sequence, the group of BIAS frames and the 
+# final DARK frame will go through _FIND_BAD_PIXELS, so set the
+# ARRAY_TESTS_FIND_BAD_PIXELS internal header to 1 (true). Else,
+# set to 0 (false).
+if ( ( ( $num >= 2 ) && ( $num <= ( $bias_frames + 1 ) ) ) || ( $num == $total_frames ) ) {
   $Frm->uhdr("ARRAY_TESTS_FIND_BAD_PIXELS", 1 );
 } else {
   $Frm->uhdr("ARRAY_TESTS_FIND_BAD_PIXELS", 0 );
 }
 
-# In a standard array tests sequence, frame 2 will have a fresh bad
+# In an array tests sequence, frame 2 will have a fresh bad
 # pixel mask, so set the ARRAY_TESTS_FRESH_BPM internal header to
 # 1 (true). Else, set it to 0 (false).
 if ( $num == 2 ) {
@@ -61,23 +133,26 @@ if ( $num == 2 ) {
   $Frm->uhdr("ARRAY_TESTS_FRESH_BPM", 0);
 }
 
-# In a standard array tests sequence, frame 11 will be the last
-# frame in the group of five to be run through the MEASURE_READNOISE
+# In an array tests sequence, the last DARK frame in the group of DARK
+# frames will be run through the MEASURE_READNOISE
 # primitive, so set the ARRAY_TESTS_MEASURE_READNOISE
 # internal header to 1 (true). Else, set it to 0 (false).
-if ( $num == 11 ) {
+if ( $num == ( $total_frames - 1 ) ) {
   $Frm->uhdr("ARRAY_TESTS_MEASURE_READNOISE", 1 );
 } else {
   $Frm->uhdr("ARRAY_TESTS_MEASURE_READNOISE", 0 );
 }
 
-# In a standard array tests sequence, frame 12 will be used to
+# In a standard array tests sequence, the final DARK frame will be used to
 # calculate the dark current. Set the ARRAY_TESTS_MEASURE_DARK_CURRENT
 # internal header to 1 (true) for this frame.
-if ( $num == 12 ) {
+if ( $num == $total_frames ) {
   $Frm->uhdr("ARRAY_TESTS_MEASURE_DARK_CURRENT", 1 );
 } else {
   $Frm->uhdr("ARRAY_TESTS_MEASURE_DARK_CURRENT", 0 );
 }
 
-
+# Store the total number of BIAS and DARK frames in internal headers
+# for use by primitives down the road.
+$Frm->uhdr("ARRAY_TESTS_BIAS_FRAMES", $bias_frames);
+$Frm->uhdr("ARRAY_TESTS_DARK_FRAMES", $dark_frames);
