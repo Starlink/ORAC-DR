@@ -90,6 +90,31 @@ sub mask {
   return $self->{Mask}; 
 };
 
+=item B<maskindex>
+
+Return or set the index object associated with the bad pixel mask.
+
+  $index = $Cal->maskindex;
+
+An index object is created automatically the first time this method
+is run.
+
+=cut
+
+sub maskindex {
+
+  my $self = shift;
+  if (@_) { $self->{MaskIndex} = shift; }
+  unless (defined $self->{MaskIndex}) {
+     my $indexfile = $ENV{ORAC_DATA_OUT}."/index.mask";
+     my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.mask";
+     $self->{MaskIndex} = new ORAC::Index($indexfile,$rulesfile);
+   };
+
+  return $self->{MaskIndex};
+
+};
+
 =back
 
 =head1 REVISION
