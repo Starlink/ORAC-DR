@@ -27,6 +27,7 @@ use Carp;
 use vars qw/$VERSION/;
 
 use ORAC::Print;
+use ORAC::Constants;
 
 $VERSION = '0.11';
 
@@ -76,6 +77,7 @@ sub new {
   $frame->{Header} = undef;
   $frame->{Group} = undef;
   $frame->{Files} = [];
+  $frame->{NoKeepArr} = [];
   $frame->{Nsubs} = undef;
   $frame->{Recipe} = undef;
   $frame->{UserHeader} = {};
@@ -149,6 +151,16 @@ arrays) and that the filename can not be an integer (otherwise
 it will be treated as an array index). Use files() to retrieve
 all the values in an array context.
 
+If a file has been marked as temporary (ie with the nokeep()
+method) it is erased (running the erase() method) when the file
+name is updated.
+
+For example, the second file (file_2) is marked as temporary
+with $Frm->nokeep(2,1). The next time the filename is updated
+($Frm->file(2,'new_file')) the current file is erased before the
+'new_file' name is stored. The temporary flag is then reset to
+zero.
+
 If a file number is requested that does not exist, the first
 member is returned.
 
@@ -181,11 +193,28 @@ sub file {
       # If we have more arguments we are setting a value
       # else wait until we return the specified value
       if (@_) {
-         ${$self->files}[$index] = $self->stripfname(shift);         
+	# First check that the old file should not be 
+	# removed before we update the object
+	# [Note that the erase method calls this method...]
+	$self->erase($firstarg) if $self->nokeep($firstarg);
+
+	# Now update the filename
+	$self->files->[$index] = $self->stripfname(shift);         
+
+	# Make sure the nokeep flag is unset
+	$self->nokeep($firstarg,0);
+
       } 
     } else {
+      # Since we are updating, Erase the existing file if required
+      $self->erase(1) if $self->nokeep(1);
+
       # Just set the first value
-      ${$self->files}[$index] = $self->stripfname($firstarg);
+      $self->files->[0] = $self->stripfname($firstarg);
+
+      # Make sure the nokeep flag is unset
+      $self->nokeep(1,0);
+
     }
   }
 
@@ -222,7 +251,8 @@ the array reference rather than the file() method:
 In this approach, the file numbering starts at 0. The file() method
 is the recommended way of addressing individual members of this
 array since the file() method could do extra processing of the
-string (especially when setting the value).
+string (especially when setting the value, for example the automatic
+deletion of temporary files).
 
 =cut
  
@@ -241,6 +271,126 @@ sub files {
   }
 }
 
+
+=item nokeep
+
+Flag used to determine whether the current filename should be
+erased when the file() method is next used to update the current
+filename.
+
+  $Frm->erase($i) if $Frm->nokeep($i);
+
+  $Frm->nokeep($i, 1);  # make ith file temporary
+  $Frm->nokeep($i, 0);  # Make ith file permanent
+
+  $nokeep = $Frm->nokeep($i);
+
+The mandatory first argument specifies the file number associated with
+this flag (same scheme as used by the file() method). An optional
+second argument can be used to set the flag. 'True' indicates that the
+file should not be kept, 'false' indicates that the file is permanent.
+
+=cut
+
+sub nokeep {
+  my $self = shift;
+
+  croak 'Usage: $Frm->nokeep(file_number,[value]);'
+    unless @_;
+
+  my $num = shift;
+
+  # Convert this number to an array index
+  my $index = $num - 1;
+
+  # If we have another argument we are setting the value
+  if (@_) {
+    $self->nokeepArr->[$index] = shift;
+  }
+
+  return $self->nokeepArr->[$index];
+
+}
+
+=item nokeepArr
+
+Array of flags. Used internally by nokeep() method.  Set or retrieve
+the array containing the flags used by the nokeep() method to
+determine whether the current filename should be erased when the
+file() method is next used to update the current filename.
+
+    $Frm->nokeepArr(@flags);
+    @flags = $Frm->nokeepArr;
+
+    $array_ref = $Frm->nokeepArr;
+
+In a scalar context the array reference is returned.
+In an array context, the array contents are returned.
+
+The nokeep() method can be used to set or retrieve individual
+flags (the numbering scheme is different).
+
+Note: It is possible to set and retrieve the array members using
+the array reference rather than the nokeep() method:
+
+  $first = $Frm->nokeepArr->[0];
+
+In this approach, the numbering starts at 0. The nokeep() method
+is the recommended way of addressing individual members of this
+array since it could do extra processing of the
+string.
+
+=cut
+ 
+sub nokeepArr {
+  my $self = shift;
+  if (@_) { @{ $self->{NoKeepArr} } = @_;}
+
+  if (wantarray) {
+
+    # In an array context, return the array itself
+    return @{ $self->{NoKeepArr} } if wantarray();
+ 
+  } else {
+    # In a scalar context, return the reference to the array
+    return $self->{NoKeepArr};
+  }
+}
+
+
+=item erase
+
+Erase the current file from disk.
+
+  $Frm->erase($i);
+
+The optional argument specified the file number to be erased.
+The argument is identical to that given to the file() method.
+Returns ORAC__OK if successful, ORAC__ERROR otherwise.
+
+Note that the file() method is not modified to reflect the
+fact the the file associated with it has been removed from disk.
+
+This method is usually called automatically when the file()
+method is used to update the current filename and the nokeep()
+flag is set to true. In this way, temporary files can be removed
+without explicit use of the erase() method. (Just need to
+use the nokeep() method after the file() method has been used
+to update the current filename).
+
+=cut
+
+sub erase {
+  my $self = shift;
+
+  # Retrieve the necessary frame name
+  my $file = $self->file(@_);
+
+  my $status = unlink $file;
+
+  return ORAC__ERROR if $status == 0;
+  return ORAC__OK;
+}
 
 # Method to return group
 # If an argument is supplied the group is set to that value
@@ -762,6 +912,10 @@ Returns $in and $out in an array context:
 
    ($in, $out) = $Frm->inout($suffix);
 
+Returns $out in a scalar context:
+
+   $out = $Frm->inout($suffix);
+
 Therefore if in=file_db and suffix=_ff then out would
 become file_db_ff but if in=file_db_ff and suffix=dk then
 out would be file_db_dk.
@@ -813,10 +967,11 @@ sub inout {
   $outfile .= $suffix;
 
   # Generate a warning if output file equals input file
-  orac_warn("inout - output filename equals input filename")
+  orac_warn("inout - output filename equals input filename ($outfile)")
     if ($outfile eq $infile);
 
-  return ($infile, $outfile);
+  return ($infile, $outfile) if wantarray();  # Array context
+  return $outfile;                            # Scalar context
 }
 
 =item template
