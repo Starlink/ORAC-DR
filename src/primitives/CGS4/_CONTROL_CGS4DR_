@@ -13,7 +13,7 @@ called after the _EXPORT_CGS4DR_FORMAT_ primitive.
 
 =item *
 
-Creates a new object in C<%Mon> which is attached to a
+Creates a new object which is attached to a
 QMAN monolith. This will fail if QMAN is not running.
 
 =item *
@@ -42,10 +42,16 @@ CGS4DR must already be running on the same machine as ORAC-DR.
 # At UKIRT the QMAN process is simply called QMAN so that tasks
 # on other machines (including the VAX) know what it is called
 
-unless (exists $Mon{QMAN}) {
+# Cant store it in %Mon since %Mon is copied into this namespace
+# each time this recipe is run. What we will do is cheat slightly
+# and store the messaging object in a hidden package that only
+# this primitive knows about. Not a problem since this is done 
+# on a need-to-know basis and only this primitive needs to know!
+
+unless (defined $ORACDR::QMAN::TEMP::MsgObject) {
 
   # We are going to search the PID list to make sure that CGS4DR is 
-  # running
+  # running. This does not check that qman is running...
   require Proc::ProcessTable;
   my $procs = new Proc::ProcessTable;
 
@@ -86,9 +92,9 @@ unless (exists $Mon{QMAN}) {
 
   if ($domain =~ /ukirt/i) {
 
-    # It might be worth checking for CGS4DR in this case as well though...
+    # Have already checked that cgs4dr is running
     
-    orac_print "Running pipeline at UKIRT. Name of qman task is easy!\n";
+    orac_print "Running pipeline at UKIRT.\n";
 
     $qman = "qman";
 
@@ -117,15 +123,15 @@ unless (exists $Mon{QMAN}) {
   # So make one up [dont tell any one that this works since
   # it is very naughty]. There is no global hash for the use of the 
   # pipeline -- this could well be a bug.
-  $ORACDR::QMAN::TEMP::QmanAccess = "$qmanaccess";
+  $ORACDR::QMAN::TEMP::QmanAccess = $qmanaccess;
 
   # Create the object
-  $Mon{QMAN} = new ORAC::Msg::ADAM::Task("$qman");
+  $ORACDR::QMAN::TEMP::MsgObject = new ORAC::Msg::ADAM::Task("$qman");
 
   # Try to talk to it
-  unless ($Mon{QMAN}->contact) {
+  unless ($ORACDR::QMAN::TEMP::MsgObject->contact) {
     orac_err "Could not talk to QMAN ($qman). Aborting\n";
-    delete $Mon{QMAN};
+    undef $ORACDR::QMAN::TEMP::MsgObject;
     my $ORAC_STATUS = ORAC__ERROR;
   }
 
@@ -142,7 +148,7 @@ my $ut  = $Frm->hdr('ORACUT');
 my $out = substr($ut, 2) . '_' . $num;
 
 # Send the command
-$Mon{QMAN}->obeyw("WRITE","string='REDUCE O$out' qposition=oldest $ORACDR::QMAN::TEMP::QmanAccess");
+$ORACDR::QMAN::TEMP::MsgObject->obeyw("WRITE","string='REDUCE O$out' qposition=oldest $ORACDR::QMAN::TEMP::QmanAccess");
 
 # ..and the end
-$Mon{QMAN}->obeyw("WRITE","string='END O$out' qposition=oldest $ORACDR::QMAN::TEMP::QmanAccess");
+$ORACDR::QMAN::TEMP::MsgObject->obeyw("WRITE","string='END O$out' qposition=oldest $ORACDR::QMAN::TEMP::QmanAccess");
