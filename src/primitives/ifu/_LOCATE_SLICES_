@@ -1,139 +1,5 @@
 # -*- perl -*-
 
-#+
-# Name:
-# _LOCATE_SLICES_
-#
-# Purpose:
-#   Locates the slices in an IFU frame
-#
-# Language:
-#   Perl5
-#
-# Description:
-#   The positions of the slices are obtained from the ifu_profile.dat file.
-#   The y offset which should be applied to these positions (which is different
-#   for each grism) is obtained from the grism data file returned by the 
-#   calibration system. All lines of this file are ignored unless they begin
-#   Offset:
-#
-#   The positions of the slices and the x and y shift that should be applied
-#   to each one to align them in the y and spectral directions are written
-#   into the USER header in arrays IFU_start, IFU_end, IFU_xshift, 
-#   IFU_yshift with indices from 0 and the number of slices into IFU_slices
-#
-#   The slice positions are placed in the array in the order in which they 
-#   are given in the ifu_profile.dat file. These should be in the order in 
-#   which they are arranged on the sky, rather than in the order in which the
-#   slice images appear on the array in order to allow correct construction
-#   of the datacube.
-#
-# Notes:
-#    - This primitive is written for the UIST IFU.
-#    - The locations of the slices and the shifts which should be applied are
-#      written into the user headers IFU_start, IFU_end, IFU_xshift and
-#      IFU_yshift. Each of these is an array with an element for each slice.
-#    - the number of slices is written to the IFU_slices user header.
-#    - The ifu_profile.dat file has one row for each slice, each containing
-#      four whitespace separated fields (ystart yend xshift yshift). All are
-#      integers except yshift.
-#    - There is one grism data file per grism (actually more than one if the
-#      grism is used in different orders). The correct file is obtained via
-#      the calibration system. The line used in this primitive is
-#             Offset: num
-#      All lines not beginning Offset: are ignored.
-# 
-# Output Data:
-#    - No new file is created. The user headers IFU_start, IFU_end, IFU_xshift 
-#      and IFU_yshift are added to the input file.   
-#
-# Tasks:
-#    none
-#
-# Authors:
-#    SPT: Stephen P. Todd (Edinburgh University/UKATC)
-#
-# Copyright:
-#    Copyright (C) 1998-2002 Particle Physics and Astronomy Research
-#    Council.  All Rights Reserved.
-#
-#-
-
-use FileHandle;
-
-# Load the ifu_profile.dat file, giving the y positions of the slices
-# and the shifts that should be applied to them.
-
-my @slice_data;
-my $profile_file = $ENV{ORAC_DATA_CAL} . "/ifu_profile.dat";
-
-# Read the positions of the slices
-
-my $profile = new FileHandle;
-open($profile, $profile_file) || die "Could not open $profile_file \n";
-while (my $str = <$profile>) {
-      next if $str eq "\n";
-      push @slice_data, [ split /\s+/, $str ] ;
-}
-close $profile;
-
-
-# Set the y offset to be applied to all the y bounds (different for
-# each grism).
-
-# Get the grism data file from the calibration system
-my $grism_file = $ENV{ORAC_DATA_CAL} . "/" . $Cal->grism;
-orac_print "Using $grism_file \n";
-
-my $offset;
-
-# And read the file looking for the line which begins Offset:
-my $file = new FileHandle;
-
-open($file, $grism_file) || die "Could not open $grism_file \n";
-while (my $str = <$file>) {
-    next unless ($str =~ /^Offset:\s(\d+)/);
-    $offset = $1;
-}
-close $file;
-
-
-
-unless (defined $offset) {die "Unable to find offset for grism.\n";}
-
-# n used to count the slices
-# @y1 and @y2 hold the ystart and yend values respectively
-# @xhift and @yshift hold xshift and yshift values (unchanged from 
-# those in ifu_profile.dat).
-my $n = 0;
-my @y1;
-my @y2;
-my @xshift;
-my @yshift;
-
-
-# Loop through, writing the positions of each slice into an array
-foreach my $slice (@slice_data) {    
-    # Set the bounds and the shift using the data loaded earlier
-    $y1[$n] = $slice->[0] + $offset;
-    $y2[$n] = $slice->[1] + $offset;
-    $xshift[$n] = $slice->[2];
-    $yshift[$n] = $slice->[3];
-    $n++;
-}
-
-
-# Write the arrays to the uhdr
-$Frm->uhdr( "IFU_start" => \@y1,
-	    "IFU_end" => \@y2,	
-	    "IFU_xshift" => \@xshift,
-	    "IFU_yshift" => \@yshift);
-
-
-# Finally, write the number of slices into the header
-$Frm->uhdr( "IFU_slices" => "$n");
-
-
 
 # Podule
 # ======
@@ -146,9 +12,7 @@ _LOCATE_SLICES_ -- Locates the slices in an IFU frame.
 
 The positions of the slices are obtained from the ifu_profile.dat file.
 The y offset which should be applied to these positions (which is different
-for each grism) is obtained from the grism data file returned by the 
-calibration system. All lines of this file are ignored unless they begin
-Offset:
+for each grism) is obtained from the calibration system.
 
 The positions of the slices and the x and y shift that should be applied
 to each one to align them in the y and spectral directions are written
@@ -188,12 +52,9 @@ integers except yshift.
 
 =item *
 
-There is one grism data file per grism (actually more than one if the
-grism is used in different orders). The correct file is obtained via
-the calibration system. The line used in this primitive is
-       Offset: num
-All lines not beginning Offset: are ignored.
-
+Each grism produces a vertical offset in the position of the spectra. This 
+offset is obtained from the calibration system.
+ 
 =back
 
 =head1 OUTPUT DATA
@@ -223,7 +84,63 @@ Council.  All Rights Reserved.
 =cut
 
 
+# Load the ifu_profile.dat file, giving the y positions of the slices
+# and the shifts that should be applied to them.
 
+my @slice_data;
+my $profile_file = $ENV{ORAC_DATA_CAL} . "/ifu_profile.dat";
+
+# Read the positions of the slices
+
+open(my $profile, $profile_file) || die "Could not open $profile_file \n";
+while (my $str = <$profile>) {
+      next if $str eq "\n";
+      push @slice_data, [ split /\s+/, $str ] ;
+}
+close $profile;
+
+
+# Get the y offset to be applied to all the y bounds (different for
+# each grism) from the calibration system
+
+my $offset = $Cal->offset;
+
+if (defined $offset) {
+    orac_print "Using offset value of $offset pixels.\n";
+} else {die "Unable to find offset for grism.\n";}
+
+
+# n used to count the slices
+# @y1 and @y2 hold the ystart and yend values respectively
+# @xhift and @yshift hold xshift and yshift values (unchanged from 
+# those in ifu_profile.dat).
+my $n = 0;
+my @y1;
+my @y2;
+my @xshift;
+my @yshift;
+
+
+# Loop through, writing the positions of each slice into an array
+foreach my $slice (@slice_data) {    
+    # Set the bounds and the shift using the data loaded earlier
+    $y1[$n] = $slice->[0] + $offset;
+    $y2[$n] = $slice->[1] + $offset;
+    $xshift[$n] = $slice->[2];
+    $yshift[$n] = $slice->[3];
+    $n++;
+}
+
+
+# Write the arrays to the uhdr
+$Frm->uhdr( "IFU_start" => \@y1,
+	    "IFU_end" => \@y2,	
+	    "IFU_xshift" => \@xshift,
+	    "IFU_yshift" => \@yshift);
+
+
+# Finally, write the number of slices into the header
+$Frm->uhdr( "IFU_slices" => "$n");
 
 
 
