@@ -3,27 +3,35 @@
 #    JITTER_SELF_FLAT
 
 # Purpose:
-#    Reduces a 9-point "standard jitter" photometry observation using
-#    object masking.     
+#    Reduces a "standard jitter" photometry observation using object 
+#    masking.     
 
 # Language:
 #    Perl5
 
 # Description:
 #    This script reduces a "standard jitter" photometry observation
-#    with IRCAM data.  It takes an IRCAM observation comprising nine
-#    object frames and a dark frame to make a calibrated, untrimmed
-#    mosaic automatically.
+#    with UFTI or IRCAM data.  It takes an imaging observation
+#    comprising jittered object frames and a dark frame to make a
+#    calibrated, untrimmed mosaic automatically.
 
 #    It performs a null debiassing, bad-pixel masking, dark
 #    subtraction, flat-field creation and division, feature
 #    detection and matching between object frames, and resampling.
+#    See the "Notes" for further information.
 
 #    This recipe works well for faint sources and for moderately
 #    crowded fields.
 
 # Notes: 
-#    -  The bad pixel mask applied is $ORAC_DATA_CAL/bpm.
+#    -  A World Co-ordinate System (WCS) using the AIPS convention is 
+#    created in the headers should no WCS already exist.
+#    -  For IRCAM, old headers are reordered and structured with
+#    headings before groups of related keywords.  The comments have
+#    units added or appear in a standard format.  Four deprecated
+#    deprecated are removed.  FITS-violating headers are corrected.
+#    Spurious instrument names are changed to IRCAM3.
+#    -  The bad-pixel mask applied is $ORAC_DATA_CAL/bpm.
 #    -  The flat field is created iteratively.  First an approximate
 #    flat-field is created by combining normalised object frames using
 #    the median at each pixel.  This flat field is applied to the object
@@ -43,28 +51,35 @@
 #    the noise will be greater in the peripheral areas having received
 #    less exposure time.  The mosaic is not normalised by its exposure
 #    time (that being the exposure time of a single frame).
-#    -  For each cycle of nine, the recipe creates a mosaic, which has
-#    its bad pixels filled and is then added into a master mosaic of
-#    improving signal to noise.  The exposure time is also summed and
-#    stored in the mosaic's EXP_TIME header.  Likewise the end airmass
-#    header, AMEND, is updated to match that of the last-observed frame
-#    contributing to the mosaic.
+#    -  For each cycle of jittered frames, the recipe creates a mosaic,
+#    which has its bad pixels filled and is then added into a master
+#    mosaic of improving signal to noise.  The exposure time is also
+#    summed and stored in the mosaic's EXP_TIME (UFTI) or DEXPTIME
+#    (IRCAM) header.  Likewise the end airmass header, AMEND, is updated
+#    to match that of the last-observed frame contributing to the mosaic.
 #    -  Intermediate frames are deleted except for the flat-fielded (_ff
 #    suffix) frames.
 
 # Output Data:
-#    -  The integrated mosaic in rg<date>_<group_number>_mos.
-#    -  A mosaic for each cycle of nine in
-#    rg<date>_<group_number>_mos_<cycle_number>, where <cycle_number>
+#    -  The integrated mosaic in <m><date>_<group_number>_mos, where <m>
+#    is "g" for UFTI and "rg" for IRCAM.
+#    -  A mosaic for each cycle of jittered frames in
+#    <m><date>_<group_number>_mos<cycle_number>, where <cycle_number>
 #    counts from 0.
-#    -  The individual flat-fielded frames in ro<date>_<obs_number>_ff.
+#    -  The individual flat-fielded frames in <i><date>_<obs_number>_ff,
+#    where <i> is "f" for UFTI and "ro" for IRCAM.
 #    -  The created flat fields in flat_<group_number>subgrp for the
 #    first or only cycle, and flat_<group_number>subgrp_<cycle_number>
 #    for subsequent cycles.
 
 # Configurable Steering Parameters:
 #    NUMBER = INTEGER
-#       The number of frames in the jitter pattern. [9]
+#       The number of frames in the jitter pattern.  If not supplied
+#       the number of offsets, as given by FITS header NOFFSETS, minus
+#       one is used.  If neither is available, 9 is the default.  An
+#       error state arises if the number of jittered frames is fewer
+#       than 3.  For observations prior to the availability of full
+#       ORAC, header NOFFSETS will be absent.  []
 
 # Timing:
 #    {timing_information}
@@ -79,8 +94,9 @@
 #    -  Error propagation is not used.
 
 # Related Recipes:
-#    JITTER5_SELF_FLAT, JITTER5_SELF_FLAT_NO_MASK, JITTER9_SELF_FLAT,
-#    JITTER9_SELF_FLAT_NO_MASK, QUADRANT_JITTER, QUADRANT_JITTER_NO_MASK.
+#    JITTER_SELF_FLAT_APHOT, JITTER_SELF_FLAT_BASIC,
+#    JITTER_SELF_FLAT_NO_MASK, JITTER_SELF_FLAT_TELE, 
+#    MOVING_JITTER_SELF_FLAT, QUADRANT_JITTER.
 
 # References:
 #   "Scripts for UFTI" G.S. Wright & S.K. Leggett, 1997 orac009-ufts, v01.
@@ -98,14 +114,17 @@
 # =======
 #
 # Every recipe must do this.
-    _IRCAM_HELLO_
+    _IMAGING_HELLO_
+
+# Create WCS, if needed.
+    _CREATE_WCS_
 
 # This gets done for the first frame in sequence.
     _JITTER_SELF_FLAT_HELLO_
 
 # Set up steering control of the processing, namely when to make a flat,
 # make a mosaic, and to mask objects when making the flat.
-    _JITTER_SELF_FLAT_STEER_ NUMBER=9
+    _JITTER_SELF_FLAT_STEER_
 
 # Calibration
 # ===========
@@ -146,18 +165,19 @@
 
 =head1 NAME
 
-JITTER_SELF_FLAT -- Reduces a 9-point "standard jitter" photometry observation using object masking.
+JITTER_SELF_FLAT -- Reduces a "standard jitter" photometry observation using object masking.
 
 =head1 DESCRIPTION
 
-This script reduces a "standard jitter" photometry observation
-with IRCAM data.  It takes an IRCAM observation comprising nine
-object frames and a dark frame to make a calibrated, untrimmed
-mosaic automatically.
+This script reduces a "standard jitter" photometry observation with
+UFTI or IRCAM data.  It takes an imaging observation comprising
+jittered object frames and a dark frame to make a calibrated,
+untrimmed mosaic automatically.
 
 It performs a null debiassing, bad-pixel masking, dark
 subtraction, flat-field creation and division, feature
 detection and matching between object frames, and resampling.
+See the L<"NOTES"> for further information.
 
 This recipe works well for faint sources and for moderately
 crowded fields.
@@ -168,7 +188,20 @@ crowded fields.
 
 =item *
 
-The bad pixel mask applied is F<$ORAC_DATA_CAL/bpm>.
+A World Co-ordinate System (WCS) using the AIPS convention is 
+created in the headers should no WCS already exist.
+
+=item * 
+
+For IRCAM, old headers are reordered and structured with
+headings before groups of related keywords.  The comments have
+units added or appear in a standard format.  Four deprecated
+deprecated are removed.  FITS-violating headers are corrected.
+Spurious instrument names are changed to IRCAM3.
+
+=item *
+
+The bad-pixel mask applied is F<$ORAC_DATA_CAL/bpm>.
 
 =item *
 
@@ -203,12 +236,12 @@ time (that being the exposure time of a single frame).
 
 =item *
 
-For each cycle of nine, the recipe creates a mosaic, which has
-its bad pixels filled and is then added into a master mosaic of
+For each cycle of jittered frames, the recipe creates a mosaic, which
+has its bad pixels filled and is then added into a master mosaic of
 improving signal to noise.  The exposure time is also summed and
-stored in the mosaic's EXP_TIME header.  Likewise the end airmass
-header, AMEND, is updated to match that of the last-observed frame
-contributing to the mosaic.
+stored in the mosaic's EXP_TIME (UFTI) or DEXPTIME (IRCAM) header.
+Likewise the end airmass header, AMEND, is updated to match that of
+the last-observed frame contributing to the mosaic.
 
 =item *
 
@@ -223,17 +256,21 @@ suffix) frames.
 
 =item *
 
-The integrated mosaic in rgE<lt>dateE<gt>_E<lt>group_numberE<gt>_mos.
+The integrated mosaic in
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_mos, where
+E<lt>mE<gt> is "g" for UFTI and "rg" for IRCAM.
 
 =item *
 
-A mosaic for each cycle of nine in
-rgE<lt>dateE<gt>_E<lt>group_numberE<gt>_mosE<lt>cycle_numberE<gt>,
+A mosaic for each cycle of jittered frames in
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_mos_E<lt>cycle_numberE<gt>,
 where E<lt>cycle_numberE<gt> counts from 0.
 
 =item *
 
-The individual flat-fielded frames in roE<lt>dateE<gt>_E<lt>obs_numberE<gt>_ff.
+The individual flat-fielded frames in
+E<lt>iE<gt>E<lt>dateE<gt>_E<lt>obs_numberE<gt>_ff, where E<lt>iE<gt>
+is "f" for UFTI and "ro" for IRCAM.
 
 =item *
 
@@ -249,7 +286,12 @@ for subsequent cycles.
 
 =item NUMBER = INTEGER
 
-The number of frames in the jitter pattern. [9]
+The number of frames in the jitter pattern.  If not supplied
+the number of offsets, as given by FITS header NOFFSETS, minus one
+is used.  If neither is available, 9 is the default.  An error 
+state arises if the number of jittered frames is fewer than 3. 
+For observations prior to the availability of full ORAC,
+NOFFSETS will be absent.  []
 
 =back
 
@@ -287,12 +329,12 @@ Error propagation is not used.
 
 =head1 RELATED RECIPES
 
-L<JITTER5_SELF_FLAT|JITTER5_SELF_FLAT>,
-L<JITTER5_SELF_FLAT_NO_MASK|JITTER5_SELF_FLAT_NO_MASK>,
-L<JITTER9_SELF_FLAT|JITTER9_SELF_FLAT>,
-L<JITTER9_SELF_FLAT_NO_MASK|JITTER9_SELF_FLAT_NO_MASK>,
-L<QUADRANT_JITTER|QUADRANT_JITTER>,
-L<QUADRANT_JITTER_NO_MASK|QUADRANT_JITTER_NO_MASK>.
+L<JITTER_SELF_FLAT_APHOT|JITTER_SELF_FLAT_APHOT>,
+L<JITTER_SELF_FLAT_BASIC|JITTER_SELF_FLAT_BASIC>,
+L<JITTER_SELF_FLAT_NO_MASK|JITTER_SELF_FLAT_NO_MASK>,
+L<JITTER_SELF_FLAT_TELE|JITTER_SELF_FLAT_TELE>,
+L<MOVING_JITTER_SELF_FLAT_TELE|MOVING_JITTER_SELF_FLAT_TELE>,
+L<QUADRANT_JITTER|QUADRANT_JITTER>.
 
 =head1 REFERENCES
 
