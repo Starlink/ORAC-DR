@@ -208,6 +208,8 @@ are responsible for setting this value from their header.
 Should be run after a header is set. Currently the header()
 method calls this whenever it is updated.
 
+Calculates ORACUT and ORACTIME
+
 This method updates the frame header.
 Returns a hash containing the new keywords.
 
@@ -226,6 +228,15 @@ sub calc_orac_headers {
   $self->hdr('ORACTIME', $time);
 
   $new{'ORACTIME'} = $time;
+
+  # Calc ORACUT:
+  my $ut = $self->hdr('DATE');
+  $ut = 0 unless defined $ut;
+  $ut =~ s/-//g;  #  Remove the intervening minus sign
+
+  $self->hdr('ORACUT', $ut);
+  $new{ORACUT} = $ut;
+
   return %new;
 }
 
@@ -268,6 +279,30 @@ sub template {
 }
 
 
+=item file_from_bits
+
+Determine the raw data filename given the variable component
+parts. A prefix (usually UT) and observation number should
+be supplied.
+
+  $fname = $Obs->file_from_bits($prefix, $obsnum);
+
+=cut
+
+sub file_from_bits {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $obsnum = shift;
+
+  # pad with leading zeroes - 5(!) digit obsnum
+  my $padnum = '0'x(5-length($obsnum)) . $obsnum;
+
+  # UFTI naming
+  return $self->rawfixedpart . $prefix . '_' . $padnum . $self->rawsuffix;
+}
+
+
 
 
 =back
@@ -301,29 +336,6 @@ sub stripfname {
   return $name;
 }
 
-
-=item file_from_bits
-
-Determine the raw data filename given the variable component
-parts. A prefix (usually UT) and observation number should
-be supplied.
-
-  $fname = $Obs->file_from_bits($prefix, $obsnum);
-
-=cut
-
-sub file_from_bits {
-  my $self = shift;
-
-  my $prefix = shift;
-  my $obsnum = shift;
-
-  # pad with leading zeroes - 5(!) digit obsnum
-  my $padnum = '0'x(5-length($obsnum)) . $obsnum;
-
-  # UFTI naming
-  return $self->rawfixedpart . $prefix . '_' . $padnum . $self->rawsuffix;
-}
 
 
 
