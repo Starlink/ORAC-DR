@@ -587,6 +587,7 @@ sub orac_determine_primitive_search_path {
 
   if ($inst eq 'SCUBA') {
     push( @path, File::Spec->catdir( $root, 'SCUBA' ) );
+    push( @path, $general_root );
 
   } elsif ($inst eq 'CGS4' or $inst eq 'OCGS4') {
     push( @path, File::Spec->catdir( $root, 'CGS4' ) );
