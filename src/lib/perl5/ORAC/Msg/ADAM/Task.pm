@@ -32,6 +32,8 @@ on exit from perl.
 
 The following methods are available:
 
+=head2 Constructor
+
 =over 4
 
 =cut
@@ -51,7 +53,7 @@ use vars qw/$VERSION $DTASK__ACTCOMPLETE $SAI__OK/;
 # Access the AMS task code
 use Starlink::AMS::Task '1.00';
  
-$VERSION = '0.01';
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 
 # Local definition of DTASK__ACT_COMPLETE. Probably should
@@ -65,7 +67,8 @@ $SAI__OK = &Starlink::ADAM::SAI__OK;
 # Cannot subclass methods since I need to change most of them
 # anyway.
 
-=item new
+
+=item B<new>
 
 Create a new instance of a ORAC::Msg::ADAM::Task object.
  
@@ -118,8 +121,13 @@ sub obj {
   return $self->{Obj};
 }
 
+=back
 
-=item load
+=head2 General Methods
+
+=over 4
+
+=item B<load>
 
 Load a monolith and set up the name in the messaging system.
 This task is called by the 'new' method.
@@ -158,7 +166,7 @@ sub load {
 }
 
 
-=item obeyw
+=item B<obeyw>
 
 Send an obey to a task and wait for a completion message
 
@@ -184,7 +192,7 @@ sub obeyw {
 }
 
 
-=item get
+=item B<get>
 
 Obtain the value of a parameter
 
@@ -216,7 +224,7 @@ sub get {
   return ($status, @values);
 }
 
-=item set
+=item B<set>
 
 Set the value of a parameter
 
@@ -250,7 +258,7 @@ sub set {
 }
 
 
-=item control
+=item B<control>
 
 Send CONTROL messages to the monolith. The type of control
 message is specified via the first argument. Allowed values are:
@@ -293,7 +301,7 @@ sub forget {
   $self->obj->forget;
 }
 
-=item resetpars
+=item B<resetpars>
 
 Reset all parameters associated with a monolith
 
@@ -317,7 +325,7 @@ sub resetpars {
 }
 
 
-=item cwd
+=item B<cwd>
 
 Set and retrieve the current working directory of the monolith
 
@@ -341,7 +349,7 @@ sub cwd {
 }
 
 
-=item contactw
+=item B<contactw>
 
 This method will not return unless the monolith can be contacted.
 It only returns with a timeout. Returns a '1' if we contacted okay
@@ -357,7 +365,7 @@ sub contactw {
 }
 
 
-=item contact
+=item B<contact>
 
 This method can be used to determine whether the object can
 contact a monolith. Returns a 1 if we can contact a monolith and
@@ -371,7 +379,7 @@ sub contact {
 }
 
 
-=item pid
+=item B<pid>
 
 Returns process id of forked task.
 Returns undef if there is no external task.
@@ -403,10 +411,20 @@ This module requires the Starlink::AMS::Task module.
 
 L<Starlink::AMS::Task>
 
+=head1 REVISION
+
+$Id$
+
 =head1 AUTHORS
 
 Tim Jenness (t.jenness@jach.hawaii.edu)
 and Frossie Economou (frossie@jach.hawaii.edu)    
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
 
 =cut
 

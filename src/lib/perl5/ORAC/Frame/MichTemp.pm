@@ -205,10 +205,19 @@ sub template {
 
 L<ORAC::Frame::UKIRT>
 
+=head1 REVISION
+
+$Id$
+
 =head1 AUTHORS
 
 Frossie Economou (frossie@jach.hawaii.edu)
-    
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
 
 =cut
 

@@ -178,6 +178,11 @@ $Id$
 
 Frossie Economou (frossie@jach.hawaii.edu)
 Tim Jenness (timj@jach.hawaii.edu)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
     
 
 =cut

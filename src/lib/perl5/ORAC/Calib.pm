@@ -51,7 +51,7 @@ The following methods are available in this class.
 
 =over 4
 
-=item new
+=item B<new>
 
 Create a new instance of a ORAC::Calib object.
 The object identifier is returned.
@@ -101,7 +101,7 @@ sub new {
 
 # Methods to access the data
 
-=item darkname
+=item B<darkname>
 
 Return (or set) the name of the current dark - no checking
 
@@ -117,7 +117,7 @@ sub darkname {
 }
 
 
-=item biasname
+=item B<biasname>
 
 Return (or set) the name of the current bias - no checking
 
@@ -133,7 +133,7 @@ sub biasname {
 }
 
 
-=item skyname
+=item B<skyname>
 
 Return (or set) the name of the current sky frame - no checking
 
@@ -148,7 +148,7 @@ sub skyname {
   return $self->{Sky};
 }
 
-=item standardname
+=item B<standardname>
 
 Return (or set) the name of the current standard frame - no checking
 
@@ -164,7 +164,7 @@ sub standardname {
 }
 
 
-=item dark
+=item B<dark>
 
 Return (or set) the name of the current dark - 
 checks suitability on return.
@@ -197,7 +197,7 @@ sub dark {
 };
 
 
-=item darknoupdate
+=item B<darknoupdate>
 
 Stops dark object from updating itself with more recent data
 
@@ -211,7 +211,7 @@ sub darknoupdate {
   return $self->{DarkNoUpdate};
 }
 
-=item flatnoupdate
+=item B<flatnoupdate>
 
 Stops flat object from updating itself with more recent data
 
@@ -225,7 +225,7 @@ sub flatnoupdate {
   return $self->{FlatNoUpdate};
 }
 
-=item biasnoupdate
+=item B<biasnoupdate>
 
 Stops bias object from updating itself with more recent data
 
@@ -240,7 +240,7 @@ sub biasnoupdate {
 }
 
 
-=item skynoupdate
+=item B<skynoupdate>
 
 Stops sky object from updating itself with more recent data
 
@@ -254,7 +254,7 @@ sub skynoupdate {
   return $self->{SkyNoUpdate};
 }
 
-=item standardnoupdate
+=item B<standardnoupdate>
 
 Stops standard object from updating itself with more recent data
 
@@ -268,7 +268,7 @@ sub standardnoupdate {
   return $self->{StandardNoUpdate};
 }
 
-=item bias
+=item B<bias>
 
 Return (or set) the name of the current bias.
 
@@ -304,7 +304,7 @@ sub bias {
 
 
 
-=item mask
+=item B<mask>
 
 Return (or set) the name of the bad pixel mask
 
@@ -319,7 +319,7 @@ sub mask {
   return $self->{Mask};
 }
 
-=item rotation
+=item B<rotation>
 
 Return (or set) the name of the rotation transformation matrix
 
@@ -335,7 +335,7 @@ sub rotation {
 }
 
 
-=item flatname
+=item B<flatname>
 
 Return (or set) the name of the current flat - no checking
 
@@ -351,7 +351,7 @@ sub flatname {
 }
 
 
-=item flat
+=item B<flat>
 
 Return (or set) the name of the current flat.
 
@@ -387,7 +387,7 @@ sub flat {
 
 
 
-=item arc
+=item B<arc>
 
 Return (or set) the name of the current arc.
 
@@ -401,7 +401,7 @@ sub arc {
   return $self->{Arc};
 };
 
-=item sky
+=item B<sky>
 
 Return (or set) the name of the current "sky" frame
 
@@ -432,7 +432,7 @@ sub sky {
   };
 };
 
-=item standard
+=item B<standard>
 
 Return (or set) the name of the current standard.
 
@@ -468,7 +468,7 @@ sub standard {
 
 }
 
-=item darkindex 
+=item B<darkindex> 
 
 Return (or set) the index object associated with the dark index file
 
@@ -491,7 +491,7 @@ sub darkindex {
 
 };
 
-=item flatindex 
+=item B<flatindex>
 
 Return (or set) the index object associated with the flat index file
 
@@ -514,7 +514,7 @@ sub flatindex {
 
 };
 
-=item biasindex 
+=item B<biasindex> 
 
 Return (or set) the index object associated with the bias index file
 
@@ -537,7 +537,7 @@ sub biasindex {
 
 };
 
-=item skyindex 
+=item B<skyindex>
 
 Return (or set) the index object associated with the sky index file
 
@@ -560,7 +560,7 @@ sub skyindex {
 
 };
 
-=item standardindex 
+=item B<standardindex> 
 
 Return (or set) the index object associated with the standard index file
 
@@ -583,7 +583,7 @@ sub standardindex {
 
 };
 
-=item thing
+=item B<thing>
 
 Returns or sets the hash associated with the header of the object
 (frame or group or whatever) needed to match calibration criteria
@@ -619,11 +619,20 @@ return $self->{Thing};
 L<ORAC::Group> and
 L<ORAC::Frame> 
 
+=head1 REVISION
+
+$Id$
+
 =head1 AUTHORS
 
 Tim Jenness (t.jenness@jach.hawaii.edu) and 
 Frossie Economou (frossie@jach.hawaii.edu)
 
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
 
 =cut
  

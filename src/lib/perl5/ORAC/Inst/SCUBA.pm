@@ -29,7 +29,7 @@ require Exporter;
 use Carp;
 use strict;
 use vars qw/$VERSION $TAIL %Mon/;
-$VERSION = '0.10';
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 use ORAC::Msg::ADAM::Control;
 use ORAC::Msg::ADAM::Task;
@@ -45,7 +45,7 @@ $TAIL = ".sdf";
 
 =over 4
 
-=item start_msg_sys
+=item B<start_msg_sys>
 
 Starts the messaging system infrastructure so that monoliths
 can be contacted. Returns an array of objects associated
@@ -79,7 +79,7 @@ sub start_msg_sys {
 
 
 
-=item start_algorithm_engines
+=item B<start_algorithm_engines>
 
 Starts the algorithm engines and returns a hash containing
 the objects associated with each monolith.
@@ -129,7 +129,7 @@ sub start_algorithm_engines {
 
 
 
-=item wait_for_algorithm_engines
+=item B<wait_for_algorithm_engines>
 
 Check to see that at least one of the algorithm engines has 
 started. Wait until contact can be made or timeout is reached.
@@ -155,9 +155,22 @@ sub wait_for_algorithm_engines {
 
 =back
 
+=head1 SEE ALSO
+
+L<ORAC::Inst::IRCAM>
+
+=head1 REVISION
+
+$Id$
+
 =head1 AUTHORS
 
 Tim Jenness (t.jenness@jach.hawaii.edu)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
 
 
 =cut

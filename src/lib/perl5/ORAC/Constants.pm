@@ -16,6 +16,8 @@ Provide access to ORAC constants.
 
 =cut
 
+use vars qw/ $VERSION /;
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 require Exporter;
 
@@ -35,7 +37,7 @@ The following constants are available from this module:
 
 =over 4
 
-=item ORAC__OK
+=item B<ORAC__OK>
 
 This constant contains the definition of good ORAC status.
 
@@ -44,7 +46,7 @@ This constant contains the definition of good ORAC status.
 use constant ORAC__OK => 0;
 
 
-=item ORAC__ERROR
+=item B<ORAC__ERROR>
 
 This constant containst the definition of bad ORAC status.
 
@@ -91,21 +93,28 @@ or
   use ORAC::Constants ();
   print ORAC::Constants::ORAC__ERROR;
 
+=head1 SEE ALSO
+
+L<constants>
+
+=head1 REVISION
+
+$Id$
 
 =head1 AUTHOR
 
 Tim Jenness (t.jenness@jach.hawaii.edu) and
 Frossie Economou (frossie@jach.hawaii.edu)
 
-
 =head1 REQUIREMENTS
 
 The C<constants> package must be available. This is a standard
 perl package.
 
-=head1 See Also
+=head1 COPYRIGHT
 
-L<constants>
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
 
 =cut
 

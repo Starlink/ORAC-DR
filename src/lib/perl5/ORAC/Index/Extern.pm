@@ -30,7 +30,7 @@ use vars qw/$VERSION/;
 require ORAC::Index;
 use base qw( ORAC::Index );
 
-$VERSION = '0.10';
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 =head1 PUBLIC METHODS
 
@@ -43,7 +43,7 @@ The following methods are new in this sub-class:
 
 =over 4
 
-=item last_read
+=item B<last_read>
 
 Time the index file was last read. This is used to determine whether
 the index file should be re-read.
@@ -66,7 +66,7 @@ These methods override the base class methods.
 
 =over 4
 
-=item indexref
+=item B<indexref>
 
 Returns or sets the reference to the hash containing the index.
 If the index file has been modified since the last update from disk,
@@ -104,7 +104,7 @@ sub indexref {
 }
 
 
-=item slurpindex
+=item B<slurpindex>
 
 Modified routine for reading the index file into the object.
 Calls the base class method but makes sure that the time of the
@@ -133,9 +133,18 @@ sub slurpindex {
 
 L<ORAC::Index>
 
+=head1 REVISION
+
+$Id$
+
 =head1 AUTHORS
 
 Tim Jenness (t.jenness@jach.hawaii.edu)
 and Frossie Economou  (frossie@jach.hawaii.edu)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
 
 =cut

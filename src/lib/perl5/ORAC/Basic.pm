@@ -727,10 +727,18 @@ $Id$
 
 Frossie Economou and Tim Jenness
 
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
 =cut
 
 
 #$Log$
+#Revision 1.44  2000/01/29 02:29:11  timj
+#Brings pods up to release standard.
+#
 #Revision 1.43  2000/01/26 00:59:19  timj
 #Fix -w warnings.
 #

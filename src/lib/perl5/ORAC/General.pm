@@ -34,8 +34,9 @@ require Exporter;
 use Carp;
 use strict;
 use vars qw/$VERSION/;
-$VERSION = undef; # -w protection
-$VERSION = '0.10';
+
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+
 
 # Use POSIX so that I can get log10 support
 # I realise that I can create a log10 function via natural logs
@@ -228,9 +229,19 @@ sub parse_obslist {
 
 L<POSIX>
 
+=head1 REVISION
+
+$Id$
+
 =head1 AUTHORS
 
 Frossie Economou  (frossie@jach.hawaii.edu) and
 Tim Jenness (t.jenness@jach.hawaii.edu)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
 
 =cut

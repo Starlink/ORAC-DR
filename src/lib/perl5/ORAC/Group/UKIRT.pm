@@ -87,6 +87,8 @@ sub new {
 
 =over 4
 
+=item B<calc_orac_headers>
+
 This method calculates header values that are required by the
 pipeline by using values stored in the header.
 
@@ -143,6 +145,11 @@ $Id$
 =head1 AUTHORS
 
 Tim Jenness (t.jenness@jach.hawaii.edu)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
 
 =cut
 

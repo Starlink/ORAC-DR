@@ -37,7 +37,7 @@ use ORAC::Group::NDF;
 # standard error module and turn on strict
 use Carp;
 use strict;
- 
+
 =head1 PUBLIC METHODS
 
 The following methods are available in this class in addition to
@@ -141,6 +141,12 @@ $Id$
 =head1 AUTHORS
 
 Frossie Economou (frossie@jach.hawaii.edu)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
 
 =cut
 

@@ -174,6 +174,7 @@ sub file_from_bits {
   # UFTI naming
   return $self->rawfixedpart . $prefix . '_' . $padnum . $self->rawsuffix;
 }
+
 =item B<findgroup>
 
 Returns group name from header.  For dark observations the current obs
@@ -345,6 +346,11 @@ $Id$
 Frossie Economou (frossie@jach.hawaii.edu)
 Tim Jenness (timj@jach.hawaii.edu)
     
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
 
 =cut
 

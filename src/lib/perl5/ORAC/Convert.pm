@@ -18,7 +18,7 @@ ORAC::Convert - Methods for converting data formats
   $conv->infile($infile);
   $outfile = $conv->convert;  # uses infile()
 
-=head1 
+=head1 DESCRIPTION
 
 Provide a system for converting data formats. Currently the
 only output format supported are:
@@ -807,6 +807,11 @@ $Id$
 =head1 AUTHORS
 
 Tim Jenness (t.jenness@jach.hawaii.edu)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
 
 =cut
 

@@ -51,12 +51,13 @@ require Exporter;
 
 use vars qw/$VERSION @EXPORT @ISA $CONVERT/;
 
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+
 @ISA = qw/Exporter/;
 @EXPORT = qw/orac_loop_list  orac_loop_wait orac_loop_inf
   orac_loop_flag
   orac_check_data_dir
   /;
-
 
 =head1 LOOP SUBROUTINES
 
@@ -65,10 +66,12 @@ The following loop facilities are available:
 =over 4
 
 
-=item orac_loop_list(classname, UT, \@array, noskip)
+=item B<orac_loop_list>
 
 Takes a list of numbers and returns back a frame object 
 for each number (one frame object per call)
+
+  $Frm = orac_loop_list($class, $UT, \@array, $noskip);
 
 undef is returned on error or when all members of the
 list have been returned. If the 'skip' flag is true
@@ -132,12 +135,14 @@ sub orac_loop_list {
 
 }
 
-=item orac_loop_inf
+=item B<orac_loop_inf>
 
 Checks for the frame stored in the first element of the supplied array
 and returns the Frame object if the file exists. The number is incremented
 such that the next observation is returned next time the routine is
 called.
+
+  $Frm = orac_loop_inf($class, $ut, \@array);
 
 undef is returned on error or when there are no more data files
 available.
@@ -152,7 +157,7 @@ flag is ignored in this loop.
 
 sub orac_loop_inf {
   
-  croak 'Wrong number of args: orac_inf(class, ut, arr_ref)'
+  croak 'Wrong number of args: orac_loop_inf(class, ut, arr_ref)'
     unless (scalar(@_) == 3 || scalar(@_) == 4);
 
   my ($class, $utdate, $obsref) = @_;
@@ -173,11 +178,13 @@ sub orac_loop_inf {
 
 }
 
-=item orac_loop_wait
+=item B<orac_loop_wait>
 
 Waits for the specified file to appear in the directory.
 A timeout of 60 minutes is hard-wired in initially -- undef
 is returned if the timeout is exceeded.
+
+  $frm = orac_loop_wait($class, $utdate, \@list, $skip);
 
 The first member of the array is used to keep track of the
 current observation number. This element is incremented so that
@@ -343,12 +350,14 @@ sub orac_loop_wait {
 
 
 
-=item orac_loop_flag
+=item B<orac_loop_flag>
 
 Waits for the specified file to appear in the directory
 by looking for the appearance of the associated flag file.
 A timeout of 60 minutes is hard-wired in initially -- undef
 is returned if the timeout is exceeded.
+
+  $frm = orac_loop_flag($class, $utdate, \@list, $skip);
 
 The first member of the array is used to keep track of the
 current observation number. This element is incremented so that
@@ -477,7 +486,7 @@ sub orac_loop_flag {
 
 =over 4
 
-=item orac_check_data_dir(ClassName, CurrentObsNum, Flag)
+=item B<orac_check_data_dir>
 
 Routine to check the input data directory (ORAC_DATA_IN) for
 files in order to see whether files exist with a higher number
@@ -485,6 +494,9 @@ than the supplied number. The routine is supplied with a class name,
 UT date and current observation number. An additional argument
 is provided to determine whether data files or flag files should
 be used for the directory search.
+
+   $next = orac_check_data_dir($class, $current, $flag);
+   ($next, $high) = orac_check_data_dir($class, $current, $flag);
 
 If called in a scalar context, the return argument is the next 
 observation in the sequence. If called in an array context, two
@@ -609,12 +621,15 @@ The following subroutines are not exported.
 
 =over 4
 
-=item link_and_read(className, UTdate, ObsNum)
+=item B<link_and_read>
 
 General subroutine for converting ut and number into file
-and creating a Frame object
-undef is returned on error
-a configured Frame object is returned if everything is okay
+and creating a Frame object.
+
+  $frm = link_and_read($class, $ut, $obsnum)l
+
+undef is returned on error.
+A configured Frame object is returned if everything is okay
 
 =cut
 
@@ -720,7 +735,7 @@ sub link_and_read {
 
 }
 
-=item orac_sleep
+=item B<orac_sleep>
 
 Pause the checking for new data files by the specified number of seconds.
 
@@ -770,10 +785,20 @@ sub orac_sleep {
 
 =back
 
+=head1 REVISION
+
+$Id$
+
 =head1 AUTHORS
 
 Frossie Economou (frossie@jach.hawaii.edu) and 
 Tim Jenness (t.jenness@jach.hawaii.edu)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
 
 =cut
 

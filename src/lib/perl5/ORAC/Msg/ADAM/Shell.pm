@@ -35,6 +35,8 @@ not return bad status when run from the unix shell.
 
 The following methods are available:
 
+=head2 Constructor
+
 =over 4
 
 =cut
@@ -55,9 +57,9 @@ use Cwd qw/getcwd/;
 use ORAC::Constants qw/:status/;
 
 use vars qw/$VERSION/;
- 
+ '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
-=item new
+=item B<new>
 
 Create a new instance of a ORAC::Msg::ADAM::Shell object.
 
@@ -94,6 +96,18 @@ sub new {
   return $task;
 }
 
+=back
+
+=head2 Accessor Methods
+
+=over 4
+
+=item B<name>, B<mon>, B<path>
+
+Methods for accessing object contents that are to be left
+private.
+
+=cut
 
 # Provide methods for accessing and setting instance data
 # Most are private except for cwd() which is a published method
@@ -126,7 +140,7 @@ sub path {
   return $self->{Path};
 }
 
-=item cwd
+=item B<cwd>
 
 Set and retrieve the directory in which this monolith
 should operate.
@@ -162,8 +176,13 @@ sub cwd {
 
 }
 
+=back
 
-=item load
+=head2 General Methods
+
+=over 4
+
+=item B<load>
 
 Initialise the monolith into the object. What this really
 does is store the directory of the monolith 
@@ -205,7 +224,7 @@ sub load {
 }
 
 
-=item obeyw
+=item B<obeyw>
 
 Execute an ADAM task via the unix shell.
 Return the shell exit status.
@@ -270,7 +289,7 @@ sub obeyw {
 }
 
 
-=item get
+=item B<get>
 
 Retrieve the current value of a parameter
 
@@ -298,7 +317,7 @@ sub get {
 }
 
 
-=item set
+=item B<set>
 
 Set a parameter.
 Currently not implemented
@@ -313,7 +332,7 @@ sub set {
 }
 
 
-=item control
+=item B<control>
 
 Control current working directory and parameter resets.  The type of
 control message is specified via the first argument. Allowed values
@@ -362,7 +381,7 @@ sub control {
 }
 
 
-=item resetpars
+=item B<resetpars>
 
 Reset parameter values.
 A simplistic version is implemented that tries to remove
@@ -381,7 +400,7 @@ sub resetpars {
 }
 
 
-=item contact and contactw
+=item B<contact and contactw>
 
 Check that we can contact the monolith.
 This method simply makes sure that we know where the monolith
@@ -413,6 +432,10 @@ sub contactw {
 
 =back
 
+=head1 REVISION
+
+$Id$
+
 =head1 AUTHOR
 
 Tim Jenness (t.jenness@jach.hawaii.edu).
@@ -422,10 +445,15 @@ and Frossie Economou (frossie@jach.hawaii.edu)
 
 Requires the C<NDF>, C<Cwd> and C<File::Basename> modules.
 
-=head1 See Also
+=head1 SEE ALSO
 
 L<perl>, 
 L<ORAC::Msg::ADAM::Task>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
 
 =cut
 

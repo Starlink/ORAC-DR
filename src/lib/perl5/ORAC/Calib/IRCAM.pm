@@ -34,8 +34,10 @@ use ORAC::Calib;			# use base class
 use Carp;
 use strict;
 
+use vars qw/ $VERSION/;
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
-=item rotation
+=item B<rotation>
 
 Return (or set) the name of the rotation transformation matrix
 
@@ -58,7 +60,7 @@ sub rotation {
   return $self->{Rotation}; 
 };
 
-=item mask
+=item B<mask>
 
 Return (or set) the name of the rotation transformation matrix
 
@@ -83,10 +85,20 @@ sub mask {
 
 =back
 
+=head1 REVISION
+
+$Id$
+
 =head1 AUTHORS
 
 Frossie Economou (frossie@jach.hawaii.edu) and
 Tim Jenness (t.jenness@jach.hawaii.edu)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
 
 =cut
 

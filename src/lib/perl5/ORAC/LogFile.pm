@@ -33,7 +33,7 @@ The following methods are available:
 
 =over 4
 
-=item B<new()>
+=item B<new>
 
 Create a new instance of ORAC::LogFile and associate it with the 
 specified log file.
@@ -204,10 +204,19 @@ sub addentry {
 
 =back
 
+=head1 REVISION
+
+$Id$
+
 =head1 AUTHORS
 
 Tim Jenness (t.jenness@jach.hawaii.edu) and
 Frossie Economou (frossie@jach.hawaii.edu)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
 
 =cut
 
