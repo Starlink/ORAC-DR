@@ -17,9 +17,12 @@
 # Derive the boxsize in arcseconds.
        my $boxangle = ( $_FIND_APPROX_OFFSETS_{BOXSIZE} || 5 );
 
-# Obtain the rotation angle in degrees.  The default is UFTI and time
-# specific.
-       my $rotangle = ( $_FIND_APPROX_OFFSETS_{ANGLE} || 0.65 );
+# Obtain the rotation angle in degrees.  The numeric default is UFTI
+# and time specific.  For UFTI it should read the rotation angle from
+# the CROTA2 header.
+       my $defrot = $Frm->hdr( "CROTA2" );
+       $defrot = defined( $defrot ) ? $defrot : 0.65;
+       my $rotangle = ( $_FIND_APPROX_OFFSETS_{ANGLE} || $defrot );
 
 # Obtain any shifts of Cartesian co-ordinates to be applied.
        my $xshift_toref = defined( $_FIND_APPROX_OFFSETS_{XSHIFT} ) ?
@@ -45,34 +48,44 @@
 # Create text file to hold the list of input files, one per line.  This
 # is needed because expanded lists of files may make the command line too
 # long for the ADAM message system.
-       unlink ("faolist.inlist$$");
-       open (INLIST, ">faolist.inlist$$");
+       unlink ("faolist.inlist$$" );
+       open( INLIST, ">faolist.inlist$$" );
        print INLIST join( "\n", @regnames ), "\n";
-       close (INLIST);
+       close( INLIST );
 
 # Create a file for storing the filenames of the offset files.
        my $offlist = "ssoff.lis$$";
        unlink ( "$offlist" );
-       open ( OFFLIST, "> $offlist" );
+       open( OFFLIST, "> $offlist" );
 
 # Loop through all the frames.
        my $first = 1;
-       foreach my $frame ( $Grp->members ) {
+       foreach my $Frame ( $Grp->members ) {
 
-# Obtain the plate scale.  Header is inaccurate.  Hardwire until
-# more precise figure is used.  Note this is UFTI specific.
-           my $xpixelscale = 0.09075;
-           my $ypixelscale = 0.09075;
-#          my $xpixelscale = $frame->hdr( "CDELT1" );
-#          my $ypixelscale = $frame->hdr( "CDELT2" );
+# Obtain the plate scales for the instrument from the headers.
+          my ( $xpixelscale, $ypixelscale );
+          my $instrument = $Frame->hdr( "INSTRUME" );
+          if ( $instrument =~ /^UFTI/ ) {
+             $xpixelscale = $Frame->hdr( "CDELT1" );
+             $ypixelscale = $Frame->hdr( "CDELT2" );
+          } else {
+             $xpixelscale = $Frame->hdr( "PIXELSIZ" );
+             $ypixelscale = $xpixelscale;
+          }
 
 # Find the boxsize in pixels.
           my $boxpix = $boxangle / $xpixelscale;
 
 # Obtain the offsets.  Try the xhead offsets first. (Currently not available
 # so use the telescope offsets.)
-          my $xoff = $frame->hdr( "TRAOFF" );
-          my $yoff = $frame->hdr( "TDECOFF" );
+          my ( $xoff, $yoff );
+          if ( $instrument =~ /^UFTI/ ) {
+             $xoff = $Frame->hdr( "TRAOFF" );
+             $yoff = $Frame->hdr( "TDECOFF" );
+          } else {
+             $xoff = $Frame->hdr( "RAOFF" );
+             $yoff = $Frame->hdr( "DECOFF" );
+          }
           my $offtype = "telescope";
 
 # If the values are both zero or there was an error (presumably arising
@@ -80,8 +93,13 @@
 # used.  Instead use the telescope offsets.  Also cope when there is an
 # error.
           if ( ( $xoff == 0 && $yoff == 0 ) ) {
-             $xoff = $frame->hdr( "TRAOFF" );
-             $yoff = $frame->hdr( "TDECOFF" );
+             if ( $instrument =~ /^UFTI/ ) {
+                $xoff = $Frame->hdr( "TRAOFF" );
+                $yoff = $Frame->hdr( "TDECOFF" );
+             } else {
+                $xoff = $Frame->hdr( "RAOFF" );
+                $yoff = $Frame->hdr( "DECOFF" );
+             }
              $offtype = "telescope";
           }
 
@@ -94,7 +112,7 @@
           $yoff = $xoff * $sinrot + $yoff * $cosrot;
 
 # Locate the centre of the frame by inquiring the frame's attributes.
-          my $ndf = $frame->file;
+          my $ndf = $Frame->file;
           $Mon{"ndfpack_mon"}->obeyw("ndftrace","ndf=$ndf");
           ( my $ORAC_STATUS, my @lbnd ) = $Mon{"ndfpack_mon"}->get("ndftrace","lbound");
           ( $ORAC_STATUS, my @ubnd ) = $Mon{"ndfpack_mon"}->get("ndftrace","ubound");
