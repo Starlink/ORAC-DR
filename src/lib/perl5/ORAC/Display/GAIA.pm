@@ -299,6 +299,9 @@ Takes a file name and arguments stored in a hash.
 Currently no image sectioning is supported.
 Display range can be adjusted with ZAUTOSCALE, ZMIN and ZMAX.
 
+Note that for GAIA, ZAUTOSCALE implies a 95 percent cut level and
+not 100 percent.
+
 =cut
 
 
@@ -356,8 +359,8 @@ sub image {
 
   # Now can modify cut levels
   if ($options{ZAUTOSCALE}) {
-    # Set autocut to 100
-    $self->send_to_gaia("$dispwid autocut -percent 100");
+    # Set autocut to 95
+    $self->send_to_gaia("$dispwid autocut -percent 95");
   } else {
     # No autoscaling
     my $min = $options{ZMIN};
