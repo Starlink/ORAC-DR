@@ -59,9 +59,7 @@ sub orac_connect_display {
     print "noticeboard is $toolnbname\n";
     $Display = new ORAC::Msg::ADAM::Task($toolname);
 
-    print "Starting wait...";
     $contact =$Display->contactw;		# ensure contact is made
-    print "Done ($contact)\n";
     unless ($contact) {
       print colored("Unable to contact Display before timeout",'red');
     }
@@ -327,6 +325,9 @@ die;
 1;
 
 #$Log$
+#Revision 1.17  1998/05/21 04:05:01  timj
+#Remove debug print statements from connect_display
+#
 #Revision 1.16  1998/05/21 03:50:12  timj
 #Change Display startup to use Proc::Simple
 #
