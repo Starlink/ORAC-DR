@@ -868,7 +868,7 @@ sub orac_process_argument_list {
 
 	# Special case if we are doing data detection since the
 	# final obs number is changing
-	if ($opt{loop} ne 'wait' and $opt{loop} ne 'flag') {
+	if (!defined $opt{loop} or ($opt{loop} ne 'wait' and $opt{loop} ne 'flag')) {
 
 	  my ($next, $high) = orac_check_data_dir($frameclass, $opt{from}, 0);
 
