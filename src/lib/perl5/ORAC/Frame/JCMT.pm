@@ -90,7 +90,7 @@ sub new {
   my $self = $class->SUPER::new({
 				 Subs => [],
 				 Filters => [],
-				 Wavelengths => [],
+				 WaveLengths => [],
 				});
 
   # Configure initial state - could pass these in with
