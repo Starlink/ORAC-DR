@@ -3,24 +3,29 @@
 #    _DIVIDE_BY_FLAT_FROM_EXTENDED_
 #
 # Purpose:
-#    Flat-fields the target frames for an extended source.
+#    Flat-fields the frames for an extended source.
 #
 # Language:
 #    Perl5
 #
 # Description:
-#    This primitive divides the target frames of the current row of
-#    an extended source by the most-recent and matching flat-field
-#    frame from $Cal->flat method.  The input frames are stored in the
-#    current $Grp.  Upon completion the target group members are the
-#    flat-fielded frames.
+#    This primitive divides the target frames, and optionally the sky
+#    frames, of the current row of an extended source by the most-recent
+#    and matching flat-field frame from $Cal->flat method.  The input
+#    frames are stored in the current $Grp.  Upon completion the target
+#    group members are the flat-fielded frames; as are the
+#    sky group members if argument FLATSKY is true.
+#
+# Arguments:
+#    FLATSKY = LOGICAL (Given)
+#       If true (1), flat field the sky frames as well as the target
+#       frames.  [1]
 #
 # Notes:
-#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
-#    in imaging mode.
+#    -  This primitive is suitable for infra-red imaging instruments.
 #    -  Processing only occurs for object and sky frames, and when
-#    the steering header TARGET_OR_SKY is "target" and steering
-#    header MAKE_FLAT is true.
+#    the steering header TARGET_OR_SKY is "target" (and "sky" for
+#    FLATSKY=1), and steering header MAKE_FLAT is true.
 #    -  For a target frame the file name is stored in the frame's
 #    header TARGET_TEMPLATE.  For a sky frame the previous target's
 #    frame name is read that frame's TARGET_TEMPLATE internal header.
@@ -39,12 +44,14 @@
 #    MJC: Malcolm J. Currie (JAC)
 #
 # Copyright:
-#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 #
 #-
 
-#
+# Selection
+# =========
+
 # This should only be performed on OBJECT frames.
     if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" || 
          $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY") {
@@ -71,6 +78,16 @@
              orac_throw "There is something wrong with the MAKE_FLAT assignments in the EXTENDED_STEER primitive\n";
           }
 
+# Arguments
+# =========
+
+# Determine whether or not to flatten the sky frames.
+          my $flatsky = $_DIVIDE_BY_FLAT_EXTENDED_{FLATSKY};
+          $flatsky = defined( $flatsky ) ? $flatsky : 1;
+
+# Obtain the template name
+# ========================
+
 # Restore the template name from the previous target frame within the 
 # group.  We know that the current frame is not a target frame so start 
 # searching from the previous frame.
@@ -94,6 +111,9 @@
                 $template = $refFrm->uhdr( "TARGET_TEMPLATE" );
              }
           }
+
+# Flat-field target frames
+# ========================
 
 # Obtain the current row number.
           my $ext_row = $Frm->uhdr( "EXTENDED_ROW" );
@@ -145,7 +165,7 @@
 
 # Report the processing status.
           orac_print "Frames $inlist have been flat-fielded with $flat\n";
-          orac_print "The flat-fielded frames are $outlist\n\n";
+          orac_print "The flat-fielded target frames are $outlist\n\n";
 
 # Now update the output filenames for each member of the group.  This
 # is fine until we come round again and find that we are trying to
@@ -154,6 +174,53 @@
 # files are meant to be used for input here.
           $tarGrp->membernames( @$outref );
 
+# Flat-field sky frames
+# =====================
+          if ( $flatsky ) {
+
+# Form a subgroup comprising all the sky frames in the current row.
+             my $skyGrp = $Grp->subgrp( TARGET_OR_SKY => "sky", 
+                                        EXTENDED_ROW => $ext_row );
+
+# Form a list of the input and ouptut target file names for CCDPACK tasks.
+             ( my $inref, my $outref ) = $skyGrp->inout( "_ff" );
+
+# Convert arrays to comma-separated lists.
+             my $inlist = join( ",", @$inref );
+             my $outlist= join( ",", @$outref );
+
+# Create text files to hold the list of input and output files, one per
+# line.  This is needed because expanded lists of files may make the
+# command line too long for the ADAM message system.
+             unlink( "flatcor.inlist$$", "flatcor.outlist$$" );
+             open( my $fh_inlist, ">flatcor.inlist$$" ) ||
+               orac_throw "Unable to open flatcor.inlist$$ to create a list of frames to flat-field.  Error: $!.\n";
+             print $fh_inlist join( "\n", @$inref ), "\n";
+             close( $fh_inlist );
+
+             open( my $fh_outlist, ">flatcor.outlist$$" ) ||
+               orac_throw "Unable to open flatcor.outlist$$ to create a list of flat-field frames.  Error: $!.\n";
+             print $fh_outlist join( "\n", @$outref ), "\n";
+             close( $fh_outlist );
+
+# Set the parameters for the task.
+             my $flat = $Cal->flat;
+             $param1 = "in=\'^flatcor.inlist$$\' flat=$flat out=\'^flatcor.outlist$$\'";
+             $param2 = "title=!";
+
+# Flatfield all the object frames.  Generate output names from the
+# input list, switching filename suffices.
+             $Mon{ "ccdpack_red" }->obeyw( "flatcor", "$param1 $param2" );
+             unlink( "flatcor.inlist$$", "flatcor.outlist$$" );
+
+# Report the processing status.
+             orac_print "Frames $inlist have been flat-fielded with $flat\n";
+             orac_print "The flat-fielded sky frames are $outlist\n\n";
+
+# Now update the output filenames for each member of the group.
+             $skyGrp->membernames( @$outref );
+
+          }
        }
     }
 
@@ -162,15 +229,27 @@
 
 =head1 NAME
 
-_DIVIDE_BY_FLAT_FROM_EXTENDED_ -- Flat-fields the target frames for an extended source.
+_DIVIDE_BY_FLAT_FROM_EXTENDED_ -- Flat-fields the frames for an extended source.
 
 =head1 DESCRIPTION
 
-This primitive divides the target frames of the current row of
-an extended source by the most-recent and matching flat-field
-frame from $Cal-E<gt>flat method.  The input frames are stored in the
-current $Grp.  Upon completion the target group members are the
-flat-fielded frames.
+This primitive divides the target frames, and optionally the sky
+frames, of the current row of an extended source by the most-recent
+and matching flat-field frame from $Cal-<gt>flat method.  The input
+frames are stored in the current $Grp.  Upon completion the target
+group members are the flat-fielded frames; as are the
+sky group members if argument FLATSKY is true.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item FLATSKY = LOGICAL (Given)
+
+If true (1), flat field the sky frames as well as the target
+frames.  [1]
+
+=back
 
 =head1 NOTES
 
@@ -178,13 +257,13 @@ flat-fielded frames.
 
 =item *
 
-This primitive is suitable for UFTI, IRCAM, and Michelle in imaging mode.
+This primitive is suitable for infra-red imaging instruments.
 
 =item *
 
-Processing only occurs for object and sky frames, and when the
-steering header TARGET_OR_SKY is "target" and steering header
-MAKE_FLAT is true.
+Processing only occurs for frames in the current cycle, and when
+the steering header TARGET_OR_SKY is "target" (and "sky" for
+FLATSKY=1), and steering header MAKE_FLAT is true.
 
 =item *
 
@@ -221,7 +300,7 @@ MJC: Malcolm J. Currie (JAC)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
