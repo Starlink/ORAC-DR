@@ -56,7 +56,7 @@ my %hdr = (
             SLIT_NAME            => "SLIT",
             UTDATE               => "IDATE",
             UTEND                => "RUTEND",
-            UTSTART              => "RUTSTART"
+            UTSTART              => "RUTSTART",
             X_DIM                => "DCOLUMNS",
             Y_DIM                => "DROWS"
 	  );
