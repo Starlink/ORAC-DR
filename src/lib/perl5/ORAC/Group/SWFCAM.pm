@@ -72,10 +72,11 @@ ORAC::Group::SWFCAM->_generate_orac_lookup_methods( \%hdr );
 
 # Set the group fixed parts for the four chips.
 my %groupfixedpart = ( '1' => 'gw',
-                     '2' => 'gx',
-                     '3' => 'gy',
-                     '4' => 'gz',
-                    );
+                       '2' => 'gx',
+                       '3' => 'gy',
+                       '4' => 'gz',
+                       '5' => 'gv',
+                     );
 
 =head1 PUBLIC METHODS
 
@@ -112,7 +113,7 @@ sub new {
 # Which WFCAM chip is this? We need to know so we know what
 # to call the group file.
   my $fixedpart;
-  if( $ENV{'ORAC_INSTRUMENT'} =~ /^WFCAM([1-4])$/ ) {
+  if( $ENV{'ORAC_INSTRUMENT'} =~ /^SWFCAM([1-5])$/ ) {
     $fixedpart = $groupfixedpart{$1};
   } else {
     $fixedpart = $groupfixedpart{'1'};
