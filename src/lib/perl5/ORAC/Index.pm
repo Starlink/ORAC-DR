@@ -48,7 +48,7 @@ The following methods are available in this class.
 Create a new instance of an B<ORAC::Index> object.
 
   $Index = new ORAC::Index;
-  $Index = new ORAC::Index($rulesfile, $indexfile);
+  $Index = new ORAC::Index($indexfile, $rulesfile);
 
 Any arguments are passed to the configure() method.
 
