@@ -33,6 +33,11 @@ will contain the names of input data files relative to ORAC_DATA_IN.
 These files will be stored into the QL parameter at at the specified
 rate (see the C<-refresh> option). This is a mandatory option.
 
+=item B<-raw>
+
+Do not try to read data file contents from the flagfile. Simply publish
+the filename in the FILENAME parameter.
+
 =item B<-refresh>
 
 The rate at which data will be presented to the pipeline (in seconds).
@@ -110,16 +115,28 @@ and FITS (character array) components.
 
 use warnings;
 use strict;
+use Carp;
 use Getopt::Long;
 use Pod::Usage;
 
+use Astro::FITS::Header::NDF;
 use Time::HiRes;
 #use Jit;
 use DRAMA;
 use Sds::Tie;
 
+# ORAC-DR library path
+use lib $ENV{ORAC_PERL5LIB};
+use ORAC::Inst::Defn qw/ orac_determine_inst_classes /;
+
+# Buffer sizes
+# Override the outgoing message size
+$DRAMA::BUFSIZE = 300000;
+$DRAMA::MESSAGEBYTES = 80000;
+$DRAMA::MAXMESSAGES  = 1;
+
 # Options
-my ($help, $man, $version, $refresh, $name, $flagfile, $loop);
+my ($help, $man, $version, $refresh, $name, $flagfile, $loop, $rawmode);
 my $opt_status = GetOptions("help" => \$help,
 			    "man" => \$man,
 			    "flagfile=s" => \$flagfile,
@@ -127,6 +144,7 @@ my $opt_status = GetOptions("help" => \$help,
 			    "refresh=s" => \$refresh,
 			    "name=s" => \$name,
 			    "loop" => \$loop,
+			    "raw" => \$rawmode,
 			   );
 
 pod2usage(1) if $help;
@@ -150,6 +168,30 @@ die "-flagfile option is mandatory\n"
 die "Supplied flagfile ($flagfile) does not exist\n"
   unless -e $flagfile;
 
+# ORAC_DATA_IN is required for us to read the file
+if (!exists $ENV{ORAC_DATA_IN}) {
+  warn "\$ORAC_DATA_IN is required when serving the IMAGE data. Falling back to FILENAME\n";
+}
+
+# if we do not have ORAC_INSTRUMENT defined we will default
+# to simply serving the files without attempting to handle
+# subframes. If FRM_CLASS is defined we will ask the frame itself
+# for details of all the components.
+my $FRM_CLASS;
+if (!exists $ENV{ORAC_INSTRUMENT}) {
+  warn "\$ORAC_INSTRUMENT not defined. Falling back to safe mode.";
+} else {
+  my @classes = orac_determine_inst_classes( $ENV{ORAC_INSTRUMENT} );
+  $FRM_CLASS = $classes[0] if @classes;
+}
+
+# Cache of filenames that are waiting to be sent
+# Only used if $FRM_CLASS is defined
+my @FILECACHE;
+
+# The format of the files stored in the filecache. Assume
+# it is the same for all files in the cache (it should be)
+my $IMAGE_FORMAT;
 
 # open the flagfile so that we can start reading files from it
 # and to make sure we can before we start DRAMA
@@ -188,16 +230,100 @@ exit;
 
 # actions
 
+# UPDATE Action
+
 sub update_param {
   my $status = shift;
   return $status unless $status->Ok;
   print "Enter UPDATE action...\n";
 
-  # First need to read a file off the "stack"
-  my $nextfile = <$FH>;
+  # first we need to see whether there is a file pending in the
+  # file cache
+  my $nextfile = shift(@FILECACHE);
 
+  # if we are in multi-frame mode we will be publishing the
+  # data in "IMAGE"-mode. Else we will use FILENAME-mode
+  my $image_mode;
+
+  # check whether we need to read from the flagfile
+  if (defined $nextfile) {
+    $image_mode = 1;
+    print "Retrieved file from cache...\n";
+
+  } elsif (!defined $nextfile) {
+    # no name, look on disk in the flagfile
+    $nextfile = <$FH>;
+    chomp($nextfile) if defined $nextfile;
+
+    # if we have a frame class defined we should use it now
+    # to find whether we have multiple components.
+    # else we just pass ths filename onto the system
+    # and publish it as a filename
+    if (defined $nextfile && defined $FRM_CLASS && !$rawmode) {
+
+      # first see if the file exists in ORAC_DATA_IN or relative
+      # to the current directory
+      my $filepath;
+      if (-e $nextfile) {
+	$filepath = $nextfile;
+      } else {
+	if (exists $ENV{ORAC_DATA_IN} &&
+	    -e File::Spec->catfile( $ENV{ORAC_DATA_IN}, $nextfile)) {
+	  $filepath = File::Spec->catfile( $ENV{ORAC_DATA_IN}, $nextfile);
+	}
+      }
+
+      # now we know whether the file exists and where it is located
+      # if we have not located the file we simply go to FILENAME
+      # mode and assume that the monitoring ORAC-DR will find it.
+      if (defined $filepath) {
+	# canonicalize
+	$filepath = mycanonpath( $filepath );
+	print "Retrieved file from file: $filepath with $FRM_CLASS\n";
+
+
+
+	# create the relevant frame object
+	my $Frm = $FRM_CLASS->new( $filepath );
+
+	if (defined $Frm) {
+	  print "Got frame $Frm\n";
+
+	  # Ask it for the files
+	  my @files = $Frm->files;
+
+	  # and store the format
+	  $IMAGE_FORMAT = $Frm->rawformat;
+
+	  use Data::Dumper;
+	  print Dumper(\@files);
+
+	  # the next file will be the first file in this list
+	  $nextfile = shift(@files);
+
+	  # IMAGE-mode?
+	  if (scalar(@files) > 0) {
+	    # if we have files remaining, then we enter IMAGE mode
+	    # and store the rest in the file cach
+	    $image_mode = 1;
+	    @FILECACHE = @files;
+	  } else {
+	    # make sure the rawsuffix is appended to the file
+	    # if we have a single file
+	    $nextfile .= $Frm->rawsuffix
+	      if (defined $Frm->rawsuffix && $nextfile !~ /\./);
+	  }
+
+	}
+
+      }
+
+    }
+
+  }
+
+  # do we have something? Else finish up or reopen the file
   if (defined $nextfile && $nextfile =~ /\w/) {
-    chomp($nextfile);
     print "Processing file: $nextfile\n";
 
     # We have global access to the QL structure
@@ -214,11 +340,62 @@ sub update_param {
 
     # Find the FILENAME (or create it)
     if ($status->Ok) {
-      if (exists $QL{FILENAME}) {
-	my $fil = $qlsds->Find("FILENAME", $status);
-	$fil->PutStringArrayExists( [ $nextfile ], $status, 1 );
+      if ($image_mode) {
+	# read the image
+	croak "Fatal error: IMAGE mode requested without associated format defined\n" unless defined $IMAGE_FORMAT;
+	if ($IMAGE_FORMAT eq 'HDS' ||
+	    $IMAGE_FORMAT eq 'NDF') {
+
+	  require PDL::IO::NDF;
+	  my $image = PDL::IO::NDF::rndf( $nextfile );
+
+	  if (defined $image) {
+
+	    my %STRUCT;
+	    $STRUCT{DATA_ARRAY} = $image;
+
+	    # reread the FITS header since we do not have the Frm
+	    # object
+	    my $fits;
+	    eval {
+	      $fits = new Astro::FITS::Header::NDF( File => $nextfile );
+	    };
+	    $fits = new Astro::FITS::Header() if (!defined $fits);
+	    $STRUCT{FITS} = [ split ("\n","$fits") ];
+
+	    # Need to remove previous IMAGE structures
+	    DRAMA::ErsPush();
+	    my $lstat = new DRAMA::Status;
+	    {
+	      my $imsds = $qlsds->Find( "IMAGE", $lstat );
+	      if ($imsds) {
+		# force out-of-scope destroy
+		$imsds->flags(1,1,1);
+	      }
+	    }
+	    $lstat->Annul() unless $lstat->Ok;
+	    DRAMA::ErsPop;
+
+	    # write the data to the structure
+	    $qlsds->PutHash( \%STRUCT, "IMAGE", $status );
+
+	  } else {
+
+	    croak "Error reading $nextfile into a PDL\n";
+
+	  }
+
+	} else {
+	  croak "Do not know (yet) how to read files of format $IMAGE_FORMAT\n";
+	}
+
       } else {
-	$qlsds->PutStringArray( [ $nextfile ], "FILENAME" );
+	if (exists $QL{FILENAME}) {
+	  my $fil = $qlsds->Find("FILENAME", $status);
+	  $fil->PutStringArrayExists( [ $nextfile ], $status, 1 );
+	} else {
+	  $qlsds->PutStringArray( [ $nextfile ], "FILENAME" );
+	}
       }
     }
 
@@ -248,6 +425,31 @@ sub update_param {
   }
 
   return $status;
+}
+
+# canonicalize path
+
+sub mycanonpath {
+  my $path = shift;
+  croak "Only works on absolute paths: not $path\n"
+    unless File::Spec->file_name_is_absolute( $path );
+
+  my ($vol, $dir, $file) = File::Spec->splitpath( $path );
+
+  my @dirs = File::Spec->splitdir( $dir );
+
+  my @newdirs;
+  for my $d (@dirs) {
+    if ( $d eq File::Spec->updir ) {
+      pop(@newdirs);
+    } elsif ($d eq File::Spec->curdir) {
+      # no action
+    } else {
+      push(@newdirs, $d );
+    }
+  }
+
+  return File::Spec->catpath( $vol, File::Spec->catdir(@newdirs), $file );
 }
 
 
