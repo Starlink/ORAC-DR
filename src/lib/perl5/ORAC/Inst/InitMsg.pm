@@ -30,7 +30,11 @@ use strict;
 use Carp;
 
 use ORAC::Constants qw/ :status /;
+use ORAC::Print;
 
+use vars qw/ $DEBUG /;
+
+$DEBUG = 0;
 
 =head2 Constructors
 
@@ -180,6 +184,9 @@ sub wait_for_algorithm_engines {
   # Loop over each engine
   for my $eng (keys %engines) {
 
+    orac_print "Waiting for engine $eng\n"
+      if $DEBUG;
+
     # Wait for this engine to start. Return ERROR
     # if we timeout
     return ORAC__ERROR unless $engines{$eng}->contactw;
@@ -246,11 +253,12 @@ sub _launch_algorithm_engines {
       if ( -e $info->{PATH} );
 
     # If $obj is not defined but required we hae a fatal error
-    croak "Unable to launch $eng via ".$info->{PATH} ."\n"
+    croak "Unable to launch engine $eng using ".$info->{PATH} .
+      "\nAborting since this engine is required\n"
       if ($info->{REQUIRED} && ! defined $obj);
 
     # Store the object
-    $Mon{$eng} = $obj;
+    $Mon{$eng} = $obj if defined $obj;
 
   }
 
