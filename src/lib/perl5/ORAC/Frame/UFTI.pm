@@ -44,15 +44,15 @@ use strict;
 
 # Translation tables for UFTI should go here
 my %hdr = (
-            EXP_TIME  => "EXP_TIME",
-            DECSCALE  => "CDELT2",
-            GAIN      => "GAIN",
-            RASCALE   => "CDELT1",
-            TDECOFF   => "TDECOFF",
-            TRAOFF    => "TRAOFF",
-            UTDATE    => "DATE",
-            UTEND     => "UTEND",
-            UTSTART   => "UTSTART"
+            EXPOSURE_TIME        => "EXP_TIME",
+            DEC_SCALE            => "CDELT2",
+            DEC_TELESCOPE_OFFSET => "TDECOFF",
+            GAIN                 => "GAIN",
+            RA_SCALE             => "CDELT1",
+            RA_TELESCOPE_OFFSET  => "TRAOFF",
+            UTDATE               => "DATE",
+            UTEND                => "UTEND",
+            UTSTART              => "UTSTART"
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed

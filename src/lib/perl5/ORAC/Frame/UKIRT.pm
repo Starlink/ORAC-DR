@@ -28,25 +28,25 @@ to B<ORAC::Frame::UKIRT> objects.
 my %hdr = (
             AIRMASS_START       => "AMSTART",
             AIRMASS_END         => "AMEND",
-            DECBASE             => "DECBASE",
+            DEC_BASE            => "DECBASE",
             EQUINOX             => "EQUINOX",
             FILTER              => "FILTER",
             INSTRUMENT          => "INSTRUME",
-            LBNDX               => "RDOUT_X1",
-            LBNDY               => "RDOUT_Y1",
-            NOFFSETS            => "NOFFSETS",
+            NUMBER_OF_OFFSETS   => "NOFFSETS",
             NUMBER_OF_EXPOSURES => "NEXP",
             OBJECT              => "OBJECT",
             OBSERVATION_NUMBER  => "OBSNUM",
-            OBSTYPE             => "OBSTYPE",
-            RABASE              => "RABASE",
+            OBSERVATION_TYPE    => "OBSTYPE",
+            RA_BASE             => "RABASE",
             READMODE            => "MODE",
             ROTATION            => "CROTA2",
-            SPD_GAIN            => "SPD_GAIN",
+            SPEED_GAIN          => "SPD_GAIN",
             STANDARD            => "STANDARD",
-            UBNDX               => "RDOUT_X2",
-            UBNDY               => "RDOUT_Y2",
-            WPLANGLE            => "WPLANGLE"
+            WAVEPLATE_ANGLE     => "WPLANGLE",
+            X_LOWER_BOUND       => "RDOUT_X1",
+            X_UPPER_BOUND       => "RDOUT_X2",
+            Y_LOWER_BOUND       => "RDOUT_Y1",
+            Y_UPPER_BOUND       => "RDOUT_Y2"
         );
 
 # Take this lookup table and generate methods that can

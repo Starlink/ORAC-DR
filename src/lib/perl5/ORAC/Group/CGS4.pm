@@ -40,25 +40,25 @@ use vars qw/$VERSION/;
 
 # Translation tables for CGS4 should go here.
 my %hdr = (
-            CONFIGURATION_INDEX => "CNFINDEX",
-            DETECTOR_INDEX      => "DINDEX",
-            DETECTOR_MODE       => "MODE",
-            DIM1                => "DCOLUMNS",
-            DIM2                => "DROWS",
-            EXP_TIME            => "DEXPTIME",
-            GRATING_DISPERSION  => "GDISP",
-            GRATING_NAME        => "GRATING",
-            GRATING_ORDER       => "GORDER",
-            GRATING_WAVELENGTH  => "GLAMBDA",
-            NSCAN_POSITIONS     => "DETNINCR",
-            SCAN_INCREMENT      => "DETINCR",
-            SLIT_ANGLE          => "SANGLE",
-            SLIT_NAME           => "SLIT",
-            TDECOFF             => "DECOFF",
-            TRAOFF              => "RAOFF",
-            UTDATE              => "IDATE",
-            UTEND               => "RUTEND",
-            UTSTART             => "RUTSTART"
+            CONFIGURATION_INDEX  => "CNFINDEX",
+            DEC_TELESCOPE_OFFSET => "TDECOFF",
+            DETECTOR_INDEX       => "DINDEX",
+            DETECTOR_MODE        => "MODE",
+            EXPOSURE_TIME        => "DEXPTIME",
+            GRATING_DISPERSION   => "GDISP",
+            GRATING_NAME         => "GRATING",
+            GRATING_ORDER        => "GORDER",
+            GRATING_WAVELENGTH   => "GLAMBDA",
+            NSCAN_POSITIONS      => "DETNINCR",
+            RA_TELESCOPE_OFFSET  => "TRAOFF",
+            SCAN_INCREMENT       => "DETINCR",
+            SLIT_ANGLE           => "SANGLE",
+            SLIT_NAME            => "SLIT",
+            UTDATE               => "IDATE",
+            UTEND                => "RUTEND",
+            UTSTART              => "RUTSTART"
+            X_DIM                => "DCOLUMNS",
+            Y_DIM                => "DROWS"
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed by

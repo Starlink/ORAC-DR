@@ -43,16 +43,16 @@ use vars qw/$VERSION/;
 
 # Translation tables for IRCAM should. go here.
 my %hdr = (
-            DECSCALE  => "PIXELSIZ",
-            DET_BIAS  => "DET_BIAS",
-            EXP_TIME  => "DEXPTIME",
-            GAIN      => "DEPERDN",
-            RASCALE   => "PIXELSIZ",
-            TDECOFF   => "DECOFF",
-            TRAOFF    => "RAOFF",
-            UTDATE    => "IDATE",
-            UTEND     => "RUTEND",
-            UTSTART   => "RUTSTART"
+            DEC_SCALE            => "PIXELSIZ",
+            DEC_TELESCOPE_OFFSET => "TDECOFF",
+            DETECTOR_BIAS        => "DET_BIAS",
+            EXPOSURE_TIME        => "DEXPTIME",
+            GAIN                 => "DEPERDN",
+            RA_SCALE             => "PIXELSIZ",
+            RA_TELESCOPE_OFFSET  => "TRAOFF",
+            UTDATE               => "DATE",
+            UTEND                => "RUTEND",
+            UTSTART              => "RUTSTART"
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed by
