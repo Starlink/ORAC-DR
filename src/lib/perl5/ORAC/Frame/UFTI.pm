@@ -51,7 +51,6 @@ my %hdr = (
             GAIN                 => "GAIN",
             RA_SCALE             => "CDELT1",
             RA_TELESCOPE_OFFSET  => "TRAOFF",
-            UTDATE               => "DATE",
             UTEND                => "UTEND",
             UTSTART              => "UTSTART"
 	  );
@@ -60,6 +59,23 @@ my %hdr = (
 # by other instruments.  Have to use the inherited version so that the
 # new subs appear in this class.
 ORAC::Frame::UFTI->_generate_orac_lookup_methods( \%hdr );
+
+sub _to_UTDATE {
+  my $self = shift;
+  my $utdate;
+  if ( exists $self->hdr->{DATE} ) {
+     $utdate = $self->hdr->{DATE};
+
+# This is a kludge to work with old data which has multiple values of
+# the DATE keyword with the last value being blank (these were early
+# UFTI data).  Return the first value, since the last value can be
+# blank. 
+     if ( ref( $utdate ) eq 'ARRAY' ) {
+        $utdate = $utdate->[0];
+     }
+  }
+  return $utdate;
+}
 
 # Specify the reference pixel, which is normally near the frame centre.
 # There may be small displacements to avoid detector joins or for
