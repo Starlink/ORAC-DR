@@ -1,0 +1,389 @@
+#+
+# Name:
+#    MOVING_JITTER_SELF_FLAT_BASIC
+
+# Purpose:
+#    Reduces a "standard jitter" photometry observation of a
+#    moving target using just the basic operations for speed.
+
+# Language:
+#    Perl5
+
+# Description:
+#    This script reduces a "standard jitter" photometry observation
+#    with UFTI or IRCAM data.  It takes an observation comprising
+#    jittered object frames and a dark frame to make a calibrated,
+#    untrimmed mosaic automatically.
+
+#    It performs a null debiassing, bad-pixel masking, dark
+#    subtraction, flat-field creation and division, amd integer shifts
+#    of pixel origin to register to fixed sky co-ordinates.   See the
+#    "Notes" for further information.
+
+#    The registration is adjusted to track the motion of the moving
+#    target using ephemeris data stored in file target_ephem.txt.
+#    See "Ephemeris-file Format" for details of this file's format.
+
+#    This recipe aims to keep pace with the pipeline's incoming data.
+#    It works well for faint moving sources and in moderately
+#    crowded fields.  It should not be used for frames where the
+#    telescope guided on the moving object.  In that case reduction
+#    should be performed by JITTER_SELF_FLAT_TELE which registers
+#    using the telescope offsets alone.
+
+# Notes: 
+#    -  A World Co-ordinate System (WCS) using the AIPS convention is 
+#    created in the headers should no WCS already exist.
+#    -  For IRCAM, old headers are reordered and structured with
+#    headings before groups of related keywords.  The comments have
+#    units added or appear in a standard format.  Four deprecated
+#    deprecated are removed.  FITS-violating headers are corrected.
+#    Spurious instrument names are changed to IRCAM3.
+#    -  The bad pixel mask applied is $ORAC_DATA_CAL/bpm.
+#    -  The flat field is created by combining normalised object 
+#    frames using the median at each pixel.
+#    -  Registration is performed using the telescope offsets
+#    transformed to pixels.  Once the offsets are determined, they
+#    are adjusted for the motion of the target, so that the final
+#    mosaic registers the target, not the background stars.
+#    -  There is no resampling, merely integer shifts of origin.
+#    -  The ephemeris file is specified by environment variable
+#    ORAC_EPHEMERIS, defaulting to $ORAC_DATA_OUT/target_ephem.dat.
+#    -  The recipe makes the mosaics by applying offsets in intensity
+#    to give the most consistent result amongst the overlapping regions.
+#    The mosaic is not trimmed to the dimensions of a single frame, thus
+#    the noise will be greater in the peripheral areas having received
+#    less exposure time.  The mosaic is not normalised by its exposure
+#    time (that being the exposure time of a single frame).
+#    -  For each cycle of jittered frames, the recipe creates a mosaic,
+#    which is then added into a master mosaic of improving signal to
+#    noise.  The exposure time is also summed and stored in the mosaic's
+#    EXP_TIME (UFTI) or DEXPTIME (IRCAM) header.  Likewise the end
+#    airmass header, AMEND, is updated to match that of the last-observed
+#    frame contributing to the mosaic.
+#    -  Intermediate frames are deleted except for the flat-fielded (_ff
+#    suffix) frames.
+
+# Ephemeris-file Format:
+#    The current format of the ephemeris file is one line per object
+#    comprising three space-separated fields in the following order:
+#      - the objectname, which may contain embedded spaces; and
+#      - the motion in the plane of the sky in arcsec/second for right
+#    ascension then declination.
+#
+#    Note that the right-ascension motion is the change in right ascension
+#    multiplied by the cosine of the declination.  The format may change
+#    to include UT and possibly date.
+
+# Output Data:
+#    -  The integrated mosaic in <m><date>_<group_number>_mos, where <m>
+#    is "g" for UFTI and "rg" for IRCAM.
+#    -  A mosaic for each cycle of jittered frames in
+#    <m><date>_<group_number>_mos<cycle_number>, where <cycle_number>
+#    counts from 0.
+#    -  The individual flat-fielded frames in <i><date>_<obs_number>_ff,
+#    where <i> is "f" for UFTI and "ro" for IRCAM.
+#    -  The created flat fields in flat_<group_number>subgrp for the
+#    first or only cycle, and flat_<group_number>subgrp_<cycle_number>
+#    for subsequent cycles.
+
+# Configurable Steering Parameters:
+#    NUMBER = INTEGER
+#       The number of frames in the jitter pattern.  If not supplied
+#       the number of offsets, as given by FITS header NOFFSETS, minus
+#       one is used.  If neither is available, 9 is the default.  An
+#       error state arises if the number of jittered frames is fewer
+#       than 3.  For observations prior to the availability of full
+#       ORAC, header NOFFSETS will be absent.  []
+
+# Timing:
+#    {timing_information}
+
+# Implementation Status:
+#    -  The processing engines are from the Starlink packages: CCDPACK
+#    and KAPPA.
+#    -  Uses the Starlink NDF format.
+#    -  History is recorded within the data files.
+#    -  The title of the data is propagated through intermediate files
+#    to the mosaic.
+#    -  Error propagation is not used.
+
+# Related Recipes:
+#    JITTER_SELF_FLAT_BASIC, JITTER_SELF_FLAT_TELE,
+#    MOVING_JITTER_SELF_FLAT
+
+# References:
+#   "Scripts for UFTI" G.S. Wright & S.K. Leggett, 1997 orac009-ufts, v01.
+
+# Authors:
+#   MJC: Malcolm J. Currie (UKATC/JAC)
+
+# Copyright:
+#    Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Startup
+# =======
+#
+# Every recipe must do this.
+    _IMAGING_HELLO_
+
+# Create WCS, if needed.
+    _CREATE_WCS_
+
+# This gets done for the first frame in sequence.
+    _JITTER_SELF_FLAT_HELLO_
+
+# Set up steering control of the processing, namely when to make a flat,
+# make a mosaic, and to mask objects when making the flat.
+    _JITTER_SELF_FLAT_STEER_
+
+# Calibration
+# ===========
+#
+# The following operations are performed for every appropriate frame.
+
+# Apply the bad-pixel mask.
+    _MASK_BAD_PIXELS_
+
+# Remove the bias.
+    _REMOVE_BIAS_
+
+# Subtract the dark frame.
+    _SUBTRACT_DARK_
+
+# Generate an approximate flat field by using the object frames.
+# Apply the flat field.   No object masking is applied.
+    _FLAT_FIELD_MASKED_GROUP_ MASK=0
+
+# Mosaicking
+# ==========
+
+# Determine the linear offsets between the object frames in the group
+# from the telescope offsets.  Register the frames using a shift
+# of pixel origin.  Correct the offsets for a moving target.
+    _GENERATE_OFFSETS_JITTER_ TELEOFF=1 MOVING_TARGET=1
+
+# Apply shifts of origin, and tesselate.  The mosaic is not trimmed to
+# the dimensions of an input frame.  Bad pixels are not filled.
+    _MAKE_MOSAIC_NO_BOUND_ RESAMPLE=0 FILLBAD=0
+
+# Remove intermediate data files.
+    _JITTER_SELF_FLAT_TIDY_
+
+# Podule
+# ======
+
+=head1 NAME
+
+MOVING_JITTER_SELF_FLAT_BASIC -- Reduces a "standard jitter" photometry observation of a moving target using just the basic operations for speed.
+
+=head1 DESCRIPTION
+
+This script reduces a "standard jitter" photometry observation
+with UFTI or IRCAM data.  It takes an observation comprising jittered
+object frames and a dark frame to make a calibrated, untrimmed
+mosaic automatically.
+
+It performs a null debiassing, bad-pixel masking, dark
+subtraction, flat-field creation and division, amd integer shifts
+of pixel origin to register to fixed sky co-ordinates.  
+See the L<"NOTES"> for further information.
+
+The registration is adjusted to track the motion of the moving target
+using ephemeris data stored in file F<target_ephem.txt>. See
+L<"EPHEMERIS-FILE FORMAT"> for details of this file's format.
+
+This recipe aims to keep pace with the pipeline's incoming data. It
+works well for faint moving sources and in moderately crowded fields.
+It should not be used for frames where the telescope guided on the
+moving object.  In that case reduction should be performed by
+L<JITTER_SELF_FLAT_TELE|JITTER_SELF_FLAT_TELE> which registers using
+the telescope offsets alone.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+A World Co-ordinate System (WCS) using the AIPS convention is 
+created in the headers should no WCS already exist.
+
+=item * 
+
+For IRCAM, old headers are reordered and structured with
+headings before groups of related keywords.  The comments have
+units added or appear in a standard format.  Four deprecated
+deprecated are removed.  FITS-violating headers are corrected.
+Spurious instrument names are changed to IRCAM3.
+
+=item *
+
+The bad pixel mask applied is F<$ORAC_DATA_CAL/bpm>.
+
+=item *
+
+The flat field is created by combining normalised object 
+frames using the median at each pixel.
+
+=item *
+
+Registration is performed using the telescope offsets
+transformed to pixels.  Once the offsets are determined, they
+are adjusted for the motion of the target, so that the final
+mosaic registers the target, not the background stars.
+
+=item *
+
+There is no resampling, merely integer shifts of origin.
+The ephemeris file is specified by environment variable
+ORAC_EPHEMERIS, defaulting to F<$ORAC_DATA_OUT/target_ephem.dat>.
+
+=item *
+
+The recipe makes the mosaics by applying offsets in intensity
+to give the most consistent result amongst the overlapping regions.
+The mosaic is not trimmed to the dimensions of a single frame, thus
+the noise will be greater in the peripheral areas having received
+less exposure time.  The mosaic is not normalised by its exposure
+time (that being the exposure time of a single frame).
+
+=item *
+
+For each cycle of jittered frames, the recipe creates a mosaic, which
+is then added into a master mosaic of improving signal to noise.  The
+exposure time is also summed and stored in the mosaic's EXP_TIME
+(UFTI) or DEXPTIME (IRCAM) header.  Likewise the end airmass header,
+AMEND, is updated to match that of the last-observed frame
+contributing to the mosaic.
+
+=item *
+
+Intermediate frames are deleted except for the flat-fielded (_ff
+suffix) frames.
+
+=back
+
+=head1 EPHEMERIS-FILE FORMAT
+
+The current format of the ephemeris file is one line per object
+comprising three space-separated fields in the following order:
+
+=over 4
+
+=item *
+
+the objectname, which may contain embedded spaces; and
+
+=item *
+
+the motion in the plane of the sky in arcsec/second for right
+ascension then declination.
+
+=back
+
+Note that the right-ascension motion is the change in right ascension
+multiplied by the cosine of the declination.  The format may change
+to include UT and possibly date.
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The integrated mosaic in
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_mos, where
+E<lt>mE<gt> is "g" for UFTI and "rg" for IRCAM.
+
+=item *
+
+A mosaic for each cycle of jittered frames in
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_mos_E<lt>cycle_numberE<gt>,
+where E<lt>cycle_numberE<gt> counts from 0.
+
+=item *
+
+The individual flat-fielded frames in
+E<lt>iE<gt>E<lt>dateE<gt>_E<lt>obs_numberE<gt>_ff, where E<lt>iE<gt>
+is "f" for UFTI and "ro" for IRCAM.
+
+=item *
+
+The created flat fields in flat_E<lt>group_numberE<gt>subgrp for the
+first or only cycle, and
+flat_E<lt>group_numberE<gt>subgrp_E<lt>cycle_numberE<gt> for
+subsequent cycles.
+
+=back
+
+=head1 CONFIGURABLE STEERING PARAMETERS
+
+=over 4
+
+=item NUMBER = INTEGER
+
+The number of frames in the jitter pattern.  If not supplied
+the number of offsets, as given by FITS header NOFFSETS, minus one
+is used.  If neither is available, 9 is the default.  An error 
+state arises if the number of jittered frames is fewer than 3. 
+For observations prior to the availability of full ORAC,
+NOFFSETS will be absent.  []
+
+=back
+
+=head1 TIMING
+
+TBS
+
+=head1 IMPLEMENTATION STATUS
+
+=over 4
+
+=item *
+
+The processing engines are from the Starlink packages: CCDPACK and
+KAPPA.
+
+=item *
+
+Uses the Starlink NDF format.
+
+=item *
+
+History is recorded within the data files.
+
+=item *
+
+The title of the data is propagated through intermediate files
+to the mosaic.
+
+=item *
+
+Error propagation is not used.
+
+=back
+
+=head1 RELATED RECIPES
+
+L<JITTER_SELF_FLAT_BASIC|JITTER_SELF_FLAT_BASIC>,
+L<JITTER_SELF_FLAT_TELE|JITTER_SELF_FLAT_TELE>,
+L<MOVING_JITTER_SELF_FLAT|MOVING_JITTER_SELF_FLAT>
+
+=head1 REFERENCES
+
+"I<Scripts for UFTI>" G.S. Wright & S.K. Leggett, 1997 orac009-ufts, v01.
+
+=head1 AUTHORS
+
+Malcolm J. Currie (UKATC/JAC) (mjc@jach.hawaii.edu)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
