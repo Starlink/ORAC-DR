@@ -155,7 +155,6 @@ sub calc_orac_headers {
       # get it from the HSTSTART
       my $hst = $self->hdr('HSTSTART');
       if (defined $hst) {
-	print "Got $hst\n";
 	my ($hh, $hm, $hs) = split(/:/, $hst);
 	$s = $hs;
       } else {
