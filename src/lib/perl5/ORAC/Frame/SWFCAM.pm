@@ -149,7 +149,7 @@ sub new {
   my $self = $class->SUPER::new();
 
   # Which WFCAM chip is this?
-  if( $ENV{'ORAC_INSTRUMENT'} =~ /^WFCAM([1-5])$/ ) {
+  if( $ENV{'ORAC_INSTRUMENT'} =~ /^SWFCAM([1-5])$/ ) {
     $self->rawfixedpart($rawfixedparts{lc($1)});
   } else {
     $self->rawfixedpart("w");
