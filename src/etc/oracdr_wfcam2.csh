@@ -52,7 +52,7 @@ endif
 
 set oracdr_args = "-ut $oracut"
 
-setenv ORAC_INSTRUMENT WFCAM1
+setenv ORAC_INSTRUMENT WFCAM2
 setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/wfcam2/$oracut
 setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/wfcam2/$oracut
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/wfcam
