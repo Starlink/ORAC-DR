@@ -369,6 +369,11 @@ sub orac_determine_inst_classes {
     $frameclass = "ORAC::Frame::NIRI";
     $calclass = "ORAC::Calib::UIST";
     $instclass = "ORAC::Inst::NIRI";
+  } elsif ($inst eq 'CLASSICCAM') {
+    $groupclass = "ORAC::Group::CLASSICCAM";
+    $frameclass = "ORAC::Frame::CLASSICCAM";
+    $calclass   = "ORAC::Calib::CLASSICCAM";
+    $instclass  = "ORAC::Inst::CLASSICCAM";
   } else {
     orac_err("Instrument $inst is not currently supported in ORAC-DR\n");
     return ();
@@ -537,6 +542,11 @@ sub orac_determine_recipe_search_path {
     push( @path, $imaging_root );
     push( @path, $spectro_root );
 
+  } elsif ($inst eq 'CLASSICCAM') {
+    push( @path, File::Spec->catdir( $root, "CLASSICCAM" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "CLASSICCAM" ) );
+    push( @path, $imaging_root );
+
   } else {
     croak "Recipes: Unrecognised instrument: $inst\n";
   }
@@ -672,6 +682,12 @@ sub orac_determine_primitive_search_path {
     push( @path, $spectro_root );
     push( @path, $general_root );
 
+  } elsif ($inst eq 'CLASSICCAM') {
+    push( @path, File::Spec->catdir( $root, "CLASSICCAM" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "CLASSICCAM" ) );
+    push( @path, $imaging_root );
+    push( @path, $general_root );
+
 
   } else {
     croak "Primitives: Unrecognised instrument: $inst\n";
@@ -746,6 +762,11 @@ sub orac_determine_initial_algorithm_engines {
       ccdpack_res /
 
   } elsif ($inst eq 'NIRI') {
+
+    @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg
+      ccdpack_res /
+
+  } elsif ($inst eq 'CLASSICCAM') {
 
     @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg
       ccdpack_res /
