@@ -518,7 +518,8 @@ sub indexentry {
   # This should probably be a method???
   unless ($#calibdata == (scalar(keys %rules) - 1)) {
     print '$#calibdata is ',$#calibdata,'(scalar(keys %rules) - 1)) is ',(scalar(keys %rules) - 1),"\n";
-    orac_err "Something has gone seriously wrong with the index file\n";
+    my $file = $self->indexfile;
+    orac_err "Something has gone seriously wrong with the index file $file\n";
     orac_err "You will need to regenerate it\n";
     return undef;
   };
@@ -589,7 +590,8 @@ sub verify {
   # This should probably be a method???
   unless ($#calibdata == (scalar(keys %rules) - 1)) {
     print '$#calibdata is ',$#calibdata,'(scalar(keys %rules) - 1)) is ',(scalar(keys %rules) - 1),"\n";
-    orac_err "Something has gone seriously wrong with the index file\n";
+    my $file = $self->indexfile;
+    orac_err "Something has gone seriously wrong with the index file $file\n";
     orac_err "You will need to regenerate it\n";
     return undef;
   };
