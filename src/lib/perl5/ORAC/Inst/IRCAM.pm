@@ -136,7 +136,8 @@ The routine returns when all the last monolith can be contacted
 routine is called).
 
 IRCAM uses PHOTOM (photom_mon), CCDPACK (ccdpack_red, ccdpack_res, 
-ccdpack_reg), KAPPA (kappa_mon), and PISA (pisa_mon).
+ccdpack_reg), KAPPA (kappa_mon, ndfpack_mon), POLPACK (polpack_mon),
+CURSA (catselect) and PISA (pisa_mon).
 
 =cut
 
@@ -145,14 +146,29 @@ sub start_algorithm_engines {
 
   %Mon = ();
 
-  $Mon{photom_mon} = new ORAC::Msg::ADAM::Task("photom_mon_$$",$ENV{PHOTOM_DIR}."/photom_mon");
-  $Mon{ndfpack_mon} = new ORAC::Msg::ADAM::Task("ndfpack_mon_$$",$ENV{KAPPA_DIR}."/ndfpack_mon");
-  $Mon{ccdpack_red} = new ORAC::Msg::ADAM::Task("ccdpack_red_$$",$ENV{CCDPACK_DIR}."/ccdpack_red");
-  $Mon{ccdpack_res} = new ORAC::Msg::ADAM::Task("ccdpack_res_$$",$ENV{CCDPACK_DIR}."/ccdpack_res");
-  $Mon{ccdpack_reg} = new ORAC::Msg::ADAM::Task("ccdpack_reg_$$",$ENV{CCDPACK_DIR}."/ccdpack_reg");
-  $Mon{pisa_mon} = new ORAC::Msg::ADAM::Task("pisa_mon_$$",$ENV{PISA_DIR}."/pisa_mon");
-  $Mon{kappa_mon} = new ORAC::Msg::ADAM::Task("kappa_mon_$$",$ENV{KAPPA_DIR}."/kappa_mon");
+  $Mon{photom_mon} =  new ORAC::Msg::ADAM::Task( "photom_mon_$$",
+         "$ENV{PHOTOM_DIR}/photom_mon" );
 
+  $Mon{ccdpack_red} = new ORAC::Msg::ADAM::Task( "ccdpack_red_$$",
+         "$ENV{CCDPACK_DIR}/ccdpack_red" );
+  $Mon{ccdpack_reg} = new ORAC::Msg::ADAM::Task( "ccdpack_reg_$$",
+         "$ENV{CCDPACK_DIR}/ccdpack_reg" );
+  $Mon{ccdpack_res} = new ORAC::Msg::ADAM::Task( "ccdpack_res_$$",
+         "$ENV{CCDPACK_DIR}/ccdpack_res" );
+
+  $Mon{kappa_mon} =   new ORAC::Msg::ADAM::Task( "kappa_mon_$$",
+         "$ENV{KAPPA_DIR}/kappa_mon" );
+  $Mon{ndfpack_mon} = new ORAC::Msg::ADAM::Task( "ndfpack_mon_$$",
+         "$ENV{KAPPA_DIR}/ndfpack_mon" );
+
+  $Mon{pisa_mon} =    new ORAC::Msg::ADAM::Task( "pisa_mon_$$",
+         "$ENV{PISA_DIR}/pisa_mon" );
+
+  $Mon{polpack_mon} = new ORAC::Msg::ADAM::Task( "polpack_mon_$$",
+         "$ENV{POLPACK_DIR}/polpack_mon" );
+
+  $Mon{catselect}   = new ORAC::Msg::ADAM::Task( "catselect_$$",
+         "$ENV{CURSA_DIR}/catselect" );
 
   return %Mon;
 }
