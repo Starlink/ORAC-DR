@@ -1,26 +1,37 @@
+# -*-perl-*-
+
 =head1 NAME
 
-_FIND_TOTAL_FLUX_ - Determine the total flux of a point source
+_FIND_TOTAL_FLUX_ - Determine the total flux of a source
 
 =head1 DESCRIPTION
 
-Finds the total flux of a point source located at the map origin.
-No attempt is made to search for sources not located at approximately
-the map centre.
+Finds the total flux of a source either by fitting or aperture
+photometry.
 
-The total flux is determined by fitting a Sersic profile to the source
-and then integrating underneath that profile using a standard integral
-solution. If the fit is poor (defined by the axis ratio falling
-outside a pre-defined range) then a stats-based method is used
-instead.
+The total flux can be determined by fitting a Sersic profile to the
+source and integrating underneath that profile using a standard
+integral solution. If the fit is poor (defined by the axis ratio
+falling outside a pre-defined range) then the default aperture
+photometry method is used instead.
 
-Note that the C<Math::Gsl> module must be installed.
+Note that the C<Math::Gsl> module must be installed for the PSF
+integrator.
+
+This primitive is designed to work on a single image and will fail if
+the current Frame object contains more than one file.
 
 =head1 ARGUMENTS
 
 The following arguments are supported:
 
 =over 4
+
+=item USEPSF
+
+A flag to indicate whether to calculate the source flux from either a
+fit the source using the Kappa PSF function or using an aperture
+photometry method. Default is to use aperture photometry (USEPSF = 0).
 
 =item LOGFILE
 
@@ -45,7 +56,7 @@ PSF, WCSFRAME
 
 =item Other SCUBA-2 primitives
 
-_FIND_INTEGRATED_INTENSITY_
+_FIND_INTEGRATED_INTENSITY_, _FIND_BRIGHTEST_SOURCE_
 
 =back
 
@@ -58,9 +69,8 @@ contains the following keys:
 
 =item RESULTS
 
-An array containing the total flux for each sub-instrument. Contains
-C<undef> if the calculation did not complete sucessfully.  Starts
-counting at 1.
+The total flux for the current Frame. Contains C<undef> if the
+calculation did not complete sucessfully.
 
 =back
 
@@ -89,6 +99,12 @@ All Rights Reserved.
 
 =cut
 
+# First check that we only have one file in the Frame
+unless ($Frm->nfiles == 1) {
+    orac_throw "Error: _FIND_TOTAL_FLUX_ must be run after frames have been combined\n";
+#    exit;
+}
+
 # Write logfile (default to true)
 my $uselog = (exists $_FIND_TOTAL_FLUX_{LOGFILE} &&
           defined $_FIND_TOTAL_FLUX_{LOGFILE}) ?
@@ -102,97 +118,100 @@ my $verbose = (exists $_FIND_TOTAL_FLUX_{VERBOSE} &&
 # initialise the results array
 $_FIND_TOTAL_FLUX_{RESULTS} = [];
 
+# Check the desired flux calculation method.
+my $usepsf = (exists $_FIND_TOTAL_FLUX_{USEPSF} &&
+	      defined $_FIND_TOTAL_FLUX_{USEPSF}) ?
+    $_FIND_TOTAL_FLUX_{USEPSF} : 0;
 
 # Initialise the log file if necessary
 my $log;
 if ($uselog) {
   $log = new ORAC::LogFile("log.flux");
   my $time = gmtime();
-  $log->header("Pointing log file - created on $time",
+  $log->header("Flux log file - created on $time",
                "\n#     Time   Filter        TotalFlux    CSO   El",
              "----------------------------------------------------------"
             );
 
 }
 
-# Get the centroid
-_CENTROID_FRAME_ LOGFILE=0
+# Find the brightest source in the frame
+_FIND_BRIGHTEST_SOURCE_ LOGFILE=0 WCSFRAME=grid
 
-# Now Loop over frames
-for my $i (1.. $Frm->nfiles ) {
+# Find the input file
+my $in = $Frm->file(1);
 
-  # Find the input file
-  my $in = $Frm->file($i);
-
-  # we now run PSF if possible else simply use the peak position from
-  # centroiding
-  my $totalflux;
-  if (starversion_lt('kappa', 'V0.15-0')) {
+# We now run PSF if possible else simply use the peak position from
+# centroiding
+my $totalflux;
+if (starversion_lt('kappa', 'V0.15-0')) {
     # warn
     orac_warn "Your kappa version is too old to use PSF properly. Using stats to find total flux\n";
     # Resort to stats method
-    _FIND_INTEGRATED_INTENSITY_ FRAME=$i VERBOSE=0 LOGFILE=0;
+    _FIND_INTEGRATED_INTENSITY_ VERBOSE=0 LOGFILE=0;
     $totalflux = $_FIND_INTEGRATED_INTENSITY_{RESULTS} ;
 
-  } else {
+} else {
     # Need to make sure we are using a AXIS coordinate frame
-    $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=axis");
+#    $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=axis");
+    $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=pixel");
 
     # Create temporary file with the position in
     my $tmp = new ORAC::TempFile;
     my $tmpfile = $tmp->file;
-    print { $tmp->handle } $_CENTROID_FRAME_{RESULTS}->[$i]->[0]," ",
-       $_CENTROID_FRAME_{RESULTS}->[$i]->[1], "\n";
+    print { $tmp->handle } $_FIND_BRIGHTEST_SOURCE_{RESULTS}->[0]," ",
+       $_FIND_BRIGHTEST_SOURCE_{RESULTS}->[1], "\n";
     $tmp->handle->close;
-    my $args = "incat=! device=! cofile=$tmpfile";
 
-    # Run PSF
-    $Mon{kappa_mon}->obeyw("psf","norm=no range=4 isize=15 in=$in $args");
-
-    # Retrieve the answer
     my $ORAC_STATUS;
-    ( $ORAC_STATUS, my $amp)  = $Mon{kappa_mon}->get("psf","amp1");
-    ( $ORAC_STATUS, my $axisr) = $Mon{kappa_mon}->get("psf","axisr");
-    ( $ORAC_STATUS, my $fwhm) = $Mon{kappa_mon}->get("psf","fwhm");
-    ( $ORAC_STATUS, my $gamma) = $Mon{kappa_mon}->get("psf","gamma");
+    if ($usepsf) {
 
-    # Find the integrated intensity under the fitted PSF, given these parameters
-    # The units will be in ...
+	my $args = "incat=! device=! cofile=$tmpfile";
 
-## Quick hack to test it runs since psf doesn't work on simulated data yet.
-##      _FIND_INTEGRATED_INTENSITY_ FRAME=$i VERBOSE=0 LOGFILE=0;
-##      $totalflux = $_FIND_INTEGRATED_INTENSITY_{RESULTS} ;
+	# Run PSF
+	$Mon{kappa_mon}->obeyw("psf","norm=no range=4 isize=15 in=$in $args");
 
-    $totalflux = integrate_psf($amp, $fwhm, $gamma);
+	# Retrieve the answer
+	( $ORAC_STATUS, my $amp)  = $Mon{kappa_mon}->get("psf","amp1");
+	( $ORAC_STATUS, my $axisr) = $Mon{kappa_mon}->get("psf","axisr");
+	( $ORAC_STATUS, my $fwhm) = $Mon{kappa_mon}->get("psf","fwhm");
+	( $ORAC_STATUS, my $gamma) = $Mon{kappa_mon}->get("psf","gamma");
 
-    # Check the axis ratio
-    if ($axisr > 1.4 || $axisr < 0.75) {
-      orac_warn "Axis ratio of source out of specification (was $axisr). Ignoring fit.\n";
+	# Find the integrated intensity under the fitted PSF, given these parameters
+	# The units will be in ...
 
-      # Use stats instead
-      orac_warn "Using aperture photometry at centroid position for $in instead.\n";
+	# Check the axis ratio
+	if ($axisr > 1.4 || $axisr < 0.75) {
+	    orac_warn "Axis ratio of source out of specification (was $axisr). Ignoring fit.\n";
+	    # Use stats instead
+	    orac_warn "Using aperture photometry at centroid position for $in instead.\n";
+	    # Call _FIND_INTEGRATED_INTENSITY_ primitive on the current image
+	    _FIND_INTEGRATED_INTENSITY_ VERBOSE=0 LOGFILE=0;
+	    $totalflux = $_FIND_INTEGRATED_INTENSITY_{RESULTS} ;
+	} else {
+	    # integrate_profile or Something::Sersic->integrate_profile;
+	    $totalflux = integrate_profile($amp, $fwhm, $axisr, $gamma, 2);
+	}
 
-      # Call _FIND_INTEGRATED_INTENSITY_ primitive on the current image
-       _FIND_INTEGRATED_INTENSITY_ FRAME=$i VERBOSE=0 LOGFILE=0;
-      $totalflux = $_FIND_INTEGRATED_INTENSITY_{RESULTS} ;
-#      $totalflux = 1;
+    } else {
+	# Use an aperture photmetry method
+	_FIND_INTEGRATED_INTENSITY_  VERBOSE=0 LOGFILE=0;
+	$totalflux = $_FIND_INTEGRATED_INTENSITY_{RESULTS} ;
     }
-  }
+}
 
-  # Store the result in the hash
-  $_FIND_TOTAL_FLUX_{RESULTS}->[$i] = $totalflux;
+# Store the result in the hash
+$_FIND_TOTAL_FLUX_{RESULTS} = $totalflux;
 
-  # Write a log file if required
-  if ($uselog) {
+# Write a log file if required
+if ($uselog) {
 
     my $num = sprintf "%-4d", $Frm->number;
     my $time= sprintf "%12.3f", $Frm->hdr('ORACTIME');
-#    my $filt= sprintf "%4s",   $filters[$i-1];
     my $filt= sprintf "%4s",   "850";
     $totalflux = sprintf "%9.2f", $totalflux;
 
-    # Get the tau
-    # TAU from calibration object
+    # Get the tau from calibration object
 #    my $tau = sprintf "%5.2f", $Cal->tau($filters[$i-1]);
 
     # Use that tau to calculate CSO
@@ -202,7 +221,7 @@ for my $i (1.. $Frm->nfiles ) {
 #    } else {
 #      $cso = sprintf "%5.2f", $cso;
 #    }
-      my $cso = sprintf "%5.2f", "1.0";
+    my $cso = sprintf "%5.2f", "1.0";
 
     # elevation
     my $el = int (($Frm->hdr('STRT_ELD') + $Frm->hdr('END_ELD') ) /2.0 );
@@ -210,36 +229,10 @@ for my $i (1.. $Frm->nfiles ) {
     # Write the entry
     $log->addentry("$num $time $filt $totalflux  $cso $el " . $Frm->hdr('OBJECT'));
 
-  }
-
-#  orac_print "Total flux for filter ". $filters[$i-1].": $totalflux\n"
-  orac_print "Total flux for filter 850: $totalflux\n"
-    if $verbose;
-
 }
+
+orac_print "Total flux for filter 850: $totalflux\n"
+    if $verbose;
 
 orac_print "Calculated total signal from map\n" if $verbose;
 
-
-
-# Subroutine to find the integral of the Sersic function used in the PSF fit.
-# Total flux  = $\int_0^\infty \int_0^{2\pi} A\exp[-0.5(r/\sigma)^\gamma] r\,dr\,d\theta$
-# Uses the Gamma function implemented in Math::Gsl, and the fastest method mentioned in 
-# the Math::Gsl::Sf documentation.
-# Solution obtained from CRC Standard Mathematical Tables and Formulae, by Daniel Zwillinger
-
-sub integrate_psf {
-  my $PI = 3.1415926535;
-
-  use Math::Gsl::Sf qw(:Gamma);
-
-  my ($amp, $width, $gamma) = @_;
-
-  my $k = 2.0 / $gamma;
-
-  my $const = $PI / ( 2.0 * log(2.0)**$k );
-
-  my $integratedflux = $const * $amp * $width * $width * Math::Gsl::Sf::sf_gamma($k) / $gamma;
-
-  return $integratedflux;
-}
