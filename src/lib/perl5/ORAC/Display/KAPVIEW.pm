@@ -140,7 +140,7 @@ sub obj {
 Messaging object associated with the kappa_mon monolith.
 This is used by some of the modes in order to determine
 display related values (eg statistics to determine plotting
-ranges for SIGMA).
+ranges for SIGMA, dimension compression with COMPAVE).
 
 A kappa messaging object is created if the object is undefined.
 
@@ -1143,14 +1143,14 @@ Option keywords:
 
   XMIN/XMAX  - X-pixel range of graph
   XAUTOSCALE - Autoscale pixel range?
-  YMIN/YMAX  - Y-range of graph (in data units)
-  YAUTOSCALE - Autoscale Y-axis
+  ZMIN/ZMAX  - Y-range of graph (in data units)
+  ZAUTOSCALE - Autoscale Y-axis
 
 Default is to autoscale on the data (the model may not be visible).
 
 If the input file is greater than 1-D, the section is automatically
-converted to 1-D by selecting the 1 slice from each of the
-higher axes
+converted to 1-D by selecting the ?MIN slice from each of the
+higher axes (eg the value specified in YMIN, 3min...)
 
 =cut
 
@@ -1182,15 +1182,9 @@ sub datamodel {
   # Set the data file name
   $file =~ s/\.sdf$//;  # Strip .sdf
 
-  # Calculate NDF section
+  # Calculate NDF section - including compression of dimensions
   $file = $self->select_section($file,\%options,1);
 
-  # Probably should try to find out whether the array is 1 or 2 dimensional
-  # since currently linplot fails if the data is not 1-D
-  # would have to use NDFTRACE from NDFPACK OR use my NDF module
-  # to do it directly
-  # Cant be bothered at the moment...
-    
   # A resetpars also seems to be necessary to instruct kappa to
   # update its current frame for plotting. Without this the new PICDEF
   # regions are not picked up correctly.
@@ -1198,8 +1192,23 @@ sub datamodel {
   my $status = $self->obj->resetpars;
   return $status if $status != ORAC__OK;
 
+  # Calculate the range setting parameters
+  my $range;
+  if (exists $options{ZAUTOSCALE}) {
+    if ($options{ZAUTOSCALE}) {
+      $range = "axlim=false";
+    } else {
+      # Set the Y range
+      my $min = 0;
+      my $max = 0;
+      $min = $options{ZMIN} if exists $options{ZMIN};
+      $max = $options{ZMAX} if exists $options{ZMAX};
+      $range = "axlim=true abslim=! ordlim=[$min,$max]";
+    }
+  }
+
   # Now plot the data
-  my $args = "clear mode=2 symcol=white axlim=false";
+  my $args = "clear mode=2 symcol=white $range";
   $status = $self->obj->obeyw("linplot","ndf=$file device=$device $args");
   if ($status != ORAC__OK) {
     orac_err("Error displaying data file\n");
