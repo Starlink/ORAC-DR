@@ -592,6 +592,8 @@ pipeline by using values stored in the header.
 ORACTIME is calculated - this is the time of the observation as
 UT day + fraction of day.
 
+ORACUT is simply read from UTDATE converted to YYYYMMDD.
+
 This method updates the frame header.
 Returns a hash containing the new keywords.
 
@@ -627,7 +629,7 @@ sub calc_orac_headers {
   
   # Update the header
   $self->hdr('ORACTIME', $ut);
-
+  $self->hdr('ORACUT',   $date);
  
   $new{'ORACTIME'} = $ut;
   return %new;
