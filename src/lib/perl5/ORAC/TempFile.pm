@@ -218,7 +218,8 @@ sub Initialise {
   # Try new temporary files until we get one that didnt already exist
   # This assumes we keep on trying to open the file....
   do { 
-    $file = tmpnam() 
+    $file = tmpnam();
+    $file =~ s/\./_/g;  # Remove dots since NDF does not like them
   } until $fh = IO::File->new($file, O_RDWR|O_CREAT|O_EXCL);
 
   # Set autoflush
