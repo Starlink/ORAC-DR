@@ -15,6 +15,7 @@ use subs qw(start_msg_sys start_algorithm_engines wait_for_algorithm_engines);
 use lib $ENV{ORAC_PERL5LIB};
 use ORAC::Basic;
 use ORAC::General;
+use ORAC::Loop;
 
 &orac_exit_normally("No starlink login") unless exists $ENV{STAR_LOGIN};
 
@@ -75,7 +76,7 @@ die "Error importing $instmodule:\n$@\n" if ($@);
 # command line arguments
 #
 
-GetOptions("nodisplay","quiet!","calib=s","from=i","to=i","ut=i","list=s","h");
+GetOptions("nodisplay","quiet!","calib=s","from=i","to=i","ut=i","list=s","loop=s","h");
 
 ($opt_h) && do {
 print qq|
@@ -103,6 +104,7 @@ Options:
   -ut        UT date of observations (defaults to current yyyymmdd)
   -calib     comma seperated key=value pairs (eg. -cal dark=file1 or
              -cal dark=file1,bias=file2) of calibration *files*
+  -loop      Name of looping scheme: list, inf, or wait
   |;
 exit;
 }
@@ -242,15 +244,24 @@ if (defined $opt_calib) {
 
 };
 
+# Decide on a looping scheme
 
- 
+$loop = "orac_loop_list"; # Default is too use list to cycle through obs
+if (defined $opt_loop) {
+  $loop = "orac_loop_" . $opt_loop;
+}
+
 
 
 # Generate list of observation numbers to be processed
  
 if (defined $opt_from) {
- 
-  @obs = $opt_from .. $opt_to;
+
+  if (defined $opt_to) {
+    @obs = $opt_from .. $opt_to
+  } else {
+    @obs = ($opt_from);  # Used for data detection loops etc
+  }
  
 } elsif (defined $opt_list) {
 
@@ -258,27 +269,21 @@ if (defined $opt_from) {
 
 }
 
-foreach $obsno (@obs) {
+# Loop forever
+
+while (1) {
+
+# foreach $obsno (@obs) {
   #------------------------------------------------------------------------
   #
-  # Create frame object
-  $Frm = new $frameobject;
 
+  # Return back the current frame
+  # This will also configure the frame object
+  $Frm = &{$loop}($frameobject, $opt_ut, \@obs);
 
-  # Find the filename from the number
-  #
-  $File = $Frm->file_from_bits($opt_ut,$obsno);
-  
-  # temporary solution ? Create symbolic link in output directory
-  # pointing to raw data file this or a similar strategy is needed to
-  # preserve order-stupidity on the part of the primitives
-
-  symlink($In.$File,$File);
-
-  # 
-  # Now that the file exists in cwd we can configure the object
-  # 
-  $Frm->configure($File);
+  # If frame is undefined then we assume that the data loop
+  # should be stopped
+  last unless defined $Frm;
 
   print colored ("REDUCING: ".$Frm->raw."\n","yellow");
   
@@ -294,8 +299,8 @@ foreach $obsno (@obs) {
   do {
     
     $Grp = new $groupobject($grpname);
-    $Grp->file($Grp->file_from_bits($opt_ut, $obsno));
-    unlink($Grp->file);
+    $Grp->file($Grp->file_from_bits($opt_ut, $Frm->number));
+    unlink($Grp->file); # wont work since .sdf is not included
     $Groups{$grpname} = $Grp;		# store group object
     print colored ("A new group ".$Grp->file." has been created\n","blue");
 
@@ -359,6 +364,9 @@ foreach $obsno (@obs) {
 #------------------------------------------------------------------------
 
 # $Log$
+# Revision 1.29  1998/07/08 03:49:32  timj
+# Use different data detection loops
+#
 # Revision 1.28  1998/07/07 06:28:55  frossie
 # Call noupdate method when a calibration has been specified in the
 # command line
@@ -468,3 +476,5 @@ foreach $obsno (@obs) {
 # Revision 1.1  1997/11/21 21:29:43  frossie
 # Initial revision
 #
+
+
