@@ -180,7 +180,14 @@ sub xorac_about {
   $image->grid( -column => 0, -row => 0, -sticky => 'nsew' );		 
   
   # text
-  my $foot = $about_frame->Label( -text    => "\nXORAC-DR $xoracdr_version\nPerl Version $]\nTk version $Tk::VERSION",
+  my $string;
+  if ( defined $ENV{"ORAC_INSTRUMENT"} ) {
+     $string = "\nXORAC-DR $xoracdr_version\nPerl Version $]\nTk version $Tk::VERSION\n\nInstrument: $ENV{'ORAC_INSTRUMENT'}\nSupport: $ENV{'ORAC_PERSON'}\@jach.hawaii.edu\nDocumentation: SUN/$ENV{'ORAC_SUN'}"
+  } else {
+     $string = "\nXORAC-DR $xoracdr_version\nPerl Version $]\nTk version $Tk::VERSION\n";
+  }
+    
+  my $foot = $about_frame->Label( -textvariable    => \$string,
                                   -relief  => 'flat',
 	  			  -font    => 'Arial', 
 				  -justify => 'center',
@@ -415,9 +422,7 @@ sub xorac_setenv {
 		           # and disable recipe edit menu item
 	                   unless (-d $ENV{"ORAC_RECIPE_DIR"}) { 
 		               $recipe_menu->
-			       entryconfigure(2, -state => 'disabled'); 
-		               orac_err(" ORAC_RECIPE_DIR directory" .
-			        "($ENV{'ORAC_RECIPE_DIR'}) does not exist.\n");
+			       entryconfigure(2, -state => 'disabled');
 		           }
 	                }
 			
@@ -915,7 +920,7 @@ sub xorac_select_recipe {
                                       -activebackground => 'blue' );
 
   $ok_button->configure( -command => sub {
-  
+                   if ( defined $$selected[0] ) {
                            # label text
                            $label_text = "Choose a recipe: ";
  
@@ -933,17 +938,19 @@ sub xorac_select_recipe {
   
                            # re-configure the OK button 
                            $ok_button->configure( -command => sub {
-			     # get the filename
-			     my $filename = $$selected[0];
-			     # untie variables
-			     untie @contents;
-			     untie $selected; 
-			     # destroy widgets
-			     ORAC::Event->destroy("RE");
-			     ORAC::Event->unregister("RE");
-			     # create editor window
-                             xorac_editor( $directory, $filename ); }); 
-			 } );
+			     if ( defined $$selected[0] ) {
+			        # get the filename
+			        my $filename = $$selected[0];
+			        # untie variables
+			        untie @contents;
+			        untie $selected; 
+			        # destroy widgets
+			        ORAC::Event->destroy("RE");
+			        ORAC::Event->unregister("RE");
+			        # create editor window
+                                xorac_editor( $directory, $filename ); 
+			     }}); 
+                   } } );
   $ok_button->grid( -column => 1 ,-row => 2, -sticky => 'we' );	
 
 }

@@ -37,6 +37,7 @@ use Cwd;
 use Sys::Hostname;
 use Net::Domain;    
 use ORAC::Print;
+use ORAC::Constants qw/ :status /;
 
 use Starlink::Config;  # Need to know where fluxes is
 
@@ -459,253 +460,221 @@ sub orac_configure_for_instrument {
   my $oracut = $options->{'ut'};
 
   # Set up a local copy of ORAC_DATA_ROOT and ORAC_CAL_ROOT so we dont
-  #  confuse the routinewhen it is called with a different instrument - is only important
-  # for default behaviour
+  # confuse the routine when it is called with a different instrument - is 
+  # only important for default behaviour
   my $orac_data_root = $ENV{ORAC_DATA_ROOT};
   my $orac_cal_root = $ENV{ORAC_CAL_ROOT};
 
   SWITCH: {
      if ( $instrument eq "CGS4" ) {
-                                   # Instrument
-                                   $ENV{"ORAC_INSTRUMENT"} = "CGS4";
+     
+             # Instrument
+             $ENV{"ORAC_INSTRUMENT"} = "CGS4";
 
-                                   # Calibration information
-                                   $orac_cal_root =
-				       "/ukirt_sw/oracdr_cal"
-                                       unless defined $orac_cal_root;
-                                   $ENV{"ORAC_DATA_CAL"} =
-				       File::Spec->catdir($orac_cal_root,"cgs4");
+             # Calibration information
+             $orac_cal_root = "/ukirt_sw/oracdr_cal"
+                    unless defined $orac_cal_root;
+             $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"cgs4");
 				
-                                   # Recipe and Primitive
-                                   undef $ENV{"ORAC_RECIPE_DIR"} 
-                                        if defined $ENV{"ORAC_RECIPE_DIR"};
-                                   undef $ENV{"ORAC_PRIMITIVE_DIR"} 
-                                        if defined $ENV{"ORAC_PRIMITIVE_DIR"};
+             # Recipe and Primitive
+             #undef $ENV{"ORAC_RECIPE_DIR"} 
+             #       if defined $ENV{"ORAC_RECIPE_DIR"};
+             #undef $ENV{"ORAC_PRIMITIVE_DIR"} 
+             #       if defined $ENV{"ORAC_PRIMITIVE_DIR"};
 
 
-                                   # data directories
-                                   $orac_data_root = "/ukirtdata"
-                                        unless defined $orac_data_root;
+             # data directories
+             $orac_data_root = "/ukirtdata"
+                    unless defined $orac_data_root;
 
-                                   $ENV{"ORAC_DATA_IN"} = 
-                                        File::Spec->catdir($orac_data_root,
-							   "raw","cgs4",$oracut);
-                                   $ENV{"ORAC_DATA_OUT"} = 
-                                        File::Spec->catdir($orac_data_root,
-							   "reduced","cgs4",$oracut);
+             $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+	                                                "raw","cgs4",$oracut);
+             $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir( $orac_data_root,
+	                                              "reduced","cgs4",$oracut);
 
-                                  # misc
-                                  $ENV{"ORAC_PERSON"} = "frossie";
-                                  $ENV{"ORAC_SUN"} = "230";
-                                  $options->{"loop"} = "flag";
+             # misc
+             $ENV{"ORAC_PERSON"} = "frossie";
+             $ENV{"ORAC_SUN"} = "230";
+             $options->{"loop"} = "flag";
 
-                                  last SWITCH; }
+             last SWITCH; }
 
      if ( $instrument eq "IRCAM" ) {
 
-                                   # Instrument
-                                   $ENV{"ORAC_INSTRUMENT"} = "IRCAM";
+             # Instrument
+             $ENV{"ORAC_INSTRUMENT"} = "IRCAM";
 
-                                   # Calibration information
-                                   $orac_cal_root =
-				       "/ukirt_sw/oracdr_cal"
-                                       unless defined $orac_cal_root;
-                                   $ENV{"ORAC_DATA_CAL"} =
-				       File::Spec->catdir($orac_cal_root,"ircam");
+             # Calibration information
+             $orac_cal_root = "/ukirt_sw/oracdr_cal"
+                     unless defined $orac_cal_root;
+             $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"ircam");
 				
-                                   # Recipie and Primitive
-                                   undef $ENV{"ORAC_RECIPE_DIR"} 
-                                        if defined $ENV{"ORAC_RECIPE_DIR"};
-                                   undef $ENV{"ORAC_PRIMITIVE_DIR"} 
-                                        if defined $ENV{"ORAC_PRIMITIVE_DIR"};
+             # Recipie and Primitive
+             #undef $ENV{"ORAC_RECIPE_DIR"} 
+             #        if defined $ENV{"ORAC_RECIPE_DIR"};
+             #undef $ENV{"ORAC_PRIMITIVE_DIR"} 
+             #        if defined $ENV{"ORAC_PRIMITIVE_DIR"};
 
-                                   # data directories
-                                   $orac_data_root = "/ukirtdata"
-                                        unless defined $orac_data_root;
+             # data directories
+             $orac_data_root = "/ukirtdata"
+                     unless defined $orac_data_root;
 
-                                   $ENV{"ORAC_DATA_IN"} = 
-                                        File::Spec->catdir($orac_data_root,
-							   "raw","ircam", $oracut);
-                                   $ENV{"ORAC_DATA_OUT"} = 
-                                        File::Spec->catdir($orac_data_root,
-							   "reduced","ircam",$oracut);
+             $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+	                                                "raw","ircam", $oracut);
+             $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir($orac_data_root,
+	                                             "reduced","ircam",$oracut);
 
-                                  # misc
-                                  $ENV{"ORAC_PERSON"} = "mjc";
-                                  $ENV{"ORAC_SUN"} = "232";
-                                  $options->{"loop"} = "flag";
+             # misc
+             $ENV{"ORAC_PERSON"} = "mjc";
+             $ENV{"ORAC_SUN"} = "232";
+             $options->{"loop"} = "flag";
 
-                                  last SWITCH; }
+             last SWITCH; }
 
      if ( $instrument eq "SCUBA" ) {
 
-                                  # Instrument
-                                  $ENV{"ORAC_INSTRUMENT"} = "SCUBA";
+             # Instrument
+             $ENV{"ORAC_INSTRUMENT"} = "SCUBA";
 
-                                  # Calibration information
-                                  $orac_cal_root = 
-				          "/jcmt_sw/oracdr_cal"
-                                          unless defined $orac_cal_root;
-                                  $ENV{"ORAC_DATA_CAL"} =
-				         File::Spec->catdir($orac_cal_root,"scuba");
+             # Calibration information
+             $orac_cal_root = "/jcmt_sw/oracdr_cal"
+	             unless defined $orac_cal_root;
+             $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"scuba");
 				
-                                  # Recipe and Primitives
-                                  undef $ENV{"ORAC_RECIPE_DIR"} 
-				         if defined $ENV{"ORAC_RECIPE_DIR"};
-                                  undef $ENV{"ORAC_PRIMITIVE_DIR"} 
-				         if defined $ENV{"ORAC_PRIMITIVE_DIR"};
+             # Recipe and Primitives
+             #undef $ENV{"ORAC_RECIPE_DIR"} 
+	     #       if defined $ENV{"ORAC_RECIPE_DIR"};
+             #undef $ENV{"ORAC_PRIMITIVE_DIR"} 
+	     #       if defined $ENV{"ORAC_PRIMITIVE_DIR"};
 
-                                  # ORAC_DATA_ROOT depends on our location
-                                  # There are 3 possibilities. We are in Hilo,
-				  # we are at the JCMT or we are somewhere else.
-                                  # At the JCMT we need to set ORAC_DATA_ROOT
-				  # to /jcmtarchive. In this case the current
-				  # UT date is the sensible choice
+             # ORAC_DATA_ROOT depends on our location. There are 3
+	     # possibilities. We are in Hilo, we are at the JCMT or we 
+	     # are somewhere else.
+	     #
+             # At the JCMT we need to set ORAC_DATA_ROOT to /jcmtarchive. 
+	     # In this case the current UT date is the sensible choice
 
-                                  # In Hilo we need to set DATADIR to
-				  # /scuba/Semester/UTdate/ In this case
-				  # current UT is meaningless and an argument
-				  # should be used
+             # In Hilo we need to set DATADIR to /scuba/Semester/UTdate/ 
+	     # In this case current UT is meaningless and an argument
+	     # should be used
 
-                                  # Somewhere else - we have no idea where
-				  # DATADIR should be so we set data root to
-				  # the current directory
+             # Somewhere else - we have no idea where DATADIR should be so 
+	     # we set data root to the current directory
 
-                                  # Use domainname to work out where we are
-                                  unless ( defined $orac_data_root )
-                                  {
-				      $orac_data_root = cwd;
-                                      if (Net::Domain->domainname =~ "jcmt"  ) {
-                                        $orac_data_root = "/jcmtarchive";
-                                      } elsif (Net::Domain->domainname =~ "jach"  ) {
-                                        $orac_data_root = "/scuba";
-				      }
-                                  }
+             # Use domainname to work out where we are
+             unless ( defined $orac_data_root )
+             { 
+               $orac_data_root = cwd;
+               if (Net::Domain->domainname =~ "jcmt"  ) {
+                   $orac_data_root = "/jcmtarchive";
+                } elsif (Net::Domain->domainname =~ "jach"  ) {
+                   $orac_data_root = "/scuba";
+	        }
+             }
 
-                                  my $sem;
+             my $sem;
 
-                                  if ( $orac_data_root eq "/scuba" )
-                                  {
+             if ( $orac_data_root eq "/scuba" )
+             {
+	        # Note that for SCUBA at the JAC we use
+                # use /scuba/semester.
 
-				    # Note that for SCUBA at the JAC we use
-				    # use /scuba/semester.
+		# Start by splitting the YYYYMMDD string
+		# year and month/day
+		my $yyyy = substr( $oracut, 0, 4 );
+		my $mmdd = substr( $oracut, 4, 4 );
 
-				    # Start by splitting the YYYYMMDD string
-				    # year and month/day
-				    my $yyyy = substr( $oracut, 0, 4 );
-				    my $mmdd = substr( $oracut, 4, 4 );
+	        # Calculate previous year
+		my $prev_yyyy = $yyyy - 1;
 
-				    # Calculate previous year
-				    my $prev_yyyy = $yyyy - 1;
+		# Two digit years
+		my $yy = substr( $yyyy, 2, 2);
+		my $prevyy = substr( $prev_yyyy, 2, 2);
 
-				    # Two digit years
-				    my $yy = substr( $yyyy, 2, 2);
-				    my $prevyy = substr( $prev_yyyy, 2, 2);
+		# Need to put the month in the correct
+		# semester. Note that 199?0201 is in the
+		# previous semester, same for 199?0801
+		if ($mmdd > 201 && $mmdd < 802) {
+		   $sem = "m${yy}a";
+		} elsif ($mmdd < 202) {
+		   $sem = "m${prevyy}b";
+		} else {
+		   $sem = "m${yy}b";
+		}
+	     }
 
-				    # Need to put the month in the correct
-				    # semester. Note that 199?0201 is in the
-				    # previous semester, same for 199?0801
-				    if ($mmdd > 201 && $mmdd < 802) {
-				      $sem = "m${yy}a";
-				    } elsif ($mmdd < 202) {
-				      $sem = "m${prevyy}b";
-				    } else {
-				      $sem = "m${yy}b";
-				    }
+             # input data directory
+             if ( defined $sem ) {
+                $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+							   $sem, $oracut );
+             } else {
+                $ENV{"ORAC_DATA_IN"} =  File::Spec->catdir( $orac_data_root,
+							    $oracut );  }
 
-                                  }
+             # Output data directory is more problematic.
+             # If we are at JCMT set it to ORAC_DATA_ROOT/reduced/$oracut, 
+	     # else set to current directory
+             if ($orac_data_root eq "/jcmtarchive") {
+                $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir( $orac_data_root,
+		                                            "reduced","orac",
+							    $oracut);
+                if ( hostname ne "mamo" ) {
+                   orac_err("Please use mamo for ORAC-DR reduction. Aborting.");
+                   throw ORAC::Error::FatalError( "Use mamo for reduction",
+		                                  ORAC__FATAL);
+                }
+                unless ( -d $ENV{"ORAC_DATA_OUT"} ) {
+		   # stuff to do with mamo here
+                   # Parent directory has sticky group bit set so this
+		   # guarantees correct group ownership
 
-                                  # input data directory
-                                  if ( defined $sem )
-                                  {
-                                     $ENV{"ORAC_DATA_IN"} =
-				           File::Spec->catdir( $orac_data_root,
-							       $sem, $oracut);
-                                  }
-				  else
-				  {
-                                     $ENV{"ORAC_DATA_IN"} =
-				           File::Spec->catdir($orac_data_root,
-							      $oracut);
-                                  }
+	           # mkdir $ORAC_DATA_OUT
+                   # chmod g+rws $ORAC_DATA_OUT
 
-                                  # Output data directory is more problematic.
-                                  # If we are at JCMT set it to
-				  # ORAC_DATA_ROOT/reduced/$oracut, else set to
-				  # current directory
-                                  if ($orac_data_root eq "/jcmtarchive")
-                                  {
-                                     $ENV{"ORAC_DATA_OUT"} = 
-				          File::Spec->catdir($orac_data_root,
-							     "reduced","orac", $oracut);
+                }
+             } else {
+                 $ENV{"ORAC_DATA_OUT"} = cwd;
+             }
 
-                                     if ( hostname ne "mamo" )
-                                     {
-                                        orac_err("Please use mamo for ORAC-DR reduction. Aborting.");
-                                        throw ORAC::Error::FatalError("Use mamo for ORAC-DR reduction");
-                                     }
-                                     unless ( -d $ENV{"ORAC_DATA_OUT"} )
-                                     {
+             # Misc stuff
+             $ENV{"ORAC_PERSON"} = "timj";
+             $ENV{"ORAC_SUN"} = "231";
+             $options->{"loop"} = "wait";
+             $options->{"skip"} = 1;
 
-                                        # stuff to do with mamo here
-
-	                                # Parent directory has sticky group
-				        # bit set so this guarantees correct
-				        # group ownership
-
-	                                # mkdir $ORAC_DATA_OUT
-                                        # chmod g+rws $ORAC_DATA_OUT
-
-                                     }
-                                  }
-                                  else
-                                  {
-                                     $ENV{"ORAC_DATA_OUT"} = cwd;
-                                  }
-
-                                  # Misc stuff
-                                  $ENV{"ORAC_PERSON"} = "timj";
-                                  $ENV{"ORAC_SUN"} = "231";
-                                  $options->{"loop"} = "wait";
-                                  $options->{"skip"} = 1;
-
-
-                                  last SWITCH; }
+             last SWITCH; }
+	      
      if ( $instrument eq "UFTI" ) {
 
-                                   # Instrument
-                                   $ENV{"ORAC_INSTRUMENT"} = "UFTI2";
+             # Instrument
+             $ENV{"ORAC_INSTRUMENT"} = "UFTI2";
 
-                                   # Calibration information
-                                   $orac_cal_root =
-				       File::Spec->catdir("ukirt_sw","oracdr_cal")
-					   unless defined $orac_cal_root;
-                                   $ENV{"ORAC_DATA_CAL"} =
-				       File::Spec->catdir($orac_cal_root,"ufti");
+             # Calibration information
+             $orac_cal_root = File::Spec->catdir("ukirt_sw","oracdr_cal")
+		     unless defined $orac_cal_root;
+             $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"ufti");
 				
-                                   # Recipie and Primitive
-                                   undef $ENV{"ORAC_RECIPE_DIR"} 
-                                        if defined $ENV{"ORAC_RECIPE_DIR"};
-                                   undef $ENV{"ORAC_PRIMITIVE_DIR"} 
-                                        if defined $ENV{"ORAC_PRIMITIVE_DIR"};
+             # Recipie and Primitive
+             #undef $ENV{"ORAC_RECIPE_DIR"} 
+             #        if defined $ENV{"ORAC_RECIPE_DIR"};
+             #undef $ENV{"ORAC_PRIMITIVE_DIR"} 
+             #        if defined $ENV{"ORAC_PRIMITIVE_DIR"};
 
-                                   # data directories
-                                   $orac_data_root = "/ukirtdata"
-                                        unless defined $orac_data_root;
+             # data directories
+             $orac_data_root = "/ukirtdata"
+                     unless defined $orac_data_root;
 
-                                   $ENV{"ORAC_DATA_IN"} =
-                                        File::Spec->catdir($orac_data_root,
-							   "raw","ufti",$oracut);
-                                   $ENV{"ORAC_DATA_OUT"} =
-                                        File::Spec->catdir($orac_data_root,
-							   "reduced","ufti",$oracut);
+             $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+	                                                "raw","ufti",$oracut);
+             $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir($orac_data_root,
+	                                              "reduced","ufti",$oracut);
 
-                                  # misc
-                                  $ENV{"ORAC_PERSON"} = "mjc";
-                                  $ENV{"ORAC_SUN"} = "232";
-                                  $options->{"loop"} = "flag";
+             # misc
+             $ENV{"ORAC_PERSON"} = "mjc";
+             $ENV{"ORAC_SUN"} = "232";
+             $options->{"loop"} = "flag";
 
-                                  last SWITCH; }
+             last SWITCH; }
 
      my $nothing = 1;
   }

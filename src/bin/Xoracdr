@@ -164,9 +164,7 @@ my $Label = ORAC::Event->query("Tk")->Label( -width      => 40,
 					      -font => 'Arial',
                                               -text => "Xoracdr $VERSION");
 # Pack the label
-$Label->grid( -row    => 0, 
-              -colum  => 0, 
-	      -sticky => 'w' );
+$Label->grid( -row => 0, -column => 0, -sticky => 'w' );
 
 # Create ProgresBar widget
 my $Progress = ORAC::Event->query("Tk")->ProgressBar( 
@@ -431,7 +429,7 @@ xorac_update_progress('Packed Menu Bar', 30);
 
 # Frame for control panel
 my $main_frame = ORAC::Event->query("Tk")->Frame( -relief      => 'flat',
-                                                  -borderwidth => 0 );
+                                                  -borderwidth => 2 );
 
 # I N S T R U M E N T   L I S T ---------------------------------------------
 
@@ -458,8 +456,7 @@ $main_frame->bind("Listbox", "<B2-Motion>",['scan','dragto',Ev('x'),Ev('y')]);
 
 # Tie the Listbox to the $inst_select scalar, note that this currently
 # uses a locally modifed copy of Tk::Listbox since by default the Listbox
-# widget doesn't come with tied variables, this sucked sufficiently badly
-# that I fixed it (with alot of help from Tim)
+# widget doesn't come with tied variables.
 tie $inst_select, "Tk::Listbox", $instruments;
 
 xorac_update_progress('Packed Instrument List', 40);
@@ -474,32 +471,33 @@ my ( $file_button );
 my @obs;
 
 # button sub-frame
-my $sub_but_frame = $main_frame->Frame( -relief      => 'flat',
-                                        -borderwidth => 0 );
+#my $sub_but_frame = $main_frame->Frame( -relief      => 'flat',
+#                                        -borderwidth => 0 );
 
-$sub_but_frame->grid( -column => 0, -row => 1, -sticky => 'new');
+#$sub_but_frame->grid( -column => 0, -row => 1, -sticky => 'new');
 	
 
 # Config button
-my $cf_button = $sub_but_frame->Button( -text         => 'Setup for Instrument',
-                                        -font             => 'Arial',
-                                        -activeforeground => 'white',
-                                        -activebackground => 'blue');
+#my $cf_button = $sub_but_frame->Button( -text       => 'Setup for Instrument',
+#                                        -font             => 'Arial',
+#                                        -activeforeground => 'white',
+#                                        -activebackground => 'blue');
 
-$cf_button->grid( -column => 0, -row => 1, -sticky => 'we' );
+#$cf_button->grid( -column => 0, -row => 1, -sticky => 'we' );
 
 # Go button
-my $go_button = $sub_but_frame->Button( -text             => 'Start ORAC-DR',
+my $go_button = $main_frame->Button( -text             => 'Start ORAC-DR',
                                         -font             => 'Arial',
                                         -activeforeground => 'white',
                                         -activebackground => 'blue',
-					-state            => 'disabled' );
+					-state            => 'disabled',
+					 );
 
-$go_button->grid( -column => 0, -row => 2, -sticky => 'we' );
+$go_button->grid( -column => 0, -row => 1, -sticky => 'we' );
 
 
-# bind button actions
-$cf_button->bind( "<ButtonPress>", 
+# Bind the left mouse button click to the Tk::Listbox to setup the instrument
+$instruments->bind( "<ButtonPress>", 
        sub { if ( defined $$inst_select[0] ) {
 	        try {
 		  orac_configure_for_instrument(${$inst_select}[0], \%options);
@@ -515,13 +513,18 @@ $cf_button->bind( "<ButtonPress>",
 	        my $error = ORAC::Error->prior;
                 ORAC::Error->flush if defined $error;
 		$go_button->configure( -state => 'normal' );
-		$ENV{"ORAC_RECIPE_DIR"} = $ENV{"ORAC_DATA_OUT"}
-		   unless defined $ENV{"ORAC_RECIPE_DIR"};
+ 
 		if( defined $ENV{"ORAC_INSTRUMENT"} ) {
 		   $menus[3]->menu()->entryconfigure(2, -state => 'normal'); }
 		$menus[3]->menu()->entryconfigure(2, -label =>
 		                        "Edit $$inst_select[0] Recipes");
 
+                $ENV{"ORAC_RECIPE_DIR"} = $ENV{"ORAC_DATA_OUT"}
+		   unless defined $ENV{"ORAC_RECIPE_DIR"};
+	        unless (-d $ENV{"ORAC_RECIPE_DIR"}) { 
+		   $recipe_menu-> entryconfigure(2, -state => 'disabled'); 
+		   undef $ENV{"ORAC_RECIPE_DIR"};
+		}
                 # If we have changed the loop type during setup, the interface
 		# will be in a bad state, we need to correct this...
 		
@@ -586,6 +589,7 @@ $cf_button->bind( "<ButtonPress>",
 		                        -state      => $list_state );
 		$file_button->configure( -state => $file_state ); } } );
 
+# bind the Go button
 $go_button->bind( "<ButtonPress>", 
        sub { if ( $go_button->cget( -state) eq 'active' ) 
              {
@@ -653,6 +657,100 @@ my $ut_entry = $sub_txt_frame->Entry( -exportselection     => 1,
 				      -textvariable        => \$options{"ut"},
 				      -width               => 12 );
 $ut_entry->grid( -column => 1, -row => 0, -sticky => 'ew' );
+
+$ut_entry->bind( "<Return>",
+       sub { if ( defined $$inst_select[0] ) {
+	        try {
+		  orac_configure_for_instrument(${$inst_select}[0], \%options);
+		}
+		catch ORAC::Error::FatalError with
+		{
+	            print "Fatal Error caught by Xoracdr GUI\n";
+		}
+		catch ORAC::Error::UserAbort with
+		{
+	            print "User Abort caught by Xoracdr GUI\n";
+		};
+	        my $error = ORAC::Error->prior;
+                ORAC::Error->flush if defined $error;
+		$go_button->configure( -state => 'normal' );
+		   
+		if( defined $ENV{"ORAC_INSTRUMENT"} ) {
+		   $menus[3]->menu()->entryconfigure(2, -state => 'normal'); }
+		$menus[3]->menu()->entryconfigure(2, -label =>
+		                        "Edit $$inst_select[0] Recipes");
+
+                $ENV{"ORAC_RECIPE_DIR"} = $ENV{"ORAC_DATA_OUT"}
+		   unless defined $ENV{"ORAC_RECIPE_DIR"};
+	        unless (-d $ENV{"ORAC_RECIPE_DIR"}) { 
+		   $recipe_menu-> entryconfigure(2, -state => 'disabled'); 
+		   undef $ENV{"ORAC_RECIPE_DIR"};
+		}
+		 
+                # If we have changed the loop type during setup, the interface
+		# will be in a bad state, we need to correct this...
+		
+		# define the status variables
+		my ( $to_state, $from_state, $list_state, $file_state );
+		my ( $to_lab, $from_lab, $list_lab );
+		my ( $to_ent, $from_ent, $list_ent );
+		
+		# switch on the current loop type
+		SWITCH: {
+		 if ( $options{"loop"} eq "list" ) {
+		   $list_state = 'normal';
+	           $to_state = $from_state = $file_state = 'disabled';
+		   $list_lab = 'black'; $list_ent = '#d9d9d9';
+		   $to_lab = $to_ent = 'grey75';
+		   $from_lab = $from_ent = 'grey75';
+		   $list_lab = $list_ent = 'grey75';
+		   $options{"to"} = $options{"from"} = $options{"file"} = undef;
+		   last SWITCH; }
+		 if ( $options{"loop"} eq "wait" ) {
+		   $to_state = $from_state = 'normal';
+		   $list_state = $file_state = 'disabled';
+		   $to_lab = 'black'; $to_ent = '#d9d9d9';
+		   $from_lab = 'black'; $from_ent = '#d9d9d9';
+		   $list_lab = $list_ent = 'grey75';
+		   $options{"list"} = $options{"file"} = undef;
+		   last SWITCH; }  
+		 if ( $options{"loop"} eq "inf" ) {
+		   $to_state = 'normal';
+		   $list_state = $from_state = $file_state = 'disabled';
+		   $to_lab = 'black'; $to_ent = '#d9d9d9';
+		   $from_lab = $from_ent = $list_lab = $list_ent = 'grey75';
+		   $options{"list"} = $options{"file"} = undef;
+		   last SWITCH; }  
+		 if ( $options{"loop"} eq "flag" ) {
+		   $to_state = $from_state = 'normal';
+		   $list_state = $file_state = 'disabled';
+		   $to_lab = 'black'; $to_ent = '#d9d9d9';
+		   $from_lab = 'black'; $from_ent = '#d9d9d9';
+		   $list_lab = $list_ent = 'grey75';
+		   $options{"list"} = $options{"file"} = undef;
+		   last SWITCH; }
+		 if ( $options{"loop"} eq "file" ) {
+		   $file_state = 'normal';
+		   $to_state = $from_state = $list_state = 'disabled';
+		   $to_lab = $to_ent = 'grey75';
+		   $from_lab = $from_ent = 'grey75';
+		   $list_lab = $list_ent = 'grey75';
+		   $options{"list"} = $options{"to"} = $options{"from"} = undef;
+		 }
+		 my $nothing = 1;
+		}  
+		# configure the widgets 
+                $to_label->configure( -foreground => $to_lab );
+		$to_entry->configure( -background => $to_ent,
+		                      -state      => $to_state );
+		$from_label->configure( -foreground => $from_lab );
+		$from_entry->configure( -background => $from_ent,
+				        -state      => $from_state );
+		$list_label->configure( -foreground => $list_lab);
+		$list_entry->configure( -background => $list_ent,
+		                        -state      => $list_state );
+		$file_button->configure( -state => $file_state ); } } );
+
 
 # From entry field
 $options{"from"} = 1;
@@ -777,7 +875,7 @@ my $sub_dir_frame = $main_frame->Frame( -relief      => 'flat',
                                         -borderwidth => 10 );
 
 $sub_dir_frame->grid( -column => 1, -row => 1, 
-                      -columnspan => 2, -sticky => 'nsew');
+                      -columnspan => 2, -rowspan => 2, -sticky => 'nsew');
 
 # ORAC_DATA_IN entry field
 my $raw_label = $sub_dir_frame->Label(  -text    => 'Raw data path: ',
@@ -821,8 +919,8 @@ xorac_update_progress('Packed Directory Entries', 65);
 my $sub_loop_frame = $main_frame->Frame( -relief      => 'flat',
                                         -borderwidth => 0 );
 
-$sub_loop_frame->grid( -column => 1, -row => 2, 
-                       -columnspan => 2, -sticky => 'nsew');
+$sub_loop_frame->grid( -column => 0, -row => 3, 
+                       -columnspan => 3, -sticky => 'nsew');
 
 			
 # Loop Options label
@@ -929,13 +1027,13 @@ my $flag_checkbutton = $sub_loop_frame->Checkbutton( -anchor      => 'w',
 $flag_checkbutton->grid( -column => 4, -row => 0, -sticky => 'ew' );
 
 # -loop file checkbutton and "file list" button
-$file_button = $sub_loop_frame->Button( -text             => 'File List',
+$file_button = $sub_loop_frame->Button( -text             => 'Select Files',
                                            -font             => 'Arial',
                                            -activeforeground => 'white',
                                            -activebackground => 'blue',
 					   -state            => 'disabled' );
 
-$file_button->grid(-column => 2, -row => 1, -columnspan => 3, -sticky => 'we');
+$file_button->grid(-column => 6, -row => 0, -sticky => 'we');
 
 my $file_checkbutton = $sub_loop_frame->Checkbutton( 
                                 -anchor      => 'w',
@@ -961,7 +1059,7 @@ my $file_checkbutton = $sub_loop_frame->Checkbutton(
 		$options{"list"} = undef;
 		} );
 		
-$file_checkbutton->grid( -column => 1, -row => 1, -sticky => 'ew' );
+$file_checkbutton->grid( -column => 5, -row => 0, -sticky => 'ew' );
 
 $file_button->bind( "<ButtonPress>", 
        sub { if ( $file_button->cget( -state) eq 'active' ) 
@@ -1090,6 +1188,9 @@ catch ORAC::Error::UserAbort with
 # R E V I S I O N  L O G ----------------------------------------------------
 
 # $Log$
+# Revision 1.4  2001/02/28 00:18:08  allan
+# Major GUI rearrange, get rid of setup for instrument button
+#
 # Revision 1.3  2001/02/26 21:10:51  allan
 # Changed revision string regular expression
 #
