@@ -394,12 +394,30 @@ This method configures the display regions.
 
   $device = $self->config_region(%opt);
 
-Returns undef without action if the REGION keyword is not available (since
-this is the port number) or if REGION is not in the allowed range.
-Otherwise the actual modified device name is returned.
+Returns undef without action if the REGION keyword is not available
+(since have no idea where to put it) or if REGION is not in the
+allowed range.  Otherwise the actual modified device name is returned.
 undef is returned if no arguments are supplied.
 
 If the window name is not supplied (WINDOW) then 'default' is assumed.
+
+The regions are defined as follows:
+
+  0 - full screen
+  1 - top left
+  2 - top right
+  3 - bottom left
+  4 - bottom right
+  5 - left
+  6 - right
+  7 - top
+  8 - bottom
+  17:32 - position in 4x4 grid (starting top left)
+
+Currently this routine is not very efficient since the region
+is defined every single time (rather than being defined once
+and then selected). This is especially true for the 4x4 grid -
+this is created every time (all 16 regions).
 
 =cut
 
@@ -414,9 +432,12 @@ sub config_region {
 
   if (exists $options{REGION}) {
     $port = $options{REGION};
-    orac_print("Port is $port\n",'cyan') if $DEBUG;
-    # Port must be an integer between 0 and 8
-    return undef unless ($port =~ /^[0-8]$/);
+    orac_print("Region is $port\n",'cyan') if $DEBUG;
+    # Port must be an integer
+    if ($port !~ /^\d+$/) {
+      orac_err "Supplied region specification ($port) not an integer\n";
+      return undef;
+    }
 
   } else {
     return undef;
@@ -432,24 +453,68 @@ sub config_region {
   my $device = $self->window_dev($window);
 
   # We now have a device and port number
+  # If the region number is less than 9 we use
+  # picdef on a specific region
+  # If it is between 17 and 32 we set up a big 4x4 array
+  # and select the required region with picsel
 
-  # Construct the string that we send to PICDEF
-  my $string;
+  my $status;
+  if ($port >= 0 && $port <= 8) {
 
-  my @regions = (
-		 "cc [1,1]",
-		 "tl", "tr", "bl","br",
-		 "cl [0.5,1.0]", "cr [0.5,1.0]",
-		 "tl [1.0,0.5]", "bl [1.0,0.5]"
-		);
+    # Construct the string that we send to PICDEF
+    my $string;
 
-  # Set the string
-  $string = $regions[$port];
+    my @regions = (
+		   "cc [1,1]",
+		   "tl", "tr", "bl","br",
+		   "cl [0.5,1.0]", "cr [0.5,1.0]",
+		   "tl [1.0,0.5]", "bl [1.0,0.5]"
+		  );
 
-  orac_print("Configuring AGI region $port with $string\n",'cyan') if $DEBUG;
-  # Configure with PICDEF
-  my $status = $self->obj->obeyw("picdef","device=$device nocurrent outline $string");
+    # Set the string
+    $string = $regions[$port];
+
+    orac_print("Configuring AGI region $port with $string\n",'cyan') if $DEBUG;
+    # Configure with PICDEF
+    $status = $self->obj->obeyw("picdef","device=$device nocurrent outline $string");
   
+  } elsif ($port >= 17 && $port <=32) {
+    # 4 x 4 grid
+
+    my $nx = 4;
+    my $ny = 4;
+    my $ntot = $nx * $ny;
+
+    orac_print("Configuring AGI region $port with $nx x $ny grid\n",'cyan') if $DEBUG;
+    $status = $self->obj->obeyw("picdef","device=$device nocurrent mode=a prefix=ORAC xpic=$nx ypic=$ny nooutline");
+
+    # Select the specified region
+    if ($status == ORAC__OK) {
+      # Need to subtract 16 from region number to convert to
+      # index number in 4x4 grid.
+      my $num = $port - 16;
+
+      # unfortunately we want to start at top left but
+      # kappa wants to start at bottom left
+      # We need to map this number to one starting at top left
+
+      # Mapping is ( N = number starting from top left)
+
+      # Kappa N = N - Ntotal - Nx + 
+      #                        2 * Nx * (Ny +1 - int( (N + Nx - 1) / Nx ))
+
+      my $kapn = $num - $ntot - $nx + ( 2 * $nx * ($ny + 1 - int(($num + $nx - 1)/ $nx)));
+
+      # Select the picture
+      $status = $self->obj->obeyw("picsel","ORAC$kapn device=$device");
+    }
+
+  } else {
+    orac_err "Region number ($port) outside allowed range\n";
+    return undef;
+    
+  }
+
   if ($status != ORAC__OK) {
     orac_err("Error configuring region\n");
     return undef;
