@@ -81,6 +81,12 @@ current.
 
 =cut
 
+# Abort if polpack not around
+unless (exists $Mon{polpack_mon}) {
+  orac_err("POLPACK not found -- can not calculate polarisation\n");
+  my $ORAC_STATUS = ORAC__ERROR;
+}
+
 # Create dummy frame object to store P and THETA output
 my $P_frm = $Frm->new;
 my $Theta_frm = $Frm->new;
@@ -91,124 +97,41 @@ my $S2N_frm = $Frm->new;
 my $bin = ($_CALCULATE_POLARISATION_FROM_CUBE_FRAME_{'BIN'} || 2);
 my $Sig2N = ($_CALCULATE_POLARISATION_FROM_CUBE_FRAME_{'S2N'} || 2);
 
-my ($in, @iout, @pout, @ptemp, @thout, @catout);
+my ($in, @iout, @pout, @thout, @catout, @binout);
 
-# Check for POLPACK
-if (exists $Mon{polpack_mon}) {
-
-  # Loop over frames
-  for my $i (1..$Frm->nfiles) {
-  
-    # Output names
-    ($in, $iout[$i]) = $Frm->inout('_pol',$i);
-    ($in, $pout[$i]) = $Frm->inout('_p',$i);
-    ($in, $ptemp[$i]) = $Frm->inout('_ptemp',$i);
-    ($in, $thout[$i]) = $Frm->inout('_theta',$i);
-    ($in, $catout[$i]) = $Frm->inout('_cat', $i);
-
-    # unlink an existing catalogue (assume .FIT)
-    # Since POLVEC will not overwrite
-    unlink "$iout[$i].FIT", "$catout[$i].FIT";
-
-    orac_print "Binning at $bin pixels\n" if $bin > 1;
-    # Just run POLVEC
-    $Mon{polpack_mon}->obeyw('polvec',"in=$in cat=$catout[$i] ang=$thout[$i] p=$ptemp[$i] i=$iout[$i] box=$bin method=mean");
-
-    # Set the I image to be the slice from the cube rather than
-    # the binned image (for now) until we decide whether POLVEC
-    # will bin up or not
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in(,,1) out=$iout[$i] title='Stokes I image'");
-
-
-    # Turn history recording back on
-    $Mon{ndfpack_mon}->obeyw("hisset","ndf=$iout[$i] mode=normal");
-    $Mon{ndfpack_mon}->obeyw("hisset","ndf=$thout[$i] mode=normal");
-    $Mon{ndfpack_mon}->obeyw("hisset","ndf=$ptemp[$i] mode=normal");
-
-
-    # Binning should be done in POLBIN but can be done in POLVEC
-    # so long as we dont use the binned I image
-    # Main reason not to is that we are keeping support for KAPPA
-    # fallback mode and VECPLOT display. VECPLOT does not support
-    # p/theta images different size to the I image
-
-
-    # The p image is thresholded later on.
-
-
-  }
-
-} else {
-
-  # Loop over frames
-  for my $i (1..$Frm->nfiles) {
-  
-    # Output names
-    my ($utemp, $qtemp);
-    ($in, $iout[$i]) = $Frm->inout('_pol',$i);
-    ($in, $pout[$i]) = $Frm->inout('_p',$i);
-    ($in, $ptemp[$i]) = $Frm->inout('_ptemp',$i);
-    ($in, $thout[$i]) = $Frm->inout('_theta',$i);
-    ($in, $utemp) = $Frm->inout('_utemp',$i);
-    ($in, $qtemp) = $Frm->inout('_qtemp',$i);
-
-    # If we are going to bin the IQU cube, we have to do it here.
-    # We can use compave to bin the cube as a whole by [$bin,$bin,1]
-    # and then use SQORST to expand it. There is every likelihood
-    # that WCS are lost during this. Origin information will be lost
-    # when SQORST is used - only compress for now
-
-    my $avout;
-    if ($bin > 1) {
-      orac_print "Binning at $bin pixels\n";
-      $avout = new ORAC::TempFile(0);
-      $Mon{kappa_mon}->obeyw('compave',"in=$in out=".$avout->file." compress=[$bin,$bin,1]");
-      # Use the compave output as the in
-      $in = $avout->file;
-    }
-
-    # Need to extract the I Q and U images from the cube
-    # and setbound to be ,,1 so that maths can combine them
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in(,,1) out=$iout[$i]");  
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in(,,2) out=$qtemp");  
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in(,,3) out=$utemp");  
-
-    # Now setbounds
-    $Mon{ndfpack_mon}->obeyw("setbound","ndf=$qtemp(,,1)");
-    $Mon{ndfpack_mon}->obeyw("setbound","ndf=$utemp(,,1)");
-    $Mon{ndfpack_mon}->obeyw("setbound","ndf=$iout[$i](,,1)");
-
-    # Else use kappa maths
-    # Note that we have Q,U intensities so have to divide by I
-    $Mon{kappa_mon}->obeyw("maths","exp='100*sqrt(ia*ia+ib*ib/(ic*ic))' ia=$qtemp ib=$utemp ic=$iout[$i] out=$ptemp[$i] title='Polarisation'");
-    $Mon{kappa_mon}->obeyw("maths","exp='0.5*atan2d(ia,ib)' ia=$utemp ib=$qtemp out=$thout[$i] title='Polarisation angle'");
-    
-    # Set the units
-    $Mon{ndfpack_mon}->obeyw("setunits", "ndf=$ptemp[$i] units=% ");
-    $Mon{ndfpack_mon}->obeyw("setunits", "ndf=$thout[$i] units=degrees ");
-
-    # Erase q and utemp
-    $Mon{ndfpack_mon}->obeyw("erase","object=$qtemp ok=true");
-    $Mon{ndfpack_mon}->obeyw("erase","object=$utemp ok=true");
-    
-  }
-}
-
-# Independent of KAPPA or POLPACK we now have 
-# P, Theta and I images
-# P is in $ptemp and has to be thresholded
-
-# Loop over nfiles again
+# Loop over frames
 for my $i (1..$Frm->nfiles) {
+ 
+  
+  # Output names
+  ($in, $iout[$i]) = $Frm->inout('_pol',$i);
+  ($in, $pout[$i]) = $Frm->inout('_p',$i);
+  ($in, $thout[$i]) = $Frm->inout('_theta',$i);
+  ($in, $catout[$i]) = $Frm->inout('_cat', $i);
+  ($in, $binout[$i]) = $Frm->inout('_bin', $i);
 
-  # At this pont we have I, P and THETA images
-  # Also, with POLPACK we will have a FITS catalogue
-  # We have already binned up using POLVEC with POLPACK
+  # unlink an existing catalogue (assume .FIT)
+  # Since POLVEC will not overwrite
+  unlink "$iout[$i].FIT", "$catout[$i].FIT", "$binout[$i].FIT";
 
-  # When we dont have CURSA the only thing we can really do
-  # is threshold P and throw away the large values
+#  orac_print "Binning over $bin pixels\n" if $bin > 1;
+  # Just run POLVEC
+  $Mon{polpack_mon}->obeyw('polvec',"in=$in cat=$catout[$i] p=$pout[$i] ang=$thout[$i]");
 
-  if (exists $Mon{catselect} && exists $Mon{polpack_mon}) {
+  # Set the I image to be the slice from the cube
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in(,,1) out=$iout[$i] title='Stokes I image'");
+
+  # Do not change the bounds to 2-D
+  # - too lazy
+
+  # Make sure history is on
+  $Mon{ndfpack_mon}->obeyw("hisset","ndf=$iout[$i] mode=normal");
+
+  # Now bin the catalogue
+  $Mon{polpack_mon}->obeyw("polbin","in=$catout[$i] out=$binout[$i] method=mean box=$bin");
+
+  # only clip if we have CURSA
+  if (exists $Mon{catselect}) {
 
     # threshold catalogue on I>0 && p/dp> 3
     # and write it to a catalogue of the same name as the I image
@@ -217,29 +140,27 @@ for my $i (1..$Frm->nfiles) {
 
     orac_print "Clipping vectors below signal-to-noise of $Sig2N\n";
 
-    # Convert the catalogue to an image in P so that we can generate
-    # a signal to noise map
-
-    my $pimag = new ORAC::TempFile(0);
-    $Mon{polpack_mon}->obeyw("polimage"," in=$iout[$i] coldat=p colvar='dp**2' method=mean shape=true out=" . $pimag->file);
-
-    my $s2n = $Frm->inout('_s2n',$i);
-    $Mon{kappa_mon}->obeyw("maths","exp='ia/sqrt(va)' ia=".$pimag->file ." out=$s2n title='p S/N'");
-
-    $S2N_frm->file($i, $s2n);
-
   } else {
-    orac_print "CURSA/POLPACK not available -- can only threshold p\n";
+    orac_print "CURSA not available -- no clipping available\n";
+
+    # Move the binned catalogur to the final output
+    system( "mv $binout[$i].FIT $iout[$i].FIT");
   }
 
-  # Just threshold the P
-  $Mon{kappa_mon}->obeyw("thresh", "in=$ptemp[$i] out=$pout[$i] thrlo=0.001 thrhi=15.0 newlo=BAD newhi=BAD");
+  # Convert the catalogue to an image in P so that we can generate
+  # a signal to noise map
 
-  # Erase ptemp
-  $Mon{ndfpack_mon}->obeyw("erase","object=$ptemp[$i] ok=true");
+  my $pimag = new ORAC::TempFile(0);
+  $Mon{polpack_mon}->obeyw("polimage"," in=$iout[$i] coldat=p colvar='dp**2' method=mean shape=true out=" . $pimag->file);
 
+  my $s2n = $Frm->inout('_s2n',$i);
+  $Mon{kappa_mon}->obeyw("maths","exp='ia/sqrt(va)' ia=".$pimag->file ." out=$s2n title='p S/N'");
+
+  $S2N_frm->file($i, $s2n);
+  orac_print "S/N image calculated\n";
 
   # Create an .ORAC extension
+  use NDF;
   ndf_begin();
   my ($indf,@null,$xloc, $place);
   my $status = &NDF::SAI__OK;
@@ -266,19 +187,12 @@ for my $i (1..$Frm->nfiles) {
   # Update dummy P and Theta frames
   $P_frm->file($i, $pout[$i]);
   $Theta_frm->file($i,$thout[$i]);
-
 }
 
 
-# Display P and theta and _pol
+#  Display P and theta and _pol
 $Display->display_data($P_frm) if defined $Display;
 $Display->display_data($Theta_frm) if defined $Display;
 $Display->display_data($I_frm) if defined $Display;
 $Display->display_data($S2N_frm) if defined $Display;
-
-# Now undef the temporary frames
-$P_frm = undef;
-$Theta_frm = undef;
-$I_frm = undef;
- 
 
