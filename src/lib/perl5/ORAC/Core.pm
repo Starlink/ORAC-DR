@@ -56,7 +56,6 @@ use ORAC::Recipe;
 use ORAC::Loop;                         # Loop control
 use ORAC::Event;                        # Tk event 
 use ORAC::General;                      # parse_* routines
-use ORAC::Xorac;                        # Tk log window
 use ORAC::Error qw/:try/;
 use ORAC::Constants qw/:status/;        # ORAC status varaibles
 
@@ -396,7 +395,7 @@ sub orac_print_configuration {
     if ($log_options =~ /x/) {
     
       # Delay X-loading until now
-      eval "use Tk; use Tk::TextANSIColor;";
+      eval "use Tk; use Tk::TextANSIColor; use ORAC::Xorac;";
       if ($@) {
         print STDERR "Error loading Tk modules - X logging not available\n";
         print STDERR "Using screen instead\n";
