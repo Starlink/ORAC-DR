@@ -76,7 +76,7 @@ sub new {
   my $status = $disp->configure;
 
   if ($status != ORAC__OK) {
-    croak "Error launching/contacting or configuring Gaia. It is unlikely that this can be fixed by retrying from within ORACDR. Please rerun either with the display switched off or with a different display device selected.";
+    croak "Error launching/contacting or configuring Gaia. It is unlikely that this can be fixed by retrying from within ORAC-DR. Please rerun either with the display switched off or with a different display device selected.";
   }
 
   # Return object
@@ -148,7 +148,7 @@ to launching a new display device (ie running up GAIA itself).
 
   $status = $Display->create_dev($win, $name);
 
-For GAIA (V E<lt>= 2.3-2) the device name ($dev) must be an integer.
+For GAIA (V E<lt>= 2.3-2) the device name ($name) must be an integer.
 (enforced if the newdev() method is used).
 
 ORAC status is returned. 
@@ -186,7 +186,12 @@ sub create_dev {
   # Wait for GAIA to configure itself
   # need the delay to prevent us sending the next request before
   # the gaia internals recognise the new clone
-  sleep 5;
+  # Choose to do this by asking gaia to tell us when the window
+  # exists rather than simply sleeping for N seconds
+  while (1) {
+    my ($status, $exists) = $self->send_to_gaia("winfo exists $clone.image");
+    last if ($status == ORAC__OK && $exists);
+  }
 
   return ORAC__OK;
 }
@@ -251,7 +256,7 @@ sub launch {
 
     }
 
-    # Okay - didn't work, launch a new gaia
+    # Okay - didn't work, launch a new gaia (this is not a method)
     &_launch_new_gaia();
 
     # increment counter
@@ -394,6 +399,7 @@ Sends the supplied command to gaia. Any response from Gaia is returned.
 
 The returned status is translated into an ORAC status (either ORAC__OK
 or ORAC__ERROR). On error, the return_string contains the error message.
+The status returned is the status of the last command processed by GAIA.
 
 =cut
 
@@ -405,84 +411,115 @@ sub send_to_gaia {
 
   my @command = @_;
   my @results;
-  my $command = '';
   my $num_commands = @command;
   print "number of commands = $num_commands\n" if $DEBUG;
-  my ($reply, $reply2, $result);
-  my $message = '';
+
+
+  # Combine all the commands into a single string prefixed by
+  # remotetcl (the internal gaia command for evaluating tcl strings)
+  my $command = '';
   foreach (@command) {
     $command .= "remotetcl \"$_\"\n";
   }
   print "\n************ GAIA Command: $command\n" if $DEBUG;
-  my $sock = $self->sock();
 
   # Check socket
-  my $timeout = 30.0; # no point waiting longer than 30 seconds
-                      # even if the images are enormous
-  my $res = $self->sel->can_write($timeout);
+  # Set timeout for GAIA select() checks.
+  # No point waiting longer than 30 seconds even if images are very large
+  my $timeout = 30.0;
 
   # have a problem if returns undef from can_write
-  unless (defined $res) {
-    return (ORAC__ERROR, 'Socket not writable - timeout');
-  }
+  # Return if we can't write to the socket
+  return (ORAC__ERROR, 'Socket not writable - timeout')
+    unless $self->sel->can_write($timeout);
 
+  # Get the socket object
+  my $sock = $self->sock();
+
+  # Send the command to gaia
   print "prepping to send..." if $DEBUG;
   print $sock $command;
   print "completed send...\n" if $DEBUG;
-  $message = '';
+
+  # set up a status variable
   my $status;
-  for ( my $i = 0; $i < $num_commands; $i++ ) {
-    $reply2 = '';
+
+  # We expect to receive a reply from GAIA
+  # for each command we sent so loop over each command
+
+  for my $i ( 1 .. $num_commands ) {
+
     print "prepping to receive..." if $DEBUG;
-    my $a = '';
-    $reply2 = '';
 
     # Check that the socket is readable, up to timeout
-    my $res = $self->sel->can_read($timeout);
 
-    unless (defined $res) {
-      return (ORAC__ERROR, 'GAIA Socket not readable - timeout');
-    }
+    return (ORAC__ERROR, 'GAIA Socket not readable - timeout')
+      unless $self->sel->can_read($timeout);
 
     # Receive the first status string (should be a status and a list of bytes
     # terminated with a \n
-    while (!($reply2 =~ /[\n]/)) {
+    # We keep on reading a single character at a time until we
+    # get a \n.
+    # We can not use <$sock> in this case since we have printed to
+    # it earlier.
+    # Go into an infinite loop until we get a \n
+    # Do not count the number of loops - hopefully the recv will
+    # fail if we get into trouble.
+
+    my $result = '';
+    while ( 1 ) {
       # Recv should return undef on error but this does not seem
       # to work on Solaris -- check for $! explicitly instead!!!
-      recv ($sock, $reply2, 1, 0);
+      recv ($sock, my $reply1, 1, 0);
       return (ORAC__ERROR, "Error reading initial byte stream from GAIA socket: $!") if $!;
-#      use Data::Dumper;
-#      print "Return valus is $ret and reply is $reply2\n";
 
-#      croak "Error ret is ".Dumper(\$ret).":$!\n" unless defined $ret;
-#      croak "This cant be right - ret is blank" if $ret eq '';
+      # Jump out the loop if we have a newline
+      last if $reply1 eq "\n";
 
-      $a.=$reply2;
+      # Append the new byte
+      $result .= $reply1;
     }
-    $result = $a;
+
+    # We now have the initial response from GAIA.
+    # Should be a status code and the number of bytes to receive
+    # If the status is bad (!=0) we still need to receive the message
+    # since that is then the error message
+
+    ($status, my $nbytes) = split /\s/, $result,2;
     print "completed receive of status and byte length...\n" if $DEBUG;
-    print "i = $i.  results = $result\n" if $DEBUG;
-    ($status, my $byte) = split / /, $result,2;
-    while ($byte > 4096) {
-      print "bytes are huge!!\n" if $DEBUG;
+    print "Command number = $i  Status $status NBytes $nbytes\n" 
+      if $DEBUG;
+
+
+    # If the number of bytes to receive is greater than 4096 we
+    # have to break the read of the reply into smaller chunks of
+    # 4096 bytes each
+
+    my $message = ''; # The reply string
+    while ($nbytes > 0) {
+
+      # Work out how many bytes to look for
+      # Either 4096 or the number we have left if lower
+      my $recvbytes = ($nbytes > 4096 ? 4096 : $nbytes);
+
+      print "Preparing to receive $recvbytes bytes from GAIA\n" if $DEBUG;
       # Recv should return undef on error but this does not seem
       # to work on Solaris -- check for $! explicitly instead!!!
-      recv ($sock, $reply2, 4096, 0);
+      recv ($sock, my $reply2, $recvbytes, 0);
       return (ORAC__ERROR, "Error reading data from GAIA socket: $!")
 	if $!;
-      $byte -=4096;
+
+      # Append the string
       $message .= $reply2;
+
+      # Reduce nbytes by 4096 and loop if required
+      $nbytes -= 4096;
+
     }
-    print "prepping to receive actual data...\n" if $DEBUG;
-    
-    # Recv should return undef on error but this does not seem
-    # to work on Solaris -- check for $! explicitly instead!!!
-    recv ($sock, $reply, $byte, 0);
-    return (ORAC__ERROR, "Error reading data from GAIA socket: $!") if $!;
-    $message .= $reply;
+
+    # Store the final message into the array
     push (@results, $message);
-    print "results received: $message\n" if $DEBUG;
-    $message = '';
+    print "results received for command $i: $message\n" if $DEBUG;
   }
   
   # Translate status code
@@ -493,7 +530,6 @@ sub send_to_gaia {
   }
 
   # Return the results
-  return ($status, $results[0])  if ($num_commands < 2);
   return ($status, @results);
 }
 
@@ -536,13 +572,17 @@ If an image name does not include an extension then '.sdf' is appended.
 Takes a file name and arguments stored in a hash.
 
   $disp->image("filename", \%options)
-
+  $disp->image("filename", { WINDOW => 2 });
 
 Currently no image sectioning is supported.
 Display range can be adjusted with ZAUTOSCALE, ZMIN and ZMAX.
 
 Note that for GAIA, ZAUTOSCALE implies a 95 percent cut level and
 not 100 percent.
+
+Will attempt to relaunch GAIA if it can not be contacted.
+Will attempt to create a new clone window if a clone can not be
+contacted even though it has been used previously.
 
 ORAC status is returned.
 
@@ -587,10 +627,45 @@ sub image {
   }
   # and convert it into a device id
   my $device = $self->window_dev($window);
+
+  # Need to test that the device actually exists even if gaia 
+  # is running
+  my ($status, $exists) = $self->send_to_gaia("winfo exists $device");
+
+  if ($status == ORAC__OK) {
+    unless ($exists) {
+      # Window does not exist so we should try to relaunch it
+      # Need to get the ID name from the requested device name
+      # this is the number at the end of the device string
+      $device =~ /(\d+)$/;
+      my $name = $1;
+      if (defined $name) {
+	orac_warn "Attempting to restart GAIA window $window ($device)\n";
+	$status = $self->create_dev($window, $name);
+	return $status if $status == ORAC__ERROR;
+      } else {
+	orac_err "Could not determine GAIA name from $device\n";
+	orac_err "Therefore could not try to relaunch clone window $window\n";
+	return ORAC__ERROR;
+      }
+
+    }
+  } else {
+    # This probably means that GAIA is no longer attached to the
+    # socket. WE have the ability to try to relaunch if required.....
+    # That would require use clearing the device lookup table
+    # and rerunning launch() and configure()
+    orac_warn "Could not talk to GAIA. Attempting to relaunch GAIA\n";
+    %{ $self->dev } = ();
+    $self->launch;
+    $status = $self->configure;
+    $device = $self->window_dev($window); # Get an updated device name
+  }
+
   
   # We now need to retrieve the image id associated with this
   # clone from gaia
-  my ($status, $image) = $self->send_to_gaia("$device get_image");
+  ($status, my $image) = $self->send_to_gaia("$device get_image");
 
   # Should be able to check the error message from herre and attempt
   # to relaunch a missing window.
@@ -598,8 +673,9 @@ sub image {
     orac_err "Error: $image\n";
     orac_err "ORAC::Display::GAIA - Error retrieving image id\n";
     orac_err "Lost connection to GAIA window! Did you close it by mistake?\n".
-      "If you want the GAIA displays back, restart the pipeline\n".
-	"at a convenient time. If you want to have fewer GAIA windows\n".
+      "Will attempt to relaunch GAIA next time around\n".
+      "Restart the pipeline at a convenient time if this fails\n".
+	"If you want to have fewer GAIA windows\n".
 	  "configure your display - type \"oracman Display\" for info.\n";
 
     return ORAC__ERROR;
@@ -692,7 +768,9 @@ $Id$
 
 =head1 AUTHORS
 
-Tim Jenness (t.jenness@jach.hawaii.edu) and Casey Best (cbest@uvic.ca).
+Tim Jenness (t.jenness@jach.hawaii.edu).
+Communication code written initially by Casey Best (cbest@uvic.ca)
+based on tcl code from Peter Draper.
 
 =head1 COPYRIGHT
 
