@@ -370,10 +370,10 @@ sub orac_determine_inst_classes {
     $calclass = "ORAC::Calib::UIST";
     $instclass = "ORAC::Inst::NIRI";
   } elsif ($inst eq 'CLASSICCAM') {
-    $groupclass = "ORAC::Group::CLASSICCAM";
-    $frameclass = "ORAC::Frame::CLASSICCAM";
-    $calclass   = "ORAC::Calib::CLASSICCAM";
-    $instclass  = "ORAC::Inst::CLASSICCAM";
+    $groupclass = "ORAC::Group::ClassicCam";
+    $frameclass = "ORAC::Frame::ClassicCam";
+    $calclass   = "ORAC::Calib::ClassicCam";
+    $instclass  = "ORAC::Inst::ClassicCam";
   } else {
     orac_err("Instrument $inst is not currently supported in ORAC-DR\n");
     return ();
