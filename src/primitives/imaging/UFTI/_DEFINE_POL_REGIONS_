@@ -12,19 +12,22 @@
 #    A polarimetry frame is divided into four sections: object and sky
 #    for the e- and o-beams.  This primitive returns the extents of these
 #    regions for subsequent extraction and sky subtraction.  The frames
-#    are deemed to be aligned approximately with Right Ascension and
-#    Declination and the jittering is along the Right-ascension axis.
+#    are deemed to be aligned approximately with right ascension and
+#    declination and the jittering is along the right-ascension axis.
 #    Also the order of the regions from north to south is e target,
-#    o target, e sky, and o sky.
+#    o target, e sky, and o sky for the full array.  For the sub-array
+#    there are only two regions e target and o target in the same
+#    direction; for each of these the sky is extracted from a region
+#    away from the source.
 #
 #    At present fixed limits are used, but sigma-clipped profiling is
 #    possible to determine where each region starts and ends along the
-#    Declination axis.
+#    declination axis.
 #    
 #    The current target limits are 30% to 70% of the frame width about
-#    the jittered Right-ascension centre using the telescope offsets, or
+#    the jittered right-ascension centre using the telescope offsets, or
 #    10% to 90% if argument EXTENDED is true.  Thus the limits define a
-#    section 40% or 80% of the Right-ascension width of the frame
+#    section 40% or 80% of the right-ascension width of the frame
 #    roughly centred on the source.  The restriction is to make mosaics
 #    with few pixels not derived from all contributing jittered frames,
 #    since there are usually only three jitter positions, and to allow
@@ -32,7 +35,9 @@
 #    limits could be expanded for extended sources.
 #
 #    The current sky limits are 1% to 99% of the frame width along the
-#    Right-ascension axis.
+#    right-ascension axis for the full array.  For the sub-array these
+#    are either 5% to 40% or 60% to 95% depending on the offset of the
+#    source.
 #
 # Arguments:
 #    ESBOUNDS( 4 ) = INTEGER (Returned)
@@ -42,7 +47,7 @@
 #       The pixel bounds defining the e-beam target region in a raw
 #       polarisation frame.
 #    EXTENDED = LOGICAL (Given)
-#       If true (1), wider Right Ascension limits are used for the
+#       If true (1), wider right ascension limits are used for the
 #       target regions, 10% to 90%, instead of 30% to 70%. [0]
 #    OSBOUNDS( 4 ) = INTEGER (Returned)
 #       The pixel bounds defining the o-beam sky region in a raw
@@ -55,11 +60,18 @@
 #    -  This primitive is suitable for UFTI.
 #    -  It only operates on object frames.
 #    -  Fractional pixel limits are rounded to the next lower integer.
-#    -  The Declination pixel limits for the sections are as follows.
+#    -  The declination pixel limits for the sections are as follows.
 #    o sky: 69--264; e sky: 320--484; o target: 601--764; e target: 
 #    824--988.
+#    -  The declination limits for the sections when using the
+#    sub-array are as follows.
+#    o target, sky: 77--241; e target, sky: 287--451.
+#    -  This primitive decides if it is using the sub-array by looking
+#    at the size of the array in the x-dimension.  If this value is larger
+#    than 1000, then the full array is assumed.  Otherwise, the sub-array
+#    is assumed.
 #    -  Allowance is made if the chip is rotated such that the
-#    Declination axis increases or decreases with x.
+#    declination axis increases or decreases with x.
 #
 #
 # Tasks:
@@ -67,9 +79,10 @@
 #
 # Authors:
 #    MJC: Malcolm J. Currie (JAC)
+#    BC: Brad Cavanagh (JAC)
 #
 # Copyright:
-#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 #
 #-
@@ -77,7 +90,7 @@
 # This should only be performed on OBJECT frames.
     if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ) {
 
-# Find the width limits in Right Ascension of the target regions.
+# Find the width limits in right ascension of the target regions.
        my $extended = $_DEFINE_POL_REGIONS_{EXTENDED};
        $extended = defined( $extended ) ? $extended: 0;
 
@@ -106,15 +119,21 @@
        $Mon{"ndfpack_mon"}->obeyw("ndftrace", "$param1");
 
 # Extract the bounds of the frame.
-       ( $ORAC_STATUS, my @lbnd ) = $Mon{"ndfpack_mon"}->get("ndftrace","lbound");
-       ( $ORAC_STATUS, my @ubnd ) = $Mon{"ndfpack_mon"}->get("ndftrace","ubound");
+       ( $ORAC_STATUS, my @lbnd ) = $Mon{"ndfpack_mon"}->get( "ndftrace", "lbound" );
+       ( $ORAC_STATUS, my @ubnd ) = $Mon{"ndfpack_mon"}->get( "ndftrace", "ubound" );
 
 # Obtain the dimensions.
        my $xdim = $ubnd[ 0 ] - $lbnd[ 0 ] + 1;
        my $ydim = $ubnd[ 1 ] - $lbnd[ 1 ] + 1;
 
-# Find the offset in Right Ascension as a fraction of
-# frame width (along axis closely aligned to the Right Ascension).  Here
+# Determine if we're using the sub-array.
+      my $subarray = 0;
+      if ( $xdim < 1000 ) {
+        $subarray = 1;
+      }
+
+# Find the offset in right ascension as a fraction of
+# frame width (along axis closely aligned to the right ascension).  Here
 # we assume that rotation is either near 0 or +/-90 degrees.  In practice
 # this probably doesn't matter unless a non-square chip is introduced.
        my $ra_off_f;
@@ -128,18 +147,44 @@
 # =========================
 
 # Set the limits of the e- and o-beam target and sky as percentages
-# of the image, along the axis perpendicular to the bands (Declination
-# direction).  The offsets are by convention only in Right Ascension.
-        my @et_lbnd_f = ( $ra_frac_l + $ra_off_f, 0.805 );
-        my @et_ubnd_f = ( $ra_frac_u + $ra_off_f, 0.965 );
-        my @ot_lbnd_f = ( $ra_frac_l + $ra_off_f, 0.587 );
-        my @ot_ubnd_f = ( $ra_frac_u + $ra_off_f, 0.747 );
-        my @es_lbnd_f = ( 0.01, 0.313 );
-        my @es_ubnd_f = ( 0.99, 0.473 );
-        my @os_lbnd_f = ( 0.01, 0.068 );
-        my @os_ubnd_f = ( 0.99, 0.258 );
+# of the image, along the axis perpendicular to the bands (declination
+# direction).  The offsets are by convention only in right ascension.
+        my ( @et_lbnd_f, @et_ubnd_f, @ot_lbnd_f, @ot_ubnd_f );
+        my ( @es_lbnd_f, @es_ubnd_f, @os_lbnd_f, @os_ubnd_f );
+        if ( $subarray ) {
+           @et_lbnd_f = ( $ra_frac_l + $ra_off_f, 0.470 );
+           @et_ubnd_f = ( $ra_frac_u + $ra_off_f, 0.150 );
+           @ot_lbnd_f = ( $ra_frac_l + $ra_off_f, 0.880 );
+           @ot_ubnd_f = ( $ra_frac_u + $ra_off_f, 0.560 );
 
-# Flip the axes if Right Ascension is aligned with y axis of the frame.
+# We need to define different sky regions depending on the offset,
+# since we want to be as far from the source as possible.
+           if ( $ra_off_f > 0 ) {
+              @es_lbnd_f = ( 0.05, 0.470 );
+              @es_ubnd_f = ( 0.40, 0.150 );
+              @os_lbnd_f = ( 0.05, 0.880 );
+              @os_ubnd_f = ( 0.40, 0.560 );
+           } else {
+              @es_lbnd_f = ( 0.60, 0.470 );
+              @es_ubnd_f = ( 0.95, 0.150 );
+              @os_lbnd_f = ( 0.60, 0.880 );
+              @os_ubnd_f = ( 0.95, 0.560 );
+           }
+ 
+        } else {
+
+# We're using the full array.
+           @et_lbnd_f = ( $ra_frac_l + $ra_off_f, 0.805 );
+           @et_ubnd_f = ( $ra_frac_u + $ra_off_f, 0.965 );
+           @ot_lbnd_f = ( $ra_frac_l + $ra_off_f, 0.587 );
+           @ot_ubnd_f = ( $ra_frac_u + $ra_off_f, 0.747 );
+           @es_lbnd_f = ( 0.01, 0.313 );
+           @es_ubnd_f = ( 0.99, 0.473 );
+           @os_lbnd_f = ( 0.01, 0.068 );
+           @os_ubnd_f = ( 0.99, 0.258 );
+       }
+
+# Flip the axes if right ascension is aligned with y axis of the frame.
        if ( abs( $rotangle ) > 45 ) {
           @et_lbnd_f = reverse( @et_lbnd_f );
           @et_ubnd_f = reverse( @et_ubnd_f );
@@ -151,7 +196,7 @@
           @os_ubnd_f = reverse( @os_ubnd_f );
        }
 
-# Allow for positive right-angle rotation, i.e. where the Declination axis
+# Allow for positive right-angle rotation, i.e. where the declination axis
 # corresponds to the negative x axis.  To get the same pixel, as we
 # round down, add a half pixel more than 1 in addition to normal one
 # pixel extra to subtract from.  Switch the bounds so that the upper is
@@ -171,31 +216,31 @@
 # Finally ensure the lower bound is is indeed lower than the upper.
 # e-beam, target
        my ( $et_x_l, $et_x_u, $et_y_l, $et_y_u );
-       $et_x_l = int( min( $et_lbnd_f[ 0 ], $et_ubnd_f[ 0 ] ) * $xdim );
-       $et_x_u = int( max( $et_lbnd_f[ 0 ], $et_ubnd_f[ 0 ] ) * $xdim );
-       $et_y_l = int( min( $et_lbnd_f[ 1 ], $et_ubnd_f[ 1 ] ) * $ydim );
-       $et_y_u = int( max( $et_lbnd_f[ 1 ], $et_ubnd_f[ 1 ] ) * $ydim );
+       $et_x_l = int( min( $et_lbnd_f[ 0 ], $et_ubnd_f[ 0 ] ) * $xdim ) + $lbnd[ 0 ] - 1;
+       $et_x_u = int( max( $et_lbnd_f[ 0 ], $et_ubnd_f[ 0 ] ) * $xdim ) + $lbnd[ 0 ] - 1;
+       $et_y_l = int( min( $et_lbnd_f[ 1 ], $et_ubnd_f[ 1 ] ) * $ydim ) + $lbnd[ 1 ] - 1;
+       $et_y_u = int( max( $et_lbnd_f[ 1 ], $et_ubnd_f[ 1 ] ) * $ydim ) + $lbnd[ 1 ] - 1;
 
 # o-beam, target
        my ( $ot_x_l, $ot_x_u, $ot_y_l, $ot_y_u );
-       $ot_x_l = int( min( $ot_lbnd_f[ 0 ], $ot_ubnd_f[ 0 ] ) * $xdim );
-       $ot_x_u = int( max( $ot_lbnd_f[ 0 ], $ot_ubnd_f[ 0 ] ) * $xdim );
-       $ot_y_l = int( min( $ot_lbnd_f[ 1 ], $ot_ubnd_f[ 1 ] ) * $ydim );
-       $ot_y_u = int( max( $ot_lbnd_f[ 1 ], $ot_ubnd_f[ 1 ] ) * $ydim );
+       $ot_x_l = int( min( $ot_lbnd_f[ 0 ], $ot_ubnd_f[ 0 ] ) * $xdim ) + $lbnd[ 0 ] - 1;
+       $ot_x_u = int( max( $ot_lbnd_f[ 0 ], $ot_ubnd_f[ 0 ] ) * $xdim ) + $lbnd[ 0 ] - 1;
+       $ot_y_l = int( min( $ot_lbnd_f[ 1 ], $ot_ubnd_f[ 1 ] ) * $ydim ) + $lbnd[ 1 ] - 1;
+       $ot_y_u = int( max( $ot_lbnd_f[ 1 ], $ot_ubnd_f[ 1 ] ) * $ydim ) + $lbnd[ 1 ] - 1;
 
 # e-beam, sky
        my ( $es_x_l, $es_x_u, $es_y_l, $es_y_u );
-       $es_x_l = int( min( $es_lbnd_f[ 0 ], $es_ubnd_f[ 0 ] ) * $xdim );
-       $es_x_u = int( max( $es_lbnd_f[ 0 ], $es_ubnd_f[ 0 ] ) * $xdim );
-       $es_y_l = int( min( $es_lbnd_f[ 1 ], $es_ubnd_f[ 1 ] ) * $ydim );
-       $es_y_u = int( max( $es_lbnd_f[ 1 ], $es_ubnd_f[ 1 ] ) * $ydim );
+       $es_x_l = int( min( $es_lbnd_f[ 0 ], $es_ubnd_f[ 0 ] ) * $xdim ) + $lbnd[ 0 ] - 1;
+       $es_x_u = int( max( $es_lbnd_f[ 0 ], $es_ubnd_f[ 0 ] ) * $xdim ) + $lbnd[ 0 ] - 1;
+       $es_y_l = int( min( $es_lbnd_f[ 1 ], $es_ubnd_f[ 1 ] ) * $ydim ) + $lbnd[ 1 ] - 1;
+       $es_y_u = int( max( $es_lbnd_f[ 1 ], $es_ubnd_f[ 1 ] ) * $ydim ) + $lbnd[ 1 ] - 1;
 
 # o-beam, sky
        my ( $os_x_l, $os_x_u, $os_y_l, $os_y_u );
-       $os_x_l = int( min( $os_lbnd_f[ 0 ], $os_ubnd_f[ 0 ] ) * $xdim );
-       $os_x_u = int( max( $os_lbnd_f[ 0 ], $os_ubnd_f[ 0 ] ) * $xdim );
-       $os_y_l = int( min( $os_lbnd_f[ 1 ], $os_ubnd_f[ 1 ] ) * $ydim );
-       $os_y_u = int( max( $os_lbnd_f[ 1 ], $os_ubnd_f[ 1 ] ) * $ydim );
+       $os_x_l = int( min( $os_lbnd_f[ 0 ], $os_ubnd_f[ 0 ] ) * $xdim ) + $lbnd[ 0 ] - 1;
+       $os_x_u = int( max( $os_lbnd_f[ 0 ], $os_ubnd_f[ 0 ] ) * $xdim ) + $lbnd[ 0 ] - 1;
+       $os_y_l = int( min( $os_lbnd_f[ 1 ], $os_ubnd_f[ 1 ] ) * $ydim ) + $lbnd[ 1 ] - 1;
+       $os_y_u = int( max( $os_lbnd_f[ 1 ], $os_ubnd_f[ 1 ] ) * $ydim ) + $lbnd[ 1 ] - 1;
 
 # Calculate and store the e-target bounds.
 # ========================================
@@ -226,18 +271,21 @@ _DEFINE_POL_REGIONS_ -- Determine the extents of object and sky regions of an UF
 A polarimetry frame is divided into four sections: object and sky
 for the e- and o-beams.  This primitive returns the extents of these
 regions for subsequent extraction and sky subtraction.  The frames
-are deemed to be aligned approximately with Right Ascension and
-Declination and the jittering is along the Right-ascension axis.
-Also the order of the regions from north to south is e target,
-o target, e sky, and o sky.
+are deemed to be aligned approximately with right ascension and
+declination and the jittering is along the right-ascension axis.
+Also the order of the regions from north to south is I<e> target,
+I<o> target, I<e> sky, and I<o> sky.  For the sub-array there
+are only two regions I<e> target and I<o> target in the same
+direction; for each of these the sky is extracted from a region away
+from the source.
 
 At present fixed limits are used, but sigma-clipped profiling is
 possible to determine where each region starts and ends along the
-Declination axis.
+declination axis.
 
 The current target limits are 30% to 70% of the frame width about
-the jittered Right-ascension centre using the telescope offsets.
-Thus the limits define a section 40% of the Right-ascension width
+the jittered right-ascension centre using the telescope offsets.
+Thus the limits define a section 40% or 80% of the right-ascension width
 of the frame roughly centred on the source.  The restriction is to
 make mosaics with few pixels not derived from all contributing
 jittered frames, since there are usually only three jitter positions,
@@ -245,7 +293,9 @@ and to allow a reasonable jitter step.  If the jitter size was
 restricted, the limits could be expanded for extended sources.
 
 The current sky limits are 1% to 99% of the frame width along the
-Right-ascension axis.
+right-ascension axis for the full array.  For the sub-array these are
+either 5% to 40% or 60% to 95% depending on the offset of the
+source.
 
 =head1 ARGUMENTS
 
@@ -291,13 +341,27 @@ Fractional pixel limits are rounded to the next lower integer.
 
 =item *
 
-The Declination pixel limits for UFTI sections are as follows.
-o sky: 69--264; e sky: 320--484; o target: 601--764; e target: 824--988.
+The declination pixel limits for UFTI sections are as follows.
+I<o> sky: 69--264; I<e> sky: 320--484; I<o> target: 601--764;
+I<e> target: 824--988.
+
+=item *
+
+The right-ascension pixel limits for the sections when using the
+sub-array are as follows.
+I<o> target, sky: 77--241; I<e> target, sky: 287--451.
+
+=item *
+
+This primitive decides if it is using the sub-array by looking
+at the size of the array in the I<x>-dimension.  If this value is larger
+than 1000, then the full array is assumed.  Otherwise, the sub-array
+is assumed.
 
 =item *
 
 Allowance is made if the chip is rotated such that the
-Declination axis increases or decreases with x.
+declination axis increases or decreases with x.
 
 =back
 
@@ -307,11 +371,12 @@ KAPPA: NDFTRACE.
 
 =head1 AUTHORS
 
-MJC: Malcolm J. Currie (JAC)
+Malcolm J. Currie (JAC, Starlink) <mjc@star.rl.ac.uk>
+Brad Cavanagh (JAC) <b.cavanagh@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
