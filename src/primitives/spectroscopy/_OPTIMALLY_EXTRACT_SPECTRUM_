@@ -1,0 +1,238 @@
+# _OPTIMALLY_EXTRACT_SPECTRUM_ -*-perl-*-
+#
+# use optimal extraction to extract positive and negative rows to create a spectrum
+
+=head1 NAME
+
+_OPTIMALLY EXTRACT SPECTRUM_ - uses optimal extraction algorithm to extract positive and negative spectra from a reduced group file
+
+=head1 DESCRIPTION
+
+This primitive uses the optimal extraction algorithm used in the
+Figaro task 'optextract' to extract five rows centred on the positive
+and negative spectra in a reduced group file, then adds the two
+together to give a final spectrum.
+
+=head1 PARAMETERS
+
+=over 4
+
+=item POSROW
+
+Defines the centre row of the positive spectrum.  If not defined
+this value is obtained from the row index file. If a value can not
+be determined from the index file the default is to use row 96.
+
+=item NEGROW
+
+Defines the centre row of the negative spectrum.  If this parameter is
+not defined, this value will be retrieved from the index file.
+If the parameter can not be determined from the index file it will
+be calculated from the offset information in the header. If it still
+can not be determined (no relevant FITS headers) a row of 106 will be
+used.
+
+=back
+
+=head1 ORAC
+
+=head2 Engines referenced
+
+KAPPA, FIGARO
+
+=head2 Tasks called
+
+=over 4
+
+=item kappa_mon
+
+sub
+
+=item figaro1
+
+optextract, profile
+
+=back
+
+=head2 Objects addressed
+
+$Grp
+
+=head1 NOTES
+
+If the _COADD_PAIRS_AND_GROUP_ primitive is modified so that the headers
+from the OBJECT observation are written to the reduced group file, the
+negative row calculations will be incorrect.  See the NOTES and
+comments for the _COADD_PAIRS_AND_GROUP_ primitive for further
+clarification.
+
+For pair reduction, this primitive does nothing unless a completed
+pair is available.
+
+=head2 REVISION
+
+  $Id$
+
+=head1 AUTHOR
+
+b.cavanagh@jach.hawaii.edu
+
+=cut
+
+# Cosine for angles measured in degrees.
+    sub cosdeg { cos($_[0] * 3.14159265359 / 180 ); }
+
+# Validation
+# ==========
+# No need to bother if this is a pair reduction and we don't yet have
+# a pair.  Proceed regardless for non-pair reduction.
+    my $reduce_group = $Frm->uhdr( "PAIR_COMPLETE" );
+    $reduce_group = defined( $reduce_group ) ? $reduce_group : 1;
+
+# If we are processing the group, proceed.
+    if ( $reduce_group ) {
+
+       my $group = $Grp->file;
+       my $out = $Grp->raw . "_sp";
+
+       my $groupfile = $group . $Grp->filesuffix;
+       my $outfile = $out . $Grp->filesuffix;
+
+# Look for a missing or out-of-date output file, the latter by
+# comparing the modification times of the group and output files.
+       if ( ( ( $Grp->file_exists ) && ( !( -e $outfile ) ) ) ||
+            ( ( -e $outfile ) &&
+              ( ( stat( $groupfile ) )[9] > ( stat( $outfile ) )[9] ) ) ) {
+
+# Obtain the rows to extract.
+# ===========================
+
+# First look in the arguments
+          my $posrow = ( $_OPTIMALLY_EXTRACT_SPECTRUM_{POSROW} || undef );
+          my $negrow = ( $_OPTIMALLY_EXTRACT_SPECTRUM_{NEGROW} || undef );
+
+# If posrow or negrow are not defined we go and get it from the index file
+          unless ( defined $posrow && defined $negrow ) {
+             my @rows = $Cal->rows;
+             unless ( defined $posrow ) {
+                if ( defined $rows[0] ) {
+                   $posrow = $rows[ 0 ];
+                } else {
+                   $posrow = 96; # take the default
+                }
+             }
+
+             $negrow = $rows[ 1 ] unless defined $negrow;
+          }
+
+# Determine the location of the negative row using the offsets.
+# -------------------------------------------------------------
+
+# If we could not find a negative row, calculate it.   This is
+# effectively saying the the Cal->rows method returned nothing at all
+# (i.e. there is no standard yet).
+          if ( !defined( $negrow ) ) {
+
+# If the user hasn't stated the negative row as a parameter, we need to
+# calculate it.  We use the sky co-ordinates and offsets of the sky
+# frame.
+             my $raoff  = $Grp->uhdr( "SKY_RAOFF" );
+             my $decoff = $Grp->uhdr( "SKY_DECOFF" );
+#    my $basera = $Grp->uhdr( "SKY_RABASE" );
+#    my $basedec= $Grp->uhdr( "SKY_DECBASE" );
+#    my $ra     = $Grp->uhdr( "SKY_MEANRA" );
+#    my $dec    = $Grp->uhdr( "SKY_MEANDEC" );
+
+# In the old CGS4 acquisition software this actually makes
+# a difference.  In ORAC the BASERA, BASEDEC, RA and DEC headers
+# are fixed and the offsets are the only thing that changes.
+# This makes the calculation much simpler.
+             my $slide = sqrt( $raoff * $raoff + $decoff * $decoff );
+
+#  Here's the old code.  
+#    my $radist = 15 * cosdeg( $basedec ) * ( $basera - $ra ) * 3600;
+#    my $decdist = $dec - $basedec;
+#    my $slide = sqrt( $radist * $radist + $decdist * $decdist );
+#    print $radist . " " . $decdist . " " . $slide . "\n";
+#    $negrow = nint($posrow + ($slide / 0.61));
+
+             if ( $slide == 0 ) {
+                orac_warn "Negative extraction row could not be " .
+                          "determined from FITS headers.\n";
+                orac_warn "Defaulting to row 106\n";
+                $negrow = 106;
+
+             } else {
+                $negrow = nint( $posrow + ( $slide / 0.61 ) );
+                orac_print "Negative row determined from FITS headers " .
+                           " ($negrow) relative to row $posrow.\n";
+             }
+
+          }
+
+# Set the optimal-extraction limits.
+          my $startpos = $posrow - 2;
+          my $endpos = $posrow + 2;
+          my $startneg = $negrow - 2;
+          my $endneg = $negrow + 2;
+
+# Create the positive and negative profiles.
+# ==========================================
+
+# Create names of temporary files that will store two profiles and
+# a work file.
+          my $posprof = new ORAC::TempFile;
+          my $posproffile = $posprof->file;
+          my $negprof = new ORAC::TempFile;
+          my $negproffile = $negprof->file;
+          my $tmp = new ORAC::TempFile;
+          my $tmpfile = $tmp->file;
+
+# Determine the positive and negative spatial profile using any variance
+# information to weight the points.  It uses a fifth-order polynomial to
+# fit to the rows, rejecting the worst five points in each row.  This
+# assumes minimal tilt of the spectra with respect to the X axis.
+          my $commonargs = "degree=5 nreject=5 weight=yes residual=$tmpfile";
+          my $param = "profile=$posproffile ystart=$startpos yend=$endpos";
+          $Mon{'figaro1'}->obeyw( "profile", "image=$group $param $commonargs" );
+
+          $param = "profile=$negproffile ystart=$startneg yend=$endneg";
+          $Mon{'figaro1'}->obeyw( "profile", "image=$group $param $commonargs");
+
+# Create temporary files for extracted spectra.
+          my $posspec = new ORAC::TempFile;
+          my $posspecfile = $posspec->file;
+          my $negspec = new ORAC::TempFile;
+          my $negspecfile = $negspec->file;
+
+# Use the positive and negative profiles to optimally extract the positive
+# and negative spectra.
+          $param = "profile=$posproffile spectrum=$posspecfile weight=yes";
+          $Mon{'figaro1'}->obeyw( "optextract", "image=$group $param" );
+
+          $param = "profile=$negproffile spectrum=$negspecfile weight=yes";
+          $Mon{'figaro1'}->obeyw( "optextract", "image=$group $param" );
+
+# Subtract the negative spectrum from the positive.
+          $Mon{'kappa_mon'}->obeyw( "sub", "in1=$posspecfile in2=$negspecfile out=$tmpfile" );
+
+# Divide the spectrum by two for the correct levels.
+          $Mon{'kappa_mon'}->obeyw( "cdiv", "in=$tmpfile out=$out scalar=2" );
+
+# Print congratulatory message.
+          my $nnrow = nint( $negrow );
+          orac_print "Positive (row $posrow) and negative (row $nnrow) " . 
+                     "spectra from $group optimally extracted into $out.\n";
+
+# Update the group object.
+          $Grp->file( $out );
+
+# Update group header to indicate that we now have a 1-D spectrum
+          $Grp->uhdr( "NDIMS", 1 );
+
+# Display the spectrum.
+          $Display->display_data( $Grp ) if ( defined $Display );
+
+       }
+
+    }
