@@ -91,7 +91,7 @@ contains the following keys:
 =item RESULTS
 
 An array containing the integrated intensity for each sub-instrument.
-Contains C<undef> if the caluclation did not complete sucessfully.
+Contains C<undef> if the calculation did not complete sucessfully.
 Starts counting at 1.
 
 =back
@@ -176,7 +176,7 @@ my @pos = (
 
 	  );
 
-# Read logfile (default to true)
+# Write logfile (default to true)
 my $uselog = (exists $_FIND_INTEGRATED_INTENSITY_{LOGFILE} && 
 	  defined $_FIND_INTEGRATED_INTENSITY_{LOGFILE}) ?
   $_FIND_INTEGRATED_INTENSITY_{LOGFILE} : 1;
@@ -204,35 +204,15 @@ for my $i (1.. $Frm->nfiles ) {
   # Find the input file
   my $in = $Frm->file($i);
 
-  # Find the centroid
-  # See also _CENTROID_FRAME_
-  # Need to check for kappa 0.14 or higher -- use the KAPVERSION_MINOR
-  # global variable
-  # If we have KAPPA14 we have to first make sure the wcsframe
-  # is AXIS so that we can start searching from the
-  # coordinate centre
-  my $args;
-  if ($KAPPA_VERSION_MINOR >= 14) {
-    $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=axis");
-    $args = " init='0,0' ";
-  } else {
-    $args = " cosys=d init=[0,0]"
-  }
+  # Find the centroid without writing a log entry
+  _CENTROID_FRAME_  LOGFILE=0
 
-  $args .= " mode=i cerror=true search=9";
-
-  $Mon{kappa_mon}->obeyw("centroid","ndf=$in $args");
 
   # Read the result
-  my ($dx, $dy, $ORAC_STATUS);
-  
-  # KAPPA 14 returns the centre pos as a string, earlier versions
-  # return an array -- just use XCEN and YCEN with two adam calls
-  ($ORAC_STATUS, $dx) = $Mon{kappa_mon}->get("centroid","xcen");
-  ($ORAC_STATUS, $dy) = $Mon{kappa_mon}->get("centroid","ycen");
+  my ($dx, $dy, $vpeak) = @{ $_CENTROID_FRAME_{RESULTS} };
 
   # Make sure we have good pixels
-  if ($dx > -1e38 && $dy > -1e38) {
+  if (defined $dx && defined $dy) {
 
     # Reformat the result
     my $dx = sprintf "%6.2f", $dx;
@@ -260,8 +240,9 @@ for my $i (1.. $Frm->nfiles ) {
     # Now calculate stats of the masked file to get the flux in the
     # aperture
     $Mon{kappa_mon}->obeyw("stats","ndf=$out");
-  
+
     # Get sum and number of valid pixels
+    my $ORAC_STATUS;
     ($ORAC_STATUS, my $sum) = $Mon{kappa_mon}->get("stats","total");
     ($ORAC_STATUS, my $ngood) = $Mon{kappa_mon}->get("stats","numgood");
 
@@ -272,7 +253,7 @@ for my $i (1.. $Frm->nfiles ) {
     # Find the median and standard deviation at a number
     # of coordinates stored in @pos
     foreach my $posn ( @pos ) {
-      
+
       # Create the temporary file for the ard description
       my $ard2 = new ORAC::TempFile;
 
@@ -307,7 +288,7 @@ for my $i (1.. $Frm->nfiles ) {
       # Now calculate stats of the masked file to get the mean and the
       # standard deviation
       $Mon{kappa_mon}->obeyw("stats","ndf=$out");
-  
+
       # Retrieve the values
       ($ORAC_STATUS, my $avg) = $Mon{kappa_mon}->get("stats","mean");
       ($ORAC_STATUS, my $stdv) = $Mon{kappa_mon}->get("stats","sigma");
@@ -318,7 +299,7 @@ for my $i (1.. $Frm->nfiles ) {
       orac_print "MEAN/SIGMA : $avg/$stdv\n", 'red';
 
     }
-    
+
     # Choose the most correct looking median and standard deviation
     # sort into noise order
     my @sorted = sort { $a->[1] <=> $b->[1] } @avg_stdv;
@@ -358,7 +339,7 @@ for my $i (1.. $Frm->nfiles ) {
 
     # Get the tau
     # TAU from calibration object
-    my $tau = sprintf "%5.2f", $Cal->tau($filters[$i-1]); 
+    my $tau = sprintf "%5.2f", $Cal->tau($filters[$i-1]);
 
     # Use that tau to calculate CSO
     my ($cso, $status) = JCMT::Tau::get_tau('CSO',$filters[$i-1], $tau);
