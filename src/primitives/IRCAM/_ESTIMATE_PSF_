@@ -7,59 +7,71 @@
 # Exports:
 #    PSFNAME, Reference to @CENTRE
 #  
-# This should only be performed on OBJECT frames.
-# This method Acts on a reduced group
+# This method acts on a reduced group.
+
 # We have to specify this since we have to decide whether we
 # are using $Frm or $Grp and in general this routine is run
 # on reduced images.
+    orac_print "PRIMITIVE: ESTIMATE_PSF\n";
 
-print colored ("PRIMITIVE: ESTIMATE_PSF\n",'magenta');
+# This should only be performed on OBJECT frames.
+    if ($Grp->hdr(OBSTYPE) =~ /OBJECT/) {
 
-if ($Grp->hdr(OBSTYPE) =~ /OBJECT/) {
+# Determine the centre of the frame for the first group member.
+#       if ($Grp->num == 0 ) {
 
-  # User-accessible mapping and parameters
-  $user = "";
+# Run a task to obtain details of the frame.
+          $header = "ndf=".$Grp->file;
+          $Mon{"ndfpack_mon"}->obeyw("$header");
 
-  # Specify the other parameters for the CENTROID stage.
-  $header = "ndf=".$Grp->file."(~40,~40)";
-  $hidden = "mode=interface init=[128,128] cosys=w"; 
+# Extract the bounds of the frame.
+          ($ORAC_STATUS, @lbnd) = $Mon{"ndfpack_mon"}->get("ndftrace","lbound");
+          ($ORAC_STATUS, @ubnd) = $Mon{"ndfpack_mon"}->get("ndftrace","ubound");
 
-  # Find the centroid of the object.  For the moment start the search at
-  # the frame centre.  The standard position may be displaced from this,
-  # and should be written to the headers.
-  $Mon{"kappa_mon"}->obeyw("centroid","$header $user $hidden");
-  #   print "Command was: centroid $header $user $hidden \n";
+# Find the mid points.
+          $xmid = nint( ( $lbnd[0] + $ubnd[0] ) / 2 );
+          $ymid = nint( ( $lbnd[1] + $ubnd[1] ) / 2 );
+#       };
 
-  # Store the located centroid within a text file of the format PSF expects.
-  # (There should be some rationalisation in KAPPA and CCDPACK to use
-  # Clive Davenhall's small tables.  In that case this would be altered.)
+# Specify the other parameters for the CENTROID stage.
+       $header = "ndf=".$Grp->file."(~40,~40)";
+       $hidden = "mode=interface init=[$xmid,$ymid] cosys=w"; 
 
-  ($status, @centre ) = $Mon{"kappa_mon"}->get("centroid","centre");
+# Find the centroid of the object.  For the moment start the search at
+# the frame centre.  The standard position may be displaced from this,
+# and should be written to the headers.
+       $Mon{"kappa_mon"}->obeyw("centroid","$header $hidden");
 
-  open ( PSFIN, ">centre$$.dat" );
-  print PSFIN "@centre\n";
-  close ( PSFIN );
+# Store the located centroid within a text file of the format PSF expects.
+# (There should be some rationalisation in KAPPA and CCDPACK to use
+# Clive Davenhall's small tables.  In that case this would be altered.)
+       ($ORAC_STATUS, @centre ) = $Mon{"kappa_mon"}->get("centroid","centre");
 
-  # Store the centre information for later use.
-  $_ESTIMATE_PSF_{CENTRE} = \@centre;
+       open ( PSFIN, ">centre$$.dat" );
+       print PSFIN "@centre\n";
+       close ( PSFIN );
 
-  # Assign the other parameters.
-  $psfname = ($_ESTIMATE_PSF_{PSF} || "psf$$");
+# Store the centre information for later use.
+       $_ESTIMATE_PSF_{CENTRE} = \@centre;
 
-  # Specify the other parameters for the PSF stage.
-  $header = "in=".$Grp->file." out=$psfname";
-  $hidden = "cut=1E-20 device=! cofile=centre$$.dat";
+# Assign the other parameters.
+       $psfname = ($_ESTIMATE_PSF_{PSF} || "psf$$");
 
-  # Calculate the psf, using the standard star alone.  Make an image of
-  # the psf, which goes to a very low signal.  It's needed to compute the
-  # light beyond the aperture.
-  $Mon{"kappa_mon"}->obeyw("psf","$header $user $hidden");
+# Specify the other parameters for the PSF stage.
+       $header = "in=".$Grp->file." out=$psfname";
+       $hidden = "cut=1E-20 device=! cofile=centre$$.dat";
 
-  # Store the PSF name in the primitives hash
-  $_ESTIMATE_PSF_{"PSFNAME"} = $psfname;
+# Calculate the psf, using the standard star alone.  Make an image of
+# the psf, which goes to a very low signal.  It's needed to compute the
+# light beyond the aperture.
+       $Mon{"kappa_mon"}->obeyw("psf","$header $hidden");
 
-  # Now we can remove the temporary ascii file
-  unlink ("centre$$.dat");
+# Store the PSF name in the primitives hash.
+       $_ESTIMATE_PSF_{"PSFNAME"} = $psfname;
 
-  print colored("Orac says: PSF of standard star in frame ".$Grp->file." determined\n",'magenta');
-};
+# Now we can remove the temporary ascii file
+       unlink ("centre$$.dat");
+
+# Report the processing status.
+       orac_print "Orac says: PSF of standard star in frame ".$Grp->file." determined\n";
+    };
