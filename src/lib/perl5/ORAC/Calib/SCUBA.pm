@@ -33,8 +33,9 @@ uses the thing() method).
 # Calibration object for the ORAC pipeline
 
 use strict;
+use warnings;
 use Carp;
-use vars qw/$VERSION %DEFAULT_FCFS %PHOTFLUXES @PLANETS $DEBUG/;
+use vars qw/$VERSION %DEFAULT_FCFS %PHOTFLUXES @PLANETS $DEBUG %FCFS/;
 
 use Cwd;          # Directory change
 
@@ -88,6 +89,85 @@ $DEBUG = 0; # Turn off debugging mode
 			    '850N' => 1.00,
 			   }
 		);
+
+
+# FCF can vary with time. Index by filter and then ARCSEC/BEAM
+# UT date is used for START and END. If none there then assume open
+# ended. If only START assume currently applicable
+# The arrays are populated in order
+# START and END are inclusive
+
+%FCFS = ('2000' => [
+		    {
+		     BEAM => 650, # No date
+		    },
+		   ],
+	 '1350' => [
+		    {
+		     BEAM => 130, # No date
+		    },
+		   ],
+	 '750'  => [
+		    {
+		     BEAM => 310, # No date
+		    },
+		   ],
+	 '350'  => [
+		    {
+		     BEAM => 1200, # No date
+		    },
+		   ],
+	 '850N' => [ # Asumed to be in date order
+		    {
+		     START => 19960101, # Beginning of SCUBA history
+		     END   => 19980215,
+		     ARCSEC=> 1.07,
+		     BEAM  => 266.0,
+		    },
+		    {
+		     START => 19960101, # Beginning of SCUBA history
+		     ARCSEC=> 0.98,
+		     BEAM  => 248.0,
+		    },
+		   ],
+	 '850W' => [ # Asumed to be in date order
+		    {
+		     START => 19990901, # Filter installed
+		     END   => 20000630,
+		     ARCSEC=> 0.84,
+		     BEAM  => 207.0,
+		    },
+		    {
+		     START => 20000630, # Beginning of SCUBA history
+		     END   => 20010515,
+		     ARCSEC=> 0.88,
+		     BEAM  => 216.0,
+		    },
+		    {
+		     START => 20010516, # Beginning of SCUBA history
+		     ARCSEC=> 1.13,
+		     BEAM  => 280.0,
+		    },
+		   ],
+	 '450W' => [
+		    {
+		     ARCSEC => 6.9,
+		     BEAM   => 855,
+		    },
+		   ],
+	 '450W' => [
+		    {
+		     ARCSEC => 3.2,
+		     BEAM   => 340,
+		    },
+		   ],
+	);
+
+
+# Treat 450 and 850 the same as 850N and 450N
+$FCFS{'450'} = $FCFS{'450N'};
+$FCFS{'850'} = $FCFS{'850N'};
+
 
 # Should probably put calibrator flux information in a different
 # file
@@ -727,14 +807,10 @@ sub gain {
     my $generic;
     ($generic = $filt ) =~ s/\D+$//;
 
-    if (exists $DEFAULT_FCFS{$units}{$filt}) {
-      $gain = $DEFAULT_FCFS{$units}{$filt};
-    } elsif (exists $DEFAULT_FCFS{$units}{$generic}) {
-      $gain = $DEFAULT_FCFS{$units}{$generic};
-    } else {
-      orac_err "No gain exists for the specified filter ($filt)\n";
-      $gain = undef;
-    }
+    $gain = $self->_get_default_fcf( $filt, $units, $self->thing->{ORACUT});
+
+    orac_err "No gain exists for the specified filter ($filt)\n"
+      unless defined $gain;
 
   } elsif ($sys eq 'INDEX') {
 
@@ -1236,6 +1312,75 @@ sub _search_skydip_index {
 
 }
 
+=item B<_get_default_fcf>
+
+Given a filter, FCF units (BEAM or ARCSEC) and the UT date (in ORACUT
+format) returns the default FCF values as derived from an automated
+reduction of the complete data archive.
+
+  $fcf = $self->_get_default_fcf( $filter, 'ARCSEC', '19980215');
+
+Returns undef if no FCF is available for the specified combination.
+
+=cut
+
+sub _get_default_fcf {
+
+  my $self = shift;
+  my ($filter, $units, $ut) = @_;
+
+  $filter = uc($filter); # upper cased keys
+  $units  = uc($units);
+  $ut = int($ut);  # only changes on integer days
+
+  # First check to see if the filter is present in the %FCFS hash
+  return undef unless exists $FCFS{$filter};
+
+  # Get the array
+  my $details = $FCFS{$filter};
+
+  # Now we step through the array until we find an entry that 
+  # corresponds to the requested time
+  my $match;
+  for my $h (@$details) {
+
+    # if there is no START key then we just take this
+    # entry as a match
+    unless (exists $h->{START}) {
+      $match = $h;
+      last;
+    }
+
+    # See if we are in range. Might not have an END
+    next if $h->{START} > $ut; # Should leave loop before this
+
+    # if we don't have an END point then this is a match
+    unless (exists $h->{END}) {
+      $match = $h;
+      last;
+    }
+
+    # If we have an END then we need to check range
+    if ($h->{END} >= $ut) {
+      $match = $h;
+      last;
+    }
+
+  }
+
+  # If we did not match return undef
+  return undef unless defined $match;
+
+  # This is a little inefficient and repetitive but I want to retain
+  # the ability to choose an aperture size for ARCSEC
+
+  # We have a match so we now have to search for the correct units
+  return undef unless exists $match->{$units};
+
+  # Everything okay, return the answer
+  return $match->{$units};
+
+}
 
 
 =back
@@ -1244,7 +1389,7 @@ sub _search_skydip_index {
 
 =head1 SEE ALSO
 
-L<ORAC::Calib> 
+L<ORAC::Calib>
 
 =head1 REVISION
 
