@@ -1,6 +1,8 @@
     # Don't do this unless we have all the images from a particular jitter
 
     if ($Frm->uhdr("JITTER_COMPLETE")) {
+        orac_print "Doing JITTER_SKY sky estimation for group " . $Grp->name .
+	    "\n";
 
         # Get all the files in the group and do background stats on them.
 
@@ -29,6 +31,7 @@
 
             # Loop for each image extension...
 
+            orac_print "Forming mean sky file $outfile\n";
 	    foreach my $i (1 .. $Frm->findnsubs) {
 
 		# Get a temporary file
@@ -49,13 +52,12 @@
 
 		# Do the combination now...
 
-		my $errmsg = "";
+		my $errmsg;
 		my $retval = cir_imcombine($tmpfil->file,$outf,"","CIR_CPM",
-		    MEDIANCALC,0,1,0,USEBPM,REJPOISSON,1,1,1,3.0,3.0,$readkey,
+		    MEDIANCALC,0,0,1,NOBPM,REJPOISSON,1,1,1,3.0,3.0,$readkey,
 		    $gainkey,$expkey,$errmsg);
 		if ($retval != CIR_OK) {
-		    orac_err("CIR_IMCOMBINE: failed in _JITTER_SKY_\n$errmsg\n");
-		    return(ORAC__ERROR);
+		    orac_throw "CIR_IMCOMBINE: failed in _JITTER_SKY_\n$errmsg\n";
 		}
    
                 # Ditch temporary file
@@ -89,6 +91,7 @@
 
         foreach my $frm ($Grp->allmembers) {
             my $nextn = $frm->findnsubs;
+            orac_print "Doing sky subtraction for " . $frm->file . "\n";
             foreach my $i (1 .. $nextn) {
                 my $subfrm = $frm->getasubframe($i);
                 my $subskyfrm = $skyfrm->getasubframe($i);
@@ -98,25 +101,20 @@
                 my $isdone = $subfrm->uhdr("SKYSUB");
                 next if (defined($isdone) && $isdone =~ /^Done/);
 
-                # Find scale factor for sky frame.
-
-                my $scfac = ($subfrm->uhdr("CIRMED"))/($subskyfrm->hdr("CIRMED"));
-
                 # Open a file and write this info to it
                 
                 my $tmpfil = ORAC::TempFile->new;
                 my $fh = $tmpfil->handle;
-                printf $fh "%s %g\n",$subskyfrm->file,$scfac;
+                printf $fh "%s %g\n",$subskyfrm->file,1.0;
                 $fh->close;
 
                 # Do the subtraction
 
-                my $errmsg = "";
+                my $errmsg;
                 my $retval = cir_mscale_subt($subfrm->file,$tmpfil->file,
-                    $subfrm->uhdr("CIRMED"),"",$errmsg);
+                    $subskyfrm->hdr("CIRMED"),"",$errmsg);
                 if ($retval != CIR_OK) {
-                    orac_err("CIR_MSCALE_SUBT: failed in _JITTER_SKY_\n$errmsg\n");
-                    return(ORAC__ERROR);
+                    orac_throw "CIR_MSCALE_SUBT: failed in _JITTER_SKY_\n$errmsg\n";
                 }
 
                 # Delete file...
@@ -126,7 +124,7 @@
                 # Add a line to the header...
 
                 my $hline = sprintf "Done _JITTER_SKY_: %s %0.3f",
-                    $subskyfrm->file,$scfac;
+                    $subskyfrm->file,1.0;
                 $frm->getasubframe($i)->update_header("SKYSUB",TSTRING,$hline,
                     "");
                 $frm->hdr("SKYSUB",$hline);
