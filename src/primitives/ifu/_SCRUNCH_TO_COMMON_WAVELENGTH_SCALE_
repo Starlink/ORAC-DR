@@ -111,7 +111,7 @@ my $numpix = 1024;
 orac_print "Scrunching $in to $numpix pixels from $min to $max Angstroms.\n";
 
 # And scrunch it
-my $param = "image=$in file=$iarfile wstart=$min wend=$max bins=$numpix output=$tmp_out log=f linear=f density=f";
+my $param = "image=$in file=$iarfile wstart=$min wend=$max bins=$numpix output=$tmp_out log=f quad=t density=f";
 $Mon{'figaro3'}->obeyw("iscrunch", "$param");
 
 # Iscrunch does not complain, even if it has failed, so we should check
@@ -131,22 +131,36 @@ if ( $variance eq "TRUE" ) {
     orac_print "Scrunching variance array in $in.\n";
 
     my $tmpfile1 = new ORAC::TempFile;
-    my $tmpfile2 = new ORAC::TempFile;
-
     my $tmp = $tmpfile1->file;
+
+    my $tmpfile2 = new ORAC::TempFile;
     my $tmp2 = $tmpfile2->file;
+
+    my $tmpfile3 = new ORAC::TempFile;
+    my $tmp3 = $tmpfile3->file;
+
+    my $tmpfile4 = new ORAC::TempFile;
+    my $tmp4 = $tmpfile4->file;
 
     my $ORAC_STATUS = ( create_hdsobj( $tmp, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
 
     $ORAC_STATUS = ( copy_hdsobj( "$in.VARIANCE", "$tmp.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
 
+    # Scrunch the variance array.
     my $param = "image=$tmp file=$iarfile wstart=$min wend=$max bins=$numpix output=$tmp2 log=f quad=t density=f";
-    $Mon{'figaro3'}->obeyw("iscrunch", "$param"); 
+    $Mon{'figaro3'}->obeyw("iscrunch", "$param");
 
-    $ORAC_STATUS = ( copy_hdsobj( "$tmp2.DATA_ARRAY", "$tmp_out.VARIANCE" ) ? ORAC__OK : ORAC__ERROR );
+    # Threshold anomalous values.
+    $Mon{'kappa_mon'}->obeyw("thresh", "in=$tmp2 out=$tmp3 thrlo=0 newlo=bad thrhi=1E4 newhi=bad");
 
-    $Mon{'ndfpack_mon' }->obeyw("ndfcopy", "$tmp_out $tmp");
-    $Mon{'kappa_mon'}->obeyw("thresh", "in=$tmp comp=Variance out=$tmp_out thrlo=0 newlo=bad thrhi=1E6 newhi=bad");
+    # Copy the bad pixels flagged in the variance array to the data array.
+    $Mon{'kappa_mon'}->obeyw("copybad", "in=$tmp_out ref=$tmp3 out=$tmp4");
+
+    # Copy the variance array over to the output file.
+    $ORAC_STATUS = ( copy_hdsobj( "$tmp3.DATA_ARRAY", "$tmp4.VARIANCE" ) ? ORAC__OK : ORAC__ERROR );
+
+    $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$tmp4 out=$tmp_out");
+
 }
 
 $Mon{'figaro1' }->obeyw("xcdiv", "image=$tmp_out output=$out factor=10000");
