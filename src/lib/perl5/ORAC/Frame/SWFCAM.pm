@@ -242,6 +242,20 @@ sub file_from_bits {
   return $self->rawfixedpart . $prefix . "_" . $padnum . $self->rawsuffix;
 }
 
+sub flag_from_bits {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $obsnum = shift;
+
+  my $raw = $self->pattern_from_bits( $prefix, $obsnum );
+
+  $raw =~ /^(.*?)\.(.*?)$/;
+  my $flag = "." . $1 . ".ok";
+
+  return $flag;
+}
+
 =back
 
 =head1 SEE ALSO
