@@ -1067,7 +1067,7 @@ unless ($opt_batch) {
 
     # Set the ORAC::Print prefix
     my $fnumber = $Frm->number;
-    $$ORAC_MESSAGE = 'ORAC-DR reducing observation number ' . $fnumber;
+    $$ORAC_MESSAGE = $instrument . ': ORAC-DR reducing observation number ' . $fnumber;
     $orac_prt->errpre("#$fnumber Err: ");
     $orac_prt->warpre("#$fnumber Warning: ");
 
@@ -1115,7 +1115,7 @@ unless ($opt_batch) {
     # Reset the obs number labels
     $orac_prt->errpre('Error: ');
     $orac_prt->warpre('Warning: ');
-    $$ORAC_MESSAGE = 'ORAC-DR reducing observation --';
+    $$ORAC_MESSAGE = $instrument . ': ORAC-DR reducing observation --';
 
 
   }
@@ -1154,7 +1154,7 @@ unless ($opt_batch) {
       orac_print ("REDUCING: ".$Frm->raw."\n","yellow");
       # Set the ORAC::Print prefix
       my $fnumber = $Frm->number;
-      $$ORAC_MESSAGE = 'ORAC-DR reducing observation ' . $fnumber;
+      $$ORAC_MESSAGE = $instrument . ': ORAC-DR reducing observation ' . $fnumber;
       $orac_prt->errpre("#$fnumber Err: ");
       $orac_prt->warpre("#$fnumber Warning: ");
       # Actually process the observation
@@ -1197,7 +1197,7 @@ unless ($opt_batch) {
       # Reset the obs number labels
       $orac_prt->errpre('Error: ');
       $orac_prt->warpre('Warning: ');
-      $$ORAC_MESSAGE = 'ORAC-DR reducing observation --';
+      $$ORAC_MESSAGE = $instrument . ': ORAC-DR reducing observation --';
     }
   }
 
