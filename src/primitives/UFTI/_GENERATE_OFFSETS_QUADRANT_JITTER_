@@ -4,7 +4,7 @@
 #    Find the offsets between the frames in a QUADRANT_JITTER recipe.
 #
 # Primitives Called:
-#    _GENERATE_OFFSETS_
+#    _GENERATE_OFFSETS_, _TELE_OFFSETS_
 #
 # Arguments:
 #    COMPLETE = REAL (Given)
@@ -17,13 +17,31 @@
 #    PERCENTILE = REAL (Given)
 #       Percentile threshold for locating objects to register frames. 
 #       It must be in the range 75 to 99.9. [98]
+#    TELEOFF = LOGICAL (Given)
+#       If true (1), it will just use the telescope offsets to register.
+#       If false (0), it will attempt automatic registration.
+
+# Arguments
+# =========
+
+# Determine whether or not telescope offsets should only be used.
+    my $usetele = $_GENERATE_OFFSETS_QUADRANT_JITTER_{TELEOFF};
+    $usetele = defined( $usetele ) ? $usetele : 0;
+
+# Obtain the parameters for the detection.
+    my ( $complete, $minpix, $percentile );
+    if ( ! $usetele ) {
+       $percentile = ( $_GENERATE_OFFSETS_QUADRANT_JITTER_{PERCENTILE} || 98 );
+       $minpix = ( $_GENERATE_OFFSETS_QUADRANT_JITTER_{MINPIX} || 9 );
+       $complete = ( $_GENERATE_OFFSETS_QUADRANT_JITTER_{COMPLETE} || 0.4 );
+    }
 
 # Selection
 # =========
 
 # This should only be performed on OBJECT frames.
     if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ||
-         $Frm->hdr( "OBSTYPE" ) eq "SKY") {
+         $Frm->hdr( "OBSTYPE" ) eq "SKY" ) {
 
 # Test whether or not it is time to make a mosaic.
        my $makemos = $Frm->hdr( "MAKE_MOSAIC" );
@@ -39,17 +57,51 @@
           {
              my $Grp = $cycleGrp;
 
+# Telescope offsets
+# =================
+             if ( $usetele ) {
+
+# Form a list of input file names for CCDPACK tasks.
+                my @objects = $Grp->membernames;
+
+# Convert list to comma-separated list.
+                my $objlist = join( ",", @objects );
+
+# Create text file to hold the list of input files, one per line.  This
+# is needed because expanded lists of files may make the command line too
+# long for the ADAM message system.
+                unlink( "objlist.inlist$$" );
+                open( INLIST, ">objlist.inlist$$" );
+                print INLIST join( "\n", @objects ), "\n";
+                close( INLIST );
+
+# Use telescope offsets from the headers.
+                _TELE_OFFSETS_
+
+# Register
+# ========
+
+# Specify the other parameters for the REGISTER stage.
+                my $header = "inlist='^objlist.inlist$$'";
+                my $hidden = "fittype=1"; 
+
+# Register the frames using a shift of origin.  Create the CCDPACK
+# TRANSFORM extensions.
+                $Mon{"ccdpack_reg"}->obeyw("register","$header $hidden accept");
+                unlink( "objlist.inlist$$" );
+
+# Report processing status.
+                orac_print "Orac says: frames $objlist registered\n";
+
+             } else {
+
 # Generate the offsets
 # ====================
 
-# Obtain the parameters for the detection.
-             my $percentile = ( $_GENERATE_OFFSETS_QUADRANT_JITTER_{PERCENTILE} || 98 );
-             my $minpix = ( $_GENERATE_OFFSETS_QUADRANT_JITTER_{MINPIX} || 9 );
-             my $complete = ( $_GENERATE_OFFSETS_QUADRANT_JITTER_{COMPLETE} || 0.4 );
-
 # Call the generic primitive which does most of the work.  Use central
 # source as a backup.
-             _GENERATE_OFFSETS_ PERCENTILE=$percentile MINPIX=$minpix COMPLETE=$complete CENTRAL_SOURCE=TRUE
+                _GENERATE_OFFSETS_ PERCENTILE=$percentile MINPIX=$minpix COMPLETE=$complete CENTRAL_SOURCE=TRUE
+             }
 
 # End of scope of local $Grp aka $cycleGrp.
           }
