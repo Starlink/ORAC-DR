@@ -65,8 +65,8 @@ examples.
 
 =head1 REQUIREMENTS
 
-The CFITSIO Perl module, available from http://www.cpan.org/.  This may
-already be installed at your site.
+The Astro::FITS::CFITSIO Perl module, available from http://www.cpan.org/.  
+This may already be installed at your site.
 
 =head1 AUTHOR
 
@@ -74,9 +74,9 @@ Malcolm J. Currie (JAC)
 
 =cut
 
-# We need the CFITSIO library to manipulate the FITS header.
-   use CFITSIO qw( :longnames );
-   use CFITSIO qw( :constants );
+# We need the Astro::FITS::CFITSIO library to manipulate the FITS header.
+   use Astro::FITS::CFITSIO qw( :longnames );
+   use Astro::FITS::CFITSIO qw( :constants );
 
 # Declare variables.
    my ( $obstype, $grpnum, $grpmem, $obsnum, $recipe );
