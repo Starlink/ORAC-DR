@@ -15,6 +15,10 @@
 #    and that mosaics can be added.  The primitive then passes the new
 #    group to primitive _GENERATE_OFFSETS_ to do the bulk of the work.
 #
+#    When argument TELEOFF is true, _TELE_OFFSETS_ is invoked and
+#    the derived offsets are used to register with a shift of origin;
+#    otherwise _GENERATE_OFFSETS_ is the work horse.
+#
 # Language:
 #    Perl5
 #
@@ -33,6 +37,9 @@
 #       It must be in the range 75 to 99.9.  The default here is for
 #       UFTI and the new IRCAM.  For the original IRCAM3 without the
 #       magnifier, 96 proved to be satisfactory.  [98]
+#    TELEOFF = LOGICAL (Given)
+#       If true (1), it will just use the telescope offsets to register.
+#       If false (0), it will attempt automatic registration.  [0]
 #
 # Notes:
 #    -  This primitive is suitable for both UFTI and IRCAM.
@@ -40,9 +47,13 @@
 #    steering header MAKE_MOSAIC is true.  The selected frames
 #    are those in the current cycle whose steering header
 #    TARGET_OR_SKY is "target".
+#    -  The steering header CYCLE_NUMBER specifies the cycle number.
 #    -  The _GENERATE_OFFSETS_ argument CENTRAL_SOURCE is FALSE.
 #    Thus matching the centroids of a central source is not attempted
 #    if automatic registration fails.
+#
+# Tasks:
+#    CCDPACK: REGISTER; KAPPA: WCSFRAME.
 #
 # Authors:
 #    MJC: Malcolm J. Currie (JAC)
@@ -56,10 +67,17 @@
 # Arguments
 # =========
 
+# Determine whether or not telescope offsets should only be used.
+    my $usetele = $_GENERATE_OFFSETS_CHOP_SKY_{TELEOFF};
+    $usetele = defined( $usetele ) ? $usetele : 0;
+
 # Obtain the parameters for the detection.
-    my $percentile = ( $_GENERATE_OFFSETS_CHOP_SKY_{PERCENTILE} || 98 );
-    my $minpix = ( $_GENERATE_OFFSETS_CHOP_SKY_{MINPIX} || 9 );
-    my $complete = ( $_GENERATE_OFFSETS_CHOP_SKY_{COMPLETE} || 0.4 );
+    my ( $complete, $minpix, $percentile );
+    if ( ! $usetele ) {
+       $percentile = ( $_GENERATE_OFFSETS_CHOP_SKY_{PERCENTILE} || 98 );
+       $minpix = ( $_GENERATE_OFFSETS_CHOP_SKY_{MINPIX} || 9 );
+       $complete = ( $_GENERATE_OFFSETS_CHOP_SKY_{COMPLETE} || 0.4 );
+    }
 
 # Selection
 # =========
@@ -100,15 +118,74 @@
              $tempGrp->push( $tarGrp->members );
           }
 
+# Telescope offsets
+# =================
+          if ( $usetele ) {
+
+# Make a local $Grp.
+             my $Grp = $tempGrp;
+
+# Form a list of input file names for CCDPACK tasks.
+             my @objects = $Grp->membernames;
+
+# Convert list to comma-separated list.
+             my $objlist = join( ",", @objects );
+
+# Create text file to hold the list of input files, one per line.  This
+# is needed because expanded lists of files may make the command line too
+# long for the ADAM message system.
+             unlink( "objlist.inlist$$" );
+             open( INLIST, ">objlist.inlist$$" );
+             print INLIST join( "\n", @objects ), "\n";
+             close( INLIST );
+
+# Use telescope offsets from the headers.
+             _TELE_OFFSETS_
+
+# Set the co-ordinate system to pixels.
+# =====================================
+
+# This is needed because CCDPACK v3.0, which is in the same release
+# as KAPPA v0.14-3 uses the WCS.  CCDPACK/REGISTER has a new USEWCS
+# parameter which defaults to true, meaning convert the pixel
+# co-ordinates in the .off files into the current co-ordinate system
+# of each NDF.  We use pixel co-ordinates throughout.  By making the
+# change here the REGISTER command line remains unchanged.
+             my ( $header, $hidden );
+             if ( starversion_gt( "KAPPA", 'V0.13-6' ) ) {
+                $header = "ndf='^objlist.inlist$$' frame=pixel";
+                $Mon{"ndfpack_mon"}->obeyw("wcsframe", "$header");
+             }
+
+# Register
+# ========
+
+# Specify the other parameters for the REGISTER stage.
+             $header = "inlist='^objlist.inlist$$'";
+             $hidden = "fittype=1";
+
+# Register the frames using a shift of origin.  Create the CCDPACK
+# TRANSFORM extensions.
+             $Mon{"ccdpack_reg"}->obeyw("register","$header $hidden accept");
+             unlink( "objlist.inlist$$" );
+
+# Report processing status.
+             orac_print "Orac says: frames $objlist registered\n";
+
+# Attempt automatic registration
+# ==============================
+          } else {
+
 # Generate the offsets
 # ====================
 
 # Make a local $Grp.
-          {
              my $Grp = $tempGrp;
 
-# Call the generic primitive which does most of the work.  Use central
-# source as a backup.
+# Call the generic primitive which does most of the work.  Do not use central
+# source as a backup.  Use the reference mosaic's co-ordinate system so ensure
+# that central-source offsets are with respect to that, if the 
+# CENTRAL_SOURCE flag is switched.
              _GENERATE_OFFSETS_ PERCENTILE=$percentile MINPIX=$minpix COMPLETE=$complete CENTRAL_SOURCE=FALSE
 
 # End of scope of local $Grp aka $tempGrp.
@@ -134,6 +211,11 @@ current cycle, so that there is a common registration and that mosaics
 can be added.  The primitive then passes the new group to primitive
 L<_GENERATE_OFFSETS_|_GENERATE_OFFSETS_> to do the bulk of the work.
 
+When argument TELEOFF is true, L<_TELE_OFFSETS_|_TELE_OFFSETS_> is
+invoked and the derived offsets are used to register with a shift of
+origin; otherwise L<_GENERATE_OFFSETS_|_GENERATE_OFFSETS_> is the work
+horse.
+
 =head1 ARGUMENTS
 
 =over 4
@@ -158,6 +240,11 @@ It must be in the range 75 to 99.9.  The default here is for
 UFTI and the new IRCAM.  For the original IRCAM3 without the
 magnifier, 96 proved to be satisfactory.  [98]
 
+=item TELEOFF = LOGICAL (Given)
+
+If true (1), it will just use the telescope offsets to register.
+If false (0), it will attempt automatic registration.  [0]
+
 =back
 
 =head1 NOTES
@@ -177,11 +264,19 @@ TARGET_OR_SKY is "target".
 
 =item *
 
+The steering header CYCLE_NUMBER specifies the cycle number.
+
+=item *
+
 The _GENERATE_OFFSETS_ argument CENTRAL_SOURCE is FALSE.
 Thus matching the centroids of a central source is not attempted
 if automatic registration fails.
 
 =back
+
+=head1 TASKS
+
+CCDPACK: REGISTER, KAPPA: WCSFRAME.
 
 =head1 AUTHORS
 
