@@ -27,15 +27,15 @@ to ORAC::Group::JCMT objects. Some additional methods are supplied.
  
 use 5.004;
 use ORAC::Group;
- 
+
 # Let the object know that it is derived from ORAC::Frame;
 @ORAC::Group::JCMT::ISA = qw/ORAC::Group/;
- 
+
  
 # standard error module and turn on strict
 use Carp;
 use strict;
- 
+
 # For reading the header
 use NDF;
 
@@ -81,6 +81,77 @@ sub readhdr {
   return $ref;
 
 }
+
+
+=back
+
+=head1 NEW METHODS
+
+This section describes methods that are available to the
+JCMT implementation of ORAC::Group.
+
+=over 4
+
+=item membernamessub
+
+Return list of file names associated with the specified
+sub instrument.
+
+  @names = $Grp->membernamessub($sub)
+
+=cut
+
+sub membernamessub {
+
+  my $self = shift;
+  my $sub = lc(shift);
+
+  my @list = ();
+
+  # Loop through each frame
+  foreach my $frm ($self->members) {
+
+    # Loop through each sub instrument
+    my @subs = $frm->subs;
+    for (my $i=0; $i < $frm->nsubs; $i++) {
+      push (@list, $frm->file($i+1)) if $sub eq lc($subs[$i]);
+    }
+  }
+
+  return @list;
+
+}
+
+=item grpoutsub
+
+Method to determine the group filename associated with
+the current sub-instrument.
+
+This method uses the file() method to determine the
+group rootname and then tags it by the specified sub-instrument.
+
+  $file = $Grp->grpoutsub($sub);
+
+=cut
+
+sub grpoutsub {
+  my $self = shift;
+
+  # dont bother checking whether something was specified
+  my $sub = shift;
+
+  # Retrieve the root name
+  my $file = $self->file;
+
+  # Set suffix
+  my $suffix = '_' . lc($sub);
+
+  # Append the sub-instrument (don't if the sub is already there!
+  $file .= $suffix unless $file =~ /$suffix$/;
+
+  return $file;
+}
+
 
 =back
 
