@@ -259,12 +259,7 @@ sub _from_STANDARD {
 
 sub _to_UTDATE {
    my $self = shift;
-
-# This is UT start and time.
-   my $dateobs = $self->hdr->{"DATE-OBS"};
-
-# Extract out the data in yyyymmdd format.
-   return substr( $dateobs, 0, 4 ) . substr( $dateobs, 5, 2 ) . substr( $dateobs, 8, 2 )
+   return $self->get_UT_date();
 }
 
 sub _to_UTEND {
@@ -365,6 +360,17 @@ sub _to_Y_UPPER_BOUND {
 # Supplementary methods for the translations
 # ------------------------------------------
 
+# Returns the UT date in YYYYMMDD format.
+sub get_UT_date {
+   my $self = shift;
+
+# This is UT start and time.
+   my $dateobs = $self->hdr->{"DATE-OBS"};
+
+# Extract out the data in yyyymmdd format.
+   return substr( $dateobs, 0, 4 ) . substr( $dateobs, 5, 2 ) . substr( $dateobs, 8, 2 )
+}
+
 # Returns the UT time of observation in decimal hours.
 sub get_UT_hours {
    my $self = shift;
@@ -447,8 +453,8 @@ ORACUT: This is the UT day of the frame in YYYYMMDD format.
 This method should be run after a header is set.  Currently the readhdr()
 method calls this whenever it is updated.
 
-This method updates the frame header.
-Returns a hash containing the new keywords.
+This method updates the frame header.  It returns a hash containing the new
+keywords.
 
 =cut
 
@@ -458,25 +464,24 @@ sub calc_orac_headers {
 # Run the base class first since that does the ORAC headers.
    my %new = $self->SUPER::calc_orac_headers;
 
-
 # ORACTIME
 # --------
 # For ESO this is the UTC header value converted to decimal hours
 # and a 12-hour offset to avoid worrying about midnight UT.
    my $time = $self->get_UT_hours() + 12.0;
 
-# Just return it (zero if not available)
-   $time = 0 unless (defined $time);
-   $self->hdr('ORACTIME', $time);
+# Just return it (zero if not available).
+   $time = 0 unless ( defined $time );
+   $self->hdr( "ORACTIME", $time );
 
    $new{'ORACTIME'} = $time;
 
 # ORACUT
 # ------
 # For ESO this is the UTC header value converted to decimal hours.
-   my $ut =  $self->get_UT_hours();
+   my $ut = $self->get_UT_date();
    $ut = 0 unless defined $ut;
-   $self->hdr('ORACUT', $ut);
+   $self->hdr( "ORACUT", $ut );
 
    return %new;
 }
