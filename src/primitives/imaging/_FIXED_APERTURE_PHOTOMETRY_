@@ -117,7 +117,7 @@
 #    but the primitive continues defaulting the header value to 1.
 #
 # Tasks:
-#    KAPPA: ARDMASK, NDFCOPY, PSF; PHOTOM: AUTOPHOTOM.
+#    KAPPA: ARDMASK, NDFCOPY, NDFTRACE, PSF, WCSFRAME; PHOTOM: AUTOPHOTOM.
 #
 # Authors:
 #    MJC: Malcolm J. Currie (JAC)
@@ -466,6 +466,20 @@
 # Gaussian FWHM
 # =============
 
+# We must set the WCS to pixels.
+             my ( $frameno, $param1, $ORAC_STATUS );
+             my $ndf = $Frm->file;
+             if ( starversion_gt( "KAPPA", 'V0.13-6' ) ) {
+
+# Record the current WCS domain number.
+                $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$ndf" );
+                ( $ORAC_STATUS, $frameno ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "current" );
+
+# Switch to pixel co-ordinates for PSF.
+                $param1 = "ndf=$ndf frame=pixel";
+                $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "$param1" );
+             }
+
 # Store the located centroid within a text file of the format PSF expects.
              unlink ( "centre$$.dat" );
              open ( PSFIN, ">centre$$.dat" );
@@ -474,14 +488,13 @@
 
 # Specify the other parameters for the PSF stage.  Read from an old-style
 # file not a table.  Increase the box size to include several arcseconds.
-             my $ndf = $Frm->file;
-             my $param1 = "in=$ndf gauss device=! incat=! cofile=centre$$.dat isize=101";
+             $param1 = "in=$ndf gauss device=! incat=! cofile=centre$$.dat isize=101";
 
 # Calculate the best-fitting Gaussian psf, using the star alone.  
              my $psf_status = $Mon{ "kappa_mon" }->obeyw( "psf", "$param1" );
 
 # Use null values if PSF fails to converge.
-             my ( $axisratio, $gfwhm, $ORAC_STATUS ); 
+             my ( $axisratio, $gfwhm ); 
              if ( $psf_status != ORAC__OK ) {
                 $gfwhm = "<null>";
 
@@ -496,6 +509,12 @@
                 $gfwhm = $gfwhm * sqrt( min( 10, $axisratio ) ) * $pixelscale;
              }
              unlink "centre$$.dat";
+
+# Restore the former WCS domain.
+             if ( starversion_gt( "KAPPA", 'V0.13-6' ) ) {
+                $param1 = "ndf=$ndf frame=$frameno";
+                $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "$param1" );
+             }
 
 # Determine sky level by clipping.
 # ================================
@@ -916,7 +935,7 @@ but the primitive continues defaulting the header value to 1.
 
 =head1 TASKS
 
-KAPPA: ARDMASK, NDFCOPY, PSF; PHOTOM: AUTOPHOTOM.
+KAPPA: ARDMASK, NDFCOPY, NDFTRACE, PSF, WCSFRAME; PHOTOM: AUTOPHOTOM.
 
 =head1 AUTHORS
 
