@@ -43,7 +43,7 @@ $DEBUG = 0;
 
 require Exporter;
 @ISA = qw/Exporter/;
-@EXPORT = qw/orac_print orac_err orac_warn/;
+@EXPORT = qw/orac_print orac_err orac_warn orac_debug/;
 
 
 use IO::File;
