@@ -46,15 +46,11 @@ use vars qw/$VERSION/;
 my %hdr = (
             DEC_SCALE            => "PIXELSIZ",
             DEC_TELESCOPE_OFFSET => "TDECOFF",
-            EXPOSURE_TIME        => "EXP_TIME",
-            GAIN                 => "GAIN",
             RA_SCALE             => "PIXELSIZ",
             RA_TELESCOPE_OFFSET  => "TRAOFF",
 
 # then the spectroscopy...
             CONFIGURATION_INDEX  => "CNFINDEX",
-# DINDEX is defined below
-#            DETECTOR_INDEX       => "DINDEX",
             GRATING_DISPERSION   => "GRATDISP",
             GRATING_NAME         => "GRATNAME",
             GRATING_ORDER        => "GRATORD",
@@ -71,6 +67,8 @@ my %hdr = (
             CHOP_ANGLE           => "CHPANGLE",
             CHOP_THROW           => "CHPTHROW",
             DETECTOR_READ_TYPE   => "DETMODE",
+            EXPOSURE_TIME        => "EXP_TIME",
+            GAIN                 => "GAIN",
             NUMBER_OF_READS      => "NREADS",
             OBSERVATION_MODE     => "CAMERA"
 	  );
