@@ -136,6 +136,13 @@ sub calc_orac_headers {
 
 =item B<configure>
 
+Configure the frame object. Usually called from the constructor.
+
+Can be called either with a single filename or a reference to an
+array of filenames
+
+  $Frm->configure( \@files );
+  $Frm->configure( $file );
 
 =cut
 
@@ -145,7 +152,7 @@ sub configure {
   my @fnames;
   if( scalar( @_ ) == 1 ) {
     my $fnamesref = shift;
-    @fnames = @$fnamesref;
+    @fnames = ( ref($fnamesref) ? @$fnamesref : $fnamesref );
   } elsif( scalar( @_ ) == 2 ) {
 
     # SCUBA-2 configure() cannot take 2 arguments.
