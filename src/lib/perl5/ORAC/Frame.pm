@@ -731,10 +731,9 @@ sub calc_orac_headers {
   # Just return it (zero if not available)
   my $time = $self->hdr('RUTSTART');
   $time = 0 unless (defined $time);
-  $self->hdr('ORACTIME');
+  $self->hdr('ORACTIME', $time);
 
   $new{'ORACTIME'} = $time;
-
   return %new;
 }
 
