@@ -1,0 +1,135 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_FIND_SOURCES__ - source extraction and photometry on all sources
+
+=head1 DESCRIPTION
+
+For the specified file, find all the sources and calculate the peak
+flux of each detected source. Write the results to a catalogue file.
+
+=head1 TASKS
+
+Currently uses SEXTRACTOR for source extraction and for photometry.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item IMAGE
+
+Integer corresponding to the current file in the Frame. Default = 1.
+
+=item DETECT_SIGMA
+
+Threshold detection limit (default = 3).
+
+=item MINPIX
+
+Minimum number of connected pixels required to define a source
+(default = 12).
+
+=item BRIGHTEST
+
+Flag to indicate whether to return the position of the brightest
+source only (default no).
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item CATALOGUE
+
+String containing the name of the catalogue with the extracted sources.
+
+=item BRPOS
+
+Array containing the X, Y positions of the brightest source.
+
+=back
+
+=head1 BUGS
+
+ - Catalogue is currently given a fixed name rather than a name
+   that changes with the group file (or possibly eSTAR Agent ID)
+
+=head1 NOTES
+
+Modified from the UKIRT imaging primitive _CREATE_IMAGE_CATALOGUE_ for
+use with SCUBA2.
+
+=head1 AUTHOR
+
+Andy Gibb <agg@astro.ubc.ca>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2005 Particle Physics and Astronomy Research Council and
+University of British Columbia.  All Rights Reserved.
+
+=cut
+
+# Determine if we want just the brightest source
+my $brightest = (exists $_FIND_SOURCES_{BRIGHTEST} &&
+                defined $_FIND_SOURCES_{BRIGHTEST} ) ?
+    ($_FIND_SOURCES_{BRIGHTEST}) : 0;
+# Get the input NDF
+my $image = (exists $_FIND_SOURCES_{IMAGE} &&
+                defined $_FIND_SOURCES_{IMAGE} ) ?
+    ($_FIND_SOURCES_{IMAGE}) : 1;
+
+my $in = $Frm->file($_FIND_SOURCES_{IMAGE});
+
+require Starlink::Extractor;
+require Astro::WaveBand;
+
+# Obtain the detection sigma level.
+my $detect = ( $_FIND_SOURCES_{DETECT_SIGMA} || 3 );
+
+# Obtain the minimum number of pixels in the objects.
+my $minpix = ( $_FIND_SOURCES_{MINPIX} || 12 );
+
+# Report the processing status.
+orac_print "Detecting objects in $in with at least $minpix connected pixels\n";
+orac_print "   at $detect times sky noise above sky.\n";
+
+# Perform inventory on the field
+my $extractor = new Starlink::Extractor( config => $Cal->find_file("extractor_catalogue.sex" ) );
+$extractor->detect_thresh( $detect );
+$extractor->analysis_thresh( 3.0 );
+my $extracted_catalog = $extractor->extract( frame => $in,
+					     filter => new Astro::WaveBand( Filter => "850") );
+
+# Weed out objects that have a size less than $minpix pixels.
+my $filtered_catalog = new Astro::Catalog;
+while ( $extracted_catalog->sizeof > 0 ) {
+    my $star = $extracted_catalog->popstar;
+    next if ( $star->morphology->area < $minpix );
+    $filtered_catalog->pushstar( $star );
+}
+
+orac_print $filtered_catalog->sizeof() . " objects detected in $in.\n";
+
+# Dump the catalog to disk.
+_GET_CATALOGUE_NAME_
+my $catalogue_name = $_GET_CATALOGUE_NAME_{NAME};
+my $cat_file = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, $catalogue_name);
+my $status = $filtered_catalog->write_catalog( file => $cat_file,
+					       format => 'Cluster',
+                                               );
+
+orac_print "Wrote catalogue to $cat_file.\n\n";
+
+# Find the brightest source position if desired.
+if ($brightest) {
+    my @maxpos;
+    # Sort catalogue entries by flux, and find maxpos
+
+    # Store position as ref to array
+    $_FIND_SOURCES_{BRPOS} = \@maxpos;
+
+}
+
