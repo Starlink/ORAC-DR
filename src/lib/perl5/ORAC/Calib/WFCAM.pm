@@ -568,6 +568,65 @@ sub dark {
     };
 };
 
+=item B<readnoise>
+
+Determine the readnoise to be used for the current observation.
+This method returns a number rather than a particular file even
+though it uses an index file.
+
+Croaks if it was not possible to determine a valid readnoise.
+(usually indicating that ARRAY_TESTS have not been reduced).
+
+  $readnoise = $Cal->readnoise;
+
+The index file is queried every time (usually not a problem since there
+are only a limited number of array tests per night and the index
+is cached in memory) unless the noupdate flag is true.
+
+If the noupdate flag is set there is no verification that the readnoise
+meets the specified rules (this is because the command-line override
+uses a value rather than a file).
+
+The index file must include a column named READNOISE.
+Subclassed from Calib.pm to provide a nominal value in the event that no
+readnoise index file is defined.
+
+=cut
+
+sub readnoise {
+  my $self = shift;
+  my $nominal = 25.0;
+
+  # Handle arguments
+  return $self->readnoisecache(shift) if @_;
+
+  # If noupdate is in effect we should return the cached value
+  # unless it is not defined. This effectively allows the command-line
+  # value to be used to override without verifying its suitability
+  if ($self->readnoisenoupdate) {
+    my $cache = $self->readnoisecache;
+    return $cache if defined $cache;
+  }
+
+  # Now we are looking for a value from the index file
+  my $noisefile = $self->readnoiseindex->choosebydt('ORACTIME',$self->thing);
+  if (! defined $noisefile) {
+      orac_warn "No suitable readnoise value found in index file\n";
+      return $nominal;
+  }
+
+  # This gives us the filename, we now need to get the actual value
+  # of the readnoise.
+  my $noiseref = $self->readnoiseindex->indexentry( $noisefile );
+  if (exists $noiseref->{READNOISE}) {
+    return $noiseref->{READNOISE};
+  } else {
+    orac_warn "Unable to obtain READNOISE from index file entry $noisefile\n";
+    return $nominal;
+  }
+
+}
+
 =back
 
 =head1 REVISION
