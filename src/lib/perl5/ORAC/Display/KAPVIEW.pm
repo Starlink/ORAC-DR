@@ -17,6 +17,7 @@ IMAGE - display image using DISPLAY
 GRAPH - display graph using LINPLOT
 SIGMA - display scatter plot with a Y-range of +/-N sigma.
 DATAMODEL - Display data (as points) with a model overlaid
+HISTOGRAM - Histogram of values in data array
 
 =cut
 
@@ -133,6 +134,9 @@ display related values (eg statistics to determine plotting
 ranges for SIGMA).
 
 A kappa messaging object is created if the object is undefined.
+
+Note also that the HISTOGRAM task is present in the kappa monolith
+rather than in the KAPVIEW monolith.
 
 =cut
 
@@ -771,6 +775,103 @@ sub datamodel {
       return $status;
     }
   }
+
+
+}
+
+
+=item histogram
+
+Display a histogram of the data values present in the 
+data array.
+
+Takes a file name and arguments stored in a hash.
+Note that currently it does not take a format argument
+and NDF is assumed.
+
+Arguments:
+
+  XMIN/MAX - minimum/maximum x-pixel value
+  XAUTOSCALE - Use full X-range
+  YMIN/YMAX - minimum/maximum x-pixel value
+  YAUTOSCALE - use full Y-range
+  ZMIN/ZMAX - Z range of histogram
+  ZAUTOSCALE - use full Z-range
+  NBINS - Number of bins to be used for histogram calculation
+
+=cut
+
+sub histogram {
+
+  my $self = shift;
+ 
+  my $file = shift;
+
+  my %options = ();
+  if (@_) {
+    my $opt = shift;
+    if (ref($opt) eq 'HASH') {
+      %options = %{$opt};
+    }
+  }
+
+  # Configure the display on the basis of REGION specifier
+  # ..and return the selected device.
+  # Return undef if something went wrong.
+  my $device = $self->config_region(%options);
+
+  # If device is now undef we have a problem
+  unless (defined $device) {
+    orac_err("Error configuring display. Possible invalid region designation\n");
+    return ORAC__ERROR;
+  }
+
+  # Set the data file name
+  $file =~ s/\.sdf$//;  # Strip .sdf
+
+  # A resetpars also seems to be necessary to instruct kappa to
+  # update its current frame for plotting. Without this the new PICDEF
+  # regions are not picked up correctly.
+  # May not be necessary if KAPVIEW is an A-task
+
+  my $status = $self->obj->resetpars;
+  return $status if $status != ORAC__OK;
+
+  # THIS IS THE HISTOGRAM SPECIFIC STUFF
+
+  # Should probably set the options
+  # If we are autoscaling then we dont need any axis setting
+  # default is not to send any axis control information
+  # Just do Z-range for now
+
+  my $range = "range=!";
+  if (exists $options{ZAUTOSCALE}) {
+    if ($options{ZAUTOSCALE}) {
+      $range = "range=!";
+    } else {
+      # Set the Y range
+      my $min = 0;
+      my $max = 0;
+      $min = $options{ZMIN} if exists $options{ZMIN};
+      $max = $options{ZMAX} if exists $options{ZMAX};
+      $range = "range=[$min,$max]";
+    }
+  }
+  my $nbins;
+  $nbins = " NUMBIN=$options{NBINS}" if exists $options{NBINS};
+
+  # Construct string for linplot options
+  my $args = "$range $nbins";
+
+  # Run histogram
+  $status = $self->kappa->obeyw("histogram","in=$file device=$device $args accept");
+  if ($status != ORAC__OK) {
+    orac_err("Error displaying histogram\n");
+    orac_err("Trying to execute: histogram ndf=$file device=$device $args accept\n");
+    return $status;
+  }
+
+  return $status;
 
 
 }
