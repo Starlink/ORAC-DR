@@ -499,7 +499,7 @@ sub orac_determine_recipe_search_path {
   if ($inst eq 'SCUBA') {
     push( @path, File::Spec->catdir( $root, 'SCUBA' ) );
 
-  } elsif ($inst eq 'SCUBA2') {
+  } elsif ($inst =~ /^SCUBA2/) {
     push( @path, File::Spec->catdir( $root, "SCUBA2" ) );
 
   } elsif ($inst eq 'JCMT_DAS') {
@@ -658,7 +658,7 @@ sub orac_determine_primitive_search_path {
     push( @path, File::Spec->catdir( $root, 'SCUBA' ) );
     push( @path, $general_root );
 
-  } elsif( $inst eq 'SCUBA2' ) {
+  } elsif( $inst =~ /^SCUBA2/ ) {
     push( @path, File::Spec->catdir( $root, 'SCUBA2') );
     push( @path, $general_root );
 
@@ -838,7 +838,7 @@ sub orac_determine_calibration_search_path {
     push( @path, File::Spec->catdir( $root, 'jcmt_das' ) );
     push( @path, $general_submm_root );
 
-  } elsif( $inst eq 'SCUBA2' ) {
+  } elsif( $inst =~ /^SCUBA2/ ) {
     push( @path, File::Spec->catdir( $root, 'scuba2' ) );
     push( @path, $general_submm_root );
 
