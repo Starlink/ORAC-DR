@@ -35,7 +35,6 @@ my %hdr = (
             DETECTOR_READ_TYPE  => "MODE",
             EQUINOX             => "EQUINOX",
             FILTER              => "FILTER",
-            INSTRUMENT          => "INSTRUME",
             NUMBER_OF_OFFSETS   => "NOFFSETS",
             NUMBER_OF_EXPOSURES => "NEXP",
             OBJECT              => "OBJECT",

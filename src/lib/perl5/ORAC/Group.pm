@@ -714,7 +714,6 @@ sub calc_orac_headers {
                    GRATING_NAME
                    GRATING_ORDER
                    GRATING_WAVELENGTH
-                   INSTRUMENT 
                    NSCAN_POSITIONS
                    NUMBER_OF_EXPOSURES
                    NUMBER_OF_OFFSETS 
