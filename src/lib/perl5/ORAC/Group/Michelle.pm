@@ -155,17 +155,17 @@ sub calc_orac_headers {
 
 
   # ORACTIME
-  # For IRCAM the keyword is simply RUTSTART
+  # For Michelle the keyword is simply UTSTART
   # Just return it (zero if not available)
-  my $time = $self->hdr('RUTSTART');
+  my $time = $self->hdr('UTSTART');
   $time = 0 unless (defined $time);
   $self->hdr('ORACTIME', $time);
 
   $new{'ORACTIME'} = $time;
 
   # ORACUT
-  # For IRCAM this is simply the IDATE header value
-  my $ut = $self->hdr('IDATE');
+  # For Michelle this is simply the UTDATE header value
+  my $ut = $self->hdr('UTDATE');
   $ut = 0 unless defined $ut;
   $self->hdr('ORACUT', $ut);
 
@@ -193,5 +193,4 @@ Council. All Rights Reserved.
 
 =cut
 
- 
 1;
