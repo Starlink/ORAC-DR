@@ -163,9 +163,15 @@ $DEBUG = 0; # Turn off debugging mode
 		    },
 		    {
 		     START => 20020701, # Not checked
+		     END   => 20021201,
+		     ARCSEC=> 1.09,
+		     BEAM  => 278.0,
+		    },
+		    {
+		     START => 20021202,
 		     END   => 20021231,
-		     ARCSEC=> 1.06,
-		     BEAM  => 276.0,
+		     ARCSEC => 0.79,
+		     BEAM => 194,
 		    },
 		    {
 		     START => 20030101, # Not checked
@@ -193,9 +199,27 @@ $DEBUG = 0; # Turn off debugging mode
 		    },
 		    {
 		     START => 20010101,
-		     END => 20030131,
-		     ARCSEC => 2.6,
+		     END => 20020601,
+		     ARCSEC => 2.78,
 		     BEAM   => 260,
+		    },
+		    {
+		     START => 20020602,
+		     END => 20021201,
+		     ARCSEC => 4.13,
+		     BEAM => 497,
+		    },
+		    {
+		     START => 20021202,
+		     END => 20021231,
+		     ARCSEC => 2.73,
+		     BEAM => 306,
+		    },
+		    {
+		     START => 20030101,
+		     END => 20030131,
+		     ARCSEC => 2.45,
+		     BEAM => 262,
 		    },
 		    {
 		     START => 20030201,
