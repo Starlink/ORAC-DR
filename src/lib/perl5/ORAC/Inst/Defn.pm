@@ -514,6 +514,8 @@ sub orac_determine_recipe_search_path {
     push( @path, File::Spec->catdir( $root, "ISAAC" ) );
     push( @path, File::Spec->catdir( $imaging_root, "ISAAC" ) );
     push( @path, File::Spec->catdir( $spectro_root, "ISAAC" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "ESO" ) );
+    push( @path, File::Spec->catdir( $spectro_root, "ESO" ) );
     push( @path, $imaging_root );
     push( @path, $spectro_root );
 
@@ -521,6 +523,8 @@ sub orac_determine_recipe_search_path {
     push( @path, File::Spec->catdir( $root, "NACO" ) );
     push( @path, File::Spec->catdir( $imaging_root, "NACO" ) );
     push( @path, File::Spec->catdir( $spectro_root, "NACO" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "ESO" ) );
+    push( @path, File::Spec->catdir( $spectro_root, "ESO" ) );
     push( @path, $imaging_root );
     push( @path, $spectro_root );
 
@@ -650,6 +654,8 @@ sub orac_determine_primitive_search_path {
     push( @path, File::Spec->catdir( $root, "ISAAC" ) );
     push( @path, File::Spec->catdir( $imaging_root, "ISAAC" ) );
     push( @path, File::Spec->catdir( $spectro_root, "ISAAC" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "ESO" ) );
+    push( @path, File::Spec->catdir( $spectro_root, "ESO" ) );
     push( @path, $imaging_root );
     push( @path, $spectro_root );
     push( @path, $general_root );
@@ -658,6 +664,8 @@ sub orac_determine_primitive_search_path {
     push( @path, File::Spec->catdir( $root, "NACO" ) );
     push( @path, File::Spec->catdir( $imaging_root, "NACO" ) );
     push( @path, File::Spec->catdir( $spectro_root, "NACO" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "ESO" ) );
+    push( @path, File::Spec->catdir( $spectro_root, "ESO" ) );
     push( @path, $imaging_root );
     push( @path, $spectro_root );
     push( @path, $general_root );
