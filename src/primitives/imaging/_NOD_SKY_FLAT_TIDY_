@@ -1,0 +1,120 @@
+#+
+# Name:
+#    _NOD_SKY_FLAT_TIDY_
+#
+# Purpose:
+#    Removes unwanted intermediate files for the NOD_SKY_FLAT recipe
+#    variants.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    Removes intermediate frames, but retaining those with the _ff suffix.
+#    Files are only removed when they are no longer needed, as guided
+#    by the steering headers FLAT_DIVIDE, MAKE_MOSAIC and CYCLE_NUMBER,
+#    and group internal header DIFFERENCE_GROUP.  Registration text files
+#    with extension .off are also removed.
+
+#
+# Authors:
+#    BC: Brad Cavanagh (JAC)
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Record the group file name.
+    my $grpname = $Grp->file;
+
+# Determine whether the NDFs support variance.  Any of the NDFs should
+# do.
+    my $file = $Frm->file;
+    $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$file" );
+    ( my $ORAC_STATUS, my $variance ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "variance" );
+
+# Removed intermediate files stored $Frm->file method.
+    _DELETE_TEMP_FILES_ KEEP=_nm,_th,_dp,_ff,_adu
+
+# Certain files can only be removed once certain steps are complete,
+# and then only as a group.  So determine if it's time to remove these
+# files.  Since the flat may only be created after the first cycle, use
+# the FLAT_DIVIDE steering parameter, as this is activated every cycle.
+# Obtain the cycle number too.
+    my $flatdivide = $Frm->uhdr( "FLAT_DIVIDE" );
+    my $mademosaic = $Frm->uhdr( "MAKE_MOSAIC" );
+    my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" ); 
+
+# Remove the remaining files from this cycle used to make the flat.
+    if ( $flatdivide ) {
+       _DELETE_TEMP_GROUP_FILES_ DELETE=_th
+       if ( $variance eq "TRUE" ) {
+          _DELETE_TEMP_GROUP_FILES_ DELETE=_bgl,_pov,_rnv
+       }
+    }
+
+# Remove the remaining files from this cycle used to make the mosaic.
+# Note these are in the difference-pair group.
+    if ( $mademosaic ) {
+       {
+
+# Make a local version of the main group, using the group of
+# differenced pairs.  Then use the standard primitive which expects
+# a $Grp.
+          my $Grp = $Grp->uhdr( "DIFFERENCE_GROUP" );
+          my $mosGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+          {
+             my $Grp = $mosGrp;
+             my $Frm = $Grp->frame( $Grp->num - 1 );
+             _DELETE_TEMP_GROUP_FILES_ DELETE=_trn
+
+# Obtain the last syllable, i.e. parts of the name broken by underscore,
+# for each frame.
+             foreach $Frm ( $Grp->members ) {
+                my @syllables = split( /_/, $Frm->file );
+                my $suffix = $syllables[ $#syllables ];
+
+# Remove the offset text files.  These are associated with the _ff frames, so
+# switch suffices by reforming the name with the new suffix.
+                my $textfile = join( "_", @syllables[ 0..$#syllables-1 ] ) . "_ff";
+                unlink ( $textfile . ".off" );
+             }
+
+# Remove the group offset text file.
+             if ( $cycleno > 0 ) {
+                unlink ( $grpname . ".off" );
+             }
+          }
+       }
+    }
+    orac_print "\n\n";
+
+# Podule
+# ======
+
+=head1 NAME
+
+_NOD_SKY_FLAT_TIDY_ -- Removes unwanted intermediate files for the NOD_SKY_FLAT_THERMAL recipe.
+
+=head1 DESCRIPTION
+
+Removes intermediate frames, but retaining those with the _ff suffix.
+Files are only removed when they are no longer needed, as guided by
+the steering headers FLAT_DIVIDE, MAKE_MOSAIC and CYCLE_NUMBER, and
+group internal header DIFFERENCE_GROUP.  Registration text files with
+extension .off are also removed.
+
+=head1 AUTHORS
+
+BC: Brad Cavanagh (JAC)
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
