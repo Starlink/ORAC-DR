@@ -95,6 +95,9 @@ sub sigma_ui {
 		-height => '0',
 		-width => '0',
 	);
+	my($button_8) = $root->Button (
+		-text => 'Modify',
+	);
 	my($button_4) = $root->Button (
 		-padx => '20',
 		-text => 'Revert',
@@ -105,11 +108,14 @@ sub sigma_ui {
 
 	# widget commands
 
+	$button_8->configure(
+		-command => sub { modify_current('SIGMA') }
+	);
 	$button_4->configure(
 		-command => sub { &set_default_status('SIGMA');}
 	);
 	$button_7->configure(
-		-command => \&add_sigma_entry
+		-command => sub { add_entry('SIGMA') }
 	);
 
 	# Geometry management
@@ -232,14 +238,19 @@ sub sigma_ui {
 		-row => '3',
 		-sticky => 'nesw'
 	);
-	$button_4->grid(
+	$button_8->grid(
 		-in => $frame_4,
 		-column => '1',
 		-row => '1'
 	);
+	$button_4->grid(
+		-in => $frame_4,
+		-column => '2',
+		-row => '1'
+	);
 	$button_7->grid(
 		-in => $frame_4,
-		-column => '3',
+		-column => '4',
 		-row => '1'
 	);
 
@@ -249,6 +260,7 @@ sub sigma_ui {
 	$frame_2->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
 	$frame_2->gridRowconfigure(2, -weight  => 0, -minsize  => 30);
 	$frame_2->gridRowconfigure(3, -weight  => 0, -minsize  => 30);
+	$frame_2->gridRowconfigure(4, -weight  => 0, -minsize  => 30);
 
 	# container $frame_2 (columns)
 	$frame_2->gridColumnconfigure(1, -weight => 0, -minsize => 76);
@@ -261,9 +273,10 @@ sub sigma_ui {
 	$frame_4->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
 
 	# container $frame_4 (columns)
-	$frame_4->gridColumnconfigure(1, -weight => 0, -minsize => 2);
+	$frame_4->gridColumnconfigure(1, -weight => 0, -minsize => 30);
 	$frame_4->gridColumnconfigure(2, -weight => 0, -minsize => 2);
-	$frame_4->gridColumnconfigure(3, -weight => 0, -minsize => 35);
+	$frame_4->gridColumnconfigure(3, -weight => 0, -minsize => 2);
+	$frame_4->gridColumnconfigure(4, -weight => 0, -minsize => 35);
 
 	# container $root (rows)
 	$root->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
@@ -293,7 +306,3 @@ create_menus('SIGMA', $toolmenu, $windowmenu, $regionmenu);
 
 	# end additional interface code
 }
-
-
-1;
-
