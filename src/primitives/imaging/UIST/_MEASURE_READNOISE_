@@ -1,7 +1,72 @@
+=head1 NAME
+
+_MEASURE_READNOISE_ - measures readnoise for an array tests sequence
+for UIST.
+
+=head1 DESCRIPTION
+
+This primitive measures the readnoise for a group of UIST dark frames,
+reports it to the user, and files this readnoise in a log file if it
+is being run at UKIRT.
+
+This primitive assumes the following order for an array tests sequence:
+
+=over 4
+
+=item One throwaway frame used to "clean up" the array before statistics
+are done on the remaining frames.
+
+=item A group of frames that will be used to determine the readnoise.
+These frames should be short-exposure DARKs.
+
+=back
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2002 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
 # Bring in Starlink::HDSPACK::copobj
 use Starlink::HDSPACK qw/ copobj /;
 
-if ( $Frm->uhdr( "ARRAY_TESTS_MEASURE_READNOISE" ) ) {
+if ( $Frm->uhdr( "MEASURE_READNOISE" ) ) {
+
+  # Initially flag the file as not being writable.
+  my $writable = 0;
+  if( -e "/ukirt_sw/logs" ) {
+
+    # Create a results file if one does not exist.
+    my $results = "/ukirt_sw/logs/uist_array_tests.log";
+
+    if( -w $results ) {
+      $writable = 1;
+    }
+    if( !( -e $results) ) {
+      if( $writable ) {
+        open( RESULTS, ">$results" ) ||
+          orac_throw "Unable to open a new array-test $results log file. Error: $!.\n";
+        orac_print "Creating a new results file called $results\n";
+
+        print RESULTS " UT  Date         Readnoise     Dark Current\n";
+        print RESULTS "----------        ---------     ------------\n";
+      } else {
+        orac_warn "Unable to write to new array-test $results log file.\n";
+      }
+    } else {
+      if( $writable ) {
+        open( RESULTS, ">>$results" ) ||
+          orac_throw "Unable to append to the array-test $results log file. Error: $!.\n";
+      } else {
+        orac_warn "Unable to append to the array-test $results log file.\n";
+      }
+    }
+  }
 
   orac_print "Calculating NDSTARE readnoise.\n";
 
@@ -12,7 +77,7 @@ if ( $Frm->uhdr( "ARRAY_TESTS_MEASURE_READNOISE" ) ) {
   my @files = $Grp->membernames;
 
   # Determine the number of DARK frames and total frames in the group.
-  my $dark_frames = $Frm->uhdr("ARRAY_TESTS_DARK_FRAMES");
+  my $dark_frames = $Frm->uhdr("DARK_FRAMES");
   my $nfiles = $#files; # This is actually total frames - 1.
 
   # Create a temporary file to hold the 'mean' image.
@@ -53,7 +118,7 @@ if ( $Frm->uhdr( "ARRAY_TESTS_MEASURE_READNOISE" ) ) {
     my $file = $Frm->file($i);
     my $hashnumber = $i - $nfiles + $dark_frames;
     $files .= $hash{$hashnumber} . "=" . $file . " ";
-    $add .= "((" . $hash{$hashnumber} . "-" . $hash{$mfile} . ")*(" . $hash{$hashnumber} . "-" . $hash{$mfile} . "))";
+    $add .= "((" . $hash{$hashnumber} . "-" . $hash{$mfile} . "))";
     $add .= " + " if($i != $nfiles);
   }
 
@@ -71,15 +136,35 @@ if ( $Frm->uhdr( "ARRAY_TESTS_MEASURE_READNOISE" ) ) {
   my $ORAC_STATUS = copobj( "$tfile2name.DATA_ARRAY", "$out.VARIANCE", $status );
 
   # Obtain the mean of the variance frame
-  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$out comp=Variance" );
+  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$out comp=Variance clip=3" );
 
-  ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+  ( $ORAC_STATUS, my $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
 
-  my $readnoise = sqrt($mean);
+  my $nreads = $Frm->uhdr( "ORAC_NUMBER_OF_READS" ) || 2;
+  my $readint = $Frm->hdr( "READINT" ) || 1.0;
+  _GET_GAIN_
+  my $gain = $_GET_GAIN_{GAIN};
+  my $multirds = $Frm->hdr( "MULTIRDS" ) || 1;
+
+  my $readnoise = $sigma * ( $nreads - 1 ) * $readint * $gain / ( $multirds * sqrt( 2 ) );
   
   # Format the output for easier display.
   my $o_readnoise = sprintf( "%9.3f", $readnoise );
-  orac_print "NDSTARE readnoise is: $o_readnoise.\n";
+  orac_print "NDSTARE readnoise is: $o_readnoise e-/sec.\n";
+
+  # And get an error in the mean as well.
+  ( $ORAC_STATUS, my $meanerr ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+
+  # Format the output for easier display.
+  my $o_meanerr = sprintf( "%9.3f", $meanerr );
+  orac_print "NDSTARE readnoise standard deviation is: $o_meanerr e-/sec.\n\n";
+
+  # Write to the log file.
+  if( -e "/ukirt_sw/logs" && $writable ) {
+    my $utdate = substr( $Frm->hdr( "DATE-OBS" ), 0, 10 );
+    printf RESULTS "%10s %16s\n", $utdate, $o_readnoise;
+    close( RESULTS );
+  }
 
   # File the readnoise with the Cal system.
   # Needs to be in a hash
@@ -87,13 +172,6 @@ if ( $Frm->uhdr( "ARRAY_TESTS_MEASURE_READNOISE" ) ) {
   $Cal->readnoiseindex->add($Frm->file, \%calhash);
   orac_print "Readnoise filed with the calibration system.\n";
   
-  # And get an error in the mean as well.
-  ( $ORAC_STATUS, my $meanerr ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
-
-  # Format the output for easier display.
-  my $o_meanerr = sprintf( "%9.3f", $meanerr );
-  orac_print "NDSTARE readnoise standard deviation is: $o_meanerr.\n\n";
-
   # Remove temporary text file.
   unlink( "makecal.inlist$$" );
 
