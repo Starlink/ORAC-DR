@@ -1,0 +1,678 @@
+#+
+# Name:
+#    _MAKE_FP_MASK_
+#
+# Purpose:
+#    Makes an ARD mask excluding regions beyond the FP-transmitted
+#    circle.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive detects the ring about the central transmitted
+#    region of a Fabry-Perot frame, and uses this information to
+#    determine the location of the ring's centre.  The fixed width
+#    of the circle then permits creation of an ARD (ASCII Region
+#    Definition cf. SUN/183) file specifying the region outside the
+#    central circle for later masking.
+#
+#    The primitive reports the successful creation of the ARD file.
+#
+# Arguments:
+#    MASKFILE = CHARACTER (Returned)
+#       The name of the ARD (ASCII Region Definition cf. SUN/183)
+#       text file to contain the region beyond the central circle
+#       transmitted through the Fabry-Perot etalon.  The name is
+#       the current Group name followed by "_fp.ard".
+#
+# Notes:
+#    -  First the calibration fpcentre is accessed to see if the
+#    centre has been determined manually.  If it is, this is used
+#    and reported.
+#    -  Otherwise narrow cross-sections along a column and a row
+#    are collapsed to form profiles.  A 95% percentile threshold
+#    setting the other pixels bad is used to select the peaks due
+#    to the surrounding ring of the Fabry-Perot attachment.  Then
+#    the weighted average of these points is used to specify the
+#    the peaks.  Given the known diameter of the transmission area
+#    and width of the ring, it is possible to determine the
+#    displacement of cross-section with respect to the centre.
+#    -  Should the previous step fail to locate both peaks, because
+#    the relative illumination of the ring and beyond is highly
+#    variable, second row or column cross-sections displaced by
+#    approximately 100 pixels from the first, are used to define
+#    the ring on one side (left/right or top/bottom).  This requires
+#    both a column and a row solution to be solved simultaneously
+#    for the centre co-ordinates.   Since these are somewhat less
+#    reliable, the transmission radius is incremented by 15 pixels
+#    to make more likely that the transmission region is fully
+#    included in the ARD region.
+#    -  Mixed solutions are also solved, say if the x centre is known
+#    and there is a fix for the x position across a row or two.  The
+#    average of all valid determinations is derived.
+#    -  Failing the above, a default centre is used.  The transmission
+#    radius is incremented by 30 pixels to make more likely that the
+#    transmission region is fully included in the ARD region.
+#    -  The determined centre is filed to the fpcentre calibration.
+#    -  The intermediate scratch frames cannot be displayed.
+#
+# Output Data:
+#    -  ARD file specifying mask to exclude all but the circle
+#    of light through the FP.
+#
+# Tasks:
+#    KAPPA: COLLAPSE, HISTAT, MATHS, STATS, THRESH, WCSFRAME.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (Starlink)
+#
+# Copyright:
+#    Copyright (C) 2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+    my ( $radius, $xcentre, $ycentre );
+    my $ndf = $Frm->file;
+
+# First attempt to obtain the values from the calibration system.
+# If it's successful extract the x and y co-ordinates, of which there
+# must be two, and shift the nominal positions, otherwise use the current
+# values.
+    my $fpc = eval { $Cal->fpcentre };
+    if ( !$@ ) {
+       my @centre = @$fpc;
+       if ( $#centre == 1 ) {
+          $xcentre = $centre[ 0 ];  $ycentre = $centre[ 1 ];
+          orac_print "Using specified co-ordinates of the FP centre " .
+                     "$xcentre, $ycentre.\n";
+          $radius = 414;
+       }
+    }
+    if ( !defined( $xcentre ) || !defined( $ycentre ) ) {
+
+# Initialise variables.
+# =====================
+
+# Define the row (r) and column (c) cuts, the lower and upper search
+# bounds for the peaks from the ring pattern, and relative direction
+# of the cuts with respect to the centre (rs and cs).
+       my $r2 = 400;  my $r2_lb = 250;  my $r2_ub = 750;
+       my $r1 = 300;  my $r1_lb = 320;  my $r1_ub = 570;
+       my $rs = abs( $r2 - $r1 ) / ( $r2 - $r1 );
+       my $c2 = 860;  my $c2_lb = 350;  my $c2_ub = 800;
+       my $c1 = 950;  my $c1_lb = 500;  my $c1_ub = 630;
+       my $cs = abs( $c2 - $c1 ) / ( $c2 - $c1 );
+
+# Ignore the lowest rows which may be brighter than the ring.
+       my $clow = 150;
+
+# Set the collapse half width in pixels.  The total averaging is over
+# 2*hwidth+1 pixels.
+       my $hwidth = 2;
+
+# Set the mean positions to be undefined, so that we can tell
+# which approach is needed to solve for the centre co-ordinates.
+       my ( $mean_xpos_r2l, $mean_xpos_r2u, $mean_xpos_r1l, $mean_xpos_r1u );
+       my ( $mean_ypos_c2l, $mean_ypos_c2u, $mean_ypos_c1l, $mean_ypos_c1u );
+       my ( $xcoeff, $ycoeff, $acoeff, $bcoeff, $ccoeff, $dcoeff );
+
+# Set the approximate radius and width of the ring.  Allow a little
+# error in the centering by increasing the radius slightly.  Set the
+# radius increment should a fit be used.
+       my $ring = 484;
+       my $ring_width = 140;
+       $radius = $ring - 0.5 * $ring_width + 2;
+       my $radius_incr = 15;
+
+# Set the default centre.
+       my $xcen_def = 525;
+       my $ycen_def = 612;
+
+# Set an upper limit for thresholding.  Signal should be no more than c.E4.
+       my $uth = 1E10;
+
+# Create temporary files.
+# =======================
+       my $coltmp = new ORAC::TempFile;
+       my $colfile = $coltmp->file;
+
+       my $colthtmp = new ORAC::TempFile;
+       my $colthfile = $colthtmp->file;
+
+       my $colxtmp = new ORAC::TempFile;
+       my $colxfile = $colxtmp->file;
+
+# Try to determine the y centre using one or, if necessary, two cuts.
+# ===================================================================
+
+# First row
+# ---------
+
+# Collapse the first set of rows.
+       my @bounds = ( $r2 - $hwidth, $r2 + $hwidth );
+       my $param = "$ndf(,$bounds[0]:$bounds[1]) out=$colfile axis=2 estimator=median";
+       $Mon{ "kappa_mon" }->obeyw( "collapse", "$param" );
+
+# Switch to pixel co-ordinates.
+       $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$colfile frame=pixel" );
+
+# Find and cut above the 95 percentile.  The aim is to retain merely the peaks in
+# the cross-section where the ring pattern occurs.
+       $Mon{ "kappa_mon" }->obeyw( "histat", "ndf=$colfile percentiles=95" );
+       my ( $ORAC_STATUS, $cut ) = $Mon{ "kappa_mon"}->get( "histat", "perval" );
+       $param = "in=$colfile thrlo=$cut newlo=bad thrhi=$uth newhi=$uth out=$colthfile";
+       $Mon{ "kappa_mon" }->obeyw( "thresh", "$param" );
+
+# We examine each peak separately to determine the mean x, stating with
+# the left peak.  These peaks are too wide for KAPPA:CENTROID or
+# FIGARO:EMLT so use a devious route.  First find the mean value.  Then
+# evaluate the positions in MATHS, and then obtain the mean of those.
+       $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$colthfile(:$r2_lb)" );
+       ( my $stats_status, my $mean ) = $Mon{ "kappa_mon"}->get( "stats", "mean" );
+       if ( abs( $mean ) < $uth ) {
+        
+          $param = "ia=$colthfile(:$r2_lb) exp='xa*ia/($mean)' out=$colxfile"; 
+          $Mon{ "kappa_mon" }->obeyw( "maths", "$param" );
+
+          $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$colxfile" );
+          ( $ORAC_STATUS, $mean_xpos_r2l ) = $Mon{ "kappa_mon"}->get( "stats", "mean" );
+
+          orac_print "Lower x position at row $r2 is $mean_xpos_r2l.\n";
+       } else {
+          orac_print "Lower x position at row $r2 is undefined.\n";
+       }
+
+# Repeat the previous steps for the right peak in the clipped cross-section.
+       $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$colthfile($r2_ub:)" );
+       ( $ORAC_STATUS, $mean ) = $Mon{ "kappa_mon"}->get( "stats", "mean" );
+       if ( abs( $mean ) < $uth ) {
+          $param = "ia=$colthfile($r2_ub:) exp='xa*ia/($mean)' out=$colxfile"; 
+          $Mon{ "kappa_mon" }->obeyw( "maths", "$param" );
+
+          $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$colxfile" );
+          ( $ORAC_STATUS, $mean_xpos_r2u ) = $Mon{ "kappa_mon"}->get( "stats", "mean" );
+
+          orac_print "Upper x position at row $r2 is $mean_xpos_r2u.\n";
+       } else {
+          orac_print "Upper x position at row $r2 is undefined.\n";
+       }
+
+# If we know the width of the chord, use Pythagoras to determine the centre
+# of the circle.
+       if ( defined ( $mean_xpos_r2u ) && defined( $mean_xpos_r2l ) ) {
+          my $r2hw = 0.5 * ( $mean_xpos_r2u - $ mean_xpos_r2l );
+          $ycentre = $r2 + $rs * sqrt( ( $ring - $r2hw ) * ( $ring + $r2hw ) );
+          orac_print "y centre for r2 is $ycentre\n";
+
+# Need to have a second row to find a solution using simulataneous equations.
+       } else {
+
+# Second row
+# ----------
+
+# Collapse the second set of rows.
+          @bounds = ( $r1 - $hwidth, $r1 + $hwidth );
+          $param = "$ndf(,$bounds[0]:$bounds[1]) out=$colfile axis=2 estimator=median";
+          $Mon{ "kappa_mon" }->obeyw( "collapse", "$param" );
+
+# Switch to pixel co-ordinates.
+          $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$colfile frame=pixel" );
+
+# Find and cut above the 95 percentile.  The aim is to retain merely the peaks in
+# the cross-section where the ring pattern occurs.
+          $Mon{ "kappa_mon" }->obeyw( "histat", "ndf=$colfile percentiles=95" );
+          ( $ORAC_STATUS, $cut ) = $Mon{ "kappa_mon"}->get( "histat", "perval" );
+          $param = "in=$colfile thrlo=$cut newlo=bad thrhi=$uth newhi=$uth out=$colthfile";
+          $Mon{ "kappa_mon" }->obeyw( "thresh", "$param" );
+
+# We examine each peak separately to determine the mean x, stating with
+# the left peak.  These peaks are too wide for KAPPA:CENTROID or
+# FIGARO:EMLT so use a devious route.  First find the mean value.  Then
+# evaluate the positions in MATHS, and then obtain the mean of those.
+          $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$colthfile(:$r1_lb)" );
+          ( my $stats_status, $mean ) = $Mon{ "kappa_mon"}->get( "stats", "mean" );
+          if ( abs( $mean ) < $uth ) {
+
+             $param = "ia=$colthfile(:$r1_lb) exp='xa*ia/($mean)' out=$colxfile"; 
+             $Mon{ "kappa_mon" }->obeyw( "maths", "$param" );
+
+             $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$colxfile" );
+             ( $ORAC_STATUS, $mean_xpos_r1l ) = $Mon{ "kappa_mon"}->get( "stats", "mean" );
+
+             orac_print "Lower x position at row $r1 is $mean_xpos_r1l.\n";
+          } else {
+             orac_print "Lower x position at row $r1 is undefined.\n";
+          }
+
+# Repeat the previous steps for the right peak in the clipped cross-section.
+          $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$colthfile($r2_ub:)" );
+          ( $ORAC_STATUS, $mean ) = $Mon{ "kappa_mon"}->get( "stats", "mean" );
+          if ( abs( $mean ) < $uth ) {
+             $param = "ia=$colthfile($r1_ub:) exp='xa*ia/($mean)' out=$colxfile"; 
+             $Mon{ "kappa_mon" }->obeyw( "maths", "$param" );
+
+             $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$colxfile" );
+             ( $ORAC_STATUS, $mean_xpos_r1u ) = $Mon{ "kappa_mon"}->get( "stats", "mean" );
+
+             orac_print "Upper x position at row $r1 is $mean_xpos_r1u.\n";
+          } else {
+             orac_print "Lower x position at row $r1 is undefined.\n";
+          }
+
+# If we know the width of the chord, use Pythagoras to determine the centre
+# of the circle.
+          my $delta_x;
+          my $delta_y = $r2 - $r1;
+          if ( defined( $mean_xpos_r1u ) && defined( $mean_xpos_r1l ) ) {
+             $delta_x = $mean_xpos_r1u - $ mean_xpos_r1l;
+             my $r1hw = 0.5 * $delta_x;
+             $ycentre = $r1 + $rs * sqrt( ( $ring - $r1hw ) * ( $ring + $r1hw ) );
+             orac_print "ycentre for r1 is $ycentre\n";
+
+# Needs simultaneous equation solution.  So find the coefficients for the
+# first relationship xcentre = mean_xpos_r?u - a * ( ycentre - y? ) + b
+# where ? = 1 or 2 depending on which pair of mean positions are defined.
+          } elsif ( defined( $mean_xpos_r1u ) && defined( $mean_xpos_r2u ) ) {
+             $delta_x = $mean_xpos_r2u - $ mean_xpos_r1u;
+             $acoeff = $delta_y / $delta_x;
+             $bcoeff = 0.5 / $delta_x *
+                       ( ( $delta_y * $ delta_y ) - ( $delta_x * $ delta_x ) );
+          
+          } elsif ( defined( $mean_xpos_r1l ) && defined( $mean_xpos_r2l ) ) {
+             $delta_x = $mean_xpos_r2l - $ mean_xpos_r1l;
+             $acoeff = $delta_y / $delta_x;
+             $bcoeff = 0.5 / $delta_x *
+                       ( ( $delta_y * $ delta_y ) - ( $delta_x * $ delta_x ) );
+          }
+       }
+
+# Try to determine the x centre using one or, if necessary, two cuts.
+# ===================================================================
+
+# First column
+# ------------
+
+# Collapse the first set of columns.
+       @bounds = ( $c2 - $hwidth, $c2 + $hwidth );
+       $param = "$ndf($bounds[0]:$bounds[1],) out=$colfile axis=1 estimator=median";
+       $Mon{ "kappa_mon" }->obeyw( "collapse", "$param" );
+
+# Switch to pixel co-ordinates.
+       $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$colfile frame=pixel" );
+
+# Find and cut above the 95 percentile.  The aim is to retain merely the peaks in
+# the cross-section where the ring pattern occurs.
+       $Mon{ "kappa_mon" }->obeyw( "histat", "ndf=$colfile percentiles=95" );
+       ( $ORAC_STATUS, $cut ) = $Mon{ "kappa_mon"}->get( "histat", "perval" );
+       $param = "in=$colfile thrlo=$cut newlo=bad thrhi=$uth newhi=$uth out=$colthfile";
+       $Mon{ "kappa_mon" }->obeyw( "thresh", "$param" );
+
+# We examine each peak separately to determine the mean x, stating with
+# the left peak.  These peaks are too wide for KAPPA:CENTROID or
+# FIGARO:EMLT so use a devious route.  First find the mean value.  Then
+# evaluate the positions in MATHS, and then obtain the mean of those.
+       $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$colthfile($clow:$c2_lb)" );
+       ( $stats_status, $mean ) = $Mon{ "kappa_mon"}->get( "stats", "mean" );
+       if ( abs( $mean ) < $uth ) {
+          $param = "ia=$colthfile($clow:$c2_lb) exp='xa*ia/($mean)' out=$colxfile"; 
+          $Mon{ "kappa_mon" }->obeyw( "maths", "$param" );
+
+          $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$colxfile" );
+          ( $ORAC_STATUS, $mean_ypos_c2l ) = $Mon{ "kappa_mon"}->get( "stats", "mean" );
+
+          orac_print "Lower y position at column $c2 is $mean_ypos_c2l.\n";
+       } else {
+          orac_print "Lower y position at column $c2 is undefined.\n";
+       }
+
+# Repat the previous steps for the right peak in the clipped cross-section.
+       $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$colthfile($c2_ub:)" );
+       ( $ORAC_STATUS, $mean ) = $Mon{ "kappa_mon"}->get( "stats", "mean" );
+       if ( abs( $mean ) < $uth ) {
+          $param = "ia=$colthfile($c2_ub:) exp='xa*ia/($mean)' out=$colxfile"; 
+          $Mon{ "kappa_mon" }->obeyw( "maths", "$param" );
+
+          $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$colxfile" );
+          ( $ORAC_STATUS, $mean_ypos_c2u ) = $Mon{ "kappa_mon"}->get( "stats", "mean" );
+
+          orac_print "Upper y position at column $c2 is $mean_ypos_c2u.\n";
+       } else {
+         orac_print "Upper y position at column $c2 is undefined.\n";
+       }
+
+       if ( defined( $mean_ypos_c2u ) && defined( $mean_ypos_c2l ) ) {
+          my $r2hw = 0.5 * ( $mean_ypos_c2u - $ mean_ypos_c2l );
+          $xcentre = $c2 + $cs * sqrt( ( $ring - $r2hw ) * ( $ring + $r2hw ) );
+          orac_print "x centre for c2 is $xcentre\n";
+
+# Need to have a second column to find a solution using simulataneous equations.
+       } else {
+
+# Second column
+# -------------
+
+# Collapse the second set of columns.
+          @bounds = ( $c1 - $hwidth, $c1 + $hwidth );
+          $param = "$ndf($bounds[0]:$bounds[1],) out=$colfile axis=1 estimator=median";
+          $Mon{ "kappa_mon" }->obeyw( "collapse", "$param" );
+
+# Switch to pixel co-ordinates.
+          $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$colfile frame=pixel" );
+
+# Find and cut above the 95 percentile.  The aim is to retain merely the peaks in
+# the cross-section where the ring pattern occurs.
+          $Mon{ "kappa_mon" }->obeyw( "histat", "ndf=$colfile percentiles=95" );
+          ( $ORAC_STATUS, $cut ) = $Mon{ "kappa_mon"}->get( "histat", "perval" );
+          $param = "in=$colfile thrlo=$cut newlo=bad thrhi=$uth newhi=$uth out=$colthfile";
+          $Mon{ "kappa_mon" }->obeyw( "thresh", "$param" );
+
+# We examine each peak separately to determine the mean x, stating with
+# the left peak.  These peaks are too wide for KAPPA:CENTROID or
+# FIGARO:EMLT so use a devious route.  First find the mean value.  Then
+# evaluate the positions in MATHS, and then obtain the mean of those.
+          $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$colthfile($clow:$c1_lb)" );
+          ( my $stats_status, $mean ) = $Mon{ "kappa_mon"}->get( "stats", "mean" );
+          if ( abs( $mean ) < $uth ) {
+             $param = "ia=$colthfile($clow:$c1_lb) exp='xa*ia/($mean)' out=$colxfile"; 
+             $Mon{ "kappa_mon" }->obeyw( "maths", "$param" );
+
+             $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$colxfile" );
+             ( $ORAC_STATUS, $mean_ypos_c1l ) = $Mon{ "kappa_mon"}->get( "stats", "mean" );
+
+             orac_print "Lower y position at column $c1 is $mean_ypos_c1l.\n";
+          } else {
+             orac_print "Lower y position at column $c1 is undefined.\n";
+          }
+
+# Repeat the previous steps for the right peak in the clipped cross-section.
+          $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$colthfile($c1_ub:)" );
+          ( $ORAC_STATUS, $mean ) = $Mon{ "kappa_mon"}->get( "stats", "mean" );
+          if ( abs( $mean ) < $uth ) {
+             $param = "ia=$colthfile($c1_ub:) exp='xa*ia/($mean)' out=$colxfile"; 
+             $Mon{ "kappa_mon" }->obeyw( "maths", "$param" );
+
+             $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$colxfile" );
+             ( $ORAC_STATUS, $mean_ypos_c1u ) = $Mon{ "kappa_mon"}->get( "stats", "mean" );
+
+             orac_print "Upper y position at column $c1 is $mean_ypos_c1u.\n";
+          } else {
+             orac_print "Upper y position at column $c1 is undefined.\n";
+          }
+
+# If we know the width of the chord, use Pythagoras to determine the centre
+# of the circle.
+          my $delta_y;
+          my $delta_x = $c2 - $c1;
+          if ( defined( $mean_ypos_c1u ) && defined( $mean_ypos_c1l ) ) {
+             $delta_y = $mean_ypos_c1u - $ mean_ypos_c1l;
+             my $c1hw = 0.5 * $delta_x;
+             $xcentre = $c1 + $cs * sqrt( ( $ring - $c1hw ) * ( $ring + $c1hw ) );
+             orac_print "xcentre is $xcentre\n";
+
+# Needs simultaneous equation solution.  So find the coefficients for the
+# first relationship xcentre = mean_xpos_r?u - a * ( ycentre - y? ) + b
+# where ? = 1 or 2 depending on which pair of mean positions are defined.
+          } elsif ( defined( $mean_ypos_c1u ) && defined( $mean_ypos_c2u ) ) {
+             $delta_y = $mean_ypos_c2u - $ mean_ypos_c1u;
+             $ccoeff = $delta_y / $delta_x;
+             $dcoeff = 0.5 / $delta_x *
+                       ( ( $delta_y * $ delta_y ) - ( $delta_x * $ delta_x ) );
+
+          } elsif ( defined( $mean_ypos_c1l ) && defined( $mean_ypos_c2l ) ) {
+             $delta_y = $mean_ypos_c2l - $ mean_ypos_c1l;
+             $ccoeff = $delta_y / $delta_x;
+             $dcoeff = 0.5 / $delta_x *
+                       ( ( $delta_y * $ delta_y ) - ( $delta_x * $ delta_x ) );
+          }
+       }
+
+# Mixed solutions
+# ===============
+
+# Solve simultaneous equations when two fixes on the ring have been
+# found along pairs of columns and rows.
+       if ( defined( $acoeff ) && defined( $bcoeff ) &&
+            defined( $dcoeff ) && defined( $dcoeff ) ) {
+          $xcentre = ( $dcoeff - $bcoeff ) / ( $acoeff - $ccoeff );
+          $ycentre = 0.5 * ( $acoeff * $xcentre + $bcoeff +
+                             $ccoeff * $xcentre + $dcoeff );
+          $radius += $radius_incr;
+
+# If one centre is known from two sides of a cross-section, and there's
+# a partial solution for the other, substitute the known value into the
+# transformation.  It may be possible to do this for both cross-sections,
+# so average where possible.  Start with the x centre being known and the
+# y centre unknown, but there's an x-y fix on the ring at a known row. 
+# Solve by Pythagoras.  Note that the sense of the square root is implied
+# by the sense of the r1,r2 and c1,c2 with respect to the centre given by
+# rs and cs respectively.
+       } elsif ( ( defined( $mean_xpos_r1u ) || defined( $mean_xpos_r2u ) || 
+                   defined( $mean_xpos_r1l ) || defined( $mean_xpos_r2l ) ) &&
+                   defined( $xcentre ) && !defined( $ycentre ) ) {
+          my $nr = 0;
+          $ycentre = 0;
+          if ( defined( $mean_xpos_r2u ) ) {
+             $ycentre += $r2 + $rs * sqrt( $ring * $ring - ( $mean_xpos_r2u - $xcentre ) *
+                         ( $mean_xpos_r2u - $xcentre ) );
+             $nr++;
+          }
+          if ( defined( $mean_xpos_r1u ) ) {
+             $ycentre += $r1 + $rs * sqrt( $ring * $ring - ( $mean_xpos_r1u - $xcentre ) *
+                         ( $mean_xpos_r1u - $xcentre ) );
+             $nr++;
+          }
+          if ( defined( $mean_xpos_r2l ) ) {
+             $ycentre += $r2 + $rs * sqrt( $ring * $ring - ( $mean_xpos_r2l - $xcentre ) *
+                         ( $mean_xpos_r2l - $xcentre ) );
+             $nr++;
+          }
+          if ( defined( $mean_xpos_r1l ) ) {
+             $ycentre += $r1 + $rs * sqrt( $ring * $ring - ( $mean_xpos_r1l - $xcentre ) *
+                         ( $mean_xpos_r1l - $xcentre ) );
+             $nr++;
+          }
+          $ycentre /= $nr;
+          orac_print "y centre for mixed solution is $ycentre\n";
+
+# Now apply when the y centre is known, but not the x centre, and there's
+# an x-y fix on the ring at a known column.
+       } elsif ( ( defined( $mean_ypos_c1u ) || defined( $mean_ypos_c2u ) || 
+                   defined( $mean_ypos_c1l ) || defined( $mean_ypos_c2l ) ) &&
+                   defined( $ycentre ) && !defined( $xcentre ) ) {
+          my $nr = 0;
+          $xcentre = 0;
+          if ( defined( $mean_ypos_c2u ) ) {
+             $xcentre += $c2 + $cs * sqrt( $ring * $ring - ( $mean_ypos_c2u - $ycentre ) *
+                         ( $mean_ypos_c2u - $ycentre ) );
+             $nr++;
+          }
+          if ( defined( $mean_ypos_c1u ) ) {
+             $xcentre += $c1 + $cs * sqrt( $ring * $ring - ( $mean_ypos_c1u - $ycentre ) *
+                         ( $mean_ypos_c1u - $ycentre ) );
+             $nr++;
+          }
+          if ( defined( $mean_ypos_c2l ) ) {
+             $xcentre += $c2 + $cs * sqrt( $ring * $ring - ( $mean_ypos_c2l - $ycentre ) *
+                         ( $mean_ypos_c2l - $ycentre ) );
+             $nr++;
+          }
+          if ( defined( $mean_ypos_c1l ) ) {
+             $xcentre += $c1 + $cs * sqrt( $ring * $ring - ( $mean_ypos_c1l - $ycentre ) *
+                         ( $mean_ypos_c1l - $ycentre ) );
+             $nr++;
+          }
+          $xcentre /= $nr;
+          orac_print "x centre for mixed solution is $xcentre\n";
+
+# Give up and use some default.  Increase the radius to cover the
+# useable region at the cost of including some of the ring.  It's better
+# not to miss some of the transmitted region.
+       } else {
+          if ( ! defined( $xcentre ) ) {
+             $xcentre = $xcen_def;
+             $radius += $radius_incr;
+             orac_print "Defaulting x centre to $xcentre and increase " .
+                        "region radius by $radius_incr pixels.\n";
+          }
+          if ( ! defined( $ycentre ) ) {
+             $ycentre = $ycen_def;
+             $radius += $radius_incr;
+             orac_print "Defaulting y centre to $ycentre and increase " .
+                        "region radius by $radius_incr pixels.\n";
+          }
+       }
+
+# File the base location in the calibration system.
+# =================================================
+
+# The value needs to be in a hash.  Use the current frame as a reference
+# for this, as it has the same readout mode and speed/well depth as the
+# others.
+       my @fpc = ( $xcentre, $ycentre );
+       my %hash = ( %{ $Frm->hdr }, FPCENTRE => \@fpc );
+       $Cal->fpcentreindex->add( $Frm->file, \%hash );
+
+       orac_print "FP transmission centre co-ordinates filed with the calibration system.\n";
+    }
+
+# Create the ARD file.
+# ====================
+
+# Generate the ARD file name using the raw frame name.  Export the file
+# for use by masking primitive.
+    my $ardfile = $Grp->raw . "_fp.ard";
+    $_FP_MASK_CENTRE_{MASKFILE} = $ardfile;
+
+# Remove any existing ARD object file.
+    unlink( $ardfile );
+
+# Create an ARD file.
+    open( my $fh_ardfile, "> $ardfile" ) ||
+      orac_throw "Unable to open $ardfile to create a mask of the FP.  Error: $!.\n";
+
+# Create a circle mask around the central pixel, but we wish not mask
+# the pixels outside this region, hence the ".NOT." prefix.
+     printf $fh_ardfile ".NOT. CIRCLE( %.1f, %.1f, %.1f )\n",
+                $xcentre, $ycentre, $radius;
+
+     close( $fh_ardfile );
+
+# Report the processing status.
+     orac_print "FP mask for $ndf stored in ARD file $ardfile\n\n";
+
+# Podule
+# ======
+
+=head1 NAME
+
+_MAKE_FP_MASK_ -- Makes an ARD mask excluding regions beyond the FP-transmitted circle. 
+
+=head1 DESCRIPTION
+
+This primitive detects the ring about the central transmitted
+region of a Fabry-Perot frame, and uses this information to
+determine the location of the ring's centre.  The fixed width
+of the circle then permits creation of an ARD (ASCII Region
+Definition cf. SUN/183) file specifying the region outside the
+central circle for later masking.
+
+The primitive reports the successful creation of the ARD file.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item MASKFILE = CHARACTER (Returned)
+
+The name of the ARD (ASCII Region Definition cf. SUN/183)
+text file to contain the region beyond the central circle
+transmitted through the Fabry-Perot etalon.  The name is
+the current Group name followed by "_fp.ard".
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+First the calibration fpcentre is accessed to see if the
+centre has been determined manually.  If it is, this is used
+and reported.
+
+=item *
+
+Otherwise narrow cross-sections along a column and a row
+are collapsed to form profiles.  A 95% percentile threshold
+setting the other pixels bad is used to select the peaks due
+to the surrounding ring of the Fabry-Perot attachment.  Then
+the weighted average of these points is used to specify the
+the peaks.  Given the known diameter of the transmission area
+and width of the ring, it is possible to determine the
+displacement of cross-section with respect to the centre.
+
+=item *
+
+Should the previous step fail to locate both peaks, because
+the relative illumination of the ring and beyond is highly
+variable, second row or column cross-sections displaced by
+approximately 100 pixels from the first, are used to define
+the ring on one side (left/right or top/bottom).  This requires
+both a column and a row solution to be solved simultaneously
+for the centre co-ordinates.   Since these are somewhat less
+reliable, the transmission radius is incremented by 15 pixels
+to make more likely that the transmission region is fully
+included in the ARD region.
+
+=item *
+
+Mixed solutions are also solved, say if the I<x> centre is known
+and there is a fix for the I<x> position across a row or two.  The
+average of all valid determinations is derived.
+
+=item *
+
+Failing the above, a default centre is used.  The transmission
+radius is incremented by 30 pixels to make more likely that the
+transmission region is fully included in the ARD region.
+
+=item *
+
+The determined centre is filed to the fpcentre calibration.
+
+=item *
+
+The intermediate scratch frames cannot be displayed.
+
+=back
+
+=head1 OUTPUT dATA
+
+=over 4
+
+=item *
+
+ARD file specifying mask to exclude all but the circle
+of light through the FP.
+
+=back
+
+=head1 TASKS
+
+KAPPA: COLLAPSE, HISTAT, MATHS, STATS, THRESH, WCSFRAME.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (Starlink)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+
