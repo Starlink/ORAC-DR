@@ -32,10 +32,15 @@
 
 # ---------------------------------------------------------------------------
 
-#use 5.006;
+use 5.006;
 
 use strict;
+use warnings;
 use vars qw/$VERSION/;
+
+# Really need to remove all font references and let
+# Tk automatically recognise -font on the ocmmand line
+our $FONT = 'fixed';
 
 # P O D  D O C U M E N T A T I O N ------------------------------------------
 
@@ -138,12 +143,12 @@ my $menu_frame = $MW->Frame( -relief      =>'raised',
 
 foreach ( qw/File Options Help/ )
 {
-   push (@menus, $menu_frame->Menubutton( -font => 'Arial', -text => $_ ) );
+   push (@menus, $menu_frame->Menubutton( -font => $FONT, -text => $_ ) );
 }
 
 # Help menu
 $menus[2]->pack( -side => 'right' );
-$help_menu = $menus[2]->Menu( -tearoff => 0, -font => 'Arial' );
+$help_menu = $menus[2]->Menu( -tearoff => 0, -font => $FONT );
 $menus[2]->configure( -menu => $help_menu );
 
 $menus[2]->menu()->add( "command", -label => "Help",
@@ -154,7 +159,7 @@ $menus[2]->menu()->add( "command", -label => "About FITS Editor",
 
 # File menu
 $menus[0]->pack( -side => 'left'); 
-$file_menu = $menus[0]->Menu( -tearoff => 0, -font => 'Arial' );
+$file_menu = $menus[0]->Menu( -tearoff => 0, -font => $FONT );
 
 $menus[0]->configure( -menu => $file_menu );
 
@@ -171,7 +176,7 @@ $menus[0]->menu()->add( "command", -label => "Exit",
 
 # Options menu
 $menus[1]->pack( -side => 'left' );
-$options_menu = $menus[1]->Menu( -tearoff => 0, -font => 'Arial' );
+$options_menu = $menus[1]->Menu( -tearoff => 0, -font => $FONT );
 
 $menus[1]->configure( -menu => $options_menu );
 
@@ -192,14 +197,14 @@ my $label_frame = $MW->Frame( -relief      =>'groove',
 			      
 # Status label
 my $top_label = $label_frame->Label( -textvariable => \$CURRENT_DIRECTORY,
-                                         -font         => 'Arial',
+                                         -font         => $FONT,
 					 -foreground   => 'blue');
 #$top_label->grid( -column => 0, -row => 0, -sticky => 'we' );
 $top_label->pack( -side => 'left' );
 $CURRENT_DIRECTORY = "Working directory: ";			        
 		
 my $directory_entry = $label_frame->Entry( -exportselection     => 1,
-                            -font                => 'Arial',
+                            -font                => $FONT,
 		            -selectbackground    => 'blue',
 		            -selectforeground    => 'white',
 			    -justify             => 'left',
@@ -210,7 +215,7 @@ $directory_entry->pack( -side => 'left' );
 
 # Save changes button
 my $save_button = $label_frame->Button( -text             => 'Commit Changes',
-                                        -font             => 'Arial',
+                                        -font             => $FONT,
                                         -activeforeground => 'white',
                                         -activebackground => 'blue',
 					-state            => 'disabled',
@@ -234,7 +239,7 @@ my $files = $left_frame->Listbox( -borderwidth         => 1,
                                   -selectbackground    => 'blue',
 				  -selectforeground    => 'white',
 				  -selectmode          => 'single',
-				  -font                => 'Arial',
+				  -font                => $FONT,
 				  -height              => 22,
 				  -width               => 30,
 				  -yscrollcommand => ['set'=>$left_scrollbar]);
@@ -291,7 +296,7 @@ my ( $new_keyword, $new_value, $new_comment );
 
 # Widgets and stuff
 my $add_label = $add_keyword_frame->Label( -text => "New Header Card",
-                                         -font         => 'Arial' );
+                                         -font         => $FONT );
 
 my $keyword_entry = $add_keyword_frame->Entry( 
 	                                  -exportselection     => 1,
@@ -319,7 +324,7 @@ my $comment_entry = $add_keyword_frame->Entry(
 				          -width               => 40 );
 
 my $add_button = $add_keyword_frame->Button(text             => 'Add',
-                                        -font             => 'Arial',
+                                        -font             => $FONT,
                                         -activeforeground => 'white',
                                         -activebackground => 'blue',
 					-state            => 'disabled'
@@ -349,7 +354,7 @@ my ( $insert_flag, $after_index, $after_key );
 $insert_flag = 'plain';
 
 my $insert_checkbutton = $add_sub_frame->Checkbutton( -anchor      => 'w',
-                                                    -font        => 'Arial',
+                                                    -font        => $FONT,
 						    -text        => 'Insert',
 						    -selectcolor => 'blue',
 						    -onvalue     => 'plain',
@@ -359,7 +364,7 @@ my $insert_checkbutton = $add_sub_frame->Checkbutton( -anchor      => 'w',
 $insert_checkbutton->grid( -column => 0, -row => 0, -sticky => 'ew' );
           
 my $afterindex_checkbutton = $add_sub_frame->Checkbutton( -anchor  => 'w',
-                                                    -font        => 'Arial',
+                                                    -font        => $FONT,
 						-text  => 'Insert before index',
 						    -selectcolor => 'blue',
 						    -onvalue     => 'index',
@@ -378,7 +383,7 @@ my $index_entry = $add_sub_frame->Entry(
 
 $index_entry->grid( -column => 2, -row => 0, -sticky => 'ew' );	 	         
 my $afterkey_checkbutton = $add_sub_frame->Checkbutton( -anchor  => 'w',
-                                                    -font        => 'Arial',
+                                                    -font        => $FONT,
 					-text  => 'Insert after keyword',
 						    -selectcolor => 'blue',
 						    -onvalue     => 'key',
@@ -404,11 +409,11 @@ $key_entry->grid( -column => 4, -row => 0, -sticky => 'ew' );
 my ( $type_flag );
 
 my $type_label = $add_type_frame->Label( -text => "Type:",
-                                         -font         => 'Arial' );
+                                         -font         => $FONT );
 $type_label->grid( -column => 0, -row => 0, -sticky => 'ew' ); 
 
 my $int_checkbutton = $add_type_frame->Checkbutton( -anchor      => 'w',
-                                                    -font        => 'Arial',
+                                                    -font        => $FONT,
 						    -text        => 'INT',
 						    -selectcolor => 'blue',
 						    -onvalue     => 'int',
@@ -422,7 +427,7 @@ my $int_checkbutton = $add_type_frame->Checkbutton( -anchor      => 'w',
 $int_checkbutton->grid( -column => 1, -row => 0, -sticky => 'ew' );
 
 my $float_checkbutton = $add_type_frame->Checkbutton( -anchor      => 'w',
-                                                    -font        => 'Arial',
+                                                    -font        => $FONT,
 						    -text        => 'FLOAT',
 						    -selectcolor => 'blue',
 						    -onvalue     => 'float',
@@ -436,7 +441,7 @@ my $float_checkbutton = $add_type_frame->Checkbutton( -anchor      => 'w',
 $float_checkbutton->grid( -column => 2, -row => 0, -sticky => 'ew' );
 
 my $string_checkbutton = $add_type_frame->Checkbutton( -anchor      => 'w',
-                                                    -font        => 'Arial',
+                                                    -font        => $FONT,
 						    -text        => 'STRING',
 						    -selectcolor => 'blue',
 						    -onvalue     => 'string',
@@ -449,7 +454,7 @@ my $string_checkbutton = $add_type_frame->Checkbutton( -anchor      => 'w',
 $string_checkbutton->grid( -column => 3, -row => 0, -sticky => 'ew' );
 
 my $logical_checkbutton = $add_type_frame->Checkbutton( -anchor      => 'w',
-                                                    -font        => 'Arial',
+                                                    -font        => $FONT,
 						    -text        => 'LOGICAL',
 						    -selectcolor => 'blue',
 						    -onvalue     => 'logical',
@@ -462,7 +467,7 @@ my $logical_checkbutton = $add_type_frame->Checkbutton( -anchor      => 'w',
 					   
 $logical_checkbutton->grid( -column => 4, -row => 0, -sticky => 'ew' );          
 my $comment_checkbutton = $add_type_frame->Checkbutton( -anchor      => 'w',
-                                                    -font        => 'Arial',
+                                                    -font        => $FONT,
 						    -text        => 'COMMENT',
 						    -selectcolor => 'blue',
 						    -onvalue     => 'comment',
@@ -485,11 +490,11 @@ $del_keyword_frame->grid( -column => 1, -row => 1, -sticky => 'nsew' );
 
 # Widgets and stuff
 my $del_label = $del_keyword_frame->Label( -text => "Delete Header Card",
-                                         -font         => 'Arial' );
+                                         -font         => $FONT );
  
 
 my $del_button = $del_keyword_frame->Button(text             => 'Delete',
-                                        -font             => 'Arial',
+                                        -font             => $FONT,
                                         -activeforeground => 'white',
                                         -activebackground => 'blue',
 					-state            => 'disabled'
@@ -514,7 +519,7 @@ $delete_flag = 'index';
 
 # delete checkbuttons
 my $byindex_checkbutton = $del_sub_frame->Checkbutton( -anchor  => 'w',
-                                                    -font        => 'Arial',
+                                                    -font        => $FONT,
 						-text  => 'by index',
 						    -selectcolor => 'blue',
 						    -onvalue     => 'index',
@@ -534,7 +539,7 @@ my $byindex_entry = $del_sub_frame->Entry(
 
 $byindex_entry->grid( -column => 1, -row => 0, -sticky => 'ew' );	 	         
 my $bykey_checkbutton = $del_sub_frame->Checkbutton( -anchor  => 'w',
-                                                    -font        => 'Arial',
+                                                    -font        => $FONT,
 					-text  => 'by name',
 						    -selectcolor => 'blue',
 						    -onvalue     => 'key',
@@ -562,12 +567,12 @@ my $status_frame = $MW->Frame( -relief      =>'flat',
 
 # Status label
 my $status_label = $status_frame->Label( -textvariable => \$CURRENT_STATUS,
-                                         -font         => 'Arial',
+                                         -font         => $FONT,
 					 -foreground   => 'blue');
 $status_label->pack( -side => 'left'); 
 
 my $file_type = $status_frame->Label( -textvariable => \$FILE_TYPE,
-                                         -font         => 'Arial',
+                                         -font         => $FONT,
 					 -foreground   => 'red');
 
 $file_type->pack( -side => 'right'); 
@@ -895,6 +900,9 @@ MainLoop();
 # T I M E   A T   T H E   B A R  -------------------------------------------
 
 # $Log$
+# Revision 1.2  2001/09/20 00:29:31  timj
+# Start moving away from a hard-wired arial font
+#
 # Revision 1.1  2001/07/02 23:09:08  allan
 # FITS Editor, basic functionality only. Menus not working
 #

@@ -31,9 +31,15 @@ package ORAC::Xorac;
 
 # ---------------------------------------------------------------------------
 
+use 5.006;
 use strict;          # smack! Don't do it again!
 use warnings;
 use Carp;            # Transfer the blame to someone else
+
+# Want to specify a font that is consistent with our
+# resources. The easiest way to do this is simply to
+# not specify a font. For testing want to get the resource
+our $FONT = 'fixed';
 
 # P O D  D O C U M E N T A T I O N ------------------------------------------
 
@@ -189,7 +195,7 @@ sub xorac_about {
     
   my $foot = $about_frame->Label( -textvariable    => \$string,
                                   -relief  => 'flat',
-	  			  -font    => 'Arial', 
+	  			  -font    => $FONT, 
 				  -justify => 'center',
 				  -anchor  => 'n',
 				  -borderwidth => 5 );
@@ -198,7 +204,7 @@ sub xorac_about {
   # credits
   my $credits = $about_frame->Label( -text  => "\nFrossie Economou, Tim Jenness and Alasdair Allan\nCopyright (C) 1998-2001 Particle Physics and Astronomy Research Council.",
                                   -relief  => 'flat',
-	  			  -font    => 'Arial', 
+	  			  -font    => $FONT, 
 				  -justify => 'center',
 				  -anchor  => 'n',
 				  -borderwidth => 5 );
@@ -206,7 +212,7 @@ sub xorac_about {
   # license
   my $gpl = $about_frame->Label( -text => "\nThis program is free software; you can redistribute it and/or modify it under the\nterms of the GNU General Public License as published by the Free Software\nFoundation; either version 2 of the License, or (at your option) any later version.\n\nThis program is distributed in the hope that it will be useful,but WITHOUT ANY\nWARRANTY; without even the implied warranty of MERCHANTABILITY or\nFITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License\nfor more details.\n\nYou should have received a copy of the GNU General Public License along with\n this program; if not, write to the Free Software Foundation, Inc., 59 Temple Place,\n Suite 330, Boston, MA  02111-1307, USA",
                                  -relief  => 'flat',
-	  			  -font    => 'Arial', 
+	  			  -font    => $FONT, 
 				  -justify => 'left',
 				  -anchor  => 'n',
 				  -borderwidth => 5 );
@@ -214,7 +220,7 @@ sub xorac_about {
 
   # close button
   my $close_button = $top_level->Button( -text    => "Close",
-                                         -font    => 'Arial',
+                                         -font    => $FONT,
 					 -activeforeground => 'white',
                                          -activebackground => 'blue',
                                          -command => 
@@ -249,14 +255,14 @@ sub xorac_setenv {
   my $orac_data_root_label = $top_level->Label( 
                                         -text    => 'Data root directory',
                                         -relief  => 'groove',
-				        -font    => 'Arial',
+				        -font    => $FONT,
 				        -justify => 'left',
 				        -anchor  => 'w');
   $orac_data_root_label->grid( -column => 0, -row => 0 , -sticky => 'ew');	
 
   my $orac_data_root_entry = $top_level->Entry( 
                                  -exportselection     => 1,
-                                 -font                => 'Arial',
+                                 -font                => $FONT,
 				 -selectbackground    => 'blue',
 				 -selectforeground    => 'white',
 				 -justify             => 'left',
@@ -268,14 +274,14 @@ sub xorac_setenv {
   my $orac_cal_root_label = $top_level->Label( 
                                        -text    => 'Calibration root directory',
                                         -relief  => 'groove',
-				        -font    => 'Arial',
+				        -font    => $FONT,
 				        -justify => 'left',
 				        -anchor  => 'w');
   $orac_cal_root_label->grid( -column => 0, -row => 1 , -sticky => 'ew');	
 
   my $orac_cal_root_entry = $top_level->Entry( 
                                  -exportselection     => 1,
-                                 -font                => 'Arial',
+                                 -font                => $FONT,
 				 -selectbackground    => 'blue',
 				 -selectforeground    => 'white',
 				 -justify             => 'left',
@@ -287,14 +293,14 @@ sub xorac_setenv {
   my $orac_recipe_dir_label = $top_level->Label( 
                                         -text    => 'User recipes',
                                         -relief  => 'groove',
-				        -font    => 'Arial',
+				        -font    => $FONT,
 				        -justify => 'left',
 				        -anchor  => 'w');
   $orac_recipe_dir_label->grid( -column => 0, -row => 2 , -sticky => 'ew');	
 
   my $orac_recipe_dir_entry = $top_level->Entry( 
                                  -exportselection     => 1,
-                                 -font                => 'Arial',
+                                 -font                => $FONT,
 				 -selectbackground    => 'blue',
 				 -selectforeground    => 'white',
 				 -justify             => 'left',
@@ -306,14 +312,14 @@ sub xorac_setenv {
   my $orac_primitive_dir_label = $top_level->Label( 
                                         -text    => 'User primitives',
                                         -relief  => 'groove',
-				        -font    => 'Arial',
+				        -font    => $FONT,
 				        -justify => 'left',
 				        -anchor  => 'w');
   $orac_primitive_dir_label->grid( -column => 0, -row => 3 , -sticky => 'ew');	
 
   my $orac_primitive_dir_entry = $top_level->Entry( 
                                  -exportselection     => 1,
-                                 -font                => 'Arial',
+                                 -font                => $FONT,
 				 -selectbackground    => 'blue',
 				 -selectforeground    => 'white',
 				 -justify             => 'left',
@@ -325,14 +331,14 @@ sub xorac_setenv {
   my $orac_data_in_label = $top_level->Label( 
                                         -text    => 'Input data',
                                         -relief  => 'groove',
-				        -font    => 'Arial',
+				        -font    => $FONT,
 				        -justify => 'left',
 				        -anchor  => 'w');
   $orac_data_in_label->grid( -column => 0, -row => 4, -sticky => 'ew');	
 
   my $orac_data_in_entry = $top_level->Entry( 
                                  -exportselection     => 1,
-                                 -font                => 'Arial',
+                                 -font                => $FONT,
 				 -selectbackground    => 'blue',
 				 -selectforeground    => 'white',
 				 -justify             => 'left',
@@ -344,14 +350,14 @@ sub xorac_setenv {
   my $orac_data_out_label = $top_level->Label( 
                                         -text    => 'Output data',
                                         -relief  => 'groove',
-				        -font    => 'Arial',
+				        -font    => $FONT,
 				        -justify => 'left',
 				        -anchor  => 'w');
   $orac_data_out_label->grid( -column => 0, -row => 5, -sticky => 'ew');	
 
   my $orac_data_out_entry = $top_level->Entry( 
                                  -exportselection     => 1,
-                                 -font                => 'Arial',
+                                 -font                => $FONT,
 				 -selectbackground    => 'blue',
 				 -selectforeground    => 'white',
 				 -justify             => 'left',
@@ -363,14 +369,14 @@ sub xorac_setenv {
   my $orac_data_cal_label = $top_level->Label( 
                                         -text    => 'Instrument calibration',
                                         -relief  => 'groove',
-				        -font    => 'Arial',
+				        -font    => $FONT,
 				        -justify => 'left',
 				        -anchor  => 'w');
   $orac_data_cal_label->grid( -column => 0, -row => 6, -sticky => 'ew');	
 
   my $orac_data_cal_entry = $top_level->Entry( 
                                  -exportselection     => 1,
-                                 -font                => 'Arial',
+                                 -font                => $FONT,
 				 -selectbackground    => 'blue',
 				 -selectforeground    => 'white',
 				 -justify             => 'left',
@@ -381,7 +387,7 @@ sub xorac_setenv {
   # close button
   my $close_button = $top_level->Button( 
              -text    => "Close",
-             -font    => 'Arial',
+             -font    => $FONT,
 	     -activeforeground => 'white',
 	     -activebackground => 'blue',
 	     -command => 
@@ -463,7 +469,7 @@ sub xorac_log_window {
         
    # Create easy exit button
    $frame->Button( -text=>'Exit ORAC-DR',
-	           -font=>'Arial',
+	           -font=>$FONT,
                    -activeforeground => 'white',
                    -activebackground => 'blue',
 		   -command => sub {
@@ -485,7 +491,7 @@ sub xorac_log_window {
 			
    # Create a pause button
    $frame->Button( -text=>'Pause ORAC-DR',
-	           -font=>'Arial',
+	           -font=>$FONT,
                    -activeforeground => 'white',
                    -activebackground => 'blue',
 		   -command => sub { 
@@ -497,7 +503,7 @@ sub xorac_log_window {
    $msg1   = $frame->
          Label(-width=>60,
 	       -textvariable=>\$ORAC_MESSAGE,
-	       -font=>'Arial')->pack(-side => "left");
+	       -font=>$FONT)->pack(-side => "left");
 
    $textw1 = $MW->Scrolled('TextANSIColor',
 	  		        -scrollbars=>'w',
@@ -505,7 +511,7 @@ sub xorac_log_window {
 			        -foreground=>'white',
 			        -height => 30,
 			        -width  => 90,
-				-font    => 'Arial'
+				-font    => $FONT
 			   )->pack;
    $textw1->tagConfigure('ANSIfgmagenta', -foreground => '#ccccff');
    $textw1->tagConfigure('ANSIfgblue', -foreground => '#33ff33');
@@ -513,27 +519,27 @@ sub xorac_log_window {
    tie *TEXT1,  "Tk::TextANSIColor", $textw1;
 
    # ORAC_WARN messages
-   $lab2   = $MW->Label(-text=>'Warnings',-font=>'Arial')->pack;
+   $lab2   = $MW->Label(-text=>'Warnings',-font=>$FONT)->pack;
    $textw2 = $MW->Scrolled('TextANSIColor',
 	  		        -scrollbars=>'w',
 			        -background=>'#555555',
 			        -foreground=>'white',
 			        -height => 5,
 			        -width  => 90,
-				-font    => 'Arial'
+				-font    => $FONT
 			   )->pack;
    $textw2->insert('end',"ORAC-DR warning messages\n");
    tie *TEXT2,  "Tk::TextANSIColor", $textw2;
 
    # ORAC Error messages
-   $lab1   = $MW->Label(-text=>'Errors',-font=>'Arial')->pack;
+   $lab1   = $MW->Label(-text=>'Errors',-font=>$FONT)->pack;
    $textw3 = $MW->Scrolled('TextANSIColor',
 			        -scrollbars=>'w',
 			        -background=>'#555555',
 			        -foreground=>'white',
 			        -height => 5,
 			        -width  => 90,
-				-font    => 'Arial'
+				-font    => $FONT
 			   )->pack;
     $textw3->insert('end',"ORAC-DR error messages\n");
     $textw3->tagConfigure('ANSIfgred', -foreground => '#ffcccc');
@@ -580,7 +586,7 @@ sub xorac_recipe_window {
   # label
   my $label = $top_level->Label( -textvariable    => $CURRENT_RECIPE,
 			         -relief  => 'flat',
-	  	                 -font    => 'Arial', 
+	  	                 -font    => $FONT, 
 		                 -justify => 'left',
 			         -foreground =>'blue',
 			         -anchor  => 'w',
@@ -603,7 +609,7 @@ sub xorac_recipe_window {
 		  	         -background          => '#555555',
 			         -foreground          => 'white',
 			         -selectmode          => 'single',
-				 -font                => 'Arial',
+				 -font                => $FONT,
 				 -height              => 15,
 				 -width               => 65,
 				 -yscrollcommand      => ['set'=>$scrollbar]);
@@ -625,7 +631,7 @@ sub xorac_recipe_window {
 		      
   # edit recipe button, not for public consumption perhaps?
   my $edit_button = $button_frame->Button( -text           => 'Current Recipe ',
-                                           -font             => 'Arial',
+                                           -font             => $FONT,
                                            -activeforeground => 'white',
                                            -activebackground => 'blue',
   					   -command => 
@@ -653,7 +659,7 @@ sub xorac_recipe_window {
   # Cancel button
   my $cancel_button = $button_frame->Button( 
                                -text=>'Close',
-	                       -font=>'Arial',	
+	                       -font=>$FONT,	
 			       -activeforeground => 'white',
                                -activebackground => 'blue',
 	 	               -command => sub { untie @PRIMITIVE_LIST;
@@ -698,14 +704,14 @@ sub xorac_pause {
   # label
   my $label = $popup->Label( -text    => "Processing paused",
 			     -relief  => 'flat',
-	  	             -font    => 'Arial', 
+	  	             -font    => $FONT, 
 		             -justify => 'center',
 			     -anchor  => 'n',
 		             -borderwidth => 5 );
   $label->grid( -column => 0 ,-row => 0, -sticky => 'nsew' );		           
   # button
   my $button = $popup->Button( -text=>'Resume',
-	                       -font=>'Arial',	
+	                       -font=>$FONT,	
 			       -activeforeground => 'white',
                                -activebackground => 'blue',
 	 	               -command => sub { $popup->destroy; } );
@@ -855,7 +861,7 @@ sub xorac_editor {
   my $label_text = "Editing recipe: " . $recipe;
   my $label1 = $top_level->Label( -textvariable => \$label_text,
 			          -relief       => 'flat',
-	  	                  -font         => 'Arial', 
+	  	                  -font         => $FONT, 
 		                  -justify      => 'left',
 				  -foreground   => 'blue',
 			          -anchor       => 'w',
@@ -864,7 +870,7 @@ sub xorac_editor {
           
   # text widget	
   my $text = $top_level -> Scrolled("Text",
-                                    -font => 'Arial',
+                                    -font => $FONT,
                                     -background          => '#555555',
 			            -foreground          => 'white',	
 				    -scrollbars => 'e');
@@ -877,7 +883,7 @@ sub xorac_editor {
   my $in_str = "Loaded recipe: " . $directory . "/";
   my $label2 = $label_frame->Label( -textvariable    => \$in_str,
 			         -relief  => 'flat',
-	  	                 -font    => 'Arial', 
+	  	                 -font    => $FONT, 
 		                 -justify => 'left',
 			         -anchor  => 'w',
 				 -foreground => 'blue',
@@ -887,7 +893,7 @@ sub xorac_editor {
   my $out_str = "Saving recipe: ". $ENV{"ORAC_RECIPE_DIR"} . "/";
   my $label3 = $label_frame->Label( -textvariable    => \$out_str,
 			         -relief  => 'flat',
-	  	                 -font    => 'Arial', 
+	  	                 -font    => $FONT, 
 		                 -justify => 'left',
 			         -anchor  => 'w',
 				 -foreground => 'blue',
@@ -900,7 +906,7 @@ sub xorac_editor {
     
   # Cancel button
   my $cancel_button = $button_frame->Button( -text=>'Close',
-	                       -font=>'Arial',	
+	                       -font=>$FONT,	
 			       -activeforeground => 'white',
                                -activebackground => 'blue',
 	 	               -command => sub { 
@@ -910,7 +916,7 @@ sub xorac_editor {
   
   # OK button
   my $save_button = $button_frame->Button( -text=>'Save Recipe',
-	                       -font=>'Arial',	
+	                       -font=>$FONT,	
 			       -activeforeground => 'white',
                                -activebackground => 'blue',
 			       -state => 'disabled' );
@@ -1002,7 +1008,7 @@ sub xorac_calib {
      
   my $instrument_label = $popup->Label( -textvariable    => \$label_txt,
 			                -relief          => 'flat',
-	  	                        -font            => 'Arial', 
+	  	                        -font            => $FONT, 
 		                        -justify         => 'left',
 			                -foreground      => 'blue',
 			                -anchor          => 'w',
@@ -1035,13 +1041,13 @@ sub xorac_calib {
   foreach my $key (sort keys %calib) {
      push ( @labels, $popup->Label( -text    => $key,
 			            -relief  => 'groove',
-	  	                    -font    => 'Arial', 
+	  	                    -font    => $FONT, 
 		                    -justify => 'left',
 			            -anchor  => 'w',
 				    -width   => 15,
 		                    -borderwidth => 2 ) );
      push ( @entries, $popup->Entry( -exportselection     => 1,
-                                     -font                => 'Arial',
+                                     -font                => $FONT,
 				     -selectbackground    => 'blue',
 				     -selectforeground    => 'white',
 				     -justify             => 'left',
@@ -1062,7 +1068,7 @@ sub xorac_calib {
   #my ( $add_key, $add_val );
   
   #my $key_entry = $popup->Entry( -exportselection     => 1,
-  #                               -font                => 'Arial',
+  #                               -font                => $FONT,
   #	                          -selectbackground    => 'blue',
   #	                          -selectforeground    => 'white',
   #		                  -justify             => 'left',
@@ -1070,7 +1076,7 @@ sub xorac_calib {
   # 		                  -width               => 15 );
   #$key_entry->grid( -column => 0, -row => $i+1, -sticky => 'ew' );
   #my $val_entry = $popup->Entry( -exportselection     => 1,
-  #                               -font                => 'Arial',
+  #                               -font                => $FONT,
   #		                 -selectbackground    => 'blue',
   #		                 -selectforeground    => 'white',
   #			         -justify             => 'left',
@@ -1085,7 +1091,7 @@ sub xorac_calib {
 
   # add button
   #my $add_button = $button_frame->Button( -text    => "Add",
-  #                                        -font    => 'Arial',
+  #                                        -font    => $FONT,
   #			                   -activeforeground => 'white',
   #                                        -activebackground => 'blue',
   #                                        -command => sub { 
@@ -1103,7 +1109,7 @@ sub xorac_calib {
  
   # cancel button
   my $cancel_button = $button_frame->Button( -text    => "Cancel",
-                                            -font    => 'Arial',
+                                            -font    => $FONT,
 			                    -activeforeground => 'white',
                                             -activebackground => 'blue',
                                             -command => sub {
@@ -1112,7 +1118,7 @@ sub xorac_calib {
      
   # apply button
   my $apply_button = $button_frame->Button( -text    => "Apply",
-                                            -font    => 'Arial',
+                                            -font    => $FONT,
 			                    -activeforeground => 'white',
                                             -activebackground => 'blue',
                                             -command => sub { 
@@ -1158,7 +1164,7 @@ sub xorac_select_filelist {
   
   my $top_label = $top_level->Label( -textvariable    => \$label_txt,
 			             -relief          => 'flat',
-	  	                     -font            => 'Arial', 
+	  	                     -font            => $FONT, 
 		                     -justify         => 'left',
 			             -foreground      => 'blue',
 			             -anchor          => 'w',
@@ -1185,7 +1191,7 @@ sub xorac_select_filelist {
   
   my $left_label = $left_frame->Label( -textvariable    => \$left_txt,
 			             -relief          => 'flat',
-	  	                     -font            => 'Arial', 
+	  	                     -font            => $FONT, 
 		                     -justify         => 'left',
 			             -foreground      => 'blue',
 			             -anchor          => 'w',
@@ -1197,7 +1203,7 @@ sub xorac_select_filelist {
   
   my $right_label = $right_frame->Label( -textvariable    => \$right_txt,
 			             -relief          => 'flat',
-	  	                     -font            => 'Arial', 
+	  	                     -font            => $FONT, 
 		                     -justify         => 'left',
 			             -foreground      => 'blue',
 			             -anchor          => 'w',
@@ -1230,7 +1236,7 @@ sub xorac_select_filelist {
                                   -selectbackground    => 'blue',
 			          -selectforeground    => 'white',
 			          -selectmode          => 'multiple',
-				  -font                => 'Arial',
+				  -font                => $FONT,
 				  -height              => 20,
 				  -width               => 35,
 				  -yscrollcommand      => ['set'=>$scrollbar]);
@@ -1253,7 +1259,7 @@ sub xorac_select_filelist {
                                   -selectbackground    => 'blue',
 			          -selectforeground    => 'white',
 			          -selectmode          => 'multiple',
-				  -font                => 'Arial',
+				  -font                => $FONT,
 				  -height              => 20,
 				  -width               => 35,
 				  -yscrollcommand      => ['set'=>$scrollbar2]);
@@ -1271,7 +1277,7 @@ sub xorac_select_filelist {
 
   # add button
   my $add_button = $middle_frame->Button( -text    => "Add",
-                                            -font    => 'Arial',
+                                            -font    => $FONT,
 					    -activeforeground => 'white',
                                             -activebackground => 'blue',
                                             -command => sub { 
@@ -1288,7 +1294,7 @@ sub xorac_select_filelist {
     
   # remove button
   my $remove_button = $middle_frame->Button( -text    => "Remove",
-                                         -font    => 'Arial',
+                                         -font    => $FONT,
 					 -activeforeground => 'white',
                                          -activebackground => 'blue',
                                          -command => sub {  
@@ -1307,7 +1313,7 @@ sub xorac_select_filelist {
 
   # add all button
   my $addall_button = $middle_frame->Button( -text    => "Add all",
-                                            -font    => 'Arial',
+                                            -font    => $FONT,
 					    -activeforeground => 'white',
                                             -activebackground => 'blue',
                                             -command => sub { 
@@ -1318,7 +1324,7 @@ sub xorac_select_filelist {
     
   # remove button
   my $removeall_button = $middle_frame->Button( -text    => "Remove all",
-                                         -font    => 'Arial',
+                                         -font    => $FONT,
 					 -activeforeground => 'white',
                                          -activebackground => 'blue',
                                          -command => sub {  
@@ -1338,7 +1344,7 @@ sub xorac_select_filelist {
 
   # cancel button
   my $cancel_button = $button_frame->Button( -text    => "Cancel",
-                                            -font    => 'Arial',
+                                            -font    => $FONT,
 					    -activeforeground => 'white',
                                             -activebackground => 'blue',
                                             -command => sub {
@@ -1352,7 +1358,7 @@ sub xorac_select_filelist {
     
   # ok button
   my $ok_button = $button_frame->Button( -text    => "OK",
-                                         -font    => 'Arial',
+                                         -font    => $FONT,
 					 -activeforeground => 'white',
                                          -activebackground => 'blue',
                                          -command => sub { 
