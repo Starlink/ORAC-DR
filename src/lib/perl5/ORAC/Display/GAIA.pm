@@ -40,7 +40,7 @@ use Cwd qw/ getcwd /;         # To get current working directory
 use vars qw/ $VERSION $DEBUG /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
-$DEBUG   = 0;
+$DEBUG   = 1;
 
 # Store the hostname (even though hostname does cache)
 my $localhost = hostname;
@@ -248,6 +248,13 @@ sub launch {
   my $timegap_to_check  = 3;  # in seconds
   my $timegap_to_launch = 20; # in units of $timegap_to_check
 
+  # Set the RTD_REMOTE_DIR environment variable to $ORAC_DATA_OUT
+  # if it's not already set.
+  if( ! defined( $ENV{'RTD_REMOTE_DIR'} ) ) {
+    $ENV{'RTD_REMOTE_DIR'} = $ENV{'ORAC_DATA_OUT'};
+    print "Setting RTD_REMOTE_DIR environment variable to ORAC_DATA_OUT\n";
+  }
+
  # First attempt to simply connect
   my $sock = $self->_open_gaia_socket();
 
@@ -309,14 +316,11 @@ sub _open_gaia_socket {
   my $self = shift;
   my $fh;
 
-  # Attempt to open .rtd-remote file, first in RTD_REMOTE_DIR then
-  # looking in $HOME
-  for my $env (qw/RTD_REMOTE_DIR HOME/) {
-    # do we have that environment variable set?
-    next unless exists $ENV{$env};
-    next unless $ENV{$env};
+  # Attempt to open .rtd-remote file in RTD_REMOTE_DIR.
 
-    my $path = File::Spec->catdir( $ENV{$env}, ".rtd-remote");
+  if( defined( $ENV{'RTD_REMOTE_DIR'} ) ) {
+
+    my $path = File::Spec->catdir( $ENV{RTD_REMOTE_DIR}, ".rtd-remote");
     print "Looking in path: $path\n" if $DEBUG;
 
     if ($fh = new IO::File($path)) {
@@ -329,17 +333,17 @@ sub _open_gaia_socket {
       # file matches the host we are running on
       if ($self->use_remote_gaia || $host =~ /$localhost/) {
 
-	# Open the socket connection
-	my $sock = IO::Socket::INET->new( 
-					 Proto => "tcp",
-					 PeerAddr  => $host,
-					 PeerPort  => $port,
-					);
-	if ($sock) {
-	  print "Opened GAIA on $path\n" if $DEBUG;
-	  $sock->autoflush(1);
-	  return $sock;
-	}
+        # Open the socket connection
+        my $sock = IO::Socket::INET->new(
+                                         Proto => "tcp",
+                                         PeerAddr  => $host,
+                                         PeerPort  => $port,
+                                        );
+        if ($sock) {
+          print "Opened GAIA on $path\n" if $DEBUG;
+          $sock->autoflush(1);
+          return $sock;
+        }
       }
     }
   }
