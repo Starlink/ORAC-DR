@@ -64,7 +64,7 @@ sub new {
   $group->{Header} = undef;
   $group->{File} = undef;
   $group->{Recipe} = undef;
-  $group->{FixedPart} = '_dem_';
+  $group->{FixedPart} = '_grp_';
   $group->{FileSuffix} = '.sdf';
 
   bless($group, $class);
