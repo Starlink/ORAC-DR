@@ -71,15 +71,37 @@ if ($Grp->lastmember($Frm) && $Grp->num >=1) {
 
       if (exists $Mon{ccdpack_reg}) {
 
-	# Create text file for mosaic names
-	my $tmp = new ORAC::TempFile || die "Error opening makemos input file\n";
-	print {$tmp->handle} join("\n", @members) ."\n";
-	orac_print "Members for makemos: ".join("\n",@members)."\n";
-	$tmp->handle->close || die "Error closing makemos input file\n";
+	# need to mosaic the I, Q and U planes separately and then
+	# regenerate the cube
 
-	my $args = "in=^". $tmp->file ." noscale nozero usevar genvar title='Average IQU'";
+	my @planes = qw(I Q U);
 
-	$Mon{ccdpack_reg}->obeyw("makemos","$args out=$out method=mean");
+	orac_print "Mosaicing the following frames:\n".join("\n",@members)."\n";
+
+	foreach my $i (0..$#planes) {
+	  my $plane = $i + 1;
+	  orac_print "Mosaicing the $planes[$i] data\n";
+
+	  # Create text file for mosaic names
+	  my $tmp = new ORAC::TempFile || die "Error opening makemos input file\n";
+	  print {$tmp->handle} join("(,,$plane)\n", @members) ."(,,$plane)\n";
+	  $tmp->handle->close || die "Error closing makemos input file\n";
+
+	  # We are using the first member as a reference
+	  my $ref = $members[0] . "(,,$plane)";
+
+	my $args = "in=^". $tmp->file ." noscale zero method=mean usevar genvar title='Average $planes[$i]'";
+
+	  # Run CCDPACK with noscale but with zero correction relative
+	  # to the reference image
+	  $Mon{ccdpack_reg}->obeyw("makemos","$args out=${out}_mos$planes[$i] ref=$ref");
+
+	}
+
+	orac_print "Putting cube back together...\n";
+	# Now paste the planes back into the cube
+	$Mon{kappa_mon}->obeyw("paste","in=${out}_mos$planes[0] p1=${out}_mos$planes[1] p2=${out}_mos$planes[2] title='Average IQU cube' out=$out");
+
 
 	# Copy world coordinates
 	$Mon{ndfpack_mon}->obeyw("wcscopy","ndf=$out like=$members[0] ok=true");
