@@ -79,7 +79,7 @@ sub new {
   $frame->{NoKeepArr} = [];
   $frame->{Nsubs} = undef;
   $frame->{Recipe} = undef;
-  $frame->{UserHeader} = {};
+  $frame->{UHeader} = {};
   $frame->{Format} = undef;
   $frame->{IsGood} = 1;
   $frame->{Intermediates} = [];
@@ -678,8 +678,6 @@ The following methods are provided for manipulating
 B<ORAC::Frame> objects:
 
 =over 4
-
-=cut
 
 =item B<calc_orac_headers>
 
