@@ -88,7 +88,7 @@ sub _from_AIRMASS_START {
 sub _to_DEC_BASE {
    my $self = shift;
    my $dec = 0.0;
-   if ( exists ( $self->hdr->{DEC} ) {
+   if ( exists ( $self->hdr->{DEC} ) ) {
       $dec = $self->hdr->{DEC};
    }
    $dec = defined( $dec ) ? $dec: 0.0; 
