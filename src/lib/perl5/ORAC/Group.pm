@@ -2,7 +2,7 @@ package ORAC::Group;
 
 =head1 NAME
 
-ORAC::Group - base class for dealing with observation groups in ORACDR
+ORAC::Group - base class for dealing with observation groups in ORAC-DR
 
 =head1 SYNOPSIS
 
@@ -21,8 +21,7 @@ ORAC::Group - base class for dealing with observation groups in ORACDR
 This module provides the basic methods available to all
 ORAC::Group objects. This class should be used when 
 storing information relating to a group of observations
-processed in the ORACDR data reduction pipeline.
-
+processed in the ORAC-DR data reduction pipeline.
 
 =cut
 
@@ -34,7 +33,7 @@ use Carp;
 use strict;
 use vars qw/$VERSION/;
 
-$VERSION = '0.12';
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 # Associated classes
 use ORAC::Print;          # Print statements
@@ -76,7 +75,8 @@ sub new {
   $group->{Name} = undef;
   $group->{AllMembers} = [];
   $group->{Members} = [];
-  $group->{Header} = undef;
+  $group->{Header} = {};
+  $group->{UHeader} = {};
   $group->{File} = undef;
   $group->{Recipe} = undef;
   $group->{FixedPart} = undef;
@@ -98,7 +98,7 @@ sub new {
 
 =item subgrp
 
-Method to return a new group (ie a subgrp of the existing
+Method to return a new group (ie a sub-group of the existing
 group) that contains all members of the main group matching
 certain header values.
 
@@ -108,6 +108,8 @@ frame.
   $subgrp = $Grp->subgrp(NAME => 'CRL618', CHOP=> 60.0);
 
 The new subgrp is blessed into the same class as $Grp.
+All header information (header() and uheader()) is copied 
+from the main group to the sub-group.
 
 This method is generally used where access to members of the
 group by some search criterion is required.
@@ -126,6 +128,10 @@ sub subgrp {
   # Create a new grp
   my @subgrp = (); # Storage array
   my $subgrp = $self->new($self->name . "subgrp");  
+
+  # Copy the header information
+  %{$subgrp->header} = %{$self->header};
+  %{$subgrp->uheader} = %{$self->uheader};
 
   # Now loop over all members of the group and compare with
   # the hash
@@ -174,6 +180,9 @@ For example, if @keys = ('MODE','CHOP') then you can gurantee
 that the members of each sub group will have the same values
 for MODE and CHOP. 
 
+All header information from the main group is copied to the
+sub groups.
+
 =cut
 
 sub subgrps {
@@ -195,8 +204,13 @@ sub subgrps {
 
     # Now see whether this key already exists in the hash
     # if it doesnt we populate it with a group object
-    $store{$key} = $self->new() unless exists $store{$key};
-    
+    unless (exists $store{$key} ) {
+      $store{$key} = $self->new();
+      # Copy the header
+      %{$store{$key}->header} = %{$self->header};
+      %{$store{$key}->uheader} = %{$self->uheader};
+    }
+
     # Store the frame (this is inefficient since it 
     # forces a check_membership every time and we know membership
     # is okay since members() only returns valid frames.
@@ -357,6 +371,39 @@ sub header {
 
   return $self->{Header};
 }
+=item uheader
+
+Set or retrieve the hash associated with the user-supplied header \
+information. This can be used in addition to header() in the case where
+header() stores the information associated with the FITS header of the
+file itself, and uheader() is associated with other variables that
+are not reflected in the file.
+
+    $Grp->uheader(\%hdr);
+    $hashref = $Grp->uheader;
+
+This methods takes and returns a reference to a hash.
+
+The header values can be accessed by using the uhdr() method
+or by dereferencing the return value of header():
+
+   $value = $Grp->uheader->{KEY};
+   $value = $Grp->uhdr('KEY');
+
+=cut
+
+
+sub uheader {
+  my $self = shift;
+
+  if (@_) { 
+    my $arg = shift;
+    croak("Argument is not a hash reference") unless ref($arg) eq "HASH";
+    $self->{UHeader} = $arg;
+  }
+
+  return $self->{UHeader};
+}
 
 
 # This method returns the reference to the array
@@ -454,31 +501,6 @@ sub badobs_index {
   return $self->{BadObsIndex}; 
 
 }
-
-
-
-# Method to return the recipe name
-# If an argument is supplied the recipe is set to that value
-# The recipe name can not be set automatically since it relies
-# on the members of the group.
-
-#=item recipe
-#
-#Set or retrieve the name of the recipe being used to reduce the
-#group.
-#
-#    $Grp->recipe("recipe_name");
-#    $recipe_name = $Grp->recipe;
-#
-#=cut
-
-
-#sub recipe {
-#  my $self = shift;
-#  if (@_) { $self->{Recipe} = shift;}
-#  return $self->{Recipe};
-#}
-
 
 =back
 
@@ -613,9 +635,6 @@ sub membernames {
 }
  
 
-# General methods
-
-
 # Supply a method to access individual pieces of header information
 # Without forcing the user to access the hash directly
 
@@ -631,10 +650,12 @@ hash.
 
 Can also be used to set values in the header.
 
-  $Obs->hdr("INSTRUME", "IRCAM");
+  $Grp->hdr("INSTRUME", "IRCAM");
 
 If no arguments are provided, the reference to the header hash
 is returned (equivalent to running the header() method).
+
+  $Grp->hdr->{INSTRUME} = 'SCUBA';
 
 =cut
 
@@ -652,6 +673,43 @@ sub hdr {
 
   # No arguments, return the header hash reference
   return $self->header;
+}
+
+=item uhdr
+
+This method allows specific entries in the user-defined header to be 
+set and accessed.
+The input argument should correspond to the keyword in the header
+hash.
+
+  $tel = $Grp->uhdr("TELESCOP");
+  $instrument = $Grp->uhdr("INSTRUME");
+
+Can also be used to set values in the header.
+
+  $Grp->uhdr("INSTRUME", "IRCAM");
+
+If no arguments are provided, the reference to the header hash
+is returned (equivalent to running the header() method).
+
+  $Grp->uhdr->{INSTRUME} = 'SCUBA';
+
+=cut
+
+
+sub uhdr {
+  my $self = shift;
+
+  if (@_) {
+    my $keyword = shift;
+
+    if (@_) { $self->uheader->{$keyword} = shift; }
+
+    return $self->uheader->{$keyword};
+  }
+
+  # No arguments, return the header hash reference
+  return $self->uheader;
 }
 
 
@@ -693,11 +751,11 @@ sub push {
 Retrieve or set the nth frame of the group.
 Counting starts at 0 as for a standard perl array.
 
-  $obj = $Grp->frame(2);
+  $Frm = $Grp->frame(2);
 
 A second argument can be used to set the nth frame.
 
-  $Grp->frame(3, $obj);
+  $Grp->frame(3, $Frm);
 
 
 =cut
@@ -729,11 +787,8 @@ This is identical to the $# construct.
 =cut
 
 sub num {
-
   my $self = shift;
-
   return $#{$self->members_ref};
-
 }
 
 
@@ -774,10 +829,15 @@ names for each file. This is achieved by calling the inout()
 method for each frame in turn. This will fail if the members of the
 group do not possess the inout() method.
 
-This method takes one argument (the new suffix) and 
-returns references to two arrays.
+This method can take two arguments: the new suffix and, optionally,
+the file number to use (see the inout() documentation for
+ORAC::Frame). References to two arrays are returned when called
+in an array context; returns the output array ref when called
+from a scalar context
 
   ($inref, $outref) = $Grp->inout("suffix");
+  ($inref, $outref) = $Grp->inout("suffix",2);
+  $outref= $Grp->inout("suffix");
 
 =cut
 
@@ -788,6 +848,9 @@ sub inout {
   # Find the suffix
   my $suffix = shift;
 
+  # Read the file number if supplied
+  my $num = (scalar(@_) ? shift : 1);
+
   # Initialise the output arrays
   my @in = ();
   my @out = ();
@@ -796,24 +859,30 @@ sub inout {
   foreach my $member ($self->members) {
 
     # Retrieve the input and output names of these files
-    my ($in, $out) = $member->inout($suffix);
+    my ($in, $out) = $member->inout($suffix,$num);
     push(@in, $in);
     push(@out, $out);
 
   }
 
   # Return the array references
-  return \@in, \@out;
-
+  if (wantarray()) {
+    return \@in, \@out;
+  } else {
+    return \@out;
+  }
 }
 
 =item updateout
 
 This method updates the current filename of each member of the group
-when supplied with a suffix. The inout() method (of the individual frame)
-is invoked for each member to generate the output name.
+when supplied with a suffix (and optionally, a file number -- see the
+inout() method in ORAC::Frame for more information). The inout() 
+method (of the individual frame) is invoked for each member to 
+generate the output name.
 
   $Grp->updateout("suffix");
+  $Grp->updateout("suffix",5);
 
 This can be used to update the member filenames after an operation
 has been applied to every file in the group. Alternatively the 
@@ -824,13 +893,15 @@ method.
 
 sub updateout {
   my $self = shift;
-
   my $suffix = shift;
+
+  # Read the file number if supplied
+  my $num = (scalar(@_) ? shift : 1);
   
   # Now loop over the members
   foreach my $member ($self->members) {
 
-    my ($in, $out) = $member->inout($suffix);
+    my ($in, $out) = $member->inout($suffix,$num);
     $member->file($out);
   }
 
@@ -840,7 +911,7 @@ sub updateout {
 =item template()
 
 Method to change all the current filenames in the group so that they
-match the supplied template. This method invokes the template
+match the supplied template. This method invokes the template()
 method for each member of the group.
 
   $Grp->template("filename_template");
@@ -1090,3 +1161,5 @@ Tim Jenness (t.jenness@jach.hawaii.edu)
 and Frossie Economou  (frossie@jach.hawaii.edu)
 
 =cut
+
+1;
