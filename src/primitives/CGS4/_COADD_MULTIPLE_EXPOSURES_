@@ -49,27 +49,28 @@ frossie@jach.hawaii.edu
 my $nfiles = $Frm->nfiles;
 
 if($nfiles != 1) {
-  # generate "ia + ib + ic .... " expression for kappa maths
-  my $exp = join ("+",grep {$_ = "i".chr($_+96)} (1..$nfiles));
-  
-  # generate "ia=cfoo_1.i1  ib=cfoo_1.i2 ic=cfoo_1.i3 .... " expression for input to kappa maths
-  my $args =  join (" ",grep {$_ = "i".chr($_+96)."=".$Frm->file($_)} (1..$nfiles));
-  
+
+  # generate list of files for 'makemos'
+  my $tmp = new ORAC::TempFile;
+  foreach my $i (1..$nfiles) {
+    print {$tmp->handle} $Frm->file($i) . "\n";
+  }
+  $tmp->handle->close;
+
   # generate name of output file
   $Frm->files($Frm->file);
   my ($in,$out) = $Frm->inout("_co");
-  
-  my $temp = new ORAC::TempFile;
-  my $tempname = $temp->file;
-  
-  $Mon{'kappa_mon'}->obeyw("maths","exp=$exp out=$tempname $args");
-  
-  $Mon{'kappa_mon'}->obeyw("cdiv","in=$tempname out=$out scalar=$nfiles");
-  
+
+  # average the files together using 'makemos'
+  my $mosargs = "in=^" . $Frm->file . " noscale nousevar nozero method=mean logto=neither logfile=!";
+  $Mon{'ccdpack_reg'}->obeyw("makemos","$mosargs out=$out");
+
+  # update $Frm object
   $Frm->file($out);
   $Frm->mergehdr;
   
   $Display->display_data($Frm) if defined $Display;
   
+  # print congratulatory message
   orac_print ("Frames coadded into $out\n");
 }
