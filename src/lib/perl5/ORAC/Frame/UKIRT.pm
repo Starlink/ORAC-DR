@@ -84,10 +84,6 @@ sub new {
   $frame->{Group} = undef;
   $frame->{Files} = [];
   $frame->{Recipe} = undef;
-  $frame->{Nsubs} = undef;
-  $frame->{Subs} = [];
-  $frame->{Filters} = [];
-  $frame->{WaveLengths} = [];
   $frame->{RawSuffix} = ".sdf";
   $frame->{RawFixedPart} = 'ro'; 
   $frame->{UserHeader} = {};
@@ -143,6 +139,68 @@ sub readhdr {
 
   return $ref;
 }
+
+
+=item findgroup
+
+Returns group name from header.  For dark observations the current obs
+number is returned if the group number is not defined or is set to zero
+(the usual case with IRCAM)
+
+=cut
+
+sub findgroup {
+
+  my $self = shift;
+
+  my $hdrgrp = $self->hdr('GRPNUM');
+
+
+  # Is this group name set to anything useful
+  if ($hdrgrp == 0) {
+    # if the group is invalid there is not a lot we can do about
+    # it except for the case of certain calibration objects that
+    # we know are the only members of their group (eg DARK)
+
+    if ($self->hdr('OBJECT') eq 'DARK') {
+       $hdrgrp = $self->hdr('RUN');
+    }
+
+  }
+  return $hdrgrp;
+
+}
+
+=item findrecipe
+
+Find the recipe name. At the moment we perform a KLUDGE by 
+only returning recipes for calibrations (specifically 
+DARK observations). All other times we will return undef
+and hope that the pipeline will realise that for undef it should 
+take the command line override value
+
+=cut
+
+sub findrecipe {
+
+  my $self = shift;
+
+  my $recipe = $self->hdr('RECIPE');
+
+  # Check to see whether there is something there
+  # if not try to make something up
+  if ($recipe !~ /./) {
+
+      if ($self->hdr('OBJECT') eq 'DARK') {
+       $recipe = 'IRCAM_DARK';
+    }
+
+  } 
+  return $recipe;
+
+
+}
+
 
 =back
 
