@@ -199,12 +199,7 @@ sub configure {
     
         $self->findrecipe;
     } elsif ($simple) {
-        my $subFrm = $self->new;
-        $subFrm->file($fname);
-        $subFrm->raw($fname);
-        $subFrm->readhdr;
-        $self->{SubFrms} = [$subFrm];
-        $subFrm->subfrmnumber(0);
+        $self->{SubFrms} = [$self];
         $self->subfrmnumber(0);
         $self->findgroup;
         $self->findrecipe;
@@ -265,27 +260,6 @@ They are included here so that authors of derived classes are
 aware of them.
 
 =over 4
-
-=cut
-sub update_header {
-    my $self = shift;
-    my ($key,$type,$value,$comment) = @_;
-
-    # Get the file and open it...
-
-    my $status = 0;
-    my $fptr = Astro::FITS::CFITSIO::open_file($self->file,READWRITE,$status);
-    return($status) if ($status);
-
-    # Now update the keyword...
-
-    $fptr->update_key($type,$key,$value,$comment,$status);
-    $fptr->close_file($status);
-    $self->hdr($key => $value);
-    $self->uhdr($key => $value);
-    return($status);
-}
-
 
 =item B<findgroup>
 
@@ -353,6 +327,9 @@ Copyright (C) 2003-2006 Cambridge Astronomy Survey Unit. All Rights Reserved.
 #
 #
 # $Log$
+# Revision 1.4  2003/10/04 00:06:40  jrl
+# Modified to remove redundant update_header method
+#
 # Revision 1.3  2003/09/25 10:03:54  jrl
 # Updated to for MEFs and SEFs
 #
