@@ -33,8 +33,12 @@ in addition to the temporary file created by this class.
 use strict;
 use Carp;
 use IO::File;
-use POSIX qw/tmpnam/;
 use vars qw/$VERSION $DEBUG/;
+
+#use POSIX qw/tmpnam/;
+use File::MkTemp qw/mktemp/;
+
+
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 $DEBUG = 0;
@@ -218,7 +222,8 @@ sub Initialise {
   # Try new temporary files until we get one that didnt already exist
   # This assumes we keep on trying to open the file....
   do { 
-    $file = tmpnam();
+#    $file = tmpnam();
+    $file = mktemp('oractempXXXXXX', $ENV{ORAC_DATA_OUT});
     $file =~ s/\./_/g;  # Remove dots since NDF does not like them
   } until $fh = IO::File->new($file, O_RDWR|O_CREAT|O_EXCL);
 
@@ -273,7 +278,7 @@ sub DEBUG {
 
 =head1 SEE ALSO
 
-L<IO::File>, L<POSIX/tmpnam()>
+L<IO::File>, L<File::MkTemp>, L<POSIX/tmpnam()>
 
 =head1 REVISION
 
