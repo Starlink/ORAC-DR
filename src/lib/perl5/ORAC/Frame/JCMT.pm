@@ -396,6 +396,71 @@ sub inout {
 }
 
 
+=item template
+
+This method is identical to the base class template method
+except that only files matching the specified sub-instrument
+are affected.
+
+  $Frm->template($template, $sub);
+
+If no sub-instrument is specified then the first file name
+is modified
+
+=cut
+
+sub template {
+  my $self = shift;
+
+  my $template = shift;
+
+  my $sub = undef;
+  if (@_) { $sub = shift; }
+
+  # Now get a list of all the subs
+  my @subs = $self->subs;
+
+  # If sub has not been specified then we only process one file
+  my $nfiles;
+  if (defined $sub) {
+    $nfiles = $self->num_files;
+  } else {
+    $nfiles =1;
+  }
+
+  # Get the observation number
+  my $num = $self->number;
+
+
+  # loop through each file
+  # (assumes that we actually have the same number of files as subs
+  # Not the case before EXTINCTION  
+
+  for (my $i = 0; $i < $nfiles; $i++) {
+
+    # Do nothing if sub is defined but not equal to the current
+    if (defined $sub) { next unless $sub eq $subs[$i]; }
+
+    # Okay we get to here if the subs match of if sub was not
+    # defined
+    # Now repeat the code in the base class
+    # Could we use SUPER::template here? No - since the base
+    # class does not understand numbers passed to file
+    
+    # Change the first number
+    $template =~ s/_\d+_/_${num}_/;
+
+    # Update the filename
+    $self->file($i+1, $template);
+
+  }
+
+}
+
+
+
+
+
 =item num_files
 
 Number of files associated with the current state.
@@ -544,6 +609,69 @@ sub aref {
   return $self->{Files};
 }
 
+
+
+=item file2sub
+
+Given a file index, (see file()) returns the associated
+sub-instrument.
+
+  $sub = $Frm->file2sub(2)
+
+Returns the first sub name if index is too large.
+
+=cut
+
+sub file2sub {
+  my $self = shift;
+  my $index = shift;
+  
+  # Look through subs()
+  my @subs = @{$self->subs};
+  
+  # Decrement $index so that it matches an array lookup
+  $index--;
+  
+  if ($index > $#subs) {
+    return $subs[0];
+  } else {
+    return $subs[$index];
+  }
+}
+
+=item sub2file
+
+Given a sub instrument name returns the associated file
+index. This is the revers of sub2file. The resulting value
+can be used directly in file() to retrieve the file name.
+
+  $file = $Frm->file($Frm->sub2file('LONG'));
+
+A case insensitive comparison is performed.
+
+Returns 1 if nothing matched (ie just returns the first file
+in file(). This is probably a bug.
+
+=cut
+
+sub sub2file {
+  my $self = shift;
+  my $sub = lc(shift);
+  
+  # The index can be found by going thourgh @subs until
+  # we find a match
+  my @subs = $self->subs;
+  
+  my $index = 1; # return first file name at least
+  for (my $i = 0; $i <= $#subs; $i++) {
+    if ($sub eq lc($subs[$i])) {
+      $index = $i + 1;
+      last;
+    }
+  }
+  
+  return $index;
+}
 
 
 
