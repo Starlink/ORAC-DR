@@ -1,0 +1,155 @@
+=head1 NAME
+
+_PAIR_REDUCTION_STEER_ - steering file for pair-based recipes
+
+=head1 DESCRIPTION
+
+This primitive controls the overall state of a recipe involving
+pair subtraction. It currently determines whether we are
+an OBJECT or a SKY and whether we are the first or second observation
+of a pair. This information is required by many of the group primitives
+to determine whether or not to act.
+
+=head1 OUTPUT
+
+Stores information in the user header of the current frame
+with the following keys:
+
+=over 4
+
+=item PAIR_COMPLETE
+
+True if the frame is the second of a pair. False otherwise.
+
+=item ON_SOURCE
+
+True if we are on the object. False if we are on sky.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Incompatible with the C<-batch> option in ORAC-DR since this primitive
+uses the number of frames in the group to determine state.
+
+=item *
+
+The test to see if the observation is either OBJECT or SKY
+relies on the offset being exactly zero.  If the offset comes back as
+a floating point number, this equality may not happen, even though the
+offset is technically zero (this is due to the way computers handle
+floating point numbers -- 0.0 may not necessarily be equal to zero).
+If, for some reason, the test fails, this strict equality check may
+need to be modified to check within a range around zero.
+
+=item *
+
+Determines that a pair is complete by counting the number of members in
+the ORAC-DR group. This will be different from the number of members
+in the CGS4 group if the pipeline is restarted. It is
+assumed that the pipeline is restarted at the start of a pair
+(and the pipeline will fail if this is not the case).
+Additionally, the total number of observations in the group so far
+(regardless of the ORAC-DR group) is also calculated to determine
+the state of the pair. If the two answers are different the recipe
+aborts since this is indicative of the pipeline restarting midway
+through a pair reduction.
+
+=item *
+
+The pipeline can not be started from the second observation of a pair
+since ORAC-DR will have no knowledge of the previous frame.
+
+=item *
+
+When a frame is determined to be a SKY the offset information
+(the FITS headers) are stored in the Group object (via the uhdr())
+so that subsequent primitives can use this information to determine
+the position of the negative row. This is only used if the extraction
+is done without reducing a standard and is used to guarantee that
+the off position can be determined regardless of the order of the
+sky-object pair. The FITS headers stored are C<RAOFF>, C<DECOFF>,
+C<RABASE>, C<DECBASE>, C<MEANRA>, C<MEANDEC> and are prefixed by
+C<SKY_> when stored in the user header.
+
+=back
+
+=head2 Revision
+
+ $Id$
+
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+=cut
+
+
+# Retrieve the number of frames currently in the group.  This assumes
+# no batch mode.
+    my $num = $Grp->num() + 1;
+
+# Set the PAIR_COMPLETE steering header.
+    if ( $num % 2 == 1 ) {
+       $Frm->uhdr( "PAIR_COMPLETE", 0 );
+       orac_print "This observation is the start of a pair";
+
+    } else {
+       $Frm->uhdr( "PAIR_COMPLETE", 1 );
+       orac_print "This observation completes a pair.";
+    }
+
+# Calculate the total number of observations in the group by using the
+# Group name and the current observation number.  If the pair state
+# calculated above is inconsistent with the pair state calculated here
+# we abort.
+    my $groupnum = $Frm->group;
+    my $obsnum   = $Frm->number;
+
+# Actual number is diff + 1 (hence the strange modulo).
+    my $diff = $obsnum - $groupnum;
+
+    if ( $Frm->uhdr( "PAIR_COMPLETE" ) && ( $diff % 2 == 0 ) ) {
+       orac_err "Group number and current frame number indicates this " .
+                "is an incomplete pair,\n yet group membership " .
+                "indicates otherwise.\n";
+       orac_err "Was the pipeline restarted midway through a group?\n";
+       my $ORAC_STATUS = ORAC__ERROR;
+
+    } elsif ( ( $Frm->uhdr( "PAIR_COMPLETE" ) == 0 ) && ( $diff % 2 == 1 ) ) {
+       orac_err "Group number and current frame number indicates this " .
+                "is a complete pair,\n yet group membership " .
+                "indicates otherwise.\n";
+       orac_err "Was the pipeline restarted midway through a group?\n";
+       my $ORAC_STATUS = ORAC__ERROR;
+    }
+
+# Obtain the telescope offsets.
+    my $raoff = $Frm->uhdr( "ORAC_TRAOFF" );
+    my $decoff= $Frm->uhdr( "ORAC_TDECOFF" );
+
+# Now calculate whether we are an object or a sky observation.
+# This is achieved by determining if there is an offset, i.e.
+# the telescope moved.  Allow for rounding and type conversion
+# (string <-> numeric) to 1 milli-arcsec level.
+    if ( ( abs $raoff < 0.001 ) && ( abs $decoff < 0.001 ) ) {
+
+       $Frm->uhdr( "ON_SOURCE", 1 );
+       orac_print "The observation is of an OBJECT frame.\n";
+
+    } else {
+       $Frm->uhdr( "ON_SOURCE", 0 );
+       orac_print "The observation is of a SKY frame.\n";
+
+# Store the offset information in the group user header
+       $Grp->uhdr( "SKY_RAOFF",   $Frm->uhdr( "ORAC_TRAOFF" ) );
+       $Grp->uhdr( "SKY_DECOFF",  $Frm->uhdr( "ORAC_TDECOFF"  ) );
+#       $Grp->uhdr( "SKY_RABASE",  $Frm->uhdr( "ORAC_RABASE"  ) );
+#       $Grp->uhdr( "SKY_DECBASE", $Frm->uhdr( "ORAC_DECBASE" ) );
+#       $Grp->uhdr( "SKY_MEANRA",  $Frm->uhdr( "MEANRA"  ) );
+#       $Grp->uhdr( "SKY_MEANDEC", $Frm->uhdr( "MEANDEC" ) );
+    }
