@@ -1,8 +1,28 @@
 # _FLAT_FIELD_QUADRANT_JITTER_      -*-perl-*-
 #
 
+# Determine whether or not to mask objects as well as quadrants.
+# Determine whether or not to mask objects.
+    if ( defined $_FLAT_FIELD_QUADRANT_JITTER_{MASK} ) {
+       $mask_obj = $_FLAT_FIELD_QUADRANT_JITTER_{MASK};
+    } else {
+       $mask_obj = 1;
+    }
+
 # Create a group based upon the current frame name.
-    $Grp->template($Frm->file);
+    $Grp->template( $Frm->file );
+
+# Record the group identifier.
+    $mainGrp = $Grp;
+
+# Specify the cycle number.
+    $cycleno = int( $Grp->num / 4 );
+
+# Extract from the main group those frames belonging to this group.
+    $cyclegrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+
+# Make this the main group for the moment.
+    $Grp = $cyclegrp;
 
 # Record the group members at this point.
     @quad_names = $Grp->membernames;
@@ -11,53 +31,60 @@
     _MAKE_FLAT_QUADRANT_JITTER_
 
 # Reset the group names to be the ones to flat field.
-    $Grp->membernames(@quad_names);
+    $Grp->membernames( @quad_names );
 
 # Apply the flat field.
-    _DIVIDE_BY_FLAT_FROM_QUADRANT_GROUP_
+    _DIVIDE_BY_FLAT_FROM_GROUP_
 
-# Save the current file name.
-    $current = $Frm->file;
-
-# Can generate a flat field when the the number of object frames is a
-# multiple of four.
-    if ( ($Grp->num + 1) % 4 == 0 ) {
+# Test whether or not it is time to mask objects.  Use global
+# argument first, then frame by frame.
+    if ( $mask_obj ) {
+       $maskobjects = $Frm->hdr( "MASK_OBJECTS" );
+       if ( $maskobjects ) {
 
 # Create an array to store the names of the mask files. 
-       @maskfiles = ();
-       @ff_frames = $Grp->membernames;
+          @maskfiles = ();
 
 # Compute a mask of the objects for each member of the flat-field
-# group.
-       for ( $i = 0; $i <= $Grp->num; $i++ ) {
-          $frame = $ff_frames[$i];
-          $Frm->file($frame);
-          _MAKE_OBJECTS_MASK_
+# group, using a local $Frm.
+          foreach $Frm ( $Grp->members ) {
+             _MAKE_OBJECTS_MASK_ OCCULT=17
 
-# Record the list of maskfiles.
-          @maskfiles = (@maskfiles, $_MAKE_OBJECTS_MASK_{MASKFILE});
-       }
+# Record the mask filename into an array.
+             push( @maskfiles, $_MAKE_OBJECTS_MASK_{MASKFILE} );
+          }
 
-# Mask the objects in each frame.
-       for ( $i = 0; $i <= $Grp->num; $i++ ) {
-          $Frm->file( @quad_names[$i] );
-          _MASK_OBJECTS_ MASKFILE=$maskfiles[$i]
-       }
+# Create an array to store the names of the masked datasets. 
+          @masked_names = ();
 
-# Use the last frame created (the one with objects masked) as a template
-# to form the group.
-       $Grp->template($Frm->file);
+# Mask the objects in each frame.  Make a copy of the @quad_names
+# so we can shift its elements.  Again use a local $Frm.
+          @local_quad_names = @quad_names;
+          foreach $Frm ( $Grp->members ) {
+             $file = shift( @local_quad_names );
+             $maskfile = shift( @maskfiles );
+             $Frm->file( $file );
+             _MASK_OBJECTS_ MASKFILE=$maskfile
+
+# Record the masked (or unmasked file if the masking has failed)
+# filename into an array.
+             push ( @masked_names, $Frm->file );
+          }
+
+# Set the group names to be the masked ones to form improved flat field.
+          $Grp->membernames( @masked_names );
 
 # Generate the new flat field using the jittered masked frames.
-       _MAKE_FLAT_FROM_GROUP_ 
+          _MAKE_FLAT_FROM_GROUP_ 
 
 # Reset the group names to be the ones to flat field.
-       $Grp->membernames(@quad_names);
+          $Grp->membernames( @quad_names );
 
 # Apply the better flat field.
-       _DIVIDE_BY_FLAT_FROM_GROUP_
-
+          _DIVIDE_BY_FLAT_FROM_GROUP_
+       }
     }
 
-# Restore the oiginal pipeline current file name.
-    $Frm->file($current);
+# Restore the original group.
+    $Grp = $mainGrp;
+    $Grp->template( $Frm->file );
