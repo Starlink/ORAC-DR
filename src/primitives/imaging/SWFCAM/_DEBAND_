@@ -1,0 +1,96 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_DEBAND_ - First attempt at removing banding.
+
+=head1 DESCRIPTION
+
+=head1 NOTES
+
+Maybe some off-by 1 errors in the pixel co-ordinates specified
+
+=cut
+
+my ($in, $out) = $Frm->inout("_deband");
+
+my $tmp = new ORAC::TempFile;
+my $tmpfile = $tmp->file;
+
+my $temp = new ORAC::TempFile;
+my $tempfile = $temp->file;
+
+my $tmpa = new ORAC::TempFile;
+my $a = $tmpa->file;
+my $tmpb = new ORAC::TempFile;
+my $b = $tmpb->file;
+my $tmpc = new ORAC::TempFile;
+my $c = $tmpc->file;
+my $tmpd = new ORAC::TempFile;
+my $d = $tmpd->file;
+
+# Copy the first quadrant straight to the new image
+$Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in(1:1024,1:1024) out=$a");
+$Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$a origin=[1,1]");
+$Mon{'ndfpack_mon'}->obeyw("setbound", "ndf=$a(1:4096,1:1024)");
+$Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$a origin=[1,1]");
+
+# Rotate the 2nd quad to temp
+$Mon{'kappa_mon'}->obeyw("rotate", "angle=90 in=$in(1025:2048,1:1024) out=$b");
+$Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$b origin=[1,1]");
+$Mon{'ndfpack_mon'}->obeyw("setbound", "ndf=$b(-1024:3072,1:1024)");
+$Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$b origin=[1,1]");
+
+# Rotate the 3rd quad to temp
+$Mon{'kappa_mon'}->obeyw("rotate", "angle=180 in=$in(1025:2048,1025:2048) out=$c");
+$Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$c origin=[1,1]");
+$Mon{'ndfpack_mon'}->obeyw("setbound", "ndf=$c(-2048:2048,1:1024)");
+$Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$c origin=[1,1]");
+
+# Rotate the 4th quad to temp
+$Mon{'kappa_mon'}->obeyw("rotate", "angle=270 in=$in(1:1024,1025:2048) out=$d");
+$Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$d origin=[1,1]");
+$Mon{'ndfpack_mon'}->obeyw("setbound", "ndf=$d(-3072:1024,1:1024)");
+$Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$d origin=[1,1]");
+
+# Make the "mosaic"
+# use a tmp file for the filelist.
+my $list=new ORAC::TempFile;
+my $listfile =$list->file;
+open(LIST, ">$listfile");
+print LIST "$a\n$b\n$c\n$d\n";
+close(LIST);
+
+$Mon{'ccdpack_reg'}->obeyw("makemos", "in=^$listfile method=mean out=$tmpfile");
+
+# Collapse the mosaic to make a profile
+$Mon{'kappa_mon'}->obeyw("collapse", "in=$tmpfile out=$tempfile estimator=mode axis=2");
+
+# Grow the profile out
+$Mon{'kappa_mon'}->obeyw("manic", "in=$tempfile out=$a axes=[0,1] lbound=0 ubound=1024");
+
+# Rotate to make the other quadrants
+$Mon{'kappa_mon'}->obeyw("rotate", "angle=90 in=$a out=$b");
+$Mon{'kappa_mon'}->obeyw("rotate", "angle=180 in=$a out=$c");
+$Mon{'kappa_mon'}->obeyw("rotate", "angle=270 in=$a out=$d");
+
+# Do position and expand the quadrant images to full images
+$Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$a origin=[1,1]");
+$Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$b origin=[1,1025]");
+$Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$c origin=[1025,1025]");
+$Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$d origin=[1025,1]");
+$Mon{'ndfpack_mon'}->obeyw("setbound", "ndf=$a(1:2048,1:2048)");
+$Mon{'ndfpack_mon'}->obeyw("setbound", "ndf=$b(1:2048,1:2048)");
+$Mon{'ndfpack_mon'}->obeyw("setbound", "ndf=$c(1:2048,1:2048)");
+$Mon{'ndfpack_mon'}->obeyw("setbound", "ndf=$d(1:2048,1:2048)");
+
+# Mosaic em up.
+$Mon{'ccdpack_reg'}->obeyw("makemos", "in=^$listfile method=mean out=$tmpfile");
+
+# Subtract from the original image
+$Mon{'kappa_mon'}->obeyw("sub", "in1=$in in2=$tmpfile out=$out");
+
+#Hello, world
+orac_print("$in to $out: Debanding algorithm applied\n");
+
+$Frm->file($out);
