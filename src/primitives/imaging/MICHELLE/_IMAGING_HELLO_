@@ -26,7 +26,10 @@
 #    set for undefined bounds (to cope with early data).
 #    -  Corrects the acquisition bug which sets ORAC_WAVEPLATE_ANGLE
 #    internal header to be a comment instead of value 0.  It changes both
-#    the actual headers and the $Frm->uhdr hash.
+#    the actual headers and the $Frm->uhdr hash.  If the waveplate
+#    angle is 180 or greater, the script takes modulo 180 of the waveplate
+#    angle, updating both the internal and external headers with the new
+#    value.
 #
 # Output Data:
 #    -  Copied frame inheriting the current frame's name but with 
@@ -105,6 +108,13 @@
 # Specify the NDF.
     $in = $Frm->file;
 
+# ***** Kludge Alert ******
+#
+# There is currently no means of accessing the FITS airlock in the
+# multi-NDF container file generically, forced to assumed the
+# the data structure for now.  So hardwire the name.
+       ( my $inheader = $in ) =~ s/I1BEAMA/HEADER/;
+
 # See if WPLANGLE has a value.
     if ( !defined( $Frm->uhdr( "ORAC_WAVEPLATE_ANGLE" ) ) ) {
 
@@ -114,48 +124,102 @@
        $Frm->uhdr( "ORAC_WAVEPLATE_ANGLE", 0 );
 
 # The data also need to be changed so that the flat can be filed.
-# Thus correct the FITS header WPLANGLE value too.  This assumes that
-# there is a keyword corresponding to the ORAC_WAVEPLATE_ANGLE.  Note
-# that the input file name remains the same.
+# Thus correct the FITS airlock value too.  This assumes that there
+# is a keyword corresponding to the ORAC_WAVEPLATE_ANGLE.  Note that
+# the input file name remains the same.  The implied wildcarding of
+# the multi-NDF file by KAPPA would deal with this at one time.
+# However, now due to changes in the DR conversion from raw frames, 
+# there is only one set of user and external headers per Frm.   Hence
+# there is no looping over the integrations.  The current frame is the
+# first integration, so we have to access the header NDF.  
        my %keywords =  $Frm->translate_hdr( "ORAC_WAVEPLATE_ANGLE" );
        my @wplakey = keys( %keywords );
        $param1 = "edit=update keyword=$wplakey[ 0 ] value=0.0 comment=\\\$C position=!"; 
-       $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "ndf=$in $param1" );
+       $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "ndf=$inheader $param1" );
+
+# Correct the waveplate angle to modulo 180 degrees.
+# ==================================================
+
+    } elsif ( $Frm->uhdr( "ORAC_WAVEPLATE_ANGLE" ) > 179.99 ) {
+
+# For the polarimetry reductions the waveplate angles are 0, 45, 22.5,
+# and 67.5.  Values 180, 225, 202.5, and 247.5 are equivalent.
+       my $wplangle = $Frm->uhdr( "ORAC_WAVEPLATE_ANGLE" );
+       my $newangle = $wplangle % 180;
+
+# For some reason the orientation angle zero is written as 0.0 rather
+# than 0 (unlike 45).  However, below a 180-degree waveplate angle
+# mod 180, becomes 0 when written by FITSMOD will change a 180-degree
+# angle, thus not be matched by various invocations of the subgrp
+# method in the polarimetry code.  So make 0 into 0.0 before storing
+# in the user header.  Make it a string to force the trailing 0 to
+# appear in the user header.
+       if ( abs( $newangle ) < 1E-4 ) {
+          $newangle = "0.0";
+       } 
+
+# Store the revised value.
+       $Frm->uhdr( "ORAC_WAVEPLATE_ANGLE", $newangle );
+
+# The data also need to be changed so that the mosaic will inherit it.
+# Thus correct the FITS airlock value too.  This assumes that
+# there is a keyword corresponding to the ORAC_WAVEPLATE_ANGLE.  Note
+# that the input file name remains the same.  Again we are forced to
+# the header-NDF kludge for now.  See the earlier FITSMOD comments for
+# more details.
+       my %keywords =  $Frm->translate_hdr( "ORAC_WAVEPLATE_ANGLE" );
+       my @wplakey = keys( %keywords );
+       $param1 = "edit=update keyword=$wplakey[ 0 ] value=$newangle comment=\\\$C position=!"; 
+       $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "ndf=$inheader $param1" );
+
+# Report the processing status.
+       orac_print "Frame $in has waveplate angle changed from " .
+                  "$wplangle to $newangle (modulo 180).\n";
     }
 
 # Set the bounds of the NDF.
 # ==========================
 
+# Repeat for all the integrations.
+    foreach my $i ( 1 .. $Frm->nfiles ) {
+
 # Wavefront sensing uses ORAC-DR where readout bounds may not
 # be present.  The default origin of (1,1) will be used.
-    if ( exists $Frm->uhdr->{ "ORAC_X_LOWER_BOUND" } ) {
+       if ( exists $Frm->uhdr->{ "ORAC_X_LOWER_BOUND" } ) {
 
 # Read readout bounds from the headers.
-       my $x1 = $Frm->uhdr( "ORAC_X_LOWER_BOUND" );
-       my $y1 = $Frm->uhdr( "ORAC_Y_LOWER_BOUND" );
+          my $x1 = $Frm->uhdr( "ORAC_X_LOWER_BOUND" );
+          my $y1 = $Frm->uhdr( "ORAC_Y_LOWER_BOUND" );
 
 # Allow for old data where the headers were not available.
-       if ( ! ( defined( $x1 ) && defined( $y1 ) ) ) {
-          $x1 = 1;
-          $y1 = 1;
-       }
+          if ( ! ( defined( $x1 ) && defined( $y1 ) ) ) {
+             $x1 = 1;
+             $y1 = 1;
+          }
 
 # Set the parameters for the task.
-       $param1 = "ndf=$in origin=[$x1,$y1]";
+          my $in = $Frm->file( $i );
+          $param1 = "ndf=$in origin=[$x1,$y1]";
 
 # Set the pixel origin.
-       $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param1" );
+          $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param1" );
 
 # Report the processing status.
-       orac_print "Frame $in has origin set to ($x1,$y1).\n";
+          orac_print "Frame $in has origin set to ($x1,$y1).\n";
+       }
     }
 
 # Initiate history recording.
 # ===========================
-    $Mon{ "ndfpack_mon" }->obeyw( "hisset", "ndf=$in" );
+
+# Repeat for all the integrations.
+    foreach my $i ( 1 .. $Frm->nfiles ) {
+       $in = $Frm->file( $i );
+       $Mon{ "ndfpack_mon" }->obeyw( "hisset", "ndf=$in" );
 
 # Report the processing status.
-    orac_print "Frame $in has history recording enabled.\n";
+       orac_print "Frame $in has history recording enabled.\n";
+    }
 
 # Correct data units to standard
 # ==============================
@@ -220,7 +284,9 @@ undefined bounds (to cope with early data).
 
 Corrects the acquisition bug which sets ORAC_WAVEPLATE_ANGLE internal
 header to be a comment instead of value 0.  It changes both the actual
-headers and the $Frm->uhdr hash.
+headers and the $Frm->uhdr hash.  If the waveplate angle is 180 or
+greater, the script takes modulo 180 of the waveplate angle, updating
+both the internal and external headers with the new value.
 
 =back
 
