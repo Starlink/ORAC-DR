@@ -1,0 +1,69 @@
+=head1 NAME
+
+_FILE_BAD_PIXELS_
+
+=head1 DESCRIPTION
+
+Files an image as a bad pixel mask. If the internal ARRAY_TESTS_FRESH_BPM
+header is set to FALSE, then the given image will be added to the current
+bad pixel mask to create a new one. Otherwise, only the given image will
+be used to create a new bad pixel mask.
+
+This primitive uses the CGS4 standard for bad pixel masks - good values
+are set as zero, and bad values are set as bad.
+
+=head1 AUTHORS 
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# If we get passed a FILE argument, we use it, otherwise we use $Frm.
+# $out from this shouldn't get used. $in maybe
+my ($in, $out) = $Frm->inout("_bad");
+my $ndf = ( $_FILE_BAD_PIXELS_{FILE} || undef );
+if (!defined $ndf) {
+   $ndf = $in;
+}
+# Stuff this into a temporary frame object
+my $tFrm = new $Frm;
+$tFrm->file($ndf);
+
+# Determine if we're to start the BPM from scratch
+if ($Frm->uhdr("ARRAY_TESTS_FRESH_BPM") eq "FALSE") {
+   ($in, $out) = $tFrm->inout("_bpc");
+   # Pull in the bad pixels from the filed mask - so this becomes cumulative
+   my $mask = $Cal->mask;
+   $Mon{'kappa_mon'}->obeyw("add", "in1=$in in2=$mask out=$out title=$out");
+   orac_print ("$in to $out: Accumulated bad pixels from $mask\n");
+   $tFrm->file($out);
+} else {
+   orac_print ("Starting Bad Pixel Mask from Fresh\n");
+}
+
+# Make it into a conventional cgs4 bpm - 0s everywhere good bad values elewhere
+($in, $out) = $tFrm->inout("_bpm");
+$Mon{'kappa_mon'}->obeyw("thresh", "in=$in newlo=0 newhi=0 out=$out title=$out thrhi=0 thrlo=0");
+$Mon{'ndfpack_mon'}->obeyw("setbad", "ndf=$out value=true");
+orac_print "$in to $out: To cgs4 bpm format\n";
+$tFrm->file($out);
+
+# Store as the current bpm
+my $number = $Frm->uhdr("ORAC_OBSERVATION_NUMBER");
+my $bpm = "bpm_$number";
+$Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$out out=$bpm");
+$tFrm->file($bpm);
+$tFrm->readhdr;
+
+$Cal->mask($bpm);
+orac_print "$out to $bpm: copied and filed as the current bad pixel mask\n";
+
+# Add to index file
+$Cal->maskindex->add($tFrm->file, $tFrm->hdr );
+orac_print "$bpm added to mask index file\n";
