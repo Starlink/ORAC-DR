@@ -18,7 +18,7 @@ information. This is the information required by ORAC-DR in order
 to configure itself before the data detection loop can begin.
 
 This module provides information on class hierarchies, recipe
-search paths and intialisation or algorithm engines.
+search paths and initialisation or algorithm engines.
 
 All instrument dependencies are specified in this module.
 
@@ -86,12 +86,13 @@ BEGIN { # A kluge - for some reason kapview does not pick up the
   # dont understand since the environment is passed to the forked
   # process...
   # Need the second arg in perl versions prior to 5.6.0
-  mkdir File::Spec->catdir(File::Spec->tmpdir,"oracdragi"),0777
-    or croak "Could not make AGI temp directory: $!";
-  $ENV{'AGI_USER'} = "/tmp/oracdragi";
+  my $agidir =  File::Spec->catdir(File::Spec->tmpdir, "oracdragi" . $$);
+  mkdir $agidir,0777
+    or croak "Could not make AGI temp directory $agidir: $!";
+  $ENV{'AGI_USER'} = $agidir;
   $ENV{'AGI_NODE'} = "orac_kapview$$";
 
-  push( @DIRS_TO_UNLINK, "/tmp/oracdragi");
+  push( @DIRS_TO_UNLINK, $agidir);
 
 }
 
