@@ -12,24 +12,42 @@ to an array of references to hashes, each hash having keys POS and
 MULT - the beam position and multiplier
 
 When determining the location of the rows on which the spectra fall,
-a y-profile spectrum is created in a file ending with _ypr.
+a y-profile spectrum is created by taking the weighted mean to remove
+the effects of noisy pixels. This y-profile spectrum is stored in a
+file ending with _ypr. Before this file is used for beam detection it
+can be smoothed with a median filter whose kernel size is dictated
+by the SMOOTH argument.
 
-=head1 PARAMETERS
+=head1 ARGUMENTS
 
-The ROWSCAL parameter - if set to 'SAVE', the primitive will store the
-beam information it detects to the calibration rows system. If set to
-'LOAD', the primitive will ask the Cal system for the beam information
-rather than trying to determine it from the data. If unset, the beam
-information will be determined from the image, and used without being
-stored to the Cal system.
+=over 4
 
-=head1 AUTHOR
+=item ROWSCAL = CHARACTER (Given)
+
+If this is set to "SAVE", the primitive will store the beam
+information it detects to the calibration rows system.  If it
+is set to "LOAD", the primitive will ask the calibration system
+for the beam information rather than trying to determine it from
+the data.  If unset, the beam information will be determined from
+the image, and used without being stored to the calibration
+system.
+  
+=item SMOOTH = INTEGER (Given)
+ 
+A positive integer applies a median filter using a kernel size
+of SMOOTH rounded up to the next whole odd integer.  If it is
+not positive, no smoothing occurs.  [0]
+ 
+=back
+
+=head1 AUTHORS
 
 Paul Hirst <p.hirst@jach.hawaii.edu>
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
@@ -37,6 +55,16 @@ Council. All Rights Reserved.
 # Paramters
 my $calload = (defined $_EXTRACT_FIND_ROWS_{ROWSCAL} && $_EXTRACT_FIND_ROWS_{ROWSCAL} eq 'LOAD') ? 1 : 0;
 my $calsave = (defined $_EXTRACT_FIND_ROWS_{ROWSCAL} && $_EXTRACT_FIND_ROWS_{ROWSCAL} eq 'SAVE') ? 1 : 0;
+
+# Size of the smoothing box. 0 or negative is no smoothing.
+my $smooth = defined $_EXTRACT_FIND_ROWS_{SMOOTH} ? $_EXTRACT_FIND_ROWS_{SMOOTH} : 0;
+$smooth = ( $smooth > 0 ) ? $smooth : 0;
+
+# Derive the smoothing kernel size.
+my $boxsize = 0;
+if( $smooth ) {
+  $boxsize = int( $smooth / 2 ) * 2 + 1;
+}
 
 # Get the input filename. We won't actually use an output file here 
 # - we just add some entries to the group uhdr.
@@ -85,10 +113,19 @@ if (! $calload) {
    my $tmpfile = $tmp->file;
    my $ORAC_STATUS;
 
+   my $smoothed = new ORAC::TempFile;
+   my $smofile = $smoothed->file;
+
    my $posbeamsfound=0;
    if($posbeams) {
       # Need to thresh to only see the +ve half
       $Mon{'kappa_mon'}->obeyw("thresh", "in=$colfile out=$tmpfile thrlo=0 newlo=0 thrhi=1000000 newhi=1000000"); 
+
+      if ( $smooth ) {
+        my $param = "in=$tmpfile estimator=median box=$boxsize out=$smofile";
+        $Mon{ 'kappa_mon' }->obeyw( "block", "$param");
+        $tmpfile = $smofile;
+      }
 
       # Call figaro emlt on the +ve half of the collapsed file
       $Mon{'figaro2'}->obeyw("emlt", "spectrum=$tmpfile xstart=min xend=max lines=$posbeams");
@@ -113,10 +150,19 @@ if (! $calload) {
    $negbeams=2 if($nbeams==4);
    $mult = -1;
 
+       my $smoothed = new ORAC::TempFile;
+       my $smofile = $smoothed->file;
+
    my $negbeamsfound=0;
    if($negbeams) {
       # Need to thresh to only see the +ve half of the negated file
       $Mon{'kappa_mon'}->obeyw("thresh", "in=$ncolfile out=$tmpfile thrlo=0 newlo=0 thrhi=1000000 newhi=1000000");
+
+      if ( $smooth ) {
+        my $param = "in=$tmpfile estimator=median box=$boxsize out=$smofile";
+        $Mon{ 'kappa_mon' }->obeyw( "block", "$param");
+        $tmpfile = $smofile;
+      }
 
       # Call figaro emlt on the negated collapsed file
       $Mon{'figaro2'}->obeyw("emlt", "spectrum=$tmpfile xstart=min xend=max lines=$negbeams");
