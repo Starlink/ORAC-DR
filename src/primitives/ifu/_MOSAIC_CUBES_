@@ -1,8 +1,10 @@
-=head1 Name
+#-*-perl-*-
+
+=head1 NAME
 
 _MOSAIC_CUBES_
 
-=head1 Description
+=head1 DESCRIPTION
 
 Mosaic all sky subtracted datacubes in the current group together. If
 there are offsets from one object frame to another (ie a jitter
@@ -11,17 +13,62 @@ reflect this (_SET_OFFSET_). Images are then extracted from the
 datacube.
 
 This gets very slow as more pairs are added (all pairs are mosaiced
-after each complete pair. Do not use this for observations where there 
+after each complete pair. Do not use this for observations where there
 are no offsets - it is much faster to just coadd the 2d spectra then form
 a datacube.
 
 The output file is a group with suffix _mos.
 
-=head1 Author
+=head1 ARGUMENTS
+
+=over 4
+
+=item METHOD = CHARACTER (Given)
+
+The method used to combine frames to form the mosaic.  See
+parameter METHOD of CCDPACK/MAKEMOS (SUN/139) for the options.
+The main two in practice will be "Median" or "Mean".  The former
+excludes outliers but has problems in good seeing where the
+registration is poor, as it biases against the peak values of
+the steepening profile near the core, and hence underestimate
+the flux.  In this circumstance the mean blurs the psf profile,
+making it more of a plateau than a sharp peak.  However, the
+mean preserves the flux, at the cost of the odd rogue value
+affecting the result.  ["Mean"]
+
+=item MOSAIC_INPUT = CHARACTER (Given)
+
+The name of the internal header and tag that this primitive
+will use for mosaicking. The tag must be passed to this primitive
+so it can refer to a specific file, and the header must be set so
+a subgroup can be formed. If one or both of the header and tag
+is not set, then errors will happen. [FORM_DATACUBE_RESULT]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for near-infrared integral field units.
+
+=head1 AUTHORS
 
 Stephen Todd <spt@roe.ac.uk>
+Brad Cavanagh (JAC) <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
 
 =cut
+
+# Obtain arguments.
+my $mosaic_input = ( $_MOSAIC_CUBES_{MOSAIC_INPUT} || "FORM_DATACUBE_RESULT" );
+my $method = ( $_MOSAIC_CUBES_{METHOD} || "median" );
 
 # The group file name - we use the ->raw one here, as subsequent steps
 # (eg extraction) will update the ->file and we want none of that here
@@ -31,44 +78,107 @@ my $groupfile = $Grp->raw . "_mos";
 my ($in, $out) = $Frm->inout("_junk");
 my $obsnum = $Frm->number;
 
-# If it doesn't exist, create the group file
-if (!(-e ($groupfile . ".sdf"))) {
-   # Create the group file by copying the sky subtracted pair into it
-   orac_print "Creating group $groupfile with $in\n";
-   $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$groupfile title=$groupfile");
- 
-   open (my $LIST, ">mosaic.dat") || die "Unable to open mosaic.dat\n.";
-   print $LIST "$in\n";
-   close $LIST;
-
-} else {
-    # The group file does exist. Coadd the current pair into it
-    
-    open (my $LIST, ">>mosaic.dat") || die "Unable to open mosaic.dat\n.";
-    print $LIST "$in\n";
-    close $LIST;
-
-    # Use a tmp file to do the addition
-    my $tmpfile=new ORAC::TempFile;
-    my $tmp = $tmpfile->file;
-
-   # Need to know how many pairs are in the group
-    my $nobs=scalar(@{ scalar($Grp->coadds) } );
-
-    my $param = "in=^mosaic.dat out=tmp method=mean  ";
-
-    $Mon{'ccdpack_reg'}->obeyw("makemos", $param); 
-
-    $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "tmp $groupfile"); 
-}
-
-
-# Update the group object
-#$Grp->coaddspush($obsnum);
+# Get the group file name. Use the raw one here, as subsequent steps
+# will update the ->file and we want none of that here.
+my $groupfile = $Grp->raw;
 $Grp->file($groupfile);
 
-orac_print "Coadded into group file $groupfile\n";
+# If it doesn't exist, create the group file
+if (! $Grp->file_exists ) {
 
+   # Create the group file by copying the sky subtracted pair into it
+   orac_print "Creating group $groupfile with $in.\n";
+   $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$groupfile title=$groupfile");
+
+} else {
+  # The group file does exist. Coadd the current pair into it
+
+  # Get a list of the group members so far, and use those that
+  # have the $mosaic_input uhdr set to 1.
+  my $subgrp = $Grp->subgrp($mosaic_input => 1);
+
+  my @members = $subgrp->members;
+
+  # We want to combine all of the members of $subgrp into the
+  # output file. These need to be written into a temporary file
+  # so that the command-line for makemos doesn't get too large.
+  my $inputlist = "inlist.list$$";
+  unlink( $inputlist );
+  open( my $fh_inlist, ">$inputlist" ) ||
+    orac_throw "Unable to open $inputlist to create a list of frames to coadd. Error: $!\n";
+  foreach my $member (@members) {
+
+    # Retrieve the filename from the quad combination step.
+    $member->tagretrieve( $mosaic_input );
+    my $file = $member->file;
+    $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$file frame=PIXEL" );
+    print $fh_inlist $file, "\n";
+  }
+
+  close( $fh_inlist );
+
+  # Set the optimal number of overlaps to be the number of jittered
+  # frames minus one.
+  my $optov = scalar( @members ) - 1;
+
+  # Delete the existing output file.
+  unlink( $groupfile );
+
+  # Set up CCDPACK.
+  my $param = "saturate=no preserve=yes genvar=yes restore=no logto=terminal adc=! rnoise=! bounds=! direction=! deferred=! ndfnames=yes save=no";
+  my $ORAC_STATUS = $Mon{ "ccdpack_res" }->control( "par_reset" );
+  $Mon{'ccdpack_res'}->obeyw( "ccdsetup", "$param accept" );
+
+  my $param = "in=^$inputlist out=$groupfile method=$method zero usevar=yes optov=$optov";
+  $Mon{'ccdpack_reg'}->obeyw("makemos", "$param");
+
+  # Delete the list of input files.
+  unlink( $inputlist );
+
+  # Reset the WCS to AXIS.
+  foreach my $member (@members) {
+    $member->tagretrieve( 'FORM_DATACUBE_RESULT' );
+    my $file = $member->file;
+    $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$file frame=AXIS" );
+  }
+  $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$groupfile frame=AXIS" );
+
+  # Need to know how many pairs are in the group
+  my $nobs = scalar( @{ scalar($Grp->coadds) } ) + 1;
+
+  # Report to the user.
+  orac_print "$in coadded to $groupfile by $method method.\n";
+  orac_print "Group $groupfile now contains $nobs pairs: ";
+
+  my $membersstring = join ", ", ( map { $_->file } @members );
+
+  orac_print "$membersstring\n";
+
+  # Now update the FITS header to reflect the new end airmass, using the
+  # value from the current frame.  Using the internal header, obtain the
+  # name of the external keyword.
+
+  my $amendname = "ORAC_AIRMASS_END";
+  my $amend  = $Frm->uhdr( $amendname );
+  my %keywords = $Frm->translate_hdr( $amendname );
+  my @amendkey = keys( %keywords );
+  no warnings 'misc';
+  _SET_GROUP_FITS_ITEM_ KEY=$amendkey[ 0 ] VALUE=$amend
+
+  # Do likewise for the end UT time.
+  my $utendname = "ORAC_UTEND";
+  my $utend  = $Frm->uhdr( $utendname );
+  %keywords = $Frm->translate_hdr( $utendname );
+  my @utendkey = keys( %keywords );
+  _SET_GROUP_FITS_ITEM_ KEY=$utendkey[ 0 ] VALUE=$utend
+}
+
+# Update the group object
+$Grp->coaddspush($obsnum);
+$Grp->file($groupfile);
+
+# Display if necessary.
+$Display->display_data($Grp) if defined $Display;
+
+# Tidy up output.
 orac_print "\n";
-
-
