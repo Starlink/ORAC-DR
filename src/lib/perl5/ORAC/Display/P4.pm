@@ -603,9 +603,9 @@ sub process_options {
     next if $key eq "TYPE";
 
     orac_print("Setting $key to $options{$key}\n",'cyan') if $DEBUG;
-    $key eq 'AUTOSCALE' && ($$href{'AUTOSCALE'} = $options{AUTOSCALE});
-    $key eq 'MIN'       && ($$href{'LOW'} = $options{MIN});
-    $key eq 'MAX'       && ($$href{'HIGH'} = $options{MAX});
+    $key eq 'AUTOSCALE' && ($$href{'AUTOSCALE'} = $options{ZAUTOSCALE});
+    $key eq 'ZMIN'       && ($$href{'LOW'} = $options{ZMIN});
+    $key eq 'ZMAX'       && ($$href{'HIGH'} = $options{ZMAX});
     $key eq 'HISTBINS'  && ($$href{'HISTOGRAM_BINS'} = $options{HISTBINS});
     $key eq 'HISTXSTEP' && ($$href{'HISTOGRAM_XSTEP'} = $options{HISTXSTEP});
     $key eq 'HISTYSTEP' && ($$href{'HISTOGRAM_YSTEP'} = $options{HISTYSTEP});
