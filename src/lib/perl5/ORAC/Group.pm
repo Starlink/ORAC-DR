@@ -130,9 +130,21 @@ reduced group.
 =cut
 
 
+# The default file method should be able to accept numbers
+# If an integer is supplied then do nothing - simply return
+# current value. This is added here so that the Display system
+# can ask for multiple file names based on index - which
+# is used by the Frames in some cases (eg SCUBA). The Display
+# sub-system does not distinguish between Groups and Frames
+# so the shared methods have to be supported on both.
+
 sub file {
   my $self = shift;
-  if (@_) { $self->{File} = $self->stripfname(shift); }
+  if (@_) { 
+    my $arg = shift;
+    $self->{File} = $self->stripfname($arg)
+      unless ($arg =~ /^\d+$/ && $arg != 0); 
+  }
   return $self->{File};
 }
 
