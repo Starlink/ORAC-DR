@@ -75,14 +75,18 @@ sub new {
 
   # Configure the AGI environment variables
   # Should tidy this up when we finish
-  $ENV{AGI_USER} = "/tmp";
-  $ENV{AGI_NODE} = "orac_kapview$$";
+  BEGIN { # A kluge - for some reason kapview does not pick up the
+          # correct environment if I leave out the BEGIN block
+          # dont understand since the environment is passed to the forked
+          # process...
+    $ENV{'AGI_USER'} = "/tmp";
+    $ENV{'AGI_NODE'} = "orac_kapview$$";
+  }
 
   # Store these values so that I know what file to remove 
   # independent of whether some other module has redefined them
   $AGI_USER = $ENV{AGI_USER};
   $AGI_NODE = $ENV{AGI_NODE};
-
 
   # Split the launching and configuration into separate subroutines
   if ($status == ORAC__OK) {
