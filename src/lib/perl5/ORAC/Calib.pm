@@ -91,7 +91,7 @@ sub new {
   $obj->{Iar} = undef;
   $obj->{IarIndex} = undef;
   $obj->{Offset} = undef;
-  $obj->{OffsetIndex} = undef
+  $obj->{OffsetIndex} = undef;
 
   $obj->{BaseShift} = undef;
   $obj->{ReferenceOffset} = undef;
@@ -624,7 +624,9 @@ Used when using a command-line override to the pipeline.
 
 sub zeropointnoupdate {
   my $self = shift;
-  if (@_) { $self->{ZeropointNoUpdate} = shift;
+  if (@_) { $self->{ZeropointNoUpdate} = shift; }
+  return $self->{ZeropointNoUpdate};
+}
 
 =item B<baseshiftnoupdate>
 
