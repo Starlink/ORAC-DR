@@ -287,6 +287,9 @@ sub display_data {
 
       # Now ask the tool to display the filename using the
       # display method specified in 'TYPE'
+      # Lower case TYPE
+      $display_info{TYPE} = lc($display_info{TYPE});
+
       orac_print("Current tool: $current_tool\n",'cyan') if $DEBUG;
       if ($current_tool->can($display_info{TYPE})) {
 	# now we pass the buck
@@ -296,12 +299,14 @@ sub display_data {
 	# Note that because the base class of Frame/Group can not
 	# handle multiple file specifiers I can only pass in the
 	# file number if $n is greater than one
+	# Change this so that the file methods know to discard numbers
+	# The base classes have been modified....
 	my $fname;
-	if ($n == 1) {
-	  $fname = $frm->file;
-	} else {
+#	if ($n == 1) {
+#	  $fname = $frm->file;
+#	} else {
 	  $fname = $frm->file($n);
-	}
+#	}
 
 	# May want to pass in a merged hash at this point
 	# ie a mixture of the display_info options as defined
@@ -430,7 +435,7 @@ sub parse_file_defn {
       my $RAW = 0;
       if ($test eq 'num' || $test eq 'raw') {
 	# Now if id is a number then the test is true
-	if ($id =~ /\d+/) {
+	if ($id =~ /^\d+$/) {
 	  $test = $id;  # fool the following test
 	}
 	$RAW = 1;
