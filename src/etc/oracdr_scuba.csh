@@ -1,6 +1,6 @@
 #+
 #  Name:
-#     oracdr_ufti
+#     oracdr_scuba
 
 #  Purpose:
 #     Initialise ORAC-DR environment for use with SCUBA
@@ -68,6 +68,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.8  2001/05/01 00:14:45  timj
+#     Update semester determination so it works with 20010122
+#
 #     Revision 1.7  2000/08/08 21:40:08  timj
 #     Realise that csh if's do not short circuit ($orachost)
 #
@@ -186,42 +189,30 @@ endif
 # is set to this value I will append the semester value
 
 if ( $ORAC_DATA_ROOT == /scuba ) then
-  # Append semester
+
+  # Hilo is a bit more complicated since now we need to
+  # find the semester name
+
   # Start by splitting the YYYYMMDD string into bits
-  set oracyy   = `echo $oracut | cut -c3-4`
-  set oracmm   = `echo $oracut | cut -c5-6`
-  set oracdd   = `echo $oracut | cut -c7-8`
+  set oracyy = `echo $oracut | cut -c3-4`
+  set oracprev_yy = `expr $oracut - 10000 | cut -c3-4`
+  set oracmmdd = `echo $oracut | cut -c5-8`
 
   # Need to put the month in the correct semester
   # Note that 199?0201 is in the previous semester
   # Same for 199?0801
-
-  if ($oracmm == '01') then
-    # This is January so belongs to previous year    
-    # Check for year=00 special case
-    if ($oracyy == '00') then
-      set oracyy = 99
-    else 
-      set oracyy = `expr $yy - 1`
-    endif
-    set orac_sem = "m${oracyy}b"
-
-   else if ($oracmm == '02' && $oracdd == '01') then
-    # First day of feb is in previous semester
-    # check for OO special case
-    if ($oracyy == '00') then
-      set oracyy = 99
-    else
-      set oracyy = `expr $oracyy - 1`
-    endif
-    set orac_sem = "m${oracyy}b"
-  else if ($oracmm < 8) then
+  # The semester changes on UT Feb 2 and Aug 2:
+  if ( $oracmmdd > 201 && $oracmmdd < 802 ) then
     set orac_sem = "m${oracyy}a"
-  else if ($oracmm == '08' && $oracdd == '01') then
-    set orac_sem = "m${oracyy}a"
+  else if ( $oracmmdd < 202 ) then
+    set orac_sem = "m${oracprev_yy}b"
   else
-    set orac_sem = "m${oracyy}b"
+   set orac_sem = "m${oracyy}b"
   endif
+
+  unset oracyy
+  unset oracprev_yy
+  unset oracmmdd
 
   set orac_sem = ${orac_sem}/
 
