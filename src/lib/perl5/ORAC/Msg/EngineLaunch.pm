@@ -438,13 +438,13 @@ sub launch {
       }
 
       # Launch it if we can find the path. Remote tasks
-      # are characterized by a null string in the path
+      # are characterized by a null path
 
       # For some messaging systems the object identifier should be
       # different each time this is called to protect against systems
       # that can not reuse system identifiers
       my $obj;
-      if (-e $path || $path eq '') {
+      if (!$path || -e $path) {
 	my $engid = ($messys->require_uniqid ? $self->engine_inc($engine)
 		     : $engine );
 	$obj = $pars{CLASS}->new($engid, $path );
@@ -495,6 +495,10 @@ sub launch {
 	}
 
       }
+
+    } else {
+
+      orac_warn("Do not know anything about engine $engine so can neither start it nor connect to it.\n");
 
     }
 
@@ -556,7 +560,7 @@ sub engine_inc {
 Determines the object associated with the messaging system
 that is required for using the named algorithm engine.
 
-  $messys = $launch->_get_messys_object;
+  $messys = $launch->_get_engine_messys_object;
 
 =cut
 
