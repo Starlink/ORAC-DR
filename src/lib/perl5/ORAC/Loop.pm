@@ -302,7 +302,7 @@ sub orac_loop_wait {
     }
 
     # Sleep for a bit
-    $timer += sleep($pause);
+    $timer += orac_sleep($pause);
     $npauses++;
 
     # Return bad status if timer hits timeout
@@ -439,7 +439,7 @@ sub orac_loop_flag {
     }
 
     # Sleep for a bit
-    $timer += sleep($pause);
+    $timer += orac_sleep($pause);
 
     # Return bad status if timer hits timeout
     if ($timer > $timeout) {
@@ -704,6 +704,50 @@ sub link_and_read {
 
   # Return success
   return $Frm;
+
+}
+
+=item orac_sleep
+
+Pause the checking for new data files by the specified number of seconds.
+
+  $time = orac_sleep($pause);
+
+Where $pause is the number of seconds to wait and $time is the number
+of seconds actually waited (see the sleep() command for more details).
+
+If the Tk system is loaded this routine will actually do a Tk event loop
+for the required number of seconds. This is so that the X screen will
+be refreshed. Currently the only test is the Tk is loaded, not that
+we are actually using Tk.....
+
+=cut
+
+sub orac_sleep {
+
+  my $pause = shift;
+  my $actual;
+
+  if (defined &Tk::DoOneEvent) {
+    # Tk friendly....
+    my $now = time();
+    while (time() - $now < $pause) {
+      my $id = Tk->after($pause, sub { } );
+      # Process events - the after makes sure that an event does
+      # actually occur
+      &Tk::DoOneEvent(0);
+      Tk::After::cancel($id); # A kluge
+    }
+    # Calculate actual elapsed time
+    $actual = time() - $now;
+
+  } else {
+    # Do a standard sleep
+    $actual = sleep($pause);
+
+  }
+
+  return $actual;
 
 }
 
