@@ -59,11 +59,29 @@ orac_print "Doing eSTAR trigger.\n";
   my $user = "agent";
   my $password = "InterProcessCommunication";
 
+  # -----------------------------------------------------------------------
+  # Quick hack to send multiple messages on trigger, need both 'update' and
+  # 'observation' messages. Brad, read carefully before making further changes. 
+  # 
+  # -- AALLAN (21-JUL-03)
+  #
+  # Note that there are two types of alert the ORAC-DR pipeline should
+  # send to the eSTAR agent. An 'update' alert and an 'observation' alert.
+  # An update alert is currently ignored by the agent, but should come at
+  # the end of each observation frame, a 'observation' alert comes at the
+  # end of all processing pointing to the final data products. For now
+  # lets hardwire the sending of both alerts, after all we've just finished
+  # a frame, and then (since the observation currently only consists of
+  # a single frame we need an update message to say that frame is done and
+  # then immediately an observation message to say the observation is
+  # done.
+  # ------------------------------------------------------------------------
+  
   # The embedded agent is responsible for copying this to a public
   # location
   my %hash = ( ID => $Frm->uhdr("ESTAR_ID"),
                FITS => "file://" . $ENV{'ORAC_DATA_OUT'} . "/".$Grp->file,
-               Catalog => "file://" . $ENV{'ORAC_DATA_OUT'} . "/estar_cat.txt",
+               Catalog => "file://" . $ENV{'ORAC_DATA_OUT'} . "/estar_cat.txt"
              );
 
   my $endpoint = "http://" . $host . ":" . $port;
@@ -87,6 +105,11 @@ orac_print "Doing eSTAR trigger.\n";
   $soap->uri($urn);
   $soap->proxy( $endpoint, cookie_jar => $cookie_jar );
 
+  # UPDATE MESSAGE
+  # --------------
+  
+  $hash{AlertType} = "update";
+  
   orac_print( "Sending SOAP message:\n");
   for my $key (sort keys %hash) {
      orac_print "        $key: $hash{$key}\n";
@@ -106,5 +129,28 @@ orac_print "Doing eSTAR trigger.\n";
     orac_warn "SOAP Fault String: " . $result->faultstring() . "\n";
   }
 
+  # OBSERVATION MESSAGE
+  # -------------------
+
+  $hash{AlertType} = "observation";
+  
+  orac_print( "Sending SOAP message:\n");
+  for my $key (sort keys %hash) {
+     orac_print "        $key: $hash{$key}\n";
+  }
+
+  my $result;
+  eval { $result = $soap->handle_data( %hash ) };
+  if( $@ ) {
+    orac_throw "Unable to handle SOAP request: $@";
+  }
+
+  # The result of the SOAP request.
+  unless( $result->fault() ) {
+    orac_print "SOAP Result: " . $result->result() . "\n";
+  } else {
+    orac_warn "SOAP Fault Code: " . $result->faultcode() . "\n";
+    orac_warn "SOAP Fault String: " . $result->faultstring() . "\n";
+  }
 
 }
