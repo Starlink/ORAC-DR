@@ -1,0 +1,154 @@
+=head1 NAME
+
+_REMOVE_SKYDIP_MEASUREMENTS_ - remove measurements from skydip observations
+
+=head1 SYNOPSIS
+
+  _REMOVE_SKYDIP_MEASUREMENTS_      N=5 SUB=LONG
+
+=head1 DESCRIPTION
+
+Removes the low elevation points from the specified sub-instrument
+for skydip observations. The number of points to remove can be 
+specified as an argument (default is 5).
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item N
+
+Number of points to remove from the skydip. The points are removed
+from the low elevation (high airmass) part of the skydip. Default
+is 5.
+
+=item SUB
+
+Name of the sub-instrument from which points should be removed.
+Value should be one of LONG, SHORT, P2000, P1350, P1100 or ALL.
+ALL is the default (points are removed from every sub-instrument).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item SURF
+
+C<CHANGE_QUALITY>
+
+=back
+
+=head1 CALLED PRIMITIVES
+
+This primitive uses the following primitives:
+
+=over 4
+
+=item _PRE_PROCESS_SKYDIP_
+
+This is called (rather than L<_PRE_PROCESS_|_PRE_PROCESS_>
+since in this case cold and hot load temperatures are required.
+
+=back
+
+=head1 NOTES
+
+Skydip data is slightly different from normal SCUBA data in that
+the sub-instruments are never extracted into separate files before
+running the actual SKYDIP task (L<_REDUCE_SKYDIP_). This means that
+in order to match sub-instruments the position in the sub-instrument
+array (stored in the Frame object) is used instead.
+
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2000 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+=cut
+
+# Make sure we are reducing a skydip
+if ($Frm->hdr("MODE") eq 'SKYDIP') {
+
+  # Read the arguments and assign defaults
+  my $ndrop = (exists $_REMOVE_SKYDIP_MEASUREMENTS_{'N'}
+	       && defined $_REMOVE_SKYDIP_MEASUREMENTS_{'N'}
+	       ? $_REMOVE_SKYDIP_MEASUREMENTS_{'N'} : 5 );
+
+  my $keep_sub = (exists $_REMOVE_SKYDIP_MEASUREMENTS_{'SUB'}
+	       && defined $_REMOVE_SKYDIP_MEASUREMENTS_{'SUB'}
+	       ? $_REMOVE_SKYDIP_MEASUREMENTS_{'SUB'} : 'ALL' );
+
+
+  # Determine whether the telescope was going up or down
+  my $ediff = $Frm->hdr("END_EL") - $Frm->hdr("START_EL");
+
+  # Flag to indicate whether we want to process all subs
+  my $doall = 0;
+  $doall = 1 if uc( $keep_sub ) eq 'ALL';
+
+  # Check that we have a reasonable number of measurements to fit
+  my $ignore = 0;
+  my $mdiff = $Frm->hdr('N_MEASUR') - $ndrop;
+  if ( $mdiff < 4 ) {
+    orac_err 'Too few measurements remaining (<4) after removing requested number';
+    orac_err 'Ignoring the request';
+    $ignore = 1;
+  }
+
+
+  unless ($ignore) {
+
+    # Construct the change_quality measurement section
+    # Section must be of the form    b?;m??
+    # where b is the sub-instrument number and 
+    # m indicates the range 1:N or MAX-N:MAX
+    # depending on the direction of the skydip
+    my $msect = 'm';
+    my ($mstart, $mend);
+    if ($ediff > 0) {
+      # We need to discard the first set of points
+      $msect .= "1:$ndrop";
+    } else {
+      # We need to discard the last N points
+      $msect .= ( $mdiff + 1 ) . ":" . $Frm->hdr('N_MEASUR');
+    }
+
+
+    # Since we only have one file, we need to now loop over
+    # sub-instruments, running change quality unless ALL are
+    # required.
+    my $i = 0;
+    for my $sub ( $Frm->subs ) {
+
+      $i++;
+
+      # Check that we are meant to be modifying this sub-instrument
+      if ( $doall || $keep_sub =~ /$sub/i ) {
+
+	# Construct the change_quality string
+	my $sect = "{B$i;$msect}";
+
+	# Get the input file
+	my $file = $Frm->file();
+
+	# Run change_quality
+	$Mon{surf_mon}->obeyw("change_quality","in=$file$sect bad_quality=true");
+	orac_print "Removing measurements using $sect\n";
+
+      }
+
+    }
+  }
+
+}
+
