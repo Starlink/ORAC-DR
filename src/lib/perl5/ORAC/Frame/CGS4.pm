@@ -157,10 +157,6 @@ sub new {
 
 =back
 
-
-
-
-
 =head2 General Methods
 
 =over 4
@@ -259,36 +255,6 @@ sub configure {
 
   # Return something
   return 1;
-}
-
-=item B<file_from_bits>
-
-Determine the raw data filename given the variable component
-parts. A prefix (usually UT) and observation number should
-be supplied.
-
-  $fname = $Frm->file_from_bits($prefix, $obsnum);
-
-For CGS4 the raw filename is of the form:
-
-  cYYYYMMDD_NNNNN.sdf
-
-where the number is 0 padded.
-
-=cut
-
-sub file_from_bits {
-  my $self = shift;
-
-  my $prefix = shift;
-  my $obsnum = shift;
-
-  # Zero pad the number
-  $obsnum = sprintf("%05d", $obsnum);
-
-  # CGS4 form is  FIXED PREFIX _ NUM SUFFIX
-  return $self->rawfixedpart . $prefix . '_' . $obsnum . $self->rawsuffix;
-
 }
 
 =item B<findnsubs>
@@ -666,6 +632,7 @@ $Id$
 
 Frossie Economou (frossie@jach.hawaii.edu)
 Tim Jenness (t.jenness@jach.hawaii.edu)
+Paul Hirst (p.hirst@jach.hawaii.edu)
 
 =head1 COPYRIGHT
 
