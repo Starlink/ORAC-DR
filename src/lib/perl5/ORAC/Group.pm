@@ -34,12 +34,16 @@ use Carp;
 use strict;
 use vars qw/$VERSION/;
 
-$VERSION = '0.10';
+$VERSION = '0.11';
 
 # Derive some methods from the base Frame class
 
-@ORAC::Group::ISA = qw/ORAC::Frame/;
+#@ORAC::Group::ISA = qw/ORAC::Frame/;
+use base qw/ORAC::Frame/;
 
+# Associated classes
+use ORAC::Print;          # Print statements
+use ORAC::Index::Extern;  # For bad observation index list
 
 # Setup the object structure
 
@@ -47,6 +51,10 @@ $VERSION = '0.10';
 =head1 PUBLIC METHODS
 
 The following methods are available in this class.
+
+=head2 Constructors
+
+The following constructors are available:
 
 =over 4
 
@@ -71,12 +79,14 @@ sub new {
   my $group = {};  # Anon hash
 
   $group->{Name} = undef;
+  $group->{AllMembers} = [];
   $group->{Members} = [];
   $group->{Header} = undef;
   $group->{File} = undef;
   $group->{Recipe} = undef;
   $group->{FixedPart} = undef;
   $group->{FileSuffix} = undef;
+  $group->{BadObsIndex} = undef;
 
   bless($group, $class);
 
@@ -91,6 +101,130 @@ sub new {
 
 }
 
+=item subgrp
+
+Method to return a new group (ie a subgrp of the existing
+group) that contains all members of the main group matching
+certain header values.
+
+Arguments is a hash that is used for comparison with each
+frame.
+
+  $subgrp = $Grp->subgrp(NAME => 'CRL618', CHOP=> 60.0);
+
+The new subgrp is blessed into the same class as $Grp.
+
+This method is generally used where access to members of the
+group by some search criterion is required.
+
+It is possible that the returned group will contain no 
+members....
+
+=cut
+
+sub subgrp {
+  my $self = shift;
+
+  # Read the input hash
+  my %hash = @_;
+
+  # Create a new grp
+  my @subgrp = (); # Storage array
+  my $subgrp = $self->new($self->name . "subgrp");  
+
+  # Now loop over all members of the group and compare with
+  # the hash
+  foreach my $member ($self->members) {
+
+    my $match = 1;  # Assume a match
+
+    # We are doing a string comparison
+    foreach my $key (%hash) {
+      unless ($hash{$key} eq $member->hdr($key)) {
+        $match = 0;
+        last;
+      }
+    }
+
+    # If we have matched all keys then we push onto the subgrp
+    # Use a temporary array for efficiency
+    push(@subgrp, $member) if $match;
+
+  }
+
+  # Store the matched members in the sub group
+  # If we do it this way we do not have to check group membership
+  # (Since we know the frames are valid since they came from the
+  # members() method)
+  # but we do have to set members_ref as well as allmembers_ref
+  
+  $subgrp->allmembers_ref(\@subgrp);
+  $subgrp->members_ref(\@subgrp);
+
+  return $subgrp;
+
+}
+
+
+=item subgrps
+
+Returns frames grouped by the supplied header keys.
+A frame can not belong to more than one sub group created by this
+method:
+
+   @grps = $Grp->subgrps(@keys);
+
+The groups in @grps are blessed into the same class as $Grp.
+For example, if @keys = ('MODE','CHOP') then you can gurantee
+that the members of each sub group will have the same values
+for MODE and CHOP. 
+
+=cut
+
+sub subgrps {
+  my $self = shift;
+  my @keys = @_;
+  
+  # We can create a unique key in a hash for the header values
+  # specified. So create a temporary hash.
+  my %store = ();
+  
+  # Loop over all members of current group
+
+  foreach my $member ($self->members) {
+    # Create a key
+    my $key = "";
+    foreach my $hdr (@keys) {
+      $key .= $member->hdr($hdr);
+    }
+
+    # Now see whether this key already exists in the hash
+    # if it doesnt we populate it with a group object
+    $store{$key} = $self->new() unless exists $store{$key};
+    
+    # Store the frame (this is inefficient since it 
+    # forces a check_membership every time and we know membership
+    # is okay since members() only returns valid frames.
+    $store{$key}->push($member);
+    
+  }
+
+  # Return the values
+  return values %store;  
+}
+
+
+
+=back
+
+=head2 Instance methods
+
+The following methods are available for accessing the 
+'instance' data.
+
+=over 4
+
+=cut
 
 # Create some methods to access "instance" data
 #
@@ -162,6 +296,12 @@ reduced group.
 sub filesuffix {
   my $self = shift;
   if (@_) { $self->{FileSuffix} = shift;};
+
+  # Default to .sdf
+  unless (defined $self->{FileSuffix}) {
+    $self->{FileSuffix} = '.sdf';
+  }
+
   return $self->{FileSuffix};
 }
 
@@ -202,6 +342,12 @@ stored in the reduced group file.
 
 This methods takes and returns a reference to a hash.
 
+The header values can be accessed by using the hdr() method
+or by dereferencing the return value of header():
+
+   $value = $Grp->header->{KEY};
+   $value = $Grp->hdr('KEY');
+
 =cut
 
 
@@ -214,9 +360,107 @@ sub header {
     $self->{Header} = $arg;
   }
 
-
   return $self->{Header};
 }
+
+
+# This method returns the reference to the array
+
+=item allmembers_ref
+
+Set or retrieve the reference to the array containing the members of the
+group.
+
+    $Grp->allmembers_ref(\@frames);
+    $arrayref = $Grp->allmembers_ref;
+
+This should probably be considered a private routine. Use the members()
+method to return a list of all valid members and the allmembers() method
+to return a list of all Group members.
+
+=cut
+
+sub allmembers_ref {
+  my $self = shift;
+
+  if (@_) { 
+    my $arg = shift;
+    croak("allmembers_ref: Argument is not an array reference") 
+      unless ref($arg) eq "ARRAY";
+    $self->{AllMembers} = $arg;
+
+    # Check membership
+    $self->check_membership;
+  }
+
+  return $self->{AllMembers};
+}
+
+
+# For backwards compatibility.
+sub aref {
+  my $self = shift;
+  print "Use of this routine is deprecated - use allmembers_ref instead\n";
+  if (@_) {
+    $self->allmembers_ref(@_);
+  }
+  return $self->allmembers_ref;
+}
+
+
+=item members_ref
+
+Set or retrieve the reference to the array containing the valid
+members of the group.
+
+    $Grp->members_ref(\@frames);
+    $arrayref = $Grp->members_ref;
+
+This should probably be considered a private routine. Use the members()
+method to return a list of all valid members and the allmembers() method
+to return a list of all Group members.
+
+=cut
+
+sub members_ref {
+  my $self = shift;
+
+  if (@_) { 
+    my $arg = shift;
+    croak("members_ref: Argument is not an array reference") 
+      unless ref($arg) eq "ARRAY";
+    $self->{Members} = $arg;
+  }
+
+  return $self->{Members};
+}
+
+
+=item badobs_index
+
+Return (or set) the index object associate with the bad observation
+index file. A index of class ORAC::Index::Extern is used since 
+this index is modified by an external user/program.
+
+=cut
+
+sub badobs_index {
+
+  my $self = shift;
+  if (@_) { $self->{BadObsIndex} = shift }
+
+  # If undef we can create a new index object
+  unless (defined $self->{BadObsIndex}) {
+    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.badobs";
+    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.badobs";
+    $self->{BadObsIndex} = new ORAC::Index::Extern($indexfile,$rulesfile);
+  };
+
+  return $self->{BadObsIndex}; 
+
+}
+
+
 
 # Method to return the recipe name
 # If an argument is supplied the recipe is set to that value
@@ -240,6 +484,15 @@ sub header {
 #  return $self->{Recipe};
 #}
 
+
+=back
+
+=head2 General methods
+
+The following methods are provided for manipulating ORAC::Group
+objects:
+
+=over 4
 
 =item file_from_bits
 
@@ -267,6 +520,33 @@ sub file_from_bits {
 # This takes an array as input
 # An array is returned
 
+=item allmembers
+
+Set or retrieve the array containing the objects of which the group
+consists.
+
+    $Grp->allmembers(@frames);
+    @frames = $Grp->allmembers;
+
+The setting function of this routine should only be used
+if you know what you are doing (since it completely changes the group
+membership).
+
+All group members are returned regardless of the state of each member.
+Use the members() method to return only valid members.
+
+=cut
+
+sub allmembers {
+  my $self = shift;
+  if (@_) { 
+    @{ $self->allmembers_ref } = @_;
+    $self->check_membership; # Check valid frames.
+  }
+  return @{ $self->allmembers_ref };
+}
+
+
 =item members
 
 Set or retrieve the array containing the objects of which the group
@@ -275,13 +555,20 @@ consists.
     $Grp->members(@frames);
     @frames = $Grp->members;
 
+This is the safest way to access the group members
+since it only returns valid frames to the caller.
+
+Use the allmembers() method to return all members of the group 
+regardless of the state of the individual frames.
+
 =cut
 
 sub members {
   my $self = shift;
-  if (@_) { @{ $self->{Members} } = @_;}
-  return @{ $self->{Members} };
+  if (@_) { @{ $self->members_ref } = @_;}
+  return @{ $self->members_ref };
 }
+
 
 =item membernames
 
@@ -330,33 +617,6 @@ sub membernames {
   return @list;
 }
  
-# This method returns the reference to the array
-
-=item aref
-
-Set or retrieve the reference to the array containing the members of the
-group.
-
-    $Grp->aref(\@frames);
-    $arrayref = $Grp->aref;
-
-=cut
-
-
-
-
-sub aref {
-  my $self = shift;
-
-  if (@_) { 
-    my $arg = shift;
-    croak("Argument is not an array reference") unless ref($arg) eq "ARRAY";
-    $self->{Members} = $arg;
-  }
-
-  return $self->{Members};
-}
-
 
 # General methods
 
@@ -378,17 +638,25 @@ Can also be used to set values in the header.
 
   $Obs->hdr("INSTRUME", "IRCAM");
 
+If no arguments are provided, the reference to the header hash
+is returned (equivalent to running the header() method).
+
 =cut
 
 
 sub hdr {
   my $self = shift;
 
-  my $keyword = shift;
+  if (@_) {
+    my $keyword = shift;
 
-  if (@_) { ${$self->header}{$keyword} = shift; }
+    if (@_) { $self->header->{$keyword} = shift; }
 
-  return ${$self->header}{$keyword};
+    return $self->header->{$keyword};
+  }
+
+  # No arguments, return the header hash reference
+  return $self->header;
 }
 
 
@@ -413,7 +681,9 @@ There are no return arguments.
 sub push {
   my $self = shift;
   if (@_) {
-    push(@{$self->{Members}}, @_);
+    push(@{ $self->allmembers_ref }, @_);
+    # Check frame membership
+    $self->check_membership;
   }
 }
 
@@ -444,10 +714,10 @@ sub frame {
   my $number = shift;
 
   # Seems that we are setting the value
-  if (@_) { ${$self->aref}[$number] = shift; }
+  if (@_) { $self->members_ref->[$number] = shift; }
 
   # Return the value
-  return ${$self->aref}[$number];
+  return $self->members_ref->[$number];
 }
 
 
@@ -467,7 +737,7 @@ sub num {
 
   my $self = shift;
 
-  return $#{$self->aref};
+  return $#{$self->members_ref};
 
 }
 
@@ -635,103 +905,96 @@ sub reduce {
 }
 
 
-=item subgrp
 
-Method to return a new group (ie a subgrp of the existing
-group) that contains all members of the main group matching
-certain header values.
 
-Arguments is a hash that is used for comparison with each
-frame.
+=item check_membership
 
-  $subgrp = $Grp->subgrp(NAME => 'CRL618', CHOP=> 60.0);
+Check whether any of the members of the group have been marked for
+removal from the group. The valid group members are copied
+to a new array and can be retrieved by the members() or members_ref()
+methods. Note that all group methods use the list of valid group
+members.
 
-The new subgrp is blessed into the same class as $Grp.
+This routine is automatically run whenever the group membership
+is updated (via the push() or  allmembers() methods. This may
+cause too high an overhead with push() in, for example, the
+subgrps method).
 
-This method is generally used where access to members of the
-group by some search criterion is required.
+This method works by looking in a text file created by the
+observer in $ORAC_DATA_OUT called index.badobs. This file
+contains a list of numbers (two per line) relating to observations
+that should be turned off. The first number is the UT date
+(YYYYMMDD) and the second number is the observation
+number. This is necessary so that ORAC_DATA_OUT can be reused
+for a different UT date without worrying about the index file
+file turning off incorrect observations.
 
-It is possible that the returned group will contain no 
-members....
+The UT and observation number are compared with each member of
+the group (the full list of members - see allmembers()).
+For each group member, the following test is performed to test
+for validity. First it is queried to check whether it is in a
+good state (ie has been processed successfully). 
+A frame will be marked as bad if the recipe fails to execute
+successfully. If the frame is good (from the pipeline viewpoint)
+the UT date and observation number is then compared with the
+entries in the index file. If a match can B<NOT> be found the
+frame is considered to be valid and is copied to the list of valid
+group members (see the members() method).
+
+The format of the index file should be of the form:
+
+ 24 19980716 
+ 27 19980716 
+ 43 19980815 
+ ...
 
 =cut
 
-sub subgrp {
+sub check_membership {
   my $self = shift;
 
-  # Read the input hash
-  my %hash = @_;
+  # Array of good frames
+  my @good = ();
 
-  # Create a new grp
-  my $subgrp = $self->new($self->name . "subgrp");  
+  # Need to loop over all members of the group
+  foreach my $member ($self->allmembers) {
 
-  # Now loop over all members of the group and compare with
-  # the hash
-  foreach my $member (@{$self->aref}) {
+    # First need to see whether the the frame is in a valid
+    # state -- no point continuing if not valid
 
-    my $match = 1;  # Assume a match
+    if ($member->isgood) {
 
-    # We are doing a string comparison
-    foreach my $key (%hash) {
-      unless ($hash{$key} eq $member->hdr($key)) {
-        $match = 0;
-        last;
+      # Now compare the current frame with the bad observation
+      # index list. This routine will return undef if there was
+      # no match [ie a good file] and an index key if the file
+      # was bad (the first matching key is returned)
+      # Note that we have to make sure that the keys are in
+      # alphabetical order (not very clever) since this is the
+      # order constrained by the Index class and must match the
+      # order used in the user-supplied index file
+
+      my $badobs = 
+          $self->badobs_index->cmp_with_hash({
+					      ORACNUM => $member->number,
+					      ORACUT => $member->hdr('ORACUT')
+					     });
+
+      # if the $badobs is not defined then we have a good observation
+      unless (defined $badobs) {
+	push (@good, $member);
+      } else {
+	orac_warn "Removing observation ". $member->number ." from group\n";
       }
-    }
 
-    # If we have matched all keys then we push onto subgrp
-    $subgrp->push($member) if $match;
+    }
 
   }
 
-  return $subgrp;
+  # Update the good members list
+  $self->members_ref(\@good);
 
 }
 
-
-=item subgrps
-
-Returns frames grouped by the supplied header keys.
-A frame can not be in more than one subgroup.
-
-   @grps = $Grp->subgrps(@keys);
-
-The groups in @grps are blessed into the same class as $Grp.
-For example, if @keys = ('MODE','CHOP') then you can gurantee
-that the members of each sub group will have the same values
-for MODE and CHOP. 
-
-=cut
-
-sub subgrps {
-  my $self = shift;
-  my @keys = @_;
-  
-  # We can create a unique key in a hash for the header values
-  # specified. So create a temporary hash.
-  my %store = ();
-  
-  # Loop over all members of current group
-
-  foreach my $member (@{$self->aref}) {
-    # Create a key
-    my $key = "";
-    foreach my $hdr (@keys) {
-      $key .= $member->hdr($hdr);
-    }
-
-    # Now see whether this key already exists in the hash
-    # if it doesnt we populate it with a group object
-    $store{$key} = $self->new() unless exists $store{$key};
-    
-    # Store the frame
-    $store{$key}->push($member);
-    
-  }
-
-  # Return the values
-  return values %store;  
-}
 
 
 
