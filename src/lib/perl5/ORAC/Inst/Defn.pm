@@ -670,7 +670,12 @@ sub orac_determine_loop_behaviour {
     unless scalar(@_) == 1 ;
 
   my ( $instrument ) = @_;
-  my $dname = `domainname`;
+  my $dname;
+  unless ( defined $ENV{"ORAC_NO_NET"} ) {
+      $dname = Net::Domain->domainname;
+  } else {
+      $dname = "Unknown";
+  }       
   my $behaviour = 'list'; # default value
 
   if( $dname eq 'JAC.jcmt' ) {
@@ -736,7 +741,12 @@ sub orac_configure_for_instrument {
   my $orac_cal_root = $ENV{"ORAC_CAL_ROOT"};
 
   # We are continually doing domainname lookups so do it once here
-  my $domain = Net::Domain->domainname;
+  my $domain;
+  unless ( defined $ENV{"ORAC_NO_NET"} ) {
+      $domain = Net::Domain->domainname;
+  } else {
+      $domain = "Unknown";
+  }        
 
 
 
