@@ -34,6 +34,7 @@ use ORAC::Print;
 
 use ORAC::Display::P4;
 use ORAC::Display::KAPVIEW;
+use ORAC::Display::GAIA;
 
 use vars qw/$VERSION $DEBUG/;
 
