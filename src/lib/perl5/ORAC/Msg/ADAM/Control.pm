@@ -41,16 +41,15 @@ use vars qw/$VERSION $RUNNING/;
 
 $VERSION = '0.01';
 
-*RUNNING = *Starlink::AMS::Init::AMSRUNNING;
-
-
 # This needs to Starlink module
-use Starlink::AMS::Init;
+use Starlink::AMS::Init '1.00';
 
 # Derive all methods from the Starlink module since this
 # behaves in exactly the same way.
 
-@ORAC::Msg::ADAM::Control::ISA = qw/Starlink::AMS::Init/;
+#@ORAC::Msg::ADAM::Control::ISA = qw/Starlink::AMS::Init/;
+
+use base qw/Starlink::AMS::Init/;
 
 
 =item new
