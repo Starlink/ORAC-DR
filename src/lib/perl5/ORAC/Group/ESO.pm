@@ -53,7 +53,6 @@ my %hdr = (
             GRATING_ORDER        => "HIERARCH.ESO.INS.GRAT.ORDER",
             GRATING_WAVELENGTH   => "HIERARCH.ESO.INS.GRAT.WLEN",
             SLIT_NAME            => "HIERARCH.ESO.INS.OPTI1.ID",
-#            SLIT_NAME            => "HIERARCH.ESO.INS.SLIT",
             X_DIM                => "HIERARCH.ESO.DET.WIN.NX",
             Y_DIM                => "HIERARCH.ESO.DET.WIN.NY",
 
@@ -111,13 +110,20 @@ sub _to_DEC_BASE {
    return $dec;
 }
 
-# This is guesswork at present.
+# This is guesswork at present.  It's rather tied to the UKIRT names
+# and we need generic names or use instrument-specific values in
+# instrument-specific primitives, and pass the actual value for the
+# night log.  Could do with separate ORAC_CHOPPING, ORAC_BIAS booleans
+# to indicate whether or not chopping is enabled and whether or not the
+# detector mode needs a bias removed, like UKIRT's STARE mode.
 sub _to_DETECTOR_READ_TYPE {
    my $self = shift;
    my $read_type;
    my $chop = $self->hdr->{"HIERARCH.ESO.TEL.CHOP.ST"};
-   my $readout_mode = $self->hdr->{"HIERARCH.ESO.DET.MODE.NAME"};
-   if ( $readout_mode =~ /Uncorr/ ) {
+   $chop = defined( $chop ) ? $chop : 0;
+   my $detector_mode = exists( $self->hdr->{"HIERARCH.ESO.DET.MODE.NAME"} ) ?
+                       $self->hdr->{"HIERARCH.ESO.DET.MODE.NAME"} : "NDSTARE";
+   if ( $detector_mode =~ /Uncorr/ ) {
       if ( $chop ) {
          $read_type = "CHOP";
       } else {
@@ -143,7 +149,6 @@ sub _to_EQUINOX {
    return $equinox;
 }
 
-
 # Sampling is always 1x1, and therefore there are no headers with
 # these values.
 sub _to_NSCAN_POSITIONS {
@@ -161,28 +166,22 @@ sub _to_NUMBER_OF_OFFSETS {
             
 sub _from_NUMBER_OF_OFFSETS {
    "HIERARCH.ESO.TPL.NEXP",  $_[0]->uhdr( "ORAC_NUMBER_OF_OFFSETS" ) - 1;
-#   "NEXP",  $_[0]->uhdr( "ORAC_NUMBER_OF_OFFSETS" ) - 1;
 }
 
 sub _to_OBSERVATION_MODE {
    my $self = shift;
-   my $mode = $self->hdr->{"HIERARCH.ESO.DPR.TECH"};
-   if ( uc( $mode ) eq "IMAGE" ) {
-      $mode = "imaging";
-   } else {
-      $mode = "spectroscopy";
-   }
-   return $mode;
+   return $self->get_instrument_mode();
 }
 
 sub _from_OBSERVATION_MODE {
    "HIERARCH.ESO.DPR.TECH",  $_[0]->uhdr( "ORAC_OBSERVATION_MODE" );
-#   "DPRTECH",  $_[0]->uhdr( "ORAC_OBSERVATION_MODE" );
 }
 
+# OBJECT, SKY, and DARK need no change.
 sub _to_OBSERVATION_TYPE {
    my $self = shift;
    my $type = $self->hdr->{"HIERARCH.ESO.DPR.TYPE"};
+   $type = exists( $self->hdr->{"HIERARCH.ESO.DPR.TYPE"} ) ? $self->hdr->{"HIERARCH.ESO.DPR.TYPE"} : "OBJECT";
    if ( uc( $type ) eq "STD" ) {
       $type = "OBJECT";
    } elsif ( uc( $type ) eq "SKY,FLAT" ) {
@@ -195,7 +194,6 @@ sub _to_OBSERVATION_TYPE {
 
 sub _from_OBSERVATION_TYPE {
    "HIERARCH.ESO.DPR.TYPE",  $_[0]->uhdr( "ORAC_OBSERVATION_TYPE" );
-#   "DPRTYPE",  $_[0]->uhdr( "ORAC_OBSERVATION_TYPE" );
 }
 
 sub _to_RA_BASE {
@@ -276,7 +274,9 @@ sub _to_UTSTART {
 sub _to_WAVEPLATE_ANGLE {
     my $self = shift;
     my $polangle = 0.0;
-    if ( exists $self->hdr->{"HIERARCH.ESO.SEQ.ROT.OFFANGLE"} ) {
+    if ( exists $self->hdr->{"HIERARCH.ESO.ADA.POSANG"} ) {
+       $polangle = $self->hdr->{"HIERARCH.ESO.ADA.POSANG"};
+    } elsif ( exists $self->hdr->{"HIERARCH.ESO.SEQ.ROT.OFFANGLE"} ) {
        $polangle = $self->hdr->{"HIERARCH.ESO.SEQ.ROT.OFFANGLE"};
     } elsif ( exists $self->hdr->{CROTA1} ) {
        $polangle = abs( $self->hdr->{CROTA1} );
@@ -352,6 +352,18 @@ sub _to_Y_UPPER_BOUND {
 # Supplementary methods for the translations
 # ------------------------------------------
 
+# Get the observation mode.
+sub get_instrument_mode {
+   my $self = shift;
+   my $mode = uc( $self->hdr->{"HIERARCH.ESO.DPR.TECH"} );
+   if ( $mode eq "IMAGE" || $mode eq "POLARIMETRY" ) {
+      $mode = "imaging";
+   } elsif ( $mode eq "SPECTRUM" ) {
+      $mode = "spectroscopy";
+   }
+   return $mode;
+}
+
 # Returns the UT date in YYYYMMDD format.
 sub get_UT_date {
    my $self = shift;
@@ -413,12 +425,19 @@ sub rotation{
       if( $cdelt1 < 0 ) { $sgn2 = -1; } else { $sgn2 = 1; }
       my $rad = 57.2957795131;
       $rotangle = atan2( -$cd21 * $dtor, $sgn2 * $cd11 * $dtor ) / $dtor;
+
+# Orientation may be encapsulated in the slit position angle for
+# spectroscopy.
    } else {
-      $rotangle = 180.0;
+      if ( uc( $self->get_instrument_mode() ) eq "SPECTROSCOPY" &&
+           exists $self->hdr->{"HIERARCH.ESO.ADA.POSANG"} ) {
+         $rotangle = $self->hdr->{"HIERARCH.ESO.ADA.POSANG"};
+      } else {
+         $rotangle = 180.0;
+      }
    }
    return $rotangle;
 }
-
 
 =head1 PUBLIC METHODS
 
@@ -437,9 +456,8 @@ pipeline by using values stored in the header.
 Required ORAC extensions are:
 
 ORACTIME: should be set to a decimal time that can be used for
-comparing the relative start times of frames.  For UKIRT this
-number is decimal hours, for SCUBA this number is decimal
-UT days.
+comparing the relative start times of frames.  For ESO this
+number is decimal hours + 12.
 
 ORACUT: This is the UT day of the frame in YYYYMMDD format.
 
@@ -476,6 +494,7 @@ sub calc_orac_headers {
    my $ut = $self->get_UT_date();
    $ut = 0 unless defined $ut;
    $self->hdr( "ORACUT", $ut );
+   $new{'ORACUT'} = $ut;
 
    return %new;
 }
