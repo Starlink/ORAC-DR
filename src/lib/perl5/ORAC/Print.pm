@@ -69,6 +69,7 @@ $RDHDL = undef;
 
 use ORAC::Error qw/:try/;
 use ORAC::Constants qw/:status/;
+use ORAC::Event;
 
 use IO::File;
 use IO::Tee;
