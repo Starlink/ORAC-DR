@@ -65,6 +65,10 @@ sub new {
   $obj->{Mask}        = undef;
   $obj->{MaskIndex}   = undef;
   $obj->{MaskNoUpdate} = 0;
+  $obj->{Profile}     = undef;
+  $obj->{ProfileIndex}= undef;
+  $obj->{ProfileNoUpdate} = undef;
+
   return $obj;
 
 }
@@ -135,6 +139,64 @@ sub masknoupdate {
 
 }
 
+=item B<profilename>
+
+Return (or set) the name of the current profile
+
+  $profile = $Cal->profilename;
+
+The C<profile()> method should be used if a test for suitability of the
+profile is required.
+
+=cut
+
+
+sub profilename {
+  my $self = shift;
+  if (@_) { $self->{Profile} = shift unless $self->profilenoupdate; }
+  return $self->{Profile};
+};
+
+
+=item B<profileindex>
+
+Return or set the index object associated with the profile.
+
+  $index = $Cal->profileindex;
+
+An index object is created automatically the first time this method
+is run.
+
+=cut
+
+sub profileindex {
+
+  my $self = shift;
+  if (@_) { $self->{ProfileIndex} = shift; }
+  unless (defined $self->{ProfileIndex}) {
+     my $indexfile = $ENV{ORAC_DATA_OUT}."/index.profile";
+     my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.profile";
+     $self->{ProfileIndex} = new ORAC::Index($indexfile,$rulesfile);
+   };
+
+  return $self->{ProfileIndex};
+
+};
+
+=item B<profilenoupdate>
+
+Stops object from updating itself with more recent data.
+Used when overrding the profile file from the command-line.
+
+=cut
+
+sub profilenoupdate {
+
+  my $self = shift;
+  if (@_) { $self->{ProfileNoUpdate} = shift; }
+  return $self->{ProfileNoUpdate};
+
+}
 
 =item B<rowname>
 

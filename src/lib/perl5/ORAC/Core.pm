@@ -255,8 +255,9 @@ sub orac_process_frame {
   my $Mon = $args{Engines};
   my $Display = $args{Display};
 
-  # Store the header of the current frame in the calibration object
-  $Cal->thing($Frm->hdr);
+  # Store the headers of the current frame in the calibration object
+  $Cal->thingone($Frm->hdr);
+  $Cal->thingtwo($Frm->uhdr);
 
   # KLUDGE: If recipe is not defined take the one specified on the command
   # Line. Else use the one instructed by the frame.

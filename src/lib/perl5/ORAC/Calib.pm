@@ -50,6 +50,8 @@ use ORAC::Print;
 
 The following methods are available in this class.
 
+=head2 Constructors
+
 =over 4
 
 =item B<new>
@@ -79,19 +81,20 @@ sub new {
   $obj->{Arc} = undef;
   $obj->{Standard} = undef;
   $obj->{Sky} = undef;
+  $obj->{ReadNoise} = undef;
 
   $obj->{DarkIndex} = undef;
   $obj->{FlatIndex} = undef;
   $obj->{BiasIndex} = undef;
   $obj->{SkyIndex} = undef;
   $obj->{StandardIndex} = undef;
+  $obj->{ReadNoiseIndex} = undef;
 
   $obj->{DarkNoUpdate} = 0;
   $obj->{FlatNoUpdate} = 0;
   $obj->{BiasNoUpdate} = 0;
   $obj->{SkyNoUpdate} = 0;
-
-
+  $obj->{ReadNoiseNoUpdate} = 0;
 
   bless($obj, $class);
 
@@ -99,6 +102,13 @@ sub new {
   return $obj;
 
 }
+
+
+=back
+
+=head2 Accessor Methods
+
+=over 4
 
 
 # Methods to access the data
@@ -150,6 +160,19 @@ sub skyname {
   return $self->{Sky};
 }
 
+=item B<readnoisecache>
+
+Cached value of the readnoise. Only used when noupdate is in effect.
+
+=cut
+
+sub readnoisecache {
+  my $self = shift;
+  if (@_) { $self->{ReadNoise} = shift unless $self->readnoisenoupdate; }
+  return $self->{ReadNoise};
+}
+
+
 =item B<standardname>
 
 Return (or set) the name of the current standard frame - no checking
@@ -198,6 +221,58 @@ sub dark {
   };
 };
 
+=item B<readnoise>
+
+Determine the readnoise to be used for the current observation.
+This method returns a number rather than a particular file even
+though it uses an index file.
+
+Croaks if it was not possible to determine a valid readnoise.
+(usually indicating that ARRAY_TESTS have not been reduced).
+
+  $readnoise = $Cal->readnoise;
+
+The index file is queried every time (usually not a problem since there
+are only a limited number of array tests per night and the index
+is cached in memory) unless the noupdate flag is true.
+
+If the noupdate flag is set there is no verification that the readnoise
+meets the specified rules (this is because the command-line override
+uses a value rather than a file).
+
+The index file must include a column named READNOISE.
+
+=cut
+
+sub readnoise {
+  my $self = shift;
+
+  # Handle arguments
+  return $self->readnoisecache(shift) if @_;
+
+  # If noupdate is in effect we should return the cached value
+  # unless it is not defined. This effectively allows the command-line
+  # value to be used to override without verifying its suitability
+  if ($self->readnoisenoupdate) {
+    my $cache = $self->readnoisecache;
+    return $cache if defined $cache;
+  }
+
+  # Now we are looking for a value from the index file
+  my $noisefile = $self->readnoiseindex->choosebydt('ORACTIME',$self->thing);
+  croak "No suitable readnoise value found in index file"
+    unless defined $noisefile;
+
+  # This gives us the filename, we now need to get the actual value
+  # of the readnoise.
+  my $noiseref = $self->readnoiseindex->indexentry( $noisefile );
+  if (exists $noiseref->{READNOISE}) {
+    return $noiseref->{READNOISE};
+  } else {
+    croak "Unable to obtain READNOISE from index file entry $noisefile\n";
+  }
+
+}
 
 =item B<darknoupdate>
 
@@ -268,6 +343,20 @@ sub standardnoupdate {
   my $self = shift;
   if (@_) { $self->{StandardNoUpdate} = shift; }
   return $self->{StandardNoUpdate};
+}
+
+=item B<readnoisenoupdate>
+
+Stops readnoise object from updating itself with more recent data
+
+Used when using a command-line override to the pipeline
+
+=cut
+
+sub readnoisenoupdate {
+  my $self = shift;
+  if (@_) { $self->{ReadNoiseNoUpdate} = shift; }
+  return $self->{ReadNoiseNoUpdate};
 }
 
 =item B<bias>
@@ -539,6 +628,26 @@ sub biasindex {
 
 };
 
+=item B<readnoiseindex>
+
+Return (or set) the index object associated with the readnoise index file.
+
+=cut
+
+sub readnoiseindex {
+
+  my $self = shift;
+  if (@_) { $self->{ReadNoiseIndex} = shift; }
+
+  unless (defined $self->{ReadNoiseIndex}) {
+    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.readnoise";
+    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.readnoise";
+    $self->{ReadNoiseIndex} = new ORAC::Index($indexfile,$rulesfile);
+  };
+
+  return $self->{ReadNoiseIndex};
+}
+
 =item B<skyindex>
 
 Return (or set) the index object associated with the sky index file
@@ -556,10 +665,7 @@ sub skyindex {
     $self->{SkyIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
-
-  return $self->{SkyIndex}; 
-
-
+  return $self->{SkyIndex};
 };
 
 =item B<standardindex> 
@@ -587,6 +693,21 @@ sub standardindex {
 
 =item B<thing>
 
+Returns the hash that can be used for checking the validity of
+calibration frames. This is a combination of the two hashes
+stored in C<thingone> and C<thingtwo>. The hash returned
+by this method is readonly.
+
+  $hdr = $Cal->thing;
+
+=cut
+
+sub thing {
+  return { %{$_[0]->thingone}, %{$_[0]->thingtwo} };
+}
+
+=item B<thingone>
+
 Returns or sets the hash associated with the header of the object
 (frame or group or whatever) needed to match calibration criteria
 against.
@@ -595,22 +716,42 @@ Ending sentences with a preposition is a bug.
 
 =cut
 
-sub thing {
+sub thingone {
 
-my $self = shift;
+  my $self = shift;
 
-# check that we have been passed a hash
-
-  if (@_) { 
+  # check that we have been passed a hash
+  if (@_) {
     my $arg = shift;
     croak("Argument is not a hash") unless ref($arg) eq "HASH";
-    $self->{Thing} = $arg;
-  };
+    $self->{Thing1} = $arg;
+  }
 
-return $self->{Thing};
+  return $self->{Thing1};
+}
 
+=item B<thingtwo>
 
-};
+Returns or sets the hash associated with the user defined header of
+the object (frame or group or whatever) against which calibration
+criteria are applied.
+
+=cut
+
+sub thingtwo {
+
+  my $self = shift;
+
+  # check that we have been passed a hash
+  if (@_) {
+    my $arg = shift;
+    croak("Argument is not a hash") unless ref($arg) eq "HASH";
+    $self->{Thing2} = $arg;
+  }
+
+  return $self->{Thing2};
+}
+
 
 =back
 
