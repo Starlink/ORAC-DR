@@ -29,7 +29,7 @@ use Carp;
 use File::Spec;  # For pedants everywhere
 use IO::File;    # until perl5.6 is guaranteed
 
-use Data::Dumper;
+# use Data::Dumper; # for debugging
 
 use ORAC::Constants qw/ :status /;
 use ORAC::Print;
@@ -493,7 +493,7 @@ sub read_recipe {
   # If the path array is empty add cwd (should not happen in oracdr
   @path = ( File::Spec->curdir ) unless @path;
 
-  print Dumper(\@path),"\n";
+  # print Dumper(\@path),"\n";
 
   # Now search the directory structure for NAME
   my $fh = $self->_search_path( \@path, $name);
@@ -1042,8 +1042,8 @@ Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>
 Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
-=cut
-
 =end __HIDDEN__
+
+=cut
 
 1;
