@@ -79,6 +79,7 @@ sub new {
   $frame->{Recipe} = undef;
   $frame->{UserHeader} = {};
   $frame->{Format} = undef;
+  $frame->{IsGood} = 1;
 
   bless($frame, $class);
 
@@ -284,6 +285,12 @@ stored for the observation.
 
 This methods takes and returns a reference to a hash.
 
+The header values can be accessed by using the hdr() method
+or by dereferencing the return value of header():
+
+   $value = $Grp->header->{KEY};
+   $value = $Grp->hdr('KEY');
+
 =cut
 
 
@@ -345,18 +352,44 @@ Can also be used to set values in the header.
 
   $Obs->hdr("INSTRUME", "IRCAM");
 
+If no arguments are provided, the reference to the header hash
+is returned (equivalent to running the header() method).
+
+  $value = $Obs->hdr->{INSTRUME};
+
 =cut
 
 sub hdr {
   my $self = shift;
 
-  my $keyword = shift;
+  if (@_) {
+    my $keyword = shift;
 
-  if (@_) { ${$self->header}{$keyword} = shift; }
+    if (@_) { $self->header->{$keyword} = shift; }
 
-  return ${$self->header}{$keyword};
+    return $self->header->{$keyword};
+  }
+
+  # No arguments, return the header hash reference
+  return $self->header;
 }
 
+
+=item isgood
+
+Flag to determine the current state of the frame. If isgood()
+is true the Frame is valid. If it returns false the frame
+object may have a problem (eg the recipe responsible for 
+processing the frame failed to complete).
+
+=cut
+
+sub isgood {
+  my $self = shift;
+  if (@_) { $self->{IsGood} = shift;  }
+  $self->{IsGood} = 1 unless defined $self->{IsGood};
+  return $self->{IsGood};
+}
 
 
 # Method to configure the object.
@@ -701,16 +734,26 @@ Can also be used to set values in the header.
 
   $Obs->uhdr("INFORMATION", "value");
 
+If no arguments are provided, the reference to the header hash
+is returned (equivalent to running the userheader() method).
+
+
 =cut
 
 sub uhdr {
   my $self = shift;
 
-  my $keyword = shift;
+  if (@_) {
+    my $keyword = shift;
 
-  if (@_) { ${$self->userheader}{$keyword} = shift; }
+    if (@_) { $self->userheader->{$keyword} = shift; }
 
-  return ${$self->userheader}{$keyword};
+    return $self->userheader->{$keyword};
+  }
+
+  # No arguments, return the header hash reference
+  return $self->userheader;
+
 }
 
 =item gui_id
@@ -761,11 +804,16 @@ sub num_files {
 This method calculates header values that are required by the
 pipeline by using values stored in the header.
 
-An example is ORACTIME that should be set to the time of the
-observation in hours. Instrument specific frame objects
-are responsible for setting this value from their header.
+Required ORAC extensions are:
 
-Should be run after a header is set. Currently the header()
+ORACTIME: should be set to a decimal time that can be used for
+comparing the relative start times of frames. For IRCAM this
+number is decimal hours, for SCUBA this number is decimal
+UT days.
+
+ORACUT: This is the UT day of the frame in YYYYMMDD format.
+
+This method should be run after a header is set. Currently the header()
 method calls this whenever it is updated.
 
 This method updates the frame header.
@@ -786,6 +834,13 @@ sub calc_orac_headers {
   $self->hdr('ORACTIME', $time);
 
   $new{'ORACTIME'} = $time;
+
+  # ORACUT
+  # For IRCAM this is simply the IDATE header value
+  my $ut = $self->hdr('IDATE');
+  $ut = 0 unless defined $ut;
+  $self->hdr('ORACUT', $ut);
+
   return %new;
 }
 
