@@ -506,6 +506,28 @@ sub template {
   }
 }
 
+=item lastmember
+
+Method to determine whether the supplied argument
+matches the last member of the group. Returns a 1 if
+it is the last member and a zero otherwise.
+
+   $islast = $Grp->lastmember($Frm);
+
+=cut
+
+sub lastmember {
+  my $self = shift;
+  my $member = shift;
+
+  if ($member eq $self->frame($self->num)) {
+    return 1;
+  }
+
+  return 0;
+}
+
+
 
 =back
 
