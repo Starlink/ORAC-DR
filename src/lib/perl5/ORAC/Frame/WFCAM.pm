@@ -516,6 +516,41 @@ we return 0.  The group name stored in the object is automatically
 updated using this value.
  
 =cut
+
+sub findgroup {
+  
+  my $self = shift;
+  
+  my $hdrgrp = $self->hdr('TILENUM');
+  if (! $hdrgrp) {
+      $hdrgrp = $self->hdr('GRPNUM');
+  }
+  my $amiagroup;
+  
+  # NB: Test for GRPMEM is not 'T' as it used to be.  FITS header reader
+  # now silently converts boolean values to 1 or 0.
+  
+  if (!defined $self->hdr('GRPMEM')){
+    $amiagroup = 1;
+  } elsif ($self->hdr('GRPMEM') eq "1") {
+    $amiagroup = 1;
+  } else {
+    $amiagroup = 0;
+  }
+                  
+  # Is this group name set to anything useful
+ 
+  if (!$hdrgrp || !$amiagroup ) {
+    # if the group is invalid there is not a lot we can do
+    # so we just assume 0
+    $hdrgrp = 0;
+  }
+ 
+  $self->group($hdrgrp);
+ 
+  return $hdrgrp;
+                                                                                
+}
  
 =head1 SEE ALSO
 
