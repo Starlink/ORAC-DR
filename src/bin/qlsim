@@ -1,0 +1,280 @@
+#!perl
+
+=head1 NAME
+
+qlsim - Simulated DRAMA task for -loop task option
+
+=head1 SYNOPSIS
+
+   qlsim -name SCU2 -flagfile sa.ok
+
+=head1 DESCRIPTION
+
+When testing the ORAC-DR pipeline in "Quick Look" mode (aka the "task"
+looping option) data are made available to the DR via DRAMA parameters.
+This simulator provides a surrogate acquisition task using the standard
+QL parameter interface.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<-name>
+
+This is the name that the task will use in the DRAMA message system.
+If not specified, it will use the name QLSIM.
+
+=item B<-flagfile>
+
+The name of a standard ORAC-DR multi-frame flag file. The flag file
+will contain the names of input data files relative to ORAC_DATA_IN.
+These files will be stored into the QL parameter at at the specified
+rate (see the C<-refresh> option). This is a mandatory option.
+
+=item B<-refresh>
+
+The rate at which data will be presented to the pipeline (in seconds).
+Defaults to 2 seconds.
+
+=item B<-loop>
+
+By default, the task will exit when it runs out of files. When this
+option is enabled the task will start from the beginning again when
+it gets to the end.
+
+=item B<-help>
+
+Provide simple help information.
+
+=item B<-man>
+
+Provides the manual page.
+
+=item B<-version>
+
+The version of the simulator.
+
+=back
+
+=head1 ACTIONS
+
+This is a DRAMA task with the following actions (in addition to the
+core actions that all perl DRAMA tasks have):
+
+=over 4
+
+=item B<UPDATE>
+
+This is the internal action that reschedules itself at the refresh
+rate, updating the internal parameters. It should not be called
+from an external source.
+
+=back
+
+=head1 PARAMETERS
+
+This is a DRAMA task with parameters matching those expected by ORAC-DR:
+
+=over 4
+
+=item B<QL>
+
+This is the SDS parameter monitored by ORAC-DR. It consists of the following
+SDS components:
+
+=over 8
+
+=item B<TIMESTAMP>
+
+The Unix epoch seconds for when the parameter was written
+
+=item B<FILENAME>
+
+The name of the file to be read by ORAC-DR. This component is mandatory
+unless the IMAGE component is present. It takes priority over IMAGE
+if both are present.
+
+=item B<IMAGE>
+
+A structure containing the processed image. Must be present if FILENAME
+is not present. This structure contains DATA_ARRAY (a 2-d image) 
+and FITS (character array) components.
+
+=back
+
+=back
+
+=cut
+
+use warnings;
+use strict;
+use Getopt::Long;
+use Pod::Usage;
+
+use Time::HiRes;
+#use Jit;
+use DRAMA;
+use Sds::Tie;
+
+# Options
+my ($help, $man, $version, $refresh, $name, $flagfile, $loop);
+my $opt_status = GetOptions("help" => \$help,
+			    "man" => \$man,
+			    "flagfile=s" => \$flagfile,
+			    "version" => \$version,
+			    "refresh=s" => \$refresh,
+			    "name=s" => \$name,
+			    "loop" => \$loop,
+			   );
+
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+
+if ($version) {
+  my $id = '$Id$ ';
+  print "QuickLook simulator data source for ORAC-DR pipeline\n";
+  print " CVS revision: $id\n";
+  exit;
+}
+
+# handle defaults
+$refresh ||= 2.0;
+$name    ||= "QLSIM";
+
+# error checks
+die "-flagfile option is mandatory\n"
+  unless defined $flagfile;
+
+die "Supplied flagfile ($flagfile) does not exist\n"
+  unless -e $flagfile;
+
+
+# open the flagfile so that we can start reading files from it
+# and to make sure we can before we start DRAMA
+# This is a global for simplicity
+open my $FH, "< $flagfile"
+  or die "Error opening file $flagfile: $!";
+
+# Initialise DRAMA
+DPerlInit( $name );
+#Jit::Init( $name );
+
+# Register the actions
+my $status = new DRAMA::Status;
+Dits::DperlPutActions("UPDATE",\&update_param,undef,0,undef,$status);
+
+# Get the parameter object
+my $sdp = Dits::GetParId();
+
+# Create the QL structure
+my $qlsds = Sds->Create("QL", undef, Sds::STRUCT, 0, $status );
+$qlsds->Create( "TIMESTAMP", undef,Sds::DOUBLE, 0.0, $status );
+
+# Store it in the parameter system
+$sdp->Create('', 'SDS', $qlsds);
+
+# Create the rescheduling timescale
+my $DELAY = Dits::DeltaTime( int($refresh), ($refresh - int($refresh)));
+
+# call ourselves
+DRAMA::obey $name, "UPDATE";
+
+# event loop
+Dits::MainLoop( $status );
+
+exit;
+
+# actions
+
+sub update_param {
+  my $status = shift;
+  return $status unless $status->Ok;
+  print "Enter UPDATE action...\n";
+
+  # First need to read a file off the "stack"
+  my $nextfile = <$FH>;
+
+  if (defined $nextfile && $nextfile =~ /\w/) {
+    chomp($nextfile);
+    print "Processing file: $nextfile\n";
+
+    # We have global access to the QL structure
+    # Lazy, so use a tie for exploration
+    tie my %QL, "Sds::Tie", $qlsds;
+#    $QL{FILENAME} = $nextfile;
+#    $QL{TIMESTAMP} = Time::HiRes::time();
+
+    # Find the timestamp
+    my $t = $qlsds->Find( "TIMESTAMP", $status );
+    print Time::HiRes::time() ."\n";
+    $t->PutPdl( PDL::Core::pdl( Time::HiRes::time() ) )
+      if (defined $t && $status->Ok);
+
+    # Find the FILENAME (or create it)
+    if ($status->Ok) {
+      if (exists $QL{FILENAME}) {
+	my $fil = $qlsds->Find("FILENAME", $status);
+	$fil->PutStringArrayExists( [ $nextfile ], $status, 1 );
+      } else {
+	$qlsds->PutStringArray( [ $nextfile ], "FILENAME" );
+      }
+    }
+
+    $qlsds->List( $status );
+    # trigger parameter update
+    $sdp->Update($qlsds, $status);
+
+    # reschedule
+    Dits::PutDelay( $DELAY, $status );
+    Dits::PutRequest( Dits::REQ_WAIT, $status );
+  } else {
+    # nothing else in the file
+    # do we start from the start?
+    if ($loop) {
+      # reopen the file
+      close($FH);
+      open $FH, "< $flagfile" or die "Error reopening flagfile $flagfile: $!";
+
+      # reschedule immediately so we serve the next file without an obvious delay
+      DRAMA::MsgOut( $status, "Loop switch enabled. Restarting from the top");
+      Dits::PutRequest( Dits::REQ_STAGE, $status );
+    } else {
+      # abort
+      Dits::PutRequest( Dits::REQ_EXIT(), $status );
+      close($FH);
+    }
+  }
+
+  return $status;
+}
+
+
+=head1 SEE ALSO
+
+L<DRAMA>, L<ORAC::Loop>.
+
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2005 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
+
+=cut
