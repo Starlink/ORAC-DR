@@ -1,0 +1,77 @@
+    # Do flat field correction and dark correction
+
+    _STAGE1_SPECIAL_ FLATCOR=1 DARKCOR=1
+
+    # Create an output file name for the catalogue
+
+    my ($basename,$dir,$suffix,$extn) = $Frm->parsefname;
+    my $outfile = sprintf("%s_cat%s",$basename,$suffix);
+
+    # First hedit in the confidence map...
+
+    my $cpm = $Cal->CPM;
+    my $cpmfr = sprintf("%s[1]",$cpm);
+    my ($errmsg,$retval);
+    foreach my $i (1 .. $Frm->findnsubs) {
+        my $snum = $Frm->getasubframe($i)->subfrmnumber;
+        $retval = cir_update_hdr($Frm->getasubframe($i)->file,"CIR_CPM",
+            "STRING",$cpmfr,"Name of Confidence Map",$errmsg);
+        $Frm->getasubframe($i)->hdr("CIR_CPM",$cpmfr);
+ 
+        # Now do an image detection
+
+        my $inf = $Frm->getasubframe($i)->file;
+        my $outf = sprintf("%s[%d]",$outfile,$i);
+        my $ellf = "";
+        $retval = cir_imcore($inf,$cpmfr,25,3.0,0,3.5,64,$outf,$ellf,
+	    0,3,$errmsg);
+        if ($retval != CIR_OK) {
+            orac_throw "CIR_IMCORE: failed in _IMCORE_\n$errmsg\n";
+        }
+    }
+
+    # Now extract the useful info out of the header of each catalogue...
+
+    foreach my $i (1 .. $Frm->findnsubs) {
+        my $catfile = sprintf("%s[%d]",$outfile,$i);
+	my $tmpCat = $Frm->new($catfile);
+        my $seeing = $tmpCat->hdr("SEEING");
+        my $foc_i = $tmpCat->hdr("FOC_I");
+        my $foc_off = $tmpCat->hdr("FOC_OFF");
+        my $line = sprintf("Frame %02d: offset = %g, seeing = %g\n",$foc_i,
+	    $foc_off,$seeing);
+        orac_print($line);
+    }
+
+=head1 NAME
+
+_FOCUS_SERIES_ -- Do very basic analysis on a focus series and report back
+the FWHM as a function of focus offset
+
+=head1 DESCRIPTION
+
+This recipe does a very basic dark subtraction and flat field calibration on
+a focus series. All of the images are in the same container file, so the input
+will have only images from a single detector. Once the dark and flat are dealt
+with, a very simple image detection is done. The mean FWHM of the objects on
+the frame is extracted from the header and presented on the screen as a 
+function of focus offset.
+
+=head1 ARGUMENTS
+
+None
+
+=head1 NOTES
+
+None
+
+=head1 AUTHORS
+
+JRL: Jim Lewis (CASU, IoA)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004-2007 Cambridge Astronomy Survey Unit. 
+All Rights Reserved
+
+=cut
