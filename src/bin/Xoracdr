@@ -520,9 +520,16 @@ xorac_update_progress('Packed Buttons', 45);
 # manipulates are still in lexical scope. This is a sucky kludge, but we
 # call this routine from 3 different places in the GUI.
 my $configure_instrument = 
-        sub { if ( defined $$inst_select[0] ) {
+        sub { if ( defined $$inst_select[0] || $ENV{"ORAC_INSTRUMENT"}) {
 	        try {
-		  orac_configure_for_instrument(${$inst_select}[0], \%options);
+		  # set ORAC_INSTRUMENT if we have just made a new selection
+		  # otherwise don't we could be calling this routine from
+		  # entering a new UT date and not want to change the
+		  # selected instrument
+		  $ENV{"ORAC_INSTRUMENT"} = $$inst_select[0]
+		                    if defined $$inst_select[0];
+		  orac_configure_for_instrument( $ENV{"ORAC_INSTRUMENT"},
+		                                 \%options );
 		}
 		catch ORAC::Error::FatalError with
 		{
@@ -580,6 +587,11 @@ my $configure_instrument =
 		  }
 		}
 		
+		# We may have an undefined loop type at this stage, in which
+		# case lets default to -loop list shall we?
+		unless ( defined $options{"loop"} || $options{"loop"} ne "") {
+		   $options{"loop"} = "list"; }
+		   
                 # If we have changed the loop type during setup, the interface
 		# will be in a bad state, we need to correct this...
 		
@@ -596,8 +608,8 @@ my $configure_instrument =
 		   $list_lab = 'black'; $list_ent = '#d9d9d9';
 		   $to_lab = $to_ent = 'grey75';
 		   $from_lab = $from_ent = 'grey75';
-		   $list_lab = $list_ent = 'grey75';
 		   $options{"to"} = $options{"from"} = $options{"file"} = undef;
+		   @obs = ();
 		   last SWITCH; }
 		 if ( $options{"loop"} eq "wait" ) {
 		   $to_state = $from_state = 'normal';
@@ -606,13 +618,15 @@ my $configure_instrument =
 		   $from_lab = 'black'; $from_ent = '#d9d9d9';
 		   $list_lab = $list_ent = 'grey75';
 		   $options{"list"} = $options{"file"} = undef;
+		   @obs = ();
 		   last SWITCH; }  
 		 if ( $options{"loop"} eq "inf" ) {
 		   $to_state = 'normal';
 		   $list_state = $from_state = $file_state = 'disabled';
-		   $to_lab = 'black'; $to_ent = '#d9d9d9';
-		   $from_lab = $from_ent = $list_lab = $list_ent = 'grey75';
+		   $from_lab = 'black'; $from_ent = '#d9d9d9';
+		   $to_lab = $to_ent = $list_lab = $list_ent = 'grey75';
 		   $options{"list"} = $options{"file"} = undef;
+		   @obs = ();
 		   last SWITCH; }  
 		 if ( $options{"loop"} eq "flag" ) {
 		   $to_state = $from_state = 'normal';
@@ -621,6 +635,7 @@ my $configure_instrument =
 		   $from_lab = 'black'; $from_ent = '#d9d9d9';
 		   $list_lab = $list_ent = 'grey75';
 		   $options{"list"} = $options{"file"} = undef;
+		   @obs = ();
 		   last SWITCH; }
 		 if ( $options{"loop"} eq "file" ) {
 		   $file_state = 'normal';
@@ -629,8 +644,19 @@ my $configure_instrument =
 		   $from_lab = $from_ent = 'grey75';
 		   $list_lab = $list_ent = 'grey75';
 		   $options{"list"} = $options{"to"} = $options{"from"} = undef;
-		 }
-		 my $nothing = 1;
+		   @obs = ();
+		   last SWITCH; }
+		   
+		 # default block, this should not occur, but if it does we
+		 # are enabling all inputs, so it the GUI gets into a bad
+		 # state the user can continue processing data.
+		 $file_state = 'normal';
+		 $to_state = $from_state = $list_state = 'normal';
+		 $to_lab = 'black'; $to_ent = '#d9d9d9';
+		 $from_lab = 'black'; $from_ent = '#d9d9d9';
+		 $list_lab = 'black'; $list_ent = '#d9d9d9';
+		 $options{"list"} = $options{"to"} = $options{"from"} = undef;	
+		 @obs = ();
 		}  
 		# configure the widgets 
                 $to_label->configure( -foreground => $to_lab );
@@ -1216,6 +1242,9 @@ catch ORAC::Error::UserAbort with
 # R E V I S I O N  L O G ----------------------------------------------------
 
 # $Log$
+# Revision 1.8  2001/03/02 21:26:55  allan
+# GUI changes to support not forcing a -loop definition
+#
 # Revision 1.7  2001/03/02 05:06:36  allan
 # Working SelectRecipe widget used for Edit Recipe and Override Recipe menu items, plus minor GUI tweaks and a couple of bug fixes
 #
