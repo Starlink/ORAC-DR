@@ -129,9 +129,8 @@ sub findgroup {
 
 =item B<findrecipe>
 
-Find the recipe name. If a recipe name can not be found (using
-the 'DRRECIPE' keyword). If no recipe can be found 'QUICK_LOOK'
-is returned by default.
+Find the recipe name. If no recipe can be found from the
+'DRRECIPE FITS keyword'QUICK_LOOK' is returned by default.
 
 The recipe name stored in the object is automatically updated using 
 this value.
@@ -237,10 +236,8 @@ sub stripfname {
 
   my $name = shift;
 
-  # Strip everything after the first dot
-
-  $name =~ s/\.sdf$//;
-
+  # Strip everything after the first dot (or .gz as well)
+  $name =~ s/\.(sdf)(\.gz|\.Z)?$//;
   
   return $name;
 }
