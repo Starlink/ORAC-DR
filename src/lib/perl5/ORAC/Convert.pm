@@ -25,6 +25,7 @@ only output format supported are:
 
   NDF     - simple NDF files
   HDS     - HDS containers with .HEADER and .Inn NDFs
+  FITS    - Simple FITS files
 
 The only input formats supported are:
 
@@ -262,6 +263,18 @@ sub convert {
     orac_print("Converting from FITS to NDF...\n");
     $outfile = $self->fits2ndf;
     orac_print("...done\n");
+  } elsif ($options{'IN'} eq 'HDS' && $options{'OUT'} eq 'FITS') {
+    # Implement HDS2FITS
+    orac_print("Converting from HDS to FITS...\n");
+    $outfile = $self->hds2ndf;
+    my ($base, $dir, $suffix) = fileparse($outfile, '.sdf');
+    $base =~ s/_raw//;
+    my $outfile2 = $base . $suffix;
+    rename($outfile,$outfile2);
+    $self->infile($outfile2);
+    $outfile = $self->ndf2fits;
+    unlink $outfile2;
+    orac_print("...done\n");
   } elsif ($options{'IN'} eq 'HDS' && $options{OUT} eq 'NDF') {
     # Implement HDS2NDF
     orac_print "Converting from HDS container to merged NDF...\n";
@@ -420,6 +433,54 @@ sub fits2ndf {
   # Return the filename (append .sdf) if everything okay.
   if ($status == ORAC__OK) {
     return $ndf;
+  } else {
+    return undef;
+  }
+
+}
+
+=item B<ndf2fits>
+=cut
+
+sub ndf2fits {
+  my $self = shift;
+
+  my $name;
+  if (@_) {
+    $name = shift;
+  } else {
+    $name = $self->infile;
+  }
+
+  # Generate an outfile
+  # First Remove any suffices and retrieve the rootname
+  # basename requires us to know the extension if FITS, FIT, fit etc
+  my $out = (fileparse($name, '\..*'))[0];
+
+  # We know that an NDF ends with .sdf -- append it.
+  my $fitsfile = $out . ".fit";
+#  $out .= ".I1";
+
+  # Check the output file name and whether we are allowed to
+  # overwrite it.
+  if (-e $fitsfile && ! $self->overwrite) {
+    # Return early
+    orac_warn "The converted file ($fitsfile) already exists - won't convert again\n";
+    return $fitsfile;
+  }
+
+  # Check to see if fits2ndf monolith is running
+  my $status = ORAC__ERROR;
+  if (defined $self->mon('ndf2fits')) {
+
+    # Do the conversion
+    $status = $self->mon('ndf2fits')->obeyw("ndf2fits","in=$out out=$fitsfile profits proexts");
+
+  }
+
+  # Return the filename (append .sdf) if everything okay.
+  if ($status == ORAC__OK) {
+    return $fitsfile;
   } else {
     return undef;
   }
@@ -806,6 +867,7 @@ $Id$
 =head1 AUTHORS
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+Jim Lewis E<lt>jrl@ast.cam.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
