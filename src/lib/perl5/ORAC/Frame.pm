@@ -27,6 +27,8 @@ use warnings;
 use Carp;
 use vars qw/$VERSION/;
 
+use Astro::FITS::HdrTrans;
+
 use ORAC::Print;
 use ORAC::Constants;
 
@@ -672,8 +674,10 @@ ORACUT: This is the UT day of the frame in YYYYMMDD format.
 This method should be run after a header is set. Currently the readhdr()
 method calls this whenever it is updated.
 
-This method updates the frame header.
-Returns a hash containing the new keywords.
+  %translated = $Frm->calc_orac_headers;
+
+This method updates the frame user header and returns a hash
+containing the new keywords.
 
 =cut
 
@@ -698,20 +702,39 @@ sub calc_orac_headers {
   $self->hdr('ORACUT', $ut);
 
   # Now create all the ORAC_ headers
-  # go through an array of headers and translate the
-  # ones we can find with associated methods
+  # First attempt is to use Astro::FITS::HdrTrans
+  my %trans;
+  eval {
+    # we do have the advantage over HdrTrans in that we know
+    # the instrument translation table to use via ORAC_INSTRUMENT
+    # and this frame class. We may need to add a Frame instrument method
+    # that will allow us to hint HdrTrans.
+    my $hdr = $self->hdr;
+    %trans = Astro::FITS::HdrTrans::translate_from_FITS( $hdr,
+							prefix => 'ORAC_');
 
-  # Loop over all the headers
-  # Do nothing if a translation method does not exist
-  # This makes it safe for everyone
-  for my $key ( @ORAC_INTERNAL_HEADERS ) {
-    my $method = "_to_$key";
-#    print "Trying method $method\n";
-    if ($self->can($method)) {
-#      print "Running method $method\n";
-      # This returns a single value
-      $new{"ORAC_$key"} = $self->$method();
-      $self->uhdr("ORAC_$key", $new{"ORAC_$key"});
+    # store them in the object and append them to the return hash
+    $self->uhdr( %trans );
+    %new = (%new, %trans);
+  };
+
+  # if we have no values do it the old way
+  if (!keys %trans) {
+    # go through an array of headers and translate the
+    # ones we can find with associated methods
+
+    # Loop over all the headers
+    # Do nothing if a translation method does not exist
+    # This makes it safe for everyone
+    for my $key ( @ORAC_INTERNAL_HEADERS ) {
+      my $method = "_to_$key";
+      #    print "Trying method $method\n";
+      if ($self->can($method)) {
+	#      print "Running method $method\n";
+	# This returns a single value
+	$new{"ORAC_$key"} = $self->$method();
+	$self->uhdr("ORAC_$key", $new{"ORAC_$key"});
+      }
     }
   }
 
