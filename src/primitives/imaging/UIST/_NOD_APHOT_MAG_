@@ -1,0 +1,413 @@
+#+
+# Name:
+#    _NOD_APHOT_MAG_
+#
+# Purpose:
+#    Performs aperture photometry for UIST NOD recipes.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive computes photometry for the individual frames and
+#    mosaic of a NOD jitter.  It invokes _FIXED_APERTURE_PHOTOMETRY_
+#    to derive aperture photometry for both the positive and negative
+#    point sources.  Photometry is performed for each frame of the
+#    current cycle in the difference group, and the group mosaic frame.
+#    It does not assume a central or centrally symmetric distribution
+#    of the positive and negative signals for the mosaic.
+#
+#  Arguments:
+#     APERTURE = REAL (Given)
+#        The aperture in arcseconds for the photometry.  [5.0]
+#     INNER = REAL (Given)
+#        The ratio of the diameters of inner ring of the sky annulus to
+#        that of the object aperture (APERTURE).  It is constrained
+#        to be in the range 1.1 to 3.0.  The mode of the pixel values in 
+#        the annulus is used to subtract the sky for statistics 3) and
+#        4) listed above.  [1.3]
+#     SKY_EST = INTEGER (Given)
+#        Sky estimations method as per AUTOPHOTOM parameter SKYEST.  The
+#        default is the mode, so as to exclude contaminating sources.
+#        1 is the mean; 2 is the average of values within two standard
+#        deviations of the mean; 3 is the mode from PHOTOM, 4 is a 
+#        multiply clipped mean emulating the mode but without involving
+#        the median.  It is supplied as a constant to AUTOPHOTOM (hence
+#        option 4).  The final option is to cope with self-flat frames
+#        with a spike artifact in the histogram thus giving the wrong
+#        median, and hence biased mode.  The default is used should 
+#        the supplied value not be one of the allowed options. [4]
+#     OUTER = REAL (Given)
+#        The ratio of the diameters of outer ring of the sky annulus to
+#        that of the object aperture (APERTURE).  It is constrained to
+#        be in the range 1.4 to 5.0 and be at least 0.3 greater than the
+#        inner scale factor of the annulus.  [2.0]
+#
+# Notes:
+#    -  This primitive is suitable for UIST in imaging mode, but could
+#    be used for IRCAM too.
+#    -  Processing only occurs when it is time to perform photometry,
+#    i.e. when the steering header DO_APHOT is true, and only on object
+#    frames.
+#    -  The steering header CYCLE_NUMBER specifies the recipe cycle
+#    number.
+#    -  The reference to the difference group is stored in the internal
+#    group header DIFFERENCE_GROUP.
+#    -  To discriminate between the various results, in the results
+#    file the positive images have suffix "_pos" after the frame name
+#    and the negative images have a "_neg" suffix.
+#    -  The following steps are used to find the equatorial offsets of
+#    the two images of the source in the mosaic.  The mosaic is smoothed 
+#    with a 5x5-pixel median filter.  The maximum and minimum pixels are
+#    deemed to be the two images of the source.  Their mean position
+#    relative to the centre of the mosaic, less the referenceoffset
+#    from the calibration system already incorporated, gives the pixel
+#    displacements.  These are converted to equatorial offsets using
+#    the _GET_PLATE_SCALE_ primitive to scale to arcseconds, and user
+#    header ORAC_ROTATION to create the rotation matrix.
+#    -  The primitive sets the telescope offsets of the mosaic to be
+#    the equatorial offsets derived as described above, storing them
+#    in both in the physical frame and in the group header. 
+#    -  To perform the photometry primitive _FIXED_APERTURE_PHOTOMETRY_
+#    is called twice with displacements of the positive and negative
+#    images set for each frame.  The displacements are half of the
+#    reference (first) frame's internal headers RA_OFFSET_DIFFERENCE
+#    and DEC_OFFSET_DIFFERENCE.
+#
+# Tasks:
+#    KAPPA: BLOCK, FITSMOD, STATS.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Arguments
+# =========
+
+# Obtain the aperture diameter in arcseconds.
+    my $aperture = ( $_NOD_APHOT_MAG_{APERTURE} || 5 );
+
+#  Set outer default.  This default routine assumes the smaller field
+#  size of an instrument like IRCAM or Michelle (less than half of even
+#  the UFTI sub-array), and the NOD type recipes move the star images
+#  closer to the frame edge, hence the smaller outer limit.  For
+#  instruments with a larger field of view, create an instrument-specific
+#  version of this primitive.
+    my $defouter = 2.0;
+
+# Calculate the radius of the inner and outer extent of the aperture.
+    my $inner = ( $_NOD_APHOT_MAG_{INNER} || 1.3 );
+    my $outer = ( $_NOD_APHOT_MAG_{OUTER} || $defouter );
+    $inner = min( 3.0, max( $inner, 1.1 ) );
+    $outer = min( 5.0, max( $inner + 0.3, $outer, 1.4 ) );
+
+# Obtain the sky-estimation-method index.
+    my $skyest = ( $_NOD_APHOT_MAG_{SKY_EST} || 4 );
+    if ( $skyest !~ /^[+]?\d$/ || $skyest < 1 || $skyest > 4 ) {
+       orac_warn "Invalid sky estimation ($skyest).  Should be 1, 2, 3, or 4.  Using multiply clipped mean.\n";
+       $skyest = 4;
+    }
+
+# Selection
+# =========
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT/ ) {
+
+# Determine whether it is time to do aperture photometry.
+       my $do_aphot = $Frm->uhdr( "DO_APHOT" );
+       if ( $do_aphot ) {
+
+# Make the difference group the current standard group by starting a new context.
+          my $Grp = $Grp->uhdr( "DIFFERENCE_GROUP" );
+
+# Obtain the cycle number.  Default to zero if undefined, so that recipes
+# which do not support this feature will continue to work.
+          my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+          $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+# Select those members in the current cycle.
+          my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+
+# Not sure why but the group file is not propagated to the subgrp (subgrp of a subgrp?),
+# so copy the group file.
+          $cycleGrp->file( $Grp->file );
+
+# Find the offsets to images.
+# ===========================
+
+# Mosaic
+# ------
+
+# For the mosaic, we don't know where exactly the points will be if
+# the symmetry of the pattern about the centre is relaxed.  It's not
+# clear how robust the origin created during the mosaic creation is.
+# Therefore, locate the peak in the image.  EXTRACTOR is possible but
+# for simplicity smooth the image then find the maximum value.
+
+# Create temporary file.
+          my $tmp = new ORAC::TempFile;
+          my $tmpfile = $tmp->file;
+
+# Smooth the image using a median 5x5-pixel neighbourhood, to remove
+# noise spikes and hot pixels.
+          my $mosaic = $Grp->file;
+          my $param1 = "in=$mosaic out=$tmpfile box=5 estimator=median";
+          $Mon{ "kappa_mon" }->obeyw( "block", "$param1" );
+
+# Locate the main positive object within a central box.
+          $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$tmpfile" );
+
+          my ( @maxpos, @minpos, $ORAC_STATUS, $mraoff, $mdecoff );
+
+# Extract the location of the maximum and minimum pixels of the smooth
+# mosaic.
+          ( $ORAC_STATUS, @maxpos ) = $Mon{ "kappa_mon" }->get( "stats", "maxpos" );
+          ( $ORAC_STATUS, @minpos ) = $Mon{ "kappa_mon" }->get( "stats", "minpos" );
+
+# Validate the position.  If it's failed try the default, which is
+# symmetric about the centre.
+          my $badint = -0x80000000;
+          if ( $maxpos[ 0 ] == $badint || $minpos[ 0 ] == $badint ) {
+             $mraoff = 0;
+             $mdecoff = 0;
+
+          } else {
+
+# Obtain group file's central pixel.
+             my ( $xmid, $ymid );
+             {
+                my $Frm = new $Frm;
+                $Frm->file( $Grp->file );
+                _GET_FRAME_CENTRE_
+                $xmid = $_GET_FRAME_CENTRE_{XCENTRE};
+                $ymid = $_GET_FRAME_CENTRE_{YCENTRE};
+             }
+
+# Obtain the plate scale and pixel increments along the sky co-ordinate axes.
+             _GET_PLATE_SCALE_
+             my $platescale = $_GET_PLATE_SCALE_{PLATESCALE};
+
+# Find the mean location of the positive and negative images with respect to
+# frame centre in pixels.
+             my $xoff_p = 0.5 * ( $maxpos[ 0 ] + $minpos[ 0 ] ) - $xmid;
+             my $yoff_p = 0.5 * ( $maxpos[ 1 ] + $minpos[ 1 ] ) - $ymid;
+
+# Obtain the referenceoffset from the calibration system using null
+# offsets if it cannot extract the x and y displacements successfully.
+# There must be two offset co-ordinates.
+             my @disp = ( 0, 0 );
+             my $offset = eval { $Cal->referenceoffset };
+             if ( !$@ ) {
+                if ( $#$offset == 1 ) {
+                   @disp = @$offset;
+                }
+             }
+
+# The above already take the displacement into account, so apply the
+# inverse correction for this, and convert to arcseconds.
+             my $xoff_as = ( $xoff_p - $disp[ 0 ] ) * $platescale;
+             my $yoff_as = ( $yoff_p - $disp[ 1 ] ) * $platescale;
+
+# Need to convert to equatorial co-ordinate offsets.  Obtain the
+# orientation of the chip.
+             my $rotangle = $Frm->uhdr( "ORAC_ROTATION" );
+             $rotangle = defined( $rotangle ) ? $rotangle : 0.0;
+
+# Define some useful variables to apply the rotation matrix.
+             my $pi = atan2( 1, 1 ) * 4;
+             my $dtor = $pi / 180.0;
+             my $cosrot = cos( $rotangle * $dtor );
+             my $sinrot = sin( $rotangle * $dtor );
+
+# Apply the rotation matrix to derive the equatorial offsets.
+             $mraoff = $xoff_as * $cosrot - $yoff_as * $sinrot;
+             $mdecoff = $xoff_as * $sinrot + $yoff_as * $cosrot;
+          }
+
+# Adjust the mosaic telescope headers.
+# ------------------------------------
+
+# Obtain the header keywords for the telescope offsets.  
+          my $raname = "ORAC_RA_TELESCOPE_OFFSET";
+          my $decname = "ORAC_DEC_TELESCOPE_OFFSET";
+          my %keywords = $Frm->translate_hdr( $raname );
+          my @rakey = keys( %keywords );
+          %keywords = $Frm->translate_hdr( $decname );
+          my @deckey = keys( %keywords );
+
+# Set the group offsets to be zero.  Leave the position and comment unchanged.
+          my $file = $Grp->file;
+          $param1 = "ndf=$file keyword=$rakey[ 0 ] edit=update value=$mraoff position=!";
+          $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$param1 comment=\\\$C" );
+          $param1 = "ndf=$file keyword=$deckey[ 0 ] edit=update value=$mdecoff position=!";
+          $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$param1 comment=\\\$C" );
+
+# Also update the header values.
+          $Grp->uhdr( $raname, $mraoff );
+          $Grp->uhdr( $decname, $mdecoff );
+
+# Offset to positive in all frames of the group.
+# ----------------------------------------------
+
+# Obtain the offsets between the offset centre and positive images.  Note that 
+# this is about the centre for the mosaic.
+          my $raoff = 0.5 * $Grp->frame( 0 )->uhdr( "RA_OFFSET_DIFFERENCE" );
+          my $decoff = 0.5 * $Grp->frame( 0 )->uhdr( "DEC_OFFSET_DIFFERENCE" );
+
+# Perform photometry.
+# ===================
+
+# Start a new Grp context.
+          {
+             my $Grp = $cycleGrp;
+
+# Measure the positive images.
+             _FIXED_APERTURE_PHOTOMETRY_ POSITIVE=1 APERTURE=$aperture INNER=$inner OUTER=$outer SKY_EST=$skyest RAOFF=$raoff DECOFF=$decoff SUFFIX=_pos
+
+# Obtain the offsets between the offset centre and negative images.
+# The images are arranged symmetrically.
+             $raoff = -$raoff;
+             $decoff = -$decoff;
+
+# Measure the negative images.
+             _FIXED_APERTURE_PHOTOMETRY_ POSITIVE=0 APERTURE=$aperture INNER=$inner OUTER=$outer SKY_EST=$skyest RAOFF=$raoff DECOFF=$decoff SUFFIX=_neg
+          }
+       }
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_NOD_APHOT_MAG_ -- Performs aperture photometry for UIST NOD recipes.
+
+=head1 DESCRIPTION
+
+This primitive computes photometry for the individual frames and
+mosaic of a NOD jitter.  It invokes 
+L<_FIXED_APERTURE_PHOTOMETRY_|_FIXED_APERTURE_PHOTOMETRY_>
+to derive aperture photometry for both the positive and negative
+point sources.  Photometry is performed for each frame of the
+current cycle in the difference group, and the group mosaic frame.
+It does not assume a central or centrally symmetric distribution
+of the positive and negative signals for the mosaic.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item APERTURE = REAL (Given)
+
+The aperture in arcseconds for the photometry.  [5.0]
+
+=item INNER = REAL (Given)
+
+The ratio of the diameters of inner ring of the sky annulus to
+that of the object aperture (APERTURE).  It is constrained
+to be in the range 1.1 to 3.0.  The mode of the pixel values in 
+the annulus is used to subtract the sky for statistics 3) and
+4) listed above.  [1.3]
+
+=item SKY_EST = INTEGER (Given)
+
+Sky estimations method as per AUTOPHOTOM parameter SKYEST.  The
+default is the mode, so as to exclude contaminating sources.
+1 is the mean; 2 is the average of values within two standard
+deviations of the mean; 3 is the mode from PHOTOM, 4 is a 
+multiply clipped mean emulating the mode but without involving
+the median.  It is supplied as a constant to AUTOPHOTOM (hence
+option 4).  The final option is to cope with self-flat frames
+with a spike artifact in the histogram thus giving the wrong
+median, and hence biased mode.   The default is used should 
+the supplied value not be one of the allowed options. [4]
+
+=item OUTER = REAL (Given)
+
+The ratio of the diameters of outer ring of the sky annulus to
+that of the object aperture (APERTURE).  It is constrained to
+be in the range 1.4 to 5.0 and be at least 0.3 greater than the
+inner scale factor of the annulus.  [2.0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UIST in imaging mode, but could be used
+for IRCAM too.
+
+=item *
+
+Processing only occurs when it is time to perform photometry,
+i.e. when the steering header DO_APHOT is true, and only on object
+frames.
+
+=item *
+
+The steering header CYCLE_NUMBER specifies the recipe cycle
+number.
+
+=item *
+
+The reference to the difference group is stored in the internal
+group header DIFFERENCE_GROUP.
+
+=item *
+
+To discriminate between the various results, in the results
+file the positive images have suffix "_pos" after the frame name
+and the negative images have a "_neg" suffix.
+
+=item *
+
+The following steps are used to find the equatorial offsets of
+the two images of the source in the mosaic.  The mosaic is smoothed 
+with a 5x5-pixel median filter.  The maximum and minimum pixels are
+deemed to be the two images of the source.  Their mean position
+relative to the centre of the mosaic, less the referenceoffset
+from the calibration system already incorporated, gives the pixel
+displacements.  These are converted to equatorial offsets using
+the L<_GET_PLATE_SCALE_|_GET_PLATE_SCALE_> primitive to scale to
+arcseconds, and user header ORAC_ROTATION to create the rotation matrix.
+
+=item *
+
+The primitive sets the telescope offsets of the mosaic to be
+the equatorial offsets derived as described above, storing them
+in both in the physical frame and in the group header. 
+
+=item *
+
+To perform the photometry primitive 
+L<_FIXED_APERTURE_PHOTOMETRY_|_FIXED_APERTURE_PHOTOMETRY_>
+is called twice with displacements of the positive and negative
+images set for each frame.  The displacements are half of the
+reference (first) frame's internal headers RA_OFFSET_DIFFERENCE
+and DEC_OFFSET_DIFFERENCE.
+
+=back
+
+=head1 TASKS
+
+KAPPA: BLOCK, FITSMOD, STATS.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
