@@ -6,11 +6,24 @@ ORAC::Display::P4 - ORACDR interface to P4
 
 =head1 SYNOPSIS
 
+  use ORAC::Display::P4;
+
+  $disp = new ORAC::Display::P4;
+
+  $disp->image($file);
+
 =head1 DESCRIPTION
 
 ORAC interface to P4. Provides methods for displaying images
 and spectrum with P4.
 
+Supported display modes:
+
+  IMAGE - display 2-d image
+  SURFACE - display 3-d surface of 2-d image
+  CONTOUR - display contour plot
+  HISTOGRAM - display data histogram
+  OVERGRAPH - display graph without clearing display
 
 =cut
 
@@ -395,6 +408,15 @@ this is the port number) or if REGION is not in the allowed range.
 Otherwise the actual port number is returned.
 undef is returned if no arguments are supplied.
 
+Valid keywords:
+
+  ZAUTOSCALE
+  ZMIN
+  ZMAX
+  NBINS
+  NCONT
+  CONTTYPE
+
 If the window name is not supplied (WINDOW) then 'default' is assumed.
 
 =cut
@@ -453,10 +475,10 @@ sub process_options {
     next if $key eq "TYPE";
 
     orac_print("Setting $key to $options{$key}\n",'cyan') if $DEBUG;
-    $key eq 'AUTOSCALE' && ($$href{'AUTOSCALE'} = $options{ZAUTOSCALE});
+    $key eq 'ZAUTOSCALE' && ($$href{'AUTOSCALE'} = $options{ZAUTOSCALE});
     $key eq 'ZMIN'       && ($$href{'LOW'} = $options{ZMIN});
     $key eq 'ZMAX'       && ($$href{'HIGH'} = $options{ZMAX});
-    $key eq 'HISTBINS'  && ($$href{'HISTOGRAM_BINS'} = $options{HISTBINS});
+    $key eq 'NBINS'  && ($$href{'HISTOGRAM_BINS'} = $options{NBINS});
     $key eq 'HISTXSTEP' && ($$href{'HISTOGRAM_XSTEP'} = $options{HISTXSTEP});
     $key eq 'HISTYSTEP' && ($$href{'HISTOGRAM_YSTEP'} = $options{HISTYSTEP});
     $key eq 'HISTSMOOTH' && ($$href{'HIST_SMOOTH'} = $options{HISTSMOOTH});
@@ -497,6 +519,15 @@ sub send_data {
   }
   return $status;
 }
+
+
+=back
+
+=head1 DISPLAY METHODS
+
+=over 4
+
+=cut
 
 
 =item image

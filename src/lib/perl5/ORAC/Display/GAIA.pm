@@ -8,7 +8,7 @@ ORAC::Display::GAIA - ORAC interface to GAIA
 
   $disp = new ORAC::Display::GAIA;
 
-  $disp->image();
+  $disp->image($file);
 
 =head1 DESCRIPTION
 
@@ -272,6 +272,12 @@ sub send_to_gaia {
 }
 
 
+=back
+
+=head1 DISPLAY METHODS
+
+=over 4
+
 =item image
 
 Routine to display images in Gaia. Note that the full file name is required.
@@ -282,6 +288,9 @@ Takes a file name and arguments stored in a hash.
 
   $disp->image("filename", \%options)
 
+
+Currently no image manipulation options are supported.
+(ie no image sectioning or setting of display range).
 
 =cut
 
