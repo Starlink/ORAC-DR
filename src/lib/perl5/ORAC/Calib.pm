@@ -117,6 +117,38 @@ sub darkname {
 }
 
 
+=item biasname
+
+Return (or set) the name of the current bias - no checking
+
+  $dark = $Cal->biasname;
+
+
+=cut
+
+sub biasname {
+  my $self = shift;
+  if (@_) { $self->{Bias} = shift unless $self->biasnoupdate; }
+  return $self->{Bias};
+}
+
+
+=item skyname
+
+Return (or set) the name of the current sky frame - no checking
+
+  $dark = $Cal->skyname;
+
+
+=cut
+
+sub skyname {
+  my $self = shift;
+  if (@_) { $self->{Sky} = shift unless $self->skynoupdate; }
+  return $self->{Sky};
+}
+
+
 =item dark
 
 Return (or set) the name of the current dark - 
