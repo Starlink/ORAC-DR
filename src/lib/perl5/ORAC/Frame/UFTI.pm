@@ -43,14 +43,14 @@ use strict;
 
 # Translation tables for UFTI shouldr go here
 my %hdr = (
-            ORAC_EXP_TIME  => "EXP_TIME",
-            ORAC_DECSCALE  => "CDELT2",
-            ORAC_GAIN      => "GAIN",
-            ORAC_RASCALE   => "CDELT1",
-            ORAC_TDECOFF   => "TDECOFF",
-            ORAC_TRAOFF    => "TRAOFF",
-            ORAC_UTEND     => "UTEND",
-            ORAC_UTSTART   => "UTSTART"
+            EXP_TIME  => "EXP_TIME",
+            DECSCALE  => "CDELT2",
+            GAIN      => "GAIN",
+            RASCALE   => "CDELT1",
+            TDECOFF   => "TDECOFF",
+            TRAOFF    => "TRAOFF",
+            UTEND     => "UTEND",
+            UTSTART   => "UTSTART"
 	  );
 
 # Take this lookup table and generate methods that can
