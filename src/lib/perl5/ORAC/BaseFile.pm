@@ -146,21 +146,21 @@ sub hdr {
     # recursion loops.
     my $hdr = $self->hdr();
 
-    if (scalar(@_) == 1) {
+    if (scalar(@_) eq 1) {
       # Return the value if we have a single argument
       my $key = shift;
       my $value = $hdr->{$key};
-      if (ref($value) == 'ARRAY') {
-	# multi-valued
-	if (wantarray) {
-	  return @$value;
-	} else {
-	  # Return the last element since that is what you
-	  # would get if you read the header as a hash
-	  return $value->[-1];
-	}
+      if (ref($value) eq 'ARRAY') {
+        # multi-valued
+        if (wantarray) {
+          return @$value;
+        } else {
+          # Return the last element since that is what you
+          # would get if you read the header as a hash
+          return $value->[-1];
+        }
       } else {
-	return $value;
+        return $value;
       }
     } else {
 
