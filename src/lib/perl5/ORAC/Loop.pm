@@ -54,7 +54,7 @@ The following loop facilities are available:
 =over 4
 
 
-=item orac_list
+=item orac_loop_list
 
 Takes a list of numbers and returns back a frame object 
 for each number (one frame object per call)
@@ -84,7 +84,7 @@ sub orac_loop_list {
 
 }
 
-=item orac_inf
+=item orac_loop_inf
 
 Checks for the frame stored in the first element of the supplied array
 and returns the Frame object if the file exists. The number is incremented
@@ -163,7 +163,7 @@ sub orac_loop_wait {
 
   # Now loop until the file appears
 
-  my $timeout = 60;  # 60 seconds time out
+  my $timeout = 600;  # 10 minutes time out
   my $timer = 0.0;
   my $pause = 2.0;   # Pause for 5 seconds
 
