@@ -52,19 +52,20 @@ my %hdr = (
 
 # then the spectroscopy.
             CONFIGURATION_INDEX => "CNFINDEX",
-            DETECTOR_INDEX  => "DINDEX",
-            DETECTOR_MODE   => "DETMODE",
-            DIM1            => "DCOLUMNS",
-            DIM2            => "DROWS",
-            GRATING_NAME    => "GRATNAME",
-            GRATING_ORDER   => "GRATORD",
-            GRATING_WAVELENGTH => "GRATPOS",
-            NSCAN_POSITIONS => "DETNINCR",
+            DETECTOR_INDEX      => "DINDEX",
+            DETECTOR_MODE       => "DETMODE",
+            DIM1                => "DCOLUMNS",
+            DIM2                => "DROWS",
+            GRATING_DISPERSION  => "GRATDISP",
+            GRATING_NAME        => "GRATNAME",
+            GRATING_ORDER       => "GRATORD",
+            GRATING_WAVELENGTH  => "GRATPOS",
+            NSCAN_POSITIONS     => "DETNINCR",
             NUMBER_OF_EXPOSURES => "NEXP",
-            SCAN_INCREMENT  => "DETINCR",
-            SLIT_ANGLE      => "SLITANG",
-            SLIT_NAME       => "SLITNAME",
-            UTDATE          => "TBD"
+            SCAN_INCREMENT      => "DETINCR",
+            SLIT_ANGLE          => "SLITANG",
+            SLIT_NAME           => "SLITNAME",
+            UTDATE              => "UTDATE"
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed by
@@ -77,6 +78,15 @@ ORAC::Frame::Michelle->_generate_orac_lookup_methods( \%hdr );
 # not appear in the above hash.  For example, the start time is that of
 # the first sub-image, and the end time that of the sub-image.  These
 # translation methods make use 
+
+sub _to_DETECTOR_INDEX {
+  my $self = shift;
+  $self->hdr->{ $self->nfiles }->{DINDEX};
+}
+
+sub _from_DETECTOR_INDEX {
+  "DINDEX", $_[0]->uhdr("ORAC_DETECTOR_INDEX");
+}
 
 sub _to_UTEND {
   my $self = shift;
@@ -163,6 +173,34 @@ sub new {
 This section describes sub-classed methods.
 
 =over 4
+
+=item B<findrecipe>
+
+Find the recipe name. If no recipe can be found from the
+'RECIPE' FITS keyword'QUICK_LOOK' is returned by default.
+
+The recipe name stored in the object is automatically updated using 
+this value.
+
+=cut
+
+sub findrecipe {
+
+  my $self = shift;
+
+  my $recipe = $self->hdr('RECIPE');
+
+  # Check to see whether there is something there
+  # if not try to make something up
+  if (! defined $recipe || length($recipe) == 0) {
+    $recipe = 'QUICK_LOOK';
+  }
+
+  # Update
+  $self->recipe($recipe);
+
+  return $recipe;
+}
 
 =back
 
