@@ -406,6 +406,9 @@ are keyed by observing mode:
  ALIGN  => 'SCUBA_ALIGN'
  FOCUS  => 'SCUBA_FOCUS'
 
+So called "wide" photometry is treated as a map (although this
+depends on the name of the jiggle pattern which may change).
+
 In future we may want to have a separate text file containing
 the mapping between observing mode and recipe so that
 we dont have to hard wire the relationship.
@@ -430,7 +433,13 @@ sub findrecipe {
   } elsif ($mode eq 'POINTING') {
     $recipe = 'SCUBA_POINTING';
   } elsif ($mode eq 'PHOTOM') {
-    $recipe = 'SCUBA_STD_PHOTOM';
+    # Special-case wide photometry. This test relies on the jiggle pattern
+    # name
+    if ($self->hdr->{JIGL_NAM} =~ /wide/) {
+      $recipe = 'SCUBA_JIGMAP';
+    } else {
+      $recipe = 'SCUBA_STD_PHOTOM';
+    }
   } elsif ($mode eq 'ALIGN') {
     $recipe = 'SCUBA_ALIGN';
   } elsif ($mode eq 'FOCUS') {
