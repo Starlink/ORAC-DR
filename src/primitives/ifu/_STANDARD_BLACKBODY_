@@ -1,0 +1,94 @@
+=head1 NAME
+
+_STANDARD_BLACKBODY_ - Divide a standard star spectrum by a blackbody model.
+
+=head1 DESCRIPTION
+
+This primitive 
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# Get the temperature from the headers.
+my $temp = $Grp->uhdr("TEMPERATURE");
+
+# If we have an actual temperature, proceed with the blackbody division.
+if( defined( $temp ) && $temp ne 'UNKNOWN' ) {
+
+# Get the base filename and the current group filename.
+  my $base = $Grp->raw;
+  my $in = $Grp->file;
+
+# Set up the output filename, which depends on the dimensions
+# of the group file. 1D is _sp_dbs, 2D is _im_dbs, 3D is
+# _cube_dbs.
+  my $out;
+  $Mon{'ndfpack_mon'}->obeyw("ndftrace", "ndf=$in");
+  my ( $ORAC_STATUS, @dims ) = $Mon{'ndfpack_mon'}->get("ndftrace", "dims");
+  if( defined( $dims[2] ) ) {
+    # We've got a cube.
+    $out = $base . "_cube_dbs";
+  } elsif( defined( $dims[1] ) ) {
+    # We've got an image.
+    $out = $base . "_im_dbs";
+  } else {
+    # We've got a spectrum.
+    $out = $base . "_sp_dbs";
+  }
+
+# Create a blackbody spectrum (temporary file for this).
+  my $bb = new ORAC::TempFile;
+  my $bbfile = $bb->file;
+
+# And another temporary file.
+  my $tmp = new ORAC::TempFile;
+  my $tmpfile = $tmp->file;
+
+# Copy the input spectrum into a temp file and make sure the Axis
+# label and units are such that FIGARO can understand them.
+  $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$tmpfile");
+  $Mon{'ndfpack_mon'}->obeyw("axlabel", "ndf=$tmpfile dim=1 label=Wavelength");
+  $Mon{'ndfpack_mon'}->obeyw("axunits", "ndf=$tmpfile dim=1 units=Micron");
+
+# Make the black body spectrum
+  $Mon{'figaro4'}->obeyw("bbody", "in=$tmpfile out=$bbfile temp=$temp logar=false");
+
+# This is in silly units (Jy/sr) Convert it to F-lambda back into the tmp file
+  $Mon{'figaro2'}->obeyw("fwconv", "spectrum=$bbfile flux_unit=erg output=$tmpfile");
+
+# Normalise it to 1 at the waveband centre.
+  my $gwlen = $Frm->uhdr("WAVEBAND_CENTRE");
+  if( $gwlen =~ /UNKNOWN/ ) {
+    $gwlen = $Frm->uhdr("ORAC_GRATING_WAVELENGTH");
+  }
+
+  $Mon{'kappa_mon'}->obeyw("stats", "ndf=$tmpfile($gwlen~1)");
+  (my $ORAC_STATUS, my $mean) = $Mon{'kappa_mon'}->get("stats", "mean");
+
+  $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tmpfile scalar=$mean out=$bbfile");
+
+# Bodge on a variance component
+  $Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$bbfile variance=0");
+
+# Divide by the black-body specrum
+  $Mon{'kappa_mon'}->obeyw("div", "in1=$in in2=$bbfile out=$out title=$out");
+  orac_print "$in to $out: Divided by Black Body Standard Star Model\n";
+  $Grp->file($out);
+
+} else {
+
+  orac_warn "Unable to determine temperature of standard. Will not divide by black body.\n";
+
+}
+
+
+orac_print "\n";
