@@ -33,24 +33,21 @@ foreach my $i (1 .. $Frm->nfiles) {
         my ($in, $out) = $Frm->inout ("_pov", $i);
 
         # Units of in are DN/exp
-        # Divide by the gain into a tmp file
-        $Mon{'kappa_mon'}->obeyw("cdiv", "in=$in scalar=$gain out=$tmpfile");
 
-        # Units in tmp are electrons per exp
-        $Mon{'kappa_mon'}->obeyw("cmult", "in=$tmpfile scalar=$nexp out=$tempfile");
+        # convert to total electrons - need to multiply by $gain and $nexp
+	my $factor = $gain * $nexp;
+        $Mon{'kappa_mon'}->obeyw("cmult", "in=$in scalar=$factor out=$tmpfile");
+        # Units in tmp are total electrons.
 
-        # Units of temp are total electrons
+        # Use setvar to set the variance array of the tmp file to be the Poisson variance
+        $Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$tmpfile variance=data");
 
-        # Use setvar to set the variance array of the temp file to be the Poisson variance
-        $Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$tempfile variance=data");
+        # tmp is now the total electons, with Poisson variance.
+	# We've thrown out the readnoise by doing the setvar on the tmp file
 
-        # temp is now the total electons, with Poisson variance
-        $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tempfile scalar=$nexp out=$tmpfile");
-        
-        # tmp is now electrons per exp, with poisson variance
-        $Mon{'kappa_mon'}->obeyw("cmult", "in=$tmpfile scalar=$gain out=$tempfile");
-
-        # temp is now DN/exp, with poisson variance
+	# Now convert the tmpfile back to DN per coadd
+        $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tmpfile scalar=$factor out=$tempfile");
+	# tempfile is now in DN per coadd, with poisson (only) variance
 
         # Now, we need to add the variance array of the temp file to that of
         # the $in file, and call it $out.
