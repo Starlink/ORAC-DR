@@ -583,7 +583,8 @@ sub image {
 
 =head1 SEE ALSO
 
-L<ORAC::Display::Base>, L<ORAC::Display::KAPVIEW>, L<ORAC::Display>
+L<ORAC::Display::Base>, L<ORAC::Display::KAPVIEW>, L<ORAC::Display>,
+L<IO::Socket>
 
 =head1 REVISION
 

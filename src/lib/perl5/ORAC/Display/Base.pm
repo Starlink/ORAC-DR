@@ -136,12 +136,13 @@ is the first time the routine is called (ie the only window
 name present is 'default', the name of the default window
 is associated with window win.). We go through this hoop
 so that devices will open a window before the user has associated
-there user-defined name with the actual window name.
+their user-defined name with the actual window name.
 
   $name = $self->window_dev('win');
 
 If the windows were launched with bad status we should 
-set the device name to something recongnisable as bad!.
+set the device name to something recognisable as bad
+since status is not returned.
 
 =cut
 
@@ -218,7 +219,7 @@ sub newdev {
 
 =head1 SEE ALSO
 
-ORAC::Display::GAIA, ORAC::Display::KAPVIEW
+L<ORAC::Display::GAIA>, L<ORAC::Display::KAPVIEW>
 
 =head1 REVISION
 
