@@ -213,7 +213,8 @@ sub configure {
 
   # Populate the header
   # for hds container set header NDF to be in the .header extension
-  my $hdr_ext = $self->file.".header";
+  my $hdr_ext = $self->file;
+  $hdr_ext .= ".header" if @Components;
 
   $self->readhdr($hdr_ext);
 
@@ -229,7 +230,6 @@ sub configure {
 
     # Strip the chop information
     (my $kluge = $comp) =~ s/BEAM[AB]$//;
-
     my ($href, $status) = fits_read_header($rootfile . ".$kluge");
     # Store the header associated with this subframe
     $self->hdr->{$i} = $href if $status == &NDF::SAI__OK;
