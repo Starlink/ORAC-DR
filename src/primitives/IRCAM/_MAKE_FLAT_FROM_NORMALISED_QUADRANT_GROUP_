@@ -1,0 +1,81 @@
+# _MAKE_FLAT_FROM_NORMALISED_QUADRANT_GROUP_    -*- perl -*-
+#
+# Forms a flat-field from a group of object frames.  Each member of the
+# group is expected to be masked in the quadrant containing the major
+# source, and be normalised to one of the frames.  The primitive uses
+# a median to combine pre-normalised frames pixel by pixel.
+#
+# TASK: CCDPACK - MAKECAL, KAPPA - CDIV, KAPPA - STATS
+#
+# This should only be performed on OBJECT frames.
+    if ($Frm->hdr(OBSTYPE) =~ /OBJECT/) {
+
+# Can generate a flat field when the the number of object frames is a
+# multiple of four.
+       if ( ($Grp->num + 1) % 4 == 0 ) {
+
+# Form a list of input file names for MAKECAL from the other members
+# of the group.  This is not as obvious as it sounds since we are
+# trying to do this by looking at the current file values for each
+# Frame object in the loop.  First time around everything is fine.
+# Second time around we realise that the previous frames now have the
+# wrong names since they have been flat-fielded etc.  We now have to
+# construct the input names from the template.  The template is the
+# current frame name.
+          $Grp->template($Frm->file);
+
+# Form a list of input file names for CCDPACK tasks.  Inquire the number
+# of files to be processed.  Set up the object list assuming that
+# everything in the Group members list contains the file pointer to
+# pre-flatfielded data.
+          @objects = $Grp->membernames;
+          $numfiles = $Grp->num + 1;
+          $objlist = join(",", @objects);
+
+# Create text file to hold the list of input files, one per line.  This
+# is needed because expanded lists of files may make the command line too
+# long for the ADAM message system.
+          unlink ("objlist.inlist");
+          open (INLIST, ">objlist.inlist");
+          for ( $i = 0; $i < $numfiles; $i++ ) {
+             print INLIST @objects[$i],"\n";
+          }
+          close (INLIST);
+
+# Assign the other parameters.  Note that output flat is hardwired for
+# the moment.
+          $uflat = $Grp->name."_uflat";
+          $header = "in='^objlist.inlist' out=$uflat";
+          $hidden = "sigmas=2.0 expose=1 reset accept"; 
+          $user = "method=median";
+
+# Median filter the intra-normalised and quadrant-masked frames to produce
+# an un-normalised flatfield.
+          $Mon{"ccdpack_red"}->obeyw("makecal","$header $user $hidden");
+          unlink ("objlist.inlist");
+
+# Obtain the mean of the combined frame.
+          $Mon{"kappa_mon"}->obeyw("stats","ndf=$uflat");
+
+# Extract the mean of the frame.
+          ($ORAC_STATUS, $mean) = $Mon{"kappa_mon"}->get("stats","mean");
+
+# Assign the parameters.  Note that output flat is hardwired for the moment.
+          $out = $Grp->name."_flat";
+          $header = "in=$uflat out=$out scalar=$mean title=\'Flat field\'";
+
+# Normalise the flat field to have a mean of one.
+          $Mon{"kappa_mon"}->obeyw("cdiv","$header");
+          unlink ($uflat.".sdf");
+
+# Set the current flat in the calibration object.
+          $Cal->flat($out);
+     
+# Report the status of the processing.
+          orac_print "Orac says: frames $objlist used for flat\n";
+
+# Display the image.
+          _DISPLAY_FLAT_IMAGE_
+
+       };
+    };

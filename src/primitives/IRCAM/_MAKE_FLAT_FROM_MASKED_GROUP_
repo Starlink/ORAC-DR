@@ -1,0 +1,63 @@
+#  _MAKE_FLAT_FROM_MASKED_GROUP_      -*-perl-*-
+#
+#  Makes a flat field of mostly blank sky.  It makes a flat from
+#  the group, applies it to the group, detects any objects, masks
+#  the objects, and recomputes the flat field.
+#  
+
+# Create a group based upon the current frame name.
+    $Grp->template($Frm->file);
+
+# Record the group members at this point.
+    @sky_names = $Grp->membernames;
+
+# Make a first pass at a flat using the jittered frames of the group.
+    _MAKE_FLAT_FROM_GROUP_
+
+# Reset the group names to be the ones to flat field.
+    $Grp->membernames(@sky_names);
+
+# Apply the flat field.
+    _DIVIDE_BY_FLAT_FROM_GROUP_
+
+# Save the current file name.
+    $current = $Frm->file;
+
+# Can generate a flat field when there are at least three sky frames.
+    if ( $Grp->num > 2 ) {
+
+# Create an array to store the names of the mask files. 
+       @maskfiles = ();
+       @ff_frames = $Grp->membernames;
+
+# Compute a mask of the objects for each member of the flat-field
+# group.
+       for ( $i = 0; $i <= $Grp->num; $i++ ) {
+          $frame = $ff_frames[$i];
+          $Frm->file($frame);
+          _MAKE_OBJECTS_MASK_
+
+# Record the list of maskfiles.
+          @maskfiles = (@maskfiles, $_MAKE_OBJECTS_MASK_{MASKFILE});
+       }
+
+# Mask the objects in each frame.
+       for ( $i = 0; $i <= $Grp->num; $i++ ) {
+          $Frm->file( @sky_names[$i] );
+          _MASK_OBJECTS_ MASKFILE=$maskfiles[$i]
+       }
+
+# Use the last frame created (the one with objects masked) as a template
+# to form the group.
+       $Grp->template($Frm->file);
+
+# Generate the new flat field using the jittered masked frames.
+       _MAKE_FLAT_FROM_GROUP_ 
+
+# Reset the group names to be the ones to flat field.
+       $Grp->membernames(@sky_names);
+
+    }
+
+# Restore the oiginal pipeline current file name.
+    $Frm->file($current);

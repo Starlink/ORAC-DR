@@ -1,0 +1,198 @@
+# _MAKE_OBJECTS_MASK_     -*- perl -*-
+#
+# Detects objects within an image (should be approximately flat-fielded)
+# and creates an ARD file to be used to mask the objects.
+#
+# TASK: KAPPA - GLITCH, MATHS, STATS; PISA - PISAFIND.
+#
+
+# Selection
+# =========
+
+# This should only be performed on OBJECT frames.
+    if ($Frm->hdr(OBSTYPE) =~ /OBJECT/) {
+
+# Note the root file name as the Frm->file will change during this
+# primitive.
+       $root = $Frm->file;
+
+# Perform inventory on the field
+# ==============================
+
+# Obtain the range of data values, the mean value, and the number
+# of bad pixels within the frame.
+       $in = $root;
+       $Mon{"kappa_mon"}->obeyw("stats","ndf=$in");
+       ($ORAC_STATUS, $wordmin) = $Mon{"kappa_mon"}->get("stats","minimum");
+       ($ORAC_STATUS, $wordmax) = $Mon{"kappa_mon"}->get("stats","maximum");
+       ($ORAC_STATUS, $mean) = $Mon{"kappa_mon"}->get("stats","mean");
+       ($ORAC_STATUS, $sigma) = $Mon{"kappa_mon"}->get("stats","sigma");
+       ($ORAC_STATUS, $numbad) = $Mon{"kappa_mon"}->get("stats","numbad");
+
+# Remove bad pixels
+# -----------------
+
+# PISAFIND cannot cope with bad pixels, so these must be substituted.
+       ($ORAC_STATUS, $numbad) = $Mon{"kappa_mon"}->get("stats","numbad");
+       if ( $numbad > 0 ) {
+
+# Generate the input and output file names.
+          ($indg,$outdg) =  $Frm->inout("_dg");
+
+# Remove the isolated bad pixels, replacing them with the median of the
+# surrounding pixels.
+          $header = "inpic=$indg outpic=$outdg again=f where=bad";
+          $Mon{"kappa_mon"}->obeyw("glitch","$header");
+
+# Record the new file name in the frame object.
+          $Frm->file($outdg);
+       }
+
+# Obtain the range of data values and count the number of bad pixels
+# within the frame.
+       $in = $Frm->file;
+       $Mon{"kappa_mon"}->obeyw("stats","ndf=$in");
+
+# There may be some residual bad pixels at the periphery.  Replace these
+# with the mean value, which should not bias the object detection
+# significantly.
+       ($ORAC_STATUS, $numbad) = $Mon{"kappa_mon"}->get("stats","numbad");
+       if ( $numbad > 0 ) {
+
+# Generate the input and output file names.
+          ($insbp,$outsbp) =  $Frm->inout("_sbp");
+
+# Substitute the bad pixels, replacing them with the average value
+# of the frame.
+          $header = "in=$insbp out=$outsbp repval=$mean";
+          $Mon{"kappa_mon"}->obeyw("nomagic","$header");
+
+# Record the new file name in the frame object.
+          $Frm->file($outsbp);
+       }
+
+# N.B. this may need some more work, say setting any remaining bad pixels to
+# the mode.
+
+# Scale the data
+# --------------
+
+# Scale the data to the range 0 to 32765 to keep the data within
+# the PISAFIND range. 
+       $wscale = 1.0;
+       $imin = nint($wordmin-0.5);
+       $imax = nint($wordmax);
+
+# Is an offset correction required?  After application the maximum must
+# not exceed the PISAFIND maximum.  We have shhaved off one to allow for
+# rounding.
+       if ( $imin < 0 && ( $imax - $imin ) <= 32765 ) {
+
+# Generate the input and output file names.
+          ($insc,$outsc) =  $Frm->inout("_sc");
+
+# Apply the offset so that the data are all positive.
+          $header = "in=$insc out=$outsc scalar=$wordmin";
+          $Mon{"kappa_mon"}->obeyw("csub","$header");
+
+# Record the new file name in the frame object.
+          $Frm->file($outsc);
+
+# Is scaling required?
+       } elsif ( $imin < 0 || $imax > 32765 ) {
+
+# Generate the input and output file names.
+          ($insc,$outsc) =  $Frm->inout("_sc");
+
+# Scale the data.
+          $wscale = 32765.0 / ($wordmax-$wordmin);
+          $header = "ia=$insc out=$outsc exp=$wscale*(IA-($wordmin))";
+          $Mon{"kappa_mon"}->obeyw("maths","$header");
+
+# Record the new file name in the frame object.
+          $Frm->file($outsc);
+       }
+
+# Locate the objects
+# ------------------
+
+# Generate the input file name.
+       $inpisa = $Frm->file;
+       orac_print "Orac says: Detecting objects in $inpisa\n";
+
+# Specify the PISAFIND parameters.  Use the standard deviation (albeit
+# unclipped) to specify the threshold, scaled to a new range, if
+# applicable.
+       $resfile = $root . ".res";
+       $minpix = ( $_MAKE_OBJECTS_MASK_{MINPIX} || 12 );
+       $thresh = min( 10, $sigma * $wscale );
+       $header = "in=$inpisa method=0 results=$resfile";
+       $hidden = "minpix=$minpix thresh=$thresh ismoo";
+
+# Derive an inventory of the images in $resfile.
+       $Mon{"pisa_mon"}->obeyw("pisafind","$header $hidden accept");
+ 
+# Remove any intermediate data file.  There is no problem if either NDF
+# does not exist.  This means the supplied flat-fielded image has no bad
+# pixels and all of its values lie within the range 0 to 32765.
+       unlink($outdg . ".sdf");    # Assumes NDF.
+       unlink($outsc . ".sdf");    # Assumes NDF.
+       unlink($outsbp . ".sdf");   # Assumes NDF.
+       unlink("pisafind.dat");     # Unused results file.
+
+# Read the results file into an array.  Obtain the number of objects.
+# Remove the results file.
+#       my $file = new IO::File("< $resfile");
+#       @lines = $file;
+#       $numobject = $#lines;
+#       ($numobject) = split(/\s+/, $lines[-1]);
+#       orac_print "Last line is: $lines[-1]\n";
+#       orac_print "*** number of objects is $numobject\n";
+#       undef $file;
+#       unlink($resfile);
+
+       open (RESFILE, "< $resfile");
+       @lines = <RESFILE>;
+       $numobject = $#lines + 1;
+       close (RESFILE);
+
+# Form the ARD file
+# =================
+
+# Generate the ARD file name using the raw frame name.  Export the file
+# for use by masking primitive.
+       $ardfile = $root . "_objects.ard";
+       $_MAKE_OBJECTS_MASK_{MASKFILE} = $ardfile;
+
+# Remove any existing ARD object file.
+       unlink ($ardfile);
+
+# Create an ARD file.
+       open (ARDFILE, "> $ardfile");
+
+# Read each line of the PISAFIND results file, and split the fields.
+       for ($ifd = 0; $ifd < $numobject; $ifd++) {
+          @fields = split(/\s+/, $lines[$ifd]);
+
+# Relevant fields are:
+# 2  x co-ordinate of centre
+# 3  y co-ordinate of centre
+# 5  number of pixels above the threshold
+# 7  ellipticity
+# 8  orientation measured in degrees anti-clockwise from y axis
+#
+# The first two can be used directly in the ARD description, but the
+# other three are used to generate the semi-major axes, and the ARD
+# ELLIPSE orientation.
+          $ea = sqrt($fields[5] / 3.14159 /max((1.0 - @fields[7]), 0.99999));
+          $ea = min($ea, 0.5 * $fields[5]);
+          $eb = $ea * (1.0 - $fields[7]);
+          $orient = ( $fields[8] - 90.0 ) % 360.0;
+
+#  Write the ARD description.
+          printf ARDFILE "ELLIPSE( %10.3f, %10.3f, %8.3f, %8.3f, %5.1f )\n",
+             $fields[2], $fields[3], $ea, $eb, $orient;
+       }
+       close (ARDFILE);
+
+    };
