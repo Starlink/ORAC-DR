@@ -69,7 +69,7 @@ sub rotation {
 
 =item B<mask>
 
-Return (or set) the name of the rotation transformation matrix
+Return (or set) the name of the bad-pixel mask.
 
   $mask = $Cal->mask;
 
