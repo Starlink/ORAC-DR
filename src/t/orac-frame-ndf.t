@@ -4,7 +4,7 @@
 
 use strict;
 use warnings;
-use Test::More tests => 12;
+use Test::More tests => 11;
 use ORAC::Constants qw/ ORAC__OK ORAC__ERROR/;
 
 # Need create_hdsobj
