@@ -16,6 +16,43 @@
 # primitive.
        $root = $Frm->file;
 
+# Locate the "central" circle
+# ===========================
+
+# We want to find where a bright point source or compact galaxy is usually
+# placed so the source can be fully masked.
+
+# Obtain the plate scales.
+       $xpixelscale =  $Frm->hdr( "CDELT1" );
+       $ypixelscale =  $Frm->hdr( "CDELT2" );
+
+# Derive the diameter of the occulting circle in arcseconds.
+       my $occultangle = ( $_MAKE_OBJECTS_MASK_{OCCULT} || 7 );
+
+# Find the occulting circle radius in pixels.
+       $occultpix = 0.5 * $occultangle / sqrt( $xpixelscale * $ypixelscale );
+
+# Obtain the telescope offsets.
+       $xoff = $Frm->hdr( "TRAOFF" );
+       $yoff = $Frm->hdr( "TDECOFF" );
+
+# Convert to pixel offsets.
+       $xoff = $xoff / $xpixelscale;
+       $yoff = -1.0 * $yoff / $ypixelscale;
+
+# Locate the centre of the frame by inquiring the frame's attributes.
+       $Mon{"ndfpack_mon"}->obeyw("ndftrace","ndf=$root");
+       ( $ORAC_STATUS, @lbnd ) = $Mon{"ndfpack_mon"}->get("ndftrace","lbound");
+       ( $ORAC_STATUS, @ubnd ) = $Mon{"ndfpack_mon"}->get("ndftrace","ubound");
+
+# Find the mid points.
+       $xmid = ( ( $lbnd[0] + $ubnd[0] ) / 2.0 );
+       $ymid = ( ( $lbnd[1] + $ubnd[1] ) / 2.0 );
+
+# Derive the centre co-ordinates of the box.
+       $xcentre = $xmid + $xoff;
+       $ycentre = $ymid + $yoff;
+
 # Perform inventory on the field
 # ==============================
 
@@ -146,7 +183,7 @@
 # applicable.
        $resfile = $root . ".res";
        $minpix = ( $_MAKE_OBJECTS_MASK_{MINPIX} || 12 );
-       $thresh = max( 3, min( 10, $wscale * ( $perc[1] - $perc[0] ) ) );
+       $thresh = max( 1.5, min( 10, $wscale * ( $perc[1] - $perc[0] ) ) );
        $header = "in=$inpisa method=0 results=$resfile";
        $hidden = "minpix=$minpix thresh=$thresh ismoo";
 
@@ -188,6 +225,12 @@
 
 # Create an ARD file.
           open (ARDFILE, "> $ardfile");
+
+# Create a circle mask around the central region to ensure that a bright
+# and possibly extended source is fully masked.  The faint outer parts are
+# occasionaly ignored by PISA.
+          printf ARDFILE "CIRCLE( %10.3f, %10.3f, %5.1f )\n",
+                $xcentre, $ycentre, $occultpix;
 
 # Read each line of the PISAFIND results file, and split the fields.
           for ($ifd = 0; $ifd < $numobject; $ifd++) {
