@@ -26,7 +26,8 @@ sub-class.
 
 =cut
 
-use 5.004;
+use 5.006;
+use warnings;
 use ORAC::Group;
 
 # Inherit from ORAC::Group

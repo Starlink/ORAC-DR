@@ -24,8 +24,9 @@ to B<ORAC::Group::JCMT> objects. Some additional methods are supplied.
 
 # A package to describe a UKIRT group object for the
 # ORAC pipeline
- 
-use 5.004;
+
+use 5.006;
+use warnings;
 use ORAC::Group::NDF;
 
 # Let the object know that it is derived from ORAC::Frame;

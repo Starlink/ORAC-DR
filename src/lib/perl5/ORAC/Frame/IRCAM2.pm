@@ -27,7 +27,8 @@ objects.
 # A package to describe a UFTI group object for the
 # ORAC pipeline
 
-use 5.004;
+use 5.006;
+use warnings;
 use vars qw/$VERSION/;
 use ORAC::Frame::UKIRT;
 use ORAC::Constants;

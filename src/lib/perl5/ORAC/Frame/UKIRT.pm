@@ -23,6 +23,9 @@ to B<ORAC::Frame::UKIRT> objects.
 
 =cut
 
+use 5.006;
+use strict;
+use warnings;
 
 # These are the UKIRT generic lookup tables
 my %hdr = (
@@ -57,7 +60,6 @@ ORAC::Frame::UKIRT->_generate_orac_lookup_methods( \%hdr );
 # A package to describe a UKIRT group object for the
 # ORAC pipeline
 
-use 5.004;
 use vars qw/$VERSION/;
 use ORAC::Frame::NDF;
 use ORAC::Constants;
@@ -70,7 +72,6 @@ use base qw/ORAC::Frame::NDF/;
 
 # standard error module and turn on strict
 use Carp;
-use strict;
 
 
 =head1 PUBLIC METHODS

@@ -26,12 +26,13 @@ sub-class.
 
 =cut
 
-use 5.004;
+use 5.006;
 use ORAC::Frame;
 
 # Inherit from ORAC::Group
 use base qw/ORAC::Frame/;
 
+use warnings;
 use strict;
 use Carp;
 use ORAC::Constants qw/:status/;

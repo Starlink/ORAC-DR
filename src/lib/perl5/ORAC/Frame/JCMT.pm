@@ -26,7 +26,8 @@ to B<ORAC::Frame::JCMT> objects. Some additional methods are supplied.
 # A package to describe a JCMT frame object for the
 # ORAC pipeline
 
-use 5.004;
+use 5.006;
+use warnings;
 use ORAC::Frame::NDF;
 use ORAC::Constants;
 use ORAC::Print;
