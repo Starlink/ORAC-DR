@@ -512,6 +512,13 @@ sub send_to_gaia {
       recv ($sock, my $reply1, 1, 0);
       return (ORAC__ERROR, "Error reading initial byte stream from GAIA socket: $!") if $!;
 
+      # Return with an error if the socket read returns a null string
+      # We could also delete the socket object but this will be done
+      # automatically when the next send fails. This is not pretty but
+      # is quicker than attempting to modify the class to support an
+      # undefined socket and automatic relaunching when the socket is undef.
+      return (ORAC__ERROR, "Read null string from GAIA socket. Assuming GAIA has died\n") if $reply1 eq '';
+
       # Jump out the loop if we have a newline
       last if $reply1 eq "\n";
 
@@ -547,6 +554,9 @@ sub send_to_gaia {
       recv ($sock, my $reply2, $recvbytes, 0);
       return (ORAC__ERROR, "Error reading data from GAIA socket: $!")
 	if $!;
+
+      # Return with an error if the socket read returns a null string
+      return (ORAC__ERROR, "Read null string from GAIA socket. Assuming GAIA has died\n") if $reply1 eq '';
 
       # Append the string
       $message .= $reply2;
