@@ -102,9 +102,25 @@ sub _to_DEC_TELESCOPE_OFFSET {
    } elsif ( exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} &&
              exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} ) {
 
-      my $pixscale = $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
-      my $x_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} * $pixscale;
-      my $y_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} * $pixscale;
+      my $pixscale = 0.148;
+      if ( exists $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"} ) {
+         $pixscale = $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
+      }
+
+# Sometimes the first cumulative offsets are non-zero contrary to the
+# documentation.
+      my $expno = 1;
+      if ( exists $self->hdr->{"HIERARCH.ESO.TPL.EXPNO"} ) {
+         $expno = $self->hdr->{"HIERARCH.ESO.TPL.EXPNO"};
+      }
+      my ( $x_as, $y_as );
+      if ( $expno == 1 ) {
+         $x_as = 0.0;
+         $y_as = 0.0;
+      } else {
+         $x_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} * $pixscale;
+         $y_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} * $pixscale;
+      }
 
 # Define degrees to radians conversion and obtain the rotation angle.
       my $dtor = atan2( 1, 1 ) / 45.0;
@@ -122,7 +138,7 @@ sub _to_DEC_TELESCOPE_OFFSET {
    return -1.0 * $decoffset;
 }
 
-# If the telescope ofset exists in arcsec, then use it.  Otherwise
+# If the telescope offset exists in arcsec, then use it.  Otherwise
 # convert the Cartesian offsets to equatorial offsets.
 sub _to_RA_TELESCOPE_OFFSET {
    my $self = shift;
@@ -133,9 +149,26 @@ sub _to_RA_TELESCOPE_OFFSET {
    } elsif ( exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} &&
              exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} ) {
 
-      my $pixscale = $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
-      my $x_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} * $pixscale;
-      my $y_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} * $pixscale;
+      my $pixscale = 0.148;
+      if ( exists $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"} ) {
+         $pixscale = $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
+      }
+
+# Sometimes the first cumulative offsets are non-zero contrary to the
+# documentation.
+      my $expno = 1;
+      if ( exists $self->hdr->{"HIERARCH.ESO.TPL.EXPNO"} ) {
+         $expno = $self->hdr->{"HIERARCH.ESO.TPL.EXPNO"};
+      }
+
+      my ( $x_as, $y_as );
+      if ( $expno == 1 ) {
+         $x_as = 0.0;
+         $y_as = 0.0;
+      } else {
+         $x_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} * $pixscale;
+         $y_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} * $pixscale;
+      }
 
 # Define degrees to radians conversion and obtain the rotation angle.
       my $dtor = atan2( 1, 1 ) / 45.0;
@@ -371,13 +404,16 @@ sub _to_RECIPE {
    } elsif ( $template =~ /ISAAC[SL]W_img_obs_AutoJitterOffset/ ) {
       $recipe = "CHOP_SKY_JITTER";
 
+# The following two perhaps should be using NOD_CHOP and a variant of
+# NOD_CHOP_APHOT to cope with the three source images (central double
+# flux) rather than four.
    } elsif ( $template eq "ISAACLW_img_obs_AutoChopNod" ||
              $seq eq "ISAACLW_img_obs_AutoChopNod" ) {
       $recipe = "NOD_SELF_FLAT_NO_MASK";
 
-   } elsif ( $template eq "ISAACLW_img_cal_Standard_Star" ||
-             $template =~ /^ISAACSW_img_tec_Zp/ ||
-             $seq eq "ISAACLW_img_cal_Standard_Star" ) {
+   } elsif ( $template eq "ISAACLW_img_cal_StandardStar" ||
+             $template =~ /^ISAACLW_img_tec_Zp/ ||
+             $seq eq "ISAACLW_img_cal_StandardStar" ) {
       $recipe = "NOD_SELF_FLAT_NO_MASK_APHOT";
 
    } elsif ( $template =~ /ISAAC[SL]W_img_cal_Darks/ ||
@@ -390,7 +426,8 @@ sub _to_RECIPE {
 # Imaging spectroscopy.  There appears to be no distinction
 # for flats from target, hence no division into POL_JITTER and
 # SKY_FLAT_POL.
-   } elsif ( $template eq "ISAACSW_img_obs_Polarimetry" ) {
+   } elsif ( $template eq "ISAACSW_img_obs_Polarimetry" ||
+             $template eq "ISAACSW_img_cal_Polarimetry" ) {
       $recipe = "POL_JITTER";
 
 # Spectroscopy.  EXTENDED_SOURCE may be more appropriate for
