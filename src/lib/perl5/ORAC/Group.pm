@@ -94,6 +94,7 @@ sub new {
 	       Header => {},
 	       Members => [],
 	       Name => undef,
+	       RawName => undef,
 	       Recipe => undef,
 	       UHeader => {},
 	       %subclass,
@@ -105,6 +106,7 @@ sub new {
   # Currently the argument will simply be the group name (ID)
 
   $group->name(shift) if @_;
+  $group->raw(shift) if @_;
 
   return $group;
 }
@@ -990,6 +992,25 @@ sub push {
     # Check frame membership
     $self->check_membership;
   }
+}
+
+
+=item B<raw>
+
+This method returns (or sets) the name of the raw data file
+associated with this object. In the context of a group, it is
+the name of the group file before any group level processing is
+done.
+
+  $Grp->raw("raw_data");
+  $filename = $Grp->raw;
+
+=cut
+
+sub raw {
+  my $self = shift;
+  if (@_) { $self->{RawName} = shift; }
+  return $self->{RawName};
 }
 
 =item B<readhdr>
