@@ -60,9 +60,11 @@ foreach my $line (<MASTER>) {
     }
 
     # This needs Paul's custom pod2latex to support the head1level option
-    system("./pod2latex --modify --head1level 4 $doc$pod");
+    system("/local/perl-5.6/bin/pod2latex --modify --h1level 4 $doc$pod")
+      && die "Error running pod2latex: $!";
 
-    open (LATEX,"$doc.tex");
+    open (LATEX,"$doc.tex")
+      or die "Could not open $doc.tex";
 
     print SUN <LATEX>;
 
