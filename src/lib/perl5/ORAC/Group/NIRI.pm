@@ -237,22 +237,38 @@ sub _to_WAVEPLATE_ANGLE {
 # Shift the bounds to GRID co-ordinates.
 sub _to_X_LOWER_BOUND {
    my $self = shift;
-   return nint( $self->hdr->{LOWCOL} + 1 );
+   my $bound = 1;
+   if ( exists( $self->hdr->{LOWCOL} ) ) {
+      $bound = nint( $self->hdr->{LOWCOL} + 1 );
+   }
+   return $bound;
 }
 
 sub _to_Y_LOWER_BOUND {
    my $self = shift;
-   return nint( $self->hdr->{LOWROW} + 1 );
+   my $bound = 1;
+   if ( exists( $self->hdr->{LOWROW} ) ) {
+      $bound = nint( $self->hdr->{LOWROW} + 1 );
+   }
+   return $bound;
 }
 
 sub _to_X_UPPER_BOUND {
    my $self = shift;
-   return nint( $self->hdr->{HICOL} + 1 );
+   my $bound = 1024;
+   if ( exists( $self->hdr->{HICOL} ) ) {
+      $bound = nint( $self->hdr->{HICOL} + 1 );
+   }
+   return $bound;
 }
 
 sub _to_Y_UPPER_BOUND {
    my $self = shift;
-   return nint( $self->hdr->{HIROW} + 1 );
+   my $bound = 1024;
+   if ( exists( $self->hdr->{HIROW} ) ) {
+      $bound = nint( $self->hdr->{HIROW} + 1 );
+   }
+   return $bound;
 }
 
 # Supplementary methods for the translations
