@@ -337,6 +337,8 @@ Currently only one filename can be associated with the group
 as first argument so as to provide compatibility with the
 display system).
 
+If raw() is undefined, it is set to this value when the filename is updated.
+
 =cut
 
 
@@ -354,6 +356,7 @@ sub file {
     my $arg = shift;
     $self->{File} = $self->stripfname($arg)
       unless ($arg =~ /^\d+$/ && $arg != 0); 
+    $self->raw($self->{File}) unless defined $self->raw;
   }
   return $self->{File};
 }
@@ -504,8 +507,26 @@ group identifier)
 
 sub name {
   my $self = shift;
-  if (@_) { $self->{Name} = shift;}
+  if (@_) { $self->{Name} = shift; }
   return $self->{Name};
+}
+
+=item B<raw>
+
+This method returns (or sets) the name of the raw data file
+associated with this object. In the context of a group, it is
+the name of the group file before any group level processing is
+done.
+
+  $Grp->raw("raw_data");
+  $filename = $Grp->raw;
+
+=cut
+
+sub raw {
+  my $self = shift;
+  if (@_) { $self->{RawName} = shift; }
+  return $self->{RawName};
 }
 
 
@@ -992,25 +1013,6 @@ sub push {
     # Check frame membership
     $self->check_membership;
   }
-}
-
-
-=item B<raw>
-
-This method returns (or sets) the name of the raw data file
-associated with this object. In the context of a group, it is
-the name of the group file before any group level processing is
-done.
-
-  $Grp->raw("raw_data");
-  $filename = $Grp->raw;
-
-=cut
-
-sub raw {
-  my $self = shift;
-  if (@_) { $self->{RawName} = shift; }
-  return $self->{RawName};
 }
 
 =item B<readhdr>
