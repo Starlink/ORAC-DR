@@ -25,4 +25,4 @@ RDOUT_Y1 == $Hdr{RDOUT_Y1}
 RDOUT_Y2 == $Hdr{RDOUT_Y2}
 
 # Ensure ORACTIME goes into the rules file
-ORACTIME
+ORACTIME ; abs(ORACTIME - $Hdr{ORACTIME}) < 1.0
