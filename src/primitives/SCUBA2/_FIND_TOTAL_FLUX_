@@ -1,14 +1,20 @@
 =head1 NAME
 
-_FIND_TOTAL_FLUX_ - Determine the peak signal of a point source
+_FIND_TOTAL_FLUX_ - Determine the total flux of a point source
 
 =head1 DESCRIPTION
 
-Finds the peak signal of a point source located at the map origin.
+Finds the total flux of a point source located at the map origin.
 No attempt is made to search for sources not located at approximately
 the map centre.
 
-The peak signal is determined by fitting a gamma function.
+The total flux is determined by fitting a Sersic profile to the source
+and then integrating underneath that profile using a standard integral
+solution. If the fit is poor (defined by the axis ratio falling
+outside a pre-defined range) then a stats-based method is used
+instead.
+
+Note that the C<Math::Gsl> module must be installed.
 
 =head1 ARGUMENTS
 
@@ -37,6 +43,10 @@ given to the user. Default is verbose (true).
 
 PSF, WCSFRAME
 
+=item Other SCUBA-2 primitives
+
+_FIND_INTEGRATED_INTENSITY_
+
 =back
 
 =head1 OUTPUT DATA
@@ -48,9 +58,9 @@ contains the following keys:
 
 =item RESULTS
 
-An array containing the peak signal for each sub-instrument.
-Contains C<undef> if the calculation did not complete sucessfully.
-Starts counting at 1.
+An array containing the total flux for each sub-instrument. Contains
+C<undef> if the calculation did not complete sucessfully.  Starts
+counting at 1.
 
 =back
 
@@ -60,13 +70,13 @@ The following files are created:
 
 =over 4
 
-=item C<log.peak>
+=item C<log.flux>
 
-Log of peak signals.
+Log of flux values.
 
 =back
 
-The frame object is not updated. Means no output file - write to Index file
+The frame object is not updated.
 
 =head1 AUTHOR
 
@@ -96,20 +106,17 @@ $_FIND_TOTAL_FLUX_{RESULTS} = [];
 # Initialise the log file if necessary
 my $log;
 if ($uselog) {
-  $log = new ORAC::LogFile("log.peak");
+  $log = new ORAC::LogFile("log.flux");
   my $time = gmtime();
   $log->header("Pointing log file - created on $time",
-               "\n#     Time   Filter    PeakFlux      TotalFlux    CSO El",
-             "------------------------------------------------------------------"
+               "\n#     Time   Filter        TotalFlux    CSO   El",
+             "----------------------------------------------------------"
             );
 
 }
 
-#my @filters = $Frm->filters;
-
-# Get the centroid and the peak at the centroid
+# Get the centroid
 _CENTROID_FRAME_ LOGFILE=0
-
 
 # Now Loop over frames
 for my $i (1.. $Frm->nfiles ) {
@@ -117,13 +124,15 @@ for my $i (1.. $Frm->nfiles ) {
   # Find the input file
   my $in = $Frm->file($i);
 
-  # we now run PSF if possible else simply use the peak from 
+  # we now run PSF if possible else simply use the peak position from
   # centroiding
   my $totalflux;
-  my $peak = $_CENTROID_FRAME_{RESULTS}->[$i]->[2]; # default peak
   if (starversion_lt('kappa', 'V0.15-0')) {
     # warn
-    orac_warn "Your kappa version is too old to use PSF properly. Using stats to find peak\n";
+    orac_warn "Your kappa version is too old to use PSF properly. Using stats to find total flux\n";
+    # Resort to stats method
+    _FIND_INTEGRATED_INTENSITY_ FRAME=$i VERBOSE=0 LOGFILE=0;
+    $totalflux = $_FIND_INTEGRATED_INTENSITY_{RESULTS} ;
 
   } else {
     # Need to make sure we are using a AXIS coordinate frame
@@ -138,39 +147,36 @@ for my $i (1.. $Frm->nfiles ) {
     my $args = "incat=! device=! cofile=$tmpfile";
 
     # Run PSF
-##    $Mon{kappa_mon}->obeyw("psf","norm=no range=4 isize=15 in=$in $args");
+    $Mon{kappa_mon}->obeyw("psf","norm=no range=4 isize=15 in=$in $args");
 
     # Retrieve the answer
     my $ORAC_STATUS;
-##    ( $ORAC_STATUS, my $amp)  = $Mon{kappa_mon}->get("psf","amp1");
-##    ( $ORAC_STATUS, my $axisr) = $Mon{kappa_mon}->get("psf","axisr");
-##    ( $ORAC_STATUS, my $fwhm) = $Mon{kappa_mon}->get("psf","fwhm");
-##    ( $ORAC_STATUS, my $gamma) = $Mon{kappa_mon}->get("psf","gamma");
+    ( $ORAC_STATUS, my $amp)  = $Mon{kappa_mon}->get("psf","amp1");
+    ( $ORAC_STATUS, my $axisr) = $Mon{kappa_mon}->get("psf","axisr");
+    ( $ORAC_STATUS, my $fwhm) = $Mon{kappa_mon}->get("psf","fwhm");
+    ( $ORAC_STATUS, my $gamma) = $Mon{kappa_mon}->get("psf","gamma");
 
     # Find the integrated intensity under the fitted PSF, given these parameters
     # The units will be in ...
 
-      _FIND_INTEGRATED_INTENSITY_ FRAME=$i VERBOSE=0 LOGFILE=0;
-      $totalflux = $_FIND_INTEGRATED_INTENSITY_{RESULTS} ;
+## Quick hack to test it runs since psf doesn't work on simulated data yet.
+##      _FIND_INTEGRATED_INTENSITY_ FRAME=$i VERBOSE=0 LOGFILE=0;
+##      $totalflux = $_FIND_INTEGRATED_INTENSITY_{RESULTS} ;
 
-##    $totalflux = integrate_psf($amp, $fwhm, $gamma);
-
-# Need some criteria for replacing this next statement group. Do we just integrate within
-# an aperture? Do we just report the peak?
-# No, should then go on to use an ap phot method like the old f-i-i
+    $totalflux = integrate_psf($amp, $fwhm, $gamma);
 
     # Check the axis ratio
-##    if ($axisr > 1.4 || $axisr < 0.75) {
-##      orac_warn "Axis ratio of source out of specification (was $axisr). Ignoring fit.\n";
+    if ($axisr > 1.4 || $axisr < 0.75) {
+      orac_warn "Axis ratio of source out of specification (was $axisr). Ignoring fit.\n";
 
-      # Use stats peak
-##      orac_warn "Using aperture photometry at centroid position for $in instead.\n";
+      # Use stats instead
+      orac_warn "Using aperture photometry at centroid position for $in instead.\n";
 
       # Call _FIND_INTEGRATED_INTENSITY_ primitive on the current image
-##       _FIND_INTEGRATED_INTENSITY_ FRAME=$i ;
-##      $totalflux = $_FIND_INTEGRATED_INTENSITY_{RESULTS} ;
+       _FIND_INTEGRATED_INTENSITY_ FRAME=$i VERBOSE=0 LOGFILE=0;
+      $totalflux = $_FIND_INTEGRATED_INTENSITY_{RESULTS} ;
 #      $totalflux = 1;
-##    }
+    }
   }
 
   # Store the result in the hash
@@ -183,7 +189,6 @@ for my $i (1.. $Frm->nfiles ) {
     my $time= sprintf "%12.3f", $Frm->hdr('ORACTIME');
 #    my $filt= sprintf "%4s",   $filters[$i-1];
     my $filt= sprintf "%4s",   "850";
-    $peak = sprintf "%9.2f", $peak;
     $totalflux = sprintf "%9.2f", $totalflux;
 
     # Get the tau
@@ -203,7 +208,7 @@ for my $i (1.. $Frm->nfiles ) {
     my $el = int (($Frm->hdr('STRT_ELD') + $Frm->hdr('END_ELD') ) /2.0 );
 
     # Write the entry
-    $log->addentry("$num $time $filt $peak $totalflux  $cso $el " . $Frm->hdr('OBJECT'));
+    $log->addentry("$num $time $filt $totalflux  $cso $el " . $Frm->hdr('OBJECT'));
 
   }
 
@@ -213,7 +218,7 @@ for my $i (1.. $Frm->nfiles ) {
 
 }
 
-orac_print "Calculated peak signal from map\n" if $verbose;
+orac_print "Calculated total signal from map\n" if $verbose;
 
 
 
