@@ -1,0 +1,53 @@
+# _ESTIMATE_PSF_
+#
+# Estimates the PSF of a standard star.
+#
+# TASK: KAPPA - CENTROID, PARGET, PSF
+#
+# This should only be performed on OBJECT frames.
+
+print colored ("PRIMITIVE: ESTIMATE_PSF\n",'magenta');
+$file = ($_ESTIMATE_PSF_{FILE} || ${main::File});
+
+if ($Hdr{OBSTYPE} =~ /OBJECT/) {
+
+# User-accessible mapping and parameters
+   $user = "";
+
+# Specify the other parameters for the CENTROID stage.
+   $header = "ndf=$file(~40,~40)";
+   $hidden = "mode=interface init=[128,128] cosys=w"; 
+
+# Find the centroid of the object.  For the moment start the search at
+# the frame centre.  The standard position may be displaced from this,
+# and should be written to the headers.
+   $Mon{"kappa_mon"}->obeyw("centroid","$header $user $hidden");
+#   print "Command was: centroid $header $user $hidden \n";
+
+# Store the located centroid within a text of the format PSF expects.
+# (There should be some rationalisation in KAPPA and CCDPACK to use
+# Clive Davenhall's small tables.  In that case this would be altered.)
+# The split of the centre parameter array has a leading space.  Put this
+# into a junk variable.
+#   @centre = `parget centre centroid`;
+   ($value, $status ) = $Mon{"kappa_mon"}->get("centroid:centre");
+   ($junk, @centre) = split(/\[|,|\]/, $value, 4);
+   open ( PSFIN, ">centre$$.dat" );
+   print PSFIN "@centre\n";
+   close ( PSFIN );
+
+# Assign the other parameters.
+   $psfname = ($_ESTIMATE_PSF_{PSF} || "psf$$");
+
+# Specify the other parameters for the PSF stage.
+   $header = "in=$file out=$psfname";
+   $hidden = "cut=1E-20 device=! cofile=centre$$.dat";
+
+# Calculate the psf, using the standard star alone.  Make an image of
+# the psf, which goes to a very low signal.  It's needed to compute the
+# light beyond the aperture.
+   $Mon{"kappa_mon"}->obeyw("psf","$header $user $hidden");
+#   print "Command was: psf $header $user $hidden \n";
+
+   print "Orac says: PSF of standard star in frame $file determined\n";
+};

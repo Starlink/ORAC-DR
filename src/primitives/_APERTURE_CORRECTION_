@@ -1,0 +1,67 @@
+# _APERTURE_CORRECTION_
+#
+# Determine the aperture photometric correction.
+#
+# TASK: KAPPA - STATS, PARGET, CALC, APERADD
+#
+# This should only be performed on OBJECT frames.
+
+print colored ("PRIMITIVE: APERTURE_CORRECTION\n",'magenta');
+
+if ($Hdr{OBSTYPE} =~ /OBJECT/) {
+
+# User-accessible mapping and parameters
+   $user = "";
+
+# Sum the flux within the fitted-psf image.  This should be only a
+# slight underestimate of the asymptotic flux.
+   $Mon{"kappa_mon"}->obeyw("stats","psf$$ accept ");
+#   $fullpsf = `parget total stats`;
+   ($fullpsf, $status ) = $Mon{"kappa_mon"}->get("stats:total");
+
+# Constrain supplied apertures.
+   $aperture_factor = ($_APERTURE_CORRECTION_{APERTURE} || "4.5");
+   if ( $aperture_factor < 3.0 ) { $aperture_factor = 3.0 };
+   if ( $aperture_factor > 8.0 ) { $aperture_factor = 8.0 };
+#   $aperture_factor = `calc exp="min(8.0,max($aperture_factor,3.0))"`;
+   $inner = ($_APERTURE_CORRECTION_{INNER} || "2.0");
+   $outer = ($_APERTURE_CORRECTION_{OUTER} || "4.0");
+   if ( $inner < 1.2 ) { $inner = 1.2 };
+   if ( $inner > 3.0 ) { $inner = 3.0 };
+   if ( $outer < $inner + 0.3 ) { $outer = 1.2 };
+   if ( $outer < 1.5 ) { $outer = 1.5 };
+   if ( $outer > 5.0 ) { $outer = 5.0 };
+
+#   $inner = `/star/bin/kappa calc exp="min(3.0,max($inner,1.2))"`;
+#   $outer = `/star/bin/kappa calc exp="min(5.0,max($inner+0.3,$outer,1.5))"`;
+
+# In order to keep the aperture correction small (like under 1 percent),
+# choose an aperture many times the FWHM of the psf.
+#   $fwhm = `parget fwhm psf`;
+   ($fwhm, $status ) = $Mon{"kappa_mon"}->get("psf:fwhm");
+
+#   $aperture = `calc exp="($fwhm)*$aperture_factor"`;
+   $aperture = $fwhm * $aperture_factor;
+#   $rapture = `calc exp="($aperture)*0.5"`;
+   $rapture = $aperture * 0.5;
+
+# Assign the other parameters.
+   $psfname = ($_APERTURE_CORRECTION_{PSF} || "psf$$");
+
+# Specify the other parameters for the CENTROID stage.
+   $header = "inpic=$psfname";
+   $hidden = "diam=$aperture";
+
+# Integrate the psf flux within the aperture about the image centre
+# (that's where PSF puts it).  Reset to get a new image centre.
+   $Mon{"kappa_mon"}->obeyw("aperadd","$header $user $hidden reset accept ");
+#   print "Command was: aperadd $header $user $hidden reset accept \n";
+
+# Compute the correction factor.
+#   $partpsf = `parget total aperadd`;
+   ($partpsf, $status ) = $Mon{"kappa_mon"}->get("aperadd:total");
+
+#   $correction = `calc exp="($fullpsf)/($partpsf)"`;
+   $correction = $fullpsf / $partpsf;
+   print "Aperture correction: $correction\n\n";
+};
