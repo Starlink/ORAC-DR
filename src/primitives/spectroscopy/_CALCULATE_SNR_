@@ -1,0 +1,85 @@
+=head1 NAME
+
+_CALCULATE_SNR_ - Display the Signal to Noise Ratio for a frame
+
+=head1 DESCRIPTION
+
+Calculates and optionally displays the signal to noise ration for a frame.
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+if ($Frm->uhdr("PAIR_COMPLETE")) {
+
+  my $in = $Grp->file;
+
+  # Simply add an _snr to the filename to denote signal to noise ratio
+  my $out = $in ."_snr";
+
+  # A generic temp file
+  my $tmp = new ORAC::TempFile;
+  my $tmpfile = $tmp->file;
+  $tmpfile = $in."_tmp"; 
+  
+  # A temp file to store the variance
+  my $var = new ORAC::TempFile;
+  my $varfile = $var->file;
+  $varfile = $in."_var"; 
+  
+  # A temp file to store the standard-deviation
+  my $sd = new ORAC::TempFile;
+  my $sdfile = $sd->file;
+  $sdfile = $in."_sd"; 
+  
+  # Another temp file to store the signal
+  my $sig = new ORAC::TempFile;
+  my $sigfile = $sig->file;
+  $sigfile = $in."_sig"; 
+  
+  # Patent-Pending horrible hack
+  my $ORAC_STATUS = ( create_hdsobj( $varfile, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+  $ORAC_STATUS = ( copy_hdsobj( "$in.VARIANCE", "$varfile.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
+
+  $ORAC_STATUS = ( create_hdsobj( $sigfile, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+  $ORAC_STATUS = ( copy_hdsobj( "$in.DATA_ARRAY", "$sigfile.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
+  $Mon{'ndfpack_mon'}->obeyw("setbad", "ndf=$sigfile");
+
+  # Form the standard deviation as the square root of the variance
+  $Mon{'kappa_mon'}->obeyw("pow", "in=$varfile power=0.5 out=$sdfile");
+ 
+  # Form the signal to noise ratio
+  $Mon{'kappa_mon'}->obeyw("div", "in1=$sigfile in2=$sdfile out=$out");
+  $Mon{'ndfpack_mon'}->obeyw("native", "object=$out");  
+
+  # Copy in an axis component etc
+  $Mon{'ndfpack_mon'}->obeyw("setaxis", "ndf=$out like=$in");
+  $Mon{'ndfpack_mon'}->obeyw("setbad", "ndf=$out");
+  orac_print "Signal-to-Noise Ratio spectrum of $in: $out\n";  
+
+  # Determine the statistics
+  $Mon{'kappa_mon'}->obeyw("stats", "ndf=$out");
+  ($ORAC_STATUS, my $mean) = $Mon{'kappa_mon'}->get("stats", "mean");
+  ($ORAC_STATUS, my $max) = $Mon{'kappa_mon'}->get("stats", "maximum");
+
+  $mean = sprintf("%.2f", $mean);
+  $max = sprintf("%.2f", $max);
+
+  orac_print "S/N ratio of $in: Mean=$mean, maximum=$max\n";
+
+  my $tmpGrp = new $Grp;
+  $tmpGrp->file($out);
+   
+  # Display the snr spectrum
+  $Display->display_data( $tmpGrp ) if defined $Display;
+
+  orac_print "\n";
+
+}
