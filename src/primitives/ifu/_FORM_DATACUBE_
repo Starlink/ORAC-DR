@@ -1,0 +1,56 @@
+(my $in, my $out) = $Frm->inout( "_cube" );
+
+my $n_slices = $Frm->uhdr("IFU_slices");
+
+# We're going to need some temporary files
+use ORAC::TempFile;
+
+my $ymin = 0;
+my $ymax = 60;
+
+# and some temporary files
+my $tmp=new ORAC::TempFile;
+my $tmp_slice = $tmp->file;
+
+# The first time through we want to force creation of a new datacube
+my $new = "t";
+
+my $param;
+
+orac_print "Forming datacube \n";
+
+for (my $n = 1; $n <= $n_slices; $n++) {
+    # Read the position of the nth slice as written into the headers
+
+    my $ystart = $Frm->uhdr("IFU_start_$n");
+    my $yend = $Frm->uhdr("IFU_end_$n");
+    my $xshift = $Frm->uhdr("IFU_xshift_$n");
+    my $yshift = $Frm->uhdr("IFU_yshift_$n");
+    
+    # Keep the user aware of progress
+    orac_print "Extracting slice. y1=$ystart  y2=$yend  yshift=$yshift \n";
+    
+    # Copy the area of the input frame containing the required slice
+    # to a temporary file.
+    $param = "in=$in(,$ystart:$yend) out=$tmp_slice";
+    $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
+
+    # Shift it in the y-direction
+    $param = "image=$tmp_slice xshift=$xshift yshift=$yshift xsplit=0 ysplit=2 output=$tmp_slice";
+    $Mon{"figaro1"}->obeyw( "ishift", "$param" );
+
+    $param = "$tmp_slice [0,0]";
+    $Mon{"ndfpack_mon"}->obeyw("setorigin", "$param");
+
+    # Grow it into the datacube
+    $param = "image=$tmp_slice cube=$out xstart=$n xend=$n new=$new xsize=$n_slices";
+    $Mon{"figaro1"}->obeyw( "growyt", "$param" );
+
+    # We no longer want to force the creation of a new datacube
+    $new="f";
+}
+
+
+
+
+

@@ -1,0 +1,108 @@
+# -*- perl -*-
+#+
+# _IFU_EXTRACT_SLICES_
+#
+# Extracts the slices from a raw IFU frame and shifts them in x
+# to the nearest pixel or so using the positions and shifts written
+# into the headers by _IFU_LOCATE_SLICES_
+#-
+
+(my $in, my $out) = $Frm->inout( "_ifu" );
+
+# Number of slices
+my $n_slices = $Frm->uhdr("IFU_slices");
+
+
+# We're going to need some temporary files
+use ORAC::TempFile;
+
+# Initialise some variables
+my $param;
+my $y_off = 1;
+my $slice;
+my $flag = 0;
+
+# and some temporary files
+my $tmp1=new ORAC::TempFile;
+my $tmp_paste = $tmp1->file;
+my $tmp2 = new ORAC::TempFile;
+my $tmp_slice = $tmp2->file;
+my @y1;
+my @y2;
+my @yshift;
+
+for (my $n = 1; $n <= $n_slices; $n++) {
+    # Find the nth slice
+
+    my $ystart = $Frm->uhdr("IFU_start_$n");
+    my $yend = $Frm->uhdr("IFU_end_$n");
+    my $xshift = $Frm->uhdr("IFU_xshift_$n");
+    $yshift[$n] = $Frm->uhdr("IFU_yshift_$n");
+    
+    # Keep the user aware of progress
+    orac_print "Extracting slice. y1=$ystart  y2=$yend \n";
+    
+    # Copy the area of the input frame containing the required slice
+    # to a temporary file.
+    $param = "in=$in(1:1024,$ystart:$yend) out=$tmp_slice title=IFU";
+    $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
+   
+    # Set its origin so that we can paste it into our output frame
+    # in the correct place.
+    $param = "$tmp_slice [$xshift,$y_off]";
+    $Mon{"ndfpack_mon"}->obeyw("setorigin", "$param");
+
+    # If this is not the first slice then paste it onto what we've
+    # already got (stored in the other temporary file) and write it
+    # to $out.
+    if ($flag) { 
+        $param = "$tmp_paste $tmp_slice out=$out";
+        $Mon{"kappa_mon"}->obeyw("paste", "$param");
+
+	# Copy the current $out to $tmp_paste for use next time round.
+	$param = "in=$out out=$tmp_paste";
+        $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
+    } else {
+	# If it is the first slice then just copy it to $tmp_paste
+	# ready for use next time round and set $flag to true.
+        $param = "in=$tmp_slice out=$tmp_paste";
+        $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
+	$flag = 1;
+    }
+
+    $y1[$n] = $y_off;
+
+    # y_off stores the y origin which should be used to paste the
+    # next slice into the final frame. Increment it by the height of the 
+    # slice we've just pasted.
+    $y_off += $yend - $ystart + 1;
+
+    $y2[$n] = $y1[$n] + $yend - $ystart;
+
+}
+
+# The end. Set the name of the output frame
+$Frm->file( $out );
+$Mon{"ndfpack_mon"}->obeyw("erase", "$out.axis ok=true");
+$Mon{"ndfpack_mon"}->obeyw("setbound", "$out(0:,)");
+
+# Write the new positions of the slice images into the headers for 
+# later use (xshift is now set to 0 because we've done that now).
+
+for (my $n=1 ; $n <= $n_slices; $n++) {
+    $Frm->uhdr( "IFU_start_$n" => "$y1[$n]",
+		"IFU_end_$n" => "$y2[$n]",	
+		"IFU_xshift_$n" => "0",
+		"IFU_yshift_$n" => "$yshift[$n]");
+}
+
+$Mon{'ndfpack_mon'}->obeyw("ndftrace", "$out");
+(my $ORAC_STATUS, my @dims) = $Mon{'ndfpack_mon'}->get("ndftrace", "dims");
+
+$Frm->uhdr("ORAC_X_DIM" => "$dims[0]", 
+           "ORAC_Y_DIM" => "$dims[1]"); 
+
+
+
+
+

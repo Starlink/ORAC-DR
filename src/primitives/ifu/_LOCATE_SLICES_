@@ -1,0 +1,75 @@
+# 		-*-perl-*-
+
+#+
+# _LOCATE_SLICES_
+#
+# Locates the IFU slices in a raw frame and writes their positions
+# into the USER header in the form IFU_start_1=..., IFU_end_1=...,
+# IFU_shift_1=... etc and the number of slices into IFU_slices
+#
+# The grism is identified using the GRISM1 and GRISM2 headers. This
+# is used to look up the y offset that must be applied to the positions
+# of the slices recorded in ifu_profile.dat
+#-
+
+use Env (ORAC_DATA_CAL);
+open(PROFILE, $ORAC_DATA_CAL . "/ifu_profile.dat");
+
+# Read the positions of the slices
+my @slice_data;
+ LINE: while (my $str = <PROFILE>) {
+     next LINE if $str eq "\n";
+     push @slice_data, [ split ' ', $str ] ;
+ }
+close PROFILE;
+
+# Set the y offset to be applied to all the y bounds (different for
+# each grism).
+
+my $grism1=$Frm->hdr("GRISM1");
+my $grism2=$Frm->hdr("GRISM2");
+my $grism;
+
+if ($grism1 ne "Open" && $grism2 eq "Open") {$grism=$grism1;}
+if ($grism1 eq "Open" && $grism2 ne "Open") {$grism=$grism2;}
+
+
+open(OFFSETS, $ORAC_DATA_CAL . "/grism_offset.dat");
+my $offset;
+my $name;
+
+ LINE2: while (my $str = <OFFSETS>) {
+     # Skip lines which don't start with the grism name
+     next LINE2 if (index ($str, $grism) < 0);
+     ($name, $offset) = split(' ' , $str);
+ }
+close OFFSETS;
+
+my $n = 0;
+
+# Loop through, writing the positions of each slice
+foreach my $slice (@slice_data) {
+    
+    $n++;
+    # Set the bounds and the shift using the data loaded earlier
+    my $y1 = $slice->[0] + $offset;
+    my $y2 = $slice->[1] + $offset;
+    my $xshift = $slice->[2];
+    my $yshift = $slice->[3];
+
+    $Frm->uhdr( "IFU_start_$n" => "$y1",
+		"IFU_end_$n" => "$y2",	
+		"IFU_xshift_$n" => "$xshift",
+		"IFU_yshift_$n" => "$yshift");
+}
+
+# Finally, write the number of slices into the header
+$Frm->uhdr( "IFU_slices" => "$n");
+
+
+
+
+
+
+
+
