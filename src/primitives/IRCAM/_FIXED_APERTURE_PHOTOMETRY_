@@ -6,6 +6,42 @@
 #
 #    _FIND_SOURCE_CENTROID_:        CENTRE
 
+#  Arguments:
+#     APERTURE = REAL (Given)
+#        The aperture in arcseconds for the photometry.  [6.0]
+#     INNER = REAL (Given)
+#        The ratio of the diameters of inner ring of the sky annulus to
+#        that of the object aperture (APERTURE).  It is constrained
+#        to be in the range 1.1 to 3.0.  The mode of the pixel values in 
+#        the annulus is used to subtract the sky for statistics 3) and 4)
+#        listed above.  [1.5]
+#     OUTER = REAL (Given)
+#        The ratio of the diameters of outer ring of the sky annulus to
+#        that of the object aperture (APERTURE).  It is constrained to be
+#        in the range 1.4 to 5.0 and be at least 0.3 greater than the
+#        inner scale factor of the annulus.  [2.5]
+#     POSITIVE = LOGICAL (Given)
+#        If 1 (true), the point source is positive, i.e. has values above
+#        the sky level.  If 0 (false), the point source is negative. [1]
+#     SKY_EST = INTEGER (Given)
+#        Sky estimations method as per AUTOPHOTOM parameter SKYEST. [3]
+#     SUFFIX = CHARACTER (Given)
+#        Suffix to be applied to the name of the frame in the log of
+#        the results.  It is usually not set.  The NOD recipes need it
+#        to discriminate between the positive and negative images.
+#        [""]
+#     XOFF = REAL (Given)
+#        The approximate x pixel offset of the centroid of the point
+#        source to be measured with respect to the nominal position.
+#        The nominal position is the y centre of the array plus the
+#        x telescope offset.  (It's plus because R.A. increases with
+#        negative x.)  [0.0]
+#     YOFF = REAL (Given)
+#        The approximate y pixel offset of the centroid of the point
+#        source to be measured with respect to the nominal position.
+#        The nominal position is the y centre of the array minus the
+#        telescope offset.  [0.0]
+
 # Input arguments recognised by this primitive:
 #    SKYEST, ZP, INNER, OUTER
 
@@ -15,6 +51,23 @@
 # on reduced images.
     my $do_aphot = $Frm->hdr( "DO_APHOT" );
     if ( $do_aphot ) {
+
+# Arguments
+# =========
+
+# Obtain the suffix value for the file name in the log.  Used
+# for NOD positive and negative images, but normally set to null
+       my $suffix = ( $_FIXED_APERTURE_PHOTOMETRY_{SUFFIX} || "" );
+
+# Process as positive or negative source.
+       my $positive = $_FIXED_APERTURE_PHOTOMETRY_{POSITIVE};
+       $positive = defined( $positive ) ? $positive : 1;
+
+# Obtain the offsets of the point-source images.
+       my $xoff = $_FIXED_APERTURE_PHOTOMETRY_{XOFF};
+       $xoff = defined( $xoff ) ? $xoff : 0.0;
+       my $yoff = $_FIXED_APERTURE_PHOTOMETRY_{YOFF};
+       $yoff = defined( $yoff ) ? $yoff : 0.0;
 
 # This should only be performed on OBJECT frames.
        if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ) {
@@ -44,8 +97,8 @@
 
 # Push the members of the existing group into the temporary group.  Exclude
 # any sky frames.
-          my $targrp = $Grp->subgrp( TARGET_OR_SKY => "target" );
-          $phoGrp->push( $targrp->members );
+          my $tarGrp = $Grp->subgrp( TARGET_OR_SKY => "target" );
+          $phoGrp->push( $tarGrp->members );
 
 # Push the temporary frame into the temporary group.  Note that the
 # Orac::Group class can contain anything.  However in ORAC-DR we want
@@ -88,6 +141,15 @@
                 }
                 if ( $filter =~ /^K/ ) {
                    $extinction = 0.07; $catcol = 2; last SWITCH;
+                }
+                if ( $filter =~ /^L'/ ) {
+                   $extinction = 0.10; $catcol = 4; last SWITCH;
+                }
+                if ( $filter =~ /^L/ ) {
+                   $extinction = 0.10; $catcol = 3; last SWITCH;
+                }
+                if ( $filter =~ /^M/ ) {
+                   $extinction = 0.10; $catcol = 5; last SWITCH;
                 }
                 $extinction = 0.0; $catcol = -1;
              }
@@ -170,7 +232,7 @@
 # Check that a match has been found.  Use a special value to indicate
 # a null magnitude.
                 if ( $recno > $#stds ) {
-                   orac_warn "Standard $objname has no tabulated JHK magnitudes in $fs_standards\n";
+                   orac_warn "Standard $objname has no tabulated $filter magnitude in $fs_standards\n";
                    $catmag = $nullmag;
                 } else {
 
@@ -199,7 +261,7 @@
 # ========================================================
 
 # Locate the image centre.
-             _FIND_SOURCE_CENTROID_
+             _FIND_SOURCE_CENTROID_ XOFF=$xoff YOFF=$yoff POSITIVE=$positive
              my $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
 
 # Obtain the aperture diameter in arcseconds.
@@ -208,8 +270,8 @@
 # Calculate the radius of the inner and outer extent of the aperture.
              my $inner = ( $_FIXED_APERTURE_PHOTOMETRY_{INNER} || 1.5 );
              my $outer = ( $_FIXED_APERTURE_PHOTOMETRY_{OUTER} || 2.5 );
-             $inner = min( 3.0, max( $inner, 1.2 ) );
-             $outer = min( 5.0, max( $inner + 0.3, $outer, 1.5 ) );
+             $inner = min( 3.0, max( $inner, 1.1 ) );
+             $outer = min( 5.0, max( $inner + 0.3, $outer, 1.4 ) );
 
 # Automatic photometry
 # ====================
@@ -234,10 +296,16 @@
 # Specify the other parameters for AUTOPHOTOM.  Strictly we should check the
 # headers for the readout mode
              my $header = "in=".$Frm->file." infile=photom$$.dat outfile=photom$$.res";
-             my $hidden = "nocentro padu=$padu biasle=0 photon=2 positive sature=12000 nousemask";
+             my $hidden;
+             if ( $positive ) {
+                $hidden = "nocentro padu=$padu biasle=0 photon=2 positive sature=12000 nousemask";
+             } else {
+                $hidden = "nocentro padu=$padu biasle=0 photon=2 nousemags nopositive sature=12000 nousemask";
+             }
 
 # Perform the photometry, however, for this case compute a centroid
 # about which to integrate.
+# Use different modes of AUTOPHOTOM if the source is negative.
              $Mon{"photom_mon"}->obeyw("autophotom","$header $user $hidden");
 
 # Extract and present the results.
@@ -253,11 +321,23 @@
 # exposure time.  The magnitude returned by AUTOPHOTOM is calculated
 # using the expression -2.5log10( photons/s ).  However, the UKIRT
 # standard is to use -2.5log10( counts/s ), so correct the instrumental
-# magnitude by the ADU factor, and convert the sky level back to counts.
-             my $magnorm = $results[0] + 2.5 * log10( $exptime * $padu );
-             my $magerr = $results[1];
-             my $sky_level = $results[2] / $padu;
-             my $errcode = $results[4];
+# magnitude by the ADU factor.
+             my ( $errcode, $magerr, $magnorm, $sky_level );
+             $errcode = $results[4];
+             if ( $positive ) {
+                $magnorm = $results[0] + 2.5 * log10( $exptime * $padu );
+                $magerr = $results[1];
+
+# Convert from counts to magnitudes for negative sources.  Add in zero
+# point which is ignored when parameter usemags is false.
+             } else {
+                $magnorm = -2.5 * ( log10( abs( $results[3] ) ) -
+                                    log10( $exptime * $padu ) ) + $zp;
+                $magerr = 1 - 10 ** ( -0.4 * abs( $results[1] / $results[0] ) );
+             }
+
+# Convert the sky level back to counts.
+             $sky_level = $results[2] / $padu;
 
 # Correct for the mean extinction.
              my $magext = $magnorm - $extcor;
@@ -267,9 +347,12 @@
              $outer = $outer * $as_aperture;
 
 # Format the results to give a sensible number of significant figures.
-             my ( $fs_mag, $fs_sky, $fs_airmass, $fs_apdiam, $fs_inner, $fs_outer );
+             my ( $fs_mag, $fs_err, $fs_sky, $fs_airmass, $fs_apdiam );
+             my ( $fs_inner, $fs_outer );
              $fs_mag = sprintf( "%7.3f", $magnorm );
              $fs_mag =~ s/ //g;
+             $fs_err = sprintf( "%6.3f", $magerr );
+             $fs_err =~ s/ //g;
              $fs_sky = sprintf( "%9.3f", $sky_level );
              $fs_sky =~ s/ //g;
              $fs_airmass = sprintf( "%6.4f", $extcor );
@@ -288,12 +371,12 @@
 
 # Print the results.
              orac_print "\n";
-             orac_print "Frame:                  ".$Frm->file."\n";
+             orac_print "Frame:                  ".$Frm->file.$suffix."\n";
              orac_print "Filter:                 $filter\n";
              if ( $errcode ne "OK" ) {
-                orac_print "Instrumental Magnitude: $fs_mag +/- $magerr (error $errcode)\n";
+                orac_print "Instrumental Magnitude: $fs_mag +/- $fs_err (error $errcode)\n";
              } else {
-                orac_print "Instrumental Magnitude: $fs_mag +/- $magerr\n";
+                orac_print "Instrumental Magnitude: $fs_mag +/- $fs_err\n";
              }
              orac_print "Airmass correction:     $fs_airmass\n";
              if ( $catmag < $nullmag ) {
@@ -316,7 +399,7 @@
 # matching the STL format when the keywords are present.
              printf LOGFILE ( "%19s %12s %8.5f %7s %5.3f %7.3f %7.3f %6.3f %2s %5.1f".
                               "%5.1f %5.1f %8.2f %1s %6.3f %6.3f %6.3f \n",
-             $Frm->file, $objname, $ut, $filter, $airmass, $magnorm,
+             $Frm->file.$suffix, $objname, $ut, $filter, $airmass, $magnorm,
              $magext, $magerr, $errcode, $as_aperture, $inner, $outer,
              $sky_level, $incflag, $catmag, $magdif, $magdif_ext );
 
