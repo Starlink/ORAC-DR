@@ -63,6 +63,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.2  2003/10/01 01:31:00  phirst
+#     setenv stuff
+#
 #     Revision 1.1  2003/01/22 11:54:49  jrl
 #     Initial Entry
 #
@@ -113,6 +116,7 @@ setenv ORAC_INSTRUMENT UFTI_CASU
 setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/ufti/$oracut/
 setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/ufti/$oracut/
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/ufti_casu
+setenv PERL5LIB ${ORAC_PERL5LIB}:/ukirt_sw/cirdr/perlinstall
 
 # screen things
 setenv ORAC_PERSON jrl
