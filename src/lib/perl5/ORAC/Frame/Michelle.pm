@@ -64,11 +64,9 @@ my %hdr = (
 # then the general.
             CHOP_ANGLE           => "CHPANGLE",
             CHOP_THROW           => "CHPTHROW",
-            DETECTOR_READ_TYPE   => "DETMODE",
             EXPOSURE_TIME        => "EXP_TIME",
             GAIN                 => "GAIN",
             NUMBER_OF_READS      => "NREADS",
-            OBSERVATION_MODE     => "CAMERA"
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed by
@@ -88,6 +86,7 @@ ORAC::Frame::Michelle->_generate_orac_lookup_methods( \%hdr );
 
 sub _to_DETECTOR_INDEX {
   my $self = shift;
+
   if( exists( $self->hdr->{ $self->nfiles } ) && exists( $self->hdr->{ $self->nfiles }->{DINDEX} ) ) {
     $self->hdr->{ $self->nfiles }->{DINDEX};
   }
@@ -96,6 +95,27 @@ sub _to_DETECTOR_INDEX {
 sub _from_DETECTOR_INDEX {
   "DINDEX", $_[0]->uhdr("ORAC_DETECTOR_INDEX");
 }
+
+# Allow for changing FITS headers by date.
+sub _to_DETECTOR_READ_TYPE {
+  my $self = shift;
+
+  my $ut = $self->hdr->{UTDATE};
+  if( !defined( $ut ) ) {
+    $ut = 0;
+  } else {
+    $ut =~ s/-//g;
+  }
+  my $read_type;
+  if( $ut < 20040206 ) {
+    $read_type = $self->hdr->{DETMODE};
+  } else {
+    $read_type = $self->hdr->{DET_MODE};
+  }
+
+  return $read_type;
+}
+
 
 # Cater for early data with missing headers.
 sub _to_NUMBER_OF_OFFSETS {
@@ -142,6 +162,26 @@ sub _to_OBJECT {
       }
    }
    return $object;
+}
+
+# Allow for changing FITS headers by date.
+sub _to_OBSERVATION_MODE {
+  my $self = shift;
+
+  my $ut = $self->hdr->{UTDATE};
+  if( !defined( $ut ) ) {
+    $ut = 0;
+  } else {
+    $ut =~ s/-//g;
+  }
+  my $mode;
+  if( $ut < 20040206 ) {
+    $mode = $self->hdr->{CAMERA};
+  } else {
+    $mode = $self->hdr->{INSTMODE};
+  }
+
+  return $mode;
 }
 
 # Cater for early data with missing values.
