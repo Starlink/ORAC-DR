@@ -8,7 +8,7 @@ use Test::More tests => 11;
 use ORAC::Constants qw/ ORAC__OK ORAC__ERROR/;
 
 # Need create_hdsobj
-use Starlink::HDSPACK 1.7;
+use Starlink::HDSPACK 1.12;
 
 require_ok("ORAC::Frame::NDF");
 
