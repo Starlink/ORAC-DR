@@ -489,7 +489,15 @@ sub orac_loop_flag {
   # The flag has appeared therefore we believe the file is there as well.
   # Link_and_read
   # A new $Frm is created and the file is converted to our base format (NDF).
-  $Frm = link_and_read($class, $utdate, $obsno, 1);
+  eval {
+    $Frm = link_and_read($class, $utdate, $obsno, 1);
+  };
+  if ($@) {
+    # that failed. This may indicate a sync issue so pause
+    # for a couple of seconds and retry without the eval
+    orac_sleep(2);
+    $Frm = link_and_read($class, $utdate, $obsno, 1);
+  }
 
   # Now need to increment obsnum for next time round
   $$obsref[0]++;
