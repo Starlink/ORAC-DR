@@ -12,7 +12,7 @@ ORAC::Msg::ADAM::Shell - Run ADAM tasks from unix shell
 
   $status           = $kap->obeyw("task", "params");
   $status           = $kap->set("task", "param","value");
-  ($value, $status) = $kap->get("task", "param");
+  ($status, @values) = $kap->get("task", "param");
   ($dir, $status)   = $kap->control("default","dir");
   $kap->control("par_reset");
   $kap->resetpars;
@@ -49,7 +49,7 @@ use NDF;
 use File::Basename;
 
 # Safe current directory
-use Cwd;
+use Cwd qw/getcwd/;
 
 # Retrieve the status constants
 use ORAC::Constants qw/:status/;
@@ -226,7 +226,7 @@ sub obeyw {
   my $self = shift;
 
   my $task = shift;
-  my $args = shift;
+  my $args = shift || " ";
 
   my $command = $self->path . "/" . $task;
 
