@@ -53,5 +53,7 @@ if ($script == "none") then
     echo "You must be logged onto a wfcamdr machine for oracdr_wfcam to work"
     echo "Otherwise, use oracdr_wfcamN where N=camera number"
 else 
+   # This seems to help...
+   setenv HDS_MAP 0
    source ${ORAC_DIR}/etc/$script $1 $2 $3 $4
 endif
