@@ -47,13 +47,98 @@ use vars qw/$VERSION/;
 # Translation tables for UIST should go here.
 # First the imaging...
 my %hdr = (
-	   # Assume identical headers to Michelle
+            DEC_SCALE            => "PIXLSIZE",
+            DEC_TELESCOPE_OFFSET => "TDECOFF",
+            GAIN                 => "GAIN",
+            RA_SCALE             => "PIXLSIZE",
+            RA_TELESCOPE_OFFSET  => "TRAOFF",
+
+# then the spectroscopy...
+            CONFIGURATION_INDEX  => "CNFINDEX",
+            GRATING_DISPERSION   => "DISPERSN",
+            GRATING_NAME         => "GRISM",
+            GRATING_ORDER        => "GRATORD",
+            GRATING_WAVELENGTH   => "CENWAVL",
+            SLIT_ANGLE           => "SLITANG",
+            SLIT_NAME            => "SLITNAME",
+            UTDATE               => "UTDATE",
+            X_DIM                => "DCOLUMNS",
+            Y_DIM                => "DROWS",
+
+# then the general.
+            CHOP_ANGLE           => "CHPANGLE",
+            CHOP_THROW           => "CHPTHROW",
+            DETECTOR_READ_TYPE   => "DET_MODE",
+            OBSERVATION_MODE     => "INSTMODE"
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed by
 # other instruments.  Have to use the inherited version so that the new
 # subs appear in this class.
 ORAC::Frame::UIST->_generate_orac_lookup_methods( \%hdr );
+
+sub _to_DETECTOR_READ_TYPE {
+  my $self = shift;
+  $self->hdr->{ $self->nfiles }->{DET_MODE};
+}
+
+sub _from_DETECTOR_READ_TYPE {
+  "DET_MODE", $_[0]->uhdr("ORAC_DETECTOR_READ_TYPE");
+}
+
+sub _to_EXPOSURE_TIME {
+  my $self = shift;
+  $self->hdr->{ $self->nfiles }->{EXP_TIME};
+}
+
+sub _from_EXPOSURE_TIME {
+  "EXP_TIME", $_[0]->uhdr("ORAC_EXPOSURE_TIME");
+}
+
+sub _to_GAIN {
+  my $self = shift;
+  $self->hdr->{ $self->nfiles }->{GAIN};
+}
+
+sub _from_GAIN {
+  "GAIN", $_[0]->uhdr("ORAC_GAIN");
+}
+
+sub _to_NUMBER_OF_EXPOSURES {
+  my $self = shift;
+  $self->hdr->{ $self->nfiles }->{NEXP};
+}
+
+sub _from_NUMBER_OF_EXPOSURES {
+  "NREADS", $_[0]->uhdr("ORAC_NUMBER_OF_EXPOSURES");
+}
+
+sub _to_NUMBER_OF_READS {
+  my $self = shift;
+  $self->hdr->{ $self->nfiles }->{NREADS};
+}
+
+sub _from_NUMBER_OF_READS {
+  "NREADS", $_[0]->uhdr("ORAC_NUMBER_OF_READS");
+}
+
+sub _to_NSCAN_POSITIONS {
+  1;
+}
+
+# Sampling is always 1x1, and therefore there are no headers with
+# these values.
+sub _from_NSCAN_POSITIONS {
+  "DETNINCR", 1;
+}
+
+sub _to_SCAN_INCREMENT {
+  1;
+}
+
+sub _from_SCAN_INCREMENT {
+  "DETINCR", 1;
+}
 
 
 =head1 PUBLIC METHODS
