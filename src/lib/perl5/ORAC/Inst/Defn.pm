@@ -89,7 +89,8 @@ END {
 # These should be set to directories that have been created
 # by File::Temp so that they will be tidied automatically
 
-BEGIN { # A kluge - for some reason kapview does not pick up the
+BEGIN { 
+  # A kluge - for some reason kapview does not pick up the
   # correct environment if I leave out the BEGIN block
   # dont understand since the environment is passed to the forked
   # process...
@@ -537,6 +538,41 @@ sub orac_configure_for_instrument {
 
              last SWITCH; }
 
+     if ( $instrument eq "IRCAM (old)" ) {
+
+             # Instrument
+             $ENV{"ORAC_INSTRUMENT"} = "IRCAM";
+
+             # Calibration information
+             $orac_cal_root = "/ukirt_sw/oracdr_cal"
+                     unless defined $orac_cal_root;
+             $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"ircam");
+				
+             # Recipie and Primitive
+             #undef $ENV{"ORAC_RECIPE_DIR"} 
+             #        if defined $ENV{"ORAC_RECIPE_DIR"};
+             #undef $ENV{"ORAC_PRIMITIVE_DIR"} 
+             #        if defined $ENV{"ORAC_PRIMITIVE_DIR"};
+
+             # data directories
+             $orac_data_root = "/ukirtdata"
+                     unless defined $orac_data_root;
+
+             $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+	                                                "raw","ircam", $oracut);
+             $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir($orac_data_root,
+	                                             "reduced","ircam",$oracut)
+				     unless defined $$options{"honour"};
+
+             # misc
+             $ENV{"ORAC_PERSON"} = "mjc";
+             $ENV{"ORAC_SUN"} = "232";
+             if (Net::Domain->domainname =~ "ukirt"  ) {
+                  $options->{"loop"} = "flag";
+             }
+
+             last SWITCH; }
+	     
      if ( $instrument eq "SCUBA" ) {
 
              # Instrument
@@ -687,7 +723,43 @@ sub orac_configure_for_instrument {
 
              last SWITCH; }
 
-     my $nothing = 1;
+     if ( $instrument eq "UFTI (old)" ) {
+
+             # Instrument
+             $ENV{"ORAC_INSTRUMENT"} = "UFTI";
+
+             # Calibration information
+             $orac_cal_root = File::Spec->catdir("ukirt_sw","oracdr_cal")
+		     unless defined $orac_cal_root;
+             $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"ufti");
+				
+             # Recipie and Primitive
+             #undef $ENV{"ORAC_RECIPE_DIR"} 
+             #        if defined $ENV{"ORAC_RECIPE_DIR"};
+             #undef $ENV{"ORAC_PRIMITIVE_DIR"} 
+             #        if defined $ENV{"ORAC_PRIMITIVE_DIR"};
+
+             # data directories
+             $orac_data_root = "/ukirtdata"
+                     unless defined $orac_data_root;
+
+             $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+	                                                "raw","ufti",$oracut);
+             $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir($orac_data_root,
+	                                              "reduced","ufti",$oracut)
+				     unless defined $$options{"honour"};
+
+             # misc
+             $ENV{"ORAC_PERSON"} = "mjc";
+             $ENV{"ORAC_SUN"} = "232";
+             if (Net::Domain->domainname =~ "ukirt"  ) {
+                  $options->{"loop"} = "flag";
+             }           
+
+             last SWITCH; }
+
+     orac_err(" Instrument $instrument is not currently supported by Xoracdr\n");
+
   }
 
 }
