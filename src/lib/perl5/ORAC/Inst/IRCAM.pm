@@ -71,7 +71,7 @@ for this instrument.
 
 sub return_possible_calibrations {
   my $self = shift;
-  return ( "bias", "dark", "flat" );
+  return ( "bias", "dark", "flat", "mask", "sky", "badobs", "readnoise", "referenceoffset" );
 
 }
 
@@ -88,7 +88,8 @@ $Id$
 =head1 AUTHORS
 
 Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>,
-Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>.
 
 =head1 COPYRIGHT
 
