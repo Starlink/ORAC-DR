@@ -263,6 +263,8 @@ Returns $in and $out in an array context:
 
    ($in, $out) = $Frm->inout($suffix);
 
+   ($in,$out) = $Frm->inout($suffix,2);
+
 =cut
 
 sub inout {
@@ -309,8 +311,26 @@ sub inout {
   # reattach it and create an HDS container *IF* NFILES is greater than 1
   # If NFILES equals 1 
   if (defined $rest && $nfiles > 1) {
-    unless (-e $outfile.".sdf") {
-      my ($loc,$status);
+
+    my ($loc,$status);
+    $status = &NDF::SAI__OK;
+
+    if (-e $outfile.".sdf") {
+      
+      err_begin($status);
+      hds_open($outfile, 'UPDATE', $loc, $status);
+
+      dat_there($loc, $rest, my $there, $status);
+      if ($there) {
+	dat_erase($loc, $rest, $status);
+      };
+
+      dat_annul($loc, $status);
+      err_end($status);
+
+
+    } else {
+
       my @null = (0);
       
       hds_new ($outfile,substr($outfile,0,9),"MICHELLE_HDS",0,@null,$loc,$status);
