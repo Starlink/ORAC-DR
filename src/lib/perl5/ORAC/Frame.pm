@@ -144,9 +144,20 @@ The stripfname method is invoked on the file.
 
 =cut
 
+# Modify so that a number can be supplied even if it is currently
+# ignored. At some point the more general SCUBA routines will
+# be copied across. Note that this change is needed so that the
+# display system can be generalised (since it asks for the Nth
+# file - where N can be 1 to num_files.).
+
+
 sub file {
   my $self = shift;
-  if (@_) { $self->{File} = $self->stripfname(shift); }
+  if (@_) { 
+    my $arg = shift;
+    $self->{File} = $self->stripfname(shift)
+      unless ($arg =~ /^\d+$/ && $arg != 0); 
+  }
   return $self->{File};
 }
 
