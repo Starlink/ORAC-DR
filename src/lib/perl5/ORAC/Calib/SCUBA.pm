@@ -228,9 +228,33 @@ $DEBUG = 0; # Turn off debugging mode
 		     BEAM  => 196,
 		    },
 		    {
-		     START => 20030917, # Open ended
-		     ARCSEC=> 0.81,
-		     BEAM  => 203,
+		     START => 20030917,
+		     END   => 20031019,
+		     ARCSEC=> 0.78,
+		     BEAM  => 201,
+		    },
+		    {
+		     START => 20031020,
+		     END   => 20031231,
+		     ARCSEC=> 0.83,
+		     BEAM  => 216,
+		    },
+		    {
+		     START => 20040101,
+		     END   => 20040212,
+		     ARCSEC=> 0.84,
+		     BEAM  => 218,
+		    },
+		    {
+		     START => 20040213,
+		     END   => 20040404,
+		     ARCSEC=> 0.85,
+		     BEAM  => 231,
+		    },
+		    {
+		     START => 20040405, # SCUBA shutdown
+		     ARCSEC=> 0.78,
+		     BEAM  => 201,
 		    },
 
 		   ],
@@ -308,10 +332,33 @@ $DEBUG = 0; # Turn off debugging mode
 		    },
 		    {
 		     START  => 20030823,
-		     ARCSEC => 2.77,
-		     BEAM => 286,
+		     END    => 20031019,
+		     ARCSEC => 2.72,
+		     BEAM => 316,
 		    },
-
+		    {
+		     START  => 20031020,
+		     END    => 20031231,
+		     ARCSEC => 3.2,
+		     BEAM => 379,
+		    },
+		    {
+		     START  => 20040101,
+		     END    => 20040212,
+		     ARCSEC => 3.1,
+		     BEAM => 414,
+		    },
+		    {
+		     START  => 20040213,
+		     END    => 20040404,
+		     ARCSEC => 3.6,
+		     BEAM => 528,
+		    },
+		    {
+		     START  => 20040405, # SCUBA shutdown
+		     ARCSEC => 2.72,
+		     BEAM => 316,
+		    },
 		   ],
 	);
 
