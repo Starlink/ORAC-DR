@@ -27,7 +27,7 @@ CGS4DR must already be running on the same machine as ORAC-DR.
 
 # Connect to the monolith
 # This is made harder by the fact that CGS4DR uses PID-related
-# ADAM names
+# ADAM names except when at UKIRT.
 # QMAN is actually named  reverse($pid)_qman
 # where $pid is the process ID of the parent CGS4DR_TCL task
 # There are two ways to do this:
@@ -39,9 +39,13 @@ CGS4DR must already be running on the same machine as ORAC-DR.
 #      the same now as it was then (in fact $ENV{ADAM_USER} is
 #      redefined when running ORAC-DR.
 
+# At UKIRT the QMAN process is simply called QMAN so that tasks
+# on other machines (including the VAX) know what it is called
+
 unless (exists $Mon{QMAN}) {
 
-  # We are going to search the PID list
+  # We are going to search the PID list to make sure that CGS4DR is 
+  # running
   require Proc::ProcessTable;
   my $procs = new Proc::ProcessTable;
 
@@ -73,11 +77,47 @@ unless (exists $Mon{QMAN}) {
   my $name = scalar getpwuid($uid);
   orac_print "Found cgs4dr_tcl process running as PID $pid under user $name (UID $uid)\n";
 
-  # We are fine so calculate the name
-  # Reverse the process id
-  # Must be a more efficient way than reverse split???
-  my $rpid = reverse split (//, $pid );
-  my $qman = $rpid . "_qman";
+
+  # name of qman in ADAM messaging system and password access
+  my ($qmanaccess, $qman);
+
+  # If we are at UKIRT this is fairly straightforward
+  my $domain = `domainname`;
+
+  if ($domain =~ /ukirt/i) {
+
+    # It might be worth checking for CGS4DR in this case as well though...
+    
+    orac_print "Running pipeline at UKIRT. Name of qman task is easy!\n";
+
+    $qman = "qman";
+
+    $qmanaccess = '';
+
+  } else {
+    
+    # Running elsewhere, need to know PID of CGS4DR
+
+    # We are fine so calculate the name
+    # Reverse the process id
+    # Must be a more efficient way than reverse split???
+    my $rpid = reverse split (//, $pid );
+    $qman = $rpid . "_qman";
+
+    # Password and lockword for the QMAN process are 
+    # These are derived from the pid as well
+    $lockword = $rpid . "lock";
+    $password = $rpid . "pass";
+
+    $qmanaccess = "password=$password lockword=$lockword";
+
+  }
+
+  # These need to be stored in a global somewhere so use
+  # So make one up [dont tell any one that this works since
+  # it is very naughty]. There is no global hash for the use of the 
+  # pipeline -- this could well be a bug.
+  $ORACDR::QMAN::TEMP::QmanAccess = "$qmanaccess";
 
   # Create the object
   $Mon{QMAN} = new ORAC::Msg::ADAM::Task("$qman");
@@ -89,16 +129,6 @@ unless (exists $Mon{QMAN}) {
     my $ORAC_STATUS = ORAC__ERROR;
   }
 
-  # Password and lockword for the QMAN process are 
-  # These are derived from the pid as well
-  my $lockword = $rpid . "lock";
-  my $password = $rpid . "pass";
-
-  # These need to be stored in a global somewhere so use
-  # So make one up [dont tell any one that this works since
-  # it is very naughty]. There is no global hash for the use of the 
-  # pipeline -- this could well be a bug.
-  $ORACDR::QMAN::TEMP::QmanAccess = "password=$password lockword=$lockword";
 
 }
 
