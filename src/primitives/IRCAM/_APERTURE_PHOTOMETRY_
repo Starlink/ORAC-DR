@@ -1,0 +1,112 @@
+# _APERTURE_PHOTOMETRY_
+#
+# Perform aperture photomtry on a standard star.
+#
+# TASK: PHOTOM - AUTOPHOTOM
+#
+# Imports from:
+#    _APERTURE_CORRECTION_: RAPTURE, CORRECTION
+#    _ESTIMATE_PSF_:        CENTRE
+
+# Input arguments recognised by this primitive:
+#    SKYEST, ZP, INNER, OUTER
+
+#
+# This should only be performed on OBJECT frames.
+
+print colored ("PRIMITIVE: APERTURE_PHOTOMETRY\n",'magenta');
+
+if ($Grp->hdr(OBSTYPE) =~ /OBJECT/) {
+
+  # Convert the aperture correction  to magnitudes to the nearest 
+  # millimagnitude. 
+  # Need to retrieve the correction factor from earlier primitive
+  $correction = $_APERTURE_CORRECTION_{CORRECTION};
+  $cormag = 0.001 * nint(1000 * (-2.5 * log10($correction)));
+
+  # Obtain the filter from the FITS headers.
+  $filter = $Grp->hdr(FILTER);
+
+  # Obtain the mean extinction coefficient.
+ SWITCH: {
+    if ($filter =~ "J") { $extinction = 0.102; last SWITCH; }
+    if ($filter =~ "H") { $extinction = 0.059; last SWITCH; }
+    if ($filter =~ "K") { $extinction = 0.088; last SWITCH; }
+    $extinction = 0.0;
+  }
+
+  # Obtain the airmass from the FITS headers.  Find the approximate
+  # mean airmass from the start and end values.  This should be
+  # adequate unless it is a long integration with the source crossing
+  # the meridian.
+  
+  $amstart = $Grp->hdr(AMSTART);
+  $amend = $Grp->hdr(AMEND);
+  $airmass = 0.5 * ($amstart + $amend);
+  $extcor = $airmass * $extinction;
+
+  # Calculate the radius of the inner and outer extent of the
+  # Aperture.
+  # Used to be calculated in _APERTURE_CORRECTION_ until I realised
+  # that they werent being used in _APERTURE_CORRECTION_
+
+  $inner = ($_APERTURE_PHOTOMETRY_{INNER} || "2.0");
+  $outer = ($_APERTURE_PHOTOMETRY_{OUTER} || "4.0");
+  $inner = min(3.0, max($inner, 1.2));
+  $outer = min(5.0, max($inner+0.3, $outer, 1.5));
+
+  # The automatic photometry task needs a text file to control the
+  # type and location of the photometry, and the size and shape of the
+  # aperture.  In this example case these are fixed, but we could use
+  # parameters for these in a hierarchy of scripts.  We have a
+  # circular aperture obtaining the sky from an annulus 1.3 to twice
+  # the diameter of the main aperture.
+
+  $rapture = $_APERTURE_CORRECTION_{RAPTURE};
+  $centre = $_ESTIMATE_PSF_{CENTRE};
+  open ( PHOTOM, ">photom$$.dat" );
+  print PHOTOM "#ANN 1 $inner $outer\n";
+  print PHOTOM "1 @$centre 0.0 0.0 0.0 0.0 OK $rapture 0.0 0.0 annulus circle\n";
+  close ( PHOTOM );
+
+  # Assign the other parameters.
+
+  # Specify the user parameters.
+  $skyest = ($_APERTURE_PHOTOMETRY_{SKY_EST} || "3");
+  $zp = ($_APERTURE_PHOTOMETRY_{ZP} || "23.0");
+  $user = "skyest=$skyest skymag=$zp";
+
+  # Specify the other parameters for AUTOPHOTOM.
+  $header = "in=".$Grp->file." infile=photom$$.dat outfile=photom$$.res";
+  $hidden = "nocentro padu=1 biasle=0 photon=1 positive sature=12000 nousemask";
+
+  # Perform the photometry, however, for this case compute a centroid
+  # about which to integrate.
+  $Mon{"photom_mon"}->obeyw("autophotom","$header $user $hidden");
+  #   print "Command was: autophotom $header $user $hidden\n";
+
+  # Extract and present the results.  The magnitude and error are the
+  # fourth and fifth fields in the output file.  The sky estimate is the
+  # sixth.
+  open (PHOTOM, "photom$$.res");
+  @results = map { (split)[3..5] } <PHOTOM>;
+  close (PHOTOM);
+
+  # Print results
+  print  "\n";
+  print  "Frame:                  ".$Grp->file."\n";
+  print  "Filter:                 $filter\n";
+  print  "Magnitude:              $results[0] +/- $results[1]\n";
+  print  "Airmass correction:     $extcor\n";
+  print  "Sky:                    $results[2]\n";
+  print  "Aperture diameter:      ".$_APERTURE_CORRECTION_{APERTURE}." pixels\n";
+  print  "Aperture ratio:         ".$_APERTURE_CORRECTION_{APERTURE_FACTOR}." FWHM ($fwhm pixels)\n";
+  print  "Annulus inner scale:    $inner\n";
+  print  "Annulus outer scale:    $outer\n";
+  print  "Photometric correction: ".$_APERTURE_CORRECTION_{CORRECTION}."; $cormag mag.\n";
+  print  "\n";
+
+  # Remove the photometry text file
+  unlink("photom$$.res");
+
+};

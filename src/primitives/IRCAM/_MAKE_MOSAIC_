@@ -1,0 +1,74 @@
+# _MAKE_MOSAIC_
+#
+# Forms a mosaic
+#
+# TASK: KAPPA - TRANJOIN; CCDPACK - TRANLIST, MAKEMOS
+#
+# This should only be performed on OBJECT frames.
+if ($Frm->hdr(OBSTYPE) =~ /OBJECT/) {
+
+  # Can generate a mosaic when there are at least three
+  # object frames.
+  if ($Grp->num >= 2 ) {
+
+    # User-accessible mapping and parameters
+    $user = "";
+    $osuffix = ($_MAKE_MOSAIC_{SUFFIX_OUT} || "mos");
+
+    # Form a list of input file names for CCDPACK tasks.
+    # Need to generate an input list for TRNAJOIN and TRANNDF 
+    # and an output list using a hard-wired suffix of '_trn'
+    ($inref, $outref) = $Grp->inout('_trn');
+
+    # Convert list to comma separated list
+    $objlist = join(",", @$inref);
+    $outlist= join(",", @$outref);
+
+    # Specify the other parameters for the TRANJOIN stage.
+    $hidden = "in2=ircam3_rotate2eq.transform dest=first"; 
+
+    # Join the rotation transformation to each of the CCDPACK extensions.
+    # The rotation transformation follows the shift-of-origin and is stored
+    # in the '_ff' frame.  Unfortunately, CCDEDIT doesn't support joining
+    # transformations, and KAPPA/TRANJOIN does operate on lists of files.
+    # Write the input file names to the text files.
+    foreach $flatted (@$inref) {
+      $header = "in1=${flatted}.more.ccdpack.transform";
+      $Mon{"kappa_mon"}->obeyw("tranjoin","$header $user $hidden accept");
+    }
+
+    print colored("Orac says: rotation transformation joined\n",'magenta');
+
+    # Assign other parameters.
+
+    $header = "in='$objlist' out='$outlist'";
+    $hidden = "shape=specify lbound=[1,1] ubound=[256,256]";
+
+    # Shift and resample the flat-field object frames.  Automatically
+    # determines the bounds.  It takes the origin from the first object
+    # frame.
+    $Mon{"ccdpack_reg"}->obeyw("tranndf","$header $user $hidden");
+
+    print colored ("Orac says: frames $objlist resampled\n",'magenta');
+    $Mon{"ccdpack_reg"}->control('par_reset');
+
+    # Assign other parameters.  The scale might become a user parameter.
+    # Presumably we should set the Grp output name when we construct
+    # $outname. Do not change the output name if we have already
+    # appended the output suffix the previous time around
+    $outname = $Grp->file . $osuffix unless $Grp->file =~ /$osuffix$/;
+    $header = "in='$outlist' out='$outname'";
+    $hidden = "zero scale";
+
+    # Make the mosaic correcting for differences in both scale and offset.
+    $Mon{"ccdpack_reg"}->obeyw("makemos","$header $user $hidden");
+
+    # Set the group name in the Group object
+    $Grp->file($outname);
+    # ...and read the header
+    $Grp->header($Grp->readhdr);
+
+    print colored ("Orac says: mosaic $outname formed\n",'magenta');
+    
+  }
+}
