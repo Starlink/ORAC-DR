@@ -80,6 +80,8 @@ sub new {
 
   $obj->{DarkIndex} = undef;
 
+  $obj->{DarkNoUpdate} = 0;
+
 
 
   bless($obj, $class);
@@ -103,7 +105,7 @@ Return (or set) the name of the current dark - no checking
 
 sub darkname {
   my $self = shift;
-  if (@_) { $self->{Dark} = shift; }
+  if (@_) { $self->{Dark} = shift unless $self->darknoupdate; }
   return $self->{Dark};
 }
 
@@ -126,6 +128,8 @@ sub dark {
   # happy ending - frame is ok
   if ($ok) {return $self->darkname};
 
+  croak("Override dark is not suitable! Giving up") if $self->darknoupdate;
+
   # not so good
   if (defined $ok) {
     $self->darkname($self->darkindex->choosebydt('ORACTIME',$self->thing));
@@ -135,7 +139,19 @@ sub dark {
 };
 
 
+=item darknoupdate
 
+Stops dark object from updating itself with more recent data
+
+Used when using a command-line override to the pipeline
+
+=cut
+
+sub darknoupdate {
+  my $self = shift;
+  if (@_) { $self->{DarkNoUpdate} = shift; }
+  return $self->{DarkNoUpdate};
+}
 
 =item bias
 
