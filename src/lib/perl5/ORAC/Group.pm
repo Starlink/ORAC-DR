@@ -243,12 +243,12 @@ The header must be available (set by the "header" method).
 The input argument should correspond to the keyword in the header
 hash.
 
-  $tel = $Grp->("TELESCOP");
-  $instrument = $Grp->("INSTRUME");
+  $tel = $Grp->hdr("TELESCOP");
+  $instrument = $Grp->hdr("INSTRUME");
 
 Can also be used to set values in the header.
 
-  $Obs->("INSTRUME", "IRCAM");
+  $Obs->hdr("INSTRUME", "IRCAM");
 
 =cut
 
