@@ -10,12 +10,20 @@ _MAKE_MOSAIC_FRAME_ - Create frame mosaic
 
 =head1 DESCRIPTION
 
-This primitive takes all the aligned sub-scan frames from each sub-array
-and mosaics them into a single output image.
+This primitive takes all the aligned sub-frames and mosaics them into
+a single output image. A check is made to see if the number of files
+to mosaic is greater than the maximum allowed (a value which depends
+on the version of CCDPACK installed), and if so the process is divided
+into several steps to generate intermediate mosaicked files which are
+then mosaicked at the end.
 
 =head1 KNOWN ISSUES
 
-Assumes the _ALIGN_ARRAYS_ primitive has been run on the input images.
+Assumes the _ALIGN_ARRAYS_ primitive has been run on the input
+images. The check for the number of files to mosaic ($maxmos) is done
+only once, which means this primitive will fail if the number of steps
+exceeds the maximum number of files. Thus the effective limit to the
+number of files to mosaic is $maxmos**2.
 
 =head1 ALGORITHMS
 
@@ -41,28 +49,66 @@ the terms of the GNU General Public License as published by the Free Software
 Foundation; either version 2 of the License, or (at your option) any later
 version.
 
-This program is distributed in the hope that it will be useful,but WITHOUT ANY
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-Place,Suite 330, Boston, MA  02111-1307, USA
+Place, Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
-# write mosaicking input text file
-my $intmp = new ORAC::TempFile;
-for my $i (1..$Frm->nfiles) {
-  print {$intmp->handle} $Frm->file($i) ."\n";
-}
+# Set verbose flag manually for now.
+my $verbose = 0;
 
+# Check version of ccdpack. Older versions can only handle 100 files at a time
+my $maxmosfiles = (starversion_lt('ccdpack', 'V4.0-17')) ? 100 : 1000;
+
+$maxmosfiles = 100;
+# Calculate the number of steps to break the mosaicking into
+my @files = $Frm->files;
+
+my @mosaiclist;
+
+if (@files > $maxmosfiles) {
+
+    use POSIX qw/ ceil /;
+    my $nsteps = ceil(@files/$maxmosfiles);
+    my $stepsize = ceil(@files/$nsteps);
+
+    my $i = 1;
+
+    orac_print "STEP = $stepsize, NSTEPS = $nsteps\n" if $verbose;
+
+    while ($i < $#files) {
+
+	my $start = $i;
+	my $end = $start + $stepsize - 1;
+
+	my $intmp = new ORAC::TempFile;
+	print {$intmp->handle} join("\n",@files[$start..$end]);
+    
+	my $outmos = new ORAC::TempFile;
+	$Mon{ccdpack_reg}->obeyw("makemos","in=^".$intmp->file." nousevar out=".$outmos->file." scale zero");
+	orac_print "DOING INTERMEDIATE MOSAIC \n" if $verbose;
+	push (@mosaiclist, $outmos->file);
+	
+	$i = $end + 1;
+    }
+
+} else {
+    @mosaiclist = @files;
+}
 # create output filename, derived from first input file
 # since this is a many to one operation
-my ($in, $out) = $Frm->inout('_mos', 0);
+my ($in, $mosaic) = $Frm->inout('_mos', 0);
+
+my $mostmp = new ORAC::TempFile;
+print {$mostmp->handle} join("\n",@mosaiclist[0..$#mosaiclist]);
 
 orac_print("Creating mosaic for frame\n");
-$Mon{ccdpack_reg}->obeyw("makemos","in=^".$intmp->file." nousevar scale out=$out zero");
+$Mon{ccdpack_reg}->obeyw("makemos","in=^".$mostmp->file." nousevar out=$mosaic ");
 
 # store the single output file
-$Frm->files( $out );
+$Frm->files( $mosaic );
