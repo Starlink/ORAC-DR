@@ -34,15 +34,16 @@ use ORAC::Constants;
 
 
 my @ORAC_INTERNAL_HEADERS = qw/
-  MYTEST
-  AIRMASS_START  
-  AIRMASS_END DECBASE
+  AIRMASS_START
+  AIRMASS_END
+  DECBASE
   FILTER 
   INSTRUMENT 
   LBNDX 
   LBNDY
   NOFFSETS 
   OBJECT 
+  OBSERVATION_NUMBER
   OBSTYPE 
   RABASE 
   READMODE
@@ -60,11 +61,21 @@ my @ORAC_INTERNAL_HEADERS = qw/
   TRAOFF 
   UTEND 
   UTSTART
-  NSCAN_POSITIONS
-  SCAN_INCREMENT
+  CONFIGURATION_INDEX
+  DETECTOR_INDEX
+  DETECTOR_MODE
   DIM1
   DIM2
-  DETECTOR_INDEX
+  GRATING_NAME
+  GRATING_ORDER
+  GRATING_WAVELENGTH
+  NSCAN_POSITIONS
+  NUMBER_OF_EXPOSURES
+  SCAN_INCREMENT
+  SLIT_ANGLE
+  SLIT_NAME
+  STANDARD
+  UTDATE
 /;
 
 # Setup the object structure
@@ -83,9 +94,9 @@ The following constructors are available:
 
 Create a new instance of a B<ORAC::Frame> object.  This method also
 takes optional arguments: if 1 argument is supplied it is assumed to
-be the name of the raw file associated with the observation. If 2
+be the name of the raw file associated with the observation.  If 2
 arguments are supplied they are assumed to be the raw file prefix and
-observation number. In any case, all arguments are passed to the
+observation number.  In any case, all arguments are passed to the
 configure() method which is run in addition to new() when arguments
 are supplied.  The object identifier is returned.
 

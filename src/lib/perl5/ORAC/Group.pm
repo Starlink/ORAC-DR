@@ -695,12 +695,48 @@ sub calc_orac_headers {
   # go through an array of headers and translate the
   # ones we can find with associated methods
   my @ORAC_ = (qw/
-               AIRMASS_START  AIRMASS_END DECBASE
-               FILTER INSTRUMENT LBNDX LBNDY
-               NOFFSETS OBJECT OBSTYPE RABASE READMODE
-               ROTATION SPD_GAIN UBNDX UBNDY WPLANGLE
-               DECSCALE DET_BIAS EXP_TIME GAIN RASCALE
-               TDECOFF TRAOFF UTEND UTSTART
+               AIRMASS_START
+               AIRMASS_END
+               DECBASE
+               FILTER 
+               INSTRUMENT 
+               LBNDX 
+               LBNDY
+               NOFFSETS 
+               OBJECT 
+               OBSERVATION_NUMBER
+               OBSTYPE 
+               RABASE 
+               READMODE
+               ROTATION 
+               SPD_GAIN 
+               UBNDX 
+               UBNDY 
+               WPLANGLE 
+               DECSCALE 
+               DET_BIAS 
+               EXP_TIME 
+               GAIN 
+               RASCALE
+               TDECOFF 
+               TRAOFF 
+               UTEND 
+               UTSTART
+               CONFIGURATION_INDEX
+               DETECTOR_INDEX
+               DETECTOR_MODE
+               DIM1
+               DIM2
+               GRATING_NAME
+               GRATING_ORDER
+               GRATING_WAVELENGTH
+               NSCAN_POSITIONS
+               NUMBER_OF_EXPOSURES
+               SCAN_INCREMENT
+               SLIT_ANGLE
+               SLIT_NAME
+               STANDARD
+               UTDATE
                /);
 
   # Loop over all the headers
