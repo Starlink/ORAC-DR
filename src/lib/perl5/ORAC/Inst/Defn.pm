@@ -287,6 +287,11 @@ sub orac_determine_inst_classes {
     $calclass   = "ORAC::Calib::IRCAM";
     $instclass  = "ORAC::Inst::IRCAM";
     $inst  = 'IRCAM'; # to pick up IRCAM recipes
+  } elsif ($inst eq 'INGRID') {
+    $groupclass = "ORAC::Group::INGRID";
+    $frameclass = "ORAC::Frame::INGRID";
+    $calclass   = "ORAC::Calib::INGRID";
+    $instclass  = "ORAC::Inst::INGRID";
   } elsif ($inst eq 'IRIS2') {
     $groupclass = "ORAC::Group::IRIS2";
     $frameclass = "ORAC::Frame::IRIS2";
@@ -473,6 +478,11 @@ sub orac_determine_recipe_search_path {
     push( @path, $imaging_root );
     push( @path, $spectro_root );
 
+  } elsif ($inst eq 'INGRID') {
+    push( @path, File::Spec->catdir( $root, "INGRID" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "INGRID" ) );
+    push( @path, $imaging_root );
+
   } elsif ($inst eq 'IRIS2') {
     push( @path, File::Spec->catdir( $root, "IRIS2" ) );
     push( @path, File::Spec->catdir( $imaging_root, "IRIS2" ) );
@@ -584,6 +594,12 @@ sub orac_determine_primitive_search_path {
     push( @path, $spectro_root );
     push( @path, $general_root );
 
+  } elsif ($inst eq 'INGRID') {
+    push( @path, File::Spec->catdir( $root, "INGRID" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "INGRID" ) );
+    push( @path, $imaging_root );
+    push( @path, $general_root );
+
   } elsif ($inst eq 'IRIS2') {
     push( @path, File::Spec->catdir( $root, "IRIS2" ) );
     push( @path, File::Spec->catdir( $imaging_root, "IRIS2" ) );
@@ -673,6 +689,11 @@ sub orac_determine_initial_algorithm_engines {
     @AlgEng = qw/ figaro1 figaro2 figaro4 kappa_mon ndfpack_mon
       ccdpack_red ccdpack_reg /;
 
+  } elsif ($inst eq 'INGRID') {
+
+    @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg
+      ccdpack_res /
+
   } elsif ($inst eq 'ISAAC') {
 
     @AlgEng = qw/ figaro1 figaro2 figaro4 kappa_mon ndfpack_mon
@@ -756,6 +777,8 @@ sub orac_determine_loop_behaviour {
 
   } elsif( $dname =~ /aat/i ) {
     if( uc($instrument) eq 'IRIS2' ) {
+      $behaviour = 'wait';
+  } elsif( uc($instrument) eq 'INGRID' ) {
       $behaviour = 'wait';
   } elsif( uc($instrument) eq 'ISAAC' ) {
       $behaviour = 'wait';
@@ -1211,6 +1234,42 @@ sub orac_configure_for_instrument {
              if (Net::Domain->domainname =~ "ukirt"  ) {
                   $options->{"loop"} = "flag";
              }           
+             $options->{"skip"} = 0;
+
+             last SWITCH; }
+
+     if ( $instrument eq "INGRID" ) {
+
+             # Instrument
+             $ENV{"ORAC_INSTRUMENT"} = "INGRID";
+
+             # Calibration information
+             $orac_cal_root = "/ukirt_sw/oracdr_cal"
+                     unless defined $orac_cal_root;
+             $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"ingrid");
+				
+             # Recipe and Primitive
+             #undef $ENV{"ORAC_RECIPE_DIR"} 
+             #        if defined $ENV{"ORAC_RECIPE_DIR"};
+             #undef $ENV{"ORAC_PRIMITIVE_DIR"} 
+             #        if defined $ENV{"ORAC_PRIMITIVE_DIR"};
+
+             # data directories
+             $orac_data_root = "/ukirtdata"
+                     unless defined $orac_data_root;
+
+             $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+	                                                "raw","ingrid", $oracut);
+             $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir($orac_data_root,
+	                                             "reduced","ingrid",$oracut)
+				     unless defined $$options{"honour"};
+
+             # misc
+             $ENV{"ORAC_PERSON"} = "mjc";
+             $ENV{"ORAC_SUN"} = "232";
+             if ( $domain =~ /ing/i  ) {
+                $options->{"loop"} = "flag";
+             }
              $options->{"skip"} = 0;
 
              last SWITCH; }
@@ -1680,7 +1739,7 @@ Paul Hirst E<lt>p.hirst@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
