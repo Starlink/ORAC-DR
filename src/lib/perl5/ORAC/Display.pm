@@ -39,16 +39,22 @@ use ORAC::Display::GAIA;
 
 use vars qw/$VERSION $DEBUG/;
 
-$VERSION = '0.10';
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+
 $DEBUG = 0;
 
 =head1 PUBLIC METHODS
 
+=head2 Constructor
+
 =over 4
 
-=item new()
+=item B<new>
 
-Create a new instance of ORAC::Display.
+Create a new instance of B<ORAC::Display>. No arguments are
+required.
+
+  $Display = new ORAC::Display;
 
 =cut
 
@@ -68,60 +74,51 @@ sub new {
 
 }
 
-=item toolref(\%hash)
+=back
 
-Returns (or sets) the reference to the hash containing the current
-mapping from display tool to display tool object.
+=head1 Accessor Methods
 
-  $Display->toolref(\%device);
-  $hashref = $Display->toolref
+=over 4
 
-=cut
-
-sub toolref {
-  my $self = shift;
-
-  if (@_) { 
-    my $arg = shift;
-    croak("Argument is not a hash") unless ref($arg) eq "HASH";
-    $self->{Tools} = $arg;
-  }
-
-  return $self->{Tools};
-}
-
-
-
-=item display_tools(%hash)
+=item B<display_tools>
 
 Returns (or sets) a hash containing the current lookup of display tool
 to display tool object. For example:
 
    $Display->display_tools(%tools);
    %tools = $Display->display_tools;
- 
+
 where %tools could look like:
 
      'GAIA' => Display::GAIA=HASH(object),
      'P4'   => Display::P4=HASH(object)
 
-etc.
+etc. The current contents are overwritten when a new hash is supplied.
+
+When called from an array context, returns the full hash contents.
+When called from a scalar context, returns the reference to the hash.
 
 =cut
 
 sub display_tools {
   my $self = shift;
   if (@_) {
-    my %junk = @_;
-    $self->toolref(\%junk);
+    %{ $self->{Tools} } = @_;
   }
-  return %{$self->toolref};
+  if (wantarray()) {
+    return %{$self->{Tools}};
+  } else {
+    return $self->{Tools};
+  }
 }
 
-=item filename(name)
+=item B<filename>
 
 Set (or retrieve) the name of the file containing the display device
 definition. Only used when usenbs() is false.
+
+  $file = $Display->file;
+  $Display->file("new_file");
 
 =cut
 
@@ -131,24 +128,15 @@ sub filename {
   return $self->{FileName};
 }
 
-=item usenbs(1/0)
 
-Determine whether NBS (shared memory) should be used to read the
-display device definition. Default is false.
-
-=cut
-
-sub usenbs {
-  my $self = shift;
-  if (@_) { $self->{UseNBS} = shift; }
-  return $self->{UseNBS};
-}
-
-=item filename(name)
+=item B<idstring>
 
 Set (or retrieve) the value of the string used for comparison
 with the display device definition information (created by the
 separate device allocation GUI).
+
+  $Display->idstring($id);
+  $id = $Display->idstring;
 
 =cut
 
@@ -158,21 +146,82 @@ sub idstring {
   return $self->{ID};
 }
 
+=item B<usenbs>
+
+Determine whether NBS (shared memory) should be used to read the
+display device definition. Default is false.
+
+  $usenbs = $Display->usenbs;
+  $Display->usenbs(0);
+
+=cut
+
+sub usenbs {
+  my $self = shift;
+  if (@_) { $self->{UseNBS} = shift; }
+  return $self->{UseNBS};
+}
 
 
-=item display_data(object, [\%hash])
+=back
+
+=head2 General Methods
+
+=over 4
+
+=item B<definition>
+
+Method to read a display definition, compare it with the idstring 
+stored in the object (this is usually a file suffix)
+and return back an array of  hashes containing all the relevant entries
+from the definition. If an argument is given, the object updates
+its definition of current idstring (and then searches).
+
+   @defn = $display->definition;
+   @defn = $display->definition($id);
+
+An empty array is returned if the suffix can not be matched.
+
+=cut
+
+sub definition {
+  my $self = shift;
+ 
+  if (@_) {
+    my $id = shift;
+    $self->idstring($id);
+  }
+
+  my @defn;
+
+  # Now need to decide whether we are using NBS or a file
+  if ($self->usenbs) {
+    @defn = $self->parse_nbs_defn;
+  } else {
+    @defn = $self->parse_file_defn;
+  }
+
+  return @defn;
+}
+
+
+
+=item B<display_data>
 
 This is the main method to be used for displaying data.  The supplied
 object must contain a method for determining the filename and the
 display ID (so that it can be compared with the information stored in
-the device definition file). It should support the file()
-and  gui_id() methods.
+the device definition file). It should support the file(), nfiles()
+and gui_id() methods.
 
 The optional hash can be used to supply extra entries in the
 display definition file (or in fact do away with the definition file
 completely). Note that the contents of the options hash will be used
 even if no display definition can be found to match the current 
 gui_id.
+
+  $Display->display_data($Frm) if defined $Display;
+  $Display->display_data($Frm, { TOOL => 'GAIA'});
 
 =cut
 
@@ -268,7 +317,7 @@ sub display_data {
       # Query the tools hash
 
       my $current_tool;
-      unless (exists $ {$self->toolref}{$display_info{TOOL}}) {
+      unless (exists $self->display_tools->{$display_info{TOOL}}) {
 	orac_print("Creating new object for $display_info{TOOL}\n",'blue');
 
 	my $obj = 'ORAC::Display::' . $display_info{TOOL};
@@ -294,12 +343,12 @@ sub display_data {
 	}
 
 
-	$ {$self->toolref}{$display_info{TOOL}} = $current_tool;
+	$self->display_tools->{$display_info{TOOL}} = $current_tool;
 
       } else {
 	orac_print("Tool $display_info{TOOL} already running\n",'cyan')
 	  if $DEBUG;
-	$current_tool = $ {$self->toolref}{$display_info{TOOL}};
+	$current_tool = $self->display_tools->{$display_info{TOOL}};
       }
 
       # Now ask the tool to display the filename using the
@@ -342,43 +391,8 @@ sub display_data {
 }
 
 
-=item definition(suffix)
 
-Method to read a display definition, compare it with the idstring 
-stored in the object (this is usually a file suffix)
-and return back an array of  hashes containing all the relevant entries
-from the definition. If an argument is given, the object updates
-its definition of current idstring.
-
-   @defn = $display->definition;
-
-
-An empty array is returned if the suffix can not be matched.
-
-=cut
-
-sub definition {
-  my $self = shift;
- 
-  if (@_) {
-    my $id = shift;
-    $self->idstring($id);
-  }
-
-  my @defn;
-
-  # Now need to decide whether we are using NBS or a file
-  if ($self->usenbs) {
-    @defn = $self->parse_nbs_defn;
-  } else {
-    @defn = $self->parse_file_defn;
-  }
-
-  return @defn;
-}
-
-
-=item parse_nbs_defn
+=item B<parse_nbs_defn>
 
 Using the current idstring, read the relevant information from
 a noticeboard and return it in a hash. This routine takes no
@@ -398,7 +412,7 @@ sub parse_nbs_defn {
 }
 
 
-=item parse_file_defn
+=item B<parse_file_defn>
 
 Using the current idstring, read the relevant information from
 the text file (name stored in filename()) and return it in an array
@@ -502,10 +516,14 @@ sub parse_file_defn {
 
 
 =back
- 
+
 =head1 SEE ALSO
 
-Related ORAC display devices (eg L<ORAC::Display::P4>)
+Related ORAC display devices (eg L<ORAC::Display::KAPVIEW>)
+
+=head1 REVISION
+
+$Id$
 
 =head1 AUTHORS
 
