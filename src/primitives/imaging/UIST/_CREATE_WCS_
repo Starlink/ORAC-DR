@@ -19,18 +19,24 @@
 #    to CD-style headers.  It's just adapted from UFTI, so the exact
 #    reference pixel and offsets for polarimetry are merely inherited.
 #
-#    The changes are listed below.
+#    The changes are reported, and are listed below.
 #
 #    a) Remove the PC matrix headers.
 #
 #    b) Add a CROTA2 header using the rotation angle derived from the
 #    PC matrix.
 #
+#    c) For polarimetry, the reference pixel (CRPIX1,CRPIX2) is adjusted
+#    for the bifurcation by the Wollaston prism.
+#
 # Notes:
 #    -  Editing only occurs for OBJECT and SKY frames.
 #    -  Following a successful introduction of a WCS, the current
 #    AST Frame is SKY.  Any existing WCS Frames besides the default
 #    three---PIXEL, GRID, AXIS---are lost. 
+#    -  The polarimetry bifurcation is wavelength dependent derived from
+#    _DEFINE_IRPOL_BEAM_SEPARATIONS_.  If the reference pixels are not
+#    defined, defaults of 511, 284.
 
 # Output Data:
 #    The modified NDF.
@@ -43,20 +49,27 @@
 #    {enter_new_authors_here}
 
 # Copyright:
-#    Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 
 #-
 
-# Bring in Math::Trig::asind for the header translation tables.
+# Bring in Math::Trig::asind for the header-translation tables.
    use Math::Trig qw/ asin /;
+
+# Is this polarimetry?  If it is, then the co-ordinate system
+# in the headers corresponds to that without the Wollaston prism in
+# the nbeam, i.e. as if it were simple imaging.  The positions need
+# to be adjusted to match the reference source region, which by
+# convention is the e-beam (upper of the two).
+    my $poldata = $Frm->hdr( "POLARISE" );
 
 # Do headers need editing?
 # ========================
 
 # Do not want to redo a frame already converted, otherwise the scale
 # will erroneously be reduced each pass through this primitive.
-    my $needs_editing = ! defined( $Frm->hdr( "CROTA2" ) );
+    my $needs_editing = ! defined( $Frm->hdr( "CROTA2" ) ) || $poldata;
 
 # Modify the headers should only be performed on OBJECT or SKY
 # frames, which have not already been converted.  
@@ -76,7 +89,52 @@
 # The axes are rotated for UIST, i.e. x axis is along declination.
        my $pi = atan2( 1, 1 ) * 4;
        my $rotangle = asin( $pc21 ) * 180.0 / $pi;
+       my $dtor = $pi / 180.0;
+ 
+# Determine the displacement of the reference pixel for polarimetry.
+# ==================================================================
+       my ( $pol_xref, $pol_yref );
+       if ( $poldata ) {
 
+# First obtain the displacements of the two beams after splitting in the
+# prism.  The headers's reference pixel applies to the unsplit beam.
+# Therefore we need half of the offsets.
+          _DEFINE_IRPOL_BEAM_SEPARATIONS_
+          my $pol_raoff_as = 0.5 * $_DEFINE_IRPOL_BEAM_SEPARATIONS_{RAOFF};
+          my $pol_decoff_as = 0.5 * $_DEFINE_IRPOL_BEAM_SEPARATIONS_{DECOFF};
+
+# Convert the equatorial offsets to pixels.
+# -----------------------------------------
+# Define some useful variables to apply the rotation matrix.
+          my $cosrot = cos( $rotangle * $dtor );
+          my $sinrot = sin( $rotangle * $dtor );
+
+# Obtain the plate scales for the instrument from the headers.
+          _GET_PLATE_SCALE_
+          my $ra_pixelscale = $_GET_PLATE_SCALE_{RASCALE};
+          my $dec_pixelscale = $_GET_PLATE_SCALE_{DECSCALE};
+
+# Convert prism offsets in arcseconds to pixel offsets of the object
+# in the Cartesian sense.
+          my $pol_raoff_p = -1.0 * $pol_raoff_as / $ra_pixelscale;
+          my $pol_decoff_p = -1.0 * $pol_decoff_as / $dec_pixelscale;
+
+# Apply the rotation matrix to obtain Cartesian pixel offsets.  Note
+# CRPIX1 corresponds to declination.
+          my $pol_xoffset = $pol_decoff_p * $cosrot - $pol_raoff_p * $sinrot;
+          my $pol_yoffset = $pol_decoff_p * $sinrot + $pol_raoff_p * $cosrot;
+
+# Obtain the pre-prism reference pixel.  Use the 2003 December documented
+# defaults, the second axis being flipped (see _CREATE_RAW_FRAME_)
+# until AST can cope.
+          my $xref = $Frm->hdr( "CRPIX1" ) || 511;
+          my $yref = $Frm->hdr( "CRPIX2" ) || 284;
+
+# Set the new reference pixel for the source e-beam.
+          $pol_xref = $xref - $pol_xoffset;
+          $pol_yref = $yref - $pol_yoffset;
+       }
+       
 # Create the FITSMOD steering file.
 # =================================
        my $table = "fitsmod$$.lis";
@@ -98,14 +156,27 @@
        print $fh_steering "D PC2_1\n";
        print $fh_steering "D PC1_2\n";
        print $fh_steering "D PC2_2\n";
+
+# Correct the reference pixel for polarimetry.
+       if ( $poldata ) {
+          print $fh_steering "U CRPIX1 $pol_xref \$C\n";
+          print $fh_steering "U CRPIX2 $pol_yref \$C\n";
+       }
        close( $fh_steering );
 
 # Edit the headers.
        $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "ndf=$ndf mode=file table=$table" );
        unlink( $table );
 
+# Report progress.
        orac_print "AIPS-convention world co-ordinate system replaces PC matrix " .
                   "to headers\n    of $ndf.\n";
+       if ( $poldata ) {
+          my $fs_xref = sprintf( "%.2f", $pol_xref );
+          my $fs_yref = sprintf( "%.2f", $pol_yref );
+          orac_print "Tied the WCS to the source e-beam by a shift of the " . 
+                     "reference pixel to ($fs_xref,$fs_yref).\n";
+       }
 
 # Remove an existing WCS component, so that later when a new WCS is made,
 # it will include a SKY co-ordinate frame.  As there may not already be a
@@ -137,12 +208,15 @@ WCS headers, although we made need a temporary correction from PC
 to CD-style headers.  It's just adapted from UFTI, so the exact
 reference pixel and offsets for polarimetry are merely inherited.
 
-The changes are listed below.
+The changes are reported, and are listed below.
 
 a) Remove the PC matrix headers.
 
 b) Add a CROTA2 header using the rotation angle derived from the
 PC matrix.
+
+c) For polarimetry, the reference pixel (CRPIX1,CRPIX2) is adjusted
+for the bifurcation by the Wollaston prism.
 
 =head1 NOTES
 
@@ -158,6 +232,12 @@ there is no WCS.  This includes all editing steps.
 Following a successful introduction of a WCS, the current
 AST Frame is SKY.  Any existing WCS Frames besides the default
 three---PIXEL, GRID, AXIS---are lost. 
+
+=item *
+
+The polarimetry bifurcation is wavelength dependent derived from
+L<_DEFINE_IRPOL_BEAM_SEPARATIONS_|_DEFINE_IRPOL_BEAM_SEPARATIONS_>.
+If the reference pixels are not defined, defaults of 511, 284.
 
 =back
 
@@ -181,7 +261,7 @@ Malcolm J. Currie (JAC)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
