@@ -11,13 +11,19 @@ ORAC::Calib::SCUBA - SCUBA calibration object
   $Cal = new ORAC::Calib::SCUBA;
 
   $gain = $Cal->gain($filter);
-
+  $tau  = $Cal->tau($filter);
+  @badbols = $Cal->badbols;
 
 =head1 DESCRIPTION
 
 This module returns (and can be used to set) calibration information
 for SCUBA. SCUBA calibrations are used for extinction correction
 (the sky opacity) and conversion of volts to Janskys.
+
+It can also be used to set and retrieve lists of bad bolometers generated
+by noise observations and to store the results of pointing observations
+(pointing results are not retrievable since they are a write-only
+calibration).
 
 =cut
 
@@ -129,12 +135,16 @@ sub new {
 
   my $obj = {};  # Anon hash
 
-  $obj->{Gains} = undef;
+  $obj->{Gains} = undef;          # Gains
   $obj->{GainsNoUpdate} = 0;
   $obj->{GainsIndex} = undef;
-  $obj->{TauSys} = undef;
+  $obj->{TauSys} = undef;         # Tau system
   $obj->{TauSysNoUpdate} = 0;
   $obj->{SkydipIndex} = undef;
+  $obj->{BadBols} = undef;        # Bad bolometers
+  $obj->{BadBolsNoUpdate} = 0;
+  $obj->{BadBolsIndex} = undef;
+  $obj->{PointIndex} = undef;
   $obj->{FluxesObj} = undef;      # Fluxes monolith
   $obj->{FluxesTmpDir} = undef;
   $obj->{AMS} = undef;         # ADAM messaging object
@@ -254,18 +264,22 @@ CSO tau since this number is independent of wavelength.
 mode uses the results of 850 micron skydips from index
 files to derive the opacity for the requested wavelength.
 
+Additionally, modes 'DIPINTERP' and '850DIPINTERP' can be 
+used to interpolate the current tau from skydips taken
+either side of the current observation.
+
 Currently there is no way to specify an actual 850 micron
 tau value (the number is treated as a CSO value). In the future
 this may change (or a tausys of 850=value will be used??)
 
-If tausys has not been set it defaults to 'CSO'
+If tausys has not been set it defaults to '850SKYDIP'
 
 =cut
 
 sub tausys {
   my $self = shift;
   if (@_) { $self->{TauSys} = uc(shift) unless $self->tausysnoupdate; }
-  $self->{TauSys} = 'CSO' unless (defined $self->{TauSys});
+  $self->{TauSys} = '850SKYDIP' unless (defined $self->{TauSys});
   return $self->{TauSys};
 }
 
@@ -319,11 +333,17 @@ the selected wavelength is updated in the frame header (Key=FILTER)
 and the skydip index is queried for the skydip that matched the criterion
 and is closest in time.
 
-At some point we may want to add a feature where the tau values either
-side of the frame are reported and used to find the current tau.
+The tausys='850SKYDIP' mode uses the results of 850 micron skydips
+from index files to derive the opacity for the requested wavelength.
 
-Also, we might want to add a system where the high frequency tau is derived
-from the closest low-frequency skydip.....
+Additionally, modes 'DIPINTERP' and '850DIPINTERP' can be used to
+interpolate the current tau from skydips taken either side of the
+current observation.
+
+The skydip modes will default to using CSO if a suitable
+skydip can not be found. Also, a warning is raised if a skydip
+is found but was takan more than 3 hours before or after the
+current observation.
 
 undef is returned if an error occurred [eg the CSO is so high that the
 tau can not be calculated using the linear relationship].
@@ -365,67 +385,180 @@ sub tau {
     orac_warn("Error converting a CSO tau of $sys to an opacity for filter $filt\n") if $status == -1;
 
     
-  } elsif ($sys eq 'SKYDIP' || $sys eq 'INDEX') {
+  } elsif ($sys =~ /DIP/ || $sys eq 'INDEX') {
 
-    # Skydips have been selected. 
-    # Given that a skydip is never current (because each time we change
-    # filter the 'current' is no longer valid) ask for one every time.
-    # This assumes that people do not want to specify a skydip that
-    # should be used by the system. (usually a hard-wired CSO is enough)
+    # Skydips have been selected (using index files)
 
-    # First add/modify the FILTER keyword in the current frame
-    $self->thing->{FILTER} = $filt;
+    # We always have to ask for the nearest skydip from the index
+    # file. If one is not available, revert to CSO tau
+    # If sys=850SKYDIP we derive the tau from nearest 850 skydip
 
-    # Now ask for the best skydip
-    # (Closest in time)
-    # Note that the reduction stops if a skydip can not be found...
-    my $best = $self->skydipindex->choosebydt('ORACTIME', $self->thing);
-
-    # Now retrieve the index entry itself
-    my $entref = $self->skydipindex->indexentry($best);
-
-    if (defined $entref) {
-      $tau = $entref->{TAUZ};
-    } else {
-      orac_err("Error reading entry $best from Skydip index");
-      $tau = undef;      
-    }
-
-
-  } elsif ($sys eq '850SKYDIP') {
-
-    # We are reqeusting that the tau of the current filter
-    # is retrieved by looking at the tau from an 850 skydip
-
-    # Get a copy of the header hash
+    # First tak a copy of the header (we will need to change
+    # this when looking for 850 skydips
     my %hdr = %{$self->thing};
 
-    # First need to make sure that we are looking for a 850 skydip value
-    $hdr{FILTER} = '850';
+    # Now set the filter name in this hash so that
+    # we know what filter we are searching for
+    # Special case for a 850 skydip only search
+    if ($sys =~ /850/) {
+      $hdr{FILTER} = '850';
+    } else {
+      $hdr{FILTER} = $filt;
+    }
 
-    # Now ask for the best skydip
-    # (Closest in time)
-    # Note that the reduction stops if a skydip can not be found...
-    my $best = $self->skydipindex->choosebydt('ORACTIME', \%hdr);
+    # Now we have to ask for the 'best' skydip matching these
+    # criterion. For interpolation schemes we need to ask for
+    # the nearest skydips either side in time from the current
+    # frame. For normal querying we simply ask for the closest
+    # in time.
 
-    # Now retrieve the index entry itself
-    my $entref = $self->skydipindex->indexentry($best);
+    # ASIDE: Note that in the 850skydip case, querying the complete
+    # index file is inefficient since the chances are quite good
+    # that a verification of the current skydip alone would be okay
 
-    if (defined $entref) {
-      $tau = $entref->{TAUZ};
+    # This variable sets the threshold value for age
+    my $too_old = 3.0/24.0; # 3 hours as a day fraction
 
-      orac_print "Using 850 tau of $tau to generate tau for filter $filt\n";
+    # Check that SYS matches 'interp' (interpolation)
+    # and ask for two index searches [inefficient???] 
+    # Might want to use a index routine that searches for high and 
+    # low at the same time
+    if ($sys =~ /INTERP/) {
+      my $high = $self->skydipindex->chooseby_positivedt('ORACTIME', \%hdr, 1);
+      my $low  = $self->skydipindex->chooseby_negativedt('ORACTIME', \%hdr, 1);
+
+      # Check to see
+      # Now retrieve the actual entries
+      my ($high_ent, $low_ent);
+      $high_ent = $self->skydipindex->indexentry($high) if defined $high;
+      $low_ent  = $self->skydipindex->indexentry($low) if defined $low;
+
+      # The possibilities are:
+      # - low and high are found, we interpolate
+      # - low and high are found but some are older than 3 hours, warn
+      #   and interpolate
+      # - only high is found - use it [warn if too new]
+      # - only low is found - use it [warn if too old]
+      # - nothing found - revert to using CSO tau
+ 
+      # Check the HIGH
+      if (defined $high_ent) {
+	# Okay - see how old it is
+	my $age = abs($high_ent->{ORACTIME} - $hdr{ORACTIME});
+        if ($age > $too_old) {
+	  orac_warn(" the closest skydip (from above) was too new [".sprintf('%5.2f',$age*24.0)." hours]\nUsing this value anyway...\n");
+	}
+      }
+
+      # Check the LOW
+      if (defined $low_ent) {
+	# Okay - see how old it is
+	my $age = abs($low_ent->{ORACTIME} - $hdr{ORACTIME});
+        if ($age > $too_old) {
+	  orac_warn(" the closest skydip (from below) was too old [".sprintf('%5.2f',$age*24.0)." hours]\nUsing this value anyway...\n");
+	}
+      }
+
+      # Now look for the tau values
+      if (defined $low_ent && defined $high_ent) {
+	# Interpolate TAU value
+
+	# Find taus for each time
+	my $highz = $high_ent->{TAUZ};
+	my $hight = $high_ent->{ORACTIME};
+	my $lowz  = $low_ent->{TAUZ};
+	my $lowt  = $low_ent->{ORACTIME};
+
+	my $framet = $hdr{ORACTIME};
+
+#	print "HIGH: $highz @ $hight\n";
+#	print "LOW: $lowz  @ $lowt\n";
+#	print "Now:  $framet\n";
+
+	# Calculate tau at time $framet
+	# This is not as good as returning both tau values
+        # and times to the caller
+
+	$tau = $lowz + ($framet - $lowt) * ($highz-$lowz) / ($hight - $lowt);
+
+      } else {
+
+	orac_warn "Cannot interpolate - can not find suitable skydips on both sides of this observation\nUsing a single value...\n";
+	
+	# If only one is defined, use that tau
+	$tau = undef;
+	$tau = $low_ent->{TAUZ} if defined $low_ent;
+	$tau = $high_ent->{TAUZ} if defined $high_ent;
+
+	# If none are defined - tau is undef anyway
+	
+      }
+
+
+    } else {
+      
+      # Retrieve the closest in time
+      my $nearest = $self->skydipindex->choosebydt('ORACTIME', \%hdr,0);
+      
+      # Check return value
+      if (defined $nearest) {
+
+	# Now retrieve the entry
+	my $entref = $self->skydipindex->indexentry($nearest);
+
+	# Possibilities are:
+	# - something found, use it, report if it is too old.
+	# - nothing found - revert to using CSO tau
+
+	# Check age
+	if (defined $entref) {
+	  my $age = abs($entref->{ORACTIME} - $hdr{ORACTIME});
+	  orac_warn("Skydip $nearest was taken ".sprintf('%5.2f',$age*24.0)." hours from this frame\nUsing this value anyway...\n")
+	    if $age > $too_old;
+
+	  $tau = $entref->{TAUZ};
+
+	} else {
+	  orac_warn "Error reading index entry $nearest\n";
+	}
+      }
+
+    }
+
+    # If we have a tau value AND we are using a 850->filter conversion
+    # We should convert here
+
+    if (defined $tau && $sys =~ /850/) {
+
+      orac_print "Using 850 tau of ".sprintf("%6.3f",$tau)." to generate tau for filter $filt\n";
 
       # Now convert this tau to the requested filter
       ($tau, $status) = get_tau($filt, '850', $tau);
 
-      orac_warn("Error converting a 850 tau of $tau to an opacity for filter $filt\n") if $status == -1;
+      # On error - report conversion error then set tau to undef
+      # so that we can try to adopt a CSO value
+      if ($status == -1) {
+	orac_warn("Error converting a 850 tau to an opacity for filter $filt\n");
+	$tau = undef;
+      }
 
-    } else {
-      orac_err("Error reading entry $best from Skydip index");
-      $tau = undef;      
     }
 
+    # If $tau has not yet been set (ie the index lookup failed)
+    # revert to a CSO tau lookup
+    unless (defined $tau) {
+
+      orac_print "No suitable skydip found - converting from CSO tau\n";
+      # Find CSO
+      my $csotau = $self->thing->{'TAU_225'};
+
+      ($tau, $status) = get_tau($filt, 'CSO', $csotau);
+
+      if ($status == -1) {
+	orac_warn("Error converting a CSO tau of $csotau to an opacity for filter $filt\n");
+	$tau = undef;
+      }
+    }
 
   } else {
     orac_err(" tausys is non-standard ($sys)\n");
@@ -515,7 +648,7 @@ It may also be useful if the gains either side of current observation
 are retrieved so that the gain can be interpolated.
 
 This would use the same method call that may be added for handling
-skydips either side. (chooseeithersidebydt?)
+skydips either side. (chooseby_positivedt/negativedt)
 
 =cut
 
@@ -558,7 +691,7 @@ sub gain {
     my $entref = $self->gainsindex->indexentry($best);
 
     if (defined $entref) {
-      $gain = $$entref{GAIN};
+      $gain = $entref->{GAIN};
     } else {
       orac_err("Error reading entry $best from Gains index");
       $gain = undef;      
@@ -694,58 +827,169 @@ sub fluxcal {
 
 }
 
+=item badbols
 
+Set or retrieve the name of the system to be used for bad bolometer
+determination. Allowed values are:
 
-=item skydiptaus
+ - 'index': Use an index file generated by noise observations
+            using the reflector blade. The bolometers stored in this
+            file are those that were above the noise threshold in 
+            the _REDUCE_NOISE_ primitive. The index file is generated
+            by the _REDUCE_NOISE_ primitive
+ - 'file' : Uses the contents of the file badbol.lis (contains a space
+            separated list of bolometer names in the first line). This
+            file is in ORAC_DATA_OUT. If the file is not found, no
+            bolometers will be flagged.
+ - colon separated list of bad bolometers
+            If badbols=h7:i12:g4,... then this list will be used
+            as the bad bolometers throughout the reduction.
 
-Method to store and retrieve the reference to a hash containing the
-current tau information derived from skydips.
-The hash should be indexed by SCUBA filter.
-
-  $Cal->skydiptaus(\%hdr);
-  $hashref = $Cal->skydiptaus;
+Default is to use the 'file' method.
 
 =cut
 
-sub skydiptaus {
-
+sub badbols {
   my $self = shift;
- 
-  if (@_) { 
-    my $arg = shift;
-    croak("Argument is not a hash") unless ref($arg) eq "HASH";
-    $self->{SkydipTaus} = $arg;
-  }
+  if (@_) { $self->{BadBols} = uc(shift) unless $self->badbolsnoupdate; }
+  $self->{BadBols} = 'FILE' unless (defined $self->{BadBols});
+  return $self->{BadBols};
+}
 
-  return $self->{SkydipTaus};
+=item badbolsnoupdate
+
+Flag to prevent the badbols system from being modified during data
+processing.
+
+=cut
+
+sub badbolsnoupdate {
+  my $self = shift;
+  if (@_) { $self->{BadBolsNoUpdate} = shift };
+  return $self->{BadBolsNoUpdate};
 }
 
 
+=item skydipindex
 
-
-=item skydiptau
-
-Allow a single skydip tau value  to be retrieved for a specific filter.
-
-  $tau = $Cal->skydiptau("850");
-  
-Can also be used to set a value
-
-  $Cal->skydiptau("850", number);
+Return (or set) the index object associated with the bad bolometers
+index file. This index file is used if badbols() is set to index.
 
 =cut
 
-sub skydiptau {
+sub badbolsindex {
 
   my $self = shift;
+  if (@_) { $self->{BadBolsIndex} = shift; }
  
-  my $keyword = shift;
+  unless (defined $self->{BadBolsIndex}) {
+    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.badbols";
+    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.badbols";
+    $self->{BadBolsIndex} = new ORAC::Index($indexfile,$rulesfile);
+  };
  
-  if (@_) { ${$self->skydiptaus}{$keyword} = shift; }
- 
-  return ${$self->skydiptaus}{$keyword};
+  return $self->{BadBolsIndex}; 
 
-} 
+
+}
+
+=item badbol_list
+
+Returns list of bolometer names that should be turned off for the
+current observation. The source of this list depends on the setting
+of the badbols() parameter (controlled by the user).
+Can be one of 'index', 'file' or actual bolometer list. See the
+badbols() method documentation for more information.
+
+=cut
+
+sub badbol_list {
+  my $self = shift;
+
+  # Retrieve the badbols query system
+  my $sys = $self->badbols;
+
+  # Array to store the bad bolometers
+  my @badbols = ();
+
+  # Check system
+  if ($sys eq 'INDEX') {
+    # Look for bolometers in index file
+
+    # look in the index file
+    # and retrieve the closest in time that agrees with the rules
+    my $best = $self->badbolsindex->choosebydt('ORACTIME', $self->thing);
+
+    # Now retrieve the entry
+    if (defined $best) {
+      my $entref = $self->badbolsindex->indexentry($best);
+      if (defined $entref) {
+	my $list = $entref->{BADBOLS};
+	@badbols = split(",",$list);
+      } else {
+	orac_err("Error reading entry $best from BadBols index");
+      }
+    }
+
+
+  } elsif ($sys eq 'FILE') {
+    # Look for bolometers in badbol.lis file
+    my $file = "$ENV{ORAC_DATA_OUT}/badbol.lis";
+    if (-e $file) {
+      my $fh = new IO::File("< $file");
+
+      if (defined $fh) {
+	# read first line
+	my $list = <$fh>;
+	# close the file
+	close $fh;
+	# Split on spaces
+	@badbols = split(/\s+/,$list);
+      }
+
+    }
+
+  } else {
+    # Look for bolometers in $sys itself
+    # Split on commas - for now do not check whether the names
+    # are sensible. If we were to do that we should do the check
+    # outside this 'if' and before we return the list
+    # Currently this check is done in the primitive at the same time
+    # as the bolometer list is compared to the valid bolometers
+    # stored in the Frame itself
+
+    @badbols = split(/:/,$sys);
+
+  }
+
+  # Return the list
+  return @badbols;
+
+}
+
+=item pointingindex
+
+Return (or set) the index object associated with the pointing
+index file. This index file is used to store the results of 
+pointing observations.
+
+=cut
+
+sub pointingindex {
+
+  my $self = shift;
+  if (@_) { $self->{PointIndex} = shift; }
+ 
+  unless (defined $self->{PointIndex}) {
+    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.pointing";
+    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.pointing";
+    $self->{PointIndex} = new ORAC::Index($indexfile,$rulesfile);
+  };
+ 
+  return $self->{PointIndex}; 
+
+
+}
 
 
 =item DESTROY
