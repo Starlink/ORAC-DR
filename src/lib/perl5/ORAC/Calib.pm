@@ -54,7 +54,7 @@ The following methods are available in this class.
 
 Create a new instance of a ORAC::Calib object.
 The object identifier is returned.
- 
+
   $Obs = new ORAC::Calib;
 
 =cut
@@ -99,6 +99,8 @@ sub dark {
 =item bias
 
 Return (or set) the current bias.
+
+  $dark = $Cal->dark;
 
 =cut
 
@@ -157,7 +159,9 @@ L<ORAC::Frame>
 
 =head1 AUTHORS
 
-Tim Jenness (t.jenness@jach.hawaii.edu)
+Tim Jenness (t.jenness@jach.hawaii.edu) and 
+Frossie Economou (frossie@jach.hawaii.edu)
+
 
 =cut
  
