@@ -1016,6 +1016,7 @@ Recognised options:
   YAUTOSCALE - Use autoscaling for Y?
   ZMIN/ZMAX  - Z-range of greyscale (data units)
   ZAUTOSCALE - Autoscale Z?
+  KEY        - Display key to colour table?
   COMP       - Component to display (Data (default), Variance or Error)
 
 Default is to autoscale.
@@ -1082,6 +1083,15 @@ sub image {
   # Select component
   if (exists $options{COMP} && defined $options{COMP}) {
     $optstring .= " COMP=$options{COMP}";
+  }
+
+  # Display colour table key or not.
+  if (exists $options{KEY} && defined $options{KEY} ) {
+    $optstring .= " KEY=" . ( $options{KEY} ? 'TRUE' : 'FALSE' );
+  } else {
+    # This default is needed because otherwise KAPPA/DISPLAY will
+    # use whatever the previous value was.
+    $optstring .= " KEY=FALSE";
   }
 
   my $status;
