@@ -37,6 +37,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.3  2000/02/03 03:44:09  timj
+#     Add check for existence of IN/OUT directories
+#
 #     Revision 1.2  2000/02/03 03:14:18  timj
 #     Add ORACDR_VERSION
 #
@@ -126,7 +129,17 @@ echo "     Type 'showme sun${ORAC_SUN}' to browse the hypertext documentation"
 echo " "
 echo " "
 echo " Raw data will appear in $ORAC_DATA_IN"
+# Check for that in directory
+if !(-d $ORAC_DATA_IN) then
+  echo '     \!\!\!\!\!\!\!\!\!\!\!\! but that directory does not exist \!\!\!\!\!\!\!\!\! '
+endif
+
 echo " Reduced data will appear in $ORAC_DATA_OUT"
+# Check for that out directory
+if !(-d $ORAC_DATA_OUT) then
+  echo '     \!\!\!\!\!\!\!\!\!\!\!\! but that directory does not exist \!\!\!\!\!\!\!\!\! '
+endif
+
 echo " "
 echo "+++++++++ For automatic $ORAC_INSTRUMENT reduction use oracdr -loop $ORAC_LOOP +++++++++"
 echo ""
