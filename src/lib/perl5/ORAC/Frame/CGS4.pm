@@ -81,7 +81,8 @@ ORAC::Frame::CGS4->_generate_orac_lookup_methods( \%hdr );
 
 sub _to_UTEND {
   my $self = shift;
-  $self->hdr->{ $self->nfiles }->{RUTEND};
+  $self->hdr->{ $self->nfiles }->{RUTEND}
+    if exists $self->hdr->{ $self->nfiles };
 }
 
 sub _from_UTEND {
@@ -90,7 +91,8 @@ sub _from_UTEND {
 
 sub _to_UTSTART {
   my $self = shift;
-  $self->hdr->{ 1 }->{RUTSTART};
+  $self->hdr->{ 1 }->{RUTSTART}
+    if exists $self->hdr->{1};
 }
 
 sub _from_UTSTART {
@@ -180,6 +182,8 @@ the prefix and arg2 is the observation number.
 sub configure {
   my $self = shift;
 
+  print "*****************************************\n";
+
   # If two arguments (prefix and number)
   # have to find the raw filename first
   # else assume we are being given the raw filename
@@ -230,9 +234,10 @@ sub configure {
 
     # Strip the chop information
     (my $kluge = $comp) =~ s/BEAM[AB]$//;
-    my ($href, $status) = fits_read_header($rootfile . ".$kluge");
+    #my ($href, $status) = fits_read_header($rootfile . ".$kluge");
+    my $hdr = new Astro::FITS::Header::NDF( File => $rootfile .".$kluge");
     # Store the header associated with this subframe
-    $self->hdr->{$i} = $href if $status == &NDF::SAI__OK;
+    $self->hdr->{$i} = $hdr if $hdr;
 
     $i++;
   }
