@@ -442,7 +442,7 @@ sub _find_processed_images {
 
   # create the expected path to the container
   $file =~ s/\.sdf$//;
-  my $path = $file . ".MORE.DA_IMAGE";
+  my $path = $file . ".MORE.SCU2RED";
 
   # forget about using NDF to locate the extension, use HDS directly
   ($status, my @locs) = retrieve_locs( $path, 'READ', $status );
