@@ -888,7 +888,7 @@ sub orac_process_argument_list {
       @$obs = (1);
 
    }
- 
+
    return ( $loop );
 
 }
