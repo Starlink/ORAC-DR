@@ -1,0 +1,114 @@
+# 		-*-perl-*-
+
+# Podule
+# ======
+
+=head1 NAME
+
+_CALCULATE_WAVELENGTH_RANGE_ -- Calculate the wavelength range to use when scrunching IFU spectra
+
+=head1 DESCRIPTION
+
+This primitive calculates the wavelength range that should be used when 
+scrunching IFU spectra. This should be run on an IFU arc frame. The appropriate
+arlines.lis file is obtained from the calibration system. The wavelength range
+is calculated from the polynomial fit in the arlines file. The minimum and 
+maximum wavelengths are put into the headers of the frame.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Does nothing if the observation is not an arc frame.
+
+=item *
+
+Wavelengths are given as integer numbers of Angstroms. The maximum wavelength
+returned will always be greated than the minimum wavelength regardless of the 
+direction of increasing wavelength on the raw frame.
+
+=item *
+
+The range is reduced by a small amount (100 Angstroms) at each end of
+the range. This seems to make Iscrunch happier (otherwise artifacts
+appear in the scrunched frame).
+
+=back
+
+=head1 OUTPUT DATA
+
+No output frame is produced. The minimum and maximum wavelengths are
+put into the headers lambda_min and lambda_max of the current frame.
+
+=back
+
+=head1 TASKS
+
+None
+
+=head1 AUTHORS
+
+Stephen Todd <spt@roe.ac.uk>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+
+if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "ARC") {
+
+    # Determine the wavelength range required from the arlines.lis file
+    my $arlines_file = $ENV{ORAC_DATA_CAL} . "/" . $Cal->arlines; 
+    orac_print "Getting wavelength range from $arlines_file \n";
+
+
+    my $order;      # The order of the wavelength calibration
+    my $fit = "";   # The coefficients as read from the arlines.lis file
+    my @coeffs;     # The coefficients converted to a more useful form
+
+    # Read the arlines.lis file
+    open(my $file, $arlines_file) || die "Could not open $arlines_file \n";
+
+    while (<$file>) {
+	# We are only interested in the bit after the Order of fit line really
+	if (defined $order) {
+	    chomp;
+	    $fit .= $_; 
+	}
+
+	# Find the order of the fit
+	if (/Order of fit:\s+(\d+)/) {$order = $1}
+    }
+    close $file;
+    
+    # Substitute E for D in the scientific form numbers (Fortran->Perl)
+    $fit =~ s/D/E/g;
+
+    # Read the coefficients into @coeffs (in reverse order, as they appear
+    # in the arlines.lis file)
+    while ($fit =~ /(-? [\d\.]+ E[+-]\d\d)/gx) {push @coeffs, $1}
+
+    # Use the coeficients to calculate the maximum and minimum wavelengths.
+    # It seems to be useful to knock 100 Ang or so off each end of the range
+    # otherwise Iscrunch doesn't behave very well
+    my $min = 0;
+    for my $n (0..$order) {$min += $coeffs[-1-$n] * 1024**$n;}
+
+    $min = int($min) + 100;
+    my $max = int($coeffs[-1]) - 100;
+
+    # Check that min and max are the right way round (otherwise Iscrunch
+    # does nothing).
+    if ($min > $max) {($min, $max) = ($max, $min)}
+
+    $Frm->uhdr( "lambda_min" => "$min");
+    $Frm->uhdr( "lambda_max" => "$max");
+
+} else {
+    orac_print "Can only obtain wavelength range for arc frames. Ignoring.\n";
+}
