@@ -81,68 +81,45 @@ ORAC::Frame::Michelle->_generate_orac_lookup_methods( \%hdr );
 # Certain headers appear in each .In sub-frame.  Special translation
 # rules are required to represent the combined image, and thus should
 # not appear in the above hash.  For example, the start time is that of
-# the first sub-image, and the end time that of the sub-image.  These
-# translation methods make use 
+# the first sub-image, and the end time that of the sub-image. 
 
+# Declination offsets need to be handled differently for spectroscopy
+# mode because of the new nod iterator.
+sub _to_DEC_TELESCOPE_OFFSET {
+   my $self = shift;
+   my $decoff;
 
-# RA and Dec offsets need to be handled differently for spectroscopy
-# mode because of the new nod iterator. If the nod iterator is used,
-# then telescope offsets always come out as 0,0. We need to check if
-# we're in the B beam (the nodded position) to figure out what the
-# offset is.
-sub _to_RA_TELESCOPE_OFFSET {
-  my $self = shift;
+# Determine the observation mode, e.g. spectroscopy or imaging.
+   my $mode = $self->_to_OBSERVATION_MODE();
+   if ( $mode eq 'spectroscopy' ) {
 
-  my $raoff;
+# If the nod iterator is used, then telescope offsets always come out
+# as 0,0.  We need to check if we're in the B beam (the nodded
+# position) to figure out what the offset is using the chop angle
+# and throw.
+      if ( exists( $self->hdr->{CHOPBEAM} ) &&
+           $self->hdr->{CHOPBEAM} =~ /^B/ &&
+           exists( $self->hdr->{CHPANGLE} ) &&
+           exists( $self->hdr->{CHPTHROW} ) ) {
 
-  my $mode = $self->_to_OBSERVATION_MODE();
+         my $pi = 4 * atan2( 1, 1 );
+         my $throw = $self->hdr->{CHPTHROW};
+         my $angle = $self->hdr->{CHPANGLE} * $pi / 180.0;
+         $decoff = $throw * cos( $angle );
+      } else {
+         $decoff = $self->hdr->{TDECOFF};
+      }
 
-  if( $mode eq 'spectroscopy' ) {
-    if( exists( $self->hdr->{CHOPBEAM} ) &&
-        $self->hdr->{CHOPBEAM} =~ /^B/ &&
-        exists( $self->hdr->{CHPANGLE} ) &&
-        exists( $self->hdr->{CHPTHROW} ) ) {
-      my $pi = 4 * atan2( 1, 1 );
-      my $throw = $self->hdr->{CHPTHROW};
-      my $angle = $self->hdr->{CHPANGLE} * $pi / 180.0;
-      $raoff = $throw * sin( $angle );
-    } else {
-      $raoff = $self->hdr->{TRAOFF};
-    }
-  } else {
-    $raoff = $self->hdr->{TRAOFF};
-  }
-  return $raoff;
+# Imaging.
+   } else {
+      $decoff = $self->hdr->{TDECOFF};
+   }
 
+   return $decoff;
 }
 
-sub _to_DEC_TELESCOPE_OFFSET {
-  my $self = shift;
-
-  my $decoff;
-
-  my $mode = $self->_to_OBSERVATION_MODE();
-
-  if( $mode eq 'spectroscopy' ) {
-
-    if( exists( $self->hdr->{CHOPBEAM} ) &&
-        $self->hdr->{CHOPBEAM} =~ /^B/ &&
-        exists( $self->hdr->{CHPANGLE} ) &&
-        exists( $self->hdr->{CHPTHROW} ) ) {
-
-      my $pi = 4 * atan2( 1, 1 );
-      my $throw = $self->hdr->{CHPTHROW};
-      my $angle = $self->hdr->{CHPANGLE} * $pi / 180.0;
-      $decoff = $throw * cos( $angle );
-    } else {
-      $decoff = $self->hdr->{TDECOFF};
-    }
-  } else {
-    $decoff = $self->hdr->{TDECOFF};
-  }
-
-  return $decoff;
-
+sub _from_DEC_TELESCOPE_OFFSET { 
+   "TDECOFF", $_[0]->uhdr("ORAC_DEC_TELESCOPE_OFFSET");
 }
 
 sub _to_DETECTOR_INDEX {
@@ -249,6 +226,44 @@ sub _to_OBSERVATION_MODE {
    return $mode;
 }
 
+# Right-ascension offsets need to be handled differently for spectroscopy
+# mode because of the new nod iterator.
+sub _to_RA_TELESCOPE_OFFSET {
+   my $self = shift;
+   my $raoff;
+
+# Determine the observation mode, e.g. spectroscopy or imaging.
+   my $mode = $self->_to_OBSERVATION_MODE();
+   if ( $mode eq 'spectroscopy' ) {
+
+# If the nod iterator is used, then telescope offsets always come out
+# as 0,0.  We need to check if we're in the B beam (the nodded
+# position) to figure out what the offset is using the chop angle
+# and throw.
+      if ( exists( $self->hdr->{CHOPBEAM} ) &&
+           $self->hdr->{CHOPBEAM} =~ /^B/ &&
+           exists( $self->hdr->{CHPANGLE} ) &&
+           exists( $self->hdr->{CHPTHROW} ) ) {
+         my $pi = 4 * atan2( 1, 1 );
+         my $throw = $self->hdr->{CHPTHROW};
+         my $angle = $self->hdr->{CHPANGLE} * $pi / 180.0;
+         $raoff = $throw * sin( $angle );
+
+       } else {
+         $raoff = $self->hdr->{TRAOFF};
+       }
+
+# Imaging.
+   } else {
+      $raoff = $self->hdr->{TRAOFF};
+   }
+   return $raoff;
+}
+
+sub _from_RA_TELESCOPE_OFFSET { 
+   "TRAOFF", $_[0]->uhdr("ORAC_RA_TELESCOPE_OFFSET");
+}
+
 # Cater for early data with missing values.
 sub _to_SCAN_INCREMENT {
    my $self = shift;
@@ -287,25 +302,25 @@ sub _to_UTDATE {
 }
 
 sub _to_UTEND {
-  my $self = shift;
-  if( exists( $self->hdr->{ $self->nfiles } ) &&  exists( $self->hdr->{ $self->nfiles }->{UTEND} ) ) {
-    $self->hdr->{ $self->nfiles }->{UTEND};
-  }
+   my $self = shift;
+   if ( exists( $self->hdr->{ $self->nfiles } ) &&  exists( $self->hdr->{ $self->nfiles }->{UTEND} ) ) {
+      $self->hdr->{ $self->nfiles }->{UTEND};
+   }
 }
 
 sub _from_UTEND {
-  "UTEND", $_[0]->uhdr("ORAC_UTEND");
+   "UTEND", $_[0]->uhdr("ORAC_UTEND");
 }
 
 sub _to_UTSTART {
-  my $self = shift;
-  if( exists( $self->hdr->{ 1 } ) &&  exists( $self->hdr->{ 1 }->{UTSTART} ) ) {
-    $self->hdr->{ 1 }->{UTSTART};
-  }
+   my $self = shift;
+   if ( exists( $self->hdr->{ 1 } ) &&  exists( $self->hdr->{ 1 }->{UTSTART} ) ) {
+      $self->hdr->{ 1 }->{UTSTART};
+   }
 }
 
 sub _from_UTSTART {
-  "UTSTART", $_[0]->uhdr("ORAC_UTSTART");
+   "UTSTART", $_[0]->uhdr("ORAC_UTSTART");
 }
 
 # Specify the reference pixel, which is normally near the frame centre.
@@ -322,7 +337,7 @@ sub _to_X_REFERENCE_PIXEL{
 
 # Use a default of the centre of the full array.
    } else {
-     $xref = 161;
+      $xref = 161;
    }
    return $xref;
 }
@@ -461,11 +476,11 @@ Required ORAC extensions are:
 
 ORACTIME: should be set to a decimal time that can be used for
 comparing the relative start times of frames.  For Michelle
-this is decimal UT days.
+number is decimal UT days.
 
 ORACUT: This is the UT day of the frame in YYYYMMDD format.
 
-This method should be run after a header is set. Currently the readhdr()
+This method should be run after a header is set.  Currently the readhdr()
 method calls this whenever it is updated.
 
 This method updates the frame header.
@@ -474,27 +489,28 @@ Returns a hash containing the new keywords.
 =cut
 
 sub calc_orac_headers {
-  my $self = shift;
+   my $self = shift;
 
-  # Run the base class first since that does the ORAC
-  # headers
-  my %new = $self->SUPER::calc_orac_headers;
+# Run the base class first since that does the ORAC headers.
+   my %new = $self->SUPER::calc_orac_headers;
 
 
-  # ORACTIME
-  my $date = defined($self->hdr("UTDATE")) ? $self->hdr("UTDATE") : 0;
-  my $time = defined($self->hdr->{1}->{'UTSTART'}) ? $self->hdr->{1}->{'UTSTART'} / 24 : ( defined( $self->hdr->{'UTSTART'} ) ? $self->hdr->{'UTSTART'} / 24 : 0 );
-  $self->hdr('ORACTIME', $date + $time);
+# ORACTIME
 
-  $new{'ORACTIME'} = $time;
+# Return zero if the date or time are unavailable.
+   my $date = defined( $self->hdr( "UTDATE" ) ) ? $self->hdr( "UTDATE")  : 0;
+   my $time = defined( $self->hdr->{1}->{'UTSTART'}) ? $self->hdr->{1}->{'UTSTART'} / 24 : ( defined( $self->hdr->{'UTSTART'} ) ? $self->hdr->{'UTSTART'} / 24 : 0 );
+   $self->hdr( 'ORACTIME', $date + $time );
 
-  # ORACUT
-  # For Michelle this is simply the UTDATE header value.
-  my $ut = $self->hdr('UTDATE');
-  $ut = 0 unless defined $ut;
-  $self->hdr('ORACUT', $ut);
+   $new{'ORACTIME'} = $time;
 
-  return %new;
+# ORACUT
+# For Michelle this is simply the UTDATE header value.
+   my $ut = $self->hdr( "UTDATE" );
+   $ut = 0 unless defined $ut;
+   $self->hdr('ORACUT', $ut);
+
+   return %new;
 }
 
 =back
