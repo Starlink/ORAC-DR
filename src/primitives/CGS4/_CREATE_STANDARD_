@@ -32,8 +32,11 @@ Defines the row to extract as the standard spectrum.
 If SEARCH is greater than 1 this will be used to specify the center
 of a region to be searched in order to find the best row to use.
 If a row is not given, this primitive will default to the value
-stored in the header (as calculated by L<_DETERMINE_ROW_|_DETERMINE_ROW_>).
-If that primitive has not been run it will default to 96.
+calculated by L<_DETERMINE_ROW_|_DETERMINE_ROW_>). The ROW
+specified here will be passed to _DETERMINE_ROW_ in any case.
+(since that primitive is called from this one in order to force
+an index entry)
+
 
 =item SEARCH
 
@@ -158,214 +161,244 @@ sub dectodms {
 # end subroutine dectodms
 }
 
-my $fullname = $Grp->file . $Grp->filesuffix;
 my $groupname = $Grp->file;
-if(!(-e $fullname)) {
+if(!( $Grp->file_exists )) {
   orac_warn("Reduced group file $groupname does not exist.\n");
   orac_warn("Cannot create standard.\n");
+} elsif (! $Frm->uhdr("PAIR_COMPLETE")) {
+  orac_warn "Pair not yet complete. Can not create new standard yet.\n";
 } else {
 
-# get temperature parameter
-# if the temperature parameter is not defined, check configuration table
-# for spectral type. If that fails, check SIMBAD for spectral type.
-# if SIMBAD fails, default to 6000.
+  # We need to get the star parameters. Since this is sometimes costly
+  # we only do this if we havent already done it for this group!!!
+  my ($vmag, $temperature, $spectype);
+  unless (defined $Grp->uhdr("TEMPERATURE") && defined $Grp->uhdr("VMAG")
+	  && defined $Grp->uhdr("SPECTYPE")) {
 
-  my $temperature = ($_CREATE_STANDARD_{TEMP} || undef);
-  my $spectype;
-  my $vmag;
-  my %spectotemp = (
-		    O5 => 40000,
-		    O6 => 37000,
-		    O7 => 35000,
-		    O8 => 34000,
-		    O9 => 33000,
-		    B0 => 30000,
-		    B1 => 25400,
-		    B2 => 22000,
-		    B3 => 18700,
-		    B4 => 17000,
-		    B5 => 15400,
-		    B6 => 14000,
-		    B7 => 13000,
-		    B8 => 11900,
-		    B9 => 10500,
-		    A0 => 9520,
-		    A1 => 9230,
-		    A2 => 8970,
-		    A3 => 8720,
-		    A4 => 8500,
-		    A5 => 8200,
-		    A6 => 8000,
-		    A7 => 7850,
-		    A8 => 7580,
-		    A9 => 7400,
-		    F0 => 7200,
-		    F1 => 7000,
-		    F2 => 6890,
-		    F3 => 6700,
-		    F4 => 6500,
-		    F5 => 6440,
-		    F6 => 6350,
-		    F7 => 6275,
-		    F8 => 6200,
-		    F9 => 5900,
-		    G0 => 5930,
-		    G1 => 5880,
-		    G2 => 5830,
-		    G3 => 5785,
-		    G4 => 5740,
-		    G5 => 5680,
-		    G6 => 5620,
-		    G7 => 5525,
-		    G8 => 5430,
-		    G9 => 5335,
-		    K0 => 5240,
-		    K1 => 5125,
-		    K2 => 5010,
-		    K3 => 4785,
-		    K4 => 4560,
-		    K5 => 4340,
-		    K6 => 4185,
-		    K7 => 4030,
-		    K8 => 3950,
-		    K9 => 3875,
-		    M0 => 3800,
-		    M1 => 3680,
-		    M2 => 3530,
-		    M3 => 3380,
-		    M4 => 3180,
-		    M5 => 3030,
-		    M6 => 2850,
-		   );
-  
-  # first check the calibration table for spectral type
+    # get temperature parameter
+    # if the temperature parameter is not defined, check configuration table
+    # for spectral type. If that fails, check SIMBAD for spectral type.
+    # if SIMBAD fails, default to 6000.
 
-  if(!defined($temperature)) {
+    $temperature = ($_CREATE_STANDARD_{TEMP} || undef);
+    $spectype;
+    $vmag;
+    my %spectotemp = (
+		      O5 => 40000,
+		      O6 => 37000,
+		      O7 => 35000,
+		      O8 => 34000,
+		      O9 => 33000,
+		      B0 => 30000,
+		      B1 => 25400,
+		      B2 => 22000,
+		      B3 => 18700,
+		      B4 => 17000,
+		      B5 => 15400,
+		      B6 => 14000,
+		      B7 => 13000,
+		      B8 => 11900,
+		      B9 => 10500,
+		      A0 => 9520,
+		      A1 => 9230,
+		      A2 => 8970,
+		      A3 => 8720,
+		      A4 => 8500,
+		      A5 => 8200,
+		      A6 => 8000,
+		      A7 => 7850,
+		      A8 => 7580,
+		      A9 => 7400,
+		      F0 => 7200,
+		      F1 => 7000,
+		      F2 => 6890,
+		      F3 => 6700,
+		      F4 => 6500,
+		      F5 => 6440,
+		      F6 => 6350,
+		      F7 => 6275,
+		      F8 => 6200,
+		      F9 => 5900,
+		      G0 => 5930,
+		      G1 => 5880,
+		      G2 => 5830,
+		      G3 => 5785,
+		      G4 => 5740,
+		      G5 => 5680,
+		      G6 => 5620,
+		      G7 => 5525,
+		      G8 => 5430,
+		      G9 => 5335,
+		      K0 => 5240,
+		      K1 => 5125,
+		      K2 => 5010,
+		      K3 => 4785,
+		      K4 => 4560,
+		      K5 => 4340,
+		      K6 => 4185,
+		      K7 => 4030,
+		      K8 => 3950,
+		      K9 => 3875,
+		      M0 => 3800,
+		      M1 => 3680,
+		      M2 => 3530,
+		      M3 => 3380,
+		      M4 => 3180,
+		      M5 => 3030,
+		      M6 => 2850,
+		     );
     
-    my $type;
-    my $objname = $Frm->hdr->{'OBJECT'};
+    # first check the calibration table for spectral type
     
-    orac_print "Searching Bright Star Catalogue for $objname\n";
+    if(!defined($temperature)) {
+      
+      my $type;
+      my $objname = $Frm->hdr->{'OBJECT'};
+      
+      orac_print "Searching Bright Star Catalogue for $objname\n";
+      
+      if($objname =~ /bs\s?([0-9]{1,4})/i) {
+	my $bsnum = $1;
+	my $calfile = $ENV{'ORAC_DATA_CAL'} . "/bsc5.dat";
+	my $template = "a4a10a2a9a6a6a4a1a1a1a5a2a9a2a2a4a1a2a2a2a2a2a4a1a2a2a2a6a6a5a1a1a5a1a5a1a5a1a20a1a6a6a1a5a4a4a2a3a1a4a6a4a2a1\n";
+	open BSFILE, $calfile;
+	while (<BSFILE>) {
+	  my @data = unpack($template,$_);
+	  # $data[0] == BS#, $data[38] == spectral type
+	  if($1 == $data[0]) {
+	    # remove the first two characters from $data[38]
+	    my $revdata = reverse $data[38];
+	    chop $revdata;
+	    chop $revdata;
+	    $data[38] = reverse $revdata;
+	    # determine the spectral type from the first two characters
+	    if($data[38] =~ /^([a-z][0-9])/i) {
+	      $spectype = $1;
+	      orac_print "Object is spectral type $spectype\n";
+	      ($vmag = $data[29]) =~ s/\s+//g;
+	      $temperature = $spectotemp{$spectype};
+	      orac_print "Setting temperature to $temperature K.\n";
+	      orac_print "V magnitude is $vmag \n";
+	    }
+	    last;
+	  }
+	}
+	close BSFILE;
+      }
+    }
     
-    if($objname =~ /bs\s?([0-9]{1,4})/i) {
-      my $bsnum = $1;
-      my $calfile = $ENV{'ORAC_DATA_CAL'} . "/bsc5.dat";
-      my $template = "a4a10a2a9a6a6a4a1a1a1a5a2a9a2a2a4a1a2a2a2a2a2a4a1a2a2a2a6a6a5a1a1a5a1a5a1a5a1a20a1a6a6a1a5a4a4a2a3a1a4a6a4a2a1\n";
-      open BSFILE, $calfile;
-      while (<BSFILE>) {
-	my @data = unpack($template,$_);
-	# $data[0] == BS#, $data[38] == spectral type
-	if($1 == $data[0]) {
-	  # remove the first two characters from $data[38]
-	  my $revdata = reverse $data[38];
-	  chop $revdata;
-	  chop $revdata;
-	  $data[38] = reverse $revdata;
-	  # determine the spectral type from the first two characters
-	  if($data[38] =~ /^([a-z][0-9])/i) {
+    if((!defined($temperature)) && (defined(&LWP::Simple::get))) {
+      
+      orac_print "Object not found in Bright Star Catalogue.\n";
+      orac_print "Querying SIMBAD for spectral type...\n";
+      my $meanra = $Frm->hdr("MEANRA");
+      my $meandec = $Frm->hdr("MEANDEC");
+      
+      my ($radeg, $ramin, $rasec) = dectodms($meanra);
+      my ($decdeg, $decmin, $decsec) = dectodms($meandec);
+      
+      # set up the URL
+      my $URL1 = "http://simbad.harvard.edu/sim-id.pl?protocol=html&Ident=" . $radeg . "+" . $ramin . "+";
+      my $URL2;
+      if($decdeg > 0) {
+	$URL2 = $rasec . "+%2B" . $decdeg . "+" . $decmin . "+" . $decsec . "&NbIdent=1&Radius=10&Radius.unit";
+      } else {
+	$URL2 = $rasec . "+" . $decdeg . "+" . $decmin . "+" . $decsec . "&NbIdent=1&Radius=10&Radius.unit";
+      }
+      my $URL3 = "=arcmin&CooFrame=FK5&CooEpoch=2000&CooEqui=2000&output.max=";
+      my $URL4 = "all&o.catall=on&output.mesdisp=N&Bibyear1=1983&Bibyear2=1999&Frame1=FK5";
+      my $URL5 = "&Frame2=none&Frame3=none&Epoch1=2000.0&Epoch2=1950.0&Epoch3=2000.0&Equi1";
+      my $URL6 = "=2000.0&Equi2=1950.0&Equi3=2000.0";
+      my $URL = $URL1 . $URL2 . $URL3 . $URL4 . $URL5 . $URL6;
+      
+      $LWP::Simple::ua->timeout(20); # set timeout to 20 seconds
+      my @content = split '\n', LWP::Simple::get($URL);
+      if(!defined($content[0])) {
+	orac_print "Unable to connect to SIMBAD database.\n";
+      } else {
+	my $found = 0;
+	# if the SIMBAD results page changes, this will need to change as well.
+	foreach my $string (@content) { 
+	  my @array = ();
+	  @array = split '\|', $string;
+	  if((defined($array[4])) && ($array[4] =~ /([a-z][0-9])/i) && ($found == 0)) { 
 	    $spectype = $1;
+	    my @simcoord = split ' ', $array[2];
+	    my $format = "%2d %2d %4.2f";
+	    my $rastring = sprintf($format,$radeg,$ramin,$rasec);
+	    my $decstring = sprintf($format,$decdeg,$decmin,$decsec);
+	    my $srastring = sprintf($format,$simcoord[0],$simcoord[1],$simcoord[2]);
+	    my $sdecstring = sprintf($format,$simcoord[3],$simcoord[4],$simcoord[5]);
+	    orac_print "Header RA: $rastring Decl: $decstring\n";
+	    orac_print "SIMBAD RA: $srastring Decl: $sdecstring\n";
 	    orac_print "Object is spectral type $spectype\n";
-	    ($vmag = $data[29]) =~ s/\s+//g;
 	    $temperature = $spectotemp{$spectype};
 	    orac_print "Setting temperature to $temperature K.\n";
-	    orac_print "V magnitude is $vmag \n";
+	    $found = 1;
+	    # Simply look for the last number surrounded by spaces
+	    # Rather than looking for  'Number Number' which sometimes
+	    # fails since occasionally SIMBAD inserts a character between
+	    # the numbers
+	    $array[3] =~ /([\d\.]+)\s*$/;
+	    $vmag = $1;
+	    if (defined $vmag) {
+	      orac_print "V magnitude is $vmag (from $array[3])\n";
+	    } else {
+	      orac_warn "V magnitude information did not match the expected pattern\n";
+	      orac_warn "Got: '$array[3]' expected  'Number ? Number' (where ? is an optional character)\n";
+	      orac_warn "V magnitude could not be determined\n";
+	    }
+	    
 	  }
-	  last;
 	}
-      }
-      close BSFILE;
-    }
-  }
-
-  if((!defined($temperature)) && (defined(&LWP::Simple::get))) {
-    
-    orac_print "Object not found in Bright Star Catalogue.\n";
-    orac_print "Querying SIMBAD for spectral type...\n";
-    my $meanra = $Frm->hdr("MEANRA");
-    my $meandec = $Frm->hdr("MEANDEC");
-    
-    my ($radeg, $ramin, $rasec) = dectodms($meanra);
-    my ($decdeg, $decmin, $decsec) = dectodms($meandec);
-    
-    # set up the URL
-    my $URL1 = "http://simbad.harvard.edu/sim-id.pl?protocol=html&Ident=" . $radeg . "+" . $ramin . "+";
-    my $URL2;
-    if($decdeg > 0) {
-      $URL2 = $rasec . "+%2B" . $decdeg . "+" . $decmin . "+" . $decsec . "&NbIdent=1&Radius=10&Radius.unit";
-    } else {
-      $URL2 = $rasec . "+" . $decdeg . "+" . $decmin . "+" . $decsec . "&NbIdent=1&Radius=10&Radius.unit";
-    }
-    my $URL3 = "=arcmin&CooFrame=FK5&CooEpoch=2000&CooEqui=2000&output.max=";
-    my $URL4 = "all&o.catall=on&output.mesdisp=N&Bibyear1=1983&Bibyear2=1999&Frame1=FK5";
-    my $URL5 = "&Frame2=none&Frame3=none&Epoch1=2000.0&Epoch2=1950.0&Epoch3=2000.0&Equi1";
-    my $URL6 = "=2000.0&Equi2=1950.0&Equi3=2000.0";
-    my $URL = $URL1 . $URL2 . $URL3 . $URL4 . $URL5 . $URL6;
-
-    $LWP::Simple::ua->timeout(20);       # set timeout to 20 seconds
-    my @content = split '\n', LWP::Simple::get($URL);
-    if(!defined($content[0])) {
-      orac_print "Unable to connect to SIMBAD database.\n";
-    } else {
-      my $found = 0;
-      # if the SIMBAD results page changes, this will need to change as well.
-      foreach my $string (@content) { 
-	my @array = ();
-	@array = split '\|', $string;
-	if((defined($array[4])) && ($array[4] =~ /([a-z][0-9])/i) && ($found == 0)) { 
-	  $spectype = $1;
-	  my @simcoord = split ' ', $array[2];
+	if($found == 0) {
 	  my $format = "%2d %2d %4.2f";
 	  my $rastring = sprintf($format,$radeg,$ramin,$rasec);
 	  my $decstring = sprintf($format,$decdeg,$decmin,$decsec);
-	  my $srastring = sprintf($format,$simcoord[0],$simcoord[1],$simcoord[2]);
-	  my $sdecstring = sprintf($format,$simcoord[3],$simcoord[4],$simcoord[5]);
-	  orac_print "Header RA: $rastring Decl: $decstring\n";
-	  orac_print "SIMBAD RA: $srastring Decl: $sdecstring\n";
-	  orac_print "Object is spectral type $spectype\n";
-	  $temperature = $spectotemp{$spectype};
-	  orac_print "Setting temperature to $temperature K.\n";
-	  $found = 1;
-          # Simply look for the last number surrounded by spaces
-	  # Rather than looking for  'Number Number' which sometimes
-	  # fails since occasionally SIMBAD inserts a character between
-	  # the numbers
-	  $array[3] =~ /([\d\.]+)\s*$/;
-	  $vmag = $1;
-	  if (defined $vmag) {
-	    orac_print "V magnitude is $vmag (from $array[3])\n";
-	  } else {
-	    orac_warn "V magnitude information did not match the expected pattern\n";
-	    orac_warn "Got: '$array[3]' expected  'Number ? Number' (where ? is an optional character)\n";
-	    orac_warn "V magnitude could not be determined\n";
-	  }
-
+	  orac_print "Object at RA: $rastring Decl: $decstring not classified in SIMBAD\n";
 	}
       }
-      if($found == 0) {
-	my $format = "%2d %2d %4.2f";
-	my $rastring = sprintf($format,$radeg,$ramin,$rasec);
-	my $decstring = sprintf($format,$decdeg,$decmin,$decsec);
-	orac_print "Object at RA: $rastring Decl: $decstring not classified in SIMBAD\n";
-      }
     }
+    
+    # if SIMBAD failed to set the temperature, default to 6000
+    
+    unless (defined $temperature) {
+
+      $temperature = 6000.0;
+      orac_print "Temperature could not be determined. Defaulting to $temperature K\n";
+      
+    }
+
+    # Store the values in the header
+    $Grp->uhdr("VMAG",$vmag);
+    $Grp->uhdr("TEMPERATURE",$temperature);
+    $Grp->uhdr("SPECTYPE",$spectype);
+
+  } else {
+
+    $vmag = $Grp->uhdr("VMAG");
+    $temperature = $Grp->uhdr("TEMPERATURE");
+    $spectype = $Grp->uhdr("SPECTYPE");
+
+    orac_print "Using previously determined values of ";
+    orac_print "Vmag=$vmag, SPECTYPE=$spectype, TEMP=$temperature\n";
   }
 
-# if SIMBAD failed to set the temperature, default to 6000
-
-  unless (defined $temperature) {
-
-    $temperature = 6000.0;
-    orac_print "Temperature could not be determined. Defaulting to $temperature K\n";
-
+  # Check to see if we are overriding the extraction row
+  my $defrow;
+  if (exists $_CREATE_STANDARD_{ROW}) {
+    $defrow = $_CREATE_STANDARD_{ROW};
+    orac_print "Using row $defrow provided by user\n";
+    _DETERMINE_ROW_ ROW=$defrow
+  } else {
+    # Retrieve the correct row from the calibration object
+    # There is no override. This either works or fails.
+    _DETERMINE_ROW_
+    my @rows = $Cal->rows;
+    $defrow = $rows[0]; 
+    orac_print "Using row $defrow read from index file\n";
   }
-
-# get extraction row
-# if the extraction row is not defined, default to that calculated
-# by _DETERMINE_ROW_ or 96
-
-  my $defrow = ( defined $Frm->uhdr('EXTRACT_ROW') ?  
-		 $Frm->uhdr('EXTRACT_ROW') : 96);
-  my $extractrow = ($_CREATE_STANDARD_{ROW} || $defrow);
+  my $extractrow = $defrow;
 
 # Get the search box (make sure it is at least size 1)
   my $search = (exists $_CREATE_STANDARD_{SEARCH} &&
@@ -557,8 +590,27 @@ if(!(-e $fullname)) {
   #####################################################
 
   # Set output file name to something else
-#  $out = "std_opt_" . $Grp->name;
+  $out = "std_opt_" . $Grp->name;
+
+  # Profile the image
+  my $prof = new ORAC::TempFile;
+  my $proffile = $prof->file;
+  my $tmp  = new ORAC::TempFile;
+  my $tmpfile = $tmp->file;
+  my $start = $extractrow - 2;
+  my $end   = $extractrow + 2;
+  my $args = "degree=5 nreject=5 weight=no residual=$tmpfile";
+  $Mon{'figaro1'}->obeyw("profile","image=$in profile=$proffile ystart=$start yend=$end $args"); 
 
   # Now do the optimal extaction
+  $Mon{'figaro1'}->obeyw("optextract","image=$in profile=$proffile spectrum=$out weight=no");
+
+  orac_print "Orac says: $in to $out: Optimal extracted standard created\n";
+
+  $hdr{NDIMS} = 1;  # This is the grown standard
+
+  $Cal->standardindex->add($out, \%hdr);
+  
+  orac_print "$out added to index file\n";
 
 }
