@@ -6,6 +6,11 @@ ORAC::Display::KAPVIEW - ORACDR interface to Kapview (Kappa)
 
 =head1 SYNOPSIS
 
+  use ORAC::Display::KAPVIEW;
+  $disp = new ORAC::Display::KAPVIEW;
+
+  $disp->image($file, { XAUTOSCALE => 1});
+
 =head1 DESCRIPTION
 
 ORAC interface to Kappa Kapview. Provides methods for displaying images
@@ -15,7 +20,7 @@ Available options are:
 
 IMAGE - display image using DISPLAY
 GRAPH - display graph using LINPLOT
-SIGMA - display scatter plot with a Y-range of +/-N sigma.
+SIGMA - display scatter plot with a Y-range of +/- N sigma.
 DATAMODEL - Display data (as points) with a model overlaid
 HISTOGRAM - Histogram of values in data array
 
@@ -31,8 +36,11 @@ use ORAC::Msg::ADAM::Control;
 use File::Copy;
 use Cwd;
 
+use NDF;  # To read image bounds
+
 use ORAC::Print;
 use ORAC::Constants qw/:status/;        #  Constants
+use ORAC::General;                      # Max and min
 
 use base qw/ ORAC::Display::Base /;     # Base class
 
@@ -256,7 +264,8 @@ sub create_dev {
 
 =item launch
 
-Launch kapview.
+This method starts the kapview monolith and stores the associated
+Task object.
 
 =cut
 
@@ -275,7 +284,8 @@ sub launch {
 
 =item configure
 
-Load a startup image.
+Load a startup image. This tests the system to make sure that images
+can be displayed and that the colour map is loaded.
 
 =cut
 
@@ -398,12 +408,164 @@ sub config_region {
 
 }
 
+=item select_section
+
+This method converts a file name and options hash into
+a filename with an attached NDF section.
+
+  $newfile = $Display->select_section($file, \%options);
+
+The return value is the original filename with the
+NDF section attached.
+
+Relevant keywords in options hash:
+
+  XMIN/XMAX - X pixel max and min values
+  YMIN/YMAX - Y pixel max and min values
+  XAUTOSCALE - Use autoscaling for X?
+  YAUTOSCALE - Use autoscaling for Y?
+
+If Xautoscale and Yautoscale are true, no section command is appended.
+If the XAUTOSCALE/YAUTOSCALE/nAUTOSCALE keywords can not be found they are
+assumed to be true.
+
+For data arrays with N>2, the leading letter is dropped and replaced
+by the dimension number. eg:
+
+  3MIN/3MAX - pixel range of the 3rd dimension
+  4AUTOSCALE - autoscale the 4th dimension?
+
+For NDFs the maximum dimensionality is 7.
+
+The bounds of the input file are compared to the supplied bounds.
+If any of the requested bounds are exceeded, the maximum value
+will be used instead. 
+
+Returns undef on error.
+The unmodified file name is returned if no options hash can be found.
+
+=cut
+
+
+sub select_section {
+  my $self = shift;
+  my $file = shift;
+  my $options = shift;
+
+  return $file if ref($options) ne 'HASH';
+
+  # Take a copy of the options hash
+  my %options = %{$options};
+
+
+  my $maxdim = 7;  # Maximum number of allowed dimensions
+
+  # Define lookup table of prefix (allow up to 7 dimensions)
+  my @lookup = ( "X", "Y", 3..$maxdim);
+  my @autosc = ();  # Autoscale flags
+  my $auto_all = 1; # Flag to keep track of global autoscale
+ 
+  # Read the autoscale flags from the hash
+  for my $dim (@lookup) {
+    my $autosc = 1;
+    my $key = $dim . "AUTOSCALE";
+    $autosc = $options{$key} if exists $options{$key};
+    push (@autosc, $autosc);
+
+    # Set flag to 0 if any of the autoscale flags are false
+    $auto_all = 0 unless $autosc; 
+  }
+
+  # Return the filename if all the autoscale flags are true
+  return $file if ($auto_all);
+
+  # Now query the file for its bounds to make sure that the pixel
+  # index bounds supplied to not exceed the bounds of the file
+  # Could do this by opening the file using NDF or by using the
+  # KAPPA ndftrace command. Doing it myself has less overhead
+  # (and will use fewer lines!!)
+
+  my $status = &NDF::SAI__OK;
+  my ($indf, @lbnd, @ubnd, $ndim);
+  ndf_find(&NDF::DAT__ROOT, $file, $indf, $status);
+  ndf_bound($indf, 7, @lbnd, @ubnd, $ndim, $status);
+  ndf_annul($indf, $status);
+  if ($status != &NDF::SAI__OK) {
+    err_annul($status);
+    orac_err("Error reading bounds from input file: $file");
+    return undef;
+  }
+  
+#  print "Ndims = $ndim\n";
+#  print "Lower bounds are: ", join(":",@lbnd),"\n";
+#  print "Upper bounds are: ", join(":",@ubnd),"\n";
+
+  # This is an array describing the section for each dimension
+  my @sects = ();
+
+  # Loop over all valid dimensions
+  for my $dim (1..$ndim) {
+    my $index = $dim-1;
+
+    # Check that this dim is mentioned in the lookup table
+    if (defined $lookup[$index]) {
+
+      # Check the autoscale flag for this dim
+      unless ($autosc[$index]) {
+
+	# Read the bounds from the hash
+	my $pre = $lookup[$index];
+
+	# Lower bound is minimum of $lbnd[$dim-1] and $options{?MIN}
+        my $lower = max($lbnd[$index], $options{"${pre}MIN"});
+        my $upper = min($ubnd[$index], $options{"${pre}MAX"});
+
+	$sects[$index] = "$lower:$upper";
+
+      } else {
+        # An empty section
+	$sects[$index] = undef;
+      }
+
+    }
+
+  }  
+  
+  # Construct the section
+  my $section = "(". join(",", @sects) . ")";
+
+  # Return the filename
+  return "$file$section";
+
+}
+
+=back
+
+=head1 DISPLAY METHODS
+
+=over 4
+
+=cut
+
+######################## DISPLAY MODES ##############################
+
 =item image
 
 Display an image.
 Takes a file name and arguments stored in a hash.
 Note that currently it does not take a format argument
 and NDF is assumed.
+
+Recognised options:
+
+  XMIN/XMAX - X pixel max and min values
+  YMIN/YMAX - Y pixel max and min values
+  XAUTOSCALE - Use autoscaling for X?
+  YAUTOSCALE - Use autoscaling for Y?
+  ZMIN/ZMAX  - Z-range of greyscale (data units)
+  ZAUTOSCALE - Autoscale Z?
+
+Default is to autoscale.
 
 =cut
 
@@ -437,6 +599,12 @@ sub image {
   # Options handling can not be taken out into a sub since every
   # kapview command has subtly different parameter names,
 
+  # Set the data file name
+  $file =~ s/\.sdf$//;  # Strip .sdf
+
+  # Calculate NDF section
+  $file = $self->select_section($file,\%options);
+
   # Construct the parameter string for DISPLAY
   my $optstring = " ";
 
@@ -455,8 +623,6 @@ sub image {
     }
   }
 
-  # Set the data file name
-  $file =~ s/\.sdf$//;  # Strip .sdf
   
   my $status;
 
@@ -493,6 +659,15 @@ Takes a file name and arguments stored in a hash.
 Note that currently it does not take a format argument
 and NDF is assumed.
 
+Display keywords:
+
+  XMIN/XMAX  - X-pixel range of graph
+  XAUTOSCALE - Autoscale pixel range?
+  YMIN/YMAX  - Y-range of graph (in data units)
+  YAUTOSCALE - Autoscale Y-axis
+
+Default is to autoscale.
+
 =cut
 
 sub graph {
@@ -522,6 +697,9 @@ sub graph {
 
   # Set the data file name
   $file =~ s/\.sdf$//;  # Strip .sdf
+
+  # Calculate the NDF section
+  $file = $self->select_section($file,\%options);
 
   # A resetpars also seems to be necessary to instruct kappa to
   # update its current frame for plotting. Without this the new PICDEF
@@ -707,6 +885,15 @@ Takes a file name and arguments stored in a hash.
 Note that currently it does not take a format argument
 and NDF is assumed.
 
+Option keywords:
+
+  XMIN/XMAX  - X-pixel range of graph
+  XAUTOSCALE - Autoscale pixel range?
+  YMIN/YMAX  - Y-range of graph (in data units)
+  YAUTOSCALE - Autoscale Y-axis
+
+Default is to autoscale on the data (the model may not be visible).
+
 =cut
 
 sub datamodel {
@@ -737,6 +924,9 @@ sub datamodel {
   # Set the data file name
   $file =~ s/\.sdf$//;  # Strip .sdf
 
+  # Calculate NDF section
+  $file = $self->select_section($file,\%options);
+
   # Probably should try to find out whether the array is 1 or 2 dimensional
   # since currently linplot fails if the data is not 1-D
   # would have to use NDFTRACE from NDFPACK OR use my NDF module
@@ -761,6 +951,9 @@ sub datamodel {
 
   # Now plot overlay the model if it is available
   my $model = $file . "_model";
+
+  # Calculate the NDF section of the model
+  $model = $self->select_section($model,\%options);
 
   if (-e $model . ".sdf") {  # Assume .sdf extension!!!!
 
@@ -795,9 +988,11 @@ Arguments:
   XAUTOSCALE - Use full X-range
   YMIN/YMAX - minimum/maximum x-pixel value
   YAUTOSCALE - use full Y-range
-  ZMIN/ZMAX - Z range of histogram
+  ZMIN/ZMAX - Z range of histogram (data units)
   ZAUTOSCALE - use full Z-range
   NBINS - Number of bins to be used for histogram calculation
+
+Default is for autoscaling and for NBINS=20.
 
 =cut
 
@@ -829,6 +1024,9 @@ sub histogram {
   # Set the data file name
   $file =~ s/\.sdf$//;  # Strip .sdf
 
+  # Calculate NDF section
+  $file = $self->select_section($file,\%options);
+
   # A resetpars also seems to be necessary to instruct kappa to
   # update its current frame for plotting. Without this the new PICDEF
   # regions are not picked up correctly.
@@ -836,6 +1034,7 @@ sub histogram {
 
   my $status = $self->obj->resetpars;
   return $status if $status != ORAC__OK;
+
 
   # THIS IS THE HISTOGRAM SPECIFIC STUFF
 
@@ -857,7 +1056,7 @@ sub histogram {
       $range = "range=[$min,$max]";
     }
   }
-  my $nbins;
+  my $nbins = " NUMBIN=20";
   $nbins = " NUMBIN=$options{NBINS}" if exists $options{NBINS};
 
   # Construct string for linplot options
