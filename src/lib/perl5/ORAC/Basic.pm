@@ -401,8 +401,7 @@ sub orac_parse_arguments {
 
 =item orac_parse_recipe(array_reference, instrument)
 
-Parses a recipe, reading in the necessary primitives and
-adding automatic error checking code.
+Parses a recipe, reading in the necessary primitives.
 
 The recipe is parsed in place (ie using the array reference).
 The instrument name is supplied so that the directory name
@@ -447,7 +446,7 @@ sub orac_parse_recipe {
       my $lines_ref = orac_read_primitive($macro, $instrument);
 
       # Store lines - making sure we create a separate scope
-      push(@parsed,"\n{\n\n",@$lines_ref,"\n}\n");
+      push(@parsed,"\n{\nmy \$ORAC_PRIMITIVE=\"$macro\";\n\n",@$lines_ref,"\n}\n");
       
 
       } else {
@@ -498,7 +497,7 @@ sub orac_add_code_to_recipe {
       # Add the following debug line if the obeyw is not commented out
       # Debug line if DEBUG is true
       if ($DEBUG && $line !~ /\#.+->obeyw/) {
-	push(@processed,"orac_debug(\"$arguments\n\");\n")
+	push(@processed,'orac_debug( $Frm->number . ":".$ORAC_PRIMITIVE .'."\":\t$arguments\n\");\n")
       }
 
       # Now check to see whether it starts with a comment character
@@ -713,6 +712,10 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.39  1999/06/25 02:26:45  timj
+#Improve debugging output in add_code_to_recipe.
+#Add $ORAC_PRIMITIVE to recipe code.
+#
 #Revision 1.38  1999/05/13 00:43:24  timj
 #Check for $DISPLAY env var before allowing Display system to be started.
 #
