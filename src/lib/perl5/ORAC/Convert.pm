@@ -246,7 +246,11 @@ sub convert {
   }
 
   # If the input format is the same as the output just return
-  return $filename if $options{'IN'} eq $options{OUT};
+  # Make sure directory path is removed
+  if ($options{'IN'} eq $options{OUT}) {
+    my $out = (split(/\//,$filename))[-1];
+    return $out;
+  }
 
   # Set the overwrite flag
   $self->overwrite($options{OVERWRITE}) if exists $options{OVERWRITE};
@@ -261,7 +265,11 @@ sub convert {
   # NOT YET IMPLEMENTED
 
   # Return the name of the converted file
-  return $outfile;
+  # Make sure that we dont return a full path (the conversion occurred
+  # in the current directory even if we read from a remote directory)
+
+
+  return (split(/\//,$outfile))[-1];;
 
 }
 
