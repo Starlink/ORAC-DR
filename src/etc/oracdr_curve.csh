@@ -59,6 +59,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.2  2001/03/17 00:02:30  timj
+#     Make sure that curve uses a private disp.dat rather than the version from ORAC_DATA_CAL
+#
 #     Revision 1.1  2000/12/18 21:57:36  npr
 #     Original version of oracdr_curve.csh, based on oracdr_ufti.csh
 #
@@ -103,7 +106,7 @@ endif
 
 set oracdr_args = "-ut $oracut"
 
-setenv ORAC_INSTRUMENT ufti
+setenv ORAC_INSTRUMENT UFTI
 setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/curve/$oracut/
 setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/curve/$oracut/
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/ufti
@@ -112,6 +115,10 @@ setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/ufti
 setenv ORAC_PERSON mjc
 setenv ORAC_LOOP flag
 setenv ORAC_SUN  232
+
+if ( ! -f ${ORAC_DATA_OUT}/disp.dat ) then
+    echo "NUM TYPE=image TOOL=gaia REGION=1 WINDOW=1 AUTOSCALE=1" > ${ORAC_DATA_OUT}/disp.dat
+endif
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
