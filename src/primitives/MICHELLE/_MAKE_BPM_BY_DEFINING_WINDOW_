@@ -1,0 +1,150 @@
+# -*-perl-*-
+
+# _MAKE_BPM_BY_DEFINING_WINDOW_
+#
+# this primitive marks data within a window as either good or bad
+# 
+# b.cavanagh@jach.hawaii.edu
+
+
+=head1 NAME
+
+MAKE_BPM_BY_DEFINING_WINDOW - mark data within a window as either good or bad
+
+=head1 DESCRIPTION
+
+Flags pixels inside a rectangular window as either good or bad.  Good pixels 
+will be given a value of zero, following CGS4 convention.
+
+=head1 PARAMETERS
+
+=over 4
+
+=item WINDOW
+
+GOOD if pixels within the window are good while other pixels are bad, or
+BAD if pixels within the window are bad while other pixels are good. Defaults
+to GOOD.
+
+=back
+
+=head1 ORAC
+
+=head2 Engines referenced
+
+KAPPA
+
+=head2 Tasks called
+
+=over 4
+
+=item kappa_mon
+
+chpix, ardmask
+
+=item ndfpack_mon
+
+ndftrace
+
+=back
+
+=head2 Objects addressed
+
+$Frm
+
+=head1 NOTES
+
+Uses NDFTRACE to get bounds since at this time a complete FITS header
+is not available.
+
+Follows CGS4 convention where good pixels are given a value of zero.
+
+Uses a workaround for ARDMASK that requires the lower bounds of the
+rectangle to have 1 subtracted from them so that the correct rectangle
+is blanked. If the "feature" in ARDMASK is fixed, this workaround
+will be removed.
+
+=head2 REVISION
+
+  $Id$
+
+=head1 AUTHOR
+
+b.cavanagh@jach.hawaii.edu
+
+=cut
+
+# get parameter
+
+my $winpar = ($_MAKE_BPM_BY_DEFINING_WINDOW_{WINDOW} || undef);
+
+(uc($winpar) eq "BAD") || ($winpar = "GOOD");
+
+# get window dimensions from the user
+
+my ($col, $row);
+
+if (uc($winpar) eq "GOOD") {
+  $col = orac_read("Enter first and last columns to be marked as good (comma delimited)>");
+  $row = orac_read("Enter first and last rows to be marked as good (comma delimited)>");
+} else {
+  $col = orac_read("Enter first and last columns to be marked as bad (comma delimited)>");
+  $row = orac_read("Enter first and last rows to be marked as bad (comma delimited)>");
+};
+
+my ($fcol, $lcol) = split(",", $col);
+my ($frow, $lrow) = split(",", $row);
+
+# the following two lines get around a "feature" in ARDMASK, where pixels are treated
+# in floating point pixel co-ordinates instead of integer pixel indices, thus
+# blanking out a window that's one pixel smaller than what the user actually wants.
+#
+# this may need to be removed if this "feature" is fixed.
+
+$fcol-=1;
+$frow-=1;
+
+# create ARD file
+
+my $ard = new ORAC::TempFile;
+if (uc($winpar) eq "GOOD") {
+  my $ardstring=".NOT. RECT($fcol,$frow,$lcol,$lrow)\n";
+  print {$ard->handle} $ardstring;
+} else {
+  my $ardstring="RECT($fcol,$frow,$lcol,$lrow)\n";
+  print {$ard->handle} $ardstring;
+};
+$ard->handle->close;
+
+# get the names of input, output and temp files
+
+my $in = $Frm->file;
+my $out = "bpm_".$Frm->number;
+my $temp = new ORAC::TempFile;
+my $tmp = $temp->file;
+my $ardf = $ard->file;
+
+# set all pixels to zero
+# this follows the convention of CGS4 where good pixels have a value of zero
+
+my $ORAC_STATUS;
+
+$Mon{'ndfpack_mon'}->obeyw("ndftrace","ndf=$in quiet");
+
+($ORAC_STATUS, my @lbound) = $Mon{'ndfpack_mon'}->get('ndftrace','lbound');
+($ORAC_STATUS, my @ubound) = $Mon{'ndfpack_mon'}->get('ndftrace','ubound');
+
+my $xmin = $lbound[0];
+my $ymin = $lbound[1];
+
+my $imdim = "'$xmin:,$ymin:'";
+
+$Mon{'kappa_mon'}->obeyw("chpix","in=$in out=$tmp section=$imdim newval=0");
+
+# set the bad pixels using ARDMASK
+
+$Mon{'kappa_mon'}->obeyw("ardmask","in=$tmp ardfile=$ardf out=$out title=$out");
+
+# print congratulatory message
+
+orac_print("The bad pixel mask $out has been created.\n");
