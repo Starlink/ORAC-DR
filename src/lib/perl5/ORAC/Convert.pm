@@ -29,6 +29,11 @@ NDF format is used as the intermediate  format for all conversions
 
 Uses the Starlink CONVERT package (via monoliths).
 
+Can be used to convert from instrument specific NDF files (eg
+multi-frame CGS4 data or I- and O- frames for IRCAM) to HDS formats
+usable by the pipeline (either as HDS containers or NDFs with combined
+I and O information).
+
 =cut
 
 
@@ -49,11 +54,15 @@ $VERSION = '0.10';
 
 The following methods are provided:
 
+=head2 Constructors
+
 =over 4
 
-=item new()
+=item B<new>
 
 Object constructor. Should always be used before initiating a conversion.
+
+  $Cvt = new ORAC::Convert;
 
 =cut
 
@@ -91,10 +100,21 @@ sub new {
 }
 
 
-=item infile
+=back
+
+=head2 Accessor Methods
+
+=over 4
+
+The following methods are available for accessing the 
+'instance' data.
+
+=item B<infile>
 
 Method for storing or retreiving the current input filename.
 Used by default if omitted from convert() methods.
+
+  $infile = $Cvt->infile;
 
 =cut
 
@@ -104,24 +124,13 @@ sub infile {
   return $self->{InFile};
 }
 
-=item overwrite
+=item B<objref>
 
-Method for storing or retreiving the flag governing whether
-a file should be overwritten if it already exists.
+Hash containing convert task objects. These are the actual
+ORAC::Msg::ADAM::Task objects related to each Starlink CONVERT
+monolith that is required.
 
-If false, the file will be converted regardless.
-
-=cut
-
-sub overwrite {
-  my $self = shift;
-  if (@_) { $self->{OverWrite} = shift;  }
-  return $self->{OverWrite};
-}
-
-=item objref
-
-Hash containing convert task objects.
+  $mon = $Cvt->objref->{monolith_name};
 
 =cut
 
@@ -137,59 +146,40 @@ sub objref {
   return $self->{ConvObjects};
 }
 
+=item B<overwrite>
 
+Method for storing or retreiving the flag governing whether
+a file should be overwritten if it already exists.
 
-=item mon(name) 
-
-Returns a ORAC::Msg::ADAM::Task object using a path of name_$$
-in the messaging system.
-
-Returns undef if a monolith can not be contacted or fails to start.
+If false, the file will be converted regardless.
 
 =cut
 
-sub mon {
+sub overwrite {
   my $self = shift;
-  
-  croak "Usage: Convert->mon(name)" unless scalar (@_) == 1;
-
-  # Get the name
-  my $mon = shift;
-  
-  # Append pid
-  my $name = $mon . "_$$";
-
-  # Now look up object in the message storage area
-  my $obj;
-  if (exists $ {$self->objref}{$name}) {
-    return $ {$self->objref}{$name};
-  } else {
-    # Create a new one
-    $obj = new ORAC::Msg::ADAM::Task($name, "$ENV{CONVERT_DIR}/$mon",
-				     { MONOLITH => "$mon"}
-				    );
-    if ($obj->contactw) {
-      $ {$self->objref}{$name} = $obj;
-    } else {
-      return undef;
-    }
-
-  }
-
+  if (@_) { $self->{OverWrite} = shift;  }
+  return $self->{OverWrite};
 }
 
+=back
 
+=head2 General Methods
 
-=item convert (Filename, OptionsHashRef)
+=over 4
+
+=item B<convert>
 
 Convert a file to the format specified by options.
+
+  $nrefile = $Cvt->convert;
+  $newfile = $Cvt->convert($oldfile, { IN => 'FITS', OUT => 'NDF' });
 
 File is optional - uses infile() to retrieve the name if not specified.
 The options hash is optional (assumed to be last argument). If not
 specified the input format will be guessed and the output format
 will be set to NDF.
 
-Recongised keywords in the hash are:
+Recogised keywords in the hash are:
 
   IN  => input format (NDF or FITS)
   OUT => desired output format (NDF)
@@ -276,9 +266,11 @@ sub convert {
 }
 
 
-=item guessformat(name)
+=item B<guessformat>
 
 Given 'name' try to guess data format.
+
+  $format = $Cvt->guessformat("test.sdf");
 
 =cut
 
@@ -307,11 +299,64 @@ sub guessformat {
 
 }
 
+=item B<mon>
 
-=item fits2ndf
+Returns a ORAC::Msg::ADAM::Task object using a path of name_$$
+in the messaging system.
+
+  $object = $Cvt->mon($name);
+
+Returns undef if a monolith can not be contacted or fails to start.
+
+Populates the object using the objref() method.
+
+=cut
+
+sub mon {
+  my $self = shift;
+  
+  croak "Usage: Convert->mon(name)" unless scalar (@_) == 1;
+
+  # Get the name
+  my $mon = shift;
+  
+  # Append pid
+  my $name = $mon . "_$$";
+
+  # Now look up object in the message storage area
+  my $obj;
+  if (exists $ {$self->objref}{$name}) {
+    return $ {$self->objref}{$name};
+  } else {
+    # Create a new one
+    $obj = new ORAC::Msg::ADAM::Task($name, "$ENV{CONVERT_DIR}/$mon",
+				     { MONOLITH => "$mon"}
+				    );
+    if ($obj->contactw) {
+      $ {$self->objref}{$name} = $obj;
+    } else {
+      return undef;
+    }
+
+  }
+
+}
+
+=back
+
+=head2 Data Conversion Methods
+
+=over 4
+
+=item B<fits2ndf>
 
 Convert a fits file to an NDF.
 Returns the output name.
+
+  $newfile = $Cvt->fits2ndf;
+
+Retrieves the input filename from the object via the infile()
+method.
 
 =cut
 
