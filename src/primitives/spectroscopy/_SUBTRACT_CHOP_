@@ -7,6 +7,8 @@ _SUBTRACT_CHOP_ - subtract the bias frame from the current frame
 This primitive subtracts the two chop beams in the current frame.
 Nothing happens if the observation isn't of type CHOP
 
+This will need a minor update to handle NDCHOP
+ - or would that be ND_CHOP?
 
 =head1 AUTHOR
 
@@ -14,30 +16,48 @@ Paul Hirst <p.hirst@jach.hawaii.edu>
 
 =cut
 
-# Chop subtraction is only applicable to CHOP mode
+# Chop subtraction is only applicable to CHOP mode, oh and NDCHOP (ND_CHOP ?)
 
 if ( $Frm->uhdr( "ORAC_DETECTOR_MODE" ) eq "CHOP" ) {
 
   # Process all the sub-files.
-  # I guess the sequence in the HDS is thus:
+  # The sequence in the HDS is thus:
   # .I1 .I1BEAMA .I1BEAMB .I2 .I2BEAMA .I2BEAMB .I3 .I3BEAMA .I3BEAMB etc etc
-  # OK, but oracdr's inout method only gives you the .In frames
-  # Worry about variance later
+  #
+  # OK, but the Frame object only gives us the .BEAM data when in chop mode
+  # Thus, in the loop, we see: .I1BEAM! .I1BEAMB .I2BEAMA .I2BEAMB etc
+  # We keep a list of what we want in the output frame, and Update the frame
+  # Object with it manually...
 
-  foreach my $i (1 .. $Frm->nfiles) {
-    # Generate the input and output filenames. CBS = Chop Beam Subtracted
-    my ( $in, $out ) = $Frm->inout( "_cbs", $i );
+  my @files = ();
+  my $mfiles = $Frm->nfiles / 2;
+
+  foreach my $i (1 .. $mfiles) {
+
+    # Generate the input numbers
+    my $b = 2 * $i;
+    my $a = $b -1;
+
+    # Generate the input filenames.
+    my ( $ina, $foo ) = $Frm->inout( "_foo", $a );
+    my ( $inb, $foo ) = $Frm->inout( "_foo", $b );
+
+    # Generate the output filename scb = subtracted chop beam
+    my ( $foo, $out) = $Frm->inout( "_scb", $i);
     
-    # Just copy the pre-subtracted one for now
-    $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$out title=$out");
+    # Subtract the 2 chop beams
+    $Mon{'kappa_mon'}->obeyw("sub", "in1=$ina in2=$inb out=$out title=$out");
 
     # Report the processing status.
-    orac_print "$in to $out: chop pre-subtracted frame copied\n";
+    orac_print "$ina - $inb to $out: subtracted chop beam\n";
       
-    # Record the new file name in the frame object.
-    $Frm->file( $i, $out );
+    # Note the new filename for the output frame
+    push @files, $out;
   }
-    
+
+  # File the output frames in the Frame object
+  $Frm->files(@files);
+
 } else {
   orac_print "Not a CHOP observation; therefore no chop beam subtraction.\n";
 }
