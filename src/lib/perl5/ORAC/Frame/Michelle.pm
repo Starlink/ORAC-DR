@@ -46,9 +46,9 @@ use vars qw/$VERSION/;
 my %hdr = (
             RECIPE               => "RECIPE",
             DEC_SCALE            => "CDELT2",
-            DEC_TELESCOPE_OFFSET => "TDECOFF",
+#            DEC_TELESCOPE_OFFSET => "TDECOFF",
             RA_SCALE             => "CDELT1",
-            RA_TELESCOPE_OFFSET  => "TRAOFF",
+#            RA_TELESCOPE_OFFSET  => "TRAOFF",
 
 # then the spectroscopy...
             CONFIGURATION_INDEX  => "CNFINDEX",
@@ -83,6 +83,67 @@ ORAC::Frame::Michelle->_generate_orac_lookup_methods( \%hdr );
 # not appear in the above hash.  For example, the start time is that of
 # the first sub-image, and the end time that of the sub-image.  These
 # translation methods make use 
+
+
+# RA and Dec offsets need to be handled differently for spectroscopy
+# mode because of the new nod iterator. If the nod iterator is used,
+# then telescope offsets always come out as 0,0. We need to check if
+# we're in the B beam (the nodded position) to figure out what the
+# offset is.
+sub _to_RA_TELESCOPE_OFFSET {
+  my $self = shift;
+
+  my $raoff;
+
+  my $mode = $self->_to_OBSERVATION_MODE();
+
+  if( $mode eq 'spectroscopy' ) {
+    if( exists( $self->hdr->{CHOPBEAM} ) &&
+        $self->hdr->{CHOPBEAM} =~ /^B/ &&
+        exists( $self->hdr->{CHPANGLE} ) &&
+        exists( $self->hdr->{CHPTHROW} ) ) {
+      my $pi = 4 * atan2( 1, 1 );
+      my $throw = $self->hdr->{CHPTHROW};
+      my $angle = $self->hdr->{CHPANGLE} * $pi / 180.0;
+      $raoff = $throw * sin( $angle );
+    } else {
+      $raoff = $self->hdr->{TRAOFF};
+    }
+  } else {
+    $raoff = $self->hdr->{TRAOFF};
+  }
+  return $raoff;
+
+}
+
+sub _to_DEC_TELESCOPE_OFFSET {
+  my $self = shift;
+
+  my $decoff;
+
+  my $mode = $self->_to_OBSERVATION_MODE();
+
+  if( $mode eq 'spectroscopy' ) {
+
+    if( exists( $self->hdr->{CHOPBEAM} ) &&
+        $self->hdr->{CHOPBEAM} =~ /^B/ &&
+        exists( $self->hdr->{CHPANGLE} ) &&
+        exists( $self->hdr->{CHPTHROW} ) ) {
+
+      my $pi = 4 * atan2( 1, 1 );
+      my $throw = $self->hdr->{CHPTHROW};
+      my $angle = $self->hdr->{CHPANGLE} * $pi / 180.0;
+      $decoff = $throw * cos( $angle );
+    } else {
+      $decoff = $self->hdr->{TDECOFF};
+    }
+  } else {
+    $decoff = $self->hdr->{TDECOFF};
+  }
+
+  return $decoff;
+
+}
 
 sub _to_DETECTOR_INDEX {
    my $self = shift;
