@@ -27,7 +27,7 @@ objects are available to B<ORAC::Frame::Michelle> objects.
 # ORAC pipeline
  
 use 5.004;
-use ORAC::Frame;
+use ORAC::Frame::UKIRT;
  
 # Let the object know that it is derived from ORAC::Frame;
 #@ORAC::Frame::Michelle::ISA = qw/ORAC::Frame::UKIRT/;
