@@ -24,6 +24,11 @@
 #       the minimum pixel when POSITIVE is false. [5]
 #    CENTRE( 2 ) = REAL (Returned)
 #       The centroid pixel co-ordinates.
+#    DECOFF = REAL (Given)
+#       The approximate Declination pixel offset of the centroid of the
+#       point source to be measured with respect to the nominal position.
+#       The nominal position is the Declination centre of the array minus
+#       the Declination telescope offset.  [0.0]
 #    FOUND = LOGICAL (Returned)
 #       If true, a centroid was found.
 #    INIT( 2 ) = REAL (Returned)
@@ -31,17 +36,12 @@
 #    POSITIVE = LOGICAL (Given)
 #       If 1 (true), the point source is positive, i.e. has values above
 #       the sky level.  If 0 (false), the point source is negative. [1]
-#    XOFF = REAL (Given)
-#       The approximate x pixel offset of the centroid of the point
+#    RAOFF = REAL (Given)
+#       The approximate R.A. pixel offset of the centroid of the point
 #       source to be measured with respect to the nominal position.
-#       The nominal position is the y centre of the array plus the
-#       x telescope offset.  (It's plus because R.A. increases with
-#       negative x.)  [0.0]
-#    YOFF = REAL (Given)
-#       The approximate y pixel offset of the centroid of the point
-#       source to be measured with respect to the nominal position.
-#       The nominal position is the y centre of the array minus the
-#       telescope offset.  [0.0]
+#       The nominal position is the R.A. centre of the array plus the
+#       R.A. telescope offset.  (It's plus because R.A. increases with
+#       negative Cartesian co-ordinate.)  [0.0]
 #
 # Notes:
 #    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
@@ -60,7 +60,7 @@
 #    PIXEL for the latter.
 #
 # Tasks:
-#    KAPPA: CENTROID, NDFTRACE, STATS, WCSFRAME.
+#    KAPPA: CENTROID, STATS, WCSFRAME.
 #
 # Authors:
 #    MJC: Malcolm J. Currie (JAC)
@@ -82,10 +82,10 @@
        $positive = defined( $positive ) ? $positive : 1;
 
 # Obtain the relative offsets of the point-source images.
-       my $rxoff = $_FIND_SOURCE_CENTROID_{XOFF};
-       $rxoff = defined( $rxoff ) ? $rxoff : 0.0;
-       my $ryoff = $_FIND_SOURCE_CENTROID_{YOFF};
-       $ryoff = defined( $ryoff ) ? $ryoff : 0.0;
+       my $rraoff = $_FIND_SOURCE_CENTROID_{RAOFF};
+       $rraoff = defined( $rraoff ) ? $rraoff : 0.0;
+       my $rdecoff = $_FIND_SOURCE_CENTROID_{DECOFF};
+       $rdecoff = defined( $rdecoff ) ? $rdecoff : 0.0;
 
 # Obtain the rotation angle in degrees.  The numeric default was UFTI
 # and time specific.  Now the ideal no-rotation is a compromise default.
@@ -96,19 +96,13 @@
 # Define the size of the box in arcseconds, and hence pixels. 
        my $boxsize = ( $_FIND_SOURCE_CENTROID_{BOXSIZE} || 5 );
 
-# Obtain frame pixel bounds.
-# ==========================
-
-# Run a task to obtain details of the frame.
-       my $param1 = "ndf=" . $Frm->file;
-       $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "$param1" );
-
-# Extract the bounds of the frame.
-       ( my $ORAC_STATUS, my @lbnd ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "lbound" );
-       ( $ORAC_STATUS, my @ubnd ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "ubound" );
-
 # Find pixel limits of the search box.
 # ====================================
+
+# Obtain frame pixel bounds.
+       _GET_FRAME_CENTRE_
+       my $xmid = $_GET_FRAME_CENTRE_{XCENTRE};
+       my $ymid = $_GET_FRAME_CENTRE_{YCENTRE};
 
 # Define some useful variables to apply the rotation matrix.
        my $pi = atan2( 1, 1 ) * 4;
@@ -116,27 +110,23 @@
        my $cosrot = cos( $rotangle * $dtor );
        my $sinrot = sin( $rotangle * $dtor );
  
-# Find the mid points.
-       my $xmid = nint( ( $lbnd[0] + $ubnd[0] ) / 2 );
-       my $ymid = nint( ( $lbnd[1] + $ubnd[1] ) / 2 );
-
 # Obtain the approximate (telescope) offsets and the plate scale.
        _GET_PLATE_SCALE_
        my $pixelscale = $_GET_PLATE_SCALE_{RASCALE};
-       my $xoffh = $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" ) + $rxoff;
-       my $yoffh = $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" ) + $ryoff;
+       my $raoffh = $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" ) + $rraoff;
+       my $decoffh = $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" ) + $rdecoff;
 
 # Convert to pixel offsets of the object in the Cartesian sense.
-       my $xoffs = $xoffh / $pixelscale;
-       my $yoffs = -1.0 * $yoffh / $pixelscale;
+       my $raoffs = $raoffh / $pixelscale;
+       my $decoffs = -1.0 * $decoffh / $pixelscale;
 
 # Apply the rotation matrix.
-       my $xoff = $xoffs * $cosrot - $yoffs * $sinrot;
-       my $yoff = $xoffs * $sinrot + $yoffs * $cosrot;
+       my $xoff = $raoffs * $cosrot - $decoffs * $sinrot;
+       my $yoff = $raoffs * $sinrot + $decoffs * $cosrot;
 
-# Derive the centre co-ordinates of the box.
-       my $xcentre = int( $xmid + $xoff );
-       my $ycentre = int( $ymid + $yoff );
+# Derive the centre co-ordinates of the box.  Note the sign convention.
+       my $xcentre = int( $xmid - $xoff );
+       my $ycentre = int( $ymid - $yoff );
 
 # Store the initial centre position for use by calling script.
        my @init = ( $xcentre, $ycentre );
@@ -147,6 +137,7 @@
 
 # Set the co-ordinate system to pixels.
 # =====================================
+       my ( $param1, $ORAC_STATUS );
        if ( starversion_gt( "KAPPA", 'V0.13-6' ) ) {
           $param1 = "ndf=" . $Frm->file . " frame=pixel";
           $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "$param1" );
@@ -282,6 +273,13 @@ the minimum pixel when POSITIVE is false. [5]
 
 The centroid pixel co-ordinates.
 
+=item DECOFF = REAL (Given)
+
+The approximate Declination pixel offset of the centroid of the
+point source to be measured with respect to the nominal position.
+The nominal position is the Declination centre of the array minus
+the Declination telescope offset.  [0.0]
+
 =item FOUND = LOGICAL (Returned)
 
 If true, a centroid was found.
@@ -295,20 +293,13 @@ The initial co-ordinates for the centroid search.
 If 1 (true), the point source is positive, i.e. has values above
 the sky level.  If 0 (false), the point source is negative. [1]
 
-=item XOFF = REAL (Given)
+=item RAOFF = REAL (Given)
 
-The approximate x pixel offset of the centroid of the point
+The approximate R.A. pixel offset of the centroid of the point
 source to be measured with respect to the nominal position.
-The nominal position is the y centre of the array plus the
-x telescope offset.  (It's plus because R.A. increases with
-negative x.)  [0.0]
-
-=item YOFF = REAL (Given)
-
-The approximate y pixel offset of the centroid of the point
-source to be measured with respect to the nominal position.
-The nominal position is the y centre of the array minus the
-telescope offset.  [0.0]
+The nominal position is the R.A. centre of the array plus the
+R.A. telescope offset.  (It's plus because R.A. increases with
+negative Cartesian co-ordinate.)  [0.0]
 
 =back
 
@@ -348,7 +339,7 @@ PIXEL for the latter.
 
 =head1 TASKS
 
-KAPPA: CENTROID, NDFTRACE, STATS, WCSFRAME.
+KAPPA: CENTROID, STATS, WCSFRAME.
 
 =head1 AUTHORS
 
