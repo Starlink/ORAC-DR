@@ -282,9 +282,9 @@ sub flag_from_bits {
   my $prefix = shift;
   my $obsnum = shift;
   
-  # flag files for CGS4 of the type .42_ok
-  
-  my $flag = ".".$obsnum."_ok";
+  # flag files for CGS4 of the type .cYYYYMMDD_NNNNN.ok
+  my $raw = $self->file_from_bits($prefix, $obsnum);
+  my $flag = ".".$obsnum.".ok";
 
 }
 
