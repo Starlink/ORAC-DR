@@ -98,7 +98,7 @@
     if ($1 != "") then
        set oracut = $1
     else
-       set oracut = `date -u +%Y%m%d`
+       set oracut = `\date -u +%Y%m%d`
     endif
 
     set oracdr_args = "-ut $oracut"

@@ -61,6 +61,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.3  2002/04/02 03:04:52  mjc
+#     Use \date command to override aliases.
+#
 #     Revision 1.2  2001/12/01 02:13:46  timj
 #     - s/Michelle/UIST/g
 #     - Quote ???
@@ -72,7 +75,7 @@
 #        Original version based upon CGS4 equivalent.
 
 #  Copyright:
-#     Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#     Copyright (C) 1998-2002 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.
 
 #-
@@ -100,7 +103,7 @@ endif
 if ($1 != "") then
     set oracut = $1
 else
-    set oracut = `date -u +%Y%m%d`
+    set oracut = `\date -u +%Y%m%d`
 endif
 
 set oracdr_args = "-ut $oracut"
