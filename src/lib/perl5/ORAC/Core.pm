@@ -199,29 +199,25 @@ sub orac_process_frame {
   };
 
 
-
-
-
   # Read in the selected recipe - note that this returns an array reference
   my $recipe_ref = orac_read_recipe($Recipe, $instrument);	# read recipe
   
+  # Parse the recipe, this is recursive.
   # In order to save time here we should not be 
   # passing an enormous array around (can contain hundereds of lines
   # of code). Instead pass around an array reference
-  # Since we use a reference to a array we dont need to explicitly
-  # return it either.
-  while (grep /^\s*_/,@$recipe_ref) {	# while it contains other recipes
-    $recipe_ref = orac_parse_recipe($recipe_ref, $instrument); # keep parsing recipes
-  };
+  $recipe_ref = orac_parse_recipe($recipe_ref, $instrument);
 
   # Now that the recipe is parsed, insert code for automatic error
   # checking, etc
 
   $recipe_ref = orac_add_code_to_recipe($recipe_ref);
-  
-  orac_execute_recipe($recipe_ref,$Frm,$Grp,$Cal,$Mon); # execute parsed recipe
+
+  # execute the parsed recipe
+  orac_execute_recipe($recipe_ref,$Frm,$Grp,$Cal,$Mon);
 
   # delete symlink to raw data file
+  # Only want to do this if we created it initially....
   unlink($Frm->raw) if (-l $Frm->raw);
 
 

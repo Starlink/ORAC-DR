@@ -451,22 +451,41 @@ sub orac_parse_arguments {
 
 #------------------------------------------------------------------------
 
-=item B<orac_parse_recipe>(array_reference, instrument)
+=item B<orac_parse_recipe>
 
 Parses a recipe, reading in the necessary primitives.
 
-The recipe is parsed in place (ie using the array reference).
-The instrument name is supplied so that the directory name
-containing the primitives can be constructed.
+  $parsed = orac_parse_recipe($input, $instrument, $depth);
 
-An array reference to the parsed array is returned.
+The input must be a referenced to an array of lines from a recipe or
+primitive. The recipe is parsed in place (ie using the array
+reference) and will therefore be modified when returning to the
+caller.
+
+The instrument name is supplied so that the directory name containing
+the primitives can be constructed. See C<orac_read_primitive>.
+
+This routine uses recursion to parse the recipe until no more
+primitive include directives are present. A recursion depth
+of 50 is imposed to deal with out-of-control recipe recursion
+(usually where a primitive calls itself). This should not be a
+problem for working primitives.
+
+The depth parameter is an integer specifying the current recursion
+depth. This should be set to undef (do not even both to supply is)
+when called by a user and is incremented by the routine internally.
+
+  $parsed = orac_parse_recipe( $input, $instrument );
+
+An array reference to the parsed array is returned. If an error 
+occurs, the routine C<croaks>.
 
 =cut
 
 sub orac_parse_recipe {
 
   croak 'Usage: orac_parse_recipe(\@recipe, instrument_name)'
-    unless scalar(@_) == 2;
+    unless (scalar(@_) == 2) || (scalar(@_) == 3);
 
   croak 'orac_parse_recipe: First argument must be an array reference!'
     unless ref($_[0]) eq 'ARRAY';
@@ -474,13 +493,44 @@ sub orac_parse_recipe {
 
   my $recipe = shift;
   my $instrument = shift;
+  my $depth = shift; # can be undef
 
-  my @parsed = (); # Create output array
-  
-  my ($line);
-  
-  foreach $line (@$recipe) {
+  # Increment recursion depth
+  $depth++;
+
+  # Check depth
+  my $MAX_DEPTH = 10;
+  if ($depth > $MAX_DEPTH) {
+    orac_err "Maximum recursion depth ($MAX_DEPTH) reached for this recipe.\n";
+    croak "Aborting recipe parse\n";
+  }
+
+  # depth cant be negative
+  $depth = 1 if $depth <= 0;
+
+  # Create output array
+  my @parsed = ();
+
+  # indicates we are in a pod section so should not insert primitives
+  my $inpod = 0;
+
+  # Loop over recipe lines
+  foreach my $line (@$recipe) {
+
+    # check to see if this is a pod directive
+    # special case =cut
+    if ($line =~ /^=cut\n/) {
+      $inpod = 0;
+      next; # dont want the =cut to be in on its own
+    } elsif ($line =~ /^=/) {
+      $inpod = 1;
+    }
+
+    # if we are in pod then we should simply skip to the next line
+    # as there is nothing to parse
+    next if $inpod;
     
+    # Check for primitive insert directives
     if ($line =~ /^\s*_/) {
       $line =~ s/^\s+//;	# zap leading blanks
       $line =~ s/\s*$//;        # Zap trailing blanks
@@ -496,6 +546,9 @@ sub orac_parse_recipe {
     
       # read in primitive
       my $lines_ref = orac_read_primitive($macro, $instrument);
+
+      # Now recurse to read parse the primitive for more primitives
+      $lines_ref = orac_parse_recipe($lines_ref, $instrument, $depth);
 
       # Store lines - making sure we create a separate scope
       push(@parsed,"\n{\nmy \$ORAC_PRIMITIVE=\"$macro\";\n\n",@$lines_ref,"\n}\n");
@@ -800,6 +853,10 @@ Council. All Rights Reserved.
 
 
 #$Log$
+#Revision 1.49  2000/04/04 03:07:35  timj
+#recipe parsing is now recursive (with recursion depth limits).
+#PODs are now ignored.
+#
 #Revision 1.48  2000/03/01 21:56:17  timj
 #Fix pods so that they pass all check with podchecker
 #
