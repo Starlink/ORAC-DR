@@ -11,6 +11,11 @@ ORAC::Display::Kapview - ORACDR interface to Kapview (Kappa)
 ORAC interface to Kappa Kapview. Provides methods for displaying images
 and spectrum with Kapview.
 
+Available options are:
+
+IMAGE - display image using DISPLAY
+GRAPH - display graph using LINPLOT
+SIGMA - display scatter plot with a Y-range of +/-N sigma.
 
 =cut
 
@@ -59,6 +64,7 @@ sub new {
   $disp->{Obj} = undef;  # Messaging object
   $disp->{AMS} = undef;  # Adam message system storage
   $disp->{Dev} = {};     # Device list
+  $disp->{Kappa} = undef; # Kappa_mon messaging object
 
   bless ($disp, $class);
 
@@ -105,14 +111,14 @@ sub new {
   if ($status != ORAC__OK) {
     die "Error launching Kapview. It is unlikely that this can be fixed by retrying from within ORACDR. Please rerun either with the display switched off or with a different display device selected.";
   }
-
+  
   return $disp;
 }
 
 
 =item obj
 
-Messaging object associated with the P4 display object.
+Messaging object associated with the Kapview display object.
 
 =cut
 
@@ -120,6 +126,31 @@ sub obj {
   my $self = shift;
   if (@_) { $self->{Obj} = shift; }
   return $self->{Obj};
+}
+
+=item kappa
+
+Messaging object associated with the kappa_mon monolith.
+This is used by some of the modes in order to determine
+display related values (eg statistics to determine plotting
+ranges for SIGMA).
+
+A kappa messaging object is created if the object is undefined.
+
+=cut
+
+sub kappa {
+  my $self = shift;
+  if (@_) { $self->{Kappa} = shift; }
+
+  # Start kappa if needed
+  unless (defined $self->{Kappa}) {
+    orac_print ("Creating Kappa_mon object.............\n",'cyan') if $DEBUG;
+    $self->{Kappa} = new ORAC::Msg::ADAM::Task("kappa_mon_$$", 
+                              "$ENV{KAPPA_DIR}/kappa_mon"); 
+  }
+
+  return $self->{Kappa};
 }
 
 
@@ -341,6 +372,16 @@ sub launch_dev {
      die "Error launching display device. It is unlikely that this can be fixed by retrying from within ORACDR. Aborting...";
 #    return $status;
   }
+
+  # try a paldef
+  my $status = $self->obj->obeyw("paldef","device=$device");
+  if ($status != ORAC__OK) {
+    orac_err("Error setting default pallette\n");
+     die "Error launching display device. It is unlikely that this can be fixed by retrying from within ORACDR. Aborting...";
+#    return $status;
+  }
+
+
   return ORAC__OK;
 
 }
@@ -563,15 +604,213 @@ sub image {
   # regions are not picked up correctly.
 
   $status = $self->obj->resetpars;
+  return $status if $status != ORAC__OK;
   
   # Do the obeyw
   $status = $self->obj->obeyw("display", "device=$device in=$file axes clear $optstring accept");
   if ($status != ORAC__OK) {
-    orac_err("Error displaying startup image\n");
+    orac_err("Error displaying image\n");
     orac_err("Trying to execute: display device=$device axes in=$file\n");
   }
   return $status;
 
+}
+
+=item graph
+
+Display a 1-D plot.
+
+Currently the data input must be 1-D.
+
+Takes a file name and arguments stored in a hash.
+Note that currently it does not take a format argument
+and NDF is assumed.
+
+=cut
+
+sub graph {
+
+  my $self = shift;
+ 
+  my $file = shift;
+
+  my %options = ();
+  if (@_) {
+    my $opt = shift;
+    if (ref($opt) eq 'HASH') {
+      %options = %{$opt};
+    }
+  }
+
+  # Configure the display on the basis of REGION specifier
+  # ..and return the selected device.
+  # Return undef if something went wrong.
+  my $device = $self->config_region(%options);
+
+  # If device is now undef we have a problem
+  unless (defined $device) {
+    orac_err("Error configuring display. Possible invalid region designation\n");
+    return ORAC__ERROR;
+  }
+
+  # Set the data file name
+  $file =~ s/\.sdf$//;  # Strip .sdf
+
+  # A resetpars also seems to be necessary to instruct kappa to
+  # update its current frame for plotting. Without this the new PICDEF
+  # regions are not picked up correctly.
+
+  my $status = $self->obj->resetpars;
+  return $status if $status != ORAC__OK;
+
+
+  # Should probably set the options
+  # If we are autoscaling then we dont need any axis setting
+  # default is not to send any axis control information
+  my $range;
+  if (exists $options{AUTOSCALE}) {
+    if ($options{AUTOSCALE}) {
+      $range = "axlim=false";
+    } else {
+      # Set the Y range
+      my $min = 0;
+      my $max = 0;
+      $min = $options{LOW} if exists $options{LOW};
+      $max = $options{HIGH} if exists $options{HIGH};
+      $range = "axlim=true abslim=! ordlim=[$min,$max]";
+    }
+  }
+
+  # Construct string for linplot options
+  my $args = "clear mode=line $range";
+
+  # Run linplot
+  $status = $self->obj->obeyw("linplot","ndf=$file(1,) device=$device $args");
+  if ($status != ORAC__OK) {
+    orac_err("Error displaying graph\n");
+    orac_err("Trying to execute: linplot ndf=$file device=$device $args$\n");
+    return $status;
+  }
+
+  return $status;
+
+
+}
+
+
+=item sigma
+
+Display a scatter plot of the data with Y range of N-sigma (sigma
+is derived from the data) with dashed lines overlaid at the X-sigma
+points.
+
+By default a range of +/-5 sigma with dashed lines at +/-3 sigma
+are used.
+
+These values can be overriden by using the RANGE and DASHED 
+keywords.
+
+Takes a file name and arguments stored in a hash.
+Note that currently it does not take a format argument
+and NDF is assumed.
+
+=cut
+
+sub sigma {
+
+  my $self = shift;
+ 
+  my $file = shift;
+
+  my %options = ();
+  if (@_) {
+    my $opt = shift;
+    if (ref($opt) eq 'HASH') {
+      %options = %{$opt};
+    }
+  }
+
+  # Configure the display on the basis of REGION specifier
+  # ..and return the selected device.
+  # Return undef if something went wrong.
+  my $device = $self->config_region(%options);
+
+  # If device is now undef we have a problem
+  unless (defined $device) {
+    orac_err("Error configuring display. Possible invalid region designation\n");
+    return ORAC__ERROR;
+  }
+
+  # Set the data file name
+  $file =~ s/\.sdf$//;  # Strip .sdf
+
+  # Probably should try to find out whether the array is 1 or 2 dimensional
+  # since currently linplot fails if the data is not 1-D
+  # would have to use NDFTRACE from NDFPACK OR use my NDF module
+  # to do it directly
+  # Cant be bothered at the moment...
+
+  # First thing to do is calculate the relevant statistics of the
+  # input file.
+  # Use kappa STATS
+  my $status;
+  if ($self->kappa->contactw) {
+    $status = $self->kappa->obeyw("stats","ndf=$file");
+    if ($status != ORAC__OK) {
+      orac_err("Error calculating statistics of data file\n");
+      return $status;
+    }
+  } else {
+    orac_err("Error contacting Kappa_mon\n");
+    return ORAC__ERROR
+  }
+
+  # Now retrieve the answer
+  my ($mean, $sigma);
+  ($status,  $mean) = $self->kappa->get("stats","mean");
+  ($status, $sigma) = $self->kappa->get("stats","sigma");
+
+
+  # Now need to check the options string
+  my $range = 5.0;
+  my $dashed = 3.0;
+
+  $range = $options{RANGE} if (exists $options{RANGE});
+  $dashed = $options{DASHED} if (exists $options{DASHED});
+
+  # Now calculate the range of the plot
+  my $max = $mean + ($range * $sigma);
+  my $min = $mean - ($range * $sigma);
+
+  # A resetpars also seems to be necessary to instruct kappa to
+  # update its current frame for plotting. Without this the new PICDEF
+  # regions are not picked up correctly.
+
+  $status = $self->obj->resetpars;
+  return $status if $status != ORAC__OK;
+
+  # Construct string for linplot options
+  my $args = "clear mode=2 axlim=true ordlim=[$min,$max] abslim=!";
+
+  # Run linplot
+  $status = $self->obj->obeyw("linplot","ndf=$file device=$device $args");
+  if ($status != ORAC__OK) {
+    orac_err("Error displaying sigma plot\n");
+    orac_err("Trying to execute: linplot ndf=$file device=$device $args$\n");
+    return $status;
+  }
+
+ 
+  # Run drawsig
+  $args = "linestyle=2 sigcol=red nsigma=[0,$dashed]";
+  $status = $self->obj->obeyw("drawsig","device=$device $args");
+  if ($status != ORAC__OK) {
+    orac_err("Error overlaying lines\n");
+    orac_err("Trying to execute: drawsig device=$device $args$\n");
+    return $status;
+  }
+
+  return $status;
 }
 
 
