@@ -52,7 +52,8 @@ use strict;
 use vars qw/$VERSION $DEBUG $CURRENT @ISA @EXPORT $TKMW $RDHDL/;
 use subs qw/__curr_obj/;
 
-$VERSION = '0.11';
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+
 $DEBUG = 0;
 
 require Exporter;
@@ -65,7 +66,7 @@ $TKMW = undef;
 # For read on STDIN and output on STDOUT
 # Create one handle for the process. Note this can be overridden
 # externally
-$RDHDL = new Term::ReadLine 'orac_read';
+$RDHDL = undef;
 
 use IO::File;
 use IO::Tee;
@@ -150,7 +151,10 @@ sub orac_read {
   $prompt = shift if @_;
 
   # Retrieve the readline object
-  return undef unless defined $RDHDL;
+  # Creating it if necessary - this fails if we are not attached
+  # to a tty (could check for that myself).
+  $RDHDL = new Term::ReadLine 'orac_read'
+    unless defined $RDHDL;
 
   # If TKMW is defined set tkrunning
   $RDHDL->tkRunning(1) if defined $TKMW;
@@ -668,6 +672,10 @@ sub PRINTF {
 =head1 SEE ALSO
 
 L<Term::ANSIColor>, L<IO::Tee>.
+
+=head1 REVISION
+
+$Id$
 
 =head1 AUTHORS
 
