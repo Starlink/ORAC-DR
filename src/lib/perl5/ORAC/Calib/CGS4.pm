@@ -69,20 +69,6 @@ sub mask {
 =cut
 
 
-sub flat {
-  my $self = shift;
-  if (@_) { $self->{Flat} = shift; }
-
-  unless (defined $self->{Flat}) {
-    $self->{Flat} = "flat26";
-  };
-
-
-  return $self->{Flat}; 
-};
-
-
-
 
 
 =back
