@@ -40,7 +40,7 @@ use strict;
 use vars qw/$VERSION/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
-# Translation tables for UFTI shouldr go here
+# Translation tables for Michelle shouldr go here
 my %hdr = (
             DECSCALE  => "PIXELSIZ",
             EXP_TIME  => "DEXPTIME",
@@ -48,8 +48,7 @@ my %hdr = (
             RASCALE   => "PIXELSIZ",
             TDECOFF   => "DECOFF",
             TRAOFF    => "RAOFF",
-            UTEND     => "RUTEND",
-            UTSTART   => "RUTSTART"
+	    DETINCR   => "DETINCR"
 	  );
 
 # Take this lookup table and generate methods that can
@@ -57,6 +56,26 @@ my %hdr = (
 # Have to use the inherited version so that the new subs appear in 
 # this class
 ORAC::Frame::Michelle->_generate_orac_lookup_methods( \%hdr );
+
+# These translation methods make use 
+
+sub _to_UTEND {
+  my $self = shift;
+  $self->hdr->{ $self->nfiles }->{UTEND};
+}
+
+sub _from_UTEND {
+  "UTEND", $_[0]->uhdr("ORAC_UTEND");
+}
+
+sub _to_UTSTART {
+  my $self = shift;
+  $self->hdr->{ 1 }->{UTSTART};
+}
+
+sub _from_UTSTART {
+  "UTSTART", $_[0]->uhdr("ORAC_UTSTART");
+}
 
 =head1 PUBLIC METHODS
 
