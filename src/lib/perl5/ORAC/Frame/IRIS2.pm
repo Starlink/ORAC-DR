@@ -458,7 +458,7 @@ sub findgroup {
 
   if( defined $self->hdr('IR2GNUM') ) {
     $hdrgrp = $self->hdr('IR2GNUM');
-    print "Using IRIS2 user specified IR2GNUM. group=$hdrgrp\n";
+#    print "Using IRIS2 user specified IR2GNUM. group=$hdrgrp\n";
     if ($self->hdr('IR2GMEM')) {
       $amiagroup = 1;
     } elsif (!defined $self->hdr('IR2GMEM')){
@@ -468,7 +468,7 @@ sub findgroup {
     }
   } else {
     $hdrgrp = $self->hdr('GRPNUM');
-    print "Using usual GRPNUM. group=$hdrgrp\n";
+#    print "Using usual GRPNUM. group=$hdrgrp\n";
     if ($self->hdr('GRPMEM')) {
       $amiagroup = 1;
     } elsif (!defined $self->hdr('GRPMEM')){
