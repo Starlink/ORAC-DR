@@ -34,7 +34,7 @@
 #        Root location of the calibration files. $ORAC_DATA_CAL
 #        is derived from this variable by adding the appropriate
 #        value of $ORAC_INSTRUMENT. In this case $ORAC_DATA_CAL
-#        is set to $ORAC_DATA_CAL/ufti. If ORAC_CAL_ROOT is not
+#        is set to $ORAC_CAL_ROOT/ufti. If ORAC_CAL_ROOT is not
 #        defined it defaults to "/ukirt_sw/oracdr_cal".
 
 
@@ -62,6 +62,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.2  2000/02/03 03:43:38  timj
+#     Correct doc typo
+#
 #     Revision 1.1  2000/02/03 02:50:45  timj
 #     Starlink startup scripts
 #
