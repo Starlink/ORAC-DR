@@ -141,7 +141,7 @@ sub masknoupdate {
 
 =item B<profilename>
 
-Return (or set) the name of the current profile
+Return (or set) the name of the current profile - no checking
 
   $profile = $Cal->profilename;
 
@@ -157,6 +157,38 @@ sub profilename {
   return $self->{Profile};
 };
 
+=item B<profile>
+
+Return (or set) the name of the current profile
+
+   $profile = $Cal->profile;
+
+=cut
+
+sub profile {
+  my $self = shift;
+  if (@_) {
+    # if we are setting, accept the value and return
+    return $self->profilename(shift);
+  };
+
+  my $ok = $self->profileindex->verify($self->profilename,$self->thing);
+
+  # happy ending - frame is ok
+  if ($ok) {return $self->profilename};
+
+  croak("Override profile is not suitable! Giving up") if $self->profilenoupdate;
+
+  # not so good
+  if (defined $ok) {
+    my $profile = $self->profileindex->choosebydt('ORACTIME',$self->thing);
+    croak "No suitable profile was found in index file"
+      unless defined $profile;
+    $self->profilename($profile);
+  } else {
+    croak("Error in profile calibration checking - giving up");
+  };
+};
 
 =item B<profileindex>
 
@@ -313,10 +345,13 @@ Returns the relevant extraction rows to the caller by comparing
 the index entries with the current frame. Suitable
 values will be found or the method will abort.
 
-Returns two numbers, the position of the positive row and the position
-of the negative.
+Returns two numbers, the number of beams, and a reference to an array
+describing the beams.
 
-  my ($posrow, $negrow) = $Cal->rows;
+  my ($nbeams, $beamsref) = $Cal->rows;
+
+Generally followed by:
+  my @beams = @$beamsref;
 
 Returns undef and prints a warning if the row can not be determined
 from the index file.
@@ -347,7 +382,23 @@ sub rows {
 
   }
 
-  return $rowname;
+  # Retrieve the NBEAMS and BEAMS from the index
+   my ($nbeams, @beams);
+                                                                 
+   if (defined $rowname) {
+
+     my $entry = $self->rowindex->indexentry($rowname);
+     # Sanity check
+     croak "BEAMS could not be found in index entry $rowname\n" unless (exists $entry->{BEAMS});
+     croak "NBEAMS could not be found in index entry $rowname\n" unless (exists $entry->{NBEAMS});
+     $nbeams = $entry->{NBEAMS};
+     @beams = $entry->{BEAMS};
+   } else {
+     # Could not find it
+     $nbeams = undef;
+     @beams = undef;
+   }
+   return ( $nbeams, @beams );
 }
 
 
