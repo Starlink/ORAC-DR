@@ -5,27 +5,40 @@
 # TASK: KAPPA - CSUB
 #
 # Imports:
-#    _MAKE_FLAT_FROM_NORMALISED_EXTENDED_ : FLAT_MEDIAN
-#    _NORMALISE_TO_MODE_EXTENDED_         : SKY_FREQ SKY_OFFSET(2)
+#    _NORMALISE_TO_MODE_EXTENDED_         : SKY_LEVEL()
 #
 
 # This should only be performed on OBJECT frames.
     if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ||
          $Frm->hdr( "OBSTYPE" ) eq "SKY" ) {
 
-# Test whether or not it is time to subtract sky values.
+# Test whether or not it is time to subtract sky values.  Note this should
+# only be set in the steering file when creating a mosaic.
        $skysub = $Frm->hdr( "SUBTRACT_SKY" );
        if ( $skysub ) {
 
-# Form a subgroup comprising the target frames within the current row.
-          $targrp = $Grp->subgrp( TARGET_OR_SKY => "target",
-                                  EXTENDED_ROW => $ext_row );
+# Determine whether it is time to make a grand mosaic.
+          $grandmosaic = $Frm->hdr( "MAKE_GRAND_MOSAIC" );
+
+# Determine whether the full mosaic is required, otherwise make the
+# mosaic for the current row.
+          if ( $grandmosaic ) {
+
+# Form a subgroup comprising all the target frames.
+             $targrp = $Grp->subgrp( TARGET_OR_SKY => "target" );
+
+          } else {
+
+# Obtain the current row number.
+             $ext_row = $Frm->hdr( "EXTENDED_ROW" );
+
+# Form a subgroup comprising all the target frames in the current row.
+             $targrp = $Grp->subgrp( TARGET_OR_SKY => "target",
+                                     EXTENDED_ROW => $ext_row );
+          }
 
 # Form a list of the input and output target frames.
           ( $inref, $outref ) = $targrp->inout( "_ss" );
-
-# Import the median of the reference sky frame.
-          $median = $_MAKE_FLAT_FROM_NORMALISED_EXTENDED_{FLAT_MEDIAN};
 
 # Process each file in turn because there are no wildcarded file names
 # in CSUB.
@@ -40,28 +53,28 @@
 # Find the sky number corresponding to the object frame.
              $skyindex =  $target_number + 1;
 
-# Import the offsets with respect to this of the sky frames which just
-# bracket the current observation.
-             $sky_before = $_NORMALISE_TO_MODE_EXTENDED_{SKY_OFFSET}[$skyindex-1];
-             $sky_after = $_NORMALISE_TO_MODE_EXTENDED_{SKY_OFFSET}[$skyindex];
+# Import the sky levels of the sky frames which just bracket the current
+# observation.
+             $sky_before = $_NORMALISE_TO_MODE_EXTENDED_SKY_LEVEL[$skyindex-1];
+             $sky_after = $_NORMALISE_TO_MODE_EXTENDED_SKY_LEVEL[$skyindex];
 
-# Derive the sky offset for the current object frame by linear interpolation
-# between the median values of the last two sky medians (i.e. the pair
-# which most closely bracket the object frame).  As the frequency of
-# sky frames is fixed at two, i.e. alternting with sky, the interpolation
-# ssume timing equally
-             $offset = $median - $sky_before + 
-                       0.5 * ( $sky_before - $sky_after );
+# Derive the sky level for the current object frame by linear interpolation
+# between the modal sky values of the pair which most closely bracket the
+# object frame.  As the frequency of sky frames is fixed at two, i.e. alternting
+# with sky, the interpolation assumes the object frame was taken exactly
+# midway in time between its bracketing sky frames.
+             orac_print "+++ Sky before $sky_before .  Sky after $sky_after\n";
+             $sky_level = $sky_before - 0.5 * ( $sky_before - $sky_after );
 
 # Specify the parameters.
-             $header = "in=$in scalar=$offset out=$out title=\'Sky subtracted\'";
+             $header = "in=$in scalar=$sky_level out=$out title=\'Sky subtracted\'";
 
 # Note all sky frames and data frames should have the same exposure time.
 # In theory we could take care of by the Cal object and the headers.
              $Mon{"kappa_mon"}->obeyw("csub","$header");
 
 # Report the processing status.
-             orac_print "Orac says: $in to $out: Sky subtracted\n";
+             orac_print "Orac says: $in to $out: Sky ($sky_level) subtracted\n";
 
 # Display the image.
              _DISPLAY_FRAME_IMAGE_
