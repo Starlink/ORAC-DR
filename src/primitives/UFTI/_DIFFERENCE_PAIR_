@@ -1,0 +1,151 @@
+# _DIFFERENCE_PAIR_          -*-perl-*-
+#
+# Subtracts one frame from the previous.  Stores the resultant frame in
+# a group $diffGrp.  Evaluates displacements in x-y between the two
+# frames and records them in the frame as XOFFSET_DIFFERENCE and
+# YOFFSET_DIFFERENCE headers.
+#
+# TASK: KAPPA - SUB
+#
+# This should only be performed on OBJECT frames.
+    if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ||
+         $Frm->hdr( "OBSTYPE" ) eq "SKY" ) {
+
+# Is it time to difference a pair?
+       my $take_difference = $Frm->hdr( "DIFFERENCE_PAIR" );
+
+       if ( $take_difference ) {
+
+# Subtract within the pair.
+# =========================
+
+# Generate the input and output filenames.  The output file has the same
+# name as the input except the suffix is changed to indicate that it is
+# differenced pair.
+          ( my $in, my $out ) = $Frm->inout( "_dp" );
+
+# Obtain the previous file from the main group.
+          my $previousFrm = $Grp->frame( $Grp->num - 1 );
+          my $previous = $previousFrm->file;
+
+# Obtain the sense of the subtractions from the steering header.  Note
+# we can't use SUB in both cases because we need to propagate the
+# headers from the $in NDF, but the primary NDF in SUB is that specified
+# by parameter IN1.
+          my $header;
+          if ( $Frm->hdr( "PAIR_ORDER" ) ) {
+             $header = "ib=$previous ia=$in out=$out title=! exp='ib-ia'";
+             $Mon{"kappa_mon"}->obeyw( "maths", "$header" );
+          } else {
+
+# Difference the two frames.
+             $header = "in2=$previous in1=$in out=$out title=!";
+             $Mon{"kappa_mon"}->obeyw( "sub", "$header" );
+          }
+
+# Report the processing status.
+          orac_print "Orac says: $in subtracted from $previous to make $out: " .
+                     "Pair differenced\n";
+
+# Access or create the group of differenced frames.
+# =================================================
+
+# Does the Group of difference frames exist?  If not create it and
+# inherit the group file name ftom the main group.
+          my $diffGrp = $Grp->uhdr( "DIFFERENCE_GROUP" );
+          if ( ! defined( $diffGrp ) ) {
+             $diffGrp = $Grp->new;
+             $diffGrp->file( $Grp->file );
+
+#  Store the pointer to the group in the main Group user header.
+             $Grp->uhdr( "DIFFERENCE_GROUP", $diffGrp );
+          }
+
+# Evaluate the offsets between the frames.
+# ========================================
+
+# Obtain the instrument name, and hence the header keywords for the
+# telescope offsets.  
+          my ( $instrument, $raname, $decname, $xoff, $yoff );
+          if ( $instrument =~ /^UFTI/ ) {
+             $raname = "TRAOFF";
+             $decname = "TDECOFF";
+          } else {
+             $raname = "RAOFF";
+             $decname = "DECOFF";
+          }
+
+# Since the frames are combined, we find the average of their offsets.
+          $xoff = 0.5 * ( $previousFrm->hdr( $raname ) +
+                          $Frm->hdr( $raname ) );
+          $yoff = 0.5 * ( $previousFrm->hdr( $decname ) +
+                          $Frm->hdr( $decname ) );
+
+# Revise the offsets stored in the FITS extension in the output (differenced pair) image.
+# Leave the position and comment unchanged.
+          $header = "ndf=$out keyword=$raname edit=update value=$xoff position=!";
+          $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$header comment=\\\$C" );
+          $header = "ndf=$out keyword=$decname edit=update value=$yoff position=!";
+          $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$header comment=\\\$C" );
+
+# Report the processing status.
+          orac_print "Orac says: $in subtracted from $previous to make $out: " .
+                     "Pair differenced\n";
+
+# Evaluate the displacements between the positive and negative images.
+# =============================================
+
+# Derive the displacement between previous and current frames.  Here we
+# assume symmetry about the centre, so that the pair of images can be located
+# quickly, and hence measured.
+          my ( $xdisp, $ydisp );
+          $xdisp = $previousFrm->hdr( $raname ) - $Frm->hdr( $raname );
+          $ydisp = $previousFrm->hdr( $decname ) - $Frm->hdr( $decname );
+
+# Change the sign for the reverse order.
+          if ( ! $Frm->hdr( "PAIR_ORDER" ) ) {
+             $xdisp = -$xdisp;
+             $ydisp = -$ydisp;
+          }
+
+# Report the offsets.
+          orac_print "The offsets between the positive and negative images is ($xdisp,$ydisp).\n";
+
+# Store the differenced frame in the group.
+# =========================================
+
+# Create a new frame to store the differenced pair image.
+          my $tempFrm = $Frm->new( $out );
+
+# Need to propagate the raw frame as ORAC-DR pattern matches for files
+# ending in a number to set the $Frm->number, which is needed for the
+# template method.
+          $tempFrm->raw( $Frm->raw );
+
+# Transfer the headers being sure to transfer from the primary frame.
+          if ( $Frm->hdr( "PAIR_ORDER" ) ) {
+             %{$tempFrm->hdr} = ( %{$previousFrm->hdr} );
+             %{$tempFrm->uhdr} = ( %{$previousFrm->uhdr} );
+          } else {
+
+# Difference the two frames.
+             %{$tempFrm->hdr} = ( %{$Frm->hdr} );
+             %{$tempFrm->uhdr} = ( %{$Frm->uhdr} );
+          }
+
+# Revise the offsets stored in the hdr.
+          $tempFrm->hdr( $raname, $xoff );
+          $tempFrm->hdr( $decname, $yoff );
+
+# Store the displacements in the differenced frame.
+          $tempFrm->hdr( "XOFFSET_DIFFERENCE", $xdisp );
+          $tempFrm->hdr( "YOFFSET_DIFFERENCE", $ydisp );
+
+# Store the differenced frame in the difference group.
+          $diffGrp->push( $tempFrm );
+
+# Display the image using the temporary frame.
+          $Display->display_data( $tempFrm ) if (defined $Display);
+
+       }
+    }
