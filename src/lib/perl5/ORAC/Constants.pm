@@ -20,7 +20,7 @@ to return an ORAC__ABORT or ORAC__FATAL status using ORAC::Error.
 use strict;
 use warnings;
 
-use vars qw/ $VERSION /;
+use vars qw/ $VERSION @ISA %EXPORT_TAGS @EXPORT_OK/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 require Exporter;
