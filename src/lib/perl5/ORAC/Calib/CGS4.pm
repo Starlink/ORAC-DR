@@ -345,16 +345,13 @@ Returns the relevant extraction rows to the caller by comparing
 the index entries with the current frame. Suitable
 values will be found or the method will abort.
 
-Returns two numbers, the number of beams, and a reference to an array
-describing the beams.
+Returns two numbers, the maximum number of beams expected
+and a an array of hashes describing the beams that were detected.
 
-  my ($nbeams, $beamsref) = $Cal->rows;
+  my ($nbeams, @beams) = $Cal->rows;
 
-Generally followed by:
-  my @beams = @$beamsref;
-
-Returns undef and prints a warning if the row can not be determined
-from the index file.
+Returns undef and an empty list and prints a warning if the row can
+not be determined from the index file.
 
 Can not be used to set the name of the index key. Use the C<rowname>
 method for that.
@@ -384,19 +381,20 @@ sub rows {
 
   # Retrieve the NBEAMS and BEAMS from the index
    my ($nbeams, @beams);
-                                                                 
    if (defined $rowname) {
 
      my $entry = $self->rowindex->indexentry($rowname);
      # Sanity check
-     croak "BEAMS could not be found in index entry $rowname\n" unless (exists $entry->{BEAMS});
-     croak "NBEAMS could not be found in index entry $rowname\n" unless (exists $entry->{NBEAMS});
+     croak "BEAMS could not be found in index entry $rowname\n" 
+       unless (exists $entry->{BEAMS});
+     croak "NBEAMS could not be found in index entry $rowname\n" 
+       unless (exists $entry->{NBEAMS});
      $nbeams = $entry->{NBEAMS};
-     @beams = $entry->{BEAMS};
+     @beams = @{$entry->{BEAMS}};
    } else {
      # Could not find it
      $nbeams = undef;
-     @beams = undef;
+     @beams = ();
    }
    return ( $nbeams, @beams );
 }
