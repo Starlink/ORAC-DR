@@ -252,7 +252,6 @@ sub launch {
   # if it's not already set.
   if( ! defined( $ENV{'RTD_REMOTE_DIR'} ) ) {
     $ENV{'RTD_REMOTE_DIR'} = $ENV{'ORAC_DATA_OUT'};
-    print "Setting RTD_REMOTE_DIR environment variable to ORAC_DATA_OUT\n";
   }
 
  # First attempt to simply connect
