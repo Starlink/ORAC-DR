@@ -46,6 +46,7 @@ use Cwd; # Current working directory
   orac_setup_display
   orac_execute_recipe orac_read_recipe
   orac_parse_recipe orac_exit_normally orac_exit_abnormally
+  orac_add_code_to_recipe
   /;
 
 $VERSION = '0.10';
@@ -196,12 +197,12 @@ sub orac_parse_arguments {
 
   local($line) = shift(@_);
 
-  ($macro,my @arguments)=split(/\s+/,$line);
+  ($macro,my @arguments) = split(/\s+/,$line);
 
   %$macro = ();
   foreach $argument (@arguments) {
-    ($key,$value)=split("=",$argument);
-    $$macro{$key}=$value;
+    ($key,$value) = split("=",$argument);
+    $$macro{$key} = $value;
   };
 
 };
@@ -227,7 +228,7 @@ sub orac_parse_recipe {
     
     if ($line =~ /^\s*_/) {
       $line =~ s/^\s+//g;	# zap leading blanks
-      ($macro,@rest)=split(/\s+/,$line);
+      ($macro,@rest) = split(/\s+/,$line);
       # read in primitive
       open(DICTIONARY,$ {main::dictionary_dir}.$macro) || 
 	croak "No translation for $line\n";    
@@ -246,54 +247,70 @@ sub orac_parse_recipe {
       push(@parsed,@lines);
       
 
-    # Now check for obeyw
-    # Need a clever check since we have to decide whether the 
-    # line already contains an equals or is commented out
-    # - I am not very clever so split it into bits
-    } elsif ($line =~ /->obeyw/) {
+      } else {
+	# Just push the line on as is
+	push (@parsed, $line);
 
+      }
+
+  }
+
+  return(@parsed);
+
+}
+
+
+sub orac_add_code_to_recipe {
+  
+  local(@recipe) = @_;
+  my(@processed);
+  
+  my ($line);
+  
+  foreach $line (@recipe) {
+    
+    if ($line =~ /->obeyw(.*)/) {
+      
+      my $arguments = $1;
+      
+      $arguments =~ s/\"/ /g;
+      push(@processed,"orac_debug(\"$arguments\n\");\n");
+      print "xxxxxxxx: $arguments \n";
       #    } elsif ($line =~ /={0}.+->obeyw/) { # old line
-
+      
       # Now check to see whether it starts with a comment character
       # Note that the xemacs syntac recognition does not understand #
       # in a pattern match
       # or if somebody has put an equals sign in and is checking it
       # themselves.
       if ($line !~ /(\#|=).+?->obeyw/x) {
-
+	
 	# Now add the OBEYW status checking lines
 	# prepending the OBEYW_STATUS line
-	push (@parsed, "orac_debug($line);¨);
-	push (@parsed, '$OBEYW_STATUS = ' .$line);
-	push (@parsed, &orac_check_obey_status($line));
-
+	push (@processed, '$OBEYW_STATUS = ' .$line);
+	push (@processed, &orac_check_obey_status($line));
+	
       } else {
 	# Just push the line on as is
-	push (@parsed, $line);
+	push (@processed, $line);
       }
       
-      # Now check for a different kind of status
-      # If the recipe writer uses $ORAC_STATUS
-      # Then we can add some lines immediately after to check
-      # this status (0 is good as for Starlink)
     } elsif ($line =~ /\$ORAC_STATUS/) {
-    
       # Put on the current line
-      push (@parsed, $line);
-      
+      push (@processed, $line);      
       # Add the status checking code
-      push (@parsed, &orac_check_status);
+      push (@processed, &orac_check_status);
       
-    } else {
-      
-      push(@parsed,$line);
-    
+    } else {      
+      push(@processed,$line);
     }
   
   };
 
-  return(@parsed);
+  return(@processed);
 }
+
+
 
 
 # This is the status checking code
@@ -427,6 +444,13 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.24  1998/08/07 02:25:52  frossie
+#Add orac_add_code_to_recipe subroutine. Put in it the automatic error
+#checking code, and remove it from orac_parse_recipe so that it is
+#executed only after recursive parsing has ceased.
+#
+#Add orac_debug code to orac_add_code_to_recipe
+#
 #Revision 1.23  1998/08/06 21:08:54  frossie
 #Add orac_debug in auto status checking
 #
