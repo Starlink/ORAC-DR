@@ -12,7 +12,11 @@
 #    This primitive defines the field-distortion mapping for the
 #    current frame, using the relationships stored in two `calibration'
 #    files.  It creates a new WCS domain called ISAAC_DISTORTION within
-#    the frame.
+#    the frame containing the forward and inverse distortion mappings.
+#    It also replaces the original SKY domain which uses the incorrect,
+#    distorted grid co-ordinates; it forms a compound mapping of the
+#    grid distortion and the mapping between the undistorted grid and
+#    ideal sky co-ordinates.
 #
 # Notes:
 #    -  This primitive is suitable for ISAAC in imaging mode.
@@ -20,7 +24,8 @@
 #    web page: http://www.eso.org/instruments/isaac/problems_tips.html.
 #
 # Tasks:
-#    KAPPA: WCSADD.
+#    ATOOLS: ASTADDFRAME, ASTCMPMAP, ASTGETFRAME, ASTGETMAPPING, ASTREMOVEFRAME;
+#    KAPPA: WCSADD, WCSFRAME.
 #
 # Authors:
 #    MJC: Malcolm J. Currie (Starlink)
@@ -34,18 +39,52 @@
 # For OS-independent filename creation.
     use File::Spec;
 
-# Open the faint-standards file and store its records in an array.
+# Open the mapping files.
     my $path = $ENV{ "ORAC_DATA_CAL" };
     my $forexp = "^" . File::Spec->catfile( $path, "forward_distortion.lis" );
     my $invexp = "^" . File::Spec->catfile( $path, "inverse_distortion.lis" );
 
+# Resample using the forward and inverse math-type mappings in text files.
+# Save the WCS description in file map_dist.txt.
     my $ndf = $Frm->file;
     my $param1 = "maptype=math frame=grid domain=ISAAC_DISTORTION ndf=$ndf";
-    my $param2 = "forexp=$forexp invexp=$invexp frmtype=Frame";
+    my $param2 = "forexp=$forexp invexp=$invexp frmtype=Frame mapout=map_dist.txt";
     $Mon{ "ndfpack_mon" }->obeyw( "wcsadd", "$param1 $param2 accept" );
 
 # Report the status.
     orac_print "Distortion transformation created in $ndf\n";
+
+# Switch to the SKY domain.
+    $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$ndf frame=SKY" );
+
+# Create a text file ("map_ideal.txt") holding an AST description of
+# mapping the grid to idealised sky co-ordinates.  The base frame
+# is the GRID.
+    $param1 = "this=$ndf iframe1=AST__BASE iframe2=AST__CURRENT result=map_ideal.txt";
+    $Mon{ "atools_mon" }->obeyw( "astgetmapping", "$param1" );
+
+# Create a text file ("sky.txt") holding an AST description of the SKY
+# Frame. 
+    $param1 = "this=$ndf iframe=AST__CURRENT result=sky.txt";
+    $Mon{ "atools_mon" }->obeyw( "astgetframe", "$param1" );
+
+# Concatenate Mappings for the distortion and grid to sky.  Put the
+# resulting Mapping description in text file "map_cmp.txt".  This is
+# the Mapping from actual grid co-ordinatess to sky co-ordinates.
+    $param1 = "map1=map_dist.txt map2=map_ideal.txt series result=map_cmp.txt accept";
+    $Mon{ "atools_mon" }->obeyw( "astcmpmap", "$param1" );
+
+# Remove the original SKY Frame from the WCS component.
+    $Mon{ "atools_mon" }->obeyw( "astremoveframe", "this=$ndf iframe=AST__CURRENT result=$ndf" );
+
+# Add in the SKY frame, using the Mapping in "map_cmp.txt" to connect
+# it to the GRID Frame.
+    $param1 = "this=$ndf iframe=AST__BASE map=map_cmp.txt frame=sky.txt result=$ndf";
+    $Mon{ "atools_mon" }->obeyw( "astaddframe", "$param1" );
+
+# Report the status.
+    orac_print "Replace SKY WCS with another, which includes the distortion, in $ndf\n";
+
 
 # Podule
 # ======
@@ -56,9 +95,14 @@ _DEFINE_DISTORTION_TRANSFORMATION_ -- Creates the WCS mappings for ISAAC field-d
 
 =head1 DESCRIPTION
 
-This primitive defines the field-distortion mapping for the current
-frame, using the relationships stored in two `calibration' files.  It
-creates a new WCS domain called ISAAC_DISTORTION within the frame.
+This primitive defines the field-distortion mapping for the
+current frame, using the relationships stored in two `calibration'
+files.  It creates a new WCS domain called ISAAC_DISTORTION within
+the frame containing the forward and inverse distortion mappings.
+It also replaces the original SKY domain which uses the incorrect,
+distorted grid co-ordinates; it forms a compound mapping of the
+grid distortion and the mapping between the undistorted grid and
+ideal sky co-ordinates.
 
 =head1 NOTES
 
@@ -77,7 +121,8 @@ web page: http://www.eso.org/instruments/isaac/problems_tips.html.
 
 =head1 TASKS
 
-KAPPA: WCSADD.
+ATOOLS: ASTADDFRAME, ASTCMPMAP, ASTGETFRAME, ASTGETMAPPING, ASTREMOVEFRAME;
+KAPPA: WCSADD, WCSFRAME.
 
 =head1 AUTHORS
 
