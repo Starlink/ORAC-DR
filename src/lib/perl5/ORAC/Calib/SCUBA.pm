@@ -972,7 +972,7 @@ sub tau {
       $tau = 0.0;
     }
 
-  } elsif ($sys =~ /DIP/ || $sys eq 'INDEX') {
+  } elsif ($sys =~ /DIP/ || $sys eq 'INDEX') { # Skydips
 
     # Skydips have been selected (using index files)
 
@@ -988,153 +988,80 @@ sub tau {
     # we know what filter we are searching for
     # Special case for a 850 skydip only search
     # but we don't know whether we should be searching for 850W
-    # or 850N
-    if ($sys =~ /850/) {
-      $hdr{FILTER} = '850W';
-    } else {
+    # or 850N. To overcome this we run once for 850W and again for 850N
+    # unless the current filter is already 850 microns
+    if ($filt =~ /850/) {
       $hdr{FILTER} = $filt;
-    }
 
-    # Now we have to ask for the 'best' skydip matching these
-    # criterion. For interpolation schemes we need to ask for
-    # the nearest skydips either side in time from the current
-    # frame. For normal querying we simply ask for the closest
-    # in time.
+      # Search for the requested filter
+      $tau = $self->_search_skydip_index($sys, \%hdr);
 
-    # ASIDE: Note that in the 850skydip case, querying the complete
-    # index file is inefficient since the chances are quite good
-    # that a verification of the current skydip alone would be okay
+    } elsif ($sys =~ /^850/) { # scale from 850 filter
 
-    # This variable sets the threshold value for age
-    my $too_old = 3.0/24.0; # 3 hours as a day fraction
+      # Need to loop over all 850 filters until we find one that
+      # returns a match. In principal, we should search for all filters
+      # and then determine the closest (either by using a clever rules
+      # file or by searching multiple times and storing the time 
+      # difference). In practice, you very really mix 850W skydips with
+      # 850N skydips within a single night.
 
-    # Check that SYS matches 'interp' (interpolation)
-    # and ask for two index searches [inefficient???]
-    # Might want to use a index routine that searches for high and
-    # low at the same time
-    if ($sys =~ /INTERP/) {
-      my $high = $self->skydipindex->chooseby_positivedt('ORACTIME', \%hdr, 0);
-      my $low  = $self->skydipindex->chooseby_negativedt('ORACTIME', \%hdr, 0);
+      my $found;
+      foreach my $f ( '850W', '850N' ) {
+	$hdr{FILTER} = $f;
 
-      # Check to see
-      # Now retrieve the actual entries
-      my ($high_ent, $low_ent);
-      $high_ent = $self->skydipindex->indexentry($high) if defined $high;
-      $low_ent  = $self->skydipindex->indexentry($low) if defined $low;
+	# Search for the requested filter
+	$tau = $self->_search_skydip_index($sys, \%hdr);
 
-      # The possibilities are:
-      # - low and high are found, we interpolate
-      # - low and high are found but some are older than 3 hours, warn
-      #   and interpolate
-      # - only high is found - use it [warn if too new]
-      # - only low is found - use it [warn if too old]
-      # - nothing found - revert to using CSO tau
-
-      # Check the HIGH
-      if (defined $high_ent) {
-	# Okay - see how old it is
-	my $age = abs($high_ent->{ORACTIME} - $hdr{ORACTIME});
-        if ($age > $too_old) {
-	  orac_warn(" the closest skydip (from above: $high) was too new [".sprintf('%5.2f',$age*24.0)." hours]\nUsing this value anyway...\n");
+	# Jump out the loop if we have an answer
+	if (defined $tau) {
+	  $found = $f;
+	  last;
 	}
+
+	orac_warn "Unable to find a valid skydip using filter $f\n";
+
       }
 
-      # Check the LOW
-      if (defined $low_ent) {
-	# Okay - see how old it is
-	my $age = abs($low_ent->{ORACTIME} - $hdr{ORACTIME});
-        if ($age > $too_old) {
-	  orac_warn(" the closest skydip (from below: $low) was too old [".sprintf('%5.2f',$age*24.0)." hours]\nUsing this value anyway...\n");
+      # Now we need to translate the 850 tau to the required tau
+      # One complication is that the JCMT::Tau module does not allow
+      # for conversions between arbritrary filters. The solution is to
+      # go through the CSO airlock but this should probably occur
+      # inside get_tau rather than here.
+      if (defined $tau) {
+
+	orac_print "Using $found tau of ".sprintf("%6.3f",$tau)." to generate tau for filter $filt\n";
+
+	# Now convert this tau to the requested filter
+	# This must be changed to work for 850N as well
+	($tau, $status) = get_tau($filt, $found, $tau);
+
+	# If there is an error, try going through CSO
+	if ($status == -1) {
+
+	  (my $intermed_tau, $status) = get_tau('CSO', $found, $tau);
+
+	  if ($status != -1) {
+	    ($tau, $status) = get_tau($filt, 'CSO', $intermed_tau);
+
+	    # On error - report conversion error then set tau to undef
+	    # so that we can try to adopt a CSO value
+	    if ($status == -1) {
+	      orac_warn("Error converting a $found tau to an opacity for filter $filt\n");
+	      $tau = undef;
+	    }
+	  }
+
 	}
+
       }
 
-      # Now look for the tau values
-      if (defined $low_ent && defined $high_ent) {
-	# Interpolate TAU value
+    } else { # Just want to use the requested filter
 
-	# Find taus for each time
-	my $highz = $high_ent->{TAUZ};
-	my $hight = $high_ent->{ORACTIME};
-	my $lowz  = $low_ent->{TAUZ};
-	my $lowt  = $low_ent->{ORACTIME};
-
-	my $framet = $hdr{ORACTIME};
-
-#	print "HIGH: $highz @ $hight\n";
-#	print "LOW: $lowz  @ $lowt\n";
-#	print "Now:  $framet\n";
-
-	# Calculate tau at time $framet
-	# This is not as good as returning both tau values
-        # and times to the caller
-
-	orac_print "Calculating interpolated tau value....\n";
-
-	$tau = $lowz + ($framet - $lowt) * ($highz-$lowz) / ($hight - $lowt);
-
-      } else {
-
-	orac_warn "Cannot interpolate - can not find suitable skydips on both sides of this observation\nUsing a single value...\n";
-	
-	# If only one is defined, use that tau
-	$tau = undef;
-	$tau = $low_ent->{TAUZ} if defined $low_ent;
-	$tau = $high_ent->{TAUZ} if defined $high_ent;
-
-	# If none are defined - tau is undef anyway
-	
-      }
-
-
-    } else {
-
-      # Retrieve the closest in time
-      my $nearest = $self->skydipindex->choosebydt('ORACTIME', \%hdr,0);
-
-      # Check return value
-      if (defined $nearest) {
-
-	# Now retrieve the entry
-	my $entref = $self->skydipindex->indexentry($nearest);
-
-	# Possibilities are:
-	# - something found, use it, report if it is too old.
-	# - nothing found - revert to using CSO tau
-
-	# Check age
-	if (defined $entref) {
-	  my $age = abs($entref->{ORACTIME} - $hdr{ORACTIME});
-	  orac_warn("Skydip $nearest was taken ".sprintf('%5.2f',$age*24.0)." hours from this frame\nUsing this value anyway...\n")
-	    if $age > $too_old;
-
-	  $tau = $entref->{TAUZ};
-
-	} else {
-	  orac_warn "Error reading index entry $nearest\n";
-	}
-      }
+      $hdr{FILTER} = $filt;
+      $tau = $self->_search_skydip_index($sys, \%hdr);
 
     }
 
-    # If we have a tau value AND we are using a 850->filter conversion
-    # We should convert here
-
-    if (defined $tau && $sys =~ /850/) {
-
-      orac_print "Using 850W tau of ".sprintf("%6.3f",$tau)." to generate tau for filter $filt\n";
-
-      # Now convert this tau to the requested filter
-      # This must be changed to work for 850N as well
-      ($tau, $status) = get_tau($filt, '850W', $tau);
-
-      # On error - report conversion error then set tau to undef
-      # so that we can try to adopt a CSO value
-      if ($status == -1) {
-	orac_warn("Error converting a 850 tau to an opacity for filter $filt\n");
-	$tau = undef;
-      }
-
-    }
 
     # Need to configure the fallback options to enable the
     # adoption of a CSO tau to be optional
@@ -1216,6 +1143,173 @@ sub DESTROY {
 
 
 =back
+
+=begin __PRIVATE_METHODS__
+
+=head1 PRIVATE METHODS
+
+Methods used internally by this class.
+
+=over 4
+
+=item B<_search_skydip_index>
+
+Given a header, via a hash reference, and a interpolation type search
+the skydip index file to see if a match can be found.  A separate
+method so that it can be called with different filter names
+efficiently (without having to do special-cased pattern matching for
+850W and 850N. See the C<tau()> method for the different interpolation
+methods for skydips.
+
+  my $tau = $Cal->_search_skydip_index($method, \%hdr);
+
+Returns the tau (undefined if no match). The tau will be for the selected
+filter and will not be scaled to a reference filter.
+
+=cut
+
+sub _search_skydip_index {
+
+  my $self = shift;
+
+  # $sys is the interpolation system to use
+  # $hdr is a ref to a hash containing all the headers
+  my ($sys, $hdr) = @_;
+
+  # This stores the answer
+  my $tau;
+
+  # Now we have to ask for the 'best' skydip matching these
+  # criterion. For interpolation schemes we need to ask for
+  # the nearest skydips either side in time from the current
+  # frame. For normal querying we simply ask for the closest
+  # in time.
+
+  # ASIDE: Note that in the 850skydip case, querying the complete
+  # index file is inefficient since the chances are quite good
+  # that a verification of the current skydip alone would be okay
+
+  # This variable sets the threshold value for age
+  my $too_old = 3.0/24.0; # 3 hours as a day fraction
+
+  # Check that SYS matches 'interp' (interpolation)
+  # and ask for two index searches [inefficient???]
+  # Might want to use a index routine that searches for high and
+  # low at the same time
+  if ($sys =~ /INTERP/) {
+    my $high = $self->skydipindex->chooseby_positivedt('ORACTIME', $hdr, 0);
+    my $low  = $self->skydipindex->chooseby_negativedt('ORACTIME', $hdr, 0);
+
+    # Check to see
+    # Now retrieve the actual entries
+    my ($high_ent, $low_ent);
+    $high_ent = $self->skydipindex->indexentry($high) if defined $high;
+    $low_ent  = $self->skydipindex->indexentry($low) if defined $low;
+
+    # The possibilities are:
+    # - low and high are found, we interpolate
+    # - low and high are found but some are older than 3 hours, warn
+    #   and interpolate
+    # - only high is found - use it [warn if too new]
+    # - only low is found - use it [warn if too old]
+    # - nothing found - revert to using CSO tau
+
+    # Check the HIGH
+    if (defined $high_ent) {
+      # Okay - see how old it is
+      my $age = abs($high_ent->{ORACTIME} - $hdr->{ORACTIME});
+      if ($age > $too_old) {
+	orac_warn(" the closest skydip (from above: $high) was too new [".sprintf('%5.2f',$age*24.0)." hours]\nUsing this value anyway...\n");
+      }
+    }
+
+    # Check the LOW
+    if (defined $low_ent) {
+      # Okay - see how old it is
+      my $age = abs($low_ent->{ORACTIME} - $hdr->{ORACTIME});
+      if ($age > $too_old) {
+	orac_warn(" the closest skydip (from below: $low) was too old [".sprintf('%5.2f',$age*24.0)." hours]\nUsing this value anyway...\n");
+      }
+    }
+
+    # Now look for the tau values
+    if (defined $low_ent && defined $high_ent) {
+      # Interpolate TAU value
+
+      # Find taus for each time
+      my $highz = $high_ent->{TAUZ};
+      my $hight = $high_ent->{ORACTIME};
+      my $lowz  = $low_ent->{TAUZ};
+      my $lowt  = $low_ent->{ORACTIME};
+
+      my $framet = $hdr->{ORACTIME};
+
+#	print "HIGH: $highz @ $hight\n";
+#	print "LOW: $lowz  @ $lowt\n";
+#	print "Now:  $framet\n";
+
+      # Calculate tau at time $framet
+      # This is not as good as returning both tau values
+      # and times to the caller
+
+      orac_print "Calculating interpolated tau value....\n";
+
+      $tau = $lowz + ($framet - $lowt) * ($highz-$lowz) / ($hight - $lowt);
+
+    } else {
+
+      orac_warn "Cannot interpolate - can not find suitable skydips on both sides of this observation\nUsing a single value...\n";
+	
+      # If only one is defined, use that tau
+      $tau = undef;
+      $tau = $low_ent->{TAUZ} if defined $low_ent;
+      $tau = $high_ent->{TAUZ} if defined $high_ent;
+
+      # If none are defined - tau is undef anyway
+	
+    }
+
+
+  } else { # No interpolation, just use nearest
+
+    # Retrieve the closest in time
+    my $nearest = $self->skydipindex->choosebydt('ORACTIME', $hdr,0);
+
+    # Check return value
+    if (defined $nearest) {
+
+      # Now retrieve the entry
+      my $entref = $self->skydipindex->indexentry($nearest);
+
+      # Possibilities are:
+      # - something found, use it, report if it is too old.
+      # - nothing found - revert to using CSO tau
+
+      # Check age
+      if (defined $entref) {
+	my $age = abs($entref->{ORACTIME} - $hdr->{ORACTIME});
+	orac_warn("Skydip $nearest was taken ".sprintf('%5.2f',$age*24.0)." hours from this frame\nUsing this value anyway...\n")
+	  if $age > $too_old;
+
+	$tau = $entref->{TAUZ};
+
+      } else {
+	orac_warn "Error reading index entry $nearest\n";
+      }
+    }
+
+  }
+
+  # Return the answer
+  return $tau;
+
+}
+
+
+
+=back
+
+=end __PRIVATE_METHODS__
 
 =head1 SEE ALSO
 
