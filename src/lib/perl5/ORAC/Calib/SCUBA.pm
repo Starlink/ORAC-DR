@@ -25,20 +25,31 @@ for SCUBA.
 
 use strict;
 use Carp;
-use vars qw/$VERSION %DEFAULT_GAINS %PHOTFLUXES/;
+use vars qw/$VERSION %DEFAULT_GAINS %PHOTFLUXES @PLANETS $DEBUG/;
+
+use Cwd;          # Directory change
+use File::Path;   # rmtree function
 
 # Derive from standard Calib class (even though nothing in common
 # for now)
 use ORAC::Calib;  # We are a Calib class
 use ORAC::Index;  # Use index file
 use ORAC::Print;  # Standardised printing
+use ORAC::Constants; # ORAC__OK
+
+use ORAC::Msg::ADAM::Control;  # For fluxes monolith - messaging
+use ORAC::Msg::ADAM::Task;     # For fluxes monolith
+
 
 use JCMT::Tau;    # Tau conversion
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 # Let the object know that it is derived from ORAC::Frame;
-@ORAC::Calib::SCUBA::ISA = qw/ORAC::Calib/;
+#@ORAC::Calib::SCUBA::ISA = qw/ORAC::Calib/;
+use base qw/ORAC::Calib/;
+
+$DEBUG = 0; # Turn off debugging mode
  
 # Define default SCUBA gains
 
@@ -87,6 +98,9 @@ use JCMT::Tau;    # Tau conversion
 	      );
 
 
+# The planets that we can retrieve fluxes for
+@PLANETS = qw/ MARS JUPITER SATURN URANUS NEPTUNE /;
+
 
 # Setup the object structure
 
@@ -120,12 +134,111 @@ sub new {
   $obj->{TauSys} = undef;
   $obj->{TauSysNoUpdate} = 0;
   $obj->{SkydipIndex} = undef;
-  $obj->{Thing} = {};
+  $obj->{FluxesObj} = undef;      # Fluxes monolith
+  $obj->{FluxesTmpDir} = undef;
+  $obj->{AMS} = undef;         # ADAM messaging object
 
   bless($obj, $class);
 
   # Take no arguments at present
   return $obj;
+
+}
+
+=item fluxes_tmp_dir
+
+Name of temporary directory created for the fluxes monolith.
+(set or retrieve)
+
+=cut
+
+sub fluxes_tmp_dir {
+  my $self = shift;
+  if (@_) { $self->{FluxesTmpDir} = shift; }
+  return $self->{FluxesTmpDir};
+}
+
+
+
+=item fluxes_mon
+
+Retrieves the ORAC::Msg::ADAM::Task object associated with
+the Starlink fluxes monolith.
+
+A new object is created if the value is undefined.
+
+Relies on the Adam messaging system being available.
+ADAM messaging is initialised if not present.
+
+Currently this routine also assumes that no other fluxes
+objects are started by this process (since there are a number
+of things that must be configured before starting the monolith).
+
+=cut
+
+sub fluxes_mon {
+  my $self = shift;
+  my $status;
+
+  unless (defined $self->{FluxesObj}) {
+    # Start AMS
+    $self->{AMS} = new ORAC::Msg::ADAM::Control;
+    $status = $self->{AMS}->init;
+    croak 'ORAC::Calib::SCUBA::fluxes_mon: Error starting ADAM messaging system'
+      unless $status == ORAC__OK;
+
+    # Start FLUXES - this requires some environment variables to be defined
+    # This should use a $FLUXES_DIR env variable
+    # $ENV{FLUXES} = '/star/bin/fluxes';
+    $ENV{FLUXES} = '/home/timj/tmp/fluxes';
+
+    # Should chdir to /tmp, create the soft link, launch fluxes
+    # and then chdir back to wherever we happen to be.
+
+    my $cwd = cwd; # Store current dir
+
+    # Create temp directory - this is needed in case another
+    # oracdr is running fluxes and we want to make sure that
+    # the JPLEPH file is not removed when THAT oracdr finishes!
+    my $tmpdir = "/tmp/fluxes_$$";
+    mkdir $tmpdir,0777 || croak "Could not make directory $tmpdir: $!";
+
+    chdir($tmpdir) || croak "Could not change directory to $tmpdir: $!";
+
+    # Hard-wire in the location of JPLEPH - note that 
+    # we assume /star is available as /star!!!!
+    # Probably could do with $JPL_DIR as well.
+    # Create soft link to JPLEPH
+
+    # If the JPLEPH file is there already then assume it is okay
+    unless (-f "JPLEPH") {
+      unlink "JPLEPH";
+      symlink "/star/etc/jpl/jpleph.dat", "JPLEPH"
+	|| croak "Could not create link to JPL ephemeris";
+    }
+
+    # Set FLUXPWD variable
+    $ENV{'FLUXPWD'} = cwd;
+
+    # Now we can try and launch fluxes
+    my $obj = new ORAC::Msg::ADAM::Task("fluxes_$$",
+				       "$ENV{FLUXES}/fluxes");
+
+    # Now we can chdir back to our real working directory
+    chdir $cwd || croak "Could not change back to $cwd: $!";
+
+    # Wait and See if we can contact
+    if ($obj->contactw) {
+      # Store the object
+      $self->{FluxesObj} = $obj;
+      $self->fluxes_tmp_dir($tmpdir);
+    } else {
+      croak 'Error launching fluxes monolith. Aborting.';
+    }
+
+  }
+
+  return $self->{FluxesObj};
 
 }
 
@@ -428,6 +541,12 @@ sub iscalsource {
   my $source = uc(shift);
   my $filter = shift;
 
+  # If we match a planet straightaway then it is a calibrator
+  # regardless of filter (unless the filter is not available in fluxes)
+
+  return 1 if grep /$source/, @PLANETS;
+
+
   # Start off being pessimistic
   my $iscal = 0;
   if (exists $PHOTFLUXES{$source}) {
@@ -451,6 +570,8 @@ Return the flux of a calibrator source
 
 Can not currently handle planets.
 
+Returns undef if the flux could not be determined.
+
 =cut
 
 sub fluxcal {
@@ -462,11 +583,59 @@ sub fluxcal {
   # Start off being pessimistic
   my $flux = undef;
 
+  # Check in the fluxes hash for a value
   if (exists $PHOTFLUXES{$source}) {
     # Source exists in calibrator list
 
     if (exists $PHOTFLUXES{$source}{$filter}) {
       $flux = $PHOTFLUXES{$source}{$filter};
+    }
+
+  } elsif ( grep(/$source/, @PLANETS) ) {
+    # Else if we have a planet name
+
+    # Construct argument string for fluxes
+    my $hidden = "pos=n flu=y screen=n ofl=n msg_filter=quiet outfile=fluxes.dat apass=n now=n";
+
+    # Now we need to know the date for fluxes (the time is pretty 
+    # immaterial for the flux)
+    # FLUXES needs the date in DD MM YY format
+    # of course SCUBA uses YYYY:MM:DD format
+    my $scudate = $self->thing->{'UTDATE'}; # the thing method is the header
+
+    if (defined $scudate) {
+      my ($y,$m,$d) = split(/:/, $scudate);
+      $y = substr($y,2);
+      $scudate = "$d $m $y";
+
+    } else {
+      $scudate = '0 1 1';
+    }
+
+    # Get the time as well - I'm pretty sure that the flux will hardly
+    # change when I change the ut time
+    my $scutime = $self->thing->{'UTSTART'};
+
+    if (defined $scutime) {
+      $scutime =~ tr/:/ /; # Translate colon to space
+    } else {
+      $scutime = '0 0 0';
+    }
+
+    my $status = $self->fluxes_mon->obeyw("","$hidden planet=$source date='$scudate' time='$scutime' filter=$filter");
+
+    if ($status != ORAC__OK) {
+      orac_err "The FLUXES program did not run successfully\n";
+      return undef;
+    }
+
+    # At this point we dont know whether we want the flux in the beam
+    # or the total flux
+
+    ($status, $flux) = $self->fluxes_mon->get("","F_BEAM");
+    if ($status != ORAC__OK || $flux == -1) {
+      orac_err "Error retrieving flux for filter $filter and planet $source\n";
+      return undef;
     }
 
   }
@@ -529,6 +698,26 @@ sub skydiptau {
 
 } 
 
+
+=item DESTROY
+
+Removes any directories that may have been created by this
+calibration class (eg by starting fluxes).
+
+Assumes that only this object is interested in the fluxes monolith
+associated with this object since we are about to remove the
+temporary directory containing the JPL ephemeris file.
+
+=cut
+
+sub DESTROY {
+  my $self = shift;
+  if ($self->fluxes_tmp_dir) {
+    rmtree $self->fluxes_tmp_dir;    
+    orac_print "Removing temporary directory containing JPLEPH\n"
+      if $DEBUG;
+  }
+}
 
 
 
