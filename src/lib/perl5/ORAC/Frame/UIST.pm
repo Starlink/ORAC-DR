@@ -435,7 +435,7 @@ sub calc_orac_headers {
 
   # ORACTIME
   my $date = defined($self->hdr('UTDATE')) ? $self->hdr('UTDATE') : 0;
-  my $time = defined($self->hdr->{1}->{'UTSTART'}) ? $self->hdr->{1}->{'UTSTART'} / 24 : 0;
+  my $time = defined($self->hdr->{1}->{'UTSTART'}) ? $self->hdr->{1}->{'UTSTART'} / 24 : ( defined($self->hdr->{'UTSTART'}) ? $self->hdr->{'UTSTART'} / 24 : 0 );
 
   $self->hdr('ORACTIME', $date + $time);
 
