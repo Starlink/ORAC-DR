@@ -568,7 +568,7 @@ sub orac_configure_for_instrument {
 
              last SWITCH; }
 
-     if ( $instrument eq "IRCAM" ) {
+     if ( $instrument eq "IRCAM" or $instrument eq "IRCAM2") {
 
              # Instrument
              $ENV{"ORAC_INSTRUMENT"} = "IRCAM2";
@@ -604,6 +604,7 @@ sub orac_configure_for_instrument {
              last SWITCH; }
 
      if ( $instrument eq "IRCAM (old)" ) {
+       # Can't distinguish IRCAM from IRCAM2 !!
 
              # Instrument
              $ENV{"ORAC_INSTRUMENT"} = "IRCAM";
@@ -633,7 +634,7 @@ sub orac_configure_for_instrument {
              $ENV{"ORAC_PERSON"} = "mjc";
              $ENV{"ORAC_SUN"} = "232";
              if (Net::Domain->domainname =~ "ukirt"  ) {
-                  $options->{"loop"} = "flag";
+                  $options->{"loop"} = "wait";
              }
 
              last SWITCH; }
@@ -753,7 +754,7 @@ sub orac_configure_for_instrument {
 
              last SWITCH; }
 	      
-     if ( $instrument eq "UFTI" ) {
+     if ( $instrument eq "UFTI" or $instrument eq "UFTI2") {
 
              # Instrument
              $ENV{"ORAC_INSTRUMENT"} = "UFTI2";
@@ -788,7 +789,7 @@ sub orac_configure_for_instrument {
 
              last SWITCH; }
 
-     if ( $instrument eq "UFTI (old)" ) {
+     if ( $instrument eq "UFTI (old)") {
 
              # Instrument
              $ENV{"ORAC_INSTRUMENT"} = "UFTI";
@@ -819,7 +820,7 @@ sub orac_configure_for_instrument {
              $ENV{"ORAC_SUN"} = "232";
              if (Net::Domain->domainname =~ "ukirt"  ) {
                   $options->{"loop"} = "flag";
-             }           
+             }
 
              last SWITCH; }
 
