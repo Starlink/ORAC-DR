@@ -200,7 +200,7 @@ sub _to_UTEND {
 # Obtain the UT start time and convert to decimal hours.
    my $utstring = $self->hdr( "UTEND" );
    my $utend = $utstring;
-   if ( ! is_numeric( $utstring ) ) {
+   if ( ! is_numeric( $utstring ) && $utstring !~ /Value/ ) {
       $utend = hmstodec( $utstring );
    }
    return $utend;
@@ -220,7 +220,7 @@ sub _to_UTSTART {
 # Obtain the UT start time and convert to decimal hours.
    my $utstring = $self->hdr( "UT" );
    my $ut = 0.0;
-   if ( defined( $utstring ) && $utstring !~ /\s+/ ) {
+   if ( defined( $utstring ) && $utstring !~ /\s+/ && $utstring !~ /Value/ ) {
       $ut = hmstodec( $utstring );
    }
    return $ut;
