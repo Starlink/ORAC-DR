@@ -1,4 +1,3 @@
-
 #+
 #  Name:
 #     oracdr_start
@@ -20,6 +19,7 @@
 #  Authors:
 #     Frossie Economou (frossie@jach.hawaii.edu)
 #     Tim Jenness (t.jenness@jach.hawaii.edu)
+#     Malcolm J. Currie (mjc@jach.hawaii.edu)
 #     {enter_new_authors_here}
 
 #  Notes:
@@ -37,6 +37,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.7  2002/04/04 08:21:20  mjc
+#     Allow for multiple Starlink User Notes.
+#
 #     Revision 1.6  2001/03/19 23:33:30  timj
 #     Add oracdr_monitor
 #
@@ -60,7 +63,7 @@
 #     $Id$
 
 #  Copyright:
-#     Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+#     Copyright (C) 1998-2002 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.
 
 #-
@@ -71,13 +74,13 @@
 # to be set at script install time.
 
 # Can do this by a secret override or by using the Starlink
-# install system
+# install system.
 
 # Check for the existence of a $ORAC_PERLBIN environment variable
 # and allow that to be used in preference to the starlink version
 # if set (and if it exists)
 
-if ($?ORAC_PERLBIN) then
+if ( $?ORAC_PERLBIN ) then
   set starperl = $ORAC_PERLBIN
 else if ( -e STAR_PERL ) then
   set starperl = STAR_PERL
@@ -87,7 +90,7 @@ endif
 
 # Set up back door for the version number
 
-if ($?ORACDR_VERSION) then
+if ( $?ORACDR_VERSION ) then
   set pkgvers = $ORACDR_VERSION
 else
   set pkgvers = PKG_VERS
@@ -96,7 +99,7 @@ endif
 
 # These are perl programs
 
-if (-e $starperl ) then
+if ( -e $starperl ) then
 
   # ORAC-DR
   # Might have an argument to oracdr passed in to this routine.
@@ -129,25 +132,44 @@ endif
 
 alias oracman     'csh ${ORAC_DIR}/bin/oracman'
 
+# Define default documentation instruction.
+set doc_command = "'showme sun${ORAC_SUN}'"
+
+# Allow for more than one document per instrument.  Determine whether
+# or not there is a comma in document number.
+set comma_index = `echo ${ORAC_SUN} | awk '{print index($0,",")}'`
+if ( $comma_index > 0 ) then
+
+# Extract the document numbers.
+   set doc_numbers = `echo ${ORAC_SUN} | awk '{i=1;while(i<=split($0,a,",")){print a[i];i++}}'`
+
+# Form concatenated instruction giving options for finding documentation. 
+   set doc_command = "'showme sun$doc_numbers[1]'"
+   shift doc_numbers
+   foreach doc ( $doc_numbers )
+      set doc_command = "$doc_command or 'showme sun$doc'"
+   end
+endif
 
 # Start up message
-
 echo " "
 echo "     ORAC Data Reduction Pipeline -- (ORAC-DR Version $pkgvers)"
 echo "     Configured for instrument $ORAC_INSTRUMENT"
 echo " "
 echo '     Type "oracdr -h" for usage'
-echo "     Type 'showme sun${ORAC_SUN}' to browse the hypertext documentation"
+echo "     Type $doc_command to browse the hypertext documentation"
 echo " "
 echo " "
 echo " Raw data will be read from $ORAC_DATA_IN"
-# Check for that in directory
-if !(-d $ORAC_DATA_IN) then
+
+# Check for that `in' directory
+if !( -d $ORAC_DATA_IN ) then
   echo '     \!\!\!\!\!\!\!\!\!\!\!\! but that directory does not exist \!\!\!\!\!\!\!\!\! '
 endif
 
 echo " Reduced data will appear in $ORAC_DATA_OUT"
-# Check for that out directory
+
+# Check for that `out' directory
 if !(-d $ORAC_DATA_OUT) then
   echo '     \!\!\!\!\!\!\!\!\!\!\!\! but that directory does not exist \!\!\!\!\!\!\!\!\! '
 endif
