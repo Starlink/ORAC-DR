@@ -2,7 +2,7 @@
 
 # S T A R L I N K  D O C U M E N T I O N ------------------------------------
 
-#+ 
+#+
 #  Name:
 #    fitseditor
 
@@ -16,7 +16,7 @@
 #    Invoked by source ${ORAC_DIR}/etc/fitseditor_start.csh
 
 #  Description:
-#    
+#
 
 #  Authors:
 #    Alasdair Allan (aa@astro.ex.ac.uk)
@@ -41,6 +41,7 @@ use vars qw/$VERSION/;
 
 =head1 NAME
 
+fitseditor - Manipulate FITS headers using a GUI
 
 =head1 SYNOPSIS
 
@@ -48,7 +49,8 @@ use vars qw/$VERSION/;
 
 =head1 DESCRIPTION
 
-C<fitseditor> is an X Windows GUI 
+C<fitseditor> is an X Windows GUI that can be used to modify headers
+of a FITS file or a Starlink NDF.
 
 
 =head1 REVISION
@@ -66,13 +68,13 @@ All Rights Reserved.
 
 =cut
 
-# H A N D L E  V E R S I O N ----------------------------------------------- 
+# H A N D L E  V E R S I O N -----------------------------------------------
 
-#  Version number - do this before anything else so that we dont have to 
+#  Version number - do this before anything else so that we dont have to
 #  wait for all the modules to load - very quick
 BEGIN {
   $VERSION = sprintf "%d.%d", q$Revision$ =~ /(\d+)\.(\d+)/;
- 
+
   #  Check for version number request - do this before real options handling
   foreach (@ARGV) {
     if (/^-vers/) {
@@ -83,7 +85,7 @@ BEGIN {
   }
 }
 
-# L O A D  M O D U L E S ---------------------------------------------------- 
+# L O A D  M O D U L E S ----------------------------------------------------
 
 #
 #  ORAC modules
@@ -102,10 +104,10 @@ use Pod::Usage;
 use Getopt::Long;
 use POSIX qw/:sys_wait_h/;
 use Errno qw/EAGAIN/;
-use Getopt::Long;                    
+use Getopt::Long;
 use File::Spec;
 
-# 
+#
 # Tk modules
 #
 use Tk;
@@ -127,7 +129,7 @@ $MW->configure( -cursor => "tcross" );
 my ( $CURRENT_STATUS, $CURRENT_DIRECTORY, $FILE_TYPE );
 
 # Declare anonymous sub-routines (this is doing it wrong)
-my ( $file_request, $read_file, $update_window, 
+my ( $file_request, $read_file, $update_window,
      $rebuild_widgets, $commit_changes );
 
 # Declare file path variables
@@ -1024,6 +1026,9 @@ MainLoop();
 # T I M E   A T   T H E   B A R  -------------------------------------------
 
 # $Log$
+# Revision 1.5  2002/09/16 03:48:09  timj
+# Fix pod
+#
 # Revision 1.4  2001/10/24 19:52:43  allan
 # Quick fix to the font problem
 #
