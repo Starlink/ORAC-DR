@@ -395,6 +395,29 @@ sub contact {
   return $self->obj->contact;
 }
 
+
+=item pid
+
+Returns process id of forked task.
+Returns undef if there is no external task.
+
+=cut
+
+sub pid {
+
+  my $self = shift;
+  my $pid = $self->obj->pid;
+
+  # If it is a scalar then simply return
+  if (not ref($pid)) {
+    return $pid;
+  } else {
+    return $pid->{'pid'};
+  } 
+
+}
+
+
 =back
 
 =head1 REQUIREMENTS
