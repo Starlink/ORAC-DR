@@ -2,7 +2,7 @@ package ORAC::Frame::UKIRT;
 
 =head1 NAME
 
-ORAC::Frame::UKIRT - UKIRT class for dealing with observation files in ORACDR
+ORAC::Frame::UKIRT - UKIRT class for dealing with observation files in ORAC-DR
 
 =head1 SYNOPSIS
 
@@ -17,9 +17,9 @@ ORAC::Frame::UKIRT - UKIRT class for dealing with observation files in ORACDR
 =head1 DESCRIPTION
 
 This module provides methods for handling Frame objects that
-are specific to UKIRT. It provides a class derived from ORAC::Frame.
-All the methods available to ORAC::Frame objects are available
-to ORAC::Frame::UKIRT objects. Some additional methods are supplied.
+are specific to UKIRT. It provides a class derived from B<ORAC::Frame>.
+All the methods available to B<ORAC::Frame> objects are available
+to B<ORAC::Frame::UKIRT> objects.
 
 =cut
  
@@ -27,12 +27,15 @@ to ORAC::Frame::UKIRT objects. Some additional methods are supplied.
 # ORAC pipeline
  
 use 5.004;
+use vars qw/$VERSION/
 use ORAC::Frame;
 use ORAC::Constants;
  
 # Let the object know that it is derived from ORAC::Frame;
 use base qw/ORAC::Frame/;
  
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+
  
 # standard error module and turn on strict
 use Carp;
@@ -45,15 +48,15 @@ use NDF;
 =head1 PUBLIC METHODS
 
 The following methods are available in this class in addition to
-those available from ORAC::Frame.
+those available from B<ORAC::Frame>.
+
+=head2 Constructor
 
 =over 4
 
-=cut
- 
-=item new
- 
-Create a new instance of a ORAC::Frame::UKIRT object.
+=item B<new>
+
+Create a new instance of a B<ORAC::Frame::UKIRT> object.
 This method also takes optional arguments:
 if 1 argument is  supplied it is assumed to be the name
 of the raw file associated with the observation. If 2 arguments
@@ -62,10 +65,10 @@ observation number. In any case, all arguments are passed to
 the configure() method which is run in addition to new()
 when arguments are supplied.
 The object identifier is returned.
- 
-   $Obs = new ORAC::Frame::UKIRT;
-   $Obs = new ORAC::Frame::UKIRT("file_name");
-   $Obs = new ORAC::Frame::UKIRT("UT","number");
+
+   $Frm = new ORAC::Frame::UKIRT;
+   $Frm = new ORAC::Frame::UKIRT("file_name");
+   $Frm = new ORAC::Frame::UKIRT("UT","number");
 
 The constructor hard-wires the '.sdf' rawsuffix and the
 'ro' prefix although these can be overriden with the 
@@ -81,13 +84,13 @@ sub new {
   my $frame = {};  # Anon hash
 
   $frame->{RawName} = undef;
-  $frame->{Header} = undef;
+  $frame->{Header} = {};
   $frame->{Group} = undef;
   $frame->{Files} = [];
   $frame->{Recipe} = undef;
   $frame->{RawSuffix} = ".sdf";
   $frame->{RawFixedPart} = 'ro'; 
-  $frame->{UserHeader} = {};
+  $frame->{UHeader} = {};
   $frame->{NoKeepArr} = [];
   $frame->{Intermediates} = [];
 
@@ -109,8 +112,9 @@ sub new {
 
 }
 
+=head2 General Methods
 
-=item erase
+=item B<erase>
 
 Erase the current file from disk.
 
@@ -149,54 +153,15 @@ sub erase {
 }
 
 
-=item readhdr
 
-Reads the header from the observation file (the filename is stored
-in the object). The reference to the header hash is returned.
-This method does not set the header in the object (in general that
-is done by configure() ).
-
-    $hashref = $Grp->readhdr;
-
-If there is an error during the read a reference to an empty hash is 
-returned.
-
-Currently this method assumes that the reduced group is stored in
-NDF format. Only the FITS header is retrieved from the NDF.
-
-There are no input arguments.
-
-=cut
-
-sub readhdr {
-  
-  my $self = shift;
-
-   my ($ref, $status);
-  
-  if (@_) {
-    
-    ($ref, $status) = fits_read_header(shift);
-    
-  } else {
-    
-    # Just read the NDF fits header
-    ($ref, $status) = fits_read_header($self->file);
-    
-    
-  };
-  # Return an empty hash if bad status
-  $ref = {} if ($status != &NDF::SAI__OK);
-
-  return $ref;
-}
-
-
-=item findgroup
+=item B<findgroup>
 
 Returns group name from header.  For dark observations the current obs
 number is returned if the group number is not defined or is set to zero
 (the usual case with IRCAM)
+
+The group name stored in the object is automatically updated using 
+this value.
 
 =cut
 
@@ -218,17 +183,21 @@ sub findgroup {
     }
 
   }
+
+  $self->group($hdrgrp);
+
   return $hdrgrp;
 
 }
 
-=item findrecipe
+=item B<findrecipe>
 
-Find the recipe name. At the moment we perform a KLUDGE by 
-only returning recipes for calibrations (specifically 
-DARK observations). All other times we will return undef
-and hope that the pipeline will realise that for undef it should 
-take the command line override value
+Find the recipe name. If a recipe name can not be found (using
+the 'DRRECIPE' keyword). If no recipe can be found 'QUICK_LOOK'
+is returned by default.
+
+The recipe name stored in the object is automatically updated using 
+this value.
 
 =cut
 
@@ -241,15 +210,64 @@ sub findrecipe {
   # Check to see whether there is something there
   # if not try to make something up
   if ($recipe !~ /./) {
-
-       $recipe = 'QUICK_LOOK';
-
-
+    $recipe = 'QUICK_LOOK';
   } 
+
+  # Update
+  $self->recipe($recipe);
+
   return $recipe;
-
-
 }
+
+=item B<readhdr>
+
+Reads the header from the observation file (the filename is stored in
+the object).  This method sets the header in the object (in general
+that is done by configure() ).
+
+    $hashref = $Frm->readhdr;
+
+All exisiting header information is lost. The calc_orac_headers()
+method is invoked once the header information is read.
+If there is an error during the read a reference to an empty hash is 
+returned.
+
+Currently this method assumes that the reduced group is stored in
+NDF format. Only the FITS header is retrieved from the NDF.
+
+There are no input or return arguments.
+
+=cut
+
+sub readhdr {
+  
+  my $self = shift;
+
+   my ($ref, $status);
+  
+  if (@_) {
+    
+    ($ref, $status) = fits_read_header(shift);
+    
+  } else {
+    
+    # Just read the NDF fits header
+    ($ref, $status) = fits_read_header($self->file);
+    
+  }
+
+  # Return an empty hash if bad status
+  $ref = {} if ($status != &NDF::SAI__OK);
+
+  # Update the contents
+  %{$self->hdr} = %$ref;
+
+  # calc derived headers
+  $self->calc_orac_headers;
+
+  return;
+}
+
 
 
 =back
@@ -262,7 +280,7 @@ aware of them.
 
 =over 4
 
-=item stripfname
+=item B<stripfname>
 
 Method to strip file extensions from the filename string. This method
 is called by the file() method. For UKIRT we strip all extensions of the
@@ -295,6 +313,10 @@ Currently this module requires the NDF module.
 =head1 SEE ALSO
 
 L<ORAC::Group>
+
+=head1 REVISION
+
+$Id$
 
 =head1 AUTHORS
 

@@ -17,9 +17,9 @@ ORAC::Frame::JCMT - JCMT class for dealing with observation files in ORACDR
 =head1 DESCRIPTION
 
 This module provides methods for handling Frame objects that
-are specific to JCMT. It provides a class derived from ORAC::Frame.
-All the methods available to ORAC::Frame objects are available
-to ORAC::Frame::JCMT objects. Some additional methods are supplied.
+are specific to JCMT. It provides a class derived from B<ORAC::Frame>.
+All the methods available to B<ORAC::Frame> objects are available
+to B<ORAC::Frame::JCMT> objects. Some additional methods are supplied.
 
 =cut
 
@@ -30,11 +30,15 @@ use 5.004;
 use ORAC::Frame;
 use ORAC::Constants;
 
+use vars qw/$VERSION/;
+
 # Let the object know that it is derived from ORAC::Frame;
 @ORAC::Frame::JCMT::ISA = qw/ORAC::Frame/;
 
 # Use base doesn't seem to work...
 #use base qw/ ORAC::Frame /;
+
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 
 # standard error module and turn on strict
@@ -43,15 +47,17 @@ use strict;
 
 use NDF; # For fits reading
 
-=head1 METHODS
+=head1 PUBLIC METHODS
 
-Modifications to standard ORAC::Frame methods.
+The following are modifications to standard ORAC::Frame methods.
+
+=head2 Constructors
 
 =over 4
 
-=item new
+=item B<new>
 
-Create a new instance of a ORAC::Frame::JCMT object.
+Create a new instance of a B<ORAC::Frame::JCMT> object.
 This method also takes optional arguments:
 if 1 argument is  supplied it is assumed to be the name
 of the raw file associated with the observation. If 2 arguments
@@ -78,7 +84,7 @@ sub new {
   my $frame = {};  # Anon hash
  
   $frame->{RawName} = undef;
-  $frame->{Header} = undef;
+  $frame->{Header} = {};
   $frame->{Group} = undef;
   $frame->{Files} = [];
   $frame->{NoKeepArr} = [];
@@ -89,7 +95,7 @@ sub new {
   $frame->{WaveLengths} = [];
   $frame->{RawSuffix} = ".sdf";
   $frame->{RawFixedPart} = '_dem_'; 
-  $frame->{UserHeader} = {};
+  $frame->{UHeader} = {};
   $frame->{Intermediates} = [];
 
   bless($frame, $class);
@@ -110,6 +116,104 @@ sub new {
   
 }
 
+
+=head2 General methods
+
+The following methods are provided for manipulating
+B<ORAC::Frame::JCMT> objects. These methods override those
+provided by B<ORAC::Frame>.
+
+
+=item B<calc_orac_headers>
+
+This method calculates header values that are required by the
+pipeline by using values stored in the header.
+
+ORACTIME is calculated - this is the time of the observation as
+UT day + fraction of day.
+
+ORACUT is simply read from UTDATE converted to YYYYMMDD.
+
+This method updates the frame header.
+Returns a hash containing the new keywords.
+
+=cut
+
+sub calc_orac_headers {
+  my $self = shift;
+
+  my %new = ();  # Hash containing the derived headers
+ 
+  # ORACTIME
+
+  # First get the time of day
+  my $time = $self->hdr('UTSTART');
+  if (defined $time) {
+    # Need to split on :
+    my ($h,$m,$s) = split(/:/,$time);
+    $time = $h + $m/60 + $s/3600;
+  } else {
+    $time = 0;
+  }
+
+  # Now get the UT date
+  my $date = $self->hdr('UTDATE');
+  if (defined $date) {
+    my ($y,$m,$d) = split(/:/, $date);
+    $date = $y . '0'x (2-length($m)) . $m . '0'x (2-length($d)) . $d;
+  } else {
+    $date = 0;
+  }
+
+  my $ut = $date + ( $time / 24.0 );
+  
+  # Update the header
+  $self->hdr('ORACTIME', $ut);
+  $self->hdr('ORACUT',   $date);
+ 
+  $new{'ORACTIME'} = $ut;
+  return %new;
+
+}
+
+=item configure
+
+This method is used to configure the object. It is invoked
+automatically if the new() method is invoked with an argument. The
+file(), raw(), readhdr(), findgroup(), findrecipe(), findsubs() 
+findfilters() and findwavelengths() methods are
+invoked by this command. Arguments are required.
+If there is one argument it is assumed that this is the
+raw filename. If there are two arguments the filename is
+constructed assuming that arg 1 is the prefix and arg2 is the
+observation number.
+
+  $Frm->configure("fname");
+  $Frm->configure("UT","num");
+
+The sub-instrument configuration is also stored.
+
+=cut
+
+sub configure {
+  my $self = shift;
+
+  # Run base class configure
+  $self->SUPER::configure(@_);
+ 
+  # Find number of sub-instruments from header
+  # Nsubs is already run in the base class.
+  # and store this value along with all sub-instrument info.
+  # Do this so that the header can be changed without us
+  # losing the original state information
+
+  $self->findsubs;
+  $self->findfilters;
+  $self->findwavelengths;
+
+  # Return something
+  return 1;
+}
 
 =item erase
 
@@ -149,46 +253,7 @@ sub erase {
 
 }
 
-=item configure
-
-This method is used to configure the object. It is invoked
-automatically if the new() method is invoked with an argument. The
-file(), raw(), readhdr(), header(), group() and recipe() methods are
-invoked by this command. Arguments are required.
-If there is one argument it is assumed that this is the
-raw filename. If there are two arguments the filename is
-constructed assuming that arg 1 is the prefix and arg2 is the
-observation number.
-
-  $Frm->configure("fname");
-  $Frm->configure("UT","num");
-
-The sub-instrument configuration is also stored.
-
-=cut
-
-sub configure {
-  my $self = shift;
-
-  # Run base class configure
-  $self->SUPER::configure(@_);
- 
-  # Find number of sub-instruments from header
-  # Nsubs is already run in the base class.
-  # and store this value along with all sub-instrument info.
-  # Do this so that the header can be changed without us
-  # losing the original state information
-
-  $self->subs($self->findsubs);
-  $self->filters($self->findfilters);
-  $self->wavelengths($self->findwavelengths);
-
-  # Return something
-  return 1;
-}
-
-
-=item file_from_bits
+=item B<file_from_bits>
 
 Determine the raw data filename given the variable component
 parts. A prefix (usually UT) and observation number should
@@ -211,48 +276,14 @@ sub file_from_bits {
   return $prefix . $self->rawfixedpart . $padnum . $self->rawsuffix;
 }
 
+=item B<findgroup>
 
-=item readhdr
+Return the group associated with the Frame. This group is constructed
+from header information. The group name is automatically updated in
+the object via the group() method.
 
-Reads the header from the observation file (the filename is stored
-in the object). The reference to the header hash is returned.
-This method does not set the header in the object (in general that
-is done by configure() ).
-
-    $hashref = $Obj->readhdr;
-
-If there is an error during the read a reference to an empty hash is 
-returned.
-
-Currently this method assumes that the reduced group is stored in
-NDF format. Only the FITS header is retrieved from the NDF.
-
-There are no input arguments.
-
-=cut
-
-sub readhdr {
- 
-  my $self = shift;
-  
-  # Just read the NDF fits header
-  my ($ref, $status) = fits_read_header($self->file);
- 
-  # Return an empty hash if bad status
-  $ref = {} if ($status != &NDF::SAI__OK);
- 
-  return $ref;
-}
-
-
-=item findgroup
-
-Return the group associated with the Frame. 
-This group is constructed from header information.
-
-Currently the group name is constructed from the 
-MODE, OBJECT and FILTER keywords. This may cause problems
-in the following cases:
+Currently the group name is constructed from the MODE, OBJECT and
+FILTER keywords. This may cause problems in the following cases:
 
  - The chop throw changes and the data should not be coadded
  [in general this is true except for LO chopping scan maps
@@ -327,14 +358,40 @@ sub findgroup {
     $group .= 'emII';
   } 
 
+  # Update $group
+  $self->group($group);
 
   return $group;
-
 }
 
-=item findrecipe
+
+=item B<findnsubs>
+
+Forces the object to determine the number of sub-instruments
+associated with the data by looking in the header (hdr()). 
+The result is stored in the object using nsubs().
+
+Unlike findgroup() this method will always search the header for
+the current state.
+
+=cut
+
+sub findnsubs {
+  my $self = shift;
+  
+  my $nsubs = $self->hdr->{N_SUBS};
+  $self->nsubs($nsubs);
+  return $nsubs;
+}
+
+
+
+=item B<findrecipe>
 
 Return the recipe associated with the frame.
+The state of the object is automatically updated via the
+recipe() method.
+
 Currently returns undef for all frames except 
 skydips. This is because it is not yet decided
 how the command line override facility (provided
@@ -381,12 +438,13 @@ sub findrecipe {
     }
   }
 
+  # Update the recipe
+  $self->recipe($recipe);
+
   return $recipe;
 }
 
-
-
-=item inout
+=item B<inout>
 
 Method to return the current input filename and the 
 new output filename given a suffix and a sub-instrument
@@ -464,7 +522,46 @@ sub inout {
 }
 
 
-=item template
+=item B<readhdr>
+
+Reads the header from the observation file (the filename is stored in
+the object).  This methods does set the header in the object and is
+usually called by configure().
+
+    $hashref = $Frm->readhdr;
+
+All exisiting header information is lost. The calc_orac_headers()
+method is invoked once the header information is read.
+If there is an error during the read an empty header will be stored.
+
+Currently this method assumes that the reduced group is stored in
+NDF format. Only the FITS header is retrieved from the NDF.
+
+There are no input or return arguments.
+
+=cut
+
+sub readhdr {
+ 
+  my $self = shift;
+  
+  # Just read the NDF fits header
+  my ($ref, $status) = fits_read_header($self->file);
+ 
+  # Return an empty hash if bad status
+  $ref = {} if ($status != &NDF::SAI__OK);
+ 
+  # Update the contents
+  %{$self->hdr} = %$ref;
+
+  # calc derived headers
+  $self->calc_orac_headers;
+
+  return;
+}
+
+
+=item B<template>
 
 This method is identical to the base class template method
 except that only files matching the specified sub-instrument
@@ -543,88 +640,84 @@ sub template {
 }
 
 
-=item calc_orac_headers
-
-This method calculates header values that are required by the
-pipeline by using values stored in the header.
-
-ORACTIME is calculated - this is the time of the observation as
-UT day + fraction of day.
-
-ORACUT is simply read from UTDATE converted to YYYYMMDD.
-
-This method updates the frame header.
-Returns a hash containing the new keywords.
-
-=cut
-
-sub calc_orac_headers {
-  my $self = shift;
-
-  my %new = ();  # Hash containing the derived headers
- 
-  # ORACTIME
-
-  # First get the time of day
-  my $time = $self->hdr('UTSTART');
-  if (defined $time) {
-    # Need to split on :
-    my ($h,$m,$s) = split(/:/,$time);
-    $time = $h + $m/60 + $s/3600;
-  } else {
-    $time = 0;
-  }
-
-  # Now get the UT date
-  my $date = $self->hdr('UTDATE');
-  if (defined $date) {
-    my ($y,$m,$d) = split(/:/, $date);
-    $date = $y . '0'x (2-length($m)) . $m . '0'x (2-length($d)) . $d;
-  } else {
-    $date = 0;
-  }
-
-  my $ut = $date + ( $time / 24.0 );
-  
-  # Update the header
-  $self->hdr('ORACTIME', $ut);
-  $self->hdr('ORACUT',   $date);
- 
-  $new{'ORACTIME'} = $ut;
-  return %new;
-
-}
-
-
-=item findnsubs
-
-Forces the object to determine the number of sub-instruments
-associated with the data by looking in the header(). 
-The result can be stored in the object using nsubs().
-
-Unlike findgroup() this method will always search the header for
-the current state.
-
-=cut
-
-sub findnsubs {
-  my $self = shift;
-
-  return $self->hdr('N_SUBS');
-}
-
-
-
 =back
 
 =head1 NEW METHODS FOR JCMT
 
 This section describes methods that are available in addition
-to the standard methods found in ORAC::Frame.
+to the standard methods found in B<ORAC::Frame>.
+
+=head2 Accessor Methods
+
+The following extra accessor methods are provided:
 
 =over 4
 
-=item file2sub
+=item B<filters>
+
+Return or set the filter names associated with each sub-instrument
+in the frame.
+
+=cut
+
+sub filters {
+  my $self = shift;
+  
+  if (@_) {
+    @{$self->{Filters}} = @_;
+  }
+
+  return @{$self->{Filters}};
+
+}
+
+=item B<subs>
+
+Return or set the names of the sub-instruments associated
+with the frame.
+
+=cut
+
+sub subs {
+  my $self = shift;
+  
+  if (@_) {
+    @{$self->{Subs}} = @_;
+  }
+
+  return @{$self->{Subs}};
+
+}
+
+
+=item B<wavelengths>
+
+Return or set the wavelengths associated with each  sub-instrument
+in the frame.
+
+=cut
+
+sub wavelengths {
+  my $self = shift;
+  
+  if (@_) {
+    @{$self->{WaveLengths}} = @_;
+  }
+
+  return @{$self->{WaveLengths}};
+
+}
+
+
+=back
+
+=head2 General methods
+
+The following additional methods are provided:
+
+=over 4
+
+=item B<file2sub>
 
 Given a file index, (see file()) returns the associated
 sub-instrument.
@@ -656,7 +749,102 @@ sub file2sub {
   }
 }
 
-=item sub2file
+=item B<findfilters>
+
+Forces the object to determine the names of all sub-instruments
+associated with the data by looking in the hdr(). 
+The result is stored in the object using filters().
+
+Unlike findgroup() this method will always search the header for
+the current state.
+
+=cut
+
+
+sub findfilters {
+  my $self = shift;
+
+  # Dont use the nsubs method (derive all from header)
+  my $nsubs = $self->hdr('N_SUBS');
+
+  my @filter = ();
+  for (my $i =1; $i <= $nsubs; $i++) {
+    my $key = 'FILT_' . $i;
+
+    push(@filter, $self->hdr($key));
+  }
+
+  $self->filters(@filter);
+
+  return @filter;
+}
+
+
+=item B<findsubs>
+
+Forces the object to determine the names of all sub-instruments
+associated with the data by looking in the header (hdr()). 
+The result is stored in the object using subs().
+
+Unlike findgroup() this method will always search the header for
+the current state.
+
+=cut
+
+sub findsubs {
+  my $self = shift;
+
+  # Dont use the nsubs method (derive all from header)
+  my $nsubs = $self->hdr('N_SUBS');
+
+  my @subs = ();
+  for (my $i =1; $i <= $nsubs; $i++) {
+    my $key = 'SUB_' . $i;
+
+    push(@subs, $self->hdr($key));
+  }
+
+  # Should now set the value in the object!
+  $self->subs(@subs);
+
+  return @subs;
+}
+
+
+
+
+=item B<findwavelengths>
+
+Forces the object to determine the names of all sub-instruments
+associated with the data by looking in the header (hdr()). 
+The result is stored in the object using wavelengths().
+
+Unlike findgroup() this method will always search the header for
+the current state.
+
+=cut
+
+
+sub findwavelengths {
+  my $self = shift;
+
+  # Dont use the nsubs method (derive all from header)
+  my $nsubs = $self->hdr('N_SUBS');
+
+  my @wave = ();
+  for (my $i =1; $i <= $nsubs; $i++) {
+    my $key = 'WAVE_' . $i;
+
+    push(@wave, $self->hdr($key));
+  }
+
+  $self->wavelengths(@wave);
+
+  return @wave;
+}
+
+
+=item B<sub2file>
 
 Given a sub instrument name returns the associated file
 index. This is the reverse of sub2file. The resulting value
@@ -690,149 +878,6 @@ sub sub2file {
   }
   
   return $index;
-}
-
-=item subs
-
-Return or set the names of the sub-instruments associated
-with the frame.
-
-=cut
-
-sub subs {
-  my $self = shift;
-  
-  if (@_) {
-    @{$self->{Subs}} = @_;
-  }
-
-  return @{$self->{Subs}};
-
-}
-
-=item filters
-
-Return or set the filter names associated with each sub-instrument
-in the frame.
-
-=cut
-
-sub filters {
-  my $self = shift;
-  
-  if (@_) {
-    @{$self->{Filters}} = @_;
-  }
-
-  return @{$self->{Filters}};
-
-}
-
-=item wavelengths
-
-Return or set the wavelengths associated with each  sub-instrument
-in the frame.
-
-=cut
-
-sub wavelengths {
-  my $self = shift;
-  
-  if (@_) {
-    @{$self->{WaveLengths}} = @_;
-  }
-
-  return @{$self->{WaveLengths}};
-
-}
-
-
-=item findsubs
-
-Forces the object to determine the names of all sub-instruments
-associated with the data by looking in the header(). 
-The result can be stored in the object using subs().
-
-Unlike findgroup() this method will always search the header for
-the current state.
-
-=cut
-
-sub findsubs {
-  my $self = shift;
-
-  # Dont use the nsubs method (derive all from header)
-  my $nsubs = $self->hdr('N_SUBS');
-
-  my @subs = ();
-  for (my $i =1; $i <= $nsubs; $i++) {
-    my $key = 'SUB_' . $i;
-
-    push(@subs, $self->hdr($key));
-  }
-
-  # Should now set the value in the object!
-
-  return @subs;
-}
-
-
-
-=item findfilters
-
-Forces the object to determine the names of all sub-instruments
-associated with the data by looking in the header(). 
-The result can be stored in the object using subs().
-
-Unlike findgroup() this method will always search the header for
-the current state.
-
-=cut
-
-
-sub findfilters {
-  my $self = shift;
-
-  # Dont use the nsubs method (derive all from header)
-  my $nsubs = $self->hdr('N_SUBS');
-
-  my @filter = ();
-  for (my $i =1; $i <= $nsubs; $i++) {
-    my $key = 'FILT_' . $i;
-
-    push(@filter, $self->hdr($key));
-  }
-
-  return @filter;
-}
-
-
-=item findwavelengths
-
-Forces the object to determine the names of all sub-instruments
-associated with the data by looking in the header(). 
-The result can be stored in the object using subs().
-
-Unlike findgroup() this method will always search the header for
-the current state.
-
-=cut
-
-
-sub findwavelengths {
-  my $self = shift;
-
-  # Dont use the nsubs method (derive all from header)
-  my $nsubs = $self->hdr('N_SUBS');
-
-  my @filter = ();
-  for (my $i =1; $i <= $nsubs; $i++) {
-    my $key = 'WAVE_' . $i;
-
-    push(@filter, $self->hdr($key));
-  }
-
-  return @filter;
 }
 
 
@@ -877,6 +922,10 @@ This module requires the NDF module.
 =head1 SEE ALSO
 
 L<ORAC::Frame>
+
+=head1 REVISION
+
+$Id$
 
 =head1 AUTHORS
 
