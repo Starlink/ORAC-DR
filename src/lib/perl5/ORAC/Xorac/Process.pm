@@ -342,7 +342,6 @@ sub xorac_start_process {
   catch ORAC::Error::FatalError with 
   {
      my $error = shift;
-     print " FatalError in Xorac::Process\n";
      $fatal_dialog->configure( -text => "Error: $error" );
      $fatal_dialog->Show;
      return;
@@ -351,12 +350,10 @@ sub xorac_start_process {
   {
   
      my $error = shift;
-     print " UserAbort in Xorac::Process\n";
      return;
   }
   otherwise
   {
-     print " Croak in Xorac::Process\n";
      my $error = shift;
      
      $fatal_dialog->configure( -text => "Croak: $error" );
