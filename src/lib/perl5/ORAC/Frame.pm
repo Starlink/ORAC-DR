@@ -908,7 +908,7 @@ sub erase {
 
 Method to determine whether the Frame file() exists on disk or not.
 Returns true if the file is there, false otherwise. Effectively
-equivalent to using -e but allows for the possibility that the
+equivalent to using C<-e> but allows for the possibility that the
 information stored in file() does not directly relate to the
 file as stored on disk (e.g. a .sdf extension). The base class is
 very simplistic (ie does not assume extensions).
