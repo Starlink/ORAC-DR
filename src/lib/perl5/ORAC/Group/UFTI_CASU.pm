@@ -16,27 +16,29 @@ ORAC::Group::UFTI_CASU - class for dealing with UFTI observation groups in ORAC-
 =head1 DESCRIPTION
 
 This module provides methods for handling group objects that
-are specific to UFTI. It provides a class derived from B<ORAC::Group::SEF>.
+are specific to UFTI. It provides a class derived from B<ORAC::Group::MEF>.
 All the methods available to ORAC::Group objects are available
-to B<ORAC::Group::UFTI> objects.
+to B<ORAC::Group::UFTI_CASU> objects.
 
 =cut
 
-# A package to describe a UKIRT group object for the
-# ORAC pipeline
+# A package to describe a UFTI_CASU group object for the ORAC pipeline
 
 use 5.006;
 use strict;
 use warnings;
 use vars qw/$VERSION/;
-use ORAC::Group::UKIRT_CASU;
+use ORAC::Group::MEF;
 
 # Set inheritance
-use base qw/ ORAC::Group::UKIRT_CASU /;
+
+use base qw/ ORAC::Group::MEF /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
-# Translation tables for UFTI should go here
+# Translation tables for UFTI should go here.  I've combined the headers from
+# both the orginal UFTI class as well as the UKIRT class.
+
 my %hdr = (
             EXPOSURE_TIME        => "EXP_TIME",
             DEC_SCALE            => "CDELT2",
@@ -46,13 +48,38 @@ my %hdr = (
             RA_TELESCOPE_OFFSET  => "TRAOFF",
             UTDATE               => "DATE",
             UTEND                => "UTEND",
-            UTSTART              => "UTSTART"
+            UTSTART              => "UTSTART",
+            AIRMASS_START        => "AMSTART",
+            AIRMASS_END          => "AMEND",
+            DEC_BASE             => "DECBASE",
+            DETECTOR_READ_TYPE   => "MODE",
+            EQUINOX              => "EQUINOX",
+            FILTER               => "FILTER",
+            NUMBER_OF_OFFSETS    => "NOFFSETS",
+            NUMBER_OF_EXPOSURES  => "NEXP",
+            OBJECT               => "OBJECT",
+            OBSERVATION_NUMBER   => "OBSNUM",
+            OBSERVATION_TYPE     => "OBSTYPE",
+            RA_BASE              => "RABASE",
+            ROTATION             => "CROTA2",
+            SPEED_GAIN           => "SPD_GAIN",
+            STANDARD             => "STANDARD",
+            WAVEPLATE_ANGLE      => "WPLANGLE",
+            X_LOWER_BOUND        => "RDOUT_X1",
+            X_UPPER_BOUND        => "RDOUT_X2",
+            Y_LOWER_BOUND        => "RDOUT_Y1",
+            Y_UPPER_BOUND        => "RDOUT_Y2"
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed
 # by other instruments.  Have to use the inherited version so that the
 # new subs appear in this class.
+
 ORAC::Group::UFTI_CASU->_generate_orac_lookup_methods( \%hdr );
+
+sub _to_TELESCOPE {
+  return "UKIRT";
+}
 
 =head1 PUBLIC METHODS
 
@@ -69,8 +96,8 @@ Create a new instance of a B<ORAC::Group::UFTI> object.
 This method takes an optional argument containing the
 name of the new group. The object identifier is returned.
 
-   $Grp = new ORAC::Group::UFTI;
-   $Grp = new ORAC::Group::UFTI("group_name");
+   $Grp = new ORAC::Group::UFTI_CASU;
+   $Grp = new ORAC::Group::UFTI_CASU("group_name");
 
 This method calls the base class constructor but initialises
 the group with a file suffix of '.fit' and a fixed part
@@ -84,9 +111,11 @@ sub new {
 
   # Do not pass objects if the constructor required
   # knowledge of fixedpart() and filesuffix()
+
   my $group = $class->SUPER::new(@_);
 
   # Configure it
+
   $group->fixedpart('gf');
   $group->filesuffix('.fit');
 
@@ -150,7 +179,7 @@ sub calc_orac_headers {
 
 =head1 SEE ALSO
 
-L<ORAC::Group>, L<ORAC::Group::SEF>
+L<ORAC::Group>, L<ORAC::Group::MEF>
 
 =head1 REVISION
 
