@@ -686,10 +686,10 @@ sub graph {
   my $args = "clear mode=line $range";
 
   # Run linplot
-  $status = $self->obj->obeyw("linplot","ndf=$file(1,) device=$device $args");
+  $status = $self->obj->obeyw("linplot","ndf=$file device=$device $args");
   if ($status != ORAC__OK) {
     orac_err("Error displaying graph\n");
-    orac_err("Trying to execute: linplot ndf=$file device=$device $args$\n");
+    orac_err("Trying to execute: linplot ndf=$file device=$device $args\n");
     return $status;
   }
 
@@ -797,7 +797,7 @@ sub sigma {
   $status = $self->obj->obeyw("linplot","ndf=$file device=$device $args");
   if ($status != ORAC__OK) {
     orac_err("Error displaying sigma plot\n");
-    orac_err("Trying to execute: linplot ndf=$file device=$device $args$\n");
+    orac_err("Trying to execute: linplot ndf=$file device=$device $args\n");
     return $status;
   }
 
@@ -807,7 +807,7 @@ sub sigma {
   $status = $self->obj->obeyw("drawsig","device=$device $args");
   if ($status != ORAC__OK) {
     orac_err("Error overlaying lines\n");
-    orac_err("Trying to execute: drawsig device=$device $args$\n");
+    orac_err("Trying to execute: drawsig device=$device $args\n");
     return $status;
   }
 
@@ -874,10 +874,10 @@ sub datamodel {
 
   # Now plot the data
   my $args = "clear mode=2 symcol=white axlim=false";
-  $status = $self->obj->obeyw("linplot","ndf=$file(1,) device=$device $args");
+  $status = $self->obj->obeyw("linplot","ndf=$file device=$device $args");
   if ($status != ORAC__OK) {
     orac_err("Error displaying data file\n");
-    orac_err("Trying to execute: linplot ndf=$file device=$device $args$\n");
+    orac_err("Trying to execute: linplot ndf=$file device=$device $args\n");
     return $status;
   }
 
@@ -890,10 +890,10 @@ sub datamodel {
     $args = "noclear mode=line lincol=red pltitl='' ordlab=''";
 
     # Run linplot
-    $status = $self->obj->obeyw("linplot","ndf=$model(1,) device=$device $args");
+    $status = $self->obj->obeyw("linplot","ndf=$model device=$device $args");
     if ($status != ORAC__OK) {
       orac_err("Error overlaying model\n");
-      orac_err("Trying to execute: linplot ndf=$model device=$device $args$\n");
+      orac_err("Trying to execute: linplot ndf=$model device=$device $args\n");
       return $status;
     }
   }
