@@ -82,6 +82,7 @@ sub new {
   $obj->{Standard} = undef;
   $obj->{Sky} = undef;
   $obj->{ReadNoise} = undef;
+  $obj->{BaseShift} = undef;
 
   $obj->{DarkIndex} = undef;
   $obj->{FlatIndex} = undef;
@@ -89,12 +90,14 @@ sub new {
   $obj->{SkyIndex} = undef;
   $obj->{StandardIndex} = undef;
   $obj->{ReadNoiseIndex} = undef;
+  $obj->{BaseShiftIndex} = undef;
 
   $obj->{DarkNoUpdate} = 0;
   $obj->{FlatNoUpdate} = 0;
   $obj->{BiasNoUpdate} = 0;
   $obj->{SkyNoUpdate} = 0;
   $obj->{ReadNoiseNoUpdate} = 0;
+  $obj->{BaseShiftNoUpdate} = 0;
 
   bless($obj, $class);
 
@@ -170,6 +173,18 @@ sub readnoisecache {
   my $self = shift;
   if (@_) { $self->{ReadNoise} = shift unless $self->readnoisenoupdate; }
   return $self->{ReadNoise};
+}
+
+=item B<baseshiftcache>
+
+Cached value of the baseshift.  Only used when noupdate is in effect.
+
+=cut
+
+sub baseshiftcache {
+  my $self = shift;
+  if (@_) { $self->{BaseShift} = shift unless $self->baseshiftnoupdate; }
+  return $self->{BaseShift};
 }
 
 
@@ -274,6 +289,61 @@ sub readnoise {
 
 }
 
+=item B<baseshift>
+
+Determine the pixel indices of the base position to be used for the
+current observation.  This allows for incorrect instrument apertures.
+In theory a 0,0 offset should place a source at the base position.
+This method returns a comma separated doublet "x,y" string rather
+than a particular file even though it uses an index file.
+
+Croaks if it was not possible to determine a valid base location
+(usually indicating that a standard has not been observed).
+
+  $base = $Cal->baseshift;
+
+The index file is queried every time (usually not a problem since there
+are only a limited number of array tests per night and the index
+is cached in memory) unless the noupdate flag is true.
+
+If the noupdate flag is set there is no verification that the base
+location meets the specified rules (this is because the command-line
+override uses a value rather than a file).
+
+The index file must include a column named BASESHIFT.
+
+=cut
+
+sub baseshift {
+  my $self = shift;
+
+  # Handle arguments
+  return $self->baseshiftcache(shift) if @_;
+
+  # If noupdate is in effect we should return the cached value
+  # unless it is not defined. This effectively allows the command-line
+  # value to be used to override without verifying its suitability
+  if ($self->baseshiftnoupdate) {
+    my $cache = $self->baseshiftcache;
+    return $cache if defined $cache;
+  }
+
+  # Now we are looking for a value from the index file
+  my $basefile = $self->baseshiftindex->choosebydt('ORACTIME',$self->thing);
+  croak "No suitable pixel location of the base found in index file."
+    unless defined $basefile;
+
+  # This gives us the filename, we now need to get the actual value
+  # of the pixel location of the base.
+  my $baseref = $self->baseshiftindex->indexentry( $basefile );
+  if (exists $baseref->{BASESHIFT}) {
+    return $baseref->{BASESHIFT};
+  } else {
+    croak "Unable to obtain BASESHIFT from index file entry $basefile.\n";
+  }
+
+}
+
 =item B<darknoupdate>
 
 Stops dark object from updating itself with more recent data
@@ -347,9 +417,9 @@ sub standardnoupdate {
 
 =item B<readnoisenoupdate>
 
-Stops readnoise object from updating itself with more recent data
+Stops readnoise object from updating itself with more recent data.
 
-Used when using a command-line override to the pipeline
+Used when using a command-line override to the pipeline.
 
 =cut
 
@@ -357,6 +427,20 @@ sub readnoisenoupdate {
   my $self = shift;
   if (@_) { $self->{ReadNoiseNoUpdate} = shift; }
   return $self->{ReadNoiseNoUpdate};
+}
+
+=item B<baseshiftnoupdate>
+
+Stops baseshift object from updating itself with more recent data.
+
+Used when using a command-line override to the pipeline.
+
+=cut
+
+sub baseshiftnoupdate {
+  my $self = shift;
+  if (@_) { $self->{BaseShiftNoUpdate} = shift; }
+  return $self->{BaseShiftNoUpdate};
 }
 
 =item B<bias>
@@ -648,6 +732,27 @@ sub readnoiseindex {
   return $self->{ReadNoiseIndex};
 }
 
+=item B<baseshiftindex>
+
+Return (or set) the index object associated with the baseshift index file.
+
+=cut
+
+sub baseshiftindex {
+
+  my $self = shift;
+  if (@_) { $self->{BaseShiftIndex} = shift; }
+
+  unless (defined $self->{BaseShiftIndex}) {
+    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.baseshift";
+    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.baseshift";
+    $self->{BaseShiftIndex} = new ORAC::Index($indexfile,$rulesfile);
+  };
+
+  return $self->{BaseShiftIndex};
+}
+
+
 =item B<skyindex>
 
 Return (or set) the index object associated with the sky index file
@@ -768,13 +873,14 @@ $Id$
 
 =head1 AUTHORS
 
-Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt> and
-Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
+Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>, and
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
