@@ -427,6 +427,12 @@ sub _to_orac_status {
   } elsif ($status == 141460275 || # MESSYS__NOTFOUND
 	   $status == 141460291 || # MESSYS__TIMEOUT
 	   $status == 141460379 || # MESSYS__TOOLONG
+	   $status == 199786514 || # MSP__BADQUEUE
+	   $status == 199786546 || # MSP__NOTFOUND
+	   $status == 199786562 || # MSP__RECLEN
+	   $status == 199786570 || # MSP__SENDLEN
+	   $status == 199786578 || # MSP__SOCKFAIL
+	   $status == 199786586 || # MSP__SOCKINIT
 	   $status == 159809544 ) {  # SOCK__READSOCK
     print "BAD ENGINE STATUS\n" if $DEBUG;
     return ORAC__BADENG;
