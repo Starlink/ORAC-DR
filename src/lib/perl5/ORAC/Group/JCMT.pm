@@ -47,6 +47,40 @@ those available from ORAC::Group.
 
 =over 4
 
+=cut
+
+# Same as for Group.pm except that we use '_dem_' for the fixed part.
+# and .sdf for the suffix
+
+sub new {
+
+  my $proto = shift;
+  my $class = ref($proto) || $proto;
+
+  my $group = {};  # Anon hash
+
+  $group->{Name} = undef;
+  $group->{Members} = [];
+  $group->{Header} = undef;
+  $group->{File} = undef;
+  $group->{Recipe} = undef;
+  $group->{FixedPart} = '_dem_';
+  $group->{FileSuffix} = '.sdf';
+
+  bless($group, $class);
+
+  # If an arguments are supplied then we can configure the object
+  # Currently the argument will simply be the group name (ID)
+
+  if (@_) { 
+    $group->name(shift);
+  }
+
+  return $group;
+
+}
+
+
 =item readhdr
 
 Reads the header from the reduced group file (the filename is stored
@@ -81,6 +115,31 @@ sub readhdr {
   return $ref;
 
 }
+
+=item file_from_bits
+
+Method to return the group filename derived from a fixed
+variable part (eg UT) and a group designator (usually obs
+number). The full filename is returned (including suffix).
+
+  $file = $Grp->file_from_bits("UT","num");
+
+Returns file of form UT_dem_00num.sdf
+
+=cut
+
+sub file_from_bits {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $num = shift;
+
+  my $padnum = '0'x(4-length($num)) . $num;
+
+  return $prefix . $self->fixedpart . $padnum . $self->filesuffix;
+
+}
+
 
 
 =back

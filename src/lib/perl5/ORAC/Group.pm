@@ -71,6 +71,8 @@ sub new {
   $group->{Header} = undef;
   $group->{File} = undef;
   $group->{Recipe} = undef;
+  $group->{FixedPart} = 'rg';
+  $group->{FileSuffix} = undef;
 
   bless($group, $class);
 
@@ -130,6 +132,42 @@ sub file {
   return $self->{File};
 }
 
+=item filesuffix
+
+Set or retrieve the filename suffix associated with the
+reduced group.
+
+    $Grp->filesuffix(".sdf");
+    $group_file = $Grp->filesuffix;
+
+=cut
+
+
+sub filesuffix {
+  my $self = shift;
+  if (@_) { $self->{FileSuffix} = shift;};
+  return $self->{FileSuffix};
+}
+
+=item fixedpart
+
+Set or retrieve the part of the group filename that does not
+change between invocation. The output filename can be derived using
+this.
+
+    $Grp->fixedpart("rg");
+    $prefix = $Grp->fixedpart;
+
+=cut
+
+
+sub fixedpart {
+  my $self = shift;
+  if (@_) { $self->{FixedPart} = shift;};
+  return $self->{FixedPart};
+}
+
+
 
 
 # Method to populate the header with a hash
@@ -182,6 +220,28 @@ sub header {
 #  if (@_) { $self->{Recipe} = shift;}
 #  return $self->{Recipe};
 #}
+
+
+=item file_from_bits
+
+Method to return the group filename derived from a fixed
+variable part (eg UT) and a group designator (usually obs
+number). The full filename is returned (including suffix).
+
+  $file = $Grp->file_from_bits("UT","num");
+
+=cut
+
+sub file_from_bits {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $num = shift;
+
+  # Follow UKIRT style
+  return $self->fixedpart . $prefix . '_' . $num . $self->filesuffix;
+
+}
 
 
 # Method to set/return all members of the group

@@ -50,14 +50,19 @@ Modifications to standard ORAC::Frame methods.
 =item new
 
 Create a new instance of a ORAC::Frame::JCMT object.
-This method takes an optional argument containing the
-name of the raw file associated with the observation. If the
-filename is supplied the configure() method is run in
-addition to new().
+This method also takes optional arguments:
+if 1 argument is  supplied it is assumed to be the name
+of the raw file associated with the observation. If 2 arguments
+are supplied they are assumed to be the raw file prefix and
+observation number. In any case, all arguments are passed to
+the configure() method which is run in addition to new()
+when arguments are supplied.
 The object identifier is returned.
 
    $Obs = new ORAC::Frame::JCMT;
    $Obs = new ORAC::Frame::JCMT("file_name");
+   $Obs = new ORAC::Frame::JCMT("UT","number");
+
 
 This object has additional support for multiple sub-instruments.
 
@@ -79,11 +84,15 @@ sub new {
   $frame->{Subs} = [];
   $frame->{Filters} = [];
   $frame->{WaveLengths} = [];
+  $frame->{RawSuffix} = ".sdf";
+  $frame->{RawFixedPart} = '_dem_'; 
+  $frame->{UserHeader} = {};
 
   bless($frame, $class);
  
   # If arguments are supplied then we can configure the object
   # Currently the argument will be the filename.
+  # If there are two args this becomes a prefix and number
   # This could be extended to include a reference to a hash holding the
   # header info but this may well compromise the object since
   # the best way to generate the header (including extensions) is to use the
@@ -172,7 +181,14 @@ sub file {
 This method is used to configure the object. It is invoked
 automatically if the new() method is invoked with an argument. The
 file(), raw(), readhdr(), header(), group() and recipe() methods are
-invoked by this command. Arguments are not required.
+invoked by this command. Arguments are required.
+If there is one argument it is assumed that this is the
+raw filename. If there are two arguments the filename is
+constructed assuming that arg 1 is the prefix and arg2 is the
+observation number.
+
+  $Obs->configure("fname");
+  $Obs->configure("UT","num");
 
 The sub-instrument configuration is also stored.
 
@@ -181,7 +197,17 @@ The sub-instrument configuration is also stored.
 sub configure {
   my $self = shift;
  
-  my $fname = shift;
+  # If two arguments (prefix and number) 
+  # have to find the raw filename first
+  # else assume we are being given the raw filename
+  my $fname;
+  if (scalar(@_) == 1) {
+    $fname = shift;
+  } elsif (scalar(@_) == 2) {
+    $fname = $self->file_from_bits(@_);
+  } else {
+    croak 'Wrong number of arguments to configure: 1 or 2 args only';
+  }
 
   # Set the filename
   $self->file($fname);
@@ -211,6 +237,29 @@ sub configure {
   return 1;
 }
 
+
+=item file_from_bits
+
+Determine the raw data filename given the variable component
+parts. A prefix (usually UT) and observation number should
+be supplied.
+
+  $fname = $Obs->file_from_bits($prefix, $obsnum);
+
+=cut
+
+sub file_from_bits {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $obsnum = shift;
+
+  # pad with leading zeroes
+  my $padnum = '0'x(4-length($obsnum)) . $obsnum;
+
+  # SCUBA naming
+  return $prefix . $self->rawfixedpart . $padnum . $self->rawsuffix;
+}
 
 
 =item readhdr

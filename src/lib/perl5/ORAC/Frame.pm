@@ -43,14 +43,18 @@ The following methods are available in this class.
 =item new
 
 Create a new instance of a ORAC::Frame object.
-This method takes an optional argument containing the
-name of the raw file associated with the observation. If the
-filename is supplied the configure() method is run in
-addition to new().
+This method also takes optional arguments:
+if 1 argument is  supplied it is assumed to be the name
+of the raw file associated with the observation. If 2 arguments
+are supplied they are assumed to be the raw file prefix and
+observation number. In any case, all arguments are passed to
+the configure() method which is run in addition to new()
+when arguments are supplied.
 The object identifier is returned.
 
    $Obs = new ORAC::Frame;
    $Obs = new ORAC::Frame("file_name");
+   $Obs = new ORAC::Frame("UT","number");
 
 
 =cut
@@ -66,6 +70,8 @@ sub new {
   my $frame = {};  # Anon hash
 
   $frame->{RawName} = undef;
+  $frame->{RawSuffix} = undef;
+  $frame->{RawFixedPart} = undef; 
   $frame->{Header} = undef;
   $frame->{Group} = undef;
   $frame->{File} = undef;
@@ -76,6 +82,7 @@ sub new {
 
   # If arguments are supplied then we can configure the object
   # Currently the argument will be the filename.
+  # If there are two args this becomes a prefix and number
   # This could be extended to include a reference to a hash holding the
   # header info but this may well compromise the object since
   # the best way to generate the header (including extensions) is to use the
@@ -172,6 +179,40 @@ sub group {
 
   return $self->{Group};
 }
+
+# Methods giving access to the object components that define
+# the construction of the raw data file name
+
+=item rawsuffix
+
+Return (or set) the file name suffix associated with
+the raw data file.
+
+  $suffix = $self->rawsuffix;
+
+=cut
+
+sub rawsuffix {
+  my $self = shift;
+  if (@_) { $self->{RawSuffix} = shift; }
+  return $self->{RawSuffix};
+}
+
+=item rawfixedpart
+
+Return (or set) the constant part of the raw filename associated
+with the raw data file. (ie the bit that stays fixed every night)
+
+  $fixed = $self->rawfixedpart;
+
+=cut
+
+sub rawfixedpart {
+  my $self = shift;
+  if (@_) { $self->{RawFixedPart} = shift; }
+  return $self->{RawFixedPart};
+}
+
 
 # Method to return the recipe name
 # If an argument is supplied the recipe is set to that value
@@ -297,14 +338,31 @@ sub hdr {
 This method is used to configure the object. It is invoked
 automatically if the new() method is invoked with an argument. The
 file(), raw(), readhdr(), header(), group() and recipe() methods are
-invoked by this command. Arguments are not required.
+invoked by this command. Arguments are required.
+If there is one argument it is assumed that this is the
+raw filename. If there are two arguments the filename is
+constructed assuming that arg 1 is the prefix and arg2 is the
+observation number.
+
+  $Obs->configure("fname");
+  $Obs->configure("UT","num");
 
 =cut
 
 sub configure {
   my $self = shift;
 
-  my $fname = shift;
+  # If two arguments (prefix and number) 
+  # have to find the raw filename first
+  # else assume we are being given the raw filename
+  my $fname;
+  if (scalar(@_) == 1) {
+    $fname = shift;
+  } elsif (scalar(@_) == 2) {
+    $fname = $self->file_from_bits(@_);
+  } else {
+    croak 'Wrong number of arguments to configure: 1 or 2 args only';
+  }
 
   # Set the filename
   $self->file($fname);
@@ -323,6 +381,31 @@ sub configure {
 
   # Return something
   return 1;
+}
+
+# Method to derive file name from components
+
+=item file_from_bits
+
+Determine the raw data filename given the variable component
+parts. A prefix (usually UT) and observation number should
+be supplied.
+
+  $fname = $Obs->file_from_bits($prefix, $obsnum);
+
+=cut
+
+sub file_from_bits {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $obsnum = shift;
+
+  # In this case (since this is generic) simply return
+  # a combination. Use the IRCAM model by default
+  # since this is a UKIRT designed system (<duck> - timj)
+  return $self->rawfixedpart . $prefix . '_' . $obsnum . $self->rawsuffix;
+
 }
 
 

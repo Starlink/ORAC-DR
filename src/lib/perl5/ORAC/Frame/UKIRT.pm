@@ -48,6 +48,70 @@ those available from ORAC::Frame.
 
 =over 4
 
+=cut
+ 
+=item new
+ 
+Create a new instance of a ORAC::Frame::UKIRT object.
+This method also takes optional arguments:
+if 1 argument is  supplied it is assumed to be the name
+of the raw file associated with the observation. If 2 arguments
+are supplied they are assumed to be the raw file prefix and
+observation number. In any case, all arguments are passed to
+the configure() method which is run in addition to new()
+when arguments are supplied.
+The object identifier is returned.
+ 
+   $Obs = new ORAC::Frame::UKIRT;
+   $Obs = new ORAC::Frame::UKIRT("file_name");
+   $Obs = new ORAC::Frame::UKIRT("UT","number");
+
+The constructor hard-wires the '.sdf' rawsuffix and the
+'ro' prefix although these can be overriden with the 
+rawsuffix() and rawfixedpart() methods.
+
+=cut
+
+sub new {
+
+  my $proto = shift;
+  my $class = ref($proto) || $proto;
+
+  my $frame = {};  # Anon hash
+
+  $frame->{RawName} = undef;
+  $frame->{Header} = undef;
+  $frame->{Group} = undef;
+  $frame->{Files} = [];
+  $frame->{Recipe} = undef;
+  $frame->{Nsubs} = undef;
+  $frame->{Subs} = [];
+  $frame->{Filters} = [];
+  $frame->{WaveLengths} = [];
+  $frame->{RawSuffix} = ".sdf";
+  $frame->{RawFixedPart} = 'ro'; 
+  $frame->{UserHeader} = {};
+
+  bless($frame, $class);
+
+  # If arguments are supplied then we can configure the object
+  # Currently the argument will be the filename.
+  # If there are two args this becomes a prefix and number
+  # This could be extended to include a reference to a hash holding the
+  # header info but this may well compromise the object since
+  # the best way to generate the header (including extensions) is to use the
+  # readhdr method.
+
+  if (@_) { 
+    $frame->configure(@_);
+  }
+
+  return $frame;
+
+}
+
+
+
 =item readhdr
 
 Reads the header from the observation file (the filename is stored
