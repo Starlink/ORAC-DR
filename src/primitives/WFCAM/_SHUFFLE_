@@ -12,101 +12,118 @@ my ($i,$j,$ncards,$more,$keyword,$keylength,%hdr,$status,$fptr,$hdutype,$card);
 $status = 0;
 %hdr = ();
 my $fptr = Astro::FITS::CFITSIO::open_file($Frm->file,READWRITE,$status);
-$fptr->get_hdrspace($ncards,$more,$status);
-$j = 1;
-for ($i = 1; $i <= $ncards; $i++) {
-    $fptr->read_record($j,$card,$status);
-    if (Astro::FITS::CFITSIO::fits_get_keyclass($card) < TYP_CKSUM_KEY) {
-	$j++;
-	next;
-    } elsif (Astro::FITS::CFITSIO::fits_get_keyclass($card) == TYP_COMM_KEY ||
-	$card =~ /^\s+/ ) {
+
+# If this has more than one image extension, then it's a focus frame and 
+# we don't want to shuffle
+
+my $nhdus;
+$fptr->get_num_hdus($nhdus,$status);
+if ($nhdus > 2) {
+    $fptr->close_file($status);
+} else {
+    $fptr->get_hdrspace($ncards,$more,$status);
+    $j = 1;
+    for ($i = 1; $i <= $ncards; $i++) {
+	$fptr->read_record($j,$card,$status);
+        if (Astro::FITS::CFITSIO::fits_get_keyclass($card) == TYP_SCAL_KEY) {
+            $fptr->delete_record($j,$status); 
+    	    next;
+        } elsif (Astro::FITS::CFITSIO::fits_get_keyclass($card) < TYP_CKSUM_KEY) {
+	    $j++;
+	    next;
+	} elsif (Astro::FITS::CFITSIO::fits_get_keyclass($card) == TYP_COMM_KEY ||
+	    $card =~ /^\s+/ ) {
+	    $fptr->delete_record($j,$status);
+	    next;
+	} 
+	Astro::FITS::CFITSIO::fits_get_keyname($card,$keyword,$keylength,$status);
+	if ($keyword eq "ORIGIN") {
+	    $card = sprintf("%s","ORIGIN  = 'UKIRT             ' / Origin of this FITS file");
+	}
+	if (! defined $hdr{$keyword}) {
+            if (substr($card,8,1) ne '=') {
+    	        $card = sprintf("%8s= \'                  ' %s",
+    		    substr($card,0,8),substr($card,31));
+            }
+	    $hdr{$keyword} = sprintf("%-80s",$card);
+	}
 	$fptr->delete_record($j,$status);
-	next;
-    } 
-    Astro::FITS::CFITSIO::fits_get_keyname($card,$keyword,$keylength,$status);
-    if ($keyword eq "ORIGIN") {
-	$card = sprintf("%s","ORIGIN  = 'UKIRT' / Origin of this FITS file");
     }
-    if (! defined $hdr{$keyword}) {
-        $hdr{$keyword} = sprintf("%-80s",$card);
-    }
-    $fptr->delete_record($j,$status);
-}
-$fptr->movabs_hdu(2,$hdutype,$status);
-$fptr->get_hdrspace($ncards,$more,$status);
-$j = 1;
-for ($i = 1; $i <= $ncards; $i++) {
-    $fptr->read_record($j,$card,$status);
-    if (Astro::FITS::CFITSIO::fits_get_keyclass($card) < TYP_CKSUM_KEY) {
-	$j++;
-	next;
-    } elsif (Astro::FITS::CFITSIO::fits_get_keyclass($card) == TYP_COMM_KEY ||
-	$card =~ /^\s+/ ) {
+    $fptr->movabs_hdu(2,$hdutype,$status);
+    $fptr->get_hdrspace($ncards,$more,$status);
+    $j = 1;
+    for ($i = 1; $i <= $ncards; $i++) {
+	$fptr->read_record($j,$card,$status);
+	if (Astro::FITS::CFITSIO::fits_get_keyclass($card) < TYP_CKSUM_KEY) {
+	    $j++;
+	    next;
+	} elsif (Astro::FITS::CFITSIO::fits_get_keyclass($card) == TYP_COMM_KEY ||
+	    $card =~ /^\s+/ ) {
+	    $fptr->delete_record($j,$status);
+	    next;
+	}
+	Astro::FITS::CFITSIO::fits_get_keyname($card,$keyword,$keylength,$status);
+	if ($keyword eq "ORIGIN") {
+	    $card = sprintf("%s","ORIGIN  = 'United Kingdom Infrared Telescope' / Origin of this FITS file");
+	}
+	if (! defined $hdr{$keyword}) {
+	    $hdr{$keyword} = sprintf("%-80s",$card);
+	}
 	$fptr->delete_record($j,$status);
-	next;
     }
-    Astro::FITS::CFITSIO::fits_get_keyname($card,$keyword,$keylength,$status);
-    if ($keyword eq "ORIGIN") {
-	$card = sprintf("%s","ORIGIN  = 'United Kingdom Infrared Telescope' / Origin of this FITS file");
+
+    # Delete some header items that we know we don't want...
+
+    foreach $i ('HDUCLAS1','HDUCLAS2','CDELT1','CDELT2') {
+	delete $hdr{$i};
     }
-    if (! defined $hdr{$keyword}) {
-        $hdr{$keyword} = sprintf("%-80s",$card);
-    }
-    $fptr->delete_record($j,$status);
-}
 
-# Delete some header items that we know we don't want...
+    # Now loop for all the keywords in the primary list and add them into the
+    # primary header
 
-foreach $i ('HDUCLAS1','HDUCLAS2','CDELT1','CDELT2') {
-    delete $hdr{$i};
-}
-
-# Now loop for all the keywords in the primary list and add them into the
-# primary header
-
-$fptr->movabs_hdu(1,$hdutype,$status);
-my $n = @phukeys;
-foreach $i (1 .. $n) {
-    my $c = $phukeys[$i-1];
-    if (defined $hdr{$c}) {
-	$fptr->write_record($hdr{$c},$status);
-        delete $hdr{$c};
-    }
-}
-
-# And the same for the extension header...
-
-$fptr->movabs_hdu(2,$hdutype,$status);
-my $n = @ehukeys;
-foreach $i (1 .. $n) {
-    my $c = $ehukeys[$i-1];
-    if (defined $hdr{$c}) {
-	$fptr->write_record($hdr{$c},$status);
-        delete $hdr{$c};
-    }
-}
-
-# Now put any orphaned keywords in the primary and mark them as such...
-
-$n = keys %hdr;
-if ($n > 0) {
     $fptr->movabs_hdu(1,$hdutype,$status);
-    my $card = "Extra keywords...";
-    $fptr->write_comment($card,$status);
-    foreach my $kk (keys %hdr) {
-        $fptr->write_record($hdr{$kk},$status);
+    my $n = @phukeys;
+    foreach $i (1 .. $n) {
+	my $c = $phukeys[$i-1];
+	if (defined $hdr{$c}) {
+	    $fptr->write_record($hdr{$c},$status);
+	    delete $hdr{$c};
+	}
     }
+
+    # And the same for the extension header...
+
+    $fptr->movabs_hdu(2,$hdutype,$status);
+    my $n = @ehukeys;
+    foreach $i (1 .. $n) {
+	my $c = $ehukeys[$i-1];
+	if (defined $hdr{$c}) {
+	    $fptr->write_record($hdr{$c},$status);
+	    delete $hdr{$c};
+	}
+    }
+
+    # Now put any orphaned keywords in the primary and mark them as such...
+
+    $n = keys %hdr;
+    if ($n > 0) {
+	$fptr->movabs_hdu(1,$hdutype,$status);
+	my $card = "Extra keywords...";
+	$fptr->write_comment($card,$status);
+	foreach my $kk (keys %hdr) {
+	    $fptr->write_record($hdr{$kk},$status);
+	}
+    }
+    $fptr->close_file($status);
+
+    # Now redefine the Frm object...
+
+    my $ftmp = $Frm->new($Frm->file);
+    $Frm->hdr($ftmp->hdr);
+    $Frm->uhdr($ftmp->uhdr);
+    foreach $i (1 .. $Frm->findnsubs) {
+	$Frm->getasubframe($i)->hdr($ftmp->getasubframe($i)->hdr);
+	$Frm->getasubframe($i)->uhdr($ftmp->getasubframe($i)->uhdr);
+    }
+
 }
-$fptr->close_file($status);
-
-# Now redefine the Frm object...
-
-my $ftmp = $Frm->new($Frm->file);
-$Frm->hdr($ftmp->hdr);
-$Frm->uhdr($ftmp->uhdr);
-foreach $i (1 .. $Frm->findnsubs) {
-    $Frm->getasubframe($i)->hdr($ftmp->getasubframe($i)->hdr);
-    $Frm->getasubframe($i)->uhdr($ftmp->getasubframe($i)->uhdr);
-}
-
