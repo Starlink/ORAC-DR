@@ -161,6 +161,7 @@ sub new {
   # Do not supply user-arguments yet.
   # This is because if we do run configure via the constructor
   # the rawfixedpart and rawsuffix will be undefined.
+
   my $self = $class->SUPER::new();
 
   # Which WFCAM 'instrument' is this?  
@@ -168,7 +169,7 @@ sub new {
   if ($ENV{'ORAC_INSTRUMENT'} =~ /^WFCAM_([A-D])$/) {
       my $rfp = 'w' . lc($1);
       $self->rawfixedpart($rfp);
-      $self->{chipname} = [$rfp];
+      $self->{chipname} = [lc($1)];
   } else {
       $self->rawfixedpart('w_');
       $self->{chipname} = ["a","b","c","d"];
@@ -177,13 +178,16 @@ sub new {
   # Configure initial state - could pass these in with
   # the class initialisation hash - this assumes that I know
   # the hash member name
-  $self->rawsuffix('.fit');
-  $self->rawformat('FITS');
+
+  $self->rawsuffix('.sdf');
+  $self->rawformat('HDS');
   $self->format('FITS');
+  $self->fitssuffix('.fit');
 
   # If arguments are supplied then we can configure the object
   # Currently the argument will be the filename.
   # If there are two args this becomes a prefix and number
+
   $self->configure(@_) if @_;
 
   return $self;
@@ -533,7 +537,6 @@ sub findgroup {
   return $hdrgrp;
 
 }
-
 
 
 =head1 SEE ALSO
