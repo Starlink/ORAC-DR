@@ -573,11 +573,11 @@ sub hds2mef {
     # First check to see if fits2ndf monolith is running
 
     my $status = ORAC__ERROR;
-    if (defined $self->mon('ndf2fits')) {
+    if (defined $self->mon('convert_mon')) {
 
         # Do the conversion
 
-        $status = $self->mon('ndf2fits')->obeyw("ndf2fits","in=$hdsfile out=$fitsfile profits encoding=\'FITS-IRAF\'");
+        $status = $self->mon('convert_mon')->obeyw("ndf2fits","in=$hdsfile out=$fitsfile profits encoding=\'FITS-IRAF\'");
     }
 
     # Check to make sure this succeeded
