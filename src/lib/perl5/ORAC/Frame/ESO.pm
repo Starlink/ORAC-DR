@@ -218,14 +218,14 @@ sub _from_OBSERVATION_MODE {
 sub _to_OBSERVATION_TYPE {
    my $self = shift;
    my $type = $self->hdr->{"HIERARCH.ESO.DPR.TYPE"};
-   $type = exists( $self->hdr->{"HIERARCH.ESO.DPR.TYPE"} ) ? $self->hdr->{"HIERARCH.ESO.DPR.TYPE"} : "OBJECT";
-   if ( uc( $type ) eq "STD" ) {
+   $type = exists( $self->hdr->{"HIERARCH.ESO.DPR.TYPE"} ) ? uc( $self->hdr->{"HIERARCH.ESO.DPR.TYPE"} ) : "OBJECT";
+   if ( $type eq "STD" ) {
       $type = "OBJECT";
-   } elsif ( uc( $type ) eq "SKY,FLAT" || uc( $type ) eq "FLAT,SKY" ) {
+   } elsif ( $type eq "SKY,FLAT" || $type eq "FLAT,SKY" ) {
       $type = "SKY";
-   } elsif ( uc( $type ) eq "LAMP,FLAT" || uc( $type ) eq "FLAT,LAMP" ) {
+   } elsif ( $type eq "LAMP,FLAT" || $type eq "FLAT,LAMP" ) {
       $type = "LAMP";
-   } elsif ( uc( $type ) eq "LAMP" ) {
+   } elsif ( $type eq "LAMP" || $type eq "WAVE,LAMP" ) {
       $type = "ARC";
    }
    return $type;
@@ -400,7 +400,7 @@ sub get_instrument_mode {
    my $mode = uc( $self->hdr->{"HIERARCH.ESO.DPR.TECH"} );
    if ( $mode eq "IMAGE" || $mode eq "POLARIMETRY" ) {
       $mode = "imaging";
-   } elsif ( $mode eq "SPECTRUM" ) {
+   } elsif ( $mode =~ /SPECTRUM/ ) {
       $mode = "spectroscopy";
    }
    return $mode;

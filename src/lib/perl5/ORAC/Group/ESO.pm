@@ -396,7 +396,7 @@ sub get_instrument_mode {
    my $mode = uc( $self->hdr->{"HIERARCH.ESO.DPR.TECH"} );
    if ( $mode eq "IMAGE" || $mode eq "POLARIMETRY" ) {
       $mode = "imaging";
-   } elsif ( $mode eq "SPECTRUM" ) {
+   } elsif ( $mode =~ /SPECTRUM/ ) {
       $mode = "spectroscopy";
    }
    return $mode;
