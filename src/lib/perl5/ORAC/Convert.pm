@@ -60,7 +60,8 @@ use vars qw/$VERSION/;
 use File::Basename;  # Get file suffix
 use File::Spec;      # Not really necessary -- a bit anal I suppose
 use NDF;
-use Starlink::HDSPACK qw/copobj/; # copobj
+use Starlink::HDSPACK qw/copy_hdsobj copobj 
+  delete_hdsobj create_hdsobj/; # copobj/creobj/delobj
 
 use ORAC::Print;
 use ORAC::Msg::EngineLaunch; # To launch convert monolith
@@ -541,17 +542,23 @@ sub gmef2hds {
   if (defined $self->mon('fits2ndf')) {
 
     # Do the conversion
-    my $extable=$ENV{'ORAC_DATA_CAL'}."/extable.txt";
+    my $extable = File::Spec($ENV{'ORAC_DATA_CAL'},"extable.txt");
     orac_print "Using extable: $extable\n";
     $status = $self->mon('fits2ndf')->obeyw("fits2ndf","container=true encodings=FITS-IRAF extable=$extable in=$name out=$out profits=true fmtcnv=true");
 
     # This leaves us with an invalid file as the HEADER doesn't contain a data array
-    $self->mon('figaro1')->obeyw("creobj", "type=ARRAY dims=0 object=$out.HEADER.DATA_ARRAY");
-    $self->mon('figaro1')->obeyw("creobj", "type=_REAL dims=1 object=$out.HEADER.DATA_ARRAY.DATA");
+    my $hstat;
+    $hstat = create_hdsobj("$out.HEADER.DATA_ARRAY", "ARRAY");
+    $hstat = create_hdsobj("$out.HEADER.DATA_ARRAY.DATA","_REAL",[1])
+      if $hstat;
 
     # Move the FITS component of NDF HEADER to the FITS airlock/extension.
-    $self->mon('figaro1')->obeyw("creobj", "type=ARRAY dims=0 object=$out.HEADER.MORE");
-    $self->mon('figaro1')->obeyw("renobj", "source=$out.HEADER.FITS destin=$out.HEADER.MORE.FITS");
+    # Use copy/del since we have no renobj yet
+    $hstat = create_hdsobj("$out.HEADER.MORE","EXT") if $hstat;
+    $hstat = copy_hdsobj("$out.HEADER.FITS","$out.HEADER.MORE.FITS") if $hstat;
+    $hstat = delete_hdsobj("$out.HEADER.FITS") if $hstat;
+
+    $status = ($hstat ? ORAC__OK : ORAC__ERROR );
 
   }
 
@@ -563,6 +570,12 @@ sub gmef2hds {
   }
 
 }
+
+=item B<ingmef2hds>
+
+Convert an ING format Multi-Extension FITS file into an HDS container.
+
+=cut
 
 sub ingmef2hds {
   my $self = shift;
@@ -595,18 +608,24 @@ sub ingmef2hds {
   if (defined $self->mon('fits2ndf')) {
 
     # Do the conversion.
-    my $extable=$ENV{'ORAC_DATA_CAL'}."/extable.txt";
+    my $extable = File::Spec->catfile($ENV{'ORAC_DATA_CAL'},"extable.txt");
     orac_print "Using extable: $extable\n";
     my $param = "container=true encodings=FITS-WCS profits=true fmtcnv=true";
     $status = $self->mon('fits2ndf')->obeyw("fits2ndf","extable=$extable in=$name out=$out $param");
 
     # This leaves us with an invalid file as the HEADER doesn't contain a data array
-    $self->mon('figaro1')->obeyw("creobj", "type=ARRAY dims=0 object=$out.HEADER.DATA_ARRAY");
-    $self->mon('figaro1')->obeyw("creobj", "type=_REAL dims=1 object=$out.HEADER.DATA_ARRAY.DATA");
+    my $hstat;
+    $hstat = create_hdsobj("$out.HEADER.DATA_ARRAY", "ARRAY");
+    $hstat = create_hdsobj("$out.HEADER.DATA_ARRAY.DATA","_REAL",[1])
+      if $hstat;
 
     # Move the FITS component of NDF HEADER to the FITS airlock/extension.
-    $self->mon('figaro1')->obeyw("creobj", "type=ARRAY dims=0 object=$out.HEADER.MORE");
-    $self->mon('figaro1')->obeyw("renobj", "source=$out.HEADER.FITS destin=$out.HEADER.MORE.FITS");
+    # Use copy/del since we have no renobj yet
+    $hstat = create_hdsobj("$out.HEADER.MORE","EXT") if $hstat;
+    $hstat = copy_hdsobj("$out.HEADER.FITS","$out.HEADER.MORE.FITS") if $hstat;
+    $hstat = delete_hdsobj("$out.HEADER.FITS") if $hstat;
+
+    $status = ($hstat ? ORAC__OK : ORAC__ERROR );
 
   }
 
