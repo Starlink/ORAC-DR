@@ -14,9 +14,10 @@
 #    an ARD (ASCII Region Definition cf. SUN/183) file containing
 #    elliptical regions corresponding to the measured extents of the
 #    sources.  A circular central occulting mask is also written to
-#    the ARD file; this is because the object detection around bright
-#    sources (as might be expected near frame centre) is uneven and
-#    can leave many small blobs.  `Central' refers to offset 0,0,
+#    the ARD file, provided the integration was on the sky as opposed
+#    to say a dome flat); this is because the object detection around
+#    bright sources (as might be expected near frame centre) is uneven
+#    and can leave many small blobs.  `Central' refers to offset 0,0,
 #    therefore on jittered frames, the bright target is still masked
 #    as it appears in different pixel locations in the frame.
 #
@@ -24,6 +25,9 @@
 #    and the various intermiediate frames made during processing.
 #
 # Arguments:
+#    ENLARGE = REAL (Given)
+#       Enlarge the ellipses of the found objects by this multiplier.
+#       This value will be constrained to between 1.0 and 1.5. [1.0]
 #    MASKFILE = CHARACTER (Returned)
 #       The name of the ARD (ASCII Region Definition cf. SUN/183)
 #       text file to contain the regions spanning the objects in the
@@ -37,9 +41,6 @@
 #       The diameter of the central occulting mask in arcseconds. This
 #       diameter is not multiplied by the enlargement factor given by
 #       the ENLARGE parameter. [7]
-#    ENLARGE = REAL (Given)
-#       Enlarge the ellipses of the found objects by this multiplier.
-#       This value will be constrained to between 1.0 and 1.5. [1.0]
 #
 # Notes:
 #    -  This primitive is suitable for infrared imagers.
@@ -85,7 +86,7 @@
 #    MJC: Malcolm J. Currie (JAC, Starlink)
 #
 # Copyright:
-#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 #
 #-
@@ -115,13 +116,22 @@
 # Define rotation matrix
 # ======================
 
-# Obtain the rotation angle in degrees.
-       my $rotangle = $Frm->uhdr( "ORAC_ROTATION" );
-       $rotangle = defined( $rotangle ) ? $rotangle : 0.0;
-
-# Define some useful variables to apply the rotation matrix.
+# Define some useful variables, say to apply the rotation matrix.
        my $pi = atan2( 1, 1 ) * 4;
        my $dtor = $pi / 180.0;
+
+       my ( $param1, $ORAC_STATUS, $occultpix, $xcentre, $ycentre );
+
+# Obtain the frame file name and hence its bounds.
+       my $in = $Frm->file;
+       $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$in" );
+       ( $ORAC_STATUS, my @lbnd ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "lbound" ); 
+       ( $ORAC_STATUS, my @ubnd ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "ubound" );
+
+# Lamp or dome flats do not have sky co-ordinate information and there
+# is no central source to mask.
+       my $onsky = $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) ne "LAMP";
+       if ( $onsky ) {
 
 # Locate the "central" circle
 # ===========================
@@ -130,32 +140,25 @@
 # placed so the source can be fully masked.
 
 # Find the Cartesian offsets in pixels.
-       _GET_CARTESIAN_TELESCOPE_OFFSETS_
-       my $xoff = $_GET_CARTESIAN_TELESCOPE_OFFSETS_{XOFF};
-       my $yoff = $_GET_CARTESIAN_TELESCOPE_OFFSETS_{YOFF};
+         _GET_CARTESIAN_TELESCOPE_OFFSETS_
+          my $xoff = $_GET_CARTESIAN_TELESCOPE_OFFSETS_{XOFF};
+          my $yoff = $_GET_CARTESIAN_TELESCOPE_OFFSETS_{YOFF};
 
 # Obtain the plate scales for the instrument from the headers.
-       _GET_PLATE_SCALE_
-       my $platescale = $_GET_PLATE_SCALE_{PLATESCALE};
+          _GET_PLATE_SCALE_
+          my $platescale = $_GET_PLATE_SCALE_{PLATESCALE};
 
 # Find the occulting circle radius in pixels.
-       my $occultpix = 0.5 * $occultangle / $platescale;
+          $occultpix = 0.5 * $occultangle / $platescale;
 
-# Locate the centre of the frame by inquiring the frame's attributes.
-# Obtain the frame file name.
-       my ( $param1, $ORAC_STATUS );
-       my $in = $Frm->file;
-       $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$in" );
-       ( $ORAC_STATUS, my @lbnd ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "lbound" ); 
-       ( $ORAC_STATUS, my @ubnd ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "ubound" );
-
-# Find the mid points.
-       my $xmid = ( ( $lbnd[ 0 ] + $ubnd[ 0 ] ) / 2.0 );
-       my $ymid = ( ( $lbnd[ 1 ] + $ubnd[ 1 ] ) / 2.0 );
+# Find the mid points of the bounds.
+          my $xmid = ( ( $lbnd[ 0 ] + $ubnd[ 0 ] ) / 2.0 );
+          my $ymid = ( ( $lbnd[ 1 ] + $ubnd[ 1 ] ) / 2.0 );
 
 # Derive the centre co-ordinates of the occulting mask.
-       my $xcentre = $xmid + $xoff;
-       my $ycentre = $ymid + $yoff;
+          $xcentre = $xmid + $xoff;
+          $ycentre = $ymid + $yoff;
+       }
 
 # Perform inventory on the field
 # ==============================
@@ -166,7 +169,7 @@
 # the name and format of the results catalogue is fixed (to match PISA) and is
 # in the ASCII file ${ORAC_DATA_CAL}/extractor_mask.param.
        my $resfile = "object_mask.cat";
-       my $parfile = $Cal->find_file("extractor_mask.sex");
+       my $parfile = "$ENV{ORAC_DATA_CAL}/extractor_mask.sex";
 
 # Read the EXTRACTOR parameter file line by line until the DETECT_THRESH
 # parameter is encountered.  Extract its value.  Note the
@@ -228,8 +231,10 @@
 # were occasionally ignored by PISA.  Leave in for now with EXTRACTOR.
 # Don't multiply this by the enlargement factor as we assume the user
 # knows what they want when they give the occulting radius.
-          printf $fh_ardfile "CIRCLE( %10.3f, %10.3f, %5.1f )\n",
-                $xcentre, $ycentre, $occultpix;
+          if ( $onsky ) {
+             printf $fh_ardfile "CIRCLE( %10.3f, %10.3f, %5.1f )\n",
+                   $xcentre, $ycentre, $occultpix;
+          }
 
 # Read each line of the EXTRACTOR catalogue, and split the fields.
           for ( my $ifd = 0; $ifd < $numobject; $ifd++ ) {
@@ -284,7 +289,8 @@ orientations of the sources in the current frame.  It creates
 an ARD (ASCII Region Definition cf. SUN/183) file containing
 elliptical regions corresponding to the measured extents of the
 sources.  A circular central occulting mask is also written to
-the ARD file; this is because the object detection around bright
+the ARD file, provided the integration was on the sky as opposed
+to say a dome flat); this is because the object detection around bright
 sources (as might be expected near frame centre) is uneven and
 can leave many small blobs.  `Central' refers to offset 0,0,
 therefore on jittered frames, the bright target is still masked
@@ -296,6 +302,11 @@ and the various intermiediate frames made during processing.
 =head1 ARGUMENTS
 
 =over 4
+
+=item ENLARGE = REAL (Given)
+
+Enlarge the ellipses of the found objects by this multiplier. This
+value will be constrained to between 1.0 and 1.5. [1.0]
 
 =item MASKFILE = CHARACTER (Returned)
 
@@ -314,11 +325,6 @@ of pixels can be considered as an object in the inventory. [12]
 The diameter of the central occulting mask in arcseconds. This diameter
 is not multiplied by the enlargement factor given by the ENLARGE
 parameter. [7]
-
-=item ENLARGE = REAL (Given)
-
-Enlarge the ellipses of the found objects by this multiplier. This
-value will be constrained to between 1.0 and 1.5. [1.0]
 
 =back
 
@@ -416,7 +422,7 @@ Malcolm J. Currie (JAC, Starlink) <mjc@star.rl.ac.uk>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
