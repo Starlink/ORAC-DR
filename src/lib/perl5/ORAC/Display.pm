@@ -445,12 +445,14 @@ sub parse_file_defn {
       # Do test
       if ($test eq $id) {
 
-	# If NUM was selected then we want a slighlt differen
+	# If NUM was selected then we want a slightly different
         # informational message
-	if ($RAW == 1) {
-	  orac_print("Display device determined (NUM:$test)\n",'blue');
-	} else {
-	  orac_print("Display device determined ($test)\n",'blue');	  
+	if ($DEBUG) {
+	  if ($RAW == 1) {
+	    orac_print("Display device determined (NUM:$test)\n",'blue');
+	  } else {
+	    orac_print("Display device determined ($test)\n",'blue');	  
+	  }
 	}
 
 	orac_print("ID:$id LINE:$line\n",'cyan') if $DEBUG;
