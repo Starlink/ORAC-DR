@@ -91,6 +91,7 @@ sub new {
 				AMS => undef,    # Adam message system
 				Kappa => undef,  # Kappa_mon object
 				Ndfpack=> undef, # Ndfpack_mon object
+				Regions => {},
 			       );
 
   # Start message system (should just return if already started)
