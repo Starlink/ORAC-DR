@@ -37,6 +37,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.4  2000/02/03 04:52:50  timj
+#     Slight change to startup screen
+#
 #     Revision 1.3  2000/02/03 03:44:09  timj
 #     Add check for existence of IN/OUT directories
 #
@@ -128,7 +131,7 @@ echo '     Type "oracdr -h" for usage'
 echo "     Type 'showme sun${ORAC_SUN}' to browse the hypertext documentation"
 echo " "
 echo " "
-echo " Raw data will appear in $ORAC_DATA_IN"
+echo " Raw data will be read from $ORAC_DATA_IN"
 # Check for that in directory
 if !(-d $ORAC_DATA_IN) then
   echo '     \!\!\!\!\!\!\!\!\!\!\!\! but that directory does not exist \!\!\!\!\!\!\!\!\! '
@@ -141,7 +144,7 @@ if !(-d $ORAC_DATA_OUT) then
 endif
 
 echo " "
-echo "+++++++++ For automatic $ORAC_INSTRUMENT reduction use oracdr -loop $ORAC_LOOP +++++++++"
+echo "+++++++++ For online $ORAC_INSTRUMENT reduction use oracdr -loop $ORAC_LOOP +++++++++"
 echo ""
 echo For comments specific to $ORAC_INSTRUMENT data reduction mail $ORAC_PERSON@jach.hawaii.edu
 echo 'For problems with the ORAC-DR system mail helpme@jach.hawaii.edu'
