@@ -341,22 +341,31 @@ sub orac_process_frame {
 This routine setups the orac print system, it takes the $opt_debug and
 $log_options and the $MW variable and determines which file handles to return
 
-  my($orac_prt, $msg_prt, $msgerr_prt, $ORAC_MESSAGE)    
-     = orac_print_configuration( $opt_debug, $opt_showcurrent,
-                                 $log_options, $win_str, \$CURRENT_RECIPE );
+  my($orac_prt, $msg_prt, $msgerr_prt, $ORAC_MESSAGE,
+     $PRIMITIVE_LIST, $CURRENT_PRIMITIVE)    
+     = orac_print_configuration( 
+                                 $log_options, $win_str, \$CURRENT_RECIPE 
+                                 \@ORAC_ARGS, %options
+                                );
 
-The tied file handles $orac_prt, $msg_prt and $msgerr_prt are returned, along with the Tk packed variable $ORAC_MESSAGE.
+The ORAC_ARGS are assumed to be the command line options. C<%options>
+is the options hash. C<-debug> and C<-showcurrent> are used by this
+routine.
+
+The tied file handles $orac_prt, $msg_prt and $msgerr_prt are
+returned, along with the Tk packed variable $ORAC_MESSAGE and
+a reference to arrays containing the primitive information.
 
 =cut
 
 sub orac_print_configuration {
 
-  croak 'Usage: orac_print_configuration( $opt_debug, $opt_showcurrent, $log_options, $win_str, \$CURRENT_RECIPE )'
-    unless scalar(@_) == 5 ;
-
   # Read the argument list
-  my ( $opt_debug, $opt_showcurrent, $log_options, $win_str,
-       $CURRENT_RECIPE ) = @_;
+  my $log_options = shift;
+  my $win_str = shift;
+  my $CURRENT_RECIPE = shift;
+  my $ORAC_ARGS = shift;
+  my %opt = @_;
 
   # First thing we need to do is create an ORAC::Print object
   # that we can fiddle with to adjust the output filehandles
@@ -365,7 +374,7 @@ sub orac_print_configuration {
   $orac_prt = new ORAC::Print; # For general orac_print
 
   # Debug info
-  if ($opt_debug) {
+  if ($opt{debug}) {
     $orac_prt->debugmsg(1);
     my $fh = new IO::File(">ORACDR.DEBUG") ||
         do { orac_err "Error opening debug logfile: $!";
@@ -431,7 +440,7 @@ sub orac_print_configuration {
 	       ORAC::Xorac::xorac_log_window( $win_str, \$orac_prt );
 
 	# Create the Tk recipe window
-	if ($opt_showcurrent) {
+	if ($opt{showcurrent}) {
 	   # Routine returns a reference to a tied array (listbox contents)
        	   ( $PRIMITIVE_LIST, $CURRENT_PRIMITIVE ) =
 	                  ORAC::Xorac::xorac_recipe_window( $win_str, $CURRENT_RECIPE );
@@ -508,7 +517,7 @@ sub orac_print_configuration {
       print $logfh "\tPerl version    : $]\n";
       print $logfh "\tOperating System: $^O\n";
 
-      #print $logfh "\nORAC-DR Arguments: ".join(" ",@$ORAC_ARGS)."\n";
+      print $logfh "\nORAC-DR Arguments: ".join(" ",@$ORAC_ARGS)."\n";
 
       print $logfh "\nSession:\n\n";
 
@@ -695,67 +704,77 @@ sub orac_start_display {
 
 =item B<orac_calib_override>
 
-This routine creates sets methods in the calibration object if any
-calibration override keyword pairs are set on the command line
+This routine creates a calibration object of the specified class and
+overrides methods as specified in the C<--calib> option string.
 
-   my $Cal = orac_calib_override( $opt_calib, $calclass );
+   my $Cal = orac_calib_override( $calclass, @opt_calib, );
 
-it returns a calibration object reference.
+Multiple calibrations specifications can be supplied.
+The calibrations are specified as comma separated keyword=value strings
+or as hash references.
 
 =cut
 
 sub orac_calib_override {
 
-  croak 'Usage: orac_calib_override( $opt_calib, $calclass )'
-    unless scalar(@_) == 2 ;
+#  croak 'Usage: orac_calib_override( $opt_calib, $calclass )'
+#    unless scalar(@_) == 2 ;
 
-  my ( $opt_calib, $calclass ) = @_;
+  my ( $calclass, @calibs ) = @_;
 
   # Create calibration object
   my $Cal = new $calclass;
 
-  # Define variable
+  # Some where to store the values
   my %calibs;
 
-  # fill hash 
-  if (defined $opt_calib) {
+  # First we need to get a hash with all the calibration values
+  # in it
+  for my $opt_calib (@calibs) {
 
-     if ( ref($opt_calib) ) {
-        # $opt_calib will be a reference if passed from Xoracdr it may 
-	# have keywords with zero length strings as values, a quick 
-	# kludge to get round this follows
-	foreach my $key (keys %$opt_calib ) {
-	  $calibs{$key} = $$opt_calib{$key} if length($$opt_calib{$key}) != 0; }
+    next unless defined $opt_calib;
+
+    if ( ref($opt_calib) ) {
+      # $opt_calib will be a reference if passed from Xoracdr it may 
+      # have keywords with zero length strings as values, a quick 
+      # kludge to get round this follows
+      foreach my $key (keys %$opt_calib ) {
+	$calibs{$key} = $$opt_calib{$key} if length($$opt_calib{$key}) != 0; 
+      }
+
      } else {
-        # or as a string from oracdr itself
-        %calibs = parse_keyvalues($opt_calib); }
-
-     foreach my $key (keys %calibs) {
-
-       # Since we can manipulate the hash values via the GUI a key may
-       # exist with an undef value, we have to check each key to see
-       # that it has a value
-       if ( defined $calibs{$key} ) {
-
-           if ($Cal->can($key)) {		# set appropriate method
-
-              $Cal->$key($calibs{$key});
-
-              # if we have a noupdate method to enforce overrides, use it.
-              my $noupdate = $key."noupdate";
-              $Cal->$noupdate(1) if $Cal->can($noupdate);
-
-              orac_print("ORAC says: Calibration $key set to $calibs{$key}\n",
-	                 "blue");
-
-           } else {				# complain but continue
-
-              orac_err (" Calibration ($key) unknown by this instrument. Ignored\n");
-
-           }
-       }
+       # or as a string from oracdr itself
+       # need push(%hash...)
+       %calibs = (%calibs, parse_keyvalues($opt_calib));
      }
 
+  }
+
+  # For each calibration configure the cal object
+  foreach my $key (keys %calibs) {
+
+    # Since we can manipulate the hash values via the GUI a key may
+    # exist with an undef value, we have to check each key to see
+    # that it has a value
+    if ( defined $calibs{$key} ) {
+
+      if ($Cal->can($key)) {		# set appropriate method
+
+	$Cal->$key($calibs{$key});
+
+	# if we have a noupdate method to enforce overrides, use it.
+	my $noupdate = $key."noupdate";
+	$Cal->$noupdate(1) if $Cal->can($noupdate);
+
+	orac_print("ORAC says: Calibration $key set to $calibs{$key}\n",
+		   "blue");
+
+      } else {				# complain but continue
+
+	orac_err (" Calibration ($key) unknown by this instrument. Ignored\n");
+
+      }
+    }
   }
 
   return $Cal;
@@ -802,101 +821,142 @@ This routine checks that your data exists and decides which data
 loop approach to use.
 
  my $loop =  
-     orac_process_argument_list( $opt_from, $opt_to, $opt_skip, $opt_list,
-                                  $frameclass, \@obs );
+     orac_process_argument_list( $frameclass, \@obs, %opt );
 
 it returns the looping scheme and a list of observations if one does not
 already exist.
+
+This routine is fairly complex since there are many combinations of
+C<-from>, C<-to>, C<-skip>, C<-loop> and C<-list> that interact with
+each other.
+
+The options hash may contain the following keys: from, to, skip,
+list and loop. All these are optional as the values may or may
+not be defined or supplied by the user.
 
 =cut
 
 sub orac_process_argument_list {
 
-  croak 'Usage: orac_process_argument_list($opt_from, $opt_to, $opt_skip, $opt_list, $frameclass, \@obs)'
-    unless scalar(@_) == 6;
-
   # Read the argument list
-  my ($opt_from, $opt_to, $opt_skip, $opt_list, $frameclass, $obs) = @_;
+  my ($frameclass, $obs, %opt) = @_;
 
-  my $loop = 'orac_loop_list'; # Default loop scheme unless -from
+  my $loop;
 
-  if (defined $opt_from) {
+  # This is triggered if we have -from and is the most complex option
+  # since it can be used in conjunction with -skip and different
+  # looping. The biggest complication comes from the optimization
+  # with -skip
 
-     if (defined $opt_to) 
-     {
-        @$obs = $opt_from .. $opt_to
-     } 
-     else 
-     {
+  if (defined $opt{from}) {
 
-        # If the skip flag is set to true we can turn the -from..end 
-        # loop into 'list' loop by determining the last observation number.
-        # For historical reasons, the inf loop should be used if the -skip
-        # option is false.
+    if (defined $opt{to}) {
 
-        if ($opt_skip)
-	{
-           my ($next, $high) = orac_check_data_dir($frameclass, $opt_from, 0);
+      # We have a known range so convert this to -list
+      @$obs = $opt{from} .. $opt{to};
 
-           if (defined $high) {
-	      @$obs = ($opt_from..$high);
-           }
-	   else
-	   {
-	      # High not defined, simply look for the $opt_from ignoring high
-	      # -loop wait should work this way anyway
-	      @$obs = ( $opt_from );
-           }
+      $loop = 'list'
+
+    } else {
+
+      # If the skip flag is set to true we can turn the -from..end
+      # loop into 'list' loop by determining the last observation
+      # number.  For historical reasons, the inf loop should be used
+      # if the -skip option is false.
+
+      if ($opt{skip}) {
+
+	# Special case if we are doing data detection since the
+	# final obs number is changing
+	if ($opt{loop} ne 'wait' and $opt{loop} ne 'flag') {
+
+	  my ($next, $high) = orac_check_data_dir($frameclass, $opt{from}, 0);
+
+	  if (defined $high) {
+
+	    @$obs = ($opt{from}..$high);
+	    $loop = 'list';
+
+	  } else {
+
+	    # High not defined, simply look for the $opt{from} ignoring high
+	    # This essentially means that there is only one file to process
+	    @$obs = ( $opt{from} );
+	    $loop = 'list';
+
+	  }
+
+	} else {
+
+	  # If we are using -loop wait and flag we can not optimize 
+	  # to -list since the file count is changing
+	  @$obs = ( $opt{from} );
+	  $loop = $opt{loop};
 
 	}
-	else
-	{
 
-           @$obs = ($opt_from);  # Used for data detection loops etc
 
-           # Set default loop scheme to 'inf'
-           # if there is no 'to' and 'skip' is false.
-           $loop = 'orac_loop_inf';
+      } else {
 
-        }
+	# We are not skipping so just start from the first number
+	# and increment until we run out of observations
+	@$obs = ($opt{from});
 
-        orac_print "Starting at observation $opt_from and looping until no files available\n"
-     }
+	# Set default loop scheme to 'inf'
+	# if there is no 'to' and 'skip' is false.
+	$loop = 'inf';
 
-   }
-   elsif (defined $opt_list)
-   {
-      @$obs = parse_obslist($opt_list);
-      $loop = 'orac_loop_list';
+      }
 
-   }
-   elsif (defined $opt_to) 
-   {
-       # This catches the case where -to is defined but no -from or -list
-       # Start counting at 1
-       orac_print "Processing observations 1 to $opt_to\n";
-       @$obs = (1..$opt_to);
+      orac_print "Starting at observation $opt{from} and looping until no files available\n"
+    }
 
-   }
-   elsif (defined $$obs[0])
-   {
-       # There is at least one element in the @obs array, we have a pre-
-       # existing file list from the -files option and want to use
-       # orac_loop_file
-       $loop = 'orac_loop_file';
-   }
-   else
-   {
-      # Okay - none of -from, -list or -to were defined
-      # We default to 1 in this case and set the loop to wait
-      # Note that loop will be overriden if -loop is supplied
-      orac_print "No observation numbers supplied - starting from obs 1\n";
-      $loop = 'orac_loop_wait';
-      @$obs = (1);
+  } elsif (defined $opt{list}) {
 
-   }
+    @$obs = parse_obslist($opt{list});
+    $loop = 'list';
 
-   return ( $loop );
+  } elsif (defined $opt{to}) {
+
+    # This catches the case where -to is defined but no -from or -list
+    # Start counting at 1
+    orac_print "Processing observations 1 to $opt{to}\n";
+    @$obs = (1..$opt{to});
+    $loop = 'list';
+
+  } elsif (defined $$obs[0]) {
+
+    # There is at least one element in the @obs array, we have a pre-
+    # existing file list from the -files option and want to use
+    # orac_loop_file
+    $loop = 'file';
+
+  } else {
+
+    # Okay - none of -from, -list or -to were defined
+    # We default to 1 in this case and set the loop to wait
+    # Note that loop will be overriden if -loop is supplied
+    orac_print "No observation numbers supplied - starting from obs 1\n";
+    $loop = 'wait';
+    @$obs = (1);
+
+  }
+
+  # -loop overrides the above determination if it has been specified
+  # explicitly unless it has been set to list already by the above 
+  # logic
+  $loop = $opt{loop} if defined $opt{loop} && $loop ne 'list';
+
+  # -list always overrides -loop if it has been specified
+  $loop = 'list' if $opt{list};
+
+  # if we have defined it prepend orac_loop_
+  $loop = "orac_loop_$loop" if defined $loop;
+
+  print "Loop is $loop  Obs is @$obs\n";
+
+  # Return the answer
+  return $loop;
 
 }
 

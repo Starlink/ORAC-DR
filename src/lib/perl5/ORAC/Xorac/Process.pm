@@ -30,6 +30,7 @@ package ORAC::Xorac::Process;
 
 # ---------------------------------------------------------------------------
 
+use warnings;
 use strict;                  # smack! Don't do it again!
 use Carp;                    # Transfer the blame to someone else
   
@@ -56,7 +57,8 @@ $Id$
 
 =head1 AUTHORS
 
-Alasdair Allan (aa@astro.ex.ac.uk)
+Alasdair Allan E<lt>aa@astro.ex.ac.ukE<gt>,
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
@@ -216,11 +218,14 @@ sub xorac_start_process {
 
   try 
   {
-     ( $orac_prt, $msg_prt, $msgerr_prt, $ORAC_MESSAGE, 
-       $PRIMITIVE_LIST, $CURRENT_PRIMITIVE ) =
-        orac_print_configuration(${$options}{"debug"},
-	                         ${$options}{"showcurrent"}, 
-	                         $log_options, $win_str, $CURRENT_RECIPE );
+    ( $orac_prt, $msg_prt, $msgerr_prt, $ORAC_MESSAGE, 
+      $PRIMITIVE_LIST, $CURRENT_PRIMITIVE ) =
+        orac_print_configuration(
+				 $log_options, $win_str, 
+				 $CURRENT_RECIPE,
+				 [ 'xoracdr' ],
+				 %$options
+				);
   }
   catch ORAC::Error::FatalError with 
   {
@@ -302,16 +307,14 @@ sub xorac_start_process {
   ######################## C A L I B R A T I O N ##############################
 
   # Calibration frame overrides
-  my $Cal = orac_calib_override( ${$options}{"calib"}, $calclass );
+  my $Cal = orac_calib_override($calclass, ${$options}{"calib"} );
   
   ################## P R O C E S S  A R G U M E N T  L I S T ##################
 
   # Generate list of observation numbers to be processed
   # This is related to looping scheme
   my $loop =  
-    orac_process_argument_list( ${$options}{"from"}, ${$options}{"to"},
-                                 ${$options}{"skip"}, ${$options}{"list"},
-                                 $frameclass, $obs );
+    orac_process_argument_list( $frameclass, $obs, %$options );
  
   ##################### L O O P I N G  S C H E M E ############################
 
