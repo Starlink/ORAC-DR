@@ -34,6 +34,7 @@ use ORAC::Constants qw/:status/;
 use IO::Socket;  # For socket connection to Gaia
 use IO::Select;
 
+use Sys::Hostname; # Special case ukirt
 use Cwd qw/ cwd /;         # To get current working directory
 
 use vars qw/ $VERSION $DEBUG /;
@@ -41,6 +42,8 @@ use vars qw/ $VERSION $DEBUG /;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 $DEBUG   = 0;
 
+# Store the hostname (even though hostname does cache)
+my $localhost = hostname;
 
 =head1 PUBLIC METHODS
 
@@ -66,7 +69,13 @@ sub new {
   # Create a new instance from the base class
   # Dont allow any arguments.
   # Probably should turn off -w here
-  my $disp = $class->SUPER::new(Sock => undef, Sel => IO::Select->new);
+  my $disp = $class->SUPER::new(Sock => undef, 
+				Sel => IO::Select->new,
+				ConnectToRemoteGAIA => 1,
+			       );
+
+  # SPECIAL CASE UKIRT FOR NOW
+  $disp->use_remote_gaia(0) if $localhost =~ /kauwa/;
 
   # Now try to launch Gaia
 
@@ -134,6 +143,22 @@ sub sel {
   return $self->{Sel};
 }
 
+=item B<use_remote_gaia>
+
+Controls whether we are allowed to connect to a GAIA process that
+is already running on a remote machine. By default this is allowed
+(true) but in some cases you may not want to connect to a remote
+GAIA. For example, at UKIRT, the display must be sent to the machine
+running the pipeline and not one of the other GAIAs that are running
+on separate machines for QuickLook and general data inspection.
+
+=cut
+
+sub use_remote_gaia {
+  my $self = shift;
+  if (@_) { $self->{ConnectToRemoteGAIA} = shift; }
+  return $self->{ConnectToRemoteGAIA};
+}
 
 =back
 
@@ -285,16 +310,23 @@ sub _open_gaia_socket {
     my ($pid, $host, $port) = split (/\s+/, <$fh>);
     print "host = $host,   pid = $pid,    port = $port\n" if $DEBUG;
     close $fh;
-    my $sock = IO::Socket::INET->new( 
-				     Proto => "tcp",
-				     PeerAddr  => $host,
-				     PeerPort  => $port,
-				    );
-    if ($sock) {
-      $sock->autoflush(1);
-      return $sock;
-    }
 
+    # We are allowed to try and connect to this gaia if we 
+    # can talk to remote gaias or if the host mentioned in the 
+    # file matches the host we are running on
+    if ($self->use_remote_gaia || $host =~ /$localhost/) {
+
+      # Open the socket connection
+      my $sock = IO::Socket::INET->new( 
+				       Proto => "tcp",
+				       PeerAddr  => $host,
+				       PeerPort  => $port,
+				      );
+      if ($sock) {
+	$sock->autoflush(1);
+	return $sock;
+      }
+    }
   } 
 
   return undef;
