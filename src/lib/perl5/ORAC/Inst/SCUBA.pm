@@ -96,7 +96,7 @@ sub start_algorithm_engines {
 
   %Mon = ();
 
-  $Mon{surf_mon} = new ORAC::Msg::ADAM::Task("surf_mon_$$", "/jcmt_sw/scuba/redsdir/surf_mon");
+  $Mon{surf_mon} = new ORAC::Msg::ADAM::Task("surf_mon_$$", "$ENV{SURF_DIR}/surf_mon");
  
   $Mon{kapview_mon} = new ORAC::Msg::ADAM::Task("kapview_mon_$$",$ENV{KAPPA_DIR}."/kapview_mon");
   $Mon{ndfpack_mon} = new ORAC::Msg::ADAM::Task("ndfpack_mon_$$",$ENV{KAPPA_DIR}."/ndfpack_mon");
