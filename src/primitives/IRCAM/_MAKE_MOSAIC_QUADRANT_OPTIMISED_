@@ -1,15 +1,101 @@
-# _MAKE_MOSAIC_QUADRANT_OPTIMISED_     -*- perl -*-
+#+
+# Name:
+#    _MAKE_MOSAIC_QUADRANT_OPTIMISED_
 #
-# Forms a mosaic for Quadrant jittering.
+# Purpose:
+#    Forms a mosaic for a QUADRANT_JITTER recipe.
 #
-# TASK: KAPPA - TRANJOIN; CCDPACK - TRANLIST, MAKEMOS
+# Language:
+#    Perl5
 #
+# Description:
+#    This primitive makes a mosaic from the object frames in the
+#    current cycle of the current $Grp of a QUADRANT_JITTER recipe.
+#    There are two main stages: resampling and making the mosaic.
+#
+#    The primitive either resamples each frame using the non-integer
+#    Cartesian offsets, or merely finds the offsets between frames to
+#    the nearest pixel and shifts the origin (see argument RESAMPLE).
+#    The resampling or shifting imposes no limit to the frame bounds,
+#    so the mosaic extends to include all pixels in contributing frames. 
+#
+#    The primitive then makes the mosaic using zero-point shifts to give
+#    the most self-consistent mosaic based upon the statistics of
+#    overlapping pixels.  On the first cycle, the mosaic becomes the
+#    group file and its headers read.  On subsequent cycles, the current
+#    mosaic is co-added into the group or `grand' mosaic.
+#
+#    To prevent the accumulated build up of bad pixels in the grand
+#    mosaic, there is an option (argument FILLBAD) to fill in bad pixels
+#    by using a smooth function which matches the surrounding data.  The
+#    function is an iterative approximation to a solution of Laplace's
+#    equation.
+#
+# Arguments:
+#    FILLBAD = LOGICAL (Given)
+#       If true (1), replace the bad pixels in the current cycle's
+#       mosaic with a smooth function derived from its neighbours. 
+#       Otherwise, leave the bad pixels unaltered.  [1]
+#    INT_METHOD = CHARACTER (Given)
+#       The interpolation method.  This is either "linint" for bi-linear
+#       interpolation, or "nearest" for nearest neighbour.  The latter
+#       takes about half the time.  ["linint"]
+#    RESAMPLE = LOGICAL (Given)
+#       If true (1), resample the current cycle's frames to the same
+#       Cartesian co-ordinate system using the method given by argument
+#       INT_METHOD.  If false (0), use integer offsets and changes of
+#       origin to register the frames.  The latter is many times
+#       faster and is recommended for pipeline operation.
+#
+# Notes:
+#    -  This primitive is suitable for both UFTI and IRCAM.
+#    Instrument-specific headers are obtained where appropriate.
+#    -  Processing only occurs for object frames, and when the
+#    steering header MAKE_MOSAIC is true.
+#    -  When RESAMPLE is false, the offset files (.off extension)
+#    associated with each frame are interrogated to find one common
+#    object---the one with identifier 1---as would be the case if
+#    telescope or central-source offsets are used.  For each frame
+#    the read x-y co-ordinates rounded to the nearest integer and
+#    with opposite sign become the new origin.
+#    -  Group header ROOT_NAME stores the name of the mosaic
+#    excluding any suffix.  It is written for the first cycle,
+#    and read back for subsequent cycles of the recipe.
+#    -  The start and end airmasses of the grand mosaic are revised to
+#    the limiting values for the first and last contributing frames
+#    respectively.  Likewise the exposure time is summed.
+#    -  The individual mosaic and grand mosaic are displayed.
+#    -  The frame titles are propagated.
+#    -  The optimum number of overlaps for the mosaic creation is 3
+#    plus the cycle number. 
+#
+# Tasks:
+#    CCDPACK: MAKEMOS, TRANNDF; KAPPA: ADD, FILLBAD, FITSMOD, NDFCOPY,
+#    SETORIGIN.
+#
+# Output Data:
+#    -  The grand mosaic, which is called is "<groupname>_mos", where
+#    <groupname> is the name of the group.  For multiple cycles, single 
+#    mosaics are also retained and called <groupname>_mos_<cyclenumber>,
+#    where <cyclenumber> is the cycle number derived from steering
+#    header CYCLE_NUMBER.
+#    -  Resampled frames each inheriting the name of its input frame but
+#    with the _trn suffix, when RESAMPLE is true.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+#-
+
 
 # Arguments
 # =========
 
-# Obtain the value for the interpolation.
+# Obtain the value for the interpolation method.
     my $intmethod = ( $_MAKE_MOSAIC_QUADRANT_OPTIMISED_{INT_METHOD} || "linint" );
+    if ( $intmethod ne "linint" && $intmethod ne "nearest" ) {
+       $intmethod = "linint";
+    }
 
 # Determine whether or not to fill bad pixels.
     my $fillbad = $_MAKE_MOSAIC_QUADRANT_OPTIMISED_{FILLBAD};
@@ -29,8 +115,10 @@
        my $makemos = $Frm->hdr( "MAKE_MOSAIC" );
        if ( $makemos ) {
 
-# Obtain the cycle number.
+# Obtain the cycle number.  Default to zero if undefined, so that recipes
+# which do not support this feature will continue to work.
           my $cycleno = $Frm->hdr( "CYCLE_NUMBER" );
+          $cycleno = defined( $cycleno ) ? $cycleno : 0;
 
 # Specify the mosaic suffix.
           my $osuffix = "_mos";
@@ -308,13 +396,147 @@
              } else {
                 $header = "in=$tmpmos out=" . $Grp->file . "_0";
                 $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$header" );
-
              }
              orac_print "Orac says: Frame $mosname co-added into main mosaic " . $Grp->file . "\n";
 
 # Display the main mosaic.
              _DISPLAY_GROUP_IMAGE_
           }
-
        }
     }
+
+# Podule
+# ======
+
+=head1 NAME 
+
+MAKE_MOSAIC_QUADRANT_OPTIMISED -- Forms a mosaic for a QUADRANT_JITTER recipe.
+
+=head1 DESCRIPTION
+
+This primitive makes a mosaic from the object frames in the
+current cycle of the current $Grp of a QUADRANT_JITTER recipe.
+There are two main stages: resampling and making the mosaic.
+
+The primitive either resamples each frame using the non-integer
+Cartesian offsets, or merely finds the offsets between frames to
+the nearest pixel and shifts the origin (see argument RESAMPLE).
+The resampling or shifting imposes no limit to the frame bounds,
+so the mosaic extends to include all pixels in contributing frames. 
+
+The primitive then makes the mosaic using zero-point shifts to give
+the most self-consistent mosaic based upon the statistics of
+overlapping pixels.  On the first cycle, the mosaic becomes the
+group file and its headers read.  On subsequent cycles, the current
+mosaic is co-added into the group or `grand' mosaic.
+
+To prevent the accumulated build up of bad pixels in the grand
+mosaic, there is an option (argument FILLBAD) to fill in bad pixels
+by using a smooth function which matches the surrounding data.  The
+function is an iterative approximation to a solution of Laplace's
+equation.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item FILLBAD = LOGICAL (Given)
+
+If true (1), replace the bad pixels in the current cycle's
+mosaic with a smooth function derived from its neighbours. 
+Otherwise, leave the bad pixels unaltered.  [1]
+
+=item INT_METHOD = CHARACTER (Given)
+
+The interpolation method.  This is either "linint" for bi-linear
+interpolation, or "nearest" for nearest neighbour.  The latter
+takes about half the time.  ["linint"]
+
+=item RESAMPLE = LOGICAL (Given)
+
+If true (1), resample the current cycle's frames to the same
+Cartesian co-ordinate system using the method given by argument
+INT_METHOD.  If false (0), use integer offsets and changes of
+origin to register the frames.  The latter is many times
+faster and is recommended for pipeline operation.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for both UFTI and IRCAM.
+Instrument-specific headers are obtained where appropriate.
+
+=item *
+
+Processing only occurs for object frames, and when the
+steering header MAKE_MOSAIC is true.
+
+=item *
+
+When RESAMPLE is false, the offset files (.off extension)
+associated with each frame are interrogated to find one common
+object---the one with identifier 1---as would be the case if
+telescope or central-source offsets are used.  For each frame
+the read x-y co-ordinates rounded to the nearest integer and
+with opposite sign become the new origin.
+
+=item *
+
+Group header ROOT_NAME stores the name of the mosaic
+excluding any suffix.  It is written for the first cycle,
+and read back for subsequent cycles of the recipe.
+
+=item *
+
+The start and end airmasses of the grand mosaic are revised to
+the limiting values for the first and last contributing frames
+respectively.  Likewise the exposure time is summed.
+
+=item *
+
+The individual mosaic and grand mosaic are displayed.
+
+=item *
+
+The frame titles are propagated.
+
+=item *
+
+The optimum number of overlaps for the mosaic creation is 3
+plus the cycle number. 
+
+=back
+
+=head1 TASKS
+
+CCDPACK: MAKEMOS, TRANNDF; KAPPA: ADD, FILLBAD, FITSMOD, NDFCOPY, SETORIGIN.
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The grand mosaic, which is called is "<groupname>_mos", where
+<groupname> is the name of the group.  For multiple cycles, single 
+mosaics are also retained and called <groupname>_mos_<cyclenumber>,
+where <cyclenumber> is the cycle number derived from steering
+header CYCLE_NUMBER.
+
+=item *
+
+Resampled frames each inheriting the name of its input frame but
+with the _trn suffix, when RESAMPLE is true.
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=cut
