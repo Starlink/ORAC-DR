@@ -68,6 +68,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.6  2000/04/07 20:02:25  timj
+#     Force -loop wait -skip at JCMT
+#
 #     Revision 1.5  2000/04/03 20:09:56  timj
 #     Use rsh to mamo to set write permissions.
 #     Add -skip to ORAC_LOOP
@@ -273,6 +276,10 @@ if ($ORAC_DATA_ROOT == /jcmtarchive ) then
    echo '**** PLEASE USE MAMO FOR ORAC-DR DATA REDUCTION ***'
    echo '***************************************************'
  endif
+
+ # We are at the summit so we want to force -skip -loop wait
+ set oracdr_args = "$oracdr_args -loop wait -skip"
+ echo "Setting default oracdr argument list to $oracdr_args"
 
 else 
 
