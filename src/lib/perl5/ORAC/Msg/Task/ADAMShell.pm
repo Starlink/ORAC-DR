@@ -42,11 +42,13 @@ The following methods are available:
 
 =cut
 
+use 5.006;
 use strict;
+use warnings;
 use Carp;
 
 # Need this to perform the get() function
-use NDF; 
+use NDF;
 
 # Need to strip a path
 use File::Basename;
@@ -376,7 +378,7 @@ sub control {
     return (undef, $status);
 
   } else {
-    croak "Unrecognised control type. Should be \'default\' or '\par_reset\'";
+    croak "Unrecognised control type. Should be 'default' or 'par_reset'";
   }
 
 }
