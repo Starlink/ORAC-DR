@@ -16,26 +16,74 @@ Uses the EXTINCTION task from SURF.
 
 Retrieves the best tau from the calibration object.
 
+=head1 ARGUMENTS
+
+  SUBS = comma separated list of sub-instruments 
+         to be processed.
+
+Must use full names: long,short long,p1350 etc.
+If this argument is not supplied then all sub-instruments
+are processed.
+
 =cut
+
+
+# Read the list of selected sub-instruments
+$ok_list = ($_EXTINCTION_CORRECT_{SUBS} || '' );
+
+@ok_list = split(',',lc($ok_list));
+
+orac_print "Processing sub-instruments: $ok_list\n"
+  if $#ok_list > -1;
 
 @subs = $Frm->subs;
 @filts = $Frm->filters;
+@wavelengths = $Frm->wavelengths;
+
 my $in = $Frm->file;
 
-for ($i = 0; $i < $Frm->nsubs; $i++) {
+# Initialise output arrays 
+# (since the sub-instrument list will change)
+@outsub = ();
+@outfilt = ();
+@outwave = ();
+$i = 0;  # Output counter
 
-   # Set the 'input' filename in the object for the current
-   # sub-instrument
-   $Frm->file($i+1, $in);
+# Loop over each sub-instrument
+for $count (1..$Frm->nsubs) {
 
    # Find current sub instrument and filter
-   my $sub = $subs[$i];
-   my $filter = $filts[$i];
+   my $sub = $subs[$count - 1];
+   my $filter = $filts[$count - 1];
+   my $wave   = $wavelengths[$count - 1];
+
+   # Check current sub-instrument against list (assuming one was
+   # supplied)
+   if ($#ok_list > -1) {
+     unless (grep { /$sub/i } @ok_list) {
+       orac_print "Skipping sub-instrument $sub\n";
+       next;
+     }
+   }
+
+   $i++;  # increment file count
+   orac_print "Sub-instrument $sub is in valid list\n";
+
+   # Store the sub, filter and wavelength
+   push(@outsub, $sub);
+   push(@outfilt, $filter);
+   push(@outwave, $wave);
+
+   # Read tau value
    my $tau = $Cal->tau($filter);
    unless (defined $tau) { # Check tau
      orac_err("Error reading tau - no value received");
      $ORAC_STATUS = ORAC__ERROR;
    }
+
+   # Set the 'input' filename in the object for the current
+   # sub-instrument
+   $Frm->file($i, $in);
 
    # construct the arguments
    my $args = "sub_instrument=$sub first_tau=$tau second_tau=$tau";
@@ -43,12 +91,28 @@ for ($i = 0; $i < $Frm->nsubs; $i++) {
 
    # Construct the input and output filenames
    my $suffix = "_" . lc(substr($sub, 0, 3)) . "_ext";
-   my ($in, $out) = $Frm->inout($suffix, $i+1);
+   my ($in, $out) = $Frm->inout($suffix, $i);
 
    $Mon{surf_mon}->obeyw("extinction", "in=$in out=$out $args");
   
-   $Frm->file($i+1, $out);   
+   $Frm->file($i, $out);   
 
    orac_print "ORAC says: Extinction corrected $sub sub-inst from $in (tau=$tau)\n";
 
 }
+
+# Tidy up the object since we may have thrown away some
+# sub-instruments
+
+if ($i > 0) {
+  $Frm->nsubs($i);
+  $Frm->wavelengths(@outwave);
+  $Frm->filters(@outfilt);
+  $Frm->subs(@outsub);
+} else {
+  # No files selected so exit
+  orac_print "No valid sub-instruments in this object\n";
+  $Frm->isgood(0);
+  return;
+}
+
