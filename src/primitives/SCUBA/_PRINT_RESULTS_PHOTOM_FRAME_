@@ -34,7 +34,27 @@ if ($Frm->hdr(MODE) eq "PHOTOM") {
   print "Observation number: " . join(",",$Frm->number) ."\n";
   print "\n";
 
+  # Open a photometry log file if one does not exist already
+  # If one does exist - open for append
+  my $logfh;
+  if (-e 'log.photom') {
+    # open  for append
+    $logfh = new IO::File('>> log.photom');
+  } else {
+    # Open for write
+    $logfh = new IO::File('> log.photom');
+
+    # Print header
+    my $time = gmtime();
+    print $logfh "Photometry log file - written on $time\n";
+    print $logfh "\n#     Source    Bol Filt  Time          Flux       Error      S/N\n";
+    print $logfh "------------------------------------------------------------------\n";
+
+  }
+
+
   @subs = $Frm->subs;
+  @filters = $Frm->filters;
  
   # loop over sub instruments
   for ($i = 0; $i < $Frm->nsubs; $i++) {
@@ -73,6 +93,8 @@ if ($Frm->hdr(MODE) eq "PHOTOM") {
       # Print results
       if ($ngood > 0) {
 	$errmean = $sigma / sqrt($ngood);
+      } else {
+	$errmean = 'BAD';
       }
 
       $subndf =~ s/_peak//i;
@@ -83,8 +105,39 @@ if ($Frm->hdr(MODE) eq "PHOTOM") {
       if ($errmean > 0.0) {
 	$signoise = $mean / $errmean;
 	printf "\tS/N            = %5.2f\n\n", $signoise;
+      } else {
+	$signoise = 'BAD';
       }
  
+      my $num = $Frm->number;
+      my $src = $Frm->hdr('OBJECT');
+      my $filt = $filters[$i];
+      my $time = $Frm->hdr('ORACTIME');
+      my $bolname = $subndf;
+
+      # Make sure that sourcename is 10 character
+      my $len = 10;
+      if (length($src) > $len) {
+	$src = substr($src,0,$len);
+      } else {
+	$src .= ' ' x ($len - length($src) );
+      }
+
+      # Make sure that bolometer name is only 3 characters
+      my $len = 3;
+      if (length($bolname) > $len) {
+	$src = substr($bolname,0,$len);
+      } else {
+	$bolname .= ' ' x ($len - length($bolname) );
+      }
+
+
+      printf $logfh  "%-4d $src $bolname %4d %11.2f %10.3f %10.3f %6.2f\n",
+        $num, $filt, $time, $mean, $errmean, $signoise;
+
     }
   }
+
+  close $logfh;
+  
 }
