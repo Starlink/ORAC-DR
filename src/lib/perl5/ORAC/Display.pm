@@ -11,7 +11,7 @@ ORAC::Display - Top level interface to ORAC display tools
   $Display = new ORAC::Display;
   $Display->useshm(1);
   $Display->setupfile(filename);
-  $Display->display('frame/group object');
+  $Display->display_data('frame/group object');
   
 =head1 DESCRIPTION
 
