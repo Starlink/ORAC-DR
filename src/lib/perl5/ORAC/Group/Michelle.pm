@@ -43,12 +43,8 @@ use vars qw/$VERSION/;
 my %hdr = (
             DEC_SCALE            => "PIXELSIZ",
             DEC_TELESCOPE_OFFSET => "TDECOFF",
-            EXPOSURE_TIME        => "EXP_TIME",
-            GAIN                 => "GAIN",
             RA_SCALE             => "PIXELSIZ",
             RA_TELESCOPE_OFFSET  => "TRAOFF",
-            UTEND                => "UTEND",
-            UTSTART              => "UTSTART",
 
 # then the spectroscopy.
             CONFIGURATION_INDEX  => "CNFINDEX",
@@ -69,8 +65,12 @@ my %hdr = (
             CHOP_ANGLE           => "CHPANGLE",
             CHOP_THROW           => "CHPTHROW",
             DETECTOR_READ_TYPE   => "DETMODE",
+            EXPOSURE_TIME        => "EXP_TIME",
+            GAIN                 => "GAIN",
             NUMBER_OF_READS      => "NREADS",
-            OBSERVATION_MODE     => "CAMERA"
+            OBSERVATION_MODE     => "CAMERA",
+            UTEND                => "UTEND",
+            UTSTART              => "UTSTART"
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed by
