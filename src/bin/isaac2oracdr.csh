@@ -109,8 +109,8 @@
        set hour = `echo $arcname | awk '{print substr($0,18,2)}'`
        set min = `echo $arcname | awk '{print substr($0,21,2)}'`
        set sec = `echo $arcname | awk '{print substr($0,24,6)}'`
-       set time = `calc \"$hour+$min/60.0+$sec/3600.0\"` 
-       echo "Date is $date   Time is $time"
+       set htime = `calc \"$hour+$min/60.0+$sec/3600.0\"` 
+       echo "Date is $date   Time is $htime"
 
        if ( $first == 1 ) then
           set first = 0
@@ -124,7 +124,7 @@
 # spanning midnight.
        else
           @ samedate = $prevdate + 1
-          if ( $date == $samedate && $hour < 14 ) then
+          if ( $date == $samedate && $hour < 19 ) then
              @ date--
 
 # Different date.
@@ -178,11 +178,26 @@
        set grpmem = `grep \[0-9\] fitshead$$`
        \rm fitshead$$
 
+# Extract the observation technique.
+       (fitshead $file | grep "DPR TECH" | awk '{split($0,a," "); print a[6]}' | sed "s/'//g" >fitshead$$) >&/dev/null
+       set technique = `grep \[A-Z\] fitshead$$`
+       \rm fitshead$$
+
+# Extract the exposure name.
+       set expname = ""
+       if ( "$technique" == "POLARIMETRY" ) then
+          (fitshead $file | grep "DET EXP NAME" | awk '{split($0,a," "); print a[7]}'| sed "s/'//g" >fitshead$$) >&/dev/null
+          set expname = `grep \[A-Za-z0-9\] fitshead$$ | awk '{print substr($0,1,5)}'`
+          echo "expname: $expname"
+          \rm fitshead$$
+       endif
+
 # The group index (member) number of 1 indicates the start of a new
 # group.  By convention the group number is the observation number of
 # the first group member.
-       if ( $grpmem == 1 ) then
+       if ( $grpmem == 1 && ( "$expname" == "" || "$expname" == "Pol00" ) ) then
           set grpnum = $obsnum
+          echo "Starting group $grpnum"
        endif
 
 # Convert the FITS file to a simple NDF.  Redirect the information
