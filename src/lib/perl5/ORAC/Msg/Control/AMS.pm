@@ -223,6 +223,23 @@ sub init {
 
 =back
 
+=head1 CLASS METHODS
+
+=over 4
+
+=item B<require_uniqid>
+
+Returns true, indicating that the ADAM "engine" identifiers must
+be unique in the client each time an engine is launched.
+
+=cut
+
+sub require_uniqid {
+  return 1;
+}
+
+=back
+
 =head1 REQUIREMENTS
 
 This module requires the Starlink::AMS::Init module.
