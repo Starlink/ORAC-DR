@@ -14,6 +14,7 @@ ORAC::Print - ORAC output message printing
   orac_err("error text");
   orac_print("some text");
   orac_warn("some warning");
+  orac_throw("error text");
 
   $value = orac_read("Prompt");
 
@@ -60,7 +61,7 @@ $DEBUG = 0;
 
 require Exporter;
 @ISA = qw/Exporter/;
-@EXPORT = qw/orac_print orac_err orac_warn orac_debug orac_read/;
+@EXPORT = qw/orac_print orac_err orac_warn orac_debug orac_read orac_throw/;
 
 # Create a Term::ReadLine handle
 # For read on STDIN and output on STDOUT
@@ -124,6 +125,19 @@ colour.
 sub orac_err {
   my $prt = __curr_obj;
   $prt->err(@_);
+}
+
+=item orac_throw( text, [colour])
+
+Identical to C<orac_err> except that an exception is thrown (see
+C<ORAC::Error>) of type C<ORAC::Error::FatalError> immediately after
+the text message has been printed.
+
+=cut
+
+sub orac_throw {
+  my $prt = __curr_obj;
+  $prt->throw(@_);
 }
 
 =item orac_debug( text)
@@ -582,6 +596,25 @@ sub err {
 
   tk_update();
   
+}
+
+
+=item throw (text,[colour])
+
+  $prt->throw("An error message");
+
+Same as C<err> method except that an exception of type
+C<ORAC::Error::FatalError> is thrown immediately after the error
+message is printed.
+
+The message itself is part of the exception that is thrown.
+
+=cut
+
+sub throw {
+  my $self = shift;
+  $self->err(@_);
+  ORAC::Error::FatalError->throw(shift);
 }
 
 =item debug (text)
