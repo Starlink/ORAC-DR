@@ -8,6 +8,16 @@ Process skydip data and calculate the resultant tau..
 If the fit is good the current value in the calibration object
 is updated for each successful filter..
 
+=head1 PARAMETERS
+
+Allowed parameters are:
+
+  T_HOT - specify the hot load temperature
+  T_COLD_{sub} - specify the cold load temperature for sub-instrument
+  ETA_TEL_{sub}  - specify eta_tel for sub-instrument
+
+The sub-instrument name should be in upper case.
+
 =head1 TASKS
 
 Uses the SURF SKYDIP task.
@@ -21,6 +31,21 @@ Uses the SURF SKYDIP task.
 # Get input name
 my $in = $Frm->file;
 
+# Check argument list for a hot load temperature
+my $t_hot = ($_REDUCE_SKYDIP_{T_HOT} || undef);
+$t_hot = 'T_HOT='.$t_hot if defined $t_hot;
+
+# Also, if T_HOT is not specified but we are processing data older
+# than 19980203 then we should use the value of T_AMB for T_HOT
+
+unless (defined $t_hot) {
+  if ($Frm->hdr('ORACUT') < 19980204) {
+    my $tamb = $Frm->hdr('T_AMB');
+    $t_hot = "T_HOT=$tamb";
+  }
+}
+
+
 # Print a header for the result printing
 print "  Sub    TAUZ   ETA_TEL  B       Residual/K\n";
 
@@ -28,7 +53,7 @@ print "  Sub    TAUZ   ETA_TEL  B       Residual/K\n";
 # Loop over sub-instruments
 for ($i = 0; $i < $Frm->nsubs; $i++) {
 
-  my $sub = $subs[$i];
+  my $sub = uc($subs[$i]);
   
   # Choose names for temporary output files
   # These simply contain the reduced data and are only
@@ -36,8 +61,18 @@ for ($i = 0; $i < $Frm->nsubs; $i++) {
   my $out = "skydip_" . $sub . '_' . $Frm->number . '_sdip';
   my $model = $out . '_model';
 
+  # Set the input args if specified
+  my $hidden = '';
+  my $tcold = ( $_REDUCE_SKYDIP_{"T_COLD_$sub"} || undef);
+  $hidden .= " T_COLD=$tcold " if defined $tcold;
+
+  my $etatel = ( $_REDUCE_SKYDIP_{"ETA_TEL_$sub"} || undef);
+  $hidden .= " ETA_TEL=$etatel " if defined $etatel;
+
+  $hidden .= $t_hot;
+
   # Set the input arguments
-  $args = "sub_instrument=$sub accept";
+  $args = "sub_instrument=$sub $hidden accept";
 
   # Perform the fit
   # Take default values for all fitting parameters
@@ -45,7 +80,7 @@ for ($i = 0; $i < $Frm->nsubs; $i++) {
   # is not cleared so the fit for 850 doesn't quite work - must
   # be some 450ness left over for eta_tel or b.
   $ORAC_STATUS = $Mon{surf_mon}->resetpars; # Reset some parameters
-  $Mon{surf_mon}->obeyw('skydip', "in=$in out=$out model_out=$model $args");
+  $Mon{surf_mon}->obeyw("skydip", "in=$in out=$out model_out=$model $args");
 
   # Retrieve result from the monolith
   # First check that fit was good
@@ -54,6 +89,7 @@ for ($i = 0; $i < $Frm->nsubs; $i++) {
   if ($goodfit eq 'TRUE') {
 
     ($ORAC_STATUS, $tauz) = $Mon{surf_mon}->get("skydip","tauz_fit");
+    ($ORAC_STATUS, $tauz_err) = $Mon{surf_mon}->get("skydip","tauz_err");
     ($ORAC_STATUS, $etatel) = $Mon{surf_mon}->get("skydip","eta_tel_fit");
     ($ORAC_STATUS, $bfit) = $Mon{surf_mon}->get("skydip","b_fit");
     ($ORAC_STATUS, $sigma) = $Mon{surf_mon}->get("skydip","sigma");
@@ -75,7 +111,10 @@ for ($i = 0; $i < $Frm->nsubs; $i++) {
     # header before updating the index
     my %hdr = %{$Frm->header};
     $hdr{TAUZ} = $tauz;
+    $hdr{TAUZ_ERR} = $tauz_err;
     $hdr{FILTER} = uc($filts[$i]);
+    $hdr{BWF} = $bfit;
+    $hdr{RESIDUAL} = $sigma;
     $Cal->skydipindex->add($out, \%hdr);
 
   } else {
