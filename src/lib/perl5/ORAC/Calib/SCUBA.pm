@@ -576,8 +576,6 @@ Return the flux of a calibrator source
 
   $flux = $Cal->fluxcal("sourcename", "filter");
 
-Can not currently handle planets.
-
 Returns undef if the flux could not be determined.
 
 =cut
