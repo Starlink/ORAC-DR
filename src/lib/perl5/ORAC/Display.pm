@@ -168,7 +168,7 @@ display ID (so that it can be compared with the information stored in
 the device definition file). It should support the file()
 and  gui_id() methods.
 
-The optional hash can be used to override certain entries in the
+The optional hash can be used to supply extra entries in the
 display definition file (or in fact do away with the definition file
 completely). Note that the contents of the options hash will be used
 even if no display definition can be found to match the current 
@@ -240,9 +240,8 @@ sub display_data {
 #    my %display_info = $self->definition;
     my @defn = $self->definition;
 
-    # If there are no definitions but we have provided an options
-    # hash we can use that
-    $defn[0] = $optref if (defined $optref && scalar(@defn) == 0);
+    # push additional entries onto the definition array
+    push (@defn,$optref) if (defined $optref);
 
     # Now need to loop over all members of @defn
     # This will just jump out if there are no matches stored in the array
@@ -250,10 +249,6 @@ sub display_data {
 
       # Create a new hash for convenience
       my %display_info = %$defref;
-
-      # Merge with the supplied options (if defined)
-      # This might happen twice if there were no matching entries
-      %display_info = (%display_info, %$optref) if defined $optref;
 
       # Next if we dont have a key describing the display tool
       next unless exists $display_info{'TOOL'};
