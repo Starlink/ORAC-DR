@@ -1,0 +1,155 @@
+#+
+# Name:
+#    _CORRECT_NONLINEARITY_
+#
+# Purpose:
+#    Corrects the raw data for detector non-linearity.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive corrects the raw data frame for non-linearity
+#    applying the correction given in the IRAF script on the instrument
+#    web page.
+#
+# Notes:
+#    -  This primitive is suitable for ClassicCam.
+#    -  The correction is 1.625E-6 * (1 + overhead/exposure_time),
+#    where the overhead are 2 * speed * number of pre-exposure reads
+#    + ( speed + readout time ) * number of post-exposure reads.
+#    The exposure time and speed come from user headers
+#    ORAC_EXPOSURE_TIME and ORAC_SPEED_GAIN respectively.  The speeds
+#    have a small increment of 10-20ms over the nominal values.  The
+#    pre- and post-exposure reads come from the FITS headers PRE_EP
+#    and READS_EP respectively.  The readout time is 85ms per quadrant
+#    or 340ms for the full array as determined by FITS header QUAD.
+#
+# Output Data:
+#    -  Linearity-corrected frame inheriting the current frame's name
+#    but with the _nl suffix.
+#
+# Tasks:
+#    KAPPA: CMULT.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (Starlink)
+#
+# Copyright:
+#    Copyright (C) 2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Obtain metadata
+# ===============
+
+# Gather all the headers information needed to define an exposure time
+# for the non-linearity.  This information is taken from the IRAF script
+# available at the ClassicCam web site.
+
+# Find the electronic time overhead in milliseconds.
+   my $speed = $Frm->uhdr( "ORAC_SPEED_GAIN" );
+   my $frame_time = 2020 if ( $speed eq "2.0s" );
+   $frame_time = 1015 if ( $speed eq "1.0s" );
+   $frame_time = 753 if ( $speed eq "743ms" );
+   $frame_time = 415 if ( $speed eq "405ms" );
+
+# Find the readout time.
+   my $read_time = 340;
+   $read_time = 85 if ( $Frm->hdr( "QUAD" ) < 5 );
+
+# Find the exposure time.
+   my $exptime = $Frm->uhdr( "ORAC_EXPOSURE_TIME" );
+
+# Find the number pre-exposure reads and post-integration reads.
+   my $reads_pre = $Frm->hdr( "PRE_EP" );
+   my $reads_post = $Frm->hdr( "READS_EP" );
+
+# Compute the elapsed time in seconds.
+# ====================================
+
+# Obtain the total overheads in ms.  Why there is a factor of two
+# on the pre_exposure time is not explained.
+   my $time_pre_exposure = $reads_pre * $frame_time;
+   my $read_time = $reads_post * ( $read_time + $frame_time );
+   my $elapsed = ( 2 * $time_pre_exposure + $read_time ) / 1000.;
+
+# Apply the correction factor.
+# ============================
+
+# Set the correction factor.
+   my $factor = 1.0 + 1.625E-6 * ( 1.0 + $elapsed / $exptime );
+
+# Generate input and output filenames.
+   my ( $in, $out ) = $Frm->inout( "_nl" );
+
+# Apply the factor.
+   $Mon{ "kappa_mon" }->obeyw( "cmult", "in=$in out=$out scalar=$factor" );
+
+# Report the processing status.
+   orac_print "Frame $in has non-linearity correction applied in $out.\n";
+
+# Now update the output filename in the Frame object.
+   $Frm->file( $out );
+
+# Podule
+# ======
+
+=head1 NAME
+
+_CORRECT_NONLINEARITY_ -- Corrects the raw data for detector non-linearity.
+
+=head1 DESCRIPTION
+
+This primitive corrects the raw data frame for non-linearity
+applying the correction given in the IRAF script on the instrument
+web page.
+ 
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ClassicCam.
+
+=item *
+
+The correction is 1.625E-6 * (1 + overhead/exposure_time),
+where the overhead are 2 * speed * number of pre-exposure reads
++ ( speed + readout time ) * number of post-exposure reads.
+The exposure time and speed come from user headers
+ORAC_EXPOSURE_TIME and ORAC_SPEED_GAIN respectively.  The speeds
+have a small increment of 10-20ms over the nominal values.  The
+pre- and post-exposure reads come from the FITS headers PRE_EP
+and READS_EP respectively.  The readout time is 85ms per quadrant
+or 340ms for the full array as determined by FITS header QUAD.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Linearity-corrected frame inheriting the current frame's name
+but with the _nl suffix.
+
+=back
+
+=head1 TASKS
+
+KAPPA: CMULT.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (Starlink)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
