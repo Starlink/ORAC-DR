@@ -1,4 +1,4 @@
-#!/local/bin/perl
+#!/local/bin/perl -w
 
 =head1 NAME
 
@@ -6,7 +6,9 @@ oracdr_parse_recipe - parse a recipe and write to standard output
 
 =head1 SYNOPSIS
 
- oracdr_parse_recipe SCUBA_NOISE
+ oracdr_parse_recipe RECIPE_NAME
+ oracdr_parse_recipe -debug SCUBA_NOISE
+ oracdr_parse_recipe -syntax REDUCE_DARK
 
 =head1 DESCRIPTION
 
@@ -14,7 +16,32 @@ Simply prints an expanded ORAC-DR recipe. Allows recipes to be examined
 without having to run up C<oracdr> itself. Used mainly for debugging
 purposes.
 
-There are no arguments (not even a -h yet!).
+=head1 OPTIONS AND ARGUMENTS
+
+This section describes the supported command line options.
+Minimum matching is supported.
+
+=over 4
+
+=item B<-help>
+
+Print a brief help message and exit.
+
+=item B<-man>
+
+Print the manual page and exit.
+
+=item B<-debug>
+
+The recipe is parsed and translated to include debugging
+information.
+
+=item B<-syntax>
+
+Perform a syntax check on the recipe rather than writing the
+recipe contents to STDOUT.
+
+=back
 
 =head1 ENVIRONMENT
 
@@ -31,6 +58,10 @@ The instrument to be used to create recipes.
 Location of the ORAC Perl modules (if they are not installed in a standard
 location).
 
+=item B<ORAC_DIR>
+
+Location of the ORAC-DR system. Required in order to locate recipes.
+
 =back
 
 =head1 SEE ALSO
@@ -43,22 +74,44 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.edu<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2000 Particle Physics and Astronomy Research Council.
+Copyright (C) 2000-2001 Particle Physics and Astronomy Research Council.
 All Rights Reserved.
 
 =cut
 
 use strict;
 use lib $ENV{ORAC_PERL5LIB};
-use ORAC::Basic;
-use Time::HiRes qw/ gettimeofday tv_interval /;
+use Pod::Usage;
+use Getopt::Long;
+use ORAC::Recipe;
+
+#use Time::HiRes qw/ gettimeofday tv_interval /;
+
+my %options = (
+	       "help" => 0,
+	       "man"  => 0,
+	       "debug" => 0,
+	       "syntax" => 0,
+	      );
+
+GetOptions(\%options,
+           "help",
+           "man",
+	   "debug",
+	   "syntax"
+          ) || pod2usage(2);
+
+pod2usage(1)  if ($options{help});
+pod2usage(-verbose => 2)  if ($options{man});
+
+
 
 # Read the recipe name
 unless (@ARGV) {
   die "Usage: oracdr_parse_recipe RECIPE_NAME\n";
 }
 
-my $Recipe = shift;
+my $RecipeName = shift;
 
 
 # Read instrument from $ORAC_INSTRUMENT
@@ -70,9 +123,21 @@ unless (exists $ENV{ORAC_INSTRUMENT}) {
 my $instrument = uc($ENV{ORAC_INSTRUMENT});
 
 # Read and parse recipe
-my $recipe_ref = orac_read_recipe($Recipe, $instrument);
-$recipe_ref = orac_parse_recipe($recipe_ref, $instrument);
-$recipe_ref = orac_add_code_to_recipe($recipe_ref);
 
-# print the result
-print @$recipe_ref;
+# Create new recipe object
+my $recipe = new ORAC::Recipe( NAME => $RecipeName,
+			       INSTRUMENT => $instrument);
+
+$recipe->debug(1) if $options{debug};
+
+# parse the recipe
+$recipe->parse;
+
+# print the result using an internal method
+if ($options{syntax}) {
+  $recipe->check_syntax;
+  print "Recipe Syntax OK\n" or die "Error printing success message\n";
+} else {
+  print @{ $recipe->_recipe };
+}
+
