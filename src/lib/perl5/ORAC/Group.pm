@@ -269,8 +269,8 @@ sub file_from_bits {
 
 =item members
 
-Set or retrieve the array containing the members of the
-group.
+Set or retrieve the array containing the objects of which the group
+consists.
 
     $Grp->members(@frames);
     @frames = $Grp->members;
@@ -281,6 +281,53 @@ sub members {
   my $self = shift;
   if (@_) { @{ $self->{Members} } = @_;}
   return @{ $self->{Members} };
+}
+
+=item membernames
+
+Return a list of all the files associated with
+the group. This is achieved by invoking the file() method for
+each object stored in the Members array.
+For this to work each member must be an object capable of invoking
+numbers() (e.g. ORAC::Frame). Currently the routine does not check
+to make sure this is possible - the program will die if you try
+to use a SCALAR.
+
+If an argument list is given the file names for each member of the
+group are updated. This will only be attempted if the number of 
+arguments given matches the number of members in the group.
+
+  $Grp->membernames(@newnames);
+  @names = $Grp->membernames;
+
+=cut
+
+sub membernames {
+
+  my $self = shift;
+
+  # If arguments are supplied use the values to update the
+  # filenames in each frame
+  if (@_) {
+    # Only attempt this if the number of arguments supplied matches
+    # The number of members in the group
+    if ($self->num == $#_) {
+      foreach my $member ($self->members) {
+	my $newname = shift;
+	$member->file($newname);
+      }
+    }
+
+  }
+
+  # Now return the list of names associated with each member
+  my @list = ();
+  foreach my $member ($self->members) {
+
+    push(@list, $member->file);
+
+  }
+  return @list;
 }
  
 # This method returns the reference to the array
@@ -294,6 +341,8 @@ group.
     $arrayref = $Grp->aref;
 
 =cut
+
+
 
 
 sub aref {
@@ -450,52 +499,7 @@ sub membernumbers {
   return @list;
 }
 
-=item membernames
 
-Return a list of all the files associated with
-the group. This is achieved by invoking the file() method for
-each object stored in the Members array.
-For this to work each member must be an object capable of invoking
-numbers() (e.g. ORAC::Frame). Currently the routine does not check
-to make sure this is possible - the program will die if you try
-to use a SCALAR.
-
-If an argument list is given the file names for each member of the
-group are updated. This will only be attempted if the number of 
-arguments given matches the number of members in the group.
-
-  $Grp->membernames(@newnames);
-  @names = $Grp->membernames;
-
-=cut
-
-sub membernames {
-
-  my $self = shift;
-
-  # If arguments are supplied use the values to update the
-  # filenames in each frame
-  if (@_) {
-    # Only attempt this if the number of arguments supplied matches
-    # The number of members in the group
-    if ($self->num == $#_) {
-      foreach my $member ($self->members) {
-	my $newname = shift;
-	$member->file($newname);
-      }
-    }
-
-  }
-
-  # Now return the list of names associated with each member
-  my @list = ();
-  foreach my $member ($self->members) {
-
-    push(@list, $member->file);
-
-  }
-  return @list;
-}
 
 =item inout
 
