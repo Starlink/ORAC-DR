@@ -424,8 +424,8 @@ sub tau {
     # Might want to use a index routine that searches for high and 
     # low at the same time
     if ($sys =~ /INTERP/) {
-      my $high = $self->skydipindex->chooseby_positivedt('ORACTIME', \%hdr, 1);
-      my $low  = $self->skydipindex->chooseby_negativedt('ORACTIME', \%hdr, 1);
+      my $high = $self->skydipindex->chooseby_positivedt('ORACTIME', \%hdr, 0);
+      my $low  = $self->skydipindex->chooseby_negativedt('ORACTIME', \%hdr, 0);
 
       # Check to see
       # Now retrieve the actual entries
@@ -685,7 +685,7 @@ sub gain {
 
     # Now ask for the 'best' gain observation
     # This means closest in time
-    my $best = $self->gainsindex->choosebydt('ORACTIME', $self->thing);
+    my $best = $self->gainsindex->choosebydt('ORACTIME', $self->thing,0);
 
     # Now retrieve the entry itself
     my $entref = $self->gainsindex->indexentry($best);
@@ -918,7 +918,7 @@ sub badbol_list {
 
     # look in the index file
     # and retrieve the closest in time that agrees with the rules
-    my $best = $self->badbolsindex->choosebydt('ORACTIME', $self->thing);
+    my $best = $self->badbolsindex->choosebydt('ORACTIME', $self->thing,0);
 
     # Now retrieve the entry
     if (defined $best) {
