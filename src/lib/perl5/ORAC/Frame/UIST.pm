@@ -379,10 +379,10 @@ sub mergehdr {
     # Remove duplicate headers
     my %f = map { $_, undef } @fitsA;
     @fitsB = grep { !exists $f{$_} } @fitsB;
-		
+
     # Merge arrays
     push(@fitsA, @fitsB);
-		
+
     # Now resize the FITS extension by deleting and creating
     # (cmp_modc requires the parent locator)
     $ndim = 1;
@@ -404,6 +404,56 @@ sub mergehdr {
     }
   }
 }
+
+=item B<calc_orac_headers>
+
+This method calculates header values that are required by the
+pipeline by using values stored in the header.
+
+Required ORAC extensions are:
+
+ORACTIME: should be set to a decimal time that can be used for
+comparing the relative start times of frames. For UKIRT instruments this
+number is decimal hours, for SCUBA this number is decimal UT days.
+
+ORACUT: This is the UT day of the frame in YYYYMMDD format.
+
+This method should be run after a header is set. Currently the readhdr()
+method calls this whenever it is updated.
+
+This method updates the frame header.
+Returns a hash containing the new keywords.
+
+=cut
+
+sub calc_orac_headers {
+  my $self = shift;
+
+  # Run the base class first since that does the ORAC
+  # headers
+  my %new = $self->SUPER::calc_orac_headers;
+
+  # ORACTIME
+  # For UIST the keyword is simply the UTSTART header value.
+  # Just return it (zero if not available)
+  my $time = $self->hdr->{1}->{'UTSTART'};
+  if( !defined( $time ) ) {
+    $time = $self->hdr->{'UTSTART'};
+  }
+  $time = 0 unless (defined $time);
+  $self->hdr('ORACTIME', $time);
+
+  $new{'ORACTIME'} = $time;
+
+  # ORACUT
+  # For UIST this is simply the UTDATE header value.
+  my $ut = $self->hdr('UTDATE');
+  $ut = 0 unless defined $ut;
+  $self->hdr('ORACUT', $ut);
+
+  return %new;
+}
+
 
 =back
 
