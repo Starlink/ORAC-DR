@@ -389,6 +389,7 @@ sub configure {
 
   # Load the startup image
   my $result;
+  ($status, $result) = $self->send_to_gaia("$default configure -hdu 0");
   ($status, $result) = $self->send_to_gaia("$default configure -file $startup");
 
   if ($status != ORAC__OK) {
@@ -644,10 +645,20 @@ sub image {
   my $file = shift;
 
 
-  # Check file for extension
+  # Check file for extension. If this is a MEF then escape the square brackets
+  # so that the extension number is interpreted properly. Also bump up the 
+  # value of the extension number as GAIA starts from 1 rather than 0 like
+  # everyone else...
+
+  if ($file =~ /^(.*?)\[(\d+)\]$/) {
+    $file = sprintf("%s\\\\[%d\\\\]",$1,$2+1);
+
   # Assume that an extension is a . followed by letters but not a /
-  unless ($file =~ /\.\w+$/ || $file =~ /\[\d+\]$/) {
-    $file .= ".sdf";
+
+  } else {
+    unless ($file =~ /\.\w+$/) {
+      $file .= ".sdf";
+    }
   }
 
   # We probably should append the full path since we dont know 
@@ -738,7 +749,8 @@ sub image {
 
   # Just send to GAIA - configure the new file
   my $junk;
-  ($status, $junk) = $self->send_to_gaia("$image configure -file $file");
+#  ($status, $junk) = $self->send_to_gaia("$image configure -file $file");
+  ($status, $junk) = $self->send_to_gaia("$device open $file");
 
   if ($status != ORAC__OK) {
     orac_err "Error: $junk\n";
