@@ -258,7 +258,9 @@ sub convert {
   my $outfile = undef;
   # Now ask the relevant routine to convert first to NDF
   if ($options{'IN'} eq 'FITS') {
+    orac_print("Converting from FITS to NDF...\n");
     $outfile = $self->fits2ndf;
+    orac_print("...done\n");
   }
 
   # Now from NDF convert to the desired output format
