@@ -401,6 +401,11 @@ sub orac_print_configuration {
         print STDERR "Using screen instead\n";
         print STDERR "Error was: $@\n";
         $$log_options .= 's'; # Make sure we print to screen now
+	
+        # $PRIMITIVE_LIST is a reference to an array
+        $PRIMITIVE_LIST = [ ];
+	# $CURRENT_PRIMITIVE is a reference to a reference to an array
+	my $ARRAY = [ ]; $CURRENT_PRIMITIVE = \$ARRAY;
  
       } else {     
         # Create the Tk log window
