@@ -256,7 +256,7 @@ sub convert {
     unless( -e $outfile ) {
       symlink( $filename, $outfile ) ||
       do {
-        orac_err("Error creating symlink from ORAC_DATA_OUT to $filename\n");
+        orac_err("Error creating symlink from ORAC_DATA_OUT to '$filename'\n");
         orac_err("$!\n");
         return undef;
       };
