@@ -4,15 +4,18 @@
 
 =head1 NAME
 
-CREATE_STANDARD - creates and files a standard image
+CREATE_STANDARD - creates and files a standard image and spectrum
 
 =head1 DESCRIPTION
 
-Takes a reduced group file for an observed standard, extracts a spectrum,
-divides that spectrum by a blackbody spectrum of the same temperature as
-the standard, then grows the divided spectrum into an image with the same
-dimensions as the original observations. The resulting image is then filed
-as a standard calibration file.
+Takes a reduced group file for an observed standard, extracts a
+spectrum from a single row of pixels, divides that spectrum by a
+blackbody spectrum of the same temperature as the standard, then grows
+the divided spectrum into an image with the same dimensions as the
+original observations. The resulting image is then filed as a standard
+calibration file.
+Also optimally extracts a spectrum of the standard, divides it by the
+black body model and files that as a standard calibration file.
 
 =head1 PARAMETER
 
@@ -95,17 +98,17 @@ Following output files are created and filed:
 =item C<std_N>
 
 The standard grown to the same dimension as the array. This is
-simply extracted from the specified extraction row.
+simply extracted from the specified extraction row and divided by 
+the black body.
 This spectrum can not be displayed.
 
-=item C<_sp>
+=item C<std_N_sp>
 
-Optimally extracted standard spectrum. This spectrum can
-be displayed.
+Optimally extracted standard spectrum, divided by the black body.
 
-=back
+=item C<gc..._sp> 
 
-These are not stored in the group object.
+Optimally extracted spectrum of the standard star.
 
 =head2 INDEX FILES
 
@@ -152,6 +155,8 @@ will not proceed.
 =head1 AUTHOR
 
 b.cavanagh@jach.hawaii.edu
+
+modified by p.hirst@jach.hawaii.edu
 
 =cut
 
@@ -619,7 +624,7 @@ if(!( $Grp->file_exists )) {
 
   # Set output file name to something else
   # and make sure it has a suffix recognisable from the display system
-  $out = "std_opt_" . $Grp->name . "_sp";
+  $out = $Grp->raw . "_sp";
 
   # Profile the image
   my $prof = new ORAC::TempFile;
@@ -638,9 +643,25 @@ if(!( $Grp->file_exists )) {
   $Mon{ndfpack_mon}->obeyw("settitle", "ndf=$out title='$title'");
 
   # And tell everyone the good news
-  orac_print "Orac says: $in to $out: Optimal extracted standard created\n";
+  orac_print "Orac says: $in to $out: Optimal extracted spectrum created\n";
 
-  $hdr{NDIMS} = 1;  # This is the grown standard
+  # Take the spectrum and divide it by the black body
+  my $gcsp = $out;
+  $out = "std_" . $Grp->name . "_sp";
+
+  # do the division
+  $Mon{'kappa_mon'}->obeyw("div","in1=$gcsp in2=$normbbname out=$out");
+
+  # set the title and some other stuff
+  $objname = $Frm->hdr->{'OBJECT'};
+  $title = "$objname (T=$temperature K Vmag=$vmag)";
+  $Mon{ndfpack_mon}->obeyw("settitle", "ndf=$out title='$title'");
+
+  # print congratulatory message
+
+  orac_print "Orac says: $gcsp to $out: Standard spectrum created\n";
+ 
+  $hdr{NDIMS} = 1; # Cos err, its a spectrum.
 
   $Cal->standardindex->add($out, \%hdr);
   
