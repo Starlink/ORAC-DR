@@ -773,7 +773,7 @@ sub orac_determine_initial_algorithm_engines {
   } elsif ($inst eq 'UIST') {
 
     @AlgEng = qw/ figaro1 figaro2 figaro4 kappa_mon ndfpack_mon
-      ccdpack_red ccdpack_reg /;
+      ccdpack_red ccdpack_reg atools_mon /;
 
   } elsif ($inst eq 'INGRID') {
 
