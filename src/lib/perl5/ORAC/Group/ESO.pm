@@ -182,7 +182,7 @@ sub _to_OBSERVATION_TYPE {
    my $self = shift;
    my $type = $self->hdr->{"HIERARCH.ESO.DPR.TYPE"};
    $type = exists( $self->hdr->{"HIERARCH.ESO.DPR.TYPE"} ) ? $self->hdr->{"HIERARCH.ESO.DPR.TYPE"} : "OBJECT";
-   if ( uc( $type ) eq "STD" ) {
+   if ( uc( $type ) =~ /STD/ ) {
       $type = "OBJECT";
    } elsif ( uc( $type ) eq "SKY,FLAT" || uc( $type ) eq "FLAT,SKY" ) {
       $type = "SKY";

@@ -243,7 +243,7 @@ sub _to_STANDARD {
    my $self = shift;
    my $standard = 0;
    my $type = $self->hdr->{"HIERARCH.ESO.DPR.TYPE"};
-   if ( uc( $type ) eq "STD" ) {
+   if ( uc( $type ) =~ /STD/ ) {
       $standard = 1;
    }
    return $standard;
