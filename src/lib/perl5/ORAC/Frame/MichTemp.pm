@@ -159,6 +159,17 @@ sub findrecipe {
 }
 
 
+=item B<mergehdr>
+
+Null method for compatibility with Michelle class
+
+=cut
+
+
+sub mergehdr {
+
+}
+
 =item B<template>
 
 Method to change the current filename of the frame (file())
