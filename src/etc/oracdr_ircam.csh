@@ -62,6 +62,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.3  2000/02/09 21:33:57  timj
+#     Fix $ut to $oracut
+#
 #     Revision 1.2  2000/02/03 03:43:38  timj
 #     Correct doc typo
 #
@@ -103,7 +106,7 @@ endif
 
 if ($1 != "") then
     set oracut = $1
-    set oracsut = `echo $ut |cut -c3-8`
+    set oracsut = `echo $oracut |cut -c3-8`
 else
     set oracut = `date -u +%Y%m%d`
     set oracsut = `date -u +%y%m%d`
