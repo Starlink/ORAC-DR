@@ -29,6 +29,7 @@ to B<ORAC::Frame::JCMT> objects. Some additional methods are supplied.
 use 5.004;
 use ORAC::Frame;
 use ORAC::Constants;
+use ORAC::Print;
 
 use vars qw/$VERSION/;
 
