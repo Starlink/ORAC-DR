@@ -713,6 +713,9 @@ sub _add_code_to_recipe {
 
   };
 
+  # We must return true at the end of the recipe
+  push(@processed, "\n1;\n");
+
   # Now we have a post-processed recipe  store it
   $self->_recipe( \@processed );
 
