@@ -1,0 +1,260 @@
+    # Get some parameters
+
+    my $equinox = (defined $_WCSFIT_{EQUINOX} ? $_WCSFIT_{EQUINOX} : 2000);
+    my $override = (defined $_WCSFIT_{OVERRIDE} ? $_WCSFIT_{OVERRIDE} : 0);
+    my $pass = (defined $_WCSFIT_{PASS} ? $_WCSFIT_{PASS} : 2);
+
+    # Set some WCS parameter names
+
+    my %wcsparms = ('CRVAL1'  => "DOUBLE",
+		    'CRVAL2'  => "DOUBLE",
+		    'CRPIX1'  => "DOUBLE",
+		    'CRPIX2'  => "DOUBLE",
+		    'CD1_1'   => "DOUBLE",
+		    'CD1_2'   => "DOUBLE",
+		    'CD2_1'   => "DOUBLE",
+		    'CD2_2'   => "DOUBLE",
+		    'CUNIT1'  => "STRING",
+		    'CUNIT2'  => "STRING",
+		    'CTYPE1'  => "STRING",
+		    'CTYPE2'  => "STRING",
+		    'WCSPASS' => "INT",
+		    'NUMBRMS' => "INT",
+		    'STDCRMS' => "DOUBLE",
+		    'PROJP1'  => "FLOAT",
+		    'PROJP3'  => "FLOAT",
+		    'PV2_0'   => "FLOAT",
+		    'PV2_1'   => "FLOAT",
+		    'PV2_2'   => "FLOAT",
+		    'PV2_3'   => "FLOAT");
+
+    # Get the astrometric source
+
+    my $astrom = $Cal->astrom;
+    my ($catsrc,$site,$catpath);
+
+    # Construct a file name for it and attempt to open the file
+ 
+    my $fname = sprintf("ast_%s.pl",$astrom);
+    $fname = File::Spec->catfile($ENV{'ORAC_DATA_CAL'},$fname);
+    my $fh;
+    open($fh,"<$fname") || orac_throw("Unable to open astrometric standard source definition file");
+ 
+    # Read and evaluate the expressions in the file...
+ 
+    my $line = "";
+    while (<$fh>) {
+        $line .= $_;
+    }
+    close($fh);
+    eval($line);
+    orac_throw("Unable to parse instructions in astrometric standard source definition file") if ($@);
+     
+    # Send a friendly message
+
+    orac_print "Fitting Pass $pass WCS to " . $Frm->file . "\n";
+
+    # Now loop for each extension 
+
+    foreach my $j (1 .. $Frm->findnsubs) {
+	my $frm = $Frm->getasubframe($j);
+	my $dsfile = $frm->file;
+	my $cpmfr = $frm->hdr("CIR_CPM");
+	$cpmfr = ($cpmfr ? $cpmfr : "noconf");
+	my ($catbase,$retval,$ctmp,$errmsg);
+
+	# Does this frame have a WCS already?
+
+	my $wcspass = $frm->hdr("WCSPASS");
+	$wcspass = (defined $wcspass ? $wcspass : -1);
+
+	# Check whether to override the current WCS. If not, then
+	# skip this image.
+
+	if ($override || ($wcspass < $pass)) {
+
+            # Get a reference RA and Dec for the current WCS pass
+
+            my $midx = $frm->hdr("NAXIS1")/2;
+            my $midy = $frm->hdr("NAXIS2")/2;
+            my ($raref1,$decref1);
+            $retval = cir_xy2radec($dsfile,$midx,$midy,$raref1,$decref1,$errmsg);
+            if ($retval != CIR_OK) {
+                orac_err("CIR_XY2RADEC: Failed in _WCSFIT_ for $dsfile\n$errmsg\n");
+                next;
+            }
+
+	    # If this is a first pass WCS, then do an image detection...
+	
+	    if ($pass == 1) {
+		$ctmp = ORAC::TempFile->new(0);
+		$catbase = $ctmp->file;
+		unlink $catbase;
+		$retval = cir_imcore($dsfile,$cpmfr,25,2.0,0,3.5,64,$catbase,
+				     "",0,3,$errmsg);
+		if ($retval != CIR_OK) {
+		    orac_err("CIR_IMCORE: Failed in _WCSFIT_ for $dsfile\n$errmsg\n");
+		    next;
+		}
+                $catbase .= "[1]";
+	    } else {
+		$catbase = $frm->uhdr("CATFILE");
+		if (! defined $catbase) {
+		    my @fspec = $frm->parsefname;
+		    $catbase = sprintf("%s_cat%s[%d]",$fspec[0],
+			$fspec[2],$fspec[3]);
+		}
+	    }
+
+	    # Now get some standard stars 
+
+	    my $tmpstds = ORAC::TempFile->new(0);
+	    my $stdsfile = $tmpstds->file;
+            unlink $stdsfile if (-e $stdsfile);
+	    $retval = cir_getstds($dsfile,$stdsfile,$catsrc,$site,$catpath,
+		$equinox,5,1,$errmsg);
+	    if ($retval != CIR_OK) {
+		orac_err("CIR_GETSTDS: Failed in _WCSFIT_\n$errmsg\n");
+		next;
+	    }
+            $stdsfile .= "[1]";
+
+	    # Now matchem up...
+
+	    my $maxsize = max($frm->hdr("NAXIS1"),$frm->hdr("NAXIS2"));
+	    my $srad = int(0.25*$maxsize);
+	    my $tmpmatch = ORAC::TempFile->new(0);
+	    my $matchfile = $tmpmatch->file;
+	    unlink $matchfile;
+	    my $nmatch;
+	    $retval = cir_matchstds($catbase,$stdsfile,$srad,
+		$frm->hdr("NAXIS1"),$frm->hdr("NAXIS2"),$matchfile,
+		$nmatch,$errmsg);
+	    if ($retval != CIR_OK) {
+                $tmpmatch->DESTROY;
+                $ctmp->DESTROY if ($pass == 1);
+                $tmpstds->DESTROY;
+		orac_err("CIR_MATCHSTDS: Failed in _WCSFIT_\n$errmsg\n");
+		next;
+	    } elsif ($nmatch == 0) {
+		$tmpmatch->DESTROY;
+                $ctmp->DESTROY if ($pass == 1);
+                $tmpstds->DESTROY;
+		orac_err("CIR_MATCHSTDS: Failed in _WCSFIT_\nNo objects matched\n");
+		next;
+	    }   
+            $ctmp->DESTROY if ($pass == 1);
+            $tmpstds->DESTROY;
+
+	    # Now do a plate solution
+
+	    $retval = cir_platesol($dsfile,$matchfile,6,$pass,1,$errmsg);
+	    if ($retval != CIR_OK) {
+		orac_err("CIR_PLATESOL: Failed in _WCSFIT_\n$errmsg");
+                $tmpmatch->DESTROY;
+		next;
+	    }
+	    $tmpmatch->DESTROY;
+
+	    # If this is a second pass WCS, then update the catalogue headers
+
+	    if ($pass == 2) {
+		my $frm = $Frm->new($Frm->file)->getasubframe($j);
+		foreach my $parm (keys %wcsparms) {
+		    my $val = $frm->hdr($parm);
+		    next if (! defined $val);
+                    $retval = cir_update_hdr($catbase,$parm,$wcsparms{$parm},
+                        $val,"",$errmsg);
+		}
+	    }
+            my ($raref2,$decref2);
+            $retval = cir_xy2radec($dsfile,$midx,$midy,$raref2,$decref2,$errmsg);
+            if ($retval != CIR_OK) {
+                orac_err("CIR_XY2RADEC: Failed in _WCSFIT_ for $dsfile\n$errmsg\n");
+                next;
+            }
+
+            # Work out zeropoint shift
+
+	    $raref2 = ($raref2 - $raref1)*3600.0;
+	    $decref2 = ($decref2 - $decref1)*3600.0;
+	    my $outkey = sprintf("RAZP%d%d",$wcspass,$pass);
+	    my $outcom = sprintf("[arcsec] Ref RA shift pass %d to %d (new - old)",
+		$wcspass,$pass);
+            $retval = cir_update_hdr($frm->file,$outkey,"FLOAT",$raref2,$outcom,
+                $errmsg);
+	    $outkey = sprintf("DECZP%d%d",$wcspass,$pass);
+	    $outcom = sprintf("[arcsec] Ref Dec shift pass %d to %d (new - old)",
+		$wcspass,$pass);
+            $retval = cir_update_hdr($frm->file,$outkey,"FLOAT",$decref2,$outcom,
+                $errmsg);
+            $frm->hdr("WCSPASS",$pass);
+	}
+    }
+
+=head1 NAME
+
+_WCSFIT_ -- Fit a WCS to an image
+
+=head1 DESCRIPTION
+
+This primitive cycles through all of the image extensions in an input file
+and fits a WCS to the objects in each. The routine works in two modes.  In
+first pass mode, an image detection is first done. In second pass mode, the
+routines uses a pre-existing catalogue. The coverage of the image is calculated
+in equatorial coordinates and some astrometric standards are extracted from
+a catalogue in that coordinate range.  These are matched up to the coordinates
+from the catalogue. (The equatorial coordinates for the object catalogue should
+come either from the first pass WCS or a rough WCS).  The X,Y positions of
+the matched objects are fitted against the equatorial coordinates to work out
+the WCS parameters.  Equatorial coordinates of the centre of each frame are
+calculated using the previous WCS and the new one.  This is the astrometric
+shift.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item EQUINOX = float (Given)
+
+The equinox of output WCS
+
+=item OVERRIDE = int (Given)
+ 
+If set, then any WCS that already exists in the header will be overwritten
+ 
+=item PASS = int (Given)
+
+The pass level of the WCS.  If this is set to 1, then a first pass WCS is fit.
+This includes generating a shallow catalogue before fitting.  If this is set
+to 2, then a pre-existing catalogue is used.
+ 
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+If this is a second pass WCS, then the new WCS parameters are written to the
+catalogue header.
+
+=item *
+
+A zeropoint shift is calculated between the input WCS and the output WCS. This 
+is written to the file header as RAZPmn and DECZPmn where m is the pass level
+of the input WCS and n is the pass level of the output WCS. Units are arcsec.
+
+=back
+
+=head1 AUTHORS
+
+JRL: Jim Lewis (CASU, IoA)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003-2006 Cambridge Astronomy Survey Unit. 
+All Rights Reserved
+
+=cut
