@@ -49,7 +49,6 @@ use vars qw/$VERSION/;
 my %hdr = (
             DEC_SCALE            => "PIXLSIZE",
             DEC_TELESCOPE_OFFSET => "TDECOFF",
-            GAIN                 => "GAIN",
             RA_SCALE             => "PIXLSIZE",
             RA_TELESCOPE_OFFSET  => "TRAOFF",
 
@@ -68,7 +67,6 @@ my %hdr = (
 # then the general.
             CHOP_ANGLE           => "CHPANGLE",
             CHOP_THROW           => "CHPTHROW",
-            DETECTOR_READ_TYPE   => "DET_MODE",
             OBSERVATION_MODE     => "INSTMODE"
 	  );
 
@@ -125,6 +123,25 @@ sub _from_NUMBER_OF_READS {
 sub _to_NSCAN_POSITIONS {
   1;
 }
+
+sub _to_UTEND {
+  my $self = shift;
+  $self->hdr->{ $self->nfiles }->{UTEND};
+}
+
+sub _from_UTEND {
+  "UTEND", $_[0]->uhdr("ORAC_UTEND");
+}
+
+sub _to_UTSTART {
+  my $self = shift;
+  $self->hdr->{ 1 }->{UTSTART};
+}
+
+sub _from_UTSTART {
+  "UTSTART", $_[0]->uhdr("ORAC_UTSTART");
+}
+
 
 # Sampling is always 1x1, and therefore there are no headers with
 # these values.
