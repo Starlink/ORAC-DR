@@ -2,7 +2,7 @@ package ORAC::Display::KAPVIEW;
 
 =head1 NAME
 
-ORAC::Display::Kapview - ORACDR interface to Kapview (Kappa)
+ORAC::Display::KAPVIEW - ORACDR interface to Kapview (Kappa)
 
 =head1 SYNOPSIS
 
@@ -46,8 +46,8 @@ $DEBUG = 0;
 
 Object constructor. The constructor starts up a new version of kapview,
 starts a GWM window and displays the startup logo.
-undef is returned if the constructor fails (eg the ADAM message system
-is not running).
+
+The program aborts if there is an error launching kapview.
 
 The message system must be running so that Kapview can be configured.
 (AMS is started if needed)
@@ -72,14 +72,8 @@ sub new {
 
   # Start message system (should just return if already started)
   my $status = ORAC__OK;
-  # This check is a bit dodgy. I add it to stop the error message
-  # occuring concerning whether the AMS is currently running or not.
-  if ($ORAC::Msg::ADAM::Control::RUNNING == 0) {
-    $disp->{AMS} = new ORAC::Msg::ADAM::Control;
-    $status = $disp->{AMS}->init;
-  } else {
-    orac_print "AMS already running\n",'blue';
-  }
+  $disp->{AMS} = new ORAC::Msg::ADAM::Control;
+  $status = $disp->{AMS}->init;
 
   # Configure the AGI environment variables
   # Should tidy this up when we finish
@@ -147,8 +141,21 @@ sub kappa {
   # Start kappa if needed
   unless (defined $self->{Kappa}) {
     orac_print ("Creating Kappa_mon object.............\n",'cyan') if $DEBUG;
+
+    # Note that a MONOLITH name is supplied as an option.
+    # This is so that if a path to the monolith exists and it
+    # is an A-task [note that we dont specify task type - if a
+    # kappa monolith is already running on this path as an I-task
+    # then parameter retrieval will fail. It is possible that in the
+    # future the objects will be stored so that if a monolith is started
+    # by the same process in a different piece of code a copy of the
+    # task object will be returned rather than creating a new one.)
+    # Currently this is still a bit of a kluge and requires some knowledge
+    # of the way that the kappa monolith used by the recipes was started.
     $self->{Kappa} = new ORAC::Msg::ADAM::Task("kappa_mon_$$", 
-                              "$ENV{KAPPA_DIR}/kappa_mon"); 
+					       "$ENV{KAPPA_DIR}/kappa_mon",
+					       { MONOLITH => 'kappa_mon' }
+					      ); 
   }
 
   return $self->{Kappa};
@@ -465,7 +472,7 @@ sub configure {
 
 This method configures the display regions.
 
-  $device = $self->process_options(%opt);
+  $device = $self->config_region(%opt);
 
 Returns undef without action if the REGION keyword is not available (since
 this is the port number) or if REGION is not in the allowed range.
@@ -769,7 +776,18 @@ sub sigma {
   # Now retrieve the answer
   my ($mean, $sigma);
   ($status,  $mean) = $self->kappa->get("stats","mean");
+  if ($status != ORAC__OK) {
+    orac_err "Error in ORAC::Display::KAPVIEW::sigma\n";
+    orac_err("Error retrieving value of parameter MEAN from Kappa task STATS\n");
+    return $status;
+  }
+
   ($status, $sigma) = $self->kappa->get("stats","sigma");
+  if ($status != ORAC__OK) {
+    orac_err "Error in ORAC::Display::KAPVIEW::sigma\n";
+    orac_err("Error retrieving value of parameter SIGMA from Kappa task STATS\n");
+    return $status;
+  }
 
 
   # Now need to check the options string
@@ -785,7 +803,8 @@ sub sigma {
 
   # A resetpars also seems to be necessary to instruct kappa to
   # update its current frame for plotting. Without this the new PICDEF
-  # regions are not picked up correctly.
+  # regions are not picked up correctly. This may be fixed when 
+  # running as an A-task rather than an I-task.
 
   $status = $self->obj->resetpars;
   return $status if $status != ORAC__OK;

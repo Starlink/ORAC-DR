@@ -68,14 +68,8 @@ sub new {
 
   # Start message system (should just return if already started)
   my $status = ORAC__OK;
-  # This check is a bit dodgy. I add it to stop the error message
-  # occuring concerning whether the AMS is currently running or not.
-  if ($ORAC::Msg::ADAM::Control::RUNNING == 0) {
-    $disp->{AMS} = new ORAC::Msg::ADAM::Control;
-    $status = $disp->{AMS}->init;
-  } else {
-    orac_print "AMS already running\n",'blue';
-  }
+  $disp->{AMS} = new ORAC::Msg::ADAM::Control;
+  $status = $disp->{AMS}->init;
 
   # Split the launching and configuration into separate subroutines
 
