@@ -1,6 +1,8 @@
+# -*-perl-*-
+
 =head1 NAME
 
-REMOVE_SKY_NOISE_SCAN
+_REMOVE_SKY_NOISE_SCAN_
 
 =head1 DESCRIPTION
 
@@ -38,98 +40,112 @@ This routine doesnt assume that SCAN map data is the input
 (will work with jiggle) - this is probably an incorrect
 name.
 
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2005 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
+
 =cut
 
 # First need to get the group that matches the current frames
 # chop configuration
 
-if ($Frm->hdr('SUB_1') eq 'LONG' || $Frm->hdr('SUB_1') eq 'SHORT') {
-
-  my $subgrp = $Grp->subgrp(CHOP_THR => $Frm->hdr('CHOP_THR'),
-			    CHOP_PA  => $Frm->hdr('CHOP_PA'));
+my $subgrp = $Grp->subgrp(CHOP_THR => $Frm->hdr('CHOP_THR'),
+			  CHOP_PA  => $Frm->hdr('CHOP_PA'));
 
 
-  # Now that we have a sub grp we can test that
-  # the current frame is the last member of the sub group before
-  # proceeding
+# Now that we have a sub grp we can test that
+# the current frame is the last member of the sub group before
+# proceeding
 
-  if ($subgrp->lastmember($Frm)) {
+if ($subgrp->lastmember($Frm)) {
 
-    # calculate out_coords - the assumption is that
-    # That all members of the group were either in a fixed 
-    # coordinate frmae (RB or RJ) or a moving frame (PL)
-    my $outcoords = 'RJ';
-    $outcoords = 'PL' if $Frm->hdr('CENT_CRD') eq 'PLANET';
+  # calculate out_coords - the assumption is that
+  # That all members of the group were either in a fixed 
+  # coordinate frmae (RB or RJ) or a moving frame (PL)
+  my $outcoords = 'RJ';
+  $outcoords = 'PL' if $Frm->hdr('CENT_CRD') eq 'PLANET';
 
 
-    # We now have a group derived from $Grp but that only includes
-    # frames that are related.
+  # We now have a group derived from $Grp but that only includes
+  # frames that are related.
 
-    # Loop over the different sub-instruments
-    # in the current frame
+  # Loop over the different sub-instruments
+  # in the current frame
 
-    foreach my $sub ($Frm->subs) {
-    
-      orac_print("Calculating sky contribution for sub $sub\n");
+  foreach my $sub ($Frm->subs) {
 
-      # Since this is a many-in many-out primitive we need
-      # to reset all the filenames of the subgroup so that
-      # they match the current frame.
-      $subgrp->template($Frm->file($Frm->sub2file($sub)), $sub);
-  
-      # Now need to find all the input frames for this sub-instrument
-      # that are part of this group
- 
-      my @members = $subgrp->membernamessub($sub);
+    # only works for arrays
+    next if $sub =~ /^P\d/i;
 
-      # Have to generate an input text file for CALCSKY
-      # This is so similar to REBIN that we should use  a shared sub
-      # Might even be worth having a group method.
-      my $infile = "calcsky_$$.lis";
-      my $fh = new IO::File("> $infile") || die "Error opening scratch file $!";
-      for (@members) { print $fh "$_ 1 0 0\n"; };
-      close $fh;
-      
+    orac_print("Calculating sky contribution for sub $sub\n");
 
-      # Okay we now have an input file so calculate sky...
-      my $args = "boxsz=2.0 out_coords=$outcoords model=! nosrc=!";
-      $Mon{surf_mon}->obeyw("calcsky","ref=$infile noloop $args");
-      
-      unlink $infile;
-  
-    }
+    # Since this is a many-in many-out primitive we need
+    # to reset all the filenames of the subgroup so that
+    # they match the current frame.
+    $subgrp->template($Frm->file($Frm->sub2file($sub)), $sub);
 
-    # Now we need to go through each member of the group
-    # and remove the resulting sky for each sub-instrument
-    # This is a standard method
+    # Now need to find all the input frames for this sub-instrument
+    # that are part of this group
 
-    foreach my $member ($subgrp->members) {
-  
-      for my $i (1..$member->nfiles) {
+    my @members = $subgrp->membernamessub($sub);
 
-	my ($in, $out) = $member->inout('_sky',$i);
-      
-	orac_print("Removing sky noise for $in\n");
-	       
+    # Have to generate an input text file for CALCSKY
+    # This is so similar to REBIN that we should use  a shared sub
+    # Might even be worth having a group method.
+    my $infile = "calcsky_$$.lis";
+    my $fh = new IO::File("> $infile") || die "Error opening scratch file $!";
+    for (@members) { print $fh "$_ 1 0 0\n"; };
+    close $fh;
 
-	$Mon{surf_mon}->obeyw("remsky","in=$in out=$out");
-    
-	# Update frame object
-	$member->file($i, $out);
-		   
-      }
-  
+    # Okay we now have an input file so calculate sky...
+    my $args = "boxsz=2.0 out_coords=$outcoords model=! nosrc=!";
+    $Mon{surf_mon}->obeyw("calcsky","ref=$infile noloop $args");
+
+    unlink $infile;
+
+  }
+
+  # Now we need to go through each member of the group
+  # and remove the resulting sky for each sub-instrument
+  # This is a standard method
+
+  foreach my $member ($subgrp->members) {
+    my @subs = $Frm->subs;
+    for my $i (1..$member->nfiles) {
+      # Array protection
+      next if $subs[$i-1] =~ /^P\d/i;
+
+      my ($in, $out) = $member->inout('_sky',$i);
+
+      orac_print("Removing sky noise for $in\n");
+
+      $Mon{surf_mon}->obeyw("remsky","in=$in out=$out");
+
+      # Update frame object
+      $member->file($i, $out);
 
     }
 
   }
+
 }
-
-
-
-# COPYRIGHT
-#
-#   Copyright (C) 1998-2000 Particle Physics and Astronomy Research
-#   Council. All Rights Reserved.
 
 

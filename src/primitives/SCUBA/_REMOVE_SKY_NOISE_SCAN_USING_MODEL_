@@ -1,6 +1,8 @@
+# -*-perl-*-
+
 =head1 NAME
 
-REMOVE_SKY_NOISE_SCAN_USING_MODEL
+_REMOVE_SKY_NOISE_SCAN_USING_MODEL_
 
 =head1 DESCRIPTION
 
@@ -35,124 +37,137 @@ This routine doesnt assume that SCAN map data is the input
 (will work with jiggle) - this is probably an incorrect
 name.
 
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2005 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
+
 =cut
 
 # First need to get the group that matches the current frames
 # chop configuration
 
-if ($Frm->hdr('SUB_1') eq 'LONG' || $Frm->hdr('SUB_1') eq 'SHORT') {
+if ($Grp->lastmember($Frm)) {
 
-  if ($Grp->lastmember($Frm)) {
+  # Get all the sub-instruments associated with the current frame
+  # These are the only ones we are interested in
+  my @allsubs = $Frm->subs;
 
-    # Get all the sub-instruments associated with the current frame
-    # These are the only ones we are interested in
-    my @allsubs = $Frm->subs;
-
-    # Loop over sub-instruments looking for an equivalent group file
-    my @subs = ();
-    my @grpfiles = ();
-    my @templates = ();  # Some valid templates
-    foreach my $nsub (0..$#allsubs) {
-      my $sub = $allsubs[$nsub];
-      my $grpfile = $Grp->grpoutsub($sub);
-      # KLUGE - assume .sdf
-      if (-e "$grpfile.sdf") {
-	push (@subs, $sub);
-	push (@grpfiles, $grpfile);
-	push (@templates, $b4sky[$nsub]);  # KLUGE
-      } else {
-	orac_print "No group file present for sub-instrument $sub - skipping\n";
-      }
+  # Loop over sub-instruments looking for an equivalent group file
+  my @subs = ();
+  my @grpfiles = ();
+  my @templates = ();  # Some valid templates
+  foreach my $nsub (0..$#allsubs) {
+    my $sub = $allsubs[$nsub];
+    my $grpfile = $Grp->grpoutsub($sub);
+    # KLUGE - assume .sdf
+    if (-e "$grpfile.sdf") {
+      push (@subs, $sub);
+      push (@grpfiles, $grpfile);
+      push (@templates, $b4sky[$nsub]);  # KLUGE
+    } else {
+      orac_print "No group file present for sub-instrument $sub - skipping\n";
     }
+  }
 
-    # Only bother if we have some sub-instruments associated with a model
-    if ($#subs > -1) {
+  # Only bother if we have some sub-instruments associated with a model
+  if ($#subs > -1) {
 
-      # Get all the subgrps
-      my @subgrps = $Grp->subgrps('CHOP_THR', 'CHOP_PA');
+    # Get all the subgrps
+    my @subgrps = $Grp->subgrps('CHOP_THR', 'CHOP_PA');
 
-      # Loop over the sub grps
-      for my $subgrp (@subgrps) {
+    # Loop over the sub grps
+    for my $subgrp (@subgrps) {
 
-	# Read the chop
-	my $chop_th = $subgrp->frame(0)->hdr->{CHOP_THR};
-	my $chop_pa = $subgrp->frame(0)->hdr->{CHOP_PA};
+      # Read the chop
+      my $chop_th = $subgrp->frame(0)->hdr->{CHOP_THR};
+      my $chop_pa = $subgrp->frame(0)->hdr->{CHOP_PA};
 
-	for my $nsub ( 0.. $#subs) {
+      for my $nsub ( 0.. $#subs) {
 
-	  # Read the sub name and the group file name
-	  my $sub = $subs[$nsub];
-	  my $grpfile = $grpfiles[$nsub];
+	# Read the sub name and the group file name
+	my $sub = $subs[$nsub];
+	my $grpfile = $grpfiles[$nsub];
 
-	  orac_print "Calculating sky for chop $chop_th PA $chop_pa sub $sub\n";
+	next if $sub =~ /^P\d/i;
 
-	  # Since this is a many-in many-out primitive we need
-	  # to reset all the filenames of the subgroup so that
-	  # they match the current frame.
-#	  $subgrp->template($Frm->file($Frm->sub2file($sub)), $sub);
+	orac_print "Calculating sky for chop $chop_th PA $chop_pa sub $sub\n";
 
-	  # Since this is an iterative primitive we need to match
-	  # the input file names to how they were before we did any
-	  # sky noise removal. Currently we cheat by looking in
-	  # the @templates array which was derived from an illegal
-	  # variable @b4sky
-	  $subgrp->template($templates[$nsub], $sub);
+	# Since this is a many-in many-out primitive we need
+	# to reset all the filenames of the subgroup so that
+	# they match the current frame.
+	#	  $subgrp->template($Frm->file($Frm->sub2file($sub)), $sub);
 
- 
-	  # Now need to find all the input frames for this sub-instrument
-	  # that are part of this group
- 
-	  my @members = $subgrp->membernamessub($sub);
+	# Since this is an iterative primitive we need to match
+	# the input file names to how they were before we did any
+	# sky noise removal. Currently we cheat by looking in
+	# the @templates array which was derived from an illegal
+	# variable @b4sky
+	$subgrp->template($templates[$nsub], $sub);
 
-	  # Have to generate an input text file for CALCSKY
-	  # This is so similar to REBIN that we should use  a shared sub
-	  # Might even be worth having a group method.
-	  my $infile = "calcsky_$$.lis";
-	  my $fh = new IO::File("> $infile") || die "Error opening scratch file $!";
-	  for (@members) { print $fh "$_ 1 0 0\n"; };
-	  close $fh;
+	# Now need to find all the input frames for this sub-instrument
+	# that are part of this group
 
-	  for (@members) { orac_print  "File: $_\n";};
-      
+	my @members = $subgrp->membernamessub($sub);
 
-	  # Okay we now have an input file so calculate sky using the GRP 
-	  # model
-	  my $args = "boxsz=2.0 model=$grpfile nosrc=! addchop";
-	  $Mon{surf_mon}->obeyw("calcsky","ref=$infile noloop $args accept");
-	  
-	  unlink $infile;
-  
-	}
+	# Have to generate an input text file for CALCSKY
+	# This is so similar to REBIN that we should use  a shared sub
+	# Might even be worth having a group method.
+	my $infile = "calcsky_$$.lis";
+	my $fh = new IO::File("> $infile") || die "Error opening scratch file $!";
+	for (@members) { print $fh "$_ 1 0 0\n"; };
+	close $fh;
 
-	# Now we need to go through each member of the group
-	# and remove the resulting sky for each sub-instrument
-	# This is a standard method
+	for (@members) { orac_print  "File: $_\n";};
 
-	foreach my $member ($subgrp->members) {
-  
-	  for my $i (1..$member->nfiles) {
-	  
-	    my ($in, $out) = $member->inout('_sky',$i);
+	# Okay we now have an input file so calculate sky using the GRP
+	# model
+	my $args = "boxsz=2.0 model=$grpfile nosrc=! addchop";
+	$Mon{surf_mon}->obeyw("calcsky","ref=$infile noloop $args accept");
+
+	unlink $infile;
+
+      }
+
+      # Now we need to go through each member of the group
+      # and remove the resulting sky for each sub-instrument
+      # This is a standard method
+
+      foreach my $member ($subgrp->members) {
+
+	my @subs = $Frm->subs;
+	for my $i (1..$member->nfiles) {
+	  # Array protection
+	  next if $subs[$i-1] =~ /^P\d/i;
+
+	  my ($in, $out) = $member->inout('_sky',$i);
 	
-	    orac_print("Removing sky noise for $in\n");
-	       
-	    $Mon{surf_mon}->obeyw("remsky","in=$in out=$out");
-    
-	    # Update frame object
-	    $member->file($i, $out);
-		   
-	  }
+	  orac_print("Removing sky noise for $in\n");
+
+	  $Mon{surf_mon}->obeyw("remsky","in=$in out=$out");
+
+	  # Update frame object
+	  $member->file($i, $out);
+
 	}
       }
     }
   }
 }
-
-
-
-# COPYRIGHT
-#
-#   Copyright (C) 1998-2000 Particle Physics and Astronomy Research
-#   Council. All Rights Reserved.
-
-
