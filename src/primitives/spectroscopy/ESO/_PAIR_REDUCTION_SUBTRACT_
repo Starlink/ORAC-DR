@@ -1,0 +1,183 @@
+#+
+# Name:
+#    _PAIR_REDUCTION_SUBTRACT_
+#
+# Purpose:
+#    Subtracts the average off-source-beam frame from its
+#    corresponding average on-source-beam frame.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive subtracts the sky/offset-beam frame from the
+#    corresponding object/main-beam frame when taking paired data.
+#    It copes with the case of a series of object frames followed
+#    by an equal number of sky frames.  Corresponding means the same
+#    position in each set, such as first object and first sky frames.
+#    In practice it subtracts the average off-source from the average
+#    on-source frame.  
+#
+#    This primitive relies on a steering primitive to count the number
+#    of on-source and off-source frames stored in the Frame user header,
+#    and to set the ON_SOURCE user header to determine which frame is
+#    on-source.  Hence it can find the index offset to its corresponding
+#    off-source frame or vice versa.  If ON_SOURCE is undefined, or the
+#    second frame offset from the current is not of the other type
+#    (object or sky), the primitive will subtract two frames regardless,
+#    warn the user, and continue on.
+#
+#    The primitive reports the successful subtraction and the frames
+#    involved.  
+#
+# Notes:
+#    -  Suitable for ESO infrared spectrographs.
+#    -  The current frame can be on source or off-source.
+#    -  The number of on-source and off-source frames currently known
+#    are taken from the Frame user headers NUMBER_ON and NUMBER_OFF
+#    respectively.
+#
+# Output Data:
+#    -  Sky-subtracted frame inheriting the current frame's name but with 
+#    the _ss suffix.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (Starlink)
+#    PH: Paul Hirst (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Find the number of frames on the source and off the source.  These are
+# expected to be the same.
+    my $number_source = $Frm->uhdr( "NUMBER_ON" );
+    my $number_sky = $Frm->uhdr( "NUMBER_OFF" );
+
+# Find indices in the group the files referring to the start of each
+# set of source and sky integrations.
+    my ( $index_source, $index_sky );
+    if ( $Frm->uhdr( "ON_SOURCE" ) ) {
+       $index_source = -$number_source;
+       $index_sky = $index_source - $number_sky;
+
+    } else {
+       $index_sky = -$number_sky;
+       $index_source = $index_sky - $number_source;
+    }
+
+# Access Frames of the averaged source and off-source data from the
+# AA..BB.. or BB..AA.. patterned data.
+    my $mFrm = ( $Grp->members )[ $index_source ];
+    my $oFrm = ( $Grp->members )[ $index_sky ];
+
+# Access the combined frames.
+    my $main = $mFrm->file;
+    my $offset = $oFrm->file;
+
+# Access the offset-beam frame displaced by the number of on-source
+# frames combined.
+    if ( $oFrm->uhdr( "ON_SOURCE" ) ) {
+
+# Something has derailed.  Inform the user.
+       orac_warn "Problem figuring out which frame is the on-source frame.  \n" .
+                 "Continuing regardless--this may or may not be doing something sensible.\n";
+    }
+
+   
+# Access the main-beam frame displaced by the number of off-source
+# frames combined.
+    if ( ! ( $mFrm->uhdr( "ON_SOURCE" ) ) ) {
+
+# Something has derailed.  Inform the user.
+       orac_warn "Problem figuring out which frame is the offset-from-source frame.  \n" .
+                 "Continuing regardless--this may or may not be doing something sensible.\n";
+    }
+
+# Get the output filename.  We won't actually use $in as $main and 
+# $offset now hold the appropriate filenames.
+    my ( $in, $out ) = $mFrm->inout( "_ss" );
+
+# Do the sky subtraction.
+    $Mon{'kappa_mon'}->obeyw( "sub", "in1=$main in2=$offset out=$out title=$out" );
+
+# Update the Frm object.
+    $Frm->file( $out );
+
+# Inform the user of progress.
+    orac_print "$offset subtracted from $main to give: $out\n";
+    orac_print "\n";
+
+# Podule
+# ======
+
+=head1 NAME
+
+_PAIR_REDUCTION_SUBTRACT_ -- Subtracts the average off-source-beam frame from its corresponding average on-source-beam frame.
+
+=head1 DESCRIPTION
+
+This primitive subtracts the sky/offset-beam frame from the
+corresponding object/main-beam frame when taking paired data.
+It copes with the case of a series of object frames followed
+by an equal number of sky frames.  Corresponding means the same
+position in each set, such as first object and first sky frames.
+In practice it subtracts the average off-source from the average
+on-source frame.  
+
+This primitive relies on a steering primitive to count the number
+of on-source and off-source frames stored in the Frame user header,
+and to set the ON_SOURCE user header to determine which frame is
+on-source.  Hence it can find the index offset to its corresponding
+off-source frame or vice versa.  If ON_SOURCE is undefined, or the
+second frame offset from the current is not of the other type
+(object or sky), the primitive will subtract two frames regardless,
+warn the user, and continue on.
+
+The primitive reports the successful subtraction and the frames
+involved.  
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Suitable for ESO infrared spectrographs.
+
+=item *
+
+The current frame can be on source or off-source.
+
+=item *
+
+The number of on-source and off-source frames currently known
+are taken from the Frame user headers NUMBER_ON and NUMBER_OFF
+respectively.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Sky-subtracted frame inheriting the current frame's name but with 
+the _ss suffix.
+
+=back 
+
+=head1 AUTHOR
+
+Malcolm J. Currie <mjc@star.rl.ac.uk>
+Paul Hirst (JAC) <p.hirst@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
