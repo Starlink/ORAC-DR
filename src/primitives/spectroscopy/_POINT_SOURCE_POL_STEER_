@@ -1,0 +1,190 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_POINT_SOURCE_POL_STEER_ -- Steers processing for POINT_SOURCE_POL recipes.
+
+=head1 DESCRIPTION
+
+This primitive controls processing for POINT_SOURCE_POL recipes through
+steering headers listed below.
+
+=head1 STEERING HEADERS
+
+The following headers are set up in the uhdr object of the current Frame.
+
+=over 4
+
+=item CALC_STOKES = LOGICAL
+
+Whether or not to calculate the Stokes parameters. This is done
+once all frames in a cycle of eight have been observed.
+
+=item CYCLE_NUMBER = INTEGER
+
+Number of the cycle, a cycle being a set of frames to complete a
+pass through the recipe. The first cycle is 0.
+
+=item ON_SOURCE = LOGICAL
+
+Whether or not the observation is on-source. If the ORAC_OBSERVATION_TYPE
+header is set to 'SKY', then ON_SOURCE is false. If the
+ORAC_OBSERVATION_TYPE header is not 'SKY', but the offset in Right
+Ascension is negative, then ON_SOURCE is true. If the RA offset is
+positive, then ON_SOURCE is false.
+
+=item PAIR_COMPLETE = LOGICAL
+
+Whether or not we are on the second member of a pair.
+
+=item POLARIMETRY = LOGICAL
+
+Whether or not we are doing polarimetry.
+
+=item USE_VARIANCE = LOGICAL
+
+Whether or not to use the variance in subsequent calculations. Set
+from the value of the USEVAR parameter (see below).
+
+=back
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item USEVAR = LOGICAL (Given)
+
+Whether or not to create and propagate variance arrays. [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UIST in spectropolarimetry mode.
+
+=back
+
+=head1 AUTHORS
+
+Brad Cavanagh (JAC) <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# Create beam groups. We need new groups to store the extracted
+# and processed e-beam and o-beam spectra. To preserve them
+# between iterations we keep their reference count at one by
+# storing references in the main Grp's user header.
+my $fn = $Grp->num + 1;
+if( $fn == 1 ) {
+
+  # Create the group at 0-degrees waveplate angle and inherit the
+  # file name from the main group with an appropriate suffix.
+  my $zGrp = $Grp->new;
+  $zGrp->file( $Grp->file . "_0" );
+
+  # Propagate the headers.
+  %{ $zGrp->hdr } = %{ $Grp->hdr };
+  %{ $zGrp->uhdr } = %{ $Grp->uhdr };
+
+  # Store the pointer to the group in the main Group user header.
+  $Grp->uhdr( "0_GROUP", $zGrp );
+
+  # And for the forty-five degree waveplate angle group.
+  my $fGrp = $Grp->new;
+  $fGrp->file( $Grp->file . "_45" );
+  %{ $fGrp->hdr } = %{ $Grp->hdr };
+  %{ $fGrp->uhdr } = %{ $Grp->uhdr };
+  $Grp->uhdr( "45_GROUP", $fGrp );
+
+  # And for the 22.5-degree waveplate angle group.
+  my $tGrp = $Grp->new;
+  $tGrp->file( $Grp->file . "_22p5" );
+  %{ $tGrp->hdr } = %{ $Grp->hdr };
+  %{ $tGrp->uhdr } = %{ $Grp->uhdr };
+  $Grp->uhdr( "22_GROUP", $tGrp );
+
+  # And for the 67.5-degree waveplate angle group.
+  my $sGrp = $Grp->new;
+  $sGrp->file( $Grp->file . "_67p5" );
+  %{ $sGrp->hdr } = %{ $Grp->hdr };
+  %{ $sGrp->uhdr } = %{ $Grp->uhdr };
+  $Grp->uhdr( "67_GROUP", $sGrp );
+
+}
+
+# Assign steering parameters.
+my $usevar = $_POINT_SOURCE_POL_STEER_{USEVAR};
+$usevar = defined( $usevar ) ? $usevar : 1;
+$Frm->uhdr( "USE_VARIANCE", $usevar );
+
+# We need to know which frames are sky and which are objects.
+# If the ORAC_OBSERVATION_TYPE is set to SKY then we know that
+# that observation is definitely sky. Otherwise we have to
+# use the offset headers to make the determination.
+if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ) {
+
+  $Frm->uhdr( "ON_SOURCE", 0 );
+  orac_print "Steerage: This observation is off-source.\n";
+
+} else {
+
+  # Get the offsets.
+  my $raoff = $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" );
+  my $decoff = $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" );
+
+  # If the RA offset is negative, we'll call that the object.
+  if ( $raoff < 0 ) {
+    $Frm->uhdr( "ON_SOURCE", 1 );
+    orac_print "Steerage: This observation is on-source.\n";
+  } else {
+    $Frm->uhdr( "ON_SOURCE", 0 );
+    orac_print "Steerage: This observation is off-source.\n";
+  }
+
+}
+
+if( ( $fn + 1 ) % 2 ) {
+
+  # We're at the end of a pair, so set the PAIR_COMPLETE header
+  # to true.
+  $Frm->uhdr( "PAIR_COMPLETE", 1 );
+  orac_print "Steerage: This observation completes a pair.\n";
+} else {
+
+  $Frm->uhdr( "PAIR_COMPLETE", 0 );
+  orac_print "Steerage: This observation is the start of a pair.\n";
+}
+
+if( ( $fn + 1 ) % 8 == 1 ) {
+
+  # We're at the end of a complete cycle, so set the CALC_STOKES
+  # header to true.
+  $Frm->uhdr( "CALC_STOKES", 1 );
+  orac_print "Steerage: This observation completes a cycle of eight.\n";
+} else {
+
+  $Frm->uhdr( "CALC_STOKES", 0 );
+}
+
+# Set the beam offsets.
+_SET_BEAMOFFSETS_
+$Grp->uhdr( "SKY_RAOFF", $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" ) );
+$Grp->uhdr( "SKY_DECOFF", $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" ) );
+
+# Set the POLARIMETRY user header.
+$Frm->uhdr("POLARIMETRY", 1);
+
+# Set the CYCLE_NUMBER header.
+$Frm->uhdr("CYCLE_NUMBER", int( $Grp->num / 8 ) );
+
+# Tidy up output.
+orac_print "\n";
