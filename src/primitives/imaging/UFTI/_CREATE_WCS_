@@ -1,0 +1,377 @@
+#+
+# Name:
+#    _CREATE_WCS_
+
+# Purpose:
+#    Corrects the headers of UFTI imaging data to create an
+#    AIPS-convention World Co-ordinate System.
+
+# Language:
+#    Perl5
+
+# Description:
+#    This primitive converts astrometric information in an UFTI frame 
+#    into an AIPS-convention World Co-ordinate System.  This is achieved
+#    by editing the headers in the FITS airlock.
+#
+#    The changes are listed below.
+#    a) Put decimal degrees of RABASE in CRVAL1, and DECBASE in CRVAL2.
+#    The comment includes a sexagesimal version of the co-ordinate.
+#    b) Change CRPIXn to the centre of the frame or a supplied x-y
+#    reference pixel.
+#    c) Divide CDELTn by 3600 to convert to degrees.  Make CDELT1
+#    negative.
+#    d) Change CTYPE1 to "RA---TAN", CTYPE2 to "DEC--TAN".
+#    e) Revise the comments for the above to adhere to the UKIRT FITS
+#    document, orac0016-fith, e.g. CRVAL1's comment becomes "RA 
+#    (hh:mm:ss.ss) at reference point [deg]" with the sexagesimal
+#    position substituted.
+#
+# Arguments:
+#    XREF = REAL (Given)
+#       The x pixel index corresponding to the base equatorial position.
+#       This defaults to the centre of the array along the RA axis for
+#       sub-arrays, but 20 pixels into the west half for the full array.
+#       If supplied beyond the range 0 to 1024, or some non-numeric value
+#       supplied, a warning is issued and the default adopted.  []
+#    YREF = REAL (Given)
+#       The y pixel index corresponding to the base equatorial position.
+#       This defaults to the centre of the array along the Declination
+#       axis for sub-arrays, but 25 pixels into the south half for the
+#       full array.  If supplied beyond the range 0 to 1024, or some
+#       non-numeric value supplied, a warning is issued and the default
+#       adopted.  []
+
+# Notes:
+#    - Editing only occurs for OBJECT and SKY frames, for which
+#    there is no WCS.  This includes all editing steps.
+#    -  Offsets of 23" N and 6" E are applied to the reference
+#    position for polarimetry.
+#    -  The location of the reference pixel is the biggest source
+#    of error, and may vary systematically with telescope operator.
+#    Comparison of real data with the defaults suggests errors
+#    are typically +/-2" in each axis.
+#    -  Following a successful introduction of a WCS, the current
+#    AST Frame is SKY.  Any existing WCS Frames besides the default
+#    three---PIXEL, GRID, AXIS---are lost. 
+
+# Output Data:
+#    The modified NDF.
+
+# Tasks:
+#    KAPPA: ERASE, FITSMOD, NDFTRACE, WCSFRAME.
+
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#    {enter_new_authors_here}
+
+# Copyright:
+#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+
+#-
+
+# Do headers need editing?
+# ========================
+
+# Determine whether or not it is a polarimetric frame.
+    my $instval = "UFTI";
+    my $polarimetry = $Frm->uhdr( "ORAC_FILTER" ) =~ m/pol/;
+
+# Do not want to redo a frame already converted, otherwise the scale
+# will erroneously be reduced each pass through this primitive.
+    my $needs_editing = $Frm->hdr( "CTYPE1" ) eq "Detector Columns";
+
+# Modify the headers should only be performed on OBJECT or SKY
+# frames, which have not already been converted.  
+    my $correct_obstype = $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+                          $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY";
+    if ( $correct_obstype && $needs_editing ) {
+
+# Set the maximum reference pixel index.
+       my $xmaxref = 1024;
+       my $ymaxref = 1024;
+
+       my $ndf = $Frm->file;
+
+# Obtain the reference position.
+# ==============================
+
+# First see if the reference positions are supplied as arguments.
+       my $xref = $_CREATE_WCS_{XREF};
+       my $yref = $_CREATE_WCS_{YREF};
+
+# Validate the x position.
+       if ( defined( $xref ) ) {
+          if ( $xref =~ /^-?(?:\d+(?:\.\d*)?|\.\d+)$/ ) {
+             orac_warn "Programming error: x reference pixel '$xref' " .
+                       "is not numeric.  Using default.\n";
+             undef $xref;
+          } elsif ( $xref < 0 || $xref > $xmaxref ) {
+             orac_warn "Programming error: x reference pixel '$xref' " .
+                       "is out of range.  Using default.\n";
+             undef $xref;
+          }
+       }
+
+# Validate the y position.
+       if ( defined( $yref ) ) {
+          if ( $yref =~ /^-?(?:\d+(?:\.\d*)?|\.\d+)$/ ) {
+             orac_warn "Programming error: y reference pixel '$yref' " .
+                       "is not numeric.  Using default.\n";
+             undef $yref;
+          } elsif ( $yref < 0 || $yref > $ymaxref ) {
+             orac_warn "Programming error: y reference pixel '$yref' " .
+                       "is out of range.  Using default.\n";
+             undef $yref;
+          }
+       }
+
+       if ( ! ( defined( $xref ) && defined( $yref ) ) ) {
+ 
+# At least one was not given so define approximate positions with respect
+# to the frame centre.
+
+# Find the bounds of the NDF.
+          my $ORAC_STATUS;
+          $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$ndf" );
+
+# Extract the bounds of the frame.
+          ( $ORAC_STATUS, my @lbnd ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "lbound" );
+          ( $ORAC_STATUS, my @ubnd ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "ubound" );
+
+# Find the mid points.
+          my $xmid = nint( ( $lbnd[ 0 ] + $ubnd[ 0 ] ) / 2 );
+          my $ymid = nint( ( $lbnd[ 1 ] + $ubnd[ 1 ] ) / 2 );
+
+# Find the dimensions.
+          my $xdim = $ubnd[ 0 ] - $lbnd[ 0 ] + 1;
+          my $ydim = $ubnd[ 1 ] - $lbnd[ 1 ] + 1;
+
+# Set an x reference pixel if it is not supplied as an argument.
+# UFTI is at the centre for a sub-array along an axis but offset slightly
+# for a sub-array to avoid the joins between the four sub-array sections
+# of the frame.
+          if ( ! defined( $xref ) ) {
+             if ( $xdim == 1024 ) {
+                $xref = $xmid + 20;
+             } else {
+                $xref = $xmid;
+             }
+
+             if ( $polarimetry ) {
+                $xref = $xref - 65.5;
+             }
+          }
+
+# Repeat for y position.
+          if ( ! defined( $yref ) ) {
+             if ( $ydim == 1024 ) {
+                $yref = $ymid - 25;
+             } else {
+                $yref = $ymid;
+             }
+
+             if ( $polarimetry ) {
+                $yref = $yref + 253;
+             }
+          }
+       }
+
+# Obtain headers.
+# ===============
+
+# First the reference equatorial position.
+       my $rabase = $Frm->uhdr( "ORAC_RA_BASE" );
+       my $decbase = $Frm->uhdr( "ORAC_DEC_BASE" );
+
+# Obtain the plate scales.
+       my $incrx = $Frm->uhdr( "ORAC_RA_SCALE" );
+       my $incry = $Frm->uhdr( "ORAC_DEC_SCALE" );
+
+# Indicate where to insert the FITS cards.  For UFTI, the WCS-related
+# headers already exist so no new location is necessary.
+       my $insert_card = " ";
+
+# Convert co-ordinate units.
+# ==========================
+
+# Correct the increments from arcseconds to degrees.  Format
+# them so header reading picks up the exponent.
+       $incrx /= -3600.0;
+       $incry /= 3600.0;
+       my $fs_incrx = sprintf( "%14.6e", $incrx );
+       my $fs_incry = sprintf( "%14.6e", $incry );
+
+# Convert RA to Sexagesimal for the comment.
+       my $rah = int( $rabase );
+       my $rares = $rabase - $rah;
+       my $ram = int( 60.0 * $rares );
+       $rares -= $ram / 60.0;
+       my $ras = sprintf( "%5.2f", 3600.0 * $rares );
+
+# Convert Declination to Sexagesimal for the comment.
+       my $decsign = "+";
+       if ( $decbase < 0 ) {
+          $decsign = "-";
+       }
+       my $decres = abs( $decbase );
+       my $decd = int( $decres );
+       $decres = $decres - $decd;
+       my $decm = int( 60.0 * $decres );
+       $decres -= $decm / 60.0;
+       my $decs = sprintf( "%4.1f", 3600.0 * $decres );
+
+# Convert RA from hours to degrees.
+       $rabase *= 15.0;
+       my $fs_rabase = sprintf( "%14.6e", $rabase );
+
+# Create the FITSMOD steering file.
+# =================================
+
+       my $table = "fitsmod$$.lis";
+       unlink( $table );
+
+# Open the steering file of editing instructions.  Set the command to
+# update as the headers exist.
+       open ( STEERING, ">$table" );
+       my $cmd = "U";
+
+       print STEERING "$cmd CTYPE1$insert_card 'RA---TAN' Equatorial tangent-plane projection\n";
+       print STEERING "$cmd CRPIX1$insert_card $xref Pixel at reference point along axis 1\n";
+       print STEERING "$cmd CRVAL1$insert_card $fs_rabase RA ($rah:$ram:$ras) at reference point [deg]\n";
+       print STEERING "$cmd CDELT1$insert_card $fs_incrx Increment per pixel at reference point [deg]\n";
+       print STEERING "$cmd CUNIT1$insert_card 'deg' Physical units of axis 1\n";
+       print STEERING "$cmd CTYPE2$insert_card 'DEC--TAN' Equatorial tangent-plane projection\n";
+       print STEERING "$cmd CRPIX2$insert_card $yref Pixel at reference point along axis 2\n";
+       print STEERING "$cmd CRVAL2$insert_card $decbase Dec ($decsign$decd:$decm:$decs) at reference point [deg]\n";
+       print STEERING "$cmd CDELT2$insert_card $fs_incry Increment per pixel at reference point [deg]\n";
+       print STEERING "$cmd CUNIT2$insert_card 'deg' Physical units of axis 2\n";
+       print STEERING "U INSTRUME $instval \$C\n" unless $instval eq " ";
+       close( STEERING );
+
+# Edit the headers.
+       $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "ndf=$ndf mode=file table=$table" );
+       unlink( $table );
+
+       orac_print "AIPS-convention world co-ordinate system added " .
+                  "to headers of $ndf.\n   Reference pixel is ($xref,$yref).\n";
+
+# Remove an existing WCS component, so that later when a new WCS is made,
+# it will include a SKY co-ordinate frame.  As there may not already be a
+# WCS component, make one with wcsframe.
+       $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$ndf frame=pixel" );
+       $Mon{ "ndfpack_mon" }->obeyw( "erase", "object=${ndf}.WCS ok" );
+
+# Create the SKY frame in the WCS component.
+       $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$ndf frame=sky" );
+       orac_print "Astrometry SKY co-ordinate frame created in $ndf.\n";
+       orac_print "\n";
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_CREATE_WCS_  -- Corrects the headers of UFTI imaging data to create an AIPS-convention World Co-ordinate System.
+
+=head1 DESCRIPTION
+
+This primitive converts astrometric information in an UFTI frame into
+an AIPS-convention World Co-ordinate System.  This is achieved by
+editing the headers in the FITS airlock.
+
+The changes are listed below.
+
+a) Put decimal degrees of RABASE in CRVAL1, and DECBASE in CRVAL2.
+The comment includes a sexagesimal version of the co-ordinate.
+
+b) Change CRPIXI<n> to the centre of the frame or a supplied x-y
+reference pixel.
+
+c) Divide CDELTI<n> by 3600 to convert to degrees.  Make CDELT1
+negative.
+
+d) Change CTYPE1 to "RA---TAN", CTYPE2 to "DEC--TAN".
+
+e) Revise the comments for the above to adhere to the UKIRT FITS
+document, orac0016-fith, e.g. CRVAL1's comment becomes "RA
+(hh:mm:ss.ss) at reference point [deg]" with the sexagesimal
+position substituted.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item XREF = REAL (Given)
+
+The I<x> pixel index corresponding to the base equatorial position.
+This defaults to the centre of the array along the RA axis for
+sub-arrays, but 20 pixels into the west half for the full array.  If
+supplied beyond the range 0 to 1024 for or some non-numeric value
+supplied, a warning is issued and the default adopted.  []
+
+=item YREF = REAL (Given)
+
+The I<y> pixel index corresponding to the base equatorial position.
+This defaults to the centre of the array along the Declination axis
+for sub-arrays, but 25 pixels into the south half for the full array.
+If supplied beyond the range 0 to 1024, or some non-numeric value
+supplied, a warning is issued and the default adopted.  []
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Editing only occurs for OBJECT and SKY frames, for which
+there is no WCS.  This includes all editing steps.
+
+=item *
+
+Offsets of 23" N and 6" E are applied to the reference
+position for polarimetry.
+
+=item *
+
+The location of the reference pixel is the biggest source
+of error, and may vary systematically with telescope operator.
+Comparison of real data with the defaults suggests errors
+are typically +/-2" in each axis.
+
+=item *
+
+Following a successful introduction of a WCS, the current
+AST Frame is SKY.  Any existing WCS Frames besides the default
+three---PIXEL, GRID, AXIS---are lost. 
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The modified NDF.
+
+=back
+
+=head1 TASKS
+
+KAPPA: ERASE, FITSMOD, NDFTRACE, WCSFRAME.
+
+=head1 AUTHORS
+
+Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
