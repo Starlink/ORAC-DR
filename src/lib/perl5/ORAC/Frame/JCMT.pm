@@ -369,6 +369,13 @@ sub findgroup {
     $self->hdr('OBJECT'). 
       $self->hdr('FILTER');
  
+  # If we are doing an EMII scan map we need to make sure
+  # the group is different from a normal map
+  if ($self->hdr('SAM_MODE') eq 'RASTER' && $self->hdr('CHOP_CRD') eq 'LO') {
+    $group .= 'emII';
+  } 
+
+
   return $group;
 
 }
@@ -411,6 +418,8 @@ sub findrecipe {
     } else {
       if ($self->hdr('CHOP_CRD') eq 'LO') {
 	$recipe = 'SCUBA_EM2SCAN';
+      } else {
+	$recipe = 'SCUBA_EKHSCAN';
       }
     }
   }
@@ -529,7 +538,7 @@ sub template {
 
 Number of files associated with the current state.
 This is in fact the number of files stored in files().
-Cf num().
+Cf num() which is num_files - 1.
 
   $nfiles = $Frm->num_files;
 
@@ -774,9 +783,23 @@ sub num {
 
 =item nsubs
 
-Return the number of sub-instruments associated with the Frame.
+Return the number of sub-instruments associated with the Frame.  
 
 =cut
+
+# This is the proposed change to nsubs:
+
+#Note that this does not necessarily equal the actual number of
+#sub-instruments observed but equals the number of sub-instruments
+#stored in the array returned by the subs() method.  This is because
+#sub-instruments can be rejected during the processing.  The
+#findnsubs() method can be used to determine the original number.  In
+#general, num_files() is the preferred method for looping over all
+#files associated with the frame.
+
+#Does not accept any input arguments.
+
+
 
 sub nsubs {
   my $self = shift;
