@@ -12,13 +12,18 @@ use ORAC::Basic;
 &orac_exit_normally("No starlink login") unless exists $ENV{STAR_LOGIN};
 
 # 
-# modules
+# general modules
 #
 use Carp;				# perl -MCarp=verbose for backtrace
-use NDF;				# to access NDF headers
-use Starlink::ADAMTASK;			# monolith access
 use Term::ANSIColor;			# color output
 use File::Copy;
+
+# JAC and ORAC related modules
+use NDF;				# to access NDF headers
+use Starlink::ADAMTASK;			# monolith access
+use ORAC::Frame::UKIRT;			# Frame object methods
+use ORAC::Group::UKIRT;			# Group object methods
+use ORAC::Calib;			# Calibration object
 #
 # command line arguments
 #
@@ -77,7 +82,6 @@ $In = $ENV{ORAC_DATA_IN};		# source of data
 $Out = $ENV{ORAC_DATA_OUT};	# data output
 $Cal = $ENV{ORAC_AUX};		# auxiliarry data (calibration etc)
 #
-chdir($Out);
 #
 # various ADAM-related constants & parameters
 #
@@ -97,7 +101,7 @@ print colored ("Orac says: Done\n","blue");
 } unless $opt_nodisplay;
 
 #
-
+  chdir($Out);				# change to output  dir
 #
 
 # start algorithm engines
@@ -123,54 +127,89 @@ print colored ("Done\n","blue");
 # Data detection loop goes here
 #------------------------------------------------------------------------
 #
-$Recipe = shift(@ARGV);
-@objects=();
-$isuffix = "";
+$Recipe = shift(@ARGV);			# this will default to the RECIPE File method
+#@objects=();
+#$isuffix = "";
 $Root = "ro".$opt_ut.'_';
+$Tail = ".sdf";
 $Groot = "g".$opt_ut.'_';
-$GFile = $Groot.$opt_from;
-unlink ($GFile);
+#$GFile = $Groot.$opt_from;
+#unlink ($GFile);
+
+$Cal = new ORAC::Calib;
+
+# temprary fudge
+$Cal->dark("ro970815_9_bp_db");
+
 foreach $obsno ($opt_dark,$opt_from..$opt_to) {
-#------------------------------------------------------------------------
-#
-# %Orac holds key=value pairs relevant to data reduction
-#
-# we expect to get these two from the header
-$File = $Root.$obsno;
-print colored ("REDUCING: $File\n","yellow");
-#
-#  Read the FITS header of the file and take a copy
-#
-$file = $In.$File;
-($headerref, $status) = fits_read_header($file);
-%Header = %$headerref;
+  #------------------------------------------------------------------------
+  #
+  # %Orac holds key=value pairs relevant to data reduction
+  #
+  
+  $File = $Root.$obsno.$Tail;		# temporary fudge
+  
+  # temporary solution ? Create symbolic link in output directory
+  # pointing to raw data file this or a similar strategy is needed to
+  # preserve order-stupidity on the part of the primitives
 
-#
-# Make sure that we successfully read a header
-# In the future we will use the concept of good ORAC status rather than stealing from
-# Starlink
-#
-# Once we are in a BIG LOOP this will probably print the warning and do a 'next'
-#
+  symlink($In.$File,$File);
 
-if ($status != &NDF::SAI__OK) {
+  # create Frame object (this also populates the header and so on)
+  # file must be accessible from current directory by now
 
-  print "Bad status from header extraction...exiting\n";
-  &orac_exit_normally;
-}
+  $Frm = new ORAC::Frame::UKIRT($File);
+  
+  print colored ("REDUCING: ".$Frm->raw."\n","yellow");
+  
+  # query Frame for its group
+  
+  $grpnum = $Frm->group;
+  
+  # create a new group object and remove the previous file
+  # unless such an object already exists
+  # note that the "existence" of this group is only meaningful
+  # over the lifetime of the pipeline
+  
+  do {
+    
 
-#
-#
-@recipe = ();
-@recipe = orac_read_recipe($Recipe);	# read recipe
+    $Grp = new ORAC::Group::UKIRT($grpnum);
+    $gfile = $Groot.$grpnum;		# temprary fudge
+    $Grp->file($gfile);
+    unlink($Grp->file);
+    $Groups{$grpnum} = $Grp;		# store group object
+    print colored ("A new group ".$Grp->file." has been created\n","blue");
 
-while (grep /^\s*_/,@recipe) {		# while it contains other recipes
-  @recipe = orac_parse_recipe(@recipe);	# keep parsing recipes
-};
+  } unless (exists $Groups{$grpnum});
 
-$oracref = orac_execute_recipe(\@recipe,\%Orac);	# execute parsed recipe
+  # push current Frame onto Group
+
+  $Grp->push($Frm);
+  print colored ("This observation is part of group ".$Grp->file."\n","blue");
+
+
+
+  #
+  # at this point the recipe method should be queried if it hasn't
+  # been explicitly set
+  
+  @recipe = orac_read_recipe($Recipe);	# read recipe
+  
+  while (grep /^\s*_/,@recipe) {	# while it contains other recipes
+    @recipe = orac_parse_recipe(@recipe); # keep parsing recipes
+  };
+  
+
+  $oracref = orac_execute_recipe(\@recipe,$Frm,$Grp,$Cal); # execute parsed recipe
+
+  # delete symlink to raw data file
+  unlink($Frm->raw) if (-l $Frm->raw);
+
 
 };				# end data loop
+
+
 
 
 &orac_exit_normally;
@@ -181,6 +220,9 @@ $oracref = orac_execute_recipe(\@recipe,\%Orac);	# execute parsed recipe
 #------------------------------------------------------------------------
 
 # $Log$
+# Revision 1.11  1998/04/04 06:45:31  frossie
+# Introduce Frm Grp and Cal objects
+#
 # Revision 1.10  1998/04/01 23:09:12  frossie
 # *** empty log message ***
 #

@@ -95,14 +95,12 @@ sub nbspoke {
 #------------------------------------------------------------------------
 sub orac_execute_recipe {
 
-local($reciperef,$argsref) = @_;
+local($reciperef,$Frm,$Grp,$Cal) = @_;
 local(@recipe) = @$reciperef;		# dereference recipe
-local(%args) = %$argsref;		# dereference arguments
 
 $block = join("",@recipe);
 eval $block;
 print colored ("Orac says: RECIPE ERROR: $@","blue") if ($@);
-return \%args;
 
 };
 
@@ -277,6 +275,9 @@ die;
 1;
 
 #$Log$
+#Revision 1.8  1998/04/04 06:46:22  frossie
+#Introduce Frm Grp and Cal objects
+#
 #Revision 1.7  1998/03/17 18:54:31  frossie
 #*** empty log message ***
 #
