@@ -43,10 +43,19 @@ Entry in C<index.fcf> log file if the frame is a calibrator.
 # Check that we are a calibrator (regardless of filter)
 if ($Cal->iscalsource($Frm->hdr("OBJECT"))) {
 
-
   # Find the integrated intensity
   # turn off logfile in production code
-  _FIND_INTEGRATED_INTENSITY_  LOGFILE=0
+  _FIND_INTEGRATED_INTENSITY_  LOGFILE=1 VERBOSE=0
+
+  # Find the peak
+  _FIND_MAP_PEAK_ LOGFILE=1 VERBOSE=0
+
+  # Retrieve the results
+  my %results = (
+		 BEAM => $_FIND_MAP_PEAK_{RESULTS},
+		 ARCSEC => $_FIND_INTEGRATED_INTENSITY_{RESULTS},
+		);
+
 
   # Now need to correct for pixel scale. This can be calculated
   # by looking at the SCUPIXSZ keyword in the header [assuming it
@@ -56,51 +65,69 @@ if ($Cal->iscalsource($Frm->hdr("OBJECT"))) {
     my $ORAC_STATUS = ORAC__ERROR;
   }
 
-  my $scale = $Frm->uhdr('SCUPIXSZ') ** 2;
+  my $pixscale = $Frm->uhdr('SCUPIXSZ') ** 2;
 
   # Get list of filters
   my @filter = $Frm->filters;
 
-  # Get results from integrated intensity
-  my $results = $_FIND_INTEGRATED_INTENSITY_{'RESULTS'};
+  # Copy of the frame header since we need to modify it
+  my %hdr = %{$Frm->hdr};
 
-  # Now Loop over frames
-  for my $i (1.. $Frm->nfiles ) {
+  # Loop over the different type of results
+  foreach my $type (keys %results) {
 
-    # skip if we have no result for this filter
-    # or it is negative
-    next unless (defined $results->[$i] && $results->[$i] > 0);
+    # Type specific configurations
+    my ($ismap, $scale, $units);
+    if ($type eq 'ARCSEC') {
+      $ismap = 1;  # Need full integrated flux
+      $scale = $pixscale; # Need to correct for pixel scale
+      $units = "Jy/arcsec**2/V";
+    } else {
+      $ismap = 0;
+      $scale = 1;
+      $units = "Jy/beam/V";
+    }
 
-    # Now get the flux
-    my $flux = $Cal->fluxcal($Frm->hdr("OBJECT"), $filter[$i-1], 1);
+    orac_print "Determining calibration of type $type\n";
 
-    if (defined $flux) {
+    # Now Loop over frames
+    for my $i (1.. $Frm->nfiles ) {
 
-      print "Flux: $flux, ". $results->[$i]. "\n";
-      # Calculate the new gain
-      my $fcf = $flux / ($results->[$i] * $scale);
+      # skip if we have no result for this filter
+      # or it is negative
+      next unless (defined $results{$type}->[$i] &&
+		   $results{$type}->[$i] > 0);
 
-      # Announce the new gain
-      orac_print("Storing new gain for ".$filter[$i-1].": $fcf Jy/V\n",'yellow');
+      # Now get the flux for this filter
+      my $flux = $Cal->fluxcal($Frm->hdr("OBJECT"), $filter[$i-1], $ismap);
 
-      # Set the current gain - add to index file
-      # This means that we have to create a hash with the
-      # new keyword GAIN and the selected filter FILTER
-      my %hdr = %{$Frm->hdr};
-      $hdr{GAIN} = $fcf;
-      $hdr{UNITS} = 'ARCSEC';
-      $hdr{FILTER} = uc($filter[$i-1]);
+      if (defined $flux) {
 
-      $Cal->gainsindex->add($Frm->file($i), \%hdr);
+	orac_print "Flux: $type $flux, ". $results{$type}->[$i]. "\n";
 
-      # Additionally it seems that a user-friendly logfile is
-      # a requirement
-      _ADD_FCF_LOG_ENTRY_ FILTER=$filter[$i-1] FCF=$fcf UNITS=ARCSEC
+	# Calculate the new gain
+	my $fcf = $flux / ($results{$type}->[$i] * $scale);
+
+	# Announce the new gain
+	orac_print("Storing new gain for ".$filter[$i-1].": $fcf $units\n",'yellow');
+
+	# Set the current gain - add to index file
+	# This means that we have to create a hash with the
+	# new keyword GAIN and the selected filter FILTER
+	$hdr{GAIN} = $fcf;
+	$hdr{UNITS} = $type;
+	$hdr{FILTER} = uc($filter[$i-1]);
+
+	$Cal->gainsindex->add($Frm->file($i), \%hdr);
+
+	# Additionally it seems that a user-friendly logfile is
+	# a requirement
+	_ADD_FCF_LOG_ENTRY_ FILTER=$filter[$i-1] FCF=$fcf UNITS=$type
+
+      }
 
     }
 
-
   }
-
 
 }
