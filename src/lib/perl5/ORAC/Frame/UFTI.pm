@@ -49,10 +49,8 @@ those available from ORAC::Frame.
 
 =over 4
 
-=cut
- 
 =item new
- 
+
 Create a new instance of a ORAC::Frame::UFTI object.
 This method also takes optional arguments:
 if 1 argument is  supplied it is assumed to be the name
