@@ -21,9 +21,10 @@ of the object to be calibrated.
 
 =cut
 
-
+use 5.006;
 use Carp;
 use strict;
+use warnings;
 use vars qw/$VERSION/;
 use ORAC::Print;
 
@@ -53,8 +54,7 @@ Any arguments are passed to the configure() method.
 =cut
 
 sub new {
-  
-  
+
   my $proto = shift;
   my $class = ref($proto) || $proto;
 
@@ -65,15 +65,13 @@ sub new {
 	       IndexRules => {},
 	       IndexRulesFile => undef,
 	      };
-  
+
   bless($index, $class);
-  
+
   if (@_) { $index->configure(@_)};
-  
-  
+
   return $index;
-  
-};
+}
 
 =back
 
@@ -110,8 +108,8 @@ Return (or set) the filename of the index file
 sub indexfile {
   my $self = shift;
   if (@_) {
-    $self->{IndexFile} = shift; 
-    $self->slurpindex;    
+    $self->{IndexFile} = shift;
+    $self->slurpindex;
   };
   return $self->{IndexFile};
 };
@@ -126,7 +124,7 @@ Return (or set) the filename of the rules file
 sub indexrulesfile {
   my $self = shift;
   if (@_) {
-    $self->{IndexRulesFile} = shift; 
+    $self->{IndexRulesFile} = shift;
     $self->slurprules;
   };
   return $self->{IndexRulesFile};
@@ -141,13 +139,13 @@ Returns or sets the reference to the hash containing the rules
 
 sub rulesref {
   my $self = shift;
-  
-  if (@_) { 
+
+  if (@_) {
     my $arg = shift;
     croak("Argument is not a hash") unless ref($arg) eq "HASH";
     $self->{IndexRules} = $arg;
   }
-  
+
   return $self->{IndexRules};
 }
 
@@ -159,13 +157,13 @@ Returns or sets the reference to the hash containing the index
 
 sub indexref {
   my $self = shift;
-  
+
   if (@_) { 
     my $arg = shift;
     croak("Argument is not a hash") unless ref($arg) eq "HASH";
     $self->{IndexEntries} = $arg;
   }
-  
+
   return $self->{IndexEntries};
 }
 
@@ -184,38 +182,37 @@ that can be retrieved with the rulesref() method.
 =cut
 
 sub slurprules {
-  
+
   my $self = shift;
   my $file = $self->indexrulesfile;
-  
+
   my %rules = ();
   my $handle = new IO::File "< $file";
-  
-  
+
   if (defined $handle) {
-    
+
     foreach my $line (<$handle>) {
-      
+
       next if $line =~ /^\s*\#/;
 
       $line =~ s/^\s+//g;		# zap leading blanks
       my ($header,$rule)=split(/\s+/,$line,2);
-      
+
       next unless defined $header;	# skip blank lines
       chomp($rule);                     # Remove carriage return
-      $rules{$header} = $rule;   
-      
-    };
-    
+      $rules{$header} = $rule;
+
+    }
+
   } else {
-    
+
     croak("Couldn't open rules file $file : $!");
-    
-  };
-  
+
+  }
+
   $self->rulesref(\%rules);
-  
-};
+
+}
 
 
 =item B<slurpindex>
@@ -239,7 +236,7 @@ index file (ie usekey=1).
 =cut
 
 sub slurpindex {
-  
+
   my $self = shift;
 
   # Read arguments
@@ -249,16 +246,15 @@ sub slurpindex {
   # Look for index file
   my $file = $self->indexfile;
   return unless (-e $file);
-  
+
   my %index = ();
   my $handle = new IO::File "< $file";
-  
-  
+
   if (defined $handle) {
-    
+
     foreach my $line (<$handle>) {
-      
-      next if $line =~ /^\s*#/; 
+
+      next if $line =~ /^\s*#/;
 
       $line =~ s/^\s+//g;		   # zap leading blanks
       my ($name,@data)=split(/\s+/,$line); # Split on spaces
@@ -271,25 +267,25 @@ sub slurpindex {
       unless ($usekey) {
         # Put $name back onto the index array
         unshift (@data, $name);
-  
+
         # Create a new key
         $name = tmpnam;
       }
-      
+
       # Store index entry in hash
       $index{$name} = \@data;
-      
-    };
-    
+
+    }
+
   } else {
-    
+
     croak("Couldn't open index file $file : $!");
-    
-  };
-  
+
+  }
+
   $self->indexref(\%index);
-  
-};
+
+}
 
 
 
@@ -301,27 +297,27 @@ writes out the current state of the index object into the index file
 =cut
 
 sub writeindex {
-  
+
   my $self=shift;
   my $file = $self->indexfile;
-  
+
   my $handle = new IO::File "> $file";
 
   if (defined $handle) {
-    
+
     print $handle "#",join(" ",sort keys %{$self->rulesref}),"\n";
-    
+
     foreach my $entry (sort keys %{$self->indexref}) {
       print $handle $self->index_to_text($entry) . "\n";
     };
-    
+
   } else {
-    
+
     croak("Couldn't open index $file : $!");
-    
-  };
-  
-};
+
+  }
+
+}
 
 =item B<add>
 
@@ -332,13 +328,13 @@ adds an entry to an index
 =cut
 
 sub add {
-  
+
   my $self=shift;
   croak('Usage: add($name,$hashref)') unless (scalar(@_)==2);
   my ($name,$hashref) = @_;
-  
-  croak("Argument is not a hash") unless ref($hashref) eq "HASH";  
-  
+
+  croak("Argument is not a hash") unless ref($hashref) eq "HASH";
+
   my @entry = ();
   foreach my $key (sort keys %{$self->rulesref}) {
     if (exists $$hashref{$key}) {
@@ -411,7 +407,7 @@ sub append_to_index {
         print $handle $self->index_to_text($entry) . "\n";
 
       } else {
-         croak "Couldn't open index $file : $!";   
+         croak "Couldn't open index $file : $!";
       }
 
     } else {
@@ -527,11 +523,11 @@ sub verify {
   return 0 unless defined $name;
 
   my $hashref = shift;
-  
+
   my $warn = 1;
   if (@_) { $warn = shift; }
 
-  croak("Argument is not a hash") unless ref($hashref) eq "HASH";  
+  croak("Argument is not a hash") unless ref($hashref) eq "HASH";
   return 0 unless defined $name;
 
   unless (exists $ {$self->indexref}{$name}) {
@@ -555,7 +551,7 @@ sub verify {
     orac_err "You will need to regenerate it\n";
     return undef;
   };
-  
+
   foreach my $key (sort keys %rules) {
     # remember, by design the index file data is already sorted by rule order
     my $CALVALUE = shift(@calibdata);	# value of nth index entry
@@ -585,15 +581,13 @@ sub verify {
 	orac_warn "Header:-".$Hdr{$key}."--Calvalue:-$CALVALUE-\n";
       }
       return 0;
-    };
-    
-  };
+    }
 
-  
+  }
+
   # if we have gotten to this stage, the calibration must be groovy
   return 1;
-  
-};
+}
 
 =item B<choosebydt>
 
@@ -617,14 +611,8 @@ If a suitable calibration can not be found an undefined value is returned.
 
 
 sub choosebydt {
-
   my $self=shift;
-
-  my $calibration =  $self->choosebydt_generic('ABS', @_);    
-
-#  croak("No suitable calibrations were found in index file. Sorry.")
-#    unless defined $calibration;
-  return $calibration;
+  return  $self->choosebydt_generic('ABS', @_);
 }
 
 =item B<chooseby_positivedt>
@@ -656,7 +644,7 @@ on-line and they have not even been taken yet).
 
 sub chooseby_positivedt {
   my $self = shift;
-  return $self->choosebydt_generic('POSITIVE', @_);  
+  return $self->choosebydt_generic('POSITIVE', @_);
 }
 
 =item B<chooseby_negativedt>
@@ -685,13 +673,7 @@ calibration can be found.
 
 sub chooseby_negativedt {
   my $self = shift;
-  my $calibration =  $self->choosebydt_generic('NEGATIVE', @_);  
-
-#  unless (defined $calibration) {
-#    croak('No suitable calibration found before current frame');
-#  }
-
-  return $calibration;
+  return $self->choosebydt_generic('NEGATIVE', @_);
 }
 
 
@@ -721,15 +703,15 @@ sub choosebydt_generic {
   my $warn = 1;
   $warn = shift if @_;
 
-  croak("Argument is not a hash") unless ref($hashref) eq "HASH";  
+  croak("Argument is not a hash") unless ref($hashref) eq "HASH";
 
   my %Hdr = %$hashref;
 
-  croak("Key $timekey unknown to orac - this should not happen\n") 
+  croak("Key $timekey unknown to orac - this should not happen\n")
     unless exists $Hdr{$timekey};
 
   my %index = %{$self->indexref};
-  
+
   my $pos = -1;
 
   foreach my $key (sort keys %{$self->rulesref}) {
@@ -756,7 +738,7 @@ sub choosebydt_generic {
       croak "choosebydt_generic: Unrecognised flag: $type\n";
     }
   };
-   
+
   # sort index keys by value (delta-tee)
   # as described by Economou (1997) TPJ 2 2 :-) :-)
   my @timesorted = sort {$dthash{$a} <=> $dthash{$b}} keys %dthash;
@@ -767,10 +749,10 @@ sub choosebydt_generic {
 
     return $calibration if ($ok);
   };
-  
+
   # If we get to this point, we didn't find any suitable ones
   return undef;
-  
+
 }
 
 
@@ -807,8 +789,8 @@ sub cmp_with_hash {
   return undef unless defined $hashref;
 
   # Croak if the argument is not a hash
-  croak("cmp_with_hash: Argument is not a hash") 
-    unless ref($hashref) eq "HASH";  
+  croak("cmp_with_hash: Argument is not a hash")
+    unless ref($hashref) eq "HASH";
 
   # Get a copy of the index
   my %index = %{ $self->indexref };
