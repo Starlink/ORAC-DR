@@ -49,7 +49,7 @@
 #       The nominal position is the R.A. centre of the array plus the
 #       R.A. telescope offset.  [0.0]
 #    SMOOTH = LOGICAL (Given)
-#       If 1 (0), a 5-by-5-pixel block median smooth is applied before
+#       If true (1), a 5-by-5-pixel block median smooth is applied before
 #       searching for the extreme value.  This removes noise and hot
 #       spots from mislocating the search window.  [1]
 #
@@ -70,15 +70,24 @@
 #    transformation would be needed near the poles or for wide fields.
 #    - Works with either KAPPA V0.13 or V0.14.  The WCS Frame is set to
 #    PIXEL for the latter.
+#    -  Should the extreme value lie within the outer 10% or 3 pixels of
+#    the edge of the initial region, a new region of the same size but 
+#    centred on the extreme value is used, and its extreme value
+#    supplied as the initial centroid position.  This allows for the
+#    source being slightly displaced from its nominal position, e.g.
+#    the telescope offsets have shifted.
+#    -  The centroid search box is set to twice the number of pixels in
+#    0.5 arcseconds plus one, subject to the constraint of being between
+#    9 and 51.
 #
 # Tasks:
 #    KAPPA: BLOCK, CENTROID, STATS, WCSFRAME.
 #
 # Authors:
-#    MJC: Malcolm J. Currie (JAC)
+#    MJC: Malcolm J. Currie (JAC, Starlink)
 #
 # Copyright:
-#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 #
 #-
@@ -169,6 +178,10 @@
 # Find the boxsize in pixels.  Note use the average, positive plate
 # scale.
        my $pixbox = nint( $boxsize / $platescale );
+       my $halfbox = int( $pixbox / 2 );
+
+# Define what is close to the edge of the box.
+       my $border = max( int( $pixbox * 0.1 ), 3 );
 
 # Set the co-ordinate system to pixels.
 # =====================================
@@ -210,22 +223,47 @@
 # Locate the main object within a central box.
        $Mon{ "kappa_mon" }->obeyw( "stats", "$ndfsect" );
 
+# Define search box size depending on the platescale within limits.
+# Assume a typical FWHM of 0.5 arcsec.
+       my $search = min( 51, max( 2 * int( 0.5 / $platescale ) + 1, 9 ) );
+
        my ( $param2, @maxpos, @minpos, $centroid_status );
        my $badint = -0x80000000;
        if ( $positive ) {
 
-# Extract the location of the maximum pixel bounds of the frame.
+# Extract the location of the maximum pixel from the section.
           ( $ORAC_STATUS, @maxpos ) = $Mon{ "kappa_mon" }->get( "stats", "maxpos" );
 
 # Validate the position.
           if ( $maxpos[ 0 ] != $badint ) {
 
+# Is the peak close to the edge of the box?
+             if ( abs( abs( $maxpos[0] - $xcentre ) - $halfbox ) <= $border ||
+                  abs( abs( $maxpos[1] - $ycentre ) - $halfbox ) <= $border ) {
+            
 # Shift the search box to be centred on the highest value within the 
+# search box.
+                $ndfsect = "ndf=${tmpfile}($maxpos[0]~$pixbox,$maxpos[1]~$pixbox)";
+
+# Locate the main object within the displaced box.  The repeated
+# statistics allows for a displaced source just outside the original
+# box, and previous peak value was only the periphery of the source.
+                $Mon{ "kappa_mon" }->obeyw( "stats", "$ndfsect" );
+
+# Extract the location of the maximum pixel from the shifted section.
+                ( $ORAC_STATUS, @maxpos ) = $Mon{ "kappa_mon" }->get( "stats", "maxpos" );
+             }
+          }
+
+# Validate the position.
+          if ( $maxpos[ 0 ] != $badint ) {
+
+# Shift the centroid search box to be centred on the highest value within the 
 # search box.
              $ndfsect = $Frm->file."($maxpos[0]~$pixbox,$maxpos[1]~$pixbox)";
 
 # Specify the other parameters for the CENTROID stage.
-             $param1 = "ndf=$ndfsect";
+             $param1 = "ndf=$ndfsect search=$search";
              if ( starversion_gt( "KAPPA", 'V0.13-6' ) ) {
                 $param2 = "mode=interface init='$maxpos[0],$maxpos[1]'";
              } else {
@@ -243,18 +281,39 @@
 
        } else {
 
-# Extract the location of the minimum pixel bounds of the frame.
+# Extract the location of the minimum pixel of the section.
           ( $ORAC_STATUS, @minpos ) = $Mon{ "kappa_mon" }->get( "stats", "minpos" );
 
 # Validate the position.
-
           if ( $minpos[ 0 ] != $badint ) {
+
+# Is the peak close to the edge of the box?
+             if ( abs( abs( $minpos[0] - $xcentre ) - $halfbox ) <= $border ||
+                  abs( abs( $minpos[1] - $ycentre ) - $halfbox ) <= $border ) {
+            
+# Shift the search box to be centred on the lowest value within the 
+# search box.
+                $ndfsect = "ndf=${tmpfile}($minpos[0]~$pixbox,$minpos[1]~$pixbox)";
+
+# Locate the main object within the displaced box.  The repeated
+# statistics allows for a displaced source just outside the original
+# box, and previous peak value was only the periphery of the source.
+                $Mon{ "kappa_mon" }->obeyw( "stats", "$ndfsect" );
+
+# Extract the location of the minimum pixel from the shifted section.
+                ( $ORAC_STATUS, @minpos ) = $Mon{ "kappa_mon" }->get( "stats", "minpos" );
+             }
+          }
+
+# Validate the position.
+          if ( $minpos[ 0 ] != $badint ) {
+
 # Shift the search box to be centred on the lowest value within the 
 # search box.
              $ndfsect = $Frm->file."($minpos[0]~$pixbox,$minpos[1]~$pixbox)";
 
 # Specify the other parameters for the CENTROID stage.
-             $param1 = "ndf=$ndfsect nopositive";
+             $param1 = "ndf=$ndfsect nopositive search=$search";
              if ( starversion_gt( "KAPPA", 'V0.13-6' ) ) {
                 $param2 = "mode=interface init='$minpos[0],$minpos[1]'";
              } else {
@@ -389,7 +448,7 @@ R.A. telescope offset.  [0.0]
 
 =item SMOOTH = LOGICAL (Given)
 
-If 1 (0), a 5-by-5-pixel block median smooth is applied before
+If true (1), a 5-by-5-pixel block median smooth is applied before
 searching for the extreme value.  This removes noise and hot
 spots from mislocating the search window.  [1]
 
@@ -433,6 +492,21 @@ transformation would be needed near the poles or for wide fields.
 Works with either KAPPA V0.13 or V0.14.  The WCS Frame is set to
 PIXEL for the latter.
 
+=item *
+
+Should the extreme value lie within the outer 10% or 3 pixels of
+the edge of the initial region, a new region of the same size but 
+centred on the extreme value is used, and its extreme value
+supplied as the initial centroid position.  This allows for the
+source being slightly displaced from its nominal position, e.g.
+the telescope offsets have shifted.
+
+=item *
+
+The centroid search box is set to twice the number of pixels in
+0.5 arcseconds plus one, subject to the constraint of being between
+9 and 51.
+
 =back
 
 =head1 TASKS
@@ -441,11 +515,11 @@ KAPPA: BLOCK, CENTROID, STATS, WCSFRAME.
 
 =head1 AUTHORS
 
-MJC: Malcolm J. Currie (JAC)
+Malcolm J. Currie (mjc@star.rl.ac.uk)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
