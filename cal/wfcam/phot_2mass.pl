@@ -16,7 +16,13 @@
                          'refmag' => '$Kmag;',
                          'extinct' => '0.05*($airmass - 1.0);',
                          'zeropt' => 24.0,
-                     }
+                     },
+		     'Z' => {
+			 'catalogue' => 'fs',
+			 'refmag' => '$zmag',
+			 'extinct' => '0.05*($airmass - 1.0);',
+			 'zeropt' => 24.0,
+		     }
                     );
  
     %catalogues = (
@@ -26,6 +32,13 @@
                        'columns' => ['Jmag','Hmag','Kmag'],
                        'vars' => ['Jmag','Hmag','Kmag'],
                        'vizcat' => 'viz2mass'
-                       }
+                       },
+                   'fs' => {
+		       'location'=>"$ENV{'ORAC_DATA_CAL'}/fs_izjhklm.dat",
+		       'accessmethod' => "searchfits",
+		       'columns' => ['imag','zmag'],
+		       'vars' => ['imag','zmag'],
+                       'vizcat' => ""
+		       }
                   );
 
