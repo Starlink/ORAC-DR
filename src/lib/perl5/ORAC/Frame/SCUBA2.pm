@@ -450,7 +450,7 @@ sub _find_processed_images {
   # if status is bad, annul what we have and return empty list
   if ($status != &NDF::SAI__OK) {
     err_annul( $status );
-    hds_annul( $_, $status ) for @locs;
+    dat_annul( $_, $status ) for @locs;
     err_end( $status );
     return ();
   }
