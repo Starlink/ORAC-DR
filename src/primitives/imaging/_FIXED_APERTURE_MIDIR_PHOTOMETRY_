@@ -19,10 +19,11 @@
 #    the aperture.  The photometry engine accounts for fractional pixels
 #    at the aperture edge but without allowance for the local gradient.
 #    The photometry also yields an internal error determined from the 
-#    sky variance.  The magnitudes are given by the expression 
-#    -2.5 * log10( abs( counts ) per second exposure time ).  Therefore
-#    negative sources can be measured too.  The magnitudes are converted
-#    to fluxes for reporting.
+#    sky variance, or the data variance if available.  The magnitudes are
+#    given by the expression 
+#          -2.5 * log10( abs( counts ) per second exposure time ). 
+#    Therefore negative sources can be measured too.  The magnitudes are
+#    converted to fluxes for reporting.
 #
 #    The source must lie within the specified aperture.  See arguments
 #    RAOFF and DECOFF for the location of the aperture.
@@ -133,6 +134,8 @@
 #    -  The ADU factor and exposure time stored in frame header are
 #    validated.  Non-positive values cause a warning message to appear,
 #    but the primitive continues defaulting the header value to 1.
+#    -  The data variance provides the magnitude error estimate whenever
+#    user header USE_VARIANCE is true (1).
 #
 # Tasks:
 #    KAPPA: ARDMASK, NDFCOPY, NDFTRACE, PSF, WCSFRAME; PHOTOM: AUTOPHOTOM.
@@ -141,7 +144,7 @@
 #    MJC: Malcolm J. Currie (JAC)
 #
 # Copyright:
-#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 #
 #-
@@ -244,66 +247,13 @@
 # Obtain the mean extinction coefficient.  Specify the corresponding catalogue
 # column number for the filter.  Also define the filter width with
 # respect to broadband N or Q, and the conversion factor to jansky.
-             my ( $catcol, $extinction, $jansky_zp, $width );
-             SWITCH: {
+             _GET_FILTER_PARAMETERS_
+             my $catcol = $_GET_FILTER_PARAMETERS_{CATCOL};
+             my $extinction = $_GET_FILTER_PARAMETERS_{EXTINCTION};
+             my $jansky_zp = $_GET_FILTER_PARAMETERS_{TOJANSKY};
+             my $width = $_GET_FILTER_PARAMETERS_{WIDTH};
+             $fzp = $_GET_FILTER_PARAMETERS_{ZEROPOINT};
 
-# N-band filters
-                if ( $filter =~ /79B10/ ) { 
-                   $extinction = 0.18; $catcol = 10; $fzp = 11.20;
-                   $jansky_zp = 65.3; $width = 0.189; last SWITCH; 
-                }
-                if ( $filter =~ /88B10/ ) {
-                   $extinction = 0.18; $catcol = 10; $fzp = 11.3;
-                   $jansky_zp = 53.0; $width = 0.189; last SWITCH;
-                }
-                if ( $filter =~ /97B10/ ) {
-                   $extinction = 0.18; $catcol = 10; $fzp = 11.50;
-                   $jansky_zp = 42.3; $width = 0.189; last SWITCH;
-                }
-                if ( $filter =~ /103B10/ ) {
-                   $extinction = 0.18; $catcol = 10; $fzp = 11.5;
-                   $jansky_zp = 38.5; $width = 0.169; last SWITCH;
-                }
-                if ( $filter =~ /105B53/ ) {
-                   $extinction = 0.18; $catcol = 10; $fzp = 12.89;
-                   $jansky_zp = 37.2; $width = 1.000; last SWITCH;
-                }
-                if ( $filter =~ /107B4/ ) {
-                   $extinction = 0.18; $catcol = 10;
-                   $jansky_zp = 36.6; $width = 0.075; last SWITCH;
-                }
-                if ( $filter =~ /116B9/ ) {
-                   $extinction = 0.18; $catcol = 10; $fzp = 11.73;
-                   $jansky_zp = 30.5; $width = 0.186; last SWITCH;
-                }
-                if ( $filter =~ /122B3/ ) {
-                   $extinction = 0.18; $catcol = 10;
-                   $jansky_zp = 27.8; $width = 0.057; last SWITCH;
-                }
-                if ( $filter =~ /125B9/ ) {
-                   $extinction = 0.18; $catcol = 10; $fzp = 11.505;
-                   $jansky_zp = 26.4; $width = 0.164; last SWITCH;
-                }
-                if ( $filter =~ /128B2/ ) {
-                   $extinction = 0.18; $catcol = 10;
-                   $jansky_zp = 25.0; $width = 0.038; last SWITCH;
-                }
-   
-# Q-band filters
-                if ( $filter =~ /F185B9/ ) {
-                   $extinction = 0.18; $catcol = 11;
-                   $jansky_zp = 12.4; $width = 0.269; last SWITCH;
-                }
-                if ( $filter =~ /F209B42/ ) {
-                   $extinction = 0.18; $catcol = 11; $fzp = 9.48;
-                   $jansky_zp = 9.35; $width = 1.000; last SWITCH;
-                }
-
-# Default filter
-                $extinction = 0.18; $catcol = -1; $fzp = 12.89;
-                $jansky_zp = 37.2; $width = 1.000;
-             }
-   
 # Obtain the airmass from the FITS headers.  Find the approximate
 # mean airmass from the start and end values.  This should be
 # adequate unless it is a long integration with the source crossing
@@ -603,13 +553,20 @@
              }
  
 # Specify the other parameters for AUTOPHOTOM.  Strictly we should check the
-# headers for the readout mode
+# headers for the readout mode, and double-check that data variance is
+# present when USE_VARIANCE is true.  PHOTON=2 uses sky variance to
+# estimate the photometric error, whereas PHOTON=3 uses the data
+# variance.
              $param1 = "in=$ndf infile=photom$$.dat outfile=photom$$.res";
+             my $photon = 2;
+             if ( $Frm->uhdr( "USE_VARIANCE" ) ) {
+                $photon = 3;
+             }
              my $param2;
              if ( $positive ) {
-                $param2 = "nocentro padu=$padu biasle=0 photon=2 positive sature=$sature nousemask";
+                $param2 = "nocentro padu=$padu biasle=0 photon=$photon positive sature=$sature nousemask";
              } else {
-                $param2 = "nocentro padu=$padu biasle=0 photon=2 nousemags nopositive sature=$sature nousemask";
+                $param2 = "nocentro padu=$padu biasle=0 photon=$photon nousemags nopositive sature=$sature nousemask";
              }
 
 # Perform the photometry, however, for this case compute a centroid
@@ -817,10 +774,11 @@ the source with the sky measured from a concentric annulus outside
 the aperture.  The photometry engine accounts for fractional pixels
 at the aperture edge but without allowance for the local gradient.
 The photometry also yields an internal error determined from the 
-sky variance.  The magnitudes are given by the expression 
--2.5 * log10( abs( counts ) per second exposure time ).  Therefore
-negative sources can be measured too.  The magnitudes are converted
-to fluxes for reporting.
+sky variance, or the data variance if available.  The magnitudes are
+given by the expression 
+   -2.5 * log10( abs( counts ) per second exposure time ). 
+Therefore negative sources can be measured too.  The magnitudes
+are converted to fluxes for reporting.
 
 The source must lie within the specified aperture.  See arguments
 RAOFF and DECOFF for the location of the aperture.
@@ -986,6 +944,11 @@ The ADU factor and exposure time stored in frame header are
 validated.  Non-positive values cause a warning message to appear,
 but the primitive continues defaulting the header value to 1.
 
+=item *
+
+The data variance provides the magnitude error estimate whenever
+user header USE_VARIANCE is true (1).
+
 =back
 
 =head1 TASKS
@@ -998,7 +961,7 @@ MJC: Malcolm J. Currie (JAC)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut

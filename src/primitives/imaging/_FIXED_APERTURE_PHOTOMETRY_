@@ -19,9 +19,10 @@
 #    the aperture.  The photometry engine accounts for fractional pixels
 #    at the aperture edge but without allowance for the local gradient.
 #    The photometry also yields an internal error determined from the 
-#    sky variance.  The magnitudes are given by the expression 
-#    -2.5 * log10( abs( counts ) per second exposure time ).  Therefore
-#    negative sources can be measured too.
+#    sky variance, or the data variance if available.  The magnitudes are
+#    given by the expression 
+#          -2.5 * log10( abs( counts ) per second exposure time ). 
+#    Therefore negative sources can be measured too.
 #
 #    The source must lie within the specified aperture.  See arguments
 #    RAOFF and DECOFF for the location of the aperture.
@@ -118,6 +119,8 @@
 #    -  The ADU factor and exposure time stored in frame header are
 #    validated.  Non-positive values cause a warning message to appear,
 #    but the primitive continues defaulting the header value to 1.
+#    -  The data variance provides the magnitude error estimate whenever
+#    user header USE_VARIANCE is true (1).
 #
 # Tasks:
 #    KAPPA: ARDMASK, NDFCOPY, NDFTRACE, PSF, WCSFRAME; PHOTOM: AUTOPHOTOM.
@@ -126,7 +129,7 @@
 #    MJC: Malcolm J. Currie (JAC)
 #
 # Copyright:
-#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 #
 #-
@@ -242,34 +245,9 @@
 
 # Obtain the mean extinction coefficient.  Specify the corresponding catalogue
 # column number for the filter.
-             my ( $catcol, $extinction );
-             SWITCH: {
-                if ( $filter =~ /^J/ ) {
-                   $extinction = 0.08; $catcol = 2; last SWITCH;
-                }
-                if ( $filter =~ /^H/ ) { 
-                   $extinction = 0.03; $catcol = 3; last SWITCH;
-                }
-                if ( $filter =~ /^K/ ) {
-                   $extinction = 0.07; $catcol = 4; last SWITCH;
-                }
-                if ( $filter =~ /^L'/ ) {
-                   $extinction = 0.09; $catcol = 5; last SWITCH;
-                }
-                if ( $filter =~ /^L/ ) {
-                   $extinction = 0.10; $catcol = 5; last SWITCH;
-                }
-                if ( $filter =~ /^M/ ) {
-                   $extinction = 0.30; $catcol = 6; last SWITCH;
-                }
-                if ( $filter =~ /^I/ ) {
-                   $extinction = 0.07; $catcol = 0; last SWITCH;
-                }
-                if ( $filter =~ /^Z/ ) {
-                   $extinction = 0.03; $catcol = 1; last SWITCH;
-                }
-                $extinction = 0.0; $catcol = -1;
-             }
+             _GET_FILTER_PARAMETERS_
+             my $catcol = $_GET_FILTER_PARAMETERS_{CATCOL};
+             my $extinction = $_GET_FILTER_PARAMETERS_{EXTINCTION};
 
 # Obtain the airmass from the FITS headers.  Find the approximate
 # mean airmass from the start and end values.  This should be
@@ -604,13 +582,20 @@
              }
  
 # Specify the other parameters for AUTOPHOTOM.  Strictly we should check the
-# headers for the readout mode
+# headers for the readout mode, and double-check that data variance is
+# present when USE_VARIANCE is true.  PHOTON=2 uses sky variance to
+# estimate the photometric error, whereas PHOTON=3 uses the data
+# variance.
              $param1 = "in=$ndf infile=photom$$.dat outfile=photom$$.res";
+             my $photon = 2;
+                orac_warn "$ndf using variance\n";
+                $photon = 3;
+             }
              my $param2;
              if ( $positive ) {
-                $param2 = "nocentro padu=$padu biasle=0 photon=2 positive sature=$sature nousemask";
+                $param2 = "nocentro padu=$padu biasle=0 photon=$photon positive sature=$sature nousemask";
              } else {
-                $param2 = "nocentro padu=$padu biasle=0 photon=2 nousemags nopositive sature=$sature nousemask";
+                $param2 = "nocentro padu=$padu biasle=0 photon=$photon nousemags nopositive sature=$sature nousemask";
              }
 
 # Perform the photometry, however, for this case compute a centroid
@@ -791,14 +776,17 @@ for the group frame, and target-frame members of the current $Grp
 within the current cycle.  The results are reported and stored in
 a text file---a Starlink STL table (see SUN/190).
 
-The photometry is in circular aperture located at the centroid of
-the source with the sky measured from a concentric annulus outside
-the aperture.  The photometry engine accounts for fractional pixels
-at the aperture edge but without allowance for the local gradient.
-The photometry also yields an internal error determined from the 
-sky variance.  The magnitudes are given by the expression 
--2.5 * log10( abs( counts ) per second exposure time ).  Therefore
-negative sources can be measured too.
+The photometry is in circular aperture located at the centroid of the
+source with the sky measured from a concentric annulus outside the
+aperture.  The photometry engine accounts for fractional pixels at the
+aperture edge but without allowance for the local gradient. The
+photometry also yields an internal error determined from the sky
+variance, or the data variance if available.  The magnitudes are given
+by the expression 
+
+   -2.5 * log10( abs( counts ) per second exposure time ).  
+   
+Therefore negative sources can be measured too.
 
 The source must lie within the specified aperture.  See arguments
 RAOFF and DECOFF for the location of the aperture.
@@ -943,6 +931,11 @@ The ADU factor and exposure time stored in frame header are
 validated.  Non-positive values cause a warning message to appear,
 but the primitive continues defaulting the header value to 1.
 
+=item *
+
+The data variance provides the magnitude error estimate whenever
+user header USE_VARIANCE is true (1).
+
 =back
 
 =head1 TASKS
@@ -955,7 +948,7 @@ MJC: Malcolm J. Currie (JAC)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
