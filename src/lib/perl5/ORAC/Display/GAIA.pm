@@ -295,7 +295,8 @@ sub launch {
 
 
 # internal method to open the socket
-# no arguments. Looks for .rtd-remote file in home directory
+# no arguments. Looks for .rtd-remote file in $RTD_REMOTE_DIR and
+# then home directory
 # Returns a socket object if successful, otherwise returns undef
 # Does not update the object state
 
@@ -308,29 +309,40 @@ sub _open_gaia_socket {
   my $self = shift;
   my $fh;
 
-  # Attempt to open .rtd-remote file
-  if ($fh = new IO::File($ENV{HOME}.'/.rtd-remote')) {
-    my ($pid, $host, $port) = split (/\s+/, <$fh>);
-    print "host = $host,   pid = $pid,    port = $port\n" if $DEBUG;
-    close $fh;
+  # Attempt to open .rtd-remote file, first in RTD_REMOTE_DIR then
+  # looking in $HOME
+  for my $env (qw/RTD_REMOTE_DIR HOME/) {
+    # do we have that environment variable set?
+    next unless exists $ENV{$env};
+    next unless $ENV{$env};
 
-    # We are allowed to try and connect to this gaia if we 
-    # can talk to remote gaias or if the host mentioned in the 
-    # file matches the host we are running on
-    if ($self->use_remote_gaia || $host =~ /$localhost/) {
+    my $path = File::Spec->catdir( $ENV{$env}, ".rtd-remote");
+    print "Looking in path: $path\n" if $DEBUG;
 
-      # Open the socket connection
-      my $sock = IO::Socket::INET->new( 
-				       Proto => "tcp",
-				       PeerAddr  => $host,
-				       PeerPort  => $port,
-				      );
-      if ($sock) {
-	$sock->autoflush(1);
-	return $sock;
+    if ($fh = new IO::File($path)) {
+      my ($pid, $host, $port) = split (/\s+/, <$fh>);
+      print "host = $host,   pid = $pid,    port = $port\n" if $DEBUG;
+      close $fh;
+
+      # We are allowed to try and connect to this gaia if we 
+      # can talk to remote gaias or if the host mentioned in the 
+      # file matches the host we are running on
+      if ($self->use_remote_gaia || $host =~ /$localhost/) {
+
+	# Open the socket connection
+	my $sock = IO::Socket::INET->new( 
+					 Proto => "tcp",
+					 PeerAddr  => $host,
+					 PeerPort  => $port,
+					);
+	if ($sock) {
+	  print "Opened GAIA on $path\n" if $DEBUG;
+	  $sock->autoflush(1);
+	  return $sock;
+	}
       }
     }
-  } 
+  }
 
   return undef;
 }
