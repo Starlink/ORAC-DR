@@ -193,6 +193,150 @@ sub _set_index_rules {
   return $index;
 }
 
+=item B<arlinesname>
+
+Return (or set) the name of the current arlines.lis file - no checking
+
+  $arlines = $Cal->arlinesname;
+
+=cut
+
+sub arlinesname {
+  my $self = shift;
+  if (@_) { $self->{Arlines} = shift; }
+  return $self->{Arlines};
+}
+
+
+=item B<arlines>
+
+Returns the name of a suitable arlines file.
+
+=cut
+
+
+sub arlines {
+
+  my $self = shift;
+  if (@_) {
+    return $self->arlinesname(shift);
+  };
+
+  my $ok = $self->arlinesindex->verify($self->arlinesname,$self->thing);
+
+  # happy ending
+  return $self->arlinesname if $ok;
+
+  if (defined $ok) {
+    my $arlines = $self->arlinesindex->choosebydt('ORACTIME',$self->thing);
+
+    unless (defined $arlines) {
+      # Nothing suitable, give up...
+      croak "No suitable arlines file was found in index file"
+    }
+
+    # Store the good value
+    $self->arlinesname($arlines);
+
+  } else {
+    # All fall down....
+    croak("Error in determining arlines file - giving up");
+  }
+}
+
+
+
+=item B<arlinesindex>
+
+Returns the index object associated with the arlines index file. Index is 
+static therefore in calibration directory.
+
+=cut
+
+sub arlinesindex {
+
+    my $self = shift;
+    if (@_) { $self->{ArlinesIndex} = shift; }
+    
+    unless (defined $self->{ArlinesIndex}) {
+	my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "index.arlines" );
+	my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.arlines" );
+	$self->{ArlinesIndex} = new ORAC::Index($indexfile,$rulesfile);
+    }
+
+    return $self->{ArlinesIndex}; 
+}
+
+=item B<calibratedarc>
+
+Returns the name of a suitable calibrated arc file. If no suitable calibrated
+arc file can be found, this method returns <undef> rather than croaking as
+other calibration options do. This is so this calibration can be skipped if
+no calibration arc can be found.
+
+=cut
+
+sub calibratedarc {
+  my $self = shift;
+  if (@_) {
+    return $self->calibratedarcname(shift);
+  };
+
+  my $ok = $self->calibratedarcindex->verify($self->calibratedarcname,$self->thing);
+
+  # happy ending
+  return $self->calibratedarcname if $ok;
+
+  if (defined $ok) {
+   my $calibratedarc = $self->calibratedarcindex->choosebydt('ORACTIME',$self->thing);
+
+    unless (defined $calibratedarc) {
+      # Nothing suitable, return undef.
+      return undef;
+    }
+
+    # Store the good value
+    $self->calibratedarcname($calibratedarc);
+
+  } else {
+    # Nothing suitable, return undef.
+    return undef;
+  }
+}
+
+=item B<calibratedarcindex>
+
+Returns the index object associated with the calibratedarc index file.
+Index is static and therefore in calibration directory.
+
+=cut
+
+sub calibratedarcindex {
+  my $self = shift;
+  if ( @_ ) { $self->{CalibratedArcIndex} = shift; }
+
+  unless ( defined( $self->{CalibratedArcIndex} ) ) {
+    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "index.calibratedarc" );
+    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.calibratedarc" );
+    $self->{CalibratedArcIndex} = new ORAC::Index( $indexfile, $rulesfile );
+  }
+  return $self->{CalibratedArcIndex};
+}
+
+=item B<calibratedarcname>
+
+Return (or set) the name of the current calibrated arc file - no checking.
+
+  $calibratedarc = $Cal->calibratedarcname;
+
+=cut
+
+sub calibratedarcname {
+  my $self = shift;
+  if ( @_ ) { $self->{CalibratedArc} = shift; }
+  return $self->{CalibratedArc};
+}
+
 
 =back
 
@@ -207,7 +351,7 @@ Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
