@@ -63,14 +63,44 @@ if (exists $Mon{polpack_mon}) {
     my $root = "stack$$" . "_";
     my $stack = "'$root" . "*'";
     if ($weights == 1) {
+
+      # Need to calculate the origin
+      # First run POLEXT to extract the WPLATE (coud assume -2.5
+      # of the first image - assume that the first image is $in.i1 (KLUGE)
+      $Mon{polpack_mon}->obeyw('polext',"in=${in}.i1 quiet=true");
+      my ($ORAC_STATUS, $wplate) = $Mon{polpack_mon}->get('polext','vwplate');
+
+      orac_print "First waveplate angle = $wplate\n";
+
+      # Calculate first analyzer angle (see pol1_srtim.f in polpack source)
+      # First one is meant to be relative to the ANGROT so it is
+      # simply 2*WP (the ANGROT is only used for relative rotations
+      # and the analyzer angle is assumed to be referenced to the
+      # first ANGROT)
+      # To centre the bins properly, really need to read the ANGROT
+      # from the last image at this waveplate and then average them
+      # - do this if we have a problem (since we can't gurantee waveplate
+      # order).
       
+      my $origin = 0.0;
+      my $range = 180.0;
+      my $anlang = 2 * $wplate;
+      $anlang = $anlang - $range * int( ($anlang - $origin)/ $range);
+      $anlang = $anlang + $range if $anlang < $origin;
+
+      orac_print "Origin for rotation must be less than $anlang\n";
+
+      # Origin should be half a bin less than anlang
+      my $bin = 22.5;
+      my $origin = $anlang - ($bin/2);
+
       # Do we want to check for left over images
       # from the last time round in case there was an abort
       # and the temp files were not removed on exiting this primitive?
 
       orac_print "Stacking images to generate variance\n";
-      my $args = "in=$in out=$stack minin=2 bin=15 stack=!";
-      $Mon{polpack_mon}->obeyw('polstack',"$args");
+      my $args = "in=$in out=$stack minin=2 bin=$bin stack=! origin=$origin";
+      $Mon{polpack_mon}->obeyw('polstack',"$args ilevel=2");
       $in = $stack;
     }
 
