@@ -25,7 +25,7 @@ to B<ORAC::Frame::CGS4> objects. Some additional methods are supplied.
 
 # A package to describe a UKIRT group object for the
 # ORAC pipeline
- 
+
 use 5.004;
 use ORAC::Frame::UKIRT;
 use ORAC::Print;
@@ -40,7 +40,7 @@ use vars qw/$VERSION/;
 # standard error module and turn on strict
 use Carp;
 use strict;
- 
+
 # For reading the header
 use NDF;
 use Starlink::HDSPACK qw/copobj/;
@@ -99,10 +99,7 @@ sub new {
   # If arguments are supplied then we can configure the object
   # Currently the argument will be the filename.
   # If there are two args this becomes a prefix and number
-
-
   $self->configure(@_) if @_;
- 
 
   return $self;
 }
@@ -133,11 +130,9 @@ the prefix and arg2 is the observation number.
 =cut
 
 sub configure {
-
-
   my $self = shift;
 
-  # If two arguments (prefix and number) 
+  # If two arguments (prefix and number)
   # have to find the raw filename first
   # else assume we are being given the raw filename
   my $fname;
@@ -148,7 +143,6 @@ sub configure {
   } else {
     croak 'Wrong number of arguments to configure: 1 or 2 args only';
   }
-
 
   # set the filename
 
@@ -228,9 +222,9 @@ sub file_from_bits {
 
 =item B<findnsubs>
 
-This method returns the number of NDFs found in an HDS container.
-This method assumes that there is a .HEADER component and removes
-1 from the total count.
+This method returns the number of .I? NDFs found in an HDS container.
+It can not simply count the number of NDFs and subtract 1 (the .HEADER)
+because Michelle stored extra NDFs in the container.
 
   $ncomp = $Frm->findnsubs;
 
@@ -252,17 +246,43 @@ sub findnsubs {
   # Now need to find the NDFs in the output HDS file
   $status = &NDF::SAI__OK;
   hds_open($file, 'READ', $loc, $status);
-  dat_ncomp($loc, $ncomp, $status);
+
+  # Need to rely on status being good before proceeding
+  if ($status == &NDF::SAI__OK) {
+
+    # Loop until we get an error
+    my $there = 1;
+    $ncomp = 0;
+    while ($there && $status == &NDF::SAI__OK) {
+
+      # increment counter
+      $ncomp++;
+
+      # Check for the .I?? component
+      dat_there($loc, "I$ncomp", $there, $status );
+
+    }
+
+    # ncomp will be one too large since we have to check
+    # for 1 higher
+    $ncomp--;
+
+  }
+
+  # Loop until 
   dat_annul($loc, $status);
 
   unless ($status == &NDF::SAI__OK) {
-    orac_err("Can't open $file for nsubs");
+    orac_err("Can't open $file for nsubs\n");
     return 0;
   }
 
-  $ncomp--;
+  if ($ncomp == 0) {
+    orac_err "Could not find .I1 NDF component in file $file\n";
+    return 0;
+  }
 
-
+  # Update the header
   $self->nsubs($ncomp);
 
   return $ncomp;
