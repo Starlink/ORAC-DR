@@ -52,7 +52,7 @@ object.
 
 =over 4
 
-=item B<standardindex>
+=item B<flatindex>
 
 Uses F<rules.flat_im> and <rules.flat_sp>
 
