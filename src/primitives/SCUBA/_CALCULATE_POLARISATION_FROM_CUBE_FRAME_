@@ -30,19 +30,16 @@ The following suffixes are generated:
 The following tasks are used:
 
  POLPACK: POLVEC to generate P and THETA from Q and U
+          POLBIN to bin and POLIMAGE to generate NDFs from catalogue
 
  CURSA: CATSELECT to select good vectors
 
- KAPPA: THRESH is used to threshold the P vectors
-
-If POLPACK is not available, KAPPA MATHS is used to calculate the
-P and THETA images from the Q and U.
-
- KAPPA - MATHS for averaging
+ KAPPA: MATHS to calculate signal-to-noise
+        NDFCOPY, SETLABEL, SETTITLE and HISSET
 
 =head1 DISPLAY
 
-The display system will be asked to display the _I frame.  
+The display system will be asked to display the _pol frame.
 A VECTOR display automatically looks for P and
 THETA in an ORAC extension if an _I suffix is found 
 A _I suffix should be associated with TYPE=VECTOR if
@@ -74,7 +71,7 @@ images for display if one exists.
 =head1 NOTES
 
 This primitive does not update the frame object. This is because the
-group primitive has to work on the IQU cubes - there is not way
+group primitive has to work on the IQU cubes - there is no way
 for the group primitive to find out the name of the cube if it runs
 after this primitive and this primitive has set the I frame as the
 current.
@@ -121,8 +118,14 @@ for my $i (1..$Frm->nfiles) {
   # Just run POLVEC
   $Mon{polpack_mon}->obeyw('polvec',"in=$in cat=$catout[$i] p=$pout[$i] ang=$thout[$i]");
 
+  # Store the source name in a variable for easy access
+  my $sourcename = $Frm->hdr("OBJECT");
+  my $runno      = $Frm->hdr("RUN");
+  $sourcename = "$sourcename (#$runno)";
+
   # Set the I image to be the slice from the cube
-  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in(,,1) out=$iout[$i] title='Stokes I image'");
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in(,,1) out=$iout[$i] title='Stokes I image - $sourcename'");
+
 
   # Do not change the bounds to 2-D
   # - too lazy
@@ -141,14 +144,27 @@ for my $i (1..$Frm->nfiles) {
     # threshold catalogue on I>0 && p/dp> 3
     # and write it to a catalogue of the same name as the I image
     unlink "$iout[$i].FIT";
-    $Mon{catselect}->obeyw("catselect"," catin=$binout[$i] catout=$iout[$i] rejcat=no seltyp=e expr='i>0 & p<$pthresh & p>0.001 & p/dp>$Sig2N'");
+    my $catstat = $Mon{catselect}->obeyw("catselect"," catin=$binout[$i] catout=$iout[$i] rejcat=no seltyp=e expr='i>0 & p<$pthresh & p>0.001 & p/dp>$Sig2N'");
 
-    orac_print "Clipping vectors below signal-to-noise of $Sig2N\n";
+    # Problem with catselect -- it returns good status even if no
+    # vectors were selected using the supplied criterion.
+    # The only thing we can do is check the file size of the output
+    # catalogue (since catselect creates one but doesnt fill it!)
+    my $fsize = (stat "$iout[$i].FIT")[7]; # size in bytes
+
+    if ($fsize == 0) {
+      orac_warn "No vectors with I>0, P>0.001, P<$pthresh and p/dp>$Sig2N\n";
+      orac_warn "Proceeding with non-thresholded catalogue\n";
+      # Move the binned catalogue to the final output
+      system( "mv $binout[$i].FIT $iout[$i].FIT");
+    } else {
+      orac_print "Clipping vectors below signal-to-noise of $Sig2N\n";
+    }
 
   } else {
     orac_print "CURSA not available -- no clipping available\n";
 
-    # Move the binned catalogur to the final output
+    # Move the binned catalogue to the final output
     system( "mv $binout[$i].FIT $iout[$i].FIT");
   }
 
@@ -158,8 +174,9 @@ for my $i (1..$Frm->nfiles) {
   my $pimag = new ORAC::TempFile(0);
   $Mon{polpack_mon}->obeyw("polimage"," in=$iout[$i] coldat=p colvar='dp**2' method=mean shape=true out=" . $pimag->file);
   my $s2n = $Frm->inout('_s2n',$i);
-  $Mon{kappa_mon}->obeyw("maths","exp='ia/sqrt(va)' ia=".$pimag->file ." out=$s2n title='p S/N'");
-
+  $Mon{kappa_mon}->obeyw("maths","exp='ia/sqrt(va)' ia=".$pimag->file ." out=$s2n title='$sourcename - (S/N)'");
+  $Mon{ndfpack_mon}->obeyw("setlabel","ndf=$s2n label='P/dP'");
+ 
   $S2N_frm->file($i, $s2n);
   orac_print "S/N image calculated\n";
 
@@ -181,10 +198,13 @@ for my $i (1..$Frm->nfiles) {
   }
 
 
-  # Generate P and THETA images from the catalogues so thatthe
-  # histograams look correct
+  # Generate P and THETA images from the catalogues so that the
+  # histograms look correct
   $Mon{polpack_mon}->obeyw("polimage"," in=$iout[$i] coldat=p colvar='dp**2' method=mean shape=true out=$pout[$i]");
+  $Mon{ndfpack_mon}->obeyw("settitle","ndf=$pout[$i] title='Polarisation: $sourcename'");
+
   $Mon{polpack_mon}->obeyw("polimage"," in=$iout[$i] coldat=ang colvar='dang**2' method=mean shape=true out=$thout[$i]");
+  $Mon{ndfpack_mon}->obeyw("settitle","ndf=$thout[$i] title='Theta: $sourcename'");
 
   # Copy P and THETA into $iout
   $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$thout[$i] out=$iout[$i].more.orac.theta");
