@@ -1,0 +1,105 @@
+=head1 NAME
+
+_DETERMINE_ROW_ - determines the brightest detector row
+
+=head1 SYNOPSIS
+
+_DETERMINE_ROW_
+_DETERMINE_ROW_  ROW=52
+
+=head1 DESCRIPTION
+
+Finds the most likely looking row to use by collapsing the 
+image to a 1-D spectrum and finding the brightest pixel.
+
+If a row is specified, no action is taken by this primitive except
+to store the information for use by subsequent primitives. This
+is so that the extraction can be specified in a single location.
+
+=head1 OPTIONS
+
+The following options are supported:
+
+=over 4
+
+=item ROW
+
+Row to use for extraction.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following packages are used:
+
+=over 4
+
+=item Kappa
+
+C<compadd>, C<stats>
+
+=back
+
+=head1 OUTPUT FILES
+
+There are no output files.
+
+=head1 NOTES
+
+This primitive only processes the first exposure/frame
+rather than attempting to coadd all the exposures. This should
+not be a problem since it is expected that this primitive
+is run after the mulitple exposures have been coadded. 
+
+Also, for very weak sources, it is possible that edge effects
+will dominate. In that case, this primitive may need to be rewritten
+such that it does not try to use the very edge of the array.
+
+=head1 AUTHOR
+
+Tim Jenness
+
+=cut
+
+
+my $extractrow = (exists $_DETERMINE_ROW_{'ROW'} ? $_DETERMINE_ROW_{ROW} : undef);
+
+unless (defined $extractrow) {
+
+  # Get the first (only?) frame name
+  my $frame = $Frm->file;
+
+  # Create a temporary name
+  my $add = new ORAC::TempFile;
+  my $addname = $add->file;
+
+  # Need to find the size of the array so that we can caluclate the
+  # compression ratio 
+  # With kappa 0.15 we can simply choose a very large number.
+  # for older kappa we have to find the size first
+
+  $Mon{'ndfpack_mon'}->obeyw("ndftrace","ndf=$frame quiet=true");
+  my ($ORAC_STATUS, @dims) = $Mon{ndfpack_mon}->get("ndftrace","dims");
+
+  # Now add up all the columns
+  # In kappa15 we can add the ALIGN parameter
+  # Use default value of WLIM
+  $Mon{kappa_mon}->obeyw("compadd","in=$frame out=$addname compress=[$dims[0],1]");
+
+  # Now find the brightest
+  $Mon{kappa_mon}->obeyw("stats","ndf=$addname");
+
+  # Get the coordinate of the maximum value in pixel coordinates
+  # (This may be a problem if we are expecting to use arcsec)
+
+  ($ORAC_STATUS, my $xmax, my $ymax) = $Mon{kappa_mon}->get("stats","maxpos");
+
+  $extractrow = $ymax;
+  orac_print "Determined extraction row from image...";
+
+}
+
+orac_print "Using detector row $extractrow\n";
+
+# Store the extraction row
+$Frm->uhdr('EXTRACT_ROW', $extractrow);
