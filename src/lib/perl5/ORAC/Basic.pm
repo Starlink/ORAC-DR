@@ -49,6 +49,8 @@ use ORAC::TempFile;
 
 use IO::File;  # Open and close files
 use Cwd; # Current working directory
+use Starlink::Versions qw/ :Funcs /;
+
 
 eval 'use LWP::Simple qw/$ua get is_success status_message/';
 if ($@) {
@@ -88,16 +90,16 @@ $Beep    = 0;       # True if ORAC should make noises
 # Do not ever make this module dependent on Starlink KAPPA being
 # available.
 
+# expect people to use starversion explicitly
+
 $KAPPA_VERSION = 'V0.0-0';
 $KAPPA_VERSION_MAJOR = 0;
 $KAPPA_VERSION_PATCHLEVEL = 0;
 
-if (-e "$ENV{KAPPA_DIR}/style.def") {
-  $KAPPA_VERSION_MINOR = 13;
-} elsif (-e "$ENV{KAPPA_DIR}/kappa_style.def") {
-  $KAPPA_VERSION_MINOR = 14;
-} else {
-  $KAPPA_VERSION_MINOR = 12;
+if (starversion('kappa')) {
+  $KAPPA_VERSION_MINOR = starversion_minor('kappa');
+  $KAPPA_VERSION_MAJOR = starversion_major('kappa');
+  $KAPPA_VERSION_PATCHLEVEL = starversion_patchlevel('kappa');
 }
 
 # Similarly for CCDPACK. Only Set CCDPACK_VERSION_MAJOR for now
@@ -105,10 +107,10 @@ if (-e "$ENV{KAPPA_DIR}/style.def") {
 $CCDPACK_VERSION = 'V0.0-0';
 $CCDPACK_VERSION_MINOR = 0;
 $CCDPACK_VERSION_PATCHLEVEL = 0;
-if (-e "$ENV{CCDPACK_DIR}/astimp") {
-  $CCDPACK_VERSION_MAJOR = 3;
-} else {
-  $CCDPACK_VERSION_MAJOR = 2;
+if ( starversion('ccdpack')) {
+  $CCDPACK_VERSION_MAJOR = starversion_major('ccdpack');
+  $CCDPACK_VERSION_MINOR = starversion_minor('ccdpack');
+  $CCDPACK_VERSION_PATCHLEVEL = starversion_patchlevel('ccdpack');
 }
 
 
@@ -849,6 +851,9 @@ Council. All Rights Reserved.
 
 
 #$Log$
+#Revision 1.51  2000/06/15 03:01:52  timj
+#Use Starlink::Versions
+#
 #Revision 1.50  2000/04/04 21:06:45  timj
 #Pods were not being included into recipes. Fixed.
 #
