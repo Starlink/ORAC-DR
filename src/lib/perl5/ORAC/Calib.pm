@@ -148,6 +148,21 @@ sub skyname {
   return $self->{Sky};
 }
 
+=item standardname
+
+Return (or set) the name of the current standard frame - no checking
+
+  $dark = $Cal->standardname;
+
+
+=cut
+
+sub standardname {
+  my $self = shift;
+  if (@_) { $self->{Standard} = shift unless $self->standardnoupdate; }
+  return $self->{Standard};
+}
+
 
 =item dark
 
