@@ -539,7 +539,7 @@ sub UKIRTio2hds {
   }
 
   # First we need to create a container file in the current directory
-  my $status = &NDF::SAI__OK;
+  $status = &NDF::SAI__OK;
   my @dims = ();
   hds_new($output, substr($output, 0, &NDF::DAT__SZNAM),'ORAC_HDS', 0,
 	  @dims, my $floc, $status);
@@ -745,7 +745,7 @@ sub hds2ndf_demo {
 	   $status);
 
   # Get the fits locator (note the deja vu)
-  ndf_xloc($indf, 'FITS', 'UPDATE', my $xloc, $status);
+  ndf_xloc($indf, 'FITS', 'UPDATE', $xloc, $status);
 
   # Find out how many entries we have
   dat_shape($xloc, $maxdim, @dim, $ndim, $status);

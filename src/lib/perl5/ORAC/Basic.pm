@@ -664,7 +664,7 @@ Exit handler when a problem has been encountered.
 
 sub orac_exit_abnormally {
   my $signal = '';
-  my $signal = shift if @_;
+  $signal = shift if @_;
 
   # Dont delete tree since this routine is called from INSIDE recipes
 #  rmtree $ENV{'ADAM_USER'};             # delete process-specific adam dir
@@ -731,6 +731,9 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.43  2000/01/26 00:59:19  timj
+#Fix -w warnings.
+#
 #Revision 1.42  1999/09/15 20:42:47  timj
 #Add support for beeping on exit and error messages
 #
