@@ -60,6 +60,48 @@ my %hdr = (
 # new subs appear in this class.
 ORAC::Frame::UFTI->_generate_orac_lookup_methods( \%hdr );
 
+# Allow for missing, undefined, and malformed headers.
+sub _to_DEC_BASE {
+   my $self = shift;
+   my $dec = undef;
+   if ( exists $self->hdr->{DECBASE} ) {
+      $dec = $self->hdr->{DECBASE};
+
+# Cope with some early data with FITS-header values starting in the
+# erroneous column 10, and thus making the FITS parser think it is a
+# comment.  These begin with an equals sign.  The value is then the
+# first word after the removed equals sign.
+      if ( defined( $dec ) && $dec =~ /^=/ ) {
+         $dec =~ s/=//;
+         my @words = split( /\s+/, $dec );
+         $dec = $words[ 0 ];
+      }
+   }
+   return $dec;
+}
+
+# Allow for missing, ubdefined, and malformed headers.
+sub _to_RA_BASE {
+   my $self = shift;
+   my $ra = undef;
+   if ( exists $self->hdr->{RABASE} ) {
+      $ra = $self->hdr->{RABASE};
+
+# Cope with some early data with FITS-header values starting in the
+# erroneous column 10, and thus making the FITS parser think it is a
+# comment.  These begin with an equals sign.  The value is then the
+# first word after the removed equals sign.
+      if ( defined( $ra ) && $ra =~ /^=/ ) {
+         $ra =~ s/=//;
+         my @words = split( /\s+/, $ra );
+         $ra = $words[ 0 ];
+      }
+   }
+   return $ra;
+}
+
+# Allow for multiple occurences of the date, the first being valid and
+# the second is blank.
 sub _to_UTDATE {
   my $self = shift;
   my $utdate;
