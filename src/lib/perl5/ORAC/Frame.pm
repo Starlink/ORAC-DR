@@ -156,7 +156,7 @@ sub file {
   if (@_) { 
     my $arg = shift;
     $self->{File} = $self->stripfname(shift)
-      unless ($arg =~ /^\d+$/ && $arg != 0); 
+#      unless ($arg =~ /^\d+$/ && $arg != 0); 
   }
   return $self->{File};
 }
