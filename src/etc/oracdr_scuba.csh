@@ -69,6 +69,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.4  2000/03/23 22:48:03  timj
+#     Set sticky bit and umask
+#
 #     Revision 1.3  2000/03/15 02:36:24  timj
 #     Update for the summit
 #
@@ -236,9 +239,21 @@ if ($ORAC_DATA_ROOT == /jcmtarchive ) then
  # Check for the directory and create it
  if (! -d $ORAC_DATA_OUT) then
    echo "CREATING OUTPUT DIRECTORY: $ORAC_DATA_OUT"
+
+   # Parent directory has sticky group bit set so this
+   # guarantees correct group ownership
    mkdir $ORAC_DATA_OUT
-   chmod 777 $ORAC_DATA_OUT
+
+   # Sticky bit set plus group write
+   # The sticky bit can not be set on a nfs disk
+   # so this does not work unless we are on mamo
+   chmod g+rws $ORAC_DATA_OUT
+
  endif
+
+ # Change umask so that we will create files that are writable
+ # by group
+ umask 002
 
  # If we are not on mamo print a warning
  set orachost = `hostname`
@@ -267,8 +282,8 @@ if ($?orachost && $orachost != 'mamo') then
    echo '***************************************************'
    echo '**** PLEASE USE MAMO FOR ORAC-DR DATA REDUCTION ***'
    echo '***************************************************'
-   unset orachost
 endif
+
 
 
 # Tidy up
@@ -279,3 +294,4 @@ unset orac_dname
 unset oracmm
 unset oracdd
 unset oracyy
+if ($?orachost) unset orachost
