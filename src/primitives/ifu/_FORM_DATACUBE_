@@ -71,9 +71,38 @@ my $new = "t";
 
 my $param;
 
-orac_print "Forming datacube \n";
+# We need to work out the bounds that should be applied to all the slice images
+# when cut out of the main image, so that y shifts can be applied without 
+# losing tops or bottoms of slices, and keeping all slice images the same
+# size for putting into the datacube
+
+# y_min should be the most negative y shift
+# y_max should be the most positive (y shift + (y_end - y_start) + 1)
+
+my ($y_min, $y_max);
 
 for my $n (0..($n_slices-1)) {
+   
+    my $ystart = $Frm->uhdr->{"IFU_start"}->[$n];
+    my $yend = $Frm->uhdr->{"IFU_end"}->[$n];
+    my $yshift = $Frm->uhdr->{"IFU_yshift"}->[$n];
+
+    if (!defined($y_min) || $yshift + 1 < $y_min) {
+	$y_min = $yshift + 1;
+    }
+
+    if(!defined($y_max) || ($yshift + $yend - $ystart + 1) > $y_max) {
+	$y_max = $yshift + $yend - $ystart + 1;
+    }
+}
+$y_max = int($y_max) + 1;
+$y_min = int($y_min) - 1;
+
+orac_print "Forming datacube (y bounds: $y_min, $y_max \n";
+
+for my $n (0..($n_slices-1)) {
+    $tmp_slice = "slice";
+
     # Read the position of the nth slice as written into the headers
 
     my $ystart = $Frm->uhdr->{"IFU_start"}->[$n];
@@ -82,20 +111,23 @@ for my $n (0..($n_slices-1)) {
     my $yshift = $Frm->uhdr->{"IFU_yshift"}->[$n];
     
     # Keep the user aware of progress
-    orac_print "Extracting slice. y1=$ystart  y2=$yend  yshift=$yshift \n";
+    orac_print "Extracting slice. y1=$ystart  y2=$yend  xshift=$xshift  yshift=$yshift \n";
     
     # Copy the area of the input frame containing the required slice
     # to a temporary file.
     $param = "in=$in(,$ystart:$yend) out=$tmp_slice";
     $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
 
-    # Shift it in the y-direction (and x if necessary)
-    $param = "image=$tmp_slice xshift=$xshift yshift=$yshift xsplit=0 ysplit=2 output=$tmp_slice";
-    $Mon{"figaro1"}->obeyw( "ishift", "$param" );
-
-    $param = "$tmp_slice [0,0]";
+    $param = "$tmp_slice [1,1]";  
     $Mon{"ndfpack_mon"}->obeyw("setorigin", "$param");
 
+    # set the y bounds on the slice
+    $Mon{"ndfpack_mon"}->obeyw("setbound", "$tmp_slice(,$y_min:$y_max)");
+
+    # Shift it in the y-direction (and x if necessary)
+    $param = "image=$tmp_slice xshift=$xshift yshift=$yshift xsplit=1 ysplit=1 output=$tmp_slice";
+    $Mon{"figaro1"}->obeyw( "ishift", "$param" );
+ 
     # Grow it into the datacube
     $param = "image=$tmp_slice cube=$out xstart=" . ($n+1) . " xend=" . ($n+1) . " new=$new xsize=$n_slices";
     $Mon{"figaro1"}->obeyw( "growyt", "$param" );
@@ -161,7 +193,7 @@ The input frame is reformatted into a datacube with suffix _cube.
 
 =head1 TASKS
 
-ndfpack_mon: ndfcopy, setorigin
+ndfpack_mon: ndfcopy, setorigin, setbound
 figaro1: ishift, growyt
 
 =head1 AUTHORS
