@@ -23,6 +23,7 @@ GRAPH - display graph using LINPLOT
 SIGMA - display scatter plot with a Y-range of +/- N sigma.
 DATAMODEL - Display data (as points) with a model overlaid
 HISTOGRAM - Histogram of values in data array
+VECTOR - Display image + vectors
 
 =cut
 
@@ -418,8 +419,13 @@ a filename with an attached NDF section.
 An optional 3rd argument can be used to specify the required 
 dimensionality. If the number of dimensions in the data file is
 greater than that requested, sections in higher dimensions
-are set to 1 (with the assumption that KAPPA will discard axes
-with 1 pixel). If the number of dimensions in the data file
+are set to 1 by compressing the undesired dimension
+(with the assumption that KAPPA will discard axes
+with 1 pixel). The desired dimension is specified with the CUT
+option. For example, a graph can be displayed from a 2-D image
+by displaying a cut in the X direction (averaging over the Ys).
+
+If the number of dimensions in the data file
 is fewer than that requested, a warning message is printed
 but we continue in the hope that KAPPA will work something out....
 
@@ -428,6 +434,11 @@ NDF section attached.
 
 Relevant keywords in options hash:
 
+  CUT  - Specify the significant dimension[s] (X,Y,3,4,5)
+         Should be a comma-separated list specifying 
+         dimensionality - number of entries should equal the
+         requested dimensionality. For a graph only 1 value
+         is required since a graph is 1-D
   XMIN/XMAX - X pixel max and min values
   YMIN/YMAX - Y pixel max and min values
   XAUTOSCALE - Use autoscaling for X?
@@ -435,7 +446,8 @@ Relevant keywords in options hash:
 
 If Xautoscale and Yautoscale are true, no section command is appended.
 If the XAUTOSCALE/YAUTOSCALE/nAUTOSCALE keywords can not be found they are
-assumed to be true.
+assumed to be true. If CUT is not specified  the first slice is
+selected (eg a NDF section of N,1,1,1)
 
 For data arrays with N>2, the leading letter is dropped and replaced
 by the dimension number. eg:
@@ -451,6 +463,31 @@ will be used instead.
 
 Returns undef on error.
 The unmodified file name is returned if no options hash can be found.
+
+Returns the following:
+
+  No CUT requested + auto-scaling:
+    returns the original filename
+  No CUT requested + some dimension ranges specified
+    returns the original filename with an NDF section
+    Dimensions above the requested dimensionality are set to the
+    min value in the section (1 if not specified)
+  CUT requested but dimensionality of data matches requested
+    dimensionality.
+    Just return the file + any relevant section
+  CUT + auto-scaling + image too large
+    data file is collapsed down to required size keeping the specified
+    dimensions and averaging over the rest. A new temporary filename
+    is returned
+  CUT + some ranges specified + image too large
+    NDF section constructed and then the data file is collapsed
+    down to the required size. A new temporary file is generated.
+  CUT + range + image + one pixel selected
+    If the non-cut dimensions have min=max a section is
+    sufficient and no averaging required
+  
+The temporary files themselves are added to a global class
+array and removed by the destructor.
 
 =cut
 
@@ -515,18 +552,70 @@ sub select_section {
 #  print "Lower bounds are: ", join(":",@lbnd),"\n";
 #  print "Upper bounds are: ", join(":",@ubnd),"\n";
 
+  # If we are going to CUT the image two things need to be true
+  # 1, the requested CUT dimensions (the significant dimension)
+  #    needs to be present in NDIMS (ie no use cutting on dim 3
+  #    if only a 2-D image requesting a 1-D slice
+  # 2. NDIMS must be greater than requested dims
+  # 3. The number of supplied cut dimensions has to equal the 
+  #    number of requested dimensions. If too few cuts are specified
+  #    (eg a 3-d to 2-d requires 2 cut axes - ie two axes that
+  #    are unaffected, the 3rd dimension is averaged), say
+  #    only Y is specified for a 3-d to 2-d conversion, the 
+  #    X dimension will also be retained. The signifcant (ie retained)
+  #    dimensions are counted lowest to highest - X,Y,3,4,5...)
+
+  # If $cutting  is not true then we will simply return a slice of the
+  # correct dimensions but assuming 1 dim is most significant
+  # and no averaging.
+
+  my $cutting = 0; # Assume no cuts
+  my (@cuts); #initialise
+
+  # None of this is significant if the dimensions already match
+
+  if ($ndim > $max_requested) {
+
+    # First create a cut array by splitting on comma
+    my @initial_cuts = split(",",$options{CUT});
+
+    # initialise @cuts to an array of 0
+    @cuts = map { 0 } @lookup[0..$ndim-1];
+
+    # Strip out dimensions that are not in @lookup[0..$ndim-1]
+    # If @cuts contains only 0 then we are not doing a cut
+    
+    foreach my $cut (@initial_cuts) {
+      # Compute $cut with each member of @lookup.
+      # if there is a match set cuts[index] to 1 (ie significant)
+      # else set it to 0.
+      foreach my $index (0..$ndim-1) {
+	print "Index=$index and Cut=$cut Lookup=$lookup[$index]\n";
+	if ($cut =~ /$lookup[$index]/i) {
+	  $cuts[$index] = 1;
+	  $cutting = 1;   # We are doing a cut since one matches
+	  last;
+	}
+      }
+    }
+
+  }
+  print "CUTS now contains: ",join("::",@cuts) ,"\n";
+
   # This is an array describing the section for each dimension
   my @sects = ();
+
+  # These arrays containing the actual bounds of each dimension
+  # in the section - they are modified in the loop to relfect
+  # the sectioning information
+  my @min   = @lbnd; # Lower bounds of section for each dim
+  my @max   = @ubnd; # upper bounds of section for each dim
+
+  print "Cutting= $cutting\n";
 
   # Loop over all valid dimensions
   for my $dim (1..$ndim) {
     my $index = $dim-1;
-
-    # If dim is greater than max_requested - set section to 1
-    if ($dim > $max_requested) {
-      $sects[$index] = 1;
-      next;
-    }
 
     # Check that this dim is mentioned in the lookup table
     if (defined $lookup[$index]) {
@@ -537,26 +626,137 @@ sub select_section {
 	# Read the bounds from the hash
 	my $pre = $lookup[$index];
 
-	# Lower bound is minimum of $lbnd[$dim-1] and $options{?MIN}
-        my $lower = max($lbnd[$index], $options{"${pre}MIN"});
-        my $upper = min($ubnd[$index], $options{"${pre}MAX"});
+	# Lower bound is maximum of $lbnd[$dim-1] and 
+        # and the minimum of $options{?MIN} and the upper bound
+        my $lower = max($lbnd[$index],min($options{"${pre}MIN"},$ubnd[$index]));
+        my $upper = min($ubnd[$index],max($options{"${pre}MAX"},$lbnd[$index]));
+
+	# If lower bounds still exceed upper, set lower to upper
+        $lower = $upper if $lower > $upper;
+
+        $min[$index]   = $lower;
+        $max[$index]   = $upper;
 
 	$sects[$index] = "$lower:$upper";
 
       } else {
-        # An empty section
+        # An empty section. 
 	$sects[$index] = undef;
       }
 
     }
 
+    # Now we have read the MIN and MAX values from the hash
+    # We now need to modify the section a little to cover the
+    # case where we are reducing dimensionality without averaging. 
+    # In that case we want sections that are higher than the requested
+    # dimensionality to be set to the min value (ie 1 pixel
+    # wide). If we are reducing dimensiona by averaging the section
+    # can stay as is and we will reduce the dims later on by using
+    # COMPAVE
+
+    if ($dim > $max_requested && !$cutting) {
+      $sects[$index] = $min[$index];
+    }
+
   }  
   
   # Construct the section
-  my $section = "(". join(",", @sects) . ")";
+  my $section = '('. join(",", @sects) . ')';
+
+  # Set the input file name (no section if $auto_all and $cutting
+  my $input;
+  if ($auto_all && $cutting) {
+    $input = $file;
+  } else {
+    $input = "$file$section";
+  }
+
+  # If we are averaging we need to do that now 
+  if ($cutting) {
+
+    # @cuts is an array containing a set of 1 and 0 corresponding
+    # to whether a dimension should be kept (1) or averaged over (0)
+
+    # If the number of 1's does not equal the max_requested we have
+    # to assume that some of the early dimensions are really significant
+    
+    # count the 1's [we know that $#cuts matches $ndim-1]
+    my $count=0;
+    foreach my $i (@cuts) {
+      $count++ if $i;
+    }
+
+    # If count is too small - correct for it
+    # Assume lowest dimension is most significant
+    if ($count < $max_requested) {
+      foreach (@cuts) {
+	if ($_ == 0) {
+	  $_ = 1;
+	  $count++;
+	  last if $count == $max_requested;
+	}
+      }
+    } elsif ($count > $max_requested) {
+      # If count is TOO high we need to start from the high end
+      # and start setting values to zero - assume highest dimension
+      # is least significant.
+      print "Need to loop $count\n";
+      for (my $i=$ndim-1; $i>=0; $i--) {
+	print "I is $i\n";
+	if ($cuts[$i] = 1) {
+	  $cuts[$i] = 0;
+	  $count--;
+	  last if $count == $max_requested;
+	}
+      }
+
+    }
+    
+    # need to construct a string for compave
+    # Takes the form of
+    #   [ factor1, factor2, factor3...factorN] for Ndims
+    # where the factors are the compression factors.
+    # for significant dimensions the factor is 1, for all other
+    # dimensions the factor is the number of pixels in the dimension
+    # (or section) [ie max-min+1]
+
+    # This means that the number of significant dimensions must
+    # equal the final required dimensionality. 
+    
+    # Loop over $ndim constructing COMPRESS key
+    my @compress;
+    for my $index (0..$ndim-1) {
+      print "YYY\n";
+      # If significant - just put a factor of 1
+      if ($cuts[$index]) {
+	push(@compress,1);
+      } else {
+	# To be compressed
+	# Factor is npixels
+	push(@compress, $max[$index]-$min[$index]+1);
+      }
+    }
+
+    print "COMPRESS=@compress\n";
+    my $compress = '[' . join(",",@compress) . ']';
+
+    my $out = "secave$$"; 
+    my $compargs = "WLIM=0.1 in=$input out=$out compress=$compress";
+
+    # Run compave
+    my $status = $self->kappa->obeyw("compave","$compargs");
+    print "Status = $status\n";
+    print "Args: $compargs\n";
+
+    return undef unless $status == ORAC__OK;
+    # Now reset $input to be the output of compave
+    $input = $out;
+
+  }
 
   # Return the filename
-  return "$file$section";
+  return $input;
 
 }
 
@@ -685,11 +885,29 @@ Display keywords:
 
   XMIN/XMAX  - X-pixel range of graph
   XAUTOSCALE - Autoscale pixel range?
-  YMIN/YMAX  - Y-range of graph (in data units)
+  YMIN/YMAX  - Y-pixel range of graph (in pixels)
   YAUTOSCALE - Autoscale Y-axis
+  YMIN/YMAX  - Z-range of graph (in data units)
+  YAUTOSCALE - Autoscale Z-axis
+  CUT        - Decide which direction is the primary axis
+               Can be X,Y,3,4,5 (for higher-dimensional data sets)
+               For a 1-D data set (or section), this value is ignored
   COMP       - Component to display (Data (default), or Error)
+  
 
-Default is to autoscale.
+Default is to autoscale. Note that the X/Y cuts are converted
+to a 1-D slice before displaying by averaging over the section. 
+
+For example:
+
+   XMIN=5 XMAX=5 YAUTOSCALE=YES 
+
+would display column 5 (ie the whole of Y for X=5).
+[CUT is irrelevant since the resulting image section is 1-D]
+
+   XAUTOSCALE=YES YMIN=20 YMAX=30 CUT=X
+
+would display the average of rows 20 and 30 for each X.
 
 Need to add way of controlling line style (eg replace with symbols)
 
@@ -738,15 +956,15 @@ sub graph {
   # If we are autoscaling then we dont need any axis setting
   # default is not to send any axis control information
   my $range;
-  if (exists $options{YAUTOSCALE}) {
-    if ($options{YAUTOSCALE}) {
+  if (exists $options{ZAUTOSCALE}) {
+    if ($options{ZAUTOSCALE}) {
       $range = "axlim=false";
     } else {
       # Set the Y range
       my $min = 0;
       my $max = 0;
-      $min = $options{YMIN} if exists $options{YMIN};
-      $max = $options{YMAX} if exists $options{YMAX};
+      $min = $options{ZMIN} if exists $options{ZMIN};
+      $max = $options{ZMAX} if exists $options{ZMAX};
       $range = "axlim=true abslim=! ordlim=[$min,$max]";
     }
   }
