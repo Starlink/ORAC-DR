@@ -21,8 +21,9 @@ ORAC::Print - ORAC output message printing
   $prt->out("Message","colour");
   $prt->err("Error message"); 
   $prt->war("warning message");
-  $prt->err_col("red");
-  $prt->out_col("magenta");
+  $prt->errcol("red");
+  $prt->outcol("magenta");
+  $prt->errbeep(1);
 
   tie *HANDLE, 'ORAC::Print', $ptr;
 
@@ -207,6 +208,7 @@ sub new {
   $prt->{OutPre}   = undef;        # Output prefix
   $prt->{WarPre}   = 'Warning:';   # Prefix for warning messages
   $prt->{ErrPre}   = 'Error:';     # Prefix for error messages
+  $prt->{ErrBeep}  = 0;            # Beep with error messages
 
   bless($prt, $class);
 
@@ -441,6 +443,20 @@ sub errhdl {
 
 }
 
+=item B<errbeep>
+
+Specifies whether the terminal is to beep when an error
+message is printed. Default is not to beep (false).
+
+  $dobeep = $Prt->errbeep;
+
+=cut
+
+sub errbeep {
+  my $self = shift;
+  if (@_) { $self->{ErrBeep} = shift;}
+  return $self->{ErrBeep};
+}
 
 =item debughdl
 
@@ -561,6 +577,9 @@ sub err {
   $errpre = '' unless defined $errpre;
 
   print $fh colored($prefix . $errpre . $text,$col);
+
+  # Beep if required
+  print STDOUT chr(7) if $self->errbeep;
 
   # There is a chance that we have just updated 
   # a Tk text widget. On the off-chance that we have,

@@ -24,7 +24,7 @@ Provides the routines for parsing and executing recipes.
 =cut
 
 use Carp;
-use vars qw($VERSION @ISA @EXPORT $Display $Batch $DEBUG $Display);
+use vars qw($VERSION @ISA @EXPORT $Display $Batch $DEBUG $Display $Beep);
 
 use strict;
 
@@ -69,6 +69,7 @@ $Display = undef;# Display object - only configured if we have a display
 
 $Batch   = 0;       # True if we are running in batch mode
 $DEBUG   = 0;       # True for extra debugging
+$Beep    = 0;       # True if ORAC should make noises
 
 #------------------------------------------------------------------------
 
@@ -646,7 +647,11 @@ sub orac_exit_normally {
 
   rmtree $ENV{'ADAM_USER'};             # delete process-specific adam dir
 
-  for (1..5) {print STDOUT chr(7); select undef,undef,undef,0.2};
+  # Ring a bell when exiting if required
+  if ($Beep) {
+    for (1..5) {print STDOUT chr(7); select undef,undef,undef,0.2}
+  }
+
   orac_print ("\nOrac says: Goodbye\n","red");
   exit;
 };
@@ -665,7 +670,9 @@ sub orac_exit_abnormally {
 #  rmtree $ENV{'ADAM_USER'};             # delete process-specific adam dir
 
   # ring my bell, baby
-  for (1..10) {print STDOUT chr(7); select undef,undef,undef,0.2};
+  if ($Beep) {
+  for (1..10) {print STDOUT chr(7); select undef,undef,undef,0.2}
+  }
 
   die "\nAborting from ORACDR - $signal received";
   # die "\n --Signal $signal received--\n";	
@@ -724,6 +731,9 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.42  1999/09/15 20:42:47  timj
+#Add support for beeping on exit and error messages
+#
 #Revision 1.41  1999/09/15 02:55:15  frossie
 #add beeps to exit normally and abnormally
 #
