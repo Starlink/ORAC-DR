@@ -4,11 +4,13 @@ _ADD_READNOSE_VARIANCE_
 
 =head1 DESCRIPTION
 
-Adds an initial variance component, which is simply flat and equal to the
-readnoise of the detector, taking the GAIN into account.
+Adds an initial variance component, which is simply flat and equal to
+the readnoise of the detector, taking the GAIN and number of exposures
+into account.
 
-This should be done properly with the Cal system to pull the value from the
-previous array_tests. For now, it's hard-coded to 40 electrons.
+This should be done properly with the Cal system to pull the value
+from the previous array_tests. For now, it's hard-coded to 40
+electrons.
 
 =head1 AUTHOR
 
@@ -22,9 +24,15 @@ my $gain = $Frm->uhdr("ORAC_GAIN");
 # Get the readnoise, in electrons
 my $rne = 40;
 
-# Get the readnoise in data-numbers
-my $rn = $rne / $gain;
+# Get the number of coadds (NEXP)
+my $nexp = $Frm->uhdr("ORAC_NUMBER_OF_EXPOSURES");
 
+# Get the readnoise in data-numbers, for all the coadds
+my $rn = $rne * $nexp / $gain;
+
+# Gonna need a temp file for this
+my $tmp=new ORAC::TempFile;
+my $tmpfile=$tmp->file;
 
 # Loop through the sub-files
 foreach my $i (1 .. $Frm->nfiles) {
@@ -32,9 +40,12 @@ foreach my $i (1 .. $Frm->nfiles) {
 	my ($in, $out) = $Frm->inout ("_rnv", $i);
 
 	# Add the variance aray
-	$Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$out");
-	$Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$out variance=$rn");
+	$Mon{'kappa_mon'}->obeyw("cmult", "in=$in scalar=$nexp out=$tmpfile");
+	$Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$tmpfile variance=$rn");
+	$Mon{'kappa_mon'}->obeyw("cdiv", "in=$tmpfile scalar=$nexp out=$out");
 
 	# Update Frame object
 	$Frm->file($i, $out);
+	orac_print("$in to $out: Read Noise variance added\n");
 }
+
