@@ -1,0 +1,116 @@
+=head1 NAME
+
+_EXTINCTION_CORRECT_FRAME_
+
+=head1 SYNOPSIS
+
+  _EXTINCTION_CORRECT_FRAME_ EXTCOR_MODE=QUICK
+
+=head1 DESCRIPTION
+
+This primitive corrects each frame for extinction. The following
+information is required:
+
+=over 4
+
+=item tau
+
+The sky opacity for this filter. Different tau sources can be used
+under the control of the calibration class. Default is to use the WVM
+reading stored in the file. [wvm]
+
+=item airmass
+
+Average airmass of this frame
+
+=item angle
+
+The angle between Nasmyth North and elevation axis. This is just
+the elevation angle.
+
+=back
+
+
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item EXTCOR_MODE
+
+EXTCOR_MODE determines which extinction correction is applied. If set
+to QUICK then the image is corrected assuming a single value for the
+airmass across the array. If set to FULL, then an accurate pixel-level
+correction is applied taking into account the airmass of individual
+pixels.
+
+=back
+
+=head1 AUTHOR
+
+=head1 COPYRIGHT
+
+=head1 TODO
+
+Check whether images have been aligned to RA/DEC
+
+=cut
+
+
+my $extcor_mode = uc( $_EXTINCTION_CORRECT_FRAME_{EXTCOR_MODE} || 'FULL');
+
+my @out;
+
+# Does this return tau_183 or scaled to obs wavelength?
+#my $tau = 0.1; # $Cal->tau(); 
+
+my $airmass = 1.41;
+#0.5*($Frm->uhdr("AIRMASS_START") + $Frm->uhdr("AIRMASS_END"));
+
+my $elevation = 45; # Should get this from $airmass or elevation in header
+
+# now use MATHS
+
+my $tau = 1; # 
+
+if ($extcor_mode eq 'FULL') {
+
+  # Parameters for Kappa MATHS
+  my $exp = "IA*exp(PT/sin(FB*FA))"; # Extinction correction part 1
+  my $pi = "3.1415926535"; # Guess...
+  my $fa = "PA+(XA*PX*sin(FB*PA)/PD)+(XB*PX*cos(FB*PA)/PD)"; # part 2
+  my $fb = "PI/180.0"; # For converting degrees to radians
+  my $pd = "3600.0";   # For converting arcsec to degrees
+  my $pixelscale = 3;  # In arcsec
+
+  # Correct all subframes
+  for my $i (1..$Frm->nfiles) {
+
+    my ($in, $out) = $Frm->inout('_ext',$i);
+    push(@out, $out);
+
+    $Mon{kappa_mon}->obeyw("maths","exp=".$exp." FA=".$fa." FB=".$fb." PA=".$elevation." PT=".$tau." PD=".$pd." PI=".$pi." PX=".$pixelscale." IA=".$in." out=".$out);
+  
+  }
+} elsif ($extcor_mode eq 'QUICK') {
+
+  # Correct all subframes
+  for my $i (1..$Frm->nfiles) {
+
+    my ($in, $out) = $Frm->inout('_ext',$i);
+    push(@out, $out);
+
+    # Just multiply images by e^tA
+    my $extcor = exp($tau*$airmass);
+    $Mon{kappa_mon}->obeyw("cmult","in=".$in." scalar=".$extcor." out=".$out);
+  }
+} else {
+  orac_err("Unrecognized EXTCOR_MODE ($extcor_mode).");
+  my $ORAC_STATUS = ORAC__ERROR;
+  
+}
+
+# register new file names
+$Frm->files( @out );
+
+orac_print "Extinction corrected using mode $extcor_mode \n";
