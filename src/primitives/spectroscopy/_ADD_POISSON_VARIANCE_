@@ -1,6 +1,6 @@
 =head1 NAME
 
-_ADD_POISSON_VARIANCE_
+_ADD_POISSON_VARIANCE_ - Adds Poisson variance to the variance component.
 
 =head1 DESCRIPTION
 
@@ -12,56 +12,54 @@ Paul Hirst <p.hirst@jach.hawaii.edu>
 
 =cut
 
-# Create a tmp file
-my $tmp = new ORAC::TempFile;
-my $tmpfile=$tmp->file;
+# Create two temporary files.
+    my $tmp = new ORAC::TempFile;
+    my $tmpfile=$tmp->file;
 
-my $temp = new ORAC::TempFile;
-my $tempfile=$temp->file;
+    my $temp = new ORAC::TempFile;
+    my $tempfile=$temp->file;
 
 # Get the gain.
-my $gain = $Frm->uhdr("ORAC_GAIN");
+    my $gain = $Frm->uhdr( "ORAC_GAIN" );
 
-# Get the number of coadds (NEXP)
-my $nexp = $Frm->uhdr("ORAC_NUMBER_OF_EXPOSURES");
+# Get the number of coadds.
+    my $nexp = $Frm->uhdr( "ORAC_NUMBER_OF_EXPOSURES" );
 
-# Loop through the sub-files
-foreach my $i (1 .. $Frm->nfiles) {
-	# Generate the input and output file names
-	my ($in, $out) = $Frm->inout ("_pov", $i);
+# Loop through the sub-files.
+    foreach my $i ( 1 .. $Frm->nfiles ) {
 
-	# Units of in are DN/exp
-	# Divide by the gain into a tmp file
-	$Mon{'kappa_mon'}->obeyw("cdiv", "in=$in scalar=$gain out=$tmpfile");
+# Generate the input and output file names
+       my ( $in, $out ) = $Frm->inout( "_pov", $i );
 
-	# Units in tmp are electrons per exp
-	$Mon{'kappa_mon'}->obeyw("cmult", "in=$tmpfile scalar=$nexp out=$tempfile");
+# Units of the input frame are DN/exposure.  Divide by the gain into a
+# temporary file.
+       $Mon{'kappa_mon'}->obeyw( "cdiv", "in=$in scalar=$gain out=$tmpfile" );
 
-	# Units of temp are total electrons
+# Units in temporary are electrons per exposure.  Convert the units to
+# electrons.
+       $Mon{'kappa_mon'}->obeyw( "cmult", "in=$tmpfile scalar=$nexp out=$tempfile" );
 
-	# Use setvar to set the variance array of the temp file to be the Poisson variance
-	$Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$tempfile variance=data");
+# Use SETVAR to set the variance array of the temporary file to be the
+# Poisson variance.
+       $Mon{'ndfpack_mon'}->obeyw( "setvar", "ndf=$tempfile variance=data" );
 
-	# temp is now the total electons, with Poisson variance
-	$Mon{'kappa_mon'}->obeyw("cdiv", "in=$tempfile scalar=$nexp out=$tmpfile");
-	
-	# tmp is now electrons per exp, with poisson variance
-	$Mon{'kappa_mon'}->obeyw("cmult", "in=$tmpfile scalar=$gain out=$tempfile");
+# Convert to electrons per exposure.  This also scales the variance.
+       $Mon{'kappa_mon'}->obeyw( "cdiv", "in=$tempfile scalar=$nexp out=$tmpfile" );
 
-	# temp is now DN/exp, with poisson variance
+# Convert to DN/exposure, again scaling the variance.
+       $Mon{'kappa_mon'}->obeyw( "cmult", "in=$tmpfile scalar=$gain out=$tempfile" );
 
-	# Now, we need to add the variance array of the temp file to that of
-	# the $in file, and call it $out.
+# Now, we need to add the variance array of the temporary file to that of
+# the original input file, and call it $out.
 
-	# We can do this by using chpix to zero the data array of the temp file
-	# then simply adding the two files together.
+# We can do this by using CHPIX to zero the data array of the temporary
+# file, and then then simply adding the two files together.
+       $Mon{'kappa_mon'}->obeyw( "chpix", "in=$tempfile out=$tmpfile newval=0 section=':,:'" );
+       $Mon{'kappa_mon'}->obeyw( "add", "in1=$tmpfile in2=$in out=$out" );
 
-	$Mon{'kappa_mon'}->obeyw("chpix", "in=$tempfile out=$tmpfile comp=Data newval=0 section=':,:'");
-	$Mon{'kappa_mon'}->obeyw("add", "in1=$tmpfile in2=$in out=$out");
+# Update the Frame object.
+       $Frm->file( $i, $out );
+       orac_print "$in to $out: Poisson variance added\n";
+    }
 
-	# Update Frame object
-	$Frm->file($i, $out);
-	orac_print("$in to $out: Poisson variance added\n");
-}
-
-orac_print "\n";
+    orac_print "\n";
