@@ -69,6 +69,18 @@
        my $yoff = $_FIXED_APERTURE_PHOTOMETRY_{YOFF};
        $yoff = defined( $yoff ) ? $yoff : 0.0;
 
+# Obtain the aperture diameter in arcseconds.
+       my $as_aperture = ( $_FIXED_APERTURE_PHOTOMETRY_{APERTURE} || 6 );
+ 
+# Calculate the radius of the inner and outer extent of the aperture.
+       my $inner = ( $_FIXED_APERTURE_PHOTOMETRY_{INNER} || 1.5 );
+       my $outer = ( $_FIXED_APERTURE_PHOTOMETRY_{OUTER} || 2.5 );
+       $inner = min( 3.0, max( $inner, 1.1 ) );
+       $outer = min( 5.0, max( $inner + 0.3, $outer, 1.4 ) );
+
+# Selection
+# =========
+
 # This should only be performed on OBJECT frames.
        if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ) {
           my $incflag = "T";
@@ -186,6 +198,22 @@
                 $padu =  $Frm->hdr( "DEPERDN" );
              }
 
+# Validate some headers.
+# ======================
+
+# Constrain PADU as we'll need to divide by it later.
+             if ( $padu < 0.0001 ) {
+                orac_warn "Data number per ADU $padu is not positive.  It is set to 1.\n";
+                $padu = 1.0;
+             }
+
+# Constrain exposure time as iut is used multiplicatively in a logarithm
+# below.
+             if ( $exptime < 0.0001 ) {
+                orac_warn "Exposure time $exptime is not positive.  It is set to 1.\n";
+                $exptime = 1.0;
+             }
+
 # Extract the system magnitude of faint standards
 # ===============================================
 
@@ -260,18 +288,21 @@
 # Find location and dimensions of the aperture and annulus
 # ========================================================
 
-# Locate the image centre.
-             _FIND_SOURCE_CENTROID_ XOFF=$xoff YOFF=$yoff POSITIVE=$positive
-             my $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
+# Locate the image centre within the aperture sized box.
+             _FIND_SOURCE_CENTROID_ XOFF=$xoff YOFF=$yoff POSITIVE=$positive BOXSIZE=$as_aperture
 
-# Obtain the aperture diameter in arcseconds.
-             my $as_aperture = ( $_FIXED_APERTURE_PHOTOMETRY_{APERTURE} || 6 );
- 
-# Calculate the radius of the inner and outer extent of the aperture.
-             my $inner = ( $_FIXED_APERTURE_PHOTOMETRY_{INNER} || 1.5 );
-             my $outer = ( $_FIXED_APERTURE_PHOTOMETRY_{OUTER} || 2.5 );
-             $inner = min( 3.0, max( $inner, 1.1 ) );
-             $outer = min( 5.0, max( $inner + 0.3, $outer, 1.4 ) );
+# It is possible that no centroid was found.  Get a reference to the flag,
+# test the status, and report an error where centroiding failed.
+             my $found = $_FIND_SOURCE_CENTROID_{FOUND};
+             if ( ! $$found ) {
+                orac_err "Unable to locate source for aperture photometry.\n";
+
+# Skip to the next frame.
+                next;
+             }
+
+# Get the reference to the centre co-ordinates/
+             my $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
 
 # Automatic photometry
 # ====================
@@ -333,7 +364,11 @@
              } else {
                 $magnorm = -2.5 * ( log10( abs( $results[3] ) ) -
                                     log10( $exptime * $padu ) ) + $zp;
-                $magerr = 1 - 10 ** ( -0.4 * abs( $results[1] / $results[0] ) );
+                if ( abs( $results[ 0 ] ) < 1E-6 ) {
+                   $magerr = 1 - 10 ** ( -0.4 * abs( $results[1] / $results[0] ) );
+                } else {
+                   $magerr = "<null>"
+                }
              }
 
 # Convert the sky level back to counts.
@@ -343,24 +378,28 @@
              my $magext = $magnorm - $extcor;
 
 # Convert annulus radii into arcseconds.
-             $inner = $inner * $as_aperture;
-             $outer = $outer * $as_aperture;
+             my $as_inner = $inner * $as_aperture;
+             my $as_outer = $outer * $as_aperture;
 
 # Format the results to give a sensible number of significant figures.
              my ( $fs_mag, $fs_err, $fs_sky, $fs_airmass, $fs_apdiam );
              my ( $fs_inner, $fs_outer );
              $fs_mag = sprintf( "%7.3f", $magnorm );
              $fs_mag =~ s/ //g;
-             $fs_err = sprintf( "%6.3f", $magerr );
-             $fs_err =~ s/ //g;
+             if ( $magerr ne "<null>" ) {
+                $fs_err = sprintf( "%6.3f", $magerr );
+                $fs_err =~ s/ //g;
+             } else {
+                $fs_err = $magerr;
+             }
              $fs_sky = sprintf( "%9.3f", $sky_level );
              $fs_sky =~ s/ //g;
              $fs_airmass = sprintf( "%6.4f", $extcor );
              $fs_apdiam = sprintf( "%5.2f", $as_aperture );
              $fs_apdiam =~ s/ //g;
-             $fs_inner =  sprintf( "%5.2f", $inner );
+             $fs_inner =  sprintf( "%5.2f", $as_inner );
              $fs_inner =~ s/ //g;
-             $fs_outer =  sprintf( "%5.2f", $outer );
+             $fs_outer =  sprintf( "%5.2f", $as_outer );
              $fs_outer =~ s/ //g;
 
              if ( $catmag < $nullmag ) {
@@ -373,11 +412,22 @@
              orac_print "\n";
              orac_print "Frame:                  ".$Frm->file.$suffix."\n";
              orac_print "Filter:                 $filter\n";
-             if ( $errcode ne "OK" ) {
-                orac_print "Instrumental Magnitude: $fs_mag +/- $fs_err (error $errcode)\n";
+
+             if ( $magerr ne "<null>" ) {
+                if ( $errcode ne "OK" ) {
+                   orac_print "Instrumental Magnitude: $fs_mag +/- $fs_err (error $errcode)\n";
+                } else {
+                   orac_print "Instrumental Magnitude: $fs_mag +/- $fs_err\n";
+                }
+
              } else {
-                orac_print "Instrumental Magnitude: $fs_mag +/- $fs_err\n";
+                if ( $errcode ne "OK" ) {
+                   orac_print "Instrumental Magnitude: $fs_mag (error $errcode)\n";
+                } else {
+                   orac_print "Instrumental Magnitude: $fs_mag\n";
+                }
              }
+
              orac_print "Airmass correction:     $fs_airmass\n";
              if ( $catmag < $nullmag ) {
                 orac_print "Catalogue Magnitude:    $catmag\n";
@@ -391,19 +441,34 @@
 # Remove the photometry text file.
              unlink( "photom$$.res" );
 
+# Write results to text logfile.
+# ==============================
+
+# Specify formats for the CURSA table.
+             my @formats = qw( %19s %12s %8.5f %7s %5.3f %7.3f %7.3f %6.3f %2s
+                               %5.1f %5.1f %5.1f %8.2f %1s %6.3f %6.3f %6.3f );
+
+# Allow for null strings instead of numerical values when something has
+# gone awry.
+             if ( $magerr eq "<null>" ) {
+                $formats[7] = "%6s";
+             }
+
+# Convert array to a space-separated list.
+             my $formatlist = join( " ", @formats );
+
 # Write the results for the current observation to the logfile.  Use sprintf
 # to format the statistics in the specified formats for the columns of
 # the table.  Append the formatted row to the logging file.  Note in case
 # some of the header information is null, output the results as strings
 # rather than integer or real; and assume a fixed format in the FITS headers
 # matching the STL format when the keywords are present.
-             printf LOGFILE ( "%19s %12s %8.5f %7s %5.3f %7.3f %7.3f %6.3f %2s %5.1f".
-                              "%5.1f %5.1f %8.2f %1s %6.3f %6.3f %6.3f \n",
-             $Frm->file.$suffix, $objname, $ut, $filter, $airmass, $magnorm,
-             $magext, $magerr, $errcode, $as_aperture, $inner, $outer,
-             $sky_level, $incflag, $catmag, $magdif, $magdif_ext );
+             printf LOGFILE ( "$formatlist \n",
+               $Frm->file.$suffix, $objname, $ut, $filter, $airmass, $magnorm,
+               $magext, $magerr, $errcode, $as_aperture, $as_inner, $as_outer,
+               $sky_level, $incflag, $catmag, $magdif, $magdif_ext );
 
-          };
+          }
 
 # Close the results file.
           close ( LOGFILE );
