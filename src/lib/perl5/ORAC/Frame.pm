@@ -33,6 +33,36 @@ use ORAC::Constants;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 
+my @ORAC_INTERNAL_HEADERS = qw/
+  MYTEST
+  AIRMASS_START  
+  AIRMASS_END DECBASE
+  FILTER 
+  INSTRUMENT 
+  LBNDX 
+  LBNDY
+  NOFFSETS 
+  OBJECT 
+  OBSTYPE 
+  RABASE 
+  READMODE
+  ROTATION 
+  SPD_GAIN 
+  UBNDX 
+  UBNDY 
+  WPLANGLE
+  DECSCALE 
+  DET_BIAS 
+  EXP_TIME 
+  GAIN 
+  RASCALE
+  TDECOFF 
+  TRAOFF 
+  UTEND 
+  UTSTART
+  DETINCR
+/;
+
 # Setup the object structure
 
 =head1 PUBLIC METHODS
@@ -736,23 +766,15 @@ sub calc_orac_headers {
   # Now create all the ORAC_ headers
   # go through an array of headers and translate the
   # ones we can find with associated methods
-  my @ORAC_ = (qw/
-	       AIRMASS_START  AIRMASS_END DECBASE
-	       FILTER INSTRUMENT LBNDX LBNDY
-	       NOFFSETS OBJECT OBSTYPE RABASE READMODE
-	       ROTATION SPD_GAIN UBNDX UBNDY WPLANGLE
-	       DECSCALE DET_BIAS EXP_TIME GAIN RASCALE
-	       TDECOFF TRAOFF UTEND UTSTART
-	       /);
 
   # Loop over all the headers
   # Do nothing if a translation method does not exist
   # This makes it safe for everyone
-  for my $key ( @ORAC_ ) {
+  for my $key ( @ORAC_INTERNAL_HEADERS ) {
     my $method = "_to_$key";
-    #print "Trying method $method\n";
+    print "Trying method $method\n";
     if ($self->can($method)) {
-      #print "Running method $method\n";
+      print "Running method $method\n";
       # This returns a single value
       $new{"ORAC_$key"} = $self->$method();
       $self->uhdr("ORAC_$key", $new{"ORAC_$key"});
