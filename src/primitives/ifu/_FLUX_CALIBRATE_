@@ -1,0 +1,109 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_FLUX_CALIBRATE_ - Flux calibrate an IFU observation.
+
+=head1 DESCRIPTION
+
+Flux calibrate an IFU observation that has been divided by a standard star by
+multiplying by an appropriate scaling factor. This scaling factor depends
+on the magnitude and spectral type of the standard star.
+
+This primitive works on either 1D, 2D, or 3D observations. If a 1D observation
+is flux calibrated, the resulting file ends in _sp_fc. If a 2D observation is
+flux calibrated, the resulting file ends in _im_fc. If a 3D observation is
+flux calibrated, the resulting file ends in _cube_fc.
+
+=head1 AUTHORS
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+if ($Frm->uhdr("PAIR_COMPLETE")) {
+
+  my $raw = $Grp->raw;
+  my $in = $Grp->file;
+  my $out;
+
+# The output filename depends on the dimensions of the
+# group. 1D is _sp_fc, 2D is _im_fc, 3D is _cube_fc.
+  $Mon{'ndfpack_mon'}->obeyw("ndftrace", "ndf=$in");
+  my ( $ORAC_STATUS, @dims ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "dims" );
+  if( defined( $dims[2] ) ) {
+    # We've got a cube.
+    $out = $raw . "_cube_fc";
+  } elsif ( defined( $dims[1] ) ) {
+    # We've got an image.
+    $out = $raw . "_im_fc";
+  } else {
+    # We've got a spectrum.
+    $out = $raw . "_sp_fc";
+  }
+
+  # Find me a standard
+  my $std = $Cal->standard;
+  orac_print "Standard: $std will be used\n";
+
+  # Need to find the mag of the std in the band that we're observing in.
+
+  # Get the index entry for that standard
+  my $stdidx = $Cal->standardindex->indexentry( $std );
+
+  # Get the VMAG and SPECTYPE from it
+  my $stdvmag = $stdidx->{'VMAG'};
+  my $stdspec = $stdidx->{'SPECTYPE'};
+
+  if( ( defined( $stdvmag ) && defined( $stdspec ) ) &&
+      ( $stdvmag ne 'UNKNOWN' && $stdspec ne 'UNKNOWN' ) ) {
+
+    # Get the waveband name.
+    my $wband = $Frm->uhdr( "WAVEBAND" );
+
+    # Now get the mag of the std in that band.
+    _GET_REFERENCE_MAGNITUDE_ BAND=$wband SPECTRAL_TYPE=$stdspec VMAG=$stdvmag
+    my $mag = $_GET_REFERENCE_MAGNITUDE_{MAG};
+
+    # And the reference flux.
+    _GET_REFERENCE_FLUX_ BAND=$wband
+    my $flux = $_GET_REFERENCE_FLUX_{FLUX};
+
+    if ( $mag ne "UNKNOWN" && $flux ne "UNKNOWN" ) {
+
+      # OK to proceed
+
+      # Convert this into W/m2/um.  Set the label and units.
+      my $stdflux = 10**( -0.4 * $mag ) * $flux;
+
+      $Mon{'kappa_mon'}->obeyw("cmult", "in=$in out=$out scalar=$stdflux title=$out");
+      $Mon{'ndfpack_mon'}->obeyw("setunits", "ndf=$out units='W/m**2/um'");
+      $Mon{'ndfpack_mon'}->obeyw("setlabel", "ndf=$out label=Flux");
+
+      orac_print "$in to $out: Flux calibrated\n";
+
+      $Grp->file($out);
+
+      # Display the spectrum
+      $Display->display_data( $Grp ) if defined $Display;
+
+    } else {
+      orac_print "Could not flux calibrate\n";
+    }
+
+  } else {
+
+    orac_print "Do not have one of V magnitude, spectral type, or temperature for standard.\nWill not flux calibrate.\n\n";
+
+  }
+
+  # Tidy up output.
+  orac_print "\n";
+
+}
