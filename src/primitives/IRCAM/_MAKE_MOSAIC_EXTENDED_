@@ -1,15 +1,101 @@
-# _MAKE_MOSAIC_EXTENDED_     -*- perl -*-
+#+
+# Name:
+#    _MAKE_MOSAIC_EXTENDED_
 #
-# Forms a mosaic for Quadrant jittering.
+# Purpose:
+#    Forms mosaics for an EXTENDED recipe.
 #
-# TASK: KAPPA - TRANJOIN; CCDPACK - TRANLIST, MAKEMOS
+# Language:
+#    Perl5
 #
+# Description:
+#    This primitive either makes a mosaic of object frames either
+#    in the current row or a `grand' mosaic of the whole of the
+#    current $Grp of an EXTENDED recipe.  There are two main
+#    stages: resampling and making the mosaic.
+#
+#    The primitive either resamples each frame using the non-integer
+#    Cartesian offsets, or merely finds the offsets between frames to
+#    the nearest pixel and shifts the origin (see argument RESAMPLE).
+#    The resampling or shifting imposes no limit to the frame bounds,
+#    so the mosaic extends to include all pixels in contributing frames. 
+#
+#    The primitive then makes a mosaic using zero-point shifts to give
+#    the most self-consistent mosaic based upon the statistics of
+#    overlapping pixels.  On the final row the primitive creates 
+#    the grand mosaic combining all target frames.  On the first cycle 
+#    of the recipe (normally there is only one) the grand mosaic becomes
+#    the group file and its headers read.  On subsequent recipe cycles,
+#    the current grand mosaic is co-added into the group `grand' mosaic.
+#
+# Arguments:
+#    INT_METHOD = CHARACTER (Given)
+#       The interpolation method.  This is either "linint" for bi-linear
+#       interpolation, or "nearest" for nearest neighbour.  The latter
+#       takes about half the time.  ["linint"]
+#    RESAMPLE = LOGICAL (Given)
+#       If true (1), resample the current cycle's frames to the same
+#       Cartesian co-ordinate system using the method given by argument
+#       INT_METHOD.  If false (0), use integer offsets and changes of
+#       origin to register the frames.  The latter is many times
+#       faster and is recommended for pipeline operation.
+#
+# Notes:
+#    -  This primitive is suitable for both UFTI and IRCAM.
+#    -  Processing only occurs for object frames, and when either
+#    steering headers MAKE_MOSAIC or MAKE_GRAND_MOSAIC is true.
+#    Mosaic making occurs only for groups members with the
+#    steering header TARGET_OR_SKY is "target", and for a grand
+#    mosaic only within the current recipe as given by steering
+#    header CYCLE_NUMBER.
+#    -  When RESAMPLE is false, the offset files (.off extension)
+#    associated with each frame are interrogated to find one common
+#    object---the one with identifier 1---as would be the case if
+#    telescope or central-source offsets are used.  For each frame
+#    the read x-y co-ordinates rounded to the nearest integer and
+#    with opposite sign become the new origin.
+#    -  Group header ROOT_NAME stores the name of the grand mosaic
+#    excluding any suffix.  It is written for the first cycle,
+#    and read back for subsequent cycles of the recipe.
+#    -  The end airmass of the mosaics are revised to the limiting
+#    value for the last contributing frame.
+#    -  The individual row mosaic and grand mosaic are displayed.
+#    -  The frame titles are propagated.
+#    -  The optimum number of overlaps for the mosaic creation is 
+#    two for a row and six for a grand mosaic.
+#    -  Code to concatenate field rotation into the resampling is
+#    commented out.  This is because rotation should be handled by the
+#    world co-ordinate system, not by resampling and hence degrading the
+#    data.
+#
+# Tasks:
+#    CCDPACK: MAKEMOS, TRANNDF; KAPPA: ADD, FITSMOD, NDFCOPY,
+#    SETORIGIN.
+#
+# Output Data:
+#    -  The grand mosaic, which is called is "<groupname>", where
+#    <groupname> is the name of the group.  For multiple cycles,
+#    individual grand mosaics are also retained and called
+#    <groupname>_<cyclenumber>", where <cyclenumber> is the cycle
+#    number derived from steering header CYCLE_NUMBER.
+#    -  The row mosaics of the last cycle in <groupname>_mos_<row>,
+#    where <row> is the number of the row.
+#    -  Resampled frames each inheriting the name of its input frame but
+#    with the _trn suffix, when RESAMPLE is true.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+#-
 
 # Arguments
 # =========
 
 # Obtain the value for the interpolation.
     my $intmethod = ( $_MAKE_MOSAIC_EXTENDED_{INT_METHOD} || "linint" );
+    if ( $intmethod ne "linint" && $intmethod ne "nearest" ) {
+       $intmethod = "linint";
+    }
 
 # Determine whether or not to resample.
     my $resample = $_MAKE_MOSAIC_EXTENDED_{RESAMPLE};
@@ -19,8 +105,12 @@
 # =========
 
 # This should only be performed on OBJECT frames.
-    if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ||
-         $Frm->hdr( "OBSTYPE" ) eq "SKY") {
+    if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ) {
+
+# Obtain the cycle number.  Default to zero if undefined, so that recipes
+# which do not support this feature will continue to work.
+       my $cycleno = $Frm->hdr( "CYCLE_NUMBER" );
+       $cycleno = defined( $cycleno ) ? $cycleno : 0;
 
 # Obtain the current row number.
        my $ext_row = $Frm->hdr( "EXTENDED_ROW" );
@@ -35,8 +125,10 @@
           my $tarGrp;
           if ( $grandmosaic ) {
 
-# Form a subgroup comprising all the target frames.
-             $tarGrp = $Grp->subgrp( TARGET_OR_SKY => "target" );
+# Form a subgroup comprising all the target frames within the current
+# cycle.
+             $tarGrp = $Grp->subgrp( TARGET_OR_SKY => "target",
+                                     CYCLE_NUMBER => $cycleno );
 
           } else {
 
@@ -45,7 +137,7 @@
                                      EXTENDED_ROW => $ext_row );
           }
 
-# Form a list of the input and ouptut target file names for CCDPACK tasks.
+# Form a list of the input and output target file names for CCDPACK tasks.
           ( my $inref, my $outref ) = $tarGrp->inout( "_trn" );
 
 # Specify the mosaic suffix.
@@ -107,6 +199,7 @@
 
 # Report the processing status.
              orac_print "Orac says: Frames $inlist resampled\n";
+             orac_print "Orac says: Resampled frames are $outlist\n";
 
           } else {
 
@@ -204,14 +297,26 @@
              $optov = 2;
           }
 
-# Define the name of the mosaic, and hence the group name.  Do not
-# change the output name if we have already appended the output suffix
-# the previous time around.
-          my $outname;
+# Define the mosaic name.  Define root name for the group for the first
+# cycle.  On later grand mosaics read the group root name from the group
+# header.
+          my ( $grproot, $outname );
           if ( $grandmosaic ) {
-             $outname = $Grp->file . $osuffix unless $Grp->file =~ /$osuffix$/;
+             if ( $cycleno == 0 ) {
+                $grproot = $Grp->file;
+                $outname = $grproot . $osuffix
+
+             } else {
+                $grproot = $Grp->hdr( "ROOT_NAME" );
+                $outname = $grproot . $osuffix . "_" . $cycleno
+             }
+
           } else {
-             $outname = $Grp->file . $osuffix . "_" . $ext_row;
+             if ( defined $Grp->hdr( "ROOT_NAME" ) ) {
+                $outname = $Grp->hdr( "ROOT_NAME" ) . "_row" . $ext_row . $osuffix; 
+             } else {
+                $outname = $Grp->file . "_row" . $ext_row . $osuffix; 
+             }
           }
 
 # Assign other parameters.  The scale might become a user parameter.
@@ -227,17 +332,50 @@
 
 # Display the resultant mosaic.
           $tarGrp->file( $outname );
-          $Display->display_data( $tarGrp ) if (defined $Display);
+          $Display->display_data( $tarGrp ) if ( defined $Display );
 
 # Define the group file and headers.
 # ==================================
 
 # Set the group name in the Group object...
-          if ( $grandmosaic ) {
+          if ( $grandmosaic && $cycleno == 0 ) {
+
              $Grp->file( $outname );
 
 # ...and read the header.
              $Grp->readhdr;
+
+# Store the root name.
+             $Grp->hdr( "ROOT_NAME", $grproot );
+
+          }
+
+# On the second and subsequent grandmosaic cycle, we just need to
+# co-add the single-cycle mosaic into the main mosaic.
+          if ( $cycleno > 0 && $grandmosaic ) {
+
+# Make a duplicate of the main mosaic.
+             my $tmpmos = "mainmos$$";
+             $header = "in=" . $Grp->file . " out=$tmpmos";
+             $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$header" );
+
+# Co-add the frames.
+             $header = "in1=$tmpmos in2=$outname out=" . $Grp->file;
+             $Mon{ "kappa_mon" }->obeyw( "add", "$header" );
+
+# Copy the first cycle mosaic from its temporary home.  This leaves the
+# mosaics for each and every individual jitter to be examined later.
+# Remove the temporary copy.
+             if ( $cycleno == 1 ) {
+                $header = "in=$tmpmos out=" . $Grp->file . "_0";
+                $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$header" );
+             }
+             _DELETE_A_FRAME_ FRAME=$tmpmos
+
+             orac_print "Orac says: Frame $outname co-added into main mosaic " . $Grp->file . "\n";
+
+# Display the main mosaic.
+             _DISPLAY_GROUP_IMAGE_
           }
 
 # Change the end airmass to reflect the last frame included in the mosaic.  Note this
@@ -252,3 +390,144 @@
 
        }
     }
+
+# Podule
+# ======
+
+=head1 NAME 
+
+MAKE_MOSAIC_EXTENDED -- Forms mosaics for an EXTENDED recipe.
+
+=head1 DESCRIPTION
+
+This primitive either makes a mosaic of object frames either
+in the current row or a `grand' mosaic of the whole of the
+current $Grp of an EXTENDED recipe.  There are two main
+stages: resampling and making the mosaic.
+
+The primitive either resamples each frame using the non-integer
+Cartesian offsets, or merely finds the offsets between frames to
+the nearest pixel and shifts the origin (see argument RESAMPLE).
+The resampling or shifting imposes no limit to the frame bounds,
+so the mosaic extends to include all pixels in contributing frames. 
+
+The primitive then makes a mosaic using zero-point shifts to give
+the most self-consistent mosaic based upon the statistics of
+overlapping pixels.  On the final row the primitive creates 
+the grand mosaic combining all target frames.  On the first cycle 
+of the recipe (normally there is only one) the grand mosaic becomes
+the group file and its headers read.  On subsequent recipe cycles,
+the current grand mosaic is co-added into the group `grand' mosaic.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item INT_METHOD = CHARACTER (Given)
+
+The interpolation method.  This is either "linint" for bi-linear
+interpolation, or "nearest" for nearest neighbour.  The latter
+takes about half the time.  ["linint"]
+
+=item RESAMPLE = LOGICAL (Given)
+
+If true (1), resample the current cycle's frames to the same
+Cartesian co-ordinate system using the method given by argument
+INT_METHOD.  If false (0), use integer offsets and changes of
+origin to register the frames.  The latter is many times
+faster and is recommended for pipeline operation.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for both UFTI and IRCAM.
+
+=item *
+
+Processing only occurs for object frames, and when either
+steering headers MAKE_MOSAIC or MAKE_GRAND_MOSAIC is true.
+Mosaic making occurs only for groups members with the
+steering header TARGET_OR_SKY is "target", and for a grand
+mosaic only within the current recipe as given by steering
+header CYCLE_NUMBER.
+
+=item *
+
+When RESAMPLE is false, the offset files (.off extension)
+associated with each frame are interrogated to find one common
+object---the one with identifier 1---as would be the case if
+telescope or central-source offsets are used.  For each frame
+the read x-y co-ordinates rounded to the nearest integer and
+with opposite sign become the new origin.
+
+=item *
+
+Group header ROOT_NAME stores the name of the grand mosaic
+excluding any suffix.  It is written for the first cycle,
+and read back for subsequent cycles of the recipe.
+
+=item *
+
+The end airmass of the mosaics are revised to the limiting value for
+the last contributing frame.
+
+=item *
+
+The individual mosaic and grand mosaic are displayed.
+
+=item *
+
+The frame titles are propagated.
+
+=item *
+
+The optimum number of overlaps for the mosaic creation is 
+two for a row and six for a grand mosaic.
+
+=item *
+
+Code to concatenate field rotation into the resampling is
+commented out.  This is because rotation should be handled by the
+world co-ordinate system, not by resampling and hence degrading the
+data.
+
+=back
+
+=head1 TASKS
+
+CCDPACK: MAKEMOS, TRANNDF; KAPPA: ADD, FITSMOD, NDFCOPY, SETORIGIN.
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The grand mosaic, which is called is "<groupname>", where
+<groupname> is the name of the group.  For multiple cycles,
+individual grand mosaics are also retained and called
+"<groupname>_<cyclenumber>", where <cyclenumber> is the cycle
+number derived from steering header CYCLE_NUMBER.
+
+=item *
+
+The row mosaics of the last cycle in <groupname>_mos_<row>,
+where <row> is the number of the row.
+
+=item *
+
+Resampled frames each inheriting the name of its input frame but
+with the _trn suffix, when RESAMPLE is true.
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=cut

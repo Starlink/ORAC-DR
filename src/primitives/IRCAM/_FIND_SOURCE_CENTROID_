@@ -1,41 +1,75 @@
-# _FIND_SOURCE_CENTROID_
+#+
+# Name:
+#    _FIND_SOURCE_CENTROID_
 #
-# Finds the centroid of a point source within a box either centred or
-# displaced from the centre by the telescope offsets and optional
-# additional offsets.  The point source can be either positive or
-# negative with respect to the background level.
+# Purpose:
+#    Finds the centroid of a point source within the current frame.
 #
-# TASK: KAPPA - CENTROID, NDFTRACE, STATS
+# Language:
+#    Perl5
 #
-#  Exports:
-#    Reference to @CENTRE  the centroid co-ordinates.
-#                 @INIT    the initial co-ordinates
-#                 $FOUND   whether or not a centroid was found.
+# Description:
+#    Finds the centroid of a point source within a box either centred or
+#    displaced from the centre by the telescope offsets and optional
+#    additional offsets.  The point source can be either positive or
+#    negative with respect to the background level.
 #
-#  Arguments:
-#     ANGLE = REAL (Given)
-#        Rotation angle of the Declination axis with respect to the
-#        frame's y axis measured counter clockwise.
-#     BOXSIZE = REAL (Given)
-#        The size in arcseconds of the search box in which to find the
-#        object's approximate position, using the brightest pixel. [5]
-#     POSITIVE = LOGICAL (Given)
-#        If 1 (true), the point source is positive, i.e. has values above
-#        the sky level.  If 0 (false), the point source is negative. [1]
-#     XOFF = REAL (Given)
-#        The approximate x pixel offset of the centroid of the point
-#        source to be measured with respect to the nominal position.
-#        The nominal position is the y centre of the array plus the
-#        x telescope offset.  (It's plus because R.A. increases with
-#        negative x.)  [0.0]
-#     YOFF = REAL (Given)
-#        The approximate y pixel offset of the centroid of the point
-#        source to be measured with respect to the nominal position.
-#        The nominal position is the y centre of the array minus the
-#        telescope offset.  [0.0]
+# Arguments:
+#    ANGLE = REAL (Given)
+#       Rotation angle of the Declination axis with respect to the
+#       frame's y axis measured counter clockwise.
+#    BOXSIZE = REAL (Given)
+#       The size in arcseconds of the search box in which to find the
+#       object's approximate position, using the brightest pixel, or
+#       the minimum pixel when POSITIVE is false. [5]
+#    CENTRE( 2 ) = REAL (Returned)
+#       The centroid pixel co-ordinates.
+#    FOUND = LOGICAL (Returned)
+#       If true, a centroid was found.
+#    INIT( 2 ) = REAL (Returned)
+#       The initial co-ordinates for the centroid search.
+#    POSITIVE = LOGICAL (Given)
+#       If 1 (true), the point source is positive, i.e. has values above
+#       the sky level.  If 0 (false), the point source is negative. [1]
+#    XOFF = REAL (Given)
+#       The approximate x pixel offset of the centroid of the point
+#       source to be measured with respect to the nominal position.
+#       The nominal position is the y centre of the array plus the
+#       x telescope offset.  (It's plus because R.A. increases with
+#       negative x.)  [0.0]
+#    YOFF = REAL (Given)
+#       The approximate y pixel offset of the centroid of the point
+#       source to be measured with respect to the nominal position.
+#       The nominal position is the y centre of the array minus the
+#       telescope offset.  [0.0]
+#
+# Notes:
+#    -  This primitive is suitable for both UFTI and IRCAM.
+#    Instrument-specific headers are obtained where appropriate.
+#    -  Processing only occurs for object frames.
+#    -  Error messages are issued if the centroid position contains a
+#    bad value or the returned status is not OK. 
+#    -  Header CROTA2---the angle of the chip's y axis with respect
+#    to North (positive is anti-clockwise)---is used to convert sky
+#    co-ordinate displacements into pixels using a simple rotation
+#    matrix.  If this header is absent, no rotation is assumed.   
+#    This formulation is satisfactory for the UKIRT's instrument scales
+#    and sizes, and its declination range.  A more-sophisticated
+#    transformation would be needed near the poles or for wide fields.
+#
+# Tasks:
+#    KAPPA: CENTROID, NDFTRACE, STATS.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+#-
 
 # This should only be performed on OBJECT frames.
     if ( $Grp->hdr( "OBSTYPE" ) eq "OBJECT" ) {
+
+# Obtain arguments.
+# =================
 
 # Process as positive or negative source.
        my $positive = $_FIND_SOURCE_CENTROID_{POSITIVE};
@@ -54,26 +88,32 @@
        $defrot = defined( $defrot ) ? $defrot : 0.0;
        my $rotangle = ( $_FIND_SOURCE_CENTROID_{ANGLE} || $defrot );
 
+# Define the size of the box in arcseconds, and hence pixels. 
+       my $boxsize = ( $_FIND_SOURCE_CENTROID_{BOXSIZE} || 5 );
+
+# Obtain frame pixel bounds.
+# ==========================
+
 # Run a task to obtain details of the frame.
        my $header = "ndf=" . $Frm->file;
        $Mon{"ndfpack_mon"}->obeyw("ndftrace", "$header");
 
 # Extract the bounds of the frame.
-       (my $ORAC_STATUS, my @lbnd) = $Mon{"ndfpack_mon"}->get("ndftrace","lbound");
-       ($ORAC_STATUS, my @ubnd) = $Mon{"ndfpack_mon"}->get("ndftrace","ubound");
+       ( my $ORAC_STATUS, my @lbnd ) = $Mon{"ndfpack_mon"}->get("ndftrace","lbound");
+       ( $ORAC_STATUS, my @ubnd ) = $Mon{"ndfpack_mon"}->get("ndftrace","ubound");
+
+# Find pixel limits of the search box.
+# ====================================
 
 # Define some useful variables to apply the rotation matrix.
        my $pi = atan2( 1, 1 ) * 4;
        my $dtor = $pi / 180.0;
        my $cosrot = cos( $rotangle * $dtor );
        my $sinrot = sin( $rotangle * $dtor );
-
+ 
 # Find the mid points.
        my $xmid = nint( ( $lbnd[0] + $ubnd[0] ) / 2 );
        my $ymid = nint( ( $lbnd[1] + $ubnd[1] ) / 2 );
-
-# Define the size of the box in arcseconds, and hence pixels. 
-       my $boxsize = ($_FIND_SOURCE_CENTROID_{BOXSIZE} || 5 );
 
 # Obtain the approximate (telescope) offsets and the plate scale.
        my ( $xoffh, $yoffh, $pixelscale );
@@ -105,6 +145,9 @@
 
 # Find the boxsize in pixels.
        my $pixbox = nint( $boxsize / $pixelscale );
+
+# Locate the centroid.
+# ====================
 
 # Specify a section which should contain the source.
        my $ndfsect = $Frm->file . "($xcentre~$pixbox,$ycentre~$pixbox)";
@@ -151,8 +194,10 @@
 
        }
 
+# Watch for possible error conditions.
+# ====================================
+
 # Check that a centroid has been found.
-orac_warn "centroid status = $centroid_status\n";
        my $found = 1;
        if ( $centroid_status != ORAC__OK ) {
           orac_err "Unable to find a centroid within a box of $boxsize arcseconds centred at ($xcentre,$ycentre).\n";
@@ -179,3 +224,106 @@ orac_warn "centroid status = $centroid_status\n";
 # Return whether or not a centroid was found.
        $_FIND_SOURCE_CENTROID_{FOUND} = \$found;
     }
+
+# Podule
+# ======
+
+=head1 NAME
+
+FIND_SOURCE_CENTROID -- Finds the centroid of a point source within the current frame.
+
+=head1 DESCRIPTION
+
+Finds the centroid of a point source within a box either centred or
+displaced from the centre by the telescope offsets and optional
+additional offsets.  The point source can be either positive or
+negative with respect to the background level.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item ANGLE = REAL (Given)
+
+Rotation angle of the Declination axis with respect to the
+frame's y axis measured counter clockwise.
+
+=item BOXSIZE = REAL (Given)
+
+The size in arcseconds of the search box in which to find the
+object's approximate position, using the brightest pixel, or
+the minimum pixel when POSITIVE is false. [5]
+
+=item CENTRE( 2 ) = REAL (Returned)
+
+The centroid pixel co-ordinates.
+
+=item FOUND = LOGICAL (Returned)
+
+If true, a centroid was found.
+
+=item INIT( 2 ) = REAL (Returned)
+
+The initial co-ordinates for the centroid search.
+
+=item POSITIVE = LOGICAL (Given)
+
+If 1 (true), the point source is positive, i.e. has values above
+the sky level.  If 0 (false), the point source is negative. [1]
+
+=item XOFF = REAL (Given)
+
+The approximate x pixel offset of the centroid of the point
+source to be measured with respect to the nominal position.
+The nominal position is the y centre of the array plus the
+x telescope offset.  (It's plus because R.A. increases with
+negative x.)  [0.0]
+
+=item YOFF = REAL (Given)
+
+The approximate y pixel offset of the centroid of the point
+source to be measured with respect to the nominal position.
+The nominal position is the y centre of the array minus the
+telescope offset.  [0.0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for both UFTI and IRCAM.
+Instrument-specific headers are obtained where appropriate.
+
+=item *
+
+Processing only occurs for object frames.
+
+=item *
+
+Error messages are issued if the centroid position contains a
+bad value or the returned status is not OK. 
+
+=item *
+
+Header CROTA2---the angle of the chip's y axis with respect
+to North (positive is anti-clockwise)---is used to convert sky
+co-ordinate displacements into pixels using a simple rotation
+matrix.  If this header is absent, no rotation is assumed.   
+This formulation is satisfactory for the UKIRT's instrument scales
+and sizes, and its declination range.  A more-sophisticated
+transformation would be needed near the poles or for wide fields.
+
+=back
+
+=head1 TASKS
+
+KAPPA: CENTROID, NDFTRACE, STATS.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=cut
