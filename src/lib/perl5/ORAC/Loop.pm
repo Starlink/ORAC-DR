@@ -228,7 +228,7 @@ sub orac_loop_wait {
 
   # Now loop until the file appears
 
-  my $timeout = 3600;  # 60 minutes time out
+  my $timeout = 7200;  # 60 minutes time out
   my $timer = 0.0;
   my $pause = 2.0;   # Time between checks
   my $dot   = 1;     # Number of pauses for each dot printed
@@ -387,7 +387,7 @@ sub orac_loop_flag {
 
   # Now loop until the file appears
 
-  my $timeout = 3600;  # 10 minutes time out
+  my $timeout = 7200;  # 120 minutes time out
   my $timer = 0.0;
   my $pause = 2.0;   # Pause for 2 seconds
 
