@@ -55,6 +55,18 @@ The input frame is reformatted into a datacube with suffix _cube.
 
 =back
 
+=head1 PARAMETERS
+
+=item EXPAND = BOOLEAN (Given)
+
+If true, expand the cube so that the spatial resolution is the same
+in both x- and y-directions. [FALSE]
+
+=item GRP = BOOLEAN (Given)
+
+If true, form the datacube from the reduced group file. Otherwise,
+form the datacube from the current frame. [FALSE]
+
 =head1 TASKS
 
 ndfpack_mon: ndfcopy, setorigin, setbound
@@ -73,118 +85,115 @@ Council.  All Rights Reserved.
 
 
 
-# Permaxes only runs from the monolith in Kappa > 1.0, so if we have 
-# an older kappa version then we need to user the old Figaro based 
+# Permaxes only runs from the monolith in Kappa > 1.0, so if we have
+# an older kappa version then we need to user the old Figaro based
 # primative.
 
 if (starversion_gt('kappa', '1.0-0') ) {
-    my ($in, $out);
+  my ($in, $out);
 
-    if ( defined( $_FORM_DATACUBE_{GRP} ) && $_FORM_DATACUBE_{GRP} == 1) {
-      $in = $Grp->file;
-      $out = $Grp->raw . "_cub";
-    } else {
-      ($in, $out) = $Frm->inout( "_cub" );
-    }
+  if ( defined( $_FORM_DATACUBE_{GRP} ) && $_FORM_DATACUBE_{GRP} == 1) {
+    $in = $Grp->file;
+    $out = $Grp->raw . "_cub";
+  } else {
+    ($in, $out) = $Frm->inout( "_cub" );
+  }
 
-    my $n_slices = $Frm->uhdr("IFU_slices");
-    
+  my $n_slices = $Frm->uhdr("IFU_slices");
+
 # We're going to need some temporary files
-    use ORAC::TempFile;
-    
-    my $ymin = 0;
-    my $ymax = 60;
-    
-    # and some temporary files
-    my $tmp=new ORAC::TempFile;
-    my $tmp_slice = $tmp->file;
-    my $tmp2=new ORAC::TempFile;
-    my $tmp_slice2 = $tmp2->file;
-    my $tmp3=new ORAC::TempFile;
-    my $tmp_paste = $tmp3->file;
-    
-    my $param;
-    my $expand = 0;
-    
-    my $pos = 1;
-    
-    orac_print "Forming datacube from $in ";
+  use ORAC::TempFile;
 
-    for my $n (0..($n_slices-1)) {
-	
-	# Read the position of the nth slice as written into the headers
+  # and some temporary files
+  my $tmp=new ORAC::TempFile;
+  my $tmp_slice = $tmp->file;
+  my $tmp2=new ORAC::TempFile;
+  my $tmp_slice2 = $tmp2->file;
+  my $tmp3=new ORAC::TempFile;
+  my $tmp_paste = $tmp3->file;
 
-	my $ystart = $Frm->uhdr->{"IFU_start"}->[$n];
-	my $yend = $Frm->uhdr->{"IFU_end"}->[$n];
-	my $xshift = $Frm->uhdr->{"IFU_xshift"}->[$n];
-	my $yshift = $Frm->uhdr->{"IFU_yshift"}->[$n];
-    
-	# Keep the user aware of progress
-	orac_print ".";
+  my $param;
+  my $expand = 0;
+
+  my $pos = 1;
+
+  orac_print "Forming datacube from $in ";
+
+  for my $n (0..($n_slices-1)) {
 	
-	# Copy the area of the input frame containing the required slice
-	# to a temporary file.
-	$param = "in=$in(,$ystart:$yend) out=$tmp_slice";
-	$Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
+    # Read the position of the nth slice as written into the headers
+
+    my $ystart = $Frm->uhdr->{"IFU_start"}->[$n];
+    my $yend = $Frm->uhdr->{"IFU_end"}->[$n];
+    my $xshift = $Frm->uhdr->{"IFU_xshift"}->[$n];
+    my $yshift = $Frm->uhdr->{"IFU_yshift"}->[$n];
+
+    # Keep the user aware of progress
+    orac_print ".";
 	
-	# add a third dimension
-	$Mon{"ndfpack_mon"}->obeyw("setbound", "$tmp_slice(,,1:1)");
+    # Copy the area of the input frame containing the required slice
+    # to a temporary file.
+    $param = "in=$in(,$ystart:$yend) out=$tmp_slice";
+    $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
 	
-	# Set the origin
-	$param = "$tmp_slice [1,1,$pos]";  
-	$Mon{"ndfpack_mon"}->obeyw("setorigin", "$param");
+    # add a third dimension
+    $Mon{"ndfpack_mon"}->obeyw("setbound", "$tmp_slice(,,1:1)");
 	
-	if ($expand) {
-	    $pos += 2;
-	} else {
-	    $pos++;
-	}
+    # Set the origin
+    $param = "$tmp_slice [1,1,$pos]";
+    $Mon{"ndfpack_mon"}->obeyw("setorigin", "$param");
 	
-	# Shift it in the y-direction (and x if necessary)
-	$param = "in=$tmp_slice out=$tmp_slice2 abs=[$xshift,$yshift,0] method=linear";
-	$Mon{"kappa_mon"}->obeyw( "slide", "$param" );
+    if ($expand) {
+      $pos += 2;
+    } else {
+      $pos++;
+    }
 	
-	
-	# If this is not the first slice then paste it onto what we've
-	# already got (stored in the other temporary file) and write it
-	# to $out.
-	if ($n > 0) { 
+    # Shift it in the y-direction (and x if necessary)
+    $param = "in=$tmp_slice out=$tmp_slice2 abs=[$xshift,$yshift,0] method=linear";
+    $Mon{"kappa_mon"}->obeyw( "slide", "$param" );
+
+    # If this is not the first slice then paste it onto what we've
+    # already got (stored in the other temporary file) and write it
+    # to $out.
+    if ($n > 0) {
 	    $param = "$tmp_paste $tmp_slice2 out=$out title=ifu_data";
 	    $Mon{"kappa_mon"}->obeyw("paste", "$param");
-	    
+
 	    # Copy the current $out to $tmp_paste for use next time round.
 	    $param = "in=$out out=$tmp_paste";
 	    $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
-	} else {
+    } else {
 	    # If it is the first slice then just copy it to $tmp_paste
 	    # ready for use next time round and set $flag to true.
 	    $param = "in=$tmp_slice2 out=$tmp_paste";
 	    $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
-	}
     }
-    
-    orac_print "\n";
+  }
 
-    # Permute the axes from (lambda, y, x) to (x, y, lambda)
-    $param = "in=$tmp_paste out=$out perm=[3,2,1]";
-    $Mon{"kappa_mon"}->obeyw( "permaxes", "$param" );
-    
+  # Tidy up output.
+  orac_print "\n";
 
-    if ($_FORM_DATACUBE_{GRP} == 1) {
-	$Grp->file($out);
-    } else {
-	$Frm->file( $out );
-    }
-    
-    $Grp->uhdr("NDIMS", 3);
-    $Frm->uhdr("NDIMS", 3);  
-    
- 
+  # Permute the axes from (lambda, y, x) to (x, y, lambda)
+  $param = "in=$tmp_paste out=$out perm=[3,2,1]";
+  $Mon{"kappa_mon"}->obeyw( "permaxes", "$param" );
+
+  # Update the appropriate object.
+  if (defined($_FORM_DATACUBE_{GRP}) && $_FORM_DATACUBE_{GRP} == 1) {
+    $Grp->file($out);
+  } else {
+    $Frm->file( $out );
+  }
+
+  # Let following steps know how many dimensions there are.
+  $Grp->uhdr("NDIMS", 3);
+  $Frm->uhdr("NDIMS", 3);
 
 } else {
-    orac_warn "Kappa version 1.0 or greater is strongly recommended.\n"; 
+  orac_warn "Kappa version 1.0 or greater is strongly recommended.\n";
+  orac_warn "Variance information will be lost when forming datacube.\n";
 	
-    _FORM_DATACUBE_NOVAR_
+  _FORM_DATACUBE_NOVAR_
 }
 
 _CREATE_WCS_
