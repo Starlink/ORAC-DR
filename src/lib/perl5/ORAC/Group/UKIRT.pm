@@ -32,6 +32,7 @@ my %hdr = (
 	   AIRMASS_START      => "AMSTART",
 	   AIRMASS_END        => "AMEND",
 	   DECBASE            => "DECBASE",
+	   EQUINOX            => "EQUINOX",
 	   FILTER             => "FILTER",
 	   INSTRUMENT         => "INSTRUME",
 	   LBNDX              => "RDOUT_X1",
