@@ -27,7 +27,8 @@ objects. Some additional methods are supplied.
 # A package to describe a UFTI group object for the
 # ORAC pipeline
 
-use 5.004;
+use 5.006;
+use warnings;
 use vars qw/$VERSION/;
 use ORAC::Frame::UKIRT;
 use ORAC::Constants;
@@ -109,12 +110,12 @@ sub new {
   $self->rawsuffix('.fits');
   $self->rawformat('FITS');
   $self->format('NDF');
- 
+
   # If arguments are supplied then we can configure the object
   # Currently the argument will be the filename.
   # If there are two args this becomes a prefix and number
   $self->configure(@_) if @_;
- 
+
   return $self;
 
 }
@@ -240,7 +241,7 @@ sub flag_from_bits {
 
   my $prefix = shift;
   my $obsnum = shift;
-  
+
   # It is almost possible to derive the flag name from the 
   # file name but not quite. In the UFTI case the flag name
   # is  .UT_obsnum.fits.ok but the filename is fUT_obsnum.fits
@@ -276,7 +277,7 @@ sub flag_from_bits {
 #   my $number = $self->hdr('OBSNUM');
 
 #   return $number;
-   
+
 # }
 
 
@@ -304,7 +305,7 @@ sub template {
 
   my $num = $self->number;
   # pad with leading zeroes - 5(!) digit obsnum
-  my $num = '0'x(5-length($num)) . $num;
+  $num = '0'x(5-length($num)) . $num;
 
   # Change the first number
   $template =~ s/_\d+_/_${num}_/;

@@ -27,21 +27,21 @@ objects.
 
 # A package to describe a MichTemp group object for the
 # ORAC pipeline
- 
-use 5.004;
+
+use 5.006;
 use vars qw/$VERSION/;
 use ORAC::Frame::UKIRT;
 use ORAC::Constants;
- 
+
 # Let the object know that it is derived from ORAC::Frame;
 use base qw/ORAC::Frame::UKIRT/;
- 
+
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
- 
+
 # standard error module and turn on strict
 use Carp;
 use strict;
- 
+use warnings;
 
 =head1 PUBLIC METHODS
 
@@ -89,12 +89,12 @@ sub new {
   # the hash member name
   $self->rawfixedpart('M');
   $self->rawsuffix('.sdf');
- 
+
   # If arguments are supplied then we can configure the object
   # Currently the argument will be the filename.
   # If there are two args this becomes a prefix and number
   $self->configure(@_) if @_;
- 
+
   return $self;
 }
 
@@ -192,7 +192,7 @@ sub template {
 
   my $num = $self->number;
   # pad with leading zeroes - 5(!) digit obsnum
-  my $num = '0'x(5-length($num)) . $num;
+  $num = '0'x(5-length($num)) . $num;
 
   # Change the first number
   $template =~ s/_\d+_/_${num}_/;
