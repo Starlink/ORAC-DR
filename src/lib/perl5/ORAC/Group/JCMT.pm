@@ -222,24 +222,25 @@ sub template {
 
 
 
-=item num_files
+=item nfiles
 
 This method returns the number of files currently associated
 with the group. What this in fact means is that it returns
 the number of files associated with the last member of the 
 group (since that is how I construct output names in the
-first place).
+first place). grpoutsub() method is responsible for 
+converting this number into a filename via the file() method.
 
 =cut
 
-sub num_files {
+sub nfiles {
   my $self = shift;
 
   # Find last frame
   my $frm = $self->frame($self->num);
 
   # Now get the number of files from that
-  return $frm->num_files;
+  return $frm->nfiles;
 }
 
 
