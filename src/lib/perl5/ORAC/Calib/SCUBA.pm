@@ -487,11 +487,11 @@ sub tausysnoupdate {
 
 Internal cache providing access to previously calculated tau values.
 This is a reference to a hash of hashes with keys of uppercased
-C<tausys()> and ORACTIME.
+C<tausys()>, ORACTIME and filter name.
 
  $cacheref = $Cal->taucache;
 
- $tau = $Cal->taucache->{TAUSYS}->{'19980515.453'};
+ $tau = $Cal->taucache->{TAUSYS}->{'19980515.453'}->{$filter};
 
 Returns a hash reference.
 
@@ -920,8 +920,8 @@ sub tau {
 
   # Check to see whether the value is already cached.
   my $oractime = $self->thing->{'ORACTIME'};
-  return $self->taucache->{$sys}->{$oractime}
-    if exists $self->taucache->{$sys}->{$oractime};
+  return $self->taucache->{$sys}->{$oractime}->{$filt}
+    if exists $self->taucache->{$sys}->{$oractime}->{$filt};
 
   # Check tausys
   if ($sys eq 'CSO') {
@@ -1157,7 +1157,7 @@ sub tau {
   }
 
   # Cache the result if it is defined
-  $self->taucache->{$sys}->{$oractime} = $tau if defined $tau;
+  $self->taucache->{$sys}->{$oractime}->{$filt} = $tau if defined $tau;
 
   # Now we have a tau value so return it
   return $tau;
