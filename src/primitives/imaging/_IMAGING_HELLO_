@@ -20,7 +20,12 @@
 #    A copy is necessary because the raw frame is write protected.  It
 #    finally corrects for non-linearity.
 #
-#    For Michelle: see UFTI.
+#    For Michelle: it permits display of the raw data, sets the pixel 
+#    origin, and switches on history recording.  It copies the raw 
+#    data integrations; and if there's only one integration, it merges
+#    the integration and the headers into a simple NDF.  The data values
+#    for ND modes are brought into line with other instruments, and are
+#    total ADU, not ADU/s.
 #
 # Notes:
 #    -  The readout lower bounds in the frame internal headers
@@ -41,12 +46,15 @@
 #
 # Output Data:
 #    -  Copied frame inheriting the current frame's name but with 
-#    the _cl suffix (IRCAM only).
+#    the _raw suffix (IRCAM & Michelle only).
 #    -  Linearity-corrected frame inheriting the current frame's name
 #    but with the _nl suffix (IRCAM only).
+#    -  For NDSTARE and NDCHOP Michelle data, the data scaled to ADU
+#    in a frame inheriting the current frame's name but with the _adu
+#    suffix.
 #
 # Tasks:
-#    KAPPA: FITSMOD, HISSET, MATHS, NDFCOPY, SETORIGIN.
+#    KAPPA: CMULT, FITSMOD, HISSET, MATHS, NDFCOPY, SETORIGIN.
 #
 # Authors:
 #    MJC: Malcolm J. Currie (JAC)
@@ -59,10 +67,15 @@
 
 # Every imaging recipe must display the raw data.
     _DISPLAY_FRAME_IMAGE_
+    orac_print "\n";
 
 # Obtain the instrument name.
     my $instrument = $Frm->uhdr( "ORAC_INSTRUMENT" );
-    my ( $in, $out, $param1 );
+    my ( $in, $out, $param1, $param2 );
+
+# Are the data chopped?
+    my $chop = $Frm->uhdr( "ORAC_DETECTOR_MODE" ) eq "CHOP" ||
+               $Frm->uhdr( "ORAC_DETECTOR_MODE" ) eq "NDCHOP";
 
 # Copy the original data.
 # =======================
@@ -75,30 +88,63 @@
     if ( $instrument =~ /IRCAM/ || $instrument =~ /Xi/ ) {
 
 # Generate list of input and output filenames.
-       ( $in, $out ) = $Frm->inout( "_cl" );
+       ( $in, $out ) = $Frm->inout( "_raw" );
 
 # Copy the data.
-       $Mon{"ndfpack_mon"}->obeyw("ndfcopy","in=$in out=$out");
+       $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "in=$in out=$out" );
 
 # Report the processing status.
-       orac_print "Frame $in copied to $out\n";
+       orac_print "$in to $out: Copied NDF component.\n";
 
 # Now update the output filename in the Frame object.
        $Frm->file( $out );
-    }
 
 # For Michelle the data are in HDS container format.  For imaging we can
 # work with a simple NDF provided there is only one .Inn NDF within
 # the container file.  That's achieved by copying the raw data to a
-# simple NDF with the _raw suffi, and mergeing the .HEADER and .I1
-# headers. 
-    if ( $instrument =~ /Michelle/ || $instrument =~ /edict/ ) {
-       if ( $Frm->nfiles == 1 ) {
-          my ( $in, $out ) = $Frm->inout( "_raw" );
-          $Mon{"ndfpack_mon"}->obeyw("ndfcopy","in=$in out=$out");
+# simple NDF with the _raw suffix, and merging the .HEADER and .I1
+# headers, but only for non-chopped data.
+    } elsif ( $instrument =~ /Michelle/ || $instrument =~ /edict/ ) {
+       if ( $Frm->nfiles == 1 && ! $chop ) {
+
+# Generate list of input and output filenames.
+          ( $in, $out ) = $Frm->inout( "_raw" );
+
+# Copy the single integration to an _raw output frame, which may be
+# manipulated.
+          $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "in=$in out=$out" );
+
+# Update the output filename in the Frame object.  Merge the headers.
           $Frm->files( $out );
           $Frm->mergehdr;
+
+# Report the processing status.
+          orac_print "$in to $out: Copied NDF component.\n";
+
+# For chopped data there must be two integrations, both of which must
+# be copied.
+       } elsif ( $chop && $Frm->nfiles == 2 ) {
+          foreach my $i ( 1 .. $Frm->nfiles ) {
+
+# Copy the raw data to an _raw output frame, which may be manipulated.
+             ( my $in, my $out ) = $Frm->inout( "_raw", $i );
+             $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "in=$in out=$out title=$out" );
+
+# Report the processing status.
+             orac_print "$in to $out: Copied NDF component.\n";
+
+# Update the Frame object.
+             $Frm->file( $i, $out );
+          }
+
+# Abort if more integrations are present.
+       } elsif ( $chop ){ 
+          orac_err "Only two integrations (one in each chopped beam) " .
+                   "per observation is supported.\n";  
+       } else {
+          orac_err "Only one integration per observation is supported.";
        }
+
     }
 
 # Correct the WPLANGLE header.
@@ -113,12 +159,13 @@
        $Frm->uhdr( "ORAC_WAVEPLATE_ANGLE", 0 );
 
 # The data also need to be changed so that the flat can be filed.
-# Thus correct the FITS header WPLANGLE value too.
+# Thus correct the FITS header WPLANGLE value too.  This assumes that
+# there is a keyword corresponding to the ORAC_WAVEPLATE_ANGLE.
        $in = $Frm->file;
        my %keywords =  $Frm->translate_hdr( "ORAC_WAVEPLATE_ANGLE" );
        my @wplakey = keys( %keywords );
        $param1 = "edit=update keyword=$wplakey[ 0 ] value=0.0 comment=\\\$C position=!"; 
-       $Mon{"ndfpack_mon"}->obeyw("fitsmod","ndf=$in $param1");
+       $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "ndf=$in $param1" );
     }
 
 # Set the bounds of the NDF.
@@ -145,7 +192,7 @@
        $param1 = "ndf=$in origin=[$x1,$y1]";
 
 # Set the pixel origin.
-       $Mon{"ndfpack_mon"}->obeyw("setorigin","$param1");
+       $Mon{"ndfpack_mon"}->obeyw( "setorigin", "$param1" );
 
 # Report the processing status.
        orac_print "Frame $in has origin set to ($x1,$y1).\n";
@@ -153,15 +200,14 @@
 
 # Initiate history recording.
 # ===========================
-    $Mon{"ndfpack_mon"}->obeyw("hisset","ndf=$in");
+    $Mon{"ndfpack_mon"}->obeyw( "hisset", "ndf=$in" );
 
 # Report the processing status.
-    orac_print "Frame $in has history recording enabled\n";
-
+    orac_print "Frame $in has history recording enabled.\n";
 
 # Report completed processing status for UFTI.
     if ( $instrument =~ /UFTI/ ) {
-       orac_print "Global UFTI tasks performed\n";
+       orac_print "Global UFTI tasks performed.\n";
 
 # There's more to do for IRCAM...
     } elsif ( $Frm->hdr( "INSTRUME" ) =~ /IRCAM/ ||
@@ -185,21 +231,21 @@
           if ( $mode eq "ND_STARE" ) {
 
 # Evaluate the expression with the bias already subtracted.
-             $Mon{"kappa_mon"}->obeyw("maths","out=$out ia=$in exp='IA+3.3E-06*IA*IA'");
+             $Mon{"kappa_mon"}->obeyw( "maths", "out=$out ia=$in exp='IA+3.3E-06*IA*IA'" );
 
 # Evaluate the expression without the bias already subtracted (STARE mode).
           } elsif ( $mode eq "STARE" ) {
-             $Mon{"kappa_mon"}->obeyw("maths","out=$out ia=$in exp='IA+3.3E-06*(IA-24460)*(IA-24460)'");
+             $Mon{"kappa_mon"}->obeyw( "maths", "out=$out ia=$in exp='IA+3.3E-06*(IA-24460)*(IA-24460)'" );
 
           }
 
 # Correct the FITS header indicating that a linearity correction has been applied.
           $param1 = "ndf=$out edit=update";
-          my $param2 = "keyword=LINEAR value=T comment='Linearisation enabled' position=LINEAR"; 
-          $Mon{"ndfpack_mon"}->obeyw("fitsmod","$param1 $param2");
+          $param2 = "keyword=LINEAR value=T comment='Linearisation enabled' position=LINEAR"; 
+          $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$param1 $param2" );
 
 # Report the processing status.
-          orac_print "Frame $in has non-linearity correction applied in $out\n";
+          orac_print "Frame $in has non-linearity correction applied in $out.\n";
 
 # Now update the output filename in the Frame object.
           $Frm->file( $out );
@@ -230,22 +276,51 @@
 # Correct the FITS header SPD_GAIN value too.
           $in = $Frm->file;
           my $comment = "Readout speed and gain (Standard|Fast|Deepwell)";
-          my $param = "comment='$comment' position=DEPERDN";
+          $param2 = "comment='$comment' position=DEPERDN";
           $param1 = "edit=write keyword=$spdkey[ 0 ] value=$spd_gain";
-          $Mon{"ndfpack_mon"}->obeyw("fitsmod","ndf=$in $param1 $param");
+          $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "ndf=$in $param1 $param2" );
 
 # Report the processing status.
           orac_print "Frame $in has $spdkey[ 0 ] set to $spd_gain.\n";
        }
 
 # Report processing status.
-       orac_print "Global IRCAM tasks performed\n";
+       orac_print "Global IRCAM tasks performed.\n";
+
+    } elsif ( $instrument =~ /Michelle/ ) {
+
+# Correct data units to standard
+# ==============================
+
+# This correction only applies to NDSTARE and NDCHOP modes.
+       if ( substr( $Frm->uhdr( "ORAC_DETECTOR_MODE" ), 0, 2) eq "ND" ) {
+
+# The data are in ADU/s, which is not the UKIRT standard.  So obtain
+# the exposure time and multiply the data by this factor.
+          my $exp_time = $Frm->uhdr( "ORAC_EXPOSURE_TIME" );
+
+          foreach my $i ( 1 .. $Frm->nfiles ) {
+
+# Generate list of input and output filenames.
+             ( $in, $out ) = $Frm->inout( "_adu", $i );
+
+# Scale the data.
+             $Mon{"kappa_mon"}->obeyw( "cmult", "in=$in scalar=$exp_time out=$out" );
+
+# Report the processing status.
+             orac_print "$in to $out: Scaled data by the exposure time " .
+                        "($exp_time) to make the units ADUs.\n";
+
+# Now update the output filename in the Frame object.
+             $Frm->file( $i, $out );
+          }
+       }
 
 # Report completed processing status for Michelle.
-    } elsif ( $instrument =~ /Michelle/ ) {
-       orac_print "Global Michelle tasks performed\n";
+       orac_print "Global Michelle tasks performed.\n";
 
     }
+    orac_print "\n";
 
 # Podule
 # ======
@@ -267,7 +342,12 @@ origin, and switches on history recording in a copy of the raw data.
 A copy is necessary because the raw frame is write protected.  It
 finally corrects for non-linearity.
 
-For Michelle: see UFTI.
+For Michelle: it permits display of the raw data, sets the pixel 
+origin, and switches on history recording.  It copies the raw 
+data integrations; and if there's only one integration, it merges
+the integration and the headers into a simple NDF.  The data values
+for ND modes are brought into line with other instruments, and are
+total ADU, not ADU/s.
 
 =head1 NOTES
 
@@ -306,18 +386,24 @@ headers and the $Frm->uhdr hash.
 =item *
 
 Copied frame inheriting the current frame's name but with 
-the _cl suffix (IRCAM only).
+the _raw suffix (IRCAM & Michelle only).
 
 =item *
 
 Linearity-corrected frame inheriting the current frame's name
 but with the _nl suffix (IRCAM only).
 
+=item *
+
+For NDSTARE and NDCHOP Michelle data, the data scaled to ADU
+in a frame inheriting the current frame's name but with the _adu
+suffix.
+
 =back
 
 =head1 TASKS
 
-KAPPA: FITSMOD, HISSET, MATHS, NDFCOPY, SETORIGIN.
+KAPPA: CMULT, FITSMOD, HISSET, MATHS, NDFCOPY, SETORIGIN.
 
 =head1 AUTHORS
 
