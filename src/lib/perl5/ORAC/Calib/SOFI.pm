@@ -84,7 +84,7 @@ sub flatindex_im {
   if ( !defined( $self->{FlatIndex} ) ||
        $self->{FlatIndex}->indexfile !~ /_im$/ ) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.flat_im" );
-    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.flat_im" );
+    my $rulesfile = $self->find_file("rules.flat_im");
     $self->{FlatIndex} = new ORAC::Index( $indexfile, $rulesfile );
   }
 
@@ -99,7 +99,7 @@ sub flatindex_sp {
   if ( !defined( $self->{FlatIndex} ) ||
        $self->{FlatIndex}->indexfile !~ /_sp$/ ) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.flat_sp" );
-    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.flat_sp" );
+    my $rulesfile = $self->find_file("rules.flat_sp");
     $self->{FlatIndex} = new ORAC::Index( $indexfile, $rulesfile );
   }
 
@@ -169,8 +169,11 @@ sub mask {
       # Nothing suitable, default to fallback position
       # Check that exists and be careful not to set this as the
       # maskname() value since it has no corresponding index enrty
-      my $defmask = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "bpm" );
-      return $defmask if -e $defmask . ".sdf";
+      my $defmask = $self->find_file("bpm.sdf");
+      if( defined( $defmask ) ) {
+        $defmask =~ s/\.sdf//;
+        return $defmask;
+      }
 
       # give up...
       croak "No suitable bad pixel mask was found in index file"
@@ -215,9 +218,9 @@ sub _set_index_rules {
 
   # Prefix ORAC_DATA_CAL, if required.
   # This is non-portable (kluge)
-  $im = File::Spec->catfile($ENV{ORAC_DATA_CAL}, $im)
+  $im = $self->find_file($im)
     unless $im =~ /\//;
-  $sp = File::Spec->catfile($ENV{ORAC_DATA_CAL}, $sp)
+  $sp = $self->find_file($sp)
     unless $sp =~ /\//;
 
   # Get the current name of the rules file in case we don't need to
@@ -299,16 +302,16 @@ The index is static, therefore it resides in the calibration directory.
 
 sub arlinesindex {
 
-    my $self = shift;
-    if (@_) { $self->{ArlinesIndex} = shift; }
-    
-    unless (defined $self->{ArlinesIndex}) {
-	my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "index.arlines" );
-	my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.arlines" );
-	$self->{ArlinesIndex} = new ORAC::Index($indexfile,$rulesfile);
-    }
+  my $self = shift;
+  if (@_) { $self->{ArlinesIndex} = shift; }
 
-    return $self->{ArlinesIndex}; 
+  unless (defined $self->{ArlinesIndex}) {
+    my $indexfile = $self->find_file("index.arlines");
+    my $rulesfile = $self->find_file("rules.arlines");
+    $self->{ArlinesIndex} = new ORAC::Index($indexfile,$rulesfile);
+  }
+
+  return $self->{ArlinesIndex};
 }
 
 =item B<calibratedarc>
@@ -360,8 +363,8 @@ sub calibratedarcindex {
   if ( @_ ) { $self->{CalibratedArcIndex} = shift; }
 
   unless ( defined( $self->{CalibratedArcIndex} ) ) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "index.calibratedarc" );
-    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.calibratedarc" );
+    my $indexfile = $self->find_file("index.calibratedarc");
+    my $rulesfile = $self->find_file("rules.calibratedarc");
     $self->{CalibratedArcIndex} = new ORAC::Index( $indexfile, $rulesfile );
   }
   return $self->{CalibratedArcIndex};

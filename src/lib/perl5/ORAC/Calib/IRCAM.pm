@@ -59,8 +59,9 @@ sub rotation {
   if (@_) { $self->{Rotation} = shift; }
 
   unless (defined $self->{Rotation}) {
-    $self->{Rotation} = File::Spec->catfile( $ENV{ORAC_DATA_CAL},
-					    "ircam3_rotate2eq" );
+    my $rotation = $self->find_file("ircam3_rotate2eq.sdf");
+    if( defined( $rotation ) ) { $rotation =~ s/\.sdf//; }
+    $self->{Rotation} = $rotation;
   };
 
 
@@ -83,7 +84,9 @@ sub mask {
   if (@_) { $self->{Mask} = shift; }
 
   unless (defined $self->{Mask}) {
-    $self->{Mask} = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "bpm" );
+    my $mask = $self->find_file("bpm.sdf");
+    if( defined( $mask ) ) { $mask =~ s/\.sdf//; }
+    $self->{Mask} = $mask;
   };
 
 
@@ -107,7 +110,7 @@ sub maskindex {
   if (@_) { $self->{MaskIndex} = shift; }
   unless (defined $self->{MaskIndex}) {
      my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" );
-     my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.mask" );
+     my $rulesfile = $self->find_file("rules.mask");
      $self->{MaskIndex} = new ORAC::Index($indexfile,$rulesfile);
    };
 
@@ -125,6 +128,7 @@ $Id$
 
 Frossie Economou (frossie@jach.hawaii.edu) and
 Tim Jenness (t.jenness@jach.hawaii.edu)
+Brad Cavanagh (b.cavanagh@jach.hawaii.edu)
 
 =head1 COPYRIGHT
 

@@ -115,7 +115,7 @@ sub maskindex {
    if (@_) { $self->{MaskIndex} = shift; }
    unless (defined $self->{MaskIndex}) {
       my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" );
-      my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.mask" );
+      my $rulesfile = $self->find_file("rules.mask");
       $self->{MaskIndex} = new ORAC::Index( $indexfile, $rulesfile );
    };
 
@@ -185,8 +185,11 @@ sub mask {
 # as the maskname() value since it has no corresponding index entry.
 #      $self->{Mask} = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "bpm" );
 #      return $self->{Mask}; 
-         my $defmask = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "bpm" );
-         return $defmask if -e $defmask . ".sdf";
+        my $defmask = $self->find_file("bpm.sdf");
+        if( defined( $defmask ) ) {
+          $defmask =~ s/\.sdf$//;
+          return $defmask;
+        }
 
 # Give up...
          croak "No suitable bad pixel mask was found in index file.";
@@ -214,10 +217,11 @@ $Id$
 Malcolm Currie (Starlink) (mjc@star.rl.ac.uk)
 Frossie Economou (frossie@jach.hawaii.edu)
 Tim Jenness (t.jenness@jach.hawaii.edu)
+Brad Cavanagh (b.cavanagh@jach.hawaii.edu)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut

@@ -117,7 +117,7 @@ sub maskindex {
    if (@_) { $self->{MaskIndex} = shift; }
    unless (defined $self->{MaskIndex}) {
       my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" );
-      my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.mask" );
+      my $rulesfile = $self->find_file("rules.mask");
       $self->{MaskIndex} = new ORAC::Index( $indexfile, $rulesfile );
    };
 
@@ -185,10 +185,11 @@ sub mask {
 # There is no suitable mask.  Default to fallback position.
 # Check that the default mask exists and be careful not to set this
 # as the maskname() value since it has no corresponding index entry.
-#      $self->{Mask} = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "bpm" );
-#      return $self->{Mask}; 
-         my $defmask = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "bpm" );
-         return $defmask if -e $defmask . ".sdf";
+        my $defmask = $self->find_file("bpm.sdf");
+        if( defined( $defmask ) ) {
+          $defmask =~ s/\.sdf$//;
+          return $defmask;
+        }
 
 # Give up...
          croak "No suitable bad pixel mask was found in index file.";
@@ -217,7 +218,7 @@ Malcolm J. Currie (mjc@star.rl.ac.uk)
 
 =head1 COPYRIGHT
 
-Copyright (C) 2003 Particle Physics and Astronomy Research
+Copyright (C) 2004 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 

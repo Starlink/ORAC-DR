@@ -120,7 +120,7 @@ sub fpcentreindex {
    if (@_) { $self->{FpCentreIndex} = shift; }
    unless ( defined $self->{FpCentreIndex} ) {
       my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.fpcentre" );
-      my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.fpcentre" );
+      my $rulesfile = $self->find_file("rules.fpcentre");
       $self->{FpCentreIndex} = new ORAC::Index( $indexfile, $rulesfile );
    }
    return $self->{FpCentreIndex};

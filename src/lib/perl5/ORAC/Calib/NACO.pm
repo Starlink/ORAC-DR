@@ -126,8 +126,11 @@ sub mask {
       # Nothing suitable, default to fallback position
       # Check that exists and be careful not to set this as the
       # maskname() value since it has no corresponding index enrty
-      my $defmask = $ENV{ORAC_DATA_CAL} . "/bpm";
-      return $defmask if -e $defmask . ".sdf";
+      my $defmask = $self->find_file("bpm.sdf");
+      if( defined( $defmask ) ) {
+        $defmask =~ s/\.sdf//;
+        return $defmask;
+      }
 
       # give up...
       croak "No suitable bad pixel mask was found in index file"
@@ -172,9 +175,9 @@ sub _set_index_rules {
 
   # Prefix ORAC_DATA_CAL if required
   # This is non-portable (kluge)
-  $im = File::Spec->catfile($ENV{ORAC_DATA_CAL}, $im)
+  $im = $self->find_file($im)
     unless $im =~ /\//;
-  $sp = File::Spec->catfile($ENV{ORAC_DATA_CAL}, $sp)
+  $sp = $self->find_file($sp)
     unless $sp =~ /\//;
 
   # Get the current name of the rules file in case we don't need to
@@ -207,7 +210,7 @@ Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut

@@ -154,7 +154,7 @@ sub emisindex {
 
   unless( defined $self->{EmissivityIndex} ) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.emis" );
-    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.emis" );
+    my $rulesfile = $self->find_file("rules.emis");
     $self->{EmissivityIndex} = new ORAC::Index( $indexfile, $rulesfile );
   }
 
@@ -208,16 +208,18 @@ sub mask {
       # Nothing suitable, default to fallback position
       # Check that exists and be careful not to set this as the
       # maskname() value since it has no corresponding index enrty
-      my $defmask = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "bpm" );
+      my $defmask = $self->find_file("bpm.sdf");
 
       # If we're in spectroscopy mode, over-ride this to be bpm_sp
       # $uhdrref is a reference to the Frame uhdr hash
       my $uhdrref = $self->thingtwo;
       if ($uhdrref->{'ORAC_OBSERVATION_MODE'} eq 'spectroscopy') {
-        $defmask = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "bpm_sp" ) ;
+        $defmask = $self->find_file("bpm_sp.sdf");
       }
-
-      return $defmask if -e $defmask . ".sdf";
+      if( defined( $defmask ) ) {
+        $defmask =~ s/\.sdf$//;
+        return $defmask;
+      }
 
       # give up...
       croak "No suitable bad pixel mask was found in index file"
@@ -254,13 +256,13 @@ sub maskindex {
 # Copy the index file from ORAC_DATA_CAL into ORAC_DATA_OUT, unless
 # it already exists there. Then use the one in ORAC_DATA_OUT.
     if ( ! -e File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" ) ) {
-      copy( File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "index.mask" ),
+      copy( $self->find_file("index.mask"),
             File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" ) );
     }
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" );
 
 # The rules file is always in $ORAC_DATA_CAL.
-    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.mask" );
+    my $rulesfile = $self->find_file("rules.mask");
 
     $self->{MaskIndex} = new ORAC::Index( $indexfile, $rulesfile );
   }
@@ -295,9 +297,9 @@ sub _set_index_rules {
 
   # Prefix ORAC_DATA_CAL if required
   # This is non-portable (kluge)
-  $im = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, $im )
+  $im = $self->find_file($im)
     unless $im =~ /\//;
-  $sp = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, $sp )
+  $sp = $self->find_file($sp)
     unless $sp =~ /\//;
 
   # Get the current name of the rules file in case we don't need to
@@ -329,7 +331,7 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
