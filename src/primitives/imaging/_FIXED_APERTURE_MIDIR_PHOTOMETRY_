@@ -42,7 +42,7 @@
 #       The aperture in arcseconds for the photometry.  [3.0]
 #    BOXSIZE = REAL (Given)
 #       The size in arcseconds of the search box in which to find the
-#       object's approximate position, using the brightes pixel, or
+#       object's approximate position, using the brightest pixel, or
 #       the minimum pixel when POSITIVE is false. [5]
 #    DECOFF = REAL (Given)
 #      The approximate Declination offset of the centroid of the point
@@ -129,12 +129,14 @@
 #    -  The mean extinction coefficients are defined in the version of
 #    primitive _GET_FILTER_PARAMETERS_ specific to the instrument
 #    (location), the generic version applying to UKIRT.
+#    -  The standard-star catalogue used is specified within
+#    primitive _STANDARD_MAGNITUDE_.  At the time of writing it is
+#    $ORAC_DATA_CAL/10_20stds.dat.  An error results if the catalogue
+#    cannot be opened.
 #    -  A warning appears should the object not be found in the
-#    standards file.
+#    standards' catalogue.
 #    -  Where a value is unknown or cannot be computed, its entry in the
 #    table is "<null>".
-#    -  The standard-star catalogue used is $ORAC_DATA_CAL/10_20stds.dat.
-#    An error results a catalogue cannot be opened.
 #    -  The ADU factor and exposure time stored in frame header are
 #    validated.  Non-positive values cause a warning message to appear,
 #    but the primitive continues defaulting the header value to 1.
@@ -148,13 +150,10 @@
 #    MJC: Malcolm J. Currie (JAC)
 #
 # Copyright:
-#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 #
 #-
-
-# For OS-independent filename creation.
-    use File::Spec;
 
 # Determine whether it is time to do aperture photometry.
 # We have to specify this since we have to decide whether we
@@ -259,7 +258,7 @@
 # column number for the filter.  Also define the filter width with
 # respect to broadband N or Q, and the conversion factor to jansky.
              _GET_FILTER_PARAMETERS_
-             my $catcol = $_GET_FILTER_PARAMETERS_{CATCOL};
+             my $waveband = $_GET_FILTER_PARAMETERS_{WAVEBAND};
              my $extinction = $_GET_FILTER_PARAMETERS_{EXTINCTION};
              my $jansky_zp = $_GET_FILTER_PARAMETERS_{TOJANSKY};
              my $width = $_GET_FILTER_PARAMETERS_{WIDTH};
@@ -308,94 +307,20 @@
                 $exptime = 1.0;
              }
 
-# Extract the system magnitude of faint standards
-# ===============================================
+# Obtain the catalogue magnitude.
+# ===============================
 
 # Remove spaces from the name, and convert to uppercase for later
 # comparison.
              ( my $starname = uc( $objname ) ) =~ s/ //g;
 
-# Faint standards have name BSn, where n is the number.  Only NQ
-# magnitudes are tabulated.
-             if ( $catcol > -1 ) {
-                my $standards_file;
-
-# Define the character to indicate a null value in the standrds' table.
-                my $nullcol = "&";
-
-# Open the faint-standards file and store its records in an array.
-                my $catpath = $ENV{ "ORAC_DATA_CAL" };
-                $standards_file = File::Spec->catfile( $catpath, "10_20stds.dat" );
-
-                if ( -e $standards_file ) {
-                   open( my $fh_standards, "<$standards_file" ) || 
-                     orac_warn "Standards file $standards_file could not be opened.  Error: $!.\n";
-   
-                   my @stds = <$fh_standards>;
-
-# Remove trailing blanks and newline.
-                      for ( @stds ) {
-                      chomp;
-                      s/\s+$//;
-                   }
-
-# Search through the table finding a line containing the object name.  The
-# file currently consists of some column headings, then a relational table.
-# Columns in the table include the star name and BS catalogue
-# designation, equatorial co-ordinates then N and Q.
-
-# Look at each line.  Extract the name, stripping the blanks.  Proceed
-# until an uppercase match is found.
-                   my $recno = 0;
-                   my $name = " ";
-                   my $othername = " ";
-                   until ( uc( $name ) eq $starname || $recno > $#stds ||
-                           uc( $othername ) eq $starname ) {
-                      $recno++;
-
-# File does not have BS prefix in the first column.
-                      if ( defined( $stds[ $recno ] ) ) {
-                         $name = "BS" . substr( $stds[ $recno ], 0, 4 );
-                         $othername = substr( $stds[ $recno ], 7, 10 );
-                      }
-                      $name =~ s/ //g;
-                     $othername =~ s/ //g;
-                   }
-
-# Check that a match has been found.  Use a special value to indicate
-# a null magnitude.
-                   if ( $recno > $#stds ) {
-                      if ( -e $standards_file ) {
-                         orac_warn "Standard $objname has no tabulated $filter magnitude in $standards_file\n";
-                      } else {
-                         orac_warn "The standards file $standards_file does not exist\n";
-                      }
-                      $catmag = $nullmag;
-                   } else {
-
-# Extract the columns.
-                      my @fields = split( / +/, $stds[ $recno ] );
-
-# Obtain the desired magnitude.
-                      $catmag = $fields[ $catcol ];
-
-                   }
-
-# Close the standards data file.
-                   close( $fh_standards );
-                }
-
-# Set a null magnitude if there is no value in the table for the
-# chosen star and waveband.
-                if ( $catmag eq $nullcol ) {
-                   $catmag = $nullmag;
-                }
-
-# Since we could not locate or open the standards file, the magnitude
-# is null.
-             } else {
-                $catmag = $nullmag;
-             }
+# Read the appropriate catalogue and return the magnitude in the
+# current waveband, if available.  Use the catalogue name in case the
+# object name contains superfluous characters after the name.
+             _STANDARD_MAGNITUDE_ WAVEBAND=$waveband NULLMAG=$nullmag NAME=$starname
+             $catmag = $_STANDARD_MAGNITUDE_{CATMAG};
+             $starname = $_STANDARD_MAGNITUDE_{CATNAME};
+             $starname = $objname if ( $starname eq " " );
 
 # Find location and dimensions of the aperture and annulus
 # ========================================================
@@ -942,18 +867,21 @@ to the instrument (location), the generic version applying to UKIRT.
 
 =item *
 
+The standard-star catalogue used is specified within
+L<_STANDARD_MAGNITUDE|_STANDARD_MAGNITUDE>.  At the time of writing it
+is F<$ORAC_DATA_CAL/10_20stds.dat>.  An error results if the catalogue
+cannot be opened.
+
+=item *
+
 A warning appears should the object not be found in the
-standards file.
+standards' catalogue.
 
 =item *
 
 Where a value is unknown or cannot be computed, its entry in the
 table is "E<lt>nullE<lt>".
 
-=item *
-
-The standard-star catalogue used is F<$ORAC_DATA_CAL/10_20stds.dat>.
-An error results a catalogue cannot be opened.
 
 =item *
 
