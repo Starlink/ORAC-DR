@@ -605,7 +605,7 @@ sub mergehdr {
 
     # determine whether we have got a .MORE component already
     ndf_begin();
-    ndf_find(&DAT__ROOT(), $new, my $indf, $status);
+    ndf_find(&NDF::DAT__ROOT(), $new, my $indf, $status);
     ndf_xnumb($indf, my $num, $status);
     ndf_annul($indf, $status);
     ndf_end($status);
