@@ -52,22 +52,6 @@ object.
 
 =item B<standardindex>
 
-Uses F<rules.standard_im> and <rules.standard_sp>
-
-=cut
-
-sub standardindex {
-  my $self = shift;
-  my $index = $self->SUPER::standardindex;
-
-  # in principal we could always call this from the base class
-  # and simply use a no-op method. Problem is that for michelle only
-  # some of the index files need this trickery
-  $self->_set_index_rules($index, 'rules.standard_im', 'rules.standard_sp');
-}
-
-=item B<standardindex>
-
 Uses F<rules.flat_im> and <rules.flat_sp>
 
 =cut
@@ -124,7 +108,7 @@ sub _set_index_rules {
   my $current = $index->indexrulesfile;
 
   # Now change the rules file
-  if ($self->thing->{CAMERA} eq 'IMAGING') {
+  if (uc($self->thing->{CAMERA}) eq 'IMAGING') {
     $index->indexrulesfile($im)
       unless $im eq $current;
   } else {
