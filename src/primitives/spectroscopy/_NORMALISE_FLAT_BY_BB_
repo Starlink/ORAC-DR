@@ -1,6 +1,6 @@
 =head1 NAME
 
-_NORMALISE_FLAT_BY_BB_
+_NORMALISE_FLAT_BY_BB_ - Normalse a flat field frame with a Black Body curve
 
 =head1 DESCRIPTION
 
@@ -10,6 +10,11 @@ First, creates a black body spectrum, using the temperature from the
 BBTEMP header, grows this to the size of the image, and divides by
 it. Then divides the image by the image's mean pixel value, so as to
 normalise it's absolute level to 1.
+
+=head1 NOTE
+
+Uses the BBTEMP FITS header. Perhaps this should have a system internal
+translated value to cope with future instrumentation.
 
 =head1 AUTHOR
 
@@ -38,33 +43,40 @@ foreach my $i (1 .. $Frm->nfiles) {
 	# refering to $btfile (ie $in)  for the dispersion axis info
 	my $bb=new ORAC::TempFile;
 	my $bbfile = $bb->file;
+	my $bc=new ORAC::TempFile;
+	my $bcfile=$bc->file;
 
-	$Mon{'figaro4'}->obeyw("bbody", "temp=$bbtemp in=$btfile out=$bbfile");
+	$Mon{'figaro4'}->obeyw("bbody", "temp=$bbtemp in=$btfile out=$bcfile");
+	$Mon{'figaro2'}->obeyw("fwconv", "spectrum=$bcfile flux_unit=erg output=$bbfile");
 
 	# Grow the bb file to be 2D
-	my $bbim=new ORAC::TempFile;
-	my $bbimfile=$bbim->file;
 
 	my $ystart = $Frm->uhdr("ORAC_Y_LOWER_BOUND");
 	my $yend = $Frm->uhdr("ORAC_Y_UPPER_BOUND");
 	my $ydim = $yend;
 
-       $Mon{'figaro1'}->obeyw( "growx", "spectrum=$bbfile image=$bbimfile ystart=$ystart yend=$yend ysize=$ydim new=true");
+       $Mon{'figaro1'}->obeyw( "growx", "spectrum=$bbfile image=$bcfile ystart=$ystart yend=$yend ysize=$ydim new=true");
 
        # Stuff on a zero variance so as not to drop the variance array shortly
-       $Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$bbimfile variance=0");
+       $Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$bcfile variance=0");
 
        # Divide the flat by the bbimage, into another temp file
        my $temp=new ORAC::TempFile;
        my $tempfile = $temp->file;
-       $Mon{'kappa_mon'}->obeyw("div", "in1=$in in2=$bbimfile out=$tempfile");
+       $Mon{'kappa_mon'}->obeyw("div", "in1=$in in2=$bcfile out=$tempfile");
 
-       # Now normalise the tempfile into the output file
+       # Now normalise the tempfile into another temp file
        $Mon{'kappa_mon'}->obeyw("stats", "ndf=$tempfile");
 
        (my $ORAC_STATUS, my $mean)=$Mon{'kappa_mon'}->get("stats", "mean");
 
-       $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tempfile scalar=$mean out=$out");
+       my $tmp=new ORAC::TempFile;
+       my $tmpfile=$tmp->file;
+
+       $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tempfile scalar=$mean out=$tmpfile");
+
+       # Now mask anything less than 10% or more than 1000% illuminated as bad, into the output file
+       $Mon{'kappa_mon'}->obeyw("thresh", "in=$tmpfile out=$out newlo=bad newhi=bad thrlo=0.1 thrhi=10 title=$out");
 
        # Update the Frm object
        $Frm->file($out, $i);
