@@ -402,6 +402,7 @@ sub orac_determine_primitive_search_path {
   }
   my $imaging_root =  File::Spec->catdir( $root, "imaging" );
   my $spectro_root =  File::Spec->catdir( $root, "spectroscopy" );
+  my $general_root =  File::Spec->catdir( $root, "general" );
 
   if ($inst eq 'SCUBA') {
     push( @path, File::Spec->catdir( $root, 'SCUBA' ) );
@@ -410,16 +411,19 @@ sub orac_determine_primitive_search_path {
     push( @path, File::Spec->catdir( $spectro_root, "CGS4" ) );
     push( @path, $spectro_root );
     push( @path, File::Spec->catdir( $root, 'CGS4' ) );
+    push( @path, $general_root );
 
   } elsif ($inst eq 'IRCAM' or $inst eq 'IRCAM2') {
     push( @path, File::Spec->catdir( $imaging_root, "IRCAM" ) );
     push( @path, $imaging_root );
     push( @path, File::Spec->catdir( $root, "IRCAM" ) );
+    push( @path, $general_root );
 
   } elsif ($inst eq 'UFTI' or $inst eq 'UFTI2') {
     push( @path, File::Spec->catdir( $imaging_root, "UFTI" ) );
     push( @path, $imaging_root );
     push( @path, File::Spec->catdir( $root, "UFTI" ) );
+    push( @path, $general_root );
 
   } elsif ($inst eq 'MICHELLE' or $inst eq 'MICHTEMP') {
     push( @path, File::Spec->catdir( $imaging_root, "MICHELLE" ) );
@@ -427,6 +431,7 @@ sub orac_determine_primitive_search_path {
     push( @path, $imaging_root );
     push( @path, $spectro_root );
     push( @path, File::Spec->catdir( $root, "MICHELLE" ) );
+    push( @path, $general_root );
 
   } else {
     croak "Primitives: Unrecognised instrument: $inst\n";
