@@ -284,6 +284,9 @@ sub header {
     my $arg = shift;
     croak("Argument is not a hash") unless ref($arg) eq "HASH";
     $self->{Header} = $arg;
+
+    # Now update the ORAC headers
+    $self->calc_orac_headers;
   }
 
 
@@ -699,6 +702,40 @@ always returns 1 since file() can only hold a single value.
 sub num_files {
   my $self = shift;
   return 1;
+}
+
+=item calc_orac_headers
+
+This method calculates header values that are required by the
+pipeline by using values stored in the header.
+
+An example is ORACTIME that should be set to the time of the
+observation in hours. Instrument specific frame objects
+are responsible for setting this value from their header.
+
+Should be run after a header is set. Currently the header()
+method calls this whenever it is updated.
+
+This method updates the frame header.
+Returns a hash containing the new keywords.
+
+=cut
+
+sub calc_orac_headers {
+  my $self = shift;
+
+  my %new = ();  # Hash containing the derived headers
+
+  # ORACTIME
+  # For IRCAM the keyword is simply RUTSTART
+  # Just return it (zero if not available)
+  my $time = $self->hdr('RUTSTART');
+  $time = 0 unless (defined $time);
+  $self->hdr('ORACTIME');
+
+  $new{'ORACTIME'} = $time;
+
+  return %new;
 }
 
 
