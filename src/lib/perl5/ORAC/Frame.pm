@@ -1016,7 +1016,7 @@ sub inout {
   $outfile .= $suffix;
 
   # Generate a warning if output file equals input file
-  orac_warn("inout - output filename equals input filename ($outfile)")
+  orac_warn("inout - output filename equals input filename ($outfile)\n")
     if ($outfile eq $infile);
 
   return ($infile, $outfile) if wantarray();  # Array context
