@@ -646,6 +646,7 @@ sub orac_exit_normally {
 
   rmtree $ENV{'ADAM_USER'};             # delete process-specific adam dir
 
+  for (1..5) {print STDOUT chr(7); select undef,undef,undef,0.2};
   orac_print ("\nOrac says: Goodbye\n","red");
   exit;
 };
@@ -662,6 +663,10 @@ sub orac_exit_abnormally {
 
   # Dont delete tree since this routine is called from INSIDE recipes
 #  rmtree $ENV{'ADAM_USER'};             # delete process-specific adam dir
+
+  # ring my bell, baby
+  for (1..10) {print STDOUT chr(7); select undef,undef,undef,0.2};
+
   die "\nAborting from ORACDR - $signal received";
   # die "\n --Signal $signal received--\n";	
 
@@ -719,6 +724,9 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.41  1999/09/15 02:55:15  frossie
+#add beeps to exit normally and abnormally
+#
 #Revision 1.40  1999/07/27 00:12:40  timj
 #Add LWP::Simple
 #
