@@ -45,14 +45,14 @@ use strict;
 # For reading the header
 use NDF;
 
-# Translation tables for UFTI shouldr go here
+# Translation tables for IRCAM should go here.
 my %hdr = (
-            DEC_SCALE            => "PIXELSIZ",
+            DEC_SCALE            => "CDELT1",
             DEC_TELESCOPE_OFFSET => "DECOFF",
             DETECTOR_BIAS        => "DET_BIAS",
             EXPOSURE_TIME        => "DEXPTIME",
             GAIN                 => "DEPERDN",
-            RA_SCALE             => "PIXELSIZ",
+            RA_SCALE             => "CDELT2",
             RA_TELESCOPE_OFFSET  => "RAOFF",
 	    RECIPE               => "DRRECIPE",
             UTDATE               => "IDATE",
