@@ -1,25 +1,35 @@
+# Bring in Starlink::HDSPACK::copobj
+use Starlink::HDSPACK qw/ copobj /;
 
 if ( $Frm->uhdr( "ARRAY_TESTS_MEASURE_READNOISE" ) ) {
 
   orac_print "Calculating NDSTARE readnoise.\n";
 
-  # Create a new output file name
+  # Create a new output file name.
   my $out = "readnoise_" . $Frm->findgroup;
 
-  # Grab the list of filenames in the current group
+  # Grab the list of filenames in the current group.
   my @files = $Grp->membernames;
 
-  # Create a temporary file to hold the 'mean' image
+  # Determine the number of DARK frames and total frames in the group.
+  my $dark_frames = $Frm->uhdr("ARRAY_TESTS_DARK_FRAMES");
+  my $nfiles = $#files; # This is actually total frames - 1.
+
+  # Create a temporary file to hold the 'mean' image.
   my $tfile1 = new ORAC::TempFile;
   my $tfile1name = $tfile1->file;
 
-  # Form the parameter string
+  # Form the parameter string.
   my $param1 = "alpha=0 expose=1 keepin=true logfile=! method=mean";
-  my $param2 = "out=$tfile1name in='";
+  my $param2 = "out=$tfile1name in='^makecal.inlist$$'";
 
-  # We need to be looking at the previous 4 files plus the current one
-  $param2 .= join ( ',', @files[$#files-4..$#files] );
-  $param2 .= "'";
+  # Create a textfile containing the names of the files we'll be
+  # averaging together.
+  unlink( "makecal.inlist$$" );
+  open( INLIST, ">makecal.inlist$$" ) ||
+    orac_throw "Unable to open makecal.inlist$$ to create a list of frames to combine. Error: $!.\n";
+  print INLIST join( "\n", @files[$nfiles-$dark_frames+1..$nfiles] ), "\n";
+  close( INLIST );
 
   $Mon{'ccdpack_red'}->obeyw( "makecal", "$param1 $param2" );
 
@@ -32,46 +42,59 @@ if ( $Frm->uhdr( "ARRAY_TESTS_MEASURE_READNOISE" ) ) {
   my $tfile2 = new ORAC::TempFile;
   my $tfile2name = $tfile2->file;
 
-  $param1 = "exp=((ia-if)**2+(ib-if)**2+(ic-if)**2+(id-if)**2+(ie-if)**2)/4";
-  $param2 = "ia=" . $files[$#files-4];
-  $param2 .= " ib=" . $files[$#files-3];
-  $param2 .= " ic=" . $files[$#files-2];
-  $param2 .= " id=" . $files[$#files-1];
-  $param2 .= " ie=" . $files[$#files];
-  $param2 .= " if=" . $tfile1name;
-  $param2 .= " out=" . $tfile2name;
-  $param2 .= " quick=true";
+  # Form the parameter strings for KAPPA/MATHS.
+  my $add = "";
+  my $files = "";
 
-  $Mon{'kappa_mon'}->obeyw( "maths", "$param1 $param2" );
+  # If there are more than nine DARK frames, we're stuffed.
+  my %hash = (1=>"IA", 2=>"IB", 3=>"IC", 4=>"ID", 5=>"IE", 6=>"IF", 7=>"IG", 8=>"IH", 9=>"II");
+  my $mfile = $dark_frames + 1;
+  foreach my $i ($nfiles-$dark_frames+1..$nfiles) {
+    my $file = $Frm->file($i);
+    my $hashnumber = $i - $nfiles + $dark_frames;
+    $files .= $hash{$hashnumber} . "=" . $file . " ";
+    $add .= "((" . $hash{$hashnumber} . "-" . $hash{$mfile} . ")*(" . $hash{$hashnumber} . "-" . $hash{$mfile} . "))";
+    $add .= " + " if($i != $nfiles);
+  }
+
+  my $exp = "( $add ) / ( $dark_frames - 1 )";
+  $files .= $hash{$mfile} . "=" . $tfile1name;
+  my $param = sprintf("$files exp='(%s)' out=$tfile2name", $exp);
+
+  $Mon{'kappa_mon'}->obeyw( "maths", "$param" );
 
   # Create a zeroed-out NDF
   $Mon{'kappa_mon'}->obeyw( "cmult", "in=$tfile2name out=$out scalar=0");
   
   # Copy the variance to the Variance array
-  $Mon{'figaro1'}->obeyw( "copobj", "source=$tfile2name.DATA_ARRAY object=$out.VARIANCE" );
-
-  # File the output readnoise frame with the Cal system
+  my $status = &Starlink::EMS::SAI__OK();
+  my $ORAC_STATUS = copobj( "$tfile2name.DATA_ARRAY", "$out.VARIANCE", $status );
 
   # Obtain the mean of the variance frame
   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$out comp=Variance" );
 
-  my ( $ORAC_STATUS, $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+  ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
 
   my $readnoise = sqrt($mean);
-
-  orac_print "NDSTARE readnoise is: $readnoise\n";
+  
+  # Format the output for easier display.
+  my $o_readnoise = sprintf( "%9.3f", $readnoise );
+  orac_print "NDSTARE readnoise is: $o_readnoise.\n";
 
   # File the readnoise with the Cal system.
   # Needs to be in a hash
-  my %hash = (%{$Frm->hdr}, READNOISE=>$readnoise);
-  $Cal->readnoiseindex->add($Frm->file, \%hash);
-  orac_print ("Readnoise Filed with the Calibration system\n");
-
+  my %calhash = (%{$Frm->hdr}, READNOISE=>$readnoise);
+  $Cal->readnoiseindex->add($Frm->file, \%calhash);
+  orac_print "Readnoise filed with the calibration system.\n";
   
   # And get an error in the mean as well.
-
   ( $ORAC_STATUS, my $meanerr ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
 
-  orac_print "NDSTARE readnoise standard deviation is: $meanerr\n\n";
+  # Format the output for easier display.
+  my $o_meanerr = sprintf( "%9.3f", $meanerr );
+  orac_print "NDSTARE readnoise standard deviation is: $o_meanerr.\n\n";
+
+  # Remove temporary text file.
+  unlink( "makecal.inlist$$" );
 
 }
