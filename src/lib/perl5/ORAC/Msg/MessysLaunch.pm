@@ -21,7 +21,7 @@ all the supported messaging systems is included in this class.
 
 The message systems are started on demand (that is, the first
 time an object is requested by name). The message systems will
-be C<ORAC::Msg> control objects (eg L<ORAC::Msg::ADAM::Control>).
+be C<ORAC::Msg::Control> objects (eg L<ORAC::Msg::Control::AMS>).
 
 This interface allows message systems to be initialised only
 when specific algorithm engines are required (rather than
@@ -29,12 +29,15 @@ starting every message system even if none are required).
 
 =cut
 
+use 5.006;
 use strict;
-
+use warnings;
+use warnings::register;
 use Carp;
 
 use ORAC::Constants qw/ :status /;
 use ORAC::Inst::Defn qw/ orac_messys_description /;
+use ORAC::Print;
 
 use vars qw/ $DEBUG /;
 $DEBUG = 0;
@@ -186,8 +189,7 @@ sub messys {
       if (defined $obj) {
 	$self->{MessageSystems}->{$name} = $obj;
       } else {
-	warn "engine: Supplied object does not have a contactw method"
-	  if $^W;
+	warnings::warnif("engine: Supplied object does not have a contactw method");
       }
 
     } elsif (exists $self->{MessageSystems}->{$name}) {
@@ -348,16 +350,16 @@ sub init_messys {
     # Make sure that the class is available
     eval "use $pars{CLASS}";
     if ($@) {
-      carp "Unable to load class $pars{CLASS} for message system $name\n";
-      croak "$@";
+      orac_warn "Unable to load class $pars{CLASS} for message system $name\n";
+      orac_throw( "$@" );
     }
 
     # Initialise it
     my $obj = $pars{CLASS}->new();
+
     if (defined $obj) {
 
       my $status = $obj->init( $self->preserve );
-
       if ($status == ORAC__OK) {
 
 	# Store it
@@ -369,15 +371,17 @@ sub init_messys {
 	# Return it
 	return $obj;
 
+      } else {
+	orac_warn("Unable to initialise $name message system\n");
       }
 
     }
 
   } else {
-    croak "Do not know anything about message system: $name\n";
+    orac_throw("Do not know anything about message system: $name\n");
   }
 
-  # Get here is nothing worked
+  # Get here if nothing worked
   return undef;
 
 }
@@ -395,8 +399,21 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2001 Particle Physics and Astronomy Research
+Copyright (C) 2001-2005 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
