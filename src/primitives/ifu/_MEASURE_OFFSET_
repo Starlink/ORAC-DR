@@ -1,0 +1,93 @@
+# We're going to need some temporary files
+use ORAC::TempFile;
+
+my $in = $Frm->file;
+my $grism = $Frm->hdr("GRISM");
+orac_print "Measuring offset from profile using $in (Grism: $grism)\n";
+
+
+# Defines the region compressed in the x-direction to measure the profile
+my $xstart = 200;
+my $xend = 800;
+
+# Set the minimum and maximum offsets to try 
+my $offset_min = -10;
+my $offset_max = 20;
+
+
+
+# create a temporary file
+my $tmp_file1 = new ORAC::TempFile;
+my $tmp1 = $tmp_file1 ->file;
+
+# compress the image in the x direction
+my $param = "image=$in xstart=$xstart xend=$xend spectrum=$tmp1";
+$Mon{'figaro1'}->obeyw("ystract", "$param");
+
+
+# turn the 'spectrum' into a text file, and read it back in to @measured
+my @measured;
+
+if (-e $tmp1) {unlink $tmp1}
+$Mon{'figaro4'}->obeyw("ascout", "in=$tmp1 out=$tmp1 bad=0 width=no");
+
+open(my $TMP, "$tmp1") or die "Failed to read $tmp1\n";
+
+# read it into @measured so that the intensity at pixel n is in 
+# $measured[n+0.5], ie: array starts at 1, compatable with Starlink pixel
+# index.
+$measured[0] = 0;
+ 
+while (my $line=<$TMP>) {
+    if ($line =~ /^\s*-?[\d\.]+\s+(-?[\d\.b]+)/) {
+	push @measured, $1;
+    }
+}
+
+close $TMP;
+
+
+# Load the profile from the calibration directory
+my $profile_file = $ENV{ORAC_DATA_CAL} . "/ifu_profile.dat";
+
+# initialise the array
+my @profile = (0) x 1025;
+
+# Read the data into array so that array[n] = 1 if n is within a slice
+# and 0 if it is not.
+open(my $PROFILE, $profile_file) || die "Could not open $profile_file \n";
+while (my $str = <$PROFILE>) {
+      next if $str eq "\n";
+
+      my ($start, $end) = (split /\s+/, $str ) ;
+      @profile[$start..$end] = (1) x ($end - $start + 1) ;   
+}
+close $PROFILE;
+
+
+
+# For each possible offset measure the total intensity allowed through the 
+# 'mask' of the profile
+my $max = 0;
+my $best_offset;
+
+for my $offset ($offset_min..$offset_max) {
+    my $sum = 0;
+    my $y1 = ($offset < 1) ? 1 : $offset;
+    my $y2 = ($offset < 1) ? 1023 + $offset : 1024;
+
+    
+    for my $n ($y1..$y2) {
+	if (! defined($profile[$n - $offset])) {
+	    orac_print "$n  $offset \n";
+	}
+	$sum += $measured[$n] * $profile[$n - $offset];
+    }
+
+    if ($sum > $max) {
+	$max = $sum;
+	$best_offset = $offset;
+    }
+}
+
+orac_print "The offset for $grism is $best_offset pixels \n";
