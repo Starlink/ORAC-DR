@@ -280,6 +280,12 @@ sub orac_determine_inst_classes {
     $frameclass = "ORAC::Frame::CGS4";
     $calclass   = "ORAC::Calib::CGS4";
     $instclass  = "ORAC::Inst::CGS4";
+  } elsif ($inst eq 'OCGS4') {
+    $groupclass = "ORAC::Group::CGS4";
+    $frameclass = "ORAC::Frame::OCGS4";
+    $calclass   = "ORAC::Calib::CGS4";
+    $instclass  = "ORAC::Inst::CGS4";
+    $inst = 'CGS4'; # to pick up CGS4 recipies and primitives
   } elsif ($inst eq 'SCUBA') {
     $groupclass = "ORAC::Group::JCMT";
     $frameclass = "ORAC::Frame::JCMT";
@@ -340,7 +346,7 @@ sub orac_determine_recipe_search_path {
 
   if ($inst eq 'SCUBA') {
     push(@path, File::Spec->catdir( $root, 'SCUBA'));
-  } elsif ($inst eq 'CGS4') {
+  } elsif ($inst eq 'CGS4' or $inst eq 'OCGS4') {
     push(@path, File::Spec->catdir( $root, 'CGS4'));
   } elsif ($inst eq 'IRCAM' or $inst eq 'IRCAM2') {
     push(@path, File::Spec->catdir( $root, "IRCAM"));
@@ -380,7 +386,7 @@ sub orac_determine_primitive_search_path {
 
   if ($inst eq 'SCUBA') {
     push(@path, File::Spec->catdir( $root, 'SCUBA'));
-  } elsif ($inst eq 'CGS4') {
+  } elsif ($inst eq 'CGS4' or $inst eq 'OCGS4') {
     push(@path, File::Spec->catdir( $root, 'CGS4'));
   } elsif ($inst eq 'IRCAM' or $inst eq 'IRCAM2') {
     push(@path, File::Spec->catdir( $root, "IRCAM"));
