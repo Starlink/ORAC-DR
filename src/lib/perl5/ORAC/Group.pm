@@ -175,7 +175,7 @@ sub subgrp {
       my $val2 = $member->uhdr($key);
 
       unless (defined $val1 or defined $val2) {
-	orac_warn "SUBGRP: Key $key is not defined in the header for $member\n";
+	orac_warn "SUBGRP: Key $key is not defined in the header for " . $member->file . "\n";
       }
 
       # -w protection
