@@ -68,9 +68,8 @@
 
 #  History:
 #     $Log$
-#     Revision 1.10  2002/08/02 01:23:05  frossie
-#     Change summit disk and machine locations
-#     These really ought to be parametrised at the top!
+#     Revision 1.11  2002/08/02 03:25:01  frossie
+#     Grr, what a mess. Added the 'dem' bit if we are at JCMT
 #
 #     Revision 1.8  2001/05/01 00:14:45  timj
 #     Update semester determination so it works with 20010122
@@ -219,18 +218,18 @@ if ( $ORAC_DATA_ROOT == /scuba ) then
   unset oracmmdd
 
   set orac_sem = ${orac_sem}/
-
+  set dem =''
 else
  
   set orac_sem = ''
-
+  set dem = "/dem"
 endif
 
 
 # First start with input directory - $ORAC_DATA_ROOT is set up
 # depending on location (domainname) if not set explicitly.
 
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/scuba/$orac_sem$oracut/
+setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/scuba/$orac_sem$oracut$dem/
 
 # Output data directory is more problematic.
 # If we are at JCMT set it to ORAC_DATA_ROOT/rodir/$oracut
