@@ -46,7 +46,7 @@ The row to end extracting at
 
 =head1 ORAC
 
-Engines referenced: Kappa, Figaro
+Engines referenced: Kappa 
 
 =head1 AUTHOR
 
@@ -84,14 +84,23 @@ if ($Frm->hdr->{'OBSTYPE'} eq 'SKY') {
   $Grp->uhdr('EMIS_DMN', $Frm->number);
 }
 
-# extract the spectrum.
+# extract the spectrum (with row averaging rather than summing)
 orac_print("Orac says: extracting rows $start to $end\n");
-$Mon{'figaro1'}->obeyw("extract","image=$in spectrum=$out ystart=$start yend=$end");
 
-# divide it by the exposure time times the number of rows extracted
-my $exptime = ($Frm->hdr("DEXPTIME"))*($end-$start);
+# into a temporary file
+my $tmp = new ORAC::TempFile;
+my $tmpfile = $tmp->file;
 
-$Mon{'figaro1'}->obeyw("icdiv","image=$out factor=$exptime output=$out");
+$Mon{'kappa_mon'}->obeyw("collapse","axis=2 in=$in out=$tmpfile low=$start high=$end estimator=mean");
+
+# divide it by the exposure time
+my $exptime = ($Frm->hdr("DEXPTIME"));
+$Mon{'kappa_mon'}->obeyw("cdiv","in=$tmpfile scalar=$exptime out=$out");
+
+# detroy the temp file
+undef $tmp;
+undef $tmpfile;
+
 
 orac_print("Orac says: $in to $out: Spectrum Extracted and divided.\n");
 
@@ -102,7 +111,7 @@ if(defined $Grp->uhdr('EMIS_SKY') && defined $Grp->uhdr('EMIS_DOME')) {
   my $emis_dome = $Grp->uhdr('EMIS_DOME');
   my $group_file = $Grp->file;
 
-  $Mon{'figaro1'}->obeyw("idiv", "image=$emis_sky image1=$emis_dome output=$group_file");
+  $Mon{'kappa_mon'}->obeyw("div", "in1=$emis_sky in2=$emis_dome out=$group_file");
 
   orac_print("Orac says: Emissivity spectrum calculated: $group_file\n");
 
