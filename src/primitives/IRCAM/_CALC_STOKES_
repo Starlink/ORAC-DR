@@ -13,15 +13,17 @@
 #    for each beam and waveplate angle---and derives images of the summed
 #    intensity; polarisation percentage, intensity, and angle; and the
 #    Stokes parameters.  The last are Q and U if linear polarisation is
-#    chosen and V for circular polarisation.  Variance information is
-#    also derived.
+#    chosen and V for circular polarisation.  Variance information for
+#    the parameters is also derived if the supplied frames contain
+#    variance.
 #
 #    The polarisation data are extracted into a catalogue in the FITS
 #    binary-table format, where they are binned, and those meeting 
 #    the following criteria are available to display in a vector plot.
-#    The criteria are percentage polarisation positive below 50%,
-#    signal-to-noise at least argument S2N and standard deviation less
-#    than argument SIGMA.
+#    The criteria are percentage polarisation positive below 50%; and
+#    if variance information is available, the signal-to-noise is at
+#    least argument S2N, and the standard deviation is less than
+#    argument SIGMA.
 #
 # Arguments:
 #    BIN = INTEGER (Given)
@@ -44,11 +46,14 @@
 #    S2N = REAL (Given)
 #       Minimum signal to noise of the polarisation percentage for a
 #       point to be included in the final catalogue and plot.  It is
-#       constrained to be at least one (i.e. no threshold).  [3]
+#       constrained to be at least one (i.e. no threshold).  It is
+#       only used if the supplied e- and o-beam frames contain data
+#       variance. [3]
 #    SIGMA = REAL (Given)
 #       Maximum error of the polarisation percentage for a point to be
 #       included in the final catalogue and plot.  It is constrained
-#       to be less than 100% (i.e. no threshold).  [5]
+#       to be less than 100% (i.e. no threshold).  It is only used if
+#       the supplied e- and o-beam frames contain data variance.  [5]
 #
 # Notes:
 #    -  This primitive is suitable for both UFTI and IRCAM.
@@ -74,7 +79,7 @@
 #    overlaid.
 #
 # Tasks:
-#    CURSA: CATSELECT; KAPPA: SETORIGIN, SETTITLE, SETUNITS;
+#    CURSA: CATSELECT; KAPPA: NDFTRACE, SETORIGIN, SETTITLE, SETUNITS;
 #    POLPACK: POLBIN, POLCAL, POLEXT, POLIMP, POLVEC.
 #
 # Output Data:
@@ -244,12 +249,22 @@
 # Report progress to avoid a long wait.
        orac_print "Orac says: Ancilliary polarisation data imported into $e_mosaics,$o_mosaics\n";
 
+# Determine whether the NDFs support variance.
+# ============================================
+
+# Any of the NDFs should do.
+       $Mon{"ndfpack_mon"}->obeyw("ndftrace","ndf=$e0");
+       ( my $ORAC_STATUS, my $variance ) = $Mon{"ndfpack_mon"}->get("ndftrace","variance");
+
 # Form Stokes data cube.
 # ======================
-
        my $cube = $root . "_sp";
        $par1 = "in='^emosaics.list$$,^omosaics.list$$'";
-       $par2 = "out=$cube pmode=$polmode dualbeam variance";
+       if ( $variance eq "TRUE" ) {
+          $par2 = "out=$cube pmode=$polmode dualbeam variance";
+       } else {
+          $par2 = "out=$cube pmode=$polmode dualbeam";
+       }
        $Mon{polpack_mon}->obeyw('polcal',"$par1 $par2");
 
 # Report the new frame.
@@ -262,7 +277,9 @@
 # ===========================
 
 # Extract images of the Stokes parameters from the cube.  There is no binning
-# and no catalogue is formed.  Variance is used to correct for bias.
+# and no catalogue is formed.  Variance is used to correct for bias.  The
+# variance flag is ignored by POLVEC if there is no variance array in the
+# supplied Stokes cube, so no conditional parameter lists are required.
        if ( $polmode eq "linear" ) {
           $par1 = "Q=${root}_Q U=${root}_U P=${root}_P";
        } elsif ( $polmode eq "circular" ) {
@@ -387,7 +404,7 @@
 
 # Stokes V (circular polarisation)
 # --------------------------------
-       } elsif ($polmode eq "circular" ) {
+       } elsif ( $polmode eq "circular" ) {
 
 # Assign a sensible title for the V Stokesparameter frame.  Reset its origin
 # to the default, for convenience.
@@ -433,27 +450,38 @@
        orac_print "Orac says: Tabular polarisation data binned in " .
                   "$bincat.\n";
 
-# Bin the vectors at the chosen scaling forming a new catalogue.
-# Delete the binned catalogue when done.
+# Apply criteria to reject noisy vectors forming a new catalogue.
+# Criteria involving the noisy will only be available if variance
+# data are present.
        my $selcat = "${root}_${di}.FIT";
        unlink ( $selcat );
        $par1 = "catin=$bincat catout=$selcat";
-       $par2 = "norejcat seltyp=e expr='p<50 & p>0 & dp<$sigma & p/dp>=$s2n'";
-       $Mon{catselect}->obeyw('catselect',"$par1 $par2");
+       if ( $variance eq "TRUE" ) {
+          $par2 = "norejcat seltyp=e expr='p<50 & p>0 & dp<$sigma & p/dp>=$s2n'";
+       } else {
+          $par2 = "norejcat seltyp=e expr='p<50 & p>0'";
+       }
+       my $selection_status = $Mon{catselect}->obeyw('catselect',"$par1 $par2");
+
+       if ( $selection_status != ORAC__OK ) {
+          orac_warn "Data are too poor to pass criteria.  Integrate for " .
+                    "longer or make the thresholds less stringent.\n";
+       } else {
 
 # Report the threshold criteria.
-       orac_print "Orac says: Thresholds applied applied to tabular " .
-                  "polarisation data in $selcat.\n";
-       orac_print "Orac says: Criteria were 0 < polarisation < 50%\n";
-       orac_print "Orac says:               S/N >= $s2n\n";
-       orac_print "Orac says:               standard deviation < $sigma%\n";
+          orac_print "Orac says: Thresholds applied applied to tabular " .
+                     "polarisation data in $selcat.\n";
+          orac_print "Orac says: Criteria were 0 < polarisation < 50%\n";
+          if ( $variance eq "TRUE" ) {
+             orac_print "Orac says:               S/N >= $s2n\n";
+             orac_print "Orac says:               standard deviation < $sigma%\n";
+          }
 
 # Display the composite plot.
-       $tempFrm->file( "${root}_${di}" );
-       $Display->display_data( $tempFrm ) if ( defined $Display );
-
+          $tempFrm->file( "${root}_${di}" );
+          $Display->display_data( $tempFrm ) if ( defined $Display );
+       }
     }
-
 
 # Podule
 # ======
@@ -468,13 +496,16 @@ This primitive takes the eight registered and resampled mosaics--one
 for each beam and waveplate angle---and derives images of the summed
 intensity; polarisation percentage, intensity, and angle; and the
 Stokes parameters.  The last are Q and U if linear polarisation is
-chosen and V for circular polarisation.
+chosen and V for circular polarisation.  Variance information for
+the parameters is also derived if the supplied frames contain
+variance.
 
 The polarisation data are extracted into a catalogue in the FITS
-binary-table format, where they are binned, and those meeting the
-following criteria are available to display in a vector plot. The
-criteria are percentage polarisition positive below 50%,
-signal-to-noise at least argument S2N and standard deviation less than
+binary-table format, where they are binned, and those meeting 
+the following criteria are available to display in a vector plot.
+The criteria are percentage polarisation positive below 50%; and
+if variance information is available, the signal-to-noise is at
+least argument S2N, and the standard deviation is less than
 argument SIGMA.
 
 =head1 ARGUMENTS
@@ -508,13 +539,16 @@ supplied.  ["linear"]
 
 Minimum signal to noise of the polarisation percentage for a
 point to be included in the final catalogue and plot.  It is
-constrained to be at least one (i.e. no threshold).  [3]
+constrained to be at least one (i.e. no threshold).  It is
+only used if the supplied e- and o-beam frames contain data
+variance. [3]
 
 =item SIGMA = REAL (Given)
 
 Maximum error of the polarisation percentage for a point to be
 included in the final catalogue and plot.  It is constrained
-to be less than 100% (i.e. no threshold).  [5]
+to be less than 100% (i.e. no threshold).  It is only used if
+the supplied e- and o-beam frames contain data variance.  [5]
 
 =back
 
@@ -574,7 +608,7 @@ overlaid.
 
 =head1 TASKS
 
-CURSA: CATSELECT; KAPPA: SETORIGIN, SETTITLE, SETUNITS;
+CURSA: CATSELECT; KAPPA: NDFTRACE, SETORIGIN, SETTITLE, SETUNITS;
 POLPACK: POLCAL, POLEXT, POLIMP, POLVEC.
 
 =head1 OUTPUT DATA
