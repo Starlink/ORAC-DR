@@ -406,8 +406,8 @@ sub orac_parse_recipe {
       # read in primitive
       my $lines_ref = orac_read_primitive($macro, $instrument);
 
-      # Store lines
-      push(@parsed,@$lines_ref);
+      # Store lines - making sure we create a separate scope
+      push(@parsed,"{\n",@$lines_ref,"}\n");
       
 
       } else {
@@ -627,6 +627,9 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.32  1999/04/22 01:40:54  timj
+#Place all primitives in their own block
+#
 #Revision 1.31  1999/04/21 21:36:04  timj
 #Fix -w
 #Add recipe dump on error for -debug
