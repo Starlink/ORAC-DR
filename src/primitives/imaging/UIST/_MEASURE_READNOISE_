@@ -1,0 +1,70 @@
+
+if ( $Frm->uhdr( "ARRAY_TESTS_MEASURE_READNOISE" ) ) {
+
+  orac_print "Calculating NDSTARE readnoise.\n";
+
+  # Create a new output file name
+  my $out = "readnoise_" . $Frm->findgroup;
+
+  # Grab the list of filenames in the current group
+  my @files = $Grp->membernames;
+
+  # Create a temporary file to hold the 'mean' image
+  my $tfile1 = new ORAC::TempFile;
+  my $tfile1name = $tfile1->file;
+
+  # Form the parameter string
+  my $param1 = "alpha=0 expose=1 keepin=true logfile=! method=mean";
+  my $param2 = "out=$tfile1name in='";
+
+  # We need to be looking at the previous 4 files plus the current one
+  $param2 .= join ( ',', @files[$#files-4..$#files] );
+  $param2 .= "'";
+
+  $Mon{'ccdpack_red'}->obeyw( "makecal", "$param1 $param2" );
+
+  # Remove the Variance array in the 'mean' image, just in case
+  # one was put in.
+  $Mon{'ndfpack_mon'}->obeyw( "setvar", "ndf=$tfile1name Variance=!" );
+
+  # Now we need to calculate the population variance estimate, then 
+  # copy that into the the Variance array in the 'mean' image.
+  my $tfile2 = new ORAC::TempFile;
+  my $tfile2name = $tfile2->file;
+
+  $param1 = "exp=((ia-if)**2+(ib-if)**2+(ic-if)**2+(id-if)**2+(ie-if)**2)/4";
+  $param2 = "ia=" . $files[$#files-4];
+  $param2 .= " ib=" . $files[$#files-3];
+  $param2 .= " ic=" . $files[$#files-2];
+  $param2 .= " id=" . $files[$#files-1];
+  $param2 .= " ie=" . $files[$#files];
+  $param2 .= " if=" . $tfile1name;
+  $param2 .= " out=" . $tfile2name;
+  $param2 .= " quick=true";
+
+  $Mon{'kappa_mon'}->obeyw( "maths", "$param1 $param2" );
+
+  # Create a zeroed-out NDF
+  $Mon{'kappa_mon'}->obeyw( "cmult", "in=$tfile2name out=$out scalar=0");
+  
+  # Copy the variance to the Variance array
+  $Mon{'figaro1'}->obeyw( "copobj", "source=$tfile2name.DATA_ARRAY object=$out.VARIANCE" );
+
+  # File the output readnoise frame with the Cal system
+
+  # Obtain the mean of the variance frame
+  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$out comp=Variance" );
+
+  my ( $ORAC_STATUS, $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+
+  my $readnoise = sqrt($mean);
+
+  orac_print "NDSTARE readnoise is: $readnoise\n";
+
+  # And get an error in the mean as well.
+
+  ( $ORAC_STATUS, my $meanerr ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+
+  orac_print "NDSTARE readnoise standard deviation is: $meanerr\n\n";
+
+}

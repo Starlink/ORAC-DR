@@ -1,0 +1,101 @@
+=head1 NAME
+
+_BIAS_GROUP_ - Reduce five bias frames for array tests to determine a
+group bias.
+
+=head1 DESCRIPTION
+
+Reduces five bias frames for array tests to determine a group bias. This
+primitive determines the mean and variance for five bias frames, converts
+the variance into a population variance estimate, and stores these in the
+data and variance arrays of a file called bias_gNNN, where NNN is the group
+number. The bias_gNNN file is also filed with the Cal system.
+
+This primitive is used with the UIST array test sequence.
+
+=head1 ARGUMENTS
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu> (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# Find out from the internal headers if we're supposed to be doing this.
+if ( $Frm->uhdr( "ARRAY_TESTS_BIAS_GROUP" ) ) {
+
+  orac_print "Creating group bias file.\n";
+
+  my $in = $Frm->file;
+  my $outfile = new ORAC::TempFile;
+  my $out = $outfile->file;
+  # If we are running version 1.0 of KAPPA, we can run MSTATS. Else, we
+  # have to run CCDPACK/MAKECAL.
+  if ( starversion_lt( "KAPPA", 'V1.0' ) ) {
+
+    # Form the parameter string
+    my $param1 = "alpha=0 expose=1 keepin=true logfile=! method=mean";
+    my $param2 = "out=$out in='";
+
+    # We need to be looking at the previous 4 files plus the current one
+    my @files = $Grp->membernames;
+    $param2 .= join ( ',', @files[$#files-4..$#files] );
+    $param2 .= "'";
+
+    $Mon{'ccdpack_red'}->obeyw( "makecal", "$param1 $param2" );
+
+  } else {
+
+    # Form the parameter string for KAPPA/MSTATS
+    my $param1 = "single=false smode=mean trim=false";
+    my $param2 = "out=$out in=\"";
+    my @files = $Grp->membernames;
+    $param2 .= join ( ',', @files[$#files-4..$#files] );
+    $param2 .= "\"";
+
+    $Mon{'kappa_mon'}->obeyw( "mstats", "$param1 $param2");
+
+  }
+
+  # Remove the Variance array in the 'mean' image, just in case
+  # one was put in.
+  $Mon{'ndfpack_mon'}->obeyw( "setvar", "ndf=$out Variance=!" );
+
+  # Now we need to calculate the population variance estimate, then 
+  # copy that into the the Variance array in the 'mean' image.
+  my $tfile1 = new ORAC::TempFile;
+  my $tfile1name = $tfile1->file;
+
+  my @files = $Grp->membernames;
+  my $param1 = "exp=((ia-if)**2+(ib-if)**2+(ic-if)**2+(id-if)**2+(ie-if)**2)/4";
+  my $param2 = "ia=" . $files[$#files-4];
+  $param2 .= " ib=" . $files[$#files-3];
+  $param2 .= " ic=" . $files[$#files-2];
+  $param2 .= " id=" . $files[$#files-1];
+  $param2 .= " ie=" . $files[$#files];
+  $param2 .= " if=" . $out;
+  $param2 .= " out=" . $tfile1name;
+  $param2 .= " quick=true";
+
+  $Mon{'kappa_mon'}->obeyw( "maths", "$param1 $param2" );
+
+  # And copy this result into the Variance array of the 'mean' image.
+  $Mon{'figaro1'}->obeyw( "copobj", "source=$tfile1name.DATA_ARRAY object=$out.VARIANCE" );
+
+  my $bias = "bias_g" . $Frm->findgroup;
+  $Mon{"ndfpack_mon"}->obeyw("ndfcopy", "in=$out out=$bias");
+
+  $Cal->bias( $bias );
+  orac_print $bias . " filed as the current bias\n";
+  $Cal->biasindex->add( $bias, $Frm->hdr );
+  orac_print $bias . " added to index file\n\n";
+  _DELETE_A_FRAME_ FRAME=$out
+
+}
