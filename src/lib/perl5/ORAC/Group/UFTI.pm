@@ -71,7 +71,7 @@ sub new {
   my $group = $class->SUPER::new(@_);
 
   # Configure it
-  $group->fixedpart('g');
+  $group->fixedpart('gf');
   $group->filesuffix('.sdf');
 
   # return the new object
