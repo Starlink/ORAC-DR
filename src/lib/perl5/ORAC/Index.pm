@@ -279,16 +279,14 @@ sub writeindex {
   my $self=shift;
   my $file = $self->indexfile;
   
-  my %index = %{$self->indexref};
   my $handle = new IO::File "> $file";
-  
-  
+
   if (defined $handle) {
     
     print $handle "#",join(" ",sort keys %{$self->rulesref}),"\n";
     
-    foreach my $entry (sort keys %index) {
-      print $handle $entry," ",join(" ",@{$index{$entry}}),"\n";      
+    foreach my $entry (sort keys %{$self->indexref}) {
+      print $handle $self->index_to_text($entry) . "\n";
     };
     
   } else {
@@ -323,9 +321,101 @@ sub add {
       croak "Rules file specifies entry $key unknown to file header";
     };
   };
-  $ {$self->indexref}{$name} = \@entry;
-  $self->writeindex;
-};
+
+  # Decide whether we are adding a brand new index entry
+  # (ie $name is not in index) OR this is a modification
+  # of an existing entry
+  # If we have a new entry - simply append to the index file
+  # If we have an old entry - write the complete index file
+  # This optimisation is to prevent a slow down that occurs
+  # when an index file contains a few hundred entries (eg when
+  # examining calibration history)
+
+  if (exists $self->indexref->{$name}) {
+    $self->indexref->{$name} = \@entry;
+    $self->writeindex;
+  } else {
+    $self->indexref->{$name} = \@entry;
+    $self->append_to_index($name);
+  }
+
+}
+
+
+=item append_to_index
+
+Method to force an append of the specified index entry to the
+the index file on disk.
+
+  $Index->append_to_index($name);
+
+$name is the name of the key (indexentry) to use to select the
+index entry to append [cf the indexentry() method].
+
+This method is intended to be called from the add() method
+to speed up index read/write when appending a new entry.
+Do not use this method to write a modified entry to the
+index file (since the original entry will still be on disk)
+
+No return value.
+
+=cut
+
+sub append_to_index {
+  my $self = shift;
+
+  # Read the key from the arg list
+  croak 'No argument supplied' unless @_;
+  my $entry = shift;
+
+  my $file = $self->indexfile;
+  my $index= $self->indexref;
+
+  # Look for the key in the indexfile (cant append if not present)
+  if (exists $index->{$entry}) {
+
+    # Look for the file on disk - if it is not there then simply
+    # call writeindex
+    if (-e $file) {
+      # Open file for append
+      my $handle = new IO::File ">> $file";
+
+      if (defined $handle) {
+        # Write entry (automatically close file when leave scope)
+        print $handle $self->index_to_text($entry) . "\n";
+
+      } else {
+         croak "Couldn't open index $file : $!";   
+      }
+
+    } else {
+      $self->writeindex;
+    }
+
+  } else {
+    carp "Possible programming error: Entry ($entry) not in current index\n";
+  }
+
+}
+
+
+=item index_to_text
+
+Convert an index entry (in the index hash) to text suitable for
+writing to an index file. Called by writeindex() and append_to_index()
+
+  $text = $Ind->index_to_text($entry);
+
+Returns the text string (including the entry name but no carriage 
+return).
+
+=cut
+
+sub index_to_text {
+  my $self = shift;
+  my $entry = shift;
+  return $entry . " " . join(" ",@{$self->indexref->{$entry}});
+}
 
 
 =item indexentry
