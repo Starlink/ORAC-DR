@@ -48,7 +48,7 @@ use ORAC::Msg::ADAM::Control;
 use ORAC::Msg::ADAM::Task;
 use ORAC::Constants qw/:status/;        #  Constants
 
-$VERSION = '0.10';
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 =head1 METHODS
 
@@ -413,6 +413,10 @@ sub fits2ndf {
 =head1 SEE ALSO
 
 The Starlink CONVERT package.
+
+=head1 REVISION
+
+$Id$
 
 =head1 AUTHORS
 
