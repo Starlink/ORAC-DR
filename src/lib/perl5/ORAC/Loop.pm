@@ -739,6 +739,12 @@ sub orac_sleep {
     while (time() - $now < $pause) {
       # Process events (Dont wait if there were none)
       &Tk::DoOneEvent(&Tk::DONT_WAIT);
+
+      # Pause for a fraction of a second to stop us going into
+      # a CPU intensive loop for no reason Not the best solution since
+      # it does make the Tk events a bit unresponsive
+      select undef,undef,undef,0.2;
+
     }
     # Calculate actual elapsed time
     $actual = time() - $now;
