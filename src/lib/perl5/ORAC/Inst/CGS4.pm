@@ -31,7 +31,7 @@ use base qw/ ORAC::Inst /;
 
 # Status handling
 use ORAC::Constants qw/:status/;
-use ORAC::Inst::Defn qw/ orac_determine_intial_algorithm_engines /;
+use ORAC::Inst::Defn qw/ orac_determine_initial_algorithm_engines /;
 
 =head1 METHODS
 
