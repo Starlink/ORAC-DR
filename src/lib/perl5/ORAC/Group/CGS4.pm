@@ -41,7 +41,7 @@ use vars qw/$VERSION/;
 # Translation tables for CGS4 should go here.
 my %hdr = (
             CONFIGURATION_INDEX  => "CNFINDEX",
-            DEC_TELESCOPE_OFFSET => "TDECOFF",
+            DEC_TELESCOPE_OFFSET => "DECOFF",
             DETECTOR_INDEX       => "DINDEX",
             DETECTOR_MODE        => "MODE",
             EXPOSURE_TIME        => "DEXPTIME",
@@ -50,7 +50,7 @@ my %hdr = (
             GRATING_ORDER        => "GORDER",
             GRATING_WAVELENGTH   => "GLAMBDA",
             NSCAN_POSITIONS      => "DETNINCR",
-            RA_TELESCOPE_OFFSET  => "TRAOFF",
+            RA_TELESCOPE_OFFSET  => "RAOFF",
             SCAN_INCREMENT       => "DETINCR",
             SLIT_ANGLE           => "SANGLE",
             SLIT_NAME            => "SLIT",
