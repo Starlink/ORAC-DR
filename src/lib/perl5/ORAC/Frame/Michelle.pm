@@ -85,35 +85,37 @@ ORAC::Frame::Michelle->_generate_orac_lookup_methods( \%hdr );
 # translation methods make use 
 
 sub _to_DETECTOR_INDEX {
-  my $self = shift;
+   my $self = shift;
 
-  if( exists( $self->hdr->{ $self->nfiles } ) && exists( $self->hdr->{ $self->nfiles }->{DINDEX} ) ) {
-    $self->hdr->{ $self->nfiles }->{DINDEX};
+   if ( exists( $self->hdr->{ $self->nfiles } ) && exists( $self->hdr->{ $self->nfiles }->{DINDEX} ) ) {
+      $self->hdr->{ $self->nfiles }->{DINDEX};
   }
 }
 
 sub _from_DETECTOR_INDEX {
-  "DINDEX", $_[0]->uhdr("ORAC_DETECTOR_INDEX");
+   "DINDEX", $_[0]->uhdr("ORAC_DETECTOR_INDEX");
 }
 
-# Allow for changing FITS headers by date.
+# Allow for changing FITS-header keyword by date.
 sub _to_DETECTOR_READ_TYPE {
-  my $self = shift;
+   my $self = shift;
 
-  my $ut = $self->hdr->{UTDATE};
-  if( !defined( $ut ) ) {
-    $ut = 0;
-  } else {
-    $ut =~ s/-//g;
-  }
-  my $read_type;
-  if( $ut < 20040206 ) {
-    $read_type = $self->hdr->{DETMODE};
-  } else {
-    $read_type = $self->hdr->{DET_MODE};
-  }
+# Need the UTDATE as integer.  Undefined UT dates are assumed
+# to be in the early epoch.
+   my $ut = $self->get_UT_date();
+   if ( !defined( $ut ) ) {
+      $ut = 0;
+   }
 
-  return $read_type;
+# Select the read-type keyword by epoch.
+   my $read_type;
+   if ( $ut < 20040206 ) {
+      $read_type = $self->hdr->{DETMODE};
+   } else {
+      $read_type = $self->hdr->{DET_MODE};
+   }
+
+   return $read_type;
 }
 
 
@@ -164,24 +166,26 @@ sub _to_OBJECT {
    return $object;
 }
 
-# Allow for changing FITS headers by date.
+# Allow for changing FITS-header keyword by date.
 sub _to_OBSERVATION_MODE {
-  my $self = shift;
+   my $self = shift;
 
-  my $ut = $self->hdr->{UTDATE};
-  if( !defined( $ut ) ) {
-    $ut = 0;
-  } else {
-    $ut =~ s/-//g;
-  }
-  my $mode;
-  if( $ut < 20040206 ) {
-    $mode = $self->hdr->{CAMERA};
-  } else {
-    $mode = $self->hdr->{INSTMODE};
-  }
+# Need the UTDATE as integer.  Undefined UT dates are assumed
+# to be in the early epoch.
+   my $ut = $self->get_UT_date();
+   if ( !defined( $ut ) ) {
+      $ut = 0;
+   }
 
-  return $mode;
+# Select the observation mode keyword by epoch.
+   my $mode;
+   if ( $ut < 20040206 ) {
+      $mode = $self->hdr->{CAMERA};
+   } else {
+      $mode = $self->hdr->{INSTMODE};
+   }
+
+   return $mode;
 }
 
 # Cater for early data with missing values.
@@ -218,16 +222,7 @@ sub _to_STANDARD {
 # Cater for early data with missing values.
 sub _to_UTDATE {
    my $self = shift;
-
-# This is UT start and time.
-   my $utdate = undef;
-   if ( exists $self->hdr->{UTDATE} ) {
-      $utdate = $self->hdr->{UTDATE};
-      if ( $utdate =~ /yyyymmdd/ ) {
-         $utdate = undef;
-      }
-   }
-   return $utdate;
+   return $self->get_UT_date();
 }
 
 sub _to_UTEND {
@@ -255,48 +250,78 @@ sub _from_UTSTART {
 # Specify the reference pixel, which is normally near the frame centre.
 # Note that offsets for polarimetry are undefined.
 sub _to_X_REFERENCE_PIXEL{
-  my $self = shift;
-  my $xref;
+   my $self = shift;
+   my $xref;
 
 # Use the average of the bounds to define the centre.
   if ( exists $self->hdr->{RDOUT_X1} && exists $self->hdr->{RDOUT_X2} ) {
-    my $xl = $self->hdr->{RDOUT_X1};
-    my $xu = $self->hdr->{RDOUT_X2};
-    $xref = nint( ( $xl + $xu ) / 2 );
+     my $xl = $self->hdr->{RDOUT_X1};
+     my $xu = $self->hdr->{RDOUT_X2};
+     $xref = nint( ( $xl + $xu ) / 2 );
 
 # Use a default of the centre of the full array.
-  } else {
-    $xref = 161;
-  }
-  return $xref;
+   } else {
+     $xref = 161;
+   }
+   return $xref;
 }
 
 sub _from_X_REFERENCE_PIXEL {
-  "CRPIX1", $_[0]->uhdr("ORAC_X_REFERENCE_PIXEL");
+   "CRPIX1", $_[0]->uhdr("ORAC_X_REFERENCE_PIXEL");
 }
 
 # Specify the reference pixel, which is normally near the frame centre.
 # Note that offsets for polarimetry are undefined.
 sub _to_Y_REFERENCE_PIXEL{
-  my $self = shift;
-  my $yref;
+   my $self = shift;
+   my $yref;
 
 # Use the average of the bounds to define the centre.
-  if ( exists $self->hdr->{RDOUT_Y1} && exists $self->hdr->{RDOUT_Y2} ) {
-    my $yl = $self->hdr->{RDOUT_Y1};
-    my $yu = $self->hdr->{RDOUT_Y2};
-    $yref = nint( ( $yl + $yu ) / 2 );
+   if ( exists $self->hdr->{RDOUT_Y1} && exists $self->hdr->{RDOUT_Y2} ) {
+      my $yl = $self->hdr->{RDOUT_Y1};
+      my $yu = $self->hdr->{RDOUT_Y2};
+      $yref = nint( ( $yl + $yu ) / 2 );
 
 # Use a default of the centre of the full array.
-  } else {
-    $yref = 121;
-  }
-  return $yref;
+   } else {
+      $yref = 121;
+   }
+   return $yref;
 }
 
 sub _from_Y_REFERENCE_PIXEL {
-  "CRPIX2", $_[0]->uhdr("ORAC_Y_REFERENCE_PIXEL");
+   "CRPIX2", $_[0]->uhdr("ORAC_Y_REFERENCE_PIXEL");
 }
+
+
+# Supplementary methods for the translations
+# ------------------------------------------
+
+# Returns the UT date in YYYYMMDD format or
+# undef if the UTDATE keyword is absent or has no
+# value.
+sub get_UT_date {
+   my $self = shift;
+
+# This is UT start and time.
+   my $utdate = undef;
+   if ( exists $self->hdr->{UTDATE} ) {
+      $utdate = $self->hdr->{UTDATE};
+
+# Remove any hyphen delimiters.  They should be present
+# but check, just in case.
+      $utdate =~ s/-//g;
+
+# Allow for blank value in early data.  Hence the
+# value returned is the comment.
+      if ( $utdate =~ /yyyymmdd/ ) {
+         $utdate = undef;
+      }
+   }
+   return $utdate;
+}
+
+
 
 =head1 PUBLIC METHODS
 
@@ -437,11 +462,11 @@ $Id$
 
 Frossie Economou (frossie@jach.hawaii.edu)
 Tim Jenness (t.jenness@jach.hawaii.edu)
-Malcolm Currie (mjc@jach.hawaii.edu)
+Malcolm J. Currie (mjc@jach.hawaii.edu)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 

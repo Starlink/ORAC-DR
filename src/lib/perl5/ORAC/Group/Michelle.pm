@@ -61,11 +61,9 @@ my %hdr = (
 # then the general.
             CHOP_ANGLE           => "CHPANGLE",
             CHOP_THROW           => "CHPTHROW",
-            DETECTOR_READ_TYPE   => "DETMODE",
             EXPOSURE_TIME        => "EXP_TIME",
             GAIN                 => "GAIN",
             NUMBER_OF_READS      => "NREADS",
-            OBSERVATION_MODE     => "CAMERA",
             UTEND                => "UTEND",
             UTSTART              => "UTSTART"
 	  );
@@ -74,6 +72,29 @@ my %hdr = (
 # other instruments.  Have to use the inherited version so that the new
 # subs appear in this class.
 ORAC::Group::Michelle->_generate_orac_lookup_methods( \%hdr );
+
+# Allow for changing FITS-header keyword by date.
+sub _to_DETECTOR_READ_TYPE {
+   my $self = shift;
+
+# Need the UTDATE as integer.  Undefined UT dates are assumed
+# to be in the early epoch.
+   my $ut = $self->get_UT_date();
+   if ( !defined( $ut ) ) {
+      $ut = 0;
+   }
+
+# Select the read-type keyword by epoch.
+   my $read_type;
+   if ( $ut < 20040206 ) {
+      $read_type = $self->hdr->{DETMODE};
+   } else {
+      $read_type = $self->hdr->{DET_MODE};
+   }
+
+   return $read_type;
+}
+
 
 # Cater for early data with missing headers.
 sub _to_NUMBER_OF_OFFSETS {
@@ -92,6 +113,7 @@ sub _to_NUMBER_OF_OFFSETS {
    return $noffsets;
 }
 
+
 # Cater for early data with missing values.
 sub _to_NSCAN_POSITIONS {
    my $self = shift;
@@ -107,20 +129,6 @@ sub _to_NSCAN_POSITIONS {
    return $nscan;
 }
 
-# Cater for early data with missing values.
-sub _to_SCAN_INCREMENT {
-   my $self = shift;
-
-# Number of scan positions.
-   my $sincr = undef;
-   if ( exists $self->hdr->{DETINCR} ) {
-      $sincr = $self->hdr->{DETINCR};
-      if ( $sincr =~ /[a-z]+/ ) {
-         $sincr = undef;
-      }
-   }
-   return $sincr;
-}
 
 # Cater for early data with missing values.
 sub _to_OBJECT {
@@ -135,6 +143,45 @@ sub _to_OBJECT {
       }
    }
    return $object;
+}
+
+
+# Allow for changing FITS-header keyword by date.
+sub _to_OBSERVATION_MODE {
+   my $self = shift;
+
+# Need the UTDATE as integer.  Undefined UT dates are assumed
+# to be in the early epoch.
+   my $ut = $self->get_UT_date();
+   if ( !defined( $ut ) ) {
+      $ut = 0;
+   }
+
+# Select the observation mode keyword by epoch.
+   my $mode;
+   if ( $ut < 20040206 ) {
+      $mode = $self->hdr->{CAMERA};
+   } else {
+      $mode = $self->hdr->{INSTMODE};
+   }
+
+   return $mode;
+}
+
+
+# Cater for early data with missing values.
+sub _to_SCAN_INCREMENT {
+   my $self = shift;
+
+# Number of scan positions.
+   my $sincr = undef;
+   if ( exists $self->hdr->{DETINCR} ) {
+      $sincr = $self->hdr->{DETINCR};
+      if ( $sincr =~ /[a-z]+/ ) {
+         $sincr = undef;
+      }
+   }
+   return $sincr;
 }
 
 
@@ -153,20 +200,41 @@ sub _to_STANDARD {
    return $standard;
 }
 
+
 # Cater for early data with missing values.
 sub _to_UTDATE {
+   my $self = shift;
+   return $self->get_UT_date();
+}
+
+
+# Supplementary methods for the translations
+# ------------------------------------------
+
+# Returns the UT date in YYYYMMDD format or
+# undef if the UTDATE keyword is absent or has no
+# value.
+sub get_UT_date {
    my $self = shift;
 
 # This is UT start and time.
    my $utdate = undef;
    if ( exists $self->hdr->{UTDATE} ) {
       $utdate = $self->hdr->{UTDATE};
+
+# Remove any hyphen delimiters.  They should be present
+# but check, just in case.
+      $utdate =~ s/-//g;
+
+# Allow for blank value in early data.  Hence the
+# value returned is the comment.
       if ( $utdate =~ /yyyymmdd/ ) {
          $utdate = undef;
       }
    }
    return $utdate;
 }
+
 
 =head1 PUBLIC METHODS
 
@@ -284,10 +352,11 @@ $Id$
 =head1 AUTHORS
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+Malcolm J. Currie  E<lt>mjc@star.rl.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
