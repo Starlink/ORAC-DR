@@ -23,10 +23,6 @@ file returned by the calibration system.
 
 =item *
 
-This primitive is written for the UIST IFU.
-
-=item *
-
 The frame should previously have been approximately straightened.
 
 =item *
@@ -36,8 +32,22 @@ are applied, and simultaneously straighten the spectra.
 
 =item *
 
-The wavelength range to which the frame should be scrunched is obtained
-from the arlines.lis file used to wavelength clibrate the frame.
+The file containing the wavelengths to be applied is obtained from the
+calibration system. The format of the entry in index.iar is
+file.iar:min:max where min and max are the minimum and maximum
+wavelengths that should be used when the frame is scrunched.
+
+=item *
+
+The variance array is scrunched separately and copied back into the
+output frame (not strictly correct because errors on adjacent pixels
+are correlated after resampling, but better than nothing).
+
+=item *
+
+Sets the ORAC_GRATING_WAVELENGTH to the central wavelength in
+Angstroms (with one digit after decimal point so that it is not
+interpreted as a pixel coordinate in later routines.
 
 =back
 
@@ -77,7 +87,8 @@ use ORAC::TempFile;
 (my $in, my $out) = $Frm->inout( "_scr" );
  
 # get the appropriate iar file
-my $iarfile = $Cal->iar;
+my ($iarfile, $min, $max) = split(':', $Cal->iar);
+
 
 orac_print "Using $iarfile to wavelength calibrate and straighten frame \n"; 
 
@@ -86,50 +97,6 @@ unless (-e $iarfile) {
 }
 
 my $numpix = 1024;
-
-
-
-# Determine the wavelength range required from the arlines.lis file
-my $arlines_file = $ENV{ORAC_DATA_CAL} . "/" . $Cal->arlines; 
-orac_print "Getting wavelength range from $arlines_file \n";
-
-my $order;      # The order of the wavelength calibration
-my $fit = "";   # The coefficients as read from the arlines.lis file
-my @coeffs;     # The coefficients converted to a more useful form
-
-# Read the arlines.lis file
-open(my $file, $arlines_file) || die "Could not open $arlines_file \n";
-while (<$file>) {
-    # We are only interested in the bit after the Order of fit line really
-    if (defined $order) {
-	chomp;
-	$fit .= $_; 
-    }
-
-    # Find the order of the fit
-    if (/Order of fit:\s+(\d+)/) {$order = $1}
-}
-close $file;
-
-# Substitute E for D in the scientific form numbers (Fortran->Perl)
-$fit =~ s/D/E/g;
-
-# Read the coefficients into @coeffs (in reverse order, as they appear
-# in the arlines.lis file)
-while ($fit =~ /(-? [\d\.]+ E[+-]\d\d)/gx) {push @coeffs, $1}
-
-# Use the coeficients to calculate the maximum and minimum wavelengths.
-# It seems to be useful to knock 100 Ang or so off each end of the range
-# otherwise Iscrunch doesn't behave very well
-my $min = 0;
-for my $n (0..$order) {$min += $coeffs[-1-$n] * 1024**$n;}
-
-$min = int($min) + 100;
-my $max = int($coeffs[-1]) - 100;
-
-# Check that min and max are the right way round (otherwise Iscrunch
-# does nothing).
-if ($min > $max) {($min, $max) = ($max, $min)}
 
 orac_print "Scrunching to $numpix pixels from $min to $max Angstroms.\n";
 
@@ -171,12 +138,15 @@ if ( $variance eq "TRUE" ) {
 
 # Set the name of the output frame
 $Frm->file( $out );
-$Frm->uhdr( "lambda_min" => "$min");
-$Frm->uhdr( "lambda_max" => "$max");
+
 $Frm->uhdr( "ORAC_GRATING_WAVELENGTH" => sprintf("%.1f", ($max + $min)/2));
+orac_print "ORAC_GRATING_WAVELENGTH set to " . sprintf("%.1f", ($max + $min)/2) . "\n";
 
 # And display it
 $Display->display_data($Frm) if defined $Display;
+
+
+
 
 
 
