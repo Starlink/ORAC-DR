@@ -30,38 +30,17 @@ objects.
 use 5.006;
 use warnings;
 use vars qw/$VERSION/;
-use ORAC::Frame::UKIRT;
+use ORAC::Frame::IRCAM;
 use ORAC::Constants;
 
-# Let the object know that it is derived from ORAC::Frame::UFTI;
-use base qw/ORAC::Frame::UKIRT/;
+# Let the object know that it is derived from ORAC::Frame::IRCAM;
+use base qw/ORAC::Frame::IRCAM/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 # standard error module and turn on strict
 use Carp;
 use strict;
-
-# Translation tables for UFTI shouldr go here
-my %hdr = (
-            DEC_SCALE            => "PIXELSIZ",
-            DEC_TELESCOPE_OFFSET => "DECOFF",
-            DETECTOR_BIAS        => "DET_BIAS",
-            EXPOSURE_TIME        => "DEXPTIME",
-            GAIN                 => "DEPERDN",
-            RA_SCALE             => "PIXELSIZ",
-            RA_TELESCOPE_OFFSET  => "RAOFF",
-            UTDATE               => "IDATE",
-            UTEND                => "RUTEND",
-            UTSTART              => "RUTSTART"
-	  );
-
-# Take this lookup table and generate methods that can
-# be sub-classed by other instruments
-# Have to use the inherited version so that the new subs appear in 
-# this class
-ORAC::Frame::IRCAM2->_generate_orac_lookup_methods( \%hdr );
-
 
 =head1 PUBLIC METHODS
 
@@ -84,9 +63,9 @@ the configure() method which is run in addition to new()
 when arguments are supplied.
 The object identifier is returned.
 
-   $Frm = new ORAC::Frame::UFTI;
-   $Frm = new ORAC::Frame::UFTI("file_name");
-   $Frm = new ORAC::Frame::UFTI("UT","number");
+   $Frm = new ORAC::Frame::IRCAM2;
+   $Frm = new ORAC::Frame::IRCAM2("file_name");
+   $Frm = new ORAC::Frame::IRCAM2("UT","number");
 
 The constructor hard-wires the '.sdf' rawsuffix and the
 'i' prefix although these can be overriden with the 
@@ -155,7 +134,7 @@ sub file_from_bits {
   # Zero pad the number
   $obsnum = sprintf("%05d", $obsnum);
 
-  # CGS4 form is  FIXED PREFIX _ NUM SUFFIX
+  # IRCAM2 form is  FIXED PREFIX _ NUM SUFFIX
   return $self->rawfixedpart . $prefix . '_' . $obsnum . $self->rawsuffix;
 
 }
@@ -171,7 +150,7 @@ should be supplied
   $flag = $Frm->flag_from_bits($prefix, $obsnum);
 
 This particular method returns back the flag file associated with
-CGS4 and is usually of the form:
+IRCAM2 and is usually of the form:
 
   .cYYYYMMDD_NNNNN.ok
 
@@ -185,7 +164,7 @@ sub flag_from_bits {
   my $prefix = shift;
   my $obsnum = shift;
   
-  # flag files for CGS4 of the type .cYYYYMMDD_NNNNN.ok
+  # flag files for IRCAM2 of the type .iYYYYMMDD_NNNNN.ok
   my $raw = $self->file_from_bits($prefix, $obsnum);
 
   # raw includes the .sdf so we have to strip it
