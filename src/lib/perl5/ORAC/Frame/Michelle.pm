@@ -50,7 +50,7 @@ my %hdr = (
             TDECOFF   => "TDECOFF",
             TRAOFF    => "TRAOFF",
 
-# then the spectroscopy.
+# then the spectroscopy...
             CONFIGURATION_INDEX => "CNFINDEX",
             DETECTOR_INDEX      => "DINDEX",
             DETECTOR_MODE       => "DETMODE",
@@ -64,7 +64,10 @@ my %hdr = (
             SCAN_INCREMENT      => "DETINCR",
             SLIT_ANGLE          => "SLITANG",
             SLIT_NAME           => "SLITNAME",
-            UTDATE              => "UTDATE"
+            UTDATE              => "UTDATE",
+
+# then the general.
+            OBSERVATION_MODE    => "CAMERA"
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed by
