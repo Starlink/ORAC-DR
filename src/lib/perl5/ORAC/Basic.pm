@@ -125,14 +125,11 @@ sub orac_execute_recipe {
   my $block = join("",@recipe);
 
   # Want to make sure that perl warnings are turned off
-  # when evaluating recipes
-  my $cur_warn = $^W;
-  local $^W = 0;
+  # when evaluating recipes - control via the -warn parameter
+  # local $^W = 0;
+
   # Execute the recipe
   my $status = eval $block;
-
-  # Reset the warning level
-  $^W = $cur_warn;
 
   # Check for an error
   if ($@) {
@@ -351,7 +348,7 @@ sub orac_parse_arguments {
   foreach my $argument (@arguments) {
     # Split each argument on equals
     my ($key,$value) = split("=",$argument);
-    $hash{$key} = $value;
+    $hash{$key} = $value if defined $value;
   }
 
   return %hash;
@@ -407,7 +404,7 @@ sub orac_parse_recipe {
       my $lines_ref = orac_read_primitive($macro, $instrument);
 
       # Store lines - making sure we create a separate scope
-      push(@parsed,"{\n",@$lines_ref,"}\n");
+      push(@parsed,"\n{\n\n",@$lines_ref,"\n}\n");
       
 
       } else {
@@ -453,7 +450,10 @@ sub orac_add_code_to_recipe {
       my $arguments = $1;
       
       $arguments =~ s/\"/ /g;
-      push(@processed,"orac_debug(\"$arguments\n\");\n");
+
+      # Debug line if DEBUG is true
+      push(@processed,"orac_debug(\"$arguments\n\");\n")
+	if $DEBUG;
 
       #    } elsif ($line =~ /={0}.+->obeyw/) { # old line
       
@@ -466,8 +466,15 @@ sub orac_add_code_to_recipe {
 	
 	# Now add the OBEYW status checking lines
 	# prepending the OBEYW_STATUS line
-	push (@processed, 'my $OBEYW_STATUS = ' .$line);
-	push (@processed, &orac_check_obey_status($line));
+	# Put it in a block of its own to prevent warnings
+	# relating to the masking of $OBEYW_STATUS in a earlier
+	# declaration in same scope
+	push (@processed, 
+	      "{  # Create block to prevent warnings from my OBEYW_STATUS\n",
+	      'my $OBEYW_STATUS = ' .$line,
+	      &orac_check_obey_status($line),
+	      "\n}\n",
+	     );
 	
       } else {
 	# Just push the line on as is
@@ -627,6 +634,10 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.33  1999/04/22 22:48:44  timj
+#Fix some -w warnings.
+#Allow -w in recipes
+#
 #Revision 1.32  1999/04/22 01:40:54  timj
 #Place all primitives in their own block
 #
