@@ -1106,6 +1106,9 @@ sub _concat_all_relevant_files {
       # entirely instrument related (no observing mode) we need to
       # select that one and only that one regardless of its position.
 
+      # remove general if we have any other option
+      @found = grep { $_ !~ /general/ } @found if @found > 1;
+
       # instrument directories are upper case. Mode directories are
       # lower case.
 
@@ -1121,7 +1124,7 @@ sub _concat_all_relevant_files {
 	    $thismode = $mode;
 	    last;
 	  }
-	}
+        }
 	
 	# if it did not match a generic mode it must be a
 	# specific observation - call it INST
