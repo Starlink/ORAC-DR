@@ -611,8 +611,8 @@ sub template {
 
   my $num = $self->number;
   my $padnum = '0'x(4-length($num)) . $num;
+
   # Change the first number
-#  $template =~ s/_\d+_/_${num}_/;
   $template =~ s/^(\w{5})(\d{4})_/$1${padnum}_/;
 
   # Update the filename
