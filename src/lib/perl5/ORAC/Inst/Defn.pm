@@ -1558,6 +1558,8 @@ sub fluxes_helper {
   # and then chdir back to wherever we happen to be.
 
   my $cwd = cwd; # Store current dir
+  croak "Error determining current working directory. Seems we got undef!"
+    unless defined $cwd;
 
   # Create temp directory - this is needed in case another
   # oracdr is running fluxes and we want to make sure that
@@ -1602,7 +1604,7 @@ sub fluxes_helper {
   }
 
   # Set FLUXPWD variable, required by FLUXES
-  $ENV{'FLUXPWD'} = cwd;
+  $ENV{'FLUXPWD'} = $tmpdir;
 
   # Create cleanup sub
   my $cleanup = sub { chdir $cwd; };
