@@ -38,9 +38,10 @@ Note this version: Index files not implemented
 use strict;
 use Carp;
 use vars qw/$VERSION/;
+use ORAC::Index;
+use ORAC::Print;
 
-$VERSION = '0.10';
-
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 # Setup the object structure
 
@@ -67,6 +68,7 @@ sub new {
   my $class = ref($proto) || $proto;
 
   my $obj = {};  # Anon hash reference
+  $obj->{Thing} = {};		# ditto
 
   $obj->{Bias} = undef;
   $obj->{Dark} = undef;
@@ -75,6 +77,10 @@ sub new {
   $obj->{Rotation} = undef;
   $obj->{Arc} = undef;
   $obj->{Standard} = undef;
+
+  $obj->{DarkIndex} = undef;
+
+
 
   bless($obj, $class);
 
@@ -86,20 +92,50 @@ sub new {
 
 # Methods to access the data
 
-=item dark
+=item darkname
 
-Return (or set) the name of the current dark.
+Return (or set) the name of the current dark - no checking
 
   $dark = $Cal->dark;
 
 
 =cut
 
-sub dark {
+sub darkname {
   my $self = shift;
   if (@_) { $self->{Dark} = shift; }
   return $self->{Dark};
 }
+
+=item dark
+
+Return (or set) the name of the current dark - 
+checks suitability on return.
+
+=cut
+
+sub dark {
+  my $self = shift;
+  if (@_) {
+    # if we are setting, accept the value and return
+    return $self->darkname(shift);
+  };
+
+  my $ok = $self->darkindex->verify($self->darkname,$self->thing);
+
+  # happy ending - frame is ok
+  if ($ok) {return $self->darkname};
+
+  # not so good
+  if (defined $ok) {
+    $self->darkname($self->darkindex->choosebydt('ORACTIME',$self->thing));
+  } else {
+    croak("Error in calibration checking - giving up");
+  };
+};
+
+
+
 
 =item bias
 
@@ -192,7 +228,59 @@ sub standard {
   return $self->{Standard};
 }
 
+=item darkindex 
+
+Return (or set) the index object associated with the dark index file
+
+=cut
+
+sub darkindex {
+
+  my $self = shift;
+  if (@_) { $self->{DarkIndex} = shift; }
+
+  unless (defined $self->{DarkIndex}) {
+    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.dark";
+    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.dark";
+    $self->{DarkIndex} = new ORAC::Index($indexfile,$rulesfile);
+  };
+
+
+  return $self->{DarkIndex}; 
+
+
+};
+
+=item thing
+
+Returns or sets the hash associated with the header of the object
+(frame or group or whatever) needed to match calibration criteria
+against.
+
+Ending sentences with a preposition is a bug.
+
+=cut
+
+sub thing {
+
+my $self = shift;
+
+# check that we have been passed a hash
+
+  if (@_) { 
+    my $arg = shift;
+    croak("Argument is not a hash") unless ref($arg) eq "HASH";
+    $self->{Thing} = $arg;
+  };
+
+return $self->{Thing};
+
+
+};
+
 =back
+
+
 
 =head1 SEE ALSO
 
