@@ -661,7 +661,7 @@ sub image {
   return $status if $status != ORAC__OK;
   
   # Do the obeyw
-  $status = $self->obj->obeyw("display", "device=$device in=$file axes clear $optstring accept");
+  $status = $self->obj->obeyw("display", "device=$device in=$file axes clear=true $optstring accept");
   if ($status != ORAC__OK) {
     orac_err("Error displaying image\n");
     orac_err("Trying to execute: display device=$device axes in=$file\n");
@@ -1115,6 +1115,72 @@ sub histogram {
 
 }
 
+
+=item vector
+
+Vectors are overlaid on an image. The supplied file is displayed
+and vectors are then drawn. The vector information is expected
+to be stored in the ORAC extension of the supplied file
+(in .P and .THETA NDFs).
+
+Recognised options:
+
+  XMIN/XMAX - X pixel max and min values
+  YMIN/YMAX - Y pixel max and min values
+  XAUTOSCALE - Use autoscaling for X?
+  YAUTOSCALE - Use autoscaling for Y?
+  ZMIN/ZMAX  - Z-range of greyscale (data units)
+  ZAUTOSCALE - Autoscale Z?
+
+Default is to autoscale.
+
+=cut
+
+sub vector {
+
+  my $self = shift;
+  my $file = shift;
+
+  my %options = ();
+  if (@_) {
+    my $opt = shift;
+    if (ref($opt) eq 'HASH') {
+      %options = %{$opt};
+    }
+  }
+
+  # Configure the display on the basis of REGION specifier
+  # ..and return the selected device.
+  # Return undef if something went wrong.
+  my $device = $self->config_region(%options);
+
+  # If device is now undef we have a problem
+  unless (defined $device) {
+    orac_err("Error configuring display. Possible invalid region designation\n");
+    return ORAC__ERROR;
+  }
+
+  # Set the data file name
+  $file =~ s/\.sdf$//;  # Strip .sdf
+
+  # Run the image method with all arguments
+  $self->image($file, \%options);
+
+
+
+  # Now run VECPLOT
+  my $status = $self->obj->obeyw("vecplot","ndf1=${file}.more.orac.p ndf2=${file}.more.orac.theta clear=no device=$device veccol=red step=2 vscale=10 pltitl=' '");
+
+  if ($status != ORAC__OK) {
+    orac_err("Error displaying vectors\n");
+    orac_err("Trying to execute: ndf1=${file}.more.orac.p ndf2=${file}.more.orac.theta clear=no device=$device veccol=red step=2 vscale=10\n");
+    return $status;
+  }
+
+  return $status;
+
+
+}
 
 
 # DESTROY
