@@ -287,7 +287,7 @@ sub orac_execute_recipe {
 
     # Exit from the pipeline
     # Do this until we debug everything
-    orac_exit_normally("Exiting due to error"); 
+    orac_exit_normally("Exiting due to error");
   }
 
 };
@@ -626,17 +626,20 @@ sub orac_add_code_to_recipe {
 	# Just push the line on as is
 	push (@processed, $line);
       }
-      
-    } elsif ($line =~ /\$ORAC_STATUS/) {
+
+    } elsif ($line =~ /\$ORAC_STATUS/ && $line =~ /=/) {
+      # Check that it has ORAC_STATUS and that the line has an
+      # assignment (should check that the = is to the left of the
+      # = and that ORAC_STATUS is to the left of a #)
       # Put on the current line
-      push (@processed, $line);      
+      push (@processed, $line);
       # Add the status checking code
       push (@processed, &orac_check_status);
-      
-    } else {      
+
+    } else {
       push(@processed,$line);
     }
-  
+
   };
 
   return(\@processed);
@@ -851,6 +854,9 @@ Council. All Rights Reserved.
 
 
 #$Log$
+#Revision 1.52  2000/08/15 19:10:38  timj
+#Check that ORAC_STATUS is on a line including an =
+#
 #Revision 1.51  2000/06/15 03:01:52  timj
 #Use Starlink::Versions
 #
