@@ -39,6 +39,7 @@ use base qw/ ORAC::Group::UKIRT /;
 
 # Translation tables for NIRI should go here
 my %hdr = (
+            DEC_TELESCOPE_OFFSET  => "DECOFFSE",
             DETECTOR_READ_TYPE   => "MODE",
             RA_TELESCOPE_OFFSET  => "RAOFFSET",
             X_REFERENCE_PIXEL    => "CRPIX1",
@@ -59,21 +60,6 @@ sub _to_DEC_SCALE {
    my $sgn;
    if ( ( $cd11 * $cd22 - $cd12 * $cd21 ) < 0 ) { $sgn = -1; } else { $sgn = 1; }
    abs( sqrt( $cd11**2 + $cd21**2 ) * 3600 );
-}
-
-# Have to fudge this for some reason for the long focal-ratio camera.
-sub _to_DEC_TELESCOPE_OFFSET {
-    my $self = shift;
-    my $offset = $self->hdr( "DECOFFSE" );
-    if ( defined( $self->hdr( "INPORT" ) ) &&
-         $self->hdr( "INPORT" ) == 3 ) {
-       $offset = -1.0 * $self->hdr( "DECOFFSE" );
-    }
-    return $offset;
-}
-
-sub _from_DEC_TELESCOPE_OFFSET {
-   "DECOFFSE",  $_[0]->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" );
 }
 
 sub _to_EXPOSURE_TIME {
@@ -150,9 +136,8 @@ sub _to_RA_SCALE {
    sqrt( $cd12**2 + $cd22**2 ) * 3600;
 }
 
-# ROTATION, DEC_SCALE and RA_SCALE transformations courtesy Micah Johnson, from
-# the cdelrot.pl script supplied for use with XIMAGE.  Extended here to the
-# FITS-WCS Paper II Section 6.2 prescription, averaging the rotation.
+# Convert the CD matrix to an average rotation.  Equations here are from 
+# FITS-WCS Paper II Section 6.2, 191 and 192.
 
 sub _to_ROTATION {
    my $self = shift;
@@ -161,27 +146,50 @@ sub _to_ROTATION {
    my $cd21 = $self->hdr("CD2_1");
    my $cd22 = $self->hdr("CD2_2");
 
-# Obtain the plate scales CDELT1 and CDELT2 equivalents as if we hasd a PCi_i matrix.
-   my $sgn;
-   if ( ( $cd11 * $cd22 - $cd12 * $cd21 ) < 0 ) { $sgn = -1; } else { $sgn = 1; }
-   my $cdelt1 = $sgn * sqrt( $cd11**2 + $cd21**2 );
-   my $cdelt2 = $sgn * sqrt( $cd22**2 + $cd12**2 );
-
-# Determine the sense of the scales.
-   my $sgn2;
-   if ( $cd12 < 0 ) { $sgn2 = -1; } else { $sgn2 = 1; }
-   my $sgn3;
-   if ( $cd21 < 0 ) { $sgn3 = -1; } else { $sgn3 = 1; }
+# Radians to degrees conversion.
    my $rtod = 45 / atan2( 1, 1 );
 
+# Determine the sense of the scales.
+   my $sgn_a;
+   if ( $cd21 < 0 ) { $sgn_a = -1; } else { $sgn_a = 1; }
+   my $sgn_b;
+   if ( $cd12 < 0 ) { $sgn_b = -1; } else { $sgn_b = 1; }
+
+# Form first rotation estimate.  Zero off-diagonal term implies zero
+# rotation.
+   my $nrot = 0;
+   my $rho_a = 0;
+   if ( abs( $cd21 / $cd11 ) > 1E-6 ) {
+      $rho_a = atan2( $sgn_a * $cd21 / $rtod, $sgn_a * $cd11 / $rtod );
+      $nrot++
+   }
+
+# Form first rotation estimate.  Zero off-diagonal term implies zero
+# rotation.
+   my $rho_b = 0;
+   if ( abs( $cd12 / $cd22 ) > 1E-6 ) {
+      $rho_b = atan2( $sgn_b * $cd12 / $rtod, -$sgn_b * $cd22 / $rtod );
+      $nrot++
+   }
+
 # Average the estimates of the rotation.
-   my $rotation = $rtod * 0.5 * ( atan2( $sgn2 * $cd21 / $rtod, $sgn2 * $cd11 / $rtod ) +
-                                  atan2( $sgn3 * $cd12 / $rtod, -$sgn3 * $cd22 / $rtod ) );
+   my $rotation = $rtod * ( $rho_a + $rho_b ) / $nrot;
 
-# Plus 90 is a fudge because the CD matrix appears is wrong by 90 degrees for port 3,
-# the f/32 camera, judging by the telescope offsets, CTYPEn, and the support astronomer.
-   $rotation += 90  if ( defined( $self->hdr( "INPORT" ) ) && $self->hdr( "INPORT" ) ) == 3;
+# The actual WCS matrix has errors and sometimes the angle which
+# should be near 180 degrees for the f/32 camera, can be out by 90 
+# degrees.  So for this camera we hardwired the main rotation and
+# merely apply the small deviation from the cardinal orientations.
+   if ( defined( $self->hdr( "INPORT" ) ) && $self->hdr( "INPORT" ) == 3 ) {
+      my $delta_rho = $rotation - ( 90 * int( $rotation / 90 ) );
+      $delta_rho -= 90 if ( $delta_rho > 45 );
+      $delta_rho += 90 if ( $delta_rho < -45 );
 
+# Setting to 180 is a fudge because the CD matrix appears is wrong
+# occasionally by 90 degrees for port 3, the f/32 camera, judging by the
+# telescope offsets, CTYPEn, and the support astronomer.  This has not
+# been corrected despite MJC's report.
+      $rotation = 180.0 + $delta_rho  
+   }
    return $rotation;
 }
 
