@@ -47,7 +47,8 @@ use base qw/ ORAC::Display::Base /;     # Base class
 
 use vars qw/$VERSION $DEBUG $AGI_USER $AGI_NODE $KAPPA13/;
 
-$VERSION = '0.10';
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+
 $DEBUG = 0;
 
 # The KAPPA13 variable is true if we are using Kappa v0.13
@@ -63,9 +64,11 @@ if (-e "$ENV{KAPPA_DIR}/style.def") {
 
 =head1 PUBLIC METHODS
 
+=head2 Constructor
+
 =over 4
 
-=item new
+=item B<new>
 
 Object constructor. The constructor starts up a new version of kapview,
 starts a GWM window and displays the startup logo.
@@ -134,20 +137,13 @@ sub new {
   return $disp;
 }
 
+=back
 
-=item obj
+=head2 Accessor Methods
 
-Messaging object associated with the Kapview display object.
+=over 4
 
-=cut
-
-sub obj {
-  my $self = shift;
-  if (@_) { $self->{Obj} = shift; }
-  return $self->{Obj};
-}
-
-=item kappa
+=item B<kappa>
 
 Messaging object associated with the kappa_mon monolith.
 This is used by some of the modes in order to determine
@@ -188,7 +184,7 @@ sub kappa {
   return $self->{Kappa};
 }
 
-=item ndfpack
+=item B<ndfpack>
 
 Messaging object associated with the ndfpack_mon monolith.
 This is used by some of the modes in order to reshape
@@ -226,11 +222,63 @@ sub ndfpack {
   return $self->{Ndfpack};
 }
 
+=item B<regions>
 
-=item newdev(win)
+A hash containing the mapping of region name (number) to
+AGI picture label.
+
+Returns hash reference in scalar context, full hash in array context.
+Contents can be modified by directly using the hash reference
+(in order to modify specific entries) or completely rewritten by
+supplying a hash as argument.
+
+  $hashref = $self->regions;
+  %hash = $self->regions;
+  $self->regions(%hash);
+  $self->regions->{Key} = "value";
+
+=cut
+
+sub regions {
+  my $self = shift;
+
+  if (@_) {
+    %{ $self->{Regions}} = @_;
+  }
+
+  if (wantarray()) {
+    return %{$self->{Regions}};
+  } else {
+    return $self->{Regions};
+  }
+}
+
+
+=item B<obj>
+
+Messaging object associated with the Kapview display object.
+
+=cut
+
+sub obj {
+  my $self = shift;
+  if (@_) { $self->{Obj} = shift; }
+  return $self->{Obj};
+}
+
+
+=back
+
+=head2 General Methods
+
+=over 4
+
+=item B<newdev>
 
 Given 'win', calculates a new device name that should be unique for
 each 'win'.
+
+ $dev = $Display->newdev($win);
 
 =cut
 
@@ -244,7 +292,7 @@ sub newdev {
 }
 
 
-=item create_dev(win)
+=item B<create_dev>
 
 Start the GWM window associated with the supplied window.
 In general this is used by the startup configuration.
@@ -261,8 +309,10 @@ and allow us to set the window name.
 
 ORAC status is returned.
 
-It may be simpler to just die() if the colour table 
-setting fails (ie the device is no good to us).
+  $status = $Display->create_dev($win);
+
+Currently, the method dies if the device can not be successfully
+created.
 
 =cut
 
@@ -270,7 +320,9 @@ sub create_dev {
   my $self = shift;
   my $window = shift;
 
-  # Get the device
+  # Get the device - this would enter an infinite loop if 
+  # window_dev failed to return an existing device name 
+  # - since window_dev calls create_dev
   my $device = $self->window_dev($window);
 
   # If I want to start GWM myself I have to do the following
@@ -295,16 +347,23 @@ sub create_dev {
   my $status = $self->obj->obeyw("lutable","$args device=$device");
   if ($status != ORAC__OK) {
     orac_err("Error configuring default LUT\n");
-     die "Error launching display device. It is unlikely that this can be fixed by retrying from within ORACDR. Aborting...";
+    die "Error launching display device. It is unlikely that this can be fixed by retrying from within ORACDR. Aborting...";
 #    return $status;
   }
 
   # try a paldef
-  my $status = $self->obj->obeyw("paldef","device=$device");
+  $status = $self->obj->obeyw("paldef","device=$device");
   if ($status != ORAC__OK) {
     orac_err("Error setting default pallette\n");
-     die "Error launching display device. It is unlikely that this can be fixed by retrying from within ORACDR. Aborting...";
+    die "Error launching display device. It is unlikely that this can be fixed by retrying from within ORACDR. Aborting...";
 #    return $status;
+  }
+
+  # If this all works we should now configure the display regions
+  $status = $self->config_regions($window);
+  if ($status != ORAC__OK) {
+    orac_err "Error configuring regions\n";
+    die "Error launching display device. It is unlikely that this can be fixed by retrying from within ORACDR. Aborting...";
   }
 
 
@@ -313,7 +372,7 @@ sub create_dev {
 }
 
 
-=item launch
+=item B<launch>
 
 This method starts the kapview monolith and stores the associated
 Task object.
@@ -333,7 +392,7 @@ sub launch {
 }
 
 
-=item configure
+=item B<configure>
 
 Load a startup image. This tests the system to make sure that images
 can be displayed and that the colour map is loaded.
@@ -362,14 +421,16 @@ sub configure {
   my $startup = "$ENV{ORAC_DIR}/images/orac_start";
 
   # Set the device for port_0 for our default display
+  # This will automatically launch the device and configure the
+  # display regions
   my $device = $self->window_dev('default');
 
   # Replace $ with \$ for eval during obeyw()
   my $data = $startup;
   $data =~ s/\$/\\\$/g;  
  
-  # Configure port 0
-  $device = $self->config_region( WINDOW=>'default',REGION=>0);
+  # Configure region 0
+  $device = $self->select_region( WINDOW=>'default',REGION=>0);
   unless (defined $device) {
     orac_err("Error configuring display. Possible invalid region designation\n");
     return ORAC__ERROR;
@@ -388,18 +449,14 @@ sub configure {
 }
 
 
-=item config_region
+=item B<config_regions>
 
-This method configures the display regions.
+This method configures the display regions so that they can be
+selected later by select_region.
 
-  $device = $self->config_region(%opt);
+  $status = $self->config_regions($window);
 
-Returns undef without action if the REGION keyword is not available
-(since have no idea where to put it) or if REGION is not in the
-allowed range.  Otherwise the actual modified device name is returned.
-undef is returned if no arguments are supplied.
-
-If the window name is not supplied (WINDOW) then 'default' is assumed.
+A window name must be supplied.
 
 The regions are defined as follows:
 
@@ -414,35 +471,149 @@ The regions are defined as follows:
   8 - bottom
   17:32 - position in 4x4 grid (starting top left)
 
-Currently this routine is not very efficient since the region
-is defined every single time (rather than being defined once
-and then selected). This is especially true for the 4x4 grid -
-this is created every time (all 16 regions).
+The picture labels are stored in the regions() array.
 
 =cut
 
-sub config_region {
+sub config_regions {
+  my $self = shift;
+  return ORAC__ERROR unless @_;
+
+  my $window = shift;
+
+  my $device = $self->window_dev($window);
+
+  my ($status, %piclabels);
+
+  # First, we can create the regions that are setup
+  # one-by-one (ie not on a grid)
+  # Store the definitions in a hash, the key is the region label
+
+  my %regions = (
+		 0 => "cc [1,1]",
+		 5 => "cl [0.5,1.0]", 
+		 6 => "cr [0.5,1.0]",
+		 7 => "tl [1.0,0.5]", 
+		 8 => "bl [1.0,0.5]",
+		);
+
+  # Loop over the regions, running picdef and piclabel
+  foreach my $region (keys %regions) {
+    my $string = $regions{$region};
+
+    orac_print("Configuring AGI region $region with $string\n",'cyan') if $DEBUG;
+
+    # Configure with PICDEF
+    $status = $self->obj->obeyw("picdef","device=$device nocurrent nooutline $string");
+
+    last unless $status == ORAC__OK;
+
+    # Label it - name is ORACa_REGION
+    my $label = "ORAC0_$region";
+
+    $status = $self->obj->obeyw("piclabel","device=$device label=$label");
+    last unless $status == ORAC__OK;
+
+    # Store the label
+    $piclabels{$region} = $label;
+
+  }
+
+  # Now we can create the 2x2  and 4x4 grids
+  foreach my $n (2,4) {
+    my $nx = $n;
+    my $ny = $n;
+    my $ntot = $nx * $ny;
+
+    my $prefix = "ORAC${n}_";
+
+    orac_print("Configuring AGI database with $nx x $ny grid\n",'cyan') if $DEBUG;
+    $status = $self->obj->obeyw("picdef","device=$device nocurrent mode=a prefix=$prefix xpic=$nx ypic=$ny nooutline");
+
+    next unless $status == ORAC__OK;
+
+    # Successfully created the regions
+    # now need to store the labels in %piclabels remembering that
+    # the numbering starts at bottom-left for kappa but top-left
+    # for ORAC-DR
+
+    # The region number must be relative to some offset
+    # For 2x2 the numbering should start at 1, for 4x4 numbering
+    # should start at 17
+    my $offset = ($n == 2 ? 0 : 16);
+
+    for my $i (1..$ntot) {
+      orac_print("Looping $i..." ,'cyan') if $DEBUG;
+      # To map from bottom-left-corner to top-left you need
+      # ( N = number starting from top left)
+      
+      # KappaN = N - Ntotal - Nx + 
+      #                        2 * Nx * (Ny +1 - int( (N + Nx - 1) / Nx ))
+
+      my $kappan = $i - $ntot - $nx + ( 2 * $nx * ($ny + 1 - int(($i + $nx - 1)/ $nx)));
+
+      # Calculate the actual region number
+      my $region = $i + $offset;
+
+      # Store the label
+      $piclabels{$region} = "ORAC${n}_$kappan";
+
+      orac_print("Region $region : $piclabels{$region}\n",'cyan')
+	if $DEBUG;
+
+    }
+
+  }
+
+  # Store the labels (probably do not want to do this afresh for each window)
+  $self->regions(%piclabels);
+
+  # Status warning
+  if ($status != ORAC__OK) {
+    orac_err "Error occurred whilst configuring display device $device\n";
+  }
+
+  return $status;
+}
+
+
+=item B<select_region>
+
+Selects the requested region as the current region in the display
+system by using a supplied hash.
+
+  $device = $Display->select_region(%options);
+
+Returns undef without action if the REGION keyword is not available
+(since have no idea where to put it) or if REGION is not in the
+allowed range.  Otherwise the name of the device containing the selected
+region is returned. undef is returned if no arguments are supplied.
+
+If the window name is not supplied (WINDOW) then 'default' is assumed.
+
+=cut
+
+sub select_region {
   my $self = shift;
 
   return undef unless @_;
 
   my %options = @_;
 
-  my $port = undef;
+  my $region = undef;
 
   if (exists $options{REGION}) {
-    $port = $options{REGION};
-    orac_print("Region is $port\n",'cyan') if $DEBUG;
-    # Port must be an integer
-    if ($port !~ /^\d+$/) {
-      orac_err "Supplied region specification ($port) not an integer\n";
-      return undef;
-    }
-
+    $region = $options{REGION};
+    orac_print("Region is $region\n",'cyan') if $DEBUG;
   } else {
     return undef;
   }
 
+  # Port must be an integer
+  if ($region !~ /^\d+$/) {
+    orac_err "Supplied region specification ($region) not a positive integer\n";
+    return undef;
+  }
 
   # Find the Window name
   my $window = 'default';
@@ -452,71 +623,26 @@ sub config_region {
   # and convert it into a device id
   my $device = $self->window_dev($window);
 
-  # We now have a device and port number
-  # If the region number is less than 9 we use
-  # picdef on a specific region
-  # If it is between 17 and 32 we set up a big 4x4 array
-  # and select the required region with picsel
+  # Now need to select the requested region
 
-  my $status;
-  if ($port >= 0 && $port <= 8) {
-
-    # Construct the string that we send to PICDEF
-    my $string;
-
-    my @regions = (
-		   "cc [1,1]",
-		   "tl", "tr", "bl","br",
-		   "cl [0.5,1.0]", "cr [0.5,1.0]",
-		   "tl [1.0,0.5]", "bl [1.0,0.5]"
-		  );
-
-    # Set the string
-    $string = $regions[$port];
-
-    orac_print("Configuring AGI region $port with $string\n",'cyan') if $DEBUG;
-    # Configure with PICDEF
-    $status = $self->obj->obeyw("picdef","device=$device nocurrent outline $string");
-  
-  } elsif ($port >= 17 && $port <=32) {
-    # 4 x 4 grid
-
-    my $nx = 4;
-    my $ny = 4;
-    my $ntot = $nx * $ny;
-
-    orac_print("Configuring AGI region $port with $nx x $ny grid\n",'cyan') if $DEBUG;
-    $status = $self->obj->obeyw("picdef","device=$device nocurrent mode=a prefix=ORAC xpic=$nx ypic=$ny nooutline");
-
-    # Select the specified region
-    if ($status == ORAC__OK) {
-      # Need to subtract 16 from region number to convert to
-      # index number in 4x4 grid.
-      my $num = $port - 16;
-
-      # unfortunately we want to start at top left but
-      # kappa wants to start at bottom left
-      # We need to map this number to one starting at top left
-
-      # Mapping is ( N = number starting from top left)
-
-      # Kappa N = N - Ntotal - Nx + 
-      #                        2 * Nx * (Ny +1 - int( (N + Nx - 1) / Nx ))
-
-      my $kapn = $num - $ntot - $nx + ( 2 * $nx * ($ny + 1 - int(($num + $nx - 1)/ $nx)));
-
-      # Select the picture
-      $status = $self->obj->obeyw("picsel","ORAC$kapn device=$device");
-    }
-
-  } else {
-    orac_err "Region number ($port) outside allowed range\n";
+  # Check that the requested region is defined
+  unless (exists $self->regions->{$region} && defined $self->regions->{$region}) {
+    orac_err "Supplied region specification ($region) does not correspond to a defined region on the device\n";
     return undef;
-    
   }
 
+  # The mapping of region number to picture name is stored in
+  # the region() array
+  
+  my $picname = $self->regions->{$region};
+
+
+  # Now run PICSEL to select the picture
+  my $status = $self->obj->obeyw("picsel","$picname device=$device");
+
+  # Check status
   if ($status != ORAC__OK) {
-    orac_err("Error configuring region\n");
+    orac_err("Error selecting picture $picname (Region $region)\n");
     return undef;
   }
 
@@ -524,7 +650,8 @@ sub config_region {
 
 }
 
-=item select_section
+
+=item B<select_section>
 
 This method converts a file name and options hash into
 a filename with an attached NDF section.
@@ -939,7 +1066,7 @@ sub image {
   # Configure the display on the basis of REGION specifier
   # ..and return the selected device.
   # Return undef if something went wrong.
-  my $device = $self->config_region(%options);
+  my $device = $self->select_region(%options);
 
   # If device is now undef we have a problem
   unless (defined $device) {
@@ -995,13 +1122,14 @@ sub image {
 
   $status = $self->obj->resetpars;
   return $status if $status != ORAC__OK;
-  
+
   # Do the obeyw
   $status = $self->obj->obeyw("display", "device=$device in=$file axes clear=true $optstring accept");
   if ($status != ORAC__OK) {
     orac_err("Error displaying image\n");
     orac_err("Trying to execute: display device=$device axes clear=true $optstring in=$file\n");
   }
+
   return $status;
 
 }
@@ -1066,7 +1194,7 @@ sub graph {
   # Configure the display on the basis of REGION specifier
   # ..and return the selected device.
   # Return undef if something went wrong.
-  my $device = $self->config_region(%options);
+  my $device = $self->select_region(%options);
 
   # If device is now undef we have a problem
   unless (defined $device) {
@@ -1174,7 +1302,7 @@ sub contour {
   # Configure the display on the basis of REGION specifier
   # ..and return the selected device.
   # Return undef if something went wrong.
-  my $device = $self->config_region(%options);
+  my $device = $self->select_region(%options);
 
   # If device is now undef we have a problem
   unless (defined $device) {
@@ -1293,7 +1421,7 @@ sub sigma {
   # Configure the display on the basis of REGION specifier
   # ..and return the selected device.
   # Return undef if something went wrong.
-  my $device = $self->config_region(%options);
+  my $device = $self->select_region(%options);
 
   # If device is now undef we have a problem
   unless (defined $device) {
@@ -1487,7 +1615,7 @@ sub datamodel {
   # Configure the display on the basis of REGION specifier
   # ..and return the selected device.
   # Return undef if something went wrong.
-    my $device = $self->config_region(%options);
+  my $device = $self->select_region(%options);
 
   # If device is now undef we have a problem
   unless (defined $device) {
@@ -1613,7 +1741,6 @@ Default is for autoscaling and for NBINS=20.
 =cut
 
 sub histogram {
-
   my $self = shift;
  
   my $file = shift;
@@ -1629,7 +1756,7 @@ sub histogram {
   # Configure the display on the basis of REGION specifier
   # ..and return the selected device.
   # Return undef if something went wrong.
-  my $device = $self->config_region(%options);
+  my $device = $self->select_region(%options);
 
   # If device is now undef we have a problem
   unless (defined $device) {
@@ -1650,7 +1777,6 @@ sub histogram {
 
   my $status = $self->obj->resetpars;
   return $status if $status != ORAC__OK;
-
 
   # THIS IS THE HISTOGRAM SPECIFIC STUFF
 
@@ -1692,8 +1818,6 @@ sub histogram {
   }
 
   return $status;
-
-
 }
 
 
@@ -1734,7 +1858,7 @@ sub vector {
   # Configure the display on the basis of REGION specifier
   # ..and return the selected device.
   # Return undef if something went wrong.
-  my $device = $self->config_region(%options);
+  my $device = $self->select_region(%options);
 
   # If device is now undef we have a problem
   unless (defined $device) {
@@ -1792,6 +1916,10 @@ sub DESTROY {
 =head1 SEE ALSO
 
 L<ORAC::Display>, L<ORAC::Display::GAIA>
+
+=head1 REVISION
+
+$Id$
 
 =head1 AUTHORS
 
