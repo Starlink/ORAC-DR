@@ -36,7 +36,7 @@ use 5.006;
 require Exporter;
 @ISA = (Exporter);
 @EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist cosdeg
-	      sindeg dectodms deg2rad rad2deg is_numeric
+	      sindeg dectodms hmstodec deg2rad rad2deg is_numeric
 	    );
 
 use Carp;
@@ -100,6 +100,30 @@ sub dectodms {
 		int( ( $dec - $dms[ 0 ] ) * 60 ) ) * 60;
   if( $neg ) { $dms[0] *= -1 }
   return @dms;
+}
+
+=item B<hmstodec>
+
+Convert hours:minutes:seconds to decimal hours.
+
+  my $hms = "23:58:01.23";
+  my $dec = hmstodec($hms);
+
+=cut
+
+sub hmstodec {
+
+  my $string = shift;
+
+  $string =~ m/\s*(\d{1,2})[: ]([0-5]?\d)[: ]([0-5]?\d)(\.\d{1,3})?\s*/;
+
+  my $secs = (defined $4) ? $3+$4 : $3;
+  my $float = ($1+($2/60.0)+(($secs)/3600.0));
+  my $sign = ($string =~ m/^\s*-/ ) ? -1.0 : +1.0;
+  $float *= $sign;
+
+  return $float;
+
 }
 
 =item B<is_numeric>
@@ -324,6 +348,7 @@ $Id$
 
 Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt> and
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+Paul Hirst E<lt>p.hirst@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
