@@ -239,6 +239,20 @@ sub skynoupdate {
   return $self->{SkyNoUpdate};
 }
 
+=item standardnoupdate
+
+Stops standard object from updating itself with more recent data
+
+Used when using a command-line override to the pipeline
+
+=cut
+
+sub standardnoupdate {
+  my $self = shift;
+  if (@_) { $self->{StandardNoUpdate} = shift; }
+  return $self->{StandardNoUpdate};
+}
+
 =item bias
 
 Return (or set) the name of the current bias.
@@ -413,9 +427,30 @@ Return (or set) the name of the current standard.
 
 
 sub standard {
+
   my $self = shift;
-  if (@_) { $self->{Standard} = shift; }
-  return $self->{Standard};
+  if (@_) {
+    # if we are setting, accept the value and return
+    return $self->standardname(shift);
+  };
+
+  my $ok = $self->standardindex->verify($self->standardname,$self->thing);
+
+  # happy ending - frame is ok
+  if ($ok) {return $self->standardname};
+
+  croak("Override standard is not suitable! Giving up") if $self->standardnoupdate;
+
+  # not so good
+  if (defined $ok) {
+    my $standard= $self->standardindex->choosebydt('ORACTIME',$self->thing);
+    croak "No suitable standard frame was found in index file"
+      unless defined $standard;
+    $self->flatname($standard);
+  } else {
+    croak("Error in calibration checking - giving up");
+  };
+
 }
 
 =item darkindex 
@@ -506,6 +541,29 @@ sub skyindex {
 
 
   return $self->{SkyIndex}; 
+
+
+};
+
+=item standardindex 
+
+Return (or set) the index object associated with the standard index file
+
+=cut
+
+sub standardindex {
+
+  my $self = shift;
+  if (@_) { $self->{StandardIndex} = shift; }
+
+  unless (defined $self->{StandardIndex}) {
+    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.standard";
+    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.standard";
+    $self->{StandardIndex} = new ORAC::Index($indexfile,$rulesfile);
+  };
+
+
+  return $self->{StandardIndex}; 
 
 
 };
