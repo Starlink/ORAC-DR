@@ -1,0 +1,113 @@
+# -*-perl-*-
+
+# Obtain the USEVAR argument. Default to false.
+my $usevar = $_USTEP_JITTER_FLAT_STEER_{USEVAR};
+$usevar = defined( $usevar ) ? $usevar : 0;
+$Frm->uhdr( "USE_VARIANCE", $usevar );
+
+# Obtain the JITTER_POSITIONS argument. Use the
+# ORAC_NUMBER_OF_JITTER_POSITIONS internal header if the argument
+# is not defined, and if the header isn't defined, default to 9,
+# warning the user along the way.
+my $jitter_positions = $_USTEP_JITTER_FLAT_STEER_{JITTER_POSITIONS};
+if( ! defined( $jitter_positions ) ) {
+  $jitter_positions = $Frm->uhdr("ORAC_NUMBER_OF_JITTER_POSITIONS");
+}
+if( ! defined( $jitter_positions ) ) {
+  orac_warn "Number of jitter positions undefined. Defaulting to 9.\n";
+  $jitter_positions = 9;
+}
+orac_print " Steering: $jitter_positions positions in jitter pattern.\n";
+
+# Do the same for USTEP_POSITIONS.
+my $ustep_positions = $_USTEP_JITTER_FLAT_STEER_{USTEP_POSITIONS};
+if( ! defined( $ustep_positions ) ) {
+  $ustep_positions = $Frm->uhdr("ORAC_NUMBER_OF_MICROSTEP_POSITIONS");
+}
+if( ! defined( $ustep_positions ) ) {
+  orac_warn "Number of microstep positions undefined. Defaulting to 1.\n";
+  $ustep_positions = 1;
+}
+orac_print " Steering: $ustep_positions positions in microstep pattern.\n";
+
+# Number of total frames in one cycle is equal to the number
+# of jitter positions multiplied by the number of microsteps per
+# jitter position.
+my $number = $jitter_positions * $ustep_positions;
+
+# Specify the first frame in a jitter position as the frame whose
+# mode will be the reference for the normalization of frames taken
+# at that jitter position.
+if( ( $Grp->num % $ustep_positions ) == 0 &&
+    $ustep_positions != 1 ) {
+  $Frm->uhdr( "REFERENCE_FRAME_INTERLEAVE_MODE", 1 );
+  orac_print " Steering: This frame will be used as a reference for sky subtraction levels.\n";
+} else {
+  $Frm->uhdr( "REFERENCE_FRAME_INTERLEAVE_MODE", 0 );
+}
+
+# Set up mosaicking and end-of-cycle processing headers.
+if( ($Grp->num + 1) % $number == 0 ) {
+  $Frm->uhdr( "MAKE_MOSAIC", 1 );
+  orac_print " Steering: Will perform mosaicking after this frame's processing.\n";
+} else {
+  $Frm->uhdr( "MAKE_MOSAIC", 0 );
+}
+
+# Specify during processing when interleaving should be done.
+
+# Grab information from headers.
+my $number_of_microsteps = $Frm->hdr( "NUSTEP" );
+my $microstep_position = $Frm->hdr( "USTEP_I" );
+my $microstep_ra = $Frm->hdr( "USTEP_X" );
+my $microstep_dec = $Frm->hdr( "USTEP_Y" );
+
+# Grab pixelsize and rotation angle.
+my $pixelsize = $Frm->hdr( "PIXLSIZE" );
+my $rotation = $Frm->uhdr( "ORAC_ROTATION" );
+
+# A couple of useful constants.
+my $pi = atan2( 1, 1 ) * 4;
+my $dtor = $pi / 180.0;
+
+# Calculate the offset in X and Y, in pixels.
+my $pixoff_x = ( $microstep_ra * cos( $rotation * $dtor ) - $microstep_dec * sin( $rotation * $dtor ) ) / $pixelsize;
+my $pixoff_y = ( $microstep_ra * sin( $rotation * $dtor ) + $microstep_dec * cos( $rotation * $dtor ) ) / $pixelsize;
+
+# And set the user headers.
+$Frm->uhdr( "NUMBER_OF_MICROSTEPS", $number_of_microsteps );
+$Frm->uhdr( "MICROSTEP_POSITION", $microstep_position );
+$Frm->uhdr( "MICROSTEP_RA", $microstep_ra );
+$Frm->uhdr( "MICROSTEP_DEC", $microstep_dec );
+
+# Set up steering headers.
+if( ( $microstep_position % $number_of_microsteps ) == 0 &&
+    $number_of_microsteps != 1 ) {
+
+  $Frm->uhdr( "EQUALISE_SKY_BACKGROUND", 1 );
+  orac_print " Steering: Will equalise sky levels after this frame's processing.\n";
+  $Frm->uhdr( "INTERLEAVE_MICROSTEPS", 1 );
+  orac_print " Steering: Will interleave after this frame's processing.\n";
+} else {
+
+  $Frm->uhdr( "EQUALISE_SKY_BACKGROUND", 0 );
+  orac_print " Steering: Will not equalise sky levels after this frame's processing.\n";
+  $Frm->uhdr( "INTERLEAVE_MICROSTEPS", 0 );
+  orac_print " Steering: Will not interleave after this frame's processing.\n";
+}
+
+# Set "new pixel origin" headers
+$Frm->uhdr( "NEW_X_ORIGIN", nint( $pixoff_x * sqrt( $number_of_microsteps ) + 1 ) );
+$Frm->uhdr( "NEW_Y_ORIGIN", nint( $pixoff_y * sqrt( $number_of_microsteps ) + 1 ) );
+
+# Set origin shift for interleave mask.
+$Frm->uhdr( "MASK_X_ORIGIN", nint( $pixoff_x * sqrt( $number_of_microsteps ) ) % sqrt( $number_of_microsteps ) + 1 );
+$Frm->uhdr( "MASK_Y_ORIGIN", nint( $pixoff_y * sqrt( $number_of_microsteps ) ) % sqrt( $number_of_microsteps ) + 1 );
+#print "mask_x_origin: " . $Frm->uhdr("MASK_X_ORIGIN") . "\n";
+#print "mask_y_origin: " . $Frm->uhdr("MASK_Y_ORIGIN") . "\n";
+
+# Set an INTERLEAVED header to false, for future use with the mosaicking step.
+$Frm->uhdr( "INTERLEAVED", 0 );
+
+# Set the cycle number.
+$Frm->uhdr( "CYCLE_NUMBER", int( $Grp->num / $number ) );
