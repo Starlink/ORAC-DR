@@ -1,0 +1,95 @@
+# -*-perl-*-
+
+# This should only be performed on OBJECT frames.
+if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+     $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ) {
+
+# Obtain the number of frames in the jitter pattern.
+# ==================================================
+
+# The number of frames in a jitter pattern is equal to
+# the number of jitter positions (which is obtained from either
+# the JITTER_POSITIONS argument to this primitive or the
+# ORAC_NUMBER_OF_JITTER_POSITIONS user header) multiplied
+# by the number of microsteps per jitter position (obtained
+# from either the USTEP_POSITIONS argument or the
+# ORAC_NUMBER_OF_USTEP_POSITIONS user header).
+  my $jitter_positions = $_USTEP_JITTER_SELFFLAT_STEER_{JITTER_POSITIONS};
+  if( ! defined( $jitter_positions ) ) {
+    $jitter_positions = $Frm->uhdr("ORAC_NUMBER_OF_JITTER_POSITIONS");
+  }
+  if( ! defined( $jitter_positions ) ) {
+    orac_warn "Number of jitter positions undefined. Defaulting to 9.\n";
+    $jitter_positions = 9;
+  }
+
+  my $ustep_positions = $_USTEP_JITTER_SELFFLAT_STEER_{USTEP_POSITIONS};
+  if( ! defined( $ustep_positions ) ) {
+    $ustep_positions = $Frm->uhdr("ORAC_NUMBER_OF_USTEP_POSITIONS");
+  }
+  if( ! defined( $ustep_positions ) ) {
+    orac_warn "Number of microstep positions undefined. Defaulting to 1.\n";
+    $ustep_positions = 1;
+  }
+
+  my $number = $jitter_positions * $ustep_positions;
+
+# Set steering headers.
+# =====================
+
+# Obtain the USEVAR argument.  Default to false.
+  my $usevar = $_USTEP_JITTER_SELFFLAT_STEER_{USEVAR};
+  $usevar = defined( $usevar ) ? $usevar : 0;
+  $Frm->uhdr( "USE_VARIANCE", $usevar );
+
+# Specify the first frame as the frame whose mode will be the
+# reference for the normalisation of frames.
+  if ( $Grp->num == 0 ) {
+    $Frm->uhdr( "REFERENCE_FRAME", 1 );
+  } else {
+    $Frm->uhdr( "REFERENCE_FRAME", 0 );
+  }
+
+# Specify during processing of which frames should the flat be created,
+# flat-field creation with objects masked, a mosaic created, and
+# aperture photometry performed.
+  if ( ($Grp->num + 1) % $number == 0 ) {
+    $Frm->uhdr( "MAKE_FLAT", 1 );
+    $Frm->uhdr( "MAKE_MOSAIC", 1 );
+    $Frm->uhdr( "MASK_OBJECTS", 1 );
+    $Frm->uhdr( "DO_APHOT", 1 );
+    $Frm->uhdr( "CREATE_CATALOGUE", 1 );
+    $Frm->uhdr( "CALCULATE_SEEING_STATS", 1 );
+
+    if( defined( $Frm->uhdr( "ESTAR" ) ) && $Frm->uhdr( "ESTAR" ) ) {
+      $Frm->uhdr( "DO_ESTAR_TRIGGER", 1 );
+    } else {
+      $Frm->uhdr( "DO_ESTAR_TRIGGER", 0 );
+    }
+
+  } else {
+
+    $Frm->uhdr( "MAKE_FLAT", 0 );
+    $Frm->uhdr( "MAKE_MOSAIC", 0 );
+    $Frm->uhdr( "MASK_OBJECTS", 0 );
+    $Frm->uhdr( "DO_APHOT", 0 );
+    $Frm->uhdr( "CREATE_CATALOGUE", 0 );
+    $Frm->uhdr( "CALCULATE_SEEING_STATS", 0 );
+
+    $Frm->uhdr( "DO_ESTAR_TRIGGER", 0 );
+  }
+
+# Insert the cycle number of the set of NUMBER frames.
+  $Frm->uhdr( "CYCLE_NUMBER", int( $Grp->num / $number ) );
+
+# Insert the number of frames in the jitter.
+  $Frm->uhdr( "JITTER_NUMBER", $number );
+
+# All frames are target.  Some more-general primitives need to select 
+# targets from sky frames.
+  $Frm->uhdr( "TARGET_OR_SKY", "target" );
+
+# Set microstep headers.
+  _JITTER_AND_INTERLEAVE_HELLO_
+}
+
