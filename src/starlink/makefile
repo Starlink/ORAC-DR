@@ -428,7 +428,7 @@ PUBLIC_SCRIPTS =
 #  and environment variables.  It is listed separately from the public 
 #  scripts as it is edited by the installation procedure.
 
-STARTUP_SCRIPT = $(PKG_NAME)_start.csh 
+STARTUP_SCRIPT = $(PKG_NAME)_start.csh xoracdr_start.csh
 
 #  Lists of Latex and hypertext documents.
 
@@ -678,19 +678,21 @@ install:
         done
 #
 #  Edit the startup script so it knows where to find Perl and what the
-#  package number is.  The original is not preserve since the edited
+#  package number is.  The original is not preserve sinced the edited
 #  version is destroyed on deinstallation.
-	if [ -n "$(STARTUP_SCRIPT)" ] ; then \
-           if [ -f $(INSTALL_ORAC)/etc/$(STARTUP_SCRIPT) ] ; then \
-              (cd $(INSTALL_ORAC)/etc;\
-                  mv $(STARTUP_SCRIPT) tmp_$(STARTUP_SCRIPT);\
-                  sed -e s#PKG_VERS#$(PKG_VERS)#g \
-                      -e s#STAR_PERL#$(STAR_PERL)#g \
-                      tmp_$(STARTUP_SCRIPT) > $(STARTUP_SCRIPT);\
-                  chmod 644 $(STARTUP_SCRIPT);\
-                  rm -f tmp_$(STARTUP_SCRIPT));\
+	for f in $(STARTUP_SCRIPT) ""; do \
+	   if [ -n "$$f" ] ; then \
+              if [ -f $(INSTALL_ORAC)/etc/$$f ] ; then \
+                 (cd $(INSTALL_ORAC)/etc;\
+                     mv $$f tmp_$$f;\
+                     sed -e s#PKG_VERS#$(PKG_VERS)#g \
+                         -e s#STAR_PERL#$(STAR_PERL)#g \
+                         tmp_$$f > $$f;\
+                     chmod 644 $$f;\
+                     rm -f tmp_$$f);\
+              else :; fi;\
            else :; fi;\
-        else :; fi
+	done
 #
 #  Install the calibration data files from the source tar file.
 	for f in "$(CALLIBRATION_SOURCE)" ""; do \
