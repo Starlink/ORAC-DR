@@ -327,7 +327,7 @@ sub orac_determine_inst_classes {
   } elsif ($inst eq 'UIST') {
     $groupclass = "ORAC::Group::UIST";
     $frameclass = "ORAC::Frame::UIST";
-    $calclass = "ORAC::Calib::Michelle";
+    $calclass = "ORAC::Calib::UIST";
     $instclass = "ORAC::Inst::CGS4";
   } else {
     orac_err("Instrument $inst is not currently supported in ORAC-DR\n");
