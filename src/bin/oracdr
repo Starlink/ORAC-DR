@@ -45,8 +45,9 @@ use ORAC::Loop;     # Loop control
 use ORAC::Print;    # Printing messages or errors
 use ORAC::Core;     # Core pipeline routines
 use ORAC::Constants; # ORAC__OK et al
+use ORAC::Inst::Defn qw/ orac_determine_inst_classes /;
 
-# 
+#
 # general modules
 #
 use Getopt::Long;                       # command line arguments
@@ -76,69 +77,16 @@ unless (exists $ENV{ORAC_INSTRUMENT}) {
   exit;
 }
 
-my ($instrument, $groupobject, $instmodule, $frameobject, $calobject);
+my $instrument = uc($ENV{ORAC_INSTRUMENT});
 
-$instrument = uc($ENV{ORAC_INSTRUMENT});
+# Get class definitions for this instrument
+my ($frameclass, $groupclass, $calclass, $instclass) =
+  orac_determine_inst_classes( $instrument );
+die "Could not translate $instrument to class hierarchy"
+  unless defined $frameclass;
 
-if ($instrument eq 'IRCAM') {
-  $groupobject = "ORAC::Group::IRCAM";
-  $frameobject = "ORAC::Frame::IRCAM";
-  $calobject   = "ORAC::Calib::IRCAM";
-  $instmodule  = "ORAC::Inst::IRCAM";
-} elsif ($instrument eq 'IRCAM2') {
-  $groupobject = "ORAC::Group::IRCAM";
-  $frameobject = "ORAC::Frame::IRCAM2";
-  $calobject   = "ORAC::Calib::IRCAM";
-  $instmodule  = "ORAC::Inst::IRCAM";
-  $instrument  = 'IRCAM'; # to pick up IRCAM recipes
-} elsif ($instrument eq 'UFTI') {
-  $groupobject = "ORAC::Group::UFTI";
-  $frameobject = "ORAC::Frame::UFTI";
-  $calobject   = "ORAC::Calib::IRCAM";
-  $instmodule  = "ORAC::Inst::IRCAM";
-} elsif ($instrument eq 'UFTI2') {
-  $groupobject = "ORAC::Group::UFTI";
-  $frameobject = "ORAC::Frame::UFTI2";
-  $calobject   = "ORAC::Calib::IRCAM";
-  $instmodule  = "ORAC::Inst::IRCAM";
-  $instrument = 'UFTI';			# to pick UFTI recipes and primitives as they are
-} elsif ($instrument eq 'CGS4') {
-  $groupobject = "ORAC::Group::CGS4";
-  $frameobject = "ORAC::Frame::CGS4";
-  $calobject   = "ORAC::Calib::CGS4";
-  $instmodule  = "ORAC::Inst::CGS4";
-} elsif ($instrument eq 'SCUBA') {
-  $groupobject = "ORAC::Group::JCMT";
-  $frameobject = "ORAC::Frame::JCMT";
-  $calobject   = "ORAC::Calib::SCUBA";
-  $instmodule  = "ORAC::Inst::SCUBA";
-} elsif ($instrument eq 'MICHTEMP') {
-  $groupobject = "ORAC::Group::Michelle";
-  $frameobject = "ORAC::Frame::MichTemp";
-  $calobject = "ORAC::Calib::CGS4";
-  $instmodule = "ORAC::Inst::CGS4";
-} elsif ($instrument eq 'MICHELLE') {
-  $groupobject = "ORAC::Group::Michelle";
-  $frameobject = "ORAC::Frame::Michelle";
-  $calobject = "ORAC::Calib::CGS4";
-  $instmodule = "ORAC::Inst::CGS4";
-} else {
-  orac_err("Instrument $instrument is not currently supported in ORACDR\n");
-  exit;
-}
-
-
-# Read in the instrument specific modules
-eval "use $groupobject;";
-die "Error importing $groupobject:\n$@\n" if ($@);
-eval "use $frameobject;";
-die "Error importing $frameobject:\n$@\n" if ($@);
-eval "use $calobject;";
-die "Error importing $calobject:\n$@\n" if ($@);
-eval "use $instmodule;";
-die "Error importing $instmodule:\n$@\n" if ($@);
-
-
+# Create a new instrument object
+my $InstObj = new $instclass;
 
 
 #
@@ -294,14 +242,30 @@ my $orac_dir = $ENV{ORAC_DIR} . "/";	# main orac directory (contains bin)
 if (exists $ENV{ORAC_DATA_OUT}) {
 
   # change to output  dir
-  chdir($ENV{ORAC_DATA_OUT}) || 
+  chdir($ENV{ORAC_DATA_OUT}) ||
     do { 
       orac_err("Could not change directory to ORAC_DATA_OUT: $!");
       &orac_exit_normally;
     };
 
 } else {
-  orac_err("ORAC_DATA_OUT environment variable not set. Aborting");
+  orac_err("ORAC_DATA_OUT environment variable not set. Aborting\n");
+  &orac_exit_normally;
+}
+
+######################## Check Input Directory ##################
+
+if (exists $ENV{ORAC_DATA_IN}) {
+
+  unless (-d $ENV{ORAC_DATA_IN}) {
+
+    orac_err("ORAC_DATA_IN directory ($ENV{ORAC_DATA_IN}) does not exist. Aborting\n");
+    &orac_exit_normally;
+  }
+
+
+} else {
+  orac_err("ORAC_DATA_IN environment variable not set. Aborting\n");
   &orac_exit_normally;
 }
 
@@ -358,7 +322,7 @@ if ($log_options ne 's') {
   my @war_hdl = ();
 
   # Request for an X-window (experimental)
-  # Put this first so that we can fall back to 
+  # Put this first so that we can fall back to
   # using the screen if Tk is not found
   if ($log_options =~ /x/) {
     # Delay X-loading until now
@@ -473,7 +437,7 @@ if ($log_options ne 's') {
     print $logfh "\tUser name       : $ENV{USER}\n";
     print $logfh "\tPerl version    : $]\n";
     print $logfh "\tOperating System: $^O\n";
-    
+
     print $logfh "\nORAC-DR Arguments: ".join(" ",@ORAC_ARGS)."\n";
 
     print $logfh "\nSession:\n\n";
@@ -509,31 +473,31 @@ if ($log_options ne 's') {
 # This routine creates and initialies the message systems.
 # Also allows us to store the message objects since on
 # undef everything goes away
-my (@messys) = start_msg_sys($opt_nomsgtmp);
+my (@messys) = $InstObj->start_msg_sys($opt_nomsgtmp);
 
 ######################## A L G.   E N G I N E S #############################
 
 my %Mon;
 unless ($opt_noeng) {
-  
+
   # start algorithm engines
   #
   orac_print("Orac says: Starting up monoliths...","blue");
   #
-  
-  %Mon = start_algorithm_engines;
-  $status = wait_for_algorithm_engines;
-  
+
+  %Mon = $InstObj->start_algorithm_engines;
+  $status = $InstObj->wait_for_algorithm_engines;
+
   if ($status != ORAC__OK) {
     orac_err("Error contacting monoliths. Aborting.\n");
     MainLoop() if defined $MW;
     orac_exit_normally;
   }
-  
+
   orac_print ("Done\n","blue");
-  
+
 } else {
-  
+
   orac_print("Orac says: No algorithm engines will be started (-noeng option)\n","blue");
 
 }
@@ -591,14 +555,14 @@ foreach my $msg (@messys) {
 ######################## C A L I B R A T I O N #############################
 
 # Create calibration object
-my $Cal = new $calobject;
+my $Cal = new $calclass;
 
 #
 # Calibration frame overrides
 #
-  
+
 if (defined $opt_calib) {
-  
+
   my %calibs = parse_keyvalues($opt_calib);
 
   foreach my $key (keys %calibs) {
@@ -642,7 +606,7 @@ if (defined $opt_from) {
     # option is false.
 
     if ($opt_skip) {
-      my ($next, $high) = orac_check_data_dir($frameobject, $opt_from, 0);
+      my ($next, $high) = orac_check_data_dir($frameclass, $opt_from, 0);
 
       if (defined $high) {
 	@obs = ($opt_from..$high);
@@ -669,7 +633,7 @@ if (defined $opt_from) {
 
     orac_print "Starting at observation $opt_from and looping until no files available\n"
   }
- 
+
 } elsif (defined $opt_list) {
 
   @obs = parse_obslist($opt_list);
@@ -741,7 +705,7 @@ my $Override_Recipe = shift(@ARGV); # this will default to the RECIPE File metho
 #            - process frames
 
 #   Batch mode can be turned on with the -batch switch.
-#   
+#
 
 
 # Default is to process data in order of arrival
@@ -756,9 +720,9 @@ unless ($opt_batch) {
     # This will also configure the frame object
     # Turn off strict
     my $Frm;
-    {    
+    {
       no strict 'refs';
-      $Frm = &{$loop}($frameobject, $opt_ut, \@obs, $opt_skip);
+      $Frm = &{$loop}($frameclass, $opt_ut, \@obs, $opt_skip);
     }
 
     # If frame is undefined then we assume that the data loop
@@ -772,9 +736,9 @@ unless ($opt_batch) {
     $ORAC_MESSAGE = 'ORAC-DR reducing observation number ' . $fnumber;
     $orac_prt->errpre("#$fnumber Err: ");
     $orac_prt->warpre("#$fnumber Warning: ");
-  
+
     # Store the Frame in the Group
-    my $Grp = orac_store_frm_in_correct_grp($Frm, $groupobject, \%Groups, 
+    my $Grp = orac_store_frm_in_correct_grp($Frm, $groupclass, \%Groups,
 					    undef, $opt_ut, $opt_resume);
 
     # Actually process the observation
@@ -805,7 +769,7 @@ unless ($opt_batch) {
     my $Frm;
     {
       no strict 'refs';
-      $Frm = &{$loop}($frameobject, $opt_ut, \@obs, $opt_skip);
+      $Frm = &{$loop}($frameclass, $opt_ut, \@obs, $opt_skip);
     }
 
     # If frame is undefined then we assume that the data loop
@@ -813,9 +777,9 @@ unless ($opt_batch) {
     last unless defined $Frm;
 
     orac_print ("Storing: ".$Frm->raw."\n","yellow");
-  
+
     # Store the Frame in the Group
-    orac_store_frm_in_correct_grp($Frm, $groupobject, \%Groups, \@Groups, 
+    orac_store_frm_in_correct_grp($Frm, $groupclass, \%Groups, \@Groups, 
 				  $opt_ut, $opt_resume);
 
   }
@@ -1114,7 +1078,7 @@ Tim Jenness (t.jenness@jach.hawaii.edu)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research Council.
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research Council.
 All Rights Reserved.
 
 =cut
@@ -1123,6 +1087,9 @@ All Rights Reserved.
 
 
 # $Log$
+# Revision 1.85  2001/01/09 03:20:40  timj
+# Use the new ORAC::Inst::Defn and ORAC::Inst::InitMsg classes
+#
 # Revision 1.84  2000/08/09 11:39:42  frossie
 # New groups
 #
