@@ -30,9 +30,9 @@
 #
 #     Three FITS headers are written in each NDF: the observation number
 #     in OBSNUM, the group number in GRPNUM, and the number of offsets
-#     (number of group members plus one).  The group number is equated
-#     to the observation number when any of four main headers: object
-#     name, filter, exposure time, quadrant---changes value.
+#     (number of group members plus one) in NOFFSETS.  The group number
+#     is equated to the observation number when any of four main headers: 
+#     object name, filter, exposure time, quadrant---changes value.
 #     The group number is unchanged until the next group is located.
 #
 #     The script reports the input FITS file as it is processed, and its
