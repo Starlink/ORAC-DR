@@ -144,9 +144,12 @@ sub sel {
 Clone a new GAIA window and associate it with 'win'. This is different
 to launching a new display device (ie running up GAIA itself).
 
-  $status = $Display->create_dev($win);
+  $status = $Display->create_dev($win, $name);
 
-ORAC status is returned.
+For GAIA (V <= 2.3-2) the device name ($dev) must be an integer.
+(enforced if the newdev() method is used).
+
+ORAC status is returned. 
 
 =cut
 
@@ -154,6 +157,7 @@ sub create_dev {
 
   my $self = shift;
   my $win = shift;
+  my $name = shift;
 
   # We launch with the ORAC display image
   my $image = "$ENV{ORAC_DIR}/images/orac_start.sdf";
@@ -161,8 +165,11 @@ sub create_dev {
   # Need to clone from the default window (called default)
   my $base = $self->dev('default');
 
+  # With v2.3-2 of GAIA the automatic naming of clones does not
+  # work correctly so we must name them explicitly. Integers are expected.
   # Now clone the window and grab the result
-  my ($status, $clone) = $self->send_to_gaia("$base clone {} $image");
+  my ($status, $clone) = 
+    $self->send_to_gaia("$base noblock_clone $name $image");
 
   if ($status != ORAC__OK) {
     # Error
@@ -177,7 +184,6 @@ sub create_dev {
   # Wait for GAIA to configure itself
   # need the delay to prevent us sending the next request before
   # the gaia internals recognise the new clone
-  orac_warn "Sleeping.......\n";
   sleep 5;
 
   return ORAC__OK;
@@ -399,6 +405,29 @@ sub send_to_gaia {
 }
 
 
+=item B<newdev>
+
+Returns the name to be used for the new GAIA window based on the supplied
+window name.
+
+   $name = $obj->newdev($win);
+
+Currently, for gaia, the argument is ignored. The name is simply returned
+as an integer calculated from the number of devices already stored
+in the object.
+
+=cut
+
+sub newdev {
+  my $self = shift;
+
+  # New Window name is simply the number of keys ('default' is in twice)
+  # This allows us to name the clone
+  my $i = scalar ( keys %{ $self->dev } );
+
+  return $i;
+}
+
 =back
 
 =head1 DISPLAY METHODS
@@ -563,6 +592,11 @@ $Id$
 =head1 AUTHORS
 
 Tim Jenness (t.jenness@jach.hawaii.edu) and Casey Best (cbest@uvic.ca).
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
 
 =cut
 
