@@ -126,6 +126,22 @@ return(@recipe);
 
 #------------------------------------------------------------------------
 
+sub orac_parse_arguments {
+
+local($line) = shift(@_);
+
+($macro,my @arguments)=split(/\s+/,$line);
+
+%$macro = ();
+foreach $argument (@arguments) {
+  ($key,$value)=split("=",$argument);
+  $$macro{$key}=$value;
+};
+
+};
+
+#------------------------------------------------------------------------
+
 sub orac_parse_recipe {
   
   local(@recipe) = @_;
@@ -137,19 +153,21 @@ sub orac_parse_recipe {
 
     if ($line =~ /^\s*_/) {
       $line =~ s/^\s+//g;		# zap leading blanks
-      ($macro,@arguments)=split(/\s+/,$line);
+      ($macro,@rest)=split(/\s+/,$line);
       # read in primitive
       open(DICTIONARY,${main::dictionary_dir}.$macro) || 
 	croak "No translation for $line\n";    
       @lines = <DICTIONARY>;
       close(DICTIONARY);
+    $parse = join(" ",$macro,@rest);
+    push(@parsed,"orac_parse_arguments(\"$parse\");");
 
-      # store arguments
-      %$macro = ();
-      foreach $argument (@arguments) {
-        ($key,$value)=split("=",$argument);
-        $$macro{$key}=$value;
-      };
+#       # store arguments
+#       %$macro = ();
+#       foreach $argument (@arguments) {
+#         ($key,$value)=split("=",$argument);
+#         $$macro{$key}=$value;
+#       };
 
     push(@parsed,@lines);
     
