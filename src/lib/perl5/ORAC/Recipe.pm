@@ -926,9 +926,9 @@ Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>
 Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
-=cut
-
 =begin __HIDDEN__
+
+=cut
 
 package ORAC::Recipe::Execution;
 
