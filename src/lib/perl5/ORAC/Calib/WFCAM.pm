@@ -595,7 +595,7 @@ readnoise index file is defined.
 
 sub readnoise {
   my $self = shift;
-  my $nominal = 15.0;
+  my $nominal = 25.0;
 
   # Handle arguments
   return $self->readnoisecache(shift) if @_;
