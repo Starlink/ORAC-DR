@@ -268,7 +268,8 @@ sub orac_loop_wait {
   my $dot     = 1;     # Number of pauses for each dot printed
   my $npauses = 0;     # number of pauses so far (reset each time dot printed)
 
-  my $actual = File::Spec->catfile($ENV{ORAC_DATA_IN},"$fname");
+  # Get the full path to the filename
+  my $actual = _to_abs_path( $fname );
 
   my $old = 0;   # Initial size of the file
 
@@ -431,7 +432,8 @@ sub orac_loop_flag {
   my $dot     = 1;     # Number of pauses per dot
   my $npauses = 0;     # number of pauses so far (reset each time dot printed)
 
-  my @actual = map {File::Spec->catfile($ENV{ORAC_DATA_IN},$_)} @fnames;
+  # Get a full path to the flag files
+  my @actual = _to_abs_path( @fnames );
 
   my $old = 0;   # Initial size of the file
 
@@ -469,9 +471,8 @@ sub orac_loop_flag {
           $obsno = $next;
           $obsref->[0] = $obsno;  # And set the array value
 
-          # Create new filenames
-	  @actual = map { File::Spec->catfile( $ENV{ORAC_DATA_IN}, $_ ) }
-	                  $Frm->flag_from_bits($utdate, $next);
+          # Create new flag filenames
+	  @actual = _to_abs_path( $Frm->flag_from_bits($utdate, $next) );
 
           orac_print("Next available observation is number $obsno");
 
@@ -484,6 +485,7 @@ sub orac_loop_flag {
 
     # Sleep for a bit
     $timer += orac_sleep($pause);
+    $npauses++;
 
     # Return bad status if timer hits timeout
     if ($timer > $timeout) {
@@ -950,8 +952,8 @@ sub link_and_read {
   if( $flag ) {
 
     # Get the flagname(s).
-    @flagnames = map { File::Spec->catfile( $ENV{'ORAC_DATA_IN'}, $_ ) }
-      $Frm->flag_from_bits($ut, $num);
+    @flagnames = _to_abs_path( $Frm->flag_from_bits($ut, $num) );
+
   }
 
   # List for raw filenames.
@@ -1241,7 +1243,7 @@ sub _convert_and_link_nofrm {
     unless (-e $bname) {
 
       # Now check in the ORAC_DATA_IN directory to make sure it is there
-      unless (-e File::Spec->catfile($ENV{ORAC_DATA_IN}, $fname)) {
+      unless (-e _to_abs_path( $fname ) ) {
         orac_err("Requested file ($fname) can not be found in ORAC_DATA_IN\n");
         return ();
       }
