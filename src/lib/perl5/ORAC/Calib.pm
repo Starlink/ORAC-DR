@@ -77,6 +77,7 @@ sub new {
   $obj->{Rotation} = undef;
   $obj->{Arc} = undef;
   $obj->{Standard} = undef;
+  $obj->{Sky} = undef;
 
   $obj->{DarkIndex} = undef;
 
@@ -227,7 +228,19 @@ sub arc {
   my $self = shift;
   if (@_) { $self->{Arc} = shift; }
   return $self->{Arc};
-}
+};
+
+=item sky
+
+Return (or set) the name of the current "sky" frame
+
+=cut
+
+sub sky {
+  my $self = shift;
+  if (@_) { $self->{Sky} = shift; }
+  return $self->{Sky};
+};
 
 =item standard
 
