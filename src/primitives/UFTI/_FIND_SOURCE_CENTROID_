@@ -1,23 +1,70 @@
 # _FIND_SOURCE_CENTROID_
 #
-# Estimates the PSF of a standard star.
+# Finds the centroid of a point source within a box either centred or
+# displaced from the centre by the telescope offsets and optional
+# additional offsets.  The point source can be either positive or
+# negative with respect to the background level.
 #
 # TASK: KAPPA - CENTROID, NDFTRACE, STATS
 #
 # Exports:
 #    Reference to @CENTRE
-#  
+#
+#  Arguments:
+#     ANGLE = REAL (Given)
+#        Rotation angle of the Declination axis with respect to the
+#        frame's y axis measured counter clockwise.
+#     BOXSIZE = REAL (Given)
+#        The size in arcseconds of the search box in which to find the
+#        object's approximate position, using the brightest pixel. [5]
+#     POSITIVE = LOGICAL (Given)
+#        If 1 (true), the point source is positive, i.e. has values above
+#        the sky level.  If 0 (false), the point source is negative. [1]
+#     XOFF = REAL (Given)
+#        The approximate x pixel offset of the centroid of the point
+#        source to be measured with respect to the nominal position.
+#        The nominal position is the y centre of the array plus the
+#        x telescope offset.  (It's plus because R.A. increases with
+#        negative x.)  [0.0]
+#     YOFF = REAL (Given)
+#        The approximate y pixel offset of the centroid of the point
+#        source to be measured with respect to the nominal position.
+#        The nominal position is the y centre of the array minus the
+#        telescope offset.  [0.0]
 
 # This should only be performed on OBJECT frames.
     if ( $Grp->hdr( "OBSTYPE" ) eq "OBJECT" ) {
 
+# Process as positive or negative source.
+       my $positive = $_FIND_SOURCE_CENTROID_{POSITIVE};
+       $positive = defined( $positive ) ? $positive : 1;
+
+# Obtain the relative offsets of the point-source images.
+       my $rxoff = $_FIND_SOURCE_CENTROID_{XOFF};
+       $rxoff = defined( $rxoff ) ? $rxoff : 0.0;
+       my $ryoff = $_FIND_SOURCE_CENTROID_{YOFF};
+       $ryoff = defined( $ryoff ) ? $ryoff : 0.0;
+
+# Obtain the rotation angle in degrees.  The numeric default is UFTI
+# and time specific.  For (T)UFTI it should read the rotation angle from
+# the CROTA2 header.
+       my $defrot = $Frm->hdr( "CROTA2" );
+       $defrot = defined( $defrot ) ? $defrot : 0.0;
+       my $rotangle = ( $_FIND_SOURCE_CENTROID_{ANGLE} || $defrot );
+
 # Run a task to obtain details of the frame.
-       my $header = "ndf=".$Frm->file;
+       my $header = "ndf=" . $Frm->file;
        $Mon{"ndfpack_mon"}->obeyw("ndftrace", "$header");
 
 # Extract the bounds of the frame.
        (my $ORAC_STATUS, my @lbnd) = $Mon{"ndfpack_mon"}->get("ndftrace","lbound");
        ($ORAC_STATUS, my @ubnd) = $Mon{"ndfpack_mon"}->get("ndftrace","ubound");
+
+# Define some useful variables to apply the rotation matrix.
+       my $pi = atan2( 1, 1 ) * 4;
+       my $dtor = $pi / 180.0;
+       my $cosrot = cos( $rotangle * $dtor );
+       my $sinrot = sin( $rotangle * $dtor );
 
 # Find the mid points.
        my $xmid = nint( ( $lbnd[0] + $ubnd[0] ) / 2 );
@@ -27,17 +74,25 @@
        my $boxsize = ($_FIND_SOURCE_CENTROID_{BOXSIZE} || 5 );
 
 # Obtain the plate scale.
-       my $xpixelscale =  $Frm->hdr( "CDELT1" );
-       my $ypixelscale =  $Frm->hdr( "CDELT2" );
-       $pixelscale = sqrt ( $xpixelscale * $ypixelscale );
+       my $pixelscale =  $Frm->hdr( "PIXELSIZ" );
 
-# Obtain the approximate offsets.
-       my $xoff = $Frm->hdr( "TRAOFF" );
-       my $yoff = $Frm->hdr( "TDECOFF" );
+# Obtain the approximate (telescope) offsets.
+       my ( $xoffh, $yoffh );
+       if ( $Frm->hdr( "INSTRUME" ) =~ /^UFTI/ ) {
+          $xoffh = $Frm->hdr( "TRAOFF" ) + $rxoff;
+          $yoffh = $Frm->hdr( "TDECOFF" ) + $ryoff;
+       } else {
+          $xoffh = $Frm->hdr( "RAOFF" ) + $rxoff;
+          $yoffh = $Frm->hdr( "DECOFF" ) + $ryoff;
+       }
 
 # Convert to pixel offsets of the object in the Cartesian sense.
-       $xoff = $xoff / $xpixelscale;
-       $yoff = -1.0 * $yoff / $ypixelscale;
+       my $xoffs = $xoffh / $pixelscale;
+       my $yoffs = -1.0 * $yoffh / $pixelscale;
+
+# Apply the rotation matrix.
+       my $xoff = $xoffs * $cosrot - $yoffs * $sinrot;
+       my $yoff = $xoffs * $sinrot + $yoffs * $cosrot;
 
 # Derive the centre co-ordinates of the box.
        my $xcentre = int( $xmid + $xoff );
@@ -52,21 +107,44 @@
 # Locate the main object within a central box.
        $Mon{"kappa_mon"}->obeyw("stats", "$ndfsect");
 
+       my ( $hidden, @maxpos, @minpos, $ndfsect );
+       if ( $positive ) {
+
 # Extract the location of the maximum pixel bounds of the frame.
-       ($ORAC_STATUS, my @maxpos) = $Mon{"kappa_mon"}->get("stats","maxpos");
+          ($ORAC_STATUS, @maxpos) = $Mon{"kappa_mon"}->get("stats","maxpos");
 
 # Shift the search box to be centred on the highest value within the 
 # search box.
-       my $ndfsect = $Frm->file."($maxpos[0]~$pixbox,$maxpos[1]~$pixbox)";
+          $ndfsect = $Frm->file."($maxpos[0]~$pixbox,$maxpos[1]~$pixbox)";
 
 # Specify the other parameters for the CENTROID stage.
-       $header = "ndf=$ndfsect";
-       my $hidden = "mode=interface init=[$maxpos[0],$maxpos[1]] cosys=w"; 
+          $header = "ndf=$ndfsect";
+          $hidden = "mode=interface init=[$maxpos[0],$maxpos[1]] cosys=w"; 
 
 # Find the centroid of the object.  For the moment start the search at
 # the frame centre.  The standard position may be displaced from this,
 # and should be written to the headers.
-       $Mon{"kappa_mon"}->obeyw("centroid","$header $hidden");
+          $Mon{"kappa_mon"}->obeyw("centroid","$header $hidden");
+
+       } else {
+
+# Extract the location of the minimum pixel bounds of the frame.
+          ($ORAC_STATUS, @minpos) = $Mon{"kappa_mon"}->get("stats","minpos");
+
+# Shift the search box to be centred on the lowest value within the 
+# search box.
+          $ndfsect = $Frm->file."($minpos[0]~$pixbox,$minpos[1]~$pixbox)";
+
+# Specify the other parameters for the CENTROID stage.
+          $header = "ndf=$ndfsect nopositive";
+          $hidden = "mode=interface init=[$minpos[0],$minpos[1]] cosys=w"; 
+
+# Find the centroid of the object.  For the moment start the search at
+# the frame centre.  The standard position may be displaced from this,
+# and should be written to the headers.
+          $Mon{"kappa_mon"}->obeyw("centroid","$header $hidden");
+
+       }
 
 # Store the located centroid within a text file of the format PSF expects.
 # (There should be some rationalisation in KAPPA and CCDPACK to use
