@@ -270,12 +270,18 @@ hash.
   $tel = $Obs->("TELESCOP");
   $instrument = $Obs->("INSTRUME");
 
+Can also be used to set values in the header.
+
+  $Obs->("INSTRUME", "IRCAM");
+
 =cut
 
 sub hdr {
   my $self = shift;
 
   my $keyword = shift;
+
+  if (@_) { ${$self->header}{$keyword} = shift; }
 
   return ${$self->header}{$keyword};
 }
