@@ -1,125 +1,3 @@
-# -*- perl -*-
-
-#+
-# Name:
-# _FILL_BAD_PIXELS_
-#
-# Purpose:
-#    Fills bad pixels in an IFU frame
-#
-# Language:
-#    Perl5
-#
-# Description:
-#    This primitive takes an IFU frame with user headers giving the position 
-#    of each slice and use the Kappa FILLBAD routine to fill bad pixels with
-#    an estimated value. It is probably a good idea to do this before any 
-#    re-sampling which is likely to spread bad pixels.
-#
-#    The slices are all treated separately to prevent the introduction of 
-#    cross-talk from one slice to another when the value of a pixel near the
-#    edge of a slice is estimated.
-#
-# Notes:
-#    - This primitive is written for the UIST IFU.
-#    - The locations of the slices and the shifts which should be applied are
-#      obtained from the user headers IFU_start, IFU_end, IFU_xshift and
-#      IFU_yshift. Each of these is an array with an element for each slice
-#    - the number of slices should be in the IFU_slices user header.
-#    - The bad pixels in each slice are filled separately.
-#
-# Output Data:
-#    - The output frame is identical to the input frame except that bad pixels
-#      are filled by an estimated value.
-#    - Output frame has _fill suffix
-#
-# Tasks:
-#    kappa_mon: fillbad, paste
-#    ndfpack_mon: ndfcopy
-#
-# Authors:
-#    SPT: Stephen P. Todd (Edinburgh University/UKATC)
-#
-# Copyright:
-#    Copyright (C) 1998-2002 Particle Physics and Astronomy Research
-#    Council.  All Rights Reserved.
-#
-#-
-
-
-
-
-(my $in, my $out) = $Frm->inout( "_fill" );
-
-orac_print "Filling bad pixels.\n";
-
-
-# and create a temporary file
-my $tmp = new ORAC::TempFile;
-my $tmp_file = $tmp->file;
-my $tmp2 = new ORAC::TempFile;
-my $tmp_paste = $tmp2->file;
-
-
-# Get number of slices and check that the user headers have been defined 
-my $n_slices = $Frm->uhdr("IFU_slices");
-unless (defined $n_slices) {
-    die "uhdr IFU_slices undefined.\n" .
-	"This should probably have been written by _LOCATE_SLICES_.\n";
-}
-
-orac_print "Working on slice: "; 
-
-# Loop over all slices
-for my $n (0..($n_slices-1)) {
-    orac_print "$n, ";
-
-    # Find the start, end, xshift and yshift of each slice from the uhdr which 
-    # should have been written by _LOCATE_SLICES_ (and check that they're 
-    # defined).
-
-    my $ystart = $Frm->uhdr->{"IFU_start"}->[$n];
-    unless (defined $ystart) {
-	die "uhdr IFU_start[$n] undefined.\n" .
-	    "Something wrong in _LOCATE_SLICES_ ?\n";
-    }
-
-    my $yend = $Frm->uhdr->{"IFU_end"}->[$n];
-    unless (defined $yend) {
-	die "uhdr IFU_yend[$n] undefined.\n" .
-	    "Something wrong in _LOCATE_SLICES_ ?\n";
-    }
-
-    # Fill the bad pixels, copying the slice to temporary file
-    my $param = "in=$in(,$ystart:$yend) out=$tmp_file niter=6";
-    $Mon{"kappa_mon"}->obeyw( "fillbad", "$param" );
-
-
-    # If this is not the first slice then paste it onto what we've
-    # already got (stored in the other temporary file) and write it
-    # to $out.
-    if ($n > 0) { 
-        $param = "$tmp_paste $tmp_file out=$out title=ifu_data";
-        $Mon{"kappa_mon"}->obeyw("paste", "$param");
-
-	# Copy the current $out to $tmp_paste for use next time round.
-	$param = "in=$out out=$tmp_paste";
-        $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
-    } else {
-	# If it is the first slice then just copy it to $tmp_paste
-	# ready for use next time round and set $flag to true.
-        $param = "in=$tmp_file out=$tmp_paste";
-        $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
-    }
-}
-
-# Make display tidy
-orac_print "\n\n";
-
-# Set the output name
-$Frm->file( $out );
-
-
 # Podule
 # ======
 
@@ -194,5 +72,76 @@ Council.  All Rights Reserved.
 =cut
 
 
+(my $in, my $out) = $Frm->inout( "_fill" );
+
+orac_print "Filling bad pixels.\n";
+
+
+# and create a temporary file
+my $tmp = new ORAC::TempFile;
+my $tmp_file = $tmp->file;
+my $tmp2 = new ORAC::TempFile;
+my $tmp_paste = $tmp2->file;
+
+
+# Get number of slices and check that the user headers have been defined 
+my $n_slices = $Frm->uhdr("IFU_slices");
+unless (defined $n_slices) {
+    die "uhdr IFU_slices undefined.\n" .
+	"This should probably have been written by _LOCATE_SLICES_.\n";
+}
+
+orac_print "Working on slice: "; 
+
+# Loop over all slices
+for my $n (0..($n_slices-1)) {
+    orac_print "$n, ";
+
+    # Find the start, end, xshift and yshift of each slice from the uhdr which 
+    # should have been written by _LOCATE_SLICES_ (and check that they're 
+    # defined).
+
+    my $ystart = $Frm->uhdr->{"IFU_start"}->[$n];
+    unless (defined $ystart) {
+	die "uhdr IFU_start[$n] undefined.\n" .
+	    "Something wrong in _LOCATE_SLICES_ ?\n";
+    }
+
+    my $yend = $Frm->uhdr->{"IFU_end"}->[$n];
+    unless (defined $yend) {
+	die "uhdr IFU_yend[$n] undefined.\n" .
+	    "Something wrong in _LOCATE_SLICES_ ?\n";
+    }
+
+    # Fill the bad pixels, copying the slice to temporary file
+    #my $param = "in=$in(,$ystart:$yend) out=$tmp_file niter=6";
+    #$Mon{"kappa_mon"}->obeyw( "fillbad", "$param" );
+
+    my $param = "in=$in(,$ystart:$yend) out=$tmp_file box=[1,4] wlim=0.3";
+    $Mon{"kappa_mon"}->obeyw("block", "$param");
+
+    # If this is not the first slice then paste it onto what we've
+    # already got (stored in the other temporary file) and write it
+    # to $out.
+    if ($n > 0) { 
+        $param = "$tmp_paste $tmp_file out=$out title=ifu_data";
+        $Mon{"kappa_mon"}->obeyw("paste", "$param");
+
+	# Copy the current $out to $tmp_paste for use next time round.
+	$param = "in=$out out=$tmp_paste";
+        $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
+    } else {
+	# If it is the first slice then just copy it to $tmp_paste
+	# ready for use next time round and set $flag to true.
+        $param = "in=$tmp_file out=$tmp_paste";
+        $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
+    }
+}
+
+# Make display tidy
+orac_print "\n\n";
+
+# Set the output name
+$Frm->file( $out );
 
 
