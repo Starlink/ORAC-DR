@@ -187,15 +187,6 @@ sub findrecipe {
 
   my $recipe = $self->hdr('RECIPE');
 
-  # Check to see whether there is something there
-  # if not try to make something up
-  if ($recipe !~ /./) {
-
-      if ($self->hdr('OBJECT') eq 'DARK') {
-       $recipe = 'IRCAM_DARK';
-    }
-
-  } 
   return $recipe;
 
 
