@@ -1,0 +1,178 @@
+=head1 NAME
+
+REBIN_EM2_GROUP
+
+=head1 DESCRIPTION
+
+This group method combines scan map data taken with different chop
+throws and removes the dual beam signature using FFTs
+
+=head1 TASKS
+
+SURF: REBIN
+KAPPA: FOURIER, ADD, MULT
+
+=head1 OPTIONS
+
+Pixel size (in arcsec) [PIXEL_SIZE].
+Rebin method [REBIN_METHOD] - default LINEAR.
+
+=head1 NOTES
+
+This routine only runs for SCAN map observations using LO
+chops.
+
+Generates a sub group of data that matches the specified
+header values. This routine rebins ALL the subgroups even if 
+the groups have already been coadded. This is a bug for simplicity...
+
+The routine does not run unless 4 or 6 chop throw datasets are
+available. [Must be sets of identical chops with different
+PAs]
+
+When mosiacing the output map centre must be chosen such that
+all the data is visible. The easiest thing is simply to take 
+the average of all map centres used (inclufing MAP_X and MAP_Y).
+This is a pain if some are in RB and some in RJ.
+
+For the dual beam deconvolution to work the output images must 
+all be regridded to the same size. This means that the extent
+of the map (combined with the new map centre) must be calculated
+in terms of the output pixel size. REBIN does this already except
+that it wont keep everything fixed [ and if I choose a size that
+matches the default size then the source is not guaranteed
+to lie at the centre pixel of the regridded image].
+
+The following options are avialable
+
+  - Run REBIN with a single chop set but configure so that it 
+    doesnt actually rebin. The SIZE parameter can then be read
+    back.
+
+  - Run SCUBA2MEM and analyse the stats on the output data file.
+     - The problem is that SCUBA2MEM doesnt combine data.
+       Still need to work out the offsets between files myself.
+
+  - Given that we know the spread of map centres Ie the maximum
+    extent of the observation) and the size of each field that
+    was used we can make a good guess at the overall extent of the
+    final map.
+
+
+=cut
+
+
+# Need to decide whether we even want to process the data yet
+# Check that this is emerson 2 data
+if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
+    $Frm->hdr('CHOP_CRD') eq 'LO') {
+  
+  
+  # First need to get the groups grouped by matching header values.
+  
+  my @subgrps = $Grp->subgrps('CHOP_THR', 'CHOP_PA');
+  
+  
+  # Now should really go through and check that we have the
+  # correct subgrps
+  
+  # Do a 'noddy' test first
+  
+  
+  if (scalar(@subgrps) == 4 || scalar(@subgrps) == 6) {
+
+    #######################################33
+
+    #  CALCULATE MAP CENTRE from a SUBGRP
+
+    # CALCULATE EXTENT OF MAP
+
+    ########################################
+
+
+
+    
+    # calculate out_coords - the assumption is that
+    # That all members of the group were either in a fixed 
+    # coordinate frmae (RB or RJ) or a moving frame (PL)
+    my $outcoords = 'RJ';
+    $outcoords = 'PL' if $Frm->hdr('CENT_CRD') eq 'PLANET';
+    
+    # Read the input args
+    $method = ($_REBIN_GROUP_{REBIN_METHOD} || "gaussian");
+    $pixsize = ($_REBIN_GROUP_{PIXEL_SIZE} || "3.0");
+    
+    # We now have a group derived from $Grp but that only includes
+    # frames that are related.
+    
+    # Loop over subgroups
+    foreach $subgrp (@subgrps) {
+      
+      my $chop = $subgrp->frame(0)->hdr('CHOP_PA');
+      my $throw = $subgrp->frame(0)->hdr('CHOP_THR');
+      
+      orac_print "..processing Chop throw: $throw, PA: $chop\n";
+      
+      # Set a name for the group
+      $subgrp->file($Grp->file .'_'. $chop . '_' . $throw);  
+      
+      # Loop over the different sub-instruments
+      # in the current frame
+      
+      foreach $sub ($subgrp->subs) {
+	
+	orac_print("Combining data for sub $sub\n");
+	
+	# Now need to find all the input frames for this sub-instrument
+	# that are part of this group
+	
+	my @members = $subgrp->membernamessub($sub);
+	
+	# Have to generate an input text file for REBIN
+	# This is quite a general piece of code
+	# Might even be worth having a group method.
+	my $infile = "emregrid_$$.lis";
+	open (INPUT, "> $infile") || die "Error opening scratch file $!";
+	map { print INPUT "$_ 1 0 0\n"; } @members;
+	close INPUT;
+	
+	# Come up with an output name
+	$out = $subgrp->grpoutsub($sub);
+	
+	# Calculate the arguments 
+	# THIS INCLUDES SETTING THE MAP SIZE AND CENTRE
+	
+	# This is is similar to the normal _rebin_group_ now
+	$args = "REBIN_METHOD=$method PIXSIZE_OUT=$pixsize noloop";
+	
+	# Run rebin
+	# Need to reset the parameters so that the regridding parameters
+	# are not remembered. Also the size parameter is remembered.
+	$Mon{surf_mon}->resetpars;
+	$Mon{surf_mon}->obeyw("rebin","ref=$infile out=$out $args accept reset");
+	
+	# Remove the scratch file
+	unlink $infile;
+	
+	
+      }
+      
+    }
+    
+    
+    # Now we can just combine the existing subgroups (assuming we have 
+    # chosen the correct sizes
+    # and deconvolve the dual beam. 
+    
+    # Note this could be converted to a seaprate primitive (with some repetition
+    # of code to create the groups) but for now this is not very useful
+    # (the only point would be if people want to regrid the individual
+    # chops independent of removing the dual beam - which has its good points)
+    
+    # BBBLLAAAHHH
+    
+  }
+  
+  
+}
+    
