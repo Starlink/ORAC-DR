@@ -374,6 +374,11 @@ sub orac_determine_inst_classes {
     $frameclass = "ORAC::Frame::NIRI";
     $calclass = "ORAC::Calib::UIST";
     $instclass = "ORAC::Inst::NIRI";
+  } elsif ($inst eq 'NIRI2') {
+    $groupclass = "ORAC::Group::NIRI";
+    $frameclass = "ORAC::Frame::NIRI2";
+    $calclass = "ORAC::Calib::UIST";
+    $instclass = "ORAC::Inst::NIRI";
   } elsif ($inst eq 'CLASSICCAM') {
     $groupclass = "ORAC::Group::ClassicCam";
     $frameclass = "ORAC::Frame::ClassicCam";
@@ -552,7 +557,7 @@ sub orac_determine_recipe_search_path {
     push( @path, $imaging_root );
     push( @path, $spectro_root );
 
-  } elsif ($inst eq 'NIRI') {
+  } elsif ($inst eq 'NIRI' or $inst eq 'NIRI2') {
     push( @path, File::Spec->catdir( $root, "NIRI" ) );
     push( @path, File::Spec->catdir( $ifu_root, "NIRI" ) );
     push( @path, File::Spec->catdir( $imaging_root, "NIRI" ) );
@@ -703,7 +708,7 @@ sub orac_determine_primitive_search_path {
     push( @path, $spectro_root );
     push( @path, $general_root );
 
-  } elsif ($inst eq 'NIRI') {
+  } elsif ($inst eq 'NIRI' or $inst eq 'NIRI2') {
     push( @path, File::Spec->catdir( $root, "NIRI" ) );
     push( @path, File::Spec->catdir( $ifu_root, "NIRI" ) );
     push( @path, File::Spec->catdir( $imaging_root, "NIRI" ) );
@@ -873,6 +878,8 @@ sub orac_determine_loop_behaviour {
     } elsif( uc($instrument) eq 'IRCAM2' ) {
       $behaviour = 'flag';
     } elsif( uc($instrument) eq 'UIST' ) {
+      $behaviour = 'flag';
+    } elsif( uc($instrument) eq 'NIRI' || uc($instrument) eq 'NIRI2' ) {
       $behaviour = 'flag';
     }
 
@@ -1566,7 +1573,7 @@ sub orac_configure_for_instrument {
 
              last SWITCH; }
 	     
-     if ( $instrument eq "NIRI" ) {
+     if ( $instrument eq "NIRI" || $instrument eq "NIRI2" ) {
      
              # Instrument
              $ENV{"ORAC_INSTRUMENT"} = "NIRI";
