@@ -235,7 +235,7 @@ sub new {
   # Configure initial state - could pass these in with
   # the class initialisation hash - this assumes that I know
   # the hash member name
-  $self->rawfixedpart('_raw');
+  $self->rawfixedpart('');
   $self->rawsuffix('.fits');
   $self->rawformat('FITS');
   $self->format('NDF');
