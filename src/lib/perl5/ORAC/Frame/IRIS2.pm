@@ -51,7 +51,6 @@ my %hdr = (
            DETECTOR_READ_TYPE     => "METHOD",
            EQUINOX                => "EQUINOX",
            EXPOSURE_TIME          => "EXPOSED",
-           FILTER                 => "IR2_FILT",
            INSTRUMENT             => "INSTRUME",
            NUMBER_OF_EXPOSURES    => "CYCLES",
            NUMBER_OF_OFFSETS      => "NOFFSETS",
@@ -113,12 +112,12 @@ sub _to_GAIN {
 sub _to_OBSERVATION_MODE {
   my $self = shift;
   my $return;
-  if( $self->hdr->{IR2_SLIT} eq "OPEN1" ) {
-    $return = "imaging";
-  } else {
+  if( $self->hdr->{IR2_GRSM} =~ /^(SAP|SIL)/i ) {
     $return = "spectroscopy";
+  } else {
+    $return = "imaging";
   }
-  $return;
+  return $return;
 }
 
 sub _to_NSCAN_POSITIONS {
@@ -129,22 +128,40 @@ sub _to_SCAN_INCREMENT {
   1;
 }
 
+sub _to_FILTER {
+  my $self = shift;
+  my $return;
+
+  if( $self->hdr->{IR2_FILT} =~ /^hole12$/i ) {
+    $return = $self->hdr->{IR2_COLD};
+  } else {
+    $return = $self->hdr->{IR2_FILT};
+  }
+  $return =~ s/ //g;
+  return $return;
+}
+
 sub _to_GRATING_DISPERSION {
   my $self = shift;
   my $return;
 
   my $grism = $self->hdr->{IR2_GRSM};
-  my $filter = $self->hdr->{IR2_FILT};
+  my $filter;
+  if( $self->hdr->{IR2_FILT} =~ /^HOLE12$/i ) {
+    $filter = $self->hdr->{IR2_COLD};
+  } else {
+    $filter = $self->hdr->{IR2_FILT};
+  }
   $grism =~ s/ //g;
   $filter =~ s/ //g;
-  if ( $grism =~ /sapphire_240/i ) {
+  if ( $grism =~ /^(sap|sil)/i ) {
     if ( uc($filter) eq 'K' || uc($filter) eq 'KS' ) {
       $return = 0.000445;
     } elsif ( uc($filter) eq 'J' ) {
       $return = 0.000233;
     }
   }
-  $return;
+  return $return;
 }
 
 sub _to_GRATING_WAVELENGTH {
@@ -152,17 +169,22 @@ sub _to_GRATING_WAVELENGTH {
   my $return;
 
   my $grism = $self->hdr->{IR2_GRSM};
-  my $filter = $self->hdr->{IR2_FILT};
+  my $filter;
+  if($self->hdr->{IR2_FILT} =~ /^hole12$/i ) {
+    $filter = $self->hdr->{IR2_COLD};
+  } else {
+    $filter = $self->hdr->{IR2_FILT};
+  }
   $grism =~ s/ //g;
   $filter =~ s/ //g;
-  if ( $grism =~ /sapphire_240/i ) {
+  if ( $grism =~ /^(sap|sil)/i ) {
     if ( uc( $filter ) eq 'K' || uc( $filter ) eq 'KS' ) {
       $return = 2.222835;
     } elsif ( uc( $filter ) eq 'J' ) {
       $return = 1.205480;
     }
   }
-  $return;
+  return $return;
 }
 
 sub _to_UTEND {
