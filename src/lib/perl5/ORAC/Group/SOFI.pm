@@ -203,7 +203,8 @@ sub _to_OBSERVATION_TYPE {
    } elsif ( uc( $type ) eq "SKY,FLAT" || uc( $type ) eq "FLAT,SKY" ||
              uc( $cat ) eq "OTHER" ) {
       $type = "SKY";
-   } elsif ( uc( $type ) eq "LAMP,FLAT" || uc( $type ) eq "FLAT,LAMP" ) {
+   } elsif ( uc( $type ) eq "LAMP,FLAT" || uc( $type ) eq "FLAT,LAMP" ||
+             uc( $type ) eq "FLAT" ) {
       $type = "LAMP";
    } elsif ( uc( $type ) eq "LAMP" ) {
       $type = "ARC";
@@ -298,7 +299,7 @@ sub _to_RECIPE {
    } elsif ( $template eq "SOFI_img_cal_DomeFlats" ||
              $template eq "SOFI_img_cal_DomeFlats" ||
              $template eq "SOFI_img_cal_SpecialDomeFlats" ) {
-      $recipe = "SKY_FLAT_MASKED";
+      $recipe = "SKY_FLAT";
 
 # Imaging spectroscopy.  There appears to be no distinction
 # for flats from target, hence no division into POL_JITTER and
