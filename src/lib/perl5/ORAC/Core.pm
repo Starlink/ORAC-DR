@@ -158,13 +158,18 @@ sub orac_process_frame {
   # Line. Else use the one instructed by the frame.
   # This needs to be changed such that we override all recipes except for
   # calibrators
-  if ($frmrecipe !~ /./) {
+  
+  if (defined $OverRecipe) {
     $Recipe = $OverRecipe;
+    orac_print "Using recipe $Recipe specified on command-line\n";
   } else {
     $Recipe = $frmrecipe;
-  }
+    orac_print "Using recipe $Recipe read from header\n";
+  };
 
-  orac_print "Using recipe $Recipe\n";
+
+
+
 
   # Read in the selected recipe - note that this returns an array reference
   my $recipe_ref = orac_read_recipe($Recipe, $instrument);	# read recipe
