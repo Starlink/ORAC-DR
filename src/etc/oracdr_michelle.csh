@@ -62,6 +62,8 @@
 #  History:
 #     2001 March 3 (MJC):
 #        Original version based upon CGS4 equivalent.
+#     2001 November 27 (MJC):
+#        SUN number from reassigned 234 to 2132,236.  Added comments.
 
 #  Copyright:
 #     Copyright (C) 1998-2001 Particle Physics and Astronomy Research
@@ -69,47 +71,52 @@
 
 #-
 
-# orac things
-if !($?ORAC_DATA_ROOT) then
-    setenv ORAC_DATA_ROOT /ukirtdata
-endif
+# ORAC things.
+# ===========
 
-if !($?ORAC_CAL_ROOT) then
-    setenv ORAC_CAL_ROOT /ukirt_sw/oracdr_cal
-endif
+# Define root directories of data and calibration source.
+    if !( $?ORAC_DATA_ROOT ) then
+       setenv ORAC_DATA_ROOT /ukirtdata
+    endif
 
-if ($?ORAC_RECIPE_DIR) then
-    echo "Warning: resetting ORAC_RECIPE_DIR"
-    unsetenv ORAC_RECIPE_DIR
-endif
+    if !( $?ORAC_CAL_ROOT ) then
+       setenv ORAC_CAL_ROOT /ukirt_sw/oracdr_cal
+    endif
 
-if ($?ORAC_PRIMITIVE_DIR) then
-    echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unsetenv ORAC_PRIMITIVE_DIR
-endif
+# Remove private source directories from code search paths.
+    if ( $?ORAC_RECIPE_DIR ) then
+       echo "Warning: resetting ORAC_RECIPE_DIR"
+       unsetenv ORAC_RECIPE_DIR
+    endif
 
+    if ( $?ORAC_PRIMITIVE_DIR ) then
+       echo "Warning: resetting ORAC_PRIMITIVE_DIR"
+       unsetenv ORAC_PRIMITIVE_DIR
+    endif
 
-if ($1 != "") then
-    set oracut = $1
-else
-    set oracut = `date -u +%Y%m%d`
-endif
+# Set the UT date.
+    if ($1 != "") then
+       set oracut = $1
+    else
+       set oracut = `date -u +%Y%m%d`
+    endif
 
-set oracdr_args = "-ut $oracut"
+    set oracdr_args = "-ut $oracut"
 
-setenv ORAC_INSTRUMENT MICHELLE
-setenv ORAC_DATA_IN  $ORAC_DATA_ROOT/raw/michelle/$oracut
-setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/michelle/$oracut
-setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/michelle
+# Define input and output data, and calibration directories.
+    setenv ORAC_INSTRUMENT MICHELLE
+    setenv ORAC_DATA_IN  $ORAC_DATA_ROOT/raw/michelle/$oracut
+    setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/michelle/$oracut
+    setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/michelle
 
-# screen things
-setenv ORAC_PERSON mjc
-setenv ORAC_LOOP flag
-setenv ORAC_SUN  234
+# Define screen environment variables.
+    setenv ORAC_PERSON mjc
+    setenv ORAC_LOOP flag
+    setenv ORAC_SUN  232,236
 
-# Source general alias file and print welcome screen
-source $ORAC_DIR/etc/oracdr_start.csh
+# Source general alias file and print welcome screen.
+    source $ORAC_DIR/etc/oracdr_start.csh
 
-# Tidy up
-unset oracut
-unset oracdr_args
+# Tidy up.
+    unset oracut
+    unset oracdr_args
