@@ -55,7 +55,6 @@ my %hdr = (
             AIRMASS_START        => "AIRMASS",
             EXPOSURE_TIME        => "EXPTIME",
             FILTER               => "INGF1NAM",
-            GAIN                 => "GAIN",
             INSTRUMENT           => "DETECTOR",
             NUMBER_OF_EXPOSURES  => "COAVERAG",
             NUMBER_OF_READS      => "NUMREADS",
@@ -73,8 +72,8 @@ sub _to_DEC_SCALE {
 
 # Assumes either x-y scales the same or the y corresponds to
 # declination.
-   if ( exists $self->hdr->{CCDYPIXE} && exists $self->hdr->{INGPSCAL} ) {
-      $decscale = $self->hdr->{CCDYPIXE} * 1000.0 * $self->hdr->{INGPSCAL};
+   if ( exists $self->hdr->{ 1 }->{CCDYPIXE} && exists $self->hdr->{INGPSCAL} ) {
+      $decscale = $self->hdr->{ 1 }->{CCDYPIXE} * 1000.0 * $self->hdr->{INGPSCAL};
    }
    return $decscale;
 }
@@ -85,8 +84,8 @@ sub _to_RA_SCALE {
 
 # Assumes either x-y scales the same or the x corresponds to right
 # ascension, and right ascension decrements with increasing x. 
-   if ( exists $self->hdr->{CCDXPIXE} && exists $self->hdr->{INGPSCAL} ) {
-      $rascale = $self->hdr->{CCDXPIXE} * -1000.0 * $self->hdr->{INGPSCAL};
+   if ( exists $self->hdr->{ 1 }->{CCDXPIXE} && exists $self->hdr->{INGPSCAL} ) {
+      $rascale = $self->hdr->{ 1 }->{CCDXPIXE} * -1000.0 * $self->hdr->{INGPSCAL};
    }
    return $rascale;
 }
@@ -168,6 +167,15 @@ sub _to_EQUINOX {
       $equinox =~ s/[BJ]//;
    }
    return $equinox;
+}
+
+sub _to_GAIN {
+   my $self = shift;
+   my $gain = 4.1;
+   if ( exists $self->hdr->{ 1 }->{GAIN} ) {
+      $gain =  $self->hdr->{ 1 }->{GAIN};
+   }
+   return $gain;
 }
 
 sub _to_NUMBER_OF_OFFSETS {
