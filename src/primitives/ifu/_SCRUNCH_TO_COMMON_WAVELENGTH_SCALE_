@@ -37,7 +37,7 @@ are applied, and simultaneously straighten the spectra.
 =item *
 
 The wavelength range to which the frame should be scrunched is obtained
-from the grism data file returned by the calibration system.
+from the arlines.lis file used to wavelength clibrate the frame.
 
 =back
 
@@ -73,7 +73,6 @@ Council.  All Rights Reserved.
 
 # We're going to need some temporary files
 use ORAC::TempFile;
-use FileHandle;
 
 (my $in, my $out) = $Frm->inout( "_scr" );
  
@@ -86,27 +85,49 @@ my $numpix = 1024;
 
 
 
-# Determine the wavelength range required from the grism data file
+# Determine the wavelength range required from the arlines.lis file
+my $arlines_file = $ENV{ORAC_DATA_CAL} . "/" . $Cal->arlines; 
+orac_print "Getting wavelength range from $arlines_file \n";
 
-my $grism_file = $ENV{ORAC_DATA_CAL} . "/" . $Cal->grism;
-orac_print "Getting wavelength range from $grism_file \n";
+my $order;      # The order of the wavelength calibration
+my $fit = "";   # The coefficients as read from the arlines.lis file
+my @coeffs;     # The coefficients converted to a more useful form
 
-my $min;
-my $max;
+# Read the arlines.lis file
+open(my $file, $arlines_file) || die "Could not open $arlines_file \n";
+while (<$file>) {
+    # We are only interested in the bit after the Order of fit line really
+    if (defined $order) {
+	chomp;
+	$fit .= $_; 
+    }
 
-# And read the file looking for the line which begins Range:
-my $file = new FileHandle;
-open($file, $grism_file) || die "Could not open $grism_file \n";
-
-while (my $str = <$file>) {
-    next unless ($str =~ /^Range:\s(\d+)\s(\d+)/);
-    $min = $1;
-    $max = $2
+    # Find the order of the fit
+    if (/Order of fit:\s+(\d+)/) {$order = $1}
 }
 close $file;
 
-orac_print "Scrunching to $numpix pixels from $min to $max Angstroms.\n";
+# Substitute E for D in the scientific form numbers (Fortran->Perl)
+$fit =~ s/D/E/g;
 
+# Read the coefficients into @coeffs (in reverse order, as they appear
+# in the arlines.lis file)
+while ($fit =~ /(-? [\d\.]+ E[+-]\d\d)/gx) {push @coeffs, $1}
+
+# Use the coeficients to calculate the maximum and minimum wavelengths.
+# It seems to be useful to knock 100 Ang or so off each end of the range
+# otherwise Iscrunch doesn't behave very well
+my $min = 0;
+for my $n (0..$order) {$min += $coeffs[-1-$n] * 1024**$n;}
+
+$min = int($min) + 100;
+my $max = int($coeffs[-1]) - 100;
+
+# Check that min and max are the right way round (otherwise Iscrunch
+# does nothing).
+if ($min > $max) {($min, $max) = ($max, $min)}
+
+orac_print "Scrunching to $numpix pixels from $min to $max Angstroms.\n";
 
 # And scrunch it
 my $param = "image=$in file=$iarfile wstart=$min wend=$max bins=$numpix output=$out log=f linear=t density=f";
@@ -148,6 +169,8 @@ $Frm->file( $out );
 
 # And display it
 $Display->display_data($Frm) if defined $Display;
+
+
 
 
 
