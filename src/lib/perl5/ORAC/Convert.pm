@@ -256,13 +256,13 @@ sub convert {
   # intermediates for all formats. Simply make some specific conversion
   # routines to do the obvious conversions and worry about it later.
 
-  # Implement FITS2NDF
   if ($options{'IN'} eq 'FITS' && $options{'OUT'} eq 'NDF') {
+    # Implement FITS2NDF
     orac_print("Converting from FITS to NDF...\n");
     $outfile = $self->fits2ndf;
     orac_print("...done\n");
   } elsif ($options{'IN'} eq 'HDS' && $options{OUT} eq 'NDF') {
-    # Implement UKIRTio2HDS
+    # Implement HDS2NDF
     orac_print "Converting from HDS container to merged NDF...\n";
     $outfile = $self->hds2ndf;
     orac_print "...done\n";
@@ -271,6 +271,14 @@ sub convert {
     orac_print "Converting from UKIRT I/O files to HDS container...\n";
     $outfile = $self->UKIRTio2hds;
     orac_print "...done\n";
+  } elsif ($options{'IN'} eq 'GMOS' && $options{'OUT'} eq 'HDS') {
+    # Implement GMOS2HDS
+    # This is a hack - gmos file are multi-ext fits
+    # fits2ndf can actually handle this, given the right options
+    orac_print("Converting from GMOS ME-FITS to HDS...\n");
+    $outfile = $self->gmos2hds;
+    orac_print("...done\n");
+
   } else {
     orac_err "Error finding a conversion routine to handle $options{IN} -> $options{OUT}\n";
     return undef;
@@ -407,6 +415,70 @@ sub fits2ndf {
 
 }
 
+=item B<gmos2hds>
+
+Convert a GMOS multi-extension FITS file to an HDS container
+
+=cut
+
+sub gmos2hds {
+  my $self = shift;
+
+  my $name;
+  if (@_) {
+    $name = shift;
+  } else {
+    $name = $self->infile;
+  }
+
+  # Generate an outfile
+  # First Remove any suffices and retrieve the rootname
+  # basename requires us to know the extension if FITS, FIT, fit etc
+  my $out = (fileparse($name, '\..*'))[0];
+
+  # Fix up gemini file name scheme :-)
+  $out =~s/S/_/;
+
+  # We know that an HDS ends with .sdf -- append it.
+  my $ndf = $out . ".sdf";
+
+
+
+  # Check the output file name and whether we are allowed to
+  # overwrite it.
+  if (-e $ndf && ! $self->overwrite) {
+    # Return early
+    orac_warn "The converted file ($ndf) already exists - won't convert again\n";
+    return $ndf;
+  }
+
+  # Check to see if fits2ndf monolith is running
+  my $status = ORAC__ERROR;
+  if (defined $self->mon('fits2ndf')) {
+
+    # Do the conversion
+    my $extable="/export/data/phirst/oracdr_cal/gmos/extable.txt";
+    orac_print "Using extable: $extable\n";
+    $status = $self->mon('fits2ndf')->obeyw("fits2ndf","container=true encodings=FITS-IRAF extable=$extable in=$name out=$out profits=true fmtcnv=true");
+
+    # This leaves us with an invalid file as the HEADER doesn't contain a data array
+    $self->mon('figaro1')->obeyw("creobj", "type=ARRAY dims=0 object=$out.HEADER.DATA_ARRAY");
+    $self->mon('figaro1')->obeyw("creobj", "type=_REAL dims=2 object=$out.HEADER.DATA_ARRAY.DATA");
+
+    # Seems need to rename HEADER.FITS to HEADER.MORE.FITS
+    $self->mon('figaro1')->obeyw("creobj", "type=ARRAY dims=0 object=$out.HEADER.MORE");
+    $self->mon('figaro1')->obeyw("renobj", "source=$out.HEADER.FITS destin=$out.HEADER.MORE.FITS");
+
+  }
+
+  # Return the filename (append .sdf) if everything okay.
+  if ($status == ORAC__OK) {
+    return $ndf;
+  } else {
+    return undef;
+  }
+
+}
 
 =item B<UKIRTio2hds>
 
