@@ -1,0 +1,195 @@
+#+
+# Name:
+#    _GENERATE_OFFSETS_POL_
+#
+# Purpose:
+#    Finds the offsets between the e- and o-beam mosaics in a POL recipe.
+#
+# Description:
+#    This primitive finds the pixel offsets between the eight mosaics
+#    of the e- and o-beams at the four waveplate angles in a polarimetry
+#    recipe.  The mosaics are stored within a group, specified by a
+#    reference stored in the internal group header MOSAIC_GROUP.  The
+#    primitive itself forms a subgroup for the current cycle of the
+#    recipe.   The primitive then passes the sub-group to the
+#    _GENERATE_OFFSETS_ primitive to do the bulk of the work.
+#    Central-source matching derives the offsets.  Telescope offsets are
+#    not appropriate because both the e- and o-beam mosaics have the same
+#    telescope offsets, since they were derived from common frames.
+#
+# Language:
+#    Perl5
+#
+# Arguments:
+#    COMPLETE = REAL (Given)
+#       Completeness of matched features for registration between two 
+#       frames to be accepted.  It must be in the range 0.2 to 1.0. [0.4]
+#    MINPIX = INTEGER (Given)
+#       Minimum number of contiguous pixels above the PERCENTILE level
+#       to be considered a registration feature.  It must be at least 6.
+#       [15]
+#    PERCENTILE = REAL (Given)
+#       Percentile threshold for locating objects to register frames. 
+#       It must be in the range 75 to 99.9.  [98]
+#
+# Notes:
+#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
+#    in imaging mode.
+#    -  Processing only occurs for object and sky frames, and when 
+#    steering header REGISTER_IMAGES is true.
+#    -  The _GENERATE_OFFSETS_ argument CENTRAL_SOURCE is TRUE.
+#    Thus matching the centroids of a central source is attempted if
+#    automatic registration fails.  The OFFSET_TYPE argument is
+#    "beam-separation".  The POLARIMETRY flag is 1.
+#    -  Steering header CYCLE_NUMBER specifies the current cycle of
+#    the recipe.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Arguments
+# =========
+
+# Obtain the parameters for the detection.
+    my ( $complete, $minpix, $percentile );
+    $percentile = ( $_GENERATE_OFFSETS_POL_{PERCENTILE} || 98 );
+    $minpix = ( $_GENERATE_OFFSETS_POL_{MINPIX} || 15 );
+    $complete = ( $_GENERATE_OFFSETS_POL_{COMPLETE} || 0.4 );
+
+# Selection
+# =========
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ) {
+
+# Test whether or not it is time to register the eight images (two beams
+# at four waveplate positions).
+       my $combine = $Frm->uhdr( "REGISTER_IMAGES" );
+       if ( $combine ) {
+
+# Make a local $Grp containing just the mosaic images.
+          my $Grp = $Grp->uhdr( "MOSAIC_GROUP" );
+
+# Obtain the cycle number.  Default to zero if undefined, so that recipes
+# which do not support this feature will continue to work.
+          my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+          $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+# Select those members in the current cycle with the same waveplate angle.
+          my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+
+# Start a new Grp context.
+          {
+             my $Grp = $cycleGrp;
+
+# Generate the offsets
+# ====================
+
+# Call the generic primitive which does most of the work.  Use central
+# source as the primary method.  Use a larger box to minimise risk of not
+# being to use central-source offsets.  For polarimetry the box is less
+# likely to contain a secondary source, so enlarging should be safe.
+#
+# The e and o images at a given polarisation angle have different offsets
+# yet the telescope offsets are the same.  Therefore the last-resort
+# offsets come from the beam separations.  OFFSET_TYPE is only for
+# information messages; the POLARIMETRY flag is needed because it tells
+# the central-source detection to ignore the telescope offsets, as the
+# extracted regions adjust according to the telescope offsets.  We do not
+# want to add the offsets again when locating the central source. 
+#
+# The beam separations are set when the mosaic is created.  If this doesn't
+# prove satisfactory it may be possible to reset the origins of the mosaics
+# to give an approximation registration.
+             my $offset_type = "beam-separation";
+             _GENERATE_OFFSETS_ PERCENTILE=$percentile MINPIX=$minpix COMPLETE=$complete CENTRAL_SOURCE=TRUE BOXSIZE=8 OFFSET_TYPE=$offset_type POLARIMETRY=1
+
+# End of scope of local $Grp aka $cycleGrp.
+          }
+       }
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+GENERATE_OFFSETS_POL -- Finds the offsets between the e- and o-beam mosaics in a POL recipe.
+
+=head1 DESCRIPTION
+
+This primitive finds the pixel offsets between the eight mosaics
+of the e- and o-beams at the four waveplate angles in a polarimetry
+recipe.  The mosaics are stored within a group, specified by a
+reference stored in the internal group header MOSAIC_GROUP.  The
+primitive itself forms a subgroup for the current cycle of the
+recipe.   The primitive then passes the sub-group to the
+L<_GENERATE_OFFSETS_> primitive to do the bulk of the work.
+Central-source matching derives the offsets.  Telescope offsets are
+not appropriate because both the e- and o-beam mosaics have the same
+telescope offsets, since they were derived from common frames.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item COMPLETE = REAL (Given)
+
+Completeness of matched features for registration between two 
+frames to be accepted.  It must be in the range 0.2 to 1.0. [0.4]
+
+=item MINPIX = INTEGER (Given)
+
+Minimum number of contiguous pixels above the PERCENTILE level
+to be considered a registration feature.  It must be at least 6.
+[15]
+
+=item PERCENTILE = REAL (Given)
+
+Percentile threshold for locating objects to register frames. 
+It must be in the range 75 to 99.9.  [98]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UFTI, IRCAM, and Michelle in imaging mode.
+
+=item *
+
+Processing only occurs for object and sky frames, and when 
+steering header REGISTER_IMAGES is true.
+
+=item *
+
+The _GENERATE_OFFSETS_ argument CENTRAL_SOURCE is TRUE.
+Thus matching the centroids of a central source is attempted if
+automatic registration fails.  The OFFSET_TYPE argument is
+"beam-separation".  The POLARIMETRY flag is 1.
+
+=item *
+
+Steering header CYCLE_NUMBER specifies the current cycle of
+the recipe.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
