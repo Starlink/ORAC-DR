@@ -82,6 +82,7 @@ sub new {
   $obj->{Standard} = undef;
   $obj->{Sky} = undef;
   $obj->{ReadNoise} = undef;
+  $obs->{Emissivity} = undef;
 
   # Used in UIST IFU reduction
   $obj->{Arlines} = undef;
@@ -101,14 +102,16 @@ sub new {
   $obj->{StandardIndex} = undef;
   $obj->{ReadNoiseIndex} = undef;
   $obj->{BaseShiftIndex} = undef;
+  $obs->{EmissivityIndex} = undef;
 
   $obj->{DarkNoUpdate} = 0;
   $obj->{FlatNoUpdate} = 0;
-  #obj->{ArcNoUpdate} = 0;
+  $obj->{ArcNoUpdate} = 0;
   $obj->{BiasNoUpdate} = 0;
   $obj->{SkyNoUpdate} = 0;
   $obj->{ReadNoiseNoUpdate} = 0;
   $obj->{BaseShiftNoUpdate} = 0;
+  $obs->{EmissivityNoUpdate} = 0;
 
   bless($obj, $class);
 
