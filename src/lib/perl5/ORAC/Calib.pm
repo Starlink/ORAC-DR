@@ -105,7 +105,7 @@ sub new {
 
 Return (or set) the name of the current dark - no checking
 
-  $dark = $Cal->dark;
+  $dark = $Cal->darkname;
 
 
 =cut
@@ -115,6 +115,7 @@ sub darkname {
   if (@_) { $self->{Dark} = shift unless $self->darknoupdate; }
   return $self->{Dark};
 }
+
 
 =item dark
 
@@ -211,12 +212,30 @@ Return (or set) the name of the current bias.
 
 =cut
 
-
 sub bias {
   my $self = shift;
-  if (@_) { $self->{Bias} = shift; }
-  return $self->{Bias};
-}
+  if (@_) {
+    # if we are setting, accept the value and return
+    return $self->biasname(shift);
+  };
+
+  my $ok = $self->biasindex->verify($self->biasname,$self->thing);
+
+  # happy ending - frame is ok
+  if ($ok) {return $self->biasname};
+
+  croak("Override bias is not suitable! Giving up") if $self->biasnoupdate;
+
+  # not so good
+  if (defined $ok) {
+    $self->biasname($self->biasindex->choosebydt('ORACTIME',$self->thing));
+  } else {
+    croak("Error in calibration checking - giving up");
+  };
+};
+
+
+
 
 =item mask
 
@@ -249,6 +268,22 @@ sub rotation {
 }
 
 
+=item flatname
+
+Return (or set) the name of the current flat - no checking
+
+  $flat = $Cal->flatname;
+
+
+=cut
+
+sub flatname {
+  my $self = shift;
+  if (@_) { $self->{Flat} = shift unless $self->flatnoupdate; }
+  return $self->{Flat};
+}
+
+
 =item flat
 
 Return (or set) the name of the current flat.
@@ -260,9 +295,26 @@ Return (or set) the name of the current flat.
 
 sub flat {
   my $self = shift;
-  if (@_) { $self->{Flat} = shift; }
-  return $self->{Flat};
-}
+  if (@_) {
+    # if we are setting, accept the value and return
+    return $self->flatname(shift);
+  };
+
+  my $ok = $self->flatindex->verify($self->flatname,$self->thing);
+
+  # happy ending - frame is ok
+  if ($ok) {return $self->flatname};
+
+  croak("Override flat is not suitable! Giving up") if $self->flatnoupdate;
+
+  # not so good
+  if (defined $ok) {
+    $self->flatname($self->flatindex->choosebydt('ORACTIME',$self->thing));
+  } else {
+    croak("Error in calibration checking - giving up");
+  };
+};
+
 
 
 =item arc
@@ -287,8 +339,24 @@ Return (or set) the name of the current "sky" frame
 
 sub sky {
   my $self = shift;
-  if (@_) { $self->{Sky} = shift; }
-  return $self->{Sky};
+  if (@_) {
+    # if we are setting, accept the value and return
+    return $self->skyname(shift);
+  };
+
+  my $ok = $self->skyindex->verify($self->skyname,$self->thing);
+
+  # happy ending - frame is ok
+  if ($ok) {return $self->skyname};
+
+  croak("Override sky is not suitable! Giving up") if $self->skynoupdate;
+
+  # not so good
+  if (defined $ok) {
+    $self->skyname($self->skyindex->choosebydt('ORACTIME',$self->thing));
+  } else {
+    croak("Error in calibration checking - giving up");
+  };
 };
 
 =item standard
