@@ -152,8 +152,8 @@ sub emisindex {
   if( @_ ) { $self->{EmissivityIndex} = shift; }
 
   unless( defined $self->{EmissivityIndex} ) {
-    my $indexfile = $ENV{ORAC_DATA_OUT} . "/index.emis";
-    my $rulesfile = $ENV{ORAC_DATA_CAL} . "/rules.emis";
+    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.emis" );
+    my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.emis" );
     $self->{EmissivityIndex} = new ORAC::Index( $indexfile, $rulesfile );
   }
 
@@ -207,13 +207,13 @@ sub mask {
       # Nothing suitable, default to fallback position
       # Check that exists and be careful not to set this as the
       # maskname() value since it has no corresponding index enrty
-      my $defmask = $ENV{ORAC_DATA_CAL} . "/bpm";
+      my $defmask = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "bpm" );
 
       # If we're in spectroscopy mode, over-ride this to be bpm_sp
       # $uhdrref is a reference to the Frame uhdr hash
       my $uhdrref=$self->thingtwo;
       if ($uhdrref->{'ORAC_OBSERVATION_MODE'} eq 'spectroscopy') {
-	$defmask = $ENV{ORAC_DATA_CAL} . "/bpm_sp";
+	$defmask = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "bpm_sp" ) ;
       }
 
       return $defmask if -e $defmask . ".sdf";
@@ -261,9 +261,9 @@ sub _set_index_rules {
 
   # Prefix ORAC_DATA_CAL if required
   # This is non-portable (kluge)
-  $im = File::Spec->catfile($ENV{ORAC_DATA_CAL}, $im)
+  $im = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, $im )
     unless $im =~ /\//;
-  $sp = File::Spec->catfile($ENV{ORAC_DATA_CAL}, $sp)
+  $sp = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, $sp )
     unless $sp =~ /\//;
 
   # Get the current name of the rules file in case we don't need to
