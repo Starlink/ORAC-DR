@@ -148,6 +148,21 @@ sub calc_orac_headers {
   if (defined $time) {
     # Need to split on :
     my ($h,$m,$s) = split(/:/,$time);
+
+    # some times, we get a dodgy seconds value
+    # See eg 19970921_dem_0025.sdf
+    if ($s > 61) {
+      # get it from the HSTSTART
+      my $hst = $self->hdr('HSTSTART');
+      if (defined $hst) {
+	print "Got $hst\n";
+	my ($hh, $hm, $hs) = split(/:/, $hst);
+	$s = $hs;
+      } else {
+	# panic. Take the first 2 digits
+	$s = substr($s,0,2);
+      }
+    }
     $time = $h + $m/60 + $s/3600;
   } else {
     $time = 0;
@@ -854,13 +869,25 @@ $Id$
 
 =head1 AUTHORS
 
-Tim Jenness (t.jenness@jach.hawaii.edu)
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2005 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
