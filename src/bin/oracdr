@@ -7,6 +7,11 @@
 # check for starlink login
 # 
 
+# Predeclare subroutines that are read in after 
+# the standard perl pre-processing (ie modules included
+# via an eval)
+use subs qw(start_msg_sys start_algorithm_engines);
+
 use ORAC::Basic;
 
 &orac_exit_normally("No starlink login") unless exists $ENV{STAR_LOGIN};
@@ -17,21 +22,52 @@ use ORAC::Basic;
 use Carp;				# perl -MCarp=verbose for backtrace
 use Term::ANSIColor;			# color output
 use File::Copy;
+use Getopt::Long;                       # command line arguments
 
-# JAC and ORAC related modules
-use NDF;				# to access NDF headers
-use ORAC::Msg::ADAM::Control;		# messaging control for ADAM
-use ORAC::Msg::ADAM::Task;		# monolith control for ADAM
-use ORAC::Frame::UKIRT;			# Frame object methods
-use ORAC::Group::UKIRT;			# Group object methods
-use ORAC::Calib;			# Calibration object
+# Need to determine module list from the ORAC_INSTRUMENT
+# environment variable before we can include certain modules.
+
+# Simply exit if the environment variable is not set.
+unless (exists $ENV{ORAC_INSTRUMENT}) {
+  print colored("No intrument specified in \$ORAC_INSTRUMENT. Please set to one of IRCAM, CGS4, SCUBA\n",'red');
+  exit;
+}
+
+$instrument = uc($ENV{ORAC_INSTRUMENT});
+
+if ($instrument eq 'IRCAM') {
+  $groupobject = "ORAC::Group::UKIRT";
+  $frameobject = "ORAC::Frame::UKIRT";
+  $calobject   = "ORAC::Calib";
+  $instmodule  = "ORAC::Inst::IRCAM";
+  $primitives  = "primitives/";
+} elsif ($instrument eq 'SCUBA') {
+  $groupobject = "ORAC::Group::JCMT";
+  $frameobject = "ORAC::Frame::JCMT";
+  $calobject   = "ORAC::Calib::SCUBA";
+  $instmodule  = "ORAC::Inst::SCUBA";
+  $primitives  = "prim_scuba/";
+} else {
+  print colored("Instrument $instrument is not currently supported in ORACDR\n",'red');
+  exit;
+}
+
+
+# Read in the instrument specific modules
+eval "use $groupobject;";
+eval "use $frameobject;";
+eval "use $calobject;";
+eval "use $instmodule;";
+
+die "Error importing instrument specific modules\n" if ($@);
+
+
+
 #
 # command line arguments
 #
 
-use Getopt::Long;
-
-GetOptions("nodisplay","quiet!","dark=i","from=i","to=i","-ut=i","h");
+GetOptions("nodisplay","quiet!","dark=i","from=i","to=i","-ut=i","list=s","h");
 
 ($opt_h) && do {
 print qq|
@@ -56,11 +92,6 @@ exit;
 }
 ;
 
-#
-# create message system object
-
-$adam = new ORAC::Msg::ADAM::Control;
-
 
 # -nodisplay suppresses display,
 #
@@ -72,39 +103,40 @@ $|=1;					# make unbuffered
 #
 $SIG{'INT'} = \&orac_exit_abnormally;
 $SIG{'PIPE'} = \&orac_exit_abnormally;
+
 #
 # constants - for the module
 #
-$orac_dir = $ENV{ORAC_DIR};		# main orac directory (contains bin)
+$orac_dir = $ENV{ORAC_DIR} . "/";	# main orac directory (contains bin)
 $recipe_dir = $orac_dir."recipes/";	# recipes
-$dictionary_dir = $orac_dir."primitives/"; # primitives
+$dictionary_dir = $orac_dir . $primitives; # primitives
+
+
 #
 # constants - for the pipeline
 #
-$In = $ENV{ORAC_DATA_IN};		# source of data
+$In = $ENV{ORAC_DATA_IN} . '/';	# source of data
 $Out = $ENV{ORAC_DATA_OUT};	# data output
-$Cal = $ENV{ORAC_AUX};		# auxiliarry data (calibration etc)
+$CalDir = $ENV{ORAC_DATA_CAL};	# auxiliarry data (calibration etc)
 #
 
 chdir($Out);				# change to output  dir
 
-#
-#
-# various ADAM-related constants & parameters
-#
-# These will end up in the Orac::Messaging::ADAM module
-#
+# Start the messaging system(s) and initialise them
+# This routine creates and initialies the message systems.
+# Also allows us to store the message objects since on
+# undef everything goes away
+(@messys) = start_msg_sys;
 
+# Now we set our overrides to the messaging systems.
 
-$ENV{'HDS_SCRATCH'} = "/tmp";           # fix ndf2fits (etc ?)  "feature"
-$ENV{'ADAM_USER'} = "/tmp/adam$$";      # process-specific adam dir
+foreach my $msg (@messys) {
 
-$adam->init;
+  # -quiet option supresses Starlink non-error messages
+  ($opt_quiet) && ($msg->messages(0));
+  $msg->timeout(30);	# task timeout
 
-# -quiet option supresses Starlink non-error messages
-($opt_quiet) && ($adam->messages(0));
-$adam->timeout(30);	# task timeout
-
+}
 
 
 #
@@ -126,14 +158,10 @@ print colored ("ORAC says: Starting up monoliths...","blue");
 &orac_connect_display unless ($opt_nodisplay);
 #$Orac{Mon_p4} = new Starlink::ADAMTASK("33672p4",$ENV{CGS4DR_ROOT}."/p4");
 #$Mon{red4} = new Starlink::ADAMTASK("red4_$$",$ENV{CGS4DR_ROOT}."/red4");
-$Mon{photom_mon} = new ORAC::Msg::ADAM::Task("photom_mon_$$",$ENV{PHOTOM_DIR}."/photom_mon");
-$Mon{figaro1} = new ORAC::Msg::ADAM::Task("figaro1_$$",$ENV{FIG_DIR}."/figaro1");
-$Mon{ccdpack_red} = new ORAC::Msg::ADAM::Task("ccdpack_red_$$",$ENV{CCDPACK_DIR}."/ccdpack_red");
-$Mon{ccdpack_res} = new ORAC::Msg::ADAM::Task("ccdpack_res_$$",$ENV{CCDPACK_DIR}."/ccdpack_res");
-$Mon{ccdpack_reg} = new ORAC::Msg::ADAM::Task("ccdpack_reg_$$",$ENV{CCDPACK_DIR}."/ccdpack_reg");
-$Mon{kappa_mon} = new ORAC::Msg::ADAM::Task("kappa_mon_$$",$ENV{KAPPA_DIR}."/kappa_mon");
-$Mon{kappa_mon}->contactw;	# wait for last monolith
 #$Mon{red4}->obeyw("set_verbose","verbose=TRUE");
+
+%Mon = start_algorithm_engines;
+
 
 print colored ("Done\n","blue");
 #
@@ -141,27 +169,37 @@ print colored ("Done\n","blue");
 # Data detection loop goes here
 #------------------------------------------------------------------------
 #
-$Recipe = shift(@ARGV);			# this will default to the RECIPE File method
-#@objects=();
-#$isuffix = "";
-$Root = "ro".$opt_ut.'_';
-$Tail = ".sdf";
-$Groot = "rg".$opt_ut.'_';
-#$GFile = $Groot.$opt_from;
-#unlink ($GFile);
+$Recipe = shift(@ARGV);		# this will default to the RECIPE File method
 
-$Cal = new ORAC::Calib;
 
-# temprary fudge
-$Cal->dark("ro970815_9_bp_db");
+# Create calibration object
+$Cal = new $calobject;
 
-foreach $obsno ($opt_dark,$opt_from..$opt_to) {
+# temporary fudge
+$Cal->dark("ro970815_9_bp_db") if $instrument eq 'IRCAM';
+
+
+
+# Generate list of observation numbers to be processed
+ 
+if (defined $opt_from) {
+ 
+  @obs = $opt_from .. $opt_to;
+ 
+} elsif (defined $opt_list) {
+ 
+  @obs = split(",",$opt_list);
+ 
+}
+
+
+foreach $obsno (@obs) {
   #------------------------------------------------------------------------
   #
-  # %Orac holds key=value pairs relevant to data reduction
+
+  # Find the filename from the number
   #
-  
-  $File = $Root.$obsno.$Tail;		# temporary fudge
+  $File = file_from_num($opt_ut,$obsno);
   
   # temporary solution ? Create symbolic link in output directory
   # pointing to raw data file this or a similar strategy is needed to
@@ -172,13 +210,13 @@ foreach $obsno ($opt_dark,$opt_from..$opt_to) {
   # create Frame object (this also populates the header and so on)
   # file must be accessible from current directory by now
 
-  $Frm = new ORAC::Frame::UKIRT($File);
+  $Frm = new $frameobject($File);
   
   print colored ("REDUCING: ".$Frm->raw."\n","yellow");
   
   # query Frame for its group
   
-  $grpnum = $Frm->group;
+  $grpname = $Frm->group;
   
   # create a new group object and remove the previous file
   # unless such an object already exists
@@ -188,14 +226,17 @@ foreach $obsno ($opt_dark,$opt_from..$opt_to) {
   do {
     
 
-    $Grp = new ORAC::Group::UKIRT($grpnum);
-    $gfile = $Groot.$grpnum;		# temprary fudge
+    $Grp = new $groupobject($grpname);
+    $gfile = group_from_num($opt_ut, $obsno);
     $Grp->file($gfile);
     unlink($Grp->file);
-    $Groups{$grpnum} = $Grp;		# store group object
+    $Groups{$grpname} = $Grp;		# store group object
     print colored ("A new group ".$Grp->file." has been created\n","blue");
 
-  } unless (exists $Groups{$grpnum});
+  } unless (exists $Groups{$grpname});
+
+  # Select current group
+  $Grp = $Groups{$grpname};
 
   # push current Frame onto Group
 
@@ -234,6 +275,10 @@ foreach $obsno ($opt_dark,$opt_from..$opt_to) {
 #------------------------------------------------------------------------
 
 # $Log$
+# Revision 1.16  1998/05/08 18:41:13  timj
+# Remove instrument specific definitions.
+# Display is still hard-wired.
+#
 # Revision 1.15  1998/04/15 02:41:28  frossie
 # Move ams_init to appropriate place
 #
