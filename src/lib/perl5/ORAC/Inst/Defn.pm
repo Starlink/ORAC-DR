@@ -58,7 +58,7 @@ $DEBUG = 0;
   orac_messys_description
   orac_configure_for_instrument
   orac_list_generic_observing_modes
-  /;
+  orac_determine_loop_behaviour /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
@@ -582,6 +582,67 @@ sub orac_determine_initial_algorithm_engines {
   return @AlgEng;
 }
 
+=item B<orac_determine_loop_behaviour>
+
+This routine determines the default loop behaviour for a the instrument.
+It does so by determining if ORAC-DR is being run at UKIRT, JCMT, Hilo,
+or some other location, then returning a string for the specific loop
+behaviour.
+
+   orac_determine_loop_behaviour( $instrument );
+
+If the instrument is not SCUBA, CGS4, IRCAM, UFTI, or Michelle, or
+ORAC-DR is not being run at UKIRT, JCMT, or Hilo, then the loop behaviour
+will default to 'list'. This routine is meant to be called by xoracdr,
+and the return values are those listed in the loop options in that
+program.
+
+=cut
+
+sub orac_determine_loop_behaviour {
+
+  croak 'Usage: orac_determine_loop_behaviour( $instrument )'
+    unless scalar(@_) == 1 ;
+
+  my ( $instrument ) = @_;
+  my $dname = `domainname`;
+  my $behaviour = 'list'; # default value
+
+  if( $dname eq 'JAC.jcmt' ) {
+
+    if( uc($instrument) eq 'SCUBA' ) {
+      $behaviour = 'wait';
+    }
+
+  } elsif( $dname eq 'JAC.ukirt' ) {
+
+    if( uc($instrument) eq 'CGS4' ) {
+      $behaviour = 'flag';
+    } elsif( uc($instrument) eq 'IRCAM' ) {
+      $behaviour = 'flag';
+    } elsif( uc($instrument) eq 'UFTI' ) {
+      $behaviour = 'flag';
+    } elsif( uc($instrument) eq 'MICHELLE' ) {
+      $behaviour = 'flag';
+    } elsif( uc($instrument) eq 'UFTI2' ) {
+      $behaviour = 'flag';
+    } elsif( uc($instrument) eq 'IRCAM2' ) {
+      $behaviour = 'flag';
+    } elsif( uc($instrument) eq 'UIST' ) {
+      $behaviour = 'flag';
+    }
+  } elsif( $dname =~ "aat" ) {
+    if( uc($instrument) eq 'IRIS2' ) {
+      $behaviour = 'wait';
+    }
+  } elsif( $dname eq 'JAC.Hilo' ) {
+    $behaviour = 'list';
+  }
+
+  return $behaviour;
+
+}
+
 =item B<orac_configure_for_instrument>
 
 This routines configures the user environment (e.g. %ENV) for the instrument, 
@@ -643,6 +704,7 @@ sub orac_configure_for_instrument {
              if (Net::Domain->domainname =~ "ukirt"  ) {
                   $options->{"loop"} = "flag";
              }
+             $options->{"skip"} = 0;
 
              last SWITCH; }
 
@@ -679,7 +741,7 @@ sub orac_configure_for_instrument {
              if (Net::Domain->domainname =~ "ukirt"  ) {
                   $options->{"loop"} = "flag";
              }
-
+             $options->{"skip"} = 0;
              last SWITCH; }
 
      if ( $instrument eq "MICHELLE" ) {
@@ -715,6 +777,7 @@ sub orac_configure_for_instrument {
              if (Net::Domain->domainname =~ "ukirt"  ) {
                   $options->{"loop"} = "flag";
              }
+             $options->{"skip"} = 0;
 
              last SWITCH; }
 
@@ -750,6 +813,7 @@ sub orac_configure_for_instrument {
              if (Net::Domain->domainname =~ "ukirt"  ) {
                   $options->{"loop"} = "flag";
              }
+             $options->{"skip"} = 0;
 
              last SWITCH; }
 
@@ -786,6 +850,7 @@ sub orac_configure_for_instrument {
              if (Net::Domain->domainname =~ "ukirt"  ) {
                   $options->{"loop"} = "wait";
              }
+             $options->{"skip"} = 0;
 
              last SWITCH; }
 	     
@@ -936,6 +1001,7 @@ sub orac_configure_for_instrument {
              if (Net::Domain->domainname =~ "ukirt"  ) {
                   $options->{"loop"} = "flag";
              }           
+             $options->{"skip"} = 0;
 
              last SWITCH; }
 
@@ -971,6 +1037,7 @@ sub orac_configure_for_instrument {
              if (Net::Domain->domainname =~ "ukirt"  ) {
                   $options->{"loop"} = "flag";
              }
+             $options->{"skip"} = 0;
 
              last SWITCH; }
 
@@ -1003,6 +1070,7 @@ sub orac_configure_for_instrument {
              if (Net::Domain->domainname =~ "aat"  ) {
                   $options->{"loop"} = "wait";
              }
+             $options->{"skip"} = 0;
 
              last SWITCH; }
 
