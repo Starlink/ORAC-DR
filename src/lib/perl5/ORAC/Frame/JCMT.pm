@@ -337,6 +337,18 @@ sub findrecipe {
 
   if ($self->hdr('MODE') eq 'SKYDIP') {
     $recipe = 'SCUBA_SKYDIP';
+  } elsif ($self->hdr('MODE') eq 'NOISE') {
+    $recipe = 'SCUBA_NOISE';
+  } elsif ($self->hdr('MODE') eq 'POINTING') {
+    $recipe = 'SCUBA_POINTING';
+  } elsif ($self->hdr('MODE') eq 'PHOTOM') {
+    $recipe = 'SCUBA_STD_PHOTOM';
+  } elsif ($self->hdr('MODE') eq 'ALIGN') {
+    $recipe = 'SCUBA_STD_ALIGN';
+  } elsif ($self->hdr('MODE') eq 'MAP') {
+    if ($self->hdr('SAM_MODE') eq 'JIGGLE') {
+      $recipe = 'SCUBA_JIGMAP';
+    }
   }
 
   return $recipe;
@@ -384,6 +396,104 @@ sub inout {
 }
 
 
+=item num_files
+
+Number of files associated with the current state.
+This is in fact the number of files stored in files().
+Cf num().
+
+  $nfiles = $Frm->num_files;
+
+=cut
+
+sub num_files {
+
+  my $self = shift;
+  my $num = $#{$self->aref} + 1;
+  return $num;
+}
+
+=item gui_id
+
+Return the identification tag that will be used by the display
+system for comparison with a display definition file.
+
+This method accepts an argument that can be used to specify
+the ID associated with the nth file stored in the frame (
+max value is num_files(); counting starts at 1)
+
+The returned ID is therefore a combination of the file number
+and the suffix.
+
+For example, if the frame contains two files named
+
+  o36_lon_ext and o37_lon_ext
+
+The ID returned from N=1 will be  s1ext and when N=2: s2ext
+(ie sN for the sub instrument number followed by the final extension).
+The sub-instrument name is not used since that would result in
+having to setup a display device for each sub-instrument.
+
+THIS CONVENTION MAY CHANGE WITH USAGE.
+
+=cut
+
+sub gui_id {
+
+  my $self = shift;
+
+  my $num = 1;
+  if (@_) { $num = shift; }
+
+  # Retrieve the Nth file  (start counting at 1)
+  my $fname = $self->file($num);
+  
+  # Split on underscore
+  my (@split) = split(/_/,$fname);
+ 
+  return "s$num" . $split[-1];
+}
+
+
+=item calc_orac_headers
+
+This method calculates header values that are required by the
+pipeline by using values stored in the header.
+
+ORACTIME is calculated - this is the time of the observation in
+hours. Currently is UT.
+
+This method updates the frame header.
+Returns a hash containing the new keywords.
+
+=cut
+
+sub calc_orac_headers {
+  my $self = shift;
+
+  my %new = ();  # Hash containing the derived headers
+ 
+  # ORACTIME
+  my $time = $self->hdr('UTSTART');
+  if (defined $time) {
+    # Need to split on :
+    my ($h,$m,$s) = split(/:/,$time);
+    $time = $h + $m/60 + $s/3600;
+  } else {
+    $time = 0;
+  }
+
+  # Update the header
+  $self->hdr('ORACTIME', $time);
+ 
+  $new{'ORACTIME'} = $time;
+  return %new;
+
+
+
+}
+
+
 
 =back
 
@@ -414,7 +524,7 @@ sub files {
 =item aref
 
 Set or retrieve the reference to the array containing the members of the
-group.
+frame.
 
     $Obj->aref(\@files);
     $arrayref = $Obj->aref;
@@ -443,6 +553,8 @@ Return the number of files in a group minus one.
 This is identical to the $# construct.
 
   $number_of_files = $Obj->num;
+
+See also num_files()
 
 =cut
 
@@ -630,7 +742,6 @@ sub findwavelengths {
 
   return @filter;
 }
-
 
 
 =back
