@@ -101,6 +101,8 @@ sub findgroup {
     $amiagroup = 1;
   } elsif (!defined $self->hdr('GRPMEM')){
     $amiagroup = 1;
+  } else {
+    $amiagroup = 0;
   }
 
 #  if ($self->hdr('GRPMEM') !~/F/) {
