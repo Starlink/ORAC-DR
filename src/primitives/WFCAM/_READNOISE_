@@ -1,0 +1,67 @@
+=head1 NAME
+
+_READNOISE_
+
+=head1 DESCRIPTION
+
+Measures WFCAM readnoise off a group of DARK frames
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+=cut
+
+# oracdr will blow away the group file if this is the first frame
+# anyway (I think)
+
+my $groupfile = $Grp->file;
+my $filename = $Frm->file;
+
+# Casu return codes
+my ($retval, $errmsg);
+
+my $filelist = [$filename];
+
+orac_print "Assimilating $filename into statistics in $groupfile\n";
+
+$retval = cir_pixstats($filelist, 1, $groupfile, $errmsg);
+if ($retval != CIR_OK) {
+   orac_throw("CIR_PIXSTATS: Failed in _PIXSTATS_\n$errmsg\n");
+}
+
+my $num = 1 + $Grp->num;
+if ($num > 2) {
+
+   my $rnfile = "readnoise_" . $Grp->name . ".fit";
+
+   orac_print "Calculating readnoise in: $rnfile\n";
+   $retval = cir_imslice($groupfile, $rnfile, 4, $errmsg);
+   if ($retval != CIR_OK) {
+      orac_throw("CIR_IMSLICE: Failed in _READNOISE_\n$errmsg\n");
+   }
+
+   $retval = cir_imsqrt($rnfile, $errmsg);
+   if ($retval != CIR_OK) {
+      orac_throw("CIR_IMSQRT: Failed in _READNOISE_\n$errmsg\n"); 
+   }
+
+   my $gain = $Frm->hdr("GAIN");
+
+   $retval = cir_imdivk($rnfile, $gain, $errmsg);
+   if ($retval != CIR_OK) {
+      orac_throw("CIR_IMDIVK: Failed in _READNOISE_\n$errmsg\n");
+   }
+
+   my $mean=0;
+   my $sig=0;
+
+   $retval = cir_imavsig($rnfile, "", $mean, $sig, $errmsg);
+   if ($retval != CIR_OK) {
+      orac_throw("CIR_MEANSIG: Failed in _READNOISE_\n$errmsg\n");
+   }
+
+   orac_print("Readnoise is: $mean +- $sig electrons\n");
+
+}
+
