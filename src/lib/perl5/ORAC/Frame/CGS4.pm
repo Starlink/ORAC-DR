@@ -52,6 +52,7 @@ my %hdr = (
             DETECTOR_INDEX       => "DINDEX",
             DETECTOR_MODE        => "MODE",
             EXPOSURE_TIME        => "DEXPTIME",
+            GAIN                 => "DEPERDN",
             GRATING_DISPERSION   => "GDISP",
             GRATING_NAME         => "GRATING",
             GRATING_ORDER        => "GORDER",
