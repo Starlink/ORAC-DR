@@ -1,74 +1,70 @@
 # _MAKE_MOSAIC_
 #
-# Forms a flat-field. 
+# Forms a mosaic
 #
 # TASK: KAPPA - TRANJOIN; CCDPACK - TRANLIST, MAKEMOS
 #
 # This should only be performed on OBJECT frames.
-if ($Hdr{OBSTYPE} =~ /OBJECT/) {
+if ($Frm->hdr(OBSTYPE) =~ /OBJECT/) {
 
-# Can generate a mosaic when there are at least three
-# object frames.
-   if ($#objects + 1 > 2 ) {
+  # Can generate a mosaic when there are at least three
+  # object frames.
+  if ($Grp->num >= 2 ) {
 
-# User-accessible mapping and parameters
-      $user = "";
+    # User-accessible mapping and parameters
+    $user = "";
 
-# Form a list of input file names for CCDPACK tasks.
-      $isuffix = ($_MAKE_MOSAIC_{SUFFIX_IN} || "_fl");
-	@objflats = @objects;
-	grep($_.=$isuffix,@objflats);
-	$objlist = join(",",@objflats);
+    # Form a list of input file names for CCDPACK tasks.
+    # Need to generate an input list for TRNAJOIN and TRANNDF 
+    # and an output list using a hard-wired suffix of '_trn'
+    ($inref, $outref) = $Grp->inout('_trn');
 
-# Specify the other parameters for the TRANJOIN stage.
-      $hidden = "in2=${main::In}/ircam3_rotate2eq.transform dest=first"; 
+    # Convert list to comma separated list
+    $objlist = join(",", @$inref);
+    $outlist= join(",", @$outref);
 
-# Join the rotation transformation to each of the CCDPACK extensions.
-# The rotation transformation follows the shift-of-origin and is stored
-# in the '_fl' frame.  Unfortunately, CCDEDIT doesn't support joining
-# transformations, and KAPPA/TRANJOIN does operate on lists of files.
-# Write the input file names to the text files.
-      foreach $flatted (@objflats) {
-         $header = "in1=${flatted}.more.ccdpack.transform";
-         $Mon{"kappa_mon"}->obeyw("tranjoin","$header $user $hidden accept");
-         print "Command was: tranjoin $header $user $hidden accept\n";
-      }
+    # Specify the other parameters for the TRANJOIN stage.
+    $hidden = "in2=ircam3_rotate2eq.transform dest=first"; 
 
-      print "Orac says: rotation transformation joined\n";
+    # Join the rotation transformation to each of the CCDPACK extensions.
+    # The rotation transformation follows the shift-of-origin and is stored
+    # in the '_ff' frame.  Unfortunately, CCDEDIT doesn't support joining
+    # transformations, and KAPPA/TRANJOIN does operate on lists of files.
+    # Write the input file names to the text files.
+    foreach $flatted (@$inref) {
+      $header = "in1=${flatted}.more.ccdpack.transform";
+      $Mon{"kappa_mon"}->obeyw("tranjoin","$header $user $hidden accept");
+    }
 
-# Assign other parameters.
-      $isuffix = ($_MAKE_MOSAIC_{SUFFIX_IN} || "_fl");
-      $osuffix = ($_MAKE_MOSAIC_{SUFFIX_OUT} || "mos");
-      $header = "in='$objlist' out='*|$isuffix|_trn|'";
-      $hidden = "shape=specify lbound=[1,1] ubound=[256,256]";
+    print colored("Orac says: rotation transformation joined\n",'magenta');
 
-# Shift and resample the flat-field object frames.  Automatically
-# determines the bounds.  It takes the origin from the first object
-# frame.
-      $Mon{"ccdpack_reg"}->obeyw("tranndf","$header $user $hidden");
-      print "Command was: tranndf $header $user $hidden\n";
+    # Assign other parameters.
+    $osuffix = ($_MAKE_MOSAIC_{SUFFIX_OUT} || "mos");
+    $header = "in='$objlist' out='$outlist'";
+    $hidden = "shape=specify lbound=[1,1] ubound=[256,256]";
 
-      print "Orac says: frames $objlist resampled\n";
-      $Mon{"ccdpack_reg"}->control('par_reset');
+    # Shift and resample the flat-field object frames.  Automatically
+    # determines the bounds.  It takes the origin from the first object
+    # frame.
+    $Mon{"ccdpack_reg"}->obeyw("tranndf","$header $user $hidden");
 
-# Create a list of resampled frames.
-      @objtrn = @objflats;
-      grep ( s/$isuffix/_trn/, @objtrn );
-      $trnlist = join(",",@objtrn);
+    print colored ("Orac says: frames $objlist resampled\n",'magenta');
+    $Mon{"ccdpack_reg"}->control('par_reset');
 
-# Assign other parameters.  The scale might become a user parameter.
-      $header = "in='$trnlist' out='$main::Root$osuffix'";
-      $hidden = "zero scale";
+    # Assign other parameters.  The scale might become a user parameter.
+    # Presumably we should set the Grp output name when we construct
+    # $outname
+    $outname = $Grp->name . $osuffix;
+    $header = "in='$outlist' out='$outname'";
+    $hidden = "zero scale";
 
-# Make the mosaic correcting for differences in both scale and offset.
-      print "Command is: makemos $header $user $hidden\n";
-      $Mon{"ccdpack_reg"}->obeyw("makemos","$header $user $hidden");
+    # Make the mosaic correcting for differences in both scale and offset.
+    $Mon{"ccdpack_reg"}->obeyw("makemos","$header $user $hidden");
 
-# Create a list of resampled filenames.
-#      @objtrn = grep ( s/_trn/_trn.sdf/, @objtrn );
-#      unlink @objtrn;
+    # Set the group name
+    $Grp->file;
 
-      print "Orac says: mosaic $main::Root$osuffix formed\n";
-
-   };
-};
+    print colored ("Orac says: mosaic $outname formed\n",'magenta');
+    
+  }
+}

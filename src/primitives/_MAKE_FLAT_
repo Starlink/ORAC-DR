@@ -7,29 +7,61 @@
 # This should only be performed on OBJECT frames.
 if ($Frm->hdr(OBSTYPE) =~ /OBJECT/) {
 
-# Can generate a flat field and mosaic when there are at least three
-# object frames.
+  # Can generate a flat field and mosaic when there are at least three
+  # object frames.
    if ($Grp->num >= 2 ) {
 
-# Form a list of input file names for MAKEFLAT from the other members
-# of the group.
-      $objlist = join(",",$Grp->membernames);
+     # Form a list of input file names for MAKEFLAT from the other members
+     # of the group.
+     # This is not as obvious as it sounds since we are trying
+     # to do this by looking at the current file values for each Frame
+     # object in the loop. First time round everything is fine
+     # Second time round we realise that the previous frames now have
+     # the wrong names since they have been flatfielded etc.
+     # We now have to construct the input names from the 
+     
+     # In this simplistic approach I simply create the input
+     # Names from list of observation numbers that make up the group
+     # I compare this with the current frame name
+     # This really depends on the numbering convention since I
+     # dont want to replace a number in the utdate part of the string
 
-# Assign the other parameters.  Note that the dark and output flat are
-# hardwired for the moment.
+     # This will go into the Grp object at some point
+     # but for now assume UKIRT data names
+     
+     my @newnames = ();
+     foreach my $num ($Grp->membernumbers) {
+       my $current = $Frm->file;
+       my $oldnumber = $Frm->number;
+       # Change the first number
+       $current =~ s/_${oldnumber}_/_${num}_/;
+       push(@newnames, $current);
+     }
+     
+     # Now update membernames
+     $Grp->membernames(@newnames);
 
-      $out='flat'.$Grp->name;
-      $hidden = "method=median"; 
 
-# Median filter of the debiassed and dark-corrected object frames to
-# produce the flatfield.
-      $Mon{"ccdpack_red"}->obeyw("makeflat","in='$inlist' out=$out $hidden reset accept");
+     # Set up the object list assuming that everything in the
+     # Group members list contains the file pointer to pre-flatfielded
+     # data.
+     $objlist = join(",",$Grp->membernames);
 
-# set flat
+     # Assign the other parameters.  Note that the dark and output flat are
+     # hardwired for the moment.
 
-$Cal->flat($out);
+     $out='flat'.$Grp->name;
+     $hidden = "method=median"; 
 
-#
-      print colored ("Orac says: frames $objlist used to make flat\n",'magenta');
-   };
-};
+     # Median filter of the debiassed and dark-corrected object frames to
+     # produce the flatfield.
+     $Mon{"ccdpack_red"}->obeyw("makeflat","in=\'$objlist\' out=$out $hidden reset accept");
+     
+     # set flat
+     
+     $Cal->flat($out);
+     
+     #
+     print colored ("Orac says: frames $objlist used to make flat\n",'magenta');
+   }
+ }
