@@ -43,21 +43,30 @@ that it wont keep everything fixed [ and if I choose a size that
 matches the default size then the source is not guaranteed
 to lie at the centre pixel of the regridded image].
 
-The following options are avialable
+The following options are avialable:
 
-  - Run REBIN with a single chop set but configure so that it 
-    doesnt actually rebin. The SIZE parameter can then be read
-    back.
+=over 4
 
-  - Run SCUBA2MEM and analyse the stats on the output data file.
-     - The problem is that SCUBA2MEM doesnt combine data.
-       Still need to work out the offsets between files myself.
+=item 
 
-  - Given that we know the spread of map centres Ie the maximum
-    extent of the observation) and the size of each field that
-    was used we can make a good guess at the overall extent of the
-    final map.
+Run REBIN with a single chop set but configure so that it 
+doesnt actually rebin. The SIZE parameter can then be read
+back.
 
+=item
+
+Run SCUBA2MEM and analyse the stats on the output data file.
+The problem is that SCUBA2MEM doesnt combine data.
+Still need to work out the offsets between files myself.
+
+=item
+
+Given that we know the spread of map centres Ie the maximum
+extent of the observation) and the size of each field that
+was used we can make a good guess at the overall extent of the
+final map.
+
+=back
 
 =cut
 
@@ -72,49 +81,264 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
   
   my @subgrps = $Grp->subgrps('CHOP_THR', 'CHOP_PA');
   
+  # Read the input args
+  $method = ($_REBIN_GROUP_{REBIN_METHOD} || "gaussian");
+  $pixsize = ($_REBIN_GROUP_{PIXEL_SIZE} || "3.0");
+
+
   
   # Now should really go through and check that we have the
   # correct subgrps
   
   # Do a 'noddy' test first
+
+  # This should check that there are 4 or 6 subgroups
+  # but also that each subgrp contains the same number
+  # of images.
+  # Check the frame counts
+  $test = 1;
+  $n = $subgrps[0]->num;
+  foreach $member (@subgrps) {
+    if ($member->num != $n) {
+      $test = 0;
+      last;
+    }
+  }
+  $test = 0 unless (scalar(@subgrps) == 4 || scalar(@subgrps) == 6);
   
-  
-  if (scalar(@subgrps) == 4 || scalar(@subgrps) == 6) {
+  # Check the test.
+  if ($test) {
 
-    #######################################33
+    $^W = 1;
 
-    #  CALCULATE MAP CENTRE from a SUBGRP
-
-    # CALCULATE EXTENT OF MAP
-
-    ########################################
-
-
-
-    
     # calculate out_coords - the assumption is that
     # That all members of the group were either in a fixed 
     # coordinate frmae (RB or RJ) or a moving frame (PL)
-    my $outcoords = 'RJ';
+    my $outcoords = $Frm->hdr('CENT_CRD');
     $outcoords = 'PL' if $Frm->hdr('CENT_CRD') eq 'PLANET';
+
+
+    #######################################
+
+    #  CALCULATE MAP CENTRE from a SUBGRP
+
+    # Need to go through all members of the first group
+    # and take an average of all the LONG and LATs
+    # Will then use that as the centre of the mosaic
+
+    if ($outcoords ne 'PL') {
+      # PL does not have a map centre
+
+      # If there is only one member of the group then
+      # we dont need to do this!
+
+      if ($subgrps[0]->num > 0) {
+
+	my $latsum = 0.0;
+	my $longsum = 0.0;
+	my $count = 0;
+	foreach my $member ($subgrps[0]->members) {
+
+	  # Read centre (ignore centre coords!)
+	  my $long = $member->hdr('LONG');
+	  my $lat = $member->hdr('LAT');
+
+	  # Convert to decimal
+	  # Shoule either have a global sub for this or should
+	  # use the SLA routine
+	  my @long = split(':',$long);
+	  my @lat = split(':',$lat);
+	
+	  my $dlat = $lat[0] + ($lat[1]/60) + ($lat[2]/3600);
+	  my $dlong = $long[0] + ($long[1]/60) + ($long[2]/3600);
+
+	  $longsum += $dlong;
+	  $latsum  += $dlat;
+	  $count++;
+	}
+
+	# Assume that we cant get to here unless there is a member in the
+	# group! (ie count > 0)
+
+	# Calculate the average
+	$latsum /= $count;
+	$longsum /= $count;
+
+	# Convert back to a string for rebin
+	my $dec2deg = sub {
+	  # This is a pain - use SLALIB!
+	  my $num = shift;
+	  my $hour = int($num);
+	  my $minute = int(($num-$hour) * 60.0);
+	  my $sec = 3600 * ($num - ($hour + ($minute / 60))) ;
+	  return ($hour, $minute, $sec);
+	};
+
+	$outlong = join(" ",&$dec2deg($longsum));
+	$outlat = join(" ",&$dec2deg($latsum));
+      
+
+      } else {
+	# Just copy the variable
+	$outlong = $subgrps[0]->frame(0)->hdr('LONG');
+	$outlat = $subgrps[0]->frame(0)->hdr('LAT');
+
+	# Replace : with a space
+	$outlong =~ s/:/ /g;
+	$outlat =~ s/:/ /g;
+
+
+      }
+
+    }
+
+
+    print "*********OUTLONG: $outlong OUTLAT: $outlat **********\n";
     
-    # Read the input args
-    $method = ($_REBIN_GROUP_{REBIN_METHOD} || "gaussian");
-    $pixsize = ($_REBIN_GROUP_{PIXEL_SIZE} || "3.0");
+    # Set up the map centre and store in $coords
+    # Map coords
+    if ($outcoords eq 'PL') {
+      $coords = "out_coords=PL";
+    } else {
+      $coords = "out_coords=$outcoords lat_out='$outlat' long_out='$outlong'";
+    }
+
+    # It is easier to simply run rebin first without REBINning
+    # in order to calculate the size of the map.
+    # This is a bit repetive (since we have to create another 
+    # temporary text file) but this is simpler than doing it in
+    # the loop below and keeping track of the first time.
+    # Obviously this technique does not work if the group we 
+    # choose is 'special' - hopefully the maps are always done in
+    # standard groups (until I check centres)
+
+    # Write text file with contents of first group and first sub
+    my @jsubs = $subgrps[0]->subs;
+    my @junk = $subgrps[0]->membernamessub($jsubs[0]);
+    my $infile = "emregrid_$$.lis";
+    open (INPUT, "> $infile") || die "Error opening scratch file $!";
+    map { print INPUT "$_ 1 0 0\n"; } @junk;
+    close INPUT;
+    map { print "$_ 1 0 0\n"; } @junk;
+
+    # Run rebin 
+    orac_err("The following error from REBIN is expected...\n");
+    $ORAC_STATUS = $Mon{surf_mon}->resetpars;
+    $args = "ref=$infile out=! noloop $coords PIXSIZE_OUT=$pixsize accept";
+    $status = $Mon{surf_mon}->obeyw("rebin","$args");
+    orac_err("Please IGNORE the above error\n");
+
+    # Now read the size
+    ($ORAC_STATUS, @size) = $Mon{surf_mon}->get("rebin","size");
+
+    orac_print("Default size of map is ". join(",",@size) ." pixels\n");
+
+    # Now I have to convert this to a standard size
+    # Try to convert to a fixed size - for now just take 
+    # 30 arcsec off the size of each dimension
+    # Note that it is not clear whether the FOURIER routines
+    # require 2**N square for best results
+
+    my $npix = 30 / $pixsize;
+    my $min = 32;  # Minimum size of output map
+    $min++ if $min == $npix; # Make sure that they are different
+
+    my @nsize = ();
+    foreach my $sz (@size) {
+      # Try to get to closest power of 2
+      my $pow = log($sz) / log(2);
+      # Choose the power nearest to an integer
+      $pow = int($pow + 0.5);
+
+      my $val = 2 ** $pow;
+
+      # Check for minimum size
+      $val = $min if $val < $min;
+
+      # Problem if $val equals $sz since REBIN can not handle that
+      # without a shift of origin. Given that I cant change the pixel
+      # size I either have to up pow or move it down.
+      # Move it up for now
+      if ($val == $sz) {
+	$pow++;
+	$val = 2 ** $pow;
+      }
+
+      # Store the value
+      push(@nsize, $val);
+    }
+
+    # Retrieve size array and generate the string for REBIN
+    $size = "size=[" . join(",",@nsize) ."]";
+    orac_print "Regridding map of size: $size\n";
+
     
+    #####################################################
+    ####################### REMDBM ######################
+    #####################################################
+    # Base name for the WEIGHTS and FT
+    $wtbase = "wt$$".'_';
+    $ftbase = "ft$$" . '_';
+    $totwt  = "weight$$";
+    $ext = '.sdf';
+    $cnt = 0;
+    $imroot = "im$$" . '_';
+    $reroot = "re$$" . '_';
+
+    #####################################################
+    ####################### END REMDBM ##################
+    #####################################################
+
     # We now have a group derived from $Grp but that only includes
     # frames that are related.
     
     # Loop over subgroups
-    foreach $subgrp (@subgrps) {
+    foreach my $subgrp (@subgrps) {
+
+      # Counter for REMDBM
+      $cnt++;
       
-      my $chop = $subgrp->frame(0)->hdr('CHOP_PA');
-      my $throw = $subgrp->frame(0)->hdr('CHOP_THR');
+      my $chop_pa = $subgrp->frame(0)->hdr('CHOP_PA');
+      my $chop_thr = $subgrp->frame(0)->hdr('CHOP_THR');
       
-      orac_print "..processing Chop throw: $throw, PA: $chop\n";
-      
+      orac_print "..processing Chop throw: $chop_thr, PA: $chop_pa\n";
+
+      #####################################################
+      ####################### REMDBM ######################
+      #####################################################
+      # Set the output name for the intermediate file
+      my $outwt = $wtbase . $chop_pa . "_$chop_thr";
+      my $outft = $ftbase . $chop_pa . "_$chop_thr";
+
+      # We can calculate the weight file here since it is
+      # independent of sub-instrument
+
+      $args = "chop=$chop_thr pa=$chop_pa pixsize=$pixsize $size accept";
+      $Mon{surf_mon}->obeyw("scumakewt","ftchop=$outft wtchop=$outwt $args");
+
+      # Calculate the total weight (so that we can remove the files
+      # when they are no longer needed
+ 
+      # if this is first time round then simply rename weight to weight
+      # else add to weight and rename
+ 
+      if ($cnt > 1) {
+	# Add to previous
+	$Mon{kappa_mon}->obeyw("add","in1=$totwt in2=$outwt out=junk$$ title='Total_Weight' reset ");
+	rename ("junk$$"."$ext", "$totwt$ext");
+	# Remove the weight
+	unlink($outwt . $ext) or die "Eek $outwt$ext $!"; 
+	
+      } else {
+	rename ("$outwt$ext", "$totwt$ext");
+      }
+
+      #####################################################
+      ##################### END REMDBM ####################
+      #####################################################
+
       # Set a name for the group
-      $subgrp->file($Grp->file .'_'. $chop . '_' . $throw);  
+      $subgrp->file($Grp->file .'_'. $chop_pa . '-' . $chop_thr);  
       
       # Loop over the different sub-instruments
       # in the current frame
@@ -135,7 +359,7 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 	open (INPUT, "> $infile") || die "Error opening scratch file $!";
 	map { print INPUT "$_ 1 0 0\n"; } @members;
 	close INPUT;
-	
+
 	# Come up with an output name
 	$out = $subgrp->grpoutsub($sub);
 	
@@ -143,33 +367,183 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 	# THIS INCLUDES SETTING THE MAP SIZE AND CENTRE
 	
 	# This is is similar to the normal _rebin_group_ now
-	$args = "REBIN_METHOD=$method PIXSIZE_OUT=$pixsize noloop";
-	
+	$args = "$size $coords REBIN_METHOD=$method PIXSIZE_OUT=$pixsize noloop";
+
 	# Run rebin
 	# Need to reset the parameters so that the regridding parameters
 	# are not remembered. Also the size parameter is remembered.
-	$Mon{surf_mon}->resetpars;
+	$ORAC_STATUS = $Mon{surf_mon}->resetpars;
 	$Mon{surf_mon}->obeyw("rebin","ref=$infile out=$out $args accept reset");
-	
+
 	# Remove the scratch file
 	unlink $infile;
+
+	#####################################################
+	####################### REMDBM ######################
+	#####################################################
+
+	# Since we are looping over files do the FFTs as well.
+	# Note that this could be separated into a separate loop
+        # or even a separate primitive if we didnt mind the extra code
+	# repetition.
+
+	# Have already generated the weights so now we have to
+	# FFT the newly generated rebin image
 	
+	# End up with one per sub of course....
+
+	# Fourier transform the input data multiplying the DEC (chop_pa=0) 
+	# by -1
+	# This probably implies that I have got the weights inverted for
+	# this chop position angle.
+ 
+	if ($chop_pa == 0) {
+ 
+	  $status =$Mon{kappa_mon}->obeyw("cmult","in=$out scalar=-1.0 out=junk$$ reset");
+	  $string = "in=junk$$";
+	} else {
+	  $string = "in=".$out;
+	}
+ 
+	$realout = "re_" . $chop_pa . '_' . $chop_thr;
+	$imout = "im_" . $chop_pa . '_' . $chop_thr;
+ 
+	orac_print ("Forward Fourier transforming $sub : $chop_thr $chop_pa\n");
+	$Mon{kappa_mon}->resetpars;
+	$Mon{kappa_mon}->obeyw("fourier","$string realout=$realout imagout=$imout hermout=! reset");
+
+ 
+	# Remove junk.sdf
+	unlink "junk$$"."$ext" if (-e "junk$$"."$ext");
+
+	# We now need to divide this by the FT of the chop and multiply
+	# by the weight of the chop 
+	# Call the FT of the chop iF, then we have (chop is purely imaginary)
+	# 
+	# New = (x + iy) * F**2 / iF
+	#     = (x + iy) F / i
+	#     = ( x + iy ) F *  i 
+	#         ------       ---
+	#           i           i
+	#
+	#     = F ( y - ix)
+ 
+	# This means we multiply the imaginary part by the FT of the chop
+	# to generate the new real component, and the real by -F to generate
+	# the new imaginary component
+
+	# Imaginary REAL -> IM
+	my $string = " -1.0*ia*ib out=imtemp ia=$realout ib=$outft";
+	$Mon{kappa_mon}->obeyw("maths","$string reset");
+
+	# REAL
+	$Mon{kappa_mon}->obeyw("mult","in1=$imout in2=$outft out=retemp reset");
+
+	# Remove intermediate files
+	unlink "$realout$ext", "$imout$ext";
+
+	# If we have been round before coadd to the running total
+	# There is a running total for each sub stored by name $re$sub$ext
+
+	if ($cnt > 1) {
+	  $Mon{kappa_mon}->obeyw("add","in1=imtemp in2=$imroot$sub out=junk$$ reset");
+	  rename ("junk$$"."$ext", "$imroot$sub$ext");
+ 
+	  $Mon{kappa_mon}->obeyw("add","in1=retemp in2=$reroot$sub out=junk$$ reset");
+	  rename ("junk$$"."$ext", "$reroot$sub$ext");
+	  unlink "imtemp$ext", "retemp$ext";
+ 
+	} else {
+	  # else rename files
+	  rename ("retemp$ext", "$reroot$sub$ext");
+	  rename ("imtemp$ext", "$imroot$sub$ext");
+	}
+
+
+	#####################################################
+	################### END REMDBM ######################
+	#####################################################
+
 	
       }
+
+      #####################################################
+      ####################### REMDBM ######################
+      #####################################################
+
+      # Remove the chop FT weight
+      unlink "$outft$ext";
+      
+      #####################################################
+      ################### END REMDBM ######################
+      #####################################################
+
+
+      # Give the display system a chance
+      $Display->display_data($subgrp) if defined $Display;
+
+    }
+
+    #####################################################
+    ####################### REMDBM ######################
+    #####################################################
+
+    # Now that we have FFTed all the input data we now need to
+    # do the inverse to generate the final image
+    # This output name is set in $Grp
+
+
+    # Now we have the total weight, and the processed real and imaginary
+    # components.
+ 
+    # Remove all the zeroes from the weights array and replace with a small
+    # number. This is a kludge to prevent DIV from doing weird things
+    # and crashing on the alpha
+    
+    $Mon{kappa_mon}->obeyw("substitute","in=$totwt out=s$totwt oldval=0.0 newval=0.00001");
+ 
+    unlink "$totwt$ext";
+
+    # Update the Grp name so that it reflects the obs type
+    # This makes it possible for the display system to specify
+    # group results based on suffix
+    $Grp->file($Grp->file . '_reb') unless $Grp->file =~ /_reb$/;
+
+    # Loop over subinstruments again - assumes that we have one set
+    # per sub
+    foreach my $sub ($Grp->subs) {
+
+      # Divide real and imaginary by the total weight
+      
+      $Mon{kappa_mon}->obeyw("div","in1=$reroot$sub in2=s$totwt out=rediv reset");
+      $Mon{kappa_mon}->obeyw("div","in1=$imroot$sub in2=s$totwt out=imdiv reset");
+ 
+      # Remove the FFTs for the current sub
+      unlink "$reroot$sub$ext", "$imroot$sub$ext";
+ 
+      orac_print "Running inverse FFT for sub $sub...\n";
+
+      # Get the output name
+      my $out = $Grp->grpoutsub($sub);
+
+      # Inverse fourier
+      $Mon{kappa_mon}->obeyw("fourier","inverse realin=rediv imagin=imdiv out=$out reset");
+ 
+      # Remove the final junk files
+      unlink "rediv$ext", "imdiv$ext";
       
     }
-    
-    
-    # Now we can just combine the existing subgroups (assuming we have 
-    # chosen the correct sizes
-    # and deconvolve the dual beam. 
-    
-    # Note this could be converted to a seaprate primitive (with some repetition
-    # of code to create the groups) but for now this is not very useful
-    # (the only point would be if people want to regrid the individual
-    # chops independent of removing the dual beam - which has its good points)
-    
-    # BBBLLAAAHHH
+
+    # Remove the total weight
+    unlink "s$totwt$ext";
+
+    # Display the image
+    $Display->display_data($Grp) if defined $Display;
+
+
+    #####################################################
+    ################### END REMDBM ######################
+    #####################################################
     
   }
   
