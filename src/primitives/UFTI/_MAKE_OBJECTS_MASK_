@@ -122,6 +122,19 @@
 # Obtain the minimum number of pixels in the objects.
        my $minpix = ( $_MAKE_OBJECTS_MASK_{MINPIX} || 12 );
 
+# Define rotation matrix
+# ======================
+
+# Obtain the rotation angle in degrees.
+       my $rotangle = $Frm->hdr( "CROTA2" );
+       $rotangle = defined( $rotangle ) ? $rotangle : 0.0;
+
+# Define some useful variables to apply the rotation matrix.
+       my $pi = atan2( 1, 1 ) * 4;
+       my $dtor = $pi / 180.0;
+       my $cosrot = cos( $rotangle * $dtor );
+       my $sinrot = sin( $rotangle * $dtor );
+
 # Locate the "central" circle
 # ===========================
 
@@ -129,18 +142,18 @@
 # placed so the source can be fully masked.
 
 # Obtain the plate scales and the telescope offsets.
-       my ( $xpixelscale, $ypixelscale, $xoff, $yoff );
+       my ( $xpixelscale, $ypixelscale, $xoffh, $yoffh );
        if ( $Frm->hdr( "INSTRUME" ) =~ /^UFTI/ ) {
           $xpixelscale =  $Frm->hdr( "CDELT1" );
           $ypixelscale =  $Frm->hdr( "CDELT2" );
-          $xoff = $Frm->hdr( "TRAOFF" );
-          $yoff = $Frm->hdr( "TDECOFF" );
+          $xoffh = $Frm->hdr( "TRAOFF" );
+          $yoffh = $Frm->hdr( "TDECOFF" );
 
        } else {
           $xpixelscale = $Frm->hdr( "PIXELSIZ" );
           $ypixelscale = $xpixelscale;
-          $xoff = $Frm->hdr( "RAOFF" );
-          $yoff = $Frm->hdr( "DECOFF" );
+          $xoffh = $Frm->hdr( "RAOFF" );
+          $yoffh = $Frm->hdr( "DECOFF" );
 
        }
 
@@ -148,9 +161,14 @@
        my $occultpix = 0.5 * $occultangle /
                        sqrt( $xpixelscale * $ypixelscale );
 
-# Convert to pixel offsets.
-       $xoff = $xoff / $xpixelscale;
-       $yoff = -1.0 * $yoff / $ypixelscale;
+# Convert telescope offsets to pixel offsets of the object in
+# the Cartesian sense.
+       my $xoffs = $xoffh / $xpixelscale;
+       my $yoffs = -1.0 * $yoffh / $ypixelscale;
+
+# Apply the rotation matrix.
+       my $xoff = $xoffs * $cosrot - $yoffs * $sinrot;
+       my $yoff = $xoffs * $sinrot + $yoffs * $cosrot;
 
 # Locate the centre of the frame by inquiring the frame's attributes.
        $Mon{"ndfpack_mon"}->obeyw("ndftrace","ndf=$root");
@@ -161,7 +179,7 @@
        my $xmid = ( ( $lbnd[0] + $ubnd[0] ) / 2.0 );
        my $ymid = ( ( $lbnd[1] + $ubnd[1] ) / 2.0 );
 
-# Derive the centre co-ordinates of the box.
+# Derive the centre co-ordinates of the occulting mask.
        my $xcentre = $xmid + $xoff;
        my $ycentre = $ymid + $yoff;
 
