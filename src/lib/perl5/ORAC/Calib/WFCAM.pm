@@ -64,9 +64,15 @@ sub new {
 
     # Assumes we have a hash object
 
+    $obj->{BPM} = undef;
+    $obj->{BPMIndex} = undef;
+    $obj->{BPMNoUpdate} = 0;
     $obj->{CPM} = undef;
     $obj->{CPMIndex} = undef;
     $obj->{CPMNoUpdate} = 0;
+    $obj->{Dome} = undef;
+    $obj->{DomeIndex} = undef;
+    $obj->{DomeNoUpdate} = 0;
     $obj->{Lintab} = undef;
     $obj->{LintabIndex} = undef;
     $obj->{LintabNoUpdate} = 0;
@@ -145,6 +151,123 @@ sub lintabnoupdate {
     my $self = shift;
     if (@_) { $self->{LintabNoUpdate} = shift; }
     return $self->{LintabNoUpdate};
+
+}
+
+=item B<domename>
+
+Return (or set) the name of the current dome flat
+
+  $mask = $Cal->domename;
+
+The C<dome()> method should be used if a test for suitability of the
+bad pixel mask is required.
+
+=cut
+
+
+sub domename {
+    my $self = shift;
+    if (@_) { $self->{Dome} = shift unless $self->domenoupdate; }
+    return $self->{Dome}; 
+};
+
+=item B<domeindex>
+
+Return or set the index object associated with the dome flat field
+
+  $index = $Cal->domeindex;
+
+An index object is created automatically the first time this method
+is run.
+
+=cut
+
+sub domeindex {
+
+  my $self = shift;
+  if (@_) { $self->{DomeIndex} = shift; }
+  unless (defined $self->{DomeIndex}) {
+    my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'},"index.dome");
+    my $rulesfile = $self->find_file("rules.dome");
+    $self->{DomeIndex} = new ORAC::Index($indexfile,$rulesfile);
+  }
+
+  return $self->{DomeIndex};
+
+}
+
+=item B<domenoupdate>
+
+Stops object from updating itself with more recent data.
+Used when overrding the dome flat from the command-line.
+
+=cut
+
+sub domenoupdate {
+
+    my $self = shift;
+    if (@_) { $self->{DomeNoUpdate} = shift; }
+    return $self->{DomeNoUpdate};
+
+}
+
+=item B<BPMname>
+
+Return (or set) the name of the current bad pixel mask
+
+  $mask = $Cal->BPMname;
+
+The C<BPM()> method should be used if a test for suitability of the
+bad pixel mask is required.
+
+=cut
+
+
+sub BPMname {
+    my $self = shift;
+    if (@_) { $self->{BPM} = shift unless $self->BPMnoupdate; }
+    return $self->{BPM}; 
+};
+
+
+=item B<BPMindex>
+
+Return or set the index object associated with the bad pixel mask
+
+  $index = $Cal->BPMindex;
+
+An index object is created automatically the first time this method
+is run.
+
+=cut
+
+sub BPMindex {
+
+  my $self = shift;
+  if (@_) { $self->{BPMIndex} = shift; }
+  unless (defined $self->{BPMIndex}) {
+    my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'},"index.bpm");
+    my $rulesfile = $self->find_file("rules.bpm");
+    $self->{BPMIndex} = new ORAC::Index($indexfile,$rulesfile);
+  }
+
+  return $self->{BPMIndex};
+
+}
+
+=item B<BPMnoupdate>
+
+Stops object from updating itself with more recent data.
+Used when overrding the bad pixel mask from the command-line.
+
+=cut
+
+sub BPMnoupdate {
+
+    my $self = shift;
+    if (@_) { $self->{BPMNoUpdate} = shift; }
+    return $self->{BPMNoUpdate};
 
 }
 
@@ -397,6 +520,98 @@ sub lintab {
         # All fall down....
 
         croak("Error in determining linearity table - giving up");
+    }
+}
+
+=item B<dome>
+
+Return (or set) the name of the current dome flat. If a map is to be 
+returned every effort is made to guarantee that it is suitable for use.
+
+  $dome = $Cal->dome;
+  $Cal->dome($newdome);
+
+=cut
+
+
+sub dome {
+
+    my $self = shift;
+
+    if (@_) {
+        return $self->domename(shift);
+    };
+
+    my $ok = $self->domeindex->verify($self->domename,$self->thing,0);
+
+    # happy ending
+
+    return $self->domename if $ok;
+
+    croak ("Override domeflat is not suitable! Giving up") 
+        if $self->domenoupdate;
+
+    if (defined $ok) {
+        my $dome = $self->domeindex->choosebydt('ORACTIME',$self->thing,0);
+        if (! defined $dome) {
+            croak "No suitable confidence map was found in index file";
+        }
+
+        # Store the good value
+
+        $self->domename($dome);
+
+    } else {
+
+        # All fall down....
+
+        croak("Error in determining confidence map - giving up");
+    }
+}
+
+=item B<BPM>
+
+Return (or set) the name of the current bad pixel mask. If a map is to be 
+returned every effort is made to guarantee that it is suitable for use.
+
+  $bpm = $Cal->BPM;
+  $Cal->BPM($newBPM);
+
+=cut
+
+
+sub BPM {
+
+    my $self = shift;
+
+    if (@_) {
+        return $self->BPMname(shift);
+    };
+
+    my $ok = $self->BPMindex->verify($self->BPMname,$self->thing,0);
+
+    # happy ending
+
+    return $self->BPMname if $ok;
+
+    croak ("Override confidence map is not suitable! Giving up") 
+        if $self->BPMnoupdate;
+
+    if (defined $ok) {
+        my $bpm = $self->BPMindex->choosebydt('ORACTIME',$self->thing,0);
+        if (! defined $bpm) {
+            croak "No suitable confidence map was found in index file";
+        }
+
+        # Store the good value
+
+        $self->BPMname($bpm);
+
+    } else {
+
+        # All fall down....
+
+        croak("Error in determining confidence map - giving up");
     }
 }
 
