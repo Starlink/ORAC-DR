@@ -437,11 +437,21 @@ sub verify {
   
   foreach my $key (sort keys %rules) {
     # remember, by design the index file data is already sorted by rule order
-    my $calvalue = shift(@calibdata);	# value of nth index entry
-    # ignore if there is no rule attached to the keyword
-    next unless defined $rules{$key};
+    my $CALVALUE = shift(@calibdata);	# value of nth index entry
 
-    my $ok = eval("'$calvalue' $rules{$key}");
+    # ignore if there is no rule attached to the keyword
+    next unless $rules{$key} =~ /\w/;
+
+    # We need to replace the key (eg ORACTIME) with $CALVALUE
+    # Note that we do not want to replace $Hdr{ORACTIME} only
+    # occurences of ORACTIME that do not have brackets
+    # Use a zero-width negative lookahead assertion
+    # Note that this does not replace ORACTIME}, ORACTIME'} or
+    # ORACTIME"}
+    $rules{$key} =~ s/$key(?!(\}|([\'\"]\})))/$CALVALUE/gx;
+
+    # Now check the rule against the header values
+    my $ok = eval("'$CALVALUE' $rules{$key}");
     if ($@) {
       orac_err "Eval error - check the syntax in your rules file\n";
       orac_err "Error was: $@ \n";
@@ -450,7 +460,7 @@ sub verify {
     unless ($ok) {
       if ($warn) {
 	orac_warn("$name not a suitable calibration: failed $key $rules{$key}\n");
-	print "Header:-",$Hdr{$key},"--","Calvalue:-$calvalue-\n";
+	print "Header:-",$Hdr{$key},"--","Calvalue:-$CALVALUE-\n";
       }
       return 0;
     };
@@ -468,6 +478,19 @@ sub verify {
 Chooses the optimal (nearest in time to an observation) calibration
 frame from the index hash
 
+  $calibration = $Index->choosebydt($key, \%header, $warn);
+
+Key is the name of the field that should be compared (eg ORACTIME)
+and %header is the hash containing the header values that are to
+be compared with the index rules. $warn is an optional third argument
+that can be used to turn off warning messages from verify (default
+is to report messages - true).
+
+This method returns the name of the calibration frame closest in 
+time that has met the selection criteria.
+
+If a suitable calibration can not be found an undefined value is returned.
+
 =cut
 
 
@@ -475,7 +498,106 @@ sub choosebydt {
 
   my $self=shift;
 
-  my ($timekey,$hashref) = @_;
+  my $calibration =  $self->choosebydt_generic('ABS', @_);    
+
+#  croak("No suitable calibrations were found in index file. Sorry.")
+#    unless defined $calibration;
+  return $calibration;
+}
+
+=item chooseby_positivedt
+
+Chooses the calibration frame closest in time from above by looking 
+in the index file (ie difference between the index file entry and
+the current frame is positive).
+
+  $calibration = $Index->chooseby_positivedt($key, \%header, $warn);
+
+Key is the name of the field that should be compared (eg ORACTIME)
+and %header is the hash containing the header values that are to
+be compared with the index rules. $warn is an optional third argument
+that can be used to turn off warning messages from verify (default
+is to report messages - true).
+
+This method returns the name of the calibration frame closest in 
+time that has met the selection criteria.
+
+This is similar to the choosebydt() method except that only
+calibrations taken after the current time (read from the
+header) can be chosen. undef is returned if no suitable
+calibration frames can be found (eg because we are running
+on-line and they have not even been taken yet).
+
+
+=cut
+
+
+sub chooseby_positivedt {
+  my $self = shift;
+  return $self->choosebydt_generic('POSITIVE', @_);  
+}
+
+=item chooseby_negativedt
+
+Chooses the calibration frame closest in time from below by looking 
+in the index file (ie delta time between the index entry and the 
+current frame is negative).
+
+  $calibration = $Index->chooseby_negativedt($key, \%header, $warn);
+
+Key is the name of the field that should be compared (eg ORACTIME)
+and %header is the hash containing the header values that are to
+be compared with the index rules. $warn is an optional third argument
+that can be used to turn off warning messages from verify (default
+is to report messages - true).
+
+This method returns the name of the calibration frame closest in 
+time that has met the selection criteria.
+
+This is similar to the choosebydt() method except that only
+calibrations taken before the current time (read from the
+header) can be chosen. undef is returned if no suitable 
+calibration can be found.
+
+=cut
+
+sub chooseby_negativedt {
+  my $self = shift;
+  my $calibration =  $self->choosebydt_generic('NEGATIVE', @_);  
+
+#  unless (defined $calibration) {
+#    croak('No suitable calibration found before current frame');
+#  }
+
+  return $calibration;
+}
+
+
+=item choosebydt_generic 
+
+Internal routine for handling calibraion matches using a 
+time difference.
+
+  $calibration = $Index->choosebydt_generic(TYPE, $key, \%header, $warn);
+
+TYPES can be 'ABS' (chooses the closest calibration in time), 
+'POSITIVE' (chooses the closest in time from calibrations earlier
+than the current header) and 'NEGATIVE' (chooses calibrations after
+the current observation [as described by %header]).
+
+KEY, HEADER and WARN are described in the choosebydt() documentation.
+
+=cut
+
+sub choosebydt_generic {
+
+  my $self = shift;
+
+  my $type = shift;
+  my $timekey = shift;
+  my $hashref = shift;
+  my $warn = 1;
+  $warn = shift if @_;
 
   croak("Argument is not a hash") unless ref($hashref) eq "HASH";  
 
@@ -497,8 +619,19 @@ sub choosebydt {
 
   my %dthash = (); # this is the hash for the keys and the associated time differences
   foreach my $key (keys %index) {
-    # calculate the absolute value of the time difference wrt to the object
-    $dthash{$key} = abs($ {$index{$key}}[$pos]-$Hdr{$timekey});
+    # calculate the value of the time difference wrt to the object
+    my $delta = $ {$index{$key}}[$pos]-$Hdr{$timekey};
+
+    # Only store if we want POSITIVE/NEGATIVE or ABSOLUTE values
+    if ($type eq 'ABS') {
+      $dthash{$key} = abs($delta);
+    } elsif ($type eq 'POSITIVE') {
+      $dthash{$key} = $delta if $delta > 0;
+    } elsif ($type eq 'NEGATIVE') {
+      $dthash{$key} = $delta if $delta < 0;
+    } else {
+      croak "choosebydt_generic: Unrecognised flag: $type\n";
+    }
   };
    
   # sort index keys by value (delta-tee)
@@ -507,16 +640,17 @@ sub choosebydt {
 
   foreach my $calibration (@timesorted) {
 
-    my $ok = $self->verify($calibration,\%Hdr);
+    my $ok = $self->verify($calibration,\%Hdr, $warn);
 
     return $calibration if ($ok);
   };
   
   # If we get to this point, we didn't find any suitable ones
-
-  croak("No suitable calibrations were found in index file. Sorry.");
+  return undef;
   
-};
+}
+
+
 
 
 =item cmp_with_hash
@@ -534,6 +668,9 @@ Use the indexentry() method to convert this key into the actual
 index entry. Note that warning messages are turned off during the
 verification stage since we are not interested in failed matches.
 
+Returns 'undef' if no match is found or if no argument is supplied
+[or that argument itself is undef]
+
 =cut
 
 sub cmp_with_hash {
@@ -543,6 +680,10 @@ sub cmp_with_hash {
   # Read the has
   my $hashref = shift;
 
+  # Return undef if the hashref is undef
+  return undef unless defined $hashref;
+
+  # Croak if the argument is not a hash
   croak("cmp_with_hash: Argument is not a hash") 
     unless ref($hashref) eq "HASH";  
 
