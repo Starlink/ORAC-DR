@@ -27,6 +27,26 @@ These frames should be short-exposure DARKs.
 
 =item *
 
+The readnoise is calculated as follows:
+
+=over 4
+
+=item * The population variance estimate (PVE) of five dark frames
+is calculated on a per-pixel basis.
+
+=item * The square root of the mean of this PVE image is calculated.
+
+=item * If the images were taken before UT 2002-11-25, the readnoise
+is calculated as the square root of the mean
+of the PVE multiplied by (number of reads - 1) multiplied by the
+read interval multiplied by the gain and divided by the number of
+multiple reads. Otherwise, the readnoise is calculated as the
+square root of the mean multiplied by the gain.
+
+=back
+
+=item *
+
 The readnoise is nominal if it falls between 40 and 45 e-/seconds.
 
 =back
@@ -63,8 +83,8 @@ if ( $Frm->uhdr( "MEASURE_READNOISE" ) ) {
           orac_throw "Unable to open a new array-test $results log file. Error: $!.\n";
         orac_print "Creating a new results file called $results\n";
 
-        print RESULTS " UT  Date         Readnoise     Dark Current\n";
-        print RESULTS "----------        ---------     ------------\n";
+        print RESULTS " UT  Date         Readnoise     RN Variance   Dark Current\n";
+        print RESULTS "----------        ---------     -----------   ------------\n";
       } else {
         orac_warn "Unable to write to new array-test $results log file.\n";
       }
@@ -158,8 +178,19 @@ if ( $Frm->uhdr( "MEASURE_READNOISE" ) ) {
   my $gain = $_GET_GAIN_{GAIN};
   my $multirds = $Frm->hdr( "MULTIRDS" ) || 1;
 
-  my $readnoise = $mean * ( $nreads - 1 ) * $readint * $gain / ( $multirds );
-  
+  my $utdate = $Frm->uhdr( "ORAC_UTDATE" );
+  my $readnoise;
+  if( defined( $utdate ) ) {
+    $utdate =~ s/-//g;
+    if( $utdate < 20021125 ) {
+      $readnoise = $mean * ( $nreads - 1 ) * $readint * $gain / ( $multirds );
+    } else {
+      $readnoise = $mean * $gain;
+    }
+  } else {
+    $readnoise = $mean * $gain;
+  }
+
   # Format the output for easier display.
   my $o_readnoise = sprintf( "%9.3f", $readnoise );
   orac_print "NDSTARE readnoise is: $o_readnoise e-/sec.\n";
@@ -184,7 +215,7 @@ if ( $Frm->uhdr( "MEASURE_READNOISE" ) ) {
   # Write to the log file.
   if( -e "/ukirt_sw/logs" && $writable ) {
     my $utdate = substr( $Frm->hdr( "DATE-OBS" ), 0, 10 );
-    printf RESULTS "%10s %16s\n", $utdate, $o_readnoise;
+    printf RESULTS "%10s %16s %15s\n", $utdate, $o_readnoise, $o_meanerr;
     close( RESULTS );
   }
 
