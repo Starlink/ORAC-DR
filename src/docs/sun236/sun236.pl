@@ -59,14 +59,31 @@ foreach my $line (<MASTER>) {
 
     }
 
-    # This needs Paul's custom pod2latex to support the head1level option
-    system("/local/perl-5.6/bin/pod2latex --modify --h1level 4 $doc$pod")
+    # We need V0.54 of Pod::LaTeX for these options
+    # Note that Pod::Select will not allow two negative
+    # selections. Until we fix that we have to be inclusive
+    # rather than exclusive
+    # (note that we could use Pod::LaTeX directly).
+    system("/local/perl-5.6/bin/pod2latex --sections 'NAME|DESCRIPTION|NOTE' --modify --h1level 4 $doc$pod")
       && die "Error running pod2latex: $!";
 
     open (LATEX,"$doc.tex")
       or die "Could not open $doc.tex";
 
-    print SUN <LATEX>;
+    # Do some post processing
+    my @lines = <LATEX>;
+
+    for my $line (@lines ) {
+      # We dont really want the DESCRIPTION heading
+      if ($line =~ /DESCRIPTION/) {
+	$line  = "\n" .'\mbox{}'."\n";
+      }
+
+
+    }
+
+
+    print SUN @lines;
 
     print "Done $doc\n";
 
