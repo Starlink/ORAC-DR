@@ -131,7 +131,8 @@ sub orac_parse_recipe {
   
   foreach $line (@recipe) {
 
-    if ($line =~ /^_/) {
+    if ($line =~ /^\s*_/) {
+      $line =~ s/^\s+//g;		# zap leading blanks
       ($macro,@arguments)=split(/\s+/,$line);
       # read in primitive
       open(DICTIONARY,${main::dictionary_dir}.$macro) || 
