@@ -22,19 +22,18 @@ Provides the routines for parsing and executing recipes.
 use Carp;
 use vars qw($VERSION @ISA @EXPORT $Display $Nbs $Batch);
 
+use strict;
+
 # This module requires the Starlink::EMS module to translate
 # the facility error status.
 
 require Exporter;
 use File::Path;
 use File::Copy;
+
 use ORAC::Print;
-use ORAC::Msg::ADAM::Task;
-use ORAC::Msg::ADAM::Control;
 use ORAC::Display;
 use ORAC::LogFile;  # For log file generation
-
-use Term::ANSIColor;  # Need this until the primitives can get rid of color
 use ORAC::General; # General subroutines given to the recipes
 use ORAC::Constants qw/:status/;	# 
 
@@ -57,12 +56,6 @@ $Display = undef;   # Display object - only configured if we have a display
 $Batch   = 0;       # True if we are running in batch mode
 
 #------------------------------------------------------------------------
-
-# RECIPES beware!! Don't stomp on these:
-
-# This accesses the global variable for the monoliths
-*Mon = *main::Mon;
-
 
 =over 4
 
@@ -123,11 +116,22 @@ Also needs the current frame, group and calibration objects.
 
 sub orac_execute_recipe {
 
-  my ($reciperef,$Frm,$Grp,$Cal) = @_;
+  my ($reciperef,$Frm,$Grp,$Cal,$Mon) = @_;
+
   my @recipe = @$reciperef;		# dereference recipe
+  my %Mon    = %{$Mon};                 # Dereference monolith hash
 
   my $block = join("",@recipe);
+
+  # Want to make sure that perl warnings are turned off
+  # when evaluating recipes
+  my $cur_warn = $^W;
+  local $^W = 0;
+  # Execute the recipe
   my $status = eval $block;
+
+  # Reset the warning level
+  $^W = $cur_warn;
 
   # Check for an error
   if ($@) {
@@ -151,14 +155,14 @@ sub orac_execute_recipe {
     if ($@ =~ /syntax error|object method/) {
       # Extract info from the error message
       $@ =~ /line (\d+)/ && do {
-	$num = $1;
+	my $num = $1;
 	orac_err("Error in line $num\n", 'red');
 	orac_err("Relevant recipe lines (with numbers):\n\n", 'red');
 
 	# Calculate number of lines to print
-	$inc = 10;
-	$start = ($num > $inc ? $num - $inc : 0 );
-	$end   = ($num < $#recipe - $inc ? $num + $inc : $#recipe);
+	my $inc = 15;
+	my $start = ($num > $inc ? $num - $inc : 0 );
+	my $end   = ($num < $#recipe - $inc ? $num + $inc : $#recipe);
 
 	# Print out the relevant chunk with line numbers
 	for (my $i=$start; $i < $end; $i++) {
@@ -317,6 +321,10 @@ sub orac_read_primitive {
 =item orac_parse_arguments(line)
 
 Parses argument lists on primitive calls.
+Converts a string of form 'arg1=value1 arg2=value2...'
+to a hash.
+
+  my %hash = orac_parse_arguments($string);
 
 =cut
 
@@ -324,15 +332,20 @@ sub orac_parse_arguments {
 
   my $line = shift;
 
-  ($macro,my @arguments) = split(/\s+/,$line);
+  my %hash = ();
+  
+  # Split the string on space
+  my @arguments = split(/\s+/,$line);
 
-  %$macro = ();
-  foreach $argument (@arguments) {
-    ($key,$value) = split("=",$argument);
-    $$macro{$key} = $value;
-  };
+  # Loop over each string
+  foreach my $argument (@arguments) {
+    # Split each argument on equals
+    my ($key,$value) = split("=",$argument);
+    $hash{$key} = $value;
+  }
 
-};
+  return %hash;
+}
 
 #------------------------------------------------------------------------
 
@@ -368,24 +381,21 @@ sub orac_parse_recipe {
   foreach $line (@$recipe) {
     
     if ($line =~ /^\s*_/) {
-      $line =~ s/^\s+//g;	# zap leading blanks
-      ($macro,@rest) = split(/\s+/,$line);
+      $line =~ s/^\s+//;	# zap leading blanks
+      $line =~ s/\s*$//;        # Zap trailing blanks
+      my ($macro,$rest) = split(/\s+/,$line,2);
 
-      # Should we be using $line here rather than joining
-      # the string back together again???
-      $parse = join(" ",$macro,@rest); 
-      push(@parsed,"orac_parse_arguments(\"$parse\");\n");
+      # Parse any arguments. Add a line that runs orac_parse_arguments
+      # on $rest and sets a hash called %macro
+      # $rest is a string of form "arg1=value arg2=value" that is 
+      # converted to a hash at runtime by orac_parse_arguments
+      push(@parsed,
+	   'my %'."$macro = orac_parse_arguments(\"$rest\");\n");
     
       # read in primitive
       my $lines_ref = orac_read_primitive($macro, $instrument);
 
-    #       # store arguments
-    #       %$macro = ();
-    #       foreach $argument (@arguments) {
-    #         ($key,$value)=split("=",$argument);
-    #         $$macro{$key}=$value;
-    #       };
-    
+      # Store lines
       push(@parsed,@$lines_ref);
       
 
@@ -445,7 +455,7 @@ sub orac_add_code_to_recipe {
 	
 	# Now add the OBEYW status checking lines
 	# prepending the OBEYW_STATUS line
-	push (@processed, '$OBEYW_STATUS = ' .$line);
+	push (@processed, 'my $OBEYW_STATUS = ' .$line);
 	push (@processed, &orac_check_obey_status($line));
 	
       } else {
@@ -511,7 +521,7 @@ in recipes.
 
 sub orac_check_obey_status {
 
-  my ($monolith, $task);
+  my ($monolith, $task, $args);
 
   # Get the name of the monlith from the obeyw
   my $line = shift;
@@ -529,7 +539,7 @@ sub orac_check_obey_status {
   my @statuslines = (
 		     'if ($OBEYW_STATUS != ORAC__OK) {',
 		     "  orac_err (\"Error in obeyw to monolith $monolith (task=$task): \$OBEYW_STATUS\\n\");" ,
-		     '  $obeyw_args = "'. $args . '";',
+		     '  my $obeyw_args = "'. $args . '";',
 		     '  orac_print("Arguments were: ","blue");',
                      '  orac_print("$obeyw_args\n\n","red"); ',
 		     '  return $OBEYW_STATUS;',
@@ -559,7 +569,7 @@ Exit handler for oracdr.
 
 sub orac_exit_normally {
 
-  $message = shift(@_);
+  my $message = shift(@_);
   orac_print ("$message - Exiting...\n","red");
 
   rmtree $ENV{'ADAM_USER'};             # delete process-specific adam dir
@@ -602,6 +612,9 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.30  1999/04/21 00:48:13  timj
+#Turn on use strict
+#
 #Revision 1.29  1999/03/15 19:37:52  timj
 #Use ORAC::Logifle
 #
