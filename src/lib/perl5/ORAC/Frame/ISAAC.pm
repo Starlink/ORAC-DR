@@ -52,30 +52,30 @@ my %hdr = (
             RA_SCALE             => "CDELT2",
 
 # then the spectroscopy...
-            CONFIGURATION_INDEX  => "GRATENC",
+            CONFIGURATION_INDEX  => "HIERARCH.ESO.INS.GRAT.ENC",
             GRATING_DISPERSION   => "CDELT1",
-            GRATING_NAME         => "GRATNAME",
-            GRATING_ORDER        => "GRAORDER",
-            GRATING_WAVELENGTH   => "GRATWLEN",
-            SLIT_ANGLE           => "SLITANG",
-            SLIT_NAME            => "SLIT",
-            X_DIM                => "WINNX",
-            Y_DIM                => "WINNY",
+            GRATING_NAME         => "HIERARCH.ESO.INS.GRAT.NAME",
+            GRATING_ORDER        => "HIERARCH.ESO.INS.GRAT.ORDER",
+            GRATING_WAVELENGTH   => "HIERARCH.ESO.INS.GRAT.WLEN",
+            SLIT_ANGLE           => "HIERARCH.ESO.ADA.POSANG",
+            SLIT_NAME            => "HIERARCH.ESO.INS.SLIT",
+            X_DIM                => "HIERARCH.ESO.WIN.NX",
+            Y_DIM                => "HIERARCH.ESO.WIN.NY",
 
 # then the general.
-            AIRMASS_START        => "SAIRMASS",
-            AIRMASS_END          => "EAIRMASS",
-            CHOP_ANGLE           => "CHPANGLE",
-            CHOP_THROW           => "CHPTHROW",
+            AIRMASS_START        => "HIERARCH.ESO.TEL.AIRM.START",
+            AIRMASS_END          => "HIERARCH.ESO.TEL.AIRM.END",
+            CHOP_ANGLE           => "HIERARCH.ESO.SEQ.CHOP.POSANGLE",
+            CHOP_THROW           => "HIERARCH.ESO.SEQ.CHOP.THROW",
             DEC_BASE             => "DEC",
             EXPOSURE_TIME        => "EXPTIME",
-            FILTER               => "FILTER",
-            NUMBER_OF_EXPOSURES  => "DETNDIT",
-            NUMBER_OF_READS      => "NCORRS",
+            FILTER               => "HIERARCH.ESO.INS.FILT1.ID",
+            NUMBER_OF_EXPOSURES  => "HIERARCH.ESO.DET.NDIT",
+            NUMBER_OF_READS      => "HIERARCH.ESO.DET.NCORRS",
             OBSERVATION_NUMBER   => "OBSNUM",
-            WAVEPLATE_ANGLE      => "WPLANGLE",
-            X_LOWER_BOUND        => "STARTX",
-            Y_LOWER_BOUND        => "STARTY"
+            WAVEPLATE_ANGLE      => "HIERARCH.ESO.SEQ.ROT.OFFANGLE",
+            X_LOWER_BOUND        => "HIERARCH.ESO.DET.WIN.STARTX",
+            Y_LOWER_BOUND        => "HIERARCH.ESO.DET.WIN.STARTY"
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed by
@@ -88,15 +88,15 @@ ORAC::Frame::ISAAC->_generate_orac_lookup_methods( \%hdr );
 sub _to_DEC_TELESCOPE_OFFSET {
    my $self = shift;
    my $decoffset = 0.0;
-   if ( exists $self->hdr->{OFFSETD} ) {
-      $decoffset = $self->hdr->{OFFSETD};
+   if ( exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETD"} ) {
+      $decoffset = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETD"};
 
-   } elsif ( exists $self->hdr->{OFFSETX} &&
-             exists $self->hdr->{OFFSETY} ) {
+   } elsif ( exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} &&
+             exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} ) {
 
-      my $pixscale = $self->hdr->{PIXSCALE};
-      my $x_as = $self->hdr->{OFFSETX} * $pixscale;
-      my $y_as = $self->hdr->{OFFSETY} * $pixscale;
+      my $pixscale = $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
+      my $x_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} * $pixscale;
+      my $y_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} * $pixscale;
 
 # Define degrees to radians conversion and obtain the rotation angle.
       my $dtor = atan2( 1, 1 ) / 45.0;
@@ -108,7 +108,7 @@ sub _to_DEC_TELESCOPE_OFFSET {
 # Apply the rotation matrix to obtain the equatorial pixel offset.
       $decoffset = -$x_as * $sinrot + $y_as * $cosrot;
    }
-
+              
 # The sense is reversed compared with UKIRT, as these measure the
 # place son the sky, not the motion of the telescope.
    return -1.0 * $decoffset;
@@ -119,15 +119,15 @@ sub _to_DEC_TELESCOPE_OFFSET {
 sub _to_RA_TELESCOPE_OFFSET {
    my $self = shift;
    my $raoffset = 0.0;
-   if ( exists $self->hdr->{OFFSETA} ) {
-      $raoffset = $self->hdr->{OFFSETA};
+   if ( exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETD"} ) {
+      $raoffset = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETD"};
 
-   } elsif ( exists $self->hdr->{OFFSETX} &&
-             exists $self->hdr->{OFFSETY} ) {
+   } elsif ( exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} &&
+             exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} ) {
 
-      my $pixscale = $self->hdr->{PIXSCALE};
-      my $x_as = $self->hdr->{OFFSETX} * $pixscale;
-      my $y_as = $self->hdr->{OFFSETY} * $pixscale;
+      my $pixscale = $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
+      my $x_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} * $pixscale;
+      my $y_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} * $pixscale;
 
 # Define degrees to radians conversion and obtain the rotation angle.
       my $dtor = atan2( 1, 1 ) / 45.0;
@@ -168,8 +168,8 @@ sub rotation{
 sub to_DETECTOR_READ_TYPE {
    my $self = shift;
    my $read_type;
-   my $chop = $self->hdr->{CHOPSTAT};
-   my $readout_mode = $self->hdr->{DETMODE};
+   my $chop = $self->hdr->{"HIERARCH.ESO.TEL.CHOP.ST"};
+   my $readout_mode = $self->hdr->{"HIERARCH.ESO.DET.MODE.NAME"};
    if ( $readout_mode =~ /Uncorr/ ) {
       if ( $chop ) {
          $read_type = "CHOP";
@@ -191,11 +191,11 @@ sub to_DETECTOR_READ_TYPE {
 sub _to_GAIN {
    my $self = shift;
    my $gain;
-   my $mode = $self->hdr->{INSMODE};
+   my $mode = $self->hdr->{"HIERARCH.ESO.INS.MODE"};
    if ( $mode =~ /SW/ ) {
       $gain = 4.6;
    } else {
-      my $readout_mode = $self->hdr->{DETMODE};
+      my $readout_mode = $self->hdr->{"HIERARCH.ESO.DET.MODE.NAME"};
       if ( $readout_mode =~ /LowBias/ ) {
          $gain = 8.7;
       } else {
@@ -215,16 +215,17 @@ sub _from_NSCAN_POSITIONS {
 
 sub _to_NUMBER_OF_OFFSETS {
    my $self = shift;
-   return $self->hdr->{TPLNEXP} + 1;
+   return $self->hdr->{"HIERARCH.ESO.TPL.NEXP"} + 1;
 }
             
 sub _from_NUMBER_OF_OFFSETS {
-   "TPLNEXP",  $_[0]->uhdr( "ORAC_NUMBER_OF_OFFSETS" ) - 1;
+#   "HIERARCH.ESO.TPL.NEXP",  $_[0]->uhdr( "ORAC_NUMBER_OF_OFFSETS" ) - 1;
+   "NEXP",  $_[0]->uhdr( "ORAC_NUMBER_OF_OFFSETS" ) - 1;
 }
 
 sub _to_OBSERVATION_MODE {
    my $self = shift;
-   my $mode = $self->hdr->{DPRTECH};
+   my $mode = $self->hdr->{"HIERARCH.ESO.DPR.TECH"};
    if ( uc( $mode ) eq "IMAGE" ) {
       $mode = "imaging";
    } else {
@@ -234,22 +235,24 @@ sub _to_OBSERVATION_MODE {
 }
 
 sub _from_OBSERVATION_MODE {
+#   "HIERARCH.ESO.DPR.TECH",  $_[0]->uhdr( "ORAC_OBSERVATION_MODE" );
    "DPRTECH",  $_[0]->uhdr( "ORAC_OBSERVATION_MODE" );
 }
 
 sub _to_OBSERVATION_TYPE {
    my $self = shift;
-   my $type = $self->hdr->{DPRTYPE};
+   my $type = $self->hdr->{"HIERARCH.ESO.DPR.TYPE"};
    if ( uc( $type ) eq "STD" ) {
       $type = "OBJECT";
-   } elsif ( uc( $type ) eq "SKY,FLAT" )  {
+   } elsif ( uc( $type ) eq "SKY,FLAT" ) {
       $type = "SKY";
    }
    return $type;
 }
 
 sub _from_OBSERVATION_TYPE {
-   "DPRTYPE",  $_[0]->uhdr( "ORAC_OBSERVATION_TYPE" );
+#   "HIERARCH.ESO.DPR.TYPE",  $_[0]->uhdr( "ORAC_OBSERVATION_TYPE" );
+   "HIERARCH.ESO.DPR.TYPE",  $_[0]->uhdr( "ORAC_OBSERVATION_TYPE" );
 }
 
 sub _to_RA_BASE {
@@ -263,7 +266,7 @@ sub _to_RA_BASE {
 sub _to_RECIPE {
    my $self = shift;
    my $recipe = "QUICK_LOOK";
-   my $template = $self->hdr->{TEMPLATE};
+   my $template = $self->hdr->{"HIERARCH.ESO.TPL.ID"};
 
    if ( $template eq "ISAACSW_img_obs_AutoJitter" ||
         $template eq "ISAACSW_img_obs_GenericOffset" ) {
@@ -295,11 +298,11 @@ sub _from_SCAN_INCREMENT {
 sub _to_SPEED_GAIN {
    my $self = shift;
    my $spd_gain;
-   my $mode = $self->hdr->{INSMODE};
+   my $mode = $self->hdr->{"HIERARCH.ESO.INS.MODE"};
    if ( $mode =~ /SW/ ) {
       $spd_gain = "Normal";
    } else {
-      my $readout_mode = $self->hdr->{DETMODE};
+      my $readout_mode = $self->hdr->{"HIERARCH.ESO.DET.MODE.NAME"};
       if ( $readout_mode =~ /LowBias/ ) {
          $spd_gain = "HiGain";
       } else {
@@ -312,7 +315,7 @@ sub _to_SPEED_GAIN {
 sub _to_STANDARD {
    my $self = shift;
    my $standard = 0;
-   my $type = $self->hdr->{DPRTYPE};
+   my $type = $self->hdr->{"HIERARCH.ESO.DPR.TYPE"};
    if ( uc( $type ) eq "STD" ) {
       $standard = 1;
    }
@@ -362,9 +365,9 @@ sub _to_X_REFERENCE_PIXEL{
    my $xref;
    if ( exists $self->hdr->{CRPIX1} ) {
       $xref = $self->hdr->{CRPIX1};
-   } elsif ( exists $self->hdr->{STARTX} && exists $self->hdr->{WINNX} ) {
-      my $xl = $self->hdr->{STARTX};
-      my $xu = $self->hdr->{WINNX};
+   } elsif ( exists $self->hdr->{"HIERARCH.ESO.DET.WIN.STARTX"} && exists $self->hdr->{"HIERARCH.ESO.DET.WIN.NX"} ) {
+      my $xl = $self->hdr->{"HIERARCH.ESO.DET.WIN.STARTX"};
+      my $xu = $self->hdr->{"HIERARCH.ESO.DET.WIN.NX"};
       $xref = nint( ( $xl + $xu ) / 2 );
    } else {
       $xref = 504;
@@ -384,9 +387,9 @@ sub _to_Y_REFERENCE_PIXEL{
    my $yref;
    if ( exists $self->hdr->{CRPIX2} ) {
       $yref = $self->hdr->{CRPIX2};
-   } elsif ( exists $self->hdr->{STARTY} && exists $self->hdr->{WINNY} ) {
-      my $yl = $self->hdr->{STARTY};
-      my $yu = $self->hdr->{WINNY};
+   } elsif ( exists $self->hdr->{"HIERARCH.ESO.DET.WIN.STARTY"} && exists $self->hdr->{"HIERARCH.ESO.DET.WIN.NY"} ) {
+      my $yl = $self->hdr->{"HIERARCH.ESO.DET.WIN.STARTY"};
+      my $yu = $self->hdr->{"HIERARCH.ESO.DET.WIN.NY"};
       $yref = nint( ( $yl + $yu ) / 2 );
    } else {
       $yref = 491;
@@ -400,12 +403,12 @@ sub _from_Y_REFERENCE_PIXEL {
 
 sub _to_X_UPPER_BOUND {
    my $self = shift;
-   return $self->hdr->{STARTX} - 1 + $self->hdr->{WINNX};
+   return $self->hdr->{"HIERARCH.ESO.DET.WIN.STARTX"} - 1 + $self->hdr->{"HIERARCH.ESO.DET.WIN.NX"};
 }
 
 sub _to_Y_UPPER_BOUND {
    my $self = shift;
-   return $self->hdr->{STARTY} - 1 + $self->hdr->{WINNY};
+   return $self->hdr->{"HIERARCH.ESO.DET.WIN.STARTY"} - 1 + $self->hdr->{"HIERARCH.ESO.DET.WIN.NY"};
 }
 
 # Sampling is always 1x1, and therefore there are no headers with
@@ -457,6 +460,9 @@ sub new {
   # Configure initial state - could pass these in with
   # the class initialisation hash - this assumes that I know
   # the hash member name
+#  $self->rawfixedpart('ISAAC.');
+#  $self->rawsuffix('.fits');
+#  $self->rawformat('FITS');
   $self->rawfixedpart('isaac');
   $self->rawsuffix('.sdf');
   $self->rawformat('NDF');
