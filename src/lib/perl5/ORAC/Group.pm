@@ -44,6 +44,7 @@ use vars qw/$VERSION/;
 use ORAC::Print;          # Print statements
 use ORAC::Index::Extern;  # For bad observation index list
 use ORAC::Constants;
+use ORAC::General;
 
 # Setup the object structure
 
