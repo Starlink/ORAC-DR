@@ -320,10 +320,19 @@ sub fluxes_mon {
       unless $status == ORAC__OK;
 
     # Start FLUXES - this requires some environment variables to be defined
-    # This should use a $FLUXES_DIR env variable
+    # Fluxes should be changed to use $FLUXES_DIR rather than $FLUXES
     unless (exists $ENV{FLUXES}) {
-	$ENV{FLUXES} = $StarConfig{Star_Bin} ."/fluxes";
+      # FLUXES_DIR is set on recent starlink releases
+      if (exists $ENV{FLUXES_DIR}) {
+	$ENV{FLUXES} = $ENV{FLUXES_DIR};
+      } else { # Guess by looking at the location of starlink
+	$ENV{FLUXES} = $StarConfig{Star_Bin} ."/fluxes";	
+      }
     }
+
+    # Now check that FLUXES directory really does exist
+    croak "Error locating fluxes directory. $ENV{FLUXES} does not exist"
+      unless -d $ENV{FLUXES};
 
     # Should chdir to /tmp, create the soft link, launch fluxes
     # and then chdir back to wherever we happen to be.
@@ -333,6 +342,7 @@ sub fluxes_mon {
     # Create temp directory - this is needed in case another
     # oracdr is running fluxes and we want to make sure that
     # the JPLEPH file is not removed when THAT oracdr finishes!
+    # Should probably be using File::Temp::tempdir
     my $tmpdir = "/tmp/fluxes_$$";
     mkdir $tmpdir,0777 || croak "Could not make directory $tmpdir: $!";
 
@@ -343,13 +353,24 @@ sub fluxes_mon {
     # Create soft link to JPLEPH
 
     # If the JPLEPH file is there already then assume it is okay
+    # not sure how that can happen given that we just made the directory!
     unless (-f "JPLEPH") {
-      unlink "JPLEPH";
-      symlink $StarConfig{Star}."/etc/jpl/jpleph.dat", "JPLEPH"
+      unlink "JPLEPH"; # should be nothing here
+
+      # Determine location of ephemeris file
+      my $ephdir = ( $ENV{JPL_DIR} || $StarConfig{Star}."/etc/jpl" );
+
+      my $jpleph = $ephdir . "/jpleph.dat";
+
+      # Check that the file exists first
+      croak "Could not find JPLEPH file at $jpleph" unless -f $jpleph;
+
+      # Create the soft link required for JPLEPH software to run
+      symlink $jpleph, "JPLEPH"
 	or croak "Could not create link to JPL ephemeris";
     }
 
-    # Set FLUXPWD variable
+    # Set FLUXPWD variable, required by FLUXES
     $ENV{'FLUXPWD'} = cwd;
 
     # Now we can try and launch fluxes
@@ -357,7 +378,7 @@ sub fluxes_mon {
 				       "$ENV{FLUXES}/fluxes");
 
     # Now we can chdir back to our real working directory
-    chdir $cwd || croak "Could not change back to $cwd: $!";
+    chdir $cwd or croak "Could not change back to $cwd: $!";
 
     # Wait and See if we can contact
     if ($obj->contactw) {
