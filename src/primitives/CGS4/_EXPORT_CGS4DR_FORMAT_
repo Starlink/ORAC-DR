@@ -1,0 +1,75 @@
+=head1 NAME
+
+_EXPORT_CGS4DR_FORMAT_ - convert ORAC HDS containers to O/I files
+
+=head1 SYNOPSIS
+
+ _EXPORT_CGS4DR_FORMAT_
+
+=head1 DESCRIPTION
+
+This primitive takes the standard ORAC HDS container file and converts
+it to the old format I and O files required for use in CGS4DR.
+The container file must exist.
+
+=head1 OUTPUT FILES
+
+Creates output files in C<idir> and C<odir> from the current
+directory (C<ORAC_DATA_OUT>).
+
+=head1 EXTERNAL TASKS
+
+No external tasks are used.
+
+=head1 NOTES
+
+This primitive is a hack that assumes that the raw data file is an HDS
+container with a C<.sdf> extension. Moreover, it assumes .HEADER and
+.I1 to .IN components. Do not use if this is not true.
+
+Could be performed in the L<ORAC::Convert> module but that would 
+require a different instrument class.
+
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
+Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>
+
+=cut
+
+
+# Get the raw filename
+my $raw = $Frm->raw;
+
+# Create the idir and odir directories if necessary
+my $odir = 'odir';
+my $idir = 'idir';
+
+foreach ($odir, $idir) {
+  mkdir $_,0777 unless -d $_;
+}
+
+# Get the root of the filename
+use File::Basename qw/basename/;
+my $inroot = basename($raw,'.sdf');
+
+# Calculate the output root
+# This is the last 6 digits of ORACUT with the run number
+my $run = $Frm->number;
+my $ut  = $Frm->hdr('ORACUT');
+
+my $outroot = substr($ut, 2) . '_' . $run;
+
+# Now we assume we know there is a header
+# - copy it to the odir
+use Starlink::HDSPACK qw/ copobj /;
+use Starlink::EMS qw/ ems_begin ems_end /;
+my $status = &Starlink::EMS::SAI__OK();
+orac_print "Copying .HEADER to o-file $odir/o$outroot\n";
+my $ORAC_STATUS = copobj ("$inroot.HEADER", "$odir/o$outroot", $status );
+
+# Copy the data itself
+foreach my $i (1..$Frm->nsubs) {
+  orac_print "Copying .I$i to i-file $idir/i${outroot}_$i\n";
+  $ORAC_STATUS = copobj ("$inroot.I$i", "$idir/i${outroot}_$i", $status );
+}
