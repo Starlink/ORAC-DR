@@ -88,7 +88,7 @@ sub _to_AIRMASS_START {
 }
 
 sub _from_AIRMASS_START {
-  "ZDSTART", acos( $_[0]->uhdr("AIRMASS_START") );
+  "ZDSTART", 180 * acos( 1 / $_[0]->uhdr("AIRMASS_START") ) / 3.14159;
 }
 
 sub _to_AIRMASS_END {
@@ -102,7 +102,7 @@ sub _to_AIRMASS_END {
 }
 
 sub _from_AIRMASS_END {
-  "ZDEND", acos( $_[0]->uhdr("AIRMASS_END") );
+  "ZDEND", 180 * acos( 1 / $_[0]->uhdr("AIRMASS_END") ) / 3.14159;
 }
 
 sub _to_GAIN {
