@@ -37,6 +37,9 @@ use base qw/ORAC::Frame::MEF/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
+# Alias file_from_bits as pattern_from_bits.
+*pattern_from_bits = \&file_from_bits;
+
 # standard error module and turn on strict
 use Carp;
 use strict;
@@ -271,6 +274,9 @@ be supplied.
 
   $fname = $Frm->file_from_bits($prefix, $obsnum);
 
+pattern_from_bits() is currently an alias for file_from_bits(),
+and both can be used interchangably for the WFCAM subclass.
+
 =cut
 
 sub file_from_bits {
@@ -312,7 +318,7 @@ sub flag_from_bits {
   # is  .UT_obsnum.fits.ok but the filename is fUT_obsnum.fits
 
   # Retrieve the data file name
-  my $raw = $self->file_from_bits($prefix, $obsnum);
+  my $raw = $self->pattern_from_bits($prefix, $obsnum);
 
   # Replace the 'f' with a '.' and append '.ok'
   substr($raw,0,1) = '.';
