@@ -187,6 +187,10 @@ sub findrecipe {
 
   my $recipe = $self->hdr('RECIPE');
 
+  unless ($recipe =~ /\w/) {
+    $recipe = 'QUICK_LOOK'
+  };
+
   return $recipe;
 
 
