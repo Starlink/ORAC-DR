@@ -1,0 +1,672 @@
+#+
+#  Name:
+#     SEEING_STATISTICS
+
+#  Purpose:
+#     Computes several statistics to quantify the UKIRT seeing.
+
+#  Language:
+#     perl 5 in ORAC-DR pipeline
+
+#  Invocation:
+#     _SEEING_STATISTICS_ [OBJECT_FRAME=?] [INNER=?] [FILE=?] [OUTER=?] 
+#                         [XPOS=?] [YPOS=?]
+
+#  Description:
+#     This script analyses the point-spread function of UFTI or IRCAM3 data,
+#     which must contain a star whose characteristics are to be measured. 
+#     A mosaic from jittered data is best as there should be few if any bad
+#     pixels affecting the star image.
+#
+#     The script tabulates the following statistics:
+#
+#       1) The overall best-fitting point-spread function using KAPPA/PSF,
+#          namely, the average full width half maximum (FWHM), the radial
+#          fall-off parameter gamma, the axis ratio and position angle
+#          of the major axis in degrees.  The last assumes that north
+#          is to the top and east to the left of the image.  In good
+#          seeing the gamma value may be unphysical, i.e. has a cusp when
+#          gamma<1.  Thus an average FWHM is derived after application
+#          of a Hanning filter.
+#       2) The average FWHM of the best-fitting Gaussian (gamma=2) in the 
+#          core.  The core is defined as 1.5 times the overall FWHM or
+#          5 pixels, whichever is larger.
+#       3) The diameters enclosing 50 percent and 80 percent of the
+#          total flux of the PSF.  These are derived from integrating
+#          the from the centroid of the star in a sky-subtracted image.
+#       4) The Strehl width and Strehl ratio.  The latter is only
+#          derived when the plate scale is known.  The theoretical
+#          width is derived from the expression 1.43 wavelength/mirror
+#          diameter, which allows for the central obstruction.
+#
+#     Lengths are given in arcseconds where the plate scale is given
+#     by keyword PIXELSIZ in the FITS airlock, otherwise pixels are
+#     used.  Similarly, keyword FILTER is used to define the filter,
+#     defaulting to K if the keyword is absent.  The filter defines the
+#     wavelength to calculate the theoretical Strehl width.
+#
+#     The results may also be tabulated in an Starlink small text list
+#     (STL) file inlcuding the date, time, and filter.  This is
+#     provided the pixel scale is known.
+
+#  Arguments:
+#     OBJECT_APERTURE = REAL (Given)
+#        The diameter of the object aperture in FWHM (seeing) units used
+#        to measure the total flux from star.  A smaller value is faster
+#        but underestimates the flux.   It is constrained to be in the
+#        range 3.0 to 15.0.  [10.0]
+#     INNER = REAL (Given)
+#        The ratio of the diameters of inner ring of the sky annulus to
+#        that of the object aperture (-a).  It is constrained to be in the
+#        range 1.2 to 3.0.  The mode of the pixel values in the annulus 
+#        is used to subtract the sky for statistics 3) and 4) listed above.
+#        [2.0]
+#     FILE = CHARACTER (Given)
+#        The name of the small text list to contain the result.  If the
+#        file exists, a record of the statistics is appended.  If it
+#        does not exist, a new file is created with the appropriate
+#        headers preceeding the row of statistics.  A null value (!)
+#        prevents the statistics from being written to a text file.
+#        [seeing.txt]
+#     OUTER = REAL (Given)
+#        The ratio of the diameters of outer ring of the sky annulus to
+#        that of the object aperture (OBJECT_DIAMETER).  The mode of the pixel
+#        values in the annulus is used to subtract the sky for statistics 3)
+#        and 4) listed above.  It is constrained to be in the range 1.5 to 5.0
+#        and be at least 0.3 greater than the inner scale factor of the annulus.
+#        [4.0]
+#     XPOS = REAL (Given)
+#        The approximate x pixel index of the centroid of the star to be
+#        measured.  It is used to locate the centroid within a 9-pixel
+#        wide box.  [X centre of the array]
+#     YPOS = REAL (Given)
+#        The approximate y pixel index of the centroid of the star to be
+#        measured.  It is used to locate the centroid within a 9-pixel
+#        wide box.  [Y centre of the array]
+
+#  Examples:
+#     _SEEING_STATISTICS_
+#        This will obtain details of a star's attributes in current Frame.
+#        The initial centroid-search position is (128,128).
+#        The results are written to seeing.txt.
+#     _SEEING_STATISTICS_ XPOS=122.45 YPOS=123.79 INNER=1.5 LOGFILE=!
+#        This will obtain psf attributes for the current $Frm frame in the
+#        pipeline. The initial centroid-search position is (122.45,123.79).
+#        The sky annulus radius limits are 1.5 to 4 times the aperture's
+#        radius.  There is no logging to a text file.
+
+#  Prior Requirements:
+#     -  KAPPA V0.9 or later.
+#     -  ESP V0.9-5b or later.
+#     -  PHOTOM V1.5 or later.
+#     -  KAPPA/PSF V0.13.
+
+#  Implementation Deficiencies:
+#     The integration for the 50- and 80-percent enclosed energy treats
+#     each aperture as independent, thus some computation is duplicated,
+#     and is the main consumer of cpu cycles in this script.
+
+#  Notes:
+#     -  There is no correction for the extinction as the filter is not
+#     provided in the header.
+
+#  Authors:
+#     MJC: Malcolm J. Currie (ROE)
+#     {enter_new_authors_here}
+
+#  History:
+#     1998 May 28 (MJC):
+#        Original version.
+#     1998 June 5 (MJC):
+#        Write results to a file.
+#     1998 September 7 (MJC):
+#        Modified to use the NAG-free version of GAUFIT.
+#     1998 September 9 (MJC):
+#        Fixed bug in locating centroid for an off-centre star.
+#     1998 October 4 (MJC):
+#        Fixed bug in calculating Strehl parameters.  Added smoothed
+#        FWHM.  Calculate and present average FWHM values instead of
+#        the minor-axis FWHM.  Corrected two comments.
+#     1998 October 22 (MJC):
+#        Converted from the C-shell script.
+#     {enter_further_changes_here}
+
+#-
+
+# This primitive should only be performed on OBJECT frames.
+    if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ) {
+
+# Find the centre of the array.
+# =============================
+
+# Run a task to obtain details of the frame.
+       $ndf = $Frm->file;
+       $Mon{"ndfpack_mon"}->obeyw("ndftrace", "ndf=$ndf");
+
+# Extract the bounds of the frame.
+       ($ORAC_STATUS, @lbnd) = $Mon{"ndfpack_mon"}->get("ndftrace","lbound");
+       ($ORAC_STATUS, @ubnd) = $Mon{"ndfpack_mon"}->get("ndftrace","ubound");
+
+# Find the mid points.
+       $xmid = nint( ( $lbnd[0] + $ubnd[0] ) / 2 );
+       $ymid = nint( ( $lbnd[1] + $ubnd[1] ) / 2 );
+
+# Obtain the argument values.
+# ===========================
+       $aperture_factor = ( $_SEEING_STATISTICS_{OBJECT_APERTURE} || 10.0 );
+       $inner = ( $_SEEING_STATISTICS_{INNER} || 2.0 );
+       $outer = ( $_SEEING_STATISTICS_{OUTER} || 4.0 );
+       $logfile = ( $_SEEING_STATISTICS_{FILE} || "seeing.txt" );
+       $xpos = ( $_SEEING_STATISTICS_{OUTER} || $xmid );
+       $ypos = ( $_SEEING_STATISTICS_{OUTER} || $ymid );
+
+# Obtain information from the FITS headers.
+# =========================================
+
+# Obtain the instrument.
+       $instrument = $Frm->hdr( "INSTRUME" );
+
+# Different instruments require different header keywords.
+       if ( $instrument =~ /^UFTI/ ) {
+
+# Obtain the units: arcseconds or pixels.  Use arcseconds if the scale
+# is present in the headers.  Also obtain the UT date.  For modern headers
+# extract the date from the time, and remove the spaces.
+          $scale =  $Frm->hdr( "CDELT1" );
+          $idate = substr( $Frm->hdr( "DATE-OBS" ), 0, 10 );
+          $idate =~ s/-//g;
+
+# Obtain the time of the observation.
+          $ut = $Frm->hdr( "UTSTART" );
+
+# Obtain the telescope focus.
+          $focus = $Frm->hdr( "TFOCUS" );
+
+       } else {
+
+# Obtain the scale.
+          $scale = $Frm->hdr( "PIXELSIZ" );
+
+# Obtain the integer date.
+          $idate = $Frm->hdr( "IDATE" );
+
+# Obtain the time of the observation.
+          $ut = $Frm->hdr( "RUTSTART" );
+
+# Obtain the telescope focus.
+          $focus = $Frm->hdr( "DFOCUS" );
+
+       }
+
+# Obtain an uppercase filter name.
+       $filter =  $Frm->hdr( "FILTER" );
+       $filter =~ tr/[a-z]/[A-Z]/;
+
+# Obtain the airmass.
+       $airmass = $Frm->hdr( "AMSTART" );
+
+# Logfile
+# =======
+       $logging = 1;
+
+# A null value requests no logging to a small text file.
+       if ( $logfile eq '!' ) {
+          $logging = 0;
+          orac_print "Orac says: seeing statistics are not logged.\n";
+
+# Create the STL header.
+       } elsif (! -e $logfile ) {
+          open ( LOGFILE, ">$logfile" );
+          orac_print "Orac says: Creating a new $logfile to record the seeing statistics.\n";
+
+print LOGFILE "!+\n";
+print LOGFILE "!  Simple STL file: UKIRT seeing statistics\n";
+print LOGFILE "!\n";
+print LOGFILE "!  Created by the seeing.csh script.\n";
+print LOGFILE "!-\n";
+print LOGFILE " \n";
+print LOGFILE "C IDATE   INTEGER  1 EXFMT=I8    TBLFMT=I8   COMMENTS='yyyymmdd'\n";
+print LOGFILE "C UT      REAL    10 EXFMT=F9.6  TBLFMT=F9.6 COMMENTS='UT at start of observation'\n";
+print LOGFILE ":         UNITS='hours'\n";
+print LOGFILE "C FILTER  CHAR*6  20 EXFMT=A6    TBLFMT=A6   COMMENTS='Filter name'\n";
+print LOGFILE "C AIRMASS REAL    27 EXFMT=F9.6  TBLFMT=F9.6 COMMENTS='Airmass at start of observation'\n";
+print LOGFILE "C FOCUS   REAL    37 EXFMT=F7.2  TBLFMT=F7.2 COMMENTS='Telescope focus'\n";
+print LOGFILE "C FWHM    REAL    45 EXFMT=F6.3  TBLFMT=F6.3 COMMENTS='Average FWHM for the full profile'\n";
+print LOGFILE ":         UNITS='arcsec'\n";
+print LOGFILE "C GAMMA   REAL    52 EXFMT=F5.3  TBLFMT=F5.3 COMMENTS='Radial fall-off parameter'\n";
+print LOGFILE "C AXISR   REAL    58 EXFMT=F5.3  TBLFMT=F5.3 COMMENTS='Axis ratio'\n";
+print LOGFILE "C PA      REAL    64 EXFMT=F6.2  TBLFMT=F6.2 COMMENTS='Position angle of major axis'\n";
+print LOGFILE ":         UNITS='degrees'\n";
+print LOGFILE "C SFWHM   REAL    71 EXFMT=F6.3  TBLFMT=F6.3 COMMENTS='Average FWHM after Hanning filter applied'\n";
+print LOGFILE ":         UNITS='arcsec'\n";
+print LOGFILE "C CFWHM   REAL    78 EXFMT=F6.3  TBLFMT=F6.3 COMMENTS='Average FWHM for a Gaussian core'\n";
+print LOGFILE ":         UNITS='arcsec'\n";
+print LOGFILE "C CORE    INTEGER 85 EXFMT=I2    TBLFMT=I2   COMMENTS='Core diameter' UNITS='pixels'\n";
+print LOGFILE "C EED50   REAL    88 EXFMT=F6.3  TBLFMT=F6.3 COMMENTS='Diameter containing 50 percent of the flux'\n";
+print LOGFILE ":         UNITS='arcsec'\n";
+print LOGFILE "C EED80   REAL    95 EXFMT=F6.3  TBLFMT=F6.3 COMMENTS='Diameter containing 80 percent of the flux'\n";
+print LOGFILE ":         UNITS='arcsec'\n";
+print LOGFILE "C STREHL  REAL   102 EXFMT=F6.4  TBLFMT=F6.4 COMMENTS='Strehl ratio'\n";
+print LOGFILE "C SWIDTH  REAL   109 EXFMT=F6.3  TBLFMT=F6.3 COMMENTS='Strehl width' UNITS='arcsec'\n";
+print LOGFILE " \n";
+print LOGFILE "D POSITION='CHARACTER'\n";
+print LOGFILE " \n";
+print LOGFILE "BEGINTABLE\n";
+
+# Append to the file if it exists.
+       } else {
+          open ( LOGFILE, ">>$logfile" );
+          orac_print "Orac says: Appending to $logfile to record the seeing statistics.\n";
+       }
+
+# Estimate the PSF
+# ================
+
+# Find the approximate location of the star.
+# -------------------------------------------
+
+# Define the size of the box in arcseconds, and hence pixels. 
+       $boxsize = 5.0;
+       $pixbox = nint( $boxsize / $scale );
+       $ndfsect = "$ndf(~$pixbox,~$pixbox)";
+
+# Locate the main object within a central box.
+       $Mon{"kappa_mon"}->obeyw("stats", "$ndfsect");
+
+# Extract the location of the maximum pixel of the frame.
+       ($ORAC_STATUS, @maxpos) = $Mon{"kappa_mon"}->get("stats","maxpos");
+
+# Obtain the centroid of the star.
+# --------------------------------
+#
+# Shift the search box to be centred on the highest value within the 
+# search box.
+       $ndfsect = "$ndf($maxpos[0]~$pixbox,$maxpos[1]~$pixbox)";
+#       $ndfsect = "$ndf(${xpos}~40,${ypos}~40)";
+
+# Specify the other parameters for the CENTROID stage.
+       $header = "ndf=$ndfsect";
+       $hidden = "mode=interface init=[$maxpos[0],$maxpos[1]] cosys=w"; 
+#       $hidden = "mode=interface init=[$xpos,$ypos] cosys=w"; 
+
+# Find the centroid of the object.  For the moment start the search at
+# the frame centre.  The standard position may be displaced from this,
+# and should be written to the headers.
+       $Mon{"kappa_mon"}->obeyw("centroid","$header $hidden");
+
+# Find the centroid of the object.  For the moment start the search at
+# the frame centre.  The standard position may be displaced from this,
+# and should be written to the headers.
+       ($ORAC_STATUS, @centre ) = $Mon{"kappa_mon"}->get("centroid","centre");
+
+# Fit the PSF.
+# ------------
+#
+# Store the located centroid within a text of the format PSF expects.
+# (There should be some rationalisation in KAPPA and CCDPACK to use
+# Clive Davenhall's small tables.  In that case this would be altered.)
+       unlink ( "centre$$.dat" );
+       open ( PSFIN, ">centre$$.dat" );
+       print PSFIN "@centre\n";
+       close ( PSFIN );
+
+# Specify the other parameters for the PSF stage.
+       $header = "in=$ndf out=psf$$";
+       $hidden = "cut=1E-20 device=! cofile=centre$$.dat";
+
+# Calculate the psf, using the star alone.  Make an image of the psf, which goes
+# to a very low signal.  It's needed to compute the light beyond the aperture.
+       $Mon{"kappa_mon"}->obeyw("psf","$header $hidden");
+
+# Obtain the fit parameters of the point-spread function.
+       ($ORAC_STATUS, $fwhm) = $Mon{"kappa_mon"}->get("psf","fwhm");
+       ($ORAC_STATUS, $axisratio) = $Mon{"kappa_mon"}->get("psf","axisr");
+       ($ORAC_STATUS, $gamma) = $Mon{"kappa_mon"}->get("psf","gamma");
+       ($ORAC_STATUS, $orient) = $Mon{"kappa_mon"}->get("psf","orient");
+
+# Derive desired values from the results, namely the average FWHM
+# and the position angle.
+       $fwhm = $fwhm * sqrt( $axisratio );
+       $pa = $orient + 90.0;
+
+# Find core-PSF Gaussian
+# ======================
+
+# In good seeing the profile is not Gaussian, and non-physical (<1)
+# values of gamma can arise.  A more reliable estimate of the FWHM
+# can be obtained by concentrating on the core.
+
+# Find the core size in pixels.  It's 1.5 times the FWHM or five pixels,
+# whichever is larger.
+       $coresize = max( 5, int( 2.0 * int( 0.75 * $fwhm ) ) + 1 );
+
+# Specify the other parameters for the PSF stage.
+       $header = "in=$ndf gauss isize=$coresize";
+       $hidden = "device=! out=! cofile=centre$$.dat";
+
+# Derive the average core FWHM.
+       $Mon{"psf_mon"}->obeyw("psf","$header $hidden");
+
+# Extract the core FWHM and axis ratio.
+#       ($ORAC_STATUS, $corefwhm) = $Mon{"psf_mon"}->get("psf","fwhm");
+#       ($ORAC_STATUS, $coreaxisratio) = $Mon{"psf_mon"}->get("psf","axisr");
+
+       $corefwhm = $corefwhm * sqrt( $coreaxisratio );
+
+# Find the smoothed FWHM
+# ======================
+
+# Apply a Hanning filter to smooth the supplied data frame.
+       $Mon{"kappa_mon"}->obeyw("gausmooth","in=$ndf out=smooth$$ fwhm=2 box=3");
+
+# Specify the other parameters for the PSF stage.
+       $header = "in=smooth$$ isize=$coresize";
+       $hidden = "device=! out=! cofile=centre$$.dat";
+
+# Calculate the psf, using the standard star alone.  Make an image of
+# the psf, which goes to a very low signal.
+       $Mon{"kappa_mon"}->obeyw("psf","$header $hidden");
+       unlink ( "smooth$$.sdf" );
+
+# Extract the smoothed image's core FWHM and axis ratio.
+       ($ORAC_STATUS, $smofwhm) = $Mon{"kappa_mon"}->get("psf","fwhm");
+       ($ORAC_STATUS, $smoaxisratio) = $Mon{"kappa_mon"}->get("psf","axisr");
+
+# Derive the average FWHM after smoothing
+       $smofwhm = $smofwhm * sqrt( $smoaxisratio );
+
+# Set radial limits.
+# ==================
+#
+# Here we define the diameter containing virually all the light from
+# the star image, and an annulus around that where the sky background is
+# to be estimated.
+
+# Constrain supplied apertures.  Variables inner and outer are the radii
+# of the annulus.
+       $aperture_factor = min( 15.0, max( $aperture_factor, 3.0 ) );
+       $inner = min( 3.0, max( $inner, 1.2 ) * 0.5 * $aperture_factor );
+       $outer = min( 5.0, max( $inner + 0.3, $outer, 1.5 ) * 0.5 * $aperture_factor );
+
+# In order to keep the aperture correction small (like well under 1
+# percent), choose an aperture many times the FWHM of the psf.
+       $aperture = max( $fwhm, $corefwhm ) * $aperture_factor;
+       $int_aperture = nint( $aperture + 0.5 ) + 1;
+
+# Form sky-subtracted image
+# =========================
+
+# Create an ARD mask for the annulus.
+       unlink ( "seeann$$.ard" );
+       open ( SEEANN, ">seeann$$.ard" );
+       print SEEANN "CIRCLE( $centre[0], $centre[1], $inner ) .AND. .NOT. CIRCLE( $centre[0], $centre[1], $outer)\n";
+       close ( SEEANN );
+
+# Apply the mask to the image.
+       $Mon{"kappa_mon"}->obeyw("ardmask","in=$ndf out=annulus$$ ardfile=seeann$$.ard");
+
+# Estimate the mode of the pixels within the sky annulus by sigma clipping, and
+# use this as the sky background.
+       $Mon{"kappa_mon"}->obeyw("stats", "ndf=annulus$$ clip=[2,2,3]");
+
+# Extract the mean and standard deviation of the annulus frame.
+       ($ORAC_STATUS, $sky) = $Mon{"kappa_mon"}->get("stats","mean");
+       ($ORAC_STATUS, $sigma) = $Mon{"kappa_mon"}->get("stats","sigma");
+
+# Subtract the sky from the image.
+       $Mon{"kappa_mon"}->obeyw("csub", "in=$ndf out=skysub$$ scalar=$sky");
+
+# Now we can remove the temporary files.
+       unlink ( "annulus$$.sdf", "seeann$$.ard" );
+
+# Determine the total flux
+# ========================
+
+# Allow for APERADD's ignorance of origin by shifting the origin of the centre
+# positions.
+       $xcen = $centre[0] - $lbnd[0] + 1;
+       $ycen = $centre[1] - $lbnd[1] + 1;
+
+# Specify the parameters for the APERADD stage.
+       $header = "inpic=skysub$$ diam=$aperture xcen=$xcen ycen=$ycen";
+       $hidden = "reset accept";
+
+# Integrate the psf flux within the aperture about the image centre.
+# Reset to get a new image centre.
+       $Mon{"kappa_mon"}->obeyw("aperadd", "$header $hidden");
+
+# Find the total flux.
+       ($ORAC_STATUS, $total_flux) = $Mon{"kappa_mon"}->get("aperadd","total");
+
+# Form integrated flux profile
+# ============================
+
+# Loop for a series of apertures from one pixel increasing in half-pixel
+# increments.  This proceeds until the aperture is larger than the
+# maximum deemed to contain the star's total flux, or the 80-percent
+# limit is reached.  This may prove to be too coarse for the linear
+# interpolation used, however we must guard against non-monotonic
+# increase in flux, especially at 80-percent level, arising from noise.
+       $aper = 1;
+       $int_aper = 1;
+       $rapture = 0.25;
+       $int_percent = 0;
+       @fluxper = ( );
+       while ( $int_aper <= $int_aperture && $int_percent < 80 ) {
+
+# Derive the radius of the aperture in pixels.
+          $rapture = $rapture + 0.25;
+
+# The automatic photometry task needs a text file to control the
+# type and location of the photometry, and the size and shape of the
+# aperture.  We have a circular aperture obtaining the sky from a 
+# concentric annulus, whose size defaults to 1.3 to twice the diameter
+# of the main aperture.
+          unlink ( "photom$$.dat" );
+          open ( PHOTOM, ">photom$$.dat" );
+          print PHOTOM "1 $centre[0] $centre[1] 0.0 0.0 0.0 0.0 OK $rapture 0.0 0.0 annulus circle\n";
+          close ( PHOTOM );
+
+# Specify the other parameters for AUTOPHOTOM.  Do not compute a centroid
+# about which to integrate.  Use a fixed background level of zero.
+          $header = "in=skysub$$ infile=photom$$.dat outfile=photom$$.res skyest=4 sky=0.0";
+          $hidden = "nocentro padu=1 biasle=0 photon=1 positive sature=12000 nousemask";
+
+# Perform the photometry.  
+          $Mon{"photom_mon"}->obeyw("autophotom","$header $hidden");
+
+# Extract the signal (total count) within the aperture from the
+# seventh field.
+          open ( PHOTRES, "<photom$$.res" );
+          @words = map{ split ' ' } <PHOTRES>;
+          $flux = $words[6];
+          close ( PHOTRES );
+
+# Tidy the temporary files as we need to re-use them for the next
+# aperture.
+          unlink ( "photom$$.dat", "photom$$.res" );
+
+# Evaluate the percentage of the total flux.
+          $int_percent = $flux / $total_flux * 100.0;
+          push ( @fluxper, $int_percent );
+
+# Increment the aperture.
+          $int_aper = int( 2.0 * $rapture );
+       }
+
+# Determine the 50% and 80% enclosed energy values
+# ================================================
+
+# Loop until percentage exceeds 50.  Use an integer percentage for
+# the logical expression.  To avoid exceeding array bounds, these
+# percentages were not stored in an array.
+       $i = -1;
+       $int_percent = 0;
+       while ( $int_percent < 50 && $i < $#fluxper ) {
+          $i++;
+          $int_percent = int( $fluxper[$i] );
+       }
+
+# Use linear interpolation to compute the aperture containing 50 percent
+# of the flux.  This method will overestimate the diameter.  Note that if
+# the increment size is changed, the scale factor (here set to half
+# a pixel per step) will appear in this expression.
+       $im1 = $i - 1;
+       $eed50 = 0.5 * ( $i + 1 + ( 50.0 - $fluxper[$im1] ) / ( $fluxper[$i] - $fluxper[$im1] ) );
+
+# Loop until percentage exceeds 80.  Use an integer percentage for
+# the logical expression.  To avoid exceeding array bounds, these
+# percentages were not stored in an array.
+       while ( $int_percent < 80 && $i < $#fluxper ) {
+          $i++;
+          $int_percent = int( $fluxper[$i] );
+       }
+
+# Use linear interpolation to compute the aperture containing 80 percent
+# of the flux.  This method will slightly overestimate the diameter but
+# somewhat less than at 50 percent and probably offset by the slight
+# underestimate of the total flux.  Note that if the increment size is
+# changed, the scale factor (here set to half pixel per step) will appear
+# in this expression.
+       $im1 = $i - 1;
+       $eed80 = 0.5 * ( $i + 1 + ( 80.0 - $fluxper[$im1] ) / ( $fluxper[$i] - $fluxper[$im1] ) );
+
+# Strehl width
+# ============ 
+
+# Assign the wavelength in microns for the filter.  K is expected so
+# place it first for efficiency.
+       SWITCH: {
+          if ( $filter =~ /^K/ ) { $lambda = 2.2; last SWITCH; }
+          if ( $filter =~ /^J/ ) { $lambda = 1.25; last SWITCH; }
+          if ( $filter =~ /^H/ ) { $lambda = 1.65; last SWITCH; }
+          if ( $filter =~ /^L-DASH/ ) { $lambda = 3.8; last SWITCH; }
+          if ( $filter =~ /^L/ ) { $lambda = 3.4; last SWITCH; }
+          if ( $filter =~ /^M/ ) { $lambda = 4.8; last SWITCH; }
+          if ( $filter =~ /^N/ ) { $lambda = 10.0; last SWITCH; }
+          $lambda = 2.2;
+       }
+
+# The theoretical Strehl width is given by the expression 1.43 lambda/D, 
+# where D is the mirror diameter in metres and lambda is the wavelength.
+# The 1.43 is derived from the integral of the J1(z)/z Bessel function.
+# It allows for the central obscuration.  The value is 1.27 without this
+# correction.  See Nick Rees's document "The Strehl of recent
+# ALICE/IRCAM3 images" (1994) for more details.
+#
+# Evaluate the theoretical width in arcseconds.  The 206265 is the number
+# of arcseconds per radian.
+       $strehl_theory = 1.43 * 206265 * $lambda / 10**6 / 3.725;
+
+# To measure the Strehl diameter/width, we need the peak flux.  Here we
+# use the peak from a Gaussian fit of the core of the star image.  The
+# background has been subtracted.  The standard deviation is unchanged.
+# There is a bug where the out value is ignored on the command line, so
+# place the desired file name into a text file.
+#       open ( GAUFIT, ">gaufitbug$$" );
+#       print GAUFIT "gaufit$$.dat\n";
+#       close ( GAUFIT );
+
+# Set up the parameters for the Gaussian fitting.
+#       $header = "nomode infile=centre$$.dat in=skysub$$ out=gaufit$$.dat";
+#       $hidden = "cosys=w noautol model=model$$ back=0 sigma=$sigma reset accept";
+
+# Find the fitted peak intensity.
+#       $Mon{"esp_mon"}->obeyw("gaufit","$header $hidden");
+
+# The results are in a text file.  Extract the peak flux from this file.
+#       open ( GAUFITRES, "<gaufit$$.dat" );
+#       @results = grep (/Peak/, <GAUFITRES>);
+#       @words = map{ split ' ' } @results[0];
+#       $peak_flux = $words[5];
+#       close ( GAUFITRES );
+#       unlink( "gaufit$$.dat", "gaufitbug$$", "model$$.sdf" );
+
+#### Fudge until working GAUFIT is available.
+
+# Extract the peak pixel of the frame.
+       $ndfsect = "skysub$$($maxpos[0]~$pixbox,$maxpos[1]~$pixbox)";
+       $Mon{"kappa_mon"}->obeyw("stats", "ndf=$ndfsect");
+       ($ORAC_STATUS, $peak_flux) = $Mon{"kappa_mon"}->get("stats","maximum");
+
+#### End of Fudge until working GAUFIT is available.
+
+# Derive the Strehl width and ratio.
+       $strehl_width = sqrt( 4.0 * $total_flux / $peak_flux / 3.14159 ) * $scale;
+       $strehl_ratio = ( $strehl_theory / $strehl_width ) ** 2;
+
+# Extract and present the results.
+# ================================
+
+# Convert the lengths from pixels to arcseconds.
+       $fwhm = $fwhm * $scale;
+       $corefwhm = $corefwhm * $scale;
+       $smofwhm = $smofwhm * $scale;
+       $eed50 = $eed50 * $scale;
+       $eed80 = $eed80 * $scale;
+
+# Trim the values to the appropriate number of significant figures, and
+# remove leading blanks.
+       $fs_fwhm = sprintf( "%6.3f", $fwhm );
+       $fs_fwhm =~ s/ //;
+       $fs_corefwhm = sprintf( "%6.3f", $corefwhm );
+       $fs_corefwhm =~ s/ //;
+       $fs_smofwhm = sprintf( "%6.3f", $smofwhm );
+       $fs_smofwhm =~ s/ //;
+
+       $fs_gamma = sprintf( "%6.3f", $gamma );
+       $fs_gamma =~ s/ //;
+       $fs_axisratio = sprintf( "%6.3f", $axisratio );
+       $fs_axisratio =~ s/ //;
+       $fs_pa = sprintf( "%6.2f", $pa );
+       $fs_pa =~ s/ //;
+
+       $fs_eed50 = sprintf( "%6.3f", $eed50 );
+       $fs_eed50 =~ s/ //;
+       $fs_eed80 = sprintf( "%6.3f", $eed80 );
+       $fs_eed80 =~ s/ //;
+       $fs_strehl_ratio = sprintf( "%6.3f", $strehl_ratio );
+       $fs_strehl_ratio =~ s/ //;
+       $fs_strehl_width = sprintf( "%6.3f", $strehl_width );
+       $fs_strehl_width =~ s/ //;
+
+# Report the scaled results.
+       orac_print " \n";
+       orac_print "Frame:                 $ndf\n";
+       orac_print "FWHM:                  $fs_fwhm arcsec\n";
+       orac_print "Gamma:                 $fs_gamma\n";
+       orac_print "Axis ratio:            $fs_axisratio\n";
+       orac_print "Position angle:        $fs_pa degrees\n";
+       orac_print " \n";
+#       orac_print "Core FWHM:             $fs_corefwhm arcsec (within $coresize pixels)\n";
+#       orac_print " \n";
+       orac_print "Smoothed FWHM:         $fs_smofwhm arcsec\n";
+       orac_print " \n";
+       orac_print "50%-flux diameter:     $fs_eed50 arcsec\n";
+       orac_print "80%-flux diameter:     $fs_eed80 arcsec\n";
+       orac_print " \n";
+       orac_print "Strehl ratio:          $fs_strehl_ratio\n";
+       orac_print "Strehl width:          $fs_strehl_width arcsec\n";
+
+       orac_print " \n";
+
+# Write statistics to logfile
+# ===========================
+       if ( $logging ) {
+
+# Use sprintf to format the statistics in the specified formats for the columns
+# of the table.  Append the formatted row to the logging file.  Note
+# in case some of the header information is null, output the results as
+# strings rather than integer or real; and assume a fixed format in
+# the FITS headers matching the STL format when the keywords are present.
+          printf LOGFILE ( "%8s %9.6f %6s %9.6f %6.3f %6.3f %5.3f %5.3f %6.2f %6.3f %6.3f %2d %6.3f %6.3f %6.4f %6.3f \n",
+            $idate, $ut, $filter, $airmass, $focus, $fwhm, $gamma, $axisratio, $pa, 
+            $smofwhm, $corefwhm, $coresize, $eed50, $eed80, $strehl_ratio, $strehl_width );
+          close ( LOGFILE );
+       }
+
+# Tidy
+# ====
+      unlink ( "psf$$.sdf", "centre$$.dat" );
+      unlink ( "centre$$.dat", "skysub$$.sdf" );
+   }
