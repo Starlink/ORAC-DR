@@ -239,23 +239,22 @@ The header is updated.
 =cut
 
 sub findnsubs {
-		  
   my $self = shift;
-  
+
   my $file = shift;
-  
+
   my ($loc,$status,$ncomp);
-  
+
   unless (defined $file) {
     $file = $self->file;
   }
-  
+
   # Now need to find the NDFs in the output HDS file
   $status = &NDF::SAI__OK;
   hds_open($file, 'READ', $loc, $status);
   dat_ncomp($loc, $ncomp, $status);
   dat_annul($loc, $status);
-		  
+
   unless ($status == &NDF::SAI__OK) {
     orac_err("Can't open $file for nsubs");
     return 0;
@@ -265,7 +264,7 @@ sub findnsubs {
 
 
   $self->nsubs($ncomp);
-  
+
   return $ncomp;
 
 }
@@ -292,7 +291,7 @@ sub flag_from_bits {
 
   my $prefix = shift;
   my $obsnum = shift;
-  
+
   # flag files for CGS4 of the type .cYYYYMMDD_NNNNN.ok
   my $raw = $self->file_from_bits($prefix, $obsnum);
 
@@ -348,42 +347,35 @@ Returns $in and $out in an array context:
 sub inout {
 
   my $self = shift;
- 
+
   my $suffix = shift;
 
   # Read the number
   my $num = 1; 
   if (@_) { $num = shift; }
-  
+
   my $infile = $self->file($num);
 
   # Split infile into a root and a tail
-  my ($root, $rest) = $self->split_name($infile);
+  my ($junk, $rest) = $self->_split_fname( $infile );
+  my @junk = @$junk;
 
-  # Chop off at last underscore
-  # Must be able to do this with a clever pattern match
-  # Want to use s/_.*$// but that turns a_b_c to a and not a_b
-  # instead split on underscore and recombine using underscore
-  # but ignoring the last member of the split array
-  my (@junk) = split(/_/,$root);
+  # We still need the root name though for the copobj
+  my $root = $self->_join_fname( $junk, '');
 
   # We only want to drop the SECOND underscore. If we only have
   # two components we simply append. If we have more we drop the last
-  # This prevents us from dropping the observation number in 
-  # ro970815_28
-
-  my $outfile;
-  if ($#junk > 1) {
-    $outfile = join("_", @junk[0..$#junk-1]);
-  } else {
-    $outfile = $root;
+  # This prevents us from dropping the observation number in
+  # ro970815_28. Special case numbers.
+  if ($#junk > 1 && $junk[-1] !~ /^\d+$/) {
+    @junk = @junk[0..$#junk-1];
   }
 
   # Find out how many files we have
   my $nfiles = $self->nfiles;
 
   # Now append the suffix to the outfile
-  $outfile .= $suffix;
+  my $outfile = $self->_join_fname(\@junk, '');
 
   # If we had a suffix (eg .i1) now need to
   # reattach it and create an HDS container *IF* NFILES is greater than 1
@@ -394,7 +386,7 @@ sub inout {
     $status = &NDF::SAI__OK;
 
     if (-e $outfile.".sdf") {
-      
+
       err_begin($status);
       hds_open($outfile, 'UPDATE', $loc, $status);
 
@@ -410,16 +402,16 @@ sub inout {
     } else {
 
       my @null = (0);
-      
+
       hds_new ($outfile,substr($outfile,0,9),"MICHELLE_HDS",0,@null,$loc,$status);
       dat_annul($loc, $status);
       orac_err("Failed to create HDS container!") if $status != &NDF::SAI__OK;
-      
+
       # propagate header
       $status = copobj($root.".header",$outfile.".header",$status);
       orac_err("Failed to propagate header!") if $status != &NDF::SAI__OK;
     }
-  
+
     $outfile .= ".".$rest;
   }
 
@@ -449,7 +441,7 @@ sub findrecipe {
   # if not try to make something up
   if (! defined $recipe || length($recipe) == 0) {
     $recipe = 'QUICK_LOOK';
-  } 
+  }
 
   # Update
   $self->recipe($recipe);
@@ -474,10 +466,10 @@ Run after updating $Frm.
 =cut
 
 sub mergehdr {
-  
+
   my $self = shift;
   my $status;
-  
+
   my $old = pop(@{$self->intermediates});
   my $new = $self->file;
 
@@ -498,7 +490,7 @@ sub mergehdr {
 
 =over 4
 
-=item B<split_name>
+=item B<_split_name>
 
 Internal routine to split a 'file' name into an actual
 filename (the HDS container) and the NDF name (the
@@ -515,7 +507,7 @@ This routine is so simple that it may not be worth the effort.
 
 =cut
 
-sub split_name {
+sub _split_name {
   my $self = shift;
   my $file  = shift;
 

@@ -969,7 +969,7 @@ display definition file.
 Arguments:
 
  number - the file number (as accepted by the file() method)
-          Starts counting at 0. If no argument is supplied
+          Starts counting at 1. If no argument is supplied
           a 1 is assumed.
 
 To return the ID associated with the second frame:
@@ -978,10 +978,14 @@ To return the ID associated with the second frame:
 
 If nfiles() equals 1, this method returns everything after the last
 suffix (using an underscore) from the filename stored in file(1). If
-nfiles E<gt> 1, this method returns the everything after the last 
-underscore, prepended with 's$number'. ie if file(2) is test_dk,
-the ID would be 's2dk'; if file() is test_dk (and nfiles = 1) the
-ID would be 'dk'.
+nfiles E<gt> 1, this method returns everything after the last
+underscore, prepended with 's$number'. ie if file(2) is test_dk, the
+ID would be 's2dk'; if file() is test_dk (and nfiles = 1) the ID would
+be 'dk'. A special case occurs when the suffix is purely a number (ie
+the entire string matches just "\d+"). In that case the number is
+translated to a string "num" so the second frame in "c20010108_00024"
+would return "s2num" and the only frame in "f2001_52" would return
+"num".
 
 =cut
 
@@ -997,15 +1001,20 @@ sub gui_id {
 
   # Split on underscore
   my (@split) = split(/_/,$fname);
+  my ($junk, $fsuffix) = $self->_split_fname( $fname );
+  my @split = @$junk;
 
   my $id = $split[-1];
+
+  # If we have a number translate to "num"
+  $id = "num" if ($id =~ /^\d+$/);
 
   # Find out how many files we have
   my $nfiles = $self->nfiles;
 
   # Prepend wtih s$num if nfiles > 1
   # This is to make it simple for instruments that only ever
-  # sotre one frame (eg UFTI)
+  # store one frame (eg UFTI)
   $id = "s$num" . $id if $nfiles > 1;
 
   return $id;
@@ -1046,6 +1055,9 @@ the contents of file(1).
 will return the second file name and the name of the new output
 file derived from this.
 
+The last suffix is not removed if it consists solely of numbers.
+This is to prevent truncation of raw data filenames.
+
 =cut
 
 sub inout {
@@ -1066,22 +1078,25 @@ sub inout {
 
   # instead split on underscore and recombine using underscore
   # but ignoring the last member of the split array
-  my (@junk) = split(/_/,$infile);
+  my ($junk, $fsuffix) = $self->_split_fname( $infile );
+
+  # Suffix is ignored
+  my @junk = @$junk;
 
   # We only want to drop the SECOND underscore. If we only have
   # two components we simply append. If we have more we drop the last
   # This prevents us from dropping the observation number in
   # ro970815_28
-
-  my $outfile;
-  if ($#junk > 1) {
-    $outfile = join("_", @junk[0..$#junk-1]);
-  } else {
-    $outfile = $infile;
+  # We special case when the last thing is a number
+  if ($#junk > 1 && $junk[-1] !~ /^\d+$/) {
+    @junk = @junk[0..$#junk-1];
   }
 
-  # Now append the suffix to the outfile
-  $outfile .= $suffix;
+  # Need to strip a leading underscore if we are using join_name
+  $suffix =~ s/^_//;
+  push(@junk, $suffix);
+
+  my $outfile = $self->_join_fname(\@junk, '');
 
   # Generate a warning if output file equals input file
   orac_warn("inout - output filename equals input filename ($outfile)\n")
@@ -1288,7 +1303,7 @@ aware of them.
 
 =over 4
 
-=item stripfname
+=item B<stripfname>
 
 Method to strip file extensions from the filename string. This method
 is called by the file() method. For the base class this method
@@ -1307,6 +1322,63 @@ sub stripfname {
   return $name;
 
 }
+
+=item B<_split_name>
+
+Given a file name, splits it into an array and a suffix. The first
+array contains the separate components of the file name (in the case
+of the base class these are the parts joined by underscores). The
+second argument suffix information.
+
+  ($bitsref, $suffix) = $frm->_split_fname( $file );
+  @bits = @$bitsref;
+
+A suffix is anything after the first "." in the filename.
+
+=cut
+
+sub _split_fname {
+  my $self = shift;
+  my $file = shift;
+
+  # Split the thing on dots first
+  my @dots = split(/\./, $file, 2);
+
+  my $suffix;
+  $suffix = $dots[1] if $#dots > 0;
+
+  # split on underscores
+  my @us = split(/_/, $dots[0]);
+
+  return \@us, $suffix;
+
+}
+
+=item B<_join_name>
+
+Reverse of C<split_name>.
+
+   $file = $frm->_join_fname(\@bits, $suffix);
+
+=cut
+
+sub _join_fname {
+  my $self = shift;
+  my ($bits, $suffix) = @_;
+  $suffix = '' unless defined $suffix;
+
+  my $root = join('_', @$bits);
+
+  my $file = $root;
+  $file .= ".$suffix" if length($suffix) > 0;
+
+  return $file;
+}
+
+
+
+=back
+
 
 # Deprecated
 
