@@ -34,6 +34,7 @@ The only input formats supported are:
   HDS     - HDS containers with .HEADER and .Inn NDFs
             In general this can only be converted to a NDF or FITS
             output file if there is only one data frame in the container.
+  GMEF    - Gemini Multi Extention FITS.
 
 In many cases the NDF format is used as the intermediate format for
 all conversions (should probably use PDLs as the intermediate
@@ -271,13 +272,23 @@ sub convert {
     orac_print "Converting from UKIRT I/O files to HDS container...\n";
     $outfile = $self->UKIRTio2hds;
     orac_print "...done\n";
-  } elsif ($options{'IN'} eq 'GMOS' && $options{'OUT'} eq 'HDS') {
-    # Implement GMOS2HDS
-    # This is a hack - gmos file are multi-ext fits
+  } elsif ($options{'IN'} eq 'GMEF' && $options{'OUT'} eq 'HDS') {
+    # Implement GMEF2HDS
+    # GMEF is Gemini Multi Extention Fits
     # fits2ndf can actually handle this, given the right options
-    orac_print("Converting from GMOS ME-FITS to HDS...\n");
-    $outfile = $self->gmos2hds;
+    orac_print("Converting from GEMINI ME-FITS to HDS...\n");
+    $outfile = $self->gmef2hds;
     orac_print("...done\n");
+  } elsif ($options{'IN'} eq 'GMEF' && $options{'OUT'} eq 'NDF') {
+    # Implement GMEF2NDF
+    # GMEF is Gemini Multi Extention Fits
+    # fits2ndf can actually handle this, given the right options
+    orac_print("Converting from GEMINI ME-FITS to NDF...\n");
+    $outfile = $self->gmef2hds;
+    $self->infile($outfile);
+    $outfile = $self->hds2ndf;
+    orac_print("...done\n");
+
 
   } else {
     orac_err "Error finding a conversion routine to handle $options{IN} -> $options{OUT}\n";
@@ -415,13 +426,13 @@ sub fits2ndf {
 
 }
 
-=item B<gmos2hds>
+=item B<gmef2hds>
 
-Convert a GMOS multi-extension FITS file to an HDS container
+Convert a GEMINI multi-extension FITS file to an HDS container
 
 =cut
 
-sub gmos2hds {
+sub gmef2hds {
   my $self = shift;
 
   my $name;
@@ -440,16 +451,14 @@ sub gmos2hds {
   $out =~s/S/_/;
 
   # We know that an HDS ends with .sdf -- append it.
-  my $ndf = $out . ".sdf";
-
-
+  my $hds = $out . ".sdf";
 
   # Check the output file name and whether we are allowed to
   # overwrite it.
-  if (-e $ndf && ! $self->overwrite) {
+  if (-e $hds && ! $self->overwrite) {
     # Return early
-    orac_warn "The converted file ($ndf) already exists - won't convert again\n";
-    return $ndf;
+    orac_warn "The converted file ($hds) already exists - won't convert again\n";
+    return $hds;
   }
 
   # Check to see if fits2ndf monolith is running
@@ -463,7 +472,7 @@ sub gmos2hds {
 
     # This leaves us with an invalid file as the HEADER doesn't contain a data array
     $self->mon('figaro1')->obeyw("creobj", "type=ARRAY dims=0 object=$out.HEADER.DATA_ARRAY");
-    $self->mon('figaro1')->obeyw("creobj", "type=_REAL dims=2 object=$out.HEADER.DATA_ARRAY.DATA");
+    $self->mon('figaro1')->obeyw("creobj", "type=_REAL dims=1 object=$out.HEADER.DATA_ARRAY.DATA");
 
     # Seems need to rename HEADER.FITS to HEADER.MORE.FITS
     $self->mon('figaro1')->obeyw("creobj", "type=ARRAY dims=0 object=$out.HEADER.MORE");
@@ -473,7 +482,7 @@ sub gmos2hds {
 
   # Return the filename (append .sdf) if everything okay.
   if ($status == ORAC__OK) {
-    return $ndf;
+    return $hds;
   } else {
     return undef;
   }
@@ -684,7 +693,7 @@ sub hds2ndf {
   err_begin($status);
 
   # Copy the base frame (.i1) to the output name
-  copobj($hdsfile . '.i1', $outfile, $status);
+  $status = copobj($hdsfile . '.i1', $outfile, $status);
 
   # Now the hard part -- we have to read in the FITS array from the
   # header and the FITS array from the data and merge them
@@ -777,7 +786,9 @@ sub hds2ndf {
   }
 
   err_end($status);
+
   return $outfile .'.sdf';
+
 
 }
 
