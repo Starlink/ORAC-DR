@@ -1,0 +1,309 @@
+#+
+# Name:
+#    _INTERLEAVE_DETECTOR_POSITIONS_
+#
+# Purpose:
+#    Interleaves exposures taken at different detector positions into
+#    one sub-image
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive interleaves exposures taken at different detector
+#    positions into one sub-image.  It does no co-adding of exposures taken
+#    at the same detector position.
+#
+# Notes:
+#    -  This primitive is not to be confused with _COADD_MULTIPLE_EXPOSURES_,
+#    which coadds sub-images into one.  To get the same functionality of
+#    CGS4's "coadd integrations", use this primitive followed directly by
+#    _COADD_MULTIPLE_EXPOSURES_.
+#    -  This primitive is suitable for CGS4, and Michelle in
+#    spectroscopy mode.
+#    -  The frame title is the name of the output NDF.
+#
+# Output Data:
+#    -  The interleaved frame with inheriting the current frame's name 
+#    but with the _in suffix.
+#
+# Tasks:
+#    KAPPA: ARDMASK, PIXDUPE, SETORIGIN; CCDPACK: MAKEMOS.
+#
+# Authors:
+#    BC: Brad Cavanagh (JAC)
+#    FE: Frossie Economou (JAC)
+#    TJ: Tim Jenness (JAC)
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+    my $param;
+
+# Obtain the number of scan positions.  We don't need to do any interlacing
+# if there's only one scan position.
+    my $nscanpos = $Frm->uhdr( "ORAC_NSCAN_POSITIONS" ); 
+    if ( $nscanpos != 1 ) {   
+
+# Obtain the increment between scans in pixels, and dimensions of the
+# array.
+       my $pixinc = $Frm->uhdr( "ORAC_SCAN_INCREMENT" );
+       my $utend = $Frm->uhdr( "ORAC_UTEND" );
+       my $xdim = $Frm->uhdr( "ORAC_DIM1" );
+       my $ydim = $Frm->uhdr( "ORAC_DIM2" );
+
+# Cope with the missing headers by accessing the array dimensions of
+# the frame.
+       if ( !( defined $xdim && defined $ydim ) ) {
+          $param = "ndf=" . $Frm->file;
+          $Mon{"ndfpack_mon"}->obeyw( "ndftrace", "$param" );
+
+# Extract the dimensions of the frame.
+          ( my $ORAC_STATUS, my @dims ) = $Mon{"ndfpack_mon"}->get( "ndftrace", "dims");
+          $xdim = $dims[ 0 ];
+          $ydim = $dims[ 1 ];
+       }
+       my $utend = $Frm->uhdr( "ORAC_UTEND" );
+       my $obstype = $Frm->uhdr( "ORAC_OBSTYPE" );
+
+# Determine the oversampling and expansion factors.  The
+# `overoversampling' is when multiple exposures ocur at a given
+# position before moving.
+       my $nsubs = $Frm->nsubs;                      # number of i-files
+       my $expansion = nint( 1 / $pixinc );          # expansion factor
+       my $oversamp = $nscanpos / $expansion;        # the oversampling
+       my $overoversamp = $nsubs / $nscanpos;        # the 'overoversampling'
+
+       my $newxdim = ( $xdim + ( $oversamp - 1 ) ) * $expansion;
+       orac_print "Interleaving frames ($nsubs observations in $nscanpos positions)\n";
+
+#print "nscanpos:$nscanpos nsubs:$nsubs pixing:$pixinc\n";
+#print "expansion:$expansion oversamp:$oversamp overoversamp:$overoversamp:\n";
+
+# Create the temporary ARD files to be used for all files.
+# ========================================================
+       my @ard;
+       my @ardname;
+
+# The ARD masks pixels in the expanded array, in steps of the expansion
+# factor, but with origins for each scan.
+       foreach my $i ( 1..$expansion ) {
+          $ard[ $i ] = new ORAC::TempFile;
+          foreach my $j ( 1..( $expansion * $xdim ) ) {
+             if ( ( ( $j - $i ) % $expansion ) != 0 ) {
+                my $ardstr = "COLUMN( $j )\n";
+                print {$ard[ $i ]->handle} $ardstr;
+             }
+          }
+
+# Close the ARD file, and record its name.
+          $ard[ $i ]->handle->close;
+          $ardname[ $i ] = $ard[ $i ]->file;
+       }
+
+# Operate on each set of images.
+# ==============================
+       my @blank;
+       my @blankname;
+
+# Operate on each sub-image separately.
+       foreach my $i ( 1..$nsubs ) {
+    
+# Determine the input and output file names.
+          my ( $in, $out ) = $Frm->inout( "_in", $i );
+    
+# Expand the image along the x-dimension using a temporary file.
+          my $exp = new ORAC::TempFile;
+          my $expname = $exp->file;
+
+          if ( $expansion != 1 ) {
+             $param = "in=$in out=$expname expand=\[$expansion,1\]";
+             $Mon{'kappa_mon'}->obeyw( "pixdupe", "$param" );
+
+# No expansion is required, so merely copy the image to the temporary file.
+          } else {
+             $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$expname" );
+          }
+
+# Blank out columns as defined by the appropriate ARD file.  Store the
+# masked image in a temporary file.
+          my $ardfile = ( ( $i - 1 ) % $expansion ) + 1;
+          $blank[ $i ] = new ORAC::TempFile;
+          $blankname[ $i ] = $blank[ $i ]->file;
+
+          if ( $expansion != 1 ) {
+             $param = "out=$blankname[ $i ] ardfile=$ardname[ $ardfile ]";
+             $Mon{'kappa_mon'}->obeyw( "ardmask","in=$expname $param");
+
+# No masking is required, so merely copy the image to the temporary file.
+          } else {
+             $param = "in=$expname out=$blankname[ $i ]";
+             $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$param");
+          }
+
+# Set the origin for pasting/mosaicking.
+          my $position = $Frm->uhdr->{$i}->{"ORAC_DETECTOR_INDEX"};
+          my $neworigin = int( ( $position - 1 ) / $expansion ) * $expansion + 1;
+#    print "position:$position neworigin:$neworigin\n";
+
+          $param = "ndf=$blankname[ $i ] origin=\[$neworigin,1\]";
+          $Mon{'ndfpack_mon'}->obeyw( "setorigin", "$param" );
+       }
+
+       if ( $overoversamp == 1 ) {
+
+# If there's only one subset of observations, they can all be merged
+# together into the output image.
+          $Frm->files( $Frm->file );
+          my ( $in, $out ) = $Frm->inout( "_in" );
+
+# Make a temporary indirection file listing the images to be merged.
+          my $tmp = new ORAC::TempFile;
+          foreach my $blanknum ( 1..$#blankname ) {
+             print {$tmp->handle} "$blankname[ $blanknum ]\n";
+          }
+          $tmp->handle->close;
+
+# Mosaic the masked frames by averaging without applying corrections for
+# scaling and offset between frames.  Variance is not computed.  There is
+# also no CCDPACK logging.
+          my $param = "noscale nogenvar nousevar nozero logto=neither logfile=!";
+          my $mosargs = "in=^" . $tmp->file . " method=mean title=$out";
+          $Mon{'ccdpack_reg'}->obeyw( "makemos", "$mosargs $param out=$out" );
+
+# Set the axis centres for the expanded axis.  First remove any existing axis
+# structure.
+          $Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$out mode=delete" );
+          my $axisexp = 1 / $expansion;
+          $param = "ndf=$out mode=expr dim=1 exprs=CENTRE*$axisexp";
+          $Mon{'ndfpack_mon'}->obeyw( "setaxis", "$param" );
+
+          orac_print "Frames interleaved into $out\n";
+
+# Create a single file, merging the headers.
+          $Frm->files( $out );
+          $Frm->mergehdr;
+
+
+# Otherwise there's more than one subset of observations, and they have to
+# be merged separately.
+       } else {
+          my @files = ();
+
+          foreach my $i ( 1..$overoversamp ) {
+
+# Make a temporary indirection file listing the images to be merged
+# for the current subset.
+             my $makemosfiles = new ORAC::TempFile;
+             foreach my $j ( 1..$nscanpos ) {
+                my $fileno = ( ( $i - 1 ) * $nscanpos ) + $j; 
+                print {$makemosfiles->handle} $blankname[ $fileno ] . "\n";
+             }
+             $makemosfiles->handle->close;
+      
+# Mosaic the images in subset $i.
+             my( $in, $out ) = $Frm->inout( "_in", $i );
+             my $makemos = $makemosfiles->file;
+
+# Mosaic the masked frames by averaging without applying corrections for
+# scaling and offset between frames.  Variance is not computed.  There is
+# also no CCDPACK logging.
+             $param = "nogenvar noscale nozero nousevar logto=neither logfile=!";
+             my $mosargs = "in=^" . $makemos . " method=mean title=$out";
+             $Mon{'ccdpack_reg'}->obeyw( "makemos", "$mosargs $param out=$out" );
+      
+# Set the axis centres for the expanded axis.  First remove any existing axis
+# structure.
+             $Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$out mode=delete" );
+             my $axisexp = 1 / $expansion;
+             $param = "ndf=$out mode=expr dim=1 exprs=CENTRE*$axisexp";
+             $Mon{'ndfpack_mon'}->obeyw( "setaxis", "$param" );
+
+             push @files, $out;
+          }
+
+# Update the Frm object.
+         $Frm->files( $Frm->file );
+         my( $in, $out ) = $Frm->inout( "_in" );
+         $Frm->files( @files );
+         $Frm->mergehdr;
+         orac_print "Frames interleaved into $out\n";
+      }
+   }
+
+   $Display->display_data( $Frm ) if defined $Display;
+
+
+# _INTERLEAVE_DETECTOR_POSITIONS_
+#
+# interleaves exposures taken at different detector positions into
+# one sub-image
+
+=head1 NAME
+
+INTERLEAVE_DETECTOR_POSITIONS - interleaves oversampled exposures into one sub-frame
+
+=head1 DESCRIPTION
+
+This primitive interleaves exposures taken at different detector positions into
+one sub-image.  It does no co-adding of exposures taken at the same detector position.
+
+=head1 ORAC
+
+=head2 Engines referenced
+
+KAPPA, CCDPACK
+
+=head2 Tasks called
+
+=over 4
+
+=item kappa_mon
+
+pixdupe, ardmask
+
+=item ndfpack_mon
+
+setorigin
+
+=item ccdpack_reg
+
+makemos
+
+=back
+
+=head2 Objects addressed
+
+$Frm
+
+=head1 OUTPUT FILES
+
+The following output files are created:
+
+=over 4 C<_in>
+
+Interleaved frame.
+
+=back
+
+=head1 NOTES
+
+This primitive is not to be confused with COADD_MULTIPLE_EXPOSURES, which coadds sub-images
+into one.  To get the same functionality of CGS4's "coadd integrations", use this recipe 
+followed directly by COADD_MULTIPLE_EXPOSURES.
+
+=head2 REVISION
+
+$Id$
+
+=head1 AUTHOR
+
+b.cavanagh@jach.hawaii.edu
+mjc@jach.hawaii.edu
+
+=cut
+
+#'
