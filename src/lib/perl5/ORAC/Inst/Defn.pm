@@ -462,8 +462,8 @@ sub orac_configure_for_instrument {
   # Set up a local copy of ORAC_DATA_ROOT and ORAC_CAL_ROOT so we dont
   # confuse the routine when it is called with a different instrument - is 
   # only important for default behaviour
-  my $orac_data_root = $ENV{ORAC_DATA_ROOT};
-  my $orac_cal_root = $ENV{ORAC_CAL_ROOT};
+  my $orac_data_root = $ENV{"ORAC_DATA_ROOT"};
+  my $orac_cal_root = $ENV{"ORAC_CAL_ROOT"};
 
   SWITCH: {
      if ( $instrument eq "CGS4" ) {
@@ -490,7 +490,8 @@ sub orac_configure_for_instrument {
              $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
 	                                                "raw","cgs4",$oracut);
              $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir( $orac_data_root,
-	                                              "reduced","cgs4",$oracut);
+	                                              "reduced","cgs4",$oracut)
+				     unless defined $$options{"honour"};
 
              # misc
              $ENV{"ORAC_PERSON"} = "frossie";
@@ -522,7 +523,8 @@ sub orac_configure_for_instrument {
              $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
 	                                                "raw","ircam", $oracut);
              $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir($orac_data_root,
-	                                             "reduced","ircam",$oracut);
+	                                             "reduced","ircam",$oracut)
+				     unless defined $$options{"honour"};
 
              # misc
              $ENV{"ORAC_PERSON"} = "mjc";
@@ -616,8 +618,8 @@ sub orac_configure_for_instrument {
 	     # else set to current directory
              if ($orac_data_root eq "/jcmtarchive") {
                 $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir( $orac_data_root,
-		                                            "reduced","orac",
-							    $oracut);
+		                          "reduced","orac", $oracut) unless
+			                  defined $$options{"honour"};
                 if ( hostname ne "mamo" ) {
                    orac_err("Please use mamo for ORAC-DR reduction. Aborting.");
                    throw ORAC::Error::FatalError( "Use mamo for reduction",
@@ -633,7 +635,7 @@ sub orac_configure_for_instrument {
 
                 }
              } else {
-                 $ENV{"ORAC_DATA_OUT"} = cwd;
+                 $ENV{"ORAC_DATA_OUT"} = cwd unless defined $$options{"honour"};
              }
 
              # Misc stuff
@@ -667,7 +669,8 @@ sub orac_configure_for_instrument {
              $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
 	                                                "raw","ufti",$oracut);
              $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir($orac_data_root,
-	                                              "reduced","ufti",$oracut);
+	                                              "reduced","ufti",$oracut)
+				     unless defined $$options{"honour"};
 
              # misc
              $ENV{"ORAC_PERSON"} = "mjc";

@@ -108,8 +108,8 @@ my @ORAC_ARGS = @ARGV;
 #
 #  ORAC modules
 #
-use lib $ENV{ORAC_PERL5LIB};     # Path to ORAC modules
-use ORAC::Basic;                 # Helper routines
+use lib $ENV{"ORAC_PERL5LIB"};     # Path to ORAC modules
+use ORAC::Basic;                   # Helper routines
 
 #
 #  General modules
@@ -211,6 +211,7 @@ xorac_update_progress('Loaded ORAC Modules', 5);
 #  General modules
 #
 use Pod::Usage;
+use Getopt::Long;
 
 # 
 # Tk modules
@@ -229,12 +230,21 @@ my %options;
 
 foreach ( qw/ nodisplay debug verbose calib from to ut list batch
               skip warn noeng log_file log_screen log_xwin loop 
-	      resume beep nomsgtmp showcurrent files / ) {
+	      resume beep nomsgtmp showcurrent files honour override/ ) {
 
    %options = ( %options, $_ => undef );
 }
 
-# Check for ORAC_LOOP environment variable here and set $$options{"loop"}
+#  Check for command line arguements
+my $status = GetOptions( "honour!" => \$options{"honour"},
+	  		 "ut=s"    => \$options{"ut"} );
+
+# Check for Tim's back door to honour ORAC_DATA_OUT
+if ( defined $options{"honour"} ) {
+   orac_print(" Xoracdr will honour ORAC_DATA_OUT ($ENV{'ORAC_DATA_OUT'})\n",
+              "blue"); }
+
+# Check for ORAC_LOOP environment variable here and set $options{"loop"}
 $options{"loop"} = $ENV{"ORAC_LOOP"};
 
 # Declare Status Bar variable here so we can pass it to processing loop
@@ -403,15 +413,33 @@ $menus[3]->menu()->add( "checkbutton",
                         -label       => "Show Current Recipe",
                         -variable    => \$options{"showcurrent"},
 			-selectcolor => 'blue' );
+
+$menus[3]->menu()->add( "checkbutton",
+                        -label       => "Override: None Selected",
+                        -variable    => \$options{"override"},
+			-state       => 'disabled',
+			-selectcolor => 'blue' );
 $menus[3]->menu()->add( "separator" );
 
-# Calls Xorac::xorac_edit_recipe() to set ORAC specfic stuff in %ENV
+
+# Calls Xorac::xorac_override_recipe to put up a popup to set the override
+my $Override_Recipe ="SCUBA_ALIGN";
+print \$Override_Recipe ."\n";
 $menus[3]->menu()->add( "command",
-                        -label   => "Edit Instrument Recipes",
+                        -label   => "Set Override Recipe",
 			-state   => 'disabled',
                         -command => sub { 
 			         try {
-		         	    xorac_edit_recipe(); 
+		         	   my $directory;
+				  ($directory, $Override_Recipe) =
+				     xorac_select_recipe( \$recipe_menu );
+				  
+				   print "stuff\n";
+				   
+				   $menus[3]->menu()->entryconfigure(3,
+				                         -state => 'normal');
+				   $menus[3]->menu()->entryconfigure(1,
+				                         -state => 'normal');
 				 }
 		                 catch ORAC::Error::FatalError with
 		                 {
@@ -422,7 +450,23 @@ $menus[3]->menu()->add( "command",
 	                            print "User Abort caught by Xoracdr GUI\n";
 	       	                 }; } );
 
-						
+# Calls Xorac::xorac_edit_recipe() to pull up the recipe editor
+$menus[3]->menu()->add( "command",
+                        -label   => "Edit Instrument Recipes",
+			-state   => 'disabled',
+                        -command => sub { 
+			         try {
+		         	    my ($directory, $recipe ) =
+				       xorac_select_recipe( 1 );
+				 }
+		                 catch ORAC::Error::FatalError with
+		                 {
+	                            print "Fatal Error caught by Xoracdr GUI\n";
+		                 }
+		                 catch ORAC::Error::UserAbort with
+		                 {
+	                            print "User Abort caught by Xoracdr GUI\n";
+	       	                 }; } );				 
 xorac_update_progress('Packed Menu Bar', 30);
 
 # B U I L D  C O N T R O L   P A N E L  -------------------------------------
@@ -470,21 +514,6 @@ my ( $file_button );
 # Declare @obs variable now for -loop file option
 my @obs;
 
-# button sub-frame
-#my $sub_but_frame = $main_frame->Frame( -relief      => 'flat',
-#                                        -borderwidth => 0 );
-
-#$sub_but_frame->grid( -column => 0, -row => 1, -sticky => 'new');
-	
-
-# Config button
-#my $cf_button = $sub_but_frame->Button( -text       => 'Setup for Instrument',
-#                                        -font             => 'Arial',
-#                                        -activeforeground => 'white',
-#                                        -activebackground => 'blue');
-
-#$cf_button->grid( -column => 0, -row => 1, -sticky => 'we' );
-
 # Go button
 my $go_button = $main_frame->Button( -text             => 'Start ORAC-DR',
                                         -font             => 'Arial',
@@ -495,10 +524,16 @@ my $go_button = $main_frame->Button( -text             => 'Start ORAC-DR',
 
 $go_button->grid( -column => 0, -row => 1, -sticky => 'we' );
 
+xorac_update_progress('Packed Buttons', 45);
 
-# Bind the left mouse button click to the Tk::Listbox to setup the instrument
-$instruments->bind( "<ButtonPress>", 
-       sub { if ( defined $$inst_select[0] ) {
+# C O N F I G U R E  I N S T R U M E N T ------------------------------------
+
+# Anonymous subroutine to configure instrument, do it here so that its in
+# the same file as all the rest of the GUI code and all the widgets it
+# manipulates are still in lexical scope. This is a sucky kludge, but we
+# call this routine from 3 different places in the GUI.
+my $configure_instrument = 
+        sub { if ( defined $$inst_select[0] ) {
 	        try {
 		  orac_configure_for_instrument(${$inst_select}[0], \%options);
 		}
@@ -515,14 +550,18 @@ $instruments->bind( "<ButtonPress>",
 		$go_button->configure( -state => 'normal' );
  
 		if( defined $ENV{"ORAC_INSTRUMENT"} ) {
-		   $menus[3]->menu()->entryconfigure(2, -state => 'normal'); }
-		$menus[3]->menu()->entryconfigure(2, -label =>
+		   $recipe_menu->entryconfigure(4, -state => 'normal'); }
+		   $recipe_menu->entryconfigure(4, -label =>
 		                        "Edit $$inst_select[0] Recipes");
+	           $recipe_menu->entryconfigure(3, -state => 'normal');
+		   $recipe_menu->entryconfigure(3, -label =>
+		                        "Override $$inst_select[0] Recipe");
 
                 $ENV{"ORAC_RECIPE_DIR"} = $ENV{"ORAC_DATA_OUT"}
 		   unless defined $ENV{"ORAC_RECIPE_DIR"};
 	        unless (-d $ENV{"ORAC_RECIPE_DIR"}) { 
-		   $recipe_menu-> entryconfigure(2, -state => 'disabled'); 
+		   $recipe_menu->entryconfigure(4, -state => 'disabled'); 
+	           $recipe_menu->entryconfigure(3, -state => 'disabled');
 		   undef $ENV{"ORAC_RECIPE_DIR"};
 		}
                 # If we have changed the loop type during setup, the interface
@@ -587,49 +626,10 @@ $instruments->bind( "<ButtonPress>",
 		$list_label->configure( -foreground => $list_lab);
 		$list_entry->configure( -background => $list_ent,
 		                        -state      => $list_state );
-		$file_button->configure( -state => $file_state ); } } );
-
-# bind the Go button
-$go_button->bind( "<ButtonPress>", 
-       sub { if ( $go_button->cget( -state) eq 'active' ) 
-             {
-                
-		# If we have an existing log window, kill it before
-		# flushing the error queue since this will generate
-		# a UserAbort
-		ORAC::Event->destroy("TL");
+		$file_button->configure( -state => $file_state ); }
+             };
 		
-	        # Check for queued UserAborts generated after quiting the
-		# log window after a FatalError
-		my $error = ORAC::Error->prior;
-		ORAC::Error->flush if defined $error;
-	    
-	        $go_button->configure( -state => 'disabled' );
-       	        $menus[0]->menu()->entryconfigure( 0, -state => 'normal' );
-       	        $menus[0]->menu()->entryconfigure( 1, -state => 'normal' );
-		try {
-	           xorac_start_process (\%options, $inst_select, 
-		                        \$CURRENT_RECIPE, \@ORAC_ARGS, \@obs);
-		}
-		catch ORAC::Error::FatalError with
-		{
-	            print "Fatal Error caught by Xoracdr GUI\n";
-		}
-		catch ORAC::Error::UserAbort with
-		{
-	            print "User Abort caught by Xoracdr GUI\n";
-		};
-		$menus[0]->menu()->entryconfigure( 0, -state => 'disabled' );
-       	        $menus[0]->menu()->entryconfigure( 1, -state => 'disabled' );
-		$go_button->configure( -state => 'normal' );
-		$CURRENT_RECIPE = "Xoracdr $VERSION - pipeline not active";
-		$error = ORAC::Error->prior;
-                ORAC::Error->flush if defined $error;
-		ORAC::Error->flush if defined $error;
-
-	     } } );
-
-xorac_update_progress('Packed Buttons', 45);
+xorac_update_progress('Anonymous sub-routines', 50);
 
 # T E X T  E N T R Y --------------------------------------------------------
 
@@ -640,7 +640,7 @@ my $sub_txt_frame = $main_frame->Frame( -relief      => 'flat',
 $sub_txt_frame->grid( -column => 1, -row => 0, -sticky => 'nsew');
 				 
 # UT date text entry field
-$options{"ut"} = utdate;
+$options{"ut"} = utdate unless defined $options{"ut"};
 
 my $ut_label = $sub_txt_frame->Label( -text    => 'UT Date: ',
                                       -relief  => 'groove',
@@ -657,100 +657,6 @@ my $ut_entry = $sub_txt_frame->Entry( -exportselection     => 1,
 				      -textvariable        => \$options{"ut"},
 				      -width               => 12 );
 $ut_entry->grid( -column => 1, -row => 0, -sticky => 'ew' );
-
-$ut_entry->bind( "<Return>",
-       sub { if ( defined $$inst_select[0] ) {
-	        try {
-		  orac_configure_for_instrument(${$inst_select}[0], \%options);
-		}
-		catch ORAC::Error::FatalError with
-		{
-	            print "Fatal Error caught by Xoracdr GUI\n";
-		}
-		catch ORAC::Error::UserAbort with
-		{
-	            print "User Abort caught by Xoracdr GUI\n";
-		};
-	        my $error = ORAC::Error->prior;
-                ORAC::Error->flush if defined $error;
-		$go_button->configure( -state => 'normal' );
-		   
-		if( defined $ENV{"ORAC_INSTRUMENT"} ) {
-		   $menus[3]->menu()->entryconfigure(2, -state => 'normal'); }
-		$menus[3]->menu()->entryconfigure(2, -label =>
-		                        "Edit $$inst_select[0] Recipes");
-
-                $ENV{"ORAC_RECIPE_DIR"} = $ENV{"ORAC_DATA_OUT"}
-		   unless defined $ENV{"ORAC_RECIPE_DIR"};
-	        unless (-d $ENV{"ORAC_RECIPE_DIR"}) { 
-		   $recipe_menu-> entryconfigure(2, -state => 'disabled'); 
-		   undef $ENV{"ORAC_RECIPE_DIR"};
-		}
-		 
-                # If we have changed the loop type during setup, the interface
-		# will be in a bad state, we need to correct this...
-		
-		# define the status variables
-		my ( $to_state, $from_state, $list_state, $file_state );
-		my ( $to_lab, $from_lab, $list_lab );
-		my ( $to_ent, $from_ent, $list_ent );
-		
-		# switch on the current loop type
-		SWITCH: {
-		 if ( $options{"loop"} eq "list" ) {
-		   $list_state = 'normal';
-	           $to_state = $from_state = $file_state = 'disabled';
-		   $list_lab = 'black'; $list_ent = '#d9d9d9';
-		   $to_lab = $to_ent = 'grey75';
-		   $from_lab = $from_ent = 'grey75';
-		   $list_lab = $list_ent = 'grey75';
-		   $options{"to"} = $options{"from"} = $options{"file"} = undef;
-		   last SWITCH; }
-		 if ( $options{"loop"} eq "wait" ) {
-		   $to_state = $from_state = 'normal';
-		   $list_state = $file_state = 'disabled';
-		   $to_lab = 'black'; $to_ent = '#d9d9d9';
-		   $from_lab = 'black'; $from_ent = '#d9d9d9';
-		   $list_lab = $list_ent = 'grey75';
-		   $options{"list"} = $options{"file"} = undef;
-		   last SWITCH; }  
-		 if ( $options{"loop"} eq "inf" ) {
-		   $to_state = 'normal';
-		   $list_state = $from_state = $file_state = 'disabled';
-		   $to_lab = 'black'; $to_ent = '#d9d9d9';
-		   $from_lab = $from_ent = $list_lab = $list_ent = 'grey75';
-		   $options{"list"} = $options{"file"} = undef;
-		   last SWITCH; }  
-		 if ( $options{"loop"} eq "flag" ) {
-		   $to_state = $from_state = 'normal';
-		   $list_state = $file_state = 'disabled';
-		   $to_lab = 'black'; $to_ent = '#d9d9d9';
-		   $from_lab = 'black'; $from_ent = '#d9d9d9';
-		   $list_lab = $list_ent = 'grey75';
-		   $options{"list"} = $options{"file"} = undef;
-		   last SWITCH; }
-		 if ( $options{"loop"} eq "file" ) {
-		   $file_state = 'normal';
-		   $to_state = $from_state = $list_state = 'disabled';
-		   $to_lab = $to_ent = 'grey75';
-		   $from_lab = $from_ent = 'grey75';
-		   $list_lab = $list_ent = 'grey75';
-		   $options{"list"} = $options{"to"} = $options{"from"} = undef;
-		 }
-		 my $nothing = 1;
-		}  
-		# configure the widgets 
-                $to_label->configure( -foreground => $to_lab );
-		$to_entry->configure( -background => $to_ent,
-		                      -state      => $to_state );
-		$from_label->configure( -foreground => $from_lab );
-		$from_entry->configure( -background => $from_ent,
-				        -state      => $from_state );
-		$list_label->configure( -foreground => $list_lab);
-		$list_entry->configure( -background => $list_ent,
-		                        -state      => $list_state );
-		$file_button->configure( -state => $file_state ); } } );
-
 
 # From entry field
 $options{"from"} = 1;
@@ -810,6 +716,58 @@ $list_entry->grid( -column => 1, -row => 3, -sticky => 'ew' );
    
 xorac_update_progress('Packed Text Entries', 55);
 
+# B I N D I N G  B U T T O N ,  T E X T  E N R T Y  &  L I S T B O X ---------
+
+# Bind the left mouse button click to the Tk::Listbox to setup the instrument
+$instruments->bind( "<ButtonPress>", sub { &$configure_instrument; } );
+
+# Bind the UT entry widget to setup the instrument if we have a valid UT Date
+$ut_entry->bind("<Key>", sub { if ( length($options{"ut"}) == 8 ) {
+                                  &$configure_instrument; } } );
+
+# Bind the Go button
+$go_button->bind( "<ButtonPress>", 
+       sub { if ( $go_button->cget( -state) eq 'active' ) 
+             {
+                
+		# If we have an existing log window, kill it before
+		# flushing the error queue since this will generate
+		# a UserAbort
+		ORAC::Event->destroy("TL");
+		
+	        # Check for queued UserAborts generated after quiting the
+		# log window after a FatalError
+		my $error = ORAC::Error->prior;
+		ORAC::Error->flush if defined $error;
+	    
+	        $go_button->configure( -state => 'disabled' );
+       	        $menus[0]->menu()->entryconfigure( 0, -state => 'normal' );
+       	        $menus[0]->menu()->entryconfigure( 1, -state => 'normal' );
+		try {
+	           xorac_start_process (\%options, $inst_select, 
+		                        \$CURRENT_RECIPE, \$Override_Recipe, 
+					\@obs);
+		}
+		catch ORAC::Error::FatalError with
+		{
+	            print "Fatal Error caught by Xoracdr GUI\n";
+		}
+		catch ORAC::Error::UserAbort with
+		{
+	            print "User Abort caught by Xoracdr GUI\n";
+		};
+		$menus[0]->menu()->entryconfigure( 0, -state => 'disabled' );
+       	        $menus[0]->menu()->entryconfigure( 1, -state => 'disabled' );
+		$go_button->configure( -state => 'normal' );
+		$CURRENT_RECIPE = "Xoracdr $VERSION - pipeline not active";
+		$error = ORAC::Error->prior;
+                ORAC::Error->flush if defined $error;
+		ORAC::Error->flush if defined $error;
+
+	     } } );
+
+xorac_update_progress('Bound events to widgets', 60);
+
 # L O G  O P T I O N S ------------------------------------------------------
 
 # Build initial log options list, reconstruct $opt_log later
@@ -866,7 +824,7 @@ my $xwin_checkbutton = $sub_log_frame->Checkbutton( -anchor      => 'w',
 				           -variable => \$options{"log_xwin"} );
 $xwin_checkbutton->grid( -column => 0, -row => 3, -sticky => 'ew' );  
 
-xorac_update_progress('Packed Log Options', 60);
+xorac_update_progress('Packed Log Options', 65);
 
 # D I R E C T O R Y S  ------------------------------------------------------
 
@@ -911,7 +869,7 @@ my $red_entry = $sub_dir_frame->Entry(  -exportselection     => 1,
 				        -width               => 30 );
 $red_entry->grid( -column => 1, -row => 1, -sticky => 'ew' );
 
-xorac_update_progress('Packed Directory Entries', 65);
+xorac_update_progress('Packed Directory Entries', 70);
 
 # L O O P  O P T I O N S  ---------------------------------------------------
 
@@ -1082,18 +1040,11 @@ $file_button->bind( "<ButtonPress>",
 	     } } );
 
 
-xorac_update_progress('Packed Loop Options', 70);
-
-# C A L I B  O P T I O N S --------------------------------------------------
-
-# No functionality to handle this as yet, Frossie? Tim?
-
-xorac_update_progress('Packed Calibration Options', 75);
+xorac_update_progress('Packed Loop Options', 75);
 
 # M I S C  O P T I O N S ----------------------------------------------------
 
-# For once not the biggest catagory
-
+# For once not the biggest catagory, I'm sure that will change with time
 
 # Directories options sub-frame
 my $sub_misc_frame = $main_frame->Frame( -relief      => 'flat',
@@ -1118,6 +1069,16 @@ my $skip_checkbutton = $sub_misc_frame->Checkbutton( -anchor      => 'w',
 $skip_checkbutton->grid( -column => 1, -row => 0, -sticky => 'ew' );
 
 xorac_update_progress('Packed Everything Else', 80);
+
+# C O N F I G U R E  G U I   F O R   O R A C _ I N S T R U M E N T ----------
+
+# If we have ORAC_INSTRUMENT defined then do an instrument setup,
+# not really GUI code, shouldn't be here, but it has to go somewhere
+if ( defined $ENV{"ORAC_INSTRUMENT"} ) {
+   $inst_select = [ $ENV{"ORAC_INSTRUMENT"} ];
+   &$configure_instrument; }
+
+xorac_update_progress('Configuring the interface', 85);
 
 # B U I L D  S T A T U S  B A R ---------------------------------------------
 
@@ -1188,6 +1149,9 @@ catch ORAC::Error::UserAbort with
 # R E V I S I O N  L O G ----------------------------------------------------
 
 # $Log$
+# Revision 1.5  2001/02/28 04:09:16  allan
+# -honour -ut options for Xoracdr and a non-functioning Override Recipe widget
+#
 # Revision 1.4  2001/02/28 00:18:08  allan
 # Major GUI rearrange, get rid of setup for instrument button
 #

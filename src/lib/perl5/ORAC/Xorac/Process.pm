@@ -113,11 +113,11 @@ The following subroutines are available:
 
 sub xorac_start_process {
 
-  croak 'Usage: xorac_start_process( \%options, $inst_select, \$CURRENT_RECIPE, \@ORAC_ARGS, \@obs )'
-    unless scalar(@_) == 5 ;
+  croak 'Usage: xorac_start_process( \%options, $inst_select, \$CURRENT_RECIPE, \$Override_Recipe, \@obs )'
+    unless scalar(@_) == 5;
 
   # Read the argument list
-  my ( $options, $inst_select, $CURRENT_RECIPE, $ORAC_ARGS, $obs ) = @_;
+  my ( $options, $inst_select, $CURRENT_RECIPE, $Override_Recipe, $obs ) = @_;
 
   use ORAC::Print;     # Printing messages or errors
   use ORAC::Core;      # Core pipeline routines
@@ -321,11 +321,17 @@ sub xorac_start_process {
   # Decide on a looping scheme
   $loop = "orac_loop_" . ${$options}{"loop"} if defined ${$options}{"loop"};
 
-  # Read recipe name
-  my $Override_Recipe = shift(@$ORAC_ARGS);
-
   ########################## D A T A   L O O P ################################
  
+  # Over ride recipe 
+  my $Use_Recipe;
+  if ( defined ${$options}{"override"} == 1 ) {
+     $Use_Recipe = $$Override_Recipe;
+     print "Recipe: $$Override_Recipe\n";
+  } else {
+     undef $Use_Recipe; 
+  }
+      
   # Call the main data processing loop
   try {
      orac_main_data_loop( ${$options}{"batch"}, ${$options}{"ut"}, 
@@ -333,7 +339,7 @@ sub xorac_start_process {
 	   	          ${$options}{"debug"}, $loop, $frameclass, $groupclass,
 		          $instrument, $Mon, $Cal, $obs, $Display, $orac_prt,
 		          $ORAC_MESSAGE, $CURRENT_RECIPE, $PRIMITIVE_LIST,
-			  $CURRENT_PRIMITIVE, $Override_Recipe );
+			  $CURRENT_PRIMITIVE, $Use_Recipe );
      orac_print ("Pipeline processing complete\n", "green");
      return;
   }

@@ -51,7 +51,8 @@ ORAC::Xorac - routines called from the Xoracdr launcher GUI
   xorac_log_window( $win_str, \$orac_prt );
   xorac_recipe_window( );
   xorac_calib( \%options );
-  xorac_edit_recipe();
+  xorac_select_recipe(  );
+  xorac_editor( $diectory, $recipe );
   xorac_exit_normally;
   xorac_exit_abnormally;
 
@@ -101,8 +102,8 @@ use vars qw/$VERSION @EXPORT @ISA /;
 @ISA = qw/Exporter/;
 @EXPORT = qw/ xorac_update_progress
               xorac_setenv xorac_log_window xorac_recipe_window
-              xorac_about xorac_pause xorac_help xorac_edit_recipe
-	      xorac_calib xorac_select_filelist
+              xorac_about xorac_pause xorac_help xorac_select_recipe
+	      xorac_calib xorac_select_filelist xorac_editor
 	      xorac_exit_normally xorac_exit_abnormally /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
@@ -377,37 +378,7 @@ sub xorac_setenv {
 				 -textvariable      =>\$ENV{"ORAC_DATA_CAL"},
 				 -width               => 30 );
   $orac_data_cal_entry->grid( -column => 1, -row => 6, -sticky => 'ew' );
-
-  # ORAC_LOOP is an environment variable that can be set under the command
-  # line version of oracdr. We use $options{"loop"} to govern the behaviour
-  # of the process loop, Xoracdr will check (once) when it fires up for the
-  # presence of ORAC_LOOP and set $options{"loop"} appropriately if set.
   
-  # Control of $options{"loop"} is via the checkbuttons in $MW, if you want
-  # to enable it here you'll have to pass \%options as an arguement to
-  # xorac_setenv and then uncomment the following code block
-  
-  # I don't see why you'd want to though...
-  
-  # ORAC_LOOP entry field
-  #my $orac_loop_label = $top_level->Label( 
-  #                                      -text    => 'ORAC_LOOP',
-  #                                      -relief  => 'groove',
-  #  			                 -font    => 'Arial',
-  #				         -justify => 'left',
-  #				         -anchor  => 'w');
-  #  $orac_loop_label->grid( -column => 0, -row => 7, -sticky => 'ew');	
-
-  #  my $orac_loop_entry = $top_level->Entry( 
-  #                                 -exportselection     => 1,
-  #                                 -font                => 'Arial',
-  #				    -selectbackground    => 'blue',
-  #				    -selectforeground    => 'white',
-  #				    -justify             => 'left',
-  #				    -textvariable      =>\$options{"loop"},
-  #				    -width               => 30 );
-  #  $orac_loop_entry->grid( -column => 1, -row => 7, -sticky => 'ew' );
-
   # close button
   my $close_button = $top_level->Button( 
              -text    => "Close",
@@ -422,7 +393,9 @@ sub xorac_setenv {
 		           # and disable recipe edit menu item
 	                   unless (-d $ENV{"ORAC_RECIPE_DIR"}) { 
 		               $recipe_menu->
-			       entryconfigure(2, -state => 'disabled');
+			         entryconfigure(4, -state => 'disabled');
+		               $recipe_menu->
+			         entryconfigure(3, -state => 'disabled');
 		           }
 	                }
 			
@@ -431,7 +404,9 @@ sub xorac_setenv {
 	                if( defined $ENV{"ORAC_RECIPE_DIR"} &&
 			    defined $ENV{"ORAC_INSTRUMENT"} ) {
                               $recipe_menu->
-			         entryconfigure(2, -state => 'normal');} 
+			         entryconfigure(4, -state => 'normal');
+		              $recipe_menu->
+			         entryconfigure(3, -state => 'normal');} 
 			
 			# So long and thanks for all the fish 
 			$top_level->destroy; 
@@ -787,20 +762,21 @@ sub xorac_help {
   chdir ( $working_dir );
 }
  
-# xorac_get_recipe() ------------------------------------------------------
+# xorac_select_recipe() ---------------------------------------------------
 
-=item B<xorac_edit_recipe>
+=item B<xorac_select_recipe>
 
-This subroutine pops up a file selector and then a recipe editor for the
-selected recipe file. The editor allows the user to edit and then save the
-recipe to ORAC_RECIPE_DIR
+This subroutine pops up a file selector to selected a recipe from the
+current recipe search path.
 
 =cut
 
-sub xorac_edit_recipe {
+sub xorac_select_recipe {
 
-  croak 'Usage: xorac_edit_recipe()'
-    unless scalar(@_) == 0 ;
+  croak 'Usage: xorac_select_recipe( $edit )'
+    unless scalar(@_) == 1 ;
+   
+  my ( $edit, $options ) = @_;
     
   my $instrument;
   
@@ -835,26 +811,26 @@ sub xorac_edit_recipe {
   # top level frame
   my $top_level = ORAC::Event->query("Tk")->Toplevel();
   ORAC::Event->register("RE"=>$top_level);
-  $top_level->title("Recipe Editor");
+  $top_level->title("Select Recipe");
   $top_level->positionfrom("user");
   $top_level->geometry("+80+80");  
   $top_level->configure( -cursor => "tcross" );
 
   # Get the directory from the user
-  xorac_select_recipe( $instrument );
+  xorac_select_file( $instrument, $edit );
 
 }
 
-# xorac_select_directory
+# xorac_select_file
 
-sub xorac_select_recipe {
+sub xorac_select_file {
 
-  croak 'Usage: xorac_select_recipe($instrument)'
-    unless scalar(@_) == 1 ;
+  croak 'Usage: xorac_select_file($instrument, $edit )'
+    unless scalar(@_) == 2;
   
   use ORAC::Inst::Defn qw/ orac_determine_recipe_search_path /;
   
-  my ( $instrument ) = @_; 
+  my ( $instrument, $edit ) = @_; 
    
   my $top_level = ORAC::Event->query("RE");
                   
@@ -919,13 +895,14 @@ sub xorac_select_recipe {
 			              -activeforeground => 'white',
                                       -activebackground => 'blue' );
 
+  my ( $flag, $filename, $directory );
   $ok_button->configure( -command => sub {
                    if ( defined $$selected[0] ) {
                            # label text
                            $label_text = "Choose a recipe: ";
  
                            # access the directory
-                           my $directory = $$selected[0];
+                           $directory = $$selected[0];
                            opendir ( DIR, $directory) or 
                            throw ORAC::Error::FatalError( 
 			               " Directory $$selected[0] not found",
@@ -940,23 +917,44 @@ sub xorac_select_recipe {
                            $ok_button->configure( -command => sub {
 			     if ( defined $$selected[0] ) {
 			        # get the filename
-			        my $filename = $$selected[0];
+			        $filename = $$selected[0];
 			        # untie variables
 			        untie @contents;
 			        untie $selected; 
 			        # destroy widgets
 			        ORAC::Event->destroy("RE");
 			        ORAC::Event->unregister("RE");
-			        # create editor window
-                                xorac_editor( $directory, $filename ); 
+
+				if ( $edit == 1 ) {
+		  	           # create editor window
+  				   xorac_editor( $directory, $filename );
+				} elsif ( ref($edit) ) {
+				   # or set menu entry and return
+				   $$edit->entryconfigure(1, 
+				             -label => "Override: $filename");
+		                   print "1 directory = $directory\n";
+				   print "1 filename = $filename\n";
+				}    
 			     }}); 
                    } } );
   $ok_button->grid( -column => 1 ,-row => 2, -sticky => 'we' );	
 
+  print "flag = $flag\n";
+  $top_level->waitVariable($filename);
+  print "flag = $flag\n";
+ 		                   print "2 directory = $directory\n";
+				   print "2 filename = $filename\n"; 
+  return( $directory, $filename );
+
 }
 
-# xorac_editor
+# xorac_editor() -----------------------------------------------------------
 
+=item B<xorac_editor>
+
+This subroutine pops a text widget to allow you to edit an recipe.
+
+=cut
 sub xorac_editor {
 
   croak 'Usage: xorac_select_recipe($directory, $recipe)'
