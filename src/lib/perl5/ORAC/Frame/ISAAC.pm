@@ -301,7 +301,8 @@ sub _to_RECIPE {
       $recipe = "POINT_SOURCE";
 
    } elsif ( $template =~ /ISAAC[SL]W_spec_cal_StandardStar/ ||
-             $template eq "ISAACLW_spec_cal_StandardStarNod" ) {
+             $template eq "ISAACLW_spec_cal_StandardStarNod" ||
+             $template =~ /ISAAC[SL]W_spec_cal_AutoNodOnSlit/  ) {
       $recipe = "STANDARD_STAR";
 
    } elsif ( $template =~ /ISAAC[SL]W_spec_cal_NightCalib/ ) {
