@@ -338,6 +338,11 @@ sub orac_determine_inst_classes {
     $frameclass = "ORAC::Frame::WFCAM";
     $calclass   = "ORAC::Calib::WFCAM";
     $instclass  = "ORAC::Inst::WFCAM";
+  } elsif ($inst =~ /^SWFCAM/) {
+    $groupclass = "ORAC::Group::SWFCAM";
+    $frameclass = "ORAC::Frame::SWFCAM";
+    $calclass   = "ORAC::Calib::SWFCAM";
+    $instclass  = "ORAC::Inst::SWFCAM";
   } elsif ($inst eq 'CGS4') {
     $groupclass = "ORAC::Group::CGS4";
     $frameclass = "ORAC::Frame::CGS4";
@@ -507,6 +512,11 @@ sub orac_determine_recipe_search_path {
     push( @path, File::Spec->catdir( $imaging_root, "WFCAM" ) );
     push( @path, $imaging_root );
 
+  } elsif ($inst =~ /^SWFCAM/) {
+    push( @path, File::Spec->catdir( $root, 'SWFCAM' ) );
+    push( @path, File::Spec->catdir( $imaging_root, 'SWFCAM' ) );
+    push( @path, $imaging_root );
+
   } elsif ($inst eq 'MICHELLE' or $inst eq 'MICHTEMP') {
     push( @path, File::Spec->catdir( $root, "MICHELLE" ) );
     push( @path, File::Spec->catdir( $imaging_root, "MICHELLE" ) );
@@ -660,6 +670,12 @@ sub orac_determine_primitive_search_path {
     push( @path, $casu_root );
     push( @path, $general_root );
 
+  } elsif ($inst =~ /^SWFCAM/) {
+    push( @path, File::Spec->catdir( $root, 'SWFCAM' ) );
+    push( @path, File::Spec->catdir( $imaging_root, 'SWFCAM' ) );
+    push( @path, $imaging_root );
+    push( @path, $general_root );
+
   } elsif ($inst eq 'MICHELLE' or $inst eq 'MICHTEMP') {
     push( @path, File::Spec->catdir( $root, "MICHELLE" ) );
     push( @path, File::Spec->catdir( $imaging_root, "MICHELLE" ) );
@@ -805,6 +821,11 @@ sub orac_determine_initial_algorithm_engines {
     @AlgEng = qw/ figaro1 figaro2 figaro4 kappa_mon ndfpack_mon
       ccdpack_red ccdpack_reg atools_mon /;
 
+  } elsif ($inst =~ /^SWFCAM/) {
+
+    @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg
+      ccdpack_res /;
+
   } elsif ($inst eq 'INGRID') {
 
     @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg
@@ -908,6 +929,8 @@ sub orac_determine_loop_behaviour {
     } elsif ( uc($instrument) eq 'UFTI_CASU' ) {
       $behaviour = 'flag';
     } elsif ( uc($instrument) =~ /^WFCAM/ ) {
+      $behaviour = 'flag';
+    } elsif ( uc($instrument) =~ /^SWFCAM/ ) {
       $behaviour = 'flag';
     } elsif ( uc($instrument) eq 'IRCAM2' ) {
       $behaviour = 'flag';
@@ -1451,6 +1474,40 @@ sub orac_configure_for_instrument {
              $options->{"skip"} = 0;
 
              last SWITCH; }
+
+     if ( $instrument =~ /^SWFCAM/ ) {
+
+       # Instrument
+       $ENV{"ORAC_INSTRUMENT"} = $instrument;
+
+       # Calibration information
+       $orac_cal_root = File::Spec->catdir("ukirt_sw", "oracdr_cal")
+         unless defined $orac_cal_root;
+       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"wfcam");
+
+       # Data directories
+       $orac_data_root = "/ukirtdata"
+         unless defined $orac_data_root;
+
+       $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+                                                  "raw",
+                                                  "wfcam",
+                                                  $oracut );
+       $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir( $orac_data_root,
+                                                   "reduced",
+                                                   "wfcam",
+                                                   $oracut )
+         unless defined $$options{"honour"};
+
+       # Miscellaneous other
+       $ENV{"ORAC_PERSON"} = "bradc";
+       $ENV{"ORAC_SUN"} = "232";
+       if( Net::Domain->domainname =~ "ukirt" ) {
+         $options->{"loop"} = "flag";
+       }
+       $options->{"skip"} = 0;
+
+       last SWITCH; }
 
      if ( $instrument eq "INGRID" ) {
 
