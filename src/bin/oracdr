@@ -69,7 +69,7 @@ die "Error importing $instmodule:\n$@\n" if ($@);
 # command line arguments
 #
 
-GetOptions("nodisplay","quiet!","dark=i","from=i","to=i","ut=i","list=s","h");
+GetOptions("nodisplay","quiet!","calib=s","from=i","to=i","ut=i","list=s","h");
 
 ($opt_h) && do {
 print qq|
@@ -82,15 +82,21 @@ Arguments:
 
 Options:
 
+  These options may be abbreviated to a unique substring.
+
   -h         this help text
-  -from      number of first observation
-  -to        number of last observation
-  -list      comma separated list of objects.
-             Colons indicate a range: 1,2,3:5,10 -> 1,2,3,4,5,10
-  -dark      number of dark observation
-  -ut        UT date of observations (defaults to current)
   -quiet     suppress engine messages
   -nodisplay do not launch display
+
+  -from      number of first observation
+  -to        number of last observation
+  -list      comma separated list of object *numbers*
+             Colons indicate a range (1,2,3:5,10 means 1,2,3,4,5,10)
+
+
+  -ut        UT date of observations (defaults to current yyyymmdd)
+  -calib     comma seperated key=value pairs (eg. -cal dark=file1 or
+             -cal dark=file1,bias=file2) of calibration *files*
   |;
 exit;
 }
@@ -132,7 +138,8 @@ $CalDir = $ENV{ORAC_DATA_CAL};	# auxiliarry data (calibration etc)
   print colored ("Orac says: No UT date supplied, using $opt_ut\n","blue");
 
 };
-  
+
+
 
 chdir($Out);				# change to output  dir
 
@@ -158,7 +165,6 @@ foreach my $msg (@messys) {
 do {
 print colored ("Orac says: Launching display...","blue");
 &orac_launch_display;
-sleep 10;
 print colored ("Orac says: Done\n","blue");
 } unless $opt_nodisplay;
 
@@ -191,8 +197,35 @@ $Override_Recipe = shift(@ARGV); # this will default to the RECIPE File method
 $Cal = new $calobject;
 
 # temporary fudge
-$Cal->dark("ro970815_9_bp_db") if $instrument eq 'IRCAM';
+#$Cal->dark("ro970815_9_bp_db") if $instrument eq 'IRCAM';
 
+#
+# Calibration frame overrides
+#
+  
+if (defined $opt_calib) {
+  
+  %calibs = parse_keyvalues($opt_calib);
+
+  foreach $key (keys %calibs) {
+
+    if ($Cal->can($key)) {		# set appropriate method
+
+      $Cal->$key($calibs{$key});
+
+      print colored ("ORAC says: Calibration $key set to $calibs{$key}\n","blue");
+
+    } else {				# complain but continue
+
+      print colored ("ORAC says: Calibration $key unknown by this instrument. Ignored\n","red");
+
+    };
+  };
+
+};
+
+
+ 
 
 
 # Generate list of observation numbers to be processed
@@ -203,7 +236,7 @@ if (defined $opt_from) {
  
 } elsif (defined $opt_list) {
 
-  @obs = orac_parse_obslist($opt_list);
+  @obs = parse_obslist($opt_list);
 
 }
 
@@ -303,6 +336,9 @@ foreach $obsno (@obs) {
 #------------------------------------------------------------------------
 
 # $Log$
+# Revision 1.23  1998/06/29 03:21:11  frossie
+# remove -dark and add general -calib option
+#
 # Revision 1.22  1998/06/28 01:10:46  frossie
 # -ut option defaults to current UT date if unspecified
 #
