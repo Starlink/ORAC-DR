@@ -33,6 +33,9 @@ use ORAC::Frame::NDF;
 use ORAC::Constants;
 use ORAC::Print;
 
+use NDF;
+use Starlink::HDSPACK qw/ retrieve_locs copobj /;
+
 use vars qw/$VERSION/;
 
 # Let the object know that it is derived from ORAC::Frame;
@@ -152,16 +155,27 @@ sub configure {
     croak "Wrong number of arguments to configure: 1 or 2 args only";
   }
 
-  # Set the filenames.
-  for my $i (1..scalar(@fnames)) {
-    $self->file($i, $fnames[$i-1]);
-  }
-
   # Set the raw files.
   $self->raw( @fnames );
 
-  # Populate the header.
-  $self->readhdr;
+  # Set the filenames. Replace with processed images where appropriate
+  my @paths;
+  for my $f (@fnames) {
+    my @internal = $self->_find_processed_images( $f );
+    if (@internal) {
+      push(@paths, @internal );
+    } else {
+      push(@paths, $f );
+    }
+  }
+
+  # register these files
+  for my $i (1..scalar(@paths) ) {
+    $self->file($i, $paths[$i-1]);
+  }
+
+  # Populate the base header from the first file
+  $self->readhdr($fnames[0]);
 
   # Find the group name and set it.
   $self->findgroup;
@@ -303,6 +317,7 @@ Forces the object to determine the number of sub-frames
 associated with the data by looking in the header (hdr()). 
 The result is stored in the object using nsubs().
 
+
 Unlike findgroup() this method will always search the header for
 the current state.
 
@@ -344,7 +359,6 @@ sub findrecipe {
 
   return $recipe;
 }
-
 
 =back
 
@@ -406,9 +420,59 @@ sub _dacodes {
   return (wantarray ? @letters : join("",@letters) );
 }
 
-=item B<_array
+=item B<_find_processed_images>
 
-=back
+Some SCUBA-2 data files include processed images (specifically, DREAM
+and STARE) that should be used as the pipeline input images in preference
+to the time series.
+
+This method takes a single file and returns the HDS hierarchy to these
+images within the main frame. Returns empty list if no reduced images
+are present.
+
+=cut
+
+sub _find_processed_images {
+  my $self = shift;
+  my $file = shift;
+
+  # begin error context
+  my $status = &NDF::SAI__OK;
+  err_begin( $status );
+
+  # create the expected path to the container
+  $file =~ s/\.sdf$//;
+  my $path = $file . ".MORE.DA_IMAGE";
+
+  # forget about using NDF to locate the extension, use HDS directly
+  ($status, my @locs) = retrieve_locs( $path, 'READ', $status );
+
+  # if status is bad, annul what we have and return empty list
+  if ($status != &NDF::SAI__OK) {
+    err_annul( $status );
+    hds_annul( $_, $status ) for @locs;
+    err_end( $status );
+    return ();
+  }
+
+  # now count the components in this location
+  dat_ncomp($locs[-1], my $ncomp, $status);
+
+  my @images;
+  if ($status == &NDF::SAI__OK) {
+    for my $i ( 1..$ncomp ) {
+      dat_index( $locs[-1], $i, my $iloc, $status );
+      dat_name( $iloc, my $name, $status );
+      push(@images, $path . "." . $name) if $name =~ /^I\d+$/;
+      dat_annul( $iloc, $status );
+    }
+  }
+  dat_annul( $_, $status ) for @locs;
+  err_annul( $status ) if $status != &NDF::SAI__OK;
+  err_end( $status );
+
+  return @images;
+}
 
 =end __INTERNAL_METHODS
 
