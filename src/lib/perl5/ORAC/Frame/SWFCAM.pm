@@ -258,6 +258,47 @@ sub flag_from_bits {
   return $flag;
 }
 
+=item B<number>
+
+Method to return the number of the observation. The number is
+determined by looking for a number at the end of the raw data
+filename.  For example a number can be extracted from strings of the
+form textNNNN.sdf or textNNNN, where NNNN is a number (leading zeroes
+are stripped) but not textNNNNtext (number must be followed by a decimal
+point or nothing at all).
+
+  $number = $Frm->number;
+
+The return value is -1 if no number can be determined.
+
+As an aside, an alternative approach for this method (especially
+in a sub-class) would be to read the number from the header.
+
+=cut
+
+sub number {
+  my $self = shift;
+
+  my ($number);
+
+  # Get the number from the raw data
+  # Assume there is a number at the end of the string
+  # (since the extension has already been removed)
+  # Leading zeroes are dropped
+
+  my $raw = $self->raw;
+  if (defined $raw && $raw =~ /(\d+)(_raw)?(\.\w+)?$/) {
+    # Drop leading 00
+    $number = $1 * 1;
+  } else {
+    # No match so set to -1
+    $number = -1;
+  }
+
+  return $number;
+
+}
+
 =back
 
 =head1 SEE ALSO
