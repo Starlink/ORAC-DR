@@ -1,0 +1,119 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_PAIR_REDUCTION_COADD_TO_GROUP_POL_ - Coadd a completed pair to a reduced group
+for polarimetry data.
+
+=head1 DESCRIPTION
+
+This primitive coadds subtracted pairs into their respective group, which
+is determined by the waveplate angle. The group is stored as a reference in
+the current $Grp's E<lt>ANGLEE<gt>_GROUP uhdr group, i.e. for
+the 0-degree waveplate angle observations, the Group object referenced
+to in the current $Grp's 0_GROUP uhdr is used.
+
+The resulting frame is an average of the pairs that were coadded into it,
+so the exposure time of that resulting frame is the same as the exposure
+time of each individual pair.
+
+The start and end airmasses and UT times of the coadded group are revised
+to the limiting values for the first and last contributing frames
+respectively.
+
+=head1 AUTHORS
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+Brad Cavanagh (JAC) <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# Obtain the waveplate angle. Convert decimal points to 'p'. Truncate
+# to one decimal place.
+my $pol_angle = $Frm->uhdr("ORAC_WAVEPLATE_ANGLE");
+$pol_angle =~ /(\d+)\./;
+my $group_header = $1 . "_GROUP";
+my $tempGrp = $Grp->uhdr("$group_header");
+
+# The group file name - we use the ->raw one here, as subsequent steps
+# (eg extraction) will update the ->file and we want none of that here
+my $groupfile = $tempGrp->raw;
+
+# Get the filename for the sky subtracted pair (ignore $out)
+my ($in, $out) = $Frm->inout("_junk");
+my $obsnum = $Frm->number;
+
+# If we're on the first cycle, create the group file.
+if( $Frm->uhdr("CYCLE_NUMBER") == 0 ) {
+  # Create the group file by copying the sky subtracted pair into it
+  orac_print "Creating group $groupfile with $in\n";
+  $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$groupfile title=$groupfile");
+
+} else {
+  # The group file does exist. Coadd the current pair into it
+
+  # We use a tmp file to do the unaveraging
+  my $ua = new ORAC::TempFile;
+  my $uafile = $ua->file;
+
+  # Need to know how many pairs are in the group
+  my $nobs=scalar(@{ scalar($tempGrp->coadds) } );
+
+  # Do the unaverage
+  $Mon{'kappa_mon'}->obeyw("cmult", "in=$groupfile scalar=$nobs out=$uafile");
+
+  # Use a tmp file to do the addition
+  my $add=new ORAC::TempFile;
+  my $addfile = $add->file;
+  $Mon{'kappa_mon'}->obeyw("add", "in1=$uafile in2=$in out=$addfile");
+
+  # Average back into the group file
+  $nobs++;
+  $Mon{'kappa_mon'}->obeyw("cdiv", "in=$addfile scalar=$nobs out=$groupfile title=$groupfile");
+
+  # And tell the user.
+  orac_print "$in coadded to $groupfile\n";
+  orac_print "Group $groupfile now contains $nobs pairs\n";
+
+}
+
+# Update the group object
+$tempGrp->file($groupfile);
+
+# Now update the FITS header to reflect the new end airmass, using the
+# value from the current frame.  Using the internal header, obtain the
+# name of the external keyword.
+
+# We need to wrap this in a block so we can define a local $Grp.
+{
+
+  my $Grp = $tempGrp;
+
+  my $amendname = "ORAC_AIRMASS_END";
+  my $amend  = $Frm->uhdr( $amendname );
+  my %keywords = $Frm->translate_hdr( $amendname );
+  my @amendkey = keys( %keywords );
+  no warnings 'misc';
+  _SET_GROUP_FITS_ITEM_ KEY=$amendkey[ 0 ] VALUE=$amend
+
+  # Do likewise for the end UT time.
+  my $utendname = "ORAC_UTEND";
+  my $utend  = $Frm->uhdr( $utendname );
+  %keywords = $Frm->translate_hdr( $utendname );
+  my @utendkey = keys( %keywords );
+  _SET_GROUP_FITS_ITEM_ KEY=$utendkey[ 0 ] VALUE=$utend
+
+}
+
+$tempGrp->coaddspush($obsnum);
+$tempGrp->readhdr;
+
+# Re-update the Grp uhdr.
+$Grp->uhdr("$group_header", $tempGrp);
+
+orac_print "\n";
