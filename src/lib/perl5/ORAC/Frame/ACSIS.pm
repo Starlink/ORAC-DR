@@ -205,7 +205,7 @@ sub configure {
   my @fnames;
   if( scalar( @_ ) == 1 ) {
     my $fnamesref = shift;
-    @fnames = @$fnamesref;
+    @fnames = (ref $fnamesref ? @$fnamesref : $fnamesref);
   } elsif( scalar( @_ ) == 2 ) {
 
     # ACSIS configure() cannot take 2 arguments.
@@ -376,7 +376,7 @@ sub flag_from_bits {
   # digits long.
   my $padnum = '0'x(5-length($obsnum)) . $obsnum;
 
-  my $flag = File::Spec->catfile('acsis00',
+  my $flag = File::Spec->catfile('acsis00',$prefix,
                                  '.' . $self->rawfixedpart . $prefix . '_' . $padnum . '.ok');
 
   return $flag;
