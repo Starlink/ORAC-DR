@@ -1,14 +1,27 @@
-# _GENERATE_OFFSETS_EXTENDED_       -*- perl -*-
+#+
+# Name:
+#    _GENERATE_OFFSETS_EXTENDED_
 #
-# Function:
-#    Find the offsets between the frames in an EXTENDED_nxm recipe.
+# Purpose:
+#    Finds the offsets between the frames in an EXTENDED_nxm recipe.
 #
-# Primitives Called:
-#    _GENERATE_OFFSETS_, _TELE_OFFSETS_
+# Description:
+#    This primitive finds the pixel offsets between the target frames  
+#    in the current $Grp of an EXTENDED_nxm recipe.  The primitive
+#    itself forms subgroups of either the target frames in a row or
+#    all the target frames in a recipe cycle, if steering headers
+#    MAKE_MOSAIC or MAKE_GRAND_MOSAIC are true respectively.  It then
+#    passes the subgroups to other primitives to do the bulk of the
+#    work.  When argument TELEOFF is true, _TELE_OFFSETS_ is invoked
+#    and the derived offsets are used to register with a shift of 
+#    origin; otherwise _GENERATE_OFFSETS_ is the work horse.
+#
+# Language:
+#    Perl5
 #
 # Arguments:
 #    COMPLETE = REAL (Given)
-#       Completeness of matched features for registration between two
+#       Completeness of matched features for registration between two 
 #       frames to be accepted.  It must be in the range 0.2 to 1.0. [0.5]
 #    MINPIX = INTEGER (Given)
 #       Minimum number of contiguous pixels above the PERCENTILE level
@@ -16,10 +29,26 @@
 #       [12]
 #    PERCENTILE = REAL (Given)
 #       Percentile threshold for locating objects to register frames. 
-#       It must be in the range 75 to 99.9. [96]
+#       It must be in the range 75 to 99.9.  [96]
 #    TELEOFF = LOGICAL (Given)
 #       If true (1), it will just use the telescope offsets to register.
-#       If false (0), it will attempt automatic registration.
+#       If false (0), it will attempt automatic registration.  [0]
+#
+# Notes:
+#    -  This primitive is suitable for both UFTI and IRCAM.
+#    -  Processing only occurs for object frames, and when either
+#    steering headers MAKE_MOSAIC or MAKE_GRAND_MOSAIC is true.
+#    -  Steering header CYCLE_NUMBER specifies the recipe cycle.
+#    -  The _GENERATE_OFFSETS_ argument CENTRAL_SOURCE is FALSE.
+#    -  The frames registered using telescope offsets are reported.
+#
+# Tasks:
+#    CCDPACK: REGISTER.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+#-
 
 # Arguments
 # =========
@@ -40,8 +69,7 @@
 # =========
 
 # This should only be performed on OBJECT frames.
-    if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ||
-         $Frm->hdr( "OBSTYPE" ) eq "SKY" ) {
+    if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ) {
 
 # Determine whether it is time to make a mosaic.
        my $makemosaic = $Frm->hdr( "MAKE_MOSAIC" );
@@ -53,8 +81,15 @@
           my $tarGrp;
           if ( $grandmosaic ) {
 
-# Form a subgroup comprising all the target frames.
-             $tarGrp = $Grp->subgrp( TARGET_OR_SKY => "target" );
+# Obtain the cycle number.  Default to zero if undefined, so that recipes
+# which do not support this feature will continue to work.
+             my $cycleno = $Frm->hdr( "CYCLE_NUMBER" );
+             $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+# Form a subgroup comprising all the target frames within the current
+# cycle.
+             $tarGrp = $Grp->subgrp( TARGET_OR_SKY => "target",
+                                     CYCLE_NUMBER => $cycleno );
 
           } else {
 
@@ -125,3 +160,96 @@
           }
        }
     }
+
+# Podule
+# ======
+
+=head1 NAME
+
+GENERATE_OFFSETS_EXTENDED -- Find the offsets between the frames in an EXTENDED_I<n>xI<m> recipe.
+
+=head1 DESCRIPTION
+
+This primitive finds the pixel offsets between the target frames  
+in the current $Grp of an EXTENDED_I<n>xI<m> recipe.  The primitive
+itself forms subgroups of either the target frames in a row or
+all the target frames in a recipe cycle, if steering headers
+MAKE_MOSAIC or MAKE_GRAND_MOSAIC are true respectively.  It then
+passes the subgroups to other primitives to do the bulk of the
+work.  When argument TELEOFF is true, L<_TELE_OFFSETS_> is invoked
+and the derived offsets are used to register with a shift of 
+origin; otherwise _GENERATE_OFFSETS_ is the work horse.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item COMPLETE = REAL (Given)
+
+Completeness of matched features for registration between two 
+frames to be accepted.  It must be in the range 0.2 to 1.0. [0.5]
+
+=item MINPIX = INTEGER (Given)
+
+Minimum number of contiguous pixels above the PERCENTILE level
+to be considered a registration feature.  It must be at least 6.
+[12]
+
+=item PERCENTILE = REAL (Given)
+
+Percentile threshold for locating objects to register frames. 
+It must be in the range 75 to 99.9.  [96]
+
+=item TELEOFF = LOGICAL (Given)
+
+If true (1), it will just use the telescope offsets to register.
+If false (0), it will attempt automatic registration.  [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for both UFTI and IRCAM.
+
+=item *
+
+Processing only occurs for object frames, and when either
+steering headers MAKE_MOSAIC or MAKE_GRAND_MOSAIC is true.
+
+=item *
+
+Steering header CYCLE_NUMBER specifies the recipe cycle.
+
+=item *
+
+The _GENERATE_OFFSETS_ argument CENTRAL_SOURCE is FALSE.
+
+=item *
+
+For a partial automatic solution, tying the co-ordinate systems
+becomes a question of finding the Cartesian displacements between
+them.  It is done by comparing the telescope offsets with the
+co-ordinates of the first object of the first automatically
+registered frame.  Then this pair of displacements are added to
+the approximate offsets of the remaining frames. 
+See L<_FIND_APPROX_OFFSETS_> for more information.
+
+=item *
+
+The frames registered using telescope offsets are reported.
+
+=back
+
+=head1 TASKS
+
+CCDPACK: REGISTER.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=cut
