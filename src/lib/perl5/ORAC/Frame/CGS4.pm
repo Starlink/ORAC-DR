@@ -148,18 +148,26 @@ sub configure {
   $self->file($fname);
   my $rootfile = $self->file;
 
- # Populate the header
-  # for hds container set header NDF to be in the .header extension
-  my $hdr_ext = $self->file.".header";
-
-  $self->readhdr($hdr_ext);
-
   # Set the raw data file name
 
   $self->raw($fname);
 
   # We have as many files as there are NDF compenents, minus the header component
   $self->findnsubs;
+
+ # Populate the header
+  # for hds container set header NDF to be in the .header extension
+  my $hdr_ext = $self->file.".header";
+
+  $self->readhdr($hdr_ext);
+
+  # now read the subheaders 
+
+  foreach my $i (1..$self->nsubs) {
+    my ($href, $status) = fits_read_header($self->file . ".i$i");
+     $self->hdr->{$i} = $href;
+    # (same as $self->hdr($i, $href);)
+  }
 
   # populate file method
 
