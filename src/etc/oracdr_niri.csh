@@ -64,6 +64,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.4  2004/06/21 22:24:56  mjc
+#     Allow for the change of file format (and ORAC_INSTRUMENT) to fix a millenium bug at 2002 March 1.
+#
 #     Revision 1.3  2004/05/28 21:09:46  mjc
 #     Changed support to mjc.  Revise caveat.
 #
@@ -130,7 +133,13 @@ endif
 
 set oracdr_args = "-ut $oracut"
 
-setenv ORAC_INSTRUMENT NIRI
+# The file naming convention changed on 2002 March 1 to accommodate
+# more than 1000 frames! 
+if ( $oracut < 20020301 ) then
+   setenv ORAC_INSTRUMENT NIRI2
+else
+   setenv ORAC_INSTRUMENT NIRI
+endif
 setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/niri/$oracut/
 setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/niri/$oracut/
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/niri
@@ -148,10 +157,9 @@ echo "Although it reduces data, it has not been refined or verified to"
 echo "be scientifically valid.  NIRI support was added to ORAC-DR as a"
 echo "demonstration of the ease of adding support for a new telescope"
 echo "and instrumentation suite."
-echo "Contact Paul Hirst <p.hirst@jach.hawaii.edu> or"
-              Malcolm Currie <mjc@star.rl.ac.uk> for more info."
+echo "Contact Paul Hirst <p.hirst@jach.hawaii.edu>   or"
+echo "        Malcolm Currie <mjc@star.rl.ac.uk> for more info."
 echo ""
-
 
 # Tidy up.
 unset oracut
