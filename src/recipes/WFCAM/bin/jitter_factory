@@ -1,0 +1,902 @@
+#!/usr/local/bin/perl  
+
+my $instruction_list = $ARGV[0];
+open FF,"$instruction_list";
+$instructions = "";
+while (<FF>) {
+    chop;
+    $instructions .= $_;
+}
+close FF;
+eval $instructions;
+unlink $instruction_list;
+
+
+my $IPIX = $$VAR1{ipix};
+my $THRESH = $$VAR1{thresh};
+my $GRID = $$VAR1{grid};
+my $CATTYPE = $$VAR1{cattype};
+my $ICROWD = $$VAR1{icrowd};
+my $RCORE = $$VAR1{rcore};
+my $CATSRC = $$VAR1{catsrc};
+my $SITE = $$VAR1{site};
+my $CATPATH = $$VAR1{catpath};
+my $FINFO = $$VAR1{finfo};
+my $CINFO = $$VAR1{cinfo};
+my $infiles = $$VAR1{infiles};
+my @allfiles = @$infiles;
+	     
+# Load some modules. First, everyone else's
+
+use Astro::FITS::CFITSIO qw(:constants :longnames);
+use File::Basename;
+use File::Temp qw(tempfile);
+use FileHandle;
+
+# Now mine
+
+use Cirdr::Primitives qw(:constants :routines);
+
+# Global WCS parameters...
+
+our %wcsparms = ('CRVAL1'  => TDOUBLE,
+                 'CRVAL2'  => TDOUBLE,
+                 'CRPIX1'  => TDOUBLE,
+                 'CRPIX2'  => TDOUBLE,
+                 'CD1_1'   => TDOUBLE,
+                 'CD1_2'   => TDOUBLE,
+                 'CD2_1'   => TDOUBLE,
+                 'CD2_2'   => TDOUBLE,
+                 'CUNIT1'  => TSTRING,
+                 'CUNIT2'  => TSTRING,
+                 'CTYPE1'  => TSTRING,
+                 'CTYPE2'  => TSTRING,
+                 'WCSPASS' => TINT,
+                 'NUMBRMS' => TINT,
+                 'STDCRMS' => TDOUBLE,
+                 'PROJP1'  => TFLOAT,
+                 'PROJP3'  => TFLOAT,
+                 'PV2_0'   => TFLOAT,
+                 'PV2_1'   => TFLOAT,
+                 'PV2_2'   => TFLOAT,
+                 'PV2_3'   => TFLOAT);
+
+# Get the files we want to dither. 
+
+my $nf = @allfiles;
+
+# Open a file to put messages...
+
+our $msg_fh = new FileHandle;
+$msg_fh->open(">jitter_$$");
+$msg_fh->autoflush;
+print $msg_fh "Begin work on files: @allfiles\n";
+
+# If there aren't enough, then there isn't much point in being here...
+
+if ($nf < 2) {
+    print $msg_fh "Not enough files to warrant being here...quitting\n";
+    exit 0;
+}
+
+# Work out what you'd like to call the output
+
+my ($name,$path,$suffix) = fileparse($allfiles[0],".fit");
+my $outdith = sprintf("%s_st%s",$name,$suffix);
+my $outconf = sprintf("%s_st_conf%s",$name,$suffix);
+my $outcat = sprintf("%s_st_cat%s",$name,$suffix);
+
+# If it already exists, then don't continue...
+
+exit 0 if (-f $outdith);
+
+# Find out how many image extensions there are (probably only one, but
+# worth doing just in case).
+
+my $status = 0;
+my (@naxis,$hdutype,$nhdu);
+my $fptr = Astro::FITS::CFITSIO::open_file($allfiles[0],READONLY,$status);
+$fptr->get_num_hdus($nhdu,$status);
+$nhdu--;
+$fptr->movabs_hdu(2,$hdutype,$status);
+$fptr->get_img_size(\@naxis,$status);
+$fptr->close_file($status);
+if ($status != 0) {
+    fitserr($status,"Can't open file $allfiles[0]");
+    exit 1;
+} 
+
+# Right...so let's do the object detection first. Loop for each file and
+# for each image extension in the file.
+
+my %cats = ();
+my %cpms = ();
+my ($retval,$errmsg,$fname,$fnamesub);
+my $doconf = 1;
+my $cpm;
+foreach $fname (@allfiles) {
+
+    # Work out a name for the object file. 
+
+    ($name,$path,$suffix) = fileparse($fname,".fit");
+    my $catbase = sprintf("%s_cat%s",$name,$suffix); 
+    $cats{$fname} = $catbase;
+    unlink $catbase if (-f $catbase);
+
+    # Loop for each image extension. Create an extension name.
+    
+    foreach my $j (1 .. $nhdu) {
+        my $fnamesub = sprintf("%s[%d]",$fname,$j);
+	my $catsub = sprintf("%s[%d]",$catbase,$j);
+
+        # Is there a confidence map defined here?
+
+        $cpm = gethdrval($fnamesub,"CIR_CPM");
+        if ($cpm) {
+            $cpm =~ /^(.*?)\[\d+\]$/;
+            $cpms{$fname} = $1;
+        } else {
+	    $cpm = "noconf";
+	    $doconf = 0;
+        }
+    
+        # Do the image detection
+        
+        $retval = cir_imcore($fnamesub,$cpm,50,7,0,3.5,256,$catsub,"",0,3,
+	    $errmsg);
+        if ($retval != CIR_OK) {
+            print $msg_fh "CIR_IMCORE failed for file %s -- %s\n",$fnamesub,
+		$errmsg;
+	    exit 1;
+        }
+    }
+}
+
+# Right, we got through that. Now, work out the implied offset between images
+# given the header info that we already have. NB: only do this for the first
+# header as presumably any others will have exactly the same offset.
+
+my @xoffs = ();
+my @yoffs = ();
+$xoffs[0] = 0.0;
+$yoffs[0] = 0.0;
+my $ref = sprintf("%s[1]",$allfiles[0]);
+my $prog;
+foreach $fname (@allfiles) {
+    next if ($fname eq $allfiles[0]);
+    $prog = sprintf("%s[1]",$fname);
+    my ($xx,$yy);
+    $retval = cir_diffxywcs($prog,$ref,$xx,$yy,$errmsg);
+    if ($retval != CIR_OK) {
+        $xx = 0.0;
+        $yy = 0.0;
+        printf $msg_fh "CIR_DIFFXYWCS: Might be a problem with WCS match between %s and %s\n",$ref,$prog;
+    }
+    push @xoffs,$xx;
+    push @yoffs,$yy;
+    printf $msg_fh "WCS offset between %s and %s: %g %g\n",$fname,$allfiles[0],
+        $xx,$yy;
+}
+
+# Now 'improve' these offsets by looking at the position of the stars in the
+# catalogues... First get some temporary file names...
+
+my $tmp;
+(undef,$ref) = tempfile("refXXXX",OPEN=>0);
+(undef,$prog) = tempfile("progXXXX",OPEN=>0);
+(undef,$tmp) = tempfile("tmpXXXX",OPEN=>0);
+
+# Now dump the first file's catalogue
+
+my $tabname = $cats{$allfiles[0]} . "[1]";
+$retval = cir_tabledump($tabname,$ref,["X_coordinate","Y_coordinate"],2,$errmsg);
+
+# Now loop through the rest of them...
+
+my $i = -1;
+my $j;
+foreach $fname (@allfiles) {
+    $i++;
+    next if ($i == 0);
+    $tabname = $cats{$fname} . "[1]";
+    $retval = cir_tabledump($tabname,$tmp,["X_coordinate","Y_coordinate"],2,
+	$errmsg);
+
+    # Read the x,y coordinates and update them by the WCS offsets....
+
+    my $fh = new FileHandle;
+    $fh->open("$tmp");
+    my $fh2 = new FileHandle;
+    $fh2->open(">$prog");
+    while (<$fh>) {
+	chop;
+        my @coords = split /\s+/;
+        $coords[0] += $xoffs[$i];
+	$coords[1] += $yoffs[$i];
+	print $fh2 "@coords \n";
+    }
+    $fh->close;
+    $fh2->close;
+    unlink $tmp;
+
+    # Now for the offsets
+
+    my ($xoff,$yoff,$nm);
+    $retval = cir_matchxy($prog,$ref,10,$naxis[0],$naxis[1],$xoff,$yoff,$nm,
+	$errmsg);
+    if ($retval != CIR_OK || $nm == 0) {
+	printf $msg_fh "Object match between %s and %s failed.\n$errmsg\nUsing WCS values\n",
+	    $allfiles[$i],$allfiles[0];
+    }
+    unlink $prog;
+    $xoffs[$i] += $xoff;
+    $yoffs[$i] += $yoff;
+    printf $msg_fh "Object offset between %s and %s: %g %g\n",$fname,
+        $allfiles[0],$xoffs[$i],$yoffs[$i];
+}
+unlink $ref;
+
+# Find the mins of the offset arrays and shift them by that amount. Add the
+# final values to the headers
+
+my $minx = min(@xoffs);
+my $miny = min(@yoffs); 
+foreach $i (0 .. $nf-1) {
+    foreach $j (1 .. $nhdu) {
+        my $fnamesub = sprintf("%s[%d]",$allfiles[$i],$j);
+        $retval = cir_update_hdr($fnamesub,"CIR_XOFF","FLOAT",$xoffs[$i],
+	    "Dither offset X",$errmsg);
+        $retval = cir_update_hdr($fnamesub,"CIR_YOFF","FLOAT",$yoffs[$i],
+	    "Dither offset Y",$errmsg);
+    }
+}
+
+# Do a bit of intermediate tidying by getting rid of the catalogue files.
+
+foreach $fname (@allfiles) {
+    unlink $cats{$fname} if (-f $cats{$fname});
+}
+
+# Get a background estimate for each frame so that we know how much to
+# bias the input images.
+
+foreach $j (1 .. $nhdu) {
+    my %allvals = ();
+    my $value;
+    my %fnamesubs = ();
+    foreach $fname (@allfiles) {
+	$fnamesub = sprintf("%s[%d]",$fname,$j);
+        $fnamesubs{$fname} = $fnamesub;
+        $retval = cir_imstat($fnamesub,"CIR_CPM",1,$value,$errmsg);
+        $allvals{$fname} = $value;
+    }
+    my $avval = sum(values %allvals)/$nf;
+    my ($fh,$tmp) = tempfile("tmpXXXX");
+    foreach $fname (@allfiles) {
+	$value = $avval - $allvals{$fname};
+        $fnamesub = $fnamesubs{$fname};
+        $retval = cir_update_hdr($fnamesub,"CIR_ZERO","FLOAT",$value,
+            "Pedestal value relative to group average",$errmsg);
+        print $fh "$fnamesub\n";
+    }
+    $fh->close;
+
+    # Do the combination. 
+
+    my $outd = sprintf("%s[%d]",$outdith,$j);
+    my $outc;
+    if ($doconf) {
+        $outc = sprintf("%s[%d]",$outconf,$j);
+    } else {
+	$outc = "";
+    }
+    $retval = cir_imcombine($tmp,$outd,$outc,"CIR_CPM",MEANCALC,1,1,0,
+	USEWEIGHT,REJPOISSON,1,1,1,5.0,5.0,"READNOIS","GAIN","EXP_TIME",
+        $errmsg);
+    unlink $tmp;
+    if ($retval != CIR_OK) {
+        print $msg_fh "CIR_IMCOMBINE failed on dither %s -- %s\n",
+	    $outd,$errmsg;
+	exit 1;
+    }
+    print $msg_fh "Files successfully dithered to $outd $outc\n";
+
+    # Do the catalogue generation for this image extension
+
+    if ($doconf) {
+	$cpm = $outc;
+    } else {
+	$cpm = "noconf";
+    }
+    $retval = cir_imcore ($outd,$cpm,$IPIX,$THRESH,$ICROWD,$RCORE,$GRID,
+			  $outcat,"",0,$CATTYPE,$errmsg);
+    if ($retval != CIR_OK) {
+        print $msg_fh "CIR_IMCORE failed on dither %s -- %s\n",$outd,$errmsg;
+	exit 1;
+    }
+    print $msg_fh "File $outd used to generate catalogue $outcat\n";
+
+    # Fit a WCS to the output dither using the catalogue generated above.
+    # Start by getting some information about the current WCS
+
+    $status = 0;
+    $fptr = Astro::FITS::CFITSIO::open_file($outd,READONLY,$status);
+    $fptr->get_img_size(\@naxis,$status);
+    $fptr->close_file($status);
+    if ($status != 0) {
+        fitserr($status,"Can't open file $outd");
+	exit 1;
+    }
+    my ($raref,$decref);
+    $retval = cir_xy2radec($outd,0.5*$naxis[0],0.5*$naxis[1],$raref,$decref,
+			   $errmsg);
+    if ($retval != CIR_OK) {
+        print $msg_fh "CIR_XY2RADEC failed on dither %s -- %s\n",$outd,$errmsg;
+	exit 1;
+    }
+
+    # Get some standard stars
+
+    (undef,$ref) = tempfile("refXXXX",OPEN=>0);
+    $retval = cir_getstds($outd,$ref,$CATSRC,$SITE,$CATPATH,2000.0,
+			  5,1,$errmsg);
+    if ($retval != CIR_OK) {
+	printf $msg_fh "CIR_GETSTDS failed on dither %s -- %s\n",$outd,$errmsg;
+        exit 1;
+    }
+
+    # Now match the standards with the catalogue stars...
+
+    my $maxsize = max($naxis[0],$naxis[1]);
+    my $srad = int(0.25*$maxsize);
+    (undef,$tmp) = tempfile("tmpXXXX",OPEN=>0);
+    my $nmatch;
+    $outcat .= "[$j]";
+    my $retval = cir_matchstds($outcat,$ref . "[1]",$srad,$naxis[0],$naxis[1],
+			       $tmp,$nmatch,$errmsg);
+    unlink $ref;
+    if ($retval != CIR_OK) {
+	unlink $tmp;
+        print $msg_fh "CIR_MATCHSTDS: Failed on $outcat\n$errmsg\n";
+	print $msg_fh "Continuing with caution\n";
+    } elsif ($nmatch == 0) {
+	unlink $tmp;
+        print $msg_fh "CIR_MATCHSTDS: Failed on $outcat\nNo objects matched\n";
+	print $msg_fh "Continuing with caution\n";
+    } else {
+	print $msg_fh "$nmatch objects matched astrometric standards\n";
+    }
+
+    # Do the plate solution
+
+    $retval = cir_platesol($outd,$tmp,6,2,1,$errmsg);
+    if ($retval != CIR_OK) {
+	print $msg_fh "CIR_PLATESOL: Failed on $outd\n$errmsg\n";
+	print $msg_fh "Continuing with the current WCS\n";
+    }
+    unlink $tmp;
+
+    # Work out WCS zeropoint shift and write it to the header.
+
+    my ($raref2,$decref2);
+    $retval = cir_xy2radec($outd,0.5*$naxis[0],0.5*$naxis[1],$raref2,$decref2,
+			   $errmsg);
+    if ($retval != CIR_OK) {
+        print $msg_fh "CIR_XY2RADEC failed on dither %s -- %s\n",$outd,$errmsg;
+	exit 1;
+    }
+    $raref2 = ($raref2 - $raref)*3600.0;
+    $decref2 = ($decref2 - $decref)*3600.0;
+    my $outkey = "RAZP20";
+    my $outcom = "[arcsec] Ref RA shift pass 2 to 0 (new - old)";
+    $retval = cir_update_hdr($outd,$outkey,"FLOAT",$raref2,$outcom,
+			     $errmsg);
+    $outkey = "DECZP20";
+    $outcom = "[arcsec] Ref DEC shift pass 2 to 0 (new - old)";
+    $retval = cir_update_hdr($outd,$outkey,"FLOAT",$decref2,$outcom,
+			     $errmsg);
+ 
+    # Copy the WCS information to the header of the catalogue 
+
+    $retval = update_cat_wcs($outd,$outcat);  
+	
+    # Update the catalogues so that the objects have equatorial coordinates
+
+    $retval = cir_catcoord($outd,$outcat,$errmsg);
+
+    # Update the headers of the input files so that they have the new WCS
+
+    foreach $fname (@allfiles) {
+	$fnamesub = $fnamesubs{$fname};
+        $retval = cir_wcsoffset($outd,$fnamesub,1,$errmsg);
+        if ($retval != CIR_OK) {
+	    print $msg_fh "CIR_WCSOFFSET: Failed on $outd and $fnamesub\n$errmsg\n";
+	}
+    }
+
+    # Classify the objects...
+
+    $retval = cir_classify($outcat,"EXP_TIME",$errmsg);
+    if ($retval != CIR_OK) {
+	print $msg_fh "CIR_CLASSIFY: Failed on $outcat\n$errmsg\n";
+    }
+
+    # Do the photometry now
+
+    $retval = do_photom($outd,$outcat);
+
+    # Process the history records
+
+    cir_prochist($outd);
+    foreach $fname (@allfiles) {
+	$fnamesub = $fnamesubs{$fname};
+        cir_prochist($fnamesub);
+    }
+        
+}
+
+exit 0;
+
+sub do_photom {
+    my ($imagefile,$catfile) = @_;
+
+
+    # If the photometric info is defined, then continue on...
+
+    my ($sumzp,$sumzp4,$sumnzp,$sumvar,$sumvar4,$anynul);
+    if (defined $FINFO && defined $CINFO) {
+	no strict 'refs';
+	no strict 'vars';
+
+	# Parse the names of the catalogue columns and the variables that will
+	# be associated with them.
+
+	my @allcolnames = @{$$CINFO{'columns'}};
+	my @allcolvars = @{$$CINFO{'vars'}};
+
+	# Get the exposure time and airmass. Then calculate the extinction
+
+	my $status = 0;
+	my ($nhdu,$exposed,$airmass,$junk,$hdutype);
+        my $iptr = Astro::FITS::CFITSIO::open_file($imagefile,READWRITE,$status);
+        if ($status != 0) {
+	    fitserr($status,"Can't open file $imagefile\n");
+	    return(1);
+        }
+	$iptr->get_hdu_num($nhdu);
+        $iptr->movabs_hdu(1,$hdutype,$status);
+        $iptr->read_key(TFLOAT,"EXP_TIME",$exposed,$junk,$status);
+	$iptr->read_key(TFLOAT,"AIRMASS",$airmass,$junk,$status);
+	$iptr->movabs_hdu($nhdu,$hdutype,$status);
+	$iptr->close_file($status);
+	my $extinct = eval $$FINFO{'extinct'};
+
+        # Initialise some accumulators
+
+	$sumzp = 0.0;
+	$sumzp4 = 0.0;
+	$sumnzp = 0;
+	$sumvar = 0.0;
+	$sumvar4 = 0.0;
+
+	# Right, get some photometric standards that should appear on the
+	# current image
+
+	my @gpars = ();
+	if ($$CINFO{'accessmethod'} eq "searchfits") {
+	    @gpars = ("localfits","",$$CINFO{'location'});
+	} elsif ($$CINFO{'accessmethod'} eq "searchinternet") {
+	    @gpars = ($$CINFO{'vizcat'},"ukirt","");
+	} elsif ($$CINFO{'accessmethod'} eq "searchlocal") {
+	    @gpars = ("local" . $$CINFO{'vizcat'},"",$$CINFO{'location'});
+	} else {
+	    print $msg_fh "Non-standard access method";
+	    return(1);
+	}
+
+	# Get a temporary file for the FITS table and get the standards
+
+	(undef,$stdsfile) = tempfile("refXXXX",OPEN=>0);
+	my $errmsg;
+	my $retval = cir_getstds($imagefile,$stdsfile,@gpars,2000.0,5,1,
+				 $errmsg);
+	if ($retval == CIR_WARN) {
+	    unlink $stdsfile;
+	    print $msg_fh "Zeropoint calculation not possible -- no standards on the current image\n";
+	    return(1)
+	} elsif ($retval == CIR_FATAL) {
+	    unlink $stdsfile;
+	    print $msg_fh "CIR_GETSTDS: Failed in do_photom_\n$errmsg";
+	    return(1)
+	}
+
+	# Open the output subset catalogue and see how many standards there are
+
+	my $status = 0;
+	my $fptr = Astro::FITS::CFITSIO::open_file($stdsfile,READONLY,$status);
+	my ($hdutype,$nrows);
+	$fptr->movabs_hdu(2,$hdutype,$status);
+	if ($status != 0) {
+	    print $msg_fh "Unable to read extracted FITS table\n";
+	    return(1)
+	}
+	$fptr->get_num_rows($nrows,$status);
+
+	# If there aren't any rows, then get out of here
+
+	if ($nrows <= 0) {
+	    print $msg_fh "No photometric standards found on image $imagefile\n";
+	    $fptr->close_file($status) if ($fptr);
+            unlink $stdsfile;
+	    return(1);
+	}
+
+	# Get the column numbers for the RA, Dec and all filter columns
+
+	my ($racol,$deccol);
+	$fptr->get_colnum(CASESEN,"ra",$racol,$status);
+	$fptr->get_colnum(CASESEN,"dec",$deccol,$status);
+	my @allcolnums = ();
+	my $ncols = @allcolnames;
+	my $colnum;
+	foreach my $col (@allcolnames) {
+	    $fptr->get_colnum(CASESEN,$col,$colnum,$status);
+	    push @allcolnums,$colnum;
+	}
+	if ($status != 0) { 
+	    print $msg_fh "One or more columns missing from standard FITS table\n";
+	    $fptr->close_file($status) if ($fptr);
+	    return(1);
+	}
+
+	# Open the object catalogue for the image and read some stuff from
+	# the header
+
+	my ($ellcol,$classcol,$corecol,$core4col,$pkcol,$saturate,$apcor,$apcor4,$junk);
+	my $cptr = Astro::FITS::CFITSIO::open_file($catfile,READONLY,$status);
+	$cptr->get_colnum(CASESEN,"Ellipticity",$ellcol,$status);
+	$cptr->get_colnum(CASESEN,"Classification",$classcol,$status);
+	$cptr->get_colnum(CASESEN,"Core_flux",$corecol,$status);
+	$cptr->get_colnum(CASESEN,"Core4_flux",$core4col,$status);
+	$cptr->get_colnum(CASESEN,"Peak_height",$pkcol,$status);
+	$cptr->read_key(TFLOAT,"SATURATE",$saturate,$junk,$status);
+	$cptr->read_key(TFLOAT,"APCOR",$apcor,$junk,$status);
+	$cptr->read_key(TFLOAT,"APCOR4",$apcor4,$junk,$status);
+	$cptr->close_file($status);
+	if ($status != 0) {
+	    print $msg_fh "Columns or keywords missing from object catalogue\n";
+	    $fptr->close_file($status) if ($fptr);
+            unlink $stdsfile;
+	    return(1);
+	}
+
+	# Loop over each of the standard stars and see if you can find
+	# a matching star in the object catalogue
+
+	my $imatch = 0;
+	my @zp = ();
+	my @zp4 = ();
+NR:	foreach my $j (1 .. $nrows) {
+	    my ($val,$anynul,$rastd,$decstd);
+	    $fptr->read_col(TFLOAT,$racol,$j,1,1,0.0,$val,$anynul,$status);
+	    $rastd = $$val[0];
+	    $fptr->read_col(TFLOAT,$deccol,$j,1,1,0.0,$val,$anynul,$status);
+	    $decstd = $$val[0];
+
+	    # Do the search of the catalogue
+ 
+            $srad = ($$CINFO{'location'} =~ /fs_izjhklm/ ? 5.0 : 2.0);
+	    my ($cptr,$ntrows,$bestrow) = search_cat($catfile,$rastd,$decstd,
+						     $srad);
+
+	    # If none matched, then go on to the next one
+
+	    if ($ntrows == 0) {
+		$cptr->close_file($status) if ($cptr);
+		next NR;
+	    }
+
+	    # If you got a match, then read the magnitude information from 
+	    # the standard catalogue
+
+	    for (my $k = 0; $k < $ncols; $k++) {
+		my $col = $allcolnames[$k];
+		my $varname = $allcolvars[$k];
+		$fptr->read_col(TFLOAT,$allcolnums[$k],$j,1,1,-42.0,$val,
+		    $anynul,$status);
+		if ($anynul) {
+		    $cptr->close_file($status) if ($cptr);
+		    next NR;
+		}
+   	        ${$varname} = $$val[0];
+ 	    }
+
+	    # Read the required information from the object catalogue
+
+	    my ($coreflux,$core4flux,$ellipt,$iclass,$pkht);
+	    $cptr->read_col(TFLOAT,$corecol,$bestrow,1,1,0.0,$val,$anynul,
+		$status);
+	    $coreflux = $$val[0];
+	    $cptr->read_col(TFLOAT,$core4col,$bestrow,1,1,0.0,$val,$anynul,
+		$status);
+	    $core4flux = $$val[0];
+	    $cptr->read_col(TFLOAT,$ellcol,$bestrow,1,1,0.0,$val,$anynul,
+		$status);
+	    $ellipt = $$val[0];
+	    $cptr->read_col(TFLOAT,$classcol,$bestrow,1,1,0.0,$val,$anynul,
+		$status);
+	    $iclass = $$val[0];
+	    $cptr->read_col(TFLOAT,$pkcol,$bestrow,1,1,0.0,$val,$anynul,
+		$status);
+	    $pkht = $$val[0];
+	    $cptr->close_file($status);
+
+	    # Check that this has the right classification and that
+	    # it is neither trailed nor saturated
+
+	    next if (int($iclass) != -1 || $pkht >= $saturate || $ellipt > 0.5);
+
+	    # Ok, we've jumped through all the hoops.  Now work out the
+	    # instrumental magnitude.
+
+	    my $cf = $coreflux/$exposed;
+	    $cf = 1.0 if ($cf < 1.0);
+	    my $fluxmag = 2.5*log10($cf) + $apcor + $percorr;
+	    $cf = $core4flux/$exposed;
+	    $cf = 1.0 if ($cf < 1.0);
+	    my $fluxmag4 = 2.5*log10($cf) + $apcor4 + $percorr;
+
+	    # Work out the reference magnitude for the standard
+
+	    my $refmag = eval $$FINFO{'refmag'};
+
+	    # Get the zero point now and store it away
+
+	    $zp[$imatch] = $refmag + $fluxmag + $extinct;
+	    $zp4[$imatch] = $refmag + $fluxmag4 + $extinct;
+	    $imatch++;
+        }
+
+	# Tidy the temporary standards file away
+
+	$fptr->close_file($status);
+        unlink $stdsfile;
+
+	# If anything matched, then get the median the MAD and a 3 sigma 
+	# clipped mean for both apertures
+
+	if ($imatch != 0) {
+	    my ($retval,$zpmed,$zpmad,$zpcav,$zpsig,$lcut,$hcut);
+	    my $errmsg;
+	    $retval = cir_medmad(\@zp,undef,$imatch,$zpmed,$zpmad,$errmsg);
+	    if ($imatch > 6) {
+		$lcut = $zpmed - 3.0*1.48*$zpmad;
+		$hcut = $zpmed + 3.0*1.48*$zpmad;
+		$retval = cir_meansigcut(\@zp,undef,$imatch,$lcut,$hcut,$zpcav,
+		    $zpsig,$errmsg);
+	    } else {
+		$zpcav = $zpmed;
+		$zpsig = 1.48*$zpmad;
+	    }
+	    $sumzp += $imatch*$zpcav;
+	    $sumvar += $imatch*$zpsig*$zpsig;
+	    $sumnzp += $imatch;
+	    $retval = cir_medmad(\@zp4,undef,$imatch,$zpmed,$zpmad,$errmsg);
+	    if ($imatch > 6) {
+		$lcut = $zpmed - 3.0*1.48*$zpmad;
+		$hcut = $zpmed + 3.0*1.48*$zpmad;
+		$retval = cir_meansigcut(\@zp4,undef,$imatch,$lcut,$hcut,$zpcav,
+		    $zpsig,$errmsg);
+	    } else {
+		$zpcav = $zpmed;
+		$zpsig = 1.48*$zpmad;
+	    }            
+	    $sumzp4 += $imatch*$zpcav;
+	    $sumvar4 += $imatch*$zpsig*$zpsig;
+	}
+
+	# Right, what is the weighted mean over all the extensions?
+
+	if ($sumnzp > 0) {
+	    $sumzp /= $sumnzp;
+	    $sumzp4 /= $sumnzp;
+	    $sumvar = sqrt($sumvar/$sumnzp);
+	    $sumvar4 = sqrt($sumvar4/$sumnzp);
+	}
+    
+    # If there was no photometric info for the instrument, then just substitute
+    # some dummy values
+    
+    } else {
+        $sumzp = 0.0;
+        $sumvar = 0.0;
+        $sumzp4 = 0.0;
+        $sumvar4 = 0.0;
+    
+    }
+    
+    # Finally, write these results to the extension headers...
+
+    my ($retval,$errmsg);
+    $retval = cir_update_hdr($imagefile,"MAGZPT","FLOAT",$sumzp,
+	"Photometric ZP(mags) for default extinction (core_flux)",$errmsg);
+    $retval = cir_update_hdr($imagefile,"MAGZRR","FLOAT",
+	$sumvar,"Photometric ZP error(mags) (core_flux)",
+	$errmsg);   
+    $retval = cir_update_hdr($imagefile,"MAGZPT4","FLOAT",$sumzp4,
+	"Photometric ZP(mags) for default extinction (core4_flux)",$errmsg);
+    $retval = cir_update_hdr($imagefile,"MAGZRR4","FLOAT",$sumvar4,
+	"Photometric ZP error(mags) (core4_flux)",$errmsg);   
+
+    # And to the catalogues
+
+    $retval = cir_update_hdr($catfile,"MAGZPT","FLOAT",$sumzp,
+	"Photometric ZP(mags) for default extinction (core_flux)",$errmsg);
+    $retval = cir_update_hdr($catfile,"MAGZRR","FLOAT",
+	$sumvar,"Photometric ZP error(mags) (core_flux)",
+	$errmsg);   
+    $retval = cir_update_hdr($catfile,"MAGZPT4","FLOAT",$sumzp4,
+	"Photometric ZP(mags) for default extinction (core4_flux)",$errmsg);
+    $retval = cir_update_hdr($catfile,"MAGZRR4","FLOAT",$sumvar4,
+	"Photometric ZP error(mags) (core4_flux)",$errmsg);   
+}
+
+
+sub search_cat {
+    my ($catname,$ra,$dec,$radius) = @_;
+
+    # Put the coordinates into radians as this is how they are stored
+    # in the object catalogues
+
+    $ra = deg2rad($ra);
+    $dec = deg2rad($dec);
+    $radius = deg2rad($radius/3600.0);
+
+    # Open a temporary file with the region specification for the RA Dec
+    # coverage.  Write this in.
+
+    my ($fh,$regfile) = tempfile("regXXXX");
+    printf $fh "circle(%g,%g,%g)\n",$ra,$dec,$radius;
+    $fh->close;
+
+    # Now get the catalogue subset. NB this will be a memory file, so there
+    # will be no need to delete it explicitly when we close it
+
+    my $catsub = sprintf("%s[regfilter(\"%s\",ra,dec)]",$catname,$regfile);
+    my $status = 0;
+    my $tptr = Astro::FITS::CFITSIO::open_file($catsub,READONLY,$status);
+    unlink $regfile;
+
+    # Get the number of rows in the subset
+
+    my $nrows;
+    if ($status == 0) {
+        $tptr->get_num_rows($nrows,$status);
+    } else {
+        $tptr = 0;
+        $nrows = 0;
+    }
+
+    # Find the best row (the one closest to the centre)
+
+    my ($irem,$anynul);
+    if ($nrows > 1) {
+        my $radmin = 2.0*$radius;
+        my ($col,@raval,@decval,$rad);
+        $tptr->get_colnum(CASEINSEN,"ra",$col,$status);
+        $tptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@raval,$anynul,$status);
+        $tptr->get_colnum(CASEINSEN,"dec",$col,$status);
+        $tptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@decval,$anynul,
+           $status);
+        for ($i = 0; $i < $nrows; $i++) {
+            $rad = sqrt(($raval[$i] - $ra)**2 + ($decval[$i] - $dec)**2);
+            if ($rad < $radmin) {
+                $radmin = $rad;
+                $irem = $i + 1;
+            }
+        }
+        $irem = 0 if (! defined $irem);
+    } elsif ($nrows == 1) {
+        $irem = 1;
+    } else {
+        $irem = 0;
+    }
+
+    # Return a pointer to the 'table', the number of rows found and the
+    # row number of the best match.
+
+    return($tptr,$nrows,$irem);
+}
+
+
+sub update_cat_wcs {
+    my ($image,$cat) = @_;
+
+    # Open the two input files.
+
+    $status = 0;
+    my $cptr = Astro::FITS::CFITSIO::open_file($cat,READWRITE,$status);
+    if ($status != 0) {
+	print $msg_fh "Catalogue $cat cannot be opened for WCS update\n";
+	return(1);
+    }
+    my $iptr = Astro::FITS::CFITSIO::open_file($image,READONLY,$status);
+    if ($status != 0) {
+	$cptr->close_file($status);
+	print $msg_fh "Image $image cannot be opened for WCS update of catalogue\n";
+	return(1);
+    }
+
+    # Now, copy the WCS keywords over.
+
+    my ($value,$comment);
+    foreach my $kk (keys %wcsparms) {
+	$status = 0;
+        $iptr->read_key($wcsparms{$kk},$kk,$value,$comment,$status);
+	$cptr->update_key($wcsparms{$kk},$kk,$value,$comment,$status);
+    }
+
+    # Close things up...
+
+    $cptr->close_file($status);
+    $iptr->close_file($status);
+}
+
+
+sub fitserr {
+    my ($status,$msg) = @_;
+    my ($ferr);
+
+    my $i = Astro::FITS::CFITSIO::fits_get_errstatus($status,$ferr);
+    print $msg_fh "$msg\n$ferr\n";
+}
+
+sub gethdrval {
+    my ($fname,$keyword) = @_;
+
+    my $status = 0;
+    my ($value,$junk);
+    my $fptr = Astro::FITS::CFITSIO::open_file($fname,READONLY,$status);
+    $fptr->read_keyword($keyword,$value,$junk,$status);
+    $fptr->close_file($status);
+    return ("") if ($status != 0);
+    $value =~ s/^'(.*?)\s*'$/$1/ if ($value =~ /'/);
+    return($value);
+}
+
+sub min {
+    my @list = @_;
+
+    my $v = (sort {$a <=> $b} @list)[0];
+    return($v);
+}
+
+sub max {
+    my @list = @_;
+
+    my $v = (sort {$a <=> $b} @list)[-1];
+    return($v);
+}
+
+sub sum {
+    my @list = @_;
+ 
+    my $v = 0.0;
+    foreach (@list) {
+        $v += $_;
+    }
+    return($v);
+}
+
+sub deg2rad {
+    my ($a) = @_;
+
+    return($a/57.2957795);
+}
+
+sub log10 {
+    my ($a) = @_;
+    
+    my $b = log($a)/log(10.0);
+    return($b);
+}
