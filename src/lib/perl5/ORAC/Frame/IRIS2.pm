@@ -90,6 +90,17 @@ sub _to_GAIN {
   5.2; # hardwire in gain for now
 }
 
+sub _to_OBSERVATION_MODE {
+  my $self = shift;
+  my $return;
+  if( $self->hdr->{IR2_SLIT} eq "OPEN1" ) {
+    $return = "imaging";
+  } else {
+    $return = "spectroscopy";
+  }
+  $return;
+}
+
 sub _to_UTEND {
   my $self = shift;
   my ($hour, $minute, $second) = split( /:/, $self->hdr->{UTEND} );
