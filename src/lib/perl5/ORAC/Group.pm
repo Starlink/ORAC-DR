@@ -230,7 +230,7 @@ sub subgrps {
 
 =back
 
-=head2 Instance methods
+=head2 Accessor methods
 
 The following methods are available for accessing the 
 'instance' data.
@@ -911,7 +911,7 @@ sub membernames {
   }
   return @list;
 }
- 
+
 =item B<membernumbers>
 
 Return a list of all the observation numbers associated with
@@ -1005,6 +1005,12 @@ method for each member of the group.
 
   $Grp->template("filename_template");
 
+A second argument can be specified to modify the specified frame
+number rather than simply the first (see the template() method
+in B<ORAC::Frame> for more details):
+
+  $Grp->template($template,2);
+
 There are no return arguments. The intelligence for this method resides
 in the individual frame objects.
 
@@ -1012,11 +1018,10 @@ in the individual frame objects.
 
 sub template {
   my $self = shift;
-  my $template = shift;
 
   # Loop over the members
   foreach my $member ($self->members) {
-    $member->template($template);
+    $member->template(@_);
   }
 }
 
