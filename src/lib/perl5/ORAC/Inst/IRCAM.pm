@@ -23,18 +23,21 @@ monoliths.
 require Exporter;
 
 @ISA = (Exporter);
-@EXPORT = qw(start_algorithm_engines
+@EXPORT = qw(start_algorithm_engines wait_for_algorithm_engines
 	    start_msg_sys);
 
 use Carp;
 use strict;
-use vars qw/$VERSION $TAIL/;
+use vars qw/$VERSION $TAIL %Mon/;
 $VERSION = undef; # -w protection
 $VERSION = '0.10';
 
 # Messaging systems
 use ORAC::Msg::ADAM::Control;
 use ORAC::Msg::ADAM::Task;
+
+# Status handling
+use ORAC::Constants qw/:status/;
 
 # Use .sdf extension
 $TAIL = ".sdf";
@@ -87,7 +90,7 @@ ccdpack_reg), FIGARO (figaro1) and KAPPA (kappa_mon).
 
 sub start_algorithm_engines {
 
-  my %Mon = ();
+  %Mon = ();
 
   $Mon{photom_mon} = new ORAC::Msg::ADAM::Task("photom_mon_$$",$ENV{PHOTOM_DIR}."/photom_mon");
   $Mon{figaro1} = new ORAC::Msg::ADAM::Task("figaro1_$$",$ENV{FIG_DIR}."/figaro1");
@@ -95,9 +98,28 @@ sub start_algorithm_engines {
   $Mon{ccdpack_res} = new ORAC::Msg::ADAM::Task("ccdpack_res_$$",$ENV{CCDPACK_DIR}."/ccdpack_res");
   $Mon{ccdpack_reg} = new ORAC::Msg::ADAM::Task("ccdpack_reg_$$",$ENV{CCDPACK_DIR}."/ccdpack_reg");
   $Mon{kappa_mon} = new ORAC::Msg::ADAM::Task("kappa_mon_$$",$ENV{KAPPA_DIR}."/kappa_mon");
-#  $Mon{kappa_mon}->contactw;	# wait for last monolith
 
   return %Mon;
+}
+
+=item wait_for_algorithm_engines
+
+Check to see that at least one of the algorithm engines has 
+started. Wait until contact can be made or timeout is reached.
+Return ORAC__OK if everything works; ORAC__ERROR if
+a timeout.
+
+The messaging system must be running.
+
+=cut
+
+sub wait_for_algorithm_engines {
+
+  if ( $Mon{kappa_mon}->contactw ) {
+    return ORAC__OK;
+  } else {
+    return ORAC__ERROR;
+  }
 }
 
 
