@@ -144,7 +144,9 @@ sub subgrp {
 
   # Create a new grp
   my @subgrp = (); # Storage array
-  my $subgrp = $self->new($self->name . "subgrp");  
+  my $parent_name = $self->name;
+  $parent_name = 'UNKNOWN' unless defined $parent_name; # -w protection
+  my $subgrp = $self->new($parent_name . "_subgrp");
 
   # Copy the header information
   %{$subgrp->hdr} = %{$self->hdr};
@@ -157,7 +159,13 @@ sub subgrp {
     my $match = 1;  # Assume a match
 
     # We are doing a string comparison
-    foreach my $key (%hash) {
+    foreach my $key (keys %hash) {
+      unless (defined $hash{$key}) {
+	orac_warn "SUBGRP: Key $key does not have a value in comparison hash\n";
+      }
+      unless (defined $member->hdr($key)) {
+	orac_warn "SUBGRP: Key $key is not defined in the header for $member\n";
+      }
       unless ($hash{$key} eq $member->hdr($key)) {
         $match = 0;
         last;
