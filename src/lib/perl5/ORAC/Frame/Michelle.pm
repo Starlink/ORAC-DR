@@ -460,9 +460,8 @@ pipeline by using values stored in the header.
 Required ORAC extensions are:
 
 ORACTIME: should be set to a decimal time that can be used for
-comparing the relative start times of frames.  For UKIRT this
-number is decimal hours, for SCUBA this number is decimal
-UT days.
+comparing the relative start times of frames.  For Michelle
+this is decimal UT days.
 
 ORACUT: This is the UT day of the frame in YYYYMMDD format.
 
@@ -483,20 +482,9 @@ sub calc_orac_headers {
 
 
   # ORACTIME
-  # For Michelle the time must be extracted from the DATE-OBS keyword
-  # and converted to decimal hours, formatted to five decimals. 
-  # Return zero if not available.
-  my $time;
-  my $epoch = $self->hdr('DATE-OBS');
-  if ( defined $epoch && $epoch =~ /:/ ) {
-    my @hms = split( /:/, substr( $epoch, index( $epoch, "T" ) + 1 ) );
-    $hms[ 2 ] =~ s/Z//;
-    $time = $hms[ 0 ] + $hms[ 1 ] / 60.0 + $hms[ 2 ] / 3600.0;
-    $time = sprintf( "%.5f", $time );
-  } else {
-    $time = 0;
-  }
-  $self->hdr('ORACTIME', $time);
+  my $date = defined($self->hdr("UTDATE")) ? $self->hdr("UTDATE") : 0;
+  my $time = defined($self->hdr->{1}->{'UTSTART'}) ? $self->hdr->{1}->{'UTSTART'} / 24 : ( defined( $self->hdr->{'UTSTART'} ) ? $self->hdr->{'UTSTART'} / 24 : 0 );
+  $self->hdr('ORACTIME', $date + $time);
 
   $new{'ORACTIME'} = $time;
 
