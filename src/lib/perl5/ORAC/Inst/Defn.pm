@@ -496,7 +496,9 @@ sub orac_configure_for_instrument {
              # misc
              $ENV{"ORAC_PERSON"} = "frossie";
              $ENV{"ORAC_SUN"} = "230";
-             $options->{"loop"} = "flag";
+             if (Net::Domain->domainname =~ "ukirt"  ) {
+                  $options->{"loop"} = "flag";
+             }        
 
              last SWITCH; }
 
@@ -529,7 +531,9 @@ sub orac_configure_for_instrument {
              # misc
              $ENV{"ORAC_PERSON"} = "mjc";
              $ENV{"ORAC_SUN"} = "232";
-             $options->{"loop"} = "flag";
+             if (Net::Domain->domainname =~ "ukirt"  ) {
+                  $options->{"loop"} = "flag";
+             }
 
              last SWITCH; }
 
@@ -641,7 +645,9 @@ sub orac_configure_for_instrument {
              # Misc stuff
              $ENV{"ORAC_PERSON"} = "timj";
              $ENV{"ORAC_SUN"} = "231";
-             $options->{"loop"} = "wait";
+             if (Net::Domain->domainname =~ "jcmt"  ) {
+                  $options->{"loop"} = "wait";
+             }            
              $options->{"skip"} = 1;
 
              last SWITCH; }
@@ -675,7 +681,9 @@ sub orac_configure_for_instrument {
              # misc
              $ENV{"ORAC_PERSON"} = "mjc";
              $ENV{"ORAC_SUN"} = "232";
-             $options->{"loop"} = "flag";
+             if (Net::Domain->domainname =~ "ukirt"  ) {
+                  $options->{"loop"} = "flag";
+             }           
 
              last SWITCH; }
 
