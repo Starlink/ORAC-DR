@@ -3,7 +3,7 @@
 #    _FP_HELLO_
 #
 # Purpose:
-#    Sets up data-reduction tasks for FP recipes.
+#    Sets up data-reduction tasks and data for FP recipes.
 #
 # Language:
 #    Perl5
@@ -26,9 +26,31 @@
 #    -  Does not detect saturated pixels.
 #    -  Parameters are neither saved from or to a `restoration' file.
 #
+#    The script also performs the following tasks.
+#    -  Calls the steering primitive to set steering headers.
+#    -  Calls _PREPARE_SINGLE_FRAME_ primitive to create error,
+#    subtract integrations for chopped data, remove the bias,
+#    and create a valid world co-ordinate system.
+#
+# Arguments:
+#    NPAIRS = INTEGER (Given)
+#       The number of frame pairs to be differenced.  It must be a
+#       multiple of 2 otherwise 4 is assumed.  A value of four or
+#       more is assumed to indicate sky subtraction.  [4]
+#    NUMBER = INTEGER (Given)
+#       The number of spatial jitter positions.  For each spatial
+#       position there are NPAIRS pairs of frames.  A value of 1 also
+#       dictates that no jittering has occurred.  To make a master
+#       mosaic combining spatial positions NUMBER should be at least 3.
+#       If NUMBER is absent, the number of offsets, as given by
+#       internal header ORAC_NUMBER_OF_OFFSETS, minus one is used.  If
+#       neither is available, 1 is used.  An error state arises if the
+#       number of jittered frames is fewer than 3.  []
+#    USEVAR = LOGICAL (Given)
+#       Whether or not to create and propagate variance arrays.  [0]
+#
 # Notes:
-#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
-#    in imaging mode.
+#    -  This primitive is only suitable for UFTI.
 #
 # Tasks:
 #    CCDPACK: CCDSETUP.
@@ -53,15 +75,46 @@
     my $param2 = "saturate=no preserve=yes genvar=no restore=no logto=terminal adc=! rnoise=! bounds=! direction=! deferred=! ndfnames=yes save=no";
 
 # Execute commands.
-    my $ORAC_STATUS = $Mon{'ccdpack_res'}->control('par_reset');
-    $Mon{'ccdpack_res'}->obeyw('ccdsetup',"$param1 $param2 accept");
+    my $ORAC_STATUS = $Mon{ "ccdpack_res" }->control( "par_reset" );
+    $Mon{ "ccdpack_res" }->obeyw( "ccdsetup", "$param1 $param2 accept" );
+
+# Set the steering headers
+# ========================
+
+# Obtain the argument values and pass to the steering command as strings
+# in case the arguments are not defined.  Leave it to steering primitive
+# to sort it out.
+    my $number = $_FP_HELLO_{NUMBER};
+    my $args = "";
+    if ( defined( $number ) ) {
+       $args = " NUMBER=$number";
+    }
+
+    my $number = $_FP_HELLO_{NPAIRS};
+    if ( defined( $npairs ) ) {
+       $args = $args . " NPAIRS=$npairs";
+    }
+
+    my $usevar = $_FP_HELLO_{USEVAR};
+    if ( defined( $usevar ) ) {
+       $args = $args . " USEVAR=$usevar";
+    }
+
+    _FP_STEER_ $args
+
+# Prepare the single frame.
+# =========================
+
+# Adds variance arrays, subtracts the bias, differences chopped beams,
+# and adds world co-ordinate system.
+    _PREPARE_SINGLE_FRAME_
 
 # Podule
 # ======
 
 =head1 NAME
 
-_FP_HELLO_ -- Sets up data-reduction tasks for FP recipes.
+_FP_HELLO_ -- Sets up data-reduction tasks and data for FP recipes.
 
 =head1 DESCRIPTION
 
@@ -109,13 +162,54 @@ Parameters are neither saved from or to a `restoration' file.
 
 =back
 
+The script also performs the following tasks.
+
+=over 4
+
+=item *
+
+Calls the steering primitive to set steering headers.
+
+=item *
+
+Calls L<_PREPARE_SINGLE_FRAME|_PREPARE_SINGLE_FRAME_> primitive to
+create error, subtract integrations for chopped data, remove the bias,
+and create a valid world co-ordinate system.
+
+=back
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item NPAIRS = INTEGER (Given)
+
+The number of frame pairs to be differenced.  It must be a multiple
+of 2 otherwise 4 is assumed.  [4]
+
+=item NUMBER = INTEGER (Given)
+
+The number of spatial jitter positions.  For each spatial position
+there are NPAIRS pairs of frames.  A value of 1 also dictates that no
+jittering has occurred.  To make a master mosaic combining spatial
+positions NUMBER should be at least 3.  If NUMBER is absent, the
+number of offsets, as given by internal header ORAC_NUMBER_OF_OFFSETS,
+minus one is used.  If neither is available, 1 is used.  An error
+state arises if the number of jittered frames is fewer than 3.  []
+
+=item USEVAR = LOGICAL (Given)
+
+Whether or not to create and propagate variance arrays.  [0]
+
+=back
+
 =head1 NOTES
 
 =over 4
 
 =item *
 
-This primitive is suitable for UFTI, IRCAM, and Michelle in imaging mode.
+This primitive is only suitable for UFTI.
 
 =back
 
