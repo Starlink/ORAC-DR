@@ -1,0 +1,73 @@
+#! -*-perl-*
+
+=head1 NAME
+
+_ADD_GAUSSIAN_NOISE_ - add Gaussian noise
+
+=head1 SYNOPSIS
+
+    _ADD_GAUSSIAN_NOISE_
+
+    _ADD_GAUSSIAN_NOISE_ SIGMA=0.1
+
+=head1 DESCRIPTION
+
+Adds Gaussian noise to an input image. First, a noise image is created
+with KAPPA CREFRAME (using the input file as a template) which is then
+added to the original image. The noise may be specified through the
+SIGMA and/or FWHM parameters. Note: SIGMA overrides FWHM if both are
+specified.
+
+=head1 ALGORITHMS
+
+Uses KAPPA CREFRAME to generate the noise image, KAPPA MATHS to
+combine the noise and input images.
+
+=head1 FILE SUFFIX
+
+Creates output files with suffix of '_gn'
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2005 University of British Columbia. All Rights Reserved.
+
+=cut
+
+# Check if sigma and/or fwhm are specified
+my $sigma = (exists $_ADD_GAUSSIAN_NOISE_{SIGMA} &&
+	     defined $_ADD_GAUSSIAN_NOISE_{SIGMA}) ?
+    $_ADD_GAUSSIAN_NOISE_{SIGMA} : 30e-3;
+
+my $fwhm = 2.355*$sigma; # Calculate FWHM
+
+unless (defined $_ADD_GAUSSIAN_NOISE_{SIGMA}) {
+    $fwhm = (exists $_ADD_GAUSSIAN_NOISE_{FWHM} &&
+	     defined $_ADD_GAUSSIAN_NOISE_{FWHM}) ?
+	     $_ADD_GAUSSIAN_NOISE_{FWHM} : 70.65e-3;
+}
+
+# Loop over files
+foreach my $i (1..$Frm->nfiles) {
+
+    # Create output filename: use input filename and add _gn suffix
+    my ($in, $out) = $Frm->inout('_gn', $i);
+
+    orac_print "Adding noise to file $in and writing to $out\n";
+
+    # Use KAPPA CREFRAME to generate a noise image to match the mosaicked image.
+    my $outtmp = new ORAC::TempFile;
+    $Mon{kappa_mon}->obeyw("creframe","mode=gn mean=0.0 sigma=$sigma like=$in out=".$outtmp->file);
+
+    # Add to or multiply input image by noise image
+#    my $exp = "IA + IB";
+#    $Mon{kappa_mon}->obeyw("maths","ia=$in ib=".$outtmp->file." exp=$exp out=$out");
+    $Mon{kappa_mon}->obeyw("add","in1=$in in2=".$outtmp->file." out=$out");
+    
+    # Register new output filename
+    $Frm->file( $i, $out );
+
+}
