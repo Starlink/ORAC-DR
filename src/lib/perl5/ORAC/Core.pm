@@ -333,7 +333,10 @@ sub orac_process_frame {
   # is not the same directory as ORAC_DATA_OUT
   if (    File::Spec->canonpath($ENV{"ORAC_DATA_IN"}) 
        ne File::Spec->canonpath($ENV{"ORAC_DATA_OUT"}) ) {
-  unlink($Frm->raw) if (-l $Frm->raw); }
+    foreach my $raw ( $Frm->raw ) {
+      unlink($raw) if (-l $raw);
+    }
+  }
 
   # Set the Xoracdr status bar to have the current recipe name
   $$CURRENT_RECIPE = "Currently doing: ";
