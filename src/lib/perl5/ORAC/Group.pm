@@ -186,7 +186,7 @@ sub subgrp {
 
   @{ $subgrp->allmembers } = @subgrp;
   @{ $subgrp->members }    = @subgrp;
-  
+
   return $subgrp;
 
 }
@@ -213,11 +213,11 @@ sub groups.
 sub subgrps {
   my $self = shift;
   my @keys = @_;
-  
+
   # We can create a unique key in a hash for the header values
   # specified. So create a temporary hash.
   my %store = ();
-  
+
   # Loop over all members of current group
 
   foreach my $member ($self->members) {
@@ -236,15 +236,15 @@ sub subgrps {
       %{$store{$key}->uhdr} = %{$self->uhdr};
     }
 
-    # Store the frame (this is inefficient since it 
+    # Store the frame (this is inefficient since it
     # forces a check_membership every time and we know membership
     # is okay since members() only returns valid frames.
     $store{$key}->push($member);
-    
+
   }
 
   # Return the values
-  return values %store;  
+  return values %store;
 }
 
 
@@ -890,7 +890,7 @@ sub erase {
 
 Method to determine whether the group file() exists on disk or not.
 Returns true if the file is there, false otherwise. Effectively
-equivalent to using -e but allows for the possibility that the
+equivalent to using C<-e> but allows for the possibility that the
 information stored in file() does not directly relate to the
 file as stored on disk (e.g. a .sdf extension).
 
@@ -1098,6 +1098,8 @@ arguments given matches the number of members in the group.
   $Grp->membernames(@newnames);
   @names = $Grp->membernames;
 
+Only the first file from each frame object is returned.
+
 =cut
 
 sub membernames {
@@ -1153,6 +1155,42 @@ sub membernumbers {
 
   }
   return @list;
+}
+
+=item B<membertagset>
+
+Set the tag in each of the members.
+
+  $Grp->membertagset( 'TAG' );
+
+Runs the C<tagset> method on each of the member frames.
+
+=cut
+
+sub membertagset {
+  my $self = shift;
+  if (@_) {
+    foreach my $member ($self->members) {
+      $member->tagset($_[0]);
+    }
+  }
+}
+
+=item B<membertagretrieve>
+
+Run the C<tagretrieve()> method for each of the members.
+
+  $Grp->membertagretrieve
+
+=cut
+
+sub membertagretrieve {
+  my $self = shift;
+  if (@_) {
+    foreach my $member ($self->members) {
+      $member->tagretrieve($_[0]);
+    }
+  }
 }
 
 # Method to return the number of frames in a group

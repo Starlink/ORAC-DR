@@ -93,6 +93,7 @@ sub new {
 	       RawSuffix => undef,
 	       Recipe => undef,
 	       UHeader => {},
+	       Tags => {},
 	       %subclass
 	      };
 
@@ -162,7 +163,7 @@ can be tidied up when required.
 
 sub file {
   my $self = shift;
- 
+
   # Set it to point to first member by default
   my $index = 0;
 
@@ -173,7 +174,7 @@ sub file {
 
     # If this is an integer then proceed
     # Check for int and non-zero (since strings eval as 0)
-    # Cant use int() since this extracts integers from the start of a 
+    # Cant use int() since this extracts integers from the start of a
     # string! Match a string containing only digits
     if ($firstarg =~ /^\d+$/ && $firstarg != 0) {
 
@@ -183,13 +184,13 @@ sub file {
       # If we have more arguments we are setting a value
       # else wait until we return the specified value
       if (@_) {
-	# First check that the old file should not be 
+	# First check that the old file should not be
 	# removed before we update the object
 	# [Note that the erase method calls this method...]
 	$self->erase($firstarg) if $self->nokeep($firstarg);
 
 	# Now update the filename
-	$self->files->[$index] = $self->stripfname(shift);         
+	$self->files->[$index] = $self->stripfname(shift);
 
 	# Make sure the nokeep flag is unset
 	$self->nokeep($firstarg,0);
@@ -197,7 +198,7 @@ sub file {
 	# Push onto file history array
 	push(@{$self->intermediates}, $self->files->[$index]);
 
-      } 
+      }
     } else {
       # Since we are updating, Erase the existing file if required
       $self->erase(1) if $self->nokeep(1);
@@ -260,7 +261,7 @@ sub files {
 
     # In an array context, return the array itself
     return @{ $self->{Files} };
- 
+
   } else {
     # In a scalar context, return the reference to the array
     return $self->{Files};
@@ -389,7 +390,7 @@ sub intermediates {
 
     # In an array context, return the array itself
     return @{ $self->{Intermediates} } if wantarray();
- 
+
   } else {
     # In a scalar context, return the reference to the array
     return $self->{Intermediates};
@@ -494,7 +495,7 @@ sub nokeepArr {
 
     # In an array context, return the array itself
     return @{ $self->{NoKeepArr} } if wantarray();
- 
+
   } else {
     # In a scalar context, return the reference to the array
     return $self->{NoKeepArr};
@@ -615,6 +616,13 @@ sub recipe {
   return $self->{Recipe};
 }
 
+
+# Return the hash reference containing the tags
+
+sub tags {
+  my $self = shift;
+  return $self->{Tags};
+}
 
 
 =item B<uhdr>
@@ -948,7 +956,7 @@ sub flag_from_bits {
   my $obsnum = shift;
 
   die "The base class version of flag_from_bits() should not be used\n -- please subclass this method\n";
-  
+
 }
 
 
@@ -992,7 +1000,7 @@ sub gui_id {
 
   my $id = $split[-1];
 
-  # Find out how many files we have 
+  # Find out how many files we have
   my $nfiles = $self->nfiles;
 
   # Prepend wtih s$num if nfiles > 1
@@ -1043,13 +1051,13 @@ file derived from this.
 sub inout {
 
   my $self = shift;
- 
+
   my $suffix = shift;
 
   # Read the number
   my $num = 1; 
   if (@_) { $num = shift; }
-  
+
   my $infile = $self->file($num);
 
   # Chop off at last underscore
@@ -1062,7 +1070,7 @@ sub inout {
 
   # We only want to drop the SECOND underscore. If we only have
   # two components we simply append. If we have more we drop the last
-  # This prevents us from dropping the observation number in 
+  # This prevents us from dropping the observation number in
   # ro970815_28
 
   my $outfile;
@@ -1169,6 +1177,55 @@ sub readhdr {
   my $self = shift;
   $self->calc_orac_headers;
   return;
+}
+
+
+=item B<tagset>
+
+Associate the current filenames with a key (or tag). Once a tag
+is initialised (it can be any string) the C<tagretrieve> method
+can be used to copy these filenames back into the object so that
+the C<files()> method will use those rather than the current
+values. This allows the data reduction steps to be "rewound".
+
+  $Frm->tagset('REBIN');
+
+The tag is case insensitive.
+
+=cut
+
+sub tagset {
+  my $self = shift;
+  if (@_) {
+    my $tag = shift;
+    $self->tags->{$tag} = [ $self->files ];
+  }
+}
+
+=item B<tagretrieve>
+
+Retrieve the files names from the tag and make them the default
+filenames for the object.
+
+  $Frm->tagretrieve('REBIN');
+
+Nothing happens if the tag does not previously exist.
+The current filenames are stored in the 'PREVIOUS' tag (unless the
+PREVIOUS tag is requested).
+
+=cut
+
+sub tagretrieve {
+  my $self = shift;
+  if (@_) {
+    my $tag = shift;
+    if (exists $self->tags->{$tag}) {
+      # Store the previous values
+      $self->tagset( 'PREVIOUS' ) unless $tag eq 'PREVIOUS';
+      # Retrieve the current values
+      $self->files( @{ $self->tags->{$tag} } );
+    }
+  }
 }
 
 
