@@ -61,7 +61,7 @@ use File::Basename;  # Get file suffix
 use File::Spec;      # Not really necessary -- a bit anal I suppose
 use NDF;
 use Starlink::HDSPACK qw/copy_hdsobj copobj 
-  delete_hdsobj create_hdsobj/; # copobj/creobj/delobj
+  delete_hdsobj create_hdsobj set_hdsobj/; # copobj/creobj/delobj/setobj
 
 use ORAC::Print;
 use ORAC::Msg::EngineLaunch; # To launch convert monolith
@@ -537,26 +537,36 @@ sub gmef2hds {
     return $hds;
   }
 
-  # Check to see if fits2ndf monolith is running
+  # Check to see if fits2ndf monolith is running.
   my $status = ORAC__ERROR;
   if (defined $self->mon('fits2ndf')) {
 
-    # Do the conversion
-    my $extable = File::Spec($ENV{'ORAC_DATA_CAL'},"extable.txt");
+    # Do the conversion.
+    my $extable = File::Spec->catfile($ENV{'ORAC_DATA_CAL'},"extable.txt");
     orac_print "Using extable: $extable\n";
     $status = $self->mon('fits2ndf')->obeyw("fits2ndf","container=true encodings=FITS-IRAF extable=$extable in=$name out=$out profits=true fmtcnv=true");
 
-    # This leaves us with an invalid file as the HEADER doesn't contain a data array
+    # This leaves us with an invalid file as the HEADER doesn't contain 
+    # a data array with a value, and it's of the wrong data type.  First
+    # copy the HEADER structure, delete the original HEADER, and replace
+    # it with a new HEADER structure of type NDF.  [There is no renobj
+    # yet, hence the copy then delete.]  Then create the DATA_ARRAY
+    # structure containing a dummy one-element data array.
     my $hstat;
-    $hstat = create_hdsobj("$out.HEADER.DATA_ARRAY", "ARRAY");
-    $hstat = create_hdsobj("$out.HEADER.DATA_ARRAY.DATA","_REAL",[1])
-      if $hstat;
+    $hstat = copy_hdsobj("$out.HEADER", "$out.FITS_HEADER");
+    $hstat = delete_hdsobj("$out.HEADER") if $hstat;
+    $hstat = create_hdsobj("$out.HEADER","NDF") if $hstat;
+    $hstat = create_hdsobj("$out.HEADER.DATA_ARRAY", "ARRAY") if $hstat;
+    $hstat = create_hdsobj("$out.HEADER.DATA_ARRAY.DATA", "_REAL", [1]) if $hstat;
+    my @dummy = ( 1.0 );
+    $hstat = set_hdsobj("$out.HEADER.DATA_ARRAY.DATA", \@dummy) if $hstat;
 
-    # Move the FITS component of NDF HEADER to the FITS airlock/extension.
-    # Use copy/del since we have no renobj yet
+    # Move the FITS component of FITS_HEADER to the FITS
+    # airlock/extension of NDF HEADER.  Finally delete the original
+    # HEADER structure.
     $hstat = create_hdsobj("$out.HEADER.MORE","EXT") if $hstat;
-    $hstat = copy_hdsobj("$out.HEADER.FITS","$out.HEADER.MORE.FITS") if $hstat;
-    $hstat = delete_hdsobj("$out.HEADER.FITS") if $hstat;
+    $hstat = copy_hdsobj("$out.FITS_HEADER.FITS","$out.HEADER.MORE.FITS") if $hstat;
+    $hstat = delete_hdsobj("$out.FITS_HEADER") if $hstat;
 
     $status = ($hstat ? ORAC__OK : ORAC__ERROR );
 
@@ -608,22 +618,32 @@ sub ingmef2hds {
   if (defined $self->mon('fits2ndf')) {
 
     # Do the conversion.
-    my $extable = File::Spec->catfile($ENV{'ORAC_DATA_CAL'},"extable.txt");
+    my $extable = File::Spec->catfile($ENV{'ORAC_DATA_CAL'}, "extable.txt");
     orac_print "Using extable: $extable\n";
     my $param = "container=true encodings=FITS-WCS profits=true fmtcnv=true";
     $status = $self->mon('fits2ndf')->obeyw("fits2ndf","extable=$extable in=$name out=$out $param");
 
-    # This leaves us with an invalid file as the HEADER doesn't contain a data array
+    # This leaves us with an invalid file as the HEADER doesn't contain 
+    # a data array with a value, and it's of the wrong data type.  First
+    # copy the HEADER structure, delete the original HEADER, and replace
+    # it with a new HEADER structure of type NDF.  [There is no renobj
+    # yet, hence the copy then delete.]  Then create the DATA_ARRAY
+    # structure containing a dummy one-element data array.
     my $hstat;
-    $hstat = create_hdsobj("$out.HEADER.DATA_ARRAY", "ARRAY");
-    $hstat = create_hdsobj("$out.HEADER.DATA_ARRAY.DATA","_REAL",[1])
-      if $hstat;
+    $hstat = copy_hdsobj("$out.HEADER", "$out.FITS_HEADER");
+    $hstat = delete_hdsobj("$out.HEADER") if $hstat;
+    $hstat = create_hdsobj("$out.HEADER","NDF") if $hstat;
+    $hstat = create_hdsobj("$out.HEADER.DATA_ARRAY", "ARRAY") if $hstat;
+    $hstat = create_hdsobj("$out.HEADER.DATA_ARRAY.DATA", "_REAL", [1]) if $hstat;
+    my @dummy = ( 1.0 );
+    $hstat = set_hdsobj("$out.HEADER.DATA_ARRAY.DATA", \@dummy) if $hstat;
 
-    # Move the FITS component of NDF HEADER to the FITS airlock/extension.
-    # Use copy/del since we have no renobj yet
+    # Move the FITS component of FITS_HEADER to the FITS
+    # airlock/extension of NDF HEADER.  Finally delete the original
+    # HEADER structure.
     $hstat = create_hdsobj("$out.HEADER.MORE","EXT") if $hstat;
-    $hstat = copy_hdsobj("$out.HEADER.FITS","$out.HEADER.MORE.FITS") if $hstat;
-    $hstat = delete_hdsobj("$out.HEADER.FITS") if $hstat;
+    $hstat = copy_hdsobj("$out.FITS_HEADER.FITS","$out.HEADER.MORE.FITS") if $hstat;
+    $hstat = delete_hdsobj("$out.FITS_HEADER") if $hstat;
 
     $status = ($hstat ? ORAC__OK : ORAC__ERROR );
 
