@@ -228,7 +228,7 @@ sub mask {
       # maskname() value since it has no corresponding index enrty
       my $defmask = $ENV{ORAC_DATA_CAL} . "/fpa46_long";
       return $defmask if -e $defmask . ".sdf";
-      
+
       # give up...
       croak "No suitable bad pixel mask was found in index file"
     }
@@ -270,7 +270,7 @@ sub rows {
   # Compare the current value with the index entry
   my $rowname = $self->rowname;
   my $ok = $self->rowindex->verify( $rowname, $self->thing );
-  
+
   # If this was not okay we need to search the index
   unless ($ok) {
 
@@ -280,7 +280,7 @@ sub rows {
       # Store it
       $self->rowname( $rowname );
     } else {
-      orac_warn "No suitable row could be found in index file";
+      orac_warn "No suitable row could be found in index file\n";
     }
 
   }
@@ -289,7 +289,7 @@ sub rows {
   my ($prow, $nrow);
   if (defined $rowname) {
     my $entry = $self->rowindex->indexentry($rowname);
-  
+
     # Sanity check
     croak "POSROW could not be found in index entry $rowname\n"
       unless (exists $entry->{POSROW});
