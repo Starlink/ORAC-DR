@@ -15,36 +15,23 @@
        $makemos = $Frm->hdr( "MAKE_MOSAIC" );
        if ( $makemos ) {
 
+# Obtain the cycle number.
+          $cycleno = $Frm->hdr( "CYCLE_NUMBER" );
+
 # Specify the mosaic suffix.
           $osuffix = "_mos";
 
+# Select those members in the current cycle.
+          $cyclegrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+
 # Form a list of input file names for the CCDPACK tasks.  We need to
 # generate an input list for TRANJOIN and TRANNDF and an output list
-# using a hard-wired suffix of '_trn'
-          ($inref, $outref) = $Grp->inout('_trn');
+# using a hard-wired suffix of '_trn'.
+          ($inref, $outref) = $cyclegrp->inout('_trn');
 
 # Convert the list to a comma-separated list as needed by CCDPACK (GRP).
           $objlist = join(",", @$inref);
           $outlist= join(",", @$outref);
-
-# Concatenate rotation to transformation
-# ======================================
-
-# Specify the other parameters for the TRANJOIN stage.
-          $hidden = "in2=".$Cal->rotation." dest=first"; 
-
-# Join the rotation transformation to each of the CCDPACK extensions.
-# The rotation transformation follows the shift-of-origin and is stored
-# in the '_ff' frame.  Unfortunately, CCDEDIT doesn't support joining
-# transformations, and KAPPA/TRANJOIN does operate on lists of files.
-# Write the input file names to the text files.
-          foreach $flatted (@$inref) {
-             $header = "in1=${flatted}.more.ccdpack.transform";
-             $Mon{"kappa_mon"}->obeyw("tranjoin","$header $hidden accept");
-          }
-
-# Report the status.
-          orac_print "Orac says: Rotation transformation joined\n";
 
 # Resampling
 # ==========
@@ -63,7 +50,8 @@
           print OUTLIST join( "\n", @$outref ), "\n";
           close (OUTLIST);
 
-# Assign the other parameters.  Use the original bounds.
+# Assign the other parameters.  Use the original bounds.  Note we do not
+# resample the main mosaic if one exists.
           $header = "in='^tranndf.inlist$$' out='^tranndf.outlist$$'";
           $hidden = "shape=auto method=linint";
 
@@ -83,11 +71,11 @@
 # comparisons for efficiency.
           $optov = 2 + int( ( $Grp->num + 4 ) / 4 );
 
-# Assign other parameters.  The scale might become a user parameter.
-# We should presumably set the Grp output name when we construct
-# $outname.  Do not change the output name if we have already
-# appended the output suffix the previous time around.
-          $outname = $Grp->file . $osuffix unless $Grp->file =~ /$osuffix$/;
+# Assign other parameters.
+          if ( $cycleno == 0 ) {
+             $mmqo_grproot = $Grp->file;
+          }
+          $outname = $mmqo_grproot . "_mu"; 
           $header = "in='^tranndf.outlist$$' out=$outname title=Mosaic";
           $hidden = "zero optov=$optov";
 
@@ -95,17 +83,66 @@
           $Mon{"ccdpack_reg"}->obeyw("makemos","$header $hidden");
           unlink ("tranndf.inlist$$", "tranndf.outlist$$");
 
-# Set the group name in the Group object...
-          $Grp->file($outname);
-
-# ...and read the header.
-          $Grp->header($Grp->readhdr);
-
 # Report the processing status.
           orac_print "Orac says: mosaic $outname formed\n";
 
+# Remove bad pixels
+# =================
+
+# Bad pixels can accumulate as the mosaics are co-added.  Thus they need to
+# be removed.
+
+# Assign parameters.  We should presumably set the Grp output name
+# when we construct $mosname.  Do not change the output name if we have
+# already appended the output suffix the previous time around.
+# The first cycle mosaic becomes the main mosaic.  Subsequent mosaics of
+# four are co-add (after registration) into the main mosaic, hence these
+# require a different name.
+          $mosname = $Grp->file . $osuffix unless $Grp->file =~ /$osuffix$/;
+          if ( $cycleno > 0 ) {
+             $mosname = $Grp->file . "_" . $cycleno;
+          }
+          $header = "in=$outname out=$mosname niter=4 size=4";
+
+# Fill in the bad pixels.
+          $Mon{ "kappa_mon" }->obeyw( "fillbad", "$header" );
+
+# Report the processing status.
+          orac_print "Orac says: Bad pixels filled in mosaic $outname to form $mosname\n";
+
+# Set the group name in the Group object...
+          if ( $cycleno == 0 ) {
+             $Grp->file( $mosname );
+
+# ...and read the header.
+             $Grp->header( $Grp->readhdr );
+          }
+
+# Report the processing status.
+          orac_print "Orac says: mosaic $mosname formed\n";
+
 # Display the resultant mosaic.
           _DISPLAY_GROUP_IMAGE_
+
+# On the second and subsequent cycle, we just need to co-add the
+# single-cycle mosaic into the main mosaic.
+          if ( $cycleno > 0 ) {
+
+# Make a duplicate of the main mosaic.
+             $tmpmos = "mainmos$$";
+             $header = "in=" . $Grp->file . " out=$tmpmos";
+             $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$header" );
+
+# Co-add the frames.
+             $header = "in1=$tmpmos in2=$mosname out=" . $Grp->file;
+             $Mon{ "kappa_mon" }->obeyw( "add", "$header" );
+             unlink( $tmpmos . ".sdf" );
+
+             orac_print "Orac says: Frame $mosname co-added into main mosaic " . $Grp->file . "\n";
+
+# Display the main mosaic.
+             _DISPLAY_GROUP_IMAGE_
+          }
 
        };
     };
