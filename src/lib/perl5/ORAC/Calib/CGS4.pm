@@ -347,26 +347,7 @@ sub rows {
 
   }
 
-  # Retrieve the POSROW and NEGROW from the index
-  my ($prow, $nrow);
-  if (defined $rowname) {
-    my $entry = $self->rowindex->indexentry($rowname);
-
-    # Sanity check
-    croak "POSROW could not be found in index entry $rowname\n"
-      unless (exists $entry->{POSROW});
-    croak "NEGROW could not be found in index entry $rowname\n"
-      unless (exists $entry->{NEGROW});
-
-    $prow = $entry->{POSROW};
-    $nrow = $entry->{NEGROW};
-
-  } else {
-    # Could not find it
-    $prow = $nrow = undef;
-  }
-
-  return ( $prow, $nrow );
+  return $rowname;
 }
 
 
