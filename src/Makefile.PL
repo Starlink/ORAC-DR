@@ -6,7 +6,7 @@ use 5.006;
 
 WriteMakefile(
 	      'NAME' => 'ORACDR',
-	      VERSION => '2.1',
+	      VERSION => '3.0',
 	      'EXE_FILES' => [qw( bin/oracdr bin/oracdr_monitor 
 				  bin/Xoracdr bin/oracdr_nuke
 				  bin/oracdisp bin/oracdr_monitor
