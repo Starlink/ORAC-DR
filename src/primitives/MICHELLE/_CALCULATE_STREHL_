@@ -1,0 +1,236 @@
+# -*-perl-*-
+
+# _CALCULATE_STREHL_
+#
+# this primitive calculates the Strehl ratio for a star in a frame
+
+=head1 NAME
+
+CALCULATE_STREHL - calculate the Strehl ratio for a star in a frame
+
+=head1 DESCRIPTION
+
+Calculates the Strehl ratio for a stellar image in a frame.  This is done using the 
+formula Sr = ( St / Sw ) ** 2, where Sr is the Strehl ratio, St is the theoretical Strehl 
+width for UKIRT, allowing for the central obstruction by the secondary, and Sw is the 
+measured Strehl width.  Sw is calculated using 
+Sw = sqrt( ( 4 * Ft ) / ( pi * Fp ) ) * pixelscale, where Ft is the total integrated flux 
+and Fp is the peak flux.
+
+=head1 PARAMETERS
+
+=over 4
+
+=item XMIN
+
+Defines the lower column limit of the box enclosing the star.
+
+=item XMAX
+
+Defines the upper column limit of the box enclosing the star.
+
+=item YMIN
+
+Defines the lower row limit of the box enclosing the star.
+
+=item YMAX
+
+Defines the upper row limit of the box enclosing the star.
+
+=item INNER
+
+The inner radius of the annulus used to calculate sky background.  Measured in pixels,
+this parameter defaults to 30.
+
+=item OUTER
+
+The outer radius of the annulus used to calculate sky background.  Measured in pixels,
+this parameter defaults to 40.
+
+=item APERTURE
+
+The radius of the aperture used to calculate the total integrated flux of the star.  Measured
+in pixels, this parameter defaults to 20.
+
+=back
+
+=head1 ORAC
+
+=head2 Engines referenced
+
+KAPPA
+
+=head2 Tasks called
+
+=over 4
+
+=item kappa_mon
+
+stats, centroid, ardmask, csub, aperadd
+
+=item ndfpack_mon
+
+ndftrace, setbad
+
+=back
+
+=head2 Objects addressed
+
+$Frm
+
+=head1 NOTES
+
+If the box limit parameters are undefined by the user, the box defaults to a 40x40 box
+centred on the array.
+
+If INNER is greater than or equal to OUTER, both parameters take on their default 
+values (INNER = 30, OUTER = 40).
+
+This primitive uses hard-coded values for wavelength and pixel scale. When MICHELLE data
+with headers is available, this primitive will need to be modified to use them.
+
+=head2 REVISION
+
+  $Id$
+
+=head1 AUTHOR
+
+b.cavanagh@jach.hawaii.edu
+
+=cut
+
+# get parameters -- wxmin refers to the minimum x for the window, etc.
+
+my $wxmin = ($_CALCULATE_STREHL_{XMIN} || undef);
+my $wxmax = ($_CALCULATE_STREHL_{XMAX} || undef);
+my $wymin = ($_CALCULATE_STREHL_{YMIN} || undef);
+my $wymax = ($_CALCULATE_STREHL_{YMAX} || undef);
+my $inner = ($_CALCULATE_STREHL_{INNER} || undef);
+my $outer = ($_CALCULATE_STREHL_{OUTER} || undef);
+my $aperture = ($_CALCULATE_STREHL_{APERTURE} || undef);
+
+my $in = $Frm->file;
+
+my $ORAC_STATUS;
+
+$Mon{'ndfpack_mon'}->obeyw("ndftrace","ndf=$in quiet");
+
+($ORAC_STATUS, my @lbound) = $Mon{'ndfpack_mon'}->get('ndftrace','lbound');
+($ORAC_STATUS, my @ubound) = $Mon{'ndfpack_mon'}->get('ndftrace','ubound');
+
+my $xmin = $lbound[0];
+my $xmax = $ubound[0];
+my $ymin = $lbound[1];
+my $ymax = $ubound[1];
+
+# if the window dimensions are undefined, set them to define a 40x40 window centred
+# on the array
+
+($wxmin) || ($wxmin = int ( ($xmax - $xmin) / 2 ) - 20);
+($wxmax) || ($wxmax = int ( ($xmax - $xmin) / 2 ) + 20);
+($wymin) || ($wymin = int ( ($ymax - $ymin) / 2 ) - 20);
+($wymax) || ($wymax = int ( ($ymax - $ymin) / 2 ) + 20);
+
+# Now a little tricky part.  Because the coordinates for the array might not start at 1,
+# (i.e. if it's been ndfcopy'ed from another array), we need to transform the window 
+# parameter coordinates into array coordinates.
+
+$wxmin = $wxmin + $xmin - 1;
+$wxmax = $wxmax + $xmin - 1;
+$wymin = $wymin + $ymin - 1;
+$wymax = $wymax + $ymin - 1;
+
+# The following bits are a massive workaround because we cannot read in the
+# headers from Michelle data.
+#
+# They will most definitely need to be changed once we get Michelle data with
+# actual headers.
+
+my $scale = 0.09075;     # the pixel scale
+my $lambda = 2.2;        # the wavelength, in microns
+
+# set the stellar aperture parameters for sky subtraction
+
+($inner) || ( $inner = 30 );          # the inner radius, in pixels
+($outer) || ( $outer = 40 );          # the outer radius, in pixels
+($aperture) || ( $aperture = 20 );       # the stellar aperture radius, in pixels
+
+if ($inner >= $outer) {
+  orac_warn("Inner sky radius greater than outer sky radius.\n");
+  orac_warn("Setting inner to 30 pixels, outer to 40 pixels.\n");
+  $inner = 30;
+  $outer = 40;
+};
+
+# find the location of the maximum pixel within the window
+
+my $ndfsect = "($wxmin:$wxmax,$wymin:$wymax)";
+$Mon{'kappa_mon'}->obeyw("stats","ndf=$in$ndfsect");
+($ORAC_STATUS, my @maxpos) = $Mon{'kappa_mon'}->get("stats","maxpos");
+
+# obtain the centroid of the star
+
+$Mon{'kappa_mon'}->obeyw("centroid","ndf=$in$ndfsect mode=interface init=[$maxpos[0],$maxpos[1]] cosys=w");
+($ORAC_STATUS, my @centre) = $Mon{'kappa_mon'}->get("centroid","centre");
+
+# The following two lines -might- be needed if 'centroid' is unable to centre on a stellar
+# image, in which case it defines $centre[i] to be some large negative number.  If it does
+# this, then set the centroid position of the star to be the same as the location of the
+# maximum pixel.  I have left these lines commented out because I have yet to see the 
+# aforementioned behaviour with any frames.
+
+#if($centre[0] <= 0) { $centre[0] = $maxpos[0]; }
+#if($centre[1] <= 0) { $centre[1] = $maxpos[1]; }
+
+# form the sky-subtracted image
+#
+# First we need to determine the sky level. To do this, we're going to blank out everything
+# except for pixels within the sky annulus, which is defined by the $inner and $outer variables.
+
+my $ard = new ORAC::TempFile;
+my $ardname = $ard->file;
+my $ardstring = "CIRCLE($centre[0],$centre[1],$inner) .OR. .NOT. CIRCLE($centre[0],$centre[1],$outer)\n";
+print {$ard->handle} $ardstring;
+$ard->handle->close;
+
+my $sky = new ORAC::TempFile;
+my $skyname = $sky->file;
+my $skysub = new ORAC::TempFile;
+my $skysubname = $skysub->file;
+
+$Mon{'ndfpack_mon'}->obeyw("setbad","ndf=$in value=true");
+$Mon{'kappa_mon'}->obeyw("ardmask","in=$in out=$skyname ardfile=$ardname");
+$Mon{'kappa_mon'}->obeyw("stats","ndf=$skyname clip=[2,2,3]");
+($ORAC_STATUS, my $skylevel) = $Mon{'kappa_mon'}->get("stats","mean");
+$Mon{'kappa_mon'}->obeyw("csub","in=$in out=$skysubname scalar=$skylevel");
+
+# determine the total flux
+#
+# Unfortunately 'aperadd' doesn't take the correct type of coordinates as parameters,
+# so we have to convert the centroid parameters back.  Also, 'aperadd' needs a diameter
+# instead of a radius for the aperture.
+
+my @cent;
+$cent[0] = $centre[0] - $xmin + 1;
+$cent[1] = $centre[1] - $ymin + 1;
+my $diam = $aperture * 2;
+$Mon{'kappa_mon'}->obeyw("aperadd","inpic=$skysubname diam=$diam xcen=$cent[0] ycen=$cent[1] reset accept");
+($ORAC_STATUS, my $total_flux) = $Mon{'kappa_mon'}->get("aperadd","total");
+
+# determine the peak flux
+#
+# This will be done by finding the peak value in the box defined by the user.
+
+$ndfsect = "($wxmin:$wxmax,$wymin:$wymax)";
+$Mon{'kappa_mon'}->obeyw("stats","ndf=$skysubname$ndfsect");
+($ORAC_STATUS, my $peak_flux) = $Mon{'kappa_mon'}->get("stats","maximum");
+
+# calculate Strehl ratio
+
+my $strehl_theory = 1.43 * 206265 * $lambda / ( 3.725 * 10**6 );
+my $strehl_width = sqrt(4.0 * $total_flux / ( $peak_flux * 3.14159 )) * $scale;
+my $strehl_ratio = ( $strehl_theory / $strehl_width ) ** 2;
+
+orac_print "Theoretical Strehl = $strehl_theory\nStrehl width = $strehl_width\nStrehl ratio = $strehl_ratio\n";
+
+# all done
