@@ -323,7 +323,7 @@ sub configure {
 =item findgroup
 
 Method to determine the group to which the observation belongs.
-The default method is to look for a "GROUP" entry in the header.
+The default method is to look for a "GRPNUM" entry in the header.
 
   $group = $Obs->findgroup;
 
@@ -332,10 +332,10 @@ The default method is to look for a "GROUP" entry in the header.
 sub findgroup {
   my $self = shift;
 
-  # Simplistic routine that simply returns the GROUP 
+  # Simplistic routine that simply returns the GRPNUM
   # entry in the header
 
-  return $self->hdr('GROUP');
+  return $self->hdr('GRPNUM');
 
 }
 
@@ -453,7 +453,7 @@ L<ORAC::Group>
 =head1 AUTHORS
 
 Tim Jenness (t.jenness@jach.hawaii.edu)
-    
+Frossie Economou (frossie@jach.hawaii.edu)    
 
 =cut
 
