@@ -92,7 +92,7 @@ sub new {
   # Configure initial state - could pass these in with
   # the class initialisation hash - this assumes that I know
   # the hash member name
-  $self->rawfixedpart('s');
+  $self->rawfixedpart('s' . $self->_wavelength_prefix );
   $self->rawsuffix('.sdf');
   $self->rawformat('NDF');
   $self->format('NDF');
@@ -184,8 +184,9 @@ be supplied.
 
   $fname = $Frm->file_from_bits($prefix, $obsnum);
 
-pattern_from_bits() is currently an alias for file_from_bits(),
-and both can be used interchangably for SCUBA.
+Not implemented for SCUBA-2 because of the multiple files
+that can be associated with a particular UT date and observation number:
+the multiple sub-arrays (a to d) and the multiple subscans.
 
 =cut
 
@@ -235,8 +236,9 @@ throws an exception if called in a scalar context. The filename
 returned will include the path relative to ORAC_DATA_IN, where
 ORAC_DATA_IN is the directory containing the flag files.
 
-The format is "sxYYYYMMDD_NNNNN.ok", where "x" is
-a-d for SCUBA2_LONG and e-h for SCUBA2_SHORT.
+The format is "swxYYYYMMDD_NNNNN.ok", where "w" is the wavelength
+signifier ('8' for 850 or '4' for 450) and "x" a letter from
+'a' to 'd'.
 
 =cut
 
@@ -251,8 +253,11 @@ sub flag_from_bits {
   # pad with leading zeroes
   my $padnum = $self->_padnum( $obsnum );
 
+  # get prefix
+  my $fixed = $self->rawfixedpart();
+
   my @flags = map {
-    "s". $_ . $prefix . "_$padnum" . ".ok"
+    $fixed . $_ . $prefix . "_$padnum" . ".ok"
   } ( $self->_dacodes );
 
   # SCUBA naming
@@ -363,26 +368,45 @@ sub _padnum {
   return sprintf( "%05d", $raw);
 }
 
+=item B<_wavelength_prefix>
+
+Return the relevent wavelength code that will be used to specify the
+particular set of data files. An '8' for 850 microns and a '4' for 450
+microns.
+
+ $pre = $frm->_wavelength_prefix();
+
+=cut
+
+sub _wavelength_prefix {
+  my $self = shift;
+  my $code;
+  if ($ENV{ORAC_INSTRUMENT} =~ /_LONG/) {
+    $code = '8';
+  } else {
+    $code = '4';
+  }
+  return $code;
+}
+
 =item B<_dacodes>
 
-Return the relevant Data Acquisition computer codes for this wavelength.
-Depends on the instrument name.
+Return the relevant Data Acquisition computer codes. Always a-d.
 
   @codes = $frm->_dacodes();
   $codes = $frm->_dacodes();
+
+In scalar context returns a single string with the values concatenated.
 
 =cut
 
 sub _dacodes {
   my $self = shift;
-  my @letters;
-  if ($ENV{ORAC_INSTRUMENT} =~ /_LONG/) {
-    @letters = qw/ a b c d /;
-  } else {
-    @letters = qw/ e f g h /;
-  }
+  my @letters = qw/ a b c d /;
   return (wantarray ? @letters : join("",@letters) );
 }
+
+=item B<_array
 
 =back
 
