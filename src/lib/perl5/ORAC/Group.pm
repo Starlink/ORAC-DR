@@ -135,6 +135,9 @@ group by some search criterion is required.
 It is possible that the returned group will contain no 
 members....
 
+If the value looks like a number a numeric comparison will be performed.
+Else a string comparison is used.
+
 =cut
 
 sub subgrp {
@@ -176,10 +179,19 @@ sub subgrp {
       $val1 = '' unless defined $val1;
       $val2 = '' unless defined $val2;
 
-      # Compare with the selected key
-      unless ( ($hash{$key} eq $val1) or ($hash{$key} eq $val2)) {
-        $match = 0;
-        last;
+      # Need to use == or eq depending on value
+      if ($val1 =~ /[A-Za-z]/ and $val2 =~ /[A-Za-z]/) {
+	# Compare with the selected key.
+	unless ( ($hash{$key} eq $val1) or ($hash{$key} eq $val2)) {
+	  $match = 0;
+	  last;
+	}
+      } else {
+	# Compare with the selected key.
+	unless ( ($hash{$key} == $val1) or ($hash{$key} == $val2)) {
+	  $match = 0;
+	  last;
+	}
       }
     }
 
