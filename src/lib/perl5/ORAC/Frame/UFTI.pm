@@ -81,34 +81,25 @@ sub new {
   my $proto = shift;
   my $class = ref($proto) || $proto;
 
-  my $frame = {};  # Anon hash
+  # Run the base class constructor with a hash reference
+  # defining additions to the class
+  # Do not supply user-arguments yet.
+  # This is because if we do run configure via the constructor
+  # the rawfixedpart and rawsuffix will be undefined.
+  my $self = $class->SUPER::new();
 
-  $frame->{RawName} = undef;
-  $frame->{Header} = {};
-  $frame->{Group} = undef;
-  $frame->{Files} = [];
-  $frame->{Recipe} = undef;
-  $frame->{RawSuffix} = ".fits";
-  $frame->{RawFixedPart} = 'f'; 
-  $frame->{UHeader} = {};
-  $frame->{NoKeepArr} = [];
-  $frame->{Intermediates} = [];
-
-  bless($frame, $class);
-
+  # Configure initial state - could pass these in with
+  # the class initialisation hash - this assumes that I know
+  # the hash member name
+  $self->rawfixedpart('f');
+  $self->rawsuffix('.fits');
+ 
   # If arguments are supplied then we can configure the object
   # Currently the argument will be the filename.
   # If there are two args this becomes a prefix and number
-  # This could be extended to include a reference to a hash holding the
-  # header info but this may well compromise the object since
-  # the best way to generate the header (including extensions) is to use the
-  # readhdr method.
-
-  if (@_) { 
-    $frame->configure(@_);
-  }
-
-  return $frame;
+  $self->configure(@_) if @_;
+ 
+  return $self;
 
 }
 
@@ -142,13 +133,12 @@ sub file_from_bits {
 }
 
 
-=item findrecipe
+=item B<findrecipe>
 
-Find the recipe name. At the moment we perform a KLUDGE by 
-only returning recipes for calibrations (specifically 
-DARK observations). All other times we will return undef
-and hope that the pipeline will realise that for undef it should 
-take the command line override value
+Find the recipe name. If the recipe name can not be found (using
+the 'RECIPE' keyword), 'QUICK_LOOK' is returned by default.
+
+The recipe name is updated in the Frame object.
 
 =cut
 
@@ -158,13 +148,13 @@ sub findrecipe {
 
   my $recipe = $self->hdr('RECIPE');
 
-  unless ($recipe =~ /\w/) {
-    $recipe = 'QUICK_LOOK'
-  };
-
-  return $recipe;
+  $recipe = 'QUICK_LOOK' unless ($recipe =~ /\w/);
 
 
+  # Update
+  $self->recipe($recipe);
+
+  return;
 }
 
 =item B<calc_orac_headers>
@@ -248,41 +238,6 @@ sub template {
   $self->file($template);
 
 }
-
-
-
-=back
-
-=head1 PRIVATE METHODS
-
-The following methods are intended for use inside the module.
-They are included here so that authors of derived classes are 
-aware of them.
-
-=over 4
-
-=item stripfname
-
-Method to strip file extensions from the filename string. This method
-is called by the file() method. For UFTI we strip all extensions of the
-form ".sdf", ".sdf.gz" and ".sdf.Z" since Starlink tasks do not require
-the extension when accessing the file name.
-
-=cut
-
-sub stripfname {
-
-  my $self = shift;
-
-  my $name = shift;
-
-  # Strip everything after the first dot
-  $name =~ s/\.(sdf)(\.gz|\.Z)?$//;
-  
-  return $name;
-}
-
-
 
 
 
