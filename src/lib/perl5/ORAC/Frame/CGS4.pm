@@ -204,6 +204,12 @@ be supplied.
 
   $fname = $Frm->file_from_bits($prefix, $obsnum);
 
+For CGS4 the raw filename is of the form:
+
+  cYYYYMMDD_NNNNN.sdf
+
+where the number is 0 padded.
+
 =cut
 
 sub file_from_bits {
@@ -211,6 +217,9 @@ sub file_from_bits {
 
   my $prefix = shift;
   my $obsnum = shift;
+
+  # Zero pad the number
+  $obsnum = sprintf("%05d", $obsnum);
 
   # CGS4 form is  FIXED PREFIX _ NUM SUFFIX
   return $self->rawfixedpart . $prefix . '_' . $obsnum . $self->rawsuffix;
@@ -270,7 +279,9 @@ should be supplied
   $flag = $Frm->flag_from_bits($prefix, $obsnum);
 
 This particular method returns back the flag file associated with
-IRCAM.
+CGS4 and is usually of the form:
+
+  .cYYYYMMDD_NNNNN.ok
 
 =cut
 
@@ -284,6 +295,10 @@ sub flag_from_bits {
   
   # flag files for CGS4 of the type .cYYYYMMDD_NNNNN.ok
   my $raw = $self->file_from_bits($prefix, $obsnum);
+
+  # raw includes the .sdf so we have to strip it
+  $raw = $self->stripfname($raw);
+
   my $flag = ".".$raw.".ok";
 
 }
