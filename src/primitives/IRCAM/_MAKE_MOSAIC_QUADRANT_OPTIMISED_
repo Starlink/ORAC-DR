@@ -9,27 +9,10 @@
 #    Perl5
 #
 # Description:
-#    This primitive makes a mosaic from the object frames in the
-#    current cycle of the current $Grp of a QUADRANT_JITTER recipe.
-#    There are two main stages: resampling and making the mosaic.
-#
-#    The primitive either resamples each frame using the non-integer
-#    Cartesian offsets, or merely finds the offsets between frames to
-#    the nearest pixel and shifts the origin (see argument RESAMPLE).
-#    The resampling or shifting imposes no limit to the frame bounds,
-#    so the mosaic extends to include all pixels in contributing frames. 
-#
-#    The primitive then makes the mosaic using zero-point shifts to give
-#    the most self-consistent mosaic based upon the statistics of
-#    overlapping pixels.  On the first cycle, the mosaic becomes the
-#    group file and its headers read.  On subsequent cycles, the current
-#    mosaic is added into the group or `grand' mosaic.
-#
-#    To prevent the accumulated build up of bad pixels in the grand
-#    mosaic, there is an option (argument FILLBAD) to fill in bad pixels
-#    by using a smooth function which matches the surrounding data.  The
-#    function is an iterative approximation to a solution of Laplace's
-#    equation.
+#    This primitive makes an untrimmed mosaic from the object frames in
+#    the current cycle of the current $Grp of a QUADRANT_JITTER recipe.
+#    It merely calls the standard _MAKE_MOSAIC_ primitive using
+#    the supplied arguments and appropriate parameter settings.
 #
 # Arguments:
 #    FILLBAD = LOGICAL (Given)
@@ -45,42 +28,16 @@
 #       Cartesian co-ordinate system using the method given by argument
 #       INT_METHOD.  If false (0), use integer offsets and changes of
 #       origin to register the frames.  The latter is many times
-#       faster and is recommended for pipeline operation.
+#       faster and is recommended for pipeline operation.  [1]
 #
 # Notes:
 #    -  This primitive is suitable for both UFTI and IRCAM.
-#    Instrument-specific headers are obtained where appropriate.
-#    -  Processing only occurs for object frames, and when the
-#    steering header MAKE_MOSAIC is true.
-#    -  When RESAMPLE is false, the offset files (.off extension)
-#    associated with each frame are interrogated to find one common
-#    object---the one with identifier 1---as would be the case if
-#    telescope or central-source offsets are used.  For each frame
-#    the read x-y co-ordinates rounded to the nearest integer and
-#    with opposite sign become the new origin.
-#    -  Group header ROOT_NAME stores the name of the mosaic
-#    excluding any suffix.  It is written for the first cycle,
-#    and read back for subsequent cycles of the recipe.
-#    -  The start and end airmasses of the grand mosaic are revised to
-#    the limiting values for the first and last contributing frames
-#    respectively.  Likewise the exposure time is summed.
-#    -  The individual mosaic and grand mosaic are displayed.
-#    -  The frame titles are propagated.
-#    -  The optimum number of overlaps for the mosaic creation is 3
-#    plus the cycle number. 
-#
-# Tasks:
-#    CCDPACK: MAKEMOS, TRANNDF; KAPPA: ADD, FILLBAD, FITSMOD, NDFCOPY,
-#    SETORIGIN.
-#
-# Output Data:
-#    -  The grand mosaic, which is called is "<groupname>_mos", where
-#    <groupname> is the name of the group.  For multiple cycles, single 
-#    mosaics are also retained and called <groupname>_mos_<cyclenumber>,
-#    where <cyclenumber> is the cycle number derived from steering
-#    header CYCLE_NUMBER.
-#    -  Resampled frames each inheriting the name of its input frame but
-#    with the _trn suffix, when RESAMPLE is true.
+#    -  Processing only occurs when the steering header MAKE_MOSAIC is
+#    true.
+#    -  The resampling does not limit the frame bounds to their original
+#    limits, so the mosaic includes all contributing pixels.
+#    -  The arguments and a computed optimum number of overlaps (three
+#    plus the number of the cycles) are merely passed to _MAKE_MOSAIC_.
 #
 # Authors:
 #    MJC: Malcolm J. Currie (JAC)
@@ -91,354 +48,58 @@
 #
 #-
 
+# Selection
+# =========
+# Test whether or not it is time to make a mosaic.
+    my $makemos = $Frm->hdr( "MAKE_MOSAIC" );
+    if ( $makemos ) {
 
 # Arguments
 # =========
 
-# Obtain the value for the interpolation method.
-    my $intmethod = ( $_MAKE_MOSAIC_QUADRANT_OPTIMISED_{INT_METHOD} || "linint" );
-    if ( $intmethod ne "linint" && $intmethod ne "nearest" ) {
-       $intmethod = "linint";
-    }
+# Obtain the value for the interpolation.
+       my $intmethod = ( $_MAKE_MOSAIC_QUADRANT_OPTIMISED_{INT_METHOD} || "linint" );
 
 # Determine whether or not to fill bad pixels.
-    my $fillbad = $_MAKE_MOSAIC_QUADRANT_OPTIMISED_{FILLBAD};
-    $fillbad = defined( $fillbad ) ? $fillbad : 1;
+       my $fillbad = $_MAKE_MOSAIC_QUADRANT_OPTIMISED_{FILLBAD};
+       $fillbad = defined( $fillbad ) ? $fillbad : 1;
 
 # Determine whether or not to resample.
-    my $resample = $_MAKE_MOSAIC_QUADRANT_OPTIMISED_{RESAMPLE};
-    $resample = defined( $resample ) ? $resample : 1;
+       my $resample = $_MAKE_MOSAIC_QUADRANT_OPTIMISED_{RESAMPLE};
+       $resample = defined( $resample ) ? $resample : 1;
 
-# Selection
-# =========
-
-# This should only be performed on OBJECT frames.
-    if ( $Frm->hdr( "OBSTYPE" ) =~ /OBJECT/ ) {
-
-# Test whether or not it is time to make a mosaic.
-       my $makemos = $Frm->hdr( "MAKE_MOSAIC" );
-       if ( $makemos ) {
-
-# Obtain the cycle number.  Default to zero if undefined, so that recipes
-# which do not support this feature will continue to work.
-          my $cycleno = $Frm->hdr( "CYCLE_NUMBER" );
-          $cycleno = defined( $cycleno ) ? $cycleno : 0;
-
-# Specify the mosaic suffix.
-          my $osuffix = "_mos";
-
-# Select those members in the current cycle.
-          my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
-
-# Form a list of input file names for the CCDPACK tasks.  We need to
-# generate an input list for TRANJOIN and TRANNDF and an output list
-# using a hard-wired suffix of '_trn'.
-          ( my $inref, my $outref ) = $cycleGrp->inout( "_trn" );
-
-# Convert the list to a comma-separated list as needed by CCDPACK (GRP).
-          my $objlist = join( ",", @$inref );
-          my $outlist = join( ",", @$outref );
-
-
-# Resampling
-# ==========
-
-          my ( $header, $hidden );
-          if ( $resample ) {
-
-# Create text files to hold the list of input and output files, one per line.
-# This is needed because the command may be long for a four-cycle quadrant
-# jitter.  Expanded lists of files may make the command line too long for the
-# ADAM message system.
-             unlink( "tranndf.inlist$$", "tranndf.outlist$$" );
-
-             open( INLIST, ">tranndf.inlist$$");
-             print INLIST join( "\n", @$inref ), "\n";
-             close( INLIST );
-
-             open( OUTLIST, ">tranndf.outlist$$");
-             print OUTLIST join( "\n", @$outref ), "\n";
-             close( OUTLIST );
-
-# Assign the other parameters.  Use the original bounds.  Note we do not
-# resample the main mosaic if one exists.
-             $header = "in='^tranndf.inlist$$' out='^tranndf.outlist$$'";
-             $hidden = "shape=auto method=$intmethod title=!";
-
-# Shift and resample the flat-field object frames.  This determines
-# the bounds automatically.  It takes the origin from the first object
-# frame.
-             $Mon{"ccdpack_reg"}->obeyw("tranndf","$header $hidden");
-
-# Report the processing status.
-             orac_print "Orac says: Frames $objlist resampled\n";
-
-          } else {
-
-# Derive the offsets
-# ==================
-
-# Open the offset files and store the co-ordinates.  Note that this
-# assumes central-source or telescope offsets have been used, and that there
-# is but one position in each.
-             my @xoffsets = ();
-             my @yoffsets = ();
-             foreach my $Frame ( $cycleGrp->members ) {
-                my $offfile = $Frame->file . ".off";
-
-                if ( ! -e $offfile ) {
-                   orac_err "Missing $offfile offset text file.\n";
-                }
-                open( OFFFILE, "<$offfile" );
-
-# Store the offsets.
-                my $offfound = 0;
-                foreach my $line ( <OFFFILE> ) {
-
-# Match 1 followed by a space in case there are more than nine
-# objects, unlikely but possible.
-                   my @fields;
-                   if ( $line =~ /^1\s/ ) {
-                      @fields = split( /\s+/, $line );
-                      push( @xoffsets, $fields[1] );
-                      push( @yoffsets, $fields[2] );
-                      $offfound = 1 ;
-                      last;
-                   }
-                }
-                close( OFFFILE );
-
-# Cannot proceed unless the x-y offsets were found.
-                if ( ! $offfound ) {
-                   orac_err "No object #1 in $offfile offset text file.\n";
-                }
-             }
-
-# Convert the offsets to be displacements of the origin to the nearest pixel.
-             my $framecount = 0;
-             foreach my $frame ( @xoffsets ) {
-                $xoffsets[$framecount] = -int( $xoffsets[$framecount] + 0.5 );
-                $yoffsets[$framecount] = -int( $yoffsets[$framecount] + 0.5 );
-                $framecount++;
-             }
-
-# Change of origin
+# Make the mosaic.
 # ================
 
-# Loop through all the members of the group, as KAPPA task can only handle
-# one data file at a time.
-             foreach my $Frame ( $cycleGrp->members ) {
-                my $frame = $Frame->file;
-
-# Assign the other parameters.  Use the original bounds.  Note we do not
-# resample the main mosaic if one exists.
-                $header = "ndf=$frame origin=[$xoffsets[0],$yoffsets[0]]";
-
-# Shift the first item from the lists of displacements.
-                shift( @xoffsets );
-                shift( @yoffsets );
-
-# Apply change of origin to the current frame.
-                $Mon{"ndfpack_mon"}->obeyw("setorigin","$header");
-             }
-
-# Create text files to hold the list of 'output' files, one per line.
-# The files are modified in situ, but are the equivalent of the output files
-# if resampling is performed.  This is needed because the command may be long
-# for a four-cycle quadrant jitter.  Expanded lists of files may make the
-# command line too long for the ADAM message system.
-             unlink( "tranndf.outlist$$" );
-
-             open( INLIST, ">tranndf.outlist$$");
-             print INLIST join( "\n", @$inref ), "\n";
-             close( INLIST );
-
-# Report the processing status.
-             orac_print "Orac says: Frames $objlist have origin shifted.\n";
-          } 
-
-# Make mosaic.
-# ============
+# Obtain the cycle number.  Default to zero if undefined, assuming there
+# is no multi-cycle processing.
+       my $cycleno = $Frm->hdr( "CYCLE_NUMBER" );
+       $cycleno = defined( $cycleno ) ? $cycleno : 0;
 
 # Derive a reasonable number of overlaps to generate a mosaic with
 # small steps between former quadrants, yet not make all the possible
 # comparisons for efficiency.
-          my $optov = 2 + int( ( $Grp->num + 4 ) / 4 );
+       my $optov = 3 + $cycleno;
 
-# Define the mosaic name.
-          my ( $grproot, $outname );
-          if ( $cycleno == 0 ) {
-             $grproot = $Grp->file;
+# Make an untrimmed mosaic using the supplied parameters and derived optimum
+# number of overlaps.
+       _MAKE_MOSAIC_ INT_METHOD=$intmethod FILLBAD=$fillbad RESAMPLE=$resample TRIM=0 OPTOV=$optov
 
-          } else {
-             $grproot = $Grp->hdr( "ROOT_NAME" );
-          }
-          $outname = $grproot . "_mu"; 
-
-# Assign other parameters.
-          $header = "in='^tranndf.outlist$$' out=$outname title=!";
-          $hidden = "zero optov=$optov";
-
-# Make the mosaic correcting for differences in offset.
-          $Mon{"ccdpack_reg"}->obeyw("makemos","$header $hidden");
-          unlink( "tranndf.inlist$$", "tranndf.outlist$$" );
-
-# Report the processing status.
-          orac_print "Orac says: mosaic $outname formed\n";
-
-# Remove bad pixels
-# =================
-
-# Bad pixels can accumulate as the mosaics are added.  Thus they may
-# need to be removed.
-
-# First define the name of the group mosaic.  We should presumably set the
-# Grp output name when we construct $mosname.  Do not change the output
-# name if we have already appended the output suffix the previous time
-# around.  The first cycle mosaic becomes the main mosaic.  Subsequent
-# mosaics of four are added (after registration) into the main mosaic,
-# hence these require a different name.
-          my $mosname = $Grp->file . $osuffix unless $Grp->file =~ /$osuffix$/;
-          if ( $cycleno > 0 ) {
-             $mosname = $Grp->file . "_" . $cycleno;
-          }
-
-# Normally filling bad pixels will not be done in this primitive.
-          if ( $fillbad ) {
-
-# Fill in the bad pixels.
-             $header = "in=$outname out=$mosname niter=4 size=4";
-             $Mon{ "kappa_mon" }->obeyw( "fillbad", "$header" );
-
-# Report the processing status.
-             orac_print "Orac says: Bad pixels filled in mosaic $outname to form $mosname\n";
-
-# We need to keep the names matching so make a copy of mosaic containing
-# bad pixels.
-          } else {
-             $header = "in=$outname out=$mosname";
-             $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$header" );
-          }
-
-# Discard the intermediate group file.
-          _DELETE_A_FRAME_ FRAME=$outname
-
-# Define the group file and headers.
-# ==================================
-
-# Set the group name in the Group object...
-          if ( $cycleno == 0 ) {
-             $Grp->file( $mosname );
-
-# ...and read the header.
-             $Grp->readhdr;
-
-# Store the root name.
-             $Grp->hdr( "ROOT_NAME", $grproot );
-          }
-
-# Report the processing status.
-          orac_print "Orac says: mosaic $mosname formed\n";
-
-# Display the resultant mosaic.
-          _DISPLAY_GROUP_IMAGE_
-
-# Change the end airmass to reflect the last frame included in the mosaic.  Note this
-# is done to the physical file as well as the ORAC-DR internal header.  This will
-# change the grand mosaic only on the first cycle.
-          my $amend = $cycleGrp->frame( $cycleGrp->num )->hdr( "AMEND" );
-          $cycleGrp->hdr( "AMEND", $amend );
-          my $header = "ndf=$mosname keyword=AMEND edit=update value=$amend position=!";
-          $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$header comment=\\\$C" );
-
-# Add the current mosaic into the grand mosaic.
-# =============================================
-
-# On the second and subsequent cycle, we just need to add the
-# single-cycle mosaic into the main mosaic.
-          if ( $cycleno > 0 ) {
-
-# Make a duplicate of the main mosaic.
-             my $tmpmos = "mainmos$$";
-             $header = "in=" . $Grp->file . " out=$tmpmos";
-             $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$header" );
-
-# Add the frames.
-             $header = "in1=$tmpmos in2=$mosname out=" . $Grp->file;
-             $Mon{ "kappa_mon" }->obeyw( "add", "$header" );
-
-# Obtain the name of the exposure time header.
-             my $exptimename;
-             if ( $Grp->hdr( "INSTRUME" ) =~ /^UFTI/ ) {
-                $exptimename = "EXP_TIME";
-             } else {
-                $exptimename = "DEXPTIME";
-             }
-
-# Change the integration time of the grand mosaic by summing the current
-# value and that of the primary NDF used to make the latest mosaic.  Note
-# this is done to the physical file as well as the ORAC-DR internal header,
-# and only to the coadded (grand) mosaic.
-             my $exptime = $Grp->hdr( $exptimename ) +
-                           $Grp->frame( 0 )->hdr( $exptimename );
-             $Grp->hdr( $exptimename, $exptime );
-             my $header = "ndf=". $Grp->file .
-                          " keyword=$exptimename edit=update value=$exptime position=!";
-             $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$header comment=\\\$C" );
-
-# Change the end airmass to reflect the last frame included in the grand mosaic.  Note this
-# is done to the physical file as well as the ORAC-DR internal header.
-             $Grp->hdr( "AMEND", $amend );
-             my $header = "ndf=" . $Grp->file . " keyword=AMEND edit=update value=$amend position=!";
-             $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$header comment=\\\$C" );
-
-# Remove the temporary copy unless its the first.  This leaves the
-# mosaics for each and every individual jitter to be examined later.
-             if ( $cycleno > 1 ) {
-                _DELETE_A_FRAME_ FRAME=$tmpmos
-
-             } else {
-                $header = "in=$tmpmos out=" . $Grp->file . "_0";
-                $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$header" );
-             }
-             orac_print "Orac says: Frame $mosname added into main mosaic " . $Grp->file . "\n";
-
-# Display the main mosaic.
-             _DISPLAY_GROUP_IMAGE_
-          }
-       }
     }
 
 # Podule
 # ======
 
-=head1 NAME 
+=head1 NAME
 
 _MAKE_MOSAIC_QUADRANT_OPTIMISED_ -- Forms a mosaic for a QUADRANT_JITTER recipe.
 
 =head1 DESCRIPTION
 
-This primitive makes a mosaic from the object frames in the
-current cycle of the current $Grp of a QUADRANT_JITTER recipe.
-There are two main stages: resampling and making the mosaic.
-
-The primitive either resamples each frame using the non-integer
-Cartesian offsets, or merely finds the offsets between frames to
-the nearest pixel and shifts the origin (see argument RESAMPLE).
-The resampling or shifting imposes no limit to the frame bounds,
-so the mosaic extends to include all pixels in contributing frames. 
-
-The primitive then makes the mosaic using zero-point shifts to give
-the most self-consistent mosaic based upon the statistics of
-overlapping pixels.  On the first cycle, the mosaic becomes the
-group file and its headers read.  On subsequent cycles, the current
-mosaic is added into the group or `grand' mosaic.
-
-To prevent the accumulated build up of bad pixels in the grand
-mosaic, there is an option (argument FILLBAD) to fill in bad pixels
-by using a smooth function which matches the surrounding data.  The
-function is an iterative approximation to a solution of Laplace's
-equation.
+This primitive makes an untrimmed mosaic from the object frames in
+the current cycle of the current $Grp of a QUADRANT_JITTER recipe.
+It merely calls the standard _MAKE_MOSAIC_ primitive using
+the supplied arguments and appropriate parameter settings.
 
 =head1 ARGUMENTS
 
@@ -473,69 +134,21 @@ faster and is recommended for pipeline operation.
 =item *
 
 This primitive is suitable for both UFTI and IRCAM.
-Instrument-specific headers are obtained where appropriate.
 
 =item *
 
-Processing only occurs for object frames, and when the
-steering header MAKE_MOSAIC is true.
+Processing only occurs when the steering header MAKE_MOSAIC is
+true.
 
 =item *
 
-When RESAMPLE is false, the offset files (.off extension)
-associated with each frame are interrogated to find one common
-object---the one with identifier 1---as would be the case if
-telescope or central-source offsets are used.  For each frame
-the read x-y co-ordinates rounded to the nearest integer and
-with opposite sign become the new origin.
+The resampling does not limit the frame bounds to their original
+limits, so the mosaic includes all contributing pixels.
 
 =item *
 
-Group header ROOT_NAME stores the name of the mosaic
-excluding any suffix.  It is written for the first cycle,
-and read back for subsequent cycles of the recipe.
-
-=item *
-
-The start and end airmasses of the grand mosaic are revised to
-the limiting values for the first and last contributing frames
-respectively.  Likewise the exposure time is summed.
-
-=item *
-
-The individual mosaic and grand mosaic are displayed.
-
-=item *
-
-The frame titles are propagated.
-
-=item *
-
-The optimum number of overlaps for the mosaic creation is 3
-plus the cycle number. 
-
-=back
-
-=head1 TASKS
-
-CCDPACK: MAKEMOS, TRANNDF; KAPPA: ADD, FILLBAD, FITSMOD, NDFCOPY, SETORIGIN.
-
-=head1 OUTPUT DATA
-
-=over 4
-
-=item *
-
-The grand mosaic, which is called is "E<lt>groupnameE<gt>_mos", where
-E<lt>groupnameE<gt> is the name of the group.  For multiple cycles, single 
-mosaics are also retained and called E<lt>groupnameE<gt>_mos_E<lt>cyclenumberE<gt>,
-where E<lt>cyclenumberE<gt> is the cycle number derived from steering
-header CYCLE_NUMBER.
-
-=item *
-
-Resampled frames each inheriting the name of its input frame but
-with the _trn suffix, when RESAMPLE is true.
+The arguments and a computed optimum number of overlaps (three plus
+the number of the cycles) are merely passed to _MAKE_MOSAIC_.
 
 =back
 
