@@ -1,13 +1,13 @@
     # Are we ready to do this?
 
     my $candither = $Frm->uhdr("JITTER_COMPLETE");
+    my ($basename,$dir,$suffix,$extn) = ($Grp->allmembers)[0]->parsefname;
+    my $dith = sprintf("%s_st%s",$basename,$suffix);
+    my $dithc = sprintf("%s_st_conf%s",$basename,$suffix);
 
     # If we have all the files for a dither, then let's get on with this...
 
-    if ($candither) {
-        my ($basename,$dir,$suffix,$extn) = ($Grp->allmembers)[0]->parsefname;
-        my $dith = sprintf("%s_st%s",$basename,$suffix);
-        my $dithc = sprintf("%s_st_conf%s",$basename,$suffix);
+    if ($candither && ! -f $dith) {
         orac_print "Dithering group: " . $Grp->name . " to file $dith\n";
 
         # Do an image detection now.  
@@ -35,20 +35,31 @@
 	    # can be used as backup in case the image detection isn't 
 	    # very successful
 
+            my @xoffwcs = ();
+            my @yoffwcs = ();
 	    my (@xoffswcs,@yoffswcs);
  	    {
 	        my $Grp = $subgrp;
 	        _DIFFXY_WCS_
+                foreach my $frm ($Grp->allmembers) {
+                    push @xoffwcs,$frm->uhdr("XOFF_WCS");
+                    push @yoffwcs,$frm->uhdr("YOFF_WCS");
+                }
 	    }
 
  	    # If the image detection went OK, then match up the detected
 	    # stars to get the offsets
 
-	    my (@xoffs,@yoffs);
+	    my @xoffs = ();
+            my @yoffs = ();
 	    if ($dstat == 0) {
 	        my $Grp = $subgrp;
 	        _DIFFXY_OBJS_
                 $dstat = $_DIFFXY_OBJS_{DSTAT};
+                foreach my $frm ($Grp->allmembers) {
+                    push @xoffs,$frm->uhdr("XOFF_OBJS");
+                    push @yoffs,$frm->uhdr("YOFF_OBJS");
+                }
 	    }
 
   	    # If there were any problems along the way, then just substitute
@@ -94,19 +105,59 @@
 	    $ttt->update_header("CRPIX2",TDOUBLE,$crpix2,""); 
         }
 
-        # Put frame structures for the dither frames into the header structure.
-
-        my $dFrm = $Frm->new($dith);
-        $Frm->uhdr("DITHER_FRAME",$dFrm);
-        $dFrm = $Frm->new($dithc);
-        $Frm->uhdr("DITHER_CPM",$dFrm);
-
         # Get rid of the object tables...
 
 	foreach my $frm ($Grp->allmembers) {
 	    unlink $frm->uhdr("OBJTAB") if (-e $frm->uhdr("OBJTAB"));
 	}
     }
+
+    # Put frame structures for the dither frames into the header structure.
+
+    my $dFrm = $Frm->new($dith);
+    $Frm->uhdr("DITHER_FRAME",$dFrm);
+    $dFrm = $Frm->new($dithc);
+    $Frm->uhdr("DITHER_CPM",$dFrm);
+
+
+=head1 NAME
+
+_DITHER_ -- Dither a group of images
+
+=head1 DESCRIPTION
+
+The images in a group each have an image detection algorithm run on them. The
+WCS of each image is examined to get an idea of the dither offsets of each
+image relative to the first one in the group.  The object catalogues are used
+to refine these offsets by matching up common objects. These offsets are then
+used during the combination to form a dither output frame and its confidence
+map
+
+=head1 ARGUMENTS
+
+None
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+The dither output file and confidence map names are passed in the Frm uhdr
+components DITHER_FRAME and DITHER_CPM.
+
+=back
+
+=head1 AUTHORS
+
+JRL: Jim Lewis (CASU, IoA)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003-2006 Cambridge Astronomy Survey Unit. 
+All Rights Reserved
+
+=cut
 
         
         
