@@ -99,6 +99,18 @@ sub orac_err {
   $prt->err(@_);
 }
 
+=item orac_debug( text)
+
+Print the supplied text as a debug message using the supplied
+colour.
+
+=cut
+
+sub orac_debug {
+  my $prt = __curr_obj;
+  $prt->debug(@_);
+}
+
 
 
 # __curr_obj returns the current Print object or creates a new
@@ -132,6 +144,8 @@ sub new {
   $prt->{OutColour} = 'magenta';
   $prt->{ErrColour} = 'red';
   $prt->{WarnColour} = 'cyan';
+  $prt->{Debug}  = 0;           # Turns on/off debug messages
+  $prt->{DebugHdl} = undef;     # Debug file handle (IO object)
 
   bless($prt, $class);
 
@@ -200,6 +214,32 @@ sub errcol {
   return $self->{ErrColour};
 }
 
+=item debugmsg
+
+Turns debugging messages on or off. Default is off.
+
+=cut
+
+sub debugmsg {
+  my $self = shift;
+  if (@_) { $self->{Debug} = shift; }
+  return $self->{Debug};
+}
+
+=item debughdl
+
+This specifies the debug file handle. Defaults to STDERR if not 
+defined. An IO:: type handle is expected (ie not a glob);
+
+=cut
+
+sub debughdl {
+  my $self = shift;
+  if (@_) { $self->{DebugHdl} = shift; }
+  return $self->{DebugHdl};
+}
+
+
 # Methods that do things...
 
 =item out(text, [col])
@@ -255,6 +295,34 @@ sub err {
   print STDERR colored("ERROR:$text",$col);
 
 }
+
+=item debug (text)
+
+Prints debug messages to the debug filehandle so long as debugging
+is turned on.
+
+=cut
+
+sub debug {
+  my $self = shift;
+  my $text = shift;
+ 
+  # Check that debug is on
+  if ($self->debugmsg) {
+
+    # Read the filehandle
+    my $fh = $self->debughdl;
+    if (defined $fh) {
+      print $fh "DEBUG:$text";
+    } else {
+      print STDERR "DEBUG:$text";
+    }
+   
+
+  }
+
+}
+
 
 =back
 
