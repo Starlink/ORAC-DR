@@ -52,29 +52,11 @@ sub _to_DEC_TELESCOPE_OFFSET {
    if ( exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETD"} ) {
       $decoffset = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETD"};
 
-   } elsif ( exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} &&
+   } elsif ( exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} ||
              exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} ) {
 
-      my $pixscale = 0.144;
-      if ( exists $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"} ) {
-         $pixscale = $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
-      }
-
-# Sometimes the first imaging cumulative offsets are non-zero contrary
-# to the documentation.
-      my $expno = 1;
-      if ( exists $self->hdr->{"HIERARCH.ESO.TPL.EXPNO"} ) {
-         $expno = $self->hdr->{"HIERARCH.ESO.TPL.EXPNO"};
-      }
-      my ( $x_as, $y_as );
-      my $mode = uc( $self->get_instrument_mode() );
-      if ( $expno == 1 && ( $mode eq "IMAGE" || $mode eq "POLARIMETRY" ) ) {
-         $x_as = 0.0;
-         $y_as = 0.0;
-      } else {
-         $x_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} * $pixscale;
-         $y_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} * $pixscale;
-      }
+# Obtain the x-y offsets in arcsecs.
+      my ($x_as, $y_as) = $self->xy_offsets();
 
 # Define degrees to radians conversion and obtain the rotation angle.
       my $dtor = atan2( 1, 1 ) / 45.0;
@@ -134,40 +116,73 @@ sub _to_GAIN {
 sub _to_GRATING_DISPERSION {
    my $self = shift;
    my $dispersion = 0.0;
-   if ( exists $self->hdr->{CDELT1} ) {
-      $dispersion = $self->hdr->{CDELT1};
-   } else {
-      if ( exists $self->hdr->{"HIERARCH.ESO.INS.GRAT.NAME"} &&
-           exists $self->hdr->{"HIERARCH.ESO.INS.GRAT.ORDER"} ) {
-         my $order = $self->hdr->{"HIERARCH.ESO.INS.GRAT.ORDER"};
-         if ( $self->hdr->{"HIERARCH.ESO.INS.GRAT.NAME"} eq "LR" ) {
-            if ( lc($order) eq "blue" ) {
-               $dispersion = 6.96e-4;
-            } else {
-               $dispersion = 1.022e-3;
-            }
+   my $order = 0;
+   if ( exists $self->hdr->{"HIERARCH.ESO.INS.GRAT.ORDER"} ) {
+      $order = $self->hdr->{"HIERARCH.ESO.INS.GRAT.ORDER"};
+    }
+    if ( $self->_to_GRATING_NAME eq "LR" ) {
+      if ( lc( $order ) eq "blue" || $self->_to_FILTER eq "GBF" ) {
+         $dispersion = 6.96e-4;
+      } else {
+         $dispersion = 1.022e-3;
+      }
 
 # Medium dispersion
-         } elsif ( $self->hdr->{"HIERARCH.ESO.INS.GRAT.NAME"} eq "MR" ) {
-            if ( $order == 8 ) {
-               $dispersion = 1.58e-4;
-            } elsif ( $order == 7 ) {
-               $dispersion = 1.87e-4;
-            } elsif ( $order == 6 ) {
-               $dispersion = 2.22e-5;
-            } elsif ( $order == 5 ) {
-               $dispersion = 2.71e-5;
-            } elsif ( $order == 4 ) {
-               $dispersion = 3.43e-5;
-            } elsif ( $order == 3 ) {
-               $dispersion = 4.62e-5;
-            }
-         }
+   } elsif ( $self->_to_GRATING_NAME eq "MR" ) {
+      if ( $order == 8 ) {
+         $dispersion = 1.58e-4;
+      } elsif ( $order == 7 ) {
+         $dispersion = 1.87e-4;
+      } elsif ( $order == 6 ) {
+         $dispersion = 2.22e-5;
+      } elsif ( $order == 5 ) {
+         $dispersion = 2.71e-5;
+      } elsif ( $order == 4 ) {
+         $dispersion = 3.43e-5;
+      } elsif ( $order == 3 ) {
+         $dispersion = 4.62e-5;
       }
    }
    return $dispersion;
 }     
 
+sub _to_GRATING_NAME{
+   my $self = shift;
+   my $name = "MR";
+   if ( exists $self->hdr->{"HIERARCH.ESO.INS.GRAT.NAME"} ) {
+      $name = $self->hdr->{"HIERARCH.ESO.INS.GRAT.NAME"};
+
+# Name is missing for low resolution.
+   } elsif ( $self->_to_FILTER =~ /^G[BR]F/ ) {
+      $name = "LR"; 
+   }
+   return $name;
+}
+
+sub _to_GRATING_WAVELENGTH{
+   my $self = shift;
+   my $wavelength = 0;
+   if ( exists $self->hdr->{"HIERARCH.ESO.INS.GRAT.WLEN"} ) {
+      $wavelength = $self->hdr->{"HIERARCH.ESO.INS.GRAT.WLEN"};
+
+# Wavelength is missing for low resolution.
+   } elsif ( $self->_to_FILTER =~ /^GBF/ ) {
+      $wavelength = 1.3; 
+   } elsif ( $self->_to_FILTER =~ /^GRF/ ) {
+      $wavelength = 2.0; 
+   }
+   return $wavelength;
+}
+
+sub _to_NUMBER_OF_READS {
+   my $self = shift;
+   my $number = 2;
+   if ( exists $self->hdr->{"HIERARCH.ESO.DET.NCORRS"} ) {
+      $number = $self->hdr->{"HIERARCH.ESO.DET.NCORRS"};
+   }
+   return $number;
+}   
+   
 # Cater for OBJECT keyword with unhelpful value.
 sub _to_OBJECT {
    my $self = shift;
@@ -224,29 +239,11 @@ sub _to_RA_TELESCOPE_OFFSET {
    if ( exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETA"} ) {
       $raoffset = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETA"};
 
-   } elsif ( exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} &&
+   } elsif ( exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} ||
              exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} ) {
 
-      my $pixscale = 0.144;
-      if ( exists $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"} ) {
-         $pixscale = $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
-      }
-
-# Sometimes the first imaging cumulative offsets are non-zero contrary
-# to the documentation.
-      my $expno = 1;
-      if ( exists $self->hdr->{"HIERARCH.ESO.TPL.EXPNO"} ) {
-         $expno = $self->hdr->{"HIERARCH.ESO.TPL.EXPNO"};
-      }
-      my ( $x_as, $y_as );
-      my $mode = uc( $self->get_instrument_mode() );
-      if ( $expno == 1 && ( $mode eq "IMAGE" || $mode eq "POLARIMETRY" ) ) {
-         $x_as = 0.0;
-         $y_as = 0.0;
-      } else {
-         $x_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} * $pixscale;
-         $y_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} * $pixscale;
-      }
+# Obtain the x-y offsets in arcsecs.
+      my ($x_as, $y_as) = $self->xy_offsets();
 
 # Define degrees to radians conversion and obtain the rotation angle.
       my $dtor = atan2( 1, 1 ) / 45.0;
@@ -345,16 +342,45 @@ sub _to_SPEED_GAIN {
 # Translate to the SLALIB name for reference frame in spectroscopy.
 sub _to_TELESCOPE {
    my $self = shift;
-   my $telescope = "NTT";
+   my $telescope = "ESONTT";
    if ( exists $self->hdr->{TELESCOP} ) {
       my $scope = $self->hdr->{TELESCOP};
       if ( defined( $scope ) ) {
          $telescope = $scope;
-         $telescope =~ s/ESO-//;
          $telescope =~ s/-U//g;
+         $telescope =~ s/-//;
       }
    }
    return $telescope;
+}
+
+# Supplementary methods for the translations
+# ------------------------------------------
+sub xy_offsets {
+   my $self = shift;
+   my $pixscale = 0.144;
+   if ( exists $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"} ) {
+      $pixscale = $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
+   }
+
+# Sometimes the first imaging cumulative offsets are non-zero contrary
+# to the documentation.
+   my $expno = 1;
+   if ( exists $self->hdr->{"HIERARCH.ESO.TPL.EXPNO"} ) {
+      $expno = $self->hdr->{"HIERARCH.ESO.TPL.EXPNO"};
+   }
+   my $x_as = 0.0;
+   my $y_as = 0.0;
+   my $mode = uc( $self->get_instrument_mode() );
+   if ( !( $expno == 1 && ( $mode eq "IMAGE" || $mode eq "POLARIMETRY" ) ) ) {
+      if ( exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} ) {
+         $x_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} * $pixscale;
+      }
+      if ( exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} ) {
+         $y_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} * $pixscale;
+      }
+   }
+   return ($x_as, $y_as);
 }
 
 =head1 PUBLIC METHODS
