@@ -298,6 +298,64 @@ sub readhdr {
 Return the group associated with the Frame. 
 This group is constructed from header information.
 
+Currently the group name is constructed from the 
+MODE, OBJECT and FILTER keywords. This may cause problems
+in the following cases:
+
+ - The chop throw changes and the data should not be coadded
+ [in general this is true except for LO chopping scan maps
+ where all 6 chops should be included in the group]
+
+ - The source name is the same, the mode is the same and the
+ filter is the same but the source coordinates are different by
+ a degree or more. In some cases [a large scan map] these should
+ be in the same group. In other cases they probably should not
+ be. Should I worry about it? One example was where the observer
+ used RB coordinates by mistake for a first map and then changed
+ to RJ -- the coordinates and source name were identical but the
+ position on the sky was miles off. Maybe this should be dealt with
+ by using the Frame ON/OFF facility [so it would be part of the group
+ but the observer would turn the observation off]
+
+ - Different source names are being used for offsets around
+ a common centre [eg the Galactic Centre scan maps]. In this case
+ we do want to coadd but this means we should be using position
+ rather than source name. Also, how do we define when two fields
+ are too far apart to be coadded
+
+ - Photometry data should never be in the same group as a source
+ that has a different pointing centre. Note this really should take
+ MAP_X and MAP_Y into account since data should be of the same group
+ if either the ra/dec is given or if the mapx/y is given relative
+ to a fixed ra/dec.
+
+Bottom line is the following (I think).
+
+In all cases the actual position in RJ coordinates should be calculated
+(taking into account RB->RJ and GA->RJ and map_x map_y, local_coords) 
+using Astro::SLA. Filter should also be matched as now.
+Planets will be special cases - matching on name rather than position.
+
+PHOTOM observations
+
+  Should match positions exactly (within 1 arcsec). Should also match
+  chop throws [since the gain is different]. The observer is responsible
+  for a final coadd. Source name then becomes irrelevant.
+
+JIGGLE MAP
+
+  Should match positions to within 10 arcmin (say). Should match chop
+  throw.
+
+SCAN MAP
+
+  Should match positions to 1 or 2 degrees?
+  Should ignore chop throws (the primitive deals with that).
+
+The group name will then use the position with a number of significant
+figures changing depending on the position tolerance.
+
+
 =cut
 
 # Supply a new method for finding a group
@@ -345,6 +403,8 @@ sub findrecipe {
     $recipe = 'SCUBA_STD_PHOTOM';
   } elsif ($self->hdr('MODE') eq 'ALIGN') {
     $recipe = 'SCUBA_ALIGN';
+  } elsif ($self->hdr('MODE') eq 'FOCUS') {
+    $recipe = 'SCUBA_FOCUS';
   } elsif ($self->hdr('MODE') eq 'MAP') {
     if ($self->hdr('SAM_MODE') eq 'JIGGLE') {
       $recipe = 'SCUBA_JIGMAP';
@@ -529,8 +589,8 @@ sub gui_id {
 This method calculates header values that are required by the
 pipeline by using values stored in the header.
 
-ORACTIME is calculated - this is the time of the observation in
-hours. Currently is UT.
+ORACTIME is calculated - this is the time of the observation as
+UT day + fraction of day.
 
 This method updates the frame header.
 Returns a hash containing the new keywords.
@@ -543,6 +603,8 @@ sub calc_orac_headers {
   my %new = ();  # Hash containing the derived headers
  
   # ORACTIME
+
+  # First get the time of day
   my $time = $self->hdr('UTSTART');
   if (defined $time) {
     # Need to split on :
@@ -552,13 +614,23 @@ sub calc_orac_headers {
     $time = 0;
   }
 
+  # Now get the UT date
+  my $date = $self->hdr('UTDATE');
+  if (defined $date) {
+    my ($y,$m,$d) = split(/:/, $date);
+    $date = $y . '0'x (2-length($m)) . $m . '0'x (2-length($d)) . $d;
+  } else {
+    $date = 0;
+  }
+
+  my $ut = $date + ( $time / 24.0 );
+  
   # Update the header
-  $self->hdr('ORACTIME', $time);
+  $self->hdr('ORACTIME', $ut);
+
  
-  $new{'ORACTIME'} = $time;
+  $new{'ORACTIME'} = $ut;
   return %new;
-
-
 
 }
 
@@ -646,7 +718,7 @@ sub file2sub {
 =item sub2file
 
 Given a sub instrument name returns the associated file
-index. This is the revers of sub2file. The resulting value
+index. This is the reverse of sub2file. The resulting value
 can be used directly in file() to retrieve the file name.
 
   $file = $Frm->file($Frm->sub2file('LONG'));
