@@ -413,21 +413,13 @@ sub mergehdr {
   my $self = shift;
   my $status;
   
-  print "It woz: ",join("-",$self->intermediates),"\n";
-  print "It iz: ",$self->file,"\n";
-
   my $old = pop(@{$self->intermediates});
   my $new = $self->file;
 
-  print "old $old new $new\n";
-
   my ($root, $rest) = $self->split_name($old);
-
-  print "root $root rest $rest\n";
 
   if (defined $rest) {
     $status = &NDF::SAI__OK;
-    print $root.".header.more.fits","!",$new.".more.fits","\n";
     $status = copobj($root.".header.more.fits",$new.".more.fits",$status);
     orac_err("Failed dismally to propagate HDS header to NDF file\n") unless ($status==&NDF::SAI__OK);
   };
