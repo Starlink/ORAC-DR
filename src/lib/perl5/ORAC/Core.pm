@@ -100,17 +100,23 @@ sub orac_store_frm_in_correct_grp {
   # query Frame for its group
   
   my $grpname = $Frm->group;
-  
+
   # create a new group object and remove the previous file
   # unless such an object already exists
   # note that the "existence" of this group is only meaningful
   # over the lifetime of the pipeline
+  # Unless the primitive is written to recognise -resume
   
   do {
     
+    # Create the group
     $Grp = new $GrpObjectType($grpname);
-    $Grp->file($Grp->file_from_bits($ut, $Frm->number));
-    unlink($Grp->file); # wont work since .sdf is not included
+
+    # File name from constrituent parts
+    # If the group name is a number itself we should
+    # use it rather than the current frame number
+    my $grpnum = ( $grpname =~ /^\d+$/ ? $grpname : $Frm->number);
+    $Grp->file($Grp->file_from_bits($ut, $grpnum));
     $GrpHash->{$grpname} = $Grp;		# store group object
     orac_print ("A new group ".$Grp->file." has been created\n","blue");
 
