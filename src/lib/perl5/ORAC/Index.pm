@@ -568,14 +568,18 @@ sub verify {
     $rules{$key} =~ s/$key(?!(\}|([\'\"]\})))/$CALVALUE/gx;
 
     # Now check the rule against the header values
-    # We sometimes get "useless use of ... in boid context" when
-    # we are using complex rules. Ssually ones that look like:
-    #       XXXX; something eq $x
-    # Just turn off that warning
     my $ok;
     {
-      no warnings "void";
-      $ok = eval("'$CALVALUE' $rules{$key}");
+      # We sometimes get "useless use of ... in boid context" when
+      # we are using complex rules. Ssually ones that look like:
+      #       XXXX; something eq $x
+      # Just turn off that warning
+      no warnings 'void';
+
+      # There is a possible bug in the perl 5.6.0 implementation of warnings
+      # that means that evals lose the ability to pick up this context
+      # in 5.6.1 I dont get a problem. Add 'no warnings' to eval
+      $ok = eval("no warnings 'void'; '$CALVALUE' $rules{$key}");
       if ($@) {
 	orac_err "Eval error - check the syntax in your rules file\n";
 	orac_err "Rules was: '$CALVALUE' $rules{$key}\n";
