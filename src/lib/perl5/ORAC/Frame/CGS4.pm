@@ -602,8 +602,22 @@ sub mergehdr {
 
   if (defined $rest) {
     $status = &NDF::SAI__OK;
-    $status = copobj($root.".header.more.fits",$new.".more.fits",$status);
-    orac_err("Failed dismally to propagate HDS header to NDF file\n") unless ($status==&NDF::SAI__OK);
+
+    # determine whether we have got a .MORE component already
+    ndf_begin();
+    ndf_find(&DAT__ROOT(), $new, my $indf, $status);
+    ndf_xnumb($indf, my $num, $status);
+    ndf_annul($indf, $status);
+    ndf_end($status);
+
+    # if we have no extensions we have to copy the whole .MORE
+    # if we have some extensions just copy .FITS
+    my $copy = ( $num ? "MORE.FITS" : "MORE");
+
+    $status = copobj($root.".header.$copy",$new.".$copy",$status);
+
+    orac_err("Failed dismally to propagate HDS header from $root to NDF file $new\n") unless ($status==&NDF::SAI__OK);
+
   };
 
 }
