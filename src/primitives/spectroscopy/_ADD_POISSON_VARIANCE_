@@ -14,7 +14,7 @@ Paul Hirst <p.hirst@jach.hawaii.edu>
 
 =cut
 
-# Create 2 tmp files
+# Create tmp files
 my $tmp = new ORAC::TempFile;
 my $tmpfile=$tmp->file;
 
@@ -34,6 +34,7 @@ my $nexp = $Frm->uhdr("ORAC_NUMBER_OF_EXPOSURES");
 foreach my $i (1 .. $Frm->nfiles) {
         # Generate the input and output file names
         my ($in, $out) = $Frm->inout ("_pov", $i);
+	my $bglout = $Frm->inout("_bgl", $i);
 
         # Units of in are DN/exp
 
@@ -45,12 +46,12 @@ foreach my $i (1 .. $Frm->nfiles) {
         # Use setvar to set the variance array of the tmp file to be the Poisson variance
         $Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$tmpfile variance=data");
 
-        # tmp is now the total electons, with Poisson variance.
+        # tmp is now the total electrons, with Poisson variance.
 	# We've thrown out the readnoise by doing the setvar on the tmp file
 
-	# Now convert the tmpfile back to DN per coadd
+	# Now convert the tmpfile back to DN per exposure
         $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tmpfile scalar=$factor out=$tempfile");
-	# tempfile is now in DN per coadd, with poisson (only) variance in both
+	# tempfile is now in DN per exposure, with poisson (only) variance in both
 	# the data and variance arrays
 
 	# Now work out how background limited we were
@@ -58,19 +59,10 @@ foreach my $i (1 .. $Frm->nfiles) {
 	$Mon{'figaro1'}->obeyw("creobj", "type=NDF dims=0 object=$tmprnfile");
 	$Mon{'figaro1'}->obeyw("copobj", "source=$in.VARIANCE object=$tmprnfile.DATA_ARRAY");
 
-	# Subtract the readnoise variance from the posiison variance
-	$Mon{'kappa_mon'}->obeyw("sub", "in1=$tempfile in2=$tmprnfile out=$tmpfile");
+	# Divide the poisson variance by the readnoise variance into bglout
+	$Mon{'kappa_mon'}->obeyw("div", "in1=$tempfile in2=$tmprnfile out=$bglout title=$bglout");
 	
-	# Now, +ve pixels in tmpfile were background limited, -ve ones were not.
-	$Mon{'kappa_mon'}->obeyw("thresh", "in=$tmpfile out=$tmprnfile thrhi=0 thrlo=0 newhi=1 newlo=0");
-	$Mon{'ndfpack_mon'}->obeyw("setbad", "ndf=$tmprnfile value=TRUE");
-	
-	$Mon{'kappa_mon'}->obeyw("stats", "ndf=$tmprnfile");
-	(my $ORAC_STATUS, my $mean) = $Mon{'kappa_mon'}->get("stats", "mean");
-	$Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$tmprnfile out=foo");
-
-	$mean *=100;
-	$mean = sprintf ("%.1f", $mean);	
+	# bglout now contains the background limited-ness
 
         # Now, we need to add the variance array of the temp file to that of
         # the $in file, and call it $out.
@@ -83,7 +75,19 @@ foreach my $i (1 .. $Frm->nfiles) {
 
         # Update Frame object
         $Frm->file($i, $out);
-        orac_print("$in to $out: Poisson variance added\n");
+        orac_print "$in to $out: Poisson variance added\n";
+
+	# Now, pixels > 1 in bgl were background limited, <1 ones were not.
+	$Mon{'kappa_mon'}->obeyw("thresh", "in=$bglout out=$tmprnfile thrhi=1 thrlo=1 newhi=1 newlo=0");
+	$Mon{'ndfpack_mon'}->obeyw("setbad", "ndf=$tmprnfile value=TRUE");
+	
+	$Mon{'kappa_mon'}->obeyw("stats", "ndf=$tmprnfile");
+	(my $ORAC_STATUS, my $mean) = $Mon{'kappa_mon'}->get("stats", "mean");
+	$Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$tmprnfile out=foo");
+
+	$mean *=100;
+	$mean = sprintf ("%.1f", $mean);	
+
 	orac_print "  $mean% of the pixels in $in were background limited\n";
 }
 
