@@ -1,0 +1,191 @@
+=head1 NAME
+
+_FIND_MAP_PEAK_ - Determine the peak signal of a point source
+
+=head1 DESCRIPTION
+
+Finds the peak signal of a point source located at the map origin.
+No attempt is made to search for sources not located at approximately
+the map centre.
+
+The peak signal is determined by fitting a gamma function.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item LOGFILE
+
+A flag to indicate whether a log file should be written containing
+the results of the integrated intensity calculation. Default is
+true.
+
+=item VERBOSE
+
+Flat to indicate whether informational messages should be 
+given to the user. Default is verbose (true).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+=over 4
+
+=item KAPPA
+
+PSF, WCSFRAME
+
+=back
+
+=head1 OUTPUT DATA
+
+On completion, the primitive hash C<%_FIND_MAP_PEAK_>
+contains the following keys:
+
+=over 4
+
+=item RESULTS
+
+An array containing the peak signal for each sub-instrument.
+Contains C<undef> if the calculation did not complete sucessfully.
+Starts counting at 1.
+
+=back
+
+=head1 OUTPUT FILES
+
+The following files are created:
+
+=over 4
+
+=item C<log.peak>
+
+Log of peak signals.
+
+=back
+
+The frame object is not updated.
+
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+Copyright (C) 2000 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+=cut
+
+# Write logfile (default to true)
+my $uselog = (exists $_FIND_MAP_PEAK_{LOGFILE} &&
+          defined $_FIND_MAP_PEAK_{LOGFILE}) ?
+  $_FIND_MAP_PEAK_{LOGFILE} : 1;
+
+# Should I be verbose (default to yes)
+my $verbose = (exists $_FIND_MAP_PEAK_{VERBOSE} && 
+	       defined $_FIND_MAP_PEAK_{VERBOSE}) ?
+  $_FIND_MAP_PEAK_{VERBOSE} : 1;
+
+# initialise the results array
+$_FIND_MAP_PEAK_{RESULTS} = [];
+
+
+# Initialise the log file if necessary
+my $log;
+if ($uselog) {
+  $log = new ORAC::LogFile("log.peak");
+  my $time = gmtime();
+  $log->header("Pointing log file - created on $time",
+               "\n#     Time   Filter    PeakFlux        CSO El",
+             "------------------------------------------------------------------"
+            );
+
+}
+
+my @filters = $Frm->filters;
+
+
+# Now Loop over frames
+for my $i (1.. $Frm->nfiles ) {
+
+  # Find the input file
+  my $in = $Frm->file($i);
+
+  # Get the centroid and the peak at the centroid
+  _CENTROID_FRAME_ LOGFILE=0
+
+  # we now run PSF if possible else simply use the peak from 
+  # centroiding
+  my $peak = $_CENTROID_FRAME_{RESULTS}->[$i]->[2]; # default peak
+  if (starversion_lt('kappa', 'V0.15-0')) {
+    # warn
+    orac_warn "Your kappa version if too old to use PSF properly. Using stats to find peak\n";
+
+  } else {
+    # Need to make sure we are using a AXIS coordinate frame
+    $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=axis");
+
+    # Create temporary file with the position in
+    my $tmp = new ORAC::TempFile;
+    my $tmpfile = $tmp->file;
+    print { $tmp->handle } $_CENTROID_FRAME_{RESULTS}->[$i]->[0]," ",
+       $_CENTROID_FRAME_{RESULTS}->[$i]->[1], "\n";
+    $tmp->handle->close;
+    my $args = "incat=! device=! cofile=$tmpfile";
+
+    # Run PSF
+    $Mon{kappa_mon}->obeyw("psf","norm=no range=4 isize=15 in=$in $args");
+
+    # Retrieve the answer
+    my $ORAC_STATUS;
+    ( $ORAC_STATUS, my $amp)  = $Mon{kappa_mon}->get("psf","amp1");
+    ( $ORAC_STATUS, my $axisr)= $Mon{kappa_mon}->get("psf","axisr");
+
+    # Check the axis ratio
+    if ($axisr > 1.4 || $axisr < 0.75) {
+      orac_warn "Axis ratio of source out of specification (was $axisr). Ignoring fit\n";
+      # Use stats peak
+
+    } else {
+      $peak = $amp;
+    }
+
+  }
+
+  # Store the result in the hash
+  $_FIND_MAP_PEAK_{RESULTS}->[$i] = $peak;
+
+  # Write a log file if required
+  if ($uselog) {
+
+    my $num = sprintf "%-4d", $Frm->number;
+    my $time= sprintf "%12.3f", $Frm->hdr('ORACTIME');
+    my $filt= sprintf "%4d",   $filters[$i-1];
+
+    # Get the tau
+    # TAU from calibration object
+    my $tau = sprintf "%5.2f", $Cal->tau($filters[$i-1]);
+
+    # Use that tau to calculate CSO
+    my ($cso, $status) = JCMT::Tau::get_tau('CSO',$filters[$i-1], $tau);
+    if ($status != 0) {
+      $cso = "*****";
+    } else {
+      $cso = sprintf "%5.2f", $cso;
+    }
+
+    # elevation
+    my $el = int (($Frm->hdr('STRT_ELD') + $Frm->hdr('END_ELD') ) /2.0 );
+
+    # Write the entry
+    $log->addentry("$num $time $filt $peak   $cso $el" . $Frm->hdr('OBJECT'));
+
+  }
+
+  orac_print "Peak signal for filter ". $filters[$i-1].": $peak\n"
+    if $verbose;
+
+}
+
+orac_print "Caluulated peak signal from map\n" if $verbose;
