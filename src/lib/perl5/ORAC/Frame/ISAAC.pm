@@ -383,10 +383,16 @@ sub _to_RECIPE {
 
    } elsif ( $template =~ /ISAAC[SL]W_img_cal_Darks/ ||
              $seq eq "ISAAC_img_cal_Darks" ) {
-       $recipe = "REDUCE_DARK";
+      $recipe = "REDUCE_DARK";
 
    } elsif ( $template =~ /ISAAC[SL]W_img_cal_TwFlats/ ) {
-       $recipe = "SKY_FLAT_MASKED";
+      $recipe = "SKY_FLAT_MASKED";
+
+# Imaging spectroscopy.  There appears to be no distinction
+# for flats from target, hence no division into POL_JITTER and
+# SKY_FLAT_POL.
+   } elsif ( $template eq "ISAACSW_img_obs_Polarimetry" ) {
+      $recipe = "POL_JITTER";
 
 # Spectroscopy.  EXTENDED_SOURCE may be more appropriate for
 # the ISAACSW_spec_obs_GenericOffset template.
