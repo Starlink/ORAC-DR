@@ -92,7 +92,9 @@ sub start_algorithm_engines {
 
   %Mon = ();
 
+  $Mon{ndfpack_mon} = new ORAC::Msg::ADAM::Task("ndfpack_mon_$$",$ENV{KAPPA_DIR}."/ndfpack_mon");
   $Mon{kappa_mon} = new ORAC::Msg::ADAM::Task("kappa_mon_$$",$ENV{KAPPA_DIR}."/kappa_mon");
+
 
   return %Mon;
 }
