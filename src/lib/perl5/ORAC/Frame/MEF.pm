@@ -262,6 +262,9 @@ sub configure {
             $subFrm->raw($sfname);
             $subFrm->fits($allextn[$i-1]);
             $subFrm->subfrmnumber($i);
+	    my $a = $self->hdr;
+	    delete $$a{'END'};
+	    $subFrm->hdr(%$a);
             push @subfrms,$subFrm;
         }
         $self->{SubFrms} = [@subfrms];
@@ -413,6 +416,9 @@ Copyright (C) 2003-2006 Cambridge Astronomy Survey Unit. All Rights Reserved.
 #
 #
 # $Log$
+# Revision 1.8  2004/09/27 07:00:47  jrl
+# Modified so that extension headers inherit the primary header
+#
 # Revision 1.7  2004/09/22 21:49:12  bradc
 # merge from acsis-dev-20040607, use pattern_from_bits()
 #
