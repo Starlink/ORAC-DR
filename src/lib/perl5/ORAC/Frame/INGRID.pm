@@ -428,6 +428,7 @@ sub getbounds{
    return @bounds;
 }
 
+# Derives the rotation angle from the rotation matrix.
 sub rotation{
    my $self = shift;
    my $rotangle = 0.0;
