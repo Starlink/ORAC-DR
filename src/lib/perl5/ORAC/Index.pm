@@ -550,7 +550,7 @@ sub verify {
     unless ($ok) {
       if ($warn) {
 	orac_warn("$name not a suitable calibration: failed $key $rules{$key}\n");
-	orac_warn "Header:-",$Hdr{$key},"--","Calvalue:-$CALVALUE-\n";
+	orac_warn "Header:-".$Hdr{$key}."--Calvalue:-$CALVALUE-\n";
       }
       return 0;
     };
