@@ -75,7 +75,7 @@ sub new {
   $group->{Header} = undef;
   $group->{File} = undef;
   $group->{Recipe} = undef;
-  $group->{FixedPart} = 'rg';
+  $group->{FixedPart} = undef;
   $group->{FileSuffix} = undef;
 
   bless($group, $class);
@@ -157,7 +157,7 @@ sub filesuffix {
 
 Set or retrieve the part of the group filename that does not
 change between invocation. The output filename can be derived using
-this.
+this. Defaults to 'rg'
 
     $Grp->fixedpart("rg");
     $prefix = $Grp->fixedpart;
@@ -168,6 +168,9 @@ this.
 sub fixedpart {
   my $self = shift;
   if (@_) { $self->{FixedPart} = shift;};
+  unless (defined $self->{FixedPart}) {
+    $self->{FixedPart} = 'rg';
+  };
   return $self->{FixedPart};
 }
 
