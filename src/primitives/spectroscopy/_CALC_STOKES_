@@ -1,0 +1,502 @@
+# -*-perl-*-
+
+=head1 NAME 
+
+_CALC_STOKES_ -- Calculates Stokes parameters for polarisation recipes.
+
+=head1 DESCRIPTION
+
+This primitive takes the eight extracted spectra -- one for each beam
+and waveplate angle -- and derives spectra of the summed intensity;
+polarisation percentage, intensity, and angle; and the Stokes parameters,
+Q and U. Variance information for the parameters is also derived if
+the supplied frames contain variance.
+
+The polarisation data are extracted into a catalogue in the FITS
+binary-table format, where they are binned, and those meeting 
+the following criteria are available to display in a vector plot.
+The criteria are percentage polarisation positive below 50%; and
+if variance information is available, the signal-to-noise is at
+least argument S2N, the standard deviation is less than argument
+SIGMA, and the intensity is positive.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item BIN = INTEGER (Given)
+
+The bin size in pixels for the wavelength axis by which the
+polarisation parameters are averaged to improve their signal to
+noise and generate a clearer spectrum.  The averaging applies
+to the catalogue, not the polarisation spectra. The value must be
+at least 1.  [5]
+
+=item DEBIAS = LOGICAL (Given)
+
+Whether or not to correct for statistical bias to the
+percentage polarization and polarized intensity.  To apply
+the correction, this argument must be true (1) and the
+data contain variance information.  [1]
+
+=item S2N = REAL (Given)
+
+Minimum signal to noise of the polarisation percentage for a
+point to be included in the final catalogue and plot.  It is
+constrained to be at least one (i.e. no threshold).  It is
+only used if the supplied e- and o-beam frames contain data
+variance. [3]
+
+=item SIGMA = REAL (Given)
+
+Maximum error of the polarisation percentage for a point to be
+included in the final catalogue and plot.  It is constrained
+to be less than 100% (i.e. no threshold).  It is only used if
+the supplied e- and o-beam frames contain data variance.  [5]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UIST in spectroscopy mode.
+
+=item *
+
+Processing only occurs when the CALC_STOKES steering header is
+true.
+
+=item *
+
+The extracted spectra are found in the groups stored by reference
+in the $Grp user headers of the form E<lt>ANGLEE<gt>_GROUP_E<lt>BEAME<gt>,
+where E<lt>ANGLEE<gt> is 0, 22, 45, or 67, and E<lt>BEAME<gt> is either
+E or O.
+
+=item *
+
+The polarised intensity is corrected for the statistical bias
+of the noise by subtracting the variance of Q or U.
+
+=item *
+
+The origins of the generated polarisation frames are set to [1,1].
+The WCS current frame is unchanged.
+
+=item *
+
+The units are set for the frames with suffices (see 
+L<"OUTPUT DATA">) P to "%", and TH to "degrees".
+
+=item *
+
+The appropriate frame titles are set for the generated frames.
+These are as follows.  I: "Intensity";  P: "Polarisation";
+PI: "Polarised Intensity"; Q: "Stokes Q"; TH: "Polarisation Angle";
+U: "Stokes U".
+
+=back
+
+=head1 TASKS
+
+CURSA: CATSELECT; KAPPA: NDFTRACE, SETORIGIN, SETTITLE, SETUNITS;
+POLPACK: POLCAL, POLEXT, POLIMP, POLVEC.
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Polarisation frames each inheriting the name of its input frame
+but each with a different suffix for the various parameters.
+These are:
+
+    I   intensity
+    P   percentage polarisation
+    PI  polarisation intensity
+    Q   Stokes Q
+    TH  polarisation angle
+    U   Stokes U
+
+=item *
+
+A FITS binary-table catalogue of the binned and culled
+polarisation data, called E<lt>groupnameE<gt>_pth.FIT, where
+E<lt>groupnameE<gt> is the prefix used for group frames.
+For each value it tabulates the x-y-z co-ordinates (x and y
+will both be 1, z is the wavelength pixel position), the total
+intensity, the Stokes parameters, the
+percentage polarisation, the polarisation angle and intensity.
+There are additional columns giving the standard deviation on
+each of the tabulated values (exlcuding the co-ordinates).
+Likewise E<lt>groupnameE<gt>_pol.FIT and
+E<lt>groupnameE<gt>_bin.FIT stored the full and binned catalogues
+respectively.
+
+=back
+
+=head1 AUTHORS
+
+Malcolm J. Currie (JAC/Starlink) <mjc@star.rl.ac.uk>
+Brad Cavanagh (JAC) <b.cavanagh@jach.hawaii.edu>
+
+=head1 REFERENCES
+
+A.Chryststomou, 1997, "Imaging Polarimetry with IRCAM3", IRPOL/2.2.
+
+D.S.Berry & T.M.Gledhill, 1999, "I<POLPACK Users Manual Version 2.0>",
+SUN/223.3.
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# Arguments
+# =========
+
+# Obtain the binning factor.
+my $binsize = max( 1, ( $_CALC_STOKES_{BIN} || 5 ) );
+
+# Obtain the signal-to-noise and standard-deviation thresholds.
+my $s2n = max( 1, ( $_CALC_STOKES_{S2N} || 3 ) );
+my $sigma = min( 100, ( $_CALC_STOKES_{SIGMA} || 5 ) );
+
+# Apply statisitcal bias correction?
+my $debias = defined( $_CALC_STOKES_{DEBIAS} ) ? $_CALC_STOKES_{DEBIAS} : 1;
+
+# Selection
+# =========
+
+if( $Frm->uhdr( "CALC_STOKES" ) ) {
+
+# Select the various frames.
+# ==========================
+
+# Obtain the e-beam 0-degree polariser angle.
+  my $e0 = $Grp->uhdr( "0_GROUP_E" );
+
+# Obtain the e-beam 22.5-degree polariser angle.
+  my $e22 = $Grp->uhdr( "22_GROUP_E" );
+
+# Obtain the e-beam 45-degree polariser angle.
+  my $e45 = $Grp->uhdr( "45_GROUP_E" );
+
+# Obtain the e-beam 67.5-degree polariser angle.
+  my $e67 = $Grp->uhdr( "67_GROUP_E" );
+
+# Obtain the o-beam 0-degree polariser angle.
+  my $o0 = $Grp->uhdr( "0_GROUP_O" );
+
+# Obtain the o-beam 22.5-degree polariser angle.
+  my $o22 = $Grp->uhdr( "22_GROUP_O" );
+
+# Obtain the o-beam 45-degree polariser angle.
+  my $o45 = $Grp->uhdr( "45_GROUP_O");
+
+# Obtain the o-beam 67.5-degree polariser angle.
+  my $o67 = $Grp->uhdr( "67_GROUP_O" );
+
+# Reshape spectra.
+# ================
+
+# Form the list of spectra.
+  my @spectra = ( $o0, $o45, $o22, $o67, $e0, $e45, $e22, $e67 );
+
+# For each spectrum, find its length, then reshape the spectrum into
+# a 1x1xn cube, where n is the length of the spectrum.
+  foreach my $spectrum ( @spectra ) {
+
+    my $in = $spectrum->file;
+    my $base = $spectrum->raw;
+    my $out = $base . "_rsh";
+
+    $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
+    ( my $ORAC_STATUS, my @ubound ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
+
+    my $ubound = $ubound[0];
+
+    # Reshape the cube. If we have KAPPA v1.1-4 or later we can use manic.
+    if( starversion_lt( "KAPPA", "V1.1-4" ) ) {
+
+      $Mon{'ndfpack_mon'}->obeyw( "reshape", "in=$in out=$out shape=[1,1,$ubound] title=! vectorize=false" );
+
+      $Mon{'ndfpack_mon'}->obeyw( "wcsremove", "ndf=$out frames=4" );
+    } else {
+
+      $Mon{'kappa_mon'}->obeyw( "manic", "in=$in out=$out axes=[0,0,1] lbound=[1,1] ubound=[1,1]" );
+
+    }
+
+    $spectrum->file( $out );
+
+    orac_print "$in to $out: Reshaped to [1,1,$ubound] cube.\n";
+
+  }
+
+  orac_print "\n";
+
+# Import the spectra into POLPACK.
+# ================================
+  my ( $par1, $par2, $title, $e_mosaics, $o_mosaics );
+
+# Make convenient lists of the mosaics.
+  $e_mosaics = $e0->file . "," . $e22->file . "," . $e45->file . "," . $e67->file;
+  $o_mosaics = $o0->file . "," . $o22->file . "," . $o45->file . "," . $o67->file;
+
+# Create text files to hold the list of input files.  This is needed
+# because expanded lists of files may make the command line too long
+# for the ADAM message system.
+  unlink ( "emosaics.list$$", "omosaics.list$$");
+
+  open( my $fh_elist, ">emosaics.list$$" ) ||
+    orac_throw "Unable to open emosaics.inlist$$ to create a list of e-beam mosaics to process.  Error: $!.\n";
+  print $fh_elist $e_mosaics, "\n";
+  close( $fh_elist );
+
+  open( my $fh_olist, ">omosaics.list$$" ) ||
+    orac_throw "Unable to open omosaics.inlist$$ to create a list of o-beam mosaics to process.  Error: $!.\n";
+  print $fh_olist $o_mosaics, "\n";
+  close( $fh_olist );
+
+# Use a table in the instrument calibration directory to import
+# headers into a POLPACK extension into all of the mosaics.
+  $par1 = "in='^emosaics.list$$,^omosaics.list$$'";
+  $par2 = "table=$ENV{ORAC_DATA_CAL}/polimp.dat quiet";
+  $Mon{ "polpack_mon" }->obeyw( "polimp", "$par1 $par2" );
+
+# Obtain the rootname for created frames.
+  my $root = $Grp->file;
+
+# There is no FITS header for the beam, so tell POLPACK explicitly.
+# Set the rotation of the analyser with respect to reference angle.  Also
+# need to group e- and o-beams at each angle through common identifiers.
+# Note that the order of the identifiers must match that of the frames.
+  $par1 = "imgid='${root}_0,${root}_22,${root}_45,${root}_67'";
+  $Mon{ "polpack_mon" }->obeyw( "polext", "in='^emosaics.list$$' ray=E $par1" );
+  $Mon{ "polpack_mon" }->obeyw( "polext", "in='^omosaics.list$$' ray=O $par1" );
+
+# Report progress to avoid a long wait.
+  orac_print "Ancilliary polarisation data imported into $e_mosaics,$o_mosaics\n";
+
+# Determine whether the NDFs support variance.
+# ============================================
+
+# Any of the NDFs should do.
+  my $param = "ndf=" . $e0->file;
+  $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "$param" );
+  ( my $ORAC_STATUS, my $variance ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "variance" );
+
+# Form Stokes data cube.
+# ======================
+
+# Set the parameters for POLCAL
+  my $cube = $root . "_st";
+  $par1 = "in='^emosaics.list$$,^omosaics.list$$'";
+  if ( $variance eq "TRUE" ) {
+    $par2 = "out=$cube pmode=linear dualbeam=false variance";
+  } else {
+    $par2 = "out=$cube pmode=linear dualbeam=false";
+  }
+
+# TRIMBAD keyword for removing girdle of bad pixels was added at
+# POLPACK version 2.1-5.
+  if ( starversion_lt( 'POLPACK', 'V2.1-5' ) ) {
+    $Mon{ "polpack_mon" }->obeyw( "polcal", "$par1 $par2" );
+  } else {
+    $Mon{ "polpack_mon" }->obeyw( "polcal", "$par1 $par2 trimbad" );
+  }
+
+# Report the new frame.
+  orac_print "Polarisation cube formed in $cube.\n";
+
+# Remove the GRP indirection files.
+  unlink ( "emosaics.list$$", "omosaics.list$$" );
+
+# Extract the various images.
+# ===========================
+
+# Extract images of the Stokes parameters from the cube.  There is no binning
+# and no catalogue is formed.  Variance may be used to correct for bias.  The
+# variance flag is ignored by POLVEC if there is no variance array in the
+# supplied Stokes cube, so no conditional parameter lists are required.
+
+  $par1 = "Q=${root}_sp-Q U=${root}_sp-U P=${root}_sp-P";
+
+  if ( $debias ) {
+    $par2 = "I=${root}_sp-I IP=${root}_sp-PI ANG=${root}_sp-TH variance debias";
+  } else {
+    $par2 = "I=${root}_sp-I IP=${root}_sp-PI ANG=${root}_sp-TH variance nodebias";
+  }
+  $Mon{ "polpack_mon" }->obeyw( "polvec", "in=$cube cat=! $par1 $par2" );
+
+# Assign a sensible title for the intensity frame.
+  $Mon{ "ndfpack_mon" }->obeyw( "settitle", "ndf=${root}_sp-I title=Intensity" );
+
+# Report the new frame.
+  orac_print "Polarisation intensity frame ${root}_sp-I formed.\n";
+
+# Create a new frame for displaying the polarisation data.
+  my $tempFrm = $Frm->new;
+
+# Display the frame.  Composite plots must wait until the table
+# is created.
+  $tempFrm->file( "${root}_sp-I" );
+  $Display->display_data( $tempFrm ) if ( defined $Display );
+
+# Set NDF attributes and display the images.
+# ==========================================
+
+# Polarisation percentage
+# -----------------------
+
+# Set the title, units and origin for the polarisation percentage.
+  $title = "title=Polarisation";
+  $Mon{ "ndfpack_mon" }->obeyw( "settitle", "ndf=${root}_sp-P $title" );
+  $Mon{ "ndfpack_mon" }->obeyw( "setunits", "ndf=${root}_sp-P units='%'" );
+  $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=${root}_sp-P origin=[1,1]" );
+
+# Report the creation of the frame.
+  orac_print "Polarisation percentage frame ${root}_sp-P formed.\n";
+
+# Display the frame.
+  $tempFrm->file( "${root}_sp-P" );
+  $Display->display_data( $tempFrm ) if ( defined $Display );
+
+# Polarisation angle
+# ------------------
+
+# Set the title, units and origin for the polarisation angle.
+  $title = "title='Polarisation Angle'";
+  $Mon{ "ndfpack_mon" }->obeyw( "settitle", "ndf=${root}_sp-TH $title" );
+  $Mon{ "ndfpack_mon" }->obeyw( "setunits", "ndf=${root}_sp-TH units=degrees" );
+  $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=${root}_sp-TH origin=[1,1]" );
+
+# Report the creation of the frame.
+  orac_print "Polarisation angle frame ${root}_sp-TH formed.\n";
+
+# Display the frame.
+  $tempFrm->file( "${root}_sp-TH" );
+  $Display->display_data( $tempFrm ) if ( defined $Display );
+
+# Polarisation intensity
+# ----------------------
+
+# Set the title and origin for the polarisation intensity.
+  $title = "title='Polarised Intensity'";
+  $Mon{ "ndfpack_mon" }->obeyw( "settitle", "ndf=${root}_sp-PI $title" );
+  $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=${root}_sp-PI origin=[1,1]" );
+
+# Report the creation of the frame.
+  orac_print "Polarisation intensity frame ${root}_sp-PI formed.\n";
+
+# Display the frame.
+  $tempFrm->file( "${root}_sp-PI" );
+  $Display->display_data( $tempFrm ) if ( defined $Display );
+
+# Stokes Q
+# --------
+
+# Assign a sensible title for the Q Stokes-parameter frame.  Reset its origin
+# to the default, for convenience.
+  $title = "title='Stokes Q'";
+  $Mon{ "ndfpack_mon" }->obeyw( "settitle", "ndf=${root}_sp-Q $title" );
+  $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=${root}_sp-Q origin=[1,1]" );
+
+# Report the creation of the frame.
+  orac_print "Polarisation Q frame ${root}_sp-Q formed.\n";
+
+# Display the frame.
+  $tempFrm->file( "${root}_sp-Q" );
+  $Display->display_data( $tempFrm ) if ( defined $Display );
+
+# Stokes U
+# --------
+
+# Assign a sensible title for the U Stokes-parameter frame.  Reset its origin
+# to the default, for convenience.
+  $title = "title='Stokes U'";
+  $Mon{ "ndfpack_mon" }->obeyw( "settitle", "ndf=${root}_sp-U $title" );
+  $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=${root}_sp-U origin=[1,1]" );
+
+# Report the creation of the frame.
+  orac_print "Polarisation U frame ${root}_sp-U formed.\n";
+
+# Display the frame.
+  $tempFrm->file( "${root}_sp-U" );
+  $Display->display_data( $tempFrm ) if ( defined $Display );
+
+  orac_print "\n";
+
+# Form a catalogue in binary-table FITS format.  Variance is used to
+# correct for bias.  Need to remove existing FITS files as CFITSIO
+# does not clobber.
+  my $fullcat = "${root}_pol.FIT";
+  unlink ( $fullcat );
+  if ( $debias ) {
+    $par1 = "in=$cube cat=$fullcat variance debias";
+  } else {
+    $par1 = "in=$cube cat=$fullcat variance nodebias";
+  }
+  $Mon{ "polpack_mon" }->obeyw( "polvec", "$par1" );
+
+  orac_print "FITS binary table of polarisation data created in $fullcat.\n";
+
+# Finished with the cube, so delete it.  Retain the full catalogue
+# so that offline binning and selection tuned to the data or user's
+# requirements can be performed.
+#       _DELETE_A_FRAME_ FRAME=$cube
+
+# Bin the vectors at the chosen scaling forming a new catalogue.
+  my $bincat = "${root}_bin.FIT";
+  unlink ( $bincat );
+  $par1 = "in=$fullcat out=$bincat";
+  $par2 = "box=1 zbox=$binsize method=median";
+  $Mon{ "polpack_mon" }->obeyw( "polbin", "$par1 $par2" );
+
+  orac_print "Tabular polarisation data binned ($binsize pixel bins) in $bincat.\n";
+
+# Apply criteria to reject noisy vectors forming a new catalogue.
+# Criteria involving the noisy will only be available if variance
+# data are present.
+  my $selcat = "${root}_pth.FIT";
+  unlink ( $selcat );
+  $par1 = "catin=$bincat catout=$selcat";
+  if ( $variance eq "TRUE" ) {
+    $par2 = "norejcat seltyp=e expr='p<50 & p>0 & dp<$sigma & p/dp>=$s2n & i>0'";
+  } else {
+    $par2 = "norejcat seltyp=e expr='p<50 & p>0 & i>0'";
+  }
+  my $selection_status = $Mon{catselect}->obeyw( "catselect", "$par1 $par2" );
+
+  if ( $selection_status != ORAC__OK ) {
+    orac_warn "Data are too poor to pass criteria.  Integrate for " .
+              "longer or make the thresholds less stringent.\n";
+  } else {
+
+# Report the threshold criteria.
+    orac_print "Thresholds applied applied to tabular " .
+               "polarisation data in $selcat.\n";
+    orac_print "Criteria were 0 < polarisation < 50%\n";
+    if ( $variance eq "TRUE" ) {
+      orac_print "              S/N >= $s2n\n";
+      orac_print "              standard deviation < $sigma%\n";
+    }
+    orac_print "              intensity > 0\n";
+    orac_print "\n";
+
+# Display the composite plot.
+    $tempFrm->file( "${root}_pth" );
+    $Display->display_data( $tempFrm ) if ( defined $Display );
+
+  }
+
+}
+
+
