@@ -9,8 +9,12 @@
 #    Perl5
 #
 # Description:
-#    This primitive subtracts a zero bias from the current frame.
-#    For current instruments there is no bias to subtract so it is
+#    This primitive subtracts a zero bias from the current frame; unless
+#    the data have variance information and were taken using a non-ND
+#    mode (i.e. where the bias has not already been subtracted), whereupon
+#    a bias frame, if available, is subtracted.
+#
+#    For most instruments there is no bias to subtract so it is
 #    something of a placeholder primitive.  Its main purpose is to set
 #    up CCDPACK for subsequent processing.  For instance, CCDPACK will
 #    complain if debiassing is not performed before say flat-fielding.
@@ -40,19 +44,57 @@
 #
 #-
 
-# Generate the input and output filenames.
+# Assume for the moment that a zero-bias is subtracted.
+    my $sub_bias_frame = 0;
+    my ( $bias, $param );
+
+# Generate the input and output filenames.  The output file has the same
+# name as the input except the suffix is changed to indicate it has been
+# bias subtracted.
     ( my $in, my $out ) = $Frm->inout( "_db" );
 
-#  Specify parameters.
-    my $param1 = "in=$in out=$out title=!";
-    my $param2 = "usecon=true zero=0";
+# Is data variance being used?
+    my $usevar = $Frm->uhdr( "USE_VARIANCE" );
+    $usevar = defined( $usevar ) ? $usevar : 0;
+
+# This should only be performed on OBJECT frames in modes where the bias
+# has not already been subtracted.  This would be modes like CHOP and
+# STARE, but not ND_STARE.
+    if ( substr( $Frm->uhdr( "ORAC_DETECTOR_MODE" ), 0, 2 ) ne "ND" &&
+         $usevar ) {
+       
+# Determine whether or not there is a bias frame to subtract.
+       $bias = eval { $Cal->bias };
+       if ( $@ ) {
+          $sub_bias_frame = 0;
+          orac_warn "There is no bias frame available.  Data variance " . 
+                    "will be wrong.\n";
+       } else {
+          $sub_bias_frame = 1;
+       }
+    }
+
+# Subtract bias.
+# ==============
+
+# Specify parameters depending on how the bias is going to be subtracted.
+    if ( $sub_bias_frame ) {
+       $param = "in=$in bias=$bias out=$out title=!";
+
+    } else {
+       $param = "in=$in out=$out title=! usecon=true zero=0";
+    }
 
 # Debias the frame using a 0 bias contribution.  There is no bad-pixel
 # masking.  Do not create a variance array.
-    $Mon{"ccdpack_red"}->obeyw("debias","$param1 $param2 reset accept");
+    $Mon{"ccdpack_red"}->obeyw( "debias", "$param reset accept" );
 
 # Report the processing.
-    orac_print "$in to $out: Bias removed\n";
+    if ( $sub_bias_frame ) {
+       orac_print "$in to $out: Bias frame $bias subtracted.\n\n";
+    } else {
+       orac_print "$in to $out: Null bias removed.\n\n";
+    }
 
 # Record the new file name in the frame object.
     $Frm->file( $out );                       # obligatory update step
@@ -69,13 +111,16 @@ _REMOVE_BIAS_ -- Subtracts a bias frame.
 
 =head1 DESCRIPTION
 
-This primitive subtracts a zero bias from the current frame.
-For current instruments there is no bias to subtract so it is
-something of a placeholder primitive.  Its main purpose is to
-set up CCDPACK for subsequent processing.  For instance, CCDPACK
-will complain if debiassing is not performed before say
-flat-fielding.  The primitive reports a successful bias
-subtraction and the frames concerned.
+This primitive subtracts a zero bias from the current frame; unless
+the data have variance information and were taken using a non-ND
+mode (i.e. where the bias has not already been subtracted), whereupon
+a bias frame, if available, is subtracted.
+
+For most instruments there is no bias to subtract so it is something
+of a placeholder primitive.  Its main purpose is to set up CCDPACK for
+subsequent processing.  For instance, CCDPACK will complain if
+debiassing is not performed before say flat-fielding.  The primitive
+reports a successful bias subtraction and the frames concerned.
 
 =head1 NOTES
 
