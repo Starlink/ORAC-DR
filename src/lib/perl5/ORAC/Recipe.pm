@@ -604,26 +604,14 @@ sub read_recipe {
   # print Dumper(\@path),"\n";
 
   # Now search the directory structure for NAME
-  my $path = $self->_search_path( \@path, $name);
+  my @found = $self->_search_path( \@path, $name);
 
-  # and open the file
-  my $fh;
-  $fh = new IO::File("< $path") if defined $path;
-
-  if (defined $fh) {
-
-    # Store the contents in the object
-    @{ $self->_recipe } = <$fh>;
-
-    # Reset the have_parsed flag
-    $self->have_parsed(0);
-
-  } else {
+  unless (@found) {
     my $str = join("\n", @path);
     throw ORAC::Error::FatalError( "Could not find and/or open recipe $name in any of:\n$str\n", ORAC__FATAL);
   }
 
-  # print Dumper( $self->_recipe );
+  $self->_recipe( $self->_concat_all_relevant_files( @found ) );
 
   return ORAC__OK;
 }
@@ -1077,7 +1065,29 @@ sub _read_primitive {
   # Now search the directory structure for primitive name
   my @found = $self->_search_path( \@path, $name);
 
-  # We now have an array of all possible primitives that match
+  unless (@found) {
+    my $str = join("\n", @path);
+    throw ORAC::Error::FatalError( "Could not find primitive named $name in any of:\n\n$str\n", ORAC__FATAL);
+  }
+
+  return $self->_concat_all_relevant_files( @found );
+}
+
+=item B<_concat_all_relevant_files>
+
+Given a set of files (with full path), return the
+contents of the file or files that are relevant. Ambiguities are
+resolved by adding conditional statements to the returned code.
+
+  $array_ref = $recipe->_concat_all_relevant_files( @files );
+
+=cut
+
+sub _concat_all_relevant_files {
+  my $self = shift;
+  my @found = @_;
+
+  # We now have an array of all possible primitives/recipes that match
   # this name. If we only have one match we can read it without
   # further ado or confusion. If we don't have any we can raise an exception
 
@@ -1089,9 +1099,9 @@ sub _read_primitive {
       $contents = $self->_slurp_file($found[0]);
 
     } else {
-      # If we have primitives in multiple places we have to decide
-      # whether we want them. We only want one primitive from each
-      # type of observation mode. If there is a primitive that is
+      # If we have primitives/recipes in multiple places we have to decide
+      # whether we want them. We only want one primitive/recipe from each
+      # type of observation mode. If there is a primitive/recipe that is
       # entirely instrument related (no observing mode) we need to
       # select that one and only that one regardless of its position.
 
@@ -1144,30 +1154,23 @@ sub _read_primitive {
 	  # If statement
 	  # This is really going to confuse the line counting
 	  push(@$contents, 
-	       'croak("There were ambiguities in primitive selection and ORAC_OBSERVATION_MODE header was not set") unless defined $Frm->uhdr("ORAC_OBSERVATION_MODE");',
+	       'croak("There were ambiguities in file selection and ORAC_OBSERVATION_MODE header was not set") unless defined $Frm->uhdr("ORAC_OBSERVATION_MODE");',
 	       "if (defined \$Frm->uhdr(\"ORAC_OBSERVATION_MODE\") && \$Frm->uhdr(\"ORAC_OBSERVATION_MODE\") eq \"$mode\") {\n");
 	  push(@$contents, "#line 0 $best{$mode}\n");
-	  # The primitive
+	  # The primitive/recipe
 	  push(@$contents, @{ $self->_slurp_file($best{$mode}) });
 	  # Closing
 	  push(@$contents, "}\n");
 
 	}
 
-
       }
 
     }
 
-
-  } else {
-    # If we can't find any we raise an exception
-    my $str = join("\n", @path);
-    throw ORAC::Error::FatalError( "Could not find primitive named $name in any of:\n\n$str\n", ORAC__FATAL);
   }
 
   return $contents;
-
 }
 
 =item B<_search_path>
