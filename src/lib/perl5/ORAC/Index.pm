@@ -6,8 +6,7 @@ ORAC::Index - perl routines for manipulating ORAC index files
 
 =head1 SYNOPSIS
 
-use ORAC::Index;
-
+ use ORAC::Index;
 
 =head1 DESCRIPTION
 
@@ -30,19 +29,26 @@ use ORAC::Print;
 
 use POSIX qw/tmpnam/;  # For unique keys
 
-$VERSION = '0.11';
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+
+
 
 =head1 PUBLIC METHODS
 
 The following methods are available in this class.
 
+=head2 Constructor
+
 =over 4
 
-=item new
+=item B<new>
 
-Create a new instance of an ORAC::Index object.
+Create a new instance of an B<ORAC::Index> object.
 
-$Index = new ORAC::Index;
+  $Index = new ORAC::Index;
+  $Index = new ORAC::Index($rulesfile, $indexfile);
+
+Any arguments are passed to the configure() method.
 
 =cut
 
@@ -51,14 +57,14 @@ sub new {
   
   my $proto = shift;
   my $class = ref($proto) || $proto;
-  
-  my $index = {};			# Anon hash reference
-  $index->{IndexRules} = {};		# ditto
-  $index->{IndexEntries} = {};		# ditto
-  
-  $index->{IndexFile} = undef;
-  $index->{IndexFileHandle} = undef;
-  $index->{IndexRulesFile} = undef;
+
+  my $index = {
+	       IndexEntries => {},
+	       IndexFile => undef,
+	       IndexFileHandle => undef,
+	       IndexRules => {},
+	       IndexRulesFile => undef,
+	      };
   
   bless($index, $class);
   
@@ -69,11 +75,34 @@ sub new {
   
 };
 
-=item indexfile
+=back
+
+=head2 Accessor Methods
+
+=over 4
+
+=item B<configure>
+
+Takes an index file and a rules file and sets up the index object
+
+  $Index->configure($indexfile, $rulesfile);
+
+=cut
+
+sub configure {
+  my $self = shift;
+  my ($file,$rules) = @_;
+  $self->indexfile($file);
+  $self->indexrulesfile($rules);
+};
+
+
+=item B<indexfile>
 
 Return (or set) the filename of the index file
 
-$file = $Index->indexfile;
+  $file = $Index->indexfile;
+  $Index->indexfile($file);
 
 =cut
 
@@ -88,7 +117,7 @@ sub indexfile {
 };
 
 
-=item indexrulesfile
+=item B<indexrulesfile>
 
 Return (or set) the filename of the rules file
 
@@ -103,20 +132,8 @@ sub indexrulesfile {
   return $self->{IndexRulesFile};
 };
 
-=item configure
 
-Takes an index file and an rules file and sets up the index object
-
-=cut
-
-sub configure {
-  my $self = shift;
-  my ($file,$rules) = @_;
-  $self->indexfile($file);
-  $self->indexrulesfile($rules);
-};
-
-=item rulesref
+=item B<rulesref>
 
 Returns or sets the reference to the hash containing the rules
 
@@ -134,7 +151,7 @@ sub rulesref {
   return $self->{IndexRules};
 }
 
-=item indexref
+=item B<indexref>
 
 Returns or sets the reference to the hash containing the index
 
@@ -152,10 +169,17 @@ sub indexref {
   return $self->{IndexEntries};
 }
 
+=back
+
+=head2 General Methods
+
+=over 4
 
 =item slurprules
 
 Sets up the index rules in the object. Croaks if it fails.
+This converts the index rules file into an internal hash
+that can be retrieved with the rulesref() method.
 
 =cut
 
@@ -194,12 +218,14 @@ sub slurprules {
 };
 
 
-=item slurpindex(usekey)
+=item B<slurpindex>
 
-Sets up the index data in the object. Croaks if it fails.
-The supplied argument is used to control the behaviour of the
-read. If the 'usekey' flag is true the first string in each
-row (space separated) is used as a key for the index hash.
+Sets up the index data in the object. Croaks if it fails.  This
+converts the index file name into an internal hash that can be
+retrieved using the indexref() method.  There is one optional
+argument.  The supplied argument is used to control the behaviour of
+the read. If the 'usekey' flag is true the first string in each row
+(space separated) is used as a key for the index hash.
 
 If 'usekey' is false the key for each row is created 
 automatically. This is useful for indexes where the contents 
@@ -268,7 +294,7 @@ sub slurpindex {
 
 
 
-=item writeindex
+=item B<writeindex>
 
 writes out the current state of the index object into the index file
 
@@ -297,7 +323,7 @@ sub writeindex {
   
 };
 
-=item add 
+=item B<add>
 
 adds an entry to an index
 
@@ -342,7 +368,7 @@ sub add {
 }
 
 
-=item append_to_index
+=item B<append_to_index>
 
 Method to force an append of the specified index entry to the
 the index file on disk.
@@ -399,7 +425,7 @@ sub append_to_index {
 }
 
 
-=item index_to_text
+=item B<index_to_text>
 
 Convert an index entry (in the index hash) to text suitable for
 writing to an index file. Called by writeindex() and append_to_index()
@@ -418,7 +444,7 @@ sub index_to_text {
 }
 
 
-=item indexentry
+=item B<indexentry>
 
 Returns a hash containing the key value pairs of the
 selected index entry.
@@ -474,7 +500,7 @@ sub indexentry {
 
 
 
-=item verify
+=item B<verify>
 
 verifies a frame (in the form of a hash reference) against a 
 (calibration) index entry (ie by supplying the hash key to the index
@@ -563,7 +589,7 @@ sub verify {
   
 };
 
-=item choosebydt
+=item B<choosebydt>
 
 Chooses the optimal (nearest in time to an observation) calibration
 frame from the index hash
@@ -595,7 +621,7 @@ sub choosebydt {
   return $calibration;
 }
 
-=item chooseby_positivedt
+=item B<chooseby_positivedt>
 
 Chooses the calibration frame closest in time from above by looking 
 in the index file (ie difference between the index file entry and
@@ -627,7 +653,7 @@ sub chooseby_positivedt {
   return $self->choosebydt_generic('POSITIVE', @_);  
 }
 
-=item chooseby_negativedt
+=item B<chooseby_negativedt>
 
 Chooses the calibration frame closest in time from below by looking 
 in the index file (ie delta time between the index entry and the 
@@ -663,7 +689,7 @@ sub chooseby_negativedt {
 }
 
 
-=item choosebydt_generic 
+=item B<choosebydt_generic>
 
 Internal routine for handling calibraion matches using a 
 time difference.
@@ -744,7 +770,7 @@ sub choosebydt_generic {
 
 
 
-=item cmp_with_hash
+=item B<cmp_with_hash>
 
 Compares each index entry with the values in the supplied hash
 (supplied as a hash reference). The key to the first matching 
@@ -796,6 +822,14 @@ sub cmp_with_hash {
 
 
 =back
+
+=head1 SEE ALSO
+
+L<ORAC::Index::Extern>
+
+=head1 REVISION
+
+$Id$
 
 =head1 AUTHORS
 
