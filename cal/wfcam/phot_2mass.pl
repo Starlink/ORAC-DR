@@ -21,8 +21,8 @@
  
     %catalogues = (
                    '2mass' => {
-                       'location' => "",
-                       'accessmethod' => "searchinternet",
+                       'location' => "/scratch/jim/2mass",
+                       'accessmethod' => "searchlocal",
                        'columns' => ['Jmag','Hmag','Kmag'],
                        'vars' => ['Jmag','Hmag','Kmag'],
                        'vizcat' => '2mass'
