@@ -132,7 +132,7 @@ sub orac_exit_normally {
 
   # Ring a bell when exiting if required
   if ($Beep) {
-    for (1..5) {print STDOUT chr(7); select undef,undef,undef,0.2}
+    for (1..5) {print STDOUT "\a"; select undef,undef,undef,0.2}
   }
 
   # Cleanup Tk window(s) if they are still hanging around
@@ -169,7 +169,7 @@ sub orac_exit_abnormally {
 
   # ring my bell, baby
   if ($Beep) {
-    for (1..10) {print STDOUT chr(7); select undef,undef,undef,0.2}
+    for (1..10) {print STDOUT "\a"; select undef,undef,undef,0.2}
   }
 
   die "\n\nAborting from ORACDR - $signal recieved";
