@@ -295,22 +295,33 @@ sub calc_orac_headers {
   # headers
   my %new = $self->SUPER::calc_orac_headers;
 
-  # ORACTIME
-  # For UFTI the keyword is simply UTSTART
-  # Just return it (zero if not available)
-  my $time = $self->hdr('UTSTART');
-  $time = 0 unless (defined $time);
-  $self->hdr('ORACTIME', $time);
+  # Grab the UT datetime from the DATE-OBS header.
+  my $dateobs = defined( $self->hdr->{1}->{'DATE-OBS'}) ? $self->hdr->{1}->{'DATE-OBS'} : ( defined($self->hdr->{'DATE-OBS'}) ? $self->hdr->{'DATE-OBS'} : 0 );
 
-  $new{'ORACTIME'} = $time;
+  # Split it into its constituent components.
+  $dateobs =~ /^(\d\d\d\d)-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)Z$/;
+  my $year = $1;
+  my $month = $2;
+  my $day = $3;
+  my $hour = $4;
+  my $minute = $5;
+  my $second = $6;
 
-  # Calc ORACUT:
-  my $ut = $self->hdr('DATE');
-  $ut = 0 unless defined $ut;
-  $ut =~ s/-//g;  #  Remove the intervening minus sign
+  # Now set ORACTIME to be decimal UT date.
+  my $date = $year . $month . $day;
+  my $time = $hour / 24 + ( $minute / ( 24 * 60 ) ) + ( $second / ( 24 * 60 * 60 ) );
 
-  $self->hdr('ORACUT', $ut);
-  $new{ORACUT} = $ut;
+  $self->hdr('ORACTIME', $date + $time);
+
+  $new{'ORACTIME'} = $date + $time;
+
+  # ORACUT is just $date.
+  $self->hdr('ORACUT', $date );
+  $new{'ORACUT'} = $date;
+
+  # And set up the ORACUTDATE header too.
+  $self->hdr('ORACDATETIME', $dateobs);
+  $new{'ORACDATETIME'} = $dateobs;
 
   return %new;
 }
