@@ -21,7 +21,10 @@
 #    The resultant offsets are written to the corresponding
 #    CCDPACK/FINDOFF ".off" offset file for each frame.  Each
 #    offset file is recorded in its corresponding frame as if the
-#    registration were found automatically.
+#    registration were found automatically. 
+#
+#    Should the group be registered using more than one method, the
+#    co-ordinates are tied to the first frame's telescope offsets.
 #
 #    The offsets and the registration method are reported.
 #
@@ -40,6 +43,12 @@
 #       messages.  The offsets themselves for polarimetry or any type of
 #       offset should already be stored in the telescope offsets.
 #       ["telescope"]
+#    POLARIMETRY = LOGICAL (Given)
+#       This is set true (1) for polarimetry data, both extracted
+#       regions and mosaics.  It's purpose is to make the central-source
+#       detection ignore the telescope offsets because the extracted
+#       polarimetry regions already allow for the offsets.  It is
+#       ignored if SEARCH_BOX is 0.  [0]
 #    REFINDEX = INTEGER (Given)
 #       The index number to write into each offset file for the pair of
 #       approximate offsets.  This is needed to combine partial
@@ -60,8 +69,7 @@
 #       resulting from a partial solution. [0.0]
 #
 # Notes:
-#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
-#    in imaging mode.
+#    -  This primitive is suitable for infrared imagers.
 #    -  Processing only occurs for object frames.
 #    -  User header ORAC_ROTATION---the angle of the chip's y axis with
 #    respect to North (positive is anti-clockwise)---is used to convert
@@ -75,10 +83,10 @@
 #    CCDPACK: CCDEDIT; KAPPA: NDFTRACE.
 #
 # Authors:
-#    MJC: Malcolm J. Currie (JAC)
+#    MJC: Malcolm J. Currie (JAC, Starlink)
 #
 # Copyright:
-#    Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 #
 #-
@@ -116,8 +124,12 @@
                           $_FIND_APPROX_OFFSETS_{YSHIFT} : 0;
 
 # Obtain the offset type, using "telescope" as the default string.
-       my $offset_type = $_GENERATE_OFFSETS_{OFFSET_TYPE};
+       my $offset_type = $_FIND_APPROX_OFFSETS_{OFFSET_TYPE};
        $offset_type = defined( $offset_type ) ? $offset_type : "telescope";
+
+# Are these polarimetry data to register?
+       my $pol = $_GENERATE_OFFSETS_{POLARIMETRY};
+       $pol = defined( $pol ) ? $pol : 0;
 
 # Create text files
 # =================
@@ -159,16 +171,13 @@
           my $xoff = $_GET_CARTESIAN_TELESCOPE_OFFSETS_{XOFF};
           my $yoff = $_GET_CARTESIAN_TELESCOPE_OFFSETS_{YOFF};
 
-# Set the offset type string for reporting the status.
-          my $offtype = $offset_type;
-
 # The telescope offsets are either the values just found, or for
 # polarisation data they are identical.  Since it is relative positions
 # which matter, set the telescope offsets for polarisation images to a
 # constant.  In practice the original values will normally be zero
 # anyway.
           my ( $xteloff, $yteloff );
-          if ( $offtype =~ /^beam/ ) {
+          if ( $pol ) {
              $xteloff = 0.0;
              $yteloff = 0.0;
           } else {
@@ -280,6 +289,17 @@
                    $xfiducial = $xnear - $xorigin;
                    $yfiducial = $ynear - $yorigin;
 
+# Correct if this is polarimetry, because there's an implied shift of
+# origin too for the extracted regions (concealed in the $xteloff,
+# $yteloff definitions), which is now needed.  If the first frame uses
+# central-source offsets, then this step is not required.  However, if
+# the first frame uses telescope offsets, the first central-source
+# registered frame must # be tied to the first frame, not to itself.
+                   if ( $pol ) {
+                      $xfiducial -= $xoff;
+                      $yfiducial -= $yoff;
+                   }
+
 # Subsequent central-source frames are not the first.
                    $firstcentral = 0;
                 }
@@ -289,10 +309,8 @@
 
 # Format the offsets removing leading spaces, using a reasonable number of
 # decimal places.
-                $fs_xoff = sprintf( "%12.3f", $xoffset );
-                $fs_xoff =~ s/ //g;
-                $fs_yoff = sprintf( "%12.3f", $yoffset );
-                $fs_yoff =~ s/ //g;
+                $fs_xoff = sprintf( "%.3f", $xoffset );
+                $fs_yoff = sprintf( "%.3f", $yoffset );
                 orac_print "Using central-source offsets ($fs_xoff,$fs_yoff) for frame $ndf\n";
 
              } else {
@@ -305,11 +323,9 @@
 # Format the offsets removing leading spaces, using a reasonable number of
 # decimal places.  This also avoids the E-large numbers which should be
 # zero from appearing.
-                $fs_xoff = sprintf( "%12.3f", $xoffset );
-                $fs_xoff =~ s/ //g;
-                $fs_yoff = sprintf( "%12.3f", $yoffset );
-                $fs_yoff =~ s/ //g;
-                orac_print "Using $offtype offsets ($fs_xoff,$fs_yoff) for frame $ndf\n";
+                $fs_xoff = sprintf( "%.3f", $xoffset );
+                $fs_yoff = sprintf( "%.3f", $yoffset );
+                orac_print "Using $offset_type offsets ($fs_xoff,$fs_yoff) for frame $ndf\n";
              }
 
 # Convert to the required co-ordinate frame.
@@ -364,6 +380,9 @@ CCDPACK/FINDOFF ".off" offset file for each frame.  Each
 offset file is recorded in its corresponding frame as if the
 registration were found automatically.
 
+Should the group be registered using more than one method, the
+co-ordinates are tied to the first frame's telescope offsets.
+
 The offsets and the registration method are reported.
 
 =head1 ARGUMENTS
@@ -390,6 +409,14 @@ messages.  The offsets themselves for polarimetry or any type of
 offset should already be stored in the telescope offsets.
 ["telescope"]
 
+=item POLARIMETRY = LOGICAL (Given)
+
+This is set true (1) for polarimetry data, both extracted
+regions and mosaics.  It's purpose is to make the central-source
+detection ignore the telescope offsets because the extracted
+polarimetry regions already allow for the offsets.  It is
+ignored if SEARCH_BOX is 0.  [0]
+
 =item REFINDEX = INTEGER (Given)
 
 The index number to write into each offset file for the pair of
@@ -397,7 +424,7 @@ approximate offsets.  This is needed to combine partial
 automatic registration with an index within the reference
 (0,0)-offset frame.  For pure approximate offsets, such as all
 telescope offsets, 1 should be used.  Non-positive values are
-set to 1. [1] 
+set to 1.  [1] 
 
 =item SEARCH_BOX = LOGICAL (Given)
 
@@ -408,13 +435,13 @@ source, otherwise use the telescope offsets.
 
 A shift of x co-ordinate to be added to the stored x offsets.
 This is needed if there is a change of co-ordinate frame
-resulting from a partial solution. [0.0]
+resulting from a partial solution.  [0.0]
 
 =item YSHIFT = REAL (Given)
 
 A shift of y co-ordinate to be added to the stored y offsets.
 This is needed if there is a change of co-ordinate frame
-resulting from a partial solution. [0.0]
+resulting from a partial solution.  [0.0]
 
 =back
 
@@ -424,7 +451,7 @@ resulting from a partial solution. [0.0]
 
 =item *
 
-This primitive is suitable for UFTI, IRCAM, and Michelle in imaging mode.
+This primitive is suitable for infrared imagers.
 
 =item *
 
@@ -448,11 +475,11 @@ CCDPACK: CCDEDIT; KAPPA: NDFTRACE.
 
 =head1 AUTHORS
 
-MJC: Malcolm J. Currie (JAC)
+Malcolm J. Currie (JAC,Starlink) <mjc@star.rl.ac.uk>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
