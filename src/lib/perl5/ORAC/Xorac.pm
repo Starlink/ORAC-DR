@@ -66,7 +66,7 @@ $Id$
 =head1 AUTHORS
 
 Alasdair Allan (aa@astro.ex.ac.uk),
-Tim Jennes (t.jenness@jach.hawaii.edu)
+Tim Jenness (t.jenness@jach.hawaii.edu)
 
 =head1 COPYRIGHT
 
