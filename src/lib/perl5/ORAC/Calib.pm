@@ -80,8 +80,14 @@ sub new {
   $obj->{Sky} = undef;
 
   $obj->{DarkIndex} = undef;
+  $obj->{FlatIndex} = undef;
+  $obj->{BiasIndex} = undef;
+  $obj->{SkyIndex} = undef;
 
   $obj->{DarkNoUpdate} = 0;
+  $obj->{FlatNoUpdate} = 0;
+  $obj->{BiasNoUpdate} = 0;
+  $obj->{SkyNoUpdate} = 0;
 
 
 
@@ -182,6 +188,20 @@ sub biasnoupdate {
   return $self->{BiasNoUpdate};
 }
 
+
+=item skynoupdate
+
+Stops sky object from updating itself with more recent data
+
+Used when using a command-line override to the pipeline
+
+=cut
+
+sub skynoupdate {
+  my $self = shift;
+  if (@_) { $self->{SkyNoUpdate} = shift; }
+  return $self->{SkyNoUpdate};
+}
 
 =item bias
 
@@ -351,6 +371,29 @@ sub biasindex {
 
 
   return $self->{BiasIndex}; 
+
+
+};
+
+=item skyindex 
+
+Return (or set) the index object associated with the sky index file
+
+=cut
+
+sub skyindex {
+
+  my $self = shift;
+  if (@_) { $self->{SkyIndex} = shift; }
+
+  unless (defined $self->{SkyIndex}) {
+    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.sky";
+    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.sky";
+    $self->{SkyIndex} = new ORAC::Index($indexfile,$rulesfile);
+  };
+
+
+  return $self->{SkyIndex}; 
 
 
 };
