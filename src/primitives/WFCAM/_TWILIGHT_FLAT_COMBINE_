@@ -1,97 +1,111 @@
-    # Are we allowed to continue and make the flat now?
+    # Do background stats on the images and scale find the relevant scale
+    # factors for the imcombine
 
-    if ($Frm->uhdr("JITTER_COMPLETE")) {
+    _ICSCALE_
 
-        # Do background stats on the images and scale find the relevant scale
-        # factors for the imcombine
+    # How many are there in the group
 
-        foreach my $frm ($Grp->members) {
-            my $Frm = $frm;
-            _IMSTAT_ HDRUP=1
-        }
-        _ICSCALE_
+    my @members = $Grp->members;
+    my $nf = @members;
 
-	# Get some header keywords...
+    # Output file name
+ 
+    my $outfile = "twiflat_" . $Grp->name . $Frm->fitssuffix;
+    my $addit = 1;
+    if (-f $outfile) {
+	unlink $outfile;
+	$addit = 0;
+    } 
 
-	my $readkey = $Frm->hdrkeys("READNOISE");
-	my $gainkey = $Frm->hdrkeys("GAIN");
-	my $expkey = $Frm->hdrkeys("EXPOSURE_TIME");
+    # If there is only file in the group, then just copy it over
 
-        # Output file name
+    my $nextn = $Frm->findnsubs;
+    my $i;
+    if ($nf < 2) {
 
-        my $outfile = "FLAT_" . $Grp->name . $Frm->fitssuffix;
+        copy($members[0]->file,$outfile);
+
+    } else {
 
         # Now loop for each image extension
 
-        my $nextn = $Frm->findnsubs;
-        my $i;
         for ($i = 1; $i <= $nextn; $i++) {
+	
+            # Make a list of the files for this extension
 
-            # Get a temporary file
-
-            my $tmpfil = new ORAC::TempFile;
-            my $fh = $tmpfil->handle;
-
-            # Write the names of the input files to the temporary file
-
+            my @allf = ();
             foreach my $frm ($Grp->members) {
-                print $fh $frm->getasubframe($i)->file . "\n";
+	        push @allf,$frm->getasubframe($i)->file;
             }
-            $fh->close;
+            my $nf = @allf;
 
             # Output file name specification
 
-            my $outf = sprintf("%s[%d]",$outfile,$Frm->getasubframe($i)->subfrmnumber);
+            my $outf = sprintf("%s[%d]",$outfile,
+                $Frm->getasubframe($i)->subfrmnumber);
 
             # Do the combination now...
 
             my ($retval,$errmsg);
-            $retval = cir_imcombine($tmpfil->file,$outf,"","",MEDIANCALC,0,0,
-                1,NOBPM,REJPOISSON,1,1,1,3.0,3.0,$readkey,$gainkey,$expkey,
-                $errmsg);
+            $retval = cir_imcombine_lite(\@allf,$nf,MEDIANCALC,2,0,3.0,$outf,
+	        $errmsg);
             if ($retval != CIR_OK) {
-                orac_throw "CIR_IMCOMBINE: failed in _TWILIGHT_FLAT_COMBINE_\n$errmsg\n";
-            }
-
-            $tmpfil->DESTROY;
-        }
-
-        # Now normalise the flats to the common mean...
-
-        my $flatfrm = $Frm->new($outfile);
-        {
-            my $Frm = $flatfrm;
-            _IMSTAT_ HDRUP=1
-        }
-        my $sum = 0.0;
-        foreach $i (1 .. $nextn) {
-            $sum += $flatfrm->getasubframe($i)->uhdr("CIRMED");
-        }
-        $sum /= $nextn;
-        foreach $i (1 .. $nextn) {
-            my $errmsg;
-            my $retval = cir_imdivk($flatfrm->getasubframe($i)->file,
-                $sum,$errmsg);
-            if ($retval != CIR_OK) {
-                orac_throw "CIR_IMDIVK: failed in _TWILIGHT_FLAT_COMBINE_\n$errmsg\n";
+               orac_throw "CIR_IMCOMBINE_LITE: failed in _TWILIGHT_FLAT_COMBINE_\n$errmsg\n";
             }
         }
-
-        # Write some stuff to the PHU
-
-        $flatfrm->update_header("CCDMEAN",TFLOAT,$sum,"Ensemble mean background");
-        $flatfrm->update_header("WFRTYPE",TSTRING,CALFLAT,"Calibration frame type");
-        _FILE_FLAT_ NAME=$outfile
-
-        # Make the CPM
-
-        {
-            my $Frm = $flatfrm;
-            my $cpmfile = sprintf("CPM_%d%s",$Grp->name,$Frm->fitssuffix);
-            _MAKE_CONFIDENCE_MAP_ OUT=$cpmfile THRESH=5.0 NITER=2 WINDOW=1
-        }
-
     }
+
+    # Now normalise the flats to the common mean...
+
+    my $flatfrm = $Frm->new($outfile);
+    {
+        my $Frm = $flatfrm;
+        _IMSTAT_ HDRUP=1
+    }
+    my $sum = 0.0;
+    foreach $i (1 .. $nextn) {
+        $sum += $flatfrm->getasubframe($i)->uhdr("CIRMED");
+    }
+    $sum /= $nextn;
+    foreach $i (1 .. $nextn) {
+        my $errmsg;
+        my $retval = cir_imdivk($flatfrm->getasubframe($i)->file,$sum,$errmsg);
+        if ($retval != CIR_OK) {
+            orac_throw "CIR_IMDIVK: failed in _TWILIGHT_FLAT_COMBINE_\n$errmsg\n";
+        }
+    }
+
+    # Write some stuff to the PHU
+
+    $flatfrm->update_header("CCDMEAN",TFLOAT,$sum,"Ensemble mean background");
+    $flatfrm->update_header("WFRTYPE",TSTRING,CALFLAT,"Calibration frame type");
+    if ($addit) {
+        _FILE_FLAT_ NAME=$outfile
+    }
+
+    # See if you have a bad pixel mask at your disposal. If you don't try and
+    # make one from the flats you have here.
+
+    my $ok = $Cal->BPMindex->verify($Cal->BPMname,$Cal->thing,0);
+    my $bpm;
+    if ($ok) {
+        $bpm = $Cal->BPMname;
+    } elsif (defined $ok) {
+        $bpm = $Cal->BPMindex->choosebydt('ORACTIME',$Cal->thing,0);
+    }
+    if (! $bpm) {
+        _MAKE_A_BPM_
+        $bpm = $_MAKE_A_BPM_{NAME};
+    }
+	
+    # Make the CPM
+
+    {
+        my $Frm = $flatfrm;
+        my $cpmfile = sprintf("cpm_%d%s",$Grp->name,$Frm->fitssuffix);
+        _MAKE_CONFIDENCE_MAP_ BPM=$bpm OUT=$cpmfile 
+    }
+
 
 =head1 NAME
 
