@@ -622,6 +622,28 @@ sub mergehdr {
 
 }
 
+=item B<template>
+
+Create new file name from template. zero-pads.
+
+=cut
+
+sub template {
+  my $self = shift;
+  my $template = shift;
+
+  my $num = $self->number;
+  # pad with leading zeroes - 5(!) digit obsnum
+  $num = '0'x(5-length($num)) . $num;
+
+  # Change the first number
+  $template =~ s/_\d+_/_${num}_/;
+
+  # Update the filename
+  $self->file($template);
+
+}
+
 
 =back
 
