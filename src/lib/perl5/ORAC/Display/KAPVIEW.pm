@@ -27,9 +27,10 @@ Available options are:
 
 =cut
 
-use 5.004;
+use 5.006;
 use Carp;
 use strict;
+use warnings;
 
 use File::Copy;
 use Cwd;
@@ -696,7 +697,7 @@ array and removed by the destructor.
 Note that this routine does not remove the temporary filename.
 This is probably a bug. Should probably create some kind of
 object that will have a destructor that removes the file rather
-than using a simple file name. (an ORAC::Frame::TmpFile)?
+than using a simple file name. (an ORAC::TempFile)?
 
 =cut
 
@@ -724,6 +725,9 @@ sub select_section {
   my $auto_all = 1; # Flag to keep track of global autoscale
 
   # Read the autoscale flags from the hash
+  # Assumes autoscale unless told otherwise
+  # Must be explicitly set and does not assume that the presnce
+  # of ?MAX and ?MIN will imply ?AUTOSCALE=0
   for my $dim (@lookup) {
     my $autosc = 1;
     my $key = $dim . "AUTOSCALE";
@@ -731,7 +735,7 @@ sub select_section {
     push (@autosc, $autosc);
 
     # Set flag to 0 if any of the autoscale flags are false
-    $auto_all = 0 unless $autosc; 
+    $auto_all = 0 unless $autosc;
   }
 
   # Now query the file for its bounds to make sure that the pixel
@@ -780,11 +784,18 @@ sub select_section {
 
   if ($ndim > $max_requested) {
 
-    # First create a cut array by splitting on comma
-    my @initial_cuts = split(",",$options{CUT});
-
     # initialise @cuts to an array of 0
     @cuts = map { 0 } @lookup[0..$ndim-1];
+
+    my @initial_cuts;
+    if (exists $options{CUT} && defined $options{CUT}) {
+      # First create a cut array by splitting on comma
+      @initial_cuts = split(",",$options{CUT});
+    } else {
+      # If no CUT has been specified we assume that a simple
+      # that a CUT of N-1 dimensions starting at X
+      @initial_cuts = map { $lookup[$_] } 0..$ndim-2;
+    }
 
     # Strip out dimensions that are not in @lookup[0..$ndim-1]
     # If @cuts contains only 0 then we are not doing a cut
@@ -862,8 +873,8 @@ sub select_section {
 
   }
 
-  # Construct the section
-  my $section = '('. join(",", @sects) . ')';
+  # Construct the section [undef are converted to '']
+  my $section = '('. join(",", map { defined $_ ? $_ : ''  } @sects) . ')';
 
   # Set the input file name (no section if $auto_all and $cutting
   my $input;
@@ -959,6 +970,7 @@ sub select_section {
 
       my $out = "secave$$"; 
       my $compargs = "WLIM=0.1 in=$input out=$out compress=$compress";
+      orac_print "COMPAVE $compargs\n","cyan" if $DEBUG;
 
       # Run compave
       my $status = $self->kappa->obeyw("compave","$compargs");
@@ -1216,9 +1228,9 @@ sub graph {
        $errbar = "errbar=true shape=bars freq=1 style='Colour(ErrBars)=red'";
     }
   } else {
-    orac_warn "ERRBAR option not recognised.\n";
+    orac_warn "ERRBAR option not specified. Assuming FALSE.\n";
   }
-       
+
   # Construct string for linplot options
   my $args = "clear mode=line $range $errbar";
 
@@ -1229,6 +1241,7 @@ sub graph {
 
 
   # Run linplot
+  orac_print "LINPLOT ndf=$file device=$device $args reset\n","cyan" if $DEBUG;
   $status = $self->obj->obeyw("linplot","ndf=$file device=$device $args reset");
   if ($status != ORAC__OK) {
     orac_err("Error displaying graph\n");
