@@ -25,14 +25,15 @@ use vars qw($VERSION @ISA @EXPORT $Display $Nbs);
 # This module requires the Starlink::EMS module to translate
 # the facility error status.
 
-use Starlink::NBS;
 require Exporter;
 use File::Path;
-use Term::ANSIColor;
 use File::Copy;
+use ORAC::Print;
 use ORAC::Msg::ADAM::Task;
 use ORAC::Msg::ADAM::Control;
+use ORAC::Display;
 
+use Term::ANSIColor;  # Need this until the primitives can get rid of color
 use ORAC::General; # General subroutines given to the recipes
 use ORAC::Constants qw/:status/;	# 
 
@@ -41,17 +42,21 @@ use Cwd; # Current working directory
 
 @ISA = qw(Exporter);
 
-@EXPORT = qw/orac_launch_display orac_connect_display
-orac_kill_display orac_execute_recipe orac_read_recipe
-orac_parse_recipe orac_exit_normally orac_exit_abnormally
-/;
+@EXPORT = qw/
+  orac_setup_display
+  orac_execute_recipe orac_read_recipe
+  orac_parse_recipe orac_exit_normally orac_exit_abnormally
+  /;
 
 $VERSION = '0.10';
+
+$Display = undef;   # Display object - only configured if we have a display
 
 #------------------------------------------------------------------------
 
 # RECIPES beware!! Don't stomp on these:
 
+# This accesses the global variable for the monoliths
 *Mon = *main::Mon;
 
 
@@ -59,212 +64,33 @@ $VERSION = '0.10';
 
 =cut
 
-# Display specific code
+# Simply create a display object
+sub orac_setup_display {
 
-sub orac_launch_display {
+  # Set this global variable
+  $Display = new ORAC::Display;
 
-  my $dir = $main::orac_dir;
-  my $Out = $main::Out;
-  
-  # Set some P4 environment variables
-  $ENV{P4_ROOT} = $ENV{CGS4DR_ROOT};
-  $ENV{P4_CONFIG} = $ENV{HOME} . "/cgs4dr_configs";
-  $ENV{P4_HOME} = $ENV{P4_ROOT};
-  $ENV{P4_EXE}  = $ENV{P4_ROOT};
-  $ENV{P4_ICL}  = $ENV{P4_ROOT};
-  $ENV{P4_DATA} = $ENV{ORAC_DATA_OUT};
-  $ENV{P4_CT}   = $ENV{P4_ROOT} . "/ndf";
-  $ENV{P4_HC}   = cwd;
-  $ENV{P4_DATE} = $main::ut;
-  $ENV{RGDIR}   = $ENV{P4_DATA};
-  $ENV{RODIR}   = $ENV{P4_DATA};
-  $ENV{RIDIR}   = $ENV{P4_DATA};
-  $ENV{ODIR}   = $ENV{P4_DATA};
-  $ENV{IDIR}   = $ENV{P4_DATA};
+  # Set the location of the display definition file
+  # (we do not currently use NBS for that)
+#  my $dispdef = "/tmp/orac_disp$$";
+  my $dispdef  = $ENV{ORAC_DIR} . "/disp.dat";  # Kludge
+  $Display->filename($dispdef);
+
+  # GUI launching goes here....
+
+  # orac_err('GUI not launched');
+}
 
 
-  # Make the CGS4DR scratch directories
-  unless (-d $ENV{P4_CONFIG}) {
-    unlink $ENV{P4_CONFIG};
-    mkdir($ENV{P4_CONFIG}, 0770);
-  }
-
-  # Do P4 startup - copy in a default file
-  # unless one is there already.
-  unless (-e $ENV{P4_CONFIG} . "/default.p4") {
-    print colored("Creating a default P4 startup file\n",'red');
-    copy ($ENV{P4_ROOT} . "/default.p4", $ENV{P4_CONFIG} . "/default.p4");
-  }
-
-  # Now need to edit the standard.p4 so that it uses
-  # the reverse of the current PID ($$)
-  $ENV{PID} = scalar reverse($$);
-
-  # Copy the default file to a backup
-  copy($ENV{P4_CONFIG} . "/default.p4", $ENV{P4_CONFIG} . "/default.p4_bak");
-
-  # Open the template and change the xwindows identifier
-  my $default = new IO::File("< $ENV{P4_CONFIG}/default.p4_bak")
-    or die "Couldn't open default.p4_bak: $!";
-
-  # Open the output file
-  my $output = new IO::File("> $ENV{P4_CONFIG}/default.p4")
-    or die "Can't open output file default.p4: $!";
-
-  # Loop over each input line, modify and send to ouput
-  foreach my $line (<$default>) {
-    $line =~ s/xwindows(\;\d+xwin)?/xwindows\;$ENV{PID}xwin/i;
-    print $output $line;
-  }
-
-  # Close files
-  $default->close;
-  $output->close;
-
-  # Now launch P4 using ORAC::Msg module
-  $Display = new ORAC::Msg::ADAM::Task("$ENV{PID}_p4", "$ENV{CGS4DR_ROOT}/p4");
-
-  # Open the associated Xwindow (could leave it to P4)
-  # Note that the $gwm object disappears as soon as we leave this
-  # subroutine
-  print colored("Launching GWM display $ENV{PID}xwin...",'blue');
-  my $gwm = new Proc::Simple;
-  $gwm->start("gwm -colours 128 -gwmname $ENV{PID}xwin -name \'ORACDR:P4 ($ENV{PID}xwin)\'");
-
-  # Pause so that GWM window can be contacted immediately
-  sleep 2;
-  print colored("Done\n",'blue');
-
-};
-#------------------------------------------------------------------------
-
-# Talk to P4 and configure 
-
-sub orac_connect_display {
-
-  my $status;
-
-  # Assume that NBS is named after the toolpid
-  my $toolpid = $Display->pid;
-  
-  $toolpid = scalar reverse ($toolpid);
-  my $toolnbname = "p".$toolpid."_plotnb";
-
-  $contact =$Display->contactw;		# ensure contact is made
-  unless ($contact) {
-    print colored("Unable to contact Display before timeout",'red');
-    return;
-  }
-
-
-
-  # Now configure the noticeboard
-  print colored("Configuring P4 NBS ($toolnbname)...",'blue');
-
-  $status = $Display->set(" ","noticeboard","$toolnbname");
-  if ($status != ORAC__OK) {
-    print colored("Error setting noticeboard name\n",'red');
-    return;
-  }
-
-  $status = $Display->obeyw("open_nb");
-  if ($status != ORAC__OK) {
-    print colored ("Error opening noticeboard\n",'red');
-    return;
-  }
-
-  $status = $Display->obeyw("restore","file=$ENV{P4_CONFIG}/default.p4 port=-1");
-  if ($status != ORAC__OK) {
-    print colored("Error configuring noticeboard\n",'red');
-    return;
-  }
-
-  # Print completion message
-  print colored("Done\n",'blue');
-
-  # Open local version of noticeboard
-  $Nbs = new Starlink::NBS ($toolnbname);
-
-  # Check notice board status
-  unless ($Nbs->isokay) {
-    print colored("Error opening noticeboard\n",'red');
-    return;
-  }
-
-  # Set some local values
-
-  $startup = '$ORAC_DIR/images/orac_start';
-  nbspoke(".port_0.display_type", "IMAGE");
-  nbspoke(".port_0.display_data", "$startup"); 
-  nbspoke(".port_1.display_data", '$P4_CT/cgs4');
-  nbspoke(".port_2.display_data", '$P4_CT/cgs4');
-  nbspoke(".port_3.display_data", '$P4_CT/cgs4');
-  nbspoke(".port_4.display_data", '$P4_CT/cgs4');
-  nbspoke(".port_5.display_data", '$P4_CT/cgs4');
-  nbspoke(".port_6.display_data", '$P4_CT/cgs4');
-  nbspoke(".port_7.display_data", '$P4_CT/cgs4');
-  nbspoke(".port_8.display_data", '$P4_CT/cgs4');
-  nbspoke(".port_0.title", "");
-  nbspoke(".port_0.plot_axes","0");
-
-  # Load the colour table and plot the ramp
-  $status = $Display->obeyw("lut","port=0");
-  if ($status != ORAC__OK) {
-    print colored("Error configuring default LUT\n",'red');
-    return;
-  }
-
-
-  my $data = nbspeek(".port_0.display_data");  # We know what this is!
-
-  # Check for possible corruption of noticeboard
-  if ($data =~ /xwin/) {
-    print colored("Error reading startup image from noticeboard\n",'red');
-    print colored("P4 noticeboard could be corrupt. Continuing\n",'red');
-    $data = $startup;
-  }
-
-  # Replace $ with \$ for eval during obeyw()
-  $data =~ s/\$/\\\$/g;  
-
-  # Ask P4 to display
-  $status = $Display->obeyw("display", "data=$data");
-  if ($status != ORAC__OK) {
-    print colored("Error displaying startup image\n",'red');
-    print colored("Trying to execute: display data=$data\n",'red');
-  }
-
-  $status = $Display->obeyw("status");
-  if ($status != ORAC__OK) {
-    print colored("Error determining P4 status\n",'red');
-  }
-
-  nbspoke(".port_0.plot_axes", "1");
-
-};
-
-#------------------------------------------------------------------------
-
-sub orac_kill_display {
-#    kill(9,$toolpid+1);
-#    system("$orac_dir/bin/cgs4dr_nuke");
-};
-#------------------------------------------------------------------------
 
 sub nbspeek {
-    my ($item) = shift(@_);
-    my $what = $Nbs->find($item);
-    my ($ok,$value) = $what->get;
-    return $value;
+  orac_err "NBSPEEK - THIS COMMAND IS NOT SUPPORTED";
 };
 
 #------------------------------------------------------------------------
 
 sub nbspoke {
-    my ($item,$value) = @_;
-    my $what = $Nbs->find($item);
-    my $ok = $what->put($value);
-    return $ok;
+    orac_err "NBSPEEK - THIS COMMAND IS NOT SUPPORTED";
 };
 
 #------------------------------------------------------------------------
@@ -288,7 +114,7 @@ sub orac_execute_recipe {
   # Check for an error
   if ($@) {
 
-    print colored ("Orac says: RECIPE ERROR: $@","blue") if ($@);
+    orac_err ("RECIPE ERROR: $@","blue") if ($@);
 
     # Create an array that matches the line numbers returned by
     # the error message.
@@ -297,12 +123,12 @@ sub orac_execute_recipe {
     my @new = split(/\n/, $block);
 
     # If this was a syntax error print out the recipe
-    if ($@ =~ /syntax error/) {
+    if ($@ =~ /syntax error|object method/) {
       # Extract info from the error message
-      $@ =~ /line (\d+),/ && do {
+      $@ =~ /line (\d+)/ && do {
 	$num = $1;
-	print colored("Error in line $num\n", 'red');
-	print colored("Relevant recipe lines (with numbers):\n\n", 'red');
+	orac_err("Error in line $num\n", 'red');
+	orac_err("Relevant recipe lines (with numbers):\n\n", 'red');
 
 	# Calculate number of lines to print
 	$inc = 10;
@@ -311,16 +137,17 @@ sub orac_execute_recipe {
 
 	# Print out the relevant chunk with line numbers
 	for (my $i=$start; $i < $end; $i++) {
-	  print colored("$i: ", 'blue') . colored("$new[$i]\n", 'red');
+	  orac_print("$i: ", 'blue');
+          orac_print("$new[$i]\n", 'red');
 	}
-	print colored("End recipe dump\n\n",'blue');
+	orac_err("End recipe dump\n\n",'blue');
       };
 
     } elsif ($@ =~ /^Died/) {
       # Else check if the recipe died. Usually a die is caused 
       # by a control C from the user.
 
-      print colored("Recipe died during execution\n",'blue');
+      orac_err("Recipe died during execution\n");
 
     }
 
@@ -402,7 +229,7 @@ sub orac_parse_recipe {
       $line =~ s/^\s+//g;	# zap leading blanks
       ($macro,@rest)=split(/\s+/,$line);
       # read in primitive
-      open(DICTIONARY,${main::dictionary_dir}.$macro) || 
+      open(DICTIONARY,$ {main::dictionary_dir}.$macro) || 
 	croak "No translation for $line\n";    
       @lines = <DICTIONARY>;
       close(DICTIONARY);
@@ -417,16 +244,32 @@ sub orac_parse_recipe {
     #       };
     
       push(@parsed,@lines);
-    
-    
-    } elsif ($line =~ /={0}.+->obeyw/) {
-    
-      # This is an OBEYW status
-      # and assumes that all OBEYW commands are dealt with
-      # by this routine implicitly (ie the RECIPE writer
-      # should never check for status from an OBEYW
-      push (@parsed, '$OBEYW_STATUS = ' .$line);
-      push (@parsed, &orac_check_obey_status($line));
+      
+
+    # Now check for obeyw
+    # Need a clever check since we have to decide whether the 
+    # line already contains an equals or is commented out
+    # - I am not very clever so split it into bits
+    } elsif ($line =~ /->obeyw/) {
+
+      #    } elsif ($line =~ /={0}.+->obeyw/) { # old line
+
+      # Now check to see whether it starts with a comment character
+      # Note that the xemacs syntac recognition does not understand #
+      # in a pattern match
+      # or if somebody has put an equals sign in and is checking it
+      # themselves.
+      if ($line !~ /(\#|=).+?->obeyw/x) {
+
+	# Now add the OBEYW status checking lines
+	# prepending the OBEYW_STATUS line
+	push (@parsed, '$OBEYW_STATUS = ' .$line);
+	push (@parsed, &orac_check_obey_status($line));
+
+      } else {
+	# Just push the line on as is
+	push (@parsed, $line);
+      }
       
       # Now check for a different kind of status
       # If the recipe writer uses $ORAC_STATUS
@@ -467,7 +310,7 @@ Provides the code for automatic status checking of recipes.
 sub orac_check_status {
  
   my @newlines =  (' if ($ORAC_STATUS != ORAC__OK) {' ,
-		   '   print colored ("Error in pipeline\n","red"); ' ,
+		   '   orac_err ("Error in pipeline\n"); ' ,
 		   '   return $ORAC_STATUS; ' ,
 		   ' } ');
 
@@ -509,9 +352,10 @@ sub orac_check_obey_status {
 
   my @statuslines = (
 		     'if ($OBEYW_STATUS != ORAC__OK) {',
-		     "  print colored (\"Error in obeyw to monolith $monolith (task=$task): \$OBEYW_STATUS\\n\",\"red\");" ,
+		     "  orac_err (\"Error in obeyw to monolith $monolith (task=$task): \$OBEYW_STATUS\\n\");" ,
 		     '  $obeyw_args = "'. $args . '";',
-		     '  print colored("Arguments were: ","blue") . colored("$obeyw_args\n\n","red"); ',
+		     '  orac_print("Arguments were: ","blue");',
+                     '  orac_print("$obeyw_args\n\n","red"); ',
 		     '  return $OBEYW_STATUS;',
 		     "}"
 		    );
@@ -540,13 +384,11 @@ Exit handler for oracdr.
 sub orac_exit_normally {
 
   $message = shift(@_);
-  orac_kill_display;
-  print colored ("Orac says: $message - Exiting...\n","red");
+  orac_print ("$message - Exiting...\n","red");
 
   rmtree $ENV{'ADAM_USER'};             # delete process-specific adam dir
-  &orac_kill_display;		# Destroy display
 
-  print colored ("\nOrac says: Goodbye\n","red");
+  orac_print ("\nOrac says: Goodbye\n","red");
   exit;
 };
 
@@ -562,7 +404,6 @@ sub orac_exit_abnormally {
 
   # Dont delete tree since this routine is called from INSIDE recipes
 #  rmtree $ENV{'ADAM_USER'};             # delete process-specific adam dir
-#  &orac_kill_display;		# Destroy display
   die "\nAborting from ORACDR - $signal received";
   # die "\n --Signal $signal received--\n";	
 
@@ -585,6 +426,12 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.22  1998/07/09 03:54:13  timj
+#Add orac_print.
+#Improve obeyw string handling.
+#Remove P4 display commands.
+#Add object initialisation for new display system.
+#
 #Revision 1.21  1998/06/29 05:20:31  timj
 #Cause orac_exit_abnormally to tell us that it is being called.
 #Make sure that noticeboard is reset even if display fails to
