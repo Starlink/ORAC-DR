@@ -12,6 +12,11 @@
 #
 #  History:
 #     $Log$
+#     Revision 1.12  1999/03/01 21:03:48  timj
+#     Add support for modify, delteAll, ClearSelection buttons
+#     Tidy up TYPE usage.
+#     Allow modify to work with highlighting.
+#
 #     Revision 1.11  1999/03/01 01:35:01  timj
 #     Add VECTOR
 #     Start simplifaction of TYPE code
@@ -102,6 +107,7 @@ if ($help) {
   # Version number
   if ($version) {
     print "oracdisp: Version $VERSION\n";
+    print "[Perl version: $]]\n";
     exit;
   }
 
@@ -131,10 +137,15 @@ use subs qw/update_status image_ui graph_ui datamodel_ui sigma_ui
 use vars qw/$MW $BAR $TKSTATUS $TOPLEVEL/;
 
 # Menus
-use vars qw/ %TOOL_TYPES %TOOLS /;
+use vars qw/ %TOOL_TYPES %TOOLS @TYPES/;
 
 # Variables related to global state of sytem
-use vars qw/%STATUS %DEFAULTS @SELECT_LIST @UNDOBUFFER $CURRENT/;
+use vars qw/%STATUS %DEFAULTS @SELECT_LIST @UNDOBUFFER $CURRENT
+  $CURRENT_TAG
+  /;
+
+# Lengths
+use vars qw/ %LENGTH /;
 
 # Widgets
 use vars qw/ $UNDO_but /;
@@ -190,6 +201,28 @@ use IO::File;
 		  }
 	 );
 
+
+# Order of TYPES in notebook
+@TYPES = qw/ IMAGE GRAPH SIGMA DATAMODEL HISTOGRAM VECTOR /;
+
+# Find the length of the longest TYPE so that we can simplify
+# formatting
+
+$LENGTH{TYPE} = 0;
+foreach (@TYPES) {
+  my $len = length($_);
+  $LENGTH{TYPE} = $len if $len > $LENGTH{TYPE};
+}
+
+# Find the length of the longest display TOOL
+
+$LENGTH{TOOL} = 0;
+foreach (keys %{TOOLS}) {
+  my $len = length($_);
+  $LENGTH{TOOL} = $len if $len > $LENGTH{TOOL};
+}
+
+$LENGTH{ID} = 9; # Guess at length of ID
 
 # Allows tools per type
 
@@ -296,6 +329,7 @@ my @DispDefn = ();
 			  XMAX => 100,
 			  YMAX => 100,
 			  ZMAX => 100,
+			  ANGROT => 0,
 			 },
 	     );
 
@@ -313,14 +347,15 @@ require Tk::Menu;
 update_status('Reading DialogBox module..', 25);
 require Tk::DialogBox;
 
-update_status('Reading notebook definitions..', 40);
-require 'image.ui.pl';
-require 'graph.ui.pl';
-require 'datamodel.ui.pl';
-require 'sigma.ui.pl';
-require 'histogram.ui.pl';
-require 'vector.ui.pl';
+update_status('Reading Read-only text widget..',30);
+require Tk::ROText;
 
+update_status('Reading notebook definitions..', 40);
+
+foreach my $page (@TYPES) {
+  my $str = lc($page) . '.ui.pl';
+  do "$str";
+}
 
 # Configure the input and output display definition files
 if (defined $optin) {
@@ -353,13 +388,6 @@ my $State_f; # The listbox containing the current state
 my $CurrDefn; # The listbox widget that contains the current definitions
 my $NB;       # The notebook widget
 my %NB_pages; # The notebook pages
-
-my $NB_image; # The image notebook widget
-my $NB_graph; # The graph notebook widget
-my $NB_datamodel; # The DataModel notebook widget
-my $NB_sigma; # The Sigma notebook widget
-my $NB_histogram; # The histogram notebook widget
-
 
 # Actually create the frame objects
 $MBar_f = $MW->Frame(-relief =>'flat', -borderwidth => 2);
@@ -434,7 +462,7 @@ sub create_notebook {
   # Now declare the entries
   # and set up a raise command
 
-  foreach my $page (keys %TOOL_TYPES) {
+  foreach my $page (@TYPES) {
 
     $NB_pages{$page} = $NB->add(lc($page), -label => ucfirst(lc($page)), -underline => 0,
 				-raisecmd => \&onNBraise);
@@ -462,11 +490,11 @@ sub create_state {
   # Create a text widget for the data with an attached Scroll bar
   # This becomes a Global variable so that
   # we can always access the widget for updating entired
-  $CurrDefn = $frame->Scrolled('Text',
+  $CurrDefn = $frame->Scrolled('ROText',
 			       -scrollbars => 'se',
 			       -wrap => 'none',
 			       -setgrid => 1,
-			       -height=>5,
+			       -height=>8,
 			       -width =>30
 			      )->pack(-side =>'top',-fill => 'both');
   $CurrDefn->bindtags(qw/widget_demo/); # Remove all bindings except dummy
@@ -477,10 +505,17 @@ sub create_state {
 				     -command => \&write_defn
 				    )->pack(-side=>'left');
 
+  # Add a DeleteAll button
+  my $deleteAll_but = $frame->Button(-text => 'Delete All',
+				     -relief => 'raised',
+				     -command => \&delete_all_entries
+				    )->pack(-side => 'left');;
+
+
   # A button to delete highlighted entries
   # Looks in the global variable @SELECT_LIST for a list of indices to
   # remove
-  my $delete_but = $frame->Button(-text => 'Delete',
+  my $delete_but = $frame->Button(-text => 'Delete Selection',
 				  -relief => 'raised',
 				  -command => \&delete_entry_from_defn
 				 )->pack(-side=>'left');
@@ -492,6 +527,14 @@ sub create_state {
 			     -state  => 'disabled',
 			     -command => \&undo_delete
 			    )->pack(-side => 'left');
+
+
+  # Button to clear the current delete selection
+  my $clearSelection = $frame->Button(-text => 'Clear Selection',
+				     -relief => 'raised',
+				     -command => \&clear_delete_selection
+				    )->pack(-side => 'left');;
+
   
   # Now fill the widget with the contents of the default state
   # Read in the default configuration from file
@@ -513,7 +556,16 @@ sub create_state {
 # This may not be good. Will need to discuss
 
 sub onNBraise {
+  # Unset the current selection
   undef $CURRENT;
+
+  # Remove the highlighting associated with the current selection
+  $CurrDefn->tag('configure',$CURRENT_TAG,
+	     -background=>undef) if defined $CURRENT_TAG;
+
+  # Remove the tag associated with current
+  undef $CURRENT_TAG;
+
 }
 
 
@@ -654,13 +706,10 @@ sub update_defn {
   $CurrDefn->delete('1.0', 'end');
 
   # Clear all tags
-#  foreach my $tag ($CurrDefn->tag('names')) {
-#    $CurrDefn->tag('delete', $tag);
-#  }
-    $CurrDefn->tag('delete', $CurrDefn->tag('names'));
+  $CurrDefn->tag('delete', $CurrDefn->tag('names'));
 
   # Now loop through @DispDefn
-  for (my $i =0; $i <= $#DispDefn; $i++) {
+  for my $i (0..$#DispDefn) {
 
     my $defn = $DispDefn[$i];
     
@@ -668,12 +717,22 @@ sub update_defn {
     my $tag = "d$i";
     
     # Convert to a string
-    my $text = Disp_HtoText($defn);
+    my $text = Disp_HtoFormatText($defn);
 
     next unless defined $text;
 
     # And insert this text into the widget and tag it with $i
     &insert_text($CurrDefn, "$text\n", $tag, 'normal', 'selected');
+
+    # If $CURRENT is set we can put that tag back
+    # Note that we have to reset CURRENT_TAG since that
+    # may no longer be correct if we have been deleting entries
+    if (defined $CURRENT) {
+      if ($defn eq $CURRENT) {
+	$CurrDefn->tag('configure', $tag, -background=>'red');
+	$CURRENT_TAG = $tag;
+      }
+    }
 
     # Now configure this tag so that it recongises when 
     # the mouse arrives and leaves
@@ -696,7 +755,19 @@ sub update_defn {
     # the 
     $CurrDefn->tag('bind', $tag, 
 		   '<Double-1>' => sub {&reflect_defn($defn);
+					my $widg = shift;
+					# If CURRENT is already set 
+					# We have to clear the previous tag
+					if (defined $CURRENT) {
+					  $widg->tag('configure',$CURRENT_TAG,
+						    -background=>undef);
+					}
+
+					# Now store the current value
 					$CURRENT = $defn;
+					$CURRENT_TAG = $tag;
+					$widg->tag('configure',$tag,
+						  -background=>'red');
 				      }
 		  );
 
@@ -780,7 +851,9 @@ sub write_defn {
 
 
 # Routine to take an entry in @DispDefn and convert it to a string
-# suitable for display or writing to a file
+# suitable writing to a file. This version should be the same form
+# that reads the definition file in the ORAC::Display system.
+# In fact these should all be in the same class.....
 # Expects a hash reference as input
 
 sub Disp_HtoText {
@@ -808,6 +881,50 @@ sub Disp_HtoText {
   # Return the string
   return $string;
 }
+
+
+# Routine to take an entry in @DispDefn and convert it to a string
+# suitable for display in the GUI (ie the order is fixed and
+# some of the equals signs are dropped - eg for TYPE and TOOL)
+# Expects a hash reference as input
+
+sub Disp_HtoFormatText {
+  # First arg is the hash reference
+  my $href = shift;
+
+  die 'Not a hash reference' unless ref($href) eq 'HASH';
+
+  my %hash = %{$href};
+
+  # Now look for ID TOOL and TYPE since these are special
+  my @prefix;
+  foreach my $tag (qw/ID TYPE TOOL/) {
+    if (exists $hash{$tag}) {
+      push(@prefix, uc($hash{$tag}) . ' 'x ($LENGTH{$tag} - length($hash{$tag})));
+    } else {
+      print "GUI_Error::: $tag key is missing\n";
+      return undef;
+    }
+
+    # Delete the key since we have already 'used' it
+    delete $hash{$tag};
+
+  }
+
+  # Create the first part of the string from the special keywords
+  my $string = join(" ",@prefix);
+  
+  foreach my $key (reverse sort keys %hash) {
+    $string .= " " . $key . "=$hash{$key}";
+  }
+
+  # Return the string
+  return $string;
+}
+
+
+
+
 
 # Routine to convert a text line (as stored on the text widget or
 # in a Definition File and convert it to a hash
@@ -985,10 +1102,28 @@ sub reconfig_menu {
 # Sub to modify the current entry. Usually called by the 'Modify'
 # button present on each notebook page
 
-sub modify_entry {
+sub modify_current {
+
+  # Find the page name
+  my $page = shift;
 
   # The assumption is that we are modifying the $CURRENT definition
   # This is similar to add_entry except that we dont create a new one
+
+  # Check to see if $CURRENT is defined - if it is not
+  # then do nothing [BUTTON SHOULD BE DISABLED SO THAT THIS
+  # DOESNT HAPPEN]
+ 
+  if (defined $CURRENT) {
+
+    # Read the selected page and overwrite the values in $CURRENT
+    %{ $CURRENT } = % { &read_page($page) };
+
+    update_defn;
+
+  } else {
+    print 'There is no current selection to be modified\n';
+  }
 
 }
 
@@ -1010,258 +1145,34 @@ sub add_entry {
 
 }
 
-# Sub to create an entry in the definition table from 
-# the GUI
 
-sub add_image_entry {
+# Sub to read the relevant notebook page and store the information
+# in a hash. A hash reference is returned.
 
-  my $href = &read_image;
+sub read_page {
 
-  # Now store this in the array
-  push(@DispDefn, $href);
+  # Read the page type from @_ and convert to upper case
+  my $type = uc(shift);
 
-  # Now update the list box
-  update_defn;
-
-}
-
-sub add_graph_entry {
-
-  my $href = &read_graph;
-
-  # Now store this in the array
-  push(@DispDefn, $href);
-
-  # Now update the list box
-  update_defn;
-
-}
-
-sub add_datamodel_entry {
-
-  my $href = &read_datamodel;
-
-  # Now store this in the array
-  push(@DispDefn, $href);
-
-  # Now update the list box
-  update_defn;
-
-}
-
-sub add_sigma_entry {
-
-  my $href = &read_sigma;
-
-  # Now store this in the array
-  push(@DispDefn, $href);
-
-  # Now update the list box
-  update_defn;
-
-}
-
-sub add_histogram_entry {
-
-  my $href = &read_histogram;
-
-  # Now store this in the array
-  push(@DispDefn, $href);
-
-  # Now update the list box
-  update_defn;
-
-}
-
-sub add_vector_entry {
-
-  my $href = &read_vector;
-
-  # Now store this in the array
-  push(@DispDefn, $href);
-
-  # Now update the list box
-  update_defn;
-
-}
-
-
-
-
-# Sub to read the image widget and store the information in a hash
-# A hash reference is returned.
-
-sub read_image {
-
-  # Create the hash to store all this in
+  # Create a new hash to store the page values in
   my %values = ();
 
-  $values{TYPE} = 'IMAGE';
+  # Now store the TYPE and the ID in the hash
+  # since these are the 'special' keys
+  $values{TYPE} = $type;
+  $values{ID}   = $STATUS{$type}{SUFFIX};
 
-  # Now read the widget state into the hash
-  $values{ID} = $STATUS{IMAGE}{SUFFIX};
-  $values{TOOL} = $STATUS{IMAGE}{TOOL};
-  $values{WINDOW} = $STATUS{IMAGE}{WINDOW};
-  $values{REGION} = $STATUS{IMAGE}{REGION};
+  # Now simply copy all the values from $STATUS{$type}
+  # to %values
+  %values = (%values, %{$STATUS{$type}});
 
-  $values{XAUTOSCALE} = $STATUS{IMAGE}{XAUTOSCALE};  
-  $values{YAUTOSCALE} = $STATUS{IMAGE}{YAUTOSCALE};  
-  $values{ZAUTOSCALE} = $STATUS{IMAGE}{ZAUTOSCALE};  
+  # And delete the SUFFIX key that we already have
+  delete $values{SUFFIX};
 
-  $values{XMIN} = $STATUS{IMAGE}{XMIN};
-  $values{XMAX} = $STATUS{IMAGE}{XMAX};
-  $values{YMIN} = $STATUS{IMAGE}{YMIN};
-  $values{YMAX} = $STATUS{IMAGE}{YMAX};
-  $values{ZMIN} = $STATUS{IMAGE}{ZMIN};
-  $values{ZMAX} = $STATUS{IMAGE}{ZMAX};
-
+  # Return the hash reference
   return \%values;
 
 }
-
-# Sub to read the graph widget and store the information in a hash
-# A hash reference is returned.
-
-sub read_graph {
-
-  # Create the hash to store all this in
-  my %values = ();
-
-  $values{TYPE} = 'GRAPH';
-
-  # Now read the widget state into the hash
-  $values{ID} = $STATUS{GRAPH}{SUFFIX};
-  $values{TOOL} = $STATUS{GRAPH}{TOOL};
-  $values{WINDOW} = $STATUS{GRAPH}{WINDOW};
-  $values{REGION} = $STATUS{GRAPH}{REGION};
-
-  $values{XAUTOSCALE} = $STATUS{GRAPH}{XAUTOSCALE};  
-  $values{YAUTOSCALE} = $STATUS{GRAPH}{YAUTOSCALE};  
-
-  $values{XMIN} = $STATUS{GRAPH}{XMIN};
-  $values{XMAX} = $STATUS{GRAPH}{XMAX};
-  $values{YMIN} = $STATUS{GRAPH}{YMIN};
-  $values{YMAX} = $STATUS{GRAPH}{YMAX};
-
-  return \%values;
-
-}
-
-# Sub to read the datamodel widget and store the information in a hash
-# A hash reference is returned.
-
-sub read_datamodel {
-
-  # Create the hash to store all this in
-  my %values = ();
-
-  $values{TYPE} = 'DATAMODEL';
-
-  # Now read the widget state into the hash
-  $values{ID} = $STATUS{DATAMODEL}{SUFFIX};
-  $values{TOOL} = $STATUS{DATAMODEL}{TOOL};
-  $values{WINDOW} = $STATUS{DATAMODEL}{WINDOW};
-  $values{REGION} = $STATUS{DATAMODEL}{REGION};
-
-  $values{XAUTOSCALE} = $STATUS{DATAMODEL}{XAUTOSCALE};  
-  $values{YAUTOSCALE} = $STATUS{DATAMODEL}{YAUTOSCALE};  
-
-  $values{XMIN} = $STATUS{DATAMODEL}{XMIN};
-  $values{XMAX} = $STATUS{DATAMODEL}{XMAX};
-  $values{YMIN} = $STATUS{DATAMODEL}{YMIN};
-  $values{YMAX} = $STATUS{DATAMODEL}{YMAX};
-
-  return \%values;
-
-}
-
-# Sub to read the sigma widget and store the information in a hash
-# A hash reference is returned.
-
-sub read_sigma {
-
-  # Create the hash to store all this in
-  my %values = ();
-
-  $values{TYPE} = 'SIGMA';
-
-  # Now read the widget state into the hash
-  $values{ID} = $STATUS{SIGMA}{SUFFIX};
-  $values{TOOL} = $STATUS{SIGMA}{TOOL};
-  $values{WINDOW} = $STATUS{SIGMA}{WINDOW};
-  $values{REGION} = $STATUS{SIGMA}{REGION};
-
-  $values{RANGE} = $STATUS{SIGMA}{RANGE};
-  $values{DASHED} = $STATUS{SIGMA}{DASHED};
-
-  return \%values;
-
-}
-
-# Sub to read the image widget and store the information in a hash
-# A hash reference is returned.
-
-sub read_histogram {
-
-  # Create the hash to store all this in
-  my %values = ();
-
-  $values{TYPE} = 'HISTOGRAM';
-
-  # Now read the widget state into the hash
-  $values{ID} = $STATUS{HISTOGRAM}{SUFFIX};
-  $values{TOOL} = $STATUS{HISTOGRAM}{TOOL};
-  $values{WINDOW} = $STATUS{HISTOGRAM}{WINDOW};
-  $values{REGION} = $STATUS{HISTOGRAM}{REGION};
-
-  $values{XAUTOSCALE} = $STATUS{HISTOGRAM}{XAUTOSCALE};  
-  $values{YAUTOSCALE} = $STATUS{HISTOGRAM}{YAUTOSCALE};  
-  $values{ZAUTOSCALE} = $STATUS{HISTOGRAM}{ZAUTOSCALE};  
-
-  $values{XMIN} = $STATUS{HISTOGRAM}{XMIN};
-  $values{XMAX} = $STATUS{HISTOGRAM}{XMAX};
-  $values{YMIN} = $STATUS{HISTOGRAM}{YMIN};
-  $values{YMAX} = $STATUS{HISTOGRAM}{YMAX};
-  $values{ZMIN} = $STATUS{HISTOGRAM}{ZMIN};
-  $values{ZMAX} = $STATUS{HISTOGRAM}{ZMAX};
-
-  $values{NBINS} = $STATUS{HISTOGRAM}{NBINS};
-
-  return \%values;
-
-}
-
-# Sub to read the image widget and store the information in a hash
-# A hash reference is returned.
-
-sub read_vector {
-
-  # Create the hash to store all this in
-  my %values = ();
-
-  $values{TYPE} = 'VECTOR';
-
-  # Now read the widget state into the hash
-  $values{ID} = $STATUS{VECTOR}{SUFFIX};
-  $values{TOOL} = $STATUS{VECTOR}{TOOL};
-  $values{WINDOW} = $STATUS{VECTOR}{WINDOW};
-  $values{REGION} = $STATUS{VECTOR}{REGION};
-
-  $values{XAUTOSCALE} = $STATUS{VECTOR}{XAUTOSCALE};  
-  $values{YAUTOSCALE} = $STATUS{VECTOR}{YAUTOSCALE};  
-  $values{ZAUTOSCALE} = $STATUS{VECTOR}{ZAUTOSCALE};  
-
-  $values{XMIN} = $STATUS{VECTOR}{XMIN};
-  $values{XMAX} = $STATUS{VECTOR}{XMAX};
-  $values{YMIN} = $STATUS{VECTOR}{YMIN};
-  $values{YMAX} = $STATUS{VECTOR}{YMAX};
-  $values{ZMIN} = $STATUS{VECTOR}{ZMIN};
-  $values{ZMAX} = $STATUS{VECTOR}{ZMAX};
-
-  return \%values;
-
-}
-
 
 
 # This subroutine copies the default values to the STATUS array
@@ -1338,3 +1249,31 @@ sub undo_delete {
   # Update the window
   &update_defn;
 }
+
+# Clear the currently selected delete list
+# And the CURRENT definition
+
+sub clear_delete_selection {
+  @SELECT_LIST = ();
+  $CURRENT = undef;
+  $CURRENT_TAG = undef;
+  &update_defn;
+}
+
+# Subroutien to delete all entries.
+# This populates the UNDO  buffer and turns on the UNDO button
+
+sub delete_all_entries { 
+  # Copy all entries to the undo buffer
+  @UNDOBUFFER = @DispDefn;
+
+  # Enable the UNDO button
+  $UNDO_but->configure(-state => 'normal');
+
+  # Clear the entries
+  @DispDefn = (); 
+
+  # Update the display
+  &update_defn 
+}
+
