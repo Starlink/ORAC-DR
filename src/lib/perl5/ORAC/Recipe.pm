@@ -845,12 +845,16 @@ The depth parameter is an integer specifying the current recursion
 depth. When called externally, the depth should be set to 0 or C<undef>.
 It is inremented internally during recursion.
 
-   $processed_chunk = $rec->_parse_recursively( \@chunk, [$depth],
-                                                \@PRIMTIIVE_LIST);
+   $processed_chunk = $rec->_parse_recursively( \@chunk,
+                                                \@PRIMTIIVE_LIST,
+					        [ $depth ]);
 
 When called externally the array to be processed is usually the
 raw recipe. The return value is a reference to an array containing
 the processed recipe chunk.
+
+The second argument is a reference to an array which is used to
+contain the current primitive status as the recipe executes.
 
 =cut
 
@@ -907,14 +911,24 @@ sub _parse_recursively {
       # on $rest and sets a hash called %primitive_name
       # $rest is a string of form "arg1=value arg2=value" that is 
       # converted to a hash at runtime by orac_parse_arguments
+      # This hash is in the upper scope so will suffer from masking
+      # problems the second time it gets used at this level.
+      # This has to be the case but we would like to turn off warnings
+      # associated with this when we are below the first level of recursion
+      push(@parsed, "no warnings 'misc'; # Added during translation to prevent mask warnings\n") 
+	if $depth > 1;
+
+      # Now create the arg hash
       push(@parsed,
-	   'my %'."$primitive_name = orac_parse_arguments(\"$rest\");\nORAC::Event->update('Tk');\n");
+	   'my %'."$primitive_name = orac_parse_arguments(\"$rest\");\n",
+	   "ORAC::Event->update('Tk');\n");
 
       # read in primitive
       my $lines_ref = $self->_read_primitive( $primitive_name );
 
       # Now recurse to read parse the primitive for more primitives
-      $lines_ref = $self->_parse_recursively($lines_ref, $depth);
+      $lines_ref = $self->_parse_recursively($lines_ref, $PRIMITIVE_LIST, 
+					     $depth);
 
       # Store lines - making sure we DO NOT create a separate scope
       # for the $$CURRENT_PRIMITIVE variable
@@ -924,7 +938,12 @@ sub _parse_recursively {
 	 "ORAC::Event->update(\"Tk\");\n\n",
 	 "#line ",(($depth-1)*1000)  ," $primitive_name\n",
          @$lines_ref,
-         "\n}\n");	
+         "\n}\n",
+	  );	
+
+      # Turn warnings back on again if we disabled them earlier
+      push(@parsed, "use warnings; # Turn back on\n") if $depth > 1;
+
 	
       # push top level primitivies into the primitive list
       if ( defined $PRIMITIVE_LIST && ref($PRIMITIVE_LIST) ) {
