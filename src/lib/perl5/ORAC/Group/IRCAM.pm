@@ -50,6 +50,7 @@ my %hdr = (
             RASCALE   => "PIXELSIZ",
             TDECOFF   => "DECOFF",
             TRAOFF    => "RAOFF",
+            UTDATE    => "IDATE",
             UTEND     => "RUTEND",
             UTSTART   => "RUTSTART"
 	  );

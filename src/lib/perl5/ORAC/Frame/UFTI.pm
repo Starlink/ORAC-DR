@@ -50,6 +50,7 @@ my %hdr = (
             RASCALE   => "CDELT1",
             TDECOFF   => "TDECOFF",
             TRAOFF    => "TRAOFF",
+            UTDATE    => "DATE",
             UTEND     => "UTEND",
             UTSTART   => "UTSTART"
 	  );
