@@ -318,13 +318,16 @@ sub fits2ndf {
   # Generate an outfile
   my $out = $name;
   $out =~ s/\.fit.*$//;
+
+  $out = (split(/\//,$out))[-1];
+
   my $ndf = $out . ".sdf";
 
   # Check the output file name and whether we are allowed to
   # overwrite it.
   if (-e $ndf && ! $self->overwrite) {
     # Return early
-    orac_warn "The converted file ($ndf) already exists in the current directory. Skipping\n";
+    orac_warn "The converted file ($ndf) already exists - won't convert again\n";
     return $ndf;
   }
 

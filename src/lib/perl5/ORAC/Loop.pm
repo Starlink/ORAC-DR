@@ -249,7 +249,7 @@ sub link_and_read {
   # Have to remember to do this everywhere we need $CONVERT since
   # we are not using a global constructor.
   unless (defined $CONVERT) { $CONVERT = new ORAC::Convert; }
-  $fname = $CONVERT->convert($fname, { OUT => 'NDF', OVERWRITE => 0});
+  $fname = $CONVERT->convert($ENV{ORAC_DATA_IN} ."/$fname", { OUT => 'NDF', OVERWRITE => 0});
 
 
   # Check state of $fname
