@@ -59,7 +59,7 @@ my %hdr = (
             GRATING_WAVELENGTH   => "HIERARCH.ESO.INS.GRAT.WLEN",
             SLIT_NAME            => "HIERARCH.ESO.INS.OPTI1.ID",
 #            SLIT_NAME            => "HIERARCH.ESO.INS.SLIT",
-n            X_DIM                => "HIERARCH.ESO.DET.WIN.NX",
+            X_DIM                => "HIERARCH.ESO.DET.WIN.NX",
             Y_DIM                => "HIERARCH.ESO.DET.WIN.NY",
 
 # then the general.
@@ -93,7 +93,7 @@ sub _from_AIRMASS_START {
 sub _to_DEC_BASE {
    my $self = shift;
    my $dec = 0.0;
-   if ( exists ( $self->hdr->{DEC} ) {
+   if ( exists ( $self->hdr->{DEC} ) ) {
       $dec = $self->hdr->{DEC};
    }
    $dec = defined( $dec ) ? $dec: 0.0; 
