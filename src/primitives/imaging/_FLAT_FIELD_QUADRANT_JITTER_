@@ -33,6 +33,8 @@
 #    REFERENCE_LEVEL.  The reference mode is then stored in
 #    variable $_NORMALISE_TO_MODE_refmode for the normalising
 #    routine.
+#    -  The platescales come from primitive _GET_PLATE_SCALE_.
+#    The orientation comes from the ORAC_ROTATION internal header.
 #
 # Arguments:
 #    MASK = LOGICAL (Given)
@@ -52,7 +54,7 @@
 #    MJC: Malcolm J. Currie (JAC)
 #
 # Copyright:
-#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Copyright (C) 1998-2002 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 #
 #-
@@ -152,11 +154,15 @@
 # Estimate size of a quadrant in arcsec.
 # --------------------------------------
 
-# Obtain the pixelscale.
-             my ( $xpixelscale, $ypixelscale );
+# Obtain the absolute pixelscales.
              _GET_PLATE_SCALE_
-             $xpixelscale = $_GET_PLATE_SCALE_{RASCALE};
-             $ypixelscale = $_GET_PLATE_SCALE_{DECSCALE};
+             my $ra_pixelscale = abs( $_GET_PLATE_SCALE_{RASCALE} );
+             my $dec_pixelscale = abs( $_GET_PLATE_SCALE_{DECSCALE} );
+
+# Obtain the rotation angle, defaulting to zero.
+             my $rotangle = $Frm->uhdr( "ORAC_ROTATION" );
+             $rotangle = defined( $rotangle ) ? $rotangle : 0.0;
+             my $rot180 = $rotangle % 180;
 
 # Read readout bounds from the headers.
              my $x1 = $Frm->uhdr( "ORAC_X_LOWER_BOUND" );
@@ -164,9 +170,17 @@
              my $y1 = $Frm->uhdr( "ORAC_Y_LOWER_BOUND" );
              my $y2 = $Frm->uhdr( "ORAC_Y_UPPER_BOUND" );
 
-# Find the length of a quadrant along its shorter side.
-             my $quadsize = int( min( ( $x2 - $x1 + 1 ) * $xpixelscale,
-                                      ( $y2 - $y1 + 1 ) * $ypixelscale ) * 0.5 );
+# Find the length of a quadrant along its shorter side.  Allow for
+# chip orientations aligned close to 0 or 180 versus where x corresponds
+# with right ascension, and +/-90 degrees where x is aligned with declination.
+             my $quadsize;
+             if ( $rot180 > -45 && $rot180 < 45 ) {
+                $quadsize = int( min( ( $x2 - $x1 + 1 ) * $ra_pixelscale,
+                                      ( $y2 - $y1 + 1 ) * $dec_pixelscale ) * 0.5 );
+             } else {
+                $quadsize = int( min( ( $x2 - $x1 + 1 ) * $dec_pixelscale,
+                                      ( $y2 - $y1 + 1 ) * $ra_pixelscale ) * 0.5 );
+             }
              orac_print "Central circular mask is $quadsize arcseconds\n";
 
 # Compute a mask of the objects for each member of the flat-field
@@ -267,6 +281,11 @@ REFERENCE_LEVEL.  The reference mode is then stored in
 variable $_NORMALISE_TO_MODE_refmode for the normalising
 routine.
 
+=item *
+
+The platescales come from primitive _GET_PLATE_SCALE_.
+The orientation comes from the ORAC_ROTATION internal header.
+
 =back
 
 =head1 ARGUMENTS
@@ -298,7 +317,7 @@ MJC: Malcolm J. Currie (JAC)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
