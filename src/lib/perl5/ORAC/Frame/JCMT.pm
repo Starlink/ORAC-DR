@@ -368,7 +368,7 @@ sub findrecipe {
     if ($self->hdr('SAM_MODE') eq 'JIGGLE') {
       $recipe = 'SCUBA_JIGMAP';
 
-      if ($self->hdr('OBJ_TYPE') eq 'POLARIMETER') {
+      if ($self->hdr('OBJ_TYPE') =~ /^POL/i) {
 	$recipe = 'SCUBA_JIGPOLMAP';
       }
 
