@@ -1,60 +1,163 @@
+# -*-perl-*-
+
 =head1 NAME
 
-_DIVIDE_BY_STANDARD_ 
+_DIVIDE_BY_STANDARD_
 
 =head1 DESCRIPTION
 
 Asks the calibration system for a suitble standard star, and divides by it.
 
+=head1 ARGUMENTS
+
+=over 4
+
+=item FRAME = BOOLEAN (Given)
+
+If this argument is true, then the current Frame object is divided by the
+standard. If it is false, then the current Group object is divided by the
+standard. [1]
+
+=back
+
 =head1 NOTES
 
+=over 4
+
+=item *
+
 The input frames should have been normalised to 1 second exposures.
+
+=item *
+
+Processing will only take place if the C<PAIR_COMPLETE> internal header
+is true.
+
+=item *
+
+The resulting file will have a _dbs suffix.
+
+=item *
+
+A spectrum, 2D image, or 3D cube may be passed to this primitive.
+
+=back
 
 =head1 AUTHOR
 
 Paul Hirst <p.hirst@jach.hawaii.edu>
-Datacube support added by Stephen Todd <spt@roe.ac.uk>
+Stephen Todd <spt@roe.ac.uk>
+Brad Cavanagh (JAC) <b.cavanagh@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
 
+# Obtain arguments
+my $frame = $_DIVIDE_BY_STANDARD_{FRAME};
+if( ! defined( $frame ) ) {
+  $frame = 1;
+}
+
 if ($Frm->uhdr("PAIR_COMPLETE")) {
 
-  my $base = $Grp->raw;
-  my $in = $Grp->file;
-  my $out;
+  my ( $in, $out );
+  if( $frame ) {
 
-  # Copy the group uhdr into the frame uhdr for the Cal system to see it
-  my $ndims = $Grp->uhdr("NDIMS");
-  $Frm->uhdr("NDIMS", $ndims);
+    ( $in, $out ) = $Frm->inout( "_dbs" );
 
-  # Need a different name for cubes and spectra for display system.  
-  if($ndims == 3) {
-     $out = $base."_dbsc";
+    # Find out the dimensions of the input Frame.
+    $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
+    my ( $ORAC_STATUS, @dims ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "dims" );
+
+    if( defined( $dims[2] ) ) {
+      # cube
+      ( $in, $out ) = $Frm->inout( "_cube_dbs" );
+    } elsif( defined( $dims[1] ) ) {
+      # image
+      ( $in, $out ) = $Frm->inout( "_im_dbs" );
+    } else {
+      # spectrum
+      ( $in, $out ) = $Frm->inout( "_sp_dbs" );
+    }
+
   } else {
-     $out = $base."_dbs";
+
+    $in = $Grp->file;
+
+    # Find the dimensions of the input Group.
+    $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
+    my ( $ORAC_STATUS, @dims ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "dims" );
+
+    if( defined( $dims[2] ) ) {
+      # cube
+      $out = $Grp->raw . "_cube_dbs";
+    } elsif( defined( $dims[1] ) ) {
+      # image
+      $out = $Grp->raw . "_im_dbs";
+    } else {
+      # spectrum
+      $out = $Grp->raw . "_sp_dbs";
+    }
   }
 
   # Find me a standard
   my $std = $Cal->standard;
   orac_print "Standard: $std will be used\n";
 
-  $in = $Grp->file;
+  # If we've got a cube, we need to check the dimensions of both the
+  # standard and the object to make sure they match. If they don't,
+  # then grow the standard in the spatial directions to match those
+  # of the object.
 
-  # Divide by it
-  $Mon{'kappa_mon'}->obeyw("div", "in1=$in in2=$std out=$out title=$out");
-  orac_print "$in to $out: Divided by standard: $std\n";
+  # We need to create a temporary file here so it can stick around
+  # for the division.
+  my $tempFrm = new ORAC::TempFile;
+  my $tempfile = $tempFrm->file;
 
-  # Update the Group object
-  $Grp->file( $out );
+  if( $out =~ /_cube_dbs/ ) {
+    my ( $ORAC_STATUS, @obj_dims, @std_dims, @lbound );
+    $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
+    ( $ORAC_STATUS, @obj_dims ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "dims" );
+    ( $ORAC_STATUS, @lbound ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
+    $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$std" );
+    ( $ORAC_STATUS, @std_dims ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "dims" );
 
-  # Display the dbs frame
-  $Display->display_data( $Grp ) if defined $Display;
+    my $x_len = $obj_dims[0];
+    my $y_len = $obj_dims[1];
+    my $wave_len = $obj_dims[2];
 
+    $Mon{'kappa_mon'}->obeyw( "pixdupe", "in=$std(1:1,1:1,1:$wave_len) out=$tempfile expand=[$x_len,$y_len,1]" );
+
+    # Set the origin of the new standard cube to be that of the object.
+    my $xorigin = $lbound[0];
+    my $yorigin = $lbound[1];
+    my $zorigin = $lbound[2];
+    $Mon{'ndfpack_mon'}->obeyw( "setorigin", "ndf=$tempfile origin=[$xorigin,$yorigin,$zorigin]" );
+
+    orac_print "Standard $std grown to [$x_len,$y_len,$wave_len] to match dimensions of object cube and placed in $tempfile.\n";
+
+    $std = $tempfile;
+
+  }
+
+  # Divide by it.
+  $Mon{'kappa_mon'}->obeyw("div", "in1=$in in2=$std out=$out title=!");
+  orac_print "$in to $out: Divided by standard.\n";
+
+  # Update and display.
+  if( $frame ) {
+    $Frm->file( $out );
+    $Display->display_data( $Frm ) if defined $Display;
+  } else {
+    $Grp->file( $out );
+    $Display->display_data( $Grp ) if defined $Display;
+  }
+
+  # Tidy up output.
   orac_print "\n";
 }
 
