@@ -812,25 +812,6 @@ Flag to indicate whether the groups have been populated before
 the recipe is executed (ie whether the pipeline is running in
 batch mode or not).
 
-=item * $KAPPA_VERSION
-
-A set of version variables are available for support of different
-Starlink KAPPA versions as a convenience to recipe writers. These
-variables are only defined if KAPPA is present on the
-system. Variables are present for the version string ($KAPPA_VERSION),
-the major version ($KAPPA_VERSION_MAJOR), minor version
-($KAPPA_VERSION_MINOR) and patchlevel ($KAPPA_VERSION_PATCHLEVEL). Currently
-only the KAPPA major version is set to something useful. This
-behaviour may change in a future release but not in such a way that
-KAPPA will be required for running recipes.
-
-For example, if $KAPVERSION is 'V0.14-3', the major version
-is 0, minor version is 14 and patchlevel is 3.
-
-=item * $CCDPACK_VERSION
-
-Similar to $KAPPA_VERSION but for CCDPACK.
-
 =back
 
 These variables are visible to recipes but should not be modified
@@ -854,6 +835,9 @@ Council. All Rights Reserved.
 
 
 #$Log$
+#Revision 1.53  2000/10/10 02:59:08  timj
+#Remove documentation for $KAPPA_* since Starlink::VERSIONS does that now.
+#
 #Revision 1.52  2000/08/15 19:10:38  timj
 #Check that ORAC_STATUS is on a line including an =
 #
