@@ -313,9 +313,8 @@ Croaks if it was not possible to determine a valid base location
 
   $base = $Cal->baseshift;
 
-The index file is queried every time (usually not a problem since there
-are only a limited number of array tests per night and the index
-is cached in memory) unless the noupdate flag is true.
+The index file is queried every time (usually not a problem since the
+index is cached in memory) unless the noupdate flag is true.
 
 If the noupdate flag is set there is no verification that the base
 location meets the specified rules (this is because the command-line
