@@ -799,7 +799,29 @@ sub erase {
 }
 
 
-# 
+=item B<file_exists>
+
+Method to determine whether the Frame file() exists on disk or not.
+Returns true if the file is there, false otherwise. Effectively
+equivalent to using -e but allows for the possibility that the
+information stored in file() does not directly relate to the
+file as stored on disk (e.g. a .sdf extension). The base class is
+very simplistic (ie does not assume extensions).
+
+  $exists = $Frm->file_exists($i)
+
+The optional argument refers to the file number.
+
+=cut
+
+sub file_exists {
+  my $self = shift;
+  if (-e $self->file(@_)) {
+    return 1;
+  }
+  return 0;
+}
+
 
 
 =item B<file_from_bits>
