@@ -102,7 +102,8 @@ sub _to_NSCAN_POSITIONS {
 # i.e. x corresponds to declination and Y to right ascension.  For other
 # UKIRT instruments this was not the case, the rotation being defined
 # in CROTA2.  Here the effective rotation is that evaluated from the
-# PC matrix with a -90 degree rotation for the rotated axes.
+# PC matrix with a 90 degree counter-clockwise rotation for the rotated
+# axes.
 
 sub _to_ROTATION {
   my $self = shift;
@@ -111,11 +112,11 @@ sub _to_ROTATION {
      my $pc11 = $self->hdr->{PC1_1};
      my $pc21 = $self->hdr->{PC2_1};
      my $rad = 57.2957795131;
-     $rotation = $rad * atan2( -$pc21 / $rad, $pc11 / $rad ) - 90.0;
+     $rotation = $rad * atan2( -$pc21 / $rad, $pc11 / $rad ) + 90.0;
   } elsif ( exists $self->hdr->{CROTA2} ) {
-     $rotation =  $self->hdr->{CROTA2} - 90.0;
+     $rotation =  $self->hdr->{CROTA2} + 90.0;
   } else {
-     $rotation = -90.0;
+     $rotation = 90.0;
   }
   return $rotation;
 }
