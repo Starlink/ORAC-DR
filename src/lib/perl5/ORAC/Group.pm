@@ -32,9 +32,10 @@ or objects that can perform those methods.
 
 # A package to describe the GROUP entity for the pipeline
 
-use 5.004;
+use 5.006;
 use Carp;
 use strict;
+use warnings;
 use vars qw/$VERSION/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
@@ -163,10 +164,20 @@ sub subgrp {
       unless (defined $hash{$key}) {
 	orac_warn "SUBGRP: Key $key does not have a value in comparison hash\n";
       }
-      unless (defined $member->hdr($key)) {
+      # Need to check hdr() and uhdr()
+      my $val1 = $member->hdr($key);
+      my $val2 = $member->uhdr($key);
+
+      unless (defined $val1 or defined $val2) {
 	orac_warn "SUBGRP: Key $key is not defined in the header for $member\n";
       }
-      unless ($hash{$key} eq $member->hdr($key)) {
+
+      # -w protection
+      $val1 = '' unless defined $val1;
+      $val2 = '' unless defined $val2;
+
+      # Compare with the selected key
+      unless ( ($hash{$key} eq $val1) or ($hash{$key} eq $val2)) {
         $match = 0;
         last;
       }
@@ -208,6 +219,11 @@ for MODE and CHOP.
 All header information from the main group is copied to the
 sub groups.
 
+If a key is not present in the headers then all the frames
+will be returned in a single subgrp (since that group guarantees
+that the specified header item is not different - it simply
+is not there).
+
 =cut
 
 sub subgrps {
@@ -224,7 +240,14 @@ sub subgrps {
     # Create a key
     my $key = "";
     foreach my $hdr (@keys) {
-      $key .= $member->hdr($hdr);
+      # We need to check in hdr() and uhdr()
+      my $val1 = $member->hdr($hdr);
+      my $val2 = $member->uhdr($hdr);
+      if (defined $val1) {
+	$key .= $val1;
+      } elsif (defined $val2) {
+	$key .= $val2;
+      }
     }
 
     # Now see whether this key already exists in the hash
