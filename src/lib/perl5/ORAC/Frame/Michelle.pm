@@ -88,9 +88,10 @@ sub new {
   $frame->{Nsubs} = undef;
   $frame->{Recipe} = undef;
   $frame->{UserHeader} = {};
+  $frame->{NoKeepArr} = [];
   $frame->{Format} = undef;
   $frame->{IsGood} = 1;
-
+  $frame->{Intermediates} = [];
 
   bless($frame, $class);
 
