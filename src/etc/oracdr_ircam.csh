@@ -62,6 +62,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.4  2000/08/05 07:36:43  frossie
+#     ORAC style
+#
 #     Revision 1.3  2000/02/09 21:33:57  timj
 #     Fix $ut to $oracut
 #
@@ -103,28 +106,24 @@ if ($?ORAC_PRIMITIVE_DIR) then
 endif
 
 
-
 if ($1 != "") then
     set oracut = $1
-    set oracsut = `echo $oracut |cut -c3-8`
 else
     set oracut = `date -u +%Y%m%d`
-    set oracsut = `date -u +%y%m%d`
-
 endif
 
-set oracdr_args = "-ut $oracsut"
+set oracdr_args = "-ut $oracut"
 
 
-setenv ORAC_INSTRUMENT IRCAM
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/ircam_data/$oracut/rodir
-setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/ircam_data/$oracut/rodir
+setenv ORAC_INSTRUMENT IRCAM2
+setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/ircam/$oracut/
+setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/ircam/$oracut/
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/ircam
 
 
 # screen things
 setenv ORAC_PERSON mjc
-setenv ORAC_LOOP wait
+setenv ORAC_LOOP flag
 setenv ORAC_SUN 232
 
 

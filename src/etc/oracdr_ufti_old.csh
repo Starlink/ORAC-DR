@@ -62,7 +62,7 @@
 
 #  History:
 #     $Log$
-#     Revision 1.3  2000/08/05 07:38:29  frossie
+#     Revision 1.1  2000/08/05 07:38:51  frossie
 #     ORAC style
 #
 #     Revision 1.2  2000/02/03 03:43:38  timj
@@ -113,9 +113,9 @@ endif
 
 set oracdr_args = "-ut $oracut"
 
-setenv ORAC_INSTRUMENT UFTI2
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/ufti/$oracut/
-setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/ufti/$oracut/
+setenv ORAC_INSTRUMENT UFTI
+setenv ORAC_DATA_IN $ORAC_DATA_ROOT/ufti_data/$oracut/raw/
+setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/ufti_data/$oracut/reduced/
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/ufti
 
 # screen things

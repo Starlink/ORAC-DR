@@ -1,4 +1,3 @@
-
 #+
 #  Name:
 #     oracdr_cgs4
@@ -62,6 +61,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.2  2000/08/05 07:36:25  frossie
+#     ORAC style
+#
 #     Revision 1.1  2000/05/02 02:24:28  frossie
 #     Initial version
 #
@@ -114,8 +116,8 @@ endif
 set oracdr_args = "-ut $oracut"
 
 setenv ORAC_INSTRUMENT CGS4
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/cgs4_data/$oracut/raw/
-setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/cgs4_data/$oracut/reduced/
+setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/cgs4/$oracut
+setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/cgs4/$oracut
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/cgs4
 
 # screen things

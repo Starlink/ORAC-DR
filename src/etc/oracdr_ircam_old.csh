@@ -1,20 +1,20 @@
 
 #+
 #  Name:
-#     oracdr_ufti
+#     oracdr_ircam
 
 #  Purpose:
-#     Initialise ORAC-DR environment for use with UFTI
+#     Initialise ORAC-DR environment for use with IRCAM
 
 #  Language:
 #     C-shell script
 
 #  Invocation:
-#     source ${ORAC_DIR}/etc/oracdr_ufti.csh
+#     source ${ORAC_DIR}/etc/oracdr_ircam.csh
 
 #  Description:
 #     This script initialises the environment variables and command
-#     aliases required to run the ORAC-DR pipeline with UFTI data.
+#     aliases required to run the ORAC-DR pipeline with IRCAM data.
 #     An optional argument is the UT date. This is used to configure
 #     the input and output data directories but assumes a UKIRT
 #     style directory configuration.
@@ -39,9 +39,9 @@
 
 
 #  Examples:
-#     oracdr_ufti
+#     oracdr_ircam
 #        Will set the variables assuming the current UT date.
-#     oracdr_ufti 19991015
+#     oracdr_ircam 19991015
 #        Use UT data 19991015
 
 #  Notes:
@@ -62,13 +62,16 @@
 
 #  History:
 #     $Log$
-#     Revision 1.3  2000/08/05 07:38:29  frossie
+#     Revision 1.1  2000/08/05 07:38:21  frossie
 #     ORAC style
+#
+#     Revision 1.3  2000/02/09 21:33:57  timj
+#     Fix $ut to $oracut
 #
 #     Revision 1.2  2000/02/03 03:43:38  timj
 #     Correct doc typo
 #
-#     Revision 1.1  2000/02/03 02:50:45  timj
+#     Revision 1.1  2000/02/03 02:50:44  timj
 #     Starlink startup scripts
 #
 #     02 Jun 1999 (frossie)
@@ -82,8 +85,6 @@
 #     Council. All Rights Reserved.
 
 #-
-
-
 
 # orac things
 if !($?ORAC_DATA_ROOT) then
@@ -107,21 +108,26 @@ endif
 
 if ($1 != "") then
     set oracut = $1
+    set oracsut = `echo $oracut |cut -c3-8`
 else
     set oracut = `date -u +%Y%m%d`
+    set oracsut = `date -u +%y%m%d`
 endif
 
-set oracdr_args = "-ut $oracut"
+set oracdr_args = "-ut $oracsut"
 
-setenv ORAC_INSTRUMENT UFTI2
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/ufti/$oracut/
-setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/ufti/$oracut/
-setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/ufti
+
+setenv ORAC_INSTRUMENT IRCAM
+setenv ORAC_DATA_IN $ORAC_DATA_ROOT/ircam_data/$oracut/rodir
+setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/ircam_data/$oracut/rodir
+setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/ircam
+
 
 # screen things
 setenv ORAC_PERSON mjc
-setenv ORAC_LOOP flag
-setenv ORAC_SUN  232
+setenv ORAC_LOOP wait
+setenv ORAC_SUN 232
+
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
@@ -129,3 +135,4 @@ source $ORAC_DIR/etc/oracdr_start.csh
 # Tidy up
 unset oracut
 unset oracdr_args
+unset oracsut
