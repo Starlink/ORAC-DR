@@ -214,6 +214,13 @@ Every time the file name is updated, the new file is pushed onto
 the intermediates() array. This is so that intermediate files
 can be tidied up when required.
 
+If the first argument is present but not defined the command is
+treated as if you typed
+
+ $Frm->file(1, undef);
+
+ie the first file is set to undef.
+
 =cut
 
 sub file {
@@ -223,7 +230,7 @@ sub file {
   my $index = 0;
 
   # Check the arguments
-  if (@_) {
+  if (@_  && defined $_[0]) {
 
     my $firstarg = shift;
 
@@ -231,7 +238,7 @@ sub file {
     # Check for int and non-zero (since strings eval as 0)
     # Cant use int() since this extracts integers from the start of a
     # string! Match a string containing only digits
-    if ($firstarg =~ /^\d+$/ && $firstarg != 0) {
+    if (defined $firstarg && $firstarg =~ /^\d+$/ && $firstarg != 0) {
 
       # Decrement value so that we can use it as a perl array index
       $index = $firstarg - 1;
@@ -239,6 +246,7 @@ sub file {
       # If we have more arguments we are setting a value
       # else wait until we return the specified value
       if (@_) {
+
 	# First check that the old file should not be
 	# removed before we update the object
 	# [Note that the erase method calls this method...]
@@ -1060,6 +1068,8 @@ translated to a string "num" so the second frame in "c20010108_00024"
 would return "s2num" and the only frame in "f2001_52" would return
 "num".
 
+Returns C<undef> if the file name is not defined.
+
 =cut
 
 sub gui_id {
@@ -1071,6 +1081,7 @@ sub gui_id {
 
   # Retrieve the Nth file name (start counting at 1)
   my $fname = $self->file($num);
+  return undef unless defined $fname;
 
   # Split on underscore
   my (@split) = split(/_/,$fname);
