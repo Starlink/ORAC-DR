@@ -45,7 +45,7 @@ use ORAC::General;                      # Max and min
 
 use base qw/ ORAC::Display::Base /;     # Base class
 
-use vars qw/$VERSION $DEBUG $AGI_USER $AGI_NODE $KAPPA13/;
+use vars qw/$VERSION $DEBUG $AGI_USER $AGI_NODE $KAPPA13 $KAPPA14/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
@@ -59,6 +59,14 @@ if (-e "$ENV{KAPPA_DIR}/style.def") {
   $KAPPA13 = 1;
 } else {
   $KAPPA13 = 0;
+}
+
+# Also, this test changes for KAPPA0.14
+if (-e "$ENV{KAPPA_DIR}/kappa_style.def") {
+  $KAPPA14 = 1;
+  $KAPPA13 = 1;
+} else {
+  $KAPPA14 = 0;
 }
 
 
@@ -1607,7 +1615,13 @@ sub sigma {
 
  
   # create args
-  $args = "linestyle=2 sigcol=red nsigma=[0,$dashed]";
+  if ($KAPPA14) {
+    $args = " style='colour(curve)=red,style(curve)=2'";
+  } else {
+   $args = "linestyle=2 sigcol=red";
+  }
+  $args .= " nsigma=[0,$dashed] ";
+
 
   # Select component
   if (exists $options{COMP} && defined $options{COMP}) {
