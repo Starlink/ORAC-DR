@@ -1,0 +1,98 @@
+    # Use some intrinsic trig functions
+
+    use Math::Trig;
+
+    # Define basic rough WCS info for UFTI
+
+    my %wcsbase = ('crpix1'    => 573,
+                   'crpix2'    => 460,
+                   'ncd1_1'    => -1,
+                   'ncd1_2'    => 0,
+ 		   'ncd2_1'    => 0,
+   		   'ncd2_2'    => 1,
+		   'scale'     => 0.09085,
+		   'extra_rot' => -0.6);
+    my $projp3 = 0.33333;
+    my @crpixoff = (320.0,196.0);
+    my @wcskeys = ("CRVAL1","CRVAL2","CRPIX1","CRPIX2","CD1_1","CD2_1",
+                   "CD2_1","CD2_2","CTYPE1","CTYPE2","CUNIT1","CUNIT2");
+
+    # Read a few parameters...
+
+    my $override = $_ROUGH_WCS_{OVERRIDE};
+    my $zpn = $_ROUGH_WCS_{ZPN};
+
+    # Check whether we even want to be here...
+
+    my $wcspass = (defined $Frm->hdr("WCSPASS") ? $Frm->hdr("WCSPASS") : -1);
+    if ($override || $wcspass < 0) {
+
+	# Set up some useful values
+
+	my ($crpix1,$crpix2,$scale,$aap,$bbp,$ddp,$eep,$extra_rot);
+	my $x1 = $Frm->uhdr("ORAC_X_LOWER_BOUND");
+	my $x2 = $Frm->uhdr("ORAC_X_UPPER_BOUND");
+	my $y1 = $Frm->uhdr("ORAC_Y_LOWER_BOUND");
+	my $y2 = $Frm->uhdr("ORAC_Y_UPPER_BOUND");
+	if ($x1 == 1 && $x2 == 1024 && $y1 == 1 && $y2 == 1024) {
+	    $crpix1 = $wcsbase{'crpix1'};
+	    $crpix2 = $wcsbase{'crpix2'};
+	} else {
+	    $crpix1 = $wcsbase{'crpix1'} - $crpixoff[0];
+	    $crpix2 = $wcsbase{'crpix2'} - $crpixoff[1];
+	}
+	$scale = $wcsbase{'scale'}/3600.0;
+	$aap = $scale*$wcsbase{'ncd1_1'};
+	$bbp = $scale*$wcsbase{'ncd1_2'};
+	$ddp = $scale*$wcsbase{'ncd2_1'};
+	$eep = $scale*$wcsbase{'ncd2_2'};
+	$extra_rot = deg2rad($wcsbase{'extra_rot'});
+	my $ca = cos($extra_rot);
+	my $sa = sin($extra_rot);
+	my $cd1_1 = $aap*$ca + $bbp*$sa;
+	my $cd1_2 = -$aap*$sa + $bbp*$ca;
+	my $cd2_1 = $ddp*$ca + $eep*$sa;
+	my $cd2_2 = -$ddp*$sa + $eep*$ca;
+
+        # Get RA and Dec from header and see if we need to precess it...
+
+	my $ra = 15.0*$Frm->uhdr("ORAC_RA_BASE");
+	my $dec = $Frm->uhdr("ORAC_DEC_BASE");
+	my $equinox = $Frm->uhdr("ORAC_EQUINOX");
+        _PRECESS_TO_2000_
+
+        # Get rid of extraneous extra WCS stuff from header.  This is because
+        # in UFTI data, the is quite often two copies of the WCS keywords...
+
+        my $status = 0;
+        my $fptr = Astro::FITS::CFITSIO::open_file($Frm->file,READWRITE,
+            $status);
+        foreach my $key (@wcskeys) {
+            $status = 0;
+            while ($status == 0) {
+                $fptr->delete_key($key,$status);
+            }
+        }
+        $fptr->close_file($status);
+
+	# Now update the header...
+
+	if ($zpn) {
+ 	    $Frm->update_header("CTYPE1",TSTRING,"RA---ZPN","");
+	    $Frm->update_header("CTYPE2",TSTRING,"DEC--ZPN","");
+	} else {
+ 	    $Frm->update_header("CTYPE1",TSTRING,"RA---TAN","");
+	    $Frm->update_header("CTYPE2",TSTRING,"DEC--TAN","");
+        }
+	$Frm->update_header("CRVAL1",TDOUBLE,$ra,"");
+	$Frm->update_header("CRVAL2",TDOUBLE,$dec,"");
+	$Frm->update_header("CRPIX1",TDOUBLE,$crpix1,"");
+	$Frm->update_header("CRPIX2",TDOUBLE,$crpix2,"");
+        $Frm->update_header("CD1_1",TDOUBLE,$cd1_1,"");
+        $Frm->update_header("CD2_1",TDOUBLE,$cd2_1,"");
+        $Frm->update_header("CD1_2",TDOUBLE,$cd1_2,"");
+        $Frm->update_header("CD2_2",TDOUBLE,$cd2_2,"");
+        $Frm->update_header("PROJP1",TFLOAT,1.0,"");
+        $Frm->update_header("PROJP3",TFLOAT,$projp3,"");
+        $Frm->update_header("WCSPASS",TINT,0,"Pass level of WCS");
+    }

@@ -1,0 +1,86 @@
+    # Initialise the results arrays
+
+    @xoffs = ();
+    @yoffs = ();
+
+    # Loop for all of the files in the group.  Get the table name
+    
+    my $nfile = 0;
+    my $template;
+    foreach my $frm ($Grp->allmembers) {
+        $nfile++;
+        my $tabname = $frm->uhdr("OBJTAB");
+
+        # Open the table and read the relevant columns.
+
+        my $status = 0;
+        my $fptr = Astro::FITS::CFITSIO::open_file($tabname,READONLY,$status);
+        my ($hdutype,$nrows,$col,@xval,@yval,@tval,@elval,$anynul);
+        $fptr->movabs_hdu(2,$hdutype,$status);
+        $fptr->get_num_rows($nrows,$status);
+	$fptr->get_colnum(CASEINSEN,"X_coordinate",$col,$status);
+	$fptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@xval,$anynul,$status);
+	$fptr->get_colnum(CASEINSEN,"Y_coordinate",$col,$status);
+	$fptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@yval,$anynul,$status);
+	$fptr->get_colnum(CASEINSEN,"Total_flux",$col,$status);
+	$fptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@tval,$anynul,$status);
+	$fptr->get_colnum(CASEINSEN,"Ellipticity",$col,$status);
+	$fptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@elval,$anynul,$status);
+	$fptr->close_file($status);
+        if ($status != 0) {
+            orac_err("_DIFFXY_OBJS_ can't read table $tabname: status = $status\n");
+            $dstat = 1;
+            last;
+        }
+
+        # Create a file with these entries in.  Ditch all that are not
+        # circular enough
+
+        my $tmpfile = "diffxy_" . $frm->file;
+        unlink $tmpfile if (-e $tmpfile);
+        open FF,">$tmpfile";
+        for my $i (0 .. $nrows-1) {
+            next if ($elval[$i] > 0.5);
+            my $xv = $xval[$i] + $xoffswcs[$nfile-1];
+            my $yv = $yval[$i] + $yoffswcs[$nfile-1];
+            print FF "$xv $yv $tval[$i]\n";
+        }
+        close FF;
+
+        # If this is the first file in the list, then make it the template
+
+        if ($nfile == 1) {
+            $template = $tmpfile;
+            push @xoffs,0.0;
+            push @yoffs,0.0;
+            next;
+        }
+
+        # Find the dimensions of the data area of the file...
+
+        my ($nx,$ny);
+        $nx = $frm->hdr("NAXIS1");
+        $ny = $frm->hdr("NAXIS2");
+
+        # Ok, now match 'em up
+
+        my $srad = 10.0;
+        my ($retval,$errmsg,$xoffset,$yoffset,$nmatch);
+        $errmsg = "";
+        $xoffset = 0.0;
+        $yoffset = 0.0;
+        $nmatch = 0;
+        $retval = cir_matchxy($tmpfile,$template,$srad,$nx,$ny,$xoffset,
+            $yoffset,$nmatch,$errmsg);
+        unlink $tmpfile;
+        if ($retval != CIR_OK || $nmatch == 0) {
+            orac_err("CIR_MATCHXY: Failed in _DIFFXY_OBJS_\n$errmsg\n");
+            $dstat = 1;
+            unlink $template;
+            last;
+        }
+        push @xoffs,$xoffset+$xoffswcs[$nfile-1];
+        push @yoffs,$yoffset+$yoffswcs[$nfile-1];
+    }
+    unlink $template;
+        

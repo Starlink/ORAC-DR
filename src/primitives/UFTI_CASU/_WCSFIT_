@@ -1,0 +1,177 @@
+    # Do this on a dither by dither basis...
+
+    my $got_em_all = $Frm->uhdr("GOT_EM_ALL");
+    if ($got_em_all) {
+
+        # Get some parameters
+
+        my $catsrc = $_WCSFIT_{CATSRC};
+        my $catpath = $_WCSFIT_{CATPATH};
+        my $equinox = $_WCSFIT_{EQUINOX};
+        my $override = $_WCSFIT_{OVERRIDE};
+        my $pass = $_WCSFIT_{PASS};
+
+	# Set some WCS parameter names
+
+	my %wcsparms = ('CRVAL1' => TDOUBLE,
+		        'CRVAL2' => TDOUBLE,
+  		        'CRPIX1' => TDOUBLE,
+		        'CRPIX2' => TDOUBLE,
+		        'CD1_1' => TDOUBLE,
+ 		        'CD1_2' => TDOUBLE,
+		        'CD2_1' => TDOUBLE,
+		        'CD2_2' => TDOUBLE,
+		        'CUNIT1' => TSTRING,
+		        'CUNIT2' => TSTRING,
+		        'CTYPE1' => TSTRING,
+		        'CTYPE2' => TSTRING,
+		        'WCSPASS' => TINT,
+		        'NUMBRMS' => TINT,
+		        'STDCRMS' => TDOUBLE,
+		        'PROJP1' => TFLOAT,
+		        'PROJP3' => TFLOAT);
+    
+	# Form the name of the dither file and see what sort of WCS is
+	# already present in the header.
+
+	my $dithfile = $Frm->uhdr("DITHER_FRAME");
+	my $tmpFrm = $Frm->new($dithfile);
+	my $wcspass = $tmpFrm->hdr("WCSPASS");
+        $wcspass = (defined $wcspass ? $wcspass : -1);
+
+	# Check whether to override the current WCS. If not, then
+	# skip this file.
+
+        if ($override || ($wcspass < $pass)) {
+
+	    # If this is a first pass WCS, then do an image detection...
+
+	    my $catbase;
+	    my ($retval,$errmsg);
+	    $errmsg = "";
+	    if ($pass == 1) {
+		$catbase = sprintf("t%s_cat%s",$tmpFrm->basename,
+		    $tmpFrm->rawsuffix);
+		$retval = cir_apm($dithfile,$catbase,"","",0,25,-2.0,64,0,
+		    $errmsg);
+		if ($retval != CIR_OK) {
+		    orac_err("CIR_APM: Failed in _WCSFIT_ for $dithfile\n$errmsg\n");
+		    next;
+		}
+	    } else {
+		$catbase = $Frm->uhdr("DITHCAT");
+		if (! defined $catbase) {
+		    $catbase = sprintf("%s_cat%s",$tmpFrm->basename,
+			$tmpFrm->fitsextn);
+		}
+	    }
+
+	    # Dump the XY info into a temporary file
+
+	    my $xyfile = sprintf("xy_%s",$tmpFrm->basename);
+	    unlink $xyfile if (-e $xyfile);
+	    my $status = 0;
+	    my $fptr = Astro::FITS::CFITSIO::open_file($catbase,READONLY,$status);
+	    my ($hdutype,$nrows,$col,@xval,@yval,@tval,@elval,$anynul);
+	    $fptr->movabs_hdu(2,$hdutype,$status);
+	    $fptr->get_num_rows($nrows,$status);
+	    $fptr->get_colnum(CASEINSEN,"X_coordinate",$col,$status);
+	    $fptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@xval,$anynul,$status);
+	    $fptr->get_colnum(CASEINSEN,"Y_coordinate",$col,$status);
+	    $fptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@yval,$anynul,$status);
+	    $fptr->get_colnum(CASEINSEN,"Total_flux",$col,$status);
+	    $fptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@tval,$anynul,$status);
+	    $fptr->get_colnum(CASEINSEN,"Ellipticity",$col,$status);
+	    $fptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@elval,$anynul,$status);
+	    $fptr->close_file($status);
+	    unlink $catbase if ($pass == 1);
+	    if ($status != 0) {
+		orac_err("_WCSFIT_ can't read table $catbase: status = $status\n");
+		next;
+	    }
+	    open FF,">$xyfile";
+	    my $i;
+	    for ($i = 0; $i < $nrows; $i++) {
+		next if ($elval[$i] > 0.5);
+		print FF "$xval[$i] $yval[$i] $tval[$i]\n";
+	    }
+	    close(FF);
+
+	    # Now get some standard stars 
+
+	    my $stdsfile = sprintf("stds_%s",$tmpFrm->basename);
+	    unlink $stdsfile if (-e $stdsfile); 
+	    $retval = cir_getstds($dithfile,$stdsfile,$catsrc,$catpath,
+		$equinox,$errmsg);
+	    if ($retval != CIR_OK) {
+		orac_err("CIR_GETSTDS: Failed in _WCSFIT_\n$errmsg\n");
+		next;
+	    }
+
+	    # Now matchem up...
+
+	    my $maxsize = max($tmpFrm->hdr("NAXIS1"),$tmpFrm->hdr("NAXIS2"));
+	    my $srad = int(0.25*$maxsize);
+	    my $matchfile = sprintf("match_%s",$tmpFrm->basename);
+	    unlink $matchfile if (-e $matchfile);
+	    my $nmatch = 0;
+	    $retval = cir_matchstds($xyfile,$stdsfile,$srad,
+		$tmpFrm->hdr("NAXIS1"),$tmpFrm->hdr("NAXIS2"),$matchfile,
+		$nmatch,$errmsg);
+	    if ($retval != CIR_OK) {
+		unlink $xyfile;
+		unlink $stdsfile;
+		unlink $matchfile;
+		orac_err("CIR_MATCHSTDS: Failed in _WCSFIT_\n$errmsg\n");
+		next;
+	    } elsif ($nmatch == 0) {
+		unlink $xyfile;
+		unlink $stdsfile;
+		unlink $matchfile;
+		orac_err("CIR_MATCHSTDS: Failed in _WCSFIT_\nNo objects matched\n");
+		next;
+	    }   
+
+	    # Intermediate tidying
+
+	    unlink $xyfile;
+	    unlink $stdsfile;
+
+	    # Now do a plate solution
+
+	    $retval = cir_platesol($dithfile,$matchfile,6,$pass,1,$errmsg);
+	    if ($retval != CIR_OK) {
+		orac_err("CIR_PLATESOL: Failed in _WCSFIT_\n$errmsg");
+		unlink $matchfile;
+		next;
+	    }
+	    unlink $matchfile;
+
+	    # If this is a second pass WCS, then update the catalogue headers
+
+	    if ($pass == 2) {
+		my $tmpFrm2 = $Frm->new($dithfile);
+		$status = 0;
+		my $tptr = Astro::FITS::CFITSIO::open_file($catbase,READWRITE,
+		    $status);
+		foreach my $parm (keys %wcsparms) {
+		    $status = 0;
+		    my $val = $tmpFrm2->hdr($parm);
+		    next if (! defined $val);
+		    $tptr->update_key($wcsparms{$parm},$parm,$val,"",$status);
+		}
+		$tptr->close_file($status);
+	    }
+	}
+
+        # Right, now just do the WCS offsets to the individual frames...
+
+        my $current_cycle = $Frm->uhdr("CYCLE_NUMBER");
+        my $subgrp = $Grp->subgrp(CYCLE_NUMBER=>$current_cycle);
+        foreach my $fr ($subgrp->allmembers) {
+            my $Frm = $fr;
+            _WCS_OFFSETS_ DITH=$dithfile
+        }
+        
+    }
+
