@@ -45,12 +45,12 @@ The routine returns when all the last monolith can be contacted
 (so requires that messaging has been initialised before this
 routine is called).
 
-SCUBA uses SURF (surf_mon)
-and  KAPPA (kapview_mon, kappa_mon, ndfpack_mon)
+SCUBA uses SURF (surf_mon) and KAPPA (kapview_mon, kappa_mon,
+ndfpack_mon).
 
 As well as some less frequently used monoliths from
-CCDPACK (ccdpack_ref), POLPACK (polpack_mon), CURSA (catselect)
-[for polarimetry] and CONERT (ndf2fits) for FITS conversion.
+CCDPACK (ccdpack_reg), POLPACK (polpack_mon), CURSA (catselect)
+[for polarimetry] and CONVERT (ndf2fits) for FITS conversion.
 
 =cut
 
@@ -98,6 +98,18 @@ Alasdair Allan E<lt>aa@astro.ex.ac.ukE<gt>
 Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
