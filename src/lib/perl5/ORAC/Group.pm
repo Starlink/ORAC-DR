@@ -48,6 +48,8 @@ use ORAC::General;
 use ORAC::BaseFile;
 use base qw/ ORAC::BaseFile /;
 
+use File::Spec;
+
 # Setup the object structure
 
 
@@ -371,8 +373,8 @@ sub badobs_index {
 
   # If undef we can create a new index object
   unless (defined $self->{BadObsIndex}) {
-    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.badobs";
-    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.badobs";
+    my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'},"index.badobs");
+    my $rulesfile = File::Spec->catfile($ENV{'ORAC_DATA_CAL'},"rules.badobs");
     $self->{BadObsIndex} = new ORAC::Index::Extern($indexfile,$rulesfile);
   };
 
