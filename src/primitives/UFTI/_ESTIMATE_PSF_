@@ -2,10 +2,10 @@
 #
 # Estimates the PSF of a standard star.
 #
-# TASK: KAPPA - CENTROID, PSF
+# TASK: KAPPA - CENTROID, PSF, NDFTRACE, STATS
 #
 # Exports:
-#    PSFNAME, Reference to @CENTRE
+#    PSFNAME, Reference to @CENTRE, FWHM
 #  
 # This method acts on a reduced group.
 
@@ -24,7 +24,7 @@
 
 # Run a task to obtain details of the frame.
              $header = "ndf=".$Grp->file;
-             $Mon{"ndfpack_mon"}->obeyw("$header");
+             $Mon{"ndfpack_mon"}->obeyw("ndftrace", "$header");
 
 # Extract the bounds of the frame.
              ($ORAC_STATUS, @lbnd) = $Mon{"ndfpack_mon"}->get("ndftrace","lbound");
@@ -35,9 +35,25 @@
              $ymid = nint( ( $lbnd[1] + $ubnd[1] ) / 2 );
 #          };
 
+# Define the size of the box in arcseconds, and hence pixels. 
+          $boxsize = ($_ESTIMATE_PSF_{BOXSIZE} || 5 );
+          $pixelscale = $Grp->hdr( "CDELT1" );
+          $pixbox = nint( $boxsize / $pixelscale );
+          $ndfsect = $Grp->file."(~$pixbox,~$pixbox)";
+
+# Locate the main object within a central box.
+          $Mon{"kappa_mon"}->obeyw("stats", "$ndfsect");
+
+# Extract the location of the maximum pixel bounds of the frame.
+          ($ORAC_STATUS, @maxpos) = $Mon{"kappa_mon"}->get("stats","maxpos");
+
+# Shift the search box to be centred on the highest value within the 
+# search box.
+          $ndfsect = $Grp->file."($maxpos[0]~$pixbox,$maxpos[1]~$pixbox)";
+
 # Specify the other parameters for the CENTROID stage.
-          $header = "ndf=".$Grp->file."(~40,~40)";
-          $hidden = "mode=interface init=[$xmid,$ymid] cosys=w"; 
+          $header = "ndf=$ndfsect";
+          $hidden = "mode=interface init=[$maxpos[0],$maxpos[1]] cosys=w"; 
 
 # Find the centroid of the object.  For the moment start the search at
 # the frame centre.  The standard position may be displaced from this,
@@ -67,6 +83,11 @@
 # the psf, which goes to a very low signal.  It's needed to compute the
 # light beyond the aperture.
           $Mon{"kappa_mon"}->obeyw("psf","$header $hidden");
+
+# Obtain the average FWHM of the point-spread function and export it.
+          ($ORAC_STATUS, $fwhm) = $Mon{"kappa_mon"}->get("psf","fwhm");
+          ($ORAC_STATUS, $axisratio) = $Mon{"kappa_mon"}->get("psf","axisr");
+          $_ESTIMATE_PSF_{FWHM} = $fwhm * sqrt( $axisratio );
 
 # Store the PSF name in the primitives hash.
           $_ESTIMATE_PSF_{"PSFNAME"} = $psfname;
