@@ -61,6 +61,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.4  2003/07/23 16:41:26  mjc
+#     Supplied the SUN numbers.
+#
 #     Revision 1.3  2002/04/02 03:04:52  mjc
 #     Use \date command to override aliases.
 #
@@ -116,7 +119,7 @@ setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/uist
 # screen things
 setenv ORAC_PERSON ATC
 setenv ORAC_LOOP flag
-setenv ORAC_SUN  '???'
+setenv ORAC_SUN  '232,236,246'
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
