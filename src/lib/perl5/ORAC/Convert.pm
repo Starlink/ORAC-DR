@@ -570,9 +570,10 @@ for the first frame (.I1).
 
   $ndf = $Cvt->hds2ndf;
 
-The resulting NDF file has the FITS headers from both the .HEADER
-and the .I1 component. No warning is given if more than one component
-exists (all higher numbers are ignored).
+The resulting NDF file has the FITS headers from just the .HEADER
+component. No attempt is made to merge the headers from the .I1
+componenet. No warning is given if more than one component exists (all
+higher numbers are ignored).
 
 =cut
 
@@ -609,11 +610,10 @@ sub hds2ndf {
   err_begin($status);
 
   # Copy the .header to a new NDF
-  copobj($hdsfile . '.header', $outfile, $status);
+  $status = copobj($hdsfile . '.header', $outfile, $status);
 
   # Copy the data to to the output NDF
-  copobj($hdsfile . '.i1.data_array', $outfile.'.DATA_ARRAY', $status);
-
+  $status = copobj($hdsfile . '.i1.data_array',$outfile.'.DATA_ARRAY',$status);
 
   # End error context and return string
   if ($status != &NDF::SAI__OK) {
