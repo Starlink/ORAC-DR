@@ -69,7 +69,7 @@ for this instrument.
 
 sub return_possible_calibrations {
   my $self = shift;
-  return ( "bias", "dark", "flat" );
+  return ( "bias", "dark", "flat", "mask", "badobs", "referenceoffset" );
 
 }
 
@@ -87,11 +87,12 @@ $Id$
 
 Paul Hirst E<lt>p.hirst@jach.hawaii.eduE<gt>,
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
-Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>
+Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>,
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>.
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 
