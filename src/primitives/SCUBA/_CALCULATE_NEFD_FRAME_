@@ -1,0 +1,235 @@
+=head1 NAME
+
+CALCULATE_NEFD_FRAME
+
+=head1 DESCRIPTION
+
+Calculate the Noise equivalent flux density (NEFD) )of the current
+observation.
+
+The NEFD is calculated using the formula:
+
+   noise =  NEFD / sqrt(time)
+
+where noise is in mJy, the time is the total on+off integration
+time in seconds. The units of NEFD are therefore mJy/rtHz.
+
+The results are written to a log file (log.nefd).
+
+=head1 NOTES
+
+Only used for PHOTOM observations.
+The units must be mJy/beam
+Has to be run after _CALC_PHOT_RESULT_
+
+
+=head1 TASKS
+
+Uses KAPPA STATS to calculate the noise level.
+
+=head1 COMMENTS
+
+A lot of this code is taken from _PRINT_RESULTS_PHOTOM_FRAME_.
+
+Requires the JCMT::SCUBA model for the theoretical NEFD calculation.
+
+=cut
+
+use JCMT::SCUBA;
+use JCMT::Tau;
+
+# Check that we have a photom observation
+
+if ($Frm->hdr('MODE') eq "PHOTOM") {
+  # also check that _CALC_PHOT_RESULT_
+  # has stored the correct key in the header
+  unless (exists $Frm->uhdr->{'PHOTOM_METHOD'}) {
+    orac_err "Unable to determine photometry reduction method from header\n";
+    orac_err "Has _CALC_PHOT_RESULT_ primitive been run?\n";
+    orac_err "Aborting NEFD calculation\n";
+  } else {
+
+    # Start by calculating the basic unit of time
+    # If we reduced this as SAMPLES the basic time unit is simply
+    # the EXP_TIME * Num Switches (normally 2)
+
+    # Complication is that we have to know whether the numbers
+    # stored in the data file are AVERAGES over the integration
+    # or the individual samples.
+    # Do this by looking in uhdr -- requires some cooperation
+    # between this module and _CALC_PHOT_RESULT_
+
+    # find the number of samples in a single point (1 for SAMPLES)
+    my $nsamp = 1; 
+    if ($Frm->uhdr('PHOTOM_METHOD') eq 'INTS' ) {
+      $nsamp = $Frm->hdr('JIGL_CNT');
+    }
+	
+    # Now calculate the fundamental time unit (on+off)
+    my $tunit = $nsamp * $Frm->hdr('EXP_TIME') * $Frm->hdr('S_PER_E');
+    
+
+    # Have the complication that we have to ASSUME the output
+    # format of SCUPHOT again.
+
+    # Retrieve sub-inst and filter names
+    my @subs = $Frm->subs;
+    my @filters = $Frm->filters;
+    my $ORAC_STATUS; 
+    
+    # loop over sub instruments
+    for (my $i = 0; $i < $Frm->nsubs; $i++) {
+      # Now need to find the NDFs in the output HDS file
+      my $status = &NDF::SAI__OK;
+      my ($loc,$ncomp);
+      hds_open($Frm->file($i+1), 'READ', $loc, $status);
+      
+      $ORAC_STATUS = ($status == &NDF::SAI__OK ? ORAC__OK : ORAC__ERROR);
+ 
+      dat_ncomp($loc, $ncomp, $status);
+ 
+      my @names = ();
+      for my $comp (1..$ncomp) {
+	my ($name, $nloc);
+	dat_index($loc, $comp, $nloc, $status);
+	dat_name($nloc, $name, $status);
+	dat_annul($nloc, $status);
+	push(@names, $name) if $name =~ /_PEAK$/;
+      }
+    
+      dat_annul($loc, $status);
+      $ORAC_STATUS = ($status == &NDF::SAI__OK ? ORAC__OK : ORAC__ERROR);
+
+      # All the NDFs are now in @names
+      # Loop over bolometers and run stats
+ 
+      foreach my $subndf (@names) {
+	my $ndf = $Frm->file($i+1) . ".$subndf";
+	$Mon{kappa_mon}->obeyw("stats","ndf=$ndf");
+
+	my $bolometer = $subndf;
+	$bolometer =~ s/_peak$//i;
+	$bolometer = sprintf "%3s", $bolometer;
+	
+	$ORAC_STATUS;
+	($ORAC_STATUS, my $sigma) = $Mon{kappa_mon}->get("stats","sigma");
+	($ORAC_STATUS, my $ngood) = $Mon{kappa_mon}->get("stats","numgood");
+
+	# Calculate the total integration time for this phot observation
+	my $totint = $tunit * $ngood;
+
+	# If the total integration time is zero (<1 second) we must abort
+	if ($totint > 1) {
+
+	  # in fact -- the NEFD calculation is not particularly helpful
+	  # unless the observation has at least 20 integrations, equivalent
+	  # to an integration time of 360 seconds
+	  if ($totint > 180) {
+
+	    # Calculate NEFD (include sigma/sqrt(n))
+	    # Note independent of ngood
+	    my $nefd = $sigma * sqrt($totint) / sqrt($ngood);
+	    $nefd = sprintf "%4d", $nefd;
+
+	    orac_print "NEFD for bolometer $bolometer (filter $filters[$i]): $nefd\n";
+
+	    # Now need to write the log file
+	    my $log = new ORAC::LogFile('log.nefd');
+
+	    # Write header
+	    my $time = gmtime();
+	    $log->header("# NEFD log file - written on $time",
+			 "\nUT        Obs  HST   Source     Time Bol  Filter  WLen  Tau   CSO   FCF Trans eNEFD NEFD",
+			 "#-------------------------------------------------------------------------------------------",
+		  );
+
+	    my $status;
+	    # Now retrieve all the bits from the header
+	    # cf. _CALIBRATE_PHOTOM_DATA_
+	    # FRom FITS header need
+	    # FILTER (+filter[$i])
+	    my $flt    = $Frm->hdr("FILTER");
+	    my $wav    = $filters[$i];
+	    # ORACUT
+	    my $utdate = $Frm->hdr('ORACUT');
+	    # RUN
+	    my $run    = sprintf "%4d", $Frm->hdr('RUN');
+	    # HSTSTART (no decimal places)
+	    my $hst    = $Frm->hdr('HSTSTART');
+	    my (@hst)  = split(/:/, $hst);
+	    $hst = sprintf '%5s', $hst[0] . ":" . $hst[1];
+	    # OBJECT
+	    my $src    = uc($Frm->hdr('OBJECT'));
+	    my $src    = sprintf "%-10s", $src;
+	    # Average of END_ELD and STRT_ELD -> airmass
+	    my $el     = ($Frm->hdr('END_ELD') + $Frm->hdr('STRT_ELD'))/ 2.0;
+	    $el        = sprintf "%2d", $el;
+	    # airmass set to zero with bad status
+	    (my $airmass, $status) = JCMT::Tau::airmass($el);
+
+	    # TAU from calibration object
+	    my $tau = sprintf "%5.2f", $Cal->tau($filters[$i]); 
+	    
+	    # Use that tau to calculate CSO
+	    (my $cso, $status) = JCMT::Tau::get_tau('CSO',$filters[$i], $tau);
+	    if ($status != 0) {
+	      $cso = "*****";
+	    } else {
+	      $cso = sprintf "%5.2f", $cso;
+	    }
+
+	    # Now retrieve the gain from the calibration object
+	    my $gain = $Cal->gain($filters[$i]);
+	    $gain   = sprintf "%4d", int($gain+0.5);
+
+	    # Need to calculate atmospheric transmission
+	    (my $trans, $status) = JCMT::Tau::transmission($airmass, $tau);
+
+	    # Check status -- if status is bad we cant calculate expected
+	    # nefd
+	    my $expNEFD;
+	    if ($status == 0) {
+	      # Now need to calculate the expected NEFD
+	      # Use JCMT::SCUBA for that
+	      ($expNEFD, $status) = JCMT::SCUBA::scunefd($filters[$i],
+							       $trans);
+	      $trans = sprintf "%4.2f", $trans;
+	      if ($status == -1) {
+		# Out of range
+		$expNEFD = '-----';
+	      } elsif ($status == -2) {
+		$expNEFD = '*****';
+	      } else {
+		$expNEFD = sprintf "%4d", $expNEFD;
+	      }
+	      
+	    } else {
+	      $expNEFD = '*****';
+	      $airmass    = '***';
+	      $trans   = '****';
+	    }
+
+	    # Format remainder
+	    $totint = sprintf "%5d", $totint;
+
+
+	    # Now write the entry
+	    $log->addentry("$utdate $run $hst $src $totint $bolometer $flt $wav $tau $cso $gain $trans $expNEFD $nefd");
+
+
+	  } else {
+	    orac_print "Observation too short for NEFD calculation (".int($totint)." seconds)\n";
+	    orac_print "Bolometer: $bolometer\n";
+	  }
+
+	} else {
+	  orac_err "No valid data points for bolometer $bolometer - not calculating NEFD\n";
+	}
+
+      }
+
+    }
+
+  }
+
+}
