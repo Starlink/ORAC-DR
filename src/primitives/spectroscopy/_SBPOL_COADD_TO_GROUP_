@@ -1,0 +1,64 @@
+
+=head1 NAME
+
+_SBPOL_COADD_TO_GROUP_
+
+=cut
+
+# The group file name - we use the ->raw one here, as subsequent steps
+# (eg extraction) will update the ->file and we want none of that here
+
+# Tag on the waveplate angle
+my $wpa = $Frm->uhdr("ORAC_WAVEPLATE_ANGLE");
+
+my $groupfile = $Grp->raw."_".substr($wpa, 0, 2);
+
+orac_print "Using groupfile $groupfile\n";
+
+# Get the filename for the sky subtracted pair (ignore $out)
+my $in = $Frm->file;
+
+orac_print "Coadding file: $in\n";
+
+my $obsnum = $Frm->number;
+$Grp->coaddspush($obsnum);
+my $nobs=scalar(@{ scalar($Grp->coadds) } );
+
+$nobs = int(($nobs-1) / 4)+1;
+
+if($nobs == 1) {
+   # Re-create the group file
+   unlink($groupfile.".sdf");
+   $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$groupfile");
+   orac_print "Created $groupfile with $in\n";
+   $Grp->file($groupfile);
+
+} else {
+
+   # The group file allready exists - coadd into it
+   # Unaverage the groupfile into a tmp file
+
+   my $tmp = new ORAC::TempFile;
+   my $tmpfile = $tmp->file;
+
+   my $factor = $nobs - 1;
+   $Mon{'kappa_mon'}->obeyw("cmult", "in=$groupfile scalar=$factor out=$tmpfile");
+
+   # Add the tmpfile and the _ss into a temp file
+
+   my $temp = new ORAC::TempFile;
+   my $tempfile = $temp->file;
+
+   $Mon{'kappa_mon'}->obeyw("add", "in1=$tmpfile in2=$in out=$tempfile");
+
+   # Re-normalise back into the groupfile
+   $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tempfile scalar=$nobs out=$groupfile");
+
+   orac_print "$in coadded to $groupfile\n";
+   orac_print "Group $groupfile now contains $nobs pairs\n";
+   $Grp->file($groupfile);
+}
+
+orac_print "\n";
+
+

@@ -1,0 +1,64 @@
+
+=head1 NAME
+
+_SBPOL_STEER_  - Single Beam Pol steering primitive
+
+=head1 DESCRIPTION
+
+Exactly what it says on the can.
+
+=head1 SEQUENCE
+
+Observations should come in the sequence:
+
+foreach beam (OBJECT SKY SKY OBJECT) {
+   foreach wpangle (0 45 22.5 67.5) {
+      OBSERVE
+   }
+}
+
+=cut
+
+# Retrieve the number of frames currently in the group.  This assumes
+# no batch mode.
+my $num = $Grp->num();
+
+# Set the PAIR_COMPLETE steering header.
+if ( $num % 8 <=3 ) {
+   $Frm->uhdr( "PAIR_COMPLETE", 0 );
+   orac_print "Steerage: This observation is the start of a pair-set.\n";
+} else {
+   $Frm->uhdr( "PAIR_COMPLETE", 1 );
+   orac_print "Steerage: This observation completes a pair-set.\n";
+}
+
+# Set the POLSEQ_COMPLETE steering header.
+if ( $num % 8 == 7 ) {
+   $Frm->uhdr( "POLSEQ_COMPLETE", 1 );
+   orac_print "$num Steerage: This observation completes a pol sequence.\n";
+} else {
+   $Frm->uhdr( "POLSEQ_COMPLETE", 0 );
+   orac_print "$num Steerage: pol sequence not yet complete.\n";
+}
+
+# Obtain the telescope offsets.
+my $raoff = $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" );
+my $decoff= $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" );
+
+# Now calculate whether we are an object or a sky observation.
+# This is achieved by determining if there is an offset, i.e.
+# the telescope moved.  Allow for rounding and type conversion
+# (string <-> numeric) to 1 milli-arcsec level.
+
+if ( ( abs $raoff < 0.001 ) && ( abs $decoff < 0.001 ) ) {
+   $Frm->uhdr( "ON_SOURCE", 1 );
+   orac_print "Steerage: This observation is of a main-beam frame.\n";
+} else {
+   $Frm->uhdr( "ON_SOURCE", 0 );
+   orac_print "Steerage: The observation is an offset-beam frame.\n";
+
+   # Store the offset information in the group user header
+   $Grp->uhdr( "SKY_RAOFF",   $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" ) );
+   $Grp->uhdr( "SKY_DECOFF",  $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET"  ) );
+
+}
