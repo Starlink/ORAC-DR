@@ -2,7 +2,7 @@ package ORAC::Frame::Michelle;
 
 =head1 NAME
 
-ORAC::Frame::Michelle - Michelle class for dealing with observation files in ORAC-DR
+ORAC::Frame::Michelle - Michelle class for dealing with observation files in ORAC-DR.
 
 =head1 SYNOPSIS
 
@@ -23,8 +23,7 @@ objects are available to B<ORAC::Frame::Michelle> objects.
 
 =cut
 
-# A package to describe a Michelle group object for the
-# ORAC pipeline
+# A package to describe a Michelle group object for the ORAC-DR pipeline.
 
 use 5.006;
 use warnings;
@@ -75,6 +74,7 @@ my %hdr = (
 # Take this lookup table and generate methods that can be sub-classed by
 # other instruments.  Have to use the inherited version so that the new
 # subs appear in this class.
+#
 # This will define the methods at runtime. The methods below this
 # are defined at compile time and will be redefined by this call
 # if there are clashes.
