@@ -71,6 +71,8 @@ sub new {
   # Now try to launch Gaia
 
   $disp->launch;
+
+
   my $status = $disp->configure;
 
   if ($status != ORAC__OK) {
@@ -195,43 +197,119 @@ sub create_dev {
 =item B<launch>
 
 Connect to a pre-existing Gaia process or launch a new Gaia process.
+If the first connection attempt fails, launches a new gaia process.
+After this, attempts to connect to a new gaia process every 3 seconds
+and attempts to launch a new gaia process every 60 seconds.
+A maximum of 5 attempts are made (5 minutes) to launch a new Gaia
+process before giving up.
+
+There is no return status -- the program croaks if it can not
+get a connection to GAIA !!
+
+Whilst it is waiting, does not attempt to keep a L<Tk|Tk> event loop
+running.
 
 =cut
 
 sub launch {
   my $self = shift;
 
-  my $done = 0;
-  my $tries = 0;
-  while (!$done && $tries <18) {
-    my $fh;
-    if ($fh = new IO::File($ENV{HOME}.'/.rtd-remote')) {
-      my ($pid, $host, $port) = split (/\s+/, <$fh>);
-      print "host = $host,   pid = $pid,    port = $port\n" if $DEBUG;
-      close $fh;
-      my $sock = IO::Socket::INET->new( 
-           Proto => "tcp",
-           PeerAddr  => $host,
-           PeerPort  => $port,
-      );
-      if ($sock) {
-        $self->sock( $sock );
-        $done = 1;
-        $self->sock()->autoflush(1);
-      } else {
-	orac_print "Could not connect to current process: Launching a new Gaia process\n";
-        system "$ENV{GAIA_DIR}/gaia.sh &";
-        sleep 20;
-      }
-    } else {
-      orac_print "Launching a new Gaia process\n";
-      system "$ENV{GAIA_DIR}/gaia.sh &";
-      sleep 20;
-    }
-    $tries++;
-  }
-  die "TIMEOUT: Could not connect to gaia\n" if (!$self->sock());
+  my $MAX_TRIES = 5;          # Number of attempts to launch new gaia
+  my $timegap_to_check  = 3;  # in seconds
+  my $timegap_to_launch = 20; # in units of $timegap_to_check
 
+ # First attempt to simply connect
+  my $sock = &_open_gaia_socket();
+
+  if ($sock) {
+    $self->sock( $sock );
+    return;
+  }
+
+  # Now launch a new gaia
+  &_launch_new_gaia();
+
+  my $tries = 0;
+  while ($tries < $MAX_TRIES) {
+
+    # Check for a connection timegap_to_launch tries
+    foreach (1..$timegap_to_launch) {
+
+      print "GAIA Connection loop $_\n" if $DEBUG;
+
+      # pause
+      sleep $timegap_to_check;
+
+      # Check for connection
+      my $sock = &_open_gaia_socket;
+
+      if ($sock) {
+	# Store it and return
+	$self->sock( $sock );
+	return;
+      }
+
+    }
+
+    # Okay - didn't work, launch a new gaia
+    &_launch_new_gaia();
+
+    # increment counter
+    $tries++;
+
+  }
+  
+  croak "TIMEOUT: Could not connect to gaia\n";
+
+}
+
+
+# internal routine to open the socket
+# no arguments. Looks for .rtd-remote file in home directory
+# Returns a socket object if successful, otherwise returns undef
+# Does not update the object state
+
+# Reads .rtd_remote file and attempts to connect
+
+sub _open_gaia_socket {
+
+  my $fh;
+
+  # Attempt to open .rtd-remote file
+  if ($fh = new IO::File($ENV{HOME}.'/.rtd-remote')) {
+    my ($pid, $host, $port) = split (/\s+/, <$fh>);
+    print "host = $host,   pid = $pid,    port = $port\n" if $DEBUG;
+    close $fh;
+    my $sock = IO::Socket::INET->new( 
+				     Proto => "tcp",
+				     PeerAddr  => $host,
+				     PeerPort  => $port,
+				    );
+    if ($sock) {
+      $sock->autoflush(1);
+      return $sock;
+    }
+
+  } 
+
+  return undef;
+}
+
+# internal sub to launch a new gaia process
+# no args. Returns ORAC status
+
+sub _launch_new_gaia {
+
+  orac_print "Launching a new GAIA process\n";
+  my $status = system "$ENV{GAIA_DIR}/gaia.sh &";
+
+  if ($status == 0) {
+    $status = ORAC__OK;
+  } else {
+    $status = ORAC__ERROR;
+  }
+
+  return $status;
 }
 
 
@@ -344,7 +422,6 @@ sub send_to_gaia {
 
   # have a problem if returns undef from can_write
   unless (defined $res) {
-    orac_err "Error - GAIA socket is not writable. Timeout!\n";
     return (ORAC__ERROR, 'Socket not writable - timeout');
   }
 
@@ -363,15 +440,22 @@ sub send_to_gaia {
     my $res = $self->sel->can_read($timeout);
 
     unless (defined $res) {
-      orac_err "send_to_gaia: Error - GAIA socket is not readable\n";
-      return (ORAC__ERROR, 'Socket not readable - timeout');
+      return (ORAC__ERROR, 'GAIA Socket not readable - timeout');
     }
 
     # Receive the first status string (should be a status and a list of bytes
     # terminated with a \n
     while (!($reply2 =~ /[\n]/)) {
-      recv ($sock, $reply2, 1, 0)
-	or return (ORAC__ERROR, 'Error reading intial byte stream from GAIA socket');
+      # Recv should return undef on error but this does not seem
+      # to work on Solaris -- check for $! explicitly instead!!!
+      recv ($sock, $reply2, 1, 0);
+      return (ORAC__ERROR, "Error reading initial byte stream from GAIA socket: $!") if $!;
+#      use Data::Dumper;
+#      print "Return valus is $ret and reply is $reply2\n";
+
+#      croak "Error ret is ".Dumper(\$ret).":$!\n" unless defined $ret;
+#      croak "This cant be right - ret is blank" if $ret eq '';
+
       $a.=$reply2;
     }
     $result = $a;
@@ -380,15 +464,20 @@ sub send_to_gaia {
     ($status, my $byte) = split / /, $result,2;
     while ($byte > 4096) {
       print "bytes are huge!!\n" if $DEBUG;
-      recv ($sock, $reply2, 4096, 0) 
-	or return (ORAC__ERROR, 'Error reading data from GAIA socket');
+      # Recv should return undef on error but this does not seem
+      # to work on Solaris -- check for $! explicitly instead!!!
+      recv ($sock, $reply2, 4096, 0);
+      return (ORAC__ERROR, "Error reading data from GAIA socket: $!")
+	if $!;
       $byte -=4096;
       $message .= $reply2;
     }
     print "prepping to receive actual data...\n" if $DEBUG;
     
-    recv ($sock, $reply, $byte, 0)
-	or return (ORAC__ERROR, 'Error reading data from GAIA socket');
+    # Recv should return undef on error but this does not seem
+    # to work on Solaris -- check for $! explicitly instead!!!
+    recv ($sock, $reply, $byte, 0);
+    return (ORAC__ERROR, "Error reading data from GAIA socket: $!") if $!;
     $message .= $reply;
     push (@results, $message);
     print "results received: $message\n" if $DEBUG;
@@ -505,8 +594,13 @@ sub image {
   # Should be able to check the error message from herre and attempt
   # to relaunch a missing window.
   if ($status != ORAC__OK) {
-    orac_err "ORAC::Display::GAIA - Error retrieving image id\n";
     orac_err "Error: $image\n";
+    orac_err "ORAC::Display::GAIA - Error retrieving image id\n";
+    orac_err "Lost connection to GAIA window! Did you close it by mistake?\n".
+      "If you want the GAIA displays back, restart the pipeline\n".
+	"at a convenient time. If you want to have fewer GAIA windows\n".
+	  "configure your display - type \"oracman Display\" for info.\n";
+
     return ORAC__ERROR;
   }
 
@@ -515,8 +609,8 @@ sub image {
   ($status, $junk) = $self->send_to_gaia("$image configure -file $file");
 
   if ($status != ORAC__OK) {
-    orac_err "ORAC::Display::GAIA - Error displaying file $file\n";
     orac_err "Error: $junk\n";
+    orac_err "ORAC::Display::GAIA - Error displaying file $file\n";
     return ORAC__ERROR;
   }
 
@@ -528,8 +622,8 @@ sub image {
   ($status, my $dispwid) = $self->send_to_gaia("$image get_image");
 
   if ($status != ORAC__OK) {
-    orac_err "ORAC::Display::GAIA - Error retrieving sub-image\n";
     orac_err "Error: $dispwid\n";
+    orac_err "ORAC::Display::GAIA - Error retrieving sub-image\n";
     return ORAC__ERROR;
   }
 
@@ -540,8 +634,8 @@ sub image {
     ($status, $junk) = $self->send_to_gaia("$dispwid autocut -percent 95");
 
   if ($status != ORAC__OK) {
-    orac_err "ORAC::Display::GAIA - Error auto cutting\n";
     orac_err "Error: $junk\n";
+    orac_err "ORAC::Display::GAIA - Error auto cutting\n";
     return ORAC__ERROR;
   }
 
