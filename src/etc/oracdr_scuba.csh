@@ -68,6 +68,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.12  2002/10/07 05:21:43  timj
+#     Should hopefully work in Hilo
+#
 #     Revision 1.11  2002/08/02 03:25:01  frossie
 #     Grr, what a mess. Added the 'dem' bit if we are at JCMT
 #
@@ -225,11 +228,20 @@ else
   set dem = "/dem"
 endif
 
+# Input data directory depends on location
+if ($ORAC_DATA_ROOT == /jcmtdata ) then
+    
+    setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/scuba/$orac_sem$oracut$dem/
 
-# First start with input directory - $ORAC_DATA_ROOT is set up
-# depending on location (domainname) if not set explicitly.
+else if ($ORAC_DATA_ROOT == /scuba ) then
 
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/scuba/$orac_sem$oracut$dem/
+    setenv ORAC_DATA_IN $ORAC_DATA_ROOT/$orac_sem$oracut
+
+else
+
+    setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/scuba/$oracut
+
+endif
 
 # Output data directory is more problematic.
 # If we are at JCMT set it to ORAC_DATA_ROOT/rodir/$oracut
