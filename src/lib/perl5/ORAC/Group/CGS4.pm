@@ -57,7 +57,7 @@ my %hdr = (
             SLIT_NAME           => "SLIT",
             TDECOFF             => "DECOFF",
             TRAOFF              => "RAOFF",
-            UTDATE              => "IDATE"
+            UTDATE              => "IDATE",
             UTEND               => "UTEND",
             UTSTART             => "UTSTART"
 	  );
