@@ -83,6 +83,7 @@ sub new {
   $frame->{UserHeader} = {};
   $frame->{Format} = undef;
   $frame->{IsGood} = 1;
+  $frame->{Intermediates} = [];
 
   bless($frame, $class);
 
@@ -164,6 +165,9 @@ zero.
 If a file number is requested that does not exist, the first
 member is returned.
 
+Every time the file name is updated, the new files is pushed onto
+the intermediates() array.
+
 =cut
 
 sub file {
@@ -204,6 +208,9 @@ sub file {
 	# Make sure the nokeep flag is unset
 	$self->nokeep($firstarg,0);
 
+	# Push onto file history array
+	push(@{$self->intermediates}, $self->files->[$index]);
+
       } 
     } else {
       # Since we are updating, Erase the existing file if required
@@ -214,6 +221,9 @@ sub file {
 
       # Make sure the nokeep flag is unset
       $self->nokeep(1,0);
+
+      # Push onto file history array
+      push(@{$self->intermediates}, $self->files->[0]);
 
     }
   }
@@ -626,6 +636,45 @@ sub hdr {
   # No arguments, return the header hash reference
   return $self->header;
 }
+
+=item intermediates
+
+An array containing all the intermediate file names used
+during processing. Filenames are pushed onto this array
+whenever the file() method is used to update the current
+file information.
+
+  $Frm->intermediates(@files);
+  @files = $Frm->intermediates;
+  push(@{$Frm->intermediates}, $file);
+  $first = $Frm->intermediates->[0];
+
+As for the files() method, returns an array reference when
+called in a scalar context and an array of file names when
+called from an array context.
+
+The array does not store information relating to the position
+of the file in the files() array [ie was it stored as
+$Frm->file(1) or $Frm->file(2)]. The order simply reflects the
+order the files were given to the file() method.
+
+=cut
+ 
+sub intermediates {
+  my $self = shift;
+  if (@_) { @{ $self->{Intermediates} } = @_;}
+
+  if (wantarray) {
+
+    # In an array context, return the array itself
+    return @{ $self->{Intermediates} } if wantarray();
+ 
+  } else {
+    # In a scalar context, return the reference to the array
+    return $self->{Intermediates};
+  }
+}
+
 
 
 =item isgood
