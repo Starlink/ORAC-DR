@@ -57,6 +57,7 @@ my %hdr = (
            OBSERVATION_TYPE       => "OBSTYPE",
            RA_BASE                => "CRVAL1",
            RA_TELESCOPE_OFFSET    => "TRAOFF",
+           RECIPE                 => "RECIPE",
            SPEED_GAIN             => "SPEED",
            X_LOWER_BOUND          => "DETECXS",
            X_UPPER_BOUND          => "DETECXE",
