@@ -145,20 +145,15 @@ sub image_ui {
 		-padx => '20',
 		-text => 'Revert',
 	);
-	my($button_5) = $root->Button (
-		-padx => '20',
-		-text => 'Delete',
-	);
-	my($button_6) = $root->Button (
-		-padx => '20',
-		-text => 'Configure',
-	);
 	my($button_7) = $root->Button (
 		-text => 'Add',
 	);
 
 	# widget commands
 
+	$button_4->configure(
+		-command => sub { &set_default_status('IMAGE'); }
+	);
 	$button_7->configure(
 		-command => \&add_image_entry
 	);
@@ -174,7 +169,8 @@ sub image_ui {
 	$frame_4->grid(
 		-in => $root,
 		-column => '1',
-		-row => '3'
+		-row => '3',
+		-sticky => 'e'
 	);
 	$frame_1->grid(
 		-in => $root,
@@ -335,19 +331,9 @@ sub image_ui {
 		-column => '1',
 		-row => '1'
 	);
-	$button_5->grid(
-		-in => $frame_4,
-		-column => '2',
-		-row => '1'
-	);
-	$button_6->grid(
-		-in => $frame_4,
-		-column => '3',
-		-row => '1'
-	);
 	$button_7->grid(
 		-in => $frame_4,
-		-column => '4',
+		-column => '3',
 		-row => '1'
 	);
 
@@ -373,8 +359,7 @@ sub image_ui {
 	# container $frame_4 (columns)
 	$frame_4->gridColumnconfigure(1, -weight => 0, -minsize => 37);
 	$frame_4->gridColumnconfigure(2, -weight => 0, -minsize => 2);
-	$frame_4->gridColumnconfigure(3, -weight => 0, -minsize => 2);
-	$frame_4->gridColumnconfigure(4, -weight => 0, -minsize => 30);
+	$frame_4->gridColumnconfigure(3, -weight => 0, -minsize => 30);
 
 	# container $root (rows)
 	$root->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
@@ -402,6 +387,7 @@ sub image_ui {
 create_menu($windowmenu, 'IMAGE','WINDOW');
 create_menu($toolmenu, 'IMAGE', 'TOOL');
 create_menu($regionmenu, 'IMAGE', 'REGION');
+
 
 
 

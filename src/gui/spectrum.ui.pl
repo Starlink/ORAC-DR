@@ -115,20 +115,15 @@ sub spectrum_ui {
 		-padx => '20',
 		-text => 'Revert',
 	);
-	my($button_5) = $root->Button (
-		-padx => '20',
-		-text => 'Delete',
-	);
-	my($button_6) = $root->Button (
-		-padx => '20',
-		-text => 'Configure',
-	);
 	my($button_7) = $root->Button (
 		-text => 'Add',
 	);
 
 	# widget commands
 
+	$button_4->configure(
+		-command => sub { &set_default_status('GRAPH'); }
+	);
 	$button_7->configure(
 		-command => \&add_graph_entry
 	);
@@ -144,7 +139,8 @@ sub spectrum_ui {
 	$frame_4->grid(
 		-in => $root,
 		-column => '1',
-		-row => '3'
+		-row => '3',
+		-sticky => 'e'
 	);
 	$frame_1->grid(
 		-in => $root,
@@ -270,19 +266,9 @@ sub spectrum_ui {
 		-column => '1',
 		-row => '1'
 	);
-	$button_5->grid(
-		-in => $frame_4,
-		-column => '2',
-		-row => '1'
-	);
-	$button_6->grid(
-		-in => $frame_4,
-		-column => '3',
-		-row => '1'
-	);
 	$button_7->grid(
 		-in => $frame_4,
-		-column => '4',
+		-column => '3',
 		-row => '1'
 	);
 
@@ -308,16 +294,15 @@ sub spectrum_ui {
 	# container $frame_4 (columns)
 	$frame_4->gridColumnconfigure(1, -weight => 0, -minsize => 2);
 	$frame_4->gridColumnconfigure(2, -weight => 0, -minsize => 2);
-	$frame_4->gridColumnconfigure(3, -weight => 0, -minsize => 2);
-	$frame_4->gridColumnconfigure(4, -weight => 0, -minsize => 35);
+	$frame_4->gridColumnconfigure(3, -weight => 0, -minsize => 35);
 
 	# container $root (rows)
 	$root->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
 	$root->gridRowconfigure(2, -weight  => 0, -minsize  => 33);
-	$root->gridRowconfigure(3, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(3, -weight  => 1, -minsize  => 30);
 
 	# container $root (columns)
-	$root->gridColumnconfigure(1, -weight => 0, -minsize => 34);
+	$root->gridColumnconfigure(1, -weight => 1, -minsize => 34);
 
 	# container $frame_1 (rows)
 	$frame_1->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
