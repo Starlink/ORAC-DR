@@ -78,9 +78,10 @@
 #    steering header MAKE_MOSAIC is true.
 #    -  When RESAMPLE is false, the offset files (.off extension)
 #    associated with each frame are interrogated to find one common
-#    object---the one with identifier 1---as would be the case if
-#    telescope or central-source offsets are used.  For each frame
-#    the read x-y co-ordinates rounded to the nearest integer and
+#    object.  This is identifier 1 if telescope or central-source 
+#    offsets are used, but the script searches upwards from 1 the first
+#    nine identifiers, if necessary, until it finds a match.  For each 
+#    frame the read x-y co-ordinates rounded to the nearest integer and
 #    with opposite sign become the new origin.
 #    -  Group header ROOT_NAME stores the name of the mosaic
 #    excluding any suffix.  It is written for the first cycle,
@@ -266,48 +267,64 @@
 # Derive the offsets
 # ==================
 
+# The matched offsets may not be with the first-ranked item, especially 
+# if it is extended, although most cases it will find a #1.  So prepare
+# to loop a few times until an identification number is available.
+             my $id = 1;
+             my $match = 0;
+             my ( @xoffsets, @yoffsets );
+             NEXTID: while ( $id < 10 && !$match ) {
+
 # Open the offset files and store the co-ordinates.  Note that this
 # assumes central-source or telescope offsets have been used, and that there
 # is but one position in each.
-             my @xoffsets = ();
-             my @yoffsets = ();
-             foreach my $Frame ( $cycleGrp->members ) {
-                my $offfile = $Frame->file . ".off";
+                @xoffsets = ();
+                @yoffsets = ();
+                foreach my $Frame ( $cycleGrp->members ) {
+                   my $offfile = $Frame->file . ".off";
 
-                if ( ! -e $offfile ) {
-                   orac_err "Missing $offfile offset text file.\n";
-                }
-                open( OFFFILE, "<$offfile" );
+                   if ( ! -e $offfile ) {
+                      orac_err "Missing $offfile offset text file.\n";
+                   }
+                   open( OFFFILE, "<$offfile" );
 
 # Store the offsets.
-                my $offfound = 0;
-                foreach my $line ( <OFFFILE> ) {
+                   my $offfound = 0;
+                   foreach my $line ( <OFFFILE> ) {
 
-# Match 1 followed by a space in case there are more than nine
-# objects, unlikely but possible.
-                   my @fields;
-                   if ( $line =~ /^1\s/ ) {
-                      @fields = split( /\s+/, $line );
-                      push( @xoffsets, $fields[1] );
-                      push( @yoffsets, $fields[2] );
-                      $offfound = 1 ;
-                      last;
+# Match the identification number  followed by a space in case there are
+# more than nine objects, unlikely but possible.
+                      my @fields;
+                      if ( $line =~ /^$id\s/ ) {
+                         @fields = split( /\s+/, $line );
+                         push( @xoffsets, $fields[1] );
+                         push( @yoffsets, $fields[2] );
+                         $offfound = 1 ;
+                         last;
+                      }
                    }
-                }
-                close( OFFFILE );
+                   close( OFFFILE );
 
 # Cannot proceed unless the x-y offsets were found.
-                if ( ! $offfound ) {
-                   orac_err "No object #1 in $offfile offset text file.\n";
+                   if ( ! $offfound ) {
+                      orac_err "No object #$id in $offfile offset text file.\n";
+
+# Try the next identification.
+                      $id++;
+                      next NEXTID;
+                   }
                 }
-             }
 
 # Convert the offsets to be displacements of the origin to the nearest pixel.
-             my $framecount = 0;
-             foreach my $frame ( @xoffsets ) {
-                $xoffsets[$framecount] = -int( $xoffsets[$framecount] + 0.5 );
-                $yoffsets[$framecount] = -int( $yoffsets[$framecount] + 0.5 );
-                $framecount++;
+                my $framecount = 0;
+                foreach my $frame ( @xoffsets ) {
+                   $xoffsets[$framecount] = -int( $xoffsets[$framecount] + 0.5 );
+                   $yoffsets[$framecount] = -int( $yoffsets[$framecount] + 0.5 );
+                   $framecount++;
+                }
+
+# We have a match, so exit the loop.
+                $match = 1;
              }
 
 # Change of origin
@@ -605,9 +622,10 @@ steering header MAKE_MOSAIC is true.
 
 When RESAMPLE is false, the offset files (.off extension)
 associated with each frame are interrogated to find one common
-object---the one with identifier 1---as would be the case if
-telescope or central-source offsets are used.  For each frame
-the read x-y co-ordinates rounded to the nearest integer and
+object.  This is identifier 1 if telescope or central-source 
+offsets are used, but the script searches upwards from 1 the first
+nine identifiers, if necessary, until it finds a match.  For each 
+frame the read x-y co-ordinates rounded to the nearest integer and
 with opposite sign become the new origin.
 
 =item *
