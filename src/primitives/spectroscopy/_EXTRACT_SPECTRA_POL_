@@ -1,0 +1,87 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_EXTRACT_SPECTRA_POL_ - Extracts spectra from an image for polarimetry data.
+
+=head1 DESCRIPTION
+
+This primitive is an intelligent wrapper around other primitives that do the
+processing. It determines the number of beams to extract, finds their locations,
+optionally extracts an arc spectrum using those locations, then extracts,
+deripples, cross-correlates, and coadds the beams for subsequent processing.
+
+This processing only occurs if the PAIR_COMPLETE header for the current Frame
+is true.
+
+Beams cannot be extracted if FIGARO is older than v5.6-0.
+
+=head1 PARAMETERS
+
+This primitive simply passes on parameters to the lower level
+primitives it calls.
+
+=over 4
+
+=item ROWSCAL = STRING (Given)
+
+Instructs the _EXTRACT_FIND_ROWS_POL_ primitive
+whether to load details from the calibration system, save details to
+the calibration system, or neither. Can be either LOAD or SAVE. []
+
+=item PROFILECAL = STRING (Given)
+
+Instructs the _EXTRACT_ALL_BEAMS_POL_ primitive
+whether to load details from the calibration system, save details to
+the calibration system, or neither. Can be either LOAD or SAVE. []
+
+=back
+
+=head1 AUTHORS
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+Brad Cavanagh (JAC) <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+if ($Frm->uhdr("PAIR_COMPLETE")) {
+
+  # This now needs an uptodate figaro - or else beam extraction is hopeless
+  if ( starversion_lt( "FIGARO", 'V5.6-0' )) {
+    orac_err ("Your figaro is too old - versions below 5.6-0 cannot support oracdr beam extraction.\n");
+  } else {
+
+    my $rowscal = $_EXTRACT_SPECTRA_POL_{ROWSCAL};
+    my $profilecal =$_EXTRACT_SPECTRA_POL_{PROFILECAL};
+
+    $rowscal=0 if (!defined $rowscal);
+    $profilecal=0 if (!defined $profilecal);
+
+    _EXTRACT_DETERMINE_NBEAMS_
+
+    _EXTRACT_FIND_ROWS_POL_ ROWSCAL=$rowscal
+
+    # Should we use an arc
+    my $noarc = $Frm->uhdr("REDUCE_SINGLE_FRAME_CONFIG_NOARC");
+    if (!$noarc) {
+      _EXTRACT_ARC_POL_
+    }
+
+    # Only proceed if we found all the beams
+    my $nbeams = $Grp->uhdr("NBEAMS");
+    if($nbeams) {
+      _EXTRACT_ALL_BEAMS_POL_ PROFILECAL=$profilecal
+
+      _DERIPPLE_ALL_BEAMS_
+      _CROSS_CORR_ALL_BEAMS_POL_
+
+      _COADD_EXTRACTED_BEAMS_POL_
+
+    }
+  }
+}
