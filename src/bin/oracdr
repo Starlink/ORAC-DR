@@ -39,8 +39,8 @@ use sigtrap qw/stack-trace normal-signals error-signals/;
 #  ORAC modules
 #
 use lib $ENV{ORAC_PERL5LIB};
-use ORAC::Basic;    # Recipe parsing/execution routines
-use ORAC::General;
+use ORAC::Basic;    # Helper routines
+use ORAC::General;  # parse_* routines
 use ORAC::Loop;     # Loop control
 use ORAC::Print;    # Printing messages or errors
 use ORAC::Core;     # Core pipeline routines
@@ -282,9 +282,6 @@ if ($opt_debug) {
   # as possible if the pipeline crashes without flushing the buffer
   $fh->autoflush(1);
 
-
-  # Set debugging on in ORAC::Basic
-  $ORAC::Basic::DEBUG = 1;
 };
 
 # Logging messages to a file
@@ -504,8 +501,10 @@ unless ($opt_noeng) {
 
 # Beeping
 if ($opt_beep) {
-  $ORAC::Basic::Beep = 1;
   $orac_prt->errbeep(1);
+  # Beep is for orac_exit_normally so must set global in the
+  # correct class
+  $ORAC::Basic::Beep = 1;
 }
 
 ######################## I N I T  D I S P L A Y #############################
@@ -513,13 +512,16 @@ if ($opt_beep) {
 # launch display
 # -nodisplay suppresses display,
 #
+my $Display;
 if ($opt_nodisplay) {
   orac_print("Orac says: No display will be used\n","blue");
 } else {
 
   orac_print ("Setting up display infrastructure (display tools will not be started until necessary)...", 'blue');
-  &orac_setup_display;
+  $Display = orac_setup_display;
   orac_print ("Done\n","blue");
+
+  # Could configure debug option in $Display at this point
 
 }
 
@@ -742,7 +744,21 @@ unless ($opt_batch) {
 					    undef, $opt_ut, $opt_resume);
 
     # Actually process the observation
-    orac_process_frame($Frm, $Grp, $Cal, \%Mon, $Override_Recipe, $instrument);
+    # Includes recipe configurations since the recipe
+    # object is not instantiated until the recipe name is
+    # read from the frame object in orac_process_frame
+    # may want to revisit this.
+    orac_process_frame(
+		       Frame => $Frm,
+		       Group => $Grp,
+		       Calibration => $Cal,
+		       Engines =>\%Mon,
+		       Display => $Display,
+		       Debug => $opt_debug,
+		       CmdLineRecipe => $Override_Recipe,
+		       Instrument => $instrument,
+		       Batch => 0,
+		      );
 
     # Reset the obs number labels
     $orac_prt->errpre('Error: ');
@@ -754,10 +770,6 @@ unless ($opt_batch) {
 
 } else {
   # Batch mode
-
-  # Set the flag in the namespace used by the recipes
-  # so that the recipes know we are in batch mode.
-  $ORAC::Basic::Batch = 1;
 
   # First loop over frames
   my @Groups = ();
@@ -794,7 +806,21 @@ unless ($opt_batch) {
       $orac_prt->errpre("#$fnumber Err: ");
       $orac_prt->warpre("#$fnumber Warning: ");
       # Actually process the observation
-      orac_process_frame($Frm, $Grp, $Cal, \%Mon, $Override_Recipe, $instrument);
+      # Includes recipe configurations since the recipe
+      # object is not instantiated until the recipe name is
+      # read from the frame object in orac_process_frame
+      # may want to revisit this.
+      orac_process_frame(
+			 Frame => $Frm,
+			 Group => $Grp,
+			 Calibration => $Cal,
+			 Engines =>\%Mon,
+			 Display => $Display,
+			 Debug => $opt_debug,
+			 CmdLineRecipe => $Override_Recipe,
+			 Instrument => $instrument,
+			 Batch => 1,
+			);
 
       # Reset the obs number labels
       $orac_prt->errpre('Error: ');
@@ -1087,6 +1113,9 @@ All Rights Reserved.
 
 
 # $Log$
+# Revision 1.86  2001/01/10 02:37:10  timj
+# Make changes required to support ORAC::Recipe
+#
 # Revision 1.85  2001/01/09 03:20:40  timj
 # Use the new ORAC::Inst::Defn and ORAC::Inst::InitMsg classes
 #
