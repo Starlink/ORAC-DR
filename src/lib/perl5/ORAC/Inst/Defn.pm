@@ -26,12 +26,16 @@ All instrument dependencies are specified in this module.
 
 use strict;
 use Carp;
+use File::Spec;
 require Exporter;
 use vars qw/ @ISA @EXPORT_OK $VERSION /;
 
 @ISA = qw/ Exporter /;
-@EXPORT_OK = qw/ orac_determine_inst_classes 
+@EXPORT_OK = qw/ 
+  orac_determine_inst_classes
   orac_determine_algorithm_engines
+  orac_determine_recipe_search_path
+  orac_determine_primitive_search_path
   /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
@@ -201,28 +205,82 @@ sub orac_determine_inst_classes {
 
 =item B<orac_determine_recipe_search_path>
 
-Returns a list of 
+Returns a list of directories that should be searched in order
+to locate recipes for the specified instrument.
 
+  @paths = orac_determine_recipe_search_path( $instrument );
 
-It is possible that this information may be moved to the specific
-instrument frame class.
+Root location is specified by the C<ORAC_DIR> environment
+variable.
 
 =cut
 
 sub orac_determine_recipe_search_path {
+  my $inst = uc(shift);
+  my @path;
 
+  my $root;
+  if (exists $ENV{ORAC_DIR}) {
+    $root = File::Spec->catdir($ENV{ORAC_DIR}, "recipes");
+  } else {
+    croak "Unable to determine ORAC_DIR location";
+  }
+
+  if ($inst eq 'SCUBA') {
+    push(@path, File::Spec->catdir( $root, 'SCUBA'));
+  } elsif ($inst eq 'CGS4') {
+    push(@path, File::Spec->catdir( $root, 'CGS4'));
+  } elsif ($inst eq 'IRCAM' or $inst eq 'IRCAM2') {
+    push(@path, File::Spec->catdir( $root, "IRCAM"));
+  } elsif ($inst eq 'UFTI' or $inst eq 'UFTI2') {
+    push(@path, File::Spec->catdir( $root, "UFTI"));
+  } elsif ($inst eq 'MICHELLE' or $inst eq 'MICHTEMP') {
+    push(@path, File::Spec->catdir( $root, "MICHELLE"));
+  } else {
+    croak "recipes: Unrecognised instrument: $inst\n";
+  }
+
+  return @path;
 }
 
 =item B<orac_determine_primitive_search_path>
 
-It is possible that this information may be moved to the specific
-instrument frame class.
+Returns a list of directories that should be searched in order
+to locate primitives for the specified instrument.
+
+  @paths = orac_determine_primitive_search_path( $instrument );
+
+Root location is specified by the C<ORAC_DIR> environment
+variable.
 
 =cut
 
 sub orac_determine_primitive_search_path {
+  my $inst = (shift);
+  my @path;
 
+  my $root;
+  if (exists $ENV{ORAC_DIR}) {
+    $root = File::Spec->catdir($ENV{ORAC_DIR}, "primitives");
+  } else {
+    croak "Unable to determine ORAC_DIR location";
+  }
 
+  if ($inst eq 'SCUBA') {
+    push(@path, File::Spec->catdir( $root, 'SCUBA'));
+  } elsif ($inst eq 'CGS4') {
+    push(@path, File::Spec->catdir( $root, 'CGS4'));
+  } elsif ($inst eq 'IRCAM' or $inst eq 'IRCAM2') {
+    push(@path, File::Spec->catdir( $root, "IRCAM"));
+  } elsif ($inst eq 'UFTI' or $inst eq 'UFTI2') {
+    push(@path, File::Spec->catdir( $root, "UFTI"));
+  } elsif ($inst eq 'MICHELLE' or $inst eq 'MICHTEMP') {
+    push(@path, File::Spec->catdir( $root, "MICHELLE"));
+  } else {
+    croak "primitives: Unrecognised instrument: $inst\n";
+  }
+
+  return @path;
 }
 
 
