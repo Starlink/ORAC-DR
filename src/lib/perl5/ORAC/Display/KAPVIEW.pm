@@ -1213,7 +1213,7 @@ sub graph {
   my $errbar = " ";
   if (exists $options{ERRBAR}) {
     if ($options{ERRBAR}) {
-       $errbar = "errbar=true shape=bars freq=3 style='Colour(ErrBars)=red'";
+       $errbar = "errbar=true shape=bars freq=1 style='Colour(ErrBars)=red'";
     }
   } else {
     orac_warn "ERRBAR option not recognised.\n";
