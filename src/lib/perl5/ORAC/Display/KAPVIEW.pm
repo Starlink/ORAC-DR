@@ -45,7 +45,7 @@ use ORAC::Msg::EngineLaunch;
 
 use base qw/ ORAC::Display::Base /;     # Base class
 
-use vars qw/$VERSION $DEBUG $AGI_USER $AGI_NODE /;
+use vars qw/ $VERSION $DEBUG /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
@@ -1915,23 +1915,6 @@ sub vector {
 
   return $status;
 }
-
-
-# DESTROY
-# Remove the AGI file when we have finished with kapview
-
-sub DESTROY {
-   my $self = shift;
-
-   # Construct the name of the AGI file
-   my $fname = $AGI_USER . "/agi_" . $AGI_NODE . ".sdf";
-
-   # Remove it
-   unlink($fname);
-
-}
-
-
 
 
 =back
