@@ -1,0 +1,340 @@
+#+
+# Name:
+#    _DEFINE_POL_REGIONS_
+#
+# Purpose:
+#    Determine the extents of object and sky regions of a polarimetry frame.
+#
+# Language:
+#    Perl5
+
+# Description:
+#    A polarimetry frame is divided into four sections: object and sky
+#    for the e- and o-beams.  This primitive returns the extents of these
+#    regions for subsequent extraction and sky subtraction.  The frames
+#    are deemed to be aligned approximately with Right Ascension and
+#    Declination and the jittering is along the Right-ascension axis.
+#
+#    At present fixed limits are used, but sigma-clipped profiling is
+#    possible to determine where each region starts and ends along the
+#    Declination axis.
+#    
+#    The current target limits are 30% to 70% of the frame width about
+#    the jittered Right-ascension centre using the telescope offsets.
+#    Thus the limits define a section 40% of the Right-ascension width
+#    of the frame roughly centred on the source.  The restriction is to
+#    make mosaics with few pixels not derived from all contributing
+#    jittered frames, since there are usually only three jitter positions,
+#    and to allow a reasonable jitter step.  If the jitter size was
+#    restricted, the limits could be expanded for extended sources.
+#
+#    The current sky limits are 1% to 99% of the frame width along the
+#    Right-ascension axis.
+#
+# Arguments:
+#    ESBOUNDS( 4 ) = INTEGER (Returned)
+#       The pixel bounds defining the e-beam sky region in a raw
+#       polarisation frame.
+#    ETBOUNDS( 4 ) = INTEGER (Returned)
+#       The pixel bounds defining the e-beam target region in a raw
+#       polarisation frame.
+#    OSBOUNDS( 4 ) = INTEGER (Returned)
+#       The pixel bounds defining the o-beam sky region in a raw
+#       polarisation frame.
+#    OTBOUNDS( 4 ) = INTEGER (Returned)
+#       The pixel bounds defining the o-beam target region in a raw
+#       polarisation frame.
+#
+# Notes:
+#    -  This primitive is suitable for both UFTI and IRCAM. 
+#    Instrument-specific headers are obtained where appropriate.
+#    -  It only operates on object frames.
+#    -  Fractional pixel limits are rounded to the next lower integer.
+#    -  The Declination pixel limits for UFTI sections are as follows.
+#    o sky: 69--264; e sky: 320--484; o target: 601--764; e target: 
+#    824--988.
+#    -  The Declination pixel limits for IRCAM sections are as follows. 
+#    o sky: 12--52; e sky: 67--107; o target: 152--192; e target:
+#    207--247.
+#    -  Allowance is made if the chip is rotated such that the
+#    Declination axis increases or decreases with x.
+#
+#
+# Tasks:
+#    KAPPA: NDFTRACE.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ) {
+
+# Obtain the rotation angle in degrees.
+       my $rotangle = $Frm->hdr( "CROTA2" );
+       $rotangle = defined( $rotangle ) ? $rotangle : 0.0;
+
+# Define some useful variables to apply the rotation matrix.
+       my $pi = atan2( 1, 1 ) * 4;
+       my $dtor = $pi / 180.0;
+       my $cosrot = cos( $rotangle * $dtor );
+       my $sinrot = sin( $rotangle * $dtor );
+
+# Obtain the plate scales for the instrument from the headers.
+       my ( $ra_pixelscale, $dec_pixelscale );
+       my $instrument = $Frm->hdr( "INSTRUME" );
+       if ( $instrument =~ /^UFTI/ ) {
+          $ra_pixelscale = $Frm->hdr( "CDELT1" );
+          $dec_pixelscale = $Frm->hdr( "CDELT2" );
+       } else {
+          $ra_pixelscale = $Frm->hdr( "PIXELSIZ" );
+          $dec_pixelscale = $ra_pixelscale;
+       }
+
+# Obtain the telescope offsets in arcseconds using the instrument-specific
+# headers.
+       my ( $ra_off_as, $dec_off_as );
+       if ( $instrument =~ /^UFTI/ ) {
+          $ra_off_as = $Frm->hdr( "TRAOFF" );
+          $dec_off_as = $Frm->hdr( "TDECOFF" );
+       } else {
+          $ra_off_as = $Frm->hdr( "RAOFF" );
+          $dec_off_as = $Frm->hdr( "DECOFF" );
+       }
+
+# Convert to pixel offsets of the object.
+       my $ra_off_p = $ra_off_as / $ra_pixelscale;
+       my $dec_off_p = -1.0 * $dec_off_as / $dec_pixelscale;
+
+# Apply the rotation matrix to obtain Cartesian pixel offsets.
+       my $xoffset = $ra_off_p * $cosrot - $dec_off_p * $sinrot;
+       my $yoffset = $ra_off_p * $sinrot + $dec_off_p * $cosrot;
+
+# Obtain the midpoint of a band.
+# ==============================
+
+# Obtain the frame dimensions by tracing the NDF.
+       my $header = "ndf=".$Frm->file;
+       my $ORAC_STATUS;
+       $Mon{"ndfpack_mon"}->obeyw("ndftrace", "$header");
+
+# Extract the bounds of the frame.
+       ( $ORAC_STATUS, my @lbnd ) = $Mon{"ndfpack_mon"}->get("ndftrace","lbound");
+       ( $ORAC_STATUS, my @ubnd ) = $Mon{"ndfpack_mon"}->get("ndftrace","ubound");
+
+# Obtain the dimensions.
+       my $xdim = $ubnd[ 0 ] - $lbnd[ 0 ] + 1;
+       my $ydim = $ubnd[ 1 ] - $lbnd[ 1 ] + 1;
+
+# Find the offset in Right Ascension as a fraction of
+# frame width (along axis closely aligned to the Right Ascension).  Here
+# we assume that rotation is either near 0 or +/-90 degrees.  In practice
+# this probably doesn't matter unless a non-square chip is introduced.
+       my $ra_off_f;
+       if ( abs( $rotangle ) < 45 ) {
+          $ra_off_f = $ra_off_p / $xdim;
+       } else {
+          $ra_off_f = $ra_off_p / $ydim;
+       }
+
+# Define fractional limits.
+# =========================
+
+# Set the limits of the e- and o-beam target and sky as percentages
+# of the image, along the axis perpendicular to the bands (Declination
+# direction).  The offsets are by convention only in Right Ascension.
+       my ( @et_lbnd_f, @et_ubnd_f, @ot_lbnd_f, @ot_ubnd_f );
+       my ( @es_lbnd_f, @es_ubnd_f, @os_lbnd_f, @os_ubnd_f );
+       if ( $instrument =~ /^UFTI/ ) {
+          @et_lbnd_f = ( 0.30 + $ra_off_f, 0.805 );
+          @et_ubnd_f = ( 0.70 + $ra_off_f, 0.965 );
+          @ot_lbnd_f = ( 0.30 + $ra_off_f, 0.587 );
+          @ot_ubnd_f = ( 0.70 + $ra_off_f, 0.747 );
+          @es_lbnd_f = ( 0.01, 0.313 );
+          @es_ubnd_f = ( 0.99, 0.473 );
+          @os_lbnd_f = ( 0.01, 0.068 );
+          @os_ubnd_f = ( 0.99, 0.258 );
+
+# IRCAM limits are tighter since there is more latitude in the adjustment
+# of the polarimetry mask than for UFTI.
+       } else {
+          @et_lbnd_f = ( 0.30 + $ra_off_f, 0.809 );
+          @et_ubnd_f = ( 0.70 + $ra_off_f, 0.965 );
+          @ot_lbnd_f = ( 0.30 + $ra_off_f, 0.594 );
+          @ot_ubnd_f = ( 0.70 + $ra_off_f, 0.751 );
+          @es_lbnd_f = ( 0.01, 0.262 );
+          @es_ubnd_f = ( 0.99, 0.411 );
+          @os_lbnd_f = ( 0.01, 0.047 );
+          @os_ubnd_f = ( 0.99, 0.204 );
+       }
+
+# Flip the axes if Right Ascension is aligned with y axis of the frame.
+       if ( abs( $rotangle ) > 45 ) {
+          @et_lbnd_f = reverse( @et_lbnd_f );
+          @et_ubnd_f = reverse( @et_ubnd_f );
+          @ot_lbnd_f = reverse( @ot_lbnd_f );
+          @ot_ubnd_f = reverse( @ot_ubnd_f );
+          @es_lbnd_f = reverse( @es_lbnd_f );
+          @es_ubnd_f = reverse( @es_ubnd_f );
+          @os_lbnd_f = reverse( @os_lbnd_f );
+          @os_ubnd_f = reverse( @os_ubnd_f );
+       }
+
+# Allow for negative rotation, i.e. where the Declination axis
+# corresponds to the negative x axis.  To get the same pixel, as we
+# round down, add a half pixel more than 1 in addition to normal one
+# pixel extra to subtract from.  Switch the bounds so that the upper is
+# greater than the lower.
+       if ( $rotangle < -45 ) {
+          my $flips = 1.0 + 1.5 / $ydim;
+          $et_lbnd_f[ 0 ] = $flips - $et_ubnd_f[ 0 ];
+          $et_ubnd_f[ 0 ] = $flips - $et_lbnd_f[ 0 ];
+          $ot_lbnd_f[ 0 ] = $flips - $ot_ubnd_f[ 0 ];
+          $ot_ubnd_f[ 0 ] = $flips - $ot_lbnd_f[ 0 ];
+          $es_lbnd_f[ 0 ] = $flips - $es_ubnd_f[ 0 ];
+          $es_ubnd_f[ 0 ] = $flips - $es_lbnd_f[ 0 ];
+          $os_lbnd_f[ 0 ] = $flips - $os_ubnd_f[ 0 ];
+          $os_ubnd_f[ 0 ] = $flips - $os_lbnd_f[ 0 ];
+       }
+
+
+# Calculate and store the e-target bounds.
+# ========================================
+       my ( @etbounds, @otbounds, @esbounds, @osbounds );
+
+       @etbounds = ( int( $et_lbnd_f[ 0 ] * $xdim ),
+                     int( $et_ubnd_f[ 0 ] * $xdim ),
+                     int( $et_lbnd_f[ 1 ] * $ydim ), 
+                     int( $et_ubnd_f[ 1 ] * $ydim ) );
+       $_DEFINE_POL_REGIONS_{ETBOUNDS} = \@etbounds;
+
+       @otbounds = ( int( $ot_lbnd_f[ 0 ] * $xdim ),
+                     int( $ot_ubnd_f[ 0 ] * $xdim ),
+                     int( $ot_lbnd_f[ 1 ] * $ydim ), 
+                     int( $ot_ubnd_f[ 1 ] * $ydim ) );
+       $_DEFINE_POL_REGIONS_{OTBOUNDS} = \@otbounds;
+
+       @esbounds = ( int( $es_lbnd_f[ 0 ] * $xdim ),
+                     int( $es_ubnd_f[ 0 ] * $xdim ),
+                     int( $es_lbnd_f[ 1 ] * $ydim ), 
+                     int( $es_ubnd_f[ 1 ] * $ydim ) );
+       $_DEFINE_POL_REGIONS_{ESBOUNDS} = \@esbounds;
+
+       @osbounds = ( int( $os_lbnd_f[ 0 ] * $xdim ),
+                     int( $os_ubnd_f[ 0 ] * $xdim ),
+                     int( $os_lbnd_f[ 1 ] * $ydim ), 
+                     int( $os_ubnd_f[ 1 ] * $ydim ) );
+       $_DEFINE_POL_REGIONS_{OSBOUNDS} = \@osbounds;
+
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_DEFINE_POL_REGIONS_ -- Determine the extents of object and sky regions of a polarimetry frame.
+
+=head1 DESCRIPTION
+
+A polarimetry frame is divided into four sections: object and sky
+for the e- and o-beams.  This primitive returns the extents of these
+regions for subsequent extraction and sky subtraction.  The frames
+are deemed to be aligned approximately with Right Ascension and
+Declination and the jittering is along the Right-ascension axis.
+
+At present fixed limits are used, but sigma-clipped profiling is
+possible to determine where each region starts and ends along the
+Declination axis.
+
+The current target limits are 30% to 70% of the frame width about
+the jittered Right-ascension centre using the telescope offsets.
+Thus the limits define a section 40% of the Right-ascension width
+of the frame roughly centred on the source.  The restriction is to
+make mosaics with few pixels not derived from all contributing
+jittered frames, since there are usually only three jitter positions,
+and to allow a reasonable jitter step.  If the jitter size was
+restricted, the limits could be expanded for extended sources.
+
+The current sky limits are 1% to 99% of the frame width along the
+Right-ascension axis.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item ESBOUNDS( 4 ) = INTEGER (Returned)
+
+The pixel bounds defining the e-beam sky region in a raw
+polarisation frame.
+
+=item ETBOUNDS( 4 ) = INTEGER (Returned)
+
+The pixel bounds defining the e-beam target region in a raw
+polarisation frame.
+
+=item OSBOUNDS( 4 ) = INTEGER (Returned)
+
+The pixel bounds defining the o-beam sky region in a raw
+polarisation frame.
+
+=item OTBOUNDS( 4 ) = INTEGER (Returned)
+
+The pixel bounds defining the o-beam target region in a raw
+polarisation frame.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for both UFTI and IRCAM.
+Instrument-specific headers are obtained where appropriate.
+
+=item *
+
+It only operates on object frames.
+
+=item *
+
+Fractional pixel limits are rounded to the next lower integer.
+
+=item *
+
+The Declination pixel limits for UFTI sections are as follows.
+o sky: 69--264; e sky: 320--484; o target: 601--764; e target: 824--988.
+
+=item *
+
+The Declination pixel limits for IRCAM sections are as follows. 
+o sky: 12--52; e sky: 67--107; o target: 152--192; e target: 207--247.
+
+=item *
+
+Allowance is made if the chip is rotated such that the
+Declination axis increases or decreases with x.
+
+=back
+
+=head1 TASKS
+
+KAPPA: NDFTRACE.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

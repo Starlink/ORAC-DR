@@ -1,0 +1,555 @@
+#+
+# Name:
+#    _CALC_STOKES_
+#
+# Purpose:
+#    Calculates Stokes parameters for polarisation recipes.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive takes the eight registered and resampled mosaics--one
+#    for each beam and waveplate angle---and derives images of the summed
+#    intensity; polarisation percentage, intensity, and angle; and the
+#    Stokes parameters.  The last are Q and U if linear polarisation is
+#    chosen and V for circular polarisation.  Alternative arithmetic
+#    methods are available.  The ratio method is preferred.  However,
+#    for noisy or faint sources it can attempt to take the square root of
+#    a negative number, resulting in a bad value.
+#
+# Arguments:
+#    METHOD = CHARACTER (Given)
+#       The method used to calculate the polarisation images.  It must be
+#       either "ratio" or "difference",  the former being used if any
+#       other value is supplied.  The IRPOLDR manual has more details.
+#       ["difference"]
+#    POL_MODE = CHARACTER (Given) 
+#       The polarisation type to calculate.  It must be either "linear"
+#       or "circular", the former being used if any other value is
+#       supplied.  ["linear"]
+#
+# Notes:
+#    -  This primitive is suitable for both UFTI and IRCAM.
+#    Instrument-specific headers are obtained where appropriate.
+#    -  Processing only occurs for object and sky frames, and when the
+#    steering header REGISTER_IMAGES is true.
+#    -  The registered frames are found in the group stored by reference
+#    in the $Grp user header MOSAIC_GROUP.
+#    -  An offset of -6.7 degrees is applied to rotation angle.
+#    -  The origins of the generated polarisation frames are set to
+#   [1,1].  The WCS current frame is unchanged.
+#    -  The units are set for the frames with suffices (see
+#    "Output Data") P to "%", and TH to "degrees".
+#    -  The appropriate frame titles are set for the generated frames.
+#    These are as follows.  I: "Intensity";  P: "Polarisation";
+#    PI: "Polarised Intensity"; Q: "Stokes Q"; TH: "Polarisation Angle";
+#    U: "Stokes U"; V: "Stokes V"; q: "Intensity-normalised Stokes q";
+#    u: "Intensity-normalised Stokes u"; v: "Intensity-normalised Stokes v".
+#    -  All the created frames may be displayed.
+#
+# Tasks:
+#    KAPPA: ADD, MATHS, MULT, SETORIGIN, SETTITLE, SETUNITS.
+#
+# Output Data:
+#    -  Polarisation frames each inheriting the name of its input frame
+#    but each with a different suffix for the various parameters.
+#    These are:
+#        I   intensity
+#        P   percentage polarisation
+#        PI  polarisation intensity
+#        Q   Stokes Q (if POL_MODE is "linear")
+#        TH  polarisation angle
+#        U   Stokes U (if POL_MODE is "linear")
+#        V   Stokes V (if POL_MODE is "circular")
+#        q   Stokes intensity-normalised q (if POL_MODE is "linear")
+#        u   Stokes intensity-normalised u (if POL_MODE is "linear")
+#        v   Stokes intensity-normalised v (if POL_MODE is "circular")
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# References:
+#    A.Chryststomou, 1997, "Imaging Polarimetry with IRCAM3", IRPOL/2.2.
+#
+# Copyright:
+#    Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Arguments
+# =========
+
+# Obtain the value for the polarimetry mode.
+    my $polmode = ( $_CALC_STOKES_{POL_MODE} || "linear" );
+    if ( $polmode ne "linear" && $polmode ne "circular" ) {
+       $polmode = "linear";
+    }
+
+# Obtain the method by which polarisation is derived.
+    my $method = ( $_CALC_STOKES_{METHOD} || "ratio" );
+    if ( $method ne "ratio" && $method eq "difference" ) {
+       $method = "ratio";
+    }
+
+# Selection
+# =========
+
+# This should only be performed on OBJECT or SKY frames when it is time
+# to combine the registered mosaic images.
+    if ( ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ||
+           $Frm->hdr( "OBSTYPE" ) eq "SKY" ) && 
+           $Frm->hdr( "REGISTER_IMAGES" ) ) {
+
+# Make a local $Grp containing just the mosaic images.
+       my $Grp = $Grp->uhdr( "MOSAIC_GROUP" );
+
+# Select the various frames.
+# ==========================
+
+# Obtain the e-beam 0-degree polariser angle.
+       my $tempGrp = $Grp->subgrp( WAVEPLATE_ANGLE => 0,
+                                   POLARISATION_BEAM => "e" );
+       my $e0 = $tempGrp->frame( 0 )->file;
+
+# Obtain the e-beam 22.5-degree polariser angle.
+       $tempGrp = $Grp->subgrp( WAVEPLATE_ANGLE => 22,
+                                POLARISATION_BEAM => "e" );
+       my $e22 = $tempGrp->frame( 0 )->file;
+
+# Obtain the e-beam 45-degree polariser angle.
+       $tempGrp = $Grp->subgrp( WAVEPLATE_ANGLE => 45,
+                                POLARISATION_BEAM => "e" );
+       my $e45 = $tempGrp->frame( 0 )->file;
+
+# Obtain the e-beam 67.5-degree polariser angle.
+       $tempGrp = $Grp->subgrp( WAVEPLATE_ANGLE => 67,
+                                POLARISATION_BEAM => "e" );
+       my $e67 = $tempGrp->frame( 0 )->file;
+
+# Obtain the o-beam 0-degree polariser angle.
+       $tempGrp = $Grp->subgrp( WAVEPLATE_ANGLE => 0,
+                                POLARISATION_BEAM => "o" );
+       my $o0 = $tempGrp->frame( 0 )->file;
+
+# Obtain the o-beam 22.5-degree polariser angle.
+       $tempGrp = $Grp->subgrp( WAVEPLATE_ANGLE => 22,
+                                POLARISATION_BEAM => "o" );
+       my $o22 = $tempGrp->frame( 0 )->file;
+
+# Obtain the o-beam 45-degree polariser angle.
+       $tempGrp = $Grp->subgrp( WAVEPLATE_ANGLE => 45,
+                                POLARISATION_BEAM => "o" );
+       my $o45 = $tempGrp->frame( 0 )->file;
+
+# Obtain the o-beam 67.5-degree polariser angle.
+       $tempGrp = $Grp->subgrp( WAVEPLATE_ANGLE => 67,
+                                POLARISATION_BEAM => "o" );
+       my $o67 = $tempGrp->frame( 0 )->file;
+
+# Form intensity images.
+# ======================
+
+# Obtain the rootname for created frames.  
+       my $root = $Grp->file;
+
+# Sum the the e- and o-beam frame pairs to form the 0-degree and
+# 45-degree intensity images.
+       $Mon{"kappa_mon"}->obeyw("add","in1=$e0 in2=$o0 out=temp0");
+       $Mon{"kappa_mon"}->obeyw("add","in1=$e45 in2=$o45 out=temp45");
+
+       my ( $par1, $par2, $title );
+
+# Linear polarisation
+# -------------------
+       if ( $polmode eq "linear" ) {
+
+# Sum the the e- and o-beam frame pairs to form the 22.5-degree and
+# 67.5-degree intensity images.
+          $Mon{"kappa_mon"}->obeyw("add","in1=$e22 in2=$o22 out=temp22");
+          $Mon{"kappa_mon"}->obeyw("add","in1=$e67 in2=$o67 out=temp67");
+
+# Now sum the pairs into the eight-frame intensity image.
+          $par1 = "exp='(ia+ib+ic+id)'";
+          $par2 = "ia=temp0 ib=temp45 ic=temp22 id=temp67 out=${root}_I";
+          $Mon{"kappa_mon"}->obeyw("maths","$par1 $par2");
+
+# Remove the temporary frames.
+          _DELETE_A_FRAME_ FRAME=temp22
+          _DELETE_A_FRAME_ FRAME=temp67
+
+# Circular polarisation
+# ---------------------
+       } else {
+
+# Merely sum the 0-degree and 45-degree pairs into the four-frame intensity
+# image.
+          $par1 = "exp='(ia+ib)'";
+          $par2 = "ia=temp0 ib=temp45 out=${root}_I";
+          $Mon{"kappa_mon"}->obeyw("maths","$par1 $par2");
+       }
+
+# Remove the temporary frames.
+       _DELETE_A_FRAME_ FRAME=temp0
+       _DELETE_A_FRAME_ FRAME=temp45
+
+# Assign a sensible title for the intensity frame.  Reset its origin
+# to the default, for convenience.
+       $Mon{"ndfpack_mon"}->obeyw("settitle","ndf=${root}_I title=Intensity");
+       $Mon{"ndfpack_mon"}->obeyw("setorigin","ndf=${root}_I origin=[1,1]");
+
+# Report the new frame.
+       orac_print "Orac says: ${polmode}-polarisation intensity frame ${root}_I formed.\n";
+
+# Display the frame.
+       my $tempFrm = $Frm->new;
+       $tempFrm->file( "${root}_I" );
+       $Display->display_data( $tempFrm ) if ( defined $Display );
+
+# Linear polarisation
+# -------------------
+       if ( $polmode eq "linear" ) {
+          if ( $method eq "ratio" ) {
+
+# Ratio method
+# ------------
+
+# Calculate the q Stokes parameter using a token, fa, to simplify
+# the expression.
+             $par1 = "exp='(fa-1)/(fa+1)' fa=sqrt((ia/ib)/(ic/id))";
+             $par2 = "ia=$e0 ib=$o0 ic=$e45 id=$o45 out=${root}_q";
+             $Mon{"kappa_mon"}->obeyw("maths","$par1 $par2");
+
+# Calculate the u Stokes parameter likewise.
+             $par2 = "ia=$e22 ib=$o22 ic=$e67 id=$o67 out=${root}_u";
+             $Mon{"kappa_mon"}->obeyw("maths","$par1 $par2");
+
+          } else {
+
+# Difference method
+# -----------------
+
+# Calculate the q Stokes parameter using a token, fa, to simplify
+# the expression.
+             $par1 = "exp='(ia-ib-fa*(ic-id))/(ia+ib+fa*(ic+id))' " .
+                     "fa='(ia+ic)/(ib+id)'";
+             $par2 = "ia=$e0 ib=$o0 ic=$e45 id=$o45 out=${root}_q";
+             $Mon{"kappa_mon"}->obeyw("maths","$par1 $par2");
+
+# Calculate the u Stokes parameter likewise.
+             $par2 = "ia=$e0 ib=$o0 ic=$e45 id=$o45 out=${root}_q";
+             $Mon{"kappa_mon"}->obeyw("maths","$par1 $par2");
+
+          }
+
+# Assign sensible titles for the q and u frames.  Reset their origin
+# to the default, for convenience.
+          $title = "title='Intensity-normalised Stokes q'";
+          $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_q $title");
+          $Mon{ndfpack_mon}->obeyw("setorigin","ndf=${root}_q origin=[1,1]");
+
+          $title = "title='Intensity-normalised Stokes u'";
+          $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_u $title");
+          $Mon{ndfpack_mon}->obeyw("setorigin","ndf=${root}_u origin=[1,1]");
+
+# Report the progress.
+          orac_print "Orac says: $polmode-polarisation q frame ${root}_q " .
+                     "formed using the $method method.\n";
+
+# Display the frame.
+          $tempFrm = $Frm->new;
+          $tempFrm->file( "${root}_q" );
+          $Display->display_data( $tempFrm ) if ( defined $Display );
+
+# Report the progress.
+          orac_print "Orac says: $polmode-polarisation u frame ${root}_u " .
+                     "formed using the $method method.\n";
+
+# Display the frame.
+          $tempFrm = $Frm->new;
+          $tempFrm->file( "${root}_u" );
+          $Display->display_data( $tempFrm ) if ( defined $Display );
+
+# Calculate the polarisation percentage.
+          $par1 = "exp='100*sqrt(ia*ia+ib*ib)'";
+          $par2 = "ia=${root}_q ib=${root}_u out=${root}_P";
+          $Mon{kappa_mon}->obeyw("maths","$par1 $par2");
+
+# Set the title, units and origin for the polarisation percentage.
+          $title = "title=Polarisation";
+          $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_P $title");
+          $Mon{ndfpack_mon}->obeyw("setunits","ndf=${root}_P units='%'");
+          $Mon{ndfpack_mon}->obeyw("setorigin","ndf=${root}_P origin=[1,1]");
+
+# Report the creation of the frame.
+          orac_print "Orac says: $polmode-polarisation percentage frame " .
+                      "${root}_P formed.\n";
+
+# Display the frame.
+          $tempFrm = $Frm->new;
+          $tempFrm->file( "${root}_P" );
+          $Display->display_data( $tempFrm ) if ( defined $Display );
+
+# Calculate the position angle.  Allow for a misalignment of 6.7 degrees
+# (cf. IRPOLDR manual).
+          $par1 = "exp='0.5*atan2d(ia,ib)-6.7'";
+          $par2 = "ia=${root}_u ib=${root}_q out=${root}_TH";
+          $Mon{kappa_mon}->obeyw("maths","$par1 $par2");
+
+# Set the title, units and origin for the polarisation angle.
+          $title = "title='Polarisation Angle'";
+          $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_TH $title");
+          $Mon{ndfpack_mon}->obeyw("setunits","ndf=${root}_TH units=degrees");
+          $Mon{ndfpack_mon}->obeyw("setorigin","ndf=${root}_TH origin=[1,1]");
+
+# Report the creation of the frame.
+          orac_print "Orac says: $polmode-polarisation angle frame " .
+                     "${root}_TH formed.\n";
+
+# Display the frame.
+          $tempFrm = $Frm->new;
+          $tempFrm->file( "${root}_TH" );
+          $Display->display_data( $tempFrm ) if ( defined $Display );
+
+# Calculate the polarised intensities.
+          $par1 = "in1=${root}_P in2=${root}_I out=${root}_PI";
+          $Mon{kappa_mon}->obeyw("mult","$par1");
+
+# Set the title and origin for the polarisation intensity.
+          $title = "title='Polarised Intensity'";
+          $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_PI $title");
+          $Mon{ndfpack_mon}->obeyw("setorigin","ndf=${root}_PI origin=[1,1]");
+
+# Report the creation of the frame.
+          orac_print "Orac says: $polmode-polarisation intensity frame " .
+                     "${root}_PI formed.\n";
+  
+# Display the frame.
+          $tempFrm = $Frm->new;
+          $tempFrm->file( "${root}_PI" );
+          $Display->display_data( $tempFrm ) if ( defined $Display );
+
+# Calculate the Q Intensity.
+          $par1 = "in1=${root}_q in2=${root}_I out=${root}_Q";
+          $Mon{kappa_mon}->obeyw("mult","$par1");
+
+# Set the title.
+          $title = "title='Stokes Q'";
+          $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_Q $title");
+
+# Report the creation of the frame.
+          orac_print "Orac says: $polmode-polarisation Q frame " .
+                     "${root}_Q formed.\n";
+
+# Display the frame.
+          $tempFrm = $Frm->new;
+          $tempFrm->file( "${root}_Q" );
+          $Display->display_data( $tempFrm ) if ( defined $Display );
+
+# Calculate the U Intensity.
+          $par1 = "in1=${root}_u in2=${root}_I out=${root}_U";
+          $Mon{kappa_mon}->obeyw("mult","$par1");
+
+# Set the title.
+          $title = "title='Stokes U'";
+          $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_U $title");
+
+# Report the creation of the frame.
+          orac_print "Orac says: $polmode-polarisation U frame " .
+                     "${root}_U formed.\n";
+
+# Display the frame.
+          $tempFrm = $Frm->new;
+          $tempFrm->file( "${root}_U" );
+          $Display->display_data( $tempFrm ) if ( defined $Display );
+
+# Circular polarisation.
+# ======================
+       } else {
+
+          if ( $method eq "ratio" ) {
+
+# Ratio method
+# ------------
+
+# Calculate the v Stokes parameter using a token, fa, to simplify
+# the expression.
+             $par1 = "exp='(fa-1)/(fa+1)' fa='sqrt((ia/ib)/(ic/id))'";
+             $par2 = "ia=$e0 ib=$o0 ic=$e45 id=$o45 out=${root}_v";
+             $Mon{kappa_mon}->obeyw("maths","$par1 $par2");
+
+          } else {
+
+# Difference method
+# -----------------
+
+# Calculate the v Stokes parameter using a token, fa, to simplify
+# the expression.
+             $par1 = "exp='(ia-ib-fa*(ic-id))/(ia+ib+fa*(ic+id))' " .
+                     "fa='(ia+ic)/(ib+id)'";
+             $par2 = "ia=$e0 ib=$o0 ic=$e45 id=$o45 out=${root}_v";
+             $Mon{kappa_mon}->obeyw("maths","$par1 $par2");
+
+          }
+
+# Assign a sensible title for the V Stokesparameter frame.  Reset its origin
+# to the default, for convenience.
+          $title = "title='Stokes Intensity normalised v'";
+          $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_v $title");
+          $Mon{ndfpack_mon}->obeyw("setorigin","ndf=${root}_v origin=[1,1]");
+
+# Report the creation of the frame.
+          orac_print "Orac says: $polmode-polarisation v frame ${root}_v " .
+                     "formed using the $method method.\n";
+
+# Display the frame.
+          $tempFrm = $Frm->new;
+          $tempFrm->file( "${root}_v" );
+          $Display->display_data( $tempFrm ) if ( defined $Display );
+
+# Calculate the V Intensity.
+          $par1 = "in1=${root}_v in2=${root}_I out=${root}_V";
+          $Mon{kappa_mon}->obeyw("mult","$par1");
+
+# Set the title.
+          $title = "title='Stokes V'";
+          $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_V $title");
+
+# Report the creation of the frame.
+          orac_print "Orac says: $polmode-polarisation Stokes V frame " .
+                     "${root}_V formed.\n";
+
+# Display the frame.
+          $tempFrm = $Frm->new;
+          $tempFrm->file( "${root}_V" );
+          $Display->display_data( $tempFrm ) if ( defined $Display );
+
+       }
+    }
+
+# Podule
+# ======
+
+=head1 NAME 
+
+_CALC_STOKES_ -- Calculates Stokes parameters for polarisation recipes.
+
+=head1 DESCRIPTION
+
+This primitive takes the eight registered and resampled mosaics--one
+for each beam and waveplate angle---and derives images of the summed
+intensity; polarisation percentage, intensity, and angle; and the
+Stokes parameters.  The last are Q and U if linear polarisation is
+chosen and V for circular polarisation.  Alternative arithmetic
+methods are available.  The ratio method is preferred.  However,
+for noisy or faint sources it can attempt to take the square root of
+a negative number, resulting in a bad value.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item METHOD = CHARACTER (Given)
+
+The method used to calculate the polarisation images.  It must be
+either "ratio" or "difference",  the former being used if any
+other value is supplied.  The IRPOLDR manual has more details.
+["difference"]
+
+=item POL_MODE = CHARACTER (Given) 
+
+The polarisation type to calculate.  It must be either "linear"
+or "circular", the former being used if any other value is
+supplied.  ["linear"]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for both UFTI and IRCAM.
+Instrument-specific headers are obtained where appropriate.
+
+=item *
+
+Processing only occurs for object and sky frames, and when the
+steering header REGISTER_IMAGES is true.
+
+=item *
+
+The registered frames are found in the group stored by reference
+in the $Grp user header MOSAIC_GROUP.
+
+=item *
+
+An offset of -6.7 degrees is applied to rotation angle.
+
+=item *
+
+The origins of the generated polarisation frames are set to [1,1].
+The WCS current frame is unchanged.
+
+=item *
+
+The units are set for the frames with suffices (see 
+L<"OUTPUT DATA">) P to "%", and TH to "degrees".
+
+=item *
+
+The appropriate frame titles are set for the generated frames.
+These are as follows.  I: "Intensity";  P: "Polarisation";
+PI: "Polarised Intensity"; Q: "Stokes Q"; TH: "Polarisation Angle";
+U: "Stokes U"; V: "Stokes V"; q: "Intensity-normalised Stokes q";
+u: "Intensity-normalised Stokes u"; v: "Intensity-normalised Stokes v".
+
+=item *
+
+All the created frames may be displayed.
+
+=back
+
+=head1 TASKS
+
+KAPPA: ADD, MATHS, MULT, SETORIGIN, SETTITLE, SETUNITS.
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Polarisation frames each inheriting the name of its input frame
+but each with a different suffix for the various parameters.
+These are:
+
+    I   intensity
+    P   percentage polarisation
+    PI  polarisation intensity
+    Q   Stokes Q (if POL_MODE is "linear")
+    TH  polarisation angle
+    U   Stokes U (if POL_MODE is "linear")
+    V   Stokes V (if POL_MODE is "circular")
+    q   Stokes intensity-normalised q (if POL_MODE is "linear")
+    u   Stokes intensity-normalised u (if POL_MODE is "linear")
+    v   Stokes intensity-normalised v (if POL_MODE is "circular")
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 REFERENCES
+
+A.Chryststomou, 1997, "Imaging Polarimetry with IRCAM3", IRPOL/2.2.
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

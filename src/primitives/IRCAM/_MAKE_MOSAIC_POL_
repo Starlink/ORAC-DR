@@ -1,0 +1,334 @@
+#+
+# Name:
+#    _MAKE_MOSAIC_POL_
+#
+# Purpose:
+#    Forms a mosaic for e- and o-beam groups at current waveplate angle.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive makes two mosaics, one for each beam, from the object
+#    frames in the e- and o-beam groups at the current waveplate angle
+#    for a POL recipe.  It calls the standard _MAKE_MOSAIC_ primitive
+#    using each beam's group selected for the current waveplate
+#    angle within the current $Grp.  Each resultant mosaic is appended
+#    to the MOSAIC_GROUP group.
+#
+# Arguments:
+#    FILLBAD = LOGICAL (Given)
+#       If true (1), replace the bad pixels in the current cycle's
+#       mosaic with a smooth function derived from its neighbours. 
+#       Otherwise, leave the bad pixels unaltered.  [1]
+#    INT_METHOD = CHARACTER (Given)
+#       The interpolation method.  This is either "linint" for bi-linear
+#       interpolation, or "nearest" for nearest neighbour.  The latter
+#       takes about half the time.  ["linint"]
+#    RESAMPLE = LOGICAL (Given)
+#       If true (1), resample the current cycle's frames to the same
+#       Cartesian co-ordinate system using the method given by argument
+#       INT_METHOD.  If false (0), use integer offsets and changes of
+#       origin to register the frames.  The latter is many times
+#       faster and is recommended for pipeline operation.
+#
+# Notes:
+#    -  This primitive is suitable for both UFTI and IRCAM.
+#    -  Processing only occurs when the steering header MAKE_MOSAIC
+#    is true.
+#    -  The recipe cycle number comes from steering header CYCLE_NUMBER.
+#    -  The waveplate angle is obtained from header WPLANGLE.
+#    -  MOSAIC_GROUP is a $Grp group header storing a reference to the
+#    group of mosaics.
+#    -  The e- and o-beam groups are specified by references stored in
+#    the internal group headers EBEAM_GROUP and OBEAM_GROUP respectively.
+#    -  The arguments are merely passed to _MAKE_MOSAIC_ and
+#    the group mosaic name is restored to that of the current $Grp,
+#    not that of the beam groups.
+#    -  There is no trimming of the mosaics.
+#    -  Header POLARISATION_BEAM is written to both mosaic frames stored
+#    MOSAIC_GROUP with values "e" or "o" as appropriate.  The recipe
+#    cycle number is written to header CYCLE_NUMBER.
+#    -  Headers TRAOFF and TDECOFF (UFTI) or RAOFF and DECOFF (IRCAM)
+#    are also written to both mosaic frames.  These specify the beam
+#    separations in arcseconds, o-beam with respect to the e-beam, for
+#    Right Ascension and Declination respectively.  Thus by definition
+#    their values are zero for the e-beam.
+#    -  The updated headers of the mosaic are copied back into its
+#    beam group (EBEAM_GROUP or OBEAM_GROUP) frame.
+#
+# Output Data:
+#    The grand mosaics for the e- and o-beam groups at the current
+#    frame's waveplate angle called "<groupname><waveplate_angle>_mos",
+#    where <groupname> is the group's name which includes the beam
+#    name, and <waveplate_angle> is the waveplate angle rounded down to
+#    the nearest degree.   Mosaics for an individual cycle have a
+#    further "_<cycle_number>" suffix.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Arguments
+# =========
+
+# Obtain the value for the interpolation.
+    my $intmethod = ( $_MAKE_MOSAIC_POL_{INT_METHOD} || "linint" );
+
+# Determine whether or not to fill bad pixels.
+    my $fillbad = $_MAKE_MOSAIC_POL_{FILLBAD};
+    $fillbad = defined( $fillbad ) ? $fillbad : 1;
+
+# Determine whether or not to resample.
+    my $resample = $_MAKE_MOSAIC_POL_{RESAMPLE};
+    $resample = defined( $resample ) ? $resample : 1;
+
+# Selection
+# =========
+
+# Test whether or not it is time to make a mosaic.
+    my $combine = $Frm->hdr( "MAKE_MOSAIC" );
+    if ( $combine ) {
+
+# Obtain default e-o beam separations in arcseconds.
+       _DEFINE_IRPOL_BEAM_SEPARATIONS_
+       my $pol_raoff = $_DEFINE_IRPOL_BEAM_SEPARATIONS_{RAOFF};
+       my $pol_decoff = $_DEFINE_IRPOL_BEAM_SEPARATIONS_{DECOFF};
+
+# Obtain the instrument name from the headers and hence the names for
+# telescope-offset keywords.
+       my $instrument = $Frm->hdr( "INSTRUME" );
+       my ( $raoff_name, $decoff_name );
+       if ( $instrument =~ /^UFTI/ ) {
+          $raoff_name = "TRAOFF";
+          $decoff_name = "TDECOFF";
+       } else {
+          $raoff_name = "RAOFF";
+          $decoff_name = "DECOFF";
+       }
+
+# Obtain the current frame's polarisation angle and cycle number.
+       my $wplangle = $Frm->hdr( "WPLANGLE" );
+       my $cycleno = $Frm->hdr( "CYCLE_NUMBER" );
+
+# Obtain the mosaic group by reference.
+       my $mosGrp = $Grp->uhdr( "MOSAIC_GROUP" );
+
+# Loop for each beam's group of frames.
+       foreach my $grpname ( "EBEAM_GROUP", "OBEAM_GROUP" ) {
+
+# Make a local $Grp containing just the sky-subtracted images for the
+# current beam.  Report an error if the group could not be accessed.
+          my $Grp = $Grp->uhdr( $grpname );
+          if ( ! defined( $Grp ) ) {
+             orac_err "_MAKE_MOSAIC_POL_: $grpname does not exist " .
+                     "(probable programming error).\n";
+          }
+
+# Select those members with the same waveplate angle.
+          my $angleGrp = $Grp->subgrp( WPLANGLE => $wplangle );
+
+# Set the group name.  Here we mimic what happens for most uses of
+# _MAKE_MOSAIC_ where there is a single group.  The group name changes
+# having the "_mos" appended once the first mosaic is made.  There is a
+# mosaic for each waveplate angle, so this should appear in the mosaic's
+# name.  Add a small increment to allow for rounding, but not the normal
+# 0.5 as this would change 22.5 to 23 and 67.5 to 68.  Specification was
+# for 22 and 67 in the names.
+          my $int_wplangle = int( $wplangle + 0.1 );
+          my $rootname = $Grp->file . $int_wplangle;
+          if ( $cycleno == 0 ) {
+             $angleGrp->file( $rootname );
+          } else {
+             $angleGrp->file( $rootname . "_mos" );
+          }
+
+# _MAKE_MOSAIC_ uses the group header ROOT_NAME for cycles after the first
+# to create the name of the mosaic.  Here we know what ROOT_NAME has to be
+# in all cases, so it's just set.  This avoids recording both values in
+# the main group's header to enable the value to persist between cycles.
+          $angleGrp->hdr( "ROOT_NAME", $rootname );
+
+# Start a new context so that the sub-group becomes the current $Grp
+# within the context delimited by the braces.  The mosaic name is the
+# group name.  Define outside the context so that it persists when the
+# Grp reverts to the main Grp.
+          my $mosname;
+          {
+             my $Grp = $angleGrp;
+             _MAKE_MOSAIC_ INT_METHOD=$intmethod FILLBAD=$fillbad RESAMPLE=$resample TRIM=0
+
+# The group name is changed in _MAKE_MOSAIC_ to the mosaic name.
+# However, that's only for the current beam group, not the main
+# Grp.  So save the name outside this group context, and modify the
+# file associated with main Grp.
+             $mosname = $Grp->file;
+
+# Add the frame to the group.
+             $mosGrp->push( $Frm->new( $mosname ) );
+
+# Obtain the last frame of the group.
+             my $tempFrm = $mosGrp->frame( $mosGrp->num );
+
+# Inherit the cycle number.  The mosaic frames are not part of the
+# pipeline $Frm; they are in another group, however, the cycle number is
+# needed for subsequent processing.
+             $tempFrm->hdr( "CYCLE_NUMBER", $cycleno );
+
+# Set two headers needed later for computing the Stokes parameters.
+# Sub-grouping on floating waveplate angle is unreliable, and perhaps
+# needs to be changed earlier.
+             $tempFrm->hdr( "WAVEPLATE_ANGLE", $int_wplangle );
+             if ( $grpname eq "EBEAM_GROUP" ) {
+                $tempFrm->hdr( "POLARISATION_BEAM", "e" );
+
+# Sset the `telescope' offset headerss to be the beam separations.  The 
+# telescope offsets themselves have no usefulness at this point,
+# therefore it's safe to reuse them.  Indeed they should all be the same
+# and usually zero.  The writing of these headers then permits reuse of
+# existing registration routines, which eventually use the `telescope'
+# offsets as a last resort.
+                $tempFrm->hdr( $raoff_name, 0.0 );
+                $tempFrm->hdr( $decoff_name, 0.0 );
+             } else {
+                $tempFrm->hdr( "POLARISATION_BEAM", "o" );
+                $tempFrm->hdr( $raoff_name, $pol_raoff );
+                $tempFrm->hdr( $decoff_name, $pol_decoff );
+             }
+          }
+
+# Propagate the modified headers back to the original group.
+          %{ $Grp->hdr } = %{ $angleGrp->hdr };
+#          %{ $Grp->uhdr } = %{ $angleGrp->uhdr };
+
+       }
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+MAKE_MOSAIC_POL -- Forms a mosaic for e- and o-beam groups at current waveplate angle.
+
+=head1 DESCRIPTION
+
+This primitive makes two mosaics, one for each beam, from the object
+frames in the e- and o-beam groups at the current waveplate angle
+for a POL recipe.  It calls the standard L<_MAKE_MOSAIC_> primitive
+using each beam's group selected for the current waveplate
+angle within the current $Grp.  Each resultant mosaic is appended
+to the MOSAIC_GROUP group.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item FILLBAD = LOGICAL (Given)
+
+If true (1), replace the bad pixels in the current cycle's
+mosaic with a smooth function derived from its neighbours. 
+Otherwise, leave the bad pixels unaltered.  [1]
+
+=item INT_METHOD = CHARACTER (Given)
+
+The interpolation method.  This is either "linint" for bi-linear
+interpolation, or "nearest" for nearest neighbour.  The latter
+takes about half the time.  ["linint"]
+
+=item RESAMPLE = LOGICAL (Given)
+
+If true (1), resample the current cycle's frames to the same
+Cartesian co-ordinate system using the method given by argument
+INT_METHOD.  If false (0), use integer offsets and changes of
+origin to register the frames.  The latter is many times
+faster and is recommended for pipeline operation.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for both UFTI and IRCAM.
+
+=item *
+
+Processing only occurs when the steering header MAKE_MOSAIC is
+true.
+
+=item *
+
+The recipe cycle number comes from steering header CYCLE_NUMBER.
+
+=item *
+
+The waveplate angle is obtained from header WPLANGLE.
+
+=item *
+
+MOSAIC_GROUP is a $Grp group header storing a reference to the
+group of mosaics.
+
+=item *
+
+The e- and o-beam groups are specified by references stored in
+the internal group headers EBEAM_GROUP and OBEAM_GROUP respectively.
+
+=item *
+
+The arguments are merely passed to _MAKE_MOSAIC_ and
+the group mosaic name is restored to that of the current $Grp,
+not that of the beam groups.
+
+=item *
+
+There is no trimming of the mosaics.
+
+=item *
+
+Header POLARISATION_BEAM is written to both mosaic frames stored
+MOSAIC_GROUP with values "e" or "o" as appropriate.  The recipe
+cycle number is written to header CYCLE_NUMBER.
+
+=item *
+
+Headers TRAOFF and TDECOFF (UFTI) or RAOFF and DECOFF (IRCAM)
+are also written to both mosaic frames.  These specify the beam
+separations in arcseconds, o-beam with respect to the e-beam, for
+Right Ascension and Declination respectively.  Thus by definition
+their values are zero for the e-beam.
+
+=item *
+
+The updated headers of the mosaic are copied back into its
+beam group (EBEAM_GROUP or OBEAM_GROUP) frame.
+
+=back
+
+=head1 OUTPUT DATA
+
+The grand mosaics for the e- and o-beam groups at the current frame's
+waveplate angle called "E<lt>groupnameE<gt>E<lt>waveplate_angleE<gt>_mos",
+where E<lt>groupnameE<gt> is the group's name which includes the beam
+name, and E<lt>waveplate_angleE<gt> is the waveplate angle rounded
+down to the nearest degree.  Mosaics for an individual cycle have a
+further "_E<lt>cycle_numberE<gt>" suffix.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
