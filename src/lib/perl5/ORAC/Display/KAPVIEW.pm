@@ -238,7 +238,7 @@ sub newdev {
   my $self = shift;
   my $win = shift;
   
-  my $dev = "xwindows;$$" . "$win" ."xwin";
+  my $dev = "xwindows;" . "$win" ."_oracdrxwin";
 
   return $dev;
 }
@@ -538,6 +538,11 @@ Returns the following:
   
 The temporary files themselves are added to a global class
 array and removed by the destructor.
+
+Note that this routine does not remove the temporary filename.
+This is probably a bug. Should probably create some kind of
+object that will have a destructor that removes the file rather
+than using a simple file name. (an ORAC::Frame::TmpFile)?
 
 =cut
 
