@@ -28,6 +28,7 @@ to ORAC::Frame::UKIRT objects. Some additional methods are supplied.
  
 use 5.004;
 use ORAC::Frame;
+use ORAC::Constants;
  
 # Let the object know that it is derived from ORAC::Frame;
 use base qw/ORAC::Frame/;
@@ -87,6 +88,8 @@ sub new {
   $frame->{RawSuffix} = ".sdf";
   $frame->{RawFixedPart} = 'ro'; 
   $frame->{UserHeader} = {};
+  $frame->{NoKeepArr} = [];
+
 
   bless($frame, $class);
 
@@ -106,6 +109,44 @@ sub new {
 
 }
 
+
+=item erase
+
+Erase the current file from disk.
+
+  $Frm->erase($i);
+
+The optional argument specified the file number to be erased.
+The argument is identical to that given to the file() method.
+Returns ORAC__OK if successful, ORAC__ERROR otherwise.
+
+Note that the file() method is not modified to reflect the
+fact the the file associated with it has been removed from disk.
+
+This method is usually called automatically when the file()
+method is used to update the current filename and the nokeep()
+flag is set to true. In this way, temporary files can be removed
+without explicit use of the erase() method. (Just need to
+use the nokeep() method after the file() method has been used
+to update the current filename).
+
+=cut
+
+sub erase {
+  my $self = shift;
+
+  # Retrieve the necessary frame name
+  my $file = $self->file(@_);
+
+  # Append the .sdf if required
+  $file .= '.sdf' unless $file =~ /\.sdf$/;
+ 
+  my $status = unlink $file;
+
+  return ORAC__ERROR if $status == 0;
+  return ORAC__OK;
+
+}
 
 
 =item readhdr
