@@ -10,7 +10,7 @@ DISPLAY DATA BY CHANNEL - displays data by readout channel
 This primitive displays data by readout channel. Channel from one data
 is isolated by masking out all other channels. 
 
-Also generates some intelligently scaled histogram sdfs (displayed as "graphs").
+Also generates some intelligently scaled histogram NDFs (displayed as "graphs").
 
 Handles multiple integrations in HDS containers neatly - displays each integration in turn.
 
@@ -41,7 +41,7 @@ $Frm
 
 =head2 Other files
 
-$ORAC_DATA_CAL/ard_channelN.dat where 1 <= N <= 4
+$ORAC_DATA_CAL/channelN.ard where 1 <= N <= 4
 
 =head1 NOTES
 
@@ -66,116 +66,145 @@ p.hirst@jach.hawaii.edu
 Loosely based on the original by frossie@jach.hawaii.edu
 =cut
 
-# How about an array of frame objects to store the individual channels
-my @Frms;
+# How about an array of frame objects to store the individual channels.
+   my @Frms;
+   my $param;
 
 # For each integration $i
-foreach my $i (1..$Frm->nfiles) {
+    foreach my $i ( 1..$Frm->nfiles ) {
 
-  # Display the raw data in GAIA
-  # $Display->display_data($Frm, { TYPE=>'image', TOOL => 'GAIA', WINDOW=>'0' }) if (defined $Display);
+# Display the raw data in GAIA.
+# =============================
 
-  # Attempt to display just that integration frame in a gaia window.
-  # This works, but GAIA pops up a (broken) HDS NDF selector window
-  my $TmpFrm = new $Frm;
-  $TmpFrm->file($Frm->file($i));
-  $Display->display_data($TmpFrm, { TYPE=>'image', TOOL => 'GAIA', WINDOW=>'0' }) if (defined $Display);
+# $Display->display_data($Frm, { TYPE=>'image', TOOL => 'GAIA', WINDOW=>'0' }) if (defined $Display);
 
-  my $gain = $Frm->hdr('DEPERDN');
-  my $gains = sprintf "%.2f", $gain;
+# Attempt to display just that integration frame in a GAIA window.
+# This works, but GAIA pops up a (broken) HDS NDF selector window.
+       my $TmpFrm = new $Frm;
+       $TmpFrm->file( $Frm->file( $i ) );
+       $Display->display_data( $TmpFrm, { TYPE=>'image', TOOL => 'GAIA', WINDOW=>'0' } ) if ( defined $Display );
 
-  orac_print("Integration $i Gain is $gains electrons per Data Number\n");
-  orac_print("Note - the values in the histogram are in Data Numbers\n       the values in the titles are in electrons\n");
+# Obtain the gain and format to two decimal places for reporting.
+       my $gain = $Frm->uhdr( "ORAC_GAIN" );
+       my $gains = sprintf "%.2f", $gain;
 
-  # For each channel within that integration
-  # Generate split into channels and generate statistics
-  foreach my $c (1..4) {
+       orac_print "Integration $i Gain is $gains electrons per Data Number\n");
+       orac_print "Note - the values in the histogram are in Data Numbers\n" .
+                  "       the values in the titles are in electrons\n");
 
-    # Generate the input and output filenames
-    my ($in,$out) = $Frm->inout("_c$c",$i);
+# Generate split into channels and generate statistics
+# ====================================================
 
-    # Split into _cN files
-    my $ardfile = $ENV{'ORAC_DATA_CAL'}."/ard_channel$c.dat";
-    $Mon{'kappa_mon'}->obeyw("ardmask","in=$in out=$out ardfile=$ardfile title='Channel $c'");
-    # work around ardmask bug
-    $Mon{'ndfpack_mon'}->obeyw("setbad","ndf=$out value=true");
+# For each channel within that integration.
+       foreach my $c ( 1..4 ) {
 
-    # File into the Frms array
-    $Frms[$c] = new $Frm;
-    $Frms[$c]->file($i, $out);
+# Generate the input and output filenames
+          my ( $in, $out ) = $Frm->inout( "_c$c", $i );
 
-    # Display the channel according to disp.dat
-    # With a hack to only pass one .iN to the display system.
-    my $TmpFrm = new $Frm;
-    $TmpFrm->file($Frms[$c]->file($i));
-    $Display->display_data($TmpFrm) if (defined $Display);
+# Split into _cN files, masking the other channels with an ARD file.
+          my $ardfile = $ENV{'ORAC_DATA_CAL'}."/channel$c.ard";
+          $param = "in=$in out=$out ardfile=$ardfile title='Channel $c'";
+          $Mon{'kappa_mon'}->obeyw( "ardmask","$param" );
 
-    # Calculate the mean and sigma for the frame
-    $Mon{'kappa_mon'}->obeyw("stats", "ndf=$out");
-    my $ORAC_STATUS;
-    ($ORAC_STATUS, my $mean) = $Mon{'kappa_mon'}->get("stats", "mean");
-    ($ORAC_STATUS, my $sigma) = $Mon{'kappa_mon'}->get("stats", "sigma");
+# File into the Frms array
+          $Frms[ $c ] = new $Frm;
+          $Frms[ $c ]->file( $i, $out );
 
-    # File in the uhdr of that frame.
-    $Frms[$c]->uhdr('CH_MEAN', $mean);
-    $Frms[$c]->uhdr('CH_SIGMA', $sigma);
-  }
+# Display the channel according to disp.dat.
+# ==========================================
 
-  # Now calculate the parameters to use for the histogram generation.
-  my $meanmean=0;
-  my $maxsigma=0;
-   foreach my $c (1..4) {
-    $meanmean+=$Frms[$c]->uhdr('CH_MEAN');
-    $maxsigma = $Frms[$c]->uhdr('CH_SIGMA') > $maxsigma ? $Frms[$c]->uhdr('CH_SIGMA') : $maxsigma;
-  }
-  $meanmean/=4;
+# With a hack to only pass one .iN to the display system.
+          my $TmpFrm = new $Frm;
+          $TmpFrm->file( $Frms[$c]->file( $i ) );
+          $Display->display_data( $TmpFrm ) if ( defined $Display );
 
-  # plot from the mean, 2 sigma out in each direction, quantised to a multiple
-  # of 4 (see note below about A/D quantisation)
-  my $tsigma=$maxsigma*2;
-  my $pmin = 4* int (($meanmean - $tsigma)/4);
-  my $pmax = 4* int (($meanmean + $tsigma)/4);
-  my $span = $pmax - $pmin;
+# Derive channel statistics.
+# ==========================
 
-  # ncols is span/4 because the data are quantised in multiples of 4 -
-  # seems the last 2 bits of the A/D conversion get thrown away at some
-  # point.
-  my $ncols = $span/4;
+# Calculate the mean and standard deviation for the frame.
+          $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$out" );
+          my ( $ORAC_STATUS, $mean, $sigma );
+          ( $ORAC_STATUS, $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+          ( $ORAC_STATUS, $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
 
-  # Print the statistics and Generate and display the Histogram files
-  foreach my $c (1..4) {
+# File the statisitcs in the inernal headers of that frame.
+          $Frms[ $c ]->uhdr( "CH_MEAN", $mean );
+          $Frms[ $c ]->uhdr( "CH_SIGMA", $sigma );
+       }
 
-    my $mean=$Frms[$c]->uhdr('CH_MEAN')/$gain;
-    my $sigma=$Frms[$c]->uhdr('CH_SIGMA')/sqrt($gain);
+# Now calculate the parameters to use for the histogram generation, i.e
+# the average of the means and the largest standard deviation.  The
+# reason is to have the same scaling on all four histograms for easy
+# comparison.
+       my $meanmean = 0;
+       my $maxsigma = 0;
+       foreach my $c ( 1..4 ) {
+          $meanmean += $Frms[ $c ]->uhdr( "CH_MEAN" );
+          $maxsigma = $Frms[ $c ]->uhdr( "CH_SIGMA" ) > $maxsigma ? $Frms[ $c ]->uhdr( "CH_SIGMA" ) : $maxsigma;
+       }
+       $meanmean /= 4;
+
+# Plot from the mean, two sigma out in each direction, quantised to a
+# multiple of four (see note below about A/D quantisation).
+       my $tsigma = $maxsigma * 2;
+       my $pmin = 4 * int ( ( $meanmean - $tsigma ) / 4 );
+       my $pmax = 4 * int ( ( $meanmean + $tsigma ) / 4 );
+       my $span = $pmax - $pmin;
+
+# Variable ncols is span/4 because the data are quantised in multiples of
+# four.  It seems the last 2 bits of the A/D conversion get thrown away at
+# some point.
+       my $ncols = $span / 4;
+
+# Print the statistics after converting to electrons, and generate and
+# display the histogram files.
+       foreach my $c ( 1..4 ) {
+
+          my $mean = $Frms[ $c ]->uhdr( "CH_MEAN" ) / $gain;
+          my $sigma = $Frms[ $c ]->uhdr( "CH_SIGMA" ) / sqrt( $gain );
   
-    my $means = sprintf "%.2f", $mean;
-    my $sigmas = sprintf "%.2f", $sigma;
+          my $means = sprintf "%.2f", $mean;
+          my $sigmas = sprintf "%.2f", $sigma;
   
-    orac_print("Integration $i Channel $c: Mean=$means; Sigma=$sigmas electrons\n");
+          orac_print "Integration $i Channel $c: Mean=$means; Sigma=$sigmas electrons\n";
   
-    # At this point, a kludge to ensure the $Frms->out points to an HDS if necessary
-    if ($i == 1 && $Frm->nfiles > 1) {
-      $Frms[$c]->file(2, "dummy");
-    }
+# At this point, a kludge to ensure the $Frms->out points to an HDS
+# (multi-NDF) container file, if necessary.
+          if ( $i == 1 && $Frm->nfiles > 1 ) {
+             $Frms[ $c ]->file( 2, "dummy" );
+          }
 
-    my ($in,$out) = $Frms[$c]->inout("_ch$c", $i);
+# Form histogram and set other NDF attributes.
+# ============================================
 
-    $Mon{'ndfpack_mon'}->obeyw("settitle", "ndf=$in title='Channel $c Mean=$means Sigma=$sigmas e-'");
-  
-    $Mon{'kappa_mon'}->obeyw("histogram", "in=$in out=$out device=! numbin=$ncols range='$pmin,$pmax' accept");
-    $Mon{'ndfpack_mon'}->obeyw("settitle", "ndf=$out title='Channel $c Mean=$means Sigma=$sigmas e-'");
+# Set the frame title (for plotting).
+          my ( $in, $out ) = $Frms[ $c ]->inout( "_ch$c", $i );
+          $param = "title='Channel $c Mean=$means Sigma=$sigmas e-'";
+          $Mon{'ndfpack_mon'}->obeyw( "settitle", "ndf=$in $param" );
 
-    $Mon{'ndfpack_mon'}->obeyw("axlabel", "ndf=$out dim=1 label='Data value in $out'");
+# Create the histogram and store it.
+          $param = "in=$in out=$out device=! numbin=$ncols range='$pmin,$pmax'"; 
+          $Mon{'kappa_mon'}->obeyw( "histogram", "$param accept");
+
+# Set the title for the histogram.
+          $param = "title='Channel $c Mean=$means Sigma=$sigmas e-'";
+          $Mon{'ndfpack_mon'}->obeyw( "settitle", "ndf=$out $param" );
+
+# Set the axis label for the (1-d) histogram.
+          $param = "dim=1 label='Data value in $out'";
+          $Mon{'ndfpack_mon'}->obeyw( "axlabel", "ndf=$out $pram");
  
-    # Update the Frms[] object to point to the histogram ndf
-    $Frms[$c]->file($i,$out);
+# Update the Frms[] object to point to the histogram NDF.
+          $Frms[ $c ]->file( $i, $out );
 
-    # And display it
-    # With a hack to only pass one .iN to the display system.
-    my $TmpFrm = new $Frm;
-    $TmpFrm->file($Frms[$c]->file($i));
-    $Display->display_data($TmpFrm) if (defined $Display);
+# Display the histogram for the current channel
+# =============================================
 
-  };
+# With a hack to only pass one .iN to the display system.
+          my $TmpFrm = new $Frm;
+          $TmpFrm->file( $Frms[ $c ]->file( $i ) );
+          $Display->display_data( $TmpFrm ) if ( defined $Display );
+
+       };
   
-};
+    };
