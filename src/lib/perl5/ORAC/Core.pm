@@ -305,6 +305,16 @@ sub orac_process_frame {
   {
      my $Error = shift;
      $Error->throw;    
+  }
+  catch ORAC::Error::UserAbort with
+  {
+     my $Error = shift;
+     $Error->throw;
+  }
+  otherwise
+  {
+     my $Error = shift;
+     throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
   };
     
   # delete symlink to raw data file
@@ -441,6 +451,13 @@ sub orac_print_configuration {
         {
            my $Error = shift;
            $Error->throw;
+        }
+        otherwise
+        {
+           # this should sucessfully catch croaks, we want to re-throw
+	   # it as a ORAC::Error::FatalError, this should do it...
+	   my $Error = shift;
+	   throw ORAC::Error::FatalError("$Error", ORAC__FATAL );
         };
 	
         # Store the filehandles
@@ -1002,6 +1019,11 @@ unless ($opt_batch) {
     {
        my $Error = shift;
        $Error->throw;
+    }
+    otherwise
+    {
+       my $Error = shift;
+       throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
     };
     
     # Reset the obs number labels
@@ -1074,6 +1096,16 @@ unless ($opt_batch) {
       {
          my $Error = shift;
          $Error->throw;    
+      }
+      catch ORAC::Error::UserAbort with
+      {
+         my $Error = shift;
+         $Error->throw;    
+      }
+      otherwise
+      {
+         my $Error = shift;
+         throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
       };
     
       # Reset the obs number labels

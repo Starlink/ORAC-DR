@@ -92,6 +92,11 @@ sub new {
          my $Error = shift;
 	 print "re-throwing error $Error\n";
          $Error->throw;
+      }
+      otherwise
+      {
+         my $Error = shift;
+         throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
       };
     
     } elsif (exists $args{NAME}) {

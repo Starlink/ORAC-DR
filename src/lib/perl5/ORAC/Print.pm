@@ -68,6 +68,7 @@ require Exporter;
 $RDHDL = undef;
 
 use ORAC::Error qw/:try/;
+use ORAC::Constants qw/:status/;
 
 use IO::File;
 use IO::Tee;
@@ -627,6 +628,11 @@ sub tk_update {
   {
      my $Error = shift;
      $Error->throw;
+  }
+  otherwise
+  {
+     my $Error = shift;
+     throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
   };
 
 }
