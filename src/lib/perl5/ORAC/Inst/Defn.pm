@@ -334,6 +334,11 @@ sub orac_determine_inst_classes {
     $frameclass = "ORAC::Frame::GMOS";
     $calclass = "ORAC::Calib::UIST";
     $instclass = "ORAC::Inst::GMOS";
+  } elsif ($inst eq 'NIRI') {
+    $groupclass = "ORAC::Group::NIRI";
+    $frameclass = "ORAC::Frame::NIRI";
+    $calclass = "ORAC::Calib::UIST";
+    $instclass = "ORAC::Inst::NIRI";
   } else {
     orac_err("Instrument $inst is not currently supported in ORAC-DR\n");
     return ();
@@ -464,6 +469,15 @@ sub orac_determine_recipe_search_path {
     push( @path, $imaging_root );
     push( @path, $spectro_root );
 
+  } elsif ($inst eq 'NIRI') {
+    push( @path, File::Spec->catdir( $root, "NIRI" ) );
+    push( @path, File::Spec->catdir( $ifu_root, "NIRI" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "NIRI" ) );
+    push( @path, File::Spec->catdir( $spectro_root, "NIRI" ) );
+    push( @path, $ifu_root );
+    push( @path, $imaging_root );
+    push( @path, $spectro_root );
+
   } else {
     croak "Recipes: Unrecognised instrument: $inst\n";
   }
@@ -555,6 +569,17 @@ sub orac_determine_primitive_search_path {
     push( @path, $spectro_root );
     push( @path, $general_root );
 
+  } elsif ($inst eq 'NIRI') {
+    push( @path, File::Spec->catdir( $root, "NIRI" ) );
+    push( @path, File::Spec->catdir( $ifu_root, "NIRI" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "NIRI" ) );
+    push( @path, File::Spec->catdir( $spectro_root, "NIRI" ) );
+    push( @path, $ifu_root );
+    push( @path, $imaging_root );
+    push( @path, $spectro_root );
+    push( @path, $general_root );
+
+
   } else {
     croak "Primitives: Unrecognised instrument: $inst\n";
   }
@@ -602,6 +627,12 @@ sub orac_determine_initial_algorithm_engines {
 
     @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg
      ccdpack_res /
+
+  } elsif ($inst eq 'NIRI') {
+
+    @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg
+     ccdpack_res /
+
 
   } else {
     croak "Do not know which engines are required for instrument $inst";
@@ -1368,6 +1399,7 @@ $Id$
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
 Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>
+Paul Hirst E<lt>p.hirst@jach.hawaii.eduE<gt>
 
 
 =head1 COPYRIGHT
