@@ -64,6 +64,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.3  2004/11/10 02:31:49  bradc
+#     ORAC_DATA_CAL is in swfcam, not wfcam now
+#
 #     Revision 1.2  2004/11/06 01:08:26  bradc
 #     set ORAC_INSTRUMENT to SWFCAMn
 #
@@ -125,7 +128,7 @@ set oracdr_args = "-ut $oracut"
 setenv ORAC_INSTRUMENT SWFCAM3
 setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/wfcam3/$oracut
 setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/wfcam3/$oracut
-setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/wfcam
+setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/swfcam
 
 # screen things
 setenv ORAC_PERSON bradc
