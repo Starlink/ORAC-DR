@@ -90,12 +90,19 @@ sub nbspoke {
 #------------------------------------------------------------------------
 sub orac_execute_recipe {
 
-local($reciperef,$Frm,$Grp,$Cal) = @_;
-local(@recipe) = @$reciperef;		# dereference recipe
+  local($reciperef,$Frm,$Grp,$Cal) = @_;
+  local(@recipe) = @$reciperef;		# dereference recipe
 
-$block = join("",@recipe);
-eval $block;
-print colored ("Orac says: RECIPE ERROR: $@","blue") if ($@);
+  $block = join("",@recipe);
+  eval $block;
+
+  # Check for an error
+  print colored ("Orac says: RECIPE ERROR: $@","blue") if ($@);
+
+  # If this was a syntax error print out the recipe
+  if ($@ =~ /syntax error/) {
+    print @recipe;
+  }
 
 };
 
@@ -152,8 +159,8 @@ sub orac_parse_recipe {
 	croak "No translation for $line\n";    
       @lines = <DICTIONARY>;
       close(DICTIONARY);
-    $parse = join(" ",$macro,@rest);
-    push(@parsed,"orac_parse_arguments(\"$parse\");");
+      $parse = join(" ",$macro,@rest);
+      push(@parsed,"orac_parse_arguments(\"$parse\");\n");
 
 #       # store arguments
 #       %$macro = ();
@@ -246,7 +253,6 @@ sub orac_exit_normally {
     orac_kill_display;
     print colored ("Orac says: $message - Exiting...\n","red");
 
-    adamtask_exit;		# Shut down the messaging system
     &orac_kill_display;		# Destroy display
 
     print colored ("\nOrac says: Goodbye\n","red");
@@ -268,6 +274,14 @@ die;
 1;
 
 #$Log$
+#Revision 1.13  1998/04/17 19:28:42  timj
+#Make fix to the orac_parse_arguments push (ie add a \n
+#to the line pushed onto the recipe).
+#
+#Remove final reference to adamtask_exit.
+#
+#Print full recipe when a syntax error is reported in a recipe.
+#
 #Revision 1.12  1998/04/15 02:41:36  frossie
 #Move ams_init to appropriate place
 #
