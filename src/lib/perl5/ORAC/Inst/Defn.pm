@@ -379,6 +379,11 @@ sub orac_determine_inst_classes {
     $frameclass = "ORAC::Frame::ClassicCam";
     $calclass   = "ORAC::Calib::ClassicCam";
     $instclass  = "ORAC::Inst::ClassicCam";
+  } elsif( $inst eq 'JCMT_DAS') {
+    $groupclass = "ORAC::Group::JCMT_DAS";
+    $frameclass = "ORAC::Frame::JCMT_DAS";
+    $calclass = "ORAC::Calib";
+    $instclass = "ORAC::Inst::JCMT_DAS";
   } else {
     orac_err("Instrument $inst is not currently supported in ORAC-DR\n");
     return ();
@@ -458,9 +463,14 @@ sub orac_determine_recipe_search_path {
   my $imaging_root =  File::Spec->catdir( $root, "imaging" );
   my $spectro_root =  File::Spec->catdir( $root, "spectroscopy" );
   my $ifu_root     =  File::Spec->catdir( $root, "ifu" );
+  my $het_root     =  File::Spec->catdir( $root, "heterodyne" );
 
   if ($inst eq 'SCUBA') {
     push( @path, File::Spec->catdir( $root, 'SCUBA' ) );
+
+  } elsif ($inst eq 'JCMT_DAS') {
+    push( @path, File::Spec->catdir( $het_root, "JCMT_DAS" ) );
+    push( @path, $het_root );
 
   } elsif ($inst eq 'CGS4' or $inst eq 'OCGS4') {
     push( @path, File::Spec->catdir( $root, 'CGS4' ) );
@@ -588,10 +598,16 @@ sub orac_determine_primitive_search_path {
   my $imaging_root =  File::Spec->catdir( $root, "imaging" );
   my $spectro_root =  File::Spec->catdir( $root, "spectroscopy" );
   my $ifu_root     =  File::Spec->catdir( $root, "ifu" );
+  my $het_root     =  File::Spec->catdir( $root, "heterodyne" );
   my $general_root =  File::Spec->catdir( $root, "general" );
 
   if ($inst eq 'SCUBA') {
     push( @path, File::Spec->catdir( $root, 'SCUBA' ) );
+    push( @path, $general_root );
+
+  } elsif( $inst eq 'JCMT_DAS' ) {
+    push( @path, File::Spec->catdir( $het_root, 'JCMT_DAS') );
+    push( @path, $het_root );
     push( @path, $general_root );
 
   } elsif ($inst eq 'CGS4' or $inst eq 'OCGS4') {
@@ -735,6 +751,10 @@ sub orac_determine_initial_algorithm_engines {
 
     @AlgEng = qw/ surf_mon ndfpack_mon kappa_mon /;
 
+  } elsif ($inst eq 'JCMT_DAS') {
+
+    @AlgEng = qw/ ndfpack_mon kappa_mon /;
+
   } elsif ($inst eq 'CGS4') {
 
     @AlgEng = qw/ figaro1 figaro2 figaro4 kappa_mon ndfpack_mon
@@ -829,6 +849,8 @@ sub orac_determine_loop_behaviour {
 
     if( uc($instrument) eq 'SCUBA' ) {
       $behaviour = 'flag';
+    } elsif( uc($instrument) eq 'JCMT_DAS' ) {
+      $behaviour = 'wait';
     }
 
   } elsif( $dname eq 'JAC.ukirt' ) {
@@ -1210,6 +1232,35 @@ sub orac_configure_for_instrument {
 
              last SWITCH; }
 	      
+     if ( $instrument eq 'JCMT_DAS' ) {
+
+       # Instrument
+       $ENV{"ORAC_INSTRUMENT"} = "JCMT_DAS";
+
+       # Calibration information
+       $orac_cal_root = File::Spec->("jcmt_sw", "oracdr_cal")
+         unless defined $orac_cal_root;
+       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir( $orac_cal_root, "jcmt_das" );
+
+       # Data directories.
+       $orac_data_root = "/jcmtdata"
+         unless defined $orac_data_root;
+       $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+                                                  "raw",
+                                                  "heterodyne",
+                                                  $oracut );
+       $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir( $orac_data_root,
+                                                   "reduced",
+                                                   "heterodyne",
+                                                   $oracut )
+         unless defined $$options{"honour"};
+
+       # Miscellaneous.
+       $ENV{"ORAC_PERSON"} = "bradc";
+       $ENV{"ORAC_SUN"} = "230";
+
+       last SWITCH; }
+
      if ( $instrument eq "UFTI" or $instrument eq "UFTI2") {
 
              # Instrument
@@ -1877,7 +1928,7 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
 Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>,
 Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>,
 Paul Hirst E<lt>p.hirst@jach.hawaii.eduE<gt>
-
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
