@@ -1,0 +1,266 @@
+#+
+# Name:
+#    _SCALE_FP_
+#
+# Purpose:
+#    Applies scalings to the various components of an Fabry-Perot observation.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive calibrates Fabry-Perot data by scaling.  Different
+#    scaling can be applied to any or all of the following
+#    components: the line, the positive or negative continuum.
+#
+# Arguments:
+#    LINE = REAL
+#       The scaling to apply to the source signal.  The value is
+#       constrained to the range 0.1 to 10.0. [1.0]
+#    POSITIVE = REAL
+#       The scaling to apply to the positive-offset continuum signal.  The
+#       value is constrained to the range 0.1 to 10.0. [1.0]
+#    NEGATIVE = REAL
+#       The scaling to apply to the positive-offset continuum signal.  The
+#       value is constrained to the range 0.1 to 10.0. [1.0]
+#
+# Notes:
+#    -  This primitive is suitable for UFTI.
+#    -  It should only be invoked after _DIFFERENCE_PAIRS_ or equivalent
+#    has subtracted the off-source frame from the on-source frame.
+#    -  Processing only occurs when the steering header FLAT_DIVIDE is
+#    true.
+#    -  The cycle number is given by steering header CYCLE_NUMBER.
+#    -  Each scaling only occurs if its scaling factor is not 1.0.
+#    -  The line data consist of two frames.
+#
+# Output Data:
+#    -  Scaled frames each inheriting the primary frame's name
+#    but with the _fps suffix.
+#
+# Tasks:
+#    KAPPA: CMULT.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Divides the group of differenced frame pairs by the flat field.
+# Used for NOD recipes.
+
+# Selection
+# =========
+
+# Test whether or not it is time to apply the scaling.
+    if ( $Frm->uhdr( "FLAT_DIVIDE" ) {
+
+# Make a local version of the main group, using the group of
+# differenced pairs.  Then use the standard primitive which expects
+# a $Grp.
+       my $Grp = $Grp->uhdr( "DIFFERENCE_GROUP" );
+
+# Obtain the cycle number.  Default to zero if undefined.
+       my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+       $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+# Select those members in the current cycle.
+       my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+
+# Arguments
+# =========
+
+# Set the contraints on the scalings.  This surely is sufficient, where
+# values are expected to be in the 0.7 to 1.3 range.
+       my $minfactor = 0.1;
+       my $maxfactor = 10.0;
+
+# Obtain the scale factors.  First for the line...
+       my $linefactor = $_SCALE_FP_{LINE};
+       $linefactor = min( $maxfactor, max( $minfactor,
+                     defined( $linefactor ) ? $linefactor : 1.0 ) );
+
+# next the continuum with a positive offset from the line...
+       my $posfactor = $_SCALE_FP_{POSITIVE};
+       $posfactor = min( $maxfactor, max( $minfactor,
+                     defined( $posfactor ) ? $posfactor : 1.0 ) );
+
+# and finally the continuum with a negative offset from the line.
+       my $negfactor = $_SCALE_FP_{NEGATIVE};
+       $negfactor = min( $maxfactor, max( $minfactor,
+                     defined( $negfactor ) ? $negfactor : 1.0 ) );
+
+# Scale line
+# ==========
+       if ( abs( $linefactor - 1.0 ) > 1E-6 ) {
+
+# The first and third frames are of the source.  Probably should use a
+# steering header to indicate which is which and select the group
+# using this.
+
+# Obtain the name of the first frame.
+          $Frm = $cycleGrp->frame{ 0 );
+          my ( $in, out ) = $Frm->inout( "_fps" );
+
+# Apply the scale factor for the line.
+          $param = "in=$in out=$out scalar=$linefactor";
+          $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
+
+          orac_print "$in to $out: scaling of $linefactor applied to the first line signal.\n";
+
+# Update the current frame for later processing.
+          $Frm->out( $out );
+
+# Duplicate for the second line frame.
+          $Frm = $cycleGrp->frame{ 2 );
+          my ( $in, out ) = $Frm->inout( "_fps" );
+
+          $param = "in=$in out=$out scalar=$linefactor";
+          $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
+
+          orac_print "$in to $out: scaling of $linefactor applied to the second line signal.\n";
+          $Frm->out( $out );
+       }
+
+
+# Scale positive continuum
+# ========================
+       if ( abs( $posfactor - 1.0 ) > 1E-6 ) {
+
+# The first and third frames are of the source.  Probably should use a
+# steering header to indicate which is which and select the group
+# using this.
+
+# Obtain the name of the positive-continuum frame.
+          $Frm = $cycleGrp->frame{ 1 );
+          my ( $in, out ) = $Frm->inout( "_fps" );
+
+# Apply the scale factor for the positive continuum.
+          $param = "in=$in out=$out scalar=$posfactor";
+          $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
+
+          orac_print "$in to $out: scaling of $posfactor applied to the positive-continuum signal.\n";
+
+# Update the current frame for later processing.
+          $Frm->out( $out );
+       }
+
+# Scale negative continuum
+# ========================
+       if ( abs( $negfactor - 1.0 ) > 1E-6 ) {
+
+# The first and third frames are of the source.  Probably should use a
+# steering header to indicate which is which and select the group
+# using this.
+
+# Obtain the name of the negative-continuum frame.
+          $Frm = $cycleGrp->frame{ 1 );
+          my ( $in, out ) = $Frm->inout( "_fps" );
+
+# Apply the scale factor for the negative continuum.
+          $param = "in=$in out=$out scalar=$negfactor";
+          $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
+
+          orac_print "$in to $out: scaling of $negfactor applied to the negative-continuum signal.\n";
+
+# Update the current frame for later processing.
+          $Frm->out( $out );
+       }
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_SCALE_FP_ -- Applies scalings to the various components of an Fabry-Perot observation.
+
+
+=head1 DESCRIPTION
+
+This primitive calibrates Fabry-Perot data by scaling.  Different
+scaling can be applied to any or all of the following
+components: the line, the positive or negative continuum.
+
+=head1 ARGUMENTS
+
+=ver 4
+
+=item LINE = REAL
+
+The scaling to apply to the source signal.  The value is
+constrained to the range 0.1 to 10.0. [1.0]
+
+=item POSITIVE = REAL
+
+The scaling to apply to the positive-offset continuum signal.  The
+value is constrained to the range 0.1 to 10.0. [1.0]
+
+=item NEGATIVE = REAL
+
+The scaling to apply to the positive-offset continuum signal.  The
+value is constrained to the range 0.1 to 10.0. [1.0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UFTI.
+
+=item *
+
+It should only be invoked after
+L<_DIFFERENCE_PAIRS_|_DIFFERENCE_PAIRS_> or equivalent has subtracted
+the off-source frame from the on-source frame.
+
+=item *
+
+Processing only occurs when the steering header FLAT_DIVIDE is true.
+
+=item *
+
+The cycle number is given by steering header CYCLE_NUMBER.
+
+=item *
+
+Each scaling only occurs if its scaling factor is not 1.0.
+
+=item *
+
+The line data consist of two frames.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Scaled frames each inheriting the primary frame's name but with
+the _fps suffix.
+
+=back
+
+=head1 TASKS
+
+KAPPA: CMULT.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
