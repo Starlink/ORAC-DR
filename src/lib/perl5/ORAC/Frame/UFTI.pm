@@ -271,24 +271,27 @@ sub flag_from_bits {
 
 =item B<number>
 
-Method to return the number of the observation. This is the
-number stored in the OBSNUM header
+# Method to return the number of the observation. This is the
+# number stored in the OBSNUM header
 
-  $number = $Frm->number;
-
-
-=cut
+#   $number = $Frm->number;
 
 
-sub number {
+### Note: this has been removed as it caused the -from -skip
+### option combination to fail - FE
 
-  my $self = shift;
+# =cut
 
-  my $number = $self->hdr('OBSNUM');
 
-  return $number;
+# sub number {
 
-}
+#   my $self = shift;
+
+#   my $number = $self->hdr('OBSNUM');
+
+#   return $number;
+   
+# }
 
 
 =item B<template>
