@@ -182,10 +182,20 @@ my %MonolithDefns = (
 				   CLASS => 'ORAC::Msg::Task::ADAM',
 				   PATH => $ENV{FIG_DIR}."/figaro2",
 				  },
+		     figaro3 => {
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
+				   PATH => $ENV{FIG_DIR}."/figaro3",
+				  },
 		     figaro4 => {
 				   MESSYS => 'AMS',
 				   CLASS => 'ORAC::Msg::Task::ADAM',
 				   PATH => $ENV{FIG_DIR}."/figaro4",
+				  },
+		     figaro5 => {
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
+				   PATH => $ENV{FIG_DIR}."/figaro5",
 				  },
 		     pisa_mon => {
 				   MESSYS => 'AMS',
