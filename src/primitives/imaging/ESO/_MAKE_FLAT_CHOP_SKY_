@@ -89,6 +89,10 @@
 # sky frames after normalisation lose their relative signals.
        $template = $Frm->file;
 
+# Record the template sky file in case the final frame of the group is
+# of the target.
+       $Grp->uhdr( "SKY_TEMPLATE", $template );
+
 # Normalise the sky frames to each other.
        _NORMALISE_TO_MODE_EXTENDED_
     }
@@ -96,11 +100,27 @@
 # Make the initial flat field.  
 # ============================
 
-# Any faint sources present will bias the flat field.
-    _MAKE_FLAT_FROM_NORMALISED_CHOP_SKY_
+# Any faint sources present will bias the initial flat field.  These
+# are allowed for later.
+
+# _MAKE_FLAT_FROM_NORMALISED_CHOP_SKY_ uses the Grp->template method.
+# In order to always have the normalised sky frames combined to make the 
+# flat, irrespective of whether  the last frame is of the sky or of the
+# target, we have to use the last sky-group frame temporarily, and ensure
+# that its MAKE_FLAT flag is enabled. 
+    if ( $Frm->uhdr( "MAKE_FLAT" ) ) {
+       my $Frm = $skyGrp->frame( -1 );
+       $Frm->uhdr( "MAKE_FLAT", 1 );
+       _MAKE_FLAT_FROM_NORMALISED_CHOP_SKY_
+    }
 
 # Define the reference level for object masking.
 # ==============================================
+    my $_NORMALISE_TO_MODE_refmode;
+
+# Test whether or not it is time to mask objects.  Use global
+# argument first, then frame by frame.
+    if ( $mask_obj && $Frm->uhdr( "MAKE_FLAT" ) ) {
 
 # If object masking is applied, biases can be introduced in the flat,
 # as the objects move to different locations on the detector each with
@@ -127,8 +147,6 @@
 # _NORMALISE_TO_MODE_refmode includes the _NORMALISE_TO_MODE_ primitive,
 # and so we don't have to pass parameters down two levels.  The name
 # is therefore chosen to avoid potential clashes.
-    my $_NORMALISE_TO_MODE_refmode;
-    if ( $mask_obj && $Frm->uhdr( "MAKE_FLAT" ) ) {
        if ( $skyGrp->num > 0 ) {
 
 # Recall the reference level from the reference frame within the group.
@@ -143,15 +161,15 @@
              _CLIPPED_STATS_
              $_NORMALISE_TO_MODE_refmode = $_CLIPPED_STATS_{MEAN};
           }
+
+# We need now to restore the sky filenames as they were prior to
+# normalisation.  Recall the template sky name for this.
+          $template = $Grp->uhdr( "SKY_TEMPLATE" );
+          $skyGrp->template( $template );
        }
-    }
 
 # Mask objects.
 # =============
-
-# Test whether or not it is time to mask objects.  Use global
-# argument first, then frame by frame.
-    if ( $mask_obj && $Frm->uhdr( "MAKE_FLAT" ) ) {
 
 # Record the group members at this point.
        @sky_names = $skyGrp->membernames;
@@ -244,9 +262,6 @@
     }
    
 # Restore the sky filenames as they were prior to normalisation.
-    if ( $class eq "sky" ) {
-       $skyGrp->template( $template );
-    }
     if ( $mask_obj && $Frm->uhdr( "MAKE_FLAT" ) ) {
        $skyGrp->membernames( @sky_names );
     }
