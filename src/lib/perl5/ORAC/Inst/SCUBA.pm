@@ -58,8 +58,14 @@ SCUBA uses the ADAM messaging system. (ORAC::Msg::ADAM::Control)
 sub start_msg_sys {
 
   # Set ADAM environment variables
-  $ENV{'HDS_SCRATCH'} = "/tmp";           # fix ndf2fits (etc ?)  "feature"
   $ENV{'ADAM_USER'} = "/tmp/adam$$";      # process-specific adam dir
+
+  # Set HDS_SCRATCH -- unless it is defined already
+  # Want to modify this variable so that we can fix some ndf2fits
+  # feature (etc ?) -- I think the problem came up when trying to convert
+  # files from one directory to another when the input directory is 
+  # read-only...
+  $ENV{HDS_SCRATCH} = $ENV{ORAC_DATA_OUT} unless exists $ENV{HDS_SCRATCH};
 
   # Create object
   my $adam = new ORAC::Msg::ADAM::Control;
