@@ -34,8 +34,12 @@ simply by accessing the engine through the hash.
 
 =cut
 
+use 5.006;
+use warnings;
+use warnings::register;
 use strict;
 use Carp;
+use ORAC::Print;
 
 use vars qw/ $DEBUG /;
 $DEBUG = 0;
@@ -173,8 +177,7 @@ sub engine {
       if (defined $obj && UNIVERSAL::can($obj, "contactw")) {
 	$self->{Engines}->{$name} = $obj;
       } else {
-	warn "engine: Supplied object does not have a contactw method"
-	  if $^W;
+	warnings::warnif "engine: Supplied object does not have a contactw method"
       }
 
     } elsif (exists $self->{Engines}->{$name}) {
@@ -416,8 +419,8 @@ sub launch {
       # Make sure the messaging class is available
       eval "use $pars{CLASS}";
       if ($@) {
-	carp "Unable to load class $pars{CLASS} for engine $engine\n";
-	croak "$@";
+	orac_warn "Unable to load class $pars{CLASS} for engine $engine\n";
+	orac_throw "$@";
       }
 
       my $messys = $self->_get_engine_messys_object( $engine )
@@ -434,13 +437,18 @@ sub launch {
 	$path = $pars{PATH};
       }
 
-      # Launch it if we can find the path
-      # The object identifier should be different each time
-      # this is called to protect against systems that can not
-      # reuse system identifiers
-      my $obj = $pars{CLASS}->new($self->engine_inc( $engine ),
-				  $path )
-	if ( -e $path );
+      # Launch it if we can find the path. Remote tasks
+      # are characterized by a null string in the path
+
+      # For some messaging systems the object identifier should be
+      # different each time this is called to protect against systems
+      # that can not reuse system identifiers
+      my $obj;
+      if (-e $path || $path eq '') {
+	my $engid = ($messys->require_uniqid ? $self->engine_inc($engine)
+		     : $engine );
+	$obj = $pars{CLASS}->new($engid, $path );
+      }
 
       # Execute the cleanup routine immediately if defined
       $cleanup->() if defined $cleanup;
@@ -563,7 +571,7 @@ sub _get_engine_messys_object {
 
     # Make sure that the message system is initialised
     my $messys = $self->messys_launch_object->messys( $pars{MESSYS} )
-      or croak "Unable to access message system $pars{MESSYS} for engine $engine\n";
+      or orac_throw "Unable to access message system $pars{MESSYS} for engine $engine\n";
 
     return $messys;
 
@@ -695,8 +703,21 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2001 Particle Physics and Astronomy Research
+Copyright (C) 2001-2005 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
