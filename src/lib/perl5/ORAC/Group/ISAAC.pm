@@ -169,6 +169,16 @@ sub _to_DETECTOR_READ_TYPE {
    return $read_type;
 }
 
+# Equinox may be absent for calibrations such as darks.
+sub _to_EQUINOX {
+   my $self = shift;
+   my $equinox = 0;
+   if ( exists $self->hdr->{EQUINOX} ) {
+      $equinox = $self->hdr->{EQUINOX};
+   }
+   return $equinox;
+}
+
 # Filter positions 1 and 2 used for SW and 3 & 4 for LW.
 sub _to_FILTER {
    my $self = shift;
@@ -295,6 +305,10 @@ sub _to_RECIPE {
              $seq eq "ISAACLW_img_cal_Standard_Star" ) {
       $recipe = "NOD_SELF_FLAT_NO_MASK_APHOT";
 
+   } elsif ( $template =~ /ISAAC[SL]W_img_cal_Darks/ ||
+             $seq eq "ISAAC_img_cal_Darks" ) {
+      $recipe = "REDUCE_DARK";
+                       
    } elsif ( $template =~ /ISAAC[SL]W_img_cal_TwFlats/ ) {
        $recipe = "SKY_FLAT_MASKED";
 
