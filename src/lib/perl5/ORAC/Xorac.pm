@@ -730,7 +730,7 @@ sub xorac_help {
 
   croak 'Usage: xorac_help( $parent, $directory, $file )'
     unless scalar(@_) == 3 ;
-  
+
   # Parent widget
   my ( $parent, $directory, $file ) = @_;
 
@@ -743,7 +743,7 @@ sub xorac_help {
   
   # add directory to search path
   Tk::Pod->Dir( [ $directory ] );
-  	              
+
   # create pop-up widget
   my $pod = $parent->Pod( -file => $file );
 
