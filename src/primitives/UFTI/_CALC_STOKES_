@@ -13,21 +13,42 @@
 #    for each beam and waveplate angle---and derives images of the summed
 #    intensity; polarisation percentage, intensity, and angle; and the
 #    Stokes parameters.  The last are Q and U if linear polarisation is
-#    chosen and V for circular polarisation.  Alternative arithmetic
-#    methods are available.  The ratio method is preferred.  However,
-#    for noisy or faint sources it can attempt to take the square root of
-#    a negative number, resulting in a bad value.
+#    chosen and V for circular polarisation.  Variance information is
+#    also derived.
+#
+#    The polarisation data are extracted into a catalogue in the FITS
+#    binary-table format, where they are binned, and those meeting 
+#    the following criteria are available to display in a vector plot.
+#    The criteria are percentage polarisation positive below 50%,
+#    signal-to-noise at least argument S2N and standard deviation less
+#    than argument SIGMA.
 #
 # Arguments:
-#    METHOD = CHARACTER (Given)
-#       The method used to calculate the polarisation images.  It must be
-#       either "ratio" or "difference",  the former being used if any
-#       other value is supplied.  The IRPOLDR manual has more details.
-#       ["difference"]
+#    BIN = INTEGER (Given)
+#       The bin size in pixels for both x and y axes by which the
+#       polarisation parameters are averaged to improve their signal to
+#       noise and generate a clearer vector plot.  The averaging applies
+#       to the catalogue, not the polarisation images.  The default gives
+#       no losss of resolution in typical seeing.  The value must be at
+#       least 1.  [3]
+#    DISPLAY_IMAGE = CHARACTER (Given)
+#       The derived polarisation image to be displayed below the vectors
+#       in a composite plot.  Allowed values are "I", "P", and "Q", "U"
+#       when argument POL_MODE is "linear" or "V" when POL_MODE is
+#       "circular".  The chosen image will also need to be selected
+#       in the display control file.  ["I"]
 #    POL_MODE = CHARACTER (Given) 
 #       The polarisation type to calculate.  It must be either "linear"
 #       or "circular", the former being used if any other value is
 #       supplied.  ["linear"]
+#    S2N = REAL (Given)
+#       Minimum signal to noise of the polarisation percentage for a
+#       point to be included in the final catalogue and plot.  It is
+#       constrained to be at least one (i.e. no threshold).  [3]
+#    SIGMA = REAL (Given)
+#       Maximum error of the polarisation percentage for a point to be
+#       included in the final catalogue and plot.  It is constrained
+#       to be less than 100% (i.e. no threshold).  [5]
 #
 # Notes:
 #    -  This primitive is suitable for both UFTI and IRCAM.
@@ -36,7 +57,8 @@
 #    steering header REGISTER_IMAGES is true.
 #    -  The registered frames are found in the group stored by reference
 #    in the $Grp user header MOSAIC_GROUP.
-#    -  An offset of -6.7 degrees is applied to rotation angle.
+#    -  An offset of -6.3 degrees is applied to the rotation angle
+#    for the orientation of the analyser with respect to north.
 #    -  The origins of the generated polarisation frames are set to
 #   [1,1].  The WCS current frame is unchanged.
 #    -  The units are set for the frames with suffices (see
@@ -44,12 +66,14 @@
 #    -  The appropriate frame titles are set for the generated frames.
 #    These are as follows.  I: "Intensity";  P: "Polarisation";
 #    PI: "Polarised Intensity"; Q: "Stokes Q"; TH: "Polarisation Angle";
-#    U: "Stokes U"; V: "Stokes V"; q: "Intensity-normalised Stokes q";
-#    u: "Intensity-normalised Stokes u"; v: "Intensity-normalised Stokes v".
-#    -  All the created frames may be displayed.
+#    U: "Stokes U"; V: "Stokes V".
+#    -  All the created frames may be displayed.  Only the frame chosen
+#    by argument DISPLAY_IMAGE can appear as the base image with vectors
+#    overlaid.
 #
 # Tasks:
-#    KAPPA: ADD, MATHS, MULT, SETORIGIN, SETTITLE, SETUNITS.
+#    CURSA: CATSELECT; KAPPA: SETORIGIN, SETTITLE, SETUNITS;
+#    POLPACK: POLBIN, POLCAL, POLEXT, POLIMP, POLVEC.
 #
 # Output Data:
 #    -  Polarisation frames each inheriting the name of its input frame
@@ -62,15 +86,25 @@
 #        TH  polarisation angle
 #        U   Stokes U (if POL_MODE is "linear")
 #        V   Stokes V (if POL_MODE is "circular")
-#        q   Stokes intensity-normalised q (if POL_MODE is "linear")
-#        u   Stokes intensity-normalised u (if POL_MODE is "linear")
-#        v   Stokes intensity-normalised v (if POL_MODE is "circular")
+#    -  A FITS binary-table catalogue of the binned and culled
+#    polarisation data, called <groupname>_<image>.FIT, where
+#    <groupname> is the prefix used for group frames, and <image>
+#    is the value of argument DISPLAY_IMAGE or "I" if the value
+#    is not valid.  For each point it tabulates the x-y
+#    co-ordinates, the total intensity, the Stokes parameters, the
+#    percentage polarisation, the polarisation angle and intensity.
+#    There are additional columns giving the standard deviation on
+#    each of the tabulated values (excluding the co-ordinates).
+#    Likewise <groupname>_<all>.FIT and <groupname>_bin.FIT
+#    stored the full and unbinned catalogues.
 #
 # Authors:
 #    MJC: Malcolm J. Currie (JAC)
 #
 # References:
 #    A.Chryststomou, 1997, "Imaging Polarimetry with IRCAM3", IRPOL/2.2.
+#    D.S.Berry & T.M.Gledhill, 1999, "POLPACK Users Manual Version 2.0",
+#       SUN/223.3.
 #
 # Copyright:
 #    Copyright (C) 1998-2000 Particle Physics and Astronomy Research
@@ -81,6 +115,9 @@
 # Arguments
 # =========
 
+# Obtain the binning factor.
+    my $binsize = max( 1, ( $_CALC_STOKES_{BIN} || 3 ) );
+
 # Obtain the value for the polarimetry mode.
     my $polmode = ( $_CALC_STOKES_{POL_MODE} || "linear" );
     if ( $polmode ne "linear" && $polmode ne "circular" ) {
@@ -88,10 +125,26 @@
     }
 
 # Obtain the method by which polarisation is derived.
-    my $method = ( $_CALC_STOKES_{METHOD} || "ratio" );
-    if ( $method ne "ratio" && $method eq "difference" ) {
-       $method = "ratio";
+    my $di = ( $_CALC_STOKES_{DISPLAY_IMAGE} || "I" );
+
+# Validate ther display images, defaulting to the intensity
+# if the supllied value is unknown or inappropriate for the
+# polarisation mode.
+    my $invalid = $di ne "I" && $di ne "PI" && $di ne "P";
+    if ( $polmode eq "linear" ) {
+       if ( $invalid && $di ne "Q" && $di ne "V" ) {
+          $di = "I";
+       }
+
+    } elsif ( $polmode eq "circular" ) {
+       if ( $invalid && $di ne "V" ) {
+          $di = "I";
+       }
     }
+
+# Obtain the signal-to-noise and standard-deviation thresholds.
+    my $s2n = max( 1, ( $_CALC_STOKES_{S2N} || 3 ) );
+    my $sigma = min( 100, ( $_CALC_STOKES_{SIGMA} || 5 ) );
 
 # Selection
 # =========
@@ -148,51 +201,73 @@
                                 POLARISATION_BEAM => "o" );
        my $o67 = $tempGrp->frame( 0 )->file;
 
-# Form intensity images.
-# ======================
+# Import the mosaics into POLPACK.
+# ================================
+       my ( $par1, $par2, $title, $e_mosaics, $o_mosaics );
+
+# Make convenient lists of the mosaics.
+       $e_mosaics = "$e0,$e22,$e45,$e67";
+       $o_mosaics = "$o0,$o22,$o45,$o67";
+
+# Create text files to hold the list of input files.  This is needed
+# because expanded lists of files may make the command line too long
+# for the ADAM message system.
+       unlink ( "emosaics.list$$", "omosaics.list$$");
+
+       open( ELIST, ">emosaics.list$$" );
+       print ELIST $e_mosaics, "\n";
+       close( ELIST );
+
+       open( OLIST, ">omosaics.list$$" );
+       print OLIST $o_mosaics, "\n";
+       close( OLIST );
+
+# Use a table in the instrument calibration directory to import
+# headers into a POLPACK extension into all of the mosaics.
+       $par1 = "in='^emosaics.list$$,^omosaics.list$$'";
+       $par2 = "table=$ENV{ORAC_DATA_CAL}/polimp.dat quiet";
+       $Mon{polpack_mon}->obeyw('polimp',"$par1 $par2");
 
 # Obtain the rootname for created frames.  
        my $root = $Grp->file;
 
-# Sum the the e- and o-beam frame pairs to form the 0-degree and
-# 45-degree intensity images.
-       $Mon{"kappa_mon"}->obeyw("add","in1=$e0 in2=$o0 out=temp0");
-       $Mon{"kappa_mon"}->obeyw("add","in1=$e45 in2=$o45 out=temp45");
+# There is no FITS header for the beam, so tell POLPACK explicitly.
+# Set the rotation of the analyser with respect to north.  Also
+# need to group e- and o-beams at each angle through common identifiers.
+# Note that the order of thr identifiers must match that of the frames.
+       $par1 = "angrot=-6.3 imgid='${root}_0,${root}_22,${root}_45,${root}_67'";
+       $Mon{polpack_mon}->obeyw('polext',"in='^emosaics.list$$' ray=E $par1");
+       $Mon{polpack_mon}->obeyw('polext',"in='^omosaics.list$$' ray=O $par1");
 
-       my ( $par1, $par2, $title );
+# Report progress to avoid a long wait.
+       orac_print "Orac says: Ancilliary polarisation data imported into $e_mosaics,$o_mosaics\n";
 
-# Linear polarisation
-# -------------------
+# Form Stokes data cube.
+# ======================
+
+       my $cube = $root . "_sp";
+       $par1 = "in='^emosaics.list$$,^omosaics.list$$'";
+       $par2 = "out=$cube pmode=$polmode dualbeam variance";
+       $Mon{polpack_mon}->obeyw('polcal',"$par1 $par2");
+
+# Report the new frame.
+       orac_print "Orac says: ${polmode}-polarisation cube formed.\n";
+
+# Remove the GRP indirection files.
+       unlink ( "emosaics.list$$", "omosaics.list$$" );
+
+# Extract the various images.
+# ===========================
+
+# Extract images of the Stokes parameters from the cube.  There is no binning
+# and no catalogue is formed.  Variance is used to correct for bias.
        if ( $polmode eq "linear" ) {
-
-# Sum the the e- and o-beam frame pairs to form the 22.5-degree and
-# 67.5-degree intensity images.
-          $Mon{"kappa_mon"}->obeyw("add","in1=$e22 in2=$o22 out=temp22");
-          $Mon{"kappa_mon"}->obeyw("add","in1=$e67 in2=$o67 out=temp67");
-
-# Now sum the pairs into the eight-frame intensity image.
-          $par1 = "exp='(ia+ib+ic+id)'";
-          $par2 = "ia=temp0 ib=temp45 ic=temp22 id=temp67 out=${root}_I";
-          $Mon{"kappa_mon"}->obeyw("maths","$par1 $par2");
-
-# Remove the temporary frames.
-          _DELETE_A_FRAME_ FRAME=temp22
-          _DELETE_A_FRAME_ FRAME=temp67
-
-# Circular polarisation
-# ---------------------
-       } else {
-
-# Merely sum the 0-degree and 45-degree pairs into the four-frame intensity
-# image.
-          $par1 = "exp='(ia+ib)'";
-          $par2 = "ia=temp0 ib=temp45 out=${root}_I";
-          $Mon{"kappa_mon"}->obeyw("maths","$par1 $par2");
+          $par1 = "Q=${root}_Q U=${root}_U P=${root}_P";
+       } elsif ( $polmode eq "circular" ) {
+          $par1 = "V=${root}_V P=${root}_P";
        }
-
-# Remove the temporary frames.
-       _DELETE_A_FRAME_ FRAME=temp0
-       _DELETE_A_FRAME_ FRAME=temp45
+       $par2 = "I=${root}_I IP=${root}_PI ANG=${root}_TH variance debias";
+       $Mon{polpack_mon}->obeyw('polvec',"in=$cube cat=! $par1 $par2");
 
 # Assign a sensible title for the intensity frame.  Reset its origin
 # to the default, for convenience.
@@ -202,231 +277,181 @@
 # Report the new frame.
        orac_print "Orac says: ${polmode}-polarisation intensity frame ${root}_I formed.\n";
 
-# Display the frame.
+# Create a new frame for displaying the polarisation data.
        my $tempFrm = $Frm->new;
-       $tempFrm->file( "${root}_I" );
-       $Display->display_data( $tempFrm ) if ( defined $Display );
 
-# Linear polarisation
-# -------------------
-       if ( $polmode eq "linear" ) {
-          if ( $method eq "ratio" ) {
-
-# Ratio method
-# ------------
-
-# Calculate the q Stokes parameter using a token, fa, to simplify
-# the expression.
-             $par1 = "exp='(fa-1)/(fa+1)' fa=sqrt((ia/ib)/(ic/id))";
-             $par2 = "ia=$e0 ib=$o0 ic=$e45 id=$o45 out=${root}_q";
-             $Mon{"kappa_mon"}->obeyw("maths","$par1 $par2");
-
-# Calculate the u Stokes parameter likewise.
-             $par2 = "ia=$e22 ib=$o22 ic=$e67 id=$o67 out=${root}_u";
-             $Mon{"kappa_mon"}->obeyw("maths","$par1 $par2");
-
-          } else {
-
-# Difference method
-# -----------------
-
-# Calculate the q Stokes parameter using a token, fa, to simplify
-# the expression.
-             $par1 = "exp='(ia-ib-fa*(ic-id))/(ia+ib+fa*(ic+id))' " .
-                     "fa='(ia+ic)/(ib+id)'";
-             $par2 = "ia=$e0 ib=$o0 ic=$e45 id=$o45 out=${root}_q";
-             $Mon{"kappa_mon"}->obeyw("maths","$par1 $par2");
-
-# Calculate the u Stokes parameter likewise.
-             $par2 = "ia=$e0 ib=$o0 ic=$e45 id=$o45 out=${root}_q";
-             $Mon{"kappa_mon"}->obeyw("maths","$par1 $par2");
-
-          }
-
-# Assign sensible titles for the q and u frames.  Reset their origin
-# to the default, for convenience.
-          $title = "title='Intensity-normalised Stokes q'";
-          $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_q $title");
-          $Mon{ndfpack_mon}->obeyw("setorigin","ndf=${root}_q origin=[1,1]");
-
-          $title = "title='Intensity-normalised Stokes u'";
-          $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_u $title");
-          $Mon{ndfpack_mon}->obeyw("setorigin","ndf=${root}_u origin=[1,1]");
-
-# Report the progress.
-          orac_print "Orac says: $polmode-polarisation q frame ${root}_q " .
-                     "formed using the $method method.\n";
-
-# Display the frame.
-          $tempFrm = $Frm->new;
-          $tempFrm->file( "${root}_q" );
+# Display the frame.  Composite plots must wait until the table
+# is created.
+       if ( $di ne "I" ) {
+          $tempFrm->file( "${root}_I" );
           $Display->display_data( $tempFrm ) if ( defined $Display );
+       }
 
-# Report the progress.
-          orac_print "Orac says: $polmode-polarisation u frame ${root}_u " .
-                     "formed using the $method method.\n";
+# Set NDF attributes and display the images.
+# ==========================================
 
-# Display the frame.
-          $tempFrm = $Frm->new;
-          $tempFrm->file( "${root}_u" );
-          $Display->display_data( $tempFrm ) if ( defined $Display );
-
-# Calculate the polarisation percentage.
-          $par1 = "exp='100*sqrt(ia*ia+ib*ib)'";
-          $par2 = "ia=${root}_q ib=${root}_u out=${root}_P";
-          $Mon{kappa_mon}->obeyw("maths","$par1 $par2");
+# Polarisation percentage
+# -----------------------
 
 # Set the title, units and origin for the polarisation percentage.
-          $title = "title=Polarisation";
-          $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_P $title");
-          $Mon{ndfpack_mon}->obeyw("setunits","ndf=${root}_P units='%'");
-          $Mon{ndfpack_mon}->obeyw("setorigin","ndf=${root}_P origin=[1,1]");
+       $title = "title=Polarisation";
+       $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_P $title");
+       $Mon{ndfpack_mon}->obeyw("setunits","ndf=${root}_P units='%'");
+       $Mon{ndfpack_mon}->obeyw("setorigin","ndf=${root}_P origin=[1,1]");
 
 # Report the creation of the frame.
-          orac_print "Orac says: $polmode-polarisation percentage frame " .
-                      "${root}_P formed.\n";
+       orac_print "Orac says: $polmode-polarisation percentage frame " .
+                  "${root}_P formed.\n";
 
 # Display the frame.
-          $tempFrm = $Frm->new;
+       if ( $di ne "P" ) {
           $tempFrm->file( "${root}_P" );
           $Display->display_data( $tempFrm ) if ( defined $Display );
+       }
 
-# Calculate the position angle.  Allow for a misalignment of 6.7 degrees
-# (cf. IRPOLDR manual).
-          $par1 = "exp='0.5*atan2d(ia,ib)-6.7'";
-          $par2 = "ia=${root}_u ib=${root}_q out=${root}_TH";
-          $Mon{kappa_mon}->obeyw("maths","$par1 $par2");
+# Polarisation angle
+# ------------------
 
 # Set the title, units and origin for the polarisation angle.
-          $title = "title='Polarisation Angle'";
-          $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_TH $title");
-          $Mon{ndfpack_mon}->obeyw("setunits","ndf=${root}_TH units=degrees");
-          $Mon{ndfpack_mon}->obeyw("setorigin","ndf=${root}_TH origin=[1,1]");
+       $title = "title='Polarisation Angle'";
+       $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_TH $title");
+       $Mon{ndfpack_mon}->obeyw("setunits","ndf=${root}_TH units=degrees");
+       $Mon{ndfpack_mon}->obeyw("setorigin","ndf=${root}_TH origin=[1,1]");
 
 # Report the creation of the frame.
-          orac_print "Orac says: $polmode-polarisation angle frame " .
-                     "${root}_TH formed.\n";
+       orac_print "Orac says: $polmode-polarisation angle frame " .
+                  "${root}_TH formed.\n";
 
 # Display the frame.
-          $tempFrm = $Frm->new;
-          $tempFrm->file( "${root}_TH" );
-          $Display->display_data( $tempFrm ) if ( defined $Display );
+       $tempFrm->file( "${root}_TH" );
+       $Display->display_data( $tempFrm ) if ( defined $Display );
 
-# Calculate the polarised intensities.
-          $par1 = "in1=${root}_P in2=${root}_I out=${root}_PI";
-          $Mon{kappa_mon}->obeyw("mult","$par1");
+# Polarisation intensity
+# ----------------------
 
 # Set the title and origin for the polarisation intensity.
-          $title = "title='Polarised Intensity'";
-          $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_PI $title");
-          $Mon{ndfpack_mon}->obeyw("setorigin","ndf=${root}_PI origin=[1,1]");
+       $title = "title='Polarised Intensity'";
+       $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_PI $title");
+       $Mon{ndfpack_mon}->obeyw("setorigin","ndf=${root}_PI origin=[1,1]");
 
 # Report the creation of the frame.
-          orac_print "Orac says: $polmode-polarisation intensity frame " .
-                     "${root}_PI formed.\n";
+       orac_print "Orac says: $polmode-polarisation intensity frame " .
+                  "${root}_PI formed.\n";
   
 # Display the frame.
-          $tempFrm = $Frm->new;
+       if ( $di ne "PI" ) {
           $tempFrm->file( "${root}_PI" );
           $Display->display_data( $tempFrm ) if ( defined $Display );
+       }
 
-# Calculate the Q Intensity.
-          $par1 = "in1=${root}_q in2=${root}_I out=${root}_Q";
-          $Mon{kappa_mon}->obeyw("mult","$par1");
+# Stokes Q
+# --------
+       if ( $polmode eq "linear" ) {
 
-# Set the title.
+# Assign a sensible title for the Q Stokes-parameter frame.  Reset its origin
+# to the default, for convenience.
           $title = "title='Stokes Q'";
           $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_Q $title");
+          $Mon{ndfpack_mon}->obeyw("setorigin","ndf=${root}_Q origin=[1,1]");
 
 # Report the creation of the frame.
           orac_print "Orac says: $polmode-polarisation Q frame " .
                      "${root}_Q formed.\n";
 
 # Display the frame.
-          $tempFrm = $Frm->new;
-          $tempFrm->file( "${root}_Q" );
-          $Display->display_data( $tempFrm ) if ( defined $Display );
+          if ( $di ne "Q" ) {
+             $tempFrm->file( "${root}_Q" );
+             $Display->display_data( $tempFrm ) if ( defined $Display );
+          }
 
-# Calculate the U Intensity.
-          $par1 = "in1=${root}_u in2=${root}_I out=${root}_U";
-          $Mon{kappa_mon}->obeyw("mult","$par1");
+# Stokes U
+# --------
 
-# Set the title.
+# Assign a sensible title for the U Stokes-parameter frame.  Reset its origin
+# to the default, for convenience.
           $title = "title='Stokes U'";
           $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_U $title");
+          $Mon{ndfpack_mon}->obeyw("setorigin","ndf=${root}_U origin=[1,1]");
 
 # Report the creation of the frame.
           orac_print "Orac says: $polmode-polarisation U frame " .
                      "${root}_U formed.\n";
 
 # Display the frame.
-          $tempFrm = $Frm->new;
-          $tempFrm->file( "${root}_U" );
-          $Display->display_data( $tempFrm ) if ( defined $Display );
-
-# Circular polarisation.
-# ======================
-       } else {
-
-          if ( $method eq "ratio" ) {
-
-# Ratio method
-# ------------
-
-# Calculate the v Stokes parameter using a token, fa, to simplify
-# the expression.
-             $par1 = "exp='(fa-1)/(fa+1)' fa='sqrt((ia/ib)/(ic/id))'";
-             $par2 = "ia=$e0 ib=$o0 ic=$e45 id=$o45 out=${root}_v";
-             $Mon{kappa_mon}->obeyw("maths","$par1 $par2");
-
-          } else {
-
-# Difference method
-# -----------------
-
-# Calculate the v Stokes parameter using a token, fa, to simplify
-# the expression.
-             $par1 = "exp='(ia-ib-fa*(ic-id))/(ia+ib+fa*(ic+id))' " .
-                     "fa='(ia+ic)/(ib+id)'";
-             $par2 = "ia=$e0 ib=$o0 ic=$e45 id=$o45 out=${root}_v";
-             $Mon{kappa_mon}->obeyw("maths","$par1 $par2");
-
+          if ( $di ne "U" ) {
+             $tempFrm->file( "${root}_U" );
+             $Display->display_data( $tempFrm ) if ( defined $Display );
           }
+
+# Stokes V (circular polarisation)
+# --------------------------------
+       } elsif ($polmode eq "circular" ) {
 
 # Assign a sensible title for the V Stokesparameter frame.  Reset its origin
 # to the default, for convenience.
-          $title = "title='Stokes Intensity normalised v'";
-          $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_v $title");
-          $Mon{ndfpack_mon}->obeyw("setorigin","ndf=${root}_v origin=[1,1]");
-
-# Report the creation of the frame.
-          orac_print "Orac says: $polmode-polarisation v frame ${root}_v " .
-                     "formed using the $method method.\n";
-
-# Display the frame.
-          $tempFrm = $Frm->new;
-          $tempFrm->file( "${root}_v" );
-          $Display->display_data( $tempFrm ) if ( defined $Display );
-
-# Calculate the V Intensity.
-          $par1 = "in1=${root}_v in2=${root}_I out=${root}_V";
-          $Mon{kappa_mon}->obeyw("mult","$par1");
-
-# Set the title.
           $title = "title='Stokes V'";
           $Mon{ndfpack_mon}->obeyw("settitle","ndf=${root}_V $title");
+          $Mon{ndfpack_mon}->obeyw("setorigin","ndf=${root}_V origin=[1,1]");
 
 # Report the creation of the frame.
           orac_print "Orac says: $polmode-polarisation Stokes V frame " .
                      "${root}_V formed.\n";
 
 # Display the frame.
-          $tempFrm = $Frm->new;
-          $tempFrm->file( "${root}_V" );
-          $Display->display_data( $tempFrm ) if ( defined $Display );
+          if ( $di ne "V" ) {
+             $tempFrm->file( "${root}_V" );
+             $Display->display_data( $tempFrm ) if ( defined $Display );
+          }
 
        }
+
+# Form a catalogue in binary-table FITS format.  Variance is used to
+# correct for bias.  Need to remove existing FITS files as CFITSIO
+# does not clobber.
+       my $fullcat = "${root}_all.FIT";
+       unlink ( $fullcat );
+       $par1 = "in=$cube cat=$fullcat variance debias";
+       $Mon{polpack_mon}->obeyw('polvec',"$par1");
+
+       orac_print "Orac says: FITS binary table of polarisation data " .
+                  "created in $fullcat.\n";
+
+# Finished with the cube, so delete it.  Retain the full catalogue
+# so that offline binning and selection tuned to the data or user's
+# requirements can be performed.
+       _DELETE_A_FRAME_ FRAME=$cube
+
+# Bin the vectors at the chosen scaling forming a new catalogue.
+       my $bincat = "${root}_bin.FIT";
+       unlink ( $bincat );
+       $par1 = "in=$fullcat out=$bincat";
+       $par2 = "box=$binsize method=median";
+       $Mon{polpack_mon}->obeyw('polbin',"$par1 $par2");
+
+       orac_print "Orac says: Tabular polarisation data binned in " .
+                  "$bincat.\n";
+
+# Bin the vectors at the chosen scaling forming a new catalogue.
+# Delete the binned catalogue when done.
+       my $selcat = "${root}_${di}.FIT";
+       unlink ( $selcat );
+       $par1 = "catin=$bincat catout=$selcat";
+       $par2 = "norejcat seltyp=e expr='p<50 & p>0 & dp<$sigma & p/dp>=$s2n'";
+       $Mon{catselect}->obeyw('catselect',"$par1 $par2");
+
+# Report the threshold criteria.
+       orac_print "Orac says: Thresholds applied applied to tabular " .
+                  "polarisation data in $selcat.\n";
+       orac_print "Orac says: Criteria were 0 < polarisation < 50%\n";
+       orac_print "Orac says:               S/N >= $s2n\n";
+       orac_print "Orac says:               standard deviation < $sigma%\n";
+
+# Display the composite plot.
+       $tempFrm->file( "${root}_${di}" );
+       $Display->display_data( $tempFrm ) if ( defined $Display );
+
     }
+
 
 # Podule
 # ======
@@ -441,27 +466,53 @@ This primitive takes the eight registered and resampled mosaics--one
 for each beam and waveplate angle---and derives images of the summed
 intensity; polarisation percentage, intensity, and angle; and the
 Stokes parameters.  The last are Q and U if linear polarisation is
-chosen and V for circular polarisation.  Alternative arithmetic
-methods are available.  The ratio method is preferred.  However,
-for noisy or faint sources it can attempt to take the square root of
-a negative number, resulting in a bad value.
+chosen and V for circular polarisation.
+
+The polarisation data are extracted into a catalogue in the FITS
+binary-table format, where they are binned, and those meeting the
+following criteria are available to display in a vector plot. The
+criteria are percentage polarisition positive below 50%,
+signal-to-noise at least argument S2N and standard deviation less than
+argument SIGMA.
 
 =head1 ARGUMENTS
 
 =over 4
 
-=item METHOD = CHARACTER (Given)
+=item BIN = INTEGER (Given)
 
-The method used to calculate the polarisation images.  It must be
-either "ratio" or "difference",  the former being used if any
-other value is supplied.  The IRPOLDR manual has more details.
-["difference"]
+The bin size in pixels for both x and y axes by which the
+polarisation parameters are averaged to improve their signal to
+noise and generate a clearer vector plot.  The averaging applies
+to the catalogue, not the polarisation images.  The default gives
+no losss of resolution in typical seeing.  The value must be at
+least 1.  [3]
+
+=item DISPLAY_IMAGE = CHARACTER (Given)
+
+The derived polarisation image to be displayed below the vectors
+in a composite plot.  Allowed values are "I", "P", and "Q", "U"
+when argument POL_MODE is "linear" or "V" when POL_MODE is
+"circular".  The chosen image will also need to be selected
+in the display control file.  ["I"]
 
 =item POL_MODE = CHARACTER (Given) 
 
 The polarisation type to calculate.  It must be either "linear"
 or "circular", the former being used if any other value is
 supplied.  ["linear"]
+
+=item S2N = REAL (Given)
+
+Minimum signal to noise of the polarisation percentage for a
+point to be included in the final catalogue and plot.  It is
+constrained to be at least one (i.e. no threshold).  [3]
+
+=item SIGMA = REAL (Given)
+
+Maximum error of the polarisation percentage for a point to be
+included in the final catalogue and plot.  It is constrained
+to be less than 100% (i.e. no threshold).  [5]
 
 =back
 
@@ -486,7 +537,8 @@ in the $Grp user header MOSAIC_GROUP.
 
 =item *
 
-An offset of -6.7 degrees is applied to rotation angle.
+An offset of -6.3 degrees is applied to the rotation angle
+for the orientation of the analyser with respect to north.
 
 =item *
 
@@ -503,18 +555,20 @@ L<"OUTPUT DATA">) P to "%", and TH to "degrees".
 The appropriate frame titles are set for the generated frames.
 These are as follows.  I: "Intensity";  P: "Polarisation";
 PI: "Polarised Intensity"; Q: "Stokes Q"; TH: "Polarisation Angle";
-U: "Stokes U"; V: "Stokes V"; q: "Intensity-normalised Stokes q";
-u: "Intensity-normalised Stokes u"; v: "Intensity-normalised Stokes v".
+U: "Stokes U"; V: "Stokes V".
 
 =item *
 
-All the created frames may be displayed.
+All the created frames may be displayed.  Only the frame chosen
+by argument DISPLAY_IMAGE can appear as the base image with vectors
+overlaid.
 
 =back
 
 =head1 TASKS
 
-KAPPA: ADD, MATHS, MULT, SETORIGIN, SETTITLE, SETUNITS.
+CURSA: CATSELECT; KAPPA: SETORIGIN, SETTITLE, SETUNITS;
+POLPACK: POLCAL, POLEXT, POLIMP, POLVEC.
 
 =head1 OUTPUT DATA
 
@@ -533,9 +587,20 @@ These are:
     TH  polarisation angle
     U   Stokes U (if POL_MODE is "linear")
     V   Stokes V (if POL_MODE is "circular")
-    q   Stokes intensity-normalised q (if POL_MODE is "linear")
-    u   Stokes intensity-normalised u (if POL_MODE is "linear")
-    v   Stokes intensity-normalised v (if POL_MODE is "circular")
+
+=item *
+
+A FITS binary-table catalogue of the binned and culled
+polarisation data, called E<lt>groupnameE<gt>_E<lt>imageE<gt>.FIT, where
+E<lt>groupnameE<gt> is the prefix used for group frames, and E<lt>imageE<gt>
+is the value of argument DISPLAY_IMAGE or "I" if the value
+is not valid.  For each point it tabulates the x-y
+co-ordinates, the total intensity, the Stokes parameters, the
+percentage polarisation, the polarisation angle and intensity.
+There are additional columns giving the standard deviation on
+each of the tabulated values (exlcuding the co-ordinates).
+Likewise E<lt>groupnameE<gt>_E<lt>allE<gt>.FIT and 
+E<lt>groupnameE<gt>_bin.FIT stored the full and unbinned catalogues.
 
 =back
 
@@ -546,6 +611,9 @@ MJC: Malcolm J. Currie (JAC)
 =head1 REFERENCES
 
 A.Chryststomou, 1997, "Imaging Polarimetry with IRCAM3", IRPOL/2.2.
+
+D.S.Berry & T.M.Gledhill, 1999, "I<POLPACK Users Manual Version 2.0>",
+SUN/223.3.
 
 =head1 COPYRIGHT
 
