@@ -52,7 +52,9 @@ my %hdr = (
             X_UPPER_BOUND       => "RDOUT_X2",
             Y_LOWER_BOUND       => "RDOUT_Y1",
             Y_UPPER_BOUND       => "RDOUT_Y2",
-            Y_REFERENCE_PIXEL   => "CRPIX2"
+            Y_REFERENCE_PIXEL   => "CRPIX2",
+	    X_APERTURE          => "APER_X",
+	    Y_APERTURE          => "APER_Y"
         );
 
 # Take this lookup table and generate methods that can

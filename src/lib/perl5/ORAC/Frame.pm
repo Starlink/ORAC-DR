@@ -88,6 +88,8 @@ my @ORAC_INTERNAL_HEADERS = qw/
   Y_LOWER_BOUND
   Y_REFERENCE_PIXEL
   Y_UPPER_BOUND
+  X_APERTURE
+  Y_APERTURE
 /;
 
 # Setup the object structure
