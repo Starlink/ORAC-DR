@@ -121,9 +121,6 @@ reduced group.
     $Grp->file("group_filename");
     $group_file = $Grp->file;
 
-Any file extensions (e.g. .sdf or .fits) are removed from this
-string.
-
 =cut
 
 
