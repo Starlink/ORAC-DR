@@ -56,7 +56,7 @@ my %hdr = (
 # be sub-classed by other instruments
 # Have to use the inherited version so that the new subs appear in 
 # this class
-ORAC::Frame::UKIRT::Michelle->_generate_orac_lookup_methods( \%hdr );
+ORAC::Frame::Michelle->_generate_orac_lookup_methods( \%hdr );
 
 =head1 PUBLIC METHODS
 
