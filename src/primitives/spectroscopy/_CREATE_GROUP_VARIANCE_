@@ -1,0 +1,196 @@
+# _CREATE_GROUP_VARIANCE_  -*-perl-*-
+
+=head1 NAME
+
+_CREATE_GROUP_VARIANCE_ - forms the variance of the group of differenced pairs
+
+=head1 DESCRIPTION
+
+This forms the frame-to-frame variance for all the members of the
+differenced pairs of frames stored in the DIFFERENCE_PAIR group.
+The resultant variance array is then stored in the main group's
+VARIANCE component.
+
+=head1 PARAMETERS
+
+=over 4
+
+none
+
+=back
+
+=head1 ORAC
+
+=head2 Engines referenced
+
+KAPPA
+
+=head2 Tasks called
+
+=over 4
+
+=item figaro1
+
+coppbj
+
+=item kappa_mon
+
+mstats
+
+=item ndfpack_mon
+
+erase, ndfcopy, ndftrace, setorigin, setvar
+
+=back
+
+=head2 Objects addressed
+
+$Frm, $Grp
+
+=head1 NOTES
+
+=head2 REVISION
+
+  $Id$
+
+=head1 AUTHOR
+
+Malcolm J. CurrieE<lt>mjc@jach.hawaii.eduE<gt>
+
+=cut
+
+# Validation
+# ==========
+     if ( $Frm->uhdr( "GROUP_VARIANCE" ) ) {
+
+# Augment the group of differenced frames.
+# ========================================
+
+# To compute the variance, well at least for now, we need to store the
+# differenced-pair images.  For this we use a special group.
+
+# Does the Group of difference frames exist?  If not create it and
+# inherit the group file name from the main group.
+       my $diffGrp = $Grp->uhdr( "DIFFERENCE_GROUP" );
+       if ( ! defined( $diffGrp ) ) {
+          $diffGrp = $Grp->new;
+          $diffGrp->file( $Grp->file );
+
+# Store the pointer to the group in the main Group user header.
+          $Grp->uhdr( "DIFFERENCE_GROUP", $diffGrp );
+       }
+
+# The differenced pair is in the initial group image.  As the group
+# image will change, make a copy.  As we are effectively subtracting
+# the sky, the suffix is _ss, not _dp.
+       my ( $in, $out ) = $Frm->inout( "_ss" );
+       $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$out" );
+
+# Create a new frame to store the differenced pair image.
+# ORAC::Frame::CGS4 expects to be created with raw data and not an
+# arbitrary file, so a simple invocation of the new method is
+# inadequate.
+       my $tempFrm = $Frm->new();
+       $tempFrm->files( $out );
+#       my $tempFrm = $Frm->new( $out );
+
+# Need to propagate the raw frame as ORAC-DR pattern matches for files
+# ending in a number to set the $Frm->number, which is needed for the
+# template method.
+       $tempFrm->raw( $Frm->raw );
+
+# Transfer the headers to the differenced frame, being sure to transfer
+# from the primary frame.
+       if ( $Frm->uhdr( "ON_SOURCE" ) ) {
+          %{$tempFrm->hdr} = ( %{$prevFrm->hdr} );
+          %{$tempFrm->uhdr} = ( %{$prevFrm->uhdr} );
+       } else {
+
+# The primary frame is the current one, so transfer its headers to
+# the differenced frame.
+          %{$tempFrm->hdr} = ( %{$Frm->hdr} );
+          %{$tempFrm->uhdr} = ( %{$Frm->uhdr} );
+       }
+
+# Store the differenced frame in the difference group.
+       $diffGrp->push( $tempFrm );
+       undef $tempFrm;
+
+
+# Form and store the variance array
+# =================================
+
+# Find the number of observations added previously is from coadds.
+# Not using $diffGrp->num+1 since DIFFERENCE_GROUP is a temporary
+# arrangement and another scheme adding in the latest frame only is
+# expected.
+       my $numobsadded = scalar(@{ scalar($Grp->coadds) } );
+       my $numpair = $numobsadded / 2;
+
+# Can only compute the variance once there are at least three frames
+# combined in the group.
+       my ( $ndf, $padnum );
+       if ( $numpair >= 3 ) {
+
+# MSTATS has a terrible user interface (for now).  Create copies of the files
+# with the naming convention required, some name followed by a four-digit
+# number.  The number increments for each frame.
+          foreach my $i ( 1..$numpair ) {             
+             $ndf = $diffGrp->frame( $i - 1 )->file;
+             $padnum = "0" x ( 4 - length( "$i" ) ) . $i;
+             $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$ndf out=mstats$padnum" );
+          }
+
+# Form the array of standard deviations.
+          my $means = "mstatsmean$$";
+          my $sigmas = "mstatssigma$$";
+          my $param1 = "inmode=Sequential pixmode=Box numseq=$numpair noordrst";
+          my $param2 = "firstfile=mstats0001 mean=$means stddev=$sigmas";
+          $Mon{'kappa_mon'}->obeyw( "mstats", "$param1 $param2 reset accept" );
+
+# Form a variance array (the data array being standard deviations).
+          $param1 = "ndf=$sigmas variance=data**2";
+          $Mon{'ndfpack_mon'}->obeyw( "setvar", "$param1" );
+
+# Because MSTATS is an IMAGE-format task, and SETVAR currently does not
+# permit copying variance from another NDF, we have to kludge a copy
+# of the variance.  A side effect of this is that the VARIANCE copied
+# must be a structure, not an array, in case the origin of the data array
+# of the co-added frame is not at 1,1.  The cleanest way to deal with
+# this is to find the origin in the co-added group frame, and set the
+# origin of the MSTATS variance array to this origin.
+
+# Extract the lower bounds of the frame, i.e. the origin.
+          $Mon{"ndfpack_mon"}->obeyw( "ndftrace", "ndf=$groupname" );
+          ( my $ORAC_STATUS, my @lbnd ) = $Mon{"ndfpack_mon"}->get( "ndftrace", "lbound" );
+          ( $ORAC_STATUS, my $varpresent ) = $Mon{"ndfpack_mon"}->get( "ndftrace", "variance" );
+
+# Set the origin in our file of variances.
+          $param1 = "ndf=$sigmas origin=[$lbnd[0],$lbnd[1]]";
+          $Mon{"ndfpack_mon"}->obeyw( "setorigin", "$param1" );
+
+# Finally copy the variance array just created to the co-added frame.
+# COPOBJ does not clobber existing components, so an existing VARIANCE
+# must be removed first.
+          if ( $numpair > 3 && $varpresent eq "TRUE" ) {
+             $param2 = "object=${groupname}.variance ok=true";
+             $Mon{'ndfpack_mon'}->obeyw( "erase", "$param2" );
+          }
+          $param1 = "source=${sigmas}.variance object=${groupname}.variance";
+          $Mon{'figaro1'}->obeyw( "copobj", "$param1" );
+          orac_print "Group file now contains variance derived from $numpair frames.\n";
+       }
+
+# Housekeeping
+# ============
+       if ( $numpair >= 3 ) {
+          _DELETE_A_FRAME_ FRAME=mstatsmean$$
+          _DELETE_A_FRAME_ FRAME=mstatssigma$$
+
+          foreach my $i ( 1..$numpair ) {
+             $padnum = "0" x ( 4 - length( "$i" ) ) . $i;
+             _DELETE_A_FRAME_ FRAME=mstats$padnum
+          }
+       }
+
+    }
