@@ -69,13 +69,19 @@ sub findgroup {
   my $hdrgrp = $self->hdr('GRPNUM');
   my $amiagroup;
 
-  if ($self->hdr('GRPMEM') !~/F/) {
+
+  if ($self->hdr('GRPMEM')) {
     $amiagroup = 1;
   } elsif (!defined $self->hdr('GRPMEM')){
     $amiagroup = 1;
   }
 
-    
+#  if ($self->hdr('GRPMEM') !~/F/) {
+#    $amiagroup = 1;
+#  } elsif (!defined $self->hdr('GRPMEM')){
+#    $amiagroup = 1;
+#  }
+
 
   # Is this group name set to anything useful
   if ($hdrgrp == 0 || $amiagroup == 0) {
