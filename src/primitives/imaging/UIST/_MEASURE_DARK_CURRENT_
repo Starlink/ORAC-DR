@@ -1,14 +1,15 @@
 =head1 NAME
 
-_MEASURE_DARK_CURRENT_ - returns the dark current for a given frame.
+_MEASURE_DARK_CURRENT_ - measure the dark current for a given frame.
 
 =head1 DESCRIPTION
 
-Returns the dark current for a given frame. This primitive first finds
-any bad pixels in the frame using the _FIND_BAD_PIXELS_ primitive, then
-masks those bad pixels (along with bad pixels found in a current bad
-pixel mask). The dark current is then calculated as the unclipped mean
-of the current frame, and is reported in ADU.
+Measures the dark current for a given frame. The dark current is 
+calculated as the unclipped mean of the current frame, and is reported
+in ADU.
+
+If this primitive is run at UKIRT, the dark current will be stored
+in a logfile at /ukirt_sw/logs/uist_array_tests.log
 
 =head1 AUTHOR
 
@@ -21,10 +22,7 @@ Council. All Rights Reserved.
 
 =cut
 
-# Run this primitive if it's time to do so.
-if ( $Frm->uhdr( "ARRAY_TESTS_MEASURE_DARK_CURRENT" ) ) {
-
-  ( my $in, my $out ) = $Frm->inout( "_at" );
+  my $in = $Frm->file;
 
 # Calculate the mean.
   my ( $mean, $ORAC_STATUS );
@@ -38,7 +36,7 @@ if ( $Frm->uhdr( "ARRAY_TESTS_MEASURE_DARK_CURRENT" ) ) {
 # Find the exposure time.
   my $exptime = $Frm->uhdr( "ORAC_EXPOSURE_TIME" );
   if( ! defined( $exptime ) ) {
-    orac_warn "Exposure time for $Frm->file not defined. Using 60.0 seconds.\n";
+    orac_warn "Exposure time for " . $Frm->file . " not defined. Using 60.0 seconds.\n";
     $exptime = 60.0;
   }
 
@@ -49,4 +47,40 @@ if ( $Frm->uhdr( "ARRAY_TESTS_MEASURE_DARK_CURRENT" ) ) {
   my $o_dark = sprintf( "%9.3f", $dark );
   orac_print "Dark current is $o_dark e-/sec.\n\n";
 
-}
+  # Initially flag the file as not being writable.
+  my $writable = 0;
+  if( -e "/ukirt_sw/logs" ) {
+
+    # Create a results file if one does not exist.
+#    my $results = "/ukirt_sw/logs/uist_array_tests.log";
+my $results = "uist_array_tests.log";
+    if( -w $results ) {
+      $writable = 1;
+    }
+    if( !( -e $results) ) {
+      if( $writable ) {
+        open( RESULTS, ">$results" ) ||
+          orac_throw "Unable to open a new array-test $results log file. Error: $!.\n";
+        orac_print "Creating a new results file called $results\n";
+
+        print RESULTS " UT  Date     Readnoise     Dark Current\n";
+        print RESULTS "----------    ---------     ------------\n";
+      } else {
+        orac_warn "Unable to write to new array-test $results log file.\n";
+      }
+    } else {
+      if( $writable ) {
+        open( RESULTS, ">>$results" ) ||
+          orac_throw "Unable to append to the array-test $results log file. Error: $!.\n";
+      } else {
+        orac_warn "Unable to append to the array-test $results log file.\n";
+      }
+    }
+  }
+
+  # Write to the log file.
+  if( -e "/ukirt_sw/logs" && $writable ) {
+    my $utdate = substr( $Frm->hdr( "DATE-OBS" ), 0, 10 );
+    printf RESULTS "%10s                  %16s\n", $utdate, $o_dark;
+    close( RESULTS );
+  }
