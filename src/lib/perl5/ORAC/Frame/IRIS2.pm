@@ -66,8 +66,10 @@ my %hdr = (
            X_DIM                  => "NAXIS1",
            Y_DIM                  => "NAXIS2",
            X_LOWER_BOUND          => "DETECXS",
+           X_REFERENCE_PIXEL      => "CRPIX1",
            X_UPPER_BOUND          => "DETECXE",
            Y_LOWER_BOUND          => "DETECYS",
+           Y_REFERENCE_PIXEL      => "CRPIX2",
            Y_UPPER_BOUND          => "DETECYE"
           );
 
