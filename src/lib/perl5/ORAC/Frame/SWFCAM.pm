@@ -93,9 +93,10 @@ sub _to_RA_SCALE {
 
 # Set the raw fixed parts for the four chips.
 my %rawfixedparts = ('1' => 'w',
-                   '2' => 'x',
-                   '3' => 'y',
-                   '4' => 'z');
+                     '2' => 'x',
+                     '3' => 'y',
+                     '4' => 'z',
+                     '5' => 'v',);
 
 # PROJP3: The cubic distortion coefficient for ZPN projection
 my $projp3 = 220.0;
@@ -148,7 +149,7 @@ sub new {
   my $self = $class->SUPER::new();
 
   # Which WFCAM chip is this?
-  if( $ENV{'ORAC_INSTRUMENT'} =~ /^WFCAM([1-4])$/ ) {
+  if( $ENV{'ORAC_INSTRUMENT'} =~ /^WFCAM([1-5])$/ ) {
     $self->rawfixedpart($rawfixedparts{lc($1)});
   } else {
     $self->rawfixedpart("w");
