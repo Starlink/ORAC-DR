@@ -58,6 +58,7 @@ setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/wfcam1/$oracut
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/wfcam
 setenv ORAC_DATA_CASU $ORAC_DATA_OUT/casu
 setenv RTD_REMOTE_DIR $ORAC_DATA_OUT
+setenv ORAC_WFCAM_MASTER $ORAC_DATA_ROOT/reduced/wfcam1/master_calibrations
 setenv HDS_MAP 0
 
 # screen things
