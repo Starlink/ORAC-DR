@@ -33,7 +33,7 @@
 #    -  For IRCAM, old headers are reordered and structured with
 #    headings before groups of related keywords.  The comments have
 #    units added or appear in a standard format.  Four deprecated
-#    deprecated are removed.  FITS-violating headers are corrected.
+#    headers are removed.  FITS-violating headers are corrected.
 #    Spurious instrument names are changed to IRCAM3.
 #    -  The bad pixel mask applied is $ORAC_DATA_CAL/bpm.
 #    -  Each dark-subtracted frame has thresholds applied beyond which
@@ -43,6 +43,12 @@
 #    in the mode used.
 #    -  The flat field is created by combining normalised object 
 #    frames using the median at each pixel.
+#    -  For ISAAC, residual bias variations along the columns are
+#    largely removed from each flat-fielded frame.  The recipe first
+#    masks the sources, then collapses the frame along its rows to form
+#    a profile, whose clipped mean is subtracted.  The resultant profile
+#    reflects the bias variations.  The recipe subtracts this profile
+#    from each column of the flat-fielded frame.
 #    -  Registration is performed using common point sources in the
 #    overlap regions.  If the recipe cannot identify sufficient common
 #    objects, the script resorts to using the telescope offsets
@@ -81,16 +87,17 @@
 
 # Output Data:
 #    -  The integrated mosaic in <m><date>_<group_number>_mos, where <m>
-#    is "gf" for UFTI and "gi" for IRCAM.  Before 2000 August these
-#    were "g" and "rg" respectively.
-#    -  A mosaic for each cycle of object frames in
+#    is "gf" for UFTI and "gi" for IRCAM (before 2000 August
+#    these were "g" and "rg" respectively), and "giasaac" for ISAAC.
+#    -  A mosaic for each cycle of jittered frames in
 #    <m><date>_<group_number>_mos<cycle_number>, where <cycle_number>
-#    is "gf" for UFTI and "gi" for IRCAM.  Before 2000 August these
-#    were "g" and "rg" respectively.
 #    counts from 0.
 #    -  The individual flat-fielded frames in <i><date>_<obs_number>_ff,
-#    where <i> is "f" for UFTI and "i" for IRCAM.  Before 2000 August
-#    IRCAM frames had prefix "ro".
+#    where <i> is "f" for UFTI, "i" for IRCAM, and "isaac" for ISAAC.
+#    Before 2000 August IRCAM had prefix "ro".
+#    INGRID files are called r<obs_number>_ff.
+#    -  For ISAAC, the individual bias-corrected frames in
+#    <i><date>_<obs_number>_bc.
 #    -  The created flat fields in flat_<filter>_<group_number> for the
 #    first or only cycle, and flat_<filter>_<group_number>_c<cycle_number>
 #    for subsequent cycles.
@@ -124,7 +131,7 @@
 #   MJC: Malcolm J. Currie (JAC)
 
 # Copyright:
-#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 #
 #-
@@ -157,6 +164,9 @@
 
 # Apply the flat field to the differenced pairs.
     _DIVIDE_BY_FLAT_NOD_PAIRS_
+
+# Correct for residual bias variations along the columns.
+    _BIAS_CORRECT_GROUP_
 
 # Mosaicking
 # ==========
@@ -219,7 +229,7 @@ created in the headers should no WCS already exist.
 For IRCAM, old headers are reordered and structured with
 headings before groups of related keywords.  The comments have
 units added or appear in a standard format.  Four deprecated
-deprecated are removed.  FITS-violating headers are corrected.
+headers are removed.  FITS-violating headers are corrected.
 Spurious instrument names are changed to IRCAM3.
 
 =item *
@@ -238,6 +248,15 @@ in the mode used.
 
 The flat field is created by combining normalised object 
 frames using the median at each pixel.
+
+=item *
+
+For ISAAC, residual bias variations along the columns are
+largely removed from each flat-fielded frame.  The recipe first
+masks the sources, then collapses the frame along its rows to form
+a profile, whose clipped mean is subtracted.  The resultant profile
+reflects the bias variations.  The recipe subtracts this profile
+from each column of the flat-fielded frame.
 
 =item *
 
@@ -304,12 +323,12 @@ suffix) frames.
 
 The integrated mosaic in
 E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_mos, where
-E<lt>mE<gt> is "gf" for UFTI and "gi" for IRCAM.  Before 2000 August these
-were "g" and "rg" respectively.
+E<lt>mE<gt> is "gf" for UFTI and "gi" for IRCAM (before 2000 August
+these were "g" and "rg" respectively), "and gisaac" for ISAAC.
 
 =item *
 
-A mosaic for each cycle of object frames in
+A mosaic for each cycle of jittered frames in
 E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_mos_cE<lt>cycle_numberE<gt>,
 where E<lt>cycle_numberE<gt> counts from 0.
 
@@ -317,15 +336,21 @@ where E<lt>cycle_numberE<gt> counts from 0.
 
 The individual flat-fielded frames in
 E<lt>iE<gt>E<lt>dateE<gt>_E<lt>obs_numberE<gt>_ff, where E<lt>iE<gt>
-is "f" for UFTI and "i" for IRCAM.  Before 2000 August
-IRCAM frames had prefix "ro".
+is "f" for UFTI, "i" for IRCAM, and "isaac" for ISAAC.  Before 2000
+August IRCAM had prefix "ro".  IRIS2 data are named
+E<lt>date>E<lt>obs_numberE<gt>_ff, where E<lt>dateE<gt> is in the form
+"ddmmm".  INGRID files are called rE<lt>obs_numberE<gt>_ff.
+
+=item *
+
+For ISAAC, the individual bias-corrected frames in
+E<lt>iE<gt>E<lt>dateE<gt>_E<lt>obs_numberE<gt>_bc.
 
 =item *
 
 The created flat fields in flat_E<lt>filterE<gt>_E<lt>group_numberE<gt> for the
-first or only cycle, and
-flat_E<lt>filterE<gt>_E<lt>group_numberE<gt>_cE<lt>cycle_numberE<gt> for
-subsequent cycles.
+first or only cycle, and flat_E<lt>filterE<gt>_E<lt>group_numberE<gt>_cE<lt>cycle_numberE<gt>
+for subsequent cycles.
 
 =back
 
@@ -386,7 +411,7 @@ Malcolm J. Currie (JAC) (mjc@jach.hawaii.edu)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut 
