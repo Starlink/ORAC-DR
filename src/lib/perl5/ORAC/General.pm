@@ -51,6 +51,7 @@ use vars qw/$VERSION/;
 # I realise that I can create a log10 function via natural logs
 use POSIX qw//;
 use Math::Trig qw/ deg2rad rad2deg /;
+use Text::Balanced qw/ extract_bracketed extract_delimited /;
 
 =head1 SUBROUTINES
 
@@ -250,6 +251,23 @@ Takes a string of comma-separated key-value pairs and return a hash.
 
 The keys are down-cased.
 
+Values can be quoted or bracketed. If values include commas themselves
+they will be returned as array references. ie
+
+   "a=1,b=2,3,c='4,5',d=[1,2,3,4],e=[5]"
+
+will return
+
+    a => 1,
+    b => [2,3],
+    c => [4,5],
+    d => [1,2,3,4],
+    e => 5,
+
+Note that delimeters are removed from the values and that if only a
+single element is quoted it will be returned as a scalar string rather
+than an array.
+
 =cut
 
 
@@ -257,13 +275,80 @@ sub parse_keyvalues {
 
   my ($string) = shift;
   my %hash;
-  my @pairs = split(',',$string);
 
-  foreach my $pair (@pairs) {
-    my ($key,$value) = split('=',$pair,2);
-    $key = lc($key);
-    $hash{$key} = $value;
-  };
+  # Split on equals sign first so that we can trap a="b,c"
+  my @split = split('=',$string);
+
+  my $current_key = $split[0];
+
+  print "Input string: $string\n";
+  for my $i (1..$#split) {
+
+    my $value;
+    my $next_key;
+
+    print "Processing string: $split[$i]\n";
+
+    # Count the number of commas
+    my $ncomma = ( $split[$i] =~ tr|,|,|);
+
+    # Do we have a delimiting or bracketing character
+    if ($split[$i] =~ /^[\'\"\[\{\(]/ ) {
+      my ($extract, $remainder);
+      if ($split[$i] =~ /^[\'\"]/ ) {
+	# Delimiting character
+	($extract, $remainder) = extract_delimited( $split[$i],
+						    substr($split[$i],0,1));
+
+      } elsif ($split[$i] =~ /^[\[\(\{]/ ) {
+	# bracketing character
+	($extract, $remainder) = extract_bracketed( $split[$i], '(){}[]<>' );
+
+      }
+
+      # remove the brackets/delimiters
+      $extract =~ s/^.//;
+      $extract =~ s/.$//;
+
+      print "\t extracted $extract with remainder $remainder\n";
+
+      # Now we need to split the extracted string on commas
+      # and convert to an array if we have more than one
+      my @values = split(/,/,$extract);
+      $value = ( scalar(@values) > 1 ?  \@values : $values[0] );
+
+      # and calculate the next key
+      $next_key = $remainder;
+      $next_key =~ s/^,// if defined $next_key;
+
+    } elsif ($ncomma > 1 || ( $ncomma ==1 && $i == $#split)) {
+      # We have a normal comma separated list
+      # Either because we have a comma in the list and this is the
+      # last entry (and so can not be a key specification) or we
+      # have more than one comma in the string
+
+      # Just split on comma
+      my @parts = split(',',$split[$i]);
+
+      # Get the next key if we are not the last entry in the list
+      $next_key = pop(@parts) if $i != $#split;
+
+      # Convert to array or single value
+      $value = ( scalar(@parts) > 1 ? \@parts : $parts[0]);
+
+    } else {
+      # This is a straight string so we need to split on ,
+      ($value, $next_key) = split(',', $split[$i]);
+    }
+
+    # Store the current value and set the next key
+    print "Extracted value: $value and next key $next_key\n";
+    $hash{lc($current_key)} = $value;
+    $current_key = $next_key;
+  }
+
+  use Data::Dumper;
+  print Dumper( \%hash );
 
   return %hash;
 }
