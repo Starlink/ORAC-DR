@@ -575,6 +575,7 @@ sub verify {
     my $ok = eval("'$CALVALUE' $rules{$key}");
     if ($@) {
       orac_err "Eval error - check the syntax in your rules file\n";
+      orac_err "Rules was: '$CALVALUE' $rules{$key}\n";
       orac_err "Error was: $@ \n";
       return undef;
     };
