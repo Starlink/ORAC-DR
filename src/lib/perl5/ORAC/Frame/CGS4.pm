@@ -2,7 +2,7 @@ package ORAC::Frame::CGS4;
 
 =head1 NAME
 
-ORAC::Frame::UKIRT - CGS4 class for dealing with observation files in ORAC-DR
+ORAC::Frame::CGS4 - CGS4 class for dealing with observation files in ORAC-DR
 
 =head1 SYNOPSIS
 
