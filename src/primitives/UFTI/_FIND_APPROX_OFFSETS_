@@ -5,7 +5,8 @@
 #  the offsets given in the headers.
 
 # This should only be performed on OBJECT frames.
-    if ($Frm->hdr(OBSTYPE) =~ /OBJECT/ || $Frm->hdr(OBSTYPE) =~ /SKY/) {
+    if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ||
+         $Frm->hdr( "OBSTYPE" ) eq "SKY" ) {
 
 # Obtain the name of the group to register.
 #       my $reggrp = ( $_FIND_APPROX_OFFSETS_{GROUP} || $Grp );
@@ -17,27 +18,35 @@
        my $boxangle = ( $_FIND_APPROX_OFFSETS_{BOXSIZE} || 5 );
 
 # Obtain a list of the filenames of the group members.
-       @frames = $Grp->membernames;
+       @frames = $reggrp->membernames;
        $objlist = join(",",@frames);
 
+# Create text file to hold the list of input files, one per line.  This
+# is needed because expanded lists of files may make the command line too
+# long for the ADAM message system.
+       unlink ("faolist.inlist$$");
+       open (INLIST, ">faolist.inlist$$");
+       print INLIST join( "\n", @objects ), "\n";
+       close (INLIST);
+
 # Create a file for storing the filenames of the offset files.
-       $offlist = "ssoff.lis";
+       $offlist = "ssoff.lis$$";
        unlink ( "$offlist" );
        open ( OFFLIST, "> $offlist" );
 
 # Loop through all the frames.
-       foreach $frame ( $Grp->members ) {
+       foreach $frame ( $reggrp->members ) {
 
 # Obtain the plate scale.
-          $xpixelscale =  $frame->hdr( CDELT1 );
-          $ypixelscale =  $frame->hdr( CDELT2 );
+          $xpixelscale =  $frame->hdr( "CDELT1" );
+          $ypixelscale =  $frame->hdr( "CDELT2" );
 
 # Find the boxsize in pixels.
           $boxpix = $boxangle / $xpixelscale;
 
 # Obtain the offsets.  Try the xhead offsets first.
-          $xoff = $frame->hdr( TRAOFF );
-          $yoff = $frame->hdr( TDECOFF );
+          $xoff = $frame->hdr( "TRAOFF" );
+          $yoff = $frame->hdr( "TDECOFF" );
           $offtype = "crosshead";
 
 # If the values are both zero or there was an error (presumably arising
@@ -45,8 +54,8 @@
 # used.  Instead use the telescope offsets.  Also cope when there is an
 # error.
           if ( ( $xoff == 0 && $yoff == 0 ) ) {
-             $xoff = $frame->hdr( TRAOFF );
-             $yoff = $frame->hdr( TDECOFF );
+             $xoff = $frame->hdr( "TRAOFF" );
+             $yoff = $frame->hdr( "TDECOFF" );
              $offtype = "telescope";
           }
 
@@ -131,14 +140,14 @@
 
 # Create an offset file as used by CCDPACK's REGISTER task.  Store the
 # the frame name and offsets within the file.
-          $offfile = $ndf . ".off";
-          unlink ( "$offfile" );
-          open ( OFFSET, "> $offfile" );
+          $off_file = $ndf . ".off";
+          unlink ( "$off_file" );
+          open ( OFFSET, "> $off_file" );
           print OFFSET "1  $xoffset  $yoffset\n";
           close ( OFFSET );
 
 # Record the name offset file in GRP indirection file for use by CCDEDIT.
-          print OFFLIST "$offfile\n";
+          print OFFLIST "$off_file\n";
        }
     }
     close ( OFFLIST );
@@ -146,17 +155,15 @@
 # Create text file to hold the list of input files, one per line.  This
 # is needed because expanded lists of files may make the command line too
 # long for the ADAM message system.
-    unlink ("reglist.inlist");
-    open (INLIST, ">reglist.inlist");
-    for ( my $i = 0; $i < $numfiles; $i++ ) {
-       print INLIST @frames[$i],"\n";
-    }
+    unlink ("reglist.inlist$$");
+    open (INLIST, ">reglist.inlist$$");
+    print INLIST join( "\n", @frames), "\n";
     close (INLIST);
 
 # Specify parameters for editing CCDPACK headers.
-    $header = "in='^objlist.inlist' inlist=\'^$offlist\'";
+    $header = "in='^faolist.inlist$$' inlist=\'^$offlist\'";
     $hidden = "mode=alist"; 
 
 # Associate the position-list files with the current object frames.
     $Mon{"ccdpack_reg"}->obeyw("ccdedit","$header $hidden");
-
+    unlink( "faolist.inlist$$" );
