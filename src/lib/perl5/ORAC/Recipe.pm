@@ -26,6 +26,7 @@ shown in the SYNOPSIS.
 =cut
 
 use strict;
+use 5.006;
 use Carp;
 use File::Spec;  # For pedants everywhere
 use IO::File;    # until perl5.6 is guaranteed
