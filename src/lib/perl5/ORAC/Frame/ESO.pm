@@ -175,13 +175,7 @@ sub _from_NUMBER_OF_OFFSETS {
 
 sub _to_OBSERVATION_MODE {
    my $self = shift;
-   my $mode = uc( $self->hdr->{"HIERARCH.ESO.DPR.TECH"} );
-   if ( $mode eq "IMAGE" ) {
-      $mode = "imaging";
-   } elsif ( $mode eq "SPECTRUM" ) {
-      $mode = "spectroscopy";
-   }
-   return $mode;
+   return $self->get_instrument_mode();
 }
 
 sub _from_OBSERVATION_MODE {
@@ -285,7 +279,9 @@ sub _to_UTSTART {
 sub _to_WAVEPLATE_ANGLE {
     my $self = shift;
     my $polangle = 0.0;
-    if ( exists $self->hdr->{"HIERARCH.ESO.SEQ.ROT.OFFANGLE"} ) {
+    if ( exists $self->hdr->{"HIERARCH.ESO.ADA.POSANG"} ) {
+       $polangle = $self->hdr->{"HIERARCH.ESO.ADA.POSANG"};
+    } elsif ( exists $self->hdr->{"HIERARCH.ESO.SEQ.ROT.OFFANGLE"} ) {
        $polangle = $self->hdr->{"HIERARCH.ESO.SEQ.ROT.OFFANGLE"};
     } elsif ( exists $self->hdr->{CROTA1} ) {
        $polangle = abs( $self->hdr->{CROTA1} );
@@ -360,6 +356,18 @@ sub _to_Y_UPPER_BOUND {
 # Supplementary methods for the translations
 # ------------------------------------------
 
+# Get the observation mode.
+sub get_instrument_mode {
+   my $self = shift;
+   my $mode = uc( $self->hdr->{"HIERARCH.ESO.DPR.TECH"} );
+   if ( $mode eq "IMAGE" || $mode eq "POLARIMETRY" ) {
+      $mode = "imaging";
+   } elsif ( $mode eq "SPECTRUM" ) {
+      $mode = "spectroscopy";
+   }
+   return $mode;
+}
+
 # Returns the UT date in YYYYMMDD format.
 sub get_UT_date {
    my $self = shift;
@@ -421,8 +429,16 @@ sub rotation{
       if( $cdelt1 < 0 ) { $sgn2 = -1; } else { $sgn2 = 1; }
       my $rad = 57.2957795131;
       $rotangle = atan2( -$cd21 * $dtor, $sgn2 * $cd11 * $dtor ) / $dtor;
+
+# Orientation may be encapsulated in the slit position angle for
+# spectroscopy.
    } else {
-      $rotangle = 180.0;
+      if ( uc( $self->get_instrument_mode() ) eq "SPECTROSCOPY" &&
+           exists $self->hdr->{"HIERARCH.ESO.ADA.POSANG"} ) {
+         $rotangle = $self->hdr->{"HIERARCH.ESO.ADA.POSANG"};
+      } else {
+         $rotangle = 180.0;
+      }
    }
    return $rotangle;
 }
@@ -482,6 +498,8 @@ sub calc_orac_headers {
    my $ut = $self->get_UT_date();
    $ut = 0 unless defined $ut;
    $self->hdr( "ORACUT", $ut );
+
+   $new{'ORACUT'} = $ut;
 
    return %new;
 }
