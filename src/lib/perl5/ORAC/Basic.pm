@@ -14,6 +14,7 @@ use Starlink::NBS;
 require Exporter;
 use File::Path;
 use Starlink::ADAMTASK;
+use Term::ANSIColor;
 
 
 
@@ -62,6 +63,7 @@ sub orac_connect_display {
     $toolnbname = "p".$toolpid."_plotnb";
     $Display = new Starlink::ADAMTASK($toolname);
     $Display->contactw;		# ensure contact is made
+#    $Display->obeyw("verbose") unless ($main::opt_quiet);
     $Nbs = new Starlink::NBS ($toolnbname);
 };
 
@@ -97,7 +99,7 @@ local(%args) = %$argsref;		# dereference arguments
 
 $block = join("",@recipe);
 eval $block;
-print "Orac says: RECIPE ERROR: $@" if ($@);
+print colored ("Orac says: RECIPE ERROR: $@","blue") if ($@);
 return \%args;
 
 };
@@ -191,7 +193,7 @@ sub orac_parse_recipe {
 sub orac_check_status {
  
   my @newlines =  (' if ($ORAC_STATUS != $ORAC__OK) {' ,
-		   '   print "Error in pipeline\n"; ' ,
+		   '   print colored ("Error in pipeline\n","red"); ' ,
 		   '   return $ORAC_STATUS; ' ,
 		   ' } ');
   
@@ -210,7 +212,7 @@ sub orac_check_obey_status {
 
 
   my @statuslines = ('  if ($OBEYW_STATUS != $ORAC_ACT_COMPLETE) {' ,
-                  '   print "Error in obeyw to monolith $monolith: $OBEYW_STATUS\n"; ' ,
+                  '   print colored ("Error in obeyw to monolith $monolith: $OBEYW_STATUS\n","red"); ' ,
 		  '   return $OBEYW_STATUS; ' ,
 		  ' } ');
 }
@@ -229,12 +231,12 @@ sub orac_exit_normally {
 
     $message = shift(@_);
     orac_kill_display;
-    print "Orac says: $message - Exiting...\n";
+    print colored ("Orac says: $message - Exiting...\n","red");
 
     adamtask_exit;		# Shut down the messaging system
     &orac_kill_display;		# Destroy display
 
-    print "\nOrac says: Goodbye\n";
+    print colored ("\nOrac says: Goodbye\n","red");
     exit;
 };
 
