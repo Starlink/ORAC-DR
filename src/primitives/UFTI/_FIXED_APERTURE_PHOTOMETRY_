@@ -1,11 +1,37 @@
-# _FIXED_APERTURE_PHOTOMETRY_         -*- perl -*-
+#+
+# Name:
+#    _FIXED_APERTURE_PHOTOMETRY_
 #
-# Perform aperture photometry on a standard star.
+# Purpose:
+#    Performs aperture photometry on a point source.
 #
-# TASK: PHOTOM - AUTOPHOTOM
+# Language:
+#    Perl5
 #
-#    _FIND_SOURCE_CENTROID_:        CENTRE
-
+# Description:
+#    This primitive performs aperture photometry of a point source
+#    for the group frame and target-frame members of the current $Grp.
+#    The results are reported and stored in a text file---a Starlink
+#    STL table (see SUN/190).
+#
+#    The photometry is in circular aperture located at the centroid of
+#    the source with the sky measured from a concentric annulus outside
+#    the aperture.  The photometry engine accounts for fractional pixels
+#    at the aperture edge but without allowance for the local gradient.
+#    The photometry also yields an internal error determined from the 
+#    sky variance.  The magnitudes are given by the expression 
+#    -2.5 * log10( abs( counts ) per second exposure time ).  Therefore
+#    negative sources can be measured too.
+#
+#    The source must lie within the specified aperture.  See arguments
+#    XOFF and YOFF for the location of the aperture.
+#
+#    A case- and space-insensitive comparison of the object name 
+#    with the entries in a table provides a catalogue magnitude in J,
+#    H, or K for a standard star.  Also a mean extinction is applied
+#    for the mean of the start and end airmasses.  Thus the primitive
+#    calculates an approximate zero point.
+#
 #  Arguments:
 #     APERTURE = REAL (Given)
 #        The aperture in arcseconds for the photometry.  [6.0]
@@ -13,18 +39,22 @@
 #        The ratio of the diameters of inner ring of the sky annulus to
 #        that of the object aperture (APERTURE).  It is constrained
 #        to be in the range 1.1 to 3.0.  The mode of the pixel values in 
-#        the annulus is used to subtract the sky for statistics 3) and 4)
-#        listed above.  [1.5]
+#        the annulus is used to subtract the sky for statistics 3) and
+#        4) listed above.  [1.5]
 #     OUTER = REAL (Given)
 #        The ratio of the diameters of outer ring of the sky annulus to
-#        that of the object aperture (APERTURE).  It is constrained to be
-#        in the range 1.4 to 5.0 and be at least 0.3 greater than the
+#        that of the object aperture (APERTURE).  It is constrained to
+#        be in the range 1.4 to 5.0 and be at least 0.3 greater than the
 #        inner scale factor of the annulus.  [2.5]
 #     POSITIVE = LOGICAL (Given)
-#        If 1 (true), the point source is positive, i.e. has values above
-#        the sky level.  If 0 (false), the point source is negative. [1]
+#        If 1 (true), the point source is positive, i.e. has values
+#        above the sky level.  If 0 (false), the point source is
+#        negative.  [1]
 #     SKY_EST = INTEGER (Given)
-#        Sky estimations method as per AUTOPHOTOM parameter SKYEST. [3]
+#        Sky estimations method as per AUTOPHOTOM parameter SKYEST.  The
+#        default is the mode, so as to exclude contaminating sources.
+#        1 is the mean; 2 is the average of values within two standard
+#        deviations of the mean; 3 is the mode.  [3]
 #     SUFFIX = CHARACTER (Given)
 #        Suffix to be applied to the name of the frame in the log of
 #        the results.  It is usually not set.  The NOD recipes need it
@@ -41,9 +71,40 @@
 #        source to be measured with respect to the nominal position.
 #        The nominal position is the y centre of the array minus the
 #        telescope offset.  [0.0]
-
-# Input arguments recognised by this primitive:
-#    SKYEST, ZP, INNER, OUTER
+#
+# Notes:
+#    -  This primitive is suitable for both UFTI and IRCAM.
+#    Instrument-specific headers are obtained where appropriate.
+#    -  Processing only occurs when it is time to perform photometry,
+#    i.e. when the steering header DO_APHOT is true; and on target
+#    object frames when the steering header TARGET_OR_SKY is "target".
+#    -  The photometry text file is aphot_results.txt.  The format of
+#    this file is described in primitive _MAKE_PHOTOMETRY_TABLE_.
+#    -  Items reported in order are the frame name, the filter, the
+#    instrumental magnitude and its error (if available); error flags,
+#    notably B indicating that bad pixels were inside the aperture;
+#    the airmass correction, the catalogue magnitude and calculated
+#    zeropoint (if former is known); the sky level, and aperture
+#    diameter and the radii of the sky annulus in arcseconds.
+#    -  A saturation level is set at 12000 counts.
+#    -  The mean extinction coefficients are: J: 0.08; H: 0.03; K:0.07;
+#    L: 0.10; and M: 0.10.  Zero extinction applies to any other filter.
+#    -  A warning appears should the object not be found in the
+#    standards file.
+#    -  Where a value is unknown or cannot be computed, its entry in the
+#    table is "<null>".
+#    -  The faint-standard catalogue used is $ORAC_DATA_CAL/fs2000.dat.
+#    -  The ADU factor and exposure time stored in frame header are
+#    validated.  Non-positive values cause a warning message to appear,
+#    but the primitive continues defaulting the header value to 1.
+#
+# Tasks:
+#    PHOTOM: AUTOPHOTOM.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+#-
 
 # Determine whether it is time to do aperture photometry.
 # We have to specify this since we have to decide whether we
@@ -77,6 +138,9 @@
        my $outer = ( $_FIXED_APERTURE_PHOTOMETRY_{OUTER} || 2.5 );
        $inner = min( 3.0, max( $inner, 1.1 ) );
        $outer = min( 5.0, max( $inner + 0.3, $outer, 1.4 ) );
+
+# Obtain the sky-estimation-method index.
+       my $skyest = ( $_FIXED_APERTURE_PHOTOMETRY_{SKY_EST} || 3 );
 
 # Selection
 # =========
@@ -227,10 +291,10 @@
                 my $fs_standards;
 
 # Open the faint-standards file and store its records in an array.
-                if (  -e "/ukirt_sw/ircamdr/fs99.dat" ) {
-                   $fs_standards = "/ukirt_sw/ircamdr/fs99.dat";
-                } else {
-                   $fs_standards = "fs99.dat";
+                my $catpath = $ENV{ "ORAC_DATA_CAL" };
+                $fs_standards = $catpath . "/fs2000.dat";
+                if ( !-e $fs_standards ) {
+                   $fs_standards = "fs2000.dat";
                 }
                 open( FS_STANDARDS, "<$fs_standards" ) || 
                       die "JHK Standards file not found";
@@ -251,10 +315,14 @@
 # until an uppercase match is found.
                 my $recno = 1;
                 my $name = " ";
-                until ( uc( $name ) eq $starname || $recno > $#stds ) {
+                my $othername = " ";
+                until ( uc( $name ) eq $starname || $recno > $#stds ||
+                        uc( $othername ) eq $starname ) {
                    $recno++;
-                   $name = substr( $stds[ $recno ], 0, 9 );
+                   $name = substr( $stds[ $recno ], 0, 6 );
+                   $othername = substr( $stds[ $recno ], 8, 8 );
                    $name =~ s/ //g;
+                   $othername =~ s/ //g;
                 }
 
 # Check that a match has been found.  Use a special value to indicate
@@ -269,9 +337,9 @@
 
 # Extract and evaluate the magnitudes from the colours.  This could be done
 # more succinctly, but use more friendly intermediate variables.
-                   my $Kmag = $fields[ 7 ];
-                   my $Hmag = $Kmag + $fields[ 13 ];
-                   my $Jmag = $Hmag + $fields[ 10 ];
+                   my $Kmag = $fields[ 9 ];
+                   my $Hmag = $Kmag + $fields[ 15 ];
+                   my $Jmag = $Hmag + $fields[ 12 ];
                    my @mags = ( $Jmag, $Hmag, $Kmag );
 
 # Obtain the desired magnitude.
@@ -320,7 +388,6 @@
              close ( PHOTOM );
 
 # Specify the user parameters.
-             my $skyest = ( $_FIXED_APERTURE_PHOTOMETRY_{SKY_EST} || "3" );
              my $zp = 0.0;
              my $user = "skyest=$skyest skymag=$zp";
  
@@ -383,7 +450,7 @@
 
 # Format the results to give a sensible number of significant figures.
              my ( $fs_mag, $fs_err, $fs_sky, $fs_airmass, $fs_apdiam );
-             my ( $fs_inner, $fs_outer );
+             my ( $fs_catmag, $fs_inner, $fs_outer );
              $fs_mag = sprintf( "%7.3f", $magnorm );
              $fs_mag =~ s/ //g;
              if ( $magerr ne "<null>" ) {
@@ -405,6 +472,7 @@
              if ( $catmag < $nullmag ) {
                 $magdif = $catmag - $magnorm;
                 $magdif_ext = $catmag - $magext;
+                $fs_catmag = sprintf( "%6.3f", $catmag );
                 $fs_magdif_ext =  sprintf( "%6.3f", $magdif_ext );
              }
 
@@ -430,7 +498,7 @@
 
              orac_print "Airmass correction:     $fs_airmass\n";
              if ( $catmag < $nullmag ) {
-                orac_print "Catalogue Magnitude:    $catmag\n";
+                orac_print "Catalogue Magnitude:    $fs_catmag ($starname)\n";
                 orac_print "Calculated zeropoint:   $fs_magdif_ext\n"
              }
              orac_print "Sky:                    $fs_sky\n";
@@ -474,3 +542,165 @@
           close ( LOGFILE );
        }
     }
+
+# Podule
+# ======
+
+=head1 NAME
+
+FIXED_APERTURE_PHOTOMETRY -- Performs aperture photometry on a point source.
+
+=head1 DESCRIPTION
+
+This primitive performs aperture photometry of a point source
+for the group frame and target-frame members of the current $Grp.
+The results are reported and stored in a text file---a Starlink
+STL table (see SUN/190).
+
+The photometry is in circular aperture located at the centroid of
+the source with the sky measured from a concentric annulus outside
+the aperture.  The photometry engine accounts for fractional pixels
+at the aperture edge but without allowance for the local gradient.
+The photometry also yields an internal error determined from the 
+sky variance.  The magnitudes are given by the expression 
+-2.5 * log10( abs( counts ) per second exposure time ).  Therefore
+negative sources can be measured too.
+
+The source must lie within the specified aperture.  See arguments
+XOFF and YOFF for the location of the aperture.
+
+A case- and space-insensitive comparison of the object name 
+with the entries in a table provides a catalogue magnitude in I<J>,
+I<H>, or I<K> for a standard star.  Also a mean extinction is applied
+for the mean of the start and end airmasses.  Thus the primitive
+calculates an approximate zero point.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item APERTURE = REAL (Given)
+
+The aperture in arcseconds for the photometry.  [6.0]
+
+=item INNER = REAL (Given)
+
+The ratio of the diameters of inner ring of the sky annulus to
+that of the object aperture (APERTURE).  It is constrained
+to be in the range 1.1 to 3.0.  The mode of the pixel values in 
+the annulus is used to subtract the sky for statistics 3) and
+4) listed above.  [1.5]
+
+=item OUTER = REAL (Given)
+
+The ratio of the diameters of outer ring of the sky annulus to
+that of the object aperture (APERTURE).  It is constrained to
+be in the range 1.4 to 5.0 and be at least 0.3 greater than the
+inner scale factor of the annulus.  [2.5]
+
+=item POSITIVE = LOGICAL (Given)
+
+If 1 (true), the point source is positive, i.e. has values
+above the sky level.  If 0 (false), the point source is
+negative.  [1]
+
+=item SKY_EST = INTEGER (Given)
+
+Sky estimations method as per AUTOPHOTOM parameter SKYEST.  The
+default is the mode, so as to exclude contaminating sources.
+1 is the mean; 2 is the average of values within two standard
+deviations of the mean; 3 is the mode.  [3]
+
+=item SUFFIX = CHARACTER (Given)
+
+Suffix to be applied to the name of the frame in the log of
+the results.  It is usually not set.  The NOD recipes need it
+to discriminate between the positive and negative images.
+[""]
+
+=item  XOFF = REAL (Given)
+
+The approximate x pixel offset of the centroid of the point
+source to be measured with respect to the nominal position.
+The nominal position is the y centre of the array plus the
+x telescope offset.  (It's plus because R.A. increases with
+negative x.)  [0.0]
+
+=item YOFF = REAL (Given)
+
+The approximate y pixel offset of the centroid of the point
+source to be measured with respect to the nominal position.
+The nominal position is the y centre of the array minus the
+telescope offset.  [0.0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for both UFTI and IRCAM.
+Instrument-specific headers are obtained where appropriate.
+
+=item *
+
+Processing only occurs when it is time to perform photometry,
+i.e. when the steering header DO_APHOT is true; and on target
+object frames when the steering header TARGET_OR_SKY is "target".
+
+=item *
+
+The photometry text file is aphot_results.txt.  The format of
+this file is described in primitive L<_MAKE_PHOTOMETRY_TABLE_>.
+
+=item *
+
+Items reported in order are the frame name, the filter, the
+instrumental magnitude and its error (if available); error flags,
+notably B indicating that bad pixels were inside the aperture;
+the airmass correction, the catalogue magnitude and calculated
+zeropoint (if former is known); the sky level, and aperture
+diameter and the radii of the sky annulus in arcseconds.
+
+=item *
+
+A saturation level is set at 12000 counts.
+
+=item *
+
+The mean extinction coefficients are: I<J>: 0.08; I<H>: 0.03; I<K>:0.07;
+I<L>: 0.10; and I<M>: 0.10.  Zero extinction applies to any other filter.
+
+=item *
+
+A warning appears should the object not be found in the
+standards file.
+
+=item *
+
+Where a value is unknown or cannot be computed, its entry in the
+table is "<null>".
+
+=item *
+
+The faint-standard catalogue used is F<$ORAC_DATA_CAL/fs2000.dat>.
+
+=item *
+
+The ADU factor and exposure time stored in frame header are
+validated.  Non-positive values cause a warning message to appear,
+but the primitive continues defaulting the header value to 1.
+
+=back
+
+=head1 TASKS
+
+PHOTOM: AUTOPHOTOM.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=cut
