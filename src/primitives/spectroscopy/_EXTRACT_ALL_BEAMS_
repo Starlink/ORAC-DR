@@ -58,10 +58,20 @@ my $in = $Grp->raw;
 
 # Get the optextract window size. The bigger the better, sans overlap, so:
 my $window=0;
+
 if ($nbeams == 2) {
    # Set it to half the beam separation
    $window = int (0.5*(abs ($beams[1]{'POS'} - $beams[2]{'POS'})));
+
+} elsif( $nbeams == 3 ) {
+
+# Since the beams are equidistant, take the window to be the distance
+# between the positive beam (in $beam[1]) and the first negative beam
+# (in $beam[2]).
+  $window = int( 0.5 * abs( $beams[1]{'POS'} - $beams[2]{'POS'} ) );
+
 } else {
+
    # Set it to 50 pixels
    $window=50;
 }
@@ -88,6 +98,7 @@ $ORAC_STATUS = ( create_hdsobj( $oes, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
 for (my $i=1; $i<=$nbeams; $i++) {
 
    my $row = $beams[$i]{'POS'};
+   my $mult = $beams[$i]{'MULT'};
 
    # Profile the group image
 
@@ -106,6 +117,7 @@ for (my $i=1; $i<=$nbeams; $i++) {
    my $lbound = $Frm->uhdr("ORAC_Y_LOWER_BOUND");
    my $ystart = ($row-$window <= $lbound) ? ( $lbound + 1 ) : $row-$window;
    my $ystartf = $ystart - $ndflbound[1];
+   if( $ystartf < 1 ) { $ystartf = 1; }
 
    my $ubound = $Frm->uhdr("ORAC_Y_UPPER_BOUND");
    my $yend = ($row+$window >= $ubound) ? ( $ubound - 1 ) : $row+$window;
@@ -115,6 +127,23 @@ for (my $i=1; $i<=$nbeams; $i++) {
    my $tmp = new ORAC::TempFile;
    my $tmpfile = $tmp->file;
    $Mon{'kappa_mon'}->obeyw("nomagic", "in=$in out=$tmpfile repval=0");
+
+#   my $tmp2 = new ORAC::TempFile;
+#   my $tmpfile2 = $tmp2->file;
+#   # If the multiplier is negative, flip the temporary image so profile will work.
+#   if( $mult < 0 ) {
+#     $Mon{'kappa_mon'}->obeyw("cmult", "in=$tmpfile scalar=-1 out=$tmpfile2");
+#   } else {
+#      $tmpfile2 = $tmpfile;
+#   }
+
+#   # Remove any residual sky level by finding the clipped mean of the frame,
+#   # then subtracting that off.
+#   my $tmp3 = new ORAC::TempFile;
+#   my $tmpfile3 = $tmp3->file;
+#   $Mon{'kappa_mon'}->obeyw("stats", "ndf=$tmpfile2 clip=[3,3,2]");
+#   ( my $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get("stats", "mean");
+#   $Mon{'kappa_mon'}->obeyw("csub", "in=$tmpfile2 scalar=$mean out=$tmpfile3");   
 
    # Do the profile
    $Mon{'figaro1'}->obeyw("profile", "image=$tmpfile ystart=$ystartf yend=$yendf degree=1 profile=$oep residual=$oer weight nreject=5");
