@@ -47,21 +47,23 @@ use strict;
 use warnings;
 use Carp;
 
+use Time::HiRes;
 use File::Basename;
 use File::Find;
 use Cwd;
 
 use ORAC::Print;
 use ORAC::Convert;
+use ORAC::Msg::EngineLaunch; # For -loop 'task'
 
 require Exporter;
 
-use vars qw/$VERSION @EXPORT @ISA $CONVERT/;
+use vars qw/$VERSION @EXPORT @ISA $CONVERT $ENGINE_LAUNCH/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 @ISA = qw/Exporter/;
-@EXPORT = qw/ orac_loop_list  orac_loop_wait orac_loop_inf
+@EXPORT = qw/ orac_loop_list  orac_loop_wait orac_loop_inf orac_loop_task
               orac_loop_flag orac_loop_file orac_check_data_dir /;
 
 =head1 LOOP SUBROUTINES
@@ -260,15 +262,16 @@ sub orac_loop_wait {
 
   # Now loop until the file appears
 
-  my $timeout = 43200;  # 12 hours timeout
-  my $timer = 0.0;
-  my $pause = 2.0;   # Time between checks
-  my $dot   = 1;     # Number of pauses for each dot printed
+  my $timeout = 43200; # 12 hours timeout
+  my $timer   = 0.0;
+  my $pause   = 2.0;   # Time between checks
+  my $dot     = 1;     # Number of pauses for each dot printed
+  my $npauses = 0;     # number of pauses so far (reset each time dot printed)
 
   my $actual = File::Spec->catfile($ENV{ORAC_DATA_IN},"$fname");
 
   my $old = 0;   # Initial size of the file
-  my $npauses = 0; # number of pauses so far (reset each time dot printed)
+
 
   # was looping with
   #  while (! -e $actual) {
@@ -356,7 +359,6 @@ sub orac_loop_wait {
       $npauses = 0;
     }
 
-
   }
   orac_print "\nFound\n";
 
@@ -424,8 +426,10 @@ sub orac_loop_flag {
   # Now loop until the file appears
 
   my $timeout = 43200; # 12 hour timeout
-  my $timer = 0.0;
-  my $pause = 2.0;   # Pause for 2 seconds
+  my $timer   = 0.0;
+  my $pause   = 2.0;   # Pause for 2 seconds
+  my $dot     = 1;     # Number of pauses per dot
+  my $npauses = 0;     # number of pauses so far (reset each time dot printed)
 
   my @actual = map {File::Spec->catfile($ENV{ORAC_DATA_IN},$_)} @fnames;
 
@@ -489,7 +493,13 @@ sub orac_loop_flag {
     }
 
     # Show that we are thinking
-    orac_print ".";
+    # Print a dot every time $npauses equals the number specified in $dot
+    # This is so that the checking cycle can be different from the dot
+    # drawing cycle
+    if ($npauses >= $dot) {
+      orac_print ".";
+      $npauses = 0;
+    }
 
   }
   orac_print "\nFound\n";
@@ -520,12 +530,14 @@ sub orac_loop_flag {
 Takes a list of files and returns back a frame object
 for the first  file, removing it from the input array.
 
-  $Frm = orac_loop_file($class, \@array, $skip );
+  $Frm = orac_loop_file($class, $ut, \@array, $skip );
 
 undef is returned on error or when all members of the
 list have been returned.
 
 Call repeatedly to retrieve all the frame objects.
+
+The UT and skip parameters are ignored.
 
 =cut
 
@@ -536,7 +548,7 @@ sub orac_loop_file {
 
   my ($class, $utdate, $obsref, $skip) = @_;
 
-  # grab a filname from the observation array
+  # grab a filename from the observation array
   my $fname = shift(@$obsref);
 
   # If filename is undef or a blank line return undef
@@ -555,6 +567,187 @@ sub orac_loop_file {
     return $Frm;
   }
   return;
+}
+
+=item B<orac_loop_task>
+
+In this scheme, ORAC-DR obtains data triggers from a running task
+that is updating its parameters each time new data are available.
+
+  $Frm = orac_loop_task( $class, \@array, $skip );
+
+The array supplied to this routine is used to store the most recent
+timestamp (to prevent returning the same data file more than once).
+
+In this looping scheme the UT date and skip flags are ignored since we
+only know about the data most recently written.
+
+=cut
+
+sub orac_loop_task {
+  croak 'Wrong number of args: orac_loop_task(class, ut, arr_ref, skip)'
+    unless scalar(@_) == 4;
+  my ($class, $ut, $arr, $skip ) = @_;
+
+  # get the launch object or define it
+  $ENGINE_LAUNCH = new ORAC::Msg::EngineLaunch()
+    unless defined $ENGINE_LAUNCH;
+
+  # and which task(s) should be accessed for it's information.
+  my @tasks = $class->data_detection_tasks();
+  if (!@tasks) {
+    orac_err("Frame class ($class) does not support the -loop task option\n");
+    return undef;
+  }
+
+  # get the reference time
+  my $reftime = shift(@$arr) || 0;
+
+  # A hash indexed by task with the newly acquired times
+  my %current;
+  orac_print("Checking for data set newer than " . gmtime($reftime));
+
+  # Use dots and timeouts as for the other systems
+  my $timeout = 43200; # 12 hours timeout
+  my $timer   = 0.0;
+  my $pause   = 0.5;   # Time between checks
+  my $dot     = 4;     # Number of pauses for each dot printed
+  my $npauses = 0;     # number of pauses so far (reset each time dot printed)
+
+  # We will poll inside this loop until we get all 4 monitors
+  # with newer data than the reference
+  while ( 1 ) {
+
+    # somewhere to flag newness
+    my %tstatus;
+
+    # by convention we are looking for a "QL" parameter in that task
+    for my $t (@tasks) {
+      # get the task object
+      my $tobj = $ENGINE_LAUNCH->engine( $t );
+
+      if (!defined $tobj) {
+	orac_err("Unable to connect to remote task $t. Is the data acquisition system running? Aborting loop.\n");
+	return undef;
+      }
+
+      # get the parameter
+      $current{$t} = $tobj->get( "QL" );
+
+      # check the timestamp (it can be undefined if no data exist yet)
+      if (exists $current{$t}->{TIMESTAMP}
+	 && defined $current{$t}->{TIMESTAMP}) {
+	$tstatus{$t} = ( $current{$t}->{TIMESTAMP} > $reftime ? 1 : 0 );
+      } else {
+	$tstatus{$t} = 0;
+      }
+    }
+
+    # compare and contrast timestamps
+    my $ok = 1;
+    for my $key (keys %tstatus) {
+      $ok = $tstatus{$key};
+    }
+
+    # all timestamps are newer, so abort from the loop
+    # Also make sure we update reftime
+    if ($ok) {
+      my @sorted = sort values %tstatus;
+      $reftime = $sorted[-1];
+      last;
+    }
+
+    # Sleep for a bit
+    $timer += orac_sleep($pause);
+    $npauses++;
+
+    # Return bad status if timer hits timeout
+    if ($timer > $timeout) {
+      orac_print "\n";
+      orac_err("Timeout whilst waiting for next monitored data set\n");
+      return undef;
+    }
+
+    # Show that we are thinking
+    # Print a dot every time $npauses equals the number specified in $dot
+    # This is so that the checking cycle can be different from the dot
+    # drawing cycle
+    if ($npauses >= $dot) {
+      orac_print ".";
+      $npauses = 0;
+    }
+
+  }
+
+  # create a frame object
+  my $Frm = $class->new();
+
+  # Get the input and output formats for the class
+  my $infmt = $Frm->rawformat();
+  my $outfmt = $Frm->format();
+
+  # we have new data detected for all tasks
+  # now generate filesnames for each
+  my @files;
+  for my $t (keys %current) {
+
+    if (exists $current{FILENAME}) {
+      # simple filename relative to ORAC_DATA_IN
+      my $fname =  _to_abs_path( $current{FILENAME} );
+
+      # and convert to ORAC_DATA_OUT
+      my ($cname) = _convert_and_link_nofrm( $infmt, $outfmt, $fname );
+      return undef if !defined $cname;
+
+      push(@files, $cname );
+
+    } elsif (exists $current{IMAGE}) {
+      # need to choose a filename. Make one up for the moment
+      # it needs to be unique per task so use the task name and
+      # the 
+      my $fname = lc($t) . '_' . $current{TIMESTAMP};
+
+      if ($infmt eq 'NDF') {
+	# write the DATA_ARRAY out as a piddle
+	# defer depending on PDL::IO::NDF
+	require PDL::IO::NDF;
+	$current{IMAGE}->{DATA_ARRAY}->wndf( $fname );
+
+	# and write the FITS header
+	require Astro::FITS::Header::NDF;
+	my $hdr = new Astro::FITS::Header::NDF( Cards => $current{IMAGE}->{FITS} );
+	$hdr->writehdr( File => $fname );
+
+	push(@files, $fname);
+
+      } else {
+	# wibble
+	orac_err("Task monitoring loop does not (yet) know how to generate raw data in format $infmt...\n");
+	return undef;
+      }
+
+    } else {
+      orac_err("The monitored parameter does not seem to match the specification. It has neither FILENAME nor IMAGE component\n");
+      return undef;
+
+    }
+
+  }
+
+  if (!@files) {
+    orac_err("Fatal error in orac_loop_task. Got to end without any files listed\n");
+    return undef;
+  }
+  orac_print "\nFound\n";
+
+  # Now configure the frame object
+  $Frm->configure( @files == 1 ? $files[0] : \@files );
+
+  # Store the current reftime
+  $arr->[0] = $reftime;
+
+  # return the frame object
+  return $Frm;
 }
 
 =back
@@ -769,10 +962,7 @@ sub link_and_read {
     }
 
     # add $ORAC_DATA_IN to path if not absolute
-    @names = map { $_ = File::Spec->catfile( $ENV{ORAC_DATA_IN}, $_ )
-		     unless File::Spec->file_name_is_absolute($_);
-		   $_;
-		 } @names;
+    @names = _to_abs_path( @names );
 
   } else {
 
@@ -789,7 +979,7 @@ sub link_and_read {
 
       # It's not a regex, so it must be a string (brilliant logic there!)
       # Prepend $ORAC_DATA_IN.
-      push @names, File::Spec->catfile($ENV{'ORAC_DATA_IN'},$pattern);
+      push @names, _to_abs_path( $pattern );
 
     }
 
@@ -802,7 +992,7 @@ sub link_and_read {
   }
 
   # Now we need to convert the files
-  # and/or link them to ORAC_DATA_OUT and create the corresponding
+  # and/or link them to ORAC_DATA_OUT and configure the corresponding
   # frame object
   _convert_and_link( $Frm, @names ) && return $Frm;
 
@@ -815,7 +1005,7 @@ Pause the checking for new data files by the specified number of seconds.
   $time = orac_sleep($pause);
 
 Where $pause is the number of seconds to wait and $time is the number
-of seconds actually waited (see the sleep() command for more details).
+of seconds actually waited. Seconds can be fractional.
 
 If the Tk system is loaded this routine will actually do a Tk event loop
 for the required number of seconds. This is so that the X screen will
@@ -829,10 +1019,12 @@ sub orac_sleep {
   my $pause = shift;
   my $actual;
 
+  # Define our reference time
+  my $now = Time::HiRes::time();
+
   if (defined &Tk::DoOneEvent) {
     # Tk friendly....
-    my $now = time();
-    while (time() - $now < $pause) {
+    while (Time::HiRes::time() - $now < $pause) {
       # Process events (Dont wait if there were none)
       &Tk::DoOneEvent(&Tk::DONT_WAIT);
 
@@ -842,14 +1034,15 @@ sub orac_sleep {
       select undef,undef,undef,0.2;
 
     }
-    # Calculate actual elapsed time
-    $actual = time() - $now;
 
   } else {
-    # Do a standard sleep
-    $actual = sleep($pause);
+    # We want to allow fractional sleeps so use select
+    select undef,undef,undef,$pause;
 
   }
+
+  # Calculate actual elapsed time
+  $actual = Time::HiRes::time() - $now;
 
   return $actual;
 
@@ -890,6 +1083,23 @@ sub _files_nonzero {
   return 1;
 }
 
+=item B<_to_abs_path>
+
+Convert a filename(s) relative to ORAC_DATA_IN to an absolute path.
+
+  @abs = _to_abs_path( @rel );
+
+Does not affect absolute paths.
+
+=cut
+
+sub _to_abs_path {
+  return map { $_ = File::Spec->catfile( $ENV{ORAC_DATA_IN}, $_ )
+		 unless File::Spec->file_name_is_absolute($_);
+	       $_;
+	     } @_;
+}
+
 =item B<_convert_and_link>
 
 Given the supplied file names, convert and link each file to ORAC_DATA_OUT.
@@ -901,9 +1111,58 @@ Returns true if successful.
 
 sub _convert_and_link {
   my $Frm = shift;
+  my @names = @_;
+
+  if (!@names) {
+    orac_err("Can not convert/link 0 files!");
+    return undef;
+  }
+
+  # Read the input and output formats from the Frame object.
+  my $infmt = $Frm->rawformat;
+  my $outfmt = $Frm->format;
+
+  # convert the files
+  my @bname = _convert_and_link_nofrm( $infmt, $outfmt, @names );
+  return undef unless @bname;
+
+  if( scalar( @bname ) == 1 ) {
+
+    # If we only have one file, send just that file to $Frm->configure.
+    # This will be the case for most instruments.
+    $Frm->configure( $bname[0] );
+  } else {
+
+    # We have more than one file, so send the array reference to
+    # $Frm->configure. This will be the case for ACSIS most of the
+    # time.
+    $Frm->configure(\@bname);
+  }
+
+  # And indicate success
+  return 1;
+}
+
+
+=item B<_convert_and_link_nofrm>
+
+This is the low level file conversion/linking routine used by 
+C<_convert_and_link>.
+
+  @converted = _convert_and_link_nofrm( $infmt, $outfmt, @input);
+
+Given an input and output format and a list of files, returns
+the modified files. Returning an empty list indicates an error (but
+only if @input contained some filenames).
+
+=cut
+
+sub _convert_and_link_nofrm {
+  my ($infmt, $outfmt, @names) = @_;
+  return unless @names;
 
   # Sort the list.
-  my @names = sort @_;
+  @names = sort @names;
 
   # Right. Now we have a list of raw filenames in @names. These filenames
   # include the full path to the file.
@@ -911,19 +1170,19 @@ sub _convert_and_link {
   # Deal with conversion of files.
   unless( defined $CONVERT ) { $CONVERT = new ORAC::Convert; }
 
-  # Read the input and output formats from the Frame object.
-  my $infmt = $Frm->rawformat;
-  my $outfmt = $Frm->format;
-
   # Convert the files.
   my @cname;
   my @bname;
   foreach my $file ( @names ) {
 
     # Remember, $file here is relative to $ORAC_DATA_IN...
-    $file =~ s/\n$//;
+    chomp($file);
     orac_print "Converting $file from $infmt to $outfmt...\n"
       if $infmt ne $outfmt;
+
+    # we still do the conversion even if the formats are the same
+    # because convert() propogates the file from DATA_IN to DATA_OUT
+    # via a symlink
     my( $infile, $outfile ) = $CONVERT->convert( $file,
                                                  { IN => $infmt,
                                                    OUT => $outfmt,
@@ -939,7 +1198,7 @@ sub _convert_and_link {
   # don't have any converted files at all.
   if( ( scalar(@cname) != scalar(@names) ) || ( ! defined( $cname[0] ) ) ) {
     orac_err("Error in data conversion tool\n");
-    return undef;
+    return ();
   }
 
   # Try to do this in a more structured way so that we can tell
@@ -953,13 +1212,13 @@ sub _convert_and_link {
   # will not work correctly.
   foreach my $fname ( @cname ) {
 
-    # We do this because the basename will be
+    # We do this because the basename will be...
     my $bname = basename($fname);
 
     unless (-e $bname) {
 
       # Now check in the ORAC_DATA_IN directory to make sure it is there
-      unless (-e $ENV{ORAC_DATA_IN} ."/$fname") {
+      unless (-e File::Spec->catfile($ENV{ORAC_DATA_IN}, $fname)) {
         orac_err("Requested file ($fname) can not be found in ORAC_DATA_IN\n");
         return undef;
       }
@@ -977,16 +1236,17 @@ sub _convert_and_link {
           orac_err("File $fname does exist in ORAC_DATA_OUT but is a link\n");
           orac_err("pointing to nowhere. It points to: $nowhere\n");	
         }
-        return undef;
+        return ();
       }
 
       # Now we should try to create a symlink and say something
       # if it fails
       symlink(File::Spec->catfile($ENV{ORAC_DATA_IN},$fname), $bname) ||
       do {
-        orac_err("Error creating symlink named $bname from ORAC_DATA_OUT to '$ENV{ORAC_DATA_IN}/$fname'\n");
+        orac_err("Error creating symlink named $bname from ORAC_DATA_OUT to '".
+		 File::Spec->catfile($ENV{ORAC_DATA_IN},$fname). "'\n");
         orac_err("$!\n");
-        return undef;
+        return ();
       };
 
       # Note that -e checks through symlinks
@@ -995,28 +1255,14 @@ sub _convert_and_link {
       unless (-e $bname) {
         orac_err("File ($fname) can not be found through link from\n");
         orac_err("ORAC_DATA_OUT to ORAC_DATA_IN\n");
-        return undef;
+        return ();
       }
 
     }
 
   }
 
-  if( scalar( @bname ) == 1 ) {
-
-    # If we only have one file, send just that file to $Frm->configure.
-    # This will be the case for most instruments.
-    $Frm->configure( $bname[0] );
-  } else {
-
-    # We have more than one file, so send the array reference to
-    # $Frm->configure. This will be the case for ACSIS most of the
-    # time.
-    $Frm->configure(\@bname);
-  }
-
-  # And indicate success
-  return 1;
+  return @bname;
 }
 
 =back
