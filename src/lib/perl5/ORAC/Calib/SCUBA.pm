@@ -118,6 +118,7 @@ sub new {
   $obj->{Arc} = undef;
   $obj->{Standard} = undef;
   $obj->{Gains} = \%DEFAULT_GAINS;
+  $obj->{SkydipTaus} = {};
 
   bless($obj, $class);
 
@@ -243,6 +244,60 @@ sub fluxcal {
 
 
 }
+
+
+=item skydiptaus
+
+Method to store and retrieve the reference to a hash containing the
+current tau information derived from skydips.
+The hash should be indexed by SCUBA filter.
+
+  $Cal->skydiptaus(\%hdr);
+  $hashref = $Cal->skydiptaus;
+
+=cut
+
+sub skydiptaus {
+
+  my $self = shift;
+ 
+  if (@_) { 
+    my $arg = shift;
+    croak("Argument is not a hash") unless ref($arg) eq "HASH";
+    $self->{SkydipTaus} = $arg;
+  }
+
+  return $self->{SkydipTaus};
+}
+
+
+
+
+=item skydiptau
+
+Allow a single skydip tau value  to be retrieved for a specific filter.
+
+  $tau = $Cal->skydiptau("850");
+  
+Can also be used to set a value
+
+  $Cal->skydiptau("850", number);
+
+=cut
+
+sub skydiptau {
+
+  my $self = shift;
+ 
+  my $keyword = shift;
+ 
+  if (@_) { ${$self->skydiptaus}{$keyword} = shift; }
+ 
+  return ${$self->skydiptaus}{$keyword};
+
+}
+
+
 
 
 =back
