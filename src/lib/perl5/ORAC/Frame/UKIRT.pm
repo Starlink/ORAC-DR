@@ -67,9 +67,12 @@ sub findgroup {
   my $self = shift;
 
   my $hdrgrp = $self->hdr('GRPNUM');
+  my $amiagroup;
+
+  $amiagroup = 1 if ($self->hdr('GRPMEM') =~/T/);
 
   # Is this group name set to anything useful
-  if ($hdrgrp == 0) {
+  if ($hdrgrp == 0 || $amiagroup == 0) {
     # if the group is invalid there is not a lot we can do about
     # it except for the case of certain calibration objects that
     # we know are the only members of their group (eg DARK)
