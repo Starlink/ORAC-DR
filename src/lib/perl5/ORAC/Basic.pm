@@ -102,36 +102,50 @@ sub orac_execute_recipe {
   local(@recipe) = @$reciperef;		# dereference recipe
 
   $block = join("",@recipe);
-  eval $block;
+  my $status = eval $block;
 
   # Check for an error
-  print colored ("Orac says: RECIPE ERROR: $@","blue") if ($@);
+  if ($@) {
 
-  # If this was a syntax error print out the recipe
-  if ($@ =~ /syntax error/) {
-    # Extract info from the error message
-    $@ =~ /line (\d+),/ && do {
-      $num = $1;
-      print colored("Error in line $num\n", 'red');
-      print colored("Relevant recipe lines (with numbers):\n\n", 'red');
+    print colored ("Orac says: RECIPE ERROR: $@","blue") if ($@);
 
-      # Note that this line number relates to $block and
-      # not @recipe. Need to split $block on new line
-      my @new = split(/\n/, $block);
+    # Create an array that matches the line numbers returned by
+    # the error message.
+    # Note that this line number relates to $block and
+    # not @recipe. Need to split $block on new line
+    my @new = split(/\n/, $block);
 
-      # Calculate number of lines to print
-      $inc = 10;
-      $start = ($num > $inc ? $num - $inc : 0 );
-      $end   = ($num < $#recipe - $inc ? $num + $inc : $#recipe);
+    # If this was a syntax error print out the recipe
+    if ($@ =~ /syntax error/) {
+      # Extract info from the error message
+      $@ =~ /line (\d+),/ && do {
+	$num = $1;
+	print colored("Error in line $num\n", 'red');
+	print colored("Relevant recipe lines (with numbers):\n\n", 'red');
 
-      # Print out the relevant chunk with line numbers
-      for (my $i=$start; $i < $end; $i++) {
-	print colored("$i: ", 'blue') . colored("$new[$i]\n", 'red');
-      }
-      print colored("End recipe dump\n\n",'blue');
-    };
+	# Calculate number of lines to print
+	$inc = 10;
+	$start = ($num > $inc ? $num - $inc : 0 );
+	$end   = ($num < $#recipe - $inc ? $num + $inc : $#recipe);
 
-    orac_exit_normally; # Do this until we debug everything
+	# Print out the relevant chunk with line numbers
+	for (my $i=$start; $i < $end; $i++) {
+	  print colored("$i: ", 'blue') . colored("$new[$i]\n", 'red');
+	}
+	print colored("End recipe dump\n\n",'blue');
+      };
+
+    } elsif ($@ =~ /^Died/) {
+      # Else check if the recipe died. Usually a die is caused 
+      # by a control C from the user.
+
+      print colored("Recipe died during execution\n",'blue');
+
+    }
+
+    # Exit from the pipeline
+    # Do this until we debug everything
+    orac_exit_normally("Exiting due to error"); 
   }
 
 };
@@ -140,16 +154,16 @@ sub orac_execute_recipe {
 #------------------------------------------------------------------------
 sub orac_read_recipe {
 
-local $recipe = shift(@_);
-local (@arguments) = @_;
+  local $recipe = shift(@_);
+  local (@arguments) = @_;
 
-open(RECIPE,${main::recipe_dir}.$recipe) || croak "No such recipe $recipe\n";;
+  open(RECIPE,${main::recipe_dir}.$recipe) || croak "No such recipe $recipe\n";;
 
-my (@recipe) = <RECIPE>;
+  my (@recipe) = <RECIPE>;
 
-close(RECIPE);
+  close(RECIPE);
 
-return(@recipe);
+  return(@recipe);
 
 };
 
@@ -158,15 +172,15 @@ return(@recipe);
 
 sub orac_parse_arguments {
 
-local($line) = shift(@_);
+  local($line) = shift(@_);
 
-($macro,my @arguments)=split(/\s+/,$line);
+  ($macro,my @arguments)=split(/\s+/,$line);
 
-%$macro = ();
-foreach $argument (@arguments) {
-  ($key,$value)=split("=",$argument);
-  $$macro{$key}=$value;
-};
+  %$macro = ();
+  foreach $argument (@arguments) {
+    ($key,$value)=split("=",$argument);
+    $$macro{$key}=$value;
+  };
 
 };
 
@@ -202,7 +216,7 @@ sub orac_parse_recipe {
       push(@parsed,@lines);
     
     
-    } elsif ($line =~ /={-1}.+->obeyw/) {
+    } elsif ($line =~ /={0}.+->obeyw/) {
     
       # This is an OBEYW status
       # and assumes that all OBEYW commands are dealt with
@@ -377,6 +391,9 @@ sub orac_exit_abnormally {
 1;
 
 #$Log$
+#Revision 1.19  1998/05/22 03:24:01  timj
+#Stop pipeline if 'Die' detected in eval.
+#
 #Revision 1.18  1998/05/21 06:26:54  timj
 #Add support for ranges in -list by adding orac_parse_obslist
 #
