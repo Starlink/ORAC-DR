@@ -27,10 +27,10 @@ B<ORAC::Frame::SWFCAM> objects. Some additional methods are supplied.
 use 5.006;
 use warnings;
 use vars qw/$VERSION/;
-use ORAC::Frame::WFCAM;
+use ORAC::Frame::UFTI;
 use ORAC::Constants;
 
-use base qw/ ORAC::Frame::WFCAM /;
+use base qw/ ORAC::Frame::UFTI /;
 
 '$Revision$' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
@@ -58,8 +58,8 @@ my %hdr = (
             RECIPE               => "RECIPE",
             STANDARD             => "STANDARD",
             UTDATE               => "UTDATE",
-            UTEND                => "DATE-END",
-            UTSTART              => "DATE-OBS",
+            UTEND                => "UTEND",
+            UTSTART              => "UTSTART",
             X_LOWER_BOUND        => "RDOUT_X1",
             X_UPPER_BOUND        => "RDOUT_X2",
             Y_LOWER_BOUND        => "RDOUT_Y1",
