@@ -97,6 +97,19 @@ sub start_algorithm_engines {
   %Mon = ();
 
   $Mon{surf_mon} = new ORAC::Msg::ADAM::Task("surf_mon_$$", "$ENV{SURF_DIR}/surf_mon");
+
+  $Mon{polpack_mon} = new ORAC::Msg::ADAM::Task("polpack_mon_$$",
+         "$ENV{POLPACK_DIR}/polpack_mon") 
+    if -e "$ENV{POLPACK_DIR}/polpack_mon";
+
+  $Mon{ccdpack_reg} = new ORAC::Msg::ADAM::Task("polpack_reg_$$",
+         "$ENV{CCDPACK_DIR}/ccdpack_reg") 
+    if -e "$ENV{CCDPACK_DIR}/ccdpack_reg";
+
+  $Mon{catselect} = new ORAC::Msg::ADAM::Task("catselect_$$",
+         "$ENV{CURSA_DIR}/catselect") 
+    if -e "$ENV{CURSA_DIR}/catselect";
+
  
   $Mon{kapview_mon} = new ORAC::Msg::ADAM::Task("kapview_mon_$$",$ENV{KAPPA_DIR}."/kapview_mon");
   $Mon{ndfpack_mon} = new ORAC::Msg::ADAM::Task("ndfpack_mon_$$",$ENV{KAPPA_DIR}."/ndfpack_mon");
