@@ -1,0 +1,76 @@
+# _FIND_SOURCE_CENTROID_
+#
+# Estimates the PSF of a standard star.
+#
+# TASK: KAPPA - CENTROID, NDFTRACE, STATS
+#
+# Exports:
+#    Reference to @CENTRE
+#  
+
+# This should only be performed on OBJECT frames.
+    if ( $Grp->hdr( "OBSTYPE" ) eq "OBJECT" ) {
+
+# Run a task to obtain details of the frame.
+       $header = "ndf=".$Frm->file;
+       $Mon{"ndfpack_mon"}->obeyw("ndftrace", "$header");
+
+# Extract the bounds of the frame.
+       ($ORAC_STATUS, @lbnd) = $Mon{"ndfpack_mon"}->get("ndftrace","lbound");
+       ($ORAC_STATUS, @ubnd) = $Mon{"ndfpack_mon"}->get("ndftrace","ubound");
+
+# Find the mid points.
+       $xmid = nint( ( $lbnd[0] + $ubnd[0] ) / 2 );
+       $ymid = nint( ( $lbnd[1] + $ubnd[1] ) / 2 );
+
+# Define the size of the box in arcseconds, and hence pixels. 
+       $boxsize = ($_FIND_SOURCE_CENTROID_{BOXSIZE} || 5 );
+
+# Obtain the plate scale.
+       $pixelscale =  $Frm->hdr( "PIXELSIZ" );
+
+# Obtain the approximate offsets.
+       $xoff = $Frm->hdr( "RAOFF" );
+       $yoff = $Frm->hdr( "DECOFF" );
+
+# Convert to pixel offsets of the object in the Cartesian sense.
+       $xoff = $xoff / $pixelscale;
+       $yoff = -1.0 * $yoff / $pixelscale;
+
+# Derive the centre co-ordinates of the box.
+       $xcentre = int( $xmid + $xoff );
+       $ycentre = int( $ymid + $yoff );
+
+# Find the boxsize in pixels.
+       $pixbox = nint( $boxsize / $pixelscale );
+
+# Specify a section which should contain the source.
+       $ndfsect = $Frm->file . "($xcentre~$pixbox,$ycentre~$pixbox)";
+
+# Locate the main object within a central box.
+       $Mon{"kappa_mon"}->obeyw("stats", "$ndfsect");
+
+# Extract the location of the maximum pixel bounds of the frame.
+       ($ORAC_STATUS, @maxpos) = $Mon{"kappa_mon"}->get("stats","maxpos");
+
+# Shift the search box to be centred on the highest value within the 
+# search box.
+       $ndfsect = $Frm->file."($maxpos[0]~$pixbox,$maxpos[1]~$pixbox)";
+
+# Specify the other parameters for the CENTROID stage.
+       $header = "ndf=$ndfsect";
+       $hidden = "mode=interface init=[$maxpos[0],$maxpos[1]] cosys=w"; 
+
+# Find the centroid of the object.  For the moment start the search at
+# the frame centre.  The standard position may be displaced from this,
+# and should be written to the headers.
+       $Mon{"kappa_mon"}->obeyw("centroid","$header $hidden");
+
+# Store the located centroid within a text file of the format PSF expects.
+# (There should be some rationalisation in KAPPA and CCDPACK to use
+# Clive Davenhall's small tables.  In that case this would be altered.)
+       ($ORAC_STATUS, @centre ) = $Mon{"kappa_mon"}->get("centroid","centre");
+
+# Store the centre information for use by calling script.
+       $_FIND_SOURCE_CENTROID_{CENTRE} = \@centre;
+    }
