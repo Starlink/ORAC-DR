@@ -1,7 +1,7 @@
 # Must be an ARC observation for CGS4
 # Note that this isnt necessarily true for Michelle
 # Leave this in for UIST for now.
-ORAC_OBSERVATION_MODE eq 'ARC'
+ORAC_OBSERVATION_TYPE eq 'ARC'
 
 # Do not force a match on readout mode (PH,THK)
 # but it's nice to have it in the index file
