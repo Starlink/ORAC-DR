@@ -1,0 +1,65 @@
+=head1 NAME
+
+_ADD_POISSON_VARIANCE_
+
+=head1 DESCRIPTION
+
+Adds Poisson variance to the variance component. We simply add the data_array to the variance component, taking into account the gain of the detector.
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+=cut
+
+# Create a tmp file
+my $tmp = new ORAC::TempFile;
+my $tmpfile=$tmp->file;
+
+my $temp = new ORAC::TempFile;
+my $tempfile=$temp->file;
+
+# Get the gain.
+my $gain = $Frm->uhdr("ORAC_GAIN");
+
+# Get the number of coadds (NEXP)
+my $nexp = $Frm->uhdr("ORAC_NUMBER_OF_EXPOSURES");
+
+# Loop through the sub-files
+foreach my $i (1 .. $Frm->nfiles) {
+	# Generate the input and output file names
+	my ($in, $out) = $Frm->inout ("_pov", $i);
+
+	# Units of in are DN/exp
+	# Divide by the gain into a tmp file
+	$Mon{'kappa_mon'}->obeyw("cdiv", "in=$in scalar=$gain out=$tmpfile");
+
+	# Units in tmp are electrons per exp
+	$Mon{'kappa_mon'}->obeyw("cmult", "in=$tmpfile scalar=$nexp out=$tempfile");
+
+	# Units of temp are total electrons
+
+	# Use setvar to set the variance array of the temp file to be the Poisson variance
+	$Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$tempfile variance=data");
+
+	# temp is now the total electons, with Poisson variance
+	$Mon{'kappa_mon'}->obeyw("cdiv", "in=$tempfile scalar=$nexp out=$tmpfile");
+	
+	# tmp is now electrons per exp, with poisson variance
+	$Mon{'kappa_mon'}->obeyw("cmult", "in=$tmpfile scalar=$gain out=$tempfile");
+
+	# temp is now DN/exp, with poisson variance
+
+	# Now, we need to add the variance array of the temp file to that of
+	# the $in file, and call it $out.
+
+	# We can do this by using chpix to zero the data array of the temp file
+	# then simply adding the two files together.
+
+	$Mon{'kappa_mon'}->obeyw("chpix", "in=$tempfile out=$tmpfile comp=Data newval=0 section=':,:'");
+	$Mon{'kappa_mon'}->obeyw("add", "in1=$tmpfile in2=$in out=$out");
+
+	# Update Frame object
+	$Frm->file($i, $out);
+	orac_print("$in to $out: Poisson variance added\n");
+}
