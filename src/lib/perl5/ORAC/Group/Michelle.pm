@@ -53,7 +53,6 @@ my %hdr = (
 # then the spectroscopy.
             CONFIGURATION_INDEX  => "CNFINDEX",
             DETECTOR_INDEX       => "DINDEX",
-            DETECTOR_MODE        => "DETMODE",
             GRATING_DISPERSION   => "GRATDISP",
             GRATING_NAME         => "GRATNAME",
             GRATING_ORDER        => "GRATORD",
@@ -67,6 +66,7 @@ my %hdr = (
             Y_DIM                => "DROWS",
 
 # then the general.
+            DETECTOR_READ_TYPE   => "DETMODE",
             NUMBER_OF_READS      => "NREADS",
             OBSERVATION_MODE     => "CAMERA"
 	  );

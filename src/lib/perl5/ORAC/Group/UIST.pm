@@ -53,7 +53,6 @@ my %hdr = (
 # then the spectroscopy.
             CONFIGURATION_INDEX  => "CNFINDEX",
             DETECTOR_INDEX       => "DINDEX",
-            DETECTOR_MODE        => "DETMODE",
             GRATING_DISPERSION   => "GRATDISP",
             GRATING_NAME         => "GRATNAME",
             GRATING_ORDER        => "GRATORD",
@@ -67,7 +66,8 @@ my %hdr = (
             Y_DIM                => "DROWS",
 
 # then the general.
-            OBSERVATION_MODE    => "CAMERA"
+            DETECTOR_READ_TYPE   => "DETMODE",
+            OBSERVATION_MODE     => "CAMERA"
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed by
