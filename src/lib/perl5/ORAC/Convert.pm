@@ -622,36 +622,35 @@ sub hds2ndf {
     orac_err "Input filename (".$self->infile.") does not exist -- can not convert\n";
     return undef;
   }
-
+  
   # Read the input file - we only want the basename (we know .sdf suffix)
-  my $hdsfile = basename($self->infile,'.sdf');
-
-  # Construct the output file name. This is just the input with _raw
+  my ($base, $dir, $suffix) = fileparse($self->infile, '.sdf');
+ 
+  # Construct the output file name. This is just the basename with _raw
   # appended (no .sdf)
-  my $outfile = $hdsfile . '_raw';
+  my $outfile = $base . '_raw';
+
+  # The hds file for HDS system is the base name and directory but no suffix
+  my $hdsfile = File::Spec->catfile($dir, $base); # guaranteed no suffix
 
   # Check for the existence of the output file in the current dir
   # and whether we can overwrite it.
   if (-e $outfile.'.sdf' && ! $self->overwrite) {
     # Return early
-    $outfile .= '.sdf';
+    $outfile .= '.sdf';q
     orac_warn "The converted file ($outfile) already exists - won't convert again\n";
     return $outfile;
   }
-
 
   # Start new error context
   my $status = &NDF::SAI__OK;
   err_begin($status);
   
-  # Copy the base frame (.i1) to the output name
-  copobj($hdsfile . '.i1', $outfile, $status);
+  # Copy the .header to a new NDF
+  copobj($hdsfile . '.header', $outfile, $status);
 
-  # Now we can either copy the .HEADER FITS array directly into
-  # the output NDF (and lose any headers that might be there) or 
-  # we can check first and merge the headers if required.
-  # In the first instance, simply copy and overwrite the header
-  copobj($hdsfile.'.header.more.fits', $outfile .'.more.fits', $status);
+  # Copy the data to to the output NDF
+  copobj($hdsfile . '.i1.data_array', $outfile.'.DATA_ARRAY', $status);
 
 
   # End error context and return string
