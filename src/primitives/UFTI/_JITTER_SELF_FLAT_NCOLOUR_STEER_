@@ -1,0 +1,209 @@
+#+
+# Name:
+#    _JITTER_SELF_FLAT_NCOLOUR_STEER_
+#
+# Purpose:
+#    Steers processing for JITTER_SELF_FLAT_NCOLOUR recipes.
+#
+# Language:
+#    Perl5
+#
+# Description: 
+#    This primitive control processing for JITTER_SELF_FLAT_NCOLOUR
+#    recipes through steering headers listed below.  It forms a subgroup
+#    by filter name, stored by reference in the $Grp internal headers
+#    as <filter>_GROUP for later efficient access.  Each subgrp has its
+#    own file name giving by the $Grp filename followed by "_<filter>".
+#
+# Steering Headers:
+#    CYCLE_NUMBER = INTEGER
+#       Number of the cycle, a cycle being a set of frames to complete a
+#       pass through the recipe.  The first cycle is 0.
+#    DO_APHOT = LOGICAL
+#       Whether or not perform aperture photometry.  Photometry is
+#       performed once the mosaic is made.
+#    JITTER_NUMBER = INTEGER
+#       The number of frames in the jitter.
+#    MAKE_FLAT = LOGICAL
+#       Whether or not to make the flat.  The flat is made once all the
+#       jittered target frames in a cycle are available.
+#    MAKE_MOSAIC = LOGICAL
+#       Whether or not register the frames and make the mosaic.  The mosaic
+#       is made once all the jittered target frames in a cycle are available.
+#    MASK_OBJECTS = LOGICAL
+#       Whether or not to mask the objects.  Masking occurs when all the
+#       jittered frames in a cycle are available.
+#    REFERENCE_FRAME = LOGICAL
+#       A true value specifies the reference frame for normalisation
+#       of the masked frames.  It is true for the first frame
+#       and false for all subsequent frames in the observation.
+#    TARGET_OR_SKY = CHARACTER
+#       This is "target" for a target frame, and "sky" for a sky calibration
+#       frame.  All frames should be target.
+#
+# Arguments:
+#    NUMBER = INTEGER (Given)
+#       The number of frames in the jitter.  The minimum is 3. [9]
+#
+# Notes:
+#    -  This primitive is suitable for both UFTI and IRCAM.
+#    -  Processing only occurs for object and sky frames.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" || 
+         $Frm->hdr( "OBSTYPE" ) eq "SKY" ) {
+
+# Form a sub-group by filter name.
+       my $filter =  $Frm->hdr( "FILTER" );
+       my $filterGrp = $Grp->subgrp( FILTER => $filter );
+
+# Give it a new file name.
+       $filterGrp->file( $Grp->file . "_" . $filter );
+
+# Store the sub-group for future reference and hence greater efficiency.
+# The previous smaller subgroup is replaced, but that's what we want.
+       my $grphandle = $filter . "_GROUP" ;
+       $Grp->uhdr( $grphandle, $filterGrp );
+
+# Obtain the number of frames in the jitter pattern.
+       my $number = max( 3, ( $_JITTER_SELF_FLAT_NCOLOUR_STEER_{NUMBER} || 9 ) );
+
+# Specify the first frame as the frame whose mode will be the
+# reference for the normalisation of frames.
+       if ( $filterGrp->num == 0 ) {
+          $Frm->hdr( "REFERENCE_FRAME", 1 );
+       } else {
+          $Frm->hdr( "REFERENCE_FRAME", 0 );
+       }
+
+# Specify during processing of which frames should the flat be created,
+# flat-field creation with objects masked, a mosaic created, and
+# aperture photometry performed.
+       if ( ($filterGrp->num + 1) % $number == 0 ) {
+          $Frm->hdr( "MAKE_FLAT", 1 );
+          $Frm->hdr( "MAKE_MOSAIC", 1 );
+          $Frm->hdr( "MASK_OBJECTS", 1 );
+          $Frm->hdr( "DO_APHOT", 1 );
+       
+       } else {
+          $Frm->hdr( "MAKE_FLAT", 0 );
+          $Frm->hdr( "MAKE_MOSAIC", 0 );
+          $Frm->hdr( "MASK_OBJECTS", 0 );
+          $Frm->hdr( "DO_APHOT", 0 );
+       }
+
+# Insert the cycle number of the set of NUMBER frames.
+       $Frm->hdr( "CYCLE_NUMBER", int( $filterGrp->num / $number ) );
+
+# Insert the number of frames in the jitter.
+       $Frm->hdr( "JITTER_NUMBER", $number );
+
+# All frames are target.  Some more-general primitives need to select 
+# targets from sky frames.
+       $Frm->hdr( "TARGET_OR_SKY", "target" );
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_JITTER_SELF_FLAT_NCOLOUR_STEER_ -- Steers processing for JITTER_SELF_FLAT_NCOLOUR recipes.
+
+=head1 DESCRIPTION
+
+This primitive control processing for JITTER_SELF_FLAT_NCOLOUR recipes through
+recipes through steering headers listed below.  It forms a subgroup
+by filter name, stored by reference in the $Grp internal headers
+as E<lt>filterE<gt>_GROUP for later efficient access.  Each subgrp has its
+own file name giving by the $Grp filename followed by "_E<lt>filterE<gt>".
+
+=head1 STEERING HEADERS
+
+=over 4
+
+=item CYCLE_NUMBER = INTEGER
+
+Number of the cycle, a cycle being a set of frames to complete a
+pass through the recipe.  The first cycle is 0.
+
+=item DO_APHOT = LOGICAL
+
+Whether or not perform aperture photometry.
+Photometry is performed once the mosaic is made.
+
+=item JITTER_NUMBER = INTEGER
+
+The number of frames in the jitter.
+
+=item MAKE_FLAT = LOGICAL
+
+Whether or not to make the flat.  The flat is made once all the
+jittered target frames in a cycle are available.
+
+=item MAKE_MOSAIC = LOGICAL
+
+Whether or not register the frames and make the mosaic.  The mosaic
+is made once all the jittered target frames in a cycle are available.
+
+=item MASK_OBJECTS = LOGICAL
+
+Whether or not to mask the objects.  Masking occurs when all the
+jittered frames in a cycle are available.
+
+=item REFERENCE_FRAME = LOGICAL
+
+A true value specifies the reference frame for normalisation
+of the masked frames.  It is true for the first frame
+and false for all subsequent frames in the observation.
+
+=item TARGET_OR_SKY = CHARACTER
+
+This is "target" for a target frame, and "sky" for a sky calibration
+frame.  All frames should be target.
+
+=back
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item NUMBER = INTEGER (Given)
+
+The number of frames in the jitter.  The minimum is 3. [9]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for both UFTI and IRCAM.
+
+=item *
+
+Processing only occurs for object and sky frames.
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
