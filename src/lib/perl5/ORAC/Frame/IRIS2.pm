@@ -40,6 +40,137 @@ use base qw/ORAC::Frame::NDF/;
 
 use ORAC::Constants;
 
+# Translation headers for IRIS2 should go here
+my %hdr = (
+           DEC_BASE               => "CRVAL2",
+           DEC_TELESCOPE_OFFSET   => "TDECOFF",
+           DETECTOR_READ_TYPE     => "METHOD",
+           EQUINOX                => "EQUINOX",
+           EXPOSURE_TIME          => "EXPOSED",
+           FILTER                 => "IR2_FILT",
+           INSTRUMENT             => "INSTRUME",
+           NUMBER_OF_EXPOSURES    => "CYCLES",
+           NUMBER_OF_READS        => "READS",
+           OBSERVATION_TYPE       => "OBSTYPE",
+           RA_BASE                => "CRVAL1",
+           RA_TELESCOPE_OFFSET    => "TRAOFF",
+           SPEED_GAIN             => "SPEED",
+           UTDATE                 => "UTDATE",
+           X_LOWER_BOUND          => "DETECXS",
+           X_UPPER_BOUND          => "DETECXE",
+           Y_LOWER_BOUND          => "DETECYS",
+           Y_UPPER_BOUND          => "DETECYE"
+          );
+
+# Take this lookup table and generate methods that can be sub-classed by
+# other instruments.  Have to use the inherited version so that the new
+# subs appear in this class.
+ORAC::Frame::IRIS2->_generate_orac_lookup_methods( \%hdr );
+
+sub _to_AIRMASS_START {
+  my $self = shift;
+  my $pi = atan2( 1, 1 ) * 4;
+  1 / cos( $self->hdr->{ZDSTART} * $pi / 180 );
+}
+
+sub _from_AIRMASS_START {
+  "ZDSTART", acos( $_[0]->uhdr("AIRMASS_START") );
+}
+
+sub _to_AIRMASS_END {
+  my $self = shift;
+  my $pi = atan2( 1, 1 ) * 4;
+  1 / cos( $self->hdr->{ZDEND} * $pi / 180 );
+}
+
+sub _from_AIRMASS_END {
+  "ZDEND", acos( $_[0]->uhdr("AIRMASS_END") );
+}
+
+sub _to_UTEND {
+  my $self = shift;
+  my ($hour, $minute, $second) = split( /:/, $self->hdr->{UTEND} );
+  $hour + ($minute / 60) + ($second / 3600);
+}
+
+sub _from_UTEND {
+  my $dechour = $_[0]->uhdr("ORAC_UTEND");
+  my ($hour, $minute, $second);
+  $hour = int( $dechour );
+  $minute = int( ( $dechour - $hour ) * 60 );
+  $second = int( ( ( ( $dechour - $hour ) * 60 ) - $minute ) * 60 );
+  "UTEND", ( join ':', $hour,
+                       '0'x(2-length($minute)) . $minute,
+                       '0'x(2-length($second)) . $second );
+}
+
+sub _to_UTSTART {
+  my $self = shift;
+  my ($hour, $minute, $second) = split( /:/, $self->hdr->{UTSTART} );
+  $hour + ($minute / 60) + ($second / 3600);
+}
+
+sub _from_UTSTART {
+  my $dechour = $_[0]->uhdr("ORAC_UTSTART");
+  my ($hour, $minute, $second);
+  $hour = int( $dechour );
+  $minute = int( ( $dechour - $hour ) * 60 );
+  $second = int( ( ( ( $dechour - $hour ) * 60 ) - $minute ) * 60 );
+  "UTSTART", ( join ':', $hour,
+                         '0'x(2-length($minute)) . $minute,
+                         '0'x(2-length($second)) . $second );
+}
+
+sub _to_UTDATE {
+  my $self = shift;
+  my ($year, $month, $day) = split( /:/, $self->hdr->{UTDATE} );
+  join '', $year, $month, $day;
+}
+
+sub _from_UTDATE {
+  my $utdate = $_[0]->uhdr("ORAC_UTDATE");
+  my ($year, $month, $day);
+  $utdate =~ /(\d{4})(\d{2})(\d{2})/;
+  ( $year, $month, $day ) = ($1, $2, $3);
+  join ':', $year, $month, $day;
+}
+
+# ROTATION, DEC_SCALE and RA_SCALE transformations courtesy Micah Johnson, from
+# the cdelrot.pl script supplied for use with XIMAGE.
+
+sub _to_ROTATION {
+  my $self = shift;
+  my $cd11 = $self->hdr->{CD1_1};
+  my $cd12 = $self->hdr->{CD1_2};
+  my $cd21 = $self->hdr->{CD2_1};
+  my $cd22 = $self->hdr->{CD2_2};
+  my $sgn;
+  if( ( $cd11 * $cd22 - $cd12 * $cd21 ) < 0 ) { $sgn = -1; } else { $sgn = 1; }
+  my $cdelt1 = $sgn * sqrt( $cd11**2 + $cd21**2 );
+  my $sgn2;
+  if( $cdelt1 < 0 ) { $sgn2 = -1; } else { $sgn2 = 1; }
+  my $rad = 57.2957795131;
+  $rad * atan2( -$cd21 / $rad, $sgn2 * $cd11 / $rad );
+}
+
+sub _to_DEC_SCALE {
+  my $self = shift;
+  my $cd11 = $self->hdr->{CD1_1};
+  my $cd12 = $self->hdr->{CD1_2};
+  my $cd21 = $self->hdr->{CD2_1};
+  my $cd22 = $self->hdr->{CD2_2};
+  my $sgn;
+  if( ( $cd11 * $cd22 - $cd12 * $cd21 ) < 0 ) { $sgn = -1; } else { $sgn = 1; }
+  $sgn * sqrt( $cd11**2 + $cd21**2 ) * 3600;
+}
+
+sub _to_RA_SCALE {
+  my $self = shift;
+  my $cd12 = $self->hdr->{CD1_2};
+  my $cd22 = $self->hdr->{CD2_2};
+  sqrt( $cd12**2 + $cd22**2 ) * 3600;
+}
+
 =head1 PUBLIC METHODS
 
 The following methods are available in this class in addition to
@@ -51,7 +182,7 @@ those available from B<ORAC::Frame>.
 
 =item B<new>
 
-Create a new instance of a B<ORAC::Frame::UFTI> object.
+Create a new instance of a B<ORAC::Frame::IRIS2> object.
 This method also takes optional arguments:
 if 1 argument is  supplied it is assumed to be the name
 of the raw file associated with the observation. If 2 arguments
@@ -61,9 +192,9 @@ the configure() method which is run in addition to new()
 when arguments are supplied.
 The object identifier is returned.
 
-   $Frm = new ORAC::Frame::UFTI;
-   $Frm = new ORAC::Frame::UFTI("file_name");
-   $Frm = new ORAC::Frame::UFTI("UT","number");
+   $Frm = new ORAC::Frame::IRIS2;
+   $Frm = new ORAC::Frame::IRIS2("file_name");
+   $Frm = new ORAC::Frame::IRIS2("UT","number");
 
 The constructor hard-wires the '.fits' rawsuffix and the
 'f' prefix although these can be overriden with the 
@@ -86,7 +217,7 @@ sub new {
   # Configure initial state - could pass these in with
   # the class initialisation hash - this assumes that I know
   # the hash member name
-  $self->rawfixedpart('');
+  $self->rawfixedpart('_raw');
   $self->rawsuffix('.fits');
   $self->rawformat('FITS');
   $self->format('NDF');
@@ -201,7 +332,7 @@ sub file_from_bits {
   my @months = qw/ jan feb mar apr may jun jul aug sep oct nov dec/;
   $prefix = $day . $months[$month-1];
 
-  # UFTI naming
+  # IRIS2 naming
   return $prefix . $padnum . $self->rawsuffix;
 }
 
@@ -255,7 +386,7 @@ sub findgroup {
 =item B<findrecipe>
 
 Find the recipe name. If no recipe can be found from the
-'DRRECIPE' FITS keyword'QUICK_LOOK' is returned by default.
+'RECIPE' FITS keyword. 'QUICK_LOOK' is returned by default.
 
 The recipe name stored in the object is automatically updated using 
 this value.
@@ -266,7 +397,7 @@ sub findrecipe {
 
   my $self = shift;
 
-  my $recipe = $self->hdr('DRRECIPE');
+  my $recipe = $self->hdr('RECIPE');
 
   # Check to see whether there is something there
   # if not try to make something up
@@ -278,6 +409,78 @@ sub findrecipe {
   $self->recipe($recipe);
 
   return $recipe;
+}
+
+=item B<gui_id>
+
+Returns the identification string that is used to compare the
+current frame with the frames selected for display in the
+display definition file.
+
+Arguments:
+
+ number - the file number (as accepted by the file() method)
+          Starts counting at 1. If no argument is supplied
+          a 1 is assumed.
+
+To return the ID associated with the second frame:
+
+ $id = $Frm->gui_id(2);
+
+If nfiles() equals 1, this method returns everything after the last
+suffix (using an underscore) from the filename stored in file(1). If
+nfiles E<gt> 1, this method returns everything after the last
+underscore, prepended with 's$number'. ie if file(2) is test_dk, the
+ID would be 's2dk'; if file() is test_dk (and nfiles = 1) the ID would
+be 'dk'. A special case occurs when the suffix is purely a number (ie
+the entire string matches just "\d+"). In that case the number is
+translated to a string "num" so the second frame in "c20010108_00024"
+would return "s2num" and the only frame in "f2001_52" would return
+"num".
+
+Returns C<undef> if the file name is not defined.
+
+=cut
+
+sub gui_id {
+  my $self = shift;
+
+  # Read the number
+  my $num = 1;
+  if (@_) { $num = shift; }
+
+  # Retrieve the Nth file name (start counting at 1)
+  my $fname = $self->file($num);
+  return undef unless defined $fname;
+
+  # IRIS2 uses a different file convention than UKIRT instruments,
+  # so we need to determine the ID differently.
+
+  # First, split on underscore to see if there's a suffix (i.e. _dk)
+  my $id;
+  my (@split) = split(/_/,$fname);
+  if(scalar(@split) > 1) {
+    $id = $split[-1];
+  } else {
+
+    # No suffix, so parse the filename as DDmmmYYYYY
+    $fname =~ /^\d\d[a-zA-Z]{3}(\d{4})/;
+    $id = $1;
+  }
+
+  # If we have a number translate to "num"
+  $id = "num" if ($id =~ /^\d+$/);
+
+  # Find out how many files we have
+  my $nfiles = $self->nfiles;
+
+  # Prepend wtih s$num if nfiles > 1
+  # This is to make it simple for instruments that only ever
+  # store one frame (eg UFTI)
+  $id = "s$num" . $id if $nfiles > 1;
+
+  return $id;
+
 }
 
 
@@ -294,10 +497,11 @@ $Id$
 =head1 AUTHORS
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
