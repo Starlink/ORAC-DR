@@ -51,7 +51,7 @@ use vars qw/$VERSION/;
 # I realise that I can create a log10 function via natural logs
 use POSIX qw//;
 use Math::Trig qw/ deg2rad rad2deg /;
-#use Text::Balanced qw/ extract_bracketed extract_delimited /;
+use Text::Balanced qw/ extract_bracketed extract_delimited /;
 
 =head1 SUBROUTINES
 
@@ -271,9 +271,6 @@ Note that delimeters are removed from the values and that if only a
 single element is quoted it will be returned as a scalar string rather
 than an array.
 
-BRACKETED AND QUOTED ARGUMENT SUPPORT HAS BEEN DISABLED UNTIL
-TEXT::BALANCED IS PART OF STARPERL.
-
 =cut
 
 
@@ -296,36 +293,35 @@ sub parse_keyvalues {
     my $ncomma = ( $split[$i] =~ tr|,|,|);
 
     # Do we have a delimiting or bracketing character
-#    if ($split[$i] =~ /^[\'\"\[\{\(]/ ) {
-#      my ($extract, $remainder);
-#      if ($split[$i] =~ /^[\'\"]/ ) {
-#	# Delimiting character
-#	($extract, $remainder) = extract_delimited( $split[$i],
-#						    substr($split[$i],0,1));
-#
-#      } elsif ($split[$i] =~ /^[\[\(\{]/ ) {
-#	# bracketing character
-#	($extract, $remainder) = extract_bracketed( $split[$i], '(){}[]<>' );
-#
-#      }
-#
-#      # remove the brackets/delimiters
-#      $extract =~ s/^.//;
-#      $extract =~ s/.$//;
-#
-#      print "\t extracted $extract with remainder $remainder\n";
-#
-#      # Now we need to split the extracted string on commas
-#      # and convert to an array if we have more than one
-#      my @values = split(/,/,$extract);
-#      $value = ( scalar(@values) > 1 ?  \@values : $values[0] );
-#
-#      # and calculate the next key
-#      $next_key = $remainder;
-#      $next_key =~ s/^,// if defined $next_key;
-#
-#    } els
-    if ($ncomma > 1 || ( $ncomma ==1 && $i == $#split)) {
+    if ($split[$i] =~ /^[\'\"\[\{\(]/ ) {
+      my ($extract, $remainder);
+      if ($split[$i] =~ /^[\'\"]/ ) {
+	# Delimiting character
+	($extract, $remainder) = extract_delimited( $split[$i],
+						    substr($split[$i],0,1));
+
+      } elsif ($split[$i] =~ /^[\[\(\{]/ ) {
+	# bracketing character
+	($extract, $remainder) = extract_bracketed( $split[$i], '(){}[]<>' );
+
+      }
+
+      # remove the brackets/delimiters
+      $extract =~ s/^.//;
+      $extract =~ s/.$//;
+
+      # print "\t extracted $extract with remainder $remainder\n";
+
+      # Now we need to split the extracted string on commas
+      # and convert to an array if we have more than one
+      my @values = split(/,/,$extract);
+      $value = ( scalar(@values) > 1 ?  \@values : $values[0] );
+
+      # and calculate the next key
+      $next_key = $remainder;
+      $next_key =~ s/^,// if defined $next_key;
+
+    } elsif ($ncomma > 1 || ( $ncomma ==1 && $i == $#split)) {
       # We have a normal comma separated list
       # Either because we have a comma in the list and this is the
       # last entry (and so can not be a key specification) or we
