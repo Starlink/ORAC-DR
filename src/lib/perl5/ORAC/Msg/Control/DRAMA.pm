@@ -27,6 +27,7 @@ use warnings;
 use strict;
 use Carp;
 use ORAC::Print;
+use ORAC::Constants qw/ :status /;
 
 use vars qw/$VERSION $DRAMA_OBJECT /;
 
@@ -73,7 +74,7 @@ sub new {
     my $value = shift;
     if ($value) {
       my $status = $drama->init;
-      orac_throw("Error starting DRAMA message system\n") if !$status;
+      orac_throw("Error starting DRAMA message system\n") if $status != ORAC__OK;
     }
   }
 
@@ -218,12 +219,14 @@ Initialises the DRAMA messaging system. This routine should always be
 called before attempting to talk to DRAMA tasks and has no effect if the
 message system has already been enabled.
 
-  $drama->init();
+  $status = $drama->init();
 
 The DRAMA system will be inintialised using a task name basesd on the
 process ID. No arguments are required. Note that the Tk event loop
 facility in DRAMA is not enabled since currently ORAC-DR only supports
 synchronous DRAMA calls.
+
+Returns ORAC__OK on successfull initialisation.
 
 =cut
 
@@ -234,9 +237,27 @@ sub init {
 
   DPerlInit( $name );
   $self->running(1);
-  return 1;
+  return ORAC__OK;
 }
 
+
+=back
+
+=head1 CLASS METHODS
+
+=over 4
+
+=item B<require_uniqid>
+
+Returns false, indicating that the DRAMA "engine" identifiers must
+not be modified since the remote task controls its name in the message
+system.
+
+=cut
+
+sub require_uniqid {
+  return 0;
+}
 
 =back
 
