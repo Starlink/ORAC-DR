@@ -1,48 +1,105 @@
-# QUADRANT_JITTER    -*-perl-*-
+#+
+# Name:
+#    QUADRANT_JITTER
 
-=head1 Name:
-   QUADRANT_JITTER
+# Purpose:
+#    "Quadrant Jitter" standard reduction including object masking.
 
-=head1 Purpose:
-   "Quadrant Jitter" standard reduction including object masking.
+# Language:
+#    Perl5
 
-=head1 Language:
-    perl5
+# Description:
+#    This script reduces a "quadrant jitter" photometry observation
+#    with IRCAM data.  It takes an IRCAM observation comprising one or
+#    more series of four object frames where the target is
+#    approximately centred in each quadrant; and a dark frame to make
+#    a calibrated, untrimmed mosaic automatically.
 
-=head1 Description:
-    This script reduces a "quadrant jitter" photometry observation
-    with IRCAM3 data.  It takes an IRCAM observation comprising one or
-    more series of four object frames where the target is
-    approximately centred in each quadrant; and a dark frame to make
-    a calibrated, untrimmed mosaic automatically.
+#    It performs bad-pixel masking, null debiassing, dark subtraction,
+#    flat-field creation and division, feature detection and matching
+#    between object frames, and resampling.
 
-    It performs a null debiassing, bad-pixel masking, dark subtraction,
-    flatfield division, feature detection and matching between object
-    frames, resampling, and mosaicking.  The resampling comprises
-    shifts of origin only.
+#    This recipe is suitable for faint objects or objects within
+#    a comparatively bright core embedded in faint extended emission,
+#    e.g. a quasar.  The object need not be isolated, as the recipe
+#    masks objects within the other quadrants, and hence does not
+#    introduce significant artifacts into the flat field.  For isolated
+#    objects use QUADRANT_JITTER_NO_MASK; or where speed is critical, 
+#    use QUADRANT_JITTER_BASIC instead.
 
-    The flat field is created iteratively.  First the quadrant
-    containing the object is masked in each object frame.  Second an
-    approximate flat field is created by combining the normalised
-    and masked object frames using the clipped median at each pixel.
-    This flat field is applied to the object frames.  Sources within
-    the flat-fielded frames are detected, and masked in the
-    dark-subtracted frames.  The second stage is repeated but applied
-    to the masked frames to create the final flat field.
+# Notes: 
+#    -  The bad pixel mask applied is $ORAC_DATA_CAL/bpm.
+#    -  The flat field is created iteratively.  First the quadrant
+#    containing the object is masked in each object frame.  Second an
+#    approximate flat field is created by combining the normalised
+#    and masked object frames using the clipped median at each pixel.
+#    This flat field is applied to the object frames.  Sources within
+#    the flat-fielded frames are detected, and masked in the
+#    dark-subtracted frames.  The second stage is repeated but applied
+#    to the masked frames to create the final flat field.
+#    -  Registration is performed using common point sources in the
+#    overlap regions.  If the recipe cannot identify sufficient common
+#    objects, it matches the centroid of the central source.  If this
+#    fails, the script resorts to using the telescope offsets
+#    transformed to pixels.
+#    -  The resampling applies non-integer shifts of origin using
+#    bilinear interpolation.  There is no rotation to align the
+#    Cartesian axes with the cardinal directions.
+#    -  The recipe makes the mosaics by applying offsets in intensity
+#    to give the most consistent result amongst the overlapping regions.
+#    The mosaic is not trimmed to the dimensions of a single frame.  Thus
+#    the noise will be greater in the peripheral areas having received
+#    less exposure time.  The full signal will be in the central ninth
+#    containing the main object.  The mosaic is not normalised by its
+#    exposure time (that being the exposure time of a single frame).
+#    -  For each cycle of four, the recipe creates a mosaic, which has
+#    its bad pixels filled and is then added into a master mosaic of
+#    improving signal to noise.  The exposure time is also summed and
+#    stored in the mosaic's EXP_TIME header.  Likewise the end airmass
+#    header, AMEND, is updated to match that of the last-observed frame
+#    contributing to the mosaic.
+#    -  Intermediate frames are deleted except for the flat-fielded (_ff
+#    suffix) frames.
 
+# Output Data:
+#    -  The integrated mosaic in rg<date>_<group_number>_mos.
+#    -  A mosaic for each cycle of four in
+#    rg<date>_<group_number>_mos_<cycle_number>, where <cycle_number>
+#    counts from 0.
+#    -  The individual flat-fielded frames in ro<date>_<obs_number>_ff.
+#    -  The created flat fields in flat_<group_number>subgrp for the
+#    first or only cycle, and flat_<group_number>subgrp_<cycle_number>
+#    for subsequent cycles.
 
-=head1 References:
-    "Scripts for UTFI" G.S. Wright & S.K. Leggett, 1997 orac009-ufts, v01.
+# Timing:
+#    {timing_information}
 
-=head1 Authors:
-    MJC: Malcolm J. Currie (UKATC)
+# Implementation Status:
+#    -  The processing engines are from the Starlink packages: CCDPACK
+#    KAPPA, and PISA.
+#    -  Uses the Starlink NDF format.
+#    -  History is recorded within the data files.
+#    -  The title of the data is propagated through intermediate files
+#    to the mosaic.
+#    -  Error propagation is not used.
 
-=head1 COPYRIGHT
+# Related Recipes:
+#    QUADRANT_JITTER_BASIC, QUADRANT_JITTER_NO_MASK,
+#    QUADRANT_JITTER_NO_MASK_TELE, QUADRANT_JITTER_TELE, EXTENDED_5x5,
+#    EXTENDED_5x5_BASIC.
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
-Council.  All Rights Reserved.
+# References:
+#    "Scripts for UFTI" G.S. Wright & S.K. Leggett, 1997 orac009-ufts, v01.
 
-=cut
+# Authors:
+#    MJC: Malcolm J. Currie (UKATC/JAC)
+
+# Copyright:
+#    Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
 
 # Startup
 # =======
@@ -75,7 +132,7 @@ Council.  All Rights Reserved.
 # Generate the flat field using the quadrant-jitter technique.  Apply
 # it.  Mask the sources, and compute a new flat field.  Apply that
 # flat field.
-    _FLAT_FIELD_QUADRANT_JITTER_
+    _FLAT_FIELD_QUADRANT_JITTER_ MASK=1
 
 # Mosaicking
 # ==========
@@ -87,10 +144,179 @@ Council.  All Rights Reserved.
     _GENERATE_OFFSETS_QUADRANT_JITTER_ PERCENTILE=99 COMPLETE=0.4 MINPIX=12
 
 # Resample each frame, and tesselate single-cycle mosaic.  The mosaic is
-# untrimmed to the dimensions of an input frame.  Co-add a single-cycle
+# untrimmed to the dimensions of an input frame.  Add a single-cycle
 # mosaic into the main mosaic, which is initially formed using the first
-# single-cycle mosaic.
-    _MAKE_MOSAIC_QUADRANT_OPTIMISED_
+# single-cycle mosaic.  Fill bad pixels by interpolation.
+    _MAKE_MOSAIC_QUADRANT_OPTIMISED_ RESAMPLE=1 INT_METHOD=linint FILLBAD=1
 
 # Remove unwanted intermediate files.
     _QUADRANT_JITTER_TIDY_
+
+# Podule
+# ======
+
+=head1 NAME
+
+QUADRANT_JITTER -- "Quadrant Jitter" standard reduction including object masking.
+
+=head1 LANGUAGE
+
+Perl5
+
+=head1 DESCRIPTION
+
+This script reduces a "quadrant jitter" photometry observation
+with IRCAM data.  It takes an IRCAM observation comprising one or
+more series of four object frames where the target is
+approximately centred in each quadrant; and a dark frame to make
+a calibrated, untrimmed mosaic automatically.
+
+It performs bad-pixel masking, null debiassing, dark subtraction,
+flat-field creation and division, feature detection and matching
+between object frames, and resampling.
+
+This recipe is suitable for faint objects or objects within
+a comparatively bright core embedded in faint extended emission,
+e.g. a quasar.  The object need not be isolated, as the recipe
+masks objects within the other quadrants, and hence does not
+introduce significant artifacts into the flat field.  For isolated
+objects use L<QUADRANT_JITTER_NO_MASK>; or where speed is critical, 
+use L<QUADRANT_JITTER_BASIC> instead.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+The bad pixel mask applied is F<$ORAC_DATA_CAL/bpm>.
+
+=item *
+
+The flat field is created iteratively.  First the quadrant
+containing the object is masked in each object frame.  Second an
+approximate flat field is created by combining the normalised
+and masked object frames using the clipped median at each pixel.
+This flat field is applied to the object frames.  Sources within
+the flat-fielded frames are detected, and masked in the
+dark-subtracted frames.  The second stage is repeated but applied
+to the masked frames to create the final flat field.
+
+=item *
+
+Registration is performed using common point sources in the
+overlap regions.  If the recipe cannot identify sufficient common
+objects, it matches the centroid of the central source.  If this
+fails, the script resorts to using the telescope offsets
+transformed to pixels.
+
+=item *
+
+The resampling applies non-integer shifts of origin using
+bilinear interpolation.  There is no rotation to align the
+Cartesian axes with the cardinal directions.
+
+=item *
+
+The recipe makes the mosaics by applying offsets in intensity
+to give the most consistent result amongst the overlapping regions.
+The mosaic is not trimmed to the dimensions of a single frame.  Thus
+the noise will be greater in the peripheral areas having received
+less exposure time.  The full signal will be in the central ninth
+containing the main object.  The mosaic is not normalised by its
+exposure time (that being the exposure time of a single frame).
+
+=item *
+
+For each cycle of four, the recipe creates a mosaic, which has
+its bad pixels filled and is then added into a master mosaic of
+improving signal to noise.  The exposure time is also summed and
+stored in the mosaic's EXP_TIME header.  Likewise the end airmass
+header, AMEND, is updated to match that of the last-observed frame
+contributing to the mosaic.
+
+=item *
+
+Intermediate frames are deleted except for the flat-fielded (_ff
+suffix) frames, and the flat fields.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The integrated mosaic in rg<date>_<group_number>_mos.
+
+=item *
+
+A mosaic for each cycle of four in
+rg<date>_<group_number>_mos_<cycle_number>, where <cycle_number>
+counts from 0.
+
+=item *
+
+The individual flat-fielded frames in ro<date>_<obs_number>_ff.
+
+=item *
+
+The created flat fields in flat_<group_number>subgrp for the first or
+only cycle, and flat_<group_number>subgrp_<cycle_number> for
+subsequent cycles.
+
+=back
+
+=head1 TIMING
+
+TBS
+
+=head1 IMPLEMENTATION STATUS
+
+=over 4
+
+=item *
+
+The processing engines are from the Starlink packages: CCDPACK,
+KAPPA, and PISA.
+
+=item *
+
+Uses the Starlink NDF format.
+
+=item *
+
+History is recorded within the data files.
+
+=item *
+
+The title of the data is propagated through intermediate files
+to the mosaic.
+
+=item *
+
+Error propagation is not used.
+
+=back
+
+=head1 RELATED RECIPES
+
+L<QUADRANT_JITTER_BASIC>, L<QUADRANT_JITTER_NO_MASK>, L<EXTENDED_5x5>,
+L<QUADRANT_JITTER_NO_MASK_TELE>, L<QUADRANT_JITTER_TELE>, L<EXTENDED_5x5>,
+L<EXTENDED_5x5_BASIC>.
+
+=head1 REFERENCES
+
+"I<Scripts for UFTI>" G.S. Wright & S.K. Leggett, 1997 orac009-ufts, v01.
+
+=head1 AUTHORS
+
+Malcolm J. Currie (UKATC/JAC) (mjc@jach.hawaii.edu)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
