@@ -110,19 +110,18 @@ Modified routine for reading the index file into the object.
 Calls the base class method but makes sure that the time of the
 read is stored in the object.
 
-Currently this method automatically generates keys for the index
-file (rather than reading them from the file). Should be an option.
+Arguments are forwarded to the base class.
 
 =cut
 
 sub slurpindex {
   my $self = shift;
-  
+
   # Update read time
   $self->last_read(time());
 
   # Run the base class method for read
-  $self->SUPER::slurpindex(0);
+  $self->SUPER::slurpindex(@_);
 
 }
 
