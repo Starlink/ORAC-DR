@@ -1031,7 +1031,7 @@ sub xorac_calib {
       foreach ( $instclass->return_possible_calibrations ) {
           %calib = ( %calib, $_ => ${${$options}{"calib"}}{$_} ); }
   } else {    
-      foreach ( qw/ gains tausys badbols flat dark bias  / ) {
+      foreach ( qw/ gains tausys badbols flat dark bias mask sky standard readnoise baseshift referenceoffset rotation / ) {
           %calib = ( %calib, $_ => ${${$options}{"calib"}}{$_} ); } }
 
   # Declare variables 
