@@ -42,6 +42,9 @@ use Carp;
 use vars qw/$VERSION/;
 
 use File::Basename;  # Get file suffix
+use File::Spec;      # Not really necessary -- a bit anal I suppose
+use NDF;
+use Starlink::HDSPACK; # copobj
 
 use ORAC::Print;
 use ORAC::Msg::ADAM::Control;
@@ -63,6 +66,9 @@ The following methods are provided:
 Object constructor. Should always be used before initiating a conversion.
 
   $Cvt = new ORAC::Convert;
+
+Returns undef if there was an error creating the object. No arguments
+are required.
 
 =cut
 
@@ -181,8 +187,8 @@ will be set to NDF.
 
 Recogised keywords in the hash are:
 
-  IN  => input format (NDF or FITS)
-  OUT => desired output format (NDF)
+  IN  => input format (NDF, UKIRTmultindf or FITS)
+  OUT => desired output format (NDF or HDS)
 
 If 'IN' is not specified it will try to derive the format from
 name.
@@ -238,8 +244,7 @@ sub convert {
   # If the input format is the same as the output just return
   # Make sure directory path is removed
   if ($options{'IN'} eq $options{OUT}) {
-    my $out = (split(/\//,$filename))[-1];
-    return $out;
+    return basename($filename);
   }
 
   # Set the overwrite flag
@@ -260,9 +265,7 @@ sub convert {
   # Make sure that we dont return a full path (the conversion occurred
   # in the current directory even if we read from a remote directory)
 
-
-  return (split(/\//,$outfile))[-1];;
-
+  return basename($outfile);
 }
 
 
@@ -271,6 +274,9 @@ sub convert {
 Given 'name' try to guess data format.
 
   $format = $Cvt->guessformat("test.sdf");
+
+If no name is supplied, infile() is used to retrieve the current
+filename.
 
 =cut
 
@@ -285,8 +291,7 @@ sub guessformat {
   }
 
   # Check via file extension
-  my @junk = split(/\./, $name);
-  my $suffix = "." . $junk[-1];
+  my $suffix = (fileparse($name, '\..*' ) )[-1]; 
 
   # Could also do this by checking the suffix AND trying to open
   # file (eg ndf_open or see if first line is SIMPLE = T)
@@ -328,8 +333,12 @@ sub mon {
   if (exists $ {$self->objref}{$name}) {
     return $ {$self->objref}{$name};
   } else {
-    # Create a new one
-    $obj = new ORAC::Msg::ADAM::Task($name, "$ENV{CONVERT_DIR}/$mon",
+
+    # Find the full path to the monolith
+    my $fullname = File::Spec->catfile($ENV{CONVERT_DIR}, $mon);
+
+    # Create a new object
+    $obj = new ORAC::Msg::ADAM::Task($name, $fullname,
 				     { MONOLITH => "$mon"}
 				    );
     if ($obj->contactw) {
@@ -371,11 +380,11 @@ sub fits2ndf {
   }
 
   # Generate an outfile
-  my $out = $name;
-  $out =~ s/\.fit.*$//;
+  # First Remove any suffices and retrieve the rootname
+  # basename requires us to know the extension if FITS, FIT, fit etc
+  my $out = (fileparse($name, '\..*'))[0];
 
-  $out = (split(/\//,$out))[-1];
-
+  # We know that an NDF ends with .sdf -- append it.
   my $ndf = $out . ".sdf";
 
   # Check the output file name and whether we are allowed to
@@ -404,6 +413,158 @@ sub fits2ndf {
 
 }
 
+
+=item B<UKIRTmultindf2hds>
+
+Converts observations that are taken as a header file plus multiple
+NDFs into a single HDS container that contains a .HEADER NDF and
+.Inn NDFs for each of the nn data files. This is the scheme used for
+IRCAM and CGS4 data at UKIRT.
+
+  $hdsfile = $Cvt->UKIRTmultindf2hds;
+
+This routine assumes the old UKIRT data acquisition system (at least for
+IRCAM and CGS4) is generating the data files. The name of the header
+file (aka the O-file) must be stored in the object (via the infile()
+method) before running this method. The I files are assumed to be in
+the directory C<../idir> relative to the header file with a starting
+character of 'i' rather than 'o' and are multiple files with
+suffixes of '_1', '_2' etc. The new output file
+is named 'cYYYYMMDD_NNNNN' where the date is retrieved from the IDATE header
+keyword and observation number from the OBSNUM header keyword.
+
+Returns undef on error.
+
+=cut
+
+sub UKIRTmultindf2hds {
+  my $self = shift;
+
+  # Get the directory name and file name from the infile()
+  # Match any suffix -- anything after a '.'
+  my ($ofile, $odir, $suffix) = fileparse($self->infile, '\..*');
+
+  # Make sure that the O-file exists (also infile() may not return .sdf suffix)
+  my $ondfname = File::Spec->catfile($odir, $ofile); # guaranteed no suffix
+  $ondfname .= ".sdf";
+
+  unless (-e $ondfname) {
+    orac_err "Input filename ($ondfname) does not exist -- can not convert\n";
+    return undef;
+  }
+
+  # Theres a limit to what can be derived from first principals.
+  # we really need to know the format of the file names
+  # Whilst the I files do contain the name of the O file parent
+  # the O file does not contain the name of the I file root.
+
+  # Read the header of the O file
+  my ($href, $status) = fits_read_header($ondfname);
+
+  if ($status != &NDF::SAI__OK) {
+    orac_err "Error reading FITS header from O-file $ondfname\n";
+    err_annul($status);
+    return undef;
+  }
+
+  # Calculate the output filename from the FITS header information
+  my $num = 0 x (5 - length($href->{OBSNUM})) . $href->{OBSNUM};
+  my $output = 'c' . $href->{IDATE} . "_$num";
+  
+  # Check for the existence of the output file in the current dir
+  # and whether we can overwrite it.
+  if (-e $output.'.sdf' && ! $self->overwrite) {
+    # Return early
+    orac_warn "The converted file ($output) already exists - won't convert again\n";
+    return $output;
+  }
+
+  # Construct idir -- without assuming unix!
+  my $idir = File::Spec->catdir($odir, File::Spec->updir, 'idir');
+
+  # Read in a list of the O-files
+  opendir(IDIR, $idir) || do {
+    orac_err "ORAC::Convert::UKIRTmultindf2hds: Error opening IDIR: $idir\n";
+    return undef;
+  };
+
+  # Calculate the I file root name
+  # ie change 'o' to 'i' and use the root
+  my $root;
+  ($root = $ofile) =~ s/^o/i/;
+
+  # Read all the Ifiles that look like they are related to the O file
+  my @ifiles = grep /^$root/, readdir IDIR;
+  closedir IDIR;
+
+  print "IFILES: @ifiles\n";
+
+  # Check that we have found some files
+  if ($#ifiles == -1) {
+    orac_err "No I-files found in IDIR ($idir) -- can not convert\n";
+    return undef;
+  }
+
+  # First we need to create a container file in the current directory
+  my $status = &NDF::SAI__OK;
+  my @dims = ();
+  hds_new($output, substr($output, 0, &NDF::DAT__SZNAM),'ORAC_HDS', 0,
+	  @dims, my $floc, $status);
+  
+  # Then open the header file  
+  hds_open(File::Spec->catfile($odir,$ofile), 'READ', my $oloc, $status);
+
+  # Copy the header NDF
+  dat_copy($oloc, $floc, 'HEADER', $status);
+  
+  # Close the header file
+  dat_annul($oloc, $status);
+
+  # Open the header NDF file and turn on history recording
+  ndf_open($floc, "header", 'UPDATE', 'OLD', my $indf, my $place, $status);
+  ndf_happn("ORAC::Convert", $status);
+  ndf_hcre($indf, $status);
+  ndf_annul($indf, $status);
+
+  # Now loop over all the I-files and copy them in
+  my $n = 0;
+  for my $ifile (@ifiles) {
+    # Abort loop if bad status
+    last if $status != &NDF::SAI__OK;
+    $n++;
+
+    # Open the I-file
+    hds_open(File::Spec->catfile($idir,$ifile), 'READ', my $iloc, $status);
+
+    # Copy it
+    dat_copy($iloc, $floc, "i$n", $status);
+
+    # Close the file
+    dat_annul($iloc, $status);
+
+    # Open the NDF file and turn on history recording
+    ndf_open($floc, "i$n", 'UPDATE', 'OLD', my $indf, my $place, $status);
+    ndf_happn("ORAC::Convert", $status);
+    ndf_hcre($indf, $status);
+    ndf_annul($indf, $status);
+
+  }
+
+  # Close the output file
+  dat_annul($floc, $status);
+
+  # Check for errors
+  if ($status != &NDF::SAI__OK) {
+    err_flush($status);
+    orac_err "Error copying I and O files to ouput container file\n";
+    return undef;
+  }
+
+  # Everything okay - return the file name
+  return $output;
+
+
+}
 
 
 
