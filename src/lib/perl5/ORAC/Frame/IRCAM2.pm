@@ -237,7 +237,7 @@ sub template {
 
   my $num = $self->number;
   # Zero pad the number
-  $obsnum = sprintf("%05d", $obsnum);
+  $num = sprintf("%05d", $num);
 
   # Change the first number
   $template =~ s/_\d+_/_${num}_/;
