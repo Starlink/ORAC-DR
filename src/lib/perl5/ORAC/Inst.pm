@@ -24,7 +24,9 @@ This base class should be extended as required.
 
 =cut
 
+use 5.006;
 use strict;
+use warnings;
 use Carp;
 
 use ORAC::Constants qw/ :status /;
@@ -85,7 +87,7 @@ It is possible that this hash will be
 
 sub _algeng {
   my $self = shift;
-  if (@_) { $self->{AlgEng}; }
+  if (@_) { $self->{AlgEng} = shift; }
   return $self->{AlgEng};
 }
 
