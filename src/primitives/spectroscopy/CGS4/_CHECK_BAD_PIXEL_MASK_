@@ -1,0 +1,87 @@
+=head1 NAME
+
+_CHECK_BAD_PIXEL_MASK_ -- Checks bad pixel mask for suitability.
+
+=head1 DESCRIPTION
+
+This primitive performs stats on a given bad pixel mask and finds
+how many pixels were flagged as bad, allowing for the detection of
+a bad dark or array test sequence.
+
+For CGS4 a warning will be raised if more than 5% of the pixels in
+the array have been flagged as bad. It is important to run this step
+before under-illuminated rows have been masked, as that step will
+mask out more than 5% of the array.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item FILE = STRING (Given)
+
+This argument is mandatory. This argument dictates which file will
+be checked for suitability. The .sdf file suffix is not needed. []
+
+=item NUMBAD = INTEGER (Returned)
+
+The number of bad pixels in the bad pixel mask.
+
+=item PERCBAD = REAL (Returned)
+
+The percentage of bad pixels in the bad pixel mask.
+
+=back
+
+=head1 TASKS
+
+=head1 AUTHORS
+
+BC: Brad Cavanagh (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# Grab the file we're supposed to be looking at.
+my $file = $_CHECK_BAD_PIXEL_MASK_{FILE};
+
+if( defined( $file ) ) {
+
+  $file =~ s/\.sdf$//;
+
+  # Multiply the file by zero.
+  my $tmp = new ORAC::TempFile;
+  my $tmpfile = $tmp->file;
+  $Mon{'kappa_mon'}->obeyw("cmult", "in=$file out=$tmpfile scalar=0");
+
+  # Run stats.
+  $Mon{'kappa_mon'}->obeyw("stats", "ndf=$tmpfile");
+
+  # Get the numbers out the other end.
+  my $ORAC_STATUS;
+
+  ($ORAC_STATUS, my $numpix) = $Mon{'kappa_mon'}->get("stats", "numpix");
+  ($ORAC_STATUS, my $numgood) = $Mon{'kappa_mon'}->get("stats", "numgood");
+
+  # Calculate percentage of bad and report to user.
+  my $numbad = $numpix - $numgood;
+  my $percbad = sprintf("%.2f", $numbad / $numpix * 100 );
+
+  orac_print "$percbad% of the pixels in the bad pixel mask $file were flagged as bad.\n";
+
+  if( $percbad > 5 ) {
+
+    orac_warn "The number of masked pixels is high (greater than 5%), the dark frame data may not be good and the generated bad pixel mask might be invalid. You should consider redoing the array test sequence.\n";
+  }
+
+  # Set the returned arguments.
+  $_CHECK_BAD_PIXEL_MASK_{PERCBAD} = $percbad;
+  $_CHECK_BAD_PIXEL_MASK_{NUMBAD} = $numbad;
+
+}
+
+# Clean up output.
+orac_print "\n";
