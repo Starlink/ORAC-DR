@@ -26,27 +26,28 @@ to B<ORAC::Frame::UKIRT> objects.
 
 # These are the UKIRT generic lookup tables
 my %hdr = (
-	   AIRMASS_START      => "AMSTART",
-	   AIRMASS_END        => "AMEND",
-	   DECBASE            => "DECBASE",
-	   EQUINOX            => "EQUINOX",
-	   FILTER             => "FILTER",
-	   INSTRUMENT         => "INSTRUME",
-	   LBNDX              => "RDOUT_X1",
-	   LBNDY              => "RDOUT_Y1",
-	   NOFFSETS           => "NOFFSETS",
-	   OBJECT             => "OBJECT",
-           OBSERVATION_NUMBER => "OBSNUM",
-           OBSTYPE            => "OBSTYPE",
-	   RABASE             => "RABASE",
-	   READMODE           => "MODE",
-	   ROTATION           => "CROTA2",
-	   SPD_GAIN           => "SPD_GAIN",
-           STANDARD           => "STANDARD",
-	   UBNDX              => "RDOUT_X2",
-	   UBNDY              => "RDOUT_Y2",
-	   WPLANGLE           => "WPLANGLE"
-	  );
+            AIRMASS_START       => "AMSTART",
+            AIRMASS_END         => "AMEND",
+            DECBASE             => "DECBASE",
+            EQUINOX             => "EQUINOX",
+            FILTER              => "FILTER",
+            INSTRUMENT          => "INSTRUME",
+            LBNDX               => "RDOUT_X1",
+            LBNDY               => "RDOUT_Y1",
+            NOFFSETS            => "NOFFSETS",
+            NUMBER_OF_EXPOSURES => "NEXP",
+            OBJECT              => "OBJECT",
+            OBSERVATION_NUMBER  => "OBSNUM",
+            OBSTYPE             => "OBSTYPE",
+            RABASE              => "RABASE",
+            READMODE            => "MODE",
+            ROTATION            => "CROTA2",
+            SPD_GAIN            => "SPD_GAIN",
+            STANDARD            => "STANDARD",
+            UBNDX               => "RDOUT_X2",
+            UBNDY               => "RDOUT_Y2",
+            WPLANGLE            => "WPLANGLE"
+        );
 
 # Take this lookup table and generate methods that can
 # be sub-classed by other instruments
