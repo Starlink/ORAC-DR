@@ -22,7 +22,7 @@ to B<ORAC::Group::IRIS2> objects.
 
 =cut
 
-# A package to describe a IRCAM group object for the
+# A package to describe a IRIS2 group object for the
 # ORAC pipeline
 
 use 5.006;
@@ -53,12 +53,12 @@ those available from B<ORAC::Group>.
 
 =item B<new>
 
-Create a new instance of a B<ORAC::Group::IRCAM> object.
+Create a new instance of a B<ORAC::Group::IRIS2> object.
 This method takes an optional argument containing the
 name of the new group. The object identifier is returned.
 
-   $Grp = new ORAC::Group::IRCAM;
-   $Grp = new ORAC::Group::IRCAM("group_name");
+   $Grp = new ORAC::Group::IRIS2;
+   $Grp = new ORAC::Group::IRIS2("group_name");
 
 This method calls the base class constructor but initialises
 the group with a file suffix of '.sdf' and a fixed part
@@ -96,9 +96,8 @@ pipeline by using values stored in the header.
 Required ORAC extensions are:
 
 ORACTIME: should be set to a decimal time that can be used for
-comparing the relative start times of frames. For IRCAM this
-number is decimal hours, for SCUBA this number is decimal
-UT days.
+comparing the relative start times of frames. For IRIS2 this
+number is decimal UT days.
 
 ORACUT: This is the UT day of the frame in YYYYMMDD format.
 
