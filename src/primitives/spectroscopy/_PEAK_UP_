@@ -1,0 +1,68 @@
+=head1 NAME
+
+_PEAK_UP_
+
+=head1 DESCRIPTION
+
+Does simple stats on the image to determine the peak strength.
+This is a hacked copy of _EXTRACT_FIND_ROWS_
+
+=cut
+
+my ($in, $ypr) = $Frm->inout("_ypr");
+
+# Collapse the image along the dispersion axis into a ypr file
+
+$Mon{'kappa_mon'}->obeyw("collapse", "in=$in out=$ypr axis=1");
+
+my $tmp = new ORAC::TempFile;
+my $tmpfile = $tmp->file;
+my $ORAC_STATUS;
+
+# Need to thresh to only see the +ve half
+$Mon{'kappa_mon'}->obeyw("thresh", "in=$ypr out=$tmpfile thrlo=0 newlo=0 thrhi=1000000 newhi=1000000"); 
+
+# Call figaro emlt on the +ve half of the collapsed file
+$Mon{'figaro2'}->obeyw("emlt", "spectrum=$tmpfile xstart=min xend=max lines=1");
+
+my $posbeamsfound=0;
+
+($ORAC_STATUS, $posbeamsfound) = $Mon{'figaro2'}->get("emlt", "EMLT_LINES");
+orac_print "Detected $posbeamsfound of 1 positive beams\n";
+
+my @pix = $Mon{'figaro2'}->get("emlt", "EMLT_POS");
+my @peak = $Mon{'figaro2'}->get("emlt", "EMLT_PEAK");
+
+my $thepix = $pix[1];
+my $thepeak = $peak[1];
+
+orac_print "Beam position = pixel $thepix, strength = $thepeak\n";
+
+my $raoff = $Frm->uhdr("ORAC_RA_TELESCOPE_OFFSET");
+my $decoff = $Frm->uhdr("ORAC_DEC_TELESCOPE_OFFSET");
+my $slitpa = $Frm->uhdr("ORAC_SLIT_ANGLE");
+
+orac_print "Offsets are RA: $raoff, Dec: $decoff; Slit_PA is: $slitpa\n";
+
+my $lroffset = $raoff * cosdeg($slitpa) + $decoff * sindeg($slitpa);
+my $udoffset = $raoff * sindeg($slitpa) + $raoff * cosdeg($slitpa);
+
+orac_print "Offsets are: LR : $lroffset, UD: $udoffset\n";
+
+# Hack the results into a text file
+
+my $grpraw= $Grp->raw;
+my $filename = $grpraw."_peakup.txt";
+
+if(!-e $filename) {
+   # Create the header
+   open(FOO, ">$filename");
+   print FOO "FRAME, RAOFF, DECOFF, SLIT_PA, LROFF, UDOFF, PIXEL, PEAK\n";
+   close(FOO);
+}
+
+my $num = $Frm->number;
+
+open(FOO, ">>$filename");
+print FOO "$num, $raoff, $decoff, $slitpa, $lroffset, $udoffset, $thepix, $thepeak\n";
+close(FOO);

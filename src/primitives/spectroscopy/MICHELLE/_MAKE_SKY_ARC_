@@ -1,0 +1,80 @@
+=head1 NAME
+
+_MAKE_SKY_ARC_
+
+=head1 DESCRIPTION
+
+Uses and object frame to make a sky-arc - ie an arc-like spectrum
+consisting of sky lines.
+
+This is intended for Michelle, but may have uses in the thermal
+near-IR.  For now, this MICHELLE specific version is the only one that
+actually does its stuff.
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# Only want to do this once per group
+
+# Get the group arc name. Copy of code from _FILE_ARC_
+my $num = $Frm->findgroup;
+# Make a nice name for the arc file
+my $arc = "arc_g".$num;   
+
+if($Grp->uhdr("DONE_SKYARC")) {
+      # Skyarc file allready done. Do nothing, except unset IS_CAL_FRAME
+      $Frm->uhdr("IS_CAL_FRAME", 0);
+      orac_print "Unsetting cal status\n";
+} else {
+
+   orac_print "Making a sky-arc frame:\n";
+
+   # Make the sky arc frame
+
+   # Use Frame tags to reset things before the main reduction kicks in
+
+   $Frm->tagset("START");
+
+   # Copy the raw file to _skyarc_pass
+   # This is a hack to deliniate the skyarc pass processing files from the
+   # normal object processing files.
+   # This should then get converted into a _skyarc_mraw and so on as it
+   # flows through the pipeline
+   # We set the OBSERVATION_TYPE to ARC here also
+
+   foreach my $i ( 1..$Frm->nfiles ) {
+      (my $in, my $out) = $Frm->inout( "_skyarc_pass", $i );
+      $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$out");
+      orac_print "Copied $in to $out and flagged internally as a cal frame\n";
+      $Frm->uhdr("IS_CAL_FRAME", 1);
+
+      $Frm->file($i, $out);
+   }
+
+   # Keep the output tidy
+   orac_print "\n";
+
+   # Now launch the normal sky-arc reduction, ie basically
+   # the contents of REDUCE_ARC
+
+   _REDUCE_SINGLE_FRAME_
+
+   _FILE_ARC_ GROUP=1
+   $Grp->uhdr("DONE_SKYARC", 1);
+   $Frm->uhdr("IS_CAL_FRAME", 0);
+
+   # Keep the output tidy
+   orac_print "Finished making a skyarc frame. Now starting the normal reduction.\n";
+   orac_print "\n";
+
+   # Now reset the frame filename for the main reduction
+   $Frm->tagretrieve("START");
+}
