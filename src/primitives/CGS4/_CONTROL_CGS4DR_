@@ -45,29 +45,47 @@ unless (exists $Mon{QMAN}) {
   require Proc::ProcessTable;
   my $procs = new Proc::ProcessTable;
 
-  my $cgs4dr_pid;
+  my $cgs4dr_proc;
 
   foreach my $proc ( @{$procs->table} ) {
 
-    next unless $proc->cmndline =~ /cgs4dr_tcl/;
+    if ($proc->cmndline =~ /cgs4dr_tcl/ ) {
 
-    $cgs4dr_pid = $proc->pid;
+      # only get here if we have a valid process name
+      $cgs4dr_proc = $proc;
+
+      # Abort from the loop
+      last;
+
+    }
 
   }
 
   # Check that we have a value
-  unless (defined $cgs4dr_pid) {
-    orac_err "CGS4-DR does not seem to be running. Unable to talk to QMAN\n";
+  unless (defined $cgs4dr_proc) {
+    orac_err "CGS4-DR does not seem to be running. Unable to talk to QMAN.\n";
     my $ORAC_STATUS = ORAC__ERROR;
   }
 
+  # print some diagnostics
+  my $uid = $cgs4dr_proc->uid;
+  my $pid = $cgs4dr_proc->pid;
+  orac_print "Found cgs4dr_tcl process running as PID $pid under UID $uid\n";
 
   # We are fine so calculate the name
+  # Reverse the process id
   # Must be a more efficient way than reverse split???
-  my $qman = reverse split (//, $cgs4dr_pid ) .  '_qman';
+  my $rpid = reverse split (//, $pid );
+  my $qman = $rpid . "_qman";
 
   # Create the object
   $Mon{QMAN} = new Starlink::AMS::Task("$qman");
+
+  # Try to talk to it
+  unless ($Mon{QMAN}->contact) {
+    orac_err "Could not talk to QMAN ($qman). Aborting\n";
+    my $ORAC_STATUS = ORAC__ERROR;
+  }
 
 }
 
