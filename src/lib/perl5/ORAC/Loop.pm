@@ -258,28 +258,58 @@ sub link_and_read {
     return undef;
   }
 
-  # Create a symlink
-  # Dont check whether it worked or not
-  # it will fail if the file is already there...
-  # Now $fname will always be an NDF since we are trying to link
-  # to the 'converted' file
-  symlink($ENV{ORAC_DATA_IN} . "/$fname", $fname);
+  # Try to do this in a more structured way so that we can tell
+  # Why something fails
 
-  # Now we need to see if the file exists in $ORAC_DATA_IN
-  # in the current directory. Note that this also checks to see
-  # whether the symlink worked.
-  # have to do it this way around since the frame configuration
-  # routine does not report back that there was a failure in reading
-  # the header from the file
+  # If the file exists in the current directory then we dont care
+  # what happens (eg it has been converted or a link of the correct
+  # name exists with a file at the other end
 
-  # Note that the -e operator does look through the symlink to make
-  # sure that a file exists at the other end.
+  # We have to make sure the file is here else the Frame configuration
+  # will not work correctly.
 
-  unless (-e "$fname") {
-    # Oops the file is not available
-    # Print a message and return undef
-    print "Oops. Input file ($fname) could not be found in ORAC_DATA_IN\n";
-    return undef;
+  unless (-e $fname) {
+
+    # Now check in the ORAC_DATA_IN directory to make sure it is there
+    unless (-e $ENV{ORAC_DATA_IN} ."/$fname") {
+      orac_err("Requested file ($fname) can not be found in ORAC_DATA_IN\n");
+      return undef;
+    }
+
+    # Now if there is a link already in ORAC_DATA_OUT we need to
+    # read it to find out where it is pointing (we will only get
+    # to this point if the link does not point to anything at the
+    # other end since -e follows links
+    if (-l $fname) {
+      my $nowhere = readlink($fname);
+      unless (defined $nowhere) {
+	orac_err("Error reading through link from ORAC_DATA_OUT/$fname:\n");
+	orac_err("$!\n");
+      } else {
+	orac_err("File $fname does exist in ORAC_DATA_OUT but is a link\n");
+	orac_err("pointing to nowhere. It points to: $nowhere\n");	
+      }
+     return undef;
+    }
+    
+    # Now we should try to create a symlink and say something
+    # if it fails
+    symlink($ENV{ORAC_DATA_IN} . "/$fname", $fname) ||
+      do {
+	orac_err("Error creating symlink from ORAC_DATA_OUT to $ENV{ORAC_DATA_IN}/$fname\n");
+	orac_err("$!\n");
+	return undef;
+      };
+
+    # Note that -e checks through symlinks
+    # This final check SHOULD work else something really wacky is 
+    # going on
+    unless (-e $fname) {
+      orac_err("File ($fname) can not be found through link from\n");
+      orac_err("ORAC_DATA_OUT to ORAC_DATA_IN\n");
+      return undef;
+    }
+
   }
 
   # Now configure the frame object
