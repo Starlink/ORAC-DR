@@ -274,6 +274,9 @@ sub new {
 This method calculates header values that are required by the
 pipeline by using values stored in the header.
 
+This method should be run after a header is set. Currently the readhdr()
+method calls this whenever it is updated.
+
 Calculates ORACUT, ORACTIME and ORACDATETIME.
 
 ORACUT is the UT date in YYYYMMDD format.
@@ -319,6 +322,7 @@ sub calc_orac_headers {
   $new{'ORACUT'} = $date;
 
   # And set up the ORACDATETIME header too.
+  $dateobs =~ s/Z//g;
   $self->hdr('ORACDATETIME', $dateobs);
   $new{'ORACDATETIME'} = $dateobs;
 

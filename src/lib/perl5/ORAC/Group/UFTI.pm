@@ -211,7 +211,13 @@ are responsible for setting this value from their header.
 Should be run after a header is set. Currently the hdr()
 method calls this whenever it is updated.
 
-Calculates ORACUT and ORACTIME
+Calculates ORACUT, ORACTIME and ORACDATETIME.
+
+ORACUT is the UT date in YYYYMMDD format.
+
+ORACTIME is the UT date with decimal days.
+
+ORACDATETIME is the UT date in ISO8601 format: YYYY-MM-DDThh:mm:ss.
 
 This method updates the frame header.
 Returns a hash containing the new keywords.
@@ -250,6 +256,7 @@ sub calc_orac_headers {
   $new{'ORACUT'} = $date;
 
   # And set up the ORACDATETIME header too.
+  $dateobs =~ s/Z//g;
   $self->hdr( 'ORACDATETIME', $dateobs );
   $new{'ORACDATETIME'} = $dateobs;
 
