@@ -1,0 +1,80 @@
+=head1 NAME
+
+REDUCE_SKYDIP - Reduce a skydip observation
+
+=head1 DESCRIPTION
+
+Process skydip data and calculate the resultant tau..
+If the fit is good the current value in the calibration object
+is updated for each successful filter..
+
+=head1 TASKS
+
+Uses the SURF SKYDIP task.
+
+=cut
+
+# Get list of sub-instruments
+@subs = $Frm->subs;
+@filts = $Frm->filters;
+
+# Get input name
+my $in = $Frm->file;
+
+# Print a header for the result printing
+print "  Sub    TAUZ   ETA_TEL  B        XISQ\n";
+
+
+# Loop over sub-instruments
+for ($i = 0; $i < $Frm->nsubs; $i++) {
+
+  my $sub = $subs[$i];
+  
+  # Choose names for temporary output files
+  # These simply contain the reduced data and are only
+  # created so that we can plot the result
+  my $out = "skydip_" . $sub . '_' . $Frm->number;
+  my $model = $out . '_model';
+
+  # Set the input arguments
+  $args = "sub_instrument=$sub accept";
+
+  # Perform the fit
+  # Take default values for all fitting parameters
+
+  $Mon{surf_mon}->obeyw('skydip',
+			"in=$in out=$out model_out=$model $args");
+
+  # Retrieve result from the monolith
+  # First check that fit was good
+  ($ORAC_STATUS, $goodfit) = $Mon{surf_mon}->get("skydip","goodfit");
+
+  if ($goodfit eq 'TRUE') {
+
+    ($ORAC_STATUS, $tauz) = $Mon{surf_mon}->get("skydip","tauz_fit");
+    ($ORAC_STATUS, $etatel) = $Mon{surf_mon}->get("skydip","eta_tel_fit");
+    ($ORAC_STATUS, $bfit) = $Mon{surf_mon}->get("skydip","b_fit");
+    ($ORAC_STATUS, $xisq) = $Mon{surf_mon}->get("skydip","xisq");
+
+    # Formatted string
+    my $string = sprintf("%6.3f  %5.2f  %5.2f %10.1f", $tauz, $etatel, $bfit, $xisq);
+  
+    print colored(" $sub:\t$string (Updating stored tau...)\n",'magenta');
+
+    # Update the file name in the Frame
+    $Frm->file($i+1, $out);
+
+    # Update the skydip value stored in the Cal object
+    $Cal->skydiptau($filts[$i],$tauz);
+
+  } else {
+    print colored("$sub:",'magenta') . 
+      colored("  ***** Fit failed *****\n",'red');
+
+    # Update the file name in the frame to bad
+    $Frm->file($i+1, undef);
+
+  }
+
+}
+
