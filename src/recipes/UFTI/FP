@@ -11,34 +11,52 @@
 # Description:
 #    This script reduces a Fabry-Perot observation with UFTI data.
 #    It takes an UFTI observation comprising eight object frames and a
-#    dark frame to make a calibrated, untrimmed  mosaic automatically.
-
-#    It performs a null debiassing, bad-pixel masking, dark
-#    subtraction, flat-field division, feature detection and matching
-#    between object frames, and resampling.
+#    dark frame to make a calibrated, untrimmed mosaic automatically.
+#
+#    The sequence of frames expected in the observations are tabulated
+#    below.
+#
+#       Frame    Position            Wavelength
+#       -----   ----------    -------------------------
+#         1     On  source    On  line
+#         2     Off source    On  line
+#         3     Off source    Off line, positive offset
+#         4     On  source    Off line, positive offset
+#         5     On  source    On  line
+#         6     Off source    On  line
+#         7     Off source    Off line, negative offset
+#         8     On  source    Off line, negative offset
+#
+#    It performs a null debiassing, bad-pixel masking, dark subtraction,
+#    pairwise frame differencing, flat-field division, integer shifts of 
+#    origin to register, and mosaicking.  The desired result is given by
+#
+#         [(#1 - #2)-(#4 - #3)] + [(#5 - #6)-(#8 - #7)]  
+#         ---------------------------------------------
+#                          Flat Field
+#
+#    where #n is the bad-pixel masked and dark subtracted frame n.
+#    In practice, the flat field is applied to each differenced pair,
+#    such as (#4 - #3), when the pair becomes available, rather than
+#    waiting until all eight frames have been observed.
 
 # Notes: 
 #    -  The bad pixel mask applied is $ORAC_DATA_CAL/bpm.
 #    -  You may use SKY_FLAT_FP to make the flat field.
-#    -  Registration is performed using common point sources in the
-#    overlap regions.  If the recipe cannot identify sufficient common
-#    objects, the script resorts to using the telescope offsets
+#    -  Registration is performed using the telescope offsets
 #    transformed to pixels.
-#    -  The resampling applies non-integer shifts of origin using
-#    bilinear interpolation.  There is no rotation to align the
-#    Cartesian axes with the cardinal directions.
+#    -  There is no resampling, merely integer shifts of origin.
 #    -  The recipe makes the mosaics by applying offsets in intensity
 #    to give the most consistent result amongst the overlapping regions.
 #    The mosaic is not trimmed to the dimensions of a single frame, thus
 #    the noise will be greater in the peripheral areas having received
 #    less exposure time.  The mosaic is not normalised by its exposure
 #    time (that being the exposure time of a single frame).
-#    -  For each cycle of eight, the recipe creates a mosaic, which has
-#    its bad pixels filled and is then added into a master mosaic of
-#    improving signal to noise.  The exposure time is also summed and
-#    stored in the mosaic's EXP_TIME header.  Likewise the end airmass
-#    header, AMEND, is updated to match that of the last-observed frame
-#    contributing to the mosaic.
+#    -  For each cycle of eight, the recipe creates a mosaic, which is
+#    then added into a master mosaic of improving signal to noise.  The
+#    exposure time is also summed and stored in the mosaic's EXP_TIME
+#    header.  Likewise the end airmass header, AMEND, is updated to match
+#    that of the last-observed frame contributing to the mosaic.
 #    -  Intermediate frames are deleted except for the flat-fielded (_ff
 #    suffix) frames.
 
@@ -48,16 +66,13 @@
 #    g<date>_<group_number>_mos_<cycle_number>, where <cycle_number>
 #    counts from 0.
 #    -  The individual flat-fielded frames in f<date>_<obs_number>_ff.
-#    -  The created flat fields in flat_<group_number>subgrp for the
-#    first or only cycle, and flat_<group_number>subgrp_<cycle_number>
-#    for subsequent cycles.
 
 # Timing:
 #    {timing_information}
 
 # Implementation Status:
 #    -  The processing engines are from the Starlink packages: CCDPACK
-#    KAPPA, and PISA.
+#    and KAPPA.
 #    -  Uses the Starlink NDF format.
 #    -  History is recorded within the data files.
 #    -  The title of the data is propagated through intermediate files
@@ -108,13 +123,12 @@
 # Mosaicking
 # ==========
 
-# Determine the linear offsets between the object frames in the group
-# by pattern matching common features.  If that fails use the telescope
-# offsets.  Register the frames using a shift of pixel origin.
+# Register the frames using a shift of origin derived from the
+# telescope offsets. 
     _GENERATE_OFFSETS_NOD_ TELEOFF=1
 
-# Adjust origins of each frame. Make a mosaic which is not trimmed
-# to the dimensions of an input frame.
+# Apply shifts of origin, and tesselate.  The mosaic is not trimmed to
+# the dimensions of an input frame.  Bad pixels are not filled.
     _MAKE_MOSAIC_NOD_ RESAMPLE=0 FILLBAD=0
 
 # Remove intermediate data files.
@@ -129,13 +143,37 @@ FP -- Reduces an 8-frame Fabry-Perot observation.
 
 =head1 DESCRIPTION
 
-This script reduces a "nod jitter" observation with UFTI data.
+This script reduces a Fabry-Perot observation with UFTI data.
 It takes an UFTI observation comprising eight object frames and a
 dark frame to make a calibrated, untrimmed mosaic automatically.
 
-It performs a null debiassing, bad-pixel masking, dark
-subtraction, flat-field division, feature detection and matching
-between object frames, and resampling.
+The sequence of frames expected in the observations are tabulated
+below.
+
+S<   Frame    Position            Wavelength                            >
+S<   -----   ----------    ------------------------->
+S<     1     On  source    On  line
+     2     Off source    On  line
+     3     Off source    Off line, positive offset
+     4     On  source    Off line, positive offset
+     5     On  source    On  line
+     6     Off source    On  line
+     7     Off source    Off line, negative offset
+     8     On  source    Off line, negative offset>
+
+
+It performs a null debiassing, bad-pixel masking, dark subtraction,
+pairwise frame differencing, flat-field division, integer shifts of 
+origin to register, and mosaicking.  The desired result is given by
+
+S<    [(#1 - #2)-(#4 - #3)] + [(#5 - #6)-(#8 - #7)]      
+    ---------------------------------------------
+                      Flat Field>
+
+where #I<n> is the bad-pixel masked and dark subtracted frame I<n>.
+In practice, the flat field is applied to each differenced pair,
+such as (#4 - #3), when the pair becomes available, rather than
+waiting until all eight frames have been observed.
 
 =head1 NOTES
 
@@ -151,16 +189,12 @@ You may use SKY_FLAT_FP to make the flat field.
 
 =item *
 
-Registration is performed using common point sources in the
-overlap regions.  If the recipe cannot identify sufficient common
-objects, the script resorts to using the telescope offsets
+Registration is performed using the telescope offsets
 transformed to pixels.
 
 =item *
 
-The resampling applies non-integer shifts of origin using
-bilinear interpolation.  There is no rotation to align the
-Cartesian axes with the cardinal directions.
+There is no resampling, merely integer shifts of origin.
 
 =item *
 
@@ -173,12 +207,11 @@ time (that being the exposure time of a single frame).
 
 =item *
 
-For each cycle of eight, the recipe creates a mosaic, which has
-its bad pixels filled and is then added into a master mosaic of
-improving signal to noise.  The exposure time is also summed and
-stored in the mosaic's EXP_TIME header.  Likewise the end airmass
-header, AMEND, is updated to match that of the last-observed frame
-contributing to the mosaic.
+For each cycle of eight, the recipe creates a mosaic, which is
+then added into a master mosaic of improving signal to noise.  The
+exposure time is also summed and stored in the mosaic's EXP_TIME
+header.  Likewise the end airmass header, AMEND, is updated to match
+that of the last-observed frame contributing to the mosaic.
 
 =item *
 
@@ -203,28 +236,7 @@ counts from 0.
 
 The individual flat-fielded frames in f<date>_<obs_number>_ff.
 
-=item *
-
-The created flat fields in flat_<group_number>subgrp for the
-first or only cycle, and flat_<group_number>subgrp_<cycle_number>
-for subsequent cycles.
-
 =back
-
-=head1 CONFIGURABLE STEERING PARAMETERS
-
-=over 4
-
-=item NUMBER = INTEGER
-
-The number of frames in the nod pattern. It must be a multiple
-of four. [8]
-
-=back
-
-=head1 TIMING
-
-TBS
 
 =head1 IMPLEMENTATION STATUS
 
@@ -233,7 +245,7 @@ TBS
 =item *
 
 The processing engines are from the Starlink packages: CCDPACK
-KAPPA, and PISA.
+and KAPPA.
 
 =item *
 
@@ -253,11 +265,6 @@ to the mosaic.
 Error propagation is not used.
 
 =back
-
-=head1 RELATED RECIPES
-
-L<NOD4_SELF_FLAT_NO_MASK>, L<NOD4_SELF_FLAT_NO_MASK_APHOT>,
-L<NOD8_SELF_FLAT_NO_MASK_APHOT>.
 
 =head1 AUTHORS
 
