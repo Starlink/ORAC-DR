@@ -434,6 +434,9 @@ sub execute {
     # If this was a syntax error print out the recipe, string context!
     if ("$error" =~ /syntax error|object method/) {
 
+      # This is broken if the real primitive line numbers are provided
+      # rather than the line numbering of the entire recipe.
+
       # Extract info from the error message, string context!
       "$error" =~ /line (\d+)/ && do {
 	my $num = $1;
@@ -521,7 +524,9 @@ sub parse {
 
   # The master chunk is the base recipe reference.
   # The initial recursion depth is 1
-  my $parsed = $self->_parse_recursively( $self->_recipe, $PRIMITIVE_LIST );
+  my $parsed = $self->_parse_recursively( $self->_recipe, 
+					  $self->recipe_name,
+					  $PRIMITIVE_LIST );
 
   # Now need to store that array in the object overwriting the
   # unprocessed copy.
@@ -845,7 +850,7 @@ The depth parameter is an integer specifying the current recursion
 depth. When called externally, the depth should be set to 0 or C<undef>.
 It is inremented internally during recursion.
 
-   $processed_chunk = $rec->_parse_recursively( \@chunk,
+   $processed_chunk = $rec->_parse_recursively( \@chunk, $name,
                                                 \@PRIMTIIVE_LIST,
 					        [ $depth ]);
 
@@ -853,14 +858,25 @@ When called externally the array to be processed is usually the
 raw recipe. The return value is a reference to an array containing
 the processed recipe chunk.
 
-The second argument is a reference to an array which is used to
-contain the current primitive status as the recipe executes.
+The second argument is the name of the current primitive/recipe that
+is being parsed. This is used for providing line counts.  The third
+argument is a reference to an array which is used to contain the
+current primitive status as the recipe executes.
+
+Line numbering is added automatically so that warnings and errors should
+refer to the correct place in the actual primitive or recipe rather than
+line numbers in a translated recipe. In order to provide some idea of the
+position of the primitive within the recipe line numbers are incremented
+by 1000 for each level of recursion. ie if the error is stated to be
+at line 1164 this means that it is in line 164 of the primitive but that
+the primitive was called by another primitive.
 
 =cut
 
 sub _parse_recursively {
   my $self = shift;
   my $chunk = shift;
+  my $current_name = shift;
   my $PRIMITIVE_LIST = shift;
 
   croak '_parse_recursively: First argument must be an array reference!'
@@ -888,8 +904,17 @@ sub _parse_recursively {
   # indicates we are in a pod section so should not insert primitives
   my $inpod = 0;
 
+  # Store the current line number so we can reset it when returning
+  # from a primitive
+  my $lineno = 0;
+
+  # If depth is 1 it means that we should specify line number for
+  # the recipe itself
+  push(@parsed,"#line 0 $current_name\n") if $depth == 1;
+
   # Loop over recipe lines
   foreach my $line (@$chunk) {
+    $lineno++;
 
     # check to see if this is a pod directive
     # special case =cut
@@ -906,6 +931,9 @@ sub _parse_recursively {
       $line =~ s/\s*$//;        # Zap trailing blanks
       my ($primitive_name, $rest) = split(/\s+/,$line,2);
       $rest = '' unless defined $rest; # -w protection for next line
+
+      # Set the initial counter for this primitive
+      push(@parsed, "#line 0 $primitive_name"."_header\n");
 
       # Parse any arguments. Add a line that runs orac_parse_arguments
       # on $rest and sets a hash called %primitive_name
@@ -927,7 +955,8 @@ sub _parse_recursively {
       my $lines_ref = $self->_read_primitive( $primitive_name );
 
       # Now recurse to read parse the primitive for more primitives
-      $lines_ref = $self->_parse_recursively($lines_ref, $PRIMITIVE_LIST, 
+      $lines_ref = $self->_parse_recursively($lines_ref, $primitive_name,
+					     $PRIMITIVE_LIST,
 					     $depth);
 
       # Store lines - making sure we DO NOT create a separate scope
@@ -938,16 +967,48 @@ sub _parse_recursively {
 	 "ORAC::Event->update(\"Tk\");\n\n",
 	 "#line ",(($depth-1)*1000)  ," $primitive_name\n",
          @$lines_ref,
-         "\n}\n",
+	 "\n#line 0 $primitive_name"."_footer\n",
+	 "\n# Exit $primitive_name\n",
+         "}\n",
 	  );	
 
       # Turn warnings back on again if we disabled them earlier
       push(@parsed, "use warnings; # Turn back on\n") if $depth > 1;
 
+      # Reset the line count to the next line
+      # Problem is that we want both top level recipe count
+      # and first level primitive count to start counting
+      # from zero but all lower levels to increment from 1000
+      # 2000 etc. Also note that this depth is not the depth
+      # really implied by the above. We could deal with this
+      # simply by putting the above primitive code into 
+      # every parse rather than explicitly the first primitive
+      # This is because recipes are not the same as primitives
+      # in the current scheme.
+      my $thisdepth = ( $depth <= 2 ? 0 : $depth - 2);
+      my $thisline = ($thisdepth*1000) + $lineno+1;
+      push(@parsed, "#line $thisline $current_name\n");
 	
       # push top level primitivies into the primitive list
       if ( defined $PRIMITIVE_LIST && ref($PRIMITIVE_LIST) ) {
          push( @$PRIMITIVE_LIST, $primitive_name ); }
+
+    } elsif (! $inpod && $line =~ /ORAC_STATUS|obeyw/ ) {
+      # If we have something that looks like an obey or an ORAC_STATUS
+      # doesnt need to be a very good test since we are using it just
+      # to add some extra reinforcement of line counting
+
+      # Same kluge as above to figure out the line number when
+      # compensating for depth. Not sure this is worth the 
+      # effort
+      my $thisdepth = ( $depth <= 2 ? 0 : $depth - 2);
+      my $thisline = ($thisdepth*1000) + $lineno+1;
+
+      # Reset the line number after the obey or whatever
+      push(@parsed,
+	   $line,
+	   "#line $thisline $current_name\n",
+	  );
 
     } else {
       # Just push the line on as is
