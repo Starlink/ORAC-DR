@@ -90,9 +90,12 @@ BEGIN { # A kluge - for some reason kapview does not pick up the
     or croak "Could not make AGI temp directory: $!";
   $ENV{'AGI_USER'} = "/tmp/oracdragi";
   $ENV{'AGI_NODE'} = "orac_kapview$$";
+
+  push( @DIRS_TO_UNLINK, "/tmp/oracdragi");
+
 }
 
-push( @DIRS_TO_UNLINK, "/tmp/oracdragi");
+
 
 
 
@@ -409,7 +412,7 @@ sub orac_determine_initial_algorithm_engines {
   my @AlgEng;
   if ($inst eq 'SCUBA') {
 
-    @AlgEng = qw/ surf_mon ndfpack_mon /;
+    @AlgEng = qw/ surf_mon ndfpack_mon kappa_mon /;
 
   } elsif ($inst eq 'CGS4') {
 
