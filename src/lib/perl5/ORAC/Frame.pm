@@ -26,9 +26,10 @@ sub new {
 
   my $frame = {};  # Anon hash
 
+  $frame->{RawName} = undef;
   $frame->{Header} = undef;
   $frame->{Group} = undef;
-  $frame->{FileName} = undef;
+  $frame->{File} = undef;
   $frame->{Recipe} = undef;
 
   bless($frame, $class);
@@ -55,10 +56,23 @@ sub new {
 # Without args they only retrieve values
 
 
-sub filename {
+# Return/set the current file name of the object
+# Make sure that the extension is not present
+
+sub file {
   my $self = shift;
-  if (@_) { $self->{FileName} = shift;}
-  return $self->{FileName};
+  if (@_) { $self->{File} = $self->stripfname(shift); }
+  return $self->{File};
+}
+
+# Method to return/set the filename of the raw data
+# Initially this is the same as {File}
+# Make sure that no extension is present (eg .sdf)
+
+sub raw {
+  my $self = shift;
+  if (@_) { $self->{RawName} = $self->stripfname(shift); }
+  return $self->{RawName};
 }
 
 
@@ -120,7 +134,7 @@ sub readhdr {
   my $self = shift;
   
   # Just read the NDF fits header
-  my ($ref, $status) = fits_read_header($self->filename);
+  my ($ref, $status) = fits_read_header($self->file);
 
   # Return an empty hash if bad status
   $ref = {} if ($status != &NDF::SAI__OK);
@@ -151,7 +165,10 @@ sub configure {
   my $fname = shift;
 
   # Set the filename
-  $self->filename($fname);
+  $self->file($fname);
+
+  # Set the raw data file name
+  $self->raw($fname);
 
   # Populate the header
   $self->header($self->readhdr);
@@ -187,6 +204,48 @@ sub findrecipe {
   # entry in the header
 
   return $self->hdr('RECIPE');
+
+}
+
+
+# Supply a method to return the number associated with the observation
+
+sub number {
+
+  my $self = shift;
+
+  my ($number);
+
+  # Get the number from the raw data
+  # Assume there is a number at the end of the string
+  # (since the extension has already been removed)
+  # Leading zeroes are dropped
+
+  if ($self->raw =~ /(\d+)$/) {
+    # Drop leading 00
+    $number = $1 * 1;
+  } else {
+    # No match so set to -1
+    $number = -1;
+  }
+
+  return $number;
+
+}
+
+
+# Private method for removing file extensions from the filename strings
+
+sub stripfname {
+
+  my $self = shift;
+
+  my $name = shift;
+
+  # Strip everything after the first dot
+  $name =~ s/\..*//;
+  
+  return $name;
 
 }
 
