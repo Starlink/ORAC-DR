@@ -355,6 +355,28 @@ sub inout {
   return $outfile;                            # Scalar context
 }
 
+=item B<file_from_bits>
+
+Determine the raw data filename given the variable component
+parts. A prefix (usually UT) and observation number should
+be supplied.
+
+  $fname = $Frm->file_from_bits($prefix, $obsnum);
+
+=cut
+
+sub file_from_bits {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $obsnum = shift;
+
+  # pad with leading zeroes - 5(!) digit obsnum
+  my $padnum = '0'x(5-length($obsnum)) . $obsnum;
+
+  # UFTI naming
+  return $self->rawfixedpart . $prefix . '_' . $padnum . $self->rawsuffix;
+}
 
 
 =item B<findrecipe>
