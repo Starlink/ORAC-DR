@@ -716,6 +716,7 @@ sub calc_orac_headers {
                    NSCAN_POSITIONS
                    NUMBER_OF_EXPOSURES
                    NUMBER_OF_OFFSETS 
+                   NUMBER_OF_READS
                    OBJECT 
                    OBSERVATION_MODE
                    OBSERVATION_NUMBER
