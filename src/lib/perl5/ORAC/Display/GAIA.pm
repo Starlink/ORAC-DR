@@ -32,20 +32,23 @@ use ORAC::Print;
 use ORAC::Constants qw/:status/;
 
 use IO::Socket;  # For socket connection to Gaia
+use IO::Select;
 
 use Cwd qw/ cwd /;         # To get current working directory
 
 use vars qw/ $VERSION $DEBUG /;
 
-$VERSION = '0.10';
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 $DEBUG   = 0;
 
 
 =head1 PUBLIC METHODS
 
+=head2 Constructor
+
 =over 4
 
-=item new
+=item B<new>
 
 Object constructor. The constructor starts up a new version of
 GAIA (if one is not running) and connects via a socket.
@@ -63,7 +66,7 @@ sub new {
   # Create a new instance from the base class
   # Dont allow any arguments.
   # Probably should turn off -w here
-  my $disp = $class->SUPER::new(Sock => undef);
+  my $disp = $class->SUPER::new(Sock => undef, Sel => IO::Select->new);
 
   # Now try to launch Gaia
 
@@ -79,24 +82,71 @@ sub new {
 
 }
 
-=item sock 
+=back
+
+=head2 Accessor Methods
+
+=over 4
+
+=item B<sock>
 
 Returns or sets the socket to Gaia. Private to this class.
 
   $sock = $gaia->sock();
 
+This is usually IO::Socket object. This socket is automatically
+added to the IO::Select object returned by the C<sel> method.
+(and all previous sockets registered with the IO::Select object
+are removed).
+
 =cut
 
 sub sock {
   my $self = shift;
-  $self->{SOCK} = shift if @_;
-  return $self->{SOCK};
+  if (@_) {
+    # Read the socket
+    $self->{Sock} = shift;
+    # Clear all previous entries from the IO::Select object
+    $self->sel->remove( $self->sel->handles );
+
+    # Add this socket to the IO::Select object
+    $self->sel->add( $self->{Sock} );
+  }
+  return $self->{Sock};
 }
 
-=item create_dev(win)
+=item B<sel>
+
+Returns the IO::Select object associated associated with the
+current socket.
+
+  $select = $gaia->sel();
+
+This object is used to determine whether the GAIA process can be
+contacted through the established socket connection.
+
+=cut
+
+sub sel {
+  my $self = shift;
+  return $self->{Sel};
+}
+
+
+=back
+
+=head2 General Methods
+
+=over 4
+
+=item B<create_dev>
 
 Clone a new GAIA window and associate it with 'win'. This is different
 to launching a new display device (ie running up GAIA itself).
+
+  $status = $Display->create_dev($win);
+
+ORAC status is returned.
 
 =cut
 
@@ -112,17 +162,31 @@ sub create_dev {
   my $base = $self->dev('default');
 
   # Now clone the window and grab the result
-  my $clone = $self->send_to_gaia("$base clone {} $image");
+  my ($status, $clone) = $self->send_to_gaia("$base clone {} $image");
 
-  # Now store the clone window
-  $self->dev($win, $clone);
+  if ($status != ORAC__OK) {
+    # Error
+    orac_err "ORAC::Display::GAIA - Error launching clone window\n";
+    die "Error: $clone\n";
+    return ORAC__ERROR;
+  } else {
+    # Now store the clone window
+    $self->dev($win, $clone);    
+  }
 
+  # Wait for GAIA to configure itself
+  # need the delay to prevent us sending the next request before
+  # the gaia internals recognise the new clone
+  orac_warn "Sleeping.......\n";
+  sleep 5;
+
+  return ORAC__OK;
 }
 
 
 
 
-=item launch
+=item B<launch>
 
 Connect to a pre-existing Gaia process or launch a new Gaia process.
 
@@ -165,10 +229,12 @@ sub launch {
 }
 
 
-=item configure
+=item B<configure>
 
-Load the startup image into GAIA.
+Load the startup image into GAIA. Essentially used to test that
+GAIA can display images correctly.
 
+Returns ORAC status.
 
 =cut
 
@@ -181,19 +247,45 @@ sub configure {
   # Need to retrieve the name of the default window from
   # gaia itself using the get_image command.
 
-  my $gaia_objects = $self->send_to_gaia("get_skycat_images");
+  my ($status, $gaia_objects) = $self->send_to_gaia("get_skycat_images");
+
+  if ($status != ORAC__OK) {
+    orac_err "ORAC::Display::GAIA - Unable to retrieve skycat image list\n";
+    orac_err "Error: $gaia_objects\n";
+    return ORAC__ERROR;
+  }
 
   # Now we need to split this return string on spaces and 
   # get the first image name
   my $default = (split(/\s+/,$gaia_objects))[0];
 
   # Load the startup image
-  my $result = $self->send_to_gaia("$default configure -file $startup");
+  my $result;
+  ($status, $result) = $self->send_to_gaia("$default configure -file $startup");
+
+  if ($status != ORAC__OK) {
+    orac_err "ORAC::Display::GAIA - Unable to display startup image\n";
+    orac_err "Error: $result\n";
+    return ORAC__ERROR;
+  }
 
   # Get the id associated with the actual display widget
   # so that we can cut
-  my $dispwid = $self->send_to_gaia("$default get_image");
-  $self->send_to_gaia("$dispwid autocut -percent 100");
+  my $dispwid;
+  ($status, $dispwid) = $self->send_to_gaia("$default get_image");
+  if ($status != ORAC__OK) {
+    orac_err "ORAC::Display::GAIA - unable to get display widget\n";
+    orac_err "Error: $dispwid\n";
+    return ORAC__ERROR;
+  }
+
+  ($status, $result) = $self->send_to_gaia("$dispwid autocut -percent 100");
+  if ($status != ORAC__OK) {
+    orac_err "ORAC::Display::GAIA - unable to adjust autocut\n";
+    orac_err "Error: $result\n";
+    return ORAC__ERROR;
+  }
+
 
   # Expect $default to have the form .xxxn.image where 
   # .nnn is .rtdN for older gaias and .gaiaN for newer
@@ -201,27 +293,23 @@ sub configure {
   # Use split rather than substr since we cant guarantee the length
   $default = "." . (split(/\./,$default))[1];
 
-  # If the result contains something then this indicates an error
-  # So return ORAC__ERROR
-  if ($result) {
-    return ORAC__ERROR;
-  } else {
-    # Everything okay so store the name of the GAIA window
-    $self->dev('default', $default);
+  # Everything okay so store the name of the GAIA window
+  $self->dev('default', $default);
 
-    return ORAC__OK;
-  }
-
+  return ORAC__OK;
 
 }
 
 
-=item send_to_gaia
+=item B<send_to_gaia>
 
 Sends the supplied command to gaia. Any response from Gaia is returned.
 
-  $obj->send_to_gaia('command');
-  $obj->send_to_gaia(@commands);
+  ($status, $return_string) = $obj->send_to_gaia('command');
+  ($status, @return_strings) = $obj->send_to_gaia(@commands);
+
+The returned status is translated into an ORAC status (either ORAC__OK
+or ORAC__ERROR). On error, the return_string contains the error message.
 
 =cut
 
@@ -235,38 +323,61 @@ sub send_to_gaia {
   my @results;
   my $command = '';
   my $num_commands = @command;
-  print "length = $num_commands\n" if $DEBUG;
+  print "number of commands = $num_commands\n" if $DEBUG;
   my ($reply, $reply2, $result);
   my $message = '';
   foreach (@command) {
     $command .= "remotetcl \"$_\"\n";
   }
-  print "command: $command\n" if $DEBUG;
+  print "\n************ GAIA Command: $command\n" if $DEBUG;
   my $sock = $self->sock();
-  print "prepping to send...\n" if $DEBUG;
+
+  # Check socket
+  my $timeout = 30.0;
+  my $res = $self->sel->can_write($timeout);
+
+  # have a problem if returns undef from can_write
+  unless (defined $res) {
+    orac_err "Error - GAIA socket is not writable. Timeout!\n";
+    return (ORAC__ERROR, 'Socket not writable - timeout');
+  }
+
+  print "prepping to send..." if $DEBUG;
   print $sock $command;
   print "completed send...\n" if $DEBUG;
   $message = '';
+  my $status;
   for ( my $i = 0; $i < $num_commands; $i++ ) {
     $reply2 = '';
-    print "prepping to receive...\n" if $DEBUG;
+    print "prepping to receive..." if $DEBUG;
     my $a = '';
     $reply2 = '';
+
+    # Check that the socket is readable, up to timeout
+    my $res = $self->sel->can_read($timeout);
+
+    unless (defined $res) {
+      orac_err "send_to_gaia: Error - GAIA socket is not readable\n";
+      return (ORAC__ERROR, 'Socket not readable - timeout');
+    }
+
+    # Receive the first status string (should be a status and a list of bytes
+    # terminated with a \n
     while (!($reply2 =~ /[\n]/)) {
       recv ($sock, $reply2, 1, 0);
       $a.=$reply2;
     }
     $result = $a;
-    print "completed receive...\n" if $DEBUG;
+    print "completed receive of status and byte length...\n" if $DEBUG;
     print "i = $i.  results = $result\n" if $DEBUG;
-    my ($start, $byte) = split / /, $result,2;
+    ($status, my $byte) = split / /, $result,2;
     while ($byte > 4096) {
       print "bytes are huge!!\n" if $DEBUG;
       recv ($sock, $reply2, 4096, 0); 
       $byte -=4096;
       $message .= $reply2;
     }
-    print "prepping to receive\n" if $DEBUG;
+    print "prepping to receive actual data...\n" if $DEBUG;
     
     recv ($sock, $reply, $byte, 0);
     $message .= $reply;
@@ -274,8 +385,17 @@ sub send_to_gaia {
     print "results received: $message\n" if $DEBUG;
     $message = '';
   }
-  return ($results[0])  if ($num_commands < 2);
-  return (@results);
+  
+  # Translate status code
+  if ($status == 0) {
+    $status = ORAC__OK;
+  } else {
+    $status = ORAC__ERROR;
+  }
+
+  # Return the results
+  return ($status, $results[0])  if ($num_commands < 2);
+  return ($status, @results);
 }
 
 
@@ -285,7 +405,7 @@ sub send_to_gaia {
 
 =over 4
 
-=item image
+=item B<image>
 
 Routine to display images in Gaia. Note that the full file name is required.
 If an image name does not include an extension then '.sdf' is appended.
@@ -301,6 +421,8 @@ Display range can be adjusted with ZAUTOSCALE, ZMIN and ZMAX.
 
 Note that for GAIA, ZAUTOSCALE implies a 95 percent cut level and
 not 100 percent.
+
+ORAC status is returned.
 
 =cut
 
@@ -346,37 +468,97 @@ sub image {
   
   # We now need to retrieve the image id associated with this
   # clone from gaia
-  my $image = $self->send_to_gaia("$device get_image");
+  my ($status, $image) = $self->send_to_gaia("$device get_image");
+
+  if ($status != ORAC__OK) {
+    orac_err "ORAC::Display::GAIA - Error retrieving image id\n";
+    orac_err "Error: $image\n";
+    return ORAC__ERROR;
+  }
 
   # Just send to GAIA - configure the new file
-  $self->send_to_gaia("$image configure -file $file");
+  my $junk;
+  ($status, $junk) = $self->send_to_gaia("$image configure -file $file");
+
+  if ($status != ORAC__OK) {
+    orac_err "ORAC::Display::GAIA - Error displaying file $file\n";
+    orac_err "Error: $junk\n";
+    return ORAC__ERROR;
+  }
+
 
   # Other options go here for dealing with ZAUTOSCALE etc
   # To adjust cut levels we need to find the name of the display widget
   # rather than the Gaia window
 #  my $ctrlimg = $self->send_to_gaia("$image get_image");
-  my $dispwid = $self->send_to_gaia("$image get_image");
+  ($status, my $dispwid) = $self->send_to_gaia("$image get_image");
+
+  if ($status != ORAC__OK) {
+    orac_err "ORAC::Display::GAIA - Error retrieving sub-image\n";
+    orac_err "Error: $dispwid\n";
+    return ORAC__ERROR;
+  }
+
 
   # Now can modify cut levels
   if ($options{ZAUTOSCALE}) {
     # Set autocut to 95
-    $self->send_to_gaia("$dispwid autocut -percent 95");
+    ($status, $junk) = $self->send_to_gaia("$dispwid autocut -percent 95");
+
+  if ($status != ORAC__OK) {
+    orac_err "ORAC::Display::GAIA - Error auto cutting\n";
+    orac_err "Error: $junk\n";
+    return ORAC__ERROR;
+  }
+
+
   } else {
     # No autoscaling
     my $min = $options{ZMIN};
     my $max = $options{ZMAX};
     if (defined $min && defined $max) {
-      $self->send_to_gaia("$dispwid cut $min $max");
+      ($status, $junk) = $self->send_to_gaia("$dispwid cut $min $max");
+
+      if ($status != ORAC__OK) {
+	orac_err "ORAC::Display::GAIA - Error setting max/min\n";
+	orac_err "Error: $junk\n";
+	return ORAC__ERROR;
+      }
+
     }
   }
 
   # Ask the panel to reflect any changes
-  my $panel = $self->send_to_gaia("$image component info");
-  $self->send_to_gaia("$panel updateValues");
+  ($status, my $panel) = $self->send_to_gaia("$image component info");
+
+  if ($status != ORAC__OK) {
+    orac_err "ORAC::Display::GAIA - Error updating info panel\n";
+    orac_err "Error: $panel\n";
+    return ORAC__ERROR;
+  }
+
+  ($status, $junk) = $self->send_to_gaia("$panel updateValues");
+
+  if ($status != ORAC__OK) {
+    orac_err "ORAC::Display::GAIA - Error updating panel\n";
+    orac_err "Error: $junk\n";
+    return ORAC__ERROR;
+  }
+
+
+  return $status;
+
 }
 
 =back
 
+=head1 SEE ALSO
+
+L<ORAC::Display::Base>, L<ORAC::Display::KAPVIEW>, L<ORAC::Display>
+
+=head1 REVISION
+
+$Id$
 
 =head1 AUTHORS
 
