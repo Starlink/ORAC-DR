@@ -112,7 +112,6 @@ if ($Frm->hdr('MODE') eq "PHOTOM") {
 	$bolometer =~ s/_peak$//i;
 	$bolometer = sprintf "%3s", $bolometer;
 	
-	$ORAC_STATUS;
 	($ORAC_STATUS, my $sigma) = $Mon{kappa_mon}->get("stats","sigma");
 	($ORAC_STATUS, my $ngood) = $Mon{kappa_mon}->get("stats","numgood");
 
@@ -190,7 +189,7 @@ if ($Frm->hdr('MODE') eq "PHOTOM") {
             my $src    = substr((sprintf "%-12s", uc($Frm->hdr('OBJECT'))),0,12);
 
 	    # MODE
-	    my $mode = &construct_mode;
+	    my $mode = &nefd_construct_mode($Frm);
 	    $mode = sprintf "%-7s", $mode;
 
 	    # Number of Integrations
@@ -207,7 +206,7 @@ if ($Frm->hdr('MODE') eq "PHOTOM") {
 	    my $chop_pa_azel;
 	    my $chop_pa_azel_err;
 	    if ($sla_avail == 1) {
-	        ($chop_pa_azel, $chop_pa_azel_err) = &calc_chop_pa_azel;
+	        ($chop_pa_azel, $chop_pa_azel_err) = &nefd_calc_chop_pa_azel($Frm);
 	    }
 	    $chop_pa_azel = sprintf '%4.0f', $chop_pa_azel;
 	    $chop_pa_azel_err = sprintf '%3.0f', $chop_pa_azel_err;
@@ -297,12 +296,13 @@ if ($Frm->hdr('MODE') eq "PHOTOM") {
 # Given information in the fits header, construct a sensible name for
 # the observing mode.
 
-sub construct_mode {
-
-my $mode = $Frm->hdr('MODE');
-my $sam_mode = $Frm->hdr('SAM_MODE');
-my $jigl_cnt = $Frm->hdr('JIGL_CNT');
-my $sam_dx = $Frm->hdr('SAM_DX');
+no warnings 'redefine';
+sub nefd_construct_mode {
+ my $frm = shift;
+my $mode = $frm->hdr('MODE');
+my $sam_mode = $frm->hdr('SAM_MODE');
+my $jigl_cnt = $frm->hdr('JIGL_CNT');
+my $sam_dx = $frm->hdr('SAM_DX');
 
 if ($mode =~ /map/i && $sam_mode =~ /jiggle/i) {
   $mode = 'JIGMAP_'.$jigl_cnt;
@@ -327,29 +327,30 @@ return $mode;
 # observation proceeds.  The average position angle and associated
 # error are hence calculated in this case.
 
-sub calc_chop_pa_azel {
+sub nefd_calc_chop_pa_azel {
+  my $frm = shift;
  
-    my $chop_crd = $Frm->hdr('CHOP_CRD'); 
+    my $chop_crd = $frm->hdr('CHOP_CRD'); 
 
     my ($chop_pa_azel, $chop_pa_azel_err);
     if ($chop_crd =~ /az/i) {
 
-        $chop_pa_azel = $Frm->hdr('CHOP_PA');
+        $chop_pa_azel = $frm->hdr('CHOP_PA');
         $chop_pa_azel_err = 0;
 
     } elsif ($chop_crd =~ /lo/i) {
 
         # Calculate apparent ra and dec in radians
 	# Subroutine arguments are fits header and ut clock error (assume = 0)
-        my ($ra_app, $dec_app) = calc_apparent( scalar($Frm->hdr), '0' );
+        my ($ra_app, $dec_app) = calc_apparent( scalar($frm->hdr), '0' );
 
         # latitude of observatory in radians
-	my $lat_obs = deg2rad($Frm->hdr('LAT-OBS'));
+	my $lat_obs = deg2rad($frm->hdr('LAT-OBS'));
 
         # Read LST from header and convert string to radians
         # Second argument in subroutine call sets format hh:mm:ss
-        my $lst_start = string2rad($Frm->hdr('STSTART'),1);
-        my $lst_end = string2rad($Frm->hdr('STEND'),1);
+        my $lst_start = string2rad($frm->hdr('STSTART'),1);
+        my $lst_end = string2rad($frm->hdr('STEND'),1);
 
         # Calculate hour angle in radians
         my $ha_start = $lst_start - $ra_app;
@@ -364,12 +365,18 @@ sub calc_chop_pa_azel {
         my $para_end_deg = rad2deg($para_end);
 
         # Read in chop pa in local coordinates, convert to az-el, units = deg
-        my $chop_pa_azel_start = $para_start_deg - $Frm->hdr('CHOP_PA');
-        my $chop_pa_azel_end = $para_end_deg - $Frm->hdr('CHOP_PA');
+        my $chop_pa_azel_start = $para_start_deg - $frm->hdr('CHOP_PA');
+        my $chop_pa_azel_end = $para_end_deg - $frm->hdr('CHOP_PA');
 
         # Average chop pa and error
         $chop_pa_azel = ($chop_pa_azel_start + $chop_pa_azel_end) / 2.0;
         $chop_pa_azel_err = abs($chop_pa_azel - $chop_pa_azel_start);
+
+    } else {
+
+        # We dont know - probably NA chop
+        $chop_pa_azel = 0;
+        $chop_pa_azel_err = 360;
 
     }
 
