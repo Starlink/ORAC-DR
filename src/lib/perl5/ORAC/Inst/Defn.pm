@@ -54,6 +54,7 @@ $DEBUG = 0;
   orac_determine_initial_algorithm_engines
   orac_determine_recipe_search_path
   orac_determine_primitive_search_path
+  orac_determine_calibration_search_path
   orac_engine_description
   orac_messys_description
   orac_configure_for_instrument
@@ -770,6 +771,109 @@ sub orac_determine_primitive_search_path {
   return @path;
 }
 
+=item B<orac_determine_calibration_search_path>
+
+Returns a list of directories that should be searched in order
+to locate calibration files for the specified instrument.
+
+  @paths = orac_determine_calibration_search_path( $instrument );
+
+Root location is specified by the C<ORAC_CAL_ROOT> environment
+variable.
+
+=cut
+
+sub orac_determine_calibration_search_path {
+  my $inst = uc( shift );
+  my @path;
+
+  my $root;
+  if( exists $ENV{'ORAC_CAL_ROOT'} ) {
+    $root = $ENV{'ORAC_CAL_ROOT'};
+  } else {
+    croak "Unable to determine ORAC_CAL_ROOT location";
+  }
+
+  my $general_ir_root = File::Spec->catdir( $root, "general-IR" );
+  my $general_submm_root = File::Spec->catdir( $root, "general-submm" );
+  my $general_root = File::Spec->catdir( $root, "general" );
+
+  if( $inst eq 'SCUBA' ) {
+    push( @path, File::Spec->catdir( $root, 'scuba' ) );
+    push( @path, $general_submm_root );
+
+  } elsif( $inst eq 'JCMT_DAS' ) {
+    push( @path, File::Spec->catdir( $root, 'jcmt_das' ) );
+    push( @path, $general_submm_root );
+
+  } elsif( $inst eq 'CGS4' or $inst eq 'OCGS4' ) {
+    push( @path, File::Spec->catdir( $root, 'cgs4' ) );
+    push( @path, $general_ir_root );
+
+  } elsif( $inst eq 'IRCAM' or $inst eq 'IRCAM2' ) {
+    push( @path, File::Spec->catdir( $root, 'ircam' ) );
+    push( @path, $general_ir_root );
+
+  } elsif( $inst eq 'UFTI' or $inst eq 'UFTI2' ) {
+    push( @path, File::Spec->catdir( $root, 'ufti' ) );
+    push( @path, $general_ir_root );
+
+  } elsif( $inst eq 'UFTI_CASU' ) {
+    push( @path, File::Spec->catdir( $root, 'ufti_casu' ) );
+    push( @path, $general_ir_root );
+
+  } elsif( $inst =~ /^WFCAM/ or $inst =~ /^SWFCAM/ ) {
+    push( @path, File::Spec->catdir( $root, 'wfcam' ) );
+    push( @path, $general_ir_root );
+
+  } elsif( $inst eq 'MICHELLE' or $inst eq 'MICHTEMP' ) {
+    push( @path, File::Spec->catdir( $root, 'michelle' ) );
+    push( @path, $general_ir_root );
+
+  } elsif( $inst eq 'UIST' ) {
+    push( @path, File::Spec->catdir( $root, 'uist' ) );
+    push( @path, $general_ir_root );
+
+  } elsif( $inst eq 'IRIS2' ) {
+    push( @path, File::Spec->catdir( $root, 'iris2' ) );
+    push( @path, $general_ir_root );
+
+  } elsif( $inst eq 'INGRID' ) {
+    push( @path, File::Spec->catdir( $root, 'ingrid' ) );
+    push( @path, $general_ir_root );
+
+  } elsif( $inst eq 'ISAAC' ) {
+    push( @path, File::Spec->catdir( $root, 'isaac' ) );
+    push( @path, $general_ir_root );
+
+  } elsif( $inst eq 'NACO' ) {
+    push( @path, File::Spec->catdir( $root, 'naco' ) );
+    push( @path, $general_ir_root );
+
+  } elsif( $inst eq 'SOFI' ) {
+    push( @path, File::Spec->catdir( $root, 'sofi' ) );
+    push( @path, $general_ir_root );
+
+  } elsif( $inst eq 'GMOS' ) {
+    push( @path, File::Spec->catdir( $root, 'gmos' ) );
+    push( @path, $general_ir_root );
+
+  } elsif( $inst eq 'NIRI' or $inst eq 'NIRI2' ) {
+    push( @path, File::Spec->catdir( $root, 'niri' ) );
+    push( @path, $general_ir_root );
+
+  } elsif( $inst eq 'CLASSICCAM' ) {
+    push( @path, File::Spec->catdir( $root, 'classiccam' ) );
+    push( @path, $general_ir_root );
+
+  } else {
+
+    croak "Calibration directories: Unrecognised instrument: $inst\n";
+  }
+
+  return @path;
+
+}
 
 =item B<orac_determine_initial_algorithm_engines>
 
@@ -1007,13 +1111,6 @@ sub orac_configure_for_instrument {
       $orac_cal_root = "/ukirt_sw/oracdr_cal"
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"cgs4");
-        
-      # Recipe and Primitive
-      #undef $ENV{"ORAC_RECIPE_DIR"}
-      #       if defined $ENV{"ORAC_RECIPE_DIR"};
-      #undef $ENV{"ORAC_PRIMITIVE_DIR"}
-      #       if defined $ENV{"ORAC_PRIMITIVE_DIR"};
-
 
       # data directories
       $orac_data_root = "/ukirtdata"
@@ -1045,12 +1142,6 @@ sub orac_configure_for_instrument {
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"uist");
 
-      # Recipe and Primitive
-      #undef $ENV{"ORAC_RECIPE_DIR"}
-      #       if defined $ENV{"ORAC_RECIPE_DIR"};
-      #undef $ENV{"ORAC_PRIMITIVE_DIR"}
-      #       if defined $ENV{"ORAC_PRIMITIVE_DIR"};
-
       # data directories
       $orac_data_root = "/ukirtdata"
         unless defined $orac_data_root;
@@ -1079,12 +1170,6 @@ sub orac_configure_for_instrument {
       $orac_cal_root = "/ukirt_sw/oracdr_cal"
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"michelle");
-
-      # Recipe and Primitive
-      #undef $ENV{"ORAC_RECIPE_DIR"}
-      #       if defined $ENV{"ORAC_RECIPE_DIR"};
-      #undef $ENV{"ORAC_PRIMITIVE_DIR"}
-      #       if defined $ENV{"ORAC_PRIMITIVE_DIR"};
 
       # data directories
       $orac_data_root = "/ukirtdata"
@@ -1115,12 +1200,6 @@ sub orac_configure_for_instrument {
       $orac_cal_root = "/ukirt_sw/oracdr_cal"
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"ircam");
-        
-      # Recipe and Primitive
-      #undef $ENV{"ORAC_RECIPE_DIR"}
-      #        if defined $ENV{"ORAC_RECIPE_DIR"};
-      #undef $ENV{"ORAC_PRIMITIVE_DIR"}
-      #        if defined $ENV{"ORAC_PRIMITIVE_DIR"};
 
       # data directories
       $orac_data_root = "/ukirtdata"
@@ -1152,12 +1231,6 @@ sub orac_configure_for_instrument {
       $orac_cal_root = "/ukirt_sw/oracdr_cal"
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"ircam");
-        
-      # Recipe and Primitive
-      #undef $ENV{"ORAC_RECIPE_DIR"}
-      #        if defined $ENV{"ORAC_RECIPE_DIR"};
-      #undef $ENV{"ORAC_PRIMITIVE_DIR"}
-      #        if defined $ENV{"ORAC_PRIMITIVE_DIR"};
 
       # data directories
       $orac_data_root = "/ukirtdata"
@@ -1198,12 +1271,6 @@ sub orac_configure_for_instrument {
       } else {
         $location = 'elsewhere';
       }
-        
-      # Recipe and Primitives
-      #undef $ENV{"ORAC_RECIPE_DIR"}
-      #       if defined $ENV{"ORAC_RECIPE_DIR"};
-      #undef $ENV{"ORAC_PRIMITIVE_DIR"}
-      #       if defined $ENV{"ORAC_PRIMITIVE_DIR"};
 
       # ORAC_DATA_ROOT depends on our location. There are 3
       # possibilities. We are in Hilo, we are at the JCMT or we
@@ -1303,7 +1370,7 @@ sub orac_configure_for_instrument {
       # Calibration information
       $orac_cal_root = File::Spec->("jcmt_sw", "oracdr_cal")
         unless defined $orac_cal_root;
-      $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir( $orac_cal_root, "jcmt_das" );
+      $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root, "jcmt_das");
 
       # Data directories.
       $orac_data_root = "/jcmtdata"
@@ -1333,12 +1400,6 @@ sub orac_configure_for_instrument {
       $orac_cal_root = File::Spec->catdir("ukirt_sw","oracdr_cal")
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"ufti");
-        
-      # Recipe and Primitive
-      #undef $ENV{"ORAC_RECIPE_DIR"}
-      #        if defined $ENV{"ORAC_RECIPE_DIR"};
-      #undef $ENV{"ORAC_PRIMITIVE_DIR"}
-      #        if defined $ENV{"ORAC_PRIMITIVE_DIR"};
 
       # data directories
       $orac_data_root = "/ukirtdata"
@@ -1370,12 +1431,6 @@ sub orac_configure_for_instrument {
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"ufti");
 
-      # Recipe and Primitive
-      #undef $ENV{"ORAC_RECIPE_DIR"}
-      #        if defined $ENV{"ORAC_RECIPE_DIR"};
-      #undef $ENV{"ORAC_PRIMITIVE_DIR"}
-      #        if defined $ENV{"ORAC_PRIMITIVE_DIR"};
-
       # data directories
       $orac_data_root = "/ukirtdata"
         unless defined $orac_data_root;
@@ -1406,12 +1461,6 @@ sub orac_configure_for_instrument {
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"ufti_casu");
 
-      # Recipie and Primitive
-      #undef $ENV{"ORAC_RECIPE_DIR"}
-      #        if defined $ENV{"ORAC_RECIPE_DIR"};
-      #undef $ENV{"ORAC_PRIMITIVE_DIR"}
-      #        if defined $ENV{"ORAC_PRIMITIVE_DIR"};
-
       # data directories
       $orac_data_root = "/ukirtdata"
         unless defined $orac_data_root;
@@ -1441,12 +1490,6 @@ sub orac_configure_for_instrument {
       $orac_cal_root = File::Spec->catdir("ukirt_sw","oracdr_cal")
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"wfcam");
-        
-      # Recipie and Primitive
-      #undef $ENV{"ORAC_RECIPE_DIR"}
-      #        if defined $ENV{"ORAC_RECIPE_DIR"};
-      #undef $ENV{"ORAC_PRIMITIVE_DIR"}
-      #        if defined $ENV{"ORAC_PRIMITIVE_DIR"};
 
       # data directories
       $orac_data_root = "/ukirtdata"
@@ -1511,12 +1554,6 @@ sub orac_configure_for_instrument {
       $orac_cal_root = "/ukirt_sw/oracdr_cal"
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"ingrid");
-        
-      # Recipe and Primitive
-      #undef $ENV{"ORAC_RECIPE_DIR"}
-      #        if defined $ENV{"ORAC_RECIPE_DIR"};
-      #undef $ENV{"ORAC_PRIMITIVE_DIR"}
-      #        if defined $ENV{"ORAC_PRIMITIVE_DIR"};
 
       # data directories
       $orac_data_root = "/ukirtdata"
@@ -1580,7 +1617,7 @@ sub orac_configure_for_instrument {
       $orac_cal_root = "/ukirt_sw/oracdr_cal"
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"isaac");
-        
+
       # data directories
       $orac_data_root = "/ukirtdata"
         unless defined $orac_data_root;
@@ -1607,7 +1644,7 @@ sub orac_configure_for_instrument {
       $orac_cal_root = "/ukirt_sw/oracdr_cal"
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"naco");
-        
+
       # data directories
       $orac_data_root = "/ukirtdata"
         unless defined $orac_data_root;
@@ -1634,7 +1671,7 @@ sub orac_configure_for_instrument {
       $orac_cal_root = "/ukirt_sw/oracdr_cal"
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"sofi");
-        
+
       # data directories
       $orac_data_root = "/ukirtdata"
         unless defined $orac_data_root;
@@ -1661,12 +1698,6 @@ sub orac_configure_for_instrument {
       $orac_cal_root = "/ukirt_sw/oracdr_cal"
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"michelle");
-        
-      # Recipe and Primitive
-      #undef $ENV{"ORAC_RECIPE_DIR"}
-      #       if defined $ENV{"ORAC_RECIPE_DIR"};
-      #undef $ENV{"ORAC_PRIMITIVE_DIR"}
-      #       if defined $ENV{"ORAC_PRIMITIVE_DIR"};
 
       # data directories
       $orac_data_root = "/ukirtdata"
@@ -1697,12 +1728,6 @@ sub orac_configure_for_instrument {
       $orac_cal_root = "/ukirt_sw/oracdr_cal"
       unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"niri");
-
-      # Recipe and Primitive
-      #undef $ENV{"ORAC_RECIPE_DIR"}
-      #       if defined $ENV{"ORAC_RECIPE_DIR"};
-      #undef $ENV{"ORAC_PRIMITIVE_DIR"}
-      #       if defined $ENV{"ORAC_PRIMITIVE_DIR"};
 
       # data directories
       $orac_data_root = "/ukirtdata"
@@ -2048,12 +2073,12 @@ $Id$
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
 Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>,
 Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>,
-Paul Hirst E<lt>p.hirst@jach.hawaii.eduE<gt>
+Paul Hirst E<lt>p.hirst@jach.hawaii.eduE<gt>,
 Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
