@@ -6,7 +6,7 @@ ORAC::Frame::JCMT - JCMT class for dealing with observation files in ORACDR
 
 =head1 SYNOPSIS
 
-  use ORAC::Frame::UKIRT;
+  use ORAC::Frame::JCMT;
 
   $Frm = new ORAC::Frame::JCMT("filename");
   $Frm->file("file")
