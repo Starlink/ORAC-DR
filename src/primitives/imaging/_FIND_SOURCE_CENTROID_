@@ -23,7 +23,7 @@
 #
 # Arguments:
 #    ANGLE = REAL (Given)
-#       Rotation angle of the Declination axis with respect to the
+#       Rotation angle of the declination axis with respect to the
 #       frame's y axis measured counter clockwise.
 #    BOXSIZE = REAL (Given)
 #       The size in arcseconds of the search box in which to find the
@@ -32,9 +32,9 @@
 #    CENTRE( 2 ) = REAL (Returned)
 #       The centroid pixel co-ordinates.
 #    DECOFF = REAL (Given)
-#       The approximate Declination offset of the centroid of the point
+#       The approximate declination offset of the centroid of the point
 #       source to be measured with respect to the nominal position.  The
-#       nominal position is the Declination centre of the array plus
+#       nominal position is the declination centre of the array plus
 #       the Declination telescope offset.  [0.0]
 #    FOUND = LOGICAL (Returned)
 #       If true, a centroid was found.
@@ -44,8 +44,8 @@
 #       If 1 (true), the point source is positive, i.e. has values above
 #       the sky level.  If 0 (false), the point source is negative. [1]
 #    RAOFF = REAL (Given)
-#       The approximate R.A. offset of the centroid of the point
-#       source to be measured with respect to the nominal position.
+#       The approximate right-ascension offset of the centroid of the
+#       point source to be measured with respect to the nominal position.
 #       The nominal position is the R.A. centre of the array plus the
 #       R.A. telescope offset.  [0.0]
 #    SMOOTH = LOGICAL (Given)
@@ -56,6 +56,9 @@
 # Notes:
 #    -  This primitive is suitable for infra-red imaging instruments.
 #    -  Processing only occurs for object frames.
+#    -  The reference pixel is derived from the frame centre and
+#    displacements obtained from the referenceoffset calibration
+#    (defaulting to null offsets).
 #    -  Error messages are issued if the centroid position contains a
 #    bad value or the returned status is not OK. 
 #    -  Header ORAC_ROTATION---the angle of the chip's y axis with
@@ -112,10 +115,21 @@
 # Find pixel limits of the search box.
 # ====================================
 
-# Obtain frame pixel bounds.
+# Obtain frame central pixel.
        _GET_FRAME_CENTRE_
        my $xmid = $_GET_FRAME_CENTRE_{XCENTRE};
        my $ymid = $_GET_FRAME_CENTRE_{YCENTRE};
+
+# Obtain the referenceoffset from the calibration system using null
+# offsets if it cannot extract the x and y displacements successfully.
+# There must be two offset co-ordinates.
+       my @disp = ( 0, 0 );
+       my $offset = eval { $Cal->referenceoffset };
+       if ( !$@ ) {
+          if ( $#$offset == 1 ) {
+             @disp = @$offset;
+          }
+       }
 
 # Define some useful variables to apply the rotation matrix.
        my $pi = atan2( 1, 1 ) * 4;
@@ -129,7 +143,7 @@
        my $dec_pixelscale = $_GET_PLATE_SCALE_{DECSCALE};
        my $platescale = $_GET_PLATE_SCALE_{PLATESCALE};
 
-# Obtain the approximate (telescope) offsets.
+# Obtain the approximate offsets with respect to the reference pixel.
        my $ra_off_as = $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" ) + $rraoff;
        my $dec_off_as = $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" ) + $rdecoff;
 
@@ -142,11 +156,11 @@
        my $yoff = $ra_off_p * $sinrot + $dec_off_p * $cosrot;
 
 # Derive the centre co-ordinates of the box.
-       my $xcentre = int( $xmid + $xoff );
-       my $ycentre = int( $ymid + $yoff );
+       my $xcentre = int( $xmid + $disp[ 0 ] + $xoff );
+       my $ycentre = int( $ymid + $disp[ 1 ] + $yoff );
 
 # Tell the user where we're looking.
-       orac_print "Looking at ( $xcentre, $ycentre ) for an object.\n";
+       orac_print "Looking at ($xcentre, $ycentre) for an object.\n";
 
 # Store the initial centre position for use by calling script.
        my @init = ( $xcentre, $ycentre );
@@ -332,7 +346,7 @@ hot pixels before locating the extreme-value pixel.
 
 =item ANGLE = REAL (Given)
 
-Rotation angle of the Declination axis with respect to the
+Rotation angle of the declination axis with respect to the
 frame's y axis measured counter clockwise.
 
 =item BOXSIZE = REAL (Given)
@@ -347,9 +361,9 @@ The centroid pixel co-ordinates.
 
 =item DECOFF = REAL (Given)
 
-The approximate Declination offset of the centroid of the point source
-to be measured with respect to the nominal position. The nominal
-position is the Declination centre of the array plus the Declination
+The approximate declination offset of the centroid of the point source
+to be measured with respect to the nominal position.  The nominal
+position is the Declination centre of the array plus the declination
 telescope offset.  [0.0]
 
 =item FOUND = LOGICAL (Returned)
@@ -367,7 +381,7 @@ the sky level.  If 0 (false), the point source is negative. [1]
 
 =item RAOFF = REAL (Given)
 
-The approximate R.A. offset of the centroid of the point
+The approximate right-ascension offset of the centroid of the point
 source to be measured with respect to the nominal position.
 The nominal position is the R.A. centre of the array plus the
 R.A. telescope offset.  [0.0]
@@ -391,6 +405,12 @@ This primitive is suitable for infra-red imaging instruments.
 =item *
 
 Processing only occurs for object frames.
+
+=item *
+
+The reference pixel is derived from the frame centre and displacements
+obtained from the referenceoffset calibration (defaulting to null
+offsets).
 
 =item *
 
