@@ -1,34 +1,140 @@
 =head1 NAME
 
-REBIN_FRAME
+_REBIN_FRAME_ - rebin an individual frame
+
+=head1 SYNOPSIS
+
+ _REBIN_FRAME_  PIXEL_SIZE=4
 
 =head1 DESCRIPTION
 
 Rebin an individual frame.
 
-=head1 TASKS
+=head1 ARGUMENTS
 
-SURF: REBIN
-NDFPACK: SETTITLE
+The following arguments are supported:
 
-=head1 INPUT ARGUMENTS
+=over 4
 
-REBIN_METHOD - Method to use for regrid. Allowed options are
-               BESSEL, LINEAR, GAUSSIAN, SPLINE1, SPLINE2, MEDIAN
+=item REBIN_METHOD
 
-PIXEL_SIZE   - Pixel size in arcseconds
-COORDS - Output coords. Default is PL for planets, else RJ
+Method to use for regrid. Allowed options are
+BESSEL, LINEAR, GAUSSIAN, SPLINE1, SPLINE2, MEDIAN.
+See the SURF manual (SUN/216) for more information.
+
+=item PIXEL_SIZE
+
+Pixel size in arcseconds.
+
+=item COORDS
+
+Output coords. Default is PL for planets, else RJ.
+There is currently no way to specify alternative coordinate
+frame specifically for non-planets.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following tasks are used:
+
+=over 4
+
+=item SURF
+
+C<REBIN>
+
+=item NDFPACK
+
+C<SETTITLE>
+
+=back
+
+=head1 OUTPUT DATA
+
+On completion the following data is stored in the frame object user header
+
+=over 4
+
+=item SCUPIXSZ
+
+The pixel size used for the rebinning.
+
+=back
+
+=head1 OUTPUT FILES
+
+On completion the following files are created:
+
+=over I<root>_reb
+
+Rebinned images have a C<_reb> suffix.
+The frame object is updated. The pre-rebin filenames
+must be retrieved from the frame using the C<PRE_REBIN>
+tag.
+
+=head1 TAGS
+
+Since the output files can not be used by the group processing the
+input file names are tagged with the string 'PRE_REBIN'.
+
+=head1 NOTES
+
+Works on frame objects.
+
+A request is made to display the rebinned image.
+
+=head1 AUTHOR
+
+Tim Jenness
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
 
 =cut
 
-# Will need to create a dummy frame object for
-# the display tool since we dont want the reduced images to be used
-# as input to the Group
-# The easiest thing is to copy the object and pass that to Display
-# rather than changing $Frm and then changing it back again with template.
+# This is a watershed primitive. After this primitive the frames
+# will be regridded images rather than a time series.
+# The GROUP handling requires a time series so we must be careful
+# to make sure that the Group primitives can correctly identify the
+# input file. We can do this in two ways:
+#
+# 1. Do not update the frame object when this primitive completes.
+#    This has the advantege that the group primitives will easily
+#    pick up the correct file but the disadvantage that this primitive
+#    can not be followed by any image analysis primitives.
+#    This is not good enough.
+# 2. Update the frame object but store the intermediate file name in
+#    another place so that the filename can be requested from the
+#    object by the group primitive. Has the disadvantage that the
+#    group primitive no longer queries the object for its frames in
+#    the standard way.
+# 3. Do not update the filename in the frame, store it somewhere else
+#    and use that special way to get the filename for image processing
+#    primitives.
+#
+# Go with option (2) using the tagset() method.
 
-my $localfrm = new $Frm;
+
+# Get the sub-instruments
 my @subs = $Frm->subs;
+
+# Now construct arguments for rebin
+# Read input arguments
+my $method = ($_REBIN_FRAME_{REBIN_METHOD} || "gaussian");
+my $pixsize = ($_REBIN_FRAME_{PIXEL_SIZE} || "3.0");
+
+# Make sure that we are using PRE_REBIN frames
+# Will do nothing if the tag has not been set
+# This deals with the case where some other primitive
+# has rebinned.
+$Frm->tagretrieve( 'PRE_REBIN' );
+
+# Tag the current filenames so that the state before the
+# rebin can be retained
+$Frm->tagset( 'PRE_REBIN' );
 
 # Loop over sub instruments that are found in the current frame
 for my $i (1..$Frm->nfiles) {
@@ -39,11 +145,6 @@ for my $i (1..$Frm->nfiles) {
   my ($in, $out) = $Frm->inout("_reb", $i);
 
   # Only have one file so dont need to worry about a text input file
-
-  # Now construct arguments for rebin
-  # Read input arguments
-  my $method = ($_REBIN_FRAME_{REBIN_METHOD} || "gaussian");
-  my $pixsize = ($_REBIN_FRAME_{PIXEL_SIZE} || "3.0");
 
   # Output coords
   # Should use PL for planets
@@ -61,7 +162,7 @@ for my $i (1..$Frm->nfiles) {
     } else {
       $coords = 'RJ';
     }
-  }  
+  }
 
   my $args = "REBIN_METHOD=$method PIXSIZE_OUT=$pixsize OUT_COORDS=$coords noloop";
 
@@ -73,26 +174,20 @@ for my $i (1..$Frm->nfiles) {
   # remembered. Also the size parameters need to be reset.
   my $ORAC_STATUS = $Mon{surf_mon}->resetpars;
   $Mon{surf_mon}->obeyw("rebin","ref=$in out=$out $args accept reset");
-   
+
   # Update the title
-  my $title = '(FRM #'.$Frm->number.') ' .$Frm->hdr('OBJECT') . ": $sub"; 
+  my $title = '(FRM #'.$Frm->number.') ' .$Frm->hdr('OBJECT') . ": $sub";
   $Mon{ndfpack_mon}->obeyw("settitle","ndf=$out title='$title'");
 
-  # Now add the new output name to the dummy Frame object
-  $localfrm->file($i, $out);
+  # Now update the filename
+  $Frm->file($i, $out);
 
 }
 
+# Store the pixel size in the header
+# This is so that we can determine the Jy/arcsec2 calibration
+$Frm->uhdr("SCUPIXSZ", $pixsize);
+
 # Display
-$Display->display_data($localfrm) if defined $Display;
-
-# And tidy up localfrm
-undef $localfrm;
-
-
-# COPYRIGHT
-#
-#   Copyright (C) 1998-2000 Particle Physics and Astronomy Research
-#   Council. All Rights Reserved.
-
+$Display->display_data($Frm) if defined $Display;
 
