@@ -1037,8 +1037,8 @@ sub orac_execute_recipe {
   # The recipes expect %Mon and not \%Mon (which is what we have)
   # If it is not tied we can proceed as before.
   my %Mon;
-  if (tied %Mon) {
-    my $obj = tied %Mon;
+  if (tied %$Mon) {
+    my $obj = tied %$Mon;
     tie %Mon, ref($obj), $obj; # re-tie
   } else {
     %Mon = %$Mon;
