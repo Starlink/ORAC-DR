@@ -1,0 +1,210 @@
+#+
+# Name:
+#    _COADD_TO_PAIR_
+#
+# Purpose:
+#    Averages the current source and off-source frames to form a single
+#    pair of frames.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive averages the source and offset frames in an
+#    AA...BB... or BB...AA... sequence, creating two frames.  For a
+#    simple ABBA type pattern, no averaging occurs.  Both steps are
+#    reported, and the combined images displayed.
+#
+# Notes:
+#    -  Processing only occurs when the current frame's user header
+#    PAIR_COMPLETE is true, and either the NUMBER_ON or NUMBER_OFF
+#    user headers exceed 1.
+#    -  The number of contributing frames comes from user headers
+#    NUMBER_ON and NUMBER_OFF in the current Frame.  A maximum of
+#    26 is permitted.
+#    -  The sense of current frame, source or offset, comes from
+#    the current frame's user header ON_SOURCE.
+#
+# Output Data:
+#    -  Average on-source frame inheriting the first source frame's
+#    name but with the _sca suffix.
+#    -  Average off-source frame inheriting the first source frame's
+#    name but with the _oca suffix.
+#
+# Tasks:
+#    KAPPA: MATHS.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (Starlink)
+#
+# Copyright:
+#    Copyright (C) 2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Find the number on the source and off source.  These are expected to
+# be the same.  For covenience we refer to the off-source or offset
+# frames as "sky".
+    my $number_source = min( 26, $Frm->uhdr( "NUMBER_ON" ) );
+    my $number_sky = min( 26, $Frm->uhdr( "NUMBER_OFF" ) );
+
+# This should only be performed when complete AAA...BBB... or
+# BBB...AAA... sets are made, and there is more than one sky or offset
+# frame.
+    if ( $Frm->uhdr( "PAIR_COMPLETE" ) &&
+         ( $number_source > 1 || $number_sky > 1 ) ) {
+
+# Definitions for image parameters.
+       my %hash = ( 1=>"IA", 2=>"IB", 3=>"IC", 4=>"ID", 5=>"IE", 6=>"IF",
+                    7=>"IG", 8=>"IH", 9=>"II", 10=>"IJ", 11=>"IK", 12=>"IL",
+                    13=>"IM", 14=>"IN", 15=>"IO", 16=>"IP", 17=>"IQ",
+                    18=>"IR", 19=>"IS", 20=>"IT", 21=>"IU", 22=>"IV",
+                    23=>"IW", 24=>"IX", 25=>"IY", 26=>"IZ" );
+
+       my ( $files, $index_source, $index_sky );
+
+# Find indices in the group the files referring to the start of each
+# set of source and sky integrations.
+       if ( $Frm->uhdr( "ON_SOURCE" ) ) {
+          $index_source = -$number_source;
+          $index_sky = $index_source - $number_sky;
+
+       } else {
+          $index_sky = -$number_sky;
+          $index_source = $index_sky - $number_source;
+       }
+
+# Assign two frames corresponding to the first source
+# frame and first sky frame contributing to this AB or BA set of
+# observations.
+       my $source_Frm = $Grp->frame( $index_source );
+       my $sky_Frm = $Grp->frame( $index_sky );
+
+# Obtain the name of the output files, derived from the first source
+# frame and first sky frame contributing to this AB or BA set of
+# observations.  Variable $in isn't used.
+       my ( $in, $out_source ) = $source_Frm->inout( "_sca" );
+       ( $in, my $out_sky ) = $sky_Frm->inout( "_oca" );
+
+# Form command line to sum the source frames, and create a list of the files.
+       my $add = "";
+       $files = "";
+       my @filelist = ();
+       foreach my $i ( 1..$number_source ) {
+          my $file = $Grp->frame( $i + $index_source - 1 )->file;
+          push( @filelist, $file );
+          $files .= $hash{ $i } . "=" . $file . " ";
+          $add .= $hash{ $i };
+          $add .= " + " if ( $i != $number_source );
+       }
+       my $param = sprintf( "$files exp='(%s)/$number_source' out=$out_source", $add );
+
+# Average the on-source frames.
+       $Mon{ 'kappa_mon' }->obeyw( "maths", $param );
+
+# Report progress.
+       my $objlist = join( ",", @filelist );
+       orac_print "Frames $objlist coadded to form source frame $out_source\n";
+
+# Update the source frame.
+       $source_Frm->file( $out_source );
+
+# Display the source frame.
+       $Display->display_data( $source_Frm ) if defined $Display;
+
+# Form command line to sum the offset frames, and create a list of the files.
+       $add = "";
+       $files = "";
+       @filelist = ();
+       foreach my $i ( 1..$number_sky ) {
+          my $file = $Grp->frame( $i + $index_sky - 1)->file;
+          push( @filelist, $file );
+          $files .= $hash{ $i } . "=" . $file . " ";
+          $add .= $hash{ $i };
+          $add .= " + " if ( $i != $number_sky );
+       }
+       $param = sprintf( "$files exp='(%s)/$number_sky' out=$out_sky", $add );
+
+# Average the offset frames.
+       $Mon{ 'kappa_mon' }->obeyw( "maths", $param );
+
+# Report progress.
+       $objlist = join( ",", @filelist );
+       orac_print "Frames $objlist coadded to form offset frame $out_sky\n";
+
+# Update the offset frame.
+       $sky_Frm->file( $out_sky );
+
+# Display the offset frame.
+       $Display->display_data( $sky_Frm ) if defined $Display;
+
+       orac_print "\n";
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_COADD_TO_PAIR_  -- Averages the current source and off-source frames to form a single pair of frames.
+
+=head1 DESCRIPTION
+
+This primitive averages the source and offset frames in an
+AA...BB... or BB...AA... sequence, creating two frames.  For a
+simple ABBA type pattern, no averaging occurs.  Both steps are
+reported, and the combined images displayed.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Processing only occurs when the current frame's user header
+PAIR_COMPLETE is true, and either the NUMBER_ON or NUMBER_OFF
+user headers exceed 1.
+
+=item *
+
+The number of contributing frames comes from user headers
+NUMBER_ON and NUMBER_OFF in the current Frame.  A maximum of
+26 is permitted.
+
+=item *
+
+The sense of current frame, source or offset, comes from
+the current frame's user header ON_SOURCE.
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Average on-source frame inheriting the first source frame's
+name but with the _sca suffix.
+
+=item *
+
+Average off-source frame inheriting the first source frame's
+name but with the _oca suffix.
+
+=back
+
+=head1 TASKS
+
+KAPPA: MATHS.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (Starlink)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
