@@ -1,0 +1,414 @@
+#+
+# Name:
+#    _MAKE_SPECIAL_DOME_FLAT_
+#
+# Purpose:
+#    Makes special calibration-lamp flats from the current group of frames.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive makes dome flats from the current group, one
+#    for each combination of filter.  This routine selects the group
+#    for the current recipe cycle, and excludes any preliminary test
+#    frames used to set the intensity. 
+#
+#    It uses the Lidman algorithm documented in the "SOFI Users Manual",
+#    Issue 1.6, Section 5.1.3.  See the Notes for some details.
+#
+# Notes:
+#    -  This primitive is suitable for the SOFI ESO infrared cameras in 
+#    imaging mode using the Special_Dome_Flats template.
+#    -  Processing only occurs for dome-type frames, and when the
+#    steering header MAKE_FLAT is true.
+#    -  The main processing steps as as follows.
+#    -  The eight special flat frames are averaged in pairs of like
+#    attributes.  The attributes being the lamp on or off, and the
+#    vignetting mask in place or not.
+#    -  Sections in columns 500:600 in both the vignetted (A) and
+#    unvignetted (C), and column 50:100 in the vignetted (B) lamp-on
+#    frames are collapsed by averaging.  These are shifted to a common
+#    origin.  Then the expression A+(C-B) is evaluated, and grown to
+#    the full dimensions of the input frame, which in turn is subtracted
+#    from the original lamp-on unvignetted averaged frame.  This is the
+#    bias-corrected image.
+#    -  The previous step is repeated, but for the lamp-off.
+#    -  The off lamp bias-corrected frame is subtracted from its lamp-on
+#    counterpart, and the result normalised to a mean of 1 to create
+#    the flat.
+#    -  The flat is filed with the calibration system and displayed.
+#
+# Tasks:
+#    KAPPA: CDIV, COMPAVE, MATHS, PIXDUPE, SETORIGIN, STATS, SUB.
+#
+# Output Data:
+#    The flat fields.  Each is called is "flat_<filter>_<groupnumber>" for 
+#    the first cycle, and "flat_<filter>_<groupnumber>_c<cyclenumber>"
+#    for subsequent cycles, where <groupnumber> is the frame number of
+#    the group, <filter> is the filter name, and <cyclenumber> is the
+#    cycle number derived from steering header CYCLE_NUMBER. 
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC, Starlink)
+#
+# Copyright:
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Selection
+# =========
+#
+# This should only be performed on OBJECT frames, when it's time to
+# make a flat.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "LAMP" && 
+         $Frm->uhdr( "MAKE_FLAT" ) ) {
+
+# Create temporary files.
+# =======================
+
+# Average of the illumination-off frames.
+       my $tmp_off = new ORAC::TempFile;
+       my $off = $tmp_off->file;
+
+# Average of the illumination-off with masking frames.
+       my $tmp_offmask = new ORAC::TempFile;
+       my $off_mask = $tmp_offmask->file;
+
+# Average of the illumination-on frames.
+       my $tmp_on = new ORAC::TempFile;
+       my $on = $tmp_on->file;
+
+# Average of the illumination-on with masking frames.
+       my $tmp_onmask = new ORAC::TempFile;
+       my $on_mask = $tmp_onmask->file;
+
+
+# Collapsed section for flat on.
+       my $tmp_onA = new ORAC::TempFile;
+       my $onA = $tmp_onA->file;
+
+# Collapsed section for flat on and vignetted by the mask.
+       my $tmp_onB = new ORAC::TempFile;
+       my $onB = $tmp_onB->file;
+
+# Other collapsed section for flat on and vignetted by the mask.
+       my $tmp_onC = new ORAC::TempFile;
+       my $onC = $tmp_onC->file;
+
+# onA - onC + onB
+       my $tmp_onsum = new ORAC::TempFile;
+       my $onsum = $tmp_onsum->file;
+
+# Previous expanded to full x dimension.
+       my $tmp_ongrow = new ORAC::TempFile;
+       my $ongrow = $tmp_ongrow->file;
+
+# Bias-subtracted on frame.
+       my $tmp_ondb = new ORAC::TempFile;
+       my $ondb = $tmp_ondb->file;
+
+
+# Collapsed section for flat off.
+       my $tmp_offA = new ORAC::TempFile;
+       my $offA = $tmp_offA->file;
+
+# Collapsed section for flat off and vignetted by the mask.
+       my $tmp_offB = new ORAC::TempFile;
+       my $offB = $tmp_offB->file;
+
+# Other collapsed section for flat off and vignetted by the mask.
+       my $tmp_offC = new ORAC::TempFile;
+       my $offC = $tmp_offC->file;
+
+# offA - offC + offB
+       my $tmp_offsum = new ORAC::TempFile;
+       my $offsum = $tmp_offsum->file;
+
+# Previous expanded to full x dimension.
+       my $tmp_offgrow = new ORAC::TempFile;
+       my $offgrow = $tmp_offgrow->file;
+
+# Bias-subtracted off frame.
+       my $tmp_offdb = new ORAC::TempFile;
+       my $offdb = $tmp_offdb->file;
+
+# Form group of non-test observations.
+# ====================================
+
+# Select the non-test frame members in the current cycle.  The test
+# frames used to set an approriate flux level have observation type
+# "TEST".
+       my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+       $cycleno = defined( $cycleno ) ? $cycleno : 0;
+       my $calibGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno,
+                                    ORAC_OBSERVATION_TYPE => "LAMP" );
+
+# Make this the main group for this context.
+       {
+          my $Grp = $calibGrp;
+
+# Average the images.
+# ===================
+          my @frames = $Grp->membernames;
+
+          my $in1 = $frames[ 0 ];
+          my $in2 = $frames[ 7 ];
+          my $param = "exp=0.5*(ia+ib) ia=$in1 ib=$in2";
+          $Mon{ "kappa_mon" }->obeyw( "maths", "$param out=$off" );
+
+          $in1 = $frames[ 1 ];
+          $in2 = $frames[ 6 ];
+          $param = "exp=0.5*(ia+ib) ia=$in1 ib=$in2";
+          $Mon{ "kappa_mon" }->obeyw( "maths", "$param out=$off_mask" );
+
+          $in1 = $frames[ 2 ];
+          $in2 = $frames[ 5 ];
+          $param = "exp=0.5*(ia+ib) ia=$in1 ib=$in2";
+          $Mon{ "kappa_mon" }->obeyw( "maths", "$param out=$on_mask" );
+
+          $in1 = $frames[ 3 ];
+          $in2 = $frames[ 4 ];
+          $param = "exp=0.5*(ia+ib) ia=$in1 ib=$in2";
+          $Mon{ "kappa_mon" }->obeyw( "maths", "$param out=$on" );
+
+          orac_print "Averaged the repeated calibration frames.\n";
+
+# Create the bias correction.
+# ===========================
+
+# Flat on
+# -------
+
+# Use the Lidman algorithm to correct for the bias when the flat is on.
+# Collapse the frame.
+          $param = "$on(500:600,) out=$onA compress=[101,1]";
+          $Mon{ "kappa_mon" }->obeyw( "compave", "$param" );
+
+          $param = "$on_mask(500:600,) out=$onC compress=[101,1]";
+          $Mon{ "kappa_mon" }->obeyw( "compave", "$param" );
+
+          $param = "$on_mask(50:150,) out=$onB compress=[101,1]";
+          $Mon{ "kappa_mon" }->obeyw( "compave", "$param" );
+
+# Reset to a common origin.
+          $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$onA origin=[1,1]" );
+          $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$onB origin=[1,1]" );
+          $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$onC origin=[1,1]" );
+
+# Form the expression (A-C)+B for the flat-on collapsed frames.
+          $param = "exp=(ia-ic)+ib ia=$onA ib=$onB ic=$onC";
+          $Mon{ "kappa_mon" }->obeyw( "maths", "$param out=$onsum" );
+
+# Duplicate along the rows restoring an image the size of the frame-on
+# input.
+          $param = "in=$onsum out=$ongrow expand=[1024,1]";
+          $Mon{ "kappa_mon" }->obeyw( "pixdupe", "$param" );
+
+          $param = "in1=$on in2=$ongrow out=$ondb";
+          $Mon{ "kappa_mon" }->obeyw( "sub", "$param" );
+
+          orac_print "Formed bias-corrected lamp-on image.\n";
+
+# Flat off
+# -------
+
+# Continue to apply the  Lidman algorithm to correct for the bias when
+# the flat is off. 
+
+# Collapse the frame.
+          $param = "$off(500:600,) out=$offA compress=[101,1]";
+          $Mon{ "kappa_mon" }->obeyw( "compave", "$param" );
+
+          $param = "$off_mask(500:600,) out=$offC compress=[101,1]";
+          $Mon{ "kappa_mon" }->obeyw( "compave", "$param" );
+
+          $param = "$off(50:150,) out=$offB compress=[101,1]";
+          $Mon{ "kappa_mon" }->obeyw( "compave", "$param" );
+
+# Reset to a common origin.
+          $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=$offA origin=[1,1]" );
+          $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=$offB origin=[1,1]" );
+          $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=$offC origin=[1,1]" );
+
+# Form the expression (A-C)+B for the flat-off collapsed frames.
+          $param = "exp=(ia-ic)+ib ia=$offA ib=$offB ic=$offC";
+          $Mon{ "kappa_mon" }->obeyw( "maths", "$param out=$offsum" );
+
+# Duplicate along the rows restoring an image the size of the frame-off
+# input.
+          $param = "in=$offsum out=$offgrow expand=[1024,1]";
+          $Mon{ "kappa_mon" }->obeyw( "pixdupe", "$param" );
+
+# Subtract the bias image.
+          $param = "in1=$off in2=$offgrow out=$offdb";
+          $Mon{ "kappa_mon" }->obeyw( "sub", "$param" );
+
+          orac_print "Formed bias-corrected lamp-off image.\n";
+
+# Create the flat.
+# ================
+
+# Create the unnormalized flat.
+# -----------------------------
+          my $uflat = "uflat_" . $Grp->name;
+          $param = "in1=$ondb in2=$offdb out=$uflat";
+          $Mon{ "kappa_mon" }->obeyw( "sub", "$param" );
+          orac_print "Formed unnormalised flat.\n";
+
+# Generate the flat's name.
+# -------------------------
+
+# Obtain the filter name.  Remove []() or replace characters which would
+# confuse HDS.
+          my $filter = $Frm->uhdr( "ORAC_FILTER" );
+          $filter =~ s/\./p/g;
+          $filter =~ tr/\(\)\[\]/d/;
+
+# Get the cycle number.  Supply a default for recipes not supporting
+# this yet.  Can't use ( || ) syntax because 0 is the default.
+          my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+          $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+# Obtain the flat number.  This may have an _subgrp suffix.  Since we take care
+# of different cycles in the naming, we remove the ugly _subgrp
+# strings.  Note that polarimetry is not applicable.
+          my $flatno = $Grp->name;
+          $flatno =~ s/_subgrp//g;
+
+# Specify the file cycle suffix.
+          my $cyclesuffix = "";
+          if ( $cycleno > 0 ) {
+             $cyclesuffix = "_c" . $cycleno;
+          }
+
+# Generate the flat's name.
+          my $out = "flat_${filter}_" . $flatno . $cyclesuffix;
+
+# Normalise the flat.
+# -------------------
+
+# Obtain the mean of the combined frame.
+          $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$uflat" );
+
+# Extract the mean of the frame.
+          ( my $ORAC_STATUS, my $mean ) = $Mon{ "kappa_mon" }->get( "stats", "mean" );
+
+# Normalise the flat field to have a mean of one.
+          $param = "in=$uflat out=$out scalar=$mean title=\'Flat field\'";
+          $Mon{ "kappa_mon" }->obeyw( "cdiv", "$param" );
+
+# Delete the non-normalised flat.
+          _DELETE_A_FRAME_ FRAME=$uflat
+
+# Record and display the flat
+# ===========================
+
+# Set the current flat in the calibration object.
+          _FILE_FLAT_ NAME=$out
+     
+# Form a list of input file names.  Set up the object list assuming
+# that everything in the Group members list contains the file pointer
+# to pre-flatfielded data.
+          my @objects = $Grp->membernames;
+          my $objlist = join( ",", @objects );
+
+# Report the status of the processing.
+          orac_print "Frames $objlist used for flat\n";
+
+# Display the new flat.
+          _DISPLAY_FLAT_IMAGE_
+
+# End of the calibration-frame selection.
+       }
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_MAKE_SPECIAL_DOME_FLAT_ -- Makes special calibration-dome flats from the current group of frames.
+
+=head1 DESCRIPTION
+
+This primitive makes dome flats from the current group, one
+for each combination of filter.  This routine selects the group
+for the current recipe cycle, and excludes any preliminary test
+frames used to set the intensity. 
+
+It uses the Lidman algorithm documented in the I<SOFI Users Manual>,
+Issue 1.6, Section 5.1.3.  See the  L<"NOTES"> for some details.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for the SOFI ESO infrared cameras in 
+imaging mode using the Special_Dome_Flats template.
+
+=item *
+
+Processing only occurs for dome-type frames, and when the
+steering header MAKE_FLAT is true.
+
+=item *
+
+The eight special flat frames are averaged in pairs of like
+attributes.  The attributes being the lamp on or off, and the
+vignetting mask in place or not.
+
+=item *
+
+Sections in columns 500:600 in both the vignetted (I<A>) and
+unvignetted (I<C>), and column 50:100 in the vignetted (I<B>) lamp-on
+frames are collapsed by averaging.  These are shifted to a common
+origin.  Then the expression I<A+(C-B)> is evaluated, and grown to
+the full dimensions of the input frame, which in turn is subtracted
+from the original lamp-on unvignetted averaged frame.  This is the
+bias-corrected image.
+
+=item *
+
+The previous step is repeated, but for the lamp-off.
+
+=item *
+
+The off lamp bias-corrected frame is subtracted from its lamp-on
+counterpart, and the result normalised to a mean of 1 to create
+the flat.
+
+=item *
+
+The flat is filed with the calibration system and displayed.
+
+=back
+
+=head1 TASKS
+
+KAPPA: CDIV, COMPAVE, MATHS, PIXDUPE, SETORIGIN, STATS, SUB.
+
+=head1 OUTPUT DATA
+
+The flat field.  It is called is
+"flat_E<lt>filterE<gt>_E<lt>groupnumberE<gt>" for the first cycle, and
+"flat_E<lt>filterE<gt>_E<lt>groupnumberE<gt>_cE<lt>cyclenumberE<gt>"
+for subsequent cycles, where E<lt>groupnumberE<gt> is the frame number
+of the group, E<lt>filterE<gt> is the filter name, and
+E<lt>cyclenumberE<gt> is the cycle number derived from steering header
+CYCLE_NUMBER.
+
+=head1 AUTHORS
+
+Malcolm J. Currie (Starlink) <mjc@star.rl.ac.uk>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

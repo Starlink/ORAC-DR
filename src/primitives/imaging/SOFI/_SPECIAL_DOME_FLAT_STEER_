@@ -1,0 +1,209 @@
+#+
+# Name:
+#    _SPECIAL_DOME_FLAT_STEER_
+#
+# Purpose:
+#    Steers processing for the SPECIAL_DOME_FLAT recipe.
+#
+# Language:
+#    Perl5
+#
+# Description: 
+#    This primitive control processing for the SPECIAL_DOME_FLAT recipe through
+#    steering headers listed below.
+#
+# Steering Headers:
+#    CYCLE_NUMBER = INTEGER
+#       Number of the cycle, a cycle being a set of frames to complete a
+#       pass through the recipe.  The first cycle is 0.
+#    MAKE_FLAT = LOGICAL
+#       Whether or not to make the flat.  The flat is made once all the
+#       jittered target frames in a cycle are available.
+#    USE_VARIANCE = LOGICAL
+#       Whether or not variance processing is to occur.  This equates to
+#       argument USEVAR.
+#
+# Arguments:
+#    USEVAR = LOGICAL (Given)
+#       Whether or not to create and propagate variance arrays.  [0]
+#
+# Notes:
+#    -  This primitive is suitable for the ESO SOFI infra-red camera
+#    in imaging mode.
+#    -  Processing only occurs for calibration-lamp frames.
+#    -  A list of the distinct filters within the group is stored in an
+#    array stored by reference in the group user header FILTER_LIST.
+#    -  A count of the non-test calibration frames is kept in gropu user
+#    header DOME_CALIB_COUNT.  This is reset for each new filter, as
+#    different filters are not iterated within the template.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC, Starlink)
+#
+# Copyright:
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# This should only be performed on calibration-lamp frames.
+    my $cycleno;
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "LAMP" ) {
+
+# Form list of the filters.
+# =========================
+
+# Obtain the filter name from the frame header.
+       my $filter = $Frm->uhdr( "ORAC_FILTER" );
+
+# Create a new list of filters used within the group.
+       my ( $count, $filterlist );
+       if ( ! defined $Grp->uhdr( "FILTER_LIST" ) ) {
+          my @filters = ( $filter );
+          $filterlist = \@filters;
+
+# Obtain the list of filters already found.  Augment the list
+# if the current filter is not in the list.  Uses a hash to store
+# each new filter.  Assume reasonably that filters are in sequence,
+# not interspersed.  Therefore, for a new filter, reset the counter
+# of non-test frames (see below).
+       } else {
+          $count = 0;
+          $filterlist = $Grp->uhdr( "FILTER_LIST" );
+          push( @$filterlist, $filter );
+          my %seen = ();
+          my @distinct = ();
+          foreach my $f ( @$filterlist ) {
+             push( @distinct, $f ) unless $seen{ $f }++;
+          }
+          @$filterlist = @distinct;
+       }
+
+# Store the list in the group user header.
+       $Grp->uhdr( "FILTER_LIST", $filterlist );
+
+# Create a new counter of the calibration frames.  This sequence seems
+# to occasionally have test frames as part of group, but which are not
+# part of the actual calibration.  They are probably at the start, but
+# we'll not assume that.
+       if ( ! defined( $Grp->uhdr( "DOME_CALIB_COUNT" ) ) ) {
+          $count = 1;
+          $Grp->uhdr( "DOME_CALIB_COUNT", $count );
+       } else {
+          $count = $Grp->uhdr( "DOME_CALIB_COUNT" ) + 1;
+          $Grp->uhdr( "DOME_CALIB_COUNT", $count );
+       }
+
+# Obtain the number of frames in the group.
+# =========================================
+
+# This is fixed by the algorithm, needing lamp on and off twice, and
+# repeated with the mask in place.
+       my $number = 8;
+
+# Set steering headers.
+# =====================
+
+# Obtain the USEVAR argument.  Default to false.
+       my $usevar = $_SPECIAL_DOME_FLAT_STEER_{USEVAR};
+       $usevar = defined( $usevar ) ? $usevar : 0;
+       $Frm->uhdr( "USE_VARIANCE", $usevar ); 
+
+# Specify during processing of which frames should the flat be created.
+       if ( $count % $number == 0 && $count > 0 ) {
+          $Frm->uhdr( "MAKE_FLAT", 1 );
+       
+       } else {
+          $Frm->uhdr( "MAKE_FLAT", 0 );
+       }
+
+# Insert the cycle number of the set of NUMBER frames, unless it is 
+# polarimetry flats at each angle.  A complete cycle is four times
+# the number of jitter positions.  Ideally, one would like to
+# inquire the number of angles, but at the time of writing it is
+# always four.
+       $cycleno = int( ( $count - 1 ) / $number );
+    } else {
+       $cycleno = 0;
+    }
+    $Frm->uhdr( "CYCLE_NUMBER", $cycleno );
+
+# Podule
+# ======
+
+=head1 NAME
+
+_SPECIAL_DOME_FLAT_STEER_ -- Steers processing for the SPECIAL_DOME_FLAT recipe.
+
+=head1 DESCRIPTION
+
+This primitive control processing for the SPECIAL_DOME_FLAT recipe through
+steering headers listed below.
+
+=head1 STEERING HEADERS
+
+=over 4
+
+=item CYCLE_NUMBER = INTEGER
+
+Number of the cycle, a cycle being a set of frames to complete a
+pass through the recipe.  The first cycle is 0.
+
+=item MAKE_FLAT = LOGICAL
+
+Whether or not to make the flat.  The flat is made once all the
+jittered target frames in a cycle are available.
+
+=item USE_VARIANCE = LOGICAL
+
+Whether or not variance processing is to occur.  This equates to
+argument USEVAR.
+
+=back
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item USEVAR = LOGICAL (Given)
+
+Whether or not to create and propagate variance arrays.  [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for the ESO SOFI infra-red camera
+in imaging mode.
+
+=item *
+
+Processing only occurs for calibration-lamp frames.
+
+=item *
+
+A list of the distinct filters within the group is stored in an
+array stored by reference in the group user header FILTER_LIST.
+
+=item *
+
+A count of the non-test calibration frames is kept in gropu user
+header DOME_CALIB_COUNT.  This is reset for each new filter, as
+different filters are not iterated within the template.
+
+=back
+
+=head1 AUTHORS
+
+Malcolm J. Currie (JAC, Starlink) <mjc@star.rl.ac.uk>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
