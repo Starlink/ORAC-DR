@@ -104,42 +104,6 @@ sub new {
 
 =back
 
-
-=head1 PRIVATE METHODS
-
-The following methods are intended for use inside the module.
-They are included here so that authors of derived classes are 
-aware of them.
-
-=over 4
-
-=item stripfname
-
-Method to strip file extensions from the filename string. This method
-is called by the file() method. For UFTI we strip all extensions of the
-form ".sdf", ".sdf.gz" and ".sdf.Z" since Starlink tasks do not require
-the extension when accessing the file name.
-
-=cut
-
-sub stripfname {
-
-  my $self = shift;
-
-  my $name = shift;
-
-  # Strip everything after the first dot
-  $name =~ s/\.(sdf)(\.gz|\.Z)?$//;
-  
-  return $name;
-}
-
-
-
-
-
-=back
-
 =head1 REQUIREMENTS
 
 Currently this module requires the NDF module.
