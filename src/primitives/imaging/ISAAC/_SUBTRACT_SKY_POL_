@@ -1,0 +1,300 @@
+#+
+# Name:
+#    _SUBTRACT_SKY_POL_
+#
+# Purpose:
+#    Creates sky-subtracted e- and o-beam images for polarimetry recipes.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive creates sky-subtracted e- and o-beam images.  The
+#    images are subsets of the current frame in the appropriate region.
+#    Modal sky values are determined from e- and o-beam sky areas within
+#    the frame.  The sky-subtracted e- and o-beam frames are stored in two
+#    groups, which are created if they do not already exist.  References
+#    to the groups are stored in the main $Grp user headers called
+#    EBEAM_GROUP and OBEAM_GROUP.
+#
+#    The primitive reports a successful sky subtraction and the frames
+#    concerned.  It is a variant of _SUBTRACT_SKY_ for POL recipes.
+#
+# Notes:
+#    -  This primitive is suitable for ISAAC in imaging mode.
+#    -  Processing only occurs for object frames.
+#    -  If the supplied target frame contains a variance array,
+#    the error in the sky level is incorporated into the 
+#    sky-subtracted frame's variance.
+#    -  The sky-subtracted images can be displayed.
+#    -  The frame title is propagated.
+#
+# Output Data:
+#    -  Sky-subtracted e-beam and o-beam frames inheriting the frame's
+#    name but with the _ess and _oss suffices respectively.
+#
+# Tasks:
+#    KAPPA: CSUB, STATS.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ) {
+
+# Access the group of e-beam and o-beam frames.
+# =============================================
+
+# Does the group of e-beam frames exist?  If not report the fatal error.
+       my $eGrp = $Grp->uhdr( "EBEAM_GROUP" );
+       if ( ! defined( $eGrp ) ) {
+          orac_throw "_SUBTRACT_SKY_POL_: EBEAM_GROUP does not exist " .
+                     "(probable programming error).\n";
+       }
+
+# Does the group of o-beam frames exist?  If not report the fatal error.
+       my $oGrp = $Grp->uhdr( "OBEAM_GROUP" );
+       if ( ! defined( $oGrp ) ) {
+          orac_throw "_SUBTRACT_SKY_POL_: OBEAM_GROUP does not exist " .
+                     "(probable programming error).\n";
+       }
+
+# Obtain bounds of rectangular regions around the target and sky.
+# ===============================================================
+
+# Compute the pixel bounds of the target and sky e- and o-beam images.
+       _DEFINE_POL_REGIONS_
+
+# Get references to the bounds just calculated.
+       my $etbref = $_DEFINE_POL_REGIONS_{ETBOUNDS};
+       my $otbref = $_DEFINE_POL_REGIONS_{OTBOUNDS};
+       my $esbref = $_DEFINE_POL_REGIONS_{ESBOUNDS};
+       my $osbref = $_DEFINE_POL_REGIONS_{OSBOUNDS};
+       my $ezbref = $_DEFINE_POL_REGIONS_{EZBOUNDS};
+       my $ozbref = $_DEFINE_POL_REGIONS_{OZBOUNDS};
+
+# Convert references into arrays.
+       my @etbounds = @$etbref;
+       my @otbounds = @$otbref;
+       my @esbounds = @$esbref;
+       my @osbounds = @$osbref;
+       my @ezbounds = @$ezbref;
+       my @ozbounds = @$ozbref;
+
+# Determine whether the NDF supports variance.
+# ============================================
+       my $in = $Frm->file;
+       $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$in" );
+       ( my $ORAC_STATUS, my $variance ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "variance" );
+
+# Extract the sky regions
+# =======================
+
+# Create temporary files.
+       my $tmp1 = new ORAC::TempFile;
+       my $tmp_esky1 = $tmp1->file;
+
+       my $tmp2 = new ORAC::TempFile;
+       my $tmp_esky2 = $tmp2->file;
+
+       my $tmp3 = new ORAC::TempFile;
+       my $tmp_osky1 = $tmp3->file;
+
+       my $tmp4 = new ORAC::TempFile;
+       my $tmp_osky2 = $tmp4->file;
+
+# e-beam
+# ------
+# Set the bounds of the sky section of the e-beam, and the origin to
+# match the target region.
+       my $param1 = "in=$in($esbounds[ 0 ]:$esbounds[ 1 ],$etbounds[ 2 ]:$etbounds[ 3 ])";
+       my $param2 = "origin=[$etbounds[ 0 ],$etbounds[ 2 ]]";
+
+# Copy the first e-beam section of sky, matching the bounds of the source
+# section.
+       $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param1 out=$tmp_esky1" );
+       $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=$tmp_esky1 $param2" );
+
+# Set the bounds of the secondary-sky section of the e-beam.
+       $param1 = "in=$in($ezbounds[ 0 ]:$ezbounds[ 1 ],$etbounds[ 2 ]:$etbounds[ 3 ])";
+
+# Copy the second  e-beam section of sky, matching the bounds of the source
+# section.
+       $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param1 out=$tmp_esky2" );
+       $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=$tmp_esky2 $param2" );
+
+# o-beam
+# ------
+# Set the bounds of the sky section of the o-beam, and the origin to
+# match the target region.
+       $param1 = "in=$in($osbounds[ 0 ]:$osbounds[ 1 ],$otbounds[ 2 ]:$otbounds[ 3 ])";
+       $param2 = "origin=[$otbounds[ 0 ],$otbounds[ 2 ]]";
+
+# Copy the first o-beam section of sky, matching the bounds of the source
+# section.
+       $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param1 out=$tmp_osky1" );
+       $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=$tmp_osky1 $param2" );
+
+# Set the bounds of the secondary-sky section of the o-beam.
+       $param1 = "in=$in($ozbounds[ 0 ]:$ozbounds[ 1 ],$otbounds[ 2 ]:$otbounds[ 3 ])";
+
+# Copy the second o-beam section of sky, matching the bounds of the source
+# section.
+       $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param1 out=$tmp_osky2" );
+       $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=$tmp_osky2 $param2" );
+
+# Subtract the sky from the e-beam.
+# =================================
+
+# Define the file suffix.
+       ( $in, my $e_out ) = $Frm->inout( "_ess" );
+
+# Subtract the average of the two sky regions from the target region.
+# This should take care of the row bias variations.
+       $param1 = "ia=$in($etbounds[ 0 ]:$etbounds[ 1 ],$etbounds[ 2 ]:$etbounds[ 3 ])";
+       $param2 = "exp=IA-0.5*(IB+IC) IB=$tmp_esky1 IC=$tmp_esky2 out=$e_out";
+       $Mon{ "kappa_mon" }->obeyw( "maths", "$param1 $param2" );
+
+       orac_print "E-beam of $in sky subtracted using the average of neighbouring\n" .
+                  "     regions to make $e_out\n";
+
+# Store the sky-subtracted e-beam frame in the group.
+# ===================================================
+
+# Create a new frame to store the differenced pair image.
+       my $eFrm = $Frm->new( $e_out );
+
+# Need to propagate the raw frame as ORAC-DR pattern matches for files
+# ending in a number to set the $Frm->number, which is needed for the
+# template method.
+       $eFrm->raw( $Frm->raw );
+
+# Transfer the headers to the differenced frame.
+       %{$eFrm->hdr} = ( %{$Frm->hdr} );
+       %{$eFrm->uhdr} = ( %{$Frm->uhdr} );
+
+# Store the sky-subtracted e-frame in the e-beam group.
+       $eGrp->push( $eFrm );
+
+# Display the sky-subtracted e-beam frame.
+       $Display->display_data( $eFrm ) if (defined $Display);
+
+# Subtract the sky from the o-beam.
+# =================================
+
+# Define the file suffix.
+       ( $in, my $o_out ) = $Frm->inout( "_oss" );
+
+# Subtract the average of the two sky regions from the target region.
+# This should take care of the row bias variations.
+       $param1 = "ia=$in($otbounds[ 0 ]:$otbounds[ 1 ],$otbounds[ 2 ]:$otbounds[ 3 ])";
+       $param2 = "exp=IA-0.5*(IB+IC) IB=$tmp_osky1 IC=$tmp_osky2 out=$o_out";
+       $Mon{ "kappa_mon" }->obeyw( "maths", "$param1 $param2" );
+
+       orac_print "O-beam of $in sky subtracted using the average of neighbouring\n" .
+                  "     regions to make $o_out\n";
+
+
+# Store the sky-subtracted o-beam frame in the group.
+# ===================================================
+
+# Create a new frame to store the differenced pair image.
+       my $oFrm = $Frm->new( $o_out );
+
+# Need to propagate the raw frame as ORAC-DR pattern matches for files
+# ending in a number to set the $Frm->number, which is needed for the
+# template method.
+       $oFrm->raw( $Frm->raw );
+
+# Transfer the headers to the differenced frame.
+       %{$oFrm->hdr} = ( %{$Frm->hdr} );
+       %{$oFrm->uhdr} = ( %{$Frm->uhdr} );
+
+# Store the sky-subtracted o-frame in the o-beam group.
+       $oGrp->push( $oFrm );
+
+# Display the sky-subtracted o-beam frame.
+       $Display->display_data( $oFrm ) if (defined $Display);
+
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+SUBTRACT_SKY_POL -- Creates sky-subtracted e- and o-beam images for polarimetry recipes.
+
+=head1 DESCRIPTION
+
+This primitive creates sky-subtracted e- and o-beam images.  The
+images are subsets of the current frame in the appropriate region.
+Modal sky values are determined from e- and o-beam sky areas within
+the frame.  The sky-subtracted e- and o-beam frames are stored in two
+groups, which are created if they do not already exist.  References
+to the groups are stored in the main $Grp user headers called
+EBEAM_GROUP and OBEAM_GROUP.
+
+The primitive reports a successful sky subtraction and the frames
+concerned.  It is a variant of L<_SUBTRACT_SKY_|_SUBTRACT_SKY_> for
+POL recipes.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ISAAC in imaging mode.
+
+=item *
+
+Processing only occurs for object frames.
+
+=item *
+
+If the supplied target frame contains a variance array,
+the error in the sky level is incorporated into the 
+sky-subtracted frame's variance.
+
+=item *
+
+The sky-subtracted images can be displayed.
+
+=item *
+
+The frame title is propagated.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Sky-subtracted e-beam and o-beam frames inheriting the frame's
+name but with the _ess and _oss suffices respectively.
+
+=back
+
+=head1 TASKS
+
+KAPPA: CSUB, STATS.
+
+=head1 AUTHORS
+
+Malcolm J. Currie (mjc@star.rl.ac.uk)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
