@@ -14,46 +14,67 @@ has been within the field of the IFU) using optimal extraction. At
 present there are no Figaro/Kappa etc routines for performing optimal
 extraction from a datacube. This primitive is intended to be run on
 the coadded, sky-subtracted scrunched 2d spectrum produced by some of
-the IFU recipes. The profile that is generated (and currently not
-kept) will simultaneously extract the spectrum from all slices of the IFU.
+the IFU recipes. The profile that is generated will simultaneously 
+extract the spectrum from all slices of the IFU.
 
 If the NBEAMS parameter is set to 2 then positive and negative beams
 will be extracted, inveted and averaged.
 
 =head1 PARAMETERS
 
-NBEAMS - 1 if offsetting has been to sky, 2 if offsetting has been
-within the field.
+KEEP - Boolean that determines whether or not to keep the input file
+as the ORAC-DR Group object. [0]
 
-=head1 AUTHOR
+NBEAMS - 1 if offsetting has been to sky, 2 if offsetting has been
+within the field. [1]
+
+PROFILECAL - determines whether to get the profiles from the calibration
+system or save the profile to the calibration system. Can be either
+LOAD or SAVE. If neither is given, a profile will be generated but not
+stored. []
+
+=head1 AUTHORS
 
 Paul Hirst <p.hirst@jach.hawaii.edu>
 Stephen Todd <spt@roe.ac.uk>
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
 
-
+# Parse the PROFILECAL parameter.
+my $profilesave = (defined $_OPTEXTRACT_SPECTRUM_{PROFILECAL} && $_OPTEXTRACT_SPECTRUM_{PROFILECAL} eq 'SAVE') ? 1 : 0;
+my $profileload = (defined $_OPTEXTRACT_SPECTRUM_{PROFILECAL} && $_OPTEXTRACT_SPECTRUM_{PROFILECAL} eq 'LOAD') ? 1 : 0;
 
 # We're going to need some temporary files
 use ORAC::TempFile;
 
-
 my $in = $Grp->file;
 my $out = $Grp->raw . "_sp";
 
-my $nbeams = $_OPTEXTRACT_SPECTRUM_{NBEAMS} || 1;
+my $nbeams = (defined ($_OPTEXTRACT_SPECTRUM_{NBEAMS}) ? $_OPTEXTRACT_SPECTRUM_{NBEAMS} : 1);
 
 orac_print "Extracting $nbeams beams from $in\n";
 
 if ($nbeams != 1 and $nbeams != 2) {
-    orac_err("Number of beams to be extracted must be 1 or 2, not $nbeams\n");
+  orac_warn "NBEAMS parameter to _OPTEXTRACT_SPECTRUM_ must be 1 or 2.\n";
+  orac_warn "Passed parameter was $nbeams. Setting NBEAMS to 1, will only extract one beam.\n";
+  $nbeams = 1;
 }
 
+# Loop through the beams, extracting them.
+# We'll use the HDS containers so as to store the multiple beams for the
+# profiles.
+my $base = $Grp->file;
+my $oep = $base . "_oep";
+my $oer = $base . "_oer";
+
+$Mon{'figaro1'}->obeyw("creobj", "type=structure dims=0 object=$oep");
+$Mon{'figaro1'}->obeyw("creobj", "type=structure dims=0 object=$oer");
 
 # Go through once for each beam to be extracted
 for my $n (1..$nbeams) {
@@ -68,52 +89,64 @@ for my $n (1..$nbeams) {
     my $tmp2 = new ORAC::TempFile;
     my $file2 = $tmp2->file;
 
-    my $tmp3 = new ORAC::TempFile;
-    my $file3 = $tmp3->file;
+    # Get the filename for the opt-extract profile and residuals.
+    $oep = $base . "_oep" . ".beam$n";
+    $oer = $base . "_oer" . ".beam$n";
 
     # If it's the 2nd beam then multiply by -1, otherwise just copy it
     if ($n == 2) {
-	$Mon{'kappa_mon'}->obeyw("cmult", "in=$in out=$positive scalar=-1");
-	orac_print "2d spectrum multiplied by -1 -> $file1\n";
+      $Mon{'kappa_mon'}->obeyw("cmult", "in=$in out=$positive scalar=-1");
     } else {
-	$Mon{'ndfpack_mon' }->obeyw("ndfcopy", "$in $positive");
-	orac_print "$in copied to $positive\n";
+      $Mon{'ndfpack_mon' }->obeyw("ndfcopy", "$in $positive");
     }
 
+    if( $profileload ) {
 
-    # Threshold out all negative values (get rid of the other beam)
-    $Mon{'kappa_mon'}->obeyw("thresh", "in=$positive out=$file1 thrlo=0 newlo=0 thrhi=1E6 newhi=bad");
-    orac_print "Negative values removed by thresholding\n";
+      # Grab the profile from the calibration system.
+      $oep = $Cal->profile;
+      orac_print "Using $oep as optimal extraction profile from calibration system.\n";
 
+    } else {
 
-    # Make optimal extraction profile
-    my $ystart = $Frm->uhdr("ORAC_Y_LOWER_BOUND");
-    my $yend = $Frm->uhdr("ORAC_Y_UPPER_BOUND");
+      # Threshold out all negative values (get rid of the other beam)
+      $Mon{'kappa_mon'}->obeyw("thresh", "in=$positive out=$file1 thrlo=0 newlo=0 thrhi=1E6 newhi=bad");
+      orac_print "Negative values removed by thresholding\n";
 
-    $ystart =1;
-    $yend = 658;
+      # Locate the bounds of the array.
+      $Mon{"ndfpack_mon"}->obeyw( "ndftrace", "ndf=$file1");
+      ( my $ORAC_STATUS, my @lbnd ) = $Mon{"ndfpack_mon"}->get("ndftrace", "lbound");
+      ( $ORAC_STATUS, my @ubnd ) = $Mon{"ndfpack_mon"}->get("ndftrace", "ubound");
+      my $ystart = $lbnd[1];
+      my $yend = $ubnd[1];
 
-    $Mon{'figaro1'}->obeyw("profile", "image=$file1 ystart=$ystart yend=$yend degree=2 profile=$file2 residual=$file3 weight nreject=50");
+      # Get the profile.
+      $Mon{'figaro1'}->obeyw("profile", "image=$file1 ystart=$ystart yend=$yend degree=2 profile=$oep residual=$oer weight nreject=50");
 
-    orac_print "Optimal extraction profile generated over rows $ystart to $yend\n";
+      orac_print "Optimal extraction profile generated over rows $ystart to $yend\n";
+      orac_print "Profile stored in $oep, residuals stored in $oer\n";
+    }
 
+    if( $profilesave ) {
+      $Cal->profile($oep);
+      $Cal->profileindex->add( $oep, {%{$Frm->hdr}, %{$Frm->uhdr}} );
+      orac_print "Filing $oep as opt-extract profile with calibration system\n";
+    }
 
     # Extract spectrum
-    $Mon{'figaro1'}->obeyw("optextract", "image=$positive profile=$file2 weight spectrum=$file1");
-
-    orac_print "Spectrum extracted, now in $file1\n";
+    $Mon{'figaro1'}->obeyw("optextract", "image=$positive profile=$oep weight spectrum=$file1");
 
     # If it's the first one then copy it to the output file, otherwise
     # average it with the existing output file
     if ($n == 1) {
-	$Mon{'ndfpack_mon' }->obeyw("ndfcopy", "$file1 $out");
-	orac_print "$file1 copied to $out\n";
+      $Mon{'ndfpack_mon' }->obeyw("ndfcopy", "$file1 $out");
     } else {
-	$Mon{'kappa_mon'}->obeyw("add", "in1=$out in2=$file1 out=$file2");
-	$Mon{'kappa_mon'}->obeyw("cdiv", "in=$file2 out=$out scalar=2");
+      $Mon{'kappa_mon'}->obeyw("add", "in1=$out in2=$file1 out=$file2");
+      $Mon{'kappa_mon'}->obeyw("cdiv", "in=$file2 out=$out scalar=2");
 
-	orac_print "$file2 averaged into $out\n";
     }
+
+    # Tell the user.
+    orac_print "Spectrum optimally extracted into $out.\n";
 }
 
 $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$out frame=axis" );
@@ -121,7 +154,7 @@ $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$out frame=axis" );
 $Grp->file($out);
 $Display->display_data($Grp) if defined $Display;
 
-# At this point, the group is 1 dimentional
+# At this point, the group is 1 dimensional
 $Grp->uhdr("NDIMS", 1);
 
 if ($_OPTEXTRACT_SPECTRUM_{KEEP}) {
@@ -129,4 +162,5 @@ if ($_OPTEXTRACT_SPECTRUM_{KEEP}) {
    $Grp->uhdr("NDIMS", 2);
 }
 
+# Tidy up output.
 orac_print "\n";
