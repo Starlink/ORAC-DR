@@ -15,14 +15,15 @@ require Exporter;
 use File::Path;
 use Starlink::ADAMTASK;
 use Term::ANSIColor;
-
-
+use File::Copy;
 
 @ISA = qw(Exporter);
 
 @EXPORT = qw/orac_launch_display orac_connect_display
 orac_kill_display orac_execute_recipe orac_read_recipe
 orac_parse_recipe orac_exit_normally orac_exit_abnormally/;
+
+
 
 #------------------------------------------------------------------------
 
@@ -61,6 +62,7 @@ sub orac_connect_display {
     $toolpid = scalar reverse ($toolpid+1);
     $toolname = $toolpid."_p4";
     $toolnbname = "p".$toolpid."_plotnb";
+    print "noticeboard is $toolnbname\n";
     $Display = new Starlink::ADAMTASK($toolname);
     $Display->contactw;		# ensure contact is made
 #    $Display->obeyw("verbose") unless ($main::opt_quiet);
