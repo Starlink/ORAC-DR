@@ -22,7 +22,7 @@ from standard perl. These are available to all ORAC primitive writers
 
 require Exporter;
 @ISA = (Exporter);
-@EXPORT = qw( max min logten );
+@EXPORT = qw( max min log10 nint);
 
 use Carp;
 use strict;
@@ -98,6 +98,20 @@ sub log10 {
   return POSIX::log10($in);
 }
 
+
+=item nint()
+
+Return the nearest integer to a supplied floating point
+value. 0.5 is rounded up.
+
+=cut
+
+sub nint {
+  my $value = shift;
+
+  return int($value + 0.5);
+
+}
 
 
 =back
