@@ -202,75 +202,31 @@ sub file_from_bits {
 }
 
 
+=item template
 
-=back
+A reimplementation of Grp::template() recoded so that the
+sub-instrument is a recognised option. This means that
+only the files relating to the selected sub-instrument are
+affected.
 
-=head1 NEW METHODS
-
-This section describes methods that are available to the
-JCMT implementation of ORAC::Group.
-
-=over 4
-
-=item membernamessub
-
-Return list of file names associated with the specified
-sub instrument.
-
-  @names = $Grp->membernamessub($sub)
+The is very similar to the base class method except that all
+args are passed to the template method of frame rather than
+just the first arg. It is probably better to make the base class
+more general the the sub-class.....
 
 =cut
 
-sub membernamessub {
-
+sub template {
   my $self = shift;
-  my $sub = lc(shift);
-
-  my @list = ();
-
-  # Loop through each frame
-  foreach my $frm ($self->members) {
-
-    # Loop through each sub instrument
-    my @subs = $frm->subs;
-    for (my $i=0; $i < $frm->nsubs; $i++) {
-      push (@list, $frm->file($i+1)) if $sub eq lc($subs[$i]);
-    }
+  
+  # Loop over the members  
+    foreach my $member ($self->members) {
+    $member->template(@_);
   }
 
-  return @list;
-
 }
 
-=item grpoutsub
 
-Method to determine the group filename associated with
-the current sub-instrument.
-
-This method uses the file() method to determine the
-group rootname and then tags it by the specified sub-instrument.
-
-  $file = $Grp->grpoutsub($sub);
-
-=cut
-
-sub grpoutsub {
-  my $self = shift;
-
-  # dont bother checking whether something was specified
-  my $sub = shift;
-
-  # Retrieve the root name
-  my $file = $self->file;
-
-  # Set suffix
-  my $suffix = '_' . lc($sub);
-
-  # Append the sub-instrument (don't if the sub is already there!
-  $file .= $suffix unless $file =~ /$suffix$/;
-
-  return $file;
-}
 
 =item num_files
 
@@ -336,6 +292,107 @@ sub gui_id {
 
 }
 
+
+
+
+=back
+
+=head1 NEW METHODS
+
+This section describes methods that are available to the
+JCMT implementation of ORAC::Group.
+
+=over 4
+
+=item membernamessub
+
+Return list of file names associated with the specified
+sub instrument.
+
+  @names = $Grp->membernamessub($sub)
+
+=cut
+
+sub membernamessub {
+
+  my $self = shift;
+  my $sub = lc(shift);
+
+  my @list = ();
+
+  # Loop through each frame
+  foreach my $frm ($self->members) {
+
+    # Loop through each sub instrument
+    my @subs = $frm->subs;
+    for (my $i=0; $i < $frm->nsubs; $i++) {
+      push (@list, $frm->file($i+1)) if $sub eq lc($subs[$i]);
+    }
+  }
+
+  return @list;
+
+}
+
+=item grpoutsub
+
+Method to determine the group filename associated with
+the supplied sub-instrument.
+
+This method uses the file() method to determine the
+group rootname and then tags it by the specified sub-instrument.
+
+  $file = $Grp->grpoutsub($sub);
+
+=cut
+
+sub grpoutsub {
+  my $self = shift;
+
+  # dont bother checking whether something was specified
+  my $sub = shift;
+
+  # Retrieve the root name
+  my $file = $self->file;
+
+  # Set suffix
+  my $suffix = '_' . lc($sub);
+
+  # Append the sub-instrument (don't if the sub is already there!
+  $file .= $suffix unless $file =~ /$suffix$/;
+
+  return $file;
+}
+
+
+=item subs 
+
+Returns an array containing all the sub instruments present
+in the group (some frames may only have one sub-instrument)
+
+  @subs = $Grp->subs;
+
+=cut
+
+sub subs {
+  my $self = shift;
+  
+  my %subs = ();
+  
+
+  # Loop over each member
+  foreach my $frm ($self->members) {
+    
+    # Now store the keys
+    foreach  my $sub ($frm->subs) {
+      $subs{$sub}++;
+    }
+  }
+  
+  # Return the keys
+  return keys %subs;
+
+}
 
 
 
