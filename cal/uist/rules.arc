@@ -13,6 +13,11 @@ DET_MODE
 # Not for UIST
 #CNFINDEX eq $Hdr{CNFINDEX}
 
+# Basic optical parameters must match
+SLITNAME eq $Hdr{SLITNAME}
+GRISM eq $Hdr{GRISM}
+CAMLENS eq $Hdr{CAMLENS}
+
 # I suppose it should match readout areas (historic)
 RDOUT_X1 == $Hdr{RDOUT_X1}
 RDOUT_X2 == $Hdr{RDOUT_X2}
