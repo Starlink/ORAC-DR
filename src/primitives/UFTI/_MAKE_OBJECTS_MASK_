@@ -3,7 +3,7 @@
 # Detects objects within an image (should be approximately flat-fielded)
 # and creates an ARD file to be used to mask the objects.
 #
-# TASK: KAPPA - GLITCH, MATHS, STATS; PISA - PISAFIND.
+# TASK: KAPPA - GLITCH, HISTAT, MATHS, STATS; PISA - PISAFIND.
 #
 
 # Selection
@@ -26,8 +26,20 @@
        ($ORAC_STATUS, $wordmin) = $Mon{"kappa_mon"}->get("stats","minimum");
        ($ORAC_STATUS, $wordmax) = $Mon{"kappa_mon"}->get("stats","maximum");
        ($ORAC_STATUS, $mean) = $Mon{"kappa_mon"}->get("stats","mean");
-       ($ORAC_STATUS, $sigma) = $Mon{"kappa_mon"}->get("stats","sigma");
        ($ORAC_STATUS, $numbad) = $Mon{"kappa_mon"}->get("stats","numbad");
+
+# Estimate the spread around the sky.
+# -----------------------------------
+
+# PISA doesn't allow the threshold to be specified in terms of sky noise,
+# only absolute counts above sky.   Determine +/- one sigma about the
+# median (deemed to be the sky) using percentiles.  There is a strange
+# effect to be investigated where the preliminary flat-field often gives
+# too small (2-3x) a range using 31.7 and 68.3 percentiles compared with
+# the reasonable statistics for corrected flat-field.  Hence the range is
+# expanded slightly.
+       $Mon{"kappa_mon"}->obeyw("histat","ndf=$in percentiles=[28,72]");
+       ($ORAC_STATUS, @perc) = $Mon{"kappa_mon"}->get("histat","perval");
 
 # Remove bad pixels
 # -----------------
@@ -134,7 +146,7 @@
 # applicable.
        $resfile = $root . ".res";
        $minpix = ( $_MAKE_OBJECTS_MASK_{MINPIX} || 12 );
-       $thresh = min( 10, $sigma * $wscale );
+       $thresh = max( 3, min( 10, $wscale * ( $perc[1] - $perc[0] ) ) );
        $header = "in=$inpisa method=0 results=$resfile";
        $hidden = "minpix=$minpix thresh=$thresh ismoo";
 
