@@ -1,0 +1,170 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_COADD_EXTRACTED_BEAMS_POL_ -- Coadds extracted beams for spectropolarimetry.
+
+=head1 DESCRIPTION
+
+This primitive takes extracted and aligned spectra stored in an HDS structure
+and averages them together. A SpecFrame is added if a recent version of
+KAPPA is used.
+
+The input spectra are found in the POS_E, POS_O, NEG_E, and NEG_O (for
+positive E and O, and negative E and O beams, respectively) components
+in the current $Grp's E<lt>ANGLEE<gt>_GROUP uhdr group, i.e. for
+the 0-degree waveplate angle observations, the Group object referenced
+to in the current $Grp's 0_GROUP uhdr is used. The appropriate positive
+and negative beams are averaged together and stored in a file of the
+form gE<lt>cE<gt>E<lt>yyyymmddE<gt>_E<lt>groupE<gt>_E<lt>angleE<gt>_E<lt>beamE<gt>, where
+E<lt>cE<gt> is a character corresponding to the specific instrument
+(i.e. u for UIST), E<lt>yyyymmddE<gt> is the UT date, E<lt>groupE<gt>
+is the group number, E<lt>angleE<gt> is the integer waveplate angle, and
+E<lt>beamE<gt> is the beam, either E or O. A SpecFrame is added at this
+point. These beams are then
+normalised to a one-second exposure time and stored in a file with a
+E<lt>-nspE<gt> suffix. A Group object is then formed from this group
+and stored as a reference in the current Group's E<lt>angleE<gt>_GROUP_E<lt>beamE<gt>
+header.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+If the current Group's NBEAM header is not 4, no coaddition will
+be done.
+
+=item *
+
+Variances are propagated.
+
+=back
+
+=head1 AUTHORS
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+Brad Cavanagh (JAC) <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# We should have a "NBEAMS" header from _EXTRACT_DETERMINE_NBEAMS_
+my $nbeams = $Grp->uhdr("NBEAMS");
+
+# Obtain the waveplate angle to get the proper group.
+my $pol_angle = $Frm->uhdr("ORAC_WAVEPLATE_ANGLE");
+$pol_angle =~ /(\d+)\./;
+my $group_header = "$1_GROUP";
+my $tempGrp = $Grp->uhdr("$group_header");
+
+my $base = $tempGrp->raw;
+my $in = $tempGrp->file;
+
+if($nbeams == 4) {
+
+  # Let's work the magic. We know that there are four beams, and we just
+  # want to add the positive and negative e-beams, and the positive and
+  # negative o-beams. The output filename for each is going to be
+  # something like gxyyyymmdd_NNNN_A_E, where x is instrument-specific,
+  # yyyymmdd is the date, NNNN is the group number, and A is the waveplate
+  # angle.
+
+  # First, the e-beam.
+  my $out = $base . "_E";
+
+  my $tempE = new ORAC::TempFile;
+  my $tempfileE = $tempE->file;
+
+  my $in_pos = $in . ".POS_E";
+  my $in_neg = $in . ".NEG_E";
+
+  # Do the addition into the temporary file.
+  $Mon{'kappa_mon'}->obeyw("add", "in1=$in_pos in2=$in_neg out=$tempfileE");
+
+  orac_print "Added $in_pos and $in_neg.\n";
+
+  # And divide by two to get the average.
+  $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tempfileE scalar=2 out=$out title=$out");
+
+  # Add a specframe. Wrap in a block.
+  {
+    my $tempGrp = new ORAC::Group;
+    $tempGrp->file( $out );
+    $tempGrp->raw( $out );
+    my $Grp = $tempGrp;
+    $Grp->uhdr("NDIMS", 1);
+    _CREATE_SPECFRAME_
+  }
+
+  orac_print "Divided result by 2 and stored in $out.\n";
+
+  my $out_nsp = $base . "_E-nsp";
+  my $etime = $Frm->uhdr("ORAC_EXPOSURE_TIME");
+
+  $Mon{'kappa_mon'}->obeyw("cdiv", "in=$out scalar=$etime out=$out_nsp title=$out_nsp");
+
+  orac_print "Normalised to 1-second exposure time and stored in $out_nsp.\n";
+
+  # Update the group object.
+  my $group_header_2 = $group_header . "_E";
+  my $tempEGrp = new ORAC::Group;
+  $tempEGrp->file( $out_nsp );
+  $tempEGrp->raw( $out );
+
+  $Grp->uhdr( $group_header_2, $tempEGrp );
+
+  $Display->display_data( $tempEGrp ) if defined $Display;
+
+  # And now the o-beam.
+  $out = $base . "_O";
+
+  my $tempO = new ORAC::TempFile;
+  my $tempfileO = $tempO->file;
+
+  $in_pos = $in . ".POS_O";
+  $in_neg = $in . ".NEG_O";
+
+  $Mon{'kappa_mon'}->obeyw("add", "in1=$in_pos in2=$in_neg out=$tempfileO");
+
+  orac_print "Added $in_pos and $in_neg.\n";
+
+  $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tempfileO scalar=2 out=$out title=$out");
+
+  # Add a specframe. Wrap in a block.
+  {
+    my $tempGrp = new ORAC::Group;
+    $tempGrp->file( $out );
+    $tempGrp->raw( $out );
+    my $Grp = $tempGrp;
+    $Grp->uhdr("NDIMS", 1);
+    _CREATE_SPECFRAME_
+  }
+
+  orac_print "Divided result by 2 and stored in $out.\n";
+
+  $out_nsp = $base . "_O-nsp";
+
+  $Mon{'kappa_mon'}->obeyw("cdiv", "in=$out scalar=$etime out=$out_nsp title=$out_nsp");
+
+  orac_print "Normalised to 1-second exposure time and stored in $out_nsp.\n";
+
+  # Update the group object.
+  $group_header_2 = $group_header . "_O";
+  my $tempOGrp = new ORAC::Group;
+  $tempOGrp->file( $out_nsp );
+  $tempOGrp->raw( $out );
+
+  $Grp->uhdr( $group_header_2, $tempOGrp );
+
+  $Display->display_data( $tempOGrp ) if defined $Display;
+
+}
+
+# Tidy-up output.
+orac_print "\n";
