@@ -2,11 +2,11 @@ package ORAC::Group::UFTI;
 
 =head1 NAME
 
-ORAC::Group::UKIRT - UKIRT class for dealing with observation groups in ORAC-DR
+ORAC::Group::UFTI - UKIRT class for dealing with observation groups in ORAC-DR
 
 =head1 SYNOPSIS
 
-  use ORAC::Group;
+  use ORAC::Group::UFTI;
 
   $Grp = new ORAC::Group::UFTI("group1");
   $Grp->file("group_file")

@@ -130,7 +130,7 @@ sub findgroup {
 =item B<findrecipe>
 
 Find the recipe name. If no recipe can be found from the
-'DRRECIPE FITS keyword'QUICK_LOOK' is returned by default.
+'DRRECIPE' FITS keyword'QUICK_LOOK' is returned by default.
 
 The recipe name stored in the object is automatically updated using 
 this value.
