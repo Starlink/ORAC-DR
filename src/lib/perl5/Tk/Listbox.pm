@@ -131,8 +131,6 @@ sub ClassInit
  return $class;
 }
 
-=back
-
 =head1 TIED INTERFACE
 
 The Tk::Listbox widget can also be tied to a scalar or array variable, with
@@ -262,6 +260,8 @@ would have the same effect as the previous examples.
 
 It should be noted that, despite being a reference to an array (or possibly a has), you still can not copy the tied variable without it being untied, instead
 you must pass a reference to the tied scalar between subroutines.
+
+=back
 
 =cut
 
