@@ -13,7 +13,8 @@ ORAC::General - Simple perl subroutines that may be useful for primitives
   $result = log10($value);
   $result = nint($value);
   $yyyymmdd = utdate;
-  %hash = parse_keyvalue($string)
+  %hash = parse_keyvalue($string);
+  @obs = parse_obslist($string);
 
 =head1 DESCRIPTION
 
@@ -25,7 +26,7 @@ from standard perl. These are available to all ORAC primitive writers
 
 require Exporter;
 @ISA = (Exporter);
-@EXPORT = qw( max min log10 nint utdate parse_keyvalues);
+@EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist);
 
 use Carp;
 use strict;
@@ -153,6 +154,67 @@ sub parse_keyvalues {
   return %hash;
 
 };
+
+
+=item parse_obslist(list)
+
+Converts a comma separated list of observation numbers (as supplied
+on the command line for the -list option) and converts it to
+an array of observation numbers. Colons are treated as range arguments.
+
+For example,
+
+   5,9:11
+
+is converted to
+
+   (5,9,10,11) 
+
+=cut
+
+# Argument disentanglement
+
+# Parse the observation list that is entered with the -list
+# option. This is a comma separated list of numbers.
+# Ranges can be specified with colons
+
+# Returns an array of observation numbers.
+
+sub parse_obslist {
+
+  my $obslist = shift;
+  my @obs = ();
+
+  # Split on the comma
+  @obs = split(",",$obslist);
+
+  # Now go through each entry and see if we can expand on :
+  # a:b expands to a..b.
+  for (my $i = 0; $i <= $#obs; $i++) {
+
+    $obs[$i] =~ /:/ && do {
+      my ($start, $end) = split ( /:/, $obs[$i]);
+ 
+      # Generate the range
+      my @junk = $start..$end;
+
+      # Splice into @obs
+      splice(@obs, $i, 1, @junk);
+
+      # Increment the counter to take into account the
+      # new additions (since we know that @junk does not contain
+      # colons. We dont need this - especially if we want to parse
+      # The expanded array
+      $i += $#junk;
+
+    }
+
+  }
+
+  return @obs;
+}
+
+
 
 
 
