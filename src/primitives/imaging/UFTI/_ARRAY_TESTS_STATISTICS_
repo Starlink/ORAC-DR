@@ -51,6 +51,26 @@
 #
 #-
 
+# Obtain parameters.
+    my $number = $_ARRAY_TESTS_STATISTICS_{NUMBER};
+
+# Before 30000101, the number of darks taken in the array test sequence
+# is 4, and after (and including 30000101) the number is 8.
+    if( !defined( $number ) ) {
+      my $ut = $Frm->uhdr('ORAC_UTDATE');
+      if( defined( $ut ) ) {
+        $ut =~ s/-//g;
+      } else {
+        orac_warn "UT date not set in header. Array test calculations may be incorrect.\n";
+        $ut = 0;
+      }
+      if( $ut < 30000101 ) {
+        $number = 4;
+      } else {
+        $number = 8;
+      }
+    }
+
 # Create the results file if needed.
 # ==================================
 
@@ -77,10 +97,10 @@
 # Compute the statistics.
 # =======================
 
-# Wait until all the array tests are completed.  Should be four frames.
-# Change to be "every four frames" rather than "four frames" to
+# Wait until all the array tests are completed.  Should be N frames.
+# Change to be "every N frames" rather than "N frames" to
 # compensate for current lack of implementation of UFTI groups.
-     if ( ( $Grp->num + 1 ) % 4 == 0 ) {
+     if ( ( $Grp->num + 1 ) % $number == 0 ) {
 
 # Obtain the exposure time of the last and current frame.
         my $exptime = $Frm->uhdr( "ORAC_EXPOSURE_TIME" );
@@ -93,9 +113,9 @@
 # Obtain the names of the group members.
         my @frames = $Grp->membernames;
 
-# Difference the first two (ND_STARE) frames.  The first ARRAY_TESTS frame
-# is ignored.
-        my $param = "in1=$frames[1] in2=$frames[2] out=array_test";
+# Difference the third-to-last and penultimate (ND_STARE) frames.  The
+# ARRAY_TESTS frames up until these two are ignored.
+        my $param = "in1=$frames[-3] in2=$frames[-2] out=array_test";
         $Mon{ "kappa_mon" }->obeyw( "sub", "$param" );
 
 # Find the standard deviation of the difference frame after a 3-sigma clipping.
@@ -103,8 +123,8 @@
         ( my $ORAC_STATUS, my $nd_stare_sigma ) = $Mon{ "kappa_mon" }->get( "stats", "sigma" );
         my $nd_stare_rn = $nd_stare_sigma / sqrt( 2.0 ) * $adu;
 
-# Find the clipped mean of the fourth frame, a dark frame.
-        $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$frames[3] clip=3" );
+# Find the clipped mean of the last frame, a dark frame.
+        $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$frames[-1] clip=3" );
         ( $ORAC_STATUS, my $mean ) = $Mon{ "kappa_mon" }->get( "stats", "mean" );
         my $dark = $mean / $exptime * $adu;
 
