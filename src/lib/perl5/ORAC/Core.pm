@@ -24,11 +24,11 @@ use strict;
 use Carp;
 
 use ORAC::Print;
-use ORAC::Basic;
+use ORAC::Recipe;
 
 require Exporter;
 
-use vars qw/$VERSION @EXPORT @ISA $CONVERT/;
+use vars qw/$VERSION @EXPORT @ISA /;
 
 @ISA = qw/Exporter/;
 @EXPORT = qw/orac_process_frame orac_store_frm_in_correct_grp /;
@@ -98,7 +98,7 @@ sub orac_store_frm_in_correct_grp {
   }
 
   # query Frame for its group
-  
+
   my $grpname = $Frm->group;
 
   # create a new group object and remove the previous file
@@ -106,9 +106,9 @@ sub orac_store_frm_in_correct_grp {
   # note that the "existence" of this group is only meaningful
   # over the lifetime of the pipeline
   # Unless the primitive is written to recognise -resume
-  
+
   do {
-    
+
     # Create the group
     $Grp = new $GrpObjectType($grpname);
 
@@ -159,68 +159,84 @@ primitives are stored in instrument specific directories.
 The %Mon hash is supplied so that a recipe has full access to
 all the monoliths launched for this instrument.
 
-  orac_process_frame($Frm, $Grp, $Cal, \%Mon, $default_recipe, 
-     $instrument);
+  orac_process_frame(
+		       Frame => $Frm,
+		       Group => $Grp,
+		       Calibration => $Cal,
+		       Engines =>\%Mon,
+		       Display => $Display,
+		       Beep => $opt_beep,
+		       Debug => $opt_debug,
+		       CmdLineRecipe => $Override_Recipe,
+		       Instrument => $instrument,
+		       Batch => 0,
+                     );
 
+Additional parameters are provided to configure the recipe
+environment. Defaults are provided for Debug and Batch.
+(both false). Those options relate to the C<-debug> and C<-batch>
+command line options.
 
 =cut
 
 
 sub orac_process_frame {
-  use strict;
 
-  croak 'Usage: orac_process_frame($Frm, $Grp, $Cal, \%Mon, $OverRecipe, $instrument)'
-    unless scalar(@_)  == 6;
+  my %args = @_;
 
-  # Variable declaration
-  my ($Recipe);
+  # Require Frame, Group, Calibration, Display and Engines
+  for (qw/ Frame Group Calibration Display Engines Instrument/) {
+    croak "orac_process_frame: Arg hash must include keyword $_\n"
+      unless exists $args{$_};
+  }
 
-  # Read arguments
-  my ($Frm, $Grp, $Cal, $Mon, $OverRecipe, $instrument) = @_;
+  # Check args
+  croak "Engines must be supplied as hash reference\n"
+    unless ref($args{Engines}) eq 'HASH';
 
-  croak "4th argument must be reference to hash not $Mon"
-    unless ref($Mon) eq 'HASH';
+  # Copy the objects
+  my $Frm = $args{Frame};
+  my $Grp = $args{Group};
+  my $Cal = $args{Calibration};
+  my $Mon = $args{Engines};
+  my $Display = $args{Display};
+
 
   # Store the header of the current frame in the calibration object
   $Cal->thing($Frm->hdr);
-
-  #
-  # at this point the recipe method should be queried if it hasn't
-  # been explicitly set
-  # Query frame for a recipe
-
-  my $frmrecipe = $Frm->recipe;
 
   # KLUDGE: If recipe is not defined take the one specified on the command
   # Line. Else use the one instructed by the frame.
   # This needs to be changed such that we override all recipes except for
   # calibrators
-  
-  if (defined $OverRecipe) {
-    $Recipe = $OverRecipe;
-    orac_print "Using recipe $Recipe specified on command-line\n";
+
+  my $RecipeName;
+  if (exists $args{CmdLineRecipe} && defined $args{CmdLineRecipe}) {
+    $RecipeName = $args{CmdLineRecipe};
+    orac_print "Using recipe $RecipeName specified on command-line\n";
   } else {
-    $Recipe = $frmrecipe;
-    orac_print "Using recipe $Recipe provided by the frame\n";
+    # Retrieve recipe name from frame object
+    my $frmrecipe = $Frm->recipe;
+
+    # copy it
+    $RecipeName = $frmrecipe;
+    orac_print "Using recipe $RecipeName provided by the frame\n";
   };
 
+  # Create new recipe object
+  my $recipe = new ORAC::Recipe( NAME => $RecipeName,
+				 INSTRUMENT => $args{Instrument});
 
-  # Read in the selected recipe - note that this returns an array reference
-  my $recipe_ref = orac_read_recipe($Recipe, $instrument);	# read recipe
-  
-  # Parse the recipe, this is recursive.
-  # In order to save time here we should not be 
-  # passing an enormous array around (can contain hundereds of lines
-  # of code). Instead pass around an array reference
-  $recipe_ref = orac_parse_recipe($recipe_ref, $instrument);
+  # Configure debugging and batch flags
+  $recipe->debug( $args{Debug} ) if exists $args{Debug};
+  $recipe->batch( $args{Batch} ) if exists $args{Batch};
 
-  # Now that the recipe is parsed, insert code for automatic error
-  # checking, etc
 
-  $recipe_ref = orac_add_code_to_recipe($recipe_ref);
+  # parse the recipe
+  $recipe->parse;
 
-  # execute the parsed recipe
-  orac_execute_recipe($recipe_ref,$Frm,$Grp,$Cal,$Mon);
+  # Execute the recipe
+  $recipe->execute( $Frm, $Grp, $Cal, $Display, $Mon );
 
   # delete symlink to raw data file
   # Only want to do this if we created it initially....
@@ -237,14 +253,13 @@ $Id$
 
 =head1 AUTHORS
 
-Frossie Economou (frossie@jach.hawaii.edu) and 
-Tim Jenness (t.jenness@jach.hawaii.edu)
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
+Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
-
 
 =cut
 
