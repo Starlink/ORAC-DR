@@ -29,7 +29,9 @@ use 5.006;
 use strict;
 use warnings;
 
+use Math::Trig;
 use ORAC::Group::UKIRT;
+use ORAC::Print;
 use ORAC::General;
 
 # Set inheritance
@@ -50,7 +52,8 @@ my %hdr = (
             GRATING_NAME         => "HIERARCH.ESO.INS.GRAT.NAME",
             GRATING_ORDER        => "HIERARCH.ESO.INS.GRAT.ORDER",
             GRATING_WAVELENGTH   => "HIERARCH.ESO.INS.GRAT.WLEN",
-            SLIT_NAME            => "HIERARCH.ESO.INS.SLIT",
+            SLIT_NAME            => "HIERARCH.ESO.INS.OPTI1.ID",
+#            SLIT_NAME            => "HIERARCH.ESO.INS.SLIT",
             X_DIM                => "HIERARCH.ESO.DET.WIN.NX",
             Y_DIM                => "HIERARCH.ESO.DET.WIN.NY",
 
@@ -58,7 +61,6 @@ my %hdr = (
             AIRMASS_END          => "HIERARCH.ESO.TEL.AIRM.END",
             CHOP_ANGLE           => "HIERARCH.ESO.SEQ.CHOP.POSANGLE",
             CHOP_THROW           => "HIERARCH.ESO.SEQ.CHOP.THROW",
-            DEC_BASE             => "DEC",
             EXPOSURE_TIME        => "EXPTIME",
             NUMBER_OF_EXPOSURES  => "HIERARCH.ESO.DET.NDIT",
             NUMBER_OF_READS      => "HIERARCH.ESO.DET.NCORRS",
@@ -83,7 +85,17 @@ sub _from_AIRMASS_START {
    "HIERARCH.ESO.TEL.AIRM.START", $_[0]->uhdr( "ORAC_AIRMASS_START" );
 }
 
-# If the telescope ofset exists in arcsec, then use it.  Otherwise
+sub _to_DEC_BASE {
+   my $self = shift;
+   my $dec = 0.0;
+   if ( exists ( $self->hdr->{DEC} ) {
+      $dec = $self->hdr->{DEC};
+   }
+   $dec = defined( $dec ) ? $dec: 0.0; 
+   return $dec;
+}
+
+# If the telescope offset exists in arcsec, then use it.  Otherwise
 # convert the Cartesian offsets to equatorial offsets.
 sub _to_DEC_TELESCOPE_OFFSET {
    my $self = shift;
@@ -94,9 +106,25 @@ sub _to_DEC_TELESCOPE_OFFSET {
    } elsif ( exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} &&
              exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} ) {
 
-      my $pixscale = $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
-      my $x_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} * $pixscale;
-      my $y_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} * $pixscale;
+      my $pixscale = 0.148;
+      if ( exists $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"} ) {
+         $pixscale = $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
+      }
+
+# Sometimes the first cumulative offsets are non-zero contrary to the
+# documentation.
+      my $expno = 1;
+      if ( exists $self->hdr->{"HIERARCH.ESO.TPL.EXPNO"} ) {
+         $expno = $self->hdr->{"HIERARCH.ESO.TPL.EXPNO"};
+      }
+      my ( $x_as, $y_as );
+      if ( $expno == 1 ) {
+         $x_as = 0.0;
+         $y_as = 0.0;
+      } else {
+         $x_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} * $pixscale;
+         $y_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} * $pixscale;
+      }
 
 # Define degrees to radians conversion and obtain the rotation angle.
       my $dtor = atan2( 1, 1 ) / 45.0;
@@ -114,7 +142,7 @@ sub _to_DEC_TELESCOPE_OFFSET {
    return -1.0 * $decoffset;
 }
 
-# If the telescope ofset exists in arcsec, then use it.  Otherwise
+# If the telescope offset exists in arcsec, then use it.  Otherwise
 # convert the Cartesian offsets to equatorial offsets.
 sub _to_RA_TELESCOPE_OFFSET {
    my $self = shift;
@@ -125,9 +153,25 @@ sub _to_RA_TELESCOPE_OFFSET {
    } elsif ( exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} &&
              exists $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} ) {
 
-      my $pixscale = $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
-      my $x_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} * $pixscale;
-      my $y_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} * $pixscale;
+      my $pixscale = 0.148;
+      if ( exists $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"} ) {
+         $pixscale = $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
+      }
+
+# Sometimes the first cumulative offsets are non-zero contrary to the
+# documentation.
+      my $expno = 1;
+      if ( exists $self->hdr->{"HIERARCH.ESO.TPL.EXPNO"} ) {
+         $expno = $self->hdr->{"HIERARCH.ESO.TPL.EXPNO"};
+      }
+      my ( $x_as, $y_as );
+      if ( $expno == 1 ) {
+         $x_as = 0.0;
+         $y_as = 0.0;
+      } else {
+         $x_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETX"} * $pixscale;
+         $y_as = $self->hdr->{"HIERARCH.ESO.SEQ.CUMOFFSETY"} * $pixscale;
+      }
 
 # Define degrees to radians conversion and obtain the rotation angle.
       my $dtor = atan2( 1, 1 ) / 45.0;
@@ -271,6 +315,8 @@ sub _to_GRATING_DISPERSION {
    return $dispersion;
 }     
 
+# Sampling is always 1x1, and therefore there are no headers with
+# these values.
 sub _to_NSCAN_POSITIONS {
    1;
 }
@@ -326,6 +372,7 @@ sub _from_OBSERVATION_TYPE {
 sub _to_RA_BASE {
    my $self = shift;
    my $ra = $self->hdr->{RA};
+   $ra = defined( $ra ) ? $ra: 0.0; 
    return $ra / 15.0;
 }
 
@@ -359,26 +406,30 @@ sub _to_RECIPE {
    } elsif ( $template =~ /ISAAC[SL]W_img_obs_AutoJitterOffset/ ) {
       $recipe = "CHOP_SKY_JITTER";
 
+# The following two perhaps should be using NOD_CHOP and a variant of
+# NOD_CHOP_APHOT to cope with the three source images (central double
+# flux) rather than four.
    } elsif ( $template eq "ISAACLW_img_obs_AutoChopNod" ||
              $seq eq "ISAACLW_img_obs_AutoChopNod" ) {
       $recipe = "NOD_SELF_FLAT_NO_MASK";
 
-   } elsif ( $template eq "ISAACLW_img_cal_Standard_Star" ||
-             $template =~ /^ISAACSW_img_tec_Zp/ ||
-             $seq eq "ISAACLW_img_cal_Standard_Star" ) {
+   } elsif ( $template eq "ISAACLW_img_cal_StandardStar" ||
+             $template =~ /^ISAACLW_img_tec_Zp/ ||
+             $seq eq "ISAACLW_img_cal_StandardStar" ) {
       $recipe = "NOD_SELF_FLAT_NO_MASK_APHOT";
 
    } elsif ( $template =~ /ISAAC[SL]W_img_cal_Darks/ ||
              $seq eq "ISAAC_img_cal_Darks" ) {
       $recipe = "REDUCE_DARK";
-                       
+
    } elsif ( $template =~ /ISAAC[SL]W_img_cal_TwFlats/ ) {
       $recipe = "SKY_FLAT_MASKED";
 
 # Imaging spectroscopy.  There appears to be no distinction
 # for flats from target, hence no division into POL_JITTER and
 # SKY_FLAT_POL.
-   } elsif ( $template eq "ISAACSW_img_obs_Polarimetry" ) {
+   } elsif ( $template eq "ISAACSW_img_obs_Polarimetry" ||
+             $template eq "ISAACSW_img_cal_Polarimetry" ) {
       $recipe = "POL_JITTER";
 
 # Spectroscopy.  EXTENDED_SOURCE may be more appropriate for
@@ -478,6 +529,7 @@ sub _to_TELESCOPE {
    }
    return $telescope;
 }
+
 sub _to_UTDATE {
    my $self = shift;
 
@@ -652,19 +704,19 @@ of 'gisaac'.
 =cut
 
 sub new {
-  my $proto = shift;
-  my $class = ref($proto) || $proto;
+   my $proto = shift;
+   my $class = ref($proto) || $proto;
 
-  # Do not pass objects if the constructor required
-  # knowledge of fixedpart() and filesuffix()
-  my $group = $class->SUPER::new(@_);
+# Do not pass objects if the constructor required
+# knowledge of fixedpart() and filesuffix().
+   my $group = $class->SUPER::new(@_);
 
-  # Configure it
-  $group->fixedpart('gisaac');
-  $group->filesuffix('.sdf');
+# Configure it.
+   $group->fixedpart('gisaac');
+   $group->filesuffix('.sdf');
 
-  # return the new object
-  return $group;
+# Return the new object.
+   return $group;
 }
 
 =back
@@ -696,30 +748,33 @@ Returns a hash containing the new keywords.
 =cut
 
 sub calc_orac_headers {
-  my $self = shift;
+   my $self = shift;
 
-  # Run the base class first since that does the ORAC
-  # headers
-  my %new = $self->SUPER::calc_orac_headers;
+# Run the base class first since that does the ORAC
+# headers.
+   my %new = $self->SUPER::calc_orac_headers;
 
 
-  # ORACTIME
-  # For ISAAC this is the UTC header value converted to decimal hours
-  # and a 12-hour offset to avoid worrying about midnight UT.
-  my $time = $self->get_UT_hours() + 12.0;
-  # Just return it (zero if not available)
-  $time = 0 unless (defined $time);
-  $self->hdr('ORACTIME', $time);
+# ORACTIME
+# --------
+# For ISAAC this is the UTC header value converted to decimal hours
+# and a 12-hour offset to avoid worrying about midnight UT.
+   my $time = $self->get_UT_hours() + 12.0;
 
-  $new{'ORACTIME'} = $time;
+# Just return it (zero if not available)
+   $time = 0 unless (defined $time);
+   $self->hdr('ORACTIME', $time);
 
-  # ORACUT
-  # For ISAAC this is the UTC header value converted to decimal hours.
-  my $ut =  $self->get_UT_hours();
-  $ut = 0 unless defined $ut;
-  $self->hdr('ORACUT', $ut);
+   $new{'ORACTIME'} = $time;
 
-  return %new;
+# ORACUT
+# ------
+# For ISAAC this is the UTC header value converted to decimal hours.
+   my $ut =  $self->get_UT_hours();
+   $ut = 0 unless defined $ut;
+   $self->hdr('ORACUT', $ut);
+
+   return %new;
 }
 
 =back
