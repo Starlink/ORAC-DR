@@ -36,6 +36,7 @@ if( $Frm->uhdr("CREATE_CATALOGUE") ) {
 
   use Astro::Catalog;
   use Astro::Catalog::Star;
+  use Astro::Coords;
 
 # Obtain the minimum number of pixels in the objects.
   my $minpix = ( $_CREATE_IMAGE_CATALOGUE_{MINPIX} || 12 );
@@ -52,7 +53,8 @@ if( $Frm->uhdr("CREATE_CATALOGUE") ) {
 # in the ASCII file ${ORAC_DATA_CAL}/extractor_mask.param.
   my $in = $Grp->file;
   my $resfile = "object_cat.cat";
-  my $param1 = "image=$in config=$ENV{ORAC_DATA_CAL}/extractor_catalogue.sex";
+  my $config = $Cal->find_file("extractor_catalogue.sex");
+  my $param1 = "image=$in config=$config";
 
 # Report the processing status.
   orac_print "Detecting objects in $in with at least $minpix connected pixels\n";
@@ -75,10 +77,10 @@ if( $Frm->uhdr("CREATE_CATALOGUE") ) {
 #    unlink ( $resfile );
 
 # Create the Astro::Catalog object.
-    my $catalog = new Astro::Catalog( origin => 'UKIRT');
+    my $catalog = new Astro::Catalog( );
 
     my $pi = atan2( 1, 1 ) * 4;
-    my $id = 0;
+    my $id = 1;
 
 # Create a file to hold the locations of the found objects.
     my $objfile = "obj_file.txt";
@@ -158,46 +160,23 @@ if( $Frm->uhdr("CREATE_CATALOGUE") ) {
 # Switch the WCS back to SKY.
     $Mon{'ndfpack_mon'}->obeyw("wcsframe", "ndf=$in frame=SKY");
 
-# Now the output file is a CURSA small text list file, and has
-# formatting and coordinate system information in an extensive
-# header. We do not need to worry about this, and our table of
-# results begins the line after BEGINTABLE.
+# Now the output file is a CURSA small text list file, so read it
+# into an Astro::Catalog object.
+    my $stl_catalog = new Astro::Catalog( Format => 'STL',
+                                          File => $ENV{'ORAC_DATA_OUT'} . "/$radecfile",
+                                        );
 
-    open( my $fh_radecfile, "< $radecfile" ) ||
-      orac_throw "Could not open $radecfile to read in RA/Dec positions. Error: $!.\n";
-
-# Advance the file pointer.
-    while( <$fh_radecfile> !~ /^BEGINTABLE/ ) { };
-
-    $id = 0;
-    while( <$fh_radecfile> ) {
-      my @ra_fields = split /\s+/;
-
-#      print ( ( map { "($_)" } @ra_fields ), "\n" );
-
-# Create an Astro::Coords object. $ra_fields[2] holds the RA, and
-# $ra_fields[3] holds the Dec.
-      my $ra = $ra_fields[2];
-      $ra += 2 * $pi
-        if( $ra < 0 );
-      my $dec = $ra_fields[3];
-      my $coords = new Astro::Coords( ra => $ra,
-                                      dec => $dec,
-                                      units => 'radians',
-                                      type => 'J2000',
-                                    );
-
-# Pop the star out of the catalogue.
-      my @stars = $catalog->popstarbyid( $id );
-      my $star = $stars[0];
+# Get the positions from the STL catalogue and apply them to the
+# catalogue with magnitudes.
+    foreach my $stl_star ( $stl_catalog->allstars() ) {
+      my @cat_stars = $catalog->popstarbyid( $stl_star->id );
+      my $cat_star = $cat_stars[0];
 
 # Set its position.
-      $star->coords( $coords );
+      $cat_star->coords( $stl_star->coords );
 
 # And push it back into the catalogue.
-      $catalog->pushstar( $star );
-
-      $id++;
+      $catalog->pushstar( $cat_star );
     }
 
 # Dump the catalog to disk.
@@ -207,9 +186,10 @@ if( $Frm->uhdr("CREATE_CATALOGUE") ) {
 
     my @filters = ( $filter );
     my $status = $catalog->write_catalog( file => $cat_file,
-					  format => 'Cluster',
+                                          format => 'Cluster',
                                         );
-    orac_print "Wrote catalogue to $cat_file with status $status\n\n";
+
+    orac_print "Wrote catalogue to $cat_file.\n\n";
 
   }
 
