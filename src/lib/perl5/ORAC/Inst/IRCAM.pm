@@ -99,7 +99,7 @@ sub start_algorithm_engines {
 
   %Mon = ();
 
-  ($ENV{PSF_DIR} = '/star/local/bin') unless (exists $ENV{PSF_DIR});
+#  ($ENV{PSF_DIR} = '/star/local/bin') unless (exists $ENV{PSF_DIR});
 
   $Mon{photom_mon} = new ORAC::Msg::ADAM::Task("photom_mon_$$",$ENV{PHOTOM_DIR}."/photom_mon");
   $Mon{figaro1} = new ORAC::Msg::ADAM::Task("figaro1_$$",$ENV{FIG_DIR}."/figaro1");
@@ -108,7 +108,7 @@ sub start_algorithm_engines {
   $Mon{ccdpack_res} = new ORAC::Msg::ADAM::Task("ccdpack_res_$$",$ENV{CCDPACK_DIR}."/ccdpack_res");
   $Mon{ccdpack_reg} = new ORAC::Msg::ADAM::Task("ccdpack_reg_$$",$ENV{CCDPACK_DIR}."/ccdpack_reg");
   $Mon{pisa_mon} = new ORAC::Msg::ADAM::Task("pisa_mon_$$",$ENV{PISA_DIR}."/pisa_mon");
-  $Mon{psf_mon} = new ORAC::Msg::ADAM::Task("psf_mon_$$",$ENV{PSF_DIR}."/psf",{TASKTYPE=>'I'});
+#  $Mon{psf_mon} = new ORAC::Msg::ADAM::Task("psf_mon_$$",$ENV{PSF_DIR}."/psf",{TASKTYPE=>'I'});
   $Mon{kappa_mon} = new ORAC::Msg::ADAM::Task("kappa_mon_$$",$ENV{KAPPA_DIR}."/kappa_mon");
 
 
