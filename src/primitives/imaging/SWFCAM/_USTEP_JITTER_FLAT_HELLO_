@@ -1,0 +1,164 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_USTEP_JITTER_FLAT_HELLO_ -- Set up data-reduction tasks and data for the USTEP_JITTER_FLAT recipes.
+
+=head1 DESCRIPTION
+
+Sets up CCDPACK-related global parameters for USTEP_JITTER_FLAT recipes.
+The settings are as follows:
+
+=over 4
+
+=item *
+
+The readout bounds in the internal headers ORAC_X_LOWER_BOUND,
+ORAC_Y_LOWER_BOUND, ORAC_X_UPPER_BOUND, ORAC_Y_UPPER_BOUND define the
+pixel limits for processing, i.e. there are no bias strips and
+interpolation direction.
+
+=item *
+
+Error processing is disabled so the readout noise and
+analogue-to-digital conversions are not specified.
+
+=item *
+
+There is no deferred charge.
+
+=item *
+
+Position list processing tasks expect to find the names of lists
+stored within NDFs.
+
+=item *
+
+Logging is to the terminal.
+
+=item *
+
+The data type of NDF arrays is preserved.
+
+=item *
+
+Does not detect saturated pixels.
+
+=item *
+
+Parameters are neither saved from or to a `restoration' file.
+
+=back
+
+The script also performs the following tasks.
+
+=over 4
+
+=item *
+
+Calls the steering primitive to set steering headers.
+
+=item *
+
+Calls L<_PREPARE_SINGLE_FRAME|_PREPARE_SINGLE_FRAME_> primitive to
+create data errors, subtract integrations for chopped data, remove the bias,
+and create a valid world co-ordinate system.
+
+=back
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item JITTER_POSITIONS = INTEGER (Given)
+
+The number of positions in the jitter pattern. []
+
+=item MULTICOLOURED = LOGICAL (Given)
+
+Whether or not the observation is through multiple filters.  If true (1),
+the L<_USTEP_JITTER_FLAT_NCOLOUR_STEER_|_USTEP_JITTER_FLAT_NCOLOUR_STEER_>
+steering is invoked.  If false (0),
+L<_USTEP_JITTER_FLAT_STEER_|_USTEP_JITTER_FLAT_STEER_> steering rules are
+used.  [0]
+
+=item USEVAR = LOGICAL (Given)
+
+Whether or not to create and propagate variance arrays.  [0]
+
+=item USTEP_POSITIONS = INTEGER (Given)
+
+The number of positions in the microstep pattern. []
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for WFCAM.
+
+=back
+
+=head1 TASKS
+
+CCDPACK: CCDSETUP.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu> (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# Obtain the MULTICOLOURED argument. Default to false.
+my $multi = $_USTEP_JITTER_FLAT_HELLO_{MULTICOLOURED};
+$multi = defined( $multi ) ? $multi : 0;
+
+# Obtain the USEVAR argument. Default to false.
+my $usevar = $_USTEP_JITTER_FLAT_HELLO_{USEVAR};
+$usevar = defined( $usevar ) ? $usevar : 0;
+
+# Obtain the JITTER_POSITIONS and USTEP_POSITIONS arguments to be
+# passed on to _USTEP_JITTER_FLAT_STEER_ if defined.
+my $jitter_positions = $_USTEP_JITTER_FLAT_HELLO_{JITTER_POSITIONS};
+my $args = "";
+if ( defined( $jitter_positions ) ) {
+  $args .= " JITTER_POSITIONS=$jitter_positions";
+}
+my $ustep_positions = $_USTEP_JITTER_FLAT_HELLO_{USTEP_POSITIONS};
+if ( defined( $ustep_positions ) ) {
+  $args .= " USTEP_POSITIONS=$ustep_positions";
+}
+
+# Read readout bounds from the headers.
+my $x1 = $Frm->uhdr( "ORAC_X_LOWER_BOUND" );
+my $x2 = $Frm->uhdr( "ORAC_X_UPPER_BOUND" );
+my $y1 = $Frm->uhdr( "ORAC_Y_LOWER_BOUND" );
+my $y2 = $Frm->uhdr( "ORAC_Y_UPPER_BOUND" );
+my $param1 = "extent=[$x1,$x2,$y1,$y2]";
+
+# Define the hidden variables for CCDPACK setup.
+my $param2 = "saturate=no preserve=yes genvar=no restore=no logto=terminal ";
+$param2 .= "adc=! rnoise=! bounds=! direction=! deferred=! ndfnames=yes save=no";
+
+# Execute commands, setting up CCDPACK.
+my $ORAC_STATUS = $Mon{ "ccdpack_res" }->control( "par_reset" );
+$Mon{ "ccdpack_res" }->obeyw( "ccdsetup", "$param1 $param2 accept" );
+
+# Set up steering headers, choosing the appropriate primitive.
+if( $multi ) {
+  _USTEP_JITTER_FLAT_NCOLOUR_STEER_ $args
+} else {
+  _USTEP_JITTER_FLAT_STEER_ $args
+}
+
+# Prepare the single frame.
+_PREPARE_SINGLE_FRAME_
