@@ -119,7 +119,7 @@ sub new {
 
   $group->{ugrps} = [];
   $group->{jgrps} = [];
-  $group->{superframes} = undef;
+  $group->{sf} = undef;
 
   # Configure it
 
@@ -207,12 +207,12 @@ sub findugroup {
     my $grp;
     foreach $grp (@{$self->allugroups}) {
 	if ($grp->name == $ugrp) {
-	    $match = 1;
+	    $match = $grp;
 	    last;
         }
     }
     croak "Unable to match ugroup $ugrp" unless $match;
-    return($grp);
+    return($match);
 }
 
 =item B<findjgroup>
