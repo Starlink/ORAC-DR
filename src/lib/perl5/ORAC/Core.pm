@@ -694,8 +694,11 @@ sub orac_calib_override {
   if (defined $opt_calib) {
  
      if ( ref($opt_calib) ) {
-        # $opt_calib will be a reference if passed from Xoracdr
-        %calibs = %$opt_calib;
+        # $opt_calib will be a reference if passed from Xoracdr it may 
+	# have keywords with zero length strings as values, a quick 
+	# kludge to get round this follows
+	foreach my $key (keys %$opt_calib ) {
+	  $calibs{$key} = $$opt_calib{$key} if length($$opt_calib{$key}) != 0; }
      } else {
         # or as a string from oracdr itself
         %calibs = parse_keyvalues($opt_calib); }
