@@ -196,33 +196,6 @@ sub file_from_bits {
   return $self->rawfixedpart . $prefix . '_' . $padnum . $self->rawsuffix;
 }
 
-
-=item B<findrecipe>
-
-Find the recipe name. If the recipe name can not be found (using
-the 'RECIPE' keyword), 'QUICK_LOOK' is returned by default.
-
-The recipe name is updated in the Frame object.
-
-=cut
-
-sub findrecipe {
-
-  my $self = shift;
-
-  my $recipe = $self->hdr('RECIPE');
-
-  $recipe = 'QUICK_LOOK' unless ($recipe =~ /\w/);
-
-
-  # Update
-  $self->recipe($recipe);
-
-  return;
-}
-
-
-
 =item B<flag_from_bits>
 
 Determine the name of the flag file given the variable

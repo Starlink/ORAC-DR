@@ -400,34 +400,6 @@ sub findgroup {
 
 }
 
-=item B<findrecipe>
-
-Find the recipe name. If no recipe can be found from the
-'RECIPE' FITS keyword. 'QUICK_LOOK' is returned by default.
-
-The recipe name stored in the object is automatically updated using 
-this value.
-
-=cut
-
-sub findrecipe {
-
-  my $self = shift;
-
-  my $recipe = $self->hdr('RECIPE');
-
-  # Check to see whether there is something there
-  # if not try to make something up
-  if (!defined($recipe) or $recipe !~ /./) {
-    $recipe = 'QUICK_LOOK';
-  }
-
-  # Update
-  $self->recipe($recipe);
-
-  return $recipe;
-}
-
 =item B<gui_id>
 
 Returns the identification string that is used to compare the

@@ -182,34 +182,6 @@ This section describes sub-classed methods.
 
 =over 4
 
-=item B<findrecipe>
-
-Find the recipe name. If no recipe can be found from the
-'RECIPE' FITS keyword'QUICK_LOOK' is returned by default.
-
-The recipe name stored in the object is automatically updated using 
-this value.
-
-=cut
-
-sub findrecipe {
-
-  my $self = shift;
-
-  my $recipe = $self->hdr('RECIPE');
-
-  # Check to see whether there is something there
-  # if not try to make something up
-  if (! defined $recipe || length($recipe) == 0) {
-    $recipe = 'QUICK_LOOK';
-  }
-
-  # Update
-  $self->recipe($recipe);
-
-  return $recipe;
-}
-
 =back
 
 =head1 SEE ALSO
