@@ -14,6 +14,11 @@
 #    recipes through the steering headers listed below. 
 #
 # Steering Headers:
+#    CIRCULAR = LOGICAL
+#       Whether or not the the polarimetry type is circular.  This is only
+#       set when it is time to make a  mosaic and is decided by the list of
+#       unique waveplate angles in the group.  Circular polarisation is
+#       assigned when 90 and 135 degrees are present amongst the waveplate angles.
 #    CYCLE_NUMBER = INTEGER
 #       Number of the cycle, a cycle being a set of frames to complete a
 #       pass through the recipe.  The first cycle is 0.
@@ -71,15 +76,17 @@
 #       Whether or not to create and propagate variance arrays.  [1]
 #
 # Notes:
-#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
-#    in imaging mode.
+#    -  This primitive is suitable for infra-red imaging instruments.
 #    -  Processing only occurs for object and sky frames.
+#    - The list of unique waveplate angles in the group, listed in order
+#    of first appearance is stored by reference in group user header
+#    WAVEPLATE_ANGLE_LIST.
 #
 # Authors:
-#    MJC: Malcolm J. Currie (JAC)
+#    MJC: Malcolm J. Currie (JAC, Starlink)
 #
 # Copyright:
-#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 #
 #-
@@ -178,15 +185,58 @@
           $Grp->uhdr( "MOSAIC_GROUP", $mosGrp );
        }
 
+# Form a list of unique waveplate angles to test for circular polarisation. 
+# =========================================================================
+
+# Obtain the waveplate angle.
+       my $angle = $Frm->uhdr( "ORAC_WAVEPLATE_ANGLE" ) % 180;
+       my @anglelist;
+       my $anglelist_ref;
+
+# For the first frame of the observation, form an array of the
+# waveplate angles and store by refeence in the group header.
+       if ( $fn == 1 ) {
+          @anglelist = ( $angle );
+          $Grp->uhdr( "WAVEPLATE_ANGLE_LIST", \@anglelist );
+
+# For subsequent frames, obtain the array and append the new angle to
+# the array.
+       } else {
+          $anglelist_ref = $Grp->uhdr( "WAVEPLATE_ANGLE_LIST" );
+          @anglelist = @$anglelist_ref;
+          push ( @anglelist, $angle );
+
+# Form a unique list preserving the order, and store it in the group
+# user header.
+          my %seen = ();
+          my @unique = grep { ! $seen{$_} ++ } @anglelist;
+          @anglelist = @unique;
+          $Grp->uhdr( "WAVEPLATE_ANGLE_LIST", \@anglelist );
+       }
+
+# Determine if circular.  For early frames circular may be false for 0
+# then 45-degree angles.
+       my $circular = 0;
+       foreach $angle ( @anglelist ) {
+          $circular = 1 if ( $angle == 90 || $angle == 135 );
+       }
+
 # Assign the steering headers.
 # ============================
+
+# Set the circular-polarisation flag.
+       $Frm->uhdr( "CIRCULAR", $circular );
 
 # Obtain the USEVAR argument.  Default to true.
        my $usevar = $_POL_JITTER_STEER_{USEVAR};
        $usevar = defined( $usevar ) ? $usevar : 1;
        $Frm->uhdr( "USE_VARIANCE", $usevar ); 
 
-# There are four waveplate angles.
+# There are four waveplate angles for linear and circular.  This is
+# not the optimal circular polarisation since we can't set or readily 
+# determine the two waveplate angles such that the fast axis is at
+# +/- 45 degrees to the prism dispersion axis.  A workaround is to use
+# 0, 45, 90, and 135 degrees.
        my $nangle = 4;
        my $totframe = $nangle * $number;
 
@@ -215,19 +265,13 @@
 # is completed.  When all waveplate angles are observed at each jitter,
 # a mosaic for a waveplate angle can be found once the last jitter
 # position for it has been observed.
+       my $makemos;
        if ( $jitter_first ) {
-          if ( $fn % $number == 0 ) {
-             $Frm->uhdr( "MAKE_MOSAIC", 1 );
-          } else {
-             $Frm->uhdr( "MAKE_MOSAIC", 0 );
-          }
+          $makemos = ( $fn % $number == 0 );
        } else {
-          if ( $Grp->num % $totframe >= ( $totframe - $nangle ) ) {
-             $Frm->uhdr( "MAKE_MOSAIC", 1 );
-          } else {
-             $Frm->uhdr( "MAKE_MOSAIC", 0 );
-          }
+          $makemos = ( $Grp->num % $totframe >= ( $totframe - $nangle ) );
        }
+       $Frm->uhdr( "MAKE_MOSAIC", $makemos );
 
 # Insert the cycle number of the set of frames.
        $Frm->uhdr( "CYCLE_NUMBER", int( $Grp->num / $totframe ) );
@@ -260,6 +304,13 @@ recipes through the steering headers listed below.
 =head1 STEERING HEADERS
 
 =over 4
+
+=item CIRCULAR = LOGICAL
+
+Whether or not the the polarimetry type is circular.  This is only
+set when it is time to make a  mosaic and is decided by the list of
+unique waveplate angles in the group.  Circular polarisation is
+assigned when 90 and 135 degrees are present amongst the waveplate angles.
 
 =item CYCLE_NUMBER = INTEGER
 
@@ -353,7 +404,7 @@ Whether or not to create and propagate variance arrays.  [1]
 
 =item *
 
-This primitive is suitable for UFTI, IRCAM, and Michelle in imaging mode.
+This primitive is suitable for infrared imaging instruments.
 
 =item *
 
@@ -363,11 +414,11 @@ Processing only occurs for object and sky frames.
 
 =head1 AUTHORS
 
-MJC: Malcolm J. Currie (JAC)
+Malcolm J. Currie (mjc@star.rl.ac.uk)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
