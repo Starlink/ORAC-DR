@@ -737,11 +737,8 @@ sub orac_sleep {
     # Tk friendly....
     my $now = time();
     while (time() - $now < $pause) {
-      my $id = Tk->after(1000*$pause, sub { } );
-      # Process events - the after makes sure that an event does
-      # actually occur
-      &Tk::DoOneEvent(0);
-      Tk::After::cancel($id); # A kluge
+      # Process events (Dont wait if there were none)
+      &Tk::DoOneEvent(&Tk::DONT_WAIT);
     }
     # Calculate actual elapsed time
     $actual = time() - $now;
