@@ -557,9 +557,9 @@ sub gmef2hds {
     $hstat = delete_hdsobj("$out.HEADER") if $hstat;
     $hstat = create_hdsobj("$out.HEADER","NDF") if $hstat;
     $hstat = create_hdsobj("$out.HEADER.DATA_ARRAY", "ARRAY") if $hstat;
-    $hstat = create_hdsobj("$out.HEADER.DATA_ARRAY.DATA", "_REAL", [1]) if $hstat;
-    my @dummy = ( 1.0 );
-    $hstat = set_hdsobj("$out.HEADER.DATA_ARRAY.DATA", \@dummy) if $hstat;
+    $hstat = create_hdsobj("$out.HEADER.DATA_ARRAY.DATA", "_REAL", [1])
+      if $hstat;
+    $hstat = set_hdsobj("$out.HEADER.DATA_ARRAY.DATA", [1]) if $hstat;
 
     # Move the FITS component of FITS_HEADER to the FITS
     # airlock/extension of NDF HEADER.  Finally delete the original
@@ -635,14 +635,14 @@ sub ingmef2hds {
     $hstat = create_hdsobj("$out.HEADER","NDF") if $hstat;
     $hstat = create_hdsobj("$out.HEADER.DATA_ARRAY", "ARRAY") if $hstat;
     $hstat = create_hdsobj("$out.HEADER.DATA_ARRAY.DATA", "_REAL", [1]) if $hstat;
-    my @dummy = ( 1.0 );
-    $hstat = set_hdsobj("$out.HEADER.DATA_ARRAY.DATA", \@dummy) if $hstat;
+    $hstat = set_hdsobj("$out.HEADER.DATA_ARRAY.DATA", [1]) if $hstat;
 
     # Move the FITS component of FITS_HEADER to the FITS
     # airlock/extension of NDF HEADER.  Finally delete the original
     # HEADER structure.
     $hstat = create_hdsobj("$out.HEADER.MORE","EXT") if $hstat;
-    $hstat = copy_hdsobj("$out.FITS_HEADER.FITS","$out.HEADER.MORE.FITS") if $hstat;
+    $hstat = copy_hdsobj("$out.FITS_HEADER.FITS","$out.HEADER.MORE.FITS")
+      if $hstat;
     $hstat = delete_hdsobj("$out.FITS_HEADER") if $hstat;
 
     $status = ($hstat ? ORAC__OK : ORAC__ERROR );
