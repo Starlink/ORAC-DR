@@ -107,7 +107,19 @@ if (@_) {
 
 my $ok = $self->maskindex->verify($self->maskname,$self->thing);
 
-if ($ok) {return $self->maskname};
+if ($ok) {
+
+  return $self->maskname
+
+  } else {
+
+  return  $ENV{ORAC_DATA_CAL}."/fpa46_long";
+
+}
+
+
+
+;
 
 croak ("Override mask is not suitable! Giving up") if $self->masknoupdate;
 
