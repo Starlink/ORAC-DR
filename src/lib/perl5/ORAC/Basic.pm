@@ -34,7 +34,9 @@ use ORAC::Constants qw/:status/;
 
 @ISA = qw(Exporter);
 
-@EXPORT = qw/  orac_setup_display orac_exit_normally orac_exit_abnormally /;
+@EXPORT = qw/  orac_setup_display orac_exit_normally orac_exit_abnormally 
+  orac_force_abspath
+  /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
@@ -48,6 +50,26 @@ $Beep    = 0;       # True if ORAC should make noises
 The following functions are provided:
 
 =over 4
+
+=item B<orac_force_abspath>
+
+Force ORAC_DATA_IN and ORAC_DATA_OUT to use an absolute path
+rather than a relative path. Must be called before pipeline
+does the first chdir.
+
+ orac_force_abspath();
+
+Does not canonicalize.
+
+=cut
+
+sub orac_force_abspath {
+  for my $env (qw/ ORAC_DATA_IN ORAC_DATA_OUT /) {
+    $ENV{$env} = File::Spec->rel2abs( $ENV{$env} )
+      if exists $ENV{$env};
+  }
+}
+
 
 =item B<orac_setup_display>
 
