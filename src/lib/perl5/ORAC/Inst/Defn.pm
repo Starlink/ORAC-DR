@@ -208,7 +208,7 @@ my %MessageSystemDefns = (
 				 },
 			  ADAMShell => {
 					# shell does not require messaging
-					CLASS => '',
+					CLASS => 'ORAC::Msg::Control::ADAMShell',
 				       }
 			 );
 
