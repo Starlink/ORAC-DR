@@ -1,15 +1,21 @@
 =head1 NAME
 
-_REDUCE_BIAS_SPECT_ - Forms a frame of the average of multiple bias integrations, and their variance.
+_REDUCE_BIAS_SPECT_ - Reduces a spectroscopy BIAS frame
 
 =head1 DESCRIPTION
 
 Averages together multiple integrations to make the output file data array.
 Forms a variance array if there are 3 or more integrations.
+The variance frame is simply the statistical variance of the individual 
+input integrations.
 
 =head1 NOTES
 
 Will only form a variance array if there are 3 or more integrations.
+
+Note that the variance array added is the actual statistical variance, not the
+best estimate of the population variance (ie divide by n rather than n-1).
+The author considers this correct behaviour. Feel free to Email me if you dont.
 
 =head1 AUTHOR
 
@@ -18,75 +24,62 @@ Paul Hirst <p.hirst@jach.hawaii.edu>
 =cut
 
 # Sanity check
-    unless ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "BIAS" ) {
+unless ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "BIAS") {
        orac_warn "This is not a bias frame!  Running the wrong recipe?\n";
        orac_warn "The recipe continues, assuming you know what you're doing.\n";
-    }
+}
 
-# Form combined data array.
-# =========================
+my $nfiles = $Frm->nfiles;
 
-# Obtain the number of sub-files.
-    my $nfiles = $Frm->nfiles;
+my $tmpFrm=new $Frm;
+$tmpFrm->files( $Frm->file );
 
-# Create a temporary frame.
-    my $tmpFrm = new $Frm;
-    $tmpFrm->files( $Frm->file );
-    my ( $in, $out ) = $tmpFrm->inout( "_bco" );
+my ($in, $out) = $tmpFrm->inout("_bco");
 
-# Create a temporary file.
-    my $tmp = new ORAC::TempFile;
-    my $tmpname = $tmp->file;
-    my $file = $Frm->file( 1 );
+# Average together the integrations
+my $add = "";
+my $files = "";
+my %hash = (1=>"IA", 2=>"IB", 3=>"IC", 4=>"ID", 5=>"IE", 6=>"IF", 7=>"IG", 8=>"IH");
 
-# Average together the integrations, by summing them into a temporary
-# file, then normalising by the number of sub-files.  Work with the
-# final file.
-    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$file out=$out" );
-    foreach my $i ( 2..$nfiles ) {
-       $file = $Frm->file( $i );
-       $Mon{'kappa_mon'}->obeyw( "add", "in1=$out in2=$file out=$tmpname" );
-       $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$tmpname out=$out" );
-    }
-    $Mon{'kappa_mon'}->obeyw( "cdiv", "in=$tmpname scalar=$nfiles out=$out" );
+foreach my $i (1..$nfiles) {
+   my $file = $Frm->file($i);
+   $files.= $hash{$i}."=".$file." ";
+   $add .= $hash{$i};
+   $add .= " + " if($i != $nfiles);
+}
 
-# Form the variance array.
-# ========================
-    if ( $nfiles >= 3 ) {
+my $param = sprintf("$files exp='(%s)/$nfiles' out=$out", $add);
+$Mon{'kappa_mon'}->obeyw("maths", $param);
 
-# Construct the variance frame.  $out contains the mean frame.
+my $tmp = new ORAC::TempFile;
+my $tmpfile = $tmp->file;
 
-# Define two temporary files.
-       my $var = new ORAC::TempFile;
-       my $varname = $var->file;
-       my $sq = new ORAC::TempFile;
-       my $sqname = $sq->file;
-       $file = $Frm->file( 1 );
+# Calculate the Variance into the tmp file
+if ($nfiles >= 3) {
+   # Construct variance frame
+   # $out contains the mean frame
 
-# Initialise sum of squares array.
-       $Mon{'kappa_mon'}->obeyw( "sub", "in1=$file in2=$out out=$sqname" );
-       $Mon{'kappa_mon'}->obeyw( "mult", "in1=$sqname in2=$sqname out=$varname" );
+   my $mfile = $nfiles+1;
+   $files .= $hash{$mfile}."=".$out;
+   $add = "";
+   foreach my $i (1..$nfiles) {
+      $add .= "((".$hash{$i}."-".$hash{$mfile}.")*(".$hash{$i}."-".$hash{$mfile}."))";
+      $add .= " + " if($i != $nfiles);
+   }
+   my $exp = "( $add ) / $nfiles";
 
-# Update the sum of the squared deviations from the mean in $out.
-       foreach my $i ( 2 .. $nfiles ) {
-          $file = $Frm->file( $i );
-          $Mon{'kappa_mon'}->obeyw( "sub", "in1=$file in2=$out out=$tmpname" );
-          $Mon{'kappa_mon'}->obeyw( "mult", "in1=$tmpname in2=$tmpname out=$sqname" );
-          $Mon{'kappa_mon'}->obeyw( "add", "in1=$sqname in2=$varname out=$tmpname" );
-          $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$tmpname out=$varname" );  
-       }
+   $param = sprintf("$files exp='(%s)' out=$tmpfile", $exp);
+   
+   $Mon{'kappa_mon'}->obeyw("maths", $param);   
+   
+   $Mon{'figaro1'}->obeyw("copobj", "source=$tmpfile.DATA_ARRAY object=$out.VARIANCE");
 
-# Normalise by the numbrer of degrees of freedom (should this be $nfiles-1?)
-       $Mon{'kappa_mon'}->obeyw( "cdiv", "in=$tmpname scalar=$nfiles out=$varname" );    
+} else {
+   orac_warn("Will not create BIAS variance - less than 3 integrations\n");
+}
 
-# Copy the data array of the temporary file to the variance array of the
-# real file.
-       $Mon{'figaro1'}->obeyw( "copobj", "source=$varname.DATA_ARRAY object=$out.VARIANCE" );
+orac_print "$out: bias frames coadded\n";
+orac_print "\n";
 
-    } else {
-#  orac_warn("Will not create BIAS variance - less than 3 integrations\n");
-    }
-
-# Update the current frame, and merge the headers from the sub-files.
-    $Frm->files( $out );
-    $Frm->mergehdr;
+$Frm->files($out);
+$Frm->mergehdr;
