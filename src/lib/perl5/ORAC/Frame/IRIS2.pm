@@ -40,6 +40,9 @@ use base qw/ORAC::Frame::NDF/;
 
 use ORAC::Constants;
 
+# Bring in Math::Trig::acos for the header translation tables.
+use Math::Trig qw/ acos /;
+
 # Translation headers for IRIS2 should go here
 my %hdr = (
            DEC_BASE               => "CRVAL2",
