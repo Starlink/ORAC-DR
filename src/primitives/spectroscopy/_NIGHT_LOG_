@@ -83,177 +83,216 @@ Council.  All Rights Reserved.
 
 =cut
 
+# Add DR deduced headers
+_DETERMINE_SAMPLING_
+_INSTRUMENT_HELLO_
+
 # Obtain the frame number and UT date.
-    my $obsnum = $Frm->number;
-    my $obsdate = $Frm->uhdr( "ORAC_UTDATE" );
+my $obsnum = $Frm->number;
+my $obsdate = $Frm->uhdr( "ORAC_UTDATE" );
 
 # Specify the location of the nightly log file. [depends on the arguments]
-    my $nightlog;
-    if ( exists $_NIGHT_LOG_{"OUT"} ) {
+my $nightlog;
+if ( exists $_NIGHT_LOG_{"OUT"} ) {
 
-# ORAC_DATA_OUT is the current directory and the default location for
-# log files.
-       $nightlog = "${obsdate}.nightlog";
+  # ORAC_DATA_OUT is the current directory and the default location for
+  # log files.
+  $nightlog = "${obsdate}.nightlog";
 
-# If we're working in ORAC_DATA_OUT, always append to the file, creating
-# the logfile if it doesn't exist.
-    } else {
+  # If we're working in ORAC_DATA_OUT, always append to the file, creating
+  # the logfile if it doesn't exist.
+} else {
   
-# A non-standard location so full path is required
-       $nightlog = $ENV{ "ORAC_DATA_IN" } . "/${obsdate}.nightlog";
+  # A non-standard location so full path is required
+  $nightlog = $ENV{ "ORAC_DATA_IN" } . "/${obsdate}.nightlog";
   
-# If we're working in ORAC_DATA_IN, start fresh if this is frame 1
-# We don't care about the return value from unlink.
-       unlink $nightlog if $obsnum == 1;
-    }
+  # If we're working in ORAC_DATA_IN, start fresh if this is frame 1
+  # We don't care about the return value from unlink.
+  unlink $nightlog if $obsnum == 1;
+}
 
 # Flag to indicate whether or not the log is there already.
-    my $is_there;
-    $is_there = ( -e $nightlog ? 1 : 0 );
+my $is_there;
+$is_there = ( -e $nightlog ? 1 : 0 );
 
 # Create a new log object.
-    my $log = new ORAC::LogFile( $nightlog );
+my $log = new ORAC::LogFile( $nightlog );
 
 # Only proceed if we have a valid object
-    if ( defined $log ) {
+if ( defined $log ) {
+  if ( $is_there ) {
+    orac_print "Appending to Log: $nightlog\n";
+  } else {
+    orac_print "Log created as $nightlog\n";
+  }
 
-       if ( $is_there ) {
-          orac_print "Appending to Log: $nightlog\n";
-       } else {
-          orac_print "Log created as $nightlog\n";
-       }
+  # Were we given the LONG option?
+  my $long = $_NIGHT_LOG_{"LONG"};
  
-# Print the header.
-# =================
+  # Create the empty strings.
+  my $heading1="";
+  my $heading2="";
+  my $entry = "";
 
-# Create the headings.
-       if ( defined $_NIGHT_LOG_{LONG} ) {
-          $log->header(
-            " Obs | Grp  M|   Object  Std|Obstype|Slit   PA  |RA    |Dec    |RAoff|DECof| UT     | AM |DExpT |Nxp|MODE    |Sstp|Snum|rowXcol|Filter|Grating Ord|Glamda|CNFidx|   DR Recipe    |",
-            "-----|-------|--------------|-------|----|------|------|-------|-----|-----|--------|----|------|---|--------|----|----|---x---|------|-----------|------|------|----------------|");
+  # Observation number   
+  $heading1 .= " Obs |";
+  $heading2 .= "-----|";
+  #             12345
+  $entry .= sprintf("%5d ", $obsnum);
 
-#           "12345|12345|1|123456789012|1|1234567|1234|123456|123456|1234567|12345|12345|12345678|1234|123456|123|12345678|1234|1234|123x123|123456|12345678|12|123456|123456|1234567890123456|";
+  # Group number and flag 
+  $heading1 .= " Grp |";
+  $heading2 .= "-----|";
+  #             12345
+  $entry .= sprintf("%5d ", $Frm->findgroup);
 
-#            0        1         2         3         4         5         6         7         8         9         0         1         2         3         4         5         6 
-#            123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678
-       } else {
-          $log->header(
-            " Obs | Grp  M|   Object  Std|Obstype|Slit   PA  |RAoff|DECof| UT     | AM |DExpT |Num|Filtr|Grating Ord|Galmda|   DR Recipe    |",
-            "-----|-------|--------------|-------|----|------|-----|-----|--------|----|------|---|-----|-----------|------|----------------|");
+  # Object name and std flag
+  $heading1 .= "   Object  Std|";
+  $heading2 .= "--------------|";
+  #             123456789012 1
+  # Set the is-std Y/N value.
+  my $isstd = $Frm->uhdr( "ORAC_STANDARD" );
+  $isstd = "Y" if ( $isstd eq "1" );
+  $isstd = "N" if ( $isstd eq "0" );
+  $entry .= sprintf ("%12.12s %1.1s ", $Frm->uhdr("ORAC_OBJECT"), $isstd);
 
-#           "12345|12345|1|123456789012|1|1234567|1234|123456|12345|12345|12345678|1234|123456|123|12345|12345678|12|123456|1234567890123456|";
+  # Observation Type
+  $heading1 .= "Obstype|";
+  $heading2 .= "-------|";
+  #             1234567
+  $entry .= sprintf("%7.7s ", $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ));
 
-#            0        1         2         3         4         5         6         7         8         9         0         1         2         3
-#            123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012
-       }
+  # Slit and PA
+  $heading1 .= "Slit   PA  |";
+  $heading2 .= "-----------|";
+  #             1234 123456
+  # Present the slit name nicely.
+  my $slitname = $Frm->uhdr( "ORAC_SLIT_NAME" );
+  $slitname = "1pix" if ( $slitname eq "0m" );
+  $slitname = "2pix" if ( $slitname eq "0w" );
+  $slitname = "4pix" if ( $slitname eq "0ew" );
+  $slitname = "2p-e" if ( $slitname eq "36.9w" );
+  $slitname = "1p-e" if ( $slitname eq "36.9m" );
+  $entry .= sprintf("%4.4s %6.1f ", $slitname, $Frm->uhdr( "ORAC_SLIT_ANGLE" ));
 
-# Set the Y/N values.
-       my $isstd = $Frm->uhdr( "ORAC_STANDARD" );
-       if ( $isstd eq "1" ) { $isstd = "Y"; }
-       if ( $isstd eq "0" ) { $isstd = "N"; }
+  if($long) {
+    # RA
+    $heading1 .= "RA    |";
+    $heading2 .= "------|";
+    #             123456
+    $entry .= sprintf("%6.3f ", $Frm->uhdr( "ORAC_RA_BASE" ));
 
-# Present the slit name nicely.
-       my $slitname = $Frm->uhdr( "ORAC_SLIT_NAME" );
-       $slitname = "1pix" if ( $slitname eq "0m" );
-       $slitname = "2pix" if ( $slitname eq "0w" );
-       $slitname = "4pix" if ( $slitname eq "0ew" );
-       $slitname = "2p-e" if ( $slitname eq "36.9w" );
-       $slitname = "1p-e" if ( $slitname eq "36.9m" );
+    # Dec
+    $heading1 .= "Dec    |";
+    $heading2 .= "-------|";
+    #             1234567
+    $entry .= sprintf("%7.3f ", $Frm->uhdr( "ORAC_DEC_BASE" ));
+  }
 
-# Format the UT start in hours, minutes, and seconds from decimal hours.
-       my $ut = $Frm->uhdr( "ORAC_UTSTART" );
-       my $uthours = int $ut;
-       $ut -= $uthours;
-       $ut *= 60.0;
-       my $utmins = int $ut;
-       $ut -= $utmins;
-       $ut *= 60.0;
-       my $utsecs = int $ut;
-       $ut = sprintf "%02d:%02d:%02d", $uthours, $utmins, $utsecs;
+  # RA offset
+  $heading1 .= "RAoff|";
+  $heading2 .= "-----|";
+  #             12345
+  $entry .= sprintf("%5.1f ", $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" ));
 
-# Obtain the array dimensions.
-       my $xdim = $Frm->uhdr( "ORAC_X_DIM" );
-       my $ydim = $Frm->uhdr( "ORAC_Y_DIM" );
+  # Dec offset
+  $heading1 .= "DECof|";
+  $heading2 .= "-----|";
+  #             12345
+  $entry .= sprintf("%5.1f ", $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" ));
 
-# Cope with the missing headers by accessing the array dimensions of
-# the frame.
-# NO - SHOULD BL**DY WELL BE IN THE HEADERS
-#       if ( !( defined $xdim && defined $ydim ) ) {
-#          my $param = "ndf=" . $Frm->file;
-#          $Mon{"ndfpack_mon"}->obeyw( "ndftrace", "$param" );
+  # UT
+  $heading1 .= " UT     |";
+  $heading2 .= "--------|";
+  #             12345678
+  # Format the UT start in hours, minutes, and seconds from decimal hours.
+  my $ut = $Frm->uhdr( "ORAC_UTSTART" );
+  my $uthours = int $ut;
+  $ut -= $uthours;
+  $ut *= 60.0;
+  my $utmins = int $ut;
+  $ut -= $utmins;
+  $ut *= 60.0;
+  my $utsecs = int $ut;
+  $ut = sprintf("%02d:%02d:%02d", $uthours, $utmins, $utsecs);
+  $entry .= sprintf("%8.8s ", $ut);
 
-# Extract the dimensions of the frame.
-#          ( my $ORAC_STATUS, my @dims ) = $Mon{"ndfpack_mon"}->get( "ndftrace", "dims" );
-#          $xdim = $dims[ 0 ];
-#          $ydim = $dims[ 1 ];
-#       }
-       my $rowxcol = "${xdim}x${ydim}";
+  # AirMass
+  $heading1 .= " AM |";
+  $heading2 .= "----|";
+  #             1234
+  $entry .= sprintf("%4.2f ", $Frm->uhdr( "ORAC_AIRMASS_START" ));
 
-       if ( defined $_NIGHT_LOG_{LONG} ) {
+  # Exposure time
+  $heading1 .= "DExpT |";
+  $heading2 .= "------|";
+  #             123456
+  $entry .= sprintf("%6.2f ", $Frm->uhdr( "ORAC_EXPOSURE_TIME" ));
 
-# Define the Perl format for each long entry in the log.
-          my $format = "%5d %5d %1s %12.12s %1s %7.7s %4.4s %6.1f %6.3f %7.3f %5.1f %5.1f %8s %4.2f %6.2f %3d %8s %4.2f %4.2f %7s %6.6s %8.8s %2d %6.3f %6s %-16s";
+  # Number of exposures per integration
+  $heading1 .= "Nxp|";
+  $heading2 .= "---|";
+  #             123
+  $entry .= sprintf("%3d ", $Frm->uhdr( "ORAC_NUMBER_OF_EXPOSURES" ));
+
+  if ($long) { 
+   # Detector mode
+    $heading1 .= "MODE    |";
+    $heading2 .= "--------|";
+    #             12345678
+    $entry .= sprintf("%8.8s ", $Frm->uhdr( "ORAC_DETECTOR_MODE" ));
+
+    # Sampling
+    $heading1 .= "SAM|";
+    $heading2 .= "---|";
+    #             123
+    $entry .= sprintf("%3.3s ", $Frm->uhdr("SAMPLING"));
+
+    # Array size
+    $heading1 .= "rowXcol|";
+    $heading2 .= "-------|";
+    #             1234567
+    # Obtain the array dimensions.
+    my $xdim = $Frm->uhdr( "ORAC_X_DIM" );
+    my $ydim = $Frm->uhdr( "ORAC_Y_DIM" );
+    my $rowxcol = "${xdim}x${ydim}";
+    $entry .= sprintf("%7.7s ", $rowxcol);
     
-# Write the record using the prescribed format.
-          $log->addentry( sprintf( $format,
-                                   $obsnum,
-                                   $Frm->findgroup,
-                                   $Frm->isgood,
-                                   $Frm->uhdr( "ORAC_OBJECT" ),
-                                   $isstd,
-                                   $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ),
-                                   $slitname,
-                                   $Frm->uhdr( "ORAC_SLIT_ANGLE" ),
-                                   $Frm->uhdr( "ORAC_RA_BASE" ),
-                                   $Frm->uhdr( "ORAC_DEC_BASE" ),
-                                   $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" ),
-                                   $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" ),
-                                   $ut,
-                                   $Frm->uhdr( "ORAC_AIRMASS_START" ),
-                                   $Frm->uhdr( "ORAC_EXPOSURE_TIME" ),
-                                   $Frm->uhdr( "ORAC_NUMBER_OF_EXPOSURES" ),
-                                   $Frm->uhdr( "ORAC_DETECTOR_MODE" ),
-                                   $Frm->uhdr( "ORAC_SCAN_INCREMENT" ),
-                                   $Frm->uhdr( "ORAC_NSCAN_POSITIONS" ),
-                                   $rowxcol,
-                                   $Frm->uhdr( "ORAC_FILTER" ),
-                                   $Frm->uhdr( "ORAC_GRATING_NAME" ),
-                                   $Frm->uhdr( "ORAC_GRATING_ORDER" ),
-                                   $Frm->uhdr( "ORAC_GRATING_WAVELENGTH" ),
-                                   $Frm->uhdr( "ORAC_CONFIGURATION_INDEX" ),
-                                   $Frm->recipe
-                                 )
-                        );
-       } else {
+    # Filter
+    $heading1 .= "Filter|";
+    $heading2 .= "------|";
+    #             123456
+    $entry .= sprintf("%6.6s ", $Frm->uhdr( "ORAC_FILTER" ));
+  }
 
-# Define the Perl format for each normal entry in the log.
-          my $format = "%5d %5d %1s %12.12s %1s %7.7s %4.4s %6.1f %5.1f %5.1f %8s %4.2f %6.2f %3d %5.5s %8.8s %2d %6.3f %-16s";
+  # Grating and Order
+  $heading1 .= "Grating Ord|";
+  $heading2 .= "-----------|";
+  #             12345678 12
+  $entry .= sprintf("%8.8s %2d ", $Frm->uhdr( "ORAC_GRATING_NAME" ), $Frm->uhdr( "ORAC_GRATING_ORDER" ));
 
-# Write the record using the prescribed format.
-          $log->addentry( sprintf( $format,
-                                   $obsnum,
-                                   $Frm->findgroup,
-                                   $Frm->isgood,
-                                   $Frm->uhdr( "ORAC_OBJECT" ),
-                                   $isstd,
-                                   $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ),
-                                   $slitname,
-                                   $Frm->uhdr( "ORAC_SLIT_ANGLE" ),
-                                   $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" ),
-                                   $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" ),
-                                   $ut,
-                                   $Frm->uhdr( "ORAC_AIRMASS_START" ),
-                                   $Frm->uhdr( "ORAC_EXPOSURE_TIME" ),
-                                   $Frm->uhdr( "ORAC_NUMBER_OF_EXPOSURES" ),
-                                   $Frm->uhdr( "ORAC_FILTER" ),
-                                   $Frm->uhdr( "ORAC_GRATING_NAME" ),
-                                   $Frm->uhdr( "ORAC_GRATING_ORDER" ),
-                                   $Frm->uhdr( "ORAC_GRATING_WAVELENGTH" ),
-                                   $Frm->recipe
-                                 )
-                        );
-       }
+  # Grating wavelength
+  $heading1 .= "Glamda|";
+  $heading2 .= "------|";
+  #             123456
+  $entry .= sprintf("%6.3f ", $Frm->uhdr( "ORAC_GRATING_WAVELENGTH" ));
 
-    } else {
-        orac_warn "Could not create nightlog $nightlog.\n";
-    }
+  if ($long) {
+    # Configuration Index
+    $heading1 .= "CNFidx|";
+    $heading2 .= "------|";
+    #             123456
+    $entry .= sprintf("%6.6s ", $Frm->uhdr( "ORAC_CONFIGURATION_INDEX" ));
+  }
+
+  # DR recipe
+  $heading1 .= "    DR Recipe   |";
+  $heading2 .= "----------------|";
+  #             1234567890123456
+  $entry .= sprintf("%-16s", $Frm->recipe);
+
+  $log->header($heading1, $heading2);
+  $log->addentry($entry);
+} else {
+  orac_warn "Could not create nightlog $nightlog.\n";
+}
