@@ -1,0 +1,264 @@
+#+
+# Name:
+#    _SUBTRACT_DARK_
+#
+# Purpose:
+#    Subtracts a dark frame.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive subtracts from the current frame the most-recent and
+#    matching dark frame given by $Cal->dark method.  It reports
+#    a successful dark subtraction and the frames concerned. 
+#
+#    Since transient `hot' and `cold' pixels can be present despite the 
+#    application of a bad-pixel mask, the primitive also thresholds the
+#    dark-subtracted frame, setting values beyond the limits to be bad
+#    (i.e. undefined), to remove these non-physical values.  Such values
+#    can lead to problems later in the pipeline.  In a sense this
+#    processing step augments the bad-pixel mask.
+#
+# Notes:
+#    -  This primitive is suitable for NACO in imaging mode.
+#    -  Processing only occurs for object, sky, and flat frames.
+#    -  The dark-subtracted image can be displayed.
+#    -  There is no error, only a warning, if there is no dark frame
+#    available to subtract.
+#    -  The subtraction assumes the same exposure time for the dark and
+#    object frame.  That validation should be done by the $Cal->dark
+#    method.
+#    -  The lower threshold limit is the clipped mean (mode) minus five
+#    standard deviations, subject to the constraint that the limit lies
+#    between -100 and 1.   The upper limit is 1000 above the nominal
+#    saturation level for the instrument and its mode.
+#    -  The primitive issues a warning if the dark-subtracted frame's
+#    mode is negative, allowing for the error of the mode.  It aborts
+#    with an error message if the modal dark-subtracted signal is more
+#    than one standard deviation negative.
+#    -  The frame title is propagated.
+#
+# Output Data:
+#    -  Dark-subtracted frame inheriting the frame's name but with the
+#    _dk suffix.
+#    -  An array with bad-value substitution beyond thresholds and
+#    inheriting the frame's name but with the _th suffix.
+#
+# Tasks:
+#    CCDPACK: CALCOR; KAPPA: THRESH.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ||
+         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "FLAT" ) {
+
+# Subtract dark.
+# ==============
+
+# Assume for the moment that a dark will be subtracted.
+       my $sub_dark_frame = 1;
+       my ( $dark, $param );
+
+# Generate the input and output filenames.  The output file has the same
+# name as the input except the suffix is changed to indicate it has been
+# dark subtracted.
+       ( my $in, my $out ) = $Frm->inout( "_dk" );
+
+# Determine whether or not there is a dark frame to subtract.  For
+# twilight flats, the signal is large, such that the dark is negligible.
+       $dark = eval { $Cal->dark };
+       if ( $@ ) {
+          orac_warn "There is no dark frame available.  Data variance " . 
+                    "will be wrong.\n";
+          $sub_dark_frame = 0;
+       }
+
+# Specify parameters depending on how the bias is going to be subtracted.
+       if ( $sub_dark_frame ) {
+          $param = "in=$in cal=$dark out=$out title=! expose=1";
+
+# Note all dark frames and data frames should have the same exposure time.
+# This is taken care of by the Cal object.  The absolute exposure times do 
+# not matter, only the relative times, which here is one.
+          $Mon{ "ccdpack_red" }->obeyw( "calcor", "$param reset accept" );
+
+# Report the processing status.
+          orac_print "$in to $out: Dark $dark subtracted\n";
+
+# Now update the output filename in the Frame object.
+          $Frm->file( $out );
+
+# Display the image.
+          _DISPLAY_FRAME_IMAGE_
+       }
+
+# Remove non-physical values.
+# ===========================
+
+# Threshold image to exclude anomalous, non-physical values, which cause
+# problems later in the pipeline.  The values are flagged bad thus are
+# excluded from later processing.
+
+# First set the upper limit.  These are slightly above the saturation
+# limits.
+       _GET_SATURATION_LEVEL_
+       my $upper = $_GET_SATURATION_LEVEL_{SATURATION} + 1000;
+
+# Find the lower limit.  The presumption is that a physical value must be
+# positive.  We do not want to bias the noise by clipping too close to the
+# mode. 
+       
+# Find the mean and standard deviation of the bulk of the pixels around the
+# background level.
+       _CLIPPED_STATS_
+       my $mode = $_CLIPPED_STATS_{MEAN};
+       my $sigma = $_CLIPPED_STATS_{SIGMA};
+       my $numpix = $_CLIPPED_STATS_{NUMBER};
+
+# Use the statistics to define a lower limit.  -5 sigma may give a value
+# still too negative for recipe's good. -100 seems to produce reasonable
+# results.
+       my $lower = max( -100.0, min( $mode - 5.0 * $sigma, 1.0 ) );
+
+# Generate the input and output filenames.  The output file has the same
+# name as the input except the suffix is changed to indicate it has had
+# thresholds applied.
+       ( $in, $out ) = $Frm->inout( "_th" );
+       $param = "thrlo=$lower newlo=bad thrhi=$upper newhi=bad";
+
+# Apply the threshold.  Values below the lower limit are set to bad.  Those
+# above are sewt to the saturation limit.
+       $Mon{ "kappa_mon" }->obeyw( "thresh", "in=$in out=$out $param" );
+
+# Report the processing status.
+       my $fs_low = sprintf( "%.2f", $lower );
+       orac_print "$in to $out: Rogue pixels (<${fs_low}, >$upper) flagged\n";
+
+# Exit if the dark-subtracted signal is negative.
+       my $fs_mode = sprintf( "%.2f", $mode );
+       if ( ( $mode + $sigma ) < 0 ) {
+          orac_throw "Mode of dark-subtracted frame is negative (${fs_mode}). " .
+                     "A likely cause is an aberrant dark.\n";
+
+# Warn if the dark-subtracted signal is negative within the
+# uncertainties (using the error in the mean).
+       } elsif ( $mode + 3.0 * $sigma / sqrt( $numpix ) < 0 ) {
+          orac_warn "Mode of dark-subtracted frame is negative (${fs_mode}). " .
+                    "A possible cause is an aberrant dark.\nContinuing with " . 
+                    "data reduction, but this may cause later problems.\n";
+       }
+
+# Now update the output filename in the Frame object.
+       $Frm->file( $out );
+
+# Display the image.
+       _DISPLAY_FRAME_IMAGE_
+
+       orac_print "\n";
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_SUBTRACT_DARK_ -- Subtracts a dark frame.
+
+=head1 DESCRIPTION
+
+This primitive subtracts from the current frame the most-recent and
+matching dark frame given by $Cal-E<gt>dark method.  It reports
+a successful dark subtraction and the frames concerned.
+
+Since transient `hot' and `cold' pixels can be present despite the
+application of a bad-pixel mask, the primitive also thresholds the
+dark-subtracted frame, setting values beyond the limits to be bad (i.e.
+undefined), to remove these non-physical values.  Such values can lead
+to problems later in the pipeline.  In a sense this processing step
+augments the bad-pixel mask.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for NACO in imaging mode.
+
+=item *
+
+Processing only occurs for object, sky, and flat frames.
+
+=item *
+
+There is no error, only a warning, if there is no dark frame
+available to subtract.
+
+=item *
+
+The dark-subtracted image can be displayed.
+
+=item *
+
+The subtraction assumes the same exposure time for the dark and
+object frame.  That validation should be done by the $Cal-E<gt>dark method.
+
+=item *
+
+The lower threshold limit is the clipped mean (mode) minus five
+standard deviations, subject to the constraint that the limit lies
+between -100 and 1.   The upper limit is 1000 above the nominal
+saturation level for the instrument and its mode.
+
+=item *
+
+The primitive issues a warning if the dark-subtracted frame's
+mode is negative, allowing for the error of the mode.  It aborts
+with an error message if the modal dark-subtracted signal is more
+than one standard deviation negative.
+
+=item *
+
+The frame title is propagated.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Dark-subtracted frame inheriting the frame's name but with the _dk suffix.
+
+=item *
+
+An array with bad-value substitution beyond thresholds and
+inheriting the frame's name but with the _th suffix.
+
+=back
+
+=head1 TASKS
+
+CCDPACK: CALCOR; KAPPA: THRESH.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
