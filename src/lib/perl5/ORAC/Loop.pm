@@ -12,7 +12,9 @@ ORAC::Loop - data loops for ORACDR
 
   $frm = orac_loop_inf($class, $utdate, \@list);
 
-  $frm = orac_loop_wait_data($class, $utdate, \@list);
+  $frm = orac_loop_wait($class, $utdate, \@list);
+
+  $frm = orac_loop_flag($class, $utdate, \@list);
 
 =head1 DESCRIPTION
 
@@ -44,7 +46,9 @@ require Exporter;
 use vars qw/$VERSION @EXPORT @ISA $CONVERT/;
 
 @ISA = qw/Exporter/;
-@EXPORT = qw/orac_loop_list  orac_loop_wait orac_loop_inf/;
+@EXPORT = qw/orac_loop_list  orac_loop_wait orac_loop_inf
+  orac_loop_flag
+  /;
 
 
 =head1 SUBROUTINES
@@ -128,9 +132,11 @@ is returned if the timeout is exceeded.
 The first member of the array is used to keep track of the
 current observation number. This element is incremented so that
 the following observation is returned when the routine is called
-subsequently.
+subsequently. This means that this loop is similar to using the
+'-from' option in conjunction with the 'inf' loop except that
+new data is expected.
 
-The loop will return undef (I terminate looping) if the
+The loop will return undef (i.e. terminate looping) if the
 supplied array contains undef in the first entry.
 
 =cut
@@ -143,17 +149,17 @@ sub orac_loop_wait {
   my ($class, $utdate, $obsref) = @_;
 
   # If obsno is undef return undef
-  return undef unless defined $$obsref[0];
+  return undef unless defined $obsref->[0];
 
   # Get the obsno
-  my $obsno = $$obsref[0];  
+  my $obsno = $obsref->[0];
 
   # Create a new frame in class
   my $Frm = $class->new;
   
   # Construct the filename from the observation number
   # Note that this loop MUST work on the raw data.
-  # I am not going to try to right a data detection loop
+  # I am not going to try to write a data detection loop
   # that tries to guess at the name of the input file from multiple
   # options.
   my $fname = $Frm->file_from_bits($utdate, $obsno);
@@ -163,9 +169,9 @@ sub orac_loop_wait {
 
   # Now loop until the file appears
 
-  my $timeout = 600;  # 10 minutes time out
+  my $timeout = 3600;  # 60 minutes time out
   my $timer = 0.0;
-  my $pause = 2.0;   # Pause for 5 seconds
+  my $pause = 2.0;   # Pause for 2 seconds
 
   my $actual = $ENV{ORAC_DATA_IN} . "/$fname";
 
@@ -211,6 +217,90 @@ sub orac_loop_wait {
   orac_print "\nFound\n";
 
   # The file has appeared
+  # Link_and_read
+  # A new $Frm is created and the file is converted to our base format (NDF).
+  $Frm = link_and_read($class, $utdate, $obsno);
+
+  # Now need to increment obsnum for next time round
+  $$obsref[0]++;
+
+  return $Frm;
+}
+
+
+
+=item orac_loop_flag
+
+Waits for the specified file to appear in the directory
+by looking for the appearance of the associated flag file.
+A timeout of 60 minutes is hard-wired in initially -- undef
+is returned if the timeout is exceeded.
+
+The first member of the array is used to keep track of the
+current observation number. This element is incremented so that
+the following observation is returned when the routine is called
+subsequently. This means that this loop is similar to using the
+'-from' option in conjunction with the 'inf' loop except that
+new data is expected.
+
+
+The loop will return undef (i.e. terminate looping) if the
+supplied array contains undef in the first entry.
+
+=cut
+
+sub orac_loop_flag {
+
+  croak 'Wrong number of args: orac_loop_flag(class, ut, arr_ref)'
+    unless scalar(@_) == 3;
+
+  my ($class, $utdate, $obsref) = @_;
+
+  # If obsno is undef return undef
+  return undef unless defined $obsref->[0];
+
+  # Get the obsno
+  my $obsno = $obsref->[0];
+
+  # Create a new frame in class
+  my $Frm = $class->new;
+  
+  # Construct the flag name from the observation number
+  my $fname = $Frm->flag_from_bits($utdate, $obsno);
+
+  # Now check for the file
+  orac_print("Checking for next data file via flag: $fname");
+
+  # Now loop until the file appears
+
+  my $timeout = 3600;  # 10 minutes time out
+  my $timer = 0.0;
+  my $pause = 2.0;   # Pause for 2 seconds
+
+  my $actual = $ENV{ORAC_DATA_IN} . "/$fname";
+
+  my $old = 0;   # Initial size of the file
+
+  # Dont need to worry about file size
+  while (! -e $actual) {
+
+    # Sleep for a bit
+    $timer += sleep($pause);
+
+    # Return bad status if timer hits timeout
+    if ($timer > $timeout) {
+      orac_print "\n";
+      orac_err("Timeout whilst waiting for next data file: $fname\n");
+      return undef;
+    }
+
+    # Show that we are thinking
+    orac_print ".";
+
+  }
+  orac_print "\nFound\n";
+
+  # The flag has appeared therefore we believe the file is there as well.
   # Link_and_read
   # A new $Frm is created and the file is converted to our base format (NDF).
   $Frm = link_and_read($class, $utdate, $obsno);
