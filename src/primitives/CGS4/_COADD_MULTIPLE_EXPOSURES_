@@ -59,185 +59,193 @@ b.cavanagh@jach.hawaii.edu
 
 =cut
 
-# get observation information
+# First, get observation information
 
 my $nsubs = $Frm->nsubs;                  # number of i-files
 
 my $nscanpos = $Frm->hdr("DETNINCR");     # number of scan positions in scan
 my $pixinc = $Frm->hdr("DETINCR");        # increment (pixels) betw scan positions
-my $oversamp = $nscanpos * $pixinc;       # the oversampling
 my $ydim = $Frm->hdr("DROWS");            # number of rows in array
 my $xdim = $Frm->hdr("DCOLUMNS");         # number of columns in array
-
-my ($in, $out) = $Frm->inout("_co");
+my $expansion = int(1/$pixinc);           # expansion factor
+my $oversamp = $nscanpos / $expansion;    # the oversampling
 
 my $newxdim;
 
 if($nscanpos == 1) {     # if there's only one scan position, the output array is the
   $newxdim = $xdim;      # same size as the input array
 } else {                 # otherwise, the output array is larger
-  $newxdim = ($xdim + 1) * $oversamp;
+  $newxdim = ($xdim + 1) * $expansion;
 };
-$Mon{'kappa_mon'}->obeyw("creframe","xdim=$newxdim ydim=$ydim typed=fl mean=0 outpic=$out");
 
-my $nloop = $nsubs / $nscanpos;  # number of times the oversampling was over-oversampled
-my @outpic;
-my @outpicname;
+# Second, add the files in each position to each other.
 
-for (my $i=0;$i<$nloop;$i++) {
+#ORAC::TempFile->DEBUG(1);
+my @added;
+my @addedname;
 
-  $outpic[$i] = new ORAC::TempFile;
-  $outpicname[$i] = $outpic[$i]->file;
+foreach my $i (1..$Frm->nfiles) {
 
-  if($nscanpos == 1) {    # if the image was undersampled, we don't need to go through
-    my $numb = $i + 1;    # with all the interlacing steps
-    $Mon{'ndfpack_mon'}->obeyw("ndfcopy","in=$in.i$numb out=$outpicname[$i]");
-  } else {
+  my $position;
+#  ($i % $nscanpos) ? ($position = ($i % $nscanpos)) : ($position = $nscanpos);
+  $position = $Frm->hdr->{$i}->{"DINDEX"};
 
-    # first, expand the i+1'th group of i-files
-    # we need some temporary files first
-    
-    my @expand;                              # the temporary files
-    my @expandname;                          # the names of the temporary files
-    
-    for (my $j = 1; $j <= $nscanpos; $j++) {
-      $expand[$j] = new ORAC::TempFile;
-      $expandname[$j] = $expand[$j]->file;
-    };
-    
-    # now that we have the temporary files, we can expand the i-files into them  
-    
-    for(my $j = 1; $j <= $nscanpos; $j++) {
-      my $ifileno = $j + ($i * $nscanpos);
-      $Mon{'kappa_mon'}->obeyw("pixdupe","in=$in.i$ifileno out=$expandname[$j] expand=\[$oversamp,1\]");
-    };
-    
-    # now we need to make some ARD files, so we can creatively blank out columns
-    
-    my @ard;
-    my @ardname;
-    for(my $j = 1; $j <= $oversamp; $j++) {
-      $ard[$j] = new ORAC::TempFile;
-      for(my $k=1; $k <= ($oversamp * $xdim); $k++) {
-	if((($k - $j) % $oversamp) != 0) {
-	  my $ardstr = "COLUMN($k)\n";
-	  print {$ard[$j]->handle} $ardstr;
-	}
-      }
-      $ard[$j]->handle->close;
-      $ardname[$j] = $ard[$j]->file;
-    }
-    
-    # now to blank out columns
-    # the 1st and $oversamp+1'th use the 1st ARD file, the 2nd and $oversamp+2'th use the 2nd...
-    
-    my @blank;
-    my @blankname;
-    for(my $j=1; $j <= $oversamp; $j++) {
-      my $n = int(1/$pixinc);
-      for(my $k = 1; $k <= $n; $k++) {
-	my $l = $n * ($j - 1) + $k;
-	$blank[$l] = new ORAC::TempFile;
-	$blankname[$l] = $blank[$l]->file;
-	$Mon{'kappa_mon'}->obeyw("ardmask","in=$expandname[$l] ardfile=$ardname[$k] out=$blankname[$l]");
-      } # close $k loop
-    } # close $j loop
-    
-    # the 2nd $oversamp files need to be shifted by $oversamp pixels, the 3rd by 2*$oversamp...
-    
-    for(my $j=1; $j <= $oversamp; $j++) {
-      my $n = int(1/$pixinc);
-      for(my $k = 1; $k <= $n; $k++) {
-	my $neworigin = (($j - 1) * $oversamp) + 1;
-	my $l = $n * ($j - 1) + $k;
-	$Mon{'ndfpack_mon'}->obeyw("setorigin","ndf=$blankname[$l] origin=\[$neworigin,1\]");
-      }
-    }
-    
-    # and now to paste the files together
-    # the first $oversamp go together, the second $oversamp go together...
-    my @pasteargs;
-    for(my $j = 1; $j <= $oversamp; $j++) {
-      my $n = int(1/$pixinc);
-      for(my $k = 1; $k <= $n; $k++) {
-	if($k != 1) {             # don't use the first in the group because it's the base image for the paste
-	  my $numb = $k - 1;
-	  my $l = $n * ($j - 1) + $k;
-	  $pasteargs[$j] .= "p$numb=$blankname[$l] ";
-	} # close $k if
-      } # close $k loop
-      chop $pasteargs[$j];
-    } # close $j loop
-    
-    # paste the files together
-    my @paste;
-    my @pastename;
-    for(my $j = 1; $j <= $oversamp; $j++) {
-      my $n = int(1/$pixinc);
-      $paste[$j] = new ORAC::TempFile;
-      $pastename[$j] = $paste[$j]->file;
-      my $l = $n * ($j - 1) + 1;
-      $Mon{'kappa_mon'}->obeyw("paste","in=$blankname[$l] $pasteargs[$j] out=$pastename[$j] transp=true confine=false");
-    }
-    
-    # now merge the files together to give a "final" image
-    my @merge;
-    my @mergename;
-    # if there's only one file, we need to leave it as is
-    if($oversamp == 1) {
-      $Mon{'ndfpack_mon'}->obeyw("ndfcopy","in=$pastename[1] out=$outpicname[$i]");
-    } else {
-      $merge[1] = new ORAC::TempFile;
-      $mergename[1] = $merge[1]->file;
-      # first merge the first two together
-      my $xoffset = $oversamp;
-      $Mon{'kappa_mon'}->obeyw("mosaic","number=2 average=false inpic1=$pastename[1] inpic2=$pastename[2] outpic=$mergename[1] xoffset=$xoffset yoffset=0");
-      # now merge the rest consecutively
-      for(my $j = 2; $j < $oversamp; $j++) {
-	my $l = $j-1;
-	my $m = $j+1;
-	my $xoffset = $oversamp * $j;
-	$merge[$j] = new ORAC::TempFile;
-	$mergename[$j] = $merge[1]->file;
-	$Mon{'kappa_mon'}->obeyw("mosaic","number=2 average=false inpic1=$mergename[$l] inpic2=$pastename[$m] outpic=$mergename[$j] xoffset=$xoffset yoffset=0");
-      }
-      # and since we didn't average the images with 'mosaic', we need to do it now
-      my $last = $oversamp - 1;
-      $Mon{'kappa_mon'}->obeyw("cdiv","in=$mergename[$last] out=$outpicname[$i] scalar=$oversamp");
-    }
-  } # end if/else (1/many integrations)
-} # close $i loop
+  if(!defined($added[$position])) { 
+    $added[$position] = new ORAC::TempFile;
+    $addedname[$position] = $added[$position]->file;
+  }
 
-# now that we've got all these merged images, we need to average 
-# them together into the final image
-
-# first, create the argument list for 'maths'
-
-my $mathsargs;
-my $expargs;
-$expargs = "(";
-for(my $i = 0; $i < $nloop; $i++) {
-  my $char = chr(97 + $i);
-  $mathsargs .= "i$char=$outpicname[$i] ";
-  $expargs .= "i$char+";
+  my $ndfname = "$addedname[$position]" . ".sdf";
+  if(-e $ndfname) {    # if the NDF already exists, add the current file to it
+    my $current = $Frm->file($i);
+    my $temp = new ORAC::TempFile;
+    my $tempname = $temp->file;
+    $Mon{'kappa_mon'}->obeyw("add","in1=$addedname[$position] in2=$current out=$tempname");
+    $Mon{'ndfpack_mon'}->obeyw("erase","object=$addedname[$position] ok=true");
+    $Mon{'ndfpack_mon'}->obeyw("ndfcopy","in=$tempname out=$addedname[$position]");
+  } else {          # otherwise, the NDF doesn't exist, so copy it into $addedname[$position]
+    my $current = $Frm->file($i);
+    $Mon{'ndfpack_mon'}->obeyw("ndfcopy","in=$current out=$addedname[$position]");
+  }
 }
-chop $mathsargs;
-chop $expargs;
-$expargs .= ")/$nloop";
 
-# now we can average them all together
+# Average the added files
 
-$Mon{'kappa_mon'}->obeyw("maths","exp=$expargs out=$out $mathsargs title=$out");
+foreach my $i (1..$nscanpos) {
+  my $overover = $nsubs / $nscanpos;
+  my $temp = new ORAC::TempFile;
+  my $tempname = $temp->file;
+  $Mon{'kappa_mon'}->obeyw("cdiv","in=$addedname[$i] out=$tempname scalar=$overover");
+  $Mon{'ndfpack_mon'}->obeyw("erase","object=$addedname[$i] ok=true");
+  $Mon{'ndfpack_mon'}->obeyw("ndfcopy","in=$tempname out=$addedname[$i]");
+}
 
-# copy the headers from the o-file to the coadded frame
+# Now, do the processing on each set of 'position' files
 
-$Mon{'ndfpack_mon'}->obeyw("ndfcopy","in=$in.header out=$out.header");
+# If there's only one 'position' file, put it into 'outpicname', with all header
+# information correct
 
-# and update the $Frm object
+$Frm->files($Frm->file);
+#my $fixedpart = $Frm->raw;
+my ($in, $out) = $Frm->inout("_co");
 
-$Frm->files($out);
-$Display->display_data($Frm) if defined $Display;
-orac_print("Frames coadded into $out\n");
+#print "DEBUG: in: $in out: $out\n";
 
+my $outpic = new ORAC::TempFile;
+my $outpicname = $outpic->file;
+my $temp = new ORAC::TempFile;
+my $tempname = $temp->file;
+$Mon{'ndfpack_mon'}->obeyw("ndfcopy","in=$in out=$tempname");
+$Mon{'ndfpack_mon'}->obeyw("setbound","ndf=$tempname\(1:$newxdim,1:$ydim\)");
+$Mon{'kappa_mon'}->obeyw("nomagic","in=$tempname out=$outpicname repval=0");
+undef $temp;  
 
+if($#addedname == 2) {        # because @addedname starts indexing at 1 instead of 0
+  my $temp = new ORAC::TempFile;
+  my $tempname = $temp->file;
+  $Mon{'kappa_mon'}->obeyw("add","in1=$addedname[1] in2=$outpicname out=$tempname");
+  $Mon{'ndfpack_mon'}->obeyw("erase","object=$outpicname ok=true");
+  $Mon{'ndfpack_mon'}->obeyw("ndfcopy","in=$tempname out=$outpicname");
+} else {
+  
+# Otherwise, there are different positions, and now we have to interlace.
+
+# First, create some ARD files to blank out columns.
+  my @ard;
+  my @ardname;
+  
+  foreach my $i (1..$expansion) {
+    $ard[$i] = new ORAC::TempFile;
+    foreach my $j (1..($expansion*$xdim)) {
+      if((($j - $i) % $expansion) != 0) {
+	my $ardstr = "COLUMN($j)\n";
+	print {$ard[$i]->handle} $ardstr;
+      }
+    }
+    $ard[$i]->handle->close;
+    $ardname[$i] = $ard[$i]->file;
+  }
+
+# ARD files are created, now expand the 'position' files according to oversampling.
+
+  my @expand;
+  my @expandname;
+  foreach my $i (1..$nscanpos) {
+    $expand[$i] = new ORAC::TempFile;
+    $expandname[$i] = $expand[$i]->file;
+    $Mon{'kappa_mon'}->obeyw("pixdupe","in=$addedname[$i] out=$expandname[$i] expand=\[$expansion,1\]");
+  }
+
+# Blank out columns using the created ARD files.
+
+  my @blank;
+  my @blankname;
+  foreach my $i (1..$nscanpos) {
+    $blank[$i] = new ORAC::TempFile;
+    $blankname[$i] = $blank[$i]->file;
+    my $ardnumb = (($i - 1) % $expansion) + 1;
+    $Mon{'kappa_mon'}->obeyw("ardmask","in=$expandname[$i] out=$blankname[$i] ardfile=$ardname[$ardnumb]");
+  }
+
+# Shift the origin of the blanked files.
+
+  foreach my $i (1..$nscanpos) {
+    my $neworigin = int(($i - 1) / $expansion) * $expansion + 1;
+    $Mon{'ndfpack_mon'}->obeyw("setorigin","ndf=$blankname[$i] origin=\[$neworigin,1\]");
+  }
+
+# Create the 'paste' arguments list
+
+  my @pasteargs;
+  foreach my $i (1..$nscanpos) {
+    my $pasteargnumb = int(($i - 1) / $expansion) + 1;
+    my $pnumb = (($i - 1) % $expansion);
+    if($pnumb != 0) {
+      $pasteargs[$pasteargnumb] .= "p$pnumb=$blankname[$i] ";
+    }
+  }
+
+# Paste the blanked files together.
+
+  my @paste;
+  my @pastename;
+  foreach my $i (1..$oversamp) {
+    $paste[$i] = new ORAC::TempFile;
+    $pastename[$i] = $paste[$i]->file;
+    my $blankbase = ($i - 1) * $expansion + 1;
+    $Mon{'kappa_mon'}->obeyw("paste","in=$blankname[$blankbase] $pasteargs[$i] out=$pastename[$i] transp=true confine=false");
+#    print "DEBUG: pasteargs: $pasteargs[$i]\n";
+  }
+
+# Merge the pasted files together.
+ 
+  my @merge;
+  my @mergename;
+  # if there's only one file, leave it as is
+  if($oversamp == 1) {
+    $Mon{'ndfpack_mon'}->obeyw("ndfcopy","in=$pastename[1] out=$outpicname");
+  } else {
+    $merge[1] = new ORAC::TempFile;
+    $mergename[1] = $merge[1]->file;
+    # merge the first two together
+    my $xoffset = $expansion;
+    $Mon{'kappa_mon'}->obeyw("mosaic","number=2 average=false inpic1=$pastename[1] inpic2=$pastename[2] outpic=$mergename[1] xoffset=$xoffset yoffset=0");
+    # now merge the rest consecutively
+    for(my $j = 2; $j < $expansion; $j++) {
+      my $l = $j - 1;
+      my $m = $j + 1;
+      my $xoffset = $expansion * $j;
+      $merge[$j] = new ORAC::TempFile;
+      $mergename[$j] = $merge[$j]->file;
+      $Mon{'kappa_mon'}->obeyw("mosaic","number=2 average=false inpic1=$mergename[$l] inpic2=$pastename[$m] outpic=$mergename[$j] xoffset=$xoffset yoffset=0");
+    }
+    my $last = $expansion - 1;
+#    my $divide = new ORAC::TempFile;
+#    my $dividename = $divide->files;
+    $Mon{'kappa_mon'}->obeyw("cdiv","in=$mergename[$last] out=$outpicname scalar=$expansion");
+  }
+
+} # close if/else (1/many)
+
+$Mon{'ndfpack_mon'}->obeyw("ndfcopy","in=$outpicname out=$out title=$out");
 
