@@ -26,13 +26,17 @@ ORAC::Calib::UKIRT objects.
 
 =cut
 
-use ORAC::Calib;			# use base class
+use 5.006;
 
-@ORAC::Calib::IRCAM::ISA = qw/ORAC::Calib/; # set up inheritance
-
-# standard error module and turn on strict
+# standard modules
 use Carp;
 use strict;
+use warnings;
+
+use ORAC::Calib;			# use base class
+use base qw/ ORAC::Calib /;
+
+use File::Spec;
 
 use vars qw/ $VERSION/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
@@ -55,11 +59,12 @@ sub rotation {
   if (@_) { $self->{Rotation} = shift; }
 
   unless (defined $self->{Rotation}) {
-    $self->{Rotation} = $ENV{ORAC_DATA_CAL}."/ircam3_rotate2eq";
+    $self->{Rotation} = File::Spec->catfile($ENV{ORAC_DATA_CAL},
+					    "ircam3_rotate2eq");
   };
 
 
-  return $self->{Rotation}; 
+  return $self->{Rotation};
 };
 
 =item B<mask>
@@ -78,7 +83,7 @@ sub mask {
   if (@_) { $self->{Mask} = shift; }
 
   unless (defined $self->{Mask}) {
-    $self->{Mask} = $ENV{ORAC_DATA_CAL}."/bpm";
+    $self->{Mask} = File::Spec->catfile($ENV{ORAC_DATA_CAL},"bpm");
   };
 
 
