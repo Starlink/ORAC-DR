@@ -1,0 +1,120 @@
+=head1 NAME
+
+_SKY_SUBTRACT_IN_PAIRS_ - Subtracts observations taken in OBJECT/SKY pairs
+
+=head1 DESCRIPTION
+
+Co-adds observations taken in the standard OBJECT/SKY pairs.
+
+=head1 PARAMETERS
+
+=over 4
+
+none
+
+=back
+
+=head1 ORAC
+
+=head2 Engines referenced
+
+KAPPA
+
+=head2 Tasks called
+
+=over 4
+
+=item kappa_mon
+
+sub
+
+=back
+
+=head2 Objects addressed
+
+$Frm
+
+=head1 NOTES
+
+This primitive is meant to act on observations taken in the standard
+OBJECT/SKY pairing.  It does not assume that the pairings come in any
+specific order, only that for each pair of observations, one is OBJECT
+and one is SKY (i.e. observations taken in OSSOOSSO are reduced
+properly, whereas observations taken in OSOOSO are not).
+
+To determine whether an observation is OBJECT or SKY, this primitives
+relies on correct telescope offset information being placed in the
+header.  More specifically, OBJECT observations have R.A. and
+Dec. offsets of zero, and SKY observations have either R.A., Decl., or
+both set as non-zero.  If these offsets are set incorrectly, the
+primitive will not work correctly.
+
+This primitive does work with the C<-resume> flag but does not work
+with the C<-batch> flag.
+
+Assumes that by the time this primitive is called, there is only 
+one file associated with the frame object.
+
+=head2 REVISION
+
+  $Id$
+
+=head1 AUTHOR
+
+Malcolm J. CurrieE<lt>mjc@jach.hawaii.eduE<gt>
+
+=cut
+
+# Validate.
+    unless ( defined $Frm->uhdr( "PAIR_COMPLETE" ) ) {
+       orac_err "PAIR_COMPLETE is not present.  Have you run the steering primitive?";
+       my $ORAC_STATUS = ORAC__ERROR;
+    }
+
+    unless ( defined $Frm->uhdr( "ON_SOURCE" ) ) {
+       orac_err "ON_SOURCE is not present.  Have you run the steering primitive?";
+       my $ORAC_STATUS = ORAC__ERROR;
+    }
+
+# Check whether or not we have an even number of observations in the
+# group.
+    if ( $Frm->uhdr( "PAIR_COMPLETE" ) ) {
+
+# Calculate the previous observation number, and hence access the frame
+# of the previous group member.  This assumes we are not using -batch
+# mode.
+       my $prevFrm = ( $Grp->members )[ -2 ];
+       my $prevobs = $prevFrm->number;
+
+# Set the object and sky frames; this is set within the steering file.
+       my ( $object, $out, $sky );
+       if ( $Frm->uhdr( "ON_SOURCE" ) ) {
+
+# RA and Decl. offsets are zero, so assume that the current frame is the
+# object frame, and the previous is sky.  Define the name of the
+# sky-subtracted file from the object file.
+          ( $object, $out ) = $Frm->inout( "_ss" );
+          $sky = $prevFrm->file;
+
+       } else {
+
+# RA and/or Decl. offsets are non-zero, so assume that the current frame
+# is sky, and previous is object.  Generate the sky-subtracted file name
+# from the object file, i.e. the previous Frame.
+         ( $object, $out ) = $prevFrm->inout( "_ss" );
+         $sky    = $Frm->file;
+
+       }
+
+# Subtracted the sky and report the step.
+       my $param1 = "in1=$object in2=$sky out=$out title=$out";
+       $Mon{'kappa_mon'}->obeyw( "sub", "$param1" );
+
+       orac_print "\nSubtracting $sky (SKY) from $object (OBJECT).\n";
+
+# Record the new file name in the frame object.
+       $Frm->file( $out );
+       
+# Display the current frame.
+       $Display->display_data( $Frm ) if ( defined $Display );
+    }
