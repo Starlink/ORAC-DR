@@ -291,7 +291,7 @@ sub orac_determine_inst_classes {
     $groupclass = "ORAC::Group::IRIS2";
     $frameclass = "ORAC::Frame::IRIS2";
     $calclass   = "ORAC::Calib::Michelle";
-    $instclass  = "ORAC::Inst::CGS4";
+    $instclass  = "ORAC::Inst::IRIS2";
   } elsif ($inst eq 'UFTI') {
     $groupclass = "ORAC::Group::UFTI";
     $frameclass = "ORAC::Frame::UFTI";
@@ -313,7 +313,7 @@ sub orac_determine_inst_classes {
     $frameclass = "ORAC::Frame::OCGS4";
     $calclass   = "ORAC::Calib::CGS4";
     $instclass  = "ORAC::Inst::CGS4";
-    $inst = 'CGS4'; # to pick up CGS4 recipies and primitives
+    $inst = 'CGS4'; # to pick up CGS4 recipes and primitives
   } elsif ($inst eq 'SCUBA') {
     $groupclass = "ORAC::Group::JCMT";
     $frameclass = "ORAC::Frame::JCMT";
@@ -328,12 +328,12 @@ sub orac_determine_inst_classes {
     $groupclass = "ORAC::Group::Michelle";
     $frameclass = "ORAC::Frame::Michelle";
     $calclass = "ORAC::Calib::Michelle";
-    $instclass = "ORAC::Inst::CGS4";
+    $instclass = "ORAC::Inst::Michelle";
   } elsif ($inst eq 'UIST') {
     $groupclass = "ORAC::Group::UIST";
     $frameclass = "ORAC::Frame::UIST";
     $calclass = "ORAC::Calib::UIST";
-    $instclass = "ORAC::Inst::CGS4";
+    $instclass = "ORAC::Inst::UIST";
   } elsif ($inst eq 'GMOS') {
     $groupclass = "ORAC::Group::GMOS";
     $frameclass = "ORAC::Frame::GMOS";
@@ -622,11 +622,20 @@ sub orac_determine_initial_algorithm_engines {
     @AlgEng = qw/ figaro1 figaro2 figaro4 kappa_mon ndfpack_mon
       ccdpack_reg /;
 
-
   } elsif ($inst eq 'IRCAM') {
 
     @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg
       ccdpack_res /
+
+  } elsif ($inst eq 'MICHELLE') {
+
+    @AlgEng = qw/ figaro1 figaro2 figaro4 kappa_mon ndfpack_mon
+      ccdpack_red ccdpack_reg /;
+
+  } elsif ($inst eq 'UIST') {
+
+    @AlgEng = qw/ figaro1 figaro2 figaro4 kappa_mon ndfpack_mon
+      ccdpack_red ccdpack_reg /;
 
   } elsif ($inst eq 'GMOS') {
 
@@ -1545,13 +1554,14 @@ $Id$
 =head1 AUTHORS
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
-Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>
+Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>,
+Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>,
 Paul Hirst E<lt>p.hirst@jach.hawaii.eduE<gt>
 
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
