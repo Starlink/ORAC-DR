@@ -1,8 +1,84 @@
-# _NOD_APHOT_MAG_         -*- perl -*-
-# 
-# Computes photometry for the individual frmaes and mosaic of a NOD
-# jitter.  It computes photometry for both the positive and negative
-# point sources.
+#+
+# Name:
+#    _NOD_APHOT_MAG_
+#
+# Purpose:
+#    Performs aperture photometry for NOD recipes.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive computes photometry for the individual frames and
+#    mosaic of a NOD jitter.  It invokes _FIXED_APERTURE_PHOTOMETRY_
+#    to derive aperture photometry for both the positive and negative
+#    point sources.  Photometry is performed for each frame of the
+#    current cycle in the difference group, and the group mosaic frame.
+#
+#  Arguments:
+#     APERTURE = REAL (Given)
+#        The aperture in arcseconds for the photometry.  [5.0]
+#     INNER = REAL (Given)
+#        The ratio of the diameters of inner ring of the sky annulus to
+#        that of the object aperture (APERTURE).  It is constrained
+#        to be in the range 1.1 to 3.0.  The mode of the pixel values in 
+#        the annulus is used to subtract the sky for statistics 3) and
+#        4) listed above.  [1.2]
+#     SKY_EST = INTEGER (Given)
+#        Sky estimations method as per AUTOPHOTOM parameter SKYEST.  The
+#        default is the mode, so as to exclude contaminating sources.
+#        1 is the mean; 2 is the average of values within two standard
+#        deviations of the mean; 3 is the mode.  [3]
+#     OUTER = REAL (Given)
+#        The ratio of the diameters of outer ring of the sky annulus to
+#        that of the object aperture (APERTURE).  It is constrained to
+#        be in the range 1.4 to 5.0 and be at least 0.3 greater than the
+#        inner scale factor of the annulus.  [1.5]
+#
+# Notes:
+#    -  This primitive is suitable for both UFTI and IRCAM.
+#    Instrument-specific headers are obtained where appropriate.
+#    -  Processing only occurs when it is time to perform photometry,
+#    i.e. when the steering header DO_APHOT is true, and only on object
+#    frames.
+#    -  The steering header CYCLE_NUMBER specifies the recipe cycle
+#    number.
+#    -  The reference to the difference group is stored in the internal
+#    group header DIFFERENCE_GROUP.
+#    -  To discriminate between the various results, in the results
+#    file the positive images have suffix "_pos" after the frame name
+#    and the negative images have a "_neg" suffix.
+#    -  The primitive sets the telescope offsets of the mosaic to be zero
+#    both in the physical frame and in the group header.  It then finds
+#    the displacements of the positive and negative images about the centre
+#    of each frame.  The displacements are half of the reference (first)
+#    frame's headers XOFFSET_DIFFERENCE and YOFFSET_DIFFERENCE.
+#
+# Tasks:
+#    KAPPA: FITSMOD.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+#-
+
+# Arguments
+# =========
+
+# Obtain the aperture diameter in arcseconds.
+    my $aperture = ( $_NOD_APHOT_MAG_{APERTURE} || 5 );
+ 
+# Calculate the radius of the inner and outer extent of the aperture.
+    my $inner = ( $_NOD_APHOT_MAG_{INNER} || 1.2 );
+    my $outer = ( $_NOD_APHOT_MAG_{OUTER} || 1.5 );
+    $inner = min( 3.0, max( $inner, 1.1 ) );
+    $outer = min( 5.0, max( $inner + 0.3, $outer, 1.4 ) );
+
+# Obtain the sky-estimation-method index.
+    my $skyest = ( $_NOD_APHOT_MAG_{SKY_EST} || 3 );
+
+# Selection
+# =========
 
 # This should only be performed on OBJECT frames.
     if ( $Frm->hdr( "OBSTYPE" ) =~ /OBJECT/ ) {
@@ -13,6 +89,21 @@
 
 # Make the difference group the current standard group by starting a new context.
           my $Grp = $Grp->uhdr( "DIFFERENCE_GROUP" );
+
+# Obtain the cycle number.  Default to zero if undefined, so that recipes
+# which do not support this feature will continue to work.
+          my $cycleno = $Frm->hdr( "CYCLE_NUMBER" );
+          $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+# Select those members in the current cycle.
+          my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+
+# Not sure why but the group file is not propagated to the subgrp (subgrp of a subgrp?),
+# so copy the group file.
+          $cycleGrp->file( $Grp->file );
+
+# Find the offsets to images.
+# ===========================
 
 # Obtain the instrument name, and hence the header keywords for the
 # telescope offsets.  
@@ -36,36 +127,126 @@
           $Grp->hdr( $raname, 0 );
           $Grp->hdr( $decname, 0 );
 
-# Obtain the offsets between the offset centre and positive images.  Note that this is about
-# the centre for the mosaic.
+# Obtain the offsets between the offset centre and positive images.  Note that 
+# this is about the centre for the mosaic.
           my $xoff = 0.5 * $Grp->frame( 0 )->hdr( "XOFFSET_DIFFERENCE" );
           my $yoff = 0.5 * $Grp->frame( 0 )->hdr( "YOFFSET_DIFFERENCE" );
 
-# Obtain the cycle number.  Default to zero if undefined, so that recipes
-# which do not support this feature will continue to work.
-          my $cycleno = $Frm->hdr( "CYCLE_NUMBER" );
-          $cycleno = defined( $cycleno ) ? $cycleno : 0;
-
-# Select those members in the current cycle.
-          my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
-
-# Not sure why but the group file is not propagated to the subgrp (subgrp of a subgrp?),
-# so copy the group file.
-          $cycleGrp->file( $Grp->file );
+# Perform photometry.
+# ===================
 
 # Start a new Grp context.
           {
              my $Grp = $cycleGrp;
 
 # Measure the positive images.
-             _FIXED_APERTURE_PHOTOMETRY_ POSITIVE=1 APERTURE=5.0 INNER=1.2 OUTER=1.5 XOFF=$xoff YOFF=$yoff SUFFIX=_pos
+             _FIXED_APERTURE_PHOTOMETRY_ POSITIVE=1 APERTURE=$aperture INNER=$inner OUTER=$outer SKY_EST=$skyest XOFF=$xoff YOFF=$yoff SUFFIX=_pos
 
 # Obtain the offsets between the offset centre and positive images.
              $xoff = -$xoff;
              $yoff = -$yoff;
 
 # Measure the negative images.
-             _FIXED_APERTURE_PHOTOMETRY_ POSITIVE=0 APERTURE=5.0 INNER=1.2 OUTER=1.5 XOFF=$xoff YOFF=$yoff SUFFIX=_neg
+             _FIXED_APERTURE_PHOTOMETRY_ POSITIVE=0 APERTURE=$aperture INNER=$inner OUTER=$outer SKY_EST=$skyest XOFF=$xoff YOFF=$yoff SUFFIX=_neg
           }
        }
     }
+
+# Podule
+# ======
+
+=head1 NAME
+
+NOD_APHOT_MAG -- Performs aperture photometry for NOD recipes.
+
+=head1 DESCRIPTION
+
+This primitive computes photometry for the individual frames and
+mosaic of a NOD jitter.  It invokes L<_FIXED_APERTURE_PHOTOMETRY_>
+to derive aperture photometry for both the positive and negative
+point sources.  Photometry is performed for each frame of the
+current cycle in the difference group, and the group mosaic frame.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item APERTURE = REAL (Given)
+
+The aperture in arcseconds for the photometry.  [5.0]
+
+=item INNER = REAL (Given)
+
+The ratio of the diameters of inner ring of the sky annulus to
+that of the object aperture (APERTURE).  It is constrained
+to be in the range 1.1 to 3.0.  The mode of the pixel values in 
+the annulus is used to subtract the sky for statistics 3) and
+4) listed above.  [1.2]
+
+=item SKY_EST = INTEGER (Given)
+
+Sky estimations method as per AUTOPHOTOM parameter SKYEST.  The
+default is the mode, so as to exclude contaminating sources.
+1 is the mean; 2 is the average of values within two standard
+deviations of the mean; 3 is the mode.  [3]
+
+=item OUTER = REAL (Given)
+
+The ratio of the diameters of outer ring of the sky annulus to
+that of the object aperture (APERTURE).  It is constrained to
+be in the range 1.4 to 5.0 and be at least 0.3 greater than the
+inner scale factor of the annulus.  [1.5]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for both UFTI and IRCAM.
+Instrument-specific headers are obtained where appropriate.
+
+=item *
+
+Processing only occurs when it is time to perform photometry,
+i.e. when the steering header DO_APHOT is true, and only on object
+frames.
+
+=item *
+
+The steering header CYCLE_NUMBER specifies the recipe cycle
+number.
+
+=item *
+
+The reference to the difference group is stored in the internal
+group header DIFFERENCE_GROUP.
+
+=item *
+
+To discriminate between the various results, in the results
+file the positive images have suffix "_pos" after the frame name
+and the negative images have a "_neg" suffix.
+
+=item *
+
+The primitive sets the telescope offsets of the mosaic to be zero
+both in the physical frame and in the group header.  It then finds
+the displacements of the positive and negative images about the centre
+of each frame.  The displacements are half of the reference (first)
+frame's headers XOFFSET_DIFFERENCE and YOFFSET_DIFFERENCE.
+
+=back
+
+=head1 TASKS
+
+KAPPA: FITSMOD.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=cut
+
