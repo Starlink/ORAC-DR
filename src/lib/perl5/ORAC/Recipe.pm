@@ -13,7 +13,7 @@ ORAC::Recipe - Recipe parsing and execution
   $r->instrument( $instrument );
   $r->read_recipe(RECIPE => $recipe,
                   INSTRUMENT => $instrument);
-  $r->parse;
+  $r->parse( $PRIMITIVE_LIST );
   $r->execute( $Frm, $Grp, $Cal, $Display, \%Mon);
 
 =head1 DESCRIPTION
@@ -33,7 +33,8 @@ use IO::File;    # until perl5.6 is guaranteed
 
 use ORAC::Constants qw/ :status /;
 use ORAC::Print;
-use ORAC::Basic qw/ orac_exit_normally/;  # for orac_exit_nomally
+use ORAC::Basic;
+use ORAC::Error qw/ :try /; 
 use ORAC::Inst::Defn qw/ orac_determine_recipe_search_path
   orac_determine_primitive_search_path /;
 
@@ -231,7 +232,7 @@ Executes the recipes stored in the object.
 Also needs the current frame, group and calibration objects
 as well as the hash containing all the messaging objects.
 
-  $rec->execute( $Frm, $Grp, $Cal, $Display, \%Mon);
+  $rec->execute( \@CURRENT_PRIMITIVE, $Frm, $Grp, $Cal, $Display, \%Mon);
 
 The following classes are avaiable to primitive writers:
 
@@ -243,6 +244,11 @@ Other classes can be loaded from within the recipe as needed.
 The objects accessible to the recipe are:
 
 =over 4
+
+=item B<$CURRENT_PRIMITIVE>
+
+Reference to an array containing a list of currently running
+primitives.
 
 =item B<$Frm>
 
@@ -301,12 +307,14 @@ sub execute {
   my $self = shift;
 
   # Read all args so that the only thing left will be the hidden arg
+  my $CURRENT_PRIMITIVE = shift;
+  my $PRIMITIVE_LIST =shift;
   my $Frm = shift;
   my $Grp = shift;
   my $Cal = shift;
   my $Display = shift;
   my $Mon = shift;
-
+ 
   croak "Recipe has not been parsed!" unless $self->have_parsed;
 
   # Hidden options are passed in using a hash ref at the end
@@ -328,51 +336,70 @@ sub execute {
   # Want to make sure that perl warnings are turned off
   # when evaluating recipes - control via the -warn parameter
   # local $^W = 0;
-
+  
   # Info message for debugging
+  
   my $recipe_name = $self->recipe_name;
   if ($self->debug) {
-    orac_debug "***** Starting recipe '$recipe_name' *****\n";
+     orac_debug "***** Starting recipe '$recipe_name' *****\n";
   }
-
+  
   # Execute the recipe
-  my $status = ORAC::Recipe::Execution::orac_execute_recipe($block,$Frm,
-							    $Grp, $Cal,
-							    $Display, $Mon,
-							    $self->debug,
-							    $self->batch);
-
+  my $status = ORAC::Recipe::Execution::orac_execute_recipe(
+                                                             $CURRENT_PRIMITIVE,
+                                                             $block,$Frm,
+	  						     $Grp, $Cal,
+							     $Display, $Mon,
+							     $self->debug,
+							     $self->batch);
+							     
   $status = ORAC__OK unless defined $status;
   $status = ORAC__OK if $status eq '';
-
+ 
   # Some extra info
   if ($self->debug) {
     orac_debug "***** Recipe '$recipe_name' completed with status $status *****\n";
   }
+    					      
+  # Check for an error from perl (eg a croak), but evaluate in string 
+  # context so that thrown errors are caught, they should all have values
+  # attached (e.g. ORAC__ABORT or ORAC__FATAL) but don't take chances
+  if ("$@") {
 
-  # Check for an error from perl
-  # (eg a croak)
-  if ($@) {
+    # Checking ref() and isa() clears $@
+    my $error = $@;
+
+    # Check for previously thrown UserAbort errors	
+    if ( ref($error) && $error->isa("Error") )
+    {
+        if ( $error == ORAC__ABORT )
+	{
+	   # We have a UserAbort, no hassle, throw it and return to
+	   # the Tk Mainloop without printing any junk about the error
+           $error->throw;
+	}
+    }	
 
     # Since we have an error we can not trust the current
     # frame to be fully reduced. We therefore set its state
     # to bad so that it will be removed from Groups
     # Turn this feature off for now - more discussion required
     # $Frm->isgood(0);
-
+        
     # Report error
-    orac_err ("RECIPE ERROR: $@","blue");
-
+    orac_err ("RECIPE ERROR: $error","blue");
+ 
     # Create an array that matches the line numbers returned by
     # the error message.
     # Note that this line number relates to $block and
     # not @recipe. Need to split $block on new line
     my @new = split(/\n/, $block);
+    
+    # If this was a syntax error print out the recipe, string context!
+    if ("$error" =~ /syntax error|object method/) {
 
-    # If this was a syntax error print out the recipe
-    if ($@ =~ /syntax error|object method/) {
-      # Extract info from the error message
-      $@ =~ /line (\d+)/ && do {
+      # Extract info from the error message, string context!
+      "$error" =~ /line (\d+)/ && do {
 	my $num = $1;
 	orac_err("Error in line $num\n", 'red');
 	orac_err("Relevant recipe lines (with numbers):\n\n", 'red');
@@ -384,13 +411,13 @@ sub execute {
 
 	# Print out the relevant chunk with line numbers
 	for (my $i=$start; $i < $end; $i++) {
-	  orac_print("$i: ", 'blue');
-          orac_print("$new[$i]\n", 'red');
+	  orac_err("$i: ", 'blue');
+          orac_err("$new[$i]\n", 'red');
 	}
 	orac_err("End recipe dump\n\n",'blue');
       };
 
-    } elsif ($@ =~ /^Died/) {
+    } elsif ("$error" =~ /^Died/) {
       # Else check if the recipe died. Usually a die is caused 
       # by a control C from the user.
 
@@ -406,14 +433,22 @@ sub execute {
 	orac_err("Recipe contents dumped to ORACDR_RECIPE.dump\n")
       }
     }
-
-
-    # Exit from the pipeline
-    # Do this until we debug everything
-    orac_exit_normally("Exiting due to error executing recipe");
+    
+    # Check for previously thrown non-UserAbort errors	
+    if ( ref($error) && $error->isa("Error") )
+    {
+        # Exit from the pipeline with already existing error
+        $error->throw;
+    }	
+    else
+    {	
+       # Exit from the pipeline by throwing a new error
+       throw ORAC::Error::FatalError( "Exiting due to error executing recipe",
+                                      ORAC__FATAL );
+    }
   }
 
-  # Check for bad status from the recipe (this is a bda status
+  # Check for bad status from the recipe (this is a bad status
   # without a croak - we continue)
   if ($status) {
     orac_err "Recipe completed with error status = $status\n";
@@ -429,7 +464,10 @@ sub execute {
 Parses the recipe read via C<read_recipe>, reading in the
 necessary primitives and adding additional error checking code.
 
-  $rec->parse();
+Takes a reference to the tied array which defines the recipe
+window listbox contents as an optional argument.
+
+  $rec->parse( $PRIMITIVE_LIST );
 
 Once parsed the recipe is ready for execution.
 
@@ -439,14 +477,15 @@ Returns ORAC__OK on completion.
 
 sub parse {
   my $self = shift;
-
+  my $PRIMITIVE_LIST = shift;
+  
   # The recipe has to be parsed recursively.
   # To do that we need to make use of a helper routine that 
   # can process the current recipe chunk and check for recursion depth
 
   # The master chunk is the base recipe reference.
   # The initial recursion depth is 1
-  my $parsed = $self->_parse_recursively( $self->_recipe );
+  my $parsed = $self->_parse_recursively( $self->_recipe, $PRIMITIVE_LIST );
 
   # Now need to store that array in the object overwriting the
   # unprocessed copy.
@@ -710,7 +749,7 @@ sub _check_obey_status_string {
   $args = '(No arguments)' unless defined $args;
   my $none = "(None!!)";
   $monolith = $none unless defined $monolith;
-  $task = '(Unknown)' unless defined $task;
+  $task = '(Unknown)' unless defined $task;  
 
   # Need to be careful of what gets expanded when the
   # lines are added to the recipe and what gets expanded 
@@ -767,7 +806,8 @@ The depth parameter is an integer specifying the current recursion
 depth. When called externally, the depth should be set to 0 or C<undef>.
 It is inremented internally during recursion.
 
-   $processed_chunk = $rec->_parse_recursively( \@chunk, [$depth]);
+   $processed_chunk = $rec->_parse_recursively( \@chunk, [$depth],
+                                                \@PRIMTIIVE_LIST);
 
 When called externally the array to be processed is usually the
 raw recipe. The return value is a reference to an array containing
@@ -778,6 +818,7 @@ the processed recipe chunk.
 sub _parse_recursively {
   my $self = shift;
   my $chunk = shift;
+  my $PRIMITIVE_LIST = shift;
 
   croak '_parse_recursively: First argument must be an array reference!'
     unless ref($chunk) eq 'ARRAY';
@@ -828,7 +869,7 @@ sub _parse_recursively {
       # $rest is a string of form "arg1=value arg2=value" that is 
       # converted to a hash at runtime by orac_parse_arguments
       push(@parsed,
-	   'my %'."$primitive_name = orac_parse_arguments(\"$rest\");\n");
+	   'my %'."$primitive_name = orac_parse_arguments(\"$rest\");\nORAC::Event->update('Tk');\n");
 
       # read in primitive
       my $lines_ref = $self->_read_primitive( $primitive_name );
@@ -836,12 +877,19 @@ sub _parse_recursively {
       # Now recurse to read parse the primitive for more primitives
       $lines_ref = $self->_parse_recursively($lines_ref, $depth);
 
-      # Store lines - making sure we create a separate scope
+      
+      # Store lines - making sure we DO NOT create a separate scope
       push(@parsed,
-	   "\n{\nmy \$ORAC_PRIMITIVE=\"$primitive_name\";\n\n",
-	   @$lines_ref,
-	   "\n}\n");
-
+         "\n{\nmy \$ORAC_PRIMITIVE=\"$primitive_name\";\n",
+	 "\$\$CURRENT_PRIMITIVE=[ \$ORAC_PRIMITIVE ];\n",
+	 "ORAC::Event->update(\"Tk\");\n\n",
+         @$lines_ref,
+         "\n}\n");	
+	
+      # push top level primitivies into the primitive list
+      if ( defined $PRIMITIVE_LIST && ref($PRIMITIVE_LIST) ) {
+         push( @$PRIMITIVE_LIST, $primitive_name ); }
+      
     } else {
       # Just push the line on as is
       push (@parsed, $line);
@@ -1056,8 +1104,8 @@ sub orac_parse_arguments {
 Simple wrapper to eval in this namespace in order to execute recipes
 without fear of possible contamination of the base recipe namespace.
 
-  $status = orac_execute_recipe( $recipe, $Frm, $Grp, $Cal,
-                                 $Display, $Mon, $Debug, $Batch);
+  $status = orac_execute_recipe( $CURRENT_PRIMITIVE, $recipe, $Frm, $Grp, 
+                                 $Cal, $Display, $Mon, $Debug, $Batch);
 
 The recipe is a string to be evaluated. The basic objects have to
 be supplied since they can not be set inside the recipe prior to
@@ -1072,8 +1120,9 @@ batch variables are passed in as recipe globals.
 our ($BATCH, $DEBUG);
 
 sub orac_execute_recipe {
-  my ($recipe, $Frm, $Grp, $Cal, $Display, $Mon);
-  ($recipe, $Frm, $Grp, $Cal, $Display, $Mon, $DEBUG, $BATCH) = @_;
+  my ($CURRENT_PRIMITIVE, $recipe, $Frm, $Grp, $Cal, $Display, $Mon);
+  ( $CURRENT_PRIMITIVE, 
+    $recipe, $Frm, $Grp, $Cal, $Display, $Mon, $DEBUG, $BATCH) = @_;
 
   # We need to take into account that %Mon might be a tied object
   # since we can not copy a hash and retain the tie
@@ -1095,7 +1144,8 @@ sub orac_execute_recipe {
 =head1 AUTHORS
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
-Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>
+Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>,
+Alasdair Allan E<lt>aa@astro.ex.ac.ukE<gt>
 
 
 =head1 COPYRIGHT

@@ -23,10 +23,12 @@ require Exporter;
 
 @ISA = qw/Exporter/;
 
-@EXPORT_OK = qw/ORAC__OK ORAC__ERROR ORAC__BADENG/;
+@EXPORT_OK = qw/ORAC__OK ORAC__ERROR ORAC__BADENG  
+                ORAC__ABORT ORAC__FATAL/;
 
 %EXPORT_TAGS = (
-		'status'=>[qw/ ORAC__OK ORAC__ERROR ORAC__BADENG/]
+		'status'=>[qw/ ORAC__OK ORAC__ERROR ORAC__BADENG 
+		               ORAC__ABORT ORAC__FATAL/]
 	       );
 
 Exporter::export_tags('status');
@@ -48,7 +50,7 @@ use constant ORAC__OK => 0;
 
 =item B<ORAC__ERROR>
 
-This constant containst the definition of bad ORAC status.
+This constant contains the definition of bad ORAC status.
 
 =cut
 
@@ -68,6 +70,22 @@ launched.
 =cut
 
 use constant ORAC__BADENG => 2;
+
+=item B<ORAC__ABORT>
+
+This constant contains the definition a user aborted ORAC process
+
+=cut
+
+use constant ORAC__ABORT => -2;
+
+=item B<ORAC__FATAL>
+
+This constant contains the definition an ORAC process which has died fatally
+
+=cut
+
+use constant ORAC__FATAL => -3;
 
 
 =back

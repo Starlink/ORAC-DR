@@ -1,0 +1,1171 @@
+#!/usr/local/bin/perl
+
+# S T A R L I N K  D O C U M E N T I O N ------------------------------------
+
+#+ 
+#  Name:
+#    Xoracdr
+
+#  Purposes:
+#    X-Windows GUI control panel for the ORAC data reduction pipeline
+
+#  Language:
+#    Perl script
+
+#  Invocation:
+#    Invoked from ${ORAC_DIR}/etc/xoracdr_start.csh
+
+#  Description:
+#    Xoracdr is an X Windows GUI control panel which can configure 
+#    and launch the ORAC-DR data reduction pipeline.
+
+#  Authors:
+#    Alasdair Allan (aa@astro.ex.ac.uk)
+#     {enter_new_authors_here}
+
+#  Notes:
+#     - Must be launched from the xoracdr_start.csh script for the correct
+#       environment variables, notably the location of STARPERL
+
+#  Revision:
+#     $Id$
+
+#  Copyright:
+#     Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#     Council. All Rights Reserved.
+
+#-
+
+# ---------------------------------------------------------------------------
+
+use strict;
+use vars qw/$VERSION/;
+
+# P O D  D O C U M E N T A T I O N ------------------------------------------
+
+=head1 NAME
+
+Xoracdr - X Windows GUI control panel for the ORAC data reduction pipeline
+
+=head1 SYNOPSIS
+
+   Xoracdr [-vers]
+   
+=head1 DESCRIPTION
+
+C<Xoracdr> is an X Windows GUI control panel which can configure and launch
+the ORAC-DR data reduction pipeline.
+
+
+=head1 REVISION
+
+$Id$
+
+=head1 AUTHORS
+
+Alasdair Allan (aa@astro.ex.ac.uk)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+=cut
+
+# H A N D L E  V E R S I O N ----------------------------------------------- 
+
+#  Version number - do this before anything else so that we dont have to 
+#  wait for all the modules to load - very quick
+BEGIN {
+  $VERSION = sprintf "%d.%d.%d.%d", q$Revision$ 
+                                   =~ /(\d+)\.(\d+)\.(\d+)\.(\d+)/;
+ 
+  #  Check for version number request - do this before real options handling
+  foreach (@ARGV) {
+    if (/^-vers/) {
+      print " Xoracdr: ORAC-DR launcher version $VERSION\n";
+      print " Using PERL version: $]\n";
+      exit;
+    }
+  }
+}
+
+# S I G N A L  T R A P -----------------------------------------------------
+
+#  Catch as many signals as possible so that the END{} blocks work correctly
+use sigtrap qw/die normal-signals error-signals/;
+
+# C O M M A N D  L I N E  A R G U M E N T S --------------------------------
+
+# Store them first so that we can pass stuff down
+my @ORAC_ARGS = @ARGV;
+
+# L O A D  E A R L Y  M O D U L E S ---------------------------------------- 
+
+# Load only the modules necessary to initialisation before starting the
+# GUI, we don't want to leave the user looking at a blank screen. We will
+# pop up a progress bar before loading the bulk of the modules.
+
+#
+#  ORAC modules
+#
+use lib $ENV{ORAC_PERL5LIB};     # Path to ORAC modules
+use ORAC::Basic;                 # Helper routines
+
+#
+#  General modules
+#
+
+# Check for starlink login
+&orac_exit_normally("No starlink login") unless exists $ENV{STAR_LOGIN};
+
+# G L O B A L  V A R I A B L E S --------------------------------------------
+
+# I can explain...
+use vars qw/ /;
+
+# S I G N A L  H A N D L E R S ----------------------------------------------
+
+# make unbuffered
+$|=1;					
+
+# signals
+$SIG{'INT'} = \&orac_exit_abnormally;
+$SIG{'PIPE'} = 'IGNORE';
+
+# S T A R T  T K ------------------------------------------------------------
+
+# Start Tk early so the user has something to look at while the application
+# sorts itself out and loads modules, use Tk::ProgressBar a la ORACDISP 
+# since that looked pretty spiffy.
+
+# Load Tk modules
+use Tk;
+use Tk::ProgressBar;
+ 
+# Load the GUI control code
+use ORAC::Event;                    # hash table
+use ORAC::Xorac;                    # event handlers
+ 
+# Create a main window
+my $MW = MainWindow->new();
+$MW->positionfrom("user");
+$MW->geometry("+40+40");
+$MW->title("Xoracdr $VERSION");
+$MW->iconname("Xoracdr");
+$MW->configure( -cursor => "tcross" );
+
+# Register with the ORAC::Event class
+ORAC::Event->register("Tk"=>$MW);
+		   
+# Create Label widget
+my $Label = ORAC::Event->query("Tk")->Label( -width      => 40,
+			                      -anchor     =>'w',
+			                      -foreground =>'blue',
+					      -font => 'Arial',
+                                              -text => "Xoracdr $VERSION");
+# Pack the label
+$Label->grid( -row    => 0, 
+              -colum  => 0, 
+	      -sticky => 'w' );
+
+# Create ProgresBar widget
+my $Progress = ORAC::Event->query("Tk")->ProgressBar( 
+                                                -from        => 0, 
+                                                -to          => 100, 
+                                                -width       => 15, 
+			                        -length      => 270,
+                                                -blocks      => 20, 
+			                        -anchor      => 'w',
+                                                -colors      => [0, 'blue'],
+                                                -relief      => 'sunken',
+                                                -borderwidth => 3,
+                                                -troughcolor => 'grey',);
+ 
+# Pack the ProgressBar
+$Progress->grid( -sticky => 's' );
+
+# Register the label and progress bar with the ORAC::Event class
+ORAC::Event->register("Label"=>$Label);
+ORAC::Event->register("Progress"=>$Progress);
+
+# Update
+ORAC::Event->update("Tk"); 
+
+# L O A D  L A T E  M O D U L E S ------------------------------------------- 
+
+# Now the user has something to look at we can load the rest of the modules
+
+#
+#  ORAC modules
+#
+use ORAC::Core;                 # Core pipelining routines
+use ORAC::Constants;            # ORAC__OK et al
+use ORAC::General;              # parse_* routines
+use ORAC::Print;                # Print system
+use ORAC::Xorac::Process;       # Pipeline config and start routines
+use ORAC::Inst::Defn qw/ orac_determine_inst_classes 
+                         orac_configure_for_instrument /;
+use ORAC::Error qw/:try/;
+
+xorac_update_progress('Loaded ORAC Modules', 5);
+
+#
+#  General modules
+#
+use Pod::Usage;
+
+# 
+# Tk modules
+#
+require Tk::Menu;
+require Tk::Menubutton;
+require Tk::DialogBox;
+require Tk::ROText;
+
+xorac_update_progress('Loaded Tk Modules', 10);
+
+# C R E A T E  O P T I O N  H A S H -----------------------------------------
+
+# Create the option hash
+my %options;
+
+foreach ( qw/ nodisplay debug verbose calib from to ut list batch
+              skip warn noeng log_file log_screen log_xwin loop 
+	      resume beep nomsgtmp showcurrent files / ) {
+
+   %options = ( %options, $_ => undef );
+}
+
+# Check for ORAC_LOOP environment variable here and set $$options{"loop"}
+$options{"loop"} = $ENV{"ORAC_LOOP"};
+
+# Declare Status Bar variable here so we can pass it to processing loop
+my ( $CURRENT_RECIPE );
+
+xorac_update_progress('Built %options hash', 20);
+
+# B U I L D  M E N U  B A R -------------------------------------------------
+
+# Declare variables
+my ( @menus );
+my ( $file_menu, $display_menu, $options_menu, $recipe_menu, $help_menu );
+
+# Frame for menu bar
+my $menu_frame = ORAC::Event->query("Tk")->Frame( -relief      =>'raised', 
+                                                  -borderwidth => 1);
+
+foreach ( qw/File Display Options Recipe Help/ )
+{
+   push (@menus, $menu_frame->Menubutton( -font => 'Arial', -text => $_ ) );
+}
+
+# Help menu
+$menus[4]->pack( -side => 'right' );
+$help_menu = $menus[4]->Menu( -tearoff => 0, -font => 'Arial' );
+
+$menus[4]->configure( -menu => $help_menu );
+$menus[4]->menu()->add( "command", -label => "ORAC-DR pipeline",
+                        -command => sub { 
+          xorac_help($MW, $ENV{"ORAC_DIR"}."/howto/", "Introduction");
+			                } );
+$menus[4]->menu()->add( "command", -label => "The display system",
+                        -command => sub { 
+	  xorac_help($MW, $ENV{"ORAC_DIR"}."/howto/", "DisplaySystem");
+			                } );					
+$menus[4]->menu()->add( "separator" );
+$menus[4]->menu()->add( "command", -label => "About XORAC-DR",
+                        -command => [ \&xorac_about, $VERSION ] );
+
+# File menu
+$menus[0]->pack( -side => 'left'); 
+$file_menu = $menus[0]->Menu( -tearoff => 0, -font => 'Arial' );
+
+$menus[0]->configure( -menu => $file_menu );
+$menus[0]->menu()->add( "command", -label => "Stop processing",
+                        -state         => 'disabled',
+                        -command => sub {
+			
+		   # Need to remove the tie - just use STDOUT and STDERR
+		   my $msg_prt  = new ORAC::Print; # For message system
+                   my $msgerr_prt = new ORAC::Print; # For errors from mess sys
+                   my $orac_prt = new ORAC::Print; # For general orac_print 
+        
+	           # store an error to be flushed on the next update
+		   record ORAC::Error::UserAbort("Exited from pipeline");
+		   # disable this menu item since ORAC-DR isn't running
+		   $menus[0]->menu()->entryconfigure( 0, -state => 'disabled' );
+                   ORAC::Event->destroy("TL");
+		   ORAC::Event->unregister("TL");
+			                } );
+$menus[0]->menu()->add( "command", -label => "Pause processing",
+                        -state         => 'disabled',
+                        -command => sub { xorac_pause( $MW); } );				
+$menus[0]->menu()->add( "command", -label => "Nuke ORAC-DR",
+                        -command => sub { 
+		       my $system_status = 
+	               system "$ENV{'STARPERL'} $ENV{ORAC_DIR}/bin/oracdr_nuke";
+	               if( $system_status != 0 )
+	               {
+	                  orac_err(" Unable to nuke ORAC-DR\n");
+	               } } );	
+$menus[0]->menu()->add( "separator" );
+$menus[0]->menu()->add( "command", -label => "Exit",
+                        -command => sub {
+                  # redefine the ORAC::Print bindings
+                  my $msg_prt  = new ORAC::Print; # For message system
+                  my $msgerr_prt = new ORAC::Print; # For errors from mess sys
+                  my $orac_prt = new ORAC::Print; # For general orac_print 
+                
+	          # destroy the Tk widget
+		  ORAC::Event->destroy("Tk");
+		  ORAC::Event->unregister("Tk");		
+		   
+		   } );
+
+# Display menu
+$menus[1]->pack( -side => 'left' );
+$display_menu = $menus[1]->Menu( -tearoff => 0, -font => 'Arial' );
+
+$menus[1]->configure( -menu => $display_menu );
+$menus[1]->menu()->add( "checkbutton",
+                        -label       => "No Display",
+                        -variable    => \$options{"nodisplay"},
+			-selectcolor => 'blue' );
+$menus[1]->menu()->add( "separator" );
+
+# This is a quick kludge to show proof of concept, insert something alot
+# more elgant before we give it to the users to play with as its doubtful
+# that ORACDISP has all the environment variables it needs to run
+$menus[1]->menu()->add( "command",
+                        -label   => "Configure Display",
+                        -command => 
+	sub { my $system_status = 
+	          system "$ENV{'STARPERL'} $ENV{ORAC_DIR}/bin/oracdisp";
+	      if( $system_status != 0 )
+	      {
+	         orac_err(" Unable to execute ORACDISP\n");
+	      } });
+
+# Options menu
+$menus[2]->pack( -side => 'left' );
+$options_menu = $menus[2]->Menu( -tearoff => 0, -font => 'Arial' );
+
+$menus[2]->configure( -menu => $options_menu );
+
+$menus[2]->menu()->add( "checkbutton",
+                        -label       => "Allow Resume",
+                        -variable    => \$options{"resume"},
+			-selectcolor => 'blue' );
+$menus[2]->menu()->add( "checkbutton",
+                        -label       => "No Engines",
+                        -variable    => \$options{"noeng"},
+			-selectcolor => 'blue' );
+$menus[2]->menu()->add( "checkbutton",
+                        -label       => "Common ADAM",
+                        -variable    => \$options{"nomsgtmp"},
+			-selectcolor => 'blue' );
+$menus[2]->menu()->add( "separator" );
+$menus[2]->menu()->add( "checkbutton",
+                        -label       => "Verbose",
+                        -variable    => \$options{"verbose"},
+			-selectcolor => 'blue' );		
+$menus[2]->menu()->add( "checkbutton",
+                        -label       => "Debug",
+                        -variable    => \$options{"debug"},
+			-selectcolor => 'blue' );	
+$menus[2]->menu()->add( "checkbutton",
+                        -label       => "Warn",
+                        -variable    => \$options{"warn"},
+			-selectcolor => 'blue' );
+$menus[2]->menu()->add( "checkbutton",
+                        -label       => "Beep",
+                        -variable    => \$options{"beep"},
+			-selectcolor => 'blue' );
+$menus[2]->menu()->add( "separator" );
+
+# Calls Xorac::xorac_setenv() to set ORAC specfic stuff in %ENV
+$menus[2]->menu()->add( "command",
+                        -label   => "Setup Environment",
+                        -command => sub { xorac_setenv($menus[3]->menu()); });
+			
+# Calls Xorac::xorac_calib() to do user defined calibration stuff
+$menus[2]->menu()->add( "command",
+                        -label   => "Calibration Options",
+                        -command => sub { xorac_calib(\%options); 
+			});
+				
+
+# Recipe menu
+$menus[3]->pack( -side => 'left' );
+$recipe_menu = $menus[3]->Menu( -tearoff => 0, -font => 'Arial' );
+
+$menus[3]->configure( -menu => $recipe_menu );
+
+$menus[3]->menu()->add( "checkbutton",
+                        -label       => "Show Current Recipe",
+                        -variable    => \$options{"showcurrent"},
+			-selectcolor => 'blue' );
+$menus[3]->menu()->add( "separator" );
+
+# Calls Xorac::xorac_edit_recipe() to set ORAC specfic stuff in %ENV
+$menus[3]->menu()->add( "command",
+                        -label   => "Edit Instrument Recipes",
+			-state   => 'disabled',
+                        -command => sub { 
+			         try {
+		         	    xorac_edit_recipe(); 
+				 }
+		                 catch ORAC::Error::FatalError with
+		                 {
+	                            print "Fatal Error caught by Xoracdr GUI\n";
+		                 }
+		                 catch ORAC::Error::UserAbort with
+		                 {
+	                            print "User Abort caught by Xoracdr GUI\n";
+	       	                 }; } );
+
+						
+xorac_update_progress('Packed Menu Bar', 30);
+
+# B U I L D  C O N T R O L   P A N E L  -------------------------------------
+
+# Frame for control panel
+my $main_frame = ORAC::Event->query("Tk")->Frame( -relief      => 'flat',
+                                                  -borderwidth => 0 );
+
+# I N S T R U M E N T   L I S T ---------------------------------------------
+
+# Declate variables
+my ( $inst_select );
+
+# Build instrument list
+my @inst_list = ( "CGS4", "IRCAM", "SCUBA", "UFTI" );
+
+# Listbox for instrument selection
+my $instruments = $main_frame->Listbox( -borderwidth         => 1,
+                                        -selectbackground    => 'blue',
+					-selectforeground    => 'white',
+					-selectmode          => 'single',
+					-font                => 'Arial',
+					-height              => 6);
+				        
+$instruments->insert('end', sort @inst_list);
+$instruments->grid( -column => 0, -row => 0);
+
+# Bind the 2nd mouse button to the Tk::Listbox and use the scan method
+$main_frame->bind("Listbox", "<2>",['scan','mark',Ev('x'),Ev('y')]);
+$main_frame->bind("Listbox", "<B2-Motion>",['scan','dragto',Ev('x'),Ev('y')]);
+
+# Tie the Listbox to the $inst_select scalar, note that this currently
+# uses a locally modifed copy of Tk::Listbox since by default the Listbox
+# widget doesn't come with tied variables, this sucked sufficiently badly
+# that I fixed it (with alot of help from Tim)
+tie $inst_select, "Tk::Listbox", $instruments;
+
+xorac_update_progress('Packed Instrument List', 40);
+
+# G O   B U T T O N ---------------------------------------------------------
+
+# define variables used in the callbacks for widgets created later
+my ( $to_label, $to_entry, $from_label, $from_entry, $list_label, $list_entry);
+my ( $file_button );
+
+# Declare @obs variable now for -loop file option
+my @obs;
+
+# button sub-frame
+my $sub_but_frame = $main_frame->Frame( -relief      => 'flat',
+                                        -borderwidth => 0 );
+
+$sub_but_frame->grid( -column => 0, -row => 1, -sticky => 'new');
+	
+
+# Config button
+my $cf_button = $sub_but_frame->Button( -text         => 'Setup for Instrument',
+                                        -font             => 'Arial',
+                                        -activeforeground => 'white',
+                                        -activebackground => 'blue');
+
+$cf_button->grid( -column => 0, -row => 1, -sticky => 'we' );
+
+# Go button
+my $go_button = $sub_but_frame->Button( -text             => 'Start ORAC-DR',
+                                        -font             => 'Arial',
+                                        -activeforeground => 'white',
+                                        -activebackground => 'blue',
+					-state            => 'disabled' );
+
+$go_button->grid( -column => 0, -row => 2, -sticky => 'we' );
+
+
+# bind button actions
+$cf_button->bind( "<ButtonPress>", 
+       sub { if ( defined $$inst_select[0] ) {
+	        try {
+		  orac_configure_for_instrument(${$inst_select}[0], \%options);
+		}
+		catch ORAC::Error::FatalError with
+		{
+	            print "Fatal Error caught by Xoracdr GUI\n";
+		}
+		catch ORAC::Error::UserAbort with
+		{
+	            print "User Abort caught by Xoracdr GUI\n";
+		};
+	        my $error = ORAC::Error->prior;
+                ORAC::Error->flush if defined $error;
+		$go_button->configure( -state => 'normal' );
+		$ENV{"ORAC_RECIPE_DIR"} = $ENV{"ORAC_DATA_OUT"}
+		   unless defined $ENV{"ORAC_RECIPE_DIR"};
+		if( defined $ENV{"ORAC_INSTRUMENT"} ) {
+		   $menus[3]->menu()->entryconfigure(2, -state => 'normal'); }
+		$menus[3]->menu()->entryconfigure(2, -label =>
+		                        "Edit $$inst_select[0] Recipes");
+
+                # If we have changed the loop type during setup, the interface
+		# will be in a bad state, we need to correct this...
+		
+		# define the status variables
+		my ( $to_state, $from_state, $list_state, $file_state );
+		my ( $to_lab, $from_lab, $list_lab );
+		my ( $to_ent, $from_ent, $list_ent );
+		
+		# switch on the current loop type
+		SWITCH: {
+		 if ( $options{"loop"} eq "list" ) {
+		   $list_state = 'normal';
+	           $to_state = $from_state = $file_state = 'disabled';
+		   $list_lab = 'black'; $list_ent = '#d9d9d9';
+		   $to_lab = $to_ent = 'grey75';
+		   $from_lab = $from_ent = 'grey75';
+		   $list_lab = $list_ent = 'grey75';
+		   $options{"to"} = $options{"from"} = $options{"file"} = undef;
+		   last SWITCH; }
+		 if ( $options{"loop"} eq "wait" ) {
+		   $to_state = $from_state = 'normal';
+		   $list_state = $file_state = 'disabled';
+		   $to_lab = 'black'; $to_ent = '#d9d9d9';
+		   $from_lab = 'black'; $from_ent = '#d9d9d9';
+		   $list_lab = $list_ent = 'grey75';
+		   $options{"list"} = $options{"file"} = undef;
+		   last SWITCH; }  
+		 if ( $options{"loop"} eq "inf" ) {
+		   $to_state = 'normal';
+		   $list_state = $from_state = $file_state = 'disabled';
+		   $to_lab = 'black'; $to_ent = '#d9d9d9';
+		   $from_lab = $from_ent = $list_lab = $list_ent = 'grey75';
+		   $options{"list"} = $options{"file"} = undef;
+		   last SWITCH; }  
+		 if ( $options{"loop"} eq "flag" ) {
+		   $to_state = $from_state = 'normal';
+		   $list_state = $file_state = 'disabled';
+		   $to_lab = 'black'; $to_ent = '#d9d9d9';
+		   $from_lab = 'black'; $from_ent = '#d9d9d9';
+		   $list_lab = $list_ent = 'grey75';
+		   $options{"list"} = $options{"file"} = undef;
+		   last SWITCH; }
+		 if ( $options{"loop"} eq "file" ) {
+		   $file_state = 'normal';
+		   $to_state = $from_state = $list_state = 'disabled';
+		   $to_lab = $to_ent = 'grey75';
+		   $from_lab = $from_ent = 'grey75';
+		   $list_lab = $list_ent = 'grey75';
+		   $options{"list"} = $options{"to"} = $options{"from"} = undef;
+		 }
+		 my $nothing = 1;
+		}  
+		# configure the widgets 
+                $to_label->configure( -foreground => $to_lab );
+		$to_entry->configure( -background => $to_ent,
+		                      -state      => $to_state );
+		$from_label->configure( -foreground => $from_lab );
+		$from_entry->configure( -background => $from_ent,
+				        -state      => $from_state );
+		$list_label->configure( -foreground => $list_lab);
+		$list_entry->configure( -background => $list_ent,
+		                        -state      => $list_state );
+		$file_button->configure( -state => $file_state ); } } );
+
+$go_button->bind( "<ButtonPress>", 
+       sub { if ( $go_button->cget( -state) eq 'active' ) 
+             {
+                
+		# If we have an existing log window, kill it before
+		# flushing the error queue since this will generate
+		# a UserAbort
+		ORAC::Event->destroy("TL");
+		
+	        # Check for queued UserAborts generated after quiting the
+		# log window after a FatalError
+		my $error = ORAC::Error->prior;
+		ORAC::Error->flush if defined $error;
+	    
+	        $go_button->configure( -state => 'disabled' );
+       	        $menus[0]->menu()->entryconfigure( 0, -state => 'normal' );
+       	        $menus[0]->menu()->entryconfigure( 1, -state => 'normal' );
+		try {
+	           xorac_start_process (\%options, $inst_select, 
+		                        \$CURRENT_RECIPE, \@ORAC_ARGS, \@obs);
+		}
+		catch ORAC::Error::FatalError with
+		{
+	            print "Fatal Error caught by Xoracdr GUI\n";
+		}
+		catch ORAC::Error::UserAbort with
+		{
+	            print "User Abort caught by Xoracdr GUI\n";
+		};
+		$menus[0]->menu()->entryconfigure( 0, -state => 'disabled' );
+       	        $menus[0]->menu()->entryconfigure( 1, -state => 'disabled' );
+		$go_button->configure( -state => 'normal' );
+		$CURRENT_RECIPE = "Xoracdr $VERSION - pipeline not active";
+		$error = ORAC::Error->prior;
+                ORAC::Error->flush if defined $error;
+		ORAC::Error->flush if defined $error;
+
+	     } } );
+
+xorac_update_progress('Packed Buttons', 45);
+
+# T E X T  E N T R Y --------------------------------------------------------
+
+# Text entry sub-frame
+my $sub_txt_frame = $main_frame->Frame( -relief      => 'flat',
+                                        -borderwidth => 10 );
+
+$sub_txt_frame->grid( -column => 1, -row => 0, -sticky => 'nsew');
+				 
+# UT date text entry field
+$options{"ut"} = utdate;
+
+my $ut_label = $sub_txt_frame->Label( -text    => 'UT Date: ',
+                                      -relief  => 'groove',
+				      -font    => 'Arial',
+				      -justify => 'right',
+				      -anchor  => 'e' );
+$ut_label->grid( -column => 0, -row => 0, -sticky => 'ew' );
+
+my $ut_entry = $sub_txt_frame->Entry( -exportselection     => 1,
+                                      -font                => 'Arial',
+				      -selectbackground    => 'blue',
+				      -selectforeground    => 'white',
+				      -justify             => 'left',
+				      -textvariable        => \$options{"ut"},
+				      -width               => 12 );
+$ut_entry->grid( -column => 1, -row => 0, -sticky => 'ew' );
+
+# From entry field
+$options{"from"} = 1;
+
+$from_label = $sub_txt_frame->Label( -text    => 'From: ',
+                                        -relief  => 'groove',
+	  			        -font    => 'Arial', 
+				        -justify => 'right',
+				        -anchor  => 'e' );
+$from_label->grid( -column => 0, -row => 1, -sticky => 'ew' );
+
+$from_entry = $sub_txt_frame->Entry( -exportselection     => 1,
+                                        -font                => 'Arial',
+				        -selectbackground    => 'blue',
+				        -selectforeground    => 'white',
+				        -justify             => 'left',
+				        -textvariable       =>\$options{"from"},
+				        -width               => 12 );
+$from_entry->grid( -column => 1, -row => 1, -sticky => 'ew' );
+
+# To entry field
+$to_label = $sub_txt_frame->Label( -text    => 'To: ',
+                                      -relief  => 'groove',
+				      -font    => 'Arial',
+				      -justify => 'right',
+				      -anchor  => 'e' );
+$to_label->grid( -column => 0, -row => 2 , -sticky => 'ew');
+
+$to_entry = $sub_txt_frame->Entry( -exportselection     => 1,
+                                      -font                => 'Arial',
+				      -selectbackground    => 'blue',
+				      -selectforeground    => 'white',
+				      -justify             => 'left',
+				      -textvariable        => \$options{"to"},
+				      -width               => 12 );
+$to_entry->grid( -column => 1, -row => 2, -sticky => 'ew' );
+
+# List entry field
+$list_label = $sub_txt_frame->Label( -text       => 'List: ',
+                                        -relief     => 'groove',
+				        -font       => 'Arial',
+				        -justify    => 'right',
+				        -anchor     => 'e' ,
+					-foreground => 'grey75' );
+$list_label->grid( -column => 0, -row => 3 , -sticky => 'ew');	
+
+$list_entry = $sub_txt_frame->Entry( -exportselection     => 1,
+                                        -font                => 'Arial',
+				        -selectbackground    => 'blue',
+				        -selectforeground    => 'white',
+				        -justify             => 'left',
+				        -textvariable       =>\$options{"list"},
+				        -width               => 12,
+					-state              => 'disabled',
+					-background         => 'grey75' );
+$list_entry->grid( -column => 1, -row => 3, -sticky => 'ew' );
+   
+xorac_update_progress('Packed Text Entries', 55);
+
+# L O G  O P T I O N S ------------------------------------------------------
+
+# Build initial log options list, reconstruct $opt_log later
+if (defined $ENV{DISPLAY}) 
+{
+   # fx is default if we have a DISPLAY variable
+   $options{"log_file"} = 1;     
+   $options{"log_xwin"} = 1;
+   $options{"log_screen"} = 0;    
+} 
+else 
+{
+   # This error should not occur!
+   $options{"log_screen"} = 1;
+   $options{"log_file"} = 1;  
+   $options{"log_xwin"} = 0;   
+}
+
+# Log options sub-frame
+my $sub_log_frame = $main_frame->Frame( -relief      => 'flat',
+                                        -borderwidth => 10 );
+
+$sub_log_frame->grid( -column => 2, -row => 0, -sticky => 'nsew');
+			
+# Log Options label
+my $log_label = $sub_log_frame->Label( -text    => 'Log Options: ',
+                                       -relief  => 'flat',
+				       -font    => 'Arial',
+				       -justify => 'left',
+				       -anchor  => 'w' );
+$log_label->grid( -column => 0, -row => 0 , -sticky => 'ew');
+
+# File Option checkbutton
+my $file_checkbutton = $sub_log_frame->Checkbutton( -anchor      => 'w',
+                                                    -font        => 'Arial',
+						    -text        => 'File',
+						    -selectcolor => 'blue',
+				           -variable => \$options{"log_file"} );
+$file_checkbutton->grid( -column => 0, -row => 1, -sticky => 'ew' );
+
+# Screen Option checkbutton
+my $screen_checkbutton = $sub_log_frame->Checkbutton( -anchor      => 'w',
+                                                      -font        => 'Arial',
+						      -text        => 'Screen',
+						      -selectcolor => 'blue', 
+					 -variable => \$options{"log_screen"} );
+$screen_checkbutton->grid( -column => 0, -row => 2, -sticky => 'ew' );
+
+# X-Window Option checkbutton
+my $xwin_checkbutton = $sub_log_frame->Checkbutton( -anchor      => 'w',
+                                                    -font        => 'Arial',
+						    -text        => 'X-Windows',
+						    -selectcolor => 'blue',
+				           -variable => \$options{"log_xwin"} );
+$xwin_checkbutton->grid( -column => 0, -row => 3, -sticky => 'ew' );  
+
+xorac_update_progress('Packed Log Options', 60);
+
+# D I R E C T O R Y S  ------------------------------------------------------
+
+# Directories options sub-frame
+my $sub_dir_frame = $main_frame->Frame( -relief      => 'flat',
+                                        -borderwidth => 10 );
+
+$sub_dir_frame->grid( -column => 1, -row => 1, 
+                      -columnspan => 2, -sticky => 'nsew');
+
+# ORAC_DATA_IN entry field
+my $raw_label = $sub_dir_frame->Label(  -text    => 'Raw data path: ',
+                                        -relief  => 'groove',
+				        -font    => 'Arial',
+				        -justify => 'right',
+				        -anchor  => 'e' );
+$raw_label->grid( -column => 0, -row => 0 , -sticky => 'ew');	
+
+my $raw_entry = $sub_dir_frame->Entry(  -exportselection     => 1,
+                                        -font                => 'Arial',
+				        -selectbackground    => 'blue',
+				        -selectforeground    => 'white',
+				        -justify             => 'left',
+				   -textvariable       =>\$ENV{"ORAC_DATA_IN"},
+				        -width               => 30 );
+$raw_entry->grid( -column => 1, -row => 0, -sticky => 'ew' );
+   			
+# ORAC_DATA_OUT entry field
+my $red_label = $sub_dir_frame->Label(  -text    => 'Reduced data path: ',
+                                        -relief  => 'groove',
+				        -font    => 'Arial',
+				        -justify => 'right',
+				        -anchor  => 'e' );
+$red_label->grid( -column => 0, -row => 1 , -sticky => 'ew');	
+
+my $red_entry = $sub_dir_frame->Entry(  -exportselection     => 1,
+                                        -font                => 'Arial',
+				        -selectbackground    => 'blue',
+				        -selectforeground    => 'white',
+				        -justify             => 'left',
+				   -textvariable       =>\$ENV{"ORAC_DATA_OUT"},
+				        -width               => 30 );
+$red_entry->grid( -column => 1, -row => 1, -sticky => 'ew' );
+
+xorac_update_progress('Packed Directory Entries', 65);
+
+# L O O P  O P T I O N S  ---------------------------------------------------
+
+# Directories options sub-frame
+my $sub_loop_frame = $main_frame->Frame( -relief      => 'flat',
+                                        -borderwidth => 0 );
+
+$sub_loop_frame->grid( -column => 1, -row => 2, 
+                       -columnspan => 2, -sticky => 'nsew');
+
+			
+# Loop Options label
+my $loop_label = $sub_loop_frame->Label( -text    => 'Loop Options: ',
+                                         -relief  => 'flat',
+				         -font    => 'Arial',
+				         -justify => 'left',
+				         -anchor  => 'w' );
+$loop_label->grid( -column => 0, -row => 0 , -sticky => 'ew');
+
+# -loop list checkbutton
+my $list_checkbutton = $sub_loop_frame->Checkbutton( 
+                                -anchor      => 'w',
+                                -font        => 'Arial',
+				-text        => 'List',
+				-selectcolor => 'blue',
+				-onvalue     => 'list',
+				-offvalue    => undef,
+				-variable    => \$options{"loop"},
+				-command     => sub {
+		$list_label->configure( -foreground => 'black');
+		$list_entry->configure( -background => '#d9d9d9',
+		                        -state => 'normal' );
+		$to_label->configure( -foreground => 'grey75');
+		$to_entry->configure( -background => 'grey75',
+		                      -state => 'disabled' );
+		$from_label->configure( -foreground => 'grey75');
+		$from_entry->configure( -background => 'grey75',
+		                        -state => 'disabled' );
+		$file_button->configure( -state => 'disabled' );
+		$options{"from"} = undef;
+		$options{"to"} = undef;
+		$options{"files"} = undef;
+		} );
+$list_checkbutton->grid( -column => 1, -row => 0, -sticky => 'ew' );
+
+# -loop wait checkbutton
+my $wait_checkbutton = $sub_loop_frame->Checkbutton( -anchor      => 'w',
+                                                     -font        => 'Arial',
+					  	     -text        => 'Wait',
+						     -selectcolor => 'blue',
+						     -onvalue     => 'wait',
+                  				     -offvalue    => undef,
+				           -variable => \$options{"loop"},
+				           -command     => sub {
+		$to_label->configure( -foreground => 'black');
+		$to_entry->configure( -background => '#d9d9d9',
+		                      -state => 'normal' );
+		$from_label->configure( -foreground => 'black');
+		$from_entry->configure( -background => '#d9d9d9',
+		                        -state => 'normal' );
+		$list_label->configure( -foreground => 'grey75');
+		$list_entry->configure( -background => 'grey75',
+		                        -state => 'disabled' );
+		$file_button->configure( -state => 'disabled' );
+		$options{"list"} = undef;
+		$options{"files"} = undef; } );
+$wait_checkbutton->grid( -column => 2, -row => 0, -sticky => 'ew' );
+
+# -loop inf checkbutton
+my $inf_checkbutton = $sub_loop_frame->Checkbutton(  -anchor      => 'w',
+                                                     -font        => 'Arial',
+					  	     -text        => 'Inf',
+						     -selectcolor => 'blue',
+						     -onvalue     => 'inf',
+                  				     -offvalue    => undef,	
+				           -variable => \$options{"loop"},
+				           -command     => sub {
+		$to_label->configure( -foreground => 'grey75');
+		$to_entry->configure( -background => 'grey75',
+		                      -state => 'disabled' );
+		$from_label->configure( -foreground => 'black');
+		$from_entry->configure( -background => '#d9d9d9',
+		                        -state => 'normal' );
+		$list_label->configure( -foreground => 'grey75');
+		$list_entry->configure( -background => 'grey75',
+		                        -state => 'disabled' );
+		$file_button->configure( -state => 'disabled' );
+		$options{"list"} = undef;
+		$options{"files"} = undef; }  );
+$inf_checkbutton->grid( -column => 3, -row => 0, -sticky => 'ew' );
+
+# -loop flag checkbutton
+my $flag_checkbutton = $sub_loop_frame->Checkbutton( -anchor      => 'w',
+                                                     -font        => 'Arial',
+					  	     -text        => 'Flag',
+						     -selectcolor => 'blue',
+						     -onvalue     => 'flag',
+						     -offvalue    => undef,
+				           -variable => \$options{"loop"},
+				           -command     => sub {
+		$to_label->configure( -foreground => 'black');
+		$to_entry->configure( -background => '#d9d9d9',
+		                      -state => 'normal' );
+		$from_label->configure( -foreground => 'black');
+		$from_entry->configure( -background => '#d9d9d9',
+		                        -state => 'normal' );
+		$list_label->configure( -foreground => 'grey75');
+		$list_entry->configure( -background => 'grey75',
+		                        -state => 'disabled' );
+		$file_button->configure( -state => 'disabled' );
+		$options{"list"} = undef;
+		$options{"files"} = undef; }  );
+$flag_checkbutton->grid( -column => 4, -row => 0, -sticky => 'ew' );
+
+# -loop file checkbutton and "file list" button
+$file_button = $sub_loop_frame->Button( -text             => 'File List',
+                                           -font             => 'Arial',
+                                           -activeforeground => 'white',
+                                           -activebackground => 'blue',
+					   -state            => 'disabled' );
+
+$file_button->grid(-column => 2, -row => 1, -columnspan => 3, -sticky => 'we');
+
+my $file_checkbutton = $sub_loop_frame->Checkbutton( 
+                                -anchor      => 'w',
+                                -font        => 'Arial',
+				-text        => 'File',
+				-selectcolor => 'blue',
+				-onvalue     => 'file',
+				-offvalue    => undef,
+				-variable    => \$options{"loop"},
+				-command     => sub {
+		$list_label->configure( -foreground => 'grey75');
+		$list_entry->configure( -background => 'grey75',
+		                        -state => 'disabled' );
+		$to_label->configure( -foreground => 'grey75');
+		$to_entry->configure( -background => 'grey75',
+		                      -state => 'disabled' );
+		$from_label->configure( -foreground => 'grey75');
+		$from_entry->configure( -background => 'grey75',
+		                        -state => 'disabled' );
+		$file_button->configure( -state => 'normal' );
+		$options{"from"} = undef;
+		$options{"to"} = undef;
+		$options{"list"} = undef;
+		} );
+		
+$file_checkbutton->grid( -column => 1, -row => 1, -sticky => 'ew' );
+
+$file_button->bind( "<ButtonPress>", 
+       sub { if ( $file_button->cget( -state) eq 'active' ) 
+            {
+	        # run the file selector interface
+		try {
+	           xorac_select_filelist ( \@obs);
+		}
+		catch ORAC::Error::FatalError with
+		{
+	            print "Fatal Error caught by Xoracdr GUI\n";
+		}
+		catch ORAC::Error::UserAbort with
+		{
+	            print "User Abort caught by Xoracdr GUI\n";
+		};
+		my $error = ORAC::Error->prior;
+                ORAC::Error->flush if defined $error;
+
+	     } } );
+
+
+xorac_update_progress('Packed Loop Options', 70);
+
+# C A L I B  O P T I O N S --------------------------------------------------
+
+# No functionality to handle this as yet, Frossie? Tim?
+
+xorac_update_progress('Packed Calibration Options', 75);
+
+# M I S C  O P T I O N S ----------------------------------------------------
+
+# For once not the biggest catagory
+
+
+# Directories options sub-frame
+my $sub_misc_frame = $main_frame->Frame( -relief      => 'flat',
+                                         -borderwidth => 0 );
+
+$sub_misc_frame->grid( -column => 0, -row => 2, -sticky => 'nsew');
+			
+# Batch checkbutton
+my $batch_checkbutton = $sub_misc_frame->Checkbutton( -anchor      => 'w',
+                                                      -font        => 'Arial',
+					  	      -text        => 'Batch',
+						      -selectcolor => 'blue',
+				           -variable => \$options{"batch"} );
+$batch_checkbutton->grid( -column => 0, -row => 0, -sticky => 'ew' );
+
+# Skip checkbutton
+my $skip_checkbutton = $sub_misc_frame->Checkbutton( -anchor      => 'w',
+                                                      -font        => 'Arial',
+					  	      -text        => 'Skip',
+						      -selectcolor => 'blue',
+				           -variable => \$options{"skip"} );
+$skip_checkbutton->grid( -column => 1, -row => 0, -sticky => 'ew' );
+
+xorac_update_progress('Packed Everything Else', 80);
+
+# B U I L D  S T A T U S  B A R ---------------------------------------------
+
+# Frame for menu bar
+my $status_frame = ORAC::Event->query("Tk")->Frame( -relief      =>'flat', 
+                                                    -borderwidth => 1 );
+
+# Status label
+my $status_label = $status_frame->Label( -textvariable => \$CURRENT_RECIPE,
+                                         -font         => 'Arial',
+					 -foreground   => 'blue');
+$status_label->pack( -side => 'left'); 
+
+xorac_update_progress('Packed Status Bar', 90);
+
+# P A C K  M A I N  W I N D O W ---------------------------------------------
+
+# Unless they have a really slow machine the user will never see this message
+xorac_update_progress('Interface complete', 100);
+
+# Now we have created the widgets, destroy the progress bar
+ORAC::Event->destroy("Label") if defined ORAC::Event->query("Label");
+ORAC::Event->destroy("Progress") if defined ORAC::Event->query("Progress");
+
+# UNregister the widgets with the ORAC::Event class
+ORAC::Event->unregister("Label");
+ORAC::Event->unregister("Progress");
+
+# Pack the menu frame
+$menu_frame->grid( -sticky => 'ew' );
+
+# Pack the main frame
+$main_frame->grid( -sticky => 'nsew' );
+
+# Pack the status frame
+$status_frame->grid( -sticky => 'ew' );
+$CURRENT_RECIPE = "Xoracdr $VERSION - pipeline not active";
+
+# E N D ---------------------------------------------------------------------
+
+# Bind the destroy event to properly shutdown ORAC-DR
+$MW->bind("<Destroy>", [ sub { 
+                  # redefine the ORAC::Print bindings
+                  my $msg_prt  = new ORAC::Print; # For message system
+                  my $msgerr_prt = new ORAC::Print; # For errors from mess sys
+                  my $orac_prt = new ORAC::Print; # For general orac_print 
+                
+	          # destroy the Tk widget
+		  ORAC::Event->destroy("Tk");
+		  ORAC::Event->unregister("Tk");
+			
+		  } ] ); 
+
+# Enter the Tk MainLoop
+try {
+   ORAC::Event->mainloop("Tk");
+} 
+catch ORAC::Error::UserAbort with
+{
+   my $Error = shift;
+   $Error->flush;
+};
+
+
+# Cleaup and exit
+&orac_exit_normally;
+
+# R E V I S I O N  L O G ----------------------------------------------------
+
+# $Log$
+# Revision 1.2  2001/02/24 03:07:24  allan
+# Merged main line with Xoracdr branch
+#
+# Revision 1.1.2.26  2001/02/23 21:21:05  allan
+# Working -loop file and -files for Xoracdr ONLY
+#
+# Revision 1.1.2.25  2001/02/17 01:22:06  allan
+# GUI tweaks and tucks
+#
+# Revision 1.1.2.24  2001/02/16 04:39:33  allan
+# GUI tweak
+#
+# Revision 1.1.2.23  2001/02/15 05:20:08  allan
+# Trying to get current primitive highlighted, not working
+#
+# Revision 1.1.2.22  2001/02/14 05:54:16  allan
+# Mock up GUI for -loop file options
+#
+# Revision 1.1.2.21  2001/02/14 02:16:10  allan
+# Added calibration override popup
+#
+# Revision 1.1.2.20  2001/02/09 01:45:30  allan
+# Working recipe editor
+#
+# Revision 1.1.2.19  2001/02/08 21:50:08  allan
+# Added Recipe Viewer
+#
+# Revision 1.1.2.18  2001/02/07 23:50:56  allan
+# Last few problems with ORAC::Error resolved
+#
+# Revision 1.1.2.17  2001/02/06 04:23:01  allan
+# Basic recipe editor, added status values to ORAC::Error
+#
+# Revision 1.1.2.16  2001/02/03 04:03:23  allan
+# Tucks and tweaks, nothing major. Problems with CGS4 data, recipe typo?
+#
+# Revision 1.1.2.15  2001/02/02 07:40:06  allan
+# Xoracdr GUI tweaks
+#
+# Revision 1.1.2.14  2001/02/02 07:01:34  allan
+# Added a pause_pipline button and menu item
+#
+# Revision 1.1.2.13  2001/02/02 05:04:49  allan
+# Xoracdr working copy. Missing calibration override options, but all other basic functionality now present
+#
+# Revision 1.1.2.12  2001/02/02 02:40:55  allan
+# Xoracdr GUI tweaks
+#
+# Revision 1.1.2.11  2001/02/02 01:44:56  allan
+# Working Error handling using ORAC::Error
+#
+# Revision 1.1.2.10  2001/02/01 03:49:39  allan
+# Error/Abort handling doesn't work, race condition
+#
+# Revision 1.1.2.9  2001/01/31 08:05:57  allan
+# ORAC::Error stuff put into Xoracdr, sort of works
+#
+# Revision 1.1.2.8  2001/01/30 07:45:00  allan
+# Xoracdr pipeline working, problems with exit
+#
+# Revision 1.1.2.7  2001/01/27 08:16:38  allan
+# xoracdr GUI now fully functional, lacks routine to actually launch the pipeline
+#
+# Revision 1.1.2.6  2001/01/27 02:11:47  allan
+# Xoracdr uses modified Tk::Listbox with tied scalars
+#
+# Revision 1.1.2.5  2001/01/26 08:16:52  allan
+# Added an About pop-up to Xoracdr, I was bored
+#
+# Revision 1.1.2.4  2001/01/26 06:42:08  allan
+# Prototype Xoracdr GUI, minimal functionality
+#
+# Revision 1.1.2.3  2001/01/25 07:35:38  allan
+# Basic outline for Xoracdr menus, changes to ORAC::Event
+#
+# Revision 1.1.2.1  2001/01/24 04:10:07  allan
+# Skeleton version of Xoracdr, no functionality
+#

@@ -9,9 +9,8 @@
 use strict;
 use vars qw/$VERSION/;
 
-# Version number - do this before anything else
-# so that we dont have to wait for all the modules to load
-# - very quick
+# Version number - do this before anything else so that we dont have to 
+# wait for all the modules to load - very quick
 BEGIN {
   $VERSION = sprintf "%d.%03d", q$Revision$ =~ /(\d+)\.(\d+)/;
   #
@@ -25,50 +24,37 @@ BEGIN {
   }
 }
 
-
 # Make sure we catch as many signals as possible
 # so that the END{} blocks work correctly and tidy up
-# If we change this to "die" we can catch SIGSEGV in recipes
-# The stack-trace is purely for debugging but is over the top in
-# production code.
-use sigtrap qw/stack-trace normal-signals error-signals/;
+
+# add a stack-trace for debugging
+use sigtrap qw/die normal-signals error-signals/;
+
+################# L O A D  M O D U L E S #################################### 
 
 #
 #  ORAC modules
 #
-use lib $ENV{ORAC_PERL5LIB};
-use ORAC::Basic;    # Helper routines
-use ORAC::General;  # parse_* routines
-use ORAC::Loop;     # Loop control
-use ORAC::Print;    # Printing messages or errors
-use ORAC::Core;     # Core pipeline routines
+use lib $ENV{"ORAC_PERL5LIB"};
+use ORAC::Basic;     # Helper routines
+use ORAC::General;   # parse_* routines
+use ORAC::Print;     # Printing messages or errors
+use ORAC::Core;      # Core pipeline routines
 use ORAC::Constants; # ORAC__OK et al
+use ORAC::Event;     # Tk events
+use ORAC::Error qw/:try/;
 use ORAC::Inst::Defn qw/ orac_determine_inst_classes /;
 
-# Need to use this class so that we can pre-configure the
-# message systems on the basis of command line switches
-use ORAC::Msg::MessysLaunch;
-
 #
-# general modules
+#  General modules
 #
+use Pod::Usage;    
 use Getopt::Long;                       # command line arguments
-use Sys::Hostname;                      # For logfile
-
-# use Pod::Usage;   # When we can distribute this module with Starlink
-
-# optional module
 
 # check for starlink login
-#
-&orac_exit_normally("No starlink login") unless exists $ENV{STAR_LOGIN};
+orac_exit_normally("No starlink login") unless exists $ENV{"STAR_LOGIN"}; 
 
-
-# First thing we need to do is create an ORAC::Print object
-# that we can fiddle with to adjust the output filehandles
-my $msg_prt  = new ORAC::Print; # For message system
-my $msgerr_prt = new ORAC::Print; # For errors from message system
-my $orac_prt = new ORAC::Print; # For general orac_print
+####### C H E C K  E N V I R O N M E N T  V A R I A B L E S ################
 
 # Need to determine module list from the ORAC_INSTRUMENT
 # environment variable before we can include certain modules.
@@ -90,125 +76,52 @@ die "Could not translate $instrument to class hierarchy"
 # Create a new instrument object
 my $InstObj = new $instclass;
 
-
-#
-# command line arguments
-#
+############# C O M M A N D  L I N E  A R G U M E N T S ###################
 
 # Store them first so that we can print out the log message
 my @ORAC_ARGS = @ARGV;
 
 # Now parse the args
-my ($opt_nodisplay, $opt_debug, $opt_verbose, $opt_calib, $opt_from,
-    $opt_to, $opt_ut, $opt_list, $opt_help, $opt_batch, $opt_skip,
-    $opt_warn, $opt_noeng, $opt_log, $opt_loop, $opt_resume,
-    $opt_beep, $opt_nomsgtmp
-   );
+#my ($opt_nodisplay, $opt_debug, $opt_verbose, $opt_calib, $opt_from,
+#    $opt_to, $opt_ut, $opt_list, $opt_batch, $opt_skip, $opt_warn, 
+#    $opt_noeng, $opt_log, $opt_loop, $opt_resume, $opt_beep, $opt_nomsgtmp,
+#    $opt_showcurrent, $opt_files) = orac_handle_args( \@ORAC_ARGS );
 
-my $status = GetOptions("nodisplay" => \$opt_nodisplay,
-			"debug!"    => \$opt_debug,
-			"verbose!"  => \$opt_verbose,
-			"calib=s"   => \$opt_calib,
-			"from=i"    => \$opt_from,
-			"to=i"      => \$opt_to,
-			"ut=i"      => \$opt_ut,
-			"list=s"    => \$opt_list,
-			"loop=s"    => \$opt_loop,
-			"help"      => \$opt_help,
-			"batch!"    => \$opt_batch,
-			"skip!"     => \$opt_skip,
-			"noeng"     => \$opt_noeng,
-			"nomsgtmp"  => \$opt_nomsgtmp,
-			"log=s"     => \$opt_log,
-			"resume!"   => \$opt_resume,
-			"warn!"     => \$opt_warn,
-			"beep!"     => \$opt_beep,
-		       );
+  # Pass @_ directly to GetOpt::Long::GetOptions, no need to process
+  # an arguement list as it would just complicate things. 
 
-($opt_help) && do {
-print qq|
+  my ($opt_nodisplay, $opt_debug, $opt_verbose, $opt_calib, $opt_from,
+      $opt_to, $opt_ut, $opt_list, $opt_help, $opt_batch, $opt_skip,
+      $opt_warn, $opt_noeng, $opt_log, $opt_loop, $opt_resume,
+      $opt_beep, $opt_nomsgtmp, $opt_showcurrent, $opt_files
+     );
+     
+  my $status = GetOptions("nodisplay" => \$opt_nodisplay,
+	  		  "debug!"    => \$opt_debug,
+		 	  "verbose!"  => \$opt_verbose,
+			  "calib=s"   => \$opt_calib,
+			  "from=i"    => \$opt_from,
+			  "to=i"      => \$opt_to,
+			  "ut=i"      => \$opt_ut,
+			  "list=s"    => \$opt_list,
+			  "loop=s"    => \$opt_loop,
+			  "help"      => \$opt_help,
+			  "batch!"    => \$opt_batch,
+			  "skip!"     => \$opt_skip,
+			  "noeng"     => \$opt_noeng,
+			  "nomsgtmp"  => \$opt_nomsgtmp,
+			  "log=s"     => \$opt_log,
+			  "resume!"   => \$opt_resume,
+			  "warn!"     => \$opt_warn,
+			  "beep!"     => \$opt_beep,
+			  "showcurrent!" => \$opt_showcurrent,
+			  "files=s"   => \$opt_files,
+		         );
 
-Usage:
-  oracdr [-options] <recipe_name>
-
-Arguments:
-  <recipe_name>  a recipe to be executed
-
-Options:
-
-  These options may be abbreviated to a unique substring.
-
-  -help      this help text
-  -version   print the version number
-  -verbose   print engine messages (else just have oracdr messages)
-  -debug     log debug messages to ORACDR.DEBUG
-  -nodisplay do not launch display
-
-  -from      number of first observation
-  -to        number of last observation
-  -list      comma separated list of object *numbers*
-             Colons indicate a range (1,2,3:5,10 means 1,2,3,4,5,10)
-
-
-  -ut        UT date of observations (defaults to current yyyymmdd)
-  -calib     comma seperated key=value pairs (eg. -cal dark=file1 or
-             -cal dark=file1,bias=file2) of calibration overrides.
-  -loop      Type of data detection loop: list, inf, flag or wait
-             -loop list is equivalent to not using a loop at all
-              (only data specified is reduced)
-             -loop wait waits for data to appear before timing out
-	      (data is reduced and we wait for new data)
-             -loop inf does not wait for data 
-	      (data is reduced and new data is assumed to be available)
-             -loop flag waits for completion files to appear before
-              procesing (data is reduced and we wait for new data
-	      via the flag)
-  -batch     Run in batch mode. Precalculate groups before proceesing
-             data. 'wait' loop mode should not be used with this option.
-  -skip      Allow the data detection loop to skip missing observations.
-             Default is to stop the loop when a expected file
-	     can not be found.
-  -noeng     Do not start algorithm engines. Note: this will cause 
-             the vast majority of recipes to fail.
-  -nomsgtmp  Do not create an invocation specific temporary directory
-             for the messaging systems but use whatever directory
-             is the usual default. For ADAM tasks this would mean that
-             ~/adam or ADAM_USER will be used rather than a private
-             ORAC-DR directory. This should only be used when it is
-             required for ORAC-DR to talk to tasks that were not started
-             by the pipeline and could lead to possible confusion if
-             multiple pipelines are running using this flag.
-  -log       Control the location of the session logging. Default
-             is to log messages to the screen and file (log=sf)
-             when DISPLAY environment variable is not set. If 
-             the DISPLAY env variable is set default is to use log=fx.
-             Options are:
-               s - log to screen (Xterm=STDOUT)
-               f - log to file. The logfile is called .oracdr_$$.log
-                   where $$ is the current process ID - it is written
-                   to ORAC_DATA_OUT (it is a hidden file)
-               x - log to an X widget. Has the advantage that warnings
-                   and errors do not scroll off the screen
-             The options can be combined (ie  log=sf will write log
-             messages to screen and to a file).
-  -resume    Allow the pipeline to resume midway through the processing
-             of a group. (so long as the recipe/instrument supports
-	     this behaviour). Default is for the group file to be deleted
-             when a new group is created. When -resume is set, the group
-             file is retained.
-  -warn      Turn on warning messages (perl -w). This should be used
-             for debugging only. If -verbose is also true then full
-             diagnostics are turned on (see 'perldoc diagnostics')
-  -beep      Make as much noise as possible over errors and pipeline
-             exit. (default is no beep)
-  |;
-
-# When we get Pod::Usage guarenteed to be installed we can do this:
-# pod2usage( -verbose => 1);
-
-exit;
-}
-;
+  ($opt_help) && do {
+     pod2usage( -verbose => 1);
+     exit;
+  };
 
 # Turn on -w support
 if ($opt_warn) {
@@ -218,19 +131,19 @@ if ($opt_warn) {
   }
 }
 
-############### S I G N A L  H A N D L E R S ###########################
-#
+############### S I G N A L  H A N D L E R S ##############################
+
 # signals and perl variables
 $|=1;					# make unbuffered
-#
+
 $SIG{'INT'} = \&orac_exit_abnormally;
 #$SIG{'PIPE'} = \&orac_exit_abnormally;
 $SIG{'PIPE'} = 'IGNORE';
 
-#########################  ORAC DR Configuration #######################
-#
+########## O R A C - D R  C O N F I G U R A T I O N ########################
+
 # constants - for the module
-#
+
 # Check for ORAC_DIR
 unless (exists $ENV{ORAC_DIR}) {
   orac_err("ORAC_DIR environment variable not defined. Aborting.");
@@ -239,7 +152,7 @@ unless (exists $ENV{ORAC_DIR}) {
 
 my $orac_dir = $ENV{ORAC_DIR} . "/";	# main orac directory (contains bin)
 
-######################## Change to Output directory ####################
+######## C H A N G E   T O   O U T P U T   D I R E C TO R Y  ###############
 
 if (exists $ENV{ORAC_DATA_OUT}) {
 
@@ -255,7 +168,7 @@ if (exists $ENV{ORAC_DATA_OUT}) {
   &orac_exit_normally;
 }
 
-######################## Check Input Directory ##################
+############### C H E C K  I N P U T  D I R E C T O R Y ####################
 
 if (exists $ENV{ORAC_DATA_IN}) {
 
@@ -264,604 +177,206 @@ if (exists $ENV{ORAC_DATA_IN}) {
     orac_err("ORAC_DATA_IN directory ($ENV{ORAC_DATA_IN}) does not exist. Aborting\n");
     &orac_exit_normally;
   }
-
-
+  
 } else {
   orac_err("ORAC_DATA_IN environment variable not set. Aborting\n");
   &orac_exit_normally;
 }
 
-######################## ORAC PRINT #############################
-#                       CONFIGURATION                           #
+######### O R A C  P R I N T  C O N F I G U R A T I O N #####################
 
-# Debug info
-if ($opt_debug) {
-  $orac_prt->debugmsg(1);
-  my $fh = new IO::File(">ORACDR.DEBUG");
-  $orac_prt->debughdl($fh);
+# $CURRENT_RECIPE is used in Xoracdr and for the recipe progress window
+my ( $CURRENT_RECIPE );
 
-  # Turn on autoflush of debugging info to save as much information
-  # as possible if the pipeline crashes without flushing the buffer
-  $fh->autoflush(1);
+# declare variables
+my ($log_options, $MW, $win_str);
 
+# check for log options, we need to start the Tk early if using X Windows
+if (defined $opt_log) 
+{
+   # User is overriding logging options, lower case the options
+   $log_options = lc($opt_log);
+} 
+else 
+{
+   # fx is default if we have a DISPLAY variable
+   if (defined $ENV{DISPLAY}) 
+   {
+      $log_options = 'fx';     # We use X Windows
+   } 
+   else 
+   {
+     $log_options = 'sf';      # We use the console (icky!)
+   }
+}
+
+if ( $log_options =~ /x/ )
+{
+   eval "use Tk; use Tk::TextANSIColor;";
+   $MW = MainWindow->new();
+   ORAC::Event->register("Tk"=>$MW); 
+   $win_str = "Tk";  
+}
+
+# start print system, pass $win_str since we want orac_print_confiuration to
+# be generic and useable from Xoracdr (where we pass $TOPLEVEL instead).
+my ( $orac_prt, $msg_prt, $msgerr_prt, $ORAC_MESSAGE, 
+     $PRIMITIVE_LIST, $CURRENT_PRIMITIVE );
+ 
+try 
+{
+   ( $orac_prt, $msg_prt, $msgerr_prt, $ORAC_MESSAGE, 
+     $PRIMITIVE_LIST, $CURRENT_PRIMITIVE ) = 
+         orac_print_configuration( $opt_debug, $opt_showcurrent,
+	                           $log_options, $win_str, \$CURRENT_RECIPE );
+}
+catch ORAC::Error::FatalError with 
+{
+   my $Error = shift;
+   &orac_exit_normally;
+}
+catch ORAC::Error::UserAbort with
+{
+   my $Error = shift;
+   &orac_exit_normally;
 };
+$CURRENT_RECIPE = "Starting pipeline";
 
-# Logging messages to a file
-# If log is not defined, we are defaulting to STDOUT
-# Log can be:
-#  s - xterm screen  (STDOUT)
-#  f - file          (ORACDR_$$.LOG)
-#  x - Xwindow       (experimental)
-# or combination (eg sf).
-# Can keep STDOUT default if not set at all
-# Always print error messages to STDERR  + optionally, the logfile
-# Default is to use 'sf'
+#########################   U  T    D A T E #################################
 
-my ($log_options, $MW, $ORAC_MESSAGE, $msg1, $lab1, $textw1, $textw2,
-    $textw3, $lab2);
-if (defined $opt_log) {
-  # User is overriding logging options
-  # Lower case the options
-  $log_options = lc($opt_log);
-} else {
-  # fx is default if we have a DISPLAY variable
-  if (defined $ENV{DISPLAY}) {
-    $log_options = 'fx';
-  } else {
-    $log_options = 'sf'; # The default
-  }
-}
-
-# If it only matches 's' then we dont bother with this block
-if ($log_options ne 's') {
-
-  # Initialise file handle arrays
-  my @out_hdl = ();
-  my @err_hdl = (\*STDERR);
-  my @war_hdl = ();
-
-  # Request for an X-window (experimental)
-  # Put this first so that we can fall back to
-  # using the screen if Tk is not found
-  if ($log_options =~ /x/) {
-    # Delay X-loading until now
-    eval "use Tk; use Tk::TextANSIColor;";
-    if ($@) {
-      print STDERR "Error loading Tk modules - X logging not available\n";
-      print STDERR "Using screen instead\n";
-      print STDERR "Error was: $@\n";
-      $log_options .= 's'; # Make sure we print to screen now
-    } else {
-      $MW = MainWindow->new();
-
-      # New frame for the top messages
-      my $frame = $MW->Frame->pack(-padx => 0, -pady => 5);
-
-      # Create easy exit button
-      $frame->Button(-text=>'Press to Exit ORAC-DR',
-		  -command => sub {
-		    destroy $MW;
-		    # Need to remove the tie - just use STDOUT and STDERR
-		    $orac_prt->outhdl(\*STDOUT);
-		    $orac_prt->warhdl(\*STDOUT);
-		    $orac_prt->errhdl(\*STDERR);
-		    $ORAC::Print::TKMW = undef;
-		    &orac_exit_normally;
-		  })->pack(-side => "left");
-
-
-      # ORAC_PRINT messages
-      $ORAC_MESSAGE = 'ORAC-DR reducing observation --';
-      $msg1   = $frame->Label(-width=>60,-textvariable=>\$ORAC_MESSAGE)->pack(-side => "left");
-#      $lab1   = $frame->Label(-text=>'Normal Status')->pack(-side => "left");
-
-      $textw1 = $MW->Scrolled('TextANSIColor',
-			      -scrollbars=>'w',
-			      -background=>'#555555',
-			      -foreground=>'white',
-			      -height => 30,
-			      -width  => 90
-			     )->pack;
-      $textw1->tagConfigure('ANSIfgmagenta', -foreground => '#ccccff');
-      $textw1->tagConfigure('ANSIfgblue', -foreground => '#33ff33');
-      $textw1->insert('end',"ORAC-DR status log\n");
-      tie *TEXT1,  "Tk::TextANSIColor", $textw1;
-
-      # ORAC_WARN messages
-      $lab2   = $MW->Label(-text=>'Warnings')->pack;
-      $textw2 = $MW->Scrolled('TextANSIColor',
-			      -scrollbars=>'w',
-			      -background=>'#555555',
-			      -foreground=>'white',
-			      -height => 5,
-			      -width  => 90,
-			     )->pack;
-      $textw2->insert('end',"ORAC-DR warning messages\n");
-      tie *TEXT2,  "Tk::TextANSIColor", $textw2;
-
-      # ORAC Error messages
-      $lab1   = $MW->Label(-text=>'Errors')->pack;
-      $textw3 = $MW->Scrolled('TextANSIColor',
-			      -scrollbars=>'w',
-			      -background=>'#555555',
-			      -foreground=>'white',
-			      -height => 5,
-			      -width  => 90,
-			     )->pack;
-      $textw3->insert('end',"ORAC-DR error messages\n");
-      $textw3->tagConfigure('ANSIfgred', -foreground => '#ffcccc');
-      tie *TEXT3,  "Tk::TextANSIColor", $textw3;
-
-
-      # Update and draw the screen and tell the ORAC::Print
-      # system that we have a Tk window
-      $MW->update;
-      $ORAC::Print::TKMW = $MW;
-
-      # Store the filehandles
-      push (@out_hdl, \*TEXT1);
-      push (@err_hdl, \*TEXT3);
-      push (@war_hdl, \*TEXT2, \*TEXT1); # Display warnings with messages 
-    }
-
-  }
-  # Request for SCREEN
-  if ($log_options =~ /s/) {
-    push (@out_hdl, \*STDOUT);
-    push (@war_hdl, \*STDOUT);
-  }
-  # Request for file - must have already chdir'ed to ORAC_DATA_OUT
-  if ($log_options =~ /f/) {
-    my $logfh = new IO::File(">.oracdr_$$.log") || 
-      do { orac_err "Error opening logfile: $!"; orac_exit_normally;};
-    $logfh->autoflush(1);
-
-    # Write a header
-    print $logfh "ORAC-DR logfile - created on " . scalar(gmtime) ." UT\n";
-    print $logfh "\nORAC Environment:\n\n";
-    print $logfh "\tInstrument : $ENV{ORAC_INSTRUMENT}\n";
-    print $logfh "\tInput  Dir : $ENV{ORAC_DATA_IN}\n";
-    print $logfh "\tOutput Dir : $ENV{ORAC_DATA_OUT}\n";
-    print $logfh "\tCalibration: $ENV{ORAC_DATA_CAL}\n";
-    print $logfh "\tORAC   Dir : $ENV{ORAC_DIR}\n";
-    print $logfh "\tORAC   Lib : $ENV{ORAC_PERL5LIB}\n";
-    my $rdir = ($ENV{ORAC_RECIPE_DIR} || '<undefined>');
-    my $pdir = ($ENV{ORAC_PRIMITIVE_DIR} || '<undefined>');
-    print $logfh "\tAdditional Recipe Dir   : $rdir\n";
-    print $logfh "\tAdditional Primitive Dir : $pdir\n";
-
-
-    print $logfh "\nSystem environment:\n\n";
-    print $logfh "\tHostname        : ". hostname . "\n";
-    print $logfh "\tUser name       : $ENV{USER}\n";
-    print $logfh "\tPerl version    : $]\n";
-    print $logfh "\tOperating System: $^O\n";
-
-    print $logfh "\nORAC-DR Arguments: ".join(" ",@ORAC_ARGS)."\n";
-
-    print $logfh "\nSession:\n\n";
-
-    # Store the filehandle
-    push (@out_hdl, $logfh);
-    push (@err_hdl, $logfh);
-    push (@war_hdl, $logfh);
-  }
-
-  # Configure ORAC::Print
-  $orac_prt->outhdl(@out_hdl);
-  $orac_prt->warhdl(@war_hdl);
-  $orac_prt->errhdl(@err_hdl);
-
-}
-
-# Generate tied filehandle for subsequent use by systems
-# that require a filehandle rather than use of ORAC::Print
-# The message system is one example
-
-# First generate a filehandle tied to the orac_print system
-tie *MSG, 'ORAC::Print', $msg_prt;
-$msg_prt->outcol('clear'); # Cyan color for all messages
-
-# Tie a filehandle to the error messages from the alogrithm
-# engines and redirect to orac_err
-tie *MSGERR, 'ORAC::Print', $msgerr_prt, 'err';
-
-
-#########################   U  T    D A T E #############################
 # if no UT date has been provided, default to current.
-#
 !($opt_ut) && do {
 
   $opt_ut = utdate;
-
   orac_print ("Orac says: No UT date supplied, using $opt_ut\n","blue");
 
 };
 
+######################## M E S S A G E  S Y S T E M S #######################
 
-######################## M E S S A G E  SYSTEMS #############################
-
-# Create a message system launch object and configure it
-# The message system itself will be initialised when it is
-# required rather than at the start. If we know there is one
-# messsys and we know that it will always be the same one then
-# we can configure it here explicitly. The main reason for doing
-# that is to make sure that it works before starting recipe
-# processing
-
-my $MessysLaunch = new ORAC::Msg::MessysLaunch;
-
-# Need to make sure we respect the -nomsgtmp command line
-# option. This is only useful if no other place has started
-# a message system already.
-
-# Check that we are not too late
-if ($MessysLaunch->messys_active && $opt_nomsgtmp) {
-  orac_err "Can not preserve message system state. Unable to use -nomsgtmp";
-  orac_err "Can not continue. Sorry.\n";
-  orac_exit_normally "A message system has already been started\n";
+# pre-launch message system
+try {
+   orac_message_launch( $opt_nomsgtmp, $opt_verbose );
 }
-
-$MessysLaunch->preserve( $opt_nomsgtmp );
-
-# Send the configuration options
-$MessysLaunch->config(
-		      # This timeout is not used for monolith launching
-		      timeout => 600,
-		      paramrep => sub {
-			orac_warn "Sending auto abort in response to parameter request\n";
-			return "!!"
-		      },
-		      messages => ( $opt_verbose ? 1 : 0 ),
-		      stdout => \*MSG,
-		      stderr => \*MSGERR,
-		     );
-
-# Just in case we are too late, configure the exisiting message
-# systems. 
-$MessysLaunch->configure_all;
+catch ORAC::Error::FatalError with 
+{
+   my $Error = shift;
+   orac_print("Abort from launching the Message System", "red");
+   &orac_exit_normally;
+};
 
 ######################## A L G.   E N G I N E S #############################
 
-my $Mon; # Hash reference
-unless ($opt_noeng) {
-
-  # start algorithm engines
-  #
-  orac_print("Orac says: Pre-starting mandatory monoliths...","blue");
-  #
-
-  # Pre-launch. This will fail if we can not contact the
-  # engines so need to eval it
-  eval { $Mon = $InstObj->start_algorithm_engines; };
-
-  if ($@) {
-    orac_err("Error contacting monoliths. Aborting.\n$@\n");
-    MainLoop() if defined $MW;
-    orac_exit_normally;
-  }
-
-  orac_print ("Done\n","blue");
-
-} else {
-
-  orac_print("Orac says: No algorithm engines will be started (-noeng option)\n","blue");
-
+# start algorithim engines
+my $Mon;
+try {
+   $Mon = orac_start_algorithim_engines( $opt_noeng, $InstObj );
 }
+catch ORAC::Error::FatalError with 
+{
+   my $Error = shift;
+   &orac_exit_normally;
+}
+catch ORAC::Error::UserAbort with
+{
+   my $Error = shift;
+   &orac_exit_normally;
+};
 
-####################### BEEPING ###############################
+####################### B E E P I N G #######################################
 
 # Beeping
 if ($opt_beep) {
   $orac_prt->errbeep(1);
-  # Beep is for orac_exit_normally so must set global in the
-  # correct class
+  # Beep is for orac_exit_normally so must set global in the correct class
   $ORAC::Basic::Beep = 1;
 }
 
 ######################## I N I T  D I S P L A Y #############################
-#
-# launch display
-# -nodisplay suppresses display,
-#
-my $Display;
-if ($opt_nodisplay) {
-  orac_print("Orac says: No display will be used\n","blue");
-} else {
 
-  orac_print ("Setting up display infrastructure (display tools will not be started until necessary)...", 'blue');
-  $Display = orac_setup_display;
-  orac_print ("Done\n","blue");
+# start the display
+my $Display = orac_start_display( $opt_nodisplay );
 
-  # Could configure debug option in $Display at this point
+######################## C A L I B R A T I O N ##############################
 
-}
-
-######################## C A L I B R A T I O N #############################
-
-# Create calibration object
-my $Cal = new $calclass;
-
-#
 # Calibration frame overrides
-#
+my $Cal = orac_calib_override( $opt_calib, $calclass );
 
-if (defined $opt_calib) {
+################## P R O C E S S  A R G U M E N T  L I S T ##################
 
-  my %calibs = parse_keyvalues($opt_calib);
-
-  foreach my $key (keys %calibs) {
-
-    if ($Cal->can($key)) {		# set appropriate method
-
-      $Cal->$key($calibs{$key});
-
-# if we have a noupdate method to enforce overrides, use it.
-      my $noupdate = $key."noupdate";
-      $Cal->$noupdate(1) if $Cal->can($noupdate);
-
-      orac_print("ORAC says: Calibration $key set to $calibs{$key}\n","blue");
-
-    } else {				# complain but continue
-
-      orac_err ("Calibration $key unknown by this instrument. Ignored\n");
-
-    };
-  };
-
-};
-
-
-############## Process argument list ###############################3
-# Generate list of observation numbers to be processed
-# This is related to looping scheme
-
-my $loop = 'orac_loop_list'; # Default loop scheme unless -from 
-
+# declare observations array
 my @obs;
-if (defined $opt_from) {
 
-  if (defined $opt_to) {
-    @obs = $opt_from .. $opt_to
-  } else {
+# Process the -files file1 file2 file3 command line option into
+if ( defined $opt_files ) {
+   try {
+      @obs = orac_parse_files( $opt_files );
+   }
+   catch ORAC::Error::FatalError with 
+   {
+      my $Error = shift;
 
-    # If the skip flag is set to true we can turn the -from..end 
-    # loop into 'list' loop by determining the last observation number.
-    # For historical reasons, the inf loop should be used if the -skip
-    # option is false.
+      ORAC::Error->flush if defined $Error; 
+      &orac_exit_normally;
+   }
+   catch ORAC::Error::UserAbort with
+   {
+      my $Error = shift;
 
-    if ($opt_skip) {
-      my ($next, $high) = orac_check_data_dir($frameclass, $opt_from, 0);
-
-      if (defined $high) {
-	@obs = ($opt_from..$high);
-      } else {
-	# High not defined, simply look for the $opt_from ignoring high
-	# -loop wait should work this way anyway
-	@obs = ( $opt_from );
-
-	# Probably should abort
-#	orac_err("The -from option was used even though no data exists above the selected observation number [$opt_from].");
-#	MainLoop() if defined $MW;
-#	orac_exit_normally;
-      }
-
-    } else {
-
-      @obs = ($opt_from);  # Used for data detection loops etc
-
-      # Set default loop scheme to 'inf'
-      # if there is no 'to' and 'skip' is false.
-      $loop = 'orac_loop_inf';
-
-    }
-
-    orac_print "Starting at observation $opt_from and looping until no files available\n"
-  }
-
-} elsif (defined $opt_list) {
-
-  @obs = parse_obslist($opt_list);
-
-} elsif (defined $opt_to) {
-  # This catches the case where -to is defined but no -from or -list
-  # Start counting at 1
-  orac_print "Processing observations 1 to $opt_to\n";
-  @obs = (1..$opt_to);
-
-} else {
-  # Okay - none of -from, -list or -to were defined
-  # We default to 1 in this case and set the loop to wait
-  # Note that loop will be overriden if -loop is supplied
-  orac_print "No observation numbers supplied - starting from obs 1\n";
-  $loop = 'orac_loop_wait';
-  @obs = (1);
-
+      ORAC::Error->flush if defined $Error; 
+      &orac_exit_normally;
+   };
 }
 
-############################# L O O P I N G  S C H E M E ###############
-# Decide on a looping scheme
+# Generate list of observation numbers if @obs isn't defined to be processed
+# This is related to looping scheme
+my $loop =  
+    orac_process_arguement_list( $opt_from, $opt_to, $opt_skip, $opt_list,
+                                 $frameclass, \@obs );
 
+##################### L O O P I N G  S C H E M E ############################
+
+# Decide on a looping scheme
 $loop = "orac_loop_" . $opt_loop if defined $opt_loop;
 
+# Read recipe name, this will default to the RECIPE File method
+my $Override_Recipe = shift(@ARGV);
 
-# Read recipe name
-my $Override_Recipe = shift(@ARGV); # this will default to the RECIPE File method
-
-
-
-
-
-################# D A T A   L O O P ###############################
-# 
-# There are two approaches to the data processing:
-#
-# 1 - The default processing method where data are read in 
-#     and processed as it arrives and Groups are extended as needed.
-#     This has the advantage that the data is processed as it is
-#     taken, has very good feedback to the user in real time. The down
-#     side is that Groups are processed as soon as possible and in an
-#     off-line batch processing envrionment this is very wasteful
-#     (why work out the flatfield every time a frame arrives when you
-#     simply want to work out the flatfield from the entire group).
-# 2 - The 'batch' method where the data are analysed in two passes.
-#     First the groups are setup, secondly the frames are processed in
-#     each group in turn. This has the advantage that frames can be coadded
-#     into a group only once and is the most efficient way of processing
-#     data off-line. Note that this presupposes that the primitives are
-#     written in such a way that they can spot the last member of the group
-#     (via the lastmember method). Grp Primitives without this check will
-#     probably fail since the some of the members will not have been 
-#     processed even though the group contains many members.
-#     One other issue is
-#     calibration -- in principal all calibration groups should be processed
-#     before observation groups and currently this is not supported.
-#     (only important when calibrations are taken after the observation).
-#
-#     Batch mode can be summarised as
-#       - Read in all frames and allocate groups
-#       - Loop over all groups
-#            Loop over all frames in group
-#               process frames
-#
-#    Default mode is
-#      - Loop over all frames
-#         - Allocate groups
-#            - process frames
-
-#   Batch mode can be turned on with the -batch switch.
-#
-
-
-# Default is to process data in order of arrival
-unless ($opt_batch) {
-
-  # Loop forever
-  my %Groups = ();
-
-  while (1) {
-
-    # Return back the current frame
-    # This will also configure the frame object
-    # Turn off strict
-    my $Frm;
-    {
-      no strict 'refs';
-      $Frm = &{$loop}($frameclass, $opt_ut, \@obs, $opt_skip);
-    }
-
-    # If frame is undefined then we assume that the data loop
-    # should be stopped
-    last unless defined $Frm;
-
-    orac_print ("REDUCING: ".$Frm->raw."\n","yellow");
-
-    # Set the ORAC::Print prefix
-    my $fnumber = $Frm->number;
-    $ORAC_MESSAGE = 'ORAC-DR reducing observation number ' . $fnumber;
-    $orac_prt->errpre("#$fnumber Err: ");
-    $orac_prt->warpre("#$fnumber Warning: ");
-
-    # Store the Frame in the Group
-    my $Grp = orac_store_frm_in_correct_grp($Frm, $groupclass, \%Groups,
-					    undef, $opt_ut, $opt_resume);
-
-    # Actually process the observation
-    # Includes recipe configurations since the recipe
-    # object is not instantiated until the recipe name is
-    # read from the frame object in orac_process_frame
-    # may want to revisit this.
-    orac_process_frame(
-		       Frame => $Frm,
-		       Group => $Grp,
-		       Calibration => $Cal,
-		       Engines => $Mon,
-		       Display => $Display,
-		       Debug => $opt_debug,
-		       CmdLineRecipe => $Override_Recipe,
-		       Instrument => $instrument,
-		       Batch => 0,
-		      );
-
-    # Reset the obs number labels
-    $orac_prt->errpre('Error: ');
-    $orac_prt->warpre('Warning: ');
-    $ORAC_MESSAGE = 'ORAC-DR reducing observation --';
-
-
-  }
-
-} else {
-  # Batch mode
-
-  # First loop over frames
-  my @Groups = ();
-  my %Groups = ();
-
-  while (1) {
-    # Return back the current frame
-    # This will also configure the frame object
-    my $Frm;
-    {
-      no strict 'refs';
-      $Frm = &{$loop}($frameclass, $opt_ut, \@obs, $opt_skip);
-    }
-
-    # If frame is undefined then we assume that the data loop
-    # should be stopped
-    last unless defined $Frm;
-
-    orac_print ("Storing: ".$Frm->raw."\n","yellow");
-
-    # Store the Frame in the Group
-    orac_store_frm_in_correct_grp($Frm, $groupclass, \%Groups, \@Groups, 
-				  $opt_ut, $opt_resume);
-
-  }
-
-  # Now loop over groups and frames
-  foreach my $Grp (@Groups) {
-    foreach my $Frm ($Grp->members) {
-      orac_print ("REDUCING: ".$Frm->raw."\n","yellow");
-      # Set the ORAC::Print prefix
-      my $fnumber = $Frm->number;
-      $ORAC_MESSAGE = 'ORAC-DR reducing observation ' . $fnumber;
-      $orac_prt->errpre("#$fnumber Err: ");
-      $orac_prt->warpre("#$fnumber Warning: ");
-      # Actually process the observation
-      # Includes recipe configurations since the recipe
-      # object is not instantiated until the recipe name is
-      # read from the frame object in orac_process_frame
-      # may want to revisit this.
-      orac_process_frame(
-			 Frame => $Frm,
-			 Group => $Grp,
-			 Calibration => $Cal,
-			 Engines =>$Mon,
-			 Display => $Display,
-			 Debug => $opt_debug,
-			 CmdLineRecipe => $Override_Recipe,
-			 Instrument => $instrument,
-			 Batch => 1,
-			);
-
-      # Reset the obs number labels
-      $orac_prt->errpre('Error: ');
-      $orac_prt->warpre('Warning: ');
-      $ORAC_MESSAGE = 'ORAC-DR reducing observation --';
-    }
-  }
-
-
+########################## D A T A   L O O P ################################
+ 
+# Call the main data processing loop
+try {
+  orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume, $opt_skip, $opt_debug,
+                       $loop, $frameclass, $groupclass, $instrument, $Mon, $Cal,
+		       \@obs, $Display, $orac_prt, $ORAC_MESSAGE,
+		       \$CURRENT_RECIPE, $PRIMITIVE_LIST, $CURRENT_PRIMITIVE,
+		       $Override_Recipe );
 }
+catch ORAC::Error::FatalError with 
+{
+   my $Error = shift;
 
-# Reset the ORAC::Print prefix
-orac_print "Pipeline processing complete\n";
+   ORAC::Error->flush;
+   ORAC::Event->mainloop("Tk");
+   print "Fatal Error in Main Loop\n";
+   &orac_exit_normally;
+}
+catch ORAC::Error::UserAbort with
+{
+   my $Error = shift;
 
+   ORAC::Error->flush;
+   print "User Abort from Main Loop\n";
+   &orac_exit_normally;   
+};
+
+########################## T I D Y  U P #####################################
+
+orac_print ("Pipeline processing complete\n", "green");
 
 # If $MW is defined, enter the Tk MainLoop
 # So that the session can be examined before exiting
-MainLoop() if defined $MW;
+ORAC::Event->mainloop("Tk");
 
 # Cleanup
 &orac_exit_normally;
@@ -958,6 +473,10 @@ Default is not to beep.
 Do not launch the display system. No data will be displayed and GWM,
 GAIA etc. windows will not be launched.
 
+=item B<-showcurrent>
+
+Launch a recipe viewer window along with the log Xwindow
+
 =item B<-log s>
 
 Log to terminal screen (standard out)
@@ -982,7 +501,7 @@ to invoke it in, use C<-nodisplay -log s>. This is the fastest way
 to run the pipeline if you are not interested in visually
 inspecting the data as it is being reduced.
 
-=head2 Observation numbers
+=head2 Observations
 
 =over 4
 
@@ -998,6 +517,11 @@ Number of last observation.
 
 Comma separated list of observation I<numbers>. Colons indicate a range.
 For example, `1,2,4:6,10' means 1,2,4,5,6,10.
+
+=item B<-file>
+
+File name (relative to current directory) of a flat ASCII text file containing
+a list of observation I<files> to be reduced, one file per line.
 
 =back
 
@@ -1123,7 +647,8 @@ $Id$
 =head1 AUTHORS
 
 Frossie Economou (frossie@jach.hawaii.edu),
-Tim Jenness (t.jenness@jach.hawaii.edu)
+Tim Jenness (t.jenness@jach.hawaii.edu),
+Alasdair Allan (aa@astro.ex.ac.uk)
 
 =head1 COPYRIGHT
 
@@ -1131,318 +656,3 @@ Copyright (C) 1998-2001 Particle Physics and Astronomy Research Council.
 All Rights Reserved.
 
 =cut
-
-
-
-
-# $Log$
-# Revision 1.89  2001/01/31 01:43:29  timj
-# - Remove the 'use subs'
-# - add comment to sigtrap
-#
-# Revision 1.88  2001/01/12 00:31:23  timj
-# Implement full dynamic loading of algorithm engines and
-# of messaging systems.
-#
-# Revision 1.87  2001/01/11 02:02:40  timj
-# First attempt at dynamic loading. Doesn't quite work but mostly
-# there
-#
-# Revision 1.86  2001/01/10 02:37:10  timj
-# Make changes required to support ORAC::Recipe
-#
-# Revision 1.85  2001/01/09 03:20:40  timj
-# Use the new ORAC::Inst::Defn and ORAC::Inst::InitMsg classes
-#
-# Revision 1.84  2000/08/09 11:39:42  frossie
-# New groups
-#
-# Revision 1.83  2000/08/04 19:21:57  timj
-# Remove leftover print statement
-#
-# Revision 1.82  2000/08/03 21:08:51  timj
-# - Allow -skip -from to work even if specified obs is the last one available.
-# - Make sure we enter Mainloop before calling orac_exit_normally.
-#
-# Revision 1.81  2000/08/03 04:46:59  timj
-# Add permanent exit button to Tk window
-#
-# Revision 1.80  2000/06/30 23:59:32  frossie
-# change orac_err to orac_warn for -from 1 if not files
-#
-# Revision 1.79  2000/05/07 04:15:34  timj
-# Add IRCAM2 classes
-#
-# Revision 1.78  2000/04/23 02:40:15  timj
-# Add support for -nomsgtmp flag
-#
-# Revision 1.77  2000/04/12 02:17:40  frossie
-# Changed case of print message to be consistant (requested by MHP)
-#
-# Revision 1.76  2000/02/08 04:41:12  timj
-# Fixes to documentation required by Starlink for release of V1.0-0
-#
-# Revision 1.75  2000/02/03 09:12:23  timj
-# Spell check.
-#
-# Revision 1.74  2000/02/03 07:34:48  frossie
-# doc fix
-#
-# Revision 1.73  2000/02/03 05:07:14  frossie
-# added to documentation
-#
-# Revision 1.72  2000/02/02 21:48:23  timj
-# Add pod
-#
-# Revision 1.71  2000/01/26 00:59:13  timj
-# Fix -w warnings.
-#
-# Revision 1.70  1999/10/14 07:04:35  frossie
-# Load UFTI2 Frame class
-#
-# Revision 1.69  1999/09/15 20:42:39  timj
-# Add support for beeping on exit and error messages
-#
-# Revision 1.68  1999/09/15 02:54:29  frossie
-# add beep nobeep
-#
-# Revision 1.67  1999/08/26 02:45:29  timj
-# Add support for -resume
-#
-# Revision 1.66  1999/07/27 00:10:40  timj
-# Move LWP::Simple to Basic.pm
-#
-# Revision 1.65  1999/07/26 20:28:37  frossie
-# Explicitly import LWA method
-#
-# Revision 1.64  1999/07/21 03:08:31  frossie
-# Added optional LWP::Simple package
-#
-# Revision 1.63  1999/07/06 20:52:06  timj
-# Autoflush debugging file
-#
-# Revision 1.62  1999/05/11 22:17:45  timj
-# Use ORAC::Frame::IRCAM for IRCAM
-#
-# Revision 1.61  1999/04/23 00:28:21  timj
-# Fix -batch with use strict
-#
-# Revision 1.60  1999/04/22 22:51:17  timj
-# Fix some -w warnings.
-# -verbose added, -quiet removed.
-#
-# Revision 1.59  1999/04/21 21:34:18  timj
-# Add -warn
-# Fix -w warnings
-# Make fx the default when $DISPLAY is set
-#
-# Revision 1.58  1999/04/21 02:18:00  timj
-# use strict
-#
-# Revision 1.57  1999/04/21 00:50:23  timj
-# Pass %Mon through rather than knowing the namespace
-#
-# Revision 1.56  1999/04/18 01:58:20  timj
-# Fix ORAC_PRIMITIVE_DIR ref in log file
-#
-# Revision 1.55  1999/04/14 03:50:09  frossie
-# pod change
-#
-# Revision 1.54  1999/03/27 00:52:06  timj
-# Modify the red to pink for X error messages not red normal messages.
-#
-# Revision 1.53  1999/03/27 00:40:43  frossie
-# Change red colour to pink
-#
-# Revision 1.52  1999/03/26 02:55:46  frossie
-# Added -log x option to -h output
-#
-# Revision 1.51  1999/03/26 02:43:34  timj
-# Make sure that the log file location matches the -help info
-# (.oracdr_$$.log)
-#
-# Revision 1.50  1999/03/26 02:42:34  timj
-# Add version -v option.
-# Add -log option to screen, log file and Tk window
-#
-# Revision 1.49  1999/03/23 23:54:18  frossie
-# Add Michelle temporary intrument type (MichTemp)
-#
-# Revision 1.48  1999/02/27 02:31:29  frossie
-# Changed -h option to -help
-#
-# Revision 1.47  1999/02/25 04:55:09  frossie
-# Michelle module loading
-#
-# Revision 1.46  1999/02/23 00:32:48  frossie
-# Change in instrument imported methods
-#
-# Revision 1.45  1999/02/18 03:10:44  timj
-# Set Batch variable in ORAC::Basic
-#
-# Revision 1.44  1998/12/12 04:00:24  frossie
-# Added -noeng option (does not start algorthm engines)
-#
-# Revision 1.43  1998/10/01 22:55:10  timj
-# Add the -skip option
-#
-# Revision 1.42  1998/09/25 03:35:31  timj
-# Add -batch option.
-# Remove data processing routines to ORAC::Core
-#
-# Revision 1.41  1998/09/23 23:42:48  frossie
-# Take out some print debug lines.
-#
-# Revision 1.40  1998/09/17 19:00:27  timj
-# - Add support for just using -to option.
-# - Set default behaviour when neither -list, -from nor -to are specified.
-#
-# Revision 1.39  1998/09/17 04:06:51  timj
-# Ignore SIGPIPE rather than assigning a null sub
-#
-# Revision 1.38  1998/09/17 03:32:05  timj
-# - Change recipe parsing so that it handles array references
-# - Fix -from behaviour looping
-# - use sigtrap so that we can try to trap most signals
-#
-# Revision 1.37  1998/09/16 03:21:14  frossie
-# Pick up recipes form inst-specific dirs
-#
-# Revision 1.36  1998/09/15 12:27:31  frossie
-# Add CGS4 specific class modules
-#
-# Revision 1.35  1998/08/07 02:19:06  frossie
-# Add -debug option
-#
-# Add orac_add_code_to_recipe call
-#
-# Revision 1.34  1998/07/10 02:43:55  frossie
-# For UFTI, use UFTI Group subclass
-#
-# Revision 1.33  1998/07/09 03:52:03  timj
-# Use new Display commands
-#
-# Revision 1.32  1998/07/08 23:21:05  timj
-# Tidy up.
-# Use orac_print
-#
-# Revision 1.31  1998/07/08 05:08:18  frossie
-# Change UFTI section to use UFTI Frame subclass
-#
-# Revision 1.30  1998/07/08 04:39:23  frossie
-# -h the loop option
-#
-# Revision 1.29  1998/07/08 03:49:32  timj
-# Use different data detection loops
-#
-# Revision 1.28  1998/07/07 06:28:55  frossie
-# Call noupdate method when a calibration has been specified in the
-# command line
-#
-# Revision 1.27  1998/07/07 06:11:50  frossie
-# Set current frame to calibration 'thing', against which to determine
-# calibration suitability.
-#
-# Revision 1.26  1998/06/29 05:37:36  timj
-# Add wait_for_algorithm_engines (reorganise to accomodate status checking).
-#
-# Revision 1.25  1998/06/29 05:25:16  frossie
-# Use wait_for_algorithm_engines
-#
-# Revision 1.24  1998/06/29 03:56:09  frossie
-# Bugfix: Make sure ORAC_PERL5LIB is really used.
-#
-# Revision 1.23  1998/06/29 03:21:11  frossie
-# remove -dark and add general -calib option
-#
-# Revision 1.22  1998/06/28 01:10:46  frossie
-# -ut option defaults to current UT date if unspecified
-#
-# Revision 1.21  1998/05/23 08:05:54  timj
-# Read recipe from frame (or at least try to)
-#
-# Revision 1.20  1998/05/21 18:32:31  timj
-# Left over 'exit' from my debugging efforts....
-#
-# Revision 1.19  1998/05/21 06:26:38  timj
-# Add support for ranges in -list
-#
-# Revision 1.18  1998/05/19 01:45:41  timj
-# Support file_from_bits() methods.
-#
-# Revision 1.17  1998/05/18 21:17:10  timj
-# Add support for new organization of primitives directories.
-#
-# Revision 1.16  1998/05/08 18:41:13  timj
-# Remove instrument specific definitions.
-# Display is still hard-wired.
-#
-# Revision 1.15  1998/04/15 02:41:28  frossie
-# Move ams_init to appropriate place
-#
-# Revision 1.14  1998/04/14 21:39:12  frossie
-# Move data dir chdir prior to display launch
-#
-# Revision 1.13  1998/04/14 21:10:48  frossie
-# Change explicit use of ADAMTASK modules to new ORAC::Msg classes.
-#
-# No longer need explicit exits from the messaging system as these are
-# now performed when message objects are destroyed.
-#
-# Revision 1.12  1998/04/09 02:48:06  frossie
-# Group filename changed to "rg" from "g"
-#
-# Revision 1.11  1998/04/04 06:45:31  frossie
-# Introduce Frm Grp and Cal objects
-#
-# Revision 1.10  1998/04/01 23:09:12  frossie
-# *** empty log message ***
-#
-# Revision 1.9  1998/03/17 18:54:23  frossie
-# *** empty log message ***
-#
-# Revision 1.8  1998/03/16 19:07:28  frossie
-# File::Copy and group filename prototype handling
-#
-# Revision 1.7  1998/03/16 04:07:57  frossie
-# Add use of ANSI colour
-#
-# Revision 1.6  1998/02/25 11:25:50  frossie
-# * oracdr: introduced Getopt for option handling
-#
-# Revision 1.5  1998/02/24 11:39:58  frossie
-# More namespace fixing - Hdr and Mon now generally accessible. Risk of
-# clobbering is probably worth the pain of enforcing ${main::Blah} to
-# long-suffering primitive writers.
-#
-# Revision 1.4  1998/02/24 09:13:34  frossie
-# Pipeline now does only basic control
-#
-# Revision 1.3  1998/02/20 06:43:55  frossie
-# Static variables pulled out as shell ENVs.
-#
-# -nodisplay option supported
-#
-# Revision 1.2  1998/02/20 04:22:13  frossie
-# Static variables pulled out as shell ENVs.
-#
-# Revision 1.1.1.1  1998/02/04 00:51:01  frossie
-# Original version
-#
-# Revision 1.5  1997/11/25 06:46:57  frossie
-# actually runs tasks. adam stuff not transparent.
-#
-# Revision 1.4  1997/11/22 01:04:35  frossie
-# Variables passed down and back up
-#
-# Revision 1.3  1997/11/22 00:28:23  frossie
-# Arguments propagate down
-#
-# Revision 1.2  1997/11/21 21:30:43  frossie
-# Very simple version. Deals with recipes calling recipes.
-#
-# Revision 1.1  1997/11/21 21:29:43  frossie
-# Initial revision
-#
-
-

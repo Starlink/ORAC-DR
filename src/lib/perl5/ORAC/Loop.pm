@@ -15,6 +15,8 @@ ORAC::Loop - data loops for ORACDR
   $frm = orac_loop_wait($class, $utdate, \@list, $skip);
 
   $frm = orac_loop_flag($class, $utdate, \@list, $skip);
+  
+  $frm = orac_loop_file($class, \@list );
 
 =head1 DESCRIPTION
 
@@ -54,10 +56,8 @@ use vars qw/$VERSION @EXPORT @ISA $CONVERT/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 @ISA = qw/Exporter/;
-@EXPORT = qw/orac_loop_list  orac_loop_wait orac_loop_inf
-  orac_loop_flag
-  orac_check_data_dir
-  /;
+@EXPORT = qw/ orac_loop_list  orac_loop_wait orac_loop_inf
+              orac_loop_flag orac_loop_file orac_check_data_dir /;
 
 =head1 LOOP SUBROUTINES
 
@@ -478,6 +478,123 @@ sub orac_loop_flag {
   
   return $Frm;
   
+}
+
+=item B<orac_loop_list>
+
+Takes a list of files and returns back a frame object 
+for each file (one frame object per call)
+
+  $Frm = orac_loop_file($class, \@array, $skip );
+
+undef is returned on error or when all members of the
+list have been returned.
+
+=cut
+
+sub orac_loop_file {
+
+  croak 'Wrong number of args: orac_loop_file($class, $ut, $arr_ref, $opt_skip)'
+    unless scalar(@_) == 4; 
+
+  my ($class, $utdate, $obsref, $skip) = @_;
+
+  # grab a filname from the observation array
+  my $fname = shift(@$obsref);
+  
+  # If filename is undef return undef
+  return undef unless defined $fname;
+
+  # Create a new frame in class
+  my $Frm = $class->new;
+
+  # Now we have to decide whether we have a FITS file or not
+  # Just ask it for the NDF file name
+  # If the converted file already exists  then do nothing.
+  # If the input format matches the output format just return the
+  # name.
+  # Have to remember to do this everywhere we need $CONVERT since
+  # we are not using a global constructor.
+  unless (defined $CONVERT) { $CONVERT = new ORAC::Convert; }
+
+  # Read the Input and Output formats from the Frame object
+  my $infmt = $Frm->rawformat;
+  my $outfmt = $Frm->format;
+
+  # Ask for the filename (converted if required)
+  $fname = $CONVERT->convert($ENV{ORAC_DATA_IN} ."/$fname", { IN => $infmt, 
+							      OUT => $outfmt, 
+							      OVERWRITE => 0
+							    });
+
+  # Check state of $fname
+  unless (defined $fname) {
+    orac_err("Error in data conversion tool\n");
+    return undef;
+  }
+
+  # Try to do this in a more structured way so that we can tell
+  # Why something fails
+
+  # If the file exists in the current directory then we dont care
+  # what happens (eg it has been converted or a link of the correct
+  # name exists with a file at the other end
+
+  # We have to make sure the file is here else the Frame configuration
+  # will not work correctly.
+
+  unless (-e $fname) {
+
+    # Now check in the ORAC_DATA_IN directory to make sure it is there
+    unless (-e $ENV{ORAC_DATA_IN} ."/$fname") {
+      orac_err("Requested file ($fname) can not be found in ORAC_DATA_IN\n");
+      return undef;
+    }
+
+    # Now if there is a link already in ORAC_DATA_OUT we need to
+    # read it to find out where it is pointing (we will only get
+    # to this point if the link does not point to anything at the
+    # other end since -e follows links
+    if (-l $fname) {
+      my $nowhere = readlink($fname);
+      unless (defined $nowhere) {
+	orac_err("Error reading through link from ORAC_DATA_OUT/$fname:\n");
+	orac_err("$!\n");
+      } else {
+	orac_err("File $fname does exist in ORAC_DATA_OUT but is a link\n");
+	orac_err("pointing to nowhere. It points to: $nowhere\n");	
+      }
+     return undef;
+    }
+    
+    # Now we should try to create a symlink and say something
+    # if it fails
+    symlink($ENV{ORAC_DATA_IN} . "/$fname", $fname) ||
+      do {
+	orac_err("Error creating symlink from ORAC_DATA_OUT to $ENV{ORAC_DATA_IN}/$fname\n");
+	orac_err("$!\n");
+	return undef;
+      };
+
+    # Note that -e checks through symlinks
+    # This final check SHOULD work else something really wacky is 
+    # going on
+    unless (-e $fname) {
+      orac_err("File ($fname) can not be found through link from\n");
+      orac_err("ORAC_DATA_OUT to ORAC_DATA_IN\n");
+      return undef;
+    }
+
+  }
+
+  # Now configure the frame object
+  # This will fail if the file can not be opened in the current directory.
+  
+  $Frm->configure($fname);
+
+  # Return success
+  return $Frm;
+
 }
 
 =back

@@ -35,10 +35,7 @@ use ORAC::Display;
 
 @ISA = qw(Exporter);
 
-@EXPORT = qw/
-  orac_setup_display
-  orac_exit_normally orac_exit_abnormally
-  /;
+@EXPORT = qw/  orac_setup_display orac_exit_normally orac_exit_abnormally /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
@@ -118,8 +115,19 @@ sub orac_exit_normally {
   my $message = '';
   $message = shift if @_;
 
-  orac_print ("$message - Exiting...\n","red");
+  # We are dying, and don't care about any further outstanding errors
+  # flush the queue so we have a clean exit.
+  my $error = ORAC::Error->prior;
+  ORAC::Error->flush if defined $error; 
 
+  # redefine the ORAC::Print bindings
+  my $msg_prt  = new ORAC::Print; # For message system
+  my $msgerr_prt = new ORAC::Print; # For errors from message system
+  my $orac_prt = new ORAC::Print; # For general orac_print 
+   
+  # Debug info
+  orac_print ("Exiting...\n","red");
+  
   rmtree $ENV{'ADAM_USER'}             # delete process-specific adam dir
     if defined $ENV{ADAM_USER};
 
@@ -127,6 +135,10 @@ sub orac_exit_normally {
   if ($Beep) {
     for (1..5) {print STDOUT chr(7); select undef,undef,undef,0.2}
   }
+
+  # Cleanup Tk window(s) if they are still hanging around
+  ORAC::Event->destroy("Tk");
+  ORAC::Event->unregister("Tk");
 
   orac_print ("\nOrac says: Goodbye\n","red");
   exit;
@@ -141,16 +153,26 @@ Exit handler when a problem has been encountered.
 sub orac_exit_abnormally {
   my $signal = '';
   $signal = shift if @_;
-
+ 
+  # redefine the ORAC::Print bindings
+  my $msg_prt  = new ORAC::Print; # For message system
+  my $msgerr_prt = new ORAC::Print; # For errors from message system
+  my $orac_prt = new ORAC::Print; # For general orac_print 
+     
+  # Try and cleanup, untested, I can't get it to exit abnormally
+  ORAC::Event->destroy("Tk");
+  ORAC::Event->unregister("Tk");
+  
   # Dont delete tree since this routine is called from INSIDE recipes
-#  rmtree $ENV{'ADAM_USER'};             # delete process-specific adam dir
+  #  rmtree $ENV{'ADAM_USER'};             
 
   # ring my bell, baby
   if ($Beep) {
     for (1..10) {print STDOUT chr(7); select undef,undef,undef,0.2}
   }
 
-  die "\nAborting from ORACDR - $signal received";
+  die "\n\nAborting from ORACDR - $signal recieved";
+     
   # die "\n --Signal $signal received--\n";	
 
 };
@@ -168,7 +190,8 @@ L<ORAC::Core>, L<ORAC::General>
 =head1 AUTHORS
 
 Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>,
-Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
+Alasdair Allan E<lt>aa@astro.ex.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
@@ -180,6 +203,30 @@ Council. All Rights Reserved.
 1;
 
 #$Log$
+#Revision 1.58  2001/02/24 03:07:25  allan
+#Merged main line with Xoracdr branch
+#
+#Revision 1.57.2.7  2001/02/07 23:50:56  allan
+#Last few problems with ORAC::Error resolved
+#
+#Revision 1.57.2.6  2001/02/02 01:44:56  allan
+#Working Error handling using ORAC::Error
+#
+#Revision 1.57.2.5  2001/02/01 03:49:40  allan
+#Error/Abort handling doesn't work, race condition
+#
+#Revision 1.57.2.4  2001/01/31 08:05:57  allan
+#ORAC::Error stuff put into Xoracdr, sort of works
+#
+#Revision 1.57.2.3  2001/01/31 07:00:43  allan
+#Working ORAC::Error modules, oracdr ported to use them
+#
+#Revision 1.57.2.2  2001/01/30 07:45:01  allan
+#Xoracdr pipeline working, problems with exit
+#
+#Revision 1.57.2.1  2001/01/25 07:35:38  allan
+#Basic outline for Xoracdr menus, changes to ORAC::Event
+#
 #Revision 1.57  2001/01/19 03:02:36  timj
 #removed File::Copy by mistake
 #

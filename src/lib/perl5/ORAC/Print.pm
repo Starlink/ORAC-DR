@@ -37,8 +37,8 @@ messages is controlled by the object configuration.
 If the C<ORAC::Print::TKMW> variable is set, it is assumed that this
 is the Tk object referring to the MainWindow, and the
 C<Tk-E<gt>update()> method is run whenever the C<orac_*> commands are
-executed.  This can be used to keep a Tk log window updating even
-though no X-events are being processed.
+executed via the method in the ORAC::Event class.  This can be used to 
+keep a Tk log window updating even though no X-events are being processed.
 
 A simplified interface to Term::ReadLine is provided for use with
 the orac_read command. This can only be used on STDIN/STDOUT and
@@ -50,7 +50,7 @@ is not object-oriented.
 use 5.004;
 use Carp;
 use strict;
-use vars qw/$VERSION $DEBUG $CURRENT @ISA @EXPORT $TKMW $RDHDL/;
+use vars qw/$VERSION $DEBUG $CURRENT @ISA @EXPORT $RDHDL/;
 use subs qw/__curr_obj/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
@@ -61,18 +61,19 @@ require Exporter;
 @ISA = qw/Exporter/;
 @EXPORT = qw/orac_print orac_err orac_warn orac_debug orac_read/;
 
-$TKMW = undef;
-
 # Create a Term::ReadLine handle
 # For read on STDIN and output on STDOUT
 # Create one handle for the process. Note this can be overridden
 # externally
 $RDHDL = undef;
 
+use ORAC::Error qw/:try/;
+
 use IO::File;
 use IO::Tee;
 use Term::ANSIColor;
 use Term::ReadLine;
+use Error qw/ :try /;
 
 =head1 NON-OO INTERFACE
 
@@ -158,7 +159,7 @@ sub orac_read {
     unless defined $RDHDL;
 
   # If TKMW is defined set tkrunning
-  $RDHDL->tkRunning(1) if defined $TKMW;
+  $RDHDL->tkRunning(1) if ORAC::Event->query("Tk");
 
   return $RDHDL->readline($prompt);
 }
@@ -479,7 +480,7 @@ sub debughdl {
 
   return $self->{DebugHdl};
 }
-
+ 
 # Methods that do things...
 
 =back
@@ -517,8 +518,20 @@ sub out {
   # There is a chance that we have just updated 
   # a Tk text widget. On the off-chance that we have,
   # we should do a Tk update
-  $TKMW->update if defined $TKMW;
-
+  try {
+     ORAC::Event->update("Tk");
+  }
+  catch ORAC::Error::FatalError with
+  {
+     my $Error = shift;
+     $Error->throw;    
+  }
+  catch ORAC::Error::UserAbort with
+  {
+     my $Error = shift;
+     $Error->throw;
+  };
+  
 }
 
 =item war(text, [col])
@@ -550,8 +563,20 @@ sub war {
   # There is a chance that we have just updated 
   # a Tk text widget. On the off-chance that we have,
   # we should do a Tk update
-  $TKMW->update if defined $TKMW;
-
+  try {
+     ORAC::Event->update("Tk");
+  }
+  catch ORAC::Error::FatalError with
+  {
+     my $Error = shift;
+     $Error->throw;    
+  }
+  catch ORAC::Error::UserAbort with
+  {
+     my $Error = shift;
+     $Error->throw;
+  };
+  
 }
 
 =item err(text, [col])
@@ -586,8 +611,19 @@ sub err {
   # There is a chance that we have just updated 
   # a Tk text widget. On the off-chance that we have,
   # we should do a Tk update
-  $TKMW->update if defined $TKMW;
-
+  try {
+     ORAC::Event->update("Tk");
+  }
+  catch ORAC::Error::FatalError with
+  {
+     my $Error = shift;
+     $Error->throw;    
+  }
+  catch ORAC::Error::UserAbort with
+  {
+     my $Error = shift;
+     $Error->throw;
+  };  
 }
 
 =item debug (text)
@@ -612,8 +648,19 @@ sub debug {
     # There is a chance that we have just updated 
     # a Tk text widget. On the off-chance that we have,
     # we should do a Tk update
-    $TKMW->update if defined $TKMW;
-
+    try {
+       ORAC::Event->update("Tk");
+    }
+    catch ORAC::Error::FatalError with
+    {
+       my $Error = shift;
+       $Error->throw;    
+    }
+    catch ORAC::Error::UserAbort with
+    {
+       my $Error = shift;
+       $Error->throw;
+    };    
   }
 
 }
@@ -698,8 +745,9 @@ $Id$
 
 =head1 AUTHORS
 
-Tim Jenness (t.jenness@jach.hawaii.edu)
-and Frossie Economou  (frossie@jach.hawaii.edu)
+Tim Jenness (t.jenness@jach.hawaii.edu),
+Frossie Economou  (frossie@jach.hawaii.edu),
+Alasdair Allan (aa@astro.ex.ac.uk)
 
 =head1 COPYRIGHT
 
