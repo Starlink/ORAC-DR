@@ -292,7 +292,8 @@ sub _to_RECIPE {
       $recipe = "POINT_SOURCE";
 
    } elsif ( $template =~ /_spec_cal_StandardStar/ ||
-             $template =~ /_spec_cal_StandardStarNod/ ) {
+             $template =~ /_spec_cal_StandardStarNod/ ||
+             $template =~ /_spec_cal_AutoNodOnSlit/  ) {
       $recipe = "STANDARD_STAR";
 
    } elsif ( $template =~ /_spec_cal_NightCalib/ ) {
