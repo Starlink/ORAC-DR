@@ -1,95 +1,97 @@
-    # See if observations were done at the tile level
+    if ($Frm->hdr("OBSTYPE") eq "OBJECT") {
 
-    my $tilenum = $Frm->hdr("TILENUM");
-    my $tlevel = ($tilenum != 0);
-    $Grp->uhdr("TLEVEL",$tlevel);
+	# See if observations were done at the tile level
 
-    # Define a superframes group
+	my $tilenum = $Frm->hdr("TILENUM");
+	my $tlevel = ($tilenum != 0);
+	$Grp->uhdr("TLEVEL",$tlevel);
 
-    my $sfg = $Grp->new;
-    $Grp->sfgroup($sfg);
+	# Define a superframes group
 
-    # Bodge to cover undefined values...
+	my $sfg = $Grp->new;
+	$Grp->sfgroup($sfg);
 
-    foreach my $kk ("NUSTEP","USTEP_I","NJITTER","JITTER_I") {
-	if (! defined $Frm->hdr($kk)) {
-	    $Frm->hdr($kk,1);
-        }
+	# Bodge to cover undefined values...
+
+	foreach my $kk ("NUSTEP","USTEP_I","NJITTER","JITTER_I") {
+	    if (! defined $Frm->hdr($kk)) {
+		$Frm->hdr($kk,1);
+	    }
+	}
+
+	# Now look to see where we are in the current ustep sequence...If it's the
+	# first one, then create a subgroup and add this frame into it. If it's not
+	# the first one, then just add the frame into the current subgroup
+
+	my $nustep = $Frm->hdr("NUSTEP");
+	my $ustep_i = $Frm->hdr("USTEP_I");
+	my $ustep_finished = ($nustep == $ustep_i);
+	$Grp->uhdr("USTEP_COMPLETE",$ustep_finished);
+	my @allugroups = $Grp->allugroups;
+	my $ng = @allugroups;
+	my $warned = 0;
+	if ($ng == 0 && $ustep_i != 1) {
+	    orac_warn("It appears that part of the current series is missing\nAny future image stack is likely to be incomplete\n");
+	    $warned = 1;
+	}
+	my $subgrp;
+	if ($ustep_i == 1 || $ng == 0) {
+	    my $obsnum = $Frm->hdr("OBSNUM");
+	    $subgrp = $Grp->new("$obsnum");
+	    $Frm->ugrp($subgrp->name);
+	    $subgrp->push($Frm);
+	    $Grp->pushugroup($subgrp);
+	} else {
+	    $subgrp = pop @allugroups;
+	    $subgrp->push($Frm);
+	    $Frm->ugrp($subgrp->name);
+	}
+	my $line = "";
+	$line .= sprintf("This is frame: %d of %d in microstep sequence %05d\n",
+	    $ustep_i,$nustep,$subgrp->name) if ($nustep > 1);
+	$line .= "***This microstep sequence is complete!\n" if ($ustep_finished && $nustep > 1);
+	orac_print($line) if ($line);
+
+	# Do a similar thing for jitter sequences. 
+
+	my $njitter = $Frm->hdr("NJITTER");
+	my $jitter_i = $Frm->hdr("JITTER_I");
+	my $jitter_finished = ($njitter == $jitter_i && $ustep_finished);
+	$Grp->uhdr("JITTER_COMPLETE",$jitter_finished);
+	my @alljgroups = $Grp->alljgroups;
+	$ng = @alljgroups;
+	if ($ng == 0 && $jitter_i != 1 && ! $warned) {
+	    orac_warn("It appears that part of the current ustep series is missing\nAny future image stack is likely to be incomplete\n");
+	    $warned = 1;
+	}
+	if (($jitter_i == 1 && $ustep_i == 1) || $ng == 0) {
+	    my $obsnum = $Frm->hdr("OBSNUM");
+	    $subgrp = $Grp->new("$obsnum");
+	    $subgrp->push($Frm);
+	    $Grp->pushjgroup($subgrp);
+	    $Frm->jgrp($subgrp->name);
+	} else {
+	    $subgrp = pop @alljgroups;
+	    $subgrp->push($Frm);
+	    $Frm->jgrp($subgrp->name);
+	}
+	$line = sprintf("Frame in position %d of %d in jitter sequence: %05d\n",
+	    $jitter_i,$njitter,$subgrp->name);
+	$line .= "***This jitter sequence is complete!\n" if ($jitter_finished);
+	orac_print($line);
+
+	# Have a look at the number of jitter sequences that have been done. If
+	# it's four then the current tile is complete.
+
+	my @alljgroups = $Grp->alljgroups;
+	my $n = @alljgroups;
+	if ($n == 4 && $jitter_finished) {
+	    $Grp->uhdr("TILE_COMPLETE",1);
+	    orac_print("***This tile sequence is complete\n");
+	} else {
+	    $Grp->uhdr("TILE_COMPLETE",0);
+	}
     }
-
-    # Now look to see where we are in the current ustep sequence...If it's the
-    # first one, then create a subgroup and add this frame into it. If it's not
-    # the first one, then just add the frame into the current subgroup
-
-    my $nustep = $Frm->hdr("NUSTEP");
-    my $ustep_i = $Frm->hdr("USTEP_I");
-    my $ustep_finished = ($nustep == $ustep_i);
-    $Grp->uhdr("USTEP_COMPLETE",$ustep_finished);
-    my @allugroups = $Grp->allugroups;
-    my $ng = @allugroups;
-    my $warned = 0;
-    if ($ng == 0 && $ustep_i != 1) {
-	orac_warn("It appears that part of the current series is missing\nAny future image stack is likely to be incomplete\n");
-        $warned = 1;
-    }
-    my $subgrp;
-    if ($ustep_i == 1 || $ng == 0) {
-        my $obsnum = $Frm->hdr("OBSNUM");
-	$subgrp = $Grp->new("$obsnum");
-	$Frm->ugrp($subgrp->name);
-	$subgrp->push($Frm);
-	$Grp->pushugroup($subgrp);
-    } else {
-        $subgrp = pop @allugroups;
-	$subgrp->push($Frm);
-	$Frm->ugrp($subgrp->name);
-    }
-    my $line = "";
-    $line .= sprintf("This is frame: %d of %d in microstep sequence %05d\n",
-        $ustep_i,$nustep,$subgrp->name) if ($nustep > 1);
-    $line .= "***This microstep sequence is complete!\n" if ($ustep_finished && $nustep > 1);
-    orac_print($line) if ($line);
-
-    # Do a similar thing for jitter sequences. 
-
-    my $njitter = $Frm->hdr("NJITTER");
-    my $jitter_i = $Frm->hdr("JITTER_I");
-    my $jitter_finished = ($njitter == $jitter_i && $ustep_finished);
-    $Grp->uhdr("JITTER_COMPLETE",$jitter_finished);
-    my @alljgroups = $Grp->alljgroups;
-    $ng = @alljgroups;
-    if ($ng == 0 && $jitter_i != 1 && ! $warned) {
-	orac_warn("It appears that part of the current ustep series is missing\nAny future image stack is likely to be incomplete\n");
-        $warned = 1;
-    }
-    if (($jitter_i == 1 && $ustep_i == 1) || $ng == 0) {
-        my $obsnum = $Frm->hdr("OBSNUM");
-	$subgrp = $Grp->new("$obsnum");
-	$subgrp->push($Frm);
-	$Grp->pushjgroup($subgrp);
-	$Frm->jgrp($subgrp->name);
-    } else {
-	$subgrp = pop @alljgroups;
-	$subgrp->push($Frm);
-	$Frm->jgrp($subgrp->name);
-    }
-    $line = sprintf("Frame in position %d of %d in jitter sequence: %05d\n",
-        $jitter_i,$njitter,$subgrp->name);
-    $line .= "***This jitter sequence is complete!\n" if ($jitter_finished);
-    orac_print($line);
-
-    # Have a look at the number of jitter sequences that have been done. If
-    # it's four then the current tile is complete.
-
-    my @alljgroups = $Grp->alljgroups;
-    my $n = @alljgroups;
-    if ($n == 4 && $jitter_finished) {
-	$Grp->uhdr("TILE_COMPLETE",1);
-	orac_print("***This tile sequence is complete\n");
-    } else {
-	$Grp->uhdr("TILE_COMPLETE",0);
-    }
-
 
 =head1 NAME
 

@@ -7,11 +7,9 @@
     orac_print "Doing $filt band photometry on " . $Frm->file .
         " using catalogue " . $Frm->uhdr("CATFILE") . "\n";
     _PHOTOMDATA_ FILTER=$filt
-    if (! defined $Finfo) {
-        orac_err "_DOPHOTOM_IMAGE_: Missing filter information.";
-    }
-    if (! defined $Cinfo) {
-        orac_err "_DOPHOTOM_IMAGE_: Missing catalogue information.";
+    if (! defined $Finfo || ! defined $Cinfo) {
+        orac_warn "_DOPHOTOM_IMAGE_: Unable to do zeropoint for filter $filt\nMissing filter information.\n" if (!defined $Finfo);
+        orac_warn "_DOPHOTOM_IMAGE_: Missing catalogue information.\n" if (!defined $Cinfo);
     }
 
     # If the photometric info is defined, then continue on...
@@ -67,7 +65,10 @@
 	    my $errmsg;
 	    my $retval = cir_getstds($frm->file,$stdsfile,@gpars,2000.0,5,1,
                                      $errmsg);
-	    if ($retval != CIR_OK) {
+            if ($retval == CIR_WARN) {
+	        orac_warn "Zeropoint calculation not possible -- no standards on the current image\n";
+                next;
+            } elsif ($retval == CIR_FATAL) {
 		orac_err "CIR_GETSTDS: Failed in _DOPHOTOM_IMAGE_\n$errmsg";
 		next;
 	    }
@@ -138,7 +139,7 @@
 	    my $imatch = 0;
 	    my @zp = ();
 	    my @zp4 = ();
-	    foreach my $j (1 .. $nrows) {
+NR:	    foreach my $j (1 .. $nrows) {
 		my ($val,$anynul,$rastd,$decstd);
 		$fptr->read_col(TFLOAT,$racol,$j,1,1,0.0,$val,$anynul,$status);
 		$rastd = $$val[0];
@@ -150,7 +151,11 @@
 		my ($cptr,$ntrows,$bestrow);
 		{
 		    use strict 'vars';
-		    _SEARCHCAT_ CATNAME=$catname RA=$rastd DEC=$decstd RADIUS=2.0
+                    my $srad = 2.0;
+                    if ($catname =~ /^fs/) {
+		        $srad = 5.0;
+                    }
+		    _SEARCHCAT_ CATNAME=$catname RA=$rastd DEC=$decstd RADIUS=$srad
 		    $cptr = $_SEARCHCAT_{CPTR};
 		    $ntrows = $_SEARCHCAT_{NTROWS};
 		    $bestrow = $_SEARCHCAT_{BESTROW};
@@ -169,8 +174,12 @@
 		for (my $k = 0; $k < $ncols; $k++) {
 		    my $col = $allcolnames[$k];
 		    my $varname = $allcolvars[$k];
-		    $fptr->read_col(TFLOAT,$allcolnums[$k],$j,1,1,0.0,$val,$anynul,
-			$status);
+		    $fptr->read_col(TFLOAT,$allcolnums[$k],$j,1,1,-42.0,$val,
+			$anynul,$status);
+		    if ($anynul) {
+			$cptr->close_file($status) if ($cptr);
+			next NR;
+                    }
 		    ${$varname} = $$val[0];
 		}
 
