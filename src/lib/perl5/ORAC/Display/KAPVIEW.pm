@@ -91,6 +91,7 @@ sub new {
 				AMS => undef,    # Adam message system
 				Kappa => undef,  # Kappa_mon object
 				Ndfpack=> undef, # Ndfpack_mon object
+				Polpack => undef, # Polpack mon object
 				Regions => {},
 			       );
 
@@ -200,7 +201,7 @@ sub ndfpack {
   my $self = shift;
   if (@_) { $self->{Ndfpack} = shift; }
 
-  # Start kappa if needed
+  # Start ndfpack if needed
   unless (defined $self->{Ndfpack}) {
     orac_print ("Creating Ndfpack_mon object.............\n",'cyan') if $DEBUG;
 
@@ -222,6 +223,57 @@ sub ndfpack {
 
   return $self->{Ndfpack};
 }
+
+
+=item B<polpack>
+
+Messaging object associated with the polpack_mon monolith.
+This is used by the VECTOR mode to plot vectors from catalogues.
+
+Note that this is technically not part of the KAPVIEW system.
+It is here for convenience since in all cases POLPLOT is better
+than VECPLOT for vector plotting.
+
+A Polpack messaging object is created if the object is undefined.
+
+Returns undef if polpack_mon is not available.
+
+=cut
+
+sub polpack {
+  my $self = shift;
+  if (@_) { $self->{Polpack} = shift; }
+
+  # Start polpack if needed
+  unless (defined $self->{Polpack}) {
+    if (-e "$ENV{POLPACK_DIR}/polpack_mon") {
+
+      orac_print ("Creating Polpack_mon object.............\n",'cyan') 
+	if $DEBUG;
+
+      # Note that a MONOLITH name is supplied as an option.
+      # This is so that if a path to the monolith exists and it
+      # is an A-task [note that we dont specify task type - if a
+      # kappa monolith is already running on this path as an I-task
+      # then parameter retrieval will fail. It is possible that in the
+      # future the objects will be stored so that if a monolith is started
+      # by the same process in a different piece of code a copy of the
+      # task object will be returned rather than creating a new one.)
+      # Currently this is still a bit of a kluge and requires some knowledge
+      # of the way that the kappa monolith used by the recipes was started.
+      $self->{Polpack} = new ORAC::Msg::ADAM::Task("polpack_mon_$$", 
+						   "$ENV{POLPACK_DIR}/polpack_mon",
+						   { MONOLITH => 'polpack_mon' }
+						  );
+      # Wait for it to start if necessary
+      unless ($self->{Polpack}->contactw) {
+	return undef;
+      }	
+    }
+  }
+  return $self->{Polpack};
+}
+
 
 =item B<regions>
 
@@ -1827,7 +1879,9 @@ sub histogram {
 Vectors are overlaid on an image. The supplied file is displayed
 and vectors are then drawn. The vector information is expected
 to be stored in the ORAC extension of the supplied file
-(in .P and .THETA NDFs).
+(in .P and .THETA NDFs) or, preferably, in a catalogue of the
+same name as the I image. POLPLOT is used for display if
+the catalogue is available.
 
 Recognised options:
 
@@ -1873,15 +1927,31 @@ sub vector {
   # Run the image method with all arguments
   $self->image($file, \%options);
 
-  # Select component
-  my $args = "clear=no veccol=red step=2 vscale=10 pltitl=' '";
-  if (exists $options{ANGROT} && defined $options{ANGROT}) {
-    $args .= " ANGROT=$options{ANGROT}";
+  my $status;
+  # Look for a catalogue of the same name with a .FIT extension
+  if (-e "$file.FIT" && defined $self->polpack) {
+    # Using POLPLOT
+
+    my $args = "clear=no axes=no ";
+    if (exists $options{ANGROT} && defined $options{ANGROT}) {
+      $args .= " ANGROT=$options{ANGROT}";
+    }
+
+    $status = $self->polpack->obeyw("polplot","cat=$file $args device=$device");
+
+  } else {
+    # Using VECPLOT
+
+    # Select component
+    my $args = "clear=no veccol=red step=2 vscale=10 pltitl=' '";
+    if (exists $options{ANGROT} && defined $options{ANGROT}) {
+      $args .= " ANGROT=$options{ANGROT}";
+    }
+
+    # Now run VECPLOT
+    $status = $self->obj->obeyw("vecplot","ndf1=${file}.more.orac.p ndf2=${file}.more.orac.theta device=$device $args");
+
   }
-
-
-  # Now run VECPLOT
-  my $status = $self->obj->obeyw("vecplot","ndf1=${file}.more.orac.p ndf2=${file}.more.orac.theta device=$device $args");
 
   if ($status != ORAC__OK) {
     orac_err("Error displaying vectors\n");
@@ -1890,8 +1960,6 @@ sub vector {
   }
 
   return $status;
-
-
 }
 
 
