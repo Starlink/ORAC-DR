@@ -1,0 +1,91 @@
+    my $ipix = (defined $_DITHER_AND_CATALOGUE_{IPIX} ? $_DITHER_AND_CATALOGUE_{IPIX} : 5);
+    my $thresh = (defined $_DITHER_AND_CATALOGUE_{THRESH} ? $_DITHER_AND_CATALOGUE_{THRESH} : 1.5);
+    my $icrowd = (defined $_DITHER_AND_CATALOGUE_{ICROWD} ? $_DITHER_AND_CATALOGUE_{ICROWD} : 1);
+    my $rcore = (defined $_DITHER_AND_CATALOGUE_{RCORE} ? $_DITHER_AND_CATALOGUE_{RCORE} : 3.5);
+    my $catsrc = (defined $_DITHER_AND_CATALOGUE_{CATSRC} ? $_DITHER_AND_CATALOGUE_{CATSRC} : "usno");
+    my $site = (defined $_DITHER_AND_CATALOGUE_{SITE} ? $_DITHER_AND_CATALOGUE_{SITE} : "cds");
+    my $catpath = (defined $_DITHER_AND_CATALOGUE_{CATPATH} ? $_DITHER_AND_CATALOGUE_{CATPATH} : "");
+
+    # Are we ready to do this? If so, then do the dither combination
+
+    my $candither = $Frm->uhdr("JITTER_COMPLETE");
+    if ($candither) {
+        _DITHER_
+        my $dFrm = $Frm->uhdr("DITHER_FRAME");
+        my $dCpm = $Frm->uhdr("DITHER_CPM");
+
+        # Do the initial WCS fit
+
+        {
+            my $Frm = $dFrm;
+            _WCSFIT_ CATSRC=$catsrc PASS=1 SITE=$site CATPATH=$catpath
+
+            # Right, now just do the WCS offsets to the individual frames...
+
+            foreach my $fr ($Grp->allmembers) {
+   	        my $gFrm = $fr;
+	        _WCS_OFFSETS_
+            }       
+        }
+
+        # Create a catalogue
+
+        {
+            my $Frm = $dFrm;
+            my $Frmcpm = $dCpm;
+            _IMCORE_ IPIX=$ipix THRESH=$thresh ICROWD=$icrowd RCORE=$rcore
+        }
+
+        # Do the second pass WCS fit and update the catalogue so that it
+        # has RA and Dec info for each detected object.
+
+        {
+            my $Frm = $dFrm;
+            _WCSFIT_ CATSRC=$catsrc PASS=2 SITE=$site CATPATH=$catpath
+            _UPDATECAT_
+
+            # Right, now just do the WCS offsets to the individual frames...
+
+            foreach my $fr ($Grp->allmembers) {
+   	        my $gFrm = $fr;
+	        _WCS_OFFSETS_ 
+            }       
+        }
+
+        # Do the image classification
+
+        {
+            my $Frm = $dFrm;
+            _CLASSIFY_
+        }
+
+        # Now do the photometry on this file
+
+        {   
+            my $Frm = $dFrm;
+            my $filt = $Frm->uhdr("ORAC_FILTER");
+            _SKYPERCENT_IMAGE_
+            _DOPHOTOM_IMAGE_ FILTER=$filt
+        }
+
+        # Process the history records of all files
+
+        {
+            my $Frm = $dFrm;
+            _PROCHIST_
+            foreach my $fr ($Grp->allmembers) {
+                my $Frm = $fr;
+                _PROCHIST_
+            }
+        }
+
+        # File the DQC info
+
+        {
+            my $Frm = $dFrm;
+            _FILE_DQC_
+        }
+    }        
+
+
+

@@ -1,0 +1,55 @@
+    # Locate the catalogue file, if there is one.
+
+    my $catfile = $Frm->uhdr("CATFILE");
+
+    # If a catalogue exists, then get the sky levels from it.  Otherwise
+    # do an imstat on the image and get the background from that.
+
+    my @work = ();
+    if ($catfile) {
+        for my $i (1 .. $Frm->findnsubs) {
+            my $cf = $Frm->getasubframe($i)->uhdr("CATFILE");
+            my $status = 0;
+            my $fptr = Astro::FITS::CFITSIO::open_file($cf,READONLY,$status);
+            my ($skylevel,$junk);
+            $fptr->read_key(TFLOAT,"SKYLEVEL",$skylevel,$junk,$status);
+            push @work,$skylevel;
+            $fptr->close_file($status);
+        }
+    } else {
+        _IMSTAT_ CPMLOC=CIR_CPM HDRUP=1
+        foreach my $i (1 .. $Frm->findnsubs) {
+            my $frm = $Frm->getasubframe($i);
+	    push @work,$frm->uhdr("CIRMED");
+        }
+    }
+    
+    # Now find the ensemble mean
+
+    my $sum = 0.0;
+    my $n = 0;
+    foreach my $val (@work) {
+        $sum += $val;
+        $n++;
+    }
+    $sum /= $n;
+
+    # Work out the percentage difference and write it to the header
+
+    foreach my $i (1 .. $Frm->findnsubs) {
+        my $frm = $Frm->getasubframe($i);
+        my $res = ($work[$i-1] - $sum)/$sum;
+        $res = 2.5*log10(1.0/(1.0 + $res));
+        $frm->update_header("PERCORR",TFLOAT,$res,
+            "Sky calibration correction (mags)");
+        if ($catfile) {
+            my $cf = $Frm->getasubframe($i)->uhdr("CATFILE");
+            my $status = 0;
+            my $fptr = Astro::FITS::CFITSIO::open_file($cf,READWRITE,$status);
+            $fptr->update_key(TFLOAT,"PERCORR",$res,
+                "Sky calibration correction (mags)",$status);
+            $fptr->close_file($status);
+        }
+        $frm->uhdr("PERCORR",$res);
+    }
+
