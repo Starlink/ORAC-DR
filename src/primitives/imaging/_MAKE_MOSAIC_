@@ -107,7 +107,7 @@
 #
 # Tasks:
 #    CCDPACK: MAKEMOS, TRANNDF; KAPPA: ADD, FILLBAD, FITSMOD, NDFCOPY,
-#    NDFTRACE, SETORIGIN, WCSFRAME.
+#    NDFTRACE, SETORIGIN, STATS, WCSFRAME.
 #
 # Output Data:
 #    -  The grand mosaic, which is called is "<groupname>_mos", where
@@ -202,7 +202,7 @@
 
 # Concatenate rotation to transformation
 # ======================================
-          my ( $param1, $param2 );
+          my ( $param1, $param2, $ORAC_STATUS );
           if ( $resample ) {
 
 # Specify the other parameters for the TRANJOIN stage.
@@ -216,7 +216,7 @@
 # Write the input file names to the text files.
 #             foreach $flatted (@$inref) {
 #                $param1 = "in1=${flatted}.more.ccdpack.transform";
-#                $Mon{"kappa_mon"}->obeyw( "tranjoin", "$param1 $param2 accept" );
+#                $Mon{ "kappa_mon" }->obeyw( "tranjoin", "$param1 $param2 accept" );
 #             }
 
 # Report the status.
@@ -265,7 +265,7 @@
 # Shift and resample the flat-field object frames.  This determines
 # the bounds automatically.  It takes the origin from the first object
 # frame.
-             $Mon{"ccdpack_reg"}->obeyw( "tranndf", "$param1 $param2" );
+             $Mon{ "ccdpack_reg" }->obeyw( "tranndf", "$param1 $param2" );
 
 # Report the processing status.
              orac_print "Frames $objlist resampled.\n";
@@ -353,7 +353,7 @@
                 shift( @yoffsets );
 
 # Apply change of origin to the current frame.
-                $Mon{"ndfpack_mon"}->obeyw( "setorigin", "$param1" );
+                $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param1" );
              }
 
 # Create text files to hold the list of 'output' files, one per line.
@@ -374,26 +374,30 @@
 # Make mosaic.
 # ============
 
-# Define the mosaic name.
-          my ( $grproot, $outname );
+# Define the mosaic root name.
+          my $grproot;
           if ( $cycleno == 0 ) {
              $grproot = $Grp->file;
 
           } else {
              $grproot = $Grp->uhdr( "ROOT_NAME" );
           }
-          $outname = $grproot . "_mu"; 
+
+# Define the name for the main mosaic, and hence the name for the
+# current cycle's mosaic.
+          my $mainmos = $grproot . $osuffix;
+          my $mosname = $mainmos . "_" . $cycleno;
 
 # Assign other parameters.
-          $param1 = "in='^tranndf.outlist$$' out=$outname title=!";
+          $param1 = "in='^tranndf.outlist$$' out=$mosname title=!";
           $param2 = "zero optov=$optov method=$method";
 
 # Make the mosaic correcting for differences in offset.
-          $Mon{"ccdpack_reg"}->obeyw( "makemos", "$param1 $param2" );
+          $Mon{ "ccdpack_reg" }->obeyw( "makemos", "$param1 $param2" );
           unlink( "tranndf.inlist$$", "tranndf.outlist$$" );
 
 # Report the processing status.
-          orac_print "Mosaic $outname formed.\n";
+          orac_print "Mosaic $mosname formed.\n";
 
 # Remove bad pixels
 # =================
@@ -401,36 +405,30 @@
 # Bad pixels can accumulate as the mosaics are added.  Thus they may
 # need to be removed.
 
-# First define the name of the group mosaic.  We should presumably set the
-# Grp output name when we construct $mosname.  Do not change the output
-# name if we have already appended the output suffix the previous time
-# around.  The first cycle mosaic becomes the main mosaic.  Subsequent
-# mosaics cycles are added (after registration) into the main mosaic,
-# hence these require a different name.
-          my $mosname = $Grp->file . $osuffix unless $Grp->file =~ /$osuffix$/;
-          if ( $cycleno > 0 ) {
-             $mosname = $Grp->file . "_" . $cycleno;
-          }
-
 # Only fill bad pixels when requested.
           if ( $fillbad ) {
 
+# Test for the present of any bad pixels.
+             $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$mosname" );
+             ( $ORAC_STATUS, my $numbad ) = $Mon{"kappa_mon"}->get( "stats", "numbad" );
+             if ( $numbad > 0 ) {
+
+# As the Grp->inout method applies the Frm->inout method for the members
+# we have to generate the name of the filled mosaic directly.
+                ( my $outname = $mosname )  =~ s/$osuffix/_fb/;
+
 # Fill in the bad pixels.
-             $param1 = "in=$outname out=$mosname niter=4 size=4";
-             $Mon{ "kappa_mon" }->obeyw( "fillbad", "$param1" );
+                $param1 = "in=$mosname out=$outname niter=4 size=4";
+                $Mon{ "kappa_mon" }->obeyw( "fillbad", "$param1" );
 
 # Report the processing status.
-             orac_print "Bad pixels filled in mosaic $outname to form $mosname.\n";
+                orac_print "Bad pixels filled in mosaic $mosname to form $outname.\n";
 
-# We need to keep the names matching so make a copy of mosaic containing
-# bad pixels.
-          } else {
-             $param1 = "in=$outname out=$mosname";
-             $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param1" );
+# We need to keep the variables for the current cycle's mosaic
+# matching to avoid numerous further conditional tests.
+                $mosname = $outname;
+             }
           }
-
-# Discard the intermediate group file.
-          _DELETE_A_FRAME_ FRAME=$outname
 
 # Set the world co-ordinate system to sky.
 # ========================================
@@ -440,7 +438,7 @@
 # list of the frames' domains.  See if there is a domain "SKY" ignoring
 # case.
              $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$mosname fullwcs" );
-             ( my $ORAC_STATUS, my @domain ) = $Mon{"ndfpack_mon"}->get( "ndftrace", "fdomain" );
+             ( $ORAC_STATUS, my @domain ) = $Mon{"ndfpack_mon"}->get( "ndftrace", "fdomain" );
              if ( join( " ", @domain ) =~ /\sSKY\s/i ) {
 
 # Select the SKY frame in the WCS component.
@@ -449,27 +447,8 @@
              }
           }
 
-# Define the group file and headers.
-# ==================================
-
-# Set the group name in the Group object...
-          my $mosaic_origin;
-          if ( $cycleno == 0 ) {
-             $Grp->file( $mosname );
-
-# ...and read the header.
-             $Grp->readhdr;
-
-# Store the root name.
-              $Grp->uhdr( "ROOT_NAME", $grproot );
-
-# Obtain its bounds, and hence an NDF origin string.
-#             $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$mosname" );
-              my $ORAC_STATUS;
-          }
-
-# Display the resultant mosaic.
-          _DISPLAY_GROUP_IMAGE_
+# Correct the headers for the current cycle's mosaic.
+# ===================================================
 
 # Change the end airmass to reflect the last frame included in the mosaic.  Note this
 # is done to the physical file as well as the ORAC-DR internal header.  This will
@@ -482,23 +461,44 @@
           $param1 = "ndf=$mosname keyword=$amendkey[ 0 ] edit=update value=$amend position=!";
           $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$param1 comment=\\\$C" );
 
+# Define the group file and headers.
+# ==================================
+
+# On the first cycle, merely copy the current cycle into the
+# main mosaic.
+          if ( $cycleno == 0 ) {
+             $param1 = "in=$mosname out=$mainmos";
+             $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param1" );
+             
+# Report the processing status.
+             orac_print "The first cycle's mosaic, $mosname, becomes the main mosaic $mainmos.\n";
+
+# Set the group name in the Group object to the main mosaic name, not
+# the original group name.
+             $Grp->file( $mainmos );
+
+# ...and read the header.
+             $Grp->readhdr;
+
+# Store the root name.
+             $Grp->uhdr( "ROOT_NAME", $grproot );
+
 # Add the current mosaic into the grand mosaic.
 # =============================================
 
 # On the second and subsequent cycle, we just need to add the
 # single-cycle mosaic into the main mosaic.
-          if ( $cycleno > 0 ) {
+          } elsif ( $cycleno > 0 ) {
 
-# Make a duplicate of the main mosaic.
-             my $tmpmos = "mainmos$$";
-             $param1 = "in=" . $Grp->file . " out=$tmpmos";
+# Make a duplicate of the main mosaic, using a temporary file.
+             my $tempfile = new ORAC::TempFile;
+             my $tempmos = $tempfile->file;
+             $param1 = "in=" . $Grp->file . " out=$tempmos";
              $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param1" );
 
-# Change the bounds of the new mosaic to match that of the grand mosaic.
-#             $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=$mosname origin=[$mosaic_origin]" );
-
-# Add the frames.
-             $param1 = "in1=$tmpmos in2=$mosname out=" . $Grp->file;
+# Add the frames.  Note the main mosaic is the primary component, thus
+# its history records are retained.
+             $param1 = "in1=$tempmos in2=$mosname out=" . $Grp->file;
              $Mon{ "kappa_mon" }->obeyw( "add", "$param1" );
 
 # Obtain the name of the exposure time header and external FITS keyword.
@@ -525,19 +525,15 @@
                 $Mon{"ndfpack_mon"}->obeyw( "fitsmod", "$param1 comment=\\\$C" );
              }
 
-# Copy the first cycle mosaic from its temporary home.  This leaves the
-# mosaics for each and every individual jitter to be examined later.
-# Remove the temporary copy.
-             if ( $cycleno == 1 ) {
-                $param1 = "in=$tmpmos out=" . $Grp->file . "_0";
-                $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param1" );
-             }
-             _DELETE_A_FRAME_ FRAME=$tmpmos
-
-             orac_print "Frame $mosname added into main mosaic " . $Grp->file . ".\n";
+             orac_print "Current cycle's mosaic, $mosname, added into main mosaic " . $Grp->file . ".\n";
+          }
 
 # Display the main mosaic.
-             _DISPLAY_GROUP_IMAGE_
+          _DISPLAY_GROUP_IMAGE_
+
+# Remove the intermediate mosaic.
+          if ( $fillbad ) {
+             _DELETE_A_FRAME_ FRAME=$mosname
           }
        }
        orac_print "\n";
@@ -698,7 +694,7 @@ data.
 =head1 TASKS
 
 CCDPACK: MAKEMOS, TRANNDF; KAPPA: ADD, FILLBAD, FITSMOD, NDFCOPY, 
-NDFTRACE, SETORIGIN, WCSFRAME.
+NDFTRACE, SETORIGIN, STATS, WCSFRAME.
 
 =head1 OUTPUT DATA
 
