@@ -23,24 +23,51 @@ to B<ORAC::Frame::UKIRT> objects.
 
 =cut
 
+
+# These are the UKIRT generic lookup tables
+my %hdr = (
+	   AIRMASS_START => "AMSTART",
+	   AIRMASS_END => "AMEND",
+	   DECBASE  => "DECBASE",
+	   FILTER   => "FILTER",
+	   INSTRUMENT => "INSTRUME",
+	   LBNDX    => "RDOUT_X1",
+	   LBNDY    => "RDOUT_Y1",
+	   NOFFSETS => "NOFFSETS",
+	   OBJECT   => "OBJECT",
+	   OBSTYPE  => "OBSTYPE",
+	   RABASE   => "RABASE",
+	   READMODE => "MODE",
+	   ROTATION => "CROTA2",
+	   SPD_GAIN => "SPD_GAIN",
+	   UBNDX    => "RDOUT_X2",
+	   UBNDY    => "RDOUT_Y2",
+	   WPLANGLE => "WPLANGLE"
+	  );
+
+# Take this lookup table and generate methods that can
+# be sub-classed by other instruments
+ORAC::Frame::UKIRT->_generate_orac_lookup_methods( \%hdr );
+
+
 # A package to describe a UKIRT group object for the
 # ORAC pipeline
- 
+
 use 5.004;
 use vars qw/$VERSION/;
 use ORAC::Frame::NDF;
 use ORAC::Constants;
- 
+
 # Let the object know that it is derived from ORAC::Frame::NDF;
 use base qw/ORAC::Frame::NDF/;
- 
+
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
- 
+
 # standard error module and turn on strict
 use Carp;
 use strict;
- 
+
 
 =head1 PUBLIC METHODS
 
@@ -121,7 +148,7 @@ sub findrecipe {
   # if not try to make something up
   if ($recipe !~ /./) {
     $recipe = 'QUICK_LOOK';
-  } 
+  }
 
   # Update
   $self->recipe($recipe);
@@ -131,6 +158,67 @@ sub findrecipe {
 
 
 =back
+
+=begin __private
+
+=head1 PRIVATE METHODS
+
+=over 4
+
+=item B<_from_*>
+
+Methods to translate ORAC_ private headers to FITS headers
+required by the instrument. This is the reverse of C<_to_*> called
+from C<calc_orac_headers>.
+
+These methods should only be called by C<translate_hdr>
+
+Returns a hash containing the FITS key(s) and value(s).
+
+   %fits = $Frm->_from_AIRMASS_START();
+
+=item B<_to_*>
+
+Methods to translate standard FITS headers to ORAC_ headers.
+These methods should be called just from C<orac_calc_headers>.
+
+Returns the translated value.
+
+  $val = $Frm->_to_AIRMASS_START();
+
+=cut
+
+# For UKIRT the translation is simple
+# Generate the methods automatically from a lookup table
+
+# This method generates all the internal methods
+# Expects a hash ref as argument and simply does a name
+# translation without any data processing
+# The hash is keyed by the ORAC_ name (without the ORAC_ prefix)
+# This is a class method (no object required)
+sub _generate_orac_lookup_methods {
+  my $class = shift;
+  my $lut = shift;
+
+  # Loop over the keys to the hash
+  for my $key (keys %$lut) {
+    my $ohdr = "ORAC_$key";
+    my $fhdr = $lut->{$key};
+    # print "Processing $key and $ohdr and $fhdr\n";
+
+    # First generate the code to generate ORAC_ headers
+    my $sub = qq/ sub _to_$key { \$_[0]->hdr(\"$fhdr\"); } /;
+    eval "$sub";
+
+    # Now the from 
+    $sub = qq/ sub _from_$key { (\"$fhdr\", \$_[0]->uhdr(\"$ohdr\")); } /;
+    eval "$sub";
+  }
+}
+
+=back
+
+=end __private
 
 =head1 SEE ALSO
 

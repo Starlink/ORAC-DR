@@ -26,20 +26,40 @@ objects.
 
 # A package to describe a UFTI group object for the
 # ORAC pipeline
- 
+
 use 5.004;
 use vars qw/$VERSION/;
 use ORAC::Frame::UKIRT;
 use ORAC::Constants;
- 
+
 # Let the object know that it is derived from ORAC::Frame::UFTI;
 use base qw/ORAC::Frame::UKIRT/;
- 
+
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 # standard error module and turn on strict
 use Carp;
 use strict;
+
+# Translation tables for UFTI shouldr go here
+my %hdr = (
+            ORAC_DECSCALE  => "PIXELSIZ",
+            ORAC_DET_BIAS  => "DET_BIAS",
+            ORAC_EXP_TIME  => "DEXPTIME",
+            ORAC_GAIN      => "DEPERDN",
+            ORAC_RASCALE   => "PIXELSIZ",
+            ORAC_TDECOFF   => "DECOFF",
+            ORAC_TRAOFF    => "RAOFF",
+            ORAC_UTEND     => "RUTEND",
+            ORAC_UTSTART   => "RUTSTART"
+	  );
+
+# Take this lookup table and generate methods that can
+# be sub-classed by other instruments
+# I'm assuming that we have not subclassed this method somewhere
+# else
+ORAC::Frame::UKIRT->_generate_orac_lookup_methods( \%hdr );
+
 
 =head1 PUBLIC METHODS
 

@@ -26,15 +26,15 @@ objects. Some additional methods are supplied.
 
 # A package to describe a UFTI group object for the
 # ORAC pipeline
- 
+
 use 5.004;
 use vars qw/$VERSION/;
 use ORAC::Frame::UFTI;
 use ORAC::Constants;
- 
+
 # Let the object know that it is derived from ORAC::Frame::UFTI;
 use base qw/ORAC::Frame::UFTI/;
- 
+
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 # standard error module and turn on strict
@@ -91,12 +91,12 @@ sub new {
   $self->rawsuffix('.sdf');
   $self->rawformat('HDS');
   $self->format('NDF');
- 
+
   # If arguments are supplied then we can configure the object
   # Currently the argument will be the filename.
   # If there are two args this becomes a prefix and number
   $self->configure(@_) if @_;
- 
+
   return $self;
 
 }
@@ -125,7 +125,7 @@ sub flag_from_bits {
 
   my $prefix = shift;
   my $obsnum = shift;
-  
+
   # It is almost possible to derive the flag name from the 
   # file name but not quite. In the UFTI case the flag name
   # is  .UT_obsnum.fits.ok but the filename is fUT_obsnum.fits
@@ -207,5 +207,4 @@ Council. All Rights Reserved.
 
 =cut
 
- 
 1;

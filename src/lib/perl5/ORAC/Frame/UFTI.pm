@@ -26,21 +26,39 @@ objects. Some additional methods are supplied.
 
 # A package to describe a UFTI group object for the
 # ORAC pipeline
- 
+
 use 5.004;
 use vars qw/$VERSION/;
 use ORAC::Frame::UKIRT;
 use ORAC::Constants;
- 
+
 # Let the object know that it is derived from ORAC::Frame::UKIRT;
 use base qw/ORAC::Frame::UKIRT/;
- 
+
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 # standard error module and turn on strict
 use Carp;
 use strict;
- 
+
+# Translation tables for UFTI shouldr go here
+my %hdr = (
+            ORAC_EXP_TIME  => "EXP_TIME",
+            ORAC_DECSCALE  => "CDELT2",
+            ORAC_GAIN      => "GAIN",
+            ORAC_RASCALE   => "CDELT1",
+            ORAC_TDECOFF   => "TDECOFF",
+            ORAC_TRAOFF    => "TRAOFF",
+            ORAC_UTEND     => "UTEND",
+            ORAC_UTSTART   => "UTSTART"
+	  );
+
+# Take this lookup table and generate methods that can
+# be sub-classed by other instruments
+# Hard-wirde class name that is not this class...
+ORAC::Frame::UKIRT->_generate_orac_lookup_methods( \%hdr );
+
+
 =head1 PUBLIC METHODS
 
 The following methods are available in this class in addition to

@@ -732,6 +732,32 @@ sub calc_orac_headers {
   $ut = 0 unless defined $ut;
   $self->hdr('ORACUT', $ut);
 
+  # Now create all the ORAC_ headers
+  # go through an array of headers and translate the
+  # ones we can find with associated methods
+  my @ORAC_ = (qw/
+	       AIRMASS_START  AIRMASS_END DECBASE
+	       FILTER INSTRUMENT LBNDX LBNDY
+	       NOFFSETS OBJECT OBSTYPE RABASE READMODE
+	       ROTATION SPD_GAIN UBNDX UBNDY WPLANGLE
+	       DECSCALE DET_BIAS EXP_TIME GAIN RASCALE
+	       TDECOFF TRAOFF UTEND UTSTART
+	       /);
+
+  # Loop over all the headers
+  # Do nothing if a translation method does not exist
+  # This makes it safe for everyone
+  for my $key ( @ORAC_ ) {
+    my $method = "_to_$key";
+    print "Trying method $method\n";
+    if ($self->can($method)) {
+      print "Running method $method\n";
+      # This returns a single value
+      $new{"ORAC_$key"} = $self->$method();
+      $self->uhdr("ORAC_$key", $new{"ORAC_$key"});
+    }
+  }
+
   return %new;
 }
 
@@ -1284,6 +1310,48 @@ sub template {
 
 }
 
+=item B<translate_hdr>
+
+Translates an ORAC-DR specific header (such as ORAC_TIME)
+to the equivalent FITS header(s).
+
+  %fits = $Frm->translate_hdr( "ORAC_TIME" );
+
+In some cases a single ORAC-DR header can be decomposed into 
+multiple FITS headers (for example for SCUBA, ORAC_TIME is
+a combination of the UTDATE and UTSTART). The hash returned
+by translate_hdr() will include all the key/value pairs required
+to generate the ORAC header.
+
+This method will be called automatically to update hdr() values
+ORAC_ keywords are updated via uhdr().
+
+Returns an empty list if no translation is available.
+
+=cut
+
+sub translate_hdr {
+  my $self = shift;
+  my $key = shift;
+  return () unless defined $key;
+
+  # Remove leading ORAC_
+  $key =~ s/^ORAC_//;
+
+  # Each translation is performed by an individual method
+  # This adds a overhead for method lookups but hopefully
+  # will lend itself to subclassing
+  # The translate_hdr() method itself will then not need to be 
+  # subclassed at all
+  my $method = "_from_$key";
+  print "trying method translate $method\n";
+  if ($self->can($method)) {
+    return $self->$method();
+
+  } else {
+    return ();
+  }
+}
 
 # Private method for removing file extensions from the filename strings
 

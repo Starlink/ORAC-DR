@@ -40,6 +40,24 @@ use strict;
 use vars qw/$VERSION/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
+# Translation tables for UFTI shouldr go here
+my %hdr = (
+            ORAC_DECSCALE  => "PIXELSIZ",
+            ORAC_EXP_TIME  => "DEXPTIME",
+            ORAC_GAIN      => "DEPERDN",
+            ORAC_RASCALE   => "PIXELSIZ",
+            ORAC_TDECOFF   => "DECOFF",
+            ORAC_TRAOFF    => "RAOFF",
+            ORAC_UTEND     => "RUTEND",
+            ORAC_UTSTART   => "RUTSTART"
+	  );
+
+# Take this lookup table and generate methods that can
+# be sub-classed by other instruments
+# I'm assuming that we have not subclassed this method somewhere
+# else
+ORAC::Frame::UKIRT->_generate_orac_lookup_methods( \%hdr );
+
 =head1 PUBLIC METHODS
 
 The following methods are available in this class in addition to
