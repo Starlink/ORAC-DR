@@ -903,11 +903,19 @@ sub fluxcal {
     # immaterial for the flux)
     # FLUXES needs the date in DD MM YY format
     # of course SCUBA uses YYYY:MM:DD format
-    my $scudate = $self->thing->{'UTDATE'}; # the thing method is the header
+
+    # Use ORACTIME and ORACUT for these since there are sometimes
+    # dodgy headers that the header translation code has to deal with
+    my $scudate = $self->thing->{'ORACUT'}; # the thing method is the header
 
     if (defined $scudate) {
-      my ($y,$m,$d) = split(/:/, $scudate);
-      $y = substr($y,2);
+      # ORACUT is in YYYYMMDD format
+      my $y = substr($scudate, 2, 2);
+      my $m = substr($scudate, 4, 2);
+      $m =~ s/^0//;
+      my $d = substr($scudate, 6, 2);
+      $d =~ s/^0//;
+
       $scudate = "$d $m $y";
 
     } else {
@@ -916,10 +924,20 @@ sub fluxcal {
 
     # Get the time as well - I'm pretty sure that the flux will hardly
     # change when I change the ut time
-    my $scutime = $self->thing->{'UTSTART'};
+    # Use ORACTIME since we need to handle sometimes dodgy UT header
+    my $scutime = $self->thing->{'ORACTIME'};
 
     if (defined $scutime) {
-      $scutime =~ tr/:/ /; # Translate colon to space
+      # we will ignore leap seconds
+      my $frac = $scutime - int($scutime);
+      my $dech = $frac * 24;
+      my $h = int($dech);
+      my $decm = ($dech - $h) * 60;
+      my $m = int($decm);
+      my $decs = ($decm - $m) * 60;
+
+      $scutime = "$h $m $decs";
+
     } else {
       $scutime = '0 0 0';
     }
@@ -1618,13 +1636,25 @@ $Id$
 
 =head1 AUTHORS
 
-Tim Jenness (t.jenness@jach.hawaii.edu)
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2005 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
