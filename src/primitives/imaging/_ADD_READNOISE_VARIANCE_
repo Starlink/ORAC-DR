@@ -1,0 +1,238 @@
+#+
+# Name:
+#    _ADD_READNOISE_VARIANCE_
+#
+# Purpose:
+#    Adds a variance array based on the readnoise.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive creates an initial variance component, which is
+#    simply constant and equal to the readnoise of the detector,
+#    taking the gain, the number of exposures, and the number of
+#    array reads per exposure into account.
+#
+#    The primitive reports a successful addition of the readnoise
+#    variance, the frames concerned, and the readnoise values in
+#    electrons and ADU.
+#
+# Notes:
+#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
+#    in imaging mode.
+#    -  Processing occurs only when steering header USE_VARIANCE is
+#    true (1).
+#    -  It can process multiple integrations.
+#    -  The readnoise is supplied by the _GET_READNOISE_ primitive.
+#    -  The gain comes from user header ORAC_GAIN, the number of
+#    reads from ORAC_NUMBER_OF_READS, and the number of coadds from
+#    ORAC_NUMBER_OF_EXPOSURES.
+#    -  The sum of n independent samples of a Normal distribution 
+#    N(mu, sigma^2) is distributed as N(n*mu, n*sigma^2).  A
+#    multiple, a, of a Normal distribution a*N(mu, sigma^2) is
+#    distributed as N(a*mu, a^2*sigma^2).
+#    -  For more than one coadd it assumes that a least-squares fit
+#    has been used derive the data values.  The noise is therefore
+#    scaled by a factor sqrt( 12(n-1)/n(n+1) ), where I<n> is the
+#    number of coadds.
+#    -  The frame title is propagated.
+#
+# Deficiencies:
+#    -  When processing occurs, any variance information contained in
+#    the supplied input frame will be lost.
+#
+# Output Data:
+#    -  The frame with variance added, inheriting the input frame's name
+#    but with the _rnv suffix.
+#
+# Tasks:
+#    KAPPA: NDFCOPY, SETVAR.
+#
+# Authors:
+#    PH: Paul Hirst <p.hirst@jach.hawaii.edu>
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Requires variance processing to be enabled.
+    if ( $Frm->uhdr( "USE_VARIANCE" ) ) {
+
+# Obtain the gain.
+       my $gain = $Frm->uhdr( "ORAC_GAIN" );
+       if ( ! defined $gain ) {
+          orac_err "Cannot obtain the gain to determine the read noise.\n";
+          exit;
+       }
+
+# Get the readnoise, in electrons, for a single read.
+       _GET_READNOISE_
+       my $rne = $_GET_READNOISE_{READNOISE};
+
+# Divide it down for nreads.
+       my $n = $Frm->uhdr( "ORAC_NUMBER_OF_READS" );
+       $n = defined ( $n ) ? $n : 1;
+
+# This factor is apparently the way that least-squares-fit noise scales.
+       my $factor = 1;
+       if ( $n > 1 ) {
+          $factor = sqrt( ( $n * ( $n + 1 ) ) / ( 12 * ( $n - 1 ) ) );
+       }
+       $rne /= $factor;
+
+# rne is now the readnoise per exposure, in electrons.
+
+# Get the number of coadds, i.e. the number of exposures per integration.
+       my $nexp = $Frm->uhdr( "ORAC_NUMBER_OF_EXPOSURES" );
+
+# Get the variance in electrons^2 per exposure.
+       my $vare = $rne * $rne;
+
+# The variance on the sum of N exposures (in electrons) is thus N * vare
+# (each coadd is an independent sample of the random variable).  However,
+# we need the variance on the mean of N exposures = (N * vare) / N^2
+# variance of mean of N exposures (in electrons) = vare / N.
+
+# Now convert this into ADU.  Note that electrons = ADU * Gain, thus
+# ADU = electrons / Gain.  Therefore the variance of mean of N exposures
+# (in ADU) = (vare/N)/Gain^2.
+       my $var = ( $vare / $nexp ) / ( $gain * $gain );
+
+# Note that the mean of N exposures (in ADU) is actually the value in
+# the data frame.  Thus $var is the variance of the data frame.
+
+# Loop through the sub-files.
+       foreach my $i ( 1 .. $Frm->nfiles ) {
+
+# Generate the input and output file names
+          my ( $in, $out ) = $Frm->inout( "_rnv", $i );
+
+# Copy the data frame to the output name.
+          $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$in out=$out" );
+
+# Set the variance on that to be what we calculated ($var).
+          $Mon{ "ndfpack_mon" }->obeyw( "setvar", "ndf=$out variance=$var" );
+
+# Update the Frame object.
+          $Frm->file( $i, $out );
+
+# Report the status and readnoise.
+          my $electrons = sprintf( "%.1f", $rne );
+          my $adu = sqrt( $var );
+          $adu = sprintf( "%.2g", $adu );
+          orac_print "$in to $out: Read Noise variance added:\n" .
+                     "   $electrons electrons => $adu Data Numbers.\n";
+       }
+
+       orac_print "\n";
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_ADD_READNOISE_VARIANCE_ -- Adds a variance array based on the readnoise.
+
+=head1 DESCRIPTION
+
+This primitive creates an initial variance component, which is
+simply constant and equal to the readnoise of the detector,
+taking the gain, the number of exposures, and the number of
+array reads per exposure into account.
+
+The primitive reports a successful addition of the readnoise
+variance, the frames concerned, and the readnoise values in
+electrons and ADU.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UFTI, IRCAM, and Michelle 
+in imaging mode.
+
+=item *
+
+Processing occurs only when steering header USE_VARIANCE is
+true (1).
+
+=item *
+
+It can process multiple integrations.
+
+=item *
+
+The readnoise is supplied by the L<_GET_READNOISE_|_GET_READNOISE_ >
+primitive.
+
+=item *
+
+The gain comes from user header ORAC_GAIN, the number of
+reads from ORAC_NUMBER_OF_READS, and the number of coadds from
+ORAC_NUMBER_OF_EXPOSURES.
+
+=item *
+
+The sum of n independent samples of a Normal distribution 
+i<N(mu, sigma^2)> is distributed as I<N(n*mu, n*sigma^2)>.  A
+multiple, a, of a Normal distribution I<a*N(mu, sigma^2)> is
+distributed as I<N(a*mu, a^2*sigma^2)>.
+
+=item *
+
+For more than one coadd it assumes that a least-squares fit
+has been used derive the data values.  The noise is therefore
+scaled by a factor sqrt( 12I<(n-1)/n(n+1)> ), where I<n> is the
+number of coadds.
+
+=item *
+
+The frame title is propagated.
+
+=back
+
+=head1 DEFICIENCIES
+
+=over 4
+
+=item *
+
+When processing occurs, any variance information contained in
+the supplied input frame will be lost.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The frame with variance added, inheriting the input frame's name
+but with the _rnv suffix.
+
+=back
+
+=head1 TASKS
+
+KAPPA: NDFCOPY, SETVAR.
+
+=head1 AUTHORS
+
+PH: Paul Hirst <p.hirst@jach.hawaii.edu>
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

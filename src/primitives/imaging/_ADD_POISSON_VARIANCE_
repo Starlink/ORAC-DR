@@ -1,0 +1,268 @@
+#+
+# Name:
+#    _ADD_POISSON_VARIANCE_
+#
+# Purpose:
+#    Adds Poisson variance to the variance component.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive adds Poisson variance to the variance component.
+#    In effect it simply adds the data array to the variance component,
+#    taking into account the gain of the detector and the number of
+#    exposures.
+#
+#    The primitive reports a successful addition of the Poisson variance
+#    and the frames concerned.  It also reports the percentage of
+#    background-limited pixels, i.e. those where the Poisso noise is
+#    greater than the read noise.
+#
+# Notes:
+#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
+#    in imaging mode.
+#    -  Processing occurs only when steering header USE_VARIANCE is
+#    true (1).
+#    -  It can process multiple integrations.
+#    -  The algorithm is not object oriented because KAPPA/SETVAR
+#    doesn't yet permit access to variance in other NDFs.  Thus
+#    individual HDS components are moved for now using temporary
+#    files.
+#    -  The gain comes from user header ORAC_GAIN and the number of
+#    coadds from ORAC_NUMBER_OF_EXPOSURES.
+#    -  The frame title is propagated.
+#
+# Prior Requirements:
+#    -  When processing occurs, the supplied input frame must already
+#    have a readnoise variance, i.e. have passed through
+#    _ADD_READNOISE_VARIANCE_.
+#
+# Output Data:
+#    -  The frame with variance added, inheriting the input frame's name
+#    but with the _pov suffix.
+#    -  A frame indicating whether or not a pixel was background limited, 
+#    inheriting the input frame's name but with the _bgl suffix.
+#
+# Tasks:
+#    FIGARO: CREOBJ, COPOBJ; KAPPA: ADD, CHPIX, CDIV, CMULT, DIV,
+#    SETBAD, SETVAR, STATS, THRESH.
+#
+# Authors:
+#    PH: Paul Hirst <p.hirst@jach.hawaii.edu>
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Requires variance processing to be enabled.
+    if ( $Frm->uhdr( "USE_VARIANCE" ) ) {
+
+# Create temporary files.
+       my $tmp = new ORAC::TempFile;
+       my $tmpfile=$tmp->file;
+
+       my $temp = new ORAC::TempFile;
+       my $tempfile=$temp->file;
+
+       my $tmppo = new ORAC::TempFile;
+       my $tmppofile = $tmppo->file;
+
+       my $tmprn = new ORAC::TempFile;
+       my $tmprnfile = $tmprn->file;
+
+# Obtain the gain.
+       my $gain = $Frm->uhdr( "ORAC_GAIN" );
+       if ( ! defined $gain ) {
+          orac_err "Cannot obtain the gain to determine the read noise.\n";
+          exit;
+       }
+
+# Obtain the number of exposures (NEXP).
+       my $nexp = $Frm->uhdr( "ORAC_NUMBER_OF_EXPOSURES" );
+       $nexp = defined ( $nexp ) ? $nexp : 1;
+       my $param;
+
+# Loop through the sub-files
+       foreach my $i ( 1 .. $Frm->nfiles ) {
+
+# Generate the input and output file names
+          my ( $in, $out ) = $Frm->inout ( "_pov", $i );
+          my $bglout = $Frm->inout( "_bgl", $i );
+
+# Units of in are ADU/exposure.
+
+# Convert to total electrons; we need to multiply by the gain and the
+# number of exposures.
+          my $factor = $gain * $nexp;
+          $param = "in=$in scalar=$factor out=$tmpfile";
+          $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
+
+# Units in tmp are total electrons.
+
+# Set the variance array of the tmp file to be the Poisson variance.
+          $Mon{ "ndfpack_mon" }->obeyw( "setvar", "ndf=$tmpfile variance=data" );
+
+# tmp is now the total electrons, with Poisson variance.
+# We've thrown out any readnoise by doing the setvar on the tmp file.
+
+# Now convert the tmpfile back to DN per exposure
+          $param = "in=$tmpfile scalar=$factor out=$tempfile";
+          $Mon{ "kappa_mon" }->obeyw( "cdiv", "$param" );
+
+# tempfile is now in ADU per exposure, with Poisson (only) variance in
+# the variance array.
+
+# Now work out how background limited we were.  Copy the readnoise variance from
+# the original input frame into the tmprnfile, and the Poisson variance from
+# $tempfile into tmppofile.  This is a non-OO kludge until SETVAR permits a FROM
+# parameter.
+          $Mon{ "figaro1" }->obeyw( "creobj", "type=NDF dims=0 object=$tmprnfile" );
+          $param = "source=$in.VARIANCE object=$tmprnfile.DATA_ARRAY";
+          $Mon{ "figaro1" }->obeyw( "copobj", "$param" );
+          $Mon{ "figaro1" }->obeyw( "creobj", "type=NDF dims=0 object=$tmppofile" );
+          $param = "source=$tempfile.VARIANCE object=$tmppofile.DATA_ARRAY";
+          $Mon{ "figaro1" }->obeyw( "copobj", "$param" );
+
+# Divide the Poisson variance by the readnoise variance into bglout.
+          $param = "in1=$tmppofile in2=$tmprnfile out=$bglout";
+          $Mon{ "kappa_mon" }->obeyw( "div", "$param" );
+
+# Frame bglout now contains the background `limited-ness'.
+
+# Now, we need to add the variance array of the temp file to that of
+# the original input file, and to make the final output file.
+
+# We can do this by using chpix to zero the data array of the temp file
+# then simply adding the two files together.  Note this leaves the
+# variance unchanged unlike CMULT.
+          $param = "in=$tempfile out=$tmpfile comp=Data newval=0 section=':,:'";
+          $Mon{ "kappa_mon" }->obeyw( "chpix", "$param" );
+          $Mon{ "kappa_mon" }->obeyw( "add", "in1=$tmpfile in2=$in out=$out" );
+
+# Report the processing status.
+          orac_print "$in to $out: Poisson variance added.\n";
+
+# Update the Frame object.
+          $Frm->file( $i, $out );
+
+# Obtain statistics of the background-limited pixels.  Those pixels
+# with values > 1 in bgl were background limited; those < 1 ones were not.
+          $param = "in=$bglout out=$tmprnfile thrhi=1 thrlo=1 newhi=1 newlo=0";
+          $Mon{ "kappa_mon" }->obeyw( "thresh", "$param" );
+          $Mon{ "ndfpack_mon" }->obeyw( "setbad", "ndf=$tmprnfile value=TRUE" );
+
+          $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$tmprnfile" );
+          ( my $ORAC_STATUS, my $mean ) = $Mon{ "kappa_mon" }->get( "stats", "mean" );
+
+          $mean *=100;
+          $mean = sprintf( "%.1f", $mean );      
+
+          orac_print "  $mean% of the pixels in $in were background limited.\n";
+       }
+       orac_print "\n";
+    }
+
+
+# Podule
+# ======
+
+=head1 NAME
+
+_ADD_POISSON_VARIANCE_ -- Adds Poisson variance to the variance component.
+
+=head1 DESCRIPTION
+
+This primitive adds Poisson variance to the variance component.
+In effect it simply adds the data array to the variance component,
+taking into account the gain of the detector and the number of
+exposures.
+
+The primitive reports a successful addition of the Poisson variance
+and the frames concerned.  It also reports the percentage of
+background-limited pixels, i.e. those where the Poisso noise is
+greater than the read noise.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UFTI, IRCAM, and Michelle 
+in imaging mode.
+
+=item *
+
+Processing occurs only when steering header USE_VARIANCE is
+true (1).
+
+=item *
+
+It can process multiple integrations.
+
+=item *
+
+The algorithm is not object oriented because KAPPA/SETVAR
+doesn't yet permit access to variance in other NDFs.  Thus
+individual HDS components are moved for now using temporary
+files.
+
+=item *
+
+The gain comes from user header ORAC_GAIN and the number of
+coadds from ORAC_NUMBER_OF_EXPOSURES.
+
+=item *
+
+The frame title is propagated.
+
+=back
+
+=head1 PRIOR REQUIREMENTS
+
+=over 4
+
+=item *
+
+When processing occurs, the supplied input frame must already
+have a readnoise variance, i.e. have passed through
+L<_ADD_READNOISE_VARIANCE_|_ADD_READNOISE_VARIANCE_>.
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The frame with variance added, inheriting the input frame's name
+but with the _pov suffix.
+
+=item *
+
+A frame indicating whether or not a pixel was background limited, 
+inheriting the input frame's name but with the _bgl suffix.
+
+=back
+
+=head1 TASKS
+
+FIGARO: CREOBJ, COPOBJ; KAPPA: ADD, CHPIX, CDIV, CMULT, DIV,
+SETBAD, SETVAR, STATS, THRESH.
+
+=head1 AUTHORS
+
+PH: Paul Hirst <p.hirst@jach.hawaii.edu>
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
