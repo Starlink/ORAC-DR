@@ -35,7 +35,7 @@ use IO::Socket;  # For socket connection to Gaia
 use IO::Select;
 
 use Sys::Hostname; # Special case ukirt
-use Cwd qw/ cwd /;         # To get current working directory
+use Cwd qw/ getcwd /;         # To get current working directory
 
 use vars qw/ $VERSION $DEBUG /;
 
@@ -653,8 +653,9 @@ sub image {
   # We probably should append the full path since we dont know 
   # which directory gaia will use be default
   # Check for a leading '/' indicating a full path name
+  # use getcwd because cwd sometimes doesn't work on alpha
   unless ($file =~ /^\s*\//) {
-    my $cwd = cwd;
+    my $cwd = getcwd;
     if (defined $cwd && length($cwd) > 0) {
       $file = "$cwd/$file";
     } else {
