@@ -1,16 +1,28 @@
 # _GENERATE_OFFSETS_       -*- perl -*-
 #
-# Find the offsets between the frames. 
+# Function:
+#    Find the offsets between the frames in the current $Grp. 
 #
-# TASK: CCDPACK - FINDOBJ, FINDOFF, REGISTER
+# Tasks Called:
+#    CCDPACK: FINDOBJ, FINDOFF, REGISTER.
+#
+# Primitives Called:
+#    _FIND_APPROX_OFFSETS_.
 #
 # Arguments:
+#    CENTRAL_SOURCE = LOGICAL (Given)
+#       If TRUE, attempt to register using a central source when
+#       automatic registration fails.  It uses a 5-arcsec search box
+#       about the centre of the frame, jittered by the telescope offsets.
+#       Otherwise telescope offsets provide the backup registration.
+#       [TRUE]
 #    COMPLETE = REAL (Given)
-#       Completeness of matched features for registration between two frames
-#       to be accepted.  It must be in the range 0.2 to 1.0. [0.4]
+#       Completeness of matched features for registration between two 
+#       frames to be accepted.  It must be in the range 0.2 to 1.0. [0.4]
 #    MINPIX = INTEGER (Given)
 #       Minimum number of contiguous pixels above the PERCENTILE level
-#       to be considered a registration feature.  It must be at least 6. [9]
+#       to be considered a registration feature.  It must be at least 6.
+#       [9]
 #    PERCENTILE = REAL (Given)
 #       Percentile threshold for locating objects to register frames. 
 #       It must be in the range 75 to 99.9. [98]
@@ -20,7 +32,7 @@
 
 # This should only be performed on OBJECT frames.
     if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ||
-         $Frm->hdr( "OBSTYPE" ) eq "SKY" ) {
+         $Frm->hdr( "OBSTYPE" ) eq "SKY") {
 
 # Test whether or not it is time to make a mosaic.
        $makemos = $Frm->hdr( "MAKE_MOSAIC" );
@@ -48,13 +60,13 @@
 
 # Create a new group to hold the reference frame and any other frames
 # for which registration fails.  Start it with the reference frame.
-          $reggrp = new $Grp;
-          $refobs = $Grp->frame( 0 );
-          $reggrp->push( $refobs );
+          my $regGrp = new $Grp;
+          my $refobs = $Grp->frame( 0 );
+          $regGrp->push( $refobs );
 
 # Create a new group to hold the frames which pass the automated
 # object detection.
-          $odgrp = new $Grp;
+          my $odGrp = new $Grp;
 
 # Find objects
 # ============
@@ -63,10 +75,10 @@
 # -------------------
 
 # Obtain the parameters for the detection.
-          $percentile = ( $_GENERATE_OFFSETS_{PERCENTILE} || 98 );
-          $minpix = ( $_GENERATE_OFFSETS_{MINPIX} || 9 );
-          $complete = ( $_GENERATE_OFFSETS_{COMPLETE} || 0.4 );
-          $complete = max( 0.2, min( 1.0, $complete) );
+           my $percentile = ( $_GENERATE_OFFSETS_{PERCENTILE} || 98 );
+           my $minpix = ( $_GENERATE_OFFSETS_{MINPIX} || 9 );
+           my $complete = ( $_GENERATE_OFFSETS_{COMPLETE} || 0.4 );
+           $complete = max( 0.2, min( 1.0, $complete) );
 
 # Remove existing .find and .off files for the object frames.  This is
 # needed because the presence of these files will indicate whether or
@@ -77,7 +89,7 @@
           }
 
 # Initialise the status.
-          $findoff_status = ORAC__ERROR;
+          my $findoff_status = ORAC__ERROR;
 
 # Specify the other parameters for the FINDOBJ stage.
           $header = "in='^objlist.inlist$$' outlist=\'*.find\'";
@@ -88,7 +100,7 @@
 # peak values into .find text files.  The exact values of threshold
 # percentile and minpix requires some tuning and FINDOBJ to continue
 # when no objects are found in any of the list of input data.
-          $findobj_status = $Mon{"ccdpack_reg"}->obeyw("findobj","$header $hidden accept");
+          my $findobj_status = $Mon{"ccdpack_reg"}->obeyw("findobj","$header $hidden accept");
 
 # Validate the inventory.
 # -----------------------
@@ -101,7 +113,7 @@
 # as a reference to the co-ordinate when the automated solution is
 # only partially achieved.  Thus for consistency, retain the reference
 # observation stored in the first (reference) observation.
-             $reggrp->push( @frames );
+             $regGrp->push( @frames );
 
 # Form an array to contain those frames with objects satisfying the
 # threshold criteria.  This is determined by the presence of .find
@@ -109,8 +121,8 @@
 # will complete even if there are no objects within any frame, for
 # which there will be no .find file created. 
           } else {
-             @od_objects = ();
-             $partfind = 0;
+             my @od_objects = ();
+             my $partfind = 0;
 
              foreach $frame ( @frames ) {
                 $file = $frame->file;
@@ -122,7 +134,7 @@
 # so that another means of registration can be determined for the frame
 # later.  Switch the flag to indicate that there is some more
 # registration to do.
-                   $reggrp->push( $frame );
+                   $regGrp->push( $frame );
                    $partfind = 1;
 
 # FINDOFF will exit with an error if any of the .find files contains fewer
@@ -149,7 +161,7 @@
 # to do.
                    if ( $objcount < 3 ) {
                       $partfind = 1;
-                      $reggrp->push( $frame );
+                      $regGrp->push( $frame );
 
 # This observation has sufficient objects in the .find file.  Record
 # the filename in the array of frames with sufficient objects detected,
@@ -157,25 +169,24 @@
 # detected group.
                    } else {                   
                       push( @od_objects, $file );
-                      $odgrp->push( $frame );
+                      $odGrp->push( $frame );
                    }
                 }
              }
-
 # There is no point supplying fewer than two frames for FINDOFF to register.
 # Look for the special case of only one frame with sufficient objects.  
 # Transfer the single frame to the registration group.  The initialised bad
 # findoff_status will select _FIND_APPROX_OFFSETS later.
              if ( $#od_objects < 1 ) {
-                if ( $odgrp->num == 0 ) {
-                   $reggrp->push( $odgrp->frame( 0 ) );
+                if ( $odGrp->num == 0 ) {
+                   $regGrp->push( $odGrp->frame( 0 ) );
                 }
 
 # Form a new list of frames to process at the find offset stage.
 # Again this is a text file, with one frame written per line.  This
 # is needed because expanded lists of files may make the command line
 # too long for the ADAM message system.
-             } else {
+              } else {
                 unlink ("odlist.inlist$$");
                 open (INLIST, ">odlist.inlist$$");
                 print INLIST join( "\n", @od_objects ), "\n";
@@ -218,13 +229,13 @@
 # the group of unregistered frames where no offset could be determined.
 # Record when a partial solution was returned.
                 $partsolution = 0;
-                foreach $frame ( $odgrp->members ) {
+                foreach $frame ( $odGrp->members ) {
                    $file = $frame->file;
                    $offfile = $file . ".off";
 
                    if ( ! -e $offfile ) {
                       $partsolution = 1;
-                      $reggrp->push( $frame );
+                      $regGrp->push( $frame );
                    }
                 }
              }
@@ -236,15 +247,19 @@
 # Test whether or not registration was achieved.  If not find approximate
 # offsets from the headers or finding the displacement of an object
 # within a central box.  It assumes the first frame has the object
-# centred.  As we can't pass a group as an argument, create a local
-# version of the $Grp (recall $reggrp is in the likeness of an ORAC $Grp)
-# so _FIND_APPROX_OFFSETS_ has a $Grp as it expects.
-
+# centred.  At some point add an option within _FAO_ to set the box
+# centred on a quadrant.  As we can't pass a group as an argument, create
+# another local version of the $Grp (recall $regGrp is in the likeness of
+# an ORAC $Grp) so _FIND_APPROX_OFFSETS_ has a $Grp as it expects.
+# Obtain a parameter to decide whether or not to attempt central-source
+# search.
           if ( $findoff_status != ORAC__OK || $findobj_status != ORAC__OK ||
                $partsolution || $ partfind ) {
+
              {
-                my $Grp = $reggrp;
-                _FIND_APPROX_OFFSETS_
+                my $Grp = $regGrp;
+                my $central_source = ( $_GENERATE_OFFSETS_{CENTRAL_SOURCE} || TRUE );
+                _FIND_APPROX_OFFSETS_ SEARCH_BOX=$central_source
              }
           }
 
@@ -263,5 +278,5 @@
 # Report processing status.
           orac_print "Orac says: frames $objlist registered\n\n";
 
-       };
-    };
+       }
+    }
