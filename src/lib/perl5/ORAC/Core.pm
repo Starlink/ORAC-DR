@@ -102,6 +102,7 @@ sub orac_store_frm_in_correct_grp {
     
     $Grp = new $GrpObjectType($grpname);
     $Grp->file($Grp->file_from_bits($ut, $Frm->number));
+    $Grp->raw($Grp->file);
     unlink($Grp->file); # wont work since .sdf is not included
     $GrpHash->{$grpname} = $Grp;		# store group object
     orac_print ("A new group ".$Grp->file." has been created\n","blue");
