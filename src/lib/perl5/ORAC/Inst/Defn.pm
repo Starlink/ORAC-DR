@@ -296,7 +296,7 @@ sub orac_determine_inst_classes {
     $groupclass = "ORAC::Group::IRIS2";
     $frameclass = "ORAC::Frame::IRIS2";
     $calclass   = "ORAC::Calib::Michelle";
-    $instclass  = "ORAC::Inst::IRIS2";
+    $instclass  = "ORAC::Inst::CGS4";
   } elsif ($inst eq 'ISAAC') {
     $groupclass = "ORAC::Group::ISAAC";
     $frameclass = "ORAC::Frame::ISAAC";
