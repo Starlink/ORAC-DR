@@ -339,7 +339,7 @@ sub display_data {
 	my $class = 'ORAC::Display::' . $display_info{TOOL};
 	eval "use $class";
 
-	if (@_) {
+	if ($@) {
 	  orac_err "Error loading class $class. Can not even attempt to start this display\n$@";
 	  return;
 	}
