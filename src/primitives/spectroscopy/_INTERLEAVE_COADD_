@@ -60,7 +60,13 @@ if ($nfiles > 1) {
       $ard->handle->close;
    }
 
-   my $mosparam = "genvar=true usevar=true logto=neither logfile=! method=mean scale=false zero=false in='";
+   # Use a tmp file to store the list of input file for makemos-
+   # otherwise we overflow the max length of the command line parameter
+   my $list=new ORAC::TempFile;
+   my $listfile =$list->file;
+   open(LIST, ">$listfile");
+   
+   my $mosparam = "genvar=true usevar=true logto=neither logfile=! method=mean scale=false zero=false in=^$listfile";
 
    foreach my $i (1 .. $nfiles) {
       # Get input and output file names. This is to go to a step ready for mosaicing
@@ -85,17 +91,16 @@ if ($nfiles > 1) {
       my $origin = $Frm->hdr->{$i}->{DINDEX};
       $Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$out origin=\[ $origin, 1\]");
 
-      # Add to makemos parameters
-      $mosparam .= "$out";
-      unless ($i == $nfiles) {
-	 $mosparam .= ",";
-      }
+      # Add to makemos list file
+      print LIST "$out\n";
 
       # Update the Frm object and report
       $Frm->file($i, $out);
       orac_print ("$in to $out: Prepared for interleave-coadd\n");
       
    } 
+
+   close(LIST);
 
    # We're going to 1 NDF now, and we're thru with $in
 
@@ -104,7 +109,7 @@ if ($nfiles > 1) {
 
    my ($in, $out) = $Frm->inout ("_inc");
 
-   $mosparam .= "' title=$out out=$out";
+   $mosparam .= " title=$out out=$out";
 
    $Mon{'ccdpack_reg'}->obeyw("makemos", $mosparam);
 
