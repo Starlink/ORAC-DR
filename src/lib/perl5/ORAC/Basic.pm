@@ -73,8 +73,22 @@ sub orac_setup_display {
 
   # Set the location of the display definition file
   # (we do not currently use NBS for that)
-#  my $dispdef = "/tmp/orac_disp$$";
-  my $dispdef  = $ENV{ORAC_DIR} . "/disp.dat";  # Kludge
+
+  # It is preferable for this to be instrument specific. The working
+  # copy is in ORAC_DATA_OUT. There is a system copy in ORAC_DIR
+  # but preferably there is an instrument-specific in ORAC_DATA_CAL
+  # designed by the support scientist
+
+  my $systemdisp = $ENV{ORAC_DIR}."/disp.dat";
+  my $defaultdisp = $ENV{ORAC_DATA_CAL}."/disp.dat";
+  my $dispdef = $ENV{ORAC_DATA_OUT}."/disp.dat";
+
+
+  unless (-e $defaultdisp) {$defaultdisp = $systemdisp};
+
+  unless (-e $dispdef) {copy($defaultdisp,$dispdef)};
+
+  # Set the display filename 
   $Display->filename($dispdef);
 
   # GUI launching goes here....
@@ -578,6 +592,9 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.27  1998/09/23 23:41:05  frossie
+#Add "search path" for disp.data
+#
 #Revision 1.26  1998/09/17 03:28:46  timj
 #- Use array references throughout recipe parsing and execution
 #- Support ORAC_RECIPE_DIR and ORAC_PRIMITIVE_DIR
