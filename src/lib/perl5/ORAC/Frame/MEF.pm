@@ -48,6 +48,65 @@ use vars qw/$VERSION/;
 
 The following methods are modified from the base class versions.
 
+=head2 Constructor
+
+=over 4
+ 
+=item B<new>
+ 
+Create a new instance of a B<ORAC::Frame::MEF> object.
+This method also takes optional arguments:
+if 1 argument is  supplied it is assumed to be the name
+of the raw file associated with the observation. If 2 arguments
+are supplied they are assumed to be the raw file prefix and
+observation number. In any case, all arguments are passed to
+the configure() method which is run in addition to new()
+when arguments are supplied.
+The object identifier is returned.
+ 
+   $Frm = new ORAC::Frame::MEF;
+   $Frm = new ORAC::Frame::MEF("file_name");
+   $Frm = new ORAC::Frame::MEF("UT","number");
+
+The constructor hard-wires the '.fits' rawsuffix and the
+'f' prefix although these can be overriden with the
+rawsuffix() and rawfixedpart() methods.
+ 
+=cut
+ 
+sub new {
+    my $proto = shift;
+    my $class = ref($proto) || $proto;
+
+    # Define a hash of items needed above that which is provided in
+    # the base class
+
+    my %newitems = (SubFrmNo    => undef,
+                    SubFrms     => []
+		    );
+
+    # Now call the base class constructor
+
+    my $self = $class->SUPER::new(\%newitems);
+
+    # Configure initial state - could pass these in with
+    # the class initialisation hash - this assumes that I know
+    # the hash member name
+
+    $self->rawsuffix('.fit');
+    $self->rawformat('FITS');
+    $self->format('FITS');
+
+    # If arguments are supplied then we can configure the object
+    # Currently the argument will be the filename.
+    # If there are two args this becomes a prefix and number
+    $self->configure(@_) if @_;
+ 
+   return $self;
+ 
+}                    
+
+
 =head2 Accessor Methods
 
 The following methods are available for accessing the 'instance' data.
@@ -160,51 +219,41 @@ sub configure {
     
     $self->readhdr;
 
-    # Find nsubs if this is the PHU
-    
-    my ($basename,$dir,$suffix,$extn) = $self->parsefname;
-    my ($nsubs,$simple);
-    if (! defined $extn || $extn == 0) {
-        $nsubs = $self->findnsubs;
-        $simple = ($nsubs == 0 ? 1 : 0);
+    # Right, how many extensions where there?  Get the FITS header structure
+    # from this file.  Look at the number of sub-images. 
+
+    my $fitsobj = $self->fits;
+    my @allextn = $fitsobj->subhdrs;
+    my $nsubs = @allextn;
+
+    # If there are no sub-images, then you have a simple fits file here.  
+    # Create a duplicate of the PHU in the first extension.  This simplifies
+    # recipes that loop over all image extensions
+
+    my @subfrms = ();
+    if ($nsubs == 0) {
+        $self->{SubFrms} = [$self];
+        $self->subfrmnumber(0);
+
+    # Otherwise create a Frame object for each of the subframes defined in
+    # the FITS header...
+
     } else {
-        $nsubs = 0;
-        $simple = 0;
-    }
-    
-    # If there are image extensions, then create a frame object for each of
-    # them.  Also find the group and the recipe for the PHU.  If there aren't
-    # any extensions, then you either have a simple FITS file (see below)
-    # or you have an image extension that has recursed through here.  In the 
-    # latter case there is no need to find a recipe or group as this will 
-    # have been done for the PHU.
-    
-    if ($nsubs != 0) {
-        my $i;
-        my @subfrms = ();
-        for ($i = 1; $i <= $nsubs; $i++) {
+        foreach my $i (1 .. $nsubs) {
             my $sfname = sprintf("%s[%d]",$fname,$i);
-            my $subFrm = $self->new($sfname);
+            my $subFrm = $self->new;
+            $subFrm->file($sfname);
+            $subFrm->raw($sfname);
+            $subFrm->fits($allextn[$i-1]);
             $subFrm->subfrmnumber($i);
             push @subfrms,$subFrm;
         }
         $self->{SubFrms} = [@subfrms];
         $self->subfrmnumber(0);
-    
-        # Find the group name and set it
-    
-        $self->findgroup;
-
-        # Find the recipe name
-    
-        $self->findrecipe;
-    } elsif ($simple) {
-        $self->{SubFrms} = [$self];
-        $self->subfrmnumber(0);
-        $self->findgroup;
-        $self->findrecipe;
     }
-
+    $self->findgroup;
+    $self->findrecipe;
+        
     # Return something
     
     return 1;
@@ -260,6 +309,27 @@ They are included here so that authors of derived classes are
 aware of them.
 
 =over 4
+
+=cut
+sub update_header {
+    my $self = shift;
+    my ($key,$type,$value,$comment) = @_;
+
+    # Get the file and open it...
+
+    my $status = 0;
+    my $fptr = Astro::FITS::CFITSIO::open_file($self->file,READWRITE,$status);
+    return($status) if ($status);
+
+    # Now update the keyword...
+
+    $fptr->update_key($type,$key,$value,$comment,$status);
+    $fptr->close_file($status);
+    $self->hdr($key => $value);
+    $self->uhdr($key => $value);
+    return($status);
+}
+
 
 =item B<findgroup>
 
@@ -327,8 +397,8 @@ Copyright (C) 2003-2006 Cambridge Astronomy Survey Unit. All Rights Reserved.
 #
 #
 # $Log$
-# Revision 1.4  2003/10/04 00:06:40  jrl
-# Modified to remove redundant update_header method
+# Revision 1.5  2003/10/24 08:48:49  jrl
+# Modifed to use new version Astro::FITS::Header
 #
 # Revision 1.3  2003/09/25 10:03:54  jrl
 # Updated to for MEFs and SEFs
