@@ -126,7 +126,7 @@ sub mask {
       # Nothing suitable, default to fallback position
       # Check that exists and be careful not to set this as the
       # maskname() value since it has no corresponding index enrty
-      my $defmask = $ENV{ORAC_DATA_CAL} . "/bpm";
+      my $defmask = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "bpm" );
       return $defmask if -e $defmask . ".sdf";
 
       # give up...
@@ -248,8 +248,8 @@ sub arlines {
 
 =item B<arlinesindex>
 
-Returns the index object associated with the arlines index file. Index is 
-static therefore in calibration directory.
+Returns the index object associated with the arlines index file. 
+The index is static, therefore it resides in the calibration directory.
 
 =cut
 
