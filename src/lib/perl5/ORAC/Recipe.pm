@@ -713,8 +713,8 @@ sub _add_code_to_recipe {
 
   };
 
-  # We must return true at the end of the recipe
-  push(@processed, "\n1;\n");
+  # We must return good status at the end of the recipe
+  push(@processed, "\nORAC__OK;\n");
 
   # Now we have a post-processed recipe  store it
   $self->_recipe( \@processed );
