@@ -55,29 +55,50 @@ with the messaging systems.
 CGS4 uses the ADAM messaging system. (ORAC::Msg::ADAM::Control)
 
 Scratch files are written to ORACDR_TMP directory if defined,
-else ORAC_DATA_OUT is used.
+else ORAC_DATA_OUT is used. By default ADAM_USER is set
+to be a directory in the scratch file directory. This can be
+overridden by supplying an optional flag.
+
+  start_msg_sys($preserve);
+
+If C<$preserve> is true, ADAM_USER will be left untouched. This
+enables the pipeline to talk to tasks created by other applications
+but does mean that the users ADAM_USER may be filled with unwanted
+temporary files. It also has the added problem that on shutdown
+the ADAM_USER directory is removed by ORAC-DR, this should not happen
+if C<$preserve> is true but is not currently guaranteed.
 
 =cut
 
 sub start_msg_sys {
 
+  # Read flag to control private invocation of message system
+  my $preserve = 0;
+  $preserve = shift if @_;
+
   # Set ADAM environment variables
   # process-specific adam dir
   
   # Use ORACDR_TMP, then ORAC_DATA_OUT else /tmp as ADAM_USER directory.
+  # Unless we are instructed to preserve ADAM_USER
   my $dir = "adam_$$";  
-  if (exists $ENV{ORACDR_TMP} && defined $ENV{ORACDR_TMP}
-      && -d $ENV{ORACDR_TMP}) {
+
+  unless ($preserve) {
+
+    if (exists $ENV{ORACDR_TMP} && defined $ENV{ORACDR_TMP}
+	&& -d $ENV{ORACDR_TMP}) {
     
-    $ENV{'ADAM_USER'} = $ENV{ORACDR_TMP}."/$dir";      
+      $ENV{'ADAM_USER'} = $ENV{ORACDR_TMP}."/$dir";      
 
-  } elsif (exists $ENV{'ORAC_DATA_OUT'} && defined $ENV{ORAC_DATA_OUT}
-	   && -d $ENV{ORAC_DATA_OUT}) {
+    } elsif (exists $ENV{'ORAC_DATA_OUT'} && defined $ENV{ORAC_DATA_OUT}
+	     && -d $ENV{ORAC_DATA_OUT}) {
 
-    $ENV{'ADAM_USER'} = $ENV{ORAC_DATA_OUT} . "/$dir";
+      $ENV{'ADAM_USER'} = $ENV{ORAC_DATA_OUT} . "/$dir";
+      
+    } else {
+      $ENV{'ADAM_USER'} = "/tmp/$dir";
+    }
 
-  } else {
-    $ENV{'ADAM_USER'} = "/tmp/$dir";
   }
 
   # Set HDS_SCRATCH -- unless it is defined already

@@ -146,7 +146,7 @@ my @ORAC_ARGS = @ARGV;
 my ($opt_nodisplay, $opt_debug, $opt_verbose, $opt_calib, $opt_from,
     $opt_to, $opt_ut, $opt_list, $opt_help, $opt_batch, $opt_skip,
     $opt_warn, $opt_noeng, $opt_log, $opt_loop, $opt_resume,
-    $opt_beep
+    $opt_beep, $opt_nomsgtmp
    );
 
 my $status = GetOptions("nodisplay" => \$opt_nodisplay,
@@ -162,6 +162,7 @@ my $status = GetOptions("nodisplay" => \$opt_nodisplay,
 			"batch!"    => \$opt_batch,
 			"skip!"     => \$opt_skip,
 			"noeng"     => \$opt_noeng,
+			"nomsgtmp"  => \$opt_nomsgtmp,
 			"log=s"     => \$opt_log,
 			"resume!"   => \$opt_resume,
 			"warn!"     => \$opt_warn,
@@ -213,6 +214,14 @@ Options:
 	     can not be found.
   -noeng     Do not start algorithm engines. Note: this will cause 
              the vast majority of recipes to fail.
+  -nomsgtmp  Do not create an invocation specific temporary directory
+             for the messaging systems but use whatever directory
+             is the usual default. For ADAM tasks this would mean that
+             ~/adam or ADAM_USER will be used rather than a private
+             ORAC-DR directory. This should only be used when it is
+             required for ORAC-DR to talk to tasks that were not started
+             by the pipeline and could lead to possible confusion if
+             multiple pipelines are running using this flag.
   -log       Control the location of the session logging. Default
              is to log messages to the screen and file (log=sf)
              when DISPLAY environment variable is not set. If 
@@ -476,8 +485,7 @@ if ($log_options ne 's') {
 # This routine creates and initialies the message systems.
 # Also allows us to store the message objects since on
 # undef everything goes away
-my (@messys) = start_msg_sys;
-
+my (@messys) = start_msg_sys($opt_nomsgtmp);
 
 ######################## A L G.   E N G I N E S #############################
 
@@ -877,31 +885,31 @@ use the system.
 
 =over 4
 
-=item * -help
+=item B<-help>
 
 List help text. This prints a summary of this document.
 
-=item * -version
+=item B<-version>
 
 Print the version number.
 
-=item * -verbose
+=item B<-verbose>
 
 Print messages from the Starlink engines (rather than just ORAC-DR
 messages).
 
-=item * -debug
+=item B<-debug>
 
 Log debug messages to file C<ORACDR.DEBUG> in C<$ORAC_DATA_OUT>.
 
-=item * -warn
+=item B<-warn>
 
 Turn on perl level warning messages (C<perl -w>). This should be
 used for debugging only. If C<-verbose> is also true then full 
 perl diagnostics are turned on (see L<diagnostics> for more information
 on this perl pragma).
 
-=item * -beep
+=item B<-beep>
 
 Make as much noise as possible over errors and pipeline exit.
 Default is not to beep.
@@ -912,22 +920,22 @@ Default is not to beep.
 
 =over 4
 
-=item * -nodisplay
+=item B<-nodisplay>
 
 Do not launch the display system. No data will be displayed and GWM,
 GAIA etc. windows will not be launched.
 
-=item * -log s
+=item B<-log s>
 
 Log to terminal screen (standard out)
 
-=item * -log f
+=item B<-log f>
 
 Log to a file. The logfile is called C<.oracdr_NNNN.log> where NNNN 
 is the current process ID. It is written to C<$ORAC_DATA_OUT> and is 
 a hidden file.
 
-=item * -log x
+=item B<-log x>
 
 Log to an Xwindow. Has the advantage that warnings and errors are
 written to different, independently scrollable windows.
@@ -945,15 +953,15 @@ inspecting the data as it is being reduced.
 
 =over 4
 
-=item * -from
+=item B<-from>
 
 Number of first observation.
 
-=item * -to
+=item B<-to>
 
 Number of last observation.
 
-=item * -list
+=item B<-list>
 
 Comma separated list of observation I<numbers>. Colons indicate a range.
 For example, `1,2,4:6,10' means 1,2,4,5,6,10.
@@ -964,7 +972,7 @@ For example, `1,2,4:6,10' means 1,2,4,5,6,10.
 
 =over 4
 
-=item * -ut
+=item B<-ut>
 
 UT date of observations (defaults to current yyyymmdd). When the
 instrument specific setup scripts are run, oracdr is automatically
@@ -978,7 +986,7 @@ convention for data files.
 
 =over 4
 
-=item * -calib
+=item B<-calib>
 
 Used to specify calibration overrides. Accepts comma separated key=value
 pairs. (e.g. `C<-cal dark=file1>' or `C<-cal dark=file1,bias=file2>'). The
@@ -999,24 +1007,24 @@ offline use, `inf' is most appropriate.
 
 =over 4
 
-=item  * -loop list
+=item  B<-loop list>
 
 Equivalent to simply using the C<-list> option. The pipeline will stop
 once the observations in the list have been reduced.
 
-=item  * -loop wait
+=item  B<-loop wait>
 
 Waits for data to appear before timing out. Data is reduced and the pipeline
 waits for the next file.
 
-=item  * -loop inf
+=item  B<-loop inf>
 
 Do not wait for data. Simply reduce data starting with observation
 specified by C<-from> and continuing until no more files are present.
 Implicitly used when C<-from> is specified. This is the fastest way
 of reducing data offline.
 
-=item  * -loop flag
+=item  B<-loop flag>
 
 Waits for completion files to appear (flags) before processing the data.
 Data is reduced and the pipeline waits for more data by checking the
@@ -1032,18 +1040,18 @@ information on looping schemes.
 
 =over 4
 
-=item * -batch
+=item B<-batch>
 
 Run in batch mode. Precalculate groups before processing
 data. `wait' loop mode should not be used with this option.
 B<NOTE> only SCUBA recipes support this option.
 
-=item * -skip
+=item B<-skip>
 
 Allow the data detection loop to skip missing observations.
 Default is to stop the loop when an expected file can not be found.
 
-=item * -resume
+=item B<-resume>
 
 Allow the pipeline to resume midway through the processing
 of a group. (so long as the recipe/instrument supports
@@ -1058,10 +1066,20 @@ IRCAM, UFTI and SCUBA recipes.
 
 =over 4
 
-=item * -noeng
+=item B<-noeng>
 
 Do not start algorithm engines. B<NOTE> this will cause
 the vast majority of recipes to fail.
+
+=item B<-nomsgtmp>
+
+Do not create an invocation specific temporary directory for the
+messaging systems but use whatever directory is the usual default. For
+ADAM tasks this would mean that ~/adam or $ADAM_USER will be used
+rather than a private ORAC-DR directory. This should only be used when
+it is required for ORAC-DR to talk to tasks that were not started by
+the pipeline and could lead to possible confusion if multiple
+pipelines are running using this flag.
 
 =back
 
@@ -1085,6 +1103,9 @@ All Rights Reserved.
 
 
 # $Log$
+# Revision 1.78  2000/04/23 02:40:15  timj
+# Add support for -nomsgtmp flag
+#
 # Revision 1.77  2000/04/12 02:17:40  frossie
 # Changed case of print message to be consistant (requested by MHP)
 #
