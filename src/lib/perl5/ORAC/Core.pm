@@ -42,7 +42,7 @@ ORAC::Core - core routines for data pipelining
 This module contains the core routines that actually handle the 
 data processing. Routines are provided for constructing groups
 and for processing those groups, along with routines to do the
-inital pipeline configuration and algorithim engine startup. 
+inital pipeline configuration and algorithm engine startup. 
 
 =cut
 
@@ -612,11 +612,11 @@ sub orac_message_launch {
 
 =item B<orac_start_algorithm_engines>
 
-This routine pre-launches the relevant algorithim engines which are always required by the instrument
+This routine pre-launches the relevant algorithm engines which are always required by the instrument
 
    my ( $Mon )  = orac_start_algorithm_engines( $opt_noeng, $InstObj );
 
-it returns a reference to the algorithim engine hash, $Mon.
+it returns a reference to the algorithm engine hash, $Mon.
 
 =cut
 
@@ -624,10 +624,6 @@ sub orac_start_algorithm_engines {
 
   croak 'Usage: orac_start_algorithm_engines( $opt_noeng, $InstObj)'
     unless scalar(@_) == 2 ;
-
-  # Predeclare subroutines that are read in after the standard perl pre-
-  # processing, i.e. modules included via an eval
-  use subs qw( start_algorithim_engines );
 
   # Read the argument list
   my ($opt_noeng, $InstObj) = @_;
