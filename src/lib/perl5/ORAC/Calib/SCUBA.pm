@@ -21,9 +21,7 @@ for SCUBA. SCUBA calibrations are used for extinction correction
 (the sky opacity) and conversion of volts to Janskys.
 
 It can also be used to set and retrieve lists of bad bolometers generated
-by noise observations and to store the results of pointing observations
-(pointing results are not retrievable since they are a write-only
-calibration).
+by noise observations.
 
 =cut
 
@@ -144,7 +142,6 @@ sub new {
   $obj->{BadBols} = undef;        # Bad bolometers
   $obj->{BadBolsNoUpdate} = 0;
   $obj->{BadBolsIndex} = undef;
-  $obj->{PointIndex} = undef;
   $obj->{FluxesObj} = undef;      # Fluxes monolith
   $obj->{FluxesTmpDir} = undef;
   $obj->{AMS} = undef;         # ADAM messaging object
@@ -974,31 +971,6 @@ sub badbol_list {
   return @badbols;
 
 }
-
-=item pointingindex
-
-Return (or set) the index object associated with the pointing
-index file. This index file is used to store the results of 
-pointing observations.
-
-=cut
-
-sub pointingindex {
-
-  my $self = shift;
-  if (@_) { $self->{PointIndex} = shift; }
- 
-  unless (defined $self->{PointIndex}) {
-    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.pointing";
-    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.pointing";
-    $self->{PointIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
- 
-  return $self->{PointIndex}; 
-
-
-}
-
 
 =item DESTROY
 

@@ -32,8 +32,7 @@ RUN WITH AN AZ REGRID OPTION
 
 It may be necessary to merge this with a new REBIN_FRAME....
 
-This primitive also writes the pointing result to an
-index file.
+This primitive also writes results to a logfile (log.pointing)
 
 =cut
 
@@ -42,6 +41,17 @@ $box = ( $_CENTROID_FRAME_{BOX} || 9 );
 
 @filters = $Frm->filters;
 
+# Create logfile object
+my $log = new ORAC::LogFile("log.pointing");
+
+# Write header to logfile
+my $time = gmtime();
+$log->header("Pointing log file - created on $time",
+	     "\n#     Time       Filter Az   DAZ   DEL   Peak  Seeing  CSO   ST",
+	     "------------------------------------------------------------------"
+	    );
+
+# Loop over frames
 foreach my $i (1..$Frm->nfiles) {
   
   my ($in, $out) = $Frm->inout('_reb',$i);
@@ -52,9 +62,11 @@ foreach my $i (1..$Frm->nfiles) {
 
   # Read the result
   ($ORAC_STATUS, @centre) = $Mon{kappa_mon}->get("centroid","centre");
- 
-  orac_print "Centroid position: $centre[0], $centre[1]\n";
 
+  my $daz = sprintf "%6.2f", $centre[0];
+  my $del = sprintf "%6.2f", $centre[1];
+
+  orac_print "Centroid position: $daz, $del\n";
 
   # Store the peak signal in the image (might be useful
   # for measuring flux changes in blazars
@@ -65,16 +77,23 @@ foreach my $i (1..$Frm->nfiles) {
 
   ($ORAC_STATUS, $max) = $Mon{kappa_mon}->get("stats","maximum");
 
-  # Now write the result to the index file
-  # Put in the DAZ and DEL from the centroid
-  my %hdr = %{$Frm->header};
-  $hdr{DAZ} = $centre[0];
-  $hdr{DEL} = $centre[1];
-  $hdr{FILTER} = $filters[$i-1];
-  $hdr{PEAK}   = $max;
+  # Local copy of information
+  my $num = sprintf "%-4d", $Frm->number;
+  my $time= sprintf "%11.2f", $Frm->hdr(ORACTIME);
+  my $see = sprintf "%5.2f", $Frm->hdr('SEEING');
+  my $cso = sprintf "%5.2f", $Frm->hdr('TAU_225');
+  $max= sprintf "%7.3f", $max; 
+  $daz = sprintf "%5.1f", $centre[0];
+  $del = sprintf "%5.1f", $centre[1];
+  my $filt= sprintf "%4d",   $filters[$i-1];
+  my $lst = $Frm->hdr(STSTART);
+  $lst =~ s/\.\d+$//;  # Strip decimals from seconds
 
-  # Add the entry to the index file  
-  $Cal->pointingindex->add($out,\%hdr);
-  orac_print $filters[$i-1]." pointing information written to index file\n";
+  # Calculate average azimuth for the pointing
+  my $az = int (($Frm->hdr(STRT_AZD) + $Frm->hdr(END_AZD) ) /2.0 );
+  my $az = sprintf "%3d", $az;
+
+  # Add log entry
+  $log->addentry("$num $time $filt  $az $daz $del $max $see $cso $lst");
 
 }
