@@ -94,7 +94,7 @@ sub _from_NSCAN_POSITIONS {
 sub _to_ROTATION {
   my $self = shift;
   my $rotation;
-  if ( exists $self->hdr->{PC1_1} ) {
+  if ( exists($self->hdr->{PC1_1}) && exists($self->hdr->{PC2_1})) {
      my $pc11 = $self->hdr->{PC1_1};
      my $pc21 = $self->hdr->{PC2_1};
      my $rad = 57.2957795131;
@@ -190,7 +190,6 @@ sub calc_orac_headers {
   # Run the base class first since that does the ORAC
   # headers
   my %new = $self->SUPER::calc_orac_headers;
-
 
   # ORACTIME
 
