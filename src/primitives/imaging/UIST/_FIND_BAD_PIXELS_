@@ -1,0 +1,122 @@
+=head1 NAME
+
+_FIND_BAD_PIXELS_ - Finds bad pixels in a frame
+
+=head1 DESCRIPTION
+
+Used in array tests to add the bad pixels detected in this frame into the 
+bad pixel mask.
+
+Applies thresholds to the data frames and flags pixels outside
+the limits as bad.
+
+For BIAS frames, we do a 3-sigma clipped stats and flag pixels more
+than 5 sigma from the mean in either direction. The actual threshold 
+limits applied are reported. In addition, we flag pixels whose BIAS
+variance is more than 5-sigma above the mean in a 3-sigma clipped stats.
+
+For DARK frames, we do a 3-sigma clipped stats and flag pixels more
+than 5 sigma above the mean.
+
+The bad pixels detected are added into the current bad pixel mask and
+then this is filed with the calibration system as a new and current
+bad pixel mask.
+
+This primitive is based on the CGS4 primitive of the same name.
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "BIAS") {
+   # Threshold on the pixel value
+
+   my ($in, $out) = $Frm->inout("_bpd");
+
+   # Do a kappa stats
+   $Mon{'kappa_mon'}->obeyw("stats", "ndf=$in comp=Data clip=\[ 3 \]");
+   
+   # Get the mean and standard deviation
+   my $ORAC_STATUS;
+
+   ($ORAC_STATUS, my $mean) = $Mon{'kappa_mon'}->get("stats", "mean");
+   ($ORAC_STATUS, my $sigma) = $Mon{'kappa_mon'}->get("stats", "sigma"); 
+
+   my $thrhi = $mean + 5*$sigma;
+   my $thrlo = $mean - 5*$sigma;
+
+   $Mon{'kappa_mon'}->obeyw("thresh", "in=$in newlo=bad newhi=bad out=$out title=$out thrhi=$thrhi thrlo=$thrlo");
+   orac_print "Bad pixels thresholds: low=$thrlo, high=$thrhi\n";
+
+   $Mon{'ndfpack_mon'}->obeyw("setbad", "ndf=$out value=true");
+   orac_print "$in to $out: Bad pixels detected by thresholding bias values\n";
+
+   # Now search for anomolously large values in the variance component.
+   # These would be pixels with unstable BIAS values.
+
+   # Do a kappa stats
+   $Mon{'kappa_mon'}->obeyw("stats", "ndf=$in comp=Variance clip = \[ 3 \]");
+
+   # Get the mean and standard deviation
+
+   ($ORAC_STATUS, $mean) = $Mon{'kappa_mon'}->get("stats", "mean");
+   ($ORAC_STATUS, $sigma) = $Mon{'kappa_mon'}->get("stats", "sigma"); 
+
+   $thrhi = $mean + 6*$sigma;   
+   
+   my $tmp = new ORAC::TempFile;
+   my $tmpfile = $tmp->file;
+
+   $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$out out=$tmpfile");
+
+   $Mon{'kappa_mon'}->obeyw("errclip", "in=$tmpfile out=$out limit=$thrhi mode=Variance");
+   orac_print "Bad pixel threshold: variance high=$thrhi\n";
+   orac_print "$out to $out: Unstable bias pixels detected and flagged\n";
+
+   # Do NOT update the frame object as we don't want the _bpm going onto
+   # the next stage.
+
+   _FILE_BAD_PIXELS_ FILE=$out
+
+}
+
+if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "DARK") {
+
+   # Mask any pixels with excessive dark current
+
+   my ($in, $out) = $Frm->inout("_bpd");
+
+   # Do a kappa stats, 3-sigma clipped
+   $Mon{'kappa_mon'}->obeyw("stats", "ndf=$in comp=Data clip = \[ 3 \]");
+   
+   # Get the mean and standard deviation
+   my $ORAC_STATUS;
+
+   ($ORAC_STATUS, my $mean) = $Mon{'kappa_mon'}->get("stats", "mean");
+   ($ORAC_STATUS, my $sigma) = $Mon{'kappa_mon'}->get("stats", "sigma"); 
+
+   # Make the low threshold sufficiently low that it shouldn't threshold anything
+
+   my $thrhi = $mean + 5*$sigma;
+   my $thrlo = $mean - 1000*$sigma;
+
+   $Mon{'kappa_mon'}->obeyw("thresh", "in=$in newlo=bad newhi=bad out=$out title=$out thrhi=$thrhi thrlo=$thrlo");
+
+   orac_print "Bad pixel thresholds: low=$thrlo, high=$thrhi\n";
+   orac_print "$in to $out: Bad pixels detected by thresholding dark values\n";
+
+   # Do NOT update the frame object as we don't want the _bpm going onto
+   # the next stage.
+
+   _FILE_BAD_PIXELS_ FILE=$out
+
+}
+orac_print "\n";
