@@ -175,41 +175,6 @@ sub file_from_bits {
   return $self->rawfixedpart . $prefix . '_' . $padnum . $self->rawsuffix;
 }
 
-=item B<findgroup>
-
-Returns group name from header.  For dark observations the current obs
-number is returned if the group number is not defined or is set to zero
-(the usual case with IRCAM)
-
-The group name stored in the object is automatically updated using 
-this value.
-
-=cut
-
-sub findgroup {
-
-  my $self = shift;
-
-  my $hdrgrp = $self->hdr('GRPNUM');
-
-  # Is this group name set to anything useful
-  if ($hdrgrp == 0) {
-    # if the group is invalid there is not a lot we can do about
-    # it except for the case of certain calibration objects that
-    # we know are the only members of their group (eg DARK)
-
-#    if ($self->hdr('OBJECT') eq 'DARK') {
-       $hdrgrp = $self->hdr('OBSNUM');
-#    }
-
-  }
-
-  $self->group($hdrgrp);
-
-  return $hdrgrp;
-
-}
-
 
 =item B<findrecipe>
 
