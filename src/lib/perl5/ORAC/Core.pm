@@ -168,7 +168,7 @@ sub orac_process_frame {
     orac_print "Using recipe $Recipe specified on command-line\n";
   } else {
     $Recipe = $frmrecipe;
-    orac_print "Using recipe $Recipe read from header\n";
+    orac_print "Using recipe $Recipe provided by the frame\n";
   };
 
 
