@@ -219,7 +219,7 @@ sub calc_orac_headers {
   # form YYYY-MM-DDThh:mm:ssZ. We need to convert that into
   # YYYYMMDD.fraction
   my $ut = $self->hdr("DATE-OBS");
-  $ut =~ /(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)Z/;
+  $ut =~ /(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d).(\d\d\d)/;
   my $utdate = '0'x(4-length(int($1))) . $1 .
                '0'x(2-length(int($2))) . $2 .
                '0'x(2-length(int($3))) . $3;
