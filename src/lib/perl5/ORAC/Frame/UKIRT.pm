@@ -59,6 +59,10 @@ my %hdr = (
 # be sub-classed by other instruments
 ORAC::Frame::UKIRT->_generate_orac_lookup_methods( \%hdr );
 
+# Hardwire the TELESCOPE internal header to be UKIRT.
+sub _to_TELESCOPE {
+  return "UKIRT";
+}
 
 # A package to describe a UKIRT group object for the
 # ORAC pipeline
