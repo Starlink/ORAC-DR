@@ -17,6 +17,8 @@ use Starlink::ADAMTASK;
 use Term::ANSIColor;
 use File::Copy;
 
+use ORAC::General; # General subroutines given to the recipes
+
 @ISA = qw(Exporter);
 
 @EXPORT = qw/orac_launch_display orac_connect_display
@@ -275,6 +277,9 @@ die;
 1;
 
 #$Log$
+#Revision 1.9  1998/04/10 00:27:09  timj
+#Include ORAC::General
+#
 #Revision 1.8  1998/04/04 06:46:22  frossie
 #Introduce Frm Grp and Cal objects
 #
