@@ -44,7 +44,7 @@ my %hdr = (
             DEC_SCALE            => "PIXELSIZ",
             DEC_TELESCOPE_OFFSET => "TDECOFF",
             EXPOSURE_TIME        => "EXP_TIME",
-            GAIN                 => "DEPERDN",
+            GAIN                 => "GAIN",
             RA_SCALE             => "PIXELSIZ",
             RA_TELESCOPE_OFFSET  => "TRAOFF",
             UTEND                => "UTEND",
@@ -67,7 +67,8 @@ my %hdr = (
             Y_DIM                => "DROWS",
 
 # then the general.
-            OBSERVATION_MODE    => "CAMERA"
+            NUMBER_OF_READS      => "NREADS",
+            OBSERVATION_MODE     => "CAMERA"
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed by
