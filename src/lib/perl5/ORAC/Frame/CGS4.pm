@@ -182,8 +182,6 @@ the prefix and arg2 is the observation number.
 sub configure {
   my $self = shift;
 
-  print "*****************************************\n";
-
   # If two arguments (prefix and number)
   # have to find the raw filename first
   # else assume we are being given the raw filename
