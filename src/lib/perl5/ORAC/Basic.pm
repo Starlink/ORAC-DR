@@ -28,6 +28,7 @@ use strict;
 
 require Exporter;
 use File::Path;
+use File::Copy;
 
 use ORAC::Print;
 use ORAC::Display;
@@ -179,6 +180,9 @@ Council. All Rights Reserved.
 1;
 
 #$Log$
+#Revision 1.57  2001/01/19 03:02:36  timj
+#removed File::Copy by mistake
+#
 #Revision 1.56  2001/01/10 02:57:07  timj
 #Move guts to ORAC::Recipe
 #
