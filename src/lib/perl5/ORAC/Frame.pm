@@ -1,12 +1,30 @@
 package ORAC::Frame;
 
+=head1 NAME
+
+ORAC::Frame - base class for dealing with observation frames in ORACDR
+
+=head1 SYNOPSIS
+
+  use ORAC::Frame;
+
+  $Obs = new ORAC::Frame("filename");
+  $Obs->file("prefix_flat");
+  $num = $Obs->number;  
+
+
+=head1 DESCRIPTION
+
+This module provides the basic methods available to all ORAC::Frame
+objects. This class should be used when dealing with individual
+observation files (frames).
+
+=cut
+
+
 use strict;
 use Carp;
 use vars qw/$VERSION/;
-
-# Need to read the header from the file
-use NDF;
-
 
 $VERSION = undef; # -w protection
 $VERSION = '0.10';
@@ -15,6 +33,27 @@ $VERSION = '0.10';
 
 
 # Setup the object structure
+
+=head1 PUBLIC METHODS
+
+The following methods are available in this class.
+
+=over 4
+
+=item new
+
+Create a new instance of a ORAC::Frame object.
+This method takes an optional argument containing the
+name of the raw file associated with the observation. If the
+filename is supplied the configure() method is run in
+addition to new().
+The object identifier is returned.
+
+   $Obs = new ORAC::Frame;
+   $Obs = new ORAC::Frame("file_name");
+
+
+=cut
 
 
 # NEW - create new instance of Frame
@@ -56,18 +95,19 @@ sub new {
 # Without args they only retrieve values
 
 
-# Return/set the current file name of the object
-# Make sure that the extension is not present
-
-sub file {
-  my $self = shift;
-  if (@_) { $self->{File} = $self->stripfname(shift); }
-  return $self->{File};
-}
-
 # Method to return/set the filename of the raw data
 # Initially this is the same as {File}
-# Make sure that no extension is present (eg .sdf)
+# Use stripfname to decide on whether to strip a .sdf
+
+=item raw
+
+This method returns (or sets) the name of the raw data file
+associated with this object.
+
+  $Obs->raw("raw_data");
+  $filename = $Obs->raw;
+
+=cut
 
 sub raw {
   my $self = shift;
@@ -76,9 +116,49 @@ sub raw {
 }
 
 
+# Return/set the current file name of the object
+# Make sure that the extension is not present
+
+=item file
+
+This method sets or returns the current filename.  Note that the raw()
+method is used for the raw (ie unprocessed) data file.
+This method can be used to determine the current state of the
+object. Primitive writers can set this to the current output
+name whenever they process a data file associated with this object.
+
+  $Obs->file("new_dark");
+  $current = $Obs->file;
+
+=cut
+
+sub file {
+  my $self = shift;
+  if (@_) { $self->{File} = $self->stripfname(shift); }
+  return $self->{File};
+}
+
+
+
 # Method to return group
 # If an argument is supplied the group is set to that value
 # If the group is undef then the findgroup method is invoked to set it
+
+
+=item group
+
+This method returns the group name associated with the observation.
+If the object has a value of undef (ie a new object) the findgroup()
+method is automatically invoked to determine the group. Subsequent
+invocations of the group method will simply return the current value.
+The group name can be set explicitly but in general the automatic
+lookup should be used.
+
+  $group_name = $Obs->group;
+  $Obs->group("group");
+
+=cut
+
 
 sub group {
   my $self = shift;
@@ -95,6 +175,22 @@ sub group {
 # If an argument is supplied the recipe is set to that value
 # If the recipe is undef then the findrecipe method is invoked to set it
 
+
+=item recipe
+
+This method returns the recipe name associated with the observation.
+If the object has a value of undef (ie a new object) the findrecipe()
+method is automatically invoked to determine the recipe. Subsequent
+invocations of the method will simply return the current value.
+The recipe name can also be set explicitly but in general this behaviour
+would be superceded by ORAC::Group objects.
+
+  $recipe_name = $Obs->recipe;
+  $Obs->recipe("recipe");
+
+=cut
+
+
 sub recipe {
   my $self = shift;
   if (@_) { $self->{Recipe} = shift;}
@@ -108,6 +204,19 @@ sub recipe {
 
 # Method to populate the header with a hash
 # Requires a hash reference and returns a hash reference
+
+=item header
+
+Set or retrieve the hash associated with the header information
+stored for the observation.
+
+    $Obs->header(\%hdr);
+    $hashref = $Obs->header;
+
+This methods takes and returns a reference to a hash.
+
+=cut
+
 
 sub header {
   my $self = shift;
@@ -129,22 +238,38 @@ sub header {
 # No input arguments - only assumes that the object knows the name of the
 # file associated with it
 
+=item readhdr
+
+A method that is used to read header information from an observation
+file. This method returns an empty hash by default since the base
+class does not know the format of the file associated with an
+object.
+
+=cut
+
+
 sub readhdr {
 
   my $self = shift;
+
+  return {};
   
-  # Just read the NDF fits header
-  my ($ref, $status) = fits_read_header($self->file);
-
-  # Return an empty hash if bad status
-  $ref = {} if ($status != &NDF::SAI__OK);
-
-  return $ref;
-
 }
 
 # Supply a method to access individual pieces of header information
 # Without forcing the user to access the hash directly
+
+=item hdr
+
+This method allows specific entries in the header to be accessed.
+The header must be available (set by the "header" method).
+The input argument should correspond to the keyword in the header
+hash.
+
+  $tel = $Obs->("TELESCOP");
+  $instrument = $Obs->("INSTRUME");
+
+=cut
 
 sub hdr {
   my $self = shift;
@@ -158,6 +283,15 @@ sub hdr {
 
 # Method to configure the object.
 # Assumes that the filename is available
+
+=item configure
+
+This method is used to configure the object. It is invoked
+automatically if the new() method is invoked with an argument. The
+file(), raw(), readhdr(), header(), group() and recipe() methods are
+invoked by this command. Arguments are not required.
+
+=cut
 
 sub configure {
   my $self = shift;
@@ -179,10 +313,21 @@ sub configure {
   # Find the recipe name
   $self->recipe($self->findrecipe);
 
+  # Return something
+  return 1;
 }
 
 
 # Supply a method to find the group name and set it
+
+=item findgroup
+
+Method to determine the group to which the observation belongs.
+The default method is to look for a "GROUP" entry in the header.
+
+  $group = $Obs->findgroup;
+
+=cut
 
 sub findgroup {
   my $self = shift;
@@ -197,6 +342,17 @@ sub findgroup {
 
 # Supply a method to find the recipe name and set it
 
+=item findgroup
+
+Method to determine the recipe name that should be used to reduce
+the observation.
+The default method is to look for a "RECIPE" entry in the header.
+
+  $recipe = $Obs->findrecipe;
+
+=cut
+
+
 sub findrecipe {
   my $self = shift;
 
@@ -210,6 +366,20 @@ sub findrecipe {
 
 # Supply a method to return the number associated with the observation
 
+=item number
+
+Method to return the number of the observation. The number is
+determined by looking for a number at the end of the raw data
+filename.  For example a number can be extracted from strings of the
+form textNNNN.sdf or textNNNN, where NNNN is a number (leading zeroes
+are stripped) but not textNNNNtext (number must be followed by a decimal
+point or nothing at all).
+
+  $number = $Obs->number;
+
+=cut
+
+
 sub number {
 
   my $self = shift;
@@ -221,7 +391,7 @@ sub number {
   # (since the extension has already been removed)
   # Leading zeroes are dropped
 
-  if ($self->raw =~ /(\d+)$/) {
+  if ($self->raw =~ /(\d+)(\.\w+)?$/) {
     # Drop leading 00
     $number = $1 * 1;
   } else {
@@ -236,19 +406,56 @@ sub number {
 
 # Private method for removing file extensions from the filename strings
 
+=back
+
+=head1 PRIVATE METHODS
+
+The following methods are intended for use inside the module.
+They are included here so that authors of derived classes are 
+aware of them.
+
+=cut
+
+# Private method for removing file extensions from the filename strings
+# In the base class this does nothing. It is up to the derived classes
+# To do something special with this.
+
+=over 4
+
+=item stripfname
+
+Method to strip file extensions from the filename string. This method
+is called by the file() method. For the base class this method
+does nothing. It is intended for derived classes (e.g. so that ".sdf"
+can be removed). Granted that I could simply force the "file" method
+to be modified for derived classes....(which is why this method is
+private).
+
+=cut
+
+
 sub stripfname {
 
   my $self = shift;
 
   my $name = shift;
 
-  # Strip everything after the first dot
-  $name =~ s/\..*//;
-  
   return $name;
 
 }
 
+=back
+
+=head1 SEE ALSO
+
+L<ORAC::Group>
+
+=head1 AUTHORS
+
+Tim Jenness (t.jenness@jach.hawaii.edu)
+    
+
+=cut
 
 1;
 
