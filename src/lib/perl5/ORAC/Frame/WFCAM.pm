@@ -116,6 +116,11 @@ my %extra_rot = ('a' => -1.0,
 		 'c' => -0.8,
 		 'd' => -0.4);
 
+my %rawfixedparts = ('a' => 'w',
+		     'b' => 'x',
+		     'c' => 'y',
+		     'd' => 'z');
+
 # PROJP3: The cubic distortion coefficient for ZPN projection
 
 my $projp3 = 220.0;
@@ -167,7 +172,7 @@ sub new {
   # Which WFCAM 'instrument' is this?  
 
   if ($ENV{'ORAC_INSTRUMENT'} =~ /^WFCAM_([A-D])$/) {
-      my $rfp = 'w' . lc($1);
+      my $rfp = $rawfixedparts{lc($1)};
       $self->rawfixedpart($rfp);
       $self->{chipname} = [lc($1)];
   } else {
