@@ -33,7 +33,7 @@ use strict;
 =head1 PUBLIC METHODS
 
 The following methods are available in this class in addition to
-those available from B<ORAC::Frame::UKIRT>.
+those available from B<ORAC::Frame::GEMINI>.
 
 =head2 Constructor
 
@@ -74,7 +74,7 @@ sub new {
   # the hash member name
   $self->rawfixedpart('N');
   $self->rawsuffix('.fits');
-  $self->rawformat('GMOS');
+  $self->rawformat('GMEF');
   $self->format('HDS');
 
   # If arguments are supplied then we can configure the object

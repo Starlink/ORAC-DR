@@ -29,13 +29,18 @@ use Carp;
 my %hdr = (
             AIRMASS_START       => "AMSTART",
             AIRMASS_END         => "AMEND",
-            DEC_BASE            => "DEC",
+            DEC_BASE            => "CRVAL2",
             EQUINOX             => "EQUINOX",
 	    INSTRUMENT          => "INSTRUME",
             NUMBER_OF_EXPOSURES => "NSUBEXP",
             OBJECT              => "OBJECT",
-            RA_BASE             => "RA",
-	    UTDATE              => "DATE-OBS"
+            RA_BASE             => "CRVAL1",
+	    UTDATE              => "DATE-OBS",
+	    UTEND               => "UTEND",
+	    EXPOSURE_TIME       => "EXPTIME",
+	    NUMBER_OF_EXPOSURES => "COADDS",
+	    RA_SCALE            => "CD1_1",
+            DEC_SCALE           => "CD2_2"
         );
 
 # Take this lookup table and generate methods that can
