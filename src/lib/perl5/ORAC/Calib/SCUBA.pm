@@ -150,19 +150,19 @@ $DEBUG = 0; # Turn off debugging mode
 		     BEAM  => 280.0,
 		    },
 		    {
-		     START => 20010602, # Not checked
+		     START => 20010602,
 		     END   => 20020204,
 		     ARCSEC=> 0.86,
 		     BEAM  => 209.0,
 		    },
 		    {
-		     START => 20020205, # Not checked
+		     START => 20020205,
 		     END   => 20020630,
 		     ARCSEC=> 0.88,
 		     BEAM  => 224.0,
 		    },
 		    {
-		     START => 20020701, # Not checked
+		     START => 20020701,
 		     END   => 20021201,
 		     ARCSEC=> 1.09,
 		     BEAM  => 278.0,
@@ -174,15 +174,27 @@ $DEBUG = 0; # Turn off debugging mode
 		     BEAM => 194,
 		    },
 		    {
-		     START => 20030101, # Not checked
-		     END   => 20030201,
-		     ARCSEC=> 0.84,
-		     BEAM  => 221.0,
+		     START => 20030101,
+		     END   => 20030131,
+		     ARCSEC=> 0.80,
+		     BEAM  => 193,
 		    },
 		    {
-		     START => 20030202, # Not checked
-		     ARCSEC=> 1.03,
-		     BEAM  => 251.0,
+		     START => 20030201,
+		     END   => 20030209,
+		     ARCSEC=> 0.89,
+		     BEAM  => 204, # large error bars +/- 14
+		    },
+		    {
+		     START => 20030210,
+		     END   => 20030228,
+		     ARCSEC=> 1.02,
+		     BEAM  => 255.0,
+		    },
+		    {
+		     START => 20030301, # Open ended
+		     ARCSEC=> 0.98,
+		     BEAM  => 230,
 		    },
 		   ],
 	 '450N' => [
@@ -217,14 +229,20 @@ $DEBUG = 0; # Turn off debugging mode
 		    },
 		    {
 		     START => 20030101,
-		     END => 20030131,
+		     END => 20030209,
 		     ARCSEC => 2.45,
 		     BEAM => 262,
 		    },
 		    {
-		     START => 20030201,
-		     ARCSEC => 3.02,
-		     BEAM => 350,
+		     START => 20030210,
+		     END   => 20030228,
+		     ARCSEC => 3.3,
+		     BEAM => 400,
+		    },
+		    {
+		     START => 20030301,
+		     ARCSEC => 2.85,
+		     BEAM => 330,
 		    }
 		   ],
 	);
