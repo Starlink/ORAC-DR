@@ -1,0 +1,201 @@
+=head1 NAME
+
+CENTROID_FRAME
+
+=head1 DESCRIPTION
+
+Find the centroid(s) of the current frame(s).
+Assumes that the centroid is near the origin in axis
+coordinates. [Errors not reported until the KAPPA
+centroid task writes them to a parameter].
+
+Assumes that the peak value in the map is the value of the
+pixel at the centroid position. This is not necessarily true
+though if the centroid position contains a spike.
+
+=head1 TASKS
+
+Uses the KAPPA CENTROID task.
+Uses the KAPPA STATS task to retrieve the peak
+signal in the map
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item BOX
+
+Size of search box in each dimension.
+Default is 9 pixels.
+
+=item LOGFILE
+
+Enable/Disable the writing of the logfile and normal informational
+messages. Default is for a log file to be written.
+
+
+=back
+
+=head1 OUTPUT FILES
+
+The following files are created:
+
+=over 4
+
+=item C<log.pointing>
+
+Log of pointing offsets.
+
+=back
+
+The frame object is not updated.
+
+=head1 OUTPUT DATA
+
+On completion the primitive hash C<%_CENTROID_FRAME_> contains
+the following keys:
+
+=over 4
+
+=item RESULTS
+
+An array containing the pointing offsets for each sub-instrument.
+Contains C<undef> if the calculation did not complete successfully.
+Starts counting at 1 (same as for the file() method). Each element
+in the array contains a 3 element array with the X and Y offset
+and the Z value at that X,Y position.
+
+=back
+
+=head1 NOTE
+
+This primitive also writes results to a logfile (log.pointing)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+=cut
+
+
+my $box = ( $_CENTROID_FRAME_{BOX} || 9 );
+
+# Write logfile (default to true)
+my $uselog = (exists $_CENTROID_FRAME_{LOGFILE} && 
+	  defined $_CENTROID_FRAME_{LOGFILE}) ?
+  $_CENTROID_FRAME_{LOGFILE} : 1;
+
+# initialise the results array
+$_CENTROID_FRAME_{RESULTS} = [];
+
+# Create logfile object
+my $log;
+if ($uselog) {
+  $log = new ORAC::LogFile("log.pointing");
+
+  # Write header to logfile
+  my $time = gmtime();
+  $log->header("Pointing log file - created on $time",
+	       "\n#     Time       Filter Az   DAZ   DEL   Peak  Seeing  CSO   ST",
+	       "------------------------------------------------------------------"
+	      );
+}
+
+# Loop over frames
+foreach my $i (1..$Frm->nfiles) {
+
+  my $in = $Frm->file($i);
+  my $args;
+
+  # Need to check for kappa 0.14 or higher -- use the KAPVERSION_MINOR
+  # global variable
+  # If we have KAPPA14 we have to first make sure the wcsframe
+  # is AXIS so that we can start searching from the
+  # coordinate centre
+  if (starversion_lt('kappa','V0.14-0')) {
+    $args = " cosys=d init=[0,0]"
+  } else {
+    $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=axis");
+    $args = " init='0,0' ";
+  }
+
+  $args .= " mode=i cerror=true search=$box";
+
+  $Mon{kappa_mon}->obeyw("centroid","ndf=$in $args");
+
+  # Read the result
+  my (@centre, $ORAC_STATUS);
+
+  # KAPPA 14 returns the centre pos as a string, earlier versions
+  # return an array -- just use XCEN and YCEN with two adam calls
+  ($ORAC_STATUS, $centre[0]) = $Mon{kappa_mon}->get("centroid","xcen");
+  ($ORAC_STATUS, $centre[1]) = $Mon{kappa_mon}->get("centroid","ycen");
+
+  # Check for bad pixels
+  my ($daz, $del, $max);
+  if ($centre[0] > -1e38 && $centre[1] > -1e38 && $centre[0] < 1e6
+       && $centre[1] < 1e6) {
+
+    # Determine the peak signal in the image (might be useful
+    # for measuring flux changes in blazars
+
+    # Run stats on an NDF section of the pixel at the centroid position
+    $Mon{kappa_mon}->obeyw("stats","NDF=$in($centre[0],$centre[1])");
+
+    ($ORAC_STATUS, $max) = $Mon{kappa_mon}->get("stats","maximum");
+
+    # Store it before it gets reformatted
+    $centre[2] = $max;
+
+    # Format items that may be bad
+    $max = sprintf "%7.3f", $max;
+    $daz = sprintf "%6.2f", $centre[0];
+    $del = sprintf "%6.2f", $centre[1];
+    orac_print "Centroid position: $daz, $del\n" if $uselog;
+
+  } else {
+    # Use undef
+    @centre = ( undef, undef,undef);
+
+    # Convert bad to asterix
+    $max = '*******';
+    $daz = '******';
+    $del = '******';
+    orac_print "Centroid could not be located\n" if $uselog;
+
+    $ORAC_STATUS = ORAC__ERROR;
+  }
+
+  # Store the results
+  $_CENTROID_FRAME_{RESULTS}->[$i] = [@centre];
+
+  # Local copy of information for log file
+  if ($uselog) {
+
+    my $num = sprintf "%-4d", $Frm->number;
+    my $time= sprintf "%11.2f", $Frm->hdr('ORACTIME');
+    my $see = sprintf "%5.2f", $Frm->hdr('SEEING');
+    my $cso = sprintf "%5.2f", $Frm->hdr('TAU_225');
+#    my $filt= sprintf "%4s",   $filters[$i-1];
+    my $filter = ($Frm->hdr('WAVELENG') ? $Frm->hdr('WAVELENG') : "850"); # Temp HACK
+    my $filt= sprintf "%4s",   $filter;
+    my $lst = $Frm->hdr('STSTART');
+    $lst =~ s/\.\d+$//;  # Strip decimals from seconds
+
+    # Calculate average azimuth for the pointing
+    my $az = int (($Frm->hdr('STRT_AZD') + $Frm->hdr('END_AZD') ) /2.0 );
+    $az = sprintf "%3d", $az;
+
+    # Add log entry
+    $log->addentry("$num $time $filt  $az $daz $del $max $see $cso $lst");
+
+  }
+
+}
+
+
+# COPYRIGHT
+#
+#   Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+#   Council. All Rights Reserved.

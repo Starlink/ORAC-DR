@@ -1,0 +1,240 @@
+=head1 NAME
+
+_FIND_TOTAL_FLUX_ - Determine the peak signal of a point source
+
+=head1 DESCRIPTION
+
+Finds the peak signal of a point source located at the map origin.
+No attempt is made to search for sources not located at approximately
+the map centre.
+
+The peak signal is determined by fitting a gamma function.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item LOGFILE
+
+A flag to indicate whether a log file should be written containing
+the results of the integrated intensity calculation. Default is
+true.
+
+=item VERBOSE
+
+Flag to indicate whether informational messages should be 
+given to the user. Default is verbose (true).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+=over 4
+
+=item KAPPA
+
+PSF, WCSFRAME
+
+=back
+
+=head1 OUTPUT DATA
+
+On completion, the primitive hash C<%_FIND_TOTAL_FLUX_>
+contains the following keys:
+
+=over 4
+
+=item RESULTS
+
+An array containing the peak signal for each sub-instrument.
+Contains C<undef> if the calculation did not complete sucessfully.
+Starts counting at 1.
+
+=back
+
+=head1 OUTPUT FILES
+
+The following files are created:
+
+=over 4
+
+=item C<log.peak>
+
+Log of peak signals.
+
+=back
+
+The frame object is not updated. Means no output file - write to Index file
+
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt> and 
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+Copyright (C) 2005 Particle Physics and Astronomy Research Council and
+the University of British Columbia.
+All Rights Reserved.
+
+=cut
+
+# Write logfile (default to true)
+my $uselog = (exists $_FIND_TOTAL_FLUX_{LOGFILE} &&
+          defined $_FIND_TOTAL_FLUX_{LOGFILE}) ?
+  $_FIND_TOTAL_FLUX_{LOGFILE} : 1;
+
+# Should I be verbose (default to yes)
+my $verbose = (exists $_FIND_TOTAL_FLUX_{VERBOSE} && 
+	       defined $_FIND_TOTAL_FLUX_{VERBOSE}) ?
+  $_FIND_TOTAL_FLUX_{VERBOSE} : 1;
+
+# initialise the results array
+$_FIND_TOTAL_FLUX_{RESULTS} = [];
+
+
+# Initialise the log file if necessary
+my $log;
+if ($uselog) {
+  $log = new ORAC::LogFile("log.peak");
+  my $time = gmtime();
+  $log->header("Pointing log file - created on $time",
+               "\n#     Time   Filter    PeakFlux      TotalFlux    CSO El",
+             "------------------------------------------------------------------"
+            );
+
+}
+
+#my @filters = $Frm->filters;
+
+# Get the centroid and the peak at the centroid
+_CENTROID_FRAME_ LOGFILE=0
+
+
+# Now Loop over frames
+for my $i (1.. $Frm->nfiles ) {
+
+  # Find the input file
+  my $in = $Frm->file($i);
+
+  # we now run PSF if possible else simply use the peak from 
+  # centroiding
+  my $totalflux;
+  my $peak = $_CENTROID_FRAME_{RESULTS}->[$i]->[2]; # default peak
+  if (starversion_lt('kappa', 'V0.15-0')) {
+    # warn
+    orac_warn "Your kappa version is too old to use PSF properly. Using stats to find peak\n";
+
+  } else {
+    # Need to make sure we are using a AXIS coordinate frame
+    $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=axis");
+
+    # Create temporary file with the position in
+    my $tmp = new ORAC::TempFile;
+    my $tmpfile = $tmp->file;
+    print { $tmp->handle } $_CENTROID_FRAME_{RESULTS}->[$i]->[0]," ",
+       $_CENTROID_FRAME_{RESULTS}->[$i]->[1], "\n";
+    $tmp->handle->close;
+    my $args = "incat=! device=! cofile=$tmpfile";
+
+    # Run PSF
+##    $Mon{kappa_mon}->obeyw("psf","norm=no range=4 isize=15 in=$in $args");
+
+    # Retrieve the answer
+    my $ORAC_STATUS;
+##    ( $ORAC_STATUS, my $amp)  = $Mon{kappa_mon}->get("psf","amp1");
+##    ( $ORAC_STATUS, my $axisr) = $Mon{kappa_mon}->get("psf","axisr");
+##    ( $ORAC_STATUS, my $fwhm) = $Mon{kappa_mon}->get("psf","fwhm");
+##    ( $ORAC_STATUS, my $gamma) = $Mon{kappa_mon}->get("psf","gamma");
+
+    # Find the integrated intensity under the fitted PSF, given these parameters
+    # The units will be in ...
+
+      _FIND_INTEGRATED_INTENSITY_ FRAME=$i VERBOSE=0 LOGFILE=0;
+      $totalflux = $_FIND_INTEGRATED_INTENSITY_{RESULTS} ;
+
+##    $totalflux = integrate_psf($amp, $fwhm, $gamma);
+
+# Need some criteria for replacing this next statement group. Do we just integrate within
+# an aperture? Do we just report the peak?
+# No, should then go on to use an ap phot method like the old f-i-i
+
+    # Check the axis ratio
+##    if ($axisr > 1.4 || $axisr < 0.75) {
+##      orac_warn "Axis ratio of source out of specification (was $axisr). Ignoring fit.\n";
+
+      # Use stats peak
+##      orac_warn "Using aperture photometry at centroid position for $in instead.\n";
+
+      # Call _FIND_INTEGRATED_INTENSITY_ primitive on the current image
+##       _FIND_INTEGRATED_INTENSITY_ FRAME=$i ;
+##      $totalflux = $_FIND_INTEGRATED_INTENSITY_{RESULTS} ;
+#      $totalflux = 1;
+##    }
+  }
+
+  # Store the result in the hash
+  $_FIND_TOTAL_FLUX_{RESULTS}->[$i] = $totalflux;
+
+  # Write a log file if required
+  if ($uselog) {
+
+    my $num = sprintf "%-4d", $Frm->number;
+    my $time= sprintf "%12.3f", $Frm->hdr('ORACTIME');
+#    my $filt= sprintf "%4s",   $filters[$i-1];
+    my $filt= sprintf "%4s",   "850";
+    $peak = sprintf "%9.2f", $peak;
+    $totalflux = sprintf "%9.2f", $totalflux;
+
+    # Get the tau
+    # TAU from calibration object
+#    my $tau = sprintf "%5.2f", $Cal->tau($filters[$i-1]);
+
+    # Use that tau to calculate CSO
+#    my ($cso, $status) = JCMT::Tau::get_tau('CSO',$filters[$i-1], $tau);
+#    if ($status != 0) {
+#      $cso = "*****";
+#    } else {
+#      $cso = sprintf "%5.2f", $cso;
+#    }
+      my $cso = sprintf "%5.2f", "1.0";
+
+    # elevation
+    my $el = int (($Frm->hdr('STRT_ELD') + $Frm->hdr('END_ELD') ) /2.0 );
+
+    # Write the entry
+    $log->addentry("$num $time $filt $peak $totalflux  $cso $el " . $Frm->hdr('OBJECT'));
+
+  }
+
+#  orac_print "Total flux for filter ". $filters[$i-1].": $totalflux\n"
+  orac_print "Total flux for filter 850: $totalflux\n"
+    if $verbose;
+
+}
+
+orac_print "Calculated peak signal from map\n" if $verbose;
+
+
+
+# Subroutine to find the integral of the Sersic function used in the PSF fit.
+# Total flux  = $\int_0^\infty \int_0^{2\pi} A\exp[-0.5(r/\sigma)^\gamma] r\,dr\,d\theta$
+# Uses the Gamma function implemented in Math::Gsl, and the fastest method mentioned in 
+# the Math::Gsl::Sf documentation.
+# Solution obtained from CRC Standard Mathematical Tables and Formulae, by Daniel Zwillinger
+
+sub integrate_psf {
+  my $PI = 3.1415926535;
+
+  use Math::Gsl::Sf qw(:Gamma);
+
+  my ($amp, $width, $gamma) = @_;
+
+  my $k = 2.0 / $gamma;
+
+  my $const = $PI / ( 2.0 * log(2.0)**$k );
+
+  my $integratedflux = $const * $amp * $width * $width * Math::Gsl::Sf::sf_gamma($k) / $gamma;
+
+  return $integratedflux;
+}
