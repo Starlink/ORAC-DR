@@ -21,7 +21,7 @@
           my $incflag = "T";
 
 # Define a useful variable for a null catalogue magnitude.
-          my $nullmag = 999.99;
+          my $nullmag = 99.999;
 
 # Form new group
 # ==============
@@ -95,7 +95,7 @@
 # Obtain the airmass from the FITS headers.  Find the approximate
 # mean airmass from the start and end values.  This should be
 # adequate unless it is a long integration with the source crossing
-# the meridian.  AMEND is currently not wrriten to the UFTI header.
+# the meridian.  AMEND is currently not written to the UFTI header.
 # ***UFTI specific code ***
              my $amstart = $Frm->hdr( "AMSTART" );
 #             my $amend   = $Frm->hdr( "AMEND" );
@@ -121,14 +121,14 @@
 
 # Faint standards have name FSn, where n is the number.  Only JHK
 # magnitudes are tabulated.
-             if ( substr( $starname, 0, 2 ) eq "FS" && $catcol > -1 ) {
+             if ( $catcol > -1 ) {
                 my $fs_standards;
 
 # Open the faint-standards file and store its records in an array.
-                if (  -e "/ukirt_sw/ircamdr/fs.dat" ) {
-                   $fs_standards = "/ukirt_sw/ircamdr/fs.dat";
+                if (  -e "/ukirt_sw/ircamdr/fs99.dat" ) {
+                   $fs_standards = "/ukirt_sw/ircamdr/fs99.dat";
                 } else {
-                   $fs_standards = "fs.dat";
+                   $fs_standards = "fs99.dat";
                 }
                 open( FS_STANDARDS, "<$fs_standards" ) || 
                       die "JHK Standards file not found";
@@ -141,24 +141,36 @@
                 }
 
 # Search through the table finding a line containing the object name.  The
-# file currently consists of some headings, then alternating lines of
-# star name and the magnitudes.  So we can exit at the last but one line.
-                my $recno = 0;
-                until ( $stds[ $recno ] =~ /$starname/ ||
-                        $recno >= $#stds ) {
+# file currently consists of some column headings, then a relational table.
+# Columns in the table include the star name, K magnitudes, (J-H) and (H-K)
+# colours.
+
+# Look at each line.  Extract the name, stripping the blanks.  Proceed
+# until an uppercase match is found.
+                my $recno = 1;
+                my $name = " ";
+                until ( uc( $name ) eq $starname || $recno > $#stds ) {
                    $recno++;
+                   $name = substr( $stds[ $recno ], 0, 9 );
+                   $name =~ s/ //g;
                 }
 
-# Check that a match has been found.  Use a speical value to indicate
+# Check that a match has been found.  Use a special value to indicate
 # a null magnitude.
-                if ( $recno >= $#stds ) {
+                if ( $recno > $#stds ) {
                    orac_warn "Standard $objname has no tabulated JHK magnitudes in $fs_standards\n";
                    $catmag = $nullmag;
                 } else {
 
-# Extract the magnitudes.  Note that these are in the line following the
-# name.
-                   my @mags = split( / +/, $stds[ $recno + 1 ] );
+# Extract the columns.
+                   my @fields = split( / +/, $stds[ $recno ] );
+
+# Extract and evaluate the magnitudes from the colours.  This could be done
+# more succinctly, but use more freiendly intermediate variables.
+                   my $Kmag = $fields[ 7 ];
+                   my $Hmag = $Kmag + $fields[ 13 ];
+                   my $Jmag = $Hmag + $fields[ 10 ];
+                   my @mags = ( $Jmag, $Hmag, $Kmag );
 
 # Obtain the desired magnitude.
                    $catmag = $mags[ $catcol ];
