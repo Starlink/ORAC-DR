@@ -52,7 +52,7 @@ object.
 
 =over 4
 
-=item B<standardindex>
+=item B<flatindex>
 
 Uses F<rules.flat_im> and <rules.flat_sp>
 
@@ -270,10 +270,75 @@ sub arlinesindex {
     return $self->{ArlinesIndex}; 
 }
 
+=item B<calibratedarc>
 
+Returns the name of a suitable calibrated arc file. If no suitable calibrated
+arc file can be found, this method returns <undef> rather than croaking as
+other calibration options do. This is so this calibration can be skipped if
+no calibration arc can be found.
 
+=cut
 
+sub calibratedarc {
+  my $self = shift;
+  if (@_) {
+    return $self->calibratedarcname(shift);
+  };
 
+  my $ok = $self->calibratedarcindex->verify($self->calibratedarcname,$self->thing);
+
+  # happy ending
+  return $self->calibratedarcname if $ok;
+
+  if (defined $ok) {
+   my $calibratedarc = $self->calibratedarcindex->chooseby_negativedt('ORACTIME',$self->thing, 0);
+
+    unless (defined $calibratedarc) {
+      # Nothing suitable, return undef.
+      return undef;
+    }
+
+    # Store the good value
+    $self->calibratedarcname($calibratedarc);
+
+  } else {
+    # Nothing suitable, return undef.
+    return undef;
+  }
+}
+
+=item B<calibratedarcindex>
+
+Returns the index object associated with the calibratedarc index file.
+Index is static and therefore in calibration directory.
+
+=cut
+
+sub calibratedarcindex {
+  my $self = shift;
+  if ( @_ ) { $self->{CalibratedArcIndex} = shift; }
+
+  unless ( defined( $self->{CalibratedArcIndex} ) ) {
+    my $indexfile = $ENV{ORAC_DATA_CAL} . "/index.calibratedarc";
+    my $rulesfile = $ENV{ORAC_DATA_CAL} . "/rules.calibratedarc";
+    $self->{CalibratedArcIndex} = new ORAC::Index( $indexfile, $rulesfile );
+  }
+  return $self->{CalibratedArcIndex};
+}
+
+=item B<calibratedarcname>
+
+Return (or set) the name of the current calibrated arc file - no checking.
+
+  $calibratedarc = $Cal->calibratedarcname;
+
+=cut
+
+sub calibratedarcname {
+  my $self = shift;
+  if ( @_ ) { $self->{CalibratedArc} = shift; }
+  return $self->{CalibratedArc};
+}
 
 =item B<iarname>
 

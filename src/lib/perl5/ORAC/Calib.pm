@@ -96,6 +96,9 @@ sub new {
   $obj->{BaseShift} = undef;
   $obj->{ReferenceOffset} = undef;
 
+  $obj->{CalibratedArc} = undef;
+  $obj->{CalibratedArcIndex} = undef;
+
   $obj->{DarkIndex} = undef;
   $obj->{FlatIndex} = undef;
   $obj->{ArcIndex} = undef;
