@@ -57,7 +57,7 @@
 #
 # Output Data:
 #    -  Residual sky-subtracted frame inheriting the frame's name but with 
-#    the _ss suffix.
+#    the _srs suffix.
 #    -  The one-dimensional collapsed spectral-axis profile inheriting the
 #    frame's name but with the _ypr suffix.
 #
@@ -86,11 +86,12 @@
 # Size of the smoothing box.  0 or negative is no smoothing.
     my $smooth = defined $_EXTRACT_FIND_ROWS_{SMOOTH} ? $_EXTRACT_FIND_ROWS_{SMOOTH} : 0;
     $smooth = ( $smooth > 0 ) ? $smooth : 0;
-
+    $smooth = 0 if ( $Frm->recipe =~/STANDARD/ );
+    
 # Derive the smoothing kernel size.
     my ( $boxsize, $param );
     if ( $smooth ) {
-       $boxsize = int( ( $smooth + 1.0 ) / 2 ) * 2 + 1;
+       $boxsize = int( $smooth / 2 ) * 2 + 1;
     }
 
 # Determine the residual background.
@@ -119,12 +120,13 @@
     $Mon{ 'kappa_mon' }->obeyw( "stats", "ndf=$in comp=Data clip=[2,2.5,3]" );
     ( my $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
 
-# Generate the input and output filenames.  Use suffix _ss for sky subtraction.
-    my ( $in, $ssout ) = $grpFrm->inout( "_ss" );
+# Generate the input and output filenames.  Use suffix _srs for
+# sky-residual subtraction.
+    my ( $in, $ssout ) = $grpFrm->inout( "_srs" );
       
 # Subtract the sky correction from varying sky levels.
     $Mon{ 'kappa_mon' }->obeyw( "csub", "in=$in out=$ssout scalar=$mean" );
-    orac_print "$in to $ssout: residual sky subtracted\n";
+    orac_print "$in to $ssout: residual sky ($mean) subtracted\n";
     $grpFrm->file( $ssout );
 
 # Want to retain this improved image for extraction.
@@ -147,7 +149,7 @@
 # =================================
 
 # Collapse the image along the dispersion axis into a Y PRofile (_ypr) file.
-#      my $colfile = $in."_ypr";
+#      my $colfile = $in . "_ypr";
        my ( $in, $colfile ) = $grpFrm->inout( "_ypr" );
 
        $param = "in=$in out=$colfile axis=1 estimator=median title=$colfile"; 
@@ -178,49 +180,48 @@
        my $mult = 1;
        $mult = 2 if ( $nbeams==3 );
 
-# Create a temporary file name.
+# Create temporary file names.
        my $tmp = new ORAC::TempFile;
        my $tmpfile = $tmp->file;
        my $ORAC_STATUS;
+
+       my $smoothed = new ORAC::TempFile;
+       my $smofile = $smoothed->file;
 
        my $posbeamsfound = 0;
        if ( $posbeams ) {
 
 # Need to thresh to only see the positive half.
-          $param = "in=$colfile out=$tmpfile thrlo=0 newlo=0 thrhi=$uth newhi=$uth";
+          $param = "in=$colfile out=$tmpfile thrlo=0 newlo=bad thrhi=$uth newhi=$uth";
           $Mon{ 'kappa_mon' }->obeyw( "thresh", "$param" ); 
 
 # Smooth
 # ------
           if ( $smooth ) {
-             my $smoothed = new ORAC::TempFile;
-             my $smofile = $smoothed->file;
              $param = "in=$tmpfile estimator=median box=$boxsize out=$smofile";
              $Mon{ 'kappa_mon' }->obeyw( "block", "$param");
+             $tmpfile = $smofile;
+          }
 
 # Locate and store the positive beams.
 # ------------------------------------
-# Call Figaro:EMLT on the positive half of the collapsed file.
-             $param = "spectrum=$smofile xstart=min xend=max lines=$posbeams";
-             $Mon{ 'figaro2' }->obeyw( "emlt", "$param");
-          } else {
 
-# Call Figaro:EMLT on the positive half of the collapsed file.
-             $param = "spectrum=$tmpfile xstart=min xend=max lines=$posbeams";
-             $Mon{ 'figaro2' }->obeyw( "emlt", "$param" );
-          }
+# Create an image so that source extraction can follow on the (smoothed)
+# collapsed positive half.  Figaro:EMLT is not robust for ESO data.
+          _FIND_PEAKS_BY_MAKING_IMAGE_ PROFILE=$tmpfile MAXPEAKS=$posbeams
 
 # Extract the result parameter.
-          ( $ORAC_STATUS, $posbeamsfound ) = $Mon{ 'figaro2' }->get( "emlt", "EMLT_LINES" );
+          $posbeamsfound = $_FIND_PEAKS_BY_MAKING_IMAGE_{FOUND};
           orac_print "Detected $posbeamsfound of $posbeams positive beams\n";
 
 # Loop over the detected beams, writing the details to the array of hashes.
-          my @pix = $Mon{ 'figaro2' }->get( "emlt", "EMLT_POS" );
-          my @peak = $Mon{ 'figaro2' }->get( "emlt", "EMLT_PEAK" );
+          my $pixref = $_FIND_PEAKS_BY_MAKING_IMAGE_{POS};
+          my $peakref = $_FIND_PEAKS_BY_MAKING_IMAGE_{PEAK};
           foreach my $i ( 1 .. $posbeamsfound ) {
-             $beams[ $i ] = {POS => $pix[ $i ], MULT => $mult};
-             orac_print "Found beam $i (factor $mult) at: pixel $pix[ $i ]; " .
-                        "peak mean strength = $peak[ $i ].\n";
+             $beams[ $i ] = {POS => $pixref->[ $i-1 ], MULT => $mult};
+orac_warn "Store beam info $i, POS to " .  $pixref->[ $i-1 ] . "MULT: $mult\n";
+             orac_print "Found beam $i (factor $mult) at: pixel $pixref->[ $i-1 ]; " .
+                        "peak mean strength = $peakref->[ $i-1 ].\n";
           }
        }
 
@@ -233,45 +234,45 @@
        $negbeams = 2 if ( $nbeams == 4 );
        $mult = -1;
 
+# Need a new smoothed work array.
+       my $smoothed = new ORAC::TempFile;
+       my $smofile = $smoothed->file;
+
        my $negbeamsfound = 0;
        if ( $negbeams ) {
 
 # Need to thresh to only see the positive half of the negated file.
-          $param = "in=$ncolfile out=$tmpfile thrlo=0 newlo=0 thrhi=$uth newhi=$uth";
+          $param = "in=$ncolfile out=$tmpfile thrlo=0 newlo=bad thrhi=$uth newhi=$uth";
           $Mon{ 'kappa_mon' }->obeyw( "thresh", "$param" );
 
 # Smooth
 # ------
           if ( $smooth ) {
-             my $smoothed = new ORAC::TempFile;
-             my $smofile = $smoothed->file;
              $param = "in=$tmpfile estimator=median box=$boxsize out=$smofile";
              $Mon{ 'kappa_mon' }->obeyw( "block", "$param" );
+             $tmpfile = $smofile;
+          }
 
 # Locate and store the negative beams.
 # ------------------------------------
-# Call Figaro:EMLT on the negative half of the collapsed and smoothed file.
-             $param = "spectrum=$smofile xstart=min xend=max lines=$negbeams";
-             $Mon{ 'figaro2' }->obeyw( "emlt", "$param" );
-          } else {
-
-# Call Figaro:EMLT on the negative half of the collapsed file.
-             $param = "spectrum=$tmpfile xstart=min xend=max lines=$negbeams";
-             $Mon{ 'figaro2' }->obeyw( "emlt", "$param" );
-          }
+# Create an image so that source extraction can follow on the smoothed
+# collapsed negative half.  Figaro:EMLT is not robust for ESO data.
+          _FIND_PEAKS_BY_MAKING_IMAGE_ PROFILE=$tmpfile MAXPEAKS=$negbeams
       
-          ( $ORAC_STATUS, $negbeamsfound ) = $Mon{ 'figaro2' }->get( "emlt", "EMLT_LINES" );
+          $negbeamsfound = $_FIND_PEAKS_BY_MAKING_IMAGE_{FOUND};
           orac_print "Detected $negbeamsfound of $negbeams negative beams.\n";
 
 # Loop over the detected beams, writing the details to the group user
 # header.
-          my @pix = $Mon{ 'figaro2' }->get( "emlt", "EMLT_POS" );
-          my @peak = $Mon{ 'figaro2' }->get( "emlt", "EMLT_PEAK" );
+          my $pixref = $_FIND_PEAKS_BY_MAKING_IMAGE_{POS};
+          my $peakref = $_FIND_PEAKS_BY_MAKING_IMAGE_{PEAK};
+
           foreach my $i ( 1 .. $negbeamsfound ) {
              my $j = $i + $posbeamsfound;
-             $beams[ $j ] = {POS => $pix[ $i ], MULT => $mult};
-             orac_print "Found beam $j (factor $mult) at: pixel $pix[ $i ];" .
-                        "peak mean strength = $peak[ $i ].\n";
+orac_warn "Store beam info $j, POS to " .  $pixref->[ $i-1 ] . "MULT: $mult\n";
+             $beams[ $j ] = {POS => $pixref->[ $i-1 ], MULT => $mult};
+             orac_print "Found beam $j (factor $mult) at: pixel $pixref->[ $i-1 ]; " .
+                        "peak mean strength = $peakref->[ $i-1 ].\n";
           }
        }
 
