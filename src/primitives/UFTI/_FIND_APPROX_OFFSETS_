@@ -21,6 +21,13 @@
 # specific.
        my $rotangle = ( $_FIND_APPROX_OFFSETS_{ANGLE} || 0.65 );
 
+# Obtain any shifts of Cartesian co-ordinates to be applied.
+       my $xshift_toref = defined( $_FIND_APPROX_OFFSETS_{XSHIFT} ) ?
+                          $_FIND_APPROX_OFFSETS_{XSHIFT} : 0;
+
+       my $yshift_toref = defined( $_FIND_APPROX_OFFSETS_{YSHIFT} ) ?
+                          $_FIND_APPROX_OFFSETS_{YSHIFT} : 0;
+
 # Define some useful variables to apply the rotation matrix.
        my $pi = atan2( 1, 1 ) * 4;
        my $dtor = $pi / 180.0;
@@ -96,11 +103,11 @@
           my $xmid = ( ( $lbnd[0] + $ubnd[0] ) / 2.0 );
           my $ymid = ( ( $lbnd[1] + $ubnd[1] ) / 2.0 );
 
-# Initialise minimum distance.  It acts as an indicator of whether or not
+# Initialise maximum flux.  It acts as an indicator of whether or not
 # central-source offsets have been found.
-          my $mindist = 999999;
+          my $maxflux = 0;
           my ( $xnear, $ynear, $xorigin, $yorigin );
-          my ( $xoffset, $yoffset );
+          my ( $xoffset, $yoffset, $flux );
 
 # Search in box?  For this the corresponding find file from FINDOBJ must 
 # exist.
@@ -134,6 +141,7 @@
                    my @fields = split( /\s+/, $line );
                    my $xpos = $fields[1];
                    my $ypos = $fields[2];
+                   my $flux = $fields[3];
 
 # Increment the object count.
                    $objnum++;
@@ -141,10 +149,10 @@
 # See if the object is within the box.
                    if ( $xpos > $xlbox && $xpos < $xubox &&
                         $ypos > $ylbox && $ypos < $yubox ) {
-                      my $dist = sqrt( ( $xpos - $xcentre ) **2 + 
-                                       ( $ypos - $ycentre ) **2 );
-                      if ( $dist < $mindist ) {
-                         $mindist = $dist;
+
+# Store it if it the brightest.
+                      if ( $flux > $maxflux ) {
+                         $maxflux = $flux;
                          $nearest = $objnum;
                          $xnear = $xpos;
                          $ynear = $ypos;
@@ -164,10 +172,10 @@
              my $yorigin = $yoff;
              $first = 0;
 
-# Specify the offsets to be used.  If the minimum distance is unchanged
+# Specify the offsets to be used.  If the maximum flux is unchanged
 # just use the headers, otherwise find the displacement.  
           } else {
-             if ( $mindist != 999999 && $usebox =~ /TRUE/ && -e $findfile ) {
+             if ( $maxflux != 0 && $usebox =~ /TRUE/ && -e $findfile ) {
                 $xoffset = $xnear - $xmid;
                 $yoffset = $ynear - $ymid;
                 orac_print "Orac says: using central-source offsets ($xoffset,$yoffset) for frame $ndf\n";
@@ -177,6 +185,10 @@
                 $yoffset = $yoff - $yorigin;
                 orac_print "Orac says: using $offtype offsets ($xoffset,$yoffset) for frame $ndf\n";
              }
+
+# Convert to the required co-ordinate frame.
+             $xoffset = $xoffset + $xshift_toref;
+             $yoffset = $yoffset + $yshift_toref;
 
 # Create an offset file as used by CCDPACK's REGISTER task.  Store the
 # the frame name and offsets within the file.
