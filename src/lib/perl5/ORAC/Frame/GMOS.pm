@@ -351,9 +351,9 @@ sub number {
   # Leading zeroes are dropped
 
   my $raw = $self->raw;
-  if (defined $raw && $raw =~ /N(\d+)S(\d+).fits$/) {
+  if (defined $raw && $raw =~ /N(\d+)_(\d+).sdf$/) {
     # Drop leading 00
-    $number = $1 * 1;
+    $number = $2 * 1;
   } else {
     # No match so set to -1
     $number = -1;
