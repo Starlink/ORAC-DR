@@ -183,8 +183,8 @@ sub overwrite {
 
 Convert a file to the format specified by options.
 
-  $nrefile = $Cvt->convert;
-  $newfile = $Cvt->convert($oldfile, { IN => 'FITS', OUT => 'NDF' });
+  @files = $Cvt->convert;
+  @files = $Cvt->convert($oldfile, { IN => 'FITS', OUT => 'NDF' });
 
 File is optional - uses infile() to retrieve the name if not specified.
 The options hash is optional (assumed to be last argument). If not
@@ -201,7 +201,8 @@ name.
 
 The output format is set to NDF if non-specified.
 
-Returns the new filename (derived from the input filename).
+Returns a list containing the input filename and output filename.
+Neither of these filenames has any directory structure removed.
 
 Output filename is written to the current working directory of the
 CONVERT monoliths (defaults to the CWD of the program when the
@@ -248,9 +249,21 @@ sub convert {
   }
 
   # If the input format is the same as the output just return
-  # Make sure directory path is removed
   if ($options{'IN'} eq $options{OUT}) {
-    return basename($filename);
+
+    my $outfile = basename( $filename );
+
+    unless( -e $outfile ) {
+      symlink( $filename, $outfile ) ||
+      do {
+        orac_err("Error creating symlink from ORAC_DATA_OUT to $filename\n");
+        orac_err("$!\n");
+        return undef;
+      };
+    } else {
+      orac_warn("Symlink from ORAC_DATA_OUT to $filename already exists. Continuing...\n");
+    }
+    return ( $filename, $outfile );
   }
 
   # Set the overwrite flag
@@ -334,10 +347,8 @@ sub convert {
   # NOT YET IMPLEMENTED
 
   # Return the name of the converted file
-  # Make sure that we dont return a full path (the conversion occurred
-  # in the current directory even if we read from a remote directory)
 
-  return basename($outfile);
+  return ( $filename, $outfile );
 }
 
 
@@ -1127,10 +1138,11 @@ $Id$
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 Jim Lewis E<lt>jrl@ast.cam.ac.ukE<gt>
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
