@@ -17,24 +17,47 @@
 
     my @allcols = ('X_coordinate','Y_coordinate','Ellipticity','Gaussian_sigma','Classification');
     my ($retval,$errmsg);
+    my $fwhm=0;
+    my $nsamp=0;
     foreach my $i ($Frm->findnsubs) {
         my $tab = $Frm->getasubframe($i)->uhdr("CATFILE");
         my $tmpfile = ORAC::TempFile->new(0);
         $retval = cir_tabledump($tab,$tmpfile->file,\@allcols,5,$errmsg);
         my $fh = $tmpfile->handle;
         open $fh,$tmpfile->file;
+	# Log the results to a text log file
+	my $log = new ORAC::LogFile("psf_detections.log");
+	my @headers = ("#Frame Cam X         Y         Ellipt    FWHM      Class    Intl_foc  TCS_foc",
+                       "#---------------------------------------------------------------------------");
+        #               123456 123 123456.78 123456.78 123456.78 123456.78 12356 123456.78 123456.78
+	$log->header(@headers);
         orac_print("    X         Y     Ellipt    FWHM   Class\n");
         while (<$fh>) {
             chomp;
             my @a = split /\s+/;
             $a[3] *= 2.235;
 	    my $line = sprintf("%8.2f %8.2f %8.3f %8.3f %5.0f\n",@a);
+	    my $log_fnum = $Frm->number;
+	    my $log_cnum = $Frm->hdr("CAMNUM");
+	    my $log_if = $Frm->hdr("FOC_POSN");
+	    my $log_m2 = $Frm->hdr("TCS_FOC");
+            my $logline = sprintf("%6.0f %3.0f %8.2f %8.2f %8.3f %8.3f %5.0f %8.4f %8.4f", $log_fnum, $log_cnum, $a[0], $a[1], $a[2], $a[3], $a[4], $log_if, $log_m2);
+	    $log->addentry($logline);
 	    orac_print($line);
+	    # Calculate mean FWHM for class=0 objects
+	    if($a[4] == 0) {
+ 		$nsamp++;
+		$fwhm+=$a[3];
+ 	    }
         }
         $fh->close;
         $tmpfile->DESTROY;
+	if($nsamp > 0) {
+	   $fwhm /= $nsamp;
+	   $fwhm = sprintf("%8.2f", $fwhm);
+	   my $foc = $Frm->hdr("FOC_POSN");
+	   orac_print("Mean FWHM of class=0 objects is: $fwhm, at foc_posn $foc\n");
+	   orac_print("$foc, $fwhm # FOC, FWHM\n");
+        }
     }
-
-        
-
 
