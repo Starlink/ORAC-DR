@@ -83,6 +83,7 @@ sub new {
   $obj->{FlatIndex} = undef;
   $obj->{BiasIndex} = undef;
   $obj->{SkyIndex} = undef;
+  $obj->{StandardIndex} = undef;
 
   $obj->{DarkNoUpdate} = 0;
   $obj->{FlatNoUpdate} = 0;
@@ -461,7 +462,7 @@ sub standard {
     my $standard= $self->standardindex->choosebydt('ORACTIME',$self->thing);
     croak "No suitable standard frame was found in index file"
       unless defined $standard;
-    $self->flatname($standard);
+    $self->standardname($standard);
   } else {
     croak("Error in standard calibration checking - giving up");
   };
