@@ -28,6 +28,7 @@ objects are available to B<ORAC::Frame::Michelle> objects.
  
 use 5.004;
 use ORAC::Frame::UKIRT;
+use ORAC::Print;
  
 # Let the object know that it is derived from ORAC::Frame;
 #@ORAC::Frame::Michelle::ISA = qw/ORAC::Frame::UKIRT/;
@@ -42,7 +43,7 @@ use vars qw/$VERSION/;
 
 # For reading the header
 use NDF;
-
+use Starlink::HDSPACK qw/copobj/;
 
 =head1 PUBLIC METHODS
 
@@ -90,7 +91,7 @@ sub new {
   # Configure initial state - could pass these in with
   # the class initialisation hash - this assumes that I know
   # the hash member name
-  $self->rawfixedpart('c');
+  $self->rawfixedpart('M');
   $self->rawsuffix('.sdf');
  
   # If arguments are supplied then we can configure the object
@@ -123,6 +124,8 @@ the prefix and arg2 is the observation number.
 =cut
 
 sub configure {
+
+
   my $self = shift;
 
   # If two arguments (prefix and number) 
@@ -143,18 +146,26 @@ sub configure {
   $self->file($fname);
   my $rootfile = $self->file;
 
- # Populate the header
-  # for hds container set header NDF to be in the .header extension
-  my $hdr_ext = $self->file.".header";
-
-  $self->readhdr($hdr_ext);
-
   # Set the raw data file name
 
   $self->raw($fname);
 
   # We have as many files as there are NDF compenents, minus the header component
   $self->findnsubs;
+
+ # Populate the header
+  # for hds container set header NDF to be in the .header extension
+  my $hdr_ext = $self->file.".header";
+
+  $self->readhdr($hdr_ext);
+
+  # now read the subheaders 
+
+  foreach my $i (1..$self->nsubs) {
+    my ($href, $status) = fits_read_header($self->file . ".i$i");
+     $self->hdr->{$i} = $href;
+    # (same as $self->hdr($i, $href);)
+  }
 
   # populate file method
 
@@ -165,8 +176,6 @@ sub configure {
     $self->file($i,$rootfile.".i$i");
 
   };
-
-
 
   # Find the group name and set it
   $self->findgroup;
@@ -214,66 +223,13 @@ sub findnsubs {
   }
 
   $ncomp--;
+
+
   $self->nsubs($ncomp);
   
   return $ncomp;
 
 }
-
-=item B<gui_id>
-
-Calculate the ID for the display system. Uses the last suffix
-as a key (not including dots). If nfiles>1 an 's' followed
-by a number (reflecting the file number requested) is prepended
-to the string.
-
- eg s2dk from c19991231_1_dk.i2
-
-If only one underscore is found (ie a raw number with no data
-reduction suffix) 'num' is returned along with the image
-identifier if multiple sub-frames are present
-
- eg  s2num from c19991231_1.i2
-     s3num from c19991231_1.i3
-
-Argument: sub-frame number
-
-=cut
-
-sub gui_id {
-  my $self = shift;
-  # Read the number
-  my $num = 1;
-  if (@_) { $num = shift; }
-
-  # Retrieve the Nth file name (start counting at 1)
-  my $fname = $self->file($num);
-
-  # Split infile into a root and a tail
-  my ($root, $rest) = $self->split_name($fname);
-
-  # Split on underscore
-  my (@split) = split(/_/,$root);
-
-  # If there are > 2 chunks then we have a real suffix
-  # else we have a raw data
-  my $id;
-  if ($#split > 1) {
-    $id = $split[-1];
-  } else {
-    $id = 'num';
-  }
-
-  # Find out how many files we have 
-  my $nfiles = $self->nfiles;
-
-  # Prepend with s$num if nfiles > 1
-  $id = "s$num" . $id if $nfiles > 1;
-
-  return $id;
-
-}
-
 
 =item B<inout>
 
@@ -312,6 +268,8 @@ Returns $out in a scalar context:
 Returns $in and $out in an array context:
 
    ($in, $out) = $Frm->inout($suffix);
+
+   ($in,$out) = $Frm->inout($suffix,2);
 
 =cut
 
@@ -359,13 +317,35 @@ sub inout {
   # reattach it and create an HDS container *IF* NFILES is greater than 1
   # If NFILES equals 1 
   if (defined $rest && $nfiles > 1) {
-    unless (-e $outfile.".sdf") {
-      my ($loc,$status);
+
+    my ($loc,$status);
+    $status = &NDF::SAI__OK;
+
+    if (-e $outfile.".sdf") {
+      
+      err_begin($status);
+      hds_open($outfile, 'UPDATE', $loc, $status);
+
+      dat_there($loc, $rest, my $there, $status);
+      if ($there) {
+	dat_erase($loc, $rest, $status);
+      };
+
+      dat_annul($loc, $status);
+      err_end($status);
+
+
+    } else {
+
       my @null = (0);
       
       hds_new ($outfile,substr($outfile,0,9),"MICHELLE_HDS",0,@null,$loc,$status);
       dat_annul($loc, $status);
       orac_err("Failed to create HDS container!") if $status != &NDF::SAI__OK;
+      
+      # propagate header
+      $status = copobj($root.".header",$outfile.".header",$status);
+      orac_err("Failed to propagate header!") if $status != &NDF::SAI__OK;
     }
   
     $outfile .= ".".$rest;
@@ -377,13 +357,76 @@ sub inout {
 
 
 
+=item B<findrecipe>
+
+Find the recipe name. If no recipe can be found from the
+'DRRECIPE' FITS keyword'QUICK_LOOK' is returned by default.
+
+The recipe name stored in the object is automatically updated using 
+this value.
+
+=cut
+
+sub findrecipe {
+
+  my $self = shift;
+
+  my $recipe = $self->hdr('RECIPE');
+
+  # Check to see whether there is something there
+  # if not try to make something up
+  if ($recipe !~ /./) {
+    $recipe = 'QUICK_LOOK';
+  } 
+
+  # Update
+  $self->recipe($recipe);
+
+  return $recipe;
+}
+
+=back
+
+=head1 METHODS UNIQUE TO THIS CLASS
+
+=over 4
+
+=item B<mergehdr>
+
+Method to propagate the FITS header from an HDS container to an NDF
+Run after updating $Frm.
+
+ $Frm->files($out);
+ $Frm->mergehdr;
+
+=cut
+
+sub mergehdr {
+  
+  my $self = shift;
+  my $status;
+  
+  my $old = pop(@{$self->intermediates});
+  my $new = $self->file;
+
+  my ($root, $rest) = $self->split_name($old);
+
+  if (defined $rest) {
+    $status = &NDF::SAI__OK;
+    $status = copobj($root.".header.more.fits",$new.".more.fits",$status);
+    orac_err("Failed dismally to propagate HDS header to NDF file\n") unless ($status==&NDF::SAI__OK);
+  };
+
+}
+
+
 =back
 
 =head1 PRIVATE METHODS
 
 =over 4
 
-=item split_name
+=item B<split_name>
 
 Internal routine to split a 'file' name into an actual
 filename (the HDS container) and the NDF name (the
@@ -410,8 +453,6 @@ sub split_name {
   return ($root, $rest);
 }
 
-
-
 =back
 
 =head1 REQUIREMENTS
@@ -420,7 +461,11 @@ Currently this module requires the NDF module.
 
 =head1 SEE ALSO
 
-L<ORAC::Frame::UKIRT>
+L<ORAC::Group>
+
+=head1 REVISION
+
+$Id$
 
 =head1 AUTHORS
 
