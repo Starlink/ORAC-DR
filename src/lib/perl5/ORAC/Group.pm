@@ -34,12 +34,7 @@ use Carp;
 use strict;
 use vars qw/$VERSION/;
 
-$VERSION = '0.11';
-
-# Derive some methods from the base Frame class
-
-#@ORAC::Group::ISA = qw/ORAC::Frame/;
-use base qw/ORAC::Frame/;
+$VERSION = '0.12';
 
 # Associated classes
 use ORAC::Print;          # Print statements
@@ -268,7 +263,7 @@ reduced group.
 # If an integer is supplied then do nothing - simply return
 # current value. This is added here so that the Display system
 # can ask for multiple file names based on index - which
-# is used by the Frames in some cases (eg SCUBA). The Display
+# is used by the Frames in some cases (eg SCUBA, MICHELLE). The Display
 # sub-system does not distinguish between Groups and Frames
 # so the shared methods have to be supported on both.
 
@@ -992,6 +987,56 @@ sub check_membership {
 
   # Update the good members list
   $self->members_ref(\@good);
+
+}
+
+
+=back
+
+=head1 DISPLAY COMPATIBILITY
+
+These methods are provided for compatibility with the ORAC display
+system.
+
+=over 4
+
+=item nfiles
+
+This method is used by the display system to determine the
+number of files to display. Since the Group base class can only
+ever contain one file name (as returned by file()) this method
+always returns a 1.
+
+=cut
+
+sub nfiles {
+  return 1;
+}
+
+=item gui_id
+
+Returns the identification string that is used to compare the
+current frame with the frames selected for display in the
+display definition file.
+
+In the default case, this method returns everything after the
+last suffix stored in file().
+
+In some derived implementation of this method an argument
+may be used so that multiple IDs can be extracted from objects
+that contain more than one output file per observation.
+
+=cut
+
+sub gui_id {
+  my $self = shift;
+
+  my $fname = $self->file;
+
+  # Split on underscore
+  my (@split) = split(/_/,$fname);
+
+  return $split[-1];
 
 }
 
