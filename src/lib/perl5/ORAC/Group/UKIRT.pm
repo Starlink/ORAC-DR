@@ -55,6 +55,10 @@ my %hdr = (
 # be sub-classed by other instruments
 ORAC::Group::UKIRT->_generate_orac_lookup_methods( \%hdr );
 
+sub _to_TELESCOPE {
+  return "UKIRT";
+}
+
 =head1 REVISION
 
 $Id$
