@@ -95,7 +95,7 @@ name of the new group. The object identifier is returned.
 
 This method calls the base class constructor but initialises
 the group with a file suffix of '.sdf' and a fixed part
-of 'rg'.
+of 'gm'.
 
 =cut
 
