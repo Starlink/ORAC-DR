@@ -1,249 +1,173 @@
-#+
-# Name:
-#    _NIGHT_LOG_
-
-# Purpose:
-#    Produces a text file log of a night's imaging observations.
-
-# Language:
-#    Perl5
-
-# Description:
-#    This recipe takes a night's imaging observations, and creates a text
-#    file containing a headed tabulation of parameters for each frame. 
-#
-#    The parameters are: observation number, group number, object name,
-#    observation type, UT start time, exposure time, number of coadds,
-#    read mode and speed, filter, start airmass, frame dimensions in
-#    pixels, base equatorial co-ordinates, and data-reduction recipe name.
-# 
-# Arguments:
-#    OUT = LOGICAL (Given)
-#       When set (to any value) the log file is written to ORAC_DATA_OUT
-#       rather than to ORAC_DATA_IN.
-#
-# Notes:
-#    -  The <date> comes from the internal header keyword ORAC_UTDATE. 
-#    -  The logfile created by this primitive does not follow the standard
-#    ORAC-DR naming convention (log.xxxx) since it can be used to write
-#    log files to directories other than $ORAC_DATA_OUT and unique file
-#    names are required.
-#    -  Fudges missing or old headers.
-#    -  Uses user header ORAC_INSTRUMENT to specify the file name.
-#    -  Specification provided by Sandy Leggett.
-
-# Output Data:
-#    -  For UFTI and IRCAM the text log file $ORAC_DATA_IN/<date>.nightlog,
-#    where <date> is the UT date, unless the OUT argument is set,
-#    whereupon the log is in $ORAC_DATA_OUT.  This enables a separate
-#    on-the-fly log.  For the multi-mode instruments UIST, Michelle,
-#    IRIS2, and ISAAC the file is $ORAC_DATA_IN/<date>_im.nightlog.
-#
-#    The on-the-fly log in $ORAC_DATA_OUT is always appended to, being
-#    created only if it doesn't exist.  Thus multiple entries for the
-#    same observation may exist in the on-the-fly log if the pipeline is
-#    rerun.
-#
-#    The "clean" log file in $ORAC_DATA_IN is re-started if the observation
-#    number equals 1 and is appended to otherwise, being created as necessary.
-
-# Authors:
-#   FE: Frossie Economou (JAC)
-#   MJC: Malcolm J. Currie (JAC)
-#   PH: Paul Hirst (JAC)
-
-# Copyright:
-#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
-#    Council.  All Rights Reserved.
-#
-#-
+# -*-perl-*-
 
 # For OS-independent filename creation.
-    use File::Spec;
+use File::Spec;
 
 # Fudge missing or erroneous headers.
-    _FIX_HEADERS_
-    
+_FIX_HEADERS_
+
 # Obtain the frame number and UT date.
-    my $obsnum = $Frm->number;
-    my $obsdate = $Frm->uhdr( "ORAC_UTDATE" );
-    chomp( $obsdate );
+my $obsnum = $Frm->uhdr( "ORAC_OBSERVATION_NUMBER" );
+my $obsdate = $Frm->uhdr( "ORAC_UTDATE" );
+chomp( $obsdate );
+
+# Were we given the LONG option?
+my $long = $_NIGHT_LOG_{LONG};
+my $longsuff = "";
+$longsuff = "-long" if ($long);
 
 # Obtain the name portion of the file.  Multi-mode instruments have an
 # _im appended to denote that it's an imaging log.
-    my $fileroot = $obsdate;
-    if ( uc( $Frm->uhdr( "ORAC_INSTRUMENT" ) ) eq "UIST" ||
-         uc( $Frm->uhdr( "ORAC_INSTRUMENT" ) ) eq "MICHELLE" ||
-         uc( $Frm->uhdr( "ORAC_INSTRUMENT" ) ) eq "ISAAC" ||
-         uc( $Frm->uhdr( "ORAC_INSTRUMENT" ) ) eq "IRIS2" ) {
-       $fileroot .= "_im";
-    }
+my $fileroot = $obsdate;
+if ( uc( $Frm->uhdr( "ORAC_INSTRUMENT" ) ) eq "UIST" ||
+     uc( $Frm->uhdr( "ORAC_INSTRUMENT" ) ) eq "MICHELLE" ||
+     uc( $Frm->uhdr( "ORAC_INSTRUMENT" ) ) eq "ISAAC" ||
+     uc( $Frm->uhdr( "ORAC_INSTRUMENT" ) ) eq "IRIS2" ) {
+  $fileroot .= "_im";
+}
 
 # Specify the location of the nightly log file. [depends on the arguments]
-    my $nightlog;
-    if ( defined $_NIGHT_LOG_{OUT} ) {
+my $nightlog;
+if ( defined $_NIGHT_LOG_{OUT} ) {
 
 # ORAC_DATA_OUT is the current directory and the default location for
 # log files.
-       $nightlog = "${fileroot}.nightlog";
+  $nightlog = "${fileroot}.nightlog";
 
 # If we're working in ORAC_DATA_OUT, always append to the file, creating
 # the logfile if it doesn't exist.
-    } else {
-  
+} else {
+
 # A non-standard location so full path is required.
-       $nightlog = File::Spec->catfile( $ENV{ "ORAC_DATA_IN" }, "${fileroot}.nightlog" );
-  
+  $nightlog = File::Spec->catfile( $ENV{ "ORAC_DATA_IN" }, "${fileroot}.nightlog" );
+
 # If we're working in ORAC_DATA_IN, start fresh if this is frame 1
 # We don't care about the return value from unlink.
-       unlink $nightlog if $obsnum == 1;
-    }
+  unlink $nightlog if $obsnum == 1;
+}
+
+if($long) {
+  $nightlog .= $longsuff;
+}
 
 # Flag to indicate whether or not the log is there already.
-    my $is_there;
-    $is_there = ( -e $nightlog ? 1 : 0 );
+my $is_there;
+$is_there = ( -e $nightlog ? 1 : 0 );
 
 # Create a new log object.
-    my $log = new ORAC::LogFile( $nightlog );
+my $log = new ORAC::LogFile( $nightlog );
 
 # Only proceed if we have a valid object
-    if ( defined $log ) {
+if ( defined $log ) {
 
-       if ( $is_there ) {
-          orac_print "Appending to Log: $nightlog\n";
-       } else {
-          orac_print "Log created as $nightlog\n";
-       }
- 
-# Print the header.
-       $log->header(
-         "   Obs  Group               Object  Obstype   UT start Exp.Time Nexp    Mode    Filter  Airmass Cols x Rows     RA       DEC    Eqnx DR Recipe",
-         "---------------------------------------------------------------------------------------------------------------------------------------------------------------------------" );
+  if ( $is_there ) {
+    orac_print "Appending to Log: $nightlog\n";
+  } else {
+    orac_print "Log created as $nightlog\n";
+  }
 
-# Obtain the array dimensions.  Check that the limits are defined.
-       my ( $xdim, $ydim );
-       if ( defined $Frm->uhdr( "ORAC_X_UPPER_BOUND" ) &&
-            defined $Frm->uhdr( "ORAC_X_LOWER_BOUND" ) ) {
-          $xdim = $Frm->uhdr( "ORAC_X_UPPER_BOUND" ) - $Frm->uhdr( "ORAC_X_LOWER_BOUND" ) + 1;
-       }
-       if ( defined $Frm->uhdr( "ORAC_Y_UPPER_BOUND" ) &&
-            defined $Frm->uhdr( "ORAC_Y_LOWER_BOUND" ) ) {
-          $ydim = $Frm->uhdr( "ORAC_Y_UPPER_BOUND" ) - $Frm->uhdr( "ORAC_Y_LOWER_BOUND" ) + 1;
-       }
-       my $rowxcol = "${xdim}x${ydim}";
+# Create the empty strings.
+  my $heading1 = "";
+  my $heading2 = "";
+  my $entry = "";
 
-# Define the Perl format for each entry in the log.
-       my $format = "%6d %6d %20.20s %8.8s %10.6f %8.3f %4d %7.7s %9.9s %8.3f %11.11s %9.5f %+9.5f %4d %-29.29s";
+# Observation number.
+  $heading1 .= " Obs |";
+  $heading2 .= "-----|";
+  #             12345
+  $entry .= sprintf("%5d ", $obsnum);
 
-# Write the record using the prescribed format.
-       $log->addentry( sprintf( 
-                                $format,
-                                $obsnum,
-                                $Frm->findgroup,
-                                $Frm->uhdr( "ORAC_OBJECT" ),
-                                $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ),
-                                $Frm->uhdr( "ORAC_UTSTART" ),
-                                $Frm->uhdr( "ORAC_EXPOSURE_TIME" ),
-                                $Frm->uhdr( "ORAC_NUMBER_OF_EXPOSURES" ),
-                                $Frm->uhdr( "ORAC_DETECTOR_READ_TYPE" ),
-                                $Frm->uhdr( "ORAC_FILTER" ),
-                                $Frm->uhdr( "ORAC_AIRMASS_START" ),
-                                $rowxcol,
-                                $Frm->uhdr( "ORAC_RA_BASE" ),
-                                $Frm->uhdr( "ORAC_DEC_BASE" ),
-                                $Frm->uhdr( "ORAC_EQUINOX" ),
-                                $Frm->recipe
-                              )
-                      ); 
-    } else {
-        orac_warn "Could not create nightlog $nightlog.\n";
-    }
-       
-# Podule
-# ======
+# Group number.
+  $heading1 .= " Grp |";
+  $heading2 .= "-----|";
+  #             12345
+  $entry .= sprintf("%5d ", $Frm->findgroup);
 
-=head1 NAME
+# Object name.
+  $heading1 .= "     Object |";
+  $heading2 .= "------------|";
+  #             123456789012
+  $entry .= sprintf("%12.12s ", $Frm->uhdr("ORAC_OBJECT"));
 
-_NIGHT_LOG_ -- Produces a text file log of a night's imaging observations.
+# Observation type.
+  $heading1 .= " Obstype |";
+  $heading2 .= "---------|";
+  #             123456789
+  $entry .= sprintf("%9.9s ", $Frm->uhdr("ORAC_OBSERVATION_TYPE"));
 
-=head1 DESCRIPTION
+# Jitters
+  $heading1 .= "Jitter|";
+  $heading2 .= "------|";
+  #             123456
+  #               4/ 9
+  $entry .= sprintf(" %2d/%2d ", $Frm->hdr("JITTER_I"), $Frm->hdr("NJITTER"));
 
-This recipe takes a night's imaging observations, and creates a text file
-containing a headed tabulation of parameters for each frame. 
+# Microsteps
+  $heading1 .= "Ustep|";
+  $heading2 .= "-----|";
+  #             12345
+  #              4/9
+  $entry .= sprintf(" %1d/%1d  ", $Frm->hdr("USTEP_I"), $Frm->hdr("NUSTEP"));
 
-The parameters are: observation number, group number, object name,
-observation type, UT start time, exposure time, number of coadds, read
-mode and speed, filter, start airmass, frame dimensions in pixels,
-base equatorial co-ordinates, and data-reduction recipe name.
+# UT start.
+  $heading1 .= "UT Start|";
+  $heading2 .= "--------|";
+  #             12345678
+  $entry .= sprintf("%8.5f ", $Frm->uhdr("ORAC_UTSTART"));
 
-=head1 ARGUMENTS
+# Exposure time.
+  $heading1 .= " ExpT |";
+  $heading2 .= "------|";
+  #             123456
+  $entry .= sprintf("%6.3f ", $Frm->uhdr("ORAC_EXPOSURE_TIME"));
 
-=over 4
+# Filter.
+  $heading1 .= " Filter |";
+  $heading2 .= "--------|";
+  #             12345678
+  $entry .= sprintf("%8.8s ", $Frm->uhdr("ORAC_FILTER"));
 
-=item OUT = LOGICAL (Given)
+# Airmass.
+  $heading1 .= "Airmass|";
+  $heading2 .= "-------|";
+  #             1234567
+  $entry .= sprintf("%7.3f ", $Frm->uhdr("ORAC_AIRMASS_START"));
 
-When set (to any value) the log file is written to F<$ORAC_DATA_OUT>
-rather than to F<$ORAC_DATA_IN>.
+# RA & Dec.
+  $heading1 .= "    R.A.     Decl.|";
+  $heading2 .= "------------------|";
+  #             123456789012345678
+  #             12.12345 +12.12345
+  $entry .= sprintf("%8.5f %+8.5f ",
+                    $Frm->uhdr("ORAC_RA_BASE"),
+                    $Frm->uhdr("ORAC_DEC_BASE"),
+                   );
 
-=back
+# RA & Dec offsets.
+  $heading1 .= " RA Off. Dec Off.|";
+  $heading2 .= "-----------------|";
+  #             12345678901234567
+  #             +123.123 +123.123
+  $entry .= sprintf("%+8.3f %+8.3f ",
+                    $Frm->uhdr("ORAC_RA_TELESCOPE_OFFSET"),
+                    $Frm->uhdr("ORAC_DEC_TELESCOPE_OFFSET"),
+                   );
 
-=head1 NOTES
+# DR Recipe.
+  $heading1 .= " DR Recipe";
+  $heading2 .= "-----------------------------";
+  #             12345678901234567890123456789
+  #             USTEP_JITTER_SELFFLAT
+  $entry .= sprintf("%-30s",
+                    $Frm->uhdr("ORAC_RECIPE"),
+                   );
 
-=over 4
+# Write the log.
+  $log->header( $heading1, $heading2 );
+  $log->addentry( $entry );
 
-=item *
+} else {
 
-The E<lt>dateE<gt> comes from the internal header keyword ORAC_UTDATE. 
+  orac_warn "Could not create nightlog $nightlog.\n";
 
-=item *
-
-The logfile created by this primitive does not follow the standard
-ORAC-DR naming convention (F<log.xxxx>) since it can be used to write
-log files to directories other than F<$ORAC_DATA_OUT> and unique file
-names are required.
-
-=item *
-
-Fudges missing or old headers.
-
-=item *
-
-Uses user header ORAC_INSTRUMENT to specify the file name.
-
-=item *
-
-Specification provided by Sandy Leggett.
-
-=back
-
-=head1 OUTPUT DATA
-
-=over 4
-
-=item *
-
-The text log file F<$ORAC_DATA_IN/E<lt>dateE<lt>.nightlog>, where
-E<lt>dateE<gt> is the UT date, unless the OUT argument is set,
-whereupon the log is in F<$ORAC_DATA_OUT>.  This enables a separate
-on-the-fly log.  For the multi-mode instruments UIST, Michelle, IRIS2,
-and ISAAC the file is F<$ORAC_DATA_IN/E<lt>dateE<gt>_im.nightlog>.
-
-The on-the-fly log in F<$ORAC_DATA_OUT> is always appended to, being
-created only if it doesn't exist.  Thus multiple entries for the same
-observation may exist in the on-the-fly log if the pipeline is rerun.
-
-The "clean" log file in F$<ORAC_DATA_IN> is re-started if the observation
-number equals 1 and is appended to otherwise, being created as necessary.
-
-=back
-
-=head1 AUTHORS
-
-Frossie Economou (JAC), Malcolm J. Currie (JAC), Paul Hirst (JAC)
-
-=head1 COPYRIGHT
-
-Copyright (C) 1998-2003 Particle Physics and Astronomy Research
-Council.  All Rights Reserved.
-
-=cut
+}
