@@ -1,26 +1,93 @@
 =head1 NAME
 
-CALIBRATE_DATA
+_CALIBRATE_DATA_ - Multiply data by the flux conversion factor
+
+=head1 SYNOPSIS
+
+  _CALIBRATE_DATA_ UNITS=BEAM
+  _CALIBRATE_DATA_ UNITS=ARCSEC
 
 =head1 DESCRIPTION
 
-Multiply SCUBA data by the gain.
-The value for the gain depends on the filter.
-This is a Frame operation and should be used before
-group operations.
+Multiply SCUBA data by the flux conversion factor (FCF).
+The value for the FCF depends on the filter and the type
+of calibration required. The calibration units are specified
+by an argument.
 
-Currently the calibration is identical for all observations.
+This is a Frame operation and should be used before group operations.
 
-=head1 TASKS
+=head1 ARGUMENTS
 
-Kappa: CMULT
+=over 4
+
+=item UNITS
+
+Controls the units of the FCF. The options are BEAM for
+Jy/beam/V and ARCSEC for Jy/arcsec**2/V. ARCSEC is only
+allowed for MAP observations. BEAM is the default.
+
+=back
+
+=head1 External Tasks
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA
+
+CMULT
+
+=back
+
+=head1 FILES
+
+Creates an output file with a C<_cal> extension.
+
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
 
 =cut
 
+# Read the arguments
+my $units = 'BEAM';
+if (exists $_CALIBRATE_DATA_{UNITS} ) {
+  $units = uc( $_CALIBRATE_DATA_{UNITS});
+  if ($units ne 'BEAM' && $units ne 'ARCSEC') {
+    orac_err "_CALIBRATE_DATA_: Units must be BEAM or ARCSEC not '$units'";
+    my $ORAC_STATUS = ORAC__ERROR;
+  }
+
+  # Check we have a map
+  if ($units eq 'ARCSEC' && ($Frm->hdr('MODE') !~ /MAP/i) ) {
+    orac_err "_CALIBRATE_DATA_: Can only use ARCSEC units with MAPS";
+    my $ORAC_STATUS = ORAC__ERROR;
+  }
+
+}
 
 # Need to loop over sub-instruments
 
 my @filter = $Frm->filters;
+
+# Multiplication factor - convert to mJy
+my $mult = 1000.0;
+# Units
+my $unitstr = 'm' .( $units eq 'BEAM' ? 'Jy/beam/V' : 'Jy/arcsec^2/V');
+
+# For ARCSEC we need to multiply by the square of the pixel regrid
+# size.
+
+if ($units eq 'ARCSEC') {
+  
+}
+
+# Get a units string
 
 
 # Loop over sub-instruments
@@ -29,30 +96,26 @@ for my $i (1..$Frm->nfiles) {
   # Retrieve the current gain value from the calibration
   # object. This will calibrate our data in Jy and then
   # if we multiply by an extra 1000 we get mJy
-  my $gain = $Cal->gain($filter[$i-1]) * 1000.0;
+  my $gain = $Cal->gain($filter[$i-1], $units) * 1000.0;
 
   # retrive input and output names
   my ($in, $out) = $Frm->inout("_cal", $i);
-  
   my $args = "scalar=$gain";
 
   # Multiply by the gain
   $Mon{kappa_mon}->obeyw("cmult","in=$in out=$out $args");
 
+  orac_print "Multiplying $in by $gain $unitstr\n";
+
   # Change the units
-  $Mon{ndfpack_mon}->obeyw("setunits","ndf=$out units=mJy/beam");
+  $Mon{ndfpack_mon}->obeyw("setunits","ndf=$out units=$unitstr");
 
   # Update file
   $Frm->file($i, $out);
 
 }
 
-orac_print "ORAC says: Data calibrated in mJy\n";
+orac_print "ORAC says: Data calibrated in $unitstr\n";
 
-
-# COPYRIGHT
-#
-#   Copyright (C) 1998-2000 Particle Physics and Astronomy Research
-#   Council. All Rights Reserved.
 
 
