@@ -45,6 +45,7 @@ use ORAC::Print;          # Print statements
 use ORAC::Index::Extern;  # For bad observation index list
 use ORAC::Constants;
 use ORAC::General;
+use ORAC::BaseFile;
 use base qw/ ORAC::BaseFile /;
 
 # Setup the object structure

@@ -30,6 +30,7 @@ use vars qw/$VERSION/;
 use ORAC::Print;
 use ORAC::Constants;
 
+use ORAC::BaseFile;
 use base qw/ ORAC::BaseFile /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
