@@ -311,7 +311,7 @@ sub findgroup {
   my $group;
 
   if (exists $self->hdr->{DRGROUP} && $self->hdr->{DRGROUP} ne 'UNKNOWN'
-      && $self->hdr->{DRGROUP} =~ /./) {
+      && $self->hdr->{DRGROUP} =~ /\w/) {
     $group = $self->hdr->{DRGROUP};
   } else {
     # construct group name
@@ -394,7 +394,7 @@ sub findrecipe {
   # Check for DRRECIPE. Have to make sure it contains something (anything)
   # other thant UNKNOWN.
   if (exists $self->hdr->{DRRECIPE} && $self->hdr->{DRRECIPE} ne 'UNKNOWN'
-      && $self->hdr->{DRRECIPE} =~ /./) {
+      && $self->hdr->{DRRECIPE} =~ /\w/) {
     $recipe = $self->hdr->{DRRECIPE};
   } elsif ($mode eq 'SKYDIP') {
     $recipe = 'SCUBA_SKYDIP';
