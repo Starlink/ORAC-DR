@@ -1,0 +1,52 @@
+# -*-perl-*-
+
+if( $Frm->uhdr("DO_ESTAR_TRIGGER") ) {
+
+orac_print "Doing eSTAR trigger.\n";
+orac_throw "Throwing so we don't do eSTAR trigger\n";
+
+  use SOAP::Lite;
+  use Digest::MD5 qw/ md5_hex /;
+  use URI;
+  use HTTP::Cookies;
+
+  my $host = "uluhe";
+  my $port = 8080;
+  my $user = "agent";
+  my $password = "InterProcessCommunication";
+
+  my %hash = { ID => $Frm->uhdr("ESTAR_ID"),
+               FITS => "file://" . $ENV{'ORAC_DATA_OUT'} . $Grp->file,
+               Catalog => "file://" . $ENV{'ORAC_DATA_OUT'} . "estar_cat.txt",
+             };
+
+  my $endpoint = "http://" . $host . ":" . $port;
+  my $uri = new URI($endpoint);
+
+  my $cookie = $user . "::" . md5_hex( $password );
+  $cookie =~ s/(.)/sprintf("%%%02x", ord($1))/ge;
+  $cookie =~ s/%/%25/g;
+  my $cookie_jar = HTTP::Cookies->new();
+  $cookie_jar->set_cookie( 0, $user => $cookie, '/', $uri->host(), $uri->port());
+
+  my $soap = new SOAP::Lite();
+  my $urn = "urn:/node_agent";
+
+  $soap->uri($urn);
+  $soap->proxy( $endpoint, $cookie_jar => $cookie_jar );
+
+  my $result;
+  eval { $result = $soap->handle_data( %hash ) };
+  if( $@ ) {
+    orac_throw "Unable to handle SOAP request: $@";
+  }
+
+  unless( $result->fault() ) {
+    orac_print "SOAP Result: " . $result->result() . "\n";
+  } else {
+    orac_warn "SOAP Fault Code: " . $result->faultcode() . "\n";
+    orac_warn "SOAP Fault String: " . $result->faultstring() . "\n";
+  }
+
+
+}
