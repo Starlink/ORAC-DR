@@ -370,6 +370,11 @@ sub orac_determine_inst_classes {
     $frameclass = "ORAC::Frame::Michelle";
     $calclass = "ORAC::Calib::Michelle";
     $instclass = "ORAC::Inst::Michelle";
+  } elsif ($inst eq 'MICHGEM') {
+    $groupclass = "ORAC::Group::MichGem";
+    $frameclass = "ORAC::Frame::MichGem";
+    $calclass = "ORAC::Calib::Michelle";
+    $instclass = "ORAC::Inst::Michelle";
   } elsif ($inst eq 'UIST') {
     $groupclass = "ORAC::Group::UIST";
     $frameclass = "ORAC::Frame::UIST";
@@ -526,7 +531,7 @@ sub orac_determine_recipe_search_path {
     push( @path, File::Spec->catdir( $imaging_root, 'SWFCAM' ) );
     push( @path, $imaging_root );
 
-  } elsif ($inst eq 'MICHELLE' or $inst eq 'MICHTEMP') {
+  } elsif ($inst eq 'MICHELLE' or $inst eq 'MICHTEMP' or $inst eq 'MICHGEM') {
     push( @path, File::Spec->catdir( $root, "MICHELLE" ) );
     push( @path, File::Spec->catdir( $imaging_root, "MICHELLE" ) );
     push( @path, File::Spec->catdir( $spectro_root, "MICHELLE" ) );
@@ -689,7 +694,7 @@ sub orac_determine_primitive_search_path {
     push( @path, $imaging_root );
     push( @path, $general_root );
 
-  } elsif ($inst eq 'MICHELLE' or $inst eq 'MICHTEMP') {
+  } elsif ($inst eq 'MICHELLE' or $inst eq 'MICHTEMP' or $inst eq 'MICHGEM') {
     push( @path, File::Spec->catdir( $root, "MICHELLE" ) );
     push( @path, File::Spec->catdir( $imaging_root, "MICHELLE" ) );
     push( @path, File::Spec->catdir( $spectro_root, "MICHELLE" ) );
@@ -835,11 +840,15 @@ sub orac_determine_calibration_search_path {
     push( @path, File::Spec->catdir( $root, 'ufti_casu' ) );
     push( @path, $general_ir_root );
 
-  } elsif( $inst =~ /^WFCAM/ or $inst =~ /^SWFCAM/ ) {
+  } elsif( $inst =~ /^WFCAM/ ) {
     push( @path, File::Spec->catdir( $root, 'wfcam' ) );
     push( @path, $general_ir_root );
 
-  } elsif( $inst eq 'MICHELLE' or $inst eq 'MICHTEMP' ) {
+  } elsif( $inst =~ /^SWFCAM/ ) {
+    push( @path, File::Spec->catdir( $root, 'swfcam' ) );
+    push( @path, $general_ir_root );
+
+  } elsif( $inst eq 'MICHELLE' or $inst eq 'MICHTEMP' or $inst eq 'MICHGEM' ) {
     push( @path, File::Spec->catdir( $root, 'michelle' ) );
     push( @path, $general_ir_root );
 
@@ -1189,6 +1198,36 @@ sub orac_configure_for_instrument {
       $orac_cal_root = "/ukirt_sw/oracdr_cal"
         unless defined $orac_cal_root;
       $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"michelle");
+
+      # data directories
+      $orac_data_root = "/ukirtdata"
+        unless defined $orac_data_root;
+
+      $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+                                                 "raw","michelle",$oracut);
+      $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir( $orac_data_root,
+                                                  "reduced","michelle",$oracut)
+        unless defined $$options{"honour"};
+
+      # misc
+      $ENV{"ORAC_PERSON"} = "bradc";
+      $ENV{"ORAC_SUN"} = "232,236";
+      if ($domain =~ /ukirt/i  ) {
+        $options->{"loop"} = "flag";
+      }
+      $options->{"skip"} = 0;
+
+      last SWITCH; }
+
+    if ( $instrument eq 'MICHGEM' ) {
+
+      # Instrument
+      $ENV{'ORAC_INSTRUMENT'} = 'MICHGEM';
+
+      # Calibration information
+      $orac_cal_root = "/ukirt_sw/oracdr_cal"
+        unless defined $orac_cal_root;
+      $ENV{'ORAC_DATA_CAL'} = File::Spec->catdir($orac_cal_root,"michelle");
 
       # data directories
       $orac_data_root = "/ukirtdata"
