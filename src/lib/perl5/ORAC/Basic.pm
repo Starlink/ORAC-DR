@@ -25,8 +25,10 @@ Provides the routines for parsing and executing recipes.
 
 use Carp;
 use vars qw($VERSION @ISA @EXPORT $Display $Batch $DEBUG $Display $Beep
-	    $KAPVERSION $KAPVERSION_MAJOR $KAPVERSION_MINOR
-	    $KAPVERSION_PATCHLEVEL
+	    $KAPPA_VERSION $KAPPA_VERSION_MAJOR $KAPPA_VERSION_MINOR
+	    $KAPPA_VERSION_PATCHLEVEL
+	    $CCDPACK_VERSION $CCDPACK_VERSION_MAJOR $CCDPACK_VERSION_MINOR
+	    $CCDPACK_VERSION_PATCHLEVEL
 	   );
 
 use strict;
@@ -86,17 +88,29 @@ $Beep    = 0;       # True if ORAC should make noises
 # Do not ever make this module dependent on Starlink KAPPA being
 # available.
 
-$KAPVERSION = 'V0.0-0';
-$KAPVERSION_MAJOR = 0;
-$KAPVERSION_PATCHLEVEL = 0;
+$KAPPA_VERSION = 'V0.0-0';
+$KAPPA_VERSION_MAJOR = 0;
+$KAPPA_VERSION_PATCHLEVEL = 0;
 
 if (-e "$ENV{KAPPA_DIR}/style.def") {
-  $KAPVERSION_MINOR = 13;
+  $KAPPA_VERSION_MINOR = 13;
 } elsif (-e "$ENV{KAPPA_DIR}/kappa_style.def") {
-  $KAPVERSION_MINOR = 14;
+  $KAPPA_VERSION_MINOR = 14;
 } else {
-  $KAPVERSION_MINOR = 12;
+  $KAPPA_VERSION_MINOR = 12;
 }
+
+# Similarly for CCDPACK. Only Set CCDPACK_VERSION_MAJOR for now
+
+$CCDPACK_VERSION = 'V0.0-0';
+$CCDPACK_VERSION_MINOR = 0;
+$CCDPACK_VERSION_PATCHLEVEL = 0;
+if (-e "$ENV{CCDPACK_DIR}/astimp") {
+  $CCDPACK_VERSION_MAJOR = 3;
+} else {
+  $CCDPACK_VERSION_MAJOR = 2;
+}
+
 
 #------------------------------------------------------------------------
 
@@ -741,7 +755,7 @@ Flag to indicate whether the groups have been populated before
 the recipe is executed (ie whether the pipeline is running in
 batch mode or not).
 
-=item * $KAPVERSION
+=item * $KAPPA_VERSION
 
 A set of version variables are available for support of different
 Starlink KAPPA versions as a convenience to recipe writers. These
@@ -755,6 +769,10 @@ KAPPA will be required for running recipes.
 
 For example, if $KAPVERSION is 'V0.14-3', the major version
 is 0, minor version is 14 and patchlevel is 3.
+
+=item * $CCDPACK_VERSION
+
+Similar to $KAPPA_VERSION but for CCDPACK.
 
 =back
 
@@ -778,6 +796,10 @@ Council. All Rights Reserved.
 
 
 #$Log$
+#Revision 1.46  2000/02/01 03:14:47  timj
+#Add CCDPACK_VERSION
+#Rename KAPVERSION to KAPPA_VERSION
+#
 #Revision 1.45  2000/02/01 02:49:26  timj
 #Add $KAPVERSION
 #
