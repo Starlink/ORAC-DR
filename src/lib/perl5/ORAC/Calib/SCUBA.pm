@@ -10,13 +10,14 @@ ORAC::Calib::SCUBA - SCUBA calibration object
 
   $Cal = new ORAC::Calib::SCUBA;
 
-  $dark = $Cal->gain($filter);
+  $gain = $Cal->gain($filter);
 
 
 =head1 DESCRIPTION
 
 This module returns (and can be used to set) calibration information
-for SCUBA.
+for SCUBA. SCUBA calibrations are used for extinction correction
+(the sky opacity) and conversion of volts to Janskys.
 
 =cut
 
@@ -246,10 +247,16 @@ sub fluxes_mon {
 =item tausys
 
 Set (or retrieve) the name of the system to be used for
-tau determination. Allowed values are 'CSO', 'SKYDIP'
-or a number. Currently the number is assumed to be the 
+tau determination. Allowed values are 'CSO', 'SKYDIP',
+'850SKYDIP' or a number. Currently the number is assumed to be the 
 CSO tau since this number is independent of wavelength.
-'INDEX' is an allowed synonym for 'SKYDIP'.
+'INDEX' is an allowed synonym for 'SKYDIP'. '850SKYDIP'
+mode uses the results of 850 micron skydips from index
+files to derive the opacity for the requested wavelength.
+
+Currently there is no way to specify an actual 850 micron
+tau value (the number is treated as a CSO value). In the future
+this may change (or a tausys of 850=value will be used??)
 
 If tausys has not been set it defaults to 'CSO'
 
@@ -378,11 +385,47 @@ sub tau {
     my $entref = $self->skydipindex->indexentry($best);
 
     if (defined $entref) {
-      $tau = $$entref{TAUZ};
+      $tau = $entref->{TAUZ};
     } else {
       orac_err("Error reading entry $best from Skydip index");
       $tau = undef;      
     }
+
+
+  } elsif ($sys eq '850SKYDIP') {
+
+    # We are reqeusting that the tau of the current filter
+    # is retrieved by looking at the tau from an 850 skydip
+
+    # Get a copy of the header hash
+    my %hdr = %{$self->thing};
+
+    # First need to make sure that we are looking for a 850 skydip value
+    $hdr{FILTER} = '850';
+
+    # Now ask for the best skydip
+    # (Closest in time)
+    # Note that the reduction stops if a skydip can not be found...
+    my $best = $self->skydipindex->choosebydt('ORACTIME', \%hdr);
+
+    # Now retrieve the index entry itself
+    my $entref = $self->skydipindex->indexentry($best);
+
+    if (defined $entref) {
+      $tau = $entref->{TAUZ};
+
+      orac_print "Using 850 tau of $tau to generate tau for filter $filt\n";
+
+      # Now convert this tau to the requested filter
+      ($tau, $status) = get_tau($filt, '850', $tau);
+
+      orac_warn("Error converting a 850 tau of $tau to an opacity for filter $filt\n") if $status == -1;
+
+    } else {
+      orac_err("Error reading entry $best from Skydip index");
+      $tau = undef;      
+    }
+
 
   } else {
     orac_err(" tausys is non-standard ($sys)\n");
