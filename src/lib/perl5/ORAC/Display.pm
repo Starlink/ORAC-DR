@@ -201,7 +201,7 @@ sub display_data {
   }
   
   # Now loop over each input file
-  for (my $n = 1; $n <= $nfiles; $n++) {
+  for my $n (1..$nfiles) {
 
     # Get the name of the gui ID
     my $frm_suffix;
