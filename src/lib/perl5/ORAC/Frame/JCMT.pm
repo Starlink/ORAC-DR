@@ -416,7 +416,7 @@ sub template {
   # If sub has not been specified then we only process one file
   my $nfiles;
   if (defined $sub) {
-    $nfiles = $self->num_files;
+    $nfiles = $self->nfiles;
   } else {
     $nfiles =1;
   }
