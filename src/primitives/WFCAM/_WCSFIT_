@@ -1,8 +1,5 @@
     # Get some parameters
 
-    my $catsrc = (defined $_WCSFIT_{CATSRC} ? $_WCSFIT_{CATSRC} : "2mass");
-    my $site = (defined $_WCSFIT_{SITE} ? $_WCSFIT_{SITE} : "cds");
-    my $catpath = (defined $_WCSFIT_{CATPATH} ? $_WCSFIT_{CATPATH} : "");
     my $equinox = (defined $_WCSFIT_{EQUINOX} ? $_WCSFIT_{EQUINOX} : 2000);
     my $override = (defined $_WCSFIT_{OVERRIDE} ? $_WCSFIT_{OVERRIDE} : 0);
     my $pass = (defined $_WCSFIT_{PASS} ? $_WCSFIT_{PASS} : 2);
@@ -31,6 +28,28 @@
 		    'PV2_2' => TFLOAT
 		    'PV2_3' => TFLOAT);
 
+    # Get the astrometric source
+
+    my $astrom = $Cal->astrom;
+    my ($catsrc,$site,$catpath);
+
+    # Construct a file name for it and attempt to open the file
+ 
+    my $fname = sprintf("ast_%s.pl",$astrom);
+    $fname = File::Spec->catfile($ENV{'ORAC_DATA_CAL'},$fname);
+    my $fh;
+    open($fh,"<$fname") || orac_throw("Unable to open astrometric standard source definition file");
+ 
+    # Read and evaluate the expressions in the file...
+ 
+    my $line = "";
+    while (<$fh>) {
+        $line .= $_;
+    }
+    close($fh);
+    eval($line);
+    orac_throw("Unable to parse instructions in astrometric standard source definition file") if ($@);
+     
     # Send a friendly message
 
     orac_print "Fitting Pass $pass WCS to " . $Frm->file . "\n";
@@ -199,7 +218,7 @@
 	    # If this is a second pass WCS, then update the catalogue headers
 
 	    if ($pass == 2) {
-		my $frm = $Frm->new($dsfile);
+		my $frm = $Frm->new($Frm->file)->getasubframe($j);
 		$status = 0;
 		my $tptr = Astro::FITS::CFITSIO::open_file($catbase,READWRITE,
                     $status);
@@ -227,7 +246,6 @@
 		$wcspass,$pass);
 	    $status = 0;
 	    $fptr = Astro::FITS::CFITSIO::open_file($dsfile,READWRITE,$status);
-	    $fptr->movabs_hdu($j+1,$hdutype,$status);
 	    $fptr->update_key(TFLOAT,$outkey,$raref2,$outcom,$status);
 	    $outkey = sprintf("DECZP%d%d",$wcspass,$pass);
 	    $outcom = sprintf("[arcsec] Ref Dec shift pass %d to %d (new - old)",
@@ -261,36 +279,6 @@ shift.
 =head1 ARGUMENTS
 
 =over 4
-
-=item CATSRC = char (Given)
- 
-The catalogue to use for astrometric fit. If set to 'local' then CATPATH must
-be set.  Otherwise it can either be 'usno' or '2mass'.  These latter require
-an internet connection and a value for SITE.
-
-=item SITE
- 
-The distribution of VizieR that will be used to extract astrometric standards.
-Can be:
- 
-=over 4
- 
-=item casu
- 
-CASU, Cambridge, UK
- 
-=item cds
- 
-CDS, Strasbourg, France
- 
-=item ukirt
- 
-UKIRT, Hawaii, USA
- 
-=item CATPATH = char (Given)
-
-If CATSRC is 'local' this is the full path to a FITS table with your
-astrometric standards
 
 =item EQUINOX = float (Given)
 

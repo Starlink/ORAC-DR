@@ -22,25 +22,26 @@
         my $flatfile = sprintf("flat_%d%s",$ref_run,$fitsextn);
         unlink $flatfile if (-e $flatfile);
 
-        # Now make the flat...
-
-        {
-            my $Grp = $subgrp;
-            _FLATCOMBINE_ OUT=$flatfile MASK=0
-        }
-        _FILE_FLAT_ NAME=$flatfile
-
-        # If doing masking, then divide by this flat and make object masks.
-        # Then remake the flat field using the object masks.
+        # Mask out objects first and do a first pass FLAT
 
         if ($masking) {
             use File::Copy;
+            foreach my $fr ($subgrp->allmembers) {
+                {
+                    my $Frm = $fr;
+                    _MAKE_OBJECT_MASK_ PNOP=15 THRESH=-1.0 GRID=64
+                }
+            }
+            {
+                my $Grp = $subgrp;
+                _MAKE_A_FLAT_ FLATFILE=$flatfile MASK=1 REM0=1
+            }
             foreach my $fr ($subgrp->allmembers) {
                 my $tmpnam = "tmp_" . $fr->file;
                 copy($fr->file,$tmpnam);
                 my $Frm = $fr->new($tmpnam);
                 _STAGE1_ FLATCOR=1 LINCOR=0 DARKCOR=0 RESETCOR=0
-                _MAKE_OBJECT_MASK_ PNOP=15 THRESH=-1.5 GRID=64
+                _MAKE_OBJECT_MASK_ PNOP=15 THRESH=-1.0 GRID=64
                 $fr->uhdr("OPM",$Frm->uhdr("OPM"));
                 $fr->update_header("CIR_OPM",TSTRING,$fr->uhdr("OPM"),
                     "Object mask");
@@ -49,39 +50,36 @@
             unlink $flatfile;
             {
                 my $Grp = $subgrp;
-                _FLATCOMBINE_ OUT=$flatfile MASK=1
+                _MAKE_A_FLAT_ FLATFILE=$flatfile MASK=1 REM0=0
             }
-            foreach my $fr ($subgrp->allmembers) {
-                my $opm = $fr->uhdr("OPM");
-                unlink $opm;
-            }
+        } else {
+            _MAKE_A_FLAT_ FLATFILE=$flatfile MASK=0 REM0=0
+        }
+
+        # Display the flat field frame
+
+        my $flatfrm = $Frm->new($flatfile);
+        {
+            my $Frm = $flatfrm;
+            _DISPLAY_IMAGE_
         }
 
         # Now make the confidence map...
 
         my $cpmfile = sprintf("cpm_%d%s",$ref_run,$fitsextn);
         unlink $cpmfile if (-e $cpmfile);
-        _MAKE_CONFIDENCE_MAP_ IN=$flatfile OUT=$cpmfile THRESH=5.0 NITER=2 WINDOW=1
-      
-        # Do stats on the flat
-
-        my ($value,$retval,$errmsg);
-        $errmsg = "";
-        $retval = cir_imstat($flatfile,"",1,$value,$errmsg);
-        if ($retval != CIR_OK) {
-            orac_err("CIR_IMSTAT: failed in _MAKE_FLAT_\n$errmsg\n");
-            return(ORAC__ERROR);
+        {
+            my $Frm = $flatfrm;
+            _MAKE_CONFIDENCE_MAP_ OUT=$cpmfile THRESH=5.0 NITER=2 WINDOW=1
         }
 
-        # Normalise the flat field and replace values of zero
+        # Replace any zeros in the flat frame
 
-        _FLAT_NORMAL_ IN=$flatfile NF=$value
-        _ZERO_REPLACE_ IN=$flatfile
-        my $tmpFrm = $Frm->new($flatfile);
-        $tmpFrm->update_header("WFRTYPE",TSTRING,"FLAT",
-            "Calibration frame type");        
-        _FILE_FLAT_ NAME=$flatfile
-
+        {
+            my $Frm = $flatfrm;
+            _ZERO_REPLACE_
+        }
+      
         # Now for each of the frames in the subgroup, divide by the 
         # associated flat field.
 
