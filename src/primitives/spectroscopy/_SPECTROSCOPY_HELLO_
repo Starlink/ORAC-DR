@@ -1,19 +1,19 @@
 =head1 NAME
 
-_SPECTROSCOPY_HELLO_
+_SPECTROSCOPY_HELLO_ - The first step in processing spectroscopy data.
 
 =head1 DESCRIPTION
 
 The first step in processing spectroscopy data.
 
-If the frame is 1x1 sampled, copies it into a single NDF (_raw), and
-offers it to the display system.
+* Calls _MAKE_RAW_FILE_ to copy the frame to a _raw file 
+  in $ORAC_DATA_OUT
 
-Switches on History recording
+* Switches on History recording
 
-Misc. header operations.
+* Adds the SAMPLING user header
 
-Adds the frame to the on-the-fly nightlog.
+* Adds the frame to the on-the-fly nightlog.
 
 =head1 AUTHORS
 
@@ -22,41 +22,46 @@ Frossie Economu
 
 =cut
 
-# Make a simple NDF if possible.
-# ==============================
-# Convert a one-integration HDS container file to a simple NDF with
-# the _raw suffix.
-    if ( $Frm->nfiles == 1 ) {
-       my ( $in, $out ) = $Frm->inout( "_raw" );
-       $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "in=$in out=$out" );
-  
-# Note this uses the files plural method.  This forces the creation
-# of the NDF when we supply a single NDF.
-       $Frm->files( $out );
-       $Frm->mergehdr;  
+# Keep the output tidy
+orac_print "\n";
 
-       orac_print "$in to $out: Single NDF created for 1x1 sampled data\n";
-       $Display->display_data( $Frm ) if ( defined $Display );
-    }
+# Make the _raw file
+_MAKE_RAW_FILE_
 
 # Switch history recording on.
-    foreach my $frame ( $Frm->files ) {
-       $Mon{"ndfpack_mon"}->obeyw( "hisset", "ndf=$frame" );
-       orac_print "$frame: History recording enabled\n";
-    }
+# Because we hace copied to _raw, we don't have to worry
+# any more about modifying the sacred files in ORAC_DATA_IN
+foreach my $frame ( $Frm->files ) {
+   $Mon{"ndfpack_mon"}->obeyw( "hisset", "ndf=$frame" );
+   orac_print "$frame: History recording enabled\n";
+}
 
-# Record the original spectroscopic dimention.  Take this out of
-# _INTERLEAVE_... later (PH).
-    my $xdim = $Frm->uhdr("ORAC_X_DIM");
-    $Frm->uhdr( "ORIGINAL_SPECTROSCOPIC_DIMENSION", $xdim );
+orac_print "\n";
+
+# Add the SAMPLING uhdr
+my $detincr = $Frm->uhdr("ORAC_SCAN_INCREMENT");
+my $detnincr = $Frm->uhdr("ORAC_NSCAN_POSITIONS");
+my $n = nint (1 / $detincr);
+my $m = nint ($detincr * $detnincr);;
+my $sampling = $n."x".$m;
+# With 1x1, detincr is void
+if ($detnincr==1) {
+  $sampling = "1x1";
+  }
+$Frm->uhdr('SAMPLING', $sampling);
+orac_print("Observation Sampling is: $sampling\n");
+my $nfiles = $Frm->nfiles;
+orac_print "There are $nfiles integrations in this observation\n";
+orac_print "\n";
 
 # Make sure that the Grp contains a uhdr value for NDIMS.  NDIMS is
 # used by the divide-by-standard primitive to determine whether to
 # divide by an image or a spectrum.  It is always 2-dimensional at the
 # start.
-    $Grp->uhdr( "NDIMS", 2 );
+$Grp->uhdr( "NDIMS", 2 );
 
 # Build the nightlog on the fly.
-    _NIGHT_LOG_SPECT_ OUT=1
+_NIGHT_LOG_SPECT_ OUT=1
 
-    orac_print "\n";
+# Keep the output tidy
+orac_print "\n";
