@@ -159,7 +159,7 @@ sub new {
   # Configure initial state - could pass these in with
   # the class initialisation hash - this assumes that I know
   # the hash member name
-  $self->rawfixedpart('M');
+  $self->rawfixedpart('m');
   $self->rawsuffix('.sdf');
 #  $self->rawformat('UKIRTio');
   $self->rawformat('HDS');
