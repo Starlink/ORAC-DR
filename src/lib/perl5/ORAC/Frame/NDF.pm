@@ -39,7 +39,7 @@ use warnings;
 use strict;
 use Carp;
 use ORAC::Constants qw/:status/;
-use Starlink::HDSPACK 1.7 qw/ delete_hdsobj /;
+use Starlink::HDSPACK qw/ delete_hdsobj /;
 use NDF;
 
 use vars qw/$VERSION/;
