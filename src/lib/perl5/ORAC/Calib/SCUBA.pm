@@ -29,11 +29,13 @@ use vars qw/$VERSION %DEFAULT_GAINS %PHOTFLUXES/;
 
 # Derive from standard Calib class (even though nothing in common
 # for now)
-use ORAC::Calib::SCUBA;
+use ORAC::Calib;  # We are a Calib class
+use ORAC::Index;  # Use index file
+use ORAC::Print;  # Standardised printing
 
+use JCMT::Tau;    # Tau conversion
 
-$VERSION = undef; # -w protection
-$VERSION = '0.10';
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 # Let the object know that it is derived from ORAC::Frame;
 @ORAC::Calib::SCUBA::ISA = qw/ORAC::Calib/;
@@ -112,13 +114,13 @@ sub new {
 
   my $obj = {};  # Anon hash
 
-  $obj->{Bias} = undef;
-  $obj->{Dark} = undef;
-  $obj->{Flat} = undef;
-  $obj->{Arc} = undef;
-  $obj->{Standard} = undef;
-  $obj->{Gains} = \%DEFAULT_GAINS;
-  $obj->{SkydipTaus} = {};
+  $obj->{Gains} = undef;
+  $obj->{GainsNoUpdate} = 0;
+  $obj->{GainsIndex} = undef;
+  $obj->{TauSys} = undef;
+  $obj->{TauSysNoUpdate} = 0;
+  $obj->{SkydipIndex} = undef;
+  $obj->{Thing} = {};
 
   bless($obj, $class);
 
@@ -128,54 +130,283 @@ sub new {
 }
 
 
-# Methods to access the data
+
+=item tausys
+
+Set (or retrieve) the name of the system to be used for
+tau determination. Allowed values are 'CSO', 'SKYDIP'
+or a number. Currently the number is assumed to be the 
+CSO tau since this number is independent of wavelength.
+
+If tausys has not been set it defaults to 'CSO'
+
+=cut
+
+sub tausys {
+  my $self = shift;
+  if (@_) { $self->{TauSys} = uc(shift) unless $self->tausysnoupdate; }
+  $self->{TauSys} = 'CSO' unless (defined $self->{TauSys});
+  return $self->{TauSys};
+}
+
+=item tausysnoupdate
+
+Flag to prevent the tau system from being modified during data
+processing.
+
+=cut
+
+sub tausysnoupdate {
+  my $self = shift;
+  if (@_) { $self->{TauSysNoUpdate} = shift };
+  return $self->{TauSysNoUpdate};
+}
+
+
+=item skydipindex
+
+Return (or set) the index object associated with the skydip
+index file. This index file is used if tausys() is set to skydip.
+
+=cut
+
+sub skydipindex {
+
+  my $self = shift;
+  if (@_) { $self->{SkydipIndex} = shift; }
+ 
+  unless (defined $self->{SkydipIndex}) {
+    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.skydip";
+    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.skydip";
+    $self->{SkydipIndex} = new ORAC::Index($indexfile,$rulesfile);
+  };
+ 
+  return $self->{SkydipIndex}; 
+
+
+}
+
+=item tau(filt)
+
+Returns the tau associated with the supplied filter.
+
+This routine works as follows. First tausys() is queried to determine
+the system to use to calculate the tau. If this is CSO, the current
+frame is queried for the CSO tau value stored and the tau calculated
+for FILTER. If tausys() returns a number it is assumed
+to be the actual CSO tau to use. If it is set to Skydip then
+the selected wavelength is updated in the frame header (Key=FILTER)
+and the skydip index is queried for the skydip that matched the criterion
+and is closest in time.
+
+At some point we may want to add a feature where the tau values either
+side of the frame are reported and used to find the current tau.
+
+Also, we might want to add a system where the high frequency tau is derived
+from the closest low-frequency skydip.....
+
+undef is returned if an error occurred.
+
+=cut
+
+sub tau {
+  my $self = shift;
+
+  croak 'Usage: tau(filter)' if (scalar(@_) != 1);
+
+  # Get the filter (this could be sub-instrument but it is probably
+  # easier to use filter than to query the header for the sub name).
+  my $filt = uc(shift);
+
+  # Declare local variables
+  my ($tau, $status);
+
+  # Now query tausys
+  my $sys = $self->tausys;
+
+  # Check tausys
+  if ($sys eq 'CSO') {
+
+    # Read the value from the header of thing
+    my $csotau = $ {$self->thing}{'TAU_225'};
+
+    ($tau, $status) = get_tau($filt, 'CSO', $csotau);
+
+  } elsif ($sys =~ /^\d+$/) {
+
+    ($tau, $status) = get_tau($filt, 'CSO', $sys);
+    # Should check status....
+    
+  } elsif ($sys eq 'SKYDIP') {
+
+    # Skydips have been selected. 
+    # Given that a skydip is never current (because each time we change
+    # filter the 'current' is no longer valid) ask for one every time.
+    # This assumes that people do not want to specify a skydip that
+    # should be used by the system. (usually a hard-wired CSO is enough)
+
+    # First add/modify the FILTER keyword in the current frame
+    $ {$self->thing}{FILTER} = $filt;
+
+    # Now ask for the best skydip
+    # (Closest in time)
+    # Note that the reduction stops if a skydip can not be found...
+    my $best = $self->skydipindex->choosebydt('ORACTIME', $self->thing);
+
+    # Now retrieve the index entry itself
+    my $entref = $self->skydipindex->indexentry($best);
+
+    if (defined $entref) {
+      $tau = $$entref{TAUZ};
+    } else {
+      orac_err("Error reading entry $best from Skydip index");
+      $tau = undef;      
+    }
+
+  } else {
+    orac_err(" tausys is non-standard ($sys)\n");
+    $tau = undef;
+  }
+
+
+  # Now we have a tau value so return it
+  return $tau;
+
+}
+
 
 =item gains
 
-Method to store and retrieve the reference to a hash containing the
-gain information. The hash should be indexed by SCUBA filter.
-Currently there is no difference between observation modes.
-
-  $Cal->gains(\%hdr);
-  $hashref = $Cal->gains;
+Determines whether gains are derived from the default values
+(DEFAULT) or from the index files (INDEX). Default is to
+use the index files.
 
 =cut
 
 sub gains {
-
   my $self = shift;
- 
-  if (@_) { 
-    my $arg = shift;
-    croak("Argument is not a hash") unless ref($arg) eq "HASH";
-    $self->{Gains} = $arg;
-  }
- 
- 
+  if (@_) { $self->{Gains} = uc(shift) unless $self->gainsnoupdate; }
+  $self->{Gains} = 'DEFAULT' unless (defined $self->{Gains});
   return $self->{Gains};
 }
 
-=item gain
 
-Allow a single gain to be retrieved for a specific filter.
+=item gainsnoupdate
 
-  $gain = $Cal->gain("850");
-  
-Can also be used to set a value
+Flag to prevent the gains selection from being modified during data
+processing.
 
-  $Cal->gain("850", number);
+=cut
+
+sub gainsnoupdate {
+  my $self = shift;
+  if (@_) { $self->{GainsNoUpdate} = shift };
+  return $self->{GainsNoUpdate};
+}
+
+
+=item gainsindex
+
+Return (or set) the index object associated with the gains
+index file. This index file is used if gains() is set to INDEX.
+
+=cut
+
+sub gainsindex {
+
+  my $self = shift;
+  if (@_) { $self->{GainsIndex} = shift; }
+ 
+  unless (defined $self->{GainsIndex}) {
+    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.gains";
+    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.gains";
+    $self->{GainsIndex} = new ORAC::Index($indexfile,$rulesfile);
+  };
+ 
+  return $self->{GainsIndex}; 
+
+
+}
+
+
+=item gain(filt)
+
+Method to return the current gain for the specified filter that
+is usable for the current frame.
+
+If gains() is set to DEFAULT then this method will simply return
+the current canonical gain for this filter.
+
+If gains() is set to INDEX the index will be searched for a calibration
+observation that matches the observation mode (ie Chop throw, sample
+mode, observing mode agree). 
+
+The current index system refuses to continue if a calibration can
+not be found. In future this may well be changed so that the
+DEFAULT values are used if no calibration is available.
+
+Returns the gain (undef if no gain could be found or error).
+
+It may also be useful if the gains either side of current observation
+are retrieved so that the gain can be interpolated.
+
+This would use the same method call that may be added for handling
+skydips either side. (chooseeithersidebydt?)
 
 =cut
 
 sub gain {
-
   my $self = shift;
- 
-  my $keyword = shift;
- 
-  if (@_) { ${$self->gains}{$keyword} = shift; }
- 
-  return ${$self->gains}{$keyword};
+
+  croak 'Usage: gain(filter)' if (scalar(@_) != 1);
+
+  # Get the filter (this could be sub-instrument but it is probably
+  # easier to use filter than to query the header for the sub name).
+  my $filt = uc(shift);
+
+  # Query the gain system to use
+  my $sys = $self->gains;
+
+  my $gain;
+
+  if ($sys eq 'DEFAULT') {
+    
+    if (exists $DEFAULT_GAINS{$filt}) {
+      $gain = $DEFAULT_GAINS{$filt};
+    } else {
+      orac_err "No gain exists for the specified filter ($filt)\n";
+      $gain = undef;
+    }
+
+  } elsif ($sys eq 'INDEX') {
+
+    # Now look in the index file
+
+    # Need to configure the header such that the FILTER keyword
+    # is set
+    $ {$self->thing}{FILTER} = $filt;
+
+    # Now ask for the 'best' gain observation
+    # This means closest in time
+    my $best = $self->gainsindex->choosebydt('ORACTIME', $self->thing);
+
+    # Now retrieve the entry itself
+    my $entref = $self->gainsindex->indexentry($best);
+
+    if (defined $entref) {
+      $gain = $$entref{GAIN};
+    } else {
+      orac_err("Error reading entry $best from Gains index");
+      $gain = undef;      
+    }
+
+  } else {
+    orac_err("Gains system non standard ($sys)\n");
+    $gain = undef;
+  }
+
+  # Return the gain
+  return $gain;
 
 }
 
@@ -246,6 +477,7 @@ sub fluxcal {
 }
 
 
+
 =item skydiptaus
 
 Method to store and retrieve the reference to a hash containing the
@@ -295,7 +527,7 @@ sub skydiptau {
  
   return ${$self->skydiptaus}{$keyword};
 
-}
+} 
 
 
 
