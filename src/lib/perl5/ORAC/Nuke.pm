@@ -101,6 +101,9 @@ sub orac_proc_kill {
   } elsif ($^O eq 'solaris') {
     $cmd = '/usr/bin/ps -ef';
     $pos = 1;
+  } elsif ($^O eq 'darwin') {
+    $cmd = '/bin/ps -ax';
+    $pos = 0;
   } else {
     # Digital Unix PS
     $cmd = '/bin/ps -ef';
@@ -154,6 +157,8 @@ This routine kills the shared memory segments owner by the user.
    
 it has no arguements and returns nothing.
 
+This routine does nothing on Darwin systems.
+
 =cut
 
 sub orac_ipcs_kill {
@@ -172,6 +177,10 @@ sub orac_ipcs_kill {
 
   # Read all shared memory segment IDs
   my @ipcs = `ipcs -m`;
+
+  # Return if ipcs failed -- probably because it doesn't exist on the
+  # system (like for Darwin)
+  return if $?;
 
   foreach my $line (@ipcs) {
 
