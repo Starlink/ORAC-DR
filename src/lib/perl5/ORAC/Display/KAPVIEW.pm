@@ -450,6 +450,8 @@ sub launch {
 Load a startup image. This tests the system to make sure that images
 can be displayed and that the colour map is loaded.
 
+Returns ORAC status.
+
 =cut
 
 sub configure {
@@ -1080,7 +1082,7 @@ sub select_section {
 
 ######################## DISPLAY MODES ##############################
 
-=item image
+=item B<image>
 
 Display an image.
 Takes a file name and arguments stored in a hash.
@@ -1098,6 +1100,8 @@ Recognised options:
   COMP       - Component to display (Data (default), Variance or Error)
 
 Default is to autoscale.
+
+ORAC Status is returned.
 
 =cut
 
@@ -1187,7 +1191,7 @@ sub image {
 
 }
 
-=item graph
+=item B<graph>
 
 Display a 1-D plot.
 
@@ -1227,6 +1231,8 @@ would display column 5 (ie the whole of Y for X=5).
 would display the average of rows 20 and 30 for each X.
 
 Need to add way of controlling line style (eg replace with symbols)
+
+ORAC status is returned.
 
 =cut
 
@@ -1317,7 +1323,7 @@ sub graph {
 }
 
 
-=item contour
+=item B<contour>
 
 Display contours of a 2-D data set.
 
@@ -1334,6 +1340,7 @@ Recognised options:
 
 Default is to autoscale.
 
+ORAC status is returned.
 
 =cut
 
@@ -1434,7 +1441,7 @@ sub contour {
 
 }
 
-=item sigma
+=item B<sigma>
 
 Display a scatter plot of the data with Y range of N-sigma (sigma
 is derived from the data) with dashed lines overlaid at the X-sigma
@@ -1454,6 +1461,7 @@ If we are running KAPPA 0.13, the NDF is converted
 to 1-DIM with the kappa RESHAPE command before 
 displaying.
 
+ORAC status is returned.
 
 =cut
 
@@ -1621,7 +1629,7 @@ sub sigma {
 }
 
 
-=item datamodel
+=item B<datamodel>
 
 Display mode where the supplied filename is plotted as individual
 points and a model is overlaid as a solid line. This can be used
@@ -1648,6 +1656,8 @@ Default is to autoscale on the data (the model may not be visible).
 If the input file is greater than 1-D, the section is automatically
 converted to 1-D by selecting the ?MIN slice from each of the
 higher axes (eg the value specified in YMIN, 3min...)
+
+ORAC status is returned.
 
 =cut
 
@@ -1765,11 +1775,12 @@ sub datamodel {
     }
   }
 
+  return $status;
 
 }
 
 
-=item histogram
+=item B<histogram>
 
 Display a histogram of the data values present in the 
 data array.
@@ -1790,6 +1801,8 @@ Arguments:
   COMP       - Component to display (Data (default), Variance or Error)
 
 Default is for autoscaling and for NBINS=20.
+
+ORAC status is returned.
 
 =cut
 
@@ -1874,7 +1887,7 @@ sub histogram {
 }
 
 
-=item vector
+=item B<vector>
 
 Vectors are overlaid on an image. The supplied file is displayed
 and vectors are then drawn. The vector information is expected
@@ -1894,6 +1907,8 @@ Recognised options:
   ANGROT     - angle to add to all vectors
 
 Default is to autoscale.
+
+ORAC status is returned.
 
 =cut
 
