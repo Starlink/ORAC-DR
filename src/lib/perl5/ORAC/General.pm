@@ -13,7 +13,7 @@ ORAC::General - Simple perl subroutines that may be useful for primitives
   $result = log10($value);
   $result = nint($value);
   $yyyymmdd = utdate;
-  %hash = parse_keyvalue($string);
+  %hash = parse_keyvalues($string);
   @obs = parse_obslist($string);
 
 =head1 DESCRIPTION
@@ -32,6 +32,7 @@ require Exporter;
 @EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist);
 
 use Carp;
+use warnings;
 use strict;
 use vars qw/$VERSION/;
 
@@ -47,7 +48,7 @@ use POSIX qw//;
 
 =over 4
 
-=item min(ARRAY)
+=item B<min>
 
 Find the minimum value of an array. Can also be used to find
 the minimum of a list of scalars since arguments are passed into
@@ -66,7 +67,7 @@ sub min {
   return $zmin;
 }
 
-=item max(ARRAY)
+=item B<max>
 
 Find the maximum value of an array. Can also be used to find
 the maximum of a list of scalars since arguments are passed into
@@ -86,7 +87,7 @@ sub max {
 }
 
 
-=item log10(scalar)
+=item B<log10>
 
 Returns the logarithm to base ten of a scalar.
 
@@ -107,7 +108,7 @@ sub log10 {
 };
 
 
-=item nint()
+=item B<nint>
 
 Return the nearest integer to a supplied floating point
 value. 0.5 is rounded up.
@@ -121,7 +122,7 @@ sub nint {
 
 };
 
-=item utdate
+=item B<utdate>
 
 Return the UT date (strictly, GMT) date in the format yyyymmdd
 
@@ -136,9 +137,13 @@ sub utdate {
 
 }
 
-=item parse_keyvalues
+=item B<parse_keyvalues>
 
-Takes a string of comma-seperated key-value pairs and return a hash.
+Takes a string of comma-separated key-value pairs and return a hash.
+
+  %hash = parse_keyvalues("a=1,b=2,C=3");
+
+The keys are down-cased.
 
 =cut
 
@@ -159,7 +164,7 @@ sub parse_keyvalues {
 }
 
 
-=item parse_obslist(list)
+=item B<parse_obslist>
 
 Converts a comma separated list of observation numbers (as supplied
 on the command line for the -list option) and converts it to
@@ -167,7 +172,7 @@ an array of observation numbers. Colons are treated as range arguments.
 
 For example,
 
-   5,9:11
+   "5,9:11"
 
 is converted to
 
