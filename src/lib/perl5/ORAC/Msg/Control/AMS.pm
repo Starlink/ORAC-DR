@@ -21,7 +21,7 @@ ORAC::Msg::Control::AMS - control and initialise ADAM messaging from ORAC
 
 =head1 DESCRIPTION
 
-Methods to initialise the ADAM messaging system (AMS) )and control the
+Methods to initialise the ADAM messaging system (AMS) and control the
 behaviour.
 
 =head1 METHODS
@@ -38,7 +38,7 @@ The following methods are available:
 use strict;
 use Carp;
 
-use vars qw/$VERSION $RUNNING/;
+use vars qw/$VERSION/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
@@ -223,14 +223,6 @@ sub init {
 
 =back
 
-=head1 VARIABLES
-
-The ORAC::Msg::Control::AMS::RUNNING variable can be 
-used to determine whether the message system is running or not.
-(Multiple message system objects can be created although only
-the first will actually start the message system - an error is raised
-if multiple objects are created).
-
 =head1 REQUIREMENTS
 
 This module requires the Starlink::AMS::Init module.
@@ -246,13 +238,25 @@ $Id$
 =head1 AUTHORS
 
 Tim Jenness (t.jenness@jach.hawaii.edu)
-and Frossie Economou (frossie@jach.hawaii.edu)    
+and Frossie Economou (frossie@jach.hawaii.edu)
 
 =head1 COPYRIGHT
 
 Copyright (C) 1998-2000 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
