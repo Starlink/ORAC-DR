@@ -183,7 +183,7 @@ sub _set_index_rules {
   my $current = $index->indexrulesfile;
 
   # Now change the rules file
-  if (uc($self->thing->{CAMERA}) eq 'IMAGING') {
+  if (uc($self->thing->{INSTMODE}) eq 'IMAGING') {
     $index->indexrulesfile($im)
       unless $im eq $current;
   } else {
