@@ -15,7 +15,7 @@ ORAC::Calib::CGS4;
 
   $Cal->standard(undef);
   $standard = $Cal->standard;
-  $bias = $Cal->bias;
+  $readnoise = $Cal->readnoise;
 
 =head1 DESCRIPTION
 
