@@ -21,9 +21,20 @@
 #
 # Notes:
 #    -  This primitive is suitable for Michelle in imaging mode.
+#    -  The file to be combined may be specified through group user 
+#    header MOSAIC_FRAME, if $Grp->file is not the file from which to
+#    combine images.
+#    -  The centroid is found by first setting the initial positions to
+#    the telescope offset in Cartesian co-ordinates for each nod position
+#    from the centre of the mosaic, and using a search window equal
+#    to the larger absolute telescope offset.  The telescope offsets are
+#    derived from the first and second frames in the current-cycle group.
 #    -  The regions are made as large as possible such that there is no
 #    duplication of pixels from the original group file.  In other words
-#    the regions extend to the midpoints of the chop throw and nod offsets. 
+#    the regions extend to the midpoints of the chop throw and nod
+#    offsets.  User header ORAC_CHOP_ANGLE is used to select one of two
+#    orientations (0 or +/-90 degrees) to derive the x-y half-widths of
+#    the regions.
 #    -  Before addition, the origins of each identically sized frame
 #    are set to 0,0.
 #    -  It determines for the current recipe cycle the two nod positions
@@ -86,16 +97,25 @@
 # Frame preliminaries.
 # ====================
 
-# Get the mosaic's name
-       my $in = $Grp->file;
+# Obtain the frame containing the mosaic from which the combined image
+# is to be generated.  First try the user header for the reference.
+       my $in;
+       my $mosFrm = $Grp->uhdr( "MOSAIC_FRAME" );
+       if ( defined( $mosFrm ) ) {
+          $in = $mosFrm->file;
 
-# Create a new frame.
-       my $mosFrm = new $Frm;
-       $mosFrm->file( $in );
+       } else {
+
+# Create a new frame containing the mosaic.  This is needed to find the
+# frame centre.  Process the group file by default.
+          $in = $Grp->file;
+          $mosFrm = new $Frm;
+          $mosFrm->file( $in );
 
 # Propagate the headers.
-       %{ $mosFrm->hdr } = %{ $Grp->hdr };
-       %{ $mosFrm->uhdr } = %{ $Grp->uhdr };
+          %{ $mosFrm->hdr } = %{ $Grp->hdr };
+          %{ $mosFrm->uhdr } = %{ $Grp->uhdr };
+       }
 
 # Record original telescope offsets.
        my $mos_raoff = $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" );
@@ -126,7 +146,7 @@
        my $tempGrp = new $Grp;
        $tempGrp->push( $cycleGrp->frame( 0 ) );
        $tempGrp->push( $cycleGrp->frame( 1 ) );
-       
+
        foreach my $Frm ( $tempGrp->members ) {
           _GET_CARTESIAN_TELESCOPE_OFFSETS_
           $x_nod_offset = $_GET_CARTESIAN_TELESCOPE_OFFSETS_{XOFF};
@@ -272,10 +292,12 @@
 #
 # This combination loses sub-pixel registration, but should be adequate
 # for aperture photometry.  This is also somewhat smaller than the
-# telescope pointing errors.  This makes an assumption re. orientation,
+# telescope pointing errors.  This makes an assumption regarding the
+# orientation, being either 0, or +/-90 degrees.
 # and needs a header.
           my ( $halfx, $halfy );
-          if ( $xpA < $xmid ) {
+          my $chopangle = ( $Frm->uhdr( "ORAC_CHOP_ANGLE" ) || 0 );
+          if ( abs( $chopangle ) < 45 ) {
              $halfx = int( 0.5 * abs( $xpA - $xnA ) );
              $halfy = int( 0.5 * abs( $ypA - $ynB ) );
           } else {
@@ -416,9 +438,25 @@ This primitive is suitable for Michelle in imaging mode.
 
 =item *
 
+The file to be combined may be specified through group user header
+MOSAIC_FRAME, if $Grp->file is not the file from which to combine
+images.
+
+=item *
+
+The centroid is found by first setting the initial positions to
+the telescope offset in Cartesian co-ordinates for each nod position
+from the centre of the mosaic, and using a search window equal
+to the larger absolute telescope offset.  The telescope offsets are
+derived from the first and second frames in the current-cycle group.
+
+=item *
+
 The regions are made as large as possible such that there is no
 duplication of pixels from the original group file.  In other words
-the regions extend to the midpoints of the chop throw and nod offsets. 
+the regions extend to the midpoints of the chop throw and nod offsets.
+User header ORAC_CHOP_ANGLE is used to select one of two orientations
+(0 or +/-90 degrees) to derive the x-y half-widths of the regions.
 
 =item *
 
