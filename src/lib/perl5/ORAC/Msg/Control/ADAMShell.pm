@@ -107,6 +107,23 @@ sub init { }
 
 =back
 
+=head1 CLASS METHODS
+
+=over 4
+
+=item B<require_uniqid>
+
+Returns false, indicating that the shell does not require unique
+engine identifiers since each invocation will be fresh,
+
+=cut
+
+sub require_uniqid {
+  return 0;
+}
+
+=back
+
 =head1 REVISION
 
 $Id$
@@ -118,9 +135,21 @@ and Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 1998-2005 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
