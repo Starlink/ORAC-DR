@@ -55,6 +55,7 @@ Converted to ORAC-DR by Tim Jenness.
 
 =cut
 
+use NDF; # Import HDS commands
 
 # Read arguments
 $smooth = ( $_CALCULATE_POLARISATION_FRAME_{SMOOTH} || 5.0);
@@ -62,6 +63,7 @@ $smooth = ( $_CALCULATE_POLARISATION_FRAME_{SMOOTH} || 5.0);
 # Loop over files
 
 for my $i (1..$Frm->nfiles) {
+
 
   # Sub-instrument
   my $sub = ($Frm->subs)[$i-1];
@@ -93,9 +95,6 @@ for my $i (1..$Frm->nfiles) {
 
   # Retrieve the root file name
   my $root = $Frm->file($i);
-
-  # Calculate the name for the final IQU HDS container
-  my ($junk, $iqu_out) = $Frm->inout("_iqu",$i);
   
   # Loop round each set of four
   for my $loop (1..$nloops) {
@@ -154,7 +153,7 @@ for my $i (1..$Frm->nfiles) {
 
     # Create a container file to hold the P and Theta and I
 
-    my ($junk, $out) = $Frm->inout("_temp$loop",$i);
+    ($junk, $out) = $Frm->inout("_temp$loop",$i);
     
     hds_new ($out,substr($out,0,9),"SURF_HDS",0,@null,$loc,$status);
     dat_annul($loc, $status);
@@ -182,7 +181,7 @@ for my $i (1..$Frm->nfiles) {
     orac_print "Correcting for sky rotation angle: $angrot\n";
 
     # Create a container file to hold the I, Q and U
-    my ($junk, $out) = $Frm->inout("_iqu$loop",$i);
+    ($junk, $out) = $Frm->inout("_iqu$loop",$i);
     
     hds_new ($out,substr($out,0,9),"SURF_HDS",0,@null,$loc,$status);
     dat_annul($loc, $status);
@@ -195,75 +194,71 @@ for my $i (1..$Frm->nfiles) {
     $Mon{ndfpack_mon}->obeyw("ndfcopy","in=${in}.i out=${out}.i title='Intensity'");
 
     # Calculate the Q component
-    $Mon{kappa_mon}->obeyw("maths","exp='0.01*ia*cosd(2*(ib-pa))' ia=${in}.p ib=${in}.theta pa=$angrot out=${out}.q");
+    # Note that the P returned by Calpol is percentage polarisation
+    $Mon{kappa_mon}->obeyw("maths","exp='0.01*ia*cosd(2*(ib+pa))' ia=${in}.p ib=${in}.theta pa=$angrot out=${out}.q");
 
     # Calculate the U component
-    $Mon{kappa_mon}->obeyw("maths","exp='0.01*ia*sind(2*(ib-pa))' ia=${in}.p ib=${in}.theta pa=$angrot out=${out}.u");
+    # Note that the P returned by Calpol is percentage polarisation
+    $Mon{kappa_mon}->obeyw("maths","exp='0.01*ia*sind(2*(ib+pa))' ia=${in}.p ib=${in}.theta pa=$angrot out=${out}.u");
 
-    # Coadd into the running average of Q and U
-    if ($loop == 1) {
-      # First time round - just copy the file (assumes we know .sdf!!"
-      system("cp ${out}.sdf ${iqu_out}.sdf");
-    } else {
-      # Now need to coadd via a temporary output file
-      # Not pretty
-
-      # I
-      $Mon{kappa_mon}->obeyw("add","in1=${out}.i in2=${iqu_out}.i out=${iqu_out}.itemp");
-      $Mon{ndfpack_mon}->obeyw("erase","object=${iqu_out}.i  ok=true");
-      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=${iqu_out}.itemp out=${iqu_out}.i title='I Stokes parameter'");
-      $Mon{ndfpack_mon}->obeyw("erase","object=${iqu_out}.itemp  ok=true");
-
-      # Q
-      $Mon{kappa_mon}->obeyw("add","in1=${out}.q in2=${iqu_out}.q out=${iqu_out}.qtemp");
-      $Mon{ndfpack_mon}->obeyw("erase","object=${iqu_out}.q  ok=true");
-      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=${iqu_out}.qtemp out=${iqu_out}.q title='Q Stokes parameter'");
-      $Mon{ndfpack_mon}->obeyw("erase","object=${iqu_out}.qtemp  ok=true");
-
-      # U
-      $Mon{kappa_mon}->obeyw("add","in1=${out}.u in2=${iqu_out}.u out=${iqu_out}.utemp");
-      $Mon{ndfpack_mon}->obeyw("erase","object=${iqu_out}.u ok=true");
-      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=${iqu_out}.utemp out=${iqu_out}.u title='U Stokes parameter'");
-      $Mon{ndfpack_mon}->obeyw("erase","object=${iqu_out}.utemp ok=true ");
-
-    }
+    # Erase the temporary file
+    $Mon{ndfpack_mon}->obeyw("erase","object=$in ok=true");
 
   }
+
+  # FIND MEAN I, Q and U --------------------------
 
   # We now have the sum of I's, Q's and U's in $iqu_out
   # in extensions called I,Q and U.
-  # Need to normalise by the number of loops we just went round
-  # Again need to go through temporary NDF
 
+  # Calculate the mean of the I, Q and U vectors
+  # Currently all the files are stored in files
+  # of name   ....._iqu$loop
 
-  if ($nloops > 1) {
+  # Retrieve the output file name that will be used to hold the averaged
+  # I, Q and U
 
-    orac_print "Calculating mean I, Q and U for observation\n";
+  # Calculate the name for the final IQU HDS container
+  my ($junk, $iqu_out) = $Frm->inout("_iqu",$i);
 
-    # I
-    $Mon{kappa_mon}->obeyw("cdiv","in=${iqu_out}.i scalar=$nloops out=${iqu_out}.itemp title='I Stokes Parameter' ");
-    $Mon{ndfpack_mon}->obeyw("erase","object=${iqu_out}.i  ok=true");
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=${iqu_out}.itemp out=${iqu_out}.i title=!");
-
-    # Q
-    $Mon{kappa_mon}->obeyw("cdiv","in=${iqu_out}.q scalar=$nloops out=${iqu_out}.qtemp title='Q Stokes parameter'");
-    $Mon{ndfpack_mon}->obeyw("erase","object=${iqu_out}.q  ok=true");
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=${iqu_out}.qtemp out=${iqu_out}.q title=!");
-
-    # U
-    $Mon{kappa_mon}->obeyw("cdiv","in=${iqu_out}.u scalar=$nloops out=${iqu_out}.utemp title='U Stokes parameter'");
-    $Mon{ndfpack_mon}->obeyw("erase","object=${iqu_out}.u  ok=true");
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=${iqu_out}.utemp out=${iqu_out}.u title=!");
-    
-
+  # Create the output file
+  hds_new ($iqu_out,substr($iqu_out,0,9),"SURF_HDS",0,@null,$loc,$status);
+  dat_annul($loc, $status);
+  if ($status != &NDF::SAI__OK) {
+    orac_err("Failed to create HDS container: $iqu_out!");
+    $ORAC_STATUS = ORAC__ERROR;
   }
 
-  # Now erase those temporary components (Note this is inefficient since
-  # it doesnt release the space
+  # Now need to use Kappa maths to coadd all the frames and average
+  # Need to create a maths string
 
-  $Mon{ndfpack_mon}->obeyw("erase","object=${iqu_out}.itemp  ok=true");
-  $Mon{ndfpack_mon}->obeyw("erase","object=${iqu_out}.qtemp  ok=true");
-  $Mon{ndfpack_mon}->obeyw("erase","object=${iqu_out}.utemp  ok=true");
+  # Kappa maths can only combine up to 26 input files
+  if ($nloops > 26) {
+    orac_err("Can only process a maximum of 26 waveplate sets\n");
+    $ORAC_STATUS = ORAC__ERROR;
+  }
+
+  # Loop over each component
+  orac_print "Calculating mean of ";
+  for my $stokes (qw/I Q U/) {
+    orac_print "$stokes...";
+    # Create maths string (not unicode compliant!)
+    # generate "ia + ib + ic .... " expression for kappa maths
+    my $exp = '('.join ("+",grep {$_ = "i".chr($_+96)} (1..$nloops)) . ")/$nloops";
+
+    # generate "ia=$iqu_out.?  ib=iqu_out.? ic=$iqu_out.? .... " 
+    # expression for input to kappa maths
+    my $args =  join (" ", grep {
+      $_ = "i".chr($_+96)."=${iqu_out}$_".".$stokes";
+    } (1..$nloops));
+
+    # Run kappa maths
+    $Mon{'kappa_mon'}->obeyw("maths","exp='$exp' out=${iqu_out}.$stokes $args title='$stokes Stokes Parameter'");
+
+  }
+  orac_print "\n";
+
+  # CALCULATE AVERAGE POLARISATION ------------------
 
   # Calculate the State of Polarisation
   # (Store them all in $iqu_out
