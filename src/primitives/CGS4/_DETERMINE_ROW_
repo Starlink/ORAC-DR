@@ -1,15 +1,15 @@
 =head1 NAME
 
-_DETERMINE_ROW_ - determines the brightest detector row
+_DETERMINE_ROW_ - determines the max and min rows
 
 =head1 SYNOPSIS
 
 _DETERMINE_ROW_
-_DETERMINE_ROW_  ROW=52
+_DETERMINE_ROW_  POSROW=96 NEGROW=120
 
 =head1 DESCRIPTION
 
-Finds the most likely looking row to use by collapsing the 
+Finds the most likely looking rows to use by collapsing the 
 image to a 1-D spectrum and finding the brightest pixel.
 
 If a row is specified, no action is taken by this primitive except
@@ -22,9 +22,15 @@ The following options are supported:
 
 =over 4
 
-=item ROW
+=item POSROW
 
-Row to use for extraction.
+Position of positive signal to use for extraction.
+There is no default value.
+
+=item NEGROW
+
+Position of negative signal to use for extraction.
+There is no default value.
 
 =back
 
@@ -46,14 +52,18 @@ There are no output files.
 
 =head1 NOTES
 
-This primitive only processes the first exposure/frame
-rather than attempting to coadd all the exposures. This should
-not be a problem since it is expected that this primitive
-is run after the mulitple exposures have been coadded. 
+This primitives processes a coadded pair. It makes sure that the
+group file exists before proceeding.
 
 Also, for very weak sources, it is possible that edge effects
 will dominate. In that case, this primitive may need to be rewritten
 such that it does not try to use the very edge of the array.
+
+This primitive should be run after the pairs have been coadded.
+It is best to include this primitive in _COADD_PAIRS_AND_GROUP_
+so that it is guaranteed to be run correctly. Another reason
+for doing this is that the primitive does not check that a complete
+pair has been processed.
 
 =head1 AUTHOR
 
@@ -62,44 +72,81 @@ Tim Jenness
 =cut
 
 
-my $extractrow = (exists $_DETERMINE_ROW_{'ROW'} ? $_DETERMINE_ROW_{ROW} : undef);
+my $posrow = (exists $_DETERMINE_ROW_{'POSROW'} ? 
+	      $_DETERMINE_ROW_{POSROW} : undef);
 
-unless (defined $extractrow) {
+my $negrow = (exists $_DETERMINE_ROW_{'NEGROW'} ? 
+	      $_DETERMINE_ROW_{NEGROW} : undef);
 
-  # Get the first (only?) frame name
-  my $frame = $Frm->file;
-
-  # Create a temporary name
-  my $add = new ORAC::TempFile;
-  my $addname = $add->file;
-
-  # Need to find the size of the array so that we can caluclate the
-  # compression ratio 
-  # With kappa 0.15 we can simply choose a very large number.
-  # for older kappa we have to find the size first
-
-  $Mon{'ndfpack_mon'}->obeyw("ndftrace","ndf=$frame quiet=true");
-  my ($ORAC_STATUS, @dims) = $Mon{ndfpack_mon}->get("ndftrace","dims");
-
-  # Now add up all the columns
-  # In kappa15 we can add the ALIGN parameter
-  # Use default value of WLIM
-  $Mon{kappa_mon}->obeyw("compadd","in=$frame out=$addname compress=[$dims[0],1]");
-
-  # Now find the brightest
-  $Mon{kappa_mon}->obeyw("stats","ndf=$addname");
-
-  # Get the coordinate of the maximum value in pixel coordinates
-  # (This may be a problem if we are expecting to use arcsec)
-
-  ($ORAC_STATUS, my $xmax, my $ymax) = $Mon{kappa_mon}->get("stats","maxpos");
-
-  $extractrow = $ymax;
-  orac_print "Determined extraction row from image...";
-
+unless (defined $Frm->uhdr("PAIR_COMPLETE")) {
+  orac_err "PAIR_COMPLETE not present, have you run the steering primitive??";
+  my $ORAC_STATUS = ORAC__ERROR;
 }
 
-orac_print "Using detector row $extractrow\n";
 
-# Store the extraction row
-$Frm->uhdr('EXTRACT_ROW', $extractrow);
+# Check that the group file exists and we have a pair
+
+if ( $Grp->file_exists && $Frm->uhdr("PAIR_COMPLETE") ) {
+
+  unless (defined $posrow && defined $negrow) {
+
+    # Get the group
+    my $group = $Grp->file;
+
+    # Create a temporary name
+    my $add = new ORAC::TempFile;
+    my $addname = $add->file;
+
+    # Need to find the size of the array so that we can caluclate the
+    # compression ratio 
+    # With kappa 0.15 we can simply choose a very large number.
+    # for older kappa we have to find the size first
+
+    $Mon{'ndfpack_mon'}->obeyw("ndftrace","ndf=$group quiet=true");
+    my ($ORAC_STATUS, @dims) = $Mon{ndfpack_mon}->get("ndftrace","dims");
+
+    # Now add up all the columns
+    # In kappa15 we can add the ALIGN parameter
+    # Use default value of WLIM
+    $Mon{kappa_mon}->obeyw("compadd","in=$group out=$addname compress=[$dims[0],1]");
+
+    # Now find the brightest
+    $Mon{kappa_mon}->obeyw("stats","ndf=$addname");
+
+    # Get the coordinate of the maximum value in pixel coordinates
+    # (This may be a problem if we are expecting to use arcsec)
+
+    ($ORAC_STATUS, my $xmax, my $ymax) = $Mon{kappa_mon}->get("stats","maxpos");
+    ($ORAC_STATUS, my $xmin, my $ymin) = $Mon{kappa_mon}->get("stats","minpos");
+
+    unless (defined $posrow) {
+      $posrow = $ymax;
+      orac_print "Determined positive extraction row from image...\n";
+    }
+
+
+    unless (defined $negrow) {
+      $negrow = $ymin;
+      orac_print "Determined negative extraction row from image...\n";
+    }
+
+
+  }
+
+  orac_print "Using detector rows (pos=$posrow, neg=$negrow)...";
+
+  # Store the extraction row in the index
+  $Cal->rowname( $Grp->file );
+  
+  my %hdr = %{$Frm->hdr};
+  $hdr{POSROW} = $posrow; # need this for index
+  $hdr{NEGROW} = $negrow;
+  $Cal->rowindex->add( $Grp->file, \%hdr );
+
+  orac_print "Stored in index file\n";
+
+} else {
+
+  orac_warn "Can not determine row yet (pair not yet completed)\n";
+  
+}
