@@ -1,14 +1,14 @@
 =head1 NAME
 
-_SUBTRACT_CHOP_ - subtract the bias frame from the current frame
+_SUBTRACT_CHOP_ - subtract the chop beams
 
 =head1 DESCRIPTION
 
 This primitive subtracts the two chop beams in the current frame.
 Nothing happens if the observation isn't of type CHOP
 
-This will need a minor update to handle NDCHOP
- - or would that be ND_CHOP?
+If the frames are FLATs, we add (actually average) them together into a _acb
+file.
 
 =head1 AUTHOR
 
@@ -20,12 +20,14 @@ Paul Hirst <p.hirst@jach.hawaii.edu>
 
 if (($Frm->uhdr("ORAC_DETECTOR_MODE") eq "CHOP") || ($Frm->uhdr("ORAC_DETECTOR_MODE") eq "NDCHOP")) {
 
+  my $isaflat = ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "FLAT");
+
   # Process all the sub-files.
   # The sequence in the HDS is thus:
   # .I1 .I1BEAMA .I1BEAMB .I2 .I2BEAMA .I2BEAMB .I3 .I3BEAMA .I3BEAMB etc etc
   #
   # OK, but the Frame object only gives us the .BEAM data when in chop mode
-  # Thus, in the loop, we see: .I1BEAM! .I1BEAMB .I2BEAMA .I2BEAMB etc
+  # Thus, in the loop, we see: .I1BEAMA .I1BEAMB .I2BEAMA .I2BEAMB etc
   # We keep a list of what we want in the output frame, and Update the frame
   # Object with it manually...
 
@@ -42,15 +44,20 @@ if (($Frm->uhdr("ORAC_DETECTOR_MODE") eq "CHOP") || ($Frm->uhdr("ORAC_DETECTOR_M
     my ( $ina, $foo ) = $Frm->inout( "_foo", $a );
     my ( $inb, $foo ) = $Frm->inout( "_foo", $b );
 
-    # Generate the output filename scb = subtracted chop beam
-    my ( $foo, $out) = $Frm->inout( "_scb", $i);
-    
-    # Subtract the 2 chop beams
-    $Mon{'kappa_mon'}->obeyw("sub", "in1=$ina in2=$inb out=$out title=$out");
+    # Generate the output filename, do the maths, report
+    # scb = subtracted chop beam,
+    # acb = added chop beam (For FLATs)
+    my $out;
+    if($isaflat) {
+       $out = $Frm->inout( "_acb", $i);
+       $Mon{'kappa_mon'}->obeyw("add", "in1=$ina in2=$inb out=$out title=$out");
+       orac_print "$ina + $inb to $out: added chop beams\n";
+    } else {
+       $out = $Frm->inout( "_scb", $i);
+       $Mon{'kappa_mon'}->obeyw("sub", "in1=$ina in2=$inb out=$out title=$out");
+       orac_print "$ina - $inb to $out: subtracted chop beam\n";
+    }
 
-    # Report the processing status.
-    orac_print "$ina - $inb to $out: subtracted chop beam\n";
-      
     # Note the new filename for the output frame
     push @files, $out;
   }
