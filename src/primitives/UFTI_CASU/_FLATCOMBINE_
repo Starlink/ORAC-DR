@@ -5,32 +5,44 @@
 
     # Get some stats
 
-    my $nn = "";
-    _IMSTAT_ CPMLOC=$nn HDRUP=1
+    foreach my $frm ($Grp->allmembers) {
+        my $Frm = $frm;
+        _IMSTAT_ HDRUP=1
+    }
     _ICSCALE_
+
+    # Get the readnoise...
+
+    my $readnoise = $Cal->readnoise;
 
     # Create a temporary file with the input file list in it...
 
-    my $tmpfil = "tmpflatcombine_" . time();
-    open FF,">$tmpfil";
+    my $tmpfil = ORAC::TempFile->new;
+    my $fh = $tmpfil->handle;
     foreach my $fr ($Grp->allmembers) {
-        print FF $fr->file,"\n";
+        print $fh $fr->file,"\n";
+        $fr->update_header("READNOIS",TFLOAT,$readnoise,
+            "Current estimate of read noise");
     }
-    close FF;
+    $fh->close;
+
+    # Get some header keywords
+
+    my $readkey = "READNOIS";
+    my $gainkey = $Frm->hdrkeys("GAIN");
+    my $expkey = $Frm->hdrkeys("EXPOSURE_TIME");
 
     # Do the combination
 
     my ($retval,$errmsg,$bpmflag);
-    $errmsg = "";
     $bpmflag = ($masking ? USEBPM : NOBPM);
-    $retval = cir_imcombine($tmpfil,$outf,"","CIR_OPM",MEDIANCALC,0,0,1,
-        $bpmflag,REJAVSIGCLIP,1,1,1,3.0,3.0,"CIR_RN","CIR_GN","CIR_EXP",$errmsg);
+    $retval = cir_imcombine($tmpfil->file,$outf,"","CIR_OPM",MEDIANCALC,0,0,1,
+        $bpmflag,REJAVSIGCLIP,1,1,1,3.0,3.0,$readkey,$gainkey,$expkey,$errmsg);
     if ($retval != CIR_OK) {
-        orac_err("CIR_IMCOMBINE: failed in _FLATCOMBINE_\n$errmsg\n");
-        return(ORAC__ERROR);
+        orac_throw("CIR_IMCOMBINE: failed in _FLATCOMBINE_\n$errmsg\n");
     }
 
     # Tidy up
 
-    unlink $tmpfil;
+    $tmpfil->DESTROY;
 

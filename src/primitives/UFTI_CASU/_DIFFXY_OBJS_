@@ -1,12 +1,8 @@
-    # Initialise the results arrays
-
-    @xoffs = ();
-    @yoffs = ();
-
     # Loop for all of the files in the group.  Get the table name
     
     my $nfile = 0;
     my $template;
+    my $dstat = 0;
     foreach my $frm ($Grp->allmembers) {
         $nfile++;
         my $tabname = $frm->uhdr("OBJTAB");
@@ -16,7 +12,6 @@
         my $status = 0;
         my $fptr = Astro::FITS::CFITSIO::open_file($tabname,READONLY,$status);
         my ($hdutype,$nrows,$col,@xval,@yval,@tval,@elval,$anynul);
-        $fptr->movabs_hdu(2,$hdutype,$status);
         $fptr->get_num_rows($nrows,$status);
 	$fptr->get_colnum(CASEINSEN,"X_coordinate",$col,$status);
 	$fptr->read_col(TFLOAT,$col,1,1,$nrows,0.0,\@xval,$anynul,$status);
@@ -36,23 +31,22 @@
         # Create a file with these entries in.  Ditch all that are not
         # circular enough
 
-        my $tmpfile = "diffxy_" . $frm->file;
-        unlink $tmpfile if (-e $tmpfile);
-        open FF,">$tmpfile";
+        my $tmpfile = ORAC::TempFile->new;
+        my $fh = $tmpfile->handle;
         for my $i (0 .. $nrows-1) {
             next if ($elval[$i] > 0.5);
-            my $xv = $xval[$i] + $xoffswcs[$nfile-1];
-            my $yv = $yval[$i] + $yoffswcs[$nfile-1];
-            print FF "$xv $yv $tval[$i]\n";
+            my $xv = $xval[$i] + $frm->uhdr("XOFF_WCS");
+            my $yv = $yval[$i] + $frm->uhdr("YOFF_WCS");
+            print $fh "$xv $yv $tval[$i]\n";
         }
-        close FF;
+        $tmpfile->handle->close;
 
         # If this is the first file in the list, then make it the template
 
         if ($nfile == 1) {
             $template = $tmpfile;
-            push @xoffs,0.0;
-            push @yoffs,0.0;
+            $frm->uhdr("XOFF_OBJS",0.0);
+            $frm->uhdr("YOFF_OBJS",0.0);
             next;
         }
 
@@ -65,22 +59,70 @@
         # Ok, now match 'em up
 
         my $srad = 10.0;
-        my ($retval,$errmsg,$xoffset,$yoffset,$nmatch);
-        $errmsg = "";
-        $xoffset = 0.0;
-        $yoffset = 0.0;
-        $nmatch = 0;
-        $retval = cir_matchxy($tmpfile,$template,$srad,$nx,$ny,$xoffset,
-            $yoffset,$nmatch,$errmsg);
-        unlink $tmpfile;
+        my ($errmsg,$xoffset,$yoffset,$nmatch);
+        my $retval = cir_matchxy($tmpfile->file,$template->file,$srad,$nx,$ny,
+            $xoffset,$yoffset,$nmatch,$errmsg);
+        $tmpfile->DESTROY;
         if ($retval != CIR_OK || $nmatch == 0) {
             orac_err("CIR_MATCHXY: Failed in _DIFFXY_OBJS_\n$errmsg\n");
             $dstat = 1;
-            unlink $template;
+            $template->DESTROY;
             last;
         }
-        push @xoffs,$xoffset+$xoffswcs[$nfile-1];
-        push @yoffs,$yoffset+$yoffswcs[$nfile-1];
+        $frm->uhdr("XOFF_OBJS",$xoffset+$frm->uhdr("XOFF_WCS"));
+        $frm->uhdr("YOFF_OBJS",$yoffset+$frm->uhdr("YOFF_WCS"));
     }
-    unlink $template;
-        
+    $template->DESTROY;
+    $_DIFFXY_OBJS_{DSTAT} = $dstat;
+
+=head1 NAME
+
+_DIFFXY_OBJS_ -- Refine offset positions between frames
+
+=head1 DESCRIPTION
+
+This primitive cycles through all the images in a group.  The offset position
+of each frame from the first in the group is calculated by looking at the
+positions of detected objects in a catalogue.  
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item DSTAT = int (Returned)
+
+A flag that indicates something went wrong and as such the offsets generated
+here should be ignored.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+The offsets using the WCS are used as a starting point and should be stored 
+in the uhdr components XOFF_WCS, YOFF_WCS. Thus these values must be set 
+before calling this primitive. 
+
+=item *
+
+The catalogue name is sought from the uhdr component OBJTAB. 
+
+=item *
+
+The offsets generated are stored in the uhdr components XOFF_OBJ, YOFF_OBJ.
+
+=back
+
+=head1 AUTHORS
+
+JRL: Jim Lewis (CASU, IoA)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003-2006 Cambridge Astronomy Survey Unit. 
+All Rights Reserved
+
+=cut
