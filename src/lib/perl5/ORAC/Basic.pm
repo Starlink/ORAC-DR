@@ -263,6 +263,7 @@ sub orac_parse_recipe {
 
 	# Now add the OBEYW status checking lines
 	# prepending the OBEYW_STATUS line
+	push (@parsed, "orac_debug($line);¨);
 	push (@parsed, '$OBEYW_STATUS = ' .$line);
 	push (@parsed, &orac_check_obey_status($line));
 
@@ -426,6 +427,9 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.23  1998/08/06 21:08:54  frossie
+#Add orac_debug in auto status checking
+#
 #Revision 1.22  1998/07/09 03:54:13  timj
 #Add orac_print.
 #Improve obeyw string handling.
