@@ -33,14 +33,8 @@ in addition to the temporary file created by this class.
 use strict;
 use warnings;
 use Carp;
-use IO::File;
+use File::Temp qw/ tempfile /;
 use vars qw/$VERSION $DEBUG/;
-
-# Allow for different temporary filename generation
-# Using require - so no importing of functions
-eval { require POSIX; };
-eval { require File::MkTemp; };
-
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 $DEBUG = 0;
@@ -217,29 +211,18 @@ constructor has failed.
 sub Initialise {
   my $self = shift;
 
-  # Recipe 7.5 in Perl cookbook - first edition
-  # "creating temporary files"
-  my ($file, $fh);
+  # Location of temp file
+  my $dir = $ENV{ORAC_DATA_OUT};
 
-  # Try new temporary files until we get one that didnt already exist
-  # This assumes we keep on trying to open the file....
-  do { 
+  # Get a temp file. File::Temp makes this painless
+  my ($fh, $file) = tempfile( "oractempXXXXXX",
+			      DIR => $dir,
+			    );
 
-    # Preference is given to File::MkTemp
-    if (defined &File::MkTemp::mktemp) {
-      $file = &File::MkTemp::mktemp("$ENV{ORAC_DATA_OUT}/oractempXXXXXX", $ENV{ORAC_DATA_OUT});
-
-    } elsif (defined &POSIX::tmpnam) {
-      # POSIX is not as configurable since it tells us what dir
-      # to use and does not allow use to specify a root name
-      $file = &POSIX::tmpnam();
-
-    } else {
-      croak "No temporary file generation subroutines available.\n Please install either the File::MkTemp or POSIX modules\n";
-    }
-
-    $file =~ s/\./_/g;  # Remove dots since NDF does not like them
-  } until $fh = IO::File->new($file, O_RDWR|O_CREAT|O_EXCL);
+  # Remove dots since NDF does not like them
+  # But have to be careful that original directory path might contain a .
+  # even if absolute
+  substr($file,length($dir)) =~ s/\./_/g;
 
   # Set autoflush
   $fh->autoflush(1);
@@ -248,6 +231,7 @@ sub Initialise {
   $self->handle($fh);
   $self->file($file);
 
+  return;
 }
 
 
