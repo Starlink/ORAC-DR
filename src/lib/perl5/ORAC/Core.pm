@@ -8,7 +8,7 @@ ORAC::Core - core routines for data pipelining
 
   use ORAC::Core;
 
-  orac_process_frame($Frm, $Grp, $Cal, $OverRecipe, $instrument);
+  orac_process_frame($Frm, $Grp, $Cal,\%Mon,$OverRecipe, $instrument);
 
   orac_store_frm_in_correct_grp($Frm, $GrpType, $GrpHash, $GrpArr, $ut);
 
@@ -129,8 +129,11 @@ It processes the supplied frame object that belongs to the group object,
 using the supplied calibration object. The instrument name and default
 recipe are required for recipe/primitive reading since recipes and
 primitives are stored in instrument specific directories.
+The %Mon hash is supplied so that a recipe has full access to
+all the monoliths launched for this instrument.
 
-  orac_process_frame($Frm, $Grp, $Cal, $default_recipe, $instrument);
+  orac_process_frame($Frm, $Grp, $Cal, \%Mon, $default_recipe, 
+     $instrument);
 
 
 =cut
@@ -139,14 +142,17 @@ primitives are stored in instrument specific directories.
 sub orac_process_frame {
   use strict;
 
-  croak 'Usage: orac_process_frame($Frm, $Grp, $Cal, $OverRecipe, $instrument)'
-    unless scalar(@_)  == 5;
+  croak 'Usage: orac_process_frame($Frm, $Grp, $Cal, \%Mon, $OverRecipe, $instrument)'
+    unless scalar(@_)  == 6;
 
   # Variable declaration
   my ($Recipe);
 
   # Read arguments
-  my ($Frm, $Grp, $Cal, $OverRecipe, $instrument) = @_;
+  my ($Frm, $Grp, $Cal, $Mon, $OverRecipe, $instrument) = @_;
+
+  croak "4th argument must be reference to hash not $Mon"
+    unless ref($Mon) eq 'HASH';
 
   # Store the header of the current frame in the calibration object
   $Cal->thing($Frm->header);
@@ -192,7 +198,7 @@ sub orac_process_frame {
 
   $recipe_ref = orac_add_code_to_recipe($recipe_ref);
   
-  orac_execute_recipe($recipe_ref,$Frm,$Grp,$Cal); # execute parsed recipe
+  orac_execute_recipe($recipe_ref,$Frm,$Grp,$Cal,$Mon); # execute parsed recipe
 
   # delete symlink to raw data file
   unlink($Frm->raw) if (-l $Frm->raw);
