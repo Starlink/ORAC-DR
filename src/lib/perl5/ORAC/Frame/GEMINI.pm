@@ -37,7 +37,6 @@ my %hdr = (
             NUMBER_OF_EXPOSURES => "NSUBEXP",
 	    NUMBER_OF_EXPOSURES => "COADDS",
             OBJECT              => "OBJECT",
-            RA_TELESCOPE_OFFSET => "RAOFFSET",
             X_REFERENCE_PIXEL   => "CRPIX1",
             Y_REFERENCE_PIXEL   => "CRPIX2"
         );
@@ -61,7 +60,23 @@ sub _to_DEC_SCALE {
 
 sub _to_DEC_TELESCOPE_OFFSET {
     my $self = shift;
+
+# It's simple when there's a header.
     my $offset = $self->hdr( "DECOFFSE" );
+
+# Otherwise for older data have to derive an offset from the source
+# position and the frame position.  This does assume that the
+# reference pixel is unchanged in the group.  The other headers
+# are measured in degrees, but the offsets are in arceseconds.
+    if ( !defined( $offset ) ) {
+       my $decbase = $self->hdr( "CRVAL2" ) ;
+       my $dec = $self->hdr( "DEC" );
+       if ( defined( $decbase ) && defined( $dec ) ) {
+          $offset = 3600.0 * ( $dec - $decbase );
+       } else {
+          $offset = 0.0;
+       }
+    }
     return $offset;
 }
 
@@ -104,13 +119,13 @@ sub _to_OBSERVATION_TYPE {
 sub _to_RA_BASE {
    my $self = shift;
    my $ra = 0.0;
-   if ( exists ( $self->hdr->{CRPIX1} ) ) {
-      $ra = $self->hdr->{CRPIX1};
+   if ( exists ( $self->hdr->{CRVAL1} ) ) {
+      $ra = $self->hdr->{CRVAL1};
    }
    $ra = defined( $ra ) ? $ra: 0.0;
    return $ra / 15.0;
 }
-   
+
 sub _to_RA_SCALE {
    my $self = shift;
    my $cd12 = $self->hdr("CD1_2");
@@ -118,6 +133,33 @@ sub _to_RA_SCALE {
    sqrt( $cd12**2 + $cd22**2 ) * 3600;
 }
  
+sub _to_RA_TELESCOPE_OFFSET {
+    my $self = shift;
+
+# It's simple when there's a header.
+    my $offset = $self->hdr( "RAOFFSET" );
+
+# Otherwise for older data have to derive an offset from the source
+# position and the frame position.  This does assume that the
+# reference pixel is unchanged in the group.  The other headers
+# are measured in degrees, but the offsets are in arceseconds.
+    if ( !defined( $offset ) ) {
+       my $rabase = $self->hdr( "CRVAL1" ) ;
+       my $ra = $self->hdr( "RA" );
+       my $dec = $self->hdr( "DEC" );
+       if ( defined( $rabase ) && defined( $ra ) && defined( $dec ) ) {
+          $offset = 3600* ( $ra - $rabase ) * cosdeg( $dec );
+       } else {
+          $offset = 0.0;
+       }
+    }
+    return $offset;
+}
+
+sub _from_RA_TELESCOPE_OFFSET {
+   "RAOFFSE",  $_[0]->uhdr( "ORAC_RA_TELESCOPE_OFFSET" );
+}
+
 # ROTATION, DEC_SCALE and RA_SCALE transformations courtesy Micah Johnson, from
 # the cdelrot.pl script supplied for use with XIMAGE.  Extended here to the
 # FITS-WCS Paper II Section 6.2 prescription, averaging the rotation.
@@ -157,11 +199,21 @@ sub _to_UTDATE {
 sub _to_UTEND {
    my $self = shift;
    
-# Obtain the UT start time and convert to decimal hours.
+# Obtain the UT end time and convert to decimal hours.
+   my $addexp = 0;
    my $utstring = $self->hdr( "UTEND" );
+   if ( !defined $utstring ) {
+       $utstring = $self->hdr( "UT" );
+       $addexp = 1;
+   }
+
+# Convert to decimal hours.
    my $utend = $utstring;
    if ( ! is_numeric( $utstring ) && $utstring !~ /Value/ ) {
       $utend = hmstodec( $utstring );
+   }
+   if ( $addexp ) {
+      $utend +=  $self->hdr( "EXPTIME" );
    }
    return $utend;
 }
