@@ -60,15 +60,15 @@ Sub-classed constructor. Adds knowledge of mask.
 =cut
 
 sub new {
-  my $self = shift;
-  my $obj = $self->SUPER::new(@_);
+   my $self = shift;
+   my $obj = $self->SUPER::new(@_);
 
-  # Assumes we have a hash object
-  $obj->{Mask}        = undef;
-  $obj->{MaskIndex}   = undef;
-  $obj->{MaskNoUpdate} = 0;
+# Assumes we have a hash object.
+   $obj->{Mask}        = undef;
+   $obj->{MaskIndex}   = undef;
+   $obj->{MaskNoUpdate} = 0;
 
-  return $obj;
+   return $obj;
 
 }
 
@@ -81,7 +81,7 @@ sub new {
 
 =item B<maskname>
 
-Return (or set) the name of the current bad pixel mask
+Return (or set) the name of the current bad-pixel mask
 
   $mask = $Cal->maskname;
 
@@ -92,15 +92,15 @@ mask is required.
 
 
 sub maskname {
-  my $self = shift;
-  if (@_) { $self->{Mask} = shift unless $self->masknoupdate; }
-  return $self->{Mask}; 
+   my $self = shift;
+   if (@_) { $self->{Mask} = shift unless $self->masknoupdate; }
+   return $self->{Mask}; 
 };
 
 
 =item B<maskindex>
 
-Return or set the index object associated with the bad pixel mask.
+Return or set the index object associated with the bad-pixel mask.
 
   $index = $Cal->maskindex;
 
@@ -111,15 +111,15 @@ is run.
 
 sub maskindex {
 
-  my $self = shift;
-  if (@_) { $self->{MaskIndex} = shift; }
-  unless (defined $self->{MaskIndex}) {
-     my $indexfile = $ENV{ORAC_DATA_OUT}."/index.mask";
-     my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.mask";
-     $self->{MaskIndex} = new ORAC::Index($indexfile, $rulesfile);
+   my $self = shift;
+   if (@_) { $self->{MaskIndex} = shift; }
+   unless (defined $self->{MaskIndex}) {
+      my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" );
+      my $rulesfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "rules.mask" );
+      $self->{MaskIndex} = new ORAC::Index( $indexfile, $rulesfile );
    };
 
-  return $self->{MaskIndex};
+   return $self->{MaskIndex};
 
 };
 
@@ -132,9 +132,9 @@ Used when overrding the mask file from the command-line.
 
 sub masknoupdate {
 
-  my $self = shift;
-  if (@_) { $self->{MaskNoUpdate} = shift; }
-  return $self->{MaskNoUpdate};
+   my $self = shift;
+   if (@_) { $self->{MaskNoUpdate} = shift; }
+   return $self->{MaskNoUpdate};
 
 }
 
@@ -162,45 +162,44 @@ entry for this default mask.
 
 sub mask {
 
-  my $self = shift;
+   my $self = shift;
 
-  if (@_) {
-    return $self->maskname(shift);
-  };
+   if (@_) {
+      return $self->maskname( shift );
+   };
 
-  my $ok = $self->maskindex->verify($self->maskname, $self->thing);
+   my $ok = $self->maskindex->verify( $self->maskname, $self->thing );
 
-  # happy ending
-  return $self->maskname if $ok;
+# Return the name if successful.
+   return $self->maskname if $ok;
 
-  croak ("Override mask is not suitable!  Giving up.") if $self->masknoupdate;
+   croak ( "Override mask is not suitable!  Giving up." ) if $self->masknoupdate;
 
-  if (defined $ok) {
+   if ( defined $ok ) {
+      my $mask = $self->maskindex->choosebydt( 'ORACTIME', $self->thing );
 
-    my $mask = $self->maskindex->choosebydt('ORACTIME', $self->thing);
+      unless ( defined $mask ) {
 
-    unless (defined $mask) {
-
-      # There is no suitable mask.  Default to fallback position.
-      # Check that the default mask exists and be careful not to set this
-      # as the maskname() value since it has no corresponding index entry.
-#      $self->{Mask} = File::Spec->catfile($ENV{ORAC_DATA_CAL},"bpm");
+# There is no suitable mask.  Default to fallback position.
+# Check that the default mask exists and be careful not to set this
+# as the maskname() value since it has no corresponding index entry.
+#      $self->{Mask} = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "bpm" );
 #      return $self->{Mask}; 
-       my $defmask = $ENV{ORAC_DATA_CAL} . "/bpm";
-       return $defmask if -e $defmask . ".sdf";
+         my $defmask = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "bpm" );
+         return $defmask if -e $defmask . ".sdf";
 
-      # Give up...
-      croak "No suitable bad pixel mask was found in index file.";
-    }
+# Give up...
+         croak "No suitable bad pixel mask was found in index file.";
+      }
 
-    # Store the good value.
-    $self->maskname($mask);
+# Store the good value.
+      $self->maskname( $mask );
 
-  } else {
+   } else {
 
-    # All fall down....
-    croak "Error in determining bad pixel mask.  Giving up.";
-  }
+# All fall down....
+      croak "Error in determining bad pixel mask.  Giving up.";
+   }
 
 }
 
