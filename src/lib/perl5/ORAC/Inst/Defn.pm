@@ -197,6 +197,11 @@ my %MonolithDefns = (
 				   CLASS => 'ORAC::Msg::Task::ADAM',
 				   PATH => $ENV{FIG_DIR}."/figaro5",
 				  },
+                     extractor =>{
+				   MESSYS => 'AMS',
+				   CLASS => 'ORAC::Msg::Task::ADAM',
+				   PATH => "$ENV{EXTRACTOR_DIR}/extractor",
+				  },
 		     pisa_mon => {
 				   MESSYS => 'AMS',
 				   CLASS => 'ORAC::Msg::Task::ADAM',
