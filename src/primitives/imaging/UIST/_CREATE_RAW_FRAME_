@@ -15,11 +15,16 @@
 #    the headers into a simple NDF. 
 #
 # Notes:
-#    -  This primitive is suitable for Michelle or UIST in imaging mode.
+#    -  This primitive is suitable for UIST in imaging mode.
 #    -  Errors are issued if there are not two integrations per chop,
 #    or only one integration when not in chopping mode.
 #    -  The user header ORAC_DETECTOR_READ_TYPE being "CHOP" or NDCHOP"
 #    indicates chopped data.
+#    -  There is a temporary kludge for polarimetry to flip the RA scale
+#    keyword (CDELT2) in the file and Frame header, and for the Frame
+#    ORAC_RA_SCALE internal header.  CRPIX2 is reset to 1024 minus its
+#    supplied value.  When POLPACK handles reversed co-ordinates, these
+#    fixes can be removed.
 #
 # Output Data:
 #    -  Copied frame inheriting the current frame's name but with 
@@ -32,7 +37,7 @@
 #    MJC: Malcolm J. Currie (JAC)
 #
 # Copyright:
-#    Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 #
 #-
@@ -42,6 +47,12 @@
                $Frm->uhdr( "ORAC_DETECTOR_READ_TYPE" ) eq "NDCHOP";
     my ( $in, $ out );
 
+# Are these polarisation data?
+    my $poldata = $Frm->hdr( "POLARISE" );
+
+    my $scale = -$Frm->hdr( "CDELT2" );
+    my $ra_refpix = 1024.0 - $Frm->hdr( "CRPIX2" );
+
 # Single non-chopped integration
 # ==============================
     if ( $Frm->nfiles == 1 && ! $chop ) {
@@ -49,16 +60,43 @@
 # Generate list of input and output filenames.
        ( $in, $out ) = $Frm->inout( "_raw" );
 
+# Flip the second axis so that N is to the left and E is down.  This is
+# a temporary kludge until POLPACK can deal with reversed sky
+# co-ordinate systems.
+       if ( $poldata ) {
+          $Mon{ "kappa_mon" }->obeyw( "flip", "in=$in out=$out dim=2" );
+
+# The sign of the WCS along the right-ascension axis must also be
+# flipped, as well as the reference pixel.
+          $Frm->hdr( "CDELT2", $scale );
+          $Frm->uhdr( "ORAC_RA_SCALE", -$Frm->uhdr( "ORAC_RA_SCALE" ) );
+          $Frm->hdr( "CRPIX2", $ra_refpix );
+
+# Report the processing status.
+          orac_print "$in to $out: Flipped the right-ascension axis.\n";
+
+       } else {
+
 # Copy the single integration to an _raw output frame, which may be
 # manipulated.
-       $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$in out=$out" );
+          $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$in out=$out" );
+
+# Report the processing status.
+          orac_print "$in to $out: Copied NDF component.\n";
+       }
 
 # Update the output filename in the Frame object.  Merge the headers.
        $Frm->files( $out );
        $Frm->mergehdr;
 
-# Report the processing status.
-       orac_print "$in to $out: Copied NDF component.\n";
+# The sign of the WCS along the right-ascension axis must also be
+# flipped in the actual file.
+       if ( $poldata ) {
+          my $param = "edit=update keyword=CDELT2 value=$scale mode=interface position=!";
+          $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "ndf=$out comment=\\\$C $param" );
+          $param = "edit=update keyword=CRPIX2 value=$ra_refpix mode=interface position=!";
+          $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "ndf=$out comment=\\\$C $param" );
+       }
 
 # Chopped
 # =======
@@ -70,13 +108,45 @@
 
 # Copy the raw data to an _raw output frame, which may be manipulated.
           ( $in, $out ) = $Frm->inout( "_raw", $i );
-          $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$in out=$out" );
+
+# Flip the second axis so that N is to the left and E is down.  This is
+# a temporary kludge until POLPACK can deal with reversed sky
+# co-ordinate systems.
+          if ( $poldata ) {
+             $Mon{ "kappa_mon" }->obeyw( "flip", "in=$in out=$out dim=2" );
+
+# The sign of the WCS along the right-ascension axis must also be
+# flipped, as well as the reference pixel.
+             $Frm->hdr( "CDELT2", $scale );
+             $Frm->uhdr( "ORAC_RA_SCALE", -$Frm->uhdr( "ORAC_RA_SCALE" ) );
+             $Frm->hdr( "CRPIX2", $ra_refpix );
+          
+# Report the processing status.
+             orac_print "$in to $out: Flipped the right-ascension axis.\n";
+
+          } else {
+
+# Copy the single integration to an _raw output frame, which may be
+# manipulated.
+             $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$in out=$out" );
 
 # Report the processing status.
-          orac_print "$in to $out: Copied NDF component.\n";
+             orac_print "$in to $out: Copied NDF component.\n";
+          }
 
 # Update the Frame object.
           $Frm->file( $i, $out );
+       }
+
+# The sign of the WCS along the right-ascension axis must also be
+# flipped in the actual file.  At this stage the headers are not merged,
+# therefore apply sign change to the keyword in the .HEADER NDF.
+       if ( $poldata ) {
+          my $header_file = $Frm->raw . ".HEADER";
+          my $param = "edit=update keyword=CDELT2 value=$scale mode=interface position=!";
+          $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "ndf=$header_file comment=\\\$C $param" );
+          $param = "edit=update keyword=CRPIX2 value=$ra_refpix mode=interface position=!";
+          $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "ndf=$header_file comment=\\\$C $param" );
        }
 
 # Abort if more integrations are present.
@@ -107,7 +177,7 @@ the headers into a simple NDF.
 
 =item *
 
-This primitive is suitable for Michelle or UIST in imaging mode.
+This primitive is suitable for UIST in imaging mode.
 
 =item *
 
@@ -118,6 +188,14 @@ or only one integration when not in chopping mode.
 
 The user header ORAC_DETECTOR_READ_TYPE being "CHOP" or NDCHOP"
 indicates chopped data.
+
+=item *
+
+There is a temporary kludge for polarimetry to flip the RA scale
+keyword (CDELT2) in the file and Frame header, and for the Frame
+ORAC_RA_SCALE internal header.  CRPIX2 is reset to 1024 minus its
+supplied value.  When POLPACK handles reversed co-ordinates, these
+fixes can be removed.
 
 =back
 
@@ -142,7 +220,7 @@ MJC: Malcolm J. Currie (JAC)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
