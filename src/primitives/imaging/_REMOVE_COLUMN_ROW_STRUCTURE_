@@ -1,0 +1,104 @@
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT/ ) {
+
+# Record the input file name.
+       my $ndf = $Frm->file;
+       
+# Obtain the dimensions of the supplied frame.
+       $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$ndf" );
+       my ( $ORAC_STATUS, @dims ) = $Mon{"ndfpack_mon"}->get( "ndftrace", "dims" );
+       my $xdim = $dims[ 0 ];
+       my $ydim = $dims[ 1 ];
+       
+# Correct for column structure
+# ============================
+
+# Create temporary files.
+       my $coltmp = new ORAC::TempFile;
+       my $colfile = $coltmp->file;
+
+       my $colprotmp = new ORAC::TempFile;
+       my $colprofile = $colprotmp->file;
+
+# Collapse the columns obtaining the median.  This forms a map of
+# column structure, caused for example by bias variations.
+       my( $in, $out ) = $Frm->inout( "_ypr" );
+       my $param = "in=$in out=$out estimator=median axis=2";
+       $Mon{ "kappa_mon" }->obeyw( "collapse", "$param" );
+
+# Convert this vector to two dimensions.  Note the unusual monolith
+# for RESHAPE.
+       $param = "in=$out out=$colprofile shape=[$xdim,1]";
+       $Mon{ "ndfpack_mon" }->obeyw( "reshape", "$param" );
+
+# Duplicate along the columns restoring an image the size of the
+# frame on input. 
+       $param = "in=$colprofile out=$colfile expand=[1,$ydim]";
+       $Mon{ "kappa_mon" }->obeyw( "pixdupe", "$param" );
+
+# Set the origin to match that of the original frame.
+       $param = "ndf=$colfile like=$ndf";
+       $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param" );
+
+# Subtract the two-dimensional column pattern from the original frame.
+# CPC stands for column-profile corrected.
+       ( $in, $out ) = $Frm->inout( "_cpc" );
+       $param = "in1=$in in2=$colfile out=$out";
+       $Mon{ "kappa_mon" }->obeyw( "sub", "$param" );
+
+# Report progress.
+       orac_print "Remove column structure in $in using the median to form $out\n";
+
+# Update the frame.
+       $Frm->file( $out );
+
+# Display the cleaned frame.
+       $Display->display_data( $Frm ) if ( defined $Display );
+
+# Correct for row structure
+# =========================
+
+# Create temporary files.
+       my $rowtmp = new ORAC::TempFile;
+       my $rowfile = $rowtmp->file;
+
+       my $rowprotmp = new ORAC::TempFile;
+       my $rowprofile = $rowprotmp->file;
+
+# Collapse the rows obtaining the median.  This forms a map of the row
+# structure, caused for example by electronic pickup.
+       my ( $in, $out ) = $Frm->inout( "_xpr" );
+       my $param = "in=$in out=$out estimator=median axis=1";
+       $Mon{ "kappa_mon" }->obeyw( "collapse", "$param" );
+
+# Convert this vector to two dimensions.
+       $param = "in=$out out=$rowprofile shape=[1,$ydim]";
+       $Mon{ "ndfpack_mon" }->obeyw( "reshape", "$param" );
+
+# Duplicate along the rows restoring an image the size of the frame on
+# input. 
+       $param = "in=$rowprofile out=$rowfile expand=[$xdim,1]";
+       $Mon{ "kappa_mon" }->obeyw( "pixdupe", "$param" );
+
+# Set the origin to match that of the original frame.
+       $param = "ndf=$rowfile like=$ndf";
+       $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param" );
+
+# Subtract the two-dimensional column pattern from the original frame.
+# RPC stands for row-profile corrected.
+       ( $in, $out ) = $Frm->inout( "_rpc" );
+       $param = "in1=$in in2=$rowfile out=$out";
+       $Mon{ "kappa_mon" }->obeyw( "sub", "$param" );
+
+# Report progress.
+       orac_print "Remove row structure in $in using the median to form $out\n";
+
+# Update the frame.
+       $Frm->file( $out );
+
+# Display the cleaned frame.
+       $Display->display_data( $Frm ) if ( defined $Display );
+
+# Tidy output.
+       orac_print "\n";
+    }
