@@ -8,8 +8,8 @@
     if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ||
          $Frm->hdr( "OBSTYPE" ) eq "SKY" ) {
 
-# Obtain the name of the group to register.
-#       my $reggrp = ( $_FIND_APPROX_OFFSETS_{GROUP} || $Grp );
+# Obtain parameter values.
+# ========================
 
 # Determine whether or not to use the central-box search.
        my $usebox = ( $_FIND_APPROX_OFFSETS_{SEARCH_BOX} || "TRUE" );
@@ -17,16 +17,30 @@
 # Derive the boxsize in arcseconds.
        my $boxangle = ( $_FIND_APPROX_OFFSETS_{BOXSIZE} || 5 );
 
-# Obtain a list of the filenames of the group members.
-       @frames = $reggrp->membernames;
-       $objlist = join(",",@frames);
+# Obtain the rotation angle in degrees.  The default is UFTI and time
+# specific.
+       my $rotangle = ( $_FIND_APPROX_OFFSETS_{ANGLE} || 0.65 );
+
+# Define some useful variables to apply the rotation matrix.
+       $pi = atan2( 1, 1 ) * 4;
+       $dtor = $pi / 180.0;
+       $cosrot = cos( $rotangle * dtor );
+       $sinrot = sin( $rotangle * dtor );
+
+# Create text files
+# =================
+
+# Obtain a list of the filenames of the group members.  Exclude the first
+# (reference) frame.
+       @regnames = $Grp->membernames;
+       $junk = shift( @regnames );
 
 # Create text file to hold the list of input files, one per line.  This
 # is needed because expanded lists of files may make the command line too
 # long for the ADAM message system.
        unlink ("faolist.inlist$$");
        open (INLIST, ">faolist.inlist$$");
-       print INLIST join( "\n", @frames ), "\n";
+       print INLIST join( "\n", @regnames ), "\n";
        close (INLIST);
 
 # Create a file for storing the filenames of the offset files.
@@ -35,19 +49,24 @@
        open ( OFFLIST, "> $offlist" );
 
 # Loop through all the frames.
-       foreach $frame ( $reggrp->members ) {
+       $first = 1;
+       foreach $frame ( $Grp->members ) {
 
-# Obtain the plate scale.
-          $xpixelscale =  $frame->hdr( "CDELT1" );
-          $ypixelscale =  $frame->hdr( "CDELT2" );
+# Obtain the plate scale.  Header is inaccurate.  Hardwire until
+# more precise figure is used.  Note this is UFTI specific.
+           $xpixelscale = 0.09075;
+           $ypixelscale = 0.09075;
+#          $xpixelscale = $frame->hdr( "CDELT1" );
+#          $ypixelscale = $frame->hdr( "CDELT2" );
 
 # Find the boxsize in pixels.
           $boxpix = $boxangle / $xpixelscale;
 
-# Obtain the offsets.  Try the xhead offsets first.
+# Obtain the offsets.  Try the xhead offsets first. (Currently not available
+# so use the telescope offsets.)
           $xoff = $frame->hdr( "TRAOFF" );
           $yoff = $frame->hdr( "TDECOFF" );
-          $offtype = "crosshead";
+          $offtype = "telescope";
 
 # If the values are both zero or there was an error (presumably arising
 # when the keyword is absent), this means the crosshead offsets are not
@@ -63,6 +82,10 @@
           $xoff = $xoff / $xpixelscale;
           $yoff = -1.0 * $yoff / $ypixelscale;
 
+# Apply the rotation matrix.
+          $xoff = $xoff * $cosrot - $yoff * $sinrot;
+          $yoff = $xoff * $sinrot + $yoff * $cosrot;
+
 # Locate the centre of the frame by inquiring the frame's attributes.
           $ndf = $frame->file;
           $Mon{"ndfpack_mon"}->obeyw("ndftrace","ndf=$ndf");
@@ -73,8 +96,14 @@
           $xmid = ( ( $lbnd[0] + $ubnd[0] ) / 2.0 );
           $ymid = ( ( $lbnd[1] + $ubnd[1] ) / 2.0 );
 
-# Search in box?
-          if ( $usebox =~ /TRUE/ ) {
+# Initialise minimum distance.  It acts as an indicator of whether or not
+# central-source offsets have been found.
+          $mindist = 999999;
+
+# Search in box?  For this the corresponding find file from FINDOBJ must 
+# exist.
+          $findfile = $ndf . ".find";
+          if ( $usebox =~ /TRUE/ && -e $findfile && ! $first ) {
 
 # Derive the centre co-ordinates of the box.
              $xcentre = $xmid + $xoff;
@@ -94,7 +123,6 @@
 # Find the object nearest to the centre and within the box.
              $nearest = 0;
              $objnum = 0;
-             $mindist = 999999;
              foreach $line ( <FINDFILE> ) {
 
 # Ignore the comments.  Data lines begin with an integer identifier.
@@ -118,6 +146,7 @@
                          $nearest = $objnum;
                          $xnear = $xpos;
                          $ynear = $ypos;
+
                       }
                    }
                 }
@@ -125,40 +154,42 @@
              close ( FINDFILE );
           }
 
+# Need an origin for the header offsets.  The frame centre does this for
+# the centre-source offsets.  Do not report these offsets or store them in the
+# offset file.
+          if ( $first ) {
+             $xorigin = $xoff;
+             $yorigin = $yoff;
+             $first = 0;
+
 # Specify the offsets to be used.  If the minimum distance is unchanged
 # just use the headers, otherwise find the displacement.
-          if ( $mindist == 999999 || !( $usebox =~ /TRUE/ ) ) {
-             $xoffset = $xoff;
-             $yoffset = $yoff;
-             orac_print "Orac says: using $offtype offsets ($xoffset,$yoffset) for frame $ndf\n";
-
           } else {
-             $xoffset = $xnear - $xmid;
-             $yoffset = $ynear - $ymid;
-             orac_print "Orac says: using central-source offsets ($xoffset,$yoffset) for frame $ndf\n";
-          }
+             if ( $mindist != 999999 && $usebox =~ /TRUE/ && -e $findfile ) {
+                $xoffset = $xnear - $xmid;
+                $yoffset = $ynear - $ymid;
+                orac_print "Orac says: using central-source offsets ($xoffset,$yoffset) for frame $ndf\n";
+
+             } else {
+                $xoffset = $xoff - $xorigin;
+                $yoffset = $yoff - $yorigin;
+                orac_print "Orac says: using $offtype offsets ($xoffset,$yoffset) for frame $ndf\n";
+             }
 
 # Create an offset file as used by CCDPACK's REGISTER task.  Store the
 # the frame name and offsets within the file.
-          $off_file = $ndf . ".off";
-          unlink ( "$off_file" );
-          open ( OFFSET, "> $off_file" );
-          print OFFSET "1  $xoffset  $yoffset\n";
-          close ( OFFSET );
+             $off_file = $ndf . ".off";
+             unlink ( "$off_file" );
+             open ( OFFSET, "> $off_file" );
+             print OFFSET "1  $xoffset  $yoffset\n";
+             close ( OFFSET );
 
 # Record the name offset file in GRP indirection file for use by CCDEDIT.
-          print OFFLIST "$off_file\n";
+             print OFFLIST "$off_file\n";
+          }
        }
     }
     close ( OFFLIST );
-
-# Create text file to hold the list of input files, one per line.  This
-# is needed because expanded lists of files may make the command line too
-# long for the ADAM message system.
-    unlink ("reglist.inlist$$");
-    open (INLIST, ">reglist.inlist$$");
-    print INLIST join( "\n", @frames), "\n";
-    close (INLIST);
 
 # Specify parameters for editing CCDPACK headers.
     $header = "in='^faolist.inlist$$' inlist=\'^$offlist\'";
