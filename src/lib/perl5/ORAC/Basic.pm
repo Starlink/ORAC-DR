@@ -168,13 +168,13 @@ sub orac_parse_recipe {
   
   local(@recipe) = @_;
   my(@parsed);
-
+  
   my ($line);
   
   foreach $line (@recipe) {
-
+    
     if ($line =~ /^\s*_/) {
-      $line =~ s/^\s+//g;		# zap leading blanks
+      $line =~ s/^\s+//g;	# zap leading blanks
       ($macro,@rest)=split(/\s+/,$line);
       # read in primitive
       open(DICTIONARY,${main::dictionary_dir}.$macro) || 
@@ -183,40 +183,40 @@ sub orac_parse_recipe {
       close(DICTIONARY);
       $parse = join(" ",$macro,@rest);
       push(@parsed,"orac_parse_arguments(\"$parse\");\n");
-
-#       # store arguments
-#       %$macro = ();
-#       foreach $argument (@arguments) {
-#         ($key,$value)=split("=",$argument);
-#         $$macro{$key}=$value;
-#       };
-
-    push(@parsed,@lines);
     
-
-  } elsif ($line =~ /={0}->obeyw/) {
-
-	# This is an OBEYW status
-	# and assumes that all OBEYW commands are dealt with
-	# by this routine implicitly (ie the RECIPE writer
-	# should never check for status from an OBEYW
-          push (@parsed, '$OBEYW_STATUS = ' .$line);
-          push (@parsed, &orac_check_obey_status($line));
-           
-        # Now check for a different kind of status
-        # If the recipe writer uses $ORAC_STATUS
-	# Then we can add some lines immediately after to check
-	# this status (0 is good as for Starlink)
-        } elsif ($line =~ /\$ORAC_STATUS/) {
-
-	  # Put on the current line
-	  push (@parsed, $line);
-
-	  # Add the status checking code
-	  push (@parsed, &orac_check_status);
-
-  } else {
+    #       # store arguments
+    #       %$macro = ();
+    #       foreach $argument (@arguments) {
+    #         ($key,$value)=split("=",$argument);
+    #         $$macro{$key}=$value;
+    #       };
     
+      push(@parsed,@lines);
+    
+    
+    } elsif ($line =~ /={-1}.+->obeyw/) {
+    
+      # This is an OBEYW status
+      # and assumes that all OBEYW commands are dealt with
+      # by this routine implicitly (ie the RECIPE writer
+      # should never check for status from an OBEYW
+      push (@parsed, '$OBEYW_STATUS = ' .$line);
+      push (@parsed, &orac_check_obey_status($line));
+      
+      # Now check for a different kind of status
+      # If the recipe writer uses $ORAC_STATUS
+      # Then we can add some lines immediately after to check
+      # this status (0 is good as for Starlink)
+    } elsif ($line =~ /\$ORAC_STATUS/) {
+    
+      # Put on the current line
+      push (@parsed, $line);
+      
+      # Add the status checking code
+      push (@parsed, &orac_check_status);
+      
+    } else {
+      
       push(@parsed,$line);
     
     }
@@ -224,7 +224,7 @@ sub orac_parse_recipe {
   };
 
   return(@parsed);
-};
+}
 
 
 # This is the status checking code
@@ -238,6 +238,13 @@ sub orac_check_status {
 		   '   print colored ("Error in pipeline\n","red"); ' ,
 		   '   return $ORAC_STATUS; ' ,
 		   ' } ');
+
+  # Add newlines to each line of the text so that it appears 
+  # correctly when recipe is listed
+  map { $_ .= "\n" } @newlines;
+  
+  # Return the extra lines.
+  return @newlines;
   
 }
 
@@ -245,18 +252,37 @@ sub orac_check_status {
 
 sub orac_check_obey_status {
 
-  my ($monolith);
+  my ($monolith, $task);
 
   # Get the name of the monlith from the obeyw
   my $line = shift;
 
-  $line =~ /obeyw\{(\w)\}/ && ($monolith = $1);
+  # Do the regexp separately so that we can handle the situation
+  # where the monolith path is not stored in a hash
+  $line =~ /\{(\w+)\}->obeyw/ && ($monolith = $1);
+  $line =~ /->obeyw\(\"(\w+)\"/ && ($task = $1);
+  $line =~ /->obeyw\(\"\w+\"\s*,\s*\"(.+)\"/ && ($args = $1);
 
+  # Need to be careful of what gets expanded when the
+  # lines are added to the recipe and what gets expanded 
+  # when the recipe is executed.
 
-  my @statuslines = ('  if ($OBEYW_STATUS != ORAC__OK) {' ,
-                  '   print colored ("Error in obeyw to monolith $monolith: $OBEYW_STATUS\n","red"); ' ,
-		  '   return $OBEYW_STATUS; ' ,
-		  ' } ');
+  my @statuslines = (
+		     'if ($OBEYW_STATUS != ORAC__OK) {',
+		     "  print colored (\"Error in obeyw to monolith $monolith (task=$task): \$OBEYW_STATUS\\n\",\"red\");" ,
+		     '  $obeyw_args = "'. $args . '";',
+		     '  print colored("Arguments were: ","blue") . colored("$obeyw_args\n\n","red"); ',
+		     '  return $OBEYW_STATUS;',
+		     "}"
+		    );
+
+  # Add newlines to each line of the text so that it appears 
+  # correctly when recipe is listed
+  map { $_ .= "\n" } @statuslines;
+  
+  # Return the extra lines.
+  return @statuslines;
+
 }
 
 
@@ -296,6 +322,9 @@ die;
 1;
 
 #$Log$
+#Revision 1.15  1998/04/23 01:48:02  timj
+#Improve the OBEYW error checking.
+#
 #Revision 1.14  1998/04/21 23:44:00  timj
 #Dump incorrect lines to screen when a syntax error is encountered
 #in a recipe.
