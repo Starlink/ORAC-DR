@@ -637,7 +637,7 @@ sub hds2ndf {
   # and whether we can overwrite it.
   if (-e $outfile.'.sdf' && ! $self->overwrite) {
     # Return early
-    $outfile .= '.sdf';q
+    $outfile .= '.sdf';
     orac_warn "The converted file ($outfile) already exists - won't convert again\n";
     return $outfile;
   }
