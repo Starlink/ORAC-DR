@@ -27,14 +27,16 @@ use ORAC::Constants qw/:status/;
 
 use vars qw/$VERSION $DEBUG/;
 
-$VERSION = '0.10';
-$DEBUG   = 1;
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$DEBUG   = 0;
 
 =head1 PUBLIC METHODS
 
+=head2 Constructor
+
 =over 4
 
-=item new
+=item B<new>
 
 Base class constructor. Can be called as SUPER::new() from
 sub-classes. Accepts a configuration hash as input in order to
@@ -63,8 +65,13 @@ sub new {
 
 }
 
+=back
 
-=item dev
+=head2 Accessor Methods
+
+=over 4
+
+=item B<dev>
 
 Method for handling the hash of device name mapping. ie Which 
 device name (as required for each Display interface, eg '.rtd0',
@@ -83,6 +90,8 @@ The supplied value is stored in key if two arguments are supplied:
 
   $self->dev('key','value');
 
+Undefined values are accepted.
+
 =cut
 
 sub dev {
@@ -95,18 +104,29 @@ sub dev {
     my $key = shift;
 
     # look for a value
-    if (@_) {  $self->{Dev}->{$key} = shift; }
+    if (@_) {  
+      $self->{Dev}->{$key} = shift; 
+    }
 
-    # Return the value
-    return $self->{Dev}->{$key};
-
+    # Return the value - stop it creating undef keys 
+    if (exists $self->{Dev}->{$key}) {
+      return $self->{Dev}->{$key};
+    } else {
+      return undef;
+    }
   }
 
   # Else no arguments so return the hash ref
   return $self->{Dev};
 }
 
-=item window_dev(win)
+=back
+
+=head2 General Methods
+
+=over 4
+
+=item B<window_dev>
 
 Returns the device id (eg GWM device name or RTD window name)
 associated with window 'win'. If 'win' is undefined a new
@@ -185,6 +205,9 @@ sub window_dev {
 
 
 # Null subroutine -- should be overriden as required.
+# This method allows you to provide a name to the new instance
+# of a display subsystem. For example, to name the GWM widget used
+# ky KAPVIEW. Not all subclasses use this.
 
 sub newdev {
   return undef;
@@ -197,9 +220,18 @@ sub newdev {
 
 ORAC::Display::GAIA, ORAC::Display::KAPVIEW
 
-=head1 AUTHOR
+=head1 REVISION
+
+$Id$
+
+=head1 AUTHORS
 
 Tim Jenness (t.jenness@jach.hawaii.edu)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
 
 =cut
 

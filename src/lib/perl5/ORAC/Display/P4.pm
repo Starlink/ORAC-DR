@@ -45,14 +45,16 @@ use base qw/ ORAC::Display::Base /;     # Base class
 
 use vars qw/$VERSION $DEBUG/;
 
-$VERSION = '0.10';
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 $DEBUG = 0;
 
 =head1 PUBLIC METHODS
 
+=head2 Constructor
+
 =over 4
 
-=item new
+=item B<new>
 
 Object constructor. The constructor starts up a new version of P4 and
 configures the default noticeboard, starts a GWM window and displays
@@ -113,7 +115,13 @@ sub new {
 }
 
 
-=item obj
+=back
+
+=head2 Accessor Methods
+
+=over 4
+
+=item B<obj>
 
 Messaging object associated with the P4 display object.
 
@@ -125,7 +133,7 @@ sub obj {
   return $self->{Obj};
 }
 
-=item nbs
+=item B<nbs>
 
 The noticeboard object associated with the P4 object.
 
@@ -138,11 +146,18 @@ sub nbs {
 }
 
 
+=back
 
-=item newdev(win)
+=head2 General Methods
+
+=over 4
+
+=item B<newdev>
 
 Given 'win', calculates a new device name that should be unique for
 each 'win'.
+
+  $name = $p4->newdev($win);
 
 =cut
 
@@ -155,7 +170,7 @@ sub newdev {
 }
 
 
-=item create_dev(win)
+=item B<create_dev>
 
 Start the GWM window associated with the supplied window.
 In general this is used by the startup configuration.
@@ -169,6 +184,8 @@ the specified device if one is not running).
 The only reason to use this routine to actually START a window
 is that it will give us some control over the colour allocation
 and allow us to set the window name.
+
+  $status = $p4->create_dev($win);
 
 ORAC status is returned.
 
@@ -208,7 +225,7 @@ sub create_dev {
 }
 
 
-=item launch
+=item B<launch>
 
 Set up P4 environment variables, launch a P4 process
 
@@ -271,7 +288,7 @@ sub launch {
 }
 
 
-=item configure
+=item B<configure>
 
 Configure the notice board and open the start up image
 
@@ -394,7 +411,7 @@ sub configure {
 }
 
 
-=item process_options
+=item B<process_options>
 
 This method parses the options hash and configures the P4 noticeboard
 to reflect the settings
@@ -496,9 +513,11 @@ sub process_options {
 
 }
 
-=item send_data(file,port)
+=item B<send_data>
 
 Instruct P4 to display the current file on the specified port.
+
+  $status = $p4->send_data($file, $port);
 
 Returns status.
 
@@ -530,7 +549,7 @@ sub send_data {
 =cut
 
 
-=item image
+=item B<image>
 
 Display an image.
 Takes a file name and arguments stored in a hash.
@@ -573,7 +592,7 @@ sub image {
   return $status;
 }
 
-=item graph
+=item B<graph>
 
 Display a graph (spectrum).
 Takes a file name and arguments stored in a hash.
@@ -616,7 +635,7 @@ sub graph {
 
 }
 
-=item histogram
+=item B<histogram>
 
 Display a histogram
 Takes a file name and arguments stored in a hash.
@@ -659,7 +678,7 @@ sub histogram {
 
 }
 
-=item overgraph
+=item B<overgraph>
 
 Display a graph without clearing.
 Takes a file name and arguments stored in a hash.
@@ -702,7 +721,7 @@ sub overgraph {
 
 }
 
-=item surface
+=item B<surface>
 
 Display a surface plot.
 Takes a file name and arguments stored in a hash.
@@ -745,7 +764,7 @@ sub surface {
 
 }
 
-=item contour
+=item B<contour>
 
 Display a contour plot.
 Takes a file name and arguments stored in a hash.
@@ -791,15 +810,24 @@ sub contour {
 
 
 =back
- 
+
 =head1 SEE ALSO
 
 L<ORAC::Display>, L<ORAC::Display::GAIA>
+
+=head1 REVISION
+
+$Id$
 
 =head1 AUTHORS
 
 Tim Jenness (t.jenness@jach.hawaii.edu)
 and Frossie Economou  (frossie@jach.hawaii.edu)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved
 
 =cut
 
