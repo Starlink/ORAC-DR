@@ -1,4 +1,4 @@
-#!/usr/local/bin/perl -s
+#!/usr/local/bin/perl
 #
 # Change log is at the end of this file
 #
@@ -8,7 +8,6 @@
 # 
 
 use ORAC::Basic;
-
 
 &orac_exit_normally("No starlink login") unless exists $ENV{STAR_LOGIN};
 
@@ -21,10 +20,42 @@ use Starlink::ADAMTASK;			# monolith access
 #
 # command line arguments
 #
+
+use Getopt::Long;
+
+GetOptions("nodisplay","quiet!","dark=i","from=i","to=i","-ut=i","h");
+
+($opt_h) && do {
+print qq|
+
+Usage:
+  oracdr [-options] <recipe_name>
+
+Arguments:
+  <recipe_name>  a recipe to be executed
+
+Options:
+
+  -h         this help text
+  -from      number of first observation
+  -to        number of last observation
+  -dark      number of dark observation
+  -ut        UT date of observations
+  -quiet     suppress engine messages
+  -nodisplay do not launch display
+  |;
+exit;
+}
+;
+
+
 # -quiet option supresses Starlink non-error messages
-($quiet) && ($Starlink::ADAMTASK::msg_hide = 1);
-# -nodisplay suppresses display
-# 
+($opt_quiet) && ($Starlink::ADAMTASK::msg_hide = 1);
+
+# -nodisplay suppresses display,
+#
+print "Orac says: No display will be used\n" if ($opt_nodisplay);
+
 #
 # signals and perl variables
 $|=1;					# make unbuffered
@@ -61,7 +92,7 @@ print "Orac says: Launching display...";
 &orac_launch_display;
 sleep 10;
 print "Done\n";
-} unless $nodisplay;
+} unless $opt_nodisplay;
 
 #
 
@@ -72,7 +103,7 @@ print "Done\n";
 print "ORAC says: Starting up monoliths...";
 #
 adamtask_init;
-&orac_connect_display unless ($nodisplay);
+&orac_connect_display unless ($opt_nodisplay);
 #$Orac{Mon_p4} = new Starlink::ADAMTASK("33672p4",$ENV{CGS4DR_ROOT}."/p4");
 $Mon{ccdpack_red} = new Starlink::ADAMTASK("ccdpack_red_$$",$ENV{CCDPACK_DIR}."/ccdpack_red");
 $Mon{ccdpack_res} = new Starlink::ADAMTASK("ccdpack_res_$$",$ENV{CCDPACK_DIR}."/ccdpack_res");
@@ -88,8 +119,8 @@ print "Done\n";
 $Recipe = shift(@ARGV);
 @objects=();
 $isuffix = "";
-$Root = 'ro970815_';
-foreach $obsno (9,26..30) {
+$Root = "ro".$opt_ut.'_';
+foreach $obsno ($opt_dark,$opt_from..$opt_to) {
 #------------------------------------------------------------------------
 #
 # %Orac holds key=value pairs relevant to data reduction
@@ -122,7 +153,7 @@ if ($status != &NDF::SAI__OK) {
 @recipe = ();
 @recipe = orac_read_recipe($Recipe);	# read recipe
 
-while (grep /^_/,@recipe) {		# while it contains other recipes
+while (grep /^\s*_/,@recipe) {		# while it contains other recipes
   @recipe = orac_parse_recipe(@recipe);	# keep parsing recipes
 };
 
@@ -139,6 +170,9 @@ $oracref = orac_execute_recipe(\@recipe,\%Orac);	# execute parsed recipe
 #------------------------------------------------------------------------
 
 # $Log$
+# Revision 1.6  1998/02/25 11:25:50  frossie
+# * oracdr: introduced Getopt for option handling
+#
 # Revision 1.5  1998/02/24 11:39:58  frossie
 # More namespace fixing - Hdr and Mon now generally accessible. Risk of
 # clobbering is probably worth the pain of enforcing ${main::Blah} to
