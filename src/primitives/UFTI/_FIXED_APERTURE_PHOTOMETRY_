@@ -32,6 +32,9 @@
 #    for the mean of the start and end airmasses.  Thus the primitive
 #    calculates an approximate zero point.
 #
+#    The primitive also finds the best-fitting two-dimensional Gaussian
+#    as an indicator of the seeing.
+#
 #  Arguments:
 #     APERTURE = REAL (Given)
 #        The aperture in arcseconds for the photometry.  [6.0]
@@ -80,12 +83,15 @@
 #    object frames when the steering header TARGET_OR_SKY is "target".
 #    -  The photometry text file is aphot_results.txt.  The format of
 #    this file is described in primitive _MAKE_PHOTOMETRY_TABLE_.
-#    -  Items reported in order are the frame name, the filter, the
-#    instrumental magnitude and its error (if available); error flags,
-#    notably B indicating that bad pixels were inside the aperture;
-#    the airmass correction, the catalogue magnitude and calculated
-#    zeropoint (if former is known); the sky level, and aperture
-#    diameter and the radii of the sky annulus in arcseconds.
+#    -  Items reported in order are the frame and object names;
+#    UT start time; filter; mean airmass; raw and extinction-corrected
+#    instrumental magnitude and their error (if available); error
+#    flag, notably B indicating that bad pixels were inside the
+#    aperture; aperture diameter and the radii of the sky annulus in
+#    arcseconds; the sky level; the catalogue magnitude; calculated
+#    raw and extinction-corrected zeropoint (if the catalogue magnitude
+#    is known); and the FWHM of the best-fitting two-dimensional
+#    Gaussian to the source.
 #    -  A saturation level is set at 12000 counts.
 #    -  The mean extinction coefficients are: J: 0.08; H: 0.03; K:0.07;
 #    L: 0.10; and M: 0.10.  Zero extinction applies to any other filter.
@@ -360,7 +366,8 @@
 # Find location and dimensions of the aperture and annulus
 # ========================================================
 
-# Locate the image centre within the aperture sized box.
+# Locate the image centre within the aperture sized box.  The
+# current S Frame becomes PIXEL for KAPPA versions from 0.14.
              _FIND_SOURCE_CENTROID_ XOFF=$xoff YOFF=$yoff POSITIVE=$positive BOXSIZE=$as_aperture
 
 # It is possible that no centroid was found.  Get a reference to the flag,
@@ -375,6 +382,42 @@
 
 # Get the reference to the centre co-ordinates/
              my $centre = $_FIND_SOURCE_CENTROID_{CENTRE};
+
+# Gaussian FWHM
+# =============
+
+# Store the located centroid within a text file of the format PSF expects.
+       unlink ( "centre$$.dat" );
+       open ( PSFIN, ">centre$$.dat" );
+       print PSFIN "@$centre\n";
+       close ( PSFIN );
+
+# Specify the other parameters for the PSF stage.  Read from an old-style
+# file not a table.  Increase the box size to include several arcseconds.
+       my $ndf = $Frm->file;
+       my $header = "in=$ndf gauss device=! incat=! cofile=centre$$.dat isize=101";
+orac_warn "$ndf: @$centre\n";
+
+# Calculate the best-fitting Gaussian psf, using the star alone.  
+       my $psf_status = $Mon{"kappa_mon"}->obeyw("psf","$header");
+
+# Use null values if PSF fails to converge.
+       my ( $axisratio, $gfwhm, $ORAC_STATUS );
+       if ( $psf_status != ORAC__OK ) {
+          $gfwhm = "<null>";
+
+       } else {
+
+# Obtain the fit parameters of the point-spread function.
+          ( $ORAC_STATUS, $gfwhm ) = $Mon{"kappa_mon"}->get("psf","fwhm");
+          ( $ORAC_STATUS, $axisratio ) = $Mon{"kappa_mon"}->get("psf","axisr");
+
+# Derive desired values from the results, namely the average FWHM
+# Protect against nonsense axis ratios.  Convert to arcseocnds.
+          $gfwhm = $gfwhm * sqrt( min( 10, $axisratio ) ) * $pixelscale;
+       }
+orac_warn "cofile is centre$$.dat\n";
+#       unlink "centre$$.dat";
 
 # Automatic photometry
 # ====================
@@ -397,7 +440,7 @@
  
 # Specify the other parameters for AUTOPHOTOM.  Strictly we should check the
 # headers for the readout mode
-             my $header = "in=".$Frm->file." infile=photom$$.dat outfile=photom$$.res";
+             my $header = "in=$ndf infile=photom$$.dat outfile=photom$$.res";
              my $hidden;
              if ( $positive ) {
                 $hidden = "nocentro padu=$padu biasle=0 photon=2 positive sature=12000 nousemask";
@@ -454,7 +497,7 @@
 
 # Format the results to give a sensible number of significant figures.
              my ( $fs_mag, $fs_err, $fs_sky, $fs_airmass, $fs_apdiam );
-             my ( $fs_catmag, $fs_inner, $fs_outer );
+             my ( $fs_catmag, $fs_inner, $fs_outer, $fs_gfwhm );
              $fs_mag = sprintf( "%7.3f", $magnorm );
              $fs_mag =~ s/ //g;
              if ( $magerr ne "<null>" ) {
@@ -480,9 +523,13 @@
                 $fs_magdif_ext =  sprintf( "%6.3f", $magdif_ext );
              }
 
+             if ( $gfwhm ne "<null>" ) {
+                $fs_gfwhm = sprintf( "%5.3f", $gfwhm );
+             }
+
 # Print the results.
              orac_print "\n";
-             orac_print "Frame:                  ".$Frm->file.$suffix."\n";
+             orac_print "Frame:                  $ndf$suffix\n";
              orac_print "Filter:                 $filter\n";
 
              if ( $magerr ne "<null>" ) {
@@ -505,6 +552,11 @@
                 orac_print "Catalogue Magnitude:    $fs_catmag ($starname)\n";
                 orac_print "Calculated zeropoint:   $fs_magdif_ext\n"
              }
+
+             if ( $gfwhm ne "<null>" ) {
+                orac_print "2-D Gaussian FWHM:      $fs_gfwhm arcsec\n";
+             }
+
              orac_print "Sky:                    $fs_sky\n";
              orac_print "Aperture diameter:      $fs_apdiam arcsec\n";
              orac_print "Annulus radii:          $fs_inner to $fs_outer arcsec\n";
@@ -518,7 +570,7 @@
 
 # Specify formats for the CURSA table.
              my @formats = qw( %19s %12s %8.5f %7s %5.3f %7.3f %7.3f %6.3f %2s
-                               %5.1f %5.1f %5.1f %8.2f %1s %6.3f %6.3f %6.3f );
+                               %5.1f %5.1f %5.1f %8.2f %1s %6.3f %6.3f %6.3f %5.3f );
 
 # Allow for null strings instead of numerical values when something has
 # gone awry.
@@ -536,9 +588,9 @@
 # rather than integer or real; and assume a fixed format in the FITS headers
 # matching the STL format when the keywords are present.
              printf LOGFILE ( "$formatlist \n",
-               $Frm->file.$suffix, $objname, $ut, $filter, $airmass, $magnorm,
+               $ndf.$suffix, $objname, $ut, $filter, $airmass, $magnorm,
                $magext, $magerr, $errcode, $as_aperture, $as_inner, $as_outer,
-               $sky_level, $incflag, $catmag, $magdif, $magdif_ext );
+               $sky_level, $incflag, $catmag, $magdif, $magdif_ext, $gfwhm );
 
           }
 
@@ -662,12 +714,14 @@ L<_MAKE_PHOTOMETRY_TABLE_|_MAKE_PHOTOMETRY_TABLE_>.
 
 =item *
 
-Items reported in order are the frame name, the filter, the
-instrumental magnitude and its error (if available); error flags,
-notably B indicating that bad pixels were inside the aperture;
-the airmass correction, the catalogue magnitude and calculated
-zeropoint (if former is known); the sky level, and aperture
-diameter and the radii of the sky annulus in arcseconds.
+Items reported in order are the frame and object names; UT start time;
+filter; mean airmass; raw and extinction-corrected instrumental
+magnitude and their error (if available); error flag, notably B
+indicating that bad pixels were inside the aperture; aperture diameter
+and the radii of the sky annulus in arcseconds; the sky level; the
+catalogue magnitude; calculated raw and extinction-corrected zeropoint
+(if the catalogue magnitude is known); and the FWHM of the
+best-fitting two-dimensional Gaussian to the source.
 
 =item *
 
