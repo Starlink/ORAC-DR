@@ -375,6 +375,9 @@ sub inout {
   my $nfiles = $self->nfiles;
 
   # Now append the suffix to the outfile
+  # Need to strip a leading underscore if we are using join_name
+  $suffix =~ s/^_//;
+  push(@junk, $suffix);
   my $outfile = $self->_join_fname(\@junk, '');
 
   # If we had a suffix (eg .i1) now need to
@@ -473,7 +476,7 @@ sub mergehdr {
   my $old = pop(@{$self->intermediates});
   my $new = $self->file;
 
-  my ($root, $rest) = $self->split_name($old);
+  my ($root, $rest) = $self->_split_name($old);
 
   if (defined $rest) {
     $status = &NDF::SAI__OK;
