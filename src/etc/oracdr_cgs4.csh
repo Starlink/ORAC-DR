@@ -61,6 +61,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.5  2003/10/03 01:50:26  bradc
+#     change contact person to bradc
+#
 #     Revision 1.4  2002/04/02 03:04:51  mjc
 #     Use \date command to override aliases.
 #
@@ -127,7 +130,7 @@ setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/cgs4/$oracut
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/cgs4
 
 # screen things
-setenv ORAC_PERSON phirst
+setenv ORAC_PERSON bradc
 setenv ORAC_LOOP flag
 setenv ORAC_SUN  230
 
