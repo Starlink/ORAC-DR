@@ -79,6 +79,7 @@ $DEBUG = 0; # Turn off debugging mode
 			  '750'  => 310,
 			  '450'  => 800,
 			  '350'  => 1200,
+			  '200'  => 1, # Made up number
 			  '850N' => 240,
 			  '450N' => 800,
 			  '850W' => 197,
@@ -117,6 +118,11 @@ $DEBUG = 0; # Turn off debugging mode
 	 '350'  => [
 		    {
 		     BEAM => 1200, # No date
+		    },
+		   ],
+	 '200'  => [
+		    {
+		      BEAM => 1, # No date. Made up number
 		    },
 		   ],
 	 '850N' => [ # Asumed to be in date order
@@ -1050,7 +1056,7 @@ sub gain {
   }
 
   # Return the gain
-  return $gain;
+  return (defined $gain ? $gain : 0);
 
 }
 
@@ -1169,7 +1175,7 @@ sub tau {
     ($tau, $status) = get_tau($filt, 'CSO', $csotau);
 
     if ($status == -1) {
-      orac_warn("Error converting a CSO tau of $csotau to an opacity for filter $filt\n");
+      orac_warn("Error converting a CSO tau of $csotau to an opacity for filter '$filt'\n");
       orac_warn("Setting tau to 0\n");
       $tau = 0.0;
     }
@@ -1183,7 +1189,7 @@ sub tau {
 
     # Check status
     if ($status == -1) {
-      orac_warn("Error converting a CSO tau of $sys to an opacity for filter $filt\n");
+      orac_warn("Error converting a CSO tau of $sys to an opacity for filter '$filt'\n");
       orac_warn("Setting tau to 0\n");
       $tau = 0.0;
     }
@@ -1262,7 +1268,7 @@ sub tau {
 	    # On error - report conversion error then set tau to undef
 	    # so that we can try to adopt a CSO value
 	    if ($status == -1) {
-	      orac_warn("Error converting a $found tau to an opacity for filter $filt\n");
+	      orac_warn("Error converting a $found tau to an opacity for filter '$filt'\n");
 	      $tau = undef;
 	    }
 	  }
@@ -1288,11 +1294,10 @@ sub tau {
       orac_print "No suitable skydip found - converting from CSO tau\n";
       # Find CSO
       my $csotau = $self->thing->{'TAU_225'};
-
       ($tau, $status) = get_tau($filt, 'CSO', $csotau);
 
       if ($status == -1) {
-	orac_warn("Error converting a CSO tau of $csotau to an opacity for filter $filt\n");
+	orac_warn("Error converting a CSO tau of $csotau to an opacity for filter '$filt'\n");
 	$tau = undef;
       }
     }
@@ -1307,7 +1312,7 @@ sub tau {
       ($tau, $status) = get_tau($filt, 'CSO', $csotau);
 
       if ($status == -1) {
-	orac_warn("Error converting a CSO tau of $csotau to an opacity for filter $filt\n");
+	orac_warn("Error converting a CSO tau of $csotau to an opacity for filter '$filt'\n");
 	$tau = undef;
       }
 
@@ -1329,7 +1334,7 @@ sub tau {
 
       # Check status
       if ($status == -1) {
-	orac_warn("Error converting a WVM tau of $sys to an opacity for filter $filt\n");
+	orac_warn("Error converting a WVM tau of $sys to an opacity for filter '$filt'\n");
 	orac_warn("Setting tau to 0\n");
 	$tau = 0.0;
       }
