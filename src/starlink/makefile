@@ -239,6 +239,9 @@
 #     09-OCT-2000 (TIMJ):
 #        ORAC-DR V1.1-0. Add SUN/233
 #        Now uses $COMPRESS to support gzip or compress
+#     01-APR-2001 (TIMJ):
+#        - Add xoracdr
+#        - ORAC-DR V2.1-0
 #     {enter_further_changes_here}
 #
 #  Bugs:
