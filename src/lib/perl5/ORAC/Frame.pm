@@ -1447,24 +1447,6 @@ sub _join_fname {
 
 =back
 
-
-# Deprecated
-
-sub header {
-  my $self = shift;
-  carp 'The Frame header() method is no longer supported - use hdr() instead';
-  return $self->{Header};
-}
-
-sub userheader {
-  my $self = shift;
-   carp 'The Frame userheader() method is no longer supported - use uhdr() instead';
-  return $self->{UHeader};
-}
-
-
-=back
-
 =head1 SEE ALSO
 
 L<ORAC::Group>
