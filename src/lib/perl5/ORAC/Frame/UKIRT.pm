@@ -85,12 +85,9 @@ those available from B<ORAC::Frame>.
 
 =item B<findgroup>
 
-Returns group name from header.  For dark observations the current obs
-number is returned if the group number is not defined or is set to zero
-(the usual case with IRCAM)
-
-The group name stored in the object is automatically updated using 
-this value.
+Returns group name from header.  If we can't find anything sensible,
+we return 0.  The group name stored in the object is automatically
+updated using this value.
 
 =cut
 
@@ -112,14 +109,9 @@ sub findgroup {
 
   # Is this group name set to anything useful
   if (!$hdrgrp || !$amiagroup ) {
-    # if the group is invalid there is not a lot we can do about
-    # it except for the case of certain calibration objects that
-    # we know are the only members of their group (eg DARK)
-
-#    if ($self->hdr('OBJECT') eq 'DARK') {
-       $hdrgrp = 0;
-#    }
-
+    # if the group is invalid there is not a lot we can do
+    # so we just assume 0
+    $hdrgrp = 0;
   }
 
   $self->group($hdrgrp);
