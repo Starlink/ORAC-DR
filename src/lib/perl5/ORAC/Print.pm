@@ -70,7 +70,7 @@ $RDHDL = new Term::ReadLine 'orac_read';
 use IO::File;
 use IO::Tee;
 use Term::ANSIColor;
-
+use Term::ReadLine;
 
 =head1 NON-OO INTERFACE
 
