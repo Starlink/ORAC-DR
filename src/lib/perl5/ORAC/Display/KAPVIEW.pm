@@ -518,7 +518,7 @@ sub config_region {
   # Set the string
   $string = $regions[$port];
 
-  print "Configuring region $port with $string\n";
+  orac_print("Configuring AGI region $port with $string\n",'cyan') if $DEBUG;
   # Configure with PICDEF
   my $status = $self->obj->obeyw("picdef","device=$device nocurrent outline $string");
   
