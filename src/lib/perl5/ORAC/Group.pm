@@ -705,6 +705,7 @@ sub calc_orac_headers {
                LBNDY
                NOFFSETS 
                OBJECT 
+               OBSERVATION_MODE
                OBSERVATION_NUMBER
                OBSTYPE 
                RABASE 
