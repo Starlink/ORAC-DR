@@ -734,7 +734,8 @@ sub xorac_help {
   # Parent widget
   my ( $parent, $directory, $file ) = @_;
 
-  use Tk::Pod;
+  eval "use Tk::Pod";
+  if ( $@ ) { return; }
   
   # change working directories, this is a lousy kludge
   my $working_dir = $ENV{"PWD"};
