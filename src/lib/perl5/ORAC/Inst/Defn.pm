@@ -300,8 +300,8 @@ sub orac_determine_inst_classes {
   } elsif ($inst eq 'IRIS2') {
     $groupclass = "ORAC::Group::IRIS2";
     $frameclass = "ORAC::Frame::IRIS2";
-    $calclass   = "ORAC::Calib::Michelle";
-    $instclass  = "ORAC::Inst::CGS4";
+    $calclass   = "ORAC::Calib::IRIS2";
+    $instclass  = "ORAC::Inst::IRIS2";
   } elsif ($inst eq 'ISAAC') {
     $groupclass = "ORAC::Group::ISAAC";
     $frameclass = "ORAC::Frame::ISAAC";
@@ -809,6 +809,11 @@ sub orac_determine_initial_algorithm_engines {
 
     @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg
       ccdpack_res /
+
+  } elsif ($inst eq 'IRIS2') {
+
+    @AlgEng = qw/ figaro1 figaro2 figaro4 kappa_mon ndfpack_mon
+      ccdpack_red ccdpack_reg ccdpack_res /
 
   } elsif ($inst eq 'ISAAC') {
 
