@@ -92,7 +92,7 @@ sub new {
   my $self = $class->SUPER::new( );
 
   # Configure the initial state.
-  $self->rawfixedpart('obs_das_');
+  $self->rawfixedpart('obs_het_');
   $self->rawsuffix('.dat');
   $self->rawformat('GSD');
   $self->format('GSD');
@@ -240,33 +240,36 @@ sub findgroup {
   } else {
     # construct group name
 
-    $group = $self->hdr('C1SNA1') .
-             $self->hdr('C6MODE') .
-             $self->hdr('C4ODCO') .
-             $self->hdr('C3CONFIG') .
+    $group = ( defined( $self->hdr('C1SNA1') ) ? $self->hdr('C1SNA1') : '' ) .
+             ( defined( $self->hdr('C6MODE') ) ? $self->hdr('C6MODE') : '' ) .
+             ( defined( $self->hdr('C4ODCO') ) ? $self->hdr('C4ODCO') : '' ) .
+             ( defined( $self->hdr('C3CONFIG') ) ? $self->hdr('C3CONFIG') : '' ) .
 #             $self->hdr('C12BW') .
-             $self->hdr('C7VR') .
-             $self->hdr('C12VREF');
+             ( defined( $self->hdr('C7VR') ) ? $self->hdr('C7VR') : '' ) .
+             ( defined( $self->hdr('C12VREF') ) ? $self->hdr('C12VREF') : '' );
 #             $self->hdr('C12RF');
 
     # Now the extra bits. First, check if the switch mode
     # (contained in C6MODE) is BEAMSWITCH.
-    if( $self->hdr('C6MODE') eq 'BEAMSWITCH' ) {
-      $group .= $self->hdr('C4THROW') .
-                $self->hdr('C4POSANGLE');
+    if( defined( $self->hdr('C6MODE') ) &&
+        $self->hdr('C6MODE') eq 'BEAMSWITCH' ) {
+      $group .= ( defined( $self->hdr('C4THROW') ) ? $self->hdr('C4THROW') : '' ) .
+                ( defined( $self->hdr('C4POSANGLE') ) ? $self->hdr('C4POSANGLE') : '' );
     }
 
     # Check if switch mode is FREQ_SWITCH.
-    if( $self->hdr('C6MODE') eq 'FREQ_SWITCH' ) {
+    if( defined( $self->hdr('C6MODE') ) &&
+        $self->hdr('C6MODE') eq 'FREQ_SWITCH' ) {
 
     }
 
     # Check if the observation mode (in C4ODCO) is SAMPLE.
-    if( $self->hdr('C4ODCO') eq 'SAMPLE' ) {
-      $group .= $self->hdr('C4RA2000') .
-                $self->hdr('C4EDEC2000') .
-                $self->hdr('C4SX') .
-                $self->hdr('C4SY');
+    if( defined( $self->hdr('C4ODCO') ) &&
+        $self->hdr('C4ODCO') eq 'SAMPLE' ) {
+      $group .= ( defined( $self->hdr('C4RA2000') ) ? $self->hdr('C4RA2000') : '' ) .
+                ( defined( $self->hdr('C4EDEC2000') ) ? $self->hdr('C4EDEC2000') : '' ) .
+                ( defined( $self->hdr('C4SX') ) ? $self->hdr('C4SX') : '' ) .
+                ( defined( $self->hdr('C4SY') ) ? $self->hdr('C4SY') : '' );
     }
 
   }
