@@ -24,17 +24,24 @@
 #        that of the object aperture (APERTURE).  It is constrained
 #        to be in the range 1.1 to 3.0.  The mode of the pixel values in 
 #        the annulus is used to subtract the sky for statistics 3) and
-#        4) listed above.  [1.2]
+#        4) listed above.  [1.3]
 #     SKY_EST = INTEGER (Given)
 #        Sky estimations method as per AUTOPHOTOM parameter SKYEST.  The
 #        default is the mode, so as to exclude contaminating sources.
 #        1 is the mean; 2 is the average of values within two standard
-#        deviations of the mean; 3 is the mode.  [3]
+#        deviations of the mean; 3 is the mode from PHOTOM, 4 is a 
+#        multiply clipped mean emulating the mode but without involving
+#        the median.  It is supplied as a constant to AUTOPHOTOM (hence
+#        option 4).  The final option is to cope with self-flat frames
+#        with a spike artifact in the histogram thus giving the wrong
+#        median, and hence biased mode.  The default is used should 
+#        the supplied value not be one of the allowed options. [3]
 #     OUTER = REAL (Given)
 #        The ratio of the diameters of outer ring of the sky annulus to
 #        that of the object aperture (APERTURE).  It is constrained to
 #        be in the range 1.4 to 5.0 and be at least 0.3 greater than the
-#        inner scale factor of the annulus.  [1.5]
+#        inner scale factor of the annulus.  For UFTI the default is 
+#        2.5 and for IRCAM it is 2.0.  []
 #
 # Notes:
 #    -  This primitive is suitable for both UFTI and IRCAM.
@@ -51,34 +58,45 @@
 #
 #-
 
-# Arguments
-# =========
-
-# Obtain the aperture diameter in arcseconds.
-    my $aperture = ( $_APHOT_MAG_{APERTURE} || 6 );
- 
-# Calculate the radius of the inner and outer extent of the aperture.
-    my $inner = ( $_APHOT_MAG_{INNER} || 1.2 );
-    my $outer = ( $_APHOT_MAG_{OUTER} || 1.5 );
-    $inner = min( 3.0, max( $inner, 1.1 ) );
-    $outer = min( 5.0, max( $inner + 0.3, $outer, 1.4 ) );
-
-# Obtain the sky-estimation-method index.
-    my $skyest = ( $_APHOT_MAG_{SKY_EST} || 3 );
-
 # Selection
 # =========
 
 # This should only be performed on OBJECT frames.
-    if ( $Frm->hdr( "OBSTYPE" ) =~ /OBJECT/ ) {
-
 # Determine whether it is time to do aperture photometry.
-       my $do_aphot = $Frm->hdr( "DO_APHOT" );
-       if ( $do_aphot ) {
+    if ( $Frm->hdr( "OBSTYPE" ) =~ /OBJECT/ && 
+         $Frm->hdr( "DO_APHOT" ) ) {
+
+# Arguments
+# =========
+
+# Obtain the aperture diameter in arcseconds.
+       my $aperture = ( $_APHOT_MAG_{APERTURE} || 6 );
+
+#  Set outer default by instrument type.  IRCAM has a field size less
+#  than half of even the UFTI sub-array, and the NOD recipes move the
+#  star closer to the frame edge, hence the smaller outer limit.
+       my $defouter = 2.0;
+       if ( $Frm->hdr( "INSTRUME" ) =~ /^UFTI/ ) {
+          $defouter = 2.5;
+       }
+
+# Calculate the radius of the inner and outer extent of the aperture.
+       my $inner = ( $_APHOT_MAG_{INNER} || 1.3 );
+       my $outer = ( $_APHOT_MAG_{OUTER} || $defouter );
+       $inner = min( 3.0, max( $inner, 1.1 ) );
+       $outer = min( 5.0, max( $inner + 0.3, $outer, 1.4 ) );
+
+# Obtain the sky-estimation-method index.
+       my $skyest = ( $_APHOT_MAG_{SKY_EST} || 3 );
+
+# Obtain the sky-estimation-method index.
+       if ( $skyest !~ /^[+]?\d$/ || $skyest < 1 || $skyest > 4 ) {
+          orac_warn "Invalid sky estimation ($skyest).  Should be 1, 2, 3, or 4.  Using the PHOTOM mode.\n";
+          $skyest = 3;
+       }
 
 # Measure the positive images.
-          _FIXED_APERTURE_PHOTOMETRY_ APERTURE=$aperture INNER=$inner OUTER=$outer SKY_EST=$skyest
-       }
+       _FIXED_APERTURE_PHOTOMETRY_ APERTURE=$aperture INNER=$inner OUTER=$outer SKY_EST=$skyest
     }
 
 # Podule
@@ -119,14 +137,21 @@ the annulus is used to subtract the sky for statistics 3) and
 Sky estimations method as per AUTOPHOTOM parameter SKYEST.  The
 default is the mode, so as to exclude contaminating sources.
 1 is the mean; 2 is the average of values within two standard
-deviations of the mean; 3 is the mode.  [3]
+deviations of the mean; 3 is the mode from PHOTOM, 4 is a 
+multiply clipped mean emulating the mode but without involving
+the median.  It is supplied as a constant to AUTOPHOTOM (hence
+option 4).  The final option is to cope with self-flat frames
+with a spike artifact in the histogram thus giving the wrong
+median, and hence biased mode.   The default is used should 
+the supplied value not be one of the allowed options. [3]
 
 =item OUTER = REAL (Given)
 
 The ratio of the diameters of outer ring of the sky annulus to
 that of the object aperture (APERTURE).  It is constrained to
 be in the range 1.4 to 5.0 and be at least 0.3 greater than the
-inner scale factor of the annulus.  [1.5]
+inner scale factor of the annulus.  For UFTI the default is 
+2.5 and for IRCAM it is 2.0.  []
 
 =back
 
