@@ -67,7 +67,11 @@ my %hdr = (
 # then the general.
             CHOP_ANGLE           => "CHPANGLE",
             CHOP_THROW           => "CHPTHROW",
-            OBSERVATION_MODE     => "INSTMODE"
+            OBSERVATION_MODE     => "INSTMODE",
+            DETECTOR_READ_TYPE   => "DET_MODE",
+            GAIN                 => "GAIN",
+            NUMBER_OF_EXPOSURES  => "NEXP",
+            NUMBER_OF_READS      => "NREADS",
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed by
@@ -75,49 +79,19 @@ my %hdr = (
 # subs appear in this class.
 ORAC::Frame::UIST->_generate_orac_lookup_methods( \%hdr );
 
-sub _to_DETECTOR_READ_TYPE {
-  my $self = shift;
-  $self->hdr->{ $self->nfiles }->{DET_MODE};
-}
-
-sub _from_DETECTOR_READ_TYPE {
-  "DET_MODE", $_[0]->uhdr("ORAC_DETECTOR_READ_TYPE");
-}
-
 sub _to_EXPOSURE_TIME {
   my $self = shift;
-  $self->hdr->{ $self->nfiles }->{EXP_TIME};
+  my $exptime;
+  if( exists $self->hdr->{ $self->nfiles }  && exists $self->hdr->{$self->nfiles}->{EXP_TIME}) {
+    $exptime = $self->hdr->{ $self->nfiles }->{EXP_TIME};
+  } else {
+    $exptime = $self->hdr->{EXP_TIME};
+  }
+  return $exptime;
 }
 
 sub _from_EXPOSURE_TIME {
   "EXP_TIME", $_[0]->uhdr("ORAC_EXPOSURE_TIME");
-}
-
-sub _to_GAIN {
-  my $self = shift;
-  $self->hdr->{ $self->nfiles }->{GAIN};
-}
-
-sub _from_GAIN {
-  "GAIN", $_[0]->uhdr("ORAC_GAIN");
-}
-
-sub _to_NUMBER_OF_EXPOSURES {
-  my $self = shift;
-  $self->hdr->{ $self->nfiles }->{NEXP};
-}
-
-sub _from_NUMBER_OF_EXPOSURES {
-  "NREADS", $_[0]->uhdr("ORAC_NUMBER_OF_EXPOSURES");
-}
-
-sub _to_NUMBER_OF_READS {
-  my $self = shift;
-  $self->hdr->{ $self->nfiles }->{NREADS};
-}
-
-sub _from_NUMBER_OF_READS {
-  "NREADS", $_[0]->uhdr("ORAC_NUMBER_OF_READS");
 }
 
 sub _to_NSCAN_POSITIONS {
@@ -126,7 +100,13 @@ sub _to_NSCAN_POSITIONS {
 
 sub _to_UTEND {
   my $self = shift;
-  $self->hdr->{ $self->nfiles }->{UTEND};
+  my $utend;
+  if( exists $self->hdr->{ $self->nfiles } && exists $self->hdr->{ $self->nfiles }->{UTEND} ) {
+    $utend = $self->hdr->{ $self->nfiles }->{UTEND};
+  } else {
+    $utend = $self->hdr->{UTEND};
+  }
+  return $utend;
 }
 
 sub _from_UTEND {
@@ -135,7 +115,13 @@ sub _from_UTEND {
 
 sub _to_UTSTART {
   my $self = shift;
-  $self->hdr->{ 1 }->{UTSTART};
+  my $utstart;
+  if( exists $self->hdr->{ 1 } && exists $self->hdr->{ 1 }->{UTSTART} ) {
+    $utstart = $self->hdr->{ 1 }->{UTSTART};
+  } else {
+    $utstart = $self->hdr->{UTSTART};
+  }
+  return $utstart;
 }
 
 sub _from_UTSTART {
