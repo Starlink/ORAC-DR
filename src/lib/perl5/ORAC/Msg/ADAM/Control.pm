@@ -34,11 +34,15 @@ The following methods are available:
 =cut
 
 
-$VERSION = undef;
+use strict;
+use Carp;
+
+use vars qw/$VERSION $RUNNING/;
+
 $VERSION = '0.01';
 
-use Carp;
-use strict;
+*RUNNING = *Starlink::AMS::Init::AMSRUNNING;
+
 
 # This needs to Starlink module
 use Starlink::AMS::Init;
@@ -127,6 +131,13 @@ from the ~/adam directory).
 
 =back
 
+=head1 VARIABLES
+
+The ORAC::Msg::ADAM::Control::RUNNING variable can be 
+used to determine whether the message system is running or not.
+(Multiple message system objects can be created although only
+the first will actually start the message system - an error is raised
+if multiple objects are created).
 
 =head1 REQUIREMENTS
 
