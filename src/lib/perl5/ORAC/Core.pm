@@ -1,3 +1,5 @@
+package ORAC::Core;
+
 =head1 NAME
 
 ORAC::Core - core routines for data pipelining
@@ -22,6 +24,7 @@ use strict;
 use Carp;
 
 use ORAC::Print;
+use ORAC::Basic;
 
 require Exporter;
 
@@ -30,6 +33,7 @@ use vars qw/$VERSION @EXPORT @ISA $CONVERT/;
 @ISA = qw/Exporter/;
 @EXPORT = qw/orac_process_frame orac_store_frm_in_correct_grp /;
 
+$VERSION = '0.10';
 
 =head1 SUBROUTINES
 
