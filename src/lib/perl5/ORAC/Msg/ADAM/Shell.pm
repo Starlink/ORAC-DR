@@ -50,12 +50,12 @@ use File::Basename;
 
 # Safe current directory
 use Cwd;
- 
-use vars qw/$VERSION $ORAC__OK/;
- 
-# Should get ORAC__OK from somewhere as well
-$ORAC__OK = 0;
 
+# Retrieve the status constants
+use ORAC::Constants qw/:status/;
+
+use vars qw/$VERSION/;
+ 
 
 =item new
 
@@ -141,7 +141,7 @@ returned and the cwd is not changed.
 
 sub cwd {
   my $self = shift;
-  my $status = $ORAC__OK;
+  my $status = ORAC__OK;
 
   # Supply an argument
   if (@_) { 
@@ -151,7 +151,7 @@ sub cwd {
     if (-d $cwd) {
       $self->{Cwd} = $cwd; 
     } else {
-      $status = -1;
+      $status = ORAC__ERROR;
     }
 
   }
@@ -201,7 +201,7 @@ sub load {
   }
   
   # Have to return a status
-  return $ORAC__OK;
+  return ORAC__OK;
 }
 
 
@@ -231,7 +231,7 @@ sub obeyw {
   my $command = $self->path . "/" . $task;
 
   # Check that we can actually execute the command
-  return -1 unless (-x $command);
+  return ORAC__ERROR unless (-x $command);
 
   # Change to the current working directory before running
   # This probably has some overhead
@@ -245,7 +245,7 @@ sub obeyw {
   # Now change directory back again
   chdir($cwd) || croak "Error changing back to current directory\n";
 
-  return $ORAC__OK if $exstat == 0;
+  return ORAC__OK if $exstat == 0;
   return $exstat;
 
 }
@@ -275,7 +275,7 @@ sub get {
 
   my $values = join(",", @values);
 
-  $status = $ORAC__OK if ($status == &NDF::SAI__OK);
+  $status = ORAC__OK if ($status == &NDF::SAI__OK);
 
   return ($values, $status);
 }
@@ -291,7 +291,7 @@ Currently not implemented
 sub set {
 
 
-  return $ORAC__OK;
+  return ORAC__OK;
 
 }
 
@@ -360,10 +360,39 @@ sub resetpars {
   my $self = shift;
   
   
-  return $ORAC__OK;
+  return ORAC__OK;
 }
 
 
+=item contact and contactw
+
+Check that we can contact the monolith.
+This method simply makes sure that we know where the monolith
+is and that it can be executed. There is no difference between
+contactw. and contact(). Returns a '1' if the command can be executed
+and '0' if it cannot.
+
+=cut
+
+sub contact {
+  my $self = shift;
+
+  my $command = $self->path . "/" . $self->mon;
+
+  print "Command in $command\n";
+  # Check that we can actually execute the command
+  return 0 unless (-x $command);
+
+  return 1;
+}
+
+
+sub contactw {
+  my $self = shift;
+
+  return $self->contact;
+
+}
 
 
 =back

@@ -39,8 +39,15 @@ The following methods are available:
 use strict;
 use Carp;
 
-use vars qw/$VERSION $DTASK__ACTCOMPLETE $ORAC__OK/;
- 
+# Import ORAC constants
+use ORAC::Constants qw/:status/;
+
+# I need to import good Starlink status from the ADAM module
+use Starlink::ADAM ();
+
+
+use vars qw/$VERSION $DTASK__ACTCOMPLETE $SAI__OK/;
+
 # Access the AMS task code
 use Starlink::AMS::Task;
  
@@ -48,13 +55,12 @@ $VERSION = undef;
 $VERSION = '0.01';
 
 
-# Local definition of DTASK__ACT_COMPLETE. Probably shoudl
-# try to get it from Starlink::ADAM
+# Local definition of DTASK__ACT_COMPLETE. Probably should
+# try to get it from Starlink::ADAM but currently broken
 
 $DTASK__ACTCOMPLETE = 142115659;
 
-# Should get ORAC__OK from somewhere as well
-$ORAC__OK = 0;
+$SAI__OK = &Starlink::ADAM::SAI__OK;
 
 
 # Cannot subclass methods since I need to change most of them
@@ -122,9 +128,18 @@ is not loaded.
 sub load {
   
   my $self = shift;
+  # initialise
+  my $status = $SAI__OK;
 
-  if (@_) { $self->obj->load(@_); }
+  if (@_) { $status = $self->obj->load(@_); }
 
+  # Convert from ADAM to ORAC status
+  # Probably should put in a subroutine
+  if ($status == $SAI__OK) {
+    $status = ORAC__OK;
+  }
+
+  return $status;
 }
 
 
@@ -145,9 +160,9 @@ sub obeyw {
   if (@_) { $status = $self->obj->obeyw(@_); }
 
   # Should now change status from the obeyw (DTASK__ACTCOMPLETE)
-  # to good ORAC status (0?)
+  # to good ORAC status
   if ($status == $DTASK__ACTCOMPLETE) {
-    $status = $ORAC__OK;
+    $status = ORAC__OK;
   }
   return $status;
 
@@ -179,7 +194,11 @@ sub get {
 
   my ($result, $status) = $self->obj->get($arg);
 
-  # Problem with status comparisons if ORAC does not match Starlink
+  # Convert from ADAM to ORAC status
+  # Probably should put in a subroutine
+  if ($status == $SAI__OK) {
+    $status = ORAC__OK;
+  }
 
   return ($result, $status);
 }
@@ -210,7 +229,11 @@ sub set {
 
   my $status = $self->obj->set($arg, $value);
 
-  # Problem with status comparisons if ORAC does not match Starlink
+  # Convert from ADAM to ORAC status
+  # Probably should put in a subroutine
+  if ($status == $SAI__OK) {
+    $status = ORAC__OK;
+  }
 
   return $status;
 }
@@ -237,12 +260,19 @@ methods.
 
 sub control {
 
+  my ($value, $status);
   my $self = shift;
   
   if (@_) { 
-    my ($value, $status) = $self->obj->control(@_);
-  }
+    ($value, $status) = $self->obj->control(@_);
 
+    # Convert from ADAM to ORAC status
+    # Probably should put in a subroutine
+    if ($status == $SAI__OK) {
+      $status = ORAC__OK;
+    }
+  }
+  return ($value, $status);
 }
 
 # Stop the monolith from being killed on exit
@@ -265,6 +295,12 @@ sub resetpars {
 
   my ($junk, $status) = $self->obj->control("par_reset");
 
+  # Convert from ADAM to ORAC status
+  # Probably should put in a subroutine
+  if ($status == $SAI__OK) {
+    $status = ORAC__OK;
+  }
+
   return $status;
 
 }
@@ -283,6 +319,14 @@ sub cwd {
   my $newdir = shift;
 
   my ($value, $status) = $self->obj->control("default", $newdir);
+
+  # Convert from ADAM to ORAC status
+  # Probably should put in a subroutine
+  if ($status == $SAI__OK) {
+    $status = ORAC__OK;
+  }
+  return $status;
+
 }
 
 
@@ -315,7 +359,6 @@ sub contact {
   return $self->obj->contact;
 }
 
-
 =back
 
 =head1 REQUIREMENTS
@@ -332,5 +375,8 @@ Tim Jenness (t.jenness@jach.hawaii.edu)
 and Frossie Economou (frossie@jach.hawaii.edu)    
 
 =cut
+
+# private methods
+
 
 1;
