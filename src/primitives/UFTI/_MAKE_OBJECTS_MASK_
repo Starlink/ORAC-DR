@@ -142,8 +142,8 @@
        orac_print "Orac says: Detecting objects in $inpisa with at least $minpix connected pixels at $thresh units above sky\n";
 
 # Derive an inventory of the images in $resfile.
-       $Mon{"pisa_mon"}->obeyw("pisafind","$header $hidden accept");
- 
+       $pisa_status = $Mon{"pisa_mon"}->obeyw("pisafind","$header $hidden accept");
+
 # Remove any intermediate data file.  There is no problem if either NDF
 # does not exist.  This means the supplied flat-fielded image has no bad
 # pixels and all of its values lie within the range 0 to 32765.
@@ -152,30 +152,34 @@
        unlink($outsbp . ".sdf");   # Assumes NDF.
        unlink("pisafind.dat");     # Unused results file.
 
+# We can handle a failure here by making a null ARD file.  So we test a
+# local status rather than let ORAC go on to the next file.
+       if ( $pisa_status == ORAC__OK ) {
+
 # Read the results file into an array.  Obtain the number of objects.
 # Remove the results file.
-       open (RESFILE, "< $resfile");
-       @lines = <RESFILE>;
-       $numobject = $#lines + 1;
-       close (RESFILE);
+          open (RESFILE, "< $resfile");
+          @lines = <RESFILE>;
+          $numobject = $#lines + 1;
+          close (RESFILE);
 
 # Form the ARD file
 # =================
 
 # Generate the ARD file name using the raw frame name.  Export the file
 # for use by masking primitive.
-       $ardfile = $root . "_objects.ard";
-       $_MAKE_OBJECTS_MASK_{MASKFILE} = $ardfile;
+          $ardfile = $root . "_objects.ard";
+          $_MAKE_OBJECTS_MASK_{MASKFILE} = $ardfile;
 
 # Remove any existing ARD object file.
-       unlink ($ardfile);
+          unlink ($ardfile);
 
 # Create an ARD file.
-       open (ARDFILE, "> $ardfile");
+          open (ARDFILE, "> $ardfile");
 
 # Read each line of the PISAFIND results file, and split the fields.
-       for ($ifd = 0; $ifd < $numobject; $ifd++) {
-          @fields = split(/\s+/, $lines[$ifd]);
+          for ($ifd = 0; $ifd < $numobject; $ifd++) {
+             @fields = split(/\s+/, $lines[$ifd]);
 
 # Relevant fields are:
 # 2  x co-ordinate of centre
@@ -187,18 +191,19 @@
 # The first two can be used directly in the ARD description, but the
 # other three are used to generate the semi-major axes, and the ARD
 # ELLIPSE orientation.
-          $ea = sqrt($fields[5] / 3.14159 /max((1.0 - @fields[7]), 0.99999));
-          $ea = min($ea, 0.5 * $fields[5]);
-          $eb = $ea * (1.0 - $fields[7]);
-          $orient = ( $fields[8] - 90.0 ) % 360.0;
+             $ea = sqrt($fields[5] / 3.14159 /max((1.0 - @fields[7]), 0.99999));
+             $ea = min($ea, 0.5 * $fields[5]);
+             $eb = $ea * (1.0 - $fields[7]);
+             $orient = ( $fields[8] - 90.0 ) % 360.0;
 
 #  Write the ARD description.
-          printf ARDFILE "ELLIPSE( %10.3f, %10.3f, %8.3f, %8.3f, %5.1f )\n",
-             $fields[2], $fields[3], $ea, $eb, $orient;
-       }
-       close (ARDFILE);
+             printf ARDFILE "ELLIPSE( %10.3f, %10.3f, %8.3f, %8.3f, %5.1f )\n",
+                $fields[2], $fields[3], $ea, $eb, $orient;
+          }
+          close (ARDFILE);
 
 # Report the processing status.
-       orac_print "Orac says: Mask for $root stored in ARD file $ardfile\n";
+          orac_print "Orac says: Mask for $root stored in ARD file $ardfile\n";
+       }
 
     };
