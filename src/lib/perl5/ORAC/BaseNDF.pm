@@ -108,7 +108,8 @@ sub stripfname {
   my $name = shift;
 
   # Strip everything after the first dot
-  $name =~ s/\.(sdf)(\.gz|\.Z)?$//;
+  $name =~ s/\.(sdf)(\.gz|\.Z)?$//
+    if defined $name;
 
   return $name;
 }
