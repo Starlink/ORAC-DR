@@ -11,7 +11,11 @@ ORAC::Basic - recipe parsing and execution subroutines
 =head1 SYNOPSIS
 
   use ORAC::Basic;
-  orac_parse_recipe
+  orac_setup_display;
+  $rec_arr = orac_read_recipe($recipe, $instrument);
+  orac_parse_recipe(\@recipe, $instrument);
+  orac_add_code_to_recipe(\@recipe);
+  orac_execute_recipe(\@recipe, $Frm, $Grp, $Cal, \%Mon);
 
 =head1 DESCRIPTION
 
@@ -75,12 +79,21 @@ file (F<disp.dat>). If a configuration file is not in $ORAC_DATA_OUT
 one will be copied there from $ORAC_DATA_CAL (or $ORAC_DIR
 if no file exists in $ORAC_DATA_CAL).
 
+If the $DISPLAY environment variable is not set, the display
+subsystem will not be started.
+
 There are no return arguments.
 
 =cut
 
 # Simply create a display object
 sub orac_setup_display {
+
+  # Check for DISPLAY being set
+  unless (exists $ENV{DISPLAY}) {
+    warn 'DISPLAY environment variable unset - not starting Display subsystem';
+    return;
+  }
 
   # Set this global variable
   $Display = new ORAC::Display;
@@ -309,8 +322,6 @@ If the recipe can be found in neither location the program aborts.
 =cut
 
 sub orac_read_primitive {
-
-  use strict; # For Frossie :-)
 
   croak 'Usage: orac_read_primitive(primitive_name, instrument_name)'
     unless scalar(@_) == 2;
@@ -702,6 +713,9 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.38  1999/05/13 00:43:24  timj
+#Check for $DISPLAY env var before allowing Display system to be started.
+#
 #Revision 1.37  1999/05/12 04:25:17  timj
 #Add ORAC::TempFile.
 #Expand docs for orac_execute_recipe
