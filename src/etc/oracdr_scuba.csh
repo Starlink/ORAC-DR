@@ -69,6 +69,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.3  2000/03/15 02:36:24  timj
+#     Update for the summit
+#
 #     Revision 1.2  2000/02/03 08:13:16  timj
 #     Replace /ukirt with /jcmt
 #
@@ -223,11 +226,33 @@ endif
 setenv ORAC_DATA_IN $ORAC_DATA_ROOT/$orac_sem$oracut/
 
 # Output data directory is more problematic.
-# Currently SCUBA does not use a set working directory.
-# Set to current directory
+# If we are at JCMT set it to ORAC_DATA_ROOT/rodir/$oracut
+# Else Set to current directory
 
-setenv ORAC_DATA_OUT  `pwd`
+if ($ORAC_DATA_ROOT == /jcmtarchive ) then
 
+ setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/orac/$oracut
+
+ # Check for the directory and create it
+ if (! -d $ORAC_DATA_OUT) then
+   echo "CREATING OUTPUT DIRECTORY: $ORAC_DATA_OUT"
+   mkdir $ORAC_DATA_OUT
+   chmod 777 $ORAC_DATA_OUT
+ endif
+
+ # If we are not on mamo print a warning
+ set orachost = `hostname`
+ if ($orachost != 'mamo') then
+   echo '***************************************************'
+   echo '**** PLEASE USE MAMO FOR ORAC-DR DATA REDUCTION ***'
+   echo '***************************************************'
+ endif
+
+else 
+
+  setenv ORAC_DATA_OUT  `pwd`
+
+endif
 
 # screen things
 setenv ORAC_PERSON timj
@@ -236,6 +261,15 @@ setenv ORAC_SUN  231
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
+
+# Print additional warning if required
+if ($?orachost && $orachost != 'mamo') then
+   echo '***************************************************'
+   echo '**** PLEASE USE MAMO FOR ORAC-DR DATA REDUCTION ***'
+   echo '***************************************************'
+   unset orachost
+endif
+
 
 # Tidy up
 unset oracut
