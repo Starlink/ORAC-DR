@@ -100,6 +100,10 @@ my %MonolithDefns = (
 				   CLASS => 'ORAC::Msg::ADAM::Task',
 				   PATH => "$ENV{PHOTOM_DIR}/photom_mon",
 				  },
+		     test_mon   => {
+				    CLASS => 'ORAC::Msg::ADAM::Task',
+				    PATH => "this/is/junk",
+				   },
 );
 
 
