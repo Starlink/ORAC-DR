@@ -326,9 +326,10 @@ sub flag_from_bits {
   # Retrieve the data file name
   my $raw = $self->pattern_from_bits($prefix, $obsnum);
 
-  # Replace the 'f' with a '.' and append '.ok'
-  substr($raw,0,1) = '.';
-  $raw .= '.ok';
+  # Add '.' and replace extension with '.ok'
+
+  $raw =~ /^(.*?)\.(.*?)$/;
+  $raw = '.' . $1 . '.ok';
 }
 
 # Supply a method to return the number associated with the observation
