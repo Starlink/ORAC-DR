@@ -21,8 +21,7 @@
 #    processing step augments the bad-pixel mask.
 #
 # Notes:
-#    -  This primitive is suitable for UFTI, IRCAM, and Michelle and
-#    UIST in imaging mode.
+#    -  This primitive is suitable for infrared imaging.
 #    -  Processing only occurs for object, sky, and flat frames.
 #    -  The dark-subtracted image can be displayed.
 #    -  The subtraction assumes the same exposure time for the dark and
@@ -32,6 +31,10 @@
 #    standard deviations, subject to the constraint that the limit lies
 #    between -100 and 1.   The upper limit is 1000 above the nominal
 #    saturation level for the instrument and its mode.
+#    -  The primitive issues a warning if the dark-subtracted frame's
+#    mode is negative, allowing for the error of the mode.  It aborts
+#    with an error message if the modal dark-subtracted signal is more
+#    than one standard deviation negative.
 #    -  The frame title is propagated.
 #
 # Output Data:
@@ -47,7 +50,7 @@
 #    MJC: Malcolm J. Currie (JAC)
 #
 # Copyright:
-#    Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 #
 #-
@@ -102,6 +105,7 @@
        _CLIPPED_STATS_
        my $mode = $_CLIPPED_STATS_{MEAN};
        my $sigma = $_CLIPPED_STATS_{SIGMA};
+       my $numpix = $_CLIPPED_STATS_{NUMBER};
 
 # Use the statistics to define a lower limit.  -5 sigma may give a value
 # still too negative for recipe's good. -100 seems to produce reasonable
@@ -123,13 +127,18 @@
        $fs_low =~ s/ //g;
        orac_print "$in to $out: Rogue pixels (<${fs_low}, >$upper) flagged\n";
 
-# Print a warning if the mean is negative.
-       if( ( $mode + $sigma ) < 0 ) {
-         my $fs_mode = sprintf( "%.2f", $mode );
-         orac_throw "Mode of dark-subtracted frame is negative (${fs_mode}). A possible cause is an aberrant dark.\n";
-       } elsif( $mode < 0 ) {
-         my $fs_mode = sprintf( "%.2f", $mode );
-         orac_warn "Mode of dark-subtracted frame is negative (${fs_mode}). A possible cause is an aberrant dark.\nContinuing with data reduction, but this may cause later problems.\n";
+# Exit if the dark-subtracted signal is negative.
+       my $fs_mode = sprintf( "%.2f", $mode );
+       if ( ( $mode + $sigma ) < 0 ) {
+          orac_throw "Mode of dark-subtracted frame is negative (${fs_mode}). " .
+                     "A likely cause is an aberrant dark.\n";
+
+# Warn if the dark-subtracted signal is negative within the
+# uncertainties (using the error in the mean).
+       } elsif ( $mode + 3.0 * $sigma / sqrt( $numpix ) < 0 ) {
+          orac_warn "Mode of dark-subtracted frame is negative (${fs_mode}). " .
+                    "A possible cause is an aberrant dark.\nContinuing with " . 
+                    "data reduction, but this may cause later problems.\n";
        }
 
 # Now update the output filename in the Frame object.
@@ -167,8 +176,7 @@ augments the bad-pixel mask.
 
 =item *
 
-This primitive is suitable for UFTI, IRCAM, and Michelle and UIST in
-imaging mode.
+This primitive is suitable for infrared imaging.
 
 =item *
 
@@ -189,6 +197,13 @@ The lower threshold limit is the clipped mean (mode) minus five
 standard deviations, subject to the constraint that the limit lies
 between -100 and 1.   The upper limit is 1000 above the nominal
 saturation level for the instrument and its mode.
+
+=item *
+
+The primitive issues a warning if the dark-subtracted frame's
+mode is negative, allowing for the error of the mode.  It aborts
+with an error message if the modal dark-subtracted signal is more
+than one standard deviation negative.
 
 =item *
 
@@ -221,7 +236,7 @@ MJC: Malcolm J. Currie (JAC)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
