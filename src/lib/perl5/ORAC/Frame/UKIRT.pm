@@ -83,6 +83,61 @@ those available from B<ORAC::Frame>.
 
 =over 4
 
+=item B<file_from_bits>
+
+Determine the raw data filename given the variable component
+parts. A prefix (usually UT) and observation number should
+be supplied.
+
+  $fname = $Frm->file_from_bits($prefix, $obsnum);
+
+The $obsnum is zero padded to 5 digits.
+
+=cut
+
+sub file_from_bits {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $obsnum = shift;
+
+  # Zero pad the number
+  $obsnum = sprintf("%05d", $obsnum);
+
+  # UKIRT form is FIXED PREFIX _ NUM SUFFIX
+  return $self->rawfixedpart . $prefix . '_' . $obsnum . $self->rawsuffix;
+
+}
+
+=item B<flag_from_bits>
+
+Determine the name of the flag file given the variable
+component parts. A prefix (usually UT) and observation number
+should be supplied
+
+  $flag = $Frm->flag_from_bits($prefix, $obsnum);
+
+This generic UKIRT version returns back the observation filename (from
+file_from_bits) , adds a leading "." and replaces the .sdf with .ok
+
+=cut
+
+sub flag_from_bits {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $obsnum = shift;
+
+  # flag files for UKIRT of the type .xYYYYMMDD_NNNNN.ok
+  my $raw = $self->file_from_bits($prefix, $obsnum);
+
+  # raw includes the .sdf so we have to strip it
+  $raw = $self->stripfname($raw);
+
+  my $flag = ".".$raw.".ok";
+
+}
+
 =item B<findgroup>
 
 Returns group name from header.  If we can't find anything sensible,
