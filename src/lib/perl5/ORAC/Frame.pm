@@ -70,6 +70,7 @@ sub new {
   $frame->{Group} = undef;
   $frame->{File} = undef;
   $frame->{Recipe} = undef;
+  $frame->{UserHeader} = {};
 
   bless($frame, $class);
 
@@ -267,12 +268,12 @@ The header must be available (set by the "header" method).
 The input argument should correspond to the keyword in the header
 hash.
 
-  $tel = $Obs->("TELESCOP");
-  $instrument = $Obs->("INSTRUME");
+  $tel = $Obs->hdr("TELESCOP");
+  $instrument = $Obs->hdr("INSTRUME");
 
 Can also be used to set values in the header.
 
-  $Obs->("INSTRUME", "IRCAM");
+  $Obs->hdr("INSTRUME", "IRCAM");
 
 =cut
 
@@ -470,6 +471,61 @@ sub template {
   $self->file($template);
 
 }
+
+
+=item userheader
+
+Set or retrieve a hash containing general purpose information
+about the frame. This is distinct from the Frame header
+(see header()) that is associated with the FITS header.
+
+    $Obs->userheader(\%hdr);
+    $hashref = $Obs->userheader;
+
+This methods takes and returns a reference to a hash.
+
+=cut
+
+
+sub userheader {
+  my $self = shift;
+
+  if (@_) { 
+    my $arg = shift;
+    croak("Argument is not a hash") unless ref($arg) eq "HASH";
+    $self->{UserHeader} = $arg;
+  }
+
+
+  return $self->{UserHeader};
+}
+
+
+=item uhdr
+
+This method allows specific entries in the user specified header to 
+be accessed. The header must be available (set by the "userheader" method).
+The input argument should correspond to the keyword in the header
+hash.
+
+  $info = $Obs->uhdr("INFORMATION");
+
+Can also be used to set values in the header.
+
+  $Obs->uhdr("INFORMATION", "value");
+
+=cut
+
+sub uhdr {
+  my $self = shift;
+
+  my $keyword = shift;
+
+  if (@_) { ${$self->userheader}{$keyword} = shift; }
+
+  return ${$self->userheader}{$keyword};
+}
+
 
 
 # Private method for removing file extensions from the filename strings
