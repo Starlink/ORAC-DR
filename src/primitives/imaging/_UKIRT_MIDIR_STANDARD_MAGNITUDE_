@@ -1,0 +1,273 @@
+#+
+# Name:
+#    _UKIRT_MIDIR_STANDARD_MAGNITUDE_
+#
+# Purpose:
+#    Obtains the catalogue magnitude of a UKIRT mid-infrared standard.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive reads the UKIRT mid-infrared-standard catalogue.
+#    A case- and space-insensitive comparison of the supplied object
+#    name with the entries in the table provides a catalogue magnitude
+#    in N or Q for a standard star.  The catalogue magnitude is returned
+#    through an argument.
+#
+# Arguments:
+#    CATMAG = REAL (Returned)
+#       The catalogue magnitude for the object and current frame's filter.
+#       This is set to the NULLMAG if no magnitude is available.
+#    CATNAME = CHARACTER (Returned)
+#       The object name in the catalogue.  This has superfluous
+#       characters removed from the supplied NAME.
+#    NAME = CHARACTER (Given).
+#       The object name.  This can be Bright Star Catalogue number, or
+#       the alternative Bayer name.
+#    NULLMAG = REAL (Given)
+#       A null magnitude when the object has no magnitude for the filter.
+#       [99.999]
+#    WAVEBAND = CHARACTER (Given)
+#       The name of the waveband.  It may be N or Q.  It comes from
+#       _GET_FILTER_PARAMETERS_.  ["N"]
+#
+# Notes:
+#    -  This primitive is suitable for mid-infra-red imagers.
+#    -  Processing should only occur when it is time to perform
+#    photometry, i.e. when the steering header DO_APHOT is true,
+#    however, this primitive does not make that check.  That is to
+#    permit photometry of all the contributing frames of a mosaic.
+#    -  An error occurs when the waveband is not N or Q.
+#    -  The standard-star catalogue used is $ORAC_DATA_CAL/10_20stds.dat.
+#    An error results a catalogue cannot be opened.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC, Starlink)
+#
+# Copyright:
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# For OS-independent filename creation.
+    use File::Spec;
+
+# Assign some defaults.
+    my $catname = " ";
+    my $defnullmag = 99.999;
+
+# Arguments
+# =========
+
+# Obtain the suffix value for the file name in the log.  Used
+# for NOD positive and negative images, but normally set to null.
+    my $objname = ( defined( $_UKIRT_MIDIR_STANDARD_MAGNITUDE_{NAME} ) ?
+                     $_UKIRT_MIDIR_STANDARD_MAGNITUDE_{NAME} : "" );
+    if ( $objname eq "" ) {
+       orac_err "Programming error: _UKIRT_MIDIR_STANDARD_MAGNITUDE_ not " .
+                "supplied an object name.\n";
+    }
+
+# Obtain the waveband for the magnitude.
+    my $waveband = ( defined( $_UKIRT_MIDIR_STANDARD_MAGNITUDE_{WAVEBAND} ) ?
+                   $_UKIRT_MIDIR_STANDARD_MAGNITUDE_{WAVEBAND} : "N" );
+    if ( $waveband !~ /^[NQ]/ ) {
+       orac_err "Programming error: _UKIRT_MIDIR_STANDARD_MAGNITUDE_ " .
+                "supplied $waveband, which is not a valid waveband. " .
+                "Allowed options are N or Q.\n";
+    }
+
+# Obtain the column name for the magnitude.
+    my $nullmag = ( defined( $_UKIRT_MIDIR_STANDARD_MAGNITUDE_{NULLMAG} ) ? 
+                    $_UKIRT_MIDIR_STANDARD_MAGNITUDE_{NULLMAG} : $defnullmag );
+    $catmag = $nullmag;
+    
+# Extract the standard's name(s).
+# ===============================
+
+# Remove spaces from the name, and convert to uppercase for later
+# comparison.
+    ( my $starname = uc( $objname ) ) =~ s/ //g;
+
+# More than one naming is used and some observatories use more than
+# one catalogue name in the object name.  UKIRT standards have
+# name BSn, where n is the number in the Bright Star Catalogue..
+
+# Here we look for the ESO format, which is the HST name underscore then
+# the four-digit Persson number.
+    my $hstname = "";
+    my $pername = "";
+    my $undpos = index( $starname, "_" );
+    if ( $undpos > -1 ) {
+       $hstname = substr( $starname, 0 , $undpos );
+       $pername = substr( $starname, $undpos + 1, 4 );
+    }
+
+# Read the catalogue.
+# ===================
+
+# Define the character to indicate a null value in the standards' table.
+    my $nullcol = "&";
+
+# Open the faint-standards file and store its records in an array.
+    my $catpath = $ENV{ "ORAC_DATA_CAL" };
+    my $standards_file = File::Spec->catfile( $catpath, "10_20stds.dat" );
+
+    my $fh_standards;
+    if ( -e $standards_file ) {
+       open( $fh_standards, "<$standards_file" ) || 
+         orac_warn "Standards file $standards_file could not be opened.  Error: $!.\n";
+    }
+    my @stds = <$fh_standards>;
+
+# Remove trailing blanks and newline.
+    for ( @stds ) {
+       chomp;
+       s/\s+$//;
+    }
+
+# Look for the standard in the catalogue.
+# =======================================
+
+# Search through the table finding a line containing the object name.  The
+# file currently consists of some column headings, then a relational table.
+# Columns in the table include the star name and BS catalogue
+# designation, equatorial co-ordinates then N and Q.
+
+# Look at each line.  Extract the name, stripping the blanks.  Proceed
+# until an uppercase match is found.
+    my $recno = 0;
+    my $name = " ";
+    my $othername = " ";
+    until ( uc( $name ) eq $starname || $recno > $#stds ||
+            uc( $othername ) eq $starname ) {
+       $recno++;
+
+# File does not have BS prefix in the first column.
+       if ( defined( $stds[ $recno ] ) ) {
+          $name = "BS" . substr( $stds[ $recno ], 0, 4 );
+          $othername = substr( $stds[ $recno ], 7, 10 );
+       }
+       $name =~ s/ //g;
+       $othername =~ s/ //g;
+    }
+
+# Check that a match has been found.  Use a special value to indicate
+# a null magnitude.
+    if ( $recno > $#stds ) {
+       if ( -e $standards_file ) {
+          orac_warn "Standard $objname has no tabulated $filter magnitude in $standards_file\n";
+       } else {
+          orac_warn "The standards file $standards_file does not exist\n";
+       }
+
+# Since we could not locate or open the standards file, the magnitude
+# is null.
+       $catmag = $nullmag;
+
+    } else {
+
+# Extract the columns.
+       my @fields = split( / +/, $stds[ $recno ] );
+
+# Remember the actual object name.
+       $catname = $othername;
+       $catname = $name if ( $name ne "BS&" );
+             
+# Extract the columns.
+       my @fields = split( / +/, $stds[ $recno ] );
+
+# Set up hash of columns versus filter in the current file.
+       my %wavebandindex = ( N => 10, 
+                             Q => 11 );
+
+       $catmag = $fields[ $wavebandindex{ $waveband } ];
+    }
+
+# Close the stamdards data file.
+    close( $fh_standards );
+
+# Set a null magnitude if there is no value in the table for the
+# chosen star and waveband.
+    $catmag = $nullmag  if $catmag eq $nullcol;
+
+# Return the catalogue magnitude.
+    $_UKIRT_MIDIR_STANDARD_MAGNITUDE_{CATMAG} = $catmag;
+    $_UKIRT_MIDIR_STANDARD_MAGNITUDE_{CATNAME} = $catname;
+
+
+# Podule
+# ======
+
+=head1 NAME
+
+_UKIRT_MIDIR_STANDARD_MAGNITUDE_ -- Obtains the catalogue magnitude of a UKIRT mid-infrared standard.
+
+=head1 DESCRIPTION
+
+This primitive reads the UKIRT mid-infrared-standard catalogue.
+A case- and space-insensitive comparison of the supplied object
+name with the entries in the table provides a catalogue magnitude
+in I<N> or I<Q> for a standard star.  The catalogue magnitude is returned
+through an argument.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item CATMAG = REAL (Returned)
+
+The catalogue magnitude for the object and current frame's filter.
+
+=item NAME = CHARACTER (Given).
+
+The object name.  This can be Bright Star Catalogue number, or
+the alternative Bayer name.
+
+=item NULLMAG = REAL (Given)
+
+A null magnitude when the object has no magnitude for the filter.
+[99.999]
+
+=item WAVEBAND = CHARACTER (Given)
+
+The name of the waveband.  It may be N or Q. It comes from
+L<_GET_FILTER_PARAMETERS_|_GET_FILTER_PARAMETERS_>.  ["N"]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for mid-infrared imagers.
+
+=item *
+
+Processing should only occur when it is time to perform
+photometry, i.e. when the steering header DO_APHOT is true,
+however, this primitive does not make that check.
+
+=item *
+
+An error occurs when the waveband is not N or Q.
+
+=item *
+
+The standard-star catalogue used is F<$ORAC_DATA_CAL/10_20stds.dat>.
+An error results a catalogue cannot be opened.
+
+=head1 AUTHORS
+
+Malcolm J. Currie (mjc@star.rl.ac.uk)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

@@ -1,0 +1,320 @@
+#+
+# Name:
+#    _UKIRT_STANDARD_MAGNITUDE_
+#
+# Purpose:
+#    Obtains the catalogue magnitude of a UKIRT standard.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive reads the faint-standard catalogue or its
+#    predecessor.  A case- and space-insensitive comparison of the
+#    supplied object name with the entries in the table provides a
+#    catalogue magnitude in I, Z, J, H, K, L, or M for a standard star.
+#    The catalogue magnitude is returned through an argument.
+#
+# Arguments:
+#    CATMAG = REAL (Returned)
+#       The catalogue magnitude for the object and current frame's filter.
+#       This is set to the NULLMAG if no magnitude is available.
+#    CATNAME = CHARACTER (Returned)
+#       The object name in the catalogue.  This has superfluous
+#       characters removed from the supplied NAME.
+#    NAME = CHARACTER (Given).
+#       The object name.  This can be UKIRT Faint Standard catalogue
+#       number, or the alternative name.
+#    NULLMAG = REAL (Given)
+#       A null magnitude when the object has no magnitude for the filter.
+#       [99.999]
+#    WAVEBAND = CHARACTER (Given)
+#       The name of the waveband.  It may be I, Z, J, H, K, L, or M.
+#       It comes from _GET_FILTER_PARAMETERS_.
+#
+# Notes:
+#    -  This primitive is suitable for UKIRT near-infra-red imagers.
+#    -  Processing should only occur when it is time to perform
+#    photometry, i.e. when the steering header DO_APHOT is true,
+#    however, this primitive does not make that check.  That is to
+#    permit photometry of all the contributing frames of a mosaic.
+#    -  An error occurs when the filter is not one of I, Z, J, H, K,
+#    L, or M.
+#    -  The standard-star catalogue used is $ORAC_DATA_CAL/fs_izjhklm.dat.
+#    However, if this file is unavailable, the script accesses the old
+#    $ORAC_DATA_CAL/fs2000.dat, but only for JHK data.  The indices are
+#    reduced by two since there is no preceding I and Z columns.  An error
+#    results when both catalogues cannot be opened.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC, Starlink)
+#
+# Copyright:
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# For OS-independent filename creation.
+    use File::Spec;
+
+# Assign some defaults.
+    my $catname = " ";
+    my $defnullmag = 99.999;
+
+# Arguments
+# =========
+
+# Obtain the suffix value for the file name in the log.  Used
+# for NOD positive and negative images, but normally set to null.
+    my $objname = ( defined( $_UKIRT_STANDARD_MAGNITUDE_{NAME} ) ?
+                     $_UKIRT_STANDARD_MAGNITUDE_{NAME} : "" );
+    if ( $objname eq "" ) {
+       orac_err "Programming error: _UKIRT_STANDARD_MAGNITUDE_ not " .
+                "supplied an object name.\n";
+    }
+
+# Obtain the waveband for the magnitude.
+    my $waveband = ( defined( $_UKIRT_STANDARD_MAGNITUDE_{WAVEBAND} ) ?
+                   $_UKIRT_STANDARD_MAGNITUDE_{WAVEBAND} : "K" );
+    if ( $waveband !~ /^[IZJHKLM]/ ) {
+       orac_err "Programming error: _UKIRT_STANDARD_MAGNITUDE_ " .
+                "supplied $waveband, which is not a valid waveband. " .
+                "Allowed options are I, Z, J, H, K, L, M.\n";
+    }
+
+# Obtain the column name for the magnitude.
+    my $nullmag = ( defined( $_UKIRT_STANDARD_MAGNITUDE_{NULLMAG} ) ? 
+                    $_UKIRT_STANDARD_MAGNITUDE_{NULLMAG} : $defnullmag );
+    $catmag = $nullmag;
+    
+# Extract the standard's name(s).
+# ===============================
+
+# Remove spaces from the name, and convert to uppercase for later
+# comparison.
+    ( my $starname = uc( $objname ) ) =~ s/ //g;
+
+# More than one naming is used and some observatories use more than
+# one catalogue name in the object name.  UKIRT Faint Standards have
+# name FSn, where n is the number.
+
+# Here we look for the ESO format, which is the HST name underscore then
+# the four-digit Persson number.
+    my $hstname = "";
+    my $pername = "";
+    my $undpos = index( $starname, "_" );
+    if ( $undpos > -1 ) {
+       $hstname = substr( $starname, 0 , $undpos );
+       $pername = substr( $starname, $undpos + 1, 4 );
+    }
+
+# Read the catalogue.
+# ===================
+
+# The original catalogue contained only JHK photometry.
+    my $standards_file;
+    my $jhk = 1;
+
+# Define the character to indicate a null value in the standards' table.
+    my $nullcol = "&";
+
+# Open the faint-standards file and store its records in an array.
+    my $catpath = $ENV{ "ORAC_DATA_CAL" };
+    $standards_file = File::Spec->catfile( $catpath, "fs_izjhklm.dat" );
+
+    my $fh_standards;
+    if ( -e $standards_file ) {
+       open( $fh_standards, "<$standards_file" ) || 
+         orac_warn "Standards file $standards_file could not be opened.  Error: $!.\n";
+
+# Record the fact that we are reading the new-format IZJHKLM file, not
+# the old file of just JHK data.
+       $jhk = 0;
+
+# Try the old JHK file incase the latest standards compilation is not
+# available.  For IZLM the raw file must be fs_izjhklm.
+    } elsif ( $waveband =~ /^[JHK]/ ) {
+       $standards_file = File::Spec->catfile( $catpath, "fs2000.dat" );
+       if ( !-e $standards_file ) {
+          $standards_file = "fs2000.dat";
+       }
+       open( $fh_standards, "<$standards_file" ) || 
+         orac_warn "JHK Standards file $standards_file could not be opened.  Error: $!\n";
+    }
+    my @stds = <$fh_standards>;
+
+# Remove trailing blanks and newline.
+    for ( @stds ) {
+       chomp;
+       s/\s+$//;
+    }
+
+# Look for the standard in the catalogue.
+# =======================================
+
+# Search through the table finding a line containing the object name.  The
+# file currently consists of some column headings, then a relational table.
+# Columns in the table include the star name, and the various magnitudes
+# or (J-H) and (H-K) colours in the old-format.
+
+# Look at each line.  Extract the name, stripping the blanks.  Proceed
+# until an uppercase match is found.  Allow for the observer to append
+# garbage at the end of the object name, so don't perform an exact match.
+    my $recno = 1;
+    my $name = " ";
+    my $othername = " ";
+    until ( $name eq $starname || $recno > $#stds || $othername eq $starname ||
+            $othername eq $hstname || $othername eq $pername ) {
+       $recno++;
+
+# New file does not have FS prefix in the first column.  Convert to
+# uppercase and remove blanks for conmparisons.
+       if ( defined( $stds[ $recno ] ) ) {
+          if ( $jhk ) {
+             $name = uc( substr( $stds[ $recno ], 0, 6 ) );
+             $othername = uc( substr( $stds[ $recno ], 8, 9 ) );
+          } else {
+             $name = "FS" . uc( substr( $stds[ $recno ], 0, 3 ) );
+             $othername = uc( substr( $stds[ $recno ], 5,11 ) );
+          }
+          $name =~ s/ //g;
+          $othername =~ s/ //g;
+       }
+    }
+
+# Extract the system magnitude of the standard.
+# =============================================
+
+# Check that a match has been found.  Use a special value to indicate
+# a null magnitude.
+    if ( $recno > $#stds ) {
+       if ( -e $standards_file ) {
+          orac_warn "Standard $objname has no tabulated $waveband magnitude in $standards_file\n";
+       } else {
+          orac_warn "The standards file $standards_file does not exist\n";
+       }
+       $catmag = $nullmag;
+
+    } else {
+
+# Remember the actual object name.
+       $catname = $othername;
+       $catname = $name if ( $name ne "FS&" );
+             
+# Extract the columns.
+       my @fields = split( / +/, $stds[ $recno ] );
+       if ( $jhk ) {
+
+# Extract and evaluate the desired magnitude directly or combined
+# with the colours.
+          if ( $waveband =~ /^K/ ) {
+             $catmag = $fields[ 9 ];
+          } elsif ( $waveband =~ /^H/ ) {
+             $catmag = $fields[ 9 ] + $fields[ 15 ];
+          } elsif ( $waveband =~ /^J/ ) {
+             $catmag = $fields[ 9 ] + $fields[ 15 ] + $fields[ 12 ];
+          }
+
+# Extract the IZJHKLM magnitudes.
+       } else {
+
+# Set up hash of columns versus filter in the current file.
+          my %wavebandindex = ( I => 8, 
+                                Z => 11,
+                                J => 14,
+                                H => 17,
+                                K => 20,
+                                L => 23,
+                                M => 26 );
+          $catmag = $fields[ $wavebandindex{ $waveband } ];
+       }
+    }
+
+# Close the stamdards data file.
+    close( $fh_standards );
+
+# Set a null magnitude if there is no value in the table for the
+# chosen star and waveband.
+    $catmag = $nullmag  if $catmag eq $nullcol;
+
+# Return the catalogue magnitude.
+    $_UKIRT_STANDARD_MAGNITUDE_{CATMAG} = $catmag;
+    $_UKIRT_STANDARD_MAGNITUDE_{CATNAME} = $catname;
+
+
+# Podule
+# ======
+
+=head1 NAME
+
+_UKIRT_STANDARD_MAGNITUDE_ -- Obtains the catalogue magnitude of a UKIRT standard.
+
+=head1 DESCRIPTION
+
+This primitive reads the faint-standard catalogue or its
+predecessor.  A case- and space-insensitive comparison of the
+supplied object name with the entries in the table provides a
+catalogue magnitude in I<I>, I<Z>, I<J>, I<H>, I<K>, I<L>, or I<M>
+for a standard star.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item CATMAG = REAL (Returned)
+
+The catalogue magnitude for the object and current frame's filter.
+
+=item NAME = CHARACTER (Given).
+
+The object name.  This can be UKIRT Faint Standard catalogue
+number, or the alternative name.
+
+=item NULLMAG = REAL (Given)
+
+A null magnitude when the object has no magnitude for the filter.
+[99.999]
+
+=item WAVEBAND = CHARACTER (Given)
+
+The name of the waveband.  It may be I, Z, J, H, K, L, or M.
+It comes from L<_GET_FILTER_PARAMETERS_|_GET_FILTER_PARAMETERS_>.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UKIRT near-infra-red imagers.
+
+=item *
+
+Processing only occurs when it is time to perform photometry,
+i.e. when the steering header DO_APHOT is true.
+
+=item *
+
+An error occurs when the filter is not one of I, Z, J, H, K, L, or M.
+
+=item *
+
+The standard-star catalogue used is F<$ORAC_DATA_CAL/fs_izjhklm.dat>.
+However, if this file is unavailable, the script accesses the old
+F<$ORAC_DATA_CAL/fs2000.dat>, but only for I<JHK> data.  The indices are
+reduced by two since there is no preceding I<I> and I<Z> columns.  An error
+results when both catalogues cannot be opened.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC, Starlink)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
