@@ -105,14 +105,17 @@ sub new {
   return $self;
 }
 
-
 =back
+
+
+
+
 
 =head2 General Methods
 
 =over 4
 
-item B<configure>
+=item B<configure>
 
 This method is used to configure the object. It is invoked
 automatically if the new() method is invoked with an argument. The
@@ -360,38 +363,6 @@ sub inout {
 }
 
 
-=back
-
-=head1 PRIVATE METHODS
-
-=over 4
-
-=item split_name
-
-Internal routine to split a 'file' name into an actual
-filename (the HDS container) and the NDF name (the
-thing inside the container).
-
-Splits on '.'
-
-Argument: string to split (eg test.i1)
-Returns:  root name, ndf name (eg 'test' and 'i1')
-
-NDF name is undef if there are no 'sub-frames'.
-
-This routine is so simple that it may not be worth the effort.
-
-=cut
-
-sub split_name {
-  my $self = shift;
-  my $file  = shift;
-
-  # Split on '.'
-  my ($root, $rest) = split(/\./, $file, 2);
-
-  return ($root, $rest);
-}
 
 =item B<findrecipe>
 
@@ -421,6 +392,79 @@ sub findrecipe {
   return $recipe;
 }
 
+=back
+
+=head1 METHODS UNIQUE TO THIS CLASS
+
+=over 4
+
+=item B<mergehdr>
+
+Method to propagate the FITS header from an HDS container to an NDF
+
+ $Frm->mergehdr;
+
+=cut
+
+sub mergehdr {
+  
+  my $self = shift;
+  my $status;
+  
+  print "It woz: ",join("-",$self->intermediates),"\n";
+  print "It iz: ",$self->file,"\n";
+
+  my $old = pop(@{$self->intermediates});
+  my $new = $self->file;
+
+  print "old $old new $new\n";
+
+  my ($root, $rest) = $self->split_name($old);
+
+  print "root $root rest $rest\n";
+
+  if (defined $rest) {
+    $status = &NDF::SAI__OK;
+    print $root.".header.more.fits","!",$new.".more.fits","\n";
+    $status = copobj($root.".header.more.fits",$new.".more.fits",$status);
+    orac_err("Failed dismally to propagate HDS header to NDF file\n") unless ($status==&NDF::SAI__OK);
+  };
+
+}
+
+
+=back
+
+=head1 PRIVATE METHODS
+
+=over 4
+
+=item B<split_name>
+
+Internal routine to split a 'file' name into an actual
+filename (the HDS container) and the NDF name (the
+thing inside the container).
+
+Splits on '.'
+
+Argument: string to split (eg test.i1)
+Returns:  root name, ndf name (eg 'test' and 'i1')
+
+NDF name is undef if there are no 'sub-frames'.
+
+This routine is so simple that it may not be worth the effort.
+
+=cut
+
+sub split_name {
+  my $self = shift;
+  my $file  = shift;
+
+  # Split on '.'
+  my ($root, $rest) = split(/\./, $file, 2);
+
+  return ($root, $rest);
+}
 
 =back
 
