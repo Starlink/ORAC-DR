@@ -953,8 +953,6 @@ sub orac_process_argument_list {
   # if we have defined it prepend orac_loop_
   $loop = "orac_loop_$loop" if defined $loop;
 
-  print "Loop is $loop  Obs is @$obs\n";
-
   # Return the answer
   return $loop;
 
