@@ -20,7 +20,7 @@ Provides the routines for parsing and executing recipes.
 =cut
 
 use Carp;
-use vars qw($VERSION @ISA @EXPORT $Display $Nbs $Batch);
+use vars qw($VERSION @ISA @EXPORT $Display $Nbs $Batch $DEBUG);
 
 use strict;
 
@@ -54,6 +54,7 @@ $VERSION = '0.10';
 $Display = undef;   # Display object - only configured if we have a display
 
 $Batch   = 0;       # True if we are running in batch mode
+$DEBUG   = 0;       # True for extra debugging
 
 #------------------------------------------------------------------------
 
@@ -179,6 +180,14 @@ sub orac_execute_recipe {
       orac_err("Recipe died during execution\n");
 
     }
+
+    # If debugging is turned on, dump the recipe on error
+    if ($DEBUG) {
+      my $fh = new IO::File("> ORACDR_RECIPE.dump");
+      print $fh join('',@recipe). "\n";
+      orac_err("Recipe contents dumped to ORACDR_RECIPE.dump\n")
+    }
+
 
     # Exit from the pipeline
     # Do this until we debug everything
@@ -331,8 +340,9 @@ to a hash.
 sub orac_parse_arguments {
 
   my $line = shift;
-
   my %hash = ();
+
+  return %hash unless defined $line;
   
   # Split the string on space
   my @arguments = split(/\s+/,$line);
@@ -384,6 +394,7 @@ sub orac_parse_recipe {
       $line =~ s/^\s+//;	# zap leading blanks
       $line =~ s/\s*$//;        # Zap trailing blanks
       my ($macro,$rest) = split(/\s+/,$line,2);
+      $rest = '' unless defined $rest; # -w protection for next line
 
       # Parse any arguments. Add a line that runs orac_parse_arguments
       # on $rest and sets a hash called %macro
@@ -528,9 +539,12 @@ sub orac_check_obey_status {
 
   # Do the regexp separately so that we can handle the situation
   # where the monolith path is not stored in a hash
-  $line =~ /\{(\w+)\}->obeyw/ && ($monolith = $1);
+  $line =~ /\{[\'\"]*(\w+)[\'\"]*\}->obeyw/ && ($monolith = $1);
   $line =~ /->obeyw\(\"(\w+)\"/ && ($task = $1);
   $line =~ /->obeyw\(\"\w+\"\s*,\s*\"(.+)\"/ && ($args = $1);
+  $args = '(No arguments)' unless defined $args;
+  $monolith = '(None!!)' unless defined $monolith;
+  $task = '(Unknown)' unless defined $task;
 
   # Need to be careful of what gets expanded when the
   # lines are added to the recipe and what gets expanded 
@@ -543,7 +557,7 @@ sub orac_check_obey_status {
 		     '  orac_print("Arguments were: ","blue");',
                      '  orac_print("$obeyw_args\n\n","red"); ',
 		     '  return $OBEYW_STATUS;',
-		     "}"
+		     '}'
 		    );
 
   # Add newlines to each line of the text so that it appears 
@@ -568,8 +582,9 @@ Exit handler for oracdr.
 =cut
 
 sub orac_exit_normally {
+  my $message = '';
+  $message = shift if @_;
 
-  my $message = shift(@_);
   orac_print ("$message - Exiting...\n","red");
 
   rmtree $ENV{'ADAM_USER'};             # delete process-specific adam dir
@@ -585,8 +600,8 @@ Exit handler when a problem has been encountered.
 =cut
 
 sub orac_exit_abnormally {
-
-  my $signal = shift;
+  my $signal = '';
+  my $signal = shift if @_;
 
   # Dont delete tree since this routine is called from INSIDE recipes
 #  rmtree $ENV{'ADAM_USER'};             # delete process-specific adam dir
@@ -612,6 +627,10 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.31  1999/04/21 21:36:04  timj
+#Fix -w
+#Add recipe dump on error for -debug
+#
 #Revision 1.30  1999/04/21 00:48:13  timj
 #Turn on use strict
 #
