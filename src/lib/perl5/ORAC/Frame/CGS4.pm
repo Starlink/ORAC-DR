@@ -357,39 +357,6 @@ sub findnsubs {
 
 }
 
-=item B<flag_from_bits>
-
-Determine the name of the flag file given the variable
-component parts. A prefix (usually UT) and observation number
-should be supplied
-
-  $flag = $Frm->flag_from_bits($prefix, $obsnum);
-
-This particular method returns back the flag file associated with
-CGS4 and is usually of the form:
-
-  .cYYYYMMDD_NNNNN.ok
-
-=cut
-
-
-
-sub flag_from_bits {
-  my $self = shift;
-
-  my $prefix = shift;
-  my $obsnum = shift;
-
-  # flag files for CGS4 of the type .cYYYYMMDD_NNNNN.ok
-  my $raw = $self->file_from_bits($prefix, $obsnum);
-
-  # raw includes the .sdf so we have to strip it
-  $raw = $self->stripfname($raw);
-
-  my $flag = ".".$raw.".ok";
-
-}
-
 =item B<inout>
 
 Method to return the current input filename and the new output
