@@ -28,10 +28,18 @@
 # Arguments:
 #    ANGLE = REAL (Given)
 #       Rotation angle of the Declination axis with respect to the
-#       frame's y axis measured counter clockwise.
+#       frame's y axis measured counter clockwise.  [Value of CROTA2
+#       header or 0.0 if the header does not exist]
 #    BOXSIZE = REAL (Given)
 #       The size in arcseconds of the search box in which to find the
 #       brightest object.  It is only used when SEARCH_BOX is true.
+#    OFFSET_TYPE = CHARACTER (Given)
+#       The type of offsets used as a last resort.  This will normally
+#       be "telescope", but for polarimetry mosaics it will be
+#       "beam-separation".  The string merely appears in informational
+#       messages.  The offsets themselves for polarimetry or any type of
+#       offset should already be stored in the telescope offsets.
+#       ["telescope"]
 #    SEARCH_BOX = LOGICAL (Given)
 #       If set to true (1), attempt to find the offsets from a central
 #       source, otherwise use the telescope offsets.
@@ -95,11 +103,9 @@
        my $yshift_toref = defined( $_FIND_APPROX_OFFSETS_{YSHIFT} ) ?
                           $_FIND_APPROX_OFFSETS_{YSHIFT} : 0;
 
-# Define some useful variables to apply the rotation matrix.
-       my $pi = atan2( 1, 1 ) * 4;
-       my $dtor = $pi / 180.0;
-       my $cosrot = cos( $rotangle * $dtor );
-       my $sinrot = sin( $rotangle * $dtor );
+# Obtain the offset type, using "telescope" as the default string.
+       my $offset_type = $_GENERATE_OFFSETS_{OFFSET_TYPE};
+       $offset_type = defined( $offset_type ) ? $offset_type : "telescope";
 
 # Create text files
 # =================
@@ -129,60 +135,47 @@
        my ( $xfiducial, $yfiducial, $xorigin, $yorigin );
 
 # Loop through all the frames.
-       foreach my $Frame ( $Grp->members ) {
+       foreach my $Frm ( $Grp->members ) {
 
-# Obtain the plate scales for the instrument from the headers.
-          my ( $xpixelscale, $ypixelscale );
-          my $instrument = $Frame->hdr( "INSTRUME" );
+# Obtain the x plate scale for the instrument from the headers.
+          my $xpixelscale;
+          my $instrument = $Frm->hdr( "INSTRUME" );
           if ( $instrument =~ /^UFTI/ ) {
-             $xpixelscale = $Frame->hdr( "CDELT1" );
-             $ypixelscale = $Frame->hdr( "CDELT2" );
+             $xpixelscale = $Frm->hdr( "CDELT1" );
           } else {
-             $xpixelscale = $Frame->hdr( "PIXELSIZ" );
-             $ypixelscale = $xpixelscale;
+             $xpixelscale = $Frm->hdr( "PIXELSIZ" );
           }
 
 # Find the boxsize in pixels.
           my $boxpix = $boxangle / $xpixelscale;
 
-# Obtain the offsets.  Try the xhead offsets first. (Currently not available
-# so use the telescope offsets.)
-          my ( $xoffh, $yoffh );
-          if ( $instrument =~ /^UFTI/ ) {
-             $xoffh = $Frame->hdr( "TRAOFF" );
-             $yoffh = $Frame->hdr( "TDECOFF" );
+# Obtain from the headers the plate scales, rotation, and telescope offsets
+# in arcsec for the instrument, and convert to Cartesian co-ordinates.
+# At present this does not try the xhead offsets first, as they're not
+# available.
+          _GET_CARTESIAN_TELESCOPE_OFFSETS_
+          my $xoff = $_GET_CARTESIAN_TELESCOPE_OFFSETS_{XOFF};
+          my $yoff = $_GET_CARTESIAN_TELESCOPE_OFFSETS_{YOFF};
+
+# Set the offset type string for reporting the status.
+          my $offtype = $offset_type;
+
+# The telescope offsets are either the values just found, or for
+# polarisation data they are identical.  Since it is relative positions
+# which matter, set the telescope offsets for polarisation images to a
+# constant.  In practice the original values will normally be zero
+# anyway.
+          my ( $xteloff, $yteloff );
+          if ( $offtype =~ /^beam/ ) {
+             $xteloff = 0.0;
+             $yteloff = 0.0;
           } else {
-             $xoffh = $Frame->hdr( "RAOFF" );
-             $yoffh = $Frame->hdr( "DECOFF" );
+             $xteloff = $xoff;
+             $yteloff = $yoff;
           }
-          my $offtype = "telescope";
-
-# If the values are both zero or there was an error (presumably arising
-# when the keyword is absent), this means the crosshead offsets are not
-# used.  Instead use the telescope offsets.  Also cope when there is an
-# error.
-          if ( ( $xoffh == 0 && $yoffh == 0 ) ) {
-             if ( $instrument =~ /^UFTI/ ) {
-                $xoffh = $Frame->hdr( "TRAOFF" );
-                $yoffh = $Frame->hdr( "TDECOFF" );
-             } else {
-                $xoffh = $Frame->hdr( "RAOFF" );
-                $yoffh = $Frame->hdr( "DECOFF" );
-             }
-             $offtype = "telescope";
-          }
-
-# Convert header offsets in arcseconds to pixel offsets of the object
-# in the Cartesian sense.
-          my $xoffs = $xoffh / $xpixelscale;
-          my $yoffs = -1.0 * $yoffh / $ypixelscale;
-
-# Apply the rotation matrix.
-          my $xoff = $xoffs * $cosrot - $yoffs * $sinrot;
-          my $yoff = $xoffs * $sinrot + $yoffs * $cosrot;
 
 # Locate the centre of the frame by inquiring the frame's attributes.
-          my $ndf = $Frame->file;
+          my $ndf = $Frm->file;
           $Mon{"ndfpack_mon"}->obeyw("ndftrace","ndf=$ndf");
           ( my $ORAC_STATUS, my @lbnd ) = $Mon{"ndfpack_mon"}->get("ndftrace","lbound");
           ( $ORAC_STATUS, my @ubnd ) = $Mon{"ndfpack_mon"}->get("ndftrace","ubound");
@@ -204,8 +197,8 @@
           if ( $usecentral && ! $first ) {
 
 # Derive the centre co-ordinates of the box.
-             my $xcentre = $xmid + $xoff;
-             my $ycentre = $ymid + $yoff;
+             my $xcentre = $xmid + $xteloff;
+             my $ycentre = $ymid + $yteloff;
 
 # Define pixel limits of the detection box.
              my $xlbox = $xcentre - 0.5 * $boxpix;
@@ -256,8 +249,8 @@
 # Need a common origin for the header and central-source offsets.  The chosen
 # origin is the offset of the first frame.  Then adjust the fiducial point for
 # the central offsets to match.  However, that cannot be found here as the
-# centroid's location is not known.  Do not report these offsets or store them in
-# the offset file.
+# centroid's location is not known.  Do not report these offsets or store
+# them in the offset file.
           if ( $first ) {
              $xorigin = $xoff;
              $yorigin = $yoff;
@@ -349,12 +342,22 @@ The offsets and the registration method are reported.
 =item ANGLE = REAL (Given)
 
 Rotation angle of the Declination axis with respect to the
-frame's y axis measured counter clockwise.
+frame's y axis measured counter clockwise.  [Value of CROTA2
+header or 0.0 if the header does not exist]
 
 =item BOXSIZE = REAL (Given)
 
 The size in arcseconds of the search box in which to find the
 brightest object.  It is only used when SEARCH_BOX is true.
+
+=item OFFSET_TYPE = CHARACTER (Given)
+
+The type of offsets used as a last resort.  This will normally
+be "telescope", but for polarimetry mosaics it will be
+"beam-separation".  The string merely appears in informational
+messages.  The offsets themselves for polarimetry or any type of
+offset should already be stored in the telescope offsets.
+["telescope"]
 
 =item SEARCH_BOX = LOGICAL (Given)
 
