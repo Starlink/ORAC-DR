@@ -193,11 +193,11 @@ sub display_data {
 
   # Get the number of files
   my $nfiles;
-  if ($frm->can('num_files')) {
-    $nfiles = $frm->num_files;
+  if ($frm->can('nfiles')) {
+    $nfiles = $frm->nfiles;
   } else {
     croak "ORAC::Display::display_data: supplied object can not implement\n".
-      " the num_files() method.";
+      " the nfiles() method.";
   }
   
   # Now loop over each input file
