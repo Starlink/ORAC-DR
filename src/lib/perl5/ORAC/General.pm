@@ -59,12 +59,12 @@ the subroutine in an array context.
 =cut
 
 sub min {
-  my (@z) = @_;
-  my ($zmin) = $z[$[];
-  my @min = grep((($_ <= $zmin) && ($zmin = $_)),@z);
-  ($#min == -1) && push(@min,$zmin);
-  my $answer = $min[$#min];
-};
+  my $zmin = $_[0];
+  foreach (@_) {
+    ($_ < $zmin) && ($zmin = $_);
+  }
+  return $zmin;
+}
 
 =item max(ARRAY)
 
@@ -78,12 +78,12 @@ the subroutine in an array context.
 =cut
 
 sub max {
-  my (@z) = @_;
-  my ($zmax) = $z[$[];
-  my @max = grep((($_ >= $zmax) && ($zmax = $_)),@z);
-  ($#max == -1) && push(@max,$zmax);
-  my $answer =  $max[$#max];
-};
+  my $zmax = $_[0];
+  foreach (@_) {
+    ($_ > $zmax) && ($zmax = $_);
+  }
+  return $zmax;
+}
 
 
 =item log10(scalar)
@@ -128,13 +128,13 @@ Return the UT date (strictly, GMT) date in the format yyyymmdd
 =cut
 
 sub utdate {
- 
+
   my ($day,$month,$year) = (gmtime)[3..5];
   $month++;
   $year += 1900;
   my $yyyymmdd = $year . '0'x (2-length($month)) . $month . '0'x (2-length($day)) . $day;
 
-};
+}
 
 =item parse_keyvalues
 
@@ -156,8 +156,7 @@ sub parse_keyvalues {
   };
 
   return %hash;
-
-};
+}
 
 
 =item parse_obslist(list)
@@ -198,7 +197,7 @@ sub parse_obslist {
 
     $obs[$i] =~ /:/ && do {
       my ($start, $end) = split ( /:/, $obs[$i]);
- 
+
       # Generate the range
       my @junk = $start..$end;
 
