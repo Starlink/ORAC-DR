@@ -196,6 +196,42 @@ sub findrecipe {
 
 }
 
+=item calc_orac_headers
+
+This method calculates header values that are required by the
+pipeline by using values stored in the header.
+
+An example is ORACTIME that should be set to the time of the
+observation in hours. Instrument specific frame objects
+are responsible for setting this value from their header.
+
+Should be run after a header is set. Currently the header()
+method calls this whenever it is updated.
+
+This method updates the frame header.
+Returns a hash containing the new keywords.
+
+=cut
+
+sub calc_orac_headers {
+  my $self = shift;
+
+  my %new = ();  # Hash containing the derived headers
+
+  # ORACTIME
+  # For UFTI the keyword is simply UTSTART
+  # Just return it (zero if not available)
+  my $time = $self->hdr('UTSTART');
+  $time = 0 unless (defined $time);
+  $self->hdr('ORACTIME', $time);
+
+  $new{'ORACTIME'} = $time;
+  return %new;
+}
+
+
+
+
 
 =back
 
