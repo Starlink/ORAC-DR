@@ -1,0 +1,145 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_INTERLEAVE_MICROSTEPS_ -- Interleave images taken in a microstep
+pattern.
+
+=head1 DESCRIPTION
+
+This primitive takes images in a group taken in a microstep pattern
+and interleaves them to form a higher-resolution image. These microsteps
+are fractional pixel jitters that are done to compensate for large
+pixel sizes.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for WFCAM.
+
+=item *
+
+Processing only occurs for object and sky frames.
+
+=back
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# This should only be performed on OBJECT frames.
+if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
+
+# Check to see if it's time to do the interleaving yet.
+  if( $Frm->uhdr("INTERLEAVE_MICROSTEPS") == 1 ) {
+
+# Set the output filename. Note that it's a group file.
+    my $out = $Grp->raw . "_int";
+
+# Retrieve the number of microsteps.
+    my $n_usteps = $Frm->uhdr("NUMBER_OF_MICROSTEPS");
+
+    if( ! defined( $n_usteps ) ) {
+      orac_throw "Number of microsteps undefined.\n";
+    }
+
+# Create some temporary files.
+    my @tempfiles;
+    for(1..$n_usteps) {
+      my $tempfile = new ORAC::TempFile;
+      push @tempfiles, $tempfile;
+    }
+
+# Create a textfile for MAKEMOS.
+    my $makemosfile = "makemos$$.lis";
+    open my $fh, ">$makemosfile" ||
+      orac_warn "Could not open temporary MAKEMOS list file: $!\n";
+
+# Get the appropriate mask, copy it locally.
+    my $mask = $Cal->interleavemask;
+    orac_print "Using $mask to mask duplicated rows and columns.\n";
+    if( ! -e $mask ) {
+
+# The mask doesn't exist locally, so copy it.
+      my $origmask = $Cal->find_file( $mask . ".sdf" );
+      $origmask =~ s/\.sdf$//;
+      $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$origmask out=$mask");
+    }
+
+# Grab the last N frames in the group.
+    my @interleave_frames = ($Grp->members)[(-$n_usteps)..-1];
+
+    for(0..$#interleave_frames) {
+      my $i = $_;
+      my $tempfile = $tempfiles[$i];
+      my $Frame = $interleave_frames[$i];
+
+      my $tempname = $tempfile->file;
+      my $in = $Frame->file;
+
+# Need a temporary file for pixdupe.
+      my $pixtemp = new ORAC::TempFile;
+      my $pixtempfile = $pixtemp->file;
+
+# Expand the frame to whatever the square root of the number
+# of microsteps is.
+      my $expand_factor = int(sqrt($n_usteps));
+      orac_print "Expanding $in by a factor of $expand_factor along both axes.\n";
+      my $params = "in=$in out=$pixtempfile title=! expand=$expand_factor";
+      $Mon{'kappa_mon'}->obeyw( "pixdupe", "$params" );
+
+# Shift the origin of the mask.
+      my $mask_x_origin = $Frame->uhdr("MASK_X_ORIGIN");
+      my $mask_y_origin = $Frame->uhdr("MASK_Y_ORIGIN");
+      orac_print "Shifting mask origin to $mask_x_origin,$mask_y_origin\n";
+      $params = "ndf=$mask origin=[$mask_x_origin,$mask_y_origin]";
+      $Mon{'ndfpack_mon'}->obeyw( "setorigin", "$params" );
+
+# Mask out the rows and columns into the temporary file we created
+# before this loop -- created so it doesn't lose scope and disappear
+# after this loop is finished.
+      orac_print "Masking out duplicate rows and columns.\n";
+      $params = "in1=$pixtempfile in2=$mask out=$tempname title=!";
+      $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+
+# Shift the origin of the masked frame.
+      my $new_x_origin = $Frame->uhdr("NEW_X_ORIGIN");
+      my $new_y_origin = $Frame->uhdr("NEW_Y_ORIGIN");
+      orac_print "Shifting masked frame origin to $new_x_origin,$new_y_origin\n";
+      $params = "ndf=$tempname origin=[$new_x_origin,$new_y_origin]";
+      $Mon{'ndfpack_mon'}->obeyw( "setorigin", "$params" );
+
+# Print the filename to the MAKEMOS list file.
+      print $fh "$tempname\n";
+    }
+
+    close $fh;
+
+# Run MAKEMOS.
+    my $params = "genvar=false usevar=false logto=neither logfile=!";
+    $params .= " method=mean scale=false zero=false in='^makemos$$.lis'";
+    $params .= " title=$out out=$out";
+    orac_print "Interleaving frames... ";
+    $Mon{'ccdpack_reg'}->obeyw( "makemos", "$params" );
+    orac_print "done.\n";
+
+    orac_print "$out: Interleaved microsteps.\n";
+
+    unlink "makemos$$.lis";
+
+  }
+
+}
+
+# Tidy output.
+orac_print "\n";
