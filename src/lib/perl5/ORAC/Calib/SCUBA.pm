@@ -198,7 +198,7 @@ $DEBUG = 0; # Turn off debugging mode
 		     BEAM  => 230,
 		    },
 		    {
-		     START => 20030508,
+		     START => 20030408,
 		     END   => 20030517,
 		     ARCSEC=> 0.83,
 		     BEAM  => 213,
