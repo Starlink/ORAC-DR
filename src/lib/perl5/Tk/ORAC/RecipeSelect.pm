@@ -36,7 +36,6 @@ option. The widget method C<Show> returns a selected recipe and path, e.g.
 #
 #   ORAC modules
 #
-use lib $ENV{"ORAC_PERL5LIB"};     # Path to ORAC modules
 use ORAC::Inst::Defn qw/ orac_determine_recipe_search_path /;
 use ORAC::Error;
 use ORAC::Constants qw/:status/;
