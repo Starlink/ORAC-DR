@@ -393,12 +393,12 @@ sub orac_determine_inst_classes {
   } elsif ($inst eq 'NIRI') {
     $groupclass = "ORAC::Group::NIRI";
     $frameclass = "ORAC::Frame::NIRI";
-    $calclass = "ORAC::Calib::UIST";
+    $calclass = "ORAC::Calib::NIRI";
     $instclass = "ORAC::Inst::NIRI";
   } elsif ($inst eq 'NIRI2') {
     $groupclass = "ORAC::Group::NIRI";
     $frameclass = "ORAC::Frame::NIRI2";
-    $calclass = "ORAC::Calib::UIST";
+    $calclass = "ORAC::Calib::NIRI";
     $instclass = "ORAC::Inst::NIRI";
   } elsif ($inst eq 'CLASSICCAM') {
     $groupclass = "ORAC::Group::ClassicCam";
