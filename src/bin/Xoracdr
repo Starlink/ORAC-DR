@@ -212,6 +212,8 @@ xorac_update_progress('Loaded ORAC Modules', 5);
 #
 use Pod::Usage;
 use Getopt::Long;
+use POSIX qw/:sys_wait_h/;
+use Errno qw/EAGAIN/;
 
 # 
 # Tk modules
@@ -347,18 +349,36 @@ $menus[1]->menu()->add( "checkbutton",
 			-selectcolor => 'blue' );
 $menus[1]->menu()->add( "separator" );
 
-# This is a quick kludge to show proof of concept, insert something alot
-# more elgant before we give it to the users to play with as its doubtful
-# that ORACDISP has all the environment variables it needs to run
+# fork() ORACDISP and check the pid so we don't start two copies 
+my ( $pid, $dead );
+
 $menus[1]->menu()->add( "command",
                         -label   => "Configure Display",
                         -command => 
-	sub { my $system_status = 
-	          system "$ENV{'STARPERL'} $ENV{ORAC_DIR}/bin/oracdisp";
-	      if( $system_status != 0 )
-	      {
-	         orac_err(" Unable to execute ORACDISP\n");
-	      } });
+  sub { 
+       $dead = waitpid ($pid, &WNOHANG);
+       #  $dead = $pid when the process dies
+       #  $dead = -1 if the process doesn't exist
+       #  $dead = 0 if the process isn't dead yet
+       if ( $dead != 0 ) {
+          FORK: { 
+             if ($pid = fork) {
+                return;
+	     } elsif ( defined $pid ) {
+	        exec ("$ENV{'STARPERL'} $ENV{'ORAC_DIR'}/bin/oracdisp");
+	     } elsif ($! == EAGAIN ) {
+	        # This is a supposedly recoverable fork error
+                orac_err(" Recoverable fork() error, hang on...\n");
+       	        sleep 5;
+		redo FORK;
+	     } else {
+	        # Fall over and die screaming
+	        orac_err(" Unable to fork() ORACDISP, this is fairly odd.\n");
+		return;
+	     }
+	  }
+       }    
+     });   
 
 # Options menu
 $menus[2]->pack( -side => 'left' );
@@ -1242,6 +1262,9 @@ catch ORAC::Error::UserAbort with
 # R E V I S I O N  L O G ----------------------------------------------------
 
 # $Log$
+# Revision 1.9  2001/03/03 01:53:03  allan
+# Spawn ORACDISP using fork() and check waitpid
+#
 # Revision 1.8  2001/03/02 21:26:55  allan
 # GUI changes to support not forcing a -loop definition
 #
