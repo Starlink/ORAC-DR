@@ -64,8 +64,13 @@ my $root;
 my $in;
 
 if ($nogrp) {
-    $root = $Frm->raw;
-    $in = $Frm->file;
+    # Get the input filename and obtain the root of the filename (ie all
+    # except the final suffix) by using the inout method to attach a suffix
+    # of _Z and a substitution to remove the _Z (is there a more direct way
+    # to do this?)
+
+    ($in, $root) = $Frm->inout("_Z");
+    $out =~ s/_Z$//;
 } else {
     $root = $Grp->raw;
     $in = $Grp->file;
@@ -90,9 +95,9 @@ if (-e $data_file) {
 	my $error_flag = 0;
 
 	# Check that the file extension is defined and consists only of 
-	# characters alphanumeric.
+	# alphanumeric characters.
 	next unless (defined ($ext));
-	unless ($ext =~ m/^\w+$/) {
+	unless ($ext =~ m/^[[:alnum:]]+$/) {
 	    orac_print "$ext is not a suitable file extension.\nIt should contain only alphanumeric characters.\n";
 	    $error_flag++;
 	}
@@ -100,25 +105,38 @@ if (-e $data_file) {
 	# Check that lambda contains 2 or 4 wavelengths, and that they are
 	# within the range of wavelengths of the datacube.
 	
-	if (@lambda == 2 or @lambda == 4) {
+	if ($error_flag == 0 and (@lambda == 2 or @lambda == 4)) {
 	    foreach (@lambda) {
-		unless ($_ >= $Frm->uhdr("lambda_min") and 
-			$_ <= $Frm->uhdr("lambda_max")) {
-		    orac_print "$_ is outside the wavelength range of this datacube\n(line $line of $data_file).\n";
+
+		# If the entry contains only digits then add .0 on the 
+		# end so that kappa interprets it as a wavelength and not
+		# as a pixel index.
+		if ($_ =~ m/^[[:digit:]]+$/) {
+		    $_ .= ".0";
+		}
+		
+		# Check that it looks like a floating point number now
+		# and that it is within the range of wavelengths of the
+		# current frame.
+		if ($_ =~ m/^\d+\.\d+$/) {
+		    unless ($_ >= $Frm->uhdr("lambda_min") and 
+			    $_ <= $Frm->uhdr("lambda_max")) {
+			orac_print "$_ is outside the wavelength range of this datacube\n(line $line of $data_file).\n";
+			$error_flag++;
+		    }
+		} else {
+		    orac_print "$_ is not a valid wavelength.\n";
 		    $error_flag++;
 		}
+	    } else {    
+		orac_print "Each line of $data_file should contain two or four wavelengths.\n";
+		$error_flag++;
 	    }
-	} else {    
-	    orac_print "Each line of $data_file should contain two or four wavelengths.\n";
-	    $error_flag++;
 	}
 	     
 
 	# Skip to the next line if we've found any problems.
-	if ($error_flag > 0) {
-	    orac_print "Problems with line $line of $data_file. Ignoring.\n";
-	    next;
-	}
+	next if ($error_flag > 0);
 	
 	my $out = $root . "_$ext";
 	
