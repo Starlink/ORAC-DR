@@ -417,7 +417,8 @@ sub send_to_gaia {
   my $sock = $self->sock();
 
   # Check socket
-  my $timeout = 10.0; # no point waiting longer than 10 seconds
+  my $timeout = 30.0; # no point waiting longer than 30 seconds
+                      # even if the images are enormous
   my $res = $self->sel->can_write($timeout);
 
   # have a problem if returns undef from can_write
