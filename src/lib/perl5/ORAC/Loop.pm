@@ -661,11 +661,23 @@ sub orac_check_data_dir {
   # If FLAG is true then we simply search for the dot files with 
   # a .ok at the end 
 
+  # SCUBA does not have .ok
+
   my $pattern;
 
   if ($flag) {
+    # This only works for flag files that end in .ok
+    # so get a dummy flag file
+    my $dflag = $DummyFrm->flag_from_bits('p',1);
+    if ($dflag =~ /\.ok$/) {
+      $pattern = '^\..*\.ok$';   # ' - dummy quote for emacs colour
+    } else {
+      # look for a hidden file that starts with a . and has
+      # the fixed part string in it
+      my $f = $DummyFrm->rawfixedpart;
+      $pattern = '^\..*'.$f;
+    }
 
-    $pattern = '^\..*\.ok$';   # ' - dummy quote for emacs colour
   } else {
 
     # We are matching data files. Try to match a string that
