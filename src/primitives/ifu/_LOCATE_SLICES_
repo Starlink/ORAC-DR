@@ -11,9 +11,11 @@
 #   Perl5
 #
 # Description:
-#   The grism is identified using the GRISM1 and GRISM2 headers. This
-#   is used to look up the y offset that must be applied to the positions
-#   of the slices recorded in ifu_profile.dat
+#   The positions of the slices are obtained from the ifu_profile.dat file.
+#   The y offset which should be applied to these positions (which is different
+#   for each grism) is obtained from the grism data file returned by the 
+#   calibration system. All lines of this file are ignored unless they begin
+#   Offset:
 #
 #   The positions of the slices and the x and y shift that should be applied
 #   to each one to align them in the y and spectral directions are written
@@ -35,10 +37,11 @@
 #    - The ifu_profile.dat file has one row for each slice, each containing
 #      four whitespace separated fields (ystart yend xshift yshift). All are
 #      integers except yshift.
-#    - the grisms.dat file has one line per grism with two fields per line
-#      (grism name, y offset). y offset should be an integer number of pixels
-#      to be added to the ystart and yend values in ifu_profile.dat when each
-#      grism is used.
+#    - There is one grism data file per grism (actually more than one if the
+#      grism is used in different orders). The correct file is obtained via
+#      the calibration system. The line used in this primitive is
+#             Offset: num
+#      All lines not beginning Offset: are ignored.
 # 
 # Output Data:
 #    - No new file is created. The user headers IFU_start, IFU_end, IFU_xshift 
@@ -56,6 +59,7 @@
 #
 #-
 
+use FileHandle;
 
 # Load the ifu_profile.dat file, giving the y positions of the slices
 # and the shifts that should be applied to them.
@@ -65,7 +69,8 @@ my $profile_file = $ENV{ORAC_DATA_CAL} . "/ifu_profile.dat";
 
 # Read the positions of the slices
 
-open(my $profile, $profile_file) || die "Could not open $profile_file \n";
+my $profile = new FileHandle;
+open($profile, $profile_file) || die "Could not open $profile_file \n";
 while (my $str = <$profile>) {
       next if $str eq "\n";
       push @slice_data, [ split /\s+/, $str ] ;
@@ -76,31 +81,25 @@ close $profile;
 # Set the y offset to be applied to all the y bounds (different for
 # each grism).
 
-# What grism are we using?
-my $grism1=$Frm->hdr("GRISM1");
-my $grism2=$Frm->hdr("GRISM2");
-my $grism;
+# Get the grism data file from the calibration system
+my $grism_file = $ENV{ORAC_DATA_CAL} . "/" . $Cal->grism;
+orac_print "Using $grism_file \n";
 
-# We want to know about the one that isn't open
-if ($grism1 ne "Open" && $grism2 eq "Open") {$grism=$grism1;}
-if ($grism1 eq "Open" && $grism2 ne "Open") {$grism=$grism2;}
-unless (defined $grism) {die "Unable to identify grism.\n";}
-
-
-# Load the grism data
-my $offset_file = $ENV{ORAC_DATA_CAL} . "/grism_offset.dat";
-open(my $offsets, $offset_file) || die "Could not open $offset_file \n";
 my $offset;
 
-# Look at each line of the file skipping those which don't start with the 
-# correct grism name
-while (my $str = <$offsets>) {
-    next if (index ($str, $grism) < 0);
-    (my $name, $offset) = split(' ' , $str);
-}
-close $offsets;
+# And read the file looking for the line which begins Offset:
+my $file = new FileHandle;
 
-unless (defined $offset) {die "Unable to find offset for grism $grism.\n";}
+open($file, $grism_file) || die "Could not open $grism_file \n";
+while (my $str = <$file>) {
+    next unless ($str =~ /^Offset:\s(\d+)/);
+    $offset = $1;
+}
+close $file;
+
+
+
+unless (defined $offset) {die "Unable to find offset for grism.\n";}
 
 # n used to count the slices
 # @y1 and @y2 hold the ystart and yend values respectively
@@ -145,9 +144,11 @@ _LOCATE_SLICES_ -- Locates the slices in an IFU frame.
 
 =head1 DESCRIPTION
 
-The grism is identified using the GRISM1 and GRISM2 headers. This
-is used to look up the y offset that must be applied to the positions
-of the slices recorded in ifu_profile.dat
+The positions of the slices are obtained from the ifu_profile.dat file.
+The y offset which should be applied to these positions (which is different
+for each grism) is obtained from the grism data file returned by the 
+calibration system. All lines of this file are ignored unless they begin
+Offset:
 
 The positions of the slices and the x and y shift that should be applied
 to each one to align them in the y and spectral directions are written
@@ -187,10 +188,11 @@ integers except yshift.
 
 =item *
 
-the grisms.dat file has one line per grism with two fields per line
-(grism name, y offset). y offset should be an integer number of pixels
-to be added to the ystart and yend values in ifu_profile.dat when each
-grism is used.
+There is one grism data file per grism (actually more than one if the
+grism is used in different orders). The correct file is obtained via
+the calibration system. The line used in this primitive is
+       Offset: num
+All lines not beginning Offset: are ignored.
 
 =back
 
@@ -207,7 +209,7 @@ and IFU_yshift are added to the input file.
 
 =head1 TASKS
 
-none
+None.
 
 =head1 AUTHORS
 

@@ -1,3 +1,57 @@
+# -*- perl -*-
+
+#+
+# Name:
+# _FORM_DATACUBE_
+#
+# Purpose:
+#   Re-formats an IFU frame into a datacube
+#
+# Language:
+#   Perl5
+#
+# Description:
+#
+#   The slices are extracted and placed in the datacube in the order in which
+#   their positions are given in the IFU_start and IFU_end arrays contained
+#   in the user header of the frame. The number of slices is given by the 
+#   IFU_slices header.
+# 
+#   Each area extracted from the input frame becomes one y,lambda plane of
+#   the datacube (with y->y, x->lambda).
+#  
+#   This primitive is intended for use on a straightened, wavelength calibrated
+#   frame, but the IFU_xshift values are read and used, so it will work any 
+#   time after the headers have been written (by _LOCATE_SLICES_). If the
+#   image has not been scrunched when it is run then the wavelength axis will
+#   be in pixels (not Angstroms) and there will be small offsets (~1 pixel)
+#   in the wavelength axis from one slice to another.
+#   
+# Notes:
+#    - This primitive is written for the UIST IFU.
+#    - The locations of the slices and the shifts which should be applied are
+#      taken from the user headers IFU_start, IFU_end, IFU_xshift and
+#      IFU_yshift. Each of these is an array with an element for each slice.
+#    - The number of slices is read from the IFU_slices user header.
+#
+# 
+# Output Data:
+#    - The input frame is reformatted into a datacube with suffix _cube.
+#
+# Tasks:
+#    ndfpack_mon: ndfcopy, setorigin
+#    figaro1: ishift, growyt
+#
+# Authors:
+#    SPT: Stephen P. Todd (Edinburgh University/UKATC)
+#
+# Copyright:
+#    Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+
 (my $in, my $out) = $Frm->inout( "_cube" );
 
 my $n_slices = $Frm->uhdr("IFU_slices");
@@ -19,13 +73,13 @@ my $param;
 
 orac_print "Forming datacube \n";
 
-for (my $n = 1; $n <= $n_slices; $n++) {
+for my $n (0..($n_slices-1)) {
     # Read the position of the nth slice as written into the headers
 
-    my $ystart = $Frm->uhdr("IFU_start_$n");
-    my $yend = $Frm->uhdr("IFU_end_$n");
-    my $xshift = $Frm->uhdr("IFU_xshift_$n");
-    my $yshift = $Frm->uhdr("IFU_yshift_$n");
+    my $ystart = $Frm->uhdr->{"IFU_start"}->[$n];
+    my $yend = $Frm->uhdr->{"IFU_end"}->[$n];
+    my $xshift = $Frm->uhdr->{"IFU_xshift"}->[$n];
+    my $yshift = $Frm->uhdr->{"IFU_yshift"}->[$n];
     
     # Keep the user aware of progress
     orac_print "Extracting slice. y1=$ystart  y2=$yend  yshift=$yshift \n";
@@ -35,7 +89,7 @@ for (my $n = 1; $n <= $n_slices; $n++) {
     $param = "in=$in(,$ystart:$yend) out=$tmp_slice";
     $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
 
-    # Shift it in the y-direction
+    # Shift it in the y-direction (and x if necessary)
     $param = "image=$tmp_slice xshift=$xshift yshift=$yshift xsplit=0 ysplit=2 output=$tmp_slice";
     $Mon{"figaro1"}->obeyw( "ishift", "$param" );
 
@@ -43,12 +97,87 @@ for (my $n = 1; $n <= $n_slices; $n++) {
     $Mon{"ndfpack_mon"}->obeyw("setorigin", "$param");
 
     # Grow it into the datacube
-    $param = "image=$tmp_slice cube=$out xstart=$n xend=$n new=$new xsize=$n_slices";
+    $param = "image=$tmp_slice cube=$out xstart=" . ($n+1) . " xend=" . ($n+1) . " new=$new xsize=$n_slices";
     $Mon{"figaro1"}->obeyw( "growyt", "$param" );
 
     # We no longer want to force the creation of a new datacube
     $new="f";
 }
+
+
+# Podule
+# ======
+
+=head1 NAME
+
+_FORM_DATACUBE_ -- Re-formats an IFU frame into a datacube.
+
+=head1 DESCRIPTION
+
+The slices are extracted and placed in the datacube in the order in which
+their positions are given in the IFU_start and IFU_end arrays contained
+in the user header of the frame. The number of slices is given by the 
+IFU_slices header.
+ 
+Each area extracted from the input frame becomes one y,lambda plane of
+the datacube (with y->y, x->lambda).
+  
+This primitive is intended for use on a straightened, wavelength calibrated
+frame, but the IFU_xshift values are read and used, so it will work any 
+time after the headers have been written (by _LOCATE_SLICES_). If the
+image has not been scrunched when it is run then the wavelength axis will
+be in pixels (not Angstroms) and there will be small offsets (~1 pixel)
+in the wavelength axis from one slice to another.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is written for the UIST IFU.
+
+=item *
+
+The locations of the slices and the shifts which should be applied are
+taken from the user headers IFU_start, IFU_end, IFU_xshift and
+IFU_yshift. Each of these is an array with an element for each slice.
+
+=item *
+
+The number of slices is read from the IFU_slices user header.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The input frame is reformatted into a datacube with suffix _cube.
+
+=back
+
+=head1 TASKS
+
+ndfpack_mon: ndfcopy, setorigin
+figaro1: ishift, growyt
+
+=head1 AUTHORS
+
+SPT: Stephen P. Todd (Edinburgh University/UKATC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+
+
+
 
 
 
