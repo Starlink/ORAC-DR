@@ -139,6 +139,7 @@ sub flag_from_bits {
   my $flag = ".$raw.ok";
 
 }
+
 =back
 
 =head1 SEE ALSO

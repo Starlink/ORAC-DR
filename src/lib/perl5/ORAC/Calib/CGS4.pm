@@ -38,7 +38,7 @@ use vars qw/$VERSION/;
 use Carp;
 use strict;
 
-
+=over 4
 
 =item B<mask>
 
@@ -65,6 +65,7 @@ sub mask {
 
 =item B<flat>
 
+Return (or set) the flatfield file.
 
 =cut
 

@@ -146,8 +146,8 @@ method) it is erased (running the erase() method) when the file
 name is updated.
 
 For example, the second file (file_2) is marked as temporary
-with $Frm->nokeep(2,1). The next time the filename is updated
-($Frm->file(2,'new_file')) the current file is erased before the
+with C<$Frm-E<gt>nokeep(2,1)>. The next time the filename is updated
+(C<$Frm-E<gt>file(2,'new_file')>) the current file is erased before the
 'new_file' name is stored. The temporary flag is then reset to
 zero.
 
@@ -374,10 +374,10 @@ As for the files() method, returns an array reference when
 called in a scalar context and an array of file names when
 called from an array context.
 
-The array does not store information relating to the position
-of the file in the files() array [ie was it stored as
-$Frm->file(1) or $Frm->file(2)]. The order simply reflects the
-order the files were given to the file() method.
+The array does not store information relating to the position of the
+file in the files() array [ie was it stored as C<$Frm-E<gt>file(1)> or
+C<$Frm-E<gt>file(2)>]. The order simply reflects the order the files
+were given to the file() method.
 
 =cut
  
@@ -970,7 +970,7 @@ To return the ID associated with the second frame:
 
 If nfiles() equals 1, this method returns everything after the last
 suffix (using an underscore) from the filename stored in file(1). If
-nfiles > 1, this method returns the everything after the last 
+nfiles E<gt> 1, this method returns the everything after the last 
 underscore, prepended with 's$number'. ie if file(2) is test_dk,
 the ID would be 's2dk'; if file() is test_dk (and nfiles = 1) the
 ID would be 'dk'.

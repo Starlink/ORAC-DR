@@ -18,12 +18,12 @@ and spectrum with Kapview.
 
 Available options are:
 
-IMAGE - display image using DISPLAY
-GRAPH - display graph using LINPLOT
-SIGMA - display scatter plot with a Y-range of +/- N sigma.
-DATAMODEL - Display data (as points) with a model overlaid
-HISTOGRAM - Histogram of values in data array
-VECTOR - Display image + vectors
+ IMAGE - display image using DISPLAY
+ GRAPH - display graph using LINPLOT
+ SIGMA - display scatter plot with a Y-range of +/- N sigma.
+ DATAMODEL - Display data (as points) with a model overlaid
+ HISTOGRAM - Histogram of values in data array
+ VECTOR - Display image + vectors
 
 =cut
 
@@ -754,7 +754,7 @@ If the XAUTOSCALE/YAUTOSCALE/nAUTOSCALE keywords can not be found they are
 assumed to be true. If CUT is not specified  the first slice is
 selected (eg a NDF section of N,1,1,1)
 
-For data arrays with N>2, the leading letter is dropped and replaced
+For data arrays with NE<gt>2, the leading letter is dropped and replaced
 by the dimension number. eg:
 
   3MIN/3MAX - pixel range of the 3rd dimension

@@ -122,10 +122,10 @@ sub new {
 
 =head2 Accessor Methods
 
-=over 4
-
 The following methods are available for accessing the 
 'instance' data.
+
+=over 4
 
 =item B<infile>
 

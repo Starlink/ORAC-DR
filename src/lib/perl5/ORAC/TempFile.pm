@@ -97,7 +97,7 @@ sub new {
 
   # Now run the Initialise method
   $tmp->Initialise;
-  
+
   # Return the object unless the Handle is undefined
   if (defined $tmp->{Handle}) {
 
@@ -215,7 +215,7 @@ constructor has failed.
 
 sub Initialise {
   my $self = shift;
-  
+
   # Recipe 7.5 in Perl cookbook - first edition
   # "creating temporary files"
   my ($file, $fh);
@@ -288,6 +288,7 @@ sub DEBUG {
   return $DEBUG; 
 }
 
+=back
 
 =head1 SEE ALSO
 

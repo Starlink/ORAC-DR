@@ -98,8 +98,11 @@ sub new {
   return $self;
 }
 
+=back
 
 =head2 General Methods
+
+=over 4
 
 =item B<file_from_bits>
 

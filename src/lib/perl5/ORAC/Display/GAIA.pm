@@ -146,7 +146,7 @@ to launching a new display device (ie running up GAIA itself).
 
   $status = $Display->create_dev($win, $name);
 
-For GAIA (V <= 2.3-2) the device name ($dev) must be an integer.
+For GAIA (V E<lt>= 2.3-2) the device name ($dev) must be an integer.
 (enforced if the newdev() method is used).
 
 ORAC status is returned. 

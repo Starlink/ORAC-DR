@@ -34,11 +34,11 @@ software. Commands are provided for printing error messages, warning
 messages and information messages. The final output location of these
 messages is controlled by the object configuration.
 
-If the ORAC::Print::TKMW variable is set, it is assumed that this
-is the Tk object referring to the MainWindow, and the 
-Tk->update() method is run whenever the orac_* commands are executed.
-This can be used to keep a Tk log window updating even though no
-X-events are being processed.
+If the C<ORAC::Print::TKMW> variable is set, it is assumed that this
+is the Tk object referring to the MainWindow, and the
+C<Tk-E<gt>update()> method is run whenever the C<orac_*> commands are
+executed.  This can be used to keep a Tk log window updating even
+though no X-events are being processed.
 
 A simplified interface to Term::ReadLine is provided for use with
 the orac_read command. This can only be used on STDIN/STDOUT and
@@ -174,6 +174,8 @@ sub __curr_obj {
   $prt = new ORAC::Print unless defined $prt;
   return $prt;
 }
+
+=back
 
 =head1 OO INTERFACE
 
@@ -325,7 +327,7 @@ sub outpre {
   return $self->{OutPre};
 }
 
-=item outpre
+=item warpre
 
 Prefix that is prepended to all strings printed with the
 out() method. Default is to have the string 'Warning:' prepended.
@@ -341,7 +343,7 @@ sub warpre {
   return $self->{WarPre};
 }
 
-=item outpre
+=item errpre
 
 Prefix that is prepended to all strings printed with the
 out() method. Default is to have the string 'Error:' prepended.
@@ -598,7 +600,7 @@ is turned on.
 sub debug {
   my $self = shift;
   my $text = shift;
- 
+
   # Check that debug is on
   if ($self->debugmsg) {
 
@@ -685,8 +687,6 @@ sub PRINTF {
   $obj->PRINT(sprintf(shift, @_));
 }
 
-
-=back
 
 =head1 SEE ALSO
 

@@ -37,6 +37,8 @@ use strict;
 use vars qw/ $VERSION/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
+=over
+
 =item B<rotation>
 
 Return (or set) the name of the rotation transformation matrix

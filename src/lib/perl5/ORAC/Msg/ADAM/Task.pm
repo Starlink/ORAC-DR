@@ -354,7 +354,7 @@ sub cwd {
 This method will not return unless the monolith can be contacted.
 It only returns with a timeout. Returns a '1' if we contacted okay
 and a '0' if we timed out. It will timeout if it takes longer than
-specified in ORAC::Msg::ADAM::Control->timeout.
+specified in C<ORAC::Msg::ADAM::Control-E<gt>timeout>.
 
 =cut
 

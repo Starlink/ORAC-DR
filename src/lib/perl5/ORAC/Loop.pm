@@ -24,7 +24,7 @@ observation number (or undef if there was an error or if the loop
 should be terminated).
 
 A new  Frame object is returned of class $class that has been configured
-for the new file (ie a $Frm->configure method has been run)
+for the new file (ie a C<$Frm-E<gt>configure> method has been run)
 
 It is intended that this routine is called inside an infinite while
 loop with the same @list array. This array is modified by the loop

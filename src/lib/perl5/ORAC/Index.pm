@@ -327,7 +327,7 @@ sub writeindex {
 
 adds an entry to an index
 
-$index->add($name,$hashref)
+  $index->add($name,$hashref)
 
 =cut
 
