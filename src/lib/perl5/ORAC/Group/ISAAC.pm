@@ -220,47 +220,47 @@ sub _to_GRATING_DISPERSION {
          my $order = $self->hdr->{"HIERARCH.ESO.INS.GRAT.ORDER"};
          if ( $self->hdr->{"HIERARCH.ESO.INS.GRAT.NAME"} eq "LR" ) {
             if ( $order == 6 ) {
-               $dispersion = 2.4e-4;
+               $dispersion = 2.36e-4;
             } elsif ( $order == 5 ) {
-               $dispersion = 2.9e-4;
+               $dispersion = 2.83e-4;
             } elsif ( $order == 4 ) {
-               $dispersion = 3.6e-4;
+               $dispersion = 3.54e-4;
             } elsif ( $order == 3 ) {
-               $dispersion = 4.8e-4;
+               $dispersion = 4.72e-4;
             } elsif ( $order == 2 ) {
-               $dispersion = 7.2e-4;
+               $dispersion = 7.09e-4;
             } elsif ( $order == 1 ) {
                if ( exists $self->hdr->{"HIERARCH.ESO.INS.FILT1.ID"} ) {
                   my $filter = $self->hdr->{"HIERARCH.ESO.INS.FILT1.ID"};
                   if ( $filter =~/SL/ ) {
-                     $dispersion = 1.4e-3;
+                     $dispersion = 1.412e-3;
                   } else {
-                     $dispersion = 1.5e-3;
+                     $dispersion = 1.45e-3;
                   }
                } else {
-                 $dispersion = 1.45e-3;
+                 $dispersion = 1.41e-3;
                }
             }
 
 # Medium dispersion
          } elsif ( $self->hdr->{"HIERARCH.ESO.INS.GRAT.NAME"} eq "MR" ) {
             if ( $order == 6 ) {
-               $dispersion = 3.8e-5;
+               $dispersion = 3.7e-5;
             } elsif ( $order == 5 ) {
                $dispersion = 4.6e-5;
             } elsif ( $order == 4 ) {
                $dispersion = 5.9e-5;
             } elsif ( $order == 3 ) {
-               $dispersion = 7.9e-5;
+               $dispersion = 7.8e-5;
             } elsif ( $order == 2 ) {
-               $dispersion = 1.22e-4;
+               $dispersion = 1.21e-4;
             } elsif ( $order == 1 ) {    
                if ( exists $self->hdr->{"HIERARCH.ESO.INS.FILT1.ID"} ) {       
                   my $filter = $self->hdr->{"HIERARCH.ESO.INS.FILT1.ID"};
                   if ( $filter =~/SL/ ) {
-                     $dispersion = 2.55e-4;
+                     $dispersion = 2.52e-4;
                   } else {       
-                     $dispersion = 2.37e-4;
+                     $dispersion = 2.39e-4;
                   }
                } else {
                  $dispersion = 2.46e-4;
@@ -313,6 +313,8 @@ sub _to_OBSERVATION_TYPE {
       $type = "OBJECT";
    } elsif ( uc( $type ) eq "SKY,FLAT" ) {
       $type = "SKY";
+   } elsif ( uc( $type ) eq "LAMP" ) {
+      $type = "ARC";
    }
    return $type;
 }
@@ -387,6 +389,10 @@ sub _to_RECIPE {
 
    } elsif ( $template =~ /ISAAC[SL]W_spec_cal_NightCalib/ ) {
       $recipe = "REDUCE_SINGLE_FRAME";
+
+   } elsif ( $template =~ /ISAAC[SL]W_spec_cal_Arcs/ ||
+             $seq eq "ISAAC_spec_cal_Arcs" ) {
+      $recipe = "REDUCE_ARC";
 
    } elsif ( $template =~ /ISAAC[SL]W_spec_cal_Flats/ ) {
       $recipe = "LAMP_FLAT";
