@@ -949,7 +949,7 @@ sub orac_configure_for_instrument {
              { 
                $orac_data_root = cwd;
                if (Net::Domain->domainname =~ "jcmt"  ) {
-                   $orac_data_root = "/jcmtarchive";
+                   $orac_data_root = "/jcmtdata/raw/scuba";
                 } elsif ( ( Net::Domain->domainname =~ "Hilo" ) ||
                           ( Net::Domain->domainname =~ "jach" ) ) {
                    $orac_data_root = "/scuba";
@@ -990,10 +990,10 @@ sub orac_configure_for_instrument {
              # input data directory
              if ( defined $sem ) {
                 $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
-							   $sem, $oracut );
+							   $sem, $oracut, "dem" );
              } else {
                 $ENV{"ORAC_DATA_IN"} =  File::Spec->catdir( $orac_data_root,
-							    $oracut );  }
+							    $oracut, "dem" );  }
 
              # Output data directory is more problematic.
              # If we are at JCMT set it to ORAC_DATA_ROOT/reduced/$oracut, 
@@ -1003,9 +1003,9 @@ sub orac_configure_for_instrument {
 		                          "reduced","orac", $oracut) unless
 			                  defined $$options{"honour"};
                 if ( hostname ne "mamo" ) {
-                   orac_err("Please use mamo for ORAC-DR reduction. Aborting.");
-                   throw ORAC::Error::FatalError( "Use mamo for reduction",
-		                                  ORAC__FATAL);
+#                   orac_err("Please use mamo for ORAC-DR reduction. Aborting.");
+#                   throw ORAC::Error::FatalError( "Use mamo for reduction",
+#		                                  ORAC__FATAL);
                 }
                 unless ( -d $ENV{"ORAC_DATA_OUT"} ) {
 		   # stuff to do with mamo here
