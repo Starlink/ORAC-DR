@@ -6,6 +6,10 @@ _EXTRACT_ALL_BEAMS_
 
 Optimally extracts all the beams in a group file
 
+=head1 PARAMETERS
+
+PROFILECAL: [LOAD|SAVE] - determines whether to get the profiles from the cal system, save the profiles to the cal system, or niether.
+
 =head1 AUTHOR
 
 Paul Hirst <p.hirst@jach.hawaii.edu>
@@ -17,21 +21,17 @@ Council. All Rights Reserved.
 
 =cut
 
+# Parse the parameter
+
+my $profilesave = (defined $_EXTRACT_ALL_BEAMS_{PROFILECAL} && $_EXTRACT_ALL_BEAMS_{PROFILECAL} eq 'SAVE') ? 1 : 0;
+my $profileload = (defined $_EXTRACT_ALL_BEAMS_{PROFILECAL} && $_EXTRACT_ALL_BEAMS_{PROFILECAL} eq 'LOAD') ? 1 : 0;
+
 # We should have a "NBEAMS" header from _EXTRACT_DETERMINE_NBEAMS_
 my $nbeams = $Grp->uhdr("NBEAMS");
 
-# Get the beam positions and multipliers
-my @row;
-my @mult;
-for (my $i=1; $i<=$nbeams; $i++) {
-   # We should have BEAM_POSITION_$i headers
-   my $keyword = "BEAM_POSITION_".$i;   
-   $row[$i] = $Grp->uhdr($keyword);
-
-   # And BEAM_MULT_$i headers
-   $keyword = "BEAM_MULT_".$i;
-   $mult[$i] = $Grp->uhdr($keyword);
-}
+# Get the beam positions and multipliers, with a dodgy dereference
+my $ref = $Grp->uhdr("BEAMS");
+my @beams = @$ref;
 
 # Get the input file
 my $in = $Grp->raw;
@@ -47,7 +47,7 @@ my $in = $Grp->raw;
 #   $window=10;
 #}
 
-my $window = 10;
+my $window = 5;
 orac_print ("Optimal Extraction apperture half-width will be: $window pixels\n");
 
 
@@ -61,64 +61,75 @@ my $oes = $base."_oes";
 my $tmp = new ORAC::TempFile;
 my $tmpfile = $tmp->file;
 
-# If we're using Cal system profiles, get them now
-if ((defined $_EXTRACT_ALL_BEAMS_{PROFILE}) && ($_EXTRACT_ALL_BEAMS_{PROFILE} eq 'LOAD')) {
-   $oep = $Cal->profile;
-} else {
+$Mon{'figaro1'}->obeyw("creobj", "type=structure dims=0 object=$oep");
+$Mon{'figaro1'}->obeyw("creobj", "type=structure dims=0 object=$oer");
+$Mon{'figaro1'}->obeyw("creobj", "type=structure dims=0 object=$oes");
+
+for (my $i=1; $i<=$nbeams; $i++) {
+
+   my $row = $beams[$i]{'POS'};
+
+
    # Profile the group image
 
-   $Mon{'figaro1'}->obeyw("creobj", "type=structure dims=0 object=$oep");
-   $Mon{'figaro1'}->obeyw("creobj", "type=structure dims=0 object=$oer");
-   $Mon{'figaro1'}->obeyw("creobj", "type=structure dims=0 object=$oes");
-
-   for (my $i=1; $i<=$nbeams; $i++) {
-      # Get the filename for the opt-extract profile
-      $oep = $base."_oep".".beam$i";
+   # Get the filename for the opt-extract profile
+   $oep = $base."_oep".".beam$i";
    
-      # And the profile residuals
-      $oer = $base."_oer".".beam$i";
+   # And the profile residuals
+   $oer = $base."_oer".".beam$i";
 
-      # Set ystart and yend
+   # Set ystart and yend
 
-      # Need to subtract the ndflbound off everything that goes to figaro-profile...
-      $Mon{'ndfpack_mon'}->obeyw("ndftrace", "ndf=$in");
-      (my $ORAC_STATUS, my @ndflbound) = $Mon{'ndfpack_mon'}->get("ndftrace", "lbound");
+   # Need to subtract the ndflbound off everything that goes to figaro-profile...
+   $Mon{'ndfpack_mon'}->obeyw("ndftrace", "ndf=$in");
+   (my $ORAC_STATUS, my @ndflbound) = $Mon{'ndfpack_mon'}->get("ndftrace", "lbound");   
 
-      my $lbound = $Frm->uhdr("ORAC_Y_LOWER_BOUND");
-      my $ystart = ($row[$i]-$window < $lbound) ? $lbound : $row[$i]-$window;
-      my $ystartf = $ystart - $ndflbound[1];
+   my $lbound = $Frm->uhdr("ORAC_Y_LOWER_BOUND");
+   my $ystart = ($row-$window < $lbound) ? $lbound : $row-$window;
+   orac_print "window: $window; lbound: $lbound; row: $row\n";
+   my $ystartf = $ystart - $ndflbound[1];
 
-      my $ubound = $Frm->uhdr("ORAC_Y_UPPER_BOUND");
-      my $yend = ($row[$i]+$window > $ubound) ? $ubound : $row[$i]+$window;
-      my $yendf = $yend - $ndflbound[1];
+   my $ubound = $Frm->uhdr("ORAC_Y_UPPER_BOUND");
+   my $yend = ($row+$window > $ubound) ? $ubound : $row+$window;
+   my $yendf = $yend - $ndflbound[1];
 
-      # Do the profile
-      $Mon{'figaro1'}->obeyw("profile", "image=$in ystart=$ystartf yend=$yendf degree=3 profile=$oep residual=$oer weight nreject=0");
-      orac_print "$in to $oep: Opt-Extract profile over window: $ystart:$yend\n";
-      orac_print "$in to $oer: Opt-Extract residuals from $oep\n";
+   # Do the profile
+   $Mon{'figaro1'}->obeyw("profile", "image=$in ystart=$ystartf yend=$yendf degree=1 profile=$oep residual=$oer weight nreject=5");
+   orac_print "$in to $oep: Opt-Extract profile over window: $ystart:$yend\n";
+   orac_print "$in to $oer: Opt-Extract residuals from $oep\n";
 
-      # Now we have the profiles, push them into the profile calibration system if we were asked to.
-      if((defined $_EXTRACT_ALL_BEAMS_{PROFILE}) && ($_EXTRACT_ALL_BEAMS_{PROFILE} eq 'SAVE')) {
-         $Cal->profile($oep);
-         $Cal->profileindex->add($oep, {%{$Frm->hdr}, %{$Frm->uhdr}}); # Hmmm. dodgy maybe
-         orac_print "Opt-Extract profile: $oep filed with Calibration system\n";
-      }
+   # Record the beam number in the uhdr
+   $Frm->uhdr("BEAM_NUMBER", $i);
+   # Now we have the profiles, push them into the profile calibration system if we were asked to.
+   if($profilesave) {
+      $Cal->profile($oep);
+      $Cal->profileindex->add($oep, {%{$Frm->hdr}, %{$Frm->uhdr}}); # Hmmm. dodgy maybe
+      orac_print "Opt-Extract profile: $oep filed with Calibration system\n";
    }
 }
 
 foreach my $i (1 .. $nbeams) {
 
+   my $mult = $beams[$i]{'MULT'};
+
    # Do the opt extract - (optimally extracted spectra)
    # Actually, go via a temp file if the multiplier for the beam != 1 and divide by it otherwise
-   $oep = $base."_oep".".beam$i";
+   # If we're using Cal system profiles, get one now
+   if ($profileload) {
+      $Frm->uhdr("BEAM_NUMBER", $i);
+      $oep = $Cal->profile;
+      orac_print "Got $oep as the profile from the Cal system\n";
+   } else {
+      $oep = $base."_oep".".beam$i";
+   }
    $oes = $base."_oes".".beam$i";
-   if ($mult[$i] == 1) {
+   if ($mult == 1) {
       $Mon{'figaro1'}->obeyw("optextract", "image=$in profile=$oep weight spectrum=$oes");
    } else {
       $Mon{'figaro1'}->obeyw("optextract", "image=$in profile=$oep weight spectrum=$tmpfile");
-      $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tmpfile scalar=$mult[$i] out=$oes");
+      $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tmpfile scalar=$mult out=$oes");
    }
-   orac_print "$in to $oes: Optimally extracted using profile: $oep and divisor: $mult[$i]\n";
+   orac_print "$in to $oes: Optimally extracted using profile: $oep and divisor: $mult\n";
 
    # Update the group object
    $oes = $base."_oes";
