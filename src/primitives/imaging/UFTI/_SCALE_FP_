@@ -16,13 +16,15 @@
 # Arguments:
 #    LINE = REAL
 #       The scaling to apply to the source signal.  The value is
-#       constrained to the range 0.1 to 10.0. [1.0]
-#    POSITIVE = REAL
-#       The scaling to apply to the positive-offset continuum signal.  The
-#       value is constrained to the range 0.1 to 10.0. [1.0]
+#       constrained to the range 0.1 to 10.0.  [1.0]
 #    NEGATIVE = REAL
 #       The scaling to apply to the positive-offset continuum signal.  The
-#       value is constrained to the range 0.1 to 10.0. [1.0]
+#       value is constrained to the range 0.1 to 10.0.  One of either
+#       POSITIVE or NEGATIVE should be 1.0.  [1.0]
+#    POSITIVE = REAL
+#       The scaling to apply to the positive-offset continuum signal.  The
+#       value is constrained to the range 0.1 to 10.0.  One of either
+#       POSITIVE or NEGATIVE should be 1.0.  [1.0]
 #
 # Notes:
 #    -  This primitive is suitable for UFTI.
@@ -32,6 +34,8 @@
 #    true.
 #    -  The cycle number is given by steering header CYCLE_NUMBER.
 #    -  Each scaling only occurs if its scaling factor is not 1.0.
+#    - A warning is issued if both POSITIVE and NEGATIVE are not
+#    1.0.
 #    -  The line data consist of two frames.
 #
 # Output Data:
@@ -42,7 +46,7 @@
 #    KAPPA: CMULT.
 #
 # Authors:
-#    MJC: Malcolm J. Currie (JAC)
+#    MJC: Malcolm J. Currie (Starlink)
 #
 # Copyright:
 #    Copyright (C) 2003 Particle Physics and Astronomy Research
@@ -50,14 +54,11 @@
 #
 #-
 
-# Divides the group of differenced frame pairs by the flat field.
-# Used for NOD recipes.
-
 # Selection
 # =========
 
 # Test whether or not it is time to apply the scaling.
-    if ( $Frm->uhdr( "FLAT_DIVIDE" ) {
+    if ( $Frm->uhdr( "FLAT_DIVIDE" ) ) {
 
 # Make a local version of the main group, using the group of
 # differenced pairs.  Then use the standard primitive which expects
@@ -94,82 +95,84 @@
        $negfactor = min( $maxfactor, max( $minfactor,
                      defined( $negfactor ) ? $negfactor : 1.0 ) );
 
-# Scale line
-# ==========
-       if ( abs( $linefactor - 1.0 ) > 1E-6 ) {
-
-# The first and third frames are of the source.  Probably should use a
-# steering header to indicate which is which and select the group
-# using this.
-
-# Obtain the name of the first frame.
-          $Frm = $cycleGrp->frame{ 0 );
-          my ( $in, out ) = $Frm->inout( "_fps" );
-
-# Apply the scale factor for the line.
-          $param = "in=$in out=$out scalar=$linefactor";
-          $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
-
-          orac_print "$in to $out: scaling of $linefactor applied to the first line signal.\n";
-
-# Update the current frame for later processing.
-          $Frm->out( $out );
-
-# Duplicate for the second line frame.
-          $Frm = $cycleGrp->frame{ 2 );
-          my ( $in, out ) = $Frm->inout( "_fps" );
-
-          $param = "in=$in out=$out scalar=$linefactor";
-          $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
-
-          orac_print "$in to $out: scaling of $linefactor applied to the second line signal.\n";
-          $Frm->out( $out );
+       if ( abs( $posfactor - 1.0 ) > 1E-6 &&
+            abs( $negfactor - 1.0 ) > 1E-6 ) {
+          orac_warn "One of the continuum scale factors should be 1.0. " .
+                    "Positive: $posfactor  negative: $negfactor.\n";
        }
 
+# Scale line frames
+# =================
+       my ( $in, $out, $param ); 
+       if ( abs( $linefactor - 1.0 ) > 1E-6 ) {
+
+# Select the line frames in the current cycle.
+          my $lineGrp = $cycleGrp->subgrp( FP_WAVE => "line" );
+          foreach my $lineFrm ( $lineGrp->members ) {
+
+# Obtain the name of the first frame.
+             ( $in, $out ) = $lineFrm->inout( "_fps" );
+
+# Apply the scale factor for the line.
+             $param = "in=$in out=$out scalar=$linefactor";
+             $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
+
+# Report progress.
+             orac_print "$in to $out: scaling of $linefactor applied to the line signal.\n";
+
+# Update the current frame for later processing.
+             $lineFrm->file( $out );
+          }
+       }
 
 # Scale positive continuum
 # ========================
        if ( abs( $posfactor - 1.0 ) > 1E-6 ) {
 
-# The first and third frames are of the source.  Probably should use a
-# steering header to indicate which is which and select the group
-# using this.
+# Select the positive-offset contiuum frames in the current cycle.
+          my $posGrp = $cycleGrp->subgrp( FP_WAVE => "positive" );
+          foreach my $posFrm ( $posGrp->members ) {
 
 # Obtain the name of the positive-continuum frame.
-          $Frm = $cycleGrp->frame{ 1 );
-          my ( $in, out ) = $Frm->inout( "_fps" );
+             ( $in, $out ) = $posFrm->inout( "_fps" );
 
 # Apply the scale factor for the positive continuum.
-          $param = "in=$in out=$out scalar=$posfactor";
-          $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
+             $param = "in=$in out=$out scalar=$posfactor";
+             $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
 
-          orac_print "$in to $out: scaling of $posfactor applied to the positive-continuum signal.\n";
+# Report progress.
+             orac_print "$in to $out: scaling of $posfactor applied to the\n" .
+                        "   positive-continuum signal.\n";
 
 # Update the current frame for later processing.
-          $Frm->out( $out );
+             $posFrm->file( $out );
+          }
        }
 
 # Scale negative continuum
 # ========================
        if ( abs( $negfactor - 1.0 ) > 1E-6 ) {
 
-# The first and third frames are of the source.  Probably should use a
-# steering header to indicate which is which and select the group
-# using this.
+# Select the negative-offset contiuum frames in the current cycle.
+          my $negGrp = $cycleGrp->subgrp( FP_WAVE => "negative" );
+          foreach my $negFrm ( $negGrp->members ) {
 
 # Obtain the name of the negative-continuum frame.
-          $Frm = $cycleGrp->frame{ 1 );
-          my ( $in, out ) = $Frm->inout( "_fps" );
+             ( $in, $out ) = $negFrm->inout( "_fps" );
 
 # Apply the scale factor for the negative continuum.
-          $param = "in=$in out=$out scalar=$negfactor";
-          $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
+             $param = "in=$in out=$out scalar=$negfactor";
+             $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
 
-          orac_print "$in to $out: scaling of $negfactor applied to the negative-continuum signal.\n";
+# Report progress.
+             orac_print "$in to $out: scaling of $negfactor applied to the\n" .
+                        "   negative-continuum signal.\n";
 
 # Update the current frame for later processing.
-          $Frm->out( $out );
+             $negFrm->file( $out );
+         }
        }
+       orac_print "\n";
     }
 
 # Podule
@@ -188,22 +191,24 @@ components: the line, the positive or negative continuum.
 
 =head1 ARGUMENTS
 
-=ver 4
+=over 4
 
 =item LINE = REAL
 
 The scaling to apply to the source signal.  The value is
-constrained to the range 0.1 to 10.0. [1.0]
-
-=item POSITIVE = REAL
-
-The scaling to apply to the positive-offset continuum signal.  The
-value is constrained to the range 0.1 to 10.0. [1.0]
+constrained to the range 0.1 to 10.0.  [1.0]
 
 =item NEGATIVE = REAL
 
 The scaling to apply to the positive-offset continuum signal.  The
-value is constrained to the range 0.1 to 10.0. [1.0]
+value is constrained to the range 0.1 to 10.0.  One of either
+POSITIVE or NEGATIVE should be 1.0.  [1.0]
+
+=item POSITIVE = REAL
+
+The scaling to apply to the positive-offset continuum signal.  The
+value is constrained to the range 0.1 to 10.0.  One of either
+POSITIVE or NEGATIVE should be 1.0.  [1.0]
 
 =back
 
@@ -235,6 +240,10 @@ Each scaling only occurs if its scaling factor is not 1.0.
 
 =item *
 
+A warning is issued if both POSITIVE and NEGATIVE are not 1.0.
+
+=item *
+
 The line data consist of two frames.
 
 =back
@@ -256,7 +265,7 @@ KAPPA: CMULT.
 
 =head1 AUTHORS
 
-MJC: Malcolm J. Currie (JAC)
+MJC: Malcolm J. Currie (Starlink)
 
 =head1 COPYRIGHT
 
