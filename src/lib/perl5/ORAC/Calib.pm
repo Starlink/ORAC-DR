@@ -96,6 +96,7 @@ sub new {
 
   $obj->{DarkIndex} = undef;
   $obj->{FlatIndex} = undef;
+  $obj->{ArcIndex} = undef;
   $obj->{BiasIndex} = undef;
   $obj->{SkyIndex} = undef;
   $obj->{StandardIndex} = undef;
@@ -104,6 +105,7 @@ sub new {
 
   $obj->{DarkNoUpdate} = 0;
   $obj->{FlatNoUpdate} = 0;
+  #obj->{ArcNoUpdate} = 0;
   $obj->{BiasNoUpdate} = 0;
   $obj->{SkyNoUpdate} = 0;
   $obj->{ReadNoiseNoUpdate} = 0;
@@ -381,6 +383,21 @@ sub flatnoupdate {
   return $self->{FlatNoUpdate};
 }
 
+=item B<arcnoupdate>
+
+Stops arc object from updating itself with more recent data
+
+Used when using a command-line override to the pipeline
+
+=cut
+
+sub arcnoupdate {
+  my $self = shift;
+  if (@_) { $self->{ArcNoUpdate} = shift; }
+  return $self->{ArcNoUpdate};
+}
+
+
 =item B<biasnoupdate>
 
 Stops bias object from updating itself with more recent data
@@ -569,7 +586,20 @@ sub flat {
   };
 };
 
+=item B<arcname>
 
+Return (or set) the name of the current arc - no checking
+
+  $arc = $Cal->arcname;
+
+
+=cut
+
+sub arcname {
+  my $self = shift;
+  if (@_) { $self->{Arc} = shift unless $self->arcnoupdate; }
+  return $self->{Arc};
+}
 
 =item B<arc>
 
@@ -581,9 +611,29 @@ Return (or set) the name of the current arc.
 
 sub arc {
   my $self = shift;
-  if (@_) { $self->{Arc} = shift; }
-  return $self->{Arc};
+  if (@_) { 
+    # if we are setting, accept the value and return
+    return $self->arcname(shift);
+  };
+
+  my $ok = $self->arcindex->verify($self->arcname,$self->thing);
+
+  # happy ending - frame is ok
+  if ($ok) {return $self->arcname};
+
+  croak("Override arc is not suitable! Giving up") if $self->arcnoupdate;
+
+  # not so good
+  if (defined $ok) {
+    my $arc = $self->arcindex->choosebydt('ORACTIME',$self->thing);
+    croak "No suitable arc was found in index file"
+      unless defined $arc;
+    $self->arcname($arc);
+  } else {
+    croak("Error in arc calibration checking - giving up");
+  };
 };
+
 
 =item B<sky>
 
@@ -697,6 +747,30 @@ sub flatindex {
 
 
 };
+
+=item B<arcindex>
+
+Return (or set) the index object associated with the arc index file
+
+=cut
+
+sub arcindex {
+
+  my $self = shift;
+  if (@_) { $self->{ArcIndex} = shift; }
+
+  unless (defined $self->{ArcIndex}) {
+    my $indexfile = $ENV{ORAC_DATA_OUT}."/index.arc";
+    my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.arc";
+    $self->{ArcIndex} = new ORAC::Index($indexfile,$rulesfile);
+  };
+
+
+  return $self->{ArcIndex}; 
+
+
+};
+
 
 =item B<biasindex> 
 
