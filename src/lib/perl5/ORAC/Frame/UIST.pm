@@ -48,7 +48,6 @@ use vars qw/$VERSION/;
 # Translation tables for UIST should go here.
 # First the imaging...
 my %hdr = (
-            DEC_SCALE            => "CDELT1",
             DEC_TELESCOPE_OFFSET => "TDECOFF",
             RA_SCALE             => "CDELT2",
             RA_TELESCOPE_OFFSET  => "TRAOFF",
@@ -218,6 +217,19 @@ sub _to_Y_REFERENCE_PIXEL{
 
 sub _from_Y_REFERENCE_PIXEL {
   "CRPIX2", $_[0]->uhdr("ORAC_Y_REFERENCE_PIXEL");
+}
+
+# For imaging, the declination pixel scale is in the CDELT1 header,
+# and for spectroscopy and IFU, it's in CDELT3.
+sub _to_DEC_SCALE {
+  my $self = shift;
+  my $return;
+  if( $self->hdr->{INSTMODE} eq 'imaging' ) {
+    $return = $self->hdr->{CDELT1};
+  } else {
+    $return = $self->hdr->{CDELT3};
+  }
+  return $return;
 }
 
 # Sampling is always 1x1, and therefore there are no headers with
