@@ -1,0 +1,127 @@
+    # How many microstep offsets should there be?
+
+    my @allufrms = $Grp->allmembers;
+    my $nustep = $Frm->hdr("NUSTEP");
+    my $noff = int(sqrt($nustep));
+
+    # Names of output files. If we do have to interleave here, then create
+    # a name that's appropriate.  If we don't (there is only one file in the
+    # group) then just copy that file name to the output file name.
+
+    my ($outf);
+    if (@allufrms > 1) {
+        my ($basename,$dir,$suffix,$extn) = $Frm->parsefname;
+        $outf = sprintf("%s_sf%s",$basename,$suffix);
+    } elsif (@allufrms == 1) {
+        $outf = $Frm->file;
+    }
+
+    # Cycle through each of the images in the list.  Work out
+    # what the microstep offset is relative to the first one in
+    # the list. (This is assuming it hasn't already been done)
+
+    my ($retval,$errmsg);
+    if (! -f $outf) {
+	my $reffrm = $allufrms[0];;
+        my $refra = 15.0*$reffrm->hdr("TELRA");
+        my ($xval,$yval,$xoff,$yoff,$xref,$yref);
+	foreach my $frm (@allufrms) {
+	    $retval = cir_radec2xy($frm->file,$refra,
+		$reffrm->hdr("TELDEC"),$xval,$yval,$errmsg);
+	    if ($frm == $reffrm) {
+		$xoff = 0.0;
+		$yoff = 0.0;
+		$xref = $xval;
+		$yref = $yval;
+	    } else {
+		$xoff = $xref - $xval;
+		$yoff = $yref - $yval;
+	    }
+            my $fname = $frm->file;
+	    orac_print("File $fname has microstep offsets: $xoff $yoff\n");
+	    foreach my $i (1 .. $frm->findnsubs) {
+		my $fname = $frm->getasubframe($i)->file;
+		$retval = cir_update_hdr($fname,"CIR_XOFF","FLOAT",$xoff,
+		    " [pixels] Microstep offset",$errmsg);
+		$retval = cir_update_hdr($fname,"CIR_YOFF","FLOAT",$yoff,
+		    " [pixels] Microstep offset",$errmsg);
+	    }
+	}
+
+	# Loop by extension now and write out a list of all the files
+	# to be included in the interleaf.
+
+        orac_print("Interleaving now to form superframe $outf\n");
+	foreach my $i (1 .. $Frm->findnsubs) {
+	    my $tmpfil = new ORAC::TempFile;
+	    my $fh = $tmpfil->handle;
+	    foreach my $frm (@allufrms) {
+		print $fh $frm->getasubframe($i)->file . "\n";
+	    }
+	    $fh->close;
+
+	    # Output file is named after USTEPNUM (should the the run
+	    # number of the first file in the series)
+
+            my $snum = $Frm->getasubframe($i)->subfrmnumber;
+	    my $outfile = sprintf("%s[%d]",$outf,$snum);
+
+	    # Interleave now
+
+	    $retval = cir_interleaf($tmpfil->file,$outfile,"",
+		"",0,0,$noff,$errmsg);
+	    if ($retval != CIR_OK) {
+		$tmpfil->DESTROY;
+		orac_err("CIR_INTERLEAF: Failed in _INTERLEAVE\n$errmsg\n");
+	    }
+
+	    # Clean up
+
+	    $tmpfil->DESTROY;
+	}
+    }
+
+    # Right, now pass file objects back for the superframe and its 
+    # confidence map.
+
+    my $dFrm = $Frm->new($outf);
+    $Grp->uhdr("SUPERFRAME",$dFrm);
+
+
+=head1 NAME
+
+_INTERLEAVE_ -- Work out the microstep offsets between a group of files. The
+interleave them to form a superframe.
+
+=head1 DESCRIPTION
+
+A group of files is given.  If this is only one file, then there obviously
+hasn't been any microstepping going on. In this case the current file is
+stored away in the $Frm->uhdr("SUPERFRAME") item and nothing further is done.
+If there are more than one, then the first thing to do is to work out the
+microstep offsets. This is done by looking at the telescope RA and DEC in
+the header, relative to the first frame in the group. Once this is done and
+the values are written to the data headers, then the interleaving is done
+for each file extension.  Both a superframe and a superframe confidence map
+are created.
+
+=head1 ARGUMENTS
+
+None
+
+=head1 NOTES
+
+None
+
+=head1 AUTHORS
+
+JRL: Jim Lewis (CASU, IoA)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004-2007 Cambridge Astronomy Survey Unit. 
+All Rights Reserved
+
+=cut
+
+
