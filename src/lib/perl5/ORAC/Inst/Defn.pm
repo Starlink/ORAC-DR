@@ -1134,6 +1134,80 @@ sub orac_configure_for_instrument {
 
              last SWITCH; }
 
+     if ( $instrument eq "GMOS" ) {
+     
+             # Instrument
+             $ENV{"ORAC_INSTRUMENT"} = "GMOS";
+
+             # Calibration information
+             $orac_cal_root = "/ukirt_sw/oracdr_cal"
+                    unless defined $orac_cal_root;
+             $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"michelle");
+				
+             # Recipe and Primitive
+             #undef $ENV{"ORAC_RECIPE_DIR"} 
+             #       if defined $ENV{"ORAC_RECIPE_DIR"};
+             #undef $ENV{"ORAC_PRIMITIVE_DIR"} 
+             #       if defined $ENV{"ORAC_PRIMITIVE_DIR"};
+
+
+             # data directories
+             $orac_data_root = "/ukirtdata"
+                    unless defined $orac_data_root;
+
+             $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+	                                                "raw","gmos",$oracut);
+             $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir( $orac_data_root,
+	                                              "reduced","gmos",$oracut)
+				     unless defined $$options{"honour"};
+
+             # misc
+             $ENV{"ORAC_PERSON"} = "p.hirst";
+             $ENV{"ORAC_SUN"} = "XXX";
+             if (Net::Domain->domainname =~ "ukirt"  ) {
+                  $options->{"loop"} = "flag";
+             }
+             $options->{"skip"} = 0;
+
+             last SWITCH; }
+	     
+     if ( $instrument eq "NIRI" ) {
+     
+             # Instrument
+             $ENV{"ORAC_INSTRUMENT"} = "NIRI";
+
+             # Calibration information
+             $orac_cal_root = "/ukirt_sw/oracdr_cal"
+                    unless defined $orac_cal_root;
+             $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"niri");
+				
+             # Recipe and Primitive
+             #undef $ENV{"ORAC_RECIPE_DIR"} 
+             #       if defined $ENV{"ORAC_RECIPE_DIR"};
+             #undef $ENV{"ORAC_PRIMITIVE_DIR"} 
+             #       if defined $ENV{"ORAC_PRIMITIVE_DIR"};
+
+
+             # data directories
+             $orac_data_root = "/ukirtdata"
+                    unless defined $orac_data_root;
+
+             $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+	                                                "raw","niri",$oracut);
+             $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir( $orac_data_root,
+	                                              "reduced","niri",$oracut)
+				     unless defined $$options{"honour"};
+
+             # misc
+             $ENV{"ORAC_PERSON"} = "p.hirst";
+             $ENV{"ORAC_SUN"} = "XXX";
+             if (Net::Domain->domainname =~ "ukirt"  ) {
+                  $options->{"loop"} = "flag";
+             }
+             $options->{"skip"} = 0;
+
+             last SWITCH; }
+
 
      orac_err(" Instrument $instrument is not currently supported by Xoracdr\n");
 
