@@ -556,7 +556,7 @@ sub send_to_gaia {
 	if $!;
 
       # Return with an error if the socket read returns a null string
-      return (ORAC__ERROR, "Read null string from GAIA socket. Assuming GAIA has died\n") if $reply1 eq '';
+      return (ORAC__ERROR, "Read null string from GAIA socket. Assuming GAIA has died\n") if $reply2 eq '';
 
       # Append the string
       $message .= $reply2;
