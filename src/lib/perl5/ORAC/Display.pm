@@ -215,7 +215,7 @@ sub display_data {
     # Set the current suffix in the object
     $self->idstring($frm_suffix);
 
-    orac_print("Checking display definition for entry matching $frm_suffix\n",'blue');
+    orac_print("Checking display definition for entry matching $frm_suffix\n",'blue') if $DEBUG;
 
     # Now we need to search through the display definition and
     # decide whether our suffix can be displayed anywhere.
