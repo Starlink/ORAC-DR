@@ -61,7 +61,9 @@ sub new {
   # Assumes we have a hash object
   $obj->{RowName}     = undef;
   $obj->{RowIndex}    = undef;
-
+  $obj->{Mask}        = undef;
+  $obj->{MaskIndex}   = undef;
+  $obj->{MaskNoUpdate} = 0;
   return $obj;
 
 }
@@ -84,16 +86,68 @@ For CGS4 this is set to C<$ORAC_DATA_CAL/fpa46_long> by default
 =cut
 
 
-sub mask {
+sub maskname {
   my $self = shift;
   if (@_) { $self->{Mask} = shift; }
 
-  unless (defined $self->{Mask}) {
-    $self->{Mask} = $ENV{ORAC_DATA_CAL}."/fpa46_long";
-  };
+#  unless (defined $self->{Mask}) {
+#    $self->{Mask} = $ENV{ORAC_DATA_CAL}."/fpa46_long";
+#  };
 
   return $self->{Mask}; 
 };
+
+sub mask {
+
+my $self = shift;
+
+if (@_) {
+  return $self->maskname(shift);
+  };
+
+my $ok = $self->maskindex->verify($self->maskname,$self->thing);
+
+if ($ok) {return $self->maskname};
+
+croak ("Override mask is not suitable! Giving up") if $self->masknoupdate;
+
+if (defined $ok) {
+
+  my $mask = $self->maskindex->choosebydt('ORACTIME',$self->thing);
+  croak "No suitable bad pixel mask was found in index file"
+     unless defined $mask;
+  $self->maskname($mask);
+  } else {
+    croak("Error in bad pixel masking - giving up");
+
+  };
+
+
+}
+
+
+sub maskindex {
+
+  my $self = shift;
+  if (@_) { $self->{MaskIndex} = shift; }
+  unless (defined $self->{MaskIndex}) {
+     my $indexfile = $ENV{ORAC_DATA_OUT}."/index.bpm";
+     my $rulesfile = $ENV{ORAC_DATA_CAL}."/rules.bpm";
+     $self->{MaskIndex} = new ORAC::Index($indexfile,$rulesfile);
+   };
+
+  return $self->{MaskIndex};
+
+};
+
+sub masknoupdate {
+
+  my $self = shift;
+  if (@_) { $self->{MaskNoUpdate} = shift; }
+  return $self->{MaskNoUpdate};
+
+}
+
 
 =item B<rowname>
 
