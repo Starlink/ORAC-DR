@@ -669,7 +669,30 @@ objects:
 
 =over 4
 
+=item B<calc_orac_headers>
 
+This method calculates header values that are required by the
+pipeline by using values stored in the header.
+
+Required ORAC extensions are:
+
+ORACTIME: should be set to a decimal time that can be used for
+comparing the relative start times of frames. For IRCAM this
+number is decimal hours, for SCUBA this number is decimal
+UT days.
+
+ORACUT: This is the UT day of the frame in YYYYMMDD format.
+
+This method should be run after a header is set. Currently the header()
+method calls this whenever it is updated.
+
+This is an abstract method and should be defined by a sub-class.
+
+=cut
+
+sub calc_orac_headers {
+  print "This is an abstract method. Should be defined in a subclass\n";
+}
 
 =item B<check_membership>
 
@@ -1174,11 +1197,14 @@ file. This method does nothing by default since the base
 class does not know the format of the file associated with an
 object.
 
+The calc_orac_headers() method is called automatically.
+
 =cut
 
 
 sub readhdr {
   my $self = shift;
+  $self->calc_orac_headers;
   return;
 }
 
