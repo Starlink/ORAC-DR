@@ -457,11 +457,11 @@ sub xorac_log_window {
                   $$orac_prt->errhdl(\*STDERR);			       
 	          record ORAC::Error::UserAbort( "Destroy from Log Window",
 		                                 ORAC__ABORT );
-		  
+
 	          # destroy the Tk widget
 		  ORAC::Event->destroy($win_str);
 		  ORAC::Event->unregister($win_str);
-		
+
 		  } ] );
 
    # New frame for the top messages
