@@ -147,7 +147,9 @@ Returns a hash containing the new keywords.
 sub calc_orac_headers {
   my $self = shift;
 
-  my %new = ();  # Hash containing the derived headers
+  # Run the base class first since that does the ORAC_
+  # headers
+  my %new = $self->SUPER::calc_orac_headers;
 
   # ORACTIME
   # For UFTI the keyword is simply UTSTART
