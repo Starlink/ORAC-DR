@@ -26,6 +26,8 @@ use strict;
 use Carp;
 use vars qw/$VERSION/;
 
+use Term::ANSIColor;
+
 $VERSION = undef; # -w protection
 $VERSION = '0.10';
 
@@ -499,8 +501,8 @@ sub number {
 
 Method to return the current input filename and the 
 new output filename given a suffix.
-For the base class the suffix is simply appended to the
-input name.
+For the base class the input filename is chopped
+at the last underscore and the suffix appended.
 
 Note that this method does not set the new 
 output name in this object. This must still be done by the
@@ -509,6 +511,9 @@ user.
 Returns $in and $out in an array context:
 
    ($in, $out) = $Obs->inout($suffix);
+
+Therefore if in=file_db and suffix=_ff then out would
+become file_ff
 
 =cut
 
@@ -519,7 +524,23 @@ sub inout {
   my $suffix = shift;
   
   my $infile = $self->file;
-  my $outfile = $self->file . $suffix;
+
+  # Chop off at last underscore
+  # Must be able to do this with a clever pattern match
+  # Want to use s/_.*$// but that turns a_b_c to a and not a_b
+
+  # instead split on underscore and recombine using underscore
+  # but ignoring the last member of the split array
+  my (@junk) = split(/_/,$infile);
+  my $outfile = join("_", @junk[0..$#junk-1]);
+
+  # Now append the suffix to the outfile
+  $outfile .= $suffix;
+
+  # Generate a warning if output file equals input file
+  
+  print colored("WARNING: inout - output filename equals input filename",'red')
+    if ($outfile eq $infile);
 
   return ($infile, $outfile);
 }
