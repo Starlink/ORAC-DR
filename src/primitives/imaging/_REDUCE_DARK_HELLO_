@@ -9,11 +9,29 @@
 #    Perl5
 #
 # Description:
-#    The script performs the following tasks.
+#    This primitive sets up CCDPACK-related global parameters for the
+#    REDUCE_DARK recipe and performs preliminary data reduction.
+
+#    The CCDPACK settings are as follows.
+#    -  The readout bounds in the internal headers ORAC_X_LOWER_BOUND,
+#    ORAC_Y_LOWER_BOUND, ORAC_X_UPPER_BOUND, ORAC_Y_UPPER_BOUND define 
+#    the pixel limits for processing, i.e. there are no bias strips and 
+#    interpolation direction.  
+#    -  Error processing is disabled so the readout noise and
+#    analogue-to-digital conversions are not specified.
+#    -  There is no deferred charge.
+#    -  Position list processing tasks expect to find the names of lists
+#    stored within NDFs. 
+#    -  Logging is to the terminal.
+#    -  The data type of NDF arrays is preserved.
+#    -  Does not detect saturated pixels.
+#    -  Parameters are neither saved from or to a `restoration' file.
+#
+#    The script also performs the following tasks.
 #    -  Sets the USE_VARIANCE steering header.
-#    -  Create error array using the read noise only.
-#    -  Performs the standard per-frame preparation tasks.  See
-#    _PREPARE_SINGLE_FRAME_ for more details.
+#    -  Calls _PREPARE_SINGLE_FRAME_ primitive to mask bad pixels,
+#    create data errors, subtract integrations for chopped and pre-post 
+#    data, and remove the bias.
 #
 # Steering Headers:
 #    USE_VARIANCE = LOGICAL
@@ -25,8 +43,7 @@
 #       Whether or not to create and propagate variance arrays.  [1]
 #
 # Notes:
-#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
-#    in imaging mode.
+#    -  This primitive is suitable for imaging instruments.
 #
 # Authors:
 #    MJC: Malcolm J. Currie (JAC)
@@ -46,6 +63,23 @@
     $usevar = defined( $usevar ) ? $usevar: 1;
     $Frm->uhdr( "USE_VARIANCE", $usevar );
 
+# CCDPACK setup
+# =============
+
+# Read readout bounds from the headers.
+    my $x1 = $Frm->uhdr( "ORAC_X_LOWER_BOUND" );
+    my $x2 = $Frm->uhdr( "ORAC_X_UPPER_BOUND" );
+    my $y1 = $Frm->uhdr( "ORAC_Y_LOWER_BOUND" );
+    my $y2 = $Frm->uhdr( "ORAC_Y_UPPER_BOUND" );
+    my $param1 = "extent=[$x1,$x2,$y1,$y2]";
+
+# Define the hidden variables for CCDPACK setup.
+    my $param2 = "saturate=no preserve=yes genvar=no restore=no logto=terminal adc=! rnoise=! bounds=! direction=! deferred=! ndfnames=yes save=no";
+
+# Execute commands.
+    my $ORAC_STATUS = $Mon{ "ccdpack_res" }->control( "par_reset" );
+    $Mon{ "ccdpack_res" }->obeyw( "ccdsetup", "$param1 $param2 accept" );
+
 # Prepare the single frame.
 # =========================
 
@@ -62,7 +96,53 @@ _REDUCE_DARK_HELLO_ -- Sets up data-reduction tasks and data for REDUCE_DARK rec
 
 =head1 DESCRIPTION
 
-The script performs the following tasks.
+This primitive sets up CCDPACK-related global parameters for the
+REDUCE_DARK recipe and performs preliminary data reduction.
+
+The CCDPACK settings are as follows.
+
+=over 4
+
+=item *
+
+The readout bounds in the internal headers ORAC_X_LOWER_BOUND,
+ORAC_Y_LOWER_BOUND, ORAC_X_UPPER_BOUND, ORAC_Y_UPPER_BOUND define 
+the pixel limits for processing, i.e. there are no bias strips and 
+interpolation direction.  
+
+=item *
+
+Error processing is disabled so the readout noise and
+analogue-to-digital conversions are not specified.
+
+=item *
+
+There is no deferred charge.
+
+=item *
+
+Position list processing tasks expect to find the names of lists
+stored within NDFs. 
+
+=item *
+
+Logging is to the terminal.
+
+=item *
+
+The data type of NDF arrays is preserved.
+
+=item *
+
+Does not detect saturated pixels.
+
+=item *
+
+Parameters are neither saved from or to a `restoration' file.
+
+=back
+
+The script also performs the following tasks.
 
 =over 4
 
@@ -72,7 +152,9 @@ Sets the USE_VARIANCE steering header.
 
 =item *
 
-Create error array using the read noise only.
+Calls L<_PREPARE_SINGLE_FRAME_|_PREPARE_SINGLE_FRAME_> primitive to
+mask bad pixels, create data errors, subtract integrations for chopped
+and pre-post data, and remove the bias.
 
 =back
 
@@ -103,12 +185,7 @@ Whether or not to create and propagate variance arrays.  [1]
 
 =item *
 
-This primitive is suitable for INGRID.
-
-=item *
-
-Performs the standard per-frame preparation tasks.  See
-L<_PREPARE_SINGLE_FRAME_|_PREPARE_SINGLE_FRAME_> for more details.
+This primitive is suitable for imaging instruments.
 
 =back
 
