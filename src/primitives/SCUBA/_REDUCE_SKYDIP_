@@ -22,18 +22,18 @@ Allowed parameters are:
 =item C<T_HOT>
 
 Specify the hot load temperature. In general this is not very useful
-since C<T_HOT> varies with weather conditions. It is assumed that this
-value has been corrected for emissivity of the SCUBA optics.
+since C<T_HOT> varies with weather conditions. The number will be
+corrected for wavelength as detailed in SUN/216.
 
 =item C<T_COLD_{filt}>
 
 Cold load temperature for the specified filter. I<filt> can be
-450, 850, 1350 etc. 
+450N, 850W, 1350 etc.
 
 =item C<ETA_TEL_{filt}>
 
 Telescope efficiency factor (C<eta_tel>) for specified filter.
-I<filt> can be 450, 850, 1350 etc. 
+I<filt> can be 450W, 850N, 1350 etc.
 
 =back
 
@@ -59,53 +59,16 @@ C<SETTITLE>
 
 =item *
 
-For data taken prior to UT date 19980204, C<T_AMB> is used
-rather than C<T_HOT> since T_HOT was not written to the data
-headers until that date.
+If the version of SURF is older than V1.6 then incorrect
+default values of T_COLD and ETA_TEL will be used
+(those in the data headers are not always correct). SURF V1.6
+has more intelligence when setting default parameters.
 
 =item *
 
-For data taken prior to UT date 20000401 C<T_COLD> and C<T_HOT>
-are modified to use the best available values:
-
- Filter   T_hot              T_cold    Eta_tel
-			   	     
- 450 WB   T_hot_meas - 3K    95 K      0.75
- 450 NB   T_hot_meas - 3K    102 K     0.75
- 850 WB   T_hot_meas - 1K    90 K      0.85
- 850 NB   T_hot_meas - 1K    92 K      0.85
-
-Note that C<T_HOT> is modified in order for the number to correctly
-represent the C<T_HOT> seen by the SCUBA optics rather than the
-measured temperature of the chopper wheel.
-
-=cut
-
-my %SDIP_PARS = (
-		 '450n' => {
-			    T_HOT => -3,
-			    T_COLD => 102,
-			    ETA_TEL => 0.75,
-			   },
-		 '450w' => {
-			    T_HOT => -3,
-			    T_COLD => 95,
-			    ETA_TEL => 0.75,
-			   },
-		 '850n' => {
-			    T_HOT => -1,
-			    T_COLD => 92,
-			    ETA_TEL => 0.85,
-			   },
-		 '850w' => {
-			    T_HOT => -1,
-			    T_COLD => 90,
-			    ETA_TEL => 0.85,
-			   },
-		);
-
-# Date before which modifications are to be applied
-my $MOD_DATE = 20000501;
+For data taken prior to UT date 19980204, C<T_AMB> is used
+rather than C<T_HOT> since T_HOT was not written to the data
+headers until that date.
 
 =back
 
@@ -150,26 +113,13 @@ my @filts = $Frm->filters;
 my $in = $Frm->file;
 
 # Check argument list for a hot load temperature
-# And modify as required
+# If one is not supplied we have to 
 
 my $t_hot;         # T_HOT
 my $fix_t_hot = 0; # controls whether to modify T_HOT
 
 if (exists $_REDUCE_SKYDIP_{T_HOT} && defined $_REDUCE_SKYDIP_{T_HOT}) {
   $t_hot = $_REDUCE_SKYDIP_{T_HOT};
-} else {
-
-  # First we need to check the dates
-  # First check for when T_AMB should be used
-  if ($Frm->hdr('ORACUT') < 19980204) {
-    $t_hot = $Frm->hdr('T_AMB');
-    $fix_t_hot = 1;
-  } elsif ($Frm->hdr('ORACUT') < $MOD_DATE) {
-    # Read from the header
-    $t_hot = $Frm->hdr('T_HOT');
-    $fix_t_hot = 1;
-  }
-
 }
 
 # Print a header for the result printing
@@ -181,15 +131,6 @@ for (my $i = 0; $i < $Frm->nsubs; $i++) {
 
   my $sub = uc($subs[$i]);
   my $filt= $filts[$i];
-  
-  # Work out if we have 450 850, wide or narrow band
-  my $modfilt = undef;
-  my $FILTER = uc($Frm->hdr('FILTER'));
-  if ($FILTER eq '450N:850N') {
-    $modfilt = $filt . 'n';
-  } elsif ($FILTER eq '450W:850W') {
-    $modfilt = $filt . 'w';
-  }
 
   # Choose names for temporary output files
   # These simply contain the reduced data and are only
@@ -200,46 +141,20 @@ for (my $i = 0; $i < $Frm->nsubs; $i++) {
   # Set the input args if specified
   my $hidden = ' ';
 
-  # T_COLD CORRECTION
+  # T_COLD
   if (exists $_REDUCE_SKYDIP_{"T_COLD_$filt"}) {
     my $tcold = $_REDUCE_SKYDIP_{"T_COLD_$filt"};
     $hidden .= " T_COLD=$tcold ";
-  } elsif ($Frm->hdr('ORACUT') < $MOD_DATE) {
-    # Modify the TCOLD from default if required
-    if (exists $SDIP_PARS{$modfilt}) {
-      $hidden .= " T_COLD=". $SDIP_PARS{$modfilt}{T_COLD};
-      orac_warn "Changing T_COLD ($filt) to " . $SDIP_PARS{$modfilt}{T_COLD} ."K\n";
-    }
   }
-  
-  # ETA TEL CORRECTION
+
+  # ETA_TEL
   if (exists $_REDUCE_SKYDIP_{"ETA_TEL_$filt"}) {
     my $etatel = $_REDUCE_SKYDIP_{"ETA_TEL_$filt"};
     $hidden .= " ETA_TEL=$etatel ";
-  } elsif ($Frm->hdr('ORACUT') < $MOD_DATE) {
-    # Modify eta tel from default
-    if (exists $SDIP_PARS{$modfilt}) {
-      $hidden .= " ETA_TEL=". $SDIP_PARS{$modfilt}{ETA_TEL};
-      orac_warn "Changing ETA_TEL ($filt) to " . $SDIP_PARS{$modfilt}{ETA_TEL} ."\n";
-    }
   }
-
-  # T_HOT CORRECTION
-  my $this_t_hot;
-  $this_t_hot = $t_hot if defined $t_hot;
-  if ($fix_t_hot) {
-    # Modify eta tel from default
-    if (exists $SDIP_PARS{$modfilt}) {
-      $this_t_hot = $t_hot + $SDIP_PARS{$modfilt}{T_HOT};
-      orac_warn "Changing T_HOT ($filt) by " . $SDIP_PARS{$modfilt}{T_HOT} ."K\n";
-    }
-  }
-
-  # Convert to SKYDIP string
-  $this_t_hot = ' T_HOT='.$this_t_hot if defined $this_t_hot;
 
   # Append T_HOT
-  $hidden .= $this_t_hot if defined $this_t_hot;
+  $hidden .= " T_HOT=$t_hot" if defined $t_hot;
 
   # Set the input arguments
   my $args = "sub_instrument=$sub $hidden accept";
@@ -264,11 +179,14 @@ for (my $i = 0; $i < $Frm->nsubs; $i++) {
     ($ORAC_STATUS, my $bfit) = $Mon{surf_mon}->get("skydip","b_fit");
 
     # residual only appears in v1.5-2 of SURF
-    ($ORAC_STATUS, my $residual) = $Mon{surf_mon}->get("skydip","residual");
+    my $residual = '-1';
+    if (starversion_gt('surf', 'V1.5-1') ) {
+      ($ORAC_STATUS, $residual) = $Mon{surf_mon}->get("skydip","residual");
+    }
 
     # Formatted string
     my $string = sprintf("%6.3f  %5.2f  %5.2f %10.2f", $tauz, $etatel, $bfit, $residual);
-  
+
     orac_print " $sub:\t$string [updating index]\n";
 
     # Update the model filename in the frame
@@ -314,12 +232,4 @@ for (my $i = 0; $i < $Frm->nsubs; $i++) {
   }
 
 }
-
-
-
-# COPYRIGHT
-#
-#   Copyright (C) 1998-2000 Particle Physics and Astronomy Research
-#   Council. All Rights Reserved.
-
 
