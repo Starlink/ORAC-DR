@@ -30,10 +30,10 @@ use 5.006;
 use warnings;
 use vars qw/$VERSION/;
 use ORAC::Constants;
-use ORAC::Frame::SEF;
+use ORAC::Frame::MEF;
 
 # Let the object know that it is derived from ORAC::Frame::UKIRT;
-use base qw/ORAC::Frame::SEF/;
+use base qw/ORAC::Frame::MEF/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
@@ -64,6 +64,7 @@ my %hdr = (
             RA_BASE             => "RABASE",
             RA_SCALE             => "CDELT1",
             RA_TELESCOPE_OFFSET  => "TRAOFF",
+  	    READNOISE           => "READNOIS",
             RECIPE              => "RECIPE",
             ROTATION            => "CROTA2",
             SPEED_GAIN          => "SPD_GAIN",
@@ -316,6 +317,22 @@ sub readnoiseindex_exist {
     my $rexist = (-e $ENV{ORAC_DATA_OUT}."/index.readnoise" ? 1 : 0);
     return($rexist);
 }
+
+=item B<hdrkeys>
+ 
+Find out what the UFTI fits keyword for a particular ORAC header keyword is
+ 
+    $header_keywords = $Frm->hdrkeys($orac_keyword);
+ 
+=cut
+ 
+sub hdrkeys {
+    my $self = shift;
+    my $key = shift;
+ 
+    return($hdr{$key});
+}
+ 
 
 =back
 

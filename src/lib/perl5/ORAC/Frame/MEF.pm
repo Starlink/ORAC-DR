@@ -163,19 +163,21 @@ sub configure {
     # Find nsubs if this is the PHU
     
     my ($basename,$dir,$suffix,$extn) = $self->parsefname;
-    my $nsubs;
+    my ($nsubs,$simple);
     if (! defined $extn || $extn == 0) {
         $nsubs = $self->findnsubs;
+        $simple = ($nsubs == 0 ? 1 : 0);
     } else {
         $nsubs = 0;
+        $simple = 0;
     }
     
     # If there are image extensions, then create a frame object for each of
     # them.  Also find the group and the recipe for the PHU.  If there aren't
-    # any extensions, then you either have a simple FITS file (in which case
-    # you really shouldn't be using this class) or you have an image extension
-    # that has recursed through here.  In the latter case there is no
-    # need to find a recipe or group as this will have been done for the PHU.
+    # any extensions, then you either have a simple FITS file (see below)
+    # or you have an image extension that has recursed through here.  In the 
+    # latter case there is no need to find a recipe or group as this will 
+    # have been done for the PHU.
     
     if ($nsubs != 0) {
         my $i;
@@ -195,6 +197,16 @@ sub configure {
 
         # Find the recipe name
     
+        $self->findrecipe;
+    } elsif ($simple) {
+        my $subFrm = $self->new;
+        $subFrm->file($fname);
+        $subFrm->raw($fname);
+        $subFrm->readhdr;
+        $self->{SubFrms} = [$subFrm];
+        $subFrm->subfrmnumber(0);
+        $self->subfrmnumber(0);
+        $self->findgroup;
         $self->findrecipe;
     }
 
@@ -222,16 +234,24 @@ sub findnsubs {
         $file = $self->file;
     }
 
-    # Open the file and read the number of extensions.
+    # If the subframes array has been defined, then get the number from
+    # that.
 
-    my $status = 0;
-    my $fptr = Astro::FITS::CFITSIO::open_file($file,READONLY,$status);
     my $nhdus;
-    $fptr->get_num_hdus($nhdus,$status);
-    $fptr->close_file($status);
-    if ($status != 0) {
-        orac_err("Can't open file $file for nsubs or error reading");
-        return(0);
+    if (defined $self->{SubFrms}) {
+        $nhdus = @{$self->{SubFrms}} + 1;
+
+    # Otherwise open the file and read the number of extensions.
+
+    } else {
+        my $status = 0;
+        my $fptr = Astro::FITS::CFITSIO::open_file($file,READONLY,$status);
+        $fptr->get_num_hdus($nhdus,$status);
+        $fptr->close_file($status);
+        if ($status != 0) {
+            orac_err("Can't open file $file for nsubs or error reading");
+            return(0);
+        }
     }
     return($nhdus-1);
 }
@@ -333,6 +353,9 @@ Copyright (C) 2003-2006 Cambridge Astronomy Survey Unit. All Rights Reserved.
 #
 #
 # $Log$
+# Revision 1.3  2003/09/25 10:03:54  jrl
+# Updated to for MEFs and SEFs
+#
 # Revision 1.2  2003/09/17 13:13:32  jrl
 # Small updates to error handling and to cope with extra processing steps
 #
