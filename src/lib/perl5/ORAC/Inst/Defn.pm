@@ -739,6 +739,7 @@ sub orac_configure_for_instrument {
   my $domain = Net::Domain->domainname;
 
 
+
   SWITCH: {
      if ( $instrument eq "CGS4" ) {
      
@@ -1006,9 +1007,10 @@ sub orac_configure_for_instrument {
 		  unless defined $$options{"honour"};
 
 		# We only really want people to do DR on kolea
-                if ( hostname ne "kolea" ) {
-                   orac_err("Please use mamo for ORAC-DR reduction. Aborting.");
-                   throw ORAC::Error::FatalError( "Use kolea for reduction",
+		my $drmachine = "kolea";
+                if ( hostname ne $drmachine ) {
+                   orac_err("Please use $drmachine for ORAC-DR reduction. Aborting.");
+                   throw ORAC::Error::FatalError( "Use $drmachine for reduction",
 		                                  ORAC__FATAL);
                 }
 
