@@ -434,7 +434,7 @@ STARTUP_SCRIPT = $(PKG_NAME)_start.csh
 
 LATEX_DOCS = \
    sun230.tex \
-   sun230_disp.eps sun230_logo.eps sun230_train.eps \
+   sun230_disp.eps sun230_logo.eps sun230_train.eps sun230_xoracdr.eps \
    sun231.tex \
    sun231_disp.eps sun231_logo.eps sun231_sculogo.eps \
    sun232.tex \
