@@ -1,3 +1,57 @@
+#+
+# Name:
+#    _REMOVE_COLUMN_ROW_STRUCTURE_
+#
+# Purpose:
+#    Removes additive artefacts present in the rows and columns.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive removes either or both vertical and horizontal additive
+#    artefacts arising from pickup and bias variations.  For vertical
+#    artefacts it first collapses each column using a median filter,
+#    subtracts the resultant profile mean.  The resultant vector is grown
+#    to the dimensions of the original frame, and set to the original origin. 
+#    This frame of medians is subtracted from the original frame.  Similar
+#    steps are repeated for horizontal artefacts, but the collapse is along
+#    the rows.
+#
+# Arguments:
+#    DIRECTION = = CHARACTER (Given)
+#       The filtering directions.  Allowed (case insensitive) values are
+#       "Row" for purely horizontal filtering, "Column" for only
+#       vertical-artefact filtering.  "Both" corrects for vertical
+#       then horizontal artefacts.  ["Both"]
+#
+# Notes:
+#    -  This primitive is suitable for an imaging infrared camera.
+#    -  Processing only occurs for object frames.
+#    -  The removal of column and row structure is reported.
+#    -  The column- and row-corrected frames can be displayed.
+#
+# Output Data:
+#    -  The x and y collapsed median vectors inheriting the current
+#    frame's filename but with the _xpr and _ypr suffices.
+#    -  The column and row corrected frames inheriting the current
+#    frame's filename but with the _cpc and _rpc suffices.
+#
+# Tasks:
+#    KAPPA: COLLAPSE, CSUB, NDFTRACE, PIXDUPE, RESHAPE, SETORIGIN,
+#           STATS, SUB.
+#
+# Deficiencies:
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 2002-2004 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
 # This should only be performed on OBJECT frames.
     if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT/ ) {
 
@@ -9,96 +63,219 @@
        my ( $ORAC_STATUS, @dims ) = $Mon{"ndfpack_mon"}->get( "ndftrace", "dims" );
        my $xdim = $dims[ 0 ];
        my $ydim = $dims[ 1 ];
-       
+
+       my ( $in, $out, $param, $ORAC_STATUS, $mean );
+
+# Arguments
+# =========
+
+# Obtain the value for the directions to filter.  B does not appear in
+# row or column, likewise C is absent from row or both.
+       my $direction = uc( $_REMOVE_COLUMN_ROW_STRUCTURE_{DIRECTION} || "B" );
+       $direction = "R" if $direction =~ /R/;
+       $direction = "C" if $direction =~ /C/;
+       $direction = "B" if $direction =~ /B/;
+
 # Correct for column structure
 # ============================
+       if ( $direction eq "B" || $direction eq "C" ) {
 
 # Create temporary files.
-       my $coltmp = new ORAC::TempFile;
-       my $colfile = $coltmp->file;
+          my $coltmp = new ORAC::TempFile;
+          my $colfile = $coltmp->file;
 
-       my $colprotmp = new ORAC::TempFile;
-       my $colprofile = $colprotmp->file;
+          my $colprotmp = new ORAC::TempFile;
+          my $colprofile = $colprotmp->file;
+
+          my $coldiftmp = new ORAC::TempFile;
+          my $coldiffile = $coldiftmp->file;
 
 # Collapse the columns obtaining the median.  This forms a map of
 # column structure, caused for example by bias variations.
-       my( $in, $out ) = $Frm->inout( "_ypr" );
-       my $param = "in=$in out=$out estimator=median axis=2";
-       $Mon{ "kappa_mon" }->obeyw( "collapse", "$param" );
+          ( $in, $out ) = $Frm->inout( "_ypr" );
+          $param = "in=$in out=$out estimator=median axis=2";
+          $Mon{ "kappa_mon" }->obeyw( "collapse", "$param" );
+
+# Obtain the mean of the collapsed frame.
+          $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$out" );
+          ( $ORAC_STATUS, $mean ) = $Mon{ "kappa_mon" }->get( "stats", "mean" );
+
+# Subtract the mean level, so the profile represents the variations
+# about the average signal along columns.
+          $param = "in=$out out=$coldiffile scalar=$mean";
+          $Mon{ "kappa_mon" }->obeyw( "csub", "$param" );
 
 # Convert this vector to two dimensions.  Note the unusual monolith
 # for RESHAPE.
-       $param = "in=$out out=$colprofile shape=[$xdim,1]";
-       $Mon{ "ndfpack_mon" }->obeyw( "reshape", "$param" );
+          $param = "in=$coldiffile out=$colprofile shape=[$xdim,1]";
+          $Mon{ "ndfpack_mon" }->obeyw( "reshape", "$param" );
 
 # Duplicate along the columns restoring an image the size of the
 # frame on input. 
-       $param = "in=$colprofile out=$colfile expand=[1,$ydim]";
-       $Mon{ "kappa_mon" }->obeyw( "pixdupe", "$param" );
+          $param = "in=$colprofile out=$colfile expand=[1,$ydim]";
+          $Mon{ "kappa_mon" }->obeyw( "pixdupe", "$param" );
 
 # Set the origin to match that of the original frame.
-       $param = "ndf=$colfile like=$ndf";
-       $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param" );
+          $param = "ndf=$colfile like=$ndf";
+          $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param" );
 
 # Subtract the two-dimensional column pattern from the original frame.
 # CPC stands for column-profile corrected.
-       ( $in, $out ) = $Frm->inout( "_cpc" );
-       $param = "in1=$in in2=$colfile out=$out";
-       $Mon{ "kappa_mon" }->obeyw( "sub", "$param" );
+          ( $in, $out ) = $Frm->inout( "_cpc" );
+          $param = "in1=$in in2=$colfile out=$out";
+          $Mon{ "kappa_mon" }->obeyw( "sub", "$param" );
 
 # Report progress.
-       orac_print "Remove column structure in $in using the median to form $out\n";
+          orac_print "Remove column structure in $in using the median to form $out\n";
 
 # Update the frame.
-       $Frm->file( $out );
+          $Frm->file( $out );
 
 # Display the cleaned frame.
-       $Display->display_data( $Frm ) if ( defined $Display );
+          $Display->display_data( $Frm ) if ( defined $Display );
+       } 
 
 # Correct for row structure
 # =========================
+       if ( $direction eq "B" || $direction eq "R" ) {
 
 # Create temporary files.
-       my $rowtmp = new ORAC::TempFile;
-       my $rowfile = $rowtmp->file;
+          my $rowtmp = new ORAC::TempFile;
+          my $rowfile = $rowtmp->file;
 
-       my $rowprotmp = new ORAC::TempFile;
-       my $rowprofile = $rowprotmp->file;
+          my $rowprotmp = new ORAC::TempFile;
+          my $rowprofile = $rowprotmp->file;
+
+          my $rowdiftmp = new ORAC::TempFile;
+          my $rowdiffile = $rowdiftmp->file;
 
 # Collapse the rows obtaining the median.  This forms a map of the row
 # structure, caused for example by electronic pickup.
-       my ( $in, $out ) = $Frm->inout( "_xpr" );
-       my $param = "in=$in out=$out estimator=median axis=1";
-       $Mon{ "kappa_mon" }->obeyw( "collapse", "$param" );
+          ( $in, $out ) = $Frm->inout( "_xpr" );
+          $param = "in=$in out=$out estimator=median axis=1";
+          $Mon{ "kappa_mon" }->obeyw( "collapse", "$param" );
+
+# Obtain the mean of the collapsed frame.
+          $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$out" );
+          ( $ORAC_STATUS, $mean ) = $Mon{ "kappa_mon" }->get( "stats", "mean" );
+
+# Subtract the mean level, so the profile represents the variations
+# about the average signal along rows.
+          $param = "in=$out out=$rowdiffile scalar=$mean";
+          $Mon{ "kappa_mon" }->obeyw( "csub", "$param" );
 
 # Convert this vector to two dimensions.
-       $param = "in=$out out=$rowprofile shape=[1,$ydim]";
-       $Mon{ "ndfpack_mon" }->obeyw( "reshape", "$param" );
+          $param = "in=$rowdiffile out=$rowprofile shape=[1,$ydim]";
+          $Mon{ "ndfpack_mon" }->obeyw( "reshape", "$param" );
 
 # Duplicate along the rows restoring an image the size of the frame on
 # input. 
-       $param = "in=$rowprofile out=$rowfile expand=[$xdim,1]";
-       $Mon{ "kappa_mon" }->obeyw( "pixdupe", "$param" );
+          $param = "in=$rowprofile out=$rowfile expand=[$xdim,1]";
+          $Mon{ "kappa_mon" }->obeyw( "pixdupe", "$param" );
 
 # Set the origin to match that of the original frame.
-       $param = "ndf=$rowfile like=$ndf";
-       $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param" );
+          $param = "ndf=$rowfile like=$ndf";
+          $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param" );
 
 # Subtract the two-dimensional row pattern from the original frame.
 # RPC stands for row-profile corrected.
-       ( $in, $out ) = $Frm->inout( "_rpc" );
-       $param = "in1=$in in2=$rowfile out=$out";
-       $Mon{ "kappa_mon" }->obeyw( "sub", "$param" );
+          ( $in, $out ) = $Frm->inout( "_rpc" );
+          $param = "in1=$in in2=$rowfile out=$out";
+          $Mon{ "kappa_mon" }->obeyw( "sub", "$param" );
 
 # Report progress.
-       orac_print "Remove row structure in $in using the median to form $out\n";
+          orac_print "Remove row structure in $in using the median to form $out\n";
 
 # Update the frame.
-       $Frm->file( $out );
+          $Frm->file( $out );
 
 # Display the cleaned frame.
-       $Display->display_data( $Frm ) if ( defined $Display );
+          $Display->display_data( $Frm ) if ( defined $Display );
+       }
 
 # Tidy output.
        orac_print "\n";
     }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_REMOVE_COLUMN_ROW_STRUCTURE_ -- Removes additive artefacts present in the rows and columns.
+
+=head1 DESCRIPTION
+
+This primitive removes either or both vertical and horizontal additive
+artefacts arising from pickup and bias variations.  For vertical
+artefacts it first collapses each column using a median filter,
+subtracts the resultant profile mean.  The resultant vector is grown
+to the dimensions of the original frame, and set to the original origin. 
+This frame of medians is subtracted from the original frame.  Similar
+steps are repeated for horizontal artefacts, but the collapse is along
+the rows.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item DIRECTION = = CHARACTER (Given)
+
+The filtering directions.  Allowed (case insensitive) values are
+"Row" for purely horizontal filtering, "Column" for only
+vertical-artefact filtering.  "Both" corrects for vertical
+then horizontal artefacts.  ["Both"]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for an imaging infrared camera.
+
+=item *
+
+Processing only occurs for object frames.
+
+=item *
+
+The removal of column and row structure is reported.
+
+=item *
+
+The column- and row-corrected frames can be displayed.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The I<x> and I<y> collapsed median vectors inheriting the current
+frame's filename but with the _xpr and _ypr suffices.
+
+=item *
+
+The column and row corrected frames inheriting the current
+frame's filename but with the _cpc and _rpc suffices.
+
+=head1 TASKS
+
+KAPPA: COLLAPSE, CSUB, NDFTRACE, PIXDUPE, RESHAPE, SETORIGIN,
+STATS, SUB.
+
+=head1 AUTHORS
+
+Malcolm J. Currie (mjc@star.rl.ac.uk)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2002-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
