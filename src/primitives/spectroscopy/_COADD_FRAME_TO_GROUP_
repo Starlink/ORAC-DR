@@ -1,0 +1,213 @@
+# _COADD_PAIRS_AND_GROUP_  -*-perl-*-
+
+=head1 NAME
+
+_COADD_FRAME_GROUP - coadd observations to group file
+
+=head1 DESCRIPTION
+
+Coadds observation frames to a group file. The average of the
+observations is stored in the group. This does not work with
+OBJECT/SKY pairs (see _COADD_PAIRS_AND_GROUP_ instead).
+
+=head1 PARAMETERS
+
+=over 4
+
+none
+
+=back
+
+=head1 ORAC
+
+=head2 Engines referenced
+
+KAPPA
+
+=head2 Tasks called
+
+=over 4
+
+=item kappa_mon
+
+sub, cmult, add, cdiv
+
+=item ndfpack_mon
+
+erase
+
+=back
+
+=head2 Objects addressed
+
+$Frm, $Grp
+
+=head1 NOTES
+
+This primitive does work with the C<-resume> flag but does not work
+with the C<-batch> flag.
+
+Assumes that by the time this primitive is called, there is only 
+one file associated with the frame object.
+
+=head2 REVISION
+
+  $Id$
+
+=head1 AUTHOR
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>,
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+=cut
+
+    my $obsnum = $Frm->number;
+    my $param1;
+
+# We're using $Grp->raw so that the primitive will -always- coadd to the base
+# group file. If some other steps were done after this (i.e. ratioing by a
+# standard), then $Grp->file would be the name of the file after the other
+# steps, thus sending the entire primitive into a pit of despair from which
+# it would be quite difficult to return
+    my $groupname = $Grp->raw;
+    my $framename = $Frm->file;
+
+# Now update the groupname with this value so that all the
+# methods will look in the right place
+    $Grp->file( $groupname );
+
+    if ( ! ( $Grp->file_exists ) ) {
+
+# The group file doesn't exist, so copy the frame to the group file
+       $param1 = "in=$framename out=$groupname title=$groupname";
+       $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$param1" );
+       orac_print "Creating group $groupname\n";
+
+# ...and update the group header
+       $Grp->readhdr;
+
+# This is repeated in a later segment as well.
+# Since we have coadded an observation we need to store this information
+# in the group file coadds array.
+       $Grp->coaddspush( $obsnum );
+
+    } elsif ( $Grp->coaddspresent( $obsnum ) ) {
+
+# Already been coadded.
+       orac_print "This observation ($obsnum) have already been coadded.  Skipping.\n";
+
+    } else {
+
+# The group file exists and this observation has not previously been
+# added.  Determine how many observations have already been added.
+# The number of observations added previously is from coadds.
+       my $numobsadded = scalar( @{ scalar( $Grp->coadds ) } );
+
+# Now we need to "unaverage" the group file.  A temporary file is needed
+# for this.
+       my $unavg = new ORAC::TempFile;
+       my $unavgname = $unavg->file;
+       $param1 = "in=$groupname scalar=$numobsadded out=$unavgname";
+       $Mon{'kappa_mon'}->obeyw( "cmult", "$param1" );
+
+# Now add the current observation to the unaveraged group.  A temp file is
+# needed.
+       my $addgroup = new ORAC::TempFile;
+       my $addgroupname = $addgroup->file;
+       $param1 = "in1=$unavgname in2=$framename out=$addgroupname";
+       $Mon{'kappa_mon'}->obeyw( "add", "$param1" );
+
+# Now average the result.  Erase the original group file first, because
+# KAPPA will complain if it tries to overwrite a file (will it?? TIMJ).
+       $Mon{'ndfpack_mon'}->obeyw( "erase", "object=$groupname ok=true" );
+       my $avgscalar = $numobsadded + 1;
+       $param1 = "scalar=$avgscalar out=$groupname title=$groupname";
+       $Mon{'kappa_mon'}->obeyw( "cdiv","in=$addgroupname $param1" );
+       orac_print "Adding observation $framename to group $groupname.\n";
+
+# Print an informative message (I dont think it will ever get here
+# with only a single frame since the early if should catch it.
+       if ( $avgscalar == 1 ) {
+          orac_print "Group file now contains observations from one frame.\n";
+       } else {
+          orac_print "Group file now contains observations from $avgscalar frames.\n";
+       }
+
+# Form and store the variance array
+# =================================
+
+# Can only compute the variance once there are at least three frames
+# combined in the group.
+       my ( $ndf, $padnum );
+       if ( $avgscalar >= 3 ) {
+
+# MSTATS has a terrible user interface (for now).  Create copies of the files
+# with the naming convention required, some name followed by a four-digit
+# number.  The number increments for each frame.
+          foreach my $i ( 1..$avgscalar ) {
+             $ndf = $Grp->frame( $i - 1 )->file;
+             $padnum = "0" x ( 4 - length( "$i" ) ) . $i;
+             $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$ndf out=mstats$padnum" );
+          }
+
+# Form the array of standard deviations.
+          my $means = "mstatsmean$$";
+          my $sigmas = "mstatssigma$$";
+          $param1 = "inmode=Sequential pixmode=Box numseq=$avgscalar noordrst";
+          my $param2 = "firstfile=mstats0001 mean=$means stddev=$sigmas";
+          $Mon{'kappa_mon'}->obeyw( "mstats", "$param1 $param2 reset accept" );
+
+# Form a variance array (the data array being standard deviations).
+          $param1 = "ndf=$sigmas variance=data**2";
+          $Mon{'ndfpack_mon'}->obeyw( "setvar", "$param1" );
+
+# Finally copy the variance array just created to the co-added frame.
+# COPOBJ does not clobber existing components, so an existing VARIANCE
+# must be removed first.
+          if ( $avgscalar > 3 ) {
+             $param2 = "object=${groupname}.variance ok=true";
+             $Mon{'ndfpack_mon'}->obeyw( "erase", "$param2" );
+          }
+          $param1 = "source=${sigmas}.variance object=${groupname}.variance";
+          $Mon{'figaro1'}->obeyw( "copobj", "$param1" );
+       }
+
+# Edit the FITS headers to relect the combination.
+# ================================================
+
+# Now update the FITS header to reflect the new end airmass, using the
+# value from the current frame.  Using the internal header, obtain the
+# name of the external keyword.
+       my $amendname = "ORAC_AIRMASS_END";
+       my $amend  = $Frm->uhdr( $amendname );
+       my %keywords = $Frm->translate_hdr( $amendname );
+       my @amendkey = keys( %keywords );
+       _SET_GROUP_FITS_ITEM_ KEY=$amendkey[ 0 ] VALUE=$amend
+
+# Do likewise for the end UT time.
+       my $utendname = "ORAC_AIRMASS_END";
+       my $utend  = $Frm->uhdr( $utendname );
+       %keywords = $Frm->translate_hdr( $utendname );
+       my @utendkey = keys( %keywords );
+       _SET_GROUP_FITS_ITEM_ KEY=$utendkey[ 0 ] VALUE=$utend
+
+# Housekeeping
+# ============
+       if ( $avgscalar >= 3 ) {
+          _DELETE_A_FRAME_ FRAME=mstatsmean$$
+#          _DELETE_A_FRAME_ FRAME=mstatssigma$$
+
+          foreach my $i ( 1..$avgscalar ) {
+             $padnum = "0" x ( 4 - length( "$i" ) ) . $i;
+#             _DELETE_A_FRAME_ FRAME=mstats$padnum
+          }
+       }
+
+# Since we have coadded an observation we need to store this information
+# in the group file coadds array.
+       $Grp->coaddspush( $obsnum );
+   }
+
+# Display the co-added image.
+   $Display->display_data( $Grp ) if defined $Display;
+
