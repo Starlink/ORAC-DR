@@ -142,7 +142,7 @@ rather than in the KAPVIEW monolith.
 
 sub kappa {
   my $self = shift;
-  return $self->engine_lanch_object->engine("kappa_mon");
+  return $self->engine_launch_object->engine("kappa_mon");
 }
 
 =item B<ndfpack>
@@ -158,7 +158,7 @@ A NdfPack messaging object is created if the object is undefined.
 
 sub ndfpack {
   my $self = shift;
-  return $self->engine_lanch_object->engine("ndfpack_mon");
+  return $self->engine_launch_object->engine("ndfpack_mon");
 }
 
 
@@ -179,7 +179,7 @@ Returns undef if polpack_mon is not available.
 
 sub polpack {
   my $self = shift;
-  return $self->engine_lanch_object->engine("polpack_mon");
+  return $self->engine_launch_object->engine("polpack_mon");
 }
 
 
