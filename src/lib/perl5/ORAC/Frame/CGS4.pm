@@ -49,7 +49,7 @@ use Starlink::HDSPACK qw/copobj/;
 my %hdr = (
             CONFIGURATION_INDEX => "CNFINDEX",
             DETECTOR_INDEX      => "DINDEX",
-            DETECTOR_MODE       => "DETMODE",
+            DETECTOR_MODE       => "MODE",
             DIM1                => "DCOLUMNS",
             DIM2                => "DROWS",
             EXP_TIME            => "DEXPTIME",
@@ -80,20 +80,20 @@ ORAC::Frame::CGS4->_generate_orac_lookup_methods( \%hdr );
 
 sub _to_UTEND {
   my $self = shift;
-  $self->hdr->{ $self->nfiles }->{UTEND};
+  $self->hdr->{ $self->nfiles }->{RUTEND};
 }
 
 sub _from_UTEND {
-  "UTEND", $_[0]->uhdr("ORAC_UTEND");
+  "RUTEND", $_[0]->uhdr("ORAC_UTEND");
 }
 
 sub _to_UTSTART {
   my $self = shift;
-  $self->hdr->{ 1 }->{UTSTART};
+  $self->hdr->{ 1 }->{RUTSTART};
 }
 
 sub _from_UTSTART {
-  "UTSTART", $_[0]->uhdr("ORAC_UTSTART");
+  "RUTSTART", $_[0]->uhdr("ORAC_UTSTART");
 }
 
 

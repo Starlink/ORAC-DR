@@ -42,7 +42,7 @@ use vars qw/$VERSION/;
 my %hdr = (
             CONFIGURATION_INDEX => "CNFINDEX",
             DETECTOR_INDEX      => "DINDEX",
-            DETECTOR_MODE       => "DETMODE",
+            DETECTOR_MODE       => "MODE",
             DIM1                => "DCOLUMNS",
             DIM2                => "DROWS",
             EXP_TIME            => "DEXPTIME",
@@ -58,8 +58,8 @@ my %hdr = (
             TDECOFF             => "DECOFF",
             TRAOFF              => "RAOFF",
             UTDATE              => "IDATE",
-            UTEND               => "UTEND",
-            UTSTART             => "UTSTART"
+            UTEND               => "RUTEND",
+            UTSTART             => "RUTSTART"
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed by
