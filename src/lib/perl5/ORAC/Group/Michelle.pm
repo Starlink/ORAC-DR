@@ -132,7 +132,7 @@ pipeline by using values stored in the header.
 Required ORAC extensions are:
 
 ORACTIME: should be set to a decimal time that can be used for
-comparing the relative start times of frames. For IRCAM this
+comparing the relative start times of frames.  For UKIRT this
 number is decimal hours, for SCUBA this number is decimal
 UT days.
 
