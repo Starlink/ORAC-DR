@@ -36,6 +36,7 @@ use ORAC::Display;
 use ORAC::LogFile;  # For log file generation
 use ORAC::General; # General subroutines given to the recipes
 use ORAC::Constants qw/:status/;	# 
+use ORAC::TempFile;
 
 use IO::File;  # Open and close files
 use Cwd; # Current working directory
@@ -128,6 +129,20 @@ sub nbspoke {
 Executes the recipes stored in $reciperef (an Array reference).
 Also needs the current frame, group and calibration objects
 as well as the hash containing all the messaging objects.
+
+The following classes are avaiable to primitive writers:
+
+  ORAC::Print, ORAC::LogFile, ORAC::General, ORAC::Constants,
+  ORAC::TempFile and IO::File.
+
+Other classes can be loaded from within the recipe as needed.
+
+The variables accessible to the recipe are:
+
+  $Grp - the current group.
+  $Frm - the current frame
+  $Cal - the calibration object
+  $Display - the display system (undefined if display not required)
 
 =cut
 
@@ -687,6 +702,10 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.37  1999/05/12 04:25:17  timj
+#Add ORAC::TempFile.
+#Expand docs for orac_execute_recipe
+#
 #Revision 1.36  1999/05/10 23:32:29  timj
 #Make $Display a package global
 #
