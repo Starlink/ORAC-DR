@@ -28,7 +28,11 @@ ORAC::Calib::UKIRT objects.
 
 use ORAC::Calib;			# use base class
 
-@ORAC::Calib::CGS4::ISA = qw/ORAC::Calib/; # set up inheritance
+use base qw/ORAC::Calib/;
+
+use vars qw/$VERSION/;
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+# @ORAC::Calib::CGS4::ISA = qw/ORAC::Calib/; # set up inheritance
 
 # standard error module and turn on strict
 use Carp;
@@ -36,7 +40,7 @@ use strict;
 
 
 
-=item mask
+=item B<mask>
 
 Return (or set) the name of the rotation transformation matrix
 
@@ -52,14 +56,14 @@ sub mask {
   if (@_) { $self->{Mask} = shift; }
 
   unless (defined $self->{Mask}) {
-    $self->{Mask} = $ENV{ORAC_DATA_CAL}."/bpm";
+    $self->{Mask} = $ENV{ORAC_DATA_CAL}."/fpa46_long";
   };
 
 
   return $self->{Mask}; 
 };
 
-=item flat
+=item B<flat>
 
 
 =cut
