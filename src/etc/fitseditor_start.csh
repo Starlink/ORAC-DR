@@ -27,16 +27,16 @@
 #       install
 #     - $ORAC_PERLBIN environment variable can be used to override
 #       the use of Starlink PERL.
-#     - $ORACDR_VERSION environment variable can be used to override
+#     - $ORAC_VERSION environment variable can be used to override
 #       the package version set during the installation.
 
 #  History:
 #     $Log$
+#     Revision 1.2  2001/10/24 14:35:25  allan
+#     Re-integrate FITS Editor into ORAC-DR tree post-ADASS XI
+#
 #     Revision 1.1  2001/07/02 23:09:08  allan
 #     FITS Editor, basic functionality only. Menus not working
-#
-#
-#
 
 #  Revision:
 #     $Id$
@@ -52,8 +52,8 @@
 
 # Can do this by a secret override or by using the Starlink install system
 
-# Check for the existence of a $ORAC_PERLBIN environment variable and allow 
-# that to be used in preference to the starlink version if set.
+# Check for the existence of a $ORAC_PERLBIN environment variable and
+# allow that to be used in preference to the starlink version if set.
 
 # Use setenv starperl to pass the location along to the Xoracdr script
 if ($?ORAC_PERLBIN) then
@@ -67,12 +67,19 @@ endif
 
 # Set up back door for the version number
 
-if ($?ORACDR_VERSION) then
-  set pkgvers = $ORACDR_VERSION
+if ($?ORAC_VERSION) then
+  set pkgvers = $ORAC_VERSION
 else
   set pkgvers = PKG_VERS
 endif
 
+# Default for ORAC_PERL5LIB
+
+if (! $?ORAC_PERL5LIB) then
+  setenv ORAC_PERl5LIB ${ORAC_DIR}/lib/perl5
+  echo " "
+  echo " Warning: ORAC_PERL5LIB = ${ORAC_PERl5LIB}"
+endif
 
 # These are perl programs
 
@@ -92,7 +99,7 @@ if (-e $STARPERL ) then
   echo " FITS Header Editor -- (Version ${pkgvers})"
   echo " "
   echo " Please wait, spawning fitseditor${editor_args}..."
-  $STARPERL  ${ORAC_DIR}/bin/fitseditor.pl ${editor_args}
+  $STARPERL ${ORAC_DIR}/bin/fitseditor.pl ${editor_args}
 
 else
   echo "FITS Header Editor -- (Version $pkgvers)"

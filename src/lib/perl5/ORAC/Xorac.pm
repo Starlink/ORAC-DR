@@ -39,7 +39,7 @@ use Carp;            # Transfer the blame to someone else
 # Want to specify a font that is consistent with our
 # resources. The easiest way to do this is simply to
 # not specify a font. For testing want to get the resource
-our $FONT = 'fixed';
+our $FONT = 'Arial';
 
 # P O D  D O C U M E N T A T I O N ------------------------------------------
 
