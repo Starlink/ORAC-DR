@@ -20,7 +20,7 @@ Provides the routines for parsing and executing recipes.
 =cut
 
 use Carp;
-use vars qw($VERSION @ISA @EXPORT $Display $Nbs);
+use vars qw($VERSION @ISA @EXPORT $Display $Nbs $Batch);
 
 # This module requires the Starlink::EMS module to translate
 # the facility error status.
@@ -52,6 +52,8 @@ use Cwd; # Current working directory
 $VERSION = '0.10';
 
 $Display = undef;   # Display object - only configured if we have a display
+
+$Batch   = 0;       # True if we are running in batch mode
 
 #------------------------------------------------------------------------
 
@@ -110,7 +112,7 @@ sub nbspoke {
 
 #------------------------------------------------------------------------
 
-=item orac_executre_recipe(reciperef, Frame, Group, Cal)
+=item orac_execute_recipe(reciperef, Frame, Group, Cal)
 
 Executes the recipes stored in $reciperef (an Array reference).
 Also needs the current frame, group and calibration objects.
@@ -120,8 +122,8 @@ Also needs the current frame, group and calibration objects.
 
 sub orac_execute_recipe {
 
-  local($reciperef,$Frm,$Grp,$Cal) = @_;
-  local(@recipe) = @$reciperef;		# dereference recipe
+  my ($reciperef,$Frm,$Grp,$Cal) = @_;
+  my @recipe = @$reciperef;		# dereference recipe
 
   my $block = join("",@recipe);
   my $status = eval $block;
@@ -129,7 +131,14 @@ sub orac_execute_recipe {
   # Check for an error
   if ($@) {
 
-    orac_err ("RECIPE ERROR: $@","blue") if ($@);
+    # Since we have an error we can not trust the current
+    # frame to be fully reduced. We therefore set its state
+    # to bad so that it will be removed from Groups
+    # Turn this feature off for now - more discussion required
+    # $Frm->isgood(0);
+
+    # Report error
+    orac_err ("RECIPE ERROR: $@","blue");
 
     # Create an array that matches the line numbers returned by
     # the error message.
@@ -592,6 +601,10 @@ Frossie Economou and Tim Jenness
 
 
 #$Log$
+#Revision 1.28  1999/02/18 03:11:29  timj
+#Add $Batch.
+#Change 'local' to 'my'
+#
 #Revision 1.27  1998/09/23 23:41:05  frossie
 #Add "search path" for disp.data
 #
