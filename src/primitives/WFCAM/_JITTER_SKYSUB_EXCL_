@@ -1,0 +1,111 @@
+    # Are we allowed to do this step yet?
+
+    if ($Grp->uhdr("JITTER_FINISHED")) {
+        orac_print("Begining jitter sky subtraction\n");
+
+	# OK, we have all the observations for the jitter sequence. Make
+	# the sky frame now.
+
+        my $jitnum = $Frm->hdr("GRPNUM");
+        my $grp = $Grp->subgrp("GRPNUM"=>$jitnum);
+
+        # Right, now cycle through each of the files in the jitter sequence
+	# and make a sky frame for it. Note that we have to do it in this
+	# way as we overwrite the original files.
+
+	my %skyfiles = ();
+        foreach my $frm ($grp->allmembers) {
+
+            # Get a list of all the members excluding the current file.
+
+            my @allm = ();
+            foreach my $m ($grp->allmembers) {
+                push @allm,$m if ($m ne $frm);
+            }
+	    my $sgrp = $grp->new;
+	    $sgrp->allmembers(@allm);
+
+            # Create a sky frame from these files
+
+            my $fname = $frm->file;
+            my $skyname = sprintf("sky_%s_%05d%s",$Frm->hdr("ORACUT"),
+                $frm->hdr("OBSNUM"),$Frm->fitssuffix);
+            orac_print("Creating sky file $skyname for file $fname\n");
+            {
+	        my $Grp = $sgrp;
+		_SKYCOMBINE_ OUT=$skyname
+            }
+	    _FILE_SKY_ NAME=$skyname
+	    $skyfiles{$frm->hdr("OBSNUM")} = $skyname;
+        }
+
+        # Now cycle through the files and subtract off the appropriate sky
+
+        foreach my $frm ($grp->allmembers) {
+            my $fname = $frm->file;
+	    my $obsnum = $frm->hdr("OBSNUM");
+            my $skyname = $skyfiles{$obsnum};
+	    my $skyfrm = $Frm->new($skyname);
+
+            # Cycle through each extension 
+
+            orac_print("Subtracting sky from $fname using $skyname\n");
+            my $nextn = $frm->findnsubs;
+            foreach my $i (1 .. $nextn) {
+            
+                # Get the subframe names and then do the subtraction
+
+                my $subfrm = $frm->getasubframe($i)->file;
+	        my $subskyfrm = $skyfrm->getasubframe($i)->file;
+	        my ($retval,$errmsg);
+	        $retval = cir_imsubt($subfrm,$subskyfrm,$errmsg);
+	        if ($retval != CIR_OK) {
+		    orac_err("CIR_IMSUBT: Failed in _JITTER_SKYSUB_INCL_\n$errmsg\n");
+		    next;
+		}
+
+                # Update the header to show that the sky subtraction is 
+		# now done.
+
+                my $line = sprintf("Done _JITTER_SKYSUB_EXCL_: %s",
+		    $subskyfrm);
+		$retval = cir_update_hdr($subfrm,"SKYSUB","STRING",$line,
+		    "",$errmsg);
+            }
+        }
+    }
+
+
+=head1 NAME
+
+_JITTER_SKYSUB_EXCL_ -- Estimate and subtract sky estimates by combining images
+from all jitter and microstep images from a jitter sequence except for the
+frame which is being background subtracted.
+
+=head1 DESCRIPTION
+
+This routine only is invoked once we have all the images for a particular 
+jitter sequence. Once we do, all of the files in the jitter sequence are used
+to form a mean sky frame except for the frame we want to background correct. 
+Thus each frame in the jitter sequence will have its own associated sky frame.
+
+=head1 ARGUMENTS
+
+None
+
+=head1 NOTES
+
+None
+
+=head1 AUTHORS
+
+JRL: Jim Lewis (CASU, IoA)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004-2007 Cambridge Astronomy Survey Unit. 
+All Rights Reserved
+
+=cut
+
+
