@@ -378,6 +378,9 @@ sub contact {
   my $con = 0;
   # we should really just use the TaskRunning functionality
   # but that is not yet implemented in perl/DRAMA
+  # For non-perl or non-Jit tasks we cannot guarantee PING
+  # availability so we will have to either switch technique or trap
+  # UNKNOWN ACTION.
   DRAMA::obeyw $self->taskname, "PING", {
 					 # do not care about output text
 				         -info => sub { },
