@@ -989,8 +989,13 @@ sub orac_configure_for_instrument {
 
              # input data directory
              if ( defined $sem ) {
-                $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
-							   $sem, $oracut, "dem" );
+               if ( $orac_data_root eq "/scuba" ) {
+                 $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+                                                            $sem, $oracut );
+               } else {
+                 $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+                                                            $sem, $oracut, "dem" );
+               }
              } else {
                 $ENV{"ORAC_DATA_IN"} =  File::Spec->catdir( $orac_data_root,
 							    $oracut, "dem" );  }
