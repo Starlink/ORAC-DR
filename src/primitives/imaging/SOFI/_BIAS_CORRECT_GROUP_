@@ -1,0 +1,347 @@
+#+
+# Name:
+#    _BIAS_CORRECT_GROUP_
+#
+# Purpose:
+#    Corrects SOFI imaging flat-fielded frames for variable bias.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive corrects for a varying bias in the current group
+#    members.  For each frame the primitive:
+#       - masks pixels +/- 3 standard deviations about the clipped
+#       mean;
+#       - locates sources and masks them;
+#       - forms a one-dimensional profile by collapsing along either
+#       axis (depending on argument BIASAXIS) using the median;
+#       - subtracts a clipped mean of the profile to form a new
+#       profile of the bias variations, thereby allowing for the sharp
+#       peaks in the profile corresponding to the image bottom and
+#       centre;
+#       - grows the bias variation profile to the dimensions of the
+#       original frame and sets its origin to that of the original
+#       frame; and
+#       - subtracts that bias-variation image from the original frame.
+#
+# Arguments:
+#    BIASAXIS = INTEGER (Given)
+#       The axis along which to collapse the array.  Thus if the bias
+#       varies along columns, this should be 1.  Likewise to correct
+#       bias variations along rows, set this to 2.  [1]
+#
+# Notes:
+#    -  This primitive is suitable for SOFI in imaging mode.
+#    -  Processing only occurs if the steering header MAKE_MOSAIC is
+#    true (1).
+#    -  The bias-corrected images can be displayed.
+#    -  The frame title is propagated.
+#
+# Output Data:
+#    -  Bias-corrected frames inheriting each group member's name but
+#    with the _bc suffix.
+#    -  Bias profiles inheriting each group member's name but
+#    with the _xpr suffix if BIASAXIS=1, or _ypr if BIASAXIS=2. 
+
+# Deficiencies:
+#    The algorithm is a little clunky because there is no clipped mean
+#    (approximating to the mode) statistic for the collapse, thus
+#    objects are masked to avoid a bias.
+
+# Tasks:
+#    KAPPA: COLLAPSE, CSUB, NDFTRACE, PIXDUPE, RESHAPE, SETORIGIN, SUB,
+#    THRESH, WCSFRAME.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Arguments
+# =========
+
+# Obtain and validate bias axis.  It's not clear if this argument
+# will be needed but it might be, perhaps for another instrument.
+    my $biasaxis = ( $_BIAS_CORRECT_GROUP_{BIASAXIS} || 1 );
+    $biasaxis = 1 unless ( $biasaxis == 1 || $biasaxis == 2 );
+
+# Selection
+# =========
+
+# This should only be performed on flattened frames prior to mosaic
+# creation.
+    if ( $Frm->uhdr( "MAKE_MOSAIC" ) ) {
+
+# Compute a mask of the objects for each member of the flat-field
+# group, using a local $Frm.
+       foreach $Frm ( $Grp->members ) {
+          my $ndf = $Frm->file;
+          my ( $in, $out );
+
+# Obtain the dimensions of the supplied frame.
+          $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$ndf" );
+          my ( $ORAC_STATUS, @dims ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "dims" );
+          my $xdim = $dims[ 0 ];
+          my $ydim = $dims[ 1 ];
+
+          my ( $frameno, $param );
+          if ( starversion_gt( "KAPPA", 'V0.13-6' ) ) {
+
+# Record the current WCS domain number.
+             ( $ORAC_STATUS, $frameno ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "current" );
+
+# Switch to pixel co-ordinates for COLLAPSE.
+             $param = "ndf=$ndf frame=pixel";
+             $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "$param" );
+          }
+
+# Help the masking by the thresholding the data.
+# ==============================================
+
+# Create a temporary file for the thresholded image.
+          my $tmpthresh = new ORAC::TempFile;
+          my $threshfile = $tmpthresh->file;
+
+# Find the mean and standard deviation of the bulk of the pixels around the
+# background level.
+          _CLIPPED_STATS_
+          my $mean = $_CLIPPED_STATS_{MEAN};
+          my $sigma = $_CLIPPED_STATS_{SIGMA};
+          my $lower = $mean - 3 * $sigma;
+          my $upper = $mean + 3 * $sigma;
+
+# Generate the input and output filenames.  The output file has the same
+# name as the input except the suffix is changed to indicate it has had
+# thresholds applied.
+          ( $in, $out ) = $Frm->inout( "_bct" );
+          $param = "thrlo=$lower newlo=bad thrhi=$upper newhi=bad";
+
+# Apply the threshold.  Values below the lower limit and above the upper
+# limit are set to bad.
+          $Mon{ "kappa_mon" }->obeyw( "thresh", "in=$in out=$out $param" );
+
+# Report the processing status.
+          my $fs_low = sprintf( "%.2f", $lower );
+          my $fs_high = sprintf( "%.2f", $upper );
+          orac_print "$in to $out: set bad pixels (<${fs_low}, >${fs_high}) flagged\n";
+          $Frm->file( $out );
+
+# Make a mask of the objects.
+          _MAKE_OBJECTS_MASK_
+
+# Record the mask filename.
+          my $maskfile = $_MAKE_OBJECTS_MASK_{MASKFILE};
+
+# Mask the objects.
+          _MASK_OBJECTS_ MASKFILE=$maskfile
+
+# Create temporary files.
+# =======================
+
+# For the bias profile.
+          my $tmpbias = new ORAC::TempFile;
+          my $biasprofile = $tmpbias->file;
+
+# For the bias profile, reshaped to two dimensions.
+          my $tmpprofile = new ORAC::TempFile;
+          my $profile = $tmpprofile->file;
+
+# For the bias profile expanded to an image.
+          my $tmpimage = new ORAC::TempFile;
+          my $biasimage = $tmpimage->file;
+
+# Form bias profile
+# =================
+
+# Should do this unless BIASAXIS=2 was requested, as at the time of
+# writing only bias vertical variations are seen.
+          if ( $biasaxis != 2 ) {
+
+# Collapse the frame along rows which are fairly uniform in bias,
+# using the median, although a mode would be preferable.  This forms a map
+# of the row structure, caused largely by bias variations.
+             ( $in, $out ) = $Frm->inout( "_xpr" );
+             $param = "in=$in out=$out estimator=median axis=p1";
+
+# Collapse the frame along columns using the median.  This forms a map
+# of the column structure.
+          } elsif ( $biasaxis == 2 ) {
+             ( $in, $out ) = $Frm->inout( "_ypr" );
+             $param = "in=$in out=$out estimator=median axis=p2";
+          }
+
+# Collapse the frame.
+          $Mon{ "kappa_mon" }->obeyw( "collapse", "$param" );
+          $Frm->file( $out );
+
+# Find the mean of the bulk of the pixels around the background level
+# in the row profile.
+          _CLIPPED_STATS_
+          $mean = $_CLIPPED_STATS_{MEAN};
+
+# Subtract the mean from the row profile.
+          $param = "in=$out scalar=$mean out=$biasprofile";
+          $Mon{ "kappa_mon" }->obeyw( "csub", "$param" );
+
+# Subtract bias profile from the original image.
+# ==============================================
+
+# Convert the bias profile to two dimensions.
+          if ( $biasaxis != 2 ) {
+             $param = "in=$biasprofile out=$profile shape=[1,$ydim]";
+          } elsif ( $biasaxis == 2 ) {
+             $param = "in=$biasprofile out=$profile shape=[$xdim,1]";
+          }
+          $Mon{ "ndfpack_mon" }->obeyw( "reshape", "$param" );
+
+# Duplicate along the rows restoring an image the size of the frame on
+# input.
+          $param = "in=$profile out=$biasimage expand=[$xdim,1]";
+          $Mon{ "kappa_mon" }->obeyw( "pixdupe", "$param" );
+
+# Set the origin to match that of the original frame.
+          $param = "ndf=$biasimage like=$ndf";
+          $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param" );
+
+# Restore the former WCS domain.
+          if ( starversion_gt( "KAPPA", 'V0.13-6' ) ) {
+             $param = "ndf=$ndf frame=$frameno";
+             $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "$param" );
+          }
+
+# Subtract the two-dimensional row or column pattern from the original
+# frame.
+          ( $in, $out ) = $Frm->inout( "_bc" );
+          $param = "in1=$ndf in2=$biasimage out=$out";
+          $Mon{ "kappa_mon" }->obeyw( "sub", "$param" );
+
+# Report progress.
+          orac_print "Remove bias row structure in $ndf to form $out\n";
+
+# Now update the output filename in the Frame object.
+          $Frm->file( $out );
+
+# Display the image.
+          _DISPLAY_FRAME_IMAGE_
+          orac_print "\n";
+    
+       }
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_BIAS_CORRECT_GROUP_ -- Corrects SOFI imaging flat-fielded frames for variable bias.
+
+=head1 DESCRIPTION
+
+This primitive corrects for a varying bias in the current group
+members.  For each frame the primitive:
+
+=over 4
+
+=item *
+
+masks pixels +/- 3 standard deviations about the clipped mean;
+
+=item *
+
+locates sources and masks them;
+
+=item *
+
+forms a one-dimensional profile by collapsing along either
+axis (depending on argument BIASAXIS) using the median;
+
+=item *
+
+subtracts a clipped mean of the profile to form a new
+profile of the bias variations, thereby allowing for the sharp
+peaks in the profile corresponding to the image bottom and
+centre;
+
+=item *
+
+grows the bias variation profile to the dimensions of the
+original frame and sets its origin to that of the original
+frame; and
+
+=item *
+
+subtracts that bias-variation image from the original frame.
+
+=back
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item BIASAXIS = INTEGER (Given)
+
+The axis along which to collapse the array.  Thus if the bias
+varies along columns, this should be 1.  Likewise to correct
+bias variations along rows, set this to 2.  [1]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for SOFI in imaging mode.
+
+=item *
+
+Processing only occurs if the steering header MAKE_MOSAIC is
+true (1).
+
+=item *
+
+The bias-corrected images can be displayed.
+
+=item *
+
+The frame title is propagated.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Bias-corrected frames inheriting each group member's name but
+with the _bc suffix.
+
+=item *
+
+Bias profiles inheriting each group member's name but
+with the _xpr suffix if BIASAXIS=1, or _ypr if BIASAXIS=2. 
+
+=back
+
+=head1 TASKS
+
+KAPPA: COLLAPSE, CSUB, NDFTRACE, PIXDUPE, RESHAPE, SETORIGIN, SUB,
+THRESH, WCSFRAME.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
