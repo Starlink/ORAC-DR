@@ -6,7 +6,7 @@ ORAC::Group::JCMT - JCMT class for dealing with observation groups in ORACDR
 
 =head1 SYNOPSIS
 
-  use ORAC::Group;
+  use ORAC::Group::JCMT;
 
   $Grp = new ORAC::Group::JCMT("group1");
   $Grp->file("group_file")
@@ -77,8 +77,65 @@ sub new {
   }
 
   return $group;
-
+  
 }
+
+=item file
+
+This is an extension to the default file() method.
+This method accepts a root name for the group file
+(independent of sub-instrument) - same as for the base 
+class. If a number is supplied the root name is returned
+with the appropriate extension relating to the 
+sub-instrument order in the current frame.
+
+The number to sub-instrument conversion uses the last frame in the
+group to calculate the allowed number of sub-instruments and
+the order. Note that this may well not be what you want.
+Use the grpoutsub() method if you know the name of the sub-instrument.
+
+=cut
+
+sub file {
+
+  my $self = shift;
+
+  if (@_) {
+    # There is either a string here or a number.
+    my $arg = shift; 
+
+    # Now check to see if we have a number
+    if ($arg =~ /^\d+$/) {
+
+      # Get a copy of the last frame in the group
+      # This will cause problems if frames in the group
+      # have different sub instruments and the last frame
+      # is not representative (since it could be just an LONG
+      # without that SHORT even thought the rest of the group used
+      # SHORT).
+      # Currently it at least matches the behaviour of num_files()
+
+      my $frm = $self->frame($self->num);
+      my @subs = $frm->subs;
+      # Number is 1 more than the array member
+      my $sub = $subs[$arg - 1];
+
+      my $file = $self->grpoutsub($sub);
+      return $file;
+
+    } else {
+      # No number so we just assume this is a root name 
+      # and set it
+      $self->{File} = $self->stripfname($arg);
+    }
+
+  }
+  # Return the current value
+  # If a number has been supplied then we return at another
+  # section of code
+  return $self->{File};
+}
+
 
 
 =item readhdr
@@ -124,7 +181,11 @@ number). The full filename is returned (including suffix).
 
   $file = $Grp->file_from_bits("UT","num");
 
-Returns file of form UT_dem_00num.sdf
+Returns file of form UT_grp_00num.sdf
+
+Note that this is the filename before sub-instruments
+have been taken into account (essentially this is the
+default root name for file() - the suffix is stripped).
 
 =cut
 
@@ -210,6 +271,73 @@ sub grpoutsub {
 
   return $file;
 }
+
+=item num_files
+
+This method returns the number of files currently associated
+with the group. What this in fact means is that it returns
+the number of files associated with the last member of the 
+group (since that is how I construct output names in the
+first place).
+
+=cut
+
+sub num_files {
+  my $self = shift;
+
+  # Find last frame
+  my $frm = $self->frame($self->num);
+
+  # Now get the number of files from that
+  return $frm->num_files;
+}
+
+
+=item gui_id
+
+The file identification for comparison with the ORAC::Display
+system. Input argument is the file number (starting from 1).
+
+This routine calculates the current suffix from the group file
+name base and prepends a string 'gN' signifying that this is
+a group observation and the Nth frame is requested (N is less than
+or equal to num_files()).
+
+The assumption is that file() returns a root name (ie without
+a sub-instrument designation). This then allows us to create an
+ID based on number and suffix without having to chop the
+sub-instrument name off the end.
+
+=cut
+
+sub gui_id {
+
+  my $self = shift;
+  my $num = 1;
+  if (@_) { $num = shift; }
+
+  # Get the current root
+  my $fname = $self->file;
+
+  # Split on underscore
+  my (@split) = split(/_/,$fname);
+
+  # Now the default situation is that the Grp name is just
+  # ut_grp_num_sub
+  # in this case we don't want the GUI ID to contain the number
+  # if it is a number replace it with a string 'NUM'
+  # This may well be a hack since it is probably preferable that
+  # use of NUM should be extended in the DISPLAY software
+  if ($split[-1] =~ /^\d+$/) {
+    $split[-1] = 'NUM';
+  }
+
+  return "g$num" . $split[-1];
+
+}
+
+
+
 
 
 =back
