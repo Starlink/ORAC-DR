@@ -104,7 +104,7 @@ sub new {
 
 =back
 
-=head2 Instance methods
+=head2 Accessor Methods
 
 The following methods are available for accessing the 
 'instance' data.
