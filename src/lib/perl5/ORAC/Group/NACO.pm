@@ -268,7 +268,7 @@ sub _to_RECIPE {
       $recipe = "SKY_FLAT_MASKED";
 
    } elsif ( $template =~ /_img_cal_LampFlats/ ) {
-      $recipe = "SKY_FLAT";
+      $recipe = "LAMP_FLAT";
 
 # Imaging spectroscopy.  There appears to be no distinction
 # for flats from target, hence no division into POL_JITTER and
