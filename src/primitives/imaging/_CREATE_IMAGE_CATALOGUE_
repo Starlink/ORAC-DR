@@ -32,11 +32,16 @@ All Rights Reserved.
 # Do only if it's time to create a catalogue.
 if( $Frm->uhdr("CREATE_CATALOGUE") ) {
 
-  # Delay loading so that ORAC-DR does not require these.
+# Get the input NDF.
+  my $in = $Grp->file;
 
-  use Astro::Catalog;
-  use Astro::Catalog::Star;
-  use Astro::Coords;
+# Delay loading so that ORAC-DR does not require these.
+  use lib qw[ /home/bradc/development/perl-install/lib/site_perl/5.8.3/ ];
+  require Starlink::Extractor;
+  require Astro::WaveBand;
+
+# Obtain the detection sigma level.
+  my $detect = ( $_CREATE_IMAGE_CATALOGUE_{DETECT_SIGMA} || 3 );
 
 # Obtain the minimum number of pixels in the objects.
   my $minpix = ( $_CREATE_IMAGE_CATALOGUE_{MINPIX} || 12 );
@@ -44,153 +49,35 @@ if( $Frm->uhdr("CREATE_CATALOGUE") ) {
 # Obtain the filter.
   my $filter = $Grp->uhdr("ORAC_FILTER");
 
-# Perform inventory on the field
-#
-# Specify the EXTRACTOR parameters.  Can't change the default minimum area
-# in pixels without editing the sex file...  Other parameters like the
-# saturation level and plate scale should be edited in the sex file.  Also
-# the name and format of the results catalogue is fixed (to match PISA) and is
-# in the ASCII file ${ORAC_DATA_CAL}/extractor_mask.param.
-  my $in = $Grp->file;
-  my $resfile = "object_cat.cat";
-  my $config = $Cal->find_file("extractor_catalogue.sex");
-  my $param1 = "image=$in config=$config";
-
 # Report the processing status.
   orac_print "Detecting objects in $in with at least $minpix connected pixels\n";
-  orac_print "   at 1.1 times sky noise above sky.\n";
+  orac_print "   at $detect times sky noise above sky.\n";
 
-# Derive an inventory of the images in $resfile.
-  my $extractor_status = $Mon{ "extractor" }->obeyw( "extract", "$param1" );
+# Perform inventory on the field
+  my $extractor = new Starlink::Extractor( config => $Cal->find_file("extractor_catalogue.sex" ) );
+  $extractor->detect_thresh( $detect );
+  $extractor->analysis_thresh( 3.0 );
+  my $extracted_catalog = $extractor->extract( frame => $in,
+                                       filter => new Astro::WaveBand( Filter => $filter ) );
 
-# We can handle a failure here by making a null ARD file.  So we test a
-# local status rather than let ORAC go on to the next file.
-  if ( $extractor_status == ORAC__OK ) {
+# Weed out objects that have a size less than $minpix pixels.
+  my $filtered_catalog = new Astro::Catalog;
+  while ( $extracted_catalog->sizeof > 0 ) {
+    my $star = $extracted_catalog->popstar;
+    next if ( $star->morphology->area < $minpix );
+    $filtered_catalog->pushstar( $star );
+  }
 
-# Read the results file into an array.  Obtain the number of objects.
-# Remove the results file.
-    open( my $fh_resfile, "< $resfile" ) ||
-      orac_throw "Unable to open $resfile to read the source inventory.  Error: $!.\n";
-    my @lines = <$fh_resfile>;
-    my $numobject = $#lines + 1;
-    close( $fh_resfile );
-#    unlink ( $resfile );
-
-# Create the Astro::Catalog object.
-    my $catalog = new Astro::Catalog( );
-
-    my $pi = atan2( 1, 1 ) * 4;
-    my $id = 1;
-
-# Create a file to hold the locations of the found objects.
-    my $objfile = "obj_file.txt";
-    open( my $fh_objfile, "> $objfile" ) ||
-      orac_throw "Unable to open $objfile for writing object locations. Error: $!.\n";
-
-# Perform operations on every object
-#
-# We will perform the following steps for every object found by
-# EXTRACTOR as long as that object is larger than the minimum
-# number of pixels given by $minpix:
-#
-# - convert the pixel coordinates into RA/Dec
-# - convert the flux into a magnitude
-# - create an Astro::Catalog::Star object
-# - push that object onto the Astro::Catalog object
-
-    foreach my $line (@lines) {
-
-      my @fields = split /\s+/, $line;
-
-      my $ea = sqrt( $fields[6] / $pi /
-                     max( ( 1.0 - $fields[8] ), 0.99999 ) );
-      $ea = min( $ea, 0.5 * $fields[6] );
-      my $eb = $ea * ( 1.0 - $fields[8] );
-
-# Test for objects too small.  This is important, as EXTRACTOR can throw
-# out objects of zero size.
-      next if ( ( sqrt( max( 1.0E-7, $ea * $eb ) ) * $pi ) < $minpix );
-
-#      print ( ( map { "($_)" } @fields ), "\n" );
-
-# Write the x and y coordinates to file for conversion
-# x coordinate is held in $fields[2]
-# y coordinate is held in $fields[3]
-
-      print $fh_objfile $fields[2], " ", $fields[3], "\n";
-
-# Convert the flux into a magnitude
-#
-# The flux is in $fields[4]. We're not going for a calibrated magnitude here,
-# so just do -2.5*log(flux).
-
-      my $magnitude = -2.5 * log( $fields[4] ) / log( 10 );
-
-# Approximation of error in magnitude is (error in flux) / (flux). It's an
-# approximation but it's good to a few percent.
-      my $mag_err = $fields[5] / $fields[4];
-
-# Create the Astro::Catalog::Star object (hacking in a quality of 0 for now)
-
-      my $star = new Astro::Catalog::Star( ID => $id,
-                                           Field => 0,
-                                           Magnitudes => { $filter => $magnitude },
-                                           MagErr => { $filter => $mag_err },
-                                           Quality => 0,
-                                         );
-
-# Push the Astro::Catalog::Star object into the Astro::Catalog object.
-      $catalog->pushstar( $star );
-
-      $id++;
-    }
-
-# Close the object list file.
-    close( $fh_objfile );
-
-    my $radecfile = "radec_objects.txt";
-
-# Convert the pixel coordinates in the object list file to RA/Dec.
-# We first need to set the WCS to PIXEL in the input NDF.
-    $Mon{'ndfpack_mon'}->obeyw("wcsframe", "ndf=$in frame=GRID");
-
-    my $params = "mode=file file=$objfile ndf=$in outcat=$radecfile";
-    $Mon{'kappa_mon'}->obeyw("listmake", "$params");
-
-# Switch the WCS back to SKY.
-    $Mon{'ndfpack_mon'}->obeyw("wcsframe", "ndf=$in frame=SKY");
-
-# Now the output file is a CURSA small text list file, so read it
-# into an Astro::Catalog object.
-    my $stl_catalog = new Astro::Catalog( Format => 'STL',
-                                          File => File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, "$radecfile"),
-                                        );
-
-# Get the positions from the STL catalogue and apply them to the
-# catalogue with magnitudes.
-    foreach my $stl_star ( $stl_catalog->allstars() ) {
-      my @cat_stars = $catalog->popstarbyid( $stl_star->id );
-      my $cat_star = $cat_stars[0];
-
-# Set its position.
-      $cat_star->coords( $stl_star->coords );
-
-# And push it back into the catalogue.
-      $catalog->pushstar( $cat_star );
-    }
+  orac_print $filtered_catalog->sizeof() . " objects detected in $in.\n";
 
 # Dump the catalog to disk.
-    _GET_CATALOGUE_NAME_
-    my $catalogue = $_GET_CATALOGUE_NAME_{NAME};
-    my $cat_file = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, $catalogue);
+  _GET_CATALOGUE_NAME_
+  my $catalogue_name = $_GET_CATALOGUE_NAME_{NAME};
+  my $cat_file = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, $catalogue_name);
+  my $status = $filtered_catalog->write_catalog( file => $cat_file,
+                                                 format => 'Cluster',
+                                               );
 
-    my @filters = ( $filter );
-    my $status = $catalog->write_catalog( file => $cat_file,
-                                          format => 'Cluster',
-                                        );
-
-    orac_print "Wrote catalogue to $cat_file.\n\n";
-
-  }
+  orac_print "Wrote catalogue to $cat_file.\n\n";
 
 }
