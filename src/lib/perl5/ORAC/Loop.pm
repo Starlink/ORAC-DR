@@ -283,6 +283,7 @@ sub orac_loop_wait {
 
 	  # Okay - it wasnt the expected observation number
 	  $obsno = $next;
+	  $obsref->[0] = $obsno;  # And set the array value
 
 	  # Create new filename
 	  $actual = $ENV{ORAC_DATA_IN}."/".
@@ -421,6 +422,7 @@ sub orac_loop_flag {
 
 	  # Okay - it wasnt the expected observation number
 	  $obsno = $next;
+	  $obsref->[0] = $obsno;  # And set the array value
 
 	  # Create new filename
 	  $actual = $ENV{ORAC_DATA_IN}."/".
