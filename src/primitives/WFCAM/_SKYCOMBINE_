@@ -8,28 +8,6 @@
 
     if (! -f $outf) {
 
-        # Do some stats on the images and find the relevant scale factors for
-        # the combination task
-
-        foreach my $frm ($Grp->members) {
-            my $Frm = $frm;
-            _IMSTAT_ HDRUP=1
-        }
-        _ICSCALE_
-
-        # Get some header keywords...
-
-        my $readkey = $Frm->hdrkeys("READNOISE");
-        my $gainkey = $Frm->hdrkeys("GAIN");
-        my $expkey = $Frm->hdrkeys("EXPOSURE_TIME");
-
-        # Make an object mask for each image 
-
-        foreach my $frm ($Grp->members) {
-	    my $Frm = $frm;
-	    _MAKE_OBJECT_MASK_ PNOP=25 THRESH=2.0 GRID=64
-        }
-
         # Now loop for each image extension
 
         my $nextn = $Frm->findnsubs;
@@ -37,17 +15,13 @@
 	orac_print("Combining frames to for mean sky file: $outf\n");
         for ($i = 1; $i <= $nextn; $i++) {
 
-            # Get a temporary file
-
-            my $tmpfil = new ORAC::TempFile;
-            my $fh = $tmpfil->handle;
-
             # Write the names of the input files to the temporary file
 
+	    my @allfiles = ();
             foreach my $frm ($Grp->members) {
-                print $fh $frm->getasubframe($i)->file . "\n";
+	        push @allfiles,$frm->getasubframe($i)->file;
             }
-            $fh->close;
+	    my $nfiles = @allfiles;
 
             # Output file name specification
 
@@ -56,20 +30,12 @@
             # Do the combination now...
 
             my ($retval,$errmsg);
-            $retval = cir_imcombine($tmpfil->file,$outfile,"","CIR_OPM",
-		MEANCALC,0,1,0,USEBPM,REJPOISSON,1,1,1,3.0,3.0,$readkey,
-		$gainkey,$expkey,$errmsg);
+	    $retval = cir_imcombine_lite(\@allfiles,$nfiles,MEANCALC,1,0,3.0,
+                $outfile,$errmsg);
             if ($retval != CIR_OK) {
-                orac_throw "CIR_IMCOMBINE: failed in _SKYCOMBINE_\n$errmsg\n";
+                orac_throw "CIR_IMCOMBINE_LITE: failed in _SKYCOMBINE_\n$errmsg\n";
             }
 
-            $tmpfil->DESTROY;
-        }
-
-        # Ditch object masks...
-
-        foreach my $frm ($Grp->members) {
-            unlink $frm->uhdr("OPM");
         }
 
         # Set each extension to a median of zero.
