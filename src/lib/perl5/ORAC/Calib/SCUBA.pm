@@ -177,6 +177,7 @@ sub new {
 	     SkydipIndex => undef,
 	     TauSys => undef,        # Tau system
 	     TauSysNoUpdate => 0,
+             TauCache => {},         # Cache for tau result
 	     Thing => {},            # Header of current frame
 	     CsoFit => undef,        # Polynomial tau fits
 	    };
@@ -480,6 +481,25 @@ sub tausysnoupdate {
   my $self = shift;
   if (@_) { $self->{TauSysNoUpdate} = shift };
   return $self->{TauSysNoUpdate};
+}
+
+=item B<taucache>
+
+Internal cache providing access to previously calculated tau values.
+This is a reference to a hash of hashes with keys of uppercased
+C<tausys()> and ORACTIME.
+
+ $cacheref = $Cal->taucache;
+
+ $tau = $Cal->taucache->{TAUSYS}->{'19980515.453'};
+
+Returns a hash reference.
+
+=cut
+
+sub taucache {
+  my $self = shift;
+  return $self->{TauCache};
 }
 
 =item B<csofit>
@@ -874,6 +894,14 @@ current observation.
 undef is returned if an error occurred [eg the CSO is so high that the
 tau can not be calculated using the linear relationship].
 
+The value is cached for a given tausys and observation (ORACTIME is
+used for uniqueness) to prevent delays in searching for a tau when the
+observation has not changed. It is very unlikely that a tau calibration
+will change during a data reduction of a single frame (and, in reality
+it is required that if you use a particular tau for extinction correction
+that you can retrieve the exact same tau that was used at a later date).
+The tau value is not cached if it can not be determined.
+
 =cut
 
 sub tau {
@@ -889,6 +917,11 @@ sub tau {
 
   # Now query tausys
   my $sys = $self->tausys;
+
+  # Check to see whether the value is already cached.
+  my $oractime = $self->thing->{'ORACTIME'};
+  return $self->taucache->{$sys}->{$oractime}
+    if exists $self->taucache->{$sys}->{$oractime};
 
   # Check tausys
   if ($sys eq 'CSO') {
@@ -1123,6 +1156,8 @@ sub tau {
     $tau = undef;
   }
 
+  # Cache the result if it is defined
+  $self->taucache->{$sys}->{$oractime} = $tau if defined $tau;
 
   # Now we have a tau value so return it
   return $tau;
