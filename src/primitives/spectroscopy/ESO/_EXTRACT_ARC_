@@ -1,0 +1,230 @@
+#+
+# Name:
+#    _EXTRACT_ARC_
+#
+# Purpose:
+#    Extracts an arc spectrum and calibrates with respect to reference arc.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    Extracts an arc spectrum from the arc image at the position of the
+#    first beam detected by _EXTRACT_FIND_ROWS_.  This primitive uses
+#    the user header BEAMS to determine the position of this beam, and
+#    extracts ten rows centered on this position to form the arc spectrum.
+#
+#    The arc is cross-correlated against its counterpart reference arc.
+#    If there is a valid arlines calibration available, it is adjusted
+#    be the cross-correlation offset to obtain the wavelength calibration.
+#    The wavelength calibration in Horner form is applied to make the
+#    non-linear axis.  There is no scrunching.  The axis label is
+#    changed to "Calibrated wavelength".
+#
+# Notes:
+#    -  The arlines calibration is for a manually calibrated reference
+#    arc spectrum.  A warning is issued if there is no valid arlines
+#    calibration.  An error occurs if the arlines file could not be
+#    opened.  The calibration is scaled from Angstroms to microns.
+#    -  The shift is assumed to be small, as the correction is only to
+#    first order.  This is because there is no non-interactive mode to
+#    FIGARO:IARC to derive a new polynomial fit.
+#
+# Tasks:
+#    KAPPA: AXLABEL, COLLAPSE, SETAXIS.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (Starlink)
+#    PH: Paul Hirst (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+=cut
+
+# For OS-independent filename creation.
+    use File::Spec;
+
+# We get the number of beams present, which should come from the
+# group internal header, put there by _EXTRACT_DETERMINE_NBEAMS_.
+    my $nbeams = $Grp->uhdr( "NBEAMS" );
+
+    if ( $nbeams ) {
+
+# Extract the arc spectrum.
+# =========================
+
+# Get the beam positions and multipliers, with a dodgy dereference.
+       my $ref = $Grp->uhdr( "BEAMS" );
+       my @beams = @$ref;
+       my $row = $beams[ 1 ]{'POS'};
+
+# Hardwire the window size for now.
+       my $window = 5;
+
+# Get the arc image.
+       my $arc = $Cal->arc;
+
+# Name the arc spectrum.
+       my $grpraw = $Grp->raw;
+       my $arcsp = $grpraw."_arc";
+
+# Collapse a few rows about the beam centre, using the median to
+# avoid artefacts.  Here we assume the arc-line curvature is small
+# across the beam.
+       my $param = "out=$arcsp axis=2 title=$arcsp estimator=median";
+       $Mon{ 'kappa_mon' }->obeyw( "collapse", "in=$arc(,$row~$window) $param" );
+       orac_print "Extracted arc spectrum $arcsp from $arc using $window rows\n" .
+                  "   around row $row.\n";
+
+# Determine the shift between the arc spectrum and its reference counterpart.
+# ===========================================================================
+       my $shift = 0.0;
+       {
+
+# Place the current arc spectrum into a new Frame.
+          my $Frm = new $Frm;
+          $Frm->file( $arcsp );
+
+# Obtain the shift in pixels between the current arc spectrum and the
+# reference spectrum.
+          _CROSS_CORRELATE_ARC_SPECTRUM_
+          $shift = $_CROSS_CORRELATE_ARC_SPECTRUM_{'SHIFT'};
+       }
+
+# Obtain the wavelength calibration.
+# ==================================
+
+# Determine the wavelength calibration of the reference arc from the
+# arlines calibration file.
+       my $setaxis = 1;
+       my $valid_ar = eval { $Cal->arlines };
+       if ( $@ ) {
+          $setaxis = 0;
+          orac_warn "There is no matching arlines file available.\n";
+       } else {
+          $setaxis = 1;
+       }
+
+       if ( $setaxis ) {
+          my $arlines_file = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, $Cal->arlines ); 
+          orac_print "Getting wavelength calibration from $arlines_file \n";
+
+          my $order;      # The order of the wavelength calibration.
+          my $fit = "";   # The coefficients as read from the arlines.lis file.
+          my @coeffs;     # The coefficients converted to a more useful form.
+
+# Read the arlines.lis file.
+          open( my $file, $arlines_file ) ||
+            orac_throw "Could not open $arlines_file: $!.\n";
+
+          while ( <$file> ) {
+
+# We are only interested in the bit after the order of fit line.
+             if ( defined $order ) {
+                chomp;
+                $fit .= $_; 
+             }
+
+# Find the order of the fit
+             if ( /Order of fit:\s+(\d+)/ ) { $order = $1 }
+          }
+          close $file;
+    
+# Substitute E for D in the scientific form numbers (Fortran->Perl)
+          $fit =~ s/D/E/g;
+
+# Read the coefficients into @coeffs (in reverse order, as they appear
+# in the arlines.lis file).
+          while ( $fit =~ /(-? [\d\.]+ E[+-]\d\d)/gx ) { push @coeffs, $1 }
+
+# Add the shift to the origin, having first converted to approximate
+# wavelengths.  This is crude but for small shifts should be adequate.
+          $coeffs[ -1 ] += $shift * $coeffs[ -2 ];
+
+# Define the wavelength axis.
+# ===========================
+
+# Form coefficient expression in Horner form.  Assuming
+# Figaro ARC uses pixel indices not co-ordinates. 
+          my $exp = "($coeffs[ 0 ])*INDEX";
+          for ( my $i = 1; $i < $#coeffs; $i++ ) {
+              $exp = "(($coeffs[ $i ])+" . $exp . ")*INDEX";
+          }
+
+# Add the origin value and scale from Angstrom to microns.
+          $exp = "0.0001*($coeffs[ -1 ]+" . $exp . ")";
+
+# Set the wavelength axis to the calibrated version.
+          my $in = $Grp->file;
+          my $param = "ndf=$in dim=1 mode=Expression exprs='$exp'";
+          $Mon{ 'ndfpack_mon' }->obeyw( "setaxis", "$param" );
+
+# Change the axis label.
+          $param = "ndf=$in label='Calibrated wavelength' dim=1";
+          $Mon{ 'ndfpack_mon' }->obeyw( "axlabel", "$param" );
+
+          orac_print "Apply calibration to wavelength axis of $in\n";
+       }
+    }
+    orac_print "\n";
+
+# Podule
+# ======
+
+=head1 NAME
+
+_EXTRACT_ARC_ -- Extracts an arc spectrum and calibrates with respect to reference arc.
+
+=head1 DESCRIPTION
+
+Extracts an arc spectrum from the arc image at the position of the
+first beam detected by L<_EXTRACT_FIND_ROWS_|_EXTRACT_FIND_ROWS_>.
+This primitive uses the user header BEAMS to determine the position of
+this beam, and extracts ten rows centered on this position to form the
+arc spectrum.
+
+The arc is cross-correlated against its counterpart reference arc.
+If there is a valid arlines calibration available, it is adjusted
+be the cross-correlation offset to obtain the wavelength calibration.
+The wavelength calibration in Horner form is applied to make the
+non-linear axis.  There is no scrunching.  The axis label is
+changed to "Calibrated wavelength".
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+The arlines calibration is for a manually calibrated reference
+arc spectrum.  A warning is issued if there is no valid arlines
+calibration.  An error occurs if the arlines file could not be
+opened.  The calibration is scaled from Angstroms to microns.
+
+=item *
+
+The shift is assumed to be small, as the correction is only to
+first order.  This is because there is no non-interactive mode to
+FIGARO:IARC to derive a new polynomial fit.
+
+=back
+
+=head1 TASKS
+
+KAPPA: AXLABEL, COLLAPSE, SETAXIS.
+
+=head1 AUTHOR
+
+Malcolm J. Currie <mjc@star.rl.ac.uk>
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
