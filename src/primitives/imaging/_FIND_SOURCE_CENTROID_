@@ -9,14 +9,21 @@
 #    Perl5
 #
 # Description:
-#    Finds the centroid of a point source within a box about the
-#    reference pixel, or displaced from that location by the telescope
-#    offsets and optional additional offsets.  The point source can be
-#    either positive or negative with respect to the background level.
+#    This primitive finds the centroid of a point source within a box
+#    either centred or displaced from the centre by the telescope
+#    offsets and optional additional offsets.  The centroid is measured
+#    in pixel co-ordinates.  The point source can be either positive or
+#    negative with respect to the background level.
+#
+#    It defines an initial search box around the expected positions,
+#    which is shifted to the maximum or minimum detected pixel within
+#    the initial box, depending on the polarity of the source being
+#    detected.  There is optional smoothing to remove small noise and
+#    hot pixels before locating the extreme-value pixel.
 #
 # Arguments:
 #    ANGLE = REAL (Given)
-#       Rotation angle of the declination axis with respect to the
+#       Rotation angle of the Declination axis with respect to the
 #       frame's y axis measured counter clockwise.
 #    BOXSIZE = REAL (Given)
 #       The size in arcseconds of the search box in which to find the
@@ -25,30 +32,30 @@
 #    CENTRE( 2 ) = REAL (Returned)
 #       The centroid pixel co-ordinates.
 #    DECOFF = REAL (Given)
-#       The approximate declination offset of the centroid of the point
+#       The approximate Declination offset of the centroid of the point
 #       source to be measured with respect to the nominal position.  The
-#       nominal position is the declination centre of the array plus
+#       nominal position is the Declination centre of the array plus
 #       the Declination telescope offset.  [0.0]
 #    FOUND = LOGICAL (Returned)
 #       If true, a centroid was found.
 #    INIT( 2 ) = REAL (Returned)
-#       The initial co-ordinates for the centroid search.
+#       The initial pixel co-ordinates for the centroid search.
 #    POSITIVE = LOGICAL (Given)
 #       If 1 (true), the point source is positive, i.e. has values above
 #       the sky level.  If 0 (false), the point source is negative. [1]
 #    RAOFF = REAL (Given)
-#       The approximate right-ascension offset of the centroid of the
-#       point source to be measured with respect to the nominal position.
+#       The approximate R.A. offset of the centroid of the point
+#       source to be measured with respect to the nominal position.
 #       The nominal position is the R.A. centre of the array plus the
 #       R.A. telescope offset.  [0.0]
+#    SMOOTH = LOGICAL (Given)
+#       If 1 (0), a 5-by-5-pixel block median smooth is applied before
+#       searching for the extreme value.  This removes noise and hot
+#       spots from mislocating the search window.  [1]
 #
 # Notes:
-#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
-#    and UIST in imaging mode.
+#    -  This primitive is suitable for infra-red imaging instruments.
 #    -  Processing only occurs for object frames.
-#    -  The reference pixel is derived from the frame centre and
-#    displacements obtained from the referenceoffset calibration
-#    (defaulting to null offsets).
 #    -  Error messages are issued if the centroid position contains a
 #    bad value or the returned status is not OK. 
 #    -  Header ORAC_ROTATION---the angle of the chip's y axis with
@@ -62,13 +69,13 @@
 #    PIXEL for the latter.
 #
 # Tasks:
-#    KAPPA: CENTROID, STATS, WCSFRAME.
+#    KAPPA: BLOCK, CENTROID, STATS, WCSFRAME.
 #
 # Authors:
 #    MJC: Malcolm J. Currie (JAC)
 #
 # Copyright:
-#    Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 #    Council.  All Rights Reserved.
 #
 #-
@@ -82,6 +89,10 @@
 # Process as positive or negative source.
        my $positive = $_FIND_SOURCE_CENTROID_{POSITIVE};
        $positive = defined( $positive ) ? $positive : 1;
+
+# Smooth before finding the extreme pixel value.
+       my $smooth = $_FIND_SOURCE_CENTROID_{SMOOTH};
+       $smooth = defined( $smooth ) ? $smooth : 1;
 
 # Obtain the relative offsets of the point-source images.
        my $rraoff = $_FIND_SOURCE_CENTROID_{RAOFF};
@@ -101,21 +112,10 @@
 # Find pixel limits of the search box.
 # ====================================
 
-# Obtain frame central pixel.
+# Obtain frame pixel bounds.
        _GET_FRAME_CENTRE_
        my $xmid = $_GET_FRAME_CENTRE_{XCENTRE};
        my $ymid = $_GET_FRAME_CENTRE_{YCENTRE};
-
-# Obtain the referenceoffset from the calibration system using null
-# offsets if it cannot extract the x and y displacements successfully.
-# There must be two offset co-ordinates.
-       my @disp = ( 0, 0 );
-       my $offset = eval { $Cal->referenceoffset };
-       if ( !$@ ) {
-          if ( $#$offset == 1 ) {
-             @disp = @$offset;
-          }
-       }
 
 # Define some useful variables to apply the rotation matrix.
        my $pi = atan2( 1, 1 ) * 4;
@@ -129,7 +129,7 @@
        my $dec_pixelscale = $_GET_PLATE_SCALE_{DECSCALE};
        my $platescale = $_GET_PLATE_SCALE_{PLATESCALE};
 
-# Obtain the approximate offsets with respect to the reference pixel.
+# Obtain the approximate (telescope) offsets.
        my $ra_off_as = $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" ) + $rraoff;
        my $dec_off_as = $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" ) + $rdecoff;
 
@@ -142,11 +142,11 @@
        my $yoff = $ra_off_p * $sinrot + $dec_off_p * $cosrot;
 
 # Derive the centre co-ordinates of the box.
-       my $xcentre = int( $xmid + $disp[ 0 ] + $xoff );
-       my $ycentre = int( $ymid + $disp[ 1 ] + $yoff );
+       my $xcentre = int( $xmid + $xoff );
+       my $ycentre = int( $ymid + $yoff );
 
 # Tell the user where we're looking.
-       orac_print "Looking at ($xcentre, $ycentre) for an object.\n";
+       orac_print "Looking at ( $xcentre, $ycentre ) for an object.\n";
 
 # Store the initial centre position for use by calling script.
        my @init = ( $xcentre, $ycentre );
@@ -171,11 +171,27 @@
           $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "$param1" );
        }
 
+# Smooth the data to avoid locating noise spots.
+# ==============================================
+       my $tmp = new ORAC::TempFile;
+       my $tmpfile = $ndf;
+       if ( $smooth ) {
+
+# Create temporary file.
+          $tmpfile = $tmp->file;
+
+# Smooth the image using a median 5x5-pixel neighbourhood, to remove
+# noise spikes and hot pixels.  This file is only used in the
+# statistics stage.
+          $param1 = "in=$ndf out=$tmpfile box=5 estimator=median";
+          $Mon{ "kappa_mon" }->obeyw( "block", "$param1" );
+       }
+
 # Locate the centroid.
 # ====================
 
 # Specify a section which should contain the source.
-       my $ndfsect = "ndf=" . $Frm->file . "($xcentre~$pixbox,$ycentre~$pixbox)";
+       my $ndfsect = "ndf=${tmpfile}(${xcentre}~${pixbox},${ycentre}~${pixbox})";
 
 # Locate the main object within a central box.
        $Mon{ "kappa_mon" }->obeyw( "stats", "$ndfsect" );
@@ -298,10 +314,17 @@ _FIND_SOURCE_CENTROID_ -- Finds the centroid of a point source within the curren
 
 =head1 DESCRIPTION
 
-Finds the centroid of a point source within a box about the
-reference pixel, or displaced from that location by the telescope
-offsets and optional additional offsets.  The point source can be
-either positive or negative with respect to the background level.
+This primitive finds the centroid of a point source within a box
+either centred or displaced from the centre by the telescope
+offsets and optional additional offsets.  The centroid is measured
+in pixel co-ordinates.  The point source can be either positive or
+negative with respect to the background level.
+
+It defines an initial search box around the expected positions,
+which is shifted to the maximum or minimum detected pixel within
+the initial box, depending on the polarity of the source being
+detected.  There is optional smoothing to remove small noise and
+hot pixels before locating the extreme-value pixel.
 
 =head1 ARGUMENTS
 
@@ -309,7 +332,7 @@ either positive or negative with respect to the background level.
 
 =item ANGLE = REAL (Given)
 
-Rotation angle of the declination axis with respect to the
+Rotation angle of the Declination axis with respect to the
 frame's y axis measured counter clockwise.
 
 =item BOXSIZE = REAL (Given)
@@ -324,9 +347,9 @@ The centroid pixel co-ordinates.
 
 =item DECOFF = REAL (Given)
 
-The approximate declination offset of the centroid of the point source
-to be measured with respect to the nominal position.  The nominal
-position is the Declination centre of the array plus the declination
+The approximate Declination offset of the centroid of the point source
+to be measured with respect to the nominal position. The nominal
+position is the Declination centre of the array plus the Declination
 telescope offset.  [0.0]
 
 =item FOUND = LOGICAL (Returned)
@@ -335,7 +358,7 @@ If true, a centroid was found.
 
 =item INIT( 2 ) = REAL (Returned)
 
-The initial co-ordinates for the centroid search.
+The initial pixel co-ordinates for the centroid search.
 
 =item POSITIVE = LOGICAL (Given)
 
@@ -344,10 +367,16 @@ the sky level.  If 0 (false), the point source is negative. [1]
 
 =item RAOFF = REAL (Given)
 
-The approximate right-ascension offset of the centroid of the point
+The approximate R.A. offset of the centroid of the point
 source to be measured with respect to the nominal position.
 The nominal position is the R.A. centre of the array plus the
 R.A. telescope offset.  [0.0]
+
+=item SMOOTH = LOGICAL (Given)
+
+If 1 (0), a 5-by-5-pixel block median smooth is applied before
+searching for the extreme value.  This removes noise and hot
+spots from mislocating the search window.  [1]
 
 =back
 
@@ -357,18 +386,11 @@ R.A. telescope offset.  [0.0]
 
 =item *
 
-This primitive is suitable for UFTI, IRCAM, and UIST and Michelle in
-imaging mode.
+This primitive is suitable for infra-red imaging instruments.
 
 =item *
 
 Processing only occurs for object frames.
-
-=item *
-
-The reference pixel is derived from the frame centre and displacements
-obtained from the referenceoffset calibration (defaulting to null
-offsets).
 
 =item *
 
@@ -394,7 +416,7 @@ PIXEL for the latter.
 
 =head1 TASKS
 
-KAPPA: CENTROID, STATS, WCSFRAME.
+KAPPA: BLOCK, CENTROID, STATS, WCSFRAME.
 
 =head1 AUTHORS
 
@@ -402,7 +424,7 @@ MJC: Malcolm J. Currie (JAC)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
