@@ -157,8 +157,8 @@
        my $inner = ( $_SEEING_STATISTICS_{INNER} || 2.0 );
        my $outer = ( $_SEEING_STATISTICS_{OUTER} || 4.0 );
        my $logfile = ( $_SEEING_STATISTICS_{FILE} || "seeing.txt" );
-       my $xpos = ( $_SEEING_STATISTICS_{OUTER} || $xmid );
-       my $ypos = ( $_SEEING_STATISTICS_{OUTER} || $ymid );
+       my $xpos = ( $_SEEING_STATISTICS_{XPOS} || $xmid );
+       my $ypos = ( $_SEEING_STATISTICS_{YPOS} || $ymid );
 
 # Obtain information from the FITS headers.
 # =========================================
@@ -272,7 +272,7 @@ print LOGFILE "BEGINTABLE\n";
 # Define the size of the box in arcseconds, and hence pixels. 
        my $boxsize = 5.0;
        my $pixbox = nint( $boxsize / $scale );
-       my $ndfsect = "$ndf(~$pixbox,~$pixbox)";
+       my $ndfsect = "$ndf($xpos~$pixbox,$ypos~$pixbox)";
 
 # Locate the main object within a central box.
        $Mon{"kappa_mon"}->obeyw("stats", "$ndfsect");
@@ -455,7 +455,13 @@ print LOGFILE "BEGINTABLE\n";
        }
 
 # Constrain the aperture in case one of the figures from PSF is silly.
-       $aperture = min( $aperture, 70 );
+# Might need to reconsider value for TUFTI, if this primitive is needed
+# for that instrument.
+       if ( $instrument =~ /^UFTI/ ) {
+          $aperture = min( $aperture, 100 );
+       } else {
+          $aperture = min( $aperture, 70 );
+       }
        my $int_aperture = nint( $aperture + 0.5 ) + 1;
 
 # Constrain supplied apertures.  Variables inner and outer are the radii
@@ -663,9 +669,27 @@ print LOGFILE "BEGINTABLE\n";
 
 #### End of Fudge until working GAUFIT is available.
 
+# Derive the Strehl width and ratio.  First check for a user error and prevent the
+# recipe crashing should this error be present.  Issue warning message and set
+# the Strehl values to be null.
+       my ( $strehl_width, $strehl_ratio );
+       if ( $total_flux <= 0 || $peak_flux <= 0 ) {
+          if ( $total_flux <= 0 ) {
+             orac_warn "The total flux for the source is not positive.\n";
+          }
+          if ( $peak_flux <= 0 ) {
+             orac_warn "The peak flux for the source is not positive.\n";
+          }
+          orac_warn "Source may not be within the 5-arcsec box centred at ($xpos,$ypos).\n";
+          $strehl_width = "<null>";
+          $strehl_ratio = "<null>";
+
+       } else {
+
 # Derive the Strehl width and ratio.
-       my $strehl_width = sqrt( 4.0 * $total_flux / $peak_flux / 3.14159 ) * $scale;
-       my $strehl_ratio = ( $strehl_theory / $strehl_width ) ** 2;
+          $strehl_width = sqrt( 4.0 * $total_flux / $peak_flux / 3.14159 ) * $scale;
+          $strehl_ratio = ( $strehl_theory / $strehl_width ) ** 2;
+      }
 
 # Extract and present the results.
 # ================================
@@ -724,10 +748,16 @@ print LOGFILE "BEGINTABLE\n";
        $fs_eed50 =~ s/ //;
        $fs_eed80 = sprintf( "%6.3f", $eed80 );
        $fs_eed80 =~ s/ //;
-       $fs_strehl_ratio = sprintf( "%6.3f", $strehl_ratio );
-       $fs_strehl_ratio =~ s/ //;
-       $fs_strehl_width = sprintf( "%6.3f", $strehl_width );
-       $fs_strehl_width =~ s/ //;
+
+       if ( $strehl_ratio ne "<null>" ) {
+          $fs_strehl_ratio = sprintf( "%6.3f", $strehl_ratio );
+          $fs_strehl_ratio =~ s/ //;
+          $fs_strehl_width = sprintf( "%6.3f", $strehl_width );
+          $fs_strehl_width =~ s/ //;
+       } else {
+          $fs_strehl_ratio = "<null>";
+          $fs_strehl_width = "<null>";
+       }
 
 # Report the scaled results.
        orac_print " \n";
@@ -758,6 +788,14 @@ print LOGFILE "BEGINTABLE\n";
 # the focus and after the Strehl width for easier viewing.
           my @formats = qw( %8s %9.6f %4g %6s %7.4f %8.3f %6.4f %6.3f %8.3f %6.3f %6.3f 
                             %6.2f %6.3f %6.3f %2d %6.3f %6.3f );
+
+# Allow for null strings instead of numerical values when something has
+# gone awry.
+          if ( $strehl_ratio eq "<null>" ) {
+             $formats[6] = "%6s";
+             $formats[7] = "%6s";
+          }
+
           if ( $psf_status != ORAC__OK ) {
              $formats[8] = "%8s";
              $formats[9] = "%6s";
