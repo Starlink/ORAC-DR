@@ -28,7 +28,6 @@ use vars qw/$VERSION/;
 
 use ORAC::Print;
 
-$VERSION = undef; # -w protection
 $VERSION = '0.10';
 
 
@@ -537,6 +536,8 @@ are stripped) but not textNNNNtext (number must be followed by a decimal
 point or nothing at all).
 
   $number = $Obs->number;
+
+The return value is -1 if no number can be determined.
 
 =cut
 
