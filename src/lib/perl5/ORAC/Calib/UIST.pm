@@ -231,12 +231,13 @@ sub arlines {
   return $self->arlinesname if $ok;
 
   if (defined $ok) {
-    my $arlines = $self->arlinesindex->choosebydt('ORACTIME',$self->thing);
+    my $arlines = $self->arlinesindex->chooseby_negativedt('ORACTIME',$self->thing, 0);
 
     unless (defined $arlines) {
       # Nothing suitable, give up...
       croak "No suitable arlines file was found in index file"
     }
+
     # Store the good value
     $self->arlinesname($arlines);
 
