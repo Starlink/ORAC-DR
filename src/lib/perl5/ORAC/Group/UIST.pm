@@ -43,22 +43,15 @@ use vars qw/$VERSION/;
 my %hdr = (
             DEC_SCALE            => "PIXELSIZ",
             DEC_TELESCOPE_OFFSET => "TDECOFF",
-            EXPOSURE_TIME        => "EXP_TIME",
-            GAIN                 => "DEPERDN",
             RA_SCALE             => "PIXELSIZ",
             RA_TELESCOPE_OFFSET  => "TRAOFF",
-            UTEND                => "UTEND",
-            UTSTART              => "UTSTART",
 
-# then the spectroscopy.
+# then the spectroscopy...
             CONFIGURATION_INDEX  => "CNFINDEX",
-            DETECTOR_INDEX       => "DINDEX",
-            GRATING_DISPERSION   => "GRATDISP",
-            GRATING_NAME         => "GRATNAME",
+            GRATING_DISPERSION   => "DISPERSN",
+            GRATING_NAME         => "GRISM",
             GRATING_ORDER        => "GRATORD",
-            GRATING_WAVELENGTH   => "GRATPOS",
-            NSCAN_POSITIONS      => "DETNINCR",
-            SCAN_INCREMENT       => "DETINCR",
+            GRATING_WAVELENGTH   => "CENWAVL",
             SLIT_ANGLE           => "SLITANG",
             SLIT_NAME            => "SLITNAME",
             UTDATE               => "UTDATE",
@@ -66,14 +59,39 @@ my %hdr = (
             Y_DIM                => "DROWS",
 
 # then the general.
-            DETECTOR_READ_TYPE   => "DETMODE",
-            OBSERVATION_MODE     => "CAMERA"
+            DETECTOR_READ_TYPE   => "DET_MODE",
+            EXPOSURE_TIME        => "EXP_TIME",
+            GAIN                 => "GAIN",
+            NUMBER_OF_EXPOSURES  => "NEXP",
+            NUMBER_OF_READS      => "NREADS",
+            OBSERVATION_MODE     => "INSTMODE",
+            UTEND                => "UTEND",
+            UTSTART              => "UTSTART"
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed by
 # other instruments.  Have to use the inherited version so that the new
 # subs appear in this class.
 ORAC::Group::UIST->_generate_orac_lookup_methods( \%hdr );
+
+sub _to_NSCAN_POSITIONS {
+  1;
+}
+
+# Sampling is always 1x1, and therefore there are no headers with
+# these values.
+sub _from_NSCAN_POSITIONS {
+  "DETNINCR", 1;
+}
+
+sub _to_SCAN_INCREMENT {
+  1;
+}
+
+sub _from_SCAN_INCREMENT {
+  "DETINCR", 1;
+}
+
 
 =head1 PUBLIC METHODS
 
