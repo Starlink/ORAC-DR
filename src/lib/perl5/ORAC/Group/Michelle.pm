@@ -155,16 +155,25 @@ sub calc_orac_headers {
 
 
   # ORACTIME
-  # For Michelle the keyword is simply UTSTART
-  # Just return it (zero if not available)
-  my $time = $self->hdr('UTSTART');
-  $time = 0 unless (defined $time);
+  # For Michelle the time must be extracted from the DATE-OBS keyword
+  # and converted to decimal hours, formatted to five decimals. 
+  # Return zero if not available.
+  my $time;
+  my $epoch = $self->hdr('DATE-OBS');
+  if ( defined $epoch ) {
+    my @hms = split( /:/, substr( $epoch, index( $epoch, "T" ) + 1 ) );
+    $hms[ 2 ] =~ s/Z//;
+    $time = $hms[ 0 ] + $hms[ 1 ] / 60.0 + $hms[ 2 ] / 3600.0;
+    $time = sprintf( "%.5f", $time );
+  } else {
+    $time = 0;
+  }
   $self->hdr('ORACTIME', $time);
 
   $new{'ORACTIME'} = $time;
 
   # ORACUT
-  # For Michelle this is simply the UTDATE header value
+  # For Michelle this is simply the UTDATE header value.
   my $ut = $self->hdr('UTDATE');
   $ut = 0 unless defined $ut;
   $self->hdr('ORACUT', $ut);
