@@ -156,7 +156,7 @@ sub launch {
     } else {
       orac_print "Launching a new Gaia process\n";
       system "$ENV{GAIA_DIR}/gaia.sh &";
-      sleep 5;
+      sleep 20;
     }
     $tries++;
   }
