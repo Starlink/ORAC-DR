@@ -306,6 +306,11 @@ sub orac_determine_inst_classes {
     $frameclass = "ORAC::Frame::Michelle";
     $calclass = "ORAC::Calib::Michelle";
     $instclass = "ORAC::Inst::CGS4";
+  } elsif ($inst eq 'UIST') {
+    $groupclass = "ORAC::Group::UIST";
+    $frameclass = "ORAC::Frame::UIST";
+    $calclass = "ORAC::Calib::Michelle";
+    $instclass = "ORAC::Inst::CGS4";
   } else {
     orac_err("Instrument $inst is not currently supported in ORAC-DR\n");
     return ();
@@ -376,6 +381,13 @@ sub orac_determine_recipe_search_path {
     push( @path, $imaging_root );
     push( @path, $spectro_root );
 
+  } elsif ($inst eq 'UIST') {
+    push( @path, File::Spec->catdir( $root, "UIST" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "UIST" ) );
+    push( @path, File::Spec->catdir( $spectro_root, "UIST" ) );
+    push( @path, $imaging_root );
+    push( @path, $spectro_root );
+
   } elsif ($inst eq 'IRIS2') {
     push( @path, File::Spec->catdir( $root, "IRIS2" ) );
     push( @path, File::Spec->catdir( $imaging_root, "IRIS2" ) );
@@ -441,6 +453,14 @@ sub orac_determine_primitive_search_path {
     push( @path, File::Spec->catdir( $root, "MICHELLE" ) );
     push( @path, File::Spec->catdir( $imaging_root, "MICHELLE" ) );
     push( @path, File::Spec->catdir( $spectro_root, "MICHELLE" ) );
+    push( @path, $imaging_root );
+    push( @path, $spectro_root );
+    push( @path, $general_root );
+
+  } elsif ($inst eq 'UIST') {
+    push( @path, File::Spec->catdir( $root, "UIST" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "UIST" ) );
+    push( @path, File::Spec->catdir( $spectro_root, "UIST" ) );
     push( @path, $imaging_root );
     push( @path, $spectro_root );
     push( @path, $general_root );
@@ -561,6 +581,78 @@ sub orac_configure_for_instrument {
 
              # misc
              $ENV{"ORAC_PERSON"} = "frossie";
+             $ENV{"ORAC_SUN"} = "230";
+             if (Net::Domain->domainname =~ "ukirt"  ) {
+                  $options->{"loop"} = "flag";
+             }
+
+             last SWITCH; }
+
+     if ( $instrument eq "UIST" ) {
+     
+             # Instrument
+             $ENV{"ORAC_INSTRUMENT"} = "UIST";
+
+             # Calibration information
+             $orac_cal_root = "/ukirt_sw/oracdr_cal"
+                    unless defined $orac_cal_root;
+             $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"uist");
+
+             # Recipe and Primitive
+             #undef $ENV{"ORAC_RECIPE_DIR"} 
+             #       if defined $ENV{"ORAC_RECIPE_DIR"};
+             #undef $ENV{"ORAC_PRIMITIVE_DIR"} 
+             #       if defined $ENV{"ORAC_PRIMITIVE_DIR"};
+
+
+             # data directories
+             $orac_data_root = "/ukirtdata"
+                    unless defined $orac_data_root;
+
+             $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+	                                                "raw","uist",$oracut);
+             $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir( $orac_data_root,
+	                                              "reduced","uist",$oracut)
+				     unless defined $$options{"honour"};
+
+             # misc
+             $ENV{"ORAC_PERSON"} = "atc";
+             $ENV{"ORAC_SUN"} = "???";
+             if (Net::Domain->domainname =~ "ukirt"  ) {
+                  $options->{"loop"} = "flag";
+             }
+
+             last SWITCH; }
+
+     if ( $instrument eq "MICHELLE" ) {
+     
+             # Instrument
+             $ENV{"ORAC_INSTRUMENT"} = "MICHELLE";
+
+             # Calibration information
+             $orac_cal_root = "/ukirt_sw/oracdr_cal"
+                    unless defined $orac_cal_root;
+             $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"michelle");
+				
+             # Recipe and Primitive
+             #undef $ENV{"ORAC_RECIPE_DIR"} 
+             #       if defined $ENV{"ORAC_RECIPE_DIR"};
+             #undef $ENV{"ORAC_PRIMITIVE_DIR"} 
+             #       if defined $ENV{"ORAC_PRIMITIVE_DIR"};
+
+
+             # data directories
+             $orac_data_root = "/ukirtdata"
+                    unless defined $orac_data_root;
+
+             $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+	                                                "raw","michelle",$oracut);
+             $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir( $orac_data_root,
+	                                              "reduced","michelle",$oracut)
+				     unless defined $$options{"honour"};
+
+             # misc
+             $ENV{"ORAC_PERSON"} = "mjc";
              $ENV{"ORAC_SUN"} = "230";
              if (Net::Domain->domainname =~ "ukirt"  ) {
                   $options->{"loop"} = "flag";

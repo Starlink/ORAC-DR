@@ -26,7 +26,8 @@ objects are available to B<ORAC::Frame::Michelle> objects.
 # A package to describe a Michelle group object for the
 # ORAC pipeline
 
-use 5.004;
+use 5.006;
+use warnings;
 use ORAC::Frame::CGS4;
 use ORAC::Print;
 
@@ -52,7 +53,8 @@ my %hdr = (
 
 # then the spectroscopy...
             CONFIGURATION_INDEX  => "CNFINDEX",
-            DETECTOR_INDEX       => "DINDEX",
+# DINDEX is defined below
+#            DETECTOR_INDEX       => "DINDEX",
             DETECTOR_MODE        => "DETMODE",
             GRATING_DISPERSION   => "GRATDISP",
             GRATING_NAME         => "GRATNAME",
@@ -73,6 +75,9 @@ my %hdr = (
 # Take this lookup table and generate methods that can be sub-classed by
 # other instruments.  Have to use the inherited version so that the new
 # subs appear in this class.
+# This will define the methods at runtime. The methods below this
+# are defined at compile time and will be redefined by this call
+# if there are clashes.
 ORAC::Frame::Michelle->_generate_orac_lookup_methods( \%hdr );
 
 # Certain headers appear in each .In sub-frame.  Special translation
