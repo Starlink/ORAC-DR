@@ -30,7 +30,7 @@ use 5.004;
 use ORAC::Frame;
  
 # Let the object know that it is derived from ORAC::Frame;
-@ORAC::Frame::UKIRT::ISA = qw/ORAC::Frame/;
+use base qw/ORAC::Frame/;
  
  
 # standard error module and turn on strict
@@ -128,12 +128,22 @@ There are no input arguments.
 =cut
 
 sub readhdr {
-
-  my $self = shift;
   
-  # Just read the NDF fits header
-  my ($ref, $status) = fits_read_header($self->file);
+  my $self = shift;
 
+   my ($ref, $status);
+  
+  if (@_) {
+    
+    ($ref, $status) = fits_read_header(shift);
+    
+  } else {
+    
+    # Just read the NDF fits header
+    ($ref, $status) = fits_read_header($self->file);
+    
+    
+  };
   # Return an empty hash if bad status
   $ref = {} if ($status != &NDF::SAI__OK);
 
@@ -228,7 +238,9 @@ sub stripfname {
   my $name = shift;
 
   # Strip everything after the first dot
-  $name =~ s/\.(sdf)(\.gz|\.Z)?$//;
+
+  $name =~ s/\.sdf$//;
+
   
   return $name;
 }
