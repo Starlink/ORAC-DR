@@ -105,15 +105,8 @@ sub findgroup {
     $amiagroup = 0;
   }
 
-#  if ($self->hdr('GRPMEM') !~/F/) {
-#    $amiagroup = 1;
-#  } elsif (!defined $self->hdr('GRPMEM')){
-#    $amiagroup = 1;
-#  }
-
-
   # Is this group name set to anything useful
-  if ($hdrgrp == 0 || $amiagroup == 0) {
+  if (!$hdrgrp || !$amiagroup ) {
     # if the group is invalid there is not a lot we can do about
     # it except for the case of certain calibration objects that
     # we know are the only members of their group (eg DARK)
@@ -148,7 +141,7 @@ sub findrecipe {
 
   # Check to see whether there is something there
   # if not try to make something up
-  if ($recipe !~ /./) {
+  if (!defined($recipe) or $recipe !~ /./) {
     $recipe = 'QUICK_LOOK';
   }
 
