@@ -607,7 +607,6 @@ sub hds2mef {
     # Now loop for each of the temporary files...
 
     my $ifileno;
-    my @wcscards = ();
     for ($ifileno = 0; $ifileno < $ntmp; $ifileno++) {
         my ($naxis,@naxes,$bitpix);
 
@@ -616,53 +615,24 @@ sub hds2mef {
 
 	my $ifile = $alltmp[$ifileno];
         my $iptr = Astro::FITS::CFITSIO::open_file($ifile,READONLY,$fitstatus);
-	if ($ifileno == 0) {
-	    $naxis = 0;
-	    @naxes = ();
-            $bitpix = BYTE_IMG;
-	} else {
-	    $iptr->get_img_parm($bitpix,$naxis,\@naxes,$fitstatus);
-	}
         if ($fitstatus != 0) {
 	    unlink @alltmp;
 	    orac_err "Couldn't open temporary FITS file $ifile\n";
 	    return undef;
 	}
 
-	# Create the image in the output file and copy the data (if there
-        # is any to copy)
+        # Copy the input image to the output file... 
 
-	$optr->create_img($bitpix,$naxis,\@naxes,$fitstatus);
-        $iptr->copy_data($optr,$fitstatus) if ($ifileno != 0);
-        if ($fitstatus != 0) {
-            orac_err "Couldn't create image extension $ifile in $outfile\n";
-	    return undef;
-        }
+        $iptr->copy_hdu($optr,0,$status);
 
-        # Right, now copy over all the header cards
+        # Resize the PHU to get rid of silly starlink 'feature'...
 
-        my ($nh,$junk,$card,$i);
-        $iptr->get_hdrspace($nh,$junk,$fitstatus);
-        for $i (1 .. $nh) {
-	    $iptr->read_record($i,$card,$fitstatus);
-            if (fits_get_keyclass($card) == TYP_WCS_KEY || $card =~ /^PV/ || $card =~ /^CRUNIT/) {
-		if ($ifileno == 0) {
-		    push @wcscards,$card;
-		    next;
-                } else {
-		    next;
-                }
-            } 
-	    if (fits_get_keyclass($card) > TYP_CMPRS_KEY && $card !~ /^HDUCLAS/) {
-		$optr->write_record($card,$fitstatus);
-	    }
+	if ($ifileno == 0) {
+	    $naxis = 0;
+	    @naxes = ();
+            $bitpix = BYTE_IMG;
+            $optr->resize_img($bitpix,$naxis,\@naxes,$status);
 	}
-        if ($ifileno != 0) {
-            my $nwcs = @wcscards;
-            for $i (1 .. $nwcs) {
-		$optr->write_record($wcscards[$i-1],$fitstatus);
-            }
-        }
 
         # Close up the input file
 
