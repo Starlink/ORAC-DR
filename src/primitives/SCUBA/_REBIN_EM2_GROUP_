@@ -9,7 +9,7 @@ throws and removes the dual beam signature using FFTs
 
 =head1 TASKS
 
-SURF: REBIN
+SURF: REBIN, SCUMAKEWT
 KAPPA: FOURIER, ADD, MULT
 
 =head1 OPTIONS
@@ -30,6 +30,9 @@ The routine does not run unless 4 or 6 chop throw datasets are
 available. [Must be sets of identical chops with different
 PAs]
 
+Filtering of high frequencies is used as for remdbm with the -filter
+option.
+
 When mosiacing the output map centre must be chosen such that
 all the data is visible. The easiest thing is simply to take 
 the average of all map centres used (inclufing MAP_X and MAP_Y).
@@ -43,7 +46,7 @@ that it wont keep everything fixed [ and if I choose a size that
 matches the default size then the source is not guaranteed
 to lie at the centre pixel of the regridded image].
 
-The following options are avialable:
+The following options are available:
 
 =over 4
 
@@ -68,6 +71,8 @@ final map.
 
 =back
 
+In fact we choose to use option 1 (REBIN without an output file).
+
 =cut
 
 
@@ -79,6 +84,8 @@ final map.
 # the images for each sub group
 
 if ($Grp->lastmember($Frm)) {
+
+my $DISH_DIAMETER = 15.0;  # JCMT specific
 
 
 # Need to decide whether we even want to process the data yet
@@ -104,7 +111,7 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
   
   # Do a 'noddy' test first
 
-  # This should check that there are 4 or 6 subgroups
+  # This should check that there are > 4 (but even) subgroups
   # but also that each subgrp contains the same number
   # of images.
   # Check the frame counts
@@ -116,17 +123,24 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
       last;
     }
   }
-  $test = 0 unless (scalar(@subgrps) == 4 || scalar(@subgrps) == 6);
+  $test = 0 unless (scalar(@subgrps) >= 4 && (scalar(@subgrps) % 2 == 0));
   
+  # Also might want to test that there are even numbers of chops for
+  # each CHOP_PA.
+
   # Check the test.
   if ($test) {
 
     # calculate out_coords - the assumption is that
     # That all members of the group were either in a fixed 
-    # coordinate frmae (RB or RJ) or a moving frame (PL)
+    # coordinate frame (RB or RJ) or a moving frame (PL)
+    # Note that all scan maps must be regridded in RJ 
+    # regardless of the centre coords frame unless they are a moving frame
+    # For now, simply use CENT_CRD since I do not want to have to
+    # convert RB to RJ coordinates later on when I calculate the map centre
+    # my $outcoords = ($Frm->hdr('CENT_CRD') eq 'PLANET' ? 'PL' : 'RJ');
     my $outcoords = $Frm->hdr('CENT_CRD');
     $outcoords = 'PL' if $Frm->hdr('CENT_CRD') eq 'PLANET';
-
 
     #######################################
 
@@ -155,7 +169,7 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 	  my $lat = $member->hdr('LAT');
 
 	  # Convert to decimal
-	  # Shoule either have a global sub for this or should
+	  # Should either have a global sub for this or should
 	  # use the SLA routine
 	  my @long = split(':',$long);
 	  my @lat = split(':',$lat);
@@ -232,61 +246,73 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
     open (INPUT, "> $infile") || die "Error opening scratch file $!";
     for (@junk) { print INPUT "$_ 1 0 0\n"; };
     close INPUT;
-    for (@junk) { print "$_ 1 0 0\n"; };
 
-    # Run rebin 
-    orac_err("The following error from REBIN is expected...\n");
-    orac_err("We are running rebin once in order to determine the required size of the output image...\n");
+#    print "Regridding the following files:\n";
+#    for (@junk) { print "$_ 1 0 0\n"; };
+
+    # Run rebin with out=!
     my $ORAC_STATUS = $Mon{surf_mon}->resetpars;
     my $args = "ref=$infile out=! noloop $coords PIXSIZE_OUT=$pixsize accept";
-    my $status = $Mon{surf_mon}->obeyw("rebin","$args");
-    orac_err("Please IGNORE the above error\n");
+    $Mon{surf_mon}->obeyw("rebin","$args");
 
     # Now read the size
     ($ORAC_STATUS, my @size) = $Mon{surf_mon}->get("rebin","size");
 
+    # And read the reference pixel (requires SURF 1.4)
+    ($ORAC_STATUS, my @refpix) = $Mon{surf_mon}->get("rebin","refpix");
+
     orac_print("Default size of map is ". join(",",@size) ." pixels\n");
+    orac_print("Using reference pixels: ".join(",",@refpix)."\n");
+
+    # Realize that the images do not have to be a power of two
+    # the problem had come from the fact that REFPIX could not
+    # be specified and sometimes the images would match a power
+    # of 2 size and screwup the reference pixel!
+    # Simply read REFPIX and SIZE and use them!!!!
 
     # Now I have to convert this to a standard size
-    # Try to convert to a fixed size - for now just take 
-    # 30 arcsec off the size of each dimension
+    # Try to convert to a fixed size - for now take closest power of 2
     # Note that it is not clear whether the FOURIER routines
     # require 2**N square for best results
 
-    my $npix = 30 / $pixsize;
-    my $min = 32;  # Minimum size of output map
-    $min++ if $min == $npix; # Make sure that they are different
+#    my $min = 32;  # Minimum size of output map
 
-    my @nsize = ();
-    foreach my $sz (@size) {
+#    my @nsize = ();
+#    foreach my $sz (@size) {
       # Try to get to closest power of 2
-      my $pow = log($sz) / log(2);
+#      my $pow = log($sz) / log(2);
       # Choose the power nearest to an integer
-      $pow = int($pow + 0.5);
+      # with a bias to larger grids
+#      $pow = int($pow + 0.6);
 
-      my $val = 2 ** $pow;
+#      my $val = 2 ** $pow;
 
       # Check for minimum size
-      $val = $min if $val < $min;
+#      $val = $min if $val < $min;
 
-      # Problem if $val equals $sz since REBIN can not handle that
-      # without a shift of origin. Given that I cant change the pixel
-      # size I either have to up pow or move it down.
-      # Move it up for now
-      if ($val == $sz) {
-	$pow++;
-	$val = 2 ** $pow;
-      }
+      # No longer matters if actual size = requested size since
+      # I can set REFPIX in SURF 1.4
 
       # Store the value
-      push(@nsize, $val);
-    }
+#      push(@nsize, $val);
+#    }
 
     # Retrieve size array and generate the string for REBIN
-    my $size = "size=[" . join(",",@nsize) ."]";
-    orac_print "Regridding map of size: $size\n";
+    my $size = "size=[" . join(",",@size) ."]";
+#    orac_print "Regridding map of size: $size\n";
 
-    
+    # The reference pixel should be in the same location
+    # (proportionately) as it was before we just changed the size
+
+#    my @nrefpix = ();
+#    foreach my $i (0..1) {
+#      $nrefpix[$i] = int(($refpix[$i] / $size[$i]) * $nsize[$i]);
+#    }
+
+    # Set the refpix directive
+    my $refpix = " refpix=[".join(",",@refpix)."]";
+#    orac_print "Setting reference pixel to $refpix\n";
+
     #####################################################
     ####################### REMDBM ######################
     #####################################################
@@ -326,6 +352,11 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 
       # We can calculate the weight file here since it is
       # independent of sub-instrument
+      # Unfortunately we need to know the origin information
+      # of the rebinned image as well at the size.
+      # We can either use the new LIKE parameter (moving this into the
+      # loop) or do a setorigin inside the loop so that it matches
+      # the bounds of the rebinned file.
 
       my $args = "chop=$chop_thr pa=$chop_pa pixsize=$pixsize $size accept";
       $Mon{surf_mon}->obeyw("scumakewt","ftchop=$outft wtchop=$outwt $args");
@@ -382,7 +413,7 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 	# THIS INCLUDES SETTING THE MAP SIZE AND CENTRE
 	
 	# This is is similar to the normal _rebin_group_ now
-	my $args = "$size $coords REBIN_METHOD=$method PIXSIZE_OUT=$pixsize noloop";
+	my $args = "$size $coords REBIN_METHOD=$method PIXSIZE_OUT=$pixsize noloop $refpix";
 
 	# Run rebin
 	# Need to reset the parameters so that the regridding parameters
@@ -415,12 +446,14 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 	my $string;
 	if ($chop_pa == 0) {
  
-	  $status =$Mon{kappa_mon}->obeyw("cmult","in=$out scalar=-1.0 out=junk$$ reset");
+	  $Mon{kappa_mon}->obeyw("cmult","in=$out scalar=-1.0 out=junk$$ reset");
 	  $string = "in=junk$$";
 	} else {
 	  $string = "in=".$out;
 	}
- 
+	
+
+	# Do the FFT
 	my $realout = "re_" . $chop_pa . '_' . $chop_thr;
 	my $imout = "im_" . $chop_pa . '_' . $chop_thr;
  
@@ -448,9 +481,16 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
 	# to generate the new real component, and the real by -F to generate
 	# the new imaginary component
 
+	# Since the origin is currently set to 1,1 in the FFTs,
+	# we need to change the origin to match the input image
+	# (otherwise the division by weights will not work)
+	# We do this since we are not using the LIKE parameter on SCUMAKEWT
+	# since we only want to generate the weights once and not in the loop
+	$Mon{ndfpack_mon}->obeyw("setorigin","ndf=$outft like=$realout");
+
 	# Imaginary REAL -> IM
 	my $string = " -1.0*ia*ib out=imtemp ia=$realout ib=$outft";
-	$Mon{kappa_mon}->obeyw("maths","$string reset");
+	$Mon{kappa_mon}->obeyw("maths","$string reset novariance");
 
 	# REAL
 	$Mon{kappa_mon}->obeyw("mult","in1=$imout in2=$outft out=retemp reset");
@@ -525,29 +565,73 @@ if ($Frm->hdr('SAM_MODE') eq 'RASTER' && $Frm->hdr('MODE') eq 'MAP' &&
     # group results based on suffix
     $Grp->file($Grp->file . '_reb') unless $Grp->file =~ /_reb$/;
 
+
     # Loop over subinstruments again - assumes that we have one set
     # per sub
     foreach my $sub ($Grp->subs) {
 
+      # Since the origin is currently set to 1,1 in the weights,
+      # we need to change the origin to match the input images
+      # (otherwise the division by weights will not work)
+      # The alternative is to run scumakewt after we have created
+      # the rebinned image and then use the LIKE parameter
+      # It should not be in this loop - only needs to be run once
+      # - am lazy
+      $Mon{ndfpack_mon}->obeyw("setorigin","ndf=s$totwt like=$reroot$sub");
+
       # Divide real and imaginary by the total weight
       
-      $Mon{kappa_mon}->obeyw("div","in1=$reroot$sub in2=s$totwt out=rediv reset");
-      $Mon{kappa_mon}->obeyw("div","in1=$imroot$sub in2=s$totwt out=imdiv reset");
+      $Mon{kappa_mon}->obeyw("div","in1=$reroot$sub in2=s$totwt out=rediv$$ reset");
+      $Mon{kappa_mon}->obeyw("div","in1=$imroot$sub in2=s$totwt out=imdiv$$ reset");
  
       # Remove the FFTs for the current sub
       unlink "$reroot$sub$ext", "$imroot$sub$ext";
  
+      # Mask the high frequencies using ardmask
+      # Calculate radius for each axis
+      my $wavfrm = $Grp->members->[0];
+      my $wavelength = ($wavfrm->wavelengths)[$wavfrm->sub2file($sub) - 1];
+
+      my $fixed  = $DISH_DIAMETER * $pixsize / ($wavelength * 1.0e-6 * 206265);
+
+      my $xrad = int (($nsize[0] * $fixed) + 1);
+      my $yrad = int (($nsize[1] * $fixed) + 1);
+
+      orac_print "Filtering high frequencies\n";
+
+      # Create ARD file
+      my $ardfile = new ORAC::TempFile || die "_REBIN_EM2_GROUP_: Error creating temp file for ardmask\n";
+
+      print {$ardfile->handle} ".NOT.ELLIPSE(0,0,$xrad,$yrad,0)\n";
+      $ardfile->handle->close || die "Error closing ARD file\n";
+
+      my $args = "cosys=world ardfile=".$ardfile->file;
+      $Mon{kappa_mon}->obeyw("ardmask","in=rediv$$ out=rediv_ard$$ $args");
+      $Mon{kappa_mon}->obeyw("ardmask","in=imdiv$$ out=imdiv_ard$$ $args");
+
+      # unlink the non-arded data
+      unlink "rediv$$". $ext, "imdiv$$".$ext;
+
       orac_print "Running inverse FFT for sub $sub...\n";
 
       # Get the output name
       my $out = $Grp->grpoutsub($sub);
 
       # Inverse fourier
-      $Mon{kappa_mon}->obeyw("fourier","inverse realin=rediv imagin=imdiv out=$out reset");
+      $Mon{kappa_mon}->obeyw("fourier","inverse realin=rediv_ard$$ imagin=imdiv_ard$$ out=sbeam$$ reset");
  
       # Remove the final junk files
-      unlink "rediv$ext", "imdiv$ext";
-      
+      unlink "rediv_ard$$".$ext, "imdiv_ard$$".$ext;
+
+      # Now propogate the mask and axis information from the
+      # first file in the group - could do this with copobj
+      my $args = " exp='IA*0+IB' novariance ib=sbeam$$ out=$out reset";
+      $args .= " ia=". $subgrps[0]->grpoutsub($sub);
+      $Mon{kappa_mon}->obeyw("maths","$args");
+
+      # and unlink
+      unlink "sbeam$$".$ext;
+
     }
 
     # Remove the total weight
