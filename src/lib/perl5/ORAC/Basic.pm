@@ -4,8 +4,23 @@
 
 package ORAC::Basic;
 
+=head1 NAME
+
+ORAC::Basic - generic ORAC subroutines
+
+=head1 SYNOPSIS
+
+  use ORAC::Basic;
+  orac_parse_recipe
+
+=head1 DESCRIPTION
+
+Provides the routines for parsing and executing recipes.
+
+=cut
+
 use Carp;
-use vars qw($VERSION @ISA @EXPORT);
+use vars qw($VERSION @ISA @EXPORT $Display $Nbs);
 
 # This module requires the Starlink::EMS module to translate
 # the facility error status.
@@ -21,17 +36,17 @@ use ORAC::Msg::ADAM::Control;
 use ORAC::General; # General subroutines given to the recipes
 use ORAC::Constants qw/:status/;	# 
 
-use Proc::Simple;
+use IO::File;  # Open and close files
+use Cwd; # Current working directory
 
 @ISA = qw(Exporter);
 
 @EXPORT = qw/orac_launch_display orac_connect_display
 orac_kill_display orac_execute_recipe orac_read_recipe
 orac_parse_recipe orac_exit_normally orac_exit_abnormally
-orac_parse_obslist
 /;
 
-
+$VERSION = '0.10';
 
 #------------------------------------------------------------------------
 
@@ -40,36 +55,194 @@ orac_parse_obslist
 *Mon = *main::Mon;
 
 
+=over 4
+
+=cut
+
 # Display specific code
 
 sub orac_launch_display {
 
-  my $dir = ${main::orac_dir};
-  my $Out = ${main::Out};
+  my $dir = $main::orac_dir;
+  my $Out = $main::Out;
+  
+  # Set some P4 environment variables
+  $ENV{P4_ROOT} = $ENV{CGS4DR_ROOT};
+  $ENV{P4_CONFIG} = $ENV{HOME} . "/cgs4dr_configs";
+  $ENV{P4_HOME} = $ENV{P4_ROOT};
+  $ENV{P4_EXE}  = $ENV{P4_ROOT};
+  $ENV{P4_ICL}  = $ENV{P4_ROOT};
+  $ENV{P4_DATA} = $ENV{ORAC_DATA_OUT};
+  $ENV{P4_CT}   = $ENV{P4_ROOT} . "/ndf";
+  $ENV{P4_HC}   = cwd;
+  $ENV{P4_DATE} = $main::ut;
+  $ENV{RGDIR}   = $ENV{P4_DATA};
+  $ENV{RODIR}   = $ENV{P4_DATA};
+  $ENV{RIDIR}   = $ENV{P4_DATA};
+  $ENV{ODIR}   = $ENV{P4_DATA};
+  $ENV{IDIR}   = $ENV{P4_DATA};
 
-  $p4 = new Proc::Simple;
-  $p4->start("${dir}/p4/p4_tcl $Out 970815 ndf");
-  $toolpid = $p4->{'pid'};
+
+  # Make the CGS4DR scratch directories
+  unless (-d $ENV{P4_CONFIG}) {
+    unlink $ENV{P4_CONFIG};
+    mkdir($ENV{P4_CONFIG}, 0770);
+  }
+
+  # Do P4 startup - copy in a default file
+  # unless one is there already.
+  unless (-e $ENV{P4_CONFIG} . "/default.p4") {
+    print colored("Creating a default P4 startup file\n",'red');
+    copy ($ENV{P4_ROOT} . "/default.p4", $ENV{P4_CONFIG} . "/default.p4");
+  }
+
+  # Now need to edit the standard.p4 so that it uses
+  # the reverse of the current PID ($$)
+  $ENV{PID} = scalar reverse($$);
+
+  # Copy the default file to a backup
+  copy($ENV{P4_CONFIG} . "/default.p4", $ENV{P4_CONFIG} . "/default.p4_bak");
+
+  # Open the template and change the xwindows identifier
+  my $default = new IO::File("< $ENV{P4_CONFIG}/default.p4_bak")
+    or die "Couldn't open default.p4_bak: $!";
+
+  # Open the output file
+  my $output = new IO::File("> $ENV{P4_CONFIG}/default.p4")
+    or die "Can't open output file default.p4: $!";
+
+  # Loop over each input line, modify and send to ouput
+  foreach my $line (<$default>) {
+    $line =~ s/xwindows(\;\d+xwin)?/xwindows\;$ENV{PID}xwin/i;
+    print $output $line;
+  }
+
+  # Close files
+  $default->close;
+  $output->close;
+
+  # Now launch P4 using ORAC::Msg module
+  $Display = new ORAC::Msg::ADAM::Task("$ENV{PID}_p4", "$ENV{CGS4DR_ROOT}/p4");
+
+  # Open the associated Xwindow (could leave it to P4)
+  # Note that the $gwm object disappears as soon as we leave this
+  # subroutine
+  print colored("Launching GWM display $ENV{PID}xwin...",'blue');
+  my $gwm = new Proc::Simple;
+  $gwm->start("gwm -colours 128 -gwmname $ENV{PID}xwin -name \'ORACDR:P4 ($ENV{PID}xwin)\'");
+
+  # Pause so that GWM window can be contacted immediately
+  sleep 2;
+  print colored("Done\n",'blue');
 
 };
 #------------------------------------------------------------------------
 
+# Talk to P4 and configure 
+
 sub orac_connect_display {
 
-#    chomp($toolpid = <>);
-#    $toolpid = scalar reverse ($toolpid+1);
-    $toolpid = scalar reverse ($toolpid);
-    $toolname = $toolpid."_p4";
-    $toolnbname = "p".$toolpid."_plotnb";
-    print "noticeboard is $toolnbname\n";
-    $Display = new ORAC::Msg::ADAM::Task($toolname);
+  my $status;
 
-    $contact =$Display->contactw;		# ensure contact is made
-    unless ($contact) {
-      print colored("Unable to contact Display before timeout",'red');
-    }
+  # Assume that NBS is named after the toolpid
+  my $toolpid = $Display->pid;
+  
+  $toolpid = scalar reverse ($toolpid);
+  my $toolnbname = "p".$toolpid."_plotnb";
 
-    $Nbs = new Starlink::NBS ($toolnbname);
+  $contact =$Display->contactw;		# ensure contact is made
+  unless ($contact) {
+    print colored("Unable to contact Display before timeout",'red');
+    return;
+  }
+
+
+
+  # Now configure the noticeboard
+  print colored("Configuring P4 NBS ($toolnbname)...",'blue');
+
+  $status = $Display->set(" ","noticeboard","$toolnbname");
+  if ($status != ORAC__OK) {
+    print colored("Error setting noticeboard name\n",'red');
+    return;
+  }
+
+  $status = $Display->obeyw("open_nb");
+  if ($status != ORAC__OK) {
+    print colored ("Error opening noticeboard\n",'red');
+    return;
+  }
+
+  $status = $Display->obeyw("restore","file=$ENV{P4_CONFIG}/default.p4 port=-1");
+  if ($status != ORAC__OK) {
+    print colored("Error configuring noticeboard\n",'red');
+    return;
+  }
+
+  # Print completion message
+  print colored("Done\n",'blue');
+
+  # Open local version of noticeboard
+  $Nbs = new Starlink::NBS ($toolnbname);
+
+  # Check notice board status
+  unless ($Nbs->isokay) {
+    print colored("Error opening noticeboard\n",'red');
+    return;
+  }
+
+  # Set some local values
+
+  $startup = '$ORAC_DIR/images/orac_start';
+  nbspoke(".port_0.display_type", "IMAGE");
+  nbspoke(".port_0.display_data", "$startup"); 
+  nbspoke(".port_1.display_data", '$P4_CT/cgs4');
+  nbspoke(".port_2.display_data", '$P4_CT/cgs4');
+  nbspoke(".port_3.display_data", '$P4_CT/cgs4');
+  nbspoke(".port_4.display_data", '$P4_CT/cgs4');
+  nbspoke(".port_5.display_data", '$P4_CT/cgs4');
+  nbspoke(".port_6.display_data", '$P4_CT/cgs4');
+  nbspoke(".port_7.display_data", '$P4_CT/cgs4');
+  nbspoke(".port_8.display_data", '$P4_CT/cgs4');
+  nbspoke(".port_0.title", "");
+  nbspoke(".port_0.plot_axes","0");
+
+  # Load the colour table and plot the ramp
+  $status = $Display->obeyw("lut","port=0");
+  if ($status != ORAC__OK) {
+    print colored("Error configuring default LUT\n",'red');
+    return;
+  }
+
+
+  my $data = nbspeek(".port_0.display_data");  # We know what this is!
+
+  # Check for possible corruption of noticeboard
+  if ($data =~ /xwin/) {
+    print colored("Error reading startup image from noticeboard\n",'red');
+    print colored("P4 noticeboard could be corrupt. Continuing\n",'red');
+    $data = $startup;
+  }
+
+  # Replace $ with \$ for eval during obeyw()
+  $data =~ s/\$/\\\$/g;  
+
+  # Ask P4 to display
+  $status = $Display->obeyw("display", "data=$data");
+  if ($status != ORAC__OK) {
+    print colored("Error displaying startup image\n",'red');
+    print colored("Trying to execute: display data=$data\n",'red');
+    return;
+  }
+
+  $status = $Display->obeyw("status");
+  if ($status != ORAC__OK) {
+    print colored("Error determining P4 status\n",'red');
+    return;
+  }
+
+  nbspoke(".port_0.plot_axes", "1");
+
 };
 
 #------------------------------------------------------------------------
@@ -81,27 +254,37 @@ sub orac_kill_display {
 #------------------------------------------------------------------------
 
 sub nbspeek {
-    local($item) = shift(@_);
-    $what = $Nbs->find($item);
-    ($ok,$value) = $where->get;
+    my ($item) = shift(@_);
+    my $what = $Nbs->find($item);
+    my ($ok,$value) = $what->get;
     return $value;
 };
 
 #------------------------------------------------------------------------
 
 sub nbspoke {
-    local($item,$value) = @_;
-    $what = $Nbs->find($item);
-    $ok = $what->put($value);
+    my ($item,$value) = @_;
+    my $what = $Nbs->find($item);
+    my $ok = $what->put($value);
+    return $ok;
 };
 
 #------------------------------------------------------------------------
+
+=item orac_executre_recipe(reciperef, Frame, Group, Cal)
+
+Executes the recipes stored in $reciperef (an Array reference).
+Also needs the current frame, group and calibration objects.
+
+=cut
+
+
 sub orac_execute_recipe {
 
   local($reciperef,$Frm,$Grp,$Cal) = @_;
   local(@recipe) = @$reciperef;		# dereference recipe
 
-  $block = join("",@recipe);
+  my $block = join("",@recipe);
   my $status = eval $block;
 
   # Check for an error
@@ -152,10 +335,18 @@ sub orac_execute_recipe {
 
 
 #------------------------------------------------------------------------
+
+=item orac_read_recipe(recipe)
+
+Reads the specified recipe from the recipe directory.
+An array containing the recipe is returned.
+
+=cut
+
 sub orac_read_recipe {
 
-  local $recipe = shift(@_);
-  local (@arguments) = @_;
+  my $recipe = shift;
+  my  (@arguments) = @_;
 
   open(RECIPE,${main::recipe_dir}.$recipe) || croak "No such recipe $recipe\n";;
 
@@ -169,6 +360,12 @@ sub orac_read_recipe {
 
 
 #------------------------------------------------------------------------
+
+=item orac_parse_arguments(line)
+
+Parses argument lists on primitive calls.
+
+=cut
 
 sub orac_parse_arguments {
 
@@ -185,6 +382,14 @@ sub orac_parse_arguments {
 };
 
 #------------------------------------------------------------------------
+
+=item orac_parse_recipe(array)
+
+Parses a recipe, reading in the necessary primitives and
+adding automatic error checking code.
+An array containing the full recipe is returned.
+
+=cut
 
 sub orac_parse_recipe {
   
@@ -253,6 +458,13 @@ sub orac_parse_recipe {
 
 # Subroutine to add error checking 
 # Relies on $ORAC_STATUS being available
+
+
+=item orac_check_status
+
+Provides the code for automatic status checking of recipes.
+
+=cut
  
 sub orac_check_status {
  
@@ -269,6 +481,14 @@ sub orac_check_status {
   return @newlines;
   
 }
+
+=item orac_check_obey_status
+
+Provides the code for automatic status checking of obeyw()
+in recipes.
+
+=cut
+
 
 # Subroutine to check status of OBEYW
 
@@ -309,57 +529,15 @@ sub orac_check_obey_status {
 
 
 #------------------------------------------------------------------------
-
-# Argument disentanglement
-
-# Parse the observation list that is entered with the -list
-# option. This is a comma separated list of numbers.
-# Ranges can be specified with colons
-
-# Returns an array of observation numbers.
-
-sub orac_parse_obslist {
-
-  my $obslist = shift;
-  my @obs = ();
-
-  # Split on the comma
-  @obs = split(",",$obslist);
-
-  # Now go through each entry and see if we can expand on :
-  # a:b expands to a..b.
-  for (my $i = 0; $i <= $#obs; $i++) {
-
-    $obs[$i] =~ /:/ && do {
-      my ($start, $end) = split ( /:/, $obs[$i]);
- 
-      # Generate the range
-      my @junk = $start..$end;
-
-      # Splice into @obs
-      splice(@obs, $i, 1, @junk);
-
-      # Increment the counter to take into account the
-      # new additions (since we know that @junk does not contain
-      # colons. We dont need this - especially if we want to parse
-      # The expanded array
-      $i += $#junk;
-
-    }
-
-  }
-
-  return @obs;
-}
-
-
-
-
-
-#------------------------------------------------------------------------
 # THE END(s)
 #------------------------------------------------------------------------
 
+
+=item orac_exit_normally
+
+Exit handler for oracdr.
+
+=cut
 
 sub orac_exit_normally {
 
@@ -367,11 +545,18 @@ sub orac_exit_normally {
   orac_kill_display;
   print colored ("Orac says: $message - Exiting...\n","red");
 
+  rmtree $ENV{'ADAM_USER'};             # delete process-specific adam dir
   &orac_kill_display;		# Destroy display
 
   print colored ("\nOrac says: Goodbye\n","red");
   exit;
 };
+
+=item orac_exit_abnormally
+
+Exit handler when a problem has been encountered.
+
+=cut
 
 sub orac_exit_abnormally {
 
@@ -390,7 +575,21 @@ sub orac_exit_abnormally {
 
 1;
 
+
+=back
+
+=head1 AUTHORS
+
+Frossie Economou and Tim Jenness
+
+=cut
+
+
 #$Log$
+#Revision 1.20  1998/06/29 04:17:27  timj
+#Startup P4 directly.
+#Remove orac_parse_obslist
+#
 #Revision 1.19  1998/05/22 03:24:01  timj
 #Stop pipeline if 'Die' detected in eval.
 #
