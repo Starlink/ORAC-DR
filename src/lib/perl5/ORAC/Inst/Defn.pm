@@ -308,6 +308,11 @@ sub orac_determine_inst_classes {
     $calclass   = "ORAC::Calib::IRCAM";
     $instclass  = "ORAC::Inst::IRCAM";
     $inst = 'UFTI'; # to pick UFTI recipes and primitives as they are
+  } elsif ($inst eq 'UFTI_CASU') {
+    $groupclass = "ORAC::Group::UFTI_CASU";
+    $frameclass = "ORAC::Frame::UFTI_CASU";
+    $calclass   = "ORAC::Calib::UFTI_CASU";
+    $instclass  = "ORAC::Inst::UFTI_CASU";
   } elsif ($inst eq 'CGS4') {
     $groupclass = "ORAC::Group::CGS4";
     $frameclass = "ORAC::Frame::CGS4";
@@ -447,6 +452,11 @@ sub orac_determine_recipe_search_path {
     push( @path, File::Spec->catdir( $imaging_root, "UFTI" ) );
     push( @path, $imaging_root );
 
+  } elsif ($inst eq 'UFTI_CASU') {
+    push( @path, File::Spec->catdir( $root, "UFTI_CASU" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "UFTI_CASU" ) );
+    push( @path, $imaging_root );
+
   } elsif ($inst eq 'MICHELLE' or $inst eq 'MICHTEMP') {
     push( @path, File::Spec->catdir( $root, "MICHELLE" ) );
     push( @path, File::Spec->catdir( $imaging_root, "MICHELLE" ) );
@@ -547,6 +557,12 @@ sub orac_determine_primitive_search_path {
   } elsif ($inst eq 'UFTI' or $inst eq 'UFTI2') {
     push( @path, File::Spec->catdir( $root, "UFTI" ) );
     push( @path, File::Spec->catdir( $imaging_root, "UFTI" ) );
+    push( @path, $imaging_root );
+    push( @path, $general_root );
+
+  } elsif ($inst eq 'UFTI_CASU') {
+    push( @path, File::Spec->catdir( $root, "UFTI_CASU" ) );
+    push( @path, File::Spec->catdir( $imaging_root, "UFTI_CASU" ) );
     push( @path, $imaging_root );
     push( @path, $general_root );
 
@@ -729,6 +745,8 @@ sub orac_determine_loop_behaviour {
     } elsif( uc($instrument) eq 'MICHELLE' ) {
       $behaviour = 'flag';
     } elsif( uc($instrument) eq 'UFTI2' ) {
+      $behaviour = 'flag';
+    } elsif( uc($instrument) eq 'UFTI_CASU' ) {
       $behaviour = 'flag';
     } elsif( uc($instrument) eq 'IRCAM2' ) {
       $behaviour = 'flag';
@@ -1157,6 +1175,42 @@ sub orac_configure_for_instrument {
              if ($domain =~ /ukirt/i  ) {
                   $options->{"loop"} = "flag";
              }
+             $options->{"skip"} = 0;
+
+             last SWITCH; }
+
+     if ( $instrument eq "UFTI_CASU") {
+
+             # Instrument
+             $ENV{"ORAC_INSTRUMENT"} = "UFTI_CASU";
+
+             # Calibration information
+             $orac_cal_root = File::Spec->catdir("ukirt_sw","oracdr_cal")
+		     unless defined $orac_cal_root;
+             $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"ufti_casu");
+				
+             # Recipie and Primitive
+             #undef $ENV{"ORAC_RECIPE_DIR"} 
+             #        if defined $ENV{"ORAC_RECIPE_DIR"};
+             #undef $ENV{"ORAC_PRIMITIVE_DIR"} 
+             #        if defined $ENV{"ORAC_PRIMITIVE_DIR"};
+
+             # data directories
+             $orac_data_root = "/ukirtdata"
+                     unless defined $orac_data_root;
+
+             $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
+	                                                "raw","ufti",$oracut);
+             $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir($orac_data_root,
+	                                              "reduced","ufti",$oracut)
+				     unless defined $$options{"honour"};
+
+             # misc
+             $ENV{"ORAC_PERSON"} = "jrl";
+             $ENV{"ORAC_SUN"} = "???";
+             if (Net::Domain->domainname =~ "ukirt"  ) {
+                  $options->{"loop"} = "flag";
+             }           
              $options->{"skip"} = 0;
 
              last SWITCH; }
