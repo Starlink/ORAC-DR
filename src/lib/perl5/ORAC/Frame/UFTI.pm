@@ -42,7 +42,7 @@ use base qw/ORAC::Frame::UKIRT/;
 use Carp;
 use strict;
 
-# Translation tables for UFTI shouldr go here
+# Translation tables for UFTI should go here
 my %hdr = (
             EXP_TIME  => "EXP_TIME",
             DECSCALE  => "CDELT2",
@@ -54,10 +54,9 @@ my %hdr = (
             UTSTART   => "UTSTART"
 	  );
 
-# Take this lookup table and generate methods that can
-# be sub-classed by other instruments
-# Have to use the inherited version so that the new subs appear in 
-# this class
+# Take this lookup table and generate methods that can be sub-classed
+# by other instruments.  Have to use the inherited version so that the
+# new subs appear in this class.
 ORAC::Frame::UFTI->_generate_orac_lookup_methods( \%hdr );
 
 =head1 PUBLIC METHODS
