@@ -271,16 +271,20 @@ sub convert {
 
   } elsif ($options{'IN'} eq 'HDS' && $options{'OUT'} eq 'FITS') {
     # Implement HDS2FITS
-    orac_print("Converting from HDS to FITS...\n");
-    $outfile = $self->hds2ndf;
-    my ($base, $dir, $suffix) = fileparse($outfile, '.sdf');
-    $base =~ s/_raw//;
-    my $outfile2 = $base . $suffix;
-    rename($outfile,$outfile2);
-    $self->infile($outfile2);
-    $outfile = $self->ndf2fits;
-    unlink $outfile2;
-    orac_print("...done\n");
+#    orac_print("Converting from HDS to FITS...\n");
+#    $outfile = $self->hds2ndf;
+#    my ($base, $dir, $suffix) = fileparse($outfile, '.sdf');
+#    $base =~ s/_raw//;
+#    my $outfile2 = $base . $suffix;
+#    rename($outfile,$outfile2);
+#    $self->infile($outfile2);
+#    $outfile = $self->ndf2fits;
+#    unlink $outfile2;
+#    orac_print("...done\n");
+    # Implement HDS2MEF
+      orac_print("Converting from HDS to MEF...\n");
+      $outfile = $self->hds2mef;
+      orac_print("...done\n");
 
   } elsif ($options{'IN'} eq 'HDS' && $options{OUT} eq 'NDF') {
     # Implement HDS2NDF
@@ -506,6 +510,147 @@ sub ndf2fits {
     return undef;
   }
 
+}
+
+=item B<hds2mef>
+
+Convert a HDS file into a multi-extension FITS file
+
+=cut
+
+sub hds2mef {
+    my $self = shift;
+
+    # Need CFITSIO now, so load it
+
+    use Astro::FITS::CFITSIO qw(:constants :longnames);
+
+    # Check for the input file
+
+    unless (-e $self->infile) {
+        orac_err "Input filename (".$self->infile.") does not exist -- can not convert\n";
+        return undef;
+    }
+
+    # Read the input file - we only want the basename (we know .sdf suffix)
+
+    my ($base,$dir,$suffix) = fileparse($self->infile,'.sdf');
+
+    # The HDS file for the HDS system is the base name and directory 
+    # but no suffix
+
+    my $hdsfile = File::Spec->catfile($dir,$base);
+
+    # Get an output file name
+
+    my $outfile = $base . ".fit";
+
+    # Check for the existence of the output file in the current dir
+    # and whether we can overwrite it.
+
+    if (-e $outfile && ! $self->overwrite) {
+        orac_warn "The converted file ($outfile) already exists - won't convert again\n";
+        return $outfile;
+    }
+
+    # Define a file prefix for the temporary FITS files.
+
+    my $prefix = "tmp_" . time;
+    my $fitsfile = $prefix . "*";
+
+    # Right, now convert each of the NDF components to a FITS file...
+    # First check to see if fits2ndf monolith is running
+
+    my $status = ORAC__ERROR;
+    if (defined $self->mon('ndf2fits')) {
+
+        # Do the conversion
+
+        $status = $self->mon('ndf2fits')->obeyw("ndf2fits","in=$hdsfile out=$fitsfile profits");
+    }
+
+    # Check to make sure this succeeded
+
+    if ($status != ORAC__OK) {
+	orac_err "ndf2fits failed\n";
+	return undef;
+    }
+
+    # Get a list of all of the temporary FITS files created in this last
+    # operation. (NB: the HEADER extension is alphabetically first before
+    # the I extensions, so this will put this in the correct order).
+
+    my @alltmp = sort glob $fitsfile;
+    my $ntmp = @alltmp;
+
+    # Create the output file
+
+    my $fitstatus = 0;
+    my $optr = Astro::FITS::CFITSIO::create_file($outfile,$fitstatus);
+    if ($fitstatus != 0) {
+	unlink @alltmp;
+	orac_err "Couldn't create output file $outfile\n";
+	return undef;
+    }
+
+    # Now loop for each of the temporary files...
+
+    my $ifileno;
+    for ($ifileno = 0; $ifileno < $ntmp; $ifileno++) {
+        my ($naxis,@naxes,$bitpix);
+
+        # Open the input temporary file. Get the size of the image if it's
+	# not the primary
+
+	my $ifile = $alltmp[$ifileno];
+        my $iptr = Astro::FITS::CFITSIO::open_file($ifile,READONLY,$fitstatus);
+	if ($ifileno == 0) {
+	    $naxis = 0;
+	    @naxes = ();
+            $bitpix = BYTE_IMG;
+	} else {
+	    $iptr->get_img_parm($bitpix,$naxis,\@naxes,$fitstatus);
+	}
+        if ($fitstatus != 0) {
+	    unlink @alltmp;
+	    orac_err "Couldn't open temporary FITS file $ifile\n";
+	    return undef;
+	}
+
+	# Create the image in the output file and copy the data (if there
+        # is any to copy)
+
+	$optr->create_img($bitpix,$naxis,\@naxes,$fitstatus);
+        $iptr->copy_data($optr,$fitstatus) if ($ifileno != 0);
+        if ($fitstatus != 0) {
+            orac_err "Couldn't create image extension $ifile in $outfile\n";
+	    return undef;
+        }
+
+        # Right, now copy over all the header cards
+
+        my ($nh,$junk,$card,$i);
+        $iptr->get_hdrspace($nh,$junk,$fitstatus);
+        for $i (1 .. $nh) {
+	    $iptr->read_record($i,$card,$fitstatus);
+	    if (fits_get_keyclass($card) > TYP_CMPRS_KEY && $card !~ /^HDUCLAS/) {
+		$optr->write_record($card,$status);
+	    }
+	}
+
+        # Close up the input file
+
+        $iptr->close_file($fitstatus);
+    }
+
+    # Now close up the output file
+
+    $optr->close_file($fitstatus);
+
+    # Now tidy up and get out of here
+
+    unlink @alltmp;
+    return($outfile);
 }
 
 =item B<gmef2hds>
