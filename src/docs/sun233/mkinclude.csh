@@ -13,16 +13,17 @@
 # A very, very simple script
 
 # output file name
-set cwd = `pwd`
-set output = "$cwd/sun233_classes.tex"
+set thisdir = `pwd`
+set output = "$thisdir/sun233_classes.tex"
 
 # List of files to process
+
+# These are  the classes relevant to recipe writers
 set input = ""
-foreach i ( Basic.pm Calib.pm Calib/SCUBA.pm Constants.pm Convert.pm Core.pm  Display.pm Display/Base.pm Display/GAIA.pm Display/KAPVIEW.pm Frame.pm Frame/NDF.pm Frame/UKIRT.pm Frame/JCMT.pm General.pm Group.pm Group/NDF.pm Group/UFTI.pm Group/JCMT.pm Index.pm LogFile.pm Loop.pm Msg/ADAM/Control.pm Msg/ADAM/Task.pm Print.pm TempFile.pm)
+foreach i ( Calib.pm Calib/SCUBA.pm Constants.pm  Display.pm Frame.pm Frame/NDF.pm Frame/UKIRT.pm Frame/JCMT.pm General.pm Group.pm Group/NDF.pm Group/UFTI.pm Group/JCMT.pm Index.pm LogFile.pm Loop.pm Msg/ADAM/Control.pm Msg/ADAM/Task.pm Print.pm TempFile.pm)
   echo $i
   set input = "$input ORAC/$i"
 end
-
 
 # Since the $input variable seems to run into buffer overflow if I prepend
 # the path, overcome this by changing to the ORAC_PERL5LIB directory but
@@ -34,6 +35,20 @@ cd $ORAC_PERL5LIB
 set bindir = "/home/timj/perlmods/Pod/LaTeX/"
 $bindir/pod2latex -out $output -modify -h1level 2 -sections "\!AUTHORS" $input
 
-# Return to cwd
+# These are the set of classes relevant for oracdr hackers
 
-cd $cwd;
+set output = "$thisdir/sun233_coreclasses.tex"
+
+set input = ""
+foreach i ( Basic.pm Convert.pm Core.pm  Display/Base.pm Display/GAIA.pm Display/KAPVIEW.pm)
+  echo $i
+  set input = "$input ORAC/$i"
+end
+echo $input
+
+# Run the command again
+$bindir/pod2latex -out $output -modify -h1level 2 -sections "\!AUTHORS" $input
+
+# Return to cwd - unnecessary
+
+cd $thisdir;
