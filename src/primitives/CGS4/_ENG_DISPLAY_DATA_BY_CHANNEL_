@@ -10,6 +10,10 @@ DISPLAY DATA BY CHANNEL - displays data by readout channel
 This primitive displays data by readout channel. Channel from one data
 is isolated by masking out all other channels. 
 
+Also generates some intelligently scaled histogram sdfs (displayed as "graphs").
+
+Handles multiple integrations in HDS containers neatly - displays each integration in turn.
+
 
 =head1 ORAC
 
@@ -37,7 +41,7 @@ $Frm
 
 =head2 Other files
 
-$ORAC_DATA_CAL/ard_channelN.dat where 1<N<4
+$ORAC_DATA_CAL/ard_channelN.dat where 1 <= N <= 4
 
 =head1 NOTES
 
@@ -47,34 +51,131 @@ that do not exist on the CGS4 array. This is currently not a problem with
 the 'ardmask' task, but if it is changed in the future, these ARD files 
 will also need to be changed.
 
+Also generates histograms manually, to allow us to auto-range cleverly
+and then set the range the same for all the 4 channels to allow easy
+comparison.
+
 =head2 REVISION
 
 $Id$
 
 =head1 AUTHOR
 
-frossie@jach.hawaii.edu
+p.hirst@jach.hawaii.edu
 
+Loosely based on the original by frossie@jach.hawaii.edu
 =cut
 
-if (defined $Display) {
-  
-  my $file = $Frm->file;
-  
-  foreach my $channel (1..4) {
-    
-    my ($junk,$nout) = $Frm->inout("_c$channel");
-    my $ardfile = $ENV{'ORAC_DATA_CAL'}."/ard_channel$channel.dat";
-    $Mon{'kappa_mon'}->obeyw("ardmask","in=$file out=$nout ardfile=$ardfile title='Channel $channel'");
-    
+# How about an array of frame objects to store the individual channels
+my @Frms;
+
+# For each integration $i
+foreach my $i (1..$Frm->nfiles) {
+
+  # Display the raw data in GAIA
+  # $Display->display_data($Frm, { TYPE=>'image', TOOL => 'GAIA', WINDOW=>'0' }) if (defined $Display);
+
+  # Attempt to display just that integration frame in a gaia window.
+  # This works, but GAIA pops up a (broken) HDS NDF selector window
+  my $TmpFrm = new $Frm;
+  $TmpFrm->file($Frm->file($i));
+  $Display->display_data($TmpFrm, { TYPE=>'image', TOOL => 'GAIA', WINDOW=>'0' }) if (defined $Display);
+
+  my $gain = $Frm->hdr('DEPERDN');
+  my $gains = sprintf "%.2f", $gain;
+
+  orac_print("Integration $i Gain is $gains electrons per Data Number\n");
+  orac_print("Note - the values in the histogram are in Data Numbers\n       the values in the titles are in electrons\n");
+
+  # For each channel within that integration
+  # Generate split into channels and generate statistics
+  foreach my $c (1..4) {
+
+    # Generate the input and output filenames
+    my ($in,$out) = $Frm->inout("_c$c",$i);
+
+    # Split into _cN files
+    my $ardfile = $ENV{'ORAC_DATA_CAL'}."/ard_channel$c.dat";
+    $Mon{'kappa_mon'}->obeyw("ardmask","in=$in out=$out ardfile=$ardfile title='Channel $c'");
     # work around ardmask bug
-    $Mon{'ndfpack_mon'}->obeyw("setbad","ndf=$nout value=true");
-    
-    my $Tmpfrm = new $Frm;
-    $Tmpfrm->file($nout);
-    
-    $Display->display_data($Tmpfrm) ;
+    $Mon{'ndfpack_mon'}->obeyw("setbad","ndf=$out value=true");
+
+    # File into the Frms array
+    $Frms[$c] = new $Frm;
+    $Frms[$c]->file($i, $out);
+
+    # Display the channel according to disp.dat
+    # With a hack to only pass one .iN to the display system.
+    my $TmpFrm = new $Frm;
+    $TmpFrm->file($Frms[$c]->file($i));
+    $Display->display_data($TmpFrm) if (defined $Display);
+
+    # Calculate the mean and sigma for the frame
+    $Mon{'kappa_mon'}->obeyw("stats", "ndf=$out");
+    my $ORAC_STATUS;
+    ($ORAC_STATUS, my $mean) = $Mon{'kappa_mon'}->get("stats", "mean");
+    ($ORAC_STATUS, my $sigma) = $Mon{'kappa_mon'}->get("stats", "sigma");
+
+    # File in the uhdr of that frame.
+    $Frms[$c]->uhdr('CH_MEAN', $mean);
+    $Frms[$c]->uhdr('CH_SIGMA', $sigma);
+  }
+
+  # Now calculate the parameters to use for the histogram generation.
+  my $meanmean=0;
+  my $maxsigma=0;
+   foreach my $c (1..4) {
+    $meanmean+=$Frms[$c]->uhdr('CH_MEAN');
+    $maxsigma = $Frms[$c]->uhdr('CH_SIGMA') > $maxsigma ? $Frms[$c]->uhdr('CH_SIGMA') : $maxsigma;
+  }
+  $meanmean/=4;
+
+  # plot from the mean, 2 sigma out in each direction, quantised to a multiple
+  # of 4 (see note below about A/D quantisation)
+  my $tsigma=$maxsigma*2;
+  my $pmin = 4* int (($meanmean - $tsigma)/4);
+  my $pmax = 4* int (($meanmean + $tsigma)/4);
+  my $span = $pmax - $pmin;
+
+  # ncols is span/4 because the data are quantised in multiples of 4 -
+  # seems the last 2 bits of the A/D conversion get thrown away at some
+  # point.
+  my $ncols = $span/4;
+
+  # Print the statistics and Generate and display the Histogram files
+  foreach my $c (1..4) {
+
+    my $mean=$Frms[$c]->uhdr('CH_MEAN')/$gain;
+    my $sigma=$Frms[$c]->uhdr('CH_SIGMA')/sqrt($gain);
+  
+    my $means = sprintf "%.2f", $mean;
+    my $sigmas = sprintf "%.2f", $sigma;
+  
+    orac_print("Integration $i Channel $c: Mean=$means; Sigma=$sigmas electrons\n");
+  
+    # At this point, a kludge to ensure the $Frms->out points to an HDS if necessary
+    if ($i == 1 && $Frm->nfiles > 1) {
+      $Frms[$c]->file(2, "dummy");
+    }
+
+    my ($in,$out) = $Frms[$c]->inout("_ch$c", $i);
+
+    $Mon{'ndfpack_mon'}->obeyw("settitle", "ndf=$in title='Channel $c Mean=$means Sigma=$sigmas e-'");
+  
+    $Mon{'kappa_mon'}->obeyw("histogram", "in=$in out=$out device=! numbin=$ncols range='$pmin,$pmax' accept");
+    $Mon{'ndfpack_mon'}->obeyw("settitle", "ndf=$out title='Channel $c Mean=$means Sigma=$sigmas e-'");
+
+    $Mon{'ndfpack_mon'}->obeyw("axlabel", "ndf=$out dim=1 label='Data value in $out'");
+ 
+    # Update the Frms[] object to point to the histogram ndf
+    $Frms[$c]->file($i,$out);
+
+    # And display it
+    # With a hack to only pass one .iN to the display system.
+    my $TmpFrm = new $Frm;
+    $TmpFrm->file($Frms[$c]->file($i));
+    $Display->display_data($TmpFrm) if (defined $Display);
+
   };
   
-
 };
