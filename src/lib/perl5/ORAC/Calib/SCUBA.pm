@@ -249,6 +249,7 @@ Set (or retrieve) the name of the system to be used for
 tau determination. Allowed values are 'CSO', 'SKYDIP'
 or a number. Currently the number is assumed to be the 
 CSO tau since this number is independent of wavelength.
+'INDEX' is an allowed synonym for 'SKYDIP'.
 
 If tausys has not been set it defaults to 'CSO'
 
@@ -306,7 +307,7 @@ This routine works as follows. First tausys() is queried to determine
 the system to use to calculate the tau. If this is CSO, the current
 frame is queried for the CSO tau value stored and the tau calculated
 for FILTER. If tausys() returns a number it is assumed
-to be the actual CSO tau to use. If it is set to Skydip then
+to be the actual CSO tau to use. If it is set to Skydip (or index) then
 the selected wavelength is updated in the frame header (Key=FILTER)
 and the skydip index is queried for the skydip that matched the criterion
 and is closest in time.
@@ -357,7 +358,7 @@ sub tau {
     orac_warn("Error converting a CSO tau of $sys to an opacity for filter $filt\n") if $status == -1;
 
     
-  } elsif ($sys eq 'SKYDIP') {
+  } elsif ($sys eq 'SKYDIP' || $sys eq 'INDEX') {
 
     # Skydips have been selected. 
     # Given that a skydip is never current (because each time we change
