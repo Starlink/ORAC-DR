@@ -283,47 +283,19 @@ sub _to_STANDARD {
 
 sub _to_UTDATE {
    my $self = shift;
-
-# This is UT start and time.
-   my $dateobs = $self->hdr->{"DATE-OBS"};
-
-# Extract out the data in yyyymmdd format.
-   return substr( $dateobs, 0, 4 ) . substr( $dateobs, 5, 2 ) . substr( $dateobs, 8, 2 )
+   return $self->get_UT_date();
 }
-
 
 sub _to_UTEND {
    my $self = shift;
 
-   my $startsec = 0.0;
-   if ( exists ( $self->hdr->{UTSTART} ) ) {
-
-# The time is encoded in FITS data format, i.e. hh:mm:ss.  So convert to seconds.
-      my $t = $self->hdr->{UTSTART};
-      $startsec = substr( $t, 0, 2 ) * 3600.0 +
-                  substr( $t, 3, 2 ) * 60.0 + substr( $t, 6, 2 );
-   }
-
 # This is approximate end UT in seconds.
-   my $endsec = $startsec + $self->hdr->{EXPTIME};
-
-# Convert from seconds to decimal hours.
-   return $endsec / 3600.0;
+   return $self->get_UT_hours() + $self->hdr->{EXPTIME} / 3600.0;
 }
 
 sub _to_UTSTART {
    my $self = shift;
-   my $startsec = 0.0;
-   if ( exists ( $self->hdr->{UTSTART} ) ) {
-
-# The time is encoded in FITS data format, i.e. hh:mm:ss.  So convert to seconds.
-      my $t = $self->hdr->{UTSTART};
-      $startsec = substr( $t, 0, 2 ) * 3600.0 +
-                  substr( $t, 3, 2 ) * 60.0 + substr( $t, 6, 2 );
-   }
-
-# Convert from seconds to decimal hours.
-   return $startsec / 3600.0;
+   return $self->get_UT_hours();
 }
 
 sub _to_WAVEPLATE_ANGLE {
@@ -399,19 +371,6 @@ sub dms_to_degrees {
    return $dms;
 }
 
-# Converts a sky angle specified in h:m:s format into decimal degrees.
-# It takes no account of latitude.  Argument is the sexagesimal format angle.
-sub hms_to_degrees {
-   my $self = shift;
-   my $sexa = shift;
-   my $hms;
-   if ( defined( $sexa ) ) {
-      my @pos = split( /:/, $sexa );
-      $hms = 15.0 * ( $pos[ 0 ] + $pos[ 1 ] / 60.0 + $pos [ 2 ] / 3600. );
-   }
-   return $hms;
-}
-
 # Obtain the detector bounds from a section in [xl:xu,yl:yu] syntax.
 # If the RTDATSEC header is absent, use a default which corresponds
 # to the full array.
@@ -426,6 +385,45 @@ sub getbounds{
       @bounds = split( /:/, $section );
    }
    return @bounds;
+}
+
+# Returns the UT date in YYYYMMDD format.
+sub get_UT_date {
+   my $self = shift;
+
+# This is UT start and time.
+   my $dateobs = $self->hdr->{"DATE-OBS"};
+
+# Extract out the data in yyyymmdd format.
+   return substr( $dateobs, 0, 4 ) . substr( $dateobs, 5, 2 ) . substr( $dateobs, 8, 2 )
+}
+
+sub get_UT_hours {
+   my $self = shift;
+   my $startsec = 0.0;
+   if ( exists ( $self->hdr->{UTSTART} ) ) {
+
+# The time is encoded in FITS data format, i.e. hh:mm:ss.  So convert to seconds.
+      my $t = $self->hdr->{UTSTART};
+      $startsec = substr( $t, 0, 2 ) * 3600.0 +
+                  substr( $t, 3, 2 ) * 60.0 + substr( $t, 6, 2 );
+   }
+
+# Convert from seconds to decimal hours.
+   return $startsec / 3600.0;
+}
+
+# Converts a sky angle specified in h:m:s format into decimal degrees.
+# It takes no account of latitude.  Argument is the sexagesimal format angle.
+sub hms_to_degrees {
+   my $self = shift;
+   my $sexa = shift;
+   my $hms;
+   if ( defined( $sexa ) ) {
+      my @pos = split( /:/, $sexa );
+      $hms = 15.0 * ( $pos[ 0 ] + $pos[ 1 ] / 60.0 + $pos [ 2 ] / 3600. );
+   }
+   return $hms;
 }
 
 # Derives the rotation angle from the rotation matrix.
@@ -471,35 +469,34 @@ rawsuffix() and rawfixedpart() methods.
 =cut
 
 sub new {
+   my $proto = shift;
+   my $class = ref($proto) || $proto;
 
-  my $proto = shift;
-  my $class = ref($proto) || $proto;
+# Run the base class constructor with a hash reference
+# defining additions to the class
+# Do not supply user-arguments yet.
+# This is because if we do run configure via the constructor
+# the rawfixedpart and rawsuffix will be undefined.
+   my $self = $class->SUPER::new();
 
-  # Run the base class constructor with a hash reference
-  # defining additions to the class
-  # Do not supply user-arguments yet.
-  # This is because if we do run configure via the constructor
-  # the rawfixedpart and rawsuffix will be undefined.
-  my $self = $class->SUPER::new();
+# Configure initial state - could pass these in with
+# the class initialisation hash - this assumes that I know
+# the hash member name
+   $self->rawfixedpart( 'r' );
+   $self->rawsuffix( '.fit' );
+   $self->rawformat( 'INGMEF' );
 
-  # Configure initial state - could pass these in with
-  # the class initialisation hash - this assumes that I know
-  # the hash member name
-  $self->rawfixedpart('r');
-  $self->rawsuffix('.fit');
-  $self->rawformat('INGMEF');
+# INGRID is really a single frame instrument
+# So this should be "NDF" and we should be inheriting
+# from UFTI
+   $self->format( 'HDS' );
 
-  # INGRID is really a single frame instrument
-  # So this should be "NDF" and we should be inheriting
-  # from UFTI
-  $self->format('HDS');
+# If arguments are supplied then we can configure the object
+# Currently the argument will be the filename.
+# If there are two args this becomes a prefix and number
+   $self->configure( @_ ) if @_;
 
-  # If arguments are supplied then we can configure the object
-  # Currently the argument will be the filename.
-  # If there are two args this becomes a prefix and number
-  $self->configure(@_) if @_;
-
-  return $self;
+   return $self;
 }
 
 =back
@@ -514,49 +511,45 @@ pipeline by using values stored in the header.
 Required ORAC extensions are:
 
 ORACTIME: should be set to a decimal time that can be used for
-comparing the relative start times of frames.  For UKIRT this
-number is decimal hours, for SCUBA this number is decimal
-UT days.
+comparing the relative start times of frames.  For INGRID this
+number is decimal hours.
 
 ORACUT: This is the UT day of the frame in YYYYMMDD format.
 
 This method should be run after a header is set.  Currently the readhdr()
 method calls this whenever it is updated.
 
-This method updates the frame header.
-Returns a hash containing the new keywords.
+This method updates the frame header.  It returns a hash containing the new
+keywords.
 
 =cut
 
 sub calc_orac_headers {
-  my $self = shift;
+   my $self = shift;
 
-  # Run the base class first since that does the ORAC
-  # headers
-  my %new = $self->SUPER::calc_orac_headers;
+# Run the base class first since that does the ORAC headers.
+   my %new = $self->SUPER::calc_orac_headers;
 
+# ORACTIME
+# --------
+# For INGRID this is the UTC header value converted to decimal hours
+# and a 12-hour offset to avoid worrying about midnight UT.
+   my $time = $self->get_UT_hours() + 12.0;
 
-  # ORACTIME
-  # For INGRID this is the UTSTART header value converted to decimal hours
-  # and a 12-hour offset to avoid worrying about midnight UT.  The time is
-  # encoded in FITS data format, i.e. hh:mm:ss.
-  my $t = $self->hdr->{UTSTART};
-  my $time = substr( $t, 0, 2 ) + substr( $t, 3, 2 ) / 60.0 +
-             substr( $t, 6, 2 ) / 3600.0 + 12.0;
+# Just return it (zero if not available).
+   $time = 0 unless ( defined $time );
+   $self->hdr( 'ORACTIME', $time );
 
-  # Just return it (zero if not available)
-  $time = 0 unless (defined $t);
-  $self->hdr('ORACTIME', $time);
+   $new{'ORACTIME'} = $time;
 
-  $new{'ORACTIME'} = $time;
+# ORACUT
+# ------
+# Get the UT date.
+   my $ut = $self->get_UT_date();
+   $ut = 0 unless defined $ut;
+   $self->hdr( 'ORACUT', $ut );
 
-  # ORACUT
-  # For INGRID this is the UTSTART header value converted to decimal hours.
-  my $ut = $time - 12.0;
-  $ut = 0 unless defined $t;
-  $self->hdr('ORACUT', $ut);
-
-  return %new;
+   return %new;
 }
 
 =item B<number>
@@ -578,14 +571,14 @@ in a sub-class) would be to read the number from the header.
 =cut
 
 sub number {
-  my $self = shift;
+   my $self = shift;
 
-  my $number = $self->hdr( "RUN" );
-  if ( !defined $number ) {
-    $number = -1;
-  }
+   my $number = $self->hdr( "RUN" );
+   if ( !defined $number ) {
+      $number = -1;
+   }
 
-  return $number;
+   return $number;
 }
 
 =item B<file_from_bits>
@@ -607,13 +600,13 @@ where NNNNNN is the observation number. e.g
 =cut
 
 sub file_from_bits {
-  my $self = shift;
+   my $self = shift;
 
-  my $prefix = shift;
-  my $obsnum = shift;
+   my $prefix = shift;
+   my $obsnum = shift;
 
-  # INGRID naming
-  return $self->rawfixedpart . $obsnum . $self->rawsuffix;
+# INGRID naming.
+   return $self->rawfixedpart . $obsnum . $self->rawsuffix;
 }
 
 =item B<inout>
@@ -660,78 +653,78 @@ Returns $in and $out in an array context:
 
 sub inout {
 
-  my $self = shift;
-  my $suffix = shift;
+   my $self = shift;
+   my $suffix = shift;
 
-  # Read the number.
-  my $num = 1; 
-  if (@_) { $num = shift; }
+# Read the number.
+   my $num = 1; 
+   if (@_) { $num = shift; }
 
-  my $infile = $self->file($num);
+   my $infile = $self->file($num);
 
-  # Split infile into a root and a tail.
-  my ($junk, $rest) = $self->_split_fname( $infile );
-  my @junk = @$junk;
+# Split infile into a root and a tail.
+   my ( $junk, $rest ) = $self->_split_fname( $infile );
+   my @junk = @$junk;
 
-  # We still need the root name though for the copobj.
-  my $root = $self->_join_fname( $junk, '');
+# We still need the root name though for the copobj.
+   my $root = $self->_join_fname( $junk, '');
 
-  # We only want to drop the SECOND underscore. If we only have
-  # two components we simply append. If we have more we drop the last
-  # This prevents us from dropping the observation number in
-  # ro970815_28. Special case numbers.
-  if ($#junk > 0 && $junk[-1] !~ /^\d+$/) {
+# We only want to drop the SECOND underscore.  If we only have
+# two components we simply append.  If we have more we drop the
+# last.  This prevents us from dropping the observation number in
+# ro970815_28.  Special case numbers.
+   if ($#junk > 0 && $junk[-1] !~ /^\d+$/) {
      @junk = @junk[0..$#junk-1];
   }
 
-  # Find out how many files we have.
-  my $nfiles = $self->nfiles;
+# Find out how many files we have.
+   my $nfiles = $self->nfiles;
 
-  # Now append the suffix to the outfile.  We need to strip a leading
-  # underscore if we are using join_name.
-  $suffix =~ s/^_//;
-  push(@junk, $suffix);
-  my $outfile = $self->_join_fname(\@junk, '');
+# Now append the suffix to the outfile.  We need to strip a leading
+# underscore if we are using join_name.
+   $suffix =~ s/^_//;
+   push( @junk, $suffix );
+   my $outfile = $self->_join_fname( \@junk, '' );
 
-  # If we had a suffix (e.g. .I1) now need to re-attach it and create
-  # an HDS container *IF* NFILES is greater than 1.  If NFILES equals 1
-  # we don't need to do anything.
-  if (defined $rest && $nfiles > 1) {
+# If we had a suffix (e.g. .I1) now need to re-attach it and create
+# an HDS container *IF* NFILES is greater than 1.  If NFILES equals 1
+# we don't need to do anything.
+   if ( defined $rest && $nfiles > 1 ) {
 
-    my ($loc, $status);
-    $status = &NDF::SAI__OK;
+      my ( $loc, $status );
+      $status = &NDF::SAI__OK;
 
-    if (-e $outfile.".sdf") {
+      if ( -e $outfile.".sdf" ) {
 
-      err_begin($status);
-      hds_open($outfile, 'UPDATE', $loc, $status);
+        err_begin( $status );
+        hds_open( $outfile, 'UPDATE', $loc, $status );
 
-      dat_there($loc, $rest, my $there, $status);
-      if ($there) {
-	dat_erase($loc, $rest, $status);
-      };
+        dat_there( $loc, $rest, my $there, $status );
+        if ( $there ) {
+           dat_erase( $loc, $rest, $status );
+        };
 
-      dat_annul($loc, $status);
-      err_end($status);
+        dat_annul( $loc, $status );
+        err_end( $status );
 
-    } else {
+      } else {
 
-      my @null = (0);
+         my @null = ( 0 );
 
-      hds_new ($outfile,substr($outfile,0,9),"MICHELLE_HDS",0,@null,$loc,$status);
-      dat_annul($loc, $status);
-      orac_err("Failed to create HDS container!") if $status != &NDF::SAI__OK;
+         hds_new ( $outfile, substr( $outfile, 0, 9 ), "MICHELLE_HDS", 0, @null, $loc, $status );
+         dat_annul( $loc, $status );
+         orac_err( "Failed to create HDS container!" ) if $status != &NDF::SAI__OK;
 
-      # Propagate the header.
-      $status = copobj($root.".header",$outfile.".header",$status);
-      orac_err("Failed to propagate header!") if $status != &NDF::SAI__OK;
-    }
+# Propagate the header.
+         $status = copobj( $root.".header", $outfile.".header", $status );
+         orac_err( "Failed to propagate header!" ) if $status != &NDF::SAI__OK;
+      }
 
-    $outfile .= ".".$rest;
-  }
+      $outfile .= "." . $rest;
+   }
 
-  return ($infile, $outfile) if wantarray();  # Array context
-  return $outfile;                            # Scalar context
+   return ( $infile, $outfile ) if wantarray();  # Array context
+   return $outfile;                              # Scalar context
 }
 
 sub mergehdr {
@@ -739,16 +732,16 @@ sub mergehdr {
 }
 
 sub template {
-  my $self = shift;
-  my $template = shift;
+   my $self = shift;
+   my $template = shift;
 
-  my $num = $self->number;
+   my $num = $self->number;
 
-  # Change the first number
-  $template =~ s/\d+_/${num}_/;
+# Change the first number.
+   $template =~ s/\d+_/${num}_/;
 
-  # Update the filename
-  $self->file($template);
+# Update the filename.
+   $self->file( $template );
 
 }
 

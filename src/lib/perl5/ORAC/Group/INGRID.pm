@@ -268,47 +268,19 @@ sub _to_STANDARD {
 
 sub _to_UTDATE {
    my $self = shift;
-
-# This is UT start and time.
-   my $dateobs = $self->hdr->{"DATE-OBS"};
-
-# Extract out the data in yyyymmdd format.
-   return substr( $dateobs, 0, 4 ) . substr( $dateobs, 5, 2 ) . substr( $dateobs, 8, 2 )
+   return $self->get_UT_date();
 }
-
 
 sub _to_UTEND {
    my $self = shift;
 
-   my $startsec = 0.0;
-   if ( exists ( $self->hdr->{UTSTART} ) ) {
-
-# The time is encoded in FITS data format, i.e. hh:mm:ss.  So convert to seconds.
-      my $t = $self->hdr->{UTSTART};
-      $startsec = substr( $t, 0, 2 ) * 3600.0 +
-                  substr( $t, 3, 2 ) * 60.0 + substr( $t, 6, 2 );
-   }
-
 # This is approximate end UT in seconds.
-   my $endsec = $startsec + $self->hdr->{EXPTIME};
-
-# Convert from seconds to decimal hours.
-   return $endsec / 3600.0;
+   return $self->get_UT_hours() + $self->hdr->{EXPTIME} / 3600.0;
 }
 
 sub _to_UTSTART {
    my $self = shift;
-   my $startsec = 0.0;
-   if ( exists ( $self->hdr->{UTSTART} ) ) {
-
-# The time is encoded in FITS data format, i.e. hh:mm:ss.  So convert to seconds.
-      my $t = $self->hdr->{UTSTART};
-      $startsec = substr( $t, 0, 2 ) * 3600.0 +
-                  substr( $t, 3, 2 ) * 60.0 + substr( $t, 6, 2 );
-   }
-
-# Convert from seconds to decimal hours.
-   return $startsec / 3600.0;
+   return $self->get_UT_hours();
 }
 
 sub _to_WAVEPLATE_ANGLE {
@@ -384,19 +356,6 @@ sub dms_to_degrees {
    return $dms;
 }
 
-# Converts a sky angle specified in h:m:s format into decimal degrees.
-# It takes no account of latitude.  Argument is the sexagesimal format angle.
-sub hms_to_degrees {
-   my $self = shift;
-   my $sexa = shift;
-   my $hms;
-   if ( defined( $sexa ) ) {
-      my @pos = split( /:/, $sexa );
-      $hms = 15.0 * ( $pos[ 0 ] + $pos[ 1 ] / 60.0 + $pos [ 2 ] / 3600. );
-   }
-   return $hms;
-}
-
 # Obtain the detector bounds from a section in [xl:xu,yl:yu] syntax.
 # If the RTDATSEC header is absent, use a default which corresponds
 # to the full array.
@@ -411,6 +370,45 @@ sub getbounds{
       @bounds = split( /:/, $section );
    }
    return @bounds;
+}
+
+# Returns the UT date in YYYYMMDD format.
+sub get_UT_date {
+   my $self = shift;
+
+# This is UT start and time.
+   my $dateobs = $self->hdr->{"DATE-OBS"};
+
+# Extract out the data in yyyymmdd format.
+   return substr( $dateobs, 0, 4 ) . substr( $dateobs, 5, 2 ) . substr( $dateobs, 8, 2 )
+}
+
+sub get_UT_hours {
+   my $self = shift;
+   my $startsec = 0.0;
+   if ( exists ( $self->hdr->{UTSTART} ) ) {
+
+# The time is encoded in FITS data format, i.e. hh:mm:ss.  So convert to seconds.
+      my $t = $self->hdr->{UTSTART};
+      $startsec = substr( $t, 0, 2 ) * 3600.0 +
+                  substr( $t, 3, 2 ) * 60.0 + substr( $t, 6, 2 );
+   }
+
+# Convert from seconds to decimal hours.
+   return $startsec / 3600.0;
+}
+
+# Converts a sky angle specified in h:m:s format into decimal degrees.
+# It takes no account of latitude.  Argument is the sexagesimal format angle.
+sub hms_to_degrees {
+   my $self = shift;
+   my $sexa = shift;
+   my $hms;
+   if ( defined( $sexa ) ) {
+      my @pos = split( /:/, $sexa );
+      $hms = 15.0 * ( $pos[ 0 ] + $pos[ 1 ] / 60.0 + $pos [ 2 ] / 3600. );
+   }
+   return $hms;
 }
 
 # Derives the rotation angle from the rotation matrix.
@@ -449,19 +447,19 @@ of 'gingrid'.
 =cut
 
 sub new {
-  my $proto = shift;
-  my $class = ref($proto) || $proto;
+   my $proto = shift;
+   my $class = ref($proto) || $proto;
 
-  # Do not pass objects if the constructor required
-  # knowledge of fixedpart() and filesuffix()
-  my $group = $class->SUPER::new(@_);
+# Do not pass objects if the constructor required knowledge of
+# fixedpart() and filesuffix() methods.
+   my $group = $class->SUPER::new(@_);
 
-  # Configure it
-  $group->fixedpart('gingrid');
-  $group->filesuffix('.sdf');
+# Configure it.
+   $group->fixedpart( 'gingrid' );
+   $group->filesuffix( '.sdf' );
 
-  # return the new object
-  return $group;
+# Eeturn the new object.
+   return $group;
 }
 
 =back
@@ -478,49 +476,48 @@ pipeline by using values stored in the header.
 Required ORAC extensions are:
 
 ORACTIME: should be set to a decimal time that can be used for
-comparing the relative start times of frames.  For UKIRT this
-number is decimal hours, for SCUBA this number is decimal
-UT days.
+comparing the relative start times of frames.  For INGRID this
+number is decimal hours.
 
 ORACUT: This is the UT day of the frame in YYYYMMDD format.
 
 This method should be run after a header is set.  Currently the readhdr()
 method calls this whenever it is updated.
 
-This method updates the frame header.
-Returns a hash containing the new keywords.
+This method updates the group header.  It returns a hash containing the
+new keywords.
 
 =cut
 
 sub calc_orac_headers {
-  my $self = shift;
+   my $self = shift;
 
-  # Run the base class first since that does the ORAC
-  # headers
-  my %new = $self->SUPER::calc_orac_headers;
+# Run the base class first since that does the ORAC headers.
+   my %new = $self->SUPER::calc_orac_headers;
 
+# ORACTIME
+# --------
+# For INGRID this is the UTSTART header value converted to decimal hours
+# and a 12-hour offset to avoid worrying about midnight UT.  The time is
+# encoded in FITS data format, i.e. hh:mm:ss.
+   my $t = $self->hdr->{UTSTART};
+   my $time = substr( $t, 0, 2 ) + substr( $t, 3, 2 ) / 60.0 +
+              substr( $t, 6, 2 ) / 3600.0 + 12.0;
 
-  # ORACTIME
-  # For INGRID this is the UTSTART header value converted to decimal hours
-  # and a 12-hour offset to avoid worrying about midnight UT.  The time is
-  # encoded in FITS data format, i.e. hh:mm:ss.
-  my $t = $self->hdr->{UTSTART};
-  my $time = substr( $t, 0, 2 ) + substr( $t, 3, 2 ) / 60.0 +
-             substr( $t, 6, 2 ) / 3600.0 + 12.0;
+# Just return it (zero if not available).
+   $time = 0 unless (defined $t);
+   $self->hdr('ORACTIME', $time);
 
-  # Just return it (zero if not available)
-  $time = 0 unless (defined $t);
-  $self->hdr('ORACTIME', $time);
+   $new{'ORACTIME'} = $time;
 
-  $new{'ORACTIME'} = $time;
+# ORACUT
+# ------
+# Get the UT date.
+   my $ut = $self->get_UT_date();
+   $ut = 0 unless defined $ut;
+   $self->hdr( 'ORACUT', $ut );
 
-  # ORACUT
-  # For ISAAC this is the UTStART header value converted to decimal hours.
-  my $ut = $time - 12.0;
-  $ut = 0 unless defined $t;
-  $self->hdr('ORACUT', $ut);
-
-  return %new;
+   return %new;
 }
 
 =back
