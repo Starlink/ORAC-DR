@@ -41,9 +41,9 @@ use vars qw/$VERSION/;
 # Translation tables for UIST should go here.
 # First the imaging...
 my %hdr = (
-            DEC_SCALE            => "PIXELSIZ",
+            DEC_SCALE            => "PIXLSIZE",
             DEC_TELESCOPE_OFFSET => "TDECOFF",
-            RA_SCALE             => "PIXELSIZ",
+            RA_SCALE             => "PIXLSIZE",
             RA_TELESCOPE_OFFSET  => "TRAOFF",
 
 # then the spectroscopy...
