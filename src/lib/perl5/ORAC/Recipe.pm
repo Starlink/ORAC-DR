@@ -1125,10 +1125,17 @@ sub _read_primitive {
 
       }
 
+      # Get final list of keys
+      my @keys = keys %best;
+
       # We now have a hash of possible choices. If the INST key was
       # set we use it without any messing about
       if (exists $best{INST}) {
 	$contents = $self->_slurp_file($best{INST});
+      } elsif ($#keys == 0) {
+	# We only have one choice remaining so should not be
+	# switching
+	$contents = $self->_slurp_file($best{$keys[0]});
       } else {
 	# Else we have a choice of observing modes
 	# So we have to add code to help the recipe along
@@ -1138,7 +1145,8 @@ sub _read_primitive {
 	  # This is really going to confuse the line counting
 	  push(@$contents, 
 	       'croak("There were ambiguities in primitive selection and ORAC_OBSERVATION_MODE header was not set") unless defined $Frm->uhdr("ORAC_OBSERVATION_MODE");',
-	       "if (defined \$Frm->uhdr(\"ORAC_OBSERVATION_MODE\") && \$Frm->uhdr(\"ORAC_OBSERVATION_MODE\") eq \"$mode\") {");
+	       "if (defined \$Frm->uhdr(\"ORAC_OBSERVATION_MODE\") && \$Frm->uhdr(\"ORAC_OBSERVATION_MODE\") eq \"$mode\") {\n");
+	  push(@$contents, "#line 0 $best{$mode}\n");
 	  # The primitive
 	  push(@$contents, @{ $self->_slurp_file($best{$mode}) });
 	  # Closing
