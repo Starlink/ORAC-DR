@@ -125,7 +125,7 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
        $Mon{'kappa_mon'}->obeyw( "cdiv","in=$addgroupname $param1" );
        orac_print "Adding observation $framename to group $groupname.\n";
 
-# Print an informative message (I dont think it will ever get here
+# Print an informative message (I don't think it will ever get here
 # with only a single frame since the early if should catch it.
        if ( $avgscalar == 1 ) {
           orac_print "Group file now contains observations from one frame.\n";
@@ -161,15 +161,34 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
           $param1 = "ndf=$sigmas variance=data**2";
           $Mon{'ndfpack_mon'}->obeyw( "setvar", "$param1" );
 
+# Because MSTATS is an IMAGE-format task, and SETVAR currently does not
+# permit copying variance from another NDF, we have to kludge a copy
+# of the variance.  A side effect of this is that the VARIANCE copied
+# must be a structure, not an array, in case the origin of the data array
+# of the co-added frame is not at 1,1.  The cleanest way to deal with
+# this is to find the origin in the co-added group frame, and set the
+# origin of the MSTATS variance array to this origin.
+
+# Extract the lower bounds of the frame, i.e. the origin.
+          $Mon{"ndfpack_mon"}->obeyw( "ndftrace", "ndf=$groupname" );
+          ( my $ORAC_STATUS, my @lbnd ) = $Mon{"ndfpack_mon"}->get( "ndftrace", "lbound" );
+          ( $ORAC_STATUS, my $varpresent ) = $Mon{"ndfpack_mon"}->get( "ndftrace", "variance" );
+
+# Set the origin in our file of variances.
+          $param1 = "ndf=$sigmas origin=[$lbnd[0],$lbnd[1]]";
+          $Mon{"ndfpack_mon"}->obeyw( "setorigin", "$param1" );
+
 # Finally copy the variance array just created to the co-added frame.
 # COPOBJ does not clobber existing components, so an existing VARIANCE
 # must be removed first.
-          if ( $avgscalar > 3 ) {
+          if ( $avgscalar > 3 &&
+               $varpresent eq "TRUE" ) {
              $param2 = "object=${groupname}.variance ok=true";
              $Mon{'ndfpack_mon'}->obeyw( "erase", "$param2" );
           }
           $param1 = "source=${sigmas}.variance object=${groupname}.variance";
           $Mon{'figaro1'}->obeyw( "copobj", "$param1" );
+          orac_print "Group file now contains variance derived from $avgscalar frames.\n";
        }
 
 # Edit the FITS headers to relect the combination.
@@ -185,7 +204,7 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
        _SET_GROUP_FITS_ITEM_ KEY=$amendkey[ 0 ] VALUE=$amend
 
 # Do likewise for the end UT time.
-       my $utendname = "ORAC_AIRMASS_END";
+       my $utendname = "ORAC_UTEND";
        my $utend  = $Frm->uhdr( $utendname );
        %keywords = $Frm->translate_hdr( $utendname );
        my @utendkey = keys( %keywords );
