@@ -131,7 +131,7 @@ sub new {
 
   $prt->{OutColour} = 'magenta';
   $prt->{ErrColour} = 'red';
-  $prt->{WarnColour} = 'blue';
+  $prt->{WarnColour} = 'cyan';
 
   bless($prt, $class);
 
