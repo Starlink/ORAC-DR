@@ -22,6 +22,8 @@ ORAC::Print - ORAC output message printing
   $prt->err_col("red");
   $prt->out_col("magenta");
 
+  tie *HANDLE, 'ORAC::Print', $ptr;
+
 =head1 DESCRIPTION
 
 This module provides commands for printing messages from ORAC
@@ -29,13 +31,19 @@ software. Commands are provided for printing error messages, warning
 messages and information messages. The final output location of these
 messages is controlled by the object configuration.
 
+If the ORAC::Print::TKMW variable is set, it is assumed that this
+is the Tk object referring to the MainWindow, and the 
+Tk->update() method is run whenever the orac_* commands are executed.
+This can be used to keep a Tk log window updating even though no
+X-events are being processed.
+
 =cut
 
 
 use 5.004;
 use Carp;
 use strict;
-use vars qw/$VERSION $DEBUG $CURRENT @ISA @EXPORT/;
+use vars qw/$VERSION $DEBUG $CURRENT @ISA @EXPORT $TKMW/;
 use subs qw/__curr_obj/;
 
 $VERSION = '0.10';
@@ -45,8 +53,10 @@ require Exporter;
 @ISA = qw/Exporter/;
 @EXPORT = qw/orac_print orac_err orac_warn orac_debug/;
 
+$TKMW = undef;
 
 use IO::File;
+use IO::Tee;
 use Term::ANSIColor;
 
 
@@ -126,11 +136,13 @@ sub __curr_obj {
 
 The following methods are available:
 
+=head2 Constructors
+
 =over 4
 
 =item new()
 
-Constructor. The object is returned.
+Object constructor. The object is returned.
 
 =cut
 
@@ -145,7 +157,14 @@ sub new {
   $prt->{ErrColour} = 'red';
   $prt->{WarnColour} = 'cyan';
   $prt->{Debug}  = 0;           # Turns on/off debug messages
-  $prt->{DebugHdl} = undef;     # Debug file handle (IO object)
+  $prt->{DebugHdl} = undef;        # Debug file handle (IO object)
+  $prt->{OutHdl}   = undef;        # orac_print file handles
+  $prt->{ErrHdl}   = undef;        # List of error file handles
+  $prt->{WarHdl}   = undef;        # List of warning file handles
+  $prt->{Prefix}   = undef;        # Prefix string
+  $prt->{OutPre}   = undef;        # Output prefix
+  $prt->{WarPre}   = 'Warning:';   # Prefix for warning messages
+  $prt->{ErrPre}   = 'Error:';     # Prefix for error messages
 
   bless($prt, $class);
 
@@ -157,7 +176,23 @@ sub new {
 }
 
 
-# Methods for accessing the 'instance' data
+=back
+
+=head2 Instance Methods
+
+=over 4
+
+=item debugmsg
+
+Turns debugging messages on or off. Default is off.
+
+=cut
+
+sub debugmsg {
+  my $self = shift;
+  if (@_) { $self->{Debug} = shift; }
+  return $self->{Debug};
+}
 
 
 =item outcol(colour)
@@ -214,38 +249,191 @@ sub errcol {
   return $self->{ErrColour};
 }
 
-=item debugmsg
+=item prefix
 
-Turns debugging messages on or off. Default is off.
+String that is prepended to all messages printed by this class.
+Default is to have no prefix.
+
+  $prefix = $prt->prefix;
+  $prt->prefix('Obs52');
 
 =cut
 
-sub debugmsg {
+sub prefix {
   my $self = shift;
-  if (@_) { $self->{Debug} = shift; }
-  return $self->{Debug};
+  if (@_) { $self->{Prefix} = shift; }
+  return $self->{Prefix};
 }
+
+=item outpre
+
+Prefix that is prepended to all strings printed with the
+out() method. Default is to have no prefix.
+
+  $pre = $prt->outpre;
+  $prt->outpre('ORAC says:');
+
+=cut
+
+sub outpre {
+  my $self = shift;
+  if (@_) { $self->{OutPre} = shift; }
+  return $self->{OutPre};
+}
+
+=item outpre
+
+Prefix that is prepended to all strings printed with the
+out() method. Default is to have the string 'Warning:' prepended.
+
+  $pre = $prt->warpre;
+  $prt->warpre('ORAC Warning:');
+
+=cut
+
+sub warpre {
+  my $self = shift;
+  if (@_) { $self->{WarPre} = shift; }
+  return $self->{WarPre};
+}
+
+=item outpre
+
+Prefix that is prepended to all strings printed with the
+out() method. Default is to have the string 'Error:' prepended.
+
+  $pre = $prt->errpre;
+  $prt->errpre('ORAC Error:');
+
+=cut
+
+sub errpre {
+  my $self = shift;
+  if (@_) { $self->{ErrPre} = shift; }
+  return $self->{ErrPre};
+}
+
+
+=item outhdl
+
+Output file handle(s). These are the filehandles that are used
+to send all output messages. Multiple filehandles can be supplied.
+Returns an IO::Tee object that can be used as a single filehandle.
+
+  $Prt->outhdl(\*STDOUT, $fh);
+
+  $fh = $Prt->outhdl;
+
+Default is to use STDOUT.
+
+=cut
+
+sub outhdl {
+  my $self = shift;
+
+  # Read any args and redefine IO object
+  $self->{OutHdl} = new IO::Tee(@_) if @_;
+
+  # Set up default value
+  $self->{OutHdl} = new IO::Tee(\*STDOUT)
+    unless defined $self->{OutHdl};
+
+  return $self->{OutHdl};
+
+}
+
+=item warhdl
+
+Warning output file handle(s). These are the filehandles that are used
+to print all warning messages. Multiple filehandles can be supplied.
+Returns an IO::Tee object that can be used as a single filehandle.
+
+  $Prt->warhdl(\*STDOUT, $fh);
+
+  $fh = $Prt->warhdl;
+
+Default is to use STDOUT.
+
+=cut
+
+sub warhdl {
+  my $self = shift;
+
+  # Read any args and redefine IO object
+  $self->{WarHdl} = new IO::Tee(@_) if @_;
+
+  # Set up default value
+  $self->{WarHdl} = new IO::Tee(\*STDOUT)
+    unless defined $self->{WarHdl};
+
+  return $self->{WarHdl};
+
+}
+
+
+=item errhdl
+
+Error output file handle(s). These are the filehandles that are used
+to print all error messages. Multiple filehandles can be supplied.
+Returns an IO::Tee object that can be used as a single filehandle.
+
+  $Prt->errhdl(\*STDERR, $fh);
+
+  $fh = $Prt->errhdl;
+
+Default is to use STDERR.
+
+=cut
+
+sub errhdl {
+  my $self = shift;
+
+  # Read any args and redefine IO object
+  $self->{ErrHdl} = new IO::Tee(@_) if @_;
+
+  # Set up default value
+  $self->{ErrHdl} = new IO::Tee(\*STDERR)
+    unless defined $self->{ErrHdl};
+
+  return $self->{ErrHdl};
+
+}
+
 
 =item debughdl
 
 This specifies the debug file handle. Defaults to STDERR if not 
-defined. An IO:: type handle is expected (ie not a glob);
+defined. Returns an IO::Tee object that can be used as a single
+filehandle.
 
 =cut
 
 sub debughdl {
   my $self = shift;
-  if (@_) { $self->{DebugHdl} = shift; }
+  # Read any args and redefine IO object
+  $self->{DebugHdl} = new IO::Tee(@_) if @_;
+
+  # Set up default value
+  $self->{DebugHdl} = new IO::Tee(\*STDERR)
+    unless defined $self->{DebugHdl};
+
   return $self->{DebugHdl};
 }
 
 
 # Methods that do things...
 
+=back
+
+=head2 Methods
+
+=over 4
+
 =item out(text, [col])
 
 Print output messages.
-Currently this method simply writes to standard out (STDOUT)
+By default messages are written to STDOUT. This can be overridden with
+the outhdl() method.
 
 =cut
 
@@ -256,14 +444,21 @@ sub out {
   my $col = $self->outcol;
   if (@_) { $col = shift; }
 
-  print STDOUT colored("$text",$col);
+  my $fh = $self->outhdl;
+  print $fh colored($self->prefix . $self->outpre . $text ,$col);
+
+  # There is a chance that we have just updated 
+  # a Tk text widget. On the off-chance that we have,
+  # we should do a Tk update
+  $TKMW->update if defined $TKMW;
 
 }
 
 =item war(text, [col])
 
 Print warning messages.
-Currently this method simply writes to standard out (STDOUT)
+Default is to print warnings to STDOUT. This can be overriden with
+the warhdl() method.
 
 =cut
 
@@ -274,14 +469,21 @@ sub war {
   my $col = $self->warncol;
   if (@_) { $col = shift; }
 
-  print STDOUT colored("WARNING:$text",$col);
+  my $fh = $self->warhdl;
+  print $fh colored($self->prefix . $self->warpre .$text,$col);
+
+  # There is a chance that we have just updated 
+  # a Tk text widget. On the off-chance that we have,
+  # we should do a Tk update
+  $TKMW->update if defined $TKMW;
 
 }
 
 =item err(text, [col])
 
 Print error messages.
-Currently this method simply writes to standard error (STDERR)
+Default is to use STDERR. This can be overriden with the errhdl()
+method.
 
 =cut
 
@@ -292,7 +494,13 @@ sub err {
   my $col = $self->errcol;
   if (@_) { $col = shift; }
 
-  print STDERR colored("ERROR:$text",$col);
+  my $fh = $self->errhdl;
+  print $fh colored($self->prefix . $self->errpre . $text,$col);
+
+  # There is a chance that we have just updated 
+  # a Tk text widget. On the off-chance that we have,
+  # we should do a Tk update
+  $TKMW->update if defined $TKMW;
 
 }
 
@@ -312,19 +520,90 @@ sub debug {
 
     # Read the filehandle
     my $fh = $self->debughdl;
-    if (defined $fh) {
-      print $fh "DEBUG:$text";
-    } else {
-      print STDERR "DEBUG:$text";
-    }
-   
+    print $fh "DEBUG:$text";
+
+    # There is a chance that we have just updated 
+    # a Tk text widget. On the off-chance that we have,
+    # we should do a Tk update
+    $TKMW->update if defined $TKMW;
 
   }
 
 }
 
+=back
+
+=head1 TIED INTERFACE
+
+An ORAC::Print object can also be tied to filehandle using the
+tie command:
+
+  tie *HANDLE, 'ORAC::Print', $prt, 'out|war|err';
+
+where $prt is an ORAC::Print object. Currently all strings printed
+to this handle will be redirected to the orac_print command
+(and will therefore use the output filehandles associated with the
+most recent ORAC::Print object created). The default color used
+by the tied handle can be set using the outcol() method of the
+object associated with the filehandle
+
+  $prt = new ORAC::Print;
+  $prt->outcol('clear');
+  tie *HANDLE, 'ORAC::Print', $prt;
+
+will result in all messages printed to HANDLE, being printed
+with no color codes to STDOUT.
+
+The optional fourth argument to the tie() command can be used
+to set the default output stream. Allowed values are 'out',
+'war' and 'err'. These correspond directly to the orac_print,
+orac_warn and orac_err commands. Default is to use orac_print
+for all tied filehandles.
+
+=cut
+
+# Tided handle interface
+# usage: tie *HANDLE, "ORAC::Print", $obj
+#  $obj is a ORAC::Print object
+
+sub TIEHANDLE {
+  my $class = shift;
+  my $obj = shift;
+  my $out = 'out'; # default to orac_print
+  $out = lc(shift) if @_;
+
+  # Store the selected output stream
+  # This relies on internals in order to hide the implementation
+  # from the rest of the class (ugh!).....
+  $obj->{_outtype} = $out;
+  return $obj;
+}
+
+sub PRINT {
+  my $obj = shift;
+  # Run orac_* (ie lose all reference to the object)
+  # and use the current object and filehandles
+  if ($obj->{_outtype} eq 'out') {
+    foreach (@_) { orac_print $_, $obj->outcol; }
+  } elsif ($obj->{_outtype} eq 'war') {
+    foreach (@_) { orac_warn $_, $obj->warncol; }
+  } else {
+    foreach (@_) { orac_err $_, $obj->errcol; }
+  }
+
+}
+
+sub PRINTF {
+  my $obj = shift;
+  $obj->PRINT(sprintf(shift, @_));
+}
+
 
 =back
+
+=head1 SEE ALSO
+
+L<Term::ANSIColor>, L<IO::Tee>.
 
 =head1 AUTHORS
 
