@@ -6,7 +6,7 @@ use 5.006;
 
 WriteMakefile(
 	      'NAME' => 'ORACDR',
-	      VERSION => '3.0',
+	      VERSION => '4.0',
 	      'EXE_FILES' => [qw( bin/oracdr bin/oracdr_monitor 
 				  bin/Xoracdr bin/oracdr_nuke
 				  bin/oracdisp bin/oracdr_monitor
@@ -33,7 +33,7 @@ sub MY::libscan {
   my $pm = shift;
 
   # Check that we have a pm file
-  return undef unless ($pm =~ /\.pm$/);
+  return '' unless ($pm =~ /\.pm$/);
 
   # Remore the perl5/ from the path
   $pm =~ s|perl5/||;
