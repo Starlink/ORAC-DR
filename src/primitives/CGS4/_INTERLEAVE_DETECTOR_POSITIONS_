@@ -52,10 +52,6 @@ This primitive is not to be confused with COADD_MULTIPLE_EXPOSURES, which coadds
 into one.  To get the same functionality of CGS4's "coadd integrations", use this recipe 
 followed directly by COADD_MULTIPLE_EXPOSURES.
 
-If this primitive follows a wavelength calibration primitive, all wavelength information
-will be lost.  This is due to the 'mosaic' kappa task not handling AXIS array information
-correctly.
-
 =head2 REVISION
 
 $Id$
@@ -68,13 +64,13 @@ b.cavanagh@jach.hawaii.edu
 
 #'
 
-my $nsubs = $Frm->nsubs;                      # number of i-files
 my $nscanpos = $Frm->hdr("DETNINCR");         # number of scan positions
 
 if($nscanpos != 1) {   
 
 # we don't need to do any interlacing at all if there's only one scan position
 
+  my $nsubs = $Frm->nsubs;                      # number of i-files
   my $pixinc = $Frm->hdr("DETINCR");            # increment (pixels) betw scan positions
   my $expansion = nint(1/$pixinc);              # expansion factor
   my $xdim = $Frm->hdr("DCOLUMNS");             # number of columns in array
@@ -86,9 +82,10 @@ if($nscanpos != 1) {
 
 # operate on each set of images
 
-  my @files;
-  my @output;
-  my @outputname;
+  orac_print "Interleaving frames ($nsubs observations in $nscanpos positions)\n";
+
+  my @blank;
+  my @blankname;
 
 # create the ARD files, as they'll be used for all files
 
@@ -107,102 +104,76 @@ if($nscanpos != 1) {
     $ardname[$i] = $ard[$i]->file;
   }
 
-# interlace each set of observations
-  
-  foreach my $i (1..$overoversamp) {
-    my $merged = new ORAC::TempFile;
-    my $mergedname = $merged->file;
-    my @paste;
-    my @pastename;
-    foreach my $j (1..$nscanpos) {
-      # figure out the i-file number
-      my $fileno = $j + ($i - 1) * $nscanpos;
-      my($in,$out) = $Frm->inout("_in",$fileno);
-      my $position = $Frm->hdr->{$fileno}->{"DINDEX"};
-      
-      # magnify the image along the x-dimension
-      my $exp = new ORAC::TempFile;
-      my $expname = $exp->file;
-      $Mon{'kappa_mon'}->obeyw("pixdupe","in=$in out=$expname expand=\[$expansion,1\]");
-      
-      # blank out columns as defined by the ARD file
-      my $ardfile = (($j - 1) % $expansion) + 1;
-      my $blank = new ORAC::TempFile;
-      my $blankname = $blank->file;
-      $Mon{'kappa_mon'}->obeyw("ardmask","in=$expname out=$blankname ardfile=$ardname[$ardfile]");
-      
-      # set the origin for pasting/mosaicking
-      my $neworigin = int(($j-1) / $expansion) * $expansion + 1;
-      $Mon{'ndfpack_mon'}->obeyw("setorigin","ndf=$blankname origin=\[$neworigin,1\]");
-      
-      my $pasteinto = int(($j-1) / $expansion) + 1;
-      if((($j-1) % $expansion) == 0) {
-	$paste[$pasteinto] = new ORAC::TempFile;
-	$pastename[$pasteinto] = $paste[$pasteinto]->file;
-	$Mon{'ndfpack_mon'}->obeyw("ndfcopy","in=$blankname out=$pastename[$pasteinto]");
-      } else {
-	my $temp = new ORAC::TempFile;
-	my $tempname = $temp->file;
-	$Mon{'kappa_mon'}->obeyw("paste","in=$pastename[$pasteinto] p1=$blankname out=$tempname transp=true confine=false");
-	$Mon{'ndfpack_mon'}->obeyw("erase","object=$pastename[$pasteinto] ok=true");
-	$Mon{'ndfpack_mon'}->obeyw("ndfcopy","in=$tempname out=$pastename[$pasteinto]");
-      }
-    }
-#    foreach my $j (1..$oversamp) {
-#      if($j == 1) {
-#	$Mon{'ndfpack_mon'}->obeyw("ndfcopy","in=$pastename[$j] out=$mergedname");
-#      } else {
-#	my $xoffset = ($j-1) * $expansion;
-#	my $temp = new ORAC::TempFile;
-#	my $tempname = $temp->file;
-#	$Mon{'kappa_mon'}->obeyw("mosaic","number=2 average=false inpic1=$mergedname inpic2=$pastename[$j] outpic=$tempname xoffset=$xoffset yoffset=0");
-#	$Mon{'ndfpack_mon'}->obeyw("erase","object=$mergedname ok=true");
-#	$Mon{'ndfpack_mon'}->obeyw("ndfcopy","in=$tempname out=$mergedname");
-#      }
-#    }
-    # and now to set AXIS because 'mosaic' deletes it
-#    my $axisexp = 1 / $expansion;
-#    $Mon{'ndfpack_mon'}->obeyw("setaxis","ndf=$mergedname dim=1 mode=expr exprs=CENTRE*$axisexp");
-#    if($overoversamp == 1) {
-#      $Frm->files($Frm->file);
-#      my($in,$out) = $Frm->inout("_in");
-#      my $output = new ORAC::TempFile;
-#      my $outputname = $output->file;
-#      $Mon{'kappa_mon'}->obeyw("cdiv","in=$mergedname scalar=$oversamp out=$outputname");
-#      $Mon{'ndfpack_mon'}->obeyw("ndfcopy","in=$outputname out=$out title=$out");
-#      orac_print ("Frames interleaved into $out\n");
-#      $Frm->files($out);
-#      $Frm->mergehdr;
-#    } else {
-#      my($in, $out) = $Frm->inout("_in",$i);
-#      $Mon{'kappa_mon'}->obeyw("cdiv","in=$mergedname scalar=$oversamp out=$out title=$out");
-#      push @files, $out;
-#    }
-    # now merge the files in @pastename together using ccdpack:makemos
-    # First create a text file with all the pasted names in it, so that
-    # the parameter buffer for 'makemos' doesn't overflow
-    my $tmp = new ORAC::TempFile;
-    print {$tmp->handle} join("\n",@pastename);
-    $tmp->handle->close;
+  # operate on each file separately
+  foreach my $i (1..$nsubs) {
     
-    # Now set up the arguments for 'makemos', and do the mosaicking.
+    # determine the input and output file names
+    my ($in, $out) = $Frm->inout("_in",$i);
+    
+    # expand the image along the x-dimension
+    my $exp = new ORAC::TempFile;
+    my $expname = $exp->file;
+    $Mon{'kappa_mon'}->obeyw("pixdupe","in=$in out=$expname expand=\[$expansion,1\]");
 
-    $output[$i] = new ORAC::TempFile;
-    $outputname[$i] = $output[$i]->file;
-    my $args = "in=^" . $tmp->file . " out=" . $outputname[$i] . " noscale nozero genvar method=mean nousevar";
-    $Mon{'ccdpack_reg'}->obeyw("makemos","$args");
+    # blank out columns as defined by the ARD file
+    my $ardfile = (($i - 1) % $expansion) + 1;
+    $blank[$i] = new ORAC::TempFile;
+    $blankname[$i] = $blank[$i]->file;
+    $Mon{'kappa_mon'}->obeyw("ardmask","in=$expname out=$blankname[$i] ardfile=$ardname[$ardfile]");
+
+    # set the origin for pasting/mosaicking
+    my $position = $Frm->hdr->{$i}->{"DINDEX"};
+    my $neworigin = int(($position - 1) / $expansion) * $expansion + 1;
+    $Mon{'ndfpack_mon'}->obeyw("setorigin","ndf=$blankname[$i] origin=\[$neworigin,1\]");
   }
 
+  if($overoversamp == 1) {
+
+    # if there's only one subset of observations, they can all be merged together into the output image
+    $Frm->files($Frm->file);
+    my ($in, $out) = $Frm->inout("_in");
+    my $tmp = new ORAC::TempFile;
+    foreach my $blanknum (1..$#blankname) {
+      print {$tmp->handle} "$blankname[$blanknum]\n";
+    }
+    $tmp->handle->close;
+    my $mosargs = "in=^" . $tmp->file . " noscale nousevar nozero method=mean logto=neither logfile=!";
+    $Mon{'ccdpack_reg'}->obeyw("makemos","$mosargs out=$out");
+    orac_print "Frames interleaved into $out\n";
+    $Frm->files($out);
+    $Frm->mergehdr;
+  } else {
+    
+    # otherwise there's more than one subset of observations, and they have to be merged separately
+  
+    my @files = ();
+
+    foreach my $i (1..$overoversamp) {
+      # figure out which observations go with which subset
+      my $makemosfiles = new ORAC::TempFile;
+      foreach my $j (1..$nscanpos) {
+	my $fileno = (( $i - 1 ) * $nscanpos) + $j; 
+#	print $fileno . "\n";
+#	print $blankname[$fileno] . "\n";
+	print {$makemosfiles->handle} $blankname[$fileno] . "\n";
+      }
+      $makemosfiles->handle->close;
+      
+      # mosaic the images in subset $i
+      my($in, $out) = $Frm->inout("_in",$i);
+      my $makemos = $makemosfiles->file;
+#      my $tmp = new ORAC::TempFile;
+#      my $tmpname = $tmp->file;
+      my $mosargs = "in=^" . $makemos . " method=mean genvar noscale nozero nousevar logto=neither logfile=!";
+      $Mon{'ccdpack_reg'}->obeyw("makemos","$mosargs out=$out");
+#      $Mon{'ndfpack_mon'}->obeyw("ndfcopy","in=$tmpname out=$out title=$out");
+      push @files, $out;
+    }
+    # update the Frm object
+    $Frm->files($Frm->file);
+    my($in, $out) = $Frm->inout("_in");
+    $Frm->files(@files);
+    $Frm->mergehdr;
+    orac_print "Frames interleaved into $out\n";
+  }
 }
-
-# update the Frm object (this has already been done if there's only one set of files)
-
-#if(!(($overoversamp == 1) && ($nscanpos != 1))) {
-#  $Frm->files($Frm->file);
-#  my ($in, $out) = $Frm->inout("_in");
-#  $Frm->files(@files);
-#  $Frm->mergehdr;
-#  orac_print ("Frames interleaved into $out\n");
-#}
-
-
