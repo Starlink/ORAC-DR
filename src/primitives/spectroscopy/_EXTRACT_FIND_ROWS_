@@ -72,18 +72,30 @@ $mult = 2 if($nbeams==3);
 my $tmp = new ORAC::TempFile;
 my $tmpfile = $tmp->file;
 
+my $posbeamsfound=0;
 if($posbeams) {
    # Need to thresh to only see the +ve half
    $Mon{'kappa_mon'}->obeyw("thresh", "in=$colfile out=$tmpfile thrlo=0 newlo=0 thrhi=1000000 newhi=1000000"); 
 
-   # F-ing thresh bug
-   $Mon{'ndfpack_mon'}->obeyw("setbad", "ndf=$tmpfile value=TRUE");
-
    # Call figaro emlt on the +ve half of the collapsed file
    $Mon{'figaro2'}->obeyw("emlt", "spectrum=$tmpfile xstart=min xend=max lines=$posbeams");
 
-   # Do not put a semi-colon on the end of the following line
-   _PARSE_EMLT_LIS_ FIRST=1 NLINES=$posbeams MULT=$mult
+   $posbeamsfound = $Mon{'figaro2'}->get("emlt", "EMLT_LINES");
+   orac_print "Detected $posbeamsfound of $posbeams positive beams\n";
+
+   # loop over the detected beams, writing the details to the group user header
+   my @pix = $Mon{'figaro2'}->get("emlt", "EMLT_POS");
+   my @peak = $Mon{'figaro2'}->get("emlt", "EMLT_PEAK");
+   for (my $i=1; $i<=$posbeamsfound; $i++) {
+      my $keyword = 'BEAM_POSITION_'.$i;
+      my $pixvalue = $pix[$i];
+      $Grp->uhdr($keyword, $pixvalue);
+      $keyword = 'BEAM_MULT_'.$i;
+      $Grp->uhdr($keyword, $mult);
+      my $peakvalue = $peak[$i];
+      
+      orac_print "Found beam $i (factor $mult) at: pixel $pixvalue; peak mean strength = $peakvalue\n";
+   }
 }
 
 # Now do the -ve beams;
@@ -94,19 +106,31 @@ $negbeams=2 if($nbeams==3);
 $negbeams=2 if($nbeams==4);
 $mult = -1;
 
+my $negbeamsfound=0;
 if($negbeams) {
    # Need to thresh to only see the +ve half of the negated file
    $Mon{'kappa_mon'}->obeyw("thresh", "in=$ncolfile out=$tmpfile thrlo=0 newlo=0 thrhi=1000000 newhi=1000000");
 
-   # F-ing thresh bug
-   $Mon{'ndfpack_mon'}->obeyw("setbad", "ndf=$tmpfile value=TRUE");
-
    # Call figaro emlt on the negated collapsed file
    $Mon{'figaro2'}->obeyw("emlt", "spectrum=$tmpfile xstart=min xend=max lines=$negbeams");
 
-   my $first = $posbeams+1;
-   # Do not put a semi-colon on the end of the following line
-   _PARSE_EMLT_LIS_ FIRST=$first NLINES=$negbeams MULT=$mult
+   $negbeamsfound = $Mon{'figaro2'}->get("emlt", "EMLT_LINES");
+   orac_print "Detected $negbeamsfound of $negbeams negative beams\n";
+
+   # loop over the detected beams, writing the details to the group user header
+   my @pix = $Mon{'figaro2'}->get("emlt", "EMLT_POS");
+   my @peak = $Mon{'figaro2'}->get("emlt", "EMLT_PEAK");
+   for (my $i=1; $i<=$negbeamsfound; $i++) {
+      my $j = $i + $posbeamsfound;
+      my $keyword = 'BEAM_POSITION_'.$j;
+      my $pixvalue = $pix[$i];
+      $Grp->uhdr($keyword, $pixvalue);
+      $keyword = 'BEAM_MULT_'.$j;
+      $Grp->uhdr($keyword, $mult);
+      my $peakvalue = $peak[$i];
+      
+      orac_print "Found beam $j (factor $mult) at: pixel $pixvalue; peak mean strength = $peakvalue\n";
+   }
 }
    
 if ($nbeams == 0) {
