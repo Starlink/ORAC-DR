@@ -1,0 +1,74 @@
+=head1 NAME
+
+_NORMALISE_FLAT_BY_BB_
+
+=head1 DESCRIPTION
+
+Normalises a frame (usually a CGS4 flat field frame).
+
+First, creates a black body spectrum, using the temperature from the
+BBTEMP header, grows this to the size of the image, and divides by
+it. Then divides the image by the image's mean pixel value, so as to
+normalise it's absolute level to 1.
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+=cut
+
+# Loop through sub-files
+foreach my $i (1 .. $Frm->nfiles) {
+
+	# Generate the input and output filenames
+	my ($in, $out) = $Frm->inout("_nf", $i);
+
+	# Get the Black-Body (CGS4 flat field source) temperature
+	my $bbtemp = $Frm->hdr("BBTEMP");
+
+	# Create a template for the BB spectrum
+	my $bt=new ORAC::TempFile;
+	my $btfile=$bt->file;
+
+	my $ctr = int ($Frm->uhdr("ORAC_Y_DIM") / 2);
+	$Mon{'figaro1'}->obeyw("extract", "image=$in ystart=$ctr yend=$ctr spectrum=$btfile");
+	$Mon{'ndfpack_mon'}->obeyw("axlabel", "ndf=$btfile dim=1 label=wavelength");
+
+	# create a black body model in a file, 
+	# refering to $btfile (ie $in)  for the dispersion axis info
+	my $bb=new ORAC::TempFile;
+	my $bbfile = $bb->file;
+
+	$Mon{'figaro4'}->obeyw("bbody", "temp=$bbtemp in=$btfile out=$bbfile");
+
+	# Grow the bb file to be 2D
+	my $bbim=new ORAC::TempFile;
+	my $bbimfile=$bbim->file;
+
+	my $ystart = $Frm->uhdr("ORAC_Y_LOWER_BOUND");
+	my $yend = $Frm->uhdr("ORAC_Y_UPPER_BOUND");
+	my $ydim = $yend;
+
+       $Mon{'figaro1'}->obeyw( "growx", "spectrum=$bbfile image=$bbimfile ystart=$ystart yend=$yend ysize=$ydim new=true");
+
+       # Stuff on a zero variance so as not to drop the variance array shortly
+       $Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$bbimfile variance=0");
+
+       # Divide the flat by the bbimage, into another temp file
+       my $temp=new ORAC::TempFile;
+       my $tempfile = $temp->file;
+       $Mon{'kappa_mon'}->obeyw("div", "in1=$in in2=$bbimfile out=$tempfile");
+
+       # Now normalise the tempfile into the output file
+       $Mon{'kappa_mon'}->obeyw("stats", "ndf=$tempfile");
+
+       (my $ORAC_STATUS, my $mean)=$Mon{'kappa_mon'}->get("stats", "mean");
+
+       $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tempfile scalar=$mean out=$out");
+
+       # Update the Frm object
+       $Frm->file($out, $i);
+
+       orac_print("$in to $out: Flat field normalised by Black Body\n");
+
+}
