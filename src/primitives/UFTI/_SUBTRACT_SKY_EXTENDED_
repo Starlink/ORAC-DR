@@ -1,0 +1,75 @@
+# _SUBTRACT_SKY_EXTENDED_          -*-perl-*-
+#
+# Subtracts a sky frame for extended objects.
+#
+# TASK: KAPPA - CSUB
+#
+# Imports:
+#    _MAKE_FLAT_FROM_NORMALISED_EXTENDED_ : FLAT_MEDIAN
+#    _NORMALISE_TO_MODE_EXTENDED_         : SKY_FREQ SKY_OFFSET(2)
+#
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" ||
+         $Frm->hdr( "OBSTYPE" ) eq "SKY" ) {
+
+# Test whether or not it is time to subtract sky values.
+       $skysub = $Frm->hdr( "SUBTRACT_SKY" );
+       if ( $skysub ) {
+
+# Form a subgroup comprising the target frames within the current row.
+          $targrp = $Grp->subgrp( TARGET_OR_SKY => "target",
+                                  EXTENDED_ROW => $ext_row );
+
+# Form a list of the input and output target frames.
+          ( $inref, $outref ) = $targrp->inout( "_ss" );
+
+# Import the median of the reference sky frame.
+          $median = $_MAKE_FLAT_FROM_NORMALISED_EXTENDED_{FLAT_MEDIAN};
+
+# Process each file in turn because there are no wildcarded file names
+# in CSUB.
+          foreach $frame ( $targrp->members );
+
+# Generate the input and output file names.
+             ( $in, $out ) = $frame->inout( "_ss" )
+
+# Obtain the target frame number.
+             $target_number = $frame->hdr( "TARGET_NUMBER" );
+
+# Find the sky number corresponding to the object frame.
+             $skyindex =  $target_number + 1;
+
+# Import the offsets with respect to this of the sky frames which just
+# bracket the current observation.
+             $sky_before = $_NORMALISE_TO_MODE_EXTENDED_{SKY_OFFSET}[$skyindex-1];
+             $sky_after = $_NORMALISE_TO_MODE_EXTENDED_{SKY_OFFSET}[$skyindex];
+
+# Derive the sky offset for the current object frame by linear interpolation
+# between the median values of the last two sky medians (i.e. the pair
+# which most closely bracket the object frame).  As the frequency of
+# sky frames is fixed at two, i.e. alternting with sky, the interpolation
+# ssume timing equally
+             $offset = $median - $sky_before + 
+                       0.5 * ( $sky_before - $sky_after );
+
+# Specify the parameters.
+             $header = "in=$in scalar=$offset out=$out title=\'Sky subtracted\'";
+
+# Note all sky frames and data frames should have the same exposure time.
+# In theory we could take care of by the Cal object and the headers.
+             $Mon{"kappa_mon"}->obeyw("csub","$header");
+
+# Report the processing status.
+             orac_print "Orac says: $in to $out: Sky subtracted\n";
+
+# Display the image.
+             _DISPLAY_FRAME_IMAGE_
+
+          }
+
+# Update the target group.
+          $targrp->membernames( @$outref );
+
+       };
+    };

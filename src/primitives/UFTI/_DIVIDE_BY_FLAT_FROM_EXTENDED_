@@ -1,0 +1,97 @@
+# _DIVIDE_BY_FLAT_FROM_EXTENDED_         -*- perl -*-
+#
+# Divides by a flat-field for extended sources.
+#
+# TASK: CCDPACK - FLATCOR
+#
+# Arguments/GLobal variable:
+#   TARGET_TEMPLATE = CHARACTER (Given and Returned)
+#      The name of the last target frame to be used to make the list
+#      of target frames to flat field.
+#
+# This should only be performed on OBJECT frames.
+    if ( $Frm->hdr( "OBSTYPE" ) eq "OBJECT" || 
+         $Frm->hdr( "OBSTYPE" ) eq "SKY") {
+
+# Test whether or not this is an object frame or a sky frame. 
+       $class = $Frm->hdr( "TARGET_OR_SKY" );
+
+# Need to record the last target frame, so we can use as a template, as
+# flatfielding occurs only when the current frame is of blank sky.  The
+# suffix will not be the correct if we used the blank-sky frame, as it
+# has undergone additional processing steps.
+       if ( $class eq "target" ) {
+          $_DIVIDE_BY_FLAT_FROM_EXTENDED_{TARGET_TEMPLATE} = $Frm->file;
+       }
+
+# Here we want to apply the flat field when a new flat has been calculated,
+# so determine whether that is the case.  The steering primitive should
+# ensure that there are at least three blank-sky frames.
+       $makeflat = $Frm->hdr( "MAKE_FLAT" );
+       if ( $makeflat ) {
+
+# At this point the current frame should always be of blank sky.
+          if ( $class eq "target" ) { 
+             orac_err "There is something wrong with the MAKE_FLAT assignments in the EXTENDED_STEER primitive\n";
+          }
+
+# Restore the template from the previous frame, which was of the target.
+          $template = $_DIVIDE_BY_FLAT_FROM_EXTENDED_{TARGET_TEMPLATE};
+
+# Obtain the current row number.
+          $ext_row = $Frm->hdr( "EXTENDED_ROW" );
+
+# Form a subgroup comprising all the target frames in the current row.
+          $targrp = $Grp->subgrp( TARGET_OR_SKY => "target",
+                                  EXTENDED_ROW => $ext_row );
+
+# Form a list of input file names for MAKECAL from the other members
+# of the group.  This is not as obvious as it sounds since we are
+# trying to do this by looking at the current file values for each
+# Frame object in the loop.  First time around everything is fine.
+# Second time around we realise that the previous frames now have the
+# wrong names since they have been flat-fielded etc.  We now have to
+# construct the input names from the template.  The template is the
+# current frame name.
+          $targrp->template( $template );
+
+# Form a list of the input and ouptut target file names for CCDPACK tasks.
+          ( $inref, $outref ) = $targrp->inout( "_ff" );
+
+# Convert arrays to comma-separated lists.
+          $inlist = join(",", @$inref);
+          $outlist= join(",", @$outref);
+
+# Create text files to hold the list of input and output files, one per
+# line.  This is needed because expanded lists of files may make the
+# command line too long for the ADAM message system.
+          unlink ("flatcor.inlist$$", "flatcor.outlist$$");
+          open (INLIST, ">flatcor.inlist$$");
+          print INLIST join( "\n", @$inref ), "\n";
+          close (INLIST);
+
+          open (OUTLIST, ">flatcor.outlist$$");
+          print INLIST join( "\n", @$outef ), "\n";
+          close (OUTLIST);
+
+# Set the parameters for the task.
+          $header = "in=\'^flatcor.inlist$$\' flat=".$Cal->flat." out=\'^flatcor.outlist$$\'";
+          $hidden = "title=\'Flat-fielded\'";
+
+# Flatfield all the object frames.  Generate output names from the
+# input list, switching filename suffices.
+          $Mon{"ccdpack_red"}->obeyw("flatcor","$header $hidden");
+          unlink ("flatcor.inlist$$", "flatcor.outlist$$");
+
+# Report the processing status.
+          orac_print "Orac says: frames $inlist flat-fielded\n";
+
+# Now update the output filenames for each member of the group.  This
+# is fine until we come round again and find that we are trying to
+# flat-field files that were flatfielded last time.  It is up to the
+# _MAKE_FLAT_FROM_NORMALISED_EXTENDED_ primitive to work out which
+# files are meant to be used for input here.
+          $targrp->membernames(@$outref);
+
+       };
+    };
