@@ -703,7 +703,7 @@ sub calc_orac_headers {
                    DEC_TELESCOPE_OFFSET
                    DETECTOR_BIAS
                    DETECTOR_INDEX
-                   DETECTOR_MODE
+                   DETECTOR_READ_TYPE
                    EQUINOX
                    EXPOSURE_TIME 
                    FILTER 
@@ -724,7 +724,6 @@ sub calc_orac_headers {
                    RA_BASE 
                    RA_SCALE
                    RA_TELESCOPE_OFFSET
-                   READMODE
                    ROTATION 
                    SCAN_INCREMENT
                    SLIT_ANGLE
