@@ -141,7 +141,16 @@ if($negbeams) {
    
 if (($posbeamsfound + $negbeamsfound) == $nbeams) {
    # We found all the beams
-
+   # Encode these into the group fits header
+   _SET_GROUP_FITS_ITEM_ KEY=NBEAMS VALUE=$nbeams
+   foreach my $i (1..$nbeams) {
+     my $keyword = "BEAMPOS".$i;
+     my $val = $Grp->uhdr('BEAM_POSITION_'.$i);
+     _SET_GROUP_FITS_ITEM_ KEY=$keyword VALUE=$val
+     $keyword = "BEAMMUL".$i;
+     $val = $Grp->uhdr('BEAM_MULT_'.$i);
+     _SET_GROUP_FITS_ITEM_ KEY=$keyword VALUE=$val
+   }
    # Push these off to the cal system.
    $Cal->rowindex->add($Grp->file, {%{$Grp->hdr}, %{$Grp->uhdr}, %{$Frm->hdr}, %{$Frm->uhdr}});
    orac_print "Filed group file to rows calibration system\n";
@@ -153,4 +162,35 @@ if (($posbeamsfound + $negbeamsfound) == $nbeams) {
 
 $Grp->uhdr("NBEAMS", $nbeams);
 
+if (defined $_EXTRACT_FIND_ROWS_{CALROWS} && $_EXTRACT_FIND_ROWS_{CALROWS} eq "1" ) {
+   # Now if we're getting the rows from the cal system, we do it here, and
+   # overwite the uhdr values we just found.
+
+   my $rowsfile = $Cal->rows;
+   orac_print "Getting beam rows from: $rowsfile\n";
+
+   my $tempFrm = new $Frm;
+   $tempFrm->file($rowsfile);
+
+   $tempFrm->readhdr;
+
+   my $nbeams = $tempFrm->hdr("NBEAMS");
+   $Grp->uhdr("NBEAMS", $nbeams);
+   orac_print "Cal - number of beams: $nbeams\n";
+
+   foreach my $i (1..$nbeams) {
+      my $fitskey = 'BEAMPOS'.$i;
+      my $pos = $tempFrm->hdr($fitskey);
+      my $keyword = "BEAM_POSITION_".$i;
+      $Grp->uhdr($keyword, $pos);
+
+      $fitskey = 'BEAMMUL'.$i;
+      my $mul = $tempFrm->hdr($fitskey);
+      $keyword = "BEAM_MULT_".$i;
+      $Grp->uhdr($keyword, $mul);
+
+      orac_print "Cal - Beam $i on row $pos with multiplier $mul\n";
+    }
+}
+     
 orac_print "\n";
