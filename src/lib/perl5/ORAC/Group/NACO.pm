@@ -101,7 +101,7 @@ sub _to_DEC_TELESCOPE_OFFSET {
               
 # The sense is reversed compared with UKIRT, as these measure the
 # place on the sky, not the motion of the telescope.
-   return 1.0 * $decoffset;
+   return -1.0 * $decoffset;
 }
 
 # Filters appear to be in wheels 4 to 6.  It appears the filter
@@ -219,7 +219,7 @@ sub _to_RA_TELESCOPE_OFFSET {
               
 # The sense is reversed compared with UKIRT, as these measure the
 # place on the sky, not the motion of the telescope.
-   return 1.0 * $raoffset;
+   return -1.0 * $raoffset;
 }
 
 # Derive the translation between observing template and recipe name.
