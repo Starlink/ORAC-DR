@@ -1,0 +1,325 @@
+#+
+# Name:
+#    _GENERATE_OFFSETS_POL_NOD_CHOP
+#
+# Purpose:
+#    Finds the offsets between the frames in a POL_NOD_CHOP recipe.
+#
+# Description:
+#    This primitive finds the pixel offsets between the target frames  
+#    in the current $Grp of a POL_NOD_CHOP recipe.  The primitive 
+#    itself forms new groups to be registered by other primitives.  For
+#    the first cycle of the recipe, the primitive forms a group of the
+#    current recipe cycle's difference-pair frames, accessed
+#    by the internal group header DIFFERENCE_GROUP.  On subsequent
+#    cycles a new group is formed, comprising the integrated mosaic 
+#    for the current waveplate angle, followed by the difference pairs
+#    in the current cycle, so that there is a common registration and
+#    that mosaics can be co-added.  For a moving target, the first frame
+#    of the whole observation is the first member of the group after the
+#    first cycle.
+#
+#    When argument TELEOFF is true, _GENERATE_TELE_OFFSETS_ is invoked
+#    and the derived offsets are used to register with a shift of origin;
+#    otherwise _GENERATE_OFFSETS_ is the work horse.
+#
+# Language:
+#    Perl5
+#
+# Arguments:
+#    COMPLETE = REAL (Given)
+#       Completeness of matched features for registration between two 
+#       frames to be accepted.  It must be in the range 0.2 to 1.0. [0.4]
+#    MINPIX = INTEGER (Given)
+#       Minimum number of contiguous pixels above the PERCENTILE level
+#       to be considered a registration feature.  It must be at least 6.
+#       [9]
+#    MOVING_TARGET = LOGICAL (Read)
+#       If true (1), the source is a moving target and frames are to
+#       register the moving target not the fixed stars.  [0]
+#    PERCENTILE = REAL (Given)
+#       Percentile threshold for locating objects to register frames. 
+#       It must be in the range 75 to 99.9.  [98]
+#    TELEOFF = LOGICAL (Given)
+#       If true (1), it will just use the telescope offsets to register.
+#       If false (0), it will attempt automatic registration.  [0]
+#
+# Notes:
+#    -  This primitive is suitable for UFTI, IRCAM, and Michelle 
+#    in imaging mode.
+#    -  Processing only occurs for object and sky frames, and when 
+#    steering header MAKE_MOSAIC is true.
+#    -  The steering header CYCLE_NUMBER specifies the cycle number.
+#    The waveplate angle comes from user header ORAC_WAVEPLATE_ANGLE.
+#    -  The reference mosaic is accessed through the user header
+#    MOSAIC_GROUP of the main $Grp.
+#    -  The _GENERATE_OFFSETS_ argument CENTRAL_SOURCE is TRUE.
+#    Thus matching the centroids of a central source is attempted if
+#    automatic registration fails.
+#    -  For a moving target, the reference frame (the first "_dp" frame)
+#    must exist on the second and subsequent cycles, or an error occurs.
+#    -  The frames registered using telescope offsets are reported.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Arguments
+# =========
+
+# Determine whether or not telescope offsets should only be used.
+    my $usetele = $_GENERATE_OFFSETS_POL_NOD_CHOP_{TELEOFF};
+    $usetele = defined( $usetele ) ? $usetele : 0;
+
+# Obtain the parameters for the detection.
+    my ( $complete, $minpix, $percentile );
+    if ( ! $usetele ) {
+       $percentile = ( $_GENERATE_OFFSETS_POL_NOD_CHOP_{PERCENTILE} || 98 );
+       $minpix = ( $_GENERATE_OFFSETS_POL_NOD_CHOP_{MINPIX} || 9 );
+       $complete = ( $_GENERATE_OFFSETS_POL_NOD_CHOP_{COMPLETE} || 0.4 );
+    }
+
+# Is there a moving target?
+    my $moving_target = $_GENERATE_OFFSETS_POL_NOD_CHOP_{MOVING_TARGET};
+    $moving_target = defined( $moving_target ) ? $moving_target : 0;
+
+# Selection
+# =========
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ) {
+
+# Test whether or not it is time to make a mosaic.
+       my $makemos = $Frm->uhdr( "MAKE_MOSAIC" );
+       if ( $makemos ) {
+
+# Obtain the mosaic group by reference.
+          my $mosGrp = $Grp->uhdr( "MOSAIC_GROUP" );
+
+# Select a subgroup with the current waveplate angle.
+# Make a local $Grp containing just the differenced pairs.
+          {
+             my $Grp = $Grp->uhdr( "DIFFERENCE_GROUP" );
+
+# Obtain the cycle number.  Default to zero if undefined, so that recipes
+# which do not support this feature will continue to work.
+             my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+             $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+# Obtain the current frame's polarisation angle.
+             my $wplangle = $Frm->uhdr( "ORAC_WAVEPLATE_ANGLE" );
+
+# Select those members in the current cycle, and with the current
+# waveplate angle.
+             my $cycleGrp = $Grp->subgrp( ORAC_WAVEPLATE_ANGLE => $wplangle,
+                                          CYCLE_NUMBER => $cycleno );
+
+# Form the group to process.
+# ==========================
+
+# For the first cycle of a single cycle mosaic, make a local $Grp
+# containing just the current cycle.  Note the { to start a new context.
+             my ( $tempGrp, $tempFrm );
+             if ( $cycleno == 0 ) {
+                $tempGrp = $cycleGrp;
+
+# For a moving target we want to register to the first frame, because
+# it is the reference frame for the moving target.  The motions are
+# calculated with respect to its time of observation.  We do not
+# register to the co-added mosaic (as happens for stationary sources)
+# or even the first cycle mosaic, because the fiducial stars are
+# extended and thus shifts the centroid of the sources.  There is no
+# guarantee that telescope offsets will be used.  The mosaic stellar
+# images are also possibly multiple, which can confuse the registration.
+# It's a two step process...
+             } elsif ( $moving_target ) {
+
+# First step is to create a frame which is first differenced pair.
+# NB this suffix should not be tidied in _POL_NOD_CHOP_TIDY_ script.
+# This is something of a kludge, but with all the various groups,
+# some temporary, it's hard know what frames are available.  It needs a
+# method which finds the first created frame which exists for a given
+# frame number.  Any will do.  It's the header information which is needed.
+# An alternative might be to create differently named user headers in the
+# master group to record the times.
+                $tempFrm = new $Frm;
+                $tempFrm->file( $Grp->frame( 0 )->file );
+                my ( $tin, $tout ) = $tempFrm->inout( "_dp" );
+                $tempFrm->file( $tout );
+                if ( ! $tempFrm->file_exists() ) {
+                   orac_throw "Reference frame $tout for moving target does not exist.\n";
+                }
+                %{ $tempFrm->hdr } = %{ $Grp->frame( 0 )->hdr };
+                %{ $tempFrm->uhdr } = %{ $Grp->frame( 0 )->uhdr };
+
+# Create the temporary group and insert the reference frame and the
+# current cycle's members.
+                $tempGrp = new $Grp;
+                $tempGrp->push( $tempFrm );
+                $tempGrp->push( $cycleGrp->members );
+ 
+# On later cycles a mosaic file should exist, and we shall to register
+# with that as the reference frame.  We need the mosaic with the current
+# waveplate angle.
+             } else {
+
+# Select the mosaic with the current waveplate angle.
+                my $moswpaGrp = $mosGrp->subgrp( ORAC_WAVEPLATE_ANGLE => $wplangle );
+
+# Place the file into a temporary frame pushed onto a temporary $Grp-like group. 
+# Copy its headers across to the temporary frame too.  Then append the members of
+# the subgroup.  Note the file name comes from the MOSAIC_GROUP, subrnot the
+# main line, as we want to combine with the mosaic for the waveplate
+# angle.
+                $tempFrm = new $Frm;
+                $tempFrm->file( $moswpaGrp->frame( 0 )->file );
+                %{ $tempFrm->hdr } = %{ $moswpaGrp->frame( 0 )->hdr };
+                %{ $tempFrm->uhdr } = %{ $moswpaGrp->frame( 0 )->uhdr };
+                $tempGrp = new $Grp;
+                $tempGrp->push( $tempFrm );
+                $tempGrp->push( $cycleGrp->members );
+             }
+
+# Telescope offsets
+# =================
+             if ( $usetele ) {
+
+# Make a local $Grp.
+                my $Grp = $tempGrp;
+
+# Use telescope offsets from the headers to register the frames.
+                _GENERATE_TELE_OFFSETS_ MOVING_TARGET=$moving_target
+
+             } else {
+
+# Generate the offsets
+# ====================
+
+# Make a local $Grp.
+                my $Grp = $tempGrp;
+
+# Call the generic primitive which does most of the work.  Use central
+# source as a backup.
+                _GENERATE_OFFSETS_ PERCENTILE=$percentile MINPIX=$minpix COMPLETE=$complete CENTRAL_SOURCE=TRUE  MOVING_TARGET=$moving_target
+             }
+
+# End of scope of local $Grp aka $diffGrp.
+          }
+       }
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_GENERATE_OFFSETS_POL_NOD_CHOP_ -- Finds the offsets between the frames in a POL_NOD_CHOP recipe.
+
+=head1 DESCRIPTION
+
+This primitive finds the pixel offsets between the target frames  
+in the current $Grp of a POL_NOD_CHOP recipe.  The primitive 
+itself forms new groups to be registered by other primitives.  For
+the first cycle of the recipe, the primitive forms a group of the
+current recipe cycle's difference-pair frames, accessed
+by the internal group header DIFFERENCE_GROUP.  On subsequent
+cycles a new group is formed, comprising the integrated mosaic 
+for the current waveplate angle, followed by the difference pairs
+in the current cycle, so that there is a common registration and
+that mosaics can be co-added.  For a moving target, the first frame
+of the whole observation is the first member of the group after the
+first cycle.
+
+When argument TELEOFF is true,
+L<_GENERATE_TELE_OFFSETS_|_GENERATE_TELE_OFFSETS_> is invoked and the
+derived offsets are used to register with a shift of origin; otherwise
+L<_GENERATE_OFFSETS_|_GENERATE_OFFSETS_> is the work horse.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item COMPLETE = REAL (Given)
+
+Completeness of matched features for registration between two 
+frames to be accepted.  It must be in the range 0.2 to 1.0. [0.4]
+
+=item MINPIX = INTEGER (Given)
+
+Minimum number of contiguous pixels above the PERCENTILE level
+to be considered a registration feature.  It must be at least 6.
+[9]
+
+=item MOVING_TARGET = LOGICAL (Read)
+
+If true (1), the source is a moving target and frames are to
+register the moving target not the fixed stars.  [0]
+
+=item PERCENTILE = REAL (Given)
+
+Percentile threshold for locating objects to register frames. 
+It must be in the range 75 to 99.9.  [98]
+
+=item TELEOFF = LOGICAL (Given)
+
+If true (1), it will just use the telescope offsets to register.
+If false (0), it will attempt automatic registration.  [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UFTI, IRCAM, and Michelle in imaging mode.
+
+=item *
+
+Processing only occurs for object and sky frames, and when 
+steering header MAKE_MOSAIC is true.
+
+=item *
+
+The steering header CYCLE_NUMBER specifies the cycle number.
+The waveplate angle comes from user header ORAC_WAVEPLATE_ANGLE.
+
+=item *
+
+The reference mosaic is accessed through the user header
+MOSAIC_GROUP of the main $Grp.
+
+=item *
+
+The _GENERATE_OFFSETS_ argument CENTRAL_SOURCE is TRUE.
+Thus matching the centroids of a central source is attempted if
+automatic registration fails.
+
+=item *
+
+For a moving target, the reference frame (the first "_dp" frame)
+must exist on the second and subsequent cycles, or an error occurs.
+
+=item *
+
+The frames registered using telescope offsets are reported.
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

@@ -1,0 +1,149 @@
+#+
+# Name:
+#    _POL_NOD_CHOP_TIDY_
+#
+# Purpose:
+#    Removes unwanted intermediate files for the POL_NOD_CHOP recipe
+#    and its variants.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    Removes intermediate frames, but retaining those with the _ff suffix.
+#    Mosaics, and polarisation and intensity frames are also retained.
+#    Files are only removed when they are no longer needed, as guided
+#    by the steering headers REGISTER_IMAGES, MAKE_MOSAIC, CYCLE_NUMBER,
+#    and JITTER_FIRST.  Registration text files with extensions .find,
+#    .off, and .res are also removed.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 2001 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Record the group file name.
+    my $grpname = $Grp->file;
+
+# Determine whether the NDFs support variance.  Any of the NDFs should
+# do.
+    my $file = $Frm->file;
+    $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$file" );
+    ( my $ORAC_STATUS, my $variance ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "variance" );
+
+# Removed intermediate files stored $Frm->file method.
+    _DELETE_TEMP_FILES_ KEEP=_dp,_dcb,_mos,_cab
+
+# Certain files can only be removed once certain steps are complete,
+# and then only as a group.  So determine if it's time to remove these
+# files, and obtain the cycle number.
+    my $mademosaic = $Frm->uhdr( "MAKE_MOSAIC" );
+    my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+    my $register = $Frm->uhdr( "REGISTER_IMAGES" );
+    my $jitter_first = $Frm->uhdr( "JITTER_FIRST" );
+
+# Different ordering of waveplate and jittering affects when to
+# tidy.
+    my $when;
+    if ( $jitter_first ) {
+       $when = $mademosaic;
+    } else {
+       $when = $register;
+    }
+
+# Remove the remaining files from this cycle used to make the mosaic.
+# Note these are in the difference-pair group, or after differencing
+# so they don't appear in the main group's intermediates.
+    if ( $when ) {
+       _DELETE_TEMP_GROUP_FILES_ DELETE=_bp,_db,_dcb
+       if ( $variance ) {
+          _DELETE_TEMP_GROUP_FILES_ DELETE=_bgl,_pov,_rnv
+       }
+
+       {
+
+# Make a local version of the main group, using the group of
+# differenced pairs.  Then use the standard primitive which expects
+# a $Grp.
+          my $diffGrp = $Grp->uhdr( "DIFFERENCE_GROUP" );
+          my $mosGrp = $diffGrp->subgrp( CYCLE_NUMBER => $cycleno );
+          {
+             my $Grp = $mosGrp;
+             my $Frm = $Grp->frame( $Grp->num - 1 );
+             _DELETE_TEMP_GROUP_FILES_ DELETE=_trn
+
+# Obtain the last syllable, i.e. parts of the name broken by underscore,
+# for each frame.
+             foreach $Frm ( $Grp->members ) {
+                my @syllables = split( /_/, $Frm->file );
+                my $suffix = $syllables[ $#syllables ];
+
+# Remove the offset text files.  These are associated with the _dp frames, so
+# switch suffices by reforming the name with the new suffix.
+                my $textfile = join( "_", @syllables[ 0..$#syllables-1 ] ) . "_dp";
+                unlink ( $textfile . ".off" );
+             }
+
+# Remove the group offset text file.
+             if ( $cycleno > 0 ) {
+                unlink ( $grpname . ".off" );
+             }
+          }
+          my $Grp = $mosGrp;
+          undef $mosGrp;
+       }
+    }
+
+# Is it time to remove files in or associated with the mosaic group?
+    if ( $register ) {
+       my $mosGrp = $Grp->uhdr( "MOSAIC_GROUP" );
+
+# Remove the mosaics' registration files and resampled frames using
+# the mosaic group.
+       foreach $Frm ( $mosGrp->members ) {
+
+# Obtain the last syllable, i.e. parts of the name broken by underscore.
+          my @syllables = split( /_/, $Frm->file );
+          my $suffix = $syllables[ $#syllables ];
+
+# Remove the offset and object inventory text files.  These are associated
+# with the mosaics and combined-image frame, so switch suffices by reforming
+# the name with the new suffix.
+          my $textfile = join( "_", @syllables[ 0..$#syllables-1 ] ) . "_mos";
+          unlink ( $textfile . ".off", $textfile . ".find" );
+          $textfile = join( "_", @syllables[ 0..$#syllables-1 ] ) . "_cab";
+          unlink ( $textfile . ".off" );
+       }
+    }
+    orac_print "\n\n";
+
+# Podule
+# ======
+
+=head1 NAME
+
+POL_NOD_CHOP_TIDY -- Removes unwanted intermediate files for the POL_NOD_CHOP recipe and its variants.
+
+=head1 DESCRIPTION
+
+Removes intermediate frames, but retaining those with the _ff suffix.
+Mosaics, and polarisation and intensity frames are also retained.
+Files are only removed when they are no longer needed, as guided
+by the steering headers REGISTER_IMAGES, MAKE_MOSAIC, CYCLE_NUMBER,
+and JITTER_FIRST.  Registration text files with extensions .find,
+.off, and .res are also removed.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2001 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
