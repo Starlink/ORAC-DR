@@ -1,0 +1,89 @@
+
+=head1 NAME
+
+_COADD_FRAME_GROUP_ - co-add observation to group file
+
+=head1 DESCRIPTION
+
+Co-adds observation frames to a group file. The average of the
+observations is stored in the group.
+
+Assumes that by the time this primitive is called, there is only 
+one file associated with the frame object.
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+=cut
+
+# The group raw file (also an input file)
+my $out = $Grp->raw;
+
+# The input frame
+my $in = $Frm->file;
+
+# Re-start the group processing
+
+$Grp->file($Grp->raw);
+
+if (!($Grp->file_exists)) {
+
+   # The group file doesn't exist, so copy the frame into it
+   $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$out title=$out");
+   orac_print "Creating group $out with a copy of $in\n";
+
+   # Tell the group it has this frame in it
+   $Grp->coaddspush($Frm->obsnum);
+
+} else {
+
+   # The group frame allready exists. Coadd into it.
+
+   my $num = scalar(@{scalar($Grp->coadds)});
+
+   # Unaverage into a tmp file
+   my $tmp = new ORAC::TempFile;
+   my $tmpfile = $tmp->file;
+   $Mon{'kappa_mon'}->obeyw("cmult", "in=out scalar=$num out=$tmpfile");
+
+   # Add the new frame into a temp file
+   my $temp = new ORAC::TempFile;
+   my $tempfile = $temp->file;
+   $Mon{'kappa_mon'}->obeyw("add", "in1=$tmpfile in2=$in out=$tempfile");
+
+   # Record the event in the group
+   $Grp->coaddspush($Frm->obsnum);
+
+   # Re-average into the group (output) file
+   $num = scalar(@{scalar($Grp->coadds)});
+   $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tempfile scalar=$num out=$out title=$out");
+
+   orac_print "$in coadded to $out\n";
+   orac_print "$out now contains $num observations\n";
+
+
+   # Now update the FITS header to reflect the new end airmass, using the
+   # value from the current frame.  Using the internal header, obtain the
+   # name of the external keyword.
+
+   my $amendname = "ORAC_AIRMASS_END";
+   my $amend  = $Frm->uhdr( $amendname );
+   my %keywords = $Frm->translate_hdr( $amendname );
+   my @amendkey = keys( %keywords );
+   no warnings 'misc';
+   _SET_GROUP_FITS_ITEM_ KEY=$amendkey[ 0 ] VALUE=$amend
+
+   # Do likewise for the end UT time.
+   my $utendname = "ORAC_UTEND";
+   my $utend  = $Frm->uhdr( $utendname );
+   %keywords = $Frm->translate_hdr( $utendname );
+   my @utendkey = keys( %keywords );
+   _SET_GROUP_FITS_ITEM_ KEY=$utendkey[ 0 ] VALUE=$utend
+
+}
+
+# Display the co-added image.
+$Display->display_data($Grp,{WINDOW => 1, TOOL => 'GAIA', REGION => 0, TYPE => 'IMAGE'}, 0) if defined $Display;
+
+
