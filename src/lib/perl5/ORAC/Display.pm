@@ -38,7 +38,7 @@ use ORAC::Display::KAPVIEW;
 use vars qw/$VERSION $DEBUG/;
 
 $VERSION = '0.10';
-$DEBUG = 0;
+$DEBUG = 1;
 
 =head1 PUBLIC METHODS
 
@@ -199,7 +199,7 @@ sub display_data {
       " the num_files() method.";
   }
   
-  # Now loop over the each file
+  # Now loop over each input file
   for (my $n = 1; $n <= $nfiles; $n++) {
 
     # Get the name of the gui ID
@@ -216,93 +216,105 @@ sub display_data {
 
     # Now we need to search through the display definition and
     # decide whether our suffix can be displayed anywhere.
-    # expect to have a hash containing all the entries of interest
+    # Expect to have an array of hashes where each hash corresponds
+    # to a matching line
+    # This allows a single file to be displayed on multiple
+    # devices
   
-    my %display_info = $self->definition;
+#    my %display_info = $self->definition;
+    my @defn = $self->definition;
 
-    # Return if we dont have a key describing the display tool
-    return unless exists $display_info{'TOOL'};
+    # Now need to loop over all members of @defn
+    # This will just jump out if there are no matches stored in the array
+    foreach my $defref (@defn) {
 
-    # Make sure that the tool name is uppercased
-    $display_info{'TOOL'} = uc($display_info{'TOOL'});
+      # Create a new hash for convenience
+      my %display_info = %$defref;
 
-    # print the result
-    if ($DEBUG) {
-      foreach (keys %display_info) {
-	orac_print("$_ : $display_info{$_}\n",'cyan');
+      # Next if we dont have a key describing the display tool
+      next unless exists $display_info{'TOOL'};
+
+      # Make sure that the tool name is uppercased
+      $display_info{'TOOL'} = uc($display_info{'TOOL'});
+
+      # print the result
+      if ($DEBUG) {
+	foreach (keys %display_info) {
+	  orac_print("$_ : $display_info{$_}\n",'cyan');
+	}
       }
-    }
 
-    # Now I suppose we need to decide whether the display tool is 
-    # already open to us.
-    # Query the tools hash
+      # Now I suppose we need to decide whether the display tool is 
+      # already open to us.
+      # Query the tools hash
 
-    my $current_tool;
-    unless (exists $ {$self->toolref}{$display_info{TOOL}}) {
-      orac_print("Creating new object for $display_info{TOOL}\n",'blue');
+      my $current_tool;
+      unless (exists $ {$self->toolref}{$display_info{TOOL}}) {
+	orac_print("Creating new object for $display_info{TOOL}\n",'blue');
 
-      my $obj = 'ORAC::Display::' . $display_info{TOOL};
-      #    my $obj = 'ORAC::Display';
+	my $obj = 'ORAC::Display::' . $display_info{TOOL};
+	#    my $obj = 'ORAC::Display';
 
-      # Check to see that we can create a new display object to
-      # connect to the current tool (maybe that it is simply not
-      # available)
-      if (UNIVERSAL::can($obj, 'new')) {
+	# Check to see that we can create a new display object to
+	# connect to the current tool (maybe that it is simply not
+	# available)
+	if (UNIVERSAL::can($obj, 'new')) {
+	  
+	  $current_tool = $obj->new;	
 
-	$current_tool = $obj->new;	
+	  # If the returned value is undef then we had a problem creating
+	  # the tool
+	  unless (defined $current_tool) {
+	    orac_err("Error launching $display_info{TOOL}.\n");
+	    return;
+	  } 
 
-	# If the returned value is undef then we had a problem creating
-	# the tool
-	unless (defined $current_tool) {
-	  orac_err("Error launching $display_info{TOOL}.\n");
+	} else {
+	  orac_err("Cant create a $obj object. Maybe an interface to this display\ntool does not exist in ORACDR\n");
 	  return;
-	} 
+	}
+
+
+	$ {$self->toolref}{$display_info{TOOL}} = $current_tool;
 
       } else {
-	orac_err("Cant create a $obj object. Maybe an interface to this display\ntool does not exist in ORACDR\n");
-	return;
+	orac_print("Tool $display_info{TOOL} already running\n",'cyan')
+	  if $DEBUG;
+	$current_tool = $ {$self->toolref}{$display_info{TOOL}};
       }
 
+      # Now ask the tool to display the filename using the
+      # display method specified in 'TYPE'
+      orac_print("Current tool: $current_tool\n",'cyan') if $DEBUG;
+      if ($current_tool->can($display_info{TYPE})) {
+	# now we pass the buck
+	my $method = $display_info{'TYPE'};
 
-      $ {$self->toolref}{$display_info{TOOL}} = $current_tool;
+	# Find the name of the file to be displayed
+	# Note that because the base class of Frame/Group can not
+	# handle multiple file specifiers I can only pass in the
+	# file number if $n is greater than one
+	my $fname;
+	if ($n == 1) {
+	  $fname = $frm->file;
+	} else {
+	  $fname = $frm->file($n);
+	}
 
-    } else {
-      orac_print("Tool $display_info{TOOL} already running\n",'cyan')
-	if $DEBUG;
-      $current_tool = $ {$self->toolref}{$display_info{TOOL}};
-    }
+	# May want to pass in a merged hash at this point
+	# ie a mixture of the display_info options as defined
+	# in the device definition file and the options hash
+	# supplied by the caller.
+	$current_tool->$method($fname, \%display_info);
 
-    # Now ask the tool to display the filename using the
-    # display method specified in 'TYPE'
-    orac_print("Current tool: $current_tool\n",'cyan') if $DEBUG;
-    if ($current_tool->can($display_info{TYPE})) {
-      # now we pass the buck
-      my $method = $display_info{'TYPE'};
-
-      # Find the name of the file to be displayed
-      # Note that because the base class of Frame/Group can not
-      # handle multiple file specifiers I can only pass in the
-      # file number if $n is greater than one
-      my $fname;
-      if ($n == 1) {
-	$fname = $frm->file;
       } else {
-	$fname = $frm->file($n);
+	orac_err("Can't display type '$display_info{TYPE}' on $display_info{TOOL}");
       }
 
-      # May want to pass in a merged hash at this point
-      # ie a mixture of the display_info options as defined
-      # in the device definition file and the options hash
-      # supplied by the caller.
-      $current_tool->$method($fname, \%display_info);
+    }   
 
-    } else {
-      orac_err("Can't display type '$display_info{TYPE}' on $display_info{TOOL}");
-    }
+  }
 
-  }   
-
- 
 }
 
 
@@ -310,13 +322,14 @@ sub display_data {
 
 Method to read a display definition, compare it with the idstring 
 stored in the object (this is usually a file suffix)
-and return back a hash containing all the relevant entries
+and return back an array of  hashes containing all the relevant entries
 from the definition. If an argument is given, the object updates
 its definition of current idstring.
 
-   %defn = $display->definition;
+   @defn = $display->definition;
 
-An empty hash is returned if the suffix can not be matched.
+
+An empty array is returned if the suffix can not be matched.
 
 =cut
 
@@ -328,16 +341,16 @@ sub definition {
     $self->idstring($id);
   }
 
-  my %defn;
+  my @defn;
 
   # Now need to decide whether we are using NBS or a file
   if ($self->usenbs) {
-    %defn = $self->parse_nbs_defn;
+    @defn = $self->parse_nbs_defn;
   } else {
-    %defn = $self->parse_file_defn;
+    @defn = $self->parse_file_defn;
   }
 
-  return %defn;
+  return @defn;
 }
 
 
@@ -356,7 +369,7 @@ Currently not implemented.
 
 sub parse_nbs_defn {
   my $self = shift;
-
+  return ();
 
 }
 
@@ -364,7 +377,9 @@ sub parse_nbs_defn {
 =item parse_file_defn
 
 Using the current idstring, read the relevant information from
-the text file (name stored in filename()) and return it in a hash.
+the text file (name stored in filename()) and return it in an array
+of  hashes. There will be one hash per entry in the file that
+matches the given suffix.
 This routine takes no arguments (idstring is read from the object).
 
 The input file is assumed to contain one line per ID of the following
@@ -379,7 +394,7 @@ sub parse_file_defn {
   my $self = shift;
 
   # Initialise the defintion hash
-  my %defn = ();
+  my @defn = ();
   my $id = $self->idstring;
 
   # Try to open file
@@ -400,7 +415,15 @@ sub parse_file_defn {
 
       # Compare first entry with id string
       # case insensitive
-      if ($junk[0] =~ /$id/i) {
+      my $test = lc($junk[0]);
+
+      if ($test eq $id) {
+
+	orac_print("ID:$id LINE:$line\n",'cyan') if $DEBUG;
+
+	# Create a new hash
+	my %defn = ();
+
 	# Go through each entry in the line, split on = and
 	# set in hash
 	shift(@junk);  # Remove first entry;
@@ -409,6 +432,10 @@ sub parse_file_defn {
 	  $key  = uc($key);
 	  $defn{$key} = $val;
 	}
+
+	# Store the hash
+	push(@defn, \%defn);
+
       }
     }
 
@@ -416,7 +443,7 @@ sub parse_file_defn {
   }  else {
     orac_err("Error opening device definition:$!");
   }
-  return %defn;
+  return @defn;
   
 }
 
