@@ -301,7 +301,7 @@ sub calc_orac_headers {
   my $dateobs = defined( $self->hdr->{1}->{'DATE-OBS'}) ? $self->hdr->{1}->{'DATE-OBS'} : ( defined($self->hdr->{'DATE-OBS'}) ? $self->hdr->{'DATE-OBS'} : 0 );
 
   # Split it into its constituent components.
-  $dateobs =~ /^(\d\d\d\d)-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)Z$/;
+  $dateobs =~ /^(\d\d\d\d)-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)/;
   my $year = $1;
   my $month = $2;
   my $day = $3;
