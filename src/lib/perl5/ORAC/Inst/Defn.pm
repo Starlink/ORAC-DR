@@ -342,7 +342,7 @@ sub orac_determine_inst_classes {
   } elsif ($inst =~ /^SWFCAM/) {
     $groupclass = "ORAC::Group::SWFCAM";
     $frameclass = "ORAC::Frame::SWFCAM";
-    $calclass   = "ORAC::Calib::WFCAM";
+    $calclass   = "ORAC::Calib::SWFCAM";
     $instclass  = "ORAC::Inst::SWFCAM";
   } elsif ($inst eq 'CGS4') {
     $groupclass = "ORAC::Group::CGS4";
