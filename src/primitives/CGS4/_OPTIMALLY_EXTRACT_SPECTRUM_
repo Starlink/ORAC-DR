@@ -4,31 +4,33 @@
 
 =head1 NAME
 
-OPTIMALLY EXTRACT SPECTRUM - uses optimal extraction algorithm to extract positive and negative
-spectra from a reduced group file
+_OPTIMALLY EXTRACT SPECTRUM_ - uses optimal extraction algorithm to extract positive and negative spectra from a reduced group file
 
 =head1 DESCRIPTION
 
-This primitive uses the optimal extraction algorithm used in the Figaro task 'optextract' to 
-extract five rows centred on the positive and negative spectra in a reduced group file, then
-adds the two together to give a final spectrum.
+This primitive uses the optimal extraction algorithm used in the
+Figaro task 'optextract' to extract five rows centred on the positive
+and negative spectra in a reduced group file, then adds the two
+together to give a final spectrum.
 
 =head1 PARAMETERS
 
 =over 4
 
-=item PROW
+=item POSROW
 
 Defines the centre row of the positive spectrum.  If not defined
 this value is obtained from the row index file. If a value can not
 be determined from the index file the default is to use row 96.
 
-=item NROW
+=item NEGROW
 
 Defines the centre row of the negative spectrum.  If this parameter is
 not defined, this value will be retrieved from the index file.
 If the parameter can not be determined from the index file it will
-be calculated from the offset information in the header.
+be calculated from the offset information in the header. If it still
+can not be determined (no relevant FITS headers) a row of 106 will be
+used.
 
 =back
 
@@ -87,52 +89,56 @@ if((($Grp->file_exists) && (!(-e $outfile))) || ((-e $outfile) && ((stat($groupf
   # obtain the rows to extract
 
   # First look in the arguments
-  my $prow = ($_OPTIMALLY_EXTRACT_SPECTRUM_{PROW} || undef);
-  my $nrow = ($_OPTIMALLY_EXTRACT_SPECTRUM_{NROW} || undef);
+  my $posrow = ($_OPTIMALLY_EXTRACT_SPECTRUM_{POSROW} || undef);
+  my $negrow = ($_OPTIMALLY_EXTRACT_SPECTRUM_{NEGROW} || undef);
 
-  # If prow or nrow are not defined we go and get it from the index file
-  unless (defined $prow && defined $nrow) {
+  # If posrow or negrow are not defined we go and get it from the index file
+  unless (defined $posrow && defined $negrow) {
     my @rows = $Cal->rows;
-    unless (defined $prow) {
+    unless (defined $posrow) {
       if (defined $rows[0]) {
-	$prow = $rows[0];
+	$posrow = $rows[0];
       } else {
-	$prow = 96; # take the default
+	$posrow = 96; # take the default
       }
     }
-    $nrow = $rows[1] unless defined $nrow;
+    $negrow = $rows[1] unless defined $negrow;
   }
 
   # If we could not find a negative row calculate it
-  if(!defined($nrow)) {
+  # This is effectively saying the the Cal->rows method returned
+  # nothing at all (ie no standard yet)
+  if(!defined($negrow)) {
     # if the user hasn't stated the negative row as a parameter, we need to calculate it
-      my $raoff = $Grp->hdr("RAOFF");
-      my $decoff = $Grp->hdr("DECOFF");
-      my $basera = $Grp->hdr("RABASE");
-      my $basedec = $Grp->hdr("DECBASE");
-      my $ra = $Grp->hdr("MEANRA");
-      my $dec = $Grp->hdr("MEANDEC");
-    
-    #my $raoff = $Frm->hdr("RAOFF");
-    #my $decoff = $Frm->hdr("DECOFF");
-    #my $basera = $Frm->hdr("RABASE");
-    #my $basedec = $Frm->hdr("DECBASE");
-    #my $ra = $Frm->hdr("MEANRA");
-    #my $dec = $Frm->hdr("MEANDEC");
-    
+    my $raoff = $Grp->hdr("RAOFF");
+    my $decoff = $Grp->hdr("DECOFF");
+    my $basera = $Grp->hdr("RABASE");
+    my $basedec = $Grp->hdr("DECBASE");
+    my $ra = $Grp->hdr("MEANRA");
+    my $dec = $Grp->hdr("MEANDEC");
+
     my $radist = 15 * cosdeg($basedec) * ($basera - $ra) * 3600;
     my $decdist = $dec - $basedec;
     my $slide = sqrt($radist * $radist + $decdist * $decdist);
-#    print $radist . " " . $decdist . " " . $slide . "\n";
-#    $nrow = nint($posrow + ($slide / 0.61));
-    $nrow = $prow + ($slide / 0.61);
-#    print $nrow . "\n";
+    #    print $radist . " " . $decdist . " " . $slide . "\n";
+    #    $negrow = nint($posrow + ($slide / 0.61));
+
+    if ($slide == 0) {
+      orac_warn "Negative extraction row could not be determined from FITS headers\n";
+      orac_warn "Defaulting to row 106\n";
+      $negrow = 106;
+
+    } else {
+      orac_print "Negative row determined from fits headers relative to row $posrow\n";
+      $negrow = $posrow + ($slide / 0.61);
+    }
+
   }
-  
-  my $startpos = $prow - 2;
-  my $endpos = $prow + 2;
-  my $startneg = $nrow - 2;
-  my $endneg = $nrow + 2;
+
+  my $startpos = $posrow - 2;
+  my $endpos = $posrow + 2;
+  my $startneg = $negrow - 2;
+  my $endneg = $negrow + 2;
 
 # create the positive and negative profiles
 
@@ -165,8 +171,8 @@ if((($Grp->file_exists) && (!(-e $outfile))) || ((-e $outfile) && ((stat($groupf
 
 # print congratulatory message
 
-  my $nnrow = nint($nrow);
-  orac_print "Positive (row $prow) and negative (row $nnrow) spectra from $group optimally extracted into $out\n";
+  my $nnrow = nint($negrow);
+  orac_print "Positive (row $posrow) and negative (row $nnrow) spectra from $group optimally extracted into $out\n";
 
 # update group object
 
