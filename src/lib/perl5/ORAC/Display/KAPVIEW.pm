@@ -49,7 +49,17 @@ use vars qw/$VERSION $DEBUG $AGI_USER $AGI_NODE $KAPPA13/;
 
 $VERSION = '0.10';
 $DEBUG = 0;
-$KAPPA13 = 0;  # True if we are using KAPPA 0.13
+
+# The KAPPA13 variable is true if we are using Kappa v0.13
+# and false otherwise. Dynamically check which version
+# by looking in the KAPPA_DIR directory
+
+if (-e "$ENV{KAPPA_DIR}/style.def") {
+  $KAPPA13 = 1;
+} else {
+  $KAPPA13 = 0;
+}
+
 
 =head1 PUBLIC METHODS
 
