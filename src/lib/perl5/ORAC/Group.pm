@@ -757,8 +757,10 @@ sub calc_orac_headers {
                    X_DIM
                    Y_DIM
                    X_LOWER_BOUND
+                   X_REFERENCE_PIXEL
                    X_UPPER_BOUND
                    Y_LOWER_BOUND
+                   Y_REFERENCE_PIXEL
                    Y_UPPER_BOUND
              /);
 

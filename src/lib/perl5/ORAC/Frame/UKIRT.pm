@@ -48,9 +48,11 @@ my %hdr = (
             STANDARD            => "STANDARD",
             WAVEPLATE_ANGLE     => "WPLANGLE",
             X_LOWER_BOUND       => "RDOUT_X1",
+            X_REFERENCE_PIXEL   => "CRPIX1",
             X_UPPER_BOUND       => "RDOUT_X2",
             Y_LOWER_BOUND       => "RDOUT_Y1",
-            Y_UPPER_BOUND       => "RDOUT_Y2"
+            Y_UPPER_BOUND       => "RDOUT_Y2",
+            Y_REFERENCE_PIXEL   => "CRPIX2"
         );
 
 # Take this lookup table and generate methods that can
