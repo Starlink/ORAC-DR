@@ -439,6 +439,46 @@ sub file_from_bits {
 }
 
 
+=item flag_from_bits
+
+Determine the name of the flag file given the variable
+component parts. A prefix (usually UT) and observation number
+should be supplied
+
+  $flag = $Obs->flag_from_bits($prefix, $obsnum);
+
+This particular method returns back the flag file associated with
+UFTI.
+
+=cut
+
+# Note - I don't agree that the base class should consist
+# of a mishmash of code related to many different instruments
+# depending on which sub came first. The file_from_bits
+# base method returns back the IRCAM specification and the flag_from_bits
+# base method returns a value in the UFTI style!!! (TimJ)
+# They only work together if the sub-classing is taken into account!
+
+sub flag_from_bits {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $obsnum = shift;
+  
+  # It is almost possible to derive the flag name from the 
+  # file name but not quite. In the UFTI case the flag name
+  # is  .UT_obsnum.fits.ok but the filename is fUT_obsnum.fits
+
+  # Retrieve the data file name
+  my $raw = $self->file_from_bits($prefix, $obsnum);
+
+  # Replace the 'f' with a '.' and append '.fits'
+  substr($raw,0,1) = '.';
+  $raw .= '.ok';
+}
+
+
+
 # Supply a method to find the group name and set it
 
 =item findgroup
