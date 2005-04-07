@@ -409,20 +409,36 @@ sub orac_loop_flag {
   # Get the obsno
   my $obsno = $obsref->[0];
 
+  # We use the second slot in the array to store the files read
+  # previously for this observation number. If it is empty then
+  # this is the first time through or the flag files are empty
+  # and so can not possibly be re-read
+  my $prev = $obsref->[1];
+  $prev = [] unless defined $prev;
+
   # Create a new frame in class
   my $Frm = $class->new;
 
   # Construct the flag name(s) from the observation number
   my @fnames = $Frm->flag_from_bits($utdate, $obsno);
 
-  # Now check for the file
+  # if our flag files contain pointers to multiple files then
+  # in principal we are always one flag file behind. We always
+  # have to look at $obsno and $obsno+1. If prev is defined we
+  # need to look for the next one as well
+  my @nnames;
+  @nnames = $Frm->flag_from_bits( $utdate, $obsno+1) if @$prev;
+
+
+  # Get the relevant string representing what we are looking for
   my $text;
   if (@fnames > 1) {
     $text = "$fnames[0] to $fnames[-1]";
   } else {
     $text = $fnames[0];
   }
-  orac_print("Checking for next data file via flag: $text");
+  $text .= " and next flag file" if @nnames;
+  orac_print("Checking for new data via flag: $text");
 
   # Now loop until the file appears
 
@@ -434,9 +450,47 @@ sub orac_loop_flag {
 
   # Get a full path to the flag files
   my @actual = _to_abs_path( @fnames );
+  my @nactual = _to_abs_path( @nnames );
 
-  # Dont need to worry about file size
-  while (! &_files_there( @actual ) ) {
+  # Check file size since that controls how we increment the observation
+  # number
+  my $nonzero;
+
+  # Now that we are looking (possibly) for two sets of data files
+  # we now must be in an infinite loop
+  while (1) {
+
+    # if the next observation has turned up we run with it
+    if (_files_there( @nactual ) ) {
+      # check file length
+      $nonzero = _files_nonzero(@nactual);
+      # increment the observation number
+      $obsno++;
+      # clear previous
+      $prev = [];
+
+      last;
+    }
+
+    # if the requested obsnum is available we first need to compare
+    # and contrast if we have a non zero size flag file
+    if (_files_there(@actual )) {
+      $nonzero = _files_nonzero( @actual );
+      last unless $nonzero;
+
+      # must be new if $prev is empty
+      last unless @$prev;
+
+      # read the file (should contain something)
+      my @all = _read_flagfiles( @actual );
+
+      orac_print "Found additional data associated with current observation..."
+        if @all > @$prev;
+
+      # simply compare number of entries. Not very robust but good enough
+      last if @all > @$prev;
+
+    }
 
     if ($skip) {
 
@@ -466,11 +520,15 @@ sub orac_loop_flag {
           orac_print ("\nFile $fnames[0] appears to be missing\n");
 
           # Okay - it wasnt the expected observation number
+	  # so make sure that is updated
           $obsno = $next;
-          $obsref->[0] = $obsno;  # And set the array value
 
-          # Create new flag filenames
-	  @actual = _to_abs_path( $Frm->flag_from_bits($utdate, $next) );
+          # Create new flag filenames so we can check file size
+	  @actual = _to_abs_path( $Frm->flag_from_bits($utdate, $obsno) );
+	  $nonzero = _files_nonzero( @actual );
+
+	  # clear previous list
+	  $prev = [];
 
           orac_print("Next available observation is number $obsno");
 
@@ -508,18 +566,28 @@ sub orac_loop_flag {
   # Link_and_read
   # A new $Frm is created and the file is converted to our base format (NDF).
   eval {
-    $Frm = link_and_read($class, $utdate, $obsno, 1);
+    $Frm = link_and_read($class, $utdate, $obsno, 1, $prev);
   };
   if ($@) {
     # that failed. This may indicate a sync issue so pause
     # for a couple of seconds and retry without the eval
     orac_warn "Error loading file for observation $obsno. Sleeping for 2 seconds...\n";
     orac_sleep(2);
-    $Frm = link_and_read($class, $utdate, $obsno, 1);
+    $Frm = link_and_read($class, $utdate, $obsno, 1, $prev);
   }
 
-  # Now need to increment obsnum for next time round
-  $$obsref[0]++;
+  # we can only increment the observation number if we are dealing
+  # with non-zero length flag files
+  if (!$nonzero) {
+    $obsno++;
+  }
+
+  # store the new value
+  $obsref->[0] = $obsno;
+
+  # make sure the previous reads are stored
+  # this will just be the contents of the flag files
+  $obsref->[1] = $prev if $nonzero;
 
   return $Frm;
 
@@ -830,7 +898,7 @@ sub orac_check_data_dir {
     # so get a dummy flag file
     my @dflags = $DummyFrm->flag_from_bits('p',1);
     if ($dflags[0] =~ /\.ok$/) {
-      $pattern = '^\..*\.ok$';   # ' - dummy quote for emacs colour
+      $pattern = '\.ok$';   # ' - dummy quote for emacs colour
     } else {
       # look for a hidden file that starts with a . and has
       # the fixed part string in it
@@ -918,17 +986,38 @@ and creating a Frame object.
 
   $frm = link_and_read($class, $ut, $obsnum, $flag)
 
-The four parameters are:
+  $frm = link_and_read($class, $ut, $obsnum, $flag, \@reflist)
+
+The five parameters are:
 
 =over 8
 
-=item class - class of Frame object
+=item class
 
-=item ut - UT date in YYYYMMDD
+Class of Frame object
 
-=item obsnum - observation number
+=item ut
 
-=item flag - if filename(s) is to come from flag file
+UT date in YYYYMMDD
+
+=item obsnum
+
+Observation number
+
+=item flag
+
+If filename(s) is to come from flag file
+
+=item reflist
+
+Reference to array of files names that should be excluded from
+the list of files read from the flag files (if flag files are non-zero).
+This allows for flag files that can change length during an observation
+(potentially allowing the pipeline to stop before the full observation
+is complete but after data files start appearing for the observation).
+The contents of this array are updated on exit to include the files that
+were just read. This allows the reference list to be resubmitted
+to this routine.
 
 =back
 
@@ -940,10 +1029,11 @@ A configured Frame object is returned if everything is okay
 sub link_and_read {
 
   croak 'Wrong number of args: link_and_read(class, ut, num, flag)'
-    unless scalar(@_) == 4; 
+    if (scalar(@_) != 4 && scalar(@_) != 5); 
 
-  my ($class, $ut, $num, $flag) = @_;
+  my ($class, $ut, $num, $flag, $reflist) = @_;
 
+  # create the new frame object that will receive the files
   my $Frm = $class->new();
 
   my @flagnames;
@@ -959,19 +1049,29 @@ sub link_and_read {
 
   # If we have a flagfile and it's non-zero size...
   if( $flag && &_files_nonzero(@flagnames) ) {
-    for my $flagname (@flagnames) {
-      open( my $flagfile, $flagname ) 
-	or orac_throw "Unable to open flag file $flagname: $!";
 
-      # Read the filenames from the file.
-      push(@names, grep /\w/, <$flagfile> );
+    @names = _read_flagfiles( @flagnames );
 
-      # Close the file.
-      close $flagfile;
+    # now remove any files that were in the reference list.
+    # compare with previous values (use a hash)
+    if (defined $reflist) {
+
+      # this will remove duplicate files from the flag file as well.
+      # Not a problem in real life but may be a problem with faked
+      # flag files
+      my %all = map { $_, undef } @names;
+      my %old = map { $_, undef } @$reflist;
+      @names = grep { !exists $old{$_} } keys %all;
+
+      if (!@names) {
+	orac_err "Internal error reading flag file. No new filenames detecting in flag file. This should not happen by this stage";
+	return undef;
+      }
+
+      # now update the reference list
+      @$reflist = keys %all;
+
     }
-
-    # add $ORAC_DATA_IN to path if not absolute
-    @names = _to_abs_path( @names );
 
   } else {
 
@@ -1065,9 +1165,12 @@ Return true if all the specified files are present.
    ...
  }
 
+Returns false is no files are supplied.
+
 =cut
 
 sub _files_there {
+  return 0 unless @_;
   for my $f (@_) {
     return 0 unless -e $f;
   }
@@ -1083,9 +1186,12 @@ a size greater than 0 bytes
    ...
  }
 
+Returns false if no files are supplied.
+
 =cut
 
 sub _files_nonzero {
+  return 0 unless @_;
   for my $f (@_) {
     return 0 unless -s $f;
   }
@@ -1287,6 +1393,35 @@ sub _convert_and_link_nofrm {
 
   return @bname;
 }
+
+=item B<_read_flagfiles>
+
+Read the specified flag files and return the contents.
+
+=cut
+
+sub _read_flagfiles {
+  my @flagnames = @_;
+
+  my @names;
+  for my $flagname (@flagnames) {
+    open( my $flagfile, $flagname ) 
+      or orac_throw "Unable to open flag file $flagname: $!";
+
+    # Read the filenames from the file.
+    push(@names, grep /\w/, <$flagfile> );
+
+    # Close the file.
+    close $flagfile
+      or orac_throw "Error closing flag file $flagname: $!";
+  }
+
+  # add $ORAC_DATA_IN to path if not absolute
+  return _to_abs_path( @names );
+}
+
+
+=back
 
 =back
 
