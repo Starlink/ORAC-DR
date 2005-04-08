@@ -749,6 +749,7 @@ sub orac_determine_primitive_search_path {
 
   } elsif( $inst =~ /^SCUBA2/ ) {
     push( @path, File::Spec->catdir( $root, 'SCUBA2') );
+    push( @path, $imaging_root );
     push( @path, $general_root );
 
   } elsif( $inst eq 'JCMT_DAS' ) {
