@@ -165,24 +165,174 @@ sub configure {
   # Set the raw files.
   $self->raw( @fnames );
 
+  # Read the fits headers from all the raw files (since they should all have
+  # .FITS)
+  my %rfits;
+  for my $f (@fnames) {
+    my $fits;
+    eval {
+      $fits = new Astro::FITS::Header::NDF( File => $f );
+      $fits->tiereturnsref(1);
+    };
+    if ($@) {
+      # should not happen in real data but may happen in simulated
+      # data
+      $fits = new Astro::FITS::Header( Cards => []);
+    }
+    $rfits{$f}->{PRIMARY} = $fits;
+  }
+
   # Set the filenames. Replace with processed images where appropriate
   my @paths;
   for my $f (@fnames) {
     my @internal = $self->_find_processed_images( $f );
     if (@internal) {
       push(@paths, @internal );
+      # and read the FITS headers
+      my @hdrs;
+      for my $i (@internal) {
+
+	my $fits;
+	eval {
+	  $fits = new Astro::FITS::Header::NDF( File => $i );
+	  $fits->tiereturnsref(1);
+	};
+	if ($@) {
+	  # should not happen in real data but may happen in simulated
+	  # data
+	  $fits = new Astro::FITS::Header( Cards => []);
+	}
+
+	# Just store each one in turn. We can not index by a unique
+	# name since I1 can be reused between files in the same frame
+	push(@hdrs, $fits);
+	
+      }
+
+      $rfits{$f}->{SECONDARY} = \@hdrs;
+
     } else {
       push(@paths, $f );
     }
   }
 
+  # first thing we need to do is find which keys differ
+  # between the .I1 and .IN processed images
+  for my $f (keys %rfits) {
+
+    # Rather than finding the unique keys of the primary and all the
+    # secondary headers (Which may result in no headers that are
+    # shared between primary and child) we first remove duplicate keys
+    # from the child header and move them to the primary. In general
+    # the secondary headers will either be completely unique keys
+    # (otherwise they would be in the primary) or a complete copy
+    # of the primary plus the unique keys.
+
+    # in the former case, there will be no identical keys and so
+    # nothing to merge into the PRIMARY header. In the latter, 95%
+    # will probably be identical and that will probably be identical
+    # to the bulk of the primary header.
+
+    if (exists $rfits{$f}->{SECONDARY}) {
+      # make sure we always return an entry in @different
+      my ($same, @different) = $self->_merge_fits( { force_return_diffs => 1},
+						   @{$rfits{$f}->{SECONDARY}});
+
+      # differences should now be written to the SECONDARY array
+      # since those are now the unique headers. We 
+      $rfits{$f}->{SECONDARY} = \@different;
+
+      # and merge the matching keys into the parent header
+      # in this case, headers that are not present in either the child
+      # or the primary header should be included in the merged header.
+      my ($merged, $funique, $cunique) = $self->_merge_fits( { merge_unique => 1 }, 
+							     $rfits{$f}->{PRIMARY}, $same);
+
+      # Since we have merged unique keys into the primary header, anything
+      # that is present in the "different" headers will be problematic since
+      # it implies that we have headers that are present in both the .I
+      # components and the primary header but that are identical between
+      # the .I components yet different to the primary header. This is a 
+      # problem and we need to issue a warning
+      if (defined $funique || defined $cunique) {
+	orac_warn("Headers are present in the primary FITS header of $f that clash with different values that are fixed amongst the processed components. This is not allowed.\n");
+	
+	orac_warn("Primary header:\n". $funique ."\n")
+          if defined $funique;
+	orac_warn("Component header:\n". $cunique ."\n")
+          if defined $cunique;
+      }
+
+      # Now reset the PRIMARY header to be the merge
+      $rfits{$f}->{PRIMARY} = $merged;
+    }
+  }
+
+  # Now we need to merge the primary headers into a single
+  # global header. We do not merge unique headers (there should not be
+  # any anyway) as those should be pushed back down
+
+  # merge in the original filename order
+
+  my ($primary, @different) = $self->_merge_fits( map {
+                                                   $rfits{$_}->{PRIMARY} 
+						 } @fnames);
+
+  # The leftovers have to be stored back into the subheaders
+  # but we also need to extract subheaders
+  my $stored_good;
+  my @subhdrs;
+  for my $i (0..$#fnames) {
+    my $f = $fnames[$i];
+    my $diff = $different[$i];
+
+    if (exists $rfits{$f}->{SECONDARY}) {
+
+
+      # merge with the child FITS headers if required
+      if (defined $diff) {
+	$stored_good = 1;
+	push(@subhdrs, map { $_->splice(-1,0,$diff->allitems); $_ } 
+	    @{ $rfits{$f}->{SECONDARY}});
+      } else {
+	# just store what we have (which may be empty)
+	for my $h (@{$rfits{$f}->{SECONDARY}}) {
+	  $stored_good = 1 if $h->sizeof > 0;
+	  push(@subhdrs, $h);
+	}
+      }
+
+    } else {
+      # we only had a primary header so this is only defined if we have
+      # a difference
+      if (defined $diff) {
+	$stored_good = 1; # indicate that we have at least one valid subhdr
+	push(@subhdrs, $diff);
+      } else {
+	# store blank header
+	push(@subhdrs, new Astro::FITS::Header( Cards => []));
+      }
+    }
+
+  }
+
+  # do we really have a subhdr?
+  if ($stored_good) {
+    if (@subhdrs != @paths) {
+      orac_err("Error forming sub-headers from FITS information. The number of subheaders does not equal the number of file paths (".
+	       scalar(@subhdrs) . " != " . scalar(@paths).")\n");
+    }
+    $primary->subhdrs( @subhdrs );
+  }
+
+  # Now make sure that the header is populated
+  $self->fits( $primary );
+  $self->calc_orac_headers;
+
   # register these files
   for my $i (1..scalar(@paths) ) {
     $self->file($i, $paths[$i-1]);
   }
-
-  # Populate the base header from the first file
-  $self->readhdr($fnames[0]);
 
   # Find the group name and set it.
   $self->findgroup;
@@ -502,6 +652,128 @@ sub _find_processed_images {
   return @images;
 }
 
+=item B<_merge_fits>
+
+Given a set of FITS objects, return a merged FITS header (with the
+keys that have the same value and comment across all headers) and new
+FITS headers for each input header containing the header items that
+differ (including keys that are not present in all headers)
+
+ ($same, @different) = $Frm->_merge_fits( \%options, $fits1, $fits2, ...);
+
+@different can be empty if all headers match but if any headers are
+different there will always be the same number of headers in
+@different as supplied to the function. An empty list is returned if
+not headers are supplied.
+
+The options hash is itself optional. It contains the following keys:
+
+ merge_unique - if a key is only present in one header, propogate
+                to the merged header rather than retaining it.
+
+ force_return_diffs - return an empty object per input header
+                      even if there are no diffs
+
+=cut
+
+sub _merge_fits {
+  my $self = shift;
+
+  # optional options handling
+  my %opt = ( merge_unique => 0,
+	      force_return_diffs => 0,
+	    );
+  if (ref($_[0]) eq 'HASH') {
+    my $o = shift;
+    %opt = ( %opt, %$o );
+  }
+
+  # everything else is fits headers
+  my @fits = @_;
+  return () unless @fits;
+  return $fits[0] unless @fits > 1;
+
+  # Convert all the headers into cards for easy manipulation
+  my @cards = map { [ $_->cards ]} @fits;
+
+  # Now we need to find an easy way of comparing the concatenated header
+  # with individual header. We do this by forming a hash for each header
+  # with the card as the keyword and the value as the original location
+  # of that keyword in the header. We store these hashes in an array
+  # in the same order as the original headers.
+  my @cardhash;
+  for my $f (@cards) {
+    # the card is the hash key and the value is the location in the
+    # original array
+    my $i = 0;
+    my %keys = map { $_, $i++ } @$f;
+    push(@cardhash, \%keys);
+  }
+
+  # Now we need to generate an array of all the unique cards we
+  # have available to us in the order we were given them originally.
+  # We can not use a simple hash directly. We use "existence" to control
+  # whether or not to store the card
+  my %allcards;
+  my @unique;
+  # loop over each header (we could optimize by assuming the fits header
+  # only has unique cards)
+  for my $h (@cards) {
+    # loop over individual cards
+    for my $c (@$h) {
+      if (!exists $allcards{$c}) {
+	$allcards{$c}++;
+	push(@unique, $c);
+      }
+    }
+  }
+
+  # and loop over them all to get the merged header (we already can work
+  # out the coverage by looking at %allcards but we need to know where
+  # a card came from if it is only in one or two places)
+  my @merge;
+  for my $c (@unique) {
+
+    # does the card exist?
+    my $exists = grep { exists $_->{$c} } @cardhash;
+
+    if ($exists == scalar(@cardhash) ||
+	($opt{merge_unique} && $exists == 1) ) {
+      # We have match across all inputs or a unique match
+      # so store it in the merged header
+      push(@merge, $c);
+
+      # and remove it from each of the input headers
+      for my $i (0..$#cards) {
+	# can not delete it yet (we do not want the count to change)
+	# so undef the value
+	# merge_unique==true does allow this to trigger without a
+	# corresponding lookup existing
+	my $index = (exists $cardhash[$i]->{$c} ? $cardhash[$i]->{$c} : undef);
+	next unless defined $index;
+	$cards[$i]->[$index] = undef;
+      }
+    }
+
+  }
+
+  # filter out the undef values
+  for my $c (@cards) {
+    @$c = grep { defined $_ } @$c;
+  }
+
+  # and clear @cards in the special case where none have any headers
+  if (!$opt{force_return_diffs}) {
+    @cards = () unless grep { @$_ != 0 } @cards;
+  }
+
+  # convert back to FITS object
+  my $same = new Astro::FITS::Header( Cards => \@merge );
+  my @diff = map { new Astro::FITS::Header( Cards => $_ ) } @cards;
+
+  return ($same, @diff);
+}
+
 =end __INTERNAL_METHODS
 
 =head1 SEE ALSO
@@ -521,6 +793,18 @@ Tim Jenness (t.jenness@jach.hawaii.edu)
 Copyright (C) 1998-2005 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
