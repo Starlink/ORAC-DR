@@ -560,13 +560,17 @@ sub orac_loop_flag {
     }
 
   }
-  orac_print "\nFound\n";
+  orac_print "\nFound data from observation $obsno\n";
 
   # The flag has appeared therefore we believe the file is there as well.
   # Link_and_read
   # A new $Frm is created and the file is converted to our base format (NDF).
   eval {
-    $Frm = link_and_read($class, $utdate, $obsno, 1, $prev);
+    # take a copy of $prev to prevent bizarre error if we get an error
+    # and immediate retry
+    my @local = @$prev;
+    $Frm = link_and_read($class, $utdate, $obsno, 1, \@local);
+    @$prev = @local;
   };
   if ($@) {
     # that failed. This may indicate a sync issue so pause
