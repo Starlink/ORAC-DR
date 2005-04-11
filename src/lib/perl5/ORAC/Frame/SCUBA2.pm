@@ -235,18 +235,20 @@ sub configure {
 
     if (exists $rfits{$f}->{SECONDARY}) {
       # make sure we always return an entry in @different
-      my ($same, @different) = $self->_merge_fits( { force_return_diffs => 1},
-						   @{$rfits{$f}->{SECONDARY}});
+      my ($secfirst, @secrest) = @{ $rfits{$f}->{SECONDARY} };
+      my ($same, @different) = $secfirst->merge_primary( { force_return_diffs => 1},
+							 @secrest );
 
       # differences should now be written to the SECONDARY array
-      # since those are now the unique headers. We 
+      # since those are now the unique headers.
       $rfits{$f}->{SECONDARY} = \@different;
 
       # and merge the matching keys into the parent header
       # in this case, headers that are not present in either the child
       # or the primary header should be included in the merged header.
-      my ($merged, $funique, $cunique) = $self->_merge_fits( { merge_unique => 1 }, 
-							     $rfits{$f}->{PRIMARY}, $same);
+      my ($merged, $funique, $cunique) = $rfits{$f}->{PRIMARY}->merge_primary(
+							     {merge_unique => 1},
+									   $same );
 
       # Since we have merged unique keys into the primary header, anything
       # that is present in the "different" headers will be problematic since
@@ -273,10 +275,8 @@ sub configure {
   # any anyway) as those should be pushed back down
 
   # merge in the original filename order
-
-  my ($primary, @different) = $self->_merge_fits( map {
-                                                   $rfits{$_}->{PRIMARY} 
-						 } @fnames);
+  my ($preference, @pheaders) = map { $rfits{$_}->{PRIMARY} } @fnames;
+  my ($primary, @different) = $preference->merge_primary( @pheaders );
 
   # The leftovers have to be stored back into the subheaders
   # but we also need to extract subheaders
@@ -297,7 +297,7 @@ sub configure {
       } else {
 	# just store what we have (which may be empty)
 	for my $h (@{$rfits{$f}->{SECONDARY}}) {
-	  $stored_good = 1 if $h->sizeof > 0;
+	  $stored_good = 1 if $h->sizeof > -1;
 	  push(@subhdrs, $h);
 	}
       }
@@ -650,128 +650,6 @@ sub _find_processed_images {
   err_end( $status );
 
   return @images;
-}
-
-=item B<_merge_fits>
-
-Given a set of FITS objects, return a merged FITS header (with the
-keys that have the same value and comment across all headers) and new
-FITS headers for each input header containing the header items that
-differ (including keys that are not present in all headers)
-
- ($same, @different) = $Frm->_merge_fits( \%options, $fits1, $fits2, ...);
-
-@different can be empty if all headers match but if any headers are
-different there will always be the same number of headers in
-@different as supplied to the function. An empty list is returned if
-not headers are supplied.
-
-The options hash is itself optional. It contains the following keys:
-
- merge_unique - if a key is only present in one header, propogate
-                to the merged header rather than retaining it.
-
- force_return_diffs - return an empty object per input header
-                      even if there are no diffs
-
-=cut
-
-sub _merge_fits {
-  my $self = shift;
-
-  # optional options handling
-  my %opt = ( merge_unique => 0,
-	      force_return_diffs => 0,
-	    );
-  if (ref($_[0]) eq 'HASH') {
-    my $o = shift;
-    %opt = ( %opt, %$o );
-  }
-
-  # everything else is fits headers
-  my @fits = @_;
-  return () unless @fits;
-  return $fits[0] unless @fits > 1;
-
-  # Convert all the headers into cards for easy manipulation
-  my @cards = map { [ $_->cards ]} @fits;
-
-  # Now we need to find an easy way of comparing the concatenated header
-  # with individual header. We do this by forming a hash for each header
-  # with the card as the keyword and the value as the original location
-  # of that keyword in the header. We store these hashes in an array
-  # in the same order as the original headers.
-  my @cardhash;
-  for my $f (@cards) {
-    # the card is the hash key and the value is the location in the
-    # original array
-    my $i = 0;
-    my %keys = map { $_, $i++ } @$f;
-    push(@cardhash, \%keys);
-  }
-
-  # Now we need to generate an array of all the unique cards we
-  # have available to us in the order we were given them originally.
-  # We can not use a simple hash directly. We use "existence" to control
-  # whether or not to store the card
-  my %allcards;
-  my @unique;
-  # loop over each header (we could optimize by assuming the fits header
-  # only has unique cards)
-  for my $h (@cards) {
-    # loop over individual cards
-    for my $c (@$h) {
-      if (!exists $allcards{$c}) {
-	$allcards{$c}++;
-	push(@unique, $c);
-      }
-    }
-  }
-
-  # and loop over them all to get the merged header (we already can work
-  # out the coverage by looking at %allcards but we need to know where
-  # a card came from if it is only in one or two places)
-  my @merge;
-  for my $c (@unique) {
-
-    # does the card exist?
-    my $exists = grep { exists $_->{$c} } @cardhash;
-
-    if ($exists == scalar(@cardhash) ||
-	($opt{merge_unique} && $exists == 1) ) {
-      # We have match across all inputs or a unique match
-      # so store it in the merged header
-      push(@merge, $c);
-
-      # and remove it from each of the input headers
-      for my $i (0..$#cards) {
-	# can not delete it yet (we do not want the count to change)
-	# so undef the value
-	# merge_unique==true does allow this to trigger without a
-	# corresponding lookup existing
-	my $index = (exists $cardhash[$i]->{$c} ? $cardhash[$i]->{$c} : undef);
-	next unless defined $index;
-	$cards[$i]->[$index] = undef;
-      }
-    }
-
-  }
-
-  # filter out the undef values
-  for my $c (@cards) {
-    @$c = grep { defined $_ } @$c;
-  }
-
-  # and clear @cards in the special case where none have any headers
-  if (!$opt{force_return_diffs}) {
-    @cards = () unless grep { @$_ != 0 } @cards;
-  }
-
-  # convert back to FITS object
-  my $same = new Astro::FITS::Header( Cards => \@merge );
-  my @diff = map { new Astro::FITS::Header( Cards => $_ ) } @cards;
-
-  return ($same, @diff);
 }
 
 =end __INTERNAL_METHODS
