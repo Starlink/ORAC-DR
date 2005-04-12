@@ -166,7 +166,8 @@ my @phukeys = ("DATE","ORIGIN","TELESCOP","INSTRUME","DHSVER","HDTFILE",
 	       "HUMIDITY","MIRR_NE","MIRR_NW","MIRR_SE","MIRR_SW","MIRRBTNW",
 	       "MIRRTPNW","SECONDAR","TOPAIRNW","TRUSSENE","TRUSSWSW",
 	       "WIND_DIR","WIND_SPD","CSOTAU","TAUDATE","TAUSRC","M2_X","M2_Y",
-	       "M2_Z","M2_U","M2_V","M2_W");
+	       "M2_Z","M2_U","M2_V","M2_W","TCS_FOC","FOC_POSN","FOC_ZERO",
+	       "FOC_OFFS","FOC_FOFF","FOC_I","FOC_OFF","NFOC","NFOCSCAN");
 
 # Keywords for extension header unit
 
@@ -176,8 +177,7 @@ my @ehukeys = ("INHERIT","DETECTOR","DETECTID","DROWS","DCOLUMNS",
 	       "READOUT","CAPPLICN","CAMROLE","CAMPOWER","RUNID","CTYPE1",
 	       "CTYPE2","CRPIX1","CRPIX2","CRVAL1","CRVAL2","CRUNIT1",
 	       "CRUNIT2","CD1_1","CD1_2","CD2_1","CD2_2","PV2_1","PV2_2",
-	       "PV2_3","TCS_FOC","FOC_POSN","FOC_ZERO","FOC_OFFS","FOC_FOFF",
-               "FOC_I","FOC_OFF","NFOC","NFOCSCAN"); 
+	       "PV2_3");
 
 =head1 PUBLIC METHODS
 
