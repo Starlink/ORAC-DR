@@ -318,8 +318,8 @@ foreach $j (1 .. $nhdu) {
     } else {
 	$cpm = "noconf";
     }
-    $retval = cir_imcore ($outd,$cpm,$IPIX,$THRESH,$ICROWD,$RCORE,$GRID,
-			  $outcat,"",0,$CATTYPE,$errmsg);
+    $retval = cir_imcore($outd,$cpm,$IPIX,$THRESH,$ICROWD,$RCORE,$GRID,
+			 $outcat,"",0,$CATTYPE,$errmsg);
     if ($retval != CIR_OK) {
         print $msg_fh "CIR_IMCORE failed on dither %s -- %s\n",$outd,$errmsg;
 	exit 1;
@@ -457,7 +457,8 @@ foreach $j (1 .. $nhdu) {
 		      "[arcsec] Ref RA shift pass 2 to 0 (new - old)",$status);
     $fptr->update_key(TFLOAT,"DECZP20",$DQC{'DECZP'},
 		      "[arcsec] Ref Dec shift pass 2 to 0 (new - old)",$status);
-    $fptr->read_key(TINT,"CAMNUM",$DQC{'CAMNUM'},$junk,$status);
+    $fptr->read_key(TINT,"CAMNUM",$val,$junk,$status);
+    $DQC{'CAMNUM'} = $val;
     $fptr->close_file($status); 
 
     # Process the history records
@@ -468,6 +469,10 @@ foreach $j (1 .. $nhdu) {
         cir_prochist($fnamesub);
     }
 
+    # Modifiy the seeing DQC index so that it's in arcseconds.
+
+    seeing($outd);
+
     # Write out the dqc index
 
     $DQC{'ORACTIME'} = $oractime;
@@ -476,6 +481,28 @@ foreach $j (1 .. $nhdu) {
 }
 
 exit 0;
+
+sub seeing {
+    my ($fname) = @_;
+
+    # Open the file and read the CD matrix. Keep the biggest one (absolute
+    # value). Since the rotation is small this is probably just fine
+
+    my $status = 0;
+    my @cds = ('CD1_1','CD1_2','CD2_1','CD2_2');
+    my $fptr = Astro::FITS::CFITSIO::open_file($fname,READONLY,$status);
+    my @vals = ();
+    my ($val,$junk);
+    foreach my $kk (@cds) {
+        $fptr->read_key(TFLOAT,$kk,$val,$junk,$status);
+        push @vals,abs($val);
+    }
+    $val = 3600.0*max(@vals);
+
+    # Now scale the seeing DQC parameter
+
+    $DQC{'SEEING'} *= $val;
+}
 
 sub write_dqc {
     my ($outd) = @_;
