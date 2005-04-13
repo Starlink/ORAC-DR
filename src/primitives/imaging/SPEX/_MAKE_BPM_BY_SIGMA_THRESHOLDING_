@@ -1,0 +1,202 @@
+# Name:
+#    _MAKE_BPM_BY_SIGMA_THRESHOLDING_
+
+# Purpose:
+#    Creates a bad-pixel mask from a long dark exposure.
+
+# Language:
+#    Perl5
+
+# Description:
+#    This primitive creates a bad-pixel mask from a long-exposure dark
+#    by first determining a sigma-clipped mean and standard deviation,
+#    then flagging as bad all pixels a specified number of clipped
+#    standard deviations above and below the clipped mean.  All other
+#    pixel values are set to 0.  A further mask is applied to exclude
+#    the low-value, noisy regions at the top, right and bottom of the
+#    detector.  The resultant bad-pixel mask filed in the calibration
+#    system.
+#
+# Arguments:
+#    CLIP = CHARACTER (Read)
+#       The clipping limits to form a representative mean and standard
+#       deviation of pixel values, as a comma-separated list.  ["2,3,3"]
+#    MIN_EXPOSURE = REAL (Given)
+#       The minimum allowed exposure for the dark frame in seconds.
+#       It is constrained to be at least 10.0  [20.0] 
+#    SIGMA = REAL (Given)
+#       The number of clipped standard deviations about the clipped mean
+#       beyond which pixels are flagged as bad.  The minimum permitted
+#       is 3.0.  [5.0]
+
+# Notes:
+#    -  Only operates on DARK frames, intended for SPEX in imaging mode.
+#    -  Uses primitive _CLIPPED_STATS_.
+#    -  The mask defined the unreliable periphery pixels is 
+#    $ORAC_DATA_CAL/bad_edges.ard.
+
+# Output Data:
+#    The bad pixel mask called bpm_<obsnum>, where <obsnum> is the
+#    observation number.
+
+# Tasks:
+#    KAPPA: ARDMASK, SETBAD, THRESH
+
+# Authors:
+#    MJC: Malcolm J. Currie (Starlink)
+#    {enter_new_authors_here}
+
+# Copyright:
+#    Copyright (C) 2003-2005 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+
+#-
+
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "DARK" ) {
+
+# Obtain arguments.
+       my $clip = ( $_MAKE_BPM_BY_SIGMA_THRESHOLDING_{CLIP} || "2,3,3" );
+       my $minexp = ( $_MAKE_BPM_BY_SIGMA_THRESHOLDING_{MINEXP} || 20.0 );
+       my $sigma = ( $_MAKE_BPM_BY_SIGMA_THRESHOLDING_{SIGMA} || 5 );
+
+# Constrain arguments.
+       $minexp = max( 10.0, $minexp );
+       $sigma = max( 3.0, $sigma );
+
+# Specify input and output file names.
+       my $in = $Frm->file;
+       my $out = "bpm_" . $Frm->number;
+
+# Determine if the dark has sufficient integration time to overcome
+# noise.
+       my $exptime = $Frm->uhdr( "ORAC_EXPOSURE_TIME" );
+       if ( ! defined( $exptime ) ) {
+          orac_err "Exposure time for dark $in is not defined.\n"; 
+       } elsif ( $exptime < $minexp ) {
+          orac_err "Exposure time $exptime for dark $in is less than the minimum $minexp allowed.\n";
+       }
+
+# Form clipped statistics.
+       _CLIPPED_STATS_ CLIP=$clip
+       my $clmean = $_CLIPPED_STATS_{MEAN};
+       my $clsigma = $_CLIPPED_STATS_{SIGMA};
+
+# Use two temporary files during construction of the bad-pixel mask.
+       my $temp = new ORAC::TempFile;
+       my $tmp = $temp->file;
+
+       my $temp2 = new ORAC::TempFile;
+       my $tmp2 = $temp2->file;
+
+# Set the pixel-value limits.  Between these limits, pixels are deemed
+# satisfactory, and will be zero in the bad-pixel mask.  The remaining
+# pixels are set bad.
+       my $lower = $clmean - $sigma * $clsigma;
+       my $upper = $clmean + $sigma * $clsigma;
+       $Mon{ "kappa_mon" }->obeyw( "thresh", "in=$in out=$tmp thrlo=$lower thrhi=$upper newhi=bad newlo=bad" );
+       $Mon{ "kappa_mon" }->obeyw( "thresh", "in=$tmp out=$tmp2 thrlo=0 thrhi=0 newhi=0 newlo=0 title=$out" );
+
+# Apply a mask of the borders along three sides where the detector is
+# much less sensitive than the bulk of the array, yet very noisy.
+       my $ardfile = File::Spec->catfile( $ENV{'ORAC_DATA_CAL'}, "bad_edges.ard" );
+       $Mon{ "kappa_mon" }->obeyw( "ardmask", "in=$tmp2 out=$out ardfile=$ardfile" );
+       orac_print "Masking unreliable pixels in the upper, lower, and right peripheries.\n";
+
+# Record that the mask contains bad pixels.
+#       $Mon{ "ndfpack_mon"}->obeyw( "setbad", "ndf=$out value" );
+
+# Inform the user of progress. 
+       my $fsl = sprintf( "%.3f", $lower );
+       my $fsu = sprintf( "%.3f", $upper );
+       orac_print "The bad-pixel mask $out has been created using valid data limits $fsl and $fsu.\n";
+
+# Update the current frame.
+       $Frm->file( $out );
+
+       orac_print "\n";
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_MAKE_BPM_BY_SIGMA_THRESHOLDING_ -- Creates a bad-pixel mask from a long dark exposure.
+
+=head1 DESCRIPTION
+
+This primitive creates a bad-pixel mask from a long-exposure dark
+by first determining a sigma-clipped mean and standard deviation,
+then flagging as bad all pixels a specified number of clipped
+pixel values are set to 0.  A further mask is applied to exclude
+the low-value, noisy regions at the top, right and bottom of the
+detector.  The resultant bad-pixel mask filed in the calibration
+system.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item CLIP = CHARACTER (Read)
+
+The clipping limits to form a representative mean and standard
+deviation of pixel values, as a comma-separated list.  ["2,3,3"]
+
+=item MIN_EXPOSURE = REAL (Given)
+
+The minimum allowed exposure for the dark frame in seconds.
+It is constrained to be at least 10.0  [20.0] 
+
+=item SIGMA = REAL (Given)
+
+The number of clipped standard deviations about the clipped mean
+beyond which pixels are flagged as bad.  The minimum permitted
+is 3.0.  [5.0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Only operates on DARK frames, intended for SPEX in imaging mode.
+
+=item *
+
+Uses primitive L<_CLIPPED_STATS_|_CLIPPED_STATS_>.
+
+=item *
+
+The mask defined the unreliable periphery pixels is 
+F<$ORAC_DATA_CAL/bad_edges.ard>.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+The bad pixel mask called bpm_E<lt>obsnumE<gt>, where E<lt>obsnumE<gt> is the
+observation number.
+
+=back
+
+=head1 TASKS
+
+KAPPA: ARDMASK, SETBAD, THRESH
+
+=head1 AUTHORS
+
+Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003-2005 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+
+
