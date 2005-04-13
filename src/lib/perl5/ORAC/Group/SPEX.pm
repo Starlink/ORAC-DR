@@ -165,9 +165,9 @@ sub _to_OBSERVATION_TYPE {
    my $type = "OBJECT";
    if ( defined $self->hdr->{OBJECT} ) {
       my $object = uc( $self->hdr->{OBJECT} );
-      if ( $object eq "DARK" ) {
-         $type = $object;
-      } elsif ( $object =~ /FLAT/ ) {
+      if ( $object =~ /^dark/i ) {
+         $type = "DARK";
+      } elsif ( $object =~ /flat/i ) {
          $type = "FLAT";
       }
    }
