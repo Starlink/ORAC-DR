@@ -94,6 +94,8 @@ my ($name,$path,$suffix) = fileparse($allfiles[0],".fit");
 my $outdith = sprintf("%s_st%s",$name,$suffix);
 my $outconf = sprintf("%s_st_conf%s",$name,$suffix);
 my $outcat = sprintf("%s_st_cat%s",$name,$suffix);
+$name =~ /\S(\d{8})/;
+my $utdate = $1;
 
 # If it already exists, then don't continue...
 
@@ -251,6 +253,8 @@ unlink $ref;
 my $minx = min(@xoffs);
 my $miny = min(@yoffs); 
 foreach $i (0 .. $nf-1) {
+    $xoffs[$i] -= $minx;
+    $yoffs[$i] -= $miny;
     foreach $j (1 .. $nhdu) {
         my $fnamesub = sprintf("%s[%d]",$allfiles[$i],$j);
         $retval = cir_update_hdr($fnamesub,"CIR_XOFF","FLOAT",$xoffs[$i],
@@ -311,6 +315,26 @@ foreach $j (1 .. $nhdu) {
     }
     print $msg_fh "Files successfully dithered to $outd $outc\n";
 
+    # Update the header by shifting CRPIX by the offset of the first frame
+    # (which is the frame from which the output image will have inherited
+    # its initial WCS).
+
+    $status = 0;
+    $fptr = Astro::FITS::CFITSIO::open_file($outd,READWRITE,$status);
+    if ($status != 0) {
+        fitserr($status,"Can't open file $outd");
+	exit 1;
+    }
+    $fptr->get_img_size(\@naxis,$status);
+    my $junk;
+    $fptr->read_key(TDOUBLE,"CRPIX1",$value,$junk,$status);
+    $value += $xoffs[0];
+    $fptr->update_key(TDOUBLE,"CRPIX1",$value,$junk,$status);    
+    $fptr->read_key(TDOUBLE,"CRPIX2",$value,$junk,$status);
+    $value += $yoffs[0];
+    $fptr->update_key(TDOUBLE,"CRPIX2",$value,$junk,$status);    
+    $fptr->close_file($status);
+
     # Do the catalogue generation for this image extension
 
     if ($doconf) {
@@ -329,14 +353,6 @@ foreach $j (1 .. $nhdu) {
     # Fit a WCS to the output dither using the catalogue generated above.
     # Start by getting some information about the current WCS
 
-    $status = 0;
-    $fptr = Astro::FITS::CFITSIO::open_file($outd,READONLY,$status);
-    $fptr->get_img_size(\@naxis,$status);
-    $fptr->close_file($status);
-    if ($status != 0) {
-        fitserr($status,"Can't open file $outd");
-	exit 1;
-    }
     my ($raref,$decref);
     $retval = cir_xy2radec($outd,0.5*$naxis[0],0.5*$naxis[1],$raref,$decref,
 			   $errmsg);
@@ -386,7 +402,7 @@ foreach $j (1 .. $nhdu) {
     }
     unlink $tmp;
     $fptr = Astro::FITS::CFITSIO::open_file($outd,READONLY,$status);
-    my ($junk,$stdcrms,$numbrms);
+    my ($stdcrms,$numbrms);
     $fptr->read_key(TFLOAT,"STDCRMS",$stdcrms,$junk,$status);
     $fptr->read_key(TINT,"NUMBRMS",$numbrms,$junk,$status);
     $fptr->close_file($status);
@@ -477,10 +493,147 @@ foreach $j (1 .. $nhdu) {
 
     $DQC{'ORACTIME'} = $oractime;
     write_dqc($outd);
+    log_results($utdate,$outd);
         
 }
 
 exit 0;
+
+sub log_results {
+    my ($utdate,$outf) = @_;
+
+    # Does the log file exist already? If not then create it and put in some
+    # column headers 
+
+    my $logfile = sprintf("res_%d.log",$utdate);
+    my $oldfile = (-f $logfile);
+    my $log_fh = new FileHandle;
+    $log_fh->open(">>$logfile");
+    $log_fh->autoflush;
+    if (! $oldfile) {
+        my $heading1 = "";
+        my $heading2 = "";
+
+        # File name
+
+        $heading1 .= "          Filename          |";
+	$heading2 .= "----------------------------|";
+	#             123456789+123456789+12345678
+
+        # UT date and time
+
+        $heading1 .= " UTdate |   UT   |";
+        $heading2 .= "--------|--------|";
+	#             123456789+123456789+12345678
+
+        # RA and Dec (base)
+
+        $heading1 .= "    RA    |    Dec    |";
+	$heading2 .= "----------|-----------|";
+	#             123456789+123456789+12345678
+    
+	# Airmass, filter, exposure time
+
+        $heading1 .= " AM |Filter| ExpT |";
+	$heading2 .= "----|------|------|";
+	#             123456789+123456789+12345678
+
+        # Seeing and ellipticity
+
+        $heading1 .= "FWHM|Ellp|";
+        $heading2 .= "----|----|";
+	#             123456789+123456789+12345678
+
+        # Skylevel and sky noise
+
+        $heading1 .= "  Sky   |SkyRMS|";
+        $heading2 .= "--------|------|";
+	#             123456789+123456789+12345678
+
+        # Mag zeropoint and error
+
+        $heading1 .= "MagZPT|MagZRR|";
+        $heading2 .= "------|------|";
+	#             123456789+123456789+12345678
+
+        # WCS fit goodness and number of standards
+
+        $heading1 .= "WCSRMS|N_WCS|";
+        $heading2 .= "------|-----|";
+	#             123456789+123456789+12345678
+        printf $log_fh "%s\n",$heading1;
+        printf $log_fh "%s\n",$heading2;
+    }
+
+    # Get the info you need from the file
+
+    my $status = 0;
+    my $fptr = Astro::FITS::CFITSIO::open_file($outf,READONLY,$status);
+    my ($hdu,$hdutype,$utstart,$rabase,$decbase,$airmass,$filter,$exptime);
+    my ($status);
+    $fptr->get_hdu_num($hdu);
+    $fptr->movabs_hdu(1,$hdutype,$status);
+    $fptr->read_key(TFLOAT,"UTSTART",$utstart,$junk,$status);
+    $fptr->read_key(TFLOAT,"RABASE",$rabase,$junk,$status);
+    $fptr->read_key(TFLOAT,"DECBASE",$decbase,$junk,$status);
+    $fptr->read_key(TFLOAT,"AMSTART",$airmass,$junk,$status);
+    $fptr->read_key(TSTRING,"FILTER",$filter,$junk,$status);
+    $fptr->read_key(TFLOAT,"EXP_TIME",$exptime,$junk,$status);
+    $fptr->movabs_hdu($hdu,$hdutype,$status);
+    $fptr->close_file($status);
+
+    # Reformat some of them
+
+    $utstart = substr(sexigesimal($utstart,1),0,8);
+    $rabase = sexigesimal($rabase,2);
+    $decbase = sexigesimal($decbase,3);
+
+    # Now write the results
+
+    my $line = "";
+    $line = sprintf("%-28s %8d %s %s %s %4.2f %-6s %6.2f %4.1f %4.2f %7.2f %6.2f %6.2f %6.2f %6.2f %5d",
+		    $outf,$utdate,$utstart,$rabase,$decbase,$airmass,$filter,
+		    $exptime,$DQC{'SEEING'},$DQC{'ELLIPTIC'},$DQC{'SKYLEVEL'},
+		    $DQC{'SKYNOISE'},$DQC{'MAGZPT'},$DQC{'MAGZRR'},
+                    $DQC{'STDCRMS'},$DQC{'NUMBRMS'});
+    print $log_fh "$line\n";
+    $log_fh->close;
+}
+
+sub sexigesimal {
+    my ($inval,$type) = @_;
+    my (@a,$retval);
+
+    # Divide by 15 to get to hours for RA
+
+    if ($type == 2) {
+	$inval /= 15.0;
+    }
+
+    # Save the sign for DEC
+
+    if ($type == 3) {
+        if ($inval < 0) {
+	    $sign = '-';
+            $inval = abs($inval);
+        } else {
+            $sign = '+';
+        } 
+    } else {
+        $sign = "";
+    }
+
+    # Do the conversion
+
+    $a[0] = sprintf("%02d",int($inval));
+    $inval = 60.0*($inval - $a[0]);
+    $a[1] = sprintf("%02d",int($inval));
+    $inval = 60.0*($inval - $a[1]);
+    $a[2] = sprintf("%04.1f",$inval);
+    $retval = $sign;
+    $retval .= join ':',@a;
+    return($retval);
+}
 
 sub seeing {
     my ($fname) = @_;
