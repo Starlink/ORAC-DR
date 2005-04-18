@@ -133,9 +133,9 @@ sub _to_GAIN {
 sub _to_GRATING_DISPERSION {
    my $self = shift;
    my $dispersion = 0.0;
-   if ( exists $self->hdr->{CDELT1} ) {
-      $dispersion = $self->hdr->{CDELT1};
-   } else {
+#   if ( exists $self->hdr->{CDELT1} ) {
+#      $dispersion = $self->hdr->{CDELT1};
+#   } else {
       if ( exists $self->hdr->{"HIERARCH.ESO.INS.GRAT.NAME"} &&
            exists $self->hdr->{"HIERARCH.ESO.INS.GRAT.ORDER"} ) {
          my $order = $self->hdr->{"HIERARCH.ESO.INS.GRAT.ORDER"};
@@ -189,7 +189,7 @@ sub _to_GRATING_DISPERSION {
             }   
          }
       }
-   }
+#   }
    return $dispersion;
 }     
 
