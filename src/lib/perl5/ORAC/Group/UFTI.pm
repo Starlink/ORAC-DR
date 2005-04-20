@@ -232,7 +232,11 @@ sub calc_orac_headers {
   my %new = $self->SUPER::calc_orac_headers;
 
   # Grab the UT datetime from the DATE-OBS header.
-  my $dateobs = defined( $self->hdr->{1}->{'DATE-OBS'}) ? $self->hdr->{1}->{'DATE-OBS'} : ( defined($self->hdr->{'DATE-OBS'}) ? $self->hdr->{'DATE-OBS'} : 0 );
+  my $dateobs = defined( $self->hdr->{1}->{'DATE-OBS'}) ? $self->hdr->{1}->{'DATE-OBS'} : 
+                ( defined($self->hdr->{'DATE-OBS'}) ? $self->hdr->{'DATE-OBS'} : "0000-00-00T00:00:00" );
+
+  # Cope with null string present in early data.
+  $dateobs = "0000-00-00T00:00:00" if $dateobs =~ /^\s*$/ || $dateobs eq "";
 
   # Split it into its constituent components.
   $dateobs =~ /^(\d\d\d\d)-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)/;
