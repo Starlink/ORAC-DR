@@ -1,25 +1,31 @@
     %filterstruct = (
                      'J' => {
                          'catalogue' => '2mass',
-                         'refmag' => '$Jmag;',
+                         'refmag' => '$Jmag - 0.1*($Jmag - $Hmag);',
                          'extinct' => '0.05*($airmass - 1.0);',
                          'zeropt' => 24.0,
                      },
                      'H' => {
                          'catalogue' => '2mass',
-                         'refmag' => '$Hmag;',
+                         'refmag' => '$Hmag + 0.15*($Jmag - $Hmag);',
                          'extinct' => '0.05*($airmass - 1.0);',
                          'zeropt' => 24.0,
                      },
                      'K' => {
                          'catalogue' => '2mass',
-                         'refmag' => '$Kmag;',
+                         'refmag' => '$Kmag - 0.05*($Jmag - $Kmag);',
                          'extinct' => '0.05*($airmass - 1.0);',
                          'zeropt' => 24.0,
                      },
 		     'Z' => {
-			 'catalogue' => 'fs',
-			 'refmag' => '$zmag',
+			 'catalogue' => '2mass',
+			 'refmag' => '$Jmag + 0.9*($Jmag - $Hmag);',
+			 'extinct' => '0.05*($airmass - 1.0);',
+			 'zeropt' => 24.0,
+		     },
+		     'Y' => {
+			 'catalogue' => '2mass',
+			 'refmag' => '$Jmag + 0.4*($Jmag - $Hmag);',
 			 'extinct' => '0.05*($airmass - 1.0);',
 			 'zeropt' => 24.0,
 		     }
@@ -27,7 +33,7 @@
  
     %catalogues = (
                    '2mass' => {
-                       'location' => "viz2mass",
+                       'location' => "/scratch/jim/2mass",
                        'accessmethod' => "searchinternet",
                        'columns' => ['Jmag','Hmag','Kmag'],
                        'vars' => ['Jmag','Hmag','Kmag'],
