@@ -63,6 +63,11 @@ our %wcsparms = ('CRVAL1'  => TDOUBLE,
                  'PV2_2'   => TFLOAT,
                  'PV2_3'   => TFLOAT);
 
+# A few extra globals
+
+our $scale;
+our $skylevel;
+
 # Get the files we want to dither. 
 
 my $nf = @allfiles;
@@ -451,10 +456,6 @@ foreach $j (1 .. $nhdu) {
     }
     print $msg_fh "Catalogue $outcat objects are classified\n";
 
-    # Do the photometry now
-
-    $retval = do_photom($outd,$outcat);
-
     # Update the image header
 
     $status = 0;
@@ -477,6 +478,14 @@ foreach $j (1 .. $nhdu) {
     $DQC{'CAMNUM'} = $val;
     $fptr->close_file($status); 
 
+    # Modifiy the seeing DQC index so that it's in arcseconds.
+
+    seeing($outd);
+
+    # Do the photometry now
+
+    $retval = do_photom($outd,$outcat);
+
     # Process the history records
 
     cir_prochist($outd);
@@ -484,10 +493,6 @@ foreach $j (1 .. $nhdu) {
 	$fnamesub = $fnamesubs{$fname};
         cir_prochist($fnamesub);
     }
-
-    # Modifiy the seeing DQC index so that it's in arcseconds.
-
-    seeing($outd);
 
     # Write out the dqc index
 
@@ -546,8 +551,8 @@ sub log_results {
 
         # Skylevel and sky noise
 
-        $heading1 .= "  Sky   |SkyRMS|";
-        $heading2 .= "--------|------|";
+        $heading1 .= "  Sky   |SkyRMS| Skybrt |";
+        $heading2 .= "--------|------|--------|";
 	#             123456789+123456789+12345678
 
         # Mag zeropoint and error
@@ -558,8 +563,8 @@ sub log_results {
 
         # WCS fit goodness and number of standards
 
-        $heading1 .= "WCSRMS|N_WCS|";
-        $heading2 .= "------|-----|";
+        $heading1 .= "WCSRMS|N_WCS|Scale|";
+        $heading2 .= "------|-----|-----|";
 	#             123456789+123456789+12345678
         printf $log_fh "%s\n",$heading1;
         printf $log_fh "%s\n",$heading2;
@@ -591,11 +596,11 @@ sub log_results {
     # Now write the results
 
     my $line = "";
-    $line = sprintf("%-28s %8d %s %s %s %4.2f %-6s %6.2f %4.1f %4.2f %7.2f %6.2f %6.2f %6.2f %6.2f %5d",
+    $line = sprintf("%-28s %8d %s %s %s %4.2f %-6s %6.2f %4.1f %4.2f %7.2f %6.2f %7.2f %6.2f %6.2f %6.2f %5d %5.2f",
 		    $outf,$utdate,$utstart,$rabase,$decbase,$airmass,$filter,
 		    $exptime,$DQC{'SEEING'},$DQC{'ELLIPTIC'},$DQC{'SKYLEVEL'},
-		    $DQC{'SKYNOISE'},$DQC{'MAGZPT'},$DQC{'MAGZRR'},
-                    $DQC{'STDCRMS'},$DQC{'NUMBRMS'});
+		    $DQC{'SKYNOISE'},$skylevel,$DQC{'MAGZPT'},$DQC{'MAGZRR'},
+                    $DQC{'STDCRMS'},$DQC{'NUMBRMS'},$scale);
     print $log_fh "$line\n";
     $log_fh->close;
 }
@@ -650,11 +655,12 @@ sub seeing {
         $fptr->read_key(TFLOAT,$kk,$val,$junk,$status);
         push @vals,abs($val);
     }
-    $val = 3600.0*max(@vals);
+    $scale = 3600.0*max(@vals);
+    $fptr->close_file($status);
 
     # Now scale the seeing DQC parameter
 
-    $DQC{'SEEING'} *= $val;
+    $DQC{'SEEING'} *= $scale;
 }
 
 sub write_dqc {
@@ -685,7 +691,7 @@ sub do_photom {
 
     # If the photometric info is defined, then continue on...
 
-    my ($sumzp,$sumzp4,$sumnzp,$sumvar,$sumvar4,$anynul,$imatch);
+    my ($sumzp,$sumzp4,$sumnzp,$sumvar,$sumvar4,$anynul,$imatch,$exposed);
     if (defined $FINFO && defined $CINFO) {
 	no strict 'refs';
 	no strict 'vars';
@@ -699,7 +705,7 @@ sub do_photom {
 	# Get the exposure time and airmass. Then calculate the extinction
 
 	my $status = 0;
-	my ($nhdu,$exposed,$airmass,$junk,$hdutype);
+	my ($nhdu,$airmass,$junk,$hdutype);
         my $iptr = Astro::FITS::CFITSIO::open_file($imagefile,READWRITE,$status);
         if ($status != 0) {
 	    fitserr($status,"Can't open file $imagefile\n");
@@ -708,8 +714,9 @@ sub do_photom {
 	$iptr->get_hdu_num($nhdu);
         $iptr->movabs_hdu(1,$hdutype,$status);
         $iptr->read_key(TFLOAT,"EXP_TIME",$exposed,$junk,$status);
-	$iptr->read_key(TFLOAT,"AIRMASS",$airmass,$junk,$status);
+	$iptr->read_key(TFLOAT,"AMSTART",$airmass,$junk,$status);
 	$iptr->movabs_hdu($nhdu,$hdutype,$status);
+	$iptr->read_key(TFLOAT,"SKYLEVEL",$skylevel,$junk,$status);
 	$iptr->close_file($status);
 	my $extinct = eval $$FINFO{'extinct'};
 
@@ -962,6 +969,14 @@ NR:	foreach my $j (1 .. $nrows) {
     printf $msg_fh "Photometry fit to %d stars\n",$imatch;
     printf $msg_fh "   Zeropoint 1: %g +/- %g\n",$sumzp,$sumvar;
     printf $msg_fh "   Zeropoint 2: %g +/- %g\n",$sumzp4,$sumvar4;
+
+    # Work out the sky brightness
+
+    $cf = $skylevel/$exposed;
+    $cf = 1.0 if ($cf < 1.0);
+    $cf /= ($scale*$scale);
+    $fluxmag = 2.5*log10($cf);
+    $skylevel = $sumzp - $fluxmag - $extinct;
 
     # Finally, write these results to the extension headers...
 
