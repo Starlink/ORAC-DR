@@ -165,9 +165,10 @@ sub _to_OBSERVATION_MODE {
 sub _to_OBSERVATION_TYPE {
    my $self = shift;
    my $type = "OBJECT";
-   if ( defined $self->hdr->{OBJECT} ) {
+   if ( defined $self->hdr->{OBJECT} && defined $self->hdr->{GFLT}) {
       my $object = uc( $self->hdr->{OBJECT} );
-      if ( $object =~ /^dark/i ) {
+      my $filter = uc( $self->hdr->{GFLT} );
+      if ( $filter =~ /blank/i ) {
          $type = "DARK";
       } elsif ( $object =~ /flat/i ) {
          $type = "FLAT";
