@@ -134,7 +134,7 @@
 # This is crude, but it's more efficient than doing an on the fly
 # conversion to use fitsval.
        set object = `grep OBJECT fitshead$$ | awk '{print substr($0,12,17)}'`
-       set filter = `grep GFLT fitshead$$ | awk '{print substr($0,30,1)}'`
+       set filter = `grep GFLT fitshead$$ | awk '{print substr($0,19,12)}'`
        set exptime = `grep ITIME fitshead$$ | awk '{print substr($0,11,20)}'`
        set bounds = `grep ARRAY0 fitshead$$ | awk '{print substr($0,11,20)}'`
 
