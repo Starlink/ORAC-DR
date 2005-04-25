@@ -1,0 +1,95 @@
+    my $pnop = (defined $_MAKE_OBJECT_MASK_{PNOP} ? $_MAKE_OBJECT_MASK_{PNOP} : 25);
+    my $thresh = (defined $_MAKE_OBJECT_MASK_{THRESH} ? $_MAKE_OBJECT_MASK_{THRESH} : -3.0);
+    my $grid = (defined $_MAKE_OBJECT_MASK_{GRID} ? $_MAKE_OBJECT_MASK_{GRID} : 64);
+
+    # Get an output file name for the mask.
+
+    my $outfile = sprintf("opm_%s",$Frm->file);
+    unlink $outfile if (-f $outfile);
+
+    # Get a temporary file name for the apm program to use.
+
+    my $tmpfil = ORAC::TempFile->new(0);
+    unlink $tmpfil->file;
+
+    # Loop for each image extension...
+
+    my ($retval,$errmsg);
+    foreach my $i (1 .. $Frm->findnsubs) {
+        my $inf = $Frm->getasubframe($i)->file;
+        my $outf = sprintf("%s[%d]",$outfile,$Frm->getasubframe($i)->subfrmnumber);
+
+        # Do the work..
+
+        my $errmsg;
+        my $cpmfr = $Frm->getasubframe($i)->hdr("CIR_CPM");
+        $cpmfr = ($cpmfr ? $cpmfr : "noconf");
+	my $retval = cir_imcore($inf,$cpmfr,$pnop,$thresh,0,3.5,$grid,$outfile,
+				"",0,4,$errmsg);
+        if ($retval != CIR_OK) {
+	    orac_throw "CIR_IMCORE: failed in _OBJECT_MASK_\n$errmsg\n";
+        }
+        $Frm->getasubframe($i)->uhdr("OPM",$outf);
+        $retval = cir_update_hdr($Frm->getasubframe($i)->file,"CIR_OPM",
+            "STRING",$outf,"Object mask",$errmsg);
+    }
+
+    # Add some info into the PHU of the mask
+
+    my $tmpFrm = $Frm->new($outfile);
+    $retval = cir_update_hdr($tmpFrm->file,"MASKTYPE","INT",MASK_OPM,
+	"This is an object mask",$errmsg);
+
+    # Add the name of the OPM file to the info about the current file
+
+    $Frm->uhdr("OPM",$outfile);
+
+=head1 NAME
+
+_MAKE_OBJECT_MASK_
+
+=head1 DESCRIPTION
+
+This primitive cycles through all of the image extensions in an input file
+and creates an object mask for each one. Pixels that form part of a detected
+object are flagged.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item PNOP = int (Given)
+
+The minimum number of pixels for a detection to be considered an object
+
+=item THRESH = float (Given)
+
+The detection threshold. If negative, this is in units of background sigma 
+above sky.  If positive, it is in units of actual data values above sky.
+
+=item GRID = int (Given)
+
+The blocking factor to be used in forming the background map
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+The name of the output object mask is stored in the uhdr component "OPM".
+
+=back
+
+=head1 AUTHORS
+
+JRL: Jim Lewis (CASU, IoA)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003-2006 Cambridge Astronomy Survey Unit. 
+All Rights Reserved
+
+=cut
