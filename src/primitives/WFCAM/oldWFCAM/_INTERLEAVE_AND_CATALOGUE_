@@ -1,0 +1,170 @@
+    my $ipix = (defined $_INTERLEAVE_AND_CATALOGUE_{IPIX} ? $_INTERLEAVE_AND_CATALOGUE_{IPIX} : 5);
+    my $thresh = (defined $_INTERLEAVE_AND_CATALOGUE_{THRESH} ? $_INTERLEAVE_AND_CATALOGUE_{THRESH} : 1.5);
+    my $icrowd = (defined $_INTERLEAVE_AND_CATALOGUE_{ICROWD} ? $_INTERLEAVE_AND_CATALOGUE_{ICROWD} : 1);
+    my $rcore = (defined $_INTERLEAVE_AND_CATALOGUE_{RCORE} ? $_INTERLEAVE_AND_CATALOGUE_{RCORE} : 3.5);
+
+    # Are we allowed to interleave yet?
+
+    if ($Grp->uhdr("ALLOWED_TO_INTERLEAVE")) {
+
+        # Assuming we get here, we now need a list of all the micro-step
+        # sequences that exist in the current group.
+
+        my @allugrps = $Grp->allugroups;
+	@allugrps = sort {$a->name <=> $b->name} @allugrps;
+
+        # Right now cycle through each of these
+
+        my @allsuperframes = ();
+        foreach my $ustepgrp (@allugrps) {
+	    next if ($ustepgrp->uhdr("SUPERFRAME"));
+	    my $ustepgrpname = $ustepgrp->name;
+	    my @a = $ustepgrp->members;
+	    my $n = @a;
+
+	    orac_print("Interleaving microstep sequence $ustepgrpname $n\n") if ($n > 1);
+	    my ($superframe,$jnum,$superconf);
+            {
+                my $Grp = $ustepgrp;
+                my $Frm = ($Grp->members)[0];
+                _INTERLEAVE_NOCONF_
+                $superframe = $Grp->uhdr("SUPERFRAME");
+	        $superconf = $Grp->uhdr("SUPERFRAME_CONF");
+	        $jnum = $Frm->jgrp;
+	        $superframe->jgrp($jnum);
+		$superframe->ugrp($Frm->ugrp);
+            }
+            $Grp->sfgroup->push($superframe);
+
+	    # Now do the catalogue bits. Start with the initial WCS fit
+
+	    {
+		my $Frm = $superframe;
+		_WCSFIT_ PASS=1
+
+		# Right, now just do the WCS offsets to the individual frames...
+
+		foreach my $fr ($Grp->members) {
+		    my $gFrm = $fr;
+		    _WCS_OFFSETS_
+		}
+	    }
+
+	    # Create a catalogue
+
+	    {
+		my $Frm = $superframe;
+		my $Frmcpm = $superconf;
+		_IMCORE_NOCONF_ IPIX=$ipix THRESH=$thresh ICROWD=$icrowd RCORE=$rcore
+	    }
+
+	    # Do the second pass WCS fit and update the catalogue so that it
+	    # has RA and Dec info for each detected object.
+
+	    {
+		my $Frm = $superframe;
+		_WCSFIT_ PASS=2
+		_UPDATECAT_
+
+		# Right, now just do the WCS offsets to the individual frames...
+
+		foreach my $fr ($Grp->members) {
+		    my $gFrm = $fr;
+		    _WCS_OFFSETS_
+		}
+	    }
+	    # Do the image classification
+
+	    {
+		my $Frm = $superframe;
+		_CLASSIFY_
+	    }
+
+	    # Now do the photometry on this file
+
+	    {
+		my $Frm = $superframe;
+		my $filt = $Frm->uhdr("ORAC_FILTER");
+		_SKYPERCENT_IMAGE_
+		_DOPHOTOM_IMAGE_ FILTER=$filt
+	    }
+
+	    # Process the history records of all files
+
+	    {
+		my $Frm = $superframe;
+		_PROCHIST_
+		foreach my $fr ($Grp->members) {
+		    my $Frm = $fr;
+		    _PROCHIST_
+		}
+	    }
+
+	    # File the DQC info
+
+	    {
+		my $Frm = $superframe;
+		_FILE_DQC_
+	    }
+
+	    # Display the final image
+
+	    {
+		my $Frm = $superframe;
+		_DISPLAY_IMAGE_
+	    }            
+        }
+    }
+
+
+
+=head1 NAME
+
+_INTERLEAVE_AND_CATALOGUE_ -- Interleave the microstep sequences in the 
+current tile group. Catalogue the results.
+
+=head1 DESCRIPTION
+
+This routine will do an interleaf combination when requested. The operation
+requires the $Grp->uhdr ALLOWED_TO INTERLEAVE tag to be set.  
+The interleaving section takes processed frames and creates superframes
+Once the interleaving is done, then all the further cataloguing and DQC
+estimates are done.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item IPIX
+
+The minimum size that an object can have in the catalogue (in pixels)
+
+=item THRESH
+
+The detection threshold in numbers of sigma above sky
+
+=item ICROWD
+
+If set, then the catalogue generation will include a deblending algorithm to
+try and separate merged objects
+
+=item RCORE
+
+The nominal size of the aperture (in pixels)
+
+=head1 NOTES
+
+None
+
+=head1 AUTHORS
+
+JRL: Jim Lewis (CASU, IoA)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004-2007 Cambridge Astronomy Survey Unit. 
+All Rights Reserved
+
+=cut
+
+

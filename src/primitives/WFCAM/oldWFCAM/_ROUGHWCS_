@@ -1,0 +1,111 @@
+    # Get a parameter
+
+    my $override = (defined $_ROUGHWCS_{OVERRIDE} ? $_ROUGHWCS_{OVERRIDE} : 0);
+
+    # Import some trig functions
+
+    use Math::Trig;
+
+    # Helpful message
+
+    orac_print "Assigning rough WCS to " . $Frm->file . "\n";
+
+    # Which chips are represented in the current container file?
+
+    my $chips = $Frm->chip;
+
+    # Get the RA/Dec info from the header
+
+    my $ra = 15.0*($Frm->hdr("TELRA"));
+    my $dec = $Frm->hdr("TELDEC");
+    my $equinox = $Frm->hdr("EQUINOX");
+    if ($equinox !~ /2000/) {
+        cir_fk425($ra,$dec);
+    }
+
+    # Loop for each image.  See first if it already has a WCS defined. If it
+    # does, then only set this one if you want to override.
+
+    foreach my $i (1 .. $Frm->findnsubs) {    
+        my $frm = $Frm->getasubframe($i);
+        my $chip = $$chips[$i-1];
+        my $wcspass = (! defined($frm->hdr('WCSPASS')) ? -1 : $frm->hdr('WCSPASS'));
+        next if (! $override && $wcspass >= 0);
+
+        # Get the information for this chip
+
+        my $crpix = $Frm->crpix($chip);
+        my $scale = $Frm->scale($chip);
+        my $ncd = $Frm->ncd($chip);
+        my $extra_rot = $Frm->extra_rot($chip);
+        my $projp3 = $Frm->projp3;
+
+        # Setup rotation matrix
+
+        my $aap = $scale*$$ncd[0]/3600.0;
+        my $bbp = $scale*$$ncd[1]/3600.0;
+        my $ddp = $scale*$$ncd[2]/3600.0;
+        my $eep = $scale*$$ncd[3]/3600.0;
+        my $sa = sin(deg2rad($extra_rot));
+        my $ca = cos(deg2rad($extra_rot));
+        my $cd1_1 = $aap*$ca + $bbp*$sa;
+        my $cd1_2 = -$aap*$sa + $bbp*$ca;
+        my $cd2_1 = $ddp*$ca + $eep*$sa;
+        my $cd2_2 = -$ddp*$sa + $eep*$ca;
+
+        # Right...we have all the info, now update the header...
+
+        $frm->update_header("CTYPE1",TSTRING,"RA---ZPN","");
+        $frm->update_header("CTYPE2",TSTRING,"DEC--ZPN","");
+        $frm->update_header("CRVAL1",TDOUBLE,$ra,"");
+        $frm->update_header("CRVAL2",TDOUBLE,$dec,"");
+        $frm->update_header("CRPIX1",TDOUBLE,$$crpix[0],"");
+        $frm->update_header("CRPIX2",TDOUBLE,$$crpix[1],"");
+        $frm->update_header("CD1_1",TDOUBLE,$cd1_1,"");
+        $frm->update_header("CD1_2",TDOUBLE,$cd1_2,"");
+        $frm->update_header("CD2_1",TDOUBLE,$cd2_1,"");
+        $frm->update_header("CD2_2",TDOUBLE,$cd2_2,"");
+        $frm->update_header("PROJP1",TFLOAT,1.0,"");
+        $frm->update_header("PROJP3",TFLOAT,$projp3,"");
+        $frm->update_header("PV2_0",TFLOAT,0.0,"");
+        $frm->update_header("PV2_1",TFLOAT,1.0,"");
+        $frm->update_header("PV2_2",TFLOAT,0.0,"");
+        $frm->update_header("PV2_3",TFLOAT,$projp3,"");
+        $frm->update_header("WCSPASS",TINT,0,"Pass level for WCS");
+    }
+
+=head1 NAME
+
+_ROUGHWCS_ -- Write a rough WCS to the headers of images in a file
+
+=head1 DESCRIPTION
+
+This primitive cycles through all of the image extensions in an input file
+and writes a WCS to each header based on information in the header and known
+features of the camera
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item OVERRIDE = int (Given)
+
+If set, then any WCS that already exists in the header will be overwritten
+
+=back
+
+=head1 NOTES
+
+None
+
+=head1 AUTHORS
+
+JRL: Jim Lewis (CASU, IoA)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003-2006 Cambridge Astronomy Survey Unit. 
+All Rights Reserved
+
+=cut
+

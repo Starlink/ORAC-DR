@@ -1,0 +1,137 @@
+    # Are we allowed to continue and make the flat now?
+
+    if ($Grp->uhdr("JITTER_COMPLETE")) {
+
+        # Do background stats on the images and scale find the relevant scale
+        # factors for the imcombine
+
+        foreach my $frm ($Grp->members) {
+            my $Frm = $frm;
+            _IMSTAT_ HDRUP=1
+        }
+        _ICSCALE_
+
+	# Get some header keywords...
+
+	my $readkey = $Frm->hdrkeys("READNOISE");
+	my $gainkey = $Frm->hdrkeys("GAIN");
+	my $expkey = $Frm->hdrkeys("EXPOSURE_TIME");
+
+        # Output file name
+
+        my $jname = $Frm->jgrp;
+        my $outfile = "skyflat_" . $jname . $Frm->fitssuffix;
+
+        # Now loop for each image extension
+
+        my $nextn = $Frm->findnsubs;
+        my $i;
+        for ($i = 1; $i <= $nextn; $i++) {
+
+            # Get a temporary file
+
+            my $tmpfil = new ORAC::TempFile;
+            my $fh = $tmpfil->handle;
+
+            # Write the names of the input files to the temporary file
+
+            foreach my $frm ($Grp->members) {
+                print $fh $frm->getasubframe($i)->file . "\n";
+            }
+            $fh->close;
+
+            # Output file name specification
+
+            my $outf = sprintf("%s[%d]",$outfile,$Frm->getasubframe($i)->subfrmnumber);
+	    orac_print("Forming Sky flat file $outf\n");
+
+            # Do the combination now...
+
+            my ($retval,$errmsg);
+            $retval = cir_imcombine($tmpfil->file,$outf,"","",MEANCALC,0,1,
+                0,NOBPM,REJPOISSON,1,1,1,2.0,2.0,$readkey,$gainkey,$expkey,
+                $errmsg);
+            if ($retval != CIR_OK) {
+                orac_throw "CIR_IMCOMBINE: failed in _SKYFLATCOMBINE_\n$errmsg\n";
+            }
+
+            $tmpfil->DESTROY;
+        }
+
+        # Now normalise the flats to the common mean...
+
+        my $flatfrm = $Frm->new($outfile);
+        {
+            my $Frm = $flatfrm;
+            _IMSTAT_ HDRUP=1
+        }
+        my $sum = 0.0;
+        foreach $i (1 .. $nextn) {
+            $sum += $flatfrm->getasubframe($i)->uhdr("CIRMED");
+        }
+        $sum /= $nextn;
+        foreach $i (1 .. $nextn) {
+            my $errmsg;
+            my $retval = cir_imdivk($flatfrm->getasubframe($i)->file,
+                $sum,$errmsg);
+            if ($retval != CIR_OK) {
+                orac_throw "CIR_IMDIVK: failed in _SKYFLATCOMBINE_\n$errmsg\n";
+            }
+        }
+
+        # Write some stuff to the PHU
+
+        $flatfrm->update_header("CCDMEAN",TFLOAT,$sum,"Ensemble mean background");
+        $flatfrm->update_header("WFRTYPE",TSTRING,CALFLAT,"Calibration frame type");
+        _FILE_FLAT_ NAME=$outfile
+
+        # Make the CPM
+
+        {
+            my $Frm = $flatfrm;
+            my $cpmfile = sprintf("cpm_%s%s",$jname,$Frm->fitssuffix);
+            _MAKE_CONFIDENCE_MAP_ OUT=$cpmfile THRESH=5.0 NITER=2 WINDOW=0
+        }
+
+    }
+
+=head1 NAME
+
+_SKYFLATCOMBINE_ -- Form a mean flat and confidence map
+
+=head1 DESCRIPTION
+
+This primitive first works out the background values for all the frames
+in a group. The provide scaling factors that can be used to scale the images
+to a common median during the combine phase. A combination is done for
+each image in the frames. Once the images are combined the background value
+for each of the resulting frames is calculated. Each frame is divided by
+the ensemble mean background.  This should not only ensure that the mean
+counts for a frame near the ensemble mean remain the same, but also any
+pedestal gain difference between the images is also removed. After finishing
+with the flat, it is used to create a confidence map.
+
+=head1 ARGUMENTS
+
+None
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Mean flat and confidence maps are filed in index files.
+
+=back
+
+=head1 AUTHORS
+
+JRL: Jim Lewis (CASU, IoA)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004-2007 Cambridge Astronomy Survey Unit. 
+All Rights Reserved
+
+=cut

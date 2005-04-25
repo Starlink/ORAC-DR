@@ -1,0 +1,187 @@
+    my $ipix = (defined $_DITHER_AND_CATALOGUE_{IPIX} ? $_DITHER_AND_CATALOGUE_{IPIX} : 5);
+    my $thresh = (defined $_DITHER_AND_CATALOGUE_{THRESH} ? $_DITHER_AND_CATALOGUE_{THRESH} : 1.5);
+    my $icrowd = (defined $_DITHER_AND_CATALOGUE_{ICROWD} ? $_DITHER_AND_CATALOGUE_{ICROWD} : 1);
+    my $rcore = (defined $_DITHER_AND_CATALOGUE_{RCORE} ? $_DITHER_AND_CATALOGUE_{RCORE} : 3.5);
+
+    # Are we ready to do this? If so, then do the dither combination
+
+    my $candither = $Frm->uhdr("JITTER_COMPLETE");
+    if ($candither) {
+        _DITHER_
+        my $dFrm = $Frm->uhdr("DITHER_FRAME");
+        $Grp->file($dFrm->file);
+        my $dCpm = $Frm->uhdr("DITHER_CPM");
+
+        # Do the initial WCS fit
+
+#        {
+#            my $Frm = $dFrm;
+#            _WCSFIT_ PASS=1 
+#
+#            # Right, now just do the WCS offsets to the individual frames...
+#
+#            foreach my $fr ($Grp->members) {
+#   	        my $gFrm = $fr;
+#	        _WCS_OFFSETS_
+#            }       
+#        }
+
+        # Create a catalogue
+
+        {
+            my $Frm = $dFrm;
+            my $Frmcpm = $dCpm;
+            _IMCORE_ IPIX=$ipix THRESH=$thresh ICROWD=$icrowd RCORE=$rcore
+        }
+
+        # Do the second pass WCS fit and update the catalogue so that it
+        # has RA and Dec info for each detected object.
+
+        {
+            my $Frm = $dFrm;
+            _WCSFIT_ PASS=2 
+            _UPDATECAT_
+
+            # Right, now just do the WCS offsets to the individual frames...
+
+            foreach my $fr ($Grp->members) {
+   	        my $gFrm = $fr;
+	        _WCS_OFFSETS_ 
+            }       
+        }
+
+        # Do the image classification
+
+        {
+            my $Frm = $dFrm;
+            _CLASSIFY_
+        }
+
+        # Now do the photometry on this file
+
+        {   
+            my $Frm = $dFrm;
+            my $filt = $Frm->uhdr("ORAC_FILTER");
+            _SKYPERCENT_IMAGE_
+            _DOPHOTOM_IMAGE_ FILTER=$filt
+        }
+
+        # Process the history records of all files
+
+        {
+            my $Frm = $dFrm;
+            _PROCHIST_
+            foreach my $fr ($Grp->members) {
+                my $Frm = $fr;
+                _PROCHIST_
+            }
+        }
+
+        # File the DQC info
+
+        {
+            my $Frm = $dFrm;
+            _FILE_DQC_
+        }
+
+        # Display the final image
+
+        {
+            my $Frm = $dFrm;
+            _DISPLAY_IMAGE_
+        }
+    }        
+
+=head1 NAME
+
+_DITHER_AND_CATALOGUE_ -- High level primitive that combines dithers and does 
+astrometric and photometric calibration.
+
+=head1 DESCRIPTION
+
+This primitive combines the dither level operations (i.e. operations that can
+only be done once all the frames from a dither are available). In brief
+it combines the following tasks:
+
+=over 4
+
+=item *
+
+Dithers the frames in the group
+
+=item *
+
+Fits a first pass WCS to the output dither and refers this solution back to
+the original images
+
+=item *
+
+Generates an object catalogue for the dither
+
+=item *
+
+Uses the object catalogue to fit a second pass WCS. This WCS is used to
+generate equitorial coordinates for each object in the object catalogues.
+
+=item *
+
+Classifies the objects in the object catalogues
+
+=item *
+
+Uses the object catalogue to generate a photometric zeropoint for each image
+
+=item *
+
+Files DQC information in an index file.
+
+=back
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item IPIX = int (Given)
+
+The minimum number of pixels for a detection to be considered a real object in
+the object catalogue
+
+=item THRESH = float (Given)
+
+The detection threshold for the catalogue generation.  Units are in background
+sigma.
+
+=item ICROWD = int (Given)
+
+If set, then the catalogue generation routine attempts to deblend merged
+objects.
+
+=item RCORE = float (Given)
+
+The core radius in pixels for the initial aperture.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+None
+
+=back
+
+=head1 AUTHORS
+
+JRL: Jim Lewis (CASU, IoA)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003-2006 Cambridge Astronomy Survey Unit. 
+All Rights Reserved
+
+=cut
+
+
+

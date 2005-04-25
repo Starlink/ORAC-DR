@@ -1,0 +1,103 @@
+    my $outf = (defined $_SKYCOMBINE_{OUT} ? $_SKYCOMBINE_{OUT} : "");
+    if (! $outf) {
+        $outf = sprintf("sky_%s_%05d%s",$Frm->hdr("ORACUT"),$Grp->name,
+                        $Frm->fitssuffix);
+    }
+
+    # If this file already exists, then don't bother doing it again...
+
+    if (! -f $outf) {
+
+        # Now loop for each image extension
+
+        my $nextn = $Frm->findnsubs;
+        my $i;
+	orac_print("Combining frames to for mean sky file: $outf\n");
+        for ($i = 1; $i <= $nextn; $i++) {
+
+            # Write the names of the input files to the temporary file
+
+	    my @allfiles = ();
+            foreach my $frm ($Grp->members) {
+	        push @allfiles,$frm->getasubframe($i)->file;
+            }
+	    my $nfiles = @allfiles;
+
+            # Output file name specification
+
+            my $outfile = sprintf("%s[%d]",$outf,$Frm->getasubframe($i)->subfrmnumber);
+
+            # Do the combination now...
+
+            my ($retval,$errmsg);
+	    $retval = cir_imcombine_lite(\@allfiles,$nfiles,MEDIANCALC,1,1,3.0,
+                $outfile,$errmsg);
+            if ($retval != CIR_OK) {
+                orac_throw "CIR_IMCOMBINE_LITE: failed in _SKYCOMBINE_\n$errmsg\n";
+            }
+
+        }
+
+        # Set each extension to a median of zero.
+
+        my $skyfrm = $Frm->new($outf);
+        {
+            my $Frm = $skyfrm;
+	    _IMSTAT_ HDRUP=1 
+        }
+        my ($retval,$errmsg);
+        foreach my $i (1 .. $skyfrm->findnsubs) {
+            my $sfrm = $skyfrm->getasubframe($i);
+            my $x = $sfrm->uhdr("CIRMED");
+	    orac_print "Sky frame " . $sfrm->file . " had a median $x subtracted\n";
+            $retval = cir_imsubtk($sfrm->file,$x,$errmsg);
+            $retval = cir_update_hdr($sfrm->file,"SKYLEVEL","FLOAT",$x,
+                "Original median sky level",$errmsg);
+	}
+
+        # Set a calibration file type in the header...
+
+        $retval = cir_update_hdr($skyfrm->file,"WFRTYPE","STRING",CALSKY,
+            "Mean Sky frame",$errmsg);
+    }
+
+
+=head1 NAME
+
+_SKYCOMBINE_ -- Combine a list of frames to form a mean sky frame.
+
+=head1 DESCRIPTION
+
+A list of frames are given as a group.  Statistics are done on each frame in 
+order to work out background zeropoints and scale factors. A mean sky frame is
+created by combining all of the frames.  The images are biassed to a uniform
+median background level and a reject algorithm will (hopefully) remove all
+the astronomical objects. The mean sky image is then normalised to have a zero
+background value.  
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item OUT = char (Given)
+
+The name of the output file.
+
+=back
+
+=head1 NOTES
+
+None
+
+=head1 AUTHORS
+
+JRL: Jim Lewis (CASU, IoA)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004-2007 Cambridge Astronomy Survey Unit. 
+All Rights Reserved
+
+=cut
+
+

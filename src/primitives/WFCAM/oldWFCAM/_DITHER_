@@ -1,0 +1,190 @@
+    # How many dither frames are there?
+
+    my @alldframes = $Grp->members;
+
+    # Name of output files.  If we do have to dither here, then create
+    # a name that's apprpriate.  If we don't (there is only one file in the
+    # group) then just copy the file name to the output name
+
+    my ($dith,$dithc);
+    if (@alldframes > 1) {
+        my ($basename,$dir,$suffix,$extn) = ($Grp->members)[0]->parsefname;
+        $dith = sprintf("%s_st%s",$basename,$suffix);
+        $dithc = sprintf("%s_st_conf%s",$basename,$suffix);
+    } elsif (@alldframes == 1) {
+        $dith = $Frm->file;
+        $dithc = $Frm->getasubfrm(1)->hdr("CIR_CPM");
+        my $tmp = $Frm->new($dithc);
+        my ($basename,$dir,$suffix,$extn) = $tmp->parsefname;
+        $dithc = sprintf("%s%s",$basename,$suffix);
+    }
+
+    # If we have all the files for a dither, then let's get on with this...
+
+    if (! -f $dith) {
+        orac_print "Dithering group: " . $Grp->name . " to file $dith\n";
+
+        # Do an image detection if there hasn't already been one...
+
+        my ($retval,$errmsg);
+	my $dstat = 0;
+        foreach my $frm (@alldframes) {
+            if (! defined $frm->uhdr("OBJTAB")) {
+                my $Frm = $frm;
+                my $prefix = "t";
+	        _APM_ PREFIX=$prefix PNOP=50 THRESH=7.0 GRID=256 CATTYPE=3
+                $dstat += $_APM_{DSTAT};
+            }
+        }
+
+        # Loop now for each extension and find the offsets
+
+        foreach my $i (1 .. $Frm->findnsubs) {
+
+            # Make a list of the extensions in the current group
+
+            my @current_list = ();
+            foreach my $frm ($Grp->members) {
+                push @current_list,$frm->getasubframe($i);
+            }
+            my $subgrp = $Grp->new("extngrp");
+            $subgrp->members(@current_list);
+
+ 	    # Get the offsets relative to the first in the list from
+ 	    # the rough WCS that _should_ be in the header by now! This
+	    # can be used as backup in case the image detection isn't 
+	    # very successful
+
+            my @xoffwcs = ();
+            my @yoffwcs = ();
+ 	    {
+	        my $Grp = $subgrp;
+	        _DIFFXY_WCS_
+                foreach my $frm ($Grp->members) {
+                    push @xoffwcs,$frm->uhdr("XOFF_WCS");
+                    push @yoffwcs,$frm->uhdr("YOFF_WCS");
+                }
+	    }
+
+ 	    # If the image detection went OK, then match up the detected
+	    # stars to get the offsets
+
+	    my @xoffs = ();
+            my @yoffs = ();
+	    if ($dstat == 0) {
+	        my $Grp = $subgrp;
+	        _DIFFXY_OBJS_
+                $dstat = $Frm->uhdr("DSTAT");
+                foreach my $frm ($Grp->members) {
+                    push @xoffs,$frm->uhdr("XOFF_OBJS");
+                    push @yoffs,$frm->uhdr("YOFF_OBJS");
+                }
+	    }
+
+  	    # If there were any problems along the way, then just substitute
+	    # the offsets that we got from the WCS...
+
+	    if ($dstat) {
+	        @xoffs = @xoffwcs;
+	        @yoffs = @yoffwcs;
+	    }
+
+ 	    # Reset the offsets by the minima and add them to the headers
+	    # of the input images
+
+	    my $minx = min(@xoffs);
+	    my $miny = min(@yoffs);
+            my $j = -1;
+            foreach my $frm ($subgrp->members) {
+                $j++;
+	        my $xoff = $xoffs[$j] - $minx;
+	        my $yoff = $yoffs[$j] - $miny;
+	        $retval = cir_update_hdr($frm->file,"CIR_XOFF","FLOAT",$xoff,
+                    "Dither offset X",$errmsg);
+	        $retval = cir_update_hdr($frm->file,"CIR_YOFF","FLOAT",$yoff,
+                    "Dither offset Y",$errmsg);
+	    }
+        }
+
+        # Now do the combination for the whole file
+
+        _DITH_COMBINE_ OUT=$dith OUTC=$dithc
+
+        # Update the WCS header of the dither to take into account the 
+        # dither shift of the first file in the list...
+
+	my $tmpFrm = $Frm->new($dith);
+        foreach my $i (1 .. $tmpFrm->findnsubs) {
+            my $ttt = $tmpFrm->getasubframe($i);
+  	    my $crpix1 = $ttt->hdr("CRPIX1");
+	    my $crpix2 = $ttt->hdr("CRPIX2");
+	    my $xoff = $ttt->hdr("CIR_XOFF");
+ 	    my $yoff = $ttt->hdr("CIR_YOFF");
+	    $crpix1 += $xoff;
+	    $crpix2 += $yoff;
+	    $retval = cir_update_hdr($ttt->file,"CRPIX1","FLOAT",$crpix1,
+                "",$errmsg); 
+	    $retval = cir_update_hdr($ttt->file,"CRPIX2","FLOAT",$crpix2,
+		"",$errmsg); 
+        }
+
+        # Get rid of the object tables...
+
+	foreach my $frm ($Grp->members) {
+            my $objtab;
+            ($objtab = $frm->uhdr("OBJTAB")) =~ s/^(.*?)\[\d+\]$/$1/;
+	    unlink $objtab if (-e $objtab);
+	}
+    }
+
+    # Put frame structures for the dither frames into the header structure.
+
+    my $dFrm = $Frm->new($dith);
+    $Frm->uhdr("DITHER_FRAME",$dFrm);
+    $dFrm = $Frm->new($dithc);
+    $Frm->uhdr("DITHER_CPM",$dFrm);
+
+
+=head1 NAME
+
+_DITHER_ -- Dither a group of images
+
+=head1 DESCRIPTION
+
+The images in a group each have an image detection algorithm run on them. The
+WCS of each image is examined to get an idea of the dither offsets of each
+image relative to the first one in the group.  The object catalogues are used
+to refine these offsets by matching up common objects. These offsets are then
+used during the combination to form a dither output frame and its confidence
+map
+
+=head1 ARGUMENTS
+
+None
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+The dither output file and confidence map names are passed in the Frm uhdr
+components DITHER_FRAME and DITHER_CPM.
+
+=back
+
+=head1 AUTHORS
+
+JRL: Jim Lewis (CASU, IoA)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003-2006 Cambridge Astronomy Survey Unit. 
+All Rights Reserved
+
+=cut
+
+
+
+
+

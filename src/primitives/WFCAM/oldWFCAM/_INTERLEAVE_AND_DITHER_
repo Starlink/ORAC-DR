@@ -1,0 +1,140 @@
+    my $ipix = (defined $_INTERLEAVE_AND_DITHER_{IPIX} ? $_INTERLEAVE_AND_DITHER_{IPIX} : 5);
+    my $thresh = (defined $_INTERLEAVE_AND_DITHER_{THRESH} ? $_INTERLEAVE_AND_DITHER_{THRESH} : 1.5);
+    my $icrowd = (defined $_INTERLEAVE_AND_DITHER_{ICROWD} ? $_INTERLEAVE_AND_DITHER_{ICROWD} : 1);
+    my $rcore = (defined $_INTERLEAVE_AND_DITHER_{RCORE} ? $_INTERLEAVE_AND_DITHER_{RCORE} : 3.5);
+
+    # Are we allowed to interleave yet?
+
+    if ($Grp->uhdr("ALLOWED_TO_INTERLEAVE")) {
+
+        # Assuming we get here, we now need a list of all the micro-step
+        # sequences that exist in the current group.
+
+        my @allugrps = $Grp->allugroups;
+	@allugrps = sort {$a->name <=> $b->name} @allugrps;
+
+        # Right now cycle through each of these
+
+        my @allsuperframes = ();
+	my $standard_cpm;
+	my $i = 0;
+        foreach my $ustepgrp (@allugrps) {
+	    $i++;
+	    next if ($ustepgrp->uhdr("SUPERFRAME"));
+            $standard_cpm = $allugrps[0]->uhdr("SUPERFRAME_CONF") if ($i > 1);
+	    my $ustepgrpname = $ustepgrp->name;
+	    my @a = $ustepgrp->members;
+	    my $n = @a;
+
+	    orac_print("Interleaving microstep sequence $ustepgrpname $n\n") if ($n > 1);
+	    my ($superframe,$jnum);
+            {
+                my $Grp = $ustepgrp;
+                my $Frm = ($Grp->members)[0];
+	        my $doconf = ($i == 1);
+                _INTERLEAVE_ DOCONF=$doconf
+                $superframe = $Grp->uhdr("SUPERFRAME");
+                $standard_cpm = $Grp->uhdr("SUPERFRAME_CONF") if ($i == 1);
+	        my ($retval,$errmsg);
+                foreach my $ii (1 .. $superframe->findnsubs) {
+		    $retval = cir_update_hdr($superframe->getasubframe($ii)->file,
+			"CIR_CPM","STRING",$standard_cpm->getasubframe($ii)->file,
+			"Confidence map name",$errmsg);
+	            $superframe->getasubframe($ii)->hdr("CIR_CPM",
+		        $standard_cpm->getasubframe($ii)->file);
+	        }
+	        $jnum = $Frm->jgrp;
+	        $superframe->jgrp($jnum);
+		$superframe->ugrp($Frm->ugrp);
+            }
+            $Grp->sfgroup->push($superframe);
+
+            # Do an object extraction now...
+
+	    orac_print("Doing object detection on: " . $superframe->file . "\n");
+            {
+	        $Frm = $superframe;
+                my $prefix = "t";
+                _APM_ PREFIX=$prefix PNOP=50 VERBOSE=0 THRESH=7 GRID=256 CATTYPE=3
+	    }
+        }
+    }
+
+    # Are we allowed to dither yet?
+
+    if ($Grp->uhdr("ALLOWED_TO_DITHER")) {
+
+        # Find out how many jitters there are in the current group.
+
+        my @alljgroups = $Grp->alljgroups;
+        @alljgroups = sort {$a->name <=> $b->name} @alljgroups;
+
+        # Loop for each jitter.  See how many files in each jitter group.
+
+        foreach my $cjgrp (@alljgroups) {
+	    my $curjitter = $cjgrp->name;
+	    next if ($cjgrp->uhdr("DITHER_FRAME"));
+            my $sfg = $Grp->sfgroup->sfjgrp($curjitter);
+	    orac_print("Dithering jitter sequence $curjitter\n");
+            {
+	        my $Grp = $sfg;
+                my $Frm = ($Grp->members)[0];
+                $Frm->uhdr("JITTER_COMPLETE",1);
+                _DITHER_AND_CATALOGUE_ IPIX=$ipix THRESH=$thresh ICROWD=$icrowd RCORE=$rcore
+	        $cjgrp->uhdr("DITHER_FRAME",$Frm->uhdr("DITHER_FRAME"));
+	    }
+        }
+    }
+
+=head1 NAME
+
+_INTERLEAVE_AND_DITHER_ -- Interleave and dither the microstep and jitter 
+sequences in the current tile group.
+
+=head1 DESCRIPTION
+
+This routine will do interleaf and jitter combinations when requested.  Both
+operations require and $Grp->uhdr flag to be set.  For interleaving to take
+place the flag ALLOWED_TO_INTERLEAVE must be set.  The flag for dithering is
+ALLOWED_TO_DITHER. The interleaving section takes processed frames and creates
+superframes.  The dithering section takes superframes and creates stacked 
+frames.  Once the dithering is done, then all the further cataloguing and DQC
+estimates are done.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item IPIX
+
+The minimum size that an object can have in the catalogue (in pixels)
+
+=item THRESH
+
+The detection threshold in numbers of sigma above sky
+
+=item ICROWD
+
+If set, then the catalogue generation will include a deblending algorithm to
+try and separate merged objects
+
+=item RCORE
+
+The nominal size of the aperture (in pixels)
+
+=head1 NOTES
+
+None
+
+=head1 AUTHORS
+
+JRL: Jim Lewis (CASU, IoA)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004-2007 Cambridge Astronomy Survey Unit. 
+All Rights Reserved
+
+=cut
+
+
