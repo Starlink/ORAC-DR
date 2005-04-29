@@ -114,115 +114,110 @@ BEGIN {
 # Used to construct instrument recipe dependencies
 
 my %MonolithDefns = (
-         javelin => {
-           MESSYS => 'AMS',
-           CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => "/export/data/timj/scd/phot/progs/javelin",
-          },
          kappa_mon => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => $ENV{KAPPA_DIR}."/kappa_mon",
+           PATH => ( defined( $ENV{'KAPPA_DIR'} ) ? $ENV{KAPPA_DIR}."/kappa_mon" : "" ),
           },
          surf_mon => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => "$ENV{SURF_DIR}/surf_mon",
+           PATH => ( defined( $ENV{'SURF_DIR'} ) ? "$ENV{SURF_DIR}/surf_mon" : "" ),
           },
          polpack_mon => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => "$ENV{POLPACK_DIR}/polpack_mon",
+           PATH => ( defined( $ENV{'POLPACK_DIR'} ) ? "$ENV{POLPACK_DIR}/polpack_mon" : "" ),
           },
          ccdpack_reg => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => "$ENV{CCDPACK_DIR}/ccdpack_reg",
+           PATH => ( defined( $ENV{'CCDPACK_DIR'} ) ? "$ENV{CCDPACK_DIR}/ccdpack_reg" : "" ),
           },
          ccdpack_red => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => "$ENV{CCDPACK_DIR}/ccdpack_red",
+           PATH => ( defined( $ENV{'CCDPACK_DIR'} ) ? "$ENV{CCDPACK_DIR}/ccdpack_red" : "" ),
           },
          ccdpack_res => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => "$ENV{CCDPACK_DIR}/ccdpack_res",
+           PATH => ( defined( $ENV{'CCDPACK_DIR'} ) ? "$ENV{CCDPACK_DIR}/ccdpack_res" : "" ),
           },
          catselect => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => "$ENV{CURSA_DIR}/catselect",
+           PATH => ( defined( $ENV{'CURSA_DIR'} ) ? "$ENV{CURSA_DIR}/catselect" : "" ),
           },
          ndf2fits => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => "$ENV{CONVERT_DIR}/ndf2fits",
+           PATH => ( defined( $ENV{'CONVERT_DIR'} ) ? "$ENV{CONVERT_DIR}/ndf2fits" : "" ),
           },
          fits2ndf => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => "$ENV{CONVERT_DIR}/fits2ndf",
+           PATH => ( defined( $ENV{'CONVERT_DIR'} ) ? "$ENV{CONVERT_DIR}/fits2ndf" : "" ),
          },
          convert_mon => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => "$ENV{CONVERT_DIR}/convert_mon",
+           PATH => ( defined( $ENV{'CONVERT_DIR'} ) ? "$ENV{CONVERT_DIR}/convert_mon" : "" ),
          },
          kapview_mon => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => $ENV{KAPPA_DIR}."/kapview_mon",
+           PATH => ( defined( $ENV{'KAPPA_DIR'} ) ? $ENV{KAPPA_DIR}."/kapview_mon" : "" ),
           },
          ndfpack_mon => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => $ENV{KAPPA_DIR}."/ndfpack_mon",
+           PATH => ( defined( $ENV{'KAPPA_DIR'} ) ? $ENV{KAPPA_DIR}."/ndfpack_mon" : "" ),
           },
          figaro1 => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => $ENV{FIG_DIR}."/figaro1",
+           PATH => ( defined( $ENV{'KAPPA_DIR'} ) ? $ENV{FIG_DIR}."/figaro1" : "" ),
           },
          figaro2 => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => $ENV{FIG_DIR}."/figaro2",
+           PATH => ( defined( $ENV{'FIG_DIR'} ) ? $ENV{FIG_DIR}."/figaro2" : "" ),
           },
          figaro3 => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => $ENV{FIG_DIR}."/figaro3",
+           PATH => ( defined( $ENV{'FIG_DIR'} ) ? $ENV{FIG_DIR}."/figaro3" : "" ),
           },
          figaro4 => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => $ENV{FIG_DIR}."/figaro4",
+           PATH => ( defined( $ENV{'FIG_DIR'} ) ? $ENV{FIG_DIR}."/figaro4" : "" ),
           },
          figaro5 => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => $ENV{FIG_DIR}."/figaro5",
+           PATH => ( defined( $ENV{'FIG_DIR'} ) ? $ENV{FIG_DIR}."/figaro5" : "" ),
           },
          extractor =>{
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => "$ENV{EXTRACTOR_DIR}/extractor",
+           PATH => ( defined( $ENV{'EXTRACTOR_DIR'} ) ? "$ENV{EXTRACTOR_DIR}/extractor" : "" ),
           },
          pisa_mon => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => "$ENV{PISA_DIR}/pisa_mon",
+           PATH => ( defined( $ENV{'PISA_DIR'} ) ? "$ENV{PISA_DIR}/pisa_mon" : "" ),
           },
          photom_mon => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => "$ENV{PHOTOM_DIR}/photom_mon",
+           PATH => ( defined( $ENV{'PHOTOM_DIR'} ) ? "$ENV{PHOTOM_DIR}/photom_mon" : "" ),
           },
          atools_mon => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => "$ENV{ATOOLS_DIR}/atools_mon",
+           PATH => ( defined( $ENV{'ATOOLS_DIR'} ) ? "$ENV{ATOOLS_DIR}/atools_mon" : "" ),
           },
          p4         => {
            MESSYS => 'AMS',
@@ -234,12 +229,7 @@ my %MonolithDefns = (
            CLASS => 'ORAC::Msg::Task::ADAM',
            PATH => \&fluxes_helper,
           },
-         test_mon   => {
-           MESSYS => 'AMS',
-           CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => "this/is/junk",
-          },
-	 scu2fts => {
+         scu2fts => {
            MESSYS => 'DRAMA',
            CLASS => 'ORAC::Msg::Task::DRAMA',
            PATH => (exists $ENV{SCU2FTS_DIR} ? $ENV{SCU2FTS_DIR}. "/scu2fts" :
