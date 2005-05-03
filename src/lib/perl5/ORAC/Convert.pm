@@ -320,6 +320,10 @@ sub convert {
       orac_print("Converting from HDS to MEF...\n");
       $outfile = $self->hds2mef;
       orac_print("...done\n");
+  } elsif ($options{'IN'} eq 'HDS' && $options{'OUT'} eq 'WFCAM_MEF') {
+      orac_print("Converting WFCAM file from HDS to MEF...\n");
+      $outfile = $self->hds2mef_wfcam;
+      orac_print("...done\n");
 
   } elsif ($options{'IN'} eq 'HDS' && $options{OUT} eq 'NDF') {
     # Implement HDS2NDF
@@ -543,6 +547,60 @@ sub ndf2fits {
     return undef;
   }
 
+}
+
+sub hds2mef_wfcam {
+    my $self = shift;
+
+    use Cirdr::Primitives qw(:constants);
+    use Cirdr::Opt qw(cir_wfcam_convert);
+    use ORAC::Frame::WFCAM;
+
+    # Check for the input file
+
+    unless (-e $self->infile) {
+        orac_err "Input filename (".$self->infile.") does not exist -- can not convert\n";
+        return undef;
+    }
+
+    # Read the input file - we only want the basename (we know .sdf suffix)
+
+    my ($base,$dir,$suffix) = fileparse($self->infile,'.sdf');
+
+    # The HDS file for the HDS system is the base name and directory 
+    # but no suffix
+
+    my $hdsfile = File::Spec->catfile($dir,$base);
+
+    # Get an output file name
+
+    my $outfile = $base . ".fit";
+
+    # Check for the existence of the output file in the current dir
+    # and whether we can overwrite it.
+
+    if (-e $outfile && ! $self->overwrite) {
+        orac_warn "The converted file ($outfile) already exists - won't convert again\n";
+        return $outfile;
+    }
+
+    # Get the standard fits keywords
+
+    my @phukeys = ORAC::Frame::WFCAM::phukeys;
+    my @ehukeys = ORAC::Frame::WFCAM::ehukeys;
+    my $nphu = @phukeys;
+    my $nehu = @ehukeys;
+
+    # Do the conversion
+
+    my $errmsg;
+    my $retval = cir_wfcam_convert($hdsfile,$outfile,\@phukeys,$nphu,\@ehukeys,
+				   $nehu,$errmsg);
+    if ($retval != CIR_OK) {
+	orac_err("Couldn't convert $hdsfile -- $errmsg\n");
+	return(undef);
+    }
+    return($outfile);
 }
 
 =item B<hds2mef>

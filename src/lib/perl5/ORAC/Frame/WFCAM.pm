@@ -246,7 +246,8 @@ sub new {
 
   $self->rawsuffix('.sdf');
   $self->rawformat('HDS');
-  $self->format('FITS');
+  $self->format('WFCAM_MEF');
+#  $self->format('FITS');
   $self->fitssuffix('.fit');
 
   # If arguments are supplied then we can configure the object

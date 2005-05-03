@@ -1047,7 +1047,7 @@ sub orac_determine_initial_algorithm_engines {
 
   } elsif ($inst =~ /^WFCAM/) {
 
-    @AlgEng = qw/ convert_mon /;
+    @AlgEng = qw/ /;
 
   } elsif ($inst eq 'INGRID') {
 
