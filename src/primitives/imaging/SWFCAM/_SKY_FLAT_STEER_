@@ -1,0 +1,322 @@
+# -*-perl-*-
+
+#+
+# Name:
+#    _SKY_FLAT_STEER_
+#
+# Purpose:
+#    Steers processing for SKY_FLAT recipes.
+#
+# Language:
+#    Perl5
+#
+# Description: 
+#    This primitive control processing for SKY_FLAT recipes through
+#    steering headers listed below.
+#
+# Steering Headers:
+#    CYCLE_NUMBER = INTEGER
+#       Number of the cycle, a cycle being a set of frames to complete a
+#       pass through the recipe.  The first cycle is 0.
+#    JITTER_NUMBER = INTEGER
+#       The number of frames in the jitter.
+#    MAKE_FLAT = LOGICAL
+#       Whether or not to make the flat.  The flat is made once all the
+#       jittered target frames in a cycle are available.
+#    MASK_OBJECTS = LOGICAL
+#       Whether or not to mask the objects.  Masking occurs when all the
+#       jittered frames in a cycle are available.
+#    POL_CYCLE_NUMBER = INTEGER
+#       Number of the polarimetry cycle, a cycle being a set of frames to
+#       complete a pass through the recipe for all waveplate angles.  The
+#       first cycle is 0.
+#    USE_VARIANCE = LOGICAL
+#       Whether or not variance processing is to occur.  This equates to
+#       argument USEVAR.
+#    WAVEPLATE_FLAT = LOGICAL
+#       See the argument of the same name.  This header merely propagates
+#       the value of the argument.
+#
+# Arguments:
+#    NUMBER = INTEGER (Given)
+#       The number of frames in the jitter.  If absent, the number of
+#       offsets, as given by user header ORAC_NUMBER_OF_OFFSETS, minus 
+#       one is used.  If neither is available, 5 is used.  An error state 
+#       arises if the number of jittered frames is fewer than 3.  []
+#    USEVAR = LOGICAL (Given)
+#       Whether or not to create and propagate variance arrays.  [0]
+#    WAVEPLATE_FLAT  = LOGICAL (Given)
+#       Whether or not to make a flat for each polarimeter waveplate angle.
+#       For non-polarimetric data, the value ofd the argument is immaterial.
+#       For polarimetric data, false (0) means combine all waveplate angles
+#       to make the flat (there should be an equal number of each angle).  [0]
+#
+# Notes:
+#    -  This primitive is suitable for imaging infrared cameras.
+#    -  Processing only occurs for object, sky, or calibration lamp frames.
+#    -  The data are deemed to be polarimetry if the frame internal
+#    header ORAC_FILTER contains the string "pol".
+#    -  A list of the distinct filters within the group is stored in an
+#    array stored by reference in the group user header FILTER_LIST.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC, Starlink)
+#
+# Copyright:
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# This should only be performed on OBJECT, SKY or calibration LAMP frames.
+if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+     $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ||
+     $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "LAMP" ) {
+
+# Form list of the filters.
+# =========================
+
+# Obtain the filter name from the frame header.
+  my $filter = $Frm->uhdr( "ORAC_FILTER" );
+
+# Create a new list of filters used within the group.
+  my $filterlist;
+  if ( ! defined $Grp->uhdr( "FILTER_LIST" ) ) {
+    my @filters = ( $filter );
+    $filterlist = \@filters;
+
+# Obtain the list of filters already found.  Augment the list
+# if the current filter is not in the list.  Uses a hash to store
+# each new filter.
+  } else {
+    $filterlist = $Grp->uhdr( "FILTER_LIST" );
+    push( @$filterlist, $filter );
+    my %seen = ();
+    my @distinct = ();
+    foreach my $f ( @$filterlist ) {
+      push( @distinct, $f ) unless $seen{ $f }++;
+    }
+    @$filterlist = @distinct;
+  }
+
+# Store the list in the group user header.
+  $Grp->uhdr( "FILTER_LIST", $filterlist );
+
+# Polarimetry flats
+# =================
+
+# Decide whether polarimetric data require a flat for each waveplate angle,
+# or a combined flat.  The value is always zero for non-polarimetric data.
+# Default to zero, as combining all angles seems to be the normal procedure.
+  my $waveplate_flat = 0;
+  if ( $Frm->uhdr( "ORAC_FILTER" ) =~ /pol/ ) {
+    $waveplate_flat = $_SKY_FLAT_STEER_{WAVEPLATE_FLAT};
+    $waveplate_flat = defined( $waveplate_flat ) ? $waveplate_flat: 0;
+  }
+
+# Obtain the number of frames in the jitter pattern.
+# ==================================================
+
+# First see if a hardwired value has been supplied in the recipe.  This
+# deals with old recipes with fixed numbers and cases where a frame or
+# more is missing.
+  my $number = $_SKY_FLAT_STEER_{NUMBER};
+
+# Otherwise use the ORAC_NUMBER_OF_OFFSETS user header.  In full ORAC,
+# this stores the total number of offsets used, but ignores repeat
+# iterators.  By convention there is always an offset to the origin at
+# the end, hence the recipe requires ORAC_NUMBER_OF_OFFSETS-1.
+  if ( ! defined ( $number ) ) {
+    $number = $Frm->uhdr( "ORAC_NUMBER_OF_OFFSETS" );
+    if ( defined( $number ) ) {
+      $number--;
+
+# Finally default to the original 5.
+    } else {
+      $number = 5;
+    }
+  }
+
+# Report invalid number of frames.
+  if ( $number < 3 ) {
+    orac_throw "The number of jittered frames ($number) is fewer " .
+               "than 3.\n";
+  }
+  orac_print(" $number total offsets in pattern (includes jitters and microsteps).\n", "yellow" );
+
+# Obtain the number of microstep positions.
+  my $ustep_positions = $_SKY_FLAT_STEER_{USTEP_POSITIONS};
+  if( ! defined( $ustep_positions ) ) {
+    $ustep_positions = $Frm->uhdr("ORAC_NUMBER_OF_MICROSTEP_POSITIONS");
+  }
+  if( ! defined( $ustep_positions ) ) {
+    orac_warn "Number of microstep positions undefined. Defaulting to 1.\n";
+    $ustep_positions = 1;
+  }
+  orac_print(" $ustep_positions positions in microstep pattern.\n", "yellow" );
+
+# Set steering headers.
+# =====================
+
+# Obtain the USEVAR argument.  Default to false.
+  my $usevar = $_SKY_FLAT_STEER_{USEVAR};
+  $usevar = defined( $usevar ) ? $usevar : 0;
+  $Frm->uhdr( "USE_VARIANCE", $usevar );
+
+# Specify during processing of which frames should the flat be created.
+  if ( ($Grp->num + 1) % $number == 0 && $Grp->num > 0 ) {
+    $Frm->uhdr( "MAKE_FLAT", 1 );
+    $Frm->uhdr( "MASK_OBJECTS", 1 );
+  } else {
+    $Frm->uhdr( "MAKE_FLAT", 0 );
+    $Frm->uhdr( "MASK_OBJECTS", 0 );
+  }
+
+# Set a header telling later primitives to use this frame or not for
+# flat-fielding. We only use the first from each microstep pattern because
+# the microsteps are sufficiently small that flat-fielding might be
+# adversely affected from too much flux.
+  if( $ustep_positions != 1 ) {
+    if( ( $Grp->num % $ustep_positions ) == 0 ) {
+      $Frm->uhdr( "USE_FOR_FLAT", 1 );
+      orac_print(" This frame will be used to make the flat.\n", "yellow");
+    } else {
+      $Frm->uhdr( "USE_FOR_FLAT", 0 );
+      orac_print(" This frame will not be used to make the flat.\n", "yellow");
+    }
+  } else {
+    $Frm->uhdr( "USE_FOR_FLAT", 1 );
+    orac_print(" This frame will be used to make the flat.\n", "yellow");
+  }
+
+# Insert the cycle number of the set of NUMBER frames, unless it is 
+# polarimetry flats at each angle.  A complete cycle is four times
+# the number of jitter positions.  Ideally, one would like to
+# inquire the number of angles, but at the time of writing it is
+# always four.
+  my $cycleno = int( $Grp->num / $number );
+  $Frm->uhdr( "CYCLE_NUMBER", $cycleno );
+  if ( $waveplate_flat ) {
+    $Frm->uhdr( "POL_CYCLE_NUMBER", int( $Grp->num / ( $number * 4 ) ) );
+  } else {
+    $Frm->uhdr( "POL_CYCLE_NUMBER", $cycleno );
+  }
+
+# Insert the number of frames in the jitter.
+  $Frm->uhdr( "JITTER_NUMBER", $number );
+
+# Insert whether or not to make separate waveplate flats.
+  $Frm->uhdr( "WAVEPLATE_FLAT", $waveplate_flat );
+}
+
+# Podule
+# ======
+
+=head1 NAME
+
+_SKY_FLAT_STEER_ -- Steers processing for SKY_FLAT recipes.
+
+=head1 DESCRIPTION
+
+This primitive control processing for SKY_FLAT recipes through
+steering headers listed below.
+
+=head1 STEERING HEADERS
+
+=over 4
+
+=item CYCLE_NUMBER = INTEGER
+
+Number of the cycle, a cycle being a set of frames to complete a
+pass through the recipe.  The first cycle is 0.
+
+=item JITTER_NUMBER = INTEGER
+
+The number of frames in the jitter.
+
+=item MAKE_FLAT = LOGICAL
+
+Whether or not to make the flat.  The flat is made once all the
+jittered target frames in a cycle are available.
+
+=item MASK_OBJECTS = LOGICAL
+
+Whether or not to mask the objects.  Masking occurs when all the
+jittered frames in a cycle are available.
+
+=item POL_CYCLE_NUMBER = INTEGER
+
+Number of the polarimetry cycle, a cycle being a set of frames to
+complete a pass through the recipe for all waveplate angles.  The
+first cycle is 0.
+
+=item USE_VARIANCE = LOGICAL
+
+Whether or not variance processing is to occur.  This equates to
+argument USEVAR.
+
+=item WAVEPLATE_FLAT = LOGICAL
+
+See the argument of the same name.  This header merely propagates
+the value of the argument.
+
+=back
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item NUMBER = INTEGER (Given)
+
+The number of frames in the jitter.  If absent, the number of offsets,
+as given by user header ORAC_NUMBER_OF_OFFSETS, minus one is used.  If
+neither is available, 5 is used.  An error state arises if the number
+of jittered frames is fewer than 3.  []
+
+=item USEVAR = LOGICAL (Given)
+
+Whether or not to create and propagate variance arrays.  [0]
+
+=item WAVEPLATE_FLAT  = LOGICAL (Given)
+
+Whether or not to make a flat for each polarimeter waveplate angle.
+For non-polarimetric data, the value ofd the argument is immaterial.
+For polarimetric data, false (0) means combine all waveplate angles
+to make the flat (there should be an equal number of each angle).  [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for imaging infrared cameras.
+
+=item *
+
+Processing only occurs for object, sky, or calibration lamp frames.
+
+=item *
+
+The data are deemed to be polarimetry if the frame internal header
+ORAC_FILTER contains the string "pol".
+
+=item *
+
+A list of the distinct filters within the group is stored in an
+array stored by reference in the group user header FILTER_LIST.
+
+=back
+
+=head1 AUTHORS
+
+Malcolm J. Currie (JAC, Starlink) <mjc@star.rl.ac.uk>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
