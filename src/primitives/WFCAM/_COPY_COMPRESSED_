@@ -1,34 +1,34 @@
-# Is the compressed data directory environment variable defined?
+use Astro::FITS::CFITSIO qw(:longnames :constants);
 
-if ($ENV{'ORAC_DATA_CASU'}) {
+# Create input and output names
 
-   # Check to see if the directory exists.  If it doesn't then create it.
-   if (! -d $ENV{'ORAC_DATA_CASU'}) {
-      if (! mkdir $ENV{'ORAC_DATA_CASU'}) {
-         orac_err("Unable to create directory for compressed data $ENV{'ORAC_DATA_CASU'}\n");
-      }
-   }
+my $infile = $Frm->file;
+my $outfile = "c" . $infile;
 
-   # Right, now assuming all that went well, we can now copy the file 
-   # over into the casu directory. If it already exists, then don't bother
-   # to try and do it again.
+# Check to see if it's already been compressed. Rice compressed data looks like
+# a FITS table, so check for that...
 
-   my $infile = $Frm->file;
-   my $outfile = sprintf("%s/%s",$ENV{'ORAC_DATA_CASU'},$infile);
-   if (-f $outfile) {
-      orac_print("CASU file $outfile already exists\n");
-   } else {
-      my $errmsg;
-      my $nread = $Frm->hdr("NEXP");
-      $nread = 1 if (! $nread);
-      my $retval = cir_compress_mef_f2i($infile,$nread,$outfile,$errmsg);
-      if ($retval != CIR_OK) {
-         orac_err("CIR_COMPRESS_MEF_F2I: failed in _COPY_COMPRESSED_\n$errmsg\n");
-      }
-      orac_print("CASU file $outfile created\n");
-   }
+my $hdutype;
+my $status = 0;
+my $fptr = Astro::FITS::CFITSIO::open_file($infile,READONLY,$status);
+$fptr->movabs_hdu(2,$hdutype,$status);
+$fptr->close_file($status);
+
+# If it's an image then do the compression
+
+if ($hdutype == IMAGE_HDU) {
+    my $errmsg;
+    my $nread = $Frm->hdr("NEXP");
+    $nread = 1 if (! $nread);
+    my $retval = cir_compress_mef_f2i($infile,$nread,$outfile,$errmsg);
+    if ($retval != CIR_OK) {
+        orac_err("CIR_COMPRESS_MEF_F2I: failed in _COPY_COMPRESSED_\n$errmsg\n");
+    }
+    orac_print("CASU file $infile created\n");
+    unlink $infile;
+    rename($outfile,$infile);
 } else {
-   orac_warn("Compressed data environment variable unset - will not create files for export\n");
+    orac_print("$infile is already compressed\n");
 }
 
 
