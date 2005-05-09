@@ -322,14 +322,42 @@ sub convert {
       orac_print("...done\n");
   } elsif ($options{'IN'} eq 'HDS' && $options{'OUT'} eq 'WFCAM_MEF') {
       orac_print("Converting WFCAM file from HDS to MEF...\n");
-      if (eval "require Cirdr::Opt" && eval "require Cirdr::Primitives") {
-          use Cirdr::Primitives qw(:constants);
-          use Cirdr::Opt qw(cir_wfcam_convert);
-          $outfile = $self->hds2mef_wfcam;
+
+      # Try to do this using the Cirdr Perl modules. If either of them
+      # fail, we'll fall back to use the convert_mon-based routines.
+      eval( "require Cirdr::Opt" );
+      if( $@ ) {
+
+        # Couldn't load Cirdr::Opt for some reason, so fall back to
+        # use the convert_mon-based routines.
+        $outfile = $self->hds2mef;
+
       } else {
-	  $outfile = $self->hds2mef;
+
+        # Import the required method.
+        Cirdr::Opt->import( qw/ cir_wfcam_convert / );
+
+        # Now try to get Cirdr::Primitives.
+        eval( "require Cirdr::Primitives" );
+        if( $@ ) {
+
+          # Oops, couldn't load this one either.
+          $outfile = $self->hds2mef;
+
+        } else {
+
+          # Import the required list of constants.
+          Cirdr::Primitives->import( qw/ :constants / );
+
+          # At this point we've got both of the Cirdr modules, so
+          # use the appropriate method.
+          $outfile = $self->hds2mef_wfcam;
+
+        }
       }
+
       orac_print("...done\n");
+
   } elsif ($options{'IN'} eq 'HDS' && $options{OUT} eq 'NDF') {
     # Implement HDS2NDF
     orac_print "Converting from HDS container to merged NDF...\n";
@@ -555,57 +583,57 @@ sub ndf2fits {
 }
 
 sub hds2mef_wfcam {
-    my $self = shift;
+  my $self = shift;
 
 #    use Cirdr::Primitives qw(:constants);
 #    use Cirdr::Opt qw(cir_wfcam_convert);
-    use ORAC::Frame::WFCAM;
+  use ORAC::Frame::WFCAM;
 
-    # Check for the input file
+  # Check for the input file
 
-    unless (-e $self->infile) {
-        orac_err "Input filename (".$self->infile.") does not exist -- can not convert\n";
-        return undef;
-    }
+  unless (-e $self->infile) {
+    orac_err "Input filename (".$self->infile.") does not exist -- can not convert\n";
+    return undef;
+  }
 
-    # Read the input file - we only want the basename (we know .sdf suffix)
+  # Read the input file - we only want the basename (we know .sdf suffix)
 
-    my ($base,$dir,$suffix) = fileparse($self->infile,'.sdf');
+  my ($base,$dir,$suffix) = fileparse($self->infile,'.sdf');
 
-    # The HDS file for the HDS system is the base name and directory 
-    # but no suffix
+  # The HDS file for the HDS system is the base name and directory 
+  # but no suffix
 
-    my $hdsfile = File::Spec->catfile($dir,$base);
+  my $hdsfile = File::Spec->catfile($dir,$base);
 
-    # Get an output file name
+  # Get an output file name
 
-    my $outfile = $base . ".fit";
+  my $outfile = $base . ".fit";
 
-    # Check for the existence of the output file in the current dir
-    # and whether we can overwrite it.
+  # Check for the existence of the output file in the current dir
+  # and whether we can overwrite it.
 
-    if (-e $outfile && ! $self->overwrite) {
-        orac_warn "The converted file ($outfile) already exists - won't convert again\n";
-        return $outfile;
-    }
+  if (-e $outfile && ! $self->overwrite) {
+    orac_warn "The converted file ($outfile) already exists - won't convert again\n";
+    return $outfile;
+  }
 
-    # Get the standard fits keywords
+  # Get the standard fits keywords
 
-    my @phukeys = ORAC::Frame::WFCAM::phukeys;
-    my @ehukeys = ORAC::Frame::WFCAM::ehukeys;
-    my $nphu = @phukeys;
-    my $nehu = @ehukeys;
+  my @phukeys = ORAC::Frame::WFCAM::phukeys;
+  my @ehukeys = ORAC::Frame::WFCAM::ehukeys;
+  my $nphu = @phukeys;
+  my $nehu = @ehukeys;
 
-    # Do the conversion
+  # Do the conversion
 
-    my $errmsg;
-    my $retval = cir_wfcam_convert($hdsfile,$outfile,\@phukeys,$nphu,\@ehukeys,
-				   $nehu,$errmsg);
-    if ($retval != CIR_OK) {
-	orac_err("Couldn't convert $hdsfile -- $errmsg\n");
-	return(undef);
-    }
-    return($outfile);
+  my $errmsg;
+  my $retval = cir_wfcam_convert($hdsfile,$outfile,\@phukeys,$nphu,\@ehukeys,
+                                 $nehu,$errmsg);
+  if ($retval != &CIR_OK) {
+    orac_err("Couldn't convert $hdsfile -- $errmsg\n");
+    return(undef);
+  }
+  return($outfile);
 }
 
 =item B<hds2mef>
