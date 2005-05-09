@@ -322,9 +322,14 @@ sub convert {
       orac_print("...done\n");
   } elsif ($options{'IN'} eq 'HDS' && $options{'OUT'} eq 'WFCAM_MEF') {
       orac_print("Converting WFCAM file from HDS to MEF...\n");
-      $outfile = $self->hds2mef_wfcam;
+      if (eval "require Cirdr::Opt" && eval "require Cirdr::Primitives") {
+          use Cirdr::Primitives qw(:constants);
+          use Cirdr::Opt qw(cir_wfcam_convert);
+          $outfile = $self->hds2mef_wfcam;
+      } else {
+	  $outfile = $self->hds2mef;
+      }
       orac_print("...done\n");
-
   } elsif ($options{'IN'} eq 'HDS' && $options{OUT} eq 'NDF') {
     # Implement HDS2NDF
     orac_print "Converting from HDS container to merged NDF...\n";
@@ -552,8 +557,8 @@ sub ndf2fits {
 sub hds2mef_wfcam {
     my $self = shift;
 
-    use Cirdr::Primitives qw(:constants);
-    use Cirdr::Opt qw(cir_wfcam_convert);
+#    use Cirdr::Primitives qw(:constants);
+#    use Cirdr::Opt qw(cir_wfcam_convert);
     use ORAC::Frame::WFCAM;
 
     # Check for the input file
