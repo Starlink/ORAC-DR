@@ -37,6 +37,8 @@ Council.  All Rights Reserved.
 
 =cut
 
+use Starlink::HDSPACK qw/ copy_hdsobj /;
+
 # This should only be performed on OBJECT frames.
 if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
 
@@ -83,17 +85,40 @@ if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
     orac_print "Interleaving frames...";
     my $multi = int( sqrt( $Frm->uhdr( "NUMBER_OF_MICROSTEPS" ) ) );
     my $pixfrac = 1.0 / $multi;
-    my $params = "in='^drizzle$$.lis' out=$out multi=$multi pixfrac=$pixfrac usevar=false";
-    $Mon{'ccdpack_reg'}->obeyw( "drizzle", "$params" );
+    my $param = "in='^drizzle$$.lis' out=$out multi=$multi pixfrac=$pixfrac usevar=false";
+    $Mon{'ccdpack_reg'}->obeyw( "drizzle", "$param" );
     orac_print "done.\n";
 
     # Erase the spuriously-created VARIANCE component.
     $Mon{'ndfpack_mon'}->obeyw( "erase", "object=$out.VARIANCE ok=true" );
 
+    # Copy the header from the first interleave frame.
+    my $ORAC_STATUS = ( copy_hdsobj( $interleave_frames[0]->file . ".MORE.FITS", "$out.MORE.FITS" ) ? ORAC__OK : ORAC__ERROR );
+
     orac_print "$out: Interleaved microsteps.\n";
 
     # Update the Frame object.
     $Frm->file( $out );
+
+    # Set the end airmass to reflect the last frame included in the interleave.
+    my $amendname = "ORAC_AIRMASS_END";
+    my %keywords = $Frm->translate_hdr( $amendname );
+    my @amendkey = keys( %keywords );
+    my $amend = $interleave_frames[$#interleave_frames]->uhdr( $amendname );
+    $Frm->uhdr( $amendname, $amend );
+    my $value = $keywords{ $amendkey[0] };
+    $param = "ndf=$out keyword=$amendkey[0] edit=update value=$value position=!";
+    $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$param comment=\\\$C" );
+
+    # Set the end UT time to reflect the last frame included in the interleave.
+    my $utendname = "ORAC_UTEND";
+    %keywords = $Frm->translate_hdr( $utendname );
+    my @utendkey = keys( %keywords );
+    my $utend = $interleave_frames[$#interleave_frames]->uhdr( $utendname );
+    $Frm->uhdr( $utendname, $utend );
+    $value = $keywords{ $utendkey[0] };
+    $param = "ndf=$out keyword=$utendkey[0] edit=update value=$value position=!";
+    $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$param comment=\\\$C" );
 
     # Display it.
     $Display->display_data( $Frm ) if ( defined( $Display ) );
