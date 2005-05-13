@@ -82,8 +82,8 @@ ORAC::Frame::SWFCAM->_generate_orac_lookup_methods( \%hdr );
 
 sub _to_NUMBER_OF_OFFSETS {
   my $self = shift;
-  my $njitter = $self->hdr->{NJITTER};
-  my $nustep = $self->hdr->{NUSTEP};
+  my $njitter = ( defined( $self->hdr->{NJITTER} ) ? $self->hdr->{NJITTER} : 1 );
+  my $nustep = ( defined( $self->hdr->{NUSTEP} ) ? $self->hdr->{NUSTEP} : 1 );
 
   return $njitter * $nustep + 1;
 
