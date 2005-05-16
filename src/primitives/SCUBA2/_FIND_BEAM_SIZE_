@@ -1,0 +1,185 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_FIND_BEAM_SIZE_ - Calculate the beam size from a calibrator
+
+=head1 DESCRIPTION
+
+This primitive carries out a fit to a calibrator using the Kappa PSF
+command to determine the beam size and position angle. An error is
+generated if the source is not a calibrator. The reported values are
+the full-width-at-half-maximum (FWHM) along the major and minor axes,
+and the beam position angle on the sky at the time of obseration. The
+fit is performed in the sky domain so the FWHM is returned in arcsec.
+
+By default, PSF does not assume that the beam is a gaussian, but a
+flag may be specified to force the return of the equivalent gaussian
+beam parameters.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item GAUSSIAN
+
+A flag to indicate whether the fit is forced to be gaussian. The
+default is no.
+
+=item LOGFILE
+
+A flag to indicate whether a log file should be written containing the
+results of the PSF fit. Default is true.
+
+=item VERBOSE
+
+Flag to indicate whether informational messages should be 
+given to the user. Default is verbose (true).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+=over 4
+
+=item KAPPA
+
+WCSFRAME
+
+=item Other SCUBA-2 primitives
+
+_FIT_PSF_
+
+=back
+
+=head1 OUTPUT DATA
+
+On completion, the primitive hash C<%_FIND_BEAM_SIZE_>
+contains the following key:
+
+=over 4
+
+=item RESULTS
+
+An array reference containing the beam major and minor axes and the
+position angle (E of N).
+
+=back
+
+=head1 OUTPUT FILES
+
+The following files are created:
+
+=over 4
+
+=item C<log.beam>
+
+Log of beam sizes.
+
+=back
+
+=head1 KNOWN ISSUES
+
+The beam PA is given in the SKY domain and will therefore rotate with
+the sky during the course of a single night.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+Copyright (C) 2005 the University of British Columbia.  All Rights
+Reserved.
+
+=cut
+
+# First check that we only have one file in the Frame
+unless ($Frm->nfiles == 1) {
+    orac_throw "Error: _FIND_BEAM_SIZE_ must be run after frames have been combined\n";
+#    exit;
+}
+
+# Are we forcing a gaussian?
+my $gaussian = (exists $_FIND_BEAM_SIZE_{GAUSSIAN} &&
+		defined $_FIND_BEAM_SIZE_{GAUSSIAN}) ?
+  $_FIND_BEAM_SIZE_{GAUSSIAN} : 0;
+
+# Should I be verbose? (Default to yes)
+my $verbose = (exists $_FIND_BEAM_SIZE_{VERBOSE} && 
+	       defined $_FIND_BEAM_SIZE_{VERBOSE}) ?
+  $_FIND_BEAM_SIZE_{VERBOSE} : 1;
+
+# Do we have a calibrator?
+my $calib = $Cal->iscalsource($Frm->hdr("OBJECT")) ;
+orac_throw "Error: source is not a known calibrator \n" 
+  unless ($calib);
+
+# Initialise the log file if necessary
+my $beamlog;
+if ($uselog) {
+  my $time = gmtime();
+  $beamlog = new ORAC::LogFile("log.beam");
+  $beamlog->header("Beam log file - created on $time",
+               "\n#     Time   Filter      A       B       PA     CSO   El  Object",
+             "------------------------------------------------------------------------"
+            );
+}
+
+# Find the source position
+# Use SKY frame to get source position in RA, Dec
+my $wcsframe = "sky";
+_FIND_BRIGHTEST_SOURCE_ LOGFILE=0 WCSFRAME=$wcsframe
+
+# Create temporary file with the position in
+my $tmp = new ORAC::TempFile;
+my $cofile = $tmp->file;
+print { $tmp->handle } $_FIND_BRIGHTEST_SOURCE_{RESULTS}->[0]," ",
+                       $_FIND_BRIGHTEST_SOURCE_{RESULTS}->[1], "\n";
+$tmp->handle->close;
+
+# Fit the source with a PSF
+_FIT_PSF_ IMAGE=$in USELOG=1 COFILE=$cofile GAUSSIAN=$gaussian
+($amp, $fwhm, $axisr, $gamma, $orient) = @{ $_FIT_PSF_{RESULTS} };
+
+if ($axisr > 1.4 || $axisr < 0.75) {
+  orac_warn "Warning: Fit appears to be poor or beam highly elongated \n";
+}
+
+my $beama = $fwhm;
+my $beamb = $fwhm * $axisr;
+
+$_FIND_BEAM_SIZE_{RESULTS} = [$beama, $beamb, $orient];
+
+# Update $Cal object
+#$Cal->store_beam($arr, @beam) ;
+
+# Write a log file if required
+if ($uselog) {
+  my $num = 1;
+  my $time= sprintf "%12.3f", $Frm->hdr('ORACTIME');
+  my $filt= sprintf "%4s",   "850";
+
+  # Get the tau from calibration object
+#    my $tau = sprintf "%5.2f", $Cal->tau($filters[$i-1]);
+
+  # Use that tau to calculate CSO
+#    my ($cso, $status) = JCMT::Tau::get_tau('CSO',$filters[$i-1], $tau);
+#    if ($status != 0) {
+#      $cso = "*****";
+#    } else {
+#      $cso = sprintf "%5.2f", $cso;
+#    }
+  my $cso = sprintf "%5.2f", "1.0";
+
+  # Elevation
+  my $el = int (($Frm->hdr('STRT_ELD') + $Frm->hdr('END_ELD') ) /2.0 );
+  $beama = sprintf "%5.3f", $beama;
+  $beamb = sprintf "%5.3f", $beamb;
+  $orient = sprintf "%5.3f", $orient;
+  $beamlog->addentry("$num  $time  $filt  $beama  $beamb  $orient  $cso $el ".$Frm->hdr('OBJECT'));
+  orac_print "Beam size for filter 850: $beama X $beamb arcsec^2 at a PA of $orient deg E of N \n"
+    if ($verbose);
+
+}
+
