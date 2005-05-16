@@ -17,6 +17,17 @@ on the version of CCDPACK installed), and if so the process is divided
 into several steps to generate intermediate mosaicked files which are
 then mosaicked at the end.
 
+=head1 ARGUMENTS
+
+=over 4
+
+=item METHOD
+
+The method to be used to combine the images. In principle could be any
+value supported by MAKEMOS (see MAKEMOS documentation for further
+details). In practice, only MEAN or MEDIAN are supported. MEDIAN is
+the default.
+
 =head1 KNOWN ISSUES
 
 Assumes the _ALIGN_ARRAYS_ primitive has been run on the input
@@ -59,6 +70,15 @@ Place, Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
+# Method for combiningg images: mean or median
+my $method = (exists $_MAKE_MOSAIC_FRAME_{METHOD} &&
+	      defined $_MAKE_MOSAIC_FRAME_{METHOD}) ?
+  lc($_MAKE_MOSAIC_FRAME_{METHOD}) : "median";
+
+# Should check it's a legal value...
+orac_throw "Error: unknown image combination method, $method (should be mean or median) \n"
+  unless ( ($method eq "mean") || ($method eq "median") );
+
 # Set verbose flag manually for now.
 my $verbose = 0;
 
@@ -73,32 +93,32 @@ my @mosaiclist;
 
 if (@files > $maxmosfiles) {
 
-    use POSIX qw/ ceil /;
-    my $nsteps = ceil(@files/$maxmosfiles);
-    my $stepsize = ceil(@files/$nsteps);
+  use POSIX qw/ ceil /;
+  my $nsteps = ceil(@files/$maxmosfiles);
+  my $stepsize = ceil(@files/$nsteps);
 
-    my $i = 1;
+  my $i = 1;
 
-    orac_print "STEP = $stepsize, NSTEPS = $nsteps\n" if $verbose;
+  orac_print "STEP = $stepsize, NSTEPS = $nsteps\n" if $verbose;
 
-    while ($i < $#files) {
+  while ($i < $#files) {
 
-	my $start = $i;
-	my $end = $start + $stepsize - 1;
+    my $start = $i;
+    my $end = $start + $stepsize - 1;
 
-	my $intmp = new ORAC::TempFile;
-	print {$intmp->handle} join("\n",@files[$start..$end]);
+    my $intmp = new ORAC::TempFile;
+    print {$intmp->handle} join("\n",@files[$start..$end]);
     
-	my $outmos = new ORAC::TempFile;
-	$Mon{ccdpack_reg}->obeyw("makemos","in=^".$intmp->file." nousevar out=".$outmos->file." scale zero");
-	orac_print "DOING INTERMEDIATE MOSAIC \n" if $verbose;
-	push (@mosaiclist, $outmos->file);
+    my $outmos = new ORAC::TempFile;
+    $Mon{ccdpack_reg}->obeyw("makemos","in=^".$intmp->file." method=$method nousevar out=".$outmos->file." scale zero");
+    orac_print "DOING INTERMEDIATE MOSAIC \n" if $verbose;
+    push (@mosaiclist, $outmos->file);
 	
-	$i = $end + 1;
-    }
+    $i = $end + 1;
+  }
 
 } else {
-    @mosaiclist = @files;
+  @mosaiclist = @files;
 }
 # create output filename, derived from first input file
 # since this is a many to one operation
