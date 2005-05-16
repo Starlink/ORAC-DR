@@ -305,9 +305,12 @@ sub calc_orac_headers {
   my $t1 = 0;
   if (defined($time)) {
       $time =~ /(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/;
-      $t1 = timegm($6,$5,$4,$3,$2-1,$1);
-      my $t0 = timegm(0,0,0,1,0,2001);
-      $t1 -= $t0;
+      my $frac = $4/24.0 + $5/(24.0*60.0) + $6/(24.0*60.0*60.0);
+      $t1 = sprintf("%4d%02d%02d",$1,$2,$3);
+      $t1 += $frac;
+#      $t1 = timegm($6,$5,$4,$3,$2-1,$1);
+#      my $t0 = timegm(0,0,0,1,0,2001);
+#      $t1 -= $t0;
   }
   $self->hdr('ORACTIME', $t1);
   $new{'ORACTIME'} = $t1;
