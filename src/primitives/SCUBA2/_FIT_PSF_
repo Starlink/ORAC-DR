@@ -1,0 +1,157 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_FIT_PSF_ - Determine the PSF from a point source
+
+=head1 DESCRIPTION
+
+Determines the point-spread function (PSF) from a given image,
+implicitly assumed to contain a single point source. The Starlink
+Kappa routine PSF is used, and must be supplied with the name of a
+file containing an estimate of the source position.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item IMAGE
+
+Name of image to fit PSF. No default.
+
+=item COFILE
+
+Name of file containing estimate of position of point source. No default.
+
+=item GAUSSIAN
+
+If true, then the PSF fit is forced to be a gaussian.
+
+=item VERBOSE
+
+Flag to indicate whether informational messages should be 
+given to the user. Default is verbose (true).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+=over 4
+
+=item KAPPA
+
+PSF, WCSFRAME
+
+=back
+
+=head1 OUTPUT DATA
+
+On completion, the primitive hash C<%_FIT_PSF_>
+contains the following key:
+
+=over 4
+
+=item RESULTS
+
+An array (reference) containing the five fit parameters from PSF:
+amplitude, FWHM, axis-ratio, gamma, and orientation. See the Starlink
+PSF documentation for further details of these parameters. Contains
+C<undef> if the calculation did not complete sucessfully.
+
+=back
+
+=head1 OUTPUT FILES
+
+The following files are created:
+
+=over 4
+
+=item C<log.beam>
+
+Log of beam sizes. Created only if the source is a known calibrator.
+
+=back
+
+=head1 KNOWN ISSUES
+
+Does not work with multiple sources in the COFILE. Currently assuming
+that we only want to fit to a single source (reasonable for
+SCUBA2). Also, fits only a single PSF and thus is not really suitable
+for use at 450 um as it does not take the error beam into account.
+
+The beam PA is given in the SKY domain and will therefore rotate with
+the sky during the course of a single night.
+
+=head1 FUTURE WORK
+
+If COFILE is false then another keyword could be used to specify the
+source position (RADEC=...).
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+Copyright (C) 2005 the University of British Columbia.  All Rights
+Reserved.
+
+=cut
+
+# Determine that we have an image as an argument...
+unless (exists $_FIT_PSF_{IMAGE} && defined $_FIT_PSF_{IMAGE}) {
+  orac_throw "Error: _FIT_PSF_ requires a file as input \n";
+}
+my $in = $_FIT_PSF_{IMAGE};
+# Check for COFILE
+unless (exists $_FIT_PSF_{COFILE} && defined $_FIT_PSF_{COFILE}) {
+  orac_throw "Error: _FIT_PSF_ requires a file containing an estimate of the source position \n";
+}
+
+# Are we forcing a gaussian?
+my $gaussian = (exists $_FIT_PSF_{GAUSSIAN} &&
+		defined $_FIT_PSF_{GAUSSIAN}) ?
+  $_FIT_PSF_{GAUSSIAN} : 0;
+
+# Should I be verbose? (Default to yes)
+my $verbose = (exists $_FIT_PSF_{VERBOSE} && 
+	       defined $_FIT_PSF_{VERBOSE}) ?
+  $_FIT_PSF_{VERBOSE} : 1;
+
+# Initialize the results array
+$_FIT_PSF_{RESULTS} = [];
+
+# Use SKY frame to use source positions in RA, Dec
+my $wcsframe = "sky";
+# Set the desired WCS frame
+$Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=$wcsframe");
+
+# We now run PSF if possible else simply use the peak position from
+# centroiding
+my ($amp, $axisr, $fwhm, $gamma, $orient);
+if (starversion_lt('kappa', 'V0.15-0')) {
+  # warn
+  orac_throw "Your kappa version is too old to use PSF properly. Unable to fit PSF\n";
+} else {
+  my $ORAC_STATUS;
+  my $args = "incat=! device=! gauss=$gaussian cofile=$_FIT_PSF_{COFILE}";
+
+  # Run PSF
+  $Mon{kappa_mon}->obeyw("psf","norm=no range=4 isize=15 in=$in $args");
+
+  # Retrieve the answer
+  ( $ORAC_STATUS, $amp)    = $Mon{kappa_mon}->get("psf","amp1");
+  ( $ORAC_STATUS, $axisr)  = $Mon{kappa_mon}->get("psf","axisr");
+  ( $ORAC_STATUS, $fwhm)   = $Mon{kappa_mon}->get("psf","fwhm");
+  ( $ORAC_STATUS, $gamma)  = $Mon{kappa_mon}->get("psf","gamma");
+  ( $ORAC_STATUS, $orient) = $Mon{kappa_mon}->get("psf","orient");
+
+  orac_print "Successful PSF fit: AMP=".$amp.", FWHM=".$fwhm.", AXISR=".$axisr.
+             ", GAMMA=". $gamma ." , ORIENT=".$orient."\n" if ($verbose);
+}
+
+# Store the result in the hash
+$_FIT_PSF_{RESULTS} = [ $amp, $fwhm, $axisr, $gamma, $orient ];
+
+orac_print "Calculated PSF fit parameters \n" if $verbose;
+
