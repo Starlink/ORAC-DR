@@ -1,0 +1,177 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_GET_PIXEL_SCALE_ - Determine the pixel scale for a given image
+
+=head1 DESCRIPTION
+
+_GET_PIXEL_SCALE_ determines the pixel scale for a given image by
+examining the information in the WCS extension. The calculation is
+carried out by defining three PIXEL positions in the image, converting
+these into positions in the desired output frame (e.g. SKY) and then
+using astDistance to compute the distance in radians between the
+positions in the x- and y-directions respectively.
+
+Returns an error if desired frame is not in the frameset; currently
+this means that if there is no SKY frame the primitive aborts.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item IMAGE
+
+Name of image. No default.
+
+=item DOMAIN
+
+Desired domain for output values. Default is SKY. (Currently SKY is
+the B<only> supported domain.)
+
+=item VERBOSE
+
+Flag to indicate whether informational messages should be 
+given to the user. Default is true.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+=over 4
+
+=item AST and NDF
+
+=back
+
+=head1 OUTPUT DATA
+
+On completion, the primitive hash C<%_GET_PIXEL_SCALE_>
+contains the following keys:
+
+=over 4
+
+=item RESULTS
+
+Array reference with pixel scales in the X and Y directions in radians
+
+=back
+
+=head1 KNOWN ISSUES
+
+The checking for the presence of the SKY frame is not very
+sophisticated, and only relies on seeing if a variable is left unset.
+
+Output frames other than SKY are not yet supported.
+
+=head1 FUTURE WORK
+
+Add UNITS as an arguments so that the answer is returned in the
+desired units?
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+Copyright (C) 2005 the University of British Columbia.  All Rights
+Reserved.
+
+=cut
+
+# Load AST & NDF modules
+use Starlink::AST;
+use NDF;
+
+# Determine that we have an image as an argument...
+unless (exists $_GET_PIXEL_SCALE_{IMAGE} && defined $_GET_PIXEL_SCALE_{IMAGE}) {
+  orac_throw "Error: _GET_PIXEL_SCALE_ requires a file as input \n";
+}
+
+# Set the input file
+my $in = $_GET_PIXEL_SCALE_{IMAGE};
+
+# Should I be verbose? (default to yes)
+my $verbose = (exists $_GET_PIXEL_SCALE_{VERBOSE} && 
+	       defined $_GET_PIXEL_SCALE_{VERBOSE}) ?
+	       $_GET_PIXEL_SCALE_{VERBOSE} : 1;
+
+# initialise the results array
+$_GET_PIXEL_SCALE_{RESULTS} = [];
+
+my $indomain = "PIXEL";
+# Check the desired output frame - default is SKY
+my $outdomain = (exists $_GET_PIXEL_SCALE_{DOMAIN} &&
+	      defined $_GET_PIXEL_SCALE_{DOMAIN}) ?
+    uc($_GET_PIXEL_SCALE_{DOMAIN}) : "SKY";
+
+# For now only sky domains are supported. Shouldn't be too much of a
+# problem as I can't see anyone wanting any of the intermediate
+# domains.
+unless ($outdomain =~ /SKY/) {
+  orac_throw "Sorry requested domain $outdomain is not yet supported \n";
+}
+
+# Create FrameSet from the WCS info in the input file
+my $STATUS;
+ndf_begin();
+ndf_find( &NDF::DAT__ROOT(), $in, my $indf, $STATUS );
+
+my $frameset = ndfGtwcs( $indf, $STATUS );
+ndf_annul( $indf, $STATUS );
+ndf_end( $STATUS );
+
+# Frame numbers corresponding to the given in/out domain names
+my $indom;
+my $outdom = -1;
+# Number of Frames in the FrameSet
+my $nframes = $frameset->Get( 'Nframe' );
+
+# Loop over the number of domains in the FrameSet to set the Frame
+# number for the specified domain
+foreach my $i (0 .. $nframes) {
+  my $tmp_frame = $frameset->GetFrame( $i );
+  my $domain = $tmp_frame->Get( 'Domain' );
+  $indom = $i if ($domain eq $indomain);
+  $outdom = $i if ($domain eq $outdomain);
+}
+
+# Check that the SKY domain exists - not fancy as it only
+# checks whether $outdom is unset
+orac_throw "Error: Image has no SKY domain \n" if ($outdom == -1);
+
+# Else, establish frames
+my $inframe = $frameset->GetFrame( $indom );
+my $outframe = $frameset->GetFrame( $outdom );
+
+# Retrieve mapping between desired domains
+my $mapping = $frameset->GetMapping( $indom, $outdom );
+
+# Set up arrays of positions to use in pixel coords.
+my @xpixels = (1, 1, 2);
+my @ypixels = (1, 2, 1);
+
+# Convert pixel positions into sky positions
+(my $xskyref, my $yskyref) = $frameset->Tran2( \@xpixels, \@ypixels, 1);
+
+# Output positions on the sky
+my @xsky = ($xskyref->[0], $xskyref->[1], $xskyref->[2] );
+my @ysky = ($yskyref->[0], $yskyref->[1], $yskyref->[2] );
+
+# Use astDistance to calculate the distance on the sky between the positions
+my $pt1 = [ $xsky[0], $ysky[0] ] ;
+my $pt2 = [ $xsky[2], $ysky[2] ] ;
+my $xscale = Starlink::AST::Frame::Distance($outframe, $pt1, $pt2);
+
+my $pt2 = [ $xsky[1], $ysky[1] ] ;
+my $yscale = Starlink::AST::Frame::Distance($outframe, $pt1, $pt2);
+
+# Store the result in the hash
+$_GET_PIXEL_SCALE_{RESULTS} = [$xscale, $yscale];
+
+orac_print " X-pixel scale is $xscale radians, \n Y-pixel scale is $yscale radians \n"
+  if $verbose;
+  
+orac_print "Successfully Calculated pixel scale for image\n" if $verbose;
+
