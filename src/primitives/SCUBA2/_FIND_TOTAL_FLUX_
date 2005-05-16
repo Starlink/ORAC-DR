@@ -56,7 +56,8 @@ PSF, WCSFRAME
 
 =item Other SCUBA-2 primitives
 
-_FIND_INTEGRATED_INTENSITY_, _FIND_BRIGHTEST_SOURCE_
+_FIT_PSF_, _FIND_INTEGRATED_INTENSITY_, _FIND_BRIGHTEST_SOURCE_,
+_GET_PIXEL_SCALE_
 
 =back
 
@@ -69,14 +70,14 @@ contains the following keys:
 
 =item RESULTS
 
-The total flux for the current Frame. Contains C<undef> if the
-calculation did not complete sucessfully.
+The total flux for brightest source in the current Frame. Contains
+C<undef> if the calculation did not complete sucessfully.
 
 =back
 
 =head1 OUTPUT FILES
 
-The following files are created:
+The following file is created:
 
 =over 4
 
@@ -85,6 +86,9 @@ The following files are created:
 Log of flux values.
 
 =back
+
+Note that if the object is a calibrator, then the fitting routine will
+write an entry in a beam log.
 
 The frame object is not updated.
 
@@ -105,17 +109,23 @@ unless ($Frm->nfiles == 1) {
 #    exit;
 }
 
+# Also should check that this has been run after calibration?
+
+# Define the constants, Radians to arcsec and pi
+use constant RAD2ASEC => 206265.0;
+use constant PI => 3.1415926535;
+
 # Write logfile (default to true)
 my $uselog = (exists $_FIND_TOTAL_FLUX_{LOGFILE} &&
           defined $_FIND_TOTAL_FLUX_{LOGFILE}) ?
   $_FIND_TOTAL_FLUX_{LOGFILE} : 1;
 
-# Should I be verbose (default to yes)
+# Should I be verbose? (Default to yes)
 my $verbose = (exists $_FIND_TOTAL_FLUX_{VERBOSE} && 
 	       defined $_FIND_TOTAL_FLUX_{VERBOSE}) ?
   $_FIND_TOTAL_FLUX_{VERBOSE} : 1;
 
-# initialise the results array
+# Initialize the results array
 $_FIND_TOTAL_FLUX_{RESULTS} = [];
 
 # Check the desired flux calculation method.
@@ -132,73 +142,100 @@ if ($uselog) {
                "\n#     Time   Filter        TotalFlux    CSO   El",
              "----------------------------------------------------------"
             );
-
 }
 
 # Find the brightest source in the frame
-_FIND_BRIGHTEST_SOURCE_ LOGFILE=0 WCSFRAME=grid
+# Use SKY frame to get source position in RA, Dec
+my $wcsframe = "sky";
+_FIND_BRIGHTEST_SOURCE_ LOGFILE=0 WCSFRAME=$wcsframe
 
 # Find the input file
 my $in = $Frm->file(1);
+# Set the desired WCS frame
+$Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=$wcsframe");
 
 # We now run PSF if possible else simply use the peak position from
 # centroiding
 my $totalflux;
 if (starversion_lt('kappa', 'V0.15-0')) {
-    # warn
-    orac_warn "Your kappa version is too old to use PSF properly. Using stats to find total flux\n";
-    # Resort to stats method
-    _FIND_INTEGRATED_INTENSITY_ VERBOSE=0 LOGFILE=0;
-    $totalflux = $_FIND_INTEGRATED_INTENSITY_{RESULTS} ;
-
+  # warn
+  orac_warn "Your kappa version is too old to use PSF properly. Using stats to find total flux\n";
+  # Resort to stats method
+  _FIND_INTEGRATED_INTENSITY_ VERBOSE=0 LOGFILE=0;
+  $totalflux = $_FIND_INTEGRATED_INTENSITY_{RESULTS} ;
 } else {
-    # Need to make sure we are using a AXIS coordinate frame
-#    $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=axis");
-    $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=pixel");
 
-    # Create temporary file with the position in
-    my $tmp = new ORAC::TempFile;
-    my $tmpfile = $tmp->file;
-    print { $tmp->handle } $_FIND_BRIGHTEST_SOURCE_{RESULTS}->[0]," ",
-       $_FIND_BRIGHTEST_SOURCE_{RESULTS}->[1], "\n";
-    $tmp->handle->close;
+  # Create temporary file with the position in
+  my $tmp = new ORAC::TempFile;
+  my $cofile = $tmp->file;
+  print { $tmp->handle } $_FIND_BRIGHTEST_SOURCE_{RESULTS}->[0]," ",
+                         $_FIND_BRIGHTEST_SOURCE_{RESULTS}->[1], "\n";
+  $tmp->handle->close;
 
-    my $ORAC_STATUS;
-    if ($usepsf) {
+  my $ORAC_STATUS;
+  if ($usepsf) {
 
-	my $args = "incat=! device=! cofile=$tmpfile";
+    _FIT_PSF_ IMAGE=$in USELOG=1 COFILE=$cofile
+    my ($amp, $fwhm, $axisr, $gamma, $orient) = @{ $_FIT_PSF_{RESULTS} };
 
-	# Run PSF
-	$Mon{kappa_mon}->obeyw("psf","norm=no range=4 isize=15 in=$in $args");
-
-	# Retrieve the answer
-	( $ORAC_STATUS, my $amp)  = $Mon{kappa_mon}->get("psf","amp1");
-	( $ORAC_STATUS, my $axisr) = $Mon{kappa_mon}->get("psf","axisr");
-	( $ORAC_STATUS, my $fwhm) = $Mon{kappa_mon}->get("psf","fwhm");
-	( $ORAC_STATUS, my $gamma) = $Mon{kappa_mon}->get("psf","gamma");
-
-	# Find the integrated intensity under the fitted PSF, given these parameters
-	# The units will be in ...
-
-	# Check the axis ratio
-	if ($axisr > 1.4 || $axisr < 0.75) {
-	    orac_warn "Axis ratio of source out of specification (was $axisr). Ignoring fit.\n";
-	    # Use stats instead
-	    orac_warn "Using aperture photometry at centroid position for $in instead.\n";
-	    # Call _FIND_INTEGRATED_INTENSITY_ primitive on the current image
-	    _FIND_INTEGRATED_INTENSITY_ VERBOSE=0 LOGFILE=0;
-	    $totalflux = $_FIND_INTEGRATED_INTENSITY_{RESULTS} ;
-	} else {
-	    # integrate_profile or Something::Sersic->integrate_profile;
-	    $totalflux = integrate_profile($amp, $fwhm, $axisr, $gamma, 2);
-	}
-
+    # Check the axis ratio
+    if ($axisr > 1.4 || $axisr < 0.75) {
+      orac_warn "Axis ratio of source out of specification (was $axisr). Ignoring fit.\n";
+    # Use stats instead
+      orac_warn "Using aperture photometry at centroid position for $in instead.\n";
+      $usepsf = 0;
+    # Call _FIND_INTEGRATED_INTENSITY_ primitive on the current image
+      _FIND_INTEGRATED_INTENSITY_ VERBOSE=0 LOGFILE=0;
+      $totalflux = $_FIND_INTEGRATED_INTENSITY_{RESULTS}->[1] ;
     } else {
-	# Use an aperture photmetry method
-	_FIND_INTEGRATED_INTENSITY_  VERBOSE=0 LOGFILE=0;
-	$totalflux = $_FIND_INTEGRATED_INTENSITY_{RESULTS} ;
+    # Integrate profile
+    use Starlink::PSF;
+    $totalflux = Starlink::PSF->integrate_profile($amp, $fwhm, $axisr, $gamma);
     }
+    
+  } else {
+    # Use an aperture photometry method
+    _FIND_INTEGRATED_INTENSITY_ VERBOSE=0 LOGFILE=0;
+    $totalflux = $_FIND_INTEGRATED_INTENSITY_{RESULTS}->[1] ;
+  }
 }
+
+# Determine Pixel scale - returned in radians but convert to sq arcsec
+_GET_PIXEL_SCALE_ IMAGE=$in
+my $xscale = RAD2ASEC * $_GET_PIXEL_SCALE_{RESULTS}->[0];
+my $yscale = RAD2ASEC * $_GET_PIXEL_SCALE_{RESULTS}->[1];
+my $pixelarea = $xscale*$yscale;
+
+# Allow for beam or pixel size - wcsframe must be SKY!
+my $fluxcorr; # Flux correction
+#my $units = Frm->hdr('UNITS');
+my $units = "Jy/beam";
+if ($units =~ /beam/) {
+  # Retrieve beam dimensions
+#  my @beam = $Cal->beam;
+  my @beam = (15.0, 15.0, 0.0);
+  my $beamarea = PI * $beam[0] * $beam[1] / 4.0; # sq arcsec
+  $fluxcorr = ($usepsf) ? $beamarea : $beamarea/$pixelarea ;
+} elsif ($units =~ /arcsec/) {
+  $fluxcorr = ($usepsf) ? 1.0 : 1.0/$pixelarea;
+  print "HERE!\n";
+} elsif ($units =~ /V/) { # V is effectively V/pixel
+  $fluxcorr = ($usepsf) ? $pixelarea : 1.0;
+} else {
+  orac_throw "Error: unknown units, $units \n";
+}
+
+# Units of flux density are Jy or V
+my $fluxunits;
+if ($units =~ /Jy/) {
+  $fluxunits = 'Jy';
+} elsif ($units =~ /V/) {
+  $fluxunits = 'V';
+} else {
+  orac_throw "Error: unknown units, $units \n";
+}
+
+$totalflux = $totalflux / $fluxcorr;
 
 # Store the result in the hash
 $_FIND_TOTAL_FLUX_{RESULTS} = $totalflux;
@@ -206,33 +243,33 @@ $_FIND_TOTAL_FLUX_{RESULTS} = $totalflux;
 # Write a log file if required
 if ($uselog) {
 
-    my $num = sprintf "%-4d", $Frm->number;
-    my $time= sprintf "%12.3f", $Frm->hdr('ORACTIME');
-    my $filt= sprintf "%4s",   "850";
-    $totalflux = sprintf "%9.2f", $totalflux;
+  my $num = sprintf "%-4d", $Frm->number;
+  my $time= sprintf "%12.3f", $Frm->hdr('ORACTIME');
+  my $filt= sprintf "%4s",   "850";
+  $totalflux = sprintf "%10.4f", $totalflux;
 
-    # Get the tau from calibration object
+  # Get the tau from calibration object
 #    my $tau = sprintf "%5.2f", $Cal->tau($filters[$i-1]);
 
-    # Use that tau to calculate CSO
+  # Use that tau to calculate CSO
 #    my ($cso, $status) = JCMT::Tau::get_tau('CSO',$filters[$i-1], $tau);
 #    if ($status != 0) {
 #      $cso = "*****";
 #    } else {
 #      $cso = sprintf "%5.2f", $cso;
 #    }
-    my $cso = sprintf "%5.2f", "1.0";
+  my $cso = sprintf "%5.2f", "1.0";
 
-    # elevation
-    my $el = int (($Frm->hdr('STRT_ELD') + $Frm->hdr('END_ELD') ) /2.0 );
+  # elevation
+  my $el = int (($Frm->hdr('STRT_ELD') + $Frm->hdr('END_ELD') ) /2.0 );
 
-    # Write the entry
-    $log->addentry("$num $time $filt $totalflux  $cso $el " . $Frm->hdr('OBJECT'));
-
+  # Write the entry
+  $log->addentry("$num $time $filt $totalflux  $cso $el " . $Frm->hdr('OBJECT'));
 }
 
-orac_print "Total flux for filter 850: $totalflux\n"
-    if $verbose;
+my $method = ($usepsf) ? "fitting PSF" : "integrating in aperture";
+orac_print "Total flux for filter 850: $totalflux $fluxunits estimated from $method \n"
+  if $verbose;
 
 orac_print "Calculated total signal from map\n" if $verbose;
 
