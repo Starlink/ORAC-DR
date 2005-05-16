@@ -1,3 +1,5 @@
+#! -*-perl-*
+
 =head1 NAME
 
 FIND_BRIGHTEST_SOURCE
@@ -86,7 +88,7 @@ $_FIND_BRIGHTEST_SOURCE_{RESULTS} = [];
 # set it to pixel.
 my $wcsframe = (exists $_FIND_BRIGHTEST_SOURCE_{WCSFRAME} && 
 		defined $_FIND_BRIGHTEST_SOURCE_{WCSFRAME} ) ? 
-    lc($_FIND_BRIGHTEST_SOURCE_{WCSFRAME}) : "pixel";
+    lc($_FIND_BRIGHTEST_SOURCE_{WCSFRAME}) : "sky";
 
 # Test that it's a valid frame
 unless ($wcsframe =~ /axis|pixel|grid|sky/) {
@@ -101,51 +103,63 @@ if (starversion_lt('kappa','V0.14-0')) {
 # Get file
 my $in = $Frm->file(1);
 
-# Future version: create image catalogue, sort catalogue by flux and
-# pick out coords of brightest object
 # Create SCUBA2 catalogue. 10-sigma probably overkill: 5-7 works well too.
-#_CREATE_IMAGE_CATALOGUE_ FORMAT=SCUBA2 DETECT_SIGMA=10
-#_CREATE_IMAGE_CATALOGUE_ DETECT_SIGMA=10
-_FIND_SOURCES_ DETECT_SIGMA=10
+$Frm->uhdr("CREATE_CATALOGUE" => 1); # Create a catalogue? Make it so...
+_CREATE_IMAGE_CATALOGUE_ DETECT_SIGMA=7 GROUP=0
+#_FIND_SOURCES_ DETECT_SIGMA=7
+
 # Pick out the brightest source from a catalogue
-#_GET_CATALOGUE_NAME_
-#my $catalogue = $_GET_CATALOGUE_NAME_{NAME};
+_GET_CATALOGUE_NAME_
+my $catalogue_name = $_GET_CATALOGUE_NAME_{NAME};
 # Open catalogue
-# Sort entries by flux - ignore first 3 lines.
-# my @sources = ...
-# Centre returned as RA and Dec.
-# my @centre = ($sources[0]->[2],  $sources[0]->[3]);
+my $catalogue_file = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, $catalogue_name);
+# Create catalog object
+open my $cathandle, "< $catalogue_file" or orac_throw "Error: Unable to open catalogue, $catalogue_file \n";
+my @lines = <$cathandle>;
+
+my ($ra, $dec, $mag);
+my $peakflux = 1e6; # Start with a large positive value = very faint source.
+my @maxpos;
+foreach (@lines[3..$#lines]) {
+  my @row = split(/\s+/);
+  $ra = $row[2].":".$row[3].":".$row[4];
+  $dec = $row[5].":".$row[6].":".$row[7];
+  $mag = $row[10];
+  if ($mag < $peakflux){   # Note that the brightness is in magnitudes
+    @maxpos = ($ra, $dec); 
+    $peakflux = $mag;
+  }
+}
 
 ### In the meantime... ###
 
 # Set the WCS frame
-$Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=$wcsframe");
+##$Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=$wcsframe");
 #  Run stats on the input frame
-$Mon{kappa_mon}->obeyw("stats","NDF=$in");
+##$Mon{kappa_mon}->obeyw("stats","NDF=$in");
 
 # Retrieve the maxpos: an array containing coordinates of x, y
 # values for peak
-my @maxpos;
-($ORAC_STATUS, @maxpos) = $Mon{kappa_mon}->get("stats","maxcoord");
-my ($xpix, $ypix) = @maxpos;
+##($ORAC_STATUS, @maxpos) = $Mon{kappa_mon}->get("stats","maxcoord");
+##my ($xpix, $ypix) = @maxpos;
 
 # Need to check for kappa 0.14 or higher -- use the KAPVERSION_MINOR
 # global variable
-my $args;
-if (starversion_lt('kappa','V0.14-0')) {
-    $args = " cosys=d init=[$xpix,$ypix]";
-} else {
-    $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=$wcsframe");
-    $args = " init='$xpix,$ypix' ";
-}
+##my $args;
+##if (starversion_lt('kappa','V0.14-0')) {
+##    $args = " cosys=d init=[$xpix,$ypix]";
+##} else {
+##    $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=$wcsframe");
+##    $args = " init='$xpix,$ypix' ";
+##}
 
 # Now run centroid to determine the position of the emission
 # centroid close to the peak found by stats
-$args .= " mode=i cerror=true search=$box";
+##$args .= " mode=i cerror=true search=$box";
 #$Mon{kappa_mon}->obeyw("centroid","ndf=$in $args");
 
 # Read the result
-my @centre = ($xpix, $ypix);
+##my @centre = ($xpix, $ypix);
 
 # KAPPA 14 returns the centre pos as a string, earlier versions
 # return an array -- just use XCEN and YCEN with two adam calls
@@ -155,15 +169,16 @@ my @centre = ($xpix, $ypix);
 ###
 
 # Check for bad pixels
-unless ($centre[0] > -1e38 && $centre[1] > -1e38 && $centre[0] < 1e6
-	&& $centre[1] < 1e6) {
-    # Use undef
-    @centre = ( undef, undef);
-    $ORAC_STATUS = ORAC__ERROR;
-}
+##unless ($centre[0] > -1e38 && $centre[1] > -1e38 && $centre[0] < 1e6
+##	&& $centre[1] < 1e6) {
+##    # Use undef
+##    @centre = ( undef, undef);
+##    $ORAC_STATUS = ORAC__ERROR;
+##}
 
 # Store the results as ref to array
-$_FIND_BRIGHTEST_SOURCE_{RESULTS} = [@centre];
+#$_FIND_BRIGHTEST_SOURCE_{RESULTS} = [@centre];
+$_FIND_BRIGHTEST_SOURCE_{RESULTS} = [@maxpos];
 $_FIND_BRIGHTEST_SOURCE_{WCSFRAME} = $wcsframe;
 
 # COPYRIGHT
