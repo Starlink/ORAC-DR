@@ -84,7 +84,8 @@ print $msg_fh "Begin work on files: @allfiles\n";
 our %DQC = ();
 our @skydqc = ('SKYLEVEL','SKYNOISE','SEEING','ELLIPTIC');
 our @alldqc = ('ORACTIME','CAMNUM','SKYLEVEL','SKYNOISE','SEEING','ELLIPTIC',
-	       'MAGZPT','MAGZRR','RAZP','DECZP','STDCRMS','NUMBRMS');
+	       'MAGZPT','MAGZRR','RAZP','DECZP','STDCRMS','NUMBRMS','FILTER',
+	       'MAGZPT_J','SKYLEVEL_JMAG','SKYLEVEL_MAG');
 
 # If there aren't enough, then there isn't much point in being here...
 
@@ -691,7 +692,8 @@ sub do_photom {
 
     # If the photometric info is defined, then continue on...
 
-    my ($sumzp,$sumzp4,$sumnzp,$sumvar,$sumvar4,$anynul,$imatch,$exposed);
+    my ($sumzp,$sumzp4,$sumnzp,$sumvar,$sumvar4,$anynul,$imatch,$exposed,
+	$filter,$extinct);
     if (defined $FINFO && defined $CINFO) {
 	no strict 'refs';
 	no strict 'vars';
@@ -715,10 +717,12 @@ sub do_photom {
         $iptr->movabs_hdu(1,$hdutype,$status);
         $iptr->read_key(TFLOAT,"EXP_TIME",$exposed,$junk,$status);
 	$iptr->read_key(TFLOAT,"AMSTART",$airmass,$junk,$status);
+        $iptr->read_key(TSTRING,"FILTER",$filter,$junk,$status);
+	$DQC{'FILTER'} = $filter;
 	$iptr->movabs_hdu($nhdu,$hdutype,$status);
 	$iptr->read_key(TFLOAT,"SKYLEVEL",$skylevel,$junk,$status);
 	$iptr->close_file($status);
-	my $extinct = eval $$FINFO{'extinct'};
+	$extinct = eval $$FINFO{'extinct'};
 
         # Initialise some accumulators
 
@@ -977,6 +981,8 @@ NR:	foreach my $j (1 .. $nrows) {
     $cf /= ($scale*$scale);
     $fluxmag = 2.5*log10($cf);
     $skylevel = $sumzp - $fluxmag - $extinct;
+    $DQC{'SKYLEVEL_MAG'} = $skylevel;
+    $DQC{'SKYLEVEL_JMAG'} = ($filter eq 'J' ? $skylevel : 0.0);
 
     # Finally, write these results to the extension headers...
 
@@ -991,6 +997,7 @@ NR:	foreach my $j (1 .. $nrows) {
     $retval = cir_update_hdr($imagefile,"MAGZRR4","FLOAT",$sumvar4,
 	"Photometric ZP error(mags) (core4_flux)",$errmsg);   
     $DQC{'MAGZPT'} = $sumzp;
+    $DQC{'MAGZPT_J'} = ($filter eq 'J' ? $sumzp : 0.0);
     $DQC{'MAGZRR'} = $sumvar;
 
     # And to the catalogues
