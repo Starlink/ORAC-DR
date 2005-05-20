@@ -220,9 +220,9 @@ sub calc_orac_headers {
   # YYYYMMDD.fraction
   my $ut = $self->hdr("DATE-OBS");
   $ut =~ /(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)/;
-  my $utdate = '0'x(4-length(int($1))) . $1 .
-               '0'x(2-length(int($2))) . $2 .
-               '0'x(2-length(int($3))) . $3;
+  my $utdate = '0'x(4-length(int($1))) . int($1) .
+               '0'x(2-length(int($2))) . int($2) .
+               '0'x(2-length(int($3))) . int($3);
 
   my $uttime = ( $4 / 24 ) + ( $5 / 1440 ) + ( $6 / 86400 );
 
