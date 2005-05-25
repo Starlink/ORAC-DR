@@ -16,7 +16,8 @@ falling outside a pre-defined range) then the default aperture
 photometry method is used instead.
 
 Note that the C<Math::Gsl> module must be installed for the PSF
-integrator.
+integrator. See the documentation for C<_FIT::PSF_> for further
+details.
 
 This primitive is designed to work on a single image and will fail if
 the current Frame object contains more than one file.
@@ -42,7 +43,7 @@ true.
 =item VERBOSE
 
 Flag to indicate whether informational messages should be 
-given to the user. Default is verbose (true).
+given to the user. Default is true.
 
 =back
 
@@ -87,9 +88,6 @@ Log of flux values.
 
 =back
 
-Note that if the object is a calibrator, then the fitting routine will
-write an entry in a beam log.
-
 The frame object is not updated.
 
 =head1 AUTHOR
@@ -111,7 +109,7 @@ unless ($Frm->nfiles == 1) {
 
 # Also should check that this has been run after calibration?
 
-# Define the constants, Radians to arcsec and pi
+# Define useful constants, Radians to arcsec and pi
 use constant RAD2ASEC => 206265.0;
 use constant PI => 3.1415926535;
 
@@ -156,7 +154,7 @@ $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=$wcsframe");
 
 # We now run PSF if possible else simply use the peak position from
 # centroiding
-my $totalflux;
+my $totalflux = undef;
 if (starversion_lt('kappa', 'V0.15-0')) {
   # warn
   orac_warn "Your kappa version is too old to use PSF properly. Using stats to find total flux\n";
@@ -181,16 +179,16 @@ if (starversion_lt('kappa', 'V0.15-0')) {
     # Check the axis ratio
     if ($axisr > 1.4 || $axisr < 0.75) {
       orac_warn "Axis ratio of source out of specification (was $axisr). Ignoring fit.\n";
-    # Use stats instead
+      # Use stats instead
       orac_warn "Using aperture photometry at centroid position for $in instead.\n";
       $usepsf = 0;
-    # Call _FIND_INTEGRATED_INTENSITY_ primitive on the current image
+      # Call _FIND_INTEGRATED_INTENSITY_ primitive on the current image
       _FIND_INTEGRATED_INTENSITY_ VERBOSE=0 LOGFILE=0;
       $totalflux = $_FIND_INTEGRATED_INTENSITY_{RESULTS}->[1] ;
     } else {
-    # Integrate profile
-    use Starlink::PSF;
-    $totalflux = Starlink::PSF->integrate_profile($amp, $fwhm, $axisr, $gamma);
+      # Integrate profile
+      use Starlink::PSF;
+      $totalflux = Starlink::PSF->integrate_profile($amp, $fwhm, $axisr, $gamma);
     }
     
   } else {
@@ -208,7 +206,7 @@ my $pixelarea = $xscale*$yscale;
 
 # Allow for beam or pixel size - wcsframe must be SKY!
 my $fluxcorr; # Flux correction
-#my $units = Frm->hdr('UNITS');
+#my $units = $Frm->hdr('UNITS');
 my $units = "Jy/beam";
 if ($units =~ /beam/) {
   # Retrieve beam dimensions
@@ -218,7 +216,6 @@ if ($units =~ /beam/) {
   $fluxcorr = ($usepsf) ? $beamarea : $beamarea/$pixelarea ;
 } elsif ($units =~ /arcsec/) {
   $fluxcorr = ($usepsf) ? 1.0 : 1.0/$pixelarea;
-  print "HERE!\n";
 } elsif ($units =~ /V/) { # V is effectively V/pixel
   $fluxcorr = ($usepsf) ? $pixelarea : 1.0;
 } else {
@@ -267,9 +264,13 @@ if ($uselog) {
   $log->addentry("$num $time $filt $totalflux  $cso $el " . $Frm->hdr('OBJECT'));
 }
 
-my $method = ($usepsf) ? "fitting PSF" : "integrating in aperture";
-orac_print "Total flux for filter 850: $totalflux $fluxunits estimated from $method \n"
-  if $verbose;
+if (defined $totalflux) {
 
-orac_print "Calculated total signal from map\n" if $verbose;
+  my $method = ($usepsf) ? "fitting PSF" : "integrating in aperture";
+  orac_print "Total flux for filter 850: $totalflux $fluxunits estimated from $method \n"
+    if $verbose;
 
+  orac_print "Calculated total signal from map\n" if $verbose;
+} else {
+  orac_print "Error: unable to calculate flux from image" if $verbose;
+}
