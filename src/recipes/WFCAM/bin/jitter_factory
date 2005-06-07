@@ -90,7 +90,7 @@ our %DQC = ();
 our @skydqc = ('SKYLEVEL','SKYNOISE','SEEING','ELLIPTIC');
 our @alldqc = ('ORACTIME','CAMNUM','SKYLEVEL','SKYNOISE','SEEING','ELLIPTIC',
 	       'MAGZPT','MAGZRR','RAZP','DECZP','STDCRMS','NUMBRMS','FILTER',
-	       'MAGZPT_J','SKYLEVEL_JMAG','SKYLEVEL_MAG');
+	       'MAGZPT_J','SKYLEVEL_JMAG','SKYLEVEL_MAG','PA');
 
 # If there aren't enough, then there isn't much point in being here...
 
@@ -388,17 +388,17 @@ foreach $j (1 .. $nhdu) {
     my $srad = int(0.25*$maxsize);
     (undef,$tmp) = tempfile("tmpXXXX",OPEN=>0);
     my $nmatch;
-    $outcat .= "[$j]";
-    my $retval = cir_matchstds($outcat,$ref . "[1]",$srad,$naxis[0],$naxis[1],
+    my $outcatsub = $outcat . "[$j]";
+    my $retval = cir_matchstds($outcatsub,$ref . "[1]",$srad,$naxis[0],$naxis[1],
 			       $tmp,$nmatch,$errmsg);
     unlink $ref;
     if ($retval != CIR_OK) {
 	unlink $tmp;
-        print $msg_fh "CIR_MATCHSTDS: Failed on $outcat\n$errmsg\n";
+        print $msg_fh "CIR_MATCHSTDS: Failed on $outcatsub\n$errmsg\n";
 	print $msg_fh "Continuing with caution\n";
     } elsif ($nmatch == 0) {
 	unlink $tmp;
-        print $msg_fh "CIR_MATCHSTDS: Failed on $outcat\nNo objects matched\n";
+        print $msg_fh "CIR_MATCHSTDS: Failed on $outcatsub\nNo objects matched\n";
 	print $msg_fh "Continuing with caution\n";
     } else {
 	print $msg_fh "$nmatch objects matched astrometric standards\n";
@@ -437,11 +437,11 @@ foreach $j (1 .. $nhdu) {
  
     # Copy the WCS information to the header of the catalogue 
 
-    $retval = update_cat_wcs($outd,$outcat);  
+    $retval = update_cat_wcs($outd,$outcatsub);  
 	
     # Update the catalogues so that the objects have equatorial coordinates
 
-    $retval = cir_catcoord($outd,$outcat,$errmsg);
+    $retval = cir_catcoord($outd,$outcatsub,$errmsg);
 
     # Update the headers of the input files so that they have the new WCS
 
@@ -456,16 +456,16 @@ foreach $j (1 .. $nhdu) {
 
     # Classify the objects...
 
-    $retval = cir_classify($outcat,"EXP_TIME",$errmsg);
+    $retval = cir_classify($outcatsub,"EXP_TIME",$errmsg);
     if ($retval != CIR_OK) {
-	print $msg_fh "CIR_CLASSIFY: Failed on $outcat\n$errmsg\n";
+	print $msg_fh "CIR_CLASSIFY: Failed on $outcatsub\n$errmsg\n";
     }
-    print $msg_fh "Catalogue $outcat objects are classified\n";
+    print $msg_fh "Catalogue $outcatsub objects are classified\n";
 
     # Update the image header
 
     $status = 0;
-    $fptr = Astro::FITS::CFITSIO::open_file($outcat,READONLY,$status);
+    $fptr = Astro::FITS::CFITSIO::open_file($outcatsub,READONLY,$status);
     foreach my $kk (@skydqc) {
 	my ($value,$junk);
         $fptr->read_key(TFLOAT,$kk,$value,$junk,$status);
@@ -484,13 +484,34 @@ foreach $j (1 .. $nhdu) {
     $DQC{'CAMNUM'} = $val;
     $fptr->close_file($status); 
 
-    # Modifiy the seeing DQC index so that it's in arcseconds.
+    # Modify the seeing DQC index so that it's in arcseconds.
 
     seeing($outd);
 
+    # Work out the median position angle of the objects 
+
+    $retval = cir_tabledump($outcatsub,$tmp,["Position_angle"],1,$errmsg);
+    my $fh = new FileHandle;
+    $fh->open("$tmp");
+    my @allpa = ();
+    while (<$fh>) {
+	chop;
+        push @allpa,$_;
+    }
+    $fh->close;
+    unlink $tmp;
+    @allpa = sort {$a <=> $b} @allpa;
+    my $npa = @allpa;
+    my $npa2 = $npa/2;
+    if ($npa % 2) {
+        $DQC{'PA'} = $allpa[$npa2];
+    } else {
+	$DQC{'PA'} = 0.5*($allpa[$npa2 - 1] + $allpa[$npa2]);
+    }
+
     # Do the photometry now
 
-    $retval = do_photom($outd,$outcat);
+    $retval = do_photom($outd,$outcatsub);
 
     # Process the history records
 
@@ -508,6 +529,14 @@ foreach $j (1 .. $nhdu) {
 
 }
 
+# Write a semaphore file for the catalogue
+
+my $sem = "." . $outcat;
+$sem =~ s/\.fit$/\.ok/;
+my $fh = new FileHandle;
+$fh->open(">$sem");
+$fh->close;
+
 # Display the damn thing...
 
 if ($dodisp) {
@@ -517,6 +546,8 @@ if ($dodisp) {
         $Display->display_data($Frm->getasubframe($j),{WINDOW=>$j}) if (defined $Display);
     }
 }
+
+#estar($outdith,$outcat,$oractime);
 
 
 exit 0;
@@ -1130,7 +1161,169 @@ sub update_cat_wcs {
     $iptr->close_file($status);
 }
 
+sub estar {
+    my ($fname,$catalogue,$oractime) = @_;
 
+    # Decide whether we even need to be here...
+
+    my $rmtagent = gethdrval($fname,"RMTAGENT");
+    my $agentid = gethdrval($fname,"AGENTID");
+    if ($rmtagent eq 'ESTAR') {
+        print $msg_fh "Doing eSTAR trigger.\n";
+	if (! $agentid || $agentid =~ /none/i) {
+	    print $msg_fh "ESTAR trigger with corresponding ID\n";
+	    $agentid = 1;
+	} else {
+	    print $msg_fh "Processing ESTAR trigger with ID of $agentid\n";
+	}
+    } else {
+	return;
+    }
+
+    # Load these in these here to help synch with primitive.
+
+    require SOAP::Lite;
+    require Digest::MD5;
+    require URI;
+    require HTTP::Cookies;
+
+    # Hard-wired for the moment. Probably okay for now since we
+    # should be checking for UKIRT domain. Probably do not want the
+    # password in the shipped pipeline.
+    
+    my $host = "kauwa.ukirt.jach.hawaii.edu";
+    my $port = 8080;
+    my $user = "agent";
+    my $password = "InterProcessCommunication";
+
+    # Original comment from primitive.
+    # -----------------------------------------------------------------------
+    # Quick hack to send multiple messages on trigger, need both 'update' and
+    # 'observation' messages. Brad, read carefully before making further changes.
+    #
+    # -- AALLAN (21-JUL-03)
+    #
+    # Note that there are two types of alert the ORAC-DR pipeline should
+    # send to the eSTAR agent. An 'update' alert and an 'observation' alert.
+    # An update alert is currently ignored by the agent, but should come at
+    # the end of each observation frame, a 'observation' alert comes at the
+    # end of all processing pointing to the final data products. For now
+    # lets hardwire the sending of both alerts, after all we've just finished
+    # a frame, and then (since the observation currently only consists of
+    # a single frame) we need an update message to say that frame is done and
+    # then immediately an observation message to say the observation is
+    # done.
+    # ------------------------------------------------------------------------
+
+    # Create URI. Start with the date and time
+
+    my $fits = "http://omp.jach.hawaii.edu/cgi-bin/staffworf.pl?ut=";
+    $utdate =~ /(\d{4})(\d{2})(\d{2})\.(\d+)/;
+    $fits .= sprintf("%s-%s-%s-",$1,$2,$3);
+    my $res = $4;
+    my $hour = int($res*24.0);
+    $res -= $hour/24.0;
+    my $minute = int($res*1440.0);
+    $res -= $minute/1440.0;
+    my $second = int($res*86400 + 0.5);
+    $fits .= sprintf("%02d-%02d-%02d",$hour,$minute,$second);
+    
+    # Now the run number of the first image of the combined file. This can
+    # be found by looking at the image name.
+
+    $fname =~ /^(\s)\d{8}_(\d{5})(_.*?)\.fit$/;
+    my $wfinstrum = $1;
+    my $runno = $2 + 0;
+    my $suffix = $3;
+    $wfinstrum =~ tr/wxyz/1234/;
+    $fits .= "&runnr=$runno";
+    $fits .= "&inst=WFCAM$wfinstrum";
+    $fits .= "&suffix=$suffix&group=1";
+
+    # Create the query hash
+
+    my %hash = (ID => $Frm->uhdr("ESTAR_ID"),
+                FITS => $fits,
+                Catalog => "file://" . $ENV{'ORAC_DATA_OUT'} . "/" . $catalogue,
+		);
+    my $endpoint = "http://" . $host . ":" . $port;
+    my $uri = new URI($endpoint);
+
+    # This is an inline version of Alasdair's make_cookie
+    # routine from ESTAR
+
+    my $cookie = $user . "::" . Digest::MD5::md5_hex( $password );
+    $cookie =~ s/(.)/sprintf("%%%02x", ord($1))/ge;
+    $cookie =~ s/%/%25/g;
+    
+    # end make_cookie
+
+    # put the cookie in an object suitable for SOAP transport
+
+    my $cookie_jar = HTTP::Cookies->new();
+    $cookie_jar->set_cookie( 0, user => $cookie, '/', $uri->host(), $uri->port());
+
+    # we are now going to connect to the SOAP agent
+
+    my $soap = new SOAP::Lite();
+    my $urn = "urn:/node_agent";
+
+    $soap->uri($urn);
+    $soap->proxy( $endpoint, cookie_jar => $cookie_jar );
+
+    # UPDATE MESSAGE
+    # --------------
+
+    $hash{AlertType} = "update";
+
+    print $msg_fh "Sending SOAP message:\n";
+    for my $key (sort keys %hash) {
+       print $msg_fh "        $key: $hash{$key}\n";
+    }
+
+    my $result;
+    eval {$result = $soap->handle_data(%hash)};
+    if ($@) {
+        print $msg_fh "***Unable to handle SOAP request: $@\n";
+	return;
+    }
+
+    # The result of the SOAP request.
+
+    unless($result->fault()) {
+        print $msg_fh "SOAP Result: " . $result->result() . "\n";
+    } else {
+        print $msg_fh "***SOAP Fault Code: " . $result->faultcode() . "\n";
+        print $msg_fh "***SOAP Fault String: " . $result->faultstring() . "\n";
+    }
+
+    # OBSERVATION MESSAGE
+    # -------------------
+
+    $hash{AlertType} = "observation";
+
+    print $msg_fh ("Sending SOAP message:\n");
+    for my $key (sort keys %hash) {
+        print $msg_fh "        $key: $hash{$key}\n";
+    }
+
+    eval {$result = $soap->handle_data(%hash)};
+    if ($@) {
+        print $msg_fh "***Unable to handle SOAP request: $@";
+	return;
+    }
+
+    # The result of the SOAP request.
+
+    unless($result->fault()) {
+        print $msg_fh "SOAP Result: " . $result->result() . "\n";
+    } else {
+        print $msg_fh "***SOAP Fault Code: " . $result->faultcode() . "\n";
+        print $msg_fh "***SOAP Fault String: " . $result->faultstring() . "\n";
+    }
+}
+
+    
 sub fitserr {
     my ($status,$msg) = @_;
     my ($ferr);
