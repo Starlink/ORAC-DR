@@ -85,7 +85,7 @@ sub new {
   my $status = $disp->configure;
 
   if ($status != ORAC__OK) {
-    croak "Error launching/contacting or configuring Gaia. It is unlikely that this can be fixed by retrying from within ORAC-DR. Please rerun either with the display switched off or with a different display device selected.";
+    croak "Error launching/contacting or configuring Gaia. It is unlikely that this can be fixed by retrying from within ORAC-DR. Try deleting the ~/.skycat/history file and restarting ORAC-DR. If that does not work, please rerun either with the display switched off or with a different display device selected.";
   }
 
   # Return object
