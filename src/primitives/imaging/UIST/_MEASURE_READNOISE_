@@ -50,9 +50,12 @@ read interval multiplied by the gain and divided by the number of
 multiple reads. Otherwise, the readnoise is calculated as the
 square root of the mean multiplied by the gain.
 
-=item * If the images were taken after UT 2004-03-01, the readnoise
-is calculated for four equally-sized columns for four quarters of
-the array.
+=item * If the images were taken after UT 2004-03-01 but before UT
+2005-06-20, the readnoise is calculated for four equally-sized columns
+for four quarters of the array.
+
+=item * If the images were taken after UT 2005-06-20, the readnoise
+is calculated for the four quadrants of the array.
 
 =back
 
@@ -61,7 +64,10 @@ the array.
 The readnoise is nominal if it falls between 38 and 45 e-/seconds, for
 data taken prior to 2004-03-01. For data taken after 2004-03-01 the
 readnoise is nominal if it is less than 39 e-/second, questionable between
-39 and 45 e-/second, and bad if greater than 45 e-/second.
+39 and 45 e-/second, and bad if greater than 45 e-/second. For data
+taken after 2005-06-20 the readnoise is nominal if it is less than
+42 e-/second, questionable between 42 and 44 e-/second, and high if
+greater than 44 e-/second.
 
 =back
 
@@ -71,7 +77,7 @@ Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2002-2004 Particle Physics and Astronomy Research
+Copyright (C) 2002-2005 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
@@ -235,7 +241,7 @@ if ( $Frm->uhdr( "MEASURE_READNOISE" ) ) {
   # Remove temporary text file.
   unlink( "makecal.inlist$$" );
 
-  if( $utdate > 20040301 ) {
+  if( $utdate > 20040301 && $utdate < 20050620 ) {
 
     my %x_centre = ( 1 => 128,
                      2 => 384,
@@ -275,6 +281,47 @@ if ( $Frm->uhdr( "MEASURE_READNOISE" ) ) {
         orac_warn "** Readnoise in the $region region is questionable.\n";
       } else {
         orac_warn "** Readnoise in the $region region is high.\n";
+      }
+    }
+  } elsif( $utdate >= 20050620 ) {
+
+    my %x_centre = ( 1 => 256,
+                     2 => 768,
+                     3 => 256,
+                     4 => 768 );
+    my %y_centre = ( 1 => 768,
+                     2 => 768,
+                     3 => 256,
+                     4 => 256 );
+    my %region_names = ( 1 => 'top left',
+                         2 => 'top right',
+                         3 => 'bottom left',
+                         4 => 'bottom right' );
+    for( 1..4 ) {
+      my $channel = $_;
+
+      my $x_centre = $x_centre{$channel};
+      my $y_centre = $y_centre{$channel};
+      my $region = $region_names{$channel};
+      my $param = "ndf=$out($x_centre~512,$y_centre~512) comp=Variance clip=3";
+
+      $Mon{'kappa_mon'}->obeyw("stats", "$param");
+      ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+
+      $mean = sqrt( $mean );
+
+      $readnoise = $mean * $gain;
+
+      # Format the output for easier display.
+      my $o_readnoise = sprintf( "%9.3f", $readnoise );
+      orac_print "Readnoise in the $region quadrant is $o_readnoise e-/sec.\n";
+
+      if( $readnoise <= 42.0 ) {
+        orac_print "** Readnoise in the $region quadrant is nominal.\n";
+      } elsif( $readnoise > 42.0 && $readnoise <= 44.0 ) {
+        orac_warn "** Readnoise in the $region quadrant is questionable.\n";
+      } elsif( $readnoise > 44.0 ) {
+        orac_warn "** Readnoise in the $region quadrant is high.\n";
       }
     }
   }
