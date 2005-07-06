@@ -1,0 +1,165 @@
+# _NORMALIZE_FLAT_BY_POLY_			-*-perl-*-
+
+=head1 NAME
+
+NORMALIZE_FLAT_BY_POLY - normalizes a 2-D image by using a fitted polynomial.
+
+=head1 DESCRIPTION
+
+Normalizes a 2D image (usually a flat-field) and removes any large-scale changes
+with wavelength by applying the following procedure:
+
+1. The 2-D image is collapsed in Y to an average 1-D spectrum.
+
+2. A polynomial is fit to the 1-D spectrum, and a new spectrum is created with this polynomial.
+
+3. The polynomial spectrum is grown in Y to an image with dimensions matching
+the original image.
+
+4. The original image is divided by the polynomial image.
+
+The resulting image is stored in a file with a _nf suffix.
+
+=head1 PARAMETERS
+
+=over 4
+
+=item ORDER
+
+Defines the order of the fitted polynomial.  Defaults to 5.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item * This primitive is UIST-specific. Before displaying it sets the
+WCSFRAME to PIXEL, and after it sets the WCSFRAME to SKY. This is done
+because the WCS for UIST IFU images is unusable for display purposes.
+
+=back
+
+=head1 ORAC
+
+=head2 Engines referenced
+
+KAPPA, FIGARO
+
+=head2 Tasks called
+
+=over 4
+
+=item ndfpack_mon
+
+ndftrace, setbound, setorigin, pixdupe, setvar
+
+=item kappa_mon
+
+div
+
+=item figaro1
+
+sfit
+
+=item figaro4
+
+xtract
+
+=back
+
+=head2 Objects addressed
+
+$Frm
+
+=head2 REVISION
+
+  $Id$
+
+=head1 AUTHOR
+
+b.cavanagh@jach.hawaii.edu
+modified by Stephen Todd spt@roe.ac.uk
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2005 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# Obtain the parameters.
+my $order = ( $_NORMALIZE_FLAT_BY_POLY_{ORDER} || 5 );
+
+# Process all the sub-files.
+foreach my $i ( 1..$Frm->nfiles ) {
+
+  # Generate the input and output filenames.
+  my ( $in, $out ) = $Frm->inout( "_nf", $i );
+  
+  # Get the dimensions of the input image.
+  my $xdim = $Frm->uhdr( "ORAC_X_DIM" );
+  my $ydim = $Frm->uhdr( "ORAC_Y_DIM" );
+
+  # Collapse the 2-D image to a work 1-D spectrum.  Use available variance
+  # information in the combination and to generate variance of the
+  # 1-D array.  Task XTRACT aborts if there is no variance present
+  # when VARUSE is set to true.  So first determine whether or not there
+  # is a VARIANCE array.  Without the VARIANCE array, variance is
+  # derived from the scatter of values along the Y axis for the given X
+  # pixel.
+  $Mon{"ndfpack_mon"}->obeyw("ndftrace", "$in");
+  (my $ORAC_STATUS, my $varpresent ) = $Mon{"ndfpack_mon"}->get( "ndftrace", "variance");
+  my $spec = new ORAC::TempFile;
+  my $specname = $spec->file;
+  my $param = "out=$specname colaps=\[0,1\] info=no varuse=$varpresent";
+  $Mon{'figaro4'}->obeyw( "xtract", "in=$in $param" );
+
+  # Fit a polynomial to the 1-D spectrum and create another temporary 
+  # spectrum from that polynomial.  The polynomial is fit to the log of
+  # the values to mimic CGS4DR.  
+  # **** Currently errors to the fit are not calculated. ****
+  my $polyspec = new ORAC::TempFile;
+  my $polyspecname = $polyspec->file;
+  $param = "output=$polyspecname order=$order logs=false";
+  $Mon{'figaro1'}->obeyw( "sfit", "spectrum=$specname $param" );
+  
+  # Grow the polynomial spectrum into a 2-D temporary image.  Figaro/GROWX
+  # being simpler works, but doesn't support WCS.  For KAPPA there is a
+  # need to set the bounds and origin.
+  my $polyimage = new ORAC::TempFile;
+  my $polyimagename = $polyimage->file;
+  #       $param = "image=$polyimagename ystart=1 yend=$ydim ysize=$ydim new=true";
+  #       $Mon{'figaro1'}->obeyw( "growx", "spectrum=$polyspecname $param");
+  $Mon{'ndfpack_mon'}->obeyw( "setbound", "ndf=$polyspecname(,1)" );
+  $param = "in=$polyspecname out=$polyimagename expand=[1,$ydim]";
+  $Mon{'kappa_mon'}->obeyw( "pixdupe", "$param" );
+  $Mon{'ndfpack_mon'}->obeyw( "setorigin", "$polyimagename origin=[1,1]" );
+
+  # We need a zero variance so we don't lose the variance array 
+  $Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$polyimagename variance=0");
+
+
+  # Divide the flat field by the polynomial image.
+  $param = "in2=$polyimagename out=$out title=$out";
+  $Mon{'kappa_mon'}->obeyw( "div", "in1=$in $param" );
+
+  # Set to the PIXEL frame temporarily.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=$out frame=PIXEL" );
+
+  # Update the Frame object for the current sub-file.
+  $Frm->file( $i, $out );
+
+  # Print a congratulatory message.
+  orac_print "$in to $out: flat normalized.\n";
+
+}
+
+# Display the frame
+$Display->display_data( $Frm ) if defined $Display;
+
+# Set the WCS frame back to SKY.
+foreach my $i ( 1..$Frm->nfiles ) {
+  my ( $in, $out ) = $Frm->inout( "_nf", $i );
+  $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=$in frame=SKY" );
+}
