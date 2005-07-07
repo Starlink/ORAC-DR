@@ -25,8 +25,8 @@ then mosaicked at the end.
 
 The method to be used to combine the images. In principle could be any
 value supported by MAKEMOS (see MAKEMOS documentation for further
-details). In practice, only MEAN or MEDIAN are supported. MEDIAN is
-the default.
+details). Currently, only MEAN or MEDIAN are supported. MEDIAN is the
+default.
 
 =head1 KNOWN ISSUES
 
@@ -38,7 +38,7 @@ number of files to mosaic is $maxmos**2.
 
 =head1 ALGORITHMS
 
-Usess CCDPACK MAKEMOS. This primitive is currently a very general
+Uses CCDPACK MAKEMOS. This primitive is currently a very general
 implementation.
 
 =head1 FILE SUFFIX
@@ -80,14 +80,22 @@ orac_throw "Error: unknown image combination method, $method (should be mean or 
   unless ( ($method eq "mean") || ($method eq "median") );
 
 # Set verbose flag manually for now.
-my $verbose = 0;
+my $verbose = 1;
 
 # Check version of ccdpack. Older versions can only handle 100 files at a time
 my $maxmosfiles = (starversion_lt('ccdpack', 'V4.0-17')) ? 100 : 1000;
 
+# Extra arguments to makemos - not needed if doing intermedate mosaics
+my $args; 
+
+$ORAC::TempFile::DEBUG = 1;
+
 $maxmosfiles = 100;
 # Calculate the number of steps to break the mosaicking into
 my @files = $Frm->files;
+
+# Temp file names
+my ($intmp, $outmos);
 
 my @mosaiclist;
 
@@ -97,7 +105,7 @@ if (@files > $maxmosfiles) {
   my $nsteps = ceil(@files/$maxmosfiles);
   my $stepsize = ceil(@files/$nsteps);
 
-  my $i = 1;
+  my $i = 0;
 
   orac_print "STEP = $stepsize, NSTEPS = $nsteps\n" if $verbose;
 
@@ -106,29 +114,47 @@ if (@files > $maxmosfiles) {
     my $start = $i;
     my $end = $start + $stepsize - 1;
 
-    my $intmp = new ORAC::TempFile;
+    $intmp = new ORAC::TempFile;
     print {$intmp->handle} join("\n",@files[$start..$end]);
     
-    my $outmos = new ORAC::TempFile;
-    $Mon{ccdpack_reg}->obeyw("makemos","in=^".$intmp->file." method=$method nousevar out=".$outmos->file." scale zero");
+    $outmos = new ORAC::TempFile(0);
     orac_print "DOING INTERMEDIATE MOSAIC \n" if $verbose;
+    $Mon{ccdpack_reg}->obeyw("makemos","in=^".$intmp->file." method=$method nousevar out=".$outmos->file." genvar");
+#    orac_print $outmos->file ."\n";
     push (@mosaiclist, $outmos->file);
 	
+    my $mytime = localtime;
+    orac_print $mytime ."\n";
     $i = $end + 1;
+    $args = "usevar nogenvar";
   }
 
 } else {
   @mosaiclist = @files;
+#  $args = "scale zero";
+  $args = "genvar nousevar";
 }
+
 # create output filename, derived from first input file
 # since this is a many to one operation
 my ($in, $mosaic) = $Frm->inout('_mos', 0);
 
 my $mostmp = new ORAC::TempFile;
+orac_print $mostmp->file ."\n";
 print {$mostmp->handle} join("\n",@mosaiclist[0..$#mosaiclist]);
 
 orac_print("Creating mosaic for frame\n");
-$Mon{ccdpack_reg}->obeyw("makemos","in=^".$mostmp->file." nousevar out=$mosaic ");
+$Mon{ccdpack_reg}->obeyw("makemos","in=^".$mostmp->file." out=$mosaic ".$args);
+#$Mon{ccdpack_reg}->obeyw("makemos","in=^".$mostmp->file." nousevar out=$mosaic");
 
 # store the single output file
 $Frm->files( $mosaic );
+
+# Register with group
+
+
+# Delete temp files
+#$ORAC::TempFile::DEBUG = 0;
+
+#my $mytime = localtime;
+#orac_print $mytime ."\n";
