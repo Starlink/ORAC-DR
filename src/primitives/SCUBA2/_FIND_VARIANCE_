@@ -1,0 +1,120 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_FIND_VARIANCE_ - Retrieves the variance from a mosaicked image
+
+=head1 SYNOPSIS
+
+ _FIND_VARIANCE_
+
+=head1 DESCRIPTION
+
+This primitive determines the statistics of the variance or error
+components within an NDF and reports the mean and standard
+deviation. The mean is expected to be a good estimate of the noise.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item COMP
+
+Component to probe in NDF. Maybe variance or error. Default is error (err).
+
+=back
+
+=head1 KNOWN ISSUES
+
+Does not check if the error component is present.
+
+=head1 ALGORITHMS
+
+Uses KAPPA STATS. 
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2005 University of British Columbia. All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
+
+=cut
+
+
+#my $mytime = localtime;
+#orac_print $mytime ."\n";
+
+my $ORAC_STATUS;
+
+my $comp = (exists $_FIND_VARIANCE_{COMP} && defined $_FIND_VARIANCE_{COMP}) 
+            ? lc($_FIND_VARIANCE_{COMP}) : "err";
+
+# Just want the first 3 characters
+$comp = substr($comp,0,3);
+
+if ($comp =~ /var/ ) {
+  orac_print("Finding variance statistic \n");
+} elsif ($comp =~ /err/) {
+  orac_print("Finding error statistic\n");
+} else {
+  orac_throw "Error: unsupported component, $comp. Please select either Variance or Error\n";
+}
+
+my $ndf = $Grp->file;
+
+$Mon{kappa_mon}->obeyw("stats","ndf=$ndf comp=$comp");
+
+# Retrieve the values
+($ORAC_STATUS, my $noise) = $Mon{kappa_mon}->get("stats","mean");
+
+# We need to fudge the time stamps here so that we get incrementing
+# times. Currently the simulator headers have DATE-OBS values that
+# are irrelevant. Ideally the stripchart should have an option to
+# display "seconds" directly such that we could simply say
+# "after 15 seconds we have this noise"
+
+# Integration time per Frame. Hardwire. We could always store a value
+# in $Frm when we have worked out how many DREAM/STARE images we have in 
+# each Frame
+my $inttime = 60 / (24. * 60. * 60.) ; # 60 x 1 second images
+
+my $total = $Grp->hdr("INTEGRATION_TIME");
+$total += $inttime;
+$Grp->hdr("INTEGRATION_TIME", $total);
+
+# Write to an index file
+my $log = new ORAC::LogFile("log.noise");
+my $time = gmtime();
+$log->header("#Noise log file - created on $time ",
+             "#     Time        Filter    Comp   Noise    CSO   El    Object ",
+             "#---------------------------------------------------------------------------------"
+	     );
+my $num = sprintf "%-4d", $Frm->number;
+#$time= sprintf "%12.3f", $Frm->hdr('ORACTIME');
+$time= 20050527.0 + $total;
+my $filt= sprintf "%4s",   "850";
+$noise = sprintf "%12.8e", $noise;
+#my $el = int (($Frm->hdr('STRT_ELD') + $Frm->hdr('END_ELD') ) /2.0 );
+$comp = uc( $comp );
+my $el = 45;
+my $cso = sprintf "%5.2f", "1.0";
+
+$log->addentry("$num $time $filt $comp $noise  $cso $el ". $Frm->hdr("OBJECT"));
+
+orac_print $noise ."\n";
+
