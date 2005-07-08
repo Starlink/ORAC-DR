@@ -64,12 +64,18 @@ our %wcsparms = ('CRVAL1'  => TDOUBLE,
                  'PV2_0'   => TFLOAT,
                  'PV2_1'   => TFLOAT,
                  'PV2_2'   => TFLOAT,
-                'PV2_3'   => TFLOAT);
+                 'PV2_3'   => TFLOAT);
 
 # A few extra globals
 
 our $scale;
 our $skylevel;
+
+# Some global parameters to determine how to do the object detection
+
+our $nominal_scale = 0.4;
+our @icpars_dither_offsets = (50,7.0,0,2.5,256);
+our @icpars_object_det = ($IPIX,$THRESH,$ICROWD,$RCORE,$GRID);
 
 # Get the files we want to dither. 
 
@@ -160,10 +166,19 @@ foreach $fname (@allfiles) {
 	$doconf = 0;
     }
 
+    # Work out 'plate scale' for image and scale the detection parameters
+    # accordingly
+
+    plate_scale ($fnamesub);
+    my $nsc = int($scale/$nominal_scale + 0.5);
+    my @icpars = @icpars_dither_offsets;
+    $icpars[0] *= $nsc;
+    $icpars[3] *= $nsc;
+    $icpars[4] *= $nsc;
+
     # Do the image detection
 
-    $retval = cir_imcore($fnamesub,$cpm,50,7,0,3.5,256,$catsub,"",0,3,
-	$errmsg);
+    $retval = cir_imcore($fnamesub,$cpm,@icpars,$catsub,"",0,3,$errmsg);
     if ($retval != CIR_OK) {
 	print $msg_fh "CIR_IMCORE failed for file %s -- %s\n",$fnamesub,
 	    $errmsg;
@@ -318,6 +333,16 @@ $value += $yoffs[0];
 $fptr->update_key(TDOUBLE,"CRPIX2",$value,$junk,$status);    
 $fptr->close_file($status);
 
+# Work out 'plate scale' for image and scale the detection parameters
+# accordingly
+
+plate_scale($outd);
+my $nsc = int($scale/$nominal_scale + 0.5);
+my @icpars = @icpars_object_det;
+$icpars[0] *= $nsc;
+$icpars[3] *= $nsc;
+$icpars[4] *= $nsc;
+
 # Do the catalogue generation for this image extension
 
 if ($doconf) {
@@ -325,8 +350,7 @@ if ($doconf) {
 } else {
     $cpm = "noconf";
 }
-$retval = cir_imcore($outd,$cpm,$IPIX,$THRESH,$ICROWD,$RCORE,$GRID,
-		     $outcat,"",0,$CATTYPE,$errmsg);
+$retval = cir_imcore($outd,$cpm,@icpars,$outcat,"",0,$CATTYPE,$errmsg);
 if ($retval != CIR_OK) {
     print $msg_fh "CIR_IMCORE failed on dither %s -- %s\n",$outd,$errmsg;
     exit 1;
@@ -659,6 +683,16 @@ sub sexigesimal {
 sub seeing {
     my ($fname) = @_;
 
+    plate_scale($fname);
+
+    # Now scale the seeing DQC parameter
+
+    $DQC{'SEEING'} *= $scale;
+}
+
+sub plate_scale {
+    my ($fname) = @_;
+
     # Open the file and read the CD matrix. Keep the biggest one (absolute
     # value). Since the rotation is small this is probably just fine
 
@@ -674,10 +708,7 @@ sub seeing {
     $scale = 3600.0*max(@vals);
     $fptr->close_file($status);
 
-    # Now scale the seeing DQC parameter
-
-    $DQC{'SEEING'} *= $scale;
-}
+}    
 
 sub write_dqc {
     my ($outd) = @_;
