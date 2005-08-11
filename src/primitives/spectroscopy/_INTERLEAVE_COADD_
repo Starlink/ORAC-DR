@@ -9,9 +9,8 @@ interleaves and/or co-adds them as necessary to form a single NDF.
 
 =head1 NOTES
 
-This essentially replaces the old primitives 
-_INTERLEAVE_DETECTOR_POSITIONS_ and 
-_COADD_MULTIPLE_EXPOSURES_ 
+This essentially replaces the old primitives _INTERLEAVE_DETECTOR_POSITIONS_
+and _COADD_MULTIPLE_EXPOSURES_
 
 The interleaved observation is stored in a file with a _inc suffix.
 
@@ -33,106 +32,105 @@ Council. All Rights Reserved.
 # position is in which integration component of the HDS, instead
 # referring to the DINDEX header in the integration (ie .Ix) NDF
 # headers.
+my $nfiles = $Frm->nfiles;
 
-my $detincr = $Frm->uhdr("ORAC_SCAN_INCREMENT");
-
-# The expansion factor = $a
-my $a = nint (1/ $detincr);
-
-my $nfiles=$Frm->nfiles;
-
+# We only need to do this if we actually have done more than one
+# integration.
 if ($nfiles > 1) {
 
-   # OK, here goes
+  # The ORAC_SCAN_INCREMENT is in pixels. If it's fractional, that means
+  # we've made sub-pixel steps to increase the spectral resolution, and
+  # that means we need to do an expansion.
+  my $detincr = $Frm->uhdr("ORAC_SCAN_INCREMENT");
+  my $expansion_factor = nint ( 1 / $detincr );
 
-   my $expand = new ORAC::TempFile;
-   my $efile = $expand->file;
+  # Set up two temporary files. The first will hold the expanded frames,
+  # the second will hold the ARD mask information.
+  my $expand = new ORAC::TempFile;
+  my $efile = $expand->file;
+  my $ard = new ORAC::TempFile;
+  my $ardfile = $ard->file;
 
-   my $ard = new ORAC::TempFile;
-   my $ardfile = $ard->file;
-
-   # Create the ARD file here as there's no need to do this N times.
-   # The ARD file blanks out all but the first out of every $a columns
-   # Only if we're not $a=1
-
-   if ($a != 1) {
-      foreach my $x (0 .. $Frm->uhdr("ORAC_X_DIM") - 1 ) {
-         foreach my $y (1 .. $a) {
-            if ($y != 1) {
-	        my $eval = $a*$x+$y;
-                print {$ard->handle} "COLUMN( $eval )\n";
-            }
-         }
+  # Create the ARD file here as there's no need to do this N times.
+  # The ARD file blanks out all but the first out of every $a columns
+  # Only if we have to do the expansion (i.e. the scan increment is
+  # not one pixel, i.e. the expansion factor is not equal to one)
+  if ($expansion_factor != 1) {
+    foreach my $x (0 .. $Frm->uhdr("ORAC_X_DIM") - 1 ) {
+      foreach my $y ( 1 .. $expansion_factor ) {
+        if ($y != 1) {
+	        my $eval = $expansion_factor * $x + $y;
+          print {$ard->handle} "COLUMN( $eval )\n";
+        }
       }
-      close $ard->handle or die "Could not close $ardfile: $!";
-   }
+    }
+    close $ard->handle or die "Could not close $ardfile: $!";
+  }
 
-   # Use a tmp file to store the list of input file for makemos-
-   # otherwise we overflow the max length of the command line parameter
-   my $list=new ORAC::TempFile;
-   my $listfile =$list->file;
-   open(LIST, ">$listfile");
-   
-   my $mosparam = "genvar=true usevar=true logto=neither logfile=! method=mean scale=false zero=false in=^$listfile";
+  # Use a temporary file to store the list of input files for MAKEMOS
+  # otherwise we overflow the max length of the command line parameter
+  my $list = new ORAC::TempFile;
+  my $listfile = $list->file;
 
-   foreach my $i (1 .. $nfiles) {
-      # Get input and output file names. This is to go to a step ready for mosaicing
-      # ipm = interleave pre-mosaic This is essentially a temp file.
-      my ($in, $out)=$Frm->inout("_ipm", $i);
+  foreach my $i (1 .. $nfiles) {
 
-      # Expand the file in the spectral dimention by a factor $a into a temp file
-      if ($a == 1) {
-         $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$efile");
-      } else {
-         $Mon{'kappa_mon'}->obeyw("pixdupe", "in=$in out=$efile expand=[$a, 1]");
-      }
+    # Get input and output file names. This is to go to a step ready for
+    # mosaicking.
+    # ipm = interleave pre-mosaic This is essentially a temp file.
+    my ( $in, $out )=$Frm->inout("_ipm", $i);
 
-      # Now blank out all but the first column of expanded pixels
-      if ($a != 1) {
-         $Mon{'kappa_mon'}->obeyw("ardmask", "in=$efile out=$out ardfile=$ardfile");
-      } else {
-         $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$efile out=$out");
-      }
+    # If necessary, expand the file in the spectral dimension and
+    # mask out the rows. Otherwise, just copy the input file into
+    # the output file.
+    if( $expansion_factor == 1 ) {
+      $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$out");
+    } else {
+      $Mon{'kappa_mon'}->obeyw("pixdupe", "in=$in out=$efile expand=[$expansion_factor, 1]");
+      $Mon{'kappa_mon'}->obeyw("ardmask", "in=$efile out=$out ardfile=$ardfile");
+    }
 
-      # Now shift the image in +x by DINDEX-1 pixels
-      my $origin = $Frm->hdr->{$i}->{DINDEX};
-      $Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$out origin=\[ $origin\]");
+    # Now shift the image in +x by DINDEX-1 pixels
+    my $origin = $Frm->hdr->{$i}->{DINDEX};
+    $Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$out origin=\[ $origin\]");
 
-      # Add to makemos list file
-      print LIST "$out\n";
+    # Add to makemos list file
+    print { $list->handle } "$out\n";
 
-      # Update the Frm object and report
-      $Frm->file($i, $out);
-      orac_print ("$in to $out: Prepared for interleave-coadd\n");
-      
-   } 
+    # Update the Frm object and report
+    $Frm->file($i, $out);
+    orac_print ("$in to $out: Prepared for interleave-coadd\n");
+  }
 
-   close(LIST);
+  close $list->handle or die "Could not close $listfile: $!";
 
-   # We're going to 1 NDF now, and we're thru with $in
+  # We're going to 1 NDF now, and we're thru with $in
+  $Frm->files( $Frm->file );
+  $Frm->file( $Frm->file );
 
-   $Frm->files($Frm->file);
-   $Frm->file($Frm->file);
+  my ($in, $out) = $Frm->inout( "_inc" );
 
-   my ($in, $out) = $Frm->inout ("_inc");
+  # Set up the parameters for MAKEMOS.
+  my $mosparam = "genvar=true usevar=true logto=neither logfile=! method=mean"
+               . " scale=false zero=false in=^$listfile"
+               . " title=$out out=$out";
 
-   $mosparam .= " title=$out out=$out";
+  # Perform the MAKEMOS.
+  $Mon{'ccdpack_reg'}->obeyw("makemos", $mosparam);
 
-   $Mon{'ccdpack_reg'}->obeyw("makemos", $mosparam);
+  # Update the Frame object and merge the headers.
+  $Frm->files($out);
+  $Frm->mergehdr;
+  orac_print ("Frames interleaved and coadded into $out\n");
+  $Frm->file($out);
 
-   $Frm->files($out);
-   $Frm->mergehdr;
+  # Update the uhdr.
+  $Mon{"ndfpack_mon"}->obeyw( "ndftrace", "ndf=$out" );
+  (my $ORAC_STATUS, my @dims) = $Mon{"ndfpack_mon"}->get("ndftrace", "dims");
+  $Frm->uhdr("ORAC_X_DIM", $dims[0]);
 
-   orac_print ("Frames interleaved and coadded into $out\n");
-   $Frm->file($out);
-
-   # Update the uhdr.
-   $Mon{"ndfpack_mon"}->obeyw( "ndftrace", "ndf=$out" );
-   (my $ORAC_STATUS, my @dims) = $Mon{"ndfpack_mon"}->get("ndftrace", "dims");
-   $Frm->uhdr("ORAC_X_DIM", $dims[0]);
-
-   # Proffer to display
-   $Display->display_data( $Frm ) if defined $Display;
+  # Proffer to display
+  $Display->display_data( $Frm ) if defined $Display;
 }
 
+# Tidy up output.
 orac_print "\n";
