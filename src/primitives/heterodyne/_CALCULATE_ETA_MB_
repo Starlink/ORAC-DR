@@ -1,0 +1,183 @@
+=head1 NAME                                     -*-perl-*-
+
+_CALCULATE_ETA_MB_ - Calculate Eta MB for a single point jigChop i.e. a single sample BMSW. 
+
+=head1 DESCRIPTION
+
+=head1 ARGUMENTS
+
+=over
+
+=item 4
+
+=item ENCODING
+
+=back
+
+=head1 AUTHOR
+
+Jamie Leech E<lt>j.leech@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+use ORAC::Calib::SCUBA;
+use Astro::Constants::MKS qw(:short);
+# First off check 2 things
+# 1) That the object name is a known planet for which it is useful to
+# calculate eta_mb with.
+#
+# 2) That the map size is 
+
+my $overide=0; 
+my $central_frequency;
+my $central_wavelength;
+my $sideband_factor; 
+my $c=299792458;
+
+my $object = $Frm->hdr('OBJECT');
+
+if( ($object eq "URANUS") || ($object eq "MARS") || $overide)
+{
+
+ $Cal=new ORAC::Calib::SCUBA;
+
+ my $naxis1 = $Frm->hdr('NAXIS1');
+ my $naxis2 = $Frm->hdr('NAXIS2');
+
+ if( $naxis1!=1 && $naxis2!=1)
+ {
+    orac_err("Error: we do not have a 1x1 dimension in the sky frame.\n");
+    #return;  
+ }  
+
+ # At this point the frame should consist of only 1 file
+ # Get this file
+ 
+ my $file=$Frm->file;
+
+ # Use stats to find the mean of the spectrum in T_A* (K)
+ $Mon{kappa_mon}->obeyw("stats","ndf=$file");
+
+ # Get sum and number of valid pixels
+ my $ORAC_STATUS;
+ # ($ORAC_STATUS, my $sum) = $Mon{kappa_mon}->get("stats","total");
+ # ($ORAC_STATUS, my $ngood) = $Mon{kappa_mon}->get("stats","numgood");
+ ($ORAC_STATUS, my $numpix) = $Mon{kappa_mon}->get("stats","numpix");
+ ($ORAC_STATUS, my $max) = $Mon{kappa_mon}->get("stats","maximum");
+ ($ORAC_STATUS, my $sigma) = $Mon{kappa_mon}->get("stats","sigma");
+ ($ORAC_STATUS, my $mean) = $Mon{kappa_mon}->get("stats","mean");
+ ($ORAC_STATUS, my $min) = $Mon{kappa_mon}->get("stats","minimum");
+ ($ORAC_STATUS, my @mincoord) = $Mon{kappa_mon}->get("stats","mincoord");
+ ($ORAC_STATUS, my @minpos) = $Mon{kappa_mon}->get("stats","minpos");
+ orac_print "numpix is $numpix  mean is $mean  max is $max  min is $min  sigma is $sigma  min coord $mincoord[0] $mincoord[1]  $mincoord[2]  $minpos[0] $minpos[1]  $minpos[2] fin \n";
+
+
+ $Mon{kappa_mon}->obeyw("ndftrace","ndf=$file");
+
+ ($ORAC_STATUS, my @lbound) = $Mon{ndfpack_mon}->get("ndftrace","lbound");
+ ($ORAC_STATUS, my @ubound) = $Mon{ndfpack_mon}->get("ndftrace","ubound");
+ ($ORAC_STATUS, my @flbnd) = $Mon{ndfpack_mon}->get("ndftrace","flbnd");
+ ($ORAC_STATUS, my @fubnd) = $Mon{ndfpack_mon}->get("ndftrace","fubnd");
+ ($ORAC_STATUS, my @dims) = $Mon{ndfpack_mon}->get("ndftrace","dims");
+
+ orac_print "$lbound[0] $lbound[1]  $lbound[2]--- $ubound[0] $ubound[1]  $ubound[2]\n";
+
+ ################
+ # TO DO: Insert code here to ensure that the 3rd axis units are frequency and 
+ # check the units.
+ ################
+
+ #######################
+ # Get central frequency of the spectrum
+ # determine wavelength
+ $central_frequency=0.5*($fubnd(2)-$flbnd(2));
+ $central_wavelength=$c/$central_frequency;
+ 
+ #######################
+ # TO DO determine sideband factor
+ # Avail. keywords  IS_SSB, N_MIX, OBS_SB
+ #
+ # N.B We should have the headers task or gridder populate some keywords with the
+ # eta_tel (eta_l =F_eff), sideband ratios etc from the JCMT_parameters AIPS++ table.
+ #
+ # Assume sideband ratio ~0.5 for the time being.
+ # 
+ # For DSB receivers we are sensitive to both sidebands
+ # Thus T*A will be twice as a large (assuming equal sideband
+ # sensitivity ratio)  
+ #
+ # if Rx =A then T*_A * 0.5?
+ #
+ my $is_dsb_string = $Frm->hdr('IS_DSB');
+ if ($is_dsb_string =~/T/) { $is_dsb=1;} else{ $is_dsb=0;} 
+  if ($is_dsb) { $sideband_factor =0.5;} else{ $sideband_factor =1.0;} 
+ 
+ ######################
+ # Determine flux in beam for the object using fluxcal call
+ # TO DO - determine corresponding SCUBA filter from the wavelength
+ #
+ #
+ # RxA range = 211 GHz to 276 GHz
+ #  1300      221.0 
+ #  1100      264.0 
+ #  850       350.0  
+ #  (221.0 +  264.0)/2 =242  
+ #
+ #  TO DO. Might want to make this more sophisticated , with some sort of interpolation scheme
+ # to pick more appropriate values for frequencies not near the SSUBA filter center
+ #
+ # C - band 430 to 510 GHz,
+ # D - band  630 to 710 GHz.
+ #
+ # N.B. Should store these currently hardwired values somewhere for reuse.
+ if ( ($central_frequency >= 211.0) &&  ($central_frequency < 242.0) ){ $nearest_scuba_filter="1300";}
+ elsif ( ($central_frequency < 264.0) &&  ($central_frequency >= 242.0) ){ $nearest_scuba_filter="1100";}
+ elsif ( ($central_frequency >= 264.0) &&  ($central_frequency <= 276.0) ){ $nearest_scuba_filter="1100";} 
+ elsif ( ($central_frequency >= 315.0) &&  ($central_frequency <= 373.0) ){ $nearest_scuba_filter="850";} # B-band
+ elsif ( ($central_frequency >= 430.0) &&  ($central_frequency <= 510.0) ){ $nearest_scuba_filter="600";} # C-band
+ elsif ( ($central_frequency >= 630.0) &&  ($central_frequency <= 710.0) ){ $nearest_scuba_filter="450";} # D-band  
+ else {  orac_throw "Unable to determine nearest SCUBA filter frequency. Error: $!\n"; }
+ 
+ my $flux_in_beam = $Cal->fluxcal($object,$nearest_scuba_filter);
+ orac_print "FLUXES reports flux in beam to be $flux_in_beam (Jy)\n";
+
+ ###############################
+ # Extract the beam size and the
+ #
+ # (BMAJ*BMIN*1.133) 
+ # whether SSB or DSB (see below) from the header also.
+ #
+
+ my $bmaj = $Frm->hdr('BMAJ');
+ my $bmin = $Frm->hdr('BMIN');
+
+ $beam_solid_angle=1.133*($bmaj*$PI/180.0)*($bmin*$PI/180.0) 
+
+ #######################
+ # T_mb for the planet is given by
+ #
+ $T_mb_planet=($flux_in_beam * $central_wavelength**2)/(2* $A_k * 1.133 * $beam_solid_angle)
+ ######################
+ #
+ # $mean is the mean of the spectrum in T_A* (K)
+ #
+ # $mean is approx twice as big if we are using a DSB receiver sensitive to both sidebands
+
+ $eta_mb=($mean*$sideband_factor)/$T_mb_planet;
+ orac_print "Main-beam efficiency is $eta_mb (Jy)\n";
+ ######################### 
+ # TO DO:
+ # implement a warning if the standard deviation is high - this could
+ # mean baseline curvature or the presence of an absorption line.
+ #
+ # Print result to a log file.
+ 
+} else 
+{ orac_print "Object is not a valid planetary calibrator (i.e. URANUS or MARS)- no eta_mb will be calculated\n";
+}
+
