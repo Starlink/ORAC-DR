@@ -587,7 +587,7 @@ sub hds2mef_wfcam {
 
 #    use Cirdr::Primitives qw(:constants);
 #    use Cirdr::Opt qw(cir_wfcam_convert);
-  use ORAC::Frame::WFCAM;
+  require ORAC::Frame::WFCAM;
 
   # Check for the input file
 
