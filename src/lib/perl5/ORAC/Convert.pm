@@ -619,8 +619,8 @@ sub hds2mef_wfcam {
 
   # Get the standard fits keywords
 
-  my @phukeys = ORAC::Frame::WFCAM::phukeys;
-  my @ehukeys = ORAC::Frame::WFCAM::ehukeys;
+  my @phukeys = &ORAC::Frame::WFCAM::phukeys;
+  my @ehukeys = &ORAC::Frame::WFCAM::ehukeys;
   my $nphu = @phukeys;
   my $nehu = @ehukeys;
 
@@ -647,7 +647,8 @@ sub hds2mef {
 
     # Need CFITSIO now, so load it
 
-    use Astro::FITS::CFITSIO qw(:constants :longnames);
+    require Astro::FITS::CFITSIO;
+    Astro::FITS::CFITSIO->import(qw(:constants :longnames));
 
     # Check for the input file
 
@@ -727,7 +728,8 @@ sub hds2mef {
 	# not the primary
 
 	my $ifile = $alltmp[$ifileno];
-        my $iptr = Astro::FITS::CFITSIO::open_file($ifile,READONLY,$fitstatus);
+        my $iptr = Astro::FITS::CFITSIO::open_file($ifile,
+						   &Astro::FITS::CFITSIO::READONLY,$fitstatus);
         if ($fitstatus != 0) {
 	    unlink @alltmp;
 	    orac_err "Couldn't open temporary FITS file $ifile\n";
@@ -743,7 +745,7 @@ sub hds2mef {
 	if ($ifileno == 0) {
 	    $naxis = 0;
 	    @naxes = ();
-            $bitpix = BYTE_IMG;
+            $bitpix = &Astro::FITS::CFITSIO::BYTE_IMG;
             $optr->resize_img($bitpix,$naxis,\@naxes,$status);
 	}
 
