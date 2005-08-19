@@ -1,0 +1,196 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_FILL_BAD_PIXELS_ - Fills bad pixels in a Frame or Group file by
+interpolation.
+
+=head1 DESCRIPTION
+
+This primitive fills bad pixels in either a Frame or Group file by
+interpolating over bad pixels with a smooth function. It does so by
+forming a smooth replacement function for the regions of bad values by
+forming successive approximations to a solution of Laplace's equation,
+with the surrounding valid data providing the boundary conditions
+
+This primitive can fill regions of bad pixels along with standalone
+bad pixels. This primitive is essentially a wrapper around the KAPPA
+FILLBAD task.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item GROUP = LOGICAL (Given)
+
+If true, fill bad pixels in the current Group file. If false, use the
+current Frame. [0]
+
+=item NITER = INTEGER (Given)
+
+The number of iterations of the relaxation algorithm. This value
+cannot be less than two, since this is the minimum number required to
+ensure that all bad values are assigned a replacement value. The more
+iterations used, the finer the detail in the replacement function and
+the closer it will match the surrounding good data. [2]
+
+=item SIZE = REAL (Given)
+
+The initial scale length in pixels to be used in the first
+iteration. For maximum efficiency, it should normally have a value
+about half the `size' of the largest invalid region to be
+replaced. (See the Notes section for more details.) [5.0]
+
+=item USECYCLE = LOGICAL (Given)
+
+If true, the output filename will include the group cycle number. If
+false, it won't. [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+VARIANCE components, if present, are propogated. The VARIANCE is also
+used to weight the calculation of the replacement data values.
+
+=item *
+
+The value of the parameter SIZE is not critical and the default value
+of 5.0 pixels will normally prove effective. It primarily affects the
+efficiency of the algorithm on various size scales. If the smoothing
+scale is set to a large value, large scale variations in the
+replacement function are rapidly found, while smaller scale variations
+may require many iterations. Conversely, a small value will rapidly
+produce the small scale variations but not the larger scale ones. The
+aim is to select an initial value SIZE such that during the course of
+a few iterations, the range of size scales in the replacement function
+are all used. In practice this means that the value of SIZE should be
+about half the size of the largest scale variations expected. Unless
+the valid pixels are very sparse, this is usually determined by the
+`size' of the largest invalid region to be replaced.
+
+=item *
+
+For additional background, see SUN/95.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Frame with bad pixels filled, inheriting the input object's name but
+with the _fb suffix. If the USECYCLE argument is set to true, then the
+suffix will be _fb_<CYCLE>.
+
+=back
+
+=head1 TASKS
+
+KAPPA: FILLBAD.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2005 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# Find out if we're operating on the current Group or Frame object.
+my $group = $_FILL_BAD_PIXELS_{GROUP};
+if( ! defined( $group ) ) {
+  $group = 0;
+}
+
+# Obtain the desired number of iterations. Default to 2.
+my $niter = $_FILL_BAD_PIXELS_{NITER};
+if( ! defined( $niter ) || $niter < 2 ) {
+  $niter = 2;
+}
+
+# Obtain the desired scale length. Default to 5.0.
+my $size = $_FILL_BAD_PIXELS_{SIZE};
+if( ! defined( $size ) || $size < 1 ) {
+  $size = 5.0;
+}
+
+# Find out if the user wants the cycle number to be included in the
+# output filename or not.
+my $usecycle = $_FILL_BAD_PIXELS_{USECYCLE};
+if( ! defined( $usecycle ) ) {
+  $usecycle = 0;
+}
+
+# Set the output suffix to be _fb.
+my $suffix = "_fb";
+
+# Append the cycle number to the output suffix, if requested.
+if( $usecycle ) {
+  my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+  $cycleno = defined( $cycleno ) ? $cycleno : 0;
+  $suffix .= "_$cycleno";
+}
+
+# Fill the bad pixels. If we want to do this on a Frame object, loop
+# over the subframes. If we want to do this on a Group object, just
+# use the Group object.
+if( $group ) {
+
+  # The ORAC::Group::inout method doesn't do what we want, so create
+  # our own output filename.
+  my $in = $Grp->file;
+  my $out = $Grp->uhdr( "ROOT_NAME" ) . $suffix;
+
+  # Set up the parameters to FILLBAD.
+  my $params = "in=$in out=$out niter=$niter size=$size title=!";
+
+  # And do FILLBAD.
+  $Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
+
+  # Report to the user.
+  orac_print "Bad pixels filled in $in to form $out.\n";
+
+  # Update the Group object.
+  $Grp->file( $out );
+  $Grp->readhdr;
+
+} else {
+
+  # Go over each subframe in the Frame object.
+  foreach my $i ( 1..$Frm->nfiles ) {
+
+    # Generate the input and output filenames.
+    ( my $in, my $out ) = $Frm->inout( $suffix, $i );
+
+    # Set up the parameters to FILLBAD.
+    my $params = "in=$in out=$out niter=$niter size=$size title=!";
+
+    # Do the FILLBAD.
+    $Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
+
+    # Report to the user.
+    orac_print "Bad pixels filled in $in to form $out.\n";
+
+    # Update the Frame object.
+    $Frm->file( $i, $out );
+
+  }
+
+}
+
+# Tidy up output.
+orac_print "\n";

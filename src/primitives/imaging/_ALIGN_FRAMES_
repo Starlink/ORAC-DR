@@ -1,0 +1,168 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_ALIGN_FRAMES_ - Align frames that have WCS information.
+
+=head1 DESCRIPTION
+
+This primitive uses KAPPA/WCSALIGN to align frames to the same WCS
+frame.  It does so by resampling a group of input NDFs, producing
+corresponding output NDFs which are aligned pixel-for-pixel with the
+first NDF in the group.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item METHOD = STRING (Given)
+
+The resampling method to be used. This can be any of those listed for
+WCSALIGN. Nearest-neighbour is quickest, but the default is SincSinc.
+This argument is case-insensitive. [sincsinc]
+
+=item PARAMS = ARRAY (Given)
+
+The Sinc, SincSinc, SincCos, and SincGauss resampling methods can take
+optional parameters. The first is required by all the above
+interpolation schemes. It is used to specify how many pixels are to
+contribute to the interpolated result on either side of the
+interpolation point in each dimension. Typically, a value of 2 is
+appropriate and the minimum allowed value is 1 ( i.e. one pixel on
+each side ). A value of zero or less indicates that a suitable number
+of pixels should be calculated automatically. [0]
+
+The second is required only by the SincSinc, SincCos, and SincGauss
+interpolation schemes. For the SincSinc and SincCos schemes, it
+specifies the number of pixels at which the envelope of the function
+goes to zero. The minimum value is 1.0, and the run-time default value
+is 2.0. For the SincGauss scheme, it specifies the full-width at
+half-maximum (FWHM) of the Gaussian envelope. The minimum value is
+0.1, and the run-time default is 1.0. On astronomical NDFs and
+spectra, good results are often obtained by approximately matching the
+FWHM of the envelope function, given by PARAMS(2), to the point spread
+function of the input data. []
+
+This argument must be passed as a comma-separated list. If you only
+wish to supply one parameter (e.g. for the Sinc method), then simply
+supply one value. If you wish to supply two, separate them by a comma
+(e.g. PARAMS=0.0,0.5).
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive operates on the current Group object, and aligns all
+Frames in that Group.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Aligned frames inheriting the original frames' name but with the _al
+suffix.
+
+=back
+
+=head1 TASKS
+
+KAPPA: WCSALIGN.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2005 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+use Time::HiRes 'time';
+my $start = time();
+
+# Only proceed if it's time to do so.
+if( $Frm->uhdr( "MAKE_MOSAIC" ) ) {
+
+  # Obtain the interpolation method.
+  my $method = ( lc( $_ALIGN_FRAMES_{METHOD} ) || "sincsinc" );
+
+  # Obtain the extra parameters that are necessary for the Sinc,
+  # SincSinc, SincCos, and SincGauss resampling methods.
+  my $opt_params = $_ALIGN_FRAMES_{PARAMS};
+  if( ! defined( $opt_params ) ) {
+    if( $method eq 'sinc' ) {
+      $opt_params = "0";
+    }
+    elsif( $method eq 'sincsinc' ||
+        $method eq 'sinccos' ) {
+      $opt_params = "[0,2]";
+    }
+    else {
+      $opt_params = "[0,1]";
+    }
+  }
+
+  # This method operates on all members of the Group. Write a
+  # temporary file that contains the group members, one per line, as
+  # input to WCSALIGN. Also write a similar file that contains the
+  # output name corresponding to each input frame.
+  my $intmp = new ORAC::TempFile;
+  my $outtmp = new ORAC::TempFile;
+
+  # The suffix is going to be _al.
+  my $suffix = "_al";
+  ( my $inref, my $outref ) = $Grp->inout( $suffix );
+  open my $fh_inlist, ">", $intmp->file or
+    orac_throw "Unable to open temporary file to hold input filenames "
+               . "to WCSALIGN: $!";
+  print { $fh_inlist } join( "\n", @$inref ), "\n";
+  close $fh_inlist or
+    orac_throw "Unable to close temporary file to hold input filenames "
+               . "to WCSALIGN: $!";
+
+  open my $fh_outlist, ">", $outtmp->file or
+    orac_throw "Unable to open temporary file to hold output filenames "
+               . "from WCSALIGN: $!";
+  print { $fh_outlist } join( "\n", @$outref ), "\n";
+  close $fh_outlist or
+    orac_throw "Unable to close temporary file to hold output filenames "
+               . "from WCSALIGN: $!";
+
+  # Set up the parameters to WCSALIGN.
+  my $params = "in='^" . $intmp->file . "' out='^" . $outtmp->file
+             . "' method=$method ref=! lbnd=! ubnd=! ";
+  if( defined( $opt_params ) ) {
+    $params .= "params=$opt_params ";
+  }
+
+  # Tell the user what we're doing.
+  orac_print "Aligning images " . ( join ", ", @$inref ) . " to common SKY frame.\n";
+
+  # Do the WCSALIGN shuffle.
+  $Mon{'kappa_mon'}->obeyw( "wcsalign", "$params" );
+
+  orac_print "Images aligned.\n";
+
+  # And update the Group object.
+  $Grp->updateout( $suffix );
+}
+
+# Tidy-up output.
+orac_print "\n";
+
+my $elapsed = time() - $start;
+print "time to do _ALIGN_FRAMES_: $elapsed seconds\n";

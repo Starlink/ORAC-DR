@@ -1,0 +1,250 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_MOSAIC_ALIGNED_FRAMES_ - Mosaic a set of frames previously aligned
+with WCSALIGN.
+
+=head1 DESCRIPTION
+
+This primitive aligns frames that have been aligned with WCSALIGN,
+typically with the _ALIGN_FRAMES_ method.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item FILLBAD = LOGICAL (Given)
+
+If true (1), replace the bad pixels in the current cycle's mosaic with
+a smooth function derived from its neighbours. Otherwise, leave the
+bad pixels unaltered. [1]
+
+=item METHOD = CHARACTER (Given)
+
+The combination method to use when mosaicking. This can be any of
+those that MAKEMOS can support. See SUN/139 for these. [median]
+
+=item ZERO = LOGICAL (Given)
+
+Whether or not an attempt to apply zero-point corrections to frames
+before combining them into a mosaic. [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+The output mosaic, with suffix _mos. For each cycle through a group, a
+cycle-specific mosaic will be created with suffix _mos_<CYCLE>.
+
+=back
+
+=head1 TASKS
+
+CCDPACK: MAKEMOS.
+KAPPA: ADD, NDFCOPY.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2005 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# Do only if it's time to do so.
+if( $Frm->uhdr( "MAKE_MOSAIC" ) ) {
+
+  # Obtain the combination method.
+  my $method = ( lc( $_MOSAIC_ALIGNED_FRAMES_{METHOD} ) || "median" );
+
+  # Find out if the user wants to fill bad pixels or not.
+  my $fillbad = $_MOSAIC_ALIGNED_FRAMES_{FILLBAD};
+  if( ! defined( $fillbad ) ) {
+    $fillbad = 1;
+  }
+
+  # Find out if the user wants to do zero-point corrections.
+  my $zero = $_MOSAIC_ALIGNED_FRAMES_{ZERO};
+  if( ! defined( $zero ) ) {
+    $zero = 1;
+  }
+
+  # Obtain the cycle number from the internal user headers. Default to
+  # zero if undefined, so that recipes which do not support this
+  # feature will continue to work.
+  my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+  $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+  # Select only those members in the current cycle.
+  my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+
+  # Specify the mosaic suffix, and set up the output mosaic filenames.
+  my $suffix = "_mos";
+  my $grproot;
+
+  if( $cycleno == 0 ) {
+    $grproot = $Grp->file;
+  } else {
+    $grproot = $Grp->uhdr( "ROOT_NAME" );
+  }
+  my $grandmos = $grproot . $suffix;
+  my $mosname = $grandmos . "_" . $cycleno;
+
+  # Create an input file for WCSALIGN.
+  my $intmp = new ORAC::TempFile;
+  ( my $inref, my $outref ) = $cycleGrp->inout( $suffix );
+  open my $fh_inlist, ">", $intmp->file or
+    orac_throw "Unable to open temporary file to hold input filenames "
+               . "to MAKEMOS: $!";
+  print { $fh_inlist } join( "\n", @$inref ), "\n";
+  close $fh_inlist or
+    orac_throw "Unable to close temporary file to hold input filenames "
+               . "to MAKEMOS: $!";
+
+  # Set up the parameters to MAKEMOS.
+  my $params = "in='^" . $intmp->file . "' out=$mosname title=! "
+             . "optov=3 nozero method=$method sigmas=3.0";
+
+  # Tell the user what we're doing.
+  orac_print "Mosaicking images " . ( join ", ", @$inref ) . " into $mosname.\n";
+
+  # Do the MAKEMOS.
+  $Mon{'ccdpack_reg'}->obeyw("makemos", "$params");
+
+  # Report to the user.
+  orac_print "Images mosaicked into $mosname.\n";
+
+  # Update the group file with the new mosaic.
+  $Grp->file( $mosname );
+
+  $Grp->readhdr;
+
+  $Grp->uhdr( "ROOT_NAME", $grproot );
+
+  # Correct the headers for the current cycle's mosaic. This involves
+  # changing the end airmass and UT time to reflect the last frame
+  # included in the mosaic. This is done to the physical file as well
+  # as the ORAC-DR internal header.
+  my $amendname = "ORAC_AIRMASS_END";
+  my %keywords = $Frm->translate_hdr( $amendname );
+  my @amendkey = keys( %keywords );
+  my $amend = $Grp->frame( $Grp->num )->uhdr( $amendname );
+  $Grp->uhdr( $amendname, $amend );
+  my $value = $keywords{ $amendkey[ 0 ] };
+  _SET_GROUP_FITS_ITEM_ KEY=$amendkey[0] VALUE=$value
+
+  my $utendname = "ORAC_UTEND";
+  %keywords = $Frm->translate_hdr( $utendname );
+  my @utendkey = keys( %keywords );
+  my $utend = $Grp->frame( $Grp->num )->uhdr( $utendname );
+  $Grp->uhdr( $utendname, $utend );
+  $value = $keywords{ $utendkey[ 0 ] };
+  _SET_GROUP_FITS_ITEM_ KEY=$utendkey[0] VALUE=$value
+
+  # Fill bad pixels, if requested.
+  if( $fillbad ) {
+
+    _FILL_BAD_PIXELS_ USECYCLE=1 GROUP=1 NITER=4 SIZE=4
+
+  }
+
+  $mosname = $Grp->file;
+
+  # Add this mosaic to the grand mosaic.
+  if( $cycleno == 0 ) {
+    $params = "in=$mosname out=$grandmos";
+    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+    orac_print "The first cycle's mosaic, $mosname, becomes the main mosaic $grandmos.\n";
+
+    # Set the group name in the Group object to the main mosaic name,
+    # not the original group name, read the header, and store the root
+    # name.
+    $Grp->file( $grandmos );
+    $Grp->readhdr;
+    $Grp->uhdr( "ROOT_NAME", $grproot );
+
+    # Make sure that the start and end times are present, as readhdr
+    # doesn't always provide them. Take the start from the first frame
+    # used to form the mosaic and the end from the last (and current)
+    # frame.
+    my $utstartname = "ORAC_UTSTART";
+    if( ! defined( $Grp->uhdr( $utstartname ) ) ) {
+      $Grp->uhdr( $utstartname, $Grp->frame(0)->uhdrt( $utstartname ) );
+    }
+    if( ! defined( $Grp->uhdr( $utendname ) ) ) {
+      $Grp->uhdr( $utendname, $Frm->uhdr( $utendname ) );
+    }
+  } else {
+
+    # We're not on the first cycle, so add the current mosaic to the
+    # grand mosaic. First, make a temporary file to hold a duplicate
+    # of the main mosaic.
+    my $tempfile = new ORAC::TempFile;
+    my $tempmos = $tempfile->file;
+    $params = "in=" . $Grp->file . " out=$tempmos";
+    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+    # Add the frames.
+    $params = "in1=$tempmos in2=$mosname out=" . $Grp->file;
+    $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+
+    # Obtain the name of the exposure time header and external FITS
+    # keyword.
+    my $exptimename = "ORAC_EXPOSURE_TIME";
+    %keywords = $Frm->translate_hdr( $exptimename );
+    my @expkey = keys( %keywords );
+
+    # Change the integration time of the grand mosaic by summing the
+    # current value and that of the primary NDF used to make the
+    # latest mosaic.  Note this is done to the physical file as well
+    # as the ORAC-DR internal header, and only to the added (grand)
+    # mosaic.
+    my $exptime = $Grp->uhdr( $exptimename )
+                + $cycleGrp->frame( 0 )->uhdr( $exptimename );
+    $Grp->uhdr( $exptimename, $exptime );
+    $params = "ndf=". $Grp->file
+            . " keyword=$expkey[ 0 ] edit=update value=$exptime position=!";
+    $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$params comment=\\\$C" );
+
+    # Change the end airmass to reflect the last frame included in the
+    # grand mosaic.  Note this is done to the physical file as well as
+    # the ORAC-DR internal header.
+    $Grp->uhdr( $amendname, $amend );
+    if ( defined( $value ) ) {
+      $params = "ndf=" . $Grp->file . " keyword=$amendkey[ 0 ] edit=update value=$value position=!";
+      $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$params comment=\\\$C" );
+    }
+
+    # Change the end UT time to reflect the last frame included in the
+    # grand mosaic.  Note this is done to the physical file as well as
+    # the ORAC-DR internal header.
+    $Grp->uhdr( $utendname, $utend );
+    if ( defined( $utend ) ) {
+      $params = "ndf=" . $Grp->file . " keyword=$utendkey[ 0 ] edit=update value=$utend position=!";
+      $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$params comment=\\\$C" );
+    }
+
+    orac_print "Current cycle's mosaic, $mosname, added into main mosaic " . $Grp->file . ".\n";
+
+  }
+}
+
+# Tidy up output.
+orac_print "\n";
