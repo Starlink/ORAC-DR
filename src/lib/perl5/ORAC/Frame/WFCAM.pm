@@ -89,37 +89,6 @@ my %hdr = (
 
 ORAC::Frame::WFCAM->_generate_orac_lookup_methods( \%hdr );
 
-# WCS information.  First CRPIX: the location in pixels of the optical
-# centre of the field in each chip's pixel coordinate frame.
-
-my %crpix = ('a' => [1542.2,-432.8],
-             'b' => [1528.6,1533.2],
-             'c' => [-427.7,1542.2],
-             'd' => [-427.8,-418.5]);
-
-# NCD: The CD matrix divided by the scale for zero rotation. This not
-# only gives the alignment of the chip with respect to North, but also
-# can be changed if the readout direction is changed
-
-my %ncd = ('a' => [0,1,1,0],
-           'b' => [0,1,1,0],
-	   'c' => [0,1,1,0],
-	   'd' => [0,1,1,0]);
-
-# SCALE: The pixel scale in arcseconds
-
-my %scale = ('a' => 0.4532,
-             'b' => 0.4521,
-             'c' => 0.4524,
-             'd' => 0.4537);
-
-# EXTRA_ROT: Any extra rotation of the detector that is present in degrees
-
-my %extra_rot = ('a' => -1.0,
-		 'b' => -1.1,
-		 'c' => -0.8,
-		 'd' => -0.4);
-
 my %rawfixedparts = ('1' => 'w',
                      '2' => 'x',
                      '3' => 'y',
@@ -138,6 +107,16 @@ my %pv2_3 = ('J'       => -50.0,
 	     'Brgamma' => -50.0,
 	     'OS1'     => -50.0,
 	     'nominal' => -50.0);
+
+# Central wavelengths for the WFCAM filters
+
+my %cenwave = ('Z'      => 0.88,
+               'Y'      => 1.02,
+               'J'      => 1.25,
+               'H'      => 1.64,
+	       'K'      => 2.20,
+               '1-0S1'  => 2.12,
+	       'BGamma' => 2.17);
 
 # Image sections to be used in determining the scale factor to use in 
 # dark subtraction.
@@ -475,73 +454,6 @@ sub chip {
     return($self->{chipname});
 }
 
-=item B<crpix>
-
-Return the values of CRPIX for a chip
-
-    $Frm->crpix($chip_id);
-
-where $chip_id is 'a','b','c' or 'd'.
-
-=cut
-
-sub crpix {
-    my $self = shift;
-    my $chipid = shift;
-
-    return($crpix{$chipid});
-}
-
-=item B<ncd>
-
-Return the NCD matrix for a chip
-    $Frm->ncd($chip_id);
-
-where $chip_id is 'a','b','c' or 'd'
-
-=cut
-
-sub ncd {
-    my $self = shift;
-    my $chipid = shift;
-
-    return($ncd{$chipid});
-}
-
-=item B<scale>
-
-Return the pixel scale for a chip
-
-    $Frm->scale($chip_id);
-
-where $chip_id is 'a','b','c' or 'd'
-
-=cut
-
-sub scale {
-    my $self = shift;
-    my $chipid = shift;
-
-    return($scale{$chipid});
-}
-
-=item B<extra_rot>
-
-Return any extra rotation in a chip
-
-    $Frm->extra_rot($chip_id);
-
-where $chip_id is 'a','b','c' or 'd'
-
-=cut
-
-sub extra_rot {
-    my $self = shift;
-    my $chipid = shift;
-
-    return($extra_rot{$chipid});
-}
-
 
 =item B<pv2_3> 
 Return the value of the cubic distortion coefficient 
@@ -695,6 +607,20 @@ sub ehukeys {
     return(@ehukeys);
 }
 
+=item B<cenwave> 
+
+Return a central wavelength (in microns) given the filter name 
+    $cenwave_H = $Frm->cenwave('H');
+
+=cut
+
+sub cenwave {
+    my $self = shift;
+
+    my $filter = shift;
+    return($cenwave{$filter});
+}
+
 =item B<findgroup>
  
 Returns group name from header.  If we cannot find anything sensible,
@@ -735,7 +661,6 @@ sub findgroup {
   $self->group($hdrgrp);
  
   return $hdrgrp;
-                                                                                
 }
  
 =head1 SEE ALSO
