@@ -31,6 +31,7 @@ use warnings;
 use Carp;
 use File::Spec;  # For pedants everywhere
 use IO::File;    # until perl5.6 is guaranteed
+use Text::Balanced qw/ extract_bracketed /;
 
 # use Data::Dumper; # for debugging
 
@@ -1272,7 +1273,9 @@ sub orac_parse_arguments {
     # Split each argument on equals
     my ($key,$value) = split("=",$argument,2);
     if (defined $value) {
-      if( $value =~ /^\$/ ) {
+      if( $value =~ /^\$/ ||
+          $value =~ /^\\%/ ||
+          $value =~ /^\\@/ ) {
         push(@kv, " $key => $value");
       } else {
         push( @kv, " $key => \"$value\"");
