@@ -933,7 +933,7 @@ sub _parse_recursively {
 
       # Parse any arguments. Add a line that runs orac_parse_arguments
       # on $rest and sets a hash called %primitive_name
-      # $rest is a string of form "arg1=value arg2=value" that is 
+      # $rest is a string of form 'arg1="value" arg2=$value' that is 
       # converted to a hash at runtime by orac_parse_arguments
       # This hash is in the upper scope so will suffer from masking
       # problems the second time it gets used at this level.
@@ -1272,7 +1272,11 @@ sub orac_parse_arguments {
     # Split each argument on equals
     my ($key,$value) = split("=",$argument,2);
     if (defined $value) {
-      push(@kv, " $key => \"$value\"");
+      if( $value =~ /^\$/ ) {
+        push(@kv, " $key => $value");
+      } else {
+        push( @kv, " $key => \"$value\"");
+      }
     } else {
       push(@kv, " $key => undef");
     }
