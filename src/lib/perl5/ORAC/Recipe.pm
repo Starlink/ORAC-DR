@@ -944,7 +944,7 @@ sub _parse_recursively {
 
       # Now create the arg hash
       push(@parsed,
-	   'my %'."$primitive_name = orac_parse_arguments(\"$rest\");\n",
+	   'my %'."$primitive_name = (".orac_parse_arguments($rest).");\n",
 	   "ORAC::Event->update('Tk');\n");
 
       # read in primitive
@@ -1245,6 +1245,43 @@ sub _split_path_env_var {
   return split(/:/, $_[0]);
 }
 
+=item B<orac_parse_arguments>
+
+Parses argument lists on primitive calls.
+Converts a string of form 'arg1=value1 arg2=value2...'
+to a hash constructor string of the form
+
+   a => "b", c => $d, e => "f"
+
+ie Arguments are parsed at compile time. The returned
+string should be wrapped in either () or {}.
+
+=cut
+
+sub orac_parse_arguments {
+
+  my $line = shift;
+  return "" unless defined $line;
+
+  # Split the string on space
+  my @arguments = split(/\s+/,$line);
+
+  # Loop over each string
+  my @kv;
+  foreach my $argument (@arguments) {
+    # Split each argument on equals
+    my ($key,$value) = split("=",$argument,2);
+    if (defined $value) {
+      push(@kv, " $key => \"$value\"");
+    } else {
+      push(@kv, " $key => undef");
+    }
+  }
+
+  return join( ", ", @kv);
+}
+
+=back
 
 =end __PRIVATE_METHODS__
 
@@ -1307,38 +1344,6 @@ use Starlink::Versions qw/ :Funcs /;
 These recipe runtime functions are provided:
 
 =over 4
-
-=item B<orac_parse_arguments>
-
-Parses argument lists on primitive calls.
-Converts a string of form 'arg1=value1 arg2=value2...'
-to a hash.
-
-  my %hash = orac_parse_arguments($string);
-
-Allows for run time parsing of primitive arguments.
-
-=cut
-
-sub orac_parse_arguments {
-
-  my $line = shift;
-  my %hash = ();
-
-  return %hash unless defined $line;
-
-  # Split the string on space
-  my @arguments = split(/\s+/,$line);
-
-  # Loop over each string
-  foreach my $argument (@arguments) {
-    # Split each argument on equals
-    my ($key,$value) = split("=",$argument);
-    $hash{$key} = $value if defined $value;
-  }
-
-  return %hash;
-}
 
 =item B<orac_execute_recipe>
 
