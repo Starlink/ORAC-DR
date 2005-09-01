@@ -74,6 +74,20 @@ process (unless a false argument is supplied to the constructor).
 
   $temp->handle->close;
 
+An argument hash is also supported. These arguments are OPEN and
+SUFFIX. OPEN is the equivalent of passing in a solitary false
+argument. SUFFIX appends the given suffix to the temporary
+filename. For example, to create a temporary file with a closed
+filehandle and a .txt suffix, one would do:
+
+  $temp = new ORAC::TempFile( OPEN => 0,
+                              SUFFIX => '.txt' );
+
+Note that if you pass in an argument hash you cannot have a solitary
+false argument to return a closed file; if you wish to return a closed
+file in conjunction with setting a suffix, you must use the OPEN named
+argument.
+
 =cut
 
 sub new {
@@ -91,13 +105,13 @@ sub new {
   bless $tmp, $class;
 
   # Now run the Initialise method
-  $tmp->Initialise;
+  $tmp->Initialise( @_ );
 
   # Return the object unless the Handle is undefined
   if (defined $tmp->{Handle}) {
 
     # Read any arguments - close the filehandle if false
-    if (@_) {
+    if (@_ == 1) {
       $tmp->handle->close unless $_[0];
     }
     return $tmp;
@@ -211,18 +225,29 @@ constructor has failed.
 sub Initialise {
   my $self = shift;
 
-  # Location of temp file
-  my $dir = $ENV{ORAC_DATA_OUT};
+  my %args;
+  if( @_ > 1 ) {
+    %args = @_;
+  }
+
+  # If the user supplied a directory, don't honour it.
+  if( defined( $args{'DIR'} ) ) {
+    delete $args{'DIR'};
+  }
+  my $dir = $ENV{'ORAC_DATA_OUT'};
 
   # Get a temp file. File::Temp makes this painless
   my ($fh, $file) = tempfile( "oractempXXXXXX",
-			      DIR => $dir,
-			    );
+                              DIR => $dir,
+                              %args,
+                            );
 
-  # Remove dots since NDF does not like them
-  # But have to be careful that original directory path might contain a .
-  # even if absolute
-  substr($file,length($dir)) =~ s/\./_/g;
+  # Remove dots since NDF does not like them But have to be careful
+  # that original directory path might contain a .  even if absolute,
+  # and only do it if we don't have a SUFFIX parameter in %args.
+  if( ! defined( $args{'SUFFIX'} ) ) {
+    substr($file,length($dir)) =~ s/\./_/g;
+  }
 
   # Set autoflush
   $fh->autoflush(1);
