@@ -763,6 +763,7 @@ sub orac_determine_primitive_search_path {
     push( @path, File::Spec->catdir( $root, "WFCAM" ) );
     push( @path, File::Spec->catdir( $casu_root, "WFCAM" ) );
     push( @path, $casu_root );
+    push( @path, $imaging_root );
     push( @path, $general_root );
 
   } elsif ($inst =~ /^SWFCAM/) {
