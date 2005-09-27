@@ -71,7 +71,7 @@ for this instrument.
 
 sub return_possible_calibrations {
     my $self = shift;
-    return ("dark","flat","sky", "readnoise", "mask", "referenceoffset");
+    return ("axialratio", "dark","flat","sky", "readnoise", "mask", "referenceoffset");
 }
 
 =back
