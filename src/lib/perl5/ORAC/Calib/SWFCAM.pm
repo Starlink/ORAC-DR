@@ -221,7 +221,7 @@ sub flat {
 
   # not so good
   if (defined $ok) {
-    my $flat = $self->flatindex->choosebydt('ORACTIME',$self->thing, 0);
+    my $flat = $self->flatindex->choosebydt('ORACTIME',$self->thing,0);
     croak "No suitable flat was found in index file"
       unless defined $flat;
     $self->flatname($flat);
@@ -229,6 +229,34 @@ sub flat {
     croak("Error in flat calibration checking - giving up");
   };
 };
+
+=item B<flatindex>
+
+Return or set the index for the flat.
+
+  $index = $Cal->flatindex;
+  $Cal->flatindex( $index );
+
+This method is subclassed for SWFCAM to use the find_file() method to
+find the default index.flat file, so that it can be located in either
+the C<ORAC_DATA_CAL> or C<ORAC_DATA_OUT> directories.
+
+=cut
+
+sub flatindex {
+
+  my $self = shift;
+  if (@_) { $self->{FlatIndex} = shift; }
+
+  unless (defined $self->{FlatIndex}) {
+    my $indexfile = $self->find_file("index.flat");
+    my $rulesfile = $self->find_file("rules.flat");
+    $self->{FlatIndex} = new ORAC::Index($indexfile,$rulesfile);
+  }
+
+  return $self->{FlatIndex};
+
+}
 
 =back
 
