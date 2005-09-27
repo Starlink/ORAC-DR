@@ -55,8 +55,6 @@ my %hdr = (
            RECIPE               => "RECIPE",
            STANDARD             => "STANDARD",
            UTDATE               => "UTDATE",
-           UTEND                => "UTEND",
-           UTSTART              => "UTSTART",
            X_LOWER_BOUND        => "RDOUT_X1",
            X_REFERENCE_PIXEL    => "CRPIX1",
            X_UPPER_BOUND        => "RDOUT_X2",
@@ -69,6 +67,29 @@ my %hdr = (
 # by other instruments.  Have to use the inherited version so that the
 # new subs appear in this class.
 ORAC::Group::SWFCAM->_generate_orac_lookup_methods( \%hdr );
+
+# Some headers appear in the .In sub-frames, so special translation
+# rules are needed for these.
+
+sub _to_UTEND {
+  my $self = shift;
+  $self->hdr->{ $self->nfiles }->{UTEND}
+    if exists $self->hdr->{ $self->nfiles };
+}
+
+sub _from_UTEND {
+  "UTEND", $_[0]->uhdr( "ORAC_UTEND" );
+}
+
+sub _to_UTSTART {
+  my $self = shift;
+  $self->hdr->{ 1 }->{UTSTART}
+    if exists $self->hdr->{ 1 };
+}
+
+sub _from_UTSTART {
+  "UTSTART", $_[0]->uhdr( "ORAC_UTSTART" );
+}
 
 # Set the group fixed parts for the four chips.
 my %groupfixedpart = ( '1' => 'gw',
@@ -161,10 +182,7 @@ sub calc_orac_headers {
 # YYYYMMDD.fraction
   my $ut = $self->hdr("DATE-OBS");
   $ut =~ /(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)/;
-  my $utdate = '0'x(4-length(int($1))) . $1 .
-               '0'x(2-length(int($2))) . $2 .
-               '0'x(2-length(int($3))) . $3;
-
+  my $utdate = sprintf( "%04d%02d%02d", $1, $2, $3 );
   my $uttime = ( $4 / 24 ) + ( $5 / 1440 ) + ( $6 / 86400 );
 
   $self->hdr("ORACTIME", $utdate + $uttime);
