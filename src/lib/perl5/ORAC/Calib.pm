@@ -83,12 +83,14 @@ sub new {
   $obj->{Dark} = undef;
   $obj->{Emissivity} = undef;
   $obj->{Flat} = undef;
+  $obj->{ImageQuality} = undef;
   $obj->{Mask} = undef;
   $obj->{PolRefAng} = undef;
   $obj->{ReadNoise} = undef;
   $obj->{ReferenceOffset} = undef;
   $obj->{Rotation} = undef;
   $obj->{Sky} = undef;
+  $obj->{SkyBrightness} = undef;
   $obj->{Standard} = undef;
   $obj->{Zeropoint} = undef;
   $obj->{Seeing} = undef;
@@ -100,9 +102,11 @@ sub new {
   $obj->{DarkIndex} = undef;
   $obj->{EmissivityIndex} = undef;
   $obj->{FlatIndex} = undef;
+  $obj->{ImageQualityIndex} = undef;
   $obj->{PolRefAngIndex} = undef;
   $obj->{ReadNoiseIndex} = undef;
   $obj->{SkyIndex} = undef;
+  $obj->{SkyBrightnessIndex} = undef;
   $obj->{StandardIndex} = undef;
   $obj->{ZeropointIndex} = undef;
   $obj->{SeeingIndex} = undef;
@@ -177,7 +181,6 @@ sub arc {
     croak("Error in arc calibration checking - giving up");
   };
 };
-
 
 =item B<baseshift>
 
@@ -912,7 +915,6 @@ sub arcnoupdate {
   return $self->{ArcNoUpdate};
 }
 
-
 =item B<baseshiftnoupdate>
 
 Stops baseshift object from updating itself with more recent data.
@@ -1098,6 +1100,8 @@ sub arcindex {
 
 };
 
+
+
 =item B<baseshiftindex>
 
 Return (or set) the index object associated with the baseshift index file.
@@ -1185,6 +1189,28 @@ sub flatindex {
 
 
 };
+
+=item B<imagequalityindex>
+
+Return (or set) the index object associated with the image quality
+index file.
+
+=cut
+
+sub imagequalityindex {
+
+  my $self = shift;
+  if (@_) { $self->{ImageQualityIndex} = shift; }
+
+  unless (defined $self->{ImageQualityIndex}) {
+    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.imagequality" );
+    my $rulesfile = $self->find_file("rules.imagequality");
+    $self->{ImageQualityStats} = new ORAC::Index($indexfile,$rulesfile);
+  };
+
+  return $self->{ImageQualityStats};
+
+}
 
 =item B<polrefangindex>
 
@@ -1430,6 +1456,39 @@ sub find_file {
   }
 
   return undef;
+}
+
+=item B<retrieve_by_column>
+
+Returns the value for the specified column in the specified index.
+
+  $value = $Cal->retrieve_by_column( "readnoise", "ORACTIME" );
+
+The first argument is a queryable 
+
+=cut
+
+sub retrieve_by_column {
+  my $self = shift;
+  my $index = shift;
+  my $column = uc( shift );
+
+  return undef if ! defined( $index );
+  return undef if ! defined( $column );
+
+  my $method = $index . "index";
+
+  my $basefile = $self->$method->choosebydt('ORACTIME', $self->thing, 0 );
+  croak "Unable to find suitable calibration data from $index"
+    unless defined $basefile;
+
+  my $ref = $self->$method->indexentry( $basefile );
+  if( exists( $ref->{$column} ) ) {
+    return $ref->{$column};
+  } else {
+    return undef;
+  }
+
 }
 
 =back
