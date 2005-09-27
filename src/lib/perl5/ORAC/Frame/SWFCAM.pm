@@ -27,10 +27,13 @@ B<ORAC::Frame::SWFCAM> objects. Some additional methods are supplied.
 use 5.006;
 use warnings;
 use vars qw/$VERSION/;
-use ORAC::Frame::UFTI;
+use ORAC::Frame::CGS4;
 use ORAC::Constants;
 
-use base qw/ ORAC::Frame::UFTI /;
+use NDF;
+use Starlink::HDSPACK qw/ copobj /;
+
+use base qw/ ORAC::Frame::CGS4 /;
 
 '$Revision$' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
@@ -66,8 +69,6 @@ my %hdr = (
             RECIPE               => "RECIPE",
             STANDARD             => "STANDARD",
             UTDATE               => "UTDATE",
-            UTEND                => "UTEND",
-            UTSTART              => "UTSTART",
             X_LOWER_BOUND        => "RDOUT_X1",
             X_UPPER_BOUND        => "RDOUT_X2",
             Y_LOWER_BOUND        => "RDOUT_Y1",
@@ -104,6 +105,26 @@ sub _to_ROTATION {
   my $rotation = $rad * atan2( -$cd21 / $rad, $sgn2 * $cd11 / $rad );
 
   return $rotation;
+}
+
+sub _to_UTEND {
+  my $self = shift;
+  $self->hdr->{ $self->nfiles }->{UTEND}
+    if exists $self->hdr->{ $self->nfiles };
+}
+
+sub _from_UTEND {
+  "UTEND", $_[0]->uhdr( "ORAC_UTEND" );
+}
+
+sub _to_UTSTART {
+  my $self = shift;
+  $self->hdr->{ 1 }->{UTSTART}
+    if exists $self->hdr->{ 1 };
+}
+
+sub _from_UTSTART {
+  "UTSTART", $_[0]->uhdr( "ORAC_UTSTART" );
 }
 
 # Set the raw fixed parts for the four chips.
@@ -175,7 +196,7 @@ sub new {
   # the hash member name
   $self->rawsuffix('.sdf');
   $self->rawformat('HDS');
-  $self->format('NDF');
+  $self->format('HDS');
 
   # If arguments are supplied then we can configure the object
   # Currently the argument will be the filename.
@@ -274,6 +295,123 @@ sub flag_from_bits {
   return $flag;
 }
 
+=item B<mergehdr>
+
+Method to propagate the FITS header from an HDS container to an NDF
+Run after updating $Frm.
+
+ $Frm->files($out);
+ $Frm->mergehdr;
+
+=cut
+
+sub mergehdr {
+
+  my $self = shift;
+  my $status;
+
+  my $old = pop(@{$self->intermediates});
+  my $new = $self->file;
+
+  my ($root, $rest) = $self->_split_name($old);
+
+  if (defined $rest) {
+    $status = &NDF::SAI__OK;
+
+    # Begin NDF context
+    ndf_begin();
+
+    # Open the file
+    ndf_find(&NDF::DAT__ROOT(), $root . '.header', my $indf, $status);
+
+    # Get the fits locator
+    ndf_xloc($indf, 'FITS', 'READ', my $xloc, $status);
+
+    # Find out how many entries we have
+    my $maxdim = 7;
+    my @dim = ();
+    dat_shape($xloc, $maxdim, @dim, my $ndim, $status);
+
+    # Must be 1D
+    if ($status == &NDF::SAI__OK && scalar(@dim) > 1) {
+      $status = &NDF::SAI__ERROR;
+      err_rep(' ',
+              "hsd2ndf: Dimensionality of .HEADER FITS array should be 1 but is $ndim",
+              $status);
+    }
+
+    # Read the FITS array
+    my @fitsA = ();
+    my $nfits;
+    dat_get1c($xloc, $dim[0], @fitsA, $nfits, $status)
+      if $status == &NDF::SAI__OK; # -w protection
+		
+    # Close the NDF file
+    dat_annul($xloc, $status);
+    ndf_annul($indf, $status);
+		
+    # Now we need to open the input file and modify the FITS entries
+    ndf_open(&NDF::DAT__ROOT, $new, 'UPDATE', 'OLD', $indf, my $place,
+             $status);
+		
+    # Check to see if there is a FITS component in the output file
+    ndf_xstat($indf, 'FITS', my $there, $status);
+    my @fitsB = ();
+    if (($status == &NDF::SAI__OK) && ($there)) {
+			
+      # Get the fits locator (note the deja vu)
+      ndf_xloc($indf, 'FITS', 'UPDATE', $xloc, $status);
+			
+      # Find out how many entries we have
+      dat_shape($xloc, $maxdim, @dim, $ndim, $status);
+			
+      # Must be 1D
+      if ($status == &NDF::SAI__OK && scalar(@dim) > 1) {
+        $status = &NDF::SAI__ERROR;
+        err_rep(' ',
+                "hds2ndf: Dimensionality of .HEADER FITS array should be 1 but is $ndim",
+                $status
+               );
+      }
+			
+      # Read the second FITS array
+      dat_get1c($xloc, $dim[0], @fitsB, $nfits, $status)
+        if $status == &NDF::SAI__OK; # -w protection
+			
+      # Annul the locator
+      dat_annul($xloc, $status);
+      ndf_xdel($indf,'FITS', $status);
+    }
+
+    # Remove duplicate headers
+    my %f = map { $_, undef } @fitsA;
+    @fitsB = grep { !exists $f{$_} } @fitsB;
+
+    # Merge arrays
+    push(@fitsA, @fitsB);
+
+    # Now resize the FITS extension by deleting and creating
+    # (cmp_modc requires the parent locator)
+    $ndim = 1;
+    $nfits = scalar(@fitsA);
+    my @nfits = ($nfits);
+    ndf_xnew($indf, 'FITS', '_CHAR*80', $ndim, @nfits, $xloc, $status);
+		
+    # Upload the FITS entries
+    dat_put1c($xloc, $nfits, @fitsA, $status);
+		
+    # Shutdown
+    dat_annul($xloc, $status);
+    ndf_annul($indf, $status);
+    ndf_end($status);
+		
+    if ($status != &NDF::SAI__OK) {
+      err_flush($status);
+      err_end($status);
+    }
+  }
+}
+
 =item B<number>
 
 Method to return the number of the observation. The number is
@@ -313,6 +451,39 @@ sub number {
 
   return $number;
 
+}
+
+=back
+
+=head1 PRIVATE METHODS
+
+=over 4
+
+=item B<_split_name>
+
+Internal routine to split a 'file' name into an actual
+filename (the HDS container) and the NDF name (the
+thing inside the container).
+
+Splits on '.'
+
+Argument: string to split (eg test.i1)
+Returns:  root name, ndf name (eg 'test' and 'i1')
+
+NDF name is undef if there are no 'sub-frames'.
+
+This routine is so simple that it may not be worth the effort.
+
+=cut
+
+sub _split_name {
+  my $self = shift;
+  my $file  = shift;
+
+  # Split on '.'
+  my ($root, $rest) = split(/\./, $file, 2);
+
+  return ($root, $rest);
 }
 
 =back
