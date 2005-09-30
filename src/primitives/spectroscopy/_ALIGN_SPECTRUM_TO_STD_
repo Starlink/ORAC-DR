@@ -38,31 +38,33 @@ if($ndims == 1) {
    my $in = $Grp->file;
    my $base = $Grp->raw;
    my $out = $base."_aws";    # Aligned with std
-   my $ccf = $base."_scf";    # Std cross correlation function
+   my $ccf = $base."_scf";    # Std cross-correlation function
 
    $Mon{'figaro1'}->obeyw("scross", "spectrum=$in template=$std record cross=$ccf xstart=min xend=max");
 
    ($ORAC_STATUS, my $shift) = $Mon{'figaro1'}->get("scross", "shift");
-   orac_print "$ccf: Cross Correlation Function of target and standard spectra\n";
+   orac_print "$ccf: Cross-correlation Function of target and standard spectra\n";
 
-   # Do a stats on the ccf
+   # Do a stats on the ccf.
    $Mon{'kappa_mon'}->obeyw("stats", "ndf=$ccf(~100)");
    ($ORAC_STATUS, my $maximum) = $Mon{'kappa_mon'}->get("stats", "maximum");
    my $string = sprintf ("%4.1f", 100*$maximum);
    
-   # Is it reasonable
+   # Is it reasonable?
    if ($maximum > 0.6 && $maximum < 1 && $shift < 2) {
+
       # OK, we'll use it
       orac_print "Peak of CCF (at $string %) indicates a shift of: $shift - Accepted\n";
       $shift *= -1;
+
       # Go via a tmp file to fix the unreasonable variance output of ishift
-      my $tmp = new ORAC::TempFile;
-      my $tmpfile = $tmp->file;
-      $Mon{'figaro1'}->obeyw("ishift", "image=$in xshift=$shift xsplit=20 ysplit=1 yshift=0 output=$tmpfile");
-      $Mon{'kappa_mon'}->obeyw("thresh", "in=$tmpfile comp=Variance out=$out thrlo=0 newlo=bad thrhi=1E9 newhi=bad");
+      my $param = "in=$in out=$out abs=$shift method=sincsinc params=[2,1.5]";
+      $Mon{'kappa_mon'}->obeyw("slide", "$param");
+#      $Mon{'kappa_mon'}->obeyw("thresh", "in=$tmpfile comp=Variance out=$out thrlo=0 newlo=bad thrhi=1E9 newhi=bad");
       orac_print "$in to $out: shifted by $shift\n";
       $Grp->file($out);
    } else {
+
       # We'll reject the shift - simply don't file $out as the group file
       orac_print "Peak of CCF (at $string %) indicates a shift of: $shift - Rejected\n";
    }
