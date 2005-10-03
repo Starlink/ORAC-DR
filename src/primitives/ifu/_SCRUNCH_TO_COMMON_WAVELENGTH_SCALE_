@@ -80,7 +80,7 @@ SPT: Stephen P. Todd (Edinburgh University/UKATC)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Copyright (C) 1998-2005 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 =cut
@@ -93,9 +93,6 @@ use ORAC::TempFile;
 
 (my $in, my $out) = $Frm->inout( "_scr" );
 
-my $tmpfile0 = new ORAC::TempFile;
-my $tmp_out = $tmpfile0->file;
- 
 # get the appropriate iar file
 my ($iarfile, $min, $max) = split(':', $Cal->iar);
 
@@ -111,12 +108,12 @@ my $numpix = 1024;
 orac_print "Scrunching $in to $numpix pixels from $min to $max Angstroms.\n";
 
 # And scrunch it
-my $param = "image=$in file=$iarfile wstart=$min wend=$max bins=$numpix output=$tmp_out log=f quad=t density=f";
+my $param = "image=$in file=$iarfile wstart=$min wend=$max bins=$numpix output=$out log=f quad=t density=f";
 $Mon{'figaro3'}->obeyw("iscrunch", "$param");
 
 # Iscrunch does not complain, even if it has failed, so we should check
 # that it has created an output file
-unless (-e "$tmp_out.sdf") {
+unless (-e "$out.sdf") {
   orac_throw "ISCRUNCH failed. Probable cause is IARC failing to find proper fit in wavelength calibration.\nPossible solution is to tweak rsigma parameter in _WAVELENGTH_CALIBRATE_\n"
 };
 
@@ -157,18 +154,19 @@ if ( $variance eq "TRUE" ) {
     $Mon{'kappa_mon'}->obeyw("thresh", "in=$tmp2 out=$tmp3 thrlo=0 newlo=bad thrhi=1E4 newhi=bad");
 
     # Copy the bad pixels flagged in the variance array to the data array.
-    $Mon{'kappa_mon'}->obeyw("copybad", "in=$tmp_out ref=$tmp3 out=$tmp4");
+    $Mon{'kappa_mon'}->obeyw("copybad", "in=$out ref=$tmp3 out=$tmp4");
 
     # Copy the variance array over to the output file.
     $ORAC_STATUS = ( copy_hdsobj( "$tmp3.DATA_ARRAY", "$tmp4.VARIANCE" ) ? ORAC__OK : ORAC__ERROR );
 
     $Mon{'kappa_mon'}->obeyw("thresh", "in=$tmp4 out=$tmp5 comp=VARIANCE thrlo=1e-15 newlo=bad thrhi=1E4 newhi=bad");
 
-    $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$tmp5 out=$tmp_out");
+    $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$tmp5 out=$out");
 
 }
 
-$Mon{'figaro1' }->obeyw("xcdiv", "image=$tmp_out output=$out factor=10000");
+# Convert from angstrom to micron.
+$Mon{'ndfpack_mon'}->obeyw("setaxis", "ndf=$out mode=expression exprs='CENTRE/10000'");
 $Mon{'ndfpack_mon'}->obeyw("axunits", "ndf=$out dim=1 units=Micron");
 $Mon{'ndfpack_mon'}->obeyw("wcsframe", "ndf=$out frame=axis");
 
