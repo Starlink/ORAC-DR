@@ -1,0 +1,384 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CALCULATE_IMAGE_STATISTICS_ - Calculate various image quality
+statistics based on an input catalogue.
+
+=head1 DESCRIPTION
+
+This primitive calculates image quality statistics based on an input
+catalogue. This catalogue is typically the output from either
+C<Starlink::Extractor> or C<Starlink::Autoastrom>, so that object
+morphology information is available for calculations.
+
+This primitive calculates the mean axial ratio of bright sources, the
+average object diameter converted to K-band equivalent, the sky
+brightness, the limiting magnitude, and the instrumental zero point.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item GROUP = LOGICAL (Given)
+
+If true, use the current Group file for sky brightness
+calculations. Otherwise, use the current Frame. [0]
+
+=item IMAGE_CATALOGUE = C<Astro::Catalog> object (Given)
+
+=item STANDARD_CATALOGUE = C<Astro::Catalog> object (Given)
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Files results with the Calibration system. FWHM is obtained with the
+fwhm() method, axial ratio is obtained with the axial_ratio() method,
+sky brightness is obtained with the sky_brightness() method, limiting
+magnitude is obtained with the limiting_mag() method, and the zero
+point is obtained with the zeropoint() method.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+None.
+
+=back
+
+=head1 TASKS
+
+=head1 REQUIRED PERL MODULES
+
+Astro::Catalog.
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2005 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# Find out if we want to do statistics on the current Group or Frame
+# object.
+my $group = $_CALCULATE_IMAGE_STATISTICS_{GROUP};
+my $Obj;
+$group = defined( $group ) ? $group : 0;
+if( $group ) {
+  $Obj = $Grp;
+} else {
+  $Obj = $Frm;
+}
+
+# Get the image and standard field catalogues.
+my $image_catalogue = $_CALCULATE_IMAGE_STATISTICS_{IMAGE_CATALOGUE};
+my $standard_catalogue = $_CALCULATE_IMAGE_STATISTICS_{STANDARD_CATALOGUE};
+
+# First, the FWHM and axial ratio.
+if( defined( $image_catalogue ) ) {
+
+  # Strip out any Astro::Catalog::Item objects that don't have a
+  # quality of 0 (which means good), or an area greater than 78.5
+  # pixels (which is a circle with a radius of five pixels) multiplied
+  # by the square of the expansion ratio, or an ellipticity greater
+  # than 0.25. This will eliminate any galaxies, saturated stars,
+  # blended objects, etc. from the image quality calculations.
+  my @gooditems;
+
+  _GET_EXPANSION_RATIO_
+  my $maxarea = 78.5 * ( $_GET_EXPANSION_RATIO_{X_EXPANSION} ) ** 2;
+
+  foreach my $item ( $image_catalogue->stars ) {
+    next if $item->quality;
+    next if $item->morphology->area > $maxarea;
+    next if $item->morphology->ellipticity > 0.25;
+    push @gooditems, $item;
+  }
+  my $newcat = new Astro::Catalog;
+  $newcat->pushstar( @gooditems );
+  $image_catalogue = $newcat;
+
+  # Create a temporary file to hold the input catalogue to PSF.
+  my $psf_input_temp = new ORAC::TempFile( SUFFIX => '.txt' );
+
+  # Write the catalogue to disk.
+  $image_catalogue->write_catalog( File => $psf_input_temp->file,
+                                   Format => 'STL' );
+
+  # Set up the parameters for PSF.
+  my $params = "incat=" . $psf_input_temp->file . " "
+             . "device=! gauss=false logfile=! ";
+
+  if( $group ) {
+    $params .= "in=" . $Grp->file;
+  } else {
+    $params .= "in=" . $Frm->file;
+  }
+
+  # Run PSF.
+  $Mon{'kappa_mon'}->obeyw( "psf", "$params" );
+
+  # Obtain statistics.
+  ( my $ORAC_STATUS, my $axialratio ) = $Mon{'kappa_mon'}->get( "psf", "axisr" );
+  ( $ORAC_STATUS, my $fwhm ) = $Mon{'kappa_mon'}->get( "psf", "fwhm" );
+  ( $ORAC_STATUS, my $gamma ) = $Mon{'kappa_mon'}->get( "psf", "gamma" );
+  ( $ORAC_STATUS, my $orient ) = $Mon{'kappa_mon'}->get( "psf", "orient" );
+
+  # Calculate the K-band equivalent seeing. It goes as
+  # (wavelength^(-0.2)), so we need to get the current wavelength and
+  # the K wavelength, do the division and the power, and scale the
+  # measured FWHM.
+  _GET_FILTER_PARAMETERS_
+  my $wavelength = $_GET_FILTER_PARAMETERS_{WAVELENGTH};
+  my $k_wavelength = 2.25;
+  my $scale = ( $wavelength / $k_wavelength ) ** ( -0.2 );
+  my $k_fwhm = $scale * $fwhm;
+
+  # Create printable versions.
+  my $p_axial = sprintf( "%.3f", $axialratio );
+  my $p_fwhm = sprintf( "%.3f", $fwhm );
+  my $p_k_fwhm = sprintf( "%.3f", $k_fwhm );
+  my $p_orient = sprintf( "%.3f", $orient );
+  my $p_gamma = sprintf( "%.3f", $gamma );
+
+  orac_print( "Image quality statistics on " .
+              ( $group ? $Grp->file : $Frm->file ) .
+              ":\n", "blue" );
+  orac_print( " Axial ratio:  $p_axial\n", "blue" );
+  orac_print( " FWHM:         $p_fwhm arcseconds\n", "blue" );
+  orac_print( " K-band equiv: $p_k_fwhm arcseconds\n", "blue" );
+  orac_print( " Orientation:  $p_orient degrees east of north\n", "blue" );
+  orac_print( " Gamma:        $p_gamma (2 = gaussian)\n", "blue" );
+
+  # File with the calibration system.
+  my %calhash = ( %{$Obj->hdr},
+                  AXIALRATIO => $axialratio,
+                  FWHM => $fwhm,
+                  FWHM_K => $k_fwhm,
+                  GAMMA => $gamma,
+                  ORIENT => $orient );
+  $Cal->imagequalityindex->add( $Obj->file, \%calhash );
+}
+
+# Now the zeropoint.
+if( defined( $image_catalogue ) && defined( $standard_catalogue ) ) {
+
+  # First, make sure that the image catalogue has magnitudes in a
+  # wavelength band that exists in the standard catalogue. We're
+  # assuming that we don't have a mixed catalogue, i.e., the input
+  # catalogue is made up of only one waveband, and the wavebands for
+  # the first standard star exist for all of the other standard stars.
+  my @image_stars = $image_catalogue->stars;
+  my @image_filters = $image_stars[0]->what_filters;
+  my @standard_stars = $standard_catalogue->stars;
+  my @standard_filters = $standard_stars[0]->what_filters;
+  my $match = 0;
+  my $filter = $image_filters[0];
+  foreach my $standard_filter ( @standard_filters ) {
+    if( uc( $standard_filter ) eq uc( $image_filters[0] ) ) {
+      $match = 1;
+      last;
+    }
+  }
+
+  if( ! $match ) {
+    orac_warn "Filters do not match between image catalogue and standard star catalogue. Cannot calculate instrumental zeropoint.\nContinuing with data reduction.\n";
+  } else {
+
+    # Correlate the two catalogues.
+    eval { require Astro::Correlate; };
+
+    if( $@ ) {
+      orac_warn "Could not load the Astro::Correlate Perl module: $@\n";
+      orac_warn "Cannot calculate instrumental zeropoint.\n";
+      orac_warn "Continuing with data reduction.\n";
+    } else {
+
+      # We need to get the exposure time because the results from
+      # EXTRACTOR doesn't take the exposure time into account, it only
+      # does ( -2.5 * log( counts ) ), whereas we want
+      # ( -2.5 * log( counts/sec ) ).
+
+      my $exptime = $Frm->uhdr( "ORAC_EXPOSURE_TIME" );
+
+      # Add the WCS from the first star in the image catalogue to the
+      # stars in the standard catalogue. This allows X and Y positions
+      # to be calculated for the standard catalogue so that FINDOFF
+      # can work.
+      foreach my $standardstar ( @standard_stars ) {
+        if( $standardstar->x eq "0.000" ) {
+          $standardstar->x( undef );
+        }
+        if( $standardstar->y eq "0.000" ) {
+          $standardstar->y( undef );
+        }
+        $standardstar->wcs( $image_stars[0]->wcs );
+      }
+
+      # Take the brightest 200 from either catalogue.
+      my $max = 2000;
+      if( $image_catalogue->sizeof > $max ) {
+        my @newstars = map { $_->[0] }
+                       sort { $a->[1] <=> $b->[1] }
+                       map { [ $_, $_->get_magnitude( $filter ) ] } @image_stars;
+        @newstars = @newstars[0..($max-1)];
+        my $newcat = new Astro::Catalog;
+        $newcat->pushstar( @newstars );
+        $image_catalogue = $newcat;
+      }
+
+      if( $standard_catalogue->sizeof > $max ) {
+        my @newstars = map { $_->[0] }
+                      sort { $a->[1] <=> $b->[1] }
+                      map { [ $_, $_->get_magnitude( $filter ) ] } @standard_stars;
+        @newstars = @newstars[0..($max-1)];
+        my $newcat = new Astro::Catalog;
+        $newcat->pushstar( @newstars );
+        $standard_catalogue = $newcat;
+      }
+
+      # Set up the correlation object.
+      my $corr = new Astro::Correlate( catalog1  => $image_catalogue,
+                                       catalog2  => $standard_catalogue,
+                                       method    => 'FINDOFF',
+                                       keeptemps => 0,
+                                       verbose   => 1,
+                                     );
+
+      # Run the correlation, wrapping it in an eval. If it fails, we
+      # can catch the error and just continue on without having the
+      # correlation crash the entire pipeline.
+      my $corrimagecat;
+      my $corrstandardcat;
+      eval { ( $corrimagecat, $corrstandardcat ) = $corr->correlate; };
+
+      if( $@ ) {
+        orac_warn "Could not run correlation functions to determine zeropoint: $@\n";
+        orac_warn "Continuing with data reduction.\n";
+      } else {
+
+        # Obtain the mean extinction coefficient.
+        _GET_FILTER_PARAMETERS_
+        my $waveband = $_GET_FILTER_PARAMETERS_{WAVEBAND};
+        my $extinction = $_GET_FILTER_PARAMETERS_{EXTINCTION};
+
+        # Obtain the airmass from the FITS headers. Find the
+        # approximate mean airmass from the start and end values. This
+        # should be adequate unless it is a long integration with the
+        # source crossing the meridian.
+        my $amstart = $Obj->uhdr( "ORAC_AIRMASS_START" );
+        my $amend   = $Obj->uhdr( "ORAC_AIRMASS_END" );
+        my $airmass = 0.5 * ( $amstart + $amend );
+
+        # Derive the extinction correction using the IR standard of
+        # one airmass.
+        my $extcor = ( $airmass - 1.0 ) * $extinction;
+
+        my @image_mags;
+        my @standard_mags;
+        my @diffs;
+
+        my $diff = 0;
+        my $n_objs = 0;
+        for my $i ( 0 .. $corrimagecat->sizeof ) {
+          my $imagestar = $corrimagecat->popstarbyid( $i );
+          $imagestar = $imagestar->[0];
+          my $standardstar = $corrstandardcat->popstarbyid( $i );
+          $standardstar = $standardstar->[0];
+
+          # Skip if the stars aren't defined.
+          next if ( ! defined $imagestar || ! defined $standardstar );
+
+          my $im_mag = $imagestar->get_magnitude( $filter );
+          my $st_mag = $standardstar->get_magnitude( $filter );
+
+          # Correct the measured magnitude for exposure time.
+          $im_mag += 2.5 * log10( $exptime );
+
+          # Correct the measured magnitude for extinction.
+          $im_mag -= $extcor;
+
+          # Push the magnitudes onto the arrays, correcting the
+          # magnitude from the EXTRACTOR-based catalogue.
+          push( @image_mags, $im_mag );
+          push( @standard_mags, $st_mag );
+          push( @diffs, $st_mag - $im_mag );
+        }
+
+        # Calculate the mean difference and the variance in the
+        # difference between the standard magnitudes and the measured
+        # magnitudes.
+        my $sum = 0;
+        foreach my $diff ( @diffs ) {
+          $sum += $diff;
+        }
+        my $zeropoint = $sum / ( $#diffs + 1 );
+        my $sumsqu = 0;
+        foreach my $diff( @diffs ) {
+          $sumsqu += ( $diff - $zeropoint ) * ( $diff - $zeropoint );
+        }
+        my $zeropoint_variance = sqrt( $sumsqu / ( $#diffs + 1 ) );
+
+        # Format for printing.
+        my $p_zp = sprintf( "%.3f", $zeropoint );
+        my $p_zpvar = sprintf( "%.3f", $zeropoint_variance );
+        my $p_ext = sprintf( "%.3f", $extcor );
+
+        orac_print( " Instrumental zero-point: $p_zp +/- $p_zpvar\n", "blue" );
+        orac_print( "  Extinction coefficient of $p_ext was used.\n", "blue" );
+
+        # Now that we have the zeropoint, we can calculate the sky
+        # brightness statistics.
+
+        # Run clipped mean stats on the Object.
+        my $params = "ndf=" . $Obj->file . " clip=[2,3,3]";
+        $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
+        ( my $ORAC_STATUS, my $sky_mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+        ( $ORAC_STATUS, my $sky_stddev ) = $Mon{'kappa_mon'}->get( "stats",  "sigma" );
+
+        # Format for printing.
+        my $p_sky_mean = sprintf( "%.2f", $sky_mean );
+        my $p_sky_stddev = sprintf( "%.2f", $sky_stddev );
+
+        orac_print(" Background sky level: $p_sky_mean +/- $p_sky_stddev counts.\n",
+                   "blue" );
+
+        # Now to calculate the sky level in magnitudes/arcsec^2.
+        _GET_PLATE_SCALE_
+        my $plate_scale = $_GET_PLATE_SCALE_{PLATESCALE};
+        my $counts_per_square_arcsecond = $sky_mean
+                                          / ( $plate_scale * $plate_scale );
+        my $mag_per_square_arcsecond = $zeropoint
+                                       - 2.5
+                                       * log10( $counts_per_square_arcsecond /
+                                                $exptime );
+
+        my $p_mag = sprintf( "%.2f", $mag_per_square_arcsecond );
+        orac_print(" Background sky level: $p_mag magnitudes/arcsec^2.\n",
+                   "blue" );
+
+        # File with the calibration system.
+        my %calhash = ( %{$Obj->hdr},
+                        ZEROPOINT => $zeropoint,
+                        ZEROPOINT_ERROR => $zeropoint_variance,
+                        SKY_VALUE => $sky_mean,
+                        SKY_VALUE_ERROR => $sky_stddev,
+                        SKY_VALUE_MAG => $mag_per_square_arcsecond,
+                      );
+        $Cal->photindex->add( $Obj->file, \%calhash );
+
+      }
+    }
+  }
+}
