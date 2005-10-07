@@ -1,0 +1,187 @@
+#! -*-perl-*-
+
+=head1 NAME
+
+_ALIGN_AND_MOSAIC_SUBARRAY - Align and mosaic subarray frames together
+
+=head1 SYNOPSIS
+
+ _ALIGN_AND_MOSAIC_SUBARRAY
+
+=head1 DESCRIPTION
+
+This primitive aligns and mosaics the individual subarray frames into
+array images either by using KAPPA WCSALIGN followed by CCDPACK
+MAKEMOS or performing both steps with KAPPA WCSMOSAIC. The former
+approach calls two other primitives to do the aligning and
+mosaicking. A check is made to see if the version of KAPPA supports
+WCSMOSAIC.
+
+If a group file exists, that is the reference for the alignment, else
+the first image is chosen as reference.
+
+This primitive operates on the current Frame object and selects images
+in groups of four (one for each subarray) and produces a mosaic of
+these four. The number of output files is one quarter of the total
+number of files in the Frame.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item SINGLESTEP
+
+A flag to determine whether to perform the alignment and mosaicking in
+one step using WCSMOSAIC. Default is 1 (Yes). If set to 0, then the
+following argument MUST be set. Note that the values of the METHOD and
+REBIN parameters are passed on to the primitives called if SINGLESTEP
+is 0.
+
+=item METHOD
+
+Keyword specifying the method for determing how the output pixels are
+populated. The default is nearest-neighbour resampling
+(C<nearest>). See the documentation for WCSMOSAIC or WCSALIGN for
+further details. The recommended choices are C<nearest>, C<bilinear>,
+ir C<sincsinc>.
+
+=item REBIN
+
+A flag to determine whether to rebin or resample. Default is
+resample. See the WCSMOSAIC/WCSALIGN documentation for further
+information.
+
+=item COMBINE
+
+The method to be used to combine the images. In principle could be any
+value supported by MAKEMOS (see MAKEMOS documentation for further
+details). Currently, only MEAN or MEDIAN are supported. MEDIAN is the
+default.
+
+=back
+
+=head1 KNOWN ISSUES
+
+If no group file is present the primitive should create a non-rotated
+RA/Dec reference based on the world coordinates of the first frame.
+Currently, if the world coordinates are rotated the output aligned
+frames will be rotated (as will be the case for a SCUBA-2 image
+aligned with Nasmyth coordinates).
+
+=head1 ALGORITHMS
+
+Uses KAPPA WCSMOSAIC. This primitive is currently a very general
+implementation.
+
+=head1 FILE SUFFIX
+
+An output file is created for each set of four subarray images in the
+Frame with a suffix of C<_arr>. 
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2005 University of British Columbia. All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
+=cut
+
+#my $mytime = localtime;
+#orac_print $mytime ."\n";
+
+# First check for SINGLESTEP
+my $singlestep = (exists $_ALIGN_AND_MOSAIC_{SINGLESTEP} &&
+		  defined $_ALIGN_AND_MOSAIC_{SINGLESTEP}) ?
+                  $_ALIGN_AND_MOSAIC_{SINGLESTEP} : 1;
+
+# Rebin or resample? Default is resample (rebin = 0).
+my $rebin = (exists $_ALIGN_AND_MOSAIC_{REBIN} &&
+	     defined $_ALIGN_AND_MOSAIC_{REBIN}) ?
+             $_ALIGN_AND_MOSAIC_{REBIN} : 0;
+
+# Method for determining the output pixel values
+my $method = (exists $_ALIGN_AND_MOSAIC_{METHOD} &&
+	      defined $_ALIGN_AND_MOSAIC_{METHOD}) ? 
+              lc($_ALIGN_AND_MOSAIC_{METHOD}) : "nearest"; 
+
+
+# If a single step, then check version of KAPPA is new enough
+if (starversion_lt('kappa', 'V1.5')) {
+  $singlestep = 0;
+  orac_warn "Kappa version does not support WCSMOSAIC, falling back on dual-step method";
+}
+
+###
+# Need to deal with subarray mosaicking
+###
+
+# Check if we're doing this all in one step
+if ($singlestep) {
+  my $nfiles = $Frm->nfiles;
+  my $no_of_subarrays = 4; # SHOULD THIS BE A GLOBAL VARIABLE?
+  my $maxscan = $nfiles / $no_of_subarrays;
+  # FIX: Check that nfiles is a multiple of no_of_subarrays?
+  my @out;
+
+  foreach my $j (1..$maxscan) {
+    my ($in, $out) = $Frm->inout('_arr', $j);
+    my $intmp = new ORAC::TempFile;
+    # Real method using headers
+#    foreach my $i (1..$nfiles) {
+#      print $intmp->handle $Frm->file($i) ."\n" 
+#        if ($Frm->hdr->{SUBHEADERS}->[$i-1]->{SUBSCAN} == $j);
+#    }
+
+    # HACK for using data that already exists...
+    my $filea = $Frm->file($j);
+    my $fileb = $Frm->file($j + $maxscan);
+    my $filec = $Frm->file($j + 2*$maxscan);
+    my $filed = $Frm->file($j + 3*$maxscan);
+    # We need a reference frame: use the first one
+    my $ref = $Frm->file($j);
+
+#    orac_print $filea ." ". $fileb ." ". $filec ." ". $filed ."\n";
+    print {$intmp->handle} $filea ."\n";
+    print {$intmp->handle} $fileb ."\n";
+    print {$intmp->handle} $filec ."\n";
+    print {$intmp->handle} $filed ."\n";
+    
+    # Set the WLIM parameter
+    my $wlim = 0.2;
+    $Mon{kappa_mon}->obeyw("wcsmosaic","ref=$ref rebin=$rebin method=$method lbnd=! ubnd=! wlim=$wlim out=$out in=^". $intmp->file);
+
+    push (@out, $out);
+  }
+
+# Store the output files
+  $Frm->files( @out );
+  orac_print("Aligning and mosaicking subarray images with WCSMOSAIC \n");
+
+} else { # OK, if SINGLESTEP is zero, check for COMBINE
+  my $combine = (exists $_ALIGN_AND_MOSAIC_{COMBINE} &&
+		defined $_ALIGN_AND_MOSAIC_{COMBINE}) ?
+		lc($_ALIGN_AND_MOSAIC_{COMBINE}) : "median";
+
+  # Call other primitives
+  orac_print("Aligning and mosaicking subarray images in two stages \n");
+  _ALIGN_ARRAYS_  METHOD=$method REBIN=$rebin
+  _MAKE_MOSAIC_FRAME_ COMBINE=$combine
+}
+
