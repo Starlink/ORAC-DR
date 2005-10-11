@@ -38,11 +38,7 @@ KAPPA, FIGARO
 
 =item ndfpack_mon
 
-ndftrace, axlabel, axunits
-
-=item figaro1
-
-lxset
+axlabel, axunits, ndftrace, setaxis
 
 =back
 
@@ -58,10 +54,11 @@ $Frm
 
 Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
 Paul Hirst <p.hirst@jach.hawaii.edu>
+Malcolm J. Currie <mjc@star.l.ac.uk>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Copyright (C) 1998-2005 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
@@ -79,7 +76,7 @@ foreach my $i ( 1..$Frm->nfiles ) {
    my $sampling = $Frm->uhdr("SAMPLING");
    $sampling =~ m/(\d)x\d/;
    my $factor=$1;
-      
+
    # Back to original x size - 
    # deliberately give or take a pixel or $factor
    $xdim /= $factor;
@@ -99,11 +96,17 @@ foreach my $i ( 1..$Frm->nfiles ) {
       my $ORAC_STATUS = ORAC__ERROR;
    }
 
-   # Set the AXIS wavelength scale.
-   $Mon{'figaro1'}->obeyw( "lxset", "image=$in output=$out wstart=$firstwave wend=$lastwave log=false" );
+   # Make a new NDF for the wavelength-calibrated spectrum.
+   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$out" );
+
+   # Set the AXIS wavelength scale.  Evaluating the increment first should
+   # be fine as perl uses  double-precision floating-point numbers.
+   my $incr = ( $lastwave - $firstwave ) / $xdim;
+   my $exprs = "$firstwave+(INDEX-1)*$incr";
+   $Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$out mode=expression exprs=$exprs dim=1" );
 
    # Set the AXIS label.
-   $Mon{'ndfpack_mon'}->obeyw( "axlabel", "ndf=$out label=\'Estimated wavelength\' dim=1 " );
+   $Mon{'ndfpack_mon'}->obeyw( "axlabel", "ndf=$out label=\'Estimated wavelength\' dim=1" );
    $Mon{'ndfpack_mon'}->obeyw( "axlabel", "ndf=$out label='detector row' dim=2" );
 
    # Set the AXIS units.
@@ -116,15 +119,15 @@ foreach my $i ( 1..$Frm->nfiles ) {
    # Update the Frame object.
    $Frm->file( $i, $out );
 
-   # Now copy the axis system into an explic WCS object
+   # Now copy the axis system into an explicit WCS object.
    $Mon{'ccdpack_reg'}->obeyw("wcsedit", "mode=add in=$out domain=axis frame=axis maptype=unit");
 
    # Display the wavelength calibrated array.
    $Display->display_data( $Frm ) if defined $Display;
 
-   # Print congratulatory message
+   # Print congratulatory message.
    orac_print "$in to $out: wavelength calibrated by estimation.\n";
 }
 
-# Keep output tidy
+# Keep output tidy.
 orac_print "\n";
