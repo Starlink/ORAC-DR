@@ -1,0 +1,149 @@
+#! -*-perl-*-
+
+=head1 NAME
+
+_CREATE_REFERENCE_IMAGE_ - Create a 1x1 NDF aligned to a chosen Sky frame
+
+=head1 SYNOPSIS
+
+ _CREATE_REFERENCE_IMAGE FRAME=EQUATORIAL
+
+=head1 DESCRIPTION
+
+This primitive creates a 1x1 pixel NDF image to be used in aligning
+and mosaicking individual DREAM/STARE images. The user has the option
+of specifying the desired SKY frame. If none is specified then FK5
+equatorial coordinates with a mean equinox J2000.0 is assumed.
+
+The reference position and pixel scale is determined from the most
+recent image added to the current Frame
+
+This primitive is called only if a suitable reference image does not
+already exist.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item FRAME
+
+The name of the chosen sky frame. May be any that AST knows about,
+e.g. EQUATORIAL, GALACTIC...
+
+Converted to upper case. Default is EQUATORIAL.
+
+=item VERBOSE
+
+Flag to indicate whether informational messages should be given to the
+user. Default is true.
+
+=back
+
+=head1 KNOWN ISSUES
+
+???
+
+=head1 ALGORITHMS
+
+Uses KAPPA CREFRAME and WCSADD. 
+
+=head1
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2005 University of British Columbia. All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
+=cut
+
+# Define degrees to radians conversion factor
+use constant DEG2RAD => 1.74532925e-2;
+
+# Check for arguments...
+
+# Should I be verbose? (default to yes)
+my $verbose = (exists $_CREATE_REFERENCE_IMAGE_{VERBOSE} && 
+	       defined $_CREATE_REFERENCE_IMAGE_{VERBOSE}) ?
+	       $_CREATE_REFERENCE_IMAGE_{VERBOSE} : 1;
+
+# Check for FRAME
+my $coordframe = (exists $_CREATE_REFERENCE_IMAGE_{FRAME} &&
+		  defined $_CREATE_REFERENCE_IMAGE_{FRAME}) ?
+                  uc($_CREATE_REFERENCE_IMAGE_{FRAME}) : "EQUATORIAL";
+
+# Check that it's supported
+orac_warn "Warning: unsupported Coordinate frame, $coordframe. Using default frame (EQUATORIAL)\n" 
+  unless ($coordframe eq "EQUATORIAL");
+
+# Tell the user what's going on
+orac_print "Creating reference frame: " if $verbose;
+
+# Create the empty 1x1 pixel NDF
+my $refimage = $Frm->group."_ref"; # What is it called?
+my $imgargs = "lbound=\[1,1\] ubound=\[1,1\] mode=bl";
+$Mon{kappa_mon}->obeyw("creframe","out=$refimage ".$imgargs);
+orac_print "created blank 1x1 NDF\n" if $verbose;
+
+# Get last file in current Frame for WCS info
+my $datafile = $Frm->file( $Frm->nfiles );
+
+# Calculate the pixel scale
+#_GET_PIXEL_SCALE_ IMAGE=$datafile
+
+# Retrieve values - already in radians
+#my ($dx, $dy) = @{ $_GET_PIXEL_SCALE_{RESULTS}};
+# KLUDGE: fix at 6arcsec
+my ($dx, $dy) = (3.044627e-5,3.044627e-5);
+
+# Get coords of pointing centre from header
+# KLUDGE: get RA, Dec in degrees from FITS keywords in header
+my ($x0, $y0) = ($Frm->hdr->{RA}, $Frm->hdr->{DEC});
+
+# Debugging
+#print $x0." ".$y0."\n";
+
+# Convert to radians...
+$x0 *= DEG2RAD;
+$y0 *= DEG2RAD;
+
+# Now correct for half-pixel offset
+$x0 -= $dx/2.0;
+$y0 -= $dy/2.0;
+
+# FIX: How do we specify the exact coord system we want?
+
+# Add an absolute path
+#$refimage = File::Spec->rel2abs( $refimage, $ENV{ORAC_DATA_OUT});
+
+# Add a WCS sky frame - forces pixel scale to match raw input data
+orac_print "Now adding WCS Skyframe to reference image." if $verbose;
+my $wcsargs = "frame=pixel domain=sky frmtype=skyframe maptype=linear attrs=^attrs.lis";
+my $tr = "tr=[$x0,$dx,0,$y0,0,$dy]";
+orac_print "." if $verbose;
+$Mon{ndfpack_mon}->obeyw("wcsadd","ndf=$refimage $wcsargs $tr");
+orac_print "." if $verbose;
+#$Mon{ndfpack_mon}->obeyw("wcsadd",$wcsargs." ".$tr);
+#attrs=^attrs.lis
+
+# Store the reference image in the RESULTS hash
+$_CREATE_REFERENCE_IMAGE_{RESULTS} = $refimage;
+
+orac_print " done. Successfully created reference image.\n" if $verbose;
