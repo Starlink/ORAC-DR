@@ -107,19 +107,19 @@ USA
 #orac_print $mytime ."\n";
 
 # First check for SINGLESTEP
-my $singlestep = (exists $_ALIGN_AND_MOSAIC_{SINGLESTEP} &&
-		  defined $_ALIGN_AND_MOSAIC_{SINGLESTEP}) ?
-                  $_ALIGN_AND_MOSAIC_{SINGLESTEP} : 1;
+my $singlestep = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{SINGLESTEP} &&
+		  defined $_ALIGN_AND_MOSAIC_SUBARRAY_{SINGLESTEP}) ?
+                  $_ALIGN_AND_MOSAIC_SUBARRAY_{SINGLESTEP} : 1;
 
 # Rebin or resample? Default is resample (rebin = 0).
-my $rebin = (exists $_ALIGN_AND_MOSAIC_{REBIN} &&
-	     defined $_ALIGN_AND_MOSAIC_{REBIN}) ?
-             $_ALIGN_AND_MOSAIC_{REBIN} : 0;
+my $rebin = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{REBIN} &&
+	     defined $_ALIGN_AND_MOSAIC_SUBARRAY_{REBIN}) ?
+             $_ALIGN_AND_MOSAIC_SUBARRAY_{REBIN} : 0;
 
 # Method for determining the output pixel values
-my $method = (exists $_ALIGN_AND_MOSAIC_{METHOD} &&
-	      defined $_ALIGN_AND_MOSAIC_{METHOD}) ? 
-              lc($_ALIGN_AND_MOSAIC_{METHOD}) : "nearest"; 
+my $method = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{METHOD} &&
+	      defined $_ALIGN_AND_MOSAIC_SUBARRAY_{METHOD}) ? 
+              lc($_ALIGN_AND_MOSAIC_SUBARRAY_{METHOD}) : "nearest"; 
 
 
 # If a single step, then check version of KAPPA is new enough
@@ -132,21 +132,33 @@ if (starversion_lt('kappa', 'V1.5')) {
 # Need to deal with subarray mosaicking
 ###
 
+
 # Check if we're doing this all in one step
 if ($singlestep) {
+  orac_print "Beginning mosaic \n";
   my $nfiles = $Frm->nfiles;
   my $no_of_subarrays = 4; # SHOULD THIS BE A GLOBAL VARIABLE?
   my $maxscan = $nfiles / $no_of_subarrays;
   # FIX: Check that nfiles is a multiple of no_of_subarrays?
   my @out;
 
+  # Obtain reference: check existence of group image
+  my $ref;
+  if ($Grp->file_exists) {
+    $ref = $Grp->file;
+  } else {
+    _CREATE_REFERENCE_IMAGE_ FRAME=EQUATORIAL VERBOSE=1
+    $ref = $_CREATE_REFERENCE_IMAGE_{RESULTS};
+  }
+
+  # Loop over number of quartets
   foreach my $j (1..$maxscan) {
     my ($in, $out) = $Frm->inout('_arr', $j);
     my $intmp = new ORAC::TempFile;
     # Real method using headers
 #    foreach my $i (1..$nfiles) {
 #      print $intmp->handle $Frm->file($i) ."\n" 
-#        if ($Frm->hdr->{SUBHEADERS}->[$i-1]->{SUBSCAN} == $j);
+#        if ($Frm->hdr->{SUBHEADERS}->[$i-1]->{SCANNUM} == $j);
 #    }
 
     # HACK for using data that already exists...
@@ -155,7 +167,7 @@ if ($singlestep) {
     my $filec = $Frm->file($j + 2*$maxscan);
     my $filed = $Frm->file($j + 3*$maxscan);
     # We need a reference frame: use the first one
-    my $ref = $Frm->file($j);
+#    my $ref = $Frm->file($j);
 
 #    orac_print $filea ." ". $fileb ." ". $filec ." ". $filed ."\n";
     print {$intmp->handle} $filea ."\n";
@@ -165,7 +177,7 @@ if ($singlestep) {
     
     # Set the WLIM parameter
     my $wlim = 0.2;
-    $Mon{kappa_mon}->obeyw("wcsmosaic","ref=$ref rebin=$rebin method=$method lbnd=! ubnd=! wlim=$wlim out=$out in=^". $intmp->file);
+    $Mon{kappa_mon}->obeyw("wcsmosaic","ref=$ref method=$method lbnd=! ubnd=! wlim=$wlim genvar=true out=$out in=^". $intmp->file);
 
     push (@out, $out);
   }
@@ -175,9 +187,9 @@ if ($singlestep) {
   orac_print("Aligning and mosaicking subarray images with WCSMOSAIC \n");
 
 } else { # OK, if SINGLESTEP is zero, check for COMBINE
-  my $combine = (exists $_ALIGN_AND_MOSAIC_{COMBINE} &&
-		defined $_ALIGN_AND_MOSAIC_{COMBINE}) ?
-		lc($_ALIGN_AND_MOSAIC_{COMBINE}) : "median";
+  my $combine = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{COMBINE} &&
+		defined $_ALIGN_AND_MOSAIC_SUBARRAY_{COMBINE}) ?
+		lc($_ALIGN_AND_MOSAIC_SUBARRAY_{COMBINE}) : "median";
 
   # Call other primitives
   orac_print("Aligning and mosaicking subarray images in two stages \n");
