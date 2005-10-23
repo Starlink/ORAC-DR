@@ -1,4 +1,4 @@
-# -*-perl-*-
+#! -*-perl-*-
 
 =head1 NAME
 
@@ -175,6 +175,7 @@ if ($uselog) {
 
 # Now Loop over frames
 my $in;
+my $delta = 1.0e-5;
 for my $i (1.. $Frm->nfiles ) {
 
   # Find the input file
@@ -188,10 +189,9 @@ for my $i (1.. $Frm->nfiles ) {
     $in = $Frm->file($i);
   }
 
-  my $args = ($clip ne "") ? "clip=[$clip]" : "" ;
-
   # Now calculate stats of the masked file to get the mean and the
   # standard deviation
+  my $args = ($clip ne "") ? "clip=[$clip]" : "" ;
   $Mon{kappa_mon}->obeyw("stats","ndf=$in $args");
 
   # Retrieve the values
@@ -201,6 +201,8 @@ for my $i (1.. $Frm->nfiles ) {
   ($ORAC_STATUS, my $ngood) = $Mon{kappa_mon}->get("stats","numgood");
   ($ORAC_STATUS, my $ntotal) = $Mon{kappa_mon}->get("stats","numpix");
   ($ORAC_STATUS, my $nbad) = $Mon{kappa_mon}->get("stats","numbad");
+  ($ORAC_STATUS, my $min) = $Mon{kappa_mon}->get("stats","minimum");
+  ($ORAC_STATUS, my $max) = $Mon{kappa_mon}->get("stats","maximum");
 
   my $fracgood = $ngood/$ntotal;
 
@@ -220,7 +222,7 @@ for my $i (1.. $Frm->nfiles ) {
   my $err = sqrt($ngood) * $stdv;
   orac_warn "All pixels in aperture are bad!\n"
     if $ngood == 0;
-
+  
   # Signal-to-noise
   my $s2n;
   if (abs($err) <= 1.0e-30) {
@@ -232,11 +234,53 @@ for my $i (1.. $Frm->nfiles ) {
     $s2n = abs($avg / $err);
   }
 
+  # Now use the histogram method - write results to a logfile
+  # Determine numbin: calculated from min and max to make sure that
+  # the increment is more or less the same for all images
+  my $numbin = int( ($max - $min)/$delta );
+  my $logfile = "histogram_".$i.".dat";
+  my $args = "numbin=$numbin range=! device=! logfile=$logfile";
+  $Mon{kappa_mon}->obeyw("histogram","in=$in $args");
+  # Now analyze results
+  # ##############
+  # KLUDGE - this MUST be moved into a subroutine
+  # Open log file with hist results
+  open my $HISTFH, "< $logfile "
+    or die "Unable to open file, $logfile: $!";    
+  my (@lines, @values);
+  # Fill the @lines array
+  while (<$HISTFH>){
+    chomp;
+    push (@lines, $_) if ($_ =~ /pixels/);
+  }
+  close $HISTFH;
+  unlink $logfile;
+  # Now fiddle with the @lines array
+  # Get an array of array refs, each containing
+  foreach my $line (@lines) {
+    my @tmpline = split(/\s+/,$line,6);
+    my $lineref = [ $tmpline[1], $tmpline[3], $tmpline[4] ];
+    push (@values, $lineref);
+  }
+  # Now find max value
+  my $maxpix = 0;
+  my $maxval = -1.0e6;
+  foreach my $lineref (@values) {
+    if ($lineref->[2] > $maxpix){
+      $maxpix = $lineref->[2];
+      $maxval = 0.5*($lineref->[0] + $lineref->[1]) ;
+    }
+  }
+  my $mode = $maxval;
+  # NEEDS TO BE TESTED ON FIELD OF POINT SOURCES
+  # ##############
+    
   # Store mean DC level in the hash
-  $_FIND_SKY_STATS_{RESULTS} = [ $avg, $stdv ];
+  $_FIND_SKY_STATS_{RESULTS} = [ $avg, $stdv, $mode ];
 
   my $num = sprintf "%-4d", $Frm->number;
-  my $time= sprintf "%12.3f", $Frm->hdr('ORACTIME');
+#  my $time= sprintf "%12.3f", $Frm->hdr('ORACTIME');
+  my $time= "0.0000";
   my $filt= sprintf "%4s",   "850";
   $s2n = sprintf "%5.2f", $s2n;
   $stdv = sprintf "%8.3e", $stdv;
