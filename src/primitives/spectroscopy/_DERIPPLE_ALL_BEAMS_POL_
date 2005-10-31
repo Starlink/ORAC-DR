@@ -1,0 +1,99 @@
+=head1 NAME
+
+_DERIPPLE_ALL_BEAMS_ - Deripple interleaved observations.
+
+=head1 DESCRIPTION
+
+This primitive deripples interleaved observations by creating a ripple
+flat, then dividing this ripple flat into the observation. If the amplitude
+of the ripple is greater than 70%, then no derippling is done.
+
+The resulting spectrum is created in a file with a _dri suffix. This
+file is created even if no derippling is performed because the amplitude
+is greater than 70% -- the spectrum is copied directly from source.
+
+The generated flat-field is created in a file with a _rif suffix.
+
+If there is only one observation used in interleaving (i.e. no interleaving
+is done) then no derippling is performed, and the original spectrum
+is propagated through. If this is the case, then no _dri file is created.
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# Bring in Starlink::HDSPACK;
+use Starlink::HDSPACK qw/ create_hdsobj /;
+
+# We should have a "NBEAMS" header from _EXTRACT_DETERMINE_NBEAMS_
+my $nbeams = $Grp->uhdr("NBEAMS");
+
+# Obtain the waveplate angle to get the proper group.
+my $pol_angle = $Frm->uhdr( "ORAC_WAVEPLATE_ANGLE" );
+$pol_angle =~ /(\d+)\./;
+$pol_angle = $1;
+my $group_header = "${pol_angle}_GROUP";
+my $tempGrp = $Grp->uhdr( "$group_header" );
+
+my $detincr = $Frm->uhdr("ORAC_SCAN_INCREMENT");
+my $period = nint (1/$detincr);
+
+my $base = $tempGrp->raw;
+my $inbase = $tempGrp->file;
+my $out = $base . "_dri";
+
+if ($detincr != 1) {
+
+  my $rifbase = $base."_rif";
+  my $dribase = $base."_dri";
+
+  my $ORAC_STATUS = ( create_hdsobj( $rifbase, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+  $ORAC_STATUS = ( create_hdsobj( $dribase, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+
+  # Loop over the four beams.
+  my @beams = qw/ POS_E POS_O NEG_E NEG_O /;
+
+  foreach my $beam ( @beams ) {
+
+    # Create a ripple flat field for the beam.
+    my $in = $inbase.".$beam";
+    my $rif = $rifbase.".$beam";
+    $Mon{'figaro2'}->obeyw("irflat", "spectrum=$in xstart=min xend=max more=false period=$period output=$rif");
+
+    # Need to create a zero variance array on the ripple flat field
+    $Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$rif variance=0");
+    orac_print "$in to $rif: Ripple Flat field created\n";
+
+    $Mon{'kappa_mon'}->obeyw("stats", "ndf=$rif");
+    (my $ORAC_STATUS, my $sigma) = $Mon{'kappa_mon'}->get("stats", "sigma");
+    my $string = sprintf ("%5.2f", 100*$sigma);
+    orac_print "$rif: Ripple amplitude is $string%\n";
+
+    # Do the de-ripple - but only if the ripple amplitude is less than 70%
+    my $dri = $dribase.".$beam";
+    if ($sigma < 0.7) {
+      $Mon{'kappa_mon'}->obeyw("div", "in1=$in in2=$rif out=$dri title=$dri");
+      orac_print "$in to $dri: Derippled with ripple-flat $rif\n";
+    } else {
+      # Just do a copy instead - so that if one beam gets rejected, the file still contains all beams
+      $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$dri");
+      orac_print "$in to $dri: NOT derippled as ripple amplitdue above 70%\n";
+    }
+  }
+
+  $tempGrp->file( $out );
+  $Grp->uhdr( "$group_header", $tempGrp );
+
+} else {
+
+   orac_print "$inbase: No need to deripple - scan increment is: $detincr\n";
+}
+
+   orac_print "\n";
