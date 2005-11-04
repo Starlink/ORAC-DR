@@ -175,7 +175,7 @@ sub dark {
     return $self->darkname(shift);
   };
 
-  my $ok = $self->darkindex->verify($self->darkname,$self->thing);
+  my $ok = $self->darkindex->verify($self->darkname,$self->thing, 0);
 
   # happy ending - frame is ok
   if ($ok) {return $self->darkname};
@@ -212,7 +212,7 @@ sub flat {
     return $self->flatname(shift);
   };
 
-  my $ok = $self->flatindex->verify($self->flatname,$self->thing);
+  my $ok = $self->flatindex->verify($self->flatname,$self->thing, 0);
 
   # happy ending - frame is ok
   if ($ok) {return $self->flatname};
