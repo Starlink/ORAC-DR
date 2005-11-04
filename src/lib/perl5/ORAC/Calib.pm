@@ -83,7 +83,7 @@ sub new {
   $obj->{Dark} = undef;
   $obj->{Emissivity} = undef;
   $obj->{Flat} = undef;
-  $obj->{ImageQuality} = undef;
+  $obj->{DQC} = undef;
   $obj->{Mask} = undef;
   $obj->{Photometricity} = undef;
   $obj->{PolRefAng} = undef;
@@ -100,7 +100,7 @@ sub new {
   $obj->{DarkIndex} = undef;
   $obj->{EmissivityIndex} = undef;
   $obj->{FlatIndex} = undef;
-  $obj->{ImageQualityIndex} = undef;
+  $obj->{DQCIndex} = undef;
   $obj->{PhotometricityIndex} = undef;
   $obj->{PolRefAngIndex} = undef;
   $obj->{ReadNoiseIndex} = undef;
@@ -1025,25 +1025,25 @@ sub flatindex {
 
 };
 
-=item B<imagequalityindex>
+=item B<dqcindex>
 
-Return (or set) the index object associated with the image quality
-index file.
+Return (or set) the index object associated with the data quality
+parameters index file.
 
 =cut
 
-sub imagequalityindex {
+sub dqcindex {
 
   my $self = shift;
-  if (@_) { $self->{ImageQualityIndex} = shift; }
+  if (@_) { $self->{DQCIndex} = shift; }
 
-  unless (defined $self->{ImageQualityIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.imagequality" );
-    my $rulesfile = $self->find_file("rules.imagequality");
-    $self->{ImageQualityStats} = new ORAC::Index($indexfile,$rulesfile);
+  unless (defined $self->{DQCIndex}) {
+    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.dqc" );
+    my $rulesfile = $self->find_file("rules.dqc");
+    $self->{DQCStats} = new ORAC::Index($indexfile,$rulesfile);
   };
 
-  return $self->{ImageQualityStats};
+  return $self->{DQCStats};
 
 }
 
