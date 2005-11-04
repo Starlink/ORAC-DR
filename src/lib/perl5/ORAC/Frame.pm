@@ -27,8 +27,6 @@ use warnings;
 use Carp;
 use vars qw/$VERSION/;
 
-use Astro::FITS::HdrTrans;
-
 use ORAC::Print;
 use ORAC::Constants;
 
