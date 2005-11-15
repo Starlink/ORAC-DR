@@ -1,0 +1,99 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_DARK_AND_FLAT_ -- Subtract a dark and divide by a flat in one step.
+
+=head1 DESCRIPTION
+
+This primitive subtracts a dark frame from the current Frame object
+and divides the result by a flat field, all in one step. This is done
+to speed up processing.
+
+=head1 ARGUMENTS
+
+=over 4
+
+None.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for WFCAM.
+
+=item *
+
+This primitive only operates on OBJECT, SKY, or FOCUS observations.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The dark-subtracted and flat-fielded frame, with a C<_ff> suffix.
+
+=back
+
+=head1 TASKS
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2005 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# This should only be performed on OBJECT, SKY, or FOCUS frames.
+if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+     $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ||
+     $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "FOCUS" ) {
+
+  # Obtain the dark from the calibration system.
+  my $dark = $Cal->dark;
+
+  # Obtain the flat from the calibration system.
+  my $flat = $Cal->find_file( $Cal->flat . ".sdf" );
+  $flat =~ s/\.sdf$//;
+
+  # Loop through the subframes.
+  foreach my $i ( 1 .. $Frm->nfiles ) {
+
+    # Generate list of input and output filenames.
+    ( my $in, my $out ) = $Frm->inout( "_ff", $i );
+
+    # Set the parameter list for KAPPA/MATHS.
+    my $param = "exp=(IA-IB)/IC IA=$in IB=$dark IC=$flat out=$out variance=false";
+
+    # Run KAPPA/MATHS.
+    $Mon{'kappa_mon'}->obeyw("maths", "$param" );
+
+    # Report the processing status.
+    orac_print "$in dark-subtracted and flat-fielded making $out.\n";
+
+    # Now update the output filename in the Frame object.
+    $Frm->file( $i, $out );
+
+    # Display the image.
+    _DISPLAY_FRAME_IMAGE_
+
+  }
+
+  # Tidy up output.
+  orac_print "\n";
+}
