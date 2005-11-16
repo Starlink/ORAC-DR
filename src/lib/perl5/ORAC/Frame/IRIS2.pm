@@ -63,7 +63,7 @@ my %hdr = (
            RA_BASE                => "CRVAL1",
            RA_TELESCOPE_OFFSET    => "TRAOFF",
            RECIPE                 => "RECIPE",
-	   SLIT_ANGLE             => "TEL_PA",
+           SLIT_ANGLE             => "TEL_PA",
            SPEED_GAIN             => "SPEED",
            TELESCOPE              => "TELESCOP",
            X_DIM                  => "NAXIS1",
@@ -209,8 +209,20 @@ sub _to_GRATING_WAVELENGTH {
 
 sub _to_UTEND {
   my $self = shift;
-  my ($hour, $minute, $second) = split( /:/, $self->hdr->{UTEND} );
-  $hour + ($minute / 60) + ($second / 3600);
+  #
+  # If UTEND contains ':' then its sexagisamal, otherwise its
+  # already in decimal format (as when being added to an existing
+  # giYYYMMDD_##_mos mosaic)
+  #
+
+   if ( exists $self->hdr->{UTEND} && $self->hdr->{UTEND} =~ /:/ ) {
+   	my ($hour, $minute, $second) = split( /:/, $self->hdr->{UTEND} );
+   	return $hour + ($minute / 60) + ($second / 3600);
+   } else {
+      return $self->hdr->{UTEND};
+   }
+
+
 }
 
 sub _from_UTEND {
