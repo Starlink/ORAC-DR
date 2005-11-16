@@ -37,6 +37,7 @@ use ORAC::Calib;			# use base class
 use ORAC::Print;
 
 use File::Spec;
+use File::Copy;
 
 # use base qw/ORAC::Calib::CGS4/;
 use base qw/ORAC::Calib/;
@@ -117,14 +118,23 @@ is run.
 =cut
 
 sub maskindex {
-
   my $self = shift;
   if (@_) { $self->{MaskIndex} = shift; }
+
   unless (defined $self->{MaskIndex}) {
-    my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'},"index.bpm");
-    my $rulesfile = $self->find_file("rules.bpm");
+
+# Copy the index file from ORAC_DATA_CAL into ORAC_DATA_OUT, unless
+# it already exists there. Then use the one in ORAC_DATA_OUT.
+    if ( ! -e File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" ) ) {
+      copy( $self->find_file( "index.mask" ),
+            File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" ) );
+    }
+    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" );
+
+    my $rulesfile = $self->find_file( "rules.mask" );
+
     $self->{MaskIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
+  }
 
   return $self->{MaskIndex};
 
@@ -403,6 +413,8 @@ sub mask {
     return $self->maskname(shift);
   };
 
+# Ignore distracting warnings.
+  my $warn = 0;
   my $ok = $self->maskindex->verify($self->maskname,$self->thing);
 
   # happy ending
@@ -419,11 +431,19 @@ sub mask {
       # Nothing suitable, default to fallback position
       # Check that exists and be careful not to set this as the
       # maskname() value since it has no corresponding index entry
-      my $defmask = $self->find_file("bpm.sdf");
+      my $defmask = $self->find_file( "bpm_fallback.sdf" );
       if( defined( $defmask ) ) {
         $defmask =~ s/\.sdf$//;
-        return $defmask;
       }
+
+      # If we're in spectroscopy mode, over-ride this to be bpm_sp
+      # $uhdrref is a reference to the Frame uhdr hash
+      my $uhdrref = $self->thingtwo;
+      if ($uhdrref->{'ORAC_OBSERVATION_MODE'} eq 'spectroscopy') {
+        $defmask = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "bpm_sp" ) ;
+      }
+
+      return $defmask if -e $defmask . ".sdf";
 
       # give up...
       croak "No suitable bad pixel mask was found in index file"
@@ -502,10 +522,11 @@ $Id$
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 Stuart Ryder E<lt>sdr@aaoepp.aao.gov.auE<gt>
 Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+adapted for IRIS2 by S Ryder (Jan 2004)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Copyright (C) 1998-2005 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
