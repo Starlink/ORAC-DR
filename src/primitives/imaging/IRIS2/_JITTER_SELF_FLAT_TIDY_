@@ -1,0 +1,131 @@
+#+
+# Name:
+#    _JITTER_SELF_FLAT_TIDY_
+#
+# Purpose:
+#    Removes unwanted intermediate files for the JITTER_SELF_FLAT recipe
+#    and its variants.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    Removes intermediate frames, but retaining those with the _ff suffix.
+#    Files are only removed when they are no longer needed, as guided
+#    by the steering headers MAKE_FLAT, MAKE_MOSAIC, and CYCLE_NUMBER.
+#    Registration text files with extensions .find, .off, and .res are
+#    also removed.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Record the group file name and the first frame of the whole group.
+    my $grpname = $Grp->file;
+    my $Frm0 = $Grp->frame( 0 );
+
+# Determine whether the NDFs support variance.  Any of the NDFs should
+# do.
+    my $file = $Frm->file;
+    $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$file" );
+    ( my $ORAC_STATUS, my $variance ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "variance" );
+
+# Removed intermediate files stored $Frm->file method.
+    _DELETE_TEMP_FILES_ KEEP=_th,_om,_ff,_dta
+
+# Certain files can only be removed once certain steps are complete,
+# and then only as a group.  So determine if it's time to remove these
+# files, and obtain the cycle number.
+    my $madeflat = $Frm->uhdr( "MAKE_FLAT" );
+    my $mademosaic = $Frm->uhdr( "MAKE_MOSAIC" );
+    my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" ); 
+
+# Remove the remaining files from this cycle used to make the flat.
+    my $mosGrp;
+    if ( $madeflat ) {
+       $mosGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+       {
+          my $Grp = $mosGrp;
+          _DELETE_TEMP_GROUP_FILES_ DELETE=_th,_om,_sbp,_sc,_dg,_nm,_fm
+          if ( $variance eq "TRUE" ) {
+             _DELETE_TEMP_GROUP_FILES_ DELETE=_bgl,_pov,_rnv
+          }
+          undef $mosGrp;
+       }
+    }
+
+# Remove the remaining files from this cycle used to make the mosaic.
+    if ( $mademosaic ) {
+       $mosGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+       {
+          my $Grp = $mosGrp;
+          _DELETE_TEMP_GROUP_FILES_ DELETE=_trn,_xpr
+
+# Select the frames that should be tidied.  On the second and subsequent
+# cycles the first frame is used to register with the later cycles.
+          my @list = $Grp->members;
+          if ( $cycleno > 0 ) {
+             push ( @list, $Frm0 );
+          }
+          foreach $Frm ( @list ) {
+
+# Obtain the last syllable, i.e. parts of the name broken by underscore,
+# for each frame.
+             my @syllables = split( /_/, $Frm->file );
+             my $suffix = $syllables[ $#syllables ];
+
+# Remove the offset and object-inventory text files.  These are
+# associated with the _ff frames, so switch suffices by reforming
+# the name with the new suffix.
+             my $textfile = join( "_", @syllables[ 0..$#syllables-1 ] ) . "_ff";
+             unlink ( $textfile . ".off", $textfile . ".find" );
+             unlink ( $textfile . "_objects.ard", $textfile . ".res" );
+
+# Remove the offset and object-inventory text files.  If bias correction
+# is applied, these are associated with the _bc frames, so switch suffices
+# by reforming the name with the new suffix.
+             $textfile = join( "_", @syllables[ 0..$#syllables-1 ] ) . "_bc";
+             unlink ( $textfile . ".off", $textfile . ".find" );
+	  }
+
+# Remove the group offset and object-inventory text files.
+          if ( $cycleno > 0 ) {
+             unlink( $grpname . ".off", $grpname . ".find" );
+             unlink( $grpname . ".res" );
+          }
+
+          undef $mosGrp;
+       }
+    }
+    orac_print "\n\n";
+
+# Podule
+# ======
+
+=head1 NAME
+
+_JITTER_SELF_FLAT_TIDY_ -- Removes unwanted intermediate files for the JITTER_SELF_FLAT recipe and its variant.
+
+=head1 DESCRIPTION
+
+Removes intermediate frames, but retaining those with the _ff suffix.
+Files are only removed when they are no longer needed, as guided
+by the steering headers MAKE_FLAT, MAKE_MOSAIC, and CYCLE_NUMBER.
+Registration text files with extensions .find, .off, and .res are
+also removed.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

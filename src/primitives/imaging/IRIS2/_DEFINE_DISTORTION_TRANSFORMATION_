@@ -1,0 +1,130 @@
+#+
+# Name:
+#    _DEFINE_DISTORTION_TRANSFORMATION_
+#
+# Purpose:
+#    Creates the WCS mappings for IRIS2 field-distortion correction.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive defines the field-distortion mapping for the
+#    current frame, using the relationships stored in two `calibration'
+#    files.  It creates a new WCS domain called DISTORTION within
+#    the frame.
+#
+# Notes:
+#    -  This primitive is suitable for IRIS2 in imaging mode.
+#    -  The distortion mapping comes from the IRIS2 Documentation
+#       appendices: http://www.aao.gov.au/iris2/iris2_dist.html .
+#
+# Tasks:
+#    ATOOLS: ASTADDFRAME, ASTCMPMAP, ASTGETFRAME, ASTGETMAPPING, ASTREMOVEFRAME;
+#    KAPPA: WCSADD, WCSFRAME.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (Starlink)
+#    CGT: Chris Tinney (AAO) Bodged from the ISAAC primitive for use with IRIS2
+#         Updated Feb 2005, to include changes in ISAAC primitve to
+#         improve WCS creation
+#
+# Copyright:
+#    Copyright (C) 2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# For OS-independent filename creation.
+    use File::Spec;
+
+# Open the faint-standards file and store its records in an array.
+    my $path = $ENV{ "ORAC_DATA_CAL" };
+    my $forexp = "^" . File::Spec->catfile( $path, "forward_distortion.lis" );
+    my $invexp = "^" . File::Spec->catfile( $path, "inverse_distortion.lis" );
+
+
+
+# Resample using the forward and inverse math-type mappings in text files.
+# Save the WCS description in file map_dist.txt.
+    my $ndf = $Frm->file;
+    my $param1 = "maptype=math frame=grid domain=DISTORTION ndf=$ndf";
+    my $param2 = "forexp=$forexp invexp=$invexp frmtype=Frame mapout=map_dist.txt";
+    $Mon{ "ndfpack_mon" }->obeyw( "wcsadd", "$param1 $param2 accept" );
+
+# Report the status.
+    orac_print "Distorted WCS from $forexp added \n   as domain DISTORTION in $ndf\n";
+
+# Switch to the SKY domain.
+    $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "ndf=$ndf frame=SKY" );
+
+# Create a text file ("map_ideal.txt") holding an AST description of
+# mapping the grid to idealised sky co-ordinates.  The base frame
+# is the GRID.
+    $param1 = "this=$ndf iframe1=AST__BASE iframe2=AST__CURRENT result=map_ideal.txt";
+    $Mon{ "atools_mon" }->obeyw( "astgetmapping", "$param1" );
+
+# Create a text file ("sky.txt") holding an AST description of the SKY
+# Frame. 
+    $param1 = "this=$ndf iframe=AST__CURRENT result=sky.txt";
+    $Mon{ "atools_mon" }->obeyw( "astgetframe", "$param1" );
+
+# Concatenate Mappings for the distortion and grid to sky.  Put the
+# resulting Mapping description in text file "map_cmp.txt".  This is
+# the Mapping from actual grid co-ordinates to sky co-ordinates.
+    $param1 = "map1=map_dist.txt map2=map_ideal.txt series result=map_cmp.txt accept";
+    $Mon{ "atools_mon" }->obeyw( "astcmpmap", "$param1" );
+
+# Remove the original SKY Frame from the WCS component.
+    $Mon{ "atools_mon" }->obeyw( "astremoveframe", "this=$ndf iframe=AST__CURRENT result=$ndf" );
+
+# Add in the new SKY frame, using the Mapping in "map_cmp.txt" to connect
+# it to the GRID Frame.
+    $param1 = "this=$ndf iframe=AST__BASE map=map_cmp.txt frame=sky.txt result=$ndf";
+    $Mon{ "atools_mon" }->obeyw( "astaddframe", "$param1" );
+
+# Report the status.
+    orac_print "Replaced SKY WCS in $ndf with one including astrometric distortion, \n";
+
+# Podule
+# ======
+
+=head1 NAME
+
+_DEFINE_DISTORTION_TRANSFORMATION_ -- Creates the WCS mappings for IRIS2 field-distortion correction.
+
+=head1 DESCRIPTION
+
+This primitive defines the field-distortion mapping for the current
+frame, using the relationships stored in two `calibration' files.  It
+creates a new WCS domain called DISTORTION within the frame.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for IRIS2 in imaging mode.
+
+=item *
+
+The distortion mapping comes from the IRIS2 Documentation
+appendices: http://www.aao.gov.au/iris2/iris2_dist.html .
+
+=back
+
+=head1 TASKS
+
+KAPPA: WCSADD.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (Starlink)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
