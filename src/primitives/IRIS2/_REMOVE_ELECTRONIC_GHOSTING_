@@ -1,0 +1,350 @@
+#+
+# Name:
+#    _REMOVE_ELECTRONIC_GHOSTING_
+#
+# Purpose:
+#    Corrects IRIS2 data (both imaging and spectroscopy) for
+#    what ORACDR likes to call "electronic ghosts" but which is more
+#    commonly known as 'inter-quadrant crosstalk'.  This primitive is
+#    based on that developed for the processing of ISAAC SW data
+#    (which uses a similar HAWAII detector to IRIS2).  The correction
+#    co-efficient, however, has been determined from IRIS2 data.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive corrects for electronic ghosts in the current
+#    frame.  The ghosts consist "of an additional signal, which, on
+#    one row, is proportional to the sum of the intensity along this
+#    row and the row 512 rows away."  This primitive allows the
+#    ghosting to be along rows or columns (see argument GHOSTAXIS).
+#
+#    The primitive performs the following steps using temporary
+#    intermediate files.
+#       - forms a one-dimensional profile by collapsing along either
+#       axis (depending on argument GHOSTAXIS);
+#       - copies the profile to two new profiles, whose pixel origins
+#       are offset by plus or minus 512 (-511 and 513);
+#       - sums the original profile with the shifted copies and
+#       multiplies by 2.5E-5/2*1024 to form the ghost profile;
+#       - grows the ghost profile to the dimensions of the original
+#       frame and sets its origin to that of the original frame; and
+#       - subtracts that ghost image from the original frame.
+#
+# Arguments:
+#    GHOSTAXIS = INTEGER (Given)
+#       The axis along which to collapse the array.  Thus if the
+#       ghosting varies along columns, this should be 1.  Likewise to
+#       correct electronic ghosting variations along rows, set this to
+#       2.  [1]
+#
+# Notes:
+#    -  Processes all IRIS2 frames. 
+#    -  The ghost-corrected image can be displayed.
+#    -  The frame title is propagated.
+#
+# Output Data:
+#    -  Frame corrected for electronic ghosting inheriting the input
+#    frame's name but with the _eg suffix.
+
+# Tasks:
+#    KAPPA: COLLAPSE, NDFCOPY, NDFTRACE, MATHS, PASTE, PIXDUPE, RESHAPE,
+#    SETORIGIN, SUB.
+
+#  References:
+#    - P. Amico et al., 2002, ISAAC Data Reduction Guide 1.5.
+#    - Papers by Gert Finger of ESO eg.
+#    http://www.eso.org/~gfinger/hawaii_1Kx1K/crosstalk_rock/crosstalk.html
+#    - Tinney et al. 2003, AJ, 126, 975
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC)
+#    CGT: Chris Tinney (AAO) - modified MJC primitive for IRIS2, which
+#                              required substantial debugging.
+#
+# Copyright:
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Selection
+# =========
+#
+#   CGT: Commented out. We do this on ALL IRIS2 data.
+#
+#   my $mode = $Frm->hdr( "HIERARCH.ESO.INS.MODE" );
+#   if ( $mode =~ /SW/ ) {
+
+# Arguments
+# =========
+
+# Obtain and validate ghosting axis.  It's not clear if this argument
+# will be needed but it might be, perhaps for another instrument.
+       my $ghostaxis = ( $_REMOVE_ELECTRONIC_GHOSTING_{GHOSTAXIS} || 1 );
+       $ghostaxis = 1 unless ( $ghostaxis == 1 || $ghostaxis == 2 );
+
+# Obtain the dimensions of the supplied frame.
+       my $ndf = $Frm->file;
+       $Mon{ "ndfpack_mon" }->obeyw( "ndftrace", "ndf=$ndf" );
+       my ( $ORAC_STATUS, @dims ) = $Mon{ "ndfpack_mon" }->get( "ndftrace", "dims" );
+       my $xdim = $dims[ 0 ];
+       my $ydim = $dims[ 1 ];
+
+# Create temporary files.
+# =======================
+
+# For the full profile.
+       my $tmpprofile = new ORAC::TempFile;
+       my $profile = $tmpprofile->file;
+
+# For the lower profile.
+       my $tmpprofile_l = new ORAC::TempFile;
+       my $profile_l = $tmpprofile_l->file;
+
+# For the upper profile.
+       my $tmpprofile_u = new ORAC::TempFile;
+       my $profile_u = $tmpprofile_u->file;
+
+# For the ghost profile.
+       my $tmpghost = new ORAC::TempFile;
+       my $ghostprofile = $tmpghost->file;
+
+# For the ghost profiles with swapped halves.
+       my $tmpswap = new ORAC::TempFile;
+       my $swapprofile = $tmpswap->file;
+       my $tmpswap1 = new ORAC::TempFile;
+       my $swapprofile1 = $tmpswap1->file;
+
+# For the ghost profile, reshaped to two dimensions.
+       my $tmpprofile2d = new ORAC::TempFile;
+       my $profile2d = $tmpprofile2d->file;
+
+# For the ghosting profile expanded to an image.
+       my $tmpimage = new ORAC::TempFile;
+       my $ghostimage = $tmpimage->file;
+
+# Form row/column profile
+# ========================
+       my ( $in, $out, $param );
+
+# Should do this unless GHOSTAXIS=2 was requested, as at the time of
+# writing only ghosting in the vertical direction are seen.
+       $param = "in=$ndf out=$profile estimator=mean ";
+       if ( $ghostaxis != 2 ) {
+
+# Collapse the frame along rows using the mean.  This forms a map
+# of the row structure, including the ghosting.
+          $param .= "axis=1";
+
+# Collapse the frame along columns using the mean.  This forms a map
+# of the column structure.
+       } elsif ( $ghostaxis == 2 ) {
+          $param .= "axis=2";
+       }
+
+# Collapse the frame.
+       $Mon{ "kappa_mon" }->obeyw( "collapse", "$param" );
+
+# Form correlated profiles
+# ========================
+
+# The ghosting is the sum of the nth and 512+nth pixels in the profile.
+
+# Make two copies of the upper and lower halves of the profile.
+       $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$profile(1:512) out=$profile_l" );
+       $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "in=$profile(513:1024) out=$profile_u" );
+
+# Set the pixel origins to ensure we match appropriate pixels to sum.
+       $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=$profile origin=1" );
+       $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=$profile_u origin=1" );
+       $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=$profile_l origin=513" );
+
+# Paste the two halves over the original profile confined to the
+# bounds of the original profile. CGT/AAO - this fails if you try to do it
+# in one hit. God knows why. A kappa bug? Doing the paste in two steps
+# fixes the problem.
+
+# It looks like this gets fixed in KAPPA v1.5 or later, so only do the
+# paste in two steps if we're using an older verion than that.
+       if( starversion_gt( 'KAPPA', 'V1.4-99' ) ) {
+
+         $param = "in=$profile p1=$profile_l p2=$profile_u out=$swapprofile";
+         $Mon{'kappa_mon'}->obeyw( "paste", "$param confine transp=f" );
+
+       } else {
+
+         $param = "in=$profile p1=$profile_l out=$swapprofile1";
+         $Mon{ "kappa_mon" }->obeyw( "paste", "$param confine transp=f" );
+
+         $param = "in=$swapprofile1 p1=$profile_u out=$swapprofile";
+         $Mon{ "kappa_mon" }->obeyw( "paste", "$param confine transp=f" );
+       }
+
+# Add the swapped halves to the original profile, retaining the
+# original bounds, and scale by the ghosting factor.
+       $param = "ia=$profile ib=$swapprofile out=$ghostprofile";
+       $Mon{ "kappa_mon" }->obeyw( "maths", "exp='0.0128*(IA+IB)' $param" );
+
+# Subtract ghost profile from the original image.
+# ==============================================
+
+# Convert the ghost profile to two dimensions.
+       if ( $ghostaxis != 2 ) {
+          $param = "in=$ghostprofile out=$profile2d shape=[1,$ydim]";
+       } elsif ( $ghostaxis == 2 ) {
+          $param = "in=$ghostprofile out=$profile2d shape=[$xdim,1]";
+       }
+       $Mon{ "ndfpack_mon" }->obeyw( "reshape", "$param" );
+
+# Duplicate along the rows restoring an image the size of the frame on
+# input.
+       $param = "in=$profile2d out=$ghostimage expand=[$xdim,1]";
+       $Mon{ "kappa_mon" }->obeyw( "pixdupe", "$param" );
+
+# Set the origin to match that of the original frame.
+       $param = "ndf=$ghostimage like=$ndf";
+       $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "$param" );
+
+# Subtract the two-dimensional row or column pattern from the original
+# frame.
+       ( $in, $out ) = $Frm->inout( "_eg" );
+       $param = "in1=$ndf in2=$ghostimage out=$out";
+       $Mon{ "kappa_mon" }->obeyw( "sub", "$param" );
+
+# Report progress.
+    	 orac_print "Frame $in interquadrant xtalk corrected to form $out\n";
+
+# Now update the output filename in the Frame object.
+       $Frm->file( $out );
+
+# Display the image. 
+       _DISPLAY_FRAME_IMAGE_
+	 
+#       orac_print "\n";
+
+#    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_REMOVE_ELECTRONIC_GHOSTING_ -- Corrects ISAAC SW data for electronic ghosts.
+
+=head1 DESCRIPTION
+
+This primitive corrects for electronic ghosts in the current
+frame - more commonly known as 'inter-quadrant crosstalk' -
+see for example papers by Gert Finger of ESO at
+http://www.eso.org/~gfinger/hawaii_1Kx1K/crosstalk_rock/crosstalk.html
+or the paper by Tinney et al. 2003, AJ, 126, 975.
+This primitive is based on that developed for the processing
+of ISAAC SW data (which uses a similar HAWAII detector to IRIS2).
+The correction co-efficient, however, has been determined from
+IRIS2 data. The crosstalk consists "of an additional signal, which, on
+one row, is proportional to the sum of the intensity along this
+row and the the row 512 rows away."  This primitive allows the
+ghosting to be along rows or columns (see argument GHOSTAXIS).
+
+The primitive performs the following steps using temporary
+intermediate files.  It:
+
+=over 4
+
+=item *
+
+forms a one-dimensional profile by collapsing along either
+axis (depending on argument GHOSTAXIS).
+
+=item *
+
+copies the profile to two new profiles, whose pixel origins
+are offset by plus or minus 512 (-511 and 513);
+
+=item *
+
+sums the original profile with the shifted copies and
+multiplies by 2.5E-5/2*1024 to form the ghost profile;
+
+=item *
+
+grows the ghost profile to the dimensions of the original
+frame and sets its origin to that of the original frame; and
+
+=item *
+
+subtracts that ghost image from the original frame.
+
+=back
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item GHOSTAXIS = INTEGER (Given)
+
+The axis along which to collapse the array.  Thus if the
+ghosting varies along columns, this should be 1.  Likewise to
+correct electronic ghosting variations along rows, set this to
+2.  [1]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Processes all IRIS2 frames.  
+=item *
+
+The ghost-corrected image can be displayed.
+
+=item *
+
+The frame title is propagated.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Frame corrected for electronic ghosting inheriting the input
+frame's name but with the _eg suffix.
+
+=back
+
+=head1 TASKS
+
+KAPPA: COLLAPSE, NDFCOPY, NDFTRACE, MATHS, PASTE, PIXDUPE, RESHAPE, SETORIGIN, SUB.
+
+=head1 REFERENCES
+
+=over 4
+
+=item *
+
+o P. Amico et al., 2002, ISAAC Data Reduction Guide 1.5.
+o Also papers by Gert Finger of ESO at
+http://www.eso.org/~gfinger/hawaii_1Kx1K/crosstalk_rock/crosstalk.html
+o Or the paper by Tinney et al. 2003, AJ, 126, 975 and references therein.
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+CGT: Chris Tinney (AAO)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council, and (C) 2004 Anglo-Australian Telescope Board. All Rights Reserved.
+
+=cut

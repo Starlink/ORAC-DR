@@ -1,0 +1,183 @@
+=head1 NAME
+
+_EXTRACT_ALL_BEAMS_ES_ - Optimally extracts all beams in a group file.
+
+=head1 DESCRIPTION
+
+Optimally extracts all the beams in a group file. The primitive defines
+the optimal extraction profile window to be as wide as half the separation
+between two beams (if two beams exist), or 50 pixels (if one beam exists).
+
+In obtaining the optimal extraction profile, this primitive temporarily
+fills bad pixels in the input file. It then uses this profile to optimally
+extract the spectra for the image. After it has done so, it optionally 
+files the profile with the calibration system for future use.
+
+This primitive may also optionally use a predetermined optimal extraction
+profile obtained from a standard star observation.
+
+As output this primitive creates a file ending in _oep for the optimal
+extraction profile, _oer for the residuals from the profile fitting, and
+_oes for the optimally extracted spectrum.
+
+=head1 PARAMETERS
+
+PROFILECAL: [LOAD|SAVE] - determines whether to get the profiles from
+the calibration system, save the profiles to the calibration system,
+or neither.
+
+=head1 AUTHORS
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# Bring in Starlink::HDSPACK
+use Starlink::HDSPACK qw/ create_hdsobj /;
+
+# Parse the parameter
+
+my $profilesave = (defined $_EXTRACT_ALL_BEAMS_ES_{PROFILECAL} && $_EXTRACT_ALL_BEAMS_ES_{PROFILECAL} eq 'SAVE') ? 1 : 0;
+my $profileload = (defined $_EXTRACT_ALL_BEAMS_ES_{PROFILECAL} && $_EXTRACT_ALL_BEAMS_ES_{PROFILECAL} eq 'LOAD') ? 1 : 0;
+
+# We should have a "NBEAMS" header from _EXTRACT_DETERMINE_NBEAMS_
+my $nbeams = $Grp->uhdr("NBEAMS");
+
+# Get the beam positions and multipliers, with a dodgy dereference
+my $ref = $Grp->uhdr("BEAMS");
+my @beams = @$ref;
+
+# Get the input file
+my $in = $Grp->raw;
+
+# Get the optextract window size. The bigger the better, sans overlap, so:
+my $window=0;
+if ($nbeams == 2) {
+   # Set it to half the beam separation
+   $window = int (0.5*(abs ($beams[1]{'POS'} - $beams[2]{'POS'})));
+} else {
+   # Set it to 50 pixels
+   $window=50;
+}
+
+# Hard wire the optextract window here if necessary
+my $window = 25;
+orac_print ("Optimal Extraction aperture half-width will be: $window pixels\n");
+
+
+# Loop through the beams, extracting them
+# We'll use HDS containers so as to store the multiple beams
+my $base = $Grp->file;
+my $oep = $base."_oep";
+my $oer = $base."_oer";
+my $oes = $base."_oes";
+
+my $tmp = new ORAC::TempFile;
+my $tmpfile = $tmp->file;
+
+my $ORAC_STATUS = ( create_hdsobj( $oep, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+$ORAC_STATUS = ( create_hdsobj( $oer, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+$ORAC_STATUS = ( create_hdsobj( $oes, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+
+for (my $i=1; $i<=$nbeams; $i++) {
+
+   my $row = $beams[$i]{'POS'};
+
+   # Profile the group image
+
+   # Get the filename for the opt-extract profile
+   $oep = $base."_oep".".beam$i";
+   
+   # And the profile residuals
+   $oer = $base."_oer".".beam$i";
+
+   # Set ystart and yend
+
+   # Need to subtract the ndflbound off everything that goes to figaro-profile...
+   $Mon{'ndfpack_mon'}->obeyw("ndftrace", "ndf=$in");
+   (my $ORAC_STATUS, my @ndflbound) = $Mon{'ndfpack_mon'}->get("ndftrace", "lbound");   
+
+   my $lbound = $Frm->uhdr("ORAC_Y_LOWER_BOUND");
+   my $ystart = ($row-$window <= $lbound) ? ( $lbound + 1 ) : $row-$window;
+   my $ystartf = $ystart - $ndflbound[1];
+
+   my $ubound = $Frm->uhdr("ORAC_Y_UPPER_BOUND");
+   my $yend = ($row+$window >= $ubound) ? ( $ubound - 1 ) : $row+$window;
+   my $yendf = $yend - $ndflbound[1];
+
+   # Fill bad pixels in image from which the profile will be made.
+   my $tmp = new ORAC::TempFile;
+   my $tmpfile = $tmp->file;
+   $Mon{'kappa_mon'}->obeyw("nomagic", "in=$in out=$tmpfile repval=0");
+
+   # Do the profile
+   $Mon{'figaro1'}->obeyw("profile", "image=$tmpfile ystart=$ystartf yend=$yendf degree=1 profile=$oep residual=$oer weight nreject=5");
+
+   # Now copy the axis system into an explic WCS object
+   $Mon{'ccdpack_reg'}->obeyw("wcsedit", "mode=add in=$oep domain=axis frame=axis maptype=unit");
+   $Mon{'ccdpack_reg'}->obeyw("wcsedit", "mode=add in=$oer domain=axis frame=axis maptype=unit");
+
+   orac_print "$in to $oep: Opt-Extract profile over window: $ystart:$yend\n";
+   orac_print "$in to $oer: Opt-Extract residuals from $oep\n";
+
+   # Record the beam number in the uhdr
+   $Frm->uhdr("BEAM_NUMBER", $i);
+   # Now we have the profiles, push them into the profile calibration system if we were asked to.
+   if($profilesave) {
+      $Cal->profile($oep);
+      $Cal->profileindex->add($oep, {%{$Frm->hdr}, %{$Frm->uhdr}}); # Hmmm. dodgy maybe
+      orac_print "Opt-Extract profile: $oep filed with Calibration system\n";
+   }
+}
+
+foreach my $i (1 .. $nbeams) {
+
+   my $mult = $beams[$i]{'MULT'};
+
+   # Do the opt extract - (optimally extracted spectra)
+   # Actually, go via a temp file if the multiplier for the beam != 1 and divide by it otherwise
+   # If we're using Cal system profiles, get one now
+   if ($profileload) {
+      $Frm->uhdr("BEAM_NUMBER", $i);
+      $oep = $Cal->profile;
+      orac_print "Got $oep as the profile from the Cal system\n";
+   } else {
+      $oep = $base."_oep".".beam$i";
+   }
+   $oes = $base."_oes".".beam$i";
+   if ($mult == 1) {
+      $Mon{'figaro1'}->obeyw("optextract", "image=$in profile=$oep weight spectrum=$oes");
+   } else {
+      $Mon{'figaro1'}->obeyw("optextract", "image=$in profile=$oep weight spectrum=$tmpfile");
+      $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tmpfile scalar=$mult out=$oes");
+   }
+
+   # Fix up the WCS
+   if (starversion_lt("KAPPA", 'V1.0')) {
+      # Old-style
+      $Mon{'ndfpack_mon'}->obeyw("wcsadd", "ndf=$oes frame=axis domain=axis");
+   } elsif (starversion_lt("KAPPA", 'V1.1')) {
+      # 1.0 style   
+      $Mon{'ndfpack_mon'}->obeyw("wcsadd", "ndf=$oes frame=axis domain=axis maptype=unit");
+   } else {
+      $Mon{'ndfpack_mon'}->obeyw("wcsadd", "ndf=$oes frame=axis domain=axis maptype=unit attrs=!");
+   }
+   
+
+   orac_print "$in to $oes: Optimally extracted using profile: $oep and divisor: $mult\n";
+
+   # Update the group object
+   $oes = $base."_oes";
+   $Grp->file($oes);
+
+   # At this point, the group is 1 dimentional
+   $Grp->uhdr("NDIMS", 1);
+}
+
+orac_print "\n";

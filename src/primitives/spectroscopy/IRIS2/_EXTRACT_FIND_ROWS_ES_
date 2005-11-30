@@ -1,0 +1,185 @@
+=head1 NAME
+
+_EXTRACT_FIND_ROWS_ES_ - Find spectra rows.
+
+=head1 DESCRIPTION
+
+Finds the rows in a group image at which to centre the spectra 
+extraction windows. This version assumes the standard/object
+has been observed in the "extended source" positions (close to
+rows 185 and 670).
+
+These are stored in a user-header called BEAMS, which is a reference
+to an array of references to hashes, each hash having keys POS and
+MULT - the beam position and multiplier
+
+When determining the location of the rows on which the spectra fall,
+a y-profile spectrum is created in a file ending with _ypr.
+
+=head1 PARAMETERS
+
+The ROWSCAL parameter - if set to 'SAVE', the primitive will store the
+beam information it detects to the calibration rows system. If set to
+'LOAD', the primitive will ask the Cal system for the beam information
+rather than trying to determine it from the data. If unset, the beam
+information will be determined from the image, and used without being
+stored to the Cal system.
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+Stuart Ryder <sdr@aaoepp.aao.gov.au>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# Paramters
+my $calload = (defined $_EXTRACT_FIND_ROWS_ES_{ROWSCAL} && $_EXTRACT_FIND_ROWS_ES_{ROWSCAL} eq 'LOAD') ? 1 : 0;
+my $calsave = (defined $_EXTRACT_FIND_ROWS_ES_{ROWSCAL} && $_EXTRACT_FIND_ROWS_ES_{ROWSCAL} eq 'SAVE') ? 1 : 0;
+
+# Get the input filename. We won't actually use an output file here 
+# - we just add some entries to the group uhdr.
+my $in=$Grp->file;
+
+# Variables we're going to set:
+# Central rows and multipliers of each beam
+my @beams;
+
+if (! $calload) {
+   # We get the number of beams there should be from the Grp->uhdr - should have been put
+   # there by _EXTRACT_DETERMINE_NBEAMS_
+
+   my $nbeams = $Grp->uhdr("NBEAMS");
+
+   # Try to detect beams in the image.
+
+   # Collapse the image along the dispersion axis into a tmp file
+
+   my $colfile = $in."_ypr";
+
+# SDR: Collapsing the entire image risks producing spurious peaks due
+#      to noisy data near the edges of the array.
+#      For a standard star, it should be OK to use just a few columns
+#      just off the centre of the array. Since the images are now
+#      wavelength-calibrated, we need to get the central wavelengths.
+
+   my $lambda = $Frm->uhdr( "ORAC_GRATING_WAVELENGTH" );
+   my $lambdalow = ( $lambda - 0.15 );
+   my $lambdahigh = ( $lambda - 0.05);
+   $Mon{'kappa_mon'}->obeyw("collapse", "in=$in out=$colfile axis=1 estimator=mean high=$lambdahigh low=$lambdalow");
+
+   # Send the Y PRofile file off to display
+   my $yprFrm = new $Frm;
+   $yprFrm->file($colfile);
+   $Display->display_data( $yprFrm ) if defined $Display;
+
+   my $ncol = new ORAC::TempFile;
+   my $ncolfile = $ncol->file;
+   $Mon{'kappa_mon'}->obeyw("cmult", "in=$colfile scalar=-1 out=$ncolfile");
+
+   # We do +ve beams first.
+   # How many +ve beams should there be?
+   my $posbeams=0;
+   $posbeams=1 if ($nbeams==1);
+   $posbeams=1 if ($nbeams==2);
+   $posbeams=1 if ($nbeams==3);
+   $posbeams=2 if ($nbeams==4);
+
+   # the beam multiplier
+   my $mult = 1;
+   $mult = 2 if($nbeams==3);
+
+   my $tmp = new ORAC::TempFile;
+   my $tmpfile = $tmp->file;
+   my $ORAC_STATUS;
+
+   my $posbeamsfound=0;
+   if($posbeams) {
+      # Need to thresh to only see the +ve half
+      $Mon{'kappa_mon'}->obeyw("thresh", "in=$colfile out=$tmpfile thrlo=0 newlo=0 thrhi=1000000 newhi=1000000"); 
+
+      # Call figaro emlt on the +ve half of the collapsed file
+      # SDR: Looking for features over the full y-profile may still
+      #      miss the real beams. Restrict ourselves to 155 - 215.
+#      $Mon{'figaro2'}->obeyw("emlt", "spectrum=$tmpfile xstart=min xend=max lines=$posbeams");
+      $Mon{'figaro2'}->obeyw("emlt", "spectrum=$tmpfile xstart=155 xend=215 lines=$posbeams");
+
+      ($ORAC_STATUS, $posbeamsfound) = $Mon{'figaro2'}->get("emlt", "EMLT_LINES");
+      orac_print "Detected $posbeamsfound of $posbeams positive beams\n";
+
+      # loop over the detected beams, writing the details to the array of hashes
+      my @pix = $Mon{'figaro2'}->get("emlt", "EMLT_POS");
+      my @peak = $Mon{'figaro2'}->get("emlt", "EMLT_PEAK");
+      foreach my $i (1 .. $posbeamsfound) {
+         $beams[$i] = {POS => $pix[$i], MULT => $mult};
+         orac_print "Found beam $i (factor $mult) at: pixel $pix[$i]; peak mean strength = $peak[$i]\n";
+      }
+   }
+
+   # Now do the -ve beams;
+   my $negbeams=0;
+   $negbeams=0 if($nbeams==1);
+   $negbeams=1 if($nbeams==2);
+   $negbeams=2 if($nbeams==3);
+   $negbeams=2 if($nbeams==4);
+   $mult = -1;
+
+   my $negbeamsfound=0;
+   if($negbeams) {
+      # Need to thresh to only see the +ve half of the negated file
+      $Mon{'kappa_mon'}->obeyw("thresh", "in=$ncolfile out=$tmpfile thrlo=0 newlo=0 thrhi=1000000 newhi=1000000");
+
+      # Call figaro emlt on the negated collapsed file
+      # SDR: Looking for features over the full y-profile may still
+      #      miss the real beams. Restrict ourselves to 640 - 700.
+#      $Mon{'figaro2'}->obeyw("emlt", "spectrum=$tmpfile xstart=min xend=max lines=$negbeams");
+      $Mon{'figaro2'}->obeyw("emlt", "spectrum=$tmpfile xstart=640 xend=700 lines=$negbeams");
+
+      ($ORAC_STATUS, $negbeamsfound) = $Mon{'figaro2'}->get("emlt", "EMLT_LINES");
+      orac_print "Detected $negbeamsfound of $negbeams negative beams\n";
+
+      # loop over the detected beams, writing the details to the group user header
+      my @pix = $Mon{'figaro2'}->get("emlt", "EMLT_POS");
+      my @peak = $Mon{'figaro2'}->get("emlt", "EMLT_PEAK");
+      foreach my $i (1 .. $negbeamsfound) {
+         my $j = $i + $posbeamsfound;
+         $beams[$j] = {POS => $pix[$i], MULT => $mult};
+         orac_print "Found beam $j (factor $mult) at: pixel $pix[$i]; peak mean strength = $peak[$i]\n";
+      }
+   }
+   
+   if (($posbeamsfound + $negbeamsfound) == $nbeams) {
+      # We found all the beams
+      # Push the array of hashes into the uhdr
+      $Grp->uhdr("BEAMS", \@beams);
+   
+      if($calsave) {
+         # Push these off to the cal system.
+         $Cal->rowindex->add($Grp->file, {%{$Grp->hdr}, %{$Grp->uhdr}, %{$Frm->hdr}, %{$Frm->uhdr}});
+         orac_print "Filed beam information to rows calibration system\n";
+      }
+
+   } else {
+      # Don't let it do any extraction for now
+      orac_print "Didnt find all the beams - will not extract this time round\n";
+      $nbeams = 0;
+      $Grp->uhdr("NBEAMS", $nbeams);
+   }
+
+} else {
+
+   # Simply get the beam information from the Cal system.
+   my ($nbeams, @beams) = $Cal->rows;
+
+   $Grp->uhdr("NBEAMS", $nbeams);
+   $Grp->uhdr("BEAMS", \@beams);
+
+   orac_print "Retrieved Beam information from Calibration system\n";
+}
+     
+orac_print "\n";
