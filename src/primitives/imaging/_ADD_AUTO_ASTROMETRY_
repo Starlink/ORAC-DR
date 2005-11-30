@@ -21,6 +21,14 @@ If set to true (1), then the current Group object will have its
 astrometry corrected. Otherwise, this primitive operates on the
 current Frame object. [1]
 
+=item MAXCOEFF = INTEGER (Given)
+
+The maximum coefficient model to perform. The allowed values are 4, 6,
+7, 8, and 9. See SUN/5 for a description of the models. If, for
+example, ASTROM can only calculate a 6-coefficient model and a
+9-coefficient model was requested, then the 6-coefficient model will
+be used. [9]
+
 =item OUTPUT_CATALOGUE = STRING (Given)
 
 If set, then an output catalogue of detected objects will be written
@@ -94,6 +102,19 @@ if( $Frm->uhdr( "ADD_ASTROMETRY" ) ) {
     $group = 1;
     $Obj = $Grp;
   }
+  my $statistics = $_ADD_AUTO_ASTROMETRY_{STATISTICS};
+  if( ! defined( $statistics ) ) {
+    $statistics = 0;
+  }
+  my $maxcoeff = $_ADD_AUTO_ASTROMETRY_{MAXCOEFF};
+  if( ! defined( $maxcoeff ) ||
+      ! ( $maxcoeff == 4 ||
+          $maxcoeff == 6 ||
+          $maxcoeff == 8 ||
+          $maxcoeff == 9 ) ) {
+    $maxcoeff = 9;
+  }
+
   orac_print "Adding accurate astrometry to $in.\n";
   $Obj->uhdr( "ASTROMETRY_ADDED", 0 );
 
@@ -134,7 +155,7 @@ if( $Frm->uhdr( "ADD_ASTROMETRY" ) ) {
     my $aperture_as = 5.0;
     _GET_PLATE_SCALE_
     my $platescale = $_GET_PLATE_SCALE_{PLATESCALE};
-    my $aperture_pixel = $aperture_as / $platescale;
+    my $aperture_pixel = $aperture_as / $platescale * 2;
 
     # Create a new Starlink::Autoastrom object.
     my $auto = new Starlink::Autoastrom( ndf => $in,
@@ -144,9 +165,13 @@ if( $Frm->uhdr( "ADD_ASTROMETRY" ) ) {
                                          detection_threshold => 5.0,
                                          skycat_catalogue_in => $skycat_cache,
                                          skycat_catalogue_out => $skycat_cache,
+                                         maxfit => $maxcoeff,
                                          max_obj_corr => 500,
                                          verbose => 0,
                                          keeptemps => 0,
+                                         starlink_output => 0,
+                                         maxiter => 10,
+                                         tolrms => 0.01,
                                        );
 
     # Variable to hold astrom-ized catalogue.
@@ -162,11 +187,11 @@ if( $Frm->uhdr( "ADD_ASTROMETRY" ) ) {
       orac_print "Accurate astrometry added to $in.\n";
       orac_print "Catalogue written to $output_catalogue.\n";
       $Obj->uhdr( "ASTROMETRY_ADDED", 1 );
-    }
 
-    # Now we might want to do some image statistics.
-    if( $Frm->uhdr("INTERLEAVED") || $Frm->uhdr("NUMBER_OF_MICROSTEPS") == 1 ) {
-      _CALCULATE_IMAGE_STATISTICS_ IMAGE_CATALOGUE=$merged_catalogue GROUP=$group MAGNITUDE_TYPE=MAG_APER1
+      # Now we might want to do some image statistics.
+      if( $statistics ) {
+        _CALCULATE_IMAGE_STATISTICS_ IMAGE_CATALOGUE=$merged_catalogue GROUP=$group MAGNITUDE_TYPE=MAG_APER1
+      }
     }
   }
 
