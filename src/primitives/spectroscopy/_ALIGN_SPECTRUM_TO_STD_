@@ -24,7 +24,8 @@ Council. All Rights Reserved.
 
 =cut
 
-my $ORAC_STATUS;
+use Starlink::HDSPACK qw/ copy_hdsobj /;
+
 my $ndims = $Grp->uhdr("NDIMS");
 
 if($ndims == 1) {
@@ -53,15 +54,23 @@ if($ndims == 1) {
    # spectrum, taking into account the origin of the standard
    # spectrum.
    $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
-   ( my $ORAC_STATUS, my @spec_dims ) = $Mon{'ndfpack_mon'}->get("ndftrace", "dims" );
-   my $x_spec_dim = $spec_dims[0];
+   ( my $ORAC_STATUS, my @spec_ubnd ) = $Mon{'ndfpack_mon'}->get("ndftrace", "ubound" );
+   ( $ORAC_STATUS, my @spec_lbnd ) = $Mon{'ndfpack_mon'}->get("ndftrace", "lbound" );
+   my $x_spec_ubnd = $spec_ubnd[0];
+   my $x_spec_lbnd = $spec_lbnd[0];
    $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$std" );
-   ( $ORAC_STATUS, my @std_dims ) = $Mon{'ndfpack_mon'}->get("ndftrace", "dims" );
-   my $x_std_dim = $std_dims[0];
-   if( $x_spec_dim != $x_std_dim ) {
+   ( $ORAC_STATUS, my @std_ubnd ) = $Mon{'ndfpack_mon'}->get("ndftrace", "ubound" );
+   ( $ORAC_STATUS, my @std_lbnd ) = $Mon{'ndfpack_mon'}->get("ndftrace", "lbound" );
+   my $x_std_ubnd = $std_ubnd[0];
+   my $x_std_lbnd = $std_lbnd[0];
+   if( $x_spec_lbnd != $x_std_lbnd ||
+       $x_spec_ubnd != $x_std_ubnd ) {
 
-     my $params = "ndf=$std_tmp_file(1:$x_spec_dim)";
+     my $params = "ndf=$std_tmp_file($x_spec_lbnd:$x_spec_ubnd)";
      $Mon{'ndfpack_mon'}->obeyw( "setbound", "$params" );
+
+     $ORAC_STATUS = ( copy_hdsobj( "$in.AXIS", "$std_tmp_file.AXIS" ) ? ORAC__OK : ORAC__ERROR );
+
    }
 
    $Mon{'figaro1'}->obeyw("scross", "spectrum=$in template=$std_tmp_file record cross=$ccf xstart=min xend=max");
