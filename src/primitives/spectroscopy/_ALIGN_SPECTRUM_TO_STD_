@@ -35,12 +35,36 @@ if($ndims == 1) {
       die "Called _ALIGN_SPECTRUM_TO_STD_ with no std parameter\n";
    }
 
+   # Copy the standard into a temporary NDF so we don't trounce the
+   # standard later on.
+   my $std_tmp = new ORAC::TempFile;
+   my $std_tmp_file = $std_tmp->file;
+   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$std out=$std_tmp_file" );
+
    my $in = $Grp->file;
    my $base = $Grp->raw;
    my $out = $base."_aws";    # Aligned with std
    my $ccf = $base."_scf";    # Std cross-correlation function
 
-   $Mon{'figaro1'}->obeyw("scross", "spectrum=$in template=$std record cross=$ccf xstart=min xend=max");
+   # Make sure the input spectrum and the standard spectrum are the
+   # same dimensions. If they're not, create a new spectrum with the
+   # same length as the input spectrum and paste the standard spectrum
+   # into it. This will maintain the wavelength scale of the standard
+   # spectrum, taking into account the origin of the standard
+   # spectrum.
+   $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
+   ( my $ORAC_STATUS, my @spec_dims ) = $Mon{'ndfpack_mon'}->get("ndftrace", "dims" );
+   my $x_spec_dim = $spec_dims[0];
+   $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$std" );
+   ( $ORAC_STATUS, my @std_dims ) = $Mon{'ndfpack_mon'}->get("ndftrace", "dims" );
+   my $x_std_dim = $std_dims[0];
+   if( $x_spec_dim != $x_std_dim ) {
+
+     my $params = "ndf=$std_tmp_file(1:$x_spec_dim)";
+     $Mon{'ndfpack_mon'}->obeyw( "setbound", "$params" );
+   }
+
+   $Mon{'figaro1'}->obeyw("scross", "spectrum=$in template=$std_tmp_file record cross=$ccf xstart=min xend=max");
 
    ($ORAC_STATUS, my $shift) = $Mon{'figaro1'}->get("scross", "shift");
    orac_print "$ccf: Cross-correlation Function of target and standard spectra\n";
