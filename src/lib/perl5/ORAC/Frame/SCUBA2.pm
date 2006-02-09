@@ -356,10 +356,15 @@ raw data.
 
 These tasks must be registered with the C<ORAC::Inst::Defn> module.
 
+The task list can be overridden using the $ORAC_REMOTE_TASK
+environment variable.
+
 =cut
 
 sub data_detection_tasks {
   my $self = shift;
+  my @override = ORAC::Inst::Defn::orac_remote_task();
+  return @override if @override;
   return ("QLSIM");
   my $pre = $self->_wavelength_prefix();
   my @codes = $self->_dacodes();

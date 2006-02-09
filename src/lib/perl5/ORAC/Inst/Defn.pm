@@ -110,7 +110,7 @@ BEGIN {
 
 }
 
-# Internal definitions of algoirthm engine definitions
+# Internal definitions of algorithm engine definitions
 # Used to construct instrument recipe dependencies
 
 my %MonolithDefns = (
@@ -235,40 +235,40 @@ my %MonolithDefns = (
            PATH => (exists $ENV{SCU2FTS_DIR} ? $ENV{SCU2FTS_DIR}. "/scu2fts" :
 		                                 "not_defined"),
          },
-	 # SCUBA-2 Acquisition Tasls
+	 # SCUBA-2 Acquisition Tasks
 	 QLSIM => { # we never start QLSIM
 		   MESSYS => 'DRAMA',
 		   CLASS => 'ORAC::Msg::Task::DRAMA',
 		  },
-	 scu2_8a => {
+	 SCU2_8A => {
 		     MESSYS => 'DRAMA',
 		     CLASS => 'ORAC::Msg::Task::DRAMA'
 		     },
-	 scu2_8b => {
+	 SCU2_8B => {
 		     MESSYS => 'DRAMA',
 		     CLASS => 'ORAC::Msg::Task::DRAMA'
 		     },
-	 scu2_8c => {
+	 SCU2_8C => {
 		     MESSYS => 'DRAMA',
 		     CLASS => 'ORAC::Msg::Task::DRAMA'
 		     },
-         scu2_8d => {
+         SCU2_8D => {
 		     MESSYS => 'DRAMA',
 		     CLASS => 'ORAC::Msg::Task::DRAMA'
 		     },
-	 scu2_4a => {
+	 SCU2_4A => {
 		     MESSYS => 'DRAMA',
 		     CLASS => 'ORAC::Msg::Task::DRAMA'
 		     },
-	 scu2_4b => {
+	 SCU2_4B => {
 		     MESSYS => 'DRAMA',
 		     CLASS => 'ORAC::Msg::Task::DRAMA'
 		     },
-	 scu2_4c => {
+	 SCU2_4C => {
 		     MESSYS => 'DRAMA',
 		     CLASS => 'ORAC::Msg::Task::DRAMA'
 		     },
-	 scu2_4d => {
+	 SCU2_4D => {
 		     MESSYS => 'DRAMA',
 		     CLASS => 'ORAC::Msg::Task::DRAMA'
 		     },
@@ -1948,6 +1948,9 @@ See L<"orac_messys_description">.
 
 Returns an empty list on error.
 
+If the engine is not specified but is defined in $ORAC_REMOTE_TASK
+environment variable, the task is assumed to be DRAMA.
+
 =cut
 
 sub orac_engine_description {
@@ -1955,6 +1958,14 @@ sub orac_engine_description {
   if (exists $MonolithDefns{$engine}) {
     return %{ $MonolithDefns{$engine} };
   } else {
+    # Look in ORAC_REMOTE_TASK (assumed to be DRAMA)
+    my @tasks = orac_remote_task();
+    for my $t (orac_remote_task()) {
+      if ($engine eq $t) {
+	return ( MESSYS => 'DRAMA',
+		 CLASS => 'ORAC::Msg::Task::DRAMA');
+      }
+    }
     return ();
   }
 }
@@ -1990,6 +2001,23 @@ sub orac_messys_description {
   } else {
     return ();
   }
+}
+
+=over B<orac_remote_task>
+
+Returns the override task names specified by the $ORAC_REMOTE_TASK
+environment variable.
+
+  @tasks = orac_remote_task();
+
+=cut
+
+sub orac_remote_task {
+  if (exists $ENV{ORAC_REMOTE_TASK} && defined $ENV{ORAC_REMOTE_TASK}
+      && $ENV{ORAC_REMOTE_TASK} =~ /\w/) {
+     return split(/,/, $ENV{ORAC_REMOTE_TASK});
+  }
+  return ();
 }
 
 =back
