@@ -1,4 +1,4 @@
-# -*-perl-*-
+#! -*-perl-*-
 
 =head1 NAME
 
@@ -20,7 +20,9 @@ deviation. The mean is expected to be a good estimate of the noise.
 
 =item COMP
 
-Component to probe in NDF. Maybe variance or error. Default is error (err).
+Component to probe in NDF. May be variance (var) or error
+(err). Default is error. Note the error is the square-root of the
+variance.
 
 =back
 
@@ -38,7 +40,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2005 University of British Columbia. All Rights Reserved.
+Copyright (C) 2005-2006 University of British Columbia. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -58,6 +60,7 @@ Place,Suite 330, Boston, MA  02111-1307, USA
 
 #my $mytime = localtime;
 #orac_print $mytime ."\n";
+use NDF;
 
 my $ORAC_STATUS;
 
@@ -67,9 +70,9 @@ my $comp = (exists $_FIND_VARIANCE_{COMP} && defined $_FIND_VARIANCE_{COMP})
 # Just want the first 3 characters
 $comp = substr($comp,0,3);
 
-if ($comp =~ /var/ ) {
+if ($comp eq "var" ) {
   orac_print("Finding variance statistic \n");
-} elsif ($comp =~ /err/) {
+} elsif ($comp eq "err") {
   orac_print("Finding error statistic\n");
 } else {
   orac_throw "Error: unsupported component, $comp. Please select either Variance or Error\n";
@@ -77,10 +80,15 @@ if ($comp =~ /var/ ) {
 
 my $ndf = $Grp->file;
 
-$Mon{kappa_mon}->obeyw("stats","ndf=$ndf comp=$comp");
+# Does the Variance or Error component exist in the file?
+$Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$ndf quiet=true");
+($ORAC_STATUS, my $varexists) = $Mon{ndfpack_mon}->get("ndftrace","variance");
+
+if ($varexists eq "TRUE") {
+  $Mon{kappa_mon}->obeyw("stats","ndf=$ndf comp=$comp");
 
 # Retrieve the values
-($ORAC_STATUS, my $noise) = $Mon{kappa_mon}->get("stats","mean");
+  ($ORAC_STATUS, my $noise) = $Mon{kappa_mon}->get("stats","mean");
 
 # We need to fudge the time stamps here so that we get incrementing
 # times. Currently the simulator headers have DATE-OBS values that
@@ -91,30 +99,34 @@ $Mon{kappa_mon}->obeyw("stats","ndf=$ndf comp=$comp");
 # Integration time per Frame. Hardwire. We could always store a value
 # in $Frm when we have worked out how many DREAM/STARE images we have in 
 # each Frame
-my $inttime = 60 / (24. * 60. * 60.) ; # 60 x 1 second images
+  my $inttime = 60 / (24. * 60. * 60.) ; # 60 x 1 second images
 
-my $total = $Grp->hdr("INTEGRATION_TIME");
-$total += $inttime;
-$Grp->hdr("INTEGRATION_TIME", $total);
-
+  my $total = $Grp->hdr("INT-TIME");
+  $total += $inttime;
+  $Grp->hdr("INT-TIME", $total);
+  
 # Write to an index file
-my $log = new ORAC::LogFile("log.noise");
-my $time = gmtime();
-$log->header("#Noise log file - created on $time ",
-             "#     Time        Filter    Comp   Noise    CSO   El    Object ",
-             "#---------------------------------------------------------------------------------"
-	     );
-my $num = sprintf "%-4d", $Frm->number;
+  my $log = new ORAC::LogFile("log.noise");
+  my $time = gmtime();
+  $log->header("#Noise log file - created on $time ",
+	       "#     Time        Filter    Comp   Noise    CSO   El    Object ",
+	       "#---------------------------------------------------------------------------------"
+	       );
+  my $num = sprintf "%-4d", $Frm->number;
 #$time= sprintf "%12.3f", $Frm->hdr('ORACTIME');
-$time= 20050527.0 + $total;
-my $filt= sprintf "%4s",   "850";
-$noise = sprintf "%12.8e", $noise;
+  $time= 20050527.0 + $total;
+  my $filt= sprintf "%4s",   "850";
+  $noise = sprintf "%12.8e", $noise;
 #my $el = int (($Frm->hdr('STRT_ELD') + $Frm->hdr('END_ELD') ) /2.0 );
-$comp = uc( $comp );
-my $el = 45;
-my $cso = sprintf "%5.2f", "1.0";
+  $comp = uc( $comp );
+  my $el = 45;
+  my $cso = sprintf "%5.2f", "1.0";
 
-$log->addentry("$num $time $filt $comp $noise  $cso $el ". $Frm->hdr("OBJECT"));
+#$log->addentry("$num $time $filt $comp $noise  $cso $el ". $Frm->hdr("OBJECT"));
+# Quick fudge for LAB data
+  $log->addentry("$num $time $filt $comp $noise  $cso $el LAB");
 
-orac_print $noise ."\n";
-
+  orac_print $noise ."\n";
+} else {
+  orac_print "Component $comp not present in input file\n";
+}
