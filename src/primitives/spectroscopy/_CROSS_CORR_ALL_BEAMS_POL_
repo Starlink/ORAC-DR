@@ -41,12 +41,8 @@ Council. All Rights Reserved.
 # We should have a "NBEAMS" header from _EXTRACT_DETERMINE_NBEAMS_.
 my $nbeams = $Grp->uhdr("NBEAMS");
 
-# Obtain the waveplate angle to get the proper group.
-my $pol_angle = $Frm->uhdr("ORAC_WAVEPLATE_ANGLE");
-$pol_angle =~ /(\d+)\./;
-$pol_angle = $1;
-my $group_header = "${pol_angle}_GROUP";
-my $tempGrp = $Grp->uhdr("$group_header");
+# Obtain the appropriate Group.
+my $tempGrp = $Grp->uhdr( $Frm->uhdr( "GROUP_HEADER" ) );
 
 my $base = $tempGrp->raw;
 my $in = $tempGrp->file;
@@ -102,28 +98,25 @@ if ($nbeams > 1) {
       $Mon{'kappa_mon'}->obeyw("slide", "$param");
       $Mon{'ndfpack_mon'}->obeyw("settitle", "ndf=$beamout title=$beamout");
 
-      if( starversion_lt( "KAPPA", "V1.4" ) ) {
+      # Fix up the AXIS structure to get rid of any bad pixels.
+      my $dispersion = $Frm->uhdr( "ORAC_GRATING_DISPERSION" );
+      my $refwave = $Frm->uhdr( "ORAC_GRATING_WAVELENGTH" );
+      my $xdim = $Frm->uhdr( "ORAC_X_DIM" );
+      my $firstwave = $refwave - ( $xdim / 2 ) * $dispersion;
+      my $lastwave = $refwave + ( $xdim / 2 ) * $dispersion;
 
-        # Fix up the AXIS structure to get rid of any bad pixels.
-        my $dispersion = $Frm->uhdr( "ORAC_GRATING_DISPERSION" );
-        my $refwave = $Frm->uhdr( "ORAC_GRATING_WAVELENGTH" );
-        my $xdim = $Frm->uhdr( "ORAC_X_DIM" );
-        my $firstwave = $refwave - ( $xdim / 2 ) * $dispersion;
-        my $lastwave = $refwave + ( $xdim / 2 ) * $dispersion;
-
-        # Check that the range is valid.
-        if ( abs( $firstwave - $lastwave ) < 0.001 ) {
-          orac_err "Estimated wavelength range was 0 microns.  Something has gone wrong.\n";
-          orac_err "$in cannot be wavelength calibrated.";
-          my $ORAC_STATUS = ORAC__ERROR;
-        }
-
-        my $incr = ( $lastwave - $firstwave ) / $xdim;
-        my $exprs = "$firstwave+(INDEX-1)*($incr)-(($shift)*($dispersion))";
-        $Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$beamout mode=expression exprs=$exprs dim=1" );
-        $Mon{'ndfpack_mon'}->obeyw( "axlabel", "ndf=$beamout label=\'Estimated wavelength\' dim=1" );
-        $Mon{'ndfpack_mon'}->obeyw( "axunits", "ndf=$out units=micron dim=1" );
+      # Check that the range is valid.
+      if ( abs( $firstwave - $lastwave ) < 0.001 ) {
+        orac_err "Estimated wavelength range was 0 microns.  Something has gone wrong.\n";
+        orac_err "$in cannot be wavelength calibrated.";
+        my $ORAC_STATUS = ORAC__ERROR;
       }
+
+      my $incr = ( $lastwave - $firstwave ) / $xdim;
+      my $exprs = "$firstwave+(INDEX-1)*($incr)-(($shift)*($dispersion))";
+      $Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$beamout mode=expression exprs=$exprs dim=1" );
+      $Mon{'ndfpack_mon'}->obeyw( "axlabel", "ndf=$beamout label=\'Estimated wavelength\' dim=1" );
+      $Mon{'ndfpack_mon'}->obeyw( "axunits", "ndf=$out units=micron dim=1" );
 
       orac_print "$beamin to $beamout: shifted by $shift\n";
     } else {
@@ -139,5 +132,5 @@ if ($nbeams > 1) {
   $tempGrp->file($out);
 
   # Update the group object.
-  $Grp->uhdr("$group_header", $tempGrp);
+  $Grp->uhdr( $Frm->uhdr( "GROUP_HEADER" ), $tempGrp);
 }
