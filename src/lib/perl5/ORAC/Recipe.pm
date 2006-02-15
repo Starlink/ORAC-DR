@@ -1264,6 +1264,11 @@ sub orac_parse_arguments {
   my $line = shift;
   return "" unless defined $line;
 
+  my $wantarray = wantarray;
+
+  $line =~ s/^\s+//;
+  $line =~ s/\s+$//;
+
   # Split the string on space
   my @arguments = split(/\s+/,$line);
 
@@ -1271,21 +1276,45 @@ sub orac_parse_arguments {
   my @kv;
   foreach my $argument (@arguments) {
     # Split each argument on equals
-    my ($key,$value) = split("=",$argument,2);
-    if (defined $value) {
-      if( $value =~ /^\$/ ||
-          $value =~ /^\\%/ ||
-          $value =~ /^\\@/ ) {
-        push(@kv, " $key => $value");
+    if( $argument =~ /=/ ) {
+      my ($key,$value) = split("=",$argument,2);
+      if (defined $value) {
+        if( $value =~ /^\$/ ||
+            $value =~ /^\\%/ ||
+            $value =~ /^\\@/ ) {
+          if( $wantarray ) {
+            throw ORAC::Error::FatalError( "Cannot pass Perl variables into primitives when called in list context", ORAC__FATAL );
+          } else {
+            push(@kv, " $key => $value");
+          }
+        } else {
+          if( $wantarray ) {
+            push( @kv, $key, $value );
+          } else {
+            push( @kv, " $key => \"$value\"");
+          }
+        }
       } else {
-        push( @kv, " $key => \"$value\"");
+        if( $wantarray ) {
+          push( @kv, $key, undef );
+        } else {
+          push(@kv, " $key => undef");
+        }
       }
     } else {
-      push(@kv, " $key => undef");
+      if( $wantarray ) {
+        throw ORAC::Error::FatalError( "Cannot pass solitary Perl variables into primitives when called in list context", ORAC__FATAL );
+      } else {
+        push( @kv, " &ORAC::Recipe::orac_parse_arguments($argument)" );
+      }
     }
   }
 
-  return join( ", ", @kv);
+  if( $wantarray ) {
+    return @kv;
+  } else {
+    return join( ", ", @kv);
+  }
 }
 
 =back
