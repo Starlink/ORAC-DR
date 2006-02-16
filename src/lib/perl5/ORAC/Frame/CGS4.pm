@@ -158,6 +158,17 @@ sub _from_RA_TELESCOPE_OFFSET {
   return %return;
 }
 
+sub _to_POLARIMETRY {
+  my $self = shift;
+  my $return;
+  if( exists( $self->hdr->{FILTER} ) &&
+      $self->hdr->{FILTER} =~ /+PRISM/ ) {
+    return 1;
+  } else {
+    return 0;
+  }
+}
+
 =head1 PUBLIC METHODS
 
 The following methods are available in this class in addition to
