@@ -202,6 +202,15 @@ sub _from_Y_REFERENCE_PIXEL {
   "CRPIX2", $_[0]->uhdr("ORAC_Y_REFERENCE_PIXEL");
 }
 
+sub _to_POLARIMETRY {
+  my $self = shift;
+  if( exists( $self->hdr->{FILTER} ) &&
+      $self->hdr->{FILTER} =~ /pol/i ) {
+    return 1;
+  } else {
+    return 0;
+  }
+}
 
 =head1 PUBLIC METHODS
 

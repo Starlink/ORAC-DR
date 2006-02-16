@@ -72,6 +72,7 @@ my %hdr = (
             GAIN                 => "GAIN",
             NUMBER_OF_EXPOSURES  => "NEXP",
             NUMBER_OF_READS      => "NREADS",
+            POLARIMETRY          => "POLARISE",
 	  );
 
 # Take this lookup table and generate methods that can be sub-classed by
