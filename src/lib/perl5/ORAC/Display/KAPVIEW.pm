@@ -1212,9 +1212,9 @@ sub graph {
   if (exists $options{ZAUTOSCALE}) {
     if ($options{ZAUTOSCALE}) {
       if (starversion_lt('kappa','0.13-0')) {
-	$range = "axlim=false";
+        $range = "axlim=false";
       } else {
-	$range = ' ';
+        $range = ' ';
       }
     } else {
       # Set the Y range
@@ -1223,11 +1223,11 @@ sub graph {
       $min = $options{ZMIN} if defined $options{ZMIN};
       $max = $options{ZMAX} if defined $options{ZMAX};
       if (starversion_lt('kappa','0.13-0')) {
-	# Kappa 0.12 and older used this to specify range
-	$range = "axlim=true abslim=! ordlim=[$min,$max]";
+        # Kappa 0.12 and older used this to specify range
+        $range = "axlim=true abslim=! ordlim=[$min,$max]";
       } else {
-	# New form to specify range of Y axis
-	$range = "ytop=$max ybot=$min";	
+        # New form to specify range of Y axis
+        $range = "ytop=$max ybot=$min";	
       }
     }
   }
@@ -1241,8 +1241,13 @@ sub graph {
     orac_warn "ERRBAR option not specified. Assuming FALSE.\n";
   }
 
+  my $lmode = " ";
+  if( exists( $options{LMODE} ) ) {
+    $lmode = "lmode=" . $options{LMODE};
+  }
+
   # Construct string for linplot options
-  my $args = "clear mode=line $range $errbar";
+  my $args = "clear mode=line $range $errbar $lmode";
 
   # Select component
   if (exists $options{COMP} && defined $options{COMP}) {
