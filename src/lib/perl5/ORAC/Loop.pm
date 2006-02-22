@@ -417,17 +417,17 @@ sub orac_loop_flag {
   $prev = [] unless defined $prev;
 
   # Create a new frame in class
-  my $Frm = $class->new;
+  my $TemplateFrm = $class->new;
 
   # Construct the flag name(s) from the observation number
-  my @fnames = $Frm->flag_from_bits($utdate, $obsno);
+  my @fnames = $TemplateFrm->flag_from_bits($utdate, $obsno);
 
   # if our flag files contain pointers to multiple files then
   # in principal we are always one flag file behind. We always
   # have to look at $obsno and $obsno+1. If prev is defined we
   # need to look for the next one as well
   my @nnames;
-  @nnames = $Frm->flag_from_bits( $utdate, $obsno+1) if @$prev;
+  @nnames = $TemplateFrm->flag_from_bits( $utdate, $obsno+1) if @$prev;
 
 
   # Get the relevant string representing what we are looking for
@@ -524,7 +524,7 @@ sub orac_loop_flag {
           $obsno = $next;
 
           # Create new flag filenames so we can check file size
-	  @actual = _to_abs_path( $Frm->flag_from_bits($utdate, $obsno) );
+	  @actual = _to_abs_path( $TemplateFrm->flag_from_bits($utdate, $obsno) );
 	  $nonzero = _files_nonzero( @actual );
 
 	  # clear previous list
@@ -562,6 +562,8 @@ sub orac_loop_flag {
   }
   orac_print "\nFound data from observation $obsno\n";
 
+  my $Frm;
+
   # The flag has appeared therefore we believe the file is there as well.
   # Link_and_read
   # A new $Frm is created and the file is converted to our base format (NDF).
@@ -572,13 +574,14 @@ sub orac_loop_flag {
     $Frm = link_and_read($class, $utdate, $obsno, 1, \@local);
     @$prev = @local;
   };
-  if ($@) {
+  if( $@ || !defined $Frm ) {
     # that failed. This may indicate a sync issue so pause
     # for a couple of seconds and retry without the eval
+    ORAC::Error->flush;
     orac_warn "Error loading file for observation $obsno. Sleeping for 2 seconds...\n";
     orac_sleep(2);
     $Frm = link_and_read($class, $utdate, $obsno, 1, $prev);
-  }
+  };
 
   # we can only increment the observation number if we are dealing
   # with non-zero length flag files
@@ -1107,8 +1110,10 @@ sub link_and_read {
   # Now we need to convert the files
   # and/or link them to ORAC_DATA_OUT and configure the corresponding
   # frame object
-  _convert_and_link( $Frm, @names ) && return $Frm;
-
+  if( _convert_and_link( $Frm, @names ) ) {
+    return $Frm;
+  }
+  return;
 }
 
 =item B<orac_sleep>
@@ -1253,6 +1258,7 @@ sub _convert_and_link {
     # If we only have one file, send just that file to $Frm->configure.
     # This will be the case for most instruments.
     $Frm->configure( $bname[0] );
+
   } else {
 
     # We have more than one file, so send the array reference to
