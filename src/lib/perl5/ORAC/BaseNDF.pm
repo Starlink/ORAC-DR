@@ -23,7 +23,8 @@ use warnings;
 
 use Astro::FITS::Header::NDF;
 use ORAC::Error qw/ :try /;
-
+use ORAC::Constants qw/ :status /;
+use ORAC::Print;
 
 =head1 METHODS
 
@@ -65,6 +66,8 @@ sub readhdr {
 
   my $file = (@_ ? shift : $self->file);
 
+  my $Error;
+
   # Just read the NDF fits header
   try {
     my $hdr = new Astro::FITS::Header::NDF( File => $file );
@@ -74,6 +77,12 @@ sub readhdr {
 
     # And store it in the object
     $self->fits( $hdr );
+  } otherwise {
+    $Error = shift;
+  };
+  if( defined( $Error ) ) {
+    ORAC::Error->flush;
+    throw ORAC::Error::FatalError( "$Error" );
   };
 
   # calc derived headers
