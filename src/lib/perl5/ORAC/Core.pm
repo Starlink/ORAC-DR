@@ -290,7 +290,7 @@ sub orac_process_frame {
   my $recipe;
   try {
     $recipe = new ORAC::Recipe( NAME => $RecipeName,
-				INSTRUMENT => $args{Instrument});
+                                INSTRUMENT => $args{Instrument});
   } catch ORAC::Error::FatalError with {
     my $Error = shift;
     $Error->throw;
@@ -304,8 +304,10 @@ sub orac_process_frame {
   $recipe->batch( $args{Batch} ) if exists $args{Batch};
 
 
-  # parse the recipe
-  $recipe->parse($PRIMITIVE_LIST);
+  # parse the recipe if it hasn't already been parsed.
+  if( ! $recipe->have_parsed ) {
+    $recipe->parse($PRIMITIVE_LIST);
+  }
 
   # Execute the recipe
   try {
@@ -315,7 +317,7 @@ sub orac_process_frame {
   catch ORAC::Error::FatalError with
   {
      my $Error = shift;
-     $Error->throw;    
+     $Error->throw;
   }
   catch ORAC::Error::UserAbort with
   {
