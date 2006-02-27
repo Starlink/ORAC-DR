@@ -42,6 +42,9 @@ use ORAC::Error qw/ :try /;
 use ORAC::Inst::Defn qw/ orac_determine_recipe_search_path
   orac_determine_primitive_search_path orac_list_generic_observing_modes/;
 
+# Set up a cache.
+my $RecipeCache;
+
 =head1 METHODS
 
 The following methods are available:
@@ -69,6 +72,19 @@ sub new {
   my $proto = shift;
   my $class = ref($proto) || $proto;
 
+  # First, check the cache to see if we already have a recipe
+  # object. Don't worry about modification time right now for this
+  # hack.
+  if( @_ ) {
+    my %args = @_;
+    if( exists( $args{NAME} ) ) {
+      my $recipe_name = $args{NAME};
+      if( exists( $RecipeCache->{$recipe_name} ) ) {
+        return $RecipeCache->{$args{NAME}};
+      }
+    }
+  }
+
   # Init the data structure
   my $rec = {
 	     DEBUG => 0,
@@ -77,6 +93,8 @@ sub new {
 	     RecipeName => undef,
 	     ParsedRecipe => [],
 	     HaveParsed => 0, # indicate it is ready for execution
+       ModificationTime => time,
+       Code => undef,
 	    };
 
   # bless into the correct class
@@ -106,6 +124,9 @@ sub new {
     } elsif (exists $args{INSTRUMENT}) {
       $rec->instrument( $args{INSTRUMENT});
     }
+
+    # Stuff into the cache.
+    $RecipeCache->{$args{NAME}} = $rec;
   }
 
   return $rec;
@@ -133,6 +154,22 @@ sub batch {
   return $self->{BATCH};
 }
 
+=item B<code>
+
+Set or return the coderef containing the full code of the recipe.
+
+  $code = $rec->code;
+  $rec->code( sub { ... } );
+
+Returns a coderef.
+
+=cut
+
+sub code {
+  my $self = shift;
+  if( @_ ) { $self->{Code} = shift; };
+  return $self->{Code};
+}
 
 =item B<debug>
 
@@ -163,6 +200,22 @@ sub instrument {
   my $self = shift;
   if (@_) { $self->{Instrument} = shift };
   return $self->{Instrument};
+}
+
+=item B<modtime>
+
+Set or return the modification time of the recipe. Can be used to
+check if a recipe has changed on disk since it was last parsed.
+
+  my $modtime = $recipe->modtime;
+  $recipe->modtime( time );
+
+=cut
+
+sub modtime {
+  my $self = shift;
+  if( @_ ) { $self->{ModificationTime} = shift; };
+  return $self->{ModificationTime};
 }
 
 =item B<recipe_name>
@@ -382,13 +435,11 @@ sub execute {
   }
 
   # Execute the recipe
-
   my $status = ORAC::Recipe::Execution::orac_execute_recipe( $CURRENT_PRIMITIVE,
                                                              $block,$Frm,
-	  						     $Grp, $Cal,
-							     $Display, $Mon,
-							     $self->debug,
-							     $self->batch);
+                                                             $Grp, $Cal,
+                                                             $Display, $Mon,
+                                                             $self );
 
   $status = ORAC__OK unless defined $status;
   $status = ORAC__OK if $status eq '';
@@ -521,7 +572,7 @@ sub parse {
   my $PRIMITIVE_LIST = shift;
 
   # The recipe has to be parsed recursively.
-  # To do that we need to make use of a helper routine that 
+  # To do that we need to make use of a helper routine that
   # can process the current recipe chunk and check for recursion depth
 
   # The master chunk is the base recipe reference.
@@ -652,6 +703,8 @@ sub _add_code_to_recipe {
 
   my ($line);
 
+  # 
+
   foreach $line (@$recipe) {
 
     if ($line =~ /->obeyw(.*)/) {
@@ -665,9 +718,9 @@ sub _add_code_to_recipe {
       # Debug line if DEBUG is true
       my $debug_obey = 0;
       if ($self->debug && $line !~ /\#.+->obeyw/) {
-	push(@processed,
-	     'orac_debug( $Frm->number . ":".$ORAC_PRIMITIVE .'."\":\t$arguments\n\");\n");
-	$debug_obey = 1;
+        push(@processed,
+             'orac_debug( $Frm->number . ":".$ORAC_PRIMITIVE .'."\":\t$arguments\n\");\n");
+        $debug_obey = 1;
       }
 
       # Now check to see whether it starts with a comment character
@@ -677,38 +730,37 @@ sub _add_code_to_recipe {
       # themselves.
       if ($line !~ /(\#|=).+?->obeyw/x) {
 
-	# Now add the OBEYW status checking lines
-	# prepending the OBEYW_STATUS line
-	# Put it in a block of its own to prevent warnings
-	# relating to the masking of $OBEYW_STATUS in a earlier
-	# declaration in same scope
-	push (@processed, 
-	      "{  # Create block to prevent warnings from my OBEYW_STATUS\n",
-	      'my $OBEYW_STATUS = ' .$line);
+        # Now add the OBEYW status checking lines
+        # prepending the OBEYW_STATUS line
+        # Put it in a block of its own to prevent warnings
+        # relating to the masking of $OBEYW_STATUS in a earlier
+        # declaration in same scope
+        push (@processed,
+              "{  # Create block to prevent warnings from my OBEYW_STATUS\n",
+              'my $OBEYW_STATUS = ' .$line);
 
-	# If debugging add a statement before the status is checked
-	# so that we can store the status value in the file
-	push(@processed,
-	     'orac_debug( "Returned with status = ". $OBEYW_STATUS . "\n");'."\n"
-	    ) if $debug_obey;
+        # If debugging add a statement before the status is checked
+        # so that we can store the status value in the file
+        push(@processed,
+             'orac_debug( "Returned with status = ". $OBEYW_STATUS . "\n");'."\n"
+            ) if $debug_obey;
 
-	# Now complete the obey error checking
-	push(@processed,
-	     $self->_check_obey_status_string($line),
-	     "\n}\n"
-	    );
+        # Now complete the obey error checking
+        push(@processed,
+             $self->_check_obey_status_string($line),
+             "\n}\n"
+            );
 	
       } else {
-	# Just push the line on as is
-	push (@processed, $line);
+        # Just push the line on as is
+        push (@processed, $line);
 
-	# Add simple return notification
-	push(@processed,
-	     'orac_debug( "Returned from obey. Status intercepted\n");'."\n"
-	    ) if $debug_obey;
+        # Add simple return notification
+        push(@processed,
+             'orac_debug( "Returned from obey. Status intercepted\n");'."\n"
+            ) if $debug_obey;
 
       }
-
 
     } elsif ($line =~ /\$ORAC_STATUS/ && $line =~ /=/) {
       # Check that it has ORAC_STATUS and that the line has an
@@ -720,16 +772,13 @@ sub _add_code_to_recipe {
       # Add the status checking code
       # unless there is a comment before the ORAC_STATUS
       push (@processed, $self->_check_status_string)
-	unless $line =~ /\#.+?\$ORAC_STATUS/;
+        unless $line =~ /\#.+?\$ORAC_STATUS/;
 
     } else {
       push(@processed,$line);
     }
 
   };
-
-  # We must return good status at the end of the recipe
-  push(@processed, "\nORAC__OK;\n");
 
   # Now we have a post-processed recipe  store it
   $self->_recipe( \@processed );
@@ -905,9 +954,16 @@ sub _parse_recursively {
   # from a primitive
   my $lineno = 0;
 
-  # If depth is 1 it means that we should specify line number for
-  # the recipe itself
-  push(@parsed,"#line 0 $current_name\n") if $depth == 1;
+  if( $depth == 1 ) {
+
+    # If depth is 1, then we should specify the line number for the
+    # recipe itself. Also, start the subroutine off and grab the
+    # arguments.
+
+    push( @parsed, "sub {\n" );
+    push( @parsed, "my ( \$Frm, \$Grp, \$Cal, \$Display, \$Mon ) = \@_;\n" );
+    push( @parsed, "#line 0 $current_name\n" );
+  }
 
   # Loop over recipe lines
   foreach my $line (@$chunk) {
@@ -1015,9 +1071,16 @@ sub _parse_recursively {
 
   }
 
+  # If the depth is 1, close off the subroutine.
+  if( $depth == 1 ) {
+    push( @parsed, "# Return good status.\n" );
+    push( @parsed, "ORAC__OK;\n" );
+    push( @parsed, "# End of anonymous subroutine\n" );
+    push( @parsed, "};\n" );
+  }
+
+  # And return.
   return(\@parsed);
-
-
 }
 
 =item B<_read_primitive>
@@ -1386,8 +1449,8 @@ These recipe runtime functions are provided:
 Simple wrapper to eval in this namespace in order to execute recipes
 without fear of possible contamination of the base recipe namespace.
 
-  $status = orac_execute_recipe( $CURRENT_PRIMITIVE, $recipe, $Frm, $Grp, 
-                                 $Cal, $Display, $Mon, $DEBUG, $BATCH);
+  $status = orac_execute_recipe( $CURRENT_PRIMITIVE, $block, $Frm, $Grp, 
+                                 $Cal, $Display, $Mon, $Recipe);
 
 The recipe is a string to be evaluated. The basic objects have to
 be supplied since they can not be set inside the recipe prior to
@@ -1402,9 +1465,12 @@ batch variables are passed in as recipe globals.
 our ($BATCH, $DEBUG);
 
 sub orac_execute_recipe {
-  my ($CURRENT_PRIMITIVE, $recipe, $Frm, $Grp, $Cal, $Display, $Mon);
-  ( $CURRENT_PRIMITIVE, 
-    $recipe, $Frm, $Grp, $Cal, $Display, $Mon, $DEBUG, $BATCH) = @_;
+  my ($CURRENT_PRIMITIVE, $block, $Frm, $Grp, $Cal, $Display, $Mon, $Recipe);
+  ( $CURRENT_PRIMITIVE,
+    $block, $Frm, $Grp, $Cal, $Display, $Mon, $Recipe ) = @_;
+
+  $BATCH = $Recipe->batch;
+  $DEBUG = $Recipe->debug;
 
   # We need to take into account that %Mon might be a tied object
   # since we can not copy a hash and retain the tie
@@ -1418,7 +1484,12 @@ sub orac_execute_recipe {
     %Mon = %$Mon;
   }
 
-  return eval $recipe;
+  if( ! defined( $Recipe->code ) ) {
+    my $coderef = eval "$block";
+    $Recipe->code( $coderef );
+  }
+
+  return $Recipe->code->( $Frm, $Grp, $Cal, $Display, \%Mon );
 }
 
 =back
