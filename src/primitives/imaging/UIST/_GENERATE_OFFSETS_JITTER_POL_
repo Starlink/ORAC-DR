@@ -1,0 +1,257 @@
+#+
+# Name:
+#    _GENERATE_OFFSETS_JITTER_POL_
+#
+# Purpose:
+#    Finds the offsets between the jittered frames in a POL recipe.
+#
+# Description:
+#    This primitive finds the pixel offsets between the jittered target
+#    frames in the current $Grp of a POL recipe.  The primitive itself
+#    forms a subgroup for the current cycle and waveplate angle of
+#    each of the e- and o-beam groups.  These groups are specified by
+#    references stored in the internal group headers EBEAM_GROUP and
+#    OBEAM_GROUP.   The primitive then passes the subgroup to other 
+#    primitives to do the bulk of the work.  When argument TELEOFF is 
+#    true, _TELE_OFFSETS_ is invoked and the derived offsets are used to
+#    register with a shift of origin; otherwise _GENERATE_OFFSETS_ is
+#    the work horse.
+#
+# Language:
+#    Perl5
+#
+# Arguments:
+#    COMPLETE = REAL (Given)
+#       Completeness of matched features for registration between two 
+#       frames to be accepted.  It must be in the range 0.2 to 1.0. [0.4]
+#    MINPIX = INTEGER (Given)
+#       Minimum number of contiguous pixels above the PERCENTILE level
+#       to be considered a registration feature.  It must be at least 6.
+#       [9]
+#    PERCENTILE = REAL (Given)
+#       Percentile threshold for locating objects to register frames. 
+#       It must be in the range 75 to 99.9.  [98]
+#    TELEOFF = LOGICAL (Given)
+#       If true (1), it will just use the telescope offsets to register.
+#       If false (0), it will attempt automatic registration.  [0]
+#
+# Notes:
+#    -  This primitive is suitable for infrared imaging polarimeters.
+#    -  Processing only occurs for object and sky frames, and when 
+#    steering header MAKE_MOSAIC is true.
+#    -  The _GENERATE_OFFSETS_ argument CENTRAL_SOURCE is TRUE.
+#    Thus matching the centroids of a central source is attempted if
+#    automatic registration fails.  The POLARIMETRY flag is 1.
+#    -  The frames registered using telescope offsets are reported.
+#    -  If the coronographic mask is used, telescope offsets are
+#    used regardless of the value of the TELEOFF argument.
+#
+# Tasks:
+#    CCDPACK: REGISTER; KAPPA: WCSFRAME.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC, Starlink)
+#    BC:  Brad Cavanagh (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2006 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Arguments
+# =========
+
+# Determine whether or not telescope offsets should only be used.
+    my $usetele = $_GENERATE_OFFSETS_JITTER_POL_{TELEOFF};
+    $usetele = defined( $usetele ) ? $usetele : 0;
+
+# Check to see if the coronographic mask was used.
+    if( defined( $Frm->uhdr( "ORAC_SLIT_NAME" ) ) &&
+        $Frm->uhdr( "ORAC_SLIT_NAME" ) eq 'coronograph' ) {
+      $usetele = 1;
+    }
+
+# Obtain the parameters for the detection.
+    my ( $complete, $minpix, $percentile );
+    if ( ! $usetele ) {
+       $percentile = ( $_GENERATE_OFFSETS_JITTER_POL_{PERCENTILE} || 98 );
+       $minpix = ( $_GENERATE_OFFSETS_JITTER_POL_{MINPIX} || 9 );
+       $complete = ( $_GENERATE_OFFSETS_JITTER_POL_{COMPLETE} || 0.4 );
+    }
+
+# Selection
+# =========
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ) {
+
+# Test whether or not it is time to make a mosaic.
+       my $combine = $Frm->uhdr( "MAKE_MOSAIC" );
+       if ( $combine ) {
+
+# Obtain the current frames polarisation angle.
+          my $wplangle = $Frm->uhdr( "ORAC_WAVEPLATE_ANGLE" );
+          my $int_wplangle = int( $wplangle + 0.1 );
+
+# Loop for each beam's group of frames.
+          my @beam_groups = qw( EBEAM_GROUP OBEAM_GROUP );
+          foreach my $grpname ( @beam_groups ) {
+
+# Make a local $Grp containing just the sky-subtracted images for the
+# current beam.
+             my $Grp = $Grp->uhdr( $grpname );
+
+# Obtain the cycle number.  Default to zero if undefined, so that recipes
+# which do not support this feature will continue to work.
+             my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+             $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+# Select those members in the current cycle with the same waveplate angle.
+             my $cycleGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno,
+                                          WPLANGLE => $wplangle );
+
+# Form the group to process.
+# ==========================
+
+# For the first cycle of a single cycle mosaic, make a local $Grp
+# containing just the current cycle.  Note the { to start a new context.
+             my $tempGrp;
+             if ( $cycleno == 0 ) {
+                $tempGrp = $cycleGrp;
+
+# On later cycles a mosaic file should exist, and we shall to register
+# with that as the reference frame.  So place the file into a temporary
+# frame pushed onto a temporary $Grp-like group.  Then append the members
+# of the subgroup.  Rather not have to specify the name assuming suffices,
+# but this appears to demand separate groups for each angle as well as
+# beam.
+             } else {
+                my $tempFrm = new $Frm( $Grp->file . $int_wplangle . "_mos" );
+                $tempGrp = new $Grp;
+                $tempGrp->push( $tempFrm );
+                $tempGrp->push( $cycleGrp->members );
+             }
+
+
+# Start a new Grp context.
+             {
+                my $Grp = $tempGrp;
+
+# Telescope offsets
+# =================
+                if ( $usetele ) {
+
+# Form a list of input file names for CCDPACK tasks.
+                   my @objects = $Grp->membernames;
+
+# Use telescope offsets from the headers to register the frames.
+                   _GENERATE_TELE_OFFSETS_ MOVING_TARGET=0
+
+                } else {
+
+# Generate the offsets
+# ====================
+
+# Call the generic primitive which does most of the work.  Use central
+# source as a backup.   The POLARIMETRY flag is needed because it tells
+# the central-source detection to ignore the telescope offsets, as the
+# extracted regions already adjust location according to the telescope
+# offsets.  We do not want to add the offsets again when locating the
+# central source.
+                   _GENERATE_OFFSETS_ PERCENTILE=$percentile MINPIX=$minpix COMPLETE=$complete CENTRAL_SOURCE=TRUE BOXSIZE=8 POLARIMETRY=1
+                }
+
+# End of scope of local $Grp aka $tempGrp.
+             }
+
+# End of scope of local $Grp aka $beamGrp.
+          }
+       }
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+GENERATE_OFFSETS_JITTER_POL -- Finds the offsets between the jittered frames in a POL recipe.
+
+=head1 DESCRIPTION
+
+This primitive finds the pixel offsets between the jittered target
+frames in the current $Grp of a POL recipe.  The primitive itself
+forms a subgroup for the current cycle and waveplate angle of
+each of the e- and o-beam groups.  These groups are specified by
+references stored in the internal group headers EBEAM_GROUP and
+OBEAM_GROUP.   The primitive then passes the subgroup to other 
+primitives to do the bulk of the work.  When argument TELEOFF is 
+true, L<_TELE_OFFSETS_> is invoked and the derived offsets are used to
+register with a shift of origin; otherwise L<_GENERATE_OFFSETS_> is
+the work horse.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item COMPLETE = REAL (Given)
+
+Completeness of matched features for registration between two 
+frames to be accepted.  It must be in the range 0.2 to 1.0. [0.4]
+
+=item MINPIX = INTEGER (Given)
+
+Minimum number of contiguous pixels above the PERCENTILE level
+to be considered a registration feature.  It must be at least 6.
+[9]
+
+=item PERCENTILE = REAL (Given)
+
+Percentile threshold for locating objects to register frames. 
+It must be in the range 75 to 99.9.  [98]
+
+=item TELEOFF = LOGICAL (Given)
+
+If true (1), it will just use the telescope offsets to register.
+If false (0), it will attempt automatic registration.  [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for infrared imaging polarimeters.
+
+=item *
+
+Processing only occurs for object and sky frames, and when 
+steering header MAKE_MOSAIC is true.
+
+=item *
+
+The _GENERATE_OFFSETS_ argument CENTRAL_SOURCE is TRUE.
+Thus matching the centroids of a central source is attempted if
+automatic registration fails.  The POLARIMETRY flag is 1.
+
+=item *
+
+The frames registered using telescope offsets are reported.
+
+=head1 TASKS
+
+CCDPACK: REGISTER; KAPPA: WCSFRAME.
+
+=head1 AUTHORS
+
+Malcolm J. Currie (JAC, Starlink) <mjc@star.rl.ac.uk>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
