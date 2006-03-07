@@ -55,6 +55,8 @@ my @loc_headers = qw/ POS_E POS_O NEG_E NEG_O /;
 # Parse the parameter
 my $profilesave = (defined $_EXTRACT_ALL_BEAMS_POL_{PROFILECAL} && $_EXTRACT_ALL_BEAMS_POL_{PROFILECAL} eq 'SAVE') ? 1 : 0;
 my $profileload = (defined $_EXTRACT_ALL_BEAMS_POL_{PROFILECAL} && $_EXTRACT_ALL_BEAMS_POL_{PROFILECAL} eq 'LOAD') ? 1 : 0;
+my $optimal = ( defined( $_EXTRACT_ALL_BEAMS_POL_{OPTIMAL} ) ? $_EXTRACT_ALL_BEAMS_POL_{OPTIMAL} : 1 );
+$optimal = 1;
 
 # We should have a "NBEAMS" header from _EXTRACT_DETERMINE_NBEAMS_
 my $nbeams = $Grp->uhdr("NBEAMS");
@@ -65,111 +67,137 @@ my $tempGrp = $Grp->uhdr( $Frm->uhdr( "GROUP_HEADER" ) );
 # Get the input file
 my $in = $tempGrp->raw;
 
-# Hardwire the optimal extraction window to 50 pixels.
-my $window = 5;
+# Set the window to 12 pixels.
+my $window = 12;
 orac_print ("Optimal extraction aperture half-width will be: $window pixels\n");
 
 # Loop through the beams, extracting them
 # We'll use HDS containers so as to store the multiple beams
 my $base = $tempGrp->file;
-my $oep = $base."_oep";
-my $oer = $base."_oer";
-my $oes = $base."_oes";
 
-my $tmp = new ORAC::TempFile;
-my $tmpfile = $tmp->file;
+if( $optimal ) {
 
-my $ORAC_STATUS = ( create_hdsobj( $oep, 'PROFILE', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
-$ORAC_STATUS = ( create_hdsobj( $oer, 'RESIDUALS', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
-$ORAC_STATUS = ( create_hdsobj( $oes, 'SPECTRUM', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+  my $oep = $base."_oep";
+  my $oer = $base."_oer";
+  my $oes = $base."_oes";
 
-foreach my $header (@loc_headers) {
+  my $tmp = new ORAC::TempFile;
+  my $tmpfile = $tmp->file;
 
-   my $row = $tempGrp->uhdr($header);
+  my $ORAC_STATUS = ( create_hdsobj( $oep, 'PROFILE', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+  $ORAC_STATUS = ( create_hdsobj( $oer, 'RESIDUALS', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+  $ORAC_STATUS = ( create_hdsobj( $oes, 'SPECTRUM', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
 
-   # Profile the group image
+  foreach my $header (@loc_headers) {
 
-   # Get the filename for the opt-extract profile
-   $oep = $base."_oep".".$header";
+    my $row = $tempGrp->uhdr($header);
 
-   # And the profile residuals
-   $oer = $base."_oer".".$header";
+    # Profile the group image
 
-   # Set ystart and yend
+    # Get the filename for the opt-extract profile
+    $oep = $base."_oep".".$header";
 
-   # Need to subtract the ndflbound off everything that goes to figaro-profile...
-   $Mon{'ndfpack_mon'}->obeyw("ndftrace", "ndf=$in");
-   (my $ORAC_STATUS, my @ndflbound) = $Mon{'ndfpack_mon'}->get("ndftrace", "lbound");
+    # And the profile residuals
+    $oer = $base."_oer".".$header";
 
-   my $lbound = $Frm->uhdr("ORAC_Y_LOWER_BOUND");
-   my $ystart = ($row-$window <= $lbound) ? ( $lbound + 1 ) : $row-$window;
-   my $ystartf = $ystart - $ndflbound[1];
+    # Set ystart and yend
 
-   my $ubound = $Frm->uhdr("ORAC_Y_UPPER_BOUND");
-   my $yend = ($row+$window >= $ubound) ? ( $ubound - 1 ) : $row+$window;
-   my $yendf = $yend - $ndflbound[1];
+    # Need to subtract the ndflbound off everything that goes to figaro-profile...
+    $Mon{'ndfpack_mon'}->obeyw("ndftrace", "ndf=$in");
+    (my $ORAC_STATUS, my @ndflbound) = $Mon{'ndfpack_mon'}->get("ndftrace", "lbound");
 
-   # Fill bad pixels in image from which the profile will be made.
-   my $tmp = new ORAC::TempFile;
-   my $tmpfile = $tmp->file;
-   $Mon{'kappa_mon'}->obeyw("nomagic", "in=$in out=$tmpfile repval=0");
+    my $lbound = $Frm->uhdr("ORAC_Y_LOWER_BOUND");
+    my $ystart = ($row-$window <= $lbound) ? ( $lbound + 1 ) : $row-$window;
+    my $ystartf = $ystart - $ndflbound[1];
 
-   # Do the profile
-   $Mon{'figaro1'}->obeyw("profile", "image=$tmpfile ystart=$ystartf yend=$yendf degree=1 profile=$oep residual=$oer weight nreject=5");
+    my $ubound = $Frm->uhdr("ORAC_Y_UPPER_BOUND");
+    my $yend = ($row+$window >= $ubound) ? ( $ubound - 1 ) : $row+$window;
+    my $yendf = $yend - $ndflbound[1];
 
-   # Now copy the axis system into an explic WCS object
-   $Mon{'ccdpack_reg'}->obeyw("wcsedit", "mode=add in=$oep domain=axis frame=axis maptype=unit");
-   $Mon{'ccdpack_reg'}->obeyw("wcsedit", "mode=add in=$oer domain=axis frame=axis maptype=unit");
+    # Fill bad pixels in image from which the profile will be made.
+    my $tmp = new ORAC::TempFile;
+    my $tmpfile = $tmp->file;
+    $Mon{'kappa_mon'}->obeyw("nomagic", "in=$in out=$tmpfile repval=0");
 
-   orac_print "$in to $oep: Opt-Extract profile over window: $ystart:$yend\n";
-   orac_print "$in to $oer: Opt-Extract residuals from $oep\n";
+    # Do the profile
+    $Mon{'figaro1'}->obeyw("profile", "image=$tmpfile ystart=$ystartf yend=$yendf degree=1 profile=$oep residual=$oer weight nreject=5");
 
-   # Now we have the profiles, push them into the profile calibration system if we were asked to.
-   if($profilesave) {
+    # Now copy the axis system into an explic WCS object
+    $Mon{'ccdpack_reg'}->obeyw("wcsedit", "mode=add in=$oep domain=axis frame=axis maptype=unit");
+    $Mon{'ccdpack_reg'}->obeyw("wcsedit", "mode=add in=$oer domain=axis frame=axis maptype=unit");
+
+    orac_print "$in to $oep: Opt-Extract profile over window: $ystart:$yend\n";
+    orac_print "$in to $oer: Opt-Extract residuals from $oep\n";
+
+    # Now we have the profiles, push them into the profile calibration system if we were asked to.
+    if($profilesave) {
       $Cal->profile($oep);
       $Cal->profileindex->add($oep, {%{$Frm->hdr}, %{$Frm->uhdr}}); # Hmmm. dodgy maybe
       orac_print "Opt-Extract profile: $oep filed with Calibration system\n";
-   }
-}
-
-foreach my $header (@loc_headers) {
-
-  my $mult;
-  if( $header =~ /NEG/ ) {
-    $mult = -1;
-  } else {
-    $mult = 1;
+    }
   }
 
-   # Do the opt extract - (optimally extracted spectra)
-   # Actually, go via a temp file if the multiplier for the beam != 1 and divide by it otherwise
-   # If we're using Cal system profiles, get one now
-   if ($profileload) {
+  foreach my $header (@loc_headers) {
+
+    my $mult;
+    if( $header =~ /NEG/ ) {
+      $mult = -1;
+    } else {
+      $mult = 1;
+    }
+
+    # Do the opt extract - (optimally extracted spectra)
+    # Actually, go via a temp file if the multiplier for the beam != 1 and divide by it otherwise
+    # If we're using Cal system profiles, get one now
+    if ($profileload) {
       $oep = $Cal->profile;
       orac_print "Got $oep as the profile from the Cal system\n";
-   } else {
+    } else {
       $oep = $base."_oep".".$header";
-   }
-   $oes = $base."_oes".".$header";
-   if ($mult == 1) {
+    }
+    $oes = $base."_oes".".$header";
+    if ($mult == 1) {
       $Mon{'figaro1'}->obeyw("optextract", "image=$in profile=$oep weight spectrum=$oes");
-   } else {
+    } else {
       $Mon{'figaro1'}->obeyw("optextract", "image=$in profile=$oep weight spectrum=$tmpfile");
       $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tmpfile scalar=$mult out=$oes");
-   }
+    }
 
-   orac_print "$in to $oes: Optimally extracted using profile: $oep and divisor: $mult\n";
+    orac_print "$in to $oes: Optimally extracted using profile: $oep and divisor: $mult\n";
 
-   # Update the group object
-   $oes = $base."_oes";
+    # Update the group object
+    $oes = $base."_oes";
 
-   $tempGrp->file($oes);
+    $tempGrp->file($oes);
 
-   $tempGrp->uhdr("NDIMS", 1);
+    $tempGrp->uhdr("NDIMS", 1);
 
-   # Re-update the Grp uhdr.
-   $Grp->uhdr( $Frm->uhdr( "GROUP_HEADER" ), $tempGrp);
+    # Re-update the Grp uhdr.
+    $Grp->uhdr( $Frm->uhdr( "GROUP_HEADER" ), $tempGrp);
 
+  }
+
+} else {
+
+  my $out = $base . "_sp";
+  my $ORAC_STATUS = ( create_hdsobj( $out, 'SPECTRUM', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+
+  # Need to subtract the ndflbound off everything that goes to figaro-profile...
+  $Mon{'ndfpack_mon'}->obeyw("ndftrace", "ndf=$in");
+  ($ORAC_STATUS, my @ndflbound) = $Mon{'ndfpack_mon'}->get("ndftrace", "lbound");
+
+  foreach my $header (@loc_headers) {
+
+    my $row = $tempGrp->uhdr($header);
+
+    my $lbound = $Frm->uhdr("ORAC_Y_LOWER_BOUND");
+    my $ystart = ($row-$window <= $lbound) ? ( $lbound + 1 ) : $row-$window;
+    my $ystartf = $ystart - $ndflbound[1];
+
+    my $ubound = $Frm->uhdr("ORAC_Y_UPPER_BOUND");
+    my $yend = ($row+$window >= $ubound) ? ( $ubound - 1 ) : $row+$window;
+    my $yendf = $yend - $ndflbound[1];
+  }
 }
 
 orac_print "\n";
