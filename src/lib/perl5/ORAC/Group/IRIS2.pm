@@ -145,7 +145,7 @@ sub _to_GRATING_DISPERSION {
 
   my $grism = $self->hdr->{IR2_GRSM};
   my $filter;
-  if( $self->hdr->{IR2_FILT} =~ /^HOLE12$/i ) {
+  if( $self->hdr->{IR2_FILT} =~ /^OPEN$/i ) {
     $filter = $self->hdr->{IR2_COLD};
   } else {
     $filter = $self->hdr->{IR2_FILT};
