@@ -28,11 +28,11 @@ require Exporter;
 @ISA = qw/Exporter/;
 
 @EXPORT_OK = qw/ORAC__OK ORAC__ERROR ORAC__BADENG
-                ORAC__ABORT ORAC__FATAL/;
+                ORAC__ABORT ORAC__FATAL ORAC__PARSE_ERROR/;
 
 %EXPORT_TAGS = (
 		'status'=>[qw/ ORAC__OK ORAC__ERROR ORAC__BADENG
-		               ORAC__ABORT ORAC__FATAL/]
+		               ORAC__ABORT ORAC__FATAL ORAC__PARSE_ERROR/]
 	       );
 
 Exporter::export_tags('status');
@@ -91,6 +91,13 @@ This constant contains the definition an ORAC process which has died fatally
 
 use constant ORAC__FATAL => -3;
 
+=item B<ORAC__PARSE_ERROR>
+
+This constant contains the definition of an error in parsing a recipe.
+
+=cut
+
+use constant ORAC__PARSE_ERROR => -4;
 
 =back
 
