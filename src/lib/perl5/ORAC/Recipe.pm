@@ -459,15 +459,15 @@ sub execute {
   if ("$error") {
 
     # Check for previously thrown UserAbort errors	
-    if ( ref($error) && $error->isa("Error") )
-    {
-        if ( $error == ORAC__ABORT )
-	{
-	   # We have a UserAbort, no hassle, throw it and return to
-	   # the Tk Mainloop without printing any junk about the error
-           $error->throw;
-	}
-    }	
+    if ( ref($error) && $error->isa("Error") ) {
+      if ( $error == ORAC__ABORT )
+        {
+          # We have a UserAbort, no hassle, throw it and return to
+          # the Tk Mainloop without printing any junk about the
+          # error
+          $error->throw;
+        }
+    }
 
     # Since we have an error we can not trust the current
     # frame to be fully reduced. We therefore set its state
@@ -492,21 +492,21 @@ sub execute {
 
       # Extract info from the error message, string context!
       "$error" =~ /line (\d+)/ && do {
-	my $num = $1;
-	orac_err("Error in line $num\n", 'red');
-	orac_err("Relevant recipe lines (with numbers):\n\n", 'red');
+        my $num = $1;
+        orac_err("Error in line $num\n", 'red');
+        orac_err("Relevant recipe lines (with numbers):\n\n", 'red');
 
-	# Calculate number of lines to print
-	my $inc = 15;
-	my $start = ($num > $inc ? $num - $inc : 0 );
-	my $end   = ($num < $#recipe - $inc ? $num + $inc : $#recipe);
+        # Calculate number of lines to print
+        my $inc = 15;
+        my $start = ($num > $inc ? $num - $inc : 0 );
+        my $end   = ($num < $#recipe - $inc ? $num + $inc : $#recipe);
 
-	# Print out the relevant chunk with line numbers
-	for (my $i=$start; $i < $end; $i++) {
-	  orac_err("$i: ", 'blue');
+        # Print out the relevant chunk with line numbers
+        for (my $i=$start; $i < $end; $i++) {
+          orac_err("$i: ", 'blue');
           orac_err("$new[$i]\n", 'red');
-	}
-	orac_err("End recipe dump\n\n",'blue');
+        }
+        orac_err("End recipe dump\n\n",'blue');
       };
 
     } elsif ("$error" =~ /^Died/) {
@@ -521,22 +521,19 @@ sub execute {
     if ($self->debug) {
       my $fh = new IO::File("> ORACDR_RECIPE.dump");
       if (defined $fh) {
-	print $fh join('',@recipe). "\n";
-	orac_err("Recipe contents dumped to ORACDR_RECIPE.dump\n")
+        print $fh join('',@recipe). "\n";
+        orac_err("Recipe contents dumped to ORACDR_RECIPE.dump\n")
       }
     }
 
     # Check for previously thrown non-UserAbort errors	
-    if ( ref($error) && $error->isa("Error") )
-    {
-        # Exit from the pipeline with already existing error
-        $error->throw;
-    }	
-    else
-    {	
-       # Exit from the pipeline by throwing a new error
-       throw ORAC::Error::FatalError( "Exiting due to error executing recipe",
-                                      ORAC__FATAL );
+    if ( ref($error) && $error->isa("Error") ) {
+      # Exit from the pipeline with already existing error
+      $error->throw;
+    } else {	
+      # Exit from the pipeline by throwing a new error
+      throw ORAC::Error::FatalError( "Exiting due to error executing recipe",
+                                     ORAC__FATAL );
     }
   }
 
@@ -546,7 +543,6 @@ sub execute {
     orac_err "Recipe completed with error status = $status\n";
     orac_err "Continuing but this may cause problems during group processing\n";
   }
-
 
 }
 
@@ -1486,10 +1482,18 @@ sub orac_execute_recipe {
 
   if( ! defined( $Recipe->code ) ) {
     my $coderef = eval "$block";
+    if( $@ ) {
+      return ORAC__PARSE_ERROR;
+    }
     $Recipe->code( $coderef );
   }
 
-  return $Recipe->code->( $Frm, $Grp, $Cal, $Display, \%Mon );
+  my $coderef = $Recipe->code;
+  if( defined( $coderef ) ) {
+    return $coderef->( $Frm, $Grp, $Cal, $Display, \%Mon );
+  } else {
+    return ORAC__ERROR;
+  }
 }
 
 =back
