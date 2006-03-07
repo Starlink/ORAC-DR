@@ -1,10 +1,11 @@
 =head1 NAME
 
-_ARRAY_TESTS_STATISTICS_ - Determines array tests statistics.
+_ARRAY_TESTS_STATISTICS_ - Determines array tests statistics for CGS4.
 
 =head1 DESCRIPTION
 
-Does the array tests statistics for CGS4.  
+This primitive calculates readnoise and dark current statistics for
+CGS4.
 
 The DARK frames used must have been reduced with the _REDUCE_DARK_
 primitive; this is normally called from the _ARRAY_TESTS_ primitive
@@ -14,13 +15,20 @@ The basic principle used to determine the readnoise is to subtract 2
 dark frames of the same exposure time, on the assumption that the
 readnoise is the only difference between them.
 
-=head1 AUTHOR
+The readnoise for the entire detector, as well for the individual
+channels, is calculated. On the CGS4 array, the 1st, 5th,
+9th... columns are the first channel, 2nd, 6th, 10th... are the second
+channel, 3rd, 7th, 11th... are the third channel, and 4th, 8th,
+12th... are the fourth.
+
+=head1 AUTHORS
 
 Paul Hirst <p.hirst@jach.hawaii.edu>
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright 1998-2003 Particle Physics and Astronomy Research Council.
+Copyright (C) 1998-2006 Particle Physics and Astronomy Research Council.
 All Rights Reserved.
 
 =cut
@@ -55,7 +63,7 @@ if ($steer eq "PREBPM" || $steer eq "GO") {
    # Apply a bad pixel mask (Why not indeed)
    my $temp2 = new ORAC::TempFile;
    my $t2file = $temp2->file;
-   
+
    $Mon{'kappa_mon'}->obeyw("add", "in1=$t1file in2=$mask out=$t2file");
 
    # Call stats on the masked frame
@@ -73,7 +81,7 @@ if ($steer eq "PREBPM" || $steer eq "GO") {
    if ($rn < 30.0) {
       orac_print "is low\n";
    } elsif ($rn < 38) {
-      orac_print "is most excelent\n";
+      orac_print "is most excel;ent\n";
    } elsif ($rn < 42) {
       orac_print "is Nominal\n";
    } elsif ($rn < 50) {
@@ -82,6 +90,58 @@ if ($steer eq "PREBPM" || $steer eq "GO") {
       orac_print "is HIGH \n";
    }
 
+   for( 1..4 ) {
+     my $channel = $_;
+
+     # Get the dimensions of the CGS4 array.
+     _GET_DIMENSIONS_ GROUP=0
+     my $lbound_ref = $_GET_DIMENSIONS_{LBOUND};
+     my $ubound_ref = $_GET_DIMENSIONS_{UBOUND};
+     my $lbound = $lbound_ref->[0];
+     my $ubound = $ubound_ref->[0];
+
+     # Create an ARD mask.
+     my $ardmask = "ardmask$$.txt";
+     open my $ard_fh, ">", "$ardmask" or orac_throw "Unable to open $ardmask to create an ARD mask. Error: $!.\n";
+     for( $lbound .. $ubound ) {
+       my $column = $_;
+       next if ( ( ( $column % 4 ) ) == $channel );
+       next if ( ( ( $column % 4 ) ) == 0 && $channel == 4 );
+       print $ard_fh "COLUMN( $column )\n";
+     }
+     close $ard_fh;
+
+     # Mask out the requested columns using the ARD mask.
+     my $tmp = new ORAC::TempFile;
+     my $tmpfile = $tmp->file;
+     $Mon{'kappa_mon'}->obeyw( "ardmask", "in=$t2file ardfile=$ardmask out=$tmpfile" );
+
+     # Find the stats.
+     $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$tmpfile" );
+     ( $ORAC_STATUS, my $chan_sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+
+     # Calculate the readnoise.
+     my $chan_rn = $chan_sigma * $gain / sqrt(2);
+
+     # And print it.
+     my $chan_rnstring = sprintf( "%4.1f", $chan_rn );
+     orac_print ("Readnoise in channel $channel of $chan_rnstring electrons ");
+     if ($chan_rn < 30.0) {
+       orac_print "is low.\n";
+     } elsif ($chan_rn < 38) {
+       orac_print "is most excellent.\n";
+     } elsif ($chan_rn < 42) {
+       orac_print "is nominal.\n";
+     } elsif ($chan_rn < 50) {
+       orac_print "is a little on the high side.\n";
+     } else {
+       orac_print "is HIGH.\n";
+     }
+
+     # Delete the ARD mask.
+     unlink $ardmask;
+
+   }
 
    # Difference the 5th and 6th frames (stare mode darks)
    $Mon{'kappa_mon'}->obeyw("sub", "in1=$file[5] in2=$file[4] out=$t1file");
