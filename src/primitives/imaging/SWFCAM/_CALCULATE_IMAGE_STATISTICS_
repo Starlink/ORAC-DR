@@ -109,7 +109,7 @@ if( defined( $image_catalogue ) ) {
 
     next if $item->quality;
     next if ( defined( $item->morphology->area ) &&
-              $item->morphology->area > $maxarea );
+              $item->morphology->area->value > $maxarea );
     push @gooditems, $item;
 
     my $fluxes = $item->fluxes;
@@ -162,21 +162,6 @@ if( defined( $image_catalogue ) ) {
 
   my $ellipticity = 1 - ( 1 / $axialratio );
 
-  # Calculate the K-band equivalent seeing. It goes as
-  # (wavelength^(-0.2)), so we need to get the current wavelength and
-  # the K wavelength, do the division and the power, and scale the
-  # measured FWHM.
-  _GET_FILTER_PARAMETERS_
-  my $wavelength = $_GET_FILTER_PARAMETERS_{WAVELENGTH};
-  my $k_wavelength = 2.25;
-  my $scale = ( $wavelength / $k_wavelength ) ** ( -0.2 );
-  my $k_fwhm = $scale * $fwhm;
-
-  # Obtain the mean extinction coefficient.
-  my $waveband = $_GET_FILTER_PARAMETERS_{WAVEBAND};
-  my $extinction = $_GET_FILTER_PARAMETERS_{EXTINCTION};
-  my $filter = $Frm->uhdr( "ORAC_FILTER" );
-
   # Obtain the airmass from the FITS headers. Find the
   # approximate mean airmass from the start and end values. This
   # should be adequate unless it is a long integration with the
@@ -184,6 +169,22 @@ if( defined( $image_catalogue ) ) {
   my $amstart = $Obj->uhdr( "ORAC_AIRMASS_START" );
   my $amend   = $Obj->uhdr( "ORAC_AIRMASS_END" );
   my $airmass = 0.5 * ( $amstart + $amend );
+
+  # Calculate the K-band equivalent seeing. It goes as
+  # (wavelength^(-0.2)), so we need to get the current wavelength and
+  # the K wavelength, do the division and the power, and scale the
+  # measured FWHM.
+  _GET_FILTER_PARAMETERS_
+  my $wavelength = $_GET_FILTER_PARAMETERS_{WAVELENGTH};
+  my $k_wavelength = 2.25;
+  my $scale = ( $wavelength / $k_wavelength ) ** ( 0.2 );
+  my $k_fwhm = $scale * $fwhm;
+  my $k_fwhm_zen = $k_fwhm * ( 1 / $airmass ) ** ( 0.6 );
+
+  # Obtain the mean extinction coefficient.
+  my $waveband = $_GET_FILTER_PARAMETERS_{WAVEBAND};
+  my $extinction = $_GET_FILTER_PARAMETERS_{EXTINCTION};
+  my $filter = $Frm->uhdr( "ORAC_FILTER" );
 
   # Derive the extinction correction using the IR standard of
   # one airmass.
@@ -196,7 +197,7 @@ if( defined( $image_catalogue ) ) {
   my @standard_mags;
   my @diffs;
   my @ellipticities;
-  my %psf_hist;
+  my %ell_hist;
   my %diff_hist;
   my $stepsize = 0.01;
 
@@ -261,7 +262,7 @@ if( defined( $image_catalogue ) ) {
 
     }
 
-    $psf_hist{ int( $catmatchitem->morphology->ellipticity->value / $stepsize ) * $stepsize }++;
+    $ell_hist{ int( $catmatchitem->morphology->ellipticity->value / $stepsize ) * $stepsize }++;
     push( @ellipticities, $catmatchitem->morphology->ellipticity->value );
 
   }
@@ -292,9 +293,9 @@ if( defined( $image_catalogue ) ) {
 
   my $maxell = 0;
   my $maxbin = 0;
-  foreach my $ell_bin ( sort keys %psf_hist ) {
-    if( $psf_hist{$ell_bin} > $maxell ) {
-      $maxell = $psf_hist{$ell_bin};
+  foreach my $ell_bin ( sort keys %ell_hist ) {
+    if( $ell_hist{$ell_bin} > $maxell ) {
+      $maxell = $ell_hist{$ell_bin};
       $maxbin = $ell_bin;
     }
   }
@@ -315,40 +316,40 @@ if( defined( $image_catalogue ) ) {
   my $ell_hist_avg = 0;
   if( $maxbin eq '0' ) {
     # Take 0, 0.01 and 0.02.
-    my $sum_counts = $psf_hist{0} + $psf_hist{'0.01'} + $psf_hist{'0.02'};
-    my $sum_psf = $psf_hist{'0.01'} * 0.01 + $psf_hist{'0.02'} * 0.02;
-    $ell_hist_avg = $sum_psf / $sum_counts;
+    my $sum_counts = $ell_hist{0} + $ell_hist{'0.01'} + $ell_hist{'0.02'};
+    my $sum_ell = $ell_hist{'0.01'} * 0.01 + $ell_hist{'0.02'} * 0.02;
+    $ell_hist_avg = $sum_ell / $sum_counts;
   } elsif( $maxbin eq '0.01' ) {
     # Take 0, 0.01, 0.02, and 0.03.
-    my $sum_counts = $psf_hist{0} + $psf_hist{'0.01'} + $psf_hist{'0.02'} + $psf_hist{'0.03'};
-    my $sum_psf = $psf_hist{'0.01'} * 0.01 + $psf_hist{'0.02'} * 0.02 + $psf_hist{'0.03'} * 0.03;
-    $ell_hist_avg = $sum_psf / $sum_counts;
+    my $sum_counts = $ell_hist{0} + $ell_hist{'0.01'} + $ell_hist{'0.02'} + $ell_hist{'0.03'};
+    my $sum_ell = $ell_hist{'0.01'} * 0.01 + $ell_hist{'0.02'} * 0.02 + $ell_hist{'0.03'} * 0.03;
+    $ell_hist_avg = $sum_ell / $sum_counts;
   } else {
 
     my $first = $maxbin - 0.02;
     my $second = $maxbin - 0.01;
     my $third = $maxbin + 0.01;
     my $fourth = $maxbin + 0.02;
-    if( ! defined( $psf_hist{"$first"} ) ) {
-      $psf_hist{"$first"} = 0;
+    if( ! defined( $ell_hist{"$first"} ) ) {
+      $ell_hist{"$first"} = 0;
     }
-    if( ! defined( $psf_hist{"$second"} ) ) {
-      $psf_hist{"$second"} = 0;
+    if( ! defined( $ell_hist{"$second"} ) ) {
+      $ell_hist{"$second"} = 0;
     }
-    if( ! defined( $psf_hist{"$third"} ) ) {
-      $psf_hist{"$third"} = 0;
+    if( ! defined( $ell_hist{"$third"} ) ) {
+      $ell_hist{"$third"} = 0;
     }
-    if( ! defined( $psf_hist{"$fourth"} ) ) {
-      $psf_hist{"$fourth"} = 0;
+    if( ! defined( $ell_hist{"$fourth"} ) ) {
+      $ell_hist{"$fourth"} = 0;
     }
-    my $sum_counts = $psf_hist{"$first"} + $psf_hist{"$second"} + $psf_hist{"$maxbin"} + $psf_hist{"$third"} + $psf_hist{"$fourth"};
-    my $sum_psf = $psf_hist{"$first"}  * $first
-                + $psf_hist{"$second"} * $second
-                + $psf_hist{"$maxbin"} * $maxbin
-                + $psf_hist{"$third"}  * $third
-                + $psf_hist{"$fourth"} * $fourth
+    my $sum_counts = $ell_hist{"$first"} + $ell_hist{"$second"} + $ell_hist{"$maxbin"} + $ell_hist{"$third"} + $ell_hist{"$fourth"};
+    my $sum_ell = $ell_hist{"$first"}  * $first
+                + $ell_hist{"$second"} * $second
+                + $ell_hist{"$maxbin"} * $maxbin
+                + $ell_hist{"$third"}  * $third
+                + $ell_hist{"$fourth"} * $fourth
                 ;
-    $ell_hist_avg = $sum_psf / $sum_counts;
+    $ell_hist_avg = $sum_ell / $sum_counts;
   }
 
   my $diff_hist_avg = 0;
@@ -403,10 +404,7 @@ if( defined( $image_catalogue ) ) {
 
   # Create printable versions.
   my $p_axial = sprintf( "%.3f", $axialratio );
-  my $p_ell = sprintf( "%.3f", $ellipticity );
-  my $p_ell_ext = sprintf( "%.3f", $ext_ell_mean );
-  my $p_ell_bin = sprintf( "%.3f", $maxbin );
-  my $p_ell_bin_avg = sprintf( "%.3f", $ell_hist_avg );
+  my $p_ell = sprintf( "%.3f", $ell_hist_avg );
   my $p_fwhm = sprintf( "%.3f", $fwhm );
   my $p_k_fwhm = sprintf( "%.3f", $k_fwhm );
   my $p_orient = sprintf( "%.3f", $orient );
@@ -436,11 +434,7 @@ if( defined( $image_catalogue ) ) {
               ( $group ? $Grp->file : $Frm->file ) .
               ":\n", "blue" );
   orac_print( " Axial ratio:  $p_axial\n", "blue" );
-  orac_print( " Ellipticity:  $p_ell_bin_avg\n", "blue" );
-#  orac_print( " Ellipticity:  $p_ell (PSF)\n", "blue" );
-#  orac_print( "               $p_ell_ext (mean from EXTRACTOR)\n", "blue" );
-#  orac_print( "               $p_ell_bin (histogram EXTRACTOR)\n", "blue" );
-#  orac_print( "               $p_ell_bin_avg (histogram EXTRACTOR, average around peak)\n", "blue" );
+  orac_print( " Ellipticity:  $p_ell\n", "blue" );
   orac_print( " FWHM:         $p_fwhm arcseconds\n", "blue" );
   orac_print( " K-band equiv: $p_k_fwhm arcseconds\n", "blue" );
   orac_print( " Orientation:  $p_orient degrees east of north\n", "blue" );
@@ -450,8 +444,6 @@ if( defined( $image_catalogue ) ) {
               ( $group ? $Grp->file : $Frm->file ) .
               ":\n", "blue" );
   orac_print( " Instrumental zero-point: $p_zp_hist\n", "blue" );
-#  orac_print( " Instrumental zero-point: $p_zp +/- $p_zpvar ($p_num_obj objects used)\n", "blue" );
-#  orac_print( "                          $p_zp_hist (histogram)\n", "blue" );
   orac_print( " Background sky level:    $p_sky_mean +/- $p_sky_stddev counts.\n",
               "blue" );
   orac_print( " Sky brightness:          $p_mag magnitudes/arcsec^2.\n",
@@ -460,10 +452,12 @@ if( defined( $image_catalogue ) ) {
 
   # File the whole shebang with the calibration system.
   my %calhash = ( %{$Obj->hdr},
+                  AIRMASS => $airmass,
                   AXIALRATIO => $axialratio,
                   ELLIPTICITY => $ell_hist_avg,
                   FWHM => $fwhm,
                   FWHM_K => $k_fwhm,
+                  FWHM_K_ZEN => $k_fwhm_zen,
                   GAMMA => $gamma,
                   ORIENT => $orient,
                   SKY_VALUE => $sky_mean,
