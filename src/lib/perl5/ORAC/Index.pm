@@ -969,9 +969,34 @@ sub scanindex {
   my $self = shift;
   my %filter = @_;
 
+  foreach my $key ( keys %filter ) {
+    if( $filter{$key} =~ m|^/| ) {
+      my $regex = $filter{$key};
+      $regex =~ s|^/||;
+      $regex =~ s|/$||;
+      $filter{$key} = qr[$regex];
+    }
+  }
+
+  my $id;
+  if( exists( $filter{':ID'} ) &&
+      defined( $filter{':ID'} ) ) {
+    $id = $filter{':ID'};
+    delete $filter{':ID'};
+  }
+
   # Loop over hash keys in index (random order)
   my @match;
   OUTER: for my $key ($self->indexkeys) {
+
+      if( defined( $id ) ) {
+        if( ref( $id ) ) {
+          next OUTER unless $key =~ $id;
+        } else {
+          next OUTER unless $key eq $id;
+        }
+      }
+
       my $entry = $self->indexentry($key);
 
       for my $f (keys %filter) {
