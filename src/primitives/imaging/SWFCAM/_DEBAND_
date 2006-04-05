@@ -99,7 +99,17 @@ if( ! defined( $technique ) ) {
   $technique = 3;
 }
 
-my ( $in, $out ) = $Frm->inout( "_deband" );
+my $direction = $_DEBAND_{DIRECTION};
+if( ! defined( $direction ) ) {
+  $direction = 1;
+}
+
+my $suffix = $_DEBAND_{SUFFIX};
+if( ! defined( $suffix ) ) {
+  $suffix = "_deband";
+}
+
+my ( $in, $out ) = $Frm->inout( $suffix );
 
 if( $technique == 1 ) {
 
@@ -339,6 +349,11 @@ if( $technique == 1 ) {
   $params = "in1=$in in2=" . $csub_temp->file . " out=$out title=!";
   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
 
+  $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$out fullframe fullwcs" );
+
+  # Set the current WCS Frame to SKY.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=$out frame=sky" );
+
   # Report to the user.
   orac_print "$in to $out: Removed reset anomaly structure.\n";
 
@@ -349,11 +364,25 @@ if( $technique == 1 ) {
   # This is the 1 COLLAPSE, 4 ROTATEs, and 4 PIXDUPEs method.
 
   # Set up some arrays to hold rotations, pixdupes, and setorigins.
-  my @rotate_angles = ( -90, 180, 90, 0 );
-  my @pixdupe_expands = ( '1024,1',
-                          '1,1024',
-                          '1024,1',
-                          '1,1024' );
+  my @rotate_angles;
+  if( $direction ) {
+    @rotate_angles = ( -90, 180, 90, 0 );
+  } else {
+    @rotate_angles = ( 0, -90, 180, 90 );
+  }
+
+  my @pixdupe_expands;
+  if( $direction ) {
+    @pixdupe_expands = ( '1024,1',
+                         '1,1024',
+                         '1024,1',
+                         '1,1024' );
+  } else {
+    @pixdupe_expands = ( '1,1024',
+                         '1024,1',
+                         '1,1024',
+                         '1024,1' );
+  }
   my @setorigin_origins = ( '1,1',
                             '1025,1',
                             '1025,1025',
@@ -373,7 +402,8 @@ if( $technique == 1 ) {
   my $collapse_temp = new ORAC::TempFile;
 
   # Set up parameters for COLLAPSE.
-  my $params = "in=$in(1:1024,1:1024) axis=1 "
+  my $axis = ( $direction ? 1 : 2 );
+  my $params = "in=$in(1:1024,1:1024) axis=$axis "
              . "out=" . $collapse_temp->file . " "
              . "estimator=$method"
              ;
@@ -471,6 +501,9 @@ if( $technique == 1 ) {
   # Subtract the CSUB result from the input file.
   $params = "in1=$in in2=" . $csub_temp->file . " out=$out title=!";
   $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+  # Set the current WCS Frame to SKY.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=$out frame=sky" );
 
   # Report to the user.
   orac_print "$in to $out: Removed reset anomaly structure.\n";
