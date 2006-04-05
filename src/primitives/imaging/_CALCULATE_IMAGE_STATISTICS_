@@ -92,7 +92,7 @@ my $image_catalogue = $_CALCULATE_IMAGE_STATISTICS_{IMAGE_CATALOGUE};
 
 # Only run if we actually have an image catalogue.
 if( defined( $image_catalogue ) ) {
-print "have image catalogue\n";
+
   # Strip out any Astro::Catalog::Item objects that don't have a
   # quality of 0 (which means good), or an area greater than 78.5
   # pixels (which is a circle with a radius of five pixels) multiplied
@@ -103,17 +103,13 @@ print "have image catalogue\n";
   my @catmatchitems;
 
   _GET_EXPANSION_RATIO_
-  my $maxarea = 2000 * ( $_GET_EXPANSION_RATIO_{X_EXPANSION} ) ** 2;
+  my $maxarea = 78.5 * ( $_GET_EXPANSION_RATIO_{X_EXPANSION} ) ** 2;
 
   foreach my $item ( $image_catalogue->stars ) {
-print "quality: " . $item->quality . "\n";
-print "area: " . $item->morphology->area . "\n";
-print "ellipticity: " . $item->morphology->ellipticity . "\n";
+
     next if $item->quality;
     next if ( defined( $item->morphology->area ) &&
               $item->morphology->area > $maxarea );
-    next if ( defined( $item->morphology->ellipticity ) &&
-              $item->morphology->ellipticity > 0.25 );
     push @gooditems, $item;
 
     my $fluxes = $item->fluxes;
@@ -199,70 +195,192 @@ print "ellipticity: " . $item->morphology->ellipticity . "\n";
   my @image_mags;
   my @standard_mags;
   my @diffs;
+  my @ellipticities;
+  my %psf_hist;
+  my %diff_hist;
+  my $stepsize = 0.01;
+
+  my $phot = 0;
+  if( $waveband eq 'Z' || $waveband eq 'Y' || $waveband eq 'J' ||
+      $waveband eq 'H' || $waveband eq 'K' ) {
+    $phot = 1;
+  }
 
   # Now, go through the list of objects that had catalogue magnitudes
   # and calculate the zeropoint.
   foreach my $catmatchitem ( @catmatchitems ) {
 
-    my $jmag = $catmatchitem->get_flux_quantity( waveband => 'J',
-                                                 type => 'MAG_CATALOG' );
-    my $hmag = $catmatchitem->get_flux_quantity( waveband => 'H',
-                                                 type => 'MAG_CATALOG' );
-    my $kmag = $catmatchitem->get_flux_quantity( waveband => 'K',
-                                                 type => 'MAG_CATALOG' );
-print "x: " . $catmatchitem->x . "\ny: " . $catmatchitem->y . "\n";
-print "jmag: $jmag\nhmag: $hmag\nkmag: $kmag\n";
-    # Calculate the Z, Y, J, H, and K magnitudes in the MK system.
-    my $mk_zmag = $jmag + 0.95  * ( $jmag - $hmag );
-    my $mk_ymag = $jmag + 0.5   * ( $jmag - $hmag );
-    my $mk_jmag = $jmag - 0.075 * ( $jmag - $hmag );
-    my $mk_hmag = $hmag + 0.075 * ( $jmag - $hmag );
-    my $mk_kmag = $kmag - 0.015 * ( $jmag - $kmag );
+    if( $phot ) {
+      my $jmag = $catmatchitem->get_flux_quantity( waveband => 'J',
+                                                   type => 'MAG_CATALOG' );
+      my $hmag = $catmatchitem->get_flux_quantity( waveband => 'H',
+                                                   type => 'MAG_CATALOG' );
+      my $kmag = $catmatchitem->get_flux_quantity( waveband => 'K',
+                                                   type => 'MAG_CATALOG' );
 
-    # Get the magnitude in the current waveband.
-    my $im_mag = $catmatchitem->get_flux_quantity( waveband => $filter,
-                                                   type => $magnitude_type );
+      # Calculate the Z, Y, J, H, and K magnitudes in the MK system.
+      my $mk_zmag = $jmag + 0.95  * ( $jmag - $hmag );
+      my $mk_ymag = $jmag + 0.5   * ( $jmag - $hmag );
+      my $mk_jmag = $jmag - 0.075 * ( $jmag - $hmag );
+      my $mk_hmag = $hmag + 0.075 * ( $jmag - $hmag );
+      my $mk_kmag = $kmag - 0.015 * ( $jmag - $kmag );
 
-    my $st_mag;
-    if( $filter =~ /^Z/ ) {
-      $st_mag = $mk_zmag;
-    } elsif( $filter =~ /^Y/ ) {
-      $st_mag = $mk_ymag;
-    } elsif( $filter =~ /^J/ ) {
-      $st_mag = $mk_jmag;
-    } elsif( $filter =~ /^H/ ) {
-      $st_mag = $mk_hmag;
-    } elsif( $filter =~ /^K/ ) {
-      $st_mag = $mk_kmag;
+      # Get the magnitude in the current waveband.
+      my $im_mag = $catmatchitem->get_flux_quantity( waveband => $filter,
+                                                     type => $magnitude_type );
+
+      # Skip if the magnitude is fainter than 10 (which denotes
+      # something bad).
+      next if ( ! defined( $im_mag ) );
+      next if $im_mag > 10;
+
+      my $st_mag;
+      if( $waveband eq 'Z' ) {
+        $st_mag = $mk_zmag;
+      } elsif( $waveband eq 'Y' ) {
+        $st_mag = $mk_ymag;
+      } elsif( $waveband eq 'J' ) {
+        $st_mag = $mk_jmag;
+      } elsif( $waveband eq 'H' ) {
+        $st_mag = $mk_hmag;
+      } elsif( $waveband eq 'K' ) {
+        $st_mag = $mk_kmag;
+      }
+
+      next if ( ! defined( $st_mag ) || ! defined( $im_mag ) );
+
+      # Correct the measured magnitude for exposure time.
+      $im_mag += 2.5 * log10( $exptime );
+
+      # Correct the measured magnitude for extinction.
+      $im_mag -= $extcor;
+
+      # Push the magnitudes onto the arrays, correcting the
+      # magnitude from the EXTRACTOR-based catalogue.
+      push( @image_mags, $im_mag );
+      push( @standard_mags, $st_mag );
+      push( @diffs, $st_mag - $im_mag );
+      $diff_hist{ int( ( $st_mag - $im_mag ) / $stepsize ) * $stepsize }++;
+
     }
 
-    # Correct the measured magnitude for exposure time.
-    $im_mag += 2.5 * log10( $exptime );
-
-    # Correct the measured magnitude for extinction.
-    $im_mag -= $extcor;
-print "im_mag: $im_mag\nst_mag: $st_mag\n";
-    # Push the magnitudes onto the arrays, correcting the
-    # magnitude from the EXTRACTOR-based catalogue.
-    push( @image_mags, $im_mag );
-    push( @standard_mags, $st_mag );
-    push( @diffs, $st_mag - $im_mag );
+    $psf_hist{ int( $catmatchitem->morphology->ellipticity->value / $stepsize ) * $stepsize }++;
+    push( @ellipticities, $catmatchitem->morphology->ellipticity->value );
 
   }
 
-  # Calculate the mean difference and the variance in the
-  # difference between the standard magnitudes and the measured
-  # magnitudes.
-  my $sum = 0;
-  foreach my $diff ( @diffs ) {
-    $sum += $diff;
+  my $zeropoint = 0;
+  my $zeropoint_variance = 0;
+  if( $phot ) {
+    # Calculate the mean difference and the variance in the
+    # difference between the standard magnitudes and the measured
+    # magnitudes.
+    my $sum = 0;
+    foreach my $diff ( @diffs ) {
+      $sum += $diff;
+    }
+    $zeropoint = $sum / ( $#diffs + 1 );
+    my $sumsqu = 0;
+    foreach my $diff( @diffs ) {
+      $sumsqu += ( $diff - $zeropoint ) * ( $diff - $zeropoint );
+    }
+    $zeropoint_variance = sqrt( $sumsqu / ( $#diffs + 1 ) );
   }
-  my $zeropoint = $sum / ( $#diffs + 1 );
-  my $sumsqu = 0;
-  foreach my $diff( @diffs ) {
-    $sumsqu += ( $diff - $zeropoint ) * ( $diff - $zeropoint );
+
+  my $ext_ell_sum = 0;
+  foreach my $ext_ell ( @ellipticities ) {
+    $ext_ell_sum += $ext_ell;
   }
-  my $zeropoint_variance = sqrt( $sumsqu / ( $#diffs + 1 ) );
+  my $ext_ell_mean = $ext_ell_sum / ( $#ellipticities + 1 );
+
+  my $maxell = 0;
+  my $maxbin = 0;
+  foreach my $ell_bin ( sort keys %psf_hist ) {
+    if( $psf_hist{$ell_bin} > $maxell ) {
+      $maxell = $psf_hist{$ell_bin};
+      $maxbin = $ell_bin;
+    }
+  }
+
+  my $maxdiff = 0;
+  my $maxdiffbin = 0;
+  if( $phot ) {
+    foreach my $diff_bin ( sort keys %diff_hist ) {
+      if( $diff_hist{$diff_bin} > $maxdiff ) {
+        $maxdiff = $diff_hist{$diff_bin};
+        $maxdiffbin = $diff_bin;
+      }
+    }
+  }
+
+  # We have ellipticity bin that has the most counts in it, so take
+  # two on either side and calculate the average of those.
+  my $ell_hist_avg = 0;
+  if( $maxbin eq '0' ) {
+    # Take 0, 0.01 and 0.02.
+    my $sum_counts = $psf_hist{0} + $psf_hist{'0.01'} + $psf_hist{'0.02'};
+    my $sum_psf = $psf_hist{'0.01'} * 0.01 + $psf_hist{'0.02'} * 0.02;
+    $ell_hist_avg = $sum_psf / $sum_counts;
+  } elsif( $maxbin eq '0.01' ) {
+    # Take 0, 0.01, 0.02, and 0.03.
+    my $sum_counts = $psf_hist{0} + $psf_hist{'0.01'} + $psf_hist{'0.02'} + $psf_hist{'0.03'};
+    my $sum_psf = $psf_hist{'0.01'} * 0.01 + $psf_hist{'0.02'} * 0.02 + $psf_hist{'0.03'} * 0.03;
+    $ell_hist_avg = $sum_psf / $sum_counts;
+  } else {
+
+    my $first = $maxbin - 0.02;
+    my $second = $maxbin - 0.01;
+    my $third = $maxbin + 0.01;
+    my $fourth = $maxbin + 0.02;
+    if( ! defined( $psf_hist{"$first"} ) ) {
+      $psf_hist{"$first"} = 0;
+    }
+    if( ! defined( $psf_hist{"$second"} ) ) {
+      $psf_hist{"$second"} = 0;
+    }
+    if( ! defined( $psf_hist{"$third"} ) ) {
+      $psf_hist{"$third"} = 0;
+    }
+    if( ! defined( $psf_hist{"$fourth"} ) ) {
+      $psf_hist{"$fourth"} = 0;
+    }
+    my $sum_counts = $psf_hist{"$first"} + $psf_hist{"$second"} + $psf_hist{"$maxbin"} + $psf_hist{"$third"} + $psf_hist{"$fourth"};
+    my $sum_psf = $psf_hist{"$first"}  * $first
+                + $psf_hist{"$second"} * $second
+                + $psf_hist{"$maxbin"} * $maxbin
+                + $psf_hist{"$third"}  * $third
+                + $psf_hist{"$fourth"} * $fourth
+                ;
+    $ell_hist_avg = $sum_psf / $sum_counts;
+  }
+
+  my $diff_hist_avg = 0;
+  if( $phot ) {
+    my $first = $maxdiffbin - 0.02;
+    my $second = $maxdiffbin - 0.01;
+    my $third = $maxdiffbin + 0.01;
+    my $fourth = $maxdiffbin + 0.02;
+    if( ! defined( $diff_hist{"$first"} ) ) {
+      $diff_hist{"$first"} = 0;
+    }
+    if( ! defined( $diff_hist{"$second"} ) ) {
+      $diff_hist{"$second"} = 0;
+    }
+    if( ! defined( $diff_hist{"$third"} ) ) {
+      $diff_hist{"$third"} = 0;
+    }
+    if( ! defined( $diff_hist{"$fourth"} ) ) {
+      $diff_hist{"$fourth"} = 0;
+    }
+    my $sum_diffs = $diff_hist{"$first"} + $diff_hist{"$second"} + $diff_hist{"$maxdiffbin"} + $diff_hist{"$third"} + $diff_hist{"$fourth"};
+    my $sum_diff = $diff_hist{"$first"}  * $first
+                + $diff_hist{"$second"} * $second
+                + $diff_hist{"$maxdiffbin"} * $maxdiffbin
+                + $diff_hist{"$third"}  * $third
+                + $diff_hist{"$fourth"} * $fourth
+                ;
+    $diff_hist_avg = $sum_diff / $sum_diffs;
+  }
 
   # Now that we have the zeropoint, we can calculate the sky
   # brightness statistics.
@@ -274,24 +392,31 @@ print "im_mag: $im_mag\nst_mag: $st_mag\n";
   ( $ORAC_STATUS, my $sky_stddev ) = $Mon{'kappa_mon'}->get( "stats",  "sigma" );
 
   # Now to calculate the sky level in magnitudes/arcsec^2.
-  _GET_PLATE_SCALE_
-  my $plate_scale = $_GET_PLATE_SCALE_{PLATESCALE};
-  my $counts_per_square_arcsecond = $sky_mean
-                                  / ( $plate_scale * $plate_scale );
-  my $mag_per_square_arcsecond = $zeropoint
-                               - 2.5
-                               * log10( $counts_per_square_arcsecond /
-                                        $exptime );
+  my $mag_per_square_arcsecond = 0;
+  if( $phot ) {
+    _GET_PLATE_SCALE_
+    my $plate_scale = $_GET_PLATE_SCALE_{PLATESCALE};
+    my $counts_per_square_arcsecond = $sky_mean
+                                      / ( $plate_scale * $plate_scale );
+    $mag_per_square_arcsecond = $zeropoint
+                                 - 2.5
+                                 * log10( $counts_per_square_arcsecond /
+                                          $exptime );
+  }
 
   # Create printable versions.
   my $p_axial = sprintf( "%.3f", $axialratio );
   my $p_ell = sprintf( "%.3f", $ellipticity );
+  my $p_ell_ext = sprintf( "%.3f", $ext_ell_mean );
+  my $p_ell_bin = sprintf( "%.3f", $maxbin );
+  my $p_ell_bin_avg = sprintf( "%.3f", $ell_hist_avg );
   my $p_fwhm = sprintf( "%.3f", $fwhm );
   my $p_k_fwhm = sprintf( "%.3f", $k_fwhm );
   my $p_orient = sprintf( "%.3f", $orient );
   my $p_gamma = sprintf( "%.3f", $gamma );
   my $p_num_obj = sprintf( "%d", $#diffs + 1 );
   my $p_zp = sprintf( "%.3f", $zeropoint );
+  my $p_zp_hist = sprintf( "%.3f", $diff_hist_avg );
   my $p_zpvar = sprintf( "%.3f", $zeropoint_variance );
   my $p_ext = sprintf( "%.3f", $extcor );
   my $p_sky_mean = sprintf( "%.2f", $sky_mean );
@@ -314,7 +439,11 @@ print "im_mag: $im_mag\nst_mag: $st_mag\n";
               ( $group ? $Grp->file : $Frm->file ) .
               ":\n", "blue" );
   orac_print( " Axial ratio:  $p_axial\n", "blue" );
-  orac_print( " Ellipticity:  $p_ell\n", "blue" );
+  orac_print( " Ellipticity:  $p_ell_bin_avg\n", "blue" );
+#  orac_print( " Ellipticity:  $p_ell (PSF)\n", "blue" );
+#  orac_print( "               $p_ell_ext (mean from EXTRACTOR)\n", "blue" );
+#  orac_print( "               $p_ell_bin (histogram EXTRACTOR)\n", "blue" );
+#  orac_print( "               $p_ell_bin_avg (histogram EXTRACTOR, average around peak)\n", "blue" );
   orac_print( " FWHM:         $p_fwhm arcseconds\n", "blue" );
   orac_print( " K-band equiv: $p_k_fwhm arcseconds\n", "blue" );
   orac_print( " Orientation:  $p_orient degrees east of north\n", "blue" );
@@ -323,7 +452,9 @@ print "im_mag: $im_mag\nst_mag: $st_mag\n";
   orac_print( "Photometric statistics on " .
               ( $group ? $Grp->file : $Frm->file ) .
               ":\n", "blue" );
-  orac_print( " Instrumental zero-point: $p_zp +/- $p_zpvar ($p_num_obj objects used)\n", "blue" );
+  orac_print( " Instrumental zero-point: $p_zp_hist\n", "blue" );
+#  orac_print( " Instrumental zero-point: $p_zp +/- $p_zpvar ($p_num_obj objects used)\n", "blue" );
+#  orac_print( "                          $p_zp_hist (histogram)\n", "blue" );
   orac_print( " Background sky level:    $p_sky_mean +/- $p_sky_stddev counts.\n",
               "blue" );
   orac_print( " Sky brightness:          $p_mag magnitudes/arcsec^2.\n",
@@ -333,7 +464,7 @@ print "im_mag: $im_mag\nst_mag: $st_mag\n";
   # File the whole shebang with the calibration system.
   my %calhash = ( %{$Obj->hdr},
                   AXIALRATIO => $axialratio,
-                  ELLIPTICITY => $ellipticity,
+                  ELLIPTICITY => $ell_hist_avg,
                   FWHM => $fwhm,
                   FWHM_K => $k_fwhm,
                   GAMMA => $gamma,
@@ -341,7 +472,7 @@ print "im_mag: $im_mag\nst_mag: $st_mag\n";
                   SKY_VALUE => $sky_mean,
                   SKY_VALUE_ERROR => $sky_stddev,
                   SKY_VALUE_MAG => $mag_per_square_arcsecond,
-                  ZEROPOINT => $zeropoint,
+                  ZEROPOINT => $diff_hist_avg,
                   ZEROPOINT_ERROR => $zeropoint_variance,
                 );
   $Cal->dqcindex->add( $Obj->file, \%calhash );
