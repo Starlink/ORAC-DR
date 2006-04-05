@@ -963,6 +963,13 @@ consider using the rules system directly.
 
 The return entries are not sorted into any particular order.
 
+Regular expression matching is supported by supplying a string
+beginning and ending with forward slashes (e.g. '/^g/' will match a
+string starting with 'g').
+
+Matching against the index entry's ID (i.e. the first column in an
+index) can be done by supplying the hash key ':ID'.
+
 =cut
 
 sub scanindex {
