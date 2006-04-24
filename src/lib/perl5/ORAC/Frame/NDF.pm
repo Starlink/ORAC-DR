@@ -153,7 +153,7 @@ sub erase {
 
       # Close the file
       dat_annul($loc, $hdsstat);
-      print "Should we unlink $hdsfile for $file? $dounlink";
+
       # Remove the file if HDS status is good
       if ($hdsstat == &NDF::SAI__OK) {
 	$hdsfile .= ".sdf";
