@@ -87,11 +87,16 @@ if( $group ) {
 # Get the magnitude type, defaulting to MAG_ISO.
 my $magnitude_type = $_CALCULATE_IMAGE_STATISTICS_{MAGNITUDE_TYPE} || 'MAG_ISO';
 
-# Get the image catalogue.
+# Get the catalogue containing all of the objects detected in the image.
 my $image_catalogue = $_CALCULATE_IMAGE_STATISTICS_{IMAGE_CATALOGUE};
 
-# Only run if we actually have an image catalogue.
-if( defined( $image_catalogue ) ) {
+# And get the catalogue containing only those objects that matched
+# between the standard star catalogue and the catalogue of all objects
+# detected in the image.
+my $matched_catalogue = $_CALCULATE_IMAGE_STATISTICS_{MATCHED_CATALOGUE};
+
+# Only run if we actually have an image catalogue and a matched catalogue.
+if( defined( $image_catalogue ) && defined( $matched_catalogue ) ) {
 
   # Strip out any Astro::Catalog::Item objects that don't have a
   # quality of 0 (which means good), or an area greater than 78.5
@@ -105,7 +110,7 @@ if( defined( $image_catalogue ) ) {
   _GET_EXPANSION_RATIO_
   my $maxarea = 78.5 * ( $_GET_EXPANSION_RATIO_{X_EXPANSION} ) ** 2;
 
-  foreach my $item ( $image_catalogue->stars ) {
+  foreach my $item ( $matched_catalogue->stars ) {
 
     next if $item->quality;
     next if ( defined( $item->morphology->area ) &&
@@ -132,14 +137,14 @@ if( defined( $image_catalogue ) ) {
 
   my $newcat = new Astro::Catalog;
   $newcat->pushstar( @gooditems );
-  $image_catalogue = $newcat;
+  $matched_catalogue = $newcat;
 
   # Create a temporary file to hold the input catalogue to PSF.
   my $psf_input_temp = new ORAC::TempFile( SUFFIX => '.txt' );
 
   # Write the catalogue to disk.
-  $image_catalogue->write_catalog( File => $psf_input_temp->file,
-                                   Format => 'STL' );
+  $matched_catalogue->write_catalog( File => $psf_input_temp->file,
+                                     Format => 'STL' );
 
   # Set up the parameters for PSF.
   my $params = "incat=" . $psf_input_temp->file . " "
@@ -199,12 +204,14 @@ if( defined( $image_catalogue ) ) {
   my @ellipticities;
   my %ell_hist;
   my %diff_hist;
-  my $stepsize = 0.01;
+  my %stdmag_hist;
+  my %imgmag_hist;
+  my $zp_stepsize = 0.01;
+  my $lm_stepsize = 0.1;
 
-  my $phot = 0;
-  if( $filter ne 'Z' || $filter ne 'Y' || $filter ne 'J' ||
-      $filter ne 'H' || $filter ne 'K' ) {
-    $phot = 1;
+  my $phot = 1;
+  if( $filter !~ /[ZYJHK]/ ) {
+    $phot = 0;
   }
 
   # Now, go through the list of objects that had catalogue magnitudes
@@ -258,11 +265,10 @@ if( defined( $image_catalogue ) ) {
       push( @image_mags, $im_mag );
       push( @standard_mags, $st_mag );
       push( @diffs, $st_mag - $im_mag );
-      $diff_hist{ int( ( $st_mag - $im_mag ) / $stepsize ) * $stepsize }++;
-
+      $diff_hist{ int( ( $st_mag - $im_mag ) / $zp_stepsize ) * $zp_stepsize }++;
     }
 
-    $ell_hist{ int( $catmatchitem->morphology->ellipticity->value / $stepsize ) * $stepsize }++;
+    $ell_hist{ int( $catmatchitem->morphology->ellipticity->value / $zp_stepsize ) * $zp_stepsize }++;
     push( @ellipticities, $catmatchitem->morphology->ellipticity->value );
 
   }
@@ -283,6 +289,21 @@ if( defined( $image_catalogue ) ) {
       $sumsqu += ( $diff - $zeropoint ) * ( $diff - $zeropoint );
     }
     $zeropoint_variance = sqrt( $sumsqu / ( $#diffs + 1 ) );
+
+    # Calculate magnitudes for all detected objects.
+    foreach my $item ( $image_catalogue->stars ) {
+
+      my $im_mag = $item->get_flux_quantity( waveband => $filter,
+                                             type => $magnitude_type );
+      next if $im_mag > 50;
+
+      # Correct for exposure time, extinction, and zeropoint.
+      $im_mag += 2.5 * log10( $exptime );
+      $im_mag -= $extcor;
+      $im_mag += $zeropoint;
+
+      $imgmag_hist{ int( $im_mag / $lm_stepsize ) * $lm_stepsize }++;
+    }
   }
 
   my $ext_ell_sum = 0;
@@ -292,16 +313,18 @@ if( defined( $image_catalogue ) ) {
   my $ext_ell_mean = $ext_ell_sum / ( $#ellipticities + 1 );
 
   my $maxell = 0;
-  my $maxbin = 0;
+  my $maxellbin = 0;
   foreach my $ell_bin ( sort keys %ell_hist ) {
     if( $ell_hist{$ell_bin} > $maxell ) {
       $maxell = $ell_hist{$ell_bin};
-      $maxbin = $ell_bin;
+      $maxellbin = $ell_bin;
     }
   }
 
   my $maxdiff = 0;
   my $maxdiffbin = 0;
+  my $maximgmag = 0;
+  my $maximgmagbin = 0;
   if( $phot ) {
     foreach my $diff_bin ( sort keys %diff_hist ) {
       if( $diff_hist{$diff_bin} > $maxdiff ) {
@@ -309,27 +332,34 @@ if( defined( $image_catalogue ) ) {
         $maxdiffbin = $diff_bin;
       }
     }
+
+    foreach my $imgmag_bin ( sort keys %imgmag_hist ) {
+      if( $imgmag_hist{$imgmag_bin} > $maximgmag ) {
+        $maximgmag = $imgmag_hist{$imgmag_bin};
+        $maximgmagbin = $imgmag_bin;
+      }
+    }
   }
 
   # We have ellipticity bin that has the most counts in it, so take
   # two on either side and calculate the average of those.
   my $ell_hist_avg = 0;
-  if( $maxbin eq '0' ) {
+  if( $maxellbin eq '0' ) {
     # Take 0, 0.01 and 0.02.
     my $sum_counts = $ell_hist{0} + $ell_hist{'0.01'} + $ell_hist{'0.02'};
     my $sum_ell = $ell_hist{'0.01'} * 0.01 + $ell_hist{'0.02'} * 0.02;
     $ell_hist_avg = $sum_ell / $sum_counts;
-  } elsif( $maxbin eq '0.01' ) {
+  } elsif( $maxellbin eq '0.01' ) {
     # Take 0, 0.01, 0.02, and 0.03.
     my $sum_counts = $ell_hist{0} + $ell_hist{'0.01'} + $ell_hist{'0.02'} + $ell_hist{'0.03'};
     my $sum_ell = $ell_hist{'0.01'} * 0.01 + $ell_hist{'0.02'} * 0.02 + $ell_hist{'0.03'} * 0.03;
     $ell_hist_avg = $sum_ell / $sum_counts;
   } else {
 
-    my $first = $maxbin - 0.02;
-    my $second = $maxbin - 0.01;
-    my $third = $maxbin + 0.01;
-    my $fourth = $maxbin + 0.02;
+    my $first = $maxellbin - 0.02;
+    my $second = $maxellbin - 0.01;
+    my $third = $maxellbin + 0.01;
+    my $fourth = $maxellbin + 0.02;
     if( ! defined( $ell_hist{"$first"} ) ) {
       $ell_hist{"$first"} = 0;
     }
@@ -342,10 +372,10 @@ if( defined( $image_catalogue ) ) {
     if( ! defined( $ell_hist{"$fourth"} ) ) {
       $ell_hist{"$fourth"} = 0;
     }
-    my $sum_counts = $ell_hist{"$first"} + $ell_hist{"$second"} + $ell_hist{"$maxbin"} + $ell_hist{"$third"} + $ell_hist{"$fourth"};
+    my $sum_counts = $ell_hist{"$first"} + $ell_hist{"$second"} + $ell_hist{"$maxellbin"} + $ell_hist{"$third"} + $ell_hist{"$fourth"};
     my $sum_ell = $ell_hist{"$first"}  * $first
                 + $ell_hist{"$second"} * $second
-                + $ell_hist{"$maxbin"} * $maxbin
+                + $ell_hist{"$maxellbin"} * $maxellbin
                 + $ell_hist{"$third"}  * $third
                 + $ell_hist{"$fourth"} * $fourth
                 ;
@@ -353,6 +383,7 @@ if( defined( $image_catalogue ) ) {
   }
 
   my $diff_hist_avg = 0;
+  my $imgmag_hist_avg = 0;
   if( $phot ) {
     my $first = $maxdiffbin - 0.02;
     my $second = $maxdiffbin - 0.01;
@@ -378,6 +409,32 @@ if( defined( $image_catalogue ) ) {
                 + $diff_hist{"$fourth"} * $fourth
                 ;
     $diff_hist_avg = $sum_diff / $sum_diffs;
+
+    $first = $maximgmagbin - 0.02;
+    $second = $maximgmagbin - 0.01;
+    $third = $maximgmagbin + 0.01;
+    $fourth = $maximgmagbin + 0.02;
+    if( ! defined( $imgmag_hist{"$first"} ) ) {
+      $imgmag_hist{"$first"} = 0;
+    }
+    if( ! defined( $imgmag_hist{"$second"} ) ) {
+      $imgmag_hist{"$second"} = 0;
+    }
+    if( ! defined( $imgmag_hist{"$third"} ) ) {
+      $imgmag_hist{"$third"} = 0;
+    }
+    if( ! defined( $imgmag_hist{"$fourth"} ) ) {
+      $imgmag_hist{"$fourth"} = 0;
+    }
+    my $sum_imgmags = $imgmag_hist{"$first"} + $imgmag_hist{"$second"} + $imgmag_hist{"$maximgmagbin"} + $imgmag_hist{"$third"} + $imgmag_hist{"$fourth"};
+    my $sum_imgmag = $imgmag_hist{"$first"}  * $first
+                + $imgmag_hist{"$second"} * $second
+                + $imgmag_hist{"$maximgmagbin"} * $maximgmagbin
+                + $imgmag_hist{"$third"}  * $third
+                + $imgmag_hist{"$fourth"} * $fourth
+                ;
+    $imgmag_hist_avg = $sum_imgmag / $sum_imgmags;
+
   }
 
   # Now that we have the zeropoint, we can calculate the sky
@@ -413,6 +470,7 @@ if( defined( $image_catalogue ) ) {
   my $p_zp = sprintf( "%.3f", $zeropoint );
   my $p_zp_hist = sprintf( "%.3f", $diff_hist_avg );
   my $p_zpvar = sprintf( "%.3f", $zeropoint_variance );
+  my $p_limmag_img = sprintf( "%.3f", $imgmag_hist_avg );
   my $p_ext = sprintf( "%.3f", $extcor );
   my $p_sky_mean = sprintf( "%.2f", $sky_mean );
   my $p_sky_stddev = sprintf( "%.2f", $sky_stddev );
@@ -427,7 +485,7 @@ if( defined( $image_catalogue ) ) {
               ( $group ? $Grp->file : $Frm->file ) .
               ":\n", "blue" );
   orac_print( " Filter:        $p_filter\n", "blue" );
-  orac_print( " Exposure time: $p_exptime seconds\n", "blue" );
+#  orac_print( " Exposure time: $p_exptime seconds\n", "blue" );
   orac_print( " Object name:   $p_object\n", "blue" );
   orac_print( "\n" );
   orac_print( "Image quality statistics on " .
@@ -444,6 +502,7 @@ if( defined( $image_catalogue ) ) {
               ( $group ? $Grp->file : $Frm->file ) .
               ":\n", "blue" );
   orac_print( " Instrumental zero-point: $p_zp_hist\n", "blue" );
+  orac_print( " Limiting magnitude:      $p_limmag_img\n", "blue" );
   orac_print( " Background sky level:    $p_sky_mean +/- $p_sky_stddev counts.\n",
               "blue" );
   orac_print( " Sky brightness:          $p_mag magnitudes/arcsec^2.\n",
@@ -459,6 +518,7 @@ if( defined( $image_catalogue ) ) {
                   FWHM_K => $k_fwhm,
                   FWHM_K_ZEN => $k_fwhm_zen,
                   GAMMA => $gamma,
+                  MAG_LIMIT => $imgmag_hist_avg,
                   ORIENT => $orient,
                   SKY_VALUE => $sky_mean,
                   SKY_VALUE_ERROR => $sky_stddev,
