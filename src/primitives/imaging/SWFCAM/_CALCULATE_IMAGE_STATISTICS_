@@ -32,6 +32,8 @@ calculations. Otherwise, use the current Frame. [0]
 The magnitude type to use when  calculating zeropoint. This can be any
 of the MAG_* output parameters from SExtractor. [MAG_ISO]
 
+=item MATCHED_CATALOGUE = C<Astro::Catalog> object (Given)
+
 =back
 
 =head1 NOTES
@@ -156,13 +158,32 @@ if( defined( $image_catalogue ) ) {
   # Create a temporary file to hold the input catalogue to PSF.
   my $psf_input_temp = new ORAC::TempFile( SUFFIX => '.txt' );
 
-  # Write the catalogue to disk.
-  $psf_cat->write_catalog( File => $psf_input_temp->file,
-                           Format => 'STL' );
+  my $params;
 
-  # Set up the parameters for PSF.
-  my $params = "incat=" . $psf_input_temp->file . " "
-             . "device=! gauss=false logfile=! ";
+  if( $match ) {
+
+    # Write the catalogue to disk.
+    $psf_cat->write_catalog( File => $psf_input_temp->file,
+                             Format => 'STL' );
+
+    # Set up the parameters for PSF.
+    $params = "incat=" . $psf_input_temp->file . " "
+            . "device=! gauss=false logfile=! ";
+  } else {
+    $psf_cat->write_catalog( File => $psf_input_temp->file,
+                             Format => 'XY' );
+    $params = "cofile=" . $psf_input_temp->file . " device=! gauss=false logfile=! incat=! ";
+
+    my $wcsparams = "ndf=";
+    if( $group ) {
+      $wcsparams .= $Grp->file;
+    } else {
+      $wcsparams .= $Frm->file;
+    }
+    $wcsparams .= " frame=pixel";
+
+    $Mon{'ndfpack_mon'}->obeyw( "wcsframe", $wcsparams );
+  }
 
   if( $group ) {
     $params .= "in=" . $Grp->file;
@@ -172,6 +193,17 @@ if( defined( $image_catalogue ) ) {
 
   # Run PSF.
   $Mon{'kappa_mon'}->obeyw( "psf", "$params" );
+
+  if( ! $match ) {
+    my $wcsparams = "ndf=";
+    if( $group ) {
+      $wcsparams .=  $Grp->file;
+    } else {
+      $wcsparams .= $Frm->file;
+    }
+    $wcsparams .= " frame=sky";
+    $Mon{'ndfpack_mon'}->obeyw( "wcsframe", $wcsparams );
+  }
 
   # Obtain statistics.
   ( my $ORAC_STATUS, my $axialratio ) = $Mon{'kappa_mon'}->get( "psf", "axisr" );
