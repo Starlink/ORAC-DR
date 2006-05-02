@@ -110,6 +110,10 @@ if( defined( $image_catalogue ) ) {
   _GET_EXPANSION_RATIO_
   my $maxarea = 3.14159 * 6.25 * 6.25 * ( $_GET_EXPANSION_RATIO_{X_EXPANSION} ) ** 2;
 
+  my $ell_step = 0.01;
+  my %ell_hist;
+
+  my $cat;
   if( $match ) {
     $cat = $matched_catalogue;
   } else {
@@ -124,7 +128,6 @@ if( defined( $image_catalogue ) ) {
     push @gooditems, $item;
 
     $ell_hist{ int( $item->morphology->ellipticity->value / $ell_step ) * $ell_step }++;
-    push( @ellipticities, $item->morphology->ellipticity->value );
 
     if( $match ) {
 
@@ -148,7 +151,7 @@ if( defined( $image_catalogue ) ) {
 
   }
 
-  my $psf_cat = new Astro::Catalog( Items => \@gooditems );
+  my $psf_cat = new Astro::Catalog( Stars => \@gooditems );
 
   # Create a temporary file to hold the input catalogue to PSF.
   my $psf_input_temp = new ORAC::TempFile( SUFFIX => '.txt' );
@@ -267,9 +270,12 @@ if( defined( $image_catalogue ) ) {
   # brightness, etc). if we have a catalogue of objects that matched
   # between the NDF and SkyCat AND if the filter is Z, Y, J, H, or K.
   my $phot = 1;
+  my $filter = $Frm->uhdr( "ORAC_FILTER" );
   if( $filter !~ /[ZYJHK]/ ) {
     $phot = 0;
   }
+  my $extcor = 0;
+  my @zps;
   if( $match && $phot ) {
 
     # Obtain the mean extinction coefficient.
@@ -279,7 +285,7 @@ if( defined( $image_catalogue ) ) {
 
     # Derive the extinction correction using the IR standard of
     # one airmass.
-    my $extcor = ( $airmass - 1.0 ) * $extinction;
+    $extcor = ( $airmass - 1.0 ) * $extinction;
 
     # Obtain the exposure time.
     my $exptime = $Frm->uhdr( "ORAC_EXPOSURE_TIME" );
@@ -288,14 +294,13 @@ if( defined( $image_catalogue ) ) {
     # information.
     my @image_mags;
     my @standard_mags;
-    my @zps;
     my %zp_hist;
     my %stdmag_hist;
     my %imgmag_hist;
 
     # Stepsizes for the zeropoint and limiting magnitude histograms.
-    my $zp_stepsize = 0.01;
-    my $lm_stepsize = 0.1;
+    my $zp_step = 0.01;
+    my $lm_step = 0.1;
 
     # Now, go through the list of objects that had catalogue magnitudes
     # and calculate the zeropoint.
@@ -347,7 +352,7 @@ if( defined( $image_catalogue ) ) {
       push( @image_mags, $im_mag );
       push( @standard_mags, $st_mag );
       push( @zps, $st_mag - $im_mag );
-      $zp_hist{ int( ( $st_mag - $im_mag ) / $zp_stepsize ) * $zp_stepsize }++;
+      $zp_hist{ int( ( $st_mag - $im_mag ) / $zp_step ) * $zp_step }++;
     }
 
     # Calculate the zeropoint from our histogram.
@@ -389,9 +394,9 @@ if( defined( $image_catalogue ) ) {
     # magnitudes.
     my $sum = 0;
     foreach my $zp ( @zps ) {
-      $sum += $diff;
+      $sum += $zp;
     }
-    $avg = $sum / ( $#zps + 1 );
+    my $avg = $sum / ( $#zps + 1 );
     my $sumsqu = 0;
     foreach my $zp ( @zps ) {
       $sumsqu += ( $zp - $avg ) * ( $zp - $avg );
@@ -410,9 +415,11 @@ if( defined( $image_catalogue ) ) {
       $im_mag -= $extcor;
       $im_mag += $zeropoint;
 
-      $imgmag_hist{ int( $im_mag / $lm_stepsize ) * $lm_stepsize }++;
+      $imgmag_hist{ int( $im_mag / $lm_step ) * $lm_step }++;
     }
 
+    my $maximgmag = 0;
+    my $maximgmagbin = 0;
     foreach my $imgmag_bin ( sort keys %imgmag_hist ) {
       if( $imgmag_hist{$imgmag_bin} > $maximgmag ) {
         $maximgmag = $imgmag_hist{$imgmag_bin};
@@ -420,10 +427,10 @@ if( defined( $image_catalogue ) ) {
       }
     }
 
-    $first = $maximgmagbin - ( 2 * $lm_stepsize );
-    $second = $maximgmagbin - $lm_stepsize;
-    $third = $maximgmagbin + $lm_stepsize;
-    $fourth = $maximgmagbin + ( 2 * $lm_stepsize );
+    $first = $maximgmagbin - ( 2 * $lm_step );
+    $second = $maximgmagbin - $lm_step;
+    $third = $maximgmagbin + $lm_step;
+    $fourth = $maximgmagbin + ( 2 * $lm_step );
     if( ! defined( $imgmag_hist{"$first"} ) ) {
       $imgmag_hist{"$first"} = 0;
     }
@@ -459,9 +466,10 @@ if( defined( $image_catalogue ) ) {
   my $p_ellipticity = sprintf( "%.3f", $ext_ellipticity );
   my $p_fwhm = sprintf( "%.3f", $fwhm );
   my $p_k_fwhm = sprintf( "%.3f", $k_fwhm );
+  my $p_k_fwhm_zen = sprintf( "%.3f", $k_fwhm_zen );
   my $p_orient = sprintf( "%.3f", $orient );
   my $p_gamma = sprintf( "%.3f", $gamma );
-  my $p_num_obj = sprintf( "%d", $#diffs + 1 );
+  my $p_num_obj = sprintf( "%d", $#zps + 1 );
   my $p_zp = sprintf( "%.3f", $zeropoint );
 #  my $p_zp_hist = sprintf( "%.3f", $diff_hist_avg );
   my $p_zp_var = sprintf( "%.3f", $zeropoint_variance );
@@ -486,18 +494,19 @@ if( defined( $image_catalogue ) ) {
   orac_print( "Image quality statistics on " .
               ( $group ? $Grp->file : $Frm->file ) .
               ":\n", "blue" );
-  orac_print( " Axial ratio:  $p_axial\n", "blue" );
-  orac_print( " Ellipticity:  $p_ellipticity\n", "blue" );
-  orac_print( " FWHM:         $p_fwhm arcseconds\n", "blue" );
-  orac_print( " K-band equiv: $p_k_fwhm arcseconds\n", "blue" );
-  orac_print( " Orientation:  $p_orient degrees east of north\n", "blue" );
-  orac_print( " Gamma:        $p_gamma (2 = gaussian)\n", "blue" );
+  orac_print( " Axial ratio:   $p_axial\n", "blue" );
+  orac_print( " Ellipticity:   $p_ellipticity\n", "blue" );
+  orac_print( " FWHM:          $p_fwhm arcseconds\n", "blue" );
+  orac_print( " K-band equiv:  $p_k_fwhm arcseconds\n", "blue" );
+  orac_print( "  ...at zenith: $p_k_fwhm_zen arcseconds\n", "blue" );
+  orac_print( " Orientation:   $p_orient degrees east of north\n", "blue" );
+  orac_print( " Gamma:         $p_gamma (2 = gaussian)\n", "blue" );
   orac_print( "\n" );
   orac_print( "Photometric statistics on " .
               ( $group ? $Grp->file : $Frm->file ) .
               ":\n", "blue" );
   orac_print( " Instrumental zero-point: $p_zp +/- $p_zp_var\n", "blue" );
-  orac_print( " Limiting magnitude:      $p_limmag_\n", "blue" );
+  orac_print( " Limiting magnitude:      $p_limmag\n", "blue" );
   orac_print( " Background sky level:    $p_sky_value +/- $p_sky_value_variance counts.\n",
               "blue" );
   orac_print( " Sky brightness:          $p_sky_brightness magnitudes/arcsec^2.\n",
