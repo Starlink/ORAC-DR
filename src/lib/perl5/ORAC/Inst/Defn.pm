@@ -147,7 +147,12 @@ my %MonolithDefns = (
          catselect => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => ( defined( $ENV{'CURSA_DIR'} ) ? "$ENV{CURSA_DIR}/catselect" : "" ),
+           PATH => ( defined( $ENV{'CURSA_DIR'} ) ? "$ENV{CURSA_DIR}/cursa" : "" ),
+          },
+         cursa => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => ( defined( $ENV{'CURSA_DIR'} ) ? "$ENV{CURSA_DIR}/cursa" : "" ),
           },
          ndf2fits => {
            MESSYS => 'AMS',
@@ -177,7 +182,7 @@ my %MonolithDefns = (
          figaro1 => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
-           PATH => ( defined( $ENV{'KAPPA_DIR'} ) ? $ENV{FIG_DIR}."/figaro1" : "" ),
+           PATH => ( defined( $ENV{'FIG_DIR'} ) ? $ENV{FIG_DIR}."/figaro1" : "" ),
           },
          figaro2 => {
            MESSYS => 'AMS',
