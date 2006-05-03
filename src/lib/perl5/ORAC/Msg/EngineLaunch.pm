@@ -444,7 +444,7 @@ sub launch {
       # different each time this is called to protect against systems
       # that can not reuse system identifiers
       my $obj;
-      if (!$path || -e $path) {
+      if ($path && -e $path) {
 	my $engid = ($messys->require_uniqid ? $self->engine_inc($engine)
 		     : $engine );
 	$obj = $pars{CLASS}->new($engid, $path );
