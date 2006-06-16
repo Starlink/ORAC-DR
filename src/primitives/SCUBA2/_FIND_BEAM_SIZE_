@@ -1,4 +1,4 @@
-# -*-perl-*-
+#! -*-perl-*-
 
 =head1 NAME
 
@@ -82,8 +82,14 @@ Log of beam sizes.
 
 =head1 KNOWN ISSUES
 
-The beam PA is given in the SKY domain and will therefore rotate with
-the sky during the course of a single night.
+Since the fit is currently restricted to the SKY domain, the reported
+beam PA will rotate with the sky during the course of a single
+night. When an AzEl frame becomes available that will be used for the
+fit.
+
+This method also only fits a single component to the beam. This is not
+enough at 450 microns, but currently the beam is not sufficiently
+well-known to do much more.
 
 =head1 AUTHOR
 
@@ -95,9 +101,11 @@ Reserved.
 =cut
 
 # First check that we only have one file in the Frame
+my $in;
 unless ($Frm->nfiles == 1) {
     orac_throw "Error: _FIND_BEAM_SIZE_ must be run after frames have been combined\n";
-#    exit;
+} else {
+    $in = $Frm->file;
 }
 
 # Are we forcing a gaussian?
@@ -111,7 +119,7 @@ my $verbose = (exists $_FIND_BEAM_SIZE_{VERBOSE} &&
   $_FIND_BEAM_SIZE_{VERBOSE} : 1;
 
 # Do we have a calibrator?
-my $calib = $Cal->iscalsource($Frm->hdr("OBJECT")) ;
+my $calib = $Cal->iscalsource($Frm->hdr('OBJECT')) ;
 orac_throw "Error: source is not a known calibrator \n" 
   unless ($calib);
 
@@ -138,6 +146,7 @@ print { $tmp->handle } $_FIND_BRIGHTEST_SOURCE_{RESULTS}->[0]," ",
                        $_FIND_BRIGHTEST_SOURCE_{RESULTS}->[1], "\n";
 $tmp->handle->close;
 
+# FUTURE: change to AzEl frame to carry out the fit.
 # Fit the source with a PSF
 _FIT_PSF_ IMAGE=$in USELOG=1 COFILE=$cofile GAUSSIAN=$gaussian
 ($amp, $fwhm, $axisr, $gamma, $orient) = @{ $_FIT_PSF_{RESULTS} };
@@ -158,11 +167,11 @@ $_FIND_BEAM_SIZE_{RESULTS} = [$beama, $beamb, $orient];
 if ($uselog) {
   my $num = 1;
   my $time= sprintf "%12.3f", $Frm->hdr('ORACTIME');
-  my $filt= sprintf "%4s",   "850";
+  my $filt= sprintf "%4s", $Frm->hdr('FILTER');
 
+  # FIX
   # Get the tau from calibration object
 #    my $tau = sprintf "%5.2f", $Cal->tau($filters[$i-1]);
-
   # Use that tau to calculate CSO
 #    my ($cso, $status) = JCMT::Tau::get_tau('CSO',$filters[$i-1], $tau);
 #    if ($status != 0) {
@@ -170,14 +179,19 @@ if ($uselog) {
 #    } else {
 #      $cso = sprintf "%5.2f", $cso;
 #    }
-  my $cso = sprintf "%5.2f", "1.0";
+  # Get TAU from the header
+  my $cso = sprintf "%5.2f", 0.5*($Frm->hdr('WVMTAUST') + $Frm->hdr('WVMTAUEN'));
 
   # Elevation
-  my $el = int (($Frm->hdr('STRT_ELD') + $Frm->hdr('END_ELD') ) /2.0 );
+  my $el = int ( 0.5 * ($Frm->hdr('ELDST') + $Frm->hdr('ELDEN') ) );
+  # Beam paramters
   $beama = sprintf "%5.3f", $beama;
   $beamb = sprintf "%5.3f", $beamb;
   $orient = sprintf "%5.3f", $orient;
+
+  # Write to logfile
   $beamlog->addentry("$num  $time  $filt  $beama  $beamb  $orient  $cso $el ".$Frm->hdr('OBJECT'));
+
   orac_print "Beam size for filter 850: $beama X $beamb arcsec^2 at a PA of $orient deg E of N \n"
     if ($verbose);
 
