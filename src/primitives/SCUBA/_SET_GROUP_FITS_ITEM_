@@ -1,0 +1,138 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_SET_GROUP_FITS_ITEM_
+
+=head1 SYNOPSIS
+
+  _SET_GROUP_FITS_ITEM_  KEY=OBJECT VALUE=TEST
+  _SET_GROUP_FITS_ITEM_  TABLE=filename.table
+
+=head1 DESCRIPTION
+
+Adds or modifies a FITS header for the Group.  The header is changed
+both in the physical file and in the Group's header object.
+
+=head1 PARAMETERS
+
+=over 4
+
+=item B<KEY>
+
+The FITS keyword.
+
+=item B<VALUE>
+
+The new value for the KEY keyword.
+
+=item B<COMMENT>
+
+The comment string for the KEY keyword.  If it is not defined, the
+current comment will be retained.
+
+=item B<STRING>
+
+Boolean.  If true, the header item will be forced to a string, if
+false (but defined) the item will be forced to a numeric value.  If
+not defined, the new item will be a string if the item already exist
+and is currently a string, else the default FITSMOD behaviour will be
+used.
+
+=back
+
+=head1 AUTHORS
+
+Malcolm Currie E<lt>mjc@star.rl.ac.ukE<gt>,
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2001-2005 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
+
+=cut
+
+# Get argument values.
+my $key = ( $_SET_GROUP_FITS_ITEM_{'KEY'} || undef );
+my $value = ( $_SET_GROUP_FITS_ITEM_{'VALUE'} || undef );
+my $comment = ( $_SET_GROUP_FITS_ITEM_{'COMMENT'} || undef );
+my $isstring = ( $_SET_GROUP_FITS_ITEM_{'STRING'} || undef );
+my $intable = ( $_SET_GROUP_FITS_ITEM_{'TABLE'} || undef );
+
+if ( (!(defined( $key ) && defined( $value ))) && (!defined( $intable)) ) {
+   orac_warn "Must specify either key/value pair or table for FITS header.\n";
+
+} 
+else 
+{
+   # ROR 2006-06-25 : Improved handling of group file names
+   if ($Grp->lastmember($Frm)) {
+      if ($Grp->num > 0) {
+         foreach my $sub ($Frm->subs) {
+
+            # Get the file name for this sub-band
+            my $file = $Grp->grpoutsub($sub);
+      
+            # Append the suffix if necessary
+            my $suff = $Grp->filesuffix;
+            $file .= $suff unless $file =~ /$suff$/;
+
+            if ( -e $file ) {
+
+# Form argument strings for optional arguments.
+               my $commentarg = " ";
+               if ( defined( $comment ) ) { $commentarg = "COMMENT=$comment"; }
+               my $stringarg = " ";
+               if ( defined( $isstring ) ) { $stringarg = "STRING=$isstring"; }
+
+               if ( defined($key) && $key =~ m/BUNIT/i )
+               {
+# Special case for BUNIT, which must be handled with the kappa setunit command
+                  $Mon{ndfpack_mon}->obeyw("setunits","ndf=$file units=$value");
+               }
+               elsif ( defined($intable) )
+               {
+                  if ( -e $intable ) 
+                  {
+                     $Mon{'ndfpack_mon'}->obeyw("fitsmod","ndf=$file mode=file table=$intable");
+                  }
+                  else
+                  {
+                     orac_warn("TABLE=$intable does not exist.\n");
+                  }
+               }
+               else
+               {
+# Let the generic primitive do the work.
+                  _SET_FILE_FITS_ITEM_ KEY=$key VALUE=$value FILE=$file $commentarg $stringarg
+
+# Update the header in the $Grp object.
+                  $Grp->hdr( $key => $value );
+               }
+
+            } else {
+               orac_warn "Error modifying FITS header $key.  The group file " .
+                         "$file does not exist.\n";
+            } # end else (-e $file )
+
+         } # end foreach my $sub ($Frm->subs)
+
+      } # end if ($Grp->num > 0)
+
+   } # end if ($Grp->lastmember($Frm))
+
+} # end if ( (!defined( $key )) || (!defined( $value )) )
