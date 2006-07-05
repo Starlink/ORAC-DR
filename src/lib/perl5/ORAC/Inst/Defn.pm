@@ -240,6 +240,11 @@ my %MonolithDefns = (
            PATH => (exists $ENV{SCU2FTS_DIR} ? $ENV{SCU2FTS_DIR}. "/scu2fts" :
 		                                 "not_defined"),
          },
+         hdstools_mon => {
+                          MESSYS => 'AMS',
+                          CLASS => 'ORAC::Msg::Task::ADAM',
+                          PATH => ( defined( $ENV{'HDSTOOLS_DIR'} ) ? "$ENV{HDSTOOLS_DIR}/hdstools_mon" : "" ),
+                         },
 	 # SCUBA-2 Acquisition Tasks
 	 QLSIM => { # we never start QLSIM
 		   MESSYS => 'DRAMA',
@@ -1702,7 +1707,7 @@ sub orac_configure_for_instrument {
       if( Net::Domain->domainname =~ "ukirt" ) {
         $options->{"loop"} = "flag";
       }
-      $options->{"skip"} = 0;
+      $options->{"skip"} = 1;
 
       last SWITCH; }
 
