@@ -32,6 +32,7 @@ use Carp;
 use File::Spec;  # For pedants everywhere
 use IO::File;    # until perl5.6 is guaranteed
 use Text::Balanced qw/ extract_bracketed /;
+use Time::HiRes qw( gettimeofday tv_interval );
 
 # use Data::Dumper; # for debugging
 
@@ -435,11 +436,16 @@ sub execute {
   }
 
   # Execute the recipe
+  use Time::HiRes qw/ gettimeofday /;
+  my $execute_start = [gettimeofday];
   my $status = ORAC::Recipe::Execution::orac_execute_recipe( $CURRENT_PRIMITIVE,
                                                              $block,$Frm,
                                                              $Grp, $Cal,
                                                              $Display, $Mon,
                                                              $self );
+  my $execute_elapsed = tv_interval( $execute_start );
+  my $p_execute_elapsed = sprintf( "%.3f", $execute_elapsed );
+  orac_print "Recipe took $p_execute_elapsed seconds to evaluate and execute.\n\n";
 
   $status = ORAC__OK unless defined $status;
   $status = ORAC__OK if $status eq '';
@@ -959,6 +965,13 @@ sub _parse_recursively {
     push( @parsed, "sub {\n" );
     push( @parsed, "my ( \$Frm, \$Grp, \$Cal, \$Display, \$Mon ) = \@_;\n" );
     push( @parsed, "#line 0 $current_name\n" );
+
+#    if( $self->debug ) {
+
+      push( @parsed, "use Time::HiRes qw/ gettimeofday tv_interval /;\n" );
+      push( @parsed, "my \$recipe_start_time = [gettimeofday];\n" );
+
+#    }
   }
 
   # Loop over recipe lines
@@ -1069,6 +1082,13 @@ sub _parse_recursively {
 
   # If the depth is 1, close off the subroutine.
   if( $depth == 1 ) {
+
+#    if( $self->debug ) {
+      push( @parsed, "my \$recipe_elapsed_time = tv_interval( \$recipe_start_time );\n" );
+      push( @parsed, "my \$p_recipe_elapsed_time = sprintf( \"\%.3f\", \$recipe_elapsed_time );\n" );
+      push( @parsed, "orac_print \"\\nRecipe took \$p_recipe_elapsed_time seconds to execute.\\n\";\n" );
+#    }
+
     push( @parsed, "# Return good status.\n" );
     push( @parsed, "ORAC__OK;\n" );
     push( @parsed, "# End of anonymous subroutine\n" );
