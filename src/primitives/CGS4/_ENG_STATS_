@@ -1,0 +1,124 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_ENG_STATS_ - Calculate statistics for bias and dark frames in
+engineering mode.
+
+=head1 DESCRIPTION
+
+For bias frames, this primitive calculates the mean value across the
+array and for CGS4's four channels.
+
+For dark frames, this primitive calculates the readnoise across the
+array and for CGS4's four channels.
+
+On the CGS4 array, the 4th, 8th, 12th... columns are the first
+channel, 3rd, 7th, 11th... are the second channel, 2nd, 6th,
+10th... are the third channel, and 1st, 5th, 9th... are the fourth.
+
+=head1 AUTHOR
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 REVISION
+
+$Id$
+
+=head1 COPYRIGHT
+
+Copyright (C) 2006 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# Get the gain.
+my $gain = $Frm->uhdr( "ORAC_GAIN" );
+
+# Get the exposure time.
+my $expt = $Frm->uhdr( "ORAC_EXPOSURE_TIME" );
+
+# Get current frame name.
+( my $in, undef ) = $Frm->inout( '_blah' );
+
+# Get stats for current frame.
+$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$in" );
+
+if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq 'BIAS' ) {
+
+  ( my $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+
+  my $mean_e = $mean * $gain;
+
+  my $mean_string = sprintf( "%4.1f", $mean );
+  my $mean_e_string = sprintf( "%4.1f", $mean_e );
+  orac_print "Mean value across array: $mean_string counts, $mean_e_string electrons.\n";
+
+} elsif( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq 'DARK' ) {
+
+  ( my $ORAC_STATUS, my $rn ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+
+  my $rn_e = $rn * $gain;
+
+  my $rn_string = sprintf( "%4.1f", $rn );
+  my $rn_e_string = sprintf( "%4.1f", $rn_e );
+
+  orac_print "RMS noise across array: $rn_string counts, $rn_e_string electrons.\n";
+
+}
+
+for( 1..4 ) {
+  my $channel = $_;
+
+  # Get the dimensions of the CGS4 array.
+  _GET_DIMENSIONS_ GROUP=0
+  my $lbound_ref = $_GET_DIMENSIONS_{LBOUND};
+  my $ubound_ref = $_GET_DIMENSIONS_{UBOUND};
+  my $lbound = $lbound_ref->[0];
+  my $ubound = $ubound_ref->[0];
+
+  # Create an ARD mask.
+  my $ardmask = "ardmask$$.txt";
+  open my $ard_fh, ">", "$ardmask" or orac_throw "Unable to open $ardmask to create an ARD mask. Error: $!.\n";
+  for( $lbound .. $ubound ) {
+    my $column = $_;
+    next if ( ( 5 - ( $column % 4 ) ) == $channel );
+    next if ( ( $column % 4 ) == 0 && $channel == 1 );
+    print $ard_fh "COLUMN( $column )\n";
+  }
+  close $ard_fh;
+
+  # Mask out the requested columns using the ARD mask.
+  my $tmp = new ORAC::TempFile;
+  my $tmpfile = $tmp->file;
+  $Mon{'kappa_mon'}->obeyw( "ardmask", "in=$in ardfile=$ardmask out=$tmpfile" );
+
+  # Find the stats.
+  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$tmpfile" );
+
+  if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq 'BIAS' ) {
+
+    ( my $ORAC_STATUS, my $chan_mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+
+    my $chan_mean_e = $chan_mean * $gain;
+
+    my $chan_mean_string = sprintf( "%4.1f", $chan_mean );
+    my $chan_mean_e_string = sprintf( "%4.1f", $chan_mean_e );
+    orac_print "Mean value in channel $channel: $chan_mean_string counts, $chan_mean_e_string electrons.\n";
+
+  } elsif( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq 'DARK' ) {
+
+    ( my $ORAC_STATUS, my $chan_rn ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+
+    my $chan_rn_e = $chan_rn * $gain;
+
+    my $chan_rn_string = sprintf( "%4.1f", $chan_rn );
+    my $chan_rn_e_string = sprintf( "%4.1f", $chan_rn_e );
+
+    orac_print "RMS noise in channel $channel: $chan_rn_string counts, $chan_rn_e_string electrons.\n";
+
+  }
+
+  unlink $ardmask;
+
+}
