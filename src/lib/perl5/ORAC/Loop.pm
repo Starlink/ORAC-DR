@@ -16,6 +16,8 @@ ORAC::Loop - data loops for ORACDR
 
   $frm = orac_loop_flag($class, $utdate, \@list, $skip);
 
+  $frm = orac_loop_task( $class, \@array, $skip );
+
   $frm = orac_loop_file($class, \@list );
 
 =head1 DESCRIPTION
@@ -789,7 +791,9 @@ sub orac_loop_task {
       # in the remote parameter.
       my $tstr = sprintf("%.2f",$current{$t}->{TIMESTAMP});
       $tstr =~ s/\./_/;
-      my $fname = lc($t) . '_' . $tstr;
+      my $root = $t;
+      $root =~ s/\@.*//; # @a.b.c in DRAMA task will cause HDS and ADAM problems
+      my $fname = lc($root) . '_' . $tstr;
 
       if ($infmt eq 'NDF') {
 	# write the DATA_ARRAY out as a piddle
@@ -1447,7 +1451,7 @@ Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2005 Particle Physics and Astronomy Research
+Copyright (C) 1998-2006 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
