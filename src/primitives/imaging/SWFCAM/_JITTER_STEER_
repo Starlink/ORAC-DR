@@ -14,6 +14,8 @@ my $number_of_microsteps = $Frm->hdr( "NUSTEP" );
 my $microstep_position = $Frm->hdr( "USTEP_I" );
 my $microstep_ra = $Frm->hdr( "USTEP_X" );
 my $microstep_dec = $Frm->hdr( "USTEP_Y" );
+my $number_of_jitters = $Frm->hdr( "NJITTER" );
+my $jitter_position = $Frm->hdr( "JITTER_I" );
 
 # Grab pixelsize and rotation angle.
 my $pixelsize = $Frm->hdr( "PIXLSIZE" );
@@ -32,6 +34,8 @@ $Frm->uhdr( "NUMBER_OF_MICROSTEPS", $number_of_microsteps );
 $Frm->uhdr( "MICROSTEP_POSITION", $microstep_position );
 $Frm->uhdr( "MICROSTEP_RA", $microstep_ra );
 $Frm->uhdr( "MICROSTEP_DEC", $microstep_dec );
+$Frm->uhdr( "NUMBER_OF_JITTERS", $number_of_jitters );
+$Frm->uhdr( "JITTER_POSITION", $jitter_position );
 
 $Frm->uhdr( "MAKE_FLAT", 0 );
 
@@ -47,7 +51,7 @@ if( ! defined( $jitter_positions ) ) {
   orac_warn "Number of jitter positions undefined. Defaulting to 9.\n";
   $jitter_positions = 9;
 }
-orac_print( " This is jitter position " . $Frm->hdr( "JITTER_I" ) . " of $jitter_positions.\n", "yellow" );
+orac_print( " This is jitter position " . $Frm->uhdr( "JITTER_POSITION" ) . " of $jitter_positions.\n", "yellow" );
 
 # Do the same for USTEP_POSITIONS.
 my $ustep_positions = $_JITTER_STEER_{USTEP_POSITIONS};
@@ -104,7 +108,7 @@ if( ( $microstep_position % $number_of_microsteps ) == 0 &&
 # Specify the first frame in a jitter position as the frame whose
 # mode will be the reference for the normalization of frames taken
 # at that jitter position.
-if( $Grp->num % $number == 0 ) {
+if( $jitter_position == 1 && $microstep_position == 1 ) {
   $Frm->uhdr( "REFERENCE_FRAME", 1 );
   orac_print( " This frame will be used as a reference for sky subtraction levels.\n", "yellow" );
 } else {
@@ -112,7 +116,8 @@ if( $Grp->num % $number == 0 ) {
 }
 
 # Set up mosaicking and end-of-cycle processing headers.
-if( ($Grp->num + 1) % $number == 0 ) {
+if( $number_of_microsteps == $microstep_position &&
+    $number_of_jitters == $jitter_position ) {
   $Frm->uhdr( "MAKE_MOSAIC", 1 );
   orac_print ( " Will perform mosaicking after this frame's processing.\n", "yellow" );
 
@@ -142,7 +147,14 @@ $Frm->uhdr( "NEW_Y_ORIGIN", nint( $pixoff_y * sqrt( $number_of_microsteps ) ) / 
 $Frm->uhdr( "INTERLEAVED", 0 );
 
 # Set the cycle number.
-$Frm->uhdr( "CYCLE_NUMBER", int( $Grp->num / $number ) );
+if( $jitter_position == 1 && $microstep_position == 1 ) {
+  if( ! defined( $Grp->uhdr( "CYCLE_NUMBER" ) ) ) {
+    $Grp->uhdr( "CYCLE_NUMBER", 0 );
+  } else {
+    $Grp->uhdr( "CYCLE_NUMBER", $Grp->uhdr( "CYCLE_NUMBER" )++ );
+  }
+}
+$Frm->uhdr( "CYCLE_NUMBER", $Grp->uhdr( "CYCLE_NUMBER" ) );
 
 $Frm->uhdr("TARGET_OR_SKY", "sky");
 
