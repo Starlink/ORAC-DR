@@ -81,9 +81,6 @@ if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
   # Check to see if it's time to do the interleaving yet.
   if( $Frm->uhdr("INTERLEAVE_MICROSTEPS") == 1 ) {
 
-    # Set the output filename. Note that it's a group file.
-    ( my $in, my $out ) = $Frm->inout("_int");
-
     # Retrieve the number of microsteps.
     my $n_usteps = $Frm->uhdr("NUMBER_OF_MICROSTEPS");
 
@@ -94,8 +91,30 @@ if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
     # A running exposure time.
     my $exptime = 0;
 
-    # Grab the last N frames in the group.
-    my @interleave_frames = ($Grp->members)[(-$n_usteps)..-1];
+    # Grab the frames that match this jitter position.
+    my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+    $cycleno = defined( $cycleno ) ? $cycleno : 0;
+    my $jitter_pos = $Frm->uhdr( "JITTER_POSITION" );
+    my $subGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno,
+                               JITTER_POSITION => $jitter_pos );
+    my @interleave_frames = $subGrp->members;
+
+    # Take only the most recently observed observation for a given
+    # interleave position.
+    my %pos_seen;
+    my @uniq;
+    foreach my $interleave_frame ( reverse @interleave_frames ) {
+      $pos_seen{$interleave_frame->uhdr("MICROSTEP_POSITION")}++;
+      if( $pos_seen{$interleave_frame->uhdr("MICROSTEP_POSITION")} == 1 ) {
+        push @uniq, $interleave_frame;
+      }
+    }
+    @interleave_frames = reverse @uniq;
+
+    # Set the output file name. We'll use the first frame in the
+    # "group" for this.
+    my $Frame = $interleave_frames[0];
+    ( my $in, my $out ) = $Frame->inout( "_int" );
 
     # If we have a version of KAPPA that's 1.4-3 or older, we can use
     # the faster INTERLEAVE task to do the interleaving. Otherwise, we
@@ -138,7 +157,9 @@ if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
       }
 
       # Run INTERLEAVE.
-      orac_print "Interleaving frames...";
+      orac_print "Interleaving frames ";
+      orac_print join( ", ", map { $_->file } @interleave_frames );
+      orac_print "...";
       _GET_EXPANSION_RATIO_
       my $x_expand = $_GET_EXPANSION_RATIO_{X_EXPANSION};
       my $y_expand = $_GET_EXPANSION_RATIO_{Y_EXPANSION};
@@ -147,7 +168,7 @@ if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
                  . "fill=bad trim=false title=!"
                  ;
       $Mon{'kappa_mon'}->obeyw( "interleave", "$params" );
-      orac_print "done.\n";
+      orac_print " done.\n";
 
     } else {
 
@@ -186,7 +207,9 @@ if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
       }
 
       # Run DRIZZLE.
-      orac_print "Interleaving frames...";
+      orac_print "Interleaving frames ";
+      orac_print join( ", ", map { $_->file } @interleave_frames );
+      orac_print "...";
       _GET_EXPANSION_RATIO_
       my $multi = $_GET_EXPANSION_RATIO_{X_EXPANSION};
       my $pixfrac = 1.0 / $multi;
@@ -194,7 +217,7 @@ if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
                 . "pixfrac=$pixfrac usevar=false";
 
       $Mon{'ccdpack_reg'}->obeyw( "drizzle", "$param" );
-      orac_print "done.\n";
+      orac_print " done.\n";
 
       # Erase the spuriously-created VARIANCE component, if it exists.
       $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$out" );
