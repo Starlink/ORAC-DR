@@ -64,6 +64,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.4  2006/07/21 02:09:08  bradc
+#     set RTD_REMOTE_DIR to $ORAC_DATA_OUT/.., create ORAC_DATA_OUT directory if it does not exist and we are being run on a wfdr machine
+#
 #     Revision 1.3  2004/11/12 01:22:02  phirst
 #      setenv RTD_REMOTE_DIR and HDS_MAP
 #
@@ -101,7 +104,7 @@
 if !($?ORAC_DATA_ROOT) then
     setenv ORAC_DATA_ROOT /ukirtdata
 endif
-
+    
 if !($?ORAC_CAL_ROOT) then
     setenv ORAC_CAL_ROOT /ukirt_sw/oracdr_cal
 endif
@@ -137,7 +140,16 @@ setenv ORAC_SUN
 
 # some other things
 setenv HDS_MAP 0
-setenv RTD_REMOTE_DIR $ORAC_DATA_OUT
+setenv RTD_REMOTE_DIR $ORAC_DATA_OUT/..
+
+# Determine the host, and if we're on a wfdr machine, create
+# $ORAC_DATA_OUT if it doesn't already exist.
+set hostname = `/bin/hostname`
+if( $hostname == "wfdr1" || $hostname == "wfdr2" || $hostname == "wfdr3" || $hostname == "wfdr4" ) then
+    if( ! -d ${ORAC_DATA_OUT} ) then
+        mkdir $ORAC_DATA_OUT
+    endif
+endif
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
