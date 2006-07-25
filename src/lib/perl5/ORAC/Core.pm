@@ -210,7 +210,7 @@ all the monoliths launched for this instrument.
 
   orac_process_frame(
                        CurrentRecipe => $STATUS_TEXT,
-		       PrimitiveList => $PRIMTIVE_LIST,
+		       PrimitiveList => $PRIMITIVE_LIST,
 		       Frame => $Frm,
 		       Group => $Grp,
 		       Calibration => $Cal,
