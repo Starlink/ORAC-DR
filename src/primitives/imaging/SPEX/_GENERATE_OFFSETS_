@@ -1,0 +1,688 @@
+#+
+# Name:
+#    _GENERATE_OFFSETS_
+#
+# Purpose:
+#    Finds the offsets between the frames in the current $Grp, and
+#    registers the frames.
+#
+# Description:
+#    This primitive finds the pixel offsets between the frames in the 
+#    current $Grp.  It first attempts to find and match common objects
+#    automatically.  Should this fail, approximate offsets are found.
+#    These are obtained from registering a central source (see
+#    argument CENTRAL_SOURCE) or by transforming the equatorial offsets
+#    in the headers, or by using supplied polarimetry beam separations.
+#    Partial automatic solutions are allowed; the unregistered remainder
+#    of the frames use the approximate method, and the two co-ordinate
+#    systems are tied to a common origin.
+#
+#    The derived registration can be adjusted for moving targets.
+#
+# Language:
+#    Perl5
+#
+# Arguments:
+#    BOXSIZE = REAL (Given)
+#       The size in arcseconds of the search box in which to find the
+#       brightest object.  It is only used when CENTRAL_SOURCE is true.
+#       [5.0]
+#    CENTRAL_SOURCE = LOGICAL (Given)
+#       If true, attempt to register using a central source when
+#       automatic registration fails.  It uses a BOXSIZE-arcsec search
+#       box about the centre of the frame, jittered by the telescope
+#       offsets.  Otherwise telescope offsets provide the backup
+#       registration.  [TRUE]
+#    COMPLETE = REAL (Given)
+#       Completeness of matched features for registration between two 
+#       frames to be accepted.  It must be in the range 0.2 to 1.0. [0.4]
+#    MINPIX = INTEGER (Given)
+#       Minimum number of contiguous pixels above the PERCENTILE level
+#       to be considered a registration feature.  It must be at least 6.
+#       The default here is for UFTI and the new IRCAM.  For the
+#       original IRCAM3 without the magnifier, 6 proved to be 
+#       satisfactory.  [9]
+#    MOVING_TARGET = LOGICAL (Given)
+#       If true (1), the source is a moving target and frames are to
+#       register the moving target not the fixed stars.  [0]
+#    OFFSET_TYPE = CHARACTER (Given)
+#       The type of offsets used as a last resort.  This will normally
+#       be "telescope", but for polarimetry mosaics it will be
+#       "beam-separation".  The string merely appears in informational
+#       messages.  The offsets themselves for polarimetry or any type of
+#       offset should already be stored in the telescope offsets.
+#       ["telescope"]
+#    PERCENTILE = REAL (Given)
+#       Percentile threshold for locating objects to register frames. 
+#       It must be in the range 75 to 99.9.  The default here is for
+#       UFTI and the new IRCAM.  For the original IRCAM3 without the
+#       magnifier, 96 proved to be satisfactory.  [98]
+#    POLARIMETRY = LOGICAL (Given)
+#       This is set true (1) for polarimetry data, both extracted
+#       regions and mosaics.  It's purpose is to make the central-source
+#       detection ignore the telescope offsets because the extracted
+#       polarimetry regions already allow for the offsets.  It is
+#       ignored if CENTRAL_SOURCE is not TRUE. [0]
+#    SKYREG = LOGICAL (Given)
+#       If true (1), use sky co-ordinates during the registration.
+#       [0]
+#
+# Notes:
+#    -  This primitive is suitable for infrared imaging polarimeters.
+#    -  A partial automatic solution is only possible when there are
+#    at least two registered frames.
+#    -  The following are required for automatic registration:
+#    at least three objects per frame satisfying the thresholds given
+#    by arguments MINPIX and PERCENTILE; and at least three common
+#    objects in both frames and the fraction of matching objects is at
+#    least thst given by argument COMPLETE.
+#    -  For a partial automatic solution, tying the co-ordinate systems
+#    becomes a question of finding the Cartesian displacements between
+#    them.  It is done by comparing the telescope offsets with the
+#    co-ordinates of the first object of the first automatically
+#    registered frame.  Then this pair of displacements are added to
+#    the approximate offsets of the remaining frames.  See 
+#    _FIND_APPROX_OFFSETS_ for more information.
+#
+# Tasks:
+#    CCDPACK: FINDOBJ, FINDOFF, REGISTER: KAPPA: WCSFRAME.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (JAC, Starlink)
+#
+# Copyright:
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Selection
+# =========
+
+# This should only be performed on OBJECT frames.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY") {
+
+# Test whether or not it is time to make a mosaic.
+       my $makemos = $Frm->uhdr( "MAKE_MOSAIC" );
+       if ( $makemos ) {
+
+# Create groups and list
+# ======================
+
+# Form a list of group frames.
+          my @frames = $Grp->members;
+
+# Form a list of input file names for CCDPACK tasks.
+          my @objects = $Grp->membernames;
+
+# Convert list to comma-separated list.
+          my $objlist = join( ",", @objects );
+
+# Create text file to hold the list of input files, one per line.  This
+# is needed because expanded lists of files may make the command line too
+# long for the ADAM message system.
+          unlink ( "objlist.inlist$$" );
+          open( my $fh_inlist, ">objlist.inlist$$" ) ||
+            orac_throw "Unable to open objlist.inlist$$ to create a list of frames to process.  Error: $!.\n";
+          print $fh_inlist join( "\n", @objects ), "\n";
+          close( $fh_inlist );
+
+# Create a new group to hold the reference frame and any other frames
+# for which registration fails.  Start it with the reference frame.
+          my $regGrp = new $Grp;
+          my $refobs = $Grp->frame( 0 );
+          $regGrp->push( $refobs );
+
+# Create a new group to hold the frames which pass the automated
+# object detection.
+          my $odGrp = new $Grp;
+
+# Create a new group to hold the frames which pass the automated
+# object detection and match at least one other frame in their
+# observation group.
+          my $matchGrp = new $Grp;
+
+# Set the underlying co-ordinate system.
+# ======================================
+
+# This will either be pixels or sky co-ordinates.  The latter know the
+# approximate locations of the overlap regions, and hence the fraction
+# of feasible matches.  Pixel co-ordinates formed the old system.
+          my $skyreg = $_GENERATE_OFFSETS_{SKYREG};
+          $skyreg = defined( $skyreg ) ? $skyreg : 0;
+
+# Should check whether or not SKY WCS is available...
+          my $skypresent = 1;
+          $skyreg = $skyreg && $skypresent && starversion_gt( "CCDPACK", 'V2.9' );
+          my ( $param1, $param2 );
+
+# Set the co-ordinate system.
+# ===========================
+
+# Use sky co-ordinates for registration.
+          if ( $skyreg ) {
+             $param1 = "in='^objlist.inlist$$' mode=current frame=sky";
+             $Mon{ "ccdpack_reg" }->obeyw( "wcsedit", "$param1" );
+
+# Or select pixel co-ordinates.
+
+# This is needed because CCDPACK v3.0, which is in the same release
+# as KAPPA v0.14-3 uses the WCS.  CCDPACK/FINDOFF and REGISTER have
+# new USEWCS parameters which default to true, meaning convert the
+# pixel co-ordinates in the .find and .off files into the current
+# co-ordinate system of each NDF.  We use pixel co-ordinates
+# throughout.  By making the change here, the FINDOFF and REGISTER
+# command lines remain unchanged.
+          } elsif ( starversion_gt( "KAPPA", 'V0.13-6' ) ) {
+             $param1 = "ndf='^objlist.inlist$$' frame=pixel";
+             $Mon{ "ndfpack_mon" }->obeyw( "wcsframe", "$param1" );
+          }
+
+# Find objects
+# ============
+
+# Form the inventory.
+# -------------------
+
+# Obtain the parameters for the detection.
+          my $percentile = ( $_GENERATE_OFFSETS_{PERCENTILE} || 98 );
+          my $minpix = ( $_GENERATE_OFFSETS_{MINPIX} || 9 );
+          my $complete = ( $_GENERATE_OFFSETS_{COMPLETE} || 0.4 );
+          $complete = max( 0.2, min( 1.0, $complete) );
+
+# Remove existing .find and .off files for the object frames.  This is
+# needed because the presence of these files will indicate whether or
+# not automatic registration has occurred for each frame.
+          foreach my $file ( @objects ) {
+             unlink( $file . ".find" );
+             unlink( $file . ".off" );
+          }
+
+# Initialise the status.
+          my $findoff_status = ORAC__ERROR;
+          my ( $file, $frame, $offfile, $morereg, $partfind, $partsolution );
+
+# Initialise flags which describe if only part of the find and part of
+# the offsets are found.
+          $partfind = 0;
+          $partsolution = 0;
+          $morereg = 0;
+
+# Specify the other parameters for the FINDOBJ stage.
+          $param1 = "in='^objlist.inlist$$' outlist=\'*.find\'";
+          $param2 = "percentile=$percentile minpix=$minpix override";
+
+# Locate and centroid the objects with connected pixels above a threshold
+# in all the flat-fielded object frames.  Write their co-ordinates and
+# peak values into .find text files.  The exact values of threshold
+# percentile and minpix requires some tuning and FINDOBJ to continue
+# when no objects are found in any of the list of input data.
+          my $findobj_status = $Mon{ "ccdpack_reg" }->obeyw( "findobj", "$param1 $param2 accept" );
+
+# Remove unwanted test file produced by FINDOBJ.
+          unlink( "FINDOBJ.LIS" );
+
+# Validate the inventory.
+# -----------------------
+          if ( $findobj_status != ORAC__OK ) {
+             orac_warn "Problem finding objects for registration.  Status was $findobj_status.\n";
+
+# The find-object stage has failed.  The registration group is therefore
+# the whole group of observations.  However, the primitive which finds
+# approximate offsets (_FIND_APPROX_OFFSETS_) uses the first frame
+# as a reference to the co-ordinate when the automated solution is
+# only partially achieved.  Thus for consistency, retain the reference
+# observation stored in the first (reference) observation.
+             $regGrp->push( @frames );
+
+# Form an array to contain those frames with objects satisfying the
+# threshold criteria.  This is determined by the presence of .find
+# files from FINDOBJ.  The OVERRIDE parameter being true means FINDOBJ
+# will complete even if there are no objects within any frame, for
+# which there will be no .find file created. 
+          } else {
+             my @od_objects = ();
+
+             foreach $frame ( @frames ) {
+                $file = $frame->file;
+                my $findfile = $file . ".find";
+
+                if ( ! -e $findfile ) {
+
+# Record any observation without a .find file in the registration group
+# so that another means of registration can be determined for the frame
+# later.  Switch the flag to indicate that there is some more
+# registration to do and a possible partial solution.
+                   $regGrp->push( $frame );
+                   $partfind = 1;
+                   $morereg = 1;
+
+# FINDOFF will exit with an error if any of the .find files contains fewer
+# than three objects.  To prevent losing valid registration data from
+# sources common between other frames, .find files with fewer than three
+# sources must be excluded from the FINDOFF analysis; they are not deleted
+# because the information may still be useful to find a central-source
+# offset.
+
+# So count the number of non-comment lines.  Data lines begin with an integer
+# identifier.  Sky registration only needs one object, hence only need
+# to check for object file, not its contents for sky-co-ordinate registration.
+# Actually test for sky registration later, so we create the list of
+# frames for FINDOFF in the od_objects array.
+                } else {
+                   open( my $fh_findfile, "< $findfile" ) ||
+                     orac_warn "Unable to open $findfile.  Error: $!.\n";
+
+                   my $objcount = 0;
+                   foreach my $line ( <$fh_findfile> ) {
+                      if ( $line =~ /^[1-9]/ ) {
+                         $objcount++;
+                      }
+                   }
+                   close( $fh_findfile );
+
+# Place the observation into the group still requiring registration.
+# Switch the flag to indicate that there is some more registration
+# to do.
+                   if ( $objcount < 3 && ! $skyreg ) {
+                      $partfind = 1;
+                      $morereg = 1;
+                      $regGrp->push( $frame );
+
+# This observation has sufficient objects in the .find file.  Record
+# the filename in the array of frames with sufficient objects detected,
+# and insert its corresponding frame into the objects-successfully
+# detected group.
+                   } else {                   
+                      push( @od_objects, $file );
+                      $odGrp->push( $frame );
+                   }
+                }
+             }
+
+# There is no point supplying fewer than two frames for FINDOFF to register.
+# Look for the special case of only one frame with sufficient objects.  
+# Transfer the single frame to the registration group.  The initialised bad
+# findoff_status will select _FIND_APPROX_OFFSETS_ later.
+             if ( $#od_objects < 1 && ! $skyreg ) {
+
+                if ( $odGrp->num == 0 ) {
+                   $regGrp->push( $odGrp->frame( 0 ) );
+                }
+
+# There is now no partial find.
+                $partfind = 0;
+
+# Form a new list of frames to process at the find offset stage.
+# Again this is a text file, with one frame written per line.  This
+# is needed because expanded lists of files may make the command line
+# too long for the ADAM message system.
+              } else {
+                unlink( "odlist.inlist$$" );
+                open( my $fh_odlist, ">odlist.inlist$$" ) ||
+                  orac_throw "Unable to open odlist.inlist$$ to create a list of frames to process.  Error: $!.\n";
+                print $fh_odlist join( "\n", @od_objects ), "\n";
+                close( $fh_odlist );
+
+# Derive offsets
+# ==============
+
+# Attempt to determine offsets automatically.
+# -------------------------------------------
+
+# Specify the other parameters for the FINDOFF stage.  Set a lower
+# threshold for completeness due to spurious images on UFTI.
+                $param1 = "inlist='^odlist.inlist$$' outlist=\'*.off\'";
+                if ( $skyreg ) {
+                   $param2 = "error=12 complete=$complete override=t restrict maxdisp=20 minmatch=1";
+
+                } else {
+                   $param2 = "error=1 complete=$complete override=t"
+                }
+
+# Pattern match using the co-ordinate lists.  It uses a fast algorithm
+# first, but resorts to a slower one, if patterns aren't matched.
+# Store the offsets in .off text files.
+                $findoff_status =  $Mon{ "ccdpack_reg" }->obeyw( "findoff", "$param1 $param2 accept" );
+                unlink( "odlist.inlist$$" );
+
+# Validate the offsets.
+# ---------------------
+
+# The find-offset stage has failed.  The expected failure is that there
+# were too few matching objects or proportion of objects.  So check for
+# the presence of .off files to make use of what registration was
+# possible rather than finding approximate offsets for all the frames.
+# In theory this would not work under certain circumstances, if say the
+# .off file was partially written.  However, it seems a reasonable
+# approach in practice.  So just issue a warning following bad status
+# from FINDOFF.
+                if ( $findoff_status != ORAC__OK ) {
+                   orac_warn "Problem finding offsets automatically for registration.  Status was $findoff_status.\n";
+                }
+
+# See if a partial solution was used.  For the moment look for the presence
+# of .off files.  Some will be missing for a partial solution.  Only
+# search the group of frames where objects were detected.  Again update
+# the group of unregistered frames where no offset could be determined.
+# Record when a partial solution was returned. 
+                my $numbertoreg = 0;
+                foreach $frame ( $odGrp->members ) {
+                   $file = $frame->file;
+                   $offfile = $file . ".off";
+
+                   if ( ! -e $offfile ) {
+                      $partsolution = 1;
+                      $morereg = 1;
+                      $regGrp->push( $frame );
+
+# Keep a count of the frames to be registered.
+                      $numbertoreg++
+                   } else {
+
+# There was a change to CCDPACK around version 4.0.  The .off files of
+# unregistered frames do exist, but contain no object positions.
+                      open( my $fh_offset_file, "< $offfile" ) ||
+                        orac_throw "Unable to open $offfile offsets file for reading.  Error: $!.\n";
+
+                      my $haspos = 0;
+                      foreach my $line ( <$fh_offset_file> ) {
+
+# Match an unsigned integer at the start of the line.
+                         if ( $line =~ /^\d/ ) {
+                            $haspos = 1;
+                            my @words = split( /\s+/, $line );
+                            if ( $words[ 0 ] < 1 || $words[ 0 ] > 9999 ) {
+                               orac_warn "The file $offfile has a bizarre line:\n";
+                               orac_warn "   $line\n";
+                            }
+                            last;
+                         }
+                      }
+                      close( $fh_offset_file );
+
+# Record when the current frame was not registered.
+                      if ( !$haspos ) {
+                         $partsolution = 1;
+                         $morereg = 1;
+                         $regGrp->push( $frame );
+
+# Keep a count of the frames to be registered.
+                         $numbertoreg++
+                      } else {
+                         $matchGrp->push( $frame );
+                      }
+                   }
+                }
+
+# When all the frames failed to register, there is no partial solution.
+# All will be registered by telescope or central-source offsets.
+                if ( $numbertoreg == ( $odGrp->num + 1 ) ) {
+                   $partsolution = 0;
+                   if ( $odGrp->num == 0 ) {
+                      $partfind = 0;
+                   }
+                }
+             }
+          }
+
+# Tie into a single co-ordinate system
+# ------------------------------------
+
+# If there are some frames registered using stars and others using
+# telescope offsets, we need to tie them together.  The obvious way is
+# through the telescope offset of the first (reference) frame of
+# those registered automatically, comparing it to the centroid of its
+# first source (the one with the lowest identifier).  In
+# _FIND_APPROX_OFFSETS_ we will then apply this offset to the first (and
+# only) entry to the .off files it creates.
+          my ( $xoffref, $yoffref, $xshift_toref, $yshift_toref );
+          my $refindex = 1;
+          if ( $partfind || $partsolution ) { 
+
+# Obtain the first frame already registered.  It needs to be $Frm
+# to pass to the _GET_CARTESIAN_TELESCOPE_OFFSETS_ primitive.
+# If there are matched frames, then use the first from that group. 
+# Otherwise, use the first frame that passed object detection.
+             my $Frm = new $Frm;
+             if ( $matchGrp->num > 0 ) {
+                $Frm = $matchGrp->frame( 0 );
+             } else {
+                $Frm = $odGrp->frame( 0 );
+             }
+
+# Obtain from the headers the plate scales, rotation, and telescope offsets
+# in arcsec for the instrument, and convert to Cartesian co-ordinates.
+             _GET_CARTESIAN_TELESCOPE_OFFSETS_
+             my $xoffref = $_GET_CARTESIAN_TELESCOPE_OFFSETS_{XOFF};
+             my $yoffref = $_GET_CARTESIAN_TELESCOPE_OFFSETS_{YOFF};
+
+# Read its corresponding offset file to determine the minimum identifier.
+             my $offfile = $Frm->file . ".off";
+             my @words = ( 0, 0, 0 );
+             if ( -e $offfile ) {
+                open( my $fh_offset_file, "< $offfile" ) ||
+                  orac_throw "Unable to open $offfile offsets file for reading.  Error: $!.\n";
+
+                $refindex = 9999;
+                my $refline = "  ";
+                foreach my $line ( <$fh_offset_file> ) {
+
+# Match an unsigned integer at the start of the line.
+                   if ( $line =~ /^\d/ ) {
+                      @words = split( /\s+/, $line );
+                      if ( $words[ 0 ] < $refindex ) {
+                         $refindex = $words[ 0 ];
+                         $refline = $line;
+                      }
+                   }
+                }
+                close( $fh_offset_file );
+
+# Find the position of the lowest-indexed object.
+                @words = split( /\s+/, $refline );
+             }
+
+# Find the Cartesian displacements between the two co-ordinate systems.
+             $xshift_toref = $words[ 1 ] - $xoffref;
+             $yshift_toref = $words[ 2 ] - $yoffref;
+
+# There is no change of co-ordinates required so, the offsets are zero.
+          } else {
+             $xshift_toref = 0;
+             $yshift_toref = 0;
+          }
+
+# Use other options to determine offsets.
+# ---------------------------------------
+
+# Test whether or not registration was achieved.  If not find approximate
+# offsets from the headers or finding the displacement of an object
+# within a central box.  It assumes the first frame has the object
+# centred.  At some point add an option within _FAO_ to set the box
+# centred on a quadrant.  As we can't pass a group as an argument, create
+# another local version of the $Grp (recall $regGrp is in the likeness of
+# an ORAC $Grp) so _FIND_APPROX_OFFSETS_ has a $Grp as it expects.
+# Obtain a parameter to decide whether or not to attempt central-source
+# search.
+          if ( $findoff_status != ORAC__OK || $findobj_status != ORAC__OK ||
+               $morereg ) {
+
+             {
+                my $Grp = $regGrp;
+
+# Obtain parameters for finding approximate offsets.
+                my $central_source = ( $_GENERATE_OFFSETS_{CENTRAL_SOURCE} || "TRUE" );
+                my $boxsize = ( $_GENERATE_OFFSETS_{BOXSIZE} || 5.0 );
+                my $offset_type = $_GENERATE_OFFSETS_{OFFSET_TYPE};
+                $offset_type = defined( $offset_type ) ? $offset_type : "telescope";
+                my $pol = $_GENERATE_OFFSETS_{POLARIMETRY};
+                $pol = defined( $pol ) ? $pol : 0;
+
+                _FIND_APPROX_OFFSETS_ SEARCH_BOX=$central_source BOXSIZE=$boxsize XSHIFT=$xshift_toref YSHIFT=$yshift_toref OFFSET_TYPE=$offset_type REFINDEX=$refindex POLARIMETRY=$pol
+             }
+          }
+
+# Moving target
+# =============
+          my $moving_target = $_GENERATE_OFFSETS_{MOVING_TARGET};
+          $moving_target = defined( $moving_target ) ? $moving_target : 0;
+          if ( $moving_target ) {
+             _ADJUST_OFFSETS_TO_MOVING_TARGET_
+          }
+
+# Register
+# ========
+          if ( $skyreg ) {
+             $param1 = "in='^objlist.inlist$$' mode=current frame=pixel";
+             $Mon{ "ccdpack_reg" }->obeyw( "wcsedit", "$param1" );
+          }
+
+# Specify the other parameters for the REGISTER stage.
+          $param1 = "inlist='^objlist.inlist$$'";
+          $param2 = "fittype=1";
+
+# Register the frames using a shift of origin.  Create the CCDPACK
+# TRANSFORM extensions.
+          $Mon{ "ccdpack_reg" }->obeyw( "register", "$param1 $param2 accept" );
+          unlink( "objlist.inlist$$" );
+
+# Report processing status.
+          orac_print "Frames $objlist registered.\n\n";
+
+       }
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_GENERATE_OFFSETS_ -- Finds the offsets between the frames in the current $Grp, and registers the frames.
+
+=head1 DESCRIPTION
+
+This primitive finds the pixel offsets between the frames in the 
+current $Grp.  It first attempts to find and match common objects
+automatically.  Should this fail, approximate offsets are found.
+These are obtained from registering a central source (see
+argument CENTRAL_SOURCE) or by transforming the equatorial offsets
+in the headers, or by using supplied polarimetry beam separations.
+Partial automatic solutions are allowed; the unregistered remainder
+of the frames use the approximate method, and the two co-ordinate
+systems are tied to a common origin.
+
+The derived registration can be adjusted for moving targets.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item BOXSIZE = REAL (Given)
+
+The size in arcseconds of the search box in which to find the
+brightest object.  It is only used when CENTRAL_SOURCE is true. [5.0]
+
+=item CENTRAL_SOURCE = LOGICAL (Given)
+
+If true, attempt to register using a central source when
+automatic registration fails.  It uses a BOXSIZE-arcsec search box
+about the centre of the frame, jittered by the telescope offsets.
+Otherwise telescope offsets provide the backup registration.
+[TRUE]
+
+=item COMPLETE = REAL (Given)
+
+Completeness of matched features for registration between two 
+frames to be accepted.  It must be in the range 0.2 to 1.0. [0.4]
+
+=item MINPIX = INTEGER (Given)
+
+Minimum number of contiguous pixels above the PERCENTILE level to be
+considered a registration feature.  It must be at least 6.  The
+default here is for UFTI and the new IRCAM.  For the original IRCAM3
+without the magnifier, 6 proved to be satisfactory.  [9]
+
+=item MOVING_TARGET = LOGICAL (Given)
+
+If true (1), the source is a moving target and frames are to
+register the moving target not the fixed stars.  [0]
+
+=item OFFSET_TYPE = CHARACTER (Given)
+
+The type of offsets used as a last resort.  This will normally
+be "telescope", but for polarimetry mosaics it will be
+"beam-separation".  The string merely appears in informational
+messages.  The offsets themselves for polarimetry or any type of
+offset should already be stored in the telescope offsets.
+["telescope"]
+
+=item PERCENTILE = REAL (Given)
+
+Percentile threshold for locating objects to register frames. 
+It must be in the range 75 to 99.9.  The default here is for
+UFTI and the new IRCAM.  For the original IRCAM3 without the
+magnifier, 96 proved to be satisfactory.  [98]
+
+=item POLARIMETRY = LOGICAL (Given)
+
+This is set true (1) for polarimetry data, both extracted
+regions and mosaics.  It's purpose is to make the central-source
+detection ignore the telescope offsets because the extracted
+polarimetry regions already allow for the offsets.  It is
+ignored if CENTRAL_SOURCE is not TRUE. [0]
+
+=item SKYREG = LOGICAL (Given)
+
+If true (1), use sky co-ordinates during the registration.  [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for infrared imaging polarimeters.
+
+=item *
+
+A partial automatic solution is only possible when there are
+at least two registered frames.
+
+=item *
+
+The following are required for automatic registration:
+at least three objects per frame satisfying the thresholds given
+by arguments MINPIX and PERCENTILE; and at least three common
+objects in both frames and the fraction of matching objects is at
+least thst given by argument COMPLETE.
+
+=item *
+
+For a partial automatic solution, tying the co-ordinate systems
+becomes a question of finding the Cartesian displacements between
+them.  It is done by comparing the telescope offsets with the
+co-ordinates of the first object of the first automatically
+registered frame.  Then this pair of displacements are added to
+the approximate offsets of the remaining frames.  See 
+L<_FIND_APPROX_OFFSETS_|_FIND_APPROX_OFFSETS_> for more information.
+
+=back
+
+=head1 TASKS
+
+CCDPACK: FINDOBJ, FINDOFF, REGISTER; KAPPA: WCSFRAME.
+
+=head1 AUTHORS
+
+Malcolm J. Currie (JAC, Starlink) <mjc@star.rl.ac.uk>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
