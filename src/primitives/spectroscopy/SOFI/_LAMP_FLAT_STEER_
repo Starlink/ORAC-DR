@@ -1,0 +1,340 @@
+#+
+# Name:
+#    _LAMP_FLAT_STEER_
+#
+# Purpose:
+#    Steers processing for the LAMP_FLAT recipe.
+#
+# Language:
+#    Perl5
+#
+# Description: 
+#    This primitive control processing for the LAMP_FLAT recipe through
+#    steering headers listed below.  It forms a subgroup by filter
+#    name, central wavelength and grating name, used for creating each
+#    flat; it is stored by reference in the $Grp internal headers as 
+#    <filter>_<central_wavelength>_<grating>_<slit>_GROUP for later
+#    efficient access.  A list of these sub-groups is stored in $Grp
+#    internal header LAMP_FLAT_GROUPS.  Each sub-group has its own file
+#    name given by "flat_<filter>_<central_wavelength>_<grating>_<slit>,
+#    where any decimal is replaced by "p" in the central wavelength.
+#    
+# Steering Headers:
+#    CYCLE_NUMBER = INTEGER
+#       Number of the cycle, a cycle being a set of frames to complete a
+#       pass through the recipe.  The first cycle is 0.
+#    DIFFERENCE_PAIR = LOGICAL
+#       Whether or not to subtract pairs.  It is true every second frame.
+#    FLAT_MASK_THRESHOLD = REAL
+#       The threshold that is used to mask off under-illuminated areas of
+#       the normalised flat, such as at the ends of the slit.
+#       Hardwired to 0.95 for ISAAC.
+#    MAKE_FLAT = LOGICAL
+#       Whether or not to make the flat.  The flat is made once all the
+#       jittered target frames in a cycle are available.
+#    PAIR_ORDER = LOGICAL
+#       Pair subtraction order, true means take second from the first,
+#       and false means take the first from the second.  The value is
+#       true.
+#    USE_VARIANCE = LOGICAL
+#       Whether or not variance processing is to occur.  This equates to
+#       argument USEVAR.
+#
+# Arguments:
+#    NUMBER = INTEGER (Given)
+#       The number of frames in the group.  If absent, the number of
+#       offsets, as given by internal header ORAC_NUMBER_OF_OFFSETS, minus
+#       one is used.  If neither is available, 4 is used.  An error state 
+#       arises if the number of frames is not a multiple of 4.  []
+#    USEVAR = LOGICAL (Given)
+#       Whether or not to create and propagate variance arrays.  [1]
+#
+# Notes:
+#    -  This primitive is suitable for the SOFI infrared spectroscope.
+#    -  Processing only occurs for flat or lamp frames.
+#    -  The longer files names are needed because the observations come
+#   as a single group.
+#    -  The filter name comes from the frame internal header ORAC_FILTER.
+#    The grating name is taken from ORAC_GRATING_NAME, the slit name
+#    from ORAC_SLIT_NAME, and the central wavelength is the value of
+#    ORAC_GRATING_WAVELENGTH.
+#    -  If the subgroup already exists, its file name is used for the
+#    its replacement sub-group.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (Starlink)
+#
+# Copyright:
+#    Copyright (C) 1998-2005 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# This should only be performed on FLAT or LAMP frames.
+    if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "FLAT" ||
+         $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "LAMP" ) {
+
+# Form new group by filter, central wavelength, and grating name.
+# ===============================================================
+
+# Obtain the filter name, central wavelength, and grating name from the
+# frame user header.
+       my $filter =  $Frm->uhdr( "ORAC_FILTER" );
+       my $grating = $Frm->uhdr( "ORAC_GRATING_NAME" );
+       my $slit = $Frm->uhdr( "ORAC_SLIT_NAME" );
+       my $cw = $Frm->uhdr( "ORAC_GRATING_WAVELENGTH" );
+
+# Define a group header to store the name of a group selected by filter,
+# central wavelength, and grating and slit names.
+       my $prefix =  $filter . "_" . $cw . "_" . $grating . "_" . $slit;
+       my $grphandle = $prefix . "_GROUP" ;
+
+# The list of groups needs to be stored, and appended when a new group
+# is formed.  This will permit each group's flat to be made in turn.
+       my @groups;
+
+# Remove []() or replace characters which would confuse HDS when we use the
+# filter or central wavelength in an HDS file name.
+       my $hdsfilter = $prefix;
+       $hdsfilter =~ s/\./p/g;
+       $hdsfilter =~ tr/\(\)\[\]/d/;
+
+# Determine whether or not this group is defined/exists.  If it
+# already exists use its current file.
+       my $filterGrp = $Grp->uhdr( $grphandle );
+       {
+          my ( $groupfile, $tempGrp ) ;
+          my $exist = defined( $filterGrp );
+          if ( $exist ) {
+
+# Use the existing file name.
+             $groupfile = $filterGrp->file;
+
+# Make a temporary group to hold the existing header hashes.
+             $tempGrp = $filterGrp;
+
+          } else {
+
+# Give it a new file name.
+             $groupfile = "flat_" . $hdsfilter . "_" . $Grp->name; 
+
+# Access an existing array of flat groups by reference.
+             if ( defined $Grp->uhdr( "LAMP_FLAT_GROUPS" ) ) {
+                my $group_ref = $Grp->uhdr( "LAMP_FLAT_GROUPS" );
+                @groups = @$group_ref;
+             }
+
+# Add the group to the array, and store it by reference.
+             orac_print "Form group $grphandle whose file is $groupfile.\n";
+             push ( @groups, $grphandle );
+             $Grp->uhdr( "LAMP_FLAT_GROUPS", \@groups );
+          }
+
+# Form a sub-group by filter and grating name, and central wavelength.
+          $filterGrp = $Grp->subgrp( ORAC_FILTER => $filter,
+                                     ORAC_GRATING_NAME => $grating,
+                                     ORAC_SLIT_NAME => $slit,
+                                     ORAC_GRATING_WAVELENGTH => $cw );
+
+# Give it a file name.
+          $filterGrp->file( $groupfile );
+          
+# Store the sub-group for future reference and hence greater efficiency.
+# The previous smaller subgroup is replaced, but that's what we want.
+          $Grp->uhdr( $grphandle, $filterGrp );
+
+# Transfer the existing group headers.
+          if ( $exist ) {
+
+# Propagate the headers from the earlier filter group to the current one.
+# This allows the ROOT_NAME and the summed exposure time to persist between
+# cycles.
+             %{ $filterGrp->hdr } = %{ $tempGrp->hdr };
+             %{ $filterGrp->uhdr } = %{ $tempGrp->uhdr };
+          }
+       }
+
+# Obtain the number of frames in the main group.
+# ==============================================
+
+# First see if a hardwired value has been supplied in the recipe.  This
+# deals with old recipes with fixed numbers and cases where a frame or
+# more is missing.
+       my $number = $_LAMP_FLAT_STEER_{NUMBER};
+       my $numdef = 4;
+
+# Otherwise use the ORAC_NUMBER_OF_OFFSETS internal header.  In full
+# ORAC, this stores the total number of frames in the group.
+# By convention at UKIRT there is always an offset to the origin at
+# the end, hence the recipe requires ORAC_NUMBER_OF_OFFSETS-1.
+       if ( ! defined ( $number ) ) {
+          $number = $Frm->uhdr( "ORAC_NUMBER_OF_OFFSETS" );
+          if ( defined( $number ) ) {
+             $number--;
+
+# Finally default to the default.
+          } else {
+             $number = $numdef;
+          }
+       }
+
+# Report invalid number of frames.
+       if ( $number % $numdef != 0 ) {
+          orac_throw "The number of lamp flat frames ($number) is not a multiple of $numdef.\n";
+       }
+
+# Set steering headers.
+# =====================
+
+# Obtain the USEVAR argument.  Default to false.
+       my $usevar = $_LAMP_FLAT_STEER_{USEVAR};
+       $usevar = defined( $usevar ) ? $usevar : 1;
+       $Frm->uhdr( "USE_VARIANCE", $usevar ); 
+
+# Specify during processing of which frames should the pairs be subtracted.
+       if ( ( $Grp->num + 1 ) % 2 == 0 ) {
+          $Frm->uhdr( "DIFFERENCE_PAIR", 1 );
+
+# A difference is to be made, but in what order.  PAIR_ORDER = 1 means
+# take the second from the first of the pair.
+          $Frm->uhdr( "PAIR_ORDER", 1 );
+          
+       } else {
+          $Frm->uhdr( "DIFFERENCE_PAIR", 0 );
+       }
+
+# Specify during processing of which frames should the flats be created.
+# There is no indication in the headers of the various sub-groups, so
+# make all the flats at the end.  
+orac_warn "Number in group: $number\n";
+       if ( ($Grp->num + 1) % $number == 0 ) {
+          $Frm->uhdr( "MAKE_FLAT", 1 );
+orac_warn "Make_flat\n";
+       } else {
+          $Frm->uhdr( "MAKE_FLAT", 0 );
+       }
+
+# Insert the cycle number of the set of NUMBER frames.
+       $Frm->uhdr( "CYCLE_NUMBER", int( $filterGrp->num / $number ) );
+
+# Set the masking threshold.
+       $Frm->uhdr( "FLAT_MASK_THRESHOLD", 0.95 )
+
+    }
+
+# Podule
+# ======
+
+=head1 NAME
+
+_LAMP_FLAT_STEER_ -- Steers processing for LAMP_FLAT recipes.
+
+=head1 DESCRIPTION
+
+This primitive control processing for the LAMP_FLAT recipe through
+steering headers listed below.  It forms a subgroup by filter name,
+central wavelength and grating name, used for creating each flat; it
+is stored by reference in the $Grp internal headers as
+E<lt>filterE<gt>_E<lt>central_wavelengthE<gt>_E<lt>gratingE<gt>_GROUP
+for later efficient access.  A list of these sub-groups is stored in
+$Grp internal header LAMP_FLAT_GROUPS.  Each sub-group has its own
+file name given by
+"_E<lt>filterE<gt>_E<lt>central_wavelengthE<gt>_E<lt>gratingE<gt>_E<lt>slitE<gt>",
+where any decimal is replaced by "p" in the central wavelength.
+
+=head1 STEERING HEADERS
+
+=over 4
+
+=item CYCLE_NUMBER = INTEGER
+
+Number of the cycle, a cycle being a set of frames to complete a
+pass through the recipe.  The first cycle is 0.
+
+=item DIFFERENCE_PAIR = LOGICAL
+
+Whether or not to subtract pairs.  It is true every second frame.
+
+=item FLAT_MASK_THRESHOLD = REAL
+
+The threshold that is used to mask off under-illuminated areas of the
+normalised flat, such as at the ends of the slit.  Hardwired to 0.95
+for ISAAC.
+
+=item MAKE_FLAT = LOGICAL
+
+Whether or not to make the flat.  The flat is made once all the
+jittered target frames in a cycle are available.
+
+=item PAIR_ORDER = LOGICAL
+
+Pair subtraction order, true means take second from the first,
+and false means take the first from the second.  The value is
+true.
+
+=item USE_VARIANCE = LOGICAL
+
+Whether or not variance processing is to occur.  This equates to
+argument USEVAR.
+
+=back
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item NUMBER = INTEGER (Given)
+
+The number of frames in the group.  If absent, the number of
+offsets, as given by internal header ORAC_NUMBER_OF_OFFSETS, minus
+one is used.  If neither is available, 4 is used.  An error state 
+arises if the number of frames is not a multiple of 4.  []
+
+=item USEVAR = LOGICAL (Given)
+
+Whether or not to create and propagate variance arrays.  [1]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for the SOFI infrared spectroscope.
+
+=item *
+
+Processing only occurs for flat or lamp frames.
+
+=item *
+
+The longer files names are needed because the observations come
+as a single group.
+
+=item *
+
+The filter name comes from the frame internal header ORAC_FILTER.
+
+The grating name is taken from ORAC_GRATING_NAME, the slit name
+from ORAC_SLIT_NAME, and the central wavelength is the value of
+ORAC_GRATING_WAVELENGTH.
+
+=item *
+
+If the subgroup already exists, its file name is used for the
+its replacement sub-group.
+
+=back
+
+=head1 AUTHORS
+
+Malcolm J. Currie (Starlink) <mjc@star.rl.ac.uk>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2005 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
