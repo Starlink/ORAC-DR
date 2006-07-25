@@ -78,6 +78,28 @@
     set utdates = ( )
     set obscounts = ( )
 
+# Set the path to the datediff script needed.  ORAC-DR might not be
+# defined, but the datediff.pl script will most likely be in the same
+# directory as this script.
+    set script = ${0}
+    set ddpath = $script:h
+    if ( ! -e ${ddpath}/datediff.pl ) then
+       if ( "${ORAC_DIR}" == "" || ! -e ${ORAC_DIR}/bin/datediff.pl ) then
+          echo "Unable to locate datediff.pl.  Try defining ORAC_DIR."
+          exit
+       endif
+       set ddpath = "${ORAC_DIR}/bin"
+    endif
+
+# Abort if there are no SOFI FITS files in the current directory.
+    ( ls SOFI*.fits | wc > no_files$$ ) >& /dev/null
+    set no_files = `more no_files$$`
+    \rm no_files$$
+    if ( $no_files[1] == 0 ) then
+       echo "Aborting, as there are no uncompressed SOFI FITS files present."
+       exit
+    endif              
+    
 # Process all the SOFI FITS files in the current directory.
     foreach file ( SOFI*.fits )
        echo ""
@@ -116,11 +138,12 @@
 
 # Start a new observation number sequence for a new date, apart from a
 # change over midnight.  Retain the first-half date for observations
-# spanning midnight.
+# spanning midnight.  Since dates are processed in order, the
+# difference is not going to be negative.
        else
-          @ samedate = $prevdate + 1
-          if ( $date == $samedate && $hour < 19 ) then
-             @ date--
+          set diffday = `${ddpath}/datediff.pl -date1 $prevdate -date2 $date | awk '{print $1}'`
+          if ( $diffday < 2 && $hour < 19 ) then
+             set date = $prevdate
 
 # Different date.
           else if ( $date != $prevdate ) then
