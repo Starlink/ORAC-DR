@@ -1,0 +1,92 @@
+=head1 NAME
+
+_ADD_READNOISE_VARIANCE_ - Adds a variance array based on readnoise
+
+=head1 DESCRIPTION
+
+Adds an initial variance component, which is simply flat and equal to
+the readnoise of the detector, taking the GAIN, number of exposures
+and number of array reads per exposure into account.
+
+The readnoise is obtained from the $Cal->readnoise object.
+- The Array Tests recipe files the readnoise into the Cal system
+when it measures it.
+
+=head1 NOTES
+
+The sum of n independent samples of a Normal distrubution 
+N(mu, sigma^2) is distributed as N(n*mu, n*sigma^2).
+
+A multiple, a, of a Normal distribution N(mu, sigma^2),
+a*N(mu, sigma^2) is distributed as N(a*mu, a^2*sigma^2)
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# Get the gain
+my $gain = $Frm->uhdr("ORAC_GAIN");
+if (!$gain) {
+   orac_throw "Cannot determine Gain - is the ORAC_GAIN uhdr set?\n";
+}
+
+# Get the readnoise, in electrons, for a single read.
+_GET_READNOISE_
+my $rne = $_GET_READNOISE_{READNOISE};
+
+# Divide it down for nreads
+_CALCULATE_NREADS_NOISE_FACTOR_
+
+my $factor = $Frm->uhdr("NREADS_FACTOR");
+
+# rne is now the readnoise per exposure, in electrons.
+$rne /= $factor;
+
+# Get the number of coadds (NEXP) - ie number if exposures per integration.
+my $nexp = $Frm->uhdr("ORAC_NUMBER_OF_EXPOSURES");
+
+# Get the variance in electrons^2 per exposure.
+my $vare = $rne * $rne;
+
+# The variance on the sum of N exposures (in electrons) is thus N * vare
+# (each coadd is an independent sample of the random variable),
+# but we need the variance on the mean of N exposures = (N * vare) / N^2
+# variance of mean of N exposures (in electrons) = vare / N.
+
+# Now convert this into ADU. Note that electrons = ADU * Gain,
+# thus ADU = electrons / Gain.  Thus
+# variance of mean of N exposures (in ADU) = (vare / N)/Gain^2.
+
+my $var = ($vare / $nexp) / ($gain*$gain);
+
+# Note that (mean of N exposures (in ADU)) is actually the value in
+# the data frame. Thus $var is the variance of the data frame.
+
+# Loop through the sub-files.
+foreach my $i (1 .. $Frm->nfiles) {
+
+# Generate the input and output file names
+   my ($in, $out) = $Frm->inout ("_rnv", $i);
+
+# Copy the data frame to the output name.
+   $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$out title=$out");
+
+# Set the variance on that to be what we calculated ($var)
+   $Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$out variance=$var");
+
+# Update Frame object
+   $Frm->file($i, $out);
+   my $electrons = sprintf ("%.1f", $rne);
+   my $adu = sqrt($var);
+   $adu = sprintf ("%.2g", $adu);
+   orac_print "$in to $out: Read Noise variance added: $electrons electrons => $adu Data Numbers\n";
+}
+
+orac_print "\n";
