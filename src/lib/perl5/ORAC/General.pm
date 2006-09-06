@@ -255,11 +255,11 @@ Takes a string of comma-separated key-value pairs and return a hash.
 The keys are down-cased.
 
 Values can be quoted or bracketed. If values include commas themselves
-they will be returned as array references. ie
+they will be returned as array references, e.g.
 
    "a=1,b=2,3,c='4,5',d=[1,2,3,4],e=[5]"
 
-will return
+will return the following.
 
     a => 1,
     b => [2,3],
@@ -267,7 +267,7 @@ will return
     d => [1,2,3,4],
     e => 5,
 
-Note that delimeters are removed from the values and that if only a
+Note that delimiters are removed from the values and that if only a
 single element is quoted it will be returned as a scalar string rather
 than an array.
 
