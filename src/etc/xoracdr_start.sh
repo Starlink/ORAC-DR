@@ -32,28 +32,11 @@
 
 #  History:
 #     $Log$
+#     Revision 1.2  2006/09/06 23:52:57  bradc
+#     fix for proper bash scripting
+#
 #     Revision 1.1  2006/09/06 02:30:26  bradc
 #     initial addition
-#
-#     Revision 1.3  2001/03/02 05:06:37  allan
-#     Working SelectRecipe widget used for Edit Recipe and Override Recipe menu items, plus minor GUI tweaks and a couple of bug fixes
-#
-#     Revision 1.2  2001/02/24 03:07:24  allan
-#     Merged main line with Xoracdr branch
-#
-#     Revision 1.1.2.4  2001/02/02 03:15:10  allan
-#     Corrected typo
-#
-#     Revision 1.1.2.3  2001/02/02 02:40:55  allan
-#     Xoracdr GUI tweaks
-#
-#     Revision 1.1.2.2  2001/01/26 06:42:08  allan
-#     Prototype Xoracdr GUI, minimal functionality
-#
-#     Revision 1.1.2.1  2001/01/24 04:10:49  allan
-#     Skeleton version of Xoracdr, no functionality
-#
-#
 
 #  Revision:
 #     $Id$
@@ -72,44 +55,36 @@
 # Check for the existence of a $ORAC_PERLBIN environment variable and allow 
 # that to be used in preference to the starlink version if set.
 
-# Use setenv starperl to pass the location along to the Xoracdr script
-if ("$ORAC_PERLBIN" != ""); then
-  export STARPERL=$ORAC_PERLBIN
-elif ( -e STAR_PERL ); then
-  export STARPERL=STAR_PERL
+if test ! -z "${ORAC_PERLBIN}"; then
+  starperl=$ORAC_PERLBIN
+elif test -e STAR_PERL; then
+  starperl=STAR_PERL
 else
-  export STARPERL=NONE
+  starperl=NONE
 fi
-
 
 # Set up back door for the version number
 
-if ("$ORACDR_VERSION" != ""); then
-  set pkgvers = $ORACDR_VERSION
+if test -z "${ORACDR_VERSION}"; then
+  pkgvers=$ORACDR_VERSION
 else
-  set pkgvers = PKG_VERS
+  pkgvers=PKG_VERS
 fi
 
 
 # These are perl programs
 
-if (-e $STARPERL ); then
+if test -e $starperl; then
 
-  # pass through command line arguements
-  set args = ($argv[1-])
-  set oracdr_args = ""
-  if ( $#args > 0  ); then
-    while ( $#args > 0 )
-       set oracdr_args = "${oracdr_args} $args[1]"
-       shift args
-    end
+  if test -z "${oracdr_args}"; then
+    oracdr_args=''
   fi
 
   echo " "
   echo " ORAC Data Reduction Pipeline -- (ORAC-DR Version ${pkgvers})"
   echo " "
   echo " Please wait, spawning Xoracdr${oracdr_args}..."
-  $STARPERL  ${ORAC_DIR}/bin/Xoracdr ${oracdr_args}
+  $starperl ${ORAC_DIR}/bin/Xoracdr ${oracdr_args}
 
 else
   echo "ORAC Data Reduction Pipeline -- (ORAC-DR Version $pkgvers)"
