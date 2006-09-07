@@ -37,8 +37,8 @@
 
 #  History:
 #     $Log$
-#     Revision 1.2  2006/09/06 23:45:33  bradc
-#     fix for proper bash scripting
+#     Revision 1.3  2006/09/07 00:12:23  bradc
+#     fix argument check
 #
 #     Revision 1.1  2006/09/06 02:30:11  bradc
 #     initial addition
@@ -89,7 +89,7 @@ if test -e $starperl; then
   # Might have an argument to oracdr passed in to this routine.
   # Therefore need to check for $oracdr_args shell variable
   # and use it for the alias to oracdr
-  if ! test -z "${oracdr_args}"; then
+  if test -z "${oracdr_args}"; then
     oracdr_args=''
   fi
 
