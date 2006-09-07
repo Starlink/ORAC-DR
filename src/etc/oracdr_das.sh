@@ -63,6 +63,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.2  2006/09/07 00:35:18  bradc
+#     fix for proper bash scripting
+#
 #     Revision 1.1  2006/09/06 02:29:52  bradc
 #     initial addition
 #
@@ -80,30 +83,30 @@
 #-
 
 # Calibration root
-if !("$ORAC_CAL_ROOT" != ""); then
+if test -z "$ORAC_CAL_ROOT"; then
     export ORAC_CAL_ROOT=/jcmt_sw/oracdr_cal
 fi
 
 # Recipe dir
-if ("$ORAC_RECIPE_DIR" != ""); then
+if ! test -z "$ORAC_RECIPE_DIR"; then
     echo "Warning: resetting ORAC_RECIPE_DIR"
-    unsetenv ORAC_RECIPE_DIR
+    unset ORAC_RECIPE_DIR
 fi
 
 # primitive dir
-if ("$ORAC_PRIMITIVE_DIR" != ""); then
+if ! test -z "$ORAC_PRIMITIVE_DIR"; then
     echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unsetenv ORAC_PRIMITIVE_DIR
+    unset ORAC_PRIMITIVE_DIR
 fi
 
 #  Read the input UT date
-if ($1 != ""); then
-    set oracut = $1
+if test ! -z "$1"; then
+    oracut=$1
 else
-    set oracut = `date -u +%Y%m%d`
+    oracut=`date -u +%Y%m%d`
 fi
 
-set oracdr_args = "-ut $oracut"
+export oracdr_args="-ut $oracut"
 
 # Instrument
 export ORAC_INSTRUMENT=JCMT_DAS
@@ -122,10 +125,10 @@ export ORAC_LOOP='flag -skip'
 export ORAC_SUN=231
 
 # Source general alias file and print welcome screen
-source $ORAC_DIR/etc/oracdr_start.csh
+. $ORAC_DIR/etc/oracdr_start.sh
 
 # Print additional warning if required
-set orachost = `hostname`
+orachost=`hostname`
 if ($orachost != 'kolea'); then
   echo '*****************************************************'
   echo '**** PLEASE USE KOLEA FOR ORAC-DR DATA REDUCTION ****'

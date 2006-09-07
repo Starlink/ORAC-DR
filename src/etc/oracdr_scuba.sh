@@ -68,6 +68,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.2  2006/09/07 00:35:24  bradc
+#     fix for proper bash scripting
+#
 #     Revision 1.1  2006/09/06 02:30:02  bradc
 #     initial addition
 #
@@ -134,30 +137,30 @@ fi
 
 
 # Calibration root
-if !("$ORAC_CAL_ROOT" != ""); then
+if test -z "$ORAC_CAL_ROOT"; then
     export ORAC_CAL_ROOT=/jcmt_sw/oracdr_cal
 fi
 
 # Recipe dir
-if ("$ORAC_RECIPE_DIR" != ""); then
+if ! test -z "$ORAC_RECIPE_DIR"; then
     echo "Warning: resetting ORAC_RECIPE_DIR"
-    unsetenv ORAC_RECIPE_DIR
+    unset ORAC_RECIPE_DIR
 fi
 
 # primitive dir
-if ("$ORAC_PRIMITIVE_DIR" != ""); then
+if ! test -z "$ORAC_PRIMITIVE_DIR"; then
     echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unsetenv ORAC_PRIMITIVE_DIR
+    unset ORAC_PRIMITIVE_DIR
 fi
 
 #  Read the input UT date
-if ($1 != ""); then
-    set oracut = $1
+if test ! -z "$1"; then
+    oracut=$1
 else
-    set oracut = `date -u +%Y%m%d`
+    oracut=`date -u +%Y%m%d`
 fi
 
-set oracdr_args = "-ut $oracut"
+export oracdr_args="-ut $oracut"
 
 # Instrument
 export ORAC_INSTRUMENT=SCUBA
@@ -169,7 +172,7 @@ export ORAC_DATA_CAL=$ORAC_CAL_ROOT/scuba
 
 # Input data root. Depends on location we are running from if
 # ORAC_DATA_ROOT is not defined
-if !("$ORAC_DATA_ROOT" != ""); then
+if test -z "$ORAC_DATA_ROOT"; then
 
   # ORAC_DATA_ROOT depends on our location
   # There are 3 possibilities. We are in Hilo, we are at the JCMT
@@ -187,7 +190,7 @@ if !("$ORAC_DATA_ROOT" != ""); then
 
   # Use domainname to work out where we are
 
-  set orac_dname = `domainname`
+  orac_dname=`domainname`
 
   if ($orac_dname == 'JAC.jcmt'); then
 
@@ -223,32 +226,32 @@ if ( $ORAC_DATA_ROOT == /scuba ); then
   # find the semester name
 
   # Start by splitting the YYYYMMDD string into bits
-  set oracyy = `echo $oracut | cut -c3-4`
-  set oracprev_yy = `expr $oracut - 10000 | cut -c3-4`
-  set oracmmdd = `echo $oracut | cut -c5-8`
+  oracyy=`echo $oracut | cut -c3-4`
+  oracprev_yy=`expr $oracut - 10000 | cut -c3-4`
+  oracmmdd=`echo $oracut | cut -c5-8`
 
   # Need to put the month in the correct semester
   # Note that 199?0201 is in the previous semester
   # Same for 199?0801
   # The semester changes on UT Feb 2 and Aug 2:
   if ( $oracmmdd > 201 && $oracmmdd < 802 ); then
-    set orac_sem = "m${oracyy}a"
+    orac_sem="m${oracyy}a"
   elif ( $oracmmdd < 202 ) then
-    set orac_sem = "m${oracprev_yy}b"
+    orac_sem="m${oracprev_yy}b"
   else
-   set orac_sem = "m${oracyy}b"
+   orac_sem="m${oracyy}b"
   fi
 
   unset oracyy
   unset oracprev_yy
   unset oracmmdd
 
-  set orac_sem = ${orac_sem}/
+  orac_sem=${orac_sem}/
   set dem =''
 else
  
-  set orac_sem = ''
-  set dem = "/dem"
+  orac_sem=''
+  dem="/dem"
 fi
 
 # Input data directory depends on location
@@ -287,7 +290,7 @@ if ($ORAC_DATA_ROOT == /jcmtdata ); then
 
     # check if ORAC_DATA_OUT is an NFS-mounted partition - 
 
-    set df_out = `df -t nfs $ORAC_DATA_OUT | wc -l`
+    df_out=`df -t nfs $ORAC_DATA_OUT | wc -l`
 
     # if it is 1 that's just the df header, so we're local
     # if it is 3 we're NFS
@@ -300,7 +303,7 @@ if ($ORAC_DATA_ROOT == /jcmtdata ); then
     elif ($df_out > 1) then
 
 	# get the name of the NFS host
-	set nfs_host  = `df -t nfs $ORAC_DATA_OUT | head -2 | tail -1 | awk -F: '{print $1}'`
+	nfs_host=`df -t nfs $ORAC_DATA_OUT | head -2 | tail -1 | awk -F: '{print $1}'`
 	# do the deed
 	rsh $nfs_host chmod g+rws $ORAC_DATA_OUT
 	# whinge to user
@@ -324,7 +327,7 @@ if ($ORAC_DATA_ROOT == /jcmtdata ); then
  umask 002
 
  # We are at the summit so we want to force -skip -loop flag
- set oracdr_args = "$oracdr_args -loop flag -skip"
+ export oracdr_args="$oracdr_args -loop flag -skip"
  echo "Setting default oracdr argument list to $oracdr_args"
 
 else 
@@ -339,17 +342,17 @@ export ORAC_LOOP='flag -skip'
 export ORAC_SUN=231
 
 # Source general alias file and print welcome screen
-source $ORAC_DIR/etc/oracdr_start.csh
+. $ORAC_DIR/etc/oracdr_start.sh
 
 
 # warn again
 
-set df_out = `df -t nfs $ORAC_DATA_OUT | wc -l`
+df_out=`df -t nfs $ORAC_DATA_OUT | wc -l`
 
 if ($df_out > 1); then
 
 	# get the name of the NFS host
-	set nfs_host  = `df -t nfs $ORAC_DATA_OUT | head -2 | tail -1 | awk -F: '{print $1}'`
+	nfs_host=`df -t nfs $ORAC_DATA_OUT | head -2 | tail -1 | awk -F: '{print $1}'`
 	# do the deed
 	rsh $nfs_host chmod g+rws $ORAC_DATA_OUT
 	# whinge to user

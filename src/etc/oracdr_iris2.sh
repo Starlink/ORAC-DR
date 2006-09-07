@@ -62,6 +62,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.2  2006/09/07 00:35:22  bradc
+#     fix for proper bash scripting
+#
 #     Revision 1.1  2006/09/06 02:29:56  bradc
 #     initial addition
 #
@@ -98,39 +101,39 @@
 
 
 # orac things
-if !("$ORAC_DATA_ROOT" != ""); then
+if test -z "$ORAC_DATA_ROOT"; then
 #    setenv ORAC_DATA_ROOT /irisdata
 fi
 
-if !("$ORAC_CAL_ROOT" != ""); then
+if test -z "$ORAC_CAL_ROOT"; then
     # Need to choose somewhere sensible although
     # this is a fallback as we normally expect
     # ORAC_CAL_ROOT to be set in the same way as ORAC_DIR
     export ORAC_CAL_ROOT=/iris2_soft/oracdr_cal/oracdr_cal
 fi
 
-if ("$ORAC_RECIPE_DIR" != ""); then
+if ! test -z "$ORAC_RECIPE_DIR"; then
     echo "Warning: resetting ORAC_RECIPE_DIR"
-    unsetenv ORAC_RECIPE_DIR
+    unset ORAC_RECIPE_DIR
 fi
 
-if ("$ORAC_PRIMITIVE_DIR" != ""); then
+if ! test -z "$ORAC_PRIMITIVE_DIR"; then
     echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unsetenv ORAC_PRIMITIVE_DIR
+    unset ORAC_PRIMITIVE_DIR
 fi
 
 
-if ($1 != ""); then
-    set oracut = $1
+if test ! -z "$1"; then
+    oracut=$1
 else
-    set oracut = `\date -u +%Y%m%d`
+    oracut=`\date -u +%Y%m%d`
 fi
 
-set oracdr_args = "-ut $oracut"
+export oracdr_args="-ut $oracut"
 
 # Data directories for IRIS2 only have a 2 digit year
 
-set oracut_cut = `echo $oracut | cut -c 3-8`
+oracut_cut=`echo $oracut | cut -c 3-8`
 
 export ORAC_INSTRUMENT=IRIS2
 export ORAC_DATA_IN=/data_vme10/aatobs/iris2_data/$oracut_cut
@@ -145,7 +148,7 @@ export ORAC_LOOP=wait
 export ORAC_SUN=230,232,236
 
 # Source general alias file and print welcome screen
-source $ORAC_DIR/etc/oracdr_start.csh
+. $ORAC_DIR/etc/oracdr_start.sh
 
 # Tidy up
 unset oracut_cut

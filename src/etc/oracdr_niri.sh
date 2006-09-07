@@ -64,6 +64,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.2  2006/09/07 00:35:24  bradc
+#     fix for proper bash scripting
+#
 #     Revision 1.1  2006/09/06 02:30:00  bradc
 #     initial addition
 #
@@ -109,32 +112,32 @@
 
 
 # orac things
-if !("$ORAC_DATA_ROOT" != ""); then
+if test -z "$ORAC_DATA_ROOT"; then
     export ORAC_DATA_ROOT=/ukirtdata
 fi
 
-if !("$ORAC_CAL_ROOT" != ""); then
+if test -z "$ORAC_CAL_ROOT"; then
     export ORAC_CAL_ROOT=/ukirt_sw/oracdr_cal
 fi
 
-if ("$ORAC_RECIPE_DIR" != ""); then
+if ! test -z "$ORAC_RECIPE_DIR"; then
     echo "Warning: resetting ORAC_RECIPE_DIR"
-    unsetenv ORAC_RECIPE_DIR
+    unset ORAC_RECIPE_DIR
 fi
 
-if ("$ORAC_PRIMITIVE_DIR" != ""); then
+if ! test -z "$ORAC_PRIMITIVE_DIR"; then
     echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unsetenv ORAC_PRIMITIVE_DIR
+    unset ORAC_PRIMITIVE_DIR
 fi
 
 
-if ($1 != ""); then
-    set oracut = $1
+if test ! -z "$1"; then
+    oracut=$1
 else
-    set oracut = `\date -u +%Y%m%d`
+    oracut=`\date -u +%Y%m%d`
 fi
 
-set oracdr_args = "-ut $oracut"
+export oracdr_args="-ut $oracut"
 
 # The file naming convention changed on 2002 March 1 to accommodate
 # more than 1000 frames! 
@@ -153,7 +156,7 @@ export ORAC_LOOP=flag
 export ORAC_SUN=232
 
 # Source general alias file and print welcome screen.
-source $ORAC_DIR/etc/oracdr_start.csh
+. $ORAC_DIR/etc/oracdr_start.sh
 
 echo "Warning: NIRI support in oracdr is alpha / experimental."
 echo "Although it reduces data, it has not been refined or verified to"

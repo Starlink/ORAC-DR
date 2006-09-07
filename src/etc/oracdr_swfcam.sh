@@ -30,24 +30,24 @@
 #-
 
 
-set hostname = `/bin/hostname`
+hostname=`/bin/hostname`
 
-set script = "none"
+script="none"
 
 if ($hostname == "wfdr1"); then
-    set script = oracdr_swfcam1.csh
+    script=oracdr_swfcam1.csh
 fi
 
 if ($hostname == "wfdr2"); then
-    set script = oracdr_swfcam2.csh
+    script=oracdr_swfcam2.csh
 fi
 
 if ($hostname == "wfdr3"); then
-    set script = oracdr_swfcam3.csh
+    script=oracdr_swfcam3.csh
 fi
 
 if ($hostname == "wfdr4"); then
-    set script = oracdr_swfcam4.csh
+    script=oracdr_swfcam4.csh
 fi
 
 if ($script == "none"); then
