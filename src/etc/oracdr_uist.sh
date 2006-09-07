@@ -61,12 +61,27 @@
 
 #  History:
 #     $Log$
-#     Revision 1.2  2006/09/06 23:53:57  bradc
-#     fix for proper bash scripting
+#     Revision 1.3  2006/09/07 00:13:16  bradc
+#     fix local oracut variable declaration, temporarily export oracdr_args environment variable for use by oracdr_start
 #
 #     Revision 1.1  2006/09/06 02:30:24  bradc
 #     initial addition
 #
+#     Revision 1.4  2003/07/23 16:41:26  mjc
+#     Supplied the SUN numbers.
+#
+#     Revision 1.3  2002/04/02 03:04:52  mjc
+#     Use \date command to override aliases.
+#
+#     Revision 1.2  2001/12/01 02:13:46  timj
+#     - s/Michelle/UIST/g
+#     - Quote ???
+#
+#     Revision 1.1  2001/07/04 02:07:55  timj
+#     Add UIST
+#
+#     2001 March 3 (MJC):
+#        Original version based upon CGS4 equivalent.
 
 #  Copyright:
 #     Copyright (C) 1998-2002 Particle Physics and Astronomy Research
@@ -94,13 +109,13 @@ if test ! -z "${ORAC_PRIMITIVE_DIR}"; then
 fi
 
 
-if test -z $1; then
-    local oracut=$1
+if test ! -z "$1"; then
+    oracut=$1
 else
-    local oracut=`\date -u +%Y%m%d`
+    oracut=`\date -u +%Y%m%d`
 fi
 
-local oracdr_args="-ut $oracut"
+export oracdr_args="-ut $oracut"
 
 export ORAC_INSTRUMENT=UIST
 export ORAC_DATA_IN=$ORAC_DATA_ROOT/raw/uist/$oracut
