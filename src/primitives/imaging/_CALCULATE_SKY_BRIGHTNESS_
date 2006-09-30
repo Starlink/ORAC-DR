@@ -1,0 +1,113 @@
+=head1 NAME
+
+_CALCULATE_SKY_BRIGHTNESS_ - Calculate the sky brightness for a
+reduced group.
+
+=head1 DESCRIPTION
+
+This primitive calculates the sky brightness for a reduced group by
+using a predetermined zeropoint measurement and the measured clipped
+mean of the current group. The results are reported and stored in the
+Calibration system.
+
+This primitive assumes that the zeropoint remains stable from one
+group to the next. If this is not the case, then the resulting sky
+brighness value will be incorrect.
+
+The clipped mean is done with the _CLIPPED_MEAN_ primitive and its
+default clipping levels; see that primitive's documentation for more
+information.
+
+The sky brightness is given by the expression
+
+  zeropoint - 2.5 * log10( clipped mean / ( platescale * platescale ) )
+
+=head1 ARGUMENTS
+
+None.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for any instrument in imaging mode.
+
+=item *
+
+This primitive only occurs when it is time to perform photometry,
+i.e. when the steering header DO_APHOT is true.
+
+=item *
+
+A zeropoint must be returned from the calibration system in order for
+the sky brightness value to be correct. If a zeropoint has not been
+previously measured, then zero (0) will be used. A warning will be
+issued if this is the case.
+
+=back
+
+=head1 TASKS
+
+None.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu> (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2006 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+=cut
+
+my $do_aphot = $Frm->uhdr( "DO_APHOT" );
+if( $do_aphot ) {
+
+  my $in = $Grp->file;
+
+  # Obtain the clipped mean of the current Group.
+  _CLIPPED_MEAN_
+  my $mean = $_CLIPPED_MEAN_{RESULT};
+
+  # Obtain the plate scale of the current Group.
+  _GET_PLATE_SCALE_
+  my $platescale = $_GET_PLATE_SCALE_{PLATESCALE};
+
+  # Calculate the counts per square arcsecond.
+  my $counts_per_square_arcsecond = $mean / ( $platescale * $platescale );
+
+  # Retrieve the zeropoint from the calibration system.
+  my $zeropoint = $Cal->zeropoint;
+  if( ! defined( $zeropoint ) ) {
+    orac_warn "Zeropoint not returned from calibration system. Using 0 as a default. Resulting sky brightness value will be incorrect.";
+    $zeropoint = 0;
+  }
+
+  # Get the exposure time from the headers.
+  my $exptime = $Grp->uhdr( "ORAC_EXPOSURE_TIME" );
+
+  # And calculate the sky brightness in magnitudes per square arcsecond.
+  my $sky_brightness = $zeropoint - 2.5 * log10( $counts_per_square_arcsecond / $exptime );
+
+  # Report to the user.
+  my $fs_sky_br = sprintf( "%.3f", $sky_brightness );
+  orac_print( "Sky brightness in $in is $fs_sky_br mag/arcsec^2.\n", "blue" );
+
+  # File the sky brightness with the calibration system.
+  my %hash = ( %{$Grp->hdr},
+               SKY_BRIGHTNESS => $sky_brightness,
+             );
+  $Cal->skybrightnessindex->add( $Grp->file, \%hash );
+
+  # Tidy up output.
+  orac_print "\n";
+
+}
+
