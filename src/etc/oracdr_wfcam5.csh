@@ -1,17 +1,17 @@
 
 #+
 #  Name:
-#     oracdr_wfcam3
+#     oracdr_wfcam5
 
 #  Purpose:
-#     Initialise ORAC-DR environment for use with the third WFCAM
+#     Initialise ORAC-DR environment for use with the "fifth" WFCAM
 #     chip.
 
 #  Language:
 #     C-shell script
 
 #  Invocation:
-#     source ${ORAC_DIR}/etc/oracdr_wfcam3.csh
+#     source ${ORAC_DIR}/etc/oracdr_wfcam5.csh
 
 #  Description:
 #     This script initialises the environment variables and command
@@ -40,9 +40,9 @@
 
 
 #  Examples:
-#     oracdr_wfcam3
+#     oracdr_wfcam5
 #        Will set the variables assuming the current UT date.
-#     oracdr_wfcam3 19991015
+#     oracdr_wfcam5 19991015
 #        Use UT data 19991015
 
 #  Notes:
@@ -50,7 +50,7 @@
 #     are unset by this routine if they have been set.
 #     - The data directories are assumed to be in directories "raw"
 #     (for input) and "reduced" (for output) from root
-#     $ORAC_DATA_ROOT/wfcam3/UT
+#     $ORAC_DATA_ROOT/wfcam5/UT
 #     - $ORAC_DATA_OUT and $ORAC_DATA_IN will have to be
 #     set manually if the UKIRT directory structure is not in use.
 #     - aliases are set in the oracdr_start.csh script sourced by
@@ -64,20 +64,20 @@
 
 #  History:
 #     $Log$
-#     Revision 1.8  2006/10/03 00:20:06  bradc
+#     Revision 1.1  2006/10/03 00:20:08  bradc
 #     replaced with ex-SWFCAM version
 #
-#     Revision 1.5  2006/07/21 02:09:08  bradc
+#     Revision 1.4  2006/07/21 02:09:08  bradc
 #     set RTD_REMOTE_DIR to $ORAC_DATA_OUT/.., create ORAC_DATA_OUT directory if it does not exist and we are being run on a wfdr machine
 #
-#     Revision 1.4  2004/11/12 01:22:02  phirst
+#     Revision 1.3  2004/11/12 01:22:02  phirst
 #      setenv RTD_REMOTE_DIR and HDS_MAP
-#
-#     Revision 1.3  2004/11/10 02:31:49  bradc
-#     ORAC_DATA_CAL is in wfcam, not wfcam now
 #
 #     Revision 1.2  2004/11/06 01:08:26  bradc
 #     set ORAC_INSTRUMENT to WFCAMn
+#
+#     Revision 1.1  2004/11/05 20:01:56  bradc
+#     initial addition, copy of oracdr_wfcam4.csh for "fifth" WFCAM chip
 #
 #     Revision 1.1  2004/09/14 21:17:37  bradc
 #     initial addition for WFCAM
@@ -134,9 +134,9 @@ endif
 
 set oracdr_args = "-ut $oracut"
 
-setenv ORAC_INSTRUMENT WFCAM3
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/wfcam3/$oracut
-setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/wfcam3/$oracut
+setenv ORAC_INSTRUMENT WFCAM5
+setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/wfcam5/$oracut
+setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/wfcam5/$oracut
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/wfcam
 
 # some other things

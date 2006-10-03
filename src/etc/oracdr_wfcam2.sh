@@ -1,17 +1,17 @@
 
 #+
 #  Name:
-#     oracdr_wfcam3
+#     oracdr_wfcam2
 
 #  Purpose:
-#     Initialise ORAC-DR environment for use with the third WFCAM
+#     Initialise ORAC-DR environment for use with the second WFCAM
 #     chip.
 
 #  Language:
-#     C-shell script
+#     sh shell script
 
 #  Invocation:
-#     source ${ORAC_DIR}/etc/oracdr_wfcam3.csh
+#     source ${ORAC_DIR}/etc/oracdr_wfcam2.sh
 
 #  Description:
 #     This script initialises the environment variables and command
@@ -40,9 +40,9 @@
 
 
 #  Examples:
-#     oracdr_wfcam3
+#     oracdr_wfcam2
 #        Will set the variables assuming the current UT date.
-#     oracdr_wfcam3 19991015
+#     oracdr_wfcam2 19991015
 #        Use UT data 19991015
 
 #  Notes:
@@ -50,10 +50,10 @@
 #     are unset by this routine if they have been set.
 #     - The data directories are assumed to be in directories "raw"
 #     (for input) and "reduced" (for output) from root
-#     $ORAC_DATA_ROOT/wfcam3/UT
+#     $ORAC_DATA_ROOT/wfcam2/UT
 #     - $ORAC_DATA_OUT and $ORAC_DATA_IN will have to be
 #     set manually if the UKIRT directory structure is not in use.
-#     - aliases are set in the oracdr_start.csh script sourced by
+#     - aliases are set in the oracdr_start.sh script sourced by
 #     this routine.
 
 #  Authors:
@@ -64,20 +64,23 @@
 
 #  History:
 #     $Log$
-#     Revision 1.8  2006/10/03 00:20:06  bradc
+#     Revision 1.1  2006/10/03 00:20:02  bradc
 #     replaced with ex-SWFCAM version
 #
-#     Revision 1.5  2006/07/21 02:09:08  bradc
+#     Revision 1.2  2006/09/07 00:35:27  bradc
+#     fix for proper bash scripting
+#
+#     Revision 1.1  2006/09/06 02:30:15  bradc
+#     initial addition
+#
+#     Revision 1.4  2006/07/21 02:09:08  bradc
 #     set RTD_REMOTE_DIR to $ORAC_DATA_OUT/.., create ORAC_DATA_OUT directory if it does not exist and we are being run on a wfdr machine
 #
-#     Revision 1.4  2004/11/12 01:22:02  phirst
+#     Revision 1.3  2004/11/12 01:22:02  phirst
 #      setenv RTD_REMOTE_DIR and HDS_MAP
 #
-#     Revision 1.3  2004/11/10 02:31:49  bradc
+#     Revision 1.2  2004/11/10 02:31:49  bradc
 #     ORAC_DATA_CAL is in wfcam, not wfcam now
-#
-#     Revision 1.2  2004/11/06 01:08:26  bradc
-#     set ORAC_INSTRUMENT to WFCAMn
 #
 #     Revision 1.1  2004/09/14 21:17:37  bradc
 #     initial addition for WFCAM
@@ -93,7 +96,7 @@
 #
 #
 #     21 Jan 2003 (jrl)
-#        Original Version based on oracdr_wfcam.csh
+#        Original Version based on oracdr_wfcam.sh
 
 #  Revision:
 #     $Id$
@@ -107,58 +110,58 @@
 
 
 # orac things
-if !($?ORAC_DATA_ROOT) then
-    setenv ORAC_DATA_ROOT /ukirtdata
-endif
+if test -z "$ORAC_DATA_ROOT"; then
+    export ORAC_DATA_ROOT=/ukirtdata
+fi
 
-if !($?ORAC_CAL_ROOT) then
-    setenv ORAC_CAL_ROOT /ukirt_sw/oracdr_cal
-endif
+if test -z "$ORAC_CAL_ROOT"; then
+    export ORAC_CAL_ROOT=/ukirt_sw/oracdr_cal
+fi
 
-if ($?ORAC_RECIPE_DIR) then
+if ! test -z "$ORAC_RECIPE_DIR"; then
     echo "Warning: resetting ORAC_RECIPE_DIR"
-    unsetenv ORAC_RECIPE_DIR
-endif
+    unset ORAC_RECIPE_DIR
+fi
 
-if ($?ORAC_PRIMITIVE_DIR) then
+if ! test -z "$ORAC_PRIMITIVE_DIR"; then
     echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unsetenv ORAC_PRIMITIVE_DIR
-endif
+    unset ORAC_PRIMITIVE_DIR
+fi
 
 
-if ($1 != "") then
-    set oracut = $1
+if test ! -z "$1"; then
+    oracut=$1
 else
-    set oracut = `\date -u +%Y%m%d`
-endif
+    oracut=`\date -u +%Y%m%d`
+fi
 
-set oracdr_args = "-ut $oracut"
+export oracdr_args="-ut $oracut"
 
-setenv ORAC_INSTRUMENT WFCAM3
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/wfcam3/$oracut
-setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/wfcam3/$oracut
-setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/wfcam
+export ORAC_INSTRUMENT=WFCAM2
+export ORAC_DATA_IN=$ORAC_DATA_ROOT/raw/wfcam2/$oracut
+export ORAC_DATA_OUT=$ORAC_DATA_ROOT/reduced/wfcam2/$oracut
+export ORAC_DATA_CAL=$ORAC_CAL_ROOT/wfcam
 
 # some other things
-setenv HDS_MAP 0
-setenv RTD_REMOTE_DIR $ORAC_DATA_OUT/..
+export HDS_MAP=0
+export RTD_REMOTE_DIR=$ORAC_DATA_OUT/..
 
 # Determine the host, and if we're on a wfdr machine, create
 # $ORAC_DATA_OUT if it doesn't already exist.
-set hostname = `/bin/hostname`
-if( $hostname == "wfdr1" || $hostname == "wfdr2" || $hostname == "wfdr3" || $hostname == "wfdr4" ) then
-    if( ! -d ${ORAC_DATA_OUT} ) then
+hostname=`/bin/hostname`
+if( $hostname == "wfdr1" || $hostname == "wfdr2" || $hostname == "wfdr3" || $hostname == "wfdr4" ); then
+    if( ! -d ${ORAC_DATA_OUT} ); then
         mkdir $ORAC_DATA_OUT
-    endif
-endif
+    fi
+fi
 
 # screen things
-setenv ORAC_PERSON bradc
-setenv ORAC_LOOP flag
-setenv ORAC_SUN
+export ORAC_PERSON=bradc
+export ORAC_LOOP=flag
+export ORAC_SUN
 
 # Source general alias file and print welcome screen
-source $ORAC_DIR/etc/oracdr_start.csh
+. $ORAC_DIR/etc/oracdr_start.sh
 
 # Tidy up
 unset oracut
