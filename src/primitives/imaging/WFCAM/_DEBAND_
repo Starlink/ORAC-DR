@@ -1,0 +1,640 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_DEBAND_ - Remove reset anomaly by collapsing along columns and rows.
+
+=head1 DESCRIPTION
+
+This primitive removes a reset anomaly present in the WFCAM
+detectors. This anomaly is typically seen as a ramp across each
+quadrant of each detector, with the high end being along the edge
+where the readout electronics sit.
+
+The reset anomaly is removed using one of four different techniques.
+
+The first technique "unrolls" the detector to form a 4096x1024 image
+with the reset anomaly aligned in all four quadrants. This image is
+then collapsed to form an average signature of the anomaly, which is
+then expanded out, rotated according to the anomaly's orientation on
+each quadrant, then subtracted away.
+
+The second technique collapses each quadrant individually, then
+expands the signature and subtracts it from the corresponding
+quadrant.
+
+The third technique collapses only the bottom left quadrant, then
+rotates the resulting signature, expands it, and subtracts it from
+each quadrant.
+
+The fourth technique collapses only the bottom left quadrant, expands
+the resulting signature, then rotates and subtracts it from each
+quadrant.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item METHOD = CHARACTER (Given)
+
+The method to use for estimating output pixel values for the collapse
+step. Any of those for the KAPPA/COLLAPSE task can be used, but note
+that WFCAM data typically do not have a VARIANCE component, so using
+the weighted mean ("wmean") method will probably be the same as the
+mean. ['mode']
+
+=item TECHNIQUE = INTEGER (Given)
+
+Chooses which removal technique to use. Must be an integer between 1
+and 4, corresponding to the above-described techniques. [3]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Using the COLLAPSE estimators of 'mode' and 'median' are nearly
+equivalent, but 'mode' is quicker. 'mean' is quickest but the least
+accurate, as it can be skewed by hot pixels, stars, etc.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+The debanded frame with suffix _deband.
+
+=back
+
+=head1 TASKS
+
+CCDPACK: MAKEMOS
+KAPPA: COLLAPSE, MANIC, NDFCOPY, PASTE, PIXDUPE, ROTATE, SETBOUND,
+SETORIGIN, WCSFRAME
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2005 Particle Physics and Astronomy Research
+Council.  All Rights Reserved
+
+=cut
+
+# Obtain parameters.
+my $method = $_DEBAND_{METHOD} || 'mode';
+
+my $technique = $_DEBAND_{TECHNIQUE};
+if( ! defined( $technique ) ) {
+  $technique = 3;
+}
+
+my $direction = $_DEBAND_{DIRECTION};
+if( ! defined( $direction ) ) {
+  $direction = 1;
+}
+
+my $suffix = $_DEBAND_{SUFFIX};
+if( ! defined( $suffix ) ) {
+  $suffix = "_deband";
+}
+
+my ( $in, $out ) = $Frm->inout( $suffix );
+
+if( $technique == 1 ) {
+
+  # This is Paul's method.
+
+  my $tmp = new ORAC::TempFile;
+  my $tmpfile = $tmp->file;
+
+  my $temp = new ORAC::TempFile;
+  my $tempfile = $temp->file;
+
+  my $tmpa = new ORAC::TempFile;
+  my $a = $tmpa->file;
+  my $tmpb = new ORAC::TempFile;
+  my $b = $tmpb->file;
+  my $tmpc = new ORAC::TempFile;
+  my $c = $tmpc->file;
+  my $tmpd = new ORAC::TempFile;
+  my $d = $tmpd->file;
+
+  # Copy the first quadrant straight to the new image
+  $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in(1:1024,1:1024) out=$a");
+  $Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$a origin=[1,1]");
+  $Mon{'ndfpack_mon'}->obeyw("setbound", "ndf=$a(1:4096,1:1024)");
+  $Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$a origin=[1,1]");
+
+  # Rotate the 2nd quad to temp
+  $Mon{'kappa_mon'}->obeyw("rotate", "angle=90 in=$in(1025:2048,1:1024) out=$b");
+  $Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$b origin=[1,1]");
+  $Mon{'ndfpack_mon'}->obeyw("setbound", "ndf=$b(-1024:3072,1:1024)");
+  $Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$b origin=[1,1]");
+
+  # Rotate the 3rd quad to temp
+  $Mon{'kappa_mon'}->obeyw("rotate", "angle=180 in=$in(1025:2048,1025:2048) out=$c");
+  $Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$c origin=[1,1]");
+  $Mon{'ndfpack_mon'}->obeyw("setbound", "ndf=$c(-2048:2048,1:1024)");
+  $Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$c origin=[1,1]");
+
+  # Rotate the 4th quad to temp
+  $Mon{'kappa_mon'}->obeyw("rotate", "angle=270 in=$in(1:1024,1025:2048) out=$d");
+  $Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$d origin=[1,1]");
+  $Mon{'ndfpack_mon'}->obeyw("setbound", "ndf=$d(-3072:1024,1:1024)");
+  $Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$d origin=[1,1]");
+
+  # Make the "mosaic"
+  # use a tmp file for the filelist.
+  my $list=new ORAC::TempFile;
+  my $listfile =$list->file;
+  open(LIST, ">$listfile");
+  print LIST "$a\n$b\n$c\n$d\n";
+  close(LIST);
+
+  $Mon{'ccdpack_reg'}->obeyw("makemos", "in=^$listfile method=mean out=$tmpfile");
+
+  # Collapse the mosaic to make a profile
+  $Mon{'kappa_mon'}->obeyw("collapse", "in=$tmpfile out=$tempfile estimator=$method axis=2");
+
+  # Grow the profile out
+  $Mon{'kappa_mon'}->obeyw("manic", "in=$tempfile out=$a axes=[0,1] lbound=0 ubound=1024");
+
+  # Rotate to make the other quadrants
+  $Mon{'kappa_mon'}->obeyw("rotate", "angle=90 in=$a out=$b");
+  $Mon{'kappa_mon'}->obeyw("rotate", "angle=180 in=$a out=$c");
+  $Mon{'kappa_mon'}->obeyw("rotate", "angle=270 in=$a out=$d");
+
+  # Do position and expand the quadrant images to full images
+  $Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$a origin=[1,1]");
+  $Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$b origin=[1,1025]");
+  $Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$c origin=[1025,1025]");
+  $Mon{'ndfpack_mon'}->obeyw("setorigin", "ndf=$d origin=[1025,1]");
+  $Mon{'ndfpack_mon'}->obeyw("setbound", "ndf=$a(1:2048,1:2048)");
+  $Mon{'ndfpack_mon'}->obeyw("setbound", "ndf=$b(1:2048,1:2048)");
+  $Mon{'ndfpack_mon'}->obeyw("setbound", "ndf=$c(1:2048,1:2048)");
+  $Mon{'ndfpack_mon'}->obeyw("setbound", "ndf=$d(1:2048,1:2048)");
+
+  # Mosaic em up.
+  $Mon{'ccdpack_reg'}->obeyw("makemos", "in=^$listfile method=mean out=$tmpfile");
+
+  # Determine the mode to normalize to.
+  _CLIPPED_STATS_ CLIP=2,3,3
+  my $mean = $_CLIPPED_STATS_{MEAN};
+
+  # Create a temporary file for CSUB output.
+  my $csub_temp = new ORAC::TempFile;
+
+  # Set up the parameters for CSUB.
+  my $params = "in=" . $tmpfile . " "
+            . "out=" . $csub_temp->file . " "
+            . "scalar=$mean"
+            ;
+
+  # Run CSUB.
+  $Mon{'kappa_mon'}->obeyw( "csub", "$params" );
+
+  # Subtract from the original image
+  $Mon{'kappa_mon'}->obeyw("sub", "in1=$in in2=" . $csub_temp->file . " out=$out");
+
+  #Hello, world
+  orac_print("$in to $out: Debanding algorithm applied\n");
+
+  $Frm->file($out);
+
+} elsif( $technique == 2 ) {
+
+  # This is the 4 COLLAPSEs followed by 4 PIXDUPEs method.
+  my @collapse_regions = ( '1:1024,1:1024',
+                           '1025:2048,1:1024',
+                           '1025:2048,1025:2048',
+                           '1:1024,1025:2048' );
+  my @collapse_axes = ( 1, 2, 1, 2 );
+  my @rotate_angles = ( -90, 0, -90, 0 );
+  my @setbound_bounds = ( '1:1024,1:1',
+                          '1025:2048,1:1',
+                          '1025:2048,1:1',
+                          '1:1024,1:1' );
+  my @pixdupe_expands = ( '1024,1',
+                          '1,1024',
+                          '1024,1',
+                          '1,1024' );
+  my @setorigin_origins = ( '1,1',
+                            '1025,1',
+                            '1025,1025',
+                            '1,1025' );
+
+  # Set up four temporary files that'll hold the output from pixdupe.
+  my $pixdupe1 = new ORAC::TempFile;
+  my $pixdupe2 = new ORAC::TempFile;
+  my $pixdupe3 = new ORAC::TempFile;
+  my $pixdupe4 = new ORAC::TempFile;
+
+  my @pixdupe_files = ( $pixdupe1, $pixdupe2, $pixdupe3, $pixdupe4 );
+
+  # Set the WCS frame of the input to PIXEL.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=$in frame=PIXEL" );
+
+  # Go through each quadrant.
+  for my $i ( 0 .. 3 ) {
+
+    # Create a temporary file for COLLAPSE output.
+    my $collapse_temp = new ORAC::TempFile;
+
+    # Set up parameters for COLLAPSE.
+    my $params = "in=$in(" . $collapse_regions[$i] . ") "
+               . "axis=" . $collapse_axes[$i] . " "
+               . "out=" . $collapse_temp->file . " "
+               . "estimator=$method"
+               ;
+
+    # Run COLLAPSE.
+    $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+    # Set up paramters for SETBOUND.
+    $params = "ndf=" . $collapse_temp->file . "(" . $setbound_bounds[$i] . ")";
+
+    # Run SETBOUND.
+    $Mon{'ndfpack_mon'}->obeyw( "setbound", "$params" );
+
+    # We only need to do the rotation if it's non-zero.
+    if( $rotate_angles[$i] ) {
+
+      # Create a temporary file for ROTATE.
+      my $rotate_temp = new ORAC::TempFile;
+
+      # Set up parameters for ROTATE.
+      $params = "in=" . $collapse_temp->file . " "
+              . "out=" . $rotate_temp->file . " "
+              . "angle=" . $rotate_angles[$i]
+              ;
+
+      # Run ROTATE.
+      $Mon{'kappa_mon'}->obeyw( "rotate", "$params" );
+
+      # Set up parameters for PIXDUPE.
+      $params = "in=" . $rotate_temp->file . " "
+              . "out=" . $pixdupe_files[$i]->file . " "
+              . "expand=[" . $pixdupe_expands[$i] . "]"
+              ;
+
+      # Run PIXDUPE.
+      $Mon{'kappa_mon'}->obeyw( "pixdupe", "$params" );
+
+
+    } else {
+
+      # Just need to run PIXDUPE, so set up the parameters.
+      $params = "in=" . $collapse_temp->file . " "
+              . "out=" . $pixdupe_files[$i]->file . " "
+              . "expand=[" . $pixdupe_expands[$i] . "]"
+              ;
+
+      # Run PIXDUPE.
+      $Mon{'kappa_mon'}->obeyw( "pixdupe", "$params" );
+
+    }
+
+    # Set up parameters for SETORIGIN.
+    $params = "ndf=" . $pixdupe_files[$i]->file . " "
+            . "origin=[" . $setorigin_origins[$i] . "]"
+            ;
+
+    # Run SETORIGIN.
+    $Mon{'ndfpack_mon'}->obeyw( "setorigin", "$params" );
+  }
+
+  # Create a temporary file for PASTE output.
+  my $paste_temp = new ORAC::TempFile;
+
+  # Set up the parameters for PASTE.
+  my $params = "in=" . $pixdupe1->file . " "
+             . "p1=" . $pixdupe2->file . " "
+             . "p2=" . $pixdupe3->file . " "
+             . "p3=" . $pixdupe4->file . " "
+             . "out=" . $paste_temp->file . " "
+             . "confine=false"
+             ;
+
+  # Run PASTE.
+  $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+
+  # Determine the mode to normalize to.
+  _CLIPPED_STATS_ CLIP=2,3,3
+  my $mean = $_CLIPPED_STATS_{MEAN};
+
+  # Create a temporary file for CSUB output.
+  my $csub_temp = new ORAC::TempFile;
+
+  # Set up the parameters for CSUB.
+  $params = "in=" . $paste_temp->file . " "
+          . "out=" . $csub_temp->file . " "
+          . "scalar=$mean"
+          ;
+
+  # Run CSUB.
+  $Mon{'kappa_mon'}->obeyw( "csub", "$params" );
+
+  # Subtract the PASTE result from the input file.
+  $params = "in1=$in in2=" . $csub_temp->file . " out=$out title=!";
+  $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+  $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$out fullframe fullwcs" );
+
+  # Set the current WCS Frame to SKY.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=$out frame=sky" );
+
+  # Report to the user.
+  orac_print "$in to $out: Removed reset anomaly structure.\n";
+
+  $Frm->file( $out );
+
+} elsif( $technique == 3 ) {
+
+  # This is the 1 COLLAPSE, 4 ROTATEs, and 4 PIXDUPEs method.
+
+  # Set up some arrays to hold rotations, pixdupes, and setorigins.
+  my @rotate_angles;
+  if( $direction ) {
+    @rotate_angles = ( -90, 180, 90, 0 );
+  } else {
+    @rotate_angles = ( 0, -90, 180, 90 );
+  }
+
+  my @pixdupe_expands;
+  if( $direction ) {
+    @pixdupe_expands = ( '1024,1',
+                         '1,1024',
+                         '1024,1',
+                         '1,1024' );
+  } else {
+    @pixdupe_expands = ( '1,1024',
+                         '1024,1',
+                         '1,1024',
+                         '1024,1' );
+  }
+  my @setorigin_origins = ( '1,1',
+                            '1025,1',
+                            '1025,1025',
+                            '1,1025' );
+
+  # Set up four temporary files that'll hold the output from pixdupe.
+  my $pixdupe1 = new ORAC::TempFile;
+  my $pixdupe2 = new ORAC::TempFile;
+  my $pixdupe3 = new ORAC::TempFile;
+  my $pixdupe4 = new ORAC::TempFile;
+  my @pixdupe_files = ( $pixdupe1, $pixdupe2, $pixdupe3, $pixdupe4 );
+
+  # Set the WCS frame of the input to PIXEL.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=$in frame=PIXEL" );
+
+  # Set up a temporary file for COLLAPSE.
+  my $collapse_temp = new ORAC::TempFile;
+
+  # Set up parameters for COLLAPSE.
+  my $axis = ( $direction ? 1 : 2 );
+  my $params = "in=$in(1:1024,1:1024) axis=$axis "
+             . "out=" . $collapse_temp->file . " "
+             . "estimator=$method"
+             ;
+
+  # Run COLLAPSE.
+  $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+  # Set up parameters for SETBOUND.
+  $params = "ndf=" . $collapse_temp->file . "(1:1024,1:1)";
+
+  # Run SETBOUND.
+  $Mon{'ndfpack_mon'}->obeyw( "setbound", "$params" );
+
+  # We've got our input 1024x1 NDF, now rotate it about and pixdupe it.
+  for my $i ( 0 .. 3 ) {
+
+    # ROTATE only if we need to (i.e. angle != 0), otherwise just go
+    # on and do the PIXDUPE.
+    if( $rotate_angles[$i] ) {
+
+      # Create a temporary file for ROTATE.
+      my $rotate_temp = new ORAC::TempFile;
+
+      # Set up parameters for ROTATE.
+      $params = "in=" . $collapse_temp->file . " "
+              . "out=" . $rotate_temp->file . " "
+              . "angle=" . $rotate_angles[$i]
+              ;
+
+      # Run ROTATE.
+      $Mon{'kappa_mon'}->obeyw( "rotate", "$params" );
+
+      # Set up parameters for PIXDUPE.
+      $params = "in=" . $rotate_temp->file . " "
+              . "out=" . $pixdupe_files[$i]->file . " "
+              . "expand=[" . $pixdupe_expands[$i] . "]"
+              ;
+
+      # Run PIXDUPE.
+      $Mon{'kappa_mon'}->obeyw( "pixdupe", "$params" );
+
+    } else {
+
+      # Just need to run PIXDUPE, so set up the parameters.
+      $params = "in=" . $collapse_temp->file . " "
+              . "out=" . $pixdupe_files[$i]->file . " "
+              . "expand=[" . $pixdupe_expands[$i] . "]"
+              ;
+
+      # Run PIXDUPE.
+      $Mon{'kappa_mon'}->obeyw( "pixdupe", "$params" );
+
+    }
+
+    # Set up parameters for SETORIGIN.
+    $params = "ndf=" . $pixdupe_files[$i]->file . " "
+            . "origin=[" . $setorigin_origins[$i] . "]"
+            ;
+
+    # Run SETORIGIN.
+    $Mon{'ndfpack_mon'}->obeyw( "setorigin", "$params" );
+  }
+
+  # Create a temporary file for PASTE output.
+  my $paste_temp = new ORAC::TempFile;
+
+  # Set up the parameters for PASTE.
+  $params = "in=" . $pixdupe1->file . " "
+          . "p1=" . $pixdupe2->file . " "
+          . "p2=" . $pixdupe3->file . " "
+          . "p3=" . $pixdupe4->file . " "
+          . "out=" . $paste_temp->file . " "
+          . "confine=false"
+          ;
+
+  # Run PASTE.
+  $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+
+  # Determine the mode to normalize to.
+  _CLIPPED_STATS_ CLIP=2,3,3
+  my $mean = $_CLIPPED_STATS_{MEAN};
+
+  # Create a temporary file for CSUB output.
+  my $csub_temp = new ORAC::TempFile;
+
+  # Set up the parameters for CSUB.
+  $params = "in=" . $paste_temp->file . " "
+          . "out=" . $csub_temp->file . " "
+          . "scalar=$mean"
+          ;
+
+  # Run CSUB.
+  $Mon{'kappa_mon'}->obeyw( "csub", "$params" );
+
+  # Subtract the CSUB result from the input file.
+  $params = "in1=$in in2=" . $csub_temp->file . " out=$out title=!";
+  $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+  # Set the current WCS Frame to SKY.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=$out frame=sky" );
+
+  # Report to the user.
+  orac_print "$in to $out: Removed reset anomaly structure.\n";
+
+  $Frm->file( $out );
+
+} elsif( $technique == 4 ) {
+
+  # This is the 1 COLLAPSE, 1 PIXDUPE, and 4 ROTATEs method.
+
+  # Set up some arrays to hold rotations and setorigins.
+  my @rotate_angles = ( -90, 180, 90, 0 );
+  my @setorigin_origins = ( '1,1',
+                            '1025,1',
+                            '1025,1025',
+                            '1,1025' );
+
+  # Set up four temporary files that'll hold the output from ROTATE.
+  my $rotate1 = new ORAC::TempFile;
+  my $rotate2 = new ORAC::TempFile;
+  my $rotate3 = new ORAC::TempFile;
+  my $rotate4 = new ORAC::TempFile;
+  my @rotate_files = ( $rotate1, $rotate2, $rotate3, $rotate4 );
+
+  # Set the WCS frame of the input to PIXEL.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=$in frame=PIXEL" );
+
+  # Set up a temporary file for COLLAPSE.
+  my $collapse_temp = new ORAC::TempFile;
+
+  # Set up the parameters for COLLAPSE.
+  my $params = "in=$in(1:1024,1:1024) axis=1 "
+             . "out=" . $collapse_temp->file . " "
+             . "estimator=$method"
+             ;
+
+  # Run COLLAPSE.
+  $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+  # Set up parameters for SETBOUND.
+  $params = "ndf=" . $collapse_temp->file . "(1:1024,1:1)";
+
+  # Run SETBOUND.
+  $Mon{'ndfpack_mon'}->obeyw( "setbound", "$params" );
+
+  # Set up a temporary file for PIXDUPE.
+  my $pixdupe_temp = new ORAC::TempFile;
+
+  # Set up parameters for PIXDUPE.
+  $params = "in=" . $collapse_temp->file . " "
+          . "out=" . $pixdupe_temp->file . " "
+          . "expand=[1,1024]"
+          ;
+
+  # Run PIXDUPE.
+  $Mon{'kappa_mon'}->obeyw( "pixdupe", "$params" );
+
+  # Now run the ROTATEs.
+  for my $i ( 0 .. 3 ) {
+
+    # ROTATE if rotation angle isn't 0, otherwise NDFCOPY.
+    if( $rotate_angles[$i] ) {
+
+      # Set up the parameters for ROTATE.
+      $params = "in=" . $pixdupe_temp->file . " "
+              . "out=" . $rotate_files[$i]->file . " "
+              . "angle=" . $rotate_angles[$i]
+              ;
+
+      # Run ROTATE.
+      $Mon{'kappa_mon'}->obeyw( "rotate", "$params" );
+
+    } else {
+
+      # Set up the parameters for NDFCOPY.
+      $params = "in=" . $pixdupe_temp->file . " "
+              . "out=" . $rotate_files[$i]->file . " "
+              ;
+
+      # Run NDFCOPY.
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+    }
+
+    # Set up parameters for SETORIGIN.
+    $params = "ndf=" . $rotate_files[$i]->file . " "
+            . "origin=[" . $setorigin_origins[$i] . "]";
+
+    # Run SETORIGIN.
+    $Mon{'ndfpack_mon'}->obeyw( "setorigin", "$params" );
+
+  }
+
+  # Create a temporary file for PASTE output.
+  my $paste_temp = new ORAC::TempFile;
+
+  # Set up the parameters for PASTE.
+  $params = "in=" . $rotate1->file . " "
+          . "p1=" . $rotate2->file . " "
+          . "p2=" . $rotate3->file . " "
+          . "p3=" . $rotate4->file . " "
+          . "out=" . $paste_temp->file . " "
+          . "confine=false"
+          ;
+
+  # Run PASTE.
+  $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+
+  # Determine the mode to normalize to.
+  _CLIPPED_STATS_ CLIP=2,3,3
+  my $mean = $_CLIPPED_STATS_{MEAN};
+
+  # Create a temporary file for CSUB output.
+  my $csub_temp = new ORAC::TempFile;
+
+  # Set up the parameters for CSUB.
+  $params = "in=" . $paste_temp->file . " "
+          . "out=" . $csub_temp->file . " "
+          . "scalar=$mean"
+          ;
+
+  # Run CSUB.
+  $Mon{'kappa_mon'}->obeyw( "csub", "$params" );
+
+  # Subtract the CSUB result from the input file.
+  $params = "in1=$in in2=" . $csub_temp->file . " out=$out title=!";
+  $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+  # Report to the user.
+  orac_print "$in to $out: Removed reset anomaly structure.\n";
+
+  $Frm->file( $out );
+}
+

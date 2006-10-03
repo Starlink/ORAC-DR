@@ -1,0 +1,334 @@
+#+
+# Name:
+#    BRIGHT_POINT_SOURCE_NCOLOUR
+
+# Purpose:
+#    Reduces a multi-colour bright-point-source photometry observation.
+
+# Language:
+#    Perl5
+
+# Description:
+#    This recipe reduces a "bright standard" photometry observation
+#    observed through one or more filters. For each filter it takes an
+#    imaging observation comprising
+#    a series of jittered object frames and a dark frame with a
+#    predetermined flat-field frame to make a calibrated, trimmed mosaic
+#    automatically.
+
+#    This recipe performs a null debiassing, bad-pixel masking, dark
+#    subtraction, flat-field division, feature detection and matching
+#    between object frames, and resampling.  See the "Notes" for details.
+
+#    As the name implies, it is intended for bright point sources,
+#    such as standard stars.
+
+# Notes:
+#    -  You may use SKY_FLAT or SKY_FLAT_MASKED to make the flat field.
+#    -  A World Co-ordinate System (WCS) using the AIPS convention is 
+#    created in the headers should no WCS already exist.
+#    -  For IRCAM, old headers are reordered and structured with
+#    headings before groups of related keywords.  The comments have
+#    units added or appear in a standard format.  Four deprecated
+#    deprecated are removed.  FITS-violating headers are corrected.
+#    Spurious instrument names are changed to IRCAM3.
+#    -  The bad pixel mask applied is $ORAC_DATA_CAL/bpm.
+#    -  Each dark-subtracted frame has thresholds applied beyond which
+#    pixels are flagged as bad.  The lower limit is 5 standard 
+#    deviations below the mode, but constrained to the range -100 to 1.
+#    The upper limit is 1000 above the saturation limit for the detector
+#    in the mode used.
+#    -  Where automatic registration is not possible, the recipe matches
+#    the centroid of central source, and should that fail, it resorts
+#    to using the telescope offsets transformed to pixels.
+#    -  The resampling applies non-integer shifts of origin using
+#    bilinear interpolation.  There is no rotation to align the
+#    Cartesian axes with the cardinal directions.
+#    -  The recipe makes the mosaic by applying offsets in intensity to
+#    give the most consistent result amongst the overlapping regions.
+#    The mosaic is trimmed to the dimensions of an input frame.  The
+#    mosaic is not normalised by its exposure time (that being the
+#    exposure time of a single frame).
+#    -  For each cycle of jittered frames, the recipe creates a mosaic,
+#    which is then added into a master mosaic of improving signal to
+#    noise.  The exposure time is also summed and stored in the mosaic's
+#    corresponding header.  Likewise the end airmass and end UT headers
+#    are updated to match that of the last-observed frame contributing to
+#    the mosaic.
+#    -  Intermediate frames are deleted except for the flat-fielded (_ff
+#    suffix) frames.
+#    -  Sub-arrays are supported.
+
+# Output Data:
+#    -  The resultant mosaic in <m><date>_<group_number>_<filter>_mos,
+#    where <m> is "gf" for UFTI, "gi" for IRCAM and IRIS2, and "gu" for
+#    UFTI, and <filter> is the filter name.  Before 2000 August these
+#    were "g" for UFTI and "rg" for IRCAM.
+#    -  The individual flat-fielded frames in <i><date>_<obs_number>_ff,
+#    where <i> is "f" for UFTI, "i" for IRCAM, and "u" for UIST.
+#    Before 2000 August
+#    IRCAM frames had prefix "ro". IRIS2 data are in <date><obs_number>_ff,
+#    where <date> is in the form "ddmmm".
+
+# Configurable Steering Parameters:
+#    NUMBER = INTEGER
+#       The number of frames in the jitter pattern.  If this is not 
+#       set, the number of offsets, as given by FITS header NOFFSETS,
+#       minus one is used.  If neither is available, 5 is the default.
+#       An error state arises if the number of jittered frames is fewer
+#       than 3.  For observations prior to the availability of full
+#       ORAC, header NOFFSETS will be absent.  []
+#    USEVAR = LOGICAL
+#       Whether or not to create and propagate variance arrays.  [0]
+
+# Timing:
+#    This is a fast recipe and will keep pace with observations.
+
+# Implementation Status:
+#    -  The processing engines are from the Starlink packages: CCDPACK,
+#    KAPPA, and FIGARO.
+#    -  Uses the Starlink NDF format.
+#    -  History is recorded within the data files.
+#    -  The title of the data is propagated through intermediate files
+#    to the mosaic.
+#    -  Error propagation is controlled by the USEVAR parameter.
+
+# References:
+#    "Scripts for UFTI" G.S. Wright & S.K. Leggett, 1997 orac009-ufts, v01.
+
+# Related Recipes:
+#    BRIGHT_POINT_SOURCE, JITTER_SELF_FLAT_APHOT, SKY_FLAT, SKY_FLAT_MASKED.
+
+# Authors:
+#    MJC: Malcolm J. Currie (UKATC/ATC)
+#    BC:  Brad Cavanagh (JAC)
+#
+# Copyright:
+#    Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Startup
+# =======
+
+# Imaging-specific preliminaries, such as switching on history
+# recording.
+    _IMAGING_HELLO_
+
+# Recipe-specific initialisation of data and tasks.  Set up steering
+# control of the processing, namely when to make a flat, make a mosaic.
+# Create a WCS, if needed.
+    _BRIGHT_POINT_SOURCE_HELLO_ MULTICOLOURED=1
+
+# Calibration
+# ===========
+
+# Subtract the dark frame.
+    _SUBTRACT_DARK_
+
+# Flat field using a pre-existing calibration frame.
+    _DIVIDE_BY_FLAT_
+
+# Determine the linear offsets between the object frames in the group
+# by pattern matching common features.  Register the frames using a shift
+# of pixel origin.
+    _GENERATE_OFFSETS_NCOLOUR_
+
+# Apply rotation, resample each frame, and tesselate.  The mosaic is
+# trimmed to the dimensions of an input frame.
+    _MAKE_MOSAIC_NCOLOUR_ RESAMPLE=0
+
+# Remove intermediate data files.
+    _BRIGHT_POINT_SOURCE_NCOLOUR_TIDY_
+
+# Podule
+# ======
+
+=head1 NAME
+
+BRIGHT_POINT_SOURCE_NCOLOUR -- Reduces a multi-colour bright-point-source photometry observation.
+
+=head1 DESCRIPTION
+
+This recipe reduces a "bright standard" photometry observation observed
+through one or more filters. For each filter it takes an imaging
+observation comprising a
+series of jittered object frames and a dark frame with a predetermined
+flat-field frame to make a calibrated, trimmed mosaic automatically.
+
+This recipe performs a null debiassing, bad-pixel masking, dark
+subtraction, flat-field division, feature detection and matching
+between object frames, and resampling.  See the L<"NOTES"> for details.
+
+As the name implies, it is intended for bright point sources,
+such as standard stars.
+
+=head1 NOTES
+
+=over 4
+
+=item * 
+
+You may use L<SKY_FLAT|SKY_FLAT> or L<SKY_FLAT_MASKED|SKY_FLAT_MASKED> 
+to make the flat field.
+
+=item *
+
+A World Co-ordinate System (WCS) using the AIPS convention is 
+created in the headers should no WCS already exist.
+
+=item * 
+
+For IRCAM, old headers are reordered and structured with
+headings before groups of related keywords.  The comments have
+units added or appear in a standard format.  Four deprecated
+deprecated are removed.  FITS-violating headers are corrected.
+Spurious instrument names are changed to IRCAM3.
+
+=item *
+
+The bad pixel mask applied is F<$ORAC_DATA_CAL/bpm>.
+
+=item * 
+
+Each dark-subtracted frame has thresholds applied beyond which
+pixels are flagged as bad.  The lower limit is 5 standard 
+deviations below the mode, but constrained to the range -100 to 1.
+The upper limit is 1000 above the saturation limit for the detector
+in the mode used.
+
+=item *
+
+Where automatic registration is not possible, the recipe matches
+the centroid of central source, and should that fail, it resorts
+to using the telescope offsets transformed to pixels.
+
+=item *
+
+The resampling applies non-integer shifts of origin using
+bilinear interpolation.  There is no rotation to align the
+Cartesian axes with the cardinal directions.
+
+=item * 
+
+The recipe makes the mosaic by applying offsets in intensity to
+give the most consistent result amongst the overlapping regions.
+The mosaic is trimmed to the dimensions of an input frame.  The
+mosaic is not normalised by its exposure time (that being the
+exposure time of a single frame).
+
+=item *
+
+For each cycle of jittered frames, the recipe creates a mosaic, which
+is then added into a master mosaic of improving signal to noise. The
+exposure time is also summed and stored in the mosaic's corresponding
+header.  Likewise the end airmass and end UT headers are updated to
+match that of the last-observed frame contributing to the mosaic.
+
+=item *
+
+Intermediate frames are deleted except for the flat-fielded (_ff
+suffix) frames.
+
+=item *
+
+Sub-arrays are supported.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The resultant mosaic in
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_E<lt>filterE<gt>_mos, where
+E<lt>mE<gt> is "gf" for UFTI, "gi" for IRCAM and IRIS2, and "gu" for
+UIST, and E<lt>filterE<gt> is the filter name.  Before 2000 August these
+were "g" for UFTI and "rg" for IRCAM.
+
+=item *
+
+The individual flat-fielded frames in
+E<lt>iE<gt>E<lt>dateE<gt>_E<lt>obs_numberE<gt>_ff, where E<lt>iE<gt>
+is "f" for UFTI, "i" for IRCAM and "u" for UIST..  Before 2000 August
+IRCAM frames had prefix "ro". IRIS2 data are in E<lt>dateE<gt>E<lt>obs_numberE<gt>_ff,
+where E<lt>dateE<gt> is in the form "ddmmm".
+
+=back
+
+=head1 CONFIGURABLE STEERING PARAMETERS
+
+=over 4
+
+=item NUMBER = INTEGER
+
+The number of frames in the jitter pattern.  If this is not set,
+the number of offsets, as given by FITS header NOFFSETS, minus
+one is used.  If neither is available, 5 is the default.  An
+error state arises if the number of jittered frames is fewer
+than 3.  For observations prior to the availability of full
+ORAC, header NOFFSETS will be absent.  []
+
+=item USEVAR = LOGICAL
+
+Whether or not to create and propagate variance arrays.  [0]
+
+=back
+
+=head1 TIMING
+
+This is a fast recipe and will keep pace with observations.
+
+=head1 IMPLEMENTATION STATUS
+
+=over 4
+
+=item *
+
+The processing engines are from the Starlink packages: CCDPACK,
+KAPPA, and FIGARO.
+
+=item *
+
+Uses the Starlink NDF format.
+
+=item *
+
+History is recorded within the data files.
+
+=item *
+
+The title of the data is propagated through intermediate files
+to the mosaic.
+
+=item *
+
+Error propagation is controlled by the USEVAR parameter.
+
+=back
+
+=head1 REFERENCES
+
+"I<Scripts for UFTI>" G.S. Wright & S.K. Leggett, 1997 orac009-ufts, v01.
+
+=head1 RELATED RECIPES
+
+L<BRIGHT_POINT_SOURCE_APHOT|BRIGHT_POINT_SOURCE_APHOT>,
+L<JITTER_SELF_FLAT_APHOT|JITTER_SELF_FLAT_APHOT>,
+L<SKY_FLAT|SKY_FLAT>,
+L<SKY_FLAT_MASKED|SKY_FLAT_MASKED>.
+
+=head1 AUTHORS
+
+Malcolm J. Currie (UKATC/JAC) (mjc@jach.hawaii.edu)
+Brad Cavanagh (JAC) (b.cavanagh@jach.hawaii.edu)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

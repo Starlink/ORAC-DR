@@ -1,0 +1,324 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_NIGHT_LOG_ -- Produces a text file log of a night's observations for WFCAM.
+
+=head1 DESCRIPTION
+
+This recipe takes a night's observations and creates a text file containing
+a headed tabulation of parameters for each frame.
+
+The parameters listed in the text file depend on arguments passed to this
+primitive; see the ARGUMENTS section below.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item FOCUS = LOGICAL (Given)
+
+When set, produce a focus run log listing observation number, group
+number, object name, observation type, UT start, exposure time, filter
+name, telescope focus, internal focus position, focus offset, and focus
+filter offset.
+
+=item LONG = LOGICAL (Given)
+
+When set, produce a long log listing observation number, group number,
+tile number, object name, observation type, jitter position and number
+of jitters in pattern, microstep position and number of microsteps in
+pattern, UT start time, exposure time, filter name, airmass, right
+ascension and declination coordinates, right ascension and declination
+offsets, and data reduction recipe name.
+
+=item OUT = LOGICAL (Given)
+
+When set (to any value) the log file is written to F<$ORAC_DATA_OUT>
+rather than to F<$ORAC_DATA_IN>.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+When neither the FOCUS nor LONG arguments are set, the short log
+lists observation number, group number, tile number, object name,
+observation type, jitter position and number of jitters in pattern,
+microstep position and number of microsteps in pattern, UT start time,
+exposure time, filter name, right ascension and declination offsets,
+and data reduction recipe name.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The text log files F<E<lt>dateE<gt>.nightlog_E<lt>camnumE<gt>>
+for the short nightlog, F<E<lt>dateE<gt>.nightlog_E<lt>camnumE<gt>-long>
+for the long nightlog, or F<E<lt>dateE<gt>.nightlog_E<lt>camnumE<gt>-focus>
+for the focus nightlog, where E<lt>dateE<gt> is the UT date in YYYYMMDD format
+and E<lt>camnumE<gt> is the camera number. The location of the log file
+is dictated by the OUT argument.
+
+=back
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu> (JAC)
+Paul Hirst <p.hirst@jach.hawaii.edu> (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# For OS-independent filename creation.
+use File::Spec;
+
+# Fudge missing or erroneous headers.
+_FIX_HEADERS_
+
+# Obtain the frame number and UT date and camnum.
+my $obsnum = $Frm->uhdr( "ORAC_OBSERVATION_NUMBER" );
+my $obsdate = $Frm->uhdr( "ORAC_UTDATE" );
+chomp( $obsdate );
+my $camnum = $Frm->hdr("CAMNUM");
+
+# Start building the filename suffix
+my $suff = "_" . $camnum;
+
+# Were we given any options?
+my $long = $_NIGHT_LOG_{LONG};
+$suff .= "-long" if ($long);
+my $focus = $_NIGHT_LOG_{FOCUS};
+$suff .= "-focus" if ($focus);
+
+# Do we want the usual stuff in this log?
+my $usual=1;
+$usual=0 if($focus);
+
+# Obtain the name portion of the file.  
+my $fileroot = $obsdate;
+
+# Specify the location of the nightly log file. [depends on the arguments]
+my $nightlog;
+if ( defined $_NIGHT_LOG_{OUT} ) {
+
+   # ORAC_DATA_OUT is the current directory and the default location for
+   # log files.
+   $nightlog = "${fileroot}.nightlog";
+
+   # If we're working in ORAC_DATA_OUT, always append to the file, creating
+   # the logfile if it doesn't exist.
+} else {
+
+   # A non-standard location so full path is required.
+   $nightlog = File::Spec->catfile( $ENV{ "ORAC_DATA_IN" }, "${fileroot}.nightlog" );
+
+   # If we're working in ORAC_DATA_IN, start fresh if this is frame 1
+   # We don't care about the return value from unlink.
+   unlink $nightlog if $obsnum == 1;
+}
+
+# Append any suffixes to the nightlog filename
+$nightlog .= $suff;
+
+# Flag to indicate whether or not the log is there already.
+my $is_there;
+$is_there = ( -e $nightlog ? 1 : 0 );
+
+# Create a new log object.
+my $log = new ORAC::LogFile( $nightlog );
+
+# Only proceed if we have a valid object
+if ( defined $log ) {
+
+  if ( $is_there ) {
+    orac_print "Appending to Log: $nightlog\n";
+  } else {
+    orac_print "Log created as $nightlog\n";
+  }
+
+  # Create the empty strings.
+  my $heading1 = "";
+  my $heading2 = "";
+  my $entry = "";
+
+  # Observation number.
+  $heading1 .= " Obs |";
+  $heading2 .= "-----|";
+  #             12345
+  $entry .= sprintf("%5d ", $obsnum);
+
+  # Group number.
+  $heading1 .= " Grp |";
+  $heading2 .= "-----|";
+  #             12345
+  $entry .= sprintf("%5d ", $Frm->findgroup);
+
+  if($usual) {
+    # Tile number
+    $heading1 .= " Tile|";
+    $heading2 .= "-----|";
+    #             12345
+    $entry .= sprintf("%5d ", $Frm->hdr("TILENUM"));
+  }
+
+  # Object name.
+  $heading1 .= "     Object |";
+  $heading2 .= "------------|";
+  #             123456789012
+  $entry .= sprintf("%12.12s ", $Frm->uhdr("ORAC_OBJECT"));
+
+  # Observation type.
+  $heading1 .= " Obstype |";
+  $heading2 .= "---------|";
+  #             123456789
+  $entry .= sprintf("%9.9s ", $Frm->uhdr("ORAC_OBSERVATION_TYPE"));
+
+  if($usual) {
+    # Jitters
+    $heading1 .= "Jitter|";
+    $heading2 .= "------|";
+    #             123456
+    #               4/ 9
+    if( defined( $Frm->hdr("JITTER_I") ) ) {
+      $entry .= sprintf(" %2d", $Frm->hdr("JITTER_I") );
+    } else {
+      $entry .= " --";
+    }
+    $entry .= "/";
+    if( defined( $Frm->hdr("NJITTER") ) ) {
+      $entry .= sprintf("%2d ", $Frm->hdr("NJITTER") );
+    } else {
+      $entry .= "-- ";
+    }
+
+  }
+
+  if($usual) {
+    # Microsteps
+    $heading1 .= "Ustep|";
+    $heading2 .= "-----|";
+    #             12345
+    #              4/9
+    if( defined( $Frm->hdr("USTEP_I") ) ) {
+      $entry .= sprintf(" %1d", $Frm->hdr("USTEP_I") );
+    } else {
+      $entry .= " -";
+    }
+    $entry .= "/";
+    if( defined( $Frm->hdr("NUSTEP") ) ) {
+      $entry .= sprintf("%1d ", $Frm->hdr("NUSTEP") );
+    } else {
+      $entry .= "- ";
+    }
+  }
+
+  # UT start.
+  $heading1 .= "UT Start|";
+  $heading2 .= "--------|";
+  #             12345678
+  $entry .= sprintf("%8.5f ", $Frm->uhdr("ORAC_UTSTART"));
+
+  # Exposure time.
+  $heading1 .= " ExpT |";
+  $heading2 .= "------|";
+  #             123456
+  $entry .= sprintf("%6.3f ", $Frm->uhdr("ORAC_EXPOSURE_TIME"));
+
+  # Filter.
+  $heading1 .= " Filter |";
+  $heading2 .= "--------|";
+  #             12345678
+  $entry .= sprintf("%8.8s ", $Frm->uhdr("ORAC_FILTER"));
+
+  # Focus Values
+  if($focus) {
+    $heading1 .= "TCS_FOC |";
+    $heading2 .= "--------|";
+    #             12345678
+    $entry .= sprintf("%8.4f ", $Frm->hdr("TCS_FOC"));
+
+    $heading1 .= "FOC_POSN|";
+    $heading2 .= "--------|";
+    #             12345678
+    $entry .= sprintf("%8.4f ", $Frm->hdr("FOC_POSN"));
+
+    $heading1 .= "FOC_OFFS|";
+    $heading2 .= "--------|";
+    #             12345678
+    $entry .= sprintf("%8.4f ", $Frm->hdr("FOC_OFFS"));
+
+    $heading1 .= "FOC_FOFF|";
+    $heading2 .= "--------|";
+    #             12345678
+    $entry .= sprintf("%8.4f ", $Frm->hdr("FOC_FOFF"));
+  }
+
+
+  if($usual) {
+    if($long) {
+      # Airmass.
+      $heading1 .= "Airmass|";
+      $heading2 .= "-------|";
+      #             1234567
+      $entry .= sprintf("%7.3f ", $Frm->uhdr("ORAC_AIRMASS_START"));
+    }
+  }
+
+  if($usual) {
+    if($long) {
+      # RA & Dec.
+      $heading1 .= "    R.A.     Decl.|";
+      $heading2 .= "------------------|";
+      #             123456789012345678
+      #             12.12345 +12.12345
+      $entry .= sprintf("%8.5f %+9.5f ",
+                      $Frm->uhdr("ORAC_RA_BASE"),
+                      $Frm->uhdr("ORAC_DEC_BASE"),
+                     );
+    }
+  }
+
+  if($usual) {
+    # RA & Dec offsets.
+    $heading1 .= " RA Off. Dec Off.|";
+    $heading2 .= "-----------------|";
+    #             12345678901234567
+    #             +123.123 +123.123
+    $entry .= sprintf("%+8.3f %+8.3f ",
+                    $Frm->uhdr("ORAC_RA_TELESCOPE_OFFSET"),
+                    $Frm->uhdr("ORAC_DEC_TELESCOPE_OFFSET"),
+                   );
+  }
+
+  if($usual) {
+    # DR Recipe.
+    $heading1 .= " DR Recipe";
+    $heading2 .= "-----------------------------";
+    #             12345678901234567890123456789
+    #             USTEP_JITTER_SELFFLAT
+    $entry .= sprintf("%-30s",
+                      $Frm->uhdr("ORAC_RECIPE"),
+                     );
+  }
+
+  # Write the log.
+  $log->header( $heading1, $heading2 );
+  $log->addentry( $entry );
+
+} else {
+
+  orac_warn "Could not create nightlog $nightlog.\n";
+
+}

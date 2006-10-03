@@ -1,0 +1,203 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CALCULATE_FOCUS_ -- Calculate focus adjustment numbers for WFCAM.
+
+=head1 DESCRIPTION
+
+This primitive takes a WFCAM focus observation consisting of four
+observations taken at two different focus positions, examines the FWHM
+of objects in each of the four observations, and calculates a
+suggested change in focus.
+
+=head1 ARGUMENTS
+
+=over 4
+
+None.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for WFCAM.
+
+=item *
+
+This primitive only operates on FOCUS observations.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+None.
+
+=back
+
+=head1 TASKS
+
+None.
+
+=head1 REQUIRED PERL MODULES
+
+Astro::WaveBand, Starlink::Extractor.
+
+=head1 AUTHORS
+
+Brad Cavanagh (JAC) <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2006 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# This primitive only operates on FOCUS observations.
+if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "FOCUS" ) {
+
+  my @focs;
+  my @fws;
+
+  # Let's first try loading all of the required Perl modules. Set a
+  # flag if any of them fail.
+  my $module_failed = 0;
+  require Starlink::Extractor;
+  if( $@ ) {
+    $module_failed = 1;
+    orac_warn "Could not load the Starlink::Extractor Perl module: $@\n";
+  }
+  require Astro::WaveBand;
+  if( $@ ) {
+    $module_failed = 1;
+    orac_warn "Could not load the Astro::WaveBand Perl module: $@\n";
+  }
+
+  # If we failed, warn and don't continue with focus reduction.
+  if( $module_failed ) {
+    orac_warn "Cannot determine focus.\n";
+  } else {
+
+    # Tell the user we're doing something.
+    orac_print "Calculating focus...\n";
+
+    # Set up some quality-control parameters.
+    my $max_ell = 0.5;
+    my $min_area = 15;
+
+    # Loop through the subframes.
+    foreach my $i ( 1 .. $Frm->nfiles ) {
+
+      # Set up a dummy out file so that we can get the input filename.
+      ( my $in, my $out ) = $Frm->inout( "_dummy", $i );
+
+      my $focus = $Frm->hdr->{$i}->{'FOC_OFF'};
+      push @focs, $focus;
+
+      # Create an Astro::WaveBand object.
+      my $waveband = new Astro::WaveBand( Filter => $Frm->uhdr( "ORAC_FILTER" ) );
+
+      # Extract objects.
+      my $ext = new Starlink::Extractor;
+      $ext->detect_thresh( 3.0 );
+      $ext->detect_minarea( 15 );
+      $ext->analysis_thresh( 3.0 );
+      $ext->deblend_nthresh( 32 );
+      $ext->deblend_mincont( 0.1 );
+      $ext->clean( 'Y' );
+      $ext->clean_param( 1.0 );
+      $ext->filter( 'Y' );
+      $ext->filter_name( '$EXTRACTOR_DIR/config/default.conv' );
+
+      my $cat = $ext->extract( frame => $in,
+                               filter => $waveband,
+                               quality => 0,
+                             );
+
+      # Filter out objects that don't match our criteria.
+      my @stars = $cat->filter_by_cb( sub { ( $_[0]->morphology->area->value > $min_area ) && ( $_[0]->morphology->ellipticity->value < $max_ell ) } );
+      my $filtered_cat = new Astro::Catalog( Stars => \@stars );
+
+      # Calculate the FWHM. Multiply the FWHM by two because EXTRACTOR
+      # calculates the semi-major and semi-minor axes.
+      my $fwhm = 0;
+      my $ns = 0;
+      foreach my $star ( $filtered_cat->stars ) {
+        $fwhm += 2 * sqrt( $star->morphology->major_axis_pixel->value * $star->morphology->major_axis_pixel->value +
+                           $star->morphology->minor_axis_pixel->value * $star->morphology->minor_axis_pixel->value );
+        $ns++;
+      }
+      if( $ns == 0 ) {
+        orac_warn "No objects detected at focus position $i. Suggest rerunning focus observation.\n";
+      } else {
+        my $ext_fwhm = $fwhm / $ns;
+
+        $fws[$i-1] = $ext_fwhm;
+        my $p_fwhm = sprintf( "%.3f", $ext_fwhm );
+        orac_print "Median FWHM of objects is $p_fwhm at focus position $focus.\n";
+      }
+    }
+  }
+
+  # Calculate the change in FWHM between observations.
+  my $n = 0;
+  my $sum = 0;
+  my $sumsq = 0;
+  for my $i ( 0 .. scalar(@focs) ) {
+    if( defined( $fws[$i] ) && defined( $fws[$i+1] ) ) {
+      my $dfwhm = $fws[$i+1] - $fws[$i];
+      my $dfoc = $focs[$i+1] - $focs[$i];
+      if( $dfoc ) {
+        my $delta = $dfwhm / $dfoc;
+        my $change = $delta / 35.0;
+        my $dstring = sprintf("%.2f", $delta);
+        my $cstring = sprintf("%.3f", $change);
+        orac_print "FWHM delta of $dstring indicates telescope focus change of $cstring\n";
+        $sum += $change;
+        $sumsq += ($change * $change);
+        $n++;
+      }
+    }
+  }
+
+  # Calculate the mean FWHM change.
+  if($n>0) {
+    my $mean = $sum / $n;
+    my $var = ($sumsq / $n) - ($mean*$mean);
+    my $sd = sqrt($var);
+    my $mstring = sprintf("%.3f", $mean);
+    my $sdstring = sprintf("%.3f", $sd);
+    orac_print "Indicated focus change is $mstring +/- $sdstring\n";
+
+    # Calculate the suggested new focus setting, taking the value from
+    # the TCS_FOC header as a starting point.
+    my $tcsfoc = $Frm->hdr("TCS_FOC");
+    $tcsfoc += $mean;
+    my $tfstring = sprintf("%.2f", $tcsfoc);
+
+    # Log the suggested focus to disk.
+    my $camnum = $Frm->hdr("CAMNUM");
+    my $num = $Frm->number;
+    my $tcslogfile = "tcs_focus" . $camnum . "_" . $num . ".log";
+    my $tcslog = new ORAC::LogFile( $tcslogfile );
+    $tcslog->header("#SuggestedFocus");
+    $tcslog->addentry($tcsfoc);
+
+    # And tell the user what the suggested focus should be.
+    orac_print "Suggest setting telescope focus to $tfstring\n";
+
+  } else {
+    orac_warn "Didn't detect enough stars to generate focus result\n";
+  }
+
+  # Tidy output.
+  orac_print "\n";
+
+}

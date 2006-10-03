@@ -1,0 +1,119 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_AVERAGE_DARKS_ -- Averages the current frame into the current dark.
+
+=head1 DESCRIPTION
+
+This primitive averages or copies the current frame into the
+current dark frame.  Copying occurs if the dark is new.  Both
+steps reported.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for WFCAM.
+
+=item *
+
+Only applies to dark frames as specified by user header
+ORAC_OBSERVATION_TYPE.
+
+=item *
+
+The dark frame is a copy of the supplied frame, if it is the
+first (and probably only) contributing frae.  Otherwise the
+new frame is averaged into the dark using (dark(I<n>-1)+frame)/I<n>,
+where I<n> is the number of contributing frames.
+
+=item *
+
+The number of contributing frames comes from a hash stored
+in user header DARK_FRAMES with keys equal to the dark name
+given by primitive L<_GET_DARK_NAME_|_GET_DARK_NAME_>.
+
+=head1 OUTPUT DATA
+
+Frame dark_E<lt>exposure_timeE<gt>_E<lt>group_numberE<gt>.
+
+=head1 TASKS
+
+KAPPA: MATHS, NDFCOPY.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC)
+BC: Brad Cavanagh (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2006 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# This should only be performed on OBJECT frames.
+if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "DARK" ) {
+
+# Obtain the clipped mean.
+  _CLIPPED_STATS_
+  my $mean = $_CLIPPED_STATS_{MEAN};
+
+# And the exposure time from the header.
+  my $exptime = $Frm->uhdr( "ORAC_EXPOSURE_TIME" );
+
+# And the gain.
+  my $gain = $Frm->uhdr( "ORAC_GAIN" );
+$gain = 3.6;
+# Calculate the dark current. It's simply the mean multiplied by the
+# gain divided by the exposure time.
+print "mean: $mean\ngain: $gain\nexptime: $exptime\n";
+  my $dark_current = $mean * $gain / $exptime;
+
+# Return the dark current to the user, formatted nicely.
+  my $o_dark = sprintf( "%9.3f", $dark_current );
+  orac_print "Full frame dark current is $o_dark e-/sec.\n";
+
+# Obtain the dark frame name.
+  _GET_DARK_NAME_
+  my $dark = $_GET_DARK_NAME_{NAME};
+
+# Obtain the lists of the darks.
+  my $listname = "DARK_FRAMES";
+  my $darkref = $Grp->uhdr( $listname );
+  my %dark_list = %$darkref;
+
+# Only need to average if there is more than one frame.
+  my $count = $dark_list{ $dark };
+  if ( $count > 1 ) {
+
+# Create a temporary file.
+    my $tmp = new ORAC::TempFile;
+    my $tmpdark = $tmp->file;
+
+# Take a copy of the current dark frame because we want to update
+# the dark.
+    my $param = "in=$dark out=$tmpdark";
+    $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param" );
+
+# Average the current frame into the mean dark.
+    my $in = $Frm->file;
+    $param = "exp='(IA*($count-1.0)+IB)/$count' ia=$tmpdark ib=$in out=$dark";
+    $Mon{ "kappa_mon" }->obeyw( "maths", "$param" );
+
+# Report the processing status.
+    orac_print "Dark $in averaged in $dark.\n";
+
+# Take a copy of the current frame using the prescribed name.
+  } else {
+    my $in = $Frm->file;
+    my $param = "in=$in out=$dark";
+    $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param" );
+    orac_print "Frame $in copied to $dark.\n";
+  }
+  orac_print "\n";
+}

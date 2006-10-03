@@ -1,0 +1,163 @@
+# -*-perl-*-
+
+orac_print("\nSteering information:\n", "yellow");
+
+# Obtain the USEVAR argument. Default to false.
+my $usevar = $_JITTER_STEER_{USEVAR};
+$usevar = defined( $usevar ) ? $usevar : 0;
+$Frm->uhdr( "USE_VARIANCE", $usevar );
+
+# Specify during processing when interleaving should be done.
+
+# Grab information from headers.
+my $number_of_microsteps = $Frm->hdr( "NUSTEP" );
+my $microstep_position = $Frm->hdr( "USTEP_I" );
+my $microstep_ra = $Frm->hdr( "USTEP_X" );
+my $microstep_dec = $Frm->hdr( "USTEP_Y" );
+my $number_of_jitters = $Frm->hdr( "NJITTER" );
+my $jitter_position = $Frm->hdr( "JITTER_I" );
+
+# Grab pixelsize and rotation angle.
+my $pixelsize = $Frm->hdr( "PIXLSIZE" );
+my $rotation = $Frm->uhdr( "ORAC_ROTATION" );
+
+# A couple of useful constants.
+my $pi = atan2( 1, 1 ) * 4;
+my $dtor = $pi / 180.0;
+
+# Calculate the offset in X and Y, in pixels.
+my $pixoff_x = ( $microstep_ra * cos( $rotation * $dtor ) - $microstep_dec * sin( $rotation * $dtor ) ) / $pixelsize;
+my $pixoff_y = ( $microstep_ra * sin( $rotation * $dtor ) + $microstep_dec * cos( $rotation * $dtor ) ) / $pixelsize;
+
+# And set the user headers.
+$Frm->uhdr( "NUMBER_OF_MICROSTEPS", $number_of_microsteps );
+$Frm->uhdr( "MICROSTEP_POSITION", $microstep_position );
+$Frm->uhdr( "MICROSTEP_RA", $microstep_ra );
+$Frm->uhdr( "MICROSTEP_DEC", $microstep_dec );
+$Frm->uhdr( "NUMBER_OF_JITTERS", $number_of_jitters );
+$Frm->uhdr( "JITTER_POSITION", $jitter_position );
+
+$Frm->uhdr( "MAKE_FLAT", 0 );
+
+# Obtain the JITTER_POSITIONS argument. Use the
+# ORAC_NUMBER_OF_JITTER_POSITIONS internal header if the argument
+# is not defined, and if the header isn't defined, default to 9,
+# warning the user along the way.
+my $jitter_positions = $_JITTER_STEER_{JITTER_POSITIONS};
+if( ! defined( $jitter_positions ) ) {
+  $jitter_positions = $Frm->uhdr("ORAC_NUMBER_OF_JITTER_POSITIONS");
+}
+if( ! defined( $jitter_positions ) ) {
+  orac_warn "Number of jitter positions undefined. Defaulting to 9.\n";
+  $jitter_positions = 9;
+}
+orac_print( " This is jitter position " . $Frm->uhdr( "JITTER_POSITION" ) . " of $jitter_positions.\n", "yellow" );
+
+# Do the same for USTEP_POSITIONS.
+my $ustep_positions = $_JITTER_STEER_{USTEP_POSITIONS};
+if( ! defined( $ustep_positions ) ) {
+  $ustep_positions = $Frm->uhdr("ORAC_NUMBER_OF_MICROSTEP_POSITIONS");
+}
+if( ! defined( $ustep_positions ) ) {
+  orac_warn "Number of microstep positions undefined. Defaulting to 1.\n";
+  $ustep_positions = 1;
+}
+orac_print( " This is microstep position $microstep_position of $ustep_positions.\n", "yellow" );
+
+# Obtain the SELFFLAT argument. Default to false.
+my $selfflat = $_JITTER_STEER_{SELFFLAT};
+$selfflat = defined( $selfflat ) ? $selfflat : 0;
+
+# Number of total frames in one cycle is equal to the number
+# of jitter positions multiplied by the number of microsteps per
+# jitter position.
+my $number = $jitter_positions * $ustep_positions;
+
+# Obtain the SELFFLAT argument. Default to false.
+my $selfflat = $_JITTER_STEER_{SELFFLAT};
+$selfflat = defined( $selfflat ) ? $selfflat : 0;
+if( $selfflat ) {
+  orac_print( " Will self-flat.\n", "yellow" );
+}
+
+# Set up steering headers.
+$Frm->uhdr("INTERLEAVE_MICROSTEPS", 0);
+$Frm->uhdr("ADD_INTERLEAVED_ASTROMETRY", 0);
+$Frm->uhdr("ASTROMETRY_ADDED", 0);
+
+if( ( $microstep_position % $number_of_microsteps ) == 0 &&
+    $number_of_microsteps != 1 ) {
+
+  if( $selfflat ) {
+    $Frm->uhdr( "MAKE_FLAT", 1 );
+    orac_print(" Will create flat-field after this frame's processing.\n", "yellow");
+  }
+
+  $Frm->uhdr( "INTERLEAVE_MICROSTEPS", 1 );
+  orac_print(" Will interleave after this frame's processing.\n", "yellow");
+
+  # Special-case for GPS.
+  if( $Frm->uhdr( "ORAC_OBJECT" ) !~ /^gps/i ) {
+    $Frm->uhdr( "ADD_INTERLEAVED_ASTROMETRY", 1 );
+    orac_print ( " Will add astrometry after this frame's processing.\n", "yellow" );
+    $Frm->uhdr( "CREATE_CATALOGUE", 1 );
+    orac_print( " Will generate point-source catalogue from post-interleaved frame.\n", "yellow" );
+  }
+}
+
+# Specify the first frame in a jitter position as the frame whose
+# mode will be the reference for the normalization of frames taken
+# at that jitter position.
+if( $jitter_position == 1 && $microstep_position == 1 ) {
+  $Frm->uhdr( "REFERENCE_FRAME", 1 );
+  orac_print( " This frame will be used as a reference for sky subtraction levels.\n", "yellow" );
+} else {
+  $Frm->uhdr( "REFERENCE_FRAME", 0 );
+}
+
+# Set up mosaicking and end-of-cycle processing headers.
+if( $number_of_microsteps == $microstep_position &&
+    $number_of_jitters == $jitter_position ) {
+  $Frm->uhdr( "MAKE_MOSAIC", 1 );
+  orac_print ( " Will perform mosaicking after this frame's processing.\n", "yellow" );
+
+  $Frm->uhdr( "ADD_MOSAIC_ASTROMETRY", 1 );
+  orac_print ( " Will add astrometry after mosaicking frames.\n", "yellow" );
+
+  if( defined( $Frm->uhdr( "ESTAR" ) ) && $Frm->uhdr( "ESTAR" ) ) {
+    $Frm->uhdr( "DO_ESTAR_TRIGGER", 1 );
+    orac_print(" Will do ", "yellow");
+    orac_print("e", "red");
+    orac_print("STAR trigger after this frame's processing.\n","yellow");
+  } else {
+    $Frm->uhdr( "DO_ESTAR_TRIGGER", 0 );
+  }
+
+} else {
+  $Frm->uhdr( "ADD_MOSAIC_ASTROMETRY", 0 );
+  $Frm->uhdr( "MAKE_MOSAIC", 0 );
+  $Frm->uhdr( "DO_ESTAR_TRIGGER", 0 );
+}
+
+# Set "new pixel origin" headers
+$Frm->uhdr( "NEW_X_ORIGIN", nint( $pixoff_x * sqrt( $number_of_microsteps ) ) / sqrt( $number_of_microsteps ) );
+$Frm->uhdr( "NEW_Y_ORIGIN", nint( $pixoff_y * sqrt( $number_of_microsteps ) ) / sqrt( $number_of_microsteps ) );
+
+# Set an INTERLEAVED header to false, for future use with the mosaicking step.
+$Frm->uhdr( "INTERLEAVED", 0 );
+
+# Set the cycle number.
+if( $jitter_position == 1 && $microstep_position == 1 ) {
+  if( ! defined( $Grp->uhdr( "CYCLE_NUMBER" ) ) ) {
+    $Grp->uhdr( "CYCLE_NUMBER", 0 );
+  } else {
+    my $next_cycle = $Grp->uhdr( "CYCLE_NUMBER" ) + 1;
+    $Grp->uhdr( "CYCLE_NUMBER", $next_cycle );
+  }
+}
+$Frm->uhdr( "CYCLE_NUMBER", $Grp->uhdr( "CYCLE_NUMBER" ) );
+
+$Frm->uhdr("TARGET_OR_SKY", "sky");
+
+# Tidy up output.
+orac_print "\n";

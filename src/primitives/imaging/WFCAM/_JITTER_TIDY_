@@ -1,0 +1,75 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_JITTER_TIDY_ - Remove unwanted intermediate files for the JITTER recipe.
+
+=head1 DESCRIPTION
+
+This primitive removes intermediate frames, but retains those with the
+_ff suffix. Files are removed when they are no longer needed, as guided
+by the steering headers MAKE_MOSAIC and CYCLE_NUMBER. Registration text
+files with extensions .find, .off, and .res are also removed.
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2005 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# Remove dark-subtracted frames.
+_DELETE_THESE_FILES_ FILES=dk,mraw,ff,deband
+
+# Remove offset and inventory text files.
+my $Frm0 = $Grp->frame( 0 );
+my $grpname = $Grp->file;
+my $mademosaic = $Frm->uhdr( "MAKE_MOSAIC" );
+if( $mademosaic ) {
+  my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+  my $mosGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno );
+  {
+    my $Grp = $mosGrp;
+
+# Select the frames that should be tidied.  On the second and subsequent
+# cycles the first frame is used to register with the later cycles.
+    my @list = $Grp->members;
+    if ( $cycleno > 0 ) {
+      push ( @list, $Frm0 );
+    }
+    foreach $Frm ( @list ) {
+
+# Obtain the last syllable, i.e. parts of the name broken by underscore,
+# for each frame.
+      my @syllables = split( /_/, $Frm->file );
+      my $suffix = $syllables[ $#syllables ];
+
+# Remove the offset and object-inventory text files.  These are
+# associated with the _ff frames, so switch suffices by reforming
+# the name with the new suffix.
+      my $textfile = join( "_", @syllables[ 0..$#syllables-1 ] ) . "_ff";
+      unlink ( $textfile . ".off", $textfile . ".find" );
+      unlink ( $textfile . "_objects.ard", $textfile . ".res" );
+
+# Remove the offset and object-inventory text files.  If bias correction
+# is applied, these are associated with the _bc frames, so switch suffices
+# by reforming the name with the new suffix.
+      $textfile = join( "_", @syllables[ 0..$#syllables-1 ] ) . "_bc";
+      unlink ( $textfile . ".off", $textfile . ".find" );
+    }
+
+# Remove the group offset and object-inventory text files.
+    if ( $cycleno > 0 ) {
+      unlink( $grpname . ".off", $grpname . ".find" );
+      unlink( $grpname . ".res" );
+    }
+
+    undef $mosGrp;
+  }
+}
+
+orac_print "\n";

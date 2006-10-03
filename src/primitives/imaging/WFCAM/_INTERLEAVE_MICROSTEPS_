@@ -1,0 +1,298 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_INTERLEAVE_MICROSTEPS_ -- Interleave images taken in a microstep
+pattern.
+
+=head1 DESCRIPTION
+
+This primitive takes images in a group taken in a microstep pattern
+and interleaves them to form a higher-resolution image. These microsteps
+are fractional pixel jitters that are done to compensate for large
+pixel sizes.
+
+=head1 ARGUMENTS
+
+None.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for WFCAM.
+
+=item *
+
+Processing only occurs for object and sky frames.
+
+=item *
+
+If KAPPA v1.4-3 or higher is installed, then the fast INTERLEAVE task
+will be used. Otherwise, DRIZZLE will be used to do the
+interleaving. Rudimentary timing tests show the former to be
+approximately ten times faster than the latter.
+
+=item *
+
+The output data's FITS headers are set so that the end airmass and UT
+date are equal to those for the last frame in the microstep group
+being interleaved.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The interleaved frame with suffix _int.
+
+=back
+
+=head1 TASKS
+
+CCDPACK: DRIZZLE.
+KAPPA: FITSMOD, INTERLEAVE, SETORIGIN, WCSADD, WCSFRAME.
+
+=head1 REQUIRED PERL MODULES
+
+Starlink::HDSPACK.
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004-2005 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+use Starlink::HDSPACK qw/ copy_hdsobj /;
+
+# This should only be performed on OBJECT frames.
+if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
+
+  # Check to see if it's time to do the interleaving yet.
+  if( $Frm->uhdr("INTERLEAVE_MICROSTEPS") == 1 ) {
+
+    # Retrieve the number of microsteps.
+    my $n_usteps = $Frm->uhdr("NUMBER_OF_MICROSTEPS");
+
+    if( ! defined( $n_usteps ) ) {
+      orac_throw "Number of microsteps undefined.\n";
+    }
+
+    # A running exposure time.
+    my $exptime = 0;
+
+    # Grab the frames that match this jitter position.
+    my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+    $cycleno = defined( $cycleno ) ? $cycleno : 0;
+    my $jitter_pos = $Frm->uhdr( "JITTER_POSITION" );
+    my $subGrp = $Grp->subgrp( CYCLE_NUMBER => $cycleno,
+                               JITTER_POSITION => $jitter_pos );
+    my @interleave_frames = $subGrp->members;
+
+    # Take only the most recently observed observation for a given
+    # interleave position.
+    my %pos_seen;
+    my @uniq;
+    foreach my $interleave_frame ( reverse @interleave_frames ) {
+      $pos_seen{$interleave_frame->uhdr("MICROSTEP_POSITION")}++;
+      if( $pos_seen{$interleave_frame->uhdr("MICROSTEP_POSITION")} == 1 ) {
+        push @uniq, $interleave_frame;
+      }
+    }
+    @interleave_frames = reverse @uniq;
+
+    # Set the output file name. We'll use the first frame in the
+    # "group" for this.
+    my $Frame = $interleave_frames[0];
+    ( my $in, my $out ) = $Frame->inout( "_int" );
+
+    # If we have a version of KAPPA that's 1.4-3 or older, we can use
+    # the faster INTERLEAVE task to do the interleaving. Otherwise, we
+    # have to use DRIZZLE.
+    if( starversion_gt( "KAPPA", 'V1.4-2' ) ) {
+
+      # Sort the input frames so that we cycle first in the X
+      # direction, then in Y.
+      my @frame_order = map { $_->[0] }
+                        sort { $a->[2] <=> $b->[2] }
+                        sort { $a->[1] <=> $b->[1] }
+                        map { [$_, $_->uhdr("NEW_X_ORIGIN"), $_->uhdr("NEW_Y_ORIGIN") ] }
+                        @interleave_frames;
+
+      # Set up a temporary file for the intput to INTERLEAVE.
+      my $interleave_input = new ORAC::TempFile;
+
+      for( 0 .. $#frame_order ) {
+        my $i = $_;
+        my $Frame = $frame_order[$i];
+
+        my $in = $Frame->file;
+
+        # Set the origin of the frame to be whatever we calculated in
+        # _JITTER_STEER_.
+        my $new_x_origin = $Frame->uhdr("NEW_X_ORIGIN");
+        my $new_y_origin = $Frame->uhdr("NEW_Y_ORIGIN");
+
+        # Grab the exposure time of the current frame so that we can
+        # set the exposure time of the interleaved frame later on.
+        $exptime += $Frame->uhdr( "ORAC_EXPOSURE_TIME" );
+
+#        orac_print "Setting origin of $in to $new_x_origin,$new_y_origin "
+#                   . "in preparation for interleaving.\n";
+        my $params = "ndf=$in origin=[$new_x_origin,$new_y_origin]";
+        $Mon{'ndfpack_mon'}->obeyw( "setorigin", "$params" );
+
+        # Write the filename to the INTERLEAVE input file.
+        print { $interleave_input->handle } "$in\n";
+      }
+
+      # Run INTERLEAVE.
+      orac_print "Interleaving frames ";
+      orac_print join( ", ", map { $_->file } @interleave_frames );
+      orac_print "...";
+      _GET_EXPANSION_RATIO_
+      my $x_expand = $_GET_EXPANSION_RATIO_{X_EXPANSION};
+      my $y_expand = $_GET_EXPANSION_RATIO_{Y_EXPANSION};
+      my $params = "in='^" . $interleave_input->file . "' out=$out "
+                 . "expand=[$x_expand,$y_expand] "
+                 . "fill=bad trim=false title=!"
+                 ;
+      $Mon{'kappa_mon'}->obeyw( "interleave", "$params" );
+      orac_print " done.\n";
+
+    } else {
+
+      # We don't have a recent version of KAPPA, so use the slower
+      # DRIZZLE technique.
+
+      orac_print "KAPPA is older than v1.4-2. Using DRIZZLE to interleave frames.\n";
+
+      # Create a temporary file to hold the DRIZZLE input.
+      my $drizzle_input = new ORAC::TempFile;
+
+      for(0..$#interleave_frames) {
+        my $i = $_;
+        my $Frame = $interleave_frames[$i];
+
+        # Add the exposure time of the frame to the running exposure
+        # time sum.
+        $exptime += $Frame->uhdr( "ORAC_EXPOSURE_TIME" );
+
+        my $in = $Frame->file;
+
+        # Add a new coordinate frame with the domain "MICRO" which
+        # reflects the correct alignment of the images. This also has
+        # the effect of setting MICRO as their new current coordinate
+        # frame.
+        my $new_x_origin = $Frame->uhdr("NEW_X_ORIGIN");
+        my $new_y_origin = $Frame->uhdr("NEW_Y_ORIGIN");
+#        orac_print "Setting origin of $in to $new_x_origin,$new_y_origin "
+#                   . "in preparation for interleaving.\n";
+        my $params = "ndf=$in frame=pixel domain=micro maptype=shift "
+                   . "shift=[$new_x_origin,$new_y_origin] accept";
+        $Mon{'ndfpack_mon'}->obeyw( "wcsadd", "$params" );
+
+        print { $drizzle_input->handle } "$in\n";
+
+      }
+
+      # Run DRIZZLE.
+      orac_print "Interleaving frames ";
+      orac_print join( ", ", map { $_->file } @interleave_frames );
+      orac_print "...";
+      _GET_EXPANSION_RATIO_
+      my $multi = $_GET_EXPANSION_RATIO_{X_EXPANSION};
+      my $pixfrac = 1.0 / $multi;
+      my $param = "in='^" . $drizzle_input->file . "' out=$out multi=$multi "
+                . "pixfrac=$pixfrac usevar=false";
+
+      $Mon{'ccdpack_reg'}->obeyw( "drizzle", "$param" );
+      orac_print " done.\n";
+
+      # Erase the spuriously-created VARIANCE component, if it exists.
+      $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$out" );
+      ( my $ORAC_STATUS, my $variance ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "variance" );
+      if( $variance eq 'TRUE' ) {
+        $Mon{'ndfpack_mon'}->obeyw( "erase", "object=$out.VARIANCE ok=true" );
+      }
+
+    }
+
+    # Copy the header from the first interleave frame.
+    my $ORAC_STATUS = ( copy_hdsobj( $interleave_frames[0]->file . ".MORE.FITS", "$out.MORE.FITS" ) ? ORAC__OK : ORAC__ERROR );
+
+    # Set the WCS frame back to SKY.
+    $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=$out frame=sky" );
+
+    orac_print "$out: Interleaved microsteps.\n";
+
+    # Update the Frame object.
+    $Frm->file( $out );
+
+    # Set the end airmass to reflect the last frame included in the interleave.
+    my $amendname = "ORAC_AIRMASS_END";
+    my %keywords = $Frm->translate_hdr( $amendname );
+    my @amendkey = keys( %keywords );
+    my $amend = $interleave_frames[$#interleave_frames]->uhdr( $amendname );
+    $Frm->uhdr( $amendname, $amend );
+    my $value = $keywords{ $amendkey[0] };
+    my $param = "ndf=$out keyword=$amendkey[0] edit=update value=$value position=!";
+    $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$param comment=\\\$C" );
+
+    # Set the end UT time to reflect the last frame included in the interleave.
+    my $utendname = "ORAC_UTEND";
+    %keywords = $Frm->translate_hdr( $utendname );
+    my @utendkey = keys( %keywords );
+    my $utend = $interleave_frames[$#interleave_frames]->uhdr( $utendname );
+    $Frm->uhdr( $utendname, $utend );
+    $value = $keywords{ $utendkey[0] };
+    $param = "ndf=$out keyword=$utendkey[0] edit=update value=$value position=!";
+    $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$param comment=\\\$C" );
+
+    # Set the exposure time to be the sum of the exposure times from
+    # the interleaved frames.
+    my $exptimename = "ORAC_EXPOSURE_TIME";
+    %keywords = $Frm->translate_hdr( $exptimename );
+    my @exptimekey = keys( %keywords );
+    $Frm->uhdr( $exptimename, $exptime );
+    $value = $keywords{ $exptimekey[0] };
+    $param = "ndf=$out keyword=$exptimekey[0] edit=update value=$value position=!";
+    $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$param comment=\\\$C" );
+
+    # Get the original platescale, divide it by the interleaving
+    # expansion factor, and set the user headers appropriately.
+    _GET_PLATE_SCALE_
+    my $ra_platescale = $_GET_PLATE_SCALE_{RASCALE};
+    my $dec_platescale = $_GET_PLATE_SCALE_{DECSCALE};
+    my $expand = int( sqrt( $Frm->uhdr( "NUMBER_OF_MICROSTEPS" ) ) );
+    my $new_ra_platescale = $ra_platescale / $expand;
+    my $new_dec_platescale = $dec_platescale / $expand;
+    $Frm->uhdr( "ORAC_RA_SCALE", $new_ra_platescale );
+    $Frm->uhdr( "ORAC_DEC_SCALE", $new_dec_platescale );
+
+    # Display it.
+    $Display->display_data( $Frm ) if ( defined( $Display ) );
+
+    # Set the uhdr saying that this one is the result of interleaving.
+    $Frm->uhdr( "INTERLEAVED", 1 );
+
+    # Tidy output.
+    orac_print "\n";
+
+    # Add astrometry if requested.
+    if( $Frm->uhdr( "ADD_INTERLEAVE_ASTROMETRY" ) ) {
+      _ADD_AUTO_ASTROMETRY_ GROUP=0 STATISTICS=1
+    }
+  }
+
+}

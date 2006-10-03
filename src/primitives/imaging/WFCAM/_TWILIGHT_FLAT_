@@ -1,0 +1,156 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_TWILIGHT_FLAT_ - Normalize and median combine WFCAM twilight flats.
+
+=head1 DESCRIPTION
+
+This primitive normalizes and combines WFCAM twilight flats.
+
+It ignores any frames whose clipped mean is less than 5000 or greater
+than 30000 counts. When it has a frame that meets this criterion, it
+divides the frame by the clipped mean to normalize it, and then takes
+all of the normalized frames in the current group with the same filter
+and median combines them to create a flat field.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item METHOD = Character (Given)
+
+The combination method to use. See the METHOD parameter of
+CCDPACK/MAKEMOS for the full list available (SUN/139). [median]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This method is suitable for WFCAM.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Normalized frame with _nrm suffix.
+
+=item *
+
+Flat field with name of the form flat_<group>_<filter>, where <group>
+is the group number and <filter> is the value contained in the
+ORAC_FILTER user header with decimal points replaced with the letter
+'p' and parentheses replaced with square brackets.
+
+=back
+
+=head1 TASKS
+
+KAPPA: CDIV, WCSFRAME
+CCDPACK: MAKEMOS
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2006 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# Obtain parameters.
+my $method = $_TWILIGHT_FLAT_{METHOD} || 'median';
+
+$Frm->uhdr( "FLAT_COMBINE", 0 );
+
+# Find the clipped mean of the current frame.
+_CLIPPED_STATS_
+my $mean = $_CLIPPED_STATS_{MEAN};
+my $sigma = $_CLIPPED_STATS_{SIGMA};
+
+orac_print sprintf( "Mean value for %s is %.3f +/- %.3f counts.\n", $Frm->file, $mean, $sigma );
+
+# Ignore the frame if the mean is less than 5000 or greater than
+# 30000.
+if( $mean > 5000 && $mean < 30000 ) {
+
+  $Frm->uhdr( "FLAT_COMBINE", 1 );
+
+  ( my $in, my $out ) = $Frm->inout( "_nrm" );
+
+  # Divide the flat by the clipped mean.
+  $Mon{'kappa_mon'}->obeyw( "cdiv", "in=$in out=$out scalar=$mean" );
+
+  orac_print "$in to $out: Normalized flat.\n";
+
+  $Frm->file( $out );
+
+  # Retrieve the members of the group that have passed the mean value
+  # test and have the same filter.
+  my $subGrp = $Grp->subgrp( FLAT_COMBINE => 1,
+                             ORAC_FILTER => $Frm->uhdr( "ORAC_FILTER" ) );
+
+  # Open a file that will contain the list of files that MAKEMOS will
+  # combine.
+  my $inlist = "makemos.inlist$$";
+  open my $fh_inlist, ">", $inlist or
+    orac_throw "Unable to open temporary file to hold input filenames to MAKEMOS: $!";
+
+  # For each member in this group, set the WCS frame to PIXEL and
+  # stick the filename in the WCSMOSAIC input file.
+  foreach my $frm ( $subGrp->members ) {
+    $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=" . $frm->file . " frame=PIXEL" );
+    print $fh_inlist $frm->file . "\n";
+  }
+
+  # Close the input list file.
+  close $fh_inlist;
+
+  # The output filename will be made up from the current group number
+  # and the filter.
+  my $hdsfilter = $Frm->uhdr( "ORAC_FILTER" );
+  $hdsfilter =~ s/\./p/g;
+  $hdsfilter =~ tr/\(\)\[\]/d/;
+  my $flat_out = "flat_" . $Frm->hdr( "GRPNUM"  ) . "_" . $hdsfilter;
+
+  # Make a temporary file.
+  my $tmp = new ORAC::TempFile;
+  my $tmpfile = $tmp->file;
+
+  # Run MAKEMOS.
+  orac_print " Combining flat images...\n";
+  my $params = "in=^$inlist out=$tmpfile method=$method genvar=true ";
+  $params .= "logto=neither scale=false zero=false";
+  $Mon{'ccdpack_reg'}->obeyw( "makemos", "$params" );
+
+  # Set pixels with zero value to bad.
+  orac_print " Setting zero-level pixels to bad...\n";
+  $params = "in=$tmpfile out=$flat_out repval=0";
+  $Mon{'kappa_mon'}->obeyw( "setmagic", "$params" );
+
+  # File flat with calibration system.
+  _FILE_FLAT_ NAME=$flat_out
+
+  # Report to the user.
+  orac_print "Flat field generated in $flat_out.\n";
+
+  unlink $inlist;
+
+}
+
+# Tidy output.
+orac_print "\n";

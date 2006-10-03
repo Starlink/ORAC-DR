@@ -1,0 +1,298 @@
+# -*-perl-*-
+
+# This should only be performed on SKYFLAT frames.
+if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKYFLAT" ) {
+
+  $Frm->uhdr( "FLAT_COMBINE", 0 );
+
+# First check to see if we're within the 5000-30000 counts range.
+  _CLIPPED_STATS_
+  my $mean = $_CLIPPED_STATS_{MEAN};
+  my $sigma = $_CLIPPED_STATS_{SIGMA};
+
+  orac_print sprintf( "Mean value for %s is %.3f +/- %.3f counts.\n", $Frm->file, $mean, $sigma );
+
+# Ignore the frame if the mean is less than 5000 or greater than
+# 30000.
+  if( $mean > 5000 && $mean < 30000 ) {
+
+    orac_print "Will use frame to create a flat.\n";
+    $Frm->uhdr( "FLAT_COMBINE", 1 );
+
+    my $filter = $Frm->uhdr( "ORAC_FILTER" );
+
+# Obtain parameters.
+    my $method = $_FLAT_FIELD_MASKED_GROUP_{METHOD} || "median";
+
+# Extract from the main group those frames belonging to this group and
+# for the current filter and that have passed the counts criterion
+    my $subGrp = $Grp->subgrp( FLAT_COMBINE => 1,
+                               ORAC_FILTER => $filter );
+
+    my @sky_names = $subGrp->membernames;
+
+# Normalize the current frame to its mean.
+    ( my $in, my $out ) = $Frm->inout( "_nrm" );
+    $Mon{'kappa_mon'}->obeyw( "cdiv", "in=$in out=$out scalar=$mean" );
+    orac_print "$in to $out: Normalized flat.\n";
+    $Frm->file( $out );
+
+    my $subGrp2 = $Grp->subgrp( FLAT_COMBINE => 1,
+                                ORAC_FILTER => $filter );
+
+# Make a first pass at a flat using the jittered frames of the group.
+    my $inlist = "makemos.inlist$$";
+    open my $fh_inlist, ">", $inlist or
+      orac_throw "Unable to open temporary file to hold input filenames to MAKEMOS: $!";
+
+    # For each member in this group, set the WCS frame to PIXEL and
+    # stick the filename in the WCSMOSAIC input file.
+    foreach my $frm ( $subGrp2->members ) {
+      $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=" . $frm->file . " frame=PIXEL" );
+      print $fh_inlist $frm->file . "\n";
+      print "file: " . $frm->file . "\n";
+    }
+
+      # Close the input list file.
+      close $fh_inlist;
+
+      # The output filename will be made up from the current group number
+      # and the filter.
+      my $hdsfilter = $Frm->uhdr( "ORAC_FILTER" );
+      $hdsfilter =~ s/\./p/g;
+      $hdsfilter =~ tr/\(\)\[\]/d/;
+      my $flat_out = "flat_" . $Frm->hdr( "GRPNUM"  ) . "_" . $hdsfilter;
+
+      # Run MAKEMOS.
+      orac_print "Combining flat images to form $flat_out...\n";
+      my $params = "in=^$inlist out=$flat_out method=$method genvar=true ";
+      $params .= "logto=neither scale=false zero=false";
+      $Mon{'ccdpack_reg'}->obeyw( "makemos", "$params" );
+
+      # File flat with calibration system.
+      _FILE_FLAT_ NAME=$flat_out
+
+      # Report to the user.
+      orac_print "Intermediary flat field generated in $flat_out.\n";
+
+      unlink $inlist;
+
+# Reset the group names to be the ones to flat field.
+      $Grp->membernames( @sky_names );
+
+# Apply the flat field.
+      foreach my $Frm ( $Grp->members ) {
+        ( my $in, my $out ) = $Frm->inout( "_ff" );
+
+
+
+    }
+  }
+}
+
+=head1 COMMENT
+      my @flat_fielded_names;
+      foreach my $Frm ( $Grp->members ) {
+        ( my $in, my $out ) = $Frm->inout( "_ff" );
+        $Mon{'kappa_mon'}->obeyw( "div", "in1=$in in2=$flat_out out=$out" );
+        orac_print "$in to $out: Flat-fielded with intermediary flat.\n";
+        push @flat_fielded_names, $out;
+      }
+
+# Make and apply the object mask.
+# ===============================
+
+      my $inflat = $Cal->flat;
+      my $flatmask = $inflat . "_bpm";
+      my $param = "in=$inflat out=$flatmask scalar=0 title=!";
+      $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
+
+# Report the processing status.
+      orac_print "Made a mask of bad pixels in the original flat.\n";
+
+      my $maskobjects = $Frm->uhdr( "MASK_OBJECTS" );
+      my ( @maskfiles, @masked_names, $maskfile, $file );
+
+# Create an array to store the names of the mask files.
+      @maskfiles = ();
+
+# Compute a mask of the objects for each member of the flat-field
+# group, using a local $Frm.
+      foreach $Frm ( $Grp->members ) {
+        _MAKE_OBJECTS_MASK_ ENLARGE=1.5
+
+# Record the mask filename into an array.
+        push ( @maskfiles, $_MAKE_OBJECTS_MASK_{MASKFILE} );
+      }
+
+# Create an array to store the names of the masked datasets. 
+      @masked_names = ();
+
+# Mask the objects in each frame.  Make a copy of the @sky_names
+# so we can shift its elements.  Again use a local $Frm.
+      my @local_sky_names = @sky_names;
+      foreach my $ff_file ( @flat_fielded_names ) {
+        $file = shift( @local_sky_names );
+        $maskfile = shift( @maskfiles );
+        $Frm->file( $file );
+
+# Mask the objects.  Use a 110% enlargement factor.
+        _MASK_OBJECTS_ MASKFILE=$maskfile ENLARGE=1.1
+
+# Add the mask which comprises bad pixels and zero elsewhere.
+# Apply bad-pixel mask of the first flat field.
+        ( my $in, my $out ) = $Frm->inout( "_fm" );
+        my $param = "in1=$in out=$out in2=$flatmask title=!";
+        $Mon{ "kappa_mon" }->obeyw( "add", "$param" );
+
+# Report the processing status.
+        orac_print "Applied the bad pixels in the original flat to make $out.\n\n";
+
+# Record the new file name in the frame object.
+#        $Frm->file( $out );
+
+# Record the masked (or unmasked file if the masking has failed)
+# filename into an array.
+        push ( @masked_names, $Frm->file );
+      }
+
+# Remove the flat-field bad-pixel mask.
+      _DELETE_A_FRAME_ FRAME=$flatmask
+
+# Set the group names to be the masked ones to form improved flat field.
+      $Grp->membernames( @masked_names );
+
+# Make and apply the improved flat field.
+# =======================================
+
+# Generate the new flat field using the jittered masked frames.
+      _MAKE_FLAT_FROM_NORMALISED_GROUP_
+
+# Reset the group names to be the ones to flat field.
+      $Grp->membernames( @sky_names );
+
+# Apply the better flat field.
+      _DIVIDE_BY_FLAT_FROM_GROUP_
+
+# End the context to restore the original group.
+
+    }
+
+# Restore the input current frame.
+    $Grp->template( $Frm->file );
+
+# Restore the calibration.
+    $Cal->thingone( $Frm->hdr );
+    $Cal->thingtwo( $Frm->uhdr );
+
+  }
+}
+
+# Podule
+# ======
+
+=head1 NAME
+
+_FLAT_FIELD_MASKED_GROUP_ -- Self-flat fields a group of frames.
+
+=head1 DESCRIPTION
+
+This primitive creates and applies self-flat field(s) for the current
+group of frames.  For each observation filter present within the
+group it makes a flat from the group and then divides the group
+members by that flat field.  There is also optional object masking
+to make an improved flat; objects in the flattened frames are detected
+above brightness and size thresholds, and the frames combined to make
+a new flat field.  The improved flat is then applied to the original
+input group.  Four other primitives do most of the work.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for imaging infrared cameras.
+
+=item *
+
+Processing only occurs for object, sky, or lamp frames, and when the
+steering header MAKE_FLAT is true, and only for frames in the current
+recipe cycle, as given by steering header CYCLE_NUMBER.
+Also the flat must not be specified already; if it is, the 
+primitive merely divides the group members by that flat.
+
+=item *
+
+The list of filters present in the group is listed in an array
+stored by reference in the group user header FILTER_LIST.  If this
+is undefined, only a single flat is made for filter stored in the
+current Frame's user header ORAC_FILTER.
+
+=item *
+
+The steering header JITTER_NUMBER defines the number of
+frames in a cycle.
+
+=item *
+
+Frame normalisation is with respect to a reference level of the first
+frame, stored in the first frame's internal header REFERENCE_LEVEL.
+If this is not defined, as would be the case on the first cycle, the
+mode of the reference is calculated.  The reference mode is then
+stored in variable $_NORMALISE_TO_MODE_refmode for the normalising
+routine to access for subsequent frames.
+
+=back
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item MASK = LOGICAL (Given)
+
+Perform object masking only if it is true.
+
+=item CLEAN = LOGICAL (Given)
+
+If true (1), the frames are cleaned using a box filter to remove any
+small blemishes.  Pixels deviating by more than 3 standard deviations
+from its 15x15 pixel neighbourhood are rejected.  This is done
+iteratively, three times.  If false (0), no cleaning is performed. [1]
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The invoked primitives
+L<_MAKE_FLAT_FROM_GROUP_|_MAKE_FLAT_FROM_GROUP_>,
+L<_DIVIDE_BY_FLAT_FROM_GROUP_|_DIVIDE_BY_FLAT_FROM_GROUP_>,
+L<_MAKE_OBJECTS_MASK_|_MAKE_OBJECTS_MASK_>, and
+L<_MASK_OBJECTS_|_MASK_OBJECTS_> do create new frames.  The bottom
+line is that a flat field frame is filed and indexed, and there are
+flat-fielded frames each inheriting the corresponding input frame's
+name but with an _ff suffix.  Various intermediate frames are normally
+removed by a tidy primitive.
+
+=item *
+
+A map of the original bad pixels in the flat, and a flat with
+original bad pixels and objects masked, having the name of the flat
+with _bpm and _fm suffices respectively.
+
+=back
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (JAC, Starlink) <mjc@star.rl.ac.uk>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut

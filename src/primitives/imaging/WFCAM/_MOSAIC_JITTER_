@@ -1,0 +1,137 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_MOSAIC_JITTER_ - Mosaic a jittered and optionally microstepped group
+for WFCAM.
+
+=head1 DESCRIPTION
+
+This primitive mosaics a group of WFCAM data taken in a jittered and
+optionally microstepped sequence. The frames must have already been
+astrometrically calibrated, as they are first aligned in this
+primitive by aligning them to a common WCS frame. After this occurs,
+they are mosaicked together using the CCDPACK task MAKEMOS.
+
+=head1 ARGUMENTS
+
+None.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+The frames are mosaicked together using a mean combination. This is
+chosen to preserve flux when seeing is good and registration not so
+good.
+
+=item *
+
+The mosaic is not trimmed to the dimensions of a single frame, thus
+the noise will be greater in the peripheral areas having received less
+exposure time. The mosaic is not normalised by its exposure time.
+
+=item *
+
+For each cycle of jittered frames, the recipe creates a mosaic, which
+has its bad pixels filled and is then added into a master mosaic of
+improving signal to noise. The exposure time is also summed and stored
+in the mosaic's corresponding header. Likewise, the end airmass and UT
+headers are updated to match that of the last-observed frame
+contributing to the mosaic.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The aligned frames, with suffices _al.
+
+=item *
+
+The cycle mosaic, with suffix _mos_<CYCLE>.
+
+=item *
+
+The cycle mosaic with bad pixels filled, with suffix _fb_<CYCLE>.
+
+=item *
+
+The grand mosaic, with suffix _mos.
+
+=back
+
+=head1 TASKS
+
+None called by this primitive. For details, see the _ALIGN_FRAMES_,
+_MOSAIC_ALIGNED_FRAMES_, and _ALIGN_AND_MOSAIC_ primitives.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu> (JAC)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2005 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+if( $Frm->uhdr( "MAKE_MOSAIC" ) ) {
+
+  my $subGrp;
+
+  if( $Frm->uhdr( "ORAC_NUMBER_OF_MICROSTEP_POSITIONS" ) == 1 ) {
+    $subGrp = $Grp;
+    $subGrp->file( $Grp->file );
+  } elsif( $Frm->uhdr( "ORAC_OBJECT" ) =~ /^gps/i ) {
+    $subGrp = $Grp->subgrp( INTERLEAVED => 1 );
+    $subGrp->file( $Grp->file );
+  } else {
+    $subGrp = $Grp->subgrp( INTERLEAVED => 1 );
+    $subGrp->file( $Grp->file );
+  }
+
+  # Select those members in the current cycle.
+  my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+  $cycleno = defined( $cycleno ) ? $cycleno : 0;
+  my $cycleGrp = $subGrp->subgrp( CYCLE_NUMBER => $cycleno );
+  $cycleGrp->file( $Grp->file );
+
+  {
+
+    my $Grp = $cycleGrp;
+
+    _ALIGN_AND_MOSAIC_ REBIN_METHOD=nearest FILLBAD=0
+
+    # Propagate the modified headers back to the original filter group.
+    %{ $cycleGrp->hdr } = %{ $Grp->hdr };
+    %{ $cycleGrp->uhdr } = %{ $Grp->uhdr };
+
+  }
+
+  # Update the Group.
+  $Grp->file( $cycleGrp->file );
+
+  %{ $Grp->hdr } = %{ $cycleGrp->hdr };
+  %{ $Grp->uhdr } = %{ $cycleGrp->uhdr };
+
+  if( $Frm->uhdr( "ORAC_OBJECT" ) =~ /^gps/i ) {
+
+    _ADD_AUTO_ASTROMETRY_ GROUP=1 STATISTICS=1 CROWDED=1
+
+  } else {
+
+    _ADD_AUTO_ASTROMETRY_ GROUP=1 STATISTICS=1
+
+  }
+}

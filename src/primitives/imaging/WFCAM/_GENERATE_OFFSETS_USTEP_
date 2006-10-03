@@ -1,0 +1,213 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_GENERATE_OFFSETS_USTEP_ -- Finds the offsets between the frames in a USTEP_JITTER recipe, and registers the frames.
+
+=head1 DESCRIPTION
+
+This primitive finds the pixel offsets between the target frames in
+the sub-group whose members are the results of interleaving. The primitve
+itself forms new groups to be registered by other primitives. For the first
+cycle of the recipe all its frames are passed. On subsequent cycles the
+mosaic is inserted into the group before the frames in the current
+cycle, so that there is a common registration and that mosaics can
+be co-added.  For a moving target, the first frame of the whole
+observation is the first member of the group after the first cycle.
+
+When argument TELEOFF is true,
+L<_GENERATE_TELE_OFFSETS_|_GENERATE_TELE_OFFSETS_> is invoked and the
+derived offsets are used to register with a shift of origin; otherwise
+L<_GENERATE_OFFSETS_|_GENERATE_OFFSETS_> is the work horse.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item COMPLETE = REAL (Given)
+
+Completeness of matched features for registration between two
+frames to be accepted.  It must be in the range 0.2 to 1.0. [0.4]
+
+=item MINPIX = INTEGER (Given)
+
+Minimum number of contiguous pixels above the PERCENTILE level
+to be considered a registration feature.  It must be at least 6.
+The default here is for UFTI and the new IRCAM.  For the
+original IRCAM3 without the magnifier, 6 proved to be
+satisfactory.  [9]
+
+=item MOVING_TARGET = LOGICAL (Read)
+
+If true (1), the source is a moving target and frames are to
+register the moving target not the fixed stars.  [0]
+
+=item PERCENTILE = REAL (Given)
+
+Percentile threshold for locating objects to register frames.
+It must be in the range 75 to 99.9.  The default here is for
+UFTI and the new IRCAM.  For the original IRCAM3 without the
+magnifier, 96 proved to be satisfactory.  [98]
+
+=item TELEOFF = LOGICAL (Given)
+
+If true (1), it will just use the telescope offsets to register.
+If false (0), it will attempt automatic registration.  [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for WFCAM.
+
+=item *
+
+Processing only occurs for object and sky frames, and when the
+steering header MAKE_MOSAIC is true.
+
+=item *
+
+The group steering header INTERLEAVED is used to access the
+sub-group for the current frame.
+
+=item *
+
+The steering header CYCLE_NUMBER specifies the cycle number.
+
+=item *
+
+The _GENERATE_OFFSETS_ argument CENTRAL_SOURCE is FALSE.
+
+=item *
+
+For a moving target, the reference frame (the first "_dp" frame)
+must exist on the second and subsequent cycles, or an error occurs.
+
+=item *
+
+The frames registered using telescope offsets are reported.
+
+=back
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu> (JAC)
+Malcolm J. Currie <mjc@star.rl.ac.uk> (JAC, Starlink)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# Are we looking at a moving target?
+my $moving_target = $_GENERATE_OFFSETS_USTEP_{MOVING_TARGET};
+$moving_target = defined( $moving_target ) ? $moving_target : 0;
+
+# Determine whether or not telescope offsets should only be used.
+my $usetele = $_GENERATE_OFFSETS_USTEP_{TELEOFF};
+$usetele = defined( $usetele ) ? $usetele : 0;
+
+# Obtain the parameters for the detection.
+my ( $complete, $minpix, $percentile );
+if ( ! $usetele ) {
+  $percentile = ( $_GENERATE_OFFSETS_USTEP_{PERCENTILE} || 98 );
+  $minpix = ( $_GENERATE_OFFSETS_USTEP_{MINPIX} || 9 );
+  $complete = ( $_GENERATE_OFFSETS_USTEP_{COMPLETE} || 0.4 );
+}
+
+# This should only be performed on OBJECT frames.
+if ( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "OBJECT" ||
+     $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) eq "SKY" ) {
+
+# Test whether or not it is time to make a mosaic.
+  my $makemos = $Frm->uhdr( "MAKE_MOSAIC" );
+  if ( $makemos ) {
+
+    my $intGrp;
+    # We need to check to see if we have to grab the interleaved
+    # frames or not. If the ORAC_NUMBER_OF_MICROSTEP_POSITIONS uhdr
+    # is 1, then we don't. If not, we do.
+    if( $Frm->uhdr( "ORAC_NUMBER_OF_MICROSTEP_POSITIONS" ) == 1 ) {
+      $intGrp = $Grp;
+    } else {
+      $intGrp = $Grp->subgrp( 'INTERLEAVED' => 1 );
+    }
+
+    my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+    $cycleno = defined( $cycleno ) ? $cycleno : 0;
+
+    my $cycleGrp = $intGrp->subgrp( 'CYCLE_NUMBER' => $cycleno );
+
+    my ( $tempFrm, $tempGrp );
+    if ( $cycleno == 0 ) {
+      $tempGrp = $cycleGrp;
+
+# For a moving target we want to register to the first frame, because
+# it is the reference frame for the moving target.  The motions are
+# calculated with respect to its time of observation.  We do not
+# register to the co-added mosaic (as happens for stationary sources)
+# or even the first cycle mosaic, because the fiducial stars are
+# extended and thus shifts the centroid of the sources.  There is no
+# guarantee that telescope offsets will be used.  The mosaic stellar
+# images are also possibly multiple, which can confuse the registration.
+# It's a two-stage process.  First check that the reference frame
+# exists...
+    } elsif ( $moving_target ) {
+      $tempFrm = new $Frm;
+      $tempFrm->file( $Grp->frame( 0 )->file );
+      if ( ! $tempFrm->file_exists() ) {
+        orac_throw "Reference frame " . $Grp->frame( 0 )->file .
+                   " for moving target does not exist.\n";
+      }
+
+# then form the temporary group.  Insert the reference frame first and
+# then the current cycle's members.
+      $tempGrp = new $Grp;
+      $tempGrp->push( $Grp->frame( 0 ) );
+      $tempGrp->push( $cycleGrp->members );
+
+# On later cycles a mosaic file should exist, and we shall to register
+# with that as the reference frame.  So place the file into a temporary
+# frame pushed onto a temporary $Grp-like group.  Then append the members
+# of the subgroup.
+    } else {
+      $tempFrm = new $Frm( $Grp->file );
+      $tempGrp = new $Grp;
+      $tempGrp->push( $tempFrm );
+      $tempGrp->push( $cycleGrp->members );
+    }
+
+# Telescope offsets
+# =================
+    if ( $usetele ) {
+
+# Make a local $Grp.
+      my $Grp = $tempGrp;
+
+# Use telescope offsets from the headers to register the frames.
+      _GENERATE_TELE_OFFSETS_ MOVING_TARGET=$moving_target
+
+# Attempt automatic registration
+# ==============================
+    } else {
+
+# Generate the offsets
+# ====================
+
+# Call the generic primitive which does most of the work.  Do not use central
+# source as a backup.  Use the reference mosaic's co-ordinate system so ensure
+# that central-source offsets are with respect to that, if the
+# CENTRAL_SOURCE flag is switched.
+      my $Grp = $tempGrp;
+      _GENERATE_OFFSETS_ PERCENTILE=$percentile MINPIX=$minpix COMPLETE=$complete CENTRAL_SOURCE=FALSE MOVING_TARGET=$moving_target
+
+# End of scope of local $Grp aka $tempGrp.
+    }
+  }
+}

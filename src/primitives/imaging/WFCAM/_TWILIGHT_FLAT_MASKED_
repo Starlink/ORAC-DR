@@ -1,0 +1,215 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_TWILIGHT_FLAT_ - Normalize and median combine WFCAM twilight flats.
+
+=head1 DESCRIPTION
+
+This primitive normalizes and combines WFCAM twilight flats.
+
+It ignores any frames whose clipped mean is less than 5000 or greater
+than 30000 counts. When it has a frame that meets this criterion, it
+divides the frame by the clipped mean to normalize it, and then takes
+all of the normalized frames in the current group with the same filter
+and median combines them to create a flat field.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item MASK = Boolean (Given)
+
+Whether or not to do a two-pass flat reduction. In a two-pass scheme,
+an intermediary flat is first produced. Then the individual frames are
+flat-fielded, objects are detected, and a mask is generated. This mask
+is used to mask out objects from the original frames, and a new flat
+is created from the masked images. [0]
+
+=item METHOD = Character (Given)
+
+The combination method to use. See the METHOD parameter of
+CCDPACK/MAKEMOS for the full list available (SUN/139). [median]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This method is suitable for WFCAM.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Normalized frame with _nrm suffix.
+
+=item *
+
+Flat field with name of the form flat_<group>_<filter>, where <group>
+is the group number and <filter> is the value contained in the
+ORAC_FILTER user header with decimal points replaced with the letter
+'p' and parentheses replaced with square brackets.
+
+=back
+
+=head1 TASKS
+
+KAPPA: CDIV
+CCDPACK: MAKEMOS
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2006 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# Obtain parameters.
+my $method = $_TWILIGHT_FLAT_MASKED_{METHOD} || 'median';
+
+$Frm->uhdr( "FLAT_COMBINE", 0 );
+
+# Find the clipped mean of the current frame.
+_CLIPPED_STATS_
+my $mean = $_CLIPPED_STATS_{MEAN};
+my $sigma = $_CLIPPED_STATS_{SIGMA};
+
+orac_print sprintf( "Mean value for %s is %.3f +/- %.3f counts.\n", $Frm->file, $mean, $sigma );
+
+# Ignore the frame if the mean is less than 5000 or greater than
+# 30000.
+if( $mean > 5000 && $mean < 30000 ) {
+
+  $Frm->uhdr( "FLAT_COMBINE", 1 );
+  $Frm->uhdr( "BEGIN_FILE", $Frm->file );
+
+  ( my $in, my $out ) = $Frm->inout( "_nrm" );
+
+  # Divide the flat by the clipped mean.
+  $Mon{'kappa_mon'}->obeyw( "cdiv", "in=$in out=$out scalar=$mean" );
+
+  orac_print "$in to $out: Normalized flat.\n";
+
+  $Frm->file( $out );
+  $Frm->uhdr( "NORMALIZED_FILE", $out );
+
+  # Retrieve the members of the group that have passed the mean value
+  # test and have the same filter.
+  my $subGrp = $Grp->subgrp( FLAT_COMBINE => 1,
+                             ORAC_FILTER => $Frm->uhdr( "ORAC_FILTER" ) );
+
+  # Open a file that will contain the list of files that MAKEMOS will
+  # combine.
+  my $inlist = "makemos.inlist$$";
+  open my $fh_inlist, ">", $inlist or
+    orac_throw "Unable to open temporary file to hold input filenames to MAKEMOS: $!";
+
+  # For each member in this group, set the WCS frame to PIXEL and
+  # stick the filename in the WCSMOSAIC input file.
+  foreach my $frm ( $subGrp->members ) {
+    $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=" . $frm->uhdr( "NORMALIZED_FILE" ) . " frame=PIXEL" );
+    print $fh_inlist $frm->uhdr( "NORMALIZED_FILE" ) . "\n";
+  }
+
+  # Close the input list file.
+  close $fh_inlist;
+
+  # The output filename will be made up from the current group number
+  # and the filter.
+  my $hdsfilter = $Frm->uhdr( "ORAC_FILTER" );
+  $hdsfilter =~ s/\./p/g;
+  $hdsfilter =~ tr/\(\)\[\]/d/;
+  my $flat_out = "flat_" . $Frm->hdr( "GRPNUM"  ) . "_" . $hdsfilter;
+
+  # Run MAKEMOS.
+  orac_print "Combining flat images to form $flat_out...\n";
+  my $params = "in=^$inlist out=$flat_out method=$method genvar=false ";
+  $params .= "logto=neither scale=false zero=false";
+  $Mon{'ccdpack_reg'}->obeyw( "makemos", "$params" );
+
+  # File flat with calibration system.
+  _FILE_FLAT_ NAME=$flat_out
+
+  # Report to the user.
+  orac_print "Intermediate flat field generated in $flat_out.\n";
+
+  unlink $inlist;
+
+  # Flat-field each of the input images.
+  foreach my $Frm ( $subGrp->members ) {
+    ( undef, my $out ) = $Frm->inout( "_ff" );
+    my $in = $Frm->uhdr( "BEGIN_FILE" );
+    $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=$in frame=PIXEL" );
+    $Mon{'kappa_mon'}->obeyw( "div", "in1=$in in2=$flat_out out=$out" );
+    orac_print "$in to $out: Flat-fielded with intermediate flat.\n";
+    $Frm->file( $out );
+    _MAKE_OBJECTS_MASK_ ENLARGE=1.3
+    my $maskfile = $_MAKE_OBJECTS_MASK_{MASKFILE};
+    $Frm->file( $in );
+    _MASK_OBJECTS_ MASKFILE=$maskfile
+
+    _CLIPPED_STATS_
+    my $masked_mean = $_CLIPPED_STATS_{MEAN};
+
+    ( undef, $out ) = $Frm->inout( "_nrm" );
+    $Mon{'kappa_mon'}->obeyw( "cdiv", "in=" . $Frm->file . " out=$out scalar=$masked_mean" );
+
+    $Frm->file( $out );
+
+  }
+
+  # Make a new flat from the masked files.
+  open $fh_inlist, ">", $inlist or
+    orac_throw "Unable to open temporary file to hold input filenames to MAKEMOS: $!";
+  foreach my $Frm ( $subGrp->members ) {
+    $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=" . $Frm->file . " frame=PIXEL" );
+    print $fh_inlist $Frm->file . "\n";
+  }
+  close $fh_inlist;
+  my $tmp = new ORAC::TempFile;
+  my $tmpfile = $tmp->file;
+  orac_print "Combining masked images...\n";
+  $params = "in=^$inlist out=$tmpfile method=$method genvar=false ";
+  $params .= "logto=neither scale=false zero=false";
+  $Mon{'ccdpack_reg'}->obeyw( "makemos", "$params" );
+
+  # Set pixels with zero value to bad.
+  orac_print " Setting zero-level pixels to bad...\n";
+  $params = "in=$tmpfile out=$flat_out repval=0";
+  $Mon{'kappa_mon'}->obeyw( "setmagic", "$params" );
+
+  # File flat with calibration system.
+  _FILE_FLAT_ NAME=$flat_out
+
+  orac_print "Final flat field generated in $flat_out.\n";
+
+  unlink $inlist;
+
+  # For good measure, flat-field each of the input images.
+  foreach my $Frm ( $subGrp->members ) {
+    ( undef, my $out ) = $Frm->inout( "_ff" );
+    my $in = $Frm->uhdr( "BEGIN_FILE" );
+    $Mon{'kappa_mon'}->obeyw( "div", "in1=$in in2=$flat_out out=$out" );
+    orac_print "$in to $out: Flat-fielded with final flat.\n";
+  }
+
+}
+
+# Tidy output.
+orac_print "\n";

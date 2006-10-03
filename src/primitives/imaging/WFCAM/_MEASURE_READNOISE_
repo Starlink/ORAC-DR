@@ -1,0 +1,252 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_MEASURE_READNOISE_ -- Measure and display readnoise and dark current.
+
+=head1 DESCRIPTION
+
+This primitive measures and displays readnoise and dark current for
+a group made up of dark frames. It needs three or more frames to
+perform calculations on - the first two frames will have no calculations
+and no output.
+
+This primitive will also display readnoise and dark current for the
+thirty-two channels on the WFCAM array.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Will only operate on DARK frames.
+
+=item *
+
+Readnoise is calculated as the gain multiplied by the variance.
+
+=item *
+
+Dark current is calculated as the gain multiplied by the mean.
+
+=back
+
+=head1 AUTHOR
+
+Brad Cavanagh (JAC) <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# Only do this for DARK frames.
+if( $Frm->uhdr("ORAC_OBSERVATION_TYPE") eq 'DARK' ) {
+
+# Set up the sum and sum-of-squares files.
+  my $sumfile = $Grp->raw . "_sum";
+  my $sumsquaresfile = $Grp->raw . "_sum2";
+
+  my $num = $Grp->num + 1;
+  if( $num == 3 ) {
+
+# At this point we want to grab all of the members of
+# the group file, sum them up and put that in the sum
+# file, and square and add them into the sum-of-squares
+# file.
+
+# Get the file names.
+    my @files = $Grp->members;
+
+# Cast the data values to _DOUBLE so the sum-of-squares file has
+# enough headroom to handle the data.
+    foreach my $file ( @files ) {
+      my $params = "ndf=" . $file->file . " type=_DOUBLE";
+      $Mon{'ndfpack_mon'}->obeyw("settype", "$params" );
+    }
+
+# Display to the user what's going on.
+    orac_print "Summing ";
+    foreach my $file ( @files ) {
+      orac_print $file->file . " ";
+    }
+    orac_print "to form sum group file $sumfile.\n";
+
+# Set up the parameter string for KAPPA/MATHS.
+    my $param = "exp='ia+ib+ic'";
+    $param .= " ia=" . $files[0]->file;
+    $param .= " ib=" . $files[1]->file;
+    $param .= " ic=" . $files[2]->file;
+    $param .= " out=$sumfile";
+
+# Run KAPPA/MATHS to get the sum file.
+    $Mon{'kappa_mon'}->obeyw("maths", "$param");
+
+# And the same for the sum-of-squares file.
+    orac_print "Squaring and summing ";
+    foreach my $file ( @files ) {
+      orac_print $file->file . " ";
+    }
+    orac_print "to form sum-of-squares group file $sumsquaresfile.\n";
+
+    $param = "exp='ia*ia+ib*ib+ic*ic'";
+    $param .= " ia=" . $files[0]->file;
+    $param .= " ib=" . $files[1]->file;
+    $param .= " ic=" . $files[2]->file;
+    $param .= " out=$sumsquaresfile";
+
+    $Mon{'kappa_mon'}->obeyw("maths", "$param");
+
+  } elsif( $num > 3 ) {
+
+# We just want to add the current frame to the sums group
+# file. We have to do the addition into a temporary file
+# first, then copy that overtop the sums group file.
+    my $tmpsum = new ORAC::TempFile;
+    my $tmpsumfile = $tmpsum->file;
+
+# Cast the data type to _DOUBLE.
+    my $params = "ndf=" . $Frm->file . " type=_DOUBLE";
+    $Mon{'ndfpack_mon'}->obeyw("settype", "ndf=" . $Frm->file . " type=_DOUBLE" );
+
+# Report to the user.
+    orac_print "Adding " . $Frm->file . " to $sumfile.\n";
+
+# KAPPA/ADD is quicker for adding two files than KAPPA/MATHS
+# is, so use that instead for this case.
+    $params = "in1=$sumfile in2=" . $Frm->file . " out=$tmpsumfile";
+    $Mon{'kappa_mon'}->obeyw("add", "$params");
+
+# KAPPA/NDFCOPY the temporary file into the group sum file.
+    $params = "in=$tmpsumfile out=$sumfile";
+    $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "$params");
+
+# Now for the sum-of-squares file. Set up the temporary file.
+    my $tmpsqu = new ORAC::TempFile;
+    my $tmpsqufile = $tmpsqu->file;
+
+# Report to the user.
+    orac_print "Squaring and adding " . $Frm->file . " to $sumsquaresfile.\n";
+
+# We'll use KAPPA/MATHS here because we have to do a
+# multiplication and an addition.
+    $params = "exp='ia*ia+ib'";
+    $params .= " ia=" . $Frm->file;
+    $params .= " ib=$sumsquaresfile";
+    $params .= " out=$tmpsqufile";
+    $Mon{'kappa_mon'}->obeyw("maths", "$params");
+
+# And NDFCOPY it over.
+    $params = "in=$tmpsqufile out=$sumsquaresfile";
+    $Mon{'ndfpack_mon'}->obeyw("ndfcopy", "$params");
+
+  }
+
+  if( $num > 2 ) {
+
+# Alright, so now we've got our sum and sum-of-squares files,
+# so let's create the variance and mean frames.
+
+# First, the mean (because it's easiest).
+    my $meanfile = $Grp->file . "_mean";
+
+# Report to the user.
+    orac_print "Calculating mean data file: $meanfile.\n";
+
+    my $params = "in=$sumfile scalar=$num out=$meanfile";
+    $Mon{'kappa_mon'}->obeyw("cdiv", "$params");
+
+# And create the variance frame.
+    my $varfile = $Grp->file . "_var";
+
+# Report to the user.
+    orac_print "Calculating variance data file: $varfile.\n";
+
+# Do the calculation for the variance file. Notice that the
+# units will be in electrons.
+    my $gain = $Frm->uhdr("ORAC_GAIN");
+    orac_print "Using gain of $gain electrons/adu.\n";
+    $params = "exp='$gain*sqrt($num/($num-1))*sqrt(ia/$num-ib*ib)'";
+    $params .= " ia=$sumsquaresfile";
+    $params .= " ib=$meanfile";
+    $params .= " out=$varfile";
+    $Mon{'kappa_mon'}->obeyw("maths", "$params");
+
+# Do the individual channels, all 32 of them.
+    my %chanarea = (
+                    1  => "(   1:1024,1921:2048)",
+                    2  => "(   1:1024,1793:1920)",
+                    3  => "(   1:1024,1665:1792)",
+                    4  => "(   1:1024,1537:1664)",
+                    5  => "(   1:1024,1409:1536)",
+                    6  => "(   1:1024,1281:1408)",
+                    7  => "(   1:1024,1153:1280)",
+                    8  => "(   1:1024,1025:1152)",
+
+                    9  => "(   1: 128,   1:1024)",
+                    10 => "( 129: 256,   1:1024)",
+                    11 => "( 257: 384,   1:1024)",
+                    12 => "( 385: 512,   1:1024)",
+                    13 => "( 513: 640,   1:1024)",
+                    14 => "( 641: 768,   1:1024)",
+                    15 => "( 769: 896,   1:1024)",
+                    16 => "( 897:1024,   1:1024)",
+
+                    17 => "(1025:2048,   1: 128)",
+                    18 => "(1025:2048, 129: 256)",
+                    19 => "(1025:2048, 257: 384)",
+                    20 => "(1025:2048, 385: 512)",
+                    21 => "(1025:2048, 513: 640)",
+                    22 => "(1025:2048, 641: 768)",
+                    23 => "(1025:2048, 769: 896)",
+                    24 => "(1025:2048, 897:1024)",
+
+                    25 => "(1921:2048,1025:2048)",
+                    26 => "(1793:1920,1025:2048)",
+                    27 => "(1665:1792,1025:2048)",
+                    28 => "(1537:1664,1025:2048)",
+                    29 => "(1409:1536,1025:2048)",
+                    30 => "(1281:1408,1025:2048)",
+                    31 => "(1153:1280,1025:2048)",
+                    32 => "(1025:1152,1025:2048)",
+                   );
+
+    foreach my $channum ( 1..32 ) {
+
+      ( my $chanarea = $chanarea{$channum} ) =~ s/\s//g;
+
+# Measure the readnoise.
+      $params = "ndf='$varfile" . $chanarea . "' clip=3";
+      $Mon{'kappa_mon'}->obeyw("stats", "$params");
+      ( my $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get("stats", "mean");
+      ( $ORAC_STATUS, my $sig ) = $Mon{'kappa_mon'}->get("stats", "sigma");
+
+      $mean = sprintf("%5.2f", $mean);
+      $sig = sprintf("%5.2f", $sig);
+      my $c = sprintf("%2d", $channum);
+
+      orac_print "Channel $c $chanarea{$channum} readnoise is $mean +/- $sig electrons.\n";
+    }
+
+# Now work some full-frame stats magic.
+    $Mon{'kappa_mon'}->obeyw("stats", "ndf=$varfile clip=3");
+    ( my $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get("stats", "mean");
+    ( $ORAC_STATUS, my $sig ) = $Mon{'kappa_mon'}->get("stats", "sigma");
+
+# Report full-frame stats to user.
+    $mean = sprintf("%.2f", $mean);
+    $sig = sprintf("%.2f", $sig);
+    orac_print "Overall readnoise is $mean +/- $sig electrons.\n";
+
+    $Cal->readnoise( $mean );
+    orac_print "Readnoise filed with calibration system.\n";
+
+  }
+
+# Tidy up output.
+  orac_print "\n";
+
+}
