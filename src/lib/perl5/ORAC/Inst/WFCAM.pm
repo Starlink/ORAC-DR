@@ -2,7 +2,8 @@ package ORAC::Inst::WFCAM;
 
 =head1 NAME
 
-ORAC::Inst::WFCAM - ORAC description of WFCAM
+ORAC::Inst::WFCAM - ORAC description of WFCAM using Starlink software
+for reduction
 
 =head1 SYNOPSIS
 
@@ -39,19 +40,25 @@ use ORAC::Inst::Defn qw/ orac_determine_initial_algorithm_engines /;
 
 =item B<start_algorithm_engines>
 
-WFCAM uses only cirdr routines, so no algorithm engines are needed.
+Starts the algorithm engines and returns a hash containing
+the objects associated with each monolith.
+The routine returns when all the last monolith can be contacted
+(so requires that messaging has been initialised before this
+routine is called).
+
+WFCAM uses KAPPA, CCDPACK, and PHOTOM.
 
 =cut
 
 sub start_algorithm_engines {
+
   my $self = shift;
- 
+
   # Retrieve algorithm requirements.
   my @engines = orac_determine_initial_algorithm_engines("WFCAM");
- 
+
   # And launch them.
   return $self->_launch_algorithm_engines( @engines );
- 
 
 }
 
@@ -64,13 +71,14 @@ for this instrument.
 
 sub return_possible_calibrations {
     my $self = shift;
-    return ("dark","flat","sky");
-
+    return ("axialratio", "dark","flat","sky", "readnoise", "mask", "referenceoffset");
 }
 
 =back
 
 =head1 SEE ALSO
+
+L<ORAC::Inst::IRCAM>
 
 =head1 REVISION
 
@@ -78,13 +86,12 @@ $Id$
 
 =head1 AUTHORS
 
-Jim Lewis E<lt>jrl@ast.cam.ac.ukE<gt>
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>.
 
 =head1 COPYRIGHT
 
-Copyright (C) 2003-2006 Cambridge Astronomy Survey Unit
-All Rights Reserved.
-
+Copyright (C) 2004-2006 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
 
 =cut
 
