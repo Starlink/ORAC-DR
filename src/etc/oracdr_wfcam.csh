@@ -20,6 +20,7 @@
       # Parameters are simply passed on to the oracdr_wfcam?.csh
 
 #  Authors:
+#     Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
 #     Paul Hirst <p.hirst@jach.hawaii.edu>
 
 #  Copyright:
@@ -52,8 +53,6 @@ endif
 if ($script == "none") then
     echo "You must be logged onto a wfcamdr machine for oracdr_wfcam to work"
     echo "Otherwise, use oracdr_wfcamN where N=camera number"
-else 
-   # This seems to help...
-   setenv HDS_MAP 0
+else
    source ${ORAC_DIR}/etc/$script $1 $2 $3 $4
 endif
