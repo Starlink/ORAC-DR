@@ -396,12 +396,6 @@ sub orac_determine_inst_classes {
     $calclass   = "ORAC::Calib::WFCAM";
     $instclass  = "ORAC::Inst::WFCAM";
 
-  } elsif ($inst =~ /^SWFCAM/) {
-    $groupclass = "ORAC::Group::SWFCAM";
-    $frameclass = "ORAC::Frame::SWFCAM";
-    $calclass   = "ORAC::Calib::SWFCAM";
-    $instclass  = "ORAC::Inst::SWFCAM";
-
   } elsif ($inst eq 'CGS4') {
     $groupclass = "ORAC::Group::CGS4";
     $frameclass = "ORAC::Frame::CGS4";
@@ -608,11 +602,6 @@ sub orac_determine_recipe_search_path {
     push( @path, File::Spec->catdir( $imaging_root, "WFCAM" ) );
     push( @path, $imaging_root );
 
-  } elsif ($inst =~ /^SWFCAM/) {
-    push( @path, File::Spec->catdir( $root, 'SWFCAM' ) );
-    push( @path, File::Spec->catdir( $imaging_root, 'SWFCAM' ) );
-    push( @path, $imaging_root );
-
   } elsif ($inst eq 'MICHELLE' or $inst eq 'MICHTEMP' or $inst eq 'MICHGEM') {
     push( @path, File::Spec->catdir( $root, "MICHELLE" ) );
     push( @path, File::Spec->catdir( $imaging_root, "MICHELLE" ) );
@@ -771,14 +760,7 @@ sub orac_determine_primitive_search_path {
 
   } elsif ($inst =~ /^WFCAM/) {
     push( @path, File::Spec->catdir( $root, "WFCAM" ) );
-    push( @path, File::Spec->catdir( $casu_root, "WFCAM" ) );
-    push( @path, $casu_root );
-    push( @path, $imaging_root );
-    push( @path, $general_root );
-
-  } elsif ($inst =~ /^SWFCAM/) {
-    push( @path, File::Spec->catdir( $root, 'SWFCAM' ) );
-    push( @path, File::Spec->catdir( $imaging_root, 'SWFCAM' ) );
+    push( @path, File::Spec->catdir( $imaging_root, 'WFCAM' ) );
     push( @path, $imaging_root );
     push( @path, $general_root );
 
@@ -938,10 +920,6 @@ sub orac_determine_calibration_search_path {
     push( @path, File::Spec->catdir( $root, 'wfcam' ) );
     push( @path, $general_ir_root );
 
-  } elsif( $inst =~ /^SWFCAM/ ) {
-    push( @path, File::Spec->catdir( $root, 'swfcam' ) );
-    push( @path, $general_ir_root );
-
   } elsif( $inst eq 'MICHELLE' or $inst eq 'MICHTEMP' or $inst eq 'MICHGEM' ) {
     push( @path, File::Spec->catdir( $root, 'michelle' ) );
     push( @path, $general_ir_root );
@@ -1051,14 +1029,10 @@ sub orac_determine_initial_algorithm_engines {
     @AlgEng = qw/ figaro1 figaro2 figaro4 kappa_mon ndfpack_mon
       ccdpack_red ccdpack_reg atools_mon /;
 
-  } elsif ($inst =~ /^SWFCAM/) {
+  } elsif ($inst =~ /^WFCAM/) {
 
     @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg
       ccdpack_res /;
-
-  } elsif ($inst =~ /^WFCAM/) {
-
-    @AlgEng = qw/ /;
 
   } elsif ($inst eq 'INGRID') {
 
@@ -1168,8 +1142,6 @@ sub orac_determine_loop_behaviour {
     } elsif ( uc($instrument) eq 'UFTI2' ) {
       $behaviour = 'flag';
     } elsif ( uc($instrument) =~ /^WFCAM/ ) {
-      $behaviour = 'flag';
-    } elsif ( uc($instrument) =~ /^SWFCAM/ ) {
       $behaviour = 'flag';
     } elsif ( uc($instrument) eq 'IRCAM2' ) {
       $behaviour = 'flag';
@@ -1647,37 +1619,7 @@ sub orac_configure_for_instrument {
 
       last SWITCH; }
 
-    if ( $instrument =~ /^WFCAM/) {
-
-      # Instrument
-      $ENV{"ORAC_INSTRUMENT"} = $instrument;
-
-      # Calibration information
-      $orac_cal_root = File::Spec->catdir("ukirt_sw","oracdr_cal")
-        unless defined $orac_cal_root;
-      $ENV{"ORAC_DATA_CAL"} = File::Spec->catdir($orac_cal_root,"wfcam");
-
-      # data directories
-      $orac_data_root = "/ukirtdata"
-        unless defined $orac_data_root;
-
-      $ENV{"ORAC_DATA_IN"} = File::Spec->catdir( $orac_data_root,
-                                                 "raw","wfcam",$oracut);
-      $ENV{"ORAC_DATA_OUT"} = File::Spec->catdir($orac_data_root,
-                                                 "reduced","wfcam",$oracut)
-        unless defined $$options{"honour"};
-
-      # misc
-      $ENV{"ORAC_PERSON"} = "jrl";
-      $ENV{"ORAC_SUN"} = "???";
-      if (Net::Domain->domainname =~ "ukirt"  ) {
-        $options->{"loop"} = "flag";
-      }
-      $options->{"skip"} = 0;
-
-      last SWITCH; }
-
-    if ( $instrument =~ /^SWFCAM/ ) {
+    if ( $instrument =~ /^WFCAM/ ) {
 
       # Instrument
       $ENV{"ORAC_INSTRUMENT"} = $instrument;
