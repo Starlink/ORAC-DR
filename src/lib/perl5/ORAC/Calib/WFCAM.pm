@@ -18,7 +18,7 @@ use ORAC::Calib::WFCAM;
 This module contains methods for specifying WFCAM-specific calibration
 objects when using Starlink software for reduction. It provides a class
 derived from ORAC::Calib. All the methods available to ORAC::Calib objects
-are available to ORAC::Calib::SWFCAM objects.
+are available to ORAC::Calib::WFCAM objects.
 
 =cut
 
