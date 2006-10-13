@@ -1,0 +1,187 @@
+=head1 NAME
+
+GENERATE_IQU_CUBE_FRAME - generate 3D cube with I,Q and U Stokes images
+
+=head1 DESCRIPTION
+
+Generates a 3D cube containing the I,Q and U Stokes images from
+a set of images taken with different waveplate positions. This
+routine is expected to run after the _REBIN_INTEGRATIONS_ 
+or the _REBIN_MESUREMENTS_ primitive (which generates a stack of 
+images for each waveplate position.)
+
+Automatically loops over all sub-instruments in the frame.
+
+The Q and Us generated are intensities.
+
+=head1 CONFIGURATION PARAMETERS
+
+The following configuration options are supported:
+
+   WEIGHTS - POLPACK system to use for VARIANCE generation
+             When weights=1 POLSTACK/POLCAL is used
+             else POLCAL is used with weights=3
+             Default is weights=1
+
+=head1 TASKS
+
+Uses the POLPACK POLSTACK/POLIMP/POLCAL tasks.
+
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.edE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+
+# Check for POLPACK - with dynamic launching we can no longer
+# really use exists here. Have to use defined instead.
+# This will be a little inefficient since we have to check every
+# time around and we will continue to fail hen attempting to launch
+if (defined $Mon{polpack_mon}) {
+
+  my $weights = 1;
+  if (exists $_GENERATE_IQU_CUBE_FRAME_CADC_{WEIGHTS} &&
+      defined $_GENERATE_IQU_CUBE_FRAME_CADC_{WEIGHTS} &&
+      $_GENERATE_IQU_CUBE_FRAME_CADC_{WEIGHTS} != 1) {
+    $weights = 3;
+  }
+
+  # Loop over frames
+  for my $i (1..$Frm->nfiles) {
+
+    # Sub-instrument
+    my $sub = ($Frm->subs)[$i-1];
+
+    orac_print "Processing waveplate images for sub-instrument $sub\n";
+
+    # Generate the output filename
+    my ($in, $out) = $Frm->inout("_iqu", $i);
+
+    # Run POLIMP to import the data into POLPACK
+    # Table definition stored in SURF_DIR/polimp.scuba
+
+    # In polpack 3.0-5 we can ask polimp to abort if some data
+    # is incorrect
+    my $impargs = '';
+    $impargs = "ABORT=TRUE"  if starversion_gt("polpack","V3.0-4");
+
+    # Test for errors ourselves since we know that if we have got this
+    # far that the image should not be coadded with others
+    my $polstatus = $Mon{polpack_mon}->obeyw('polimp',"in=$in table=$ENV{SURF_DIR}/polimp.scuba quiet $impargs");
+
+    if ($polstatus != ORAC__OK) {
+      # Remove the frame from the group
+      orac_warn "Unable to import frame into POLPACK. Removing from group.\n";
+      $Frm->isgood(0);
+
+      # Indicate that we have changed group membership
+      # [this is not automatic in batch mode]
+      $Grp->check_membership;
+
+      # Need bad status to abort
+      my $ORAC_STATUS = ORAC__ERROR;
+    }
+
+    my $label = $in;
+
+    # Now run with POLSTACK on the cubes to generate variances
+    # This can cause problems if images are on the bin boundaries
+    # only if weights =1
+    my $root = "stack$$" . "_";
+    my $stack = "'$root" . "*'";
+    if ($weights == 1) {
+
+      # Need to calculate the origin
+      # First run POLEXT to extract the WPLATE (could assume -2.5
+      # of the first image - assume that the first image is $in.i1 (KLUGE)
+      $Mon{polpack_mon}->obeyw('polext',"in=${in}.i1 quiet=true");
+      my ($ORAC_STATUS, $wplate) = $Mon{polpack_mon}->get('polext','vwplate');
+
+      orac_print "First waveplate angle = $wplate\n";
+
+      # Calculate first analyzer angle (see pol1_srtim.f in polpack source)
+      # First one is meant to be relative to the ANGROT so it is
+      # simply 2*WP (the ANGROT is only used for relative rotations
+      # and the analyzer angle is assumed to be referenced to the
+      # first ANGROT)
+      # To centre the bins properly, really need to read the ANGROT
+      # from the last image at this waveplate and then average them
+      # - do this if we have a problem (since we can't gurantee waveplate
+      # order).
+
+      my $origin = 0.0; # Start by assuming origin is 0
+      my $range = 180.0;
+      my $anlang = 2 * $wplate;
+      $anlang = $anlang - $range * int( ($anlang - $origin)/ $range);
+      $anlang = $anlang + $range if $anlang < $origin;
+
+      orac_print "Origin for rotation must be less than $anlang\n";
+
+      # Origin should be half a bin less than anlang
+      my $bin = 22.5;
+      $origin = $anlang - ($bin/2);
+
+      # Do we want to check for left over images
+      # from the last time round in case there was an abort
+      # and the temp files were not removed on exiting this primitive?
+
+      orac_print "Stacking images to generate variance\n";
+      my $args = "in=$in out=$stack minin=2 bin=$bin stack=! origin=$origin";
+
+      # If polstack fails we should not only abort but we should
+      # remove ourselves from the group. This is strictly correct for
+      # all these steps since this primitive must generate a cube
+      # or else the group coadding will not work later on
+      my $pstat = $Mon{polpack_mon}->obeyw('polstack',"$args ilevel=2");
+      if ($pstat != ORAC__OK) {
+	orac_warn "Unable to stack images - removing frame from group\n";
+	$Frm->isgood(0);
+	# Indicate that we have changed group membership
+	# [this is not automatic in batch mode]
+	$Grp->check_membership;
+
+	# Need bad status to abort
+	my $ORAC_STATUS = $pstat;
+      }
+
+
+      $in = $stack;
+    }
+
+    # Now run POLCAL to generate the IQU cube
+    # Run with supplied weights and niter
+    my $args = "weights=$weights ilevel=2";
+    $Mon{polpack_mon}->obeyw('polcal',"in=$in out=$out $args");
+
+    orac_print "$label converted to I,Q and U image cube\n";
+
+    # Now need to go through and remove the $stack images from disk
+    # KLUGE - worst case of 16 images
+    # KLUGE - assume .sdf extension
+    # jump out of loop on error
+    if ($weights == 1) {
+      foreach my $num (1..16) {
+	# Exit loop if we failed to delete
+	unless (unlink $root . $num . ".sdf" ) {
+	  orac_print "Deleted ". ($num - 1) . " stacked images\n";
+	  last;
+	}
+      }
+    }
+    # Update the frame object
+    $Frm->file($i, $out);
+
+  }
+
+} else {
+
+  orac_print "POLPACK is not available -- can not reduce polarimetry observations \n";
+  my $ORAC_STATUS = ORAC__ERROR;
+
+}

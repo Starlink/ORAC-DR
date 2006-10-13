@@ -1,0 +1,138 @@
+=head1 NAME
+
+EXTINCTION_CORRECT_CADC
+
+=head1 DESCRIPTION
+
+Correct for atmospheric extinction. Note that
+this routine takes one input file and outputs to
+files (one for each sub-instrument).
+
+Code corrected to drop frames that do not have 
+calibration information available. (ROR 2006-06-08)
+
+=head1 TASKS
+
+Uses the EXTINCTION task from SURF.
+
+=head1 IMPORT
+
+Retrieves the best tau from the calibration object.
+
+=head1 ARGUMENTS
+
+  SUBS = comma separated list of sub-instruments 
+         to be processed.
+
+Must use full names: long,short long,p1350 etc.
+If this argument is not supplied then all sub-instruments
+are processed.
+
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+Russell O. Redman E<lt>Russell.Redman@nrc-cnrc.gc.ca<gt>E
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# ROR 2006-06-08; modified for new primitive name
+# Read the list of selected sub-instruments
+my $ok_list = ($_EXTINCTION_CORRECT_CADC_{SUBS} || '' );
+
+my @ok_list = split(',',lc($ok_list));
+
+orac_print "Processing sub-instruments: $ok_list\n"
+  if $#ok_list > -1;
+
+my @subs = $Frm->subs;
+my @filts = $Frm->filters;
+my @wavelengths = $Frm->wavelengths;
+
+my $in = $Frm->file;
+
+# Initialise output arrays 
+# (since the sub-instrument list will change)
+my @outsub = ();
+my @outfilt = ();
+my @outwave = ();
+my $i = 0;  # Output counter
+
+# Loop over each sub-instrument
+for my $count (1..$Frm->nsubs) {
+
+   # Find current sub instrument and filter
+   my $sub = $subs[$count - 1];
+   my $filter = $filts[$count - 1];
+   my $wave   = $wavelengths[$count - 1];
+
+   # Check current sub-instrument against list (assuming one was
+   # supplied)
+   if ($#ok_list > -1) {
+     unless (grep { /$sub/i } @ok_list) {
+       orac_print "Skipping sub-instrument $sub\n";
+       next;
+     }
+   }
+
+   $i++;  # increment file count
+   orac_print "Sub-instrument $sub is in valid list\n";
+
+   # Store the sub, filter and wavelength
+   push(@outsub, $sub);
+   push(@outfilt, $filter);
+   push(@outwave, $wave);
+
+   # Read tau value
+   my $tau = $Cal->tau($filter);
+   unless (defined $tau) { # Check tau
+     orac_err("Error reading tau - no value received\n");
+
+     # ROR 2006-06-08: if no tau, mark this frame as bad and remove it from group processing
+     $Frm->isgood( 0 );
+     $Grp->check_membership; # needed for batch mode
+     orac_err("Error reading tau - mark frame as bad\n");
+     my $ORAC_STATUS = ORAC__ERROR;
+     last;
+   }
+
+   # Set the 'input' filename in the object for the current
+   # sub-instrument
+   $Frm->file($i, $in);
+
+   # construct the arguments
+   my $args = "sub_instrument=$sub first_tau=$tau second_tau=$tau";
+   $args .= " first_lst='0' second_lst='0' ";
+
+   # Construct the input and output filenames
+   my $suffix = "_" . lc(substr($sub, 0, 3)) . "_ext";
+   my ($in, $out) = $Frm->inout($suffix, $i);
+
+   $Mon{surf_mon}->obeyw("extinction", "in=$in out=$out $args");
+
+   $Frm->file($i, $out);
+
+   orac_print "ORAC says: Extinction corrected $sub sub-inst from $in (tau=".sprintf('%5.3f',$tau).")\n";
+
+}
+
+# Tidy up the object since we may have thrown away some
+# sub-instruments
+
+if ($i > 0) {
+  $Frm->nsubs($i);
+  $Frm->wavelengths(@outwave);
+  $Frm->filters(@outfilt);
+  $Frm->subs(@outsub);
+} else {
+  # No files selected so exit
+  orac_print "No valid sub-instruments in this object\n";
+  $Frm->isgood(0);
+  $Grp->check_membership; # needed for batch mode
+  return;
+}
+

@@ -1,0 +1,139 @@
+=head1 NAME
+
+_CALIBRATE_DATA_ - Multiply data by the flux conversion factor
+
+=head1 SYNOPSIS
+
+  _CALIBRATE_DATA_CADC_ UNITS=BEAM
+  _CALIBRATE_DATA_CADC_ UNITS=ARCSEC
+
+=head1 DESCRIPTION
+
+Multiply SCUBA data by the flux conversion factor (FCF).
+The value for the FCF depends on the filter and the type
+of calibration required. The calibration units are specified
+by an argument.
+
+This is a Frame operation and should be used before group operations.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item UNITS
+
+Controls the units of the FCF. The options are BEAM for
+Jy/beam/V and ARCSEC for Jy/arcsec**2/V. ARCSEC is only
+allowed for MAP observations. BEAM is the default.
+
+The nominal unit for the raw signal is V, so the units of the
+calibrated data will be Jy/beam or Jy/arcsec**2.  Also, there is 
+a preference to express flux densities in mJy rather than Jy.  
+the FITS header BUNIT will thus be set to mJy/beam, or 
+mJy/arcsec**2 depending upon the setting for BEAM.
+=back
+
+=head1 External Tasks
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA
+
+CMULT
+
+=back
+
+=head1 FILES
+
+Creates an output file with a C<_cal> extension.
+
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+
+=cut
+
+# Read the arguments
+my $units = 'BEAM';
+if (exists $_CALIBRATE_DATA_CADC_{UNITS} ) {
+  $units = uc( $_CALIBRATE_DATA_CADC_{UNITS});
+  if ($units ne 'BEAM' && $units ne 'ARCSEC') {
+    orac_err "_CALIBRATE_DATA_CADC_: Units must be BEAM or ARCSEC not '$units'";
+    my $ORAC_STATUS = ORAC__ERROR;
+  }
+
+  # Check we have a map
+  if ($units eq 'ARCSEC' && ($Frm->hdr('MODE') !~ /MAP|POINTING/i) ) {
+    orac_err "_CALIBRATE_DATA_CADC_: Can only use ARCSEC units with MAPS";
+    my $ORAC_STATUS = ORAC__ERROR;
+  }
+
+}
+
+# Need to loop over sub-instruments
+
+my @filter = $Frm->filters;
+
+# Multiplication factor - convert to mJy
+my $mult = 1000.0;
+my $pre = 'm';  # for mJy
+# Units
+my $unitstr = $pre .( $units eq 'BEAM' ? 'Jy/beam' : 'Jy/arcsec^2');
+
+# For ARCSEC we need to multiply by the square of the pixel regrid
+# size.
+
+if ($units eq 'ARCSEC') {
+  # Now need to correct for pixel scale. This can be calculated
+  # by looking at the SCUPIXSZ keyword in the header [assuming it
+  # exists]. Only in a rebinned header.
+  unless (exists $Frm->uhdr->{'SCUPIXSZ'}) {
+    orac_err("Failed to read pixel size from FITS header!");
+    my $ORAC_STATUS = ORAC__ERROR;
+  }
+
+  $mult *= $Frm->uhdr('SCUPIXSZ') ** 2;
+
+  # Correct the unit string to /pixel
+  if ($Frm->uhdr('SCUPIXSZ') != 1.0) {
+    $unitstr = $pre . 'Jy/pixel';
+  }
+
+}
+
+# Loop over sub-instruments
+for my $i (1..$Frm->nfiles) {
+
+  # Retrieve the current fcf value from the calibration
+  # object. This will calibrate our data in Jy and then
+  # if we multiply by an extra 1000 we get mJy
+  # The multiplication factor includes the /pixel correction in ARCSEC
+  my $gain = $Cal->gain($filter[$i-1], $units) * $mult;
+
+  # retrive input and output names
+  my ($in, $out) = $Frm->inout("_cal", $i);
+  my $args = "scalar=$gain";
+
+  # Multiply by the gain
+  $Mon{kappa_mon}->obeyw("cmult","in=$in out=$out $args");
+
+  orac_print "Multiplying $in by $gain $unitstr\n";
+
+  # Change the units
+  $Mon{ndfpack_mon}->obeyw("setunits","ndf=$out units=$unitstr");
+
+  # Update file
+  $Frm->file($i, $out);
+
+}
+
+orac_print "ORAC says: Data calibrated in $unitstr\n";
+
+
+
