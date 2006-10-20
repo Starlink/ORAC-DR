@@ -153,6 +153,8 @@ sub indexrulesfile {
   my $self = shift;
   if (@_) {
     my $rfile = shift;
+    croak "Rules files supplied to indexrulesfile() must be defined\n"
+      unless defined $rfile;
     if ($rfile ne NO_RULES) {
       $self->{IndexRulesFile} = $rfile;
       $self->slurprules;
@@ -236,6 +238,8 @@ sub slurprules {
   my $self = shift;
   my $file = $self->indexrulesfile;
 
+  croak "Rules file name is undefined\n" unless defined $file;
+
   my %rules = ();
   my $handle = new IO::File "< $file";
 
@@ -256,7 +260,7 @@ sub slurprules {
 
   } else {
 
-    croak("Couldn't open rules file $file : $!");
+    croak("Couldn't open rules file '".(defined $file ? $file : "<undef>" )."': $!");
 
   }
 
