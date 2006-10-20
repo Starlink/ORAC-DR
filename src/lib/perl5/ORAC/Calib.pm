@@ -1081,6 +1081,7 @@ sub arcindex {
   unless (defined $self->{ArcIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.arc" );
     my $rulesfile = $self->find_file("rules.arc");
+    croak "arc rules file could not be located\n" unless defined $rulesfile;
     $self->{ArcIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1106,6 +1107,7 @@ sub baseshiftindex {
   unless (defined $self->{BaseShiftIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.baseshift" );
     my $rulesfile = $self->find_file("rules.baseshift");
+    croak "baseshift rules file could not be located\n" unless defined $rulesfile;
     $self->{BaseShiftIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1126,6 +1128,7 @@ sub biasindex {
   unless (defined $self->{BiasIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.bias" );
     my $rulesfile = $self->find_file("rules.bias");
+    croak "bias rules file could not be located\n" unless defined $rulesfile;
     $self->{BiasIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1148,6 +1151,7 @@ sub darkindex {
   unless (defined $self->{DarkIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.dark" );
     my $rulesfile = $self->find_file("rules.dark");
+    croak "dark rules file could not be located\n" unless defined $rulesfile;
     $self->{DarkIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1171,6 +1175,7 @@ sub flatindex {
   unless (defined $self->{FlatIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.flat" );
     my $rulesfile = $self->find_file("rules.flat");
+    croak "flat rules file could not be located\n" unless defined $rulesfile;
     $self->{FlatIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1195,6 +1200,7 @@ sub dqcindex {
   unless (defined $self->{DQCIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.dqc" );
     my $rulesfile = $self->find_file("rules.dqc");
+    croak "dqc rules file could not be located\n" unless defined $rulesfile;
     $self->{DQCStats} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1217,6 +1223,7 @@ sub photindex {
   unless( defined $self->{PhotometricityIndex} ) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.phot" );
     my $rulesfile = $self->find_file( "rules.phot" );
+    croak "phot rules file could not be located\n" unless defined $rulesfile;
     $self->{Photometricity} = new ORAC::Index( $indexfile, $rulesfile );
   }
 
@@ -1238,6 +1245,8 @@ sub polrefangindex {
   unless (defined $self->{PolRefAngIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "index.polrefang" );
     my $rulesfile = $self->find_file("rules.polrefang");
+    croak "polrefang rules file could not be located\n"
+      unless defined $rulesfile;
     $self->{PolRefAngIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1258,6 +1267,7 @@ sub readnoiseindex {
   unless (defined $self->{ReadNoiseIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.readnoise" );
     my $rulesfile = $self->find_file("rules.readnoise");
+    croak "readnoise rules file could not be located\n" unless defined $rulesfile;
     $self->{ReadNoiseIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1278,6 +1288,8 @@ sub referenceoffsetindex {
   unless (defined $self->{ReferenceOffsetIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.referenceoffset" );
     my $rulesfile = $self->find_file("rules.referenceoffset");
+    croak "referenceoffset rules file could not be located\n"
+      unless defined $rulesfile;
     $self->{ReferenceOffsetIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1299,6 +1311,7 @@ sub skyindex {
   unless (defined $self->{SkyIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.sky" );
     my $rulesfile = $self->find_file("rules.sky");
+    croak "sky rules file could not be located\n" unless defined $rulesfile;
     $self->{SkyIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
@@ -1340,6 +1353,7 @@ sub standardindex {
   unless (defined $self->{StandardIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.standard" );
     my $rulesfile = $self->find_file("rules.standard");
+    croak "standard rules file could not be located\n" unless defined $rulesfile;
     $self->{StandardIndex} = new ORAC::Index($indexfile,$rulesfile);
   };
 
