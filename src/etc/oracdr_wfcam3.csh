@@ -64,6 +64,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.9  2006/10/23 18:59:40  bradc
+#     set RTD_REMOTE_DIR back to be the same as ORAC_DATA_OUT
+#
 #     Revision 1.8  2006/10/03 00:20:06  bradc
 #     replaced with ex-SWFCAM version
 #
@@ -141,7 +144,7 @@ setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/wfcam
 
 # some other things
 setenv HDS_MAP 0
-setenv RTD_REMOTE_DIR $ORAC_DATA_OUT/..
+setenv RTD_REMOTE_DIR $ORAC_DATA_OUT
 
 # Determine the host, and if we're on a wfdr machine, create
 # $ORAC_DATA_OUT if it doesn't already exist.
