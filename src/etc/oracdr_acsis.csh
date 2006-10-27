@@ -62,6 +62,9 @@
  
 #  History:
 #     $Log$
+#     Revision 1.2  2006/10/27 00:28:35  bradc
+#     fix ORAC_SUN definition
+#
 #     Revision 1.1  2004/06/07 20:40:39  bradc
 #     initial addition for ACSIS
 #
@@ -114,9 +117,9 @@ setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/acsis/$oracut/
 setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/acsis/$oracut/
  
 # screen things
-setenv ORAC_PERSON jleech
+setenv ORAC_PERSON bradc
 setenv ORAC_LOOP 'flag'
-setenv ORAC_SUN  ???
+setenv ORAC_SUN XXX
  
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
