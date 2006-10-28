@@ -56,7 +56,6 @@ my %hdr = (
             EQUINOX              => "EQUINOX",
             EXPOSURE_TIME        => "EXP_TIME",
             FILTER               => "FILTER",
-            GAIN                 => "GAIN",
             INSTRUMENT           => "INSTRUME",
             NUMBER_OF_EXPOSURES  => "NEXP",
             NUMBER_OF_JITTER_POSITIONS    => "NJITTER",
@@ -81,6 +80,26 @@ my %hdr = (
 # new subs appear in this class.
 
 ORAC::Frame::WFCAM->_generate_orac_lookup_methods( \%hdr );
+
+sub _to_GAIN {
+  my $self = shift;
+  my $gain;
+  if( defined( $self->hdr->{CAMNUM} ) ) {
+    my $camnum = $self->hdr->{CAMNUM};
+    if( $camnum == 1 || $camnum == 2 ) {
+      $gain = 4.5;
+    } elsif( $camnum == 3 ) {
+      $gain = 4.7;
+    } elsif( $camnum == 4 ) {
+      $gain = 5.6;
+    } else {
+      $gain = 1.0;
+    }
+  } else {
+    $gain = 1.0;
+  }
+  return $gain;
+}
 
 sub _to_NUMBER_OF_OFFSETS {
   my $self = shift;
@@ -485,6 +504,68 @@ sub _split_name {
   my ($root, $rest) = split(/\./, $file, 2);
 
   return ($root, $rest);
+}
+
+=back
+
+=head1 OLD CASU STUFF
+
+=cut
+
+# Keywords for primary header unit
+
+my @phukeys = ("DATE","ORIGIN","TELESCOP","INSTRUME","DHSVER","HDTFILE",
+	       "OBSERVER","USERID","OBSREF","PROJECT","SURVEY","SURVEY_I",
+	       "MSBID","RMTAGENT","AGENTID","OBJECT","RECIPE","OBSTYPE",
+	       "OBSNUM","GRPNUM","GRPMEM","TILENUM","STANDARD","NJITTER",
+	       "JITTER_I","JITTER_X","JITTER_Y","NUSTEP","USTEP_I","USTEP_X",
+	       "USTEP_Y","FILTER","UTDATE","UTSTART","UTEND","DATE-OBS",
+	       "DATE-END","MJD-OBS","WCSAXES","RADESYS","EQUINOX","TRACKSYS",
+	       "RABASE","DECBASE","TRAOFF","TDECOFF","AMSTART","AMEND","TELRA",
+	       "TELDEC","GSRA","GSDEC","READMODE","EXP_TIME","NEXP","NINT",
+	       "READINT","NREADS","AIRTEMP","BARPRESS","DEWPOINT","DOMETEMP",
+	       "HUMIDITY","MIRR_NE","MIRR_NW","MIRR_SE","MIRR_SW","MIRRBTNW",
+	       "MIRRTPNW","SECONDAR","TOPAIRNW","TRUSSENE","TRUSSWSW",
+	       "WIND_DIR","WIND_SPD","CSOTAU","TAUDATE","TAUSRC","M2_X","M2_Y",
+	       "M2_Z","M2_U","M2_V","M2_W","TCS_FOC","FOC_POSN","FOC_ZERO",
+	       "FOC_OFFS","FOC_FOFF","FOC_I","FOC_OFF","NFOC","NFOCSCAN");
+
+# Keywords for extension header unit
+
+my @ehukeys = ("INHERIT","DETECTOR","DETECTID","DROWS","DCOLUMNS",
+	       "RDOUT_X1","RDOUT_X2","RDOUT_Y1","RDOUT_Y2","PIXLSIZE","GAIN",
+	       "CAMNUM","HDTFILE2","DET_TEMP","CNFINDEX","PCSYSID","SDSUID",
+	       "READOUT","CAPPLICN","CAMROLE","CAMPOWER","RUNID","CTYPE1",
+	       "CTYPE2","CRPIX1","CRPIX2","CRVAL1","CRVAL2","CRUNIT1",
+	       "CRUNIT2","CD1_1","CD1_2","CD2_1","CD2_2","PV2_1","PV2_2",
+	       "PV2_3");
+
+=over 4
+
+=item B<phukeys>
+
+Returns the list of primary header unit keywords 
+    @phukeys = $Frm->phukeys;
+
+=cut
+
+sub phukeys {
+    my $self = shift;
+
+    return(@phukeys);
+}
+
+=item B<ehukeys>
+
+Returns the list of extension header unit keywords 
+    @ehukeys = $Frm->ehukeys;
+
+=cut
+
+sub ehukeys {
+    my $self = shift;
+
+    return(@ehukeys);
 }
 
 =back
