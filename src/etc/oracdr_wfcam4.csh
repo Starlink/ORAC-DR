@@ -64,6 +64,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.10  2006/10/28 01:37:40  bradc
+#     set PERL5LIB for CASU code
+#
 #     Revision 1.9  2006/10/23 18:59:40  bradc
 #     set RTD_REMOTE_DIR back to be the same as ORAC_DATA_OUT
 #
@@ -162,6 +165,9 @@ setenv ORAC_SUN
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
+
+# Needed for CASU code.
+setenv PERL5LIB /ukirt_sw/cirdr/perlinstall:/ukirt_sw/cirdr/perllib
 
 # Tidy up
 unset oracut
