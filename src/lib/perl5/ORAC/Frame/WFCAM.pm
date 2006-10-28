@@ -86,10 +86,8 @@ sub _to_GAIN {
   my $gain;
   if( defined( $self->hdr->{CAMNUM} ) ) {
     my $camnum = $self->hdr->{CAMNUM};
-    if( $camnum == 1 || $camnum == 2 ) {
-      $gain = 4.5;
-    } elsif( $camnum == 3 ) {
-      $gain = 4.7;
+    if( $camnum == 1 || $camnum == 2 || $camnum == 3 ) {
+      $gain = 4.6;
     } elsif( $camnum == 4 ) {
       $gain = 5.6;
     } else {
