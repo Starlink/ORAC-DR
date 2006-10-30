@@ -62,6 +62,9 @@
  
 #  History:
 #     $Log$
+#     Revision 1.3  2006/10/30 21:25:17  bradc
+#     move ORAC_DATA_IN
+#
 #     Revision 1.2  2006/10/27 00:28:35  bradc
 #     fix ORAC_SUN definition
 #
@@ -113,7 +116,7 @@ setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/acsis
  
 # Data directories
 setenv ORAC_DATA_ROOT /jcmtdata
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/acsis/$oracut/
+setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/acsis/acsis00/$oracut
 setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/acsis/$oracut/
  
 # screen things
