@@ -56,7 +56,7 @@ my %hdr = ( AIRMASS_START => 'AMSTART',
             OBSERVATION_NUMBER => 'OBSNUM',
             RA_BASE => 'CRVAL2',
             RA_SCALE => 'CDELT2',
-            RECIPE => 'DRRECIPE',
+            RECIPE => 'RECIPE',
             STANDARD => 'STANDARD',
             UTDATE => 'UTDATE',
             WAVEPLATE_ANGLE => 'SKYANG',
@@ -169,7 +169,7 @@ sub new {
   # Configure initial state - could pass these in with
   # the class initialisation hash - this assumes that I know
   # the hash member name
-  $self->rawfixedpart('a');
+  $self->rawfixedpart('ac');
   $self->rawformat('NDF');
   $self->rawsuffix('.sdf');
   $self->format('NDF');
@@ -376,8 +376,7 @@ sub flag_from_bits {
   # digits long.
   my $padnum = '0'x(5-length($obsnum)) . $obsnum;
 
-  my $flag = File::Spec->catfile('acsis00',$prefix,
-                                 '.' . $self->rawfixedpart . $prefix . '_' . $padnum . '.ok');
+  my $flag = File::Spec->catfile('.' . $self->rawfixedpart . $prefix . '_' . $padnum . '.ok');
 
   return $flag;
 }
