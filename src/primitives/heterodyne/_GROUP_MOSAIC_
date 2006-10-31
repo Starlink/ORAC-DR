@@ -36,8 +36,6 @@ Council. All Rights Reserved.
 # Check that we are processing the last frame of the group
 # and that there are some frames to coadd.
 
-orac_print "Group Name is ".$Grp->name."\n";
-
 if ($Grp->lastmember($Frm)) {
   my $ORAC_STATUS;
   my $allowable_sparseness=2.0; # we can tolerate an output cubes which has twice as many zeros as data in z direction.
@@ -50,14 +48,13 @@ if ($Grp->lastmember($Frm)) {
 
   # Get the filenames for each frame in the group. There will be one filename per frame at this stage. 
   my @frames = $Grp->members;
-  my $no_frames_in_group =scalar (@frames);
-  my $no_of_files_in_frame=0;
+  my $no_frames_in_group = scalar (@frames);
+  my $no_of_files_in_frame = 0;
 
-  orac_print "GROUP MOSAIC found $no_frames_in_group frame(s) in the group.\n"; 
+  if ( $no_frames_in_group > 1 ) {
 
-  if ( $no_frames_in_group == 1 ) {
+    orac_print "There are $no_frames_in_group frames in the current group.\n";
     $i=0;
-
     foreach $my_frame (@frames) {
       foreach my $infile ($my_frame->files) {
         #######
@@ -69,20 +66,34 @@ if ($Grp->lastmember($Frm)) {
         ($ORAC_STATUS, my @astart) = $Mon{ndfpack_mon}->get("ndftrace","flbnd");
         ($ORAC_STATUS, my @aend) = $Mon{ndfpack_mon}->get("ndftrace","fubnd");
         ($ORAC_STATUS, my @dims) = $Mon{ndfpack_mon}->get("ndftrace","dims");
+        ($ORAC_STATUS, my @funit) = $Mon{'ndfpack_mon'}->get( "ndftrace", "funit" );
 
-        orac_print "$lbound[0] $lbound[1]  $lbound[2]--- $ubound[0] $ubound[1]  $ubound[2]\n";
+        orac_print sprintf( "%s dimensions: [%d:%d,%d:%d,%d:%d]\n",
+                            $infile,
+                            $lbound[0],
+                            $ubound[0],
+                            $lbound[1],
+                            $ubound[1],
+                            $lbound[2],
+                            $ubound[2] );
 
         $resolutions[$i] = ($aend[2] - $astart[2]) /$dims[2] ;
         $astart_freq[$i] =  $astart[2];
         $aend_freq[$i] =  $aend[2];
         $filename[$i] = $infile;
-        orac_print " $aend[2] ---  $astart[2]) -- $dims[2] --- $resolutions[$i]\n";
+        orac_print sprintf( "%s runs from %.2f %s to %.2f %s over %d channels.\n",
+                            $infile,
+                            $astart[2],
+                            $funit[2],
+                            $aend[2],
+                            $funit[2],
+                            $dims[2] );
+
         $i++;
       }
     }
 
     $no_of_files_in_frame = $i;
-    orac_print "no_of_files_in_frame $no_of_files_in_frame no_frames_in_group $no_frames_in_group \n";
 
     #####################
     #
@@ -112,7 +123,6 @@ if ($Grp->lastmember($Frm)) {
         if( $j >= $no_of_files_in_frame ) { last; }
       }
 
-      print "\n";
       $i = $i + $count{$sorted_resolutions[$i]};
       $j = $i;
     }
@@ -140,8 +150,8 @@ if ($Grp->lastmember($Frm)) {
 
       #### step through $resolution[$i] if resolution matches within factor, add the the file 
       # @{ $resolution_h{$key}{file}    }   is an array of filenames
-      # @{ $resolution_h{$key}{astarts} }   is an array of corresponding astarts  
-      # @{ $resolution_h{$key}{aend}    }   is an array of corresponding aends  
+      # @{ $resolution_h{$key}{astarts} }   is an array of corresponding astarts
+      # @{ $resolution_h{$key}{aend}    }   is an array of corresponding aends
       # @{ $resolution_h{$key}{resolution} } is an array e.g. fully accurate
 
       for ($i=0;$i<$no_of_files_in_frame;$i++) {
@@ -161,9 +171,7 @@ if ($Grp->lastmember($Frm)) {
                       $resolution_hash{$key}{"aends"}[$_],
                       $resolution_hash{$key}{"aends"}[$_]]
                   } (0..($no_of_files_in_frame-1));
-
-      @temp = sort { $a[0] <=> $b[0] } @temp;
-
+      @temp = sort { $a->[0] <=> $b->[0] } @temp;
       @{ $resolution_hash{$key}{file}    } = map{ $_->[1] } @temp;
       @{ $resolution_hash{$key}{astarts} } = map{ $_->[0] } @temp;
       @{ $resolution_hash{$key}{aends}    } = map{ $_->[2] } @temp;
@@ -174,13 +182,14 @@ if ($Grp->lastmember($Frm)) {
       ###################
       # Now calculate the overlaps
       # NB. Strictly this isn't necessary, but it is useful for debugging
-      for ($i=0;$i<=($#{$resolution_hash{$key}{astarts}} - 1);$i++) {
+
+      for ( $i = 0; $i <= ( $#{$resolution_hash{$key}{astarts}} - 1 ) ; $i++ ) {
         if( $resolution_hash{$key}{aends}[$i+1] >= $resolution_hash{$key}{aends}[$i]) {
           $overlap[$i]=$resolution_hash{$key}{aends}[$i]-$resolution_hash{$key}{astarts}[$i+1];
         } elsif ( $resolution_hash{$key}{aends}[$i+1] < $resolution_hash{$key}{aends}[$i]) {
           $overlap[$i]=$resolution_hash{$key}{aends}[$i+1]-$resolution_hash{$key}{astarts}[$i+1];
         }
-        orac_print "Overlap ".$i." is ", $overlap[$i]," Hz";
+        orac_print "Overlap $i is " . $overlap[$i] . ".\n";
         # if the gap is +ve
       }
 
@@ -195,12 +204,14 @@ if ($Grp->lastmember($Frm)) {
         # IF end of this line segment streches deeper along the range
         # i.e. it is the new maximum
         if( $resolution_hash{$key}{aends}[$i] >= $depth ) {
-          #Set the new depth to the end of this line segment 
+
+          #Set the new depth to the end of this line segment
           $depth=$resolution_hash{$key}{aends}[$i];
 
           # If the start of the next ($i+1)th line segment is greater than depth
           # We have a genuine "gap"
           if(( $resolution_hash{$key}{astarts}[$i+1] - $depth ) > 0.0 ) {
+
             # Keep a tally of the gaps in the $gap_accumulator
             $gap_accumulator +=  $resolution_hash{$key}{astarts}[$i+1] - $depth;
           }
@@ -221,7 +232,8 @@ if ($Grp->lastmember($Frm)) {
       orac_print "Total range = ".$total_freq_range." Total gap= ".$total_gap."\n";
       orac_print "Total fractional sparseness = ".$frac_sparseness."\n";
 
-     if ($frac_sparseness>$allowable_sparseness) {
+     if( $frac_sparseness>$allowable_sparseness ||
+         $#{$resolution_hash{$key}{astarts}} == 0 ) {
        $do_mosaic_flag = 0;
      } else {
        $do_mosaic_flag = 1;
@@ -234,69 +246,36 @@ if ($Grp->lastmember($Frm)) {
       # Perform alignment and mosaic.
 
       if( $do_mosaic_flag ) {
-          orac_print "Preparing to mosaic...\n";
+        orac_print "Preparing to mosaic...\n";
 
-          for ($i = 0; $i <= ($#{$resolution_hash{$key}{astarts}}); $i++ ) {
+        my $inlist = "inlist.list$$";
+        unlink( $inlist );
+        open( $fh_inlist, ">$inlist" ) ||
+          orac_throw "Unable to open $inlist to create a list of cubes to align. Error: $!";
 
-          ###################
-          # Prepare the input and output file lists for alignment
-          # Create a list of input and output images.
-          $inputlist = "inlist.list$$";
-          $outputlist = "outlist.list$$";
-          unlink( $inputlist, $outputlist );
-          open($fh_inlist, ">$inputlist" ) ||
-            orac_throw "Unable to open $inputlist to create a list of spectra to mosaic. Error: $!\n";
-          open($fh_outlist, ">$outputlist" ) ||
-            orac_throw "Unable to open $outputlist to create a list of spectra to align. Error: $!\n"; 
+        for ($i = 0; $i <= ($#{$resolution_hash{$key}{astarts}}); $i++ ) {
 
-          ###################
           # Populate the input and output file lists from the filelist hash
           #
           $infile=$resolution_hash{$key}{file}[$i];
-          orac_print "File is $infile\n";
-          $_ = $key;
-          orac_print "key is $_\n";
-          (my $key_no_dot = $key) =~ s(\.)(d);
-          orac_print "key is $key_no_dot\n";
-          $outfile=$infile."_".$key_no_dot."_align";
           print $fh_inlist $infile, "\n";
-          print $fh_outlist $outfile, "\n";
         }
 
-        ###################
-        # Do the WCSALIGN
-        orac_print "Aligning...\n";
-        orac_print "in $inputlist out $outputlist\n";
-        my $param1 = "in='^$inputlist' out='^$outputlist' lbnd=! ubnd=! ref=! accept";
-        $Mon{'kappa_mon'}->obeyw( "wcsalign", "$param1" );
-
-        # Close the file lists
-        close( $fh_inlist );
-        close( $fh_outlist );
-        unlink( $inputlist);
-        orac_print "...done\n";
-
-        ###################
-        # Now Mosaic the aligned files
-        orac_print "Mosaicking...\n";
-        $outfile=$Grp->file;
-
-        # Arguments
-        my $args = "in=^$outputlist noscale nozero method=mean title='Full ACSIS cube'";
-        orac_print "...done\n";
-
-        # Run CCDPACK makemos
-        $Mon{ccdpack_reg}->obeyw("makemos","$args out=$outfile");
-        unlink( $outputlist);
+        my $outfile = $Grp->file;
+        my $params = "in=^$inlist out=$outfile lbnd=! ubnd=! ref=!";
+        $Mon{'kappa_mon'}->obeyw( "wcsmosaic", "$params" );
 
       } else {
 
         # End of if ($do_mosiac_flag)
-        orac_print "Cube sparseness is greater than a factor ".$allowable_sparseness.". No mosaic will required.";   
+        orac_print "Cube sparseness is greater than a factor ".$allowable_sparseness.". No mosaic will required.";
       }
     }# END OF foreach $key
 
   } else {
-    orac_print "GROUP MOSIAC - Only 1 frame in group => No mosaic required \n"; 
+    orac_print "There is only one frame in the current group -- no mosaicking will be done.\n";
   }
 } #End of if lastmember
+
+# Tidy up output.
+orac_print "\n";

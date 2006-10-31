@@ -35,47 +35,37 @@ my $inputlist = "inlist.list$$";
 unlink( $inputlist );
 
 open( my $fh_inlist, ">$inputlist" ) ||
-    orac_throw "Unable to open $inputlist to create a list of spectra to align. Error: $!\n";
+  orac_throw "Unable to open $inputlist to create a list of spectra to mosaic. Error: $!\n";
 
-# Determine the the number of files in this frame
-$no_of_files_in_frame=scalar(@{$Frm->files});
-orac_print "No. of files in frame is ".$no_of_files_in_frame."\n";
+if( scalar( @{$Frm->files} ) > 1 ) {
 
-# Frequency mosiacing will only be necessary if
-# there is more than 1 file in the frame
-if($no_of_files_in_frame>1)
-{
-  foreach my $file ($Frm->files) {
-     orac_print "File is $file \n";
-     #$Mon{'ndfpack_mon'}->obeyw("ndftrace","ndf=$infile");
-     #$Mon{ndfpack_mon}->obeyw("ndftrace $infile");
-     $infile=$file;
-     print $fh_inlist $infile, "\n";
-     $i++;
+  my $out;
+  my @infiles;
+  foreach my $i ( 1..$Frm->nfiles ) {
+
+    my ( $in, $tmp ) = $Frm->inout( "_cube", $i );
+    if( $i == 1 ) {
+      $out = $tmp;
+    }
+    print $fh_inlist "$in\n";
+    push @infiles, $in;
   }
 
-  # To generate output filename, 
-  # Get first 18 characters of e.g. a20050108_00003_00_08_align
-  # to give  a20050108_00003_00
-  # we preserve scan number and subsystem number
-
-  $outfile=substr($infile,0,18);
-  orac_print "Output file is $outfile \n";
-  # Arguments
+  orac_print "Forming cube $out from " . join( ", ", @infiles ) . "...";
   my $args = "in=^$inputlist noscale nozero method=mean title='Full ACSIS cube'";
+  $Mon{'ccdpack_reg'}->obeyw( "makemos", "$args out=$out" );
+  orac_print "done.\n";
 
-  # Run CCDPACK makemos
-  $Mon{ccdpack_reg}->obeyw("makemos","$args out=$outfile");
-  # delete input list file
   unlink( $inputlist);
 
   # Now update the frame file list so that it only contains 1 file
   my @frame_array;
-
-  $frame_array[0]=$outfile;
-
+  $frame_array[0]=$out;
   $Frm->files(@frame_array);
 
-  } else {
-    orac_print "FREQ_MOSAIC - Only one file in frame - no mosaic necessary.\n";
-    }
+} else {
+  orac_print "Only one spectrum in current observation -- no mosaicking will be done.\n";
+}
+
+# Tidy up output.
+orac_print "\n";
