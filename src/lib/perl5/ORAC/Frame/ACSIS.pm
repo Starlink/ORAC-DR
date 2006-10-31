@@ -397,7 +397,10 @@ sub findgroup {
   if( defined( $self->hdr('DRGROUP') ) ) {
     $hdrgrp = $self->hdr('DRGROUP');
   } else {
-    $hdrgrp = 0;
+    # Construct group name.
+    $hdrgrp = $self->hdr("OBJECT") .
+              $self->hdr( "BWMODE" ) .
+              $self->hdr( "INSTRUME" );
   }
 
   $self->group($hdrgrp);
@@ -447,6 +450,32 @@ sub pattern_from_bits {
   my $pattern = $self->rawfixedpart . $prefix . "_" . $padnum . '_\d\d_\d\d' . $self->rawsuffix;
 
   return qr/$pattern/;
+}
+
+=item B<number>
+
+Method to return the number of the observation. The number is
+determined by looking for a number after the UT date in the
+filename. This method is subclassed for ACSIS.
+
+The return value is -1 if no number can be determined.
+
+=cut
+
+sub number {
+  my $self = shift;
+  my $number;
+
+  my $raw = $self->raw;
+  if( defined( $raw ) &&
+      $raw =~ /(\d+)_(\d\d)_(\d\d)(\.\w+)?$/ ) {
+    # Drop leading zeroes.
+    $number = $1 * 1;
+  } else {
+    # No match so set to -1.
+    $number = -1;
+  }
+  return $number;
 }
 
 =over 4
