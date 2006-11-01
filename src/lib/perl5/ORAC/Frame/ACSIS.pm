@@ -398,9 +398,17 @@ sub findgroup {
     $hdrgrp = $self->hdr('DRGROUP');
   } else {
     # Construct group name.
-    $hdrgrp = $self->hdr("OBJECT") .
+
+    $self->read_wcs;
+    my $wcs = $self->wcs;
+
+    my $restfreq = $wcs->GetC("RestFreq");
+
+    $hdrgrp = $self->hdr( "OBJECT" ) .
               $self->hdr( "BWMODE" ) .
-              $self->hdr( "INSTRUME" );
+              $self->hdr( "INSTRUME" ) .
+              $self->hdr( "OBS_TYPE" ) .
+              $restfreq;
   }
 
   $self->group($hdrgrp);
