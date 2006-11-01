@@ -162,6 +162,7 @@ sub new {
 	       Recipe => undef,
 	       UHeader => {},
 	       Tags => {},
+               WCS => [],
 	       %subclass
 	      };
 
@@ -645,6 +646,79 @@ sub recipe {
 sub tags {
   my $self = shift;
   return $self->{Tags};
+}
+
+=item B<wcs>
+
+This method can be used to retrieve or set the World Coordinate System
+that is currently associated with the frame. Multiple WCSs can be
+stored if required (for example the WCSs associated with different
+ACSIS sub-instruments).
+
+  $first_wcs = $Frm->wcs;     # First WCS
+  $first_wcs = $Frm->wcs(1);  # First WCS
+  $second_wcs= $Frm->wcs(2);  # Second WCS
+  $Frm->wcs(1, value);         # Set the first WCS
+  $Frm->wcs(value);            # Set the first WCS
+  $Frm->wcs(10, wcs);        # Set the tenth WCS
+
+Note that counting starts at 1 (and not 0 as is normal for Perl
+arrays).
+
+If a WCS number is requested that does not exist, the first member is
+returned.
+
+If the first argument is present but not defined the command is
+treated as if you typed
+
+  $Frm->wcs(1, undef);
+
+ie the first wcs is set to undef.
+
+=cut
+
+sub wcs {
+  my $self = shift;
+
+  # Set it to point to first member by default.
+  my $index = 0;
+
+  # Check the arguments.
+  if( @_ && defined( $_[0] ) ) {
+
+    my $firstarg = shift;
+
+    # If this is an integer, then we have to grab the second argument
+    # and place that in the appropriate place in the array. Otherwise,
+    # check to make sure it's an AST::FrameSet object.
+    if( defined( $firstarg ) &&
+        UNIVERSAL::isa( $firstarg, "Starlink::AST::FrameSet" ) ) {
+
+      $self->{WCS}->[0] = $firstarg;
+
+    } elsif( defined( $firstarg ) &&
+             $firstarg =~ /^\d+$/ &&
+             $firstarg != 0 ) {
+
+      $index = $firstarg - 1;
+
+      if( @_ ) {
+
+        my $wcs = shift;
+        if( UNIVERSAL::isa( $wcs, "Starlink::AST::FrameSet" ) ) {
+
+          $self->{WCS}->[$index] = $wcs;
+
+        }
+      }
+    }
+  }
+
+  $index = 0 if ( $index > $#{$self->{WCS}} - 1);
+
+  # Nothing else of interest so return specified member.
+  return $self->{WCS}->[$index];
+
 }
 
 =back
