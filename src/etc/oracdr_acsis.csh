@@ -62,6 +62,9 @@
  
 #  History:
 #     $Log$
+#     Revision 1.5  2006/11/02 01:45:28  bradc
+#     fix syntax error
+#
 #     Revision 1.4  2006/11/02 01:40:27  bradc
 #     create $ORAC_DATA_OUT if at JCMT and if does not exist
 #
@@ -165,7 +168,7 @@ if ( $orac_dname == 'JAC.jcmt' ) then
       echo Please report this error to the JAC software group
 
     endif
-
+  endif
 endif
 
 # screen things
