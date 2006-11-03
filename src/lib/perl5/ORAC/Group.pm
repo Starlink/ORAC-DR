@@ -1029,6 +1029,26 @@ sub inout {
   }
 }
 
+=item B<firstmember>
+
+Method to determine whether the supplied argument matches the first
+member of the group. Returns a 1 if it is the first member and a zero
+otherwise.
+
+  $isfirst = $Grp->firstmember( $Frm );
+
+=cut
+
+sub firstmember {
+  my $self = shift;
+  my $member = shift;
+
+  if( $member eq $self->frame(0)) {
+    return 1;
+  }
+
+  return 0;
+}
 
 =item B<lastmember>
 
