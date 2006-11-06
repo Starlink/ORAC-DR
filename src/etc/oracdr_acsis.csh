@@ -62,6 +62,9 @@
  
 #  History:
 #     $Log$
+#     Revision 1.8  2006/11/06 20:59:58  bradc
+#     more syntax fixes
+#
 #     Revision 1.7  2006/11/06 20:50:53  bradc
 #     fix syntax
 #
@@ -134,7 +137,7 @@ setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/acsis/$oracut/
 # Check to see if we're at JCMT. If we are, then create the
 # ORAC_DATA_OUT directory.
 set jcmt = `/sbin/ip addr show to 128.171.92/24 | awk -F: '{print $1}' | awk '{print $2}'`
-if ( $jcmt ) then
+if ( ${?jcmt} ) then
   if ( ! -d $ORAC_DATA_OUT ) then
     echo "CREATING OUTPUT DIRECTORY: $ORAC_DATA_OUT"
 
@@ -157,8 +160,7 @@ if ( $jcmt ) then
     else if ($df_out > 1) then
 
       # get the name of the NFS host
-      set nfs_host  = `df -t nfs $ORAC_DATA_OUT | head -2 | tail -1 | awk -F: '{print $1
-}'`
+      set nfs_host  = `df -t nfs $ORAC_DATA_OUT | head -2 | tail -1 | awk -F: '{print $1}'`
       # do the deed
       rsh $nfs_host chmod g+rws $ORAC_DATA_OUT
       # whinge to user
