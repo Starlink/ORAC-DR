@@ -62,6 +62,9 @@
  
 #  History:
 #     $Log$
+#     Revision 1.7  2006/11/06 20:50:53  bradc
+#     fix syntax
+#
 #     Revision 1.6  2006/11/06 20:44:45  bradc
 #     use alternate method for determining if we are at JCMT or not
 #
@@ -130,8 +133,8 @@ setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/acsis/$oracut/
 
 # Check to see if we're at JCMT. If we are, then create the
 # ORAC_DATA_OUT directory.
-JCMT=`/sbin/ip addr show to 128.171.92/24 | awk -F: '{print $1}' | awk '{print $2}'`
-if ( -n JCMT ) then
+set jcmt = `/sbin/ip addr show to 128.171.92/24 | awk -F: '{print $1}' | awk '{print $2}'`
+if ( $jcmt ) then
   if ( ! -d $ORAC_DATA_OUT ) then
     echo "CREATING OUTPUT DIRECTORY: $ORAC_DATA_OUT"
 
