@@ -39,6 +39,7 @@ use base qw/ ORAC::BaseFile /;
 my @ORAC_INTERNAL_HEADERS = qw/
   AIRMASS_START
   AIRMASS_END
+                               CAMERA_NUMBER
   CHOP_ANGLE
   CHOP_THROW
   CONFIGURATION_INDEX
