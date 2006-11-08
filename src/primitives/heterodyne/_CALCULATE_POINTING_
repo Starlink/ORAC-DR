@@ -1,0 +1,98 @@
+=head1 NAME
+
+_CALCULATE_POINTING_ -- Calculate pointing offsets.
+
+=head1 DESCRIPTION
+
+This primitive takes an ACSIS cube, collapses it along the frequency
+axis, then performs a centroid on the object being observed. It then
+reports the offset from 0,0 in arcseconds.
+
+Only the middle 80% of the frequency range is used to avoid bringing
+in noise at the ends of the frequency range.
+
+=head1 ARGUMENTS
+
+None.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for any cube.
+
+=item *
+
+The middle 80% of the frequency axis are collapsed. This is done to
+avoid noise typically seen at the ends of the frequency axis.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Collapsed "white light" image inheriting the frame's name but with the
+_col suffix.
+
+=back
+
+=head1 TASKS
+
+KAPPA: CENTROID, COLLAPSE, NDFTRACE, WCSATTRIB.
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2006 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+=cut
+
+# Collapse the current Frm object in frequency space, using only the
+# middle 80% so that we don't get the noise on the ends of the
+# spectra.
+
+my ( $in, $colfile ) = $Frm->inout( "_col" );
+
+$Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
+my ( $ORAC_STATUS, @astart ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "flbnd" );
+( $ORAC_STATUS, my @aend ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fubnd" );
+
+my $spread = abs( $aend[2] - $astart[2] );
+my $low = $astart[2] + 0.1 * $spread;
+my $high = $aend[2] - 0.1 * $spread;
+
+# Set up parameters.
+my $param = "in=$in out=$colfile axis=3 estimator=integ title=$colfile ";
+$param   .= "high=$high low=$low";
+
+# Do the collapse.
+orac_print "Collapsing $in in frequency space to form $colfile...";
+$Mon{'kappa_mon'}->obeyw( "collapse", "$param" );
+orac_print "done.\n";
+
+# Set the offset coordinate system to Origin.
+$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$colfile mode=set name=SkyRefIs newval=Origin" );
+
+# Calculate the centroid, using the centre of the array as the initial
+# position of the object.
+$param = "ndf=$colfile init='0,0' mode=Interface";
+$Mon{'kappa_mon'}->obeyw( "centroid", "$param" );
+
+# Retrieve the x and y centre. These values are in degrees, so convert
+# them into arcseconds.
+( $ORAC_STATUS, my $xcen ) = $Mon{'kappa_mon'}->get( "centroid", "xcen" );
+( $ORAC_STATUS, my $ycen ) = $Mon{'kappa_mon'}->get( "centroid", "ycen" );
+$xcen *= 3600;
+$ycen *= 3600;
+
+# Display the results to the user.
+orac_print "xcen: $xcen ycen: $ycen\n";
