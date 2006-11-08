@@ -49,6 +49,7 @@ use strict;
 my %hdr = (
             AIRMASS_START        => "AMSTART",
             AIRMASS_END          => "AMEND",
+            CAMERA_NUMBER        => "CAMNUM",
             DEC_BASE             => "DECBASE",
             DEC_SCALE            => "PIXLSIZE",
             DEC_TELESCOPE_OFFSET => "TDECOFF",
