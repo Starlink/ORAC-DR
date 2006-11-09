@@ -62,6 +62,9 @@
  
 #  History:
 #     $Log$
+#     Revision 1.10  2006/11/09 23:16:02  bradc
+#     set umask to 2 before creating ORAC_DATA_OUT
+#
 #     Revision 1.9  2006/11/06 21:04:31  bradc
 #     more syntax fixes
 #
@@ -142,6 +145,9 @@ setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/acsis/$oracut/
 set jcmt = `/sbin/ip addr show to 128.171.92/24 | awk -F: '{print $1}' | awk '{print $2}'`
 if ( $jcmt != '' ) then
   if ( ! -d $ORAC_DATA_OUT ) then
+
+    umask 002
+
     echo "CREATING OUTPUT DIRECTORY: $ORAC_DATA_OUT"
 
     mkdir $ORAC_DATA_OUT
