@@ -1,0 +1,73 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_DATA_UNITS_TO_ADU_ -- Converts data units to ADU.
+
+=head1 DESCRIPTION
+
+EDICTs data frames taken before UT 2002-12-02 have units of ADU per second
+when in any ND mode (ie NDSTARE or NDCHOP).
+
+This primitive multiplies such frames by their exposure times to get them
+into total ADU which is what the rest of the downstream pipeline expects.
+It then divides by the number of reads to get the total ADU per exposure.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+For frames taken after UT 20061023, this primitive multiplies data
+frames by their exposure time, then divides by the number of reads to
+get the total ADU per exposure.
+
+=back
+
+=head1 AUTHORS
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=cut
+
+my $utdate = $Frm->uhdr( "ORAC_UTDATE" );
+if ( defined( $utdate ) ) {
+  $utdate =~ s/-//g;
+
+  if( $utdate > 20061023 ) {
+
+    foreach my $i ( 1 .. $Frm->nfiles ) {
+
+      my ( $in, $out ) = $Frm->inout( "_adu", $i );
+
+# The exposure time correction only applies to NDSTARE and NDCHOP modes.
+      if ( substr( $Frm->uhdr( "ORAC_DETECTOR_READ_TYPE" ), 0, 2 ) eq "ND" ) {
+
+# The data are in ADU/s, which is not the UKIRT standard.  So obtain
+# the exposure time and multiply the data by this factor.
+        my $exp_time = $Frm->uhdr( "ORAC_EXPOSURE_TIME" );
+
+# Scale the data.
+        my $norm = $exp_time;
+        $Mon{ "kappa_mon" }->obeyw( "cmult", "in=$in scalar=$norm out=$out" );
+
+# Report the processing status.
+        orac_print "$in to $out: Scaled data by the exposure time ($exp_time) " .
+                   "to make the units ADUs per exposure.\n";
+
+      }
+
+# And update the Frm object.
+      $Frm->file( $i, $out );
+
+    }
+
+  }
+
+}
+
+# Keep the output tidy.
+
+orac_print "\n";
