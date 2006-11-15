@@ -487,6 +487,12 @@ sub orac_determine_inst_classes {
     $calclass = "ORAC::Calib";
     $instclass = "ORAC::Inst::ACSIS";
 
+  } elsif( $inst eq 'ACSIS_QL' ) {
+    $groupclass = "ORAC::Group::ACSIS_QL";
+    $frameclass = "ORAC::Frame::ACSIS_QL";
+    $calclass = "ORAC::Calib";
+    $instclass = "ORAC::Inst::ACSIS_QL";
+
   } else {
     orac_err("Instrument $inst is not currently supported in ORAC-DR\n");
     return ();
@@ -578,8 +584,12 @@ sub orac_determine_recipe_search_path {
     push( @path, File::Spec->catdir( $het_root, "JCMT_DAS" ) );
     push( @path, $het_root );
 
-  } elsif ($inst eq 'ACSIS') {
+  } elsif ($inst eq 'ACSIS' ) {
     push( @path, File::Spec->catdir( $het_root, 'ACSIS' ) );
+    push( @path, $het_root );
+
+  } elsif ($inst eq 'ACSIS_QL' ) {
+    push( @path, File::Spec->catdir( $het_root, 'ACSIS_QL' ) );
     push( @path, $het_root );
 
   } elsif ($inst eq 'CGS4' or $inst eq 'OCGS4') {
@@ -737,6 +747,11 @@ sub orac_determine_primitive_search_path {
 
   } elsif( $inst eq 'ACSIS' ) {
     push( @path, File::Spec->catdir( $het_root, 'ACSIS' ) );
+    push( @path, $het_root );
+    push( @path, $general_root );
+
+  } elsif( $inst eq 'ACSIS_QL' ) {
+    push( @path, File::Spec->catdir( $het_root, 'ACSIS_QL' ) );
     push( @path, $het_root );
     push( @path, $general_root );
 
@@ -900,6 +915,10 @@ sub orac_determine_calibration_search_path {
     push( @path, File::Spec->catdir( $root, 'jcmt_das' ) );
     push( @path, $general_submm_root );
 
+  } elsif( $inst =~ /^ACSIS/ ) {
+    push( @path, File::Spec->catdir( $root, 'acsis' ) );
+    push( @path, $general_submm_root );
+
   } elsif( $inst =~ /^SCUBA2/ ) {
     push( @path, File::Spec->catdir( $root, 'scuba2' ) );
     push( @path, $general_submm_root );
@@ -1005,7 +1024,11 @@ sub orac_determine_initial_algorithm_engines {
 
     @AlgEng = qw/ ndfpack_mon kappa_mon /;
 
-  } elsif ($inst eq 'ACSIS') {
+  } elsif( $inst eq 'ACSIS' ) {
+
+    @AlgEng = qw/ ndfpack_mon kappa_mon smurf_mon /;
+
+  } elsif ($inst eq 'ACSIS_QL') {
 
     @AlgEng = qw/ ndfpack_mon kappa_mon /;
 
@@ -1125,7 +1148,7 @@ sub orac_determine_loop_behaviour {
       $behaviour = 'flag';
     } elsif ( uc($instrument) eq 'JCMT_DAS' ) {
       $behaviour = 'wait';
-    } elsif( uc($instrument) eq 'ACSIS' ) {
+    } elsif( uc($instrument) =~ /^ACSIS/ ) {
       $behaviour = 'flag';
     }
 
@@ -1554,7 +1577,36 @@ sub orac_configure_for_instrument {
          unless defined $$options{"honour"};
 
        # Miscellaneous.
-       $ENV{"ORAC_PERSON"} = "jleech";
+       $ENV{"ORAC_PERSON"} = "bradc";
+       $ENV{"ORAC_SUN"} = "000";
+
+       last SWITCH; }
+
+     if ( $instrument eq 'ACSIS_QL' ) {
+
+       # Instrument.
+       $ENV{'ORAC_INSTRUMENT'} = 'ACSIS_QL';
+
+       # Calibration information.
+       $orac_cal_root = File::Spec->('jcmt_sw', 'oracdr_cal')
+         unless defined $orac_cal_root;
+       $ENV{'ORAC_DATA_CAL'} = File::Spec->catdir( $orac_cal_root, 'acsis' );
+
+       # Data directories.
+       $orac_data_root = "/jcmtdata"
+         unless defined $orac_data_root;
+       $ENV{'ORAC_DATA_IN'} = File::Spec->catdir( $orac_data_root,
+                                                  "raw",
+                                                  "acsis",
+                                                );
+       $ENV{'ORAC_DATA_OUT'} = File::Spec->catdir( $orac_data_root,
+                                                   "reduced",
+                                                   "acsis",
+                                                   $oracut )
+         unless defined $$options{"honour"};
+
+       # Miscellaneous.
+       $ENV{"ORAC_PERSON"} = "bradc";
        $ENV{"ORAC_SUN"} = "000";
 
        last SWITCH; }
@@ -2213,7 +2265,7 @@ Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Copyright (C) 1998-2006 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
 =cut
