@@ -34,7 +34,7 @@
 #        derived from this variable by adding the appropriate value of
 #        $ORAC_INSTRUMENT.  In this case $ORAC_DATA_CAL is set to
 #        $ORAC_CAL_ROOT/classiccam.  If ORAC_CAL_ROOT is not defined
-#        defined it defaults to "/ukirt_sw/oracdr_cal".
+#        defined it defaults to "/jac_sw/oracdr_cal".
 
 #  Examples:
 #     oracdr_classiccam
@@ -75,7 +75,7 @@ if test -z "$ORAC_DATA_ROOT"; then
 fi
 
 if test -z "$ORAC_CAL_ROOT"; then
-    export ORAC_CAL_ROOT=/ukirt_sw/oracdr_cal
+    export ORAC_CAL_ROOT=/jac_sw/oracdr_cal
 fi
 
 if ! test -z "$ORAC_RECIPE_DIR"; then

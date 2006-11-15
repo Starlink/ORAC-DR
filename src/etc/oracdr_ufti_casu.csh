@@ -35,7 +35,7 @@
 #        is derived from this variable by adding the appropriate
 #        value of $ORAC_INSTRUMENT. In this case $ORAC_DATA_CAL
 #        is set to $ORAC_CAL_ROOT/ufti. If ORAC_CAL_ROOT is not
-#        defined it defaults to "/ukirt_sw/oracdr_cal".
+#        defined it defaults to "/jac_sw/oracdr_cal".
 
 
 #  Examples:
@@ -63,6 +63,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.3  2006/11/15 20:00:43  bradc
+#     change ukirt_sw and/or jcmt_sw to jac_sw
+#
 #     Revision 1.2  2003/10/01 01:31:00  phirst
 #     setenv stuff
 #
@@ -90,7 +93,7 @@ if !($?ORAC_DATA_ROOT) then
 endif
 
 if !($?ORAC_CAL_ROOT) then
-    setenv ORAC_CAL_ROOT /ukirt_sw/oracdr_cal
+    setenv ORAC_CAL_ROOT /jac_sw/oracdr_cal
 endif
 
 if ($?ORAC_RECIPE_DIR) then
@@ -116,7 +119,7 @@ setenv ORAC_INSTRUMENT UFTI_CASU
 setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/ufti/$oracut/
 setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/ufti/$oracut/
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/ufti_casu
-setenv PERL5LIB ${ORAC_PERL5LIB}:/ukirt_sw/cirdr/perlinstall
+setenv PERL5LIB ${ORAC_PERL5LIB}:/jac_sw/cirdr/perlinstall
 
 # screen things
 setenv ORAC_PERSON jrl

@@ -36,7 +36,7 @@
 #        is derived from this variable by adding the appropriate
 #        value of $ORAC_INSTRUMENT. In this case $ORAC_DATA_CAL
 #        is set to $ORAC_CAL_ROOT/wfcam. If ORAC_CAL_ROOT is not
-#        defined it defaults to "/ukirt_sw/oracdr_cal".
+#        defined it defaults to "/jac_sw/oracdr_cal".
 
 
 #  Examples:
@@ -64,6 +64,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.11  2006/11/15 20:00:47  bradc
+#     change ukirt_sw and/or jcmt_sw to jac_sw
+#
 #     Revision 1.10  2006/10/28 01:37:40  bradc
 #     set PERL5LIB for CASU code
 #
@@ -115,7 +118,7 @@ if !($?ORAC_DATA_ROOT) then
 endif
 
 if !($?ORAC_CAL_ROOT) then
-    setenv ORAC_CAL_ROOT /ukirt_sw/oracdr_cal
+    setenv ORAC_CAL_ROOT /jac_sw/oracdr_cal
 endif
 
 if ($?ORAC_RECIPE_DIR) then
@@ -164,7 +167,7 @@ setenv ORAC_SUN
 source $ORAC_DIR/etc/oracdr_start.csh
 
 # Needed for CASU code.
-setenv PERL5LIB /ukirt_sw/cirdr/perlinstall:/ukirt_sw/cirdr/perllib
+setenv PERL5LIB /jac_sw/cirdr/perlinstall:/jac_sw/cirdr/perllib
 
 # Tidy up
 unset oracut

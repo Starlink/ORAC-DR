@@ -34,7 +34,7 @@
 #        derived from this variable by adding the appropriate value of
 #        $ORAC_INSTRUMENT.  In this case $ORAC_DATA_CAL is set to
 #        $ORAC_CAL_ROOT/uist.  If ORAC_CAL_ROOT is not defined
-#        defined it defaults to "/ukirt_sw/oracdr_cal".
+#        defined it defaults to "/jac_sw/oracdr_cal".
 
 #  Examples:
 #     oracdr_uist
@@ -61,6 +61,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.5  2006/11/15 20:00:44  bradc
+#     change ukirt_sw and/or jcmt_sw to jac_sw
+#
 #     Revision 1.4  2003/07/23 16:41:26  mjc
 #     Supplied the SUN numbers.
 #
@@ -89,7 +92,7 @@ if !($?ORAC_DATA_ROOT) then
 endif
 
 if !($?ORAC_CAL_ROOT) then
-    setenv ORAC_CAL_ROOT /ukirt_sw/oracdr_cal
+    setenv ORAC_CAL_ROOT /jac_sw/oracdr_cal
 endif
 
 if ($?ORAC_RECIPE_DIR) then

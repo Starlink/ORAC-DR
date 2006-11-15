@@ -34,7 +34,7 @@
 #        derived from this variable by adding the appropriate value of
 #        $ORAC_INSTRUMENT.  In this case $ORAC_DATA_CAL is set to
 #        $ORAC_CAL_ROOT/naco.  If ORAC_CAL_ROOT is not defined
-#        defined it defaults to "/ukirt_sw/oracdr_cal".
+#        defined it defaults to "/jac_sw/oracdr_cal".
 
 #  Examples:
 #     oracdr_naco
@@ -75,7 +75,7 @@ if !( $?ORAC_DATA_ROOT ) then
 endif
 
 if !( $?ORAC_CAL_ROOT ) then
-    setenv ORAC_CAL_ROOT /ukirt_sw/oracdr_cal
+    setenv ORAC_CAL_ROOT /jac_sw/oracdr_cal
 endif
 
 if ( $?ORAC_RECIPE_DIR ) then

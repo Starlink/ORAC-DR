@@ -35,7 +35,7 @@
 #        is derived from this variable by adding the appropriate
 #        value of $ORAC_INSTRUMENT. In this case $ORAC_DATA_CAL
 #        is set to $ORAC_CAL_ROOT/niri` If ORAC_CAL_ROOT is not
-#        defined it defaults to "/ukirt_sw/oracdr_cal".
+#        defined it defaults to "/jac_sw/oracdr_cal".
 
 
 #  Examples:
@@ -64,6 +64,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.5  2006/11/15 20:00:40  bradc
+#     change ukirt_sw and/or jcmt_sw to jac_sw
+#
 #     Revision 1.4  2004/06/21 22:24:56  mjc
 #     Allow for the change of file format (and ORAC_INSTRUMENT) to fix a millenium bug at 2002 March 1.
 #
@@ -111,7 +114,7 @@ if !($?ORAC_DATA_ROOT) then
 endif
 
 if !($?ORAC_CAL_ROOT) then
-    setenv ORAC_CAL_ROOT /ukirt_sw/oracdr_cal
+    setenv ORAC_CAL_ROOT /jac_sw/oracdr_cal
 endif
 
 if ($?ORAC_RECIPE_DIR) then

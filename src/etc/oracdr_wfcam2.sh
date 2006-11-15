@@ -36,7 +36,7 @@
 #        is derived from this variable by adding the appropriate
 #        value of $ORAC_INSTRUMENT. In this case $ORAC_DATA_CAL
 #        is set to $ORAC_CAL_ROOT/wfcam. If ORAC_CAL_ROOT is not
-#        defined it defaults to "/ukirt_sw/oracdr_cal".
+#        defined it defaults to "/jac_sw/oracdr_cal".
 
 
 #  Examples:
@@ -64,6 +64,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.2  2006/11/15 20:00:33  bradc
+#     change ukirt_sw and/or jcmt_sw to jac_sw
+#
 #     Revision 1.1  2006/10/03 00:20:02  bradc
 #     replaced with ex-SWFCAM version
 #
@@ -115,7 +118,7 @@ if test -z "$ORAC_DATA_ROOT"; then
 fi
 
 if test -z "$ORAC_CAL_ROOT"; then
-    export ORAC_CAL_ROOT=/ukirt_sw/oracdr_cal
+    export ORAC_CAL_ROOT=/jac_sw/oracdr_cal
 fi
 
 if ! test -z "$ORAC_RECIPE_DIR"; then

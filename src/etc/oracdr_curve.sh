@@ -59,6 +59,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.3  2006/11/15 20:00:24  bradc
+#     change ukirt_sw and/or jcmt_sw to jac_sw
+#
 #     Revision 1.2  2006/09/07 00:35:18  bradc
 #     fix for proper bash scripting
 #
@@ -90,7 +93,7 @@ if test -z "$ORAC_DATA_ROOT"; then
 fi
 
 if test -z "$ORAC_CAL_ROOT"; then
-    export ORAC_CAL_ROOT=/ukirt_sw/oracdr_cal
+    export ORAC_CAL_ROOT=/jac_sw/oracdr_cal
 fi
 
 if ! test -z "$ORAC_RECIPE_DIR"; then

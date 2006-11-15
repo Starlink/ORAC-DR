@@ -34,7 +34,7 @@
 #        derived from this variable by adding the appropriate value of
 #        $ORAC_INSTRUMENT.  In this case $ORAC_DATA_CAL is set to
 #        $ORAC_CAL_ROOT/uist.  If ORAC_CAL_ROOT is not defined
-#        defined it defaults to "/ukirt_sw/oracdr_cal".
+#        defined it defaults to "/jac_sw/oracdr_cal".
 
 #  Examples:
 #     oracdr_uist
@@ -61,6 +61,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.4  2006/11/15 20:00:32  bradc
+#     change ukirt_sw and/or jcmt_sw to jac_sw
+#
 #     Revision 1.3  2006/09/07 00:13:16  bradc
 #     fix local oracut variable declaration, temporarily export oracdr_args environment variable for use by oracdr_start
 #
@@ -95,7 +98,7 @@ if test -z "${ORAC_DATA_ROOT}"; then
 fi
 
 if test -z "${ORAC_CAL_ROOT}"; then
-    export ORAC_CAL_ROOT=/ukirt_sw/oracdr_cal
+    export ORAC_CAL_ROOT=/jac_sw/oracdr_cal
 fi
 
 if test ! -z "${ORAC_RECIPE_DIR}"; then
