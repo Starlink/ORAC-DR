@@ -1,4 +1,4 @@
-package ORAC::Msg::Control::Shell;
+package ORAC::Msg::Control::ADAMShell;
 
 =head1 NAME
 
@@ -22,7 +22,7 @@ ORAC-DR messaging environment.
 =cut
 
 use strict;
-
+use ORAC::Constants qw/ORAC__OK/;
 
 =head2 Constructors
 
@@ -103,7 +103,7 @@ sub paramrep { sub {}; };
 
 =cut
 
-sub init { }
+sub init { ORAC__OK }
 
 =back
 
