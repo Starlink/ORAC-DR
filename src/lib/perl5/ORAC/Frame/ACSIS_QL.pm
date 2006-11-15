@@ -65,7 +65,7 @@ my %hdr = ( AIRMASS_START => 'AMSTART',
 # Take this lookup table and generate methods that can be subclassed
 # by other instruments. Have to use the inherited version so that the
 # new subs appear in this class.
-ORAC::Frame::ACSIS->_generate_orac_lookup_methods( \%hdr );
+ORAC::Frame::ACSIS_QL->_generate_orac_lookup_methods( \%hdr );
 
 # Now for the translations that require calculations and whatnot.
 
