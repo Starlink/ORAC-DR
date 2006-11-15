@@ -64,6 +64,9 @@
 
 #  History:
 #     $Log$
+#     Revision 1.11  2006/11/15 20:18:16  bradc
+#     set PERL5LIB to point to ukirt_sw for CIRDR stuff
+#
 #     Revision 1.10  2006/11/15 20:00:46  bradc
 #     change ukirt_sw and/or jcmt_sw to jac_sw
 #
@@ -167,7 +170,7 @@ endif
 source $ORAC_DIR/etc/oracdr_start.csh
 
 # Needed for CASU code.
-setenv PERL5LIB /jac_sw/cirdr/perlinstall:/jac_sw/cirdr/perllib
+setenv PERL5LIB /ukirt_sw/cirdr/perlinstall:/ukirt_sw/cirdr/perllib
 
 # Tidy up
 unset oracut
