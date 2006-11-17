@@ -224,6 +224,11 @@ my %MonolithDefns = (
            CLASS => 'ORAC::Msg::Task::ADAM',
            PATH => ( defined( $ENV{'ATOOLS_DIR'} ) ? "$ENV{ATOOLS_DIR}/atools_mon" : "" ),
           },
+         smurf_mon => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => ( defined( $ENV{'SMURF_DIR'} ) ? File::Spec->catfile( $ENV{'SMURF_DIR'}, "smurf_mon" ) : "" ),
+          },
          p4         => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
