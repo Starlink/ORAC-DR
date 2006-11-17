@@ -169,7 +169,7 @@ sub new {
   # Configure initial state - could pass these in with
   # the class initialisation hash - this assumes that I know
   # the hash member name
-  $self->rawfixedpart('ac');
+  $self->rawfixedpart('a');
   $self->rawformat('NDF');
   $self->rawsuffix('.sdf');
   $self->format('NDF');
@@ -360,9 +360,7 @@ supplied.
 
 For ACSIS the flag file is of the form .aYYYYMMDD_NNNNN.ok, where
 YYYYMMDD is the UT date and NNNNN is the observation number zero-padded
-to five digits. The flag file is stored in $ORAC_DATA_IN/acsis00,
-so the flag file will have the "acsis00" directory prepended to
-it.
+to five digits. The flag file is stored in $ORAC_DATA_IN.
 
 =cut
 
@@ -398,7 +396,6 @@ sub findgroup {
     $hdrgrp = $self->hdr('DRGROUP');
   } else {
     # Construct group name.
-
     $self->read_wcs;
     my $wcs = $self->wcs;
 
@@ -455,7 +452,7 @@ sub pattern_from_bits {
 
   my $padnum = '0'x(5-length($obsnum)) . $obsnum;
 
-  my $pattern = $self->rawfixedpart . $prefix . "_" . $padnum . '_\d\d_\d\d' . $self->rawsuffix;
+  my $pattern = $self->rawfixedpart . $prefix . "_" . $padnum . '_\d\d_\d{4}' . $self->rawsuffix;
 
   return qr/$pattern/;
 }
@@ -476,7 +473,7 @@ sub number {
 
   my $raw = $self->raw;
   if( defined( $raw ) &&
-      $raw =~ /(\d+)_(\d\d)_(\d\d)(\.\w+)?$/ ) {
+      $raw =~ /(\d+)_(\d\d)_(\d{4})(\.\w+)?$/ ) {
     # Drop leading zeroes.
     $number = $1 * 1;
   } else {
