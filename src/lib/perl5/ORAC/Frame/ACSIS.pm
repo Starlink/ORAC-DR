@@ -472,10 +472,15 @@ sub number {
   my $number;
 
   my $raw = $self->raw;
-  if( defined( $raw ) &&
-      $raw =~ /(\d+)_(\d\d)_(\d{4})(\.\w+)?$/ ) {
-    # Drop leading zeroes.
-    $number = $1 * 1;
+
+  if( defined( $raw ) ) {
+    if( ( $raw =~ /(\d+)_(\d\d)_(\d{4})(\.\w+)?$/ ) ||
+        ( $raw =~ /(\d+)\.ok$/ ) ) {
+      # Drop leading zeroes.
+      $number = $1 * 1;
+    } else {
+      $number = -1;
+    }
   } else {
     # No match so set to -1.
     $number = -1;
