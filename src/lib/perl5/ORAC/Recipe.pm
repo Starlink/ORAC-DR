@@ -1503,6 +1503,7 @@ sub orac_execute_recipe {
   if( ! defined( $Recipe->code ) ) {
     my $coderef = eval "$block";
     if( $@ ) {
+      orac_err "$@";
       return ORAC__PARSE_ERROR;
     }
     $Recipe->code( $coderef );
