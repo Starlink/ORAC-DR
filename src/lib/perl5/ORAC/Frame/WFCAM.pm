@@ -82,6 +82,26 @@ my %hdr = (
 
 ORAC::Frame::WFCAM->_generate_orac_lookup_methods( \%hdr );
 
+sub _to_DATA_UNITS {
+  my $self = shift;
+  my $data_units = 'counts/exp';
+
+  if( defined( $self->hdr->{DUNITS} ) ) {
+    $data_units = $self->hdr->{DUNITS};
+  } else {
+    my $date = ORAC::Frame::WFCAM::_to_UTDATE( $self );
+
+    if( $date > 20061023 ) {
+
+      my $read_type = ORAC::Frame::WFCAM::_to_DETECTOR_READ_TYPE( $self );
+      if( substr( $read_type, 0, 2 ) eq 'ND' ) {
+
+        $data_units = 'counts/sec';
+      }
+    }
+  }
+}
+
 sub _to_GAIN {
   my $self = shift;
   my $gain;
