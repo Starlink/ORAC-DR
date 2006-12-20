@@ -328,6 +328,8 @@ sub convert {
       eval( "require Cirdr::Opt" );
       if( $@ ) {
 
+        orac_warn "Error in loading Cirdr::Opt: $@\n";
+
         # Couldn't load Cirdr::Opt for some reason, so fall back to
         # use the convert_mon-based routines.
         $outfile = $self->hds2mef;
@@ -340,6 +342,8 @@ sub convert {
         # Now try to get Cirdr::Primitives.
         eval( "require Cirdr::Primitives" );
         if( $@ ) {
+
+          orac_warn "Error in loading Cirdr::Primitives: $@\n";
 
           # Oops, couldn't load this one either.
           $outfile = $self->hds2mef;
