@@ -62,6 +62,9 @@
  
 #  History:
 #     $Log$
+#     Revision 1.11  2006/12/20 02:06:05  bradc
+#     set ORAC_DATA_IN to spectra directory
+#
 #     Revision 1.10  2006/11/09 23:16:02  bradc
 #     set umask to 2 before creating ORAC_DATA_OUT
 #
@@ -137,7 +140,7 @@ setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/acsis
  
 # Data directories
 setenv ORAC_DATA_ROOT /jcmtdata
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/acsis/acsis00/$oracut
+setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/acsis/spectra/$oracut
 setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/acsis/$oracut/
 
 # Check to see if we're at JCMT. If we are, then create the
