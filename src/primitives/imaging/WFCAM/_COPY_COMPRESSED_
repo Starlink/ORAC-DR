@@ -1,12 +1,65 @@
+# -*-perl-*-
+
 use Astro::FITS::CFITSIO qw(:longnames :constants);
+use Starlink::HDSPACK qw/ create_hdsobj copy_hdsobj /;
 
 # Create input and output names
 
 my $tmpCvt = new ORAC::Convert;
 
+# Create a temporary HDS file in $ORAC_DATA_OUT.
+my $tmp = new ORAC::TempFile;
+my $tmpfile = $tmp->file;
 
-my $infile = $Frm->raw;
-my $outfile = "c" . $infile;
+my $ORAC_STATUS = ( create_hdsobj( $tmpfile, 'NDF', [0]) ? ORAC__OK : ORAC__ERROR );
+
+my $header_copied = 0;
+
+my $exptime = $Frm->uhdr( "ORAC_EXPOSURE_TIME" );
+
+my $out;
+
+foreach my $i ( 1 .. $Frm->nfiles ) {
+  ( my $in, $out ) = $Frm->inout( "_adu", $i );
+
+  if( ! $header_copied ) {
+
+    $ORAC_STATUS = ( create_hdsobj( "$tmpfile.HEADER", "NDF" ) ? ORAC__OK : ORAC__ERROR );
+
+    my $file = $Frm->raw;
+    $file =~ s/\.sdf$//;
+
+    $ORAC_STATUS = ( copy_hdsobj( "$file.HEADER", "$tmpfile.HEADER" ) ? ORAC__OK : ORAC__ERROR );
+
+    $header_copied = 1;
+  }
+
+  $ORAC_STATUS = ( create_hdsobj( "$tmpfile.I${i}", "NDF", [0] ) ? ORAC__OK : ORAC__ERROR );
+
+  if( $Frm->uhdr( "ORAC_DATA_UNITS" ) eq "counts/sec" ) {
+
+    orac_print "Adjusting for exposure time.\n";
+    $Mon{'kappa_mon'}->obeyw( "cmult", "in=$in scalar=$exptime out=$out" );
+
+    $ORAC_STATUS = ( copy_hdsobj( "$out", "$tmpfile.I${i}" ) ? ORAC__OK : ORAC__ERROR );
+
+  } else {
+
+    my $file = $Frm->raw;
+    $file =~ s/\.sdf$//;
+
+    $ORAC_STATUS = ( copy_hdsobj( "$file.I${i}", "$tmpfile.I${i}" ) ? ORAC__OK : ORAC__ERROR );
+
+  }
+}
+
+( undef, undef, my $infile ) = File::Spec->splitpath( $tmpfile );
+
+orac_print "Converting $infile to Rice-compressed FITS file.\n";
+
+my $outfile = "c" . $Frm->raw;
+my $outfile_proper = $Frm->raw;
+$outfile_proper =~ s/\.sdf$/\.fit/;
 
 my @outfiles = $tmpCvt->convert( $infile, { IN => 'HDS', OUT => 'WFCAM_MEF' } );
 
@@ -20,7 +73,6 @@ $fptr->movabs_hdu(2,$hdutype,$status);
 $fptr->close_file($status);
 
 # If it's an image then do the compression
-
 if ($hdutype == IMAGE_HDU) {
     my $errmsg;
     my $nread = $Frm->hdr("NEXP");
@@ -29,13 +81,17 @@ if ($hdutype == IMAGE_HDU) {
     if ($retval != CIR_OK) {
         orac_err("CIR_COMPRESS_MEF_F2I: failed in _COPY_COMPRESSED_\n$errmsg\n");
     }
-    orac_print("CASU file $outfiles[1] created\n");
+    orac_print("CASU file $outfile_proper created\n");
     unlink $outfiles[1];
-    rename($outfile,$outfiles[1]);
+    rename($outfile,$outfile_proper);
 } else {
-    orac_print("$outfiles[1] is already compressed\n");
+    orac_print("$outfile_proper is already compressed\n");
 }
 
+( my $in, $out ) = $Frm->inout( "_adu" );
+$out =~ s/\..*$//;
+$out .= ".sdf";
+unlink $out;
 
 =head1 NAME
 
