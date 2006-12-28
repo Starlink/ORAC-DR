@@ -91,7 +91,7 @@ sub _to_DATA_UNITS {
   } else {
     my $date = ORAC::Frame::WFCAM::_to_UTDATE( $self );
 
-    if( $date > 20061023 && $date < 20061020 ) {
+    if( $date > 20061023 && $date < 20061220 ) {
 
       my $read_type = ORAC::Frame::WFCAM::_to_DETECTOR_READ_TYPE( $self );
       if( substr( $read_type, 0, 2 ) eq 'ND' ) {
