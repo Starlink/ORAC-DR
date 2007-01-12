@@ -1,0 +1,450 @@
+#+
+# CHOP_SKY_JITTER
+
+# Name:
+#    CHOP_SKY_JITTER
+
+# Purpose:
+#    Reduction of alternating sky-target jitters using interpolated sky
+#    subtraction.
+
+# Language:
+#    Perl5
+
+# Description:
+#    This recipe reduces a moderately extended source using near-infrared
+#    imaging data.  The data comprise alternating blank-sky and target
+#    frames commencing and ending with a blank sky.  Both the sky and target
+#    frames are jittered.  The recipe makes a sky-subtracted untrimmed
+#    mosaic automatically. A list of detected objects is compared with
+#    the 2MASS catalog to refine the mosaic astrometry.
+
+#    The script performs bad-pixel masking, null debiassing, dark
+#    subtraction, flat-field division, sky subtraction, registration,
+#    resampling, and mosaicking.  The "Notes" give more details.
+
+#    It is suitable for extended objects where the object fills or nearly
+#    fills the frame, so sky estimation within the frame is impossible or
+#    unreliable, but the extended mapping of the target is not required.
+
+# Notes: 
+#    -  A World Co-ordinate System (WCS) using the AIPS convention is 
+#    created in the headers should no WCS already exist.
+#    -  For IRCAM, old headers are reordered and structured with
+#    headings before groups of related keywords.  The comments have
+#    units added or appear in a standard format.  Four deprecated
+#    headers are removed.  FITS-violating headers are corrected.
+#    Spurious instrument names are changed to IRCAM3.
+#    -  The bad pixel mask applied is $ORAC_DATA_CAL/bpm.
+#    -  For INGRID, the pre- and post-exposure images are subtracted.
+#    A non-linearity correction is then applied.
+#    -  Each dark-subtracted frame has thresholds applied beyond which
+#    pixels are flagged as bad.  The lower limit is 5 standard 
+#    deviations below the mode, but constrained to the range -100 to 1.
+#    The upper limit is 1000 above the saturation limit for the detector
+#    in the mode used.
+#    -  The flat field is derived from the sky frames as follows.  The
+#    mode (sigma-clipped mean) is used to offset each sky frame's mode
+#    to that of the first sky frame.  The corrected sky frames are
+#    combined pixel by pixel using a median of the values in each
+#    frame.  The resultant frame is normalised by its median to form
+#    the flat field.  This frame median is subtracted from the source
+#    frames after they have been flat-fielded.  A flat field is created
+#    from all the jittered sky frames, and applied to all the target
+#    frames.
+#    -  For ISAAC, residual bias variations along the columns are
+#    largely removed from each flat-fielded frame.  The recipe first
+#    masks the sources, then collapses the frame along its rows to form
+#    a profile, whose clipped mean is subtracted.  The resultant profile
+#    reflects the bias variations.  The recipe subtracts this profile
+#    from each column of the flat-fielded frame.
+#    -  The sky subtraction comes from linear interpolation of the sky
+#    modal values of the two flat-fielded sky frames which immediately
+#    bracket the target frame.
+#    -  The field distortion of ISAAC is corrected in the target frames
+#    using the mappings documented on the ISAAC problems web page.
+#    -  Registration is performed using common point sources in the
+#    overlap regions.  If the recipe cannot identify sufficient common
+#    objects, it then tries the crosshead offsets.  If these are null,
+#    the script resorts to the telescope offsets.
+#    -  The resampling applies non-integer shifts of origin using
+#    bilinear interpolation.  There is no rotation to align the
+#    Cartesian axes with the cardinal directions.
+#    -  The recipe makes the mosaics by applying offsets in intensity
+#    to give the most consistent result amongst the overlapping regions.
+#    The noise will be greater in the mosaic's peripheral areas, having
+#    received less exposure time.  The mosaic is not normalised by its
+#    exposure time (that being the exposure time of a single frame).
+#    -  At the end of each cycle of sky and object frames the full
+#    mosaic of target frames is created and displayed.  The mosaic has
+#    its bad pixels filled by interpolation.  On the second and 
+#    subsequent cycles the full mosaic is added into a master mosaic of
+#    improving signal to noise.  The exposure time is also summed and
+#    stored in the mosaic's corresponding header.  Likewise the end
+#    airmass and end UT headers are updated to match that of the
+#    last-observed frame contributing to the mosaic. The master mosaic
+#    has a more accurate astrometric solution applied.
+#    -  Intermediate frames are deleted except for the flat-fielded (_ff
+#    suffix) frames.
+
+# Output Data:
+#    -  The integrated mosaic in <m><date>_<group_number>_mos, where <m>
+#    is "gf" for UFTI and "gi" for IRCAM (before 2000 August these were
+#    "g" and "rg" respectively), "gi" also for IRIS2, "gu" for UIST,
+#    "gisaac" for ISAAC, and "gingrid" for INGRID.  
+#    -  A mosaic for each cycle of jittered frames in
+#    <m><date>_<group_number>_mos<cycle_number>, where <cycle_number>
+#    counts from 0.
+#    -  The individual flat-fielded frames in <i><date>_<obs_number>_ff,
+#    where <i> is "f" for UFTI, "i" for IRCAM (before 2000 August IRCAM
+#    frames had prefix "ro"), "u" for UIST, and "isaac" for ISAAC.
+#    IRIS2 data are named <date><obs_number>_ff, where <date> is in the
+#    form "ddmmm".   INGRID files are called r<obs_number>_ff.
+#    -  For ISAAC, the individual bias-corrected frames in
+#    <i><date>_<obs_number>_bc.
+#    -  The created flat fields in flat_<filter>_<group_number> for the
+#    first or only cycle, and flat_<filter>_<group_number>_c<cycle_number>
+#    for subsequent cycles.
+
+# Configurable Steering Parameters:
+#    NUMBER = INTEGER
+#       The number of target frames in the jitter pattern.  If this
+#       is not set, a value is derived from the number of offsets, as
+#       given by header NOFFSETS.  The formula is NOFFSETS / 2 - 1.
+#       An error results should NOFFSETS be odd.  If neither is 
+#       available, 9 is the default.  An error state arises if the
+#       number of jittered frames is fewer than 3.  For observations
+#       prior to the availability of full ORAC, header NOFFSETS will
+#       be absent.  []
+#    USEVAR = LOGICAL
+#       Whether or not to create and propagate variance arrays.  [0]
+
+# Timing:
+#    {timing_information}
+
+# Implementation Status:
+#    -  The processing engines are from the Starlink packages: CCDPACK,
+#    KAPPA, FIGARO, and EXTRACTOR.
+#    -  Uses the Starlink NDF format.
+#    -  History is recorded within the data files.
+#    -  The title of the data is propagated through intermediate files
+#    to the mosaic.
+#    -  Error propagation is controlled by the USEVAR parameter.
+
+# Related Recipes:
+#    CHOP_SKY_JITTER_BASIC, EXTENDED_3x3, QUADRANT_JITTER.
+
+# References:
+#    "Scripts for UFTI" G.S. Wright & S.K. Leggett, 1997 orac009-ufts, v01.
+
+# Authors:
+#    MJC: Malcolm J. Currie (UKATC/JAC)
+#    SDR: Stuart D. Ryder (AAO) - copied _ADD_AUTO_ASTROMETRY_ step
+#         from JITTER_SELF_FLAT
+
+# Copyright:
+#    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Startup
+# =======
+#
+# Imaging-specific preliminaries, such as switching on history
+# recording.
+    _IMAGING_HELLO_
+
+# Recipe-specific initialisation of data and tasks.  Set up steering
+# control of the processing.  It classifies which frames are target
+# and which are blank sky; specifies when to make a flat, make a
+# mosaic; and which is the reference sky frame for normalisation.  It
+# also keeps a count of the target frames for interpolation between sky
+# measurements.  Create a WCS, if needed.
+    _CHOP_SKY_JITTER_HELLO_
+
+# Calibration
+# ===========
+
+# Subtract the dark frame.
+    _SUBTRACT_DARK_
+
+# Generate the flat field using the extended-source technique.  This 
+# comprises the masking of deviant pixels, and normalisation and
+# combination using medians.  Also store the reference sky modal value
+# and subsequent offsets from it.
+    _MAKE_FLAT_CHOP_SKY_
+
+# Apply the flat field.
+    _DIVIDE_BY_FLAT_CHOP_SKY_
+
+# Correct for residual bias variations along the columns.
+    _BIAS_CORRECT_GROUP_
+
+# Determine modal sky levels in each sky frame.
+    _FORM_SKY_LEVELS_
+
+# Subtract the sky using linear interpolation.
+    _SUBTRACT_SKY_CHOP_SKY_
+
+# Mosaicking
+# ==========
+
+# Correct for field distortion in the target frames.
+    _APPLY_DISTORTION_TRANSFORMATION_
+
+# Determine the linear offsets between the object frames in the group
+# by pattern matching common features, or if that fails use the offsets
+# stored in the headers.  Register the frames using a shift of pixel
+# origin.
+    _GENERATE_OFFSETS_CHOP_SKY_
+
+# Resample each target frame using linear interpolation, and tesselate.
+# Fill bad pixels by interpolation.
+    _MAKE_MOSAIC_CHOP_SKY_ RESAMPLE=1 INT_METHOD=linint FILLBAD=1
+
+# Correct astrometry. Only take a four coefficient model (zero point,
+# rotation, scale).
+    _ADD_AUTO_ASTROMETRY_ STATISTICS=0 MAXCOEFF=4
+ 
+# Remove intermediate data files.
+    _CHOP_SKY_JITTER_TIDY_
+
+# Podule
+# ======
+
+=head1 NAME
+
+CHOP_SKY_JITTER -- Reduction of alternating sky-target jitters using interpolated sky subtraction.
+
+=head1 DESCRIPTION 
+
+This recipe reduces a moderately extended source using near-infrared imaging
+data.  The data comprise alternating blank-sky and target frames
+commencing and ending with a blank sky.  Both the sky and target
+frames are jittered.  The recipe makes a sky-subtracted untrimmed
+mosaic automatically. A list of detected objects is compared with
+the 2MASS catalog to refine the mosaic astrometry.
+
+The script performs bad-pixel masking, null debiassing, dark
+subtraction, flat-field division, sky subtraction, registration,
+resampling, and mosaicking.  The L<"NOTES"> give more details.
+
+It is suitable for extended objects where the object fills or nearly
+fills the frame, so sky estimation within the frame is impossible or
+unreliable, but the extended mapping of the target is not required.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+A World Co-ordinate System (WCS) using the AIPS convention is 
+created in the headers should no WCS already exist.
+
+=item * 
+
+For IRCAM, old headers are reordered and structured with
+headings before groups of related keywords.  The comments have
+units added or appear in a standard format.  Four deprecated
+headers are removed.  FITS-violating headers are corrected.
+Spurious instrument names are changed to IRCAM3.
+
+=item *
+
+The bad pixel mask applied is F<$ORAC_DATA_CAL/bpm>.
+
+=item *
+
+For INGRID, the pre- and post-exposure images are subtracted.
+A non-linearity correction is then applied.
+
+=item * 
+
+Each dark-subtracted frame has thresholds applied beyond which
+pixels are flagged as bad.  The lower limit is 5 standard 
+deviations below the mode, but constrained to the range -100 to 1.
+The upper limit is 1000 above the saturation limit for the detector
+in the mode used.
+
+=item *
+
+The flat field is derived from the sky frames as follows.  The
+mode (sigma-clipped mean) is used to offset each sky frame's mode
+to that of the first sky frame.  The corrected sky frames are
+combined pixel by pixel using a median of the values in each
+frame.  The resultant frame is normalised by its median to form
+the flat field.  This frame median is subtracted from the source
+frames after they have been flat-fielded.  A flat field is created
+from all the jittered sky frames, and applied to all the target
+frames.
+
+=item *
+
+For ISAAC, residual bias variations along the columns are
+largely removed from each flat-fielded frame.  The recipe first
+masks the sources, then collapses the frame along its rows to form
+a profile, whose clipped mean is subtracted.  The resultant profile
+reflects the bias variations.  The recipe subtracts this profile
+from each column of the flat-fielded frame.
+
+=item *
+
+The sky subtraction comes from linear interpolation of the sky modal
+values of the two flat-fielded sky frames which immediately bracket
+the target frame.
+
+=item *
+
+The field distortion of ISAAC is corrected in the target frames using
+the mappings documented on the ISAAC problems web page.
+
+=item *
+
+Registration is performed using common point sources in the
+overlap regions.  If the recipe cannot identify sufficient common
+objects, it matches the centroid of the central source.  If this
+fails, the script resorts to using the telescope offsets
+transformed to pixels.
+
+=item *
+
+The resampling applies non-integer shifts of origin using
+bilinear interpolation.  There is no rotation to align the
+Cartesian axes with the cardinal directions.
+
+=item *
+
+The recipe makes the mosaics by applying offsets in intensity
+to give the most consistent result amongst the overlapping regions.
+The noise will be greater in the mosaic's peripheral areas, having
+received less exposure time.  The mosaic is not normalised by its
+exposure time (that being the exposure time of a single frame).
+
+=item *
+
+At the end of each cycle of sky and object frames the full mosaic of
+target frames is created and displayed.  The mosaic has its bad pixels
+filled by interpolation.  On the second and subsequent cycles the full
+mosaic is added into a master mosaic of improving signal to noise. The
+exposure time is also summed and stored in the mosaic's corresponding
+header.  Likewise the end airmass and end UT headers are updated to
+match that of the last-observed frame contributing to the mosaic.
+The master mosaic has a more accurate astrometric solution applied.
+
+=item *
+
+Intermediate frames are deleted except for the flat-fielded (_ff
+suffix) frames.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+The integrated mosaic in
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_mos, where
+E<lt>mE<gt> is "gf" for UFTI and "gi" for IRCAM (before 2000 August
+these were "g" and "rg" respectively), "gi" also for IRIS2, "gu" for
+UIST, "gisaac" for ISAAC, and "gingrid" for INGRID.
+
+=item *
+
+A mosaic for each cycle of jittered frames in
+E<lt>mE<gt>E<lt>dateE<gt>_E<lt>group_numberE<gt>_mos_cE<lt>cycle_numberE<gt>,
+where E<lt>cycle_numberE<gt> counts from 0.
+
+=item *
+
+The individual flat-fielded frames in
+E<lt>iE<gt>E<lt>dateE<gt>_E<lt>obs_numberE<gt>_ff, where E<lt>iE<gt>
+is "f" for UFTI, "i" for IRCAM, (before 2000 August IRCAM frames had
+prefix "ro"), "u" for UIST, and "isaac" for ISAAC.  IRIS2 data are
+named E<lt>date>E<lt>obs_numberE<gt>_ff, where E<lt>dateE<gt> is in
+the form "ddmmm".  INGRID files are called rE<lt>obs_numberE<gt>_ff.
+
+=item *
+
+For ISAAC, the individual bias-corrected frames in
+E<lt>iE<gt>E<lt>dateE<gt>_E<lt>obs_numberE<gt>_bc.
+
+=item *
+
+The created flat fields in flat_E<lt>filterE<gt>_E<lt>group_numberE<gt> for the
+first or only cycle, and
+flat_E<lt>filterE<gt>_E<lt>group_numberE<gt>_cE<lt>cycle_numberE<gt> for
+subsequent cycles.
+
+=back
+
+=head1 CONFIGURABLE STEERING PARAMETERS
+
+=over 4
+
+=item NUMBER = INTEGER
+
+The number of target frames in the jitter pattern.  If this
+is not set, a value is derived from the number of offsets, as
+given by header NOFFSETS.  The formula is NOFFSETS / 2 - 1.
+An error results should NOFFSETS be odd.  If neither is 
+available, 9 is the default.  An error state arises if the
+number of jittered frames is fewer than 3.  For observations
+prior to the availability of full ORAC, header NOFFSETS will
+be absent.  []
+
+=item USEVAR = LOGICAL
+
+Whether or not to create and propagate variance arrays.  [0]
+
+=back
+
+=head1 IMPLEMENTATION STATUS
+
+=over 4
+
+=item *
+
+The processing engines are from the Starlink packages: CCDPACK,
+KAPPA, FIGARO, and EXTRACTOR.
+
+=item *
+
+Uses the Starlink NDF format.
+
+=item *
+
+History is recorded within the data files.
+
+=item *
+
+The title of the data is propagated through intermediate files
+to the mosaic.
+
+=item *
+
+Error propagation is controlled by the USEVAR parameter.
+
+=back
+
+=head1 REFERENCES
+
+"I<Scripts for UFTI>" G.S. Wright & S.K. Leggett, 1997 orac009-ufts, v01.
+
+=head1 RELATED RECIPES
+
+L<CHOP_SKY_JITTER|CHOP_SKY_JITTER>,
+L<EXTENDED_3x3|EXTENDED_3x3>,
+L<QUADRANT_JITTER|QUADRANT_JITTER>.
+
+=head1 AUTHORS
+
+Malcolm J. Currie (UKATC/JAC) (mjc@jach.hawaii.edu)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
