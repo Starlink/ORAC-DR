@@ -130,7 +130,7 @@ sub _to_FILTER {
   my $self = shift;
   my $return;
 
-  if( $self->hdr->{IR2_FILT} =~ /^hole12$/i ) {
+  if( $self->hdr->{IR2_FILT} =~ /^OPEN$/i ) {
     $return = $self->hdr->{IR2_COLD};
   } else {
     $return = $self->hdr->{IR2_FILT};
@@ -168,7 +168,7 @@ sub _to_GRATING_WAVELENGTH {
 
   my $grism = $self->hdr->{IR2_GRSM};
   my $filter;
-  if($self->hdr->{IR2_FILT} =~ /^hole12$/i ) {
+  if($self->hdr->{IR2_FILT} =~ /^OPEN$/i ) {
     $filter = $self->hdr->{IR2_COLD};
   } else {
     $filter = $self->hdr->{IR2_FILT};
