@@ -18,6 +18,13 @@
 #    -  The linear counts (L) are given by the expression
 #
 #    L = M * (1.0 - 8.81352977E-12*M*M + 3.72642828E-16*M*M*M), 
+#    For the IRIS2 original science grade device 
+#   and
+#    L = M * (1.0 + 8.555607E-12*M*M + 1.6591852E-16*M*M*M).
+#    For the IRIS2 replacement (Mk2) science grade device 
+#   and
+#    L = M * (1.0 + 1.3338542E-11*M*M + 6.316822E-17*M*M*M).
+#    For the IRIS2 stand-in enginerring grade device 
 #
 #       where M is the measured ADU counts (valid for M=0-50000)
 #  	  (http://www.aao.gov.au/iris2/iris2_linearity.html)
@@ -32,6 +39,8 @@
 # Authors:
 #    MJC: Malcolm J. Currie (JAC, Starlink)
 #    CGT: Chris Tinney (AAO) - modified to use IRIS2 coefficients
+#    CGT: Chris Tinney (AAO) - modified to do nothing on engineering data
+#    SDR: Stuart Ryder (AAO) - adjusted nominal values and tidied up
 #
 # Copyright:
 #    Copyright (C) 1998-2003 Particle Physics and Astronomy Research
@@ -40,27 +49,45 @@
 #-
 
 my $mode = $Frm->hdr( "METHOD" );
-if ( $mode =~ /IRIS_DRM/ ) {
+my $det  = $Frm->hdr( "DETECTOR" );
+my $ot  = $Frm->hdr( "ORACTIME" );
 
-# Generate list of input and output filenames.
-    my ( $in, $out ) = $Frm->inout( "_nl" );
-
-# Evaluate the expression that linearises the remianing data.
-    $Mon{ "kappa_mon" }->obeyw( "maths", "out=$out ia=$in exp='IA*(1.0 - 8.81352977E-12*IA*IA + 3.72642828E-16*IA*IA*IA)'" );
-
-# Report the processing status.
-    orac_print "Frame $in linearity corrected to form $out.\n";
-
-# Now update the output filename in the Frame object.
-    $Frm->file( $out );
+if ( $det !~ /Iris2.*Engineering/i && $det !~ /Iris2.*Science/i) {
+   #
+   # Issue a warning as we haven't worked out the correction yet.
+   #
+      orac_print "WARNING: DETECTOR=$det which is not yet implemented for linearity correction\n";
+      orac_print "WARNING: No linearity correction performed.\n";
 
 } else {
-#
-# Issue a warning if this is MRM data, but proceed on.
-#
-   orac_print "WARNING: METHOD=$mode which is unusual for IRIS2 imaging data\n";
-   orac_print "WARNING: No linearity correction of $mode data performed.\n";
-   
+   if ( $mode =~ /IRIS_DRM/ ) {
+
+   # Generate list of input and output filenames.
+       my ( $in, $out ) = $Frm->inout( "_nl" );
+
+   # Evaluate the expression that linearises the remaining data.
+       if ( $det =~ /Iris2.*Mk2.*Science/i ) {
+         orac_print "IRIS2 Mk2 correction : L=M*(1.0 + 8.555607E-12*M**2 + 1.6591852E-16*M**3).\n";
+         $Mon{ "kappa_mon" }->obeyw( "maths", "out=$out ia=$in exp='IA*(1.0 + 8.555607E-12*IA*IA + 1.6591852E-16*IA*IA*IA)'" );
+       } elsif ( $det =~ /Iris2.*Engineering/i ) {
+         orac_print "IRIS2 Engineering correction : L=M*(1.0 + 1.3338542E-11*M**2 + 6.316822E-17*M**3).\n";
+         $Mon{ "kappa_mon" }->obeyw( "maths", "out=$out ia=$in exp='IA*(1.0 + 1.3338542E-11*IA*IA + 6.316822E-17*IA*IA*IA)'" );
+       } else {
+         orac_print "IRIS2 Mk1 correction : L=M*(1.0 - 8.81352977E-12*M**2 + 3.72642828E-16*M**3).\n";
+         $Mon{ "kappa_mon" }->obeyw( "maths", "out=$out ia=$in exp='IA*(1.0 - 8.81352977E-12*IA*IA + 3.72642828E-16*IA*IA*IA)'" );
+       }
+   # Report the processing status.
+       orac_print "Frame $in linearity corrected to form $out.\n";
+
+   # Now update the output filename in the Frame object.
+       $Frm->file( $out );
+
+   } else {
+   #
+   # Issue a message if this is MRM data, but proceed on.
+   #
+      orac_print "No linearity correction required for $mode data.\n";
+   }
 }
 #orac_print "\n";
 
@@ -69,7 +96,7 @@ if ( $mode =~ /IRIS_DRM/ ) {
 
 =head1 NAME
 
-_CORRECT_NONLINEARITY_PRE_POST_ -- Corrects the post-pre differenced raw data for detector non-linearity.
+_CORRECT_NONLINEARITY_ -- Corrects the post-pre differenced raw data for detector non-linearity.
 
 =head1 DESCRIPTION
 
@@ -99,9 +126,20 @@ but with the _nl suffix.
 
 =item *
 
-Linear counts (L) are given by the expression
+Linear counts (L) are given by the expression:
+
 L = M * (1.0 - 8.81352977E-12*M*M + 3.72642828E-16*M*M*M), 
+for the IRIS2 Mk1 science-grade array
+
+L = M * (1.0 + 1.3338542E-11*M*M + 6.316822E-17*M*M*M),
+for the IRIS2 Engineering array
+
+L = M * (1.0 + 8.555607E-12*M*M + 1.6591852E-16*M*M*M),
+for the IRIS2 Mk2 science-grade array
+
 where M are the measured ADU counts (valid for M=0-50000)
+
+
 
 =back
 
