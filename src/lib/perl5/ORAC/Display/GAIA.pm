@@ -69,10 +69,11 @@ sub new {
   # Create a new instance from the base class
   # Dont allow any arguments.
   # Probably should turn off -w here
-  my $disp = $class->SUPER::new(Sock => undef, 
-				Sel => IO::Select->new,
-				ConnectToRemoteGAIA => 1,
-			       );
+  my $disp = $class->SUPER::new(Sock => undef,
+                                Sel => IO::Select->new,
+                                ConnectToRemoteGAIA => 1,
+                                Launchable => 1,
+                               );
 
   # SPECIAL CASE UKIRT FOR NOW
   $disp->use_remote_gaia(0) if $localhost =~ /kauwa/;
@@ -98,6 +99,23 @@ sub new {
 =head2 Accessor Methods
 
 =over 4
+
+=item B<launchable>
+
+Whether or not GAIA can be automatically launched.
+
+  $gaia->launchable( 0 );
+
+Defaults to true. If this is set to false (0), then a new GAIA will
+never be started.
+
+=cut
+
+sub launchable {
+  my $self = shift;
+  if( @_ ) { $self->{Launchable} = shift; }
+  return $self->{Launchable};
+}
 
 =item B<sock>
 
@@ -262,39 +280,43 @@ sub launch {
     return;
   }
 
-  # Now launch a new gaia
-  $self->_launch_new_gaia();
+  if( $self->launchable ) {
 
-  my $tries = 0;
-  while ($tries < $MAX_TRIES) {
+    # Now launch a new gaia
+    $self->_launch_new_gaia();
 
-    # Check for a connection timegap_to_launch tries
-    foreach (1..$timegap_to_launch) {
+    my $tries = 0;
+    while ($tries < $MAX_TRIES) {
 
-      print "GAIA Connection loop $_\n" if $DEBUG;
+      # Check for a connection timegap_to_launch tries
+      foreach (1..$timegap_to_launch) {
 
-      # pause
-      sleep $timegap_to_check;
+        print "GAIA Connection loop $_\n" if $DEBUG;
 
-      # Check for connection
-      my $sock = $self->_open_gaia_socket;
+        # pause
+        sleep $timegap_to_check;
 
-      if ($sock) {
-	# Store it and return
-	$self->sock( $sock );
-	return;
+        # Check for connection
+        my $sock = $self->_open_gaia_socket;
+
+        if ($sock) {
+          # Store it and return
+          $self->sock( $sock );
+          return;
+        }
+
       }
+
+      # Okay - didn't work, launch a new gaia (this is not a method)
+      $self->_launch_new_gaia();
+
+      # increment counter
+      $tries++;
 
     }
 
-    # Okay - didn't work, launch a new gaia (this is not a method)
-    $self->_launch_new_gaia();
-
-    # increment counter
-    $tries++;
-
   }
-  
+
   croak "TIMEOUT: Could not connect to gaia\n";
 
 }
@@ -794,7 +816,7 @@ sub image {
 
   if ($status != ORAC__OK) {
     orac_err "Error: $junk\n";
-    orac_err "ORAC::Display::GAIA - Error auto cutting\n";
+    orac_err "ORAC::Display::GAIA - Error auto cutting display window: $dispwid\n";
     return ORAC__ERROR;
   }
 
@@ -807,7 +829,7 @@ sub image {
       ($status, $junk) = $self->send_to_gaia("$dispwid cut $min $max");
 
       if ($status != ORAC__OK) {
-	orac_err "ORAC::Display::GAIA - Error setting max/min\n";
+	orac_err "ORAC::Display::GAIA - Error setting max/min display window: $dispwid\n";
 	orac_err "Error: $junk\n";
 	return ORAC__ERROR;
       }
