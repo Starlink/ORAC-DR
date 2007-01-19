@@ -108,9 +108,8 @@ my $params = "in='^" . $inlist->file . "' out=! autogrid";
 # scale manually.
 
 my $raster = ($Frm->hdr("SAM_MODE") =~ /raster/i);
-my $pixsize = '';
 if ($raster) {
-  $pixsize = $Frm->hdr( "SCAN_VEL" ) * $Frm->hdr( "STEPTIME" );
+  my $pixsize = $Frm->hdr( "SCAN_VEL" ) * $Frm->hdr( "STEPTIME" );
   $params .= " pixsize=$pixsize";
 }
 
@@ -118,10 +117,16 @@ orac_print " Determining size of output cube...";
 
 $Mon{'smurf_mon'}->obeyw( "makecube", "$params" );
 
+# Get output bounds
 my ( $ORAC_STATUS, @lbnd ) = $Mon{'smurf_mon'}->get( "makecube", "lbound" );
 ( $ORAC_STATUS, my @ubnd ) = $Mon{'smurf_mon'}->get( "makecube", "ubound" );
 ( $ORAC_STATUS, my @flbnd ) = $Mon{'smurf_mon'}->get( "makecube", "flbnd" );
 ( $ORAC_STATUS, my @fubnd ) = $Mon{'smurf_mon'}->get( "makecube", "fubnd" );
+
+# And grid parameters to speed up next call
+($ORAC_STATUS, my @pixsize ) = $Mon{'smurf_mon'}->get( "makecube", 'pixsize' );
+($ORAC_STATUS, my $crota )   = $Mon{'smurf_mon'}->get( "makecube", 'crota' );
+
 
 orac_print "done.\n";
 
@@ -163,13 +168,16 @@ if( $max_freq_chan < $f_length ) {
 
 }
 
-# Set up the parameters to MAKECUBE.
-$params .= "in='^" . $inlist->file . "' out=$out autogrid";
+# Set up the parameters to MAKECUBE. (use hints from previous call)
+# Autogrid is required because without it the pixel grid is not positioned
+# in an optimal way. (and the fractional pixel shift is not stored in an output
+# parameter at present).
+$params .= "in='^" . $inlist->file . "' out=$out autogrid crota=$crota ";
 
-# If we have a raster (SAM_MODE header), then we need to set the pixel
-# scale manually.
-if( $raster ) {
-  $params .= " pixsize=$pixsize";
+if (@pixsize > 1) {
+    $params .= " pixsize=[".join(",",@pixsize) ."] ";
+} else {
+    $params .= " pixsize=$pixsize[0] ";
 }
 
 # Tell user what we're doing.
