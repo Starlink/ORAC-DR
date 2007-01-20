@@ -496,47 +496,53 @@ sub orac_loop_flag {
 
     if ($skip) {
 
-      # Okay the file was not there -- if SKIP is true we should re-read
-      # the directory to check whether the next file has appeared
-      # In order to prevent the problem of observations n and n+1 appearing
-      # in the time it takes us to read the directory we should make sure
-      # that we are looking for observation n (which has not turned up
-      # yet) rather than n+1. We do this by running orac_check_data_dir
-      # with an observation number one less than we are interested in
+      my $lookahead = 10; # Maximum number of files to look ahead.
 
-      # Run in a scalar context since we are only interested in the next
-      # observation. The flag argument is set to true.
-      my $next = orac_check_data_dir($class, $obsno - 1, 1);
+      for my $i ( $obsno .. $obsno + $lookahead ) {
 
-      # Check to see if something was found
-      if (defined $next) {
+        # Okay the file was not there -- if SKIP is true we should
+        # re-read the directory to check whether the next file has
+        # appeared In order to prevent the problem of observations n
+        # and n+1 appearing in the time it takes us to read the
+        # directory we should make sure that we are looking for
+        # observation n (which has not turned up yet) rather than
+        # n+1. We do this by running orac_check_data_dir with an
+        # observation number one less than we are interested in
 
-        # This indicates that an observation is available
-        # Now need to modify the name of the file that the loop is
-        # searching for ($actual) [this is done many times in the loop and
-        # twice in this routine!]. Do not need to reset the timer since
-        # we already know that we have a file.
+        # Run in a scalar context since we are only interested in the
+        # next observation. The flag argument is set to true.
+        my $next = orac_check_data_dir($class, $i - 1, 1);
 
-        if ($next != $obsno) {
+        # Check to see if something was found
+        if (defined $next) {
 
-          orac_print ("\nFile $fnames[0] appears to be missing\n");
+          # This indicates that an observation is available Now need
+          # to modify the name of the file that the loop is searching
+          # for ($actual) [this is done many times in the loop and
+          # twice in this routine!]. Do not need to reset the timer
+          # since we already know that we have a file.
 
-          # Okay - it wasnt the expected observation number
-	  # so make sure that is updated
-          $obsno = $next;
+          if ($next != $i) {
 
-          # Create new flag filenames so we can check file size
-	  @actual = _to_abs_path( $TemplateFrm->flag_from_bits($utdate, $obsno) );
-	  $nonzero = _files_nonzero( @actual );
+            orac_print ("\nFile $fnames[0] appears to be missing\n");
 
-	  # clear previous list
-	  $prev = [];
+            # Okay - it wasnt the expected observation number so make
+            # sure that is updated
+            $obsno = $next;
 
-          orac_print("Next available observation is number $obsno");
+            # Create new flag filenames so we can check file size
+            @actual = _to_abs_path( $TemplateFrm->flag_from_bits($utdate, $obsno) );
+            $nonzero = _files_nonzero( @actual );
 
-          # Finish loop since we have found a file
-          last;
+            # clear previous list
+            $prev = [];
 
+            orac_print("Next available observation is number $obsno");
+
+            # Finish loop since we have found a file
+            last;
+
+          }
         }
       }
     }
