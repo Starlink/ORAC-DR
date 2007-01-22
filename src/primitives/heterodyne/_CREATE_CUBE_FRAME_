@@ -106,12 +106,16 @@ my $params = "in='^" . $inlist->file . "' out=! autogrid";
 
 # If we have a raster (SAM_MODE header), then we need to set the pixel
 # scale manually.
-
 my $raster = ($Frm->hdr("SAM_MODE") =~ /raster/i);
 if ($raster) {
   my $pixsize = $Frm->hdr( "SCAN_VEL" ) * $Frm->hdr( "STEPTIME" );
   $params .= " pixsize=$pixsize";
 }
+
+# If we have a lower sideband observation and have to restrict the
+# frequency axis, then we'll need to tell makecube to flip around the
+# upper and lower bounds.
+my $lsb = ( $Frm->hdr("OBS_SB") =~ /lsb/i );
 
 orac_print " Determining size of output cube...";
 
@@ -149,8 +153,6 @@ if( $max_freq_chan < $f_length ) {
   my $upper = $fubnd[2] - ( 1 - $ratio ) * $f_range / 2;
   my $lower = $flbnd[2] + ( 1 - $ratio ) * $f_range / 2;
 
-  $params = "specbounds='$lower,$upper' ";
-
   # Get the units of the frequency axis.
   $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$files[0] fullframe" );
   ( $ORAC_STATUS, my $funit ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "funit" );
@@ -161,6 +163,13 @@ if( $max_freq_chan < $f_length ) {
   orac_print sprintf( "%.3f to %.3f %s.\n", $flbnd[2], $fubnd[2], $funit );
   orac_print " Restricting frequency range to ";
   orac_print sprintf( "%.3f to %.3f %s.\n", $lower, $upper, $funit );
+
+  # If it's LSB, swap them around.
+  if( $lsb ) {
+    ( $upper, $lower ) = ( $lower, $upper );
+  }
+
+  $params = "specbounds='$lower,$upper' ";
 
 } else {
 
