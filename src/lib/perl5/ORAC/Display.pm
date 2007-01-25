@@ -380,26 +380,26 @@ sub display_data {
 
       orac_print("Current tool: $current_tool\n",'cyan') if $DEBUG;
       if ($current_tool->can($display_info{TYPE})) {
-	# now we pass the buck
-	my $method = $display_info{'TYPE'};
+        # now we pass the buck
+        my $method = $display_info{'TYPE'};
 
-	# Find the name of the file to be displayed
-	# Note that because the base class of Frame/Group can not
-	# handle multiple file specifiers I can only pass in the
-	# file number if $n is greater than one
-	# Change this so that the file methods know to discard numbers
-	# The base classes have been modified....
-	my $fname;
-	$fname = $frm->file($n);
+        # Find the name of the file to be displayed
+        # Note that because the base class of Frame/Group can not
+        # handle multiple file specifiers I can only pass in the
+        # file number if $n is greater than one
+        # Change this so that the file methods know to discard numbers
+        # The base classes have been modified....
+        my $fname;
+        $fname = $frm->file($n);
 
-	# May want to pass in a merged hash at this point
-	# ie a mixture of the display_info options as defined
-	# in the device definition file and the options hash
-	# supplied by the caller.
-	$current_tool->$method($fname, \%display_info);
+        # May want to pass in a merged hash at this point
+        # ie a mixture of the display_info options as defined
+        # in the device definition file and the options hash
+        # supplied by the caller.
+        $current_tool->$method($fname, \%display_info);
 
       } else {
-	orac_err("Can't display type '$display_info{TYPE}' on $display_info{TOOL}");
+        orac_err("Can't display type '$display_info{TYPE}' on $display_info{TOOL}");
       }
 
     }
