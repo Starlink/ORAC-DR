@@ -253,6 +253,48 @@ sub newdev {
   return $dev;
 }
 
+=item B<calc_centre_region>
+
+=cut
+
+sub calc_central_region {
+  my $self = shift;
+  my $file = shift;
+  my $axis = shift;
+  my $width = shift;
+
+  if( ! defined( $axis ) ) {
+    $axis = 3;
+  }
+  if( ! defined( $width ) ) {
+    $width = 100;
+  }
+
+  my $frac = $width / 100;
+
+  $file =~ s/\.sdf$//;
+
+  # Find the dimensions of the given file.
+  $self->ndfpack->obeyw( "ndftrace", "ndf=$file" );
+  my ( $ORAC_STATUS, @lbnd ) = $self->ndfpack->get( "ndftrace", "lbound" );
+  ( $ORAC_STATUS, my @ubnd ) = $self->ndfpack->get( "ndftrace", "ubound" );
+  ( $ORAC_STATUS, my @dims ) = $self->ndfpack->get( "ndftrace", "dims" );
+
+  my $upper = $ubnd[$axis-1];
+  my $lower = $lbnd[$axis-1];
+
+  # Find the start and end of the collapse regions.
+  my $start = 0.5 * ( $upper + $lower - ( $frac * $upper ) + ( $frac * $lower ) - $frac );
+  my $end   = 0.5 * ( $upper + $lower + ( $frac * $upper ) - ( $frac * $lower ) + $frac );
+
+  my @ndfsection;
+  @ndfsection = map { '' } @dims;
+  $ndfsection[$axis-1] = "$start:$end";
+  my $ndfsection = join ',', @ndfsection;
+
+  return $file . "(" . $ndfsection . ")";
+
+}
 
 =item B<create_dev>
 
@@ -805,11 +847,11 @@ sub select_section {
       # if there is a match set cuts[index] to 1 (ie significant)
       # else set it to 0.
       foreach my $index (0..$ndim-1) {
-	if ($cut =~ /$lookup[$index]/i) {
-	  $cuts[$index] = 1;
-	  $cutting = 1;   # We are doing a cut since one matches
-	  last;
-	}
+        if ($cut =~ /$lookup[$index]/i) {
+          $cuts[$index] = 1;
+          $cutting = 1;   # We are doing a cut since one matches
+          last;
+        }
       }
     }
 
@@ -835,25 +877,25 @@ sub select_section {
       # Check the autoscale flag for this dim
       unless ($autosc[$index]) {
 
-	# Read the bounds from the hash
-	my $pre = $lookup[$index];
+        # Read the bounds from the hash
+        my $pre = $lookup[$index];
 
-	# Lower bound is maximum of $lbnd[$dim-1] and 
+        # Lower bound is maximum of $lbnd[$dim-1] and 
         # and the minimum of $options{?MIN} and the upper bound
         my $lower = max($lbnd[$index],min($options{"${pre}MIN"},$ubnd[$index]));
         my $upper = min($ubnd[$index],max($options{"${pre}MAX"},$lbnd[$index]));
 
-	# If lower bounds still exceed upper, set lower to upper
+        # If lower bounds still exceed upper, set lower to upper
         $lower = $upper if $lower > $upper;
 
         $min[$index]   = $lower;
         $max[$index]   = $upper;
 
-	$sects[$index] = "$lower:$upper";
+        $sects[$index] = "$lower:$upper";
 
       } else {
-        # An empty section. 
-	$sects[$index] = undef;
+        # An empty section.
+        $sects[$index] = undef;
       }
 
     }
@@ -903,11 +945,11 @@ sub select_section {
     # Assume lowest dimension is most significant
     if ($count < $max_requested) {
       foreach (@cuts) {
-	if ($_ == 0) {
-	  $_ = 1;
-	  $count++;
-	  last if $count == $max_requested;
-	}
+        if ($_ == 0) {
+          $_ = 1;
+          $count++;
+          last if $count == $max_requested;
+        }
       }
     } elsif ($count > $max_requested) {
       # If count is TOO high we need to start from the high end
@@ -916,11 +958,11 @@ sub select_section {
 
       for (my $i=$ndim-1; $i>=0; $i--) {
 
-	if ($cuts[$i] == 1) {
-	  $cuts[$i] = 0;
-	  $count--;
-	  last if $count == $max_requested;
-	}
+        if ($cuts[$i] == 1) {
+          $cuts[$i] = 0;
+          $count--;
+          last if $count == $max_requested;
+        }
       }
 
     }
@@ -942,11 +984,11 @@ sub select_section {
 
       # If significant - just put a factor of 1
       if ($cuts[$index]) {
-	push(@compress,1);
+        push(@compress,1);
       } else {
-	# To be compressed
-	# Factor is npixels
-	push(@compress, $max[$index]-$min[$index]+1);
+        # To be compressed
+        # Factor is npixels
+        push(@compress, $max[$index]-$min[$index]+1);
       }
     }
 
@@ -958,8 +1000,8 @@ sub select_section {
     my $use_compave = 0;
     foreach (@compress) {
       if ($_ != 1) {
-	$use_compave = 1;
-	last;
+        $use_compave = 1;
+        last;
       }
     }
 
@@ -976,8 +1018,8 @@ sub select_section {
       my $status = $self->kappa->obeyw("compave","$compargs");
 
       if ($status != ORAC__OK) {
-	orac_err("Error running COMPAVE $compargs\n");
-	return undef;
+        orac_err("Error running COMPAVE $compargs\n");
+        return undef;
       }
 
       # Now reset $input to be the output of compave
@@ -1269,6 +1311,121 @@ sub graph {
 
 }
 
+=item B<chanmap>
+
+Displays a channel map of a central region of a cube.
+
+Recognized options:
+
+  XMIN/XMAX  - X pixel min and max values.
+  YMIN/YMAX  - Y pixel min and max values.
+  ZMIN/ZMAX  - Z-range of greyscale (data units)
+  XAUTOSCALE - Use autoscaling for X?
+  YAUTOSCALE - Use autoscaling for Y?
+  ZAUTOSCALE - Use autoscaling for Z?
+  WIDTH      - Width of central region to use, in percent.
+  AXIS       - Axis to collapse over.
+  NCHAN      - Total number of channels to display.
+  SHAPE      - Number of channels to display along X-axis.
+
+WIDTH defaults to 100. AXIS defaults to 3. NCHAN defaults to 9. SHAPE
+defaults to 3.
+
+ORAC status is returned.
+
+=cut
+
+sub chanmap {
+  my $self = shift;
+  my $file = shift;
+  my $opt;
+  my %options = ();
+  if( @_ ) {
+    $opt = shift;
+    if( ref( $opt ) eq 'HASH' ) {
+      %options = %{$opt};
+    }
+  }
+
+  my $width = ( defined( $options{'WIDTH'} ) ?
+                $options{'WIDTH'}            :
+                100 );
+
+  my $axis = ( defined( $options{'AXIS'} ) ?
+               $options{'AXIS'}            :
+               3 );
+
+  my $nchan = ( defined( $options{'NCHAN'} ) ?
+                $options{'NCHAN'}            :
+                9 );
+
+  my $shape = ( defined( $options{'SHAPE'} ) ?
+                $options{'SHAPE'}            :
+                3 );
+
+  # Get the NDF name for the central region.
+  my $ndf = $self->calc_central_region( $file, $axis, $width );
+
+  # Create a temporary file that'll hold the channel map.
+  my $temp = new ORAC::TempFile;
+  my $tempfile = $temp->file;
+
+  # Run CHANMAP.
+  $self->kappa->obeyw( "chanmap", "in=$ndf axis=$axis nchan=$nchan shape=$shape out=$tempfile" );
+
+  # Send this image to the image() method.
+  return $self->image( $tempfile, \%options );
+
+}
+
+=item B<cubecentre>
+
+Collapse the central region of a cube along one axis, and display an
+image of the collapse region.
+
+Recognised options:
+
+  XMIN/XMAX  - X pixel min and max values.
+  YMIN/YMAX  - Y pixel min and max values.
+  ZMIN/ZMAX  - Z-range of greyscale (data units)
+  XAUTOSCALE - Use autoscaling for X?
+  YAUTOSCALE - Use autoscaling for Y?
+  ZAUTOSCALE - Use autoscaling for Z?
+  WIDTH      - Width of central region to use, in percent.
+  AXIS       - Axis to collapse over.
+
+WIDTH defaults to 100. AXIS defaults to 3.
+
+ORAC status is returned.
+
+=cut
+
+sub cubecentre {
+  my $self = shift;
+  my $file = shift;
+  my $opt;
+  my %options = ();
+  if( @_ ) {
+    $opt = shift;
+    if( ref( $opt ) eq 'HASH' ) {
+      %options = %{$opt};
+    }
+  }
+
+  my $width = ( defined( $options{'WIDTH'} ) ?
+                $options{'WIDTH'}            :
+                100 );
+
+  my $axis = ( defined( $options{'AXIS'} ) ?
+               $options{'AXIS'}            :
+               3 );
+
+  my $ndf = $self->calc_central_region( $file, $axis, $width );
+
+  # Pass this information on to the image() method.
+  return $self->image( $ndf, \%options );
+
+}
 
 =item B<contour>
 
