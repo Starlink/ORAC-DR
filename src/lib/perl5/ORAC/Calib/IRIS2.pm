@@ -466,7 +466,7 @@ sub mask {
 
   if (defined $ok) {
 
-    my $mask = $self->maskindex->choosebydt('ORACTIME',$self->thing);
+    my $mask = $self->maskindex->chooseby_negativedt('ORACTIME',$self->thing);
 
     unless (defined $mask) {
 
