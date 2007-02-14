@@ -124,7 +124,7 @@ sub maskindex {
   if (@_) { $self->{MaskIndex} = shift; }
 
   # Switch on observation mode.
-  if( $self->thing->{IR2_GRSM} =~ /^(SAP|SIL)/i ) {
+  if( $self->thingtwo->{ORAC_OBSERVATION_MODE} =~ /spectroscopy/ ) {
     $self->maskindex_sp( $self->{MaskIndex} );
   } else {
     $self->maskindex_im( $self->{MaskIndex} );
