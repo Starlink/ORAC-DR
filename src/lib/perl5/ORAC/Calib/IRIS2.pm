@@ -101,6 +101,7 @@ mask is required.
 
 sub maskname {
   my $self = shift;
+
   if (@_) { $self->{Mask} = shift unless $self->masknoupdate; }
   return $self->{Mask}; 
 };
@@ -119,26 +120,67 @@ is run.
 
 sub maskindex {
   my $self = shift;
+
   if (@_) { $self->{MaskIndex} = shift; }
 
-  unless (defined $self->{MaskIndex}) {
-
-# Copy the index file from ORAC_DATA_CAL into ORAC_DATA_OUT, unless
-# it already exists there. Then use the one in ORAC_DATA_OUT.
-    if ( ! -e File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" ) ) {
-      copy( $self->find_file( "index.mask" ),
-            File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" ) );
-    }
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" );
-
-    my $rulesfile = $self->find_file( "rules.mask" );
-
-    $self->{MaskIndex} = new ORAC::Index($indexfile,$rulesfile);
+  # Switch on observation mode.
+  if( $self->thing->{IR2_GRSM} =~ /^(SAP|SIL)/i ) {
+    $self->maskindex_sp( $self->{MaskIndex} );
+  } else {
+    $self->maskindex_im( $self->{MaskIndex} );
   }
 
   return $self->{MaskIndex};
 
 };
+
+sub maskindex_im {
+  my $self = shift;
+
+  if( @_ ) { $self->{MaskIndex} = shift; }
+
+  if( ! defined( $self->{MaskIndex} ) ||
+      $self->{MaskIndex}->indexfile !~ /_im$/ ) {
+
+    # Copy the index file from ORAC_DATA_CAL into ORAC_DATA_OUT,
+    # unless it already exists there. Then use the one in
+    # ORAC_DATA_OUT.
+    if( ! -e File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.mask_im" ) ) {
+      copy( $self->find_file( "index.mask_im" ),
+            File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.mask_im" ) );
+    }
+    my $indexfile = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.mask_im" );
+    my $rulesfile = $self->find_file( "rules.mask_im" );
+
+    $self->{MaskIndex} = new ORAC::Index( $indexfile, $rulesfile );
+  }
+
+  return $self->{MaskIndex};
+}
+
+sub maskindex_sp {
+  my $self = shift;
+
+  if( @_ ) { $self->{MaskIndex} = shift; }
+
+  if( ! defined( $self->{MaskIndex} ) ||
+      $self->{MaskIndex}->indexfile !~ /_sp$/ ) {
+
+    # Copy the index file from ORAC_DATA_CAL into ORAC_DATA_OUT,
+    # unless it already exists there. Then use the one in
+    # ORAC_DATA_OUT.
+    if( ! -e File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.mask_sp" ) ) {
+      copy( $self->find_file( "index.mask_sp" ),
+            File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.mask_sp" ) );
+    }
+    my $indexfile = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.mask_sp" );
+    my $rulesfile = $self->find_file( "rules.mask_sp" );
+
+    $self->{MaskIndex} = new ORAC::Index( $indexfile, $rulesfile );
+  }
+
+  return $self->{MaskIndex};
+}
 
 =item B<masknoupdate>
 
