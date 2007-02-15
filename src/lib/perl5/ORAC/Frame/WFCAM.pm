@@ -86,8 +86,8 @@ sub _to_DATA_UNITS {
   my $self = shift;
   my $data_units = 'counts/exp';
 
-  if( defined( $self->hdr->{DUNITS} ) ) {
-    $data_units = $self->hdr->{DUNITS};
+  if( defined( $self->hdr->{BUNIT} ) ) {
+    $data_units = $self->hdr->{BUNIT};
   } else {
     my $date = ORAC::Frame::WFCAM::_to_UTDATE( $self );
 
@@ -100,6 +100,9 @@ sub _to_DATA_UNITS {
       }
     }
   }
+
+  return $data_units;
+
 }
 
 sub _to_GAIN {
