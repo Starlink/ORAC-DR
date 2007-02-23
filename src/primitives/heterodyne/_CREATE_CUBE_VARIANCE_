@@ -1,0 +1,124 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CREATE_CUBE_VARIANCE_ - Create a variance array for a cube.
+
+=head1 DESCRIPTION
+
+This primitive creates a variance array for a cube that would not
+ordinarily have one. It does so by determining the variance over a
+baseline region that has no lines, then growing that into a cube with
+the same dimensions as the input cube.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive must be run on a previously baselined cube such that
+the baseline regions have been previously determined.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The output cube with _var suffix.
+
+=back
+
+=head1 TASKS
+
+KAPPA: COLLAPSE
+
+=head1 REQUIRED PERL MODULES
+
+Starlink::HDSPACK.
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2007 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+use Starlink::HDSPACK qw/ copy_hdsobj /;
+
+# This primitive must be run on a previously baselined cube, so
+# retrieve that information.
+my $regions = $Frm->uhdr( "BASELINE_REGIONS" );
+if( ! defined( $regions ) ) {
+  orac_warn "Cannot calculate cube variance on unbaselined cube. Possible programming error.";
+} else {
+
+  my @regions = @$regions;
+  my ( $in, $out ) = $Frm->inout( "_var" );
+
+  # We'll just use the first baseline region, as the variance should
+  # be the same across the whole thing.
+
+  # Get the dimensions of the input frame.
+  $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
+  my ( $ORAC_STATUS, @lbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
+  ( $ORAC_STATUS, my @ubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
+
+  # Set up some temporary files to hold the variance.
+  my $temp = new ORAC::TempFile;
+  my $tempfile = $temp->file;
+  my $temp2 = new ORAC::TempFile;
+  my $temp2file = $temp2->file;
+  my $temp3 = new ORAC::TempFile;
+  my $temp3file = $temp3->file;
+
+  # Set the current WCS frame to PIXEL.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=$in frame=PIXEL" );
+
+  # Run COLLAPSE.
+  my $params = "in=$in out=$tempfile estimator=sigma low=$regions[0] high=$regions[1] axis=3";
+  $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+  # Set the WCS frame of the input frame back to SKY-DSBSPECTRUM.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=$in frame=SKY-DSBSPECTRUM" );
+
+  # Square it to get a proper variance.
+  $Mon{'kappa_mon'}->obeyw( "mult", "in1=$tempfile in2=$tempfile out=$temp2file" );
+
+  # Expand the variance out to the same size as the input file.
+  $params = "in=$temp2file out=$temp3file axes=[1,2,0] lbound=$lbnd[2] ubound=$ubnd[2]";
+  $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+  # Copy the input file to the output file.
+  $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$out" );
+
+  # Erase any existing VARIANCE array, then copy the created one in.
+  $Mon{'ndfpack_mon'}->obeyw( "erase", "object=$out.VARIANCE ok" );
+  $ORAC_STATUS = ( copy_hdsobj( "$temp3file.DATA_ARRAY", "$out.VARIANCE" ) ? ORAC__OK : ORAC__ERROR );
+
+  orac_print "$in to $out:\n";
+  orac_print " Created variance array.\n";
+
+  # Update Frame object.
+  $Frm->files( $out );
+
+  # Display.
+  $Display->display_data( $Frm ) if defined $Display;
+
+  # Tidy-up output.
+  orac_print "\n";
+
+}
