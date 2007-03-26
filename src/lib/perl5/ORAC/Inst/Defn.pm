@@ -229,6 +229,11 @@ my %MonolithDefns = (
            CLASS => 'ORAC::Msg::Task::ADAM',
            PATH => ( defined( $ENV{'SMURF_DIR'} ) ? File::Spec->catfile( $ENV{'SMURF_DIR'}, "smurf_mon" ) : "" ),
           },
+         cupid_mon => {
+           MESSYS => 'AMS',
+           CLASS => 'ORAC::Msg::Task::ADAM',
+           PATH => ( defined( $ENV{'CUPID_DIR'} ) ? File::Spec->catfile( $ENV{'CUPID_DIR'}, "cupid_mon" ) : "" ),
+          },
          p4         => {
            MESSYS => 'AMS',
            CLASS => 'ORAC::Msg::Task::ADAM',
@@ -1031,7 +1036,7 @@ sub orac_determine_initial_algorithm_engines {
 
   } elsif( $inst eq 'ACSIS' ) {
 
-    @AlgEng = qw/ ndfpack_mon kappa_mon smurf_mon /;
+    @AlgEng = qw/ ndfpack_mon kappa_mon smurf_mon cupid_mon/;
 
   } elsif ($inst eq 'ACSIS_QL') {
 
