@@ -1,0 +1,185 @@
+=head1 NAME                                     -*-perl-*-
+
+_IDENTIFY_SPECBOUNDS_ - Determine the spectral bounds of the emission within a spectral cube.
+
+=head1 DESCRIPTION
+
+The group file (which should contain a spectral axis) is collapsed along
+each non-spectral axis to form a single spectrum. This is done using a
+"MAX" estimator so that regions of emission are not diluted by combining
+them with other regions of non-emission (such as would happen if, say, a
+"MEAN" estimator were used). A background curve is then estimated and 
+subtracted from this collapsed spectrum, and the regions of emission are
+then identified using CUPID:FINDCLUMPS. The upper and lower spectral bounds 
+each region of emission are stored in the group user-defined header, with 
+key SPECBOUNDS, in the order lbnd1, ubnd1, lbnd2, ubnd2, etc.
+
+=head1 PARAMETERS
+
+=over 4
+
+=item FRAME = LOGICAL (Given)
+
+If this parameter is true (1) then the current Frame object will
+be used to identify the spectral bounds. Otherwise, the current Group
+object will be used. [0]
+
+=back
+
+=head1 AUTHOR
+
+David Berry <d.berry@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2007 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+orac_print "Identifying spectral bounds of emission regions.\n";
+
+# Decide whether to process the group or the frame (defraults to group).
+my $Obj;
+my $frame = ($_IDENTIFY_SPECBOUNDS_{FRAME}) ? 1 : 0;
+if( $frame ) {
+  $Obj = $Frm;
+} else {
+  $Obj = $Grp;
+}
+
+# Do nothing if we have no group file. 
+if( -e $Obj->file . $Obj->filesuffix ) {
+   my $tmp2;
+   my $out2;
+   my $params;
+   my $att;
+   my $domain;
+   my $lbnd;
+   my $ubnd;
+   my $iclump;
+   my @bounds;
+   my @clump_bounds;
+   my $aref;
+
+# Get the number of WCS axes in the group file.
+   my $in = $Obj->file;
+   $Mon{'atools_mon'}->obeyw( "astget", "this=$in attrib=naxes" );
+   my ($ORAC_STATUS, $naxes) = $Mon{'atools_mon'}->get('astget', 'VALUE');
+
+# Create a temporary file to hold the 1D collapsed array.
+   my $tmp = new ORAC::TempFile;
+   my $out = $tmp->file;
+
+# Compress the group file along each axis in turn, excluding the spectral axis,
+# until there is only one axis left. 
+   my $iaxis = 1;
+   while( $naxes > 1 ) {
+
+# Get the Domain for this axis.
+      $att = "Domain($iaxis)";
+      $Mon{'atools_mon'}->obeyw( "astget", "this=$in attrib=$att" );
+      ($ORAC_STATUS, $domain) = $Mon{'atools_mon'}->get('astget', 'VALUE');
+
+# Only compress along this axis if the axis Domain name does not contain the
+# string "SPECTRUM".
+      if( !( $domain =~ /SPECTRUM/ ) ) {
+
+# Collapse the array along the current axis. If this is the last axis to be 
+# collapsed put the output into the primary output array. Otherwise put it 
+# into a new temporary array that will be deleted when it goes out of scope.
+# Use the output array as the input for the next collapse.
+         $params = "in=$in";
+
+         if( $naxes == 2 ) {
+            $params = "$params out=$out";
+            $in = $out;
+
+         } else {
+            $tmp2 = new ORAC::TempFile;
+            $out2 = $tmp2->file;
+            $params = "$params out=$out2";
+            $in = $out2;
+         }
+
+         $params = "$params axis=$iaxis estimator=max";
+         $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+# Decrement the number of axes remaining in the array.
+         $naxes--;
+
+# If this is a spectral axis, move on to the next axis without decrementing 
+# the number of remaining axes.
+      } else {
+         $iaxis++;
+      }
+   }
+
+# There often seems to be grot in the first and last 10% of the spectrum
+# created above. So get the pixel index bounds of the usable section of the
+# spectrum (assumed to be the central 80%).
+   $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$out quiet=yes" );
+   ($ORAC_STATUS, $lbnd) = $Mon{'ndfpack_mon'}->get('ndftrace', 'LBOUND');
+   ($ORAC_STATUS, $ubnd) = $Mon{'ndfpack_mon'}->get('ndftrace', 'UBOUND');
+
+   my $margin = int( 0.1*( $ubnd - $lbnd ) );
+   $lbnd = $lbnd + $margin;
+   $ubnd = $ubnd - $margin;
+
+# Use CUPID:FINDBACK to identify and remove any background features that
+# have scale size larger than one quarter of the length of the usable part
+# of the spectrum (i.e. twice the size of the margin). 
+   my $tmp3 = new ORAC::TempFile;
+   my $out3 = $tmp3->file;
+   my $box = 2*$margin;
+   my $opts = "in=$out($lbnd:$ubnd) box=$box sub=yes out=$out3 accept";
+   $Mon{'cupid_mon'}->obeyw( "findback", $opts );
+
+# Use CUPID:FINDCLUMPS to identify the regions of significant emission in 
+# the spectrum.
+   my $tmp4 = new ORAC::TempFile;
+   my $out4 = $tmp4->file;
+
+   my $tmp5 = new ORAC::TempFile;
+   my $cat = $tmp5->file;
+
+   $opts = "in=$out3 out=$out4 outcat=$cat method=fellwalker config='noise=rms,mindip=1.0E10,minheight=2*RMS' accept";
+   $Mon{'cupid_mon'}->obeyw( "findclumps", $opts );
+
+# Loop round all the clumps found above, using a one-based index as required 
+# by CLUMPINFO.
+   ($ORAC_STATUS, my $nclump) = $Mon{'cupid_mon'}->get('findclumps', 'NCLUMPS');
+   for( $iclump = 1; $iclump <= $nclump; $iclump++ ) {
+
+# Use CUPID:CLUMPINFO to get the upper and lower bounds of the spectral 
+# bounding box containing the current clump. Concatentate them into the 
+# @bounds array in the order lbnd1, ubnd1, lbnd2, ubnd2, etc.
+
+      $opts = "ndf=$out4 clumps=$iclump quiet=yes";
+      $Mon{'cupid_mon'}->obeyw( "clumpinfo", $opts );
+
+      ($ORAC_STATUS, $clump_bounds[ 0 ] ) = $Mon{'cupid_mon'}->get('clumpinfo', 'FLBND');
+      ($ORAC_STATUS, $clump_bounds[ 1 ] ) = $Mon{'cupid_mon'}->get('clumpinfo', 'FUBND');
+      $bounds[ $iclump ] = [ @clump_bounds ];
+   }
+
+   orac_print "Spectral bounds of emission: ";
+   if( $nclump > 0 ) {
+      for $aref ( @bounds ) {
+         if( $aref ) {
+            orac_print " [ @$aref ]";
+         }
+      }
+      orac_print "\n";
+   } else {
+      orac_print "<no spectral emission found>\n";
+   }      
+
+# Store them the Group user-defined header.
+   $Obj->uhdr( "SPECBOUNDS", \@bounds );
+
+}
+
+# Tidy up output.
+orac_print "\n";
+
