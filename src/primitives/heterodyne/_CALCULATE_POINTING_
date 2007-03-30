@@ -1,32 +1,20 @@
+# -*-perl-*-
+
 =head1 NAME
 
-_CALCULATE_POINTING_ -- Calculate pointing offsets.
+_CALCULATE_LINE_POINTING_
 
 =head1 DESCRIPTION
 
-This primitive takes an ACSIS cube, collapses it along the frequency
-axis, then performs a centroid on the object being observed. It then
-reports the offset from 0,0 in arcseconds.
-
-Only the middle 80% of the frequency range is used to avoid bringing
-in noise at the ends of the frequency range.
-
 =head1 ARGUMENTS
 
-None.
+=over 4
+
+=back
 
 =head1 NOTES
 
 =over 4
-
-=item *
-
-This primitive is suitable for any cube.
-
-=item *
-
-The middle 80% of the frequency axis are collapsed. This is done to
-avoid noise typically seen at the ends of the frequency axis.
 
 =back
 
@@ -34,77 +22,72 @@ avoid noise typically seen at the ends of the frequency axis.
 
 =over 4
 
-=item *
-
-Collapsed "white light" image inheriting the frame's name but with the
-_col suffix.
-
 =back
 
 =head1 TASKS
 
-KAPPA: CENTROID, COLLAPSE, NDFTRACE, WCSATTRIB.
+=head1 REQUIRED PERL MODULES
 
 =head1 AUTHORS
 
-Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2006 Particle Physics and Astronomy Research Council.
-All Rights Reserved.
+Copyright (C) 2007 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
 
 =cut
 
-# Collapse the current Frm object in frequency space, using only the
-# middle 80% so that we don't get the noise on the ends of the
-# spectra.
+if( ! $Frm->uhdr( "SPARSE_CUBE" ) ) {
 
-my ( $in, $colfile ) = $Frm->inout( "_col" );
-
-$Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
-my ( $ORAC_STATUS, @astart ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "flbnd" );
-( $ORAC_STATUS, my @aend ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fubnd" );
-
-my $spread = abs( $aend[2] - $astart[2] );
-my $low = $astart[2] + 0.1 * $spread;
-my $high = $aend[2] - 0.1 * $spread;
-
-# Set up parameters.
-my $param = "in=$in out=$colfile axis=3 estimator=integ title=$colfile ";
-$param   .= "high=$high low=$low";
-
-# Do the collapse.
-orac_print "Collapsing $in in frequency space to form $colfile...";
-$Mon{'kappa_mon'}->obeyw( "collapse", "$param" );
-orac_print "done.\n";
+  my $in = $Frm->file;
 
 # Set the offset coordinate system to Origin.
-$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$colfile mode=get name=SkyRefIs" );
-( $ORAC_STATUS, my $skyrefis ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
-$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$colfile mode=set name=SkyRefIs newval=Origin" );
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=get name=SkyRefIs" );
+  my ( $ORAC_STATUS, $skyrefis ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name=SkyRefIs newval=Origin" );
+
+# Retrieve the format of either axis, so that we can set them back
+# when we're done processing.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=get name='Format(1)'" );
+  ( $ORAC_STATUS, my $format1 ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=get name='Format(2)'" );
+  ( $ORAC_STATUS, my $format2 ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
 
 # Set the format of the axes to arcseconds, with four decimal places.
-my $newformat = "s.4";
-$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$colfile mode=set name='Format(1)' newval=$newformat" );
-$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$colfile mode=set name='Format(2)' newval=$newformat" );
+  my $newformat = "s.4";
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(1)' newval=$newformat" );
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(2)' newval=$newformat" );
 
 # Calculate the centroid, using the centre of the array as the initial
 # position of the object.
-$param = "ndf=$colfile init='0,0' mode=Interface";
-$Mon{'kappa_mon'}->obeyw( "centroid", "$param" );
+  my $params = "ndf=$in init='0,0' mode=Interface cerror=true";
+  $Mon{'kappa_mon'}->obeyw( "centroid", "$params" );
 
 # Retrieve the x and y centre. These values are in degrees, so convert
 # them into arcseconds.
-( $ORAC_STATUS, my $xcen ) = $Mon{'kappa_mon'}->get( "centroid", "xcen" );
-( $ORAC_STATUS, my $ycen ) = $Mon{'kappa_mon'}->get( "centroid", "ycen" );
+  ( $ORAC_STATUS, my $xcen ) = $Mon{'kappa_mon'}->get( "centroid", "xcen" );
+  ( $ORAC_STATUS, my $ycen ) = $Mon{'kappa_mon'}->get( "centroid", "ycen" );
+  ( $ORAC_STATUS, my $xerr ) = $Mon{'kappa_mon'}->get( "centroid", "xerr" );
+  ( $ORAC_STATUS, my $yerr ) = $Mon{'kappa_mon'}->get( "centroid", "yerr" );
 
-my $p_xcen = sprintf( "%.2f", $xcen );
-my $p_ycen = sprintf( "%.2f", $ycen );
+  my $p_xcen = sprintf( "%.2f", $xcen );
+  my $p_ycen = sprintf( "%.2f", $ycen );
+  my $p_xerr = sprintf( "%.2f", $xerr );
+  my $p_yerr = sprintf( "%.2f", $yerr );
 
 # Display the results to the user.
-orac_print( "DAZ: $p_xcen DEL: $p_ycen\n", "blue" );
+  orac_print( "Pointing results:\n", "blue" );
+  orac_print( " DAZ: $p_xcen +/- $p_xerr\n DEL: $p_ycen +/- $p_yerr\n", "blue" );
 
-# Set SkyRefIs back to what it was before..
-$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$colfile mode=set name=SkyRefIs newval=$skyrefis" );
+# Set SkyRefIs and Format back to what they were before.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name=SkyRefIs newval=$skyrefis" );
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(1)' newval=$format1" );
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(2)' newval=$format2" );
 
+} else {
+
+  orac_print "Currently unable to calculate pointing values for a sparse cube.\n";
+
+}
