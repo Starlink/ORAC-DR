@@ -1,0 +1,131 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CREATE_LINE_INTENSITY_IMAGES_
+
+=head1 DESCRIPTION
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item AXIS = INTEGER (Given)
+
+The axis to collapse over. [3]
+
+=item ESTIMATOR = STRING (Given)
+
+The collapse estimator used to create the image. This can be any of
+those listed for the ESTIMATOR parameter for the KAPPA/COLLAPSE
+command. ['INTEG']
+
+=item GROUP = LOGICAL (Given)
+
+Whether or not to use the Group object to collapse over. [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The integrated intensity images with _lintegN suffix, where N is the
+image for the N-th line, counting from lower frequency to higher.
+
+=back
+
+=head1 TASKS
+
+KAPPA: COLLAPSE.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2007 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# Handle parameters.
+my $axis = ( defined( $_CREATE_LINE_INTENSITY_IMAGES_{AXIS} ) ?
+             $_CREATE_LINE_INTENSITY_IMAGES_{AXIS} :
+             3 );
+my $estimator = ( defined( $_CREATE_LINE_INTENSITY_IMAGES_{ESTIMATOR} ) ?
+                  $_CREATE_LINE_INTENSITY_IMAGES_{ESTIMATOR} :
+                  'INTEG' );
+my $group = ( defined( $_CREATE_LINE_INTENSITY_IMAGES_{GROUP} ) ?
+              $_CREATE_LINE_INTENSITY_IMAGES_{GROUP} :
+              0 );
+
+my $Obj;
+my $in;
+my $out;
+if( $group ) {
+  $Obj = $Grp;
+  $in = $Grp->file;
+  $out = $Grp->file . "_linteg";
+} else {
+  $Obj = $Frm;
+  ( $in, $out ) = $Frm->inout( "_linteg" );
+}
+
+# Check to see if the spectral bounds have been identified. If they
+# have not, identify them.
+if( ! defined( $Obj->uhdr( "SPECBOUNDS" ) ) ) {
+
+  my $frame = ( $group ? 0 : 1 );
+  _IDENTIFY_SPECBOUNDS_ FRAME=$frame
+
+}
+
+# Retrieve the spectral bounds and sort them.
+my $specbounds = $Obj->uhdr( "SPECBOUNDS" );
+my @specbounds = @$specbounds;
+@specbounds = sort { $a->[0] <=> $b->[0] } @specbounds;
+
+# For each pair of spectral bounds, collapse around them to form a
+# line-specific integrated intensity image.
+for ( my $i = 0; $i <= $#specbounds ; $i++ ) {
+
+  my $lower = $specbounds[$i][0];
+  my $upper = $specbounds[$i][1];
+
+  # The new output name is $out with the current line number appended.
+  my $tmpout = $out . ( $i + 1 );
+
+  # Set up the parameters for COLLAPSE.
+  my $params = "in=$in out=$tmpout estimator=$estimator axis=$axis low=$lower high=$upper trim=false";
+
+  # Run COLLAPSE.
+  $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+  # Report to user.
+  my $p_lower = sprintf( "%.3f", $lower );
+  my $p_upper = sprintf( "%.3f", $upper );
+  orac_print "$in to $tmpout:\n";
+  orac_print " Created line intensity image from $p_lower to $p_upper.\n";
+
+  # Create a temporary Frame object for Display.
+  my $tmpFrm = new $Frm;
+  $tmpFrm->file( $tmpout );
+  $Display->display_data( $tmpFrm ) if defined $Display;
+}
+
+# Tidy-up output.
+orac_print "\n";

@@ -1,0 +1,121 @@
+# -*-perl-*-
+
+=head1 NAME
+
+=head1 DESCRIPTION
+
+=head1 ARGUMENTS
+
+=over 4
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=back
+
+=head1 TASKS
+
+=head1 REQUIRED PERL MODULES
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2007 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
+
+# Handle parameters.
+my $axis = ( defined( $_CREATE_LINE_CHANNEL_MAPS_{AXIS} ) ?
+             $_CREATE_LINE_CHANNEL_MAPS_{AXIS} :
+             3 );
+my $estimator = ( defined( $_CREATE_LINE_CHANNEL_MAPS_{ESTIMATOR} ) ?
+                  $_CREATE_LINE_CHANNEL_MAPS_{ESTIMATOR} :
+                  'INTEG' );
+my $group = ( defined( $_CREATE_LINE_CHANNEL_MAPS_{GROUP} ) ?
+              $_CREATE_LINE_CHANNEL_MAPS_{GROUP} :
+              0 );
+my $nchan = ( defined( $_CREATE_LINE_CHANNEL_MAPS_{NCHAN} ) ?
+              $_CREATE_LINE_CHANNEL_MAPS_{NCHAN} :
+              16 );
+my $shape = ( defined( $_CREATE_LINE_CHANNEL_MAPS_{SHAPE} ) ?
+              $_CREATE_LINE_CHANNEL_MAPS_{SHAPE} :
+              4 );
+
+my $Obj;
+my $in;
+my $baseout;
+if( $group ) {
+  $Obj = $Grp;
+  $in = $Grp->file;
+  $baseout = $Grp->file . "_lchan";
+} else {
+  $Obj = $Frm;
+  ( $in, $baseout ) = $Frm->inout( "_lchan" );
+}
+
+# Only create the channel maps if we're on the last member of the
+# Group (if in Group mode), or the current frame (if not in Group
+# mode).
+if( $group && $Grp->lastmember( $Frm ) ||
+    ! $group ) {
+
+  # Check to see if the spectral bounds have been identified. If they
+  # have not, identify them.
+  if( ! defined( $Obj->uhdr( "SPECBOUNDS" ) ) ) {
+
+    my $frame = ( $group ? 0 : 1 );
+    _IDENTIFY_SPECBOUNDS_ FRAME=$frame
+
+  }
+
+  # Retrieve the spectral bounds and sort them.
+  my $specbounds = $Obj->uhdr( "SPECBOUNDS" );
+  my @specbounds = @$specbounds;
+  @specbounds = sort { $a->[0] <=> $b->[0] } @specbounds;
+
+  # For each pair of spectral bounds, create a channel map.
+  for ( my $i = 0 ; $i <= $#specbounds ; $i++ ) {
+
+    my $low  = $specbounds[$i][0];
+    my $high = $specbounds[$i][1];
+
+    # The new output name is $baseout with the current line number
+    # appended, but start the line numbers from 1 instead of 0.
+    my $out = $baseout . ( $i + 1 );
+
+    # Set up the parameters for CHANMAP.
+    my $params = "in=$in out=$out axis=$axis nchan=$nchan shape=$shape ";
+    $params   .= "low=$low high=$high estimator=$estimator";
+
+    # Run CHANMAP.
+    $Mon{'kappa_mon'}->obeyw( "chanmap", "$params" );
+
+    # Report to user.
+    my $p_low  = sprintf( "%.3f", $low );
+    my $p_high = sprintf( "%.3f", $high );
+    orac_print "$in to $out:\n";
+    orac_print " Created $nchan-channel channel map from $p_low to $p_high.\n";
+
+    # Create a temporary Frame object for Display.
+    my $tmpFrm = new $Frm;
+    $tmpFrm->file( $out );
+    $Display->display_data( $tmpFrm ) if defined( $Display );
+
+  }
+
+  # Tidy-up output.
+  orac_print "\n";
+}
