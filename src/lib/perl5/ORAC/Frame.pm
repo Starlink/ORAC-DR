@@ -568,6 +568,64 @@ sub raw {
   return wantarray ? @{$self->{RawName}} : $self->{RawName}->[0];
 }
 
+=item B<tempraw>
+
+An array of flags, one per raw file, indicating whether the raw
+file is temporary, and so can be deleted, or real data (don't want
+to delete it).
+
+  $Frm->tempraw( @istemp );
+  @istemp = $Frm->tempraw;
+
+If a single value is given, it will be applied to all raw files
+
+  $Frm->tempraw( 1 );
+
+In scalar context returns true if all frames are temporary,
+false if all frames are permanent and undef if some frames are temporary
+whilst others are permanent.
+
+  $alltemp = $Frm->tempraw();
+
+=cut
+
+sub tempraw {
+  my $self = shift;
+  if (@_) {
+    my @rawfiles = $self->raw;
+    my @flags;
+    if (scalar(@_) == 1) {
+      @flags = map { $_[0] } @rawfiles;
+    } else {
+      @flags = @_;
+      if (@flags != @rawfiles) {
+	croak "Number of tempraw flags (".@flags.") differs from number of registered raw files (".@rawfiles.")\n";
+      }
+    }
+    @{$self->{TempRaw}} = @flags;
+  }
+
+  if (wantarray) {
+    return @{$self->{TempRaw}};
+  } else {
+    my $istemp = 0;
+    my $isperm = 0;
+    for my $f (@{$self->{TempRaw}}) {
+      if ($f) {
+	$istemp = 1;
+      } else {
+	$isperm = 1;
+      }
+    }
+    if ($istemp && $isperm) {
+      return undef;
+    } elsif ($istemp) {
+      return 1;
+    } else {
+      return 0;
+    }
+  }
+}
 
 =item B<rawfixedpart>
 
