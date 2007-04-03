@@ -438,13 +438,15 @@ sub launch {
       }
 
       # Launch it if we can find the path. Remote tasks
-      # are characterized by a null path
+      # are characterized by a null path. We therefore call the engine
+      # constructor if we haven't got a path at all, or if we do have a path
+      # and the path is good.
 
       # For some messaging systems the object identifier should be
       # different each time this is called to protect against systems
       # that can not reuse system identifiers
       my $obj;
-      if ($path && -e $path) {
+      if (!$path || -e $path) {
 	my $engid = ($messys->require_uniqid ? $self->engine_inc($engine)
 		     : $engine );
 	$obj = $pars{CLASS}->new($engid, $path );
