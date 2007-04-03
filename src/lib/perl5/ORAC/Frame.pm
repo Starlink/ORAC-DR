@@ -164,6 +164,7 @@ sub new {
 	       Recipe => undef,
 	       UHeader => {},
 	       Tags => {},
+	       TempRaw => [],
                WCS => [],
 	       %subclass
 	      };
@@ -606,6 +607,8 @@ sub tempraw {
   }
 
   if (wantarray) {
+    # will be empty if nothing specified so that will default to
+    # undef if the array is read
     return @{$self->{TempRaw}};
   } else {
     my $istemp = 0;
@@ -622,6 +625,7 @@ sub tempraw {
     } elsif ($istemp) {
       return 1;
     } else {
+      # Default case if no tempraw has been specified
       return 0;
     }
   }
