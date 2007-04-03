@@ -331,9 +331,19 @@ sub orac_process_frame {
      throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
   };
 
-  # delete symlink to raw data file
-  # Only want to do this if we created it initially and if ORAC_DATA_IN
-  # is not the same directory as ORAC_DATA_OUT
+  # delete symlink to raw data file or actual data file if marked with
+  # temporary status - we rely on the temporary flags even if 
+  # the ORAC_DATA_IN == ORAC_DATA_OUT and it's not a symlink
+  my @istempraw = $Frm->tempraw;
+  for my $raw ( $Frm->raw ) {
+    my $istemp = shift(@istempraw);
+    unlink $raw if $istemp;
+  }
+
+  # Now we try again but be a bit more careful about removing
+  # files
+  # Only want to do this if we created it initially as a soft link
+  # and if ORAC_DATA_IN is not the same directory as ORAC_DATA_OUT
   if (    File::Spec->canonpath($ENV{"ORAC_DATA_IN"}) 
        ne File::Spec->canonpath($ENV{"ORAC_DATA_OUT"}) ) {
     foreach my $raw ( $Frm->raw ) {
