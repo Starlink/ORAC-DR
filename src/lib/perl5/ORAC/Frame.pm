@@ -320,6 +320,9 @@ In an array context, the array contents are returned.
 The file() method can be used to set or retrieve individual
 filenames.
 
+The previous files are stored as intermediates (similarly to the C<file>
+method behaviour) and the C<nokeep> flag is respected.
+
 Note: It is possible to set and retrieve the array members using
 the array reference rather than the file() method:
 
@@ -335,7 +338,25 @@ deletion of temporary files).
 
 sub files {
   my $self = shift;
-  if (@_) { @{ $self->{Files} } = @_;}
+  if (@_) { 
+    # get copies of current files
+    my @oldfiles = @{$self->{Files}};
+
+    # delete the old files if required and store on intermediates array
+    for my $i (1..@oldfiles) {
+      $self->erase( $i ) if $self->nokeep( $i );
+    }
+    push(@{$self->intermediates}, @oldfiles);
+
+    # Store the new versions
+    @{ $self->{Files} } = @_;
+
+    # unset noKeep flags
+    for my $i (1..scalar(@_)) {
+      $self->nokeep( $i, 0);
+    }
+
+  }
 
   if (wantarray) {
 
