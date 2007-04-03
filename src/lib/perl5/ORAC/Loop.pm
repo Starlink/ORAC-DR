@@ -778,6 +778,7 @@ sub orac_loop_task {
   # we have new data detected for all tasks
   # now generate filesnames for each
   my @files;
+  my @istemp;
   for my $t (keys %current) {
 
     if (exists $current{$t}->{FILENAME}) {
@@ -789,6 +790,7 @@ sub orac_loop_task {
       return undef if !defined $cname;
 
       push(@files, $cname );
+      push(@istemp, 0 ); # This is a real file
 
     } elsif (exists $current{$t}->{IMAGE}) {
       # need to choose a filename. Make one up for the moment
@@ -812,7 +814,9 @@ sub orac_loop_task {
 	my $hdr = new Astro::FITS::Header::NDF( Cards => $current{$t}->{IMAGE}->{FITS} );
 	$hdr->writehdr( File => $fname );
 
+	$fname .= ".sdf";
 	push(@files, $fname);
+	push(@istemp, 1); # this is a temporary file
 
       } else {
 	# wibble
@@ -836,6 +840,9 @@ sub orac_loop_task {
 
   # Now configure the frame object
   $Frm->configure( @files == 1 ? $files[0] : \@files );
+
+  # and indicate tempness
+  $Frm->tempraw( @istemp );
 
   # Store the current reftime
   $arr->[0] = $reftime;
