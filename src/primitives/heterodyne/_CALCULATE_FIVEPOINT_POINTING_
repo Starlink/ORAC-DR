@@ -10,11 +10,21 @@ _CALCULATE_FIVEPOINT_POINTING_
 
 =over 4
 
+=item TYPE = STRING (Given)
+
+The type of pointing being calculated. This is purely for bookkeeping
+purposes, and should be either CONTINUUM or LINE. This argument is
+case-insensitive. ['LINE']
+
 =back
 
 =head1 NOTES
 
 =over 4
+
+=item *
+
+This primitive is suitable for ACSIS pointing observations.
 
 =back
 
@@ -22,11 +32,18 @@ _CALCULATE_FIVEPOINT_POINTING_
 
 =over 4
 
+None.
+
 =back
 
 =head1 TASKS
 
+FIGARO: FITPOLY.
+KAPPA: NDFCOPY, SETAXIS, WCSATTRIB.
+
 =head1 REQUIRED PERL MODULES
+
+None.
 
 =head1 AUTHORS
 
@@ -34,10 +51,94 @@ Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2007 Particle Physics and Astronomy Research
-Council.  All Rights Reserved.
+Copyright (C) 2007 Science and Technology Facilities Council. All
+Rights Reserved.
 
 =cut
 
+# Find out what type of pointing we're doing, line or
+# continuum. Default to line.
+my $type = ( defined( $_CALCULATE_FIVEPOINT_POINTING_{TYPE} ) ?
+             uc( $_CALCULATE_FIVEPOINT_POINTING_{TYPE} ) :
+             'LINE' );
+
 my $in = $Frm->file;
 
+# Set the offset coordinate system to Origin, storing the original
+# value so we can restore it once we've finished.
+$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=get name=SkyRefIs" );
+my ( $ORAC_STATUS, $skyrefis ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
+$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name=SkyRefIs newval=Origin" );
+
+# Retrieve the format of either axis, so that we can set them back
+# when we're done processing.
+$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=get name='Format(1)'" );
+( $ORAC_STATUS, my $format1 ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
+$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=get name='Format(2)'" );
+( $ORAC_STATUS, my $format2 ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
+
+# Set the format of the axes to arcseconds, with four decimal places.
+my $newformat = "s.4";
+$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(1)' newval=$newformat" );
+$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(2)' newval=$newformat" );
+
+# We need to take two cuts of the data, one horizontal and the other
+# vertical. Then we'll fit a parabola to both of these using
+# FIGARO:FITPOLY to determine the pointing offsets.
+#
+# First, the horizontal.
+my $horiz = new ORAC::TempFile;
+my $horiz_file = $horiz->file;
+$Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in(,1) out=$horiz_file trim trimwcs" );
+$Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$horiz_file dim=1 mode=wcs" );
+
+# Fit the polynomial.
+my $params = "in=$horiz_file device=! dialog=f varuse=true mask1=[-10]";
+$params   .= " mask2=[10] order=2 logfil=! comp=1";
+$Mon{'figaro4'}->obeyw( "fitpoly", "$params" );
+
+# Retrieve the fit information.
+my ( $ORAC_STATUS, @horiz_coeffs ) = $Mon{'figaro4'}->get( "fitpoly", "fitcoeffs" );
+
+my $horiz_max = 206265 * ( -1.0 * $horiz_coeffs[1] / ( 2 * $horiz_coeffs[2] ) );
+
+# Now the vertical.
+my $vert = new ORAC::TempFile;
+my $vert_file = $vert->file;
+
+$Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in(1,) out=$vert_file trim trimwcs" );
+$Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$vert_file dim=1 mode=wcs" );
+
+# Fit the polynomial.
+$params  = "in=$vert_file device=! dialog=f varuse=true mask1=[-10]";
+$params .= " mask2=[10] order=2 logfil=! comp=1";
+$Mon{'figaro4'}->obeyw( "fitpoly", "$params" );
+
+# Retrieve the fit information.
+( $ORAC_STATUS, my @vert_coeffs ) = $Mon{'figaro4'}->get( "fitpoly", "fitcoeffs" );
+
+my $vert_max = 206265 * ( -1.0 * $vert_coeffs[1] / ( 2 * $vert_coeffs[2] ) );
+
+# Display the results to the user.
+my $p_horiz_max = sprintf( "%.2f", $horiz_max );
+my $p_vert_max = sprintf( "%.2f", $vert_max );
+orac_print( "Pointing results:\n", "blue" );
+orac_print( " DAZ: $p_horiz_max\n DEL: $p_vert_max\n", "blue" );
+
+# Store with the calibration system.
+my %calhash = ( %{$Frm->hdr},
+                DAZ => $horiz_max,
+                DEL => $vert_max,
+                DAZ_ERR => 0,
+                DEL_ERR => 0,
+                POINTING_TYPE => $type,
+              );
+$Cal->pointingindex->add( $Frm->file, \%calhash );
+
+# Set SkyRefIs and Format back to what they were before.
+$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name=SkyRefIs newval=$skyrefis" );
+$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(1)' newval=$format1" );
+$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(2)' newval=$format2" );
+
+# Tidy-up output.
+orac_print "\n";
