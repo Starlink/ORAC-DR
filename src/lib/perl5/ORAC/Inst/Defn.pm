@@ -494,7 +494,7 @@ sub orac_determine_inst_classes {
   } elsif( $inst eq 'ACSIS') {
     $groupclass = "ORAC::Group::ACSIS";
     $frameclass = "ORAC::Frame::ACSIS";
-    $calclass = "ORAC::Calib";
+    $calclass = "ORAC::Calib::ACSIS";
     $instclass = "ORAC::Inst::ACSIS";
 
   } elsif( $inst eq 'ACSIS_QL' ) {
