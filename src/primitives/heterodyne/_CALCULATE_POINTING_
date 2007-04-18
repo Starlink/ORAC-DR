@@ -88,21 +88,33 @@ if( ! $Frm->uhdr( "SPARSE_CUBE" ) ) {
     my $params = "ndf=$in init='0,0' mode=Interface cerror=true";
     $Mon{'kappa_mon'}->obeyw( "centroid", "$params" );
 
-    # Retrieve the x and y centre. These values are in degrees, so
-    # convert them into arcseconds.
+    # Retrieve the x and y centre.
     ( $ORAC_STATUS, my $xcen ) = $Mon{'kappa_mon'}->get( "centroid", "xcen" );
     ( $ORAC_STATUS, my $ycen ) = $Mon{'kappa_mon'}->get( "centroid", "ycen" );
     ( $ORAC_STATUS, my $xerr ) = $Mon{'kappa_mon'}->get( "centroid", "xerr" );
     ( $ORAC_STATUS, my $yerr ) = $Mon{'kappa_mon'}->get( "centroid", "yerr" );
 
+    # Make them pretty for output.
     my $p_xcen = sprintf( "%.2f", $xcen );
     my $p_ycen = sprintf( "%.2f", $ycen );
     my $p_xerr = sprintf( "%.2f", $xerr );
     my $p_yerr = sprintf( "%.2f", $yerr );
 
     # Display the results to the user.
-    orac_print( "Pointing results:\n", "blue" );
+    orac_print( "Pointing results using CENTROID:\n", "blue" );
     orac_print( " DAZ: $p_xcen +/- $p_xerr\n DEL: $p_ycen +/- $p_yerr\n", "blue" );
+
+    # Display a warning if values are large.
+    if( abs( $xcen ) > 10 ) {
+      orac_err "Absolute DAZ pointing value greater than 10 arcseconds.\n";
+    } elsif( abs( $xcen ) > 5 ) {
+      orac_warn "Absolute DAZ pointing value greater than 5 arcseconds.\n";
+    }
+    if( abs( $ycen ) > 10 ) {
+      orac_err "Absolute DEL pointing value greater than 10 arcseconds.\n";
+    } elsif( abs( $ycen ) > 5 ) {
+      orac_warn "Absolute DEL pointing value greater than 5 arcseconds.\n";
+    }
 
     # Store with the calibration system.
     my %calhash = ( %{$Frm->hdr},
@@ -115,10 +127,67 @@ if( ! $Frm->uhdr( "SPARSE_CUBE" ) ) {
                   );
     $Cal->pointingindex->add( $Frm->file, \%calhash );
 
+    # Tidy up the output so we have differentiation between CENTROID and PSF.
+    orac_print "\n";
+
+    # Now do the PSF pointing calculation.
+    #
+    # Create a dummy input positions list file. This will hold "0 0",
+    # the base position of a pointing.
+    my $psfcat = new ORAC::TempFile;
+    my $psfcatfile = $psfcat->file;
+    open my $psfcatfile_h, ">", $psfcatfile or orac_err "Cannot open temporary file for writing PSF input position list: $!";
+    print $psfcatfile_h "0 0\n";
+    close $psfcatfile_h;
+
+    # Set up the parameters for PSF.
+    $params = "in=$in incat=! cofile=$psfcatfile device=! gauss=true out=!";
+
+    # Run PSF.
+    $Mon{'kappa_mon'}->obeyw( "psf", "$params" );
+
+    # Retrieve the position.
+    ( $ORAC_STATUS, my $psf_xcen ) = $Mon{'kappa_mon'}->get( "psf", "xcen" );
+    ( $ORAC_STATUS, my $psf_ycen ) = $Mon{'kappa_mon'}->get( "psf", "ycen" );
+
+    # Make these pretty for output.
+    my $p_psf_xcen = sprintf( "%.2f", $psf_xcen );
+    my $p_psf_ycen = sprintf( "%.2f", $psf_ycen );
+
+    # Display the results to the user.
+    orac_print( "Pointing results using PSF:\n", "blue" );
+    orac_print( " DAZ: $p_psf_xcen\n DEL: $p_psf_ycen\n", "blue" );
+
+    # Display a warning if values are large.
+    if( abs( $psf_xcen ) > 10 ) {
+      orac_err "Absolute DAZ pointing value greater than 10 arcseconds.\n";
+    } elsif( abs( $psf_xcen ) > 5 ) {
+      orac_warn "Absolute DAZ pointing value greater than 5 arcseconds.\n";
+    }
+    if( abs( $psf_ycen ) > 10 ) {
+      orac_err "Absolute DEL pointing value greater than 10 arcseconds.\n";
+    } elsif( abs( $psf_ycen ) > 5 ) {
+      orac_warn "Absolute DEL pointing value greater than 5 arcseconds.\n";
+    }
+
+    # Store with the calibration system.
+    my %calhash = ( %{$Frm->hdr},
+                    DAZ => $psf_xcen,
+                    DEL => $psf_ycen,
+                    DAZ_ERR => 0,
+                    DEL_ERR => 0,
+                    POINTING_TYPE => $type,
+                    METHOD => 'PSF',
+                  );
+    $Cal->pointingindex->add( $Frm->file, \%calhash );
+
     # Set SkyRefIs and Format back to what they were before.
     $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name=SkyRefIs newval=$skyrefis" );
     $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(1)' newval=$format1" );
     $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(2)' newval=$format2" );
+
+    # Tidy-up output.
+    orac_print "\n";
 
   }
 
@@ -126,4 +195,8 @@ if( ! $Frm->uhdr( "SPARSE_CUBE" ) ) {
 
   orac_print "Currently unable to calculate pointing values for a sparse cube.\n";
 
+  # Tidy-up output.
+  orac_print "\n";
+
 }
+
