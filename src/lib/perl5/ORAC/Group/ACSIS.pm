@@ -205,45 +205,6 @@ sub calc_orac_headers {
   return %new;
 }
 
-=item B<file>
-
-=cut
-
-sub file {
-  my $self = shift;
-
-  if( @_ ) {
-    my $arg = shift;
-
-    if( $arg =~ /^\d+$/ ) {
-
-      my $frm = $self->frame( $self->num );
-      my @subs = $frm->subs;
-
-      my $sub = $subs[$arg - 1];
-      my $file = $self->grpoutsub( $sub );
-      return $file;
-    } else {
-      $self->{File} = $self->stripfname( $arg );
-    }
-  }
-  return $self->{File};
-}
-
-sub grpoutsub {
-  my $self = shift;
-
-  my $sub = shift;
-
-  my $file = $self->file;
-
-  my $suffix = '_' . lc( $sub );
-
-  $file .= $suffix unless $file =~ /$suffix$/;
-
-  return $file;
-}
-
 =back
 
 =head1 SEE ALSO
