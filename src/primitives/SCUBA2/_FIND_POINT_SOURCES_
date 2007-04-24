@@ -1,0 +1,146 @@
+#! -*-perl-*
+
+=head1 NAME
+
+_FIND_POINT_SOURCES_ - Find point sources in given image
+
+=head1 DESCRIPTION
+
+Find the position of all the point sources in the given image.
+
+This primitive is designed to work on a single image and will fail if
+the current Frame object contains more than one file.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item IMAGE
+
+Name of image file to extract point sources from. Default is current
+Frame object but only if it contains a single (stacked) image.
+
+=item MINPIX
+
+Minimum number of connected pixels defining a source. Default is 9.
+
+=item DETECT_SIGMA
+
+Optional detection threshold in units of standard deviation. Default
+is 5.
+
+=item GROUP
+
+Only used if IMAGE is not defined. If true, use the current Group file
+for sky brightness calculations. Otherwise, use the current
+Frame. Default is 0 (false).
+
+=back
+
+The frame object is not updated.
+
+=head1 OUTPUT DATA
+
+On completion the primitive hash C<%_FIND_POINT_SOURCES_> contains
+the following keys:
+
+=over 4
+
+=item CATALOGUE
+
+A catalogue in the form of an Astro::Coords object containing the
+brightest sources
+
+=back
+
+=head1 STARLINK TASKS
+
+Extractor
+
+=head1 REQUIRED PERL MODULES
+
+Starlink::Extractor, Astro::Catalog, Astro::WaveBand
+
+=head1 AUTHOR
+
+Andy Gibb <agg@astro.ubc.ca>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2007 University of British Columbia. All Rights
+Reserved.
+
+=cut
+
+# Set input file - leave undefined if not specified
+my $in = ( exists $_FIND_POINT_SOURCES_{IMAGE} ) && 
+         ( defined $_FIND_POINT_SOURCES_{IMAGE}) ? 
+         $_FIND_POINT_SOURCES_{IMAGE} : undef;
+
+# If not input file was defined use the current group or frame
+unless ( defined $in ) {
+  # Determine if the user wants to use the current stacked Grp or Frm
+  # image
+  my $Obj;
+  my $group = defined( $_FIND_POINT_SOURCES_{GROUP} ) ? 
+    $_FIND_POINT_SOURCES_{GROUP} : 0;
+  if( $group ) {
+    $Obj = $Grp;
+  } else {
+    $Obj = $Frm;
+  }
+  if ( $Obj->nfiles == 1 ) {
+    $in = $Obj->file;
+  } else {
+    orac_throw "Error: _FIND_POINT_SOURCES_ must be run after images have been combined\n";
+  }
+}
+
+# Minimum size of box defining a source
+my $minpix = ( $_FIND_POINT_SOURCES_{MINPIX} || 9 );
+# Obtain the detection sigma level.
+my $detect = ( $_FIND_POINT_SOURCES_{DETECT_SIGMA} || 5 );
+
+# Get current stacked file
+my $in = $Frm->file(1);
+
+# Initialise the results array
+$_FIND_POINT_SOURCES_{RESULTS} = [];
+
+my $filter = $Frm->uhdr("ORAC_FILTER");
+
+# Run SExtractor
+use Starlink::Extractor;
+use Astro::WaveBand;
+use Astro::Catalog;
+my $conf_file = $Cal->find_file("extractor_catalogue.sex");
+$conf_file = $ENV{'ORAC_DATA_OUT'}."/extractor_catalogue.sex";
+my $extractor = new Starlink::Extractor( config => $conf_file );
+$extractor->detect_thresh( $detect );
+$extractor->analysis_thresh( 3.0 );
+$extractor->verbose_type('NORMAL');
+
+my $extracted_catalog = $extractor->extract( frame => $in,
+					     filter => new Astro::WaveBand( Filter => $filter ) );
+
+# Filter output catalogue to identify point sources
+my $filtered_catalog = new Astro::Catalog( origin => 'ORAC-DR primitive _FIND_POINT_SOURCES_');
+my $source;
+while ( $extracted_catalog->sizeof > 0 ) {
+  # Pop current source (returns an Astro::Catalog::Star object)
+  $source = $extracted_catalog->popstar;
+
+  # Add suitable sources with an ellipticity < 0.25 (= axial ratio of
+  # 1.333) to output catalogue
+  if ( $source->morphology->ellipticity < 0.25 && 
+       $source->morphology->area >= $minpix) {
+    $filtered_catalog->pushstar( $source );
+  }
+}
+
+if ( $filtered_catalog->sizeof == 0 ) {
+  orac_warn "No point-like sources found in current image\n";
+}
+
+# Store the resultant catalogue, even if it's empty
+$_FIND_POINT_SOURCES_{CATALOGUE} = $filtered_catalog;
