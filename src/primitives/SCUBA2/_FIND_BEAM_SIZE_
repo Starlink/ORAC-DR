@@ -6,16 +6,16 @@ _FIND_BEAM_SIZE_ - Calculate the beam size from a calibrator
 
 =head1 DESCRIPTION
 
-This primitive carries out a fit to a calibrator using the Kappa PSF
-command to determine the beam size and position angle. An error is
-generated if the source is not a calibrator. The reported values are
-the full-width-at-half-maximum (FWHM) along the major and minor axes,
-and the beam position angle on the sky at the time of obseration. The
-fit is performed in the sky domain so the FWHM is returned in arcsec.
+This primitive carries out a fit to a calibrator to determine the beam
+size and position angle. An error is generated if the source is not a
+calibrator. The reported values are the full-width-at-half-maximum
+(FWHM) along the major and minor axes, and the beam position angle on
+the sky at the time of obseration. The fit is performed in the SKY
+domain so the FWHM is returned in arcsec.
 
-By default, PSF does not assume that the beam is a gaussian, but a
-flag may be specified to force the return of the equivalent gaussian
-beam parameters.
+The default is to allow the current fitting routine to determine the
+shape of the beam. A flag may be specified to force the return of the
+equivalent gaussian beam parameters.
 
 =head1 ARGUMENTS
 
@@ -46,11 +46,11 @@ given to the user. Default is verbose (true).
 
 =item KAPPA
 
-WCSFRAME
+WCSFRAME, WCSATTRIB
 
 =item Other SCUBA-2 primitives
 
-_FIT_PSF_
+_FIND_POINT_SOURCES, _FIT_PSF_
 
 =back
 
@@ -70,7 +70,7 @@ position angle (E of N).
 
 =head1 OUTPUT FILES
 
-The following files are created:
+The following files are created (if necessary):
 
 =over 4
 
@@ -82,10 +82,10 @@ Log of beam sizes.
 
 =head1 KNOWN ISSUES
 
-Since the fit is currently restricted to the SKY domain, the reported
+Since the fit is currently carried out in the SKY domain, the reported
 beam PA will rotate with the sky during the course of a single
-night. When an AzEl frame becomes available that will be used for the
-fit.
+night. The solution is to report the beam in the FPLANE coordinate
+frame - the closest approximation is the PIXEL domain.
 
 This method also only fits a single component to the beam. This is not
 enough at 450 microns, but currently the beam is not sufficiently
@@ -95,8 +95,8 @@ well-known to do much more.
 
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
-Copyright (C) 2005 the University of British Columbia.  All Rights
-Reserved.
+Copyright (C) 2005-2007 the University of British Columbia.  All
+Rights Reserved.
 
 =cut
 
@@ -111,17 +111,61 @@ unless ($Frm->nfiles == 1) {
 # Are we forcing a gaussian?
 my $gaussian = (exists $_FIND_BEAM_SIZE_{GAUSSIAN} &&
 		defined $_FIND_BEAM_SIZE_{GAUSSIAN}) ?
-  $_FIND_BEAM_SIZE_{GAUSSIAN} : 0;
+                $_FIND_BEAM_SIZE_{GAUSSIAN} : 0;
 
 # Should I be verbose? (Default to yes)
 my $verbose = (exists $_FIND_BEAM_SIZE_{VERBOSE} && 
 	       defined $_FIND_BEAM_SIZE_{VERBOSE}) ?
-  $_FIND_BEAM_SIZE_{VERBOSE} : 1;
+               $_FIND_BEAM_SIZE_{VERBOSE} : 1;
+
+# Are we writing an entry to a log file? Default Yes
+my $uselog = ( exists $_FIND_BEAM_SIZE_{LOGFILE} && 
+	       defined $_FIND_BEAM_SIZE_{LOGFILE}) ?
+               $_FIND_BEAM_SIZE_{LOGFILE} : 1;
 
 # Do we have a calibrator?
 my $calib = $Cal->iscalsource($Frm->hdr('OBJECT')) ;
-orac_throw "Error: source is not a known calibrator \n" 
-  unless ($calib);
+#orac_throw "Error: source is not a known calibrator \n" 
+#  unless ($calib);
+
+# Retrieve and store current domain (frame) so it can be reset on exit
+my $origframe;
+my $ORAC_STATUS;
+$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in name=domain mode=get");
+( $ORAC_STATUS, $origframe ) = $Mon{ndfpack_mon}->get("wcsattrib", "value");
+
+# Determine whether the WCS frame (domain) was supplied as an
+# argument, else set it to the input frame.
+my $wcsframe = (exists $_FIND_BEAM_SIZE_{WCSFRAME} && 
+		defined $_FIND_BEAM_SIZE_{WCSFRAME} ) ? 
+                uc($_FIND_BEAM_SIZE_{WCSFRAME}) : $origframe;
+
+# Test whether or not given frame is valid.
+unless ($wcsframe =~ /AXIS|PIXEL|GRID|SKY/) {
+    orac_throw "Unknown WCS frame, $wcsframe ";
+}
+
+# Check whether older versions of kappa are being used.
+if (starversion_lt('kappa','V0.14-0')) {
+    $wcsframe = "AXIS" if ($wcsframe eq "SKY"); # No SKY frame in older kappa
+}
+
+# If we have a SKY frame, determine the WCS SYSTEM parameter.
+my ($system, $origsystem);
+if ( $wcsframe eq "SKY" ) {
+  $system = (exists $_FIND_BEAM_SIZE_{SYSTEM} && 
+	     defined $_FIND_BEAM_SIZE_{SYSTEM} ) ? 
+	     uc($_FIND_BEAM_SIZE_{SYSTEM}) : "";
+
+  # Retrieve and store current system so it can be reset on exit
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in name=system mode=get");
+  ( $ORAC_STATUS, $origsystem ) = $Mon{ndfpack_mon}->get("wcsattrib", "value");
+}
+
+# Set the WCS frame to that desired if necessary
+if ( $origframe ne $wcsframe ) {
+  $Mon{ndfpack_mon}->obeyw("wcsframe", "ndf=$in frame=$wcsframe");
+}
 
 # Initialise the log file if necessary
 my $beamlog;
@@ -129,39 +173,68 @@ if ($uselog) {
   my $time = gmtime();
   $beamlog = new ORAC::LogFile("log.beam");
   $beamlog->header("Beam log file - created on $time",
-               "\n#     Time   Filter      A       B       PA     CSO   El  Object",
-             "------------------------------------------------------------------------"
+		   "\n#     Time       Filter    A       B       PA     CSO    El  Object",
+		   "----------------------------------------------------------------------"
             );
 }
 
-# Find the source position
-# Use SKY frame to get source position in RA, Dec
-my $wcsframe = "sky";
-_FIND_BRIGHTEST_SOURCE_ LOGFILE=0 WCSFRAME=$wcsframe
+# Find the positions of all point sources in the image. Use current Frm.
+_FIND_POINT_SOURCES_ DETECT_SIGMA=10
 
-# Create temporary file with the position in
-my $tmp = new ORAC::TempFile;
-my $cofile = $tmp->file;
-print { $tmp->handle } $_FIND_BRIGHTEST_SOURCE_{RESULTS}->[0]," ",
-                       $_FIND_BRIGHTEST_SOURCE_{RESULTS}->[1], "\n";
-$tmp->handle->close;
+# Retrieve Astro::Catalog object from _FIND_BEAM_SIZE_
+my $catalog = $_FIND_POINT_SOURCES_{CATALOGUE};
 
-# FUTURE: change to AzEl frame to carry out the fit.
+# What if there are no point sources?
+if ( $catalog->sizeof == 0 ) {
+  orac_throw "No point sources found in current image: unable to determine beam parameters\n";
+}
+
+# Parse DATE-OBS keyword
+my @dateobs = split( /[-T:.]/, $Frm->hdr( 'DATE-OBS' ) );
+# Create a DateTime object to allow coordinate conversions
+my $dt = DateTime->new( year => $dateobs[0], month => $dateobs[1], 
+			day => $dateobs[2], hour => $dateobs[3], 
+			minute => $dateobs[4], second => $dateobs[5],
+			nanosecond => $dateobs[6]*1e6, time_zone => 'UTC' );
+
+# Create temporary file to write source position(s) in
+my $cofile = new ORAC::TempFile;
+
+# Loop over all sources in catalogue
+use Astro::Telescope;
+foreach my $source ( @{ $catalog->allstars }) {
+  my $coords = $source->coords;
+  # Set the telescope to JCMT
+  $coords->telescope( new Astro::Telescope( 'JCMT' ) );
+
+  # Register DateTime object
+  $coords->datetime( $dt );
+
+  # Print out Az and El of current source
+#  print $coords->ra." ".$coords->dec. "\n";
+  print { $cofile->handle } $coords->ra." ".$coords->dec. "\n";
+}
+$cofile->handle->close;
+
 # Fit the source with a PSF
-_FIT_PSF_ IMAGE=$in USELOG=1 COFILE=$cofile GAUSSIAN=$gaussian
-($amp, $fwhm, $axisr, $gamma, $orient) = @{ $_FIT_PSF_{RESULTS} };
+_FIT_PSF_ IMAGE=$in USELOG=1 COFILE=$cofile->file GAUSSIAN=$gaussian
+my ($amp, $fwhm, $axisr, $gamma, $orient) = @{ $_FIT_PSF_{RESULTS} };
 
-if ($axisr > 1.4 || $axisr < 0.75) {
+# Warn user if the fit looks bad
+if ($axisr > 1.3333 || $axisr < 0.75) {
   orac_warn "Warning: Fit appears to be poor or beam highly elongated \n";
 }
 
 my $beama = $fwhm;
 my $beamb = $fwhm * $axisr;
 
+# Now subtract parallactic angle to get PA in AzEl frame
+#$orient -= $coords->pa(format => 'deg');
+
+# Store results
 $_FIND_BEAM_SIZE_{RESULTS} = [$beama, $beamb, $orient];
 
-# Update $Cal object
-#$Cal->store_beam($arr, @beam) ;
+# Register with $Cal object?
 
 # Write a log file if required
 if ($uselog) {
@@ -169,31 +242,29 @@ if ($uselog) {
   my $time= sprintf "%12.3f", $Frm->hdr('ORACTIME');
   my $filt= sprintf "%4s", $Frm->hdr('FILTER');
 
-  # FIX
-  # Get the tau from calibration object
-#    my $tau = sprintf "%5.2f", $Cal->tau($filters[$i-1]);
-  # Use that tau to calculate CSO
-#    my ($cso, $status) = JCMT::Tau::get_tau('CSO',$filters[$i-1], $tau);
-#    if ($status != 0) {
-#      $cso = "*****";
-#    } else {
-#      $cso = sprintf "%5.2f", $cso;
-#    }
-  # Get TAU from the header
-  my $cso = sprintf "%5.2f", 0.5*($Frm->hdr('WVMTAUST') + $Frm->hdr('WVMTAUEN'));
+  # Get TAU from the header - should get from $Cal object?
+  my $cso = sprintf "%6.3f", 0.5*($Frm->hdr('WVMTAUST') + $Frm->hdr('WVMTAUEN'));
 
   # Elevation
-  my $el = int ( 0.5 * ($Frm->hdr('ELDST') + $Frm->hdr('ELDEN') ) );
-  # Beam paramters
-  $beama = sprintf "%5.3f", $beama;
-  $beamb = sprintf "%5.3f", $beamb;
-  $orient = sprintf "%5.3f", $orient;
+  my $el = int ( 0.5 * ($Frm->hdr('ELSTART') + $Frm->hdr('ELEND') ) );
+  # Reformat beam parameters for printing
+  $beama = sprintf "%5.2f", $beama;
+  $beamb = sprintf "%5.2f", $beamb;
+  $orient = sprintf "%5.2f", $orient;
 
   # Write to logfile
-  $beamlog->addentry("$num  $time  $filt  $beama  $beamb  $orient  $cso $el ".$Frm->hdr('OBJECT'));
+  $beamlog->addentry("$num  $time  $filt    $beama   $beamb   $orient  $cso   $el  ".$Frm->hdr('OBJECT'));
 
-  orac_print "Beam size for filter 850: $beama X $beamb arcsec^2 at a PA of $orient deg E of N \n"
+  orac_print "Beam size for filter 850: $beama x $beamb arcsec^2 at a PA of $orient deg E of N calculated from ".$catalog->sizeof." sources\n"
     if ($verbose);
-
 }
 
+# Return SYSTEM to original value if necessary
+if ( $system ne "" ) {
+  $Mon{ndfpack_mon}->obeyw("wcsattrib", "ndf=$in mode=set name=system newval=$origsystem");
+}
+
+# Return DOMAIN to original value if necessary
+if ( $wcsframe ne $origframe ) {
+  $Mon{ndfpack_mon}->obeyw("wcsframe", "ndf=$in frame=$origframe");
+}
