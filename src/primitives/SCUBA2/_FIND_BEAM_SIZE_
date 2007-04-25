@@ -98,6 +98,22 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 Copyright (C) 2005-2007 the University of British Columbia.  All
 Rights Reserved.
 
+=head1 TODO
+
+=over 4
+
+=item - Check source is a calibrator?
+
+=item - Estimating contribution from error beam
+
+=item - Decide the best coord frame for reporting beam PA
+
+=item - Store results in Cal object?
+
+=item - Retrieve CSO tau from Cal object?
+
+=back
+
 =cut
 
 # First check that we only have one file in the Frame
@@ -172,8 +188,8 @@ my $beamlog;
 if ($uselog) {
   my $time = gmtime();
   $beamlog = new ORAC::LogFile("log.beam");
-  $beamlog->header("Beam log file - created on $time",
-		   "\n#     Time       Filter    A       B       PA     CSO    El  Object",
+  $beamlog->header("Beam log file - created on $time\n",
+		   "#     Time       Filter    A       B       PA    Seeing  El   Tau225",
 		   "----------------------------------------------------------------------"
             );
 }
@@ -220,6 +236,11 @@ $cofile->handle->close;
 _FIT_PSF_ IMAGE=$in USELOG=1 COFILE=$cofile->file GAUSSIAN=$gaussian
 my ($amp, $fwhm, $axisr, $gamma, $orient) = @{ $_FIT_PSF_{RESULTS} };
 
+# Check that the fit gave sensible results
+unless ( defined $fwhm && defined $axisr && defined $gamma ) {
+  orac_throw "Error fitting PSF\n";
+}
+
 # Warn user if the fit looks bad
 if ($axisr > 1.3333 || $axisr < 0.75) {
   orac_warn "Warning: Fit appears to be poor or beam highly elongated \n";
@@ -238,7 +259,7 @@ $_FIND_BEAM_SIZE_{RESULTS} = [$beama, $beamb, $orient];
 
 # Write a log file if required
 if ($uselog) {
-  my $num = 1;
+  my $num = $Frm->hdr('OBSNUM');
   my $time= sprintf "%12.3f", $Frm->hdr('ORACTIME');
   my $filt= sprintf "%4s", $Frm->hdr('FILTER');
 
@@ -247,13 +268,15 @@ if ($uselog) {
 
   # Elevation
   my $el = int ( 0.5 * ($Frm->hdr('ELSTART') + $Frm->hdr('ELEND') ) );
+  # Seeing
+  my $see = sprintf "%5.2f", ( 0.5 * ($Frm->hdr('SEEINGST') + $Frm->hdr('SEEINGEN') ) );
   # Reformat beam parameters for printing
   $beama = sprintf "%5.2f", $beama;
   $beamb = sprintf "%5.2f", $beamb;
   $orient = sprintf "%5.2f", $orient;
 
   # Write to logfile
-  $beamlog->addentry("$num  $time  $filt    $beama   $beamb   $orient  $cso   $el  ".$Frm->hdr('OBJECT'));
+  $beamlog->addentry("$num  $time  $filt    $beama   $beamb   $orient   $see   $el  $cso");
 
   orac_print "Beam size for filter 850: $beama x $beamb arcsec^2 at a PA of $orient deg E of N calculated from ".$catalog->sizeof." sources\n"
     if ($verbose);
