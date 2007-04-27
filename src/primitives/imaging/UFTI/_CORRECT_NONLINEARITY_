@@ -1,0 +1,138 @@
+#+
+# Name:
+#    _CORRECT_NONLINEARITY_
+#
+# Purpose:
+#    Corrects the raw data for detector non-linearity.
+#
+# Language:
+#    Perl5
+#
+# Description:
+#    This primitive corrects the raw data frame for non-linearity
+#    applying the low-order polynomial fit on the instrument web page.
+#
+# Notes:
+#    -  This primitive is suitable for UFTI.
+#    -  The current correction is  true_counts = measured/(1+6.1E-06*measured).
+#    -  The ramp up correction may be applied by defining environment
+#    variable RAMP_UP_TIME, whereupon the correction becomes
+#    true_counts = measured/(1+6.1E-06*(RAMP_UP_TIME+exposure_time)*measured).
+#    -  The LINEAR header value set to T inserted at GAIN.
+#
+# Output Data:
+#    -  Linearity-corrected frame inheriting the current frame's name
+#    but with the _nl suffix.
+#
+# Tasks:
+#    KAPPA: FITSMOD, MATHS.
+#
+# Authors:
+#    MJC: Malcolm J. Currie (Starlink)
+#
+# Copyright:
+#    Copyright (C) 1998-2005 Particle Physics and Astronomy Research
+#    Council.  All Rights Reserved.
+#
+#-
+
+# Generate list of input and output filenames.
+    my ( $in, $out ) = $Frm->inout( "_nl" );
+
+# Evaluate the expression with the bias already subtracted.
+    my $comment = "";
+    my $ramp;
+    if ( defined( $ENV{RAMP_UP_TIME} ) ) {
+
+# Obtain sumn of the ramp up and exposure times.
+       my $exptime = $Frm->uhdr( "ORAC_EXPOSURE_TIME" );
+       $ramp = $ENV{RAMP_UP_TIME};
+       my $intime = $ramp + $exptime;
+
+# The commentary will be different.
+       $comment = "and ramp-up of $ENV{RAMP_UP_TIME} seconds";
+
+# Apply the non-linearity correction to the counts.
+       $Mon{ "kappa_mon" }->obeyw( "maths", "out=$out ia=$in exp='IA/(1.0+6.1E-06*IA*$intime)'" );
+    } else {
+
+       $Mon{ "kappa_mon" }->obeyw( "maths", "out=$out ia=$in exp='IA/(1.0+6.1E-06*IA)'" );
+    }
+
+# Correct the FITS header indicating that a linearity correction has been applied.
+    my $param1 = "ndf=$out edit=write";
+    my $param2 = "keyword=LINEAR value=T comment='Linearisation enabled' position=GAIN"; 
+    $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$param1 $param2" );
+
+# Report the processing status.
+    if ( defined( $ENV{RAMP_UP_TIME} ) ) {
+      orac_print "Frame $in has non-linearity correction and ramp-up of $ramp seconds\n";
+      orac_print "   applied in $out.\n";
+    } else {
+      orac_print "Frame $in has non-linearity correction $comment applied in $out.\n";
+    }
+
+# Now update the output filename in the Frame object.
+    $Frm->file( $out );
+
+# Podule
+# ======
+
+=head1 NAME
+
+_CORRECT_NONLINEARITY_ -- Corrects the raw data for detector non-linearity.
+
+=head1 DESCRIPTION
+
+This primitive corrects the raw data frame for non-linearity
+applying the low-order polynomial fit on the instrument web page.
+ 
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UFTI.
+
+=item *
+
+The current correction is  true_counts = measured/(1+6.1E-06*measured).
+
+=item *
+
+The ramp up correction may be applied by defining environment
+variable RAMP_UP_TIME, whereupon the correction becomes
+true_counts = measured/(1+6.1E-06*(RAMP_UP_TIME+exposure_time)*measured).
+
+=item *
+
+The LINEAR header value set to T inserted at GAIN.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Linearity-corrected frame inheriting the current frame's name
+but with the _nl suffix.
+
+=back
+
+=head1 TASKS
+
+KAPPA: FITSMOD, MATHS.
+
+=head1 AUTHORS
+
+MJC: Malcolm J. Currie (Starlink)
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2005 Particle Physics and Astronomy Research
+Council.  All Rights Reserved.
+
+=cut
