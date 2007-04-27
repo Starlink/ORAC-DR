@@ -55,36 +55,40 @@ if( $Grp->lastmember( $Frm ) ) {
 
   } else {
 
-    # WCSMOSAIC all of the Grp members together.
+    # WCSMOSAIC the current Frame to the current Group. Variance
+    # weighting means that simply coadding them will work right.
 
-    my @files;
+    my $infrm = $Frm->file;
+    my $ingrp = $Grp->file;
+
+    # Create a temporary file to hold the output of WCSMOSAIC.
+    my $tmp = new ORAC::TempFile;
+    my $tmpfile = $tmp->file;
 
     # Create a textfile that will hold all of the files to be
     # WCSMOSAIC'ed.
     my $infile = new ORAC::TempFile( OPEN => 1,
                                      SUFFIX => '.lis' );
     my $tmp_fh = $infile->handle;
-    foreach my $member ( $Grp->members ) {
-      foreach my $file ( $member->files ) {
-        print $tmp_fh $file . "\n";
-        push @files, $file;
-      }
-    }
+    print $tmp_fh $ingrp . "\n";
+    print $tmp_fh $infrm . "\n";
     $infile->handle->close;
 
-    my $out = $Grp->file;
-
     # Set up the arguments to WCSMOSAIC.
-    my $params = "in='^" . $infile->file . "' out=$out ref=! ";
-    $params   .= "lbnd=! ubnd=! method=nearest genvar=false";
+    my $params = "in='^" . $infile->file . "' out=$tmpfile ref=! ";
+    $params   .= "lbnd=! ubnd=! method=nearest variance=true";
 
     # Run WCSMOSAIC.
-    orac_print "Coadding " . join ( ', ', @files ) . " to form $out...";
+    orac_print "Coadding $infrm to $ingrp...";
     $Mon{'kappa_mon'}->obeyw( "wcsmosaic", "$params" );
+
+    # NDFCOPY the output to the group file.
+    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$tmpfile out=$ingrp" );
+
     orac_print "done.\n";
 
     # Update the Grp object.
-    $Grp->file( $out );
+    $Grp->file( $ingrp );
 
   }
 
