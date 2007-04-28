@@ -205,6 +205,31 @@ sub calc_orac_headers {
   return %new;
 }
 
+=item B<file_from_bits>
+
+Method to return the group filename derived from a fixed
+variable part (eg UT) and a group designator (usually obs
+number). The full filename is returned (including suffix).
+
+  $file = $Grp->file_from_bits("UT","num","extra");
+
+For ACSIS the return string is of the format
+
+  fixedpart . prefix . '_' . number . '_' . extra . suffix
+
+=cut
+
+sub file_from_bits {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $num = shift;
+  my $extra = shift;
+
+  # Follow UKIRT style
+  return $self->fixedpart . $prefix . '_' . $num . '_' . $extra . $self->filesuffix;
+}
+
 =back
 
 =head1 SEE ALSO
