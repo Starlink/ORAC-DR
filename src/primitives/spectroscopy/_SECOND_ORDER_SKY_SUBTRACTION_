@@ -1,0 +1,60 @@
+
+# Tell the user what we're doing.
+orac_print "Performing second-order sky subtraction.\n";
+
+# Obtain parameters.
+my $ymin = ( defined( $_SECOND_ORDER_SKY_SUBTRACTION_{YMIN} )
+             ? $_SECOND_ORDER_SKY_SUBTRACTION_{YMIN}
+             : $Frm->uhdr( "ORAC_Y_LOWER_BOUND" )
+           );
+my $ymax = ( defined( $_SECOND_ORDER_SKY_SUBTRACTION_{YMIN} )
+             ? $_SECOND_ORDER_SKY_SUBTRACTION_{YMIN}
+             : $Frm->uhdr( "ORAC_Y_UPPER_BOUND" )
+           );
+my $group = ( defined( $_SECOND_ORDER_SKY_SUBTRACTION_{GROUP} )
+              ? 1
+              : 0
+            );
+
+my ( $Obj, $in, $out );
+if( $group ) {
+  $Obj = $Grp;
+  $in = $Grp->file;
+  $out = $Grp->raw . "_soss";
+} else {
+  $Obj = $Frm;
+  ( $in, $out ) = $Frm->inout( "_soss" );
+}
+
+# Collapse the frame along the wavelength axis into a temporary file.
+my $tmp = new ORAC::TempFile;
+my $tmpfile = $tmp->file;
+my $params = "in=$in(,$ymin:$ymax) out=$tmpfile axis=2 estimator=median";
+$Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+# Get the bounds of the input frame so that we can expand the
+# collapsed "spectrum" into an NDF of the same size.
+_GET_DIMENSIONS_
+my $lbound_ref = $_GET_DIMENSIONS_{LBOUND};
+my $ubound_ref = $_GET_DIMENSIONS_{UBOUND};
+my $lbound = $lbound_ref->[0];
+my $ubound = $ubound_ref->[0];
+
+# Expand this out into the same size as the input frame.
+my $tmp2 = new ORAC::TempFile;
+my $tmpfile2 = $tmp2->file;
+$params = "in=$tmpfile out=$tmpfile2 axes=[1,0] lbound=$lbound ubound=$ubound";
+$Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+# Subtract.
+$params = "in1=$in in2=$tmpfile2 out=$out";
+$Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+# Tell the user what we did.
+orac_print "$in to $out: Performed second-order sky subtraction.\n";
+
+# Update the object.
+$Obj->file( $out );
+
+# Display if requested.
+$Display->display( $Obj ) if defined $Display;
