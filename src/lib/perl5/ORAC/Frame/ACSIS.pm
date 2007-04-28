@@ -239,6 +239,40 @@ sub configure {
   return 1;
 }
 
+=item B<framegroup>
+
+=cut
+
+sub framegroup {
+  my $class = shift;
+
+  my %groupings;
+
+  # For each file, we need to read its header and create a hash of
+  # arrays with the key being the value of the SUBSYSNR header and the
+  # value being the filename.
+  foreach my $filename ( @_ ) {
+
+    my $hdr = new Astro::FITS::Header::NDF( File => $filename );
+    tie my %header, "Astro::FITS::Header", $hdr;
+
+    push @{$groupings{$header{SUBSYSNR}}}, $filename;
+
+  }
+
+  # For each one of the groups, we need to create a new Frame object
+  # using the filenames listed.
+  my @Frms;
+  foreach my $files ( values %groupings ) {
+
+    push @Frms, $class->new( @$files );
+
+  }
+
+  return @Frms;
+
+}
+
 =back
 
 =head2 General Methods
@@ -350,6 +384,11 @@ sub file_from_bits {
   die "ACSIS has no file_from_bits() method. Use pattern_from_bits() instead\n";
 }
 
+sub file_from_bits_extra {
+  my $self = shift;
+  return $self->hdr( "SUBSYSNR" );
+}
+
 =item B<flag_from_bits>
 
 Determine the name of the flag file given the variable component
@@ -405,6 +444,7 @@ sub findgroup {
               $self->hdr( "BWMODE" ) .
               $self->hdr( "INSTRUME" ) .
               $self->hdr( "OBS_TYPE" ) .
+              $self->hdr( "IFFREQ" ) .
               $restfreq;
   }
 
