@@ -154,10 +154,10 @@ sub orac_loop_list {
   # If obsno is undef return undef
   return undef unless defined $obsno;
 
-  my $Frm = link_and_read($class, $utdate, $obsno, 0);
+  my @Frms = link_and_read($class, $utdate, $obsno, 0);
 
   # Return frame
-  return $Frm;
+  return @Frms;
 
 }
 
@@ -194,13 +194,13 @@ sub orac_loop_inf {
   # Get the obsno
   my $obsno = $$obsref[0];
 
-  my $Frm = link_and_read($class, $utdate, $obsno, 0);
+  my @Frms = link_and_read($class, $utdate, $obsno, 0);
 
   # Now need to increment the obsnum for next time around
   $$obsref[0]++;
 
   # Return frame
-  return $Frm;
+  return @Frms;
 
 }
 
@@ -368,12 +368,12 @@ sub orac_loop_wait {
   # The file has appeared
   # Link_and_read
   # A new $Frm is created and the file is converted to our base format (NDF).
-  $Frm = link_and_read($class, $utdate, $obsno, 0);
+  my @Frms = link_and_read($class, $utdate, $obsno, 0);
 
   # Now need to increment obsnum for next time round
   $$obsref[0]++;
 
-  return $Frm;
+  return @Frms;
 }
 
 =item B<orac_loop_flag>
@@ -575,11 +575,12 @@ sub orac_loop_flag {
   # The flag has appeared therefore we believe the file is there as well.
   # Link_and_read
   # A new $Frm is created and the file is converted to our base format (NDF).
+  my @Frms;
   eval {
     # take a copy of $prev to prevent bizarre error if we get an error
     # and immediate retry
     my @local = @$prev;
-    $Frm = link_and_read($class, $utdate, $obsno, 1, \@local);
+    @Frms = link_and_read($class, $utdate, $obsno, 1, \@local);
     @$prev = @local;
   };
   if( $@ || !defined $Frm ) {
@@ -588,7 +589,7 @@ sub orac_loop_flag {
     ORAC::Error->flush;
     orac_warn "Error loading file for observation $obsno. Sleeping for 2 seconds...\n";
     orac_sleep(2);
-    $Frm = link_and_read($class, $utdate, $obsno, 1, $prev);
+    @Frms = link_and_read($class, $utdate, $obsno, 1, $prev);
   };
 
   # we can only increment the observation number if we are dealing
@@ -604,7 +605,7 @@ sub orac_loop_flag {
   # this will just be the contents of the flag files
   $obsref->[1] = $prev if $nonzero;
 
-  return $Frm;
+  return @Frms;
 
 }
 
@@ -643,13 +644,8 @@ sub orac_loop_file {
   my $Frm = $class->new;
 
   # and convert it if required
-  my $status = _convert_and_link( $Frm, $fname);
+  return _convert_and_link( $Frm, $fname );
 
-  if ($status) {
-    orac_print "\nFound\n";
-    return $Frm;
-  }
-  return;
 }
 
 =item B<orac_loop_task>
@@ -1127,10 +1123,7 @@ sub link_and_read {
   # Now we need to convert the files
   # and/or link them to ORAC_DATA_OUT and configure the corresponding
   # frame object
-  if( _convert_and_link( $Frm, @names ) ) {
-    return $Frm;
-  }
-  return;
+  return _convert_and_link( $Frm, @names );
 }
 
 =item B<orac_sleep>
@@ -1270,22 +1263,8 @@ sub _convert_and_link {
   my @bname = _convert_and_link_nofrm( $infmt, $outfmt, @names );
   return undef unless @bname;
 
-  if( scalar( @bname ) == 1 ) {
+  return $Frm->framegroup( @bname );
 
-    # If we only have one file, send just that file to $Frm->configure.
-    # This will be the case for most instruments.
-    $Frm->configure( $bname[0] );
-
-  } else {
-
-    # We have more than one file, so send the array reference to
-    # $Frm->configure. This will be the case for ACSIS most of the
-    # time.
-    $Frm->configure(\@bname);
-  }
-
-  # And indicate success
-  return 1;
 }
 
 
