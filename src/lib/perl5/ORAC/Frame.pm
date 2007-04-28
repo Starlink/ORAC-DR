@@ -179,6 +179,25 @@ sub new {
   return $frame;
 }
 
+=item B<framegroup>
+
+Create new instances of a B<ORAC::Frame> object.
+
+  @frames = ORAC::Frame->framegroup( @files );
+
+=cut
+
+sub framegroup {
+  my $class = shift;
+
+  my $frame = $class->new( @_ );
+
+  my @frames;
+  push @frames, $frame;
+
+  return @frames;
+}
+
 =back
 
 =head2 Accessor Methods
@@ -1044,6 +1063,10 @@ sub file_from_bits {
   die "The base class version of file_from_bits() should not be used\n -- please subclass this method\n";
 }
 
+sub file_from_bits_extra {
+  my $self = shift;
+  return undef;
+}
 
 =item B<findgroup>
 
