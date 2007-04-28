@@ -166,7 +166,10 @@ sub orac_store_frm_in_correct_grp {
     # If the group name is a number itself we should
     # use it rather than the current frame number
     my $grpnum = ( $grpname =~ /^\d+$/ ? $grpname : $Frm->number);
-    $Grp->file($Grp->file_from_bits($ut, $grpnum));
+
+    my $extra = $Frm->file_from_bits_extra;
+
+    $Grp->file($Grp->file_from_bits($ut, $grpnum, $extra));
     $GrpHash->{$grpname} = $Grp;    # store group object
     orac_print ("A new group ".$Grp->file." has been created\n","blue");
 
@@ -1062,67 +1065,70 @@ sub orac_main_data_loop {
       # Return back the current frame
       # This will also configure the frame object
       # Turn off strict
-      my $Frm;
+      my @Frms;
       {
         no strict 'refs';
-        $Frm = &{$loop}($frameclass, $opt_ut, $obs, $opt_skip);
+        @Frms = &{$loop}($frameclass, $opt_ut, $obs, $opt_skip);
       }
 
       # If frame is undefined then we assume that the data loop
       # should be stopped
-      last unless defined $Frm;
+      last unless defined $Frms[0];
 
-      orac_print ("REDUCING: ".$Frm->raw."\n","yellow");
+      foreach my $Frm ( @Frms ) {
 
-      # Set the ORAC::Print prefix
-      my $fnumber = $Frm->number;
-      $$ORAC_MESSAGE = $instrument . ': ORAC-DR reducing observation number ' . $fnumber;
-      $orac_prt->errpre("#$fnumber Err: ");
-      $orac_prt->warpre("#$fnumber Warning: ");
+        orac_print ("REDUCING: ".$Frm->raw."\n","yellow");
 
-      # Store the Frame in the Group
-      my $Grp = orac_store_frm_in_correct_grp($Frm, $groupclass, \%Groups,
-                                              undef, $opt_ut, $opt_resume);
+        # Set the ORAC::Print prefix
+        my $fnumber = $Frm->number;
+        $$ORAC_MESSAGE = $instrument . ': ORAC-DR reducing observation number ' . $fnumber;
+        $orac_prt->errpre("#$fnumber Err: ");
+        $orac_prt->warpre("#$fnumber Warning: ");
 
-      # Actually process the observation
-      # Includes recipe configurations since the recipe
-      # object is not instantiated until the recipe name is
-      # read from the frame object in orac_process_frame
-      # may want to revisit this.
-      try {
-        orac_process_frame(
-                           CurrentRecipe => $CURRENT_RECIPE,
-                           CurrentPrimitive => $CURRENT_PRIMITIVE,
-                           PrimitiveList => $PRIMITIVE_LIST,
-                           Frame => $Frm,
-                           Group => $Grp,
-                           Calibration => $Cal,
-                           Engines => $Mon,
-                           Display => $Display,
-                           Debug => $opt_debug,
-                           CmdLineRecipe => $Override_Recipe,
-                           Instrument => $instrument,
-                           Batch => 0,
-                          );
+        # Store the Frame in the Group
+        my $Grp = orac_store_frm_in_correct_grp($Frm, $groupclass, \%Groups,
+                                                undef, $opt_ut, $opt_resume);
+
+        # Actually process the observation
+        # Includes recipe configurations since the recipe
+        # object is not instantiated until the recipe name is
+        # read from the frame object in orac_process_frame
+        # may want to revisit this.
+        try {
+          orac_process_frame(
+                             CurrentRecipe => $CURRENT_RECIPE,
+                             CurrentPrimitive => $CURRENT_PRIMITIVE,
+                             PrimitiveList => $PRIMITIVE_LIST,
+                             Frame => $Frm,
+                             Group => $Grp,
+                             Calibration => $Cal,
+                             Engines => $Mon,
+                             Display => $Display,
+                             Debug => $opt_debug,
+                             CmdLineRecipe => $Override_Recipe,
+                             Instrument => $instrument,
+                             Batch => 0,
+                            );
+        }
+        catch ORAC::Error::FatalError with {
+          my $Error = shift;
+          $Error->throw;
+        }
+        catch ORAC::Error::UserAbort with {
+          my $Error = shift;
+          $Error->throw;
+        }
+        otherwise {
+          my $Error = shift;
+          throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
+        };
+
+        # Reset the obs number labels
+        $orac_prt->errpre('Error: ');
+        $orac_prt->warpre('Warning: ');
+        $$ORAC_MESSAGE = $instrument . ': ORAC-DR reducing observation --';
+
       }
-      catch ORAC::Error::FatalError with {
-        my $Error = shift;
-        $Error->throw;
-      }
-      catch ORAC::Error::UserAbort with {
-        my $Error = shift;
-        $Error->throw;
-      }
-      otherwise {
-        my $Error = shift;
-        throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
-      };
-
-      # Reset the obs number labels
-      $orac_prt->errpre('Error: ');
-      $orac_prt->warpre('Warning: ');
-      $$ORAC_MESSAGE = $instrument . ': ORAC-DR reducing observation --';
-
 
     }
 
@@ -1136,21 +1142,25 @@ sub orac_main_data_loop {
     while (1) {
       # Return back the current frame
       # This will also configure the frame object
-      my $Frm;
+      my @Frms;
       {
         no strict 'refs';
-        $Frm = &{$loop}($frameclass, $opt_ut, $obs, $opt_skip);
+        @Frms = &{$loop}($frameclass, $opt_ut, $obs, $opt_skip);
       }
 
       # If frame is undefined then we assume that the data loop
       # should be stopped
-      last unless defined $Frm;
+      last unless defined $Frms[0];
 
-      orac_print ("Storing: ".$Frm->raw."\n","yellow");
+      foreach my $Frm ( @Frms ) {
 
-      # Store the Frame in the Group
-      orac_store_frm_in_correct_grp($Frm, $groupclass, \%Groups, \@Groups,
-                                    $opt_ut, $opt_resume);
+        orac_print ("Storing: ".$Frm->raw."\n","yellow");
+
+        # Store the Frame in the Group
+        orac_store_frm_in_correct_grp($Frm, $groupclass, \%Groups, \@Groups,
+                                      $opt_ut, $opt_resume);
+
+      }
 
     }
 
