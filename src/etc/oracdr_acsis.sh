@@ -115,7 +115,7 @@ export ORAC_DATA_IN=$ORAC_DATA_ROOT/raw/acsis/$oracut/
 export ORAC_DATA_OUT=$ORAC_DATA_ROOT/reduced/acsis/$oracut/
  
 # screen things
-export ORAC_PERSON=jleech
+export ORAC_PERSON=bradc
 export ORAC_LOOP='flag'
 export ORAC_SUN=???
  

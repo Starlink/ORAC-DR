@@ -126,7 +126,7 @@ export ORAC_DATA_OUT=$ORAC_DATA_ROOT/reduced/uist/$oracut
 export ORAC_DATA_CAL=$ORAC_CAL_ROOT/uist
 
 # screen things
-export ORAC_PERSON=ATC
+export ORAC_PERSON=bradc
 export ORAC_LOOP=flag
 export ORAC_SUN='232,236,246'
 

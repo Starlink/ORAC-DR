@@ -120,7 +120,7 @@ setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/uist/$oracut
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/uist
 
 # screen things
-setenv ORAC_PERSON ATC
+setenv ORAC_PERSON bradc
 setenv ORAC_LOOP flag
 setenv ORAC_SUN  '232,236,246'
 
