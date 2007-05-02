@@ -153,7 +153,7 @@ setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/wfcam
 
 # some other things
 setenv HDS_MAP 0
-setenv RTD_REMOTE_DIR $ORAC_DATA_OUT
+setenv RTD_REMOTE_DIR $ORAC_DATA_OUT/..
 
 # Determine the host, and if we're on a wfdr machine, create
 # $ORAC_DATA_OUT if it doesn't already exist.
