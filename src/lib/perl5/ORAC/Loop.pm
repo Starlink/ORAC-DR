@@ -583,7 +583,7 @@ sub orac_loop_flag {
     @Frms = link_and_read($class, $utdate, $obsno, 1, \@local);
     @$prev = @local;
   };
-  if( $@ || !defined $Frm ) {
+  if( $@ || !defined $Frms[0] ) {
     # that failed. This may indicate a sync issue so pause
     # for a couple of seconds and retry without the eval
     ORAC::Error->flush;
