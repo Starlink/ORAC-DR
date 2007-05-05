@@ -61,47 +61,30 @@
 #     {enter_new_authors_here}
  
 #  History:
-#     $Log$
-#     Revision 1.11  2006/12/20 02:06:05  bradc
-#     set ORAC_DATA_IN to spectra directory
-#
-#     Revision 1.10  2006/11/09 23:16:02  bradc
-#     set umask to 2 before creating ORAC_DATA_OUT
-#
-#     Revision 1.9  2006/11/06 21:04:31  bradc
-#     more syntax fixes
-#
-#     Revision 1.8  2006/11/06 20:59:58  bradc
-#     more syntax fixes
-#
-#     Revision 1.7  2006/11/06 20:50:53  bradc
-#     fix syntax
-#
-#     Revision 1.6  2006/11/06 20:44:45  bradc
-#     use alternate method for determining if we are at JCMT or not
-#
-#     Revision 1.5  2006/11/02 01:45:28  bradc
-#     fix syntax error
-#
-#     Revision 1.4  2006/11/02 01:40:27  bradc
-#     create $ORAC_DATA_OUT if at JCMT and if does not exist
-#
-#     Revision 1.3  2006/10/30 21:25:17  bradc
-#     move ORAC_DATA_IN
-#
-#     Revision 1.2  2006/10/27 00:28:35  bradc
-#     fix ORAC_SUN definition
-#
-#     Revision 1.1  2004/06/07 20:40:39  bradc
-#     initial addition for ACSIS
-#
-#
+#     07-JUN-2004 (BRADC):
+#        Initial import
+#     27-OCT-2006 (BRADC):
+#        fix ORAC_SUN definition
+#     30-OCT-2006 (BRADC):
+#        move ORAC_DATA_IN
+#     02-NOV-2006 (BRADC):
+#        create $ORAC_DATA_OUT if at JCMT and if does not exist
+#     06-NOV-2006 (BRADC):
+#        - use alternate method for determining if we are at JCMT or not
+#        - fix syntax errors
+#     09-NOV-2006 (BRADC):
+#        set umask to 2 before creating ORAC_DATA_OUT
+#     20-DEC-2006 (BRADC):
+#        set ORAC_DATA_IN to spectra directory
+#     04-MAY-2007 (TIMJ):
+#        Use of /sbin/ip is non-portable
  
 #  Revision:
 #     $Id$
  
 #  Copyright:
-#     Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+#     Copyright (C) 1998-2004,2006 Particle Physics and Astronomy Research
+#     Council. Copyright (C) 2007 Science and Technology Facilities
 #     Council. All Rights Reserved.
  
 #-
@@ -145,7 +128,12 @@ setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/acsis/$oracut/
 
 # Check to see if we're at JCMT. If we are, then create the
 # ORAC_DATA_OUT directory.
-set jcmt = `/sbin/ip addr show to 128.171.92/24 | awk -F: '{print $1}' | awk '{print $2}'`
+set jcmt = ''
+if ($?SITE) then
+  if ($SITE == 'jcmt') then
+     set jcmt = $SITE
+  endif
+endif
 if ( $jcmt != '' ) then
   if ( ! -d $ORAC_DATA_OUT ) then
 
