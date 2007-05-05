@@ -128,7 +128,10 @@ doc_command="'showme sun${ORAC_SUN}'"
 # Allow for more than one document per instrument.  Determine whether
 # or not there is a comma in document number.
 set comma_index=`echo ${ORAC_SUN} | awk '{print index($0,",")}'`
-if ( $comma_index > 0 ); then
+if test -z "$comma_index"; then
+  comma_index=0
+fi
+if test "$comma_index" -gt 0; then
 
 # Extract the document numbers.
    doc_numbers=`echo ${ORAC_SUN} | sed -e 's/,/ /g'`
