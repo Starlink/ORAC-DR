@@ -20,6 +20,7 @@
 #     Frossie Economou (frossie@jach.hawaii.edu)
 #     Tim Jenness (t.jenness@jach.hawaii.edu)
 #     Malcolm J. Currie (mjc@jach.hawaii.edu)
+#     Brad Cavanagh (JAC, Hawaii)
 #     {enter_new_authors_here}
 
 #  Notes:
@@ -36,18 +37,17 @@
 #     the package version set during the installation.
 
 #  History:
-#     $Log$
-#     Revision 1.3  2006/09/07 00:12:23  bradc
-#     fix argument check
-#
-#     Revision 1.1  2006/09/06 02:30:11  bradc
-#     initial addition
+#     06-SEP-2006 (BRADC):
+#        Initial addition
+#     07-SEP-2006 (BRADC):
+#        fix argument check
 
 #  Revision:
 #     $Id$
 
 #  Copyright:
-#     Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+#     Copyright (C) 2006 Particle Physics and Astronomy Research
+#     Council. Copyright (C) 2007 Science and Technology Facilities
 #     Council. All Rights Reserved.
 
 #-
@@ -74,7 +74,13 @@ fi
 
 # Set up back door for the version number
 
-if test -z "${ORACDR_VERSION}"; then
+if test -e $ORAC_DIR/.version; then
+  pkgvers=`cat $ORAC_DIR/.version`
+elif test -e $ORAC_DIR/../.svn; then
+  pkgvers=`svnversion $ORAC_DIR/../`
+elif test -e $ORAC_DIR/.svn; then
+  pkgvers = `svnversion $ORAC_DIR`
+elif test -z "${ORACDR_VERSION}"; then
   pkgvers=$ORACDR_VERSION
 else
   pkgvers=PKG_VERS

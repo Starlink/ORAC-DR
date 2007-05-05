@@ -33,38 +33,32 @@
 #     - $ORAC_PERLBIN environment variable can be used to override
 #     the use of Starlink PERL.
 #     - $ORACDR_VERSION environment variable can be used to override
-#     the package version set during the installation.
+#     the package version set during the installation. This is only used
+#     if the source code is not inside a subversion tree and there is no
+#     $ORAC_DIR/.version file.
 
 #  History:
-#     $Log$
-#     Revision 1.7  2002/04/04 08:21:20  mjc
-#     Allow for multiple Starlink User Notes.
-#
-#     Revision 1.6  2001/03/19 23:33:30  timj
-#     Add oracdr_monitor
-#
-#     Revision 1.5  2000/10/11 01:13:51  timj
-#     Add oracdr_parse_recipe
-#
-#     Revision 1.4  2000/02/03 04:52:50  timj
-#     Slight change to startup screen
-#
-#     Revision 1.3  2000/02/03 03:44:09  timj
-#     Add check for existence of IN/OUT directories
-#
-#     Revision 1.2  2000/02/03 03:14:18  timj
-#     Add ORACDR_VERSION
-#
-#     Revision 1.1  2000/02/03 02:50:45  timj
-#     Starlink startup scripts
-#
+#     03-FEB-2000 (TIMJ):
+#        Create Starlink startup scripts.
+#        - Add ORACDR_VERSION.
+#        - Add check for existence of IN/OUT directories
+#        - Slight change to startup screen
+#     11-OCT-2000 (TIMJ):
+#        Add oracdr_parse_recipe
+#     19-MAR-2001 (TIMJ):
+#        Add oracdr_monitor
+#     04-APR-2002 (MJC):
+#        Allow for multiple Starlink User Notes
+#     04-MAY-2007 (TIMJ):
+#        Expand version reporting logic
 
 #  Revision:
 #     $Id$
 
 #  Copyright:
-#     Copyright (C) 1998-2002 Particle Physics and Astronomy Research
-#     Council. All Rights Reserved.
+#     Copyright (C) 1998-2002 Particle Physics and Astronomy Research Council
+#     Copyright (C) 2007 Science and Technology Facilities Council.
+#     All Rights Reserved.
 
 #-
 
@@ -90,7 +84,13 @@ endif
 
 # Set up back door for the version number
 
-if ( $?ORACDR_VERSION ) then
+if (-e $ORAC_DIR/.version) then
+  set pkgvers = `cat $ORAC_DIR/.version`
+else if (-e $ORAC_DIR/../.svn) then
+  set pkgvers = `svnversion $ORAC_DIR/../`
+else if (-e $ORAC_DIR/.svn) then
+  set pkgvers = `svnversion $ORAC_DIR`
+else if ( $?ORACDR_VERSION ) then
   set pkgvers = $ORACDR_VERSION
 else
   set pkgvers = PKG_VERS
