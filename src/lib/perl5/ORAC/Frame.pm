@@ -181,21 +181,27 @@ sub new {
 
 =item B<framegroup>
 
-Create new instances of a B<ORAC::Frame> object.
+Create new instances of a B<ORAC::Frame> object from multiple
+input files.
 
   @frames = ORAC::Frame->framegroup( @files );
+
+In most cases this is identical to simply passing the files directly
+to the Frame constructor. In some subclasses, frames from the same
+observation will be grouped into multiple frame objects and processed
+independently.
+
+Note that framegroup() accepts multiple filenames in a list, as opposed
+to the frame constructors that only take single files or reference to
+an array.
 
 =cut
 
 sub framegroup {
   my $class = shift;
-
-  my $frame = $class->new( @_ );
-
-  my @frames;
-  push @frames, $frame;
-
-  return @frames;
+  # if there are multiple files, pass a reference to the constructor
+  my $files = ( @_ > 1 ? [@_] : $_[0] );
+  return ( $class->new( $files ) );
 }
 
 =back
@@ -932,6 +938,9 @@ is the prefix and argument 2 is the observation number.
   $Frm->configure("fname");
   $Frm->configure("UT","num");
 
+Multiple raw file names can be provided in the first argument using
+a reference to an array.
+
 =cut
 
 sub configure {
@@ -940,20 +949,23 @@ sub configure {
   # If two arguments (prefix and number) 
   # have to find the raw filename first
   # else assume we are being given the raw filename
-  my $fname;
+  my @fnames;
   if (scalar(@_) == 1) {
-    $fname = shift;
+    my $ref = shift;
+    @fnames = ( ref $ref ? @$ref : $ref );
   } elsif (scalar(@_) == 2) {
-    $fname = $self->file_from_bits(@_);
+    @fnames = ( $self->file_from_bits(@_) );
   } else {
     croak 'Wrong number of arguments to configure: 1 or 2 args only';
   }
 
-  # Set the filename
-  $self->file($fname);
+  # Set the filenames
+  for my $i (1..scalar(@fnames)) {
+    $self->file($i, $fnames[$i-1]);
+  }
 
   # Set the raw data file name
-  $self->raw($fname);
+  $self->raw(@fnames);
 
   # Populate the header
   $self->readhdr;
