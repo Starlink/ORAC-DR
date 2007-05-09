@@ -65,6 +65,7 @@ use ORAC::Constants qw/:status/;        # ORAC status varaibles
 use ORAC::Msg::MessysLaunch;
 
 #general modules
+use Config;
 use Sys::Hostname;                      # For logfile
 use IO::File;
 
@@ -514,43 +515,76 @@ sub orac_print_configuration {
       push (@war_hdl, \*STDOUT);
     }
     # Request for file - must have already chdir'ed to ORAC_DATA_OUT
-    if ($log_options =~ /f/) {
-      my $logfh = new IO::File(">.oracdr_$$.log") || do {
-        orac_err "Error opening ORAC-DR logfile in ORAC_DATA_OUT: $!\n";
-        throw ORAC::Error::FatalError("Error opening logfile",
-                                      ORAC__FATAL);
-      };
-      $logfh->autoflush(1);
+    if ($log_options =~ /f/ || exists $ENV{ORAC_LOGDIR}) {
 
-      # Write a header
-      print $logfh "ORAC-DR logfile - created on " . scalar(gmtime) ." UT\n";
-      print $logfh "\nORAC Environment:\n\n";
-      print $logfh "\tInstrument : $ENV{ORAC_INSTRUMENT}\n";
-      print $logfh "\tInput  Dir : $ENV{ORAC_DATA_IN}\n";
-      print $logfh "\tOutput Dir : $ENV{ORAC_DATA_OUT}\n";
-      print $logfh "\tCalibration: $ENV{ORAC_DATA_CAL}\n";
-      print $logfh "\tORAC   Dir : $ENV{ORAC_DIR}\n";
-      print $logfh "\tORAC   Lib : $ENV{ORAC_PERL5LIB}\n";
-      my $rdir = ($ENV{ORAC_RECIPE_DIR} || '<undefined>');
-      my $pdir = ($ENV{ORAC_PRIMITIVE_DIR} || '<undefined>');
-      print $logfh "\tAdditional Recipe Dir   : $rdir\n";
-      print $logfh "\tAdditional Primitive Dir : $pdir\n";
+      my @logfiles;
+
+      # this is the log file for $ORAC_DATA_OUT
+      if ($log_options =~ /f/) {
+	my $logfh = new IO::File(">.oracdr_$$.log") || do {
+	  orac_err "Error opening ORAC-DR logfile in ORAC_DATA_OUT: $!\n";
+	  throw ORAC::Error::FatalError("Error opening logfile",
+					ORAC__FATAL);
+	};
+	push(@logfiles, $logfh);
+      }
+
+      # Also write a file to the ORAC_LOGDIR for convenience
+      if (exists $ENV{ORAC_LOGDIR} && -d $ENV{ORAC_LOGDIR}) {
+	my @time = gmtime();
+	my $host = (split( /\./, hostname))[0]; # only want first part of host
+	my $user = ($ENV{USER} ? "_$ENV{USER}" : "" );
+	my $inst = lc($ENV{ORAC_INSTRUMENT});
+	my $fname = sprintf("oracdr_%04d%02d%02d_%02d%02d%02d_%s_%s%s.log",
+			    $time[5]+1900, $time[4]+1,$time[3],
+			    $time[2],$time[1],$time[0],$inst, $host, $user);
+	my $fh = new IO::File("> ". File::Spec->catfile($ENV{ORAC_LOGDIR},$fname)) || do {
+	  orac_err "Error opening ORAC-DR logfile in log dir $ENV{ORAC_LOGDIR}/$fname: $!\n";
+	  throw ORAC::Error::FatalError("Error opening secondary log file", ORAC__FATAL);
+	};
+	push(@logfiles, $fh);
+      } 
+
+      for my $logfh (@logfiles) {
+	$logfh->autoflush(1);
+
+	# Write a header
+	print $logfh "ORAC-DR logfile - created on " . scalar(gmtime) ." UT\n";
+	print $logfh "\nORAC Environment:\n\n";
+	print $logfh "\tInstrument : $ENV{ORAC_INSTRUMENT}\n";
+	print $logfh "\tInput  Dir : $ENV{ORAC_DATA_IN}\n";
+	print $logfh "\tOutput Dir : $ENV{ORAC_DATA_OUT}\n";
+	print $logfh "\tCalibration: $ENV{ORAC_DATA_CAL}\n";
+	print $logfh "\tORAC   Dir : $ENV{ORAC_DIR}\n";
+	print $logfh "\tORAC   Lib : $ENV{ORAC_PERL5LIB}\n";
+	my $rdir = ($ENV{ORAC_RECIPE_DIR} || '<undefined>');
+	my $pdir = ($ENV{ORAC_PRIMITIVE_DIR} || '<undefined>');
+	print $logfh "\tAdditional Recipe Dir   : $rdir\n";
+	print $logfh "\tAdditional Primitive Dir : $pdir\n";
 
 
-      print $logfh "\nSystem environment:\n\n";
-      print $logfh "\tHostname        : ". hostname . "\n";
-      print $logfh "\tUser name       : $ENV{USER}\n";
-      print $logfh "\tPerl version    : $]\n";
-      print $logfh "\tOperating System: $^O\n";
+	print $logfh "\nSystem environment:\n\n";
+	print $logfh "\tHostname        : ". hostname . "\n";
+	print $logfh "\tUser name       : $ENV{USER}\n";
+	print $logfh "\tPerl version    : $]\n";
+	print $logfh "\tOperating System: $^O\n";
+	my $uname = "<unknown>";
+	{
+	  no warnings;
+	  my $tmp = `uname -a`;
+	  $uname = $tmp if $tmp;
+	};
+	print $logfh "\tSystem description: $uname\n";
 
-      print $logfh "\nORAC-DR Arguments: ".join(" ",@$ORAC_ARGS)."\n";
+	print $logfh "\nORAC-DR Arguments: ".join(" ",@$ORAC_ARGS)."\n";
 
-      print $logfh "\nSession:\n\n";
+	print $logfh "\nSession:\n\n";
+      }
 
-      # Store the filehandle
-      push (@out_hdl, $logfh);
-      push (@err_hdl, $logfh);
-      push (@war_hdl, $logfh);
+      # Store the filehandles
+      push (@out_hdl, @logfiles);
+      push (@err_hdl, @logfiles);
+      push (@war_hdl, @logfiles);
     }
 
     # Configure ORAC::Print
