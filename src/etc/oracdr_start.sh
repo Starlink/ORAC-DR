@@ -86,6 +86,13 @@ else
   pkgvers=PKG_VERS
 fi
 
+# Set ORAC_LOGDIR if it is not already set and if we have a /jac_logs
+
+if test -z "${ORAC_LOGDIR}"; then
+    if test -e /jac_logs/oracdr; then
+       export ORAC_LOGDIR=/jac_logs/oracdr
+    fi
+fi
 
 # These are perl programs
 

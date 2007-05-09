@@ -97,6 +97,14 @@ else
 endif
 
 
+# Set ORAC_LOGDIR if it is not already set and if we have a /jac_logs
+
+if ( ! $?ORAC_LOGDIR ) then
+    if (-e /jac_logs/oracdr) then
+	setenv ORAC_LOGDIR /jac_logs/oracdr
+    endif
+endif
+
 # These are perl programs
 
 if ( -e $starperl ) then
