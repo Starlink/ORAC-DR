@@ -462,7 +462,7 @@ sub execute {
   # Check for an error from perl (eg a croak), but evaluate in string 
   # context so that thrown errors are caught, they should all have values
   # attached (e.g. ORAC__ABORT or ORAC__FATAL) but don't take chances
-  if ("$error") {
+  if (defined $error && "$error") {
 
     # Check for previously thrown UserAbort errors	
     if ( ref($error) && $error->isa("Error") ) {
