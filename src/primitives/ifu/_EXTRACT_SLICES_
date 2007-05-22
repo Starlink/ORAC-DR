@@ -85,108 +85,105 @@ my $tmp_slice = $tmp_file2 ->file;
 # Get number of slices and check that the user headers have been defined 
 my $n_slices = $Frm->uhdr("IFU_slices");
 unless (defined $n_slices) {
-    die "uhdr IFU_slices undefined.\n" .
-	"This should probably have been written by _LOCATE_SLICES_.\n";
+  die "uhdr IFU_slices undefined.\n" .
+	    "This should probably have been written by _LOCATE_SLICES_.\n";
 }
 
 orac_print "Extracting slices ";
 
 # Loop over all slices
 for my $n (0..($n_slices-1)) {
-    # Find the start, end, xshift and yshift of each slice from the uhdr which 
-    # should have been written by _LOCATE_SLICES_ (and check that they're 
-    # defined).
 
-    my $ystart = $Frm->uhdr->{"IFU_start"}->[$n];
-    unless (defined $ystart) {
-	die "uhdr IFU_start[$n] undefined.\n" .
-	    "Something wrong in _LOCATE_SLICES_ ?\n";
-    }
+  # Find the start, end, xshift and yshift of each slice from the uhdr
+  # which should have been written by _LOCATE_SLICES_ (and check that
+  # they're defined).
 
-    my $yend = $Frm->uhdr->{"IFU_end"}->[$n];
-    unless (defined $yend) {
-	die "uhdr IFU_yend[$n] undefined.\n" .
-	    "Something wrong in _LOCATE_SLICES_ ?\n";
-    }
+  my $ystart = $Frm->uhdr->{"IFU_start"}->[$n];
+  unless (defined $ystart) {
+    die "uhdr IFU_start[$n] undefined.\n" .
+    "Something wrong in _LOCATE_SLICES_ ?\n";
+  }
 
-    my $xshift = $Frm->uhdr->{"IFU_xshift"}->[$n];
-    unless (defined $xshift) {
-	die "uhdr IFU_xshift[$n] undefined.\n" .
-	    "Something wrong in _LOCATE_SLICES_ ?\n";
-    }
+  my $yend = $Frm->uhdr->{"IFU_end"}->[$n];
+  unless (defined $yend) {
+    die "uhdr IFU_yend[$n] undefined.\n" .
+    "Something wrong in _LOCATE_SLICES_ ?\n";
+  }
 
-    $yshift[$n] = $Frm->uhdr->{"IFU_yshift"}->[$n];
-    unless (defined $yshift[$n]) {
-	die "uhdr IFU_yshift[$n] undefined.\n" .
-	    "Something wrong in _LOCATE_SLICES_ ?\n";
-    }
+  my $xshift = $Frm->uhdr->{"IFU_xshift"}->[$n];
+  unless (defined $xshift) {
+    die "uhdr IFU_xshift[$n] undefined.\n" .
+    "Something wrong in _LOCATE_SLICES_ ?\n";
+  }
 
-    # Keep the user aware of progress
-    orac_print ".";
-    
-    # Copy the area of the input frame containing the required slice
-    # to a temporary file.
-    
-    $param = "in=$in(1:1024,$ystart:$yend) out=$tmp_slice";
+  $yshift[$n] = $Frm->uhdr->{"IFU_yshift"}->[$n];
+  unless (defined $yshift[$n]) {
+    die "uhdr IFU_yshift[$n] undefined.\n" .
+    "Something wrong in _LOCATE_SLICES_ ?\n";
+  }
+
+  # Keep the user aware of progress
+  orac_print ".";
+
+  # Copy the area of the input frame containing the required slice to
+  # a temporary file.
+  $param = "in=$in(1:1024,$ystart:$yend) out=$tmp_slice";
+  $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
+
+  # Set its origin so that we can paste it into our output frame in
+  # the correct place.
+  $param = "$tmp_slice [$xshift,$y_off]";
+  $Mon{"ndfpack_mon"}->obeyw("setorigin", "$param");
+
+  # If this is not the first slice then paste it onto what we've
+  # already got (stored in the other temporary file) and write it to
+  # $out.
+  if ($n > 0) {
+    $param = "$tmp_paste $tmp_slice out=$out title=ifu_data";
+    $Mon{"kappa_mon"}->obeyw("paste", "$param");
+
+    # Copy the current $out to $tmp_paste for use next time round.
+    $param = "in=$out out=$tmp_paste";
     $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
-       
+  } else {
+    # If it is the first slice then just copy it to $tmp_paste
+    # ready for use next time round and set $flag to true.
+    $param = "in=$tmp_slice out=$tmp_paste";
+    $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
+  }
 
-    # Set its origin so that we can paste it into our output frame
-    # in the correct place.
-    $param = "$tmp_slice [$xshift,$y_off]";
-    $Mon{"ndfpack_mon"}->obeyw("setorigin", "$param");
+  $y1[$n] = $y_off;
 
-    # If this is not the first slice then paste it onto what we've
-    # already got (stored in the other temporary file) and write it
-    # to $out.
-    if ($n > 0) { 
-        $param = "$tmp_paste $tmp_slice out=$out title=ifu_data";
-        $Mon{"kappa_mon"}->obeyw("paste", "$param");
+  # y_off stores the y origin which should be used to paste the next
+  # slice into the final frame. Increment it by the height of the
+  # slice we've just pasted.
+  $y_off += $yend - $ystart + 1;
 
-	# Copy the current $out to $tmp_paste for use next time round.
-	$param = "in=$out out=$tmp_paste";
-        $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
-    } else {
-	# If it is the first slice then just copy it to $tmp_paste
-	# ready for use next time round and set $flag to true.
-        $param = "in=$tmp_slice out=$tmp_paste";
-        $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
-    }
-
-    $y1[$n] = $y_off;
-
-    # y_off stores the y origin which should be used to paste the
-    # next slice into the final frame. Increment it by the height of the 
-    # slice we've just pasted.
-    $y_off += $yend - $ystart + 1;
-
-    $y2[$n] = $y1[$n] + $yend - $ystart;
+  $y2[$n] = $y1[$n] + $yend - $ystart;
 
 }
 
 orac_print "\n";
-
 
 # The end. Set the name of the output frame
 $Frm->file( $out );
 $Mon{"ndfpack_mon"}->obeyw("erase", "$out.axis ok=true");
 $Mon{"ndfpack_mon"}->obeyw("setbound", "$out(1:,)");
 
-
-# Write the new positions of the slice images into the headers for 
+# Write the new positions of the slice images into the headers for
 # later use (xshift is now set to 0 because we've done that now).
 
 # Write the arrays to the uhdr
 $Frm->uhdr( "IFU_start" => \@y1,
-	    "IFU_end" => \@y2,	
-	    "IFU_xshift" => [map {0} 1..$n_slices],
-	    "IFU_yshift" => \@yshift);
+            "IFU_end" => \@y2,	
+            "IFU_xshift" => [map {0} 1..$n_slices],
+            "IFU_yshift" => \@yshift);
 
 $Mon{'ndfpack_mon'}->obeyw("ndftrace", "$out");
 (my $ORAC_STATUS, my @dims) = $Mon{'ndfpack_mon'}->get("ndftrace", "dims");
 
-$Frm->uhdr("ORAC_X_DIM" => "$dims[0]", 
-           "ORAC_Y_DIM" => "$dims[1]"); 
+$Frm->uhdr("ORAC_X_DIM" => "$dims[0]",
+           "ORAC_Y_DIM" => "$dims[1]");
 
 # And display it
 $Display->display_data($Frm) if defined $Display;
