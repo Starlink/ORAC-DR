@@ -65,8 +65,6 @@ my %hdr = (
             Y_DIM                => "DROWS",
 
 # then the general.
-            CHOP_ANGLE           => "CHPANGLE",
-            CHOP_THROW           => "CHPTHROW",
             OBSERVATION_MODE     => "INSTMODE",
             DETECTOR_READ_TYPE   => "DET_MODE",
             GAIN                 => "GAIN",
@@ -79,6 +77,32 @@ my %hdr = (
 # other instruments.  Have to use the inherited version so that the new
 # subs appear in this class.
 ORAC::Frame::UIST->_generate_orac_lookup_methods( \%hdr );
+
+sub _to_CHOP_ANGLE {
+  my $self = shift;
+  my $chop_angle = 0;
+  if( exists( $self->hdr->{ $self->nfiles } ) &&
+      exists( $self->hdr->{ $self->nfiles }->{CHPANGLE} ) ) {
+    $chop_angle = $self->hdr->{ $self->nfiles }->{CHPANGLE};
+  } elsif( exists( $self->hdr->{CHPANGLE} ) ) {
+    $chop_angle = $self->hdr->{CHPANGLE};
+  }
+
+  return $chop_angle;
+}
+
+sub _to_CHOP_THROW {
+  my $self = shift;
+  my $chop_throw = 0;
+  if( exists( $self->hdr->{ $self->nfiles } ) &&
+      exists( $self->hdr->{ $self->nfiles }->{CHPTHROW} ) ) {
+    $chop_throw = $self->hdr->{ $self->nfiles }->{CHPTHROW};
+  } elsif( exists( $self->hdr->{CHPTHROW} ) ) {
+    $chop_throw = $self->hdr->{CHPTHROW};
+  }
+
+  return $chop_throw;
+}
 
 sub _to_EXPOSURE_TIME {
   my $self = shift;
