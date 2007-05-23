@@ -455,8 +455,63 @@ sub iarindex {
     return $self->{IarIndex}; 
 }
 
+=item B<ifuprofile>
 
+=cut
 
+sub ifuprofile {
+  my $self = shift;
+  if( @_ ) {
+    return $self->ifuprofilename( @_ );
+  }
+
+  my $ok = $self->ifuprofileindex->verify( $self->ifuprofilename, $self->thing );
+
+  return $self->ifuprofile if $ok;
+
+  if( defined( $ok ) ) {
+    my $ifuprofile = $self->ifuprofileindex->choosebydt( "ORACTIME", $self->thing );
+
+    if( ! defined( $ifuprofile ) ) {
+      croak "No suitable IFU profile file was found in index file";
+    }
+    $self->ifuprofilename( $ifuprofile );
+  } else {
+    croak "Error in determining IFU profile file - giving up";
+  }
+}
+
+=item B<ifuprofileindex>
+
+=cut
+
+sub ifuprofileindex {
+  my $self = shift;
+  if( @_ ) {
+    $self->{IFUProfileIndex} = shift;
+  }
+
+  if( ! defined( $self->{IFUProfileIndex} ) ) {
+    my $indexfile = $self->find_file( "index.ifuprofile" );
+    my $rulesfile = $self->find_file( "rules.ifuprofile" );
+
+    $self->{IFUProfileIndex} = new ORAC::Index( $indexfile, $rulesfile );
+  }
+
+  return $self->{IFUProfileIndex};
+}
+
+=item B<ifuprofilename>
+
+=cut
+
+sub ifuprofilename {
+  my $self = shift;
+  if( @_ ) {
+    $self->{IFUProfile} = shift;
+  }
+  return $self->{IFUProfile};
+}
 
 =item B<offsetval>
 
