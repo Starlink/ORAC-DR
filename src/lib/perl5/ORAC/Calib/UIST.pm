@@ -467,7 +467,7 @@ sub ifuprofile {
 
   my $ok = $self->ifuprofileindex->verify( $self->ifuprofilename, $self->thing );
 
-  return $self->ifuprofile if $ok;
+  return $self->ifuprofilename if $ok;
 
   if( defined( $ok ) ) {
     my $ifuprofile = $self->ifuprofileindex->choosebydt( "ORACTIME", $self->thing );
