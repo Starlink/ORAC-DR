@@ -59,113 +59,120 @@
 #-
 
 # Bring in Starlink::HDSPACK for copy_hdsobj and create_hdsobj
-    use Starlink::HDSPACK qw/ copy_hdsobj create_hdsobj /;
+use Starlink::HDSPACK qw/ copy_hdsobj create_hdsobj /;
 
 # Requires variance processing to be enabled.
-    if ( $Frm->uhdr( "USE_VARIANCE" ) ) {
+if ( $Frm->uhdr( "USE_VARIANCE" ) ) {
 
-# Create temporary files.
-       my $tmp = new ORAC::TempFile;
-       my $tmpfile=$tmp->file;
+  # Create temporary files.
+  my $tmp1 = new ORAC::TempFile;
+  my $tmp1file=$tmp1->file;
 
-       my $temp = new ORAC::TempFile;
-       my $tempfile=$temp->file;
+  my $tmp2 = new ORAC::TempFile;
+  my $tmp2file=$tmp2->file;
 
-       my $tmppo = new ORAC::TempFile;
-       my $tmppofile = $tmppo->file;
+  my $tmp3 = new ORAC::TempFile;
+  my $tmp3file = $tmp3->file;
 
-       my $tmprn = new ORAC::TempFile;
-       my $tmprnfile = $tmprn->file;
+  # Temporary Poisson variance file.
+  my $tmppo = new ORAC::TempFile;
+  my $tmppofile = $tmppo->file;
 
-# Obtain the gain.
-       _GET_GAIN_
-       my $gain = $_GET_GAIN_{GAIN};
+  # Temporary readnoise file.
+  my $tmprn = new ORAC::TempFile;
+  my $tmprnfile = $tmprn->file;
 
-# Obtain the number of exposures (NEXP).
-       my $nexp = $Frm->uhdr( "ORAC_NUMBER_OF_EXPOSURES" );
-       $nexp = defined ( $nexp ) ? $nexp : 1;
-       my $param;
+  # Obtain the gain.
+  _GET_GAIN_
+  my $gain = $_GET_GAIN_{GAIN};
 
-# Loop through the sub-files
-       foreach my $i ( 1 .. $Frm->nfiles ) {
+  # Obtain the number of exposures (NEXP).
+  my $nexp = $Frm->uhdr( "ORAC_NUMBER_OF_EXPOSURES" );
+  $nexp = defined ( $nexp ) ? $nexp : 1;
+  my $param;
 
-# Generate the input and output file names
-          my ( $in, $out ) = $Frm->inout ( "_pov", $i );
-          my $bglout = $Frm->inout( "_bgl", $i );
+  # Loop through the sub-files
+  foreach my $i ( 1 .. $Frm->nfiles ) {
 
-# Units of in are ADU/exposure.
+    # Generate the input and output file names
+    my ( $in, $out ) = $Frm->inout ( "_pov", $i );
+    my $bglout = $Frm->inout( "_bgl", $i );
 
-# Convert to total electrons; we need to multiply by the gain and the
-# number of exposures.
-          my $factor = $gain * $nexp;
-          $param = "in=$in scalar=$factor out=$tmpfile";
-          $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
+    # Units of in are ADU/exposure.
 
-# Units in tmp are total electrons.
+    # Convert to total electrons; we need to multiply by the gain and
+    # the number of exposures.
+    my $factor = $gain * $nexp;
+    $param = "in=$in scalar=$factor out=$tmp1file";
+    $Mon{ "kappa_mon" }->obeyw( "cmult", "$param" );
 
-# Set the variance array of the tmp file to be the Poisson variance.
-          $Mon{ "ndfpack_mon" }->obeyw( "setvar", "ndf=$tmpfile variance=data" );
+    # Units in tmp are total electrons.
 
-# tmp is now the total electrons, with Poisson variance.
-# We've thrown out any readnoise by doing the setvar on the tmp file.
+    # Set the variance array of the tmp file to be the Poisson
+    # variance.
+    $Mon{ "ndfpack_mon" }->obeyw( "setvar", "ndf=$tmp1file variance=data" );
 
-# Now convert the tmpfile back to DN per exposure
-          $param = "in=$tmpfile scalar=$factor out=$tempfile";
-          $Mon{ "kappa_mon" }->obeyw( "cdiv", "$param" );
+    # tmp is now the total electrons, with Poisson variance.  We've
+    # thrown out any readnoise by doing the setvar on the tmp file.
 
-# tempfile is now in ADU per exposure, with Poisson (only) variance in
-# the variance array.
+    # Now convert the tmpfile back to DN per exposure
+    $param = "in=$tmp1file scalar=$factor out=$tmp2file";
+    $Mon{ "kappa_mon" }->obeyw( "cdiv", "$param" );
 
-# Now work out how background limited we were.  Copy the readnoise variance from
-# the original input frame into the tmprnfile, and the Poisson variance from
-# $tempfile into tmppofile.  This is a non-OO kludge until SETVAR permits a FROM
-# parameter.
-          my $ORAC_STATUS = ( create_hdsobj( $tmprnfile, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
-          $ORAC_STATUS = ( copy_hdsobj( "$in.VARIANCE", "$tmprnfile.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
+    # tmp2file is now in ADU per exposure, with Poisson (only)
+    # variance in the variance array.
 
-          $ORAC_STATUS = ( create_hdsobj( $tmppofile, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
-          $ORAC_STATUS = ( copy_hdsobj( "$tempfile.VARIANCE", "$tmppofile.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
+    # Now work out how background limited we were.  Copy the readnoise
+    # variance from the original input frame into the tmprnfile, and
+    # the Poisson variance from $tempfile into tmppofile.  This is a
+    # non-OO kludge until SETVAR permits a FROM parameter.
+    my $ORAC_STATUS = ( create_hdsobj( $tmprnfile, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+    $ORAC_STATUS = ( copy_hdsobj( "$in.VARIANCE", "$tmprnfile.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
 
-# Divide the Poisson variance by the readnoise variance into bglout.
-          $param = "in1=$tmppofile in2=$tmprnfile out=$bglout";
-          $Mon{ "kappa_mon" }->obeyw( "div", "$param" );
+    $ORAC_STATUS = ( create_hdsobj( $tmppofile, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+    $ORAC_STATUS = ( copy_hdsobj( "$tmp2file.VARIANCE", "$tmppofile.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
 
-# Frame bglout now contains the background `limited-ness'.
+    # Divide the Poisson variance by the readnoise variance into
+    # bglout.
+    $param = "in1=$tmppofile in2=$tmprnfile out=$bglout";
+    $Mon{ "kappa_mon" }->obeyw( "div", "$param" );
 
-# Now, we need to add the variance array of the temp file to that of
-# the original input file, and to make the final output file.
+    # Frame bglout now contains the background `limited-ness'.
 
-# We can do this by using chpix to zero the data array of the temp file
-# then simply adding the two files together.  Note this leaves the
-# variance unchanged unlike CMULT.
-          $param = "in=$tempfile out=$tmpfile comp=Data newval=0 section=':,:'";
-          $Mon{ "kappa_mon" }->obeyw( "chpix", "$param" );
-          $Mon{ "kappa_mon" }->obeyw( "add", "in1=$tmpfile in2=$in out=$out" );
+    # Now, we need to add the variance array of the temp file to that
+    # of the original input file, and to make the final output file.
 
-# Report the processing status.
-          orac_print "$in to $out: Poisson variance added.\n";
+    # We can do this by using chpix to zero the data array of the temp
+    # file then simply adding the two files together.  Note this
+    # leaves the variance unchanged unlike CMULT.
+    $param = "in=$tmp2file out=$tmp3file comp=Data newval=0 section=':,:'";
+    $Mon{ "kappa_mon" }->obeyw( "chpix", "$param" );
+    $Mon{ "kappa_mon" }->obeyw( "add", "in1=$tmp3file in2=$in out=$out" );
 
-# Update the Frame object.
-          $Frm->file( $i, $out );
+    # Report the processing status.
+    orac_print "$in to $out: Poisson variance added.\n";
 
-# Obtain statistics of the background-limited pixels.  Those pixels
-# with values > 1 in bgl were background limited; those < 1 ones were not.
-          $param = "in=$bglout out=$tmprnfile thrhi=1 thrlo=1 newhi=1 newlo=0";
-          $Mon{ "kappa_mon" }->obeyw( "thresh", "$param" );
-          $Mon{ "ndfpack_mon" }->obeyw( "setbad", "ndf=$tmprnfile value=TRUE" );
+    # Update the Frame object.
+    $Frm->file( $i, $out );
 
-          $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$tmprnfile" );
-          my $mean;
-          ( $ORAC_STATUS, $mean ) = $Mon{ "kappa_mon" }->get( "stats", "mean" );
+    # Obtain statistics of the background-limited pixels.  Those
+    # pixels with values > 1 in bgl were background limited; those < 1
+    # ones were not.
+    $param = "in=$bglout out=$tmprnfile thrhi=1 thrlo=1 newhi=1 newlo=0";
+    $Mon{ "kappa_mon" }->obeyw( "thresh", "$param" );
+    $Mon{ "ndfpack_mon" }->obeyw( "setbad", "ndf=$tmprnfile value=TRUE" );
 
-          $mean *=100;
-          $mean = sprintf( "%.1f", $mean );      
+    $Mon{ "kappa_mon" }->obeyw( "stats", "ndf=$tmprnfile" );
+    my $mean;
+    ( $ORAC_STATUS, $mean ) = $Mon{ "kappa_mon" }->get( "stats", "mean" );
 
-          orac_print "  $mean% of the pixels in $in were background limited.\n";
-       }
-       orac_print "\n";
-    }
+    $mean *=100;
+    $mean = sprintf( "%.1f", $mean );
 
+    orac_print "  $mean% of the pixels in $in were background limited.\n";
+  }
+  orac_print "\n";
+}
 
 # Podule
 # ======
