@@ -265,7 +265,7 @@ sub framegroup {
   my @Frms;
   foreach my $files ( values %groupings ) {
 
-    push @Frms, $class->new( @$files );
+    push @Frms, $class->new( $files );
 
   }
 
