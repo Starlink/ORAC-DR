@@ -31,7 +31,7 @@ use ORAC::Constants qw/ :status /;
 
 use vars qw/$VERSION $DRAMA_OBJECT /;
 
-$VERSION = sprintf("%d.%03d", q$Revision$ =~ /(\d+)\.(\d+)/);
+$VERSION = sprintf("%d", q$Revision$ =~ /(\d+)/);
 
 use DRAMA;
 
