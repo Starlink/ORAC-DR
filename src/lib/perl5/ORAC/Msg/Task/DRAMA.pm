@@ -263,6 +263,7 @@ sub get {
 			     $param,
 			     {
 			      -info => \&cbinfo,
+			      -infofull => \&cbinfofull,
 			      -error => sub { 
 				$status = _translate_err( $_[2] );
 				&cberror( $_[1] ); 
@@ -487,6 +488,38 @@ sub cbinfo {
     print $stdout "Inf: $m\n";
   }
   return;
+}
+
+=item B<cbinfofull>
+
+Full infi handler.
+
+=cut
+
+sub cbinfofull {
+  my $rtask = shift;
+  my @messages = @_;
+
+  my $err = 0;
+  for my $msg (@messages) {
+    my $prefix;
+    my $task = "$rtask:";
+    if (! exists $msg->{status}) {
+        $task = colored($task, 'green');
+	orac_print($task.$msg->{message});
+      } else {
+        my $status = $msg->{status};
+        if (!$err) {
+          # first error chunk
+          $err = 1;
+          $prefix = "##";
+        } else {
+          $prefix = "# ";
+        }
+        $task = colored($task, 'red');
+	orac_err($prefix.$task. $msg->{message});
+      }
+    }
 }
 
 =item B<cberror>
