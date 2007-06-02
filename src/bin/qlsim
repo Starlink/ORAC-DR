@@ -49,6 +49,11 @@ By default, the task will exit when it runs out of files. When this
 option is enabled the task will start from the beginning again when
 it gets to the end.
 
+=item B<-internal>
+
+Server Quick Look data generated internally on a 40x32 grid. Supercedes
+all other options, will continue indefinitely.
+
 =item B<-help>
 
 Provide simple help information.
@@ -136,7 +141,7 @@ $DRAMA::MESSAGEBYTES = 80000;
 $DRAMA::MAXMESSAGES  = 1;
 
 # Options
-my ($help, $man, $version, $refresh, $name, $flagfile, $loop, $rawmode);
+my ($help, $man, $version, $refresh, $name, $flagfile, $loop, $rawmode, $internal);
 my $opt_status = GetOptions("help" => \$help,
 			    "man" => \$man,
 			    "flagfile=s" => \$flagfile,
@@ -145,6 +150,7 @@ my $opt_status = GetOptions("help" => \$help,
 			    "name=s" => \$name,
 			    "loop" => \$loop,
 			    "raw" => \$rawmode,
+			    "internal" => \$internal,
 			   );
 
 pod2usage(1) if $help;
@@ -163,13 +169,15 @@ $name    ||= "QLSIM";
 
 # error checks
 die "-flagfile option is mandatory\n"
-  unless defined $flagfile;
+  unless (defined $flagfile || defined $internal);
 
-die "Supplied flagfile ($flagfile) does not exist\n"
-  unless -e $flagfile;
+if (defined $flagfile && !defined $internal) {
+  die "Supplied flagfile ($flagfile) does not exist\n"
+    unless -e $flagfile;
+}
 
 # ORAC_DATA_IN is required for us to read the file
-if (!exists $ENV{ORAC_DATA_IN}) {
+if (!$internal && !exists $ENV{ORAC_DATA_IN}) {
   warn "\$ORAC_DATA_IN is required when serving the IMAGE data. Falling back to FILENAME\n";
 }
 
@@ -178,11 +186,13 @@ if (!exists $ENV{ORAC_DATA_IN}) {
 # subframes. If FRM_CLASS is defined we will ask the frame itself
 # for details of all the components.
 my $FRM_CLASS;
-if (!exists $ENV{ORAC_INSTRUMENT}) {
-  warn "\$ORAC_INSTRUMENT not defined. Falling back to safe mode.";
-} else {
-  my @classes = orac_determine_inst_classes( $ENV{ORAC_INSTRUMENT} );
-  $FRM_CLASS = $classes[0] if @classes;
+if (!$internal) {
+  if (!exists $ENV{ORAC_INSTRUMENT}) {
+    warn "\$ORAC_INSTRUMENT not defined. Falling back to safe mode.";
+  } else {
+    my @classes = orac_determine_inst_classes( $ENV{ORAC_INSTRUMENT} );
+    $FRM_CLASS = $classes[0] if @classes;
+  }
 }
 
 # Cache of filenames that are waiting to be sent
@@ -196,8 +206,18 @@ my $IMAGE_FORMAT;
 # open the flagfile so that we can start reading files from it
 # and to make sure we can before we start DRAMA
 # This is a global for simplicity
-open my $FH, "< $flagfile"
-  or die "Error opening file $flagfile: $!";
+my $FH;
+if (!$internal) {
+  open my $FH, "< $flagfile"
+    or die "Error opening file $flagfile: $!";
+}
+
+# Dummy fits header
+my $FITS_Hdr;
+if ($internal) {
+  my @cards = map { Astro::FITS::Header::Item->new(Card => $_) } grep /\w/, <DATA>;
+  $FITS_Hdr = new Astro::FITS::Header( Cards => \@cards );
+}
 
 # Initialise DRAMA
 DPerlInit( $name );
@@ -205,7 +225,12 @@ DPerlInit( $name );
 
 # Register the actions
 my $status = new DRAMA::Status;
-Dits::DperlPutActions("UPDATE",\&update_param,undef,0,undef,$status);
+if (!$internal) {
+  Dits::DperlPutActions("UPDATE",\&update_param,undef,0,undef,$status);
+} else {
+  # No external file access
+  Dits::DperlPutActions("UPDATE",\&update_param_internal,undef,0,undef,$status);
+}
 
 # Get the parameter object
 my $sdp = Dits::GetParId();
@@ -229,6 +254,33 @@ Dits::MainLoop( $status );
 exit;
 
 # actions
+
+# UPDATE Action - Internal version
+
+sub update_param_internal {
+  my $status = shift;
+  return $status unless $status->Ok;
+  print "Enter (internal) UPDATE action...\n";
+  
+  # cut and paste hell
+
+  # Set the timestamp
+  my $t = $qlsds->Find( "TIMESTAMP", $status );
+  print Time::HiRes::time() ."\n";
+  $t->PutPdl( PDL::Core::pdl( Time::HiRes::time() ) )
+    if (defined $t && $status->Ok);
+
+  # Create a PDL
+  my $image = PDL::Core::ones( 40,32 ); 
+  put_image( $image, $FITS_Hdr);
+  $qlsds->List( $status );
+  # trigger parameter update
+  $sdp->Update($qlsds, $status);
+
+  # reschedule
+  Dits::PutDelay( $DELAY, $status );
+  Dits::PutRequest( Dits::REQ_WAIT, $status );
+}
 
 # UPDATE Action
 
@@ -351,9 +403,6 @@ sub update_param {
 
 	  if (defined $image) {
 
-	    my %STRUCT;
-	    $STRUCT{DATA_ARRAY} = $image;
-
 	    # reread the FITS header since we do not have the Frm
 	    # object
 	    my $fits;
@@ -361,23 +410,9 @@ sub update_param {
 	      $fits = new Astro::FITS::Header::NDF( File => $nextfile );
 	    };
 	    $fits = new Astro::FITS::Header() if (!defined $fits);
-	    $STRUCT{FITS} = [ split ("\n","$fits") ];
 
-	    # Need to remove previous IMAGE structures
-	    DRAMA::ErsPush();
-	    my $lstat = new DRAMA::Status;
-	    {
-	      my $imsds = $qlsds->Find( "IMAGE", $lstat );
-	      if ($imsds) {
-		# force out-of-scope destroy
-		$imsds->flags(1,1,1);
-	      }
-	    }
-	    $lstat->Annul() unless $lstat->Ok;
-	    DRAMA::ErsPop;
-
-	    # write the data to the structure
-	    $qlsds->PutHash( \%STRUCT, "IMAGE", $status );
+	    # put the information into the parameter
+	    put_image( $image, $fits );
 
 	  } else {
 
@@ -427,6 +462,31 @@ sub update_param {
   return $status;
 }
 
+# Put image data into the SDS parameter
+sub put_image {
+  my ($image, $fits) = @_;
+
+  my %STRUCT;
+  $STRUCT{DATA_ARRAY} = $image;
+  $STRUCT{FITS} = [ split ("\n","$fits") ];
+
+  # Need to remove previous IMAGE structures
+  DRAMA::ErsPush();
+  my $lstat = new DRAMA::Status;
+  {
+    my $imsds = $qlsds->Find( "IMAGE", $lstat );
+    if ($imsds) {
+      # force out-of-scope destroy
+      $imsds->flags(1,1,1);
+    }
+  }
+  $lstat->Annul() unless $lstat->Ok;
+  DRAMA::ErsPop;
+
+  # write the data to the structure
+  $qlsds->PutHash( \%STRUCT, "IMAGE", $status );
+}
+
 # canonicalize path
 
 sub mycanonpath {
@@ -464,6 +524,7 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 =head1 COPYRIGHT
 
 Copyright (C) 2005 Particle Physics and Astronomy Research Council.
+Copyright (C) 2007 Science and Technology Facilities Council.
 All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
@@ -480,3 +541,101 @@ this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
+
+# dummy fits header
+__DATA__
+COMMENT   '        '           / -- Telescope specific parameters --
+TELESCOP= 'JCMT    '           / Name of telescope
+ORIGIN  = 'SMURF SCUBA-2 simulator'/ Origin of file
+OBSGEO-X=         -1601185.365 / x,y,z triplet for JCMT
+OBSGEO-Y=         -5041977.547 / relative to centre of the Earth
+OBSGEO-Z=           3554875.87 / [m]
+ALT-OBS =               4092.0 / [m] Height of observatory above sea level
+LAT-OBS =        19.8258323669 / [deg] Latitude of observatory
+LONG-OBS=        204.520278931 / [deg] East longitude of observatory
+ETAL    =                  1.0 / Telescope efficiency
+COMMENT   '        '           / -- Observation & date parameters --
+OBSID   = 'SCUBA-2_1_20060301T000000'/ Unique observation ID
+OBJECT  = 'SMURF   '           / Object Name
+STANDARD=                    F / True if source is a calibrator
+OBSNUM  =                    1 / Observation Number
+NSUBSCAN=                    1 / Sub-scan Number
+OBSEND  =                    F / True if frame is last in current observation
+UTDATE  = '20060301'           / UT date as a string in yyyymmdd format
+DATE-OBS= '2006-03-01T00:00:00.000'/ Date and time (UTC) of start of sub-scan
+DATE-END= '2006-03-01T00:00:00.000'/ Date and time (UTC) of end of sub-scan
+DUT1    =                  0.0 / [d] UT1 - UTC correction
+INSTAP  = '        '           / Instrument aperture
+INSTAP_X=                  0.0 / [arcsec] X focal plane offset
+INSTAP_Y=                  0.0 / [arcsec] Y focal plane offset
+AMSTART =     1.06433815252624 / Air mass at start
+AMEND   =     1.06438056313379 / Air mass at end
+AZSTART =     189.113719518147 / [deg] Azimuth at sub-scan start
+AZEND   =     189.234280866448 / [deg] Azimuth at sub-scan end
+ELSTART =     69.9762927759412 / [deg] Elevation at sub-scan start
+ELEND   =     69.9700293730418 / [deg] Elevation at sub-scan end
+LSTSTART= '00:12:43.8812'      / LST at start of sub-scan
+LSTEND  = '00:12:53.9036'      / LST at end of sub-scan
+COMMENT   '        '           / -- Environment parameters --
+ATSTART =                  5.0 / [deg C] Ambient temperature at start
+ATEND   =                  5.0 / [deg C] Ambient temperature at end
+WVMTAUST=             0.052583 / WVM tau at start
+WVMTAUEN=             0.052583 / WVM tau at end
+SEEINGST=                  1.0 / Seeing at start
+SEEINGEN=                  1.0 / Seeing at end
+COMMENT   '        '           / -- OMP & ORAC-DR parameters --
+PROJECT = 'M08AC00 '           / The proposal ID for the PROJECT
+RECIPE  = '        '           / The ORAC-DR recipe
+DRGROUP = '        '           / Name of group to combine current observation wi
+MSBID   = '        '           / ID of min schedulable block
+MSBTID  = '        '           / Translation ID of MSB
+SURVEY  = '        '           / Survey Name
+COMMENT   '        '           / -- SCUBA-2 specific parameters --
+INSTRUME= 'SCUBA-2 '           / Instrument name - SCUBA-2
+SHUTTER = '        '           / Shutter position for dark frames
+FILTER  = '850     '           / filter used
+WAVELEN =              0.00085 / [m] Wavelength
+COMMENT   '        '           / -- Mapping parameters --
+SAM_MODE= 'SCAN    '           / Sample mode: STARE, DREAM or SCAN
+SW_MODE = 'NONE    '           / Switch mode: CHOP, PSSW, FREQ, or NONE
+OBS_TYPE= 'SCIENCE '           / Observation type -  Science, Pointing or Focus
+JIGL_CNT=                    0 / Number of points in DREAM pattern
+JIGL_NAM= '        '           / Name containing DREAM jiggle offsets
+JIGL_PA =                  0.0 / Number of points in DREAM pattern
+JIGL_CRD= '        '           / Coord frame of jiggle pattern
+JIG_SCAL=                  0.0 / [arcsec] SMU jiggle pattern scale factor
+DRMWGHTS= '        '           / Name of DREAM weights file
+MAP_HGHT=     2469.47926865683 / [arcsec] Map height
+MAP_PA  =                  0.0 / [deg] Map PA
+MAP_WDTH=     2132.67227524994 / [arcsec] Map width
+LOCL_CRD= '        '           / Local offset coordinate system
+MAP_X   =                  0.0 / [arcsec] Map X offset
+MAP_Y   =    -80.2350879694748 / [arcsec] Map Y offset
+SCAN_CRD= '?sS    '           / Scan coordinate system
+SCAN_VEL=                600.0 / [arcsec/s] Requested scanning rate
+SCAN_DY =                216.0 / [arcsec] Sample spacing perpendicular to scan
+SCAN_PA =            0.4636476 / [deg] Scan PA relative to N in SCAN_CRD system
+SCAN_PAT= 'PONG    '           / Scanning pattern
+COMMENT   '        '           / -- JOS parameters --
+STEPTIME=                0.005 / [s] Time interval between samples
+COMMENT   '        '           / -- Integration time-related parameters --
+INT_TIME=                  0.0 / [s] Time spent integrating on source
+N_SUB   =                    0 / Number of sub-scans written to file
+COMMENT   '        '           / -- SMU-specific parameters --
+ALIGN_DX=                  0.0 / SMU tables X axis alignment offset
+ALIGN_DY=                  0.0 / SMU tables Y axis alignment offset
+FOCUS_DZ=                  0.0 / SMU tables Z axis focus offset
+DAZ     =                  0.0 / SMU azimuth pointing offset
+DEL     =                  0.0 / SMU elevation pointing offset
+UAZ     =                  0.0 / User azimuth pointing offset
+UEL     =                  0.0 / User elevation pointing offset
+COMMENT   '        '           / -- Miscellaneous --
+OCSCFG  = 'config.xml' / Name of OCS Configuration XML file defining the observa
+SIMULATE=                    T / True if data produced by simulator
+SIM_SMU =                    T / True if SMU data are simulated
+SIM_RTS =                    T / True if RTS data are simulated
+SIM_TCS =                    T / True if TCS data are simulated
+STATUS  = 'NORMAL  '           / Status at obs. end - NORMAL or ABORT
+POL_CONN=                    F / True if polarimeter is in the beam
+FTS_CONN=                    F / True if FTS is used
+MEANWVM =   0.0528389294463016 / Mean zenith tau at 225 GHz from WVM
