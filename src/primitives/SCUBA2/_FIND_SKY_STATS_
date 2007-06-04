@@ -8,22 +8,25 @@ _FIND_SKY_STATS_ - determine the statistics of blank (sky) regions
 
  _FIND_SKY_STATS_
 
- _FIND_SKY_STATS_  LOGFILE=0
+ _FIND_SKY_STATS_  LOGFILE=0 CLIP=2,2
 
 =head1 DESCRIPTION
 
-This primitive calculates the statistics of regions within an image
-
-This primitive is Frame based (C<$Frm>) and either acts on each image
-in the frame or only on the one selected by the FRAME argument. It is
-expected that this primitive will usually be called from another which
-removes the sky contribution, and thus will pass it the FRAME argument.
+This primitive calculates the statistics of regions within a given
+image. It is expected that this primitive will usually be called from
+another which removes the sky contribution, and thus will pass it the
+IMAGE argument.
 
 =head1 ARGUMENTS
 
 The following arguments are supported:
 
 =over 4
+
+=item IMAGE
+
+Input image. No default, and an error will be given if no image is
+supplied.
 
 =item LOGFILE
 
@@ -35,24 +38,11 @@ results of the integrated intensity calculation. Default is true.
 Flag to indicate whether informational messages should be given to the
 user. Default is true.
 
-=item FRAME
-
-An integer which specifies which file in the current frame to perform
-the calculation on. Default is 0 which means to use all files in
-current frame.
-
 =item CLIP
 
 A comma-separated list of up to 5 numbers specifying the clip levels
 at which to evaluate the statistics. See the documentation for KAPPA
 C<stats> for further details. Default is blank (no clipping).
-
-=item MODE
-
-A string to set the type of data to be used in determining the sky
-statistics depending on whether the pipeline is operating in online
-or offline mode. Valid values are online or offline. Default
-is online.
 
 =back
 
@@ -64,7 +54,7 @@ The following external tasks are used:
 
 =item KAPPA
 
-C<stats>
+C<stats>, C<histogram>
 
 =back
 
@@ -77,20 +67,8 @@ contains the following keys:
 
 =item RESULTS
 
-An array reference containing the DC sky level and the standard
-deviation of values in the image.
-
-=back
-
-=head1 OUTPUT FILES
-
-The following files are created:
-
-=over 4
-
-=item C<log.sky>
-
-A log file containing an estimate of the DC sky level removed
+An array reference containing the mean sky level, the standard
+deviation and the modal sky value in the image.
 
 =back
 
@@ -101,10 +79,8 @@ The frame object is not updated.
 Only takes the average of the entire image assuming that the sky
 dominates the emission. A more sophisticated routine is needed for the
 pathological cases when there is a lot of extended (source) emission
-which lies at the several sigma level.
-
-Currently only supports the online pipeline mode operating on
-images only rather than directly on the timestream data.
+which lies at the several sigma level. Masking of known sources should
+take place before calling this primitive.
 
 =head1 AUTHOR
 
@@ -112,208 +88,101 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2005 University of British Columbia.  All Rights
+Copyright (C) 2005-2007 University of British Columbia.  All Rights
 Reserved.
 
 =cut
 
-use NDF;
-# Write logfile (default to true)
-my $uselog = (exists $_FIND_SKY_STATS_{LOGFILE} && 
-	      defined $_FIND_SKY_STATS_{LOGFILE}) ?
-  $_FIND_SKY_STATS_{LOGFILE} : 1;
+# Set input file
+my $in = (exists $_FIND_SKY_STATS_{IMAGE} && 
+	  defined $_FIND_SKY_STATS_{IMAGE}) ?
+          $_FIND_SKY_STATS_{IMAGE} : "";
+
+if ( $in eq "" ) {
+  orac_throw "Error: no input image given to _FIND_SKY_STATS_\n";
+}
 
 # Should I be verbose (default to yes)
 my $verbose = (exists $_FIND_SKY_STATS_{VERBOSE} && 
 	       defined $_FIND_SKY_STATS_{VERBOSE}) ?
-  $_FIND_SKY_STATS_{VERBOSE} : 1;
+               $_FIND_SKY_STATS_{VERBOSE} : 1;
 
-# Check if FRAME argument is present
-my $myframe = 0;
-if ($_FIND_SKY_STATS_{FRAME}) {
-  $myframe = $_FIND_SKY_STATS_{FRAME};
-}
-
-# Optional CLIP argument
+# Optional CLIP argument, default to blank (no clipping)
 my $clip = (exists $_FIND_SKY_STATS_{CLIP} && 
 	    defined $_FIND_SKY_STATS_{CLIP}) ?
-  $_FIND_SKY_STATS_{CLIP} : "";
-
-# Pipeline mode (default to online)
-my $pipemode = (exists $_FIND_SKY_STATS_{MODE} && 
-		defined $_FIND_SKY_STATS_{MODE}) ?
-               lc($_FIND_SKY_STATS_{MODE}) : "online";
-
-if ($pipemode =~ /on/) {
-  orac_print "ONLINE pipeline mode specified \n" if $verbose;
-} elsif ($pipemode =~ /off/) {
-  orac_print "OFFLINE pipeline mode specified \n" if $verbose;
-} else {
-  orac_warn "Warning: Unsupported mode, reverting to online \n";
-  $pipemode = "online";
-}
-
-# Change $pipemode to an integer
-$pipemode = ($pipemode =~ /on/) ? 1 : 0;
-
-orac_warn "Warning: only ONLINE pipeline currently supported, reverting to online \n" 
-  unless $pipemode;
+            $_FIND_SKY_STATS_{CLIP} : "";
 
 # Initialise the results array
 $_FIND_SKY_STATS_{RESULTS} = [];
 
-# Create logfile
-my $log;
-if ($uselog) {
-  $log = new ORAC::LogFile("log.sky");
-  my $time = gmtime();
-  $log->header("Sky statistics log file - created on $time",
-	       "\n#     Time        Filter    Offset      RMS  Npix  rms/pix  CSO  El   Object",
-	       "----------------------------------------------------------------------------------"
-	       );
-}
+# Now calculate stats of the masked file to get the mean and the
+# standard deviation
+my $args = ($clip ne "") ? "clip=[$clip]" : "" ;
+$Mon{kappa_mon}->obeyw("stats","ndf=$in $args");
 
-# Now Loop over frames
-my $in;
+# Retrieve the values
+my $ORAC_STATUS;
+($ORAC_STATUS, my $avg) = $Mon{kappa_mon}->get("stats","mean");
+($ORAC_STATUS, my $stdv) = $Mon{kappa_mon}->get("stats","sigma");
+($ORAC_STATUS, my $ngood) = $Mon{kappa_mon}->get("stats","numgood");
+($ORAC_STATUS, my $ntotal) = $Mon{kappa_mon}->get("stats","numpix");
+($ORAC_STATUS, my $nbad) = $Mon{kappa_mon}->get("stats","numbad");
+($ORAC_STATUS, my $min) = $Mon{kappa_mon}->get("stats","minimum");
+($ORAC_STATUS, my $max) = $Mon{kappa_mon}->get("stats","maximum");
+
+# KAPPA stats returns sigma = 0 if anything went wrong
+
+orac_warn "All pixels in region are bad!\n" if $ngood == 0;
+my $fracgood = $ngood/$ntotal;
+
+# Now use KAPPA histogram and write results to a file
+# Determine numbin: calculated from min and max to make sure that
+# the increment is more or less the same for all images
 my $delta = 1.0e-5;
-for my $i (1.. $Frm->nfiles ) {
+my $numbinmax = 10000;
+my $numbin = int( ($max - $min)/$delta );
+$numbin = $numbinmax if ($numbin > $numbinmax);
 
-  # Find the input file
-  if ($myframe) { # If running with a single input file...
-    if ($i == $myframe) {
-      $in = $Frm->file($i);
-    } else {
-      next;
-    }
-  } else { # Running as normal
-    $in = $Frm->file($i);
-  }
+# ORAC::TempFile can't be used to create a file to pass to histogram
+# but it *can* be used to generate a unique name for histogram so
+# ensure there won't be any name clashes.
+my $histfile = new ORAC::TempFile(0);
+my $histname = $histfile->file;
+undef $histfile;
+my $args = "numbin=$numbin range=! device=! logfile=".$histname;
+$Mon{kappa_mon}->obeyw("histogram","in=$in $args");
 
-  # Now calculate stats of the masked file to get the mean and the
-  # standard deviation
-  my $args = ($clip ne "") ? "clip=[$clip]" : "" ;
-  $Mon{kappa_mon}->obeyw("stats","ndf=$in $args");
-
-  # Retrieve the values
-  my $ORAC_STATUS;
-  ($ORAC_STATUS, my $avg) = $Mon{kappa_mon}->get("stats","mean");
-  ($ORAC_STATUS, my $stdv) = $Mon{kappa_mon}->get("stats","sigma");
-  ($ORAC_STATUS, my $ngood) = $Mon{kappa_mon}->get("stats","numgood");
-  ($ORAC_STATUS, my $ntotal) = $Mon{kappa_mon}->get("stats","numpix");
-  ($ORAC_STATUS, my $nbad) = $Mon{kappa_mon}->get("stats","numbad");
-  ($ORAC_STATUS, my $min) = $Mon{kappa_mon}->get("stats","minimum");
-  ($ORAC_STATUS, my $max) = $Mon{kappa_mon}->get("stats","maximum");
-
-  my $fracgood = $ngood/$ntotal;
-
-  # Store them if sigma is greater than 0
-#  if ($stdv > 0.0 && $fracgood > 0.5) {
-  if ($stdv > 0.0) {
-#    push(@avg_stdv, [ $avg, $stdv] );
-    orac_print "MEAN/SIGMA : $avg/$stdv\n", 'red'
-      if $verbose;
-  } else {
-    $avg = 0;
-    $stdv = 0;
-    orac_warn "Negative std deviation - setting mean and sigma to 0 \n" if $verbose;
-  }
-
-  # Calculate error on the sum (done the simple way)
-  my $err = sqrt($ngood) * $stdv;
-  orac_warn "All pixels in aperture are bad!\n"
-    if $ngood == 0;
-  
-  # Signal-to-noise
-  my $s2n;
-  if (abs($err) <= 1.0e-30) {
-    # protect division by zero and assume that very small
-    # error really means an error in the calculation
-    $s2n = 0.0;
-  } else {
-    # signal-to-noise is positive
-    $s2n = abs($avg / $err);
-  }
-
-  # Now use the histogram method - write results to a logfile
-  # Determine numbin: calculated from min and max to make sure that
-  # the increment is more or less the same for all images
-  my $numbinmax = 10000;
-  my $numbin = int( ($max - $min)/$delta );
-  $numbin = $numbinmax if ($numbin > $numbinmax);
-  my $logfile = "histogram_".$i.".dat";
-  my $args = "numbin=$numbin range=! device=! logfile=$logfile";
-  $Mon{kappa_mon}->obeyw("histogram","in=$in $args");
-  # Now analyze results
-  # ##############
-  # KLUDGE - this MUST be moved into a subroutine
-  # Open log file with hist results
-  open my $HISTFH, "< $logfile "
-    or die "Unable to open file, $logfile: $!";    
-  my (@lines, @values);
-  # Fill the @lines array
-  while (<$HISTFH>){
-    chomp;
-    push (@lines, $_) if ($_ =~ /pixels/); # We only want lines with the word pixels in it
-  }
-  close $HISTFH;
-  unlink $logfile;
-  # Now fiddle with the @lines array
-  # Get an array of array refs, each containing
-  foreach my $line (@lines) {
-    my @tmpline = split(/\s+/,$line,6);
-    my $lineref = [ $tmpline[1], $tmpline[3], $tmpline[4] ];
-    push (@values, $lineref);
-  }
-  # Now find max value
-  my $maxpix = 0;
-  my $maxval = -1.0e6;
-  foreach my $lineref (@values) {
-    if ($lineref->[2] > $maxpix){
-      $maxpix = $lineref->[2];
-      $maxval = 0.5*($lineref->[0] + $lineref->[1]) ;
-    }
-  }
-  my $mode = $maxval;
-
-  # ##############
-  # NEEDS TO BE TESTED ON FIELD OF POINT SOURCES
-  # ##############
-    
-  # Store mean DC level in the hash
-  $_FIND_SKY_STATS_{RESULTS} = [ $avg, $stdv, $mode ];
-
-  my $num = sprintf "%-4d", $Frm->number;
-  my $time= sprintf "%12.3f", $Frm->hdr('ORACTIME');
-  my $filt= sprintf "%4s", $Frm->hdr('FILTER');
-
-  # Pretty print values
-  $s2n = sprintf "%5.2f", $s2n;
-  $stdv = sprintf "%8.3e", $stdv;
-  $err = sprintf "%8.3e", $err;
-  $avg = sprintf "%8.5f", $avg;
-
-  # Get the tau
-  # TAU from calibration object
-#    my $tau = sprintf "%5.2f", $Cal->tau($filters[$i-1]);
-
-  # Use that tau to calculate CSO
-#    my ($cso, $status) = JCMT::Tau::get_tau('CSO',$filters[$i-1], $tau);
-#    if ($status != 0) {
-#      $cso = "*****";
-#    } else {
-#      $cso = sprintf "%5.2f", $cso;
-#    }
-  my $cso = sprintf "%5.2f", "1.0";
-
-  # elevation
-  my $el = int ( 0.5 * ($Frm->hdr('ELDST') + $Frm->hdr('ELDEN') ) );
-
-#  $log->addentry("$num $time  $filt   $avg   $err  $ngood  $stdv  $cso $el ". $Frm->hdr("OBJECT"))
-  my $object = "TEST";
-  $log->addentry("$num $time  $filt   $avg   $err  $ngood  $stdv  $cso $el $object")
-    if $uselog;
-
-  last if ($myframe);
+# Now analyze results - first open log file with hist results
+open my $HISTFH, "< $histname"
+  or die "Unable to open file, $histname: $!\n";
+my (@lines, @values);
+# Read all the relevant lines, delete file when done
+while (<$HISTFH>){
+  chomp;
+  push (@lines, $_) if ($_ =~ /pixels/); # We only want lines with the word pixels in it
 }
+close $HISTFH;
+unlink $histname;
+
+# Split line on spaces and store the bounds of and the number of
+# samples in the current bin
+foreach my $line (@lines) {
+  my @tmpline = split(/\s+/,$line,6);
+  my $lineref = [ $tmpline[1], $tmpline[3], $tmpline[4] ];
+  push (@values, $lineref);
+}
+# Now find the maximum value - this is the MODE
+my $maxpix = 0;
+my $maxval = -1.0e9;
+foreach my $lineref (@values) {
+  if ($lineref->[2] > $maxpix){
+    $maxpix = $lineref->[2];
+    $maxval = 0.5*($lineref->[0] + $lineref->[1]) ;
+  }
+}
+my $mode = $maxval;
+
+# Store mean DC level, standard deviation and mode in the hash
+$_FIND_SKY_STATS_{RESULTS} = [ $avg, $stdv, $mode ];
 
 orac_print "Calculated sky statistics\n" if $verbose;
