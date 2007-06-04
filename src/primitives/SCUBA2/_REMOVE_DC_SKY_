@@ -18,6 +18,23 @@ This primitive is an alternative to _REMOVE_PLANE_FROM_IMAGE_.
 
 This is a Frame operation and should be used before group operations.
 
+=head1 ARGUMENTS
+
+The following arguments are supported
+
+=over 4
+
+=item METHOD
+
+Valid options are MEAN or MODE. Default is MEAN.
+
+=item VERBOSE
+
+Flag to denote whether to print informative messages to the
+screen. Default is false (0).
+
+=back
+
 =head1 External Tasks
 
 The following external tasks are used:
@@ -34,49 +51,77 @@ C<csub>
 
 Creates an output file with a C<_sky> extension.
 
+=head1 NOTES
+
+Only deals with 2-D images, not time-series data.
+
 =head1 KNOWN ISSUES
 
-Assumes that this step should be done before calibration although it's
-a bit late to tell the user that it should have been done at an
-earlier step.
+Does not determine units from input data files.
 
 =head1 AUTHOR
 
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
-Copyright (C) 2005 the University of British Columbia.  All Rights
-Reserved.
+Copyright (C) 2005-2007 the University of British Columbia.  All
+Rights Reserved.
 
 
 =cut
 
-# Units for uncalibrated data
-# Should be obtained from header and a check made that the data are uncalibrated
+# Units for these data - should be obtained from header
 my $rawunits = "pW";
+
+# Tell user...
+orac_print "Removing sky by fitting and subtracting a constant\n";
+
+# Determine whether to subtract the mean or modal values from the image
+my $method = (exists $_REMOVE_DC_SKY_{METHOD} && 
+	      defined $_REMOVE_DC_SKY_{METHOD}) ?
+              uc($_REMOVE_DC_SKY_{METHOD}) : "MEAN";
+
+# Should I be verbose (default to yes)
+my $verbose = (exists $_REMOVE_DC_SKY_{VERBOSE} && 
+	       defined $_REMOVE_DC_SKY_{VERBOSE}) ?
+               $_REMOVE_DC_SKY_{VERBOSE} : 1;
+
+# Set the index into the returned array from _FIND_SKY_STATS_:
+# 0 = average, 1 = std deviation, 2 = mode
+my $methodnum = ($method eq "MEAN") ? 0 : 2;
 
 # Loop over files in the Frm object
 for my $i (1..$Frm->nfiles) {
 
-  _FIND_SKY_STATS_ FRAME=$i MODE=online
-  my $sky1 = $_FIND_SKY_STATS_{RESULTS}->[0]; # retrieve average
-  my $sky2 = $_FIND_SKY_STATS_{RESULTS}->[2]; # retrieve mode 
+  _FIND_SKY_STATS_ IMAGE=$Frm->file($i) CLIP=2,2,2
+  # If the std deviation is zero then something went wrong
+  if ( $_FIND_SKY_STATS_{RESULTS}->[1] == 0.0 ) {
+    orac_warn "Invalid result from _FIND_SKY_STATS_: will not subtract the sky from current file ($Frm->file($i))\n";
+  } else {
+    my $sky = $_FIND_SKY_STATS_{RESULTS}->[$methodnum];
 
-  my $sky = $sky2; # MODAL value
+    # If we want the mode, check that the result isn't -1e9: this
+    # means there were no valid pixels in the image.
+    if ( $methodnum == 2 && $sky == -1.0e9 ) {
+      orac_warn "No valid pixels in image, unable to subtract sky with method=MODE\n";
+    } else {
+      # Everything's OK so subtract a DC sky level. 
+      # Retrieve input and output names
+      my ($in, $out) = $Frm->inout("_sky", $i);
+      my $args = "scalar=$sky";
 
-  # Retrieve input and output names
-  my ($in, $out) = $Frm->inout("_sky", $i);
-  my $args = "scalar=$sky";
+      # Subtract the sky
+      $Mon{kappa_mon}->obeyw("csub","in=$in out=$out $args");
 
-  # Subtract the sky
-  $Mon{kappa_mon}->obeyw("csub","in=$in out=$out $args");
-  
-  $sky = sprintf "%12.7f", $sky;
-  orac_print "Subtracting a sky level of $sky $rawunits from $in \n";
+      if ($verbose) {
+	$sky = sprintf "%12.7f", $sky;
+	orac_print "Subtracting a constant sky level of $sky $rawunits from $in (method=$method)\n";
+      }
 
-  # Update file
-  $Frm->file($i, $out);
-
+      # Update files in Frm
+      $Frm->file($i, $out);
+    }
+  }
 }
 
-orac_print "ORAC says: Sky subtraction successful\n";
+orac_print "DC sky subtraction successful\n";
 
