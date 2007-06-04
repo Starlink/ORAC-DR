@@ -1,4 +1,4 @@
-# -*-perl-*-
+#! -*-perl-*-
 
 =head1 NAME
 
@@ -13,10 +13,10 @@ _FIND_INTEGRATED_INTENSITY_ - aperture photometry of maps using statistics
 =head1 DESCRIPTION
 
 This primitive calculates the integrated intensity, in whatever units
-the map is currently using, around a single point source that is
-assumed to be in the centre of the image (using AXIS coordinates) and
-to be the only source on the map (so that the sky contribution can be
-calculated). The value is corrected for pixel area.
+the map is currently using, around a single (point) source that is
+assumed to be the only source on the map (so that the sky contribution
+can be calculated). The value is corrected for pixel area. The SKY
+domain is used throughout.
 
 The integrated intensity is calculated using the following technique:
 
@@ -24,7 +24,7 @@ The integrated intensity is calculated using the following technique:
 
 =item 1
 
-Calculate radius of aperture. This is assumed to be 20 arcsec.
+Define radius of aperture. This is assumed to be 20 arcsec.
 
 =item 2
 
@@ -37,24 +37,26 @@ Calculate the sum of all valid pixels.
 
 =item 4
 
-For a number of 'sky' positions, generate a mask and find the
+For a number of `sky' positions, generate a mask and find the
 mean and standard deviation of the sky.
 
-=item 4
+=item 5
 
 Choose the sky region with the lowest noise (deemed to be the region
 of the map least affected by noisy pixels). The mean is not subtracted
 from the image since it is assumed that sky removal and surface
 fitting have already done that.
 
-=item 5
+=item 6
 
 Correct for pixel size to convert the sum to an area integral.
-Calculate signal-to-noise.
+Calculate signal-to-noise ratio.
 
 =back
 
-This primitive is Frame based (C<$Frm>).
+This primitive is Frame based (C<$Frm>) and either acts on each image
+in the frame or only on the one selected by the FRAME
+argument. UPDATE!!
 
 =head1 ARGUMENTS
 
@@ -62,16 +64,23 @@ The following arguments are supported:
 
 =over 4
 
+=item IMAGE
+
+The usual input file... will use current Frm
+
+=item CATALOGUE
+
+...
+
 =item LOGFILE
 
-A flag to indicate whether a log file should be written containing
-the results of the integrated intensity calculation. Default is
-true.
+A flag to indicate whether a log file should be written containing the
+results of the integrated intensity calculation. Default is true.
 
 =item VERBOSE
 
-Flag to indicate whether informational messages should be 
-given to the user. Default is verbose (true).
+Flag to indicate whether informational messages should be given to the
+user. Default is true.
 
 =back
 
@@ -94,24 +103,15 @@ contains the following keys:
 
 =over 4
 
-=item RESULTS
+=item TOTALFLUX
 
-An array containing the integrated intensity for each sub-instrument.
-Contains C<undef> if the calculation did not complete sucessfully.
-Starts counting at 1.
+A reference to an array containing the integrated intensity for each
+source in the catalogue
 
-=back
+=item PEAKFLUX
 
-=head1 OUTPUT FILES
-
-The following files are created:
-
-=over 4
-
-=item C<log.integrated>
-
-Log of integrated intensities. Units are provided in order
-to distinguish between calibrated and uncalibrated data.
+A reference to an array containing the peak intensity for each source
+in the catalogue
 
 =back
 
@@ -119,344 +119,132 @@ The frame object is not updated.
 
 =head1 NOTES
 
-This primitive must not be called before the frame object
-points to a rebinned image. Demodulated data will generate
-unpredictable results.
+It may be desireable to allow different domains to be used.
 
 =head1 AUTHOR
 
-Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2000 Particle Physics and Astronomy Research Council.
-All Rights Reserved.
+Copyright (C) 2005-2007 Particle Physics and Astronomy Research
+Council and University of British Columbia.  All Rights Reserved.
 
 =cut
 
-# Check if FRAME argument is present
-my $myframe = 0;
-if ($_FIND_INTEGRATED_INTENSITY_{FRAME}) {
-  $myframe = $_FIND_INTEGRATED_INTENSITY_{FRAME};
-}
+$ORAC::Tempfile::DEBUG = 1;
 
-# Set radius of mask - 20 arcsec.
-#my $radius = 20.0;
-my $radius = 7.0; #pixels
+# Set the input file name
+my $in = (exists $_FIND_INTEGRATED_INTENSITY_{IMAGE} &&
+	  defined $_FIND_INTEGRATED_INTENSITY_{IMAGE}) 
+          ? $_FIND_INTEGRATED_INTENSITY_{IMAGE} : undef;
 
-# positions used to calculate residual dc level and noise in the map
-# x, y, r
-# Pick regions 50 arcsec from the center.
-#my @pos = (
-#	   [
-#	    [ 0.0,  50.0, 15.0  ],
-#	   ],
-#	   [
-#	    [ 0.0, -50.0, 15.0  ],
-#	   ],
-#	   [
-#	    [  50.0, 0.0, 15.0  ],
-#	   ],
-#	   [
-#	    [ -50.0, 0.0, 15.0  ],
-#	   ],
-#	   [
-#	    [   35,  35, 15.0  ],
-#	   ],
-#	   [
-#	    [  -35, -35, 15.0  ],
-#	   ],
-#	   [
-#	    [   35, -35, 15.0  ],
-#	   ],
-#	   [
-#	    [  -35,  35, 15.0  ],
-#	   ],
-#	   [
-#	    [    30,  40, 15.0 ],
-#	   ],
-#	   [
-#	    [   -30,-40, 15.0 ],
-#	   ],
-#	   [
-#	    [ -30, 40, 15.0 ],
-#	   ],
-#	   [
-#	    [  30, -40, 15.0 ],
-#	   ],
-#
-#	  );
+# Obtain the catalogue 
+#my $catalogue = (exists $_FIND_INTEGRATED_INTENSITY_{CATALOGUE} &&
+#		 defined $_FIND_INTEGRATED_INTENSITY_{CATALOGUE}) 
+#                 ? $_FIND_INTEGRATED_INTENSITY_{CATALOGUE} : undef;
 
-#### Positions in PIXELS ####
-#my @pos = (
-#	   [
-#	    [ 0.0,  17.0, 5.0  ],
-#	   ],
-#	   [
-#	    [  17.0, 0.0, 5.0  ],
-#	   ],
-#	   [
-#	    [  17.0, 17.0, 5.0  ],
-#	   ],
-#	   [
-#	    [  33.0, 33.0, 5.0  ],
-#	   ],
-#	   [
-#	    [   12,  12, 5.0  ],
-#	   ],
-#	   [
-#	    [    10,  13, 5.0 ],
-#	   ],
-#	   );
-my @pos = (
-	   [
-	    [ 15.0,  90.0, 5.0  ],
-	   ],
-	   [
-	    [  17.0, 50.0, 5.0  ],
-	   ],
-	   [
-	    [  17.0, 17.0, 5.0  ],
-	   ],
-	   [
-	    [  110.0, 30.0, 5.0  ],
-	   ],
-	   [
-	    [   110.0,  70, 5.0  ],
-	   ],
-	   [
-	    [    60,  90, 5.0 ],
-	   ],
-
-	  );
-
+#unless ( defined ($catalogue) && defined ($in) ) {
+#  orac_throw "Error: _FIND_INTEGRATED_INTENSITY_ must be supplied with an image and corresponding catalogue\n";
+#}
 
 # Write logfile (default to true)
-my $uselog = (exists $_FIND_INTEGRATED_INTENSITY_{LOGFILE} && 
-	  defined $_FIND_INTEGRATED_INTENSITY_{LOGFILE}) ?
-  $_FIND_INTEGRATED_INTENSITY_{LOGFILE} : 1;
+my $uselog = ( exists $_FIND_INTEGRATED_INTENSITY_{LOGFILE} && 
+	       defined $_FIND_INTEGRATED_INTENSITY_{LOGFILE} ) ?
+               $_FIND_INTEGRATED_INTENSITY_{LOGFILE} : 1;
 
 # Should I be verbose (default to yes)
-my $verbose = (exists $_FIND_INTEGRATED_INTENSITY_{VERBOSE} && 
-	       defined $_FIND_INTEGRATED_INTENSITY_{VERBOSE}) ?
-  $_FIND_INTEGRATED_INTENSITY_{VERBOSE} : 1;
+my $verbose = ( exists $_FIND_INTEGRATED_INTENSITY_{VERBOSE} && 
+		defined $_FIND_INTEGRATED_INTENSITY_{VERBOSE} ) ?
+                $_FIND_INTEGRATED_INTENSITY_{VERBOSE} : 1;
 
+# Set the WCS domain to SKY
 
-# initialise the results array
-$_FIND_INTEGRATED_INTENSITY_{RESULTS} = [];
-
-# Create logfile
-my $log;
-if ($uselog) {
-  $log = new ORAC::LogFile("log.integrated");
-  my $time = gmtime();
-  $log->header("Integrated intensity log file - created on $time",
-	       "\n#     Time        Filter    IntFlux        S/N     rms npix rms/pix CSO El Object",
-             "----------------------------------------------------------------------------------"
-            );
-
+# Define X and Y positions
+my ($x, $y);
+if ( exists $_FIND_INTEGRATED_INTENSITY_{XYPOS} && 
+     defined $_FIND_INTEGRATED_INTENSITY_{XYPOS} && 
+     ref($_FIND_INTEGRATED_INTENSITY_{XYPOS}) eq "ARRAY" ) {
+  ($x, $y) = @{ $_FIND_INTEGRATED_INTENSITY_{XYPOS} };
+} else {
+  orac_throw "Error: must provide an array reference with X, Y position of source\n";
 }
 
-# Find the centroid without writing a log entry
-# This primitive loops over the frames
-#_CENTROID_FRAME_  LOGFILE=0
-#_FIND_BRIGHTEST_SOURCE_  LOGFILE=0
+# Set radius of mask - default is 20 arcsec
+my $radius = $_FIND_INTEGRATED_INTENSITY_{RADIUS} || 20.0;
 
-# Now Loop over frames
-my $in;
-for my $i (1.. $Frm->nfiles ) {
+# Create the temporary file for the ard description
+my $ard = new ORAC::TempFile;
 
-  # Find the input file
-  if ($myframe) { # If running with a single input file...
-    if ($i == $myframe) {
-      $in = $Frm->file($i);
-    } else {
-      next;
-    }
-  } else { # Running as normal
-    $in = $Frm->file($i);
-  }
-  
-  # Read the result from the centroid
-#  my ($dx, $dy, $vpeak) = @{ $_CENTROID_FRAME_{RESULTS}->[$i] };
-  my ($dx, $dy) = @{ $_FIND_BRIGHTEST_SOURCE_{RESULTS} };
-
-  # Make sure we have good pixels
-  if (defined $dx && defined $dy) {
-
-    # Reformat the result
-    my $dx = sprintf "%6.2f", $dx;
-    my $dy = sprintf "%6.2f", $dy;
-
-    # Create the temporary file for the ard description
-    my $ard = new ORAC::TempFile;
-
-    # Write the ard description
-
-    # In kappa 18 we need to add a COFRAME - we are using arcseconds
-    if (starversion_gt('kappa','V0.18-0')) {
-      print {$ard->handle} "COFRAME(AXIS)\n";
-    }
-
-    # - simply a circle centred on x y radius
-    # mask out everything else
-    print {$ard->handle} ".NOT.CIRCLE($dx, $dy, $radius)\n";
-
-    # Close the file
-    $ard->handle->close;
-
-    # Get temporary output file
-    my $outobj = new ORAC::TempFile;
-    my $out = $outobj->file;
-    my $ardin = $ard->file;
-
-    # Arguments for ardmask depend on kappa version
-    my $ardargs;
-    if (starversion_lt('kappa','V0.18-0')) {
-      $ardargs = " cosys=data ";
-    } else {
-      $ardargs = " "; # in the ard file
-    }
-
-    # Run ardmask
-    $Mon{kappa_mon}->obeyw("ardmask", "in=$in out=$out ardfile=$ardin $ardargs");
-
-    # Now calculate stats of the masked file to get the flux in the
-    # aperture
-    $Mon{kappa_mon}->obeyw("stats","ndf=$out");
-
-    # Get sum and number of valid pixels
-    my $ORAC_STATUS;
-    ($ORAC_STATUS, my $sum) = $Mon{kappa_mon}->get("stats","total");
-    ($ORAC_STATUS, my $ngood) = $Mon{kappa_mon}->get("stats","numgood");
-
-
-    # storage space
-    my @avg_stdv = ();
-
-    # Find the median and standard deviation at a number
-    # of coordinates stored in @pos
-    foreach my $posn ( @pos ) {
-
-      # Create the temporary file for the ard description
-      my $ard2 = new ORAC::TempFile;
-
-      # In kappa 18 we need to add a COFRAME - we are using arcseconds
-      if (starversion_gt('kappa','V0.18-0')) {
-	print {$ard2->handle} "COFRAME(AXIS)\n";
-      }
-
-      # Must negate the whole selection
-      print { $ard2->handle } ".NOT.(\n";
-
-      # loop over each position
-      foreach my $pos (@$posn) {
-
-	# Write the ard description - simply a circle centred on
-	# x y radius
-	# mask out everything else
-	my $x = $pos->[0];
-	my $y = $pos->[1];
-	my $r = $pos->[2];
-	print {$ard2->handle} "CIRCLE($x, $y, $r)\n";
-
-      }
-
-      # close the bracket
-      print { $ard2->handle } ")\n";
-
-      # Close the file
-      $ard2->handle->close;
-
-      # Get the ard file name
-      my $ardfile = $ard2->file;
-
-      # Run ardmask
-      $Mon{kappa_mon}->obeyw("ardmask", "in=$in out=$out ardfile=$ardfile $ardargs");
-
-      # Now calculate stats of the masked file to get the mean and the
-      # standard deviation
-      $Mon{kappa_mon}->obeyw("stats","ndf=$out");
-
-      # Retrieve the values
-      ($ORAC_STATUS, my $avg) = $Mon{kappa_mon}->get("stats","mean");
-      ($ORAC_STATUS, my $stdv) = $Mon{kappa_mon}->get("stats","sigma");
-
-      # Store them if sigma is greater than 0
-      if ($stdv > 0.0) {
-	push(@avg_stdv, [ $avg, $stdv] );
-
-	orac_print "MEAN/SIGMA : $avg/$stdv\n", 'red'
-	  if $verbose;
-      }
-    }
-
-    # Choose the most correct looking median and standard deviation
-    # sort into noise order
-    my @sorted = sort { $a->[1] <=> $b->[1] } @avg_stdv;
-
-    # Take the lowest noise value
-    my $mean = $sorted[0]->[0];
-    my $noise = $sorted[0]->[1];
-
-    # Work out final sum
-    orac_print "Sum calculated to be $sum\n" if $verbose;
-#    $sum -= $ngood * $mean;
-#    orac_print "Subtracting $mean from $ngood pixels to correct sum\n"
-#      if $verbose;
-#    orac_print "Sum now $sum\n" if $verbose;
-
-    # Calculate error on the sum (done the simple way)
-    my $err = sqrt($ngood) * $noise;
-    orac_warn "All pixels in aperture are bad!\n"
-	if $ngood == 0;
-
-    # Signal-to-noise
-    my $s2n;
-    if (abs($err) <= 1.0e-30) {
-      # protect division by zero and assume that very small
-      # error really means an error in the calculation
-      $s2n = 0.0;
-    } else {
-      # signal-to-noise is positive
-      $s2n = abs($sum / $err);
-    }
-
-    # Store sum in the hash
-    $_FIND_INTEGRATED_INTENSITY_{RESULTS}->[$i] = $sum;
-
-    my $num = sprintf "%-4d", $Frm->number;
-    my $time= sprintf "%12.3f", $Frm->hdr('ORACTIME');
-    my $filt= sprintf "%4s",   "850";
-    $sum = sprintf "%11.2f", $sum;
-    $s2n = sprintf "%5.2f", $s2n;
-    $noise = sprintf "%5.2f", $noise;
-    $err = sprintf "%7.2f", $err;
-    $mean = sprintf "%7.2f", $mean;
-
-    # Get the tau
-    # TAU from calibration object
-#    my $tau = sprintf "%5.2f", $Cal->tau($filters[$i-1]);
-
-    # Use that tau to calculate CSO
-#    my ($cso, $status) = JCMT::Tau::get_tau('CSO',$filters[$i-1], $tau);
-#    if ($status != 0) {
-#      $cso = "*****";
-#    } else {
-#      $cso = sprintf "%5.2f", $cso;
-#    }
-    my $cso = sprintf "%5.2f", "1.0";
-
-
-    # elevation
-    my $el = int (($Frm->hdr('STRT_ELD') + $Frm->hdr('END_ELD') ) /2.0 );
-
-
-    $log->addentry("$num $time $filt $sum       $s2n $err $ngood $noise $cso $el ". $Frm->hdr("OBJECT"))
-      if $uselog;
-
-  }
-  last if ($myframe);
+# Write the ard description
+# In kappa 18 we need to add a COFRAME - we are using arcseconds
+if (starversion_gt('kappa','V0.18-0')) {
+  print {$ard->handle} "COFRAME(SKY,System=FK5)\n";
 }
 
+# Mask out everything EXCEPT a circle centred on x, y. Note the
+# conversion of radius from arcsec to sky (FK5) coords.
+print {$ard->handle} ".NOT.CIRCLE($x, $y, 00:00:$radius)\n";
+
+# Close the file
+$ard->handle->close;
+
+# Get temporary output file
+my $outobj = new ORAC::TempFile;
+my $out = $outobj->file;
+my $ardin = $ard->file;
+
+# Arguments for ardmask depend on kappa version
+my $ardargs;
+if (starversion_lt('kappa','V0.18-0')) {
+  $ardargs = " cosys=data ";
+} else {
+  $ardargs = " "; # in the ard file
+}
+
+# Run ardmask
+$Mon{kappa_mon}->obeyw("ardmask", "in=$in out=$out ardfile=$ardin $ardargs");
+
+# Now calculate stats of the masked file to get the flux in the
+# aperture
+$Mon{kappa_mon}->obeyw("stats","ndf=$out");
+
+# Get sum and number of valid pixels
+my $ORAC_STATUS;
+($ORAC_STATUS, my $sum) = $Mon{kappa_mon}->get("stats","total");
+($ORAC_STATUS, my $maxflux) = $Mon{kappa_mon}->get("stats","maximum");
+($ORAC_STATUS, my $ngood) = $Mon{kappa_mon}->get("stats","numgood");
+($ORAC_STATUS, my $sigma) = $Mon{kappa_mon}->get("stats","sigma");
+
+if ($verbose) {
+  my $outsum = sprintf "%6.2f", $sum;
+  orac_print "Sum calculated to be $outsum\n";
+}
+
+# Calculate error on the sum (done the simple way)
+#my $err = sqrt($ngood) * $noise;
+#orac_warn "All pixels in aperture are bad!\n"
+#  if $ngood == 0;
+
+# Signal-to-noise
+#my $s2n;
+#if (abs($err) <= 1.0e-30) {
+#  # protect division by zero and assume that very small
+#  # error really means an error in the calculation
+#  $s2n = 0.0;
+#} else {
+#  # signal-to-noise is positive
+#  $s2n = abs($sum / $err);
+#}
+
+# Store sum in the hash
+$_FIND_INTEGRATED_INTENSITY_{TOTALFLUX} = $sum;
+$_FIND_INTEGRATED_INTENSITY_{PEAKFLUX} = $maxflux;
+$_FIND_INTEGRATED_INTENSITY_{SIGMA} = $sigma;
+
+# Tidy up by deleting masked file
+#undef $outobj;
+
+# User feedback
 orac_print "Calculated integrated intensity\n" if $verbose;
