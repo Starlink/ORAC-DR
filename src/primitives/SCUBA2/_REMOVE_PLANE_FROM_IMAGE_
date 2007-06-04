@@ -1,3 +1,5 @@
+#! -*-perl-*-
+
 =head1 NAME
 
 _REMOVE_PLANE_FROM_IMAGE_ -  remove a plane from an image
@@ -9,7 +11,7 @@ _REMOVE_PLANE_FROM_IMAGE_ -  remove a plane from an image
 =head1 DESCRIPTION
 
 This primitive fits a 2-d plane to an image. It will not work on 
-raw demodulated data.
+raw time series data.
 
 =head1 EXTERNAL TASKS
 
@@ -27,38 +29,100 @@ Only works on frames.
 
 =head1 AUTHOR
 
-Tim Jenness
+Tim Jenness, Andy Gibb
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research Council.
-All Rights Reserved.
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council, 2007 University of British Columbia. All Rights Reserved.
 
 =cut
 
+# Units...
+my $units = "pW";
 
-# loop over frames
+# Tell user...
+orac_print "Removing sky by fitting and subtracting a plane\n";
+
+# Should I be verbose (default to yes)
+my $verbose = (exists $_REMOVE_PLANE_FROM_IMAGE_{VERBOSE} && 
+	       defined $_REMOVE_PLANE_FROM_IMAGE_{VERBOSE}) ?
+               $_REMOVE_PLANE_FROM_IMAGE_{VERBOSE} : 1;
+
+# Mean sky level and RMS deviation for each file
+my (@dclevel, @sigmadc, @rms);
+
+# Loop over frames
 for my $i (1..$Frm->nfiles) {
 
   # Input file and final output
-  my ($in, $out) = $Frm->inout('_srf', $i);
+  my ($in, $out) = $Frm->inout('_sky', $i);
 
   # temp output file
   my $tmpout = new ORAC::TempFile;
   my $tmpoutfile = $tmpout->file;
 
   # Arguments to SURFIT
-  my $args = " fittype=poly order=1 estimator=median wlim=0.5 evaluate=all fitclip=[2,2,2]";
+  my $args = " fittype=poly order=1 clip=[2,2,2] estimator=mode wlim=0.5 evaluate=all fitclip=[2,2,2]";
 
   # Run SURFIT
   $Mon{kappa_mon}->obeyw("surfit","in=$in out=$tmpoutfile $args reset");
 
+  # Run stats on the fit to get the mean sky level
+  $Mon{kappa_mon}->obeyw("stats","ndf=$tmpoutfile");
+
+  # Retrieve mean value of fit as an estimate of DC sky background
+  my $ORAC_STATUS;
+  ($ORAC_STATUS, my $dclevel) = $Mon{kappa_mon}->get("stats","mean");
+  ($ORAC_STATUS, my $sigmadc) = $Mon{kappa_mon}->get("stats","sigma");
+#  orac_print "Mean sky level = $dclevel $units\n" if ($verbose);
+  push (@dclevel, $dclevel);
+  push (@sigmadc, $sigmadc);
+
+  # Would be nice to derive gradient in sky background and PA of slope
+  # (in AzEl frame) and see what the magnitude is and how much it
+  # varies.
+
   # Subtract the fit
   $Mon{kappa_mon}->obeyw("sub","in1=$in in2=$tmpoutfile out=$out");
+
+  # Now retrieve RMS to get idea of sky noise
+  ($ORAC_STATUS, my $rms) = $Mon{kappa_mon}->get("surfit","rms");
+  # What do we do with it now? Too many values to log, surely?
+#  orac_print "RMS deviation of fit = $rms $units\n" if ($verbose);
+  push (@rms, $rms);
 
   # Update the frame
   $Frm->file($i, $out);
 
+  undef $tmpout;
 }
+# Calculate mean DC level and RMS values
+my $imax = @rms;
+my $meanrms = 0;
+my $meandclevel = 0;
+my $meansigmadc = 0;
+for my $i (0 .. $imax-1) {
+  $meanrms += $rms[$i];
+  $meandclevel += $dclevel[$i];
+  $meansigmadc += $sigmadc[$i];
+}
+$meanrms /= $imax;
+$meandclevel /= $imax;
+$meansigmadc /= $imax;
 
-orac_print "Plane removed from image\n";
+# Return mean values of RMS and MEAN sky level
+$_REMOVE_PLANE_FROM_IMAGE_{RMS} = $meanrms;
+$_REMOVE_PLANE_FROM_IMAGE_{DCSKY} = $meandclevel;
+$_REMOVE_PLANE_FROM_IMAGE_{SIGMADC} = $meansigmadc;
+
+# These should be logged somewhere... In $Cal obj?
+
+if ($verbose) {
+  $meanrms = sprintf "%6.5f", $meanrms;
+  $meandclevel = sprintf "%6.5f", $meandclevel;
+  $meansigmadc = sprintf "%6.5f", $meansigmadc;
+  orac_print "Plane removed from images\n"
+    ."Mean level was $meandclevel (mean spread $meansigmadc)\n"
+    ."Mean RMS deviation was $meanrms\n";
+}
