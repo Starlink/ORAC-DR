@@ -2,16 +2,14 @@
 
 =head1 NAME
 
-_FIND_SOURCES__ - source extraction and photometry on all sources
+_FIND_SOURCES_ - Find sources in given image
 
 =head1 DESCRIPTION
 
-For the specified file, find all the sources and calculate the peak
-flux of each detected source. Write the results to a catalogue file.
+Find the position of sources in the given image.
 
-=head1 TASKS
-
-Currently uses SEXTRACTOR for source extraction and for photometry.
+This primitive is designed to work on a single image and will fail if
+the current Frame object contains more than one file.
 
 =head1 ARGUMENTS
 
@@ -19,47 +17,64 @@ Currently uses SEXTRACTOR for source extraction and for photometry.
 
 =item IMAGE
 
-Integer corresponding to the current file in the Frame. Default = 1.
+Name of image file to extract point sources from. Default is current
+Frame object but only if it contains a single (stacked) image.
 
-=item DETECT_SIGMA
+=item POINT
 
-Threshold detection limit (default = 3).
+Flag to denote whether to return point sources in the
+catalogue. Default is 0 (return all sources found).
+
+=item WRITE_CATALOGUE
+
+Flag denote whether to write the catalogue to a disk file. Default is
+0 (do not write catalogue).
 
 =item MINPIX
 
-Minimum number of connected pixels required to define a source
-(default = 12).
+Minimum number of connected pixels defining a source. Default is 9.
 
-=item BRIGHTEST
+=item DETECT_SIGMA
 
-Flag to indicate whether to return the position of the brightest
-source only (default no).
+Optional detection threshold in units of standard deviation. Default
+is 5.
+
+=item GROUP
+
+Only used if IMAGE is not defined. If true, use the current Group file
+for sky brightness calculations. Otherwise, use the current
+Frame. Default is 0 (false).
 
 =back
 
+The frame object is not updated.
+
 =head1 OUTPUT DATA
+
+On completion the primitive hash C<%_FIND_SOURCES_> contains
+the following keys:
 
 =over 4
 
 =item CATALOGUE
 
-String containing the name of the catalogue with the extracted sources.
+A catalogue in the form of an Astro::Coords object containing
+sources
 
-=item BRPOS
+=item CATALOGUE_NAME
 
-Array containing the X, Y positions of the brightest source.
+Name of disk file containing catalogue. Will be undef if no file was
+written.
 
 =back
 
-=head1 BUGS
+=head1 STARLINK TASKS
 
- - Catalogue is currently given a fixed name rather than a name
-   that changes with the group file (or possibly eSTAR Agent ID)
+Extractor
 
-=head1 NOTES
+=head1 REQUIRED PERL MODULES
 
-Modified from the UKIRT imaging primitive _CREATE_IMAGE_CATALOGUE_ for
-use with SCUBA2.
+Starlink::Extractor, Astro::Catalog, Astro::WaveBand
 
 =head1 AUTHOR
 
@@ -67,60 +82,118 @@ Andy Gibb <agg@astro.ubc.ca>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2005 Particle Physics and Astronomy Research Council and
-University of British Columbia.  All Rights Reserved.
+Copyright (C) 2007 University of British Columbia. All Rights
+Reserved.
+
+=head1 TODO
+
+=over 4
+
+=item - Set up SCUBA2 SExtractor config files in oracdr_cal
+
+=back
 
 =cut
 
-# Determine if we want just the brightest source
-my $brightest = (exists $_FIND_SOURCES_{BRIGHTEST} &&
-                defined $_FIND_SOURCES_{BRIGHTEST} ) ?
-    ($_FIND_SOURCES_{BRIGHTEST}) : 0;
-# Get the input NDF
-my $image = (exists $_FIND_SOURCES_{IMAGE} &&
-                defined $_FIND_SOURCES_{IMAGE} ) ?
-    ($_FIND_SOURCES_{IMAGE}) : 1;
+# Set input file - leave undefined if not specified
+my $in = ( exists $_FIND_SOURCES_{IMAGE} ) && 
+         ( defined $_FIND_SOURCES_{IMAGE}) ? 
+         $_FIND_SOURCES_{IMAGE} : undef;
 
-my $in = $Frm->file($_FIND_SOURCES_{IMAGE});
-
-require Starlink::Extractor;
-require Astro::WaveBand;
-
-# Obtain the detection sigma level.
-my $detect = ( $_FIND_SOURCES_{DETECT_SIGMA} || 3 );
-
-# Obtain the minimum number of pixels in the objects.
-my $minpix = ( $_FIND_SOURCES_{MINPIX} || 12 );
-
-# Report the processing status.
-orac_print "Detecting objects in $in with at least $minpix connected pixels\n";
-orac_print "   at $detect times sky noise above sky.\n";
-
-# Perform inventory on the field
-my $extractor = new Starlink::Extractor( config => $Cal->find_file("extractor_catalogue.sex" ) );
-$extractor->detect_thresh( $detect );
-$extractor->analysis_thresh( 3.0 );
-my $extracted_catalog = $extractor->extract( frame => $in,
-					     filter => new Astro::WaveBand( Filter => "850") );
-
-# Weed out objects that have a size less than $minpix pixels.
-my $filtered_catalog = new Astro::Catalog;
-while ( $extracted_catalog->sizeof > 0 ) {
-  my $star = $extracted_catalog->popstar;
-  next if ( $star->morphology->area < $minpix );
-  $filtered_catalog->pushstar( $star );
+# If not input file was defined use the current group or frame
+unless ( defined $in ) {
+  # Determine if the user wants to use the current stacked Grp or Frm
+  # image
+  my $Obj;
+  my $group = defined( $_FIND_SOURCES_{GROUP} ) ? 
+    $_FIND_SOURCES_{GROUP} : 0;
+  if( $group ) {
+    $Obj = $Grp;
+  } else {
+    $Obj = $Frm;
+  }
+  if ( $Obj->nfiles == 1 ) {
+    $in = $Obj->file;
+  } else {
+    orac_throw "Error: _FIND_SOURCES_ must be run after images have been combined\n";
+  }
 }
 
-orac_print $filtered_catalog->sizeof() . " objects detected in $in.\n";
+# Should the catalogue contain only point sources? Default is no.
+my $point = ( exists $_FIND_SOURCES_{POINT} ) && 
+            ( defined $_FIND_SOURCES_{POINT}) ? 
+            $_FIND_SOURCES_{POINT} : 0;
 
-# Dump the catalog to disk.
-_GET_CATALOGUE_NAME_
-my $catalogue_name = $_GET_CATALOGUE_NAME_{NAME};
-my $cat_file = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, $catalogue_name);
-my $status = $filtered_catalog->write_catalog( file => $cat_file, format => 'Cluster');
+# Should the catalogue be written to disk? Default is no.
+my $writecatalogue = ( exists $_FIND_SOURCES_{WRITE_CATALOGUE} ) && 
+                     ( defined $_FIND_SOURCES_{WRITE_CATALOGUE}) ? 
+                     $_FIND_SOURCES_{WRITE_CATALOGUE} : 0;
 
-orac_print "Wrote catalogue to $cat_file.\n\n";
+# Minimum size of box defining a source
+my $minpix = ( $_FIND_SOURCES_{MINPIX} || 9 );
+# Obtain the detection sigma level.
+my $detect = ( $_FIND_SOURCES_{DETECT_SIGMA} || 5 );
 
-# Save time by storing catalogue name in results hash?
+# Initialise the results array
+$_FIND_SOURCES_{RESULTS} = [];
 
+# Set ellipticity criteria for adding to source catalogue
+my $maxel;
+if ($point) {
+  $maxel = 0.25; # Point-source definition
+} else {
+  $maxel = 5.0; # Weed out obviously dodgy sources
+}
 
+# Run SExtractor
+use Starlink::Extractor;
+use Astro::WaveBand;
+use Astro::Catalog;
+my $conf_file = $Cal->find_file("extractor_catalogue.sex");
+my $extractor = new Starlink::Extractor( config => $conf_file );
+# Set the detection threshold
+$extractor->detect_thresh( $detect );
+# And the analysis threshold
+$extractor->analysis_thresh( 3.0 );
+$extractor->verbose_type('NORMAL');
+
+# Note that filter is a mandatory argument so create a dummy one
+my $extracted_catalogue = $extractor->extract( frame => $in,
+					     filter => new Astro::WaveBand( Filter => $Frm->uhdr("ORAC_FILTER") ) );
+
+# Filter output catalogue to identify point sources
+my $filtered_catalogue = new Astro::Catalog( origin => 'ORAC-DR primitive _FIND_POINT_SOURCES_');
+my $source;
+while ( $extracted_catalogue->sizeof > 0 ) {
+  # Pop current source (returns an Astro::Catalog::Star object)
+  $source = $extracted_catalogue->popstar;
+
+  # Add suitable sources to output catalogue
+  if ( ( $source->morphology->area >= $minpix ) && 
+       ( $source->morphology->ellipticity < $maxel ) ) {
+    $filtered_catalogue->pushstar( $source ) ;
+  }
+}
+
+if ( $filtered_catalogue->sizeof == 0 ) {
+  orac_warn "No sources found in current image\n";
+  if ( $writecatalogue ) {
+    orac_warn "Will not write catalogue to disk\n";
+    $writecatalogue = 0;
+  }
+}
+
+# Store the resultant catalogue, even if it's empty
+$_FIND_SOURCES_{CATALOGUE} = $filtered_catalogue;
+
+# Write to disk if desired.
+if ( $writecatalogue ) {
+  _GET_CATALOGUE_NAME_
+  my $catalogue_name = $_GET_CATALOGUE_NAME_{NAME};
+  my $cat_file = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, $catalogue_name);
+  my $status = $filtered_catalogue->write_catalog( file => $cat_file, format => 'Cluster');
+  $_FIND_SOURCES_{CATALOGUE_NAME} = $catalogue_name;
+  orac_print "Wrote catalogue to $cat_file.\n";
+} else {
+  $_FIND_SOURCES_{CATALOGUE_NAME} = undef;
+}
