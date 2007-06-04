@@ -1,4 +1,4 @@
-#! -*-perl-*
+#! -*-perl-*-
 
 =head1 NAME
 
@@ -19,6 +19,16 @@ the current Frame object contains more than one file.
 
 Name of image file to extract point sources from. Default is current
 Frame object but only if it contains a single (stacked) image.
+
+=item POINT
+
+Flag to denote whether to return point sources in the
+catalogue. Default is 0 (return all sources found).
+
+=item WRITE_CATALOGUE
+
+Flag denote whether to write the catalogue to a disk file. Default is
+0 (do not write catalogue).
 
 =item MINPIX
 
@@ -48,8 +58,8 @@ the following keys:
 
 =item CATALOGUE
 
-A catalogue in the form of an Astro::Coords object containing the
-brightest sources
+A catalogue in the form of an Astro::Coords object containing point
+sources
 
 =back
 
@@ -69,6 +79,14 @@ Andy Gibb <agg@astro.ubc.ca>
 
 Copyright (C) 2007 University of British Columbia. All Rights
 Reserved.
+
+=head1 TODO
+
+=over 4
+
+=item - Set up SCUBA2 SExtractor config files in oracdr_cal
+
+=back
 
 =cut
 
@@ -101,46 +119,45 @@ my $minpix = ( $_FIND_POINT_SOURCES_{MINPIX} || 9 );
 # Obtain the detection sigma level.
 my $detect = ( $_FIND_POINT_SOURCES_{DETECT_SIGMA} || 5 );
 
-# Get current stacked file
-my $in = $Frm->file(1);
-
 # Initialise the results array
 $_FIND_POINT_SOURCES_{RESULTS} = [];
-
-my $filter = $Frm->uhdr("ORAC_FILTER");
 
 # Run SExtractor
 use Starlink::Extractor;
 use Astro::WaveBand;
 use Astro::Catalog;
 my $conf_file = $Cal->find_file("extractor_catalogue.sex");
+# HACK to make it work - must have extractor config files in $ORAC_DATA_OUT
 $conf_file = $ENV{'ORAC_DATA_OUT'}."/extractor_catalogue.sex";
 my $extractor = new Starlink::Extractor( config => $conf_file );
+# Set the detection threshold
 $extractor->detect_thresh( $detect );
+# And the analysis threshold
 $extractor->analysis_thresh( 3.0 );
 $extractor->verbose_type('NORMAL');
 
-my $extracted_catalog = $extractor->extract( frame => $in,
-					     filter => new Astro::WaveBand( Filter => $filter ) );
+# Note that filter is a mandatory argument so create a dummy one
+my $extracted_catalogue = $extractor->extract( frame => $in,
+					     filter => new Astro::WaveBand( Filter => $Frm->uhdr("ORAC_FILTER") ) );
 
 # Filter output catalogue to identify point sources
-my $filtered_catalog = new Astro::Catalog( origin => 'ORAC-DR primitive _FIND_POINT_SOURCES_');
+my $filtered_catalogue = new Astro::Catalog( origin => 'ORAC-DR primitive _FIND_POINT_SOURCES_');
 my $source;
-while ( $extracted_catalog->sizeof > 0 ) {
+while ( $extracted_catalogue->sizeof > 0 ) {
   # Pop current source (returns an Astro::Catalog::Star object)
-  $source = $extracted_catalog->popstar;
+  $source = $extracted_catalogue->popstar;
 
   # Add suitable sources with an ellipticity < 0.25 (= axial ratio of
   # 1.333) to output catalogue
   if ( $source->morphology->ellipticity < 0.25 && 
        $source->morphology->area >= $minpix) {
-    $filtered_catalog->pushstar( $source );
+    $filtered_catalogue->pushstar( $source );
   }
 }
 
-if ( $filtered_catalog->sizeof == 0 ) {
+if ( $filtered_catalogue->sizeof == 0 ) {
   orac_warn "No point-like sources found in current image\n";
 }
 
 # Store the resultant catalogue, even if it's empty
-$_FIND_POINT_SOURCES_{CATALOGUE} = $filtered_catalog;
+$_FIND_POINT_SOURCES_{CATALOGUE} = $filtered_catalogue;
