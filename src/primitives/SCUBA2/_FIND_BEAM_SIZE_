@@ -195,19 +195,22 @@ if ($uselog) {
 }
 
 # Find the positions of all point sources in the image. Use current Frm.
-_FIND_POINT_SOURCES_ DETECT_SIGMA=10
+_FIND_SOURCES_ POINT=1 DETECT_SIGMA=10
 
-# Retrieve Astro::Catalog object from _FIND_BEAM_SIZE_
-my $catalog = $_FIND_POINT_SOURCES_{CATALOGUE};
+# Retrieve Astro::Catalog object from _FIND_SOURCES_
+my $catalogue = $_FIND_SOURCES_{CATALOGUE};
 
 # What if there are no point sources?
-if ( $catalog->sizeof == 0 ) {
+if ( $catalogue->sizeof == 0 ) {
   orac_throw "No point sources found in current image: unable to determine beam parameters\n";
 }
 
 # Parse DATE-OBS keyword
 my @dateobs = split( /[-T:.]/, $Frm->hdr( 'DATE-OBS' ) );
-# Create a DateTime object to allow coordinate conversions
+# Create a DateTime object to allow coordinate conversions.
+# Note: the format of DATE-OBS means that the fractional seconds is
+# converted into miliseconds, hence the 1e6 in argument for nanosecond
+# in the DateTime object.
 my $dt = DateTime->new( year => $dateobs[0], month => $dateobs[1], 
 			day => $dateobs[2], hour => $dateobs[3], 
 			minute => $dateobs[4], second => $dateobs[5],
@@ -218,7 +221,7 @@ my $cofile = new ORAC::TempFile;
 
 # Loop over all sources in catalogue
 use Astro::Telescope;
-foreach my $source ( @{ $catalog->allstars }) {
+foreach my $source ( @{ $catalogue->allstars }) {
   my $coords = $source->coords;
   # Set the telescope to JCMT
   $coords->telescope( new Astro::Telescope( 'JCMT' ) );
@@ -241,13 +244,14 @@ unless ( defined $fwhm && defined $axisr && defined $gamma ) {
   orac_throw "Error fitting PSF\n";
 }
 
-# Warn user if the fit looks bad
+# Warn user if the fit looks bad. Of course, this shouldn't happen
+# since we have already selected sources which satisfy this criterion.
 if ($axisr > 1.3333 || $axisr < 0.75) {
   orac_warn "Warning: Fit appears to be poor or beam highly elongated \n";
 }
 
-my $beama = $fwhm;
-my $beamb = $fwhm * $axisr;
+my $beamb = $fwhm;
+my $beama = $fwhm * $axisr;
 
 # Now subtract parallactic angle to get PA in AzEl frame
 #$orient -= $coords->pa(format => 'deg');
@@ -278,7 +282,7 @@ if ($uselog) {
   # Write to logfile
   $beamlog->addentry("$num  $time  $filt    $beama   $beamb   $orient   $see   $el  $cso");
 
-  orac_print "Beam size for filter 850: $beama x $beamb arcsec^2 at a PA of $orient deg E of N calculated from ".$catalog->sizeof." sources\n"
+  orac_print "Beam size for filter 850: $beama x $beamb arcsec^2 at a PA of $orient deg E of N calculated from ".$catalogue->sizeof." sources\n"
     if ($verbose);
 }
 
