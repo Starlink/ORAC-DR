@@ -23,9 +23,25 @@ EXTCOR_MODE determines which extinction correction is applied. If set
 to FULL, then an accurate pixel-level correction is applied taking
 into account the airmass of individual pixels. If set to QUICKER then
 the image is corrected assuming a single value for the airmass across
-the array.
+the array. 
 
 =back
+
+=head1 ALGORITHMS
+
+In FULL mode SMURF EXTINCTION is used to apply the extinction
+correction on a per-pixel basis using information from the WVM stored
+in the internal RTS state structure (if the input is timestream data)
+or the WVM reading in the FITS header (if the input is 2-D image
+data).
+
+In QUICK mode, SMURF EXTINCTION is used to apply an extinction
+correction to each frame using the mean optical depth stored in the
+FITS header for that file.
+
+In QUICKER mode the extinction correction is calculated as a single
+value and is applied to all images in the Frame object using the KAPPA
+CMULT routine.
 
 =head1 KNOWN ISSUES
 
@@ -34,20 +50,17 @@ subframe rather than a mean for the entire observation. This also
 requires that the extinction correction occurs before mosaicking
 in the non-QuickLook recipe.
 
-=head1 ALGORITHMS
-
-In FULL mode SMURF EXTINCTION is used to apply the extinction on a
-per-pixel basis
-
-In QUICK mode, SMURF EXTINCTION is used to apply a mean extinction
-correction using its internal QUICK parameter.
-
-In QUICKER mode the extinction correction is calculated as a single value
-and is applied using the KAPPA CMULT routine.
+Note that this primitive relies on SMURF using its own internal tau
+conversion methods. These should be identical to those in JCMT::Tau.
 
 =head1 FILE SUFFIX
 
 Creates output files with a '_ext' suffix.
+
+=head1 NOTES
+
+Timing tests show that QUICKER is not any quicker than QUICK so it may
+be deprecated.
 
 =head1 AUTHOR
 
@@ -55,7 +68,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2004-2006 University of British Columbia and the
+Copyright (C) 2004-2007 University of British Columbia and the
 Particle Physcis and Astronomy Research Council. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -75,62 +88,94 @@ USA
 
 =cut
 
-
+# Read the extinction correction argument if present
 my $extcor_mode = uc( $_EXTINCTION_CORRECT_FRAME_{EXTCOR_MODE} || 'FULL');
 
 my @out;
-my $extmethod; # Should this be a parameter?
 
 orac_print "Correcting for extinction in $extcor_mode mode\n";
 if ( $extcor_mode eq 'FULL' ) {
-  $extmethod = "WVMR";
-  for my $i (1..$Frm->nfiles) {
 
+  # Check input data for dimensionality as the `FULL' method means
+  # different things depending on whether the data re in the form of
+  # 2-D images or 3-D timestream.
+
+  # Use the fact that all images in a Frm will have same
+  # dimensionality. Use first file in Frm.
+  $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=".$Frm->file);
+  my ($ORAC_STATUS, $ndim) = $Mon{ndfpack_mon}->get("ndftrace","ndim");
+ 
+  # Check for 2 or 3-D and set method accordingly
+  my $extmethod;
+  if ( $ndim == 2 ) {
+    # For method CSOTAU we will let the extinction task select the
+    # value from the header
+    $extmethod = "CSOT";
+  } elsif ( $ndim == 3 ) {
+    # Else use the raw WVM data
+    $extmethod = "WVMR";
+  }
+
+  # Loop over all files in the Frm
+  for my $i (1..$Frm->nfiles) {
     my ($in, $out) = $Frm->inout('_ext',$i);
     push(@out, $out);
-
     my $extargs = "in=$in out=$out method=$extmethod quick=false accept";
     $Mon{smurf_mon}->obeyw("extinction",$extargs);
   }
 
 } elsif ( $extcor_mode eq 'QUICK' ) {
 
-  $extmethod = "CSOTAU";
   for my $i (1..$Frm->nfiles) {
+    # Tau at 225 GHz for this file
+    my $cso_st = ( defined $Frm->hdr->{SUBHEADERS}->[$i-1]->{WVMTAUST}) ? 
+      $Frm->hdr->{SUBHEADERS}->[0]->{WVMTAUST} : $Frm->hdr('WVMTAUST');
+    my $cso_end = ( defined $Frm->hdr->{SUBHEADERS}->[$i-1]->{WVMTAUEN}) ? 
+      $Frm->hdr->{SUBHEADERS}->[-1]->{WVMTAUEN} : $Frm->hdr('WVMTAUEN');
+    my $csotau = 0.5*($cso_st + $cso_end);
 
-    # Select tau for this timeslice - what if it's not there?
-#    my $tau = $Frm->hdr->{SUBHEADERS}->[$i-1]->{MEANWVM};
-    my $tau = 0.4;
     my ($in, $out) = $Frm->inout('_ext',$i);
     push(@out, $out);
-    orac_print "Correcting extinction for file $in\n";
-    my $extargs = "in=$in out=$out method=$extmethod csotau=$tau quick=true";
+#    orac_print "Correcting extinction for file $in\n";
+    my $extargs = "in=$in out=$out method=CSOTAU csotau=$csotau quick=true";
     $Mon{smurf_mon}->obeyw("extinction",$extargs);
   }
 
 } elsif ( $extcor_mode eq 'QUICKER' ) {
 
+  # Use JCMT::Tau module for tau conversions
+  use JCMT::Tau;
+
   # Use mean values from FITS header
-  my $last = $Frm->nfiles - 1;
   my ($tau, $airmass);
-  # First time round there are no subheaders TMP HACK
-  # Better to check if the subheaders exist
-  if ($last == 3 || $last == 0) {
-    $tau = $Frm->hdr->{MEANWVM};
-    $airmass = $Frm->hdr->{AMSTART};
-  } else {
-    $tau = 0.5 * ( $Frm->hdr->{SUBHEADERS}->[0]->{MEANWVM} 
-		   + $Frm->hdr->{SUBHEADERS}->[$last]->{MEANWVM} );
-    $airmass = 0.5 * ( $Frm->hdr->{SUBHEADERS}->[0]->{AMSTART} 
-		       + $Frm->hdr->{SUBHEADERS}->[$last]->{AMEND} );
-  }
+  # CSO Tau
+  my $cso_st = ( defined $Frm->hdr->{SUBHEADERS}->[0]->{WVMTAUST}) ? 
+    $Frm->hdr->{SUBHEADERS}->[0]->{WVMTAUST} : $Frm->hdr('WVMTAUST');
+  my $cso_end = ( defined $Frm->hdr->{SUBHEADERS}->[-1]->{WVMTAUEN}) ? 
+    $Frm->hdr->{SUBHEADERS}->[-1]->{WVMTAUEN} : $Frm->hdr('WVMTAUEN');
+  my $csotau = 0.5 * ($cso_st + $cso_end);
+
+  # Get wavelength vie name of filter. Assume that the string `850' or
+  # `450' will form part of the filter name.
+  my $filter = $Frm->hdr('FILTER');
+  my $wavelen = ( $filter =~ /850/ ) ? "850" : "450";
 
   # Convert WVM TAU (which is 225 GHz) to filter TAU
+  ($tau, my $status) = get_tau( $wavelen, 'CSO', $csotau );
 
+  # Airmass
+  my $amstart = ( defined $Frm->hdr->{SUBHEADERS}->[0]->{AMSTART}) ? 
+    $Frm->hdr->{SUBHEADERS}->[0]->{AMSTART} : $Frm->hdr('AMSTART');
+  my $amend = ( defined $Frm->hdr->{SUBHEADERS}->[-1]->{AMEND}) ? 
+    $Frm->hdr->{SUBHEADERS}->[-1]->{AMEND} : $Frm->hdr('AMEND');
+  $airmass = 0.5 * ($amstart + $amend);
+
+  # Extinction correction factor
   my $extcor = exp($tau*$airmass);
 
-  orac_print "QUICKER: Airmass = ".$airmass.", tau = ".$tau."\n";
+#  orac_print "QUICKER: Airmass = ".$airmass.", tau = ".$tau."\n";
 
+  # Loop over all files and apply multiplier
   for my $i (1..$Frm->nfiles) {
 
       my ($in, $out) = $Frm->inout('_ext',$i);
@@ -140,17 +185,11 @@ if ( $extcor_mode eq 'FULL' ) {
       $Mon{kappa_mon}->obeyw("cmult","in=$in scalar=$extcor out=$out");
   }
 } else {
-
   orac_err("Unrecognized EXTCOR_MODE, $extcor_mode");
   my $ORAC_STATUS = ORAC__ERROR;
-
 }
 
-# register new file names
+# Register new file names
 $Frm->files( @out );
 
 orac_print "Extinction corrected (mode = $extcor_mode) \n";
-
-#my $mytime = localtime;
-#orac_print $mytime ."\n";
-
