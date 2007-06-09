@@ -803,7 +803,12 @@ sub orac_loop_task {
 	# write the DATA_ARRAY out as a piddle
 	# defer depending on PDL::IO::NDF
 	require PDL::IO::NDF;
-	$current{$t}->{IMAGE}->{DATA_ARRAY}->wndf( $fname );
+	my $data = $current{$t}->{IMAGE}->{DATA_ARRAY};
+	if (!defined $data) {
+	    orac_err("Received IMAGE parameter did not include a DATA_ARRAY component\n");
+	    return undef;
+	}
+	$data->wndf( $fname );
 
 	# and write the FITS header
 	require Astro::FITS::Header::NDF;
