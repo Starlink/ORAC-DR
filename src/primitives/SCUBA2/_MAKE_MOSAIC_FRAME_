@@ -6,7 +6,7 @@ _MAKE_MOSAIC_FRAME_ - Create frame mosaic
 
 =head1 SYNOPSIS
 
- _MAKE_MOSAIC_FRAME_
+ _MAKE_MOSAIC_FRAME_ METHOD=MEAN GENVAR=0
 
 =head1 DESCRIPTION
 
@@ -21,12 +21,24 @@ then mosaicked at the end.
 
 =over 4
 
-=item METHOD
+=item B<METHOD>
 
 The method to be used to combine the images. In principle could be any
 value supported by MAKEMOS (see MAKEMOS documentation for further
 details). Currently, only MEAN or MEDIAN are supported. MEDIAN is the
 default.
+
+=item B<GENVAR>
+
+Flag to determine whether or not to use genvar when
+mosaicking. Default is 1 (yes),
+
+=item B<VERBOSE>
+
+Flag to denote whether to display extra information. Default is 0
+(no).
+
+=back
 
 =head1 KNOWN ISSUES
 
@@ -43,7 +55,7 @@ implementation.
 
 =head1 FILE SUFFIX
 
-Creates a single output image with a suffix of '_mos'.
+Creates a single output image with a suffix of '_fmos'.
 
 =head1 AUTHOR
 
@@ -73,20 +85,21 @@ Place, Suite 330, Boston, MA  02111-1307, USA
 # Method for combining images: mean or median
 my $method = (exists $_MAKE_MOSAIC_FRAME_{METHOD} &&
 	      defined $_MAKE_MOSAIC_FRAME_{METHOD}) ?
-  lc($_MAKE_MOSAIC_FRAME_{METHOD}) : "median";
+              lc($_MAKE_MOSAIC_FRAME_{METHOD}) : "median";
 
-# Should check it's a legal value...
-orac_throw "Error: unknown image combination method, $method (should be mean or median) \n"
+# Should check the method is a supported one
+orac_throw "Error: unknown image combination method, $method - should be mean or median\n"
   unless ( ($method eq "mean") || ($method eq "median") );
 
 # Flag to determine whether or not to use genvar when mosaicking
 my $genvar = (exists $_MAKE_MOSAIC_FRAME_{GENVAR} &&
 	      defined $_MAKE_MOSAIC_FRAME_{GENVAR}) ?
-  lc($_MAKE_MOSAIC_FRAME_{GENVAR}) : 1;
+              lc($_MAKE_MOSAIC_FRAME_{GENVAR}) : 1;
 
-
-# Set verbose flag manually for now.
-my $verbose = 1;
+# Should I be verbose (default to no)
+my $verbose = (exists $_MAKE_MOSAIC_FRAME_{VERBOSE} &&
+               defined $_MAKE_MOSAIC_FRAME_{VERBOSE}) ?
+               $_MAKE_MOSAIC_FRAME_{VERBOSE} : 0;
 
 # Check version of ccdpack. Older versions can only handle 100 files at a time
 my $maxmosfiles = (starversion_lt('ccdpack', 'V4.0-17')) ? 100 : 1000;
@@ -94,49 +107,60 @@ my $maxmosfiles = (starversion_lt('ccdpack', 'V4.0-17')) ? 100 : 1000;
 # Extra arguments to makemos - not needed if doing intermedate mosaics
 my $args; 
 
-$maxmosfiles = 100;
 # Calculate the number of steps to break the mosaicking into
 my @files = $Frm->files;
+
+# Do we need to make intermediate mosaics?
+my $intermediate = 0;
+if ( @files > $maxmosfiles) {
+  $intermediate = 1;
+}
 
 # Temp file names
 my ($intmp, $outmos);
 
+# List of files to combine in final mosaic
 my @mosaiclist;
 
-if (@files > $maxmosfiles) {
-
+# Determine if we have to make intermediate mosaics to combine later
+if ( $intermediate ) {
   use POSIX qw/ ceil /;
   my $nsteps = ceil(@files/$maxmosfiles);
   my $stepsize = ceil(@files/$nsteps);
 
+  # Have to prevent ORAC-DR deleting temporary files when they go out of
+  # scope in order for the `intermediate mosaicking' step to work
+  $ORAC::TempFile::DEBUG = 1;
+
   my $i = 0;
+  orac_print "Doing intermediate mosaics: STEP = $stepsize, NSTEPS = $nsteps\n" 
+    if $verbose;
 
-  orac_print "STEP = $stepsize, NSTEPS = $nsteps\n" if $verbose;
-
+  # Intermediate mosaic step
   while ($i < $#files) {
-
     my $start = $i;
     my $end = $start + $stepsize - 1;
 
+    # List of data files to combine into the current mosaic
     $intmp = new ORAC::TempFile;
     print {$intmp->handle} join("\n",@files[$start..$end]);
     
+    # Intermediate mosaic
     $outmos = new ORAC::TempFile(0);
-    orac_print "DOING INTERMEDIATE MOSAIC \n" if $verbose;
+
+    # Additional arguments for makemos
     $args = ($genvar) ? "nousevar genvar" : "nousevar";
-    $Mon{ccdpack_reg}->obeyw("makemos","in=^".$intmp->file." method=$method out=".$outmos->file);
-#    orac_print $outmos->file ."\n";
+    $Mon{ccdpack_reg}->obeyw("makemos","in=^".$intmp->file." method=$method out=".$outmos->file." $args");
     push (@mosaiclist, $outmos->file);
 	
-    my $mytime = localtime;
-    orac_print $mytime ."\n";
     $i = $end + 1;
-    $args = "usevar nogenvar";
+    $args = "usevar nogenvar"; # Don't need to generate variances now
   }
-
 } else {
   @mosaiclist = @files;
-  $args = ($genvar) ? "genvar nousevar" : "nousevar";
+  # If we're doing all of the files at once, we need to generate
+  # variances if desired
+  $args = ($genvar) ? "genvar" : "nousevar";
 }
 
 # Create output filename, derived from first input file since this is
@@ -144,19 +168,16 @@ if (@files > $maxmosfiles) {
 my ($in, $mosaic) = $Frm->inout('_fmos', 0);
 
 my $mostmp = new ORAC::TempFile;
-orac_print $mostmp->file ."\n";
+#orac_print $mostmp->file ."\n";
 print {$mostmp->handle} join("\n",@mosaiclist[0..$#mosaiclist]);
 
 orac_print("Creating mosaic for frame\n");
-$Mon{ccdpack_reg}->obeyw("makemos","in=^".$mostmp->file." out=$mosaic ".$args);
+$Mon{ccdpack_reg}->obeyw("makemos","in=^".$mostmp->file." out=$mosaic title=FrameMosaic".$args);
 
-# Store the single output file
+# Store the final output mosaic
 $Frm->files( $mosaic );
 
-# Register with group
-
-# Delete temp files
-#$ORAC::TempFile::DEBUG = 0;
-
-#my $mytime = localtime;
-#orac_print $mytime ."\n";
+if ( $intermediate ) {
+  # Delete temp files
+  $ORAC::TempFile::DEBUG = 0;
+}
