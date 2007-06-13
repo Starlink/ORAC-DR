@@ -32,6 +32,10 @@ noise and generate a clearer spectrum.  The averaging applies
 to the catalogue, not the polarisation spectra. The value must be
 at least 1.  [5]
 
+=item CIRCULAR = LOGICAL (Given)
+
+Whether or not circular polarimetry is to be calculated. [0]
+
 =item DEBIAS = LOGICAL (Given)
 
 Whether or not to correct for statistical bias to the
@@ -118,9 +122,10 @@ These are:
     I   intensity
     P   percentage polarisation
     PI  polarisation intensity
-    Q   Stokes Q
+    Q   Stokes Q (if CIRCULAR is 0)
     TH  polarisation angle
-    U   Stokes U
+    U   Stokes U (if CIRCULAR is 0)
+    V   Stokes V (if CIRCULAR is 1)
 
 =item *
 
@@ -170,6 +175,13 @@ my $sigma = min( 100, ( $_CALC_STOKES_{SIGMA} || 5 ) );
 
 # Apply statisitcal bias correction?
 my $debias = defined( $_CALC_STOKES_{DEBIAS} ) ? $_CALC_STOKES_{DEBIAS} : 1;
+
+# Are we doing circular polarimetry?
+my $circular = ( defined( $_CALC_STOKES_{CIRCULAR} ) ?
+                 $_CALC_STOKES_{CIRCULAR}            :
+                 0 );
+my $polmode = ( $circular ? "circular" : "linear" );
+my $upolmode = "\u\L$polmode";
 
 # Selection
 # =========
@@ -265,6 +277,49 @@ if( $Frm->uhdr( "CALC_STOKES" ) ) {
   print $fh_olist $o_mosaics, "\n";
   close( $fh_olist );
 
+# Correct circular-polarisation data masquerading as linear.
+# ----------------------------------------------------------
+# POLCAL expects data for linear polarisation to be at 0, 22.5, 45, 67.5
+# degrees.  We are fooling it in linear mode, but actually will generate
+# CP data.   We need to halve the waveplate angles in the frame headers.
+  if ( $circular ) {
+
+# Obtain the keyword to edit.
+    my %keywords = $Frm->translate_hdr( "ORAC_WAVEPLATE_ANGLE" );
+    my @wplakey = keys( %keywords );
+
+# 45->22.5 degrees
+# ----------------
+
+# Correct e- and o-beam waveplate-angle header.
+    my $param1 = "ndf=" . $e22->file . " keyword=$wplakey[ 0 ] edit=update value=22.5 position=!";
+    $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$param1 comment=\\\$C" );
+
+    $param1 = "ndf=" . $o22->file . " keyword=$wplakey[ 0 ] edit=update value=22.5 position=!";
+    $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$param1 comment=\\\$C" );
+
+# 90->45 degrees
+# --------------
+
+# Correct e- and o-beam waveplate-angle header.
+    $param1 = "ndf=" . $e45->file . " keyword=$wplakey[ 0 ] edit=update value=45 position=!";
+    $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$param1 comment=\\\$C" );
+
+    $param1 = "ndf=" . $o45->file . " keyword=$wplakey[ 0 ] edit=update value=45 position=!";
+    $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$param1 comment=\\\$C" );
+
+# 135->67.5 degrees
+# -----------------
+
+# Correct e- and o-beam waveplate-angle header.
+    $param1 = "ndf=" . $e67->file . " keyword=$wplakey[ 0 ] edit=update value=67.5 position=!";
+    $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$param1 comment=\\\$C" );
+
+    $param1 = "ndf=" . $o67->file . " keyword=$wplakey[ 0 ] edit=update value=67.5 position=!";
+    $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$param1 comment=\\\$C" );
+  }
+
+
 # Use a table in the instrument calibration directory to import
 # headers into a POLPACK extension into all of the mosaics.
   my $table = $Cal->find_file("polimp.dat");
@@ -301,9 +356,9 @@ if( $Frm->uhdr( "CALC_STOKES" ) ) {
   my $cube = $root . "_st";
   $par1 = "in='^emosaics.list$$,^omosaics.list$$'";
   if ( $variance eq "TRUE" ) {
-    $par2 = "out=$cube pmode=linear dualbeam=false variance";
+    $par2 = "out=$cube pmode=$polmode dualbeam=false variance";
   } else {
-    $par2 = "out=$cube pmode=linear dualbeam=false";
+    $par2 = "out=$cube pmode=$polmode dualbeam=false";
   }
 
 # TRIMBAD keyword for removing girdle of bad pixels was added at
@@ -328,7 +383,11 @@ if( $Frm->uhdr( "CALC_STOKES" ) ) {
 # variance flag is ignored by POLVEC if there is no variance array in the
 # supplied Stokes cube, so no conditional parameter lists are required.
 
-  $par1 = "Q=${root}_sp-Q U=${root}_sp-U P=${root}_sp-P";
+  if( $circular ) {
+    $par1 = "V=${root}_sp-V P=${root}_sp-P";
+  } else {
+    $par1 = "Q=${root}_sp-Q U=${root}_sp-U P=${root}_sp-P";
+  }
 
   if ( $debias ) {
     $par2 = "I=${root}_sp-I IP=${root}_sp-PI ANG=${root}_sp-TH variance debias";
@@ -401,37 +460,60 @@ if( $Frm->uhdr( "CALC_STOKES" ) ) {
   $tempFrm->file( "${root}_sp-PI" );
   $Display->display_data( $tempFrm ) if ( defined $Display );
 
+  if( $circular ) {
+
+# Stokes V
+# --------
+
+# Assign a sensible title for the V Stokes-parameter frame.  Reset its origin
+# to the default, for convenience.
+    $title = "title='Stokes V'";
+    $Mon{ "ndfpack_mon" }->obeyw( "settitle", "ndf=${root}_sp-V $title" );
+    $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=${root}_sp-V origin=[1,1]" );
+
+# Report the creation of the frame.
+    orac_print "${upolmode}-polarisation Stokes V frame " .
+               "${root}_sp-V formed.\n";
+
+# Display the frame.
+    $tempFrm->file( "${root}_sp-V" );
+    $Display->display_data( $tempFrm ) if ( defined $Display );
+
+  } else {
+
 # Stokes Q
 # --------
 
 # Assign a sensible title for the Q Stokes-parameter frame.  Reset its origin
 # to the default, for convenience.
-  $title = "title='Stokes Q'";
-  $Mon{ "ndfpack_mon" }->obeyw( "settitle", "ndf=${root}_sp-Q $title" );
-  $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=${root}_sp-Q origin=[1,1]" );
+    $title = "title='Stokes Q'";
+    $Mon{ "ndfpack_mon" }->obeyw( "settitle", "ndf=${root}_sp-Q $title" );
+    $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=${root}_sp-Q origin=[1,1]" );
 
 # Report the creation of the frame.
-  orac_print "Polarisation Q frame ${root}_sp-Q formed.\n";
+    orac_print "${upolmode}-polarisation Stokes Q frame ${root}_sp-Q formed.\n";
 
 # Display the frame.
-  $tempFrm->file( "${root}_sp-Q" );
-  $Display->display_data( $tempFrm ) if ( defined $Display );
+    $tempFrm->file( "${root}_sp-Q" );
+    $Display->display_data( $tempFrm ) if ( defined $Display );
 
 # Stokes U
 # --------
 
 # Assign a sensible title for the U Stokes-parameter frame.  Reset its origin
 # to the default, for convenience.
-  $title = "title='Stokes U'";
-  $Mon{ "ndfpack_mon" }->obeyw( "settitle", "ndf=${root}_sp-U $title" );
-  $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=${root}_sp-U origin=[1,1]" );
+    $title = "title='Stokes U'";
+    $Mon{ "ndfpack_mon" }->obeyw( "settitle", "ndf=${root}_sp-U $title" );
+    $Mon{ "ndfpack_mon" }->obeyw( "setorigin", "ndf=${root}_sp-U origin=[1,1]" );
 
 # Report the creation of the frame.
-  orac_print "Polarisation U frame ${root}_sp-U formed.\n";
+    orac_print "${upolmode}-polarisation Stokes U frame ${root}_sp-U formed.\n";
 
 # Display the frame.
-  $tempFrm->file( "${root}_sp-U" );
-  $Display->display_data( $tempFrm ) if ( defined $Display );
+    $tempFrm->file( "${root}_sp-U" );
+    $Display->display_data( $tempFrm ) if ( defined $Display );
+
+  }
 
   orac_print "\n";
 
