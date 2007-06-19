@@ -19,6 +19,12 @@ the Sinc, SincSinc, SincCos, SincGauss, Somb, SombCos, and Gauss
 spreading methods (see parameter METHOD). See documentation for the
 METHOD parameter for WCSMOSAIC. ['']
 
+=item MAXSIZE = INTEGER (Given)
+
+The maximum size, in bytes, of the data array of the output cube. This
+value does not include any extra information, such as variance or
+weight arrays, FITS headers, or any other NDF extensions. [512000000]
+
 =item METHOD = STRING (Given)
 
 The interpolation method to use when regridding the cube. This can be
@@ -39,6 +45,14 @@ Council. All Rights Reserved.
 =cut
 
 # Handle parameters.
+my $bytes_per_pixel = ( defined( $_COADD_FRAME_TO_GROUP_{'BYTES_PER_PIXEL'} ) ?
+                        $_COADD_FRAME_TO_GROUP_{'BYTES_PER_PIXEL'}            :
+                        4 );
+
+my $maxsize = ( defined( $_COADD_FRAME_TO_GROUP_{'MAXSIZE'} ) ?
+                $_COADD_FRAME_TO_GROUP_{'MAXSIZE'}            :
+                512_000_000 );
+
 my $method = ( defined( $_COADD_FRAME_TO_GROUP_{'METHOD'} ) ?
                $_COADD_FRAME_TO_GROUP_{'METHOD'}            :
                'nearest' );
@@ -61,12 +75,14 @@ if( $Grp->firstmember( $Frm ) ) {
 if( $Grp->lastmember( $Frm ) ) {
 # Process if we're the last member of the Grp.
 
+  orac_print "Creating group file:\n";
+
   if( $Grp->firstmember( $Frm ) ) {
   # If we're the first member, NDFCOPY the Frm file to the Grp file.
 
     my $in = $Frm->file;
     my $out = $Grp->file;
-    orac_print "Copying $in to $out...";
+    orac_print " Copying $in to $out...";
     $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$out title=$out" );
     orac_print "done.\n";
 
@@ -94,8 +110,12 @@ if( $Grp->lastmember( $Frm ) ) {
     print $tmp_fh $infrm . "\n";
     $infile->handle->close;
 
-    # Set up the arguments to WCSMOSAIC.
-    my $params = "in='^" . $infile->file . "' out=$tmpfile ref=! ";
+    # Set up the arguments to WCSMOSAIC for an initial runthrough with
+    # no output file so that we can see if we have enough size or
+    # not. Currently, if we don't have enough size we just won't
+    # bother doing to coadd, but eventually we'll create tiles and do
+    # fancy things...
+    my $params = "in='^" . $infile->file . "' out=! ref=! ";
     $params   .= "lbnd=! ubnd=! method=$method variance=true";
 
     if( uc( $method ) ne 'NEAREST' ) {
@@ -103,7 +123,46 @@ if( $Grp->lastmember( $Frm ) ) {
     }
 
     # Run WCSMOSAIC.
-    orac_print "Coadding $infrm to $ingrp...";
+    orac_print " Running initial WCSMOSAIC to test for output group file size...";
+    $Mon{'kappa_mon'}->obeyw( "wcsmosaic", "$params" );
+    orac_print "done.\n";
+
+    # Retrieve the output cube size from WCSMOSAIC.
+    ( my $ORAC_STATUS, my @lbound ) = $Mon{'kappa_mon'}->get( "wcsmosaic", "lbound" );
+    ( $ORAC_STATUS, my @ubound ) = $Mon{'kappa_mon'}->get( "wcsmosaic", "ubound" );
+
+    my $x_length = abs( $ubound[0] - $lbound[0] + 1 );
+    my $y_length = abs( $ubound[1] - $lbound[1] + 1 );
+    my $f_length = abs( $ubound[2] - $lbound[2] + 1 );
+
+    # Set up initial parameters for second WCSMOSAIC runthrough.
+    $params  = "in='^" . $infile->file . "' out=$tmpfile ref=! ";
+    $params .= " method=$method variance=true";
+
+    if( $x_length * $y_length * $f_length * $bytes_per_pixel > $maxsize ) {
+
+      orac_print " Mosaicking together files to create group cube would result in a file too large for this computer to handle.\n";
+
+      # Calculate the maximum number of available frequency channels.
+      my $max_freq_chan = int( $maxsize / ( $x_length * $y_length * $bytes_per_pixel ) );
+
+      my $ratio = $max_freq_chan / $f_length;
+
+      # We need to remove ( 1 - $ratio ) * $f_range / 2 from each end.
+      my $upper = int( $ubound[2] - ( 1 - $ratio ) * $f_length / 2 );
+      my $lower = int( $lbound[2] + ( 1 - $ratio ) * $f_length / 2 );
+
+      $params .= " lbnd=[$lbound[0],$lbound[1],$lower]";
+      $params .= " ubnd=[$ubound[0],$ubound[1],$upper]";
+
+    } else {
+
+      $params .= " lbnd=! ubnd=!";
+
+    }
+
+    # Run WCSMOSAIC for the second time.
+    orac_print " Coadding $infrm to $ingrp...";
     $Mon{'kappa_mon'}->obeyw( "wcsmosaic", "$params" );
 
     # NDFCOPY the output to the group file.
