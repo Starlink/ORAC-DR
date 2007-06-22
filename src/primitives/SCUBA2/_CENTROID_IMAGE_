@@ -1,0 +1,130 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CENTROID_IMAGE_
+
+=head1 DESCRIPTION
+
+Find the centroid of the given image. Assumes that the centroid is
+near the origin in axis coordinates, and that there is only one source
+in the image.
+
+Assumes that the peak value in the map is the value of the pixel at
+the centroid position. This is not necessarily true though if the
+centroid position contains a spike.
+
+=head1 TASKS
+
+Uses the KAPPA CENTROID task.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item IMAGE
+
+Input image. If no image is given then the GROUP argument is used to
+determine whether to use the current Group or Frame image.
+
+=item BOX
+
+Size of search box in each dimension. Default is 9 pixels.
+
+=item GROUP
+
+Flag to denote whether to use the current Group image or Frame
+image. True (1) indicates use the Group image; else use the Frame
+image. The presence of the IMAGE argument overrides this parameter.
+
+=back
+
+=head1 OUTPUT DATA
+
+On completion the primitive hash C<%_CENTROID_IMAGE_> contains
+the following keys:
+
+=over 4
+
+=item RESULTS
+
+An array containing the X, Y position of the source in the current
+coordinate frame.
+
+=back
+
+=head1 NOTE
+
+The frame object is not updated.
+
+This primitive is essentially a single-image version of
+_CENTROID_FRAME_ and as such looks very similar.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+Copyright (C) 2007 the University of British Columbia. All Rights
+Reserved.
+
+=cut
+
+
+# Set input file - leave undefined if not specified
+my $in = ( exists $_CENTROID_IMAGE_{IMAGE} ) && 
+         ( defined $_CENTROID_IMAGE_{IMAGE}) ? 
+         $_CENTROID_IMAGE_{IMAGE} : undef;
+
+# If not input file was defined use the current group or frame
+unless ( defined $in ) {
+  # Determine if the user wants to use the current stacked Grp or Frm
+  # image
+  my ($Obj, $Frmgrp);
+  my $group = defined( $_CENTROID_IMAGE_{GROUP} ) ? 
+    $_CENTROID_IMAGE_{GROUP} : 0;
+  if( $group ) {
+    $Obj = $Grp;
+    $Frmgrp = "Grp";
+  } else {
+    $Obj = $Frm;
+    $Frmgrp = "Frm";
+  }
+  if ( $Obj->nfiles == 1 ) {
+    $in = $Obj->file;
+  } else {
+    orac_throw "Error: _CENTROID_IMAGE_ must be run on the $Frmgrp after images have been combined\n";
+  }
+}
+
+my $box = ( $_CENTROID_IMAGE_{BOX} || 9 );
+
+# Initialize the results array
+$_CENTROID_IMAGE_{RESULTS} = [];
+
+# Need to check for kappa 0.14 or higher -- use the KAPVERSION_MINOR
+# global variable
+my $args;
+if (starversion_lt('kappa','V0.14-0')) {
+  $args = " cosys=d init=[0,0]";
+} else {
+  # If we have KAPPA14 we have to first make sure the wcsframe is AXIS
+  # so that we can start searching from the coordinate centre
+  $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=axis");
+  $args = " init='0,0' ";
+}
+
+$args .= " mode=i cerror=true search=$box";
+
+$Mon{kappa_mon}->obeyw("centroid","ndf=$in $args");
+
+# Read the result
+my (@centre, $ORAC_STATUS);
+
+# KAPPA 14 returns the centre pos as a string, earlier versions
+# return an array -- just use XCEN and YCEN with two ADAM calls
+($ORAC_STATUS, $centre[0]) = $Mon{kappa_mon}->get("centroid","xcen");
+($ORAC_STATUS, $centre[1]) = $Mon{kappa_mon}->get("centroid","ycen");
+
+# Store the results
+$_CENTROID_IMAGE_{RESULTS} = [@centre];
+
