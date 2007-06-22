@@ -1,0 +1,312 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_FIND_FLUXES_ - Determine the peak and integrated flux of sources in image
+
+=head1 DESCRIPTION
+
+Finds the peak and total flux of all sources in an image either by
+fitting or aperture photometry.
+
+The total flux can be determined by fitting a Sersic profile to the
+source and integrating underneath that profile using a standard
+integral solution. If the fit is poor (defined by the axis ratio
+falling outside a pre-defined range) then the default aperture
+photometry method is used instead.
+
+Note that the C<Math::Gsl> Perl module must be installed for the PSF
+integrator. See the documentation for C<Starlink::PSF> for further
+details.
+
+This primitive is designed to work on a single image and will fail if
+the current Frame object contains more than one file.
+
+Important: Data should be calibrated in Jy/beam before calling this
+primitive so that meaningful values are logged.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<USEPSF>
+
+A flag to indicate whether to calculate the source flux from either a
+fit the source using the Kappa PSF function or using an aperture
+photometry method. Default is to use aperture photometry (USEPSF = 0).
+
+=item B<RADIUS>
+
+Radius of apertures to use for aperture photometry (if USEPSF is 0)
+and/or noise estimates. Default is 20 arcsec. A special value of -1
+may be specified in which case the aperture is set by the major and
+minor axes of the object.
+
+=item B<LOGFILE>
+
+A flag to indicate whether log files should be written containing the
+results of the flux and noise calculations. Default is true.
+
+=item B<GROUP>
+
+If true, use the current Group file as input, otherwise use the
+current Frame. Default is 0 (false: use current Frame).
+
+=item B<VERBOSE>
+
+Flag to indicate whether informational messages should be 
+given to the user. Default is true.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+=over 4
+
+=item KAPPA
+
+PSF, WCSFRAME
+
+=item Other SCUBA-2 primitives
+
+_FIT_PSF_, _FIND_INTEGRATED_INTENSITY_, _FIND_SOURCES_
+
+=item Perl modules
+
+Starlink::PSF
+
+=back
+
+=head1 OUTPUT DATA
+
+The primitive hash returns no keys if the user specifies writing the
+results to a logfile. If no logfile is to be written then the
+following keys are set:
+
+=over 4
+
+=item INTFLUX
+
+Reference to array of integrated fluxes. Undef if no sources found.
+
+=item PEAKFLUX
+
+Reference to array of peak fluxes. Undef if no sources found.
+
+=back
+
+=head1 OUTPUT FILES
+
+The following file is created:
+
+=over 4
+
+=item C<log.peak>
+
+Log of peak flux values.
+
+=item C<log.integrated>
+
+Log of integrated flux values.
+
+=back
+
+The frame object is not updated.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+Copyright (C) 2007 the University of British Columbia.  All Rights
+Reserved.
+
+=cut
+
+# Should check that this has been run after calibration?
+
+# Write logfiles (default to true)
+my $uselog = (exists $_FIND_FLUXES_{LOGFILE} &&
+	      defined $_FIND_FLUXES_{LOGFILE}) ?
+              $_FIND_FLUXES_{LOGFILE} : 1;
+
+# Should I be verbose? (Default to yes)
+my $verbose = (exists $_FIND_FLUXES_{VERBOSE} && 
+	       defined $_FIND_FLUXES_{VERBOSE}) ?
+               $_FIND_FLUXES_{VERBOSE} : 1;
+
+# Check the desired flux calculation method.
+my $usepsf = (exists $_FIND_FLUXES_{USEPSF} &&
+	      defined $_FIND_FLUXES_{USEPSF}) ?
+              $_FIND_FLUXES_{USEPSF} : 0;
+
+# Set aperture radius - default is 20 arcsec
+my $radius = ( exists $_FIND_FLUXES_{RADIUS} && 
+	       defined $_FIND_FLUXES_{RADIUS} ) ?
+               $_FIND_FLUXES_{RADIUS} : 20;
+
+
+# Initialize the log files if necessary
+my ($pklog, $intlog);
+if ($uselog) {
+  my $time = gmtime();
+  # Peak fluxes
+  $pklog = new ORAC::LogFile("log.peak");
+  $pklog->header("Peak flux log file - created on $time",
+                 "\n#  ID      Time          RA          Dec       Filter  Peak  FWHM   Seeing   El  CSO",
+                 "------------------------------------------------------------------------------------"
+		 );
+  # Integrated fluxes
+  $intlog = new ORAC::LogFile("log.integrated");
+  $intlog->header("Integrated flux log file - created on $time",
+                 "\n#  ID      Time          RA          Dec       Filter  Flux  Seeing   El  CSO",
+                 "------------------------------------------------------------------------------------"
+		 );
+}
+
+# Determine if the user wants to use the current stacked Grp or Frm image
+my ($Obj, $in);
+my $group = defined( $_FIND_FLUXES_{GROUP} ) ? 
+  $_FIND_FLUXES_{GROUP} : 0;
+if( $group ) {
+  $Obj = $Grp;
+} else {
+  $Obj = $Frm;
+}
+if ( $Obj->nfiles == 1 ) {
+  $in = $Obj->file;
+} else {
+  orac_throw "Error: _FIND_FLUXES_ must be run after images have been combined\n";
+}
+
+my (@intfluxes, @pkfluxes);
+
+# Are the data calibrated?
+
+# Find all of the sources in the current frame
+_FIND_SOURCES_ IMAGE=$in
+# Retrieve catalogue
+my $catalogue = $_FIND_SOURCES_{CATALOGUE};
+
+# Check that the catalogue has sources in it
+if ( $catalogue->sizeof == 0 ) {
+  # Issue an error and skip the rest
+  orac_warn "Unable to determine fluxes, no sources found\n";
+} else {
+  # Check if installed version of Kappa has a PSF task we can use
+  if ( $usepsf && starversion_lt('kappa', 'V0.15-0')) {
+    # warn
+    orac_warn "Your kappa version is too old to use PSF. Using stats to find total flux\n";
+    $usepsf = 0;
+  }
+
+  # Set up log file entries - these will be the same for all sources in the field
+  my ($time, $filt, $cso, $see, $el, $obsnum);
+  if ($uselog) {
+    # UT string
+    $time= sprintf "%12.3f", $Obj->hdr('ORACTIME');
+    # Filter
+    $filt= sprintf "%4s", $Obj->hdr('FILTER');
+
+    # Tau at 225 GHz
+    my $cso_st = ( defined $Obj->hdr->{SUBHEADERS}->[0]->{WVMTAUST}) ? 
+      $Obj->hdr->{SUBHEADERS}->[0]->{WVMTAUST} : $Obj->hdr('WVMTAUST');
+    my $cso_end = ( defined $Obj->hdr->{SUBHEADERS}->[-1]->{WVMTAUEN}) ? 
+      $Obj->hdr->{SUBHEADERS}->[-1]->{WVMTAUEN} : $Obj->hdr('WVMTAUEN');
+    $cso = sprintf "%5.3f", 0.5*($cso_st + $cso_end);
+
+    # Seeing
+    my $see_st = ( defined $Obj->hdr->{SUBHEADERS}->[0]->{SEEINGST}) ? 
+      $Obj->hdr->{SUBHEADERS}->[0]->{SEEINGST} : $Obj->hdr('SEEINGST');
+    my $see_end = ( defined $Obj->hdr->{SUBHEADERS}->[-1]->{SEEINGEN}) ? 
+      $Obj->hdr->{SUBHEADERS}->[-1]->{SEEINGEN} : $Obj->hdr('SEEINGEN');
+    $see = sprintf "%5.3f", 0.5*($see_st + $see_end);
+
+    # Elevation - should always be >10 deg so no need to re-format for printing
+    my $el_st = ( defined $Obj->hdr->{SUBHEADERS}->[0]->{ELSTART}) ? 
+      $Obj->hdr->{SUBHEADERS}->[0]->{ELSTART} : $Obj->hdr('ELSTART');
+    my $el_end = ( defined $Obj->hdr->{SUBHEADERS}->[-1]->{ELEND}) ? 
+      $Obj->hdr->{SUBHEADERS}->[-1]->{ELEND} : $Obj->hdr('ELEND');
+    $el = int ( 0.5 * ( $el_st + $el_end ) );
+
+    # Observation number
+    $obsnum = sprintf "%05d", $Obj->hdr('OBSNUM');
+  }
+
+  my $totalflux;
+  my $fluxcorr = 1.0;
+  my $ORAC_STATUS;
+
+  if ($usepsf) {
+    orac_print "Calculating fluxes by fitting a PSF\n" if $verbose;
+    use Starlink::PSF;
+  } else {
+    orac_print "Calculating fluxes by aperture photometry\n" if $verbose;
+  }
+  # Define all the parameters we might need
+  my ($amp, $fwhm, $axisr, $gamma, $orient);
+
+  # Loop over all sources in the catalogue and run desired
+  # flux-calculation method
+  orac_print $catalogue->sizeof."\n";
+  for my $i ( 1 .. $catalogue->sizeof ) {
+    my $source = $catalogue->starbyindex( $i - 1 ); # Catalogue is 0-indexed
+    # Retrieve Astro::Coords object associated with current source
+    my $coords = $source->coords;
+    my $ra = $coords->ra;
+    my $dec = $coords->dec;
+
+#    use Data::Dumper;
+#    print Dumper($coords);
+    if ( $usepsf ) {
+      # Write position to COFILE
+      my $cofile = new ORAC::TempFile;
+      print { $cofile->handle } $ra." ".$dec. "\n";
+      $cofile->handle->close;
+      # Fit the source
+      _FIT_PSF_ IMAGE=$in COFILE=$cofile->file VERBOSE=0
+      ($amp, $fwhm, $axisr, $gamma, $orient) = @{ $_FIT_PSF_{RESULTS} };
+      undef $cofile;
+      # Integrate profile - total flux is returned in units of amp * fwhm^2
+      $totalflux = Starlink::PSF->integrate_profile($amp, $fwhm, $axisr, $gamma);
+      # Calculate geometric mean FWHM for logging
+      $fwhm *= sqrt($axisr);
+    } else {
+      # Use an aperture photometry method
+      my @xy = ( $ra, $dec );
+      _FIND_INTEGRATED_INTENSITY_ RADIUS=$radius IMAGE=$in XYPOS=\@xy
+      $totalflux = $_FIND_INTEGRATED_INTENSITY_{TOTALFLUX};
+      $amp = $_FIND_INTEGRATED_INTENSITY_{PEAKFLUX};
+      $fwhm = 15.0; # HACK!!! Should be obtained from Cal object
+    }
+
+    # Convert flux to meaningful units
+    $totalflux /= $fluxcorr;
+
+    # Write info to log file if requested
+    if ( $uselog ) {
+      # Format for printing
+      $totalflux = sprintf "%6.3f", $totalflux;
+      $amp = sprintf "%6.3f", $amp;
+      # Set source ID - assumes there will be <100 objects in frame
+      my $srcnum = sprintf "_%02d", $i;
+      my $sourceid = $obsnum.$srcnum;
+
+      $fwhm = sprintf "%6.2f", $fwhm;
+
+      # Write the entry:
+      # source_id UT ra dec filter flux rms s/n fwhm/apdiam numpix rms/pix Seeing el tau225
+      $pklog->addentry("$sourceid $time $ra $dec  $filt   $amp  $fwhm  $see   $el $cso");
+      $intlog->addentry("$sourceid $time $ra $dec  $filt   $totalflux  $see  $el $cso");
+    } else {
+      push (@intfluxes, $totalflux);
+      push (@pkfluxes, $amp);
+    }
+  }
+}
+
+unless ($uselog) {
+  $_FIND_FLUXES_{INTFLUX} = ($catalogue->sizeof) ? \@intfluxes : undef;
+  $_FIND_FLUXES_{PEAKFLUX} = ($catalogue->sizeof) ? \@pkfluxes : undef;
+}
