@@ -14,28 +14,24 @@ This primitive determines the statistics of the variance or error
 components within an NDF and reports the mean and standard
 deviation. The mean is expected to be a good estimate of the noise.
 
-On completion of the calculation, the primitive hash value
-$_FIND_VARIANCE_{NOISE} has the noise stored in it.
+On completion of the calculation, the primitive hash
+$_FIND_VARIANCE_{RESULT}. If there is no variance component, then the
+entry is set to undef.
 
 =head1 ARGUMENTS
 
 =over 4
 
-=item NDF
+=item IMAGE
 
-Name of NDF file to obtain the variance from. If left blank then the
+Name of NDF image to obtain the variance from. If left blank then the
 current group file is assumed.
 
 =item COMP
 
 Component to probe in NDF. May be variance (var) or error
-(err). Default is error. Note the error is the square-root of the
+(err). Default is variance. Note the error is the square-root of the
 variance.
-
-=item NEEDLOG
-
-Flag to denote whether or not an entry should be written into the log
-file. The default is 1 (yes).
 
 =back
 
@@ -53,7 +49,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2005-2006 University of British Columbia. All Rights Reserved.
+Copyright (C) 2005-2007 University of British Columbia. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -70,89 +66,38 @@ Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
-
-#my $mytime = localtime;
-#orac_print $mytime ."\n";
-use NDF;
-
-my $ORAC_STATUS;
-
-my $comp = (exists $_FIND_VARIANCE_{COMP} && defined $_FIND_VARIANCE_{COMP}) 
+my $comp = (exists $_FIND_VARIANCE_{COMP} && 
+	    defined $_FIND_VARIANCE_{COMP})
             ? lc($_FIND_VARIANCE_{COMP}) : "err";
 
-my $needlog = (exists $_FIND_VARIANCE_{NEEDLOG} && 
-	       defined $_FIND_VARIANCE_{NEEDLOG}) ?
-               $_FIND_VARIANCE_{NEEDLOG} : 1;
-
-my $ndf =  (exists $_FIND_VARIANCE_{NDF} && 
-	       defined $_FIND_VARIANCE_{NDF}) ?
-               $_FIND_VARIANCE_{NDF} : $Grp->file;
+my $ndf =  (exists $_FIND_VARIANCE_{IMAGE} && 
+	    defined $_FIND_VARIANCE_{IMAGE}) ?
+            $_FIND_VARIANCE_{IMAGE} : $Grp->file;
 
 # Just want the first 3 characters
 $comp = substr($comp,0,3);
 
 if ($comp eq "var" ) {
-  orac_print("Finding variance statistic \n");
+  orac_print("Returning variance\n");
 } elsif ($comp eq "err") {
-  orac_print("Finding error statistic\n");
+  orac_print("Returning error statistic\n");
 } else {
-  orac_throw "Error: unsupported component, $comp. Please select either Variance or Error\n";
+  orac_throw "Error: unsupported component, $comp - must be either Variance or Error\n";
 }
-
-#my $ndf = $Grp->file;
 
 # Does the Variance or Error component exist in the file?
 $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$ndf quiet=true");
+my $ORAC_STATUS;
 ($ORAC_STATUS, my $varexists) = $Mon{ndfpack_mon}->get("ndftrace","variance");
 
 if ($varexists eq "TRUE") {
   $Mon{kappa_mon}->obeyw("stats","ndf=$ndf comp=$comp");
 
-# Retrieve the values
-  ($ORAC_STATUS, my $noise) = $Mon{kappa_mon}->get("stats","mean");
+  # Retrieve the mean value which is the variance
+  ($ORAC_STATUS, my $mean) = $Mon{kappa_mon}->get("stats","mean");
 
-# We need to fudge the time stamps here so that we get incrementing
-# times. Currently the simulator headers have DATE-OBS values that
-# are irrelevant. Ideally the stripchart should have an option to
-# display "seconds" directly such that we could simply say
-# "after 15 seconds we have this noise"
-
-# Integration time per Frame. HACK: Hardwired. We could always store a
-# value in $Frm when we have worked out how many DREAM/STARE images we
-# have in each Frame
-
-  # Only do all this if we want to write a logfile (usually true)
-  if ($needlog) {
-    my $inttime = 60 / (24. * 60. * 60.) ; # 60 x 1 second images
-
-    my $total = $Grp->hdr("INT-TIME");
-    $total += $inttime;
-    $Grp->hdr("INT-TIME", $total);
-  
-    # Write to an index file
-    my $log = new ORAC::LogFile("log.noise");
-    my $time = gmtime();
-    $log->header("#Noise log file - created on $time ",
-		 "#     Time        Filter    Comp   Noise    CSO   El    Object ",
-		 "#---------------------------------------------------------------------------------"
-		 );
-    my $num = sprintf "%-4d", $Frm->number;
-    #$time= sprintf "%12.3f", $Frm->hdr('ORACTIME');
-    $time= 20050527.0 + $total;
-    my $filt= sprintf "%4s",   "850";
-    $noise = sprintf "%12.8e", $noise;
-    #my $el = int (($Frm->hdr('STRT_ELD') + $Frm->hdr('END_ELD') ) /2.0 );
-    $comp = uc( $comp );
-    my $el = 45;
-    my $cso = sprintf "%5.2f", "1.0";
-
-    #$log->addentry("$num $time $filt $comp $noise  $cso $el ". $Frm->hdr("OBJECT"));
-    # Quick fudge for LAB data
-    $log->addentry("$num $time $filt $comp $noise  $cso $el LAB");
-  }
-  #orac_print $noise ."\n";
-  $_FIND_VARIANCE_{NOISE} = $noise;
-
+  # Store in primitive hash
+  $_FIND_VARIANCE_{RESULT} = $mean;
 } else {
-  orac_print "Component $comp not present in input file\n";
+  orac_print "Variance component not present in input file\n";
 }
