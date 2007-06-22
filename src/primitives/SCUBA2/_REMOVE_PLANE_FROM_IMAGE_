@@ -13,6 +13,48 @@ _REMOVE_PLANE_FROM_IMAGE_ -  remove a plane from an image
 This primitive fits a 2-d plane to an image. It will not work on 
 raw time series data.
 
+The primitive works by fitting a 2-D plane to an image with the KAPPA
+task C<surfit>. The KAPPA task C<stats> is run on the fit and the mean
+and standard deviation are stored. The output from C<surfit> is the
+RMS deviation of the fit from the input image. This may be regarded as
+an alternative estimate of the noise if the number of bright sources
+is small. The average mean and standard deviation of the fitted plane
+is calculated for the images in the Frame, and these may be physically
+meaningful numbers if the spread is small. The average mean level in
+the fit is taken to be the mean DC sky signal. The average standard
+deviation (called the mean spread below) is a measure of the size of
+the sky gradient: if this gradient is C<small> then the sky level is
+well-approximated by a constant.
+
+To reiterate, the values returned (and printed if verbose is true)
+represent the following:
+
+=over 4
+
+=item Mean DC level
+
+The mean of the fitted plane, averaged over all images in the
+Frame. Taken to be the mean DC sky signal.
+
+=item Mean spread
+
+The average standard deviation in the mean of the fitted plane. Taken
+to be an estimate of the magnitude of the fitted slope.
+
+=item Mean RMS deviation
+
+The mean RMS deviation between the fit and the data. Taken to be a
+measure of the sky noise.
+
+=back
+
+If the mean spread is less than the RMS deviation, then the gradient
+on the fitted 2-D plane is small and the sky is well-approximated by a
+constant DC level.
+
+However, note that the presence of sources will mean that these
+interpretations should be used as a guide only.
+
 =head1 EXTERNAL TASKS
 
 =over 4
@@ -62,8 +104,8 @@ for my $i (1..$Frm->nfiles) {
   my $tmpout = new ORAC::TempFile;
   my $tmpoutfile = $tmpout->file;
 
-  # Arguments to SURFIT
-  my $args = " fittype=poly order=1 clip=[2,2,2] estimator=mode wlim=0.5 evaluate=all fitclip=[2,2,2]";
+  # Arguments to SURFIT: the default estimator is MODE
+  my $args = " fittype=poly order=1 clip=[2,2,2] estimator=! wlim=0.5 evaluate=all fitclip=[2,2,2]";
 
   # Run SURFIT
   $Mon{kappa_mon}->obeyw("surfit","in=$in out=$tmpoutfile $args reset");
@@ -75,7 +117,6 @@ for my $i (1..$Frm->nfiles) {
   my $ORAC_STATUS;
   ($ORAC_STATUS, my $dclevel) = $Mon{kappa_mon}->get("stats","mean");
   ($ORAC_STATUS, my $sigmadc) = $Mon{kappa_mon}->get("stats","sigma");
-#  orac_print "Mean sky level = $dclevel $units\n" if ($verbose);
   push (@dclevel, $dclevel);
   push (@sigmadc, $sigmadc);
 
@@ -111,6 +152,7 @@ $meanrms /= $imax;
 $meandclevel /= $imax;
 $meansigmadc /= $imax;
 
+
 # Return mean values of RMS and MEAN sky level
 $_REMOVE_PLANE_FROM_IMAGE_{RMS} = $meanrms;
 $_REMOVE_PLANE_FROM_IMAGE_{DCSKY} = $meandclevel;
@@ -119,10 +161,17 @@ $_REMOVE_PLANE_FROM_IMAGE_{SIGMADC} = $meansigmadc;
 # These should be logged somewhere... In $Cal obj?
 
 if ($verbose) {
+  # See if the sky gradient is small
+  if ( $meansigmadc < $meanrms ) {
+    orac_print "OK - sky background appears to be well approximated to a constant level\n", 'green';
+  } else {
+    orac_print "Caution - sky background appears to have a significant gradient, interpret these results with care\n", 'red';
+  }
+
   $meanrms = sprintf "%6.5f", $meanrms;
   $meandclevel = sprintf "%6.5f", $meandclevel;
   $meansigmadc = sprintf "%6.5f", $meansigmadc;
   orac_print "Plane removed from images\n"
-    ."Mean level was $meandclevel (mean spread $meansigmadc)\n"
-    ."Mean RMS deviation was $meanrms\n";
+    ."Mean level = $meandclevel (mean std dev = $meansigmadc)\n"
+    ."Mean RMS deviation = $meanrms\n";
 }
