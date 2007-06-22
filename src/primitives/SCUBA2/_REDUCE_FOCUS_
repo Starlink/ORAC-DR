@@ -1,0 +1,215 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_REDUCE_FOCUS_ - Process a FOCUS observation with SCUBA-2
+
+=head1 DESCRIPTION
+
+...
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=item B<LOGFILE>
+
+A flag to indicate whether log files should be written containing the
+results of the flux and noise calculations. Default is true.
+
+=item B<VERBOSE>
+
+Flag to indicate whether informational messages should be 
+given to the user. Default is true.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+=over 4
+
+=item KAPPA
+
+WCSMOSAIC
+
+=item Perl modules
+
+PDL, PDL::Fit::Polynomial
+
+=item Other SCUBA-2 primitives
+
+_FIT_PSF_, _CENTROID_IMAGE_
+
+=back
+
+=head1 OUTPUT DATA
+
+The frame object is not updated.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+Copyright (C) 2007 the University of British Columbia. All Rights
+Reserved.
+
+=cut
+
+# Write logfiles (default to true)
+my $uselog = (exists $_REDUCE_FOCUS_{LOGFILE} &&
+	      defined $_REDUCE_FOCUS_{LOGFILE}) ?
+              $_REDUCE_FOCUS_{LOGFILE} : 1;
+
+# Should I be verbose? (Default to yes)
+my $verbose = (exists $_REDUCE_FOCUS_{VERBOSE} && 
+	       defined $_REDUCE_FOCUS_{VERBOSE}) ?
+               $_REDUCE_FOCUS_{VERBOSE} : 1;
+
+# Initialize the log file if necessary
+my $focuslog;
+if ($uselog) {
+  my $time = gmtime();
+  $focuslog = new ORAC::LogFile("log.focus");
+  $focuslog->header("Focus log file - created on $time",
+		    "\n#  Time       Filter  El         Seeing   CSO",
+		    "---------------------------------------------------------------"
+		    );
+}
+
+# Check that we have a focus observation
+if ( uc($Frm->hdr('OBS_TYPE')) ne "FOCUS" ) {
+  orac_throw "Data are not from a FOCUS observation\n";
+}
+# Other checks: should be a standard source
+
+# Collect together all images with the same FOCPOSN
+my %focusgroup;			# sic
+for my $i (1 .. $Frm->nfiles ) {
+  my $focposn = ( defined $Frm->hdr->{SUBHEADERS}->[$i]->{FOCPOSN}) ? 
+    $Frm->hdr->{SUBHEADERS}->[0]->{FOCPOSN} : $Frm->hdr('FOCPOSN');
+  my $subarray = ( defined $Frm->hdr->{SUBHEADERS}->[$i]->{SUBARRAY}) ? 
+    $Frm->hdr->{SUBHEADERS}->[0]->{SUBARRAY} : $Frm->hdr('SUBARRAY');
+  # Only need to use files with the source actually present
+  push ( @{$focusgroup{$focposn}}, $i) if ( $subarray eq $Frm->hdr('INSTAP') );
+}
+
+my $ORAC_STATUS;
+my (@amps, @fwhms, @focposns);
+# Loop over all values of FOCPOSN, average together all images for a
+# given FOCPOSN and fit the source with a PSF. Store the amplitude and FWHM.
+foreach my $focposn ( keys %focusgroup ) {
+
+  # Retrieve indices for all files to be combined
+  my @files = @{$focusgroup{$focposn}};
+  # Create new TempFile to write filenames to
+  my $inlist = new ORAC::TempFile;
+  foreach my $fileindex (@files) {
+    print {$inlist->handle} $Frm->file($fileindex) ."\n";
+  }
+
+  # Temp output mosaic
+  my $focusmos = new ORAC::TempFile;
+  my $focusfile = $focusmos->file;
+
+  # Mosaic all these images together
+  my $args = "ref=! method=nearest lbnd=! ubnd=! wlim=0.2 ".
+    "genvar=true out=$focusfile in=^".$inlist->file;
+  $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
+
+  # Get estimate of source position for fitting
+  _CENTROID_IMAGE_ IMAGE=$focusfile
+
+  # Write position to ASCII file for reading into PSF
+  my $cofile = new ORAC::TempFile;
+  print {$cofile->handle} $_CENTROID_IMAGE_{RESULTS}->[0] ." "
+    .$_CENTROID_IMAGE_{RESULTS}->[1]."\n";
+  $cofile->handle->close;
+
+  # Fit a PSF to image
+  _FIT_PSF_ IMAGE=$focusfile COFILE=$cofile->file VERBOSE=0
+
+  # Store fit parameters
+  my ($amp, $fwhm, $axisr, $gamma, $orient) = @{ $_FIT_PSF_{RESULTS} };
+  $fwhm *= sqrt($axisr);
+
+  push (@amps, $amp);
+  push (@fwhms, $fwhm);
+  push (@focposns, $focposn);
+}
+
+# Now fit a quadratic to the focus data
+use PDL;
+use PDL::Fit::Polynomial;
+my $x = pdl( @focposns );
+
+# Amplitudes
+my $y = pdl( @amps );
+my ($yfit, $coeffs) = fitpoly1d ($x, $y, 3);
+my $bestfocus_amp = -1.0 * $coeffs->index(1) / ( 2. * $coeffs->index(2) );
+
+# FWHM
+$y = pdl( @fwhms );
+($yfit, $coeffs) = fitpoly1d ($x, $y, 3);
+my $bestfocus_fwhm = -1.0 * $coeffs->index(1) / ( 2. * $coeffs->index(2) );
+
+# Uncertainties? Could calculate residuals or Chi-squared at least
+
+# Write info to log file if requested
+if ( $uselog ) {
+  # Set up log file entries
+  my ($time, $filt, $cso, $see, $el, $obsnum);
+  # UT string
+  $time = sprintf "%12.3f", $Frm->hdr('ORACTIME');
+  # Filter
+  $filt = sprintf "%4s", $Frm->hdr('FILTER');
+  # Focus axis
+  my $focaxis = $Frm->hdr('FOCAXIS');
+
+  # Target source
+  my $source = $Frm->hdr('OBJECT');
+
+  # Tau at 225 GHz
+  my $cso_st = ( defined $Frm->hdr->{SUBHEADERS}->[0]->{WVMTAUST}) ? 
+    $Frm->hdr->{SUBHEADERS}->[0]->{WVMTAUST} : $Frm->hdr('WVMTAUST');
+  my $cso_end = ( defined $Frm->hdr->{SUBHEADERS}->[-1]->{WVMTAUEN}) ? 
+    $Frm->hdr->{SUBHEADERS}->[-1]->{WVMTAUEN} : $Frm->hdr('WVMTAUEN');
+  $cso = sprintf "%5.3f", 0.5*($cso_st + $cso_end);
+
+  # Seeing
+  my $see_st = ( defined $Frm->hdr->{SUBHEADERS}->[0]->{SEEINGST}) ? 
+    $Frm->hdr->{SUBHEADERS}->[0]->{SEEINGST} : $Frm->hdr('SEEINGST');
+  my $see_end = ( defined $Frm->hdr->{SUBHEADERS}->[-1]->{SEEINGEN}) ? 
+    $Frm->hdr->{SUBHEADERS}->[-1]->{SEEINGEN} : $Frm->hdr('SEEINGEN');
+  $see = sprintf "%5.3f", 0.5*($see_st + $see_end);
+
+  # Azimuth
+  my $az_st = ( defined $Frm->hdr->{SUBHEADERS}->[0]->{AZSTART}) ? 
+    $Frm->hdr->{SUBHEADERS}->[0]->{AZSTART} : $Frm->hdr('AZSTART');
+  my $az_end = ( defined $Frm->hdr->{SUBHEADERS}->[-1]->{AZEND}) ? 
+    $Frm->hdr->{SUBHEADERS}->[-1]->{AZEND} : $Frm->hdr('AZEND');
+  $az = int ( 0.5 * ( $az_st + $az_end ) );
+
+  # Elevation - should always be >10 deg so no need to re-format for printing
+  my $el_st = ( defined $Frm->hdr->{SUBHEADERS}->[0]->{ELSTART}) ? 
+    $Frm->hdr->{SUBHEADERS}->[0]->{ELSTART} : $Frm->hdr('ELSTART');
+  my $el_end = ( defined $Frm->hdr->{SUBHEADERS}->[-1]->{ELEND}) ? 
+    $Frm->hdr->{SUBHEADERS}->[-1]->{ELEND} : $Frm->hdr('ELEND');
+  $el = int ( 0.5 * ( $el_st + $el_end ) );
+
+  # Observation number
+  $obsnum = sprintf "%05d", $Frm->hdr('OBSNUM');
+
+  # Focus value to report - TMP HACK: this must be a relative focus,
+  # but relative to what?
+  my $bestfocus = sprintf( "%7.4f", $bestfocus_amp);
+
+  # Write the entry:
+  # ObsNum, source, UT, filter, focus axis, Az, El, focus posn, Seeing, tau225
+  $focuslog->addentry("$obsnum $source $time  $filt  $focaxis  $az $el  $bestfocus $see   $cso");
+}
+
+# If we are not logging these data to a file, store the noise in the
+# primitive hash
+unless ($uselog) {
+  $_REDUCE_FOCUS_{BESTFOCUS} = $bestfocus_amp;
+}
