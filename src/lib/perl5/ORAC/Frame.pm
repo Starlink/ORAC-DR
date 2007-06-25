@@ -37,65 +37,65 @@ use base qw/ ORAC::BaseFile /;
 
 
 my @ORAC_INTERNAL_HEADERS = qw/
-  AIRMASS_START
-  AIRMASS_END
+                               AIRMASS_START
+                               AIRMASS_END
                                CAMERA_NUMBER
-  CHOP_ANGLE
-  CHOP_THROW
-  CONFIGURATION_INDEX
-  DATA_UNITS
-  DEC_BASE
-  DEC_SCALE 
-  DEC_TELESCOPE_OFFSET
-  DETECTOR_BIAS
-  DETECTOR_INDEX
-  DETECTOR_READ_TYPE
-  EQUINOX
-  EXPOSURE_TIME 
-  FILTER 
-  GAIN
-  GRATING_DISPERSION
-  GRATING_NAME
-  GRATING_ORDER
-  GRATING_WAVELENGTH
-  INSTRUMENT
-  NSCAN_POSITIONS
-  NUMBER_OF_EXPOSURES
-  NUMBER_OF_JITTER_POSITIONS
-  NUMBER_OF_MICROSTEP_POSITIONS
-  NUMBER_OF_OFFSETS
-  NUMBER_OF_READS
-  OBJECT 
-  OBSERVATION_MODE
-  OBSERVATION_NUMBER
-  OBSERVATION_TYPE 
-  POLARIMETRY
-  RA_BASE 
-  RA_SCALE
-  RA_TELESCOPE_OFFSET
-  RECIPE
-  ROTATION 
-  SCAN_INCREMENT
-  SLIT_ANGLE
-  SLIT_NAME
-  SPEED_GAIN 
-  STANDARD
-  TELESCOPE
-  UTDATE
-  UTEND 
-  UTSTART
-  WAVEPLATE_ANGLE
-  X_DIM
-  Y_DIM
-  X_LOWER_BOUND
-  X_REFERENCE_PIXEL
-  X_UPPER_BOUND
-  Y_LOWER_BOUND
-  Y_REFERENCE_PIXEL
-  Y_UPPER_BOUND
-  X_APERTURE
-  Y_APERTURE
-/;
+                               CHOP_ANGLE
+                               CHOP_THROW
+                               CONFIGURATION_INDEX
+                               DATA_UNITS
+                               DEC_BASE
+                               DEC_SCALE
+                               DEC_TELESCOPE_OFFSET
+                               DETECTOR_BIAS
+                               DETECTOR_INDEX
+                               DETECTOR_READ_TYPE
+                               EQUINOX
+                               EXPOSURE_TIME
+                               FILTER
+                               GAIN
+                               GRATING_DISPERSION
+                               GRATING_NAME
+                               GRATING_ORDER
+                               GRATING_WAVELENGTH
+                               INSTRUMENT
+                               NSCAN_POSITIONS
+                               NUMBER_OF_EXPOSURES
+                               NUMBER_OF_JITTER_POSITIONS
+                               NUMBER_OF_MICROSTEP_POSITIONS
+                               NUMBER_OF_OFFSETS
+                               NUMBER_OF_READS
+                               OBJECT
+                               OBSERVATION_MODE
+                               OBSERVATION_NUMBER
+                               OBSERVATION_TYPE
+                               POLARIMETRY
+                               RA_BASE
+                               RA_SCALE
+                               RA_TELESCOPE_OFFSET
+                               RECIPE
+                               ROTATION
+                               SCAN_INCREMENT
+                               SLIT_ANGLE
+                               SLIT_NAME
+                               SPEED_GAIN
+                               STANDARD
+                               TELESCOPE
+                               UTDATE
+                               UTEND
+                               UTSTART
+                               WAVEPLATE_ANGLE
+                               X_DIM
+                               Y_DIM
+                               X_LOWER_BOUND
+                               X_REFERENCE_PIXEL
+                               X_UPPER_BOUND
+                               Y_LOWER_BOUND
+                               Y_REFERENCE_PIXEL
+                               Y_UPPER_BOUND
+                               X_APERTURE
+                               Y_APERTURE
+                              /;
 
 # Setup the object structure
 
@@ -289,19 +289,19 @@ sub file {
       # else wait until we return the specified value
       if (@_) {
 
-	# First check that the old file should not be
-	# removed before we update the object
-	# [Note that the erase method calls this method...]
-	$self->erase($firstarg) if $self->nokeep($firstarg);
+        # First check that the old file should not be
+        # removed before we update the object
+        # [Note that the erase method calls this method...]
+        $self->erase($firstarg) if $self->nokeep($firstarg);
 
-	# Now update the filename
-	$self->files->[$index] = $self->stripfname(shift);
+        # Now update the filename
+        $self->files->[$index] = $self->stripfname(shift);
 
-	# Make sure the nokeep flag is unset
-	$self->nokeep($firstarg,0);
+        # Make sure the nokeep flag is unset
+        $self->nokeep($firstarg,0);
 
-	# Push onto file history array
-	push(@{$self->intermediates}, $self->files->[$index]);
+        # Push onto file history array
+        push(@{$self->intermediates}, $self->files->[$index]);
 
       }
     } else {
@@ -646,7 +646,7 @@ sub tempraw {
     } else {
       @flags = @_;
       if (@flags != @rawfiles) {
-	croak "Number of tempraw flags (".@flags.") differs from number of registered raw files (".@rawfiles.")\n";
+        croak "Number of tempraw flags (".@flags.") differs from number of registered raw files (".@rawfiles.")\n";
       }
     }
     @{$self->{TempRaw}} = @flags;
@@ -661,9 +661,9 @@ sub tempraw {
     my $isperm = 0;
     for my $f (@{$self->{TempRaw}}) {
       if ($f) {
-	$istemp = 1;
+        $istemp = 1;
       } else {
-	$isperm = 1;
+        $isperm = 1;
       }
     }
     if ($istemp && $isperm) {
@@ -912,12 +912,12 @@ sub calc_orac_headers {
     # This makes it safe for everyone
     for my $key ( @ORAC_INTERNAL_HEADERS ) {
       my $method = "_to_$key";
-      #    print "Trying method $method\n";
+  #    print "Trying method $method\n";
       if ($self->can($method)) {
-	#      print "Running method $method\n";
-	# This returns a single value
-	$new{"ORAC_$key"} = $self->$method();
-	$self->uhdr("ORAC_$key", $new{"ORAC_$key"});
+        #      print "Running method $method\n";
+        # This returns a single value
+        $new{"ORAC_$key"} = $self->$method();
+        $self->uhdr("ORAC_$key", $new{"ORAC_$key"});
       }
     }
   }
@@ -1094,7 +1094,6 @@ sub findgroup {
 
   my $hdrgrp = $self->hdr('GRPNUM');
   my $amiagroup;
-
 
   if ($self->hdr('GRPMEM')) {
     $amiagroup = 1;
