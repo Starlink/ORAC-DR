@@ -6,16 +6,11 @@ _MAKE_MOSAIC_FRAME_ - Create frame mosaic
 
 =head1 SYNOPSIS
 
- _MAKE_MOSAIC_FRAME_ METHOD=MEAN GENVAR=0
+ _MAKE_MOSAIC_FRAME_ MAKEMOS=1 METHOD=MEAN GENVAR=0
 
 =head1 DESCRIPTION
 
-This primitive takes all the aligned sub-frames and mosaics them into
-a single output image. A check is made to see if the number of files
-to mosaic is greater than the maximum allowed (a value which depends
-on the version of CCDPACK installed), and if so the process is divided
-into several steps to generate intermediate mosaicked files which are
-then mosaicked at the end.
+This primitive is a Frame-specific wrapper to _MAKE_MOSAIC_.
 
 =head1 ARGUMENTS
 
@@ -23,10 +18,10 @@ then mosaicked at the end.
 
 =item B<METHOD>
 
-The method to be used to combine the images. In principle could be any
-value supported by MAKEMOS (see MAKEMOS documentation for further
-details). Currently, only MEAN or MEDIAN are supported. MEDIAN is the
-default.
+The method to be used to combine the images.The meaning of this
+argument depends on the application used but in principle it could be
+any valid value. See MAKEMOS and/or WCSMOSAIC documentation for
+further details.
 
 =item B<GENVAR>
 
@@ -40,19 +35,6 @@ Flag to denote whether to display extra information. Default is 0
 
 =back
 
-=head1 KNOWN ISSUES
-
-Assumes the _ALIGN_ARRAYS_ primitive has been run on the input
-images. The check for the number of files to mosaic ($maxmos) is done
-only once, which means this primitive will fail if the number of steps
-exceeds the maximum number of files. Thus the effective limit to the
-number of files to mosaic is $maxmos**2.
-
-=head1 ALGORITHMS
-
-Uses CCDPACK MAKEMOS. This primitive is currently a very general
-implementation.
-
 =head1 FILE SUFFIX
 
 Creates a single output image with a suffix of '_fmos'.
@@ -64,116 +46,52 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2004-2005 Particle Physics and Astronomy Research
+Copyright (C) 2004-2007 Particle Physics and Astronomy Research
 Council and University of British Columbia.  All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; either version 2 of the License, or (at your option) any later
-version.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or (at
+your option) any later version.
 
-This program is distributed in the hope that it will be useful, but WITHOUT ANY
-WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
 
-You should have received a copy of the GNU General Public License along with
-this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-Place, Suite 330, Boston, MA  02111-1307, USA
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
 
 =cut
 
-# Method for combining images: mean or median
-my $method = (exists $_MAKE_MOSAIC_FRAME_{METHOD} &&
-	      defined $_MAKE_MOSAIC_FRAME_{METHOD}) ?
-              lc($_MAKE_MOSAIC_FRAME_{METHOD}) : "median";
-
-# Should check the method is a supported one
-orac_throw "Error: unknown image combination method, $method - should be mean or median\n"
-  unless ( ($method eq "mean") || ($method eq "median") );
-
-# Flag to determine whether or not to use genvar when mosaicking
-my $genvar = (exists $_MAKE_MOSAIC_FRAME_{GENVAR} &&
-	      defined $_MAKE_MOSAIC_FRAME_{GENVAR}) ?
-              lc($_MAKE_MOSAIC_FRAME_{GENVAR}) : 1;
 
 # Should I be verbose (default to no)
 my $verbose = (exists $_MAKE_MOSAIC_FRAME_{VERBOSE} &&
                defined $_MAKE_MOSAIC_FRAME_{VERBOSE}) ?
                $_MAKE_MOSAIC_FRAME_{VERBOSE} : 0;
 
-# Check version of ccdpack. Older versions can only handle 100 files at a time
-my $maxmosfiles = (starversion_lt('ccdpack', 'V4.0-17')) ? 100 : 50;
+# Do we want to use makemos?
+my $makemos = (exists $_MAKE_MOSAIC_FRAME_{MAKEMOS} &&
+	       defined $_MAKE_MOSAIC_FRAME_{MAKEMOS}) ?
+               $_MAKE_MOSAIC_FRAME_{MAKEMOS} : 0;
 
-# Extra arguments to makemos
-my $args; 
+# Method for determining the output pixel values
+my $method = (exists $_MAKE_MOSAIC_FRAME_{METHOD} &&
+	      defined $_MAKE_MOSAIC_FRAME_{METHOD}) ? 
+              lc($_MAKE_MOSAIC_FRAME_{METHOD}) : ""; 
 
-# Calculate the number of steps to break the mosaicking into
-my @files = $Frm->files;
-
-# Do we need to make intermediate mosaics?
-my $intermosaic = 0;
-# Array for holding intermediate mosaic tempfiles
-my @intermosaics;
-if ( @files > $maxmosfiles) {
-  # If yes, then create temp files for the intermediate mosaics
-  $intermosaic = 1;
-}
-
-# List of files to combine in final mosaic
-my @mosaiclist;
-
-# Determine if we have to make intermediate mosaics to combine later
-if ( $intermosaic ) {
-  use POSIX qw/ ceil /;
-  my $nsteps = ceil(@files/$maxmosfiles);
-  my $stepsize = ceil(@files/$nsteps);
-
-  # Create the temporary files to hold the intermediate mosaics
-  for my $j (1 .. $nsteps) {
-    my $mosfile = new ORAC::TempFile(0);
-    push (@intermosaics, $mosfile);
-  }
-
-  my $i = 0;
-  orac_print "Doing intermediate mosaics: STEP = $stepsize, NSTEPS = $nsteps\n" 
-    if $verbose;
-
-  # Additional arguments for makemos
-  $args = ($genvar) ? " genvar usevar" : "nousevar";
-  # Intermediate mosaic step
-  foreach my $outmos ( @intermosaics ) {
-    my $start = $i;
-    my $end = $start + $stepsize - 1;
-    # List of data files to combine into the current mosaic
-    my $intmp = new ORAC::TempFile;
-    print {$intmp->handle} join("\n",@files[$start..$end]);
-    
-    $Mon{ccdpack_reg}->obeyw("makemos","in=^".$intmp->file." method=$method out=".$outmos->file." $args");
-    push (@mosaiclist, $outmos->file);
-
-#debug
-#    _CALC_SKY_NOISE_ IMAGE=$outmos->file SKYMETHOD=var
-    $i = $end + 1;
-  }
-  $args = " genvar usevar";
+# Make sure we pass in self-consistent values
+if ( $makemos ) {
+  $method = (exists $_MAKE_MOSAIC_FRAME_{METHOD} &&
+	     defined $_MAKE_MOSAIC_FRAME_{METHOD}) ? 
+             lc($_MAKE_MOSAIC_FRAME_{METHOD}) : "mean"; 
 } else {
-  @mosaiclist = @files;
-  # If we're doing all of the files at once, we need to generate
-  # variances if desired
-  $args = ($genvar) ? "genvar usevar" : "nousevar";
+  $method = (exists $_MAKE_MOSAIC_FRAME_{METHOD} &&
+	     defined $_MAKE_MOSAIC_FRAME_{METHOD}) ? 
+             lc($_MAKE_MOSAIC_FRAME_{METHOD}) : "nearest"; 
 }
 
-# Create output filename, derived from first input file since this is
-# a many to one operation
-my ($in, $mosaic) = $Frm->inout('_fmos', 0);
+_MAKE_MOSAIC_ USEGRP=0 MAKEMOS=$makemos METHOD=$method VERBOSE=$verbose
 
-my $mostmp = new ORAC::TempFile;
-print {$mostmp->handle} join("\n",@mosaiclist[0..$#mosaiclist]);
-
-orac_print("Creating mosaic for frame\n");
-$Mon{ccdpack_reg}->obeyw("makemos","in=^".$mostmp->file." method=$method out=$mosaic title=FrameMosaic ".$args);
-
-#debug
-#_CALC_SKY_NOISE_ IMAGE=$mosaic SKYMETHOD=var
-# Store the final output mosaic
-$Frm->files( $mosaic );
