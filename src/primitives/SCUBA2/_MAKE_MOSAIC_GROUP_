@@ -28,13 +28,18 @@ the new frames are combined with the existing group image. If
 COADD_MODE=STACKALL the group image is recreated from all the constituent
 frames each time it is called. Default mode is 'STACKALL'.
 
+=item B<VERBOSE>
+
+Flag to denote whether to display extra information. Default is 0
+(no).
+
 =back
 
 =head1 KNOWN ISSUES
 
 Assumes the _ALIGN_ARRAYS_ primitive has been run on the input images.
 
-Some issues with the determination of group file name.
+Defining the output filename for the Group mosaic is a bit of a hack.
 
 =head1 ALGORITHMS
 
@@ -44,77 +49,55 @@ Usess CCDPACK MAKEMOS.
 
 Creates a single output group image with a suffix of '_mos'.
 
-=head1 AUTHOR
+=head1 AUTHORS
 
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>,
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2004-2005 Particle Physics and Astronomy Research
+Copyright (C) 2004-2007 Particle Physics and Astronomy Research
 Council and University of British Columbia.  All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; either version 2 of the License, or (at your option) any later
-version.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or (at
+your option) any later version.
 
-This program is distributed in the hope that it will be useful,but WITHOUT ANY
-WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
 
-You should have received a copy of the GNU General Public License along with
-this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-Place,Suite 330, Boston, MA  02111-1307, USA
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
 
 =cut
 
 my $coadd_mode = uc($_MAKE_MOSAIC_GROUP_{COADD_MODE} || 'STACKALL');
 
-if ($Grp->lastmember($Frm)) {
+# Should I be verbose (default to no)
+my $verbose = (exists $_MAKE_MOSAIC_GROUP_{VERBOSE} &&
+               defined $_MAKE_MOSAIC_GROUP_{VERBOSE}) ?
+               $_MAKE_MOSAIC_GROUP_{VERBOSE} : 0;
 
-  # if the group file does not exist we can treat this as if
-  # the coadd option is STACKALL
-  $coadd_mode = 'STACKALL' unless $Grp->file_exists;
+# Do we want to use makemos?
+my $makemos = (exists $_MAKE_MOSAIC_GROUP_{MAKEMOS} &&
+	       defined $_MAKE_MOSAIC_GROUP_{MAKEMOS}) ?
+               $_MAKE_MOSAIC_GROUP_{MAKEMOS} : 0;
 
-  # write input text file
-  my $intmp = new ORAC::TempFile;
-
-  if ($coadd_mode eq 'RUNNING') {
-    if ($Grp->file_exists) {
-      print {$intmp->handle} $Grp->file ."\n";
-
-      for my $fname ($Frm->files) {
-	print {$intmp->handle} $fname ."\n";
-      }
-    } else {
-      orac_warn "Managed to get into RUNNING average without a group file";
-    }
-
-  } elsif ($coadd_mode eq 'STACKALL') {
-    # combine all the frames from all the groups
-    for my $f ($Grp->members) {
-      for my $fname ($f->files) {
-	print {$intmp->handle} $fname ."\n";
-      }
-    }
-  } else {
-    orac_err("Unrecognized COADD_MODE ($coadd_mode).");
-    my $ORAC_STATUS = ORAC__ERROR;
-  }
-
-  my $out = $Grp->file;
-  $out .= "_mos" unless $out =~ /_mos$/; # horrible hack KLUGE
-
-  my $tmpobj = new ORAC::TempFile(0);
-  my $tmpout = $tmpobj->file;
-
-  $Mon{ccdpack_reg}->obeyw("makemos","in=^".$intmp->file." usevar nozero noscale out=$tmpout title=Group");
-
-  rename $tmpout .".sdf", $out .".sdf" 
-     or die "Error renaming temp file"; # horrible hack KLUGE
-  $Grp->file( $out );
-
+my $method; 
+# Make sure we pass in self-consistent values
+if ( $makemos ) {
+  $method = (exists $_MAKE_MOSAIC_FRAME_{METHOD} &&
+	     defined $_MAKE_MOSAIC_FRAME_{METHOD}) ? 
+             lc($_MAKE_MOSAIC_FRAME_{METHOD}) : "mean"; 
+} else {
+  $method = (exists $_MAKE_MOSAIC_FRAME_{METHOD} &&
+	     defined $_MAKE_MOSAIC_FRAME_{METHOD}) ? 
+             lc($_MAKE_MOSAIC_FRAME_{METHOD}) : "nearest"; 
 }
-#my $mytime = localtime;
-#orac_print $mytime ."\n";
+
+_MAKE_MOSAIC_ USEGRP=1 MAKEMOS=$makemos METHOD=$method COADD_MODE=$coadd_mode VERBOSE=$verbose
