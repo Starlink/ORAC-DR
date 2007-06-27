@@ -6,16 +6,32 @@ _MAKE_MOSAIC_ - Basic primitive for mosaicking images
 
 =head1 SYNOPSIS
 
- _MAKE_MOSAIC_ ...
+ _MAKE_MOSAIC_ USEGRP=1 COADD_MODE=RUNNING
+
+ _MAKE_MOSAIC_ USEGRP=0 MAKEMOS=1
 
 =head1 DESCRIPTION
 
-This primitive takes all the aligned sub-frames and mosaics them into
-a single output image. A check is made to see if the number of files
-to mosaic is greater than the maximum allowed (a value which depends
-on the version of CCDPACK installed), and if so the process is divided
-into several steps to generate intermediate mosaicked files which are
-then mosaicked at the end.
+This is the work-horse mosaicking primitive for SCUBA-2 data. It will
+create a Frame or Group mosaic depending on the specified processing
+flag. It is designed to be called from a wrapper primitive
+specifically for processing either Frame or Group objects. 
+
+The user has the choice of specifying the mosaicking application:
+either makemos (CCDPACK) or wcsmosaic (KAPPA). Generally for quick
+mosaics of similar data, the latter is used, while the former has more
+advanced image combination features.
+
+A check is made to see if the number of files to mosaic is greater
+than the maximum allowed (a value which depends on the version of
+CCDPACK or KAPPA installed), and if so the process is divided into
+several steps to generate intermediate mosaicked files which are then
+mosaicked at the end.
+
+For producing a Group mosaic, the user has the option of creating a
+running average or stacking all of the images in the Group object.
+
+Other arguments control the method used to combine the images
 
 =head1 ARGUMENTS
 
@@ -42,20 +58,32 @@ Flag to denote whether to display extra information. Default is 0
 
 =head1 KNOWN ISSUES
 
-Assumes the _ALIGN_ARRAYS_ primitive has been run on the input
-images. The check for the number of files to mosaic ($maxmos) is done
-only once, which means this primitive will fail if the number of steps
-exceeds the maximum number of files. Thus the effective limit to the
-number of files to mosaic is $maxmos**2.
+The check for the maximum number of files that can be mosaicked
+($maxmos) is done only once, which means this primitive will fail if
+the number of intermediate mosaics also exceeds the maximum number of
+files. Thus the effective limit to the number of files to mosaic is
+$maxmos**2. For the most recent versions of MAKEMOS and WCSMOSAIC,
+this amounts to 1 million files.
 
-=head1 ALGORITHMS
+=head1 EXTERNAL ALGORITHMS
 
-Uses CCDPACK MAKEMOS. This primitive is currently a very general
-implementation.
+=over 4
+
+=item Starlink applications
+
+CCDPACK MAKEMOS, KAPPA WCSMOSAIC
+
+=item Other primitives
+
+_ALIGN_ARRAYS_, _CREATE_REFERENCE_IMAGE_
+
+=back
 
 =head1 FILE SUFFIX
 
-Creates a single output image with a suffix of '_fmos'.
+Creates a single output image with a suffix of '_fmos' for Frame
+mosaics, or `_mos' for Group mosaics which is registered with the
+appropriate object.
 
 =head1 AUTHOR
 
@@ -64,7 +92,7 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2004-2005 Particle Physics and Astronomy Research
+Copyright (C) 2004-2007 Particle Physics and Astronomy Research
 Council and University of British Columbia.  All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
@@ -97,7 +125,7 @@ my $makemos = (exists $_MAKE_MOSAIC_{MAKEMOS} &&
 	       defined $_MAKE_MOSAIC_{MAKEMOS}) ?
                $_MAKE_MOSAIC_{MAKEMOS} : 0;
 
-# Check that the value of makemos is valid:
+# Check that the installed version of Kappa has WCSMOSAIC
 if ( $makemos == 0 ) {
   if (starversion_lt('kappa', 'V1.5')) {
     $makemos = 1;
@@ -115,10 +143,12 @@ my $out;
 # Write text file with list of files to align and mosaic.
 my $filelist = new ORAC::TempFile;
 my $tmpout;
+my $grpfrm;
 
 # Are we processing a Group or a Frame?
 if ( $usegrp ) {
 
+  $grpfrm = "Group";
   my $coadd_mode = uc($_MAKE_MOSAIC_{COADD_MODE} || 'RUNNING');
   # If the group file does not exist we can treat this as if
   # the coadd option is STACKALL
@@ -154,6 +184,7 @@ if ( $usegrp ) {
     $out = $tmpout->file;
   }
 } else {
+  $grpfrm = "Frame";
   orac_print "FRAME mosaic\n" if $verbose;
 
   # Write names of all files to temp file
@@ -188,12 +219,14 @@ if ( $skyalign ) {
 }
 
 
+my $mostask;
 # Done with pre-processing, now mosaic the images
 if ( $makemos ) {
   my $combine = (exists $_MAKE_MOSAIC_{COMBINE} &&
 		 defined $_MAKE_MOSAIC_{COMBINE}) ?
 		 lc($_MAKE_MOSAIC_{COMBINE}) : "median";
 
+  $mostask = "MAKEMOS";
   # Align images to a reference image: works for Frame ONLY!!!
   _ALIGN_ARRAYS_ METHOD=$method REFIMAGE=$refimage
 
@@ -205,14 +238,7 @@ if ( $makemos ) {
 
 } else {
 
-  my $grpfrm;
-  if ( $usegrp ) {
-    $grpfrm = "Group";
-  } else {
-    $grpfrm = "Frame";
-  }
-
-  orac_print "Mosaicking $grpfrm file with WCSMOSAIC\n";
+  $mostask = "WCSMOSAIC";
   my $wlim = 0.2;
 
   my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
@@ -221,6 +247,8 @@ if ( $makemos ) {
   $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
 
 }
+
+orac_print "Mosaicking $grpfrm file with $mostask\n";
 
 # HACK for renaming group output
 if ( $usegrp ) {
