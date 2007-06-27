@@ -138,6 +138,13 @@ use Sds::Tie;
 use lib $ENV{ORAC_PERL5LIB};
 use ORAC::Inst::Defn qw/ orac_determine_inst_classes /;
 
+# Boundary start time for delayed start
+# Current time must divide exactly by this number before publishing of
+# sequence numbers will start. This allows multiple QL sim tasks to
+# synchronize. We do the delay after the initial read of the files.
+my $DELAY_FACTOR = 10;
+
+
 # Buffer sizes
 # Override the outgoing message size
 $DRAMA::BUFSIZE = 500000;
@@ -259,6 +266,9 @@ my $DELAY = Dits::DeltaTime( int($drama_refresh), 1E6 * ($drama_refresh - int($d
 
 # Sequence number
 my $SEQNUM = 1;
+
+# delay the start to allow other tasks to hit the same tick
+&delay_start();
 
 # call ourselves
 DRAMA::obey $name, "UPDATE";
@@ -531,6 +541,15 @@ sub set_timestamp {
   print "Timestamp=$now\n";
   $t->PutPdl( PDL::Core::pdl( $now ) )
     if (defined $t && $status->Ok);
+}
+
+# routine to calculate how long to sleep to hit a "round number" on the clock.
+# Sleeps for that long (so DRAMA task is not responsive)
+sub delay_start {
+  my $now = Time::HiRes::time();
+  my $remainder = int($now) % $DELAY_FACTOR;
+  print "Sleeping for $remainder seconds\n";
+  return sleep( $remainder );
 }
 
 # Set the sequence number in SDS and increments it
