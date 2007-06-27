@@ -236,12 +236,12 @@ sub init {
   my $name = "oracdr_$$";
 
   # Buffer sizes
-  $DRAMA::BUFSIZE = 300000;
+  $DRAMA::BUFSIZE = 4_000_000;
 
   # Override the space for receiving parameters
   # This limits replies to 80kB
-  $DRAMA::REPLYBYTES   = 80000;
-  $DRAMA::MAXREPLIES   = 1;
+  $DRAMA::REPLYBYTES   = 150000;
+  $DRAMA::MAXREPLIES   = 4;
 
   DPerlInit( $name );
 
