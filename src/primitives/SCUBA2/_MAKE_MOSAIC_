@@ -1,0 +1,237 @@
+#! -*-perl-*-
+
+=head1 NAME
+
+_MAKE_MOSAIC_ - Basic primitive for mosaicking images
+
+=head1 SYNOPSIS
+
+ _MAKE_MOSAIC_ ...
+
+=head1 DESCRIPTION
+
+This primitive takes all the aligned sub-frames and mosaics them into
+a single output image. A check is made to see if the number of files
+to mosaic is greater than the maximum allowed (a value which depends
+on the version of CCDPACK installed), and if so the process is divided
+into several steps to generate intermediate mosaicked files which are
+then mosaicked at the end.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<METHOD>
+
+The method to be used to combine the images. In principle could be any
+value supported by MAKEMOS (see MAKEMOS documentation for further
+details). Currently, only MEAN or MEDIAN are supported. MEDIAN is the
+default.
+
+=item B<GENVAR>
+
+Flag to determine whether or not to use genvar when
+mosaicking. Default is 1 (yes),
+
+=item B<VERBOSE>
+
+Flag to denote whether to display extra information. Default is 0
+(no).
+
+=back
+
+=head1 KNOWN ISSUES
+
+Assumes the _ALIGN_ARRAYS_ primitive has been run on the input
+images. The check for the number of files to mosaic ($maxmos) is done
+only once, which means this primitive will fail if the number of steps
+exceeds the maximum number of files. Thus the effective limit to the
+number of files to mosaic is $maxmos**2.
+
+=head1 ALGORITHMS
+
+Uses CCDPACK MAKEMOS. This primitive is currently a very general
+implementation.
+
+=head1 FILE SUFFIX
+
+Creates a single output image with a suffix of '_fmos'.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>,
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2004-2005 Particle Physics and Astronomy Research
+Council and University of British Columbia.  All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307, USA
+
+=cut
+
+# Should I be verbose (default to no)
+my $verbose = (exists $_MAKE_MOSAIC_{VERBOSE} &&
+               defined $_MAKE_MOSAIC_{VERBOSE}) ?
+               $_MAKE_MOSAIC_{VERBOSE} : 0;
+
+# Are we processing Group data?
+my $usegrp = (exists $_MAKE_MOSAIC_{USEGRP} &&
+	      defined $_MAKE_MOSAIC_{USEGRP}) ?
+              $_MAKE_MOSAIC_{USEGRP} : 0;
+
+# Do we want to take advantage of what makemos can do?
+my $makemos = (exists $_MAKE_MOSAIC_{MAKEMOS} &&
+	       defined $_MAKE_MOSAIC_{MAKEMOS}) ?
+               $_MAKE_MOSAIC_{MAKEMOS} : 0;
+
+# Check that the value of makemos is valid:
+if ( $makemos == 0 ) {
+  if (starversion_lt('kappa', 'V1.5')) {
+    $makemos = 1;
+    orac_warn "Installed Kappa version does not support WCSMOSAIC, using WCSALIGN + MAKEMOS\n";
+  }
+}
+
+# Method for determining the output pixel values
+my $method = (exists $_MAKE_MOSAIC_{METHOD} &&
+	      defined $_MAKE_MOSAIC_{METHOD}) ? 
+              lc($_MAKE_MOSAIC_{METHOD}) : "nearest"; 
+
+my $in;
+my $out;
+# Write text file with list of files to align and mosaic.
+my $filelist = new ORAC::TempFile;
+my $tmpout;
+
+# Are we processing a Group or a Frame?
+if ( $usegrp ) {
+
+  my $coadd_mode = uc($_MAKE_MOSAIC_{COADD_MODE} || 'RUNNING');
+  # If the group file does not exist we can treat this as if
+  # the coadd option is STACKALL
+  $coadd_mode = 'STACKALL' unless $Grp->file_exists;
+
+  if ($coadd_mode eq 'RUNNING') {
+    if ($Grp->file_exists) {
+      print {$filelist->handle} $Grp->file ."\n";
+
+      for my $fname ($Frm->files) {
+	print {$filelist->handle} $fname ."\n";
+      }
+    } else {
+      orac_warn "Managed to get into RUNNING average without a group file";
+    }
+  } elsif ($coadd_mode eq 'STACKALL') {
+    # combine all the frames from all the groups
+    for my $f ($Grp->members) {
+      for my $fname ($f->files) {
+	print {$filelist->handle} $fname ."\n";
+      }
+    }
+  } else {
+    orac_err("Unrecognized COADD_MODE, $coadd_mode");
+    my $ORAC_STATUS = ORAC__ERROR;
+  }
+
+  orac_print "GROUP mosaic: coadd_mode = $coadd_mode\n" 
+    if $verbose;
+  # Define output file for Group images HACK
+  if ( $usegrp ) {
+    $tmpout = new ORAC::TempFile(0);
+    $out = $tmpout->file;
+  }
+} else {
+  orac_print "FRAME mosaic\n" if $verbose;
+
+  # Write names of all files to temp file
+  for my $i (1..$Frm->nfiles) {
+    print {$filelist->handle} $Frm->file($i) ."\n";
+  }
+  # Create output filename, derived from first input file
+  # since this is a many to one operation
+  ($in, $out) = $Frm->inout('_fmos', 0);
+}
+$filelist->handle->close;
+
+# Define the reference image
+my $refimage;
+my $skyalign = 0;
+if ( $skyalign ) {
+  # Output mosaic coordinate frame
+  my $celframe = (exists $_MAKE_MOSAIC_{COORD_FRAME} &&
+		  defined $_MAKE_MOSAIC_{COORD_FRAME}) ? 
+                  lc($_MAKE_MOSAIC_{COORD_FRAME}) : "equatorial"; 
+  # Set the output coordinate frame
+  _CREATE_REFERENCE_IMAGE_ FRAME=$celframe VERBOSE=1
+  $refimage = $_CREATE_REFERENCE_IMAGE_{RESULTS};
+} else {
+  # If there's a Grp file, use that
+  if ($Grp->file_exists) {
+    $refimage = $Grp->file;
+  } else {
+    # Last resort use the first file in the current Frm
+    $refimage = $Frm->file(1);
+  }
+}
+
+
+# Done with pre-processing, now mosaic the images
+if ( $makemos ) {
+  my $combine = (exists $_MAKE_MOSAIC_{COMBINE} &&
+		 defined $_MAKE_MOSAIC_{COMBINE}) ?
+		 lc($_MAKE_MOSAIC_{COMBINE}) : "median";
+
+  # Align images to a reference image: works for Frame ONLY!!!
+  _ALIGN_ARRAYS_ METHOD=$method REFIMAGE=$refimage
+
+  # Remember to deal with intermediate mosaics as well
+
+  my $args = "in=^".$filelist->file." ref=$refimage nozero noscale out=$out"
+            ." title=Mosaic";
+  $Mon{ccdpack_reg}->obeyw("makemos","$args");
+
+} else {
+
+  my $grpfrm;
+  if ( $usegrp ) {
+    $grpfrm = "Group";
+  } else {
+    $grpfrm = "Frame";
+  }
+
+  orac_print "Mosaicking $grpfrm file with WCSMOSAIC\n";
+  my $wlim = 0.2;
+
+  my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
+    "genvar=true out=$out in=^".$filelist->file;
+
+  $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
+
+}
+
+# HACK for renaming group output
+if ( $usegrp ) {
+  my $outname = $Grp->file;
+  $outname .= "_mos" unless $outname =~ /_mos$/; # horrible hack KLUGE
+
+  rename $out .".sdf", $outname .".sdf" 
+    or die "Error renaming temp file to output Group mosaic"; # horrible hack KLUGE
+
+  $Grp->file( $outname );
+} else {
+  $Frm->files( $out );
+}
+
