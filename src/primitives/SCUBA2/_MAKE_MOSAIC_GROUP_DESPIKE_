@@ -1,0 +1,162 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_MAKE_MOSAIC_GROUP_DESPIKE_ - Create a despiked group mosaic
+
+=head1 SYNOPSIS
+
+ _MAKE_MOSAIC_GROUP_DESPIKE_  COADD_MODE=RUNNING
+
+=head1 DESCRIPTION
+
+This primitive mosaics Frame images into a Group mosaic, but waits for
+a user-specified number of Frames before co-adding in order to provide
+a good variance estimator.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<NMOS>
+
+Number of Frame images to mosaic together before coadding to
+Group. Default is 10.
+
+=item B<VERBOSE>
+
+Flag to denote whether to display extra information. Default is 0
+(no).
+
+=back
+
+=head1 ALGORITHMS
+
+Uses CCDPACK MAKEMOS.
+
+=head1 FILE SUFFIX
+
+Creates a single output group image with a suffix of '_mos'.
+
+=head1 AUTHORS
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2007 the University of British Columbia.  All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
+=cut
+
+# Should I be verbose (default to no)
+my $verbose = (exists $_MAKE_MOSAIC_GROUP_DESPIKE_{VERBOSE} &&
+               defined $_MAKE_MOSAIC_GROUP_DESPIKE_{VERBOSE}) ?
+               $_MAKE_MOSAIC_GROUP_DESPIKE_{VERBOSE} : 0;
+
+# Number of Frames to mosaic for calculating a statistically-valid
+# variance
+my $nmos = (exists $_MAKE_MOSAIC_GROUP_DESPIKE_{NMOS} &&
+	    defined $_MAKE_MOSAIC_GROUP_DESPIKE_{NMOS}) ? 
+            $_MAKE_MOSAIC_GROUP_DESPIKE_{NMOS} : 5;
+
+# Retrieve the Frames in the current Group, and get the number
+my @members = $Grp->members;
+my $nFrm = @members;
+
+# Is it time to make a mosaic? Only do so every $nmos files
+if ( $nFrm % $nmos == 0 ) {
+
+  # Start and end index
+  my $start = $nFrm - $nmos;
+  my $end = $nFrm;
+
+  # List of aligned Frm files
+  my $alfrmmos = new ORAC::TempFile;
+  # Now we need to create output aligned files to go with the input files
+  my @outfiles;
+  for my $i (1..$nmos) {
+    my $outfile = new ORAC::TempFile;
+    push (@outfiles, $outfile);
+  }
+
+  # Retrieve relevant Frms for this mosaic
+  my @Frms = @members[-$nmos..-1];
+
+  # File to store list of Frm files
+  my $frmmoslist = new ORAC::TempFile;
+  for my $i (1..$nmos ) {
+    my $CurFrm = $Frms[$i-1];
+    # write file name to file
+    print {$frmmoslist->handle} $CurFrm->file . "\n";
+    my $ofile = $outfiles[$i-1];
+    print {$alfrmmos->handle} $ofile->file . "\n";
+  }
+  $frmmoslist->handle->close;
+  $alfrmmos->handle->close;
+
+  # Determine the reference image for alignment. Use the current Group
+  # file if it exists, else use the first image in the current
+  # Frame. Note: by this stage, the images will probably be aligned in a
+  # celestial frame.
+  my $refimage;
+  if ($Grp->file_exists) {
+    $refimage = $Grp->file;
+  } else {
+    $refimage = $Frm->file(1);
+  }
+
+  # Retrieve the Group filename - make sure it ends in _mos
+  my $outname = $Grp->file;
+  $outname .= "_mos" unless $outname =~ /_mos$/; # horrible hack KLUGE
+
+  # Use wcsalign to align the files
+  my $args = "ref=$refimage lbnd=! ubnd=! out=^".$alfrmmos->file
+    ." in=^".$frmmoslist->file;
+  $Mon{kappa_mon}->obeyw("wcsalign","$args");
+
+  # Now they are aligned, call makemos to make a pseudo-Grp mosaic,
+  # generating variance. 
+  my $alignmos = new ORAC::TempFile; # Output aligned mosaic
+  $args = "in=^".$alfrmmos->file." genvar nousevar method=sigma sigmas=4.0 out="
+    .$alignmos->file;
+  $Mon{ccdpack_reg}->obeyw("makemos","$args");
+
+  # Finally call makemos again to mosaic the Grp and pseudo-Grp
+  # images, using variance weighting. This step is only performed if
+  # the Group file laready exists.
+  if ( $Grp->file_exists) {
+    my $moslist = new ORAC::TempFile;
+    print {$moslist->handle} $Grp->file."\n".$alignmos->file."\n";
+
+    my $tmpout = new ORAC::TempFile;
+    my $mosaic = $tmpout->file;
+
+    $args = "in=^".$moslist->file." usevar genvar method=mean out=$mosaic";
+    $Mon{ccdpack_reg}->obeyw("makemos","$args");
+
+    rename $mosaic .".sdf", $outname .".sdf" 
+      or die "Error renaming temp file to output Group mosaic"; # horrible hack KLUGE
+  } else {
+    rename $tempmos .".sdf", $outname .".sdf" 
+      or die "Error renaming temp file to output Group mosaic"; # horrible hack KLUGE
+  }
+
+  # Store mosaic in Group
+  $Grp->file( $outname );
+}
