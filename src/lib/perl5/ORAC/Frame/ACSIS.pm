@@ -28,8 +28,15 @@ use warnings;
 use strict;
 use Carp;
 
+use ORAC::Bounds;
 use ORAC::Error qw/ :try /;
 use ORAC::Print qw/ orac_warn /;
+
+use Astro::Coords;
+use DateTime;
+use DateTime::Format::Strptime;
+use NDF qw/ :ndf :err /;
+use Starlink::AST;
 
 our $VERSION;
 
@@ -371,6 +378,65 @@ sub readhdr {
 
   return;
 
+}
+
+=item B<sync_headers>
+
+This method is used to synchronize FITS headers with information
+stored in e.g. the World Coordinate System.
+
+  $Frm->sync_headers;
+  $Frm->sync_headers( 1 );
+
+This method takes one optional parameter, the index of the file to
+sync headers for. This index starts at 1 instead of 0.
+
+This method is subclassed for ACSIS to write CADC-specific FITS
+headers for ingest into the JCMT Science Archive.
+
+=cut
+
+sub sync_headers {
+  my $self = shift;
+  my $index = 0;
+  if( @_ ) {
+    $index = shift;
+  }
+
+  $self->SUPER::sync_headers( $index );
+
+  my @files;
+  if( $index ) {
+    push @files, $self->file( $index );
+  } else {
+    @files = $self->files;
+  }
+
+  foreach my $file ( @files ) {
+
+    if( $file !~ /_(\d)+$/ ) {
+
+      # Update the bounds headers.
+      update_bounds_headers( $file );
+
+      # Read the current headers.
+      my $header = new Astro::FITS::Header::NDF( File => $file );
+      tie my %hdr, "Astro::FITS::Header::NDF", $header, tiereturnsref => 1;
+
+      # Calculate MJD-OBS and MJD-END from DATE-OBS and DATE-END.
+      my $format = "%FT%T";
+      my $parser = new DateTime::Format::Strptime( pattern => $format );
+      my $dateobs = $parser->parse_datetime( $hdr{'DATE-OBS'} );
+      $hdr{'MJD-OBS'} = $dateobs->mjd . " / MJD of start of observation";
+      my $dateend = $parser->parse_datetime( $hdr{'DATE-END'} );
+      $hdr{'MJD-END'} = $dateend->mjd . " / MJD of end of observation";
+
+      $hdr{'ASN_TYPE'} = "obs / Time-base selection criterion";
+
+      $header->writehdr( File => $file );
+
+    }
+  }
 }
 
 =item B<file_from_bits>

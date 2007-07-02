@@ -25,6 +25,7 @@ use 5.006;
 use strict;
 use warnings;
 use Carp;
+use Starlink::Versions qw/ starversion /;
 use vars qw/$VERSION/;
 
 use ORAC::Print;
@@ -158,6 +159,7 @@ sub new {
 	       IsGood => 1,
 	       NoKeepArr => [],
 	       Nsubs => undef,
+         Product => undef,
 	       RawFixedPart => undef,
 	       RawName => undef,
 	       RawSuffix => undef,
@@ -303,6 +305,10 @@ sub file {
         # Push onto file history array
         push(@{$self->intermediates}, $self->files->[$index]);
 
+        # Sync the headers. Use the $firstarg value as that's the
+        # 1-based index.
+        $self->sync_headers( $firstarg );
+
       }
     } else {
       # Since we are updating, Erase the existing file if required
@@ -316,6 +322,9 @@ sub file {
 
       # Push onto file history array
       push(@{$self->intermediates}, $self->files->[0]);
+
+      # Sync the headers of the first file.
+      $self->sync_headers(1);
 
     }
   }
@@ -379,6 +388,11 @@ sub files {
     # unset noKeep flags
     for my $i (1..scalar(@_)) {
       $self->nokeep( $i, 0);
+    }
+
+    # Sync the headers.
+    for my $i ( 1..scalar( @_ ) ) {
+      $self->sync_headers( $i );
     }
 
   }
@@ -591,6 +605,25 @@ sub nsubs {
   return $self->{Nsubs};
 }
 
+=item B<product>
+
+Set or return the "product" of the current Frame object.
+
+  $self->product( 'Baselined cube' );
+  $product = $self->product;
+
+A "product" is a description of what the current Frame actually
+is. For example, in an imaging pipeline this might be
+"dark-subtracted" or "flat-fielded".
+
+=cut
+
+sub product {
+  my $self = shift;
+  if( @_ ) { $self->{Product} = shift; };
+  return $self->{Product};
+}
+
 # Method to return/set the filename of the raw data
 # Initially this is the same as {File}
 
@@ -756,6 +789,64 @@ sub recipe {
 sub tags {
   my $self = shift;
   return $self->{Tags};
+}
+
+=item B<sync_headers>
+
+This method is used to synchronize FITS headers with information
+stored in e.g. the World Coordinate System.
+
+  $Frm->sync_headers;
+  $Frm->sync_headers(1);
+
+This method takes one optional parameter, the index of the file to
+sync headers for. This index starts at 1 instead of 0.
+
+=cut
+
+sub sync_headers {
+  my $self = shift;
+
+  my $index = 0;
+
+  if( @_ ) {
+    $index = shift;
+  }
+
+  my @files;
+
+  if( $index ) {
+    push @files, $self->file( $index );
+  } else {
+    @files = $self->files;
+  }
+
+  foreach my $file ( @files ) {
+
+    if( $file !~ /_(\d)+$/ ) {
+
+      my $header = new Astro::FITS::Header::NDF( File => $file );
+      tie my %hdr, "Astro::FITS::Header::NDF", $header, tiereturnsref => 1;
+
+      # Insert the pipeline version.
+      $hdr{'PIPEVERS'} = "$VERSION / Pipeline version";
+
+      # Insert the algorithm engine version.
+#      $hdr{'ENGVERS'} = starversion('starlink') . " / Algorithm engine version";
+      $hdr{'ENGVERS'} = "1 / Algorithm engine version";
+
+      # Insert the PRODUCT header. This comes from the $self->product
+      # method. If the return value from this is undefined, do not
+      # insert the header.
+      my $product = $self->product;
+      if( defined( $product ) ) {
+        $hdr{'PRODUCT'} = "$product / Pipeline product";
+      }
+
+      $header->writehdr( File => $file );
+
+    }
+  }
 }
 
 =item B<wcs>
@@ -1590,12 +1681,15 @@ $Id$
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 Frossie Economou E<lt>frossie@jach.hawaii.eduE<gt>
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Copyright (C) 1998-2007 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
+Copyright (C) 2007 Science and Technology Facilities Council.  All
+Rights Reserved.
 
 =cut
 

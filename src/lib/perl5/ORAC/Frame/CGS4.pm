@@ -431,6 +431,14 @@ sub findnsubs {
 
 }
 
+=item B<sync_headers>
+
+=cut
+
+sub sync_headers {
+  return;
+}
+
 =back
 
 =head1 METHODS UNIQUE TO THIS CLASS
