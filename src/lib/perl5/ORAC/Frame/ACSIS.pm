@@ -34,7 +34,7 @@ use ORAC::Print qw/ orac_warn /;
 
 use Astro::Coords;
 use DateTime;
-use DateTime::Format::Strptime;
+use DateTime::Format::ISO8601;
 use NDF qw/ :ndf :err /;
 use Starlink::AST;
 
@@ -424,11 +424,9 @@ sub sync_headers {
       tie my %hdr, "Astro::FITS::Header::NDF", $header, tiereturnsref => 1;
 
       # Calculate MJD-OBS and MJD-END from DATE-OBS and DATE-END.
-      my $format = "%FT%T";
-      my $parser = new DateTime::Format::Strptime( pattern => $format );
-      my $dateobs = $parser->parse_datetime( $hdr{'DATE-OBS'} );
+      my $dateobs = DateTime::Format::ISO8601->parse_datetime( $hdr{'DATE-OBS'} );
+      my $dateend = DateTime::Format::ISO8601->parse_datetime( $hdr{'DATE-END'} );
       $hdr{'MJD-OBS'} = $dateobs->mjd . " / MJD of start of observation";
-      my $dateend = $parser->parse_datetime( $hdr{'DATE-END'} );
       $hdr{'MJD-END'} = $dateend->mjd . " / MJD of end of observation";
 
       $hdr{'ASN_TYPE'} = "obs / Time-base selection criterion";
