@@ -6,7 +6,7 @@ ORAC::Bounds - Provide spatial and/or spectral bounds for files.
 
 =head1 SYNOPSIS
 
-  use ORAC::Bounds;
+  use ORAC::Bounds qw/ retrieve_bounds update_bounds_headers /;
 
   my $bounds = retrieve_bounds( $filename );
   update_headers( $filename );
@@ -30,7 +30,7 @@ use Carp;
 
 use NDF qw/ :ndf :err /;
 
-@EXPORT = qw/ retrieve_bounds update_bounds_headers /;
+@EXPORT_OK = qw/ retrieve_bounds update_bounds_headers /;
 
 =head1 METHODS
 

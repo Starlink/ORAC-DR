@@ -28,7 +28,7 @@ use warnings;
 use strict;
 use Carp;
 
-use ORAC::Bounds;
+use ORAC::Bounds qw/ retrieve_bounds update_bounds_headers /;
 use ORAC::Error qw/ :try /;
 use ORAC::Print qw/ orac_warn /;
 
