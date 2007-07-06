@@ -28,7 +28,7 @@ use warnings;
 use strict;
 use Carp;
 
-use ORAC::Bounds qw/ retrieve_bounds update_bounds_headers /;
+use ORAC::Bounds qw/ return_bounds_header /;
 use ORAC::Error qw/ :try /;
 use ORAC::Print qw/ orac_warn /;
 
@@ -380,62 +380,67 @@ sub readhdr {
 
 }
 
-=item B<sync_headers>
+=item B<collate_headers>
 
-This method is used to synchronize FITS headers with information
-stored in e.g. the World Coordinate System.
+This method is used to collect all of the modified FITS headers for a
+given Frame object and return an updated C<Astro::FITS::Header> object
+to be used by the C<sync_headers> method.
 
-  $Frm->sync_headers;
-  $Frm->sync_headers( 1 );
+  my $header = $Frm->collate_headers( $file );
 
-This method takes one optional parameter, the index of the file to
-sync headers for. This index starts at 1 instead of 0.
-
-This method is subclassed for ACSIS to write CADC-specific FITS
-headers for ingest into the JCMT Science Archive.
+Takes one argument, the filename for which the header will be
+returned.
 
 =cut
 
-sub sync_headers {
+sub collate_headers {
   my $self = shift;
-  my $index = 0;
-  if( @_ ) {
-    $index = shift;
-  }
+  my $file = shift;
 
-  $self->SUPER::sync_headers( $index );
+  return unless defined( $file );
+  if( $file !~ /\.sdf$/ ) { $file .= ".sdf"; }
+  return unless -e $file;
 
-  my @files;
-  if( $index ) {
-    push @files, $self->file( $index );
-  } else {
-    @files = $self->files;
-  }
+  my $header = $self->SUPER::collate_headers( $file );
+  tie my %hdr, "Astro::FITS::Header::NDF", $header, tiereturnsref => 1;
 
-  foreach my $file ( @files ) {
+  my $bounds_header = return_bounds_header( $file );
+  my $merged;
+  my @different;
 
-    if( $file !~ /_(\d)+$/ ) {
+  ( $merged, @different ) = $header->merge_primary( $bounds_header );
 
-      # Update the bounds headers.
-      update_bounds_headers( $file );
-
-      # Read the current headers.
-      my $header = new Astro::FITS::Header::NDF( File => $file );
-      tie my %hdr, "Astro::FITS::Header::NDF", $header, tiereturnsref => 1;
-
-      # Calculate MJD-OBS and MJD-END from DATE-OBS and DATE-END.
-      my $dateobs = DateTime::Format::ISO8601->parse_datetime( $hdr{'DATE-OBS'} );
-      my $dateend = DateTime::Format::ISO8601->parse_datetime( $hdr{'DATE-END'} );
-      $hdr{'MJD-OBS'} = $dateobs->mjd . " / MJD of start of observation";
-      $hdr{'MJD-END'} = $dateend->mjd . " / MJD of end of observation";
-
-      $hdr{'ASN_TYPE'} = "obs / Time-base selection criterion";
-
-      $header->writehdr( File => $file );
-
+  foreach my $diff ( @different ) {
+    foreach my $card ( $diff->allitems ) {
+      $merged->append( $card );
     }
   }
+  $header = $merged;
+
+  # Calculate MJD-OBS and MJD-END from DATE-OBS and DATE-END.
+  my $dateobs = DateTime::Format::ISO8601->parse_datetime( $hdr{'DATE-OBS'} );
+  my $dateend = DateTime::Format::ISO8601->parse_datetime( $hdr{'DATE-END'} );
+  my $mjdobs = new Astro::FITS::Header::Item( Keyword => 'MJD-OBS',
+                                              Value   => $dateobs->mjd,
+                                              Comment => 'MJD of start of observation',
+                                              Type    => 'FLOAT' );
+  my $mjdend = new Astro::FITS::Header::Item( Keyword => 'MJD-END',
+                                              Value   => $dateend->mjd,
+                                              Comment => 'MJD of end of observation',
+                                              Type    => 'FLOAT' );
+  $header->append( $mjdobs );
+  $header->append( $mjdend );
+
+  # Set the ASN_TYPE header.
+  my $asntype = new Astro::FITS::Header::Item( Keyword => 'ASN_TYPE',
+                                               Value   => 'obs',
+                                               Comment => 'Time-based selection criterion',
+                                               Type    => 'STRING' );
+  $header->append( $asntype );
+
+  return $header;
 }
+
 
 =item B<file_from_bits>
 
@@ -592,7 +597,34 @@ sub number {
   return $number;
 }
 
+=back
+
+=head2 Accessors
+
 =over 4
+
+=item B<allow_header_sync>
+
+Whether or not to allow automatic header synchronization when the
+Frame is updated via either the C<file> or C<files> method.
+
+  $Frm->allow_header_sync( 1 );
+
+For ACSIS, defaults to true (1).
+
+=cut
+
+sub allow_header_sync {
+  my $self;
+
+  if( ! defined( $self->{AllowHeaderSync} ) ) {
+    $self->{AllowHeaderSync} = 1;
+  }
+
+  if( @_ ) { $self->{AllowHeaderSync} = shift; }
+
+  return $self->{AllowHeaderSync};
+}
 
 =back
 

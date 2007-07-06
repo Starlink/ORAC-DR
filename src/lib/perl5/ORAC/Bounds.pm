@@ -30,7 +30,7 @@ use Carp;
 
 use NDF qw/ :ndf :err /;
 
-@EXPORT_OK = qw/ retrieve_bounds update_bounds_headers /;
+@EXPORT_OK = qw/ retrieve_bounds return_bounds_header update_bounds_headers /;
 
 =head1 METHODS
 
@@ -277,6 +277,162 @@ sub retrieve_bounds {
 
 }
 
+=item B<return_bounds_header>
+
+This function creates an C<Astro::FITS::Header> object which describes
+the bounds of the observation in question.
+
+  $header = return_bounds_header( $file );
+
+The file must be an NDF. The '.sdf' extension need not be present.
+
+The following mappings from the keys listed in the retrieve_bounds()
+function are made:
+
+=over 4
+
+=item reference -> OBSRA, OBSDEC
+
+=item bottom_left -> OBSRABL, OBSDECBL
+
+=item bottom_right -> OBSRABR, OBSDECBR
+
+=item top_left -> OBSRATL, OBSDECTL
+
+=item top_right -> OBSRATR, OBSDECTR
+
+=item freq_img_lo -> FRQIMGLO
+
+=item freq_img_hi -> FRQIMGHI
+
+=item freq_sig_lo -> FRQSIGLO
+
+=item freq_sig_hi -> FRQSIGHI
+
+=back
+
+If any of the headers already exist, they will be overwritten.
+
+=cut
+
+sub return_bounds_header {
+  my $filename = shift;
+
+  return if ! defined $filename;
+
+  if( $filename !~ /\.sdf$/ ) { $filename .= ".sdf"; }
+
+  my $header;
+
+  if( -e $filename ) {
+
+    # Read the current header.
+    $header = new Astro::FITS::Header::NDF( File => $filename );
+
+    # Retrieve the bounds.
+    my $bounds = retrieve_bounds( $filename );
+
+    # Create  if the specific values are defined.
+    if( defined( $bounds->{'reference'} ) ) {
+      my $item = new Astro::FITS::Header::Item( Keyword => 'OBSRA',
+                                                Value   => $bounds->{'reference'}->ra( format => 'deg' ),
+                                                Comment => '[deg] Reference RA coordinate',
+                                                Type    => 'FLOAT' );
+      $header->append( $item );
+
+      $item = new Astro::FITS::Header::Item( Keyword => 'OBSDEC',
+                                             Value   => $bounds->{'reference'}->dec( format => 'deg' ),
+                                             Comment => '[deg] Reference Dec coordinate',
+                                             Type    => 'FLOAT' );
+      $header->append( $item );
+    }
+    if( defined( $bounds->{'bottom_left'} ) ) {
+      my $item = new Astro::FITS::Header::Item( Keyword => 'OBSRABL',
+                                                Value   => $bounds->{'bottom_left'}->ra( format => 'deg' ),
+                                                Comment => '[deg] Bottom left RA coordinate',
+                                                Type    => 'FLOAT' );
+      $header->append( $item );
+
+      $item = new Astro::FITS::Header::Item( Keyword => 'OBSDECBL',
+                                             Value   => $bounds->{'bottom_left'}->dec( format => 'deg' ),
+                                             Comment => '[deg] Bottom left Dec coordinate',
+                                             Type    => 'FLOAT' );
+      $header->append( $item );
+    }
+    if( defined( $bounds->{'top_left'} ) ) {
+      my $item = new Astro::FITS::Header::Item( Keyword => 'OBSRATL',
+                                                Value   => $bounds->{'top_left'}->ra( format => 'deg' ),
+                                                Comment => '[deg] Top left RA coordinate',
+                                                Type    => 'FLOAT' );
+      $header->append( $item );
+
+      $item = new Astro::FITS::Header::Item( Keyword => 'OBSDECTL',
+                                             Value   => $bounds->{'top_left'}->dec( format => 'deg' ),
+                                             Comment => '[deg] Top left Dec coordinate',
+                                             Type    => 'FLOAT' );
+      $header->append( $item );
+    }
+    if( defined( $bounds->{'bottom_right'} ) ) {
+      my $item = new Astro::FITS::Header::Item( Keyword => 'OBSRABR',
+                                                Value   => $bounds->{'bottom_right'}->ra( format => 'deg' ),
+                                                Comment => '[deg] Bottom right RA coordinate',
+                                                Type    => 'FLOAT' );
+      $header->append( $item );
+
+      $item = new Astro::FITS::Header::Item( Keyword => 'OBSDECBR',
+                                             Value   => $bounds->{'bottom_right'}->dec( format => 'deg' ),
+                                             Comment => '[deg] Bottom right Dec coordinate',
+                                             Type    => 'FLOAT' );
+      $header->append( $item );
+    }
+    if( defined( $bounds->{'top_right'} ) ) {
+      my $item = new Astro::FITS::Header::Item( Keyword => 'OBSRATR',
+                                                Value   => $bounds->{'top_right'}->ra( format => 'deg' ),
+                                                Comment => '[deg] Top right RA coordinate',
+                                                Type    => 'FLOAT' );
+      $header->append( $item );
+
+      $item = new Astro::FITS::Header::Item( Keyword => 'OBSDECTR',
+                                             Value   => $bounds->{'top_right'}->dec( format => 'deg' ),
+                                             Comment => '[deg] Top right Dec coordinate',
+                                             Type    => 'FLOAT' );
+      $header->append( $item );
+    }
+    if( defined( $bounds->{'freq_sig_lo'} ) ) {
+      my $item = new Astro::FITS::Header::Item( Keyword => 'FRQSIGLO',
+                                                Value   => $bounds->{'freq_sig_lo'},
+                                                Comment => '[GHz] Lower frequency bound, signal sideband',
+                                                Type    => 'FLOAT' );
+      $header->append( $item );
+    }
+    if( defined( $bounds->{'freq_sig_hi'} ) ) {
+      my $item = new Astro::FITS::Header::Item( Keyword => 'FRQSIGHI',
+                                                Value   => $bounds->{'freq_sig_hi'},
+                                                Comment => '[GHz] Upper frequency bound, signal sideband',
+                                                Type    => 'FLOAT' );
+      $header->append( $item );
+    }
+    if( defined( $bounds->{'freq_img_lo'} ) ) {
+      my $item = new Astro::FITS::Header::Item( Keyword => 'FRQIMGLO',
+                                                Value   => $bounds->{'freq_img_lo'},
+                                                Comment => '[GHz] Lower frequency bound, image sideband',
+                                                Type    => 'FLOAT' );
+      $header->append( $item );
+    }
+    if( defined( $bounds->{'freq_img_hi'} ) ) {
+      my $item = new Astro::FITS::Header::Item( Keyword => 'FRQIMGHI',
+                                                Value   => $bounds->{'freq_img_hi'},
+                                                Comment => '[GHz] Upper frequency bound, image sideband',
+                                                Type    => 'FLOAT' );
+      $header->append( $item );
+    }
+
+  }
+
+  return $header;
+
+}
+
 =item B<update_bounds_headers>
 
 This function sets FITS headers in the file describing the bounds of
@@ -319,55 +475,9 @@ the corresponding headers will not be written to the file.
 sub update_bounds_headers {
   my $filename = shift;
 
-  return if ! defined $filename;
-
-  if( $filename !~ /\.sdf$/ ) { $filename .= ".sdf"; }
-
-  if( -e $filename ) {
-
-    # Read the current header.
-    my $header = new Astro::FITS::Header::NDF( File => $filename );
-    tie my %hdr, "Astro::FITS::Header::NDF", $header, tiereturnsref => 1;
-
-    # Retrieve the bounds.
-    my $bounds = retrieve_bounds( $filename );
-
-    # And write the headers if the specific values are defined.
-    if( defined( $bounds->{'reference'} ) ) {
-      $hdr{'OBSRA'}  = $bounds->{'reference'}->ra( format => 'deg' )  . " / [deg] Reference RA coordinate";
-      $hdr{'OBSDEC'} = $bounds->{'reference'}->dec( format => 'deg' ) . " / [deg] Reference Dec coordinate";
-    }
-    if( defined( $bounds->{'bottom_left'} ) ) {
-      $hdr{'OBSRABL'}  = $bounds->{'bottom_left'}->ra( format => 'deg' )  . " / [deg] Bottom left RA coordinate";
-      $hdr{'OBSDECBL'} = $bounds->{'bottom_left'}->dec( format => 'deg' ) . " / [deg] Bottom left Dec coordinate";
-    }
-    if( defined( $bounds->{'top_left'} ) ) {
-      $hdr{'OBSRATL'}  = $bounds->{'top_left'}->ra( format => 'deg' )  . " / [deg] Top left RA coordinate";
-      $hdr{'OBSDECTL'} = $bounds->{'top_left'}->dec( format => 'deg' ) . " / [deg] Top left Dec coordinate";
-    }
-    if( defined( $bounds->{'bottom_right'} ) ) {
-      $hdr{'OBSRABR'}  = $bounds->{'bottom_right'}->ra( format => 'deg' )  . " / [deg] Bottom right RA coordinate";
-      $hdr{'OBSDECBR'} = $bounds->{'bottom_right'}->dec( format => 'deg' ) . " / [deg] Bottom right Dec coordinate";
-    }
-    if( defined( $bounds->{'top_right'} ) ) {
-      $hdr{'OBSRATR'}  = $bounds->{'top_right'}->ra( format => 'deg' )  . " / [deg] Top right RA coordinate";
-      $hdr{'OBSDECTR'} = $bounds->{'top_right'}->dec( format => 'deg' ) . " / [deg] Top right Dec coordinate";
-    }
-    if( defined( $bounds->{'freq_sig_lo'} ) ) {
-      $hdr{'FRQSIGLO'} = $bounds->{'freq_sig_lo'};
-    }
-    if( defined( $bounds->{'freq_sig_hi'} ) ) {
-      $hdr{'FRQSIGHI'} = $bounds->{'freq_sig_hi'};
-    }
-    if( defined( $bounds->{'freq_img_lo'} ) ) {
-      $hdr{'FRQIMGLO'} = $bounds->{'freq_img_lo'};
-    }
-    if( defined( $bounds->{'freq_img_hi'} ) ) {
-      $hdr{'FRQIMGHI'} = $bounds->{'freq_img_hi'};
-    }
-
+  my $header = return_bounds_header( $filename );
+  if( defined( $header ) ) {
     $header->writehdr( File => $filename );
-
   }
 }
 

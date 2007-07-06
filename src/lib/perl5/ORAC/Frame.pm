@@ -151,6 +151,7 @@ sub new {
   # Define the initial state plus include any hash information
   # from a sub-class
   my $frame = {
+               AllowHeaderSync => 0,
 	       Files => [],
 	       Format => undef,
 	       Group => undef,
@@ -221,6 +222,24 @@ The following methods are available for accessing the
 #
 # With args they set the values
 # Without args they only retrieve values
+
+=item B<allow_header_sync>
+
+Whether or not to allow automatic header synchronization when the
+Frame is updated via either the C<file> or C<files> method.
+
+  $Frm->allow_header_sync( 1 );
+  my $allow = $Frm->allow_header_sync;
+
+Defaults to false (0).
+
+=cut
+
+sub allow_header_sync {
+  my $self;
+  if( @_ ) { $self->{AllowHeaderSync} = shift; }
+  return $self->{AllowHeaderSync};
+}
 
 =item B<file>
 
@@ -791,6 +810,56 @@ sub tags {
   return $self->{Tags};
 }
 
+=item B<collate_headers>
+
+This method is used to collect all of the modified FITS headers for a
+given Frame object and return an updated C<Astro::FITS::Header> object
+to be used by the C<sync_headers> method.
+
+  my $header = $Frm->collate_headers( $file );
+
+Takes one argument, the filename for which the header will be
+returned.
+
+=cut
+
+sub collate_headers {
+  my $self = shift;
+  my $file = shift;
+
+  return unless defined( $file );
+  if( $file !~ /\.sdf$/ ) { $file .= ".sdf"; }
+  return unless -e $file;
+
+  my $header = new Astro::FITS::Header::NDF( File => $file );
+
+  # Update the version headers.
+  my $pipevers = new Astro::FITS::Header::Item( Keyword => 'PIPEVERS',
+                                                Value   => $VERSION,
+                                                Comment => 'Pipeline version',
+                                                Type    => 'STRING' );
+  my $engvers = new Astro::FITS::Header::Item( Keyword => 'ENGVERS',
+                                               Value   => 1,
+                                               Comment => 'Algorithm engine version',
+                                               Type    => 'STRING' );
+  $header->append( $pipevers );
+  $header->append( $engvers );
+
+  # Insert the PRODUCT header. This comes from the $self->product
+  # method. If the return value from this method is undefined, do not
+  # insert the header.
+  my $product = $self->product;
+  if( defined( $product ) ) {
+    my $prod = new Astro::FITS::Header::Item( Keyword => 'PRODUCT',
+                                              Value   => $product,
+                                              Comment => 'Pipeline product',
+                                              Type    => 'STRING' );
+    $header->append( $prod );
+  }
+
+  return $header;
+}
+
 =item B<sync_headers>
 
 This method is used to synchronize FITS headers with information
@@ -802,10 +871,15 @@ stored in e.g. the World Coordinate System.
 This method takes one optional parameter, the index of the file to
 sync headers for. This index starts at 1 instead of 0.
 
+Headers are only synced if the value returned by C<allow_header_sync>
+is true.
+
 =cut
 
 sub sync_headers {
   my $self = shift;
+
+  return unless $self->allow_header_sync;
 
   my $index = 0;
 
@@ -825,23 +899,7 @@ sub sync_headers {
 
     if( $file !~ /_(\d)+$/ ) {
 
-      my $header = new Astro::FITS::Header::NDF( File => $file );
-      tie my %hdr, "Astro::FITS::Header::NDF", $header, tiereturnsref => 1;
-
-      # Insert the pipeline version.
-      $hdr{'PIPEVERS'} = "$VERSION / Pipeline version";
-
-      # Insert the algorithm engine version.
-#      $hdr{'ENGVERS'} = starversion('starlink') . " / Algorithm engine version";
-      $hdr{'ENGVERS'} = "1 / Algorithm engine version";
-
-      # Insert the PRODUCT header. This comes from the $self->product
-      # method. If the return value from this is undefined, do not
-      # insert the header.
-      my $product = $self->product;
-      if( defined( $product ) ) {
-        $hdr{'PRODUCT'} = "$product / Pipeline product";
-      }
+      my $header = $self->collate_headers( $file );
 
       $header->writehdr( File => $file );
 
