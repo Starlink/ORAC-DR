@@ -236,7 +236,7 @@ Defaults to false (0).
 =cut
 
 sub allow_header_sync {
-  my $self;
+  my $self = shift;
   if( @_ ) { $self->{AllowHeaderSync} = shift; }
   return $self->{AllowHeaderSync};
 }
