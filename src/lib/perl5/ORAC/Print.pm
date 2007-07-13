@@ -226,7 +226,7 @@ sub orac_warnp {
   my $prt = __curr_obj;
   my $current = $prt->warpre;
   $prt->warpre( $PREFIX );
-  orac_print( @_ );
+  orac_warn( @_ );
   $prt->warpre( $current );
 }
 
@@ -243,7 +243,7 @@ sub orac_errp {
   my $prt = __curr_obj;
   my $current = $prt->errpre;
   $prt->errpre( $PREFIX );
-  orac_print( @_ );
+  orac_err( @_ );
   $prt->errpre( $current );
 }
 
