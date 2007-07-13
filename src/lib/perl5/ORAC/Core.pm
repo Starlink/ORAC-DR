@@ -620,7 +620,8 @@ sub orac_print_configuration {
 	print $logfh "ORAC-DR logfile - created on " . scalar(gmtime) ." UT\n";
 	print $logfh "\nORAC Environment:\n\n";
 	print $logfh "\tInstrument : $ENV{ORAC_INSTRUMENT}\n";
-	print $logfh "\tInput  Dir : $ENV{ORAC_DATA_IN}\n";
+	print $logfh "\tInput  Dir : ".(defined $ENV{ORAC_DATA_IN} ?
+					$ENV{ORAC_DATA_IN} : "<undefined>")."\n";
 	print $logfh "\tOutput Dir : $ENV{ORAC_DATA_OUT}\n";
 	print $logfh "\tCalibration: ".(defined $ENV{ORAC_DATA_CAL} ?
 					$ENV{ORAC_DATA_CAL} : "<undefined>")."\n";
@@ -1143,7 +1144,7 @@ Batch mode can be turned on with the -batch switch.
 
 sub orac_main_data_loop {
 
-  croak 'Usage: orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume, $opt_skip, $opt_debug,s $loop, $frameclass, $groupclass, $instrument, $Mon, $Cal, \@obs, $Display, $orac_prt, $ORAC_MESSAGE, $CURRENT_RECIPE, \@PRIMITIVE_LIST, $CURRENT_PRIMITIVE, $Override_Recipe )'
+  croak 'Usage: orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume, $opt_skip, $opt_debug, $loop, $frameclass, $groupclass, $instrument, $Mon, $Cal, \@obs, $Display, $orac_prt, $ORAC_MESSAGE, $CURRENT_RECIPE, \@PRIMITIVE_LIST, $CURRENT_PRIMITIVE, $Override_Recipe )'
     unless scalar(@_) == 19;
 
   # Read the argument list
