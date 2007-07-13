@@ -167,103 +167,109 @@ orac_print " Determining size of output cube...";
 
 $Mon{'smurf_mon'}->obeyw( "makecube", "$params" );
 
+orac_print "done.\n";
+
 # Check to see if we would have a sparse cube. If so, we don't have to
 # go through this song and dance.
 my ( $ORAC_STATUS, $sparse ) = $Mon{'smurf_mon'}->get( "makecube", "sparse" );
 $Frm->uhdr( "SPARSE_CUBE", ( uc( $sparse ) eq 'TRUE' ) );
 
-# Get output bounds, but only if we don't have a sparse cube.
-if( ! $Frm->uhdr( "SPARSE_CUBE" ) ) {
-  ( $ORAC_STATUS, my @lbnd ) = $Mon{'smurf_mon'}->get( "makecube", "lbound" );
-  ( $ORAC_STATUS, my @ubnd ) = $Mon{'smurf_mon'}->get( "makecube", "ubound" );
-  ( $ORAC_STATUS, my @flbnd ) = $Mon{'smurf_mon'}->get( "makecube", "flbnd" );
-  ( $ORAC_STATUS, my @fubnd ) = $Mon{'smurf_mon'}->get( "makecube", "fubnd" );
+if( uc( $sparse ) eq 'TRUE' && $pointing ) {
+
+  orac_throw "Pointing observation resulted in sparse cube. Possible problem with observation.\n";
+
+}
+
+if( uc( $sparse ) eq 'TRUE' ) {
+
+  # We have a sparse cube, so resample to a 1-arcsecond pixel scale.
+  orac_warn "Sparse cube would have resulted. Determining size of output cube for 1-arcsecond pixel scale...\n";
+
+  $params .= " pixsize=1 crota=0";
+  $Mon{'smurf_mon'}->obeyw( "makecube", "$params" );
+
+}
+
+# Get output bounds.
+
+( $ORAC_STATUS, my @lbnd ) = $Mon{'smurf_mon'}->get( "makecube", "lbound" );
+( $ORAC_STATUS, my @ubnd ) = $Mon{'smurf_mon'}->get( "makecube", "ubound" );
+( $ORAC_STATUS, my @flbnd ) = $Mon{'smurf_mon'}->get( "makecube", "flbnd" );
+( $ORAC_STATUS, my @fubnd ) = $Mon{'smurf_mon'}->get( "makecube", "fubnd" );
 
 # And grid parameters to speed up next call
-  ($ORAC_STATUS, my @pixsize ) = $Mon{'smurf_mon'}->get( "makecube", 'pixsize' );
-  ($ORAC_STATUS, my $crota )   = $Mon{'smurf_mon'}->get( "makecube", 'crota' );
+($ORAC_STATUS, my @pixsize ) = $Mon{'smurf_mon'}->get( "makecube", 'pixsize' );
+($ORAC_STATUS, my $crota )   = $Mon{'smurf_mon'}->get( "makecube", 'crota' );
 
-  orac_print "done.\n";
-
-  my $x_length = abs( $ubnd[0] - $lbnd[0] + 1 );
-  my $y_length = abs( $ubnd[1] - $lbnd[1] + 1 );
-  my $f_length = abs( $ubnd[2] - $lbnd[2] + 1 );
-  my $f_range = abs( $fubnd[2] - $flbnd[2] );
+my $x_length = abs( $ubnd[0] - $lbnd[0] + 1 );
+my $y_length = abs( $ubnd[1] - $lbnd[1] + 1 );
+my $f_length = abs( $ubnd[2] - $lbnd[2] + 1 );
+my $f_range = abs( $fubnd[2] - $flbnd[2] );
 
 # Calculate the maximum number of available frequency channels.
-  my $max_freq_chan = int( $maxsize / ( $x_length * $y_length * $bytes_per_pixel ) );
+my $max_freq_chan = int( $maxsize / ( $x_length * $y_length * $bytes_per_pixel ) );
 
 # If the maximum number of available frequency channels is less than
 # the number in the output cube, then we need to tell MAKECUBE to
 # restrict the frequency bounds.
-  if( $max_freq_chan < $f_length ) {
+if( $max_freq_chan < $f_length ) {
 
-    my $ratio = $max_freq_chan / $f_length;
+  my $ratio = $max_freq_chan / $f_length;
 
   # We need to remove ( 1 - $ratio ) * $f_range / 2 from each end.
-    my $upper = $fubnd[2] - ( 1 - $ratio ) * $f_range / 2;
-    my $lower = $flbnd[2] + ( 1 - $ratio ) * $f_range / 2;
+  my $upper = $fubnd[2] - ( 1 - $ratio ) * $f_range / 2;
+  my $lower = $flbnd[2] + ( 1 - $ratio ) * $f_range / 2;
 
   # Get the units of the frequency axis.
-    $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$files[0] fullframe" );
-    ( $ORAC_STATUS, my $funit ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "funit" );
+  $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$files[0] fullframe" );
+  ( $ORAC_STATUS, my $funit ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "funit" );
 
   # Tell the user what's going on.
-    orac_print " Running MAKECUBE to create full cube would result in a file too large\n  for this computer to handle.\n";
-    orac_print " Frequency range would have been ";
-    orac_print sprintf( "%.3f to %.3f %s.\n", $flbnd[2], $fubnd[2], $funit );
-    orac_print " Restricting frequency range to ";
-    orac_print sprintf( "%.3f to %.3f %s.\n", $lower, $upper, $funit );
+  orac_print " Running MAKECUBE to create full cube would result in a file too large\n  for this computer to handle.\n";
+  orac_print " Frequency range would have been ";
+  orac_print sprintf( "%.3f to %.3f %s.\n", $flbnd[2], $fubnd[2], $funit );
+  orac_print " Restricting frequency range to ";
+  orac_print sprintf( "%.3f to %.3f %s.\n", $lower, $upper, $funit );
 
   # If it's LSB, swap them around.
-    if( $lsb ) {
-      ( $upper, $lower ) = ( $lower, $upper );
-    }
-
-    $params = "specbounds='$lower,$upper' ";
-
-    # Set the Frame header SPECTRAL_TRIMMED appropriately.
-    $Frm->uhdr( "SPECTRAL_TRIMMED", 1 );
-
-  } else {
-
-    $Frm->uhdr( "SPECTRAL_TRIMMED", 0 );
-
-    $params = "";
-
+  if( $lsb ) {
+    ( $upper, $lower ) = ( $lower, $upper );
   }
+
+  $params = "specbounds='$lower,$upper' ";
+
+  # Set the Frame header SPECTRAL_TRIMMED appropriately.
+  $Frm->uhdr( "SPECTRAL_TRIMMED", 1 );
+
+} else {
+
+  $Frm->uhdr( "SPECTRAL_TRIMMED", 0 );
+
+  $params = "";
+
+}
 
 # Set up the parameters to MAKECUBE. (use hints from previous call)
-# Autogrid is required because without it the pixel grid is not positioned
-# in an optimal way. (and the fractional pixel shift is not stored in an output
-# parameter at present).
-  $params .= "in='^" . $inlist->file . "' out=$out autogrid crota=$crota spread=$spread";
+# Autogrid is required because without it the pixel grid is not
+# positioned in an optimal way. (and the fractional pixel shift is not
+# stored in an output parameter at present).
+$params .= "in='^" . $inlist->file . "' out=$out autogrid crota=$crota spread=$spread";
 
-  if (@pixsize > 1) {
-    $params .= " pixsize=[".join(",",@pixsize) ."] ";
-  } else {
-    $params .= " pixsize=$pixsize[0] ";
-  }
+if (@pixsize > 1) {
+  $params .= " pixsize=[".join(",",@pixsize) ."] ";
+} else {
+  $params .= " pixsize=$pixsize[0] ";
+}
 
 # If the data units are Kelvin, then we can generate a variance from
 # TSYS. Otherwise, we can generate a variance from the spread of the
 # input data values contributing to each output pixel.
-  $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$files[0] fullframe" );
-  ( $ORAC_STATUS, my $units ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
-  if( $units eq 'K' ) {
-    $params .= " genvar=tsys inweight=true";
-  } else {
-    $params .= " genvar=spread inweight=false";
-  }
-
+$Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$files[0] fullframe" );
+( $ORAC_STATUS, my $units ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
+if( $units eq 'K' ) {
+  $params .= " genvar=tsys inweight=true";
 } else {
-
-  # We have a sparse cube, so set up the parameters differently.
-  $params = "in='^" . $inlist->file . "' out=$out autogrid spread=$spread";
-
-  # Send a warning.
-  orac_warn "Sparse cube will be created in $out.\n";
-
+  $params .= " genvar=spread inweight=false";
 }
 
 if( $pointing && $instap ne '' ) {
