@@ -503,6 +503,12 @@ sub orac_determine_inst_classes {
     $calclass = "ORAC::Calib";
     $instclass = "ORAC::Inst::ACSIS_QL";
 
+  } elsif ( $inst eq 'PICARD' ) {
+    $groupclass = "ORAC::Group::PICARD";
+    $frameclass = "ORAC::Frame::PICARD";
+    $calclass = "ORAC::Calib";
+    $instclass = "ORAC::Inst::PICARD";
+
   } else {
     orac_err("Instrument $inst is not currently supported in ORAC-DR\n");
     return ();
@@ -705,6 +711,8 @@ sub orac_determine_recipe_search_path {
     push( @path, File::Spec->catdir( $imaging_root, "SPEX" ) );
     push( @path, $imaging_root );
 
+  } elsif ($inst eq 'PICARD') {
+    push( @path, File::Spec->catdir( $root, "PICARD" ) );
   } else {
     croak "Recipes: Unrecognised instrument: $inst\n";
   }
@@ -1110,8 +1118,11 @@ sub orac_determine_initial_algorithm_engines {
   } elsif ($inst eq 'SPEX') {
 
     @AlgEng = qw/ kappa_mon ndfpack_mon ccdpack_red ccdpack_reg
-      ccdpack_res /
+		  ccdpack_res /;
 
+  } elsif ($inst eq 'PICARD') {
+
+    @AlgEng = qw/ kappa_mon ndfpack_mon /;
 
   } else {
     croak "Do not know which engines are required for instrument $inst";

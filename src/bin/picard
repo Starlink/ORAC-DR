@@ -1,0 +1,308 @@
+#!/usr/local/bin/perl
+
+=head1 NAME
+
+picard - Pipeline for Combining and Analayzing Reduced Data
+
+=head1 SYNOPSIS
+
+ picard RECIPE  *.sdf
+ picard -log sfx RECIPE  *.sdf
+ 
+=head1 DESCRIPTION
+
+C<picard> is a tool for analyzing and combining a batch of astronomical
+data files that have previously had their instrumental signatures removed
+(for example by running ORAC-DR on the raw data).
+
+=head1 ARGUMENTS
+
+The following arguments are required:
+
+=over 4
+
+=item * RECIPE
+
+The recipe argument must be provided and will be applied to all input files.
+If that recipe includes a combination step, then it is up to the recipe
+to decide which input files can be combined.
+
+=item * FILES
+
+All remaining arguments refer to input filenames. Note that all files
+must be in NDF format. Currently there is no automated conversion from
+FITS.
+
+=back
+
+=head1 OPTIONS
+
+=head2 General Options
+
+=over 4
+
+=item B<-help>
+
+Lists help text summarizing the command usage.
+
+=item B<-version>
+
+Prints out the pipeline global version information.
+
+=item B<-man>
+
+Displays the full manual page.
+
+=item B<-debug>
+
+Enable debugging output.
+
+=item B<-verbose>
+
+Enable verbose output from algorithm engines.
+
+=back
+
+=head2 Windows and Output
+
+=over 4
+
+=item B<-log>
+
+Similar to ORAC-DR, this option controls whether the pipeline output is logged
+to the terminal screen (s), log file (f) or to an X-window (x).
+
+=back
+
+=cut
+
+use strict;
+use warnings;
+use vars qw/ $VERSION /;
+use File::Spec;
+
+BEGIN {
+    if (!$ENV{ORAC_PERL5LIB} && exists $ENV{ORAC_DIR}) {
+	$ENV{ORAC_PERL5LIB} = File::Spec->catdir($ENV{ORAC_DIR}, "lib","perl5");
+    }
+}
+use lib $ENV{ORAC_PERL5LIB};
+
+
+$| = 1; # unbuffered
+
+BEGIN {
+    # Version handling. Do this early to minimize overhead when just
+    # printing out a version (and the risk of a mis-installed pipeline)
+    use ORAC::Version;
+    $VERSION = ORAC::Version->getVersion;
+    foreach (@ARGV) {
+	if (/^-vers/) {
+	    print "PICARD: Data reduction pipeline version $VERSION\n";
+	    exit;
+	}
+    }
+}
+
+# ORAC Classes
+use ORAC::Error qw/:try/;
+use ORAC::Basic;
+use ORAC::Core;
+use ORAC::Print;
+use ORAC::Frame::PICARD;
+use ORAC::Group::PICARD;
+use ORAC::Inst::Defn qw/ orac_determine_inst_classes /;
+
+# Option handling
+use Pod::Usage;
+use Getopt::Long;
+
+# Store arguments for later reporting
+my @ORAC_ARGS = @ARGV;
+
+# Set the application name
+ORAC::Version->setApp( "PICARD" );
+
+# Configure prefix for print messages
+orac_print_prefix( "Picard Says: " );
+
+# Parse arguments
+my %opt;
+my $status = GetOptions(
+    "log=s" => \$opt{log},
+    "man"   => \$opt{man},
+    "help"  => \$opt{help},
+    "debug" => \$opt{debug},
+    "verbose" => \$opt{verbose},
+    );
+
+pod2usage(1) if $opt{help};
+pod2usage(-exitstatus => 0, -verbose => 2) if $opt{man};
+
+# Sanity check since we can assume a Starlink requirement
+orac_exit_normally("No starlink login") unless exists $ENV{"STAR_LOGIN"}; 
+
+# Register signal handlers
+$SIG{INT} = \&orac_exit_abnormally;
+$SIG{PIPE} = 'IGNORE';
+
+# Abort if we do not have an ORAC_DIR
+orac_exit_normally("ORAC_DIR environment variable not defined. Aborting")
+  unless exists $ENV{ORAC_DIR};
+
+# Get the recipe name
+my $Recipe = shift(@ARGV);
+
+# Files to be processed
+my @Files = @ARGV;
+
+orac_exit_normally("Must provide names of files to process")
+  unless @Files;
+
+# Files are relative to the current directory and not necessarily the
+# output directory so we have to convert them to absolute path
+@Files = map { File::Spec->rel2abs( $_ ) } @Files;
+
+# Make sure we can change to the output directory
+$ENV{ORAC_DATA_OUT} = File::Spec->curdir
+  unless exists $ENV{ORAC_DATA_OUT};
+orac_chdir_output_dir();
+
+# Initialise for this "instrument" and create a basic instrument object
+my ($frameclass, $groupclass, $calclass, $instclass) =
+  orac_determine_inst_classes( 'PICARD' );
+die "Could not determine PICARD core classes"
+  unless defined $frameclass;
+
+my $InstObj = $instclass->new();
+
+# Global variables for XORAC-DR (if we ever enable it from picard)
+my $CURRENT_RECIPE = 'Initializing';
+
+# Enable the logging system
+my ( $orac_prt, $msg_prt, $msgerr_prt, $ORAC_MESSAGE, 
+     $PRIMITIVE_LIST, $CURRENT_PRIMITIVE );
+try  {
+    ( $orac_prt, $msg_prt, $msgerr_prt, $ORAC_MESSAGE, 
+      $PRIMITIVE_LIST, $CURRENT_PRIMITIVE ) = 
+	  orac_print_config_with_defaults(\$CURRENT_RECIPE,
+					  \@ORAC_ARGS, %opt );
+} catch ORAC::Error::FatalError with {
+    my $Error = shift;
+    orac_exit_normally( "$Error" );
+} catch ORAC::Error::UserAbort with {
+    my $Error = shift;
+    orac_exit_normally();
+} otherwise {
+    # this should sucessfully catch croaks
+    my $Error = shift;
+    orac_exit_normally( "$Error" );
+};
+$CURRENT_RECIPE = "Starting pipeline";
+
+# Messaging pre-launch
+my $Mon;
+try {
+  orac_message_launch( 0, $opt{verbose} );
+  $Mon = orac_start_algorithm_engines( 0, $InstObj );
+} catch ORAC::Error::UserAbort with {
+  my $Error = shift;
+  orac_exit_normally();
+} otherwise {
+  my $Error = shift;
+  orac_exit_normally( "$Error" );
+}
+
+######################## I N I T  D I S P L A Y #############################
+
+# start the display
+my $Display = orac_start_display( $opt{nodisplay} );
+
+######################## C A L I B R A T I O N ##############################
+
+# Calibration frame overrides
+my $Cal = orac_calib_override( $calclass );
+
+# Enter the main data processing loop. We use the standard
+# ORAC-DR infrastructure but we configure it to suit picard usage
+try {
+  orac_main_data_loop( 1,     # Batch mode 
+		       undef, # No need for UT
+		       0,     # Do not resume group processing
+		       0,     # No skipping requirement
+		       $opt{debug},
+		       "orac_loop_file", # We already know the files
+		       $frameclass,
+		       $groupclass,
+		       "PICARD", # Instrument name
+		       $Mon,
+		       $Cal,
+		       \@Files,  # The files to be processed
+		       $Display,
+		       $orac_prt,
+		       $ORAC_MESSAGE,
+		       \$CURRENT_RECIPE,
+		       $PRIMITIVE_LIST,
+		       $CURRENT_PRIMITIVE,
+		       $Recipe
+    );
+} catch ORAC::Error::UserAbort with {
+   my $Error = shift;
+   ORAC::Error->flush;
+   orac_exit_normally();
+} otherwise {
+   my $Error = shift;
+   ORAC::Error->flush;
+   orac_err( "$Error" );
+   ORAC::Event->mainloop("Tk");
+   orac_exit_normally();
+};
+
+=head1 ENVIRONMENT
+
+Picard requires the following environment variables
+
+=over 4
+
+=item B<ORAC_DIR>
+
+Location of the pipeline root directory. Same definition as used for
+ORAC-DR.
+
+=item B<ORAC_PERL5LIB>
+
+Location of the pipeline infrastructure. Will default to
+$ORAC_DIR/lib/perl5 if it is not set explicitly.
+
+=item B<ORAC_DATA_OUT>
+
+Can be used to control where the output files go. If this variable
+is not defined files are written to the current working directory.
+
+=back
+
+=head1 AUTHORS
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2007 Science and Technology Facilities Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
+
+=cut
+
+1;
