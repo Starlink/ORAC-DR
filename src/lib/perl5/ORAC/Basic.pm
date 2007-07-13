@@ -163,8 +163,12 @@ sub orac_exit_normally {
 
   # Flush the error stack if all we have is an ORAC::Error::UserAbort
 
-  orac_print ("\nOrac says: $message","red") if $message ne '';
-  orac_print ("\nOrac says: Goodbye\n","red");
+  if ($message ne '') {
+    orac_print ( "\n" );
+    orac_printp ("$message","red");
+  }
+  orac_print ( "\n" );
+  orac_printp ("Goodbye\n","red");
   exit;
 }
 
@@ -194,7 +198,7 @@ sub orac_exit_abnormally {
     for (1..10) {print STDOUT "\a"; select undef,undef,undef,0.2}
   }
 
-  die "\n\nAborting from ORACDR - $signal recieved";
+  die "\n\nAborting from ".ORAC::Version->getApp." - $signal recieved";
 
 }
 

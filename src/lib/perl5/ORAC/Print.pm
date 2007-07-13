@@ -61,7 +61,8 @@ $DEBUG = 0;
 
 require Exporter;
 @ISA = qw/Exporter/;
-@EXPORT = qw/orac_print orac_err orac_warn orac_debug orac_read orac_throw/;
+@EXPORT = qw/orac_print orac_err orac_warn orac_debug orac_read orac_throw
+	     orac_printp orac_print_prefix orac_warnp orac_errp /;
 
 # Create a Term::ReadLine handle
 # For read on STDIN and output on STDOUT
@@ -77,6 +78,9 @@ use IO::File;
 use IO::Tee;
 use Term::ANSIColor;
 use Term::ReadLine;
+
+# Non-OO interface globals
+my $PREFIX;
 
 =head1 NON-OO INTERFACE
 
@@ -180,7 +184,68 @@ sub orac_read {
   return $RDHDL->readline($prompt);
 }
 
+=item B<orac_print_prefix>
 
+Set the prefix to be used by C<orac_print> in all output.
+
+  orac_prefix( "ORAC-DR says:" );
+
+=cut
+
+sub orac_print_prefix {
+  $PREFIX = shift;
+}
+
+=item B<orac_printp>
+
+As for C<orac_print> but includes the prefix that has been specified
+by using C<orac_print_prefix>.
+
+ orac_printp( $text, $color );
+
+=cut
+
+sub orac_printp {
+  my $prt = __curr_obj;
+  my $current = $prt->outpre;
+  $prt->outpre( $PREFIX );
+  orac_print( @_ );
+  $prt->outpre( $current );
+}
+
+=item B<orac_warnp>
+
+As for C<orac_warn> but includes the prefix that has been specified
+by using C<orac_print_prefix>.
+
+ orac_warnp( $text, $color );
+
+=cut
+
+sub orac_warnp {
+  my $prt = __curr_obj;
+  my $current = $prt->warpre;
+  $prt->warpre( $PREFIX );
+  orac_print( @_ );
+  $prt->warpre( $current );
+}
+
+=item B<orac_errp>
+
+As for C<orac_err> but includes the prefix that has been specified
+by using C<orac_print_prefix>.
+
+ orac_errp( $text, $color );
+
+=cut
+
+sub orac_errp {
+  my $prt = __curr_obj;
+  my $current = $prt->errpre;
+  $prt->errpre( $PREFIX );
+  orac_print( @_ );
+  $prt->errpre( $current );
+}
 
 
 # __curr_obj returns the current Print object or creates a new

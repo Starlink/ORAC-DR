@@ -2,17 +2,23 @@ package ORAC::Version;
 
 =head1 NAME
 
-ORAC::Version - Obtain ORAC-DR version number
+ORAC::Version - Obtain ORAC-DR version number and associated information
 
 =head1 SYNOPSIS
 
   use ORAC::Version;
   $VERSION = ORAC::Version->getVersion();
 
+  ORAC::Version->setApp( "ORAC-DR" );
+  $appname = ORAC::Version->getApp();
+
 =head1 DESCRIPTION
 
 This module is used to determine the version number suitable for
 the complete data reduction pipeline, including recipes.
+
+It can also be used to set global application properties such as
+the name of the application.
 
 =cut
 
@@ -50,6 +56,7 @@ change during runtime).
 
 =cut
 
+{
 my $CACHE_VER;
 sub getVersion {
   my $class = shift;
@@ -82,9 +89,38 @@ sub getVersion {
       $version = $return;
     }
   }
+  chomp($version) if defined $version;
   $CACHE_VER = $version;
   return $version;
 }
+}
+
+=item B<setApp>
+
+Sets the global application name. Defaults to "ORAC-DR".
+
+  ORAC::Version->setApp( "App" );
+
+=item B<getApp>
+
+Returns the global application name.
+
+  $app = ORAC::Version->getApp();
+
+=cut
+
+{
+my $APP = "ORAC-DR";
+sub setApp {
+  my $class = shift;
+  $APP = shift;
+}
+sub getApp {
+  return $APP;
+}
+}
+
+
 
 =back
 

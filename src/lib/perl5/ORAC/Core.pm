@@ -53,6 +53,7 @@ use Carp;
 # ORAC modules
 use ORAC::Basic;                        # Helper routines
 use ORAC::Print;
+use ORAC::Version;
 use ORAC::Recipe;
 use ORAC::Loop;                         # Loop control
 use ORAC::Event;                        # Tk event 
@@ -465,6 +466,14 @@ sub orac_print_configuration {
   my $ORAC_ARGS = shift;
   my %opt = @_;
 
+  my $app = ORAC::Version->getApp;
+  my $debug_prefix = "ORACDR";
+  my $logfile_prefix = "oracdr";
+  if ($app eq 'PICARD') {
+    $debug_prefix = "PICARD";
+    $logfile_prefix = "picard";
+  }
+
   # First thing we need to do is create an ORAC::Print object
   # that we can fiddle with to adjust the output filehandles
   $msg_prt  = new ORAC::Print; # For message system
@@ -474,7 +483,7 @@ sub orac_print_configuration {
   # Debug info
   if ($opt{debug}) {
     $orac_prt->debugmsg(1);
-    my $fh = new IO::File(">ORACDR.DEBUG") || do {
+    my $fh = new IO::File(">".$debug_prefix.".DEBUG") || do {
       orac_err "Error opening debug logfile in ORAC_DATA_OUT: $!";
       throw ORAC::Error::FatalError("Error opening debug logfile",
                                     ORAC__FATAL);
@@ -589,7 +598,7 @@ sub orac_print_configuration {
 
       # this is the log file for $ORAC_DATA_OUT
       if ($log_options =~ /f/) {
-	my $logfh = new IO::File(">.oracdr_$$.log") || do {
+	my $logfh = new IO::File(">.".$logfile_prefix."_$$.log") || do {
 	  orac_err "Error opening ORAC-DR logfile in ORAC_DATA_OUT: $!\n";
 	  throw ORAC::Error::FatalError("Error opening logfile",
 					ORAC__FATAL);
@@ -603,11 +612,12 @@ sub orac_print_configuration {
 	my $host = (split( /\./, hostname))[0]; # only want first part of host
 	my $user = ($ENV{USER} ? "_$ENV{USER}" : "" );
 	my $inst = lc($ENV{ORAC_INSTRUMENT});
-	my $fname = sprintf("oracdr_%04d%02d%02d_%02d%02d%02d_%s_%s%s.log",
+	my $fname = sprintf($logfile_prefix.
+			    "_%04d%02d%02d_%02d%02d%02d_%s_%s%s.log",
 			    $time[5]+1900, $time[4]+1,$time[3],
 			    $time[2],$time[1],$time[0],$inst, $host, $user);
 	my $fh = new IO::File("> ". File::Spec->catfile($ENV{ORAC_LOGDIR},$fname)) || do {
-	  orac_err "Error opening ORAC-DR logfile in log dir $ENV{ORAC_LOGDIR}/$fname: $!\n";
+	  orac_err "Error opening $app logfile in log dir $ENV{ORAC_LOGDIR}/$fname: $!\n";
 	  throw ORAC::Error::FatalError("Error opening secondary log file", ORAC__FATAL);
 	};
 	push(@logfiles, $fh);
@@ -617,8 +627,9 @@ sub orac_print_configuration {
 	$logfh->autoflush(1);
 
 	# Write a header
-	print $logfh "ORAC-DR logfile - created on " . scalar(gmtime) ." UT\n";
+	print $logfh "$app logfile - created on " . scalar(gmtime) ." UT\n";
 	print $logfh "\nORAC Environment:\n\n";
+	print $logfh "\tPipeline Version: ". ORAC::Version->getVersion ."\n";
 	print $logfh "\tInstrument : $ENV{ORAC_INSTRUMENT}\n";
 	print $logfh "\tInput  Dir : ".(defined $ENV{ORAC_DATA_IN} ?
 					$ENV{ORAC_DATA_IN} : "<undefined>")."\n";
@@ -646,7 +657,7 @@ sub orac_print_configuration {
 	};
 	print $logfh "\tSystem description: $uname\n";
 
-	print $logfh "\nORAC-DR Arguments: ".join(" ",@$ORAC_ARGS)."\n";
+	print $logfh "\n$app Arguments: ".join(" ",@$ORAC_ARGS)."\n";
 
 	print $logfh "\nSession:\n\n";
       }
@@ -763,7 +774,7 @@ sub orac_start_algorithm_engines {
 
     # start algorithm engines
     #
-    orac_print("Orac says: Pre-starting mandatory monoliths...","blue");
+    orac_printp("Pre-starting mandatory monoliths...","blue");
     #
 
     # Pre-launch. This will fail if we can not contact the
@@ -780,7 +791,7 @@ sub orac_start_algorithm_engines {
 
   } else {
 
-    orac_print("Orac says: No algorithm engines will be started (-noeng option)\n","blue");
+    orac_printp("No algorithm engines will be started (-noeng option)\n","blue");
 
   }
 
@@ -813,7 +824,7 @@ sub orac_start_display {
   my $Display;
 
   if ($opt_nodisplay) {
-     orac_print("Orac says: No display will be used\n","blue");
+     orac_printp("No display will be used\n","blue");
   } else {
 
     orac_print ("Setting up display infrastructure (display tools will not be started until necessary)...", 'blue');
@@ -890,7 +901,7 @@ sub orac_calib_override {
         my $noupdate = $key."noupdate";
         $Cal->$noupdate(1) if $Cal->can($noupdate);
 
-        orac_print("ORAC says: Calibration $key set to $calibs{$key}\n",
+        orac_printp("Calibration $key set to $calibs{$key}\n",
                    "blue");
 
       } else {        # complain but continue
