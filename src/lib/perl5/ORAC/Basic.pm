@@ -36,7 +36,7 @@ use ORAC::Constants qw/:status/;
 @ISA = qw(Exporter);
 
 @EXPORT = qw/  orac_setup_display orac_exit_normally orac_exit_abnormally 
-  orac_force_abspath
+  orac_force_abspath orac_chdir_output_dir
   /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
@@ -196,6 +196,38 @@ sub orac_exit_abnormally {
 
   die "\n\nAborting from ORACDR - $signal recieved";
 
+}
+
+
+=item B<orac_chdir_output_dir>
+
+Change to the output directory. If that fails, exit the pipeline.
+
+  orac_chdir_output_dir();
+
+Default output directory is controlled by ORAC_DATA_OUT environment
+variable.
+
+=cut
+
+sub orac_chdir_output_dir {
+  # Force absolute path
+  orac_force_abspath();
+
+  if (exists $ENV{ORAC_DATA_OUT}) {
+
+    # change to output  dir
+    chdir($ENV{ORAC_DATA_OUT}) ||
+      do { 
+	orac_err("Could not change directory to ORAC_DATA_OUT: $!");
+	orac_exit_normally();
+      };
+
+  } else {
+    orac_err("ORAC_DATA_OUT environment variable not set. Aborting\n");
+    orac_exit_normally();
+  }
+  return;
 }
 
 =back
