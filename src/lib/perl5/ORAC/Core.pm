@@ -76,9 +76,10 @@ use vars qw/$VERSION @EXPORT @ISA /;
 @ISA = qw/Exporter/;
 @EXPORT = qw/orac_process_frame orac_store_frm_in_correct_grp 
              orac_print_configuration orac_message_launch
-       orac_start_algorithm_engines orac_start_display
-       orac_calib_override orac_process_argument_list 
-       orac_main_data_loop orac_parse_files /;
+	     orac_start_algorithm_engines orac_start_display
+	     orac_calib_override orac_process_argument_list 
+	     orac_main_data_loop orac_parse_files
+	     orac_print_config_with_defaults /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
@@ -366,6 +367,73 @@ sub orac_process_frame {
 
 }
 
+=item B<orac_print_config_with_defaults>
+
+Wrapper for the C<orac_print_configuration> function, but including
+code to configure default logging switches before configuring the
+print system.
+
+  my ($orac_prt, $msg_prt, $err_prt, $ORAC_MESSAGE,
+      $PRIMITIVE_LIST, $CURRENT_PRIMITIVE) =
+        orac_print_config_with_defaults( \$CURRENT_RECIPE,
+                                         \@ARGV, %cloptions );
+
+@ARGV contains the command line arguments for the log file. %cloptions
+are the command line switches. C<-debug>, C<-showcurrent> and C<-log>
+are used by this routine. C<-log> will be read and modified to provide
+default behaviour.
+
+=cut
+
+sub orac_print_config_with_defaults {
+  my $CURRENT_RECIPE = shift;
+  my $ORAC_ARGS = shift;
+  my %opt = @_;
+
+  my $log_options;
+
+  # check for log options, we need to start the Tk early if using X Windows
+  if (defined $opt{log}) 
+    {
+      # User is overriding logging options, lower case the options
+      $log_options = lc($opt{log});
+    } 
+  else 
+    {
+      # fx is default if we have a DISPLAY variable
+      if (defined $ENV{DISPLAY}) 
+	{
+	  $log_options = 'fx';     # We use X Windows
+	} 
+      else 
+	{
+	  $log_options = 'sf';      # We use the console (icky!)
+	}
+    }
+
+  my ($MW, $win_str);
+  if ( $log_options =~ /x/ )
+    {
+      eval "use Tk; use Tk::TextANSIColor;";
+      unless( $@ ) {
+	$MW = MainWindow->new();
+	ORAC::Event->register("Tk"=>$MW); 
+	$win_str = "Tk";
+      } else {
+	$log_options = 'sf';
+      }     
+    }
+
+  # Now do the configuration
+  return orac_print_configuration( $log_options, 
+				   $win_str, 
+				   \$CURRENT_RECIPE,
+				   $ORAC_ARGS,
+				   %opt
+				 );
+}
+
+
 =item B<orac_print_configuration>
 
 This routine setups the orac print system, it takes the $opt_debug and
@@ -554,7 +622,8 @@ sub orac_print_configuration {
 	print $logfh "\tInstrument : $ENV{ORAC_INSTRUMENT}\n";
 	print $logfh "\tInput  Dir : $ENV{ORAC_DATA_IN}\n";
 	print $logfh "\tOutput Dir : $ENV{ORAC_DATA_OUT}\n";
-	print $logfh "\tCalibration: $ENV{ORAC_DATA_CAL}\n";
+	print $logfh "\tCalibration: ".(defined $ENV{ORAC_DATA_CAL} ?
+					$ENV{ORAC_DATA_CAL} : "<undefined>")."\n";
 	print $logfh "\tORAC   Dir : $ENV{ORAC_DIR}\n";
 	print $logfh "\tORAC   Lib : $ENV{ORAC_PERL5LIB}\n";
 	my $rdir = ($ENV{ORAC_RECIPE_DIR} || '<undefined>');
@@ -1015,7 +1084,7 @@ sub orac_process_argument_list {
 This routine handles the main data processing 
 
   orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume, 
-                       $opt_skip, $opt_debug, $opt_showcurrent, $loop, 
+                       $opt_skip, $opt_debug, $loop, 
            $frameclass, $groupclass, 
            $instrument, $Mon, $Cal, \@obs, 
            $Display, $orac_prt,
