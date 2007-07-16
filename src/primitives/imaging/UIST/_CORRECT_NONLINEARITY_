@@ -1,0 +1,146 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CORRECT_NONLINEARITY_ -- Corrects the raw data for detector
+non-linearity.
+
+=head1 DESCRIPTION
+
+This primitive is used to correct UIST frames for non-linearity. It
+only operates on data taken after 20070501.
+
+UIST's detector is non-linear in different ways depending on the
+waveform used and the observed count.
+
+For non-thermal data, the correction factor is:
+
+ y = ( 2.0E-14 * x^3 ) - ( 2.0E-10 * x^2 ) + ( 7.0E-6 * x ) + 0.9866
+
+for data where the counts are between 750 and 20000 ADUs.
+
+For thermal data, the correction factors are:
+
+ y = ( -5.0E-17 * x^5 ) + ( 6.0E-13 * x^4 ) - ( 3.0E-9 * x^3 ) +
+     ( 6.0E-6 * x^2 ) - ( 0.0062 * x ) + 4.0559
+
+for data where the counts are between 280 and 3000 ADUs, and:
+
+ y = ( -1.0E-22 * x^5 ) + ( 1.0E-17 * x^4 ) - ( 5.0E-13 * x^3 ) +
+     ( 9.0E-9 * x^2 ) - ( 7.0E-5 * x ) + 1.1624
+
+for data where the counts are between 3000 and 30000 ADUs.
+
+This correction factor is multiplied by the observed count to obtain
+the corrected value in each pixel.
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for UIST in imaging mode.
+
+=back
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2007 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+# Only run if the UT date is after 20070501.
+if( $Frm->uhdr( "ORACTIME" ) > 20070501 ) {
+
+  # Set the filenames.
+  my( $in, $out ) = $Frm->inout( "_nl" );
+
+  # Check the waveform. If it's thermal, then we have to use a separate
+  # set of correction equations.
+  my $waveform = $Frm->hdr( "WAVEFORM" );
+
+  if( $waveform =~ /thermal/i ) {
+
+    orac_print "Applying thermal non-linearity corrections.\n";
+
+    # Thermal waveform.
+    my $lo1 = 280;
+    my $hi1 = 3000;
+    my $lo2 = 3000;
+    my $hi2 = 30000;
+
+    # Threshold the first batch into a temporary file.
+    my $tmp1 = new ORAC::TempFile;
+    my $tmp1file = $tmp1->file;
+    my $params = "in=$in out=$tmp1file thrlo=$lo1 thrhi=$hi1 newlo=bad newhi=bad";
+    $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+    # Run MATHS.
+    my $tmp2 = new ORAC::TempFile;
+    my $tmp2file = $tmp2->file;
+    $params = "exp='IA*(-1.0*(5.0E-17*IA**5)+(6.0E-13*IA**4)-(3.0E-9*IA**3)+(6.0E-6*IA*IA)-(0.0062*IA)+4.0559)' out=$tmp2file ia=$tmp1file";
+    $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+
+    # Now the second range.
+    my $tmp3 = new ORAC::TempFile;
+    my $tmp3file = $tmp3->file;
+    $params = "in=$in out=$tmp3file thrlo=$lo2 thrhi=$hi2 newlo=bad newhi=bad";
+    $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+    # Run MATHS again.
+    my $tmp4 = new ORAC::TempFile;
+    my $tmp4file = $tmp4->file;
+    $params = "exp='IA*(-1.0*(1.0E-22*IA**5)+(1.0E-17*IA**4)-(5.0E-13*IA**3)+(9.0E-9*IA*IA)-(7.0E-5*IA)+1.1624)' out=$tmp4file ia=$tmp3file";
+    $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+
+    # Paste them onto the input file.
+    $params = "in=$in p1=$tmp2file p2=$tmp4file out=$out";
+    $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+
+  } else {
+
+    orac_print "Applying non-thermal non-linearity corrections.\n";
+
+    # Non-thermal waveform.
+    my $lo = 750;
+    my $hi = 20000;
+
+    # Threshold into a temporary file.
+    my $tmp1 = new ORAC::TempFile;
+    my $tmp1file = $tmp1->file;
+    my $params = "in=$in out=$tmp1file thrlo=$lo thrhi=$hi newlo=bad newhi=bad";
+    $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+    # Run MATHS on the thresholded file.
+    my $tmp2 = new ORAC::TempFile;
+    my $tmp2file = $tmp2->file;
+    $params = "exp='IA*((2.0E-14*IA**3)-(2.0E-10*IA*IA)+(7.0E-6*IA)+0.9866)' out=$tmp2file ia=$tmp1file";
+    $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+
+    # Paste this output onto the input file. The bad pixels in the
+    # linearity-corrected file will allow the base image's pixels to
+    # come through.
+    $params = "in=$in p1=$tmp2file out=$out";
+    $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+
+  }
+
+  # Report to the user.
+  orac_print "$in to $out: Detector non-linearity corrected.\n";
+
+  # Update the frame object.
+  $Frm->file( $out );
+
+  # Display, if necessary.
+  _DISPLAY_FRAME_IMAGE_
+
+  # Tidy-up output.
+  orac_print "\n";
+
+}
