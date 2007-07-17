@@ -85,31 +85,34 @@ my $verbose = (exists $_REMOVE_DC_SKY_{VERBOSE} &&
 	       defined $_REMOVE_DC_SKY_{VERBOSE}) ?
                $_REMOVE_DC_SKY_{VERBOSE} : 1;
 
-# Set the index into the returned array from _FIND_SKY_STATS_:
-# 0 = average, 1 = std deviation, 2 = mode
+# Set the histo flag
 my ($methodnum, $histo); 
 if ( $method eq "MEAN" ) {
-  $methodnum = 0;
   $histo = 0;
-} else {
-  $methodnum = 2;
+} elsif ( $method eq "MEDIAN" ) {
+  $histo = 0;
+} elsif ( $method eq "MODE" ) {
   $histo = 1;
+} else {
+  orac_err "Unknown METHOD, $method: must be MEAN, MEDIAN or MODE\n";
 }
+
 my @out;
 # Loop over files in the Frm object
 for my $i (1..$Frm->nfiles) {
 
-  _FIND_SKY_STATS_ IMAGE=$Frm->file($i) CLIP=2,2,2 VERBOSE=0 HISTO=$histo
+  # Calculate the DC sky level
+  _FIND_IMAGE_STATISTICS_ IMAGE=$Frm->file($i) CLIP=2,2,2 VERBOSE=0 HISTOGRAM=$histo
   # If the std deviation is zero then something went wrong
-  if ( $_FIND_SKY_STATS_{RESULTS}->[1] == 0.0 ) {
-    orac_warn "Invalid result from _FIND_SKY_STATS_: will not subtract the sky from current file ($Frm->file($i))\n";
+  if ( $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEAN} == 0.0 ) {
+    orac_warn "Invalid result from _FIND_IMAGE_STATISTICS_: will not subtract the sky from current file (".$Frm->file($i).")\n";
   } else {
-    my $sky = $_FIND_SKY_STATS_{RESULTS}->[$methodnum];
+    my $sky = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$method};
 
     # If we want the mode, check that the result isn't -1e9: this
     # means there were no valid pixels in the image.
-    if ( $methodnum == 2 && $sky == -1.0e9 ) {
-      orac_warn "No valid pixels in image, unable to subtract sky with method=MODE\n";
+    if ( $method eq "MODE" && $sky == -1.0e9 ) {
+      orac_warn "No valid pixels in image, unable to subtract sky with method=$method\n";
     } else {
       # Everything's OK so subtract a DC sky level. 
       # Retrieve input and output names
@@ -117,14 +120,13 @@ for my $i (1..$Frm->nfiles) {
       # Subtract the sky
       $Mon{kappa_mon}->obeyw("csub","in=$in out=$out scalar=$sky");
 
-      if ($verbose) {
-	$sky = sprintf "%12.7f", $sky;
-#	orac_print "Subtracting a constant sky level of $sky $rawunits from $in (method=$method)\n";
-	orac_print "Subtracting a constant sky level of $sky from $in (method=$method)\n";
-      }
+      $sky = sprintf "%12.7f", $sky;
+      # Store this value for logging later
+      # ####
 
-      # Update files in Frm
-#      $Frm->file($i, $out);
+      orac_print "Subtracting a constant sky level of $sky from $in (method=$method)\n" 
+	if ($verbose);
+      # Store the new sky-subtracted output file
       push(@out, $out);
     }
   }
