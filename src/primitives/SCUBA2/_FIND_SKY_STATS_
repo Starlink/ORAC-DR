@@ -44,6 +44,11 @@ A comma-separated list of up to 5 numbers specifying the clip levels
 at which to evaluate the statistics. See the documentation for KAPPA
 C<stats> for further details. Default is blank (no clipping).
 
+=item HISTAT
+
+Flag to denote whether to use the Kappa HISTAT command rather than the
+regular STATS application. Default is 1 (true).
+
 =back
 
 =head1 EXTERNAL TASKS
@@ -54,7 +59,7 @@ The following external tasks are used:
 
 =item KAPPA
 
-C<stats>, C<histogram>
+C<stats>, C<histogram>, C<histat>
 
 =back
 
@@ -117,80 +122,104 @@ my $histo = (exists $_FIND_SKY_STATS_{HISTO} &&
 	     defined $_FIND_SKY_STATS_{HISTO}) ?
              $_FIND_SKY_STATS_{HISTO} : 0;
 
+# Do we want to use KAPPA HISTAT or STATS?
+my $histat = (exists $_FIND_SKY_STATS_{HISTAT} && 
+		defined $_FIND_SKY_STATS_{HISTAT}) ?
+                $_FIND_SKY_STATS_{HISTAT} : 1;
+
 # Initialise the results array
 $_FIND_SKY_STATS_{RESULTS} = [];
 
-# Now calculate stats of the masked file to get the mean and the
-# standard deviation
-my $args = ($clip ne "") ? "clip=[$clip]" : "" ;
-$Mon{kappa_mon}->obeyw("stats","ndf=$in $args");
-
-# Retrieve the values
+# Declare useful variables
 my $ORAC_STATUS;
-($ORAC_STATUS, my $avg) = $Mon{kappa_mon}->get("stats","mean");
-($ORAC_STATUS, my $stdv) = $Mon{kappa_mon}->get("stats","sigma");
-($ORAC_STATUS, my $ngood) = $Mon{kappa_mon}->get("stats","numgood");
-($ORAC_STATUS, my $ntotal) = $Mon{kappa_mon}->get("stats","numpix");
-($ORAC_STATUS, my $nbad) = $Mon{kappa_mon}->get("stats","numbad");
-($ORAC_STATUS, my $min) = $Mon{kappa_mon}->get("stats","minimum");
-($ORAC_STATUS, my $max) = $Mon{kappa_mon}->get("stats","maximum");
+my ( $avg, $stdev, $ngood, $ntotal, $nbad, $min, $max, $median);
 
-# KAPPA stats returns sigma = 0 if anything went wrong
+if ( $histat ) {
+  # Use HISTAT to calculate statistics, returning median rather than std dev
+  $Mon{kappa_mon}->obeyw("histat","ndf=$in");
+  # Retrieve the values
+  ($ORAC_STATUS, $avg) = $Mon{kappa_mon}->get("histat","mean");
+  ($ORAC_STATUS, $median) = $Mon{kappa_mon}->get("histat","median");
+  ($ORAC_STATUS, $ngood) = $Mon{kappa_mon}->get("histat","numgood");
+  ($ORAC_STATUS, $ntotal) = $Mon{kappa_mon}->get("histat","numpix");
+  ($ORAC_STATUS, $nbad) = $Mon{kappa_mon}->get("histat","numbad");
+  ($ORAC_STATUS, $min) = $Mon{kappa_mon}->get("histat","minimum");
+  ($ORAC_STATUS, $max) = $Mon{kappa_mon}->get("histat","maximum");
+  $stdev = undef;
+} else {
+  # Now calculate stats of the masked file to get the mean and the
+  # standard deviation
+  my $args = ($clip ne "") ? "clip=[$clip]" : "" ;
+  $Mon{kappa_mon}->obeyw("stats","ndf=$in $args");
+  # Retrieve the values
+  ($ORAC_STATUS, $avg) = $Mon{kappa_mon}->get("stats","mean");
+  ($ORAC_STATUS, $stdev) = $Mon{kappa_mon}->get("stats","sigma");
+  ($ORAC_STATUS, $ngood) = $Mon{kappa_mon}->get("stats","numgood");
+  ($ORAC_STATUS, $ntotal) = $Mon{kappa_mon}->get("stats","numpix");
+  ($ORAC_STATUS, $nbad) = $Mon{kappa_mon}->get("stats","numbad");
+  ($ORAC_STATUS, $min) = $Mon{kappa_mon}->get("stats","minimum");
+  ($ORAC_STATUS, $max) = $Mon{kappa_mon}->get("stats","maximum");
+  $median = undef;
+  # Stats returns sigma = 0 if anything went wrong
+}
 
 orac_warn "All pixels in region are bad!\n" if $ngood == 0;
 my $fracgood = $ngood/$ntotal;
 
 my $mode = 0.0;
 if ( $histo ) {
-# Now use KAPPA histogram and write results to a file
-# Determine numbin: calculated from min and max to make sure that
-# the increment is more or less the same for all images
-my $delta = 1.0e-5;
-my $numbinmax = 10000;
-my $numbin = int( ($max - $min)/$delta );
-$numbin = $numbinmax if ($numbin > $numbinmax);
+  # Now use KAPPA histogram and write results to a file
+  # Determine numbin: calculated from min and max to make sure that
+  # the increment is more or less the same for all images
+  my $delta = 1.0e-5;
+  my $numbinmax = 10000;
+  my $numbin = int( ($max - $min)/$delta );
+  $numbin = $numbinmax if ($numbin > $numbinmax);
 
-# ORAC::TempFile can't be used to create a file to pass to histogram
-# but it *can* be used to generate a unique name for histogram so
-# ensure there won't be any name clashes.
-my $histfile = new ORAC::TempFile(0);
-my $histname = $histfile->file;
-undef $histfile;
-my $args = "numbin=$numbin range=! device=! logfile=".$histname;
-$Mon{kappa_mon}->obeyw("histogram","in=$in $args");
+  # ORAC::TempFile can't be used to create a file to pass to histogram
+  # but it *can* be used to generate a unique name for histogram so
+  # ensure there won't be any name clashes.
+  my $histfile = new ORAC::TempFile(0);
+  my $histname = $histfile->file;
+  undef $histfile;
+  my $args = "numbin=$numbin range=! device=! logfile=".$histname;
+  $Mon{kappa_mon}->obeyw("histogram","in=$in $args");
 
-# Now analyze results - first open log file with hist results
-open my $HISTFH, "< $histname"
-  or die "Unable to open file, $histname: $!\n";
-my (@lines, @values);
-# Read all the relevant lines, delete file when done
-while (<$HISTFH>){
-  chomp;
-  push (@lines, $_) if ($_ =~ /pixels/); # We only want lines with the word pixels in it
-}
-close $HISTFH;
-unlink $histname;
-
-# Split line on spaces and store the bounds of and the number of
-# samples in the current bin
-foreach my $line (@lines) {
-  my @tmpline = split(/\s+/,$line,6);
-  my $lineref = [ $tmpline[1], $tmpline[3], $tmpline[4] ];
-  push (@values, $lineref);
-}
-# Now find the maximum value - this is the MODE
-my $maxpix = 0;
-my $maxval = -1.0e9;
-foreach my $lineref (@values) {
-  if ($lineref->[2] > $maxpix){
-    $maxpix = $lineref->[2];
-    $maxval = 0.5*($lineref->[0] + $lineref->[1]) ;
+  # Now analyze results - first open log file with hist results
+  open my $HISTFH, "< $histname"
+    or die "Unable to open file, $histname: $!\n";
+  my (@lines, @values);
+  # Read all the relevant lines, delete file when done
+  while (<$HISTFH>){
+    chomp;
+    push (@lines, $_) if ($_ =~ /pixels/); # We only want lines with the word pixels in it
   }
-}
-$mode = $maxval;
+  close $HISTFH;
+  unlink $histname;
+
+  # Split line on spaces and store the bounds of and the number of
+  # samples in the current bin
+  foreach my $line (@lines) {
+    my @tmpline = split(/\s+/,$line,6);
+    my $lineref = [ $tmpline[1], $tmpline[3], $tmpline[4] ];
+    push (@values, $lineref);
+  }
+  # Now find the maximum value - this is the MODE
+  my $maxpix = 0;
+  my $maxval = -1.0e9;
+  foreach my $lineref (@values) {
+    if ($lineref->[2] > $maxpix){
+      $maxpix = $lineref->[2];
+      $maxval = 0.5*($lineref->[0] + $lineref->[1]) ;
+    }
+  }
+  $mode = $maxval;
 }
 
 # Store mean DC level, standard deviation and mode in the hash
-$_FIND_SKY_STATS_{RESULTS} = [ $avg, $stdv, $mode ];
+$_FIND_SKY_STATS_{RESULTS} = { MEAN => $avg, 
+			       SIGMA => $stdev, 
+			       MODE => $mode, 
+			       MEDIAN => $median };
 
 orac_print "Calculated sky statistics\n" if $verbose;
