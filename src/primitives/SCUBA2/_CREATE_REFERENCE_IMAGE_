@@ -30,7 +30,15 @@ already exist.
 The name of the chosen sky frame. May be any that AST knows about,
 e.g. EQUATORIAL, GALACTIC...
 
-Converted to upper case. Default is EQUATORIAL.
+Default is EQUATORIAL.
+
+=item PIXEL_SCALE
+
+The pixel scale for the reference image, in arcsec. It may also take
+the special values "DEFAULT" to use the internal default values,
+or "AUTO" to indicate that the pixel scale should be derived from the
+input image instead. If a value is given, the X and Y scales are set
+equal.
 
 =item VERBOSE
 
@@ -55,7 +63,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2005 University of British Columbia. All Rights Reserved.
+Copyright (C) 2005-2007 University of British Columbia. All Rights
+Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -76,6 +85,7 @@ USA
 
 # Define degrees to radians conversion factor
 use constant DEG2RAD => 1.74532925e-2;
+use constant ASEC2RAD => 4.848136811e-6;
 
 # Check for arguments...
 
@@ -87,54 +97,112 @@ my $verbose = (exists $_CREATE_REFERENCE_IMAGE_{VERBOSE} &&
 # Check for FRAME
 my $coordframe = (exists $_CREATE_REFERENCE_IMAGE_{FRAME} &&
 		  defined $_CREATE_REFERENCE_IMAGE_{FRAME}) ?
-                  uc($_CREATE_REFERENCE_IMAGE_{FRAME}) : "EQUATORIAL";
+                  uc($_CREATE_REFERENCE_IMAGE_{FRAME}) : "ICRS";
 
 # Check that it's supported
-orac_warn "Warning: unsupported Coordinate frame, $coordframe. Using default frame (EQUATORIAL)\n" 
-  unless ($coordframe eq "EQUATORIAL");
+orac_warn "Warning: unsupported Coordinate frame, $coordframe. Using default frame (ICRS)\n" 
+  unless ($coordframe eq "ICRS");
 
 # Tell the user what's going on
-orac_print "Creating reference frame: " if $verbose;
+orac_print "Creating reference image: " if $verbose;
 
-# Create the empty 1x1 pixel NDF
-my $refimage = $Frm->group."_ref"; # What is it called?
-my $imgargs = "lbound=\[1,1\] ubound=\[1,1\] mode=bl";
-$Mon{kappa_mon}->obeyw("creframe","out=$refimage ".$imgargs);
-orac_print "created blank 1x1 NDF\n" if $verbose;
+# Create the blank 3x3 pixel reference NDF
+my $refimage = $Frm->group."_ref";
+my $imgargs = "lbound=\[1,1\] ubound=\[3,3\] mode=bl";
+$Mon{kappa_mon}->obeyw("creframe","out=$refimage title=RefImage ".$imgargs);
+orac_print "create blank NDF, " if $verbose;
 
 # Get last file in current Frame for WCS info
 my $datafile = $Frm->file( $Frm->nfiles );
 
 # Calculate the pixel scale
-_GET_PIXEL_SCALE_ IMAGE=$datafile
+my $pixmethod = (exists $_CREATE_REFERENCE_IMAGE_{PIXEL_SCALE} &&
+		 defined $_CREATE_REFERENCE_IMAGE_{PIXEL_SCALE}) ?
+                 uc($_CREATE_REFERENCE_IMAGE_{PIXEL_SCALE}) : "DEFAULT";
+my ($dx, $dy) = (0.0, 0.0);
+if ( $pixmethod eq "AUTO" ) {
+  _GET_PIXEL_SCALE_ IMAGE=$datafile DERIVE=0 UNITS=ARCSEC
+  # Retrieve values in arcsec
+  ($dx, $dy) = @{ $_GET_PIXEL_SCALE_{RESULTS}};
+} elsif ( $pixmethod eq "DEFAULT" ) {
+  # Check FITS header wavelength entry
+  $dx = ($Frm->hdr('FILTER') =~ /450/) ? 3.09 : 5.8; # Should be declared somewhere else
+  $dx *= ASEC2RAD;
+  $dy = $dx;
+} else {
+  # If we're not getting the pixel scale from the image, use the value
+  # given and set the X and Y scales equal.
+  $dx = ASEC2RAD*$pixmethod;
+  $dy = $dx;
+}
 
-# Retrieve values - already in radians
-my ($dx, $dy) = @{ $_GET_PIXEL_SCALE_{RESULTS}};
-# Switch sign of dRA
-$dx = -$dx;
+# Switch sign of dRA if it's positive. Note that relies on the
+# assumption that we have a celestial sky frame.
+#$dx = -$dx if ( $dx > 0 );
 
-# Get coords of pointing centre from header
-# KLUDGE: get RA, Dec in degrees from FITS keywords in header
-my ($x0, $y0) = ($Frm->hdr->{RA}, $Frm->hdr->{DEC});
+my ($equinox, $epoch);
 
-# Convert to radians...
-$x0 *= DEG2RAD;
-$y0 *= DEG2RAD;
+# Get coords of reference pixel 
+my $args = "ndf=$datafile mode=get name=skyref";
+$Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+my ($ORAC_STATUS, $skyref) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+my ($xstr, $ystr) = split(/,/,$skyref,2);
+# Get coord system
+$args = "ndf=$datafile mode=get name=system";
+$Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+($ORAC_STATUS, my $cosys) = $Mon{ndfpack_mon}->get("wcsattrib","value");
 
-# Now correct for half-pixel offset
-$x0 -= $dx/2.0;
-$y0 -= $dy/2.0;
+# Obtain coordinates of reference image in RADIANS
+my ($x0, $y0);
+if ( $cosys eq "ICRS" || $cosys eq "GAPPT" ) {
+  # Get equinox
+  $args = "ndf=$datafile mode=get name=equinox";
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+  ($ORAC_STATUS, $equinox) = $Mon{ndfpack_mon}->get("wcsattrib","value");
 
-# FIX: How do we specify the exact coord system we want?
+  $args = "ndf=$datafile mode=get name=epoch";
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+  ($ORAC_STATUS, $epoch) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+
+  # Check value of equinox and set accordingly
+  if ( $equinox eq "2000.0" ) {
+    $equinox = "J2000";
+  } elsif ( $equinox eq "1950.0" ) {
+    $equinox = "B1950";
+  } else {
+    orac_err "Unsupported equinox, $equinox\n";
+  }
+  use Astro::Coords;
+  my $coords = new Astro::Coords( ra => $xstr, dec => $ystr, 
+				  units => 'sex', type => $equinox );
+  # Retrieve coords in radians
+  $x0 = $coords->ra( format => 'rad' );
+  $y0 = $coords->dec( format => 'rad' );
+
+  # Re-define cosys to be generically equatorial
+  $cosys = "EQUATORIAL";
+
+} elsif ( $cosys eq "GALACTIC" ) {
+  # Coords are returned in degrees so convert to radians
+  $x0 = DEG2RAD*$xstr;
+  $y0 = DEG2RAD*$ystr;
+} else {
+  orac_err "Unsupported coordinate system, $cosys\n";
+}
 
 # Add a WCS sky frame - forces pixel scale to match raw input data
-orac_print "Now adding WCS Skyframe to reference image..." if $verbose;
-my $wcsargs = "frame=pixel domain=sky frmtype=skyframe maptype=linear accept";
-my $tr = "tr=[$x0,$dx,0,$y0,0,$dy]";
+orac_print "adding WCS " if $verbose;
 
-$Mon{ndfpack_mon}->obeyw("wcsadd","ndf=$refimage $tr $wcsargs");
+# Note quoting around the pixelsize arguments
+my $wcsargs = "coords=$cosys($equinox) epoch=$epoch refcode=pixel pixelref=\[1.5,1.5\] pixelsize=\['".$dx."r', '".$dy."r'\] orient=0 positions=! projtype=gnom lon=".$x0."r lat=".$y0."r";
+$Mon{ndfpack_mon}->obeyw("setsky","ndf=$refimage $wcsargs");
+
+# Now add a FITS header, copy from the first file in the Frm.
+use Astro::FITS::Header::NDF;
+my $fitshdr = new Astro::FITS::Header::NDF( File => $Frm->file(1) );
+$fitshdr->writehdr( File => $refimage );
 
 # Store the reference image name in the RESULTS hash
 $_CREATE_REFERENCE_IMAGE_{RESULTS} = $refimage;
 
-orac_print " done. Successfully created reference image.\n" if $verbose;
+orac_print "done. Successfully created reference image.\n" if $verbose;
