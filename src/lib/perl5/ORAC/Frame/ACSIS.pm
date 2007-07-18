@@ -402,14 +402,12 @@ sub collate_headers {
   return unless -e $file;
 
   my $header = $self->SUPER::collate_headers( $file );
-  tie my %hdr, "Astro::FITS::Header::NDF", $header, tiereturnsref => 1;
 
   my $bounds_header = return_bounds_header( $file );
   my $merged;
   my @different;
 
   ( $merged, @different ) = $header->merge_primary( $bounds_header );
-
   foreach my $diff ( @different ) {
     foreach my $card ( $diff->allitems ) {
       $merged->append( $card );
@@ -418,8 +416,8 @@ sub collate_headers {
   $header = $merged;
 
   # Calculate MJD-OBS and MJD-END from DATE-OBS and DATE-END.
-  my $dateobs = DateTime::Format::ISO8601->parse_datetime( $hdr{'DATE-OBS'} );
-  my $dateend = DateTime::Format::ISO8601->parse_datetime( $hdr{'DATE-END'} );
+  my $dateobs = DateTime::Format::ISO8601->parse_datetime( $self->hdr( "DATE-OBS" ) );
+  my $dateend = DateTime::Format::ISO8601->parse_datetime( $self->hdr( "DATE-END" ) );
   my $mjdobs = new Astro::FITS::Header::Item( Keyword => 'MJD-OBS',
                                               Value   => $dateobs->mjd,
                                               Comment => 'MJD of start of observation',

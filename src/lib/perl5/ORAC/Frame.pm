@@ -831,7 +831,7 @@ sub collate_headers {
   if( $file !~ /\.sdf$/ ) { $file .= ".sdf"; }
   return unless -e $file;
 
-  my $header = new Astro::FITS::Header::NDF( File => $file );
+  my $header = new Astro::FITS::Header;
 
   # Update the version headers.
   my $pipevers = new Astro::FITS::Header::Item( Keyword => 'PIPEVERS',
@@ -899,8 +899,15 @@ sub sync_headers {
 
     if( $file !~ /_(\d)+$/ ) {
 
-      my $header = $self->collate_headers( $file );
-
+      my $newheader = $self->collate_headers( $file );
+      my $header = new Astro::FITS::Header::NDF( File => $file );
+      my ( $merged, @diff ) = $header->merge_primary( $newheader );
+      foreach my $diff( @diff ) {
+        foreach my $card ( $diff->allitems ) {
+          $merged->append( $card );
+        }
+      }
+      $header = $merged;
       $header->writehdr( File => $file );
 
     }

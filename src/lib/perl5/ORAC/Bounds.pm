@@ -327,7 +327,7 @@ sub return_bounds_header {
   if( -e $filename ) {
 
     # Read the current header.
-    $header = new Astro::FITS::Header::NDF( File => $filename );
+    $header = new Astro::FITS::Header;
 
     # Retrieve the bounds.
     my $bounds = retrieve_bounds( $filename );
