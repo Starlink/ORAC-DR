@@ -401,6 +401,10 @@ sub collate_headers {
   if( $file !~ /\.sdf$/ ) { $file .= ".sdf"; }
   return unless -e $file;
 
+  if( ! defined( $self->hdr ) || scalar( keys( %{$self->hdr} ) ) == 0 ) {
+    $self->readhdr;
+  }
+
   my $header = $self->SUPER::collate_headers( $file );
 
   my $bounds_header = return_bounds_header( $file );
