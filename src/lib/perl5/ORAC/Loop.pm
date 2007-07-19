@@ -656,7 +656,7 @@ that is updating its parameters each time new data are available.
   $Frm = orac_loop_task( $class, \@array, $skip );
 
 The array supplied to this routine is used to store the most recent
-sequence number (to prevent returning the same data file more than once).
+frame number (to prevent returning the same data file more than once).
 
 In this looping scheme the UT date and skip flags are ignored since we
 only know about the data most recently written.
@@ -680,9 +680,9 @@ sub orac_loop_task {
   }
 
   # get the reference value
-  my $refseq = shift(@$arr) || 0;
+  my $refframe = shift(@$arr) || 0;
 
-  orac_print("Checking for data set newer than sequence $refseq");
+  orac_print("Checking for data set newer than frame $refframe");
 
   # Use dots and timeouts as for the other systems
   my $timeout = 43200; # 12 hours timeout
@@ -693,12 +693,12 @@ sub orac_loop_task {
 
 
   # This is the data we have retrieved so far whilst waiting
-  # for this sequence. Indexed by sequence number and then task
+  # for this frame number. Indexed by frame number and then task
   # name.
   my %received;
 
-  # This is the sequence number we completed
-  my $wantseq;
+  # This is the frame number we completed
+  my $wantframe;
 
   # We will poll inside this loop until we get all 4 monitors
   # with newer data than the reference. This is the outer loop that allows
@@ -707,11 +707,11 @@ sub orac_loop_task {
   while ( 1 ) {
 
     # Since we know that we would like all the received parameters
-    # to have teh same SEQUENCE number and since we also can cache
-    # the value to prevent asking the same task for the same sequence
+    # to have the same FRAMENUM number and since we also can cache
+    # the value to prevent asking the same task for the same frame
     # number. We can try the tasks again if we get differing answers
     # (this will take much less than a second so should cover the case
-    # where we get half the data from one sequence and half from the next)
+    # where we get half the data from one frame and half from the next)
     # This inner while loop only triggers if we have partial data that is
     # newer since we then assume that the data will be turning up at the other
     # tasks very shortly because they are synchronized.
@@ -720,14 +720,14 @@ sub orac_loop_task {
       # by convention we are looking for a "QL" parameter in that task
       # Ask each task for data
       for my $t (@tasks) {
-	# if we already have the requested sequence from this task
-	# skip. This is a bit problematic if the sequence number 
+	# if we already have the requested frame from this task
+	# skip. This is a bit problematic if the frame number 
 	# increments in the middle of this task loop
-	next if (defined $wantseq && exists $received{$wantseq}{$t});
-	if (defined $wantseq) {
-	  orac_print "Looking at task $t for sequence $wantseq\n";
+	next if (defined $wantframe && exists $received{$wantframe}{$t});
+	if (defined $wantframe) {
+	  orac_print "Looking at task $t for frame $wantframe\n";
 	} else {
-	  orac_print "Looking for a sequence from tasks $t\n";
+	  orac_print "Looking for a frame from tasks $t\n";
 	}
 	# get the task object
 	my $tobj = $ENGINE_LAUNCH->engine( $t );
@@ -740,51 +740,51 @@ sub orac_loop_task {
 	# get the parameter
 	my $current = $tobj->get( "QL" );
 
-	my $thisseq;
-	$thisseq = $current->{SEQUENCE} if exists $current->{SEQUENCE};
+	my $thisframe;
+	$thisframe = $current->{FRAMENUM} if exists $current->{FRAMENUM};
 
-	# Is this sequence number relevant?
+	# Is this frame number relevant?
 	# No need to warn if we haven't picked anything up before.
-	if (defined $thisseq && $thisseq > $refseq) {
-	  if ($refseq > 1 && $thisseq - $refseq > 1) {
-	    orac_err "Got sequence $thisseq when expecting ".($refseq+1).
+	if (defined $thisframe && $thisframe > $refframe) {
+	  if ($refframe > 1 && $thisframe - $refframe > 1) {
+	    orac_err "Got frame $thisframe when expecting ".($refframe+1).
 	      " from task $t\n";
 	  }
 
 	  # see whether we skipped one again
-	  if (defined $wantseq && $thisseq > $wantseq) {
-	    orac_err "Sequence mismatch ($thisseq != $wantseq) so trying again\n";
+	  if (defined $wantframe && $thisframe > $wantframe) {
+	    orac_err "Frame mismatch ($thisframe != $wantframe) so trying again\n";
 
-	    # delete the earlier sequence
-	    delete $received{$wantseq};
+	    # delete the earlier frame
+	    delete $received{$wantframe};
 	  }
 
 	  # this is now the one we need
-	  $wantseq = $thisseq;
+	  $wantframe = $thisframe;
 
 	  # Store the information
-	  $received{$wantseq}{$t} = $current;
+	  $received{$wantframe}{$t} = $current;
 
 	}
 
       }
 
       # if we got no new data also skip to the outer loop because we need to pause
-      last unless defined $wantseq;
+      last unless defined $wantframe;
 
 
       # if we have everything we need skip the while loop
-      last if keys %{$received{$wantseq}} == @tasks;
+      last if keys %{$received{$wantframe}} == @tasks;
 
-      my $got = scalar( keys %{$received{$wantseq}} );
-      orac_err "Going round the task detection loop again (got $got from sequence $wantseq)\n";
+      my $got = scalar( keys %{$received{$wantframe}} );
+      orac_err "Going round the task detection loop again (got $got from frame $wantframe)\n";
     }
 
     # all timestamps are newer, so abort from the loop
     # Also make sure we update reftime
     # Have a full set of data
-    if ($wantseq && keys %{$received{$wantseq}} == @tasks) {
-      $refseq = $wantseq;
+    if ($wantframe && keys %{$received{$wantframe}} == @tasks) {
+      $refframe = $wantframe;
       last;
     }
 
@@ -818,7 +818,7 @@ sub orac_loop_task {
   my $outfmt = $Frm->format();
 
   # Local copy of relevant data to simplify source
-  my %current = %{$received{$wantseq}};
+  my %current = %{$received{$wantframe}};
 
   # we have new data detected for all tasks
   # now generate filesnames for each
@@ -895,7 +895,7 @@ sub orac_loop_task {
   $Frm->tempraw( @istemp );
 
   # Store the current reftime
-  $arr->[0] = $refseq;
+  $arr->[0] = $refframe;
 
   # return the frame object
   return $Frm;
