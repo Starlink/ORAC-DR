@@ -894,6 +894,11 @@ sub orac_loop_task {
   # and indicate tempness
   $Frm->tempraw( @istemp );
 
+  # Override the GROUP membership. This frame is generated from a remote task
+  # and so should only be coadded with frames from this observation.
+  # [KLUGE - header translation not enabled for SCUBA-2 yet]
+  $Frm->group( $Frm->hdr("OBSNUM") );
+
   # Store the current reftime
   $arr->[0] = $refframe;
 
