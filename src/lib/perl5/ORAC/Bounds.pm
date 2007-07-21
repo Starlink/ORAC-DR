@@ -135,6 +135,20 @@ sub retrieve_bounds {
     }
     err_end( $STATUS );
 
+#    my $mapping = $wcs->GetMapping( AST__BASE, AST__CURRENT );
+#    my @glbnd_out;
+#    my @gubnd_out;
+#    my @wcslbnd_out;
+#    my @wcsubnd_out;
+#    for( my $i = 0; $i < 3; $i++ ) {
+#      $glbnd_out[$i] = 0.5;
+#      $gubnd_out[$i] = $ndf_ubnd[$i] - $ndf_lbnd[$i] + 1.5;
+#      $mapping->MapBox( \@glbnd_out, \@gubnd_out, 1, $i+1, $wcslbnd_out[$i],$wcsubnd_out[$i] );
+#    }
+#    use Data::Dumper;
+#    print Dumper \@wcslbnd_out;
+#    print Dumper \@wcsubnd_out;
+
     # Retrieve spatial information.
     my $skytemplate = Starlink::AST::SkyFrame->new( "" );
     $skytemplate->Set( 'MaxAxes' => 3,
@@ -219,37 +233,44 @@ sub retrieve_bounds {
 
       $return{'reference'} = $obsref;
 
-      my $obsrabl_rad = $wcs_bnds[0]->[0];
-      my $obsratl_rad = $wcs_bnds[0]->[1];
-      my $obsrabr_rad = $wcs_bnds[0]->[2];
-      my $obsratr_rad = $wcs_bnds[0]->[3];
-      my $obsdecbl_rad = $wcs_bnds[1]->[0];
-      my $obsdectl_rad = $wcs_bnds[1]->[1];
-      my $obsdecbr_rad = $wcs_bnds[1]->[2];
-      my $obsdectr_rad = $wcs_bnds[1]->[3];
+      my $obsrabl_rad = ( $wcs_bnds[0]->[0] < -1e100 ? undef : $wcs_bnds[0]->[0] );
+      my $obsratl_rad = ( $wcs_bnds[0]->[1] < -1e100 ? undef : $wcs_bnds[0]->[1] );
+      my $obsrabr_rad = ( $wcs_bnds[0]->[2] < -1e100 ? undef : $wcs_bnds[0]->[2] );
+      my $obsratr_rad = ( $wcs_bnds[0]->[3] < -1e100 ? undef : $wcs_bnds[0]->[3] );
+      my $obsdecbl_rad = ( $wcs_bnds[1]->[0] < -1e100 ? undef : $wcs_bnds[1]->[0] );
+      my $obsdectl_rad = ( $wcs_bnds[1]->[1] < -1e100 ? undef : $wcs_bnds[1]->[1] );
+      my $obsdecbr_rad = ( $wcs_bnds[1]->[2] < -1e100 ? undef : $wcs_bnds[1]->[2] );
+      my $obsdectr_rad = ( $wcs_bnds[1]->[3] < -1e100 ? undef : $wcs_bnds[1]->[3] );
 
-      my $bl = new Astro::Coords( ra => $obsrabl_rad,
-                                  dec => $obsdecbl_rad,
-                                  type => 'J2000',
-                                  units => 'radians'
-                                );
-      my $tl = new Astro::Coords( ra => $obsratl_rad,
-                                  dec => $obsdectl_rad,
-                                  type => 'J2000',
-                                  units => 'radians' );
-      my $br = new Astro::Coords( ra => $obsrabr_rad,
-                                  dec => $obsdecbr_rad,
-                                  type => 'J2000',
-                                  units => 'radians' );
-      my $tr = new Astro::Coords( ra => $obsratr_rad,
-                                  dec => $obsdectr_rad,
-                                  type => 'J2000',
-                                  units => 'radians' );
-
-      $return{'top_left'} = $tl;
-      $return{'top_right'} = $tr;
-      $return{'bottom_left'} = $bl;
-      $return{'bottom_right'} = $br;
+      if( defined( $obsrabl_rad ) && defined( $obsdecbl_rad ) ) {
+        my $bl = new Astro::Coords( ra => $obsrabl_rad,
+                                    dec => $obsdecbl_rad,
+                                    type => 'J2000',
+                                    units => 'radians'
+                                  );
+        $return{'bottom_left'} = $bl;
+      }
+      if( defined( $obsratl_rad ) && defined( $obsdectl_rad ) ) {
+        my $tl = new Astro::Coords( ra => $obsratl_rad,
+                                    dec => $obsdectl_rad,
+                                    type => 'J2000',
+                                    units => 'radians' );
+        $return{'top_left'} = $tl;
+      }
+      if( defined( $obsrabr_rad ) && defined( $obsdecbr_rad ) ) {
+        my $br = new Astro::Coords( ra => $obsrabr_rad,
+                                    dec => $obsdecbr_rad,
+                                    type => 'J2000',
+                                    units => 'radians' );
+        $return{'bottom_right'} = $br;
+      }
+      if( defined( $obsratr_rad ) && defined( $obsdectr_rad ) ) {
+        my $tr = new Astro::Coords( ra => $obsratr_rad,
+                                    dec => $obsdectr_rad,
+                                    type => 'J2000',
+                                    units => 'radians' );
+        $return{'top_right'} = $tr;
+      }
 
     }
 
