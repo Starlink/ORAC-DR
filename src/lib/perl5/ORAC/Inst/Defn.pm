@@ -2130,7 +2130,7 @@ sub fluxes_helper {
 
     # Determine location of ephemeris file
     my $ephdir = ( $ENV{JPL_DIR} ||
-       File::Spec->catdir($StarConfig{Star},"etc","jpl") );
+       File::Spec->catdir($StarConfig{Star},"etc") );
 
     my $jpleph = File::Spec->catfile($ephdir, "jpleph.dat");
 
