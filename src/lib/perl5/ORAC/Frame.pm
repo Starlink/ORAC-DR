@@ -832,6 +832,8 @@ sub collate_headers {
   return unless -e $file;
 
   my $header = new Astro::FITS::Header;
+  $header->removebyname( 'SIMPLE' );
+  $header->removebyname( 'END' );
 
   # Update the version headers.
   my $pipevers = new Astro::FITS::Header::Item( Keyword => 'PIPEVERS',
