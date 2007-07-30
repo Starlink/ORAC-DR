@@ -249,6 +249,8 @@ sub retrieve_bounds {
                                     units => 'radians'
                                   );
         $return{'bottom_left'} = $bl;
+      } else {
+        $return{'bottom_left'} = undef;
       }
       if( defined( $obsratl_rad ) && defined( $obsdectl_rad ) ) {
         my $tl = new Astro::Coords( ra => $obsratl_rad,
@@ -256,6 +258,8 @@ sub retrieve_bounds {
                                     type => 'J2000',
                                     units => 'radians' );
         $return{'top_left'} = $tl;
+      } else {
+        $return{'top_left'} = undef;
       }
       if( defined( $obsrabr_rad ) && defined( $obsdecbr_rad ) ) {
         my $br = new Astro::Coords( ra => $obsrabr_rad,
@@ -263,6 +267,8 @@ sub retrieve_bounds {
                                     type => 'J2000',
                                     units => 'radians' );
         $return{'bottom_right'} = $br;
+      } else {
+        $return{'bottom_right'} = undef;
       }
       if( defined( $obsratr_rad ) && defined( $obsdectr_rad ) ) {
         my $tr = new Astro::Coords( ra => $obsratr_rad,
@@ -270,8 +276,9 @@ sub retrieve_bounds {
                                     type => 'J2000',
                                     units => 'radians' );
         $return{'top_right'} = $tr;
+      } else {
+        $return{'top_right'} = undef;
       }
-
     }
 
     # Only write the sideband bounds if we have them.
@@ -349,6 +356,8 @@ sub return_bounds_header {
 
     # Read the current header.
     $header = new Astro::FITS::Header;
+    $header->removebyname( 'SIMPLE' );
+    $header->removebyname( 'END' );
 
     # Retrieve the bounds.
     my $bounds = retrieve_bounds( $filename );
@@ -366,7 +375,19 @@ sub return_bounds_header {
                                              Comment => '[deg] Reference ICRS Dec coordinate',
                                              Type    => 'FLOAT' );
       $header->append( $item );
+    } else {
+      my $item = new Astro::FITS::Header::Item( Keyword => 'OBSRA',
+                                                Value   => undef,
+                                                Comment => '[deg] Reference ICRS RA coordinate',
+                                                Type    => 'UNDEF' );
+      $header->append( $item );
+
+      $item = new Astro::FITS::Header::Item( Keyword => 'OBSDEC',
+                                             Value   => undef,
+                                             Comment => '[deg] Reference ICRS Dec coordinate',
+                                             Type    => 'UNDEF' );
     }
+
     if( defined( $bounds->{'bottom_left'} ) ) {
       my $item = new Astro::FITS::Header::Item( Keyword => 'OBSRABL',
                                                 Value   => $bounds->{'bottom_left'}->ra( format => 'deg' ),
@@ -379,7 +400,19 @@ sub return_bounds_header {
                                              Comment => '[deg] Bottom left ICRS Dec coordinate',
                                              Type    => 'FLOAT' );
       $header->append( $item );
+    } else {
+      my $item = new Astro::FITS::Header::Item( Keyword => 'OBSRABL',
+                                                Value   => undef,
+                                                Comment => '[deg] Bottom left ICRS RA coordinate',
+                                                Type    => 'UNDEF' );
+      $header->append( $item );
+
+      $item = new Astro::FITS::Header::Item( Keyword => 'OBSDECBL',
+                                             Value   => undef,
+                                             Comment => '[deg] Bottom left ICRS Dec coordinate',
+                                             Type    => 'UNDEF' );
     }
+
     if( defined( $bounds->{'top_left'} ) ) {
       my $item = new Astro::FITS::Header::Item( Keyword => 'OBSRATL',
                                                 Value   => $bounds->{'top_left'}->ra( format => 'deg' ),
@@ -392,7 +425,19 @@ sub return_bounds_header {
                                              Comment => '[deg] Top left ICRS Dec coordinate',
                                              Type    => 'FLOAT' );
       $header->append( $item );
+    } else {
+      my $item = new Astro::FITS::Header::Item( Keyword => 'OBSRATL',
+                                                Value   => undef,
+                                                Comment => '[deg] Top left ICRS RA coordinate',
+                                                Type    => 'UNDEF' );
+      $header->append( $item );
+
+      $item = new Astro::FITS::Header::Item( Keyword => 'OBSDECTL',
+                                             Value   => undef,
+                                             Comment => '[deg] Top left ICRS Dec coordinate',
+                                             Type    => 'UNDEF' );
     }
+
     if( defined( $bounds->{'bottom_right'} ) ) {
       my $item = new Astro::FITS::Header::Item( Keyword => 'OBSRABR',
                                                 Value   => $bounds->{'bottom_right'}->ra( format => 'deg' ),
@@ -405,7 +450,20 @@ sub return_bounds_header {
                                              Comment => '[deg] Bottom right ICRS Dec coordinate',
                                              Type    => 'FLOAT' );
       $header->append( $item );
+    } else {
+      my $item = new Astro::FITS::Header::Item( Keyword => 'OBSRABR',
+                                                Value   => undef,
+                                                Comment => '[deg] Bottom right ICRS RA coordinate',
+                                                Type    => 'UNDEF' );
+      $header->append( $item );
+
+      $item = new Astro::FITS::Header::Item( Keyword => 'OBSDECBR',
+                                             Value   => undef,
+                                             Comment => '[deg] Bottom right ICRS Dec coordinate',
+                                             Type    => 'UNDEF' );
+      $header->append( $item );
     }
+
     if( defined( $bounds->{'top_right'} ) ) {
       my $item = new Astro::FITS::Header::Item( Keyword => 'OBSRATR',
                                                 Value   => $bounds->{'top_right'}->ra( format => 'deg' ),
@@ -418,33 +476,72 @@ sub return_bounds_header {
                                              Comment => '[deg] Top right ICRS Dec coordinate',
                                              Type    => 'FLOAT' );
       $header->append( $item );
+    } else {
+      my $item = new Astro::FITS::Header::Item( Keyword => 'OBSRATR',
+                                                Value   => undef,
+                                                Comment => '[deg] Top right ICRS RA coordinate',
+                                                Type    => 'UNDEF' );
+      $header->append( $item );
+
+      $item = new Astro::FITS::Header::Item( Keyword => 'OBSDECTR',
+                                             Value   => undef,
+                                             Comment => '[deg] Top right ICRS Dec coordinate',
+                                             Type    => 'UNDEF' );
     }
+
     if( defined( $bounds->{'freq_sig_lo'} ) ) {
       my $item = new Astro::FITS::Header::Item( Keyword => 'FRQSIGLO',
                                                 Value   => $bounds->{'freq_sig_lo'},
                                                 Comment => '[GHz] Lower barycentric freq bound, signal sideband',
                                                 Type    => 'FLOAT' );
       $header->append( $item );
+    } else {
+      my $item = new Astro::FITS::Header::Item( Keyword => 'FRQSIGLO',
+                                                Value   => undef,
+                                                Comment => '[GHz] Lower barycentric freq bound, signal sideband',
+                                                Type    => 'UNDEF' );
+      $header->append( $item );
     }
+
     if( defined( $bounds->{'freq_sig_hi'} ) ) {
       my $item = new Astro::FITS::Header::Item( Keyword => 'FRQSIGHI',
                                                 Value   => $bounds->{'freq_sig_hi'},
                                                 Comment => '[GHz] Upper barycentric freq bound, signal sideband',
                                                 Type    => 'FLOAT' );
       $header->append( $item );
+    } else {
+      my $item = new Astro::FITS::Header::Item( Keyword => 'FRQSIGHI',
+                                                Value   => undef,
+                                                Comment => '[GHz] Upper barycentric freq bound, signal sideband',
+                                                Type    => 'UNDEF' );
+      $header->append( $item );
     }
+
     if( defined( $bounds->{'freq_img_lo'} ) ) {
       my $item = new Astro::FITS::Header::Item( Keyword => 'FRQIMGLO',
                                                 Value   => $bounds->{'freq_img_lo'},
                                                 Comment => '[GHz] Lower barycentric freq bound, image sideband',
                                                 Type    => 'FLOAT' );
       $header->append( $item );
+    } else {
+       my $item = new Astro::FITS::Header::Item( Keyword => 'FRQIMGLO',
+                                                Value   => undef,
+                                                Comment => '[GHz] Lower barycentric freq bound, image sideband',
+                                                Type    => 'UNDEF' );
+      $header->append( $item );
     }
+
     if( defined( $bounds->{'freq_img_hi'} ) ) {
       my $item = new Astro::FITS::Header::Item( Keyword => 'FRQIMGHI',
                                                 Value   => $bounds->{'freq_img_hi'},
                                                 Comment => '[GHz] Upper barycentric freq bound, image sideband',
                                                 Type    => 'FLOAT' );
+      $header->append( $item );
+    } else {
+      my $item = new Astro::FITS::Header::Item( Keyword => 'FRQIMGHI',
+                                                Value   => undef,
+                                                Comment => '[GHz] Upper barycentric freq bound, image sideband',
+                                                Type    => 'UNDEF' );
       $header->append( $item );
     }
 
