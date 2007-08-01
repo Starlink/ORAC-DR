@@ -53,6 +53,17 @@ regular STATS application. Default is 1 (true).
 
 =back
 
+The following are only accessed if HISTAT is true.
+
+=over 4
+
+=item MODE_METHOD
+
+The method used by HISTAT to calculate the mode. The default is
+C<MOMENTS> as in the KAPPA manual.
+
+=back
+
 =head1 EXTERNAL TASKS
 
 The following external tasks are used:
@@ -82,7 +93,7 @@ A hash containing the following keys and values:
 
 =item MODE - modal value (only if HISTOGRAM or HISTAT are true)
 
-=item MEDIAN - median
+=item MEDIAN - median (only if HISTAT is true)
 
 =item SIGMA - standard deviation (only if HISTAT is false)
 
@@ -148,20 +159,32 @@ $_FIND_IMAGE_STATISTICS_{RESULTS} = [];
 
 # Declare useful variables
 my $ORAC_STATUS;
-my ( $avg, $stdev, $ngood, $ntotal, $nbad, $min, $max, $median);
+my ( $avg, $stdev, $ngood, $ntotal, $nbad, $min, $max, $median, $mode);
 
 if ( $histat ) {
-  # Use HISTAT to calculate statistics, returning median rather than std dev
-  $Mon{kappa_mon}->obeyw("histat","ndf=$in");
+
+  # Check for other parameters for HISTAT
+  # Default to MOMENTS method for calculating mode (as in KAPPA docs)
+  my $modemethod = (exists $_FIND_IMAGE_STATISTICS_{MODE_METHOD} && 
+		    defined $_FIND_IMAGE_STATISTICS_{MODE_METHOD}) ?
+		    uc($_FIND_IMAGE_STATISTICS_{MODE_METHOD}) : "MOMENTS";
+
+  # Use HISTAT to calculate statistics
+  $Mon{kappa_mon}->obeyw("histat","ndf=$in method=$modemethod");
   # Retrieve the values
   ($ORAC_STATUS, $avg) = $Mon{kappa_mon}->get("histat","mean");
   ($ORAC_STATUS, $median) = $Mon{kappa_mon}->get("histat","median");
+  ($ORAC_STATUS, $mode) = $Mon{kappa_mon}->get("histat","mode");
   ($ORAC_STATUS, $ngood) = $Mon{kappa_mon}->get("histat","numgood");
   ($ORAC_STATUS, $ntotal) = $Mon{kappa_mon}->get("histat","numpix");
   ($ORAC_STATUS, $nbad) = $Mon{kappa_mon}->get("histat","numbad");
   ($ORAC_STATUS, $min) = $Mon{kappa_mon}->get("histat","minimum");
   ($ORAC_STATUS, $max) = $Mon{kappa_mon}->get("histat","maximum");
   $stdev = undef;
+
+  # If HISTAT was used, then the HISTO argument is set to false
+  $histo = 0;
+
 } else {
   # Now calculate stats of the masked file to get the mean and the
   # standard deviation
@@ -176,13 +199,14 @@ if ( $histat ) {
   ($ORAC_STATUS, $min) = $Mon{kappa_mon}->get("stats","minimum");
   ($ORAC_STATUS, $max) = $Mon{kappa_mon}->get("stats","maximum");
   $median = undef;
+  $mode = undef;
   # Stats returns sigma = 0 if anything went wrong
 }
 
 orac_warn "All pixels in region are bad!\n" if $ngood == 0;
 my $fracgood = $ngood/$ntotal;
 
-my $mode = 0.0;
+# If the user wants to use STATS and wants a modal value as well...
 if ( $histo ) {
   # Now use KAPPA histogram and write results to a file
   # Determine numbin: calculated from min and max to make sure that
@@ -208,7 +232,8 @@ if ( $histo ) {
   # Read all the relevant lines, delete file when done
   while (<$HISTFH>){
     chomp;
-    push (@lines, $_) if ($_ =~ /pixels/); # We only want lines with the word pixels in it
+    # We only want lines with the word pixels in it
+    push (@lines, $_) if ($_ =~ /pixels/); 
   }
   close $HISTFH;
   unlink $histname;
