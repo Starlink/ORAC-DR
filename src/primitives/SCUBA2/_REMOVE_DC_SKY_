@@ -26,7 +26,7 @@ The following arguments are supported
 
 =item METHOD
 
-Valid options are MEAN or MODE. Default is MEAN.
+Valid options are MEAN, MEDIAN or MODE. Default is MEAN.
 
 =item VERBOSE
 
@@ -75,7 +75,7 @@ my $rawunits = "pW";
 # Tell user...
 orac_print "Removing sky by calculating and subtracting a constant level\n";
 
-# Determine whether to subtract the mean or modal values from the image
+# Determine whether to subtract the mean, median or modal values from the image
 my $method = (exists $_REMOVE_DC_SKY_{METHOD} && 
 	      defined $_REMOVE_DC_SKY_{METHOD}) ?
               uc($_REMOVE_DC_SKY_{METHOD}) : "MEAN";
@@ -85,26 +85,35 @@ my $verbose = (exists $_REMOVE_DC_SKY_{VERBOSE} &&
 	       defined $_REMOVE_DC_SKY_{VERBOSE}) ?
                $_REMOVE_DC_SKY_{VERBOSE} : 1;
 
-# Set the histo flag
-my ($methodnum, $histo); 
+# Set the histo/histat flags. The latter is a placeholder in case user
+# wishes to override default choice. Note that histo and histat are
+# mutually exclusive. Setting histo = 1 *must* set histat = 0, but the
+# reverse is not necessarily true. See the documentation for
+# _FIND_IMAGE_STATISTICS for further info.
+my ($methodnum, $histo, $histat); 
 if ( $method eq "MEAN" ) {
   $histo = 0;
+  $histat = 1;
 } elsif ( $method eq "MEDIAN" ) {
   $histo = 0;
+  $histat = 1;
 } elsif ( $method eq "MODE" ) {
-  $histo = 1;
+  $histo = 0;
+  $histat = 1;
 } else {
-  orac_err "Unknown METHOD, $method: must be MEAN, MEDIAN or MODE\n";
+  # If we got something unknown, continue using the mean
+  orac_warn "Unknown METHOD, $method: falling back on MEAN\n";
+  $method = "MEAN";
 }
 
 my @out;
 # Loop over files in the Frm object
 for my $i (1..$Frm->nfiles) {
 
-  # Calculate the DC sky level
-  _FIND_IMAGE_STATISTICS_ IMAGE=$Frm->file($i) CLIP=2,2,2 VERBOSE=0 HISTOGRAM=$histo
+  # Calculate the DC sky level.
+  _FIND_IMAGE_STATISTICS_ IMAGE=$Frm->file($i) CLIP=2,2,2 VERBOSE=0 HISTOGRAM=$histo HISTAT=$histat
   # If the std deviation is zero then something went wrong
-  if ( $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEAN} == 0.0 ) {
+  if ( $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA} == 0.0 ) {
     orac_warn "Invalid result from _FIND_IMAGE_STATISTICS_: will not subtract the sky from current file (".$Frm->file($i).")\n";
   } else {
     my $sky = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$method};
@@ -122,7 +131,6 @@ for my $i (1..$Frm->nfiles) {
 
       $sky = sprintf "%12.7f", $sky;
       # Store this value for logging later
-      # ####
 
       orac_print "Subtracting a constant sky level of $sky from $in (method=$method)\n" 
 	if ($verbose);
