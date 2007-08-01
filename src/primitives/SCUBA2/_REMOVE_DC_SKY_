@@ -86,10 +86,10 @@ my $verbose = (exists $_REMOVE_DC_SKY_{VERBOSE} &&
                $_REMOVE_DC_SKY_{VERBOSE} : 1;
 
 # Set the histo/histat flags. The latter is a placeholder in case user
-# wishes to override default choice. Note that histo and histat are
-# mutually exclusive. Setting histo = 1 *must* set histat = 0, but the
-# reverse is not necessarily true. See the documentation for
-# _FIND_IMAGE_STATISTICS for further info.
+# wishes to override default choice which is to use HISTAT. Note that
+# histo and histat are mutually exclusive. Setting histo = 1 *must*
+# set histat = 0, but the reverse is not necessarily true. See the
+# documentation for _FIND_IMAGE_STATISTICS for further info.
 my ($methodnum, $histo, $histat); 
 if ( $method eq "MEAN" ) {
   $histo = 0;
@@ -111,32 +111,36 @@ my @out;
 for my $i (1..$Frm->nfiles) {
 
   # Calculate the DC sky level.
-  _FIND_IMAGE_STATISTICS_ IMAGE=$Frm->file($i) CLIP=2,2,2 VERBOSE=0 HISTOGRAM=$histo HISTAT=$histat
-  # If the std deviation is zero then something went wrong
-  if ( $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA} == 0.0 ) {
-    orac_warn "Invalid result from _FIND_IMAGE_STATISTICS_: will not subtract the sky from current file (".$Frm->file($i).")\n";
+  _FIND_IMAGE_STATISTICS_ IMAGE=$Frm->file($i) VERBOSE=0 HISTOGRAM=$histo HISTAT=$histat
+  my $sky = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$method};
+
+  # Note that if things went wrong, the following has the effect of
+  # permanently ignoring the current file. If something went wrong
+  # computing the statistics, it may indicate a problem with the data,
+  # so this may be a good thing.
+
+  # If we want the mode, check that the result isn't -1e9: this
+  # means there were no valid pixels in the image.
+  if ( $method eq "MODE" && $sky == -1.0e9 ) {
+    orac_warn "No valid pixels in image, unable to subtract sky with method=$method\n";
+
+  } elsif ( !$histo && $sky == 0.0 ) {
+    orac_warn "Invalid result from STATS: will not subtract the sky from current file (".$Frm->file($i).")\n";
+
   } else {
-    my $sky = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$method};
+    # Everything's OK so subtract a DC sky level. 
+    # Retrieve input and output names
+    my ($in, $out) = $Frm->inout("_sky", $i);
+    # Subtract the sky
+    $Mon{kappa_mon}->obeyw("csub","in=$in out=$out scalar=$sky");
+    
+    $sky = sprintf "%12.7f", $sky;
+    # Store this value for logging later
 
-    # If we want the mode, check that the result isn't -1e9: this
-    # means there were no valid pixels in the image.
-    if ( $method eq "MODE" && $sky == -1.0e9 ) {
-      orac_warn "No valid pixels in image, unable to subtract sky with method=$method\n";
-    } else {
-      # Everything's OK so subtract a DC sky level. 
-      # Retrieve input and output names
-      my ($in, $out) = $Frm->inout("_sky", $i);
-      # Subtract the sky
-      $Mon{kappa_mon}->obeyw("csub","in=$in out=$out scalar=$sky");
-
-      $sky = sprintf "%12.7f", $sky;
-      # Store this value for logging later
-
-      orac_print "Subtracting a constant sky level of $sky from $in (method=$method)\n" 
-	if ($verbose);
-      # Store the new sky-subtracted output file
-      push(@out, $out);
-    }
+    orac_print "Subtracting a constant sky level of $sky from $in (method=$method)\n" 
+      if ($verbose);
+    # Store the new sky-subtracted output file
+    push(@out, $out);
   }
 }
 $Frm->files(@out);
