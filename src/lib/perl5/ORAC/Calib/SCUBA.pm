@@ -128,28 +128,53 @@ $DEBUG = 0; # Turn off debugging mode
 	 '850N' => [ # Asumed to be in date order
 		    {
 		     START => 19960101, # Beginning of SCUBA history
-		     END   => 19980215,
-		     ARCSEC=> 1.07,
-		     BEAM  => 266.0,
+		     END   => 19970825,
+		     ARCSEC=> 1.00, # +/- 0.06 Uranus
+		     BEAM  => 249.0,
 		    },
 		    {
-		     START => 19960101, # Beginning of SCUBA history
-		     ARCSEC=> 0.98,
-		     BEAM  => 248.0,
+		     START => 19970826,
+		     END   => 19971102,
+		     ARCSEC=> 1.11, # +/- 0.08 Mars/Uranus
+		     BEAM  => 280.0,
+		    },
+		    {
+		     START => 19971103,
+		     END   => 19980305,
+		     ARCSEC=> 1.02, # +/- 0.06 Mars/Uranus
+		     BEAM  => 258.0,
+		    },
+		    {
+		     START => 19980306,
+		     END   => 19980428,
+		     ARCSEC=> 0.93, # +/- 0.04 Mars/Uranus
+		     BEAM  => 235.0,
+		    },
+		    {
+		     START => 19980429,
+		     END   => 19980825,
+		     ARCSEC=> 1.02, # +/- 0.05 Mars/Uranus
+		     BEAM  => 257.0,
+		    },
+		    {
+		     START => 19980826,
+		     END   => 19991123,
+		     ARCSEC=> 0.96, # +/- 0.06 Mars/Uranus
+		     BEAM  => 242.0,
 		    },
 		   ],
 	 '850W' => [ # Asumed to be in date order
 		    {
 		     START => 19990901, # Filter installed
 		     END   => 20000630,
-		     ARCSEC=> 0.84,
-		     BEAM  => 207.0,
+		     ARCSEC=> 0.83,  # +/- 0.03 Mars/Uranus
+		     BEAM  => 205.0,
 		    },
 		    {
-		     START => 20000630, # Beginning of SCUBA history
+		     START => 20000630,
 		     END   => 20010515,
-		     ARCSEC=> 0.88,
-		     BEAM  => 216.0,
+		     ARCSEC=> 0.87, # +/- 0.05 Uranus
+		     BEAM  => 214.0,
 		    },
 		    {
 		     START => 20010516, # Strange increase in FCF
@@ -159,112 +184,78 @@ $DEBUG = 0; # Turn off debugging mode
 		    },
 		    {
 		     START => 20010602,
-		     END   => 20020204,
-		     ARCSEC=> 0.86,
-		     BEAM  => 209.0,
-		    },
-		    {
-		     START => 20020205,
 		     END   => 20020630,
-		     ARCSEC=> 0.88,
-		     BEAM  => 224.0,
+		     ARCSEC=> 0.88, # +/- 0.06 Mars/Uranus
+		     BEAM  => 220.0,
 		    },
 		    {
 		     START => 20020701,
 		     END   => 20021201,
-		     ARCSEC=> 1.09,
-		     BEAM  => 278.0,
+		     ARCSEC=> 1.06, # +/- 0.13
+		     BEAM  => 270.0,
 		    },
 		    {
 		     START => 20021202,
-		     END   => 20021231,
-		     ARCSEC => 0.79,
-		     BEAM => 194,
-		    },
-		    {
-		     START => 20030101,
 		     END   => 20030131,
-		     ARCSEC=> 0.80,
-		     BEAM  => 193,
+		     ARCSEC => 0.82, # +/- 0.07 (Mars and Uranus differ slightly)
+		     BEAM => 201,
 		    },
 		    {
 		     START => 20030201,
 		     END   => 20030209,
-		     ARCSEC=> 0.89,
-		     BEAM  => 204, # large error bars +/- 14
+		     ARCSEC=> 0.86, # +/- 0.02 Mars
+		     BEAM  => 197, # large error bars +/- 14
 		    },
 		    {
 		     START => 20030210,
-		     END   => 20030228,
-		     ARCSEC=> 1.02,
-		     BEAM  => 255.0,
-		    },
-		    {
-		     START => 20030301,
 		     END   => 20030407,
-		     ARCSEC=> 0.98,
-		     BEAM  => 230,
+		     ARCSEC=> 1.01,     # +/- 0.05 Mars
+		     BEAM  => 253.0,
 		    },
 		    {
 		     START => 20030408,
-		     END   => 20030517,
-		     ARCSEC=> 0.83,
-		     BEAM  => 213,
+		     END   => 20030801,
+		     ARCSEC=> 0.89, # +/- 0.04 Mars/Uranus
+		     BEAM  => 228,
 		    },
 		    {
-		     START => 20030518,
-		     END   => 20030630,
-		     ARCSEC=> 0.87,
-		     BEAM  => 212,
-		    },
-		    {
-		     START => 20030701,
-		     END   => 20030726,
-		     ARCSEC=> 0.83,
-		     BEAM  => 206,
-		    },
-		    {
-		     START => 20030727,
-		     END   => 20030822,
-		     ARCSEC=> 0.86,
-		     BEAM  => 218,
-		    },
-		    {
-		     START => 20030823,
-		     END   => 20030916,
-		     ARCSEC=> 0.79,
-		     BEAM  => 196,
-		    },
-		    {
-		     START => 20030917,
-		     END   => 20031019,
-		     ARCSEC=> 0.78,
+		     START => 20030802,
+		     END   => 20031101,,
+		     ARCSEC=> 0.81,  # +/- 0.04 Mars/Uranus
 		     BEAM  => 201,
 		    },
 		    {
-		     START => 20031020,
-		     END   => 20031231,
-		     ARCSEC=> 0.83,
-		     BEAM  => 216,
+		     START => 20031102,
+		     END   => 20040601,
+		     ARCSEC=> 0.88, # +/- 0.06 Mars/Uranus
+		     BEAM  => 228,
 		    },
 		    {
-		     START => 20040101,
-		     END   => 20040212,
-		     ARCSEC=> 0.84,
-		     BEAM  => 218,
+		     START => 20040602,
+		     END   => 20040901,
+		     ARCSEC=> 0.87, # +/- 0.03
+		     BEAM  => 224,
 		    },
 		    {
-		     START => 20040213,
-		     END   => 20040404,
-		     ARCSEC=> 0.85,
-		     BEAM  => 231,
+		     START => 20040902,
+		     END   => 20050124,
+                     # Compromise from 0.91 from Mars and 1.00 from Uranus
+                     # CRL618 also seems to favour 0.92. Go with 0.95 to split
+                     # difference but with additional 5% to errors.
+		     ARCSEC=> 0.95, # 0.91 +/- 0.05 Mars only. Uranus 1.00+/- 0.05
+		     BEAM  => 234,
 		    },
 		    {
-		     START => 20040405, # SCUBA shutdown
-		     ARCSEC=> 0.78,
-		     BEAM  => 201,
+		     START => 20050125,
+		     END   => 20050125,
+		     ARCSEC=> 0.80, # +/- 0.02 Mars (no uranus)
+		     BEAM  => 200,
 		    },
-
+		    {
+		     START => 20050126,
+		     ARCSEC=> 0.93, # +/- 0.04 Mars / Uranus
+		     BEAM  => 233,
+		    },
 		   ],
 	 '450N' => [
 		    {
