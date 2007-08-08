@@ -891,6 +891,9 @@ sub orac_determine_primitive_search_path {
     push( @path, $imaging_root );
     push( @path, $general_root );
 
+  } elsif ($inst eq 'PICARD') {
+    push( @path, File::Spec->catdir( $root, "PICARD" ) );
+    push( @path, $general_root );
   } else {
     croak "Primitives: Unrecognised instrument: $inst\n";
   }
