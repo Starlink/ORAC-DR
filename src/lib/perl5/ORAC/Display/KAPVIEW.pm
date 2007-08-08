@@ -1367,7 +1367,7 @@ sub chanmap {
   my $ndf = $self->calc_central_region( $file, $axis, $width );
 
   # Create a temporary file that'll hold the channel map.
-  my $temp = new ORAC::TempFile;
+  my $temp = ORAC::TempFile->new();
   my $tempfile = $temp->file;
 
   # Run CHANMAP.
@@ -1799,7 +1799,12 @@ sub datamodel {
   $file =~ s/\.sdf$//;  # Strip .sdf
 
   # Calculate NDF section - including compression of dimensions
-  $file = $self->select_section($file,\%options,1);
+  my $secfile = $self->select_section($file,\%options,1);
+  unless (defined $file) {
+    orac_err("Error sectioning file $file\n");
+    return ORAC__ERROR;
+  }
+  $file = $secfile;
 
   # A resetpars also seems to be necessary to instruct kappa to
   # update its current frame for plotting. Without this the new PICDEF
