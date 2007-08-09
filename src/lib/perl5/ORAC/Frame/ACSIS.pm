@@ -405,19 +405,13 @@ sub collate_headers {
     $self->readhdr;
   }
 
+  # Get the generic headers from the base class and append RA/Dec/Freq bounds information
   my $header = $self->SUPER::collate_headers( $file );
-
   my $bounds_header = return_bounds_header( $file );
-  my $merged;
-  my @different;
 
-  ( $merged, @different ) = $header->merge_primary( $bounds_header );
-  foreach my $diff ( @different ) {
-    foreach my $card ( $diff->allitems ) {
-      $merged->append( $card );
-    }
-  }
-  $header = $merged;
+  # Store the items so that we only append once for efficiency
+  my @toappend;
+  @toappend = $bounds_header->allitems if defined $bounds_header;
 
   # Calculate MJD-OBS and MJD-END from DATE-OBS and DATE-END.
   my $dateobs = DateTime::Format::ISO8601->parse_datetime( $self->hdr( "DATE-OBS" ) );
@@ -430,16 +424,16 @@ sub collate_headers {
                                               Value   => $dateend->mjd,
                                               Comment => 'MJD of end of observation',
                                               Type    => 'FLOAT' );
-  $header->append( $mjdobs );
-  $header->append( $mjdend );
+  push(@toappend, $mjdobs, $mjdend);
 
   # Set the ASN_TYPE header.
   my $asntype = new Astro::FITS::Header::Item( Keyword => 'ASN_TYPE',
                                                Value   => 'obs',
                                                Comment => 'Time-based selection criterion',
                                                Type    => 'STRING' );
-  $header->append( $asntype );
+  push(@toappend, $asntype);
 
+  $header->append( \@toappend );
   return $header;
 }
 

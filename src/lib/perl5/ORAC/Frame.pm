@@ -903,13 +903,7 @@ sub sync_headers {
 
       my $newheader = $self->collate_headers( $file );
       my $header = new Astro::FITS::Header::NDF( File => $file );
-      my ( $merged, @diff ) = $header->merge_primary( $newheader );
-      foreach my $diff( @diff ) {
-        foreach my $card ( $diff->allitems ) {
-          $merged->append( $card );
-        }
-      }
-      $header = $merged;
+      $header->append( $newheader );
       $header->writehdr( File => $file );
 
     }
