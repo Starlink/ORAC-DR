@@ -53,7 +53,7 @@ use JCMT::Tau::CsoFit; # Fits to CSO data
 
 use File::Spec;
 
-'$Revision: 1.47 $ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+'$Revision: 7074 $ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 # Let the object know that it is derived from ORAC::Frame;
 #@ORAC::Calib::SCUBA2::ISA = qw/ORAC::Calib/;
@@ -178,8 +178,7 @@ sub new {
 	     CsoFit => undef,	# Polynomial tau fits
 	     Beam => {},	# Current best-fit beam parameters
 	     FWHM => undef,     # Current mean main-beam FWHM
-	     SkyLevel => {},	# Most recent fitted sky parameters
-	     SkyRef => undef,	# Name of current reference image
+	     SkyRefImage => undef,	# Name of current reference image
 	    };
 
   bless($obj, $class);
@@ -202,6 +201,10 @@ A simple method to set or retrieve the beam full-width-at-half-maximum
 method should be used instead. If the FWHM is undef then a hard-wired
 default value, appropriate for the current wavelength, is returned.
 
+  $Cal->fwhm( $fwhm );
+
+  my $fwhm = $Cal->fwhm;
+
 =cut
 
 sub fwhm {
@@ -214,9 +217,88 @@ sub fwhm {
   }
 
   # Get
-  my $fwhm = (defined $self->{FWHM}) ? $self->{FWHM} : 
-    (( $self->{Thing1}->{FILTER}  =~ /^85/ ) ? 15.0 : 8.0);
+  my $fwhm = (defined $self->{FWHM}) ? $self->{FWHM} : 0;
+
+  if ( $fwhm == 0 ) {
+    my $thingref = $self->thingone;
+    $fwhm = ( $thingref->{FILTER}  =~ /^85/ ) ? 15.0 : 8.0;
+  }
   return $fwhm;
+}
+
+=item B<beampar>
+
+A method to set or retrieve the full parameter set for the most recent
+fit to the beam. If setting the beam parameters, all of the parameters
+must be specified. The beam dimensions and orientation must be passed
+as array references. A hash reference containing the beam parameters
+is returned.
+
+  $Cal->beampar( majfwhm => \@majfwhm, minfwhm => \@minfwhm, 
+		 orient => \@orient, errfrac => $errfrac );
+
+  my $beampar_ref = $Cal->beampar;
+
+=cut
+
+sub beampar {
+  my $self = shift;
+
+  # $self->beam is a hash reference. What should the keys be?
+  # BMAJ => val
+  # BMAJERR => val
+  # BMIN => val
+  # BMINERR => val
+  # PA => val
+  # PAERR => val
+  # ErrFrac => val
+
+  if ( @_ ) {
+    my %beamargs = shift;
+
+    # What if any of these is undef?
+    $self->{Beam}->{Bmaj} = $beamargs->{majfwhm}->[0];
+    $self->{Beam}->{BmajErr} = $beamargs->{majfwhm}->[1];
+    $self->{Beam}->{Bmin} = $beamargs->{minfwhm}->[0];
+    $self->{Beam}->{BminErr} = $beamargs->{minfwhm}->[1];
+    $self->{Beam}->{Pa} = $beamargs->{orient}->[0];
+    $self->{Beam}->{PaErr} = $beamargs->{orient}->[1];
+
+    $self->{Beam}->{ErrFrac} = $beamargs->{errfrac};
+
+    # Store geometric mean as FWHM
+    $self->fwhm( sqrt($beamargs->{majfwhm}->[0] * $beamargs->{minfwhm}->[0]) );
+
+    return;
+  }
+
+  return $self->{Beam};
+
+}
+
+=item B<refimage>
+
+Method to store or retrieve current reference image. The method
+requires two arguments: the group name and the name of the reference
+image. Currently, the group name is not used, but that may change in
+the future.
+
+  $Cal->refimage( $group_name, $refimage );
+
+  my $refimage = $Cal->refimage;
+
+=cut
+
+sub refimage {
+  my $self = shift;
+
+  if ( @_ ) {
+    my ( $group, $refimage ) = @_;
+    $self->{SkyRefImage} = $refimage;
+    return;
+  }
+
+  return $self->{SkyRefImage};
 }
 
 =item B<badbols>
@@ -821,13 +903,13 @@ sub gain {
 
 Given the source name and filter, work out whether we have calibration
 information on this source (ie we know the flux for this filter). If
-information is availble return true (1) else return (0).
+information is available return true (1) else return (0).
 
   $yesno = $Cal->iscalsource("source_name","filter");
 
 If filter is not supplied, it is assumed we are simply asking
 whether the source is a calibrator independent of whether we
-actually have a calibration value for it....
+actually have a calibration value for it.
 
 =cut
 
