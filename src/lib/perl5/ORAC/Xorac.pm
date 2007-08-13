@@ -210,7 +210,7 @@ sub xorac_about {
 				  -borderwidth => 5 );
   $credits->grid( -column => 0, -row => 1, -columnspan => 2, -sticky => 'nsew');	
   # license
-  my $gpl = $about_frame->Label( -text => "\nThis program is free software; you can redistribute it and/or modify it under the\nterms of the GNU General Public License as published by the Free Software\nFoundation; either version 2 of the License, or (at your option) any later version.\n\nThis program is distributed in the hope that it will be useful,but WITHOUT ANY\nWARRANTY; without even the implied warranty of MERCHANTABILITY or\nFITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License\nfor more details.\n\nYou should have received a copy of the GNU General Public License along with\n this program; if not, write to the Free Software Foundation, Inc., 59 Temple Place,\n Suite 330, Boston, MA  02111-1307, USA",
+  my $gpl = $about_frame->Label( -text => "\nThis program is free software; you can redistribute it and/or modify it under the\nterms of the GNU General Public License as published by the Free Software\nFoundation; either version 3 of the License, or (at your option) any later version.\n\nThis program is distributed in the hope that it will be useful,but WITHOUT ANY\nWARRANTY; without even the implied warranty of MERCHANTABILITY or\nFITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License\nfor more details.\n\nYou should have received a copy of the GNU General Public License along with\n this program; if not, write to the Free Software Foundation, Inc., 59 Temple Place,\n Suite 330, Boston, MA  02111-1307, USA",
                                  -relief  => 'flat',
 	  			  -font    => $FONT, 
 				  -justify => 'left',
