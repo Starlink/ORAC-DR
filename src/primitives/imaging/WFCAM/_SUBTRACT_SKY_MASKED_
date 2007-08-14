@@ -1,0 +1,91 @@
+# -*-perl-*-
+
+# This should only be performed when MAKE_SKY is true.
+if( $Frm->uhdr( "MAKE_SKY" ) ) {
+
+  orac_print "Creating sky frame...\n";
+
+  # Create a subgroup of the frames at the current microstep position
+  # and in the current cycle.
+  my $subGrp;
+  my $cycle_number = $Frm->uhdr( "CYCLE_NUMBER" );
+  my $microstep_position = $Frm->uhdr( "MICROSTEP_POSITION" );
+  my $jitter_position = $Frm->uhdr( "JITTER_POSITION" );
+
+  if( $microstep_position != 1 ) {
+    $subGrp = $Grp->subgrp( JITTER_POSITION => $jitter_position,
+                            CYCLE_NUMBER => $cycle_number );
+  } else {
+    $subGrp = $Grp->subgrp( MICROSTEP_POSITION => $microstep_position,
+                            CYCLE_NUMBER => $cycle_number );
+  }
+
+#  if( $Frm->uhdr( "ORAC_NUMBER_OF_MICROSTEP_POSITIONS" ) == 1 ||
+#      $Frm->uhdr( "ORAC_OBJECT" ) =~ /^gps/i ) {
+#    $subGrp = $Grp;
+#    $subGrp->file( $Grp->file );
+#  } else {
+#    $subGrp = $Grp->subgrp( INTERLEAVED => 1 );
+#    $subGrp->file( $Grp->file );
+#  }
+
+  # Select those members in the current cycle.
+#  my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
+#  $cycleno = defined( $cycleno ) ? $cycleno : 0;
+#  my $cycleGrp = $subGrp->subgrp( CYCLE_NUMBER => $cycleno );
+#  $cycleGrp->file( $Grp->file );
+
+  # Create a file to hold filenames to put through CCDPACK.
+  my $tmp1 = new ORAC::TempFile;
+  my $tmp1file = $tmp1->file;
+
+  # Find the objects and mask them out.
+  foreach my $member ( $subGrp->members ) {
+    my $origfile = $member->file;
+    my $tmpFrm = new $Frm;
+    $tmpFrm = $member;
+    {
+      my $Frm = $tmpFrm;
+      _MAKE_OBJECTS_MASK_ OCCULT=0.1 ENLARGE=1.2 MINPIX=5
+      _MASK_OBJECTS_
+
+      print { $tmp1->handle } $Frm->file . "\n";
+
+    }
+    $member->file( $origfile );
+  }
+
+  # Create a temporary sky file.
+  my $tmpsky = new ORAC::TempFile;
+  my $tmpskyfile = $tmpsky->file;
+  my $tmpsky2 = new ORAC::TempFile;
+  my $tmpsky2file = $tmpsky2->file;
+
+  # Get the name of the sky file.
+  _GET_SKY_NAME_
+  my $skyfile = $_GET_SKY_NAME_{NAME};
+
+  # Create the sky file.
+  my $params = "in='^$tmp1file' out=$tmpskyfile expose=1 method=median";
+  $Mon{'ccdpack_red'}->obeyw( "makecal", "$params" );
+
+  # Subtract off the mean sky level.
+  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$tmpskyfile" );
+  my ( $ORAC_STATUS, $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+  $Mon{'kappa_mon'}->obeyw( "csub", "in=$tmpskyfile out=$tmpsky2file scalar=$mean" );
+
+  # Remove bad pixels.
+  $params = "in=$tmpsky2file out=$skyfile";
+  $Mon{'kappa_mon'}->obeyw( "fillbad", "$params" );
+
+  # Subtract the intermediate sky frame from each of the members of
+  # the subgroup.
+  foreach my $member ( $subGrp->members ) {
+    ( my $in, my $out ) = $member->inout( "_ss" );
+    $params = "in1=$in in2=$skyfile out=$out";
+    $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+    $member->file( $out );
+    $member->uhdr( "SKY_SUBTRACTED", 1 );
+  }
+
+}
