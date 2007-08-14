@@ -41,10 +41,6 @@ use File::Spec;
 use vars qw/ $VERSION /;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
-=over 4
-
-=cut
-
 =head1 METHODS
 
 The following methods are available:

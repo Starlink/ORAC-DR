@@ -657,6 +657,8 @@ sub _find_processed_images {
   return @images;
 }
 
+=back
+
 =end __INTERNAL_METHODS
 
 =head1 SEE ALSO

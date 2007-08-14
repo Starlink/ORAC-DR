@@ -59,9 +59,6 @@ sub file_from_bits {
 
 }
 
-=back
-
-
 =item B<template>
 
 Create new file name from template. zero-pads.
@@ -85,6 +82,8 @@ sub template {
    $self->file( $template );
 
 }
+
+=back
 
 =head1 SEE ALSO
 

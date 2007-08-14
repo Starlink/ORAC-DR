@@ -505,6 +505,8 @@ sub new {
 
 =head2 General Methods
 
+=over 4
+
 =item B<calc_orac_headers>
 
 This method calculates header values that are required by the
@@ -749,9 +751,6 @@ sub template {
    $self->file( $template );
 
 }
-
-
-=over 4
 
 =back
 

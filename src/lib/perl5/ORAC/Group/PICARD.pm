@@ -6,6 +6,8 @@ ORAC::Group::PICARD - Class for handling groups of reduced data files via PICARD
 
 =head1 SYNOPSIS
 
+  use ORAC::Group::PICARD;
+
 =head1 DESCRIPTION
 
 This module provides methods for handling collections of frame objects that are

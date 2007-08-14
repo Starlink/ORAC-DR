@@ -139,6 +139,8 @@ sub fpcentrenoupdate {
    return $self->{FpCentreNoUpdate};
 }
 
+=back
+
 =head2 General Methods
 
 =over 4

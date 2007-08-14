@@ -6,6 +6,8 @@ ORAC::Frame::PICARD - Class for handling individual reduced data files via PICAR
 
 =head1 SYNOPSIS
 
+  use ORAC::Frame::PICARD;
+
 =head1 DESCRIPTION
 
 This module provides methods for handling Frame objects that are

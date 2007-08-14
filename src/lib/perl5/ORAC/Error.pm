@@ -23,7 +23,7 @@ ORAC::Error - Exception handling in an object orientated manner.
     sub do_stuff {
         record ORAC::Error::FatalError( $message, ORAC__FATAL);
     }
- 
+
     # try and catch blocks
     try {
        stuff();
@@ -45,7 +45,6 @@ ORAC::Error - Exception handling in an object orientated manner.
        # this block catches croaks and other dies
        my $Error = shift;
        orac_exit_normally($Error);
-       
     }; # Don't forget the trailing semi-colon to close the catch block
 
 =head1 DESCRIPTION

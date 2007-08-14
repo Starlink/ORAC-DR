@@ -507,9 +507,6 @@ sub file_from_bits {
 
 }
 
-=back
-
-
 =item B<template>
 
 Create new file name from template. zero-pads.
@@ -534,7 +531,7 @@ sub template {
 
 =item B<findrecipe>
 
-I subclass this so that I don't have to have the no recipe warning each time...
+I subclass this so that I do not have to have the no recipe warning each time...
 
 Method to determine the recipe name that should be used to reduce the
 observation.  The default method is to look for an "ORAC_RECIPE" entry
@@ -634,6 +631,7 @@ sub _split_name {
   return ($root, $rest);
 }
 
+=back
 
 =head1 SEE ALSO
 

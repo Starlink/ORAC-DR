@@ -271,6 +271,8 @@ sub maskindex {
 
 }
 
+=back
+
 =head2 New methods
 
 =over 4

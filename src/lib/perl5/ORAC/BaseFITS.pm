@@ -1,6 +1,6 @@
 package ORAC::BaseFITS;
 
-=head1 
+=head1 NAME
 
 ORAC::BaseFITS - Base class for FITS file manipulation
 

@@ -147,7 +147,7 @@ sub mask {
 
 }
 
-
+=back
 
 =head2 New methods
 

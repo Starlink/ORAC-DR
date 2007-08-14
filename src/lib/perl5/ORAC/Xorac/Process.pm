@@ -43,7 +43,7 @@ ORAC::Xorac:: - process launcher routines called from Xoracdr
 =head1 SYNOPSIS
 
   use ORAC::Xorac::Process
-  
+
   xorac_start_process( \%options, $inst_select, \$CURRENT_RECIPE,
                        \$Override_Recipe, \@obs, $fatal_dialog   );
 
@@ -367,6 +367,9 @@ sub xorac_start_process {
  
 }
 
+=back
+
+=cut
 
 # ----------------------------------------------------------------------------
 

@@ -43,6 +43,8 @@ $VERSION = sprintf("%d", q$Revision$ =~ /(\d+)/);
 
 =head2 Constructors
 
+=over 4
+
 =item B<new>
 
 Create a new instance of a ORAC::Msg::Task::DRAMA object.
@@ -78,7 +80,11 @@ sub new {
   return $task;
 }
 
+=back
+
 =head2 Accessor Methods
+
+=over 4
 
 =item B<taskname>
 
@@ -122,6 +128,8 @@ sub _pid {
 }
 
 =back
+
+=end __PRIVATE_METHODS__
 
 =head2 General Methods
 

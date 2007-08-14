@@ -145,6 +145,7 @@ sub new {
 
 =over 4
 
+=cut
 
 # Methods to access the data.
 # ---------------------------

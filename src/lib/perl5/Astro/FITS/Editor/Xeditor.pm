@@ -43,7 +43,7 @@ Editor::Xeditor - routines called from the FITS Editor GUI
 =head1 SYNOPSIS
 
   use Astro::FITS::Editor::Xeditor;
-  
+
   editor_about( $editor_version );
   editor_open_header($file_select, $working_directory, $FILE_TYPE, $MW, $font);
   editor_display_header( $cards, $keyword_widget, $font );
@@ -371,5 +371,8 @@ sub editor_display_header {
           \@header_value, \@header_comment );
 }
 
+=back
+
+=cut
 
 1;

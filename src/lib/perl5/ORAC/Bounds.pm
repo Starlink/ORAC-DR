@@ -599,6 +599,8 @@ sub update_bounds_headers {
   }
 }
 
+=back
+
 =head1 SEE ALSO
 
 Starlink::AST, Astro::Coords.

@@ -140,12 +140,16 @@ those available from B<ORAC::Frame>.
 Create a new instance of an B<ORAC::Frame::ACSIS> object. This method
 also takes optional arguments:
 
+=over 8
+
 =item * If one argument is supplied it is assumed to be a reference
 to an array containing a list of raw files associated with the
 observation.
 
 =item * If two arguments are supplied they are assumed to be the
 UT date and observation number.
+
+=back
 
 In any case, all arguments are passed to the configure() method which
 is run in addition to new() when arguments are supplied.

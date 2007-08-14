@@ -7,11 +7,11 @@ ORAC::Nuke - routines to kill all pipeline related processes and shared memory
 =head1 SYNOPSIS
 
   use ORAC::Nuke
-  
+
   orac_proc_kill($pattern, $exclude);
-  
+
   orac_ipcs_kill();
-  
+
 =head1 DESCRIPTION
 
 This module contains the routines called from oracdr_nuke that handle the culling of all pipeline related processes, and cleaning of shared memory.
@@ -39,6 +39,8 @@ this will not succeed unless the user has special privilege.
 Does not attempt to clear out ADAM_USER directories. This is not
 normally a problem for ORAC-DR since each ORAC-DR process works
 in a different ADAM_USER directory.
+
+=back
 
 =cut
 
@@ -154,7 +156,7 @@ sub orac_proc_kill {
 This routine kills the shared memory segments owner by the user.
 
    orac_ipsc_kill();
-   
+
 it has no arguements and returns nothing.
 
 This routine does nothing on Darwin systems.

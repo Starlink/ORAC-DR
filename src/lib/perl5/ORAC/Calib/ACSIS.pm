@@ -149,6 +149,8 @@ sub pointingindex {
 
 }
 
+=back
+
 =head1 REVISION
 
 $Id$

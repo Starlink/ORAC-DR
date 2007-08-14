@@ -2008,7 +2008,7 @@ The hash that is returned contains information on the
 class to be used to initialise the message system.
 It has the following keys
 
-=over 4
+=over 8
 
 =item CLASS
 
@@ -2031,7 +2031,7 @@ sub orac_messys_description {
   }
 }
 
-=over B<orac_remote_task>
+=item B<orac_remote_task>
 
 Returns the override task names specified by the $ORAC_REMOTE_TASK
 environment variable.

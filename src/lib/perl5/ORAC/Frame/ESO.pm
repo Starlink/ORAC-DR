@@ -481,15 +481,14 @@ sub rotation{
    return $rotangle;
 }
 
-
 =head1 PUBLIC METHODS
 
 The following methods are available in this class in addition to
 those available from ORAC::Frame.
 
-=back
-
 =head2 General Methods
+
+=over 4
 
 =item B<calc_orac_headers>
 
@@ -590,8 +589,6 @@ sub number {
   return $number;
 
 }
-
-=over 4
 
 =back
 

@@ -249,6 +249,8 @@ sub new {
 
 }
 
+=back
+
 =head2 General Methods
 
 =over 4

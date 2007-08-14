@@ -1485,9 +1485,6 @@ sub _read_flagfiles {
   return _to_abs_path( @names );
 }
 
-
-=back
-
 =back
 
 =head1 REVISION

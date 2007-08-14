@@ -12,25 +12,25 @@ ORAC::Core - core routines for data pipelining
                      $Frm, $Grp, $Cal,\%Mon,$OverRecipe, $instrument);
 
   orac_store_frm_in_correct_grp($Frm, $GrpType, $GrpHash, $GrpArr, $ut);
-  
+
   orac_handle_args( \@ORAC_ARGS );
-  
+
   orac_print_configuration( $opt_debug, $opt_showcurrent, $log_options,
                             $win_str, \$STATUS_TEXT  );
-    
+
   orac_message_launch( $opt_nomsgtmp, $opt_verbose );
-  
+
   orac_start_algorithm_engines( $opt_noeng, $InstObj );
-  
+
   orac_start_display( $nodisplay );
 
   orac_calib_override( $opt_calib, $calclass );
-  
+
   orac_parse_files( $opt_files );
 
   orac_process_argument_list( $opt_from, $opt_to, $opt_skip, $opt_list,
                                $frameclass );
-             
+
   orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume, $opt_skip, 
                        $opt_debug, $loop, $frameclass, $groupclass, 
            $instrument, $Mon, $Cal, \@obs, $Display, $orac_prt,

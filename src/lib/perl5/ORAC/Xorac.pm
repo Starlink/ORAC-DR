@@ -50,7 +50,7 @@ ORAC::Xorac - routines called from the Xoracdr launcher GUI
 =head1 SYNOPSIS
 
   use ORAC::Xorac
-  
+
   xorac_update_status( $status_text, $percent );
   xorac_about( $xoracdr_version );
   xorac_pause( $parent );
@@ -73,11 +73,13 @@ $Id$
 =head1 AUTHORS
 
 Alasdair Allan E<lt>aa@astro.ex.ac.ukE<gt>,
+Malcolm Currie E<lt>mjc@star.rl.ac.ukE<gt>,
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research Council.
+Copyright (C) 1998-2005 Particle Physics and Astronomy Research Council.
+Copyright 2007 Science and Technology Facilities Council.
 All Rights Reserved.
 
 =cut
@@ -837,6 +839,7 @@ sub xorac_select_recipe {
 This subroutine pops a text widget to allow you to edit an recipe.
 
 =cut
+
 sub xorac_editor {
 
   croak 'Usage: xorac_select_recipe($directory, $recipe)'
@@ -1375,5 +1378,9 @@ sub xorac_select_filelist {
 
 
 # ----------------------------------------------------------------------------
+
+=back
+
+=cut
 
 1;

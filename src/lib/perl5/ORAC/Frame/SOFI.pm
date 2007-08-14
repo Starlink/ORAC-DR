@@ -455,6 +455,8 @@ sub new {
 
 =head2 General Methods
 
+=over 4
+
 =item B<calc_orac_headers>
 
 This method calculates header values that are required by the
@@ -476,8 +478,6 @@ sub calc_orac_headers {
    return %new;
 }
 
-=over 4
-
 =back
 
 =head1 SEE ALSO
@@ -497,7 +497,6 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
-
 
 =cut
 

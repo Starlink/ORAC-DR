@@ -331,6 +331,8 @@ sub rowindex {
 
 }
 
+=back
+
 =head2 Index and Rules files
 
 For IRIS2 some of the rules files are keyed on the current
@@ -426,6 +428,8 @@ sub rows {
    return ( $nbeams, @beams );
 }
 
+=back
+
 =head2 General Methods
 
 =over 4
@@ -502,7 +506,7 @@ sub mask {
 
 }
 
-
+=back
 
 =head2 New methods
 

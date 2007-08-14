@@ -51,9 +51,9 @@ The following methods are modified from the base class versions.
 =head2 Constructor
 
 =over 4
- 
+
 =item B<new>
- 
+
 Create a new instance of a B<ORAC::Frame::MEF> object.
 This method also takes optional arguments:
 if 1 argument is  supplied it is assumed to be the name
@@ -63,7 +63,7 @@ observation number. In any case, all arguments are passed to
 the configure() method which is run in addition to new()
 when arguments are supplied.
 The object identifier is returned.
- 
+
    $Frm = new ORAC::Frame::MEF;
    $Frm = new ORAC::Frame::MEF("file_name");
    $Frm = new ORAC::Frame::MEF("UT","number");
@@ -71,9 +71,9 @@ The object identifier is returned.
 The constructor hard-wires the '.fits' rawsuffix and the
 'f' prefix although these can be overriden with the
 rawsuffix() and rawfixedpart() methods.
- 
+
 =cut
- 
+
 sub new {
     my $proto = shift;
     my $class = ref($proto) || $proto;
@@ -108,6 +108,7 @@ sub new {
  
 }                    
 
+=back
 
 =head2 Accessor Methods
 
@@ -149,10 +150,12 @@ sub subfrmnumber {
     return($self->{SubFrmNo});
 }
 
+=back
+
 =head2 General Methods
 
 =over 4    
-    
+
 =item B<file_exists>
 
 Checks for the existence of the frame file(). 
@@ -330,6 +333,7 @@ aware of them.
 =over 4
 
 =cut
+
 sub update_header {
     my $self = shift;
     my ($key,$type,$value,$comment) = @_;
@@ -389,7 +393,6 @@ sub findgroup {
 
 }
 
-
 =back
 
 =head1 REQUIREMENTS
@@ -413,6 +416,7 @@ Jim Lewis (jrl@ast.cam.ac.uk)
 Copyright (C) 2003-2006 Cambridge Astronomy Survey Unit. All Rights Reserved.
 
 =cut
+
 #
 #
 # $Log$
