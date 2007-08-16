@@ -35,6 +35,9 @@ use ORAC::Msg::Control::DRAMA;
 use Proc::Simple;
 use DRAMA ();
 use Sds::Tie;
+use Sds;
+use Term::ANSIColor qw/ colored /;
+use Scalar::Util qw/ blessed /;
 
 use vars qw/ $VERSION /;
 $VERSION = sprintf("%d", q$Revision$ =~ /(\d+)/);
@@ -195,14 +198,20 @@ Send an obey to a task and wait for a completion message.
 
   $status = $obj->obeyw("action","params");
 
-Parameters are optional.
+Parameters are optional. Parameters can be provided either as
+
+  Sds object
+  "param1 param2 param3"
+  "param1", "param2"
+  "param1=val1 param2=val2"
+  "param1=val1","param2=val2"
 
 =cut
 
 sub obeyw {
   my $self = shift;
   my $action = shift;
-  my $params = shift; # optional
+  my @params = @_; # optional
 
   # get the message system settings
   my $ms = new ORAC::Msg::Control::DRAMA(1);
@@ -215,9 +224,10 @@ sub obeyw {
   # wrapping the parameters into an SDS structure
   DRAMA::obeyw( $self->taskname,
 		$action,
-		( defined $params ? _tosds( $params ) : () ),
+		( @params ? _tosds( @params ) : () ),
 		{
 		 -info => \&cbinfo,
+		 -infofull => \&cbinfofull,
 		 -success => sub { $status = ORAC__OK; },
 		 -error => sub { 
 		   # need to trap BadEng status
@@ -339,6 +349,7 @@ sub set {
 	       {
 		-wait => 1,
 		-info => \&cbinfo,
+		-infofull => \&cbinfofull,
 		-timeout => $timeout,
 		-error => sub { 
 		  $status = _translate_err($_[2]);
@@ -500,7 +511,7 @@ sub cbinfo {
 
 =item B<cbinfofull>
 
-Full infi handler.
+Full info handler.
 
 =cut
 
@@ -508,26 +519,36 @@ sub cbinfofull {
   my $rtask = shift;
   my @messages = @_;
 
+  # Get the message system object to make sure that we can print messages
+  my $ms = new ORAC::Msg::Control::DRAMA(1);
+  my $stdout = $ms->stdout;
+  my $stderr = $ms->stderr;
+
   my $err = 0;
   for my $msg (@messages) {
     my $prefix;
     my $task = "$rtask:";
     if (! exists $msg->{status}) {
-        $task = colored($task, 'green');
-	orac_print($task.$msg->{message});
+      # good status
+      $task = colored($task, 'green');
+      if ($ms->messages && defined $stdout) {
+	print $stdout $task.$msg->{message}. "\n";
+      }
+    } else {
+      my $status = $msg->{status};
+      if (!$err) {
+	# first error chunk
+	$err = 1;
+	$prefix = "##";
       } else {
-        my $status = $msg->{status};
-        if (!$err) {
-          # first error chunk
-          $err = 1;
-          $prefix = "##";
-        } else {
-          $prefix = "# ";
-        }
-        $task = colored($task, 'red');
-	orac_err($prefix.$task. $msg->{message});
+	$prefix = "# ";
+      }
+      $task = colored($task, 'green');
+      if ($ms->errors && defined $stderr) {
+	print $stderr $prefix.$task.$msg->{message}."\n";
       }
     }
+  }
 }
 
 =item B<cberror>
@@ -553,7 +574,7 @@ sub cberror {
 
   for my $m (@msgs) {
     chomp($m);
-    print $stderr "Err:$m\n";
+    print $stderr "$m\n";
   }
   return;
 }
@@ -574,10 +595,27 @@ it to be used in the argument list for obeyw etc).
 
   $sds = _tosds( $param );
 
+If the argument is already an Sds object it is returned immediately.
+
+Strings of the form "A=B" are translated to an Sds structure with key
+"A" and balue "B". Strings of the form "A" are converted to an Arg
+structure of value "A".
+
 =cut
 
 sub _tosds {
-  my $param = shift;
+  my @param = @_;
+  return () unless @param;
+  if (blessed($param[0]) && $param[0]->isa("Sds") ) {
+    return $param[0];
+  } else {
+    # Need to convert the arguments to a form supported by Arg->Create
+    # ie  ("a=b", "c") - so split input strings on spaces
+    @param = map { split(/\s+/,$_) } @param;
+    return () unless @param;
+    my $arg = Arg->Create( @param );
+    return $arg if defined $arg;
+  }
   return ();
 }
 
