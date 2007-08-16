@@ -1,6 +1,142 @@
 # -*-perl-*-
 
-orac_print("\nSteering information:\n", "yellow");
+=head1 NAME
+
+_JITTER_STEER_ -- Steers processing for JITTER recipes.
+
+=head1 DESCRIPTION
+
+This primitive controls processing for WFCAM JITTER recipes by setting steering headers listed below.
+
+=head1 STEERING HEADERS
+
+=over 4
+
+=item ADD_INTERLEAVED_ASTROMETRY = LOGICAL
+
+Whether or not to add astrometry to the interleaved frames.
+
+=item CREATE_CATALOGUE = LOGICAL
+
+Whether or not to create a point-source catalogue.
+
+=item DO_ESTAR_TRIGGER = LOGICAL
+
+Whether or not to trigger the eSTAR system.
+
+=item INTERLEAVE_MICROSTEPS = LOGICAL
+
+Whether or not to interleave microstepped observations.
+
+=item JITTER_POSITION = INTEGER
+
+The current position in the jitter sequence. Starts from 1.
+
+=item MAKE_FLAT = LOGICAL
+
+Whether or not to make a self-flat.
+
+=item MAKE_MOSAIC = LOGICAL
+
+Whether or not to mosaic the images into a group mosaic.
+
+=item MAKE_SKY = LOGICAL
+
+Whether or not to make a standard sky calibration frame.
+
+=item MICROSTEP_DEC = REAL
+
+The microstep offset, in arcseconds, along the Declination axis.
+
+=item MICROSTEP_POSITION = INTEGER
+
+The current position in the microstep sequence. Starts from 1.
+
+=item MICROSTEP_RA = REAL
+
+The microstep offset, in arcseconds, along the Right Ascension axis.
+
+=item NUMBER_OF_MICROSTEPS = INTEGER
+
+The number of microstep positions in the microstep sequence.
+
+=item NUMBER_OF_JITTERS = INTEGER
+
+The number of jitter positions in the jitter sequence.
+
+=item REFERENCE_FRAME = LOGICAL
+
+Whether or not the frame is to be used to determine a reference sky level.
+
+=item USE_VARIANCE = LOGICAL
+
+Whether or not variance processing is to occur.
+
+=back
+
+=head1 STATUS HEADERS
+
+=over 4
+
+=item ASTROMETRY_ADDED = LOGICAL
+
+Whether or not astrometric corrections have been made. [0]
+
+=item INTERLEAVED = LOGICAL
+
+Whether or not microstep interleaving has been performed. [0]
+
+=item SKY_SUBTRACTED = LOGICAL
+
+Whether or not a sky calibration frame has been subtracted. [0]
+
+=back
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item JITTER_POSITIONS = INTEGER (Given)
+
+The number of positions in the jitter. If absent, the number of offsets as given by the internal header ORAC_NUMBER_OF_JITTER_POSITIONS is used. If neither is available, 9 is used. []
+
+=item SELFFLAT = LOGICAL (Given)
+
+Whether or not to use the observed frames to create a self-flat. [0]
+
+=item SELFSKY = LOGICAL (Given)
+
+Whether or not to use the observed frames to create a standard sky calibration frame. [0]
+
+=item USEVAR = LOGICAL (Given)
+
+Whether or not to create and propagate variance arrays. [0]
+
+=item USTEP_POSITIONS = INTEGER (Given)
+
+The number of positions in the microstep pattern. If absent, the number of positions as given by the internal header ORAC_NUMBER_OF_MICROSTEP_POSITIONS is used. If neither is available, 1 is used. []
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for WFCAM.
+
+=back
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt> (Joint Astronomy Centre)
+
+=head1 COPYRIGHT
+
+Copyright (C) 2007 Science and Technology Facilities Council.  All Rights Reserved.
+
+=cut
 
 # Obtain the USEVAR argument. Default to false.
 my $usevar = $_JITTER_STEER_{USEVAR};
@@ -17,6 +153,14 @@ my $microstep_dec = $Frm->hdr( "USTEP_Y" );
 my $number_of_jitters = $Frm->hdr( "NJITTER" );
 my $jitter_position = $Frm->hdr( "JITTER_I" );
 
+# And set the user headers.
+$Frm->uhdr( "NUMBER_OF_MICROSTEPS", $number_of_microsteps );
+$Frm->uhdr( "MICROSTEP_POSITION", $microstep_position );
+$Frm->uhdr( "MICROSTEP_RA", $microstep_ra );
+$Frm->uhdr( "MICROSTEP_DEC", $microstep_dec );
+$Frm->uhdr( "NUMBER_OF_JITTERS", $number_of_jitters );
+$Frm->uhdr( "JITTER_POSITION", $jitter_position );
+
 # Grab pixelsize and rotation angle.
 my $pixelsize = $Frm->hdr( "PIXLSIZE" );
 my $rotation = $Frm->uhdr( "ORAC_ROTATION" );
@@ -28,16 +172,6 @@ my $dtor = $pi / 180.0;
 # Calculate the offset in X and Y, in pixels.
 my $pixoff_x = ( $microstep_ra * cos( $rotation * $dtor ) - $microstep_dec * sin( $rotation * $dtor ) ) / $pixelsize;
 my $pixoff_y = ( $microstep_ra * sin( $rotation * $dtor ) + $microstep_dec * cos( $rotation * $dtor ) ) / $pixelsize;
-
-# And set the user headers.
-$Frm->uhdr( "NUMBER_OF_MICROSTEPS", $number_of_microsteps );
-$Frm->uhdr( "MICROSTEP_POSITION", $microstep_position );
-$Frm->uhdr( "MICROSTEP_RA", $microstep_ra );
-$Frm->uhdr( "MICROSTEP_DEC", $microstep_dec );
-$Frm->uhdr( "NUMBER_OF_JITTERS", $number_of_jitters );
-$Frm->uhdr( "JITTER_POSITION", $jitter_position );
-
-$Frm->uhdr( "MAKE_FLAT", 0 );
 
 # Obtain the JITTER_POSITIONS argument. Use the
 # ORAC_NUMBER_OF_JITTER_POSITIONS internal header if the argument
@@ -51,7 +185,6 @@ if( ! defined( $jitter_positions ) ) {
   orac_warn "Number of jitter positions undefined. Defaulting to 9.\n";
   $jitter_positions = 9;
 }
-orac_print( " This is jitter position " . $Frm->uhdr( "JITTER_POSITION" ) . " of $jitter_positions.\n", "yellow" );
 
 # Do the same for USTEP_POSITIONS.
 my $ustep_positions = $_JITTER_STEER_{USTEP_POSITIONS};
@@ -62,58 +195,52 @@ if( ! defined( $ustep_positions ) ) {
   orac_warn "Number of microstep positions undefined. Defaulting to 1.\n";
   $ustep_positions = 1;
 }
-orac_print( " This is microstep position $microstep_position of $ustep_positions.\n", "yellow" );
 
 # Obtain the SELFFLAT argument. Default to false.
 my $selfflat = $_JITTER_STEER_{SELFFLAT};
 $selfflat = defined( $selfflat ) ? $selfflat : 0;
+
+# Obtain the SELFSKY argument. Default to false.
+my $selfsky = $_JITTER_STEER_{SELFSKY};
+$selfsky = defined( $selfsky ) ? $selfsky : 0;
 
 # Number of total frames in one cycle is equal to the number
 # of jitter positions multiplied by the number of microsteps per
 # jitter position.
 my $number = $jitter_positions * $ustep_positions;
 
-# Obtain the SELFFLAT argument. Default to false.
-my $selfflat = $_JITTER_STEER_{SELFFLAT};
-$selfflat = defined( $selfflat ) ? $selfflat : 0;
-if( $selfflat ) {
-  orac_print( " Will self-flat.\n", "yellow" );
-}
+# Set up steering header defaults.
+$Frm->uhdr( "ADD_INTERLEAVED_ASTROMETRY", 0 );
+$Frm->uhdr( "CREATE_CATALOGUE", 0 );
+$Frm->uhdr( "DO_ESTAR_TRIGGER", 0 );
+$Frm->uhdr( "INTERLEAVE_MICROSTEPS", 0 );
+$Frm->uhdr( "MAKE_FLAT", 0 );
+$Frm->uhdr( "MAKE_MOSAIC", 0 );
+$Frm->uhdr( "MAKE_SKY", 0 );
+$Frm->uhdr( "REFERENCE_FRAME", 0 );
 
-# Obtain the SELFSKY argument. Default to false.
-my $selfsky = $_JITTER_STEER_{SELFSKY};
-$selfsky = defined( $selfsky ) ? $selfsky : 0;
-if( $selfsky ) {
-  orac_print( " Will self-sky.\n", "yellow" );
-}
-
-# Set up steering headers.
-$Frm->uhdr("INTERLEAVE_MICROSTEPS", 0);
-$Frm->uhdr("ADD_INTERLEAVED_ASTROMETRY", 0);
-$Frm->uhdr("ASTROMETRY_ADDED", 0);
+# Set frame status headers.
+$Frm->uhdr( "ASTROMETRY_ADDED", 0 );
+$Frm->uhdr( "INTERLEAVED", 0 );
+$Frm->uhdr( "SKY_SUBTRACTED", 0 );
 
 if( ( $microstep_position % $number_of_microsteps ) == 0 &&
     $number_of_microsteps != 1 ) {
 
   if( $selfflat ) {
     $Frm->uhdr( "MAKE_FLAT", 1 );
-    orac_print(" Will create flat-field after this frame's processing.\n", "yellow");
   }
 
   if( $selfsky ) {
     $Frm->uhdr( "MAKE_SKY", 1 );
-    orac_print( " Will create sky frame after this frame's processing.\n", "yellow" );
   }
 
   $Frm->uhdr( "INTERLEAVE_MICROSTEPS", 1 );
-  orac_print(" Will interleave after this frame's processing.\n", "yellow");
 
   # Special-case for GPS.
   if( $Frm->uhdr( "ORAC_OBJECT" ) !~ /^gps/i ) {
     $Frm->uhdr( "ADD_INTERLEAVED_ASTROMETRY", 1 );
-    orac_print ( " Will add astrometry after this frame's processing.\n", "yellow" );
     $Frm->uhdr( "CREATE_CATALOGUE", 1 );
-    orac_print( " Will generate point-source catalogue from post-interleaved frame.\n", "yellow" );
   }
 }
 
@@ -122,53 +249,26 @@ if( ( $microstep_position % $number_of_microsteps ) == 0 &&
 # at that jitter position.
 if( $jitter_position == 1 && $microstep_position == 1 ) {
   $Frm->uhdr( "REFERENCE_FRAME", 1 );
-  orac_print( " This frame will be used as a reference for sky subtraction levels.\n", "yellow" );
-} else {
-  $Frm->uhdr( "REFERENCE_FRAME", 0 );
 }
 
-if( $number_of_microsteps == 1 &&
-    $number_of_jitters == $jitter_position ) {
+if( $jitter_position == $number_of_jitters ) {
 
-  if( $selfsky ) {
+  if( $selfsky && $number_of_microsteps == 1 ) {
     $Frm->uhdr( "MAKE_SKY", 1 );
-    orac_print( " Will create sky frame after this frame's processing.\n", "yellow" );
-  }
-}
-
-# Set up mosaicking and end-of-cycle processing headers.
-if( $number_of_microsteps == $microstep_position &&
-    $number_of_jitters == $jitter_position ) {
-  $Frm->uhdr( "MAKE_MOSAIC", 1 );
-  orac_print ( " Will perform mosaicking after this frame's processing.\n", "yellow" );
-
-  $Frm->uhdr( "ADD_MOSAIC_ASTROMETRY", 1 );
-  orac_print ( " Will add astrometry after mosaicking frames.\n", "yellow" );
-
-  $Frm->uhdr( "MAKE_SKY", 1 );
-
-  if( defined( $Frm->uhdr( "ESTAR" ) ) && $Frm->uhdr( "ESTAR" ) ) {
-    $Frm->uhdr( "DO_ESTAR_TRIGGER", 1 );
-    orac_print(" Will do ", "yellow");
-    orac_print("e", "red");
-    orac_print("STAR trigger after this frame's processing.\n","yellow");
-  } else {
-    $Frm->uhdr( "DO_ESTAR_TRIGGER", 0 );
   }
 
-} else {
-  $Frm->uhdr( "ADD_MOSAIC_ASTROMETRY", 0 );
-  $Frm->uhdr( "MAKE_MOSAIC", 0 );
-  $Frm->uhdr( "DO_ESTAR_TRIGGER", 0 );
+  if( $microstep_position == $number_of_microsteps ) {
+    $Frm->uhdr( "MAKE_MOSAIC", 1 );
+    $Frm->uhdr( "ADD_MOSAIC_ASTROMETRY", 1 );
+    if( defined( $Frm->uhdr( "ESTAR" ) ) && $Frm->uhdr( "ESTAR" ) ) {
+      $Frm->uhdr( "DO_ESTAR_TRIGGER", 1 );
+    }
+  }
 }
 
 # Set "new pixel origin" headers
 $Frm->uhdr( "NEW_X_ORIGIN", nint( $pixoff_x * sqrt( $number_of_microsteps ) ) / sqrt( $number_of_microsteps ) );
 $Frm->uhdr( "NEW_Y_ORIGIN", nint( $pixoff_y * sqrt( $number_of_microsteps ) ) / sqrt( $number_of_microsteps ) );
-
-# Set an INTERLEAVED header to false, for future use with the mosaicking step.
-$Frm->uhdr( "INTERLEAVED", 0 );
-$Frm->uhdr( "SKY_SUBTRACTED", 0 );
 
 # Set the cycle number.
 if( $jitter_position == 1 && $microstep_position == 1 ) {
@@ -182,6 +282,57 @@ if( $jitter_position == 1 && $microstep_position == 1 ) {
 $Frm->uhdr( "CYCLE_NUMBER", $Grp->uhdr( "CYCLE_NUMBER" ) );
 
 $Frm->uhdr("TARGET_OR_SKY", "sky");
+
+# Display information to the user.
+orac_print("Steering information:\n", "yellow");
+orac_print( " This is jitter position " . $Frm->uhdr( "JITTER_POSITION" ) . " of $jitter_positions.\n", "yellow" );
+orac_print( " This is microstep position $microstep_position of $ustep_positions.\n", "yellow" );
+
+if( $selfflat ) {
+  orac_print( " Will self-flat.\n", "yellow" );
+}
+
+if( $selfsky ) {
+  orac_print( " Will self-sky.\n", "yellow" );
+}
+
+if( $Frm->uhdr( "REFERENCE_FRAME" ) ) {
+  orac_print( " This frame will be used as a reference for sky subtraction levels.\n", "yellow" );
+}
+
+if( $Frm->uhdr( "INTERLEAVE_MICROSTEPS" ) ) {
+  orac_print(" Will interleave after this frame's processing.\n", "yellow");
+}
+
+if( $Frm->uhdr( "ADD_INTERLEAVED_ASTROMETRY" ) ) {
+  orac_print ( " Will add astrometry after interleaving frames.\n", "yellow" );
+}
+
+if( $Frm->uhdr( "CREATE_CATALOGUE" ) ) {
+  orac_print( " Will generate point-source catalogue after interleaving frames.\n", "yellow" );
+}
+
+if( $Frm->uhdr( "MAKE_FLAT" ) ) {
+  orac_print(" Will create flat-field after this frame's processing.\n", "yellow");
+}
+
+if( $Frm->uhdr( "MAKE_SKY" ) ) {
+  orac_print( " Will create sky frame after this frame's processing.\n", "yellow" );
+}
+
+if( $Frm->uhdr( "MAKE_MOSAIC" ) ) {
+  orac_print ( " Will perform mosaicking after this frame's processing.\n", "yellow" );
+}
+
+if( $Frm->uhdr( "ADD_MOSAIC_ASTROMETRY" ) ) {
+  orac_print ( " Will add astrometry after mosaicking frames.\n", "yellow" );
+}
+
+if( $Frm->uhdr( "DO_ESTAR_TRIGGER" ) ) {
+  orac_print(" Will do ", "yellow");
+  orac_print("e", "red");
+  orac_print("STAR trigger after mosaicking frames.\n","yellow");
+}
 
 # Tidy up output.
 orac_print "\n";
