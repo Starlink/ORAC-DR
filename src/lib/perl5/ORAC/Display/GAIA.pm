@@ -784,17 +784,27 @@ sub image {
     return ORAC__ERROR;
   }
 
+  # Copy the file to a temporary file before sending to GAIA. This
+  # gets around a memory mapping bug that will be fixed properly, but
+  # not in the puana branch.
+  my $tmpfile = "GaiaTemp$$";
+  unlink( $tmpfile . ".sdf" );
+
+  ( my $rootfile, my $rest ) = split /\./, $file, 2;
+
+  use File::Copy;
+  copy( $rootfile . ".sdf", $tmpfile . ".sdf" );
+
   # Just send to GAIA - configure the new file
   my $junk;
 #  ($status, $junk) = $self->send_to_gaia("$image configure -file $file");
-  ($status, $junk) = $self->send_to_gaia("$device open $file");
+  ($status, $junk) = $self->send_to_gaia("$device open ${tmpfile}.${rest}");
 
   if ($status != ORAC__OK) {
     orac_err "Error: $junk\n";
     orac_err "ORAC::Display::GAIA - Error displaying file $file\n";
     return ORAC__ERROR;
   }
-
 
   # Other options go here for dealing with ZAUTOSCALE etc
   # To adjust cut levels we need to find the name of the display widget
