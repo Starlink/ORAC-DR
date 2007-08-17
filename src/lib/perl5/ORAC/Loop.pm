@@ -682,7 +682,7 @@ sub orac_loop_task {
   # get the reference value
   my $refframe = shift(@$arr) || 0;
 
-  orac_print("Checking for data set newer than frame $refframe");
+  orac_print("Checking for data set newer than frame $refframe\n");
 
   # Use dots and timeouts as for the other systems
   my $timeout = 43200; # 12 hours timeout
