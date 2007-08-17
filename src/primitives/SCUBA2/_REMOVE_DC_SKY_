@@ -28,6 +28,11 @@ The following arguments are supported
 
 Valid options are MEAN, MEDIAN or MODE. Default is MEAN.
 
+=item LOGFILE
+
+Flag to denote whether to write results of sky removal to a log
+file. Default is 1 (true).
+
 =item VERBOSE
 
 Flag to denote whether to print informative messages to the
@@ -85,6 +90,11 @@ my $verbose = (exists $_REMOVE_DC_SKY_{VERBOSE} &&
 	       defined $_REMOVE_DC_SKY_{VERBOSE}) ?
                $_REMOVE_DC_SKY_{VERBOSE} : 1;
 
+# Write logfiles (default to true)
+my $uselog = (exists $_REMOVE_DC_SKY_{LOGFILE} &&
+              defined $_REMOVE_DC_SKY_{LOGFILE}) ?
+              $_REMOVE_DC_SKY_{LOGFILE} : 1;
+
 # Set the histo/histat flags. The latter is a placeholder in case user
 # wishes to override default choice which is to use HISTAT. Note that
 # histo and histat are mutually exclusive. Setting histo = 1 *must*
@@ -104,6 +114,17 @@ if ( $method eq "MEAN" ) {
   # If we got something unknown, continue using the mean
   orac_warn "Unknown METHOD, $method: falling back on MEAN\n";
   $method = "MEAN";
+}
+
+# Create a log file if necessary
+my $skylog;
+if ( $uselog ) {
+  my $time = gmtime();
+  # Peak fluxes
+  $skylog = new ORAC::LogFile("log.sky");
+  $skylog->header("Sky properties log file - created on $time",
+		  "\n#  ID      Time        Filter    DC       Slope  PA  Seeing   El  CSO",
+		  "-----------------------------------------------------------------------");
 }
 
 my @out;
@@ -135,10 +156,42 @@ for my $i (1..$Frm->nfiles) {
     $Mon{kappa_mon}->obeyw("csub","in=$in out=$out scalar=$sky");
     
     $sky = sprintf "%12.7f", $sky;
-    # Store this value for logging later
-
     orac_print "Subtracting a constant sky level of $sky from $in (method=$method)\n" 
       if ($verbose);
+    # Write to a logfile if desired
+    if ( $uselog ) {
+      # UT string
+      my $time = sprintf "%12.7f", $Frm->hdr('ORACTIME');
+      # Observation number
+      my $obsnum = sprintf "%05d", $Frm->hdr('OBSNUM');
+      # Filter
+      my $filt = sprintf "%4s", $Frm->hdr('FILTER');
+
+      # Tau at 225 GHz
+      my $cso_st = ( defined $Frm->hdr->{SUBHEADERS}->[$i]->{WVMTAUST}) ?
+	$Frm->hdr->{SUBHEADERS}->[$i]->{WVMTAUST} : $Frm->hdr('WVMTAUST');
+      my $cso_end = ( defined $Frm->hdr->{SUBHEADERS}->[$i]->{WVMTAUEN}) ?
+	$Frm->hdr->{SUBHEADERS}->[$i]->{WVMTAUEN} : $Frm->hdr('WVMTAUEN');
+      my $cso = sprintf "%5.3f", 0.5*($cso_st + $cso_end);
+
+      # Seeing
+      my $see_st = ( defined $Frm->hdr->{SUBHEADERS}->[$i]->{SEEINGST}) ?
+	$Frm->hdr->{SUBHEADERS}->[$i]->{SEEINGST} : $Frm->hdr('SEEINGST');
+      my $see_end = ( defined $Frm->hdr->{SUBHEADERS}->[$i]->{SEEINGEN}) ?
+	$Frm->hdr->{SUBHEADERS}->[$i]->{SEEINGEN} : $Frm->hdr('SEEINGEN');
+      my $see = sprintf "%5.3f", 0.5*($see_st + $see_end);
+
+      # Elevation - should always be >10 deg so no need to re-format for printing
+      my $el_st = ( defined $Frm->hdr->{SUBHEADERS}->[$i]->{ELSTART}) ?
+	$Frm->hdr->{SUBHEADERS}->[$i]->{ELSTART} : $Frm->hdr('ELSTART');
+      my $el_end = ( defined $Frm->hdr->{SUBHEADERS}->[$i]->{ELEND}) ?
+	$Frm->hdr->{SUBHEADERS}->[$i]->{ELEND} : $Frm->hdr('ELEND');
+      my $el = int ( 0.5 * ( $el_st + $el_end ) );
+
+      # Since this is a DC sky removal so sky slope and PA are both 0
+      $skylog->addentry("$obsnum $time $filt $sky    0     0  $see    $el $cso");
+    }
+
     # Store the new sky-subtracted output file
     push(@out, $out);
   }
