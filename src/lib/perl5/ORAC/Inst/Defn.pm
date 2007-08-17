@@ -428,7 +428,7 @@ sub orac_determine_inst_classes {
   } elsif ($inst =~ /^SCUBA2/) {
     $groupclass = "ORAC::Group::SCUBA2";
     $frameclass = "ORAC::Frame::SCUBA2";
-    $calclass   = "ORAC::Calib::SCUBA";
+    $calclass   = "ORAC::Calib::SCUBA2";
     $instclass  = "ORAC::Inst::SCUBA2";
 
   } elsif ($inst eq 'MICHTEMP') {
