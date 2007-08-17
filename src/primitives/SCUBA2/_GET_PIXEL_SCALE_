@@ -38,10 +38,15 @@ the B<only> supported domain.)
 Units for returned pixel scale. Valid units are radians, arcsec,
 arcmin or degrees. Default is arcsec.
 
+=item DERIVE
+
+Flag to denote whether to derive the pixel scale from the image
+manually or use the value reported by ndftrace. Default is 0 (false)
+
 =item VERBOSE
 
 Flag to indicate whether informational messages should be 
-given to the user. Default is true.
+given to the user. Default is 1 (true).
 
 =back
 
@@ -103,7 +108,12 @@ my $verbose = (exists $_GET_PIXEL_SCALE_{VERBOSE} &&
 # Values will be returned in these units:
 my $units = (exists $_GET_PIXEL_SCALE_{UNITS} && 
 	     defined $_GET_PIXEL_SCALE_{UNITS}) ?
-             $_GET_PIXEL_SCALE_{UNITS} : "arcsec";
+             lc($_GET_PIXEL_SCALE_{UNITS}) : "arcsec";
+
+# Do we want to return the mapping?
+my $wantmap = (exists $_GET_PIXEL_SCALE_{WANTMAP} && 
+	     defined $_GET_PIXEL_SCALE_{WANTMAP}) ?
+             lc($_GET_PIXEL_SCALE_{WANTMAP}) : 0;
 
 my $unitconv;
 if ( $units eq "arcsec" ) {
@@ -119,122 +129,143 @@ if ( $units eq "arcsec" ) {
   $unitconv = 206264.806;
 }
 
+# Are we being asked to derive it ourselves? Default is no.
+my $derive = (exists $_GET_PIXEL_SCALE_{DERIVE} && 
+	     defined $_GET_PIXEL_SCALE_{DERIVE}) ?
+             $_GET_PIXEL_SCALE_{DERIVE} : 0;
+
 # initialise the results array
 $_GET_PIXEL_SCALE_{RESULTS} = [];
 
-my $indomain = "PIXEL";
-# Check the desired output frame - default is SKY
-my $outdomain = (exists $_GET_PIXEL_SCALE_{DOMAIN} &&
-		 defined $_GET_PIXEL_SCALE_{DOMAIN}) ?
-                 uc($_GET_PIXEL_SCALE_{DOMAIN}) : "SKY";
-
-# For now only sky domains are supported. Shouldn't be too much of a
-# problem as I can't see anyone wanting any of the intermediate
-# domains.
-unless ($outdomain =~ /SKY/) {
-  orac_throw "Sorry requested domain $outdomain is not yet supported \n";
-}
-
-# Create FrameSet from the WCS info in the input file
-my $STATUS = 0;
-ndf_begin();
-ndf_find( &NDF::DAT__ROOT(), $in, my $indf, $STATUS );
-
-my $frameset = ndfGtwcs( $indf, $STATUS );
-ndf_annul( $indf, $STATUS );
-ndf_end( $STATUS );
-
-# Frame numbers corresponding to the given in/out domain names
-my $indom;
-my $outdom = -1;
-# Number of Frames in the FrameSet
-my $nframes = $frameset->Get( 'Nframe' );
-
-# Loop over the number of domains in the FrameSet to set the Frame
-# number for the specified domain
-for my $i (1 .. $nframes) {
-  my $tmp_frame = $frameset->GetFrame( $i );
-  my $domain = $tmp_frame->Get( 'Domain' );
-  $indom = $i if ($domain eq $indomain);
-  $outdom = $i if ($domain eq $outdomain);
-}
-
-# Check that the SKY domain exists - not fancy as it only
-# checks whether $outdom is unset
-orac_throw "Error: Image has no SKY domain \n" if ($outdom == -1);
-
-# Retrieve the output SkyFrame
-my $outframe = $frameset->GetFrame( $outdom );
-
-# Retrieve mapping between PIXEL and SKY domains
-my $mapping = $frameset->GetMapping( $indom, $outdom );
-
-# Get PIXEL bounds for image
-$Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
 my $ORAC_STATUS;
-($ORAC_STATUS, my $xmin, my $ymin) = $Mon{ndfpack_mon}->get("ndftrace","lbound");
-($ORAC_STATUS, my $xmax, my $ymax) = $Mon{ndfpack_mon}->get("ndftrace","ubound");
-
-# Loop over 5 positions to calculate X and Y scale and calculate average
-my (@xpixels, @ypixels);
 my ($avxscale, $avyscale) = (0.0, 0.0);
-for my $posindex (1..5) {
-  # Set up arrays of positions to use in pixel coords: four corners
-  # plus centre.
-  if ( $posindex == 1 ) {
-    @xpixels = ($xmin, $xmin, $xmin+1);
-    @ypixels = ($ymin, $ymin+1, $ymin);
-  } elsif ( $posindex == 2 ) {
-    @xpixels = ($xmin, $xmin, $xmin+1);
-    @ypixels = ($ymax, $ymax-1, $ymax);
-  } elsif ( $posindex == 3 ) {
-    @xpixels = ($xmax, $xmax, $xmax-1);
-    @ypixels = ($ymax, $ymax-1, $ymax);
-  } elsif ( $posindex == 4 ) {
-    @xpixels = ($xmax, $xmax, $xmax-1);
-    @ypixels = ($ymin, $ymin+1, $ymin);
-  } elsif ( $posindex == 5 ) {
-    my $xmid = int( $xmax - $xmin );
-    my $ymid = int( $ymax - $ymin );
-    @xpixels = ($xmid, $xmid+1, $xmid);
-    @ypixels = ($ymid, $ymid, $ymid+1);
+my $mapping = undef;
+
+if ( $derive ) {
+
+  my $indomain = "PIXEL";
+  # Check the desired output frame - default is SKY
+  my $outdomain = (exists $_GET_PIXEL_SCALE_{DOMAIN} &&
+		   defined $_GET_PIXEL_SCALE_{DOMAIN}) ?
+		   uc($_GET_PIXEL_SCALE_{DOMAIN}) : "SKY";
+
+  # For now only sky domains are supported. Shouldn't be too much of a
+  # problem as I can't see anyone wanting any of the intermediate
+  # domains.
+  unless ($outdomain =~ /SKY/) {
+    orac_throw "Sorry requested domain $outdomain is not yet supported \n";
   }
 
-  # Convert pixel positions into sky positions using the mapping we
-  # derived earlier
-  (my $xskyref, my $yskyref) = $mapping->Tran2( \@xpixels, \@ypixels, 1);
+  # Create FrameSet from the WCS info in the input file
+  my $STATUS = 0;
+  ndf_begin();
+  ndf_find( &NDF::DAT__ROOT(), $in, my $indf, $STATUS );
 
-  # Output positions on the sky
-  my @xsky = ($xskyref->[0], $xskyref->[1], $xskyref->[2] );
-  my @ysky = ($yskyref->[0], $yskyref->[1], $yskyref->[2] );
+  my $frameset = ndfGtwcs( $indf, $STATUS );
+  ndf_annul( $indf, $STATUS );
+  ndf_end( $STATUS );
 
-  # Use astDistance to calculate the distance on the sky between the positions
-  my $pt1 = [ $xsky[0], $ysky[0] ] ;
-  my $pt2 = [ $xsky[2], $ysky[2] ] ;
-  my $xscale = $outframe->Distance($pt1, $pt2);
+  # Frame numbers corresponding to the given in/out domain names
+  my $indom;
+  my $outdom = -1;
+  # Number of Frames in the FrameSet
+  my $nframes = $frameset->Get( 'Nframe' );
 
-  my $pt2 = [ $xsky[1], $ysky[1] ] ;
-  my $yscale = $outframe->Distance($pt1, $pt2);
-
-  # Now, xscale and yscale are in radians, and so must be converted to
-  # the output units.
-  unless ( $unitconv == 1.0 ) {
-    $xscale *= $unitconv;
-    $yscale *= $unitconv;
+  # Loop over the number of domains in the FrameSet to set the Frame
+  # number for the specified domain
+  for my $i (1 .. $nframes) {
+    my $tmp_frame = $frameset->GetFrame( $i );
+    my $domain = $tmp_frame->Get( 'Domain' );
+    $indom = $i if ($domain eq $indomain);
+    $outdom = $i if ($domain eq $outdomain);
   }
-  # Add to sum
-  $avxscale += $xscale;
-  $avyscale += $yscale;
+
+  # Check that the SKY domain exists - not fancy as it only
+  # checks whether $outdom is unset
+  orac_throw "Error: Image has no SKY domain \n" if ($outdom == -1);
+
+  # Retrieve the output SkyFrame
+  my $outframe = $frameset->GetFrame( $outdom );
+
+  # Retrieve mapping between PIXEL and SKY domains
+  $mapping = $frameset->GetMapping( $indom, $outdom );
+
+  # Get PIXEL bounds for image
+  $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
+  ($ORAC_STATUS, my $xmin, my $ymin) = $Mon{ndfpack_mon}->get("ndftrace","lbound");
+  ($ORAC_STATUS, my $xmax, my $ymax) = $Mon{ndfpack_mon}->get("ndftrace","ubound");
+
+  # Loop over 5 positions to calculate X and Y scale and calculate average
+  my (@xpixels, @ypixels);
+  for my $posindex (1..5) {
+    # Set up arrays of positions to use in pixel coords: four corners
+    # plus centre.
+    if ( $posindex == 1 ) {
+      @xpixels = ($xmin, $xmin, $xmin+1);
+      @ypixels = ($ymin, $ymin+1, $ymin);
+    } elsif ( $posindex == 2 ) {
+      @xpixels = ($xmin, $xmin, $xmin+1);
+      @ypixels = ($ymax, $ymax-1, $ymax);
+    } elsif ( $posindex == 3 ) {
+      @xpixels = ($xmax, $xmax, $xmax-1);
+      @ypixels = ($ymax, $ymax-1, $ymax);
+    } elsif ( $posindex == 4 ) {
+      @xpixels = ($xmax, $xmax, $xmax-1);
+      @ypixels = ($ymin, $ymin+1, $ymin);
+    } elsif ( $posindex == 5 ) {
+      my $xmid = int( $xmax - $xmin );
+      my $ymid = int( $ymax - $ymin );
+      @xpixels = ($xmid, $xmid+1, $xmid);
+      @ypixels = ($ymid, $ymid, $ymid+1);
+    }
+
+    # Convert pixel positions into sky positions using the mapping we
+    # derived earlier
+    (my $xskyref, my $yskyref) = $mapping->Tran2( \@xpixels, \@ypixels, 1);
+
+    # Output positions on the sky
+    my @xsky = ($xskyref->[0], $xskyref->[1], $xskyref->[2] );
+    my @ysky = ($yskyref->[0], $yskyref->[1], $yskyref->[2] );
+
+    # Use astDistance to calculate the distance on the sky between the positions
+    my $pt1 = [ $xsky[0], $ysky[0] ] ;
+    my $pt2 = [ $xsky[2], $ysky[2] ] ;
+    my $xscale = $outframe->Distance($pt1, $pt2);
+
+    my $pt2 = [ $xsky[1], $ysky[1] ] ;
+    my $yscale = $outframe->Distance($pt1, $pt2);
+
+    # Now, xscale and yscale are in radians, and so must be converted to
+    # the output units.
+    unless ( $unitconv == 1.0 ) {
+      $xscale *= $unitconv;
+      $yscale *= $unitconv;
+    }
+    # Add to sum
+    $avxscale += $xscale;
+    $avyscale += $yscale;
+  }
+  # Calculate average value to use
+  $avxscale /= 5;
+  $avyscale /= 5;
+} else {
+  # Alternatively, use ndftrace to get the pixel scale. This may or
+  # may not be a better estimate.
+  $Mon{ndfpack_mon}->obeyw("ndftrace","in=$in");
+  ($ORAC_STATUS, $avxscale, $avyscale) = $Mon{ndfpack_mon}->get("ndftrace","fpixscale");
+  # Note the WANTMAP option is incompatible with DERIVE=0
+  if ( $wantmap ) {
+    orac_warn "Unable to return mapping with DERIVE=0" if $verbose;
+    $wantmap = 0;
+  }
+
 }
-# Calculate average value to use
-$avxscale /= 5;
-$avyscale /= 5;
 
 # Store the result in the hash
 $_GET_PIXEL_SCALE_{RESULTS} = [$avxscale, $avyscale];
 
 # If the caller would like access to the mapping then store that too
-if ( $_GET_PIXEL_SCALE_{WANTMAP} ) {
+if ( $wantmap ) {
   $_GET_PIXEL_SCALE_{MAPPING} = $mapping
 }
 
