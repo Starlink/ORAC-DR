@@ -2,21 +2,22 @@
 
 =head1 NAME
 
-_FIND_INTEGRATED_INTENSITY_ - aperture photometry of maps using statistics
+_FIND_INTEGRATED_INTENSITY_ - aperture photometry of image using statistics
 
 =head1 SYNOPSIS
 
- _FIND_INTEGRATED_INTENSITY_
+ _FIND_INTEGRATED_INTENSITY_ IMAGE=$image
 
- _FIND_INTEGRATED_INTENSITY_  LOGFILE=0
+ _FIND_INTEGRATED_INTENSITY_ IMAGE=$image LOGFILE=0 RADIUS=50
 
 =head1 DESCRIPTION
 
 This primitive calculates the integrated intensity, in whatever units
-the map is currently using, around a single (point) source that is
+the image is currently using, around a single (point) source that is
 assumed to be the only source on the map (so that the sky contribution
 can be calculated). The value is corrected for pixel area. The SKY
-domain is used throughout.
+domain is used throughout; the coordinate system used is the current
+one as obtained from the C<system> WCS attrobute.
 
 The integrated intensity is calculated using the following technique:
 
@@ -24,39 +25,17 @@ The integrated intensity is calculated using the following technique:
 
 =item 1
 
-Define radius of aperture. This is assumed to be 20 arcsec.
+Define radius of aperture (input parameter, or default of 20 arcsec)
 
 =item 2
 
-Find centroid and mask all data centred on this outside the calculated
-radius.
+Mask all data outside the calculated radius centred on the given position.
 
 =item 3
 
 Calculate the sum of all valid pixels.
 
-=item 4
-
-For a number of `sky' positions, generate a mask and find the
-mean and standard deviation of the sky.
-
-=item 5
-
-Choose the sky region with the lowest noise (deemed to be the region
-of the map least affected by noisy pixels). The mean is not subtracted
-from the image since it is assumed that sky removal and surface
-fitting have already done that.
-
-=item 6
-
-Correct for pixel size to convert the sum to an area integral.
-Calculate signal-to-noise ratio.
-
 =back
-
-This primitive is Frame based (C<$Frm>) and either acts on each image
-in the frame or only on the one selected by the FRAME
-argument. UPDATE!!
 
 =head1 ARGUMENTS
 
@@ -66,7 +45,7 @@ The following arguments are supported:
 
 =item IMAGE
 
-The usual input file... will use current Frm
+Input image. No default.
 
 =item RADIUS
 
@@ -76,10 +55,6 @@ The radius of the aperture in arcsec. Default is 20 arcsec.
 
 An array reference containing the formatted X, Y coordinates in the
 chosen frame. No default.
-
-=item CATALOGUE
-
-...
 
 =item LOGFILE
 
@@ -114,13 +89,24 @@ contains the following keys:
 
 =item TOTALFLUX
 
-A reference to an array containing the integrated intensity for each
-source in the catalogue
+The total flux within the aperture. No correction is made for beam
+size.
 
 =item PEAKFLUX
 
-A reference to an array containing the peak intensity for each source
-in the catalogue
+The peak intensity in the aperture
+
+=item SIGMA
+
+The standard deviation in the image
+
+=item NUMGOOD
+
+The number of pixels which contribute to the estimate of the flux
+
+=item NUMPIX
+
+The total number of pixels in the image
 
 =back
 
@@ -151,15 +137,6 @@ unless ( defined ($in) ) {
   orac_throw "Error: _FIND_INTEGRATED_INTENSITY_ must be supplied with an image\n";
 }
 
-# Obtain the catalogue 
-#my $catalogue = (exists $_FIND_INTEGRATED_INTENSITY_{CATALOGUE} &&
-#		 defined $_FIND_INTEGRATED_INTENSITY_{CATALOGUE}) 
-#                 ? $_FIND_INTEGRATED_INTENSITY_{CATALOGUE} : undef;
-
-#unless ( defined ($catalogue) && defined ($in) ) {
-#  orac_throw "Error: _FIND_INTEGRATED_INTENSITY_ must be supplied with an image and corresponding catalogue\n";
-#}
-
 # Write logfile (default to true)
 my $uselog = ( exists $_FIND_INTEGRATED_INTENSITY_{LOGFILE} && 
 	       defined $_FIND_INTEGRATED_INTENSITY_{LOGFILE} ) ?
@@ -169,8 +146,6 @@ my $uselog = ( exists $_FIND_INTEGRATED_INTENSITY_{LOGFILE} &&
 my $verbose = ( exists $_FIND_INTEGRATED_INTENSITY_{VERBOSE} && 
 		defined $_FIND_INTEGRATED_INTENSITY_{VERBOSE} ) ?
                 $_FIND_INTEGRATED_INTENSITY_{VERBOSE} : 1;
-
-# Set the WCS domain to SKY
 
 # Define X and Y positions
 my ($x, $y);
@@ -188,20 +163,36 @@ my $radius = $_FIND_INTEGRATED_INTENSITY_{RADIUS} || 20.0;
 # Create the temporary file for the ard description
 my $ard = new ORAC::TempFile;
 
+my $ORAC_STATUS;
+# Get current coordinate system
+my $args = "ndf=$in mode=get name=system";
+$Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+($ORAC_STATUS, my $cosys) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+# Convert string to upper case
+$cosys = uc($cosys);
+
 # Write the ard description
 # In kappa 18 we need to add a COFRAME - we are using arcseconds
 if (starversion_gt('kappa','V0.18-0')) {
-  print {$ard->handle} "COFRAME(SKY,System=FK5)\n";
+  print {$ard->handle} "COFRAME(SKY,System=$cosys)\n";
 }
 
-# Mask out everything EXCEPT a circle centred on x, y. Note the
-# conversion of radius from arcsec to sky (FK5) coords.
-if ( $radius < 60.0 ) {
-  print {$ard->handle} ".NOT.CIRCLE($x, $y, 00:00:$radius)\n";
+# Mask out everything EXCEPT a circle centred on X, Y. Radius has to
+# be specified correctly in current coordinate system.
+# If AzEl or Galactic, convert to degrees
+if ( $cosys eq " AZEL" || $cosys eq "GALACTIC" ) {
+  my $dradius = $radius/3600.0;
+  print {$ard->handle} ".NOT.CIRCLE($x, $y, $dradius)\n";
 } else {
-  my $mradius = int( $radius / 60.0 );
-  my $sradius = $radius - ($mradius * 60);
-  print {$ard->handle} ".NOT.CIRCLE($x, $y, 00:$mradius:$sradius)\n";
+  # All other supported systems are HMS/DMS so need to format
+  # correctly
+  if ( $radius < 60.0 ) {
+    print {$ard->handle} ".NOT.CIRCLE($x, $y, 00:00:$radius)\n";
+  } else {
+    my $mradius = int( $radius / 60.0 );
+    my $sradius = $radius - ($mradius * 60);
+    print {$ard->handle} ".NOT.CIRCLE($x, $y, 00:$mradius:$sradius)\n";
+  }
 }
 
 # Close the file
@@ -228,7 +219,6 @@ $Mon{kappa_mon}->obeyw("ardmask", "in=$in out=$out ardfile=$ardin $ardargs");
 $Mon{kappa_mon}->obeyw("stats","ndf=$out");
 
 # Get sum and number of valid pixels
-my $ORAC_STATUS;
 ($ORAC_STATUS, my $sum) = $Mon{kappa_mon}->get("stats","total");
 ($ORAC_STATUS, my $maxflux) = $Mon{kappa_mon}->get("stats","maximum");
 ($ORAC_STATUS, my $ngood) = $Mon{kappa_mon}->get("stats","numgood");
@@ -246,9 +236,3 @@ $_FIND_INTEGRATED_INTENSITY_{PEAKFLUX} = $maxflux;
 $_FIND_INTEGRATED_INTENSITY_{SIGMA} = $sigma;
 $_FIND_INTEGRATED_INTENSITY_{NUMGOOD} = $ngood;
 $_FIND_INTEGRATED_INTENSITY_{NUMPIX} = $npix;
-
-# Tidy up by deleting masked file
-#undef $outobj;
-
-# User feedback
-#orac_print "Calculated integrated intensity\n" if $verbose;
