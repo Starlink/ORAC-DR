@@ -239,6 +239,10 @@ is returned.
 
   my $beampar_ref = $Cal->beampar;
 
+Conventionally the units of the FWHM are arcsec, but it is up to the
+caller to ensure that the FWHM values are in the units of choice
+before storing them here.
+
 =cut
 
 sub beampar {
@@ -254,20 +258,20 @@ sub beampar {
   # ErrFrac => val
 
   if ( @_ ) {
-    my %beamargs = shift;
+    my %beamargs = @_;
 
     # What if any of these is undef?
-    $self->{Beam}->{Bmaj} = $beamargs->{majfwhm}->[0];
-    $self->{Beam}->{BmajErr} = $beamargs->{majfwhm}->[1];
-    $self->{Beam}->{Bmin} = $beamargs->{minfwhm}->[0];
-    $self->{Beam}->{BminErr} = $beamargs->{minfwhm}->[1];
-    $self->{Beam}->{Pa} = $beamargs->{orient}->[0];
-    $self->{Beam}->{PaErr} = $beamargs->{orient}->[1];
+    $self->{Beam}->{Bmaj} = $beamargs{majfwhm}->[0];
+    $self->{Beam}->{BmajErr} = $beamargs{majfwhm}->[1];
+    $self->{Beam}->{Bmin} = $beamargs{minfwhm}->[0];
+    $self->{Beam}->{BminErr} = $beamargs{minfwhm}->[1];
+    $self->{Beam}->{Pa} = $beamargs{orient}->[0];
+    $self->{Beam}->{PaErr} = $beamargs{orient}->[1];
 
-    $self->{Beam}->{ErrFrac} = $beamargs->{errfrac};
+    $self->{Beam}->{ErrFrac} = $beamargs{errfrac};
 
     # Store geometric mean as FWHM
-    $self->fwhm( sqrt($beamargs->{majfwhm}->[0] * $beamargs->{minfwhm}->[0]) );
+    $self->fwhm( sqrt($beamargs{majfwhm}->[0] * $beamargs{minfwhm}->[0]) );
 
     return;
   }
