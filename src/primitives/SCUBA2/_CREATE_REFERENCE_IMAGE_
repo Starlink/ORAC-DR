@@ -27,9 +27,9 @@ already exist.
 
 =item FRAME
 
-The name of the chosen sky frame for the reference image. May be any
-that AST knows about, i.e. ICRS, FK4, FK5, EQUATORIAL, GAPPT or
-GALACTIC.
+The name of the chosen sky frame for the reference image. May be
+almost any that AST knows about, i.e. ICRS, FK4, FK5, EQUATORIAL,
+GAPPT or GALACTIC. Note: AZEL is not supported.
 
 Default is ICRS (same as EQUATORIAL or FK5).
 
@@ -92,37 +92,30 @@ my $verbose = (exists $_CREATE_REFERENCE_IMAGE_{VERBOSE} &&
 	       defined $_CREATE_REFERENCE_IMAGE_{VERBOSE}) ?
 	       $_CREATE_REFERENCE_IMAGE_{VERBOSE} : 1;
 
-# Check for desired output coordinate frame
-my $coordframe = (exists $_CREATE_REFERENCE_IMAGE_{FRAME} &&
+# Check for desired OUTPUT coordinate frame
+my $cosys_out = (exists $_CREATE_REFERENCE_IMAGE_{FRAME} &&
 		  defined $_CREATE_REFERENCE_IMAGE_{FRAME}) ?
                   uc($_CREATE_REFERENCE_IMAGE_{FRAME}) : "ICRS";
-
-# Check that it's supported - continue using ICRS if not recognized
-if ( $coordframe ne "ICRS" && $coordframe ne "GAPPT" && $coordframe ne "EQUATORIAL"
-     && $coordframe ne "GALACTIC" && $coordframe ne "FK5" && $coordframe ne "FK4") {
-  orac_warn "Warning: unsupported coordinate frame, $coordframe. Using default (ICRS)\n";
-  $coordframe = "ICRS";
-}
 
 # Tell the user what's going on
 orac_print "Creating reference image: " if $verbose;
 
 # Create the blank 3x3 pixel reference NDF
 my $refimage = $Frm->group."_ref";
-my $imgargs = "lbound=\[1,1\] ubound=\[3,3\] mode=bl";
-$Mon{kappa_mon}->obeyw("creframe","out=$refimage title=RefImage ".$imgargs);
+my $imgargs = "lbound=\[1,1\] ubound=\[3,3\] mode=bl title=".$Frm->hdr('OBJECT');
+$Mon{kappa_mon}->obeyw("creframe","out=$refimage ".$imgargs);
 orac_print "create blank NDF, " if $verbose;
 
 # Get first file in current Frame for WCS and FITS header info
-my $datafile = $Frm->file( 1);
+my $datafile = $Frm->file(1);
 
 # Calculate the pixel scale. Use default values if not set.
 my $pixelscale = (exists $_CREATE_REFERENCE_IMAGE_{PIXEL_SCALE} &&
 		  defined $_CREATE_REFERENCE_IMAGE_{PIXEL_SCALE}) ?
-                  $_CREATE_REFERENCE_IMAGE_{PIXEL_SCALE} : 
-                  ( ($Frm->hdr('FILTER') =~ /450/) ? 3.09 : 5.8) ;
+                  $_CREATE_REFERENCE_IMAGE_{PIXEL_SCALE} : $Cal->pixelscale;
 
-my ($dx, $dy) = (0.0, 0.0); # These should not be zero after this block...
+# These should not be zero after this block...
+my ($dx, $dy) = (0.0, 0.0);
 if ( $pixelscale == 0 ) {
   _GET_PIXEL_SCALE_ IMAGE=$datafile DERIVE=0 UNITS=ARCSEC
   # Retrieve values in arcsec
@@ -144,10 +137,19 @@ $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
 my ($ORAC_STATUS, $skyref) = $Mon{ndfpack_mon}->get("wcsattrib","value");
 my ($xstr, $ystr) = split(/,/,$skyref,2);
 
-# Get current coordinate system
+# Get current INPUT coordinate system
 $args = "ndf=$datafile mode=get name=system";
 $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
-($ORAC_STATUS, my $cosys) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+($ORAC_STATUS, my $cosys_in) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+
+# Check that the OUTPUT coordinate system supported - use INPUT if not
+# recognized
+if ( ( $cosys_out ne "ICRS" ) && ( $cosys_out ne "GAPPT" ) 
+     && ( $cosys_out ne "EQUATORIAL" ) && ( $cosys_out ne "GALACTIC" )
+     && ( $cosys_out ne "FK5" ) && ( $cosys_out ne "FK4" ) ) {
+  orac_warn "Warning: unsupported coordinate frame, $cosys_out. Using default (ICRS)\n";
+  $cosys_out = $cosys_in;
+}
 
 # Get equinox
 $args = "ndf=$datafile mode=get name=equinox";
@@ -156,7 +158,7 @@ $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
 
 # Epoch - for GAPPT retrieve from input data
 my $epoch;
-if ( $cosys eq "GAPPT" ) {
+if ( $cosys_in eq "GAPPT" ) {
   $args = "ndf=$datafile mode=get name=epoch";
   $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
   ($ORAC_STATUS, $epoch) = $Mon{ndfpack_mon}->get("wcsattrib","value");
@@ -177,7 +179,7 @@ my ($x0, $y0);
 # input data and then retrieve parameters in desired output frame.
 use Astro::Coords;
 my $coords; 
-if ( $cosys eq "GALACTIC" ) {
+if ( $cosys_in eq "GALACTIC" ) {
   $coords = new Astro::Coords( long => $xstr, lat => $ystr,
 			       units => 'deg', type => 'galactic' );
 } else {
@@ -186,27 +188,10 @@ if ( $cosys eq "GALACTIC" ) {
 }
 
 # Now retrieve reference coordinates in desired output frame
-if ( $coordframe eq "GALACTIC" ) {
+if ( $cosys_out eq "GALACTIC" ) {
   # Retrieve coords in degrees: SETSKY uses degrees by default
   $x0 = $coords->glong( format => 'deg' );
   $y0 = $coords->glat( format => 'deg' );
-} elsif ( $coordframe eq "GAPPT" ) {
-  # THIS NEEDS TO BE TESTED... Need to check:
-  # 1) Is the epoch a UTC time or TAI?
-  # 2) What needs to be specified for SETSKY?
-
-  # Create a DateTime object and register with Astro::Coords object
-  use DateTime;
-  my $date = DateTime->from_epoch( epoch => $epoch, time_zone => 'UTC' );
-  $coords->datetime( $date );
-  $x0 = $coords->ra_app( format => 'rad' );
-  $y0 = $coords->dec_app( format => 'rad' );
-  # Convert to string and add units for SETSKY
-  $x0 = $x0."r";
-  $y0 = $y0."r";
-
-  # Re-define cosys to be generically equatorial for SETSKY
-  $coordframe = "EQUATORIAL";
 } else {
   # Retrieve coords in radians
   $x0 = $coords->ra( format => 'rad' );
@@ -216,8 +201,9 @@ if ( $coordframe eq "GALACTIC" ) {
   $x0 = $x0."r";
   $y0 = $y0."r";
 
-  # Re-define cosys to be generically equatorial for SETSKY
-  $coordframe = "EQUATORIAL($equinox)";
+  # Re-define output coordinate frame to be generically equatorial for
+  # SETSKY but with appropriate equinox
+  $cosys_out = "EQUATORIAL($equinox)";
 }
 
 # Add a WCS sky frame - forces pixel scale to match raw input data
@@ -226,7 +212,7 @@ orac_print "adding WCS " if $verbose;
 # Define parameters of WCS. Pixelsize is in ARCSEC, lat and lon are as
 # defined above.
 # Note quoting around the pixelsize arguments
-my $wcsargs = "coords=$coordframe epoch=$epoch refcode=pixel pixelref=\[1.5,1.5\] pixelsize=\['".$dx."s', '".$dy."s'\] orient=0 positions=! projtype=gnom lon=".$x0." lat=".$y0;
+my $wcsargs = "coords=$cosys_out epoch=$epoch refcode=pixel pixelref=\[1.5,1.5\] pixelsize=\['".$dx."s', '".$dy."s'\] orient=0 positions=! projtype=gnom lon=".$x0." lat=".$y0;
 $Mon{ndfpack_mon}->obeyw("setsky","ndf=$refimage $wcsargs");
 
 # Now add a FITS header, copy from the first file in the Frm.
@@ -234,7 +220,20 @@ use Astro::FITS::Header::NDF;
 my $fitshdr = new Astro::FITS::Header::NDF( File => $datafile );
 $fitshdr->writehdr( File => $refimage );
 
+# Store the SkyRef attribute in reference image
+$args = "ndf=$refimage mode=set name=skyref newval='".$skyref."'";
+$Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+
+# And if necessary, set the SkyRefIs attribute
+if ( $cosys_in eq "GAPPT" ) {
+  $args = "ndf=$datafile mode=set name=skyrefis newval=origin";
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+}
+
 # Store the reference image name in the RESULTS hash
 $_CREATE_REFERENCE_IMAGE_{RESULTS} = $refimage;
 
-orac_print "done. Successfully created reference image.\n" if $verbose;
+# Register with the calibration object
+$Cal->refimage( $Grp->name, $refimage );
+
+orac_print "done. \nSuccessfully created reference image in coordinate system $cosys_out \n" if $verbose;
