@@ -17,21 +17,29 @@ The default is to allow the current fitting routine to determine the
 shape of the beam. A flag may be specified to force the return of the
 equivalent gaussian beam parameters.
 
+The fit is to the current co-added Frame and will fail if there is
+more than one file in the Frame.
+
 =head1 ARGUMENTS
 
 The following arguments are supported:
 
 =over 4
 
+=item METHOD
+
+Method for deriving the beam parameters. Valid options are BEAM to use
+C<beamfit>, or PSF to use C<psf>. Default is BEAM.
+
 =item GAUSSIAN
 
 A flag to indicate whether the fit is forced to be gaussian. The
-default is no.
+default is no. Only accessed if method=PSF.
 
 =item LOGFILE
 
-A flag to indicate whether a log file should be written containing the
-results of the PSF fit. Default is true.
+A flag to indicate whether a pipeline log file should be written
+containing the results of the fit. Default is true.
 
 =item VERBOSE
 
@@ -46,25 +54,11 @@ given to the user. Default is verbose (true).
 
 =item KAPPA
 
-WCSFRAME, WCSATTRIB
+WCSFRAME, WCSATTRIB, BEAMFIT
 
 =item Other SCUBA-2 primitives
 
-_FIND_POINT_SOURCES, _FIT_PSF_
-
-=back
-
-=head1 OUTPUT DATA
-
-On completion, the primitive hash C<%_FIND_BEAM_SIZE_>
-contains the following key:
-
-=over 4
-
-=item RESULTS
-
-An array reference containing the beam major and minor axes and the
-position angle (E of N).
+_FIND_POINT_SOURCES, _FIT_PSF_, _FIND_INTEGRATED_INTENSITY_
 
 =back
 
@@ -104,7 +98,8 @@ Rights Reserved.
 
 =item - Check source is a calibrator?
 
-=item - Estimating contribution from error beam
+=item - Estimating contribution from error beam (Make sure UNITS for
+  calc and integrated intensity measurement are the same!!)
 
 =item - Decide the best coord frame for reporting beam PA
 
@@ -112,22 +107,21 @@ Rights Reserved.
 
 =item - Retrieve CSO tau from Cal object?
 
+=item - Error in errfrac?
+
 =back
 
 =cut
 
+use constant RAD2ASEC => 206265.0;
+
 # First check that we only have one file in the Frame
 my $in;
 unless ($Frm->nfiles == 1) {
-    orac_throw "Error: _FIND_BEAM_SIZE_ must be run after frames have been combined\n";
+  orac_throw "Error: _FIND_BEAM_SIZE_ must be run after frames have been combined\n";
 } else {
-    $in = $Frm->file;
+  $in = $Frm->file;
 }
-
-# Are we forcing a gaussian?
-my $gaussian = (exists $_FIND_BEAM_SIZE_{GAUSSIAN} &&
-		defined $_FIND_BEAM_SIZE_{GAUSSIAN}) ?
-                $_FIND_BEAM_SIZE_{GAUSSIAN} : 0;
 
 # Should I be verbose? (Default to yes)
 my $verbose = (exists $_FIND_BEAM_SIZE_{VERBOSE} && 
@@ -138,6 +132,13 @@ my $verbose = (exists $_FIND_BEAM_SIZE_{VERBOSE} &&
 my $uselog = ( exists $_FIND_BEAM_SIZE_{LOGFILE} && 
 	       defined $_FIND_BEAM_SIZE_{LOGFILE}) ?
                $_FIND_BEAM_SIZE_{LOGFILE} : 1;
+
+# Do we want to use BEAMFIT or PSF?
+my $method = ( exists $_FIND_BEAM_SIZE_{METHOD} && 
+	       defined $_FIND_BEAM_SIZE_{METHOD}) ?
+               $_FIND_BEAM_SIZE_{METHOD} : "BEAM";
+
+my $usepsf = ( $method eq "PSF" ) ? 1 : 0;
 
 # Do we have a calibrator?
 my $calib = $Cal->iscalsource($Frm->hdr('OBJECT')) ;
@@ -158,12 +159,12 @@ my $wcsframe = (exists $_FIND_BEAM_SIZE_{WCSFRAME} &&
 
 # Test whether or not given frame is valid.
 unless ($wcsframe =~ /AXIS|PIXEL|GRID|SKY/) {
-    orac_throw "Unknown WCS frame, $wcsframe ";
+  orac_throw "Unknown WCS frame, $wcsframe ";
 }
 
 # Check whether older versions of kappa are being used.
 if (starversion_lt('kappa','V0.14-0')) {
-    $wcsframe = "AXIS" if ($wcsframe eq "SKY"); # No SKY frame in older kappa
+  $wcsframe = "AXIS" if ($wcsframe eq "SKY"); # No SKY frame in older kappa
 }
 
 # If we have a SKY frame, determine the WCS SYSTEM parameter.
@@ -189,8 +190,8 @@ if ($uselog) {
   my $time = gmtime();
   $beamlog = new ORAC::LogFile("log.beam");
   $beamlog->header("Beam log file - created on $time\n",
-		   "#     Time       Filter    A       B       PA    Seeing  El   Tau225",
-		   "----------------------------------------------------------------------"
+		   "#     Time       Filter    A     dA     B     dB    PA    dPA    Seeing  El   Tau225",
+		   "-------------------------------------------------------------------------------------"
             );
 }
 
@@ -200,9 +201,12 @@ _FIND_SOURCES_ POINT=1 DETECT_SIGMA=10
 # Retrieve Astro::Catalog object from _FIND_SOURCES_
 my $catalogue = $_FIND_SOURCES_{CATALOGUE};
 
-# What if there are no point sources?
+# What if there are no point sources? Or more than 1?
 if ( $catalogue->sizeof == 0 ) {
   orac_throw "No point sources found in current image: unable to determine beam parameters\n";
+} elsif ( $catalogue->sizeof > 1 && $method eq "BEAM" ) { 
+  orac_warn "Image appears to have multiple sources - switching to PSF method\n";
+  $usepsf = 1;
 }
 
 # Parse DATE-OBS keyword
@@ -216,55 +220,148 @@ my $dt = DateTime->new( year => $dateobs[0], month => $dateobs[1],
 			minute => $dateobs[4], second => $dateobs[5],
 			nanosecond => $dateobs[6]*1e6, time_zone => 'UTC' );
 
-# Create temporary file to write source position(s) in
-my $cofile = new ORAC::TempFile;
+my (@amp, @majfwhm, @minfwhm, $axisr, $gamma, @orient, @xy);
+# Now fit the source using PSF or BEAMFIT
+if ( $usepsf ) {
+  # Are we forcing a gaussian fit?
+  my $gaussian = (exists $_FIND_BEAM_SIZE_{GAUSSIAN} &&
+		  defined $_FIND_BEAM_SIZE_{GAUSSIAN}) ?
+		  $_FIND_BEAM_SIZE_{GAUSSIAN} : 0;
 
-# Loop over all sources in catalogue
-use Astro::Telescope;
-foreach my $source ( @{ $catalogue->allstars }) {
+  # Create temporary file to write source position(s) in
+  my $cofile = new ORAC::TempFile;
+
+  # Since PSF can handle multiple sources, loop over all sources in
+  # catalogue. Of course, in practice `There can be only one'... ;-)
+  use Astro::Telescope;
+  foreach my $i ( 1.. $catalogue->sizeof ) {
+    my $source = $catalogue->starbyindex( $i - 1 );
+    my $coords = $source->coords;
+    # Set the telescope to JCMT
+#    $coords->telescope( new Astro::Telescope( 'JCMT' ) );
+    
+    # Register DateTime object
+#    $coords->datetime( $dt );
+
+    use Data::Dumper;
+#    print Dumper($catalogue);
+    # Print out Az and El of current source
+#    print $coords->ra." ".$coords->dec. "\n";
+    print { $cofile->handle } $coords->ra." ".$coords->dec. "\n";
+    # Store this position for later
+    if ( $i == 1 ) {
+      $xy[0] = $coords->ra;
+      $xy[1] = $coords->dec;
+    }
+  }
+  $cofile->handle->close;
+
+  # Fit the source with a PSF
+  _FIT_PSF_ IMAGE=$in USELOG=1 COFILE=$cofile->file GAUSSIAN=$gaussian
+  ($amp[0], $minfwhm[0], $axisr, $gamma, $orient[0]) = @{ $_FIT_PSF_{RESULTS} };
+
+  # Calculate FWHM for major axis
+  $majfwhm[0] = $minfwhm[0] * $axisr;
+
+  # Set unused `error' array elements to 0
+  $amp[1] = 0.0;
+  $majfwhm[1] = 0.0;
+  $minfwhm[1] = 0.0;
+  $orient[1] = 0.0;
+
+  # Check that the fit gave sensible results
+  unless ( defined $minfwhm[0] && defined $axisr && defined $gamma ) {
+    orac_throw "Error fitting PSF\n";
+  }
+
+  # Warn user if the fit looks bad. Of course, this shouldn't happen
+  # since we have already selected sources which satisfy this
+  # criterion.
+  if ($axisr > 1.3333 || $axisr < 0.75) {
+    orac_warn "Warning: Fit appears to be poor or beam highly elongated \n";
+  }
+
+} else {
+  # We only want to fit one beam so we assume the first (and only)
+  # one in the catalogue is the one we are interested in.
+  my $source = $catalogue->starbyindex( 0 );
   my $coords = $source->coords;
   # Set the telescope to JCMT
   $coords->telescope( new Astro::Telescope( 'JCMT' ) );
-
+    
   # Register DateTime object
   $coords->datetime( $dt );
 
-  # Print out Az and El of current source
-#  print $coords->ra." ".$coords->dec. "\n";
-  print { $cofile->handle } $coords->ra." ".$coords->dec. "\n";
+  $xy[0] = $coords->ra;
+  $xy[1] = $coords->dec;  
+
+  # Set args
+  my $pos = '"'.$xy[0].", ".$xy[1].'"';
+  my $fitarea = 15; # Use a 15x15 pixel area?
+  my $args = "mode=interface pos=".$pos." variance=true fitarea=$fitarea";
+
+  # Call beamfit
+  $Mon{kappa_mon}->obeyw("beamfit","ndf=$in $args");
+
+  # Retrieve parameters
+  my $ORAC_STATUS;
+  ($ORAC_STATUS, @majfwhm) = $Mon{kappa_mon}->get("beamfit","majfwhm");
+  ($ORAC_STATUS, @minfwhm) = $Mon{kappa_mon}->get("beamfit","minfwhm");
+  ($ORAC_STATUS, @orient) = $Mon{kappa_mon}->get("beamfit","orient");
+  ($ORAC_STATUS, @amp) = $Mon{kappa_mon}->get("beamfit","amp");
+
+  # FWHM are returned in radians: convert to arcsec
+  for my $i (0..1) {
+    $majfwhm[$i] *= RAD2ASEC;
+    $minfwhm[$i] *= RAD2ASEC;
+  }
 }
-$cofile->handle->close;
 
-# Fit the source with a PSF
-_FIT_PSF_ IMAGE=$in USELOG=1 COFILE=$cofile->file GAUSSIAN=$gaussian
-my ($amp, $fwhm, $axisr, $gamma, $orient) = @{ $_FIT_PSF_{RESULTS} };
+# Calculate total power in main beam. Note if PSF was used, the
+# amplitude will be that of the first useable source in the image. In
+# practice, there is likely to be only one source in the image so this
+# will be the amplitude we want.
+my $Pmain = 1.133 * $amp[0] * $majfwhm[0] * $minfwhm[0];
 
-# Check that the fit gave sensible results
-unless ( defined $fwhm && defined $axisr && defined $gamma ) {
-  orac_throw "Error fitting PSF\n";
+# Error in total power - assume errors add in quadrature
+my $dPmain = $Pmain * sqrt( $amp[1]*$amp[1]/($amp[0]*$amp[0]) +
+			    $majfwhm[1]*$majfwhm[1]/($majfwhm[0]*$majfwhm[0]) +
+			    $minfwhm[1]*$minfwhm[1]/($minfwhm[0]*$minfwhm[0]) );
+
+# Now do aperture photometry on source to measure total power in image
+# A 2 arcmin-diameter aperture should be big enough
+# Future: Iterative method to increase aperture from FWHM to image size
+my $radius = 60.0; 
+
+_FIND_INTEGRATED_INTENSITY_ RADIUS=$radius IMAGE=$in XYPOS=\@xy
+my $Pint = $_FIND_INTEGRATED_INTENSITY_{TOTALFLUX};
+# Error in $Pint?
+#my $Pint = 0.0;
+
+# Calculate fraction of power in error beam as a percentage
+my $errfrac;
+if ( $Pint > $Pmain ) {
+  $errfrac = 100.0 * (1.0 - ($Pmain / $Pint) );
+} else {
+  orac_warn "Total integrated power is less than that in the main beam\n";
+  $errfrac = 0.0;
 }
 
-# Warn user if the fit looks bad. Of course, this shouldn't happen
-# since we have already selected sources which satisfy this criterion.
-if ($axisr > 1.3333 || $axisr < 0.75) {
-  orac_warn "Warning: Fit appears to be poor or beam highly elongated \n";
-}
+# Store beam parameters
+$Cal->beampar( majfwhm => \@majfwhm, minfwhm => \@minfwhm, 
+	       orient => \@orient, errfrac => $errfrac );
 
-my $beamb = $fwhm;
-my $beama = $fwhm * $axisr;
+
+# Reformat for pretty reporting
+$errfrac = sprintf "%3d", $errfrac;
 
 # Now subtract parallactic angle to get PA in AzEl frame
 #$orient -= $coords->pa(format => 'deg');
 
-# Store results
-$_FIND_BEAM_SIZE_{RESULTS} = [$beama, $beamb, $orient];
-
-# Register with $Cal object?
-
 # Write a log file if required
 if ($uselog) {
-  my $num = $Frm->hdr('OBSNUM');
-  my $time= sprintf "%12.3f", $Frm->hdr('ORACTIME');
+  my $num = sprintf "%04d", $Frm->hdr('OBSNUM');
+  my $time= sprintf "%15.7f", $Frm->hdr('ORACTIME');
   my $filt= sprintf "%4s", $Frm->hdr('FILTER');
 
   # Get TAU from the header - should get from $Cal object?
@@ -275,15 +372,23 @@ if ($uselog) {
   # Seeing
   my $see = sprintf "%5.2f", ( 0.5 * ($Frm->hdr('SEEINGST') + $Frm->hdr('SEEINGEN') ) );
   # Reformat beam parameters for printing
-  $beama = sprintf "%5.2f", $beama;
-  $beamb = sprintf "%5.2f", $beamb;
-  $orient = sprintf "%5.2f", $orient;
+  my $beama = sprintf "%5.2f", $majfwhm[0];
+  my $da = sprintf "%5.2f",  $majfwhm[1];
+  my $beamb = sprintf "%5.2f", $minfwhm[0];
+  my $db = sprintf "%5.2f", $minfwhm[1];
+  my $pa = sprintf "%5.2f", $orient[0];
+  my $dpa = sprintf "%5.2f", $orient[1];
 
   # Write to logfile
-  $beamlog->addentry("$num  $time  $filt    $beama   $beamb   $orient   $see   $el  $cso");
+  $beamlog->addentry("$num  $time  $filt    $beama   $da   $beamb   $db   $pa   $dpa $see   $el  $cso");
 
-  orac_print "Beam size for filter 850: $beama x $beamb arcsec^2 at a PA of $orient deg E of N calculated from ".$catalogue->sizeof." sources\n"
-    if ($verbose);
+  my $sources;
+  if ( $catalogue->sizeof == 1 ) {
+    $sources = " source\n";
+  } else {
+    $sources = " sources\n";
+  }
+  orac_print "Beam size for $filt: $beama x $beamb arcsec^2 at a PA of $pa deg E of N calculated from ".$catalogue->sizeof.$sources if ($verbose);
 }
 
 # Return SYSTEM to original value if necessary
