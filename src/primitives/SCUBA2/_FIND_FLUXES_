@@ -15,10 +15,6 @@ integral solution. If the fit is poor (defined by the axis ratio
 falling outside a pre-defined range) then the default aperture
 photometry method is used instead.
 
-Note that the C<Math::Gsl> Perl module must be installed for the PSF
-integrator. See the documentation for C<Starlink::PSF> for further
-details.
-
 This primitive is designed to work on a single image and will fail if
 the current Frame object contains more than one file.
 
@@ -72,10 +68,6 @@ PSF, WCSFRAME
 =item Other SCUBA-2 primitives
 
 _FIT_PSF_, _FIND_INTEGRATED_INTENSITY_, _FIND_SOURCES_
-
-=item Perl modules
-
-Starlink::PSF
 
 =back
 
@@ -234,22 +226,19 @@ if ( $catalogue->sizeof == 0 ) {
     $obsnum = sprintf "%05d", $Obj->hdr('OBSNUM');
   }
 
-  my $totalflux;
   my $fluxcorr = 1.0;
   my $ORAC_STATUS;
 
   if ($usepsf) {
     orac_print "Calculating fluxes by fitting a PSF\n" if $verbose;
-    use Starlink::PSF;
   } else {
     orac_print "Calculating fluxes by aperture photometry\n" if $verbose;
   }
   # Define all the parameters we might need
-  my ($amp, $fwhm, $axisr, $gamma, $orient);
+  my ($amp, $fwhm, $axisr, $totalflux);
 
   # Loop over all sources in the catalogue and run desired
   # flux-calculation method
-  orac_print $catalogue->sizeof."\n";
   for my $i ( 1 .. $catalogue->sizeof ) {
     my $source = $catalogue->starbyindex( $i - 1 ); # Catalogue is 0-indexed
     # Retrieve Astro::Coords object associated with current source
@@ -257,8 +246,6 @@ if ( $catalogue->sizeof == 0 ) {
     my $ra = $coords->ra;
     my $dec = $coords->dec;
 
-#    use Data::Dumper;
-#    print Dumper($coords);
     if ( $usepsf ) {
       # Write position to COFILE
       my $cofile = new ORAC::TempFile;
@@ -266,10 +253,11 @@ if ( $catalogue->sizeof == 0 ) {
       $cofile->handle->close;
       # Fit the source
       _FIT_PSF_ IMAGE=$in COFILE=$cofile->file VERBOSE=0
-      ($amp, $fwhm, $axisr, $gamma, $orient) = @{ $_FIT_PSF_{RESULTS} };
+      $amp = $_FIT_PSF_{AMPLITUDE};
+      $fwhm = $_FIT_PSF_{FWHM};
+      $axisr = $_FIT_PSF_{AXISR};
+      $totalflux = $_FIT_PSF_{TOTALFLUX};
       undef $cofile;
-      # Integrate profile - total flux is returned in units of amp * fwhm^2
-      $totalflux = Starlink::PSF->integrate_profile($amp, $fwhm, $axisr, $gamma);
       # Calculate geometric mean FWHM for logging
       $fwhm *= sqrt($axisr);
     } else {
@@ -278,7 +266,7 @@ if ( $catalogue->sizeof == 0 ) {
       _FIND_INTEGRATED_INTENSITY_ RADIUS=$radius IMAGE=$in XYPOS=\@xy
       $totalflux = $_FIND_INTEGRATED_INTENSITY_{TOTALFLUX};
       $amp = $_FIND_INTEGRATED_INTENSITY_{PEAKFLUX};
-      $fwhm = 15.0; # HACK!!! Should be obtained from Cal object
+      $fwhm = $Cal->fwhm;
     }
 
     # Convert flux to meaningful units
