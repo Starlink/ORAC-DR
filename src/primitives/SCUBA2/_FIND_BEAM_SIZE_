@@ -174,9 +174,15 @@ unless ($wcsframe =~ /AXIS|PIXEL|GRID|SKY/) {
   orac_throw "Unknown WCS frame, $wcsframe ";
 }
 
-# Check whether older versions of kappa are being used.
-if (starversion_lt('kappa','V0.14-0')) {
-  $wcsframe = "AXIS" if ($wcsframe eq "SKY"); # No SKY frame in older kappa
+# Kappa must be at least V0.15 to use PSF
+if (starversion_lt('kappa','V0.15-0')) {
+  orac_throw "Installed version of KAPPA is too old to run _FIND_BEAM_SIZE_\n";
+}
+
+# See if KAPPA has beamfit
+if ( !$usepsf && starversion_lt('kappa','V1.7')) {
+  orac_warn "Installed version of KAPPA is too old to use beamfit method, switching to PSF instead\n";
+  $usepsf = 1;
 }
 
 # If we have a SKY frame, determine the WCS SYSTEM parameter.
@@ -232,7 +238,7 @@ my $dt = DateTime->new( year => $dateobs[0], month => $dateobs[1],
 			minute => $dateobs[4], second => $dateobs[5],
 			nanosecond => $dateobs[6]*1e6, time_zone => 'UTC' );
 
-my (@amp, @majfwhm, @minfwhm, $axisr, $gamma, @orient, @xy);
+my (@amp, @majfwhm, @minfwhm, $axisr, @orient, @xy);
 # Now fit the source using PSF or BEAMFIT
 if ( $usepsf ) {
   # Are we forcing a gaussian fit?
@@ -270,7 +276,11 @@ if ( $usepsf ) {
 
   # Fit the source with a PSF
   _FIT_PSF_ IMAGE=$in USELOG=1 COFILE=$cofile->file GAUSSIAN=$gaussian
-  ($amp[0], $minfwhm[0], $axisr, $gamma, $orient[0]) = @{ $_FIT_PSF_{RESULTS} };
+  # Retrieve parameters
+  $amp[0] = $_FIT_PSF_{AMPLITUDE};
+  $minfwhm[0] = $_FIT_PSF_{FWHM};
+  $axisr = $_FIT_PSF_{AXISR};
+  $orient[0] = $_FIT_PSF_{ORIENT};
 
   # Calculate FWHM for major axis
   $majfwhm[0] = $minfwhm[0] * $axisr;
@@ -282,7 +292,7 @@ if ( $usepsf ) {
   $orient[1] = 0.0;
 
   # Check that the fit gave sensible results
-  unless ( defined $minfwhm[0] && defined $axisr && defined $gamma ) {
+  unless ( defined $minfwhm[0] && defined $axisr ) {
     orac_throw "Error fitting PSF\n";
   }
 
@@ -290,7 +300,7 @@ if ( $usepsf ) {
   # since we have already selected sources which satisfy this
   # criterion.
   if ($axisr > 1.3333 || $axisr < 0.75) {
-    orac_warn "Warning: Fit appears to be poor or beam highly elongated \n";
+    orac_warn "Warning: PSF fit appears to be poor or beam highly elongated \n";
   }
 
 } else {
