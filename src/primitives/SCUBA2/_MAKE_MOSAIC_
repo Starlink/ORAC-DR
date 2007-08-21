@@ -31,23 +31,42 @@ mosaicked at the end.
 For producing a Group mosaic, the user has the option of creating a
 running average or stacking all of the images in the Group object.
 
-Other arguments control the method used to combine the images
+Other arguments control the method used to combine the images.
+
+For mosaicking images in a SKY frame, a reference image must be
+created. If a Grp file exists, that will be taken as the reference. If
+not, then the Cal object is queried to return a reference image. If
+there is no reference by this stage, then the C<SKYREF> parameter is
+used to determine whether or not a new sky-aligned reference image
+should be created.
 
 =head1 ARGUMENTS
 
 =over 4
 
+=item B<MAKEMOS_METHOD>
+
+The method to be used by MAKEMOS to combine the images. May be any
+value supported by MAKEMOS (see MAKEMOS documentation for further
+details). MEAN is the default.
+
 =item B<METHOD>
 
-The method to be used to combine the images. In principle could be any
-value supported by MAKEMOS (see MAKEMOS documentation for further
-details). Currently, only MEAN or MEDIAN are supported. MEDIAN is the
-default.
+Image resampling method used by WCSALIGN or WCSMOSAIC. May be any
+value supported by those tasks. Default is Nearest-neighbour.
 
 =item B<GENVAR>
 
 Flag to determine whether or not to use genvar when
 mosaicking. Default is 1 (yes),
+
+=item B<SKYREF>
+
+Flag to indicate whether to align images in a SKY coordinate
+frame. Default is 1 (yes). Note that this flag is only used if there
+is no prior reference image. If set to 0 (no) then the images will be
+aligned to the first image in the Frame, which may or may not be
+desireable.
 
 =item B<VERBOSE>
 
@@ -125,8 +144,14 @@ my $makemos = (exists $_MAKE_MOSAIC_{MAKEMOS} &&
 	       defined $_MAKE_MOSAIC_{MAKEMOS}) ?
                $_MAKE_MOSAIC_{MAKEMOS} : 0;
 
+# Are we aligning images in a SKY frame?
+my $skyalign = (exists $_MAKE_MOSAIC_{SKYREF} &&
+	       defined $_MAKE_MOSAIC_{SKYREF}) ?
+               $_MAKE_MOSAIC_{SKYREF} : 1;
+
+
 # Check that the installed version of Kappa has WCSMOSAIC
-if ( $makemos == 0 ) {
+unless ( $makemos ) {
   if (starversion_lt('kappa', 'V1.5')) {
     $makemos = 1;
     orac_warn "Installed Kappa version does not support WCSMOSAIC, using WCSALIGN + MAKEMOS\n";
@@ -138,16 +163,64 @@ my $method = (exists $_MAKE_MOSAIC_{METHOD} &&
 	      defined $_MAKE_MOSAIC_{METHOD}) ? 
               lc($_MAKE_MOSAIC_{METHOD}) : "nearest"; 
 
+# Method for combining images in makemos
+my $makemos_method = (exists $_MAKE_MOSAIC_{MAKEMOS_METHOD} &&
+		      defined $_MAKE_MOSAIC_{MAKEMOS_METHOD}) ? 
+                      lc($_MAKE_MOSAIC_{MAKEMOS_METHOD}) : "mean"; 
+
+# Input and output files...
 my $in;
 my $out;
+
+# Define the reference image
+my $refimage;
+# If there's a Grp file, use that
+if ($Grp->file_exists) {
+  $refimage = $Grp->file;
+} elsif ( $Cal->refimage ) {
+  # Or use the current group reference image
+  $refimage = $Cal->refimage;
+} else {
+  if ( $skyalign ) {
+    # Output mosaic coordinate frame
+    my $cosys_out = (exists $_MAKE_MOSAIC_{COORD_FRAME} &&
+		    defined $_MAKE_MOSAIC_{COORD_FRAME}) ? 
+		    lc($_MAKE_MOSAIC_{COORD_FRAME}) : ""; 
+    # If not set, just use the current system
+    if ( $cosys_out eq "" ) {
+      my $firstfile = $Frm->file(1);
+      $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$firstfile mode=get name=system");
+      (my $ORAC_STATUS, $cosys_out) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+    }
+    # Set the output coordinate frame: leave PIXEL_SCALE unset to use
+    # defaults
+    _CREATE_REFERENCE_IMAGE_ SYSTEM=$cosys_out VERBOSE=1
+    $refimage = $_CREATE_REFERENCE_IMAGE_{REFIMAGE};
+  } else {
+    # Last resort use the first file in the current Frm
+    $refimage = $Frm->file(1);
+  }
+}
+
+# Retrieve coordinate system for the reference image
+$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$refimage mode=get name=system");
+my ($ORAC_STATUS, $outsys) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+# Set flag for moving sources
+my $moving = 0;
+if ( uc($outsys) eq "GAPPT" ) {
+  $moving = 1;
+}
+
 # Write text file with list of files to align and mosaic.
 my $filelist = new ORAC::TempFile;
 my $tmpout;
 my $grpfrm;
 
-# Are we processing a Group or a Frame?
+# Now we obtain the list of files to mosaic
 if ( $usegrp ) {
-
+  # #################
+  # GROUP PROCESSING
+  # #################
   $grpfrm = "Group";
   my $coadd_mode = uc($_MAKE_MOSAIC_{COADD_MODE} || 'RUNNING');
   # If the group file does not exist we can treat this as if
@@ -157,17 +230,41 @@ if ( $usegrp ) {
   if ($coadd_mode eq 'RUNNING') {
     if ($Grp->file_exists) {
       print {$filelist->handle} $Grp->file ."\n";
+      
+      # Align the images in the current Frm before calling makemos
+      if ( $makemos ) {
+	_ALIGN_ARRAYS_ REFIMAGE=$refimage METHOD=$method REBIN=0
+      }
 
+      orac_print("Setting SkyRefIs = Origin for moving sources\n") 
+	if ( !$makemos && $moving );
       for my $fname ($Frm->files) {
+	# If we're using wcsmosaic for a moving source, SkyRefIs must be
+	# set to origin
+	if ( !$makemos && $moving ) {
+	  my $alignargs = "ndf=$fname mode=set name=skyrefis newval=origin";
+	  $Mon{ndfpack_mon}->obeyw("wcsattrib","$alignargs");
+	}
 	print {$filelist->handle} $fname ."\n";
       }
     } else {
       orac_warn "Managed to get into RUNNING average without a group file";
     }
   } elsif ($coadd_mode eq 'STACKALL') {
-    # combine all the frames from all the groups
+    # Combine all the frames from all the groups
     for my $f ($Grp->members) {
+      if ( $makemos ) {
+	_ALIGN_ARRAYS_ REFIMAGE=$refimage METHOD=$method REBIN=0 FRAME_OBJ=$f
+      }
+      orac_print("Setting SkyRefIs = Origin for moving sources\n") 
+	if ( !$makemos && $moving );
       for my $fname ($f->files) {
+	# If we're using wcsmosaic for a moving source, SkyRefIs must be
+	# set to origin
+	if ( !$makemos && $moving ) {
+	  my $alignargs = "ndf=$fname mode=set name=skyrefis newval=origin";
+	  $Mon{ndfpack_mon}->obeyw("wcsattrib","$alignargs");
+	}
 	print {$filelist->handle} $fname ."\n";
       }
     }
@@ -184,12 +281,28 @@ if ( $usegrp ) {
     $out = $tmpout->file;
   }
 } else {
+  # #################
+  # FRAME PROCESSING
+  # #################
   $grpfrm = "Frame";
   orac_print "FRAME mosaic\n" if $verbose;
 
+  # Align images in the current Frm to a reference image
+  if ( $makemos ) {
+    _ALIGN_ARRAYS_ METHOD=$method REFIMAGE=$refimage
+  }
+
   # Write names of all files to temp file
-  for my $i (1..$Frm->nfiles) {
-    print {$filelist->handle} $Frm->file($i) ."\n";
+  orac_print("Setting SkyRefIs = Origin for moving sources\n") 
+    if ( !$makemos && $moving );
+  for my $fname ($Frm->files) {
+    # If we're using wcsmosaic for a moving source, SkyRefIs must be
+    # set to origin
+    if ( !$makemos && $moving ) {
+      my $alignargs = "ndf=$fname mode=set name=skyrefis newval=origin";
+      $Mon{ndfpack_mon}->obeyw("wcsattrib","$alignargs");
+    }
+    print {$filelist->handle} "$fname\n";
   }
   # Create output filename, derived from first input file
   # since this is a many to one operation
@@ -197,57 +310,25 @@ if ( $usegrp ) {
 }
 $filelist->handle->close;
 
-# Define the reference image
-my $refimage;
-my $skyalign = 0;
-if ( $skyalign ) {
-  # Output mosaic coordinate frame
-  my $celframe = (exists $_MAKE_MOSAIC_{COORD_FRAME} &&
-		  defined $_MAKE_MOSAIC_{COORD_FRAME}) ? 
-                  lc($_MAKE_MOSAIC_{COORD_FRAME}) : "equatorial"; 
-  # Set the output coordinate frame
-  _CREATE_REFERENCE_IMAGE_ FRAME=$celframe VERBOSE=1
-  $refimage = $_CREATE_REFERENCE_IMAGE_{RESULTS};
-} else {
-  # If there's a Grp file, use that
-  if ($Grp->file_exists) {
-    $refimage = $Grp->file;
-  } else {
-    # Last resort use the first file in the current Frm
-    $refimage = $Frm->file(1);
-  }
-}
-
-
+# Done with image assembly, now mosaic the images
 my $mostask;
-# Done with pre-processing, now mosaic the images
 if ( $makemos ) {
-  my $combine = (exists $_MAKE_MOSAIC_{COMBINE} &&
-		 defined $_MAKE_MOSAIC_{COMBINE}) ?
-		 lc($_MAKE_MOSAIC_{COMBINE}) : "median";
-
+  # MAKEMOS
   $mostask = "MAKEMOS";
-  # Align images to a reference image: works for Frame ONLY!!!
-  _ALIGN_ARRAYS_ METHOD=$method REFIMAGE=$refimage
 
-  # Remember to deal with intermediate mosaics as well
+  #### Remember to deal with intermediate mosaics as well ####
 
-  my $args = "in=^".$filelist->file." ref=$refimage nozero noscale out=$out"
-            ." title=Mosaic";
+  my $args = "in=^".$filelist->file." method=$makemos_method ref=$refimage "
+            ."nozero noscale out=$out title=".$Frm->hdr('OBJECT');
   $Mon{ccdpack_reg}->obeyw("makemos","$args");
-
 } else {
-
+  # WCSMOSAIC
   $mostask = "WCSMOSAIC";
   my $wlim = 0.2;
-
   my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
     "genvar=true out=$out in=^".$filelist->file;
-
   $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
-
 }
-
 orac_print "Mosaicking $grpfrm file with $mostask\n";
 
 # HACK for renaming group output
