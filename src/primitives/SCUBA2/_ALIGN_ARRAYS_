@@ -2,7 +2,7 @@
 
 =head1 NAME
 
-_ALIGN_ARRAYS_ - Align all frames to first frame
+_ALIGN_ARRAYS_ - Align all frames to a reference image
 
 =head1 SYNOPSIS
 
@@ -10,11 +10,14 @@ _ALIGN_ARRAYS_ - Align all frames to first frame
 
 =head1 DESCRIPTION
 
-This primitive takes all the sub-scan frames from each sub-array
-and regrids them to a reference RA/Dec frame.
+This primitive takes all the sub-scan frames from each sub-array and
+regrids them to a reference RA/Dec frame. By default this primitive
+operatres on files within the current Frm, but this can be
+over-ridden by supplying an optional Frm object.
 
-If a group file exists, that is the reference, else the first
-frame is chosen as reference.
+If a group file exists, that is used as the reference, else the
+current reference image in the Cal object, or finally the first frame
+is chosen as reference if neither of those exist.
 
 =head1 ARGUMENTS
 
@@ -26,23 +29,26 @@ Keyword specifying the method for determing how the output pixels are
 populated. The default is nearest-neighbour resampling
 (C<nearest>). See the documentation for WCSMOSAIC or WCSALIGN for
 further details. The recommended choices are C<nearest>, C<bilinear>,
-ir C<sincsinc>.
+or C<sincsinc>.
 
 =item REBIN
 
-A flag to determine whether to rebin or resample. Default is
-resample. See the WCSMOSAIC/WCSALIGN documentation for further
-information.
+A flag to determine whether to rebin or resample. Default is 0
+(resample). See the WCSALIGN documentation for further information.
+
+=item REF
+
+The name of the reference image to use for alignment in the SKY
+domain. If left blank, the primitive will use the Grp file if it
+exists, or the stored reference image in the Cal object, or lastly
+just use the first file in the Frm.
+
+=item FRAME_OBJ
+
+An ORAC-DR Frm object with files to be aligned. If left unset, the
+current Frm is used.
 
 =back
-
-=head1 KNOWN ISSUES
-
-If no group file is present the primitive should create a non-rotated
-RA/Dec reference based on the world coordinates of the first frame.
-Currently, if the world coordinates are rotated the output aligned
-frames will be rotated (as will be the case for a SCUBA-2 image
-aligned with Nasmyth coordinates).
 
 =head1 ALGORITHMS
 
@@ -56,27 +62,29 @@ Creates an output image per input image, each with a suffix of '_al'.
 =head1 AUTHOR
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2004-2005 Particle Physics and Astronomy Research Council.
-All Rights Reserved.
+Copyright (C) 2004-2007 Particle Physics and Astronomy Research
+Council, the University of British Columbia. All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; either version 3 of the License, or (at your option) any later
-version.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
 
-This program is distributed in the hope that it will be useful,but WITHOUT ANY
-WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
 
-You should have received a copy of the GNU General Public License along with
-this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-Place,Suite 330, Boston, MA  02111-1307, USA
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
 
 =cut
-
 
 # Check arguments
 # Rebin or resample? Default is resample (rebin = 0).
@@ -87,38 +95,63 @@ my $rebin = (exists $_ALIGN_ARRAYS_{REBIN} &&
 # Method for determining the output pixel values
 my $method = (exists $_ALIGN_ARRAYS_{METHOD} &&
 	      defined $_ALIGN_ARRAYS_{METHOD}) ? 
-              $_ALIGN_ARRAYS_{METHOD} : "nearest"; 
+              lc($_ALIGN_ARRAYS_{METHOD}) : "nearest"; 
 
 # Set reference image if specified
 my $ref = (exists $_ALIGN_ARRAYS_{REFIMAGE} &&
 	   defined $_ALIGN_ARRAYS_{REFIMAGE}) ? 
            $_ALIGN_ARRAYS_{REFIMAGE} : "";
 
+# Has the user passed in a Frame object?
+my $Frmobj = (exists $_ALIGN_ARRAYS_{FRAME_OBJ} &&
+	      defined $_ALIGN_ARRAYS_{FRAME_OBJ}) ? 
+              $_ALIGN_ARRAYS_{FRAME_OBJ} : $Frm;
+
+# Check that the user has really passed in a Frm!
+unless ( UNIVERSAL::isa($Frmobj, "ORAC::Frame") ) {
+  orac_throw "Error: input FRAME_OBJ is not an ORAC-DR Frm object\n";
+}
+
 # If refimage not given then use Group file or first file in Frame
 if ( $ref eq "" ) {
   if ($Grp->file_exists) {
     $ref = $Grp->file;
+  } elsif ( $Cal->refimage) {
+    $ref = $Cal->refimage;
   } else {
     # Make reference NDF with correct astrometry for the tracking
     # centre of the current observation
-    $ref = $Frm->file(1);
+    $ref = $Frmobj->file(1);
   }
 }
 
-# write alignment text file
+# Check if we have a moving object
+$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$ref mode=get name=system");
+my ($ORAC_STATUS, $system) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+my $moving = ( uc($system) eq "GAPPT" ) ? 1 : 0;
+
+orac_print("Setting SkyRefIs = Origin for moving sources; ") if $moving;
+
+# Write alignment text files
 my $intmp = new ORAC::TempFile;
 my $outtmp = new ORAC::TempFile;
 my @out;
-for my $i (1..$Frm->nfiles) {
-  print {$intmp->handle} $Frm->file($i) ."\n";
-  my ($in, $out) = $Frm->inout( '_al',$i);
+for my $i (1..$Frmobj->nfiles) {
+  my $filei = $Frmobj->file($i);
+  print {$intmp->handle} $filei ."\n";
+  if ( $moving ) {
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$filei mode=set name=skyrefis newval=origin");
+  }
+  my ($in, $out) = $Frmobj->inout( '_al',$i);
   push(@out, $out);
-  print {$outtmp->handle}  "$out\n";
+  print {$outtmp->handle} "$out\n";
 }
 
-orac_print("Aligning subarray images\n");
+orac_print("Aligning subarray images ... ");
 
-$Mon{kappa_mon}->obeyw("wcsalign","ref=$ref lbnd=! ubnd=! out=^". $outtmp->file ." in=^". $intmp->file);
+$Mon{kappa_mon}->obeyw("wcsalign","ref=$ref lbnd=! ubnd=! method=$method out=^". $outtmp->file ." in=^". $intmp->file);
 
-# register new file names
-$Frm->files( @out );
+# Register new file names
+$Frmobj->files( @out );
+
+orac_print("done.\n");
