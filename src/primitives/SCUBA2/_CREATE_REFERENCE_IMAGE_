@@ -6,7 +6,7 @@ _CREATE_REFERENCE_IMAGE_ - Create a 1x1 NDF aligned to a chosen Sky frame
 
 =head1 SYNOPSIS
 
- _CREATE_REFERENCE_IMAGE FRAME=EQUATORIAL
+ _CREATE_REFERENCE_IMAGE SYSTEM=EQUATORIAL
 
 =head1 DESCRIPTION
 
@@ -25,13 +25,12 @@ already exist.
 
 =over 4
 
-=item FRAME
+=item SYSTEM
 
-The name of the chosen sky frame for the reference image. May be
-almost any that AST knows about, i.e. ICRS, FK4, FK5, EQUATORIAL,
-GAPPT or GALACTIC. Note: AZEL is not supported.
+The name of the sky coordinate system for the reference image. May be
+ICRS, FK5, EQUATORIAL, GAPPT or GALACTIC. Note: AZEL is not supported.
 
-Default is ICRS (same as EQUATORIAL or FK5).
+Default is to use the same as the input.
 
 =item PIXEL_SCALE
 
@@ -48,11 +47,58 @@ user. Default is true.
 
 =back
 
+=head1 MOVING SOURCES
+
+Creating a reference image for a moving source is more complex,
+especially as SETSKY is not aware of the GAPPT coordinate system. The
+procedure is as follows. If the input data have system=GAPPT and/or
+the output system is GAPPT then the reference image is created with
+system=GAPPT.
+
+=over 4
+
+=item Step 1 
+
+Retrieve and store System and Epoch from input data file
+
+=item Step 2
+
+Create template reference image
+
+=item Step 3 
+
+Set system on input data file to ICRS, retrieve and store SkyRef (now
+in ICRS coordinates)
+
+=item Step 4 
+
+Use SETSKY to add an ICRS SkyFrame to the reference image using
+equinox = 2000, the input epoch and SkyRef in ICRS coordinates
+
+=item Step 5
+
+Set the system for the reference image to GAPPT - SkyRef is now in
+GAPPT coordinates
+
+=back
+
+=head1 OUTPUT DATA
+
+On completion the primitive hash C<%_CREATE_REFERENCE_IMAGE_> contains
+the following key"
+
+=over 4
+
+=item REFIMAGE
+
+Name of reference image, also stored in the $Cal object
+
+=back
+
 =head1 KNOWN ISSUES
 
-Only ICRS (in its FK5, FK4 and EQUATORIAL guises), GAPPT and GALACTIC
-coordinate systems are supported. Support for GAPPT needs to be more
-thoroughly tested.
+Only EQUATORIAL (in its FK5 and ICRS guises), GAPPT and GALACTIC
+coordinate systems are supported.
 
 =head1 ALGORITHMS
 
@@ -93,9 +139,9 @@ my $verbose = (exists $_CREATE_REFERENCE_IMAGE_{VERBOSE} &&
 	       $_CREATE_REFERENCE_IMAGE_{VERBOSE} : 1;
 
 # Check for desired OUTPUT coordinate frame
-my $cosys_out = (exists $_CREATE_REFERENCE_IMAGE_{FRAME} &&
-		  defined $_CREATE_REFERENCE_IMAGE_{FRAME}) ?
-                  uc($_CREATE_REFERENCE_IMAGE_{FRAME}) : "ICRS";
+my $cosys_out = (exists $_CREATE_REFERENCE_IMAGE_{SYSTEM} &&
+		  defined $_CREATE_REFERENCE_IMAGE_{SYSTEM}) ?
+                  uc($_CREATE_REFERENCE_IMAGE_{SYSTEM}) : "";
 
 # Tell the user what's going on
 orac_print "Creating reference image: " if $verbose;
@@ -131,36 +177,43 @@ if ( $dx == 0.0 || $dy == 0.0 ) {
   orac_err "Pixel scales still set to zero - something went very wrong\n";
 }
 
-# Get coords of reference pixel in current SKY coordinate system
-my $args = "ndf=$datafile mode=get name=skyref";
-$Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
-my ($ORAC_STATUS, $skyref) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-my ($xstr, $ystr) = split(/,/,$skyref,2);
-
 # Get current INPUT coordinate system
-$args = "ndf=$datafile mode=get name=system";
-$Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
-($ORAC_STATUS, my $cosys_in) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$datafile mode=get name=system");
+my ($ORAC_STATUS, $cosys_in) = $Mon{ndfpack_mon}->get("wcsattrib","value");
 
 # Check that the OUTPUT coordinate system supported - use INPUT if not
 # recognized
-if ( ( $cosys_out ne "ICRS" ) && ( $cosys_out ne "GAPPT" ) 
+if ( $cosys_out eq "" ) {
+  # Use same as input if not set
+  $cosys_out = $cosys_in;
+} elsif ( ( $cosys_out ne "ICRS" ) && ( $cosys_out ne "GAPPT" ) 
      && ( $cosys_out ne "EQUATORIAL" ) && ( $cosys_out ne "GALACTIC" )
      && ( $cosys_out ne "FK5" ) && ( $cosys_out ne "FK4" ) ) {
   orac_warn "Warning: unsupported coordinate frame, $cosys_out. Using default (ICRS)\n";
   $cosys_out = $cosys_in;
 }
 
+# If we are dealing with a moving source, set the input coordinate
+# system to ICRS for creating the output WCS
+my $usesys = $cosys_in;
+if ( $cosys_in eq "GAPPT" ) {
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$datafile mode=set name=system newval=icrs");
+  $usesys = "ICRS";
+}
+
+# Get coords of reference pixel in current SKY coordinate system
+$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$datafile mode=get name=skyref");
+($ORAC_STATUS, my $skyref) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+my ($xstr, $ystr) = split(/,/,$skyref,2);
+
 # Get equinox
-$args = "ndf=$datafile mode=get name=equinox";
-$Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$datafile mode=get name=equinox");
 ($ORAC_STATUS, my $equinox) = $Mon{ndfpack_mon}->get("wcsattrib","value");
 
-# Epoch - for GAPPT retrieve from input data
+# Epoch - for GAPPT output retrieve from input data
 my $epoch;
-if ( $cosys_in eq "GAPPT" ) {
-  $args = "ndf=$datafile mode=get name=epoch";
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+if ( $cosys_out eq "GAPPT" ) {
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$datafile mode=get name=epoch");
   ($ORAC_STATUS, $epoch) = $Mon{ndfpack_mon}->get("wcsattrib","value");
 } else {
   # Else use equinox before redefining the equinox as a string
@@ -188,10 +241,12 @@ if ( $cosys_in eq "GALACTIC" ) {
 }
 
 # Now retrieve reference coordinates in desired output frame
+my $skycosys;
 if ( $cosys_out eq "GALACTIC" ) {
   # Retrieve coords in degrees: SETSKY uses degrees by default
   $x0 = $coords->glong( format => 'deg' );
   $y0 = $coords->glat( format => 'deg' );
+  $skycosys = $cosys_out;
 } else {
   # Retrieve coords in radians
   $x0 = $coords->ra( format => 'rad' );
@@ -203,7 +258,7 @@ if ( $cosys_out eq "GALACTIC" ) {
 
   # Re-define output coordinate frame to be generically equatorial for
   # SETSKY but with appropriate equinox
-  $cosys_out = "EQUATORIAL($equinox)";
+  $skycosys = "EQUATORIAL($equinox)";
 }
 
 # Add a WCS sky frame - forces pixel scale to match raw input data
@@ -212,7 +267,7 @@ orac_print "adding WCS " if $verbose;
 # Define parameters of WCS. Pixelsize is in ARCSEC, lat and lon are as
 # defined above.
 # Note quoting around the pixelsize arguments
-my $wcsargs = "coords=$cosys_out epoch=$epoch refcode=pixel pixelref=\[1.5,1.5\] pixelsize=\['".$dx."s', '".$dy."s'\] orient=0 positions=! projtype=gnom lon=".$x0." lat=".$y0;
+my $wcsargs = "coords=$skycosys epoch=$epoch refcode=pixel pixelref=\[1.5,1.5\] pixelsize=\['".$dx."s', '".$dy."s'\] orient=0 positions=! projtype=gnom lon=".$x0." lat=".$y0;
 $Mon{ndfpack_mon}->obeyw("setsky","ndf=$refimage $wcsargs");
 
 # Now add a FITS header, copy from the first file in the Frm.
@@ -221,19 +276,27 @@ my $fitshdr = new Astro::FITS::Header::NDF( File => $datafile );
 $fitshdr->writehdr( File => $refimage );
 
 # Store the SkyRef attribute in reference image
-$args = "ndf=$refimage mode=set name=skyref newval='".$skyref."'";
+my $args = "ndf=$refimage mode=set name=skyref newval='".$skyref."'";
 $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
 
 # And if necessary, set the SkyRefIs attribute
-if ( $cosys_in eq "GAPPT" ) {
-  $args = "ndf=$datafile mode=set name=skyrefis newval=origin";
+if ( $cosys_out eq "GAPPT" ) {
+  $args = "ndf=$refimage mode=set name=skyrefis newval=origin";
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+  $args = "ndf=$refimage mode=set name=system newval=GAPPT";
   $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
 }
 
-# Store the reference image name in the RESULTS hash
-$_CREATE_REFERENCE_IMAGE_{RESULTS} = $refimage;
+# If the input system is GAPPT, reset it before further processing
+if ( $cosys_in eq "GAPPT" ) {
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$datafile mode=set name=system newval=$cosys_in");
+}
+
+# Store the reference image name in the primitive hash
+$_CREATE_REFERENCE_IMAGE_{REFIMAGE} = $refimage;
 
 # Register with the calibration object
 $Cal->refimage( $Grp->name, $refimage );
 
-orac_print "done. \nSuccessfully created reference image in coordinate system $cosys_out \n" if $verbose;
+orac_print "done. \nSuccessfully created reference image in $cosys_out coordinate system\n" if $verbose;
+
