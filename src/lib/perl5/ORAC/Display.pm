@@ -709,7 +709,7 @@ sub process_monitor_request {
     croak "$@";
   }
   my $frm = $frmclass->new();
-  $frm->allow_header_sync( 0 );
+  $frm->allow_header_sync( 0 ) if $frm->can("allow_header_sync");
   $frm->files(@files);
 
   # Request the display
