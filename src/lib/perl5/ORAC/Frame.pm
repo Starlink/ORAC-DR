@@ -27,6 +27,8 @@ use warnings;
 use Carp;
 use Starlink::Versions qw/ starversion /;
 use vars qw/$VERSION/;
+use Astro::FITS::Header;
+use Astro::FITS::HdrTrans;
 
 use ORAC::Print;
 use ORAC::Constants;
@@ -151,7 +153,7 @@ sub new {
   # Define the initial state plus include any hash information
   # from a sub-class
   my $frame = {
-               AllowHeaderSync => 0,
+               AllowHeaderSync => undef,
 	       Files => [],
 	       Format => undef,
 	       Group => undef,

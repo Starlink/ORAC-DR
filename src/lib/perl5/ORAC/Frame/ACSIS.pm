@@ -615,7 +615,7 @@ For ACSIS, defaults to true (1).
 =cut
 
 sub allow_header_sync {
-  my $self;
+  my $self = shift;
 
   if( ! defined( $self->{AllowHeaderSync} ) ) {
     $self->{AllowHeaderSync} = 1;
