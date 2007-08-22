@@ -231,7 +231,7 @@ sub orac_exit_abnormally {
     for (1..10) {print STDOUT "\a"; select undef,undef,undef,0.2}
   }
 
-  die "\n\nAborting from ".ORAC::Version->getApp." - $signal recieved";
+  die "\n\nAborting from ".ORAC::Version->getApp." - $signal received\n";
 
 }
 
