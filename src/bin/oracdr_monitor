@@ -10,6 +10,8 @@ oracdr_monitor - monitor the ORAC-DR pipeline output
 
   oracdr_monitor --tty
 
+  oracdr_monitor -nodisplay
+
 =head1 DESCRIPTION
 
 This program monitors the output from ORAC-DR log files in the
@@ -52,6 +54,13 @@ selected if the DISPLAY environment variable is unset.
 Disable display monitoring. Ignored if DISPLAY environment variable
 is not set.
 
+=item B<-skip>
+
+If display monitoring is enabled, by default the monitor will attempt to process
+every request even if that means it falls behind the pipeline. With this option
+only the most recent request will be handled with the exception that Group
+display requests are always processed.
+
 =back
 
 =head1 AUTHOR
@@ -61,7 +70,21 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 =head1 COPYRIGHT
 
 Copyright (C) 2001 Particle Physics and Astronomy Research Council.
+Copyright (C) 2007 Science and Technology Facilties Council.
 All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
@@ -120,12 +143,13 @@ use ORAC::Display;
 Tk::CmdLine::SetArguments();
 
 # Parse options
-my ($opt_help, $opt_man, $opt_tty, $opt_nodisplay);
+my ($opt_help, $opt_man, $opt_tty, $opt_nodisplay, $opt_skip);
 
 my $status = GetOptions(
 			"help" => \$opt_help,
 			"man"  => \$opt_man,
 			"tty"  => \$opt_tty,
+			"skip" => \$opt_skip,
 			"nodisplay" => \$opt_nodisplay,
 		       );
 
@@ -615,6 +639,8 @@ sub check_display_file_using_fileevent {
 }
 
 # Callback for fileevent trigger for display requests
+{
+my $previous;
 sub deal_with_fileevent_display {
   my $w = shift;
   my $Display = shift;
@@ -630,12 +656,32 @@ sub deal_with_fileevent_display {
     $length = length($line);
   }
 
+  # if we get a line store it for later and only execute it if
+  # we get an EOF condition in the next update. This allows us to
+  # keep up with the data taking and to drop the occassional frame
+  # from the display. We expect Group display requests to come at a slower
+  # rate and to be more permanent so we do not skip Group display requests.
   if ($length > 0) {
-    eval { $Display->process_monitor_request( $line ); };
-    if ($@) {
-      print $@;
+    if (!$opt_skip) {
+      # skipping is disabled so we always process
+      process_display_request( $Display, $line );
+    } else {
+      if ($line =~ /^Group/) {
+	# A group file so mandatory display
+	process_display_request( $Display, $line );
+	$previous = undef;
+      } else {
+	# A Frame so we store this in the cache to process when idle
+	$previous = $line;
+      }
     }
   } else {
+    # Process any pending request
+    if (defined $previous) {
+      process_display_request( $Display, $previous );
+      $previous = undef;
+    }
+
     # Disable fileevent with EOF
     $w->fileevent( $$fhref, 'readable', '');
     seek($$fhref, 0, SEEK_CUR);
@@ -643,6 +689,7 @@ sub deal_with_fileevent_display {
     # and restart to see if we have cleared the EOF
     $w->after(501, [ \&restart_display_fileevent, $w, $Display, $fhref, $hdls, $fh ] );
   }
+}
 }
 
 sub restart_display_fileevent {
@@ -659,4 +706,13 @@ sub restart_display_fileevent {
     $w->fileevent( $$fhref, 'readable', [\&deal_with_fileevent_display,
 					 $w, $Display, $fhref, $hdls]);
   }
+}
+
+sub process_display_request {
+  my ($Display, $line) = @_;
+  eval { $Display->process_monitor_request( $line ); };
+  if ($@) {
+    print $@;
+  }
+  return;
 }
