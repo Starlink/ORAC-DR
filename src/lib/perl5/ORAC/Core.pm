@@ -801,12 +801,15 @@ sub orac_start_algorithm_engines {
 =item B<orac_start_display>
 
 This routine is a wrapper for the orac_setup_display() subroutine in 
-ORAC::Basic. It starts the ORAC display unless $opt_nodisplay is
+ORAC::Basic. It starts the ORAC display unless $nodisplay is
 set.
 
-   my ( $Display ) = orac_start_display( $opt_nodisplay );
+   my $Display = orac_start_display( $nodisplay );
 
 the routine returns the display object $Display.
+
+Note that an object is returned in all cases, but if display
+is disabled the display is created in monitor mode.
 
 =cut
 
@@ -825,8 +828,11 @@ sub orac_start_display {
 
   if ($opt_nodisplay) {
      orac_printp("No display will be used\n","blue");
+     # Enable monitoring output
+     $Display = orac_setup_display( nolocal => 1 );
   } else {
 
+    # Local display and monitoring output
     orac_print ("Setting up display infrastructure (display tools will not be started until necessary)...", 'blue');
     $Display = orac_setup_display;
     orac_print ("Done\n","blue");

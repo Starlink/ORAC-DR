@@ -25,12 +25,12 @@ instructs the relevant device object to send to the selected window
 
 =cut
 
-
 use 5.006;
 use Carp;
 use strict;
 use warnings;
 
+use Scalar::Util qw/ blessed /;
 use IO::File;
 use ORAC::Print;
 
@@ -44,6 +44,10 @@ use vars qw/$VERSION $DEBUG/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 $DEBUG = 0;
+
+# This is the file name (inside ORAC_DATA_OUT) containing display directives
+# for monitor processes.
+my $MONITOR_FILE = ".display_monitor";
 
 =head1 PUBLIC METHODS
 
@@ -71,6 +75,9 @@ sub new {
   $disp->{UseNBS} = 0;       # Use shared memory
   $disp->{Tools} = {};       # List of display tool objects
   $disp->{ID}    = undef;    # Current ID string
+  $disp->{MONITOR_HDL} = undef; # File handle for monitor file opened for write
+  $disp->{IS_MASTER} = 1;       # By default this class is a master not a monitor
+  $disp->{DOES_MASTER_DISPLAY} = 1; # Controls whether the Master does any displaying at all
 
   bless ($disp, $class);
 
@@ -164,6 +171,85 @@ sub usenbs {
   return $self->{UseNBS};
 }
 
+=item B<is_master>
+
+Returns true if this object is driving a display, false if this object is monitoring
+a display.
+
+=cut
+
+sub is_master {
+  my $self = shift;
+  if (@_) {
+    $self->{IS_MASTER} = shift;
+  }
+  return $self->{IS_MASTER};
+}
+
+=item B<monitor_handle>
+
+File handle associated with monitor file. Will be created if
+necessary.  If this is the master, the file is opened for write
+(thereby removing any existing file). If this is a monitor the file is
+opened for read.
+
+  $hdl = $display->monitor_handle;
+
+It is non-fatal for the monitor to fail to open a file since this usually
+indicates that the master pipeline is not enabling monitoring.
+
+=cut
+
+sub monitor_handle {
+  my $self = shift;
+  if (!defined $self->{MONITOR_HDL}) {
+    my $fh;
+    if ($self->is_master) {
+      # unlink the file to force a new inode. this allows
+      # the reader to realise that the file has been reopened.
+      unlink $MONITOR_FILE;
+      open($fh, ">", $MONITOR_FILE)
+	or croak "Unable to open display monitoring file: $!";
+    } else {
+      if (-e $MONITOR_FILE) {
+	open($fh, "<", $MONITOR_FILE)
+	  or croak "Unable to read display monitoring file despite its existence: $!";
+      }
+    }
+    $self->{MONITOR_HDL} = $fh;
+  } elsif (!$self->is_master) {
+    # see if this handle is still valid for read and we are
+    # a consumer. We have to compare the inode with the inode we
+    # got first time round
+    my @curparams = stat($MONITOR_FILE);
+    my @oldparams = stat($self->{MONITOR_HDL});
+
+    if ($curparams[1] != $oldparams[1]) {
+      # file has been recreated so re-open
+      delete $self->{MONITOR_HDL};
+      return $self->monitor_handle;
+    }
+
+  }
+
+  return $self->{MONITOR_HDL};
+}
+
+=item B<does_master_display>
+
+Controls whether the master display object is doing local displaying of data
+itself (true) or whether it is simply sending information to a monitor (false).
+Default is true.
+
+=cut
+
+sub does_master_display {
+  my $self = shift;
+  if (@_) {
+    $self->{DOES_MASTER_DISPLAY} = shift;
+  }
+  return $self->{DOES_MASTER_DISPLAY};
+}
 
 =back
 
@@ -254,6 +340,11 @@ sub display_data {
     $usedisp = shift if @_;
   }
 
+  # Write information to monitor file (if we are a master)
+  $self->append_monitor( $frm, $optref, $usedisp );
+
+  # Do we need to display anything from this object?
+  return if ($self->is_master && !$self->does_master_display);
 
   # We are going to generalise here.
   # We intend to loop over all images stored in the current object
@@ -274,6 +365,12 @@ sub display_data {
 
   # Now loop over each input file
   for my $n (1..$nfiles) {
+
+    # Sanity check (important for the monitor)
+    if (!$frm->file_exists( $n ) ) {
+      orac_warn("File to be displayed (".$frm->file($n).") does not exist\n");
+      return;
+    }
 
     # Get the name of the gui ID
     my $frm_suffix;
@@ -531,7 +628,93 @@ sub parse_file_defn {
 
 }
 
+=item B<append_monitor>
 
+Write information to a file that can be read by monitor processes. This allows the
+display system to be separated from the actual tools doing the displaying or for
+a clone display system to enable more than one person to view pipeline output.
+
+  $display->append_monitor( $Frm, \%options, $usedisp );
+
+Does nothing if this object is monitoring.
+
+=cut
+
+sub append_monitor {
+  my $self = shift;
+  my $frm = shift;
+  my $options = shift;
+  my $usedisp = shift;
+  return unless $self->is_master;
+
+  # Form the string suitable for writing to the file
+  # String is of the form:
+  # FRAMECLASS file1,file2 $usedisp opt1=val1 opt2=val2
+
+  # Get all the files - it seems that sometimes a slot can be blank
+  my @files = grep { defined $_ && $_ =~ /\w/ } $frm->files;
+  return unless @files;
+
+  # make sure that usedisp is defined
+  $usedisp = ($usedisp ? 1 : 0 );
+
+  # Store the class name without the leading ORAC:: chunk
+  # This is safer than allowing some one to edit the display file
+  # to load arbitrary modules
+  my $frmclass = blessed($frm);
+  $frmclass =~ s/ORAC:://;
+
+  # form the string
+  my $string = "$frmclass " . join(",", @files) . " $usedisp ".
+    join(" ", map { $_ . "=". $options->{$_} } keys %$options). "\n";
+
+  # Get the filehandle for the output file
+  my $mfh = $self->monitor_handle;
+  if ($mfh) {
+    local $| = 1; # need to be unbuffered
+    print $mfh $string;
+    $mfh->flush;
+  }
+  return;
+}
+
+=item B<process_monitor_request>
+
+Given a line of text matching that written by the C<append_monitor> method,
+trigger the display system accordingly by calling the C<display_data> method.
+
+  $Display->process_monitor_request( $line );
+
+No-op if the Display is configured as a master.
+
+=cut
+
+sub process_monitor_request {
+  my $self = shift;
+  my $line = shift;
+  return if $self->is_master;
+
+  # Parse the line
+  my ($frmclass, $files, $usedisp, @options) = split(/\s+/, $line);
+  return unless $files;
+
+  # and process the chunks
+  $frmclass = "ORAC::$frmclass";
+  my @files = split(",", $files);
+  my %options = map { my ($k,$v) = split(/=/,$_); $k ,$v } @options;
+
+  # Load the relevant frame class
+  eval "require $frmclass";
+  if ($@) {
+    croak "$@";
+  }
+  my $frm = $frmclass->new();
+  $frm->allow_header_sync( 0 );
+  $frm->files(@files);
+
+  # Request the display
+  $self->display_data( $frm, \%options, $usedisp );
+}
 
 =back
 

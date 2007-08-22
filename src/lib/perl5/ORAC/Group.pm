@@ -468,6 +468,21 @@ sub file {
   return $self->{File};
 }
 
+=item B<files>
+
+Frame Compatibility method for setting and retrieving the group
+file. Calls the file method with a single argument.
+
+=cut
+
+sub files {
+  my $self = shift;
+  if (@_) {
+    $self->file( $_[0] );
+  }
+  return $self->file;
+}
+
 =item B<filesuffix>
 
 Set or retrieve the filename suffix associated with the

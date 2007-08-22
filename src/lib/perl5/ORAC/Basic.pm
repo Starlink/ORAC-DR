@@ -81,25 +81,58 @@ one will be copied there from $ORAC_DATA_CAL (or $ORAC_DIR
 if no file exists in $ORAC_DATA_CAL).
 
 If the $DISPLAY environment variable is not set, the display
-subsystem will not be started.
+subsystem will be started but only for use by monitor programs.
 
 The display object is returned.
 
   $Display = orac_setup_display;
+
+Hash arguments can control behaviour to indicate master vs monitor
+behaviour. Options are:
+
+  - monitor =>  configure as a monitor (default is to be master) (false)
+  - nolocal =>  disable master display, monitor files only.
+                Default is to display locally (false)
+
+Monitor files are always written if a master.
 
 =cut
 
 # Simply create a display object
 sub orac_setup_display {
 
-  # Check for DISPLAY being set
-  unless (exists $ENV{DISPLAY}) {
-    warn 'DISPLAY environment variable unset - not starting Display subsystem';
-    return;
+  my %options = ( monitor => 0, nolocal => 0, @_ );
+
+  # Check for DISPLAY being set - not needed if we are not displaying locally
+  if (!$options{monitor}) {
+    if (!$options{nolocal}) {
+      unless (exists $ENV{DISPLAY}) {
+	$options{nolocal} = 1;
+	warn 'DISPLAY environment variable unset - configuring display for monitoring';
+      }
+    }
+  } elsif ($options{monitor}) {
+    # We are a monitor, so we must have a display
+    unless (exists $ENV{DISPLAY}) {
+      warn "DISPLAY environment variable unset - no display available";
+      return;
+    }
   }
 
   # Set this global variable
   my $Display = new ORAC::Display;
+
+  # Configure it
+  if ($options{monitor}) {
+    $Display->is_master( 0 );
+  } else {
+    $Display->is_master( 1 );
+    if ($options{nolocal}) {
+      $Display->does_master_display( 0 );
+    } else {
+      $Display->does_master_display( 1 );
+    } 
+  }
 
   # Set the location of the display definition file
   # (we do not currently use NBS for that)

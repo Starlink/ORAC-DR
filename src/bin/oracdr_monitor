@@ -21,6 +21,11 @@ If an X-display is running it sends the output to an Xwindow
 similar to the standard ORAC-DR logging window. If there is no
 display the output is sent to standard output.
 
+By default the data display is enabled to monitor the live pipeline
+display requests. On startup only new display requests are handled (any
+pending from earlier in the pipeline processing are ignored). The data
+display can be disabled using the C<-nodisplay> option.
+
 =head1 OPTIONS
 
 =over 4
@@ -42,6 +47,11 @@ Print the version number.
 This sends the output to the current xterm. It is automatically
 selected if the DISPLAY environment variable is unset.
 
+=item B<--nodisplay>
+
+Disable display monitoring. Ignored if DISPLAY environment variable
+is not set.
+
 =back
 
 =head1 AUTHOR
@@ -58,6 +68,15 @@ All Rights Reserved.
 use strict;
 require 5.006;
 use vars qw/ $VERSION /;
+use Fcntl qw/ SEEK_END SEEK_CUR /;
+use IO::Handle;
+
+BEGIN {
+    if (!$ENV{ORAC_PERL5LIB} && exists $ENV{ORAC_DIR}) {
+        $ENV{ORAC_PERL5LIB} = File::Spec->catdir($ENV{ORAC_DIR}, "lib","perl5");
+    }
+}
+use lib $ENV{"ORAC_PERL5LIB"};
 
 # H A N D L E  V E R S I O N ----------------------------------------------- 
 
@@ -93,16 +112,21 @@ use Tk;
 use Tk::IO;
 use Tk::TextANSIColor;
 
+use ORAC::Basic qw/ orac_setup_display /;
+use ORAC::Frame;
+use ORAC::Display;
+
 # Process Tk command line options
 Tk::CmdLine::SetArguments();
 
 # Parse options
-my ($opt_help, $opt_man, $opt_tty);
+my ($opt_help, $opt_man, $opt_tty, $opt_nodisplay);
 
 my $status = GetOptions(
 			"help" => \$opt_help,
 			"man"  => \$opt_man,
 			"tty"  => \$opt_tty,
+			"nodisplay" => \$opt_nodisplay,
 		       );
 
 pod2usage(1) if $opt_help;
@@ -113,12 +137,14 @@ unless (exists $ENV{DISPLAY}) {
   $opt_tty  = 1;
 }
 
-
 # This is the current file name
 my $CURRENT;
 
 # The current filehandle
 my $CURRENT_FH;
+
+# The current Display monitor filehandle
+my $CURRENT_DISP_FH;
 
 # New Tk window
 my $MW = new MainWindow;
@@ -206,8 +232,6 @@ tie *TEXT3,  "Tk::TextANSIColor", $textw3;
 
 }
 
-
-
 # Setup a repeating callback that checks for the newest file
 # and then sets up a fileevent on it. This allows for people killing
 # and restarting the pipeline without having to restart the monitor
@@ -230,6 +254,15 @@ $MW->update;
 
 #check_file_using_tail( $MW, \$CURRENT, \$CURRENT_FH, \%hdls);
 check_file_using_fileevent( $MW, \$CURRENT, \$CURRENT_FH, \%hdls);
+
+# Create a display object unless display is disabled
+if (!$opt_nodisplay) {
+  my $Display = orac_setup_display( monitor => 1 );
+  if (defined $Display) {
+    check_display_file_using_fileevent( $MW, $Display, \$CURRENT_DISP_FH,
+				      \%hdls);
+  }
+}
 
 # Start the event loop
 MainLoop;
@@ -276,8 +309,8 @@ sub check_file_using_tail {
   # Get the newest filename
   my $newest = &find_log_file();
 
-  # No file there, return
-  return unless defined $newest;
+  # No file we will just have to try again later
+  goto RECHECKTAIL unless defined $newest;
 
   # Is it different
   if (!defined $name or $newest ne $name) {
@@ -303,6 +336,7 @@ sub check_file_using_tail {
 
   }
 
+ RECHECKTAIL:
   # Recheck everything again in XX milli seconds
   $w->after(2000, [\&check_file_using_tail, $w,
 		 $nref, $fhref, $hdls]);
@@ -327,8 +361,8 @@ sub check_file_using_fileevent {
   # Get the newest filename
   my $newest = &find_log_file();
 
-  # No file there, return
-  return unless defined $newest;
+  # No file there, try again later
+  goto RECHECKFEV unless defined $newest;
 
   # Is it different
   if (!defined $name or $newest ne $name) {
@@ -345,7 +379,14 @@ sub check_file_using_fileevent {
     }
 
     # Need to open it
-    open( $fh, "< $newest") or return;
+    open( $fh, "< $newest") or do {
+      my $err = $!;
+      for my $k (keys %$hdls) {
+	my $outfh = $hdls->{$_};
+	print $outfh "Monitoring abandoned - could not open file $newest: $err\n";
+      }
+      return;
+    };
 
     # Mention that we are using a new file
     foreach (keys %$hdls) {
@@ -366,6 +407,7 @@ sub check_file_using_fileevent {
 
   }
 
+ RECHECKFEV:
   # Recheck everything again in XX milli seconds
   $w->after(2000, [\&check_file_using_fileevent, $w,
 		 $nref, $fhref, $hdls]);
@@ -487,4 +529,132 @@ sub find_log_file {
   # Newest is at the end of the sorted array
 
   return $sorted[-1]->[0];
+}
+
+# This routine configures the file event monitoring for changes to the
+# display file.
+
+# Arguments:
+#   - Mainwindow
+#   - Display object
+#   - Reference to variable to contain open monitor file handle
+
+# If an EOF occurs retry
+
+{
+my $curpos = undef;
+sub check_display_file_using_fileevent {
+  my ($w, $Display, $fhref, $hdls) = @_;
+
+  # Get the display system to open the file for read
+  my $fh = $Display->monitor_handle;
+  if ($fh) {
+
+    # if the filehandle has changed we disable the fileevent
+    # and reset the current position. Indicates that the pipeline reopened the file.
+    if (defined $$fhref && $fh != $$fhref) {
+      $w->fileevent( $$fhref, 'readable', '' ) if $w->fileevent($$fhref, 'readable');
+      $curpos = undef;
+      for (keys %$hdls) {
+	my $outfh = $hdls->{$_};
+	print $outfh "Opening new display file\n";
+      }
+    }
+
+    # This could be a reopened filehandle or the same one as last time
+    # so we need to find out where the file marker is positioned in order
+    # to determine whether it has moved or not.
+    # Sometimes we get a Tk::Event::IO error when it can't find the TELL method.
+    # we just try again if this happens.
+    my $thispos;
+    eval {
+      $thispos = CORE::tell( $fh );
+    };
+    if ($@) {
+      print STDERR "Got the TELL error with curpos = ".
+	(defined $curpos ? $curpos : "<undef>") . " and thispos = ".
+	(defined $thispos ? $thispos : "<undef>")." for $fh\n";
+    }
+
+    if (defined $thispos && (!defined $curpos || $thispos < $curpos)) {
+      # The position in the file has shrunk (so the pipeline has
+      # reopened it). So we need to set up a new filevent and seek to the
+      # end
+
+      # Seek to the end of the file so as not to get hit with lots
+      # of old display requests
+      CORE::seek($fh, 0, SEEK_END );
+
+      # Store the current position (ie the end of the file when we opened it)
+      $curpos = CORE::tell( $fh );
+
+      # Store the filehandle
+      $$fhref = $fh;
+
+      # And setup the fileevent
+      $w->fileevent( $$fhref, 'readable', [\&deal_with_fileevent_display,
+					   $w, $Display, $fhref, $hdls]);
+    }
+
+    # if the file has been read since the last check we sync up curpos
+    # to make sure we can detect shrinkage. Should be moot if the ORAC::Display
+    # class correctly reopens the file and we detect the inode change
+    if (defined $curpos && defined $thispos && $thispos > $curpos) {
+      $curpos = $thispos;
+    }
+
+  }
+
+  # Recheck to see if the file appears again
+  $w->after(2000, [\&check_display_file_using_fileevent, $w,
+		   $Display, $fhref, $hdls]);
+
+}
+}
+
+# Callback for fileevent trigger for display requests
+sub deal_with_fileevent_display {
+  my $w = shift;
+  my $Display = shift;
+  my $fhref = shift;
+  my $hdls = shift;
+
+  my $fh = $$fhref;
+  my $line = <$fh>;
+
+  my $length = 0;
+  if (defined $line) {
+    chomp($line);
+    $length = length($line);
+  }
+
+  if ($length > 0) {
+    eval { $Display->process_monitor_request( $line ); };
+    if ($@) {
+      print $@;
+    }
+  } else {
+    # Disable fileevent with EOF
+    $w->fileevent( $$fhref, 'readable', '');
+    seek($$fhref, 0, SEEK_CUR);
+
+    # and restart to see if we have cleared the EOF
+    $w->after(501, [ \&restart_display_fileevent, $w, $Display, $fhref, $hdls, $fh ] );
+  }
+}
+
+sub restart_display_fileevent {
+  my $w = shift;
+  my $Display = shift;
+  my $fhref = shift;
+  my $hdls = shift;
+  my $old = shift;
+
+  return unless defined $$fhref;
+
+  if ($old eq $$fhref) {
+    # same file handle
+    $w->fileevent( $$fhref, 'readable', [\&deal_with_fileevent_display,
+					 $w, $Display, $fhref, $hdls]);
+  }
 }
