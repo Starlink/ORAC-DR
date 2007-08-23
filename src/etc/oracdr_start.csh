@@ -84,18 +84,7 @@ endif
 
 # Set up back door for the version number
 
-if (-e $ORAC_DIR/.version) then
-  set pkgvers = `cat $ORAC_DIR/.version`
-else if (-e $ORAC_DIR/../.svn) then
-  set pkgvers = `svnversion $ORAC_DIR/../`
-else if (-e $ORAC_DIR/.svn) then
-  set pkgvers = `svnversion $ORAC_DIR`
-else if ( $?ORACDR_VERSION ) then
-  set pkgvers = $ORACDR_VERSION
-else
-  set pkgvers = PKG_VERS
-endif
-
+set pkgvers = `${ORAC_DIR}/etc/oracdr_version.sh`
 
 # Set ORAC_LOGDIR if it is not already set and if we have a /jac_logs
 

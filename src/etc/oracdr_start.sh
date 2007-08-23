@@ -74,17 +74,7 @@ fi
 
 # Set up back door for the version number
 
-if test -e $ORAC_DIR/.version; then
-  pkgvers=`cat $ORAC_DIR/.version`
-elif test -e $ORAC_DIR/../.svn; then
-  pkgvers=`svnversion $ORAC_DIR/../`
-elif test -e $ORAC_DIR/.svn; then
-  pkgvers = `svnversion $ORAC_DIR`
-elif test -z "${ORACDR_VERSION}"; then
-  pkgvers=$ORACDR_VERSION
-else
-  pkgvers=PKG_VERS
-fi
+pkgvers=`${ORAC_DIR}/etc/oracdr_version.sh`
 
 # Set ORAC_LOGDIR if it is not already set and if we have a /jac_logs
 

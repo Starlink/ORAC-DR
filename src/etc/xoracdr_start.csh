@@ -80,13 +80,7 @@ endif
 
 
 # Set up back door for the version number
-
-if ($?ORACDR_VERSION) then
-  set pkgvers = $ORACDR_VERSION
-else
-  set pkgvers = PKG_VERS
-endif
-
+set pkgvers = `${ORAC_DIR}/etc/oracdr_version.sh`
 
 # These are perl programs
 
