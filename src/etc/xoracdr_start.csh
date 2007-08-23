@@ -1,4 +1,4 @@
-
+#!/bin/csh -f
 #+ 
 #  Name:
 #    xoracdr_start.csh
@@ -10,7 +10,7 @@
 #    C-shell script
 
 #  Invocation:
-#    source $ORAC_DIR/etc/xoracdr_start.csh
+#    csh $ORAC_DIR/etc/xoracdr_start.csh
 
 #  Description:
 #    Sets all the aliases required to run the ORAC-DR GUI pipeline
@@ -18,6 +18,7 @@
 
 #  Authors:
 #    Alasdair Allan (aa@astro.ex.ac.uk)
+#    Tim Jenness (t.jenness@jach.hawaii.edu)
 #     {enter_new_authors_here}
 
 #  Notes:
