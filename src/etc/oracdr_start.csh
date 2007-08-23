@@ -51,6 +51,8 @@
 #        Allow for multiple Starlink User Notes
 #     04-MAY-2007 (TIMJ):
 #        Expand version reporting logic
+#     22-AUG-2007 (TIMJ):
+#        Factor out perl and version determination
 
 #  Revision:
 #     $Id$
@@ -78,28 +80,11 @@
 
 #-
 
-
 # Need to make sure we use the Starlink PERL command
-# in general this is in /star/Perl/bin/perl but needs
-# to be set at script install time.
-
-# Can do this by a secret override or by using the Starlink
-# install system.
-
-# Check for the existence of a $ORAC_PERLBIN environment variable
-# and allow that to be used in preference to the starlink version
-# if set (and if it exists)
-
-if ( $?ORAC_PERLBIN ) then
-  set starperl = $ORAC_PERLBIN
-else if ( -e STAR_PERL ) then
-  set starperl = STAR_PERL
-else
-  set starperl = NONE
-endif
+# in general this is in /star/Perl/bin/perl
+set starperl=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
 
 # Set up back door for the version number
-
 set pkgvers = `${ORAC_DIR}/etc/oracdr_version.sh`
 
 # Set ORAC_LOGDIR if it is not already set and if we have a /jac_logs

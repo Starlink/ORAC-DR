@@ -41,6 +41,8 @@
 #        Initial addition
 #     07-SEP-2006 (BRADC):
 #        fix argument check
+#     22-AUG-2007 (TIMJ):
+#        Factor out perl and version determination
 
 #  Revision:
 #     $Id$
@@ -70,26 +72,10 @@
 
 
 # Need to make sure we use the Starlink PERL command
-# in general this is in /star/Perl/bin/perl but needs
-# to be set at script install time.
-
-# Can do this by a secret override or by using the Starlink
-# install system.
-
-# Check for the existence of a $ORAC_PERLBIN environment variable
-# and allow that to be used in preference to the starlink version
-# if set (and if it exists)
-
-if test ! -z "${ORAC_PERLBIN}"; then
-  starperl=$ORAC_PERLBIN
-elif test -e STAR_PERL; then
-  starperl=STAR_PERL
-else
-  starperl=NONE
-fi
+# in general this is in /star/Perl/bin/perl
+starperl=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
 
 # Set up back door for the version number
-
 pkgvers=`${ORAC_DIR}/etc/oracdr_version.sh`
 
 # Set ORAC_LOGDIR if it is not already set and if we have a /jac_logs

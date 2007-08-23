@@ -47,31 +47,12 @@
 
 #-
 
-# Need to make sure we use the Starlink PERL command in general this is
-# in /star/Perl/bin/perl but needs to be set at script install time.
-
-# Can do this by a secret override or by using the Starlink install system
-
-# Check for the existence of a $ORAC_PERLBIN environment variable and
-# allow that to be used in preference to the starlink version if set.
-
-# Use setenv starperl to pass the location along to the Xoracdr script
-if ($?ORAC_PERLBIN) then
-  setenv STARPERL $ORAC_PERLBIN
-else if ( -e STAR_PERL ) then
-  setenv STARPERL STAR_PERL
-else
-  setenv STARPERL NONE
-endif
-
+# Need to make sure we use the Starlink PERL command
+# in general this is in /star/Perl/bin/perl
+set STARPERL=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
 
 # Set up back door for the version number
-
-if ($?ORAC_VERSION) then
-  set pkgvers = $ORAC_VERSION
-else
-  set pkgvers = PKG_VERS
-endif
+set pkgvers = `${ORAC_DIR}/etc/oracdr_version.sh`
 
 # Default for ORAC_PERL5LIB
 
