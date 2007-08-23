@@ -13,7 +13,7 @@
 #    Perl script
 
 #  Invocation:
-#    Invoked by source ${ORAC_DIR}/etc/fitseditor_start.csh
+#    Invoked by ${ORAC_DIR}/etc/fitseditor_start.csh
 
 #  Description:
 #
@@ -357,7 +357,7 @@ my $comment_entry = $add_keyword_frame->Entry(
 					  -textvariable => \$new_comment,
 				          -width               => 40 );
 
-my $add_button = $add_keyword_frame->Button(text             => 'Add',
+my $add_button = $add_keyword_frame->Button(-text             => 'Add',
                                         -font             => $font,
                                         -activeforeground => 'white',
                                         -activebackground => 'blue',
@@ -527,7 +527,7 @@ my $del_label = $del_keyword_frame->Label( -text => "Delete Header Card",
                                          -font         => $font );
  
 
-my $del_button = $del_keyword_frame->Button(text             => 'Delete',
+my $del_button = $del_keyword_frame->Button(-text             => 'Delete',
                                         -font             => $font,
                                         -activeforeground => 'white',
                                         -activebackground => 'blue',
