@@ -101,7 +101,7 @@ BEGIN {
   # process...
   # Need the second arg in perl versions prior to 5.6.0
   my $agidir =  File::Spec->catdir(File::Spec->tmpdir, "oracdragi" . $$);
-  mkdir $agidir,0777
+  mkdir($agidir,0777)
     or croak "Could not make AGI temp directory $agidir: $!";
   $ENV{'AGI_USER'} = $agidir;
   $ENV{'AGI_NODE'} = "orac_kapview$$";
