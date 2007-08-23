@@ -85,6 +85,14 @@ set STARPERL=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
 # Set up back door for the version number
 set pkgvers = `${ORAC_DIR}/etc/oracdr_version.sh`
 
+# Set ORAC_LOGDIR if it is not already set and if we have a /jac_logs
+
+if ( ! $?ORAC_LOGDIR ) then
+    if (-e /jac_logs/oracdr) then
+	setenv ORAC_LOGDIR /jac_logs/oracdr
+    endif
+endif
+
 # These are perl programs
 
 if (-e $STARPERL ) then
