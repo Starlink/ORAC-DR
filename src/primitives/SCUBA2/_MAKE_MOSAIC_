@@ -215,8 +215,10 @@ if ( uc($outsys) eq "GAPPT" ) {
 my $filelist = new ORAC::TempFile;
 my $tmpout;
 my $grpfrm;
+my $nfiles;
 
-# Now we obtain the list of files to mosaic
+# Now we obtain the list of files to mosaic - let user know
+orac_print "Collecting files to mosaic...\n";
 if ( $usegrp ) {
   # #################
   # GROUP PROCESSING
@@ -229,6 +231,7 @@ if ( $usegrp ) {
 
   if ($coadd_mode eq 'RUNNING') {
     if ($Grp->file_exists) {
+      $nfiles = 1;
       print {$filelist->handle} $Grp->file ."\n";
       
       # Align the images in the current Frm before calling makemos
@@ -236,36 +239,43 @@ if ( $usegrp ) {
 	_ALIGN_ARRAYS_ REFIMAGE=$refimage METHOD=$method REBIN=0
       }
 
-      orac_print("Setting SkyRefIs = Origin for moving sources\n") 
+      orac_print("Setting attributes for moving sources\n") 
 	if ( !$makemos && $moving );
       for my $fname ($Frm->files) {
 	# If we're using wcsmosaic for a moving source, SkyRefIs must be
-	# set to origin
+	# set to origin and AlignOffset to 1
 	if ( !$makemos && $moving ) {
 	  my $alignargs = "ndf=$fname mode=set name=skyrefis newval=origin";
 	  $Mon{ndfpack_mon}->obeyw("wcsattrib","$alignargs");
+	  $alignargs = "ndf=$fname mode=set name=alignoffset newval=1";
+	  $Mon{ndfpack_mon}->obeyw("wcsattrib","$alignargs");
 	}
 	print {$filelist->handle} $fname ."\n";
+	$nfiles++;
       }
     } else {
       orac_warn "Managed to get into RUNNING average without a group file";
     }
   } elsif ($coadd_mode eq 'STACKALL') {
     # Combine all the frames from all the groups
+    $nfiles = 0;
     for my $f ($Grp->members) {
       if ( $makemos ) {
 	_ALIGN_ARRAYS_ REFIMAGE=$refimage METHOD=$method REBIN=0 FRAME_OBJ=$f
       }
-      orac_print("Setting SkyRefIs = Origin for moving sources\n") 
+      orac_print("Setting attributes for moving sources\n") 
 	if ( !$makemos && $moving );
       for my $fname ($f->files) {
 	# If we're using wcsmosaic for a moving source, SkyRefIs must be
-	# set to origin
+	# set to origin and AlignOffset to 1
 	if ( !$makemos && $moving ) {
 	  my $alignargs = "ndf=$fname mode=set name=skyrefis newval=origin";
 	  $Mon{ndfpack_mon}->obeyw("wcsattrib","$alignargs");
+	  $alignargs = "ndf=$fname mode=set name=alignoffset newval=1";
+	  $Mon{ndfpack_mon}->obeyw("wcsattrib","$alignargs");
 	}
 	print {$filelist->handle} $fname ."\n";
+	$nfiles++;
       }
     }
   } else {
@@ -293,16 +303,20 @@ if ( $usegrp ) {
   }
 
   # Write names of all files to temp file
-  orac_print("Setting SkyRefIs = Origin for moving sources\n") 
+  orac_print("Setting attributes for moving sources\n") 
     if ( !$makemos && $moving );
+  $nfiles = 0;
   for my $fname ($Frm->files) {
     # If we're using wcsmosaic for a moving source, SkyRefIs must be
-    # set to origin
+    # set to origin and AlignOffset to 1
     if ( !$makemos && $moving ) {
       my $alignargs = "ndf=$fname mode=set name=skyrefis newval=origin";
       $Mon{ndfpack_mon}->obeyw("wcsattrib","$alignargs");
+      $alignargs = "ndf=$fname mode=set name=alignoffset newval=1";
+      $Mon{ndfpack_mon}->obeyw("wcsattrib","$alignargs");
     }
     print {$filelist->handle} "$fname\n";
+    $nfiles++;
   }
   # Create output filename, derived from first input file
   # since this is a many to one operation
@@ -311,10 +325,16 @@ if ( $usegrp ) {
 $filelist->handle->close;
 
 # Done with image assembly, now mosaic the images
+# First, some user feedback
 my $mostask;
 if ( $makemos ) {
-  # MAKEMOS
   $mostask = "MAKEMOS";
+} else {
+  $mostask = "WCSMOSAIC";
+}
+orac_print "Mosaicking $grpfrm file with $mostask: combining $nfiles files\n";
+if ( $makemos ) {
+  # MAKEMOS
 
   #### Remember to deal with intermediate mosaics as well ####
 
@@ -323,13 +343,11 @@ if ( $makemos ) {
   $Mon{ccdpack_reg}->obeyw("makemos","$args");
 } else {
   # WCSMOSAIC
-  $mostask = "WCSMOSAIC";
   my $wlim = 0.2;
   my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
     "genvar=true out=$out in=^".$filelist->file;
   $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
 }
-orac_print "Mosaicking $grpfrm file with $mostask\n";
 
 # HACK for renaming group output
 if ( $usegrp ) {
