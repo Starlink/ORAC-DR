@@ -17,8 +17,9 @@ The default is to allow the current fitting routine to determine the
 shape of the beam. A flag may be specified to force the return of the
 equivalent gaussian beam parameters.
 
-The fit is to the current co-added Frame and will fail if there is
-more than one file in the Frame.
+The fit is carried out on the current Grp image or the current
+co-added Frame and will fail if there is more than one file in the
+Frame.
 
 =head1 ARGUMENTS
 
@@ -29,7 +30,14 @@ The following arguments are supported:
 =item METHOD
 
 Method for deriving the beam parameters. Valid options are BEAM to use
-C<beamfit>, or PSF to use C<psf>. Default is BEAM.
+C<beamfit>, or PSF to use C<psf>. Default is BEAM. (In practice,
+anything other than PSF will cause C<beamfit> to be used.)
+
+=item SYSTEM
+
+Coordinate system in which to perform beam fit. If not set, the
+default is AZEL. May be AZEL, RADEC or GALACTIC. Minimum match is
+supported.
 
 =item GAUSSIAN
 
@@ -64,7 +72,7 @@ WCSFRAME, WCSATTRIB, BEAMFIT
 
 =item Other SCUBA-2 primitives
 
-_FIND_POINT_SOURCES, _FIT_PSF_, _FIND_INTEGRATED_INTENSITY_
+_FIND_SOURCES, _FIT_PSF_, _FIND_INTEGRATED_INTENSITY_
 
 =back
 
@@ -107,8 +115,6 @@ Rights Reserved.
 =item - Estimating contribution from error beam (Make sure UNITS for
   calc and integrated intensity measurement are the same!!)
 
-=item - Decide the best coord frame for reporting beam PA
-
 =item - Retrieve CSO tau from Cal object?
 
 =item - Error in errfrac?
@@ -123,18 +129,18 @@ use constant RAD2ASEC => 206265.0;
 
 # Are we looking at the group image?
 my $group = defined( $_FIND_BEAM_SIZE_{GROUP} ) ? $_FIND_BEAM_SIZE_{GROUP} : 0;
-
-# First check that we only have one file in the Frame
 my $in;
 if ( $group ) {
   $in = $Grp->file;
 } else {
+  # Check that we only have one file in the Frame
   unless ($Frm->nfiles == 1) {
     orac_throw "Error: _FIND_BEAM_SIZE_ must be run after frames have been combined\n";
   } else {
     $in = $Frm->file;
   }
 }
+
 # Should I be verbose? (Default to yes)
 my $verbose = (exists $_FIND_BEAM_SIZE_{VERBOSE} && 
 	       defined $_FIND_BEAM_SIZE_{VERBOSE}) ?
@@ -145,11 +151,12 @@ my $uselog = ( exists $_FIND_BEAM_SIZE_{LOGFILE} &&
 	       defined $_FIND_BEAM_SIZE_{LOGFILE}) ?
                $_FIND_BEAM_SIZE_{LOGFILE} : 1;
 
-# Do we want to use BEAMFIT or PSF?
+# Do we want to use BEAMFIT or PSF? Default BEAMFIT
 my $method = ( exists $_FIND_BEAM_SIZE_{METHOD} && 
 	       defined $_FIND_BEAM_SIZE_{METHOD}) ?
                $_FIND_BEAM_SIZE_{METHOD} : "BEAM";
 
+# Set usepsf flag
 my $usepsf = ( $method eq "PSF" ) ? 1 : 0;
 
 # Do we have a calibrator?
@@ -157,22 +164,18 @@ my $calib = $Cal->iscalsource($Frm->hdr('OBJECT')) ;
 #orac_throw "Error: source is not a known calibrator \n" 
 #  unless ($calib);
 
-# Retrieve and store current domain (frame) so it can be reset on exit
-my $origframe;
+# Retrieve and store current domain and system so they can be reset on
+# exit
+my $incosys;
 my $ORAC_STATUS;
-$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in name=domain mode=get");
-( $ORAC_STATUS, $origframe ) = $Mon{ndfpack_mon}->get("wcsattrib", "value");
+$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in name=system mode=get");
+( $ORAC_STATUS, $incosys ) = $Mon{ndfpack_mon}->get("wcsattrib", "value");
 
-# Determine whether the WCS frame (domain) was supplied as an
-# argument, else set it to the input frame.
-my $wcsframe = (exists $_FIND_BEAM_SIZE_{WCSFRAME} && 
-		defined $_FIND_BEAM_SIZE_{WCSFRAME} ) ? 
-                uc($_FIND_BEAM_SIZE_{WCSFRAME}) : $origframe;
-
-# Test whether or not given frame is valid.
-unless ($wcsframe =~ /AXIS|PIXEL|GRID|SKY/) {
-  orac_throw "Unknown WCS frame, $wcsframe ";
-}
+# Determine whether the the fit coordinate system was supplied as an
+# argument, else set it to AzEl.
+my $fitcosys = (exists $_FIND_BEAM_SIZE_{SYSTEM} && 
+		defined $_FIND_BEAM_SIZE_{SYSTEM} ) ? 
+                uc($_FIND_BEAM_SIZE_{SYSTEM}) : "AZEL";
 
 # Kappa must be at least V0.15 to use PSF
 if (starversion_lt('kappa','V0.15-0')) {
@@ -185,94 +188,51 @@ if ( !$usepsf && starversion_lt('kappa','V1.7')) {
   $usepsf = 1;
 }
 
-# If we have a SKY frame, determine the WCS SYSTEM parameter.
-my ($system, $origsystem);
-if ( $wcsframe eq "SKY" ) {
-  $system = (exists $_FIND_BEAM_SIZE_{SYSTEM} && 
-	     defined $_FIND_BEAM_SIZE_{SYSTEM} ) ? 
-	     uc($_FIND_BEAM_SIZE_{SYSTEM}) : "";
-
-  # Retrieve and store current system so it can be reset on exit
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in name=system mode=get");
-  ( $ORAC_STATUS, $origsystem ) = $Mon{ndfpack_mon}->get("wcsattrib", "value");
+# Set the coordinate system for the fit
+if ( $fitcosys =~ /AZ/ ) {
+  $fitcosys = "AZEL";
+} elsif ( $fitcosys =~ /RA|FK|ICRS/ ) {
+  $fitcosys = "ICRS";
+} elsif ( $fitcosys =~ /GAP/ ) {
+  $fitcosys = "GAPPT";
+} elsif ( $fitcosys =~ /GAL/ ) {
+  $fitcosys = "GALACTIC";
+} else {
+  orac_warn "Unknown coordinate system, $fitcosys - will use input as is\n";
+  $fitcosys = $incosys;
 }
 
-# Set the WCS frame to that desired if necessary
-if ( $origframe ne $wcsframe ) {
-  $Mon{ndfpack_mon}->obeyw("wcsframe", "ndf=$in frame=$wcsframe");
+# Set coord system for fit if necessary
+if ( $fitcosys ne $incosys ) {
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in name=system mode=set newval=$fitcosys");
 }
 
-# Initialise the log file if necessary
-my $beamlog;
-if ($uselog) {
-  my $time = gmtime();
-  $beamlog = new ORAC::LogFile("log.beam");
-  $beamlog->header("Beam log file - created on $time\n",
-		   "#     Time       Filter    A     dA     B     dB    PA    dPA    Seeing  El   Tau225",
-		   "-------------------------------------------------------------------------------------"
-            );
-}
+# Get an estimate of where the peak is in the image - note this will
+# be fooled by the presence of a spike FUTURE: dealing with spikes,
+# may need an iterative procedure (clip= option in stats).
+$Mon{kappa_mon}->obeyw("stats","ndf=$in");
+($ORAC_STATUS, my $maxpos) = $Mon{kappa_mon}->get("stats","maxwcs");
 
-# Find the positions of all point sources in the image. Use current Frm.
-_FIND_SOURCES_ POINT=1 DETECT_SIGMA=10
+# Find the centroid in the image
+my $box = 9;
+my $cenargs = "ndf=$in init='".$maxpos."' mode=i cerror=true search=$box";
+$Mon{kappa_mon}->obeyw("centroid","$cenargs");
+my @xy;
+($ORAC_STATUS, $xy[0]) = $Mon{kappa_mon}->get("centroid","xcen");
+($ORAC_STATUS, $xy[1]) = $Mon{kappa_mon}->get("centroid","ycen");
 
-# Retrieve Astro::Catalog object from _FIND_SOURCES_
-my $catalogue = $_FIND_SOURCES_{CATALOGUE};
+# Create temporary file to write source position(s) in
+my $cofile = new ORAC::TempFile;
+print { $cofile->handle } $xy[0]." ".$xy[1]. "\n";
+$cofile->handle->close;
 
-# What if there are no point sources? Or more than 1?
-if ( $catalogue->sizeof == 0 ) {
-  orac_throw "No point sources found in current image: unable to determine beam parameters\n";
-} elsif ( $catalogue->sizeof > 1 && $method eq "BEAM" ) { 
-  orac_warn "Image appears to have multiple sources - switching to PSF method\n";
-  $usepsf = 1;
-}
-
-# Parse DATE-OBS keyword
-my @dateobs = split( /[-T:.]/, $Frm->hdr( 'DATE-OBS' ) );
-# Create a DateTime object to allow coordinate conversions.
-# Note: the format of DATE-OBS means that the fractional seconds is
-# converted into miliseconds, hence the 1e6 in argument for nanosecond
-# in the DateTime object.
-my $dt = DateTime->new( year => $dateobs[0], month => $dateobs[1], 
-			day => $dateobs[2], hour => $dateobs[3], 
-			minute => $dateobs[4], second => $dateobs[5],
-			nanosecond => $dateobs[6]*1e6, time_zone => 'UTC' );
-
-my (@amp, @majfwhm, @minfwhm, $axisr, @orient, @xy);
+my (@amp, @majfwhm, @minfwhm, $axisr, @orient);
 # Now fit the source using PSF or BEAMFIT
 if ( $usepsf ) {
   # Are we forcing a gaussian fit?
   my $gaussian = (exists $_FIND_BEAM_SIZE_{GAUSSIAN} &&
 		  defined $_FIND_BEAM_SIZE_{GAUSSIAN}) ?
 		  $_FIND_BEAM_SIZE_{GAUSSIAN} : 0;
-
-  # Create temporary file to write source position(s) in
-  my $cofile = new ORAC::TempFile;
-
-  # Since PSF can handle multiple sources, loop over all sources in
-  # catalogue. Of course, in practice `There can be only one'... ;-)
-  use Astro::Telescope;
-  foreach my $i ( 1.. $catalogue->sizeof ) {
-    my $source = $catalogue->starbyindex( $i - 1 );
-    my $coords = $source->coords;
-    # Set the telescope to JCMT
-#    $coords->telescope( new Astro::Telescope( 'JCMT' ) );
-    
-    # Register DateTime object
-#    $coords->datetime( $dt );
-
-    use Data::Dumper;
-#    print Dumper($catalogue);
-    # Print out Az and El of current source
-#    print $coords->ra." ".$coords->dec. "\n";
-    print { $cofile->handle } $coords->ra." ".$coords->dec. "\n";
-    # Store this position for later
-    if ( $i == 1 ) {
-      $xy[0] = $coords->ra;
-      $xy[1] = $coords->dec;
-    }
-  }
-  $cofile->handle->close;
 
   # Fit the source with a PSF
   _FIT_PSF_ IMAGE=$in USELOG=1 COFILE=$cofile->file GAUSSIAN=$gaussian
@@ -304,23 +264,16 @@ if ( $usepsf ) {
   }
 
 } else {
-  # We only want to fit one beam so we assume the first (and only)
-  # one in the catalogue is the one we are interested in.
-  my $source = $catalogue->starbyindex( 0 );
-  my $coords = $source->coords;
-  # Set the telescope to JCMT
-  $coords->telescope( new Astro::Telescope( 'JCMT' ) );
-    
-  # Register DateTime object
-  $coords->datetime( $dt );
-
-  $xy[0] = $coords->ra;
-  $xy[1] = $coords->dec;  
-
   # Set args
   my $pos = '"'.$xy[0].", ".$xy[1].'"';
-  my $fitarea = 15; # Use a 15x15 pixel area?
-  my $args = "mode=interface pos=".$pos." variance=true fitarea=$fitarea";
+  my $fitarea = 15; # Use a 15x15 pixel area - should this change?
+
+  # Check we have a valid variance component
+  $Mon{kappa_mon}->obeyw("stats","ndf=$in comp=var");
+  ($ORAC_STATUS, my $numgood) = $Mon{kappa_mon}->get("stats","numgood");
+  my $var = ( $numgood > 0 ) ? "true" : "false";
+
+  my $args = "mode=interface pos=".$pos." variance=$var fitarea=$fitarea";
 
   # Call beamfit
   $Mon{kappa_mon}->obeyw("beamfit","ndf=$in $args");
@@ -353,7 +306,7 @@ my $dPmain = $Pmain * sqrt( $amp[1]*$amp[1]/($amp[0]*$amp[0]) +
 # Now do aperture photometry on source to measure total power in image
 # A 2 arcmin-diameter aperture should be big enough
 # Future: Iterative method to increase aperture from FWHM to image size
-my $radius = 60.0; 
+my $radius = 20.0; 
 
 _FIND_INTEGRATED_INTENSITY_ RADIUS=$radius IMAGE=$in XYPOS=\@xy
 my $Pint = $_FIND_INTEGRATED_INTENSITY_{TOTALFLUX};
@@ -373,17 +326,19 @@ if ( $Pint > $Pmain ) {
 $Cal->beampar( majfwhm => \@majfwhm, minfwhm => \@minfwhm, 
 	       orient => \@orient, errfrac => $errfrac );
 
-
 # Reformat for pretty reporting
 $errfrac = sprintf "%3d", $errfrac;
 
-# Now subtract parallactic angle to get PA in AzEl frame
-#$orient -= $coords->pa(format => 'deg');
-
 # Write a log file if required
 if ($uselog) {
+  my $time = gmtime();
+  my $beamlog = new ORAC::LogFile("log.beam");
+  $beamlog->header("Beam log file - created on $time\n",
+		   "#     Time       Filter    A     dA     B     dB    PA    dPA    Seeing  El   Tau225",
+		   "-------------------------------------------------------------------------------------"
+		   );
   my $num = sprintf "%04d", $Frm->hdr('OBSNUM');
-  my $time= sprintf "%15.7f", $Frm->hdr('ORACTIME');
+  $time= sprintf "%15.7f", $Frm->hdr('ORACTIME');
   my $filt= sprintf "%4s", $Frm->hdr('FILTER');
 
   # Get TAU from the header - should get from $Cal object?
@@ -404,21 +359,10 @@ if ($uselog) {
   # Write to logfile
   $beamlog->addentry("$num  $time  $filt    $beama   $da   $beamb   $db   $pa   $dpa $see   $el  $cso");
 
-  my $sources;
-  if ( $catalogue->sizeof == 1 ) {
-    $sources = " source\n";
-  } else {
-    $sources = " sources\n";
-  }
-  orac_print "Beam size for $filt: $beama x $beamb arcsec^2 at a PA of $pa deg E of N calculated from ".$catalogue->sizeof.$sources if ($verbose);
+  orac_print "Beam size for $filt: $beama x $beamb arcsec^2 at a PA of $pa deg E of N\n" if ($verbose);
 }
 
 # Return SYSTEM to original value if necessary
-if ( $system ne "" ) {
-  $Mon{ndfpack_mon}->obeyw("wcsattrib", "ndf=$in mode=set name=system newval=$origsystem");
-}
-
-# Return DOMAIN to original value if necessary
-if ( $wcsframe ne $origframe ) {
-  $Mon{ndfpack_mon}->obeyw("wcsframe", "ndf=$in frame=$origframe");
+if ( $fitcosys ne $incosys ) {
+  $Mon{ndfpack_mon}->obeyw("wcsattrib", "ndf=$in mode=set name=system newval=$incosys");
 }
