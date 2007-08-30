@@ -87,10 +87,14 @@ contains the following keys:
 
 =over 4
 
+=item SUM
+
+The sum of all the pixels within the aperture.
+
 =item TOTALFLUX
 
-The total flux within the aperture. No correction is made for beam
-size.
+The total flux within the aperture in units of
+signal_units*pixel_units^2.
 
 =item PEAKFLUX
 
@@ -165,8 +169,7 @@ my $ard = new ORAC::TempFile;
 
 my $ORAC_STATUS;
 # Get current coordinate system
-my $args = "ndf=$in mode=get name=system";
-$Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=system");
 ($ORAC_STATUS, my $cosys) = $Mon{ndfpack_mon}->get("wcsattrib","value");
 # Convert string to upper case
 $cosys = uc($cosys);
@@ -180,7 +183,7 @@ if (starversion_gt('kappa','V0.18-0')) {
 # Mask out everything EXCEPT a circle centred on X, Y. Radius has to
 # be specified correctly in current coordinate system.
 # If AzEl or Galactic, convert to degrees
-if ( $cosys eq " AZEL" || $cosys eq "GALACTIC" ) {
+if ( $cosys eq "AZEL" || $cosys eq "GALACTIC" ) {
   my $dradius = $radius/3600.0;
   print {$ard->handle} ".NOT.CIRCLE($x, $y, $dradius)\n";
 } else {
@@ -206,9 +209,9 @@ my $ardin = $ard->file;
 # Arguments for ardmask depend on kappa version
 my $ardargs;
 if (starversion_lt('kappa','V0.18-0')) {
-  $ardargs = " cosys=data ";
+  $ardargs = "cosys=data";
 } else {
-  $ardargs = " "; # in the ard file
+  $ardargs = ""; # in the ard file
 }
 
 # Run ardmask
@@ -227,11 +230,19 @@ $Mon{kappa_mon}->obeyw("stats","ndf=$out");
 
 if ($verbose) {
   my $outsum = sprintf "%6.2f", $sum;
-  orac_print "Sum calculated to be $outsum UNITS\n";
+  orac_print "Sum calculated to be $outsum UNITS from $npix pixels\n";
 }
 
+# Retrieve pixel scale so totalflux is returned as a flux with units
+# of signal*arcsec^2
+$Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$out");
+($ORAC_STATUS, my @dxy) = $Mon{ndfpack_mon}->get("ndftrace","fpixscale");
+my $dx = $dxy[0];
+my $dy = $dxy[1];
+
 # Store sum in the hash
-$_FIND_INTEGRATED_INTENSITY_{TOTALFLUX} = $sum;
+$_FIND_INTEGRATED_INTENSITY_{TOTALFLUX} = $sum*$dx*$dy;
+$_FIND_INTEGRATED_INTENSITY_{SUM} = $sum;
 $_FIND_INTEGRATED_INTENSITY_{PEAKFLUX} = $maxflux;
 $_FIND_INTEGRATED_INTENSITY_{SIGMA} = $sigma;
 $_FIND_INTEGRATED_INTENSITY_{NUMGOOD} = $ngood;
