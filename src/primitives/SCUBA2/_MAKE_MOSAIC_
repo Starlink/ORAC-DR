@@ -2,7 +2,7 @@
 
 =head1 NAME
 
-_MAKE_MOSAIC_ - Basic primitive for mosaicking images
+_MAKE_MOSAIC_ - Main primitive for mosaicking images
 
 =head1 SYNOPSIS
 
@@ -53,7 +53,8 @@ details). MEAN is the default.
 =item B<METHOD>
 
 Image resampling method used by WCSALIGN or WCSMOSAIC. May be any
-value supported by those tasks. Default is Nearest-neighbour.
+value supported by those tasks. Default is C<nearest>
+(nearest-neighbour).
 
 =item B<GENVAR>
 
@@ -149,6 +150,10 @@ my $skyalign = (exists $_MAKE_MOSAIC_{SKYREF} &&
 	       defined $_MAKE_MOSAIC_{SKYREF}) ?
                $_MAKE_MOSAIC_{SKYREF} : 1;
 
+# Flag to determine whether or not to generate variances when mosaicking
+my $genvar = (exists $_MAKE_MOSAIC_{GENVAR} &&
+	      defined $_MAKE_MOSAIC_{GENVAR}) ?
+              $_MAKE_MOSAIC_{GENVAR} : 1;
 
 # Check that the installed version of Kappa has WCSMOSAIC
 unless ( $makemos ) {
@@ -213,6 +218,7 @@ if ( uc($outsys) eq "GAPPT" ) {
 
 # Write text file with list of files to align and mosaic.
 my $filelist = new ORAC::TempFile;
+my $listhandle = $filelist->handle;
 my $tmpout;
 my $grpfrm;
 my $nfiles;
@@ -232,7 +238,7 @@ if ( $usegrp ) {
   if ($coadd_mode eq 'RUNNING') {
     if ($Grp->file_exists) {
       $nfiles = 1;
-      print {$filelist->handle} $Grp->file ."\n";
+      print {$listhandle} $Grp->file ."\n";
       
       # Align the images in the current Frm before calling makemos
       if ( $makemos ) {
@@ -250,7 +256,7 @@ if ( $usegrp ) {
 	  $alignargs = "ndf=$fname mode=set name=alignoffset newval=1";
 	  $Mon{ndfpack_mon}->obeyw("wcsattrib","$alignargs");
 	}
-	print {$filelist->handle} $fname ."\n";
+	print {$listhandle} "$fname\n";
 	$nfiles++;
       }
     } else {
@@ -274,7 +280,7 @@ if ( $usegrp ) {
 	  $alignargs = "ndf=$fname mode=set name=alignoffset newval=1";
 	  $Mon{ndfpack_mon}->obeyw("wcsattrib","$alignargs");
 	}
-	print {$filelist->handle} $fname ."\n";
+	print {$listhandle} "$fname\n";
 	$nfiles++;
       }
     }
@@ -315,14 +321,14 @@ if ( $usegrp ) {
       $alignargs = "ndf=$fname mode=set name=alignoffset newval=1";
       $Mon{ndfpack_mon}->obeyw("wcsattrib","$alignargs");
     }
-    print {$filelist->handle} "$fname\n";
+    print {$listhandle} "$fname\n";
     $nfiles++;
   }
   # Create output filename, derived from first input file
   # since this is a many to one operation
   ($in, $out) = $Frm->inout('_fmos', 0);
 }
-$filelist->handle->close;
+$listhandle->close;
 
 # Done with image assembly, now mosaic the images
 # First, some user feedback
@@ -332,20 +338,96 @@ if ( $makemos ) {
 } else {
   $mostask = "WCSMOSAIC";
 }
+
 orac_print "Mosaicking $grpfrm file with $mostask: combining $nfiles files\n";
+my $args;
+# Retrieve name of file containing list of images to mosaic
+my $moslist = $filelist->file;
 if ( $makemos ) {
   # MAKEMOS
 
-  #### Remember to deal with intermediate mosaics as well ####
+  # Now, if we are using makemos, we need to deal with the finite
+  # number of images that can be mosaicked simultaneously, currently
+  # 1000 but it was only 100 in older versions of CCDPACK.
+  my $maxmosfiles = (starversion_lt('ccdpack', 'V4.0-17')) ? 100 : 1000;
 
-  my $args = "in=^".$filelist->file." method=$makemos_method ref=$refimage "
-            ."nozero noscale out=$out title=".$Frm->hdr('OBJECT');
-  $Mon{ccdpack_reg}->obeyw("makemos","$args");
+  my $maxmossq = $maxmosfiles*$maxmosfiles;
+  if ( $nfiles > $maxmossq ) {
+    orac_err "Unable to mosaic images: number of input files, $nfiles, exceeds capacity, $maxmossq\n";
+  }
+
+  # Declare variable names for list of intermediate mosaics, array of
+  # intermediate mosaics ORAC::TempFile objects and list of filenames
+  # in current intermediate mosaic. This must be done here because we
+  # need these variables to remain in scope outside the block which
+  # creates the intermediate mosaics.
+  my ($intermoslist, @intermosaics, @mosaiclist);
+
+  # Check number of files and generate intermediate mosaics if necessary
+  if ( $nfiles > $maxmosfiles ) {
+    use POSIX qw/ ceil /;
+    my $nsteps = ceil($nfiles/$maxmosfiles);
+    my $stepsize = ceil($nfiles/$nsteps);
+    orac_print "Creating $nsteps intermediate mosaics, each of $stepsize images ...";
+
+    # General arguments for makemos
+    $args = ($genvar) ? " genvar usevar" : " nousevar";
+    $args .= " method=$makemos_method";
+
+    # Create the temporary files to hold the intermediate mosaic file
+    # lists: there are $nsteps of them
+    for my $j (1 .. $nsteps) {
+      my $mosfile = new ORAC::TempFile(0);
+      push (@intermosaics, $mosfile);
+    }
+
+    # Read filenames from master file list - note filenames will
+    # include a line terminator, but this is OK since they will need
+    # those be written out as well.
+    open my $listhandle, "< $moslist" or die "Unable to open file, $moslist : $!\n";
+    my @allfiles = <$listhandle>;
+
+    # Loop over number of steps, define start and end index into array
+    # of all files and write only those to the intermediate mosaic
+    # list file. There will be $stepsize number of images in each of
+    # these files. Run makemos with this shorter list of images.
+    my $curmosfile;
+    for my $i (1 .. $nsteps ) {
+      # Retrieve name of current intermediate mosaic
+      $curmosfile = $intermosaics[$i-1];
+
+      # Define start and end indices of array of images to include
+      my $start = ($i-1) * $nsteps;
+      my $end = $start + $stepsize - 1;
+
+      # Write out array slice to intermediate mosaic input file list
+      my $tmplist = new ORAC::TempFile;
+      print {$tmplist->handle} @allfiles[$start..$end];
+
+      # Run makemos
+      my $mosargs = "in=^".$tmplist->file." out=".$curmosfile->file."$args";
+      $Mon{ccdpack_reg}->obeyw("makemos","$mosargs");
+      push (@mosaiclist, $curmosfile->file);
+    }
+
+    # Reset the extra args to generate and use variances
+    $args = " genvar usevar";
+
+    # Create new list of input images to make the final mosaic
+    $intermoslist = new ORAC::TempFile;
+    print {$intermoslist->handle} join("\n",@mosaiclist[0..$#mosaiclist]);
+    $moslist = $intermoslist->file;
+  }
+
+  my $mosargs = "in=^".$moslist." method=$makemos_method ref=$refimage "
+            ."nozero noscale out=$out title=".$Frm->hdr('OBJECT')."$args";
+  $Mon{ccdpack_reg}->obeyw("makemos","$mosargs");
+
 } else {
   # WCSMOSAIC
   my $wlim = 0.2;
   my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
-    "genvar=true out=$out in=^".$filelist->file;
+    "genvar=true out=$out in=^".$moslist;
   $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
 }
 
@@ -357,8 +439,10 @@ if ( $usegrp ) {
   rename $out .".sdf", $outname .".sdf" 
     or die "Error renaming temp file to output Group mosaic"; # horrible hack KLUGE
 
+  # Register new output file with Grp
   $Grp->file( $outname );
 } else {
+  # Register new Frm file names
   $Frm->files( $out );
 }
-
+orac_print " done.\n";
