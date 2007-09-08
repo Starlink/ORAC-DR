@@ -389,6 +389,10 @@ sub forget {
 Returns boolean indicating whether the remote task can be contacted
 or not.
 
+Will try to PING the task. If that works connection is established.
+If it fails with UNKNACT error then the task is probably okay but is
+lacking a PING action.
+
 =cut
 
 sub contact {
@@ -399,6 +403,9 @@ sub contact {
   # this makes sure we always have a message system
   my $ms = new ORAC::Msg::Control::DRAMA(1);
 
+  # Get the UNKNACT status code
+  my $unknact = -1;
+  eval { $unknact = Dits::DITS__UNKNACT() };
   my $con = 0;
   # we should really just use the TaskRunning functionality
   # but that is not yet implemented in perl/DRAMA
@@ -409,7 +416,14 @@ sub contact {
 					 # do not care about output text
 				         -info => sub { },
 					 -success => sub { $con = 1 },
-					 -error => sub { $con = 0 },
+					 -error => sub {
+                                           my $statval = shift;
+                                           if ($statval == $unknact) {
+                                             $con = 1;
+                                           } else {
+                                             $con = 0;
+                                           }
+                                         },
 				 };
   return $con;
 }
