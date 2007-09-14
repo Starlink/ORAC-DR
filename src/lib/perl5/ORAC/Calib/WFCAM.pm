@@ -46,7 +46,8 @@ The following methods are available:
 
 =item B<new>
 
-Sub-classed constructor. Adds knowledge of interleave mask.
+Sub-classed constructor. Adds knowledge of interleave mask and bad
+pixel mask.
 
   my $Cal = new ORAC::Calib::WFCAM;
 
@@ -85,6 +86,25 @@ sub interleavemaskname {
   return $self->{InterleaveMask};
 }
 
+=item B<maskname>
+
+Return (or set) the name of the current bad pixel mask
+
+  $mask = $Cal->maskname;
+
+The C<mask()> method should be used if a test for suitability of the
+mask is required.
+
+=cut
+
+
+sub maskname {
+  my $self = shift;
+
+  if (@_) { $self->{Mask} = shift unless $self->masknoupdate; }
+  return $self->{Mask};
+}
+
 =item B<interleavemaskindex>
 
 Return or set the index object associated with the interleave mask.
@@ -107,6 +127,29 @@ sub interleavemaskindex {
   return $self->{InterleaveMaskIndex};
 }
 
+=item B<maskindex>
+
+Return or set the index object associated with the bad pixel mask.
+
+  $index = $Cal->maskindex;
+
+An index object is created automatically the first time this method
+is run.
+
+=cut
+
+sub maskindex {
+  my $self = shift;
+
+  if (@_) { $self->{MaskIndex} = shift; }
+  unless ( defined $self->{MaskIndex} ) {
+    my $indexfile = $self->find_file("index.mask");
+    my $rulesfile = $self->find_file("rules.mask");
+    $self->{MaskIndex} = new ORAC::Index( $indexfile, $rulesfile );
+  }
+  return $self->{MaskIndex};
+}
+
 =item B<interleavemasknoupdate>
 
 Stops object from updating itself with more recent data.
@@ -118,6 +161,21 @@ sub interleavemasknoupdate {
   my $self = shift;
   if( @_ ) { $self->{InterleaveMaskNoUpdate} = shift; }
   return $self->{InterleaveMaskNoUpdate};
+}
+
+=item B<masknoupdate>
+
+Stops object from updating itself with more recent data.
+Used when overrding the mask file from the command-line.
+
+=cut
+
+sub masknoupdate {
+
+  my $self = shift;
+  if (@_) { $self->{MaskNoUpdate} = shift; }
+  return $self->{MaskNoUpdate};
+
 }
 
 =back
@@ -229,6 +287,40 @@ sub flat {
     croak("Error in flat calibration checking - giving up");
   };
 };
+
+=item B<mask>
+
+Return (or set) the name of the current bad pixel mask.
+
+  $mask = $Cal->mask;
+
+This method is subclassed for WFCAM because we have one mask per
+camera and not one standard mask.
+
+=cut
+
+sub mask {
+  my $self = shift;
+  if( @_ ) {
+    return $self->maskname( shift );
+  }
+
+  my $ok = $self->maskindex->verify( $self->maskname, $self->thing, 0 );
+
+  # Happy ending. Frame is OK.
+  if( $ok ) { return $self->maskname; }
+
+  croak( "Override mask is not suitable! Giving up" ) if $self->masknoupdate;
+
+  if( defined( $ok ) ) {
+    my $mask = $self->maskindex->choosebydt( 'ORACTIME', $self->thing, 0 );
+    croak "No suitable mask was found in index file"
+      unless defined $mask;
+    $self->maskname( $mask );
+  } else {
+    croak( "Error in mask calibration checking - giving up" );
+  }
+}
 
 =item B<flatindex>
 
