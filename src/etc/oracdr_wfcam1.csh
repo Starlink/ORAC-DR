@@ -155,7 +155,9 @@ setenv ORAC_SUN
 
 # some other things
 setenv HDS_MAP 0
-setenv RTD_REMOTE_DIR $ORAC_DATA_OUT/..
+if ( -e $ORAC_DATA_OUT/.. ) then
+  setenv RTD_REMOTE_DIR $ORAC_DATA_OUT/..
+endif
 
 # Determine the host, and if we're on a wfdr machine, create
 # $ORAC_DATA_OUT if it doesn't already exist.
