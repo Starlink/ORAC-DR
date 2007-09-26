@@ -7,9 +7,20 @@ observation.
 
 =head1 DESCRIPTION
 
+This primitive reduces and calculates pointing information for a line
+source. It removes a zero-order baseline, creates a variance for the
+cube, then collapses around the line. The collapsed image is used to
+calculate the pointing information.
+
+The region over which the line is collapsed is determined by first
+looking in the JCMT pointing catalogue. If that does not give a line
+width, then the central non-baseline region is used.
+
 =head1 ARGUMENTS
 
 =over 4
+
+None.
 
 =back
 
@@ -17,15 +28,42 @@ observation.
 
 =over 4
 
+=item *
+
+This primitive is suitable for ACSIS cubes with either RxA or HARP-B
+as the front-end.
+
+=item *
+
+The original Frame object is restored upon exiting this primitive.
+
 =back
 
 =head1 OUTPUT DATA
 
 =over 4
 
+=item *
+
+The baselined cube in a file of the form
+aE<lt>YYYYMMDDE<gt>_E<lt>NNNNNE<gt>_E<lt>MME<gt>_bl.
+
+=item *
+
+The cube with variance added in a file of the form
+aE<lt>YYYYMMDDE<gt>_E<lt>NNNNNE<gt>_E<lt>MME<gt>_var.
+
+=item *
+
+The integrated intensity image in a file of the form
+aE<lt>YYYYMMDDE<gt>_E<lt>NNNNNE<gt>_E<lt>MME<gt>_linteg1.
+
 =back
 
 =head1 TASKS
+
+See the _REMOVE_BASELINE_, _CREATE_CUBE_VARIANCE_, _COLLAPSE_LINE_,
+_COLLAPSE_CENTRAL_LINE_, and _CALCULATE_POINTING_ primitives.
 
 =head1 REQUIRED PERL MODULES
 
@@ -58,7 +96,28 @@ if( $Frm->uhdr( "SPARSE_CUBE" ) ) {
 
     _CREATE_CUBE_VARIANCE_
 
-    _COLLAPSE_CENTRAL_LINE_
+    # Retrieve the JCMT pointing catalogue and look up the object. If
+    # it is defined, then we use the line velocity width to collapse
+    # over the line. If it isn't, we'll just use the baseline regions
+    # to figure out where the line is.
+
+    use Astro::Catalog;
+
+    my $object = $Frm->uhdr( "ORAC_OBJECT" );
+    my $poicat = $Cal->find_file( "poi.dat" );
+    my $jcmtcat = new Astro::Catalog( Format => 'JCMT',
+                                      File => $poicat );
+    my ($result) = $jcmtcat->popstarbyid( $object );
+    if( defined( $result ) &&
+        defined( $result->misc ) &&
+        defined( $result->misc->{'velocity_range'} ) ) {
+
+      my $range = $result->misc->{'velocity_range'};
+      _COLLAPSE_LINE_ CENTRE=0 RANGE=$range
+
+    } else {
+      _COLLAPSE_CENTRAL_LINE_
+    }
 
     _CALCULATE_POINTING_ TYPE=LINE
 
