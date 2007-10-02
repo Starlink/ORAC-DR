@@ -157,7 +157,7 @@ setenv ORAC_SUN
 
 # some other things
 setenv HDS_MAP 0
-if ( -e $ORAC_DATA_ROOT/raw/wfcam1 ) then
+if ( -e $ORAC_DATA_ROOT/reduced/wfcam1 ) then
   setenv RTD_REMOTE_DIR $ORAC_DATA_ROOT/reduced/wfcam1
 endif
 
