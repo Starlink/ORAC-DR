@@ -155,9 +155,6 @@ setenv ORAC_SUN
 
 # some other things
 setenv HDS_MAP 0
-if ( -e $ORAC_DATA_OUT/.. ) then
-  setenv RTD_REMOTE_DIR $ORAC_DATA_OUT/..
-endif
 
 # Determine the host, and if we're on a wfdr machine, create
 # $ORAC_DATA_OUT if it doesn't already exist.
@@ -166,6 +163,12 @@ if( $hostname == "wfdr1" || $hostname == "wfdr2" || $hostname == "wfdr3" || $hos
     if( ! -d ${ORAC_DATA_OUT} ) then
         mkdir $ORAC_DATA_OUT
     endif
+endif
+
+# Set the RTD_REMOTE_DIR environment variable, but only if the
+# directory actually exists.
+if ( -e $ORAC_DATA_OUT/.. ) then
+  setenv RTD_REMOTE_DIR $ORAC_DATA_OUT/..
 endif
 
 # Source general alias file and print welcome screen
