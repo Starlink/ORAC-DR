@@ -60,50 +60,58 @@ my $percent = ( defined( $_MASK_FREQUENCY_ENDS_{PERCENT} ) ?
                 $_MASK_FREQUENCY_ENDS_{PERCENT}            :
                 10 );
 
-# Set/get filenames.
-my ( $in, $out ) = $Frm->inout( "_em" );
+foreach my $i ( 1 .. $Frm->nfiles ) {
 
-# Retrieve the dimensions of the cube.
-$Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
-my ( $ORAC_STATUS, @lbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
-( $ORAC_STATUS, my @ubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
+  # Set/get filenames.
+  my ( $in, $out ) = $Frm->inout( "_em", $i );
 
-# Calculate the upper and lower bounds for ARDMASK.
-my $lower_x = $lbnd[0] - 1;
-my $lower_y = $lbnd[1] - 1;
-my $upper_x = $ubnd[0];
-my $upper_y = $ubnd[1];
+  # Retrieve the dimensions of the cube.
+  $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
+  my ( $ORAC_STATUS, @lbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
+  ( $ORAC_STATUS, my @ubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
 
-# Get the extent of the 3rd axis.
-my $extent = $ubnd[2] - $lbnd[2] + 1;
+  # Calculate the upper and lower bounds for ARDMASK.
+  my $lower_x = $lbnd[0] - 1;
+  my $lower_y = $lbnd[1] - 1;
+  my $upper_x = $ubnd[0];
+  my $upper_y = $ubnd[1];
 
-# Calculate the amount to blank off from either end.
-my $trim = int( $extent * $percent / 100 );
+  # Get the extent of the 3rd axis.
+  my $extent = $ubnd[2] - $lbnd[2] + 1;
 
-# Calculate the lower and upper extents.
-my $lower_z = $lbnd[2] + $trim;
-my $upper_z = $ubnd[2] - $trim;
+  # Calculate the amount to blank off from either end.
+  my $trim = int( $extent * $percent / 100 );
 
-# Create a temporary file to hold the ARD mask.
-my $ardmask = new ORAC::TempFile;
+  # Calculate the lower and upper extents.
+  my $lower_z = $lbnd[2] + $trim;
+  my $upper_z = $ubnd[2] - $trim;
 
-# We're doing three dimensions here...
-print {$ardmask->handle} "DIMENSION(3)\n";
+  # Create a temporary file to hold the ARD mask.
+  my $ardmask = new ORAC::TempFile;
 
-# Make the mask to be the unmasked central region, then we'll use the
-# INSIDE parameter to ARDMASK to mask out the ends.
-print {$ardmask->handle} "RECT( $lower_x, $lower_y, $lower_z, $upper_x, $upper_y, $upper_z )\n";
+  # We're doing three dimensions here...
+  print {$ardmask->handle} "DIMENSION(3)\n";
 
-# Run ARDMASK.
-my $params = "in=$in out=$out ardfile=" . $ardmask->file . " inside=false";
-$Mon{'kappa_mon'}->obeyw( "ardmask", "$params" );
+  # Make the mask to be the unmasked central region, then we'll use the
+  # INSIDE parameter to ARDMASK to mask out the ends.
+  print {$ardmask->handle} "RECT( $lower_x, $lower_y, $lower_z, $upper_x, $upper_y, $upper_z )\n";
+  print "RECT( $lower_x, $lower_y, $lower_z, $upper_x, $upper_y, $upper_z )\n";
 
-# Report to user.
-orac_print "$in to $out:\n";
-orac_print " Masked $percent\% from both ends of frequency range.\n";
+  # Set the coordinate frame to PIXEL.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=$in frame=PIXEL" );
 
-# Update the Frm object.
-$Frm->file( $out );
+  # Run ARDMASK.
+  my $params = "in=$in out=$out ardfile=" . $ardmask->file . " inside=false";
+  $Mon{'kappa_mon'}->obeyw( "ardmask", "$params" );
+
+  # Report to user.
+  orac_print "$in to $out:\n";
+  orac_print " Masked $percent\% from both ends of frequency range.\n";
+
+  # Update the Frm object.
+  $Frm->file( $i, $out );
+
+}
 
 # Display if necessary.
 $Display->display_data( $Frm ) if defined $Display;

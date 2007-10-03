@@ -107,13 +107,11 @@ my $inlist = new ORAC::TempFile( OPEN => 1,
                                  SUFFIX => '.lis' );
 my $inlist_fh = $inlist->handle;
 
+my $out = $Frm->inout( "_cube" );
+
 foreach my $i ( 1..$Frm->nfiles ) {
 
   my ( $in, $tmp ) = $Frm->inout( "_cube", $i );
-
-  if( $i == 1 ) {
-    $out = $tmp;
-  }
 
   print $inlist_fh "$in\n";
   push @files, $in;
@@ -218,46 +216,38 @@ if( ! $Frm->uhdr( "SPARSE_CUBE" ) ) {
   my $f_length = abs( $ubnd[2] - $lbnd[2] + 1 );
   my $f_range = abs( $fubnd[2] - $flbnd[2] );
 
-# Calculate the maximum number of available frequency channels.
-  my $max_freq_chan = int( $maxsize / ( $x_length * $y_length * $bytes_per_pixel ) );
+  my $total_pixels = $x_length * $y_length * $f_length;
+  my $total_bytes = $total_pixels * $bytes_per_pixel;
+  orac_print " Total size of output cube: $total_pixels pixels ($total_bytes bytes)\n";
+  orac_print " This computer can handle $maxsize bytes.\n";
 
-# If the maximum number of available frequency channels is less than
-# the number in the output cube, then we need to tell MAKECUBE to
-# restrict the frequency bounds.
-  if( $max_freq_chan < $f_length ) {
+  if( $maxsize < $total_bytes ) {
+    my $ntiles = int( $total_bytes / $maxsize ) + 1;
+    orac_print " Output cube will be split into $ntiles tiles.\n";
 
-    my $ratio = $max_freq_chan / $f_length;
-
-  # We need to remove ( 1 - $ratio ) * $f_range / 2 from each end.
-    my $upper = $fubnd[2] - ( 1 - $ratio ) * $f_range / 2;
-    my $lower = $flbnd[2] + ( 1 - $ratio ) * $f_range / 2;
-
-  # Get the units of the frequency axis.
-    $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$files[0] fullframe" );
-    ( $ORAC_STATUS, my $funit ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "funit" );
-
-  # Tell the user what's going on.
-    orac_print " Running MAKECUBE to create full cube would result in a file too large\n  for this computer to handle.\n";
-    orac_print " Frequency range would have been ";
-    orac_print sprintf( "%.3f to %.3f %s.\n", $flbnd[2], $fubnd[2], $funit );
-    orac_print " Restricting frequency range to ";
-    orac_print sprintf( "%.3f to %.3f %s.\n", $lower, $upper, $funit );
-
-  # If it's LSB, swap them around.
-    if( $lsb ) {
-      ( $upper, $lower ) = ( $lower, $upper );
+    # We'll tile along the long axis.
+    my $x_out; # Length of the x-axis for each tile.
+    my $y_out; # Length of the y-axis for each tile.
+    if( $x_length > $y_length ) {
+      $x_out = int ( $x_length / $ntiles ) + 1;
+      $y_out = $y_length;
+    } else {
+      $x_out = $x_length;
+      $y_out = int( $y_length / $ntiles ) + 1;
     }
 
-    $params = "specbounds='$lower,$upper' ";
+    $params = "tiledims=[$x_out,$y_out] ";
+    orac_print " Output cubes will have dimensions [$x_out,$y_out,$f_length]\n";
 
-    # Set the Frame header SPECTRAL_TRIMMED appropriately.
-    $Frm->uhdr( "SPECTRAL_TRIMMED", 1 );
+    $Frm->uhdr( "SPECTRAL_TRIMMED", 0 );
+    $Frm->uhdr( "TILED_CUBE", 1 );
 
   } else {
 
     $Frm->uhdr( "SPECTRAL_TRIMMED", 0 );
+    $Frm->uhdr( "TILED_CUBE", 0 );
 
-    $params = "";
+    $params = "tiledims=! ";
 
   }
 
@@ -327,13 +317,36 @@ orac_print( " Creating cube from " . join( ", ", @files ) . "..." );
 # Run MAKECUBE.
 $Mon{'smurf_mon'}->obeyw( "makecube", "$params" );
 
-orac_print( "done.\nCube formed in $out.\n" );
+orac_print( "done.\n" );
+
+# Retrieve the number of tiles created.
+( $ORAC_STATUS, my $ntile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
+
+if( $Frm->uhdr( "TILED_CUBE" ) ) {
+
+  # We need to rename the output cubes, as MAKECUBE creates _cube_N
+  # and we want _cubeNNN.
+  my @files;
+  foreach my $j ( 1 .. $ntile ) {
+    my $makecube_outfile = "${out}_$j.sdf";
+    my $outfile = "${out}" . sprintf( "%03d", $j ) . ".sdf";
+    rename( $makecube_outfile, $outfile );
+    $outfile =~ s/\.sdf$//;
+    push( @files, $outfile );
+  }
+
+  orac_print " $ntile cubes formed: ";
+
+  $Frm->files( @files );
+  my $filestring = join ", ", @files;
+  orac_print( "$filestring\n" );
+} else {
+  $Frm->files( $out );
+  orac_print( "Cube formed in $out.\n" );
+}
 
 # Set the product.
 $Frm->product( "CUBE" );
-
-# Update the Frm object.
-$Frm->files( $out );
 
 # Display.
 $Display->display_data( $Frm ) if defined $Display;

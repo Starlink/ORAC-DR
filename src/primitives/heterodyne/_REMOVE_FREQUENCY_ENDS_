@@ -29,7 +29,10 @@ either end. [10.0]
 
 =over 4
 
-None.
+=item *
+
+This primitive will only remove the ends if the Frame's user header
+SPECTRAL_TRIMMED does not exist or it exists and is false..
 
 =back
 
@@ -69,37 +72,41 @@ my $percent = ( defined( $_REMOVE_FREQUENCY_ENDS_{PERCENT} ) ?
 if( ! defined( $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) ||
     ! $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) {
 
-  # Set/get filenames.
-  my ( $in, $out ) = $Frm->inout( "_em" );
+  foreach my $i ( 1 .. $Frm->nfiles ) {
 
-  # Retrieve the dimensions of the cube.
-  $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
-  my ( $ORAC_STATUS, @lbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
-  ( $ORAC_STATUS, my @ubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
+    # Set/get filenames.
+    my ( $in, $out ) = $Frm->inout( "_em", $i );
 
-  # Get the extent of the 3rd axis.
-  my $extent = $ubnd[2] - $lbnd[2] + 1;
+    # Retrieve the dimensions of the cube.
+    $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
+    my ( $ORAC_STATUS, @lbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
+    ( $ORAC_STATUS, my @ubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
 
-  # Calculate the amount to blank off from either end.
-  my $trim = int( $extent * $percent / 100 );
+    # Get the extent of the 3rd axis.
+    my $extent = $ubnd[2] - $lbnd[2] + 1;
 
-  # Calculate the lower and upper extents.
-  my $lower_z = $lbnd[2] + $trim;
-  my $upper_z = $ubnd[2] - $trim;
+    # Calculate the amount to blank off from either end.
+    my $trim = int( $extent * $percent / 100 );
 
-  # Run NDFCOPY.
-  my $params = "in=$in(,,$lower_z:$upper_z) out=$out";
-  $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+    # Calculate the lower and upper extents.
+    my $lower_z = $lbnd[2] + $trim;
+    my $upper_z = $ubnd[2] - $trim;
 
-  # Report to user.
-  orac_print "$in to $out:\n";
-  orac_print " Masked $percent\% from both ends of frequency range.\n";
+    # Run NDFCOPY.
+    my $params = "in=$in(,,$lower_z:$upper_z) out=$out";
+    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
 
-  # Set the product.
-  $Frm->product( "em" );
+    # Report to user.
+    orac_print "$in to $out:\n";
+    orac_print " Trimmed $percent\% from both ends of frequency range.\n";
 
-  # Update the Frm object.
-  $Frm->file( $out );
+    # Set the product.
+    $Frm->product( "em" );
+
+    # Update the Frm object.
+    $Frm->file( $i, $out );
+
+  }
 
   # Display if necessary.
   $Display->display_data( $Frm ) if defined $Display;
