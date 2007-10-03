@@ -542,6 +542,59 @@ sub findnsubs {
   return $nsubs;
 }
 
+=item B<inout>
+
+=cut
+
+sub inout {
+  my $self = shift;
+  my $suffix = shift;
+
+  # Check to see if we have a file number to use. If we don't, then
+  # just use the standard inout method (no need to duplicate code).
+  if( ! @_ ) {
+    if( wantarray ) {
+      my ($in, $out) = $self->SUPER::inout( $suffix );
+      return ( $in, $out );
+    } else {
+      my $out = $self->SUPER::inout( $suffix );
+      return $out;
+    }
+  }
+
+  # We have a file number to use, so shift it off the argument list.
+  my $number = shift;
+
+  # The suffix of the output file is going to be the given suffix with
+  # the zero-padded number appended to the end.
+  my $outsuffix = $suffix . sprintf( "%03d", $number );
+
+  my $infile = $self->file( $number );
+
+  # Strip off everything after the last underscore.
+  my ( $junk, $fsuffix ) = $self->_split_fname( $infile );
+
+  my @junk = @$junk;
+
+  if( $#junk > 1 && $junk[-1] !~ /^\d+$/ ) {
+    @junk = @junk[0..$#junk-1];
+  }
+
+  # Strip the leading underscore off the new suffix.
+  $outsuffix =~ s/^_//;
+  push( @junk, $outsuffix );
+
+  my $outfile = $self->_join_fname( \@junk, '' );
+
+  # Generate a warning if output file equals input file
+  orac_warn("inout - output filename equals input filename ($outfile)\n")
+    if ($outfile eq $infile);
+
+  return ($infile, $outfile) if wantarray();  # Array context
+  return $outfile;                            # Scalar context
+
+}
+
 =item B<pattern_from_bits>
 
 Determine the pattern for the raw filename given the variable component
