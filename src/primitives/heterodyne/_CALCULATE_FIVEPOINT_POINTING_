@@ -83,8 +83,8 @@ $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(1)' newv
 $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(2)' newval=$newformat" );
 
 # We need to take two cuts of the data, one horizontal and the other
-# vertical. Then we'll fit a parabola to both of these using
-# FIGARO:FITPOLY to determine the pointing offsets.
+# vertical. Then we'll fit a gaussian to both of these using
+# FIGARO:FITGAUSS to determine the pointing offsets.
 #
 # First, the horizontal.
 my $horiz = new ORAC::TempFile;
@@ -92,15 +92,19 @@ my $horiz_file = $horiz->file;
 $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in(,1) out=$horiz_file trim trimwcs" );
 $Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$horiz_file dim=1 mode=wcs" );
 
-# Fit the polynomial.
+# Determine the peak value to pass to FITGAUSS.
+$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$horiz_file" );
+my ( $ORAC_STATUS, $max ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
+
+# Fit the gaussian.
 my $params = "in=$horiz_file device=! dialog=f varuse=true mask1=[-10]";
-$params   .= " mask2=[10] order=2 logfil=! comp=1";
-$Mon{'figaro4'}->obeyw( "fitpoly", "$params" );
+$params   .= " mask2=[10] ncomp=1 centre=0 cont=0 peak=$max fwhm=0.0001";
+$params   .= " cf=[0] pf=[1] wf=[0] logfil=! comp=1";
+$Mon{'figaro4'}->obeyw( "fitgauss", "$params" );
 
 # Retrieve the fit information.
-my ( $ORAC_STATUS, @horiz_coeffs ) = $Mon{'figaro4'}->get( "fitpoly", "fitcoeffs" );
-
-my $horiz_max = 206265 * ( -1.0 * $horiz_coeffs[1] / ( 2 * $horiz_coeffs[2] ) );
+( $ORAC_STATUS, my @horiz_centre ) = $Mon{'figaro4'}->get( "fitgauss", "fcentre" );
+my $horiz_centre = $horiz_centre[0] * 206265;
 
 # Now the vertical.
 my $vert = new ORAC::TempFile;
@@ -109,26 +113,30 @@ my $vert_file = $vert->file;
 $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in(1,) out=$vert_file trim trimwcs" );
 $Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$vert_file dim=1 mode=wcs" );
 
+# Again, determine the peak value.
+$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$vert_file" );
+( $ORAC_STATUS, $max ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
+
 # Fit the polynomial.
-$params  = "in=$vert_file device=! dialog=f varuse=true mask1=[-10]";
-$params .= " mask2=[10] order=2 logfil=! comp=1";
-$Mon{'figaro4'}->obeyw( "fitpoly", "$params" );
+my $params = "in=$vert_file device=! dialog=f varuse=true mask1=[-10]";
+$params   .= " mask2=[10] ncomp=1 centre=0 cont=0 peak=$max fwhm=0.0001";
+$params   .= " cf=[0] pf=[1] wf=[0] logfil=! comp=1";
+$Mon{'figaro4'}->obeyw( "fitgauss", "$params" );
 
 # Retrieve the fit information.
-( $ORAC_STATUS, my @vert_coeffs ) = $Mon{'figaro4'}->get( "fitpoly", "fitcoeffs" );
-
-my $vert_max = 206265 * ( -1.0 * $vert_coeffs[1] / ( 2 * $vert_coeffs[2] ) );
+( $ORAC_STATUS, my @vert_centre ) = $Mon{'figaro4'}->get( "fitgauss", "fcentre" );
+my $vert_centre = $vert_centre[0] * 206265;
 
 # Display the results to the user.
-my $p_horiz_max = sprintf( "%.2f", $horiz_max );
-my $p_vert_max = sprintf( "%.2f", $vert_max );
-orac_print( "Pointing results using parabola fit:\n", "blue" );
-orac_print( " DAZ: $p_horiz_max\n DEL: $p_vert_max\n", "blue" );
+my $p_horiz_centre = sprintf( "%.2f", $horiz_centre );
+my $p_vert_centre = sprintf( "%.2f", $vert_centre );
+orac_print( "Pointing results using Gaussian fit:\n", "blue" );
+orac_print( " DAZ: $p_horiz_centre\n DEL: $p_vert_centre\n", "blue" );
 
 # Store with the calibration system.
 my %calhash = ( %{$Frm->hdr},
-                DAZ => $horiz_max,
-                DEL => $vert_max,
+                DAZ => $horiz_centre,
+                DEL => $vert_centre,
                 DAZ_ERR => 0,
                 DEL_ERR => 0,
                 POINTING_TYPE => $type,
@@ -136,14 +144,14 @@ my %calhash = ( %{$Frm->hdr},
               );
 
 # Display a warning if values are large.
-if( abs( $horiz_max ) > 10 ) {
+if( abs( $horiz_centre ) > 10 ) {
   orac_err "Absolute DAZ pointing value greater than 10 arcseconds.\n";
-} elsif( abs( $horiz_max ) > 5 ) {
+} elsif( abs( $horiz_centre ) > 5 ) {
   orac_warn "Absolute DAZ pointing value greater than 5 arcseconds.\n";
 }
-if( abs( $vert_max ) > 10 ) {
+if( abs( $vert_centre ) > 10 ) {
   orac_err "Absolute DEL pointing value greater than 10 arcseconds.\n";
-} elsif( abs( $vert_max ) > 5 ) {
+} elsif( abs( $vert_centre ) > 5 ) {
   orac_warn "Absolute DEL pointing value greater than 5 arcseconds.\n";
 }
 
