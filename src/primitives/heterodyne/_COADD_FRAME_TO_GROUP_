@@ -89,6 +89,9 @@ if( $Grp->lastmember( $Frm ) ) {
     # Update the Grp object.
     $Grp->file( $out );
 
+    # Set the Grp uhdr SPARSE_CUBE header to whatever the Frm is.
+    $Grp->uhdr( "SPARSE_CUBE", $Frm->uhdr( "SPARSE_CUBE" ) );
+
   } else {
 
     # WCSMOSAIC the current Frame to the current Group. Variance
@@ -106,8 +109,82 @@ if( $Grp->lastmember( $Frm ) ) {
     my $infile = new ORAC::TempFile( OPEN => 1,
                                      SUFFIX => '.lis' );
     my $tmp_fh = $infile->handle;
-    print $tmp_fh $ingrp . "\n";
-    print $tmp_fh $infrm . "\n";
+
+    # The order in which the files appear depends on if there are any
+    # sparse cubes...
+    if( ! $Grp->uhdr( "SPARSE_CUBE" ) ) {
+      print $tmp_fh $ingrp . "\n";
+      print $tmp_fh $infrm . "\n";
+    } elsif( ! $Frm->uhdr( "SPARSE_CUBE" ) ) {
+      print $tmp_fh $infrm . "\n";
+      print $tmp_fh $ingrp . "\n";
+    } else {
+
+      # We need to create a 3x3 reference sky image with a 6-arcsecond
+      # pixel scale, then MANIC that into a 3x3xN cube (where N is the
+      # number of channels in our Group frame), then attach the
+      # SpecFrame from the Group frame to that reference sky cube,
+      # then WCSMOSAIC the sparse Group frame onto that, then use that
+      # resampled Group frame as the reference in the input file to
+      # WCSMOSAIC.
+
+      my $refimg = new ORAC::TempFile;
+      my $refimgfile = $refimg->file;
+
+      my $params = "lbound=\[1,1\] ubound=\[3,3\] mode=bl out=$refimgfile title=RefImage";
+      $Mon{'kappa_mon'}->obeyw( "creframe", "$params" );
+
+      # Get the WCS from the Group file.
+
+      # Get the coordinates of the reference pixel.
+      $params = "ndf=$ingrp mode=get name=skyref";
+      $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "$params" );
+      my ( $ORAC_STATUS, $skyref ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
+      my( $xref, $yref ) = split /,/, $skyref, 2;
+
+      print "xref: $xref yref: $yref\n";
+
+      # Get the coordinate system.
+#      $params = "ndf=$ingrp mode=get name=system";
+#      $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "$params" );
+#      ( $ORAC_STATUS, my $system ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
+
+#      print "system: $system\n";
+
+      # Get the epoch of observation.
+      $params = "ndf=$ingrp mode=get name=epoch";
+      $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "$params" );
+      ( $ORAC_STATUS, my $epoch ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
+
+      print "epoch: $epoch\n";
+
+      # Get the equinox.
+      $params = "ndf=$ingrp mode=get name=equinox";
+      $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "$params" );
+      ( $ORAC_STATUS, my $equinox ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
+      if( $equinox eq "2000.0" ) {
+        $equinox = "J2000";
+      } elsif( $equinox eq "1950.0" ) {
+        $equinox = "B1950";
+      } else {
+        orac_throw "Unsupported equinox $equinox, possible programming error";
+      }
+      print "equinox: $equinox\n";
+
+      # Create an Astro::Coords object to convert the sexagesimal
+      # reference position into radians.
+      my $coords = new Astro::Coords( ra => $xref,
+                                      dec => $yref,
+                                      units => 'sex',
+                                      type => $equinox );
+      my $x0 = $coords->ra( format => 'rad' );
+      my $y0 = $coords->dec( format => 'rad' );
+
+      # Add the Sky frame.
+      $params = "coords=EQUATORIAL($equinox) epoch=$epoch refcode=pixel pixelref=\[1.5,1.5\] pixelsize=\['6s','6s'\] orient=0 positions=! projtype=gnom lon=${x0}r lat=${y0}r";
+      $Mon{'ndfpack_mon'}->obeyw( "setsky", "ndf=$refimgfile $params" );
+    }
+
     $infile->handle->close;
 
     # Set up the arguments to WCSMOSAIC for an initial runthrough with
