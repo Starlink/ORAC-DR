@@ -22,20 +22,37 @@ Uses the KAPPA CENTROID task.
 
 =over 4
 
-=item IMAGE
+=item B<IMAGE>
 
 Input image. If no image is given then the GROUP argument is used to
 determine whether to use the current Group or Frame image.
 
-=item BOX
+=item B<BOX>
 
 Size of search box in each dimension. Default is 9 pixels.
 
-=item GROUP
+=item B<GROUP>
 
 Flag to denote whether to use the current Group image or Frame
 image. True (1) indicates use the Group image; else use the Frame
 image. The presence of the IMAGE argument overrides this parameter.
+
+=item B<COORD_FRAME>
+
+Coordinate system in which to determine the centroid position. Default
+is the current system.
+
+=item B<OFFSET>
+
+A flag to denote whether to return the centroid in offset
+coordinates. A value of 1 will force the primitive to set the SkyRefIs
+attribute to C<Origin>. Default is 0 (false) which will use the
+current value.
+
+=item B<VERBOSE>
+
+Flag to indicate whether informational messages should be 
+given to the user. Default is 1 (true).
 
 =back
 
@@ -75,6 +92,11 @@ my $in = ( exists $_CENTROID_IMAGE_{IMAGE} ) &&
          ( defined $_CENTROID_IMAGE_{IMAGE}) ? 
          $_CENTROID_IMAGE_{IMAGE} : undef;
 
+# Should I be verbose? (Default to yes)
+my $verbose = (exists $_CENTROID_IMAGE_{VERBOSE} && 
+	       defined $_CENTROID_IMAGE_{VERBOSE}) ?
+               $_CENTROID_IMAGE_{VERBOSE} : 1;
+
 # If not input file was defined use the current group or frame
 unless ( defined $in ) {
   # Determine if the user wants to use the current stacked Grp or Frm
@@ -98,6 +120,33 @@ unless ( defined $in ) {
 
 my $box = ( $_CENTROID_IMAGE_{BOX} || 9 );
 
+my $ORAC_STATUS;
+
+# Select the requested coordinate frame
+my $cosys_out = (exists $_CENTROID_IMAGE_{COORD_FRAME} &&
+		 defined $_CENTROID_IMAGE_{COORD_FRAME}) ? 
+                 lc($_CENTROID_IMAGE_{COORD_FRAME}) : ""; 
+
+my $cosys_in;
+unless ( $cosys_out eq "" ) {
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=system");
+  ($ORAC_STATUS, $cosys_in) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=set name=system newval=$cosys_out");
+}
+
+# Is the centroid to be returned in Offset coordinates?
+my $offset = ($_CENTROID_IMAGE_{OFFSET} || 0);
+my $skyrefis;
+if ( $offset ) {
+  # Check if we need to set it first
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=skyrefis");
+  ($ORAC_STATUS, $skyrefis) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+  if ( lc($skyrefis) eq "ignored" ) {
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=set name=skyrefis newval=origin");
+  }
+  orac_print "Centroid will be determined in offset coordinates\n" if ($verbose);
+}
+
 # Initialize the results array
 $_CENTROID_IMAGE_{RESULTS} = [];
 
@@ -109,7 +158,7 @@ if (starversion_lt('kappa','V0.14-0')) {
 } else {
   # If we have KAPPA14 we have to first make sure the wcsframe is AXIS
   # so that we can start searching from the coordinate centre
-  $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=axis");
+#  $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=axis");
   $args = " init='0,0' ";
 }
 
@@ -118,7 +167,7 @@ $args .= " mode=i cerror=true search=$box";
 $Mon{kappa_mon}->obeyw("centroid","ndf=$in $args");
 
 # Read the result
-my (@centre, $ORAC_STATUS);
+my @centre;
 
 # KAPPA 14 returns the centre pos as a string, earlier versions
 # return an array -- just use XCEN and YCEN with two ADAM calls
@@ -128,3 +177,13 @@ my (@centre, $ORAC_STATUS);
 # Store the results
 $_CENTROID_IMAGE_{RESULTS} = [@centre];
 
+# Reset the coordinate system if necessary
+unless ( $cosys_out eq "" ) {
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=set name=system newval=$cosys_in");
+}
+# Reset the SkyRefIs parameter if necessary
+if ( $offset ) {
+  if ( lc($skyrefis) eq "ignored" ) {
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=set name=skyrefis newval=$skyrefis");
+  }
+}
