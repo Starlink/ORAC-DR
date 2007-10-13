@@ -29,6 +29,9 @@ to B<ORAC::Frame::SCUBA2> objects. Some additional methods are supplied.
 
 use 5.006;
 use warnings;
+use strict;
+use Carp;
+
 use ORAC::Frame::NDF;
 use ORAC::Constants;
 use ORAC::Print;
@@ -46,9 +49,84 @@ use base qw/ ORAC::Frame::NDF /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
-# standard error module and turn on strict
-use Carp;
-use strict;
+# HERE BE TRANSLATION TABLES.
+my %hdr = ( FILTER => 'FILTER',
+            INSTRUMENT => 'INSTRUME',
+            OBJECT => 'OBJECT',
+            OBSERVATION_NUMBER => 'OBSNUM',
+            RECIPE => 'RECIPE',
+            STANDARD => 'STANDARD',
+            UTDATE => 'UTDATE',
+          );
+
+# Take this lookup table and generate methods that can be subclassed
+# by other instruments. Have to use the inherited version so that the
+# new subs appear in this class.
+ORAC::Frame::SCUBA2->_generate_orac_lookup_methods( \%hdr );
+
+sub _to_UTSTART {
+  my $self = shift;
+  my $utstart = defined $self->hdr->{SUBHEADERS}->[0]->{'DATE-OBS'} ? 
+    $self->hdr->{SUBHEADERS}->[0]->{'DATE-OBS'} : $self->hdr->{'DATE-OBS'};
+  return undef if ( ! defined( $utstart ) );
+  $utstart =~ /T(\d\d):(\d\d):(\d\d)/;
+  my $hour = $1;
+  my $minute = $2;
+  my $second = $3;
+  $hour + ( $minute / 60 ) + ( $second / 3600 );
+}
+
+sub _from_UTSTART {
+  my $starttime = $_[0]->uhdr("ORAC_UTSTART");
+  my $startdate = $_[0]->uhdr("ORAC_UTDATE");
+  $startdate =~ /(\d{4})(\d\d)(\d\d)/;
+  my $year = $1;
+  my $month = $2;
+  my $day = $3;
+  my $hour = int( $starttime );
+  my $minute = int( ( $starttime - $hour ) * 60 );
+  my $second = int( ( ( ( $starttime - $hour ) * 60 ) - $minute ) * 60 );
+  my $return = ( join "-", $year, $month, $day ) . "T" . ( join ":", $hour, $minute, $second );
+  return "DATE-OBS", $return;
+}
+
+sub _to_UTEND {
+  my $self = shift;
+  my $utend = defined $self->hdr->{SUBHEADERS}->[-1]->{'DATE-END'} ? 
+    $self->hdr->{SUBHEADERS}->[-1]->{'DATE-END'} : $self->hdr->{'DATE-END'};
+  return undef if ( ! defined( $utend ) );
+  $utend =~ /T(\d\d):(\d\d):(\d\d)/;
+  my $hour = $1;
+  my $minute = $2;
+  my $second = $3;
+  $hour + ( $minute / 60 ) + ( $second / 3600 );
+}
+
+sub _from_UTEND {
+  my $endtime = $_[0]->uhdr("ORAC_UTEND");
+  my $enddate = $_[0]->uhdr("ORAC_UTDATE");
+  $enddate =~ /(\d{4})(\d\d)(\d\d)/;
+  my $year = $1;
+  my $month = $2;
+  my $day = $3;
+  my $hour = int( $endtime );
+  my $minute = int( ( $endtime - $hour ) * 60 );
+  my $second = int( ( ( ( $endtime - $hour ) * 60 ) - $minute ) * 60 );
+  my $return = ( join "-", $year, $month, $day ) . "T" . ( join ":", $hour, $minute, $second );
+  return "DATE-END", $return;
+}
+
+sub _to_AIRMASS_START {
+  my $self = shift;
+  my $amstart = (defined $self->hdr->{SUBHEADERS}->[0]->{AMSTART}) ? 
+    $self->hdr->{SUBHEADERS}->[0]->{AMSTART} : $self->hdr('AMSTART');
+}
+
+sub _to_AIRMASS_END {
+  my $self = shift;
+  my $amend = (defined $self->hdr->{SUBHEADERS}->[-1]->{AMEND}) ? 
+    $self->hdr->{SUBHEADERS}->[-1]->{AMEND} : $self->hdr('AMEND');
+}
 
 =head1 PUBLIC METHODS
 
@@ -128,10 +206,23 @@ pipeline by using values stored in the header.
 sub calc_orac_headers {
   my $self = shift;
 
-  my %new = ();  # Hash containing the derived headers
+  # Run the base class first since that does the ORAC_
+  # header translations.
+  my %new = $self->SUPER::calc_orac_headers;
+
+  # ORACTIME - in decimal UT days.
+  my $uthour = $self->uhdr('ORAC_UTSTART');
+  my $utday = $self->uhdr('ORAC_UTDATE');
+  $self->hdr('ORACTIME', $utday + ( $uthour / 24 ) );
+  $new{'ORACTIME'} = $utday + ( $uthour / 24 );
+
+  # ORACUT - in YYYYMMDD format
+  my $ut = $self->uhdr('ORAC_UTDATE');
+  $ut = 0 unless defined $ut;
+  $self->hdr('ORACUT', $ut);
+  $new{'ORACUT'} = $ut;
 
   return %new;
-
 }
 
 =item B<configure>
@@ -541,6 +632,53 @@ sub findrecipe {
   $self->recipe($recipe);
 
   return $recipe;
+}
+
+=item B<numsubarrays>
+
+Return the number of subarrays in use. Works by checking for unique
+subheaders and determining which of the abcd sub-arrays are producing
+data. Only works once data are read in so ORAC-DR must have some other
+way of knowing that there are n subarrays.
+
+=cut
+
+sub numsubarrays {
+  my $self = shift;
+
+  my @subs = $self->_dacodes;
+
+  return scalar (@subs);
+}
+
+=item B<hdrval>
+
+Return the requested header entry, automatically dealing with
+subheaders. Essentially overrides the standard hdr method for
+retrieving a header value. Returns undef if no arguments are passed.
+
+=cut
+
+sub hdrval {
+  my $self = shift;
+
+  if ( @_ ) {
+    my $keyword = shift;
+    # Set a default subheader index of 0, the first subheader
+    my $subindex = @_ ? shift : 0;
+
+    my $hdrval = ( defined $self->hdr->{SUBHEADERS}->[$subindex]->{$keyword}) ? 
+      $self->hdr->{SUBHEADERS}->[$subindex]->{$keyword} : 
+      $self->hdr("$keyword");
+
+    return $hdrval;
+
+  } else {
+    # If no args, warn the user and return undef
+    orac_warn "hdrval method requires at least a keyword argument\n";
+    return undef;
+  }
+
 }
 
 =back
