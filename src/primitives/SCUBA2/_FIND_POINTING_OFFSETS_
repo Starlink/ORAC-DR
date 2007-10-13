@@ -1,0 +1,156 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_FIND_POINTING_OFFSETS_ - Determine the pointing offsets in Az/El
+
+=head1 DESCRIPTION
+
+The user may specify the method by which the source position is to be
+determined, either by fitting a Gaussian or by calculating the
+centroid position. Results are written to the log file C<log.pointing>
+as offsets in arcsecs.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=item B<METHOD>
+
+Method to calculate the source position. Supported values are
+C<CENTROID> and C<FIT>. The latter calls the _FIND_BEAM_SIZE_
+primitive. The default is C<CENTROID>.
+
+=item B<LOGFILE>
+
+A flag to indicate whether log files should be written containing the
+results of the flux and noise calculations. Default is true.
+
+=item B<VERBOSE>
+
+Flag to indicate whether informational messages should be 
+given to the user. Default is true.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+=over 4
+
+=item Other SCUBA-2 primitives
+
+_CENTROID_IMAGE_, _FIND_BEAM_SIZE_
+
+=back
+
+=head1 OUTPUT DATA
+
+The frame object is not updated.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+Copyright (C) 2007 the University of British Columbia. All Rights
+Reserved.
+
+=cut
+
+# Write logfiles (default to true)
+my $uselog = (exists $_FIND_POINTING_OFFSETS_{LOGFILE} &&
+	      defined $_FIND_POINTING_OFFSETS_{LOGFILE}) ?
+              $_FIND_POINTING_OFFSETS_{LOGFILE} : 1;
+
+# Should I be verbose? (Default to yes)
+my $verbose = (exists $_FIND_POINTING_OFFSETS_{VERBOSE} && 
+	       defined $_FIND_POINTING_OFFSETS_{VERBOSE}) ?
+               $_FIND_POINTING_OFFSETS_{VERBOSE} : 1;
+
+# Which method is being requested for calculating the offsets? Default
+# is to use KAPPA centroid
+my $offmethod = (exists $_FIND_POINTING_OFFSETS_{METHOD} &&
+		 defined  $_FIND_POINTING_OFFSETS_{METHOD}) ?
+                 lc($_FIND_POINTING_OFFSETS_{METHOD}) : "centroid";
+
+# Check that we have a pointing observation
+#if ( uc($Frm->hdr('OBS_TYPE')) ne "POINT" ) {
+#  orac_throw "Data are not from a POINTing observation\n";
+#}
+# Other checks: should be a standard source
+
+# Do we have a completed observation? Check for OBSEND = T in the last
+# entry in the Frame object.
+if ( $Frm->hdrval('OBSEND',-1) ) {
+
+  # Initialize the log file if necessary
+  my $pointinglog;
+  if ($uselog) {
+    my $time = gmtime();
+    $pointinglog = new ORAC::LogFile("log.pointing");
+    $pointinglog->header("Pointing log file - created on $time",
+			 "\n# ID  Object    Time     Filter  dAz   dEl   El  Seeing   CSO",
+			 "----------------------------------------------------------------"
+      );
+  }
+
+  # By default use the current group file
+  my $group = defined( $_FIND_POINTING_OFFSETS_{GROUP} ) ? 
+                       $_FIND_POINTING_OFFSETS_{GROUP} : 1;
+
+  # Determine pointing offsets
+  my ($daz, $del);
+  if ( $offmethod eq "fit") {
+    # METHOD = FIT
+    orac_print ("Oops METHOD=FIT not supported yet :-)\n", "red");
+  } else {
+    # METHOD = CENTROID
+    # Find source position offsets using the current Group image
+    _CENTROID_IMAGE_ GROUP=$group COORD_FRAME=AZEL OFFSET=1
+ 
+    ($daz, $del) = @{ $_CENTROID_IMAGE_{RESULTS} };
+    # dAz and dEl are currently in degrees so convert to arcsec
+    $daz = sprintf "%4.2f", 3600.0*$daz;
+    $del = sprintf "%4.2f", 3600.0*$del;
+  }
+
+  my $ORAC_STATUS;
+  # Write info to log file if requested
+  if ( $uselog ) {
+    # Set up log file entries
+    my ($time, $filt, $cso, $see, $el, $obsnum);
+    # UT string
+    $time = sprintf "%12.3f", $Frm->hdrval('ORACTIME', 0);
+    # Filter
+    $filt = sprintf "%4s", $Frm->hdr('FILTER');
+    # Focus axis
+    my $focaxis = $Frm->hdr('FOCAXIS');
+    # Target source
+    my $source = $Frm->hdr('OBJECT');
+    # Tau at 225 GHz
+    $cso = sprintf "%5.3f", 0.5*($Frm->hdrval('WVMTAUST', 0) +
+				 $Frm->hdrval('WVMTAUEN', -1));
+    # Seeing
+    $see = sprintf "%5.3f", 0.5*($Frm->hdrval('SEEINGST', 0) + 
+				 $Frm->hdrval('SEEINGEN',-1));
+    # Azimuth
+#    $az = int ( 0.5 * ( $Frm->hdrval('AZSTART', 0) + $Frm->hdrval('AZEND', -1) ) );
+    # Elevation - should always be >10 deg so no need to re-format for printing
+    $el = int ( 0.5 * ( $Frm->hdrval('ELSTART',0) + $Frm->hdrval('ELEND',-1) ) );
+    # Observation number
+    $obsnum = sprintf "%05d", $Frm->hdr('OBSNUM');
+
+    # Write the entry:
+    # ObsNum, source, UT, filter, DAz, DEl, Seeing, tau225
+    $pointinglog->addentry("$obsnum $source $time  $filt   $daz $del  $el   $see   $cso");
+  }
+
+  # If we are not logging these data to a file, store the noise in the
+  # primitive hash
+  unless ($uselog) {
+    $_FIND_POINTING_OFFSETS_{DAZ} = $daz;
+    $_FIND_POINTING_OFFSETS_{DEL} = $del;
+  }
+
+  orac_print ("Pointing offsets are (dAz, dEl) = ($daz, $del) arcsec\n", "green");
+
+}
