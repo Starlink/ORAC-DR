@@ -40,6 +40,12 @@ possible values.
 Flag to determine whether or not to use genvar when
 mosaicking. Default is 1 (yes),
 
+=item B<WAIT>
+
+Flag to denote whether to wait until the current observation has ended
+before processing the data. Only relevant for online processing at the
+telescope. Default is 0 (no).
+
 =item B<VERBOSE>
 
 Flag to denote whether to display extra information. Default is 0
@@ -84,10 +90,20 @@ my $verbose = (exists $_MAKE_MOSAIC_FRAME_{VERBOSE} &&
                defined $_MAKE_MOSAIC_FRAME_{VERBOSE}) ?
                $_MAKE_MOSAIC_FRAME_{VERBOSE} : 0;
 
+# Are we waiting until the observation has finished
+my $wait = (exists $_MAKE_MOSAIC_FRAME_{WAIT} &&
+	    defined $_MAKE_MOSAIC_FRAME_{WAIT}) ?
+            $_MAKE_MOSAIC_FRAME_{WAIT} : 0;
+
 # Do we want to use makemos?
 my $makemos = (exists $_MAKE_MOSAIC_FRAME_{MAKEMOS} &&
 	       defined $_MAKE_MOSAIC_FRAME_{MAKEMOS}) ?
                $_MAKE_MOSAIC_FRAME_{MAKEMOS} : 0;
+
+# Coordinate frame
+my $coframe =  (exists $_MAKE_MOSAIC_FRAME_{COORD_FRAME} &&
+	       defined $_MAKE_MOSAIC_FRAME_{COORD_FRAME}) ?
+               lc($_MAKE_MOSAIC_FRAME_{COORD_FRAME}) : undef;
 
 # Method for combining images in makemos 
 my $makemos_method = "";
@@ -102,13 +118,19 @@ my $method = (exists $_MAKE_MOSAIC_FRAME_{METHOD} &&
 	      defined $_MAKE_MOSAIC_FRAME_{METHOD}) ? 
               lc($_MAKE_MOSAIC_FRAME_{METHOD}) : "nearest"; 
 
-# Set the coordinate frame
-my $in = $Frm->file(1);
-$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=system");
-(my $ORAC_STATUS, my $coframe) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+if ( !$wait || ($wait && $Frm->hdrval('OBSEND',-1) ) {
 
-orac_print "Making FRAME mosaic\n";
+  # Set the coordinate frame
+  unless ( $coframe ) {
+    my $in = $Frm->file(1);
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=system");
+    (my $ORAC_STATUS, $coframe) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+  }
 
-# Call _MAKE_MOSAIC_
-_MAKE_MOSAIC_ USEGRP=0 MAKEMOS=$makemos MAKEMOS_METHOD=$makemos_method METHOD=$method VERBOSE=$verbose COORD_FRAME=$coframe
+  orac_print "Making FRAME mosaic\n";
+
+  # Call _MAKE_MOSAIC_
+  _MAKE_MOSAIC_ USEGRP=0 MAKEMOS=$makemos MAKEMOS_METHOD=$makemos_method METHOD=$method VERBOSE=$verbose COORD_FRAME=$coframe
+
+}
 
