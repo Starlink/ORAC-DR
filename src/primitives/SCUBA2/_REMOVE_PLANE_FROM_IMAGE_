@@ -24,27 +24,43 @@ meaningful numbers if the spread is small. The average mean level in
 the fit is taken to be the mean DC sky signal. The average standard
 deviation (called the mean spread below) is a measure of the size of
 the sky gradient: if this gradient is C<small> then the sky level is
-well-approximated by a constant.
+well-approximated by a constant. If this condition is not satisfied
+then the actual sky gradient is calculated (from the fit).
+
+The method of calculating the gradient of the fit proceeds as
+follows. Three positions are defined (three corners) in GRID
+coordinates and converted to world coordinates in the current system
+using C<wcstran>. The signal level is measured at these 3 positions
+using KAPPA C<look> and passed to an internal subroutine to solve the
+equation of a plane, returning the gradient and position angle of the
+line of steepest descent. This allows the user to assess whether the
+gradient in the sky emission is predominantly in the (negative)
+elevation direction.
 
 To reiterate, the values returned (and printed if verbose is true)
 represent the following:
 
 =over 4
 
-=item Mean DC level
+=item MEANSKY
 
 The mean of the fitted plane, averaged over all images in the
 Frame. Taken to be the mean DC sky signal.
 
-=item Mean spread
+=item SIGMA
 
 The average standard deviation in the mean of the fitted plane. Taken
 to be an estimate of the magnitude of the fitted slope.
 
-=item Mean RMS deviation
+=item RMS
 
-The mean RMS deviation between the fit and the data. Taken to be a
-measure of the sky noise.
+The mean RMS deviation between the fit and the data. Could be taken to
+be a measure of the sky noise.
+
+=item CONSTGOOD
+
+A flag to indicate whether a DC level is a good approximation for the
+sky emission.
 
 =back
 
@@ -53,7 +69,9 @@ on the fitted 2-D plane is small and the sky is well-approximated by a
 constant DC level.
 
 However, note that the presence of sources will mean that these
-interpretations should be used as a guide only.
+interpretations should be used as a guide only. Future versions may
+allow for known sources to be masked out before attempting to fit the
+sky.
 
 =head1 EXTERNAL TASKS
 
@@ -61,9 +79,13 @@ interpretations should be used as a guide only.
 
 =item B<KAPPA>
 
-C<surfit>, C<sub>
+C<look>, C<sub>, C<surfit>, C<wcsframe>, C<wcstran>
 
 =back
+
+=head1 OUTPUT FILES
+
+Creates output files with the suffix C<_sky>
 
 =head1 NOTES
 
@@ -86,13 +108,29 @@ my $units = "pW";
 # Tell user...
 orac_print "Removing sky by fitting and subtracting a plane\n";
 
+# Write logfiles (default to true)
+my $uselog = (exists $_REMOVE_PLANE_FROM_IMAGE_{LOGFILE} &&
+              defined $_REMOVE_PLANE_FROM_IMAGE_{LOGFILE}) ?
+              $_REMOVE_PLANE_FROM_IMAGE_{LOGFILE} : 1;
+
 # Should I be verbose (default to yes)
 my $verbose = (exists $_REMOVE_PLANE_FROM_IMAGE_{VERBOSE} && 
 	       defined $_REMOVE_PLANE_FROM_IMAGE_{VERBOSE}) ?
                $_REMOVE_PLANE_FROM_IMAGE_{VERBOSE} : 1;
 
 # Mean sky level and RMS deviation for each file
-my (@dclevel, @sigmadc, @rms);
+my (@fitmean, @sigmafitmean, @fitrms, @gradients, @PAs);
+
+# Create a log file if necessary
+my $skylog;
+if ( $uselog ) {
+  my $time = gmtime();
+  # Peak fluxes
+  $skylog = new ORAC::LogFile("log.sky");
+  $skylog->header("Sky properties log file - created on $time",
+		  "\n#  ID      Time        Filter    DC       Slope  PA  Seeing   El  CSO",
+		  "-----------------------------------------------------------------------");
+}
 
 # Loop over frames
 for my $i (1..$Frm->nfiles) {
@@ -115,63 +153,195 @@ for my $i (1..$Frm->nfiles) {
 
   # Retrieve mean value of fit as an estimate of DC sky background
   my $ORAC_STATUS;
-  ($ORAC_STATUS, my $dclevel) = $Mon{kappa_mon}->get("stats","mean");
-  ($ORAC_STATUS, my $sigmadc) = $Mon{kappa_mon}->get("stats","sigma");
-  push (@dclevel, $dclevel);
-  push (@sigmadc, $sigmadc);
-
-  # Would be nice to derive gradient in sky background and PA of slope
-  # (in AzEl frame) and see what the magnitude is and how much it
-  # varies.
+  ($ORAC_STATUS, my $fitmean) = $Mon{kappa_mon}->get("stats","mean");
+  ($ORAC_STATUS, my $sigmafitmean) = $Mon{kappa_mon}->get("stats","sigma");
+  push (@fitmean, $fitmean);
+  push (@sigmafitmean, $sigmafitmean);
 
   # Subtract the fit
   $Mon{kappa_mon}->obeyw("sub","in1=$in in2=$tmpoutfile out=$out");
 
   # Now retrieve RMS to get idea of sky noise
-  ($ORAC_STATUS, my $rms) = $Mon{kappa_mon}->get("surfit","rms");
+  ($ORAC_STATUS, my $fitrms) = $Mon{kappa_mon}->get("surfit","rms");
   # What do we do with it now? Too many values to log, surely?
-#  orac_print "RMS deviation of fit = $rms $units\n" if ($verbose);
-  push (@rms, $rms);
+  push (@fitrms, $fitrms);
+
+  # If the spread of values is greater than the RMS of the fit, then
+  # the sky might have a significant gradient, so calculate the
+  # gradient in this case
+  if ( $fitrms < $sigmafitmean ) {
+    # Derive gradient in sky background and PA of slope (in AzEl frame)
+    # The actual gradient is obtained from Pythagoras' theorem, and the
+    # position angle by the inverse tangent of the two gradients.
+    my (@x, @y, @z);
+    # query the NDF containing the fit at three corners to derive Az, El
+    # and Sky.
+
+    # Get the image dimensions in GRID coords with ndftrace
+    $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$tmpoutfile");
+    ($ORAC_STATUS, my @dims) = $Mon{ndfpack_mon}->get("ndftrace","dims");
+
+    # Use WCSTRAN to convert to WCS for three corners
+    my $wcstranargs = "ndf=$tmpoutfile framein=grid frameout=azel epochout=2000";
+    $Mon{kappa_mon}->obeyw("wcstran","$wcstranargs posin='1 1'");
+    ($ORAC_STATUS, my $xystr) = $Mon{kappa_mon}->get("wcstran","posout");
+    ($x[0], $y[0]) = split(/\s+/,$xystr,2);
+    $Mon{kappa_mon}->obeyw("wcstran","$wcstranargs posin='1 $dims[1]'");
+    ($ORAC_STATUS, $xystr) = $Mon{kappa_mon}->get("wcstran","posout");
+    ($x[1], $y[1]) = split(/\s+/,$xystr,2);
+    $Mon{kappa_mon}->obeyw("wcstran","$wcstranargs posin='$dims[0] $dims[1]'");
+    ($ORAC_STATUS, $xystr) = $Mon{kappa_mon}->get("wcstran","posout");
+    ($x[2], $y[2]) = split(/\s+/,$xystr,2);
+
+    # Set system to GRID before call to retrieve sky values
+    $Mon{kappa_mon}->obeyw("wcsframe","ndf=$tmpoutfile frame=grid");
+
+    # LOOK at the values at the three corners
+    $Mon{kappa_mon}->obeyw("look","centre='1 1' size=1,1 ndf=$tmpoutfile");
+    ($ORAC_STATUS, $z[0]) = $Mon{kappa_mon}->get("look","value");
+    $Mon{kappa_mon}->obeyw("look","centre='1 $dims[1]' size=1,1 ndf=$tmpoutfile");
+    ($ORAC_STATUS, $z[1]) = $Mon{kappa_mon}->get("look","value");
+    $Mon{kappa_mon}->obeyw("look","centre='$dims[0] $dims[1]' size=1,1 ndf=$tmpoutfile");
+    ($ORAC_STATUS, $z[2]) = $Mon{kappa_mon}->get("look","value");
+
+    # Calculate the gradient and PA of line of steepest descent
+    my ($skygradient, $pa) = calc_sky_gradient( \@x, \@y, \@z );
+    push ( @gradients, $skygradient );
+    push ( @PAs, $pa );
+  }
 
   # Update the frame
   $Frm->file($i, $out);
 
   undef $tmpout;
 }
-# Calculate mean DC level and RMS values
-my $imax = @rms;
-my $meanrms = 0;
-my $meandclevel = 0;
-my $meansigmadc = 0;
-for my $i (0 .. $imax-1) {
-  $meanrms += $rms[$i];
-  $meandclevel += $dclevel[$i];
-  $meansigmadc += $sigmadc[$i];
-}
-$meanrms /= $imax;
-$meandclevel /= $imax;
-$meansigmadc /= $imax;
+# Calculate mean DC level
+my ($meanfitmean, $sigma_meanfitmean) = mean_and_sigma( @fitmean );
+# Mean RMS of fit
+my ($meanfitrms, $sigma_meanfitrms) = mean_and_sigma( @fitrms );
+# Mean std deviation
+my ($meansigmafitmean, $sigma_meansigmafitmean) = mean_and_sigma( @sigmafitmean );
 
+# Calculate mean sky gradient and position angle
+my ($meanskygradient, $sigma_gradient) = mean_and_sigma( @gradients );
+my ($meanpa, $sigma_pa) = mean_and_sigma( @PAs );
+# Is a constant sky level a good approximation?
+my $constisgoodapprox = ( $meanskygradient < $meanfitrms) ? 1 : 0;
+
+# Extra checks on the physical reasonableness of the fit could/should
+# be inserted here
+if ( $meanskygradient > 0 ) {
+  my $g = sprintf "%g", $meanskygradient;
+  orac_print "Caution - sky gradient, $g, is positive => sky brighter at high elevation\n", 'red';
+}
 
 # Return mean values of RMS and MEAN sky level
-$_REMOVE_PLANE_FROM_IMAGE_{RMS} = $meanrms;
-$_REMOVE_PLANE_FROM_IMAGE_{DCSKY} = $meandclevel;
-$_REMOVE_PLANE_FROM_IMAGE_{SIGMADC} = $meansigmadc;
+$_REMOVE_PLANE_FROM_IMAGE_{RMS} = $meanfitrms;
+$_REMOVE_PLANE_FROM_IMAGE_{MEANSKY} = $meanfitmean;
+$_REMOVE_PLANE_FROM_IMAGE_{SIGMA} = $meansigmafitmean;
+$_REMOVE_PLANE_FROM_IMAGE_{CONSTGOOD} = $constisgoodapprox;
 
-# These should be logged somewhere... In $Cal obj?
+# Write to a logfile if desired
+if ( $uselog ) {
+  # Index of last entry in Frm
+  my $last = $Frm->nfiles - 1;
+
+  # UT string
+  my $time = sprintf "%12.7f", $Frm->hdrval('ORACTIME');
+  # Observation number
+  my $obsnum = sprintf "%05d", $Frm->hdr('OBSNUM');
+  # Filter
+  my $filt = sprintf "%4s", $Frm->hdr('FILTER');
+
+  # Tau at 225 GHz
+  my $cso = sprintf "%5.3f", 0.5*( $Frm->hdrval('WVMTAUST',0) + $Frm->hdrval('WVMTAUEN',$last));
+
+  # Seeing
+  my $see = sprintf "%5.3f", 0.5*($Frm->hdrval('SEEINGST',0) + $Frm->hdrval('SEEINGEN',$last));
+
+  # Elevation - should always be >10 deg and OK to quote to nearest
+  # integer value, so no need to re-format for printing
+  my $el = int ( 0.5 * ( $Frm->hdrval('ELSTART',0) + $Frm->hdrval('ELEND',$last) ) );
+
+  # Since this is a DC sky removal so sky slope and PA are both 0
+  my $dcsky = sprintf "%12.7f", $meanfitmean;
+  my $skygrad = sprintf "%12.7f", $meanskygradient;
+  my $gradpa = sprintf "%3.1f", $meanpa;
+  $skylog->addentry("$obsnum $time $filt $dcsky $skygrad $gradpa  $see    $el $cso");
+}
 
 if ($verbose) {
   # See if the sky gradient is small
-  if ( $meansigmadc < $meanrms ) {
+  if ( $constisgoodapprox ) {
     orac_print "OK - sky background appears to be well approximated to a constant level\n", 'green';
   } else {
     orac_print "Caution - sky background appears to have a significant gradient, interpret these results with care\n", 'red';
   }
 
-  $meanrms = sprintf "%6.5f", $meanrms;
-  $meandclevel = sprintf "%6.5f", $meandclevel;
-  $meansigmadc = sprintf "%6.5f", $meansigmadc;
+  $meanfitrms = sprintf "%6.5f", $meanfitrms;
+  $meanfitmean = sprintf "%6.5f", $meanfitmean;
+  $meansigmafitmean = sprintf "%6.5f", $meansigmafitmean;
   orac_print "Plane removed from images\n"
-    ."Mean level = $meandclevel (mean std dev = $meansigmadc)\n"
-    ."Mean RMS deviation = $meanrms\n";
+    ."Mean level = $meanfitmean (mean std dev = $meansigmafitmean)\n"
+    ."Mean RMS deviation of fit = $meanfitrms\n";
+}
+
+
+# Solve the equation of a plane, Ax + By + Cz + D = 0, given three
+# points in (x, y, z) space. In this case, it will probably be Az, El
+# and Sky brightness. Takes three arguments: references to arrays of
+# x, y and z values. Returns the sky gradient and the PA of the line
+# of steepest descent.
+
+sub calc_sky_gradient ($$$) {
+
+  # Arguments are references to arrays of x, y and z values
+  my $x = shift;
+  my $y = shift;
+  my $z = shift;
+
+  # Calculate coefficients - standard solution available in any textbook
+  my $A = $y->[0]*( $z->[1] - $z->[2] ) + $y->[1]*( $z->[2] - $z->[0] ) + 
+    $y->[2]*( $z->[0] - $z->[1] );
+  my $B = $z->[0]*( $x->[1] - $x->[2] ) + $z->[1]*( $x->[2] - $x->[0] ) + 
+    $z->[2]*( $x->[0] - $x->[1] );
+  my $C = $x->[0]*( $y->[1] - $y->[2] ) + $x->[1]*( $y->[2] - $y->[0] ) + 
+    $x->[2]*( $y->[0] - $y->[1] );
+  my $D = -1.0*( $x->[0]*( $y->[1]*$z->[2] - $y->[2]*$z->[1] ) + 
+		 $x->[1]*( $y->[2]*$z->[0] - $y->[0]*$z->[2] ) + 
+		 $x->[2]*( $y->[0]*$z->[1] - $y->[1]*$z->[0] ) );
+
+  # Normalize values by dividing by $C to return an equation of the
+  # form z = A'x + B'y + D', i.e. Sky_brightness = A'*az + B'*el + const
+  $A /= -$C;
+  $B /= -$C;
+  $D /= -$C;
+
+  # Line of steepest descent
+  my $skygradient = sqrt( $A*$A + $B*$B );
+
+  # Position angle is +ve in the direction of increasing X
+  my $pa = atan( $B / $A );
+
+  return ( $skygradient, $pa );
+}
+
+sub mean_and_sigma (@) {
+
+  my @inarray = shift;
+
+  # Return null values if the array is empty (undef)
+  return (0, 0) unless ( defined( $inarray[0] ) );
+
+  my $sum = 0.0;
+  my $sumsq = 0.0;
+  my $nelements = @inarray;
+  for my $count (0 .. $#inarray) {
+    $sum += $inarray[$count];
+    $sumsq += ($inarray[$count]*$inarray[$count]);
+  }
+  my $mean = $sum/$nelements;
+  # Return mean and std deviation
+  return ( $mean, sqrt( ($sumsq/$nelements) - $mean*$mean) );
+
 }
