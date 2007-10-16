@@ -167,6 +167,7 @@ my $method = ( exists $_FIND_BEAM_SIZE_{METHOD} &&
 my $usepsf = ( $method eq "PSF" ) ? 1 : 0;
 
 # Are we working in an offset coordinate system? Default to no.
+my ($ORAC_STATUS, $skyrefis);
 my $offset = ($_FIND_BEAM_SIZE_{OFFSET} || 0);
 if ( $offset ) {
   # Check if we need to set it first
@@ -186,7 +187,6 @@ my $calib = $Cal->iscalsource($Frm->hdr('OBJECT')) ;
 # Retrieve and store current domain and system so they can be reset on
 # exit
 my $incosys;
-my $ORAC_STATUS;
 $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in name=system mode=get");
 ( $ORAC_STATUS, $incosys ) = $Mon{ndfpack_mon}->get("wcsattrib", "value");
 
@@ -228,19 +228,9 @@ if ( $fitcosys ne $incosys ) {
 
 orac_print "Deriving the beam in the $fitcosys coordinate system\n";
 
-# Get an estimate of where the peak is in the image - note this will
-# be fooled by the presence of a spike FUTURE: dealing with spikes,
-# may need an iterative procedure (clip= option in stats).
-$Mon{kappa_mon}->obeyw("stats","ndf=$in");
-($ORAC_STATUS, my $maxpos) = $Mon{kappa_mon}->get("stats","maxwcs");
-
-# Find the centroid in the image
-my $box = 9;
-my $cenargs = "ndf=$in init='".$maxpos."' mode=i cerror=true search=$box";
-$Mon{kappa_mon}->obeyw("centroid","$cenargs");
-my @xy;
-($ORAC_STATUS, $xy[0]) = $Mon{kappa_mon}->get("centroid","xcen");
-($ORAC_STATUS, $xy[1]) = $Mon{kappa_mon}->get("centroid","ycen");
+# Find the centroid of the source
+_CENTROID_IMAGE_ IMAGE=$in OFFSET=$offset SYSTEM=$fitcosys
+my @xy = @{ $_CENTROID_IMAGE_{RESULTS} };
 
 # Create temporary file to write source position(s) in
 my $cofile = new ORAC::TempFile;
