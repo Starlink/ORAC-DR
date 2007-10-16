@@ -139,15 +139,26 @@ unless ( $cosys_out eq "" ) {
 # Are we insisting that the the centroid be returned in Offset
 # coordinates? Default is no: use the current system.
 my $offset = ($_CENTROID_IMAGE_{OFFSET} || 0);
-my $skyrefis;
-if ( $offset ) {
-  # Check if we need to set it first
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=skyrefis");
-  ($ORAC_STATUS, $skyrefis) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-  if ( lc($skyrefis) eq "ignored" ) {
+# Set the default initial position - this only changes if we are not
+# working in an offset coordinate system
+my $initpos = "0,0";
+# Check if we need to set it first
+$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=skyrefis");
+($ORAC_STATUS, my $skyrefis) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+# If we are not in an offset coord system...
+if ( lc($skyrefis) eq "ignored" ) {
+  # Do we want to change to an offset coord system?
+  if ( $offset ) {
     $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=set name=skyrefis newval=origin");
+    orac_print "Centroid will be determined in offset coordinates\n" if ($verbose);
+  } else {
+    # If we don't want offset, retrieve the formatted WCS position of
+    # the peak. NOTE: this will be fooled by the presence of a spike
+    # FUTURE: dealing with spikes, may need an iterative procedure
+    # (clip= option in stats).
+    $Mon{kappa_mon}->obeyw("stats","ndf=$in");
+    ($ORAC_STATUS, $initpos) = $Mon{kappa_mon}->get("stats","maxwcs");
   }
-  orac_print "Centroid will be determined in offset coordinates\n" if ($verbose);
 }
 
 # Initialize the results array
@@ -157,12 +168,12 @@ $_CENTROID_IMAGE_{RESULTS} = [];
 # global variable
 my $args;
 if (starversion_lt('kappa','V0.14-0')) {
-  $args = " cosys=d init=[0,0]";
+  $args = " cosys=d init=[$initpos]";
 } else {
   # If we have KAPPA14 we have to first make sure the wcsframe is AXIS
   # so that we can start searching from the coordinate centre
 #  $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=axis");
-  $args = " init='0,0' ";
+  $args = " init='".$initpos."' ";
 }
 
 $args .= " mode=i cerror=true search=$box";
