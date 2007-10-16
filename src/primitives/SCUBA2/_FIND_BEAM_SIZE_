@@ -27,35 +27,42 @@ The following arguments are supported:
 
 =over 4
 
-=item METHOD
+=item B<METHOD>
 
 Method for deriving the beam parameters. Valid options are BEAM to use
 C<beamfit>, or PSF to use C<psf>. Default is BEAM. (In practice,
 anything other than PSF will cause C<beamfit> to be used.)
 
-=item SYSTEM
+=item B<SYSTEM>
 
 Coordinate system in which to perform beam fit. If not set, the
 default is AZEL. May be AZEL, RADEC or GALACTIC. Minimum match is
 supported.
 
-=item GAUSSIAN
+=item B<OFFSET>
+
+A flag to denote whether to return the centroid in offset
+coordinates. A value of 1 will force the primitive to set the SkyRefIs
+attribute to C<Origin> if it has not already been set. Default is 0
+(false) which will use the current value.
+
+=item B<GAUSSIAN>
 
 A flag to indicate whether the fit is forced to be gaussian. The
 default is no. Only accessed if method=PSF.
 
-=item GROUP
+=item B<GROUP>
 
 Flag to indicate whether the primitive is to process the Group
 image. Default is 0 (false), which will use the current stacked Frame
 image.
 
-=item LOGFILE
+=item B<LOGFILE>
 
 A flag to indicate whether a pipeline log file should be written
 containing the results of the fit. Default is true.
 
-=item VERBOSE
+=item B<VERBOSE>
 
 Flag to indicate whether informational messages should be 
 given to the user. Default is verbose (true).
@@ -158,6 +165,18 @@ my $method = ( exists $_FIND_BEAM_SIZE_{METHOD} &&
 
 # Set usepsf flag
 my $usepsf = ( $method eq "PSF" ) ? 1 : 0;
+
+# Are we working in an offset coordinate system? Default to no.
+my $offset = ($_FIND_BEAM_SIZE_{OFFSET} || 0);
+if ( $offset ) {
+  # Check if we need to set it first
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=skyrefis");
+  ($ORAC_STATUS, $skyrefis) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+  if ( lc($skyrefis) eq "ignored" ) {
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=set name=skyrefis newval=origin");
+  }
+  orac_print "Fit to beam will be carried out in offset coordinates\n" if ($verbose);
+}
 
 # Do we have a calibrator?
 my $calib = $Cal->iscalsource($Frm->hdr('OBJECT')) ;
@@ -271,9 +290,17 @@ if ( $usepsf ) {
   my $fitarea = 15; # Use a 15x15 pixel area - should this change?
 
   # Check we have a valid variance component
-  $Mon{kappa_mon}->obeyw("stats","ndf=$in comp=var");
-  ($ORAC_STATUS, my $numgood) = $Mon{kappa_mon}->get("stats","numgood");
-  my $var = ( $numgood > 0 ) ? "true" : "false";
+  my $status = $Mon{kappa_mon}->obeyw("stats","ndf=$in comp=var");
+  my $var = "false";
+  # If status is non-zero then the call to stats failed: i.e. there is
+  # no variance component in the image. This should not cause the
+  # primitive to fail so trap it.
+  if ( $status ) {
+    orac_warn "Input file, $in, has no VARIANCE component:\nBEAMFIT will not use variance weighting\n" if $verbose;
+  } else {
+    ($ORAC_STATUS, my $numgood) = $Mon{kappa_mon}->get("stats","numgood");
+    $var = ( $numgood > 0 ) ? "true" : "false";
+  }
 
   my $args = "mode=interface pos=".$pos." variance=$var fitarea=$fitarea";
 
@@ -370,4 +397,10 @@ if ($uselog) {
 # Return SYSTEM to original value if necessary
 if ( $fitcosys ne $incosys ) {
   $Mon{ndfpack_mon}->obeyw("wcsattrib", "ndf=$in mode=set name=system newval=$incosys");
+}
+# Reset the SkyRefIs parameter if necessary
+if ( $offset ) {
+  if ( lc($skyrefis) eq "ignored" ) {
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=set name=skyrefis newval=$skyrefis");
+  }
 }
