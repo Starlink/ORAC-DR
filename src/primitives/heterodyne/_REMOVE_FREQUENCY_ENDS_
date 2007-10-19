@@ -2,7 +2,7 @@
 
 =head1 NAME
 
-_MASK_FREQUENCY_ENDS_ - Remove the ends of a cube's frequency axis.
+_REMOVE_FREQUENCY_ENDS_ - Remove the ends of a cube's frequency axis.
 
 =head1 DESCRIPTION
 
@@ -16,12 +16,26 @@ frequency axis, whereas _MASK_FREQUENCY_ENDS_ does.
 
 =over 4
 
+=item LOWER = REAL (Given)
+
+The percentage of the total frequency range to trim from the lower
+end of the frequency range. For example, if a cube has 1024 frequency
+channels, and the percentage to trim is 10%, then 102 channels will be
+trimmed from the lower end. [undef]
+
 =item PERCENT = REAL (Given)
 
 The percentage of the total frequency range to trim from either
 end. For example, if a cube has 1024 frequency channels, and the
 percentage to trim is 10%, then 102 channels will be trimmed from
 either end. [10.0]
+
+=item UPPER = REAL (Given)
+
+The percentage of the total frequency range to trim from the higher
+end of the frequency range. For example, if a cube has 1024 frequency
+channels, and the percentage to trim is 10%, then 102 channels will be
+trimmed from the upper end. [undef]
 
 =back
 
@@ -33,6 +47,12 @@ either end. [10.0]
 
 This primitive will only remove the ends if the Frame's user header
 SPECTRAL_TRIMMED does not exist or it exists and is false..
+
+=item *
+
+If either of the LOWER or UPPER parameters are given, these will be
+used. Otherwise, if both of them are left undefined, then the PERCENT
+parameter will be used.
 
 =back
 
@@ -68,6 +88,18 @@ Council.  All Rights Reserved.
 my $percent = ( defined( $_REMOVE_FREQUENCY_ENDS_{PERCENT} ) ?
                 $_REMOVE_FREQUENCY_ENDS_{PERCENT}            :
                 10 );
+my $lower = $_REMOVE_FREQUENCY_ENDS_{LOWER};
+my $upper = $_REMOVE_FREQUENCY_ENDS_{UPPER};
+
+if( defined( $lower ) || defined( $upper ) ) {
+
+  $lower = ( defined( $lower ) ? $lower : 0 );
+  $upper = ( defined( $upper ) ? $upper : 0 );
+
+} else {
+  $lower = $percent;
+  $upper = $percent;
+}
 
 if( ! defined( $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) ||
     ! $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) {
@@ -86,11 +118,12 @@ if( ! defined( $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) ||
     my $extent = $ubnd[2] - $lbnd[2] + 1;
 
     # Calculate the amount to blank off from either end.
-    my $trim = int( $extent * $percent / 100 );
+    my $trim_lower = int( $extent * $lower / 100 );
+    my $trim_upper = int( $extent * $upper / 100 );
 
     # Calculate the lower and upper extents.
-    my $lower_z = $lbnd[2] + $trim;
-    my $upper_z = $ubnd[2] - $trim;
+    my $lower_z = $lbnd[2] + $trim_lower;
+    my $upper_z = $ubnd[2] - $trim_upper;
 
     # Run NDFCOPY.
     my $params = "in=$in(,,$lower_z:$upper_z) out=$out";
@@ -98,7 +131,9 @@ if( ! defined( $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) ||
 
     # Report to user.
     orac_print "$in to $out:\n";
-    orac_print " Trimmed $percent\% from both ends of frequency range.\n";
+    orac_print " Trimmed $lower\% from lower end of frequency range.\n";
+    orac_print " Trimmed $upper\% from upper end of frequency range.\n";
+    orac_print " Trimmed dimensions: [$lower_z:$upper_z]\n";
 
     # Set the product.
     $Frm->product( "em" );
