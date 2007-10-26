@@ -20,9 +20,10 @@ The collapse estimator used to create the image. This can be any of
 those listed for the ESTIMATOR parameter for the KAPPA/COLLAPSE
 command. ['INTEG']
 
-=item GROUP = LOGICAL (Given)
+=item MASK = LOGICAL (Given)
 
-Whether or not to use the Group object to collapse over. [0]
+Whether or not to mask out non-signal regions of the cube to help
+increase signal-to-noise of the image. [1]
 
 =back
 
@@ -41,9 +42,9 @@ the cube was collapsed.
 
 =item *
 
-This primitive is suitable  for true 3-D data. This primitive will not
-create a channel map from data that are functionally 3-D but only have
-one pixel in any of the three dimensions.
+This primitive is suitable for true 3-D data. This primitive will not
+create an image from data that are functionally 3-D but only have one
+pixel in any of the three dimensions.
 
 =back
 
@@ -83,55 +84,91 @@ my $axis = ( defined( $_CREATE_INTEGRATED_INTENSITY_IMAGE_{AXIS} ) ?
 my $estimator = ( defined( $_CREATE_INTEGRATED_INTENSITY_IMAGE_{ESTIMATOR} ) ?
                   $_CREATE_INTEGRATED_INTENSITY_IMAGE_{ESTIMATOR} :
                   'INTEG' );
-my $group = ( defined( $_CREATE_INTEGRATED_INTENSITY_IMAGE_{GROUP} ) ?
-              $_CREATE_INTEGRATED_INTENSITY_IMAGE_{GROUP} :
-              0 );
+my $mask = ( defined( $_CREATE_INTEGRATED_INTENSITY_IMAGE_{MASK} ) ?
+             $_CREATE_INTEGRATED_INTENSITY_IMAGE_{MASK}            :
+             1 );
 
-my $Obj;
-my $in;
-my $out;
-if( $group ) {
-  $Obj = $Grp;
-  $in = $Grp->file;
-  $out = $Grp->file . "_integ";
-} else {
-  $Obj = $Frm;
-  ( $in, $out ) = $Frm->inout( "_integ" );
+# Check the dimensionality.
+_GET_DIMENSIONS_
+my $dims = $_GET_DIMENSIONS_{DIMS};
+
+my $degen = 0;
+foreach ( @$dims ) {
+  $degen = ( $_ == 1 );
+  last if $degen;
 }
 
-if( $group && $Grp->lastmember( $Frm ) ||
-    ! $group ) {
+# Only create an image if we don't have a degenerate cube.
+if( ! $degen ) {
 
-  # Check the dimensionality.
-  _GET_DIMENSIONS_
-  my $dims = $_GET_DIMENSIONS_{DIMS};
+  my ( undef, $out ) = $Frm->inout( "_integ" );
+  my @collapsed;
 
-  my $degen = 0;
-  foreach ( @$dims ) {
-    $degen = ( $_ == 1 );
-    last if $degen;
-  }
+  my $infile = new ORAC::TempFile;
+  open my $fh, ">", $infile->file;
 
-  # Only create an image if we don't have a degenerate cube.
-  if( ! $degen ) {
+  # We need to collapse the data and variance components, then paste
+  # the results together, then paste together the SMURF components
+  # into the output image, but only if there are more than two files.
+  if( $Frm->nfiles > 1 ) {
 
-    # Set up the parameters to COLLAPSE.
-    my $params = "in=$in out=$out estimator=$estimator axis=$axis trim=false";
+    # Set up some temporary files to hold SMURF extension information.
+    my $exptimetf = new ORAC::TempFile;
+    my $exptimefh = $exptimetf->handle;
+    my $exptimefile = $exptimetf->file;
+    my $efftimetf = new ORAC::TempFile;
+    my $efftimefh = $efftimetf->handle;
+    my $efftimefile = $efftimetf->file;
+    my $tsystf = new ORAC::TempFile;
+    my $tsysfh = $tsystf->handle;
+    my $tsysfile = $exptimetf->file;
 
-    # Run COLLAPSE.
+    foreach my $i ( 1 .. $Frm->nfiles ) {
+
+      my $in = $Frm->file( $i );
+
+      my $temp1 = new ORAC::TempFile;
+      my $temp1file = $temp1->file;
+
+      # Set up the parameters to COLLAPSE and run it.
+      my $params = "in=$in out=$temp1file estimator=$estimator axis=$axis";
+      $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+      push( @collapsed, $temp1 );
+      print $fh "$temp1file\n";
+
+      print $exptimefh "$temp1file.MORE.SMURF.EXP_TIME\n";
+      print $efftimefh "$temp1file.MORE.SMURF.EFF_TIME\n";
+      print $tsysfh "$temp1file.MORE.SMURF.TSYS\n";
+
+    }
+    close $fh;
+    close $exptimefh;
+    close $efftimefh;
+
+    # Paste together the files in @collapsed into $out.
+    my $params = "in='^" . $infile->file . "' out=$out confine=false transp=true";
+    $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+
+    # Paste the SMURF extensions into the output file.
+    $params = "in='^$exptimefile' out=$out.MORE.SMURF.EXP_TIME confine=false transp=true";
+    $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+    $params = "in='^$efftimefile' out=$out.MORE.SMURF.EFF_TIME confine=false transp=true";
+    $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+    $params = "in='^$tsysfile' out=$out.MORE.SMURF.TSYS confine=false transp=true";
+    $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+
+  } else {
+
+    my $in = $Frm->file;
+
+    my $params = "in=$in out=$out estimator=$estimator axis=$axis";
     $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
-    # Report to user.
-    orac_print "$in to $out:\n";
-    orac_print " Collapsed along axis $axis to form integrated intensity image.\n";
-
-    # Create a temporary Frame object for Display.
-    my $tmpFrm = new $Frm;
-    $tmpFrm->file( $out );
-    $Display->display_data( $tmpFrm ) if defined( $Display );
-
-    # Tidy-up output.
-    orac_print "\n";
-
   }
+
+  orac_print "Integrated intensity image created in $out.\n";
+
 }
+
+orac_print "\n";
