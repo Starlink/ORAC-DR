@@ -50,45 +50,55 @@ my $regions = $Frm->uhdr( "BASELINE_REGIONS" );
 if( defined( $regions ) ) {
   my @regions = @$regions;
 
-  my( $in, $out ) = $Frm->inout( "_mbl" );
+  foreach my $i ( 1 .. $Frm->nfiles ) {
 
-  # Retrieve the dimensions of the input Frame object.
-  $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
-  my ( $ORAC_STATUS, @lbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
-  ( $ORAC_STATUS, my @ubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
+    my( $in, $out ) = $Frm->inout( "_mbl", $i );
 
-  # Create a temporary file to hold the ARD mask.
-  my $ardmask = new ORAC::TempFile;
+    # Retrieve the dimensions of the input Frame object.
+    $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
+    my ( $ORAC_STATUS, @lbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
+    ( $ORAC_STATUS, my @ubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
 
-  # We're doing three dimensions here...
-  print {$ardmask->handle} "DIMENSION(3)\n";
+    # Retrieve the baselined regions for this Frame.
+    my @bl_regions = @{$regions[$i-1]};
 
-  # For each pair of baseline regions, write a RECT ARD region.
-  for ( my $i = 0; $i <= $#regions ; $i += 2 ) {
-    my $lower_x = $lbnd[0] - 1;
-    my $lower_y = $lbnd[1] - 1;
-    my $upper_x = $ubnd[0];
-    my $upper_y = $ubnd[1];
-    print {$ardmask->handle} "RECT( $lower_x, $lower_y, $regions[$i], $upper_x, $upper_y, $regions[$i+1] )\n";
+    # Create a temporary file to hold the ARD mask.
+    my $ardmask = new ORAC::TempFile;
+
+    # We're doing three dimensions here...
+    print {$ardmask->handle} "DIMENSION(3)\n";
+
+    # For each pair of baseline regions, write a RECT ARD region.
+    for ( my $j = 0; $j <= $#bl_regions ; $j += 2 ) {
+      my $lower_x = $lbnd[0] - 1;
+      my $lower_y = $lbnd[1] - 1;
+      my $upper_x = $ubnd[0];
+      my $upper_y = $ubnd[1];
+      print {$ardmask->handle} "RECT( $lower_x, $lower_y, $bl_regions[$j], $upper_x, $upper_y, $bl_regions[$j+1] )\n";
+    }
+
+    # Run ARDMASK.
+    my $params = "in=$in out=$out ardfile=" . $ardmask->file;
+    if( $inverse ) {
+      $params .= " inside=false";
+    }
+    $Mon{'kappa_mon'}->obeyw( "ardmask", "$params" );
+
+    # Report to user.
+    orac_print "$in to $out:\n";
+    orac_print " Masked ";
+    if( $inverse ) {
+      orac_print "non-";
+    }
+    orac_print "baseline regions.\n";
+
+    # Update the product.
+    $Frm->product( "mbl" );
+
+    # Update the Frame object.
+    $Frm->file( $i, $out );
+
   }
-
-  # Run ARDMASK.
-  my $params = "in=$in out=$out ardfile=" . $ardmask->file;
-  if( $inverse ) {
-    $params .= " inside=false";
-  }
-  $Mon{'kappa_mon'}->obeyw( "ardmask", "$params" );
-
-  # Report to user.
-  orac_print "$in to $out:\n";
-  orac_print " Masked ";
-  if( $inverse ) {
-    orac_print "non-";
-  }
-  orac_print "baseline regions.\n";
-
-  # Update the Frame object.
-  $Frm->file( $out );
 
   # Display if necessary.
   $Display->display_data( $Frm ) if defined( $Display );
