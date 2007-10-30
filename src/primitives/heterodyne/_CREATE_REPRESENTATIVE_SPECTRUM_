@@ -1,0 +1,117 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CREATE_REPRESENTATIVE_SPECTRUM_ -- Create a representative spectrum
+from a cube.
+
+=head1 DESCRIPTION
+
+This primitive creates a representative spectrum from a
+cube. Currently, "representative spectrum" means a spectrum extracted
+from the peak flux pixel in the integrated intensity map created from
+the entire cube.
+
+=head1 ARGUMENTS
+
+=over 4
+
+None.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The representative spectrum with a suffix _rsp.
+
+=back
+
+=head1 TASKS
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2007 Science and Technology Facilities
+Council.  All Rights Reserved.
+
+=cut
+
+# Only extract a representative spectrum if we've created an
+# integrated intensity image (and thus have the peak value), or if the
+# cube is 1x1xN.
+
+_GET_DIMENSIONS_
+my $dims = $_GET_DIMENSIONS_{DIMS};
+if( $dims->[0] == 1 &&
+    $dims->[1] == 1 ) {
+
+  # In this case the cube is the spectrum. Just copy the cube over.
+  my ( $in, $out ) = $Frm->inout( "_rsp" );
+  $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$out" );
+
+  orac_print "Representative spectrum created in $out.\n";
+
+} else {
+
+  # We have a proper cube, so we have to retrieve the maximum flux
+  # position from the integrated intensity image. If we don't have
+  # that information, collapse the entire cube in spatial directions
+  # to create a spectrum.
+  if( defined( $Frm->uhdr( "INTEG_MAX_POS" ) ) ) {
+
+    my $maxpos = $Frm->uhdr( "INTEG_MAX_POS" );
+
+    # We need to find which frame contains this position. Go through
+    # each one in turn, finding the dimensions.
+    my $fileno = 0;
+    foreach my $i ( 1 .. $Frm->nfiles ) {
+
+      my $file = $Frm->file( $i );
+      $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$file" );
+
+      my ( $ORAC_STATUS, @lbound ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
+      ( $ORAC_STATUS, my @ubound ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
+      if( $maxpos->[0] >= $lbound[0] &&
+          $maxpos->[0] <= $ubound[0] &&
+          $maxpos->[1] >= $lbound[1] &&
+          $maxpos->[1] <= $ubound[1] ) {
+
+        $fileno = $i;
+        last;
+      }
+    }
+
+    # Copy out the spectrum from the given file.
+    my $in = $Frm->file( $fileno );
+    my ( undef, $out ) = $Frm->inout( "_rsp" );
+    my $params = "in=$in(" . $maxpos->[0] . "," . $maxpos->[1] . ",) out=$out trim=false";
+    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+    orac_print "Representative spectrum created in $out.\n";
+
+  } else {
+
+  }
+}
+
