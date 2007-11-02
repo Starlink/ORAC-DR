@@ -35,7 +35,7 @@ use ORAC::Print qw/ orac_warn /;
 use Astro::Coords;
 use DateTime;
 use DateTime::Format::ISO8601;
-use NDF qw/ :ndf :err /;
+use NDF;
 use Starlink::AST;
 
 our $VERSION;
@@ -503,18 +503,65 @@ sub findgroup {
   if( defined( $self->hdr('DRGROUP') ) ) {
     $hdrgrp = $self->hdr('DRGROUP');
   } else {
-    # Construct group name.
+
+    # Get the WCS.
     $self->read_wcs;
     my $wcs = $self->wcs;
 
+    # Check to see what tracking system we're in. To get this, we need
+    # to make some NDF calls to get into the JCMTSTATE structure.
+    my $trsys;
+    my $status = &NDF::SAI__OK;
+    ndf_begin();
+    ndf_find( &NDF::DAT__ROOT(), $self->file, my $indf, $status );
+    ndf_xstat( $indf, 'JCMTSTATE', my $there, $status );
+
+    if( $there ) {
+      ndf_xloc( $indf, 'JCMTSTATE', 'READ', my $xloc, $status );
+      dat_there( $xloc, 'TCS_TR_SYS', my $trsys_there, $status );
+
+      if( $trsys_there ) {
+        my( @trsys, $el );
+        cmp_getvc( $xloc, 'TCS_TR_SYS', 10000, @trsys, $el, $status );
+        if( $status == &NDF::SAI__OK ) {
+          $trsys = $trsys[0];
+        }
+      }
+      dat_annul( $xloc, $status );
+    }
+
+    ndf_annul( $indf, $status );
+    ndf_end( $status );
+
+    if( defined( $trsys ) && $trsys =~ /APP/ ) {
+
+      # We're tracking in geocentric apparent, so instead of using the
+      # RefRA/RefDec position (which will be moving with the object)
+      # use the object name.
+      $hdrgrp = $self->hdr( "OBJECT" );
+
+    } else {
+
+      # Use the RefRA/RefDec position with colons stripped out and to
+      # the nearest arcsecond.
+      my $refra = $wcs->GetC("RefRA");
+      my $refdec = $wcs->GetC("RefDec");
+      $refra =~ s/\..*$//;
+      $refdec =~ s/\..*$//;
+      $refra =~ s/://g;
+      $refdec =~ s/://g;
+
+      $hdrgrp = $refra . $refdec;
+
+    }
+
     my $restfreq = $wcs->GetC("RestFreq");
 
-    $hdrgrp = $self->hdr( "OBJECT" ) .
-              $self->hdr( "BWMODE" ) .
-              $self->hdr( "INSTRUME" ) .
-              $self->hdr( "OBS_TYPE" ) .
-              $self->hdr( "IFFREQ" ) .
-              $restfreq;
+    $hdrgrp .= $self->hdr( "BWMODE" ) .
+               $self->hdr( "INSTRUME" ) .
+               $self->hdr( "OBS_TYPE" ) .
+               $self->hdr( "IFFREQ" ) .
+               $restfreq;
   }
 
   $self->group($hdrgrp);
