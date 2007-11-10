@@ -108,7 +108,6 @@ sub retrieve_bounds {
 
     # Read in the file, get the bounds via ndf_bound, and retrieve the
     # frameset.
-
     my $STATUS = 0;
     err_begin( $STATUS );
     ndf_begin;
@@ -355,7 +354,7 @@ sub return_bounds_header {
   if( -e $filename ) {
 
     # Read the current header.
-    $header = new Astro::FITS::Header;
+    $header = new Astro::FITS::Header( File => $filename );
     $header->removebyname( 'SIMPLE' );
     $header->removebyname( 'END' );
 
