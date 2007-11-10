@@ -375,6 +375,11 @@ sub readhdr {
 
     # ...and store it in the object.
     $self->fits( $hdr );
+
+    # ...and the hdr object too.
+    tie my %header, ref( $hdr ), $hdr;
+    $self->hdr( %header );
+
   };
 
   # Calculate derived headers.
@@ -558,6 +563,8 @@ sub findgroup {
     my $restfreq = $wcs->GetC("RestFreq");
 
     $hdrgrp .= $self->hdr( "BWMODE" ) .
+               $self->hdr( "SAM_MODE" ) .
+               $self->hdr( "SW_MODE" ) .
                $self->hdr( "INSTRUME" ) .
                $self->hdr( "OBS_TYPE" ) .
                $self->hdr( "IFFREQ" ) .
