@@ -98,6 +98,8 @@ foreach ( @$dims ) {
   last if $degen;
 }
 
+my @infiles;
+
 # Only create an image if we don't have a degenerate cube.
 if( ! $degen ) {
 
@@ -127,11 +129,13 @@ if( ! $degen ) {
 
       my $in = $Frm->file( $i );
 
+      push @infiles, $in;
+
       my $temp1 = new ORAC::TempFile;
       my $temp1file = $temp1->file;
 
       # Set up the parameters to COLLAPSE and run it.
-      my $params = "in=$in out=$temp1file estimator=$estimator axis=$axis";
+      my $params = "in=$in out=$temp1file estimator=$estimator axis=$axis trim=false";
       $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
       push( @collapsed, $temp1 );
@@ -161,8 +165,8 @@ if( ! $degen ) {
   } else {
 
     my $in = $Frm->file;
-
-    my $params = "in=$in out=$out estimator=$estimator axis=$axis";
+    push @infiles, $in;
+    my $params = "in=$in out=$out estimator=$estimator axis=$axis trim=false";
     $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
   }
@@ -177,7 +181,47 @@ if( ! $degen ) {
   my ( $ORAC_STATUS, @maxpos ) = $Mon{'kappa_mon'}->get( "stats", "maxpos" );
   $Frm->uhdr( "INTEG_MAX_POS", \@maxpos );
 
+  # Fix up the provenance.
+  $Frm->readhdr( $out );
+  my $hdr = $Frm->hdr;
+
+  my $prvcnt = $hdr->{'PRVCNT'};
+  foreach my $i ( 1 .. $prvcnt ) {
+    my $header = sprintf( "PRV%05d", $i );
+    my $params = "ndf=$out edit=delete keyword=$header mode=interface";
+    $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$params" );
+  }
+
+  foreach my $i ( 1..($#infiles+1) ) {
+    my $keyword = sprintf( "PRV%05d", $i );
+    my $value = $infiles[$i-1];
+    my $params = "ndf=$out edit=write keyword=$keyword value=$value position=! comment='PRV value from component observation'";
+    $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$params" );
+  }
+
+  my $keyword = "PRVCNT";
+  my $value = $#infiles + 1;
+  my $params = "ndf=$out edit=update keyword=$keyword value=$value position=! comment='\$C'";
+  $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$params" );
+
+  $keyword = "PRODUCT";
+  $value = "integ";
+  $params = "ndf=$out edit=update keyword=$keyword value=$value position=! comment='\$C'";
+  $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$params" );
+
+  # Delete the NUMTILES and TILENUM headers.
+  $keyword = "NUMTILES";
+  $params = "ndf=$out edit=delete keyword=$keyword";
+  $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$params" );
+  $keyword = "TILENUM";
+  $params = "ndf=$out edit=delete keyword=$keyword";
+  $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$params" );
+
   orac_print "Integrated intensity image created in $out.\n";
+
+  $Frm->file( $out );
+  _TAG_AS_REPRESENTATIVE_IMAGE_
+  $Frm->files( @infiles );
 
 }
 
