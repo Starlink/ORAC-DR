@@ -64,10 +64,18 @@ my $type = ( defined( $_CALCULATE_FIVEPOINT_POINTING_{TYPE} ) ?
 
 my $in = $Frm->file;
 
+# Retrieve the rest frequency so we can figure out what the FWHM is
+# for the FITGAUSS call later on. Even though we're dealing with an
+# image, all collapsed images and spectra are 3D to retain spectral
+# information.
+$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=get name=RestFreq" );
+my ( $ORAC_STATUS, $restfreq ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
+my $fwhm = 0.024383119917 / $restfreq; # FWHM in radians.
+
 # Set the offset coordinate system to Origin, storing the original
 # value so we can restore it once we've finished.
 $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=get name=SkyRefIs" );
-my ( $ORAC_STATUS, $skyrefis ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
+( $ORAC_STATUS, my $skyrefis ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
 $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name=SkyRefIs newval=Origin" );
 
 # Retrieve the format of either axis, so that we can set them back
@@ -87,40 +95,58 @@ $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(2)' newv
 # FIGARO:FITGAUSS to determine the pointing offsets.
 #
 # First, the horizontal.
-my $horiz = new ORAC::TempFile;
-my $horiz_file = $horiz->file;
-$Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in(,1) out=$horiz_file trim trimwcs" );
-$Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$horiz_file dim=1 mode=wcs" );
+my $temp1 = new ORAC::TempFile;
+my $temp1_file = $temp1->file;
+my $temp2 = new ORAC::TempFile;
+my $temp2_file = $temp2->file;
 
-# Determine the peak value to pass to FITGAUSS.
-$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$horiz_file" );
+$Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in(,1) out=$temp1_file trim trimwcs" );
+$Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$temp1_file dim=1 mode=wcs" );
+
+# Get stats on the cut so that we can set the peak and set the
+# baseline to zero, but only if both the min and max are negative.
+$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp1_file" );
 my ( $ORAC_STATUS, $max ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
+( $ORAC_STATUS, my $min ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
+
+my $peak = $max;
+if( $min < 0 && $max < 0 ) {
+  $Mon{'kappa_mon'}->obeyw( "csub", "in=$temp1_file out=$temp2_file scalar=$min" );
+  $peak = $min - $max;
+} else {
+  $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp1_file out=$temp2_file" );
+}
 
 # Fit the gaussian.
-my $params = "in=$horiz_file device=! dialog=f varuse=true mask1=[-10]";
-$params   .= " mask2=[10] ncomp=1 centre=0 cont=0 peak=$max fwhm=0.0001";
-$params   .= " cf=[0] pf=[1] wf=[0] logfil=! comp=1";
+my $params = "in=$temp2_file device=! dialog=f varuse=true mask1=[-10]";
+$params   .= " mask2=[10] ncomp=1 centre=0 cont=0 peak=$peak fwhm=$fwhm";
+$params   .= " cf=[0] pf=[0] wf=[1] logfil=! comp=1";
 $Mon{'figaro4'}->obeyw( "fitgauss", "$params" );
 
 # Retrieve the fit information.
 ( $ORAC_STATUS, my @horiz_centre ) = $Mon{'figaro4'}->get( "fitgauss", "fcentre" );
 my $horiz_centre = $horiz_centre[0] * 206265;
 
-# Now the vertical.
-my $vert = new ORAC::TempFile;
-my $vert_file = $vert->file;
+$Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in(1,) out=$temp1_file trim trimwcs" );
+$Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$temp1_file dim=1 mode=wcs" );
 
-$Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in(1,) out=$vert_file trim trimwcs" );
-$Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$vert_file dim=1 mode=wcs" );
-
-# Again, determine the peak value.
-$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$vert_file" );
+# Again, get the stats.
+$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp1_file" );
 ( $ORAC_STATUS, $max ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
+( $ORAC_STATUS, $min ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
+
+$peak = $max;
+if( $min < 0 && $max < 0 ) {
+  $Mon{'kappa_mon'}->obeyw( "csub", "in=$temp1_file out=$temp2_file scalar=$min" );
+  $peak = $min - $max;
+} else {
+  $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp1_file out=$temp2_file" );
+}
 
 # Fit the polynomial.
-my $params = "in=$vert_file device=! dialog=f varuse=true mask1=[-10]";
-$params   .= " mask2=[10] ncomp=1 centre=0 cont=0 peak=$max fwhm=0.0001";
-$params   .= " cf=[0] pf=[1] wf=[0] logfil=! comp=1";
+my $params = "in=$temp2_file device=! dialog=f varuse=true mask1=[-10]";
+$params   .= " mask2=[10] ncomp=1 centre=0 cont=0 peak=$peak fwhm=$fwhm";
+$params   .= " cf=[0] pf=[0] wf=[1] logfil=! comp=1";
 $Mon{'figaro4'}->obeyw( "fitgauss", "$params" );
 
 # Retrieve the fit information.
