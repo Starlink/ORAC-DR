@@ -61,6 +61,9 @@ sub new {
   $obj->{InterleaveMask} = undef;
   $obj->{InterleaveMaskIndex} = undef;
   $obj->{InterleaveMaskNoUpdate} = 0;
+  $obj->{SkyFlat} = undef;
+  $obj->{SkyFlatIndex} = undef;
+  $obj->{SkyFlatNoUpdate} = 0;
 
   return $obj;
 }
@@ -84,6 +87,21 @@ sub interleavemaskname {
 
   if( @_ ) { $self->{InterleaveMask} = shift unless $self->interleavemasknoupdate; }
   return $self->{InterleaveMask};
+}
+
+=item B<skyflatname>
+
+Return (or set) the skyflat used.
+
+  $skyflat = $Cal->skyflatname;
+
+=cut
+
+sub skyflatname {
+  my $self = shift;
+
+  if( @_ ) { $self->{SkyFlat} = shift unless $self->skyflatnoupdate; }
+  return $self->{SkyFlat};
 }
 
 =item B<maskname>
@@ -150,6 +168,29 @@ sub maskindex {
   return $self->{MaskIndex};
 }
 
+=item B<skyflatindex>
+
+Return or set the index object associated with the skyflat.
+
+  $index = $Cal->skyflatindex;
+
+An index object is created automatically the first time this method is
+run.
+
+=cut
+
+sub skyflatindex {
+  my $self = shift;
+
+  if( @_ ) { $self->{SkyFlatIndex} = shift; }
+  unless( defined( $self->{SkyFlatIndex} ) ) {
+    my $indexfile = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.skyflat" );
+    my $rulesfile = $self->find_file( "rules.skyflat" );
+    $self->{SkyFlatIndex} = new ORAC::Index( $indexfile, $rulesfile );
+  }
+  return $self->{SkyFlatIndex};
+}
+
 =item B<interleavemasknoupdate>
 
 Stops object from updating itself with more recent data.
@@ -176,6 +217,19 @@ sub masknoupdate {
   if (@_) { $self->{MaskNoUpdate} = shift; }
   return $self->{MaskNoUpdate};
 
+}
+
+=item B<skyflatnoupdate>
+
+Stos object from updating itself with more recent data. Used when
+overriding the skyflat file from the commandline.
+
+=cut
+
+sub skyflatnoupdate {
+  my $self = shift;
+  if( @_ ) { $self->{SkyFlatNoUpdate} = shift; }
+  return $self->{SkyFlatNoUpdate};
 }
 
 =back
@@ -319,6 +373,36 @@ sub mask {
     $self->maskname( $mask );
   } else {
     croak( "Error in mask calibration checking - giving up" );
+  }
+}
+
+=item B<skyflat>
+
+Return (or set) the name of the current skyflat.
+
+  $skyflat = $Cal->skyflat;
+
+=cut
+
+sub skyflat {
+  my $self = shift;
+  if( @_ ) {
+    return $self->skyflatname( shift );
+  }
+
+  my $ok = $self->skyflatindex->verify( $self->skyflatname, $self->thing, 0 );
+
+  if( $ok ) { return $self->skyflatname; }
+
+  croak( "Override skyflat is not suitable! Giving up" ) if $self->skyflatnoupdate;
+
+  if( defined( $ok ) ) {
+    my $skyflat = $self->skyflatindex->choosebydt( 'ORACTIME', $self->thing, 0 );
+    croak "No suitable skyflat was found in index file"
+      unless defined $skyflat;
+    $self->skyflatname( $skyflat );
+  } else {
+    croak( "Error in skyflat calibration checking - giving up" );
   }
 }
 
