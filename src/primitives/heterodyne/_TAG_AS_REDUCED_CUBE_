@@ -1,9 +1,45 @@
 
+my $file = $_TAG_AS_REDUCED_CUBE_{FILE};
 my $update = ( $_TAG_AS_REDUCED_CUBE_{UPDATE} ? 1 : 0 );
 
-foreach my $i ( 1 .. $Frm->nfiles ) {
+if( ! defined( $file ) ) {
 
-  my( $in, $out ) = $Frm->inout( "_reduced", $i );
+  foreach my $i ( 1 .. $Frm->nfiles ) {
+
+    my( $in, $out ) = $Frm->inout( "_reduced", $i );
+
+    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$out" );
+
+    # Modify the FITS header to get the provenance. This is a hack
+    # that won't be needed once provenance is tracked automatically by
+    # KAPPA routines.
+
+    # First, delete all existing PRVnnnnn headers. We know how many
+    # there are by getting the value of the PRVCNT header.
+    $Frm->readhdr($out);
+    my $hdr = $Frm->hdr;
+    my $prvcnt = $hdr->{'PRVCNT'};
+    foreach my $j ( 1 .. $prvcnt ) {
+      my $header = sprintf( "PRV%05d", $j );
+      _DELETE_FILE_FITS_ITEM_ FILE=$out KEY=$header
+    }
+
+    ( $in, my $prov ) = $Frm->inout( "_cube", $i );
+
+    _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRV00001 VALUE=$prov
+    _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRVCNT VALUE=1
+
+    orac_print "$in to $out:\n Tagged as reduced cube.\n";
+
+    if( $update ) {
+      $Frm->product( "reduced" );
+      $Frm->file( $i, $out );
+    }
+  }
+} else {
+
+  my $in = $file;
+  ( undef, my $out ) = $Frm->inout( "_reduced" );
 
   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$out" );
 
@@ -17,21 +53,21 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
   my $hdr = $Frm->hdr;
   my $prvcnt = $hdr->{'PRVCNT'};
   foreach my $j ( 1 .. $prvcnt ) {
-
     my $header = sprintf( "PRV%05d", $j );
-    my $params = "ndf=$out edit=delete keyword=$header mode=interface";
-    $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$params" );
+    _DELETE_FILE_FITS_ITEM_ FILE=$out KEY=$header
   }
 
-  ( $in, my $prov ) = $Frm->inout( "_cube", $i );
+  ( $in, my $prov ) = $Frm->inout( "_cube" );
 
-  my $params = "ndf=$out edit=write keyword=PRV00001 mode=interface position=! value='$prov' comment='\$C'";
-  $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$params" );
-  $params = "ndf=$out edit=update keyword=PRVCNT mode=interface position=! value=1 comment='PRV value from component observation'";
-  $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$params" );
+  _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRV00001 VALUE=$prov
+  _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRVCNT VALUE=1
 
   if( $update ) {
-    $Frm->file( $i, $out );
     $Frm->product( "reduced" );
+    $Frm->file( $out );
   }
+
+  orac_print "$in to $out:\n Tagged as reduced cube.\n";
 }
+
+orac_print "\n";
