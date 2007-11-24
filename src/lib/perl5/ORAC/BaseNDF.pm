@@ -26,11 +26,67 @@ use ORAC::Error qw/ :try /;
 use ORAC::Constants qw/ :status /;
 use ORAC::Print;
 
+use vars qw/ $VERSION /;
+
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+
 =head1 METHODS
 
 =head2 General Methods
 
 =over 4
+
+=item B<collate_headers>
+
+This method is used to collect all of the modified FITS headers for a
+given Frame object and return an updated C<Astro::FITS::Header> object
+to be used by the C<sync_headers> method.
+
+  my $header = $Frm->collate_headers( $file );
+
+Takes one argument, the filename for which the header will be
+returned.
+
+=cut
+
+sub collate_headers {
+  my $self = shift;
+  my $file = shift;
+
+  return unless defined( $file );
+  if( $file !~ /\.sdf$/ ) { $file .= ".sdf"; }
+  return unless -e $file;
+
+  my $header = new Astro::FITS::Header;
+  $header->removebyname( 'SIMPLE' );
+  $header->removebyname( 'END' );
+
+  # Update the version headers.
+  my $pipevers = new Astro::FITS::Header::Item( Keyword => 'PIPEVERS',
+                                                Value   => $VERSION,
+                                                Comment => 'Pipeline version',
+                                                Type    => 'STRING' );
+  my $engvers = new Astro::FITS::Header::Item( Keyword => 'ENGVERS',
+                                               Value   => 1,
+                                               Comment => 'Algorithm engine version',
+                                               Type    => 'STRING' );
+  $header->append( $pipevers );
+  $header->append( $engvers );
+
+  # Insert the PRODUCT header. This comes from the $self->product
+  # method. If the return value from this method is undefined, do not
+  # insert the header.
+  my $product = $self->product;
+  if( defined( $product ) ) {
+    my $prod = new Astro::FITS::Header::Item( Keyword => 'PRODUCT',
+                                              Value   => $product,
+                                              Comment => 'Pipeline product',
+                                              Type    => 'STRING' );
+    $header->append( $prod );
+  }
+
+  return $header;
+}
 
 =item B<readhdr>
 
@@ -91,6 +147,53 @@ sub readhdr {
   return;
 }
 
+=item B<sync_headers>
+
+This method is used to synchronize FITS headers with information
+stored in e.g. the World Coordinate System.
+
+  $Frm->sync_headers;
+  $Frm->sync_headers(1);
+
+This method takes one optional parameter, the index of the file to
+sync headers for. This index starts at 1 instead of 0.
+
+Headers are only synced if the value returned by C<allow_header_sync>
+is true.
+
+=cut
+
+sub sync_headers {
+  my $self = shift;
+
+  return unless $self->allow_header_sync;
+
+  my $index = 0;
+
+  if( @_ ) {
+    $index = shift;
+  }
+
+  my @files;
+
+  if( $index ) {
+    push @files, $self->file( $index );
+  } else {
+    @files = $self->files;
+  }
+
+  foreach my $file ( @files ) {
+
+    if( $file !~ /_(\d)+$/ ) {
+
+      my $newheader = $self->collate_headers( $file );
+      my $header = new Astro::FITS::Header::NDF( File => $file );
+      $header->append( $newheader );
+      $header->writehdr( File => $file );
+
+    }
+  }
+}
 
 
 =back
