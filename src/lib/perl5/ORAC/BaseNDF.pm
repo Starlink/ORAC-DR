@@ -28,65 +28,13 @@ use ORAC::Print;
 
 use vars qw/ $VERSION /;
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = sprintf("%d", q$Revision$ =~ /(\d+)/);
 
 =head1 METHODS
 
 =head2 General Methods
 
 =over 4
-
-=item B<collate_headers>
-
-This method is used to collect all of the modified FITS headers for a
-given Frame object and return an updated C<Astro::FITS::Header> object
-to be used by the C<sync_headers> method.
-
-  my $header = $Frm->collate_headers( $file );
-
-Takes one argument, the filename for which the header will be
-returned.
-
-=cut
-
-sub collate_headers {
-  my $self = shift;
-  my $file = shift;
-
-  return unless defined( $file );
-  if( $file !~ /\.sdf$/ ) { $file .= ".sdf"; }
-  return unless -e $file;
-
-  my $header = new Astro::FITS::Header;
-  $header->removebyname( 'SIMPLE' );
-  $header->removebyname( 'END' );
-
-  # Update the version headers.
-  my $pipevers = new Astro::FITS::Header::Item( Keyword => 'PIPEVERS',
-                                                Value   => $VERSION,
-                                                Comment => 'Pipeline version',
-                                                Type    => 'STRING' );
-  my $engvers = new Astro::FITS::Header::Item( Keyword => 'ENGVERS',
-                                               Value   => 1,
-                                               Comment => 'Algorithm engine version',
-                                               Type    => 'STRING' );
-  $header->append( $pipevers );
-  $header->append( $engvers );
-
-  # Insert the PRODUCT header. This comes from the $self->product
-  # method. If the return value from this method is undefined, do not
-  # insert the header.
-  my $product = $self->product;
-  if( defined( $product ) ) {
-    my $prod = new Astro::FITS::Header::Item( Keyword => 'PRODUCT',
-                                              Value   => $product,
-                                              Comment => 'Pipeline product',
-                                              Type    => 'STRING' );
-    $header->append( $prod );
-  }
-
-  return $header;
-}
 
 =item B<readhdr>
 
@@ -252,8 +200,23 @@ and Frossie Economou  E<lt>frossie@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Copyright (C) 2007 Science and Technology Facilities Council.
+Copyright (C) 1998-2007 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
+
 
 =cut
 

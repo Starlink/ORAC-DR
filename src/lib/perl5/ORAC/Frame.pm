@@ -35,7 +35,7 @@ use ORAC::Constants;
 use ORAC::BaseFile;
 use base qw/ ORAC::BaseFile /;
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = sprintf("%d", q$Revision$ =~ /(\d+)/);
 
 my @ORAC_INTERNAL_HEADERS = qw/
                                AIRMASS_START
@@ -104,6 +104,57 @@ my @ORAC_INTERNAL_HEADERS = qw/
 
 The following methods are available in this class:
 
+=head2 Constructors
+
+The following constructors are available:
+
+=over 4
+
+=item B<new>
+
+Create a new instance of a B<ORAC::Frame> object.  This method also
+takes optional arguments: if 1 argument is supplied it is assumed to
+be the name of the raw file associated with the observation.  If 2
+arguments are supplied they are assumed to be the raw file prefix and
+observation number.  In any case, all arguments are passed to the
+configure() method which is run in addition to new() when arguments
+are supplied.  The object identifier is returned.
+
+   $Frm = new ORAC::Frame;
+   $Frm = new ORAC::Frame("file_name");
+   $Frm = new ORAC::Frame("UT", "number");
+
+The base class constructor should be invoked by sub-class constructors.
+If this method is called with the last argument as a reference to
+a hash it is assumed that this hash contains extra configuration
+information ('instance' information) supplied by sub-classes.
+
+Note that the file format expected by this constructor is actually the
+required format of the data (as returned by C<format()> method) and not
+necessarily the raw format.  ORAC-DR will pre-process the data with
+C<ORAC::Convert> prior to passing it to this constructor.
+
+=cut
+
+sub new {
+  my $proto = shift;
+  my $class = ref($proto) || $proto;
+
+  # see if we have been given any arguments from subclass
+  my ($defaults, $args) = $class->_process_constructor_args({
+                                                             Group => undef,
+                                                             Recipe => undef,
+                                                             IsGood => 1,
+                                                             Nsubs => undef,
+                                                             RawFixedPart => undef,
+                                                             RawName => undef,
+                                                             RawSuffix => undef,
+                                                             TempRaw => [],
+                                                            }, @_ );
+
+  # call base class constructor
+  return $class->SUPER::new( @$args, $defaults );
+}
 
 =head2 Accessor Methods
 
@@ -119,36 +170,212 @@ The following methods are available for accessing the
 # With args they set the values
 # Without args they only retrieve values
 
+=item B<group>
+
+This method returns the group name associated with the observation.
+
+  $group_name = $Frm->group;
+  $Frm->group("group");
+
+This can be configured initially using the findgroup() method.
+Alternatively, findgroup() is run automatically by the configure()
+method.
+
+=cut
+
+sub group {
+  my $self = shift;
+  if (@_) { $self->{Group} = shift;}
+  return $self->{Group};
+}
 
 
+=item B<isgood>
+
+Flag to determine the current state of the frame. If isgood() is true
+the Frame is valid. If it returns false the frame object may have a
+problem (eg the recipe responsible for processing the frame failed to
+complete).
+
+This flag is used by the B<ORAC::Group> class to determine membership.
+
+=cut
+
+sub isgood {
+  my $self = shift;
+  if (@_) { $self->{IsGood} = shift;  }
+  $self->{IsGood} = 1 unless defined $self->{IsGood};
+  return $self->{IsGood};
+}
+
+=item B<nsubs>
+
+Return the number of sub-frames associated with this frame.
+
+nfiles() should be used to return the current number of sub-frames
+associated with the frame (nsubs usually only reports the number given
+in the header and may or may not be the same as the number of
+sub-frames currently stored)
+
+Usually this value is set as part of the configure() method from the
+header (using findnsubs()) or by using findnsubs() directly.
+
+=cut
+
+sub nsubs {
+  my $self = shift;
+  if (@_) { $self->{Nsubs} = shift; };
+  return $self->{Nsubs};
+}
 
 
+=item B<raw>
 
+This method returns (or sets) the name of the raw data file(s)
+associated with this object.
 
+  $Frm->raw("raw_data");
+  $filename = $Frm->raw;
 
+This method returns the first raw data file if called in scalar
+context, or a list of all the raw data files if called in list
+context.
 
+=cut
 
+sub raw {
+  my $self = shift;
+  if (@_) { $self->{RawName} = \@_; }
+  return wantarray ? @{$self->{RawName}} : $self->{RawName}->[0];
+}
 
-# Method to return/set the filename of the raw data
-# Initially this is the same as {File}
+=item B<rawfixedpart>
 
+Return (or set) the constant part of the raw filename associated
+with the raw data file. (ie the bit that stays fixed for every 
+observation)
 
+  $fixed = $self->rawfixedpart;
 
+=cut
 
+sub rawfixedpart {
+  my $self = shift;
+  if (@_) { $self->{RawFixedPart} = shift; }
+  return $self->{RawFixedPart};
+}
 
-# Method to return the recipe name
-# If an argument is supplied the recipe is set to that value
-# If the recipe is undef then the findrecipe method is invoked to set it
+=item B<rawformat>
 
+Data format associated with the raw() data file.
+Usually one of 'NDF', 'HDS' or 'FITS'. This format should be
+recognisable by C<ORAC::Convert>.
 
+=cut
 
+sub rawformat {
+  my $self = shift;
+  if (@_) { $self->{RawFormat} = shift; }
+  return $self->{RawFormat};
+}
 
-# Return the hash reference containing the tags
+=item B<rawsuffix>
 
+Return (or set) the file name suffix associated with
+the raw data file.
 
+  $suffix = $self->rawsuffix;
 
+=cut
 
+sub rawsuffix {
+  my $self = shift;
+  if (@_) { $self->{RawSuffix} = shift; }
+  return $self->{RawSuffix};
+}
 
+=item B<recipe>
+
+This method returns the recipe name associated with the observation.
+The recipe name can be set explicitly but in general should be
+set by the findrecipe() method.
+
+  $recipe_name = $Frm->recipe;
+  $Frm->recipe("recipe");
+
+This can be configured initially using the findrecipe() method.
+Alternatively, findrecipe() is run automatically by the configure()
+method.
+
+=cut
+
+sub recipe {
+  my $self = shift;
+  if (@_) { $self->{Recipe} = shift;}
+  return $self->{Recipe};
+}
+
+=item B<tempraw>
+
+An array of flags, one per raw file, indicating whether the raw
+file is temporary, and so can be deleted, or real data (don't want
+to delete it).
+
+  $Frm->tempraw( @istemp );
+  @istemp = $Frm->tempraw;
+
+If a single value is given, it will be applied to all raw files
+
+  $Frm->tempraw( 1 );
+
+In scalar context returns true if all frames are temporary,
+false if all frames are permanent and undef if some frames are temporary
+whilst others are permanent.
+
+  $alltemp = $Frm->tempraw();
+
+=cut
+
+sub tempraw {
+  my $self = shift;
+  if (@_) {
+    my @rawfiles = $self->raw;
+    my @flags;
+    if (scalar(@_) == 1) {
+      @flags = map { $_[0] } @rawfiles;
+    } else {
+      @flags = @_;
+      if (@flags != @rawfiles) {
+        croak "Number of tempraw flags (".@flags.") differs from number of registered raw files (".@rawfiles.")\n";
+      }
+    }
+    @{$self->{TempRaw}} = @flags;
+  }
+
+  if (wantarray) {
+    # will be empty if nothing specified so that will default to
+    # undef if the array is read
+    return @{$self->{TempRaw}};
+  } else {
+    my $istemp = 0;
+    my $isperm = 0;
+    for my $f (@{$self->{TempRaw}}) {
+      if ($f) {
+        $istemp = 1;
+      } else {
+        $isperm = 1;
+      }
+    }
+    if ($istemp && $isperm) {
+      return undef;
+    } elsif ($istemp) {
+      return 1;
+    } else {
+      # Default case if no tempraw has been specified
+      return 0;
+    }
+  }
+}
 
 =back
 
@@ -159,91 +386,54 @@ B<ORAC::Frame> objects:
 
 =over 4
 
-=item B<calc_orac_headers>
 
-This method calculates header values that are required by the
-pipeline by using values stored in the header.
+=item B<configure>	 
 
-Required ORAC extensions are:
+This method is used to configure the object. It is invoked	 
+automatically if the new() method is invoked with an argument. The	 
+file(), raw(), readhdr(), findgroup(), findrecipe and findnsubs()	 
+methods are invoked by this command. Arguments are required.  If there	 
+is one argument it is assumed that this is the raw filename. If there	 
+are two arguments the filename is constructed assuming that argument 1	 
+is the prefix and argument 2 is the observation number.	 
 
-ORACTIME: should be set to a decimal time that can be used for
-comparing the relative start times of frames. For IRCAM this
-number is decimal hours, for SCUBA this number is decimal
-UT days.
+  $Frm->configure("fname");	 
+  $Frm->configure("UT","num");	 
 
-ORACUT: This is the UT day of the frame in YYYYMMDD format.
+Multiple raw file names can be provided in the first argument using	 
+a reference to an array.	 
 
-This method should be run after a header is set. Currently the readhdr()
-method calls this whenever it is updated.
+=cut	 
+	 
+sub configure {	 
+  my $self = shift;	 
+  my @args = @_;
 
-  %translated = $Frm->calc_orac_headers;
-
-This method updates the frame user header and returns a hash
-containing the new keywords.
-
-=cut
-
-sub calc_orac_headers {
-  my $self = shift;
-
-  my %new = ();  # Hash containing the derived headers
-
-  # ORACTIME
-  # For IRCAM the keyword is simply RUTSTART
-  # Just return it (zero if not available)
-  my $time = $self->hdr('RUTSTART');
-  $time = 0 unless (defined $time);
-  $self->hdr('ORACTIME', $time);
-
-  $new{'ORACTIME'} = $time;
-
-  # ORACUT
-  # For IRCAM this is simply the IDATE header value
-  my $ut = $self->hdr('IDATE');
-  $ut = 0 unless defined $ut;
-  $self->hdr('ORACUT', $ut);
-
-  # Now create all the ORAC_ headers
-  # First attempt is to use Astro::FITS::HdrTrans
-  my %trans;
-  eval {
-    die "HdrTrans not yet enabled\n";
-    # we do have the advantage over HdrTrans in that we know
-    # the instrument translation table to use via ORAC_INSTRUMENT
-    # and this frame class. We may need to add a Frame instrument method
-    # that will allow us to hint HdrTrans.
-    my $hdr = $self->hdr;
-    %trans = Astro::FITS::HdrTrans::translate_from_FITS( $hdr,
-							prefix => 'ORAC_');
-
-    # store them in the object and append them to the return hash
-    $self->uhdr( %trans );
-    %new = (%new, %trans);
-  };
-
-  # if we have no values do it the old way
-  if (!keys %trans) {
-    # go through an array of headers and translate the
-    # ones we can find with associated methods
-
-    # Loop over all the headers
-    # Do nothing if a translation method does not exist
-    # This makes it safe for everyone
-    for my $key ( @ORAC_INTERNAL_HEADERS ) {
-      my $method = "_to_$key";
-  #    print "Trying method $method\n";
-      if ($self->can($method)) {
-        #      print "Running method $method\n";
-        # This returns a single value
-        $new{"ORAC_$key"} = $self->$method();
-        $self->uhdr("ORAC_$key", $new{"ORAC_$key"});
-      }
-    }
+  # if we have two arguments we need to convert to a single
+  # argument and pass to base method
+  if (scalar(@args) == 2) {
+    my @files = ( $self->file_from_bits(@args) );
+    @args = \@files;
   }
 
-  return %new;
-}
+  # call base configure
+  $self->SUPER::configure( @args );
 
+  # Set the raw data file name from the files list
+  $self->raw($self->files);
+
+  # Find the group name and set it	 
+  $self->findgroup;	 
+
+  # Find the recipe name	 
+  $self->findrecipe;	 
+
+  # Find nsubs	 
+  $self->findnsubs;	 
+
+  # Return something	 
+  return 1;	 
+}
 
 =item B<data_detection_tasks>
 
@@ -680,55 +870,6 @@ sub pattern_from_bits {
   die "The base class version of pattern_from_bits() should not be used\n -- please subclass this method\n";
 }
 
-=item B<tagset>
-
-Associate the current filenames with a key (or tag). Once a tag
-is initialised (it can be any string) the C<tagretrieve> method
-can be used to copy these filenames back into the object so that
-the C<files()> method will use those rather than the current
-values. This allows the data reduction steps to be "rewound".
-
-  $Frm->tagset('REBIN');
-
-The tag is case insensitive.
-
-=cut
-
-sub tagset {
-  my $self = shift;
-  if (@_) {
-    my $tag = shift;
-    $self->tags->{$tag} = [ $self->files ];
-  }
-}
-
-=item B<tagretrieve>
-
-Retrieve the files names from the tag and make them the default
-filenames for the object.
-
-  $Frm->tagretrieve('REBIN');
-
-Nothing happens if the tag does not previously exist.
-The current filenames are stored in the 'PREVIOUS' tag (unless the
-PREVIOUS tag is requested).
-
-=cut
-
-sub tagretrieve {
-  my $self = shift;
-  if (@_) {
-    my $tag = shift;
-    if (exists $self->tags->{$tag}) {
-      # Store the previous values
-      $self->tagset( 'PREVIOUS' ) unless $tag eq 'PREVIOUS';
-      # Retrieve the current values
-      $self->files( @{ $self->tags->{$tag} } );
-    }
-  }
-}
-
-
 =item B<template>
 
 Method to change the current filename of the frame (file())
@@ -785,57 +926,15 @@ aware of them.
 
 =over 4
 
+=item B<_orac_internal_headers>
 
-=item B<_split_fname>
-
-Given a file name, splits it into an array and a suffix. The first
-array contains the separate components of the file name (in the case
-of the base class these are the parts joined by underscores). The
-second argument suffix information.
-
-  ($bitsref, $suffix) = $frm->_split_fname( $file );
-  @bits = @$bitsref;
-
-A suffix is anything after the first "." in the filename.
+List of headers to be used for internal header translation (when not
+using Astro::FITS::HdrTrans)
 
 =cut
 
-sub _split_fname {
-  my $self = shift;
-  my $file = shift;
-
-  # Split the thing on dots first
-  my @dots = split(/\./, $file, 2);
-
-  my $suffix;
-  $suffix = $dots[1] if $#dots > 0;
-
-  # split on underscores
-  my @us = split(/_/, $dots[0]);
-
-  return \@us, $suffix;
-
-}
-
-=item B<_join_fname>
-
-Reverse of C<split_fname>.
-
-   $file = $frm->_join_fname(\@bits, $suffix);
-
-=cut
-
-sub _join_fname {
-  my $self = shift;
-  my ($bits, $suffix) = @_;
-  $suffix = '' unless defined $suffix;
-
-  my $root = join('_', @$bits);
-
-  my $file = $root;
-  $file .= ".$suffix" if length($suffix) > 0;
-
-  return $file;
+sub _orac_internal_headers {
+  return @ORAC_INTERNAL_HEADERS;
 }
 
 =back
@@ -861,6 +960,19 @@ Council. All Rights Reserved.
 
 Copyright (C) 2007 Science and Technology Facilities Council.  All
 Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
