@@ -540,6 +540,25 @@ sub intermediates {
   }
 }
 
+=item B<raw>
+
+This method returns (or sets) the name of the raw data file(s)
+associated with this object.
+
+  $Frm->raw("raw_data");
+  $filename = $Frm->raw;
+
+This method returns the first raw data file if called in scalar
+context, or a list of all the raw data files if called in list
+context.
+
+=cut
+
+sub raw {
+  my $self = shift;
+  if (@_) { $self->{RawName} = \@_; }
+  return wantarray ? @{$self->{RawName}} : $self->{RawName}->[0];
+}
 
 =item B<nokeep>
 
@@ -1011,8 +1030,6 @@ sub configure {
   if (scalar(@_) == 1) {
     my $ref = shift;
     @fnames = ( ref $ref ? @$ref : $ref );
-  } elsif (scalar(@_) == 2) {
-    @fnames = ( $self->file_from_bits(@_) );
   } else {
     croak 'Wrong number of arguments to configure: 1 or 2 args only';
   }
@@ -1027,15 +1044,6 @@ sub configure {
 
   # Populate the header
   $self->readhdr;
-
-  # Find the group name and set it
-  $self->findgroup;
-
-  # Find the recipe name
-  $self->findrecipe;
-
-  # Find nsubs
-  $self->findnsubs;
 
   # Return something
   return 1;

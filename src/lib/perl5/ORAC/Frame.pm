@@ -228,27 +228,6 @@ sub nsubs {
   return $self->{Nsubs};
 }
 
-
-=item B<raw>
-
-This method returns (or sets) the name of the raw data file(s)
-associated with this object.
-
-  $Frm->raw("raw_data");
-  $filename = $Frm->raw;
-
-This method returns the first raw data file if called in scalar
-context, or a list of all the raw data files if called in list
-context.
-
-=cut
-
-sub raw {
-  my $self = shift;
-  if (@_) { $self->{RawName} = \@_; }
-  return wantarray ? @{$self->{RawName}} : $self->{RawName}->[0];
-}
-
 =item B<rawfixedpart>
 
 Return (or set) the constant part of the raw filename associated
