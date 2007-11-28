@@ -147,7 +147,6 @@ sub new {
                                                              IsGood => 1,
                                                              Nsubs => undef,
                                                              RawFixedPart => undef,
-                                                             RawName => undef,
                                                              RawSuffix => undef,
                                                              TempRaw => [],
                                                             }, @_ );
@@ -769,21 +768,6 @@ sub inout {
 
   return ($infile, $outfile) if wantarray();  # Array context
   return $outfile;                            # Scalar context
-}
-
-
-=item B<nfiles>
-
-Number of files associated with the current state of the object and
-stored in file(). This method lets the caller know whether an
-observation has generated multiple output files for a single input.
-
-=cut
-
-sub nfiles {
-  my $self = shift;
-  my $num = $#{$self->files} + 1;
-  return $num;
 }
 
 # Supply a method to return the number associated with the observation

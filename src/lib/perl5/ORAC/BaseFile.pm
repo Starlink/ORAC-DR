@@ -71,6 +71,7 @@ sub new {
   my ($frame, $args) = $class->_process_constructor_args({
                                                           AllowHeaderSync => undef,
                                                           Files => [],
+                                                          RawName => [],
                                                           Format => undef,
 
                                                           Header => {},
@@ -90,7 +91,6 @@ sub new {
   # If arguments are supplied then we can configure the object
 
   # Currently the argument will be the filename.
-  # If there are two args this becomes a prefix and number
   $frame->configure(@$args) if @$args;
 
   return $frame;
@@ -188,6 +188,9 @@ treated as if you typed
 
 ie the first file is set to undef.
 
+The first time a filename is stored the name will also be stored in
+C<raw()> if no previous entries have been made in C<raw>.
+
 =cut
 
 sub file {
@@ -201,7 +204,16 @@ sub file {
 
     my $firstarg = shift;
 
-    # If this is an integer then proceed
+    # This can either be an integer for retrieval or
+    # an integer + filename for setting or just a filename for setting
+    # $index is the lookup into the array
+    # $filenum is the lookup into the file number (starting at 1)
+    # and can correspond to the supplied integer.
+
+    my $filenum = 1; # default if none supplied
+
+    my $filename; # if we have been given a filename
+
     # Check for int and non-zero (since strings eval as 0)
     # Cant use int() since this extracts integers from the start of a
     # string! Match a string containing only digits
@@ -214,41 +226,44 @@ sub file {
       # else wait until we return the specified value
       if (@_) {
 
-        # First check that the old file should not be
-        # removed before we update the object
-        # [Note that the erase method calls this method...]
-        $self->erase($firstarg) if $self->nokeep($firstarg);
+        # we have been given a filename so store the number
+        $filenum = $firstarg;
 
-        # Now update the filename
-        $self->files->[$index] = $self->stripfname(shift);
-
-        # Make sure the nokeep flag is unset
-        $self->nokeep($firstarg,0);
-
-        # Push onto file history array
-        push(@{$self->intermediates}, $self->files->[$index]);
-
-        # Sync the headers. Use the $firstarg value as that's the
-        # 1-based index.
-        $self->sync_headers( $firstarg );
+        # and store the filename
+        $filename = shift(@_);
 
       }
-    } else {
-      # Since we are updating, Erase the existing file if required
-      $self->erase(1) if $self->nokeep(1);
 
-      # Just set the first value
-      $self->files->[0] = $self->stripfname($firstarg);
+    } else {
+
+      # it seems that we are being given a filename rather than a number
+      $filename = $firstarg;
+
+    }
+
+    # if we have a filename we should process it
+    if (defined $filename) {
+
+      # First check that the old file should not be
+      # removed before we update the object
+      # [Note that the erase method calls this method...]
+      $self->erase($filenum) if $self->nokeep($filenum);
+
+      # Now update the filename
+      $self->files->[$index] = $self->stripfname($filename);
+
+      # if raw is not set, update it
+      $self->raw( $self->files->[$index] ) unless defined $self->raw;;
 
       # Make sure the nokeep flag is unset
-      $self->nokeep(1,0);
+      $self->nokeep($filenum,0);
 
       # Push onto file history array
-      push(@{$self->intermediates}, $self->files->[0]);
+      push(@{$self->intermediates}, $self->files->[$index]);
 
-      # Sync the headers of the first file.
-      $self->sync_headers(1);
-
+      # Sync the headers. Use the $firstarg value as that's the
+      # 1-based index.
+      $self->sync_headers( $filenum );
     }
   }
 
@@ -291,6 +306,9 @@ array since the file() method could do extra processing of the
 string (especially when setting the value, for example the automatic
 deletion of temporary files).
 
+The first time a filename is stored the name will also be stored in
+C<raw()> if no previous entries have been made in C<raw>.
+
 =cut
 
 sub files {
@@ -307,6 +325,9 @@ sub files {
 
     # Store the new versions
     @{ $self->{Files} } = @_;
+
+    # Also in raw if raw is empty
+    $self->raw( @{ $self->{Files} } ) unless defined $self->raw;;
 
     # unset noKeep flags
     for my $i (1..scalar(@_)) {
@@ -329,6 +350,20 @@ sub files {
     # In a scalar context, return the reference to the array
     return $self->{Files};
   }
+}
+
+=item B<nfiles>
+
+Number of files associated with the current state of the object and
+stored in file(). This method lets the caller know whether an
+observation has generated multiple output files for a single input.
+
+=cut
+
+sub nfiles {
+  my $self = shift;
+  my $num = $#{$self->files} + 1;
+  return $num;
 }
 
 =item B<fits>
@@ -552,12 +587,21 @@ This method returns the first raw data file if called in scalar
 context, or a list of all the raw data files if called in list
 context.
 
+Populated automatically the first time the C<files> method is used (or during
+initial object configuration).
+
 =cut
 
 sub raw {
   my $self = shift;
-  if (@_) { $self->{RawName} = \@_; }
-  return wantarray ? @{$self->{RawName}} : $self->{RawName}->[0];
+  if (@_) { @{$self->{RawName}} = @_; }
+  if (wantarray) {
+    return @{$self->{RawName}};
+  } else {
+    # do not initialise the first element so take copy
+    my @raw = @{$self->{RawName}};
+    return $raw[0];
+  }
 }
 
 =item B<nokeep>
@@ -910,6 +954,28 @@ sub collate_headers {
   return $header;
 }
 
+=item B<sync_headers>
+
+This method is used to synchronize FITS headers with information
+stored in e.g. the World Coordinate System.
+
+  $Frm->sync_headers;
+  $Frm->sync_headers(1);
+
+This method takes one optional parameter, the index of the file to
+sync headers for. This index starts at 1 instead of 0.
+
+Headers are only synced if the value returned by C<allow_header_sync>
+is true.
+
+=cut
+
+sub sync_headers {
+  my $self = shift;
+  return unless $self->allow_header_sync;
+  warn "Stub sync_headers does nothing. Please inherit from BaseNDF or BaseFITS";
+}
+
 =item B<calc_orac_headers>
 
 This method calculates header values that are required by the
@@ -1022,6 +1088,7 @@ a reference to an array.
 
 sub configure {
   my $self = shift;
+  use Data::Dumper; print Dumper(\@_);
 
   # If two arguments (prefix and number) 
   # have to find the raw filename first

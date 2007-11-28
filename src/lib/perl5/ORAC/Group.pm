@@ -50,6 +50,67 @@ use base qw/ ORAC::BaseFile /;
 
 use File::Spec;
 
+my @ORAC_INTERNAL_HEADERS = qw/
+                               AIRMASS_START
+                               AIRMASS_END
+                               CAMERA_NUMBER
+                               CHOP_ANGLE
+                               CHOP_THROW
+                               CONFIGURATION_INDEX
+                               DATA_UNITS
+                               DEC_BASE
+                               DEC_SCALE
+                               DEC_TELESCOPE_OFFSET
+                               DETECTOR_BIAS
+                               DETECTOR_INDEX
+                               DETECTOR_READ_TYPE
+                               EQUINOX
+                               EXPOSURE_TIME
+                               FILTER
+                               GAIN
+                               GRATING_DISPERSION
+                               GRATING_NAME
+                               GRATING_ORDER
+                               GRATING_WAVELENGTH
+                               INSTRUMENT
+                               NSCAN_POSITIONS
+                               NUMBER_OF_EXPOSURES
+                               NUMBER_OF_JITTER_POSITIONS
+                               NUMBER_OF_MICROSTEP_POSITIONS
+                               NUMBER_OF_OFFSETS
+                               NUMBER_OF_READS
+                               OBJECT
+                               OBSERVATION_MODE
+                               OBSERVATION_NUMBER
+                               OBSERVATION_TYPE
+                               POLARIMETRY
+                               RA_BASE
+                               RA_SCALE
+                               RA_TELESCOPE_OFFSET
+                               RECIPE
+                               ROTATION
+                               SCAN_INCREMENT
+                               SLIT_ANGLE
+                               SLIT_NAME
+                               SPEED_GAIN
+                               STANDARD
+                               TELESCOPE
+                               UTDATE
+                               UTEND
+                               UTSTART
+                               WAVEPLATE_ANGLE
+                               X_DIM
+                               Y_DIM
+                               X_LOWER_BOUND
+                               X_REFERENCE_PIXEL
+                               X_UPPER_BOUND
+                               Y_LOWER_BOUND
+                               Y_REFERENCE_PIXEL
+                               Y_UPPER_BOUND
+                               X_APERTURE
+                               Y_APERTURE
+                              /;
+
 # Setup the object structure
 
 
@@ -72,6 +133,8 @@ name of the new group. The object identifier is returned.
    $Grp = new ORAC::Group;
    $Grp = new ORAC::Group("group_name");
 
+   $Grp = new ORAC::Group("group_name", $filename );
+
 The base class constructor should be invoked by sub-class constructors.
 If this method is called with the last argument as a reference to
 a hash it is assumed that this hash contains extra configuration
@@ -86,37 +149,40 @@ sub new {
   my $proto = shift;
   my $class = ref($proto) || $proto;
 
-  # Check last arg for a hash
-  my %subclass = ();
-  %subclass = %{ pop(@_) } if (ref($_[-1]) eq 'HASH');
+  # see if we have been given any arguments from subclass
+  my ($defaults, $args) = $class->_process_constructor_args({
+                                                             AllMembers => [],
+                                                             BadObsIndex => undef,
+                                                             Coadds => [],
+                                                             FileSuffix => undef,
+                                                             FixedPart => undef,
+                                                             Members => [],
+                                                             Name => undef,
+                                                            }, @_ );
+  return $class->SUPER::new( @$args, $defaults) ;
+}
 
-  # Define the initial state plus include any hash information
-  # from a sub-class
-  my $group = {
-	       AllMembers => [],
-	       BadObsIndex => undef,
-	       Coadds => [],
-	       File => undef,
-	       FileSuffix => undef,
-	       FixedPart => undef,
-	       Header => {},
-	       Members => [],
-	       Name => undef,
-	       RawName => undef,
-	       Recipe => undef,
-	       UHeader => {},
-	       %subclass,
-	      };
+=item B<configure>
 
-  bless($group, $class);
+Initialise the object.
 
-  # If an arguments are supplied then we can configure the object
-  # Currently the argument will simply be the group name (ID)
+=cut
 
-  $group->name(shift) if @_;
-  $group->raw(shift) if @_;
+sub configure {
+  my $self = shift;
+  my @args = @_;
 
-  return $group;
+  # Get the group name
+  my $name;
+  $name = shift(@args) if @args;
+
+  # use base class configure
+  $self->SUPER::configure( @args ) if @args;
+
+  # Store the group name (this will not be available 
+  $self->name( $name ) if defined $name;
+
+  return 1;
 }
 
 =item B<subgrp>
@@ -431,57 +497,6 @@ sub coadds {
 }
 
 
-=item B<file>
-
-Set or retrieve the filename associated with the
-reduced group.
-
-    $Grp->file("group_filename");
-    $group_file = $Grp->file;
-
-Currently only one filename can be associated with the group
-(although the method will accept, but ignore, a number supplied
-as first argument so as to provide compatibility with the
-display system).
-
-If raw() is undefined, it is set to this value when the filename is updated.
-
-=cut
-
-
-# The default file method should be able to accept numbers
-# If an integer is supplied then do nothing - simply return
-# current value. This is added here so that the Display system
-# can ask for multiple file names based on index - which
-# is used by the Frames in some cases (eg SCUBA, MICHELLE). The Display
-# sub-system does not distinguish between Groups and Frames
-# so the shared methods have to be supported on both.
-
-sub file {
-  my $self = shift;
-  if (@_) { 
-    my $arg = shift;
-    $self->{File} = $self->stripfname($arg)
-      unless ($arg =~ /^\d+$/ && $arg != 0); 
-    $self->raw($self->{File}) unless defined $self->raw;
-  }
-  return $self->{File};
-}
-
-=item B<files>
-
-Frame Compatibility method for setting and retrieving the group
-file. Calls the file method with a single argument.
-
-=cut
-
-sub files {
-  my $self = shift;
-  if (@_) {
-    $self->file( $_[0] );
-  }
-  return $self->file;
-}
 
 =item B<filesuffix>
 
@@ -492,7 +507,6 @@ reduced group.
     $group_file = $Grp->filesuffix;
 
 =cut
-
 
 sub filesuffix {
   my $self = shift;
@@ -574,24 +588,6 @@ sub name {
   return $self->{Name};
 }
 
-=item B<raw>
-
-This method returns (or sets) the name of the raw data file
-associated with this object. In the context of a group, it is
-the name of the group file before any group level processing is
-done.
-
-  $Grp->raw("raw_data");
-  $filename = $Grp->raw;
-
-=cut
-
-sub raw {
-  my $self = shift;
-  if (@_) { $self->{RawName} = shift; }
-  return $self->{RawName};
-}
-
 =back
 
 =head2 General methods
@@ -600,105 +596,6 @@ The following methods are provided for manipulating B<ORAC::Group>
 objects:
 
 =over 4
-
-=item B<calc_orac_headers>
-
-This method calculates header values that are required by the
-pipeline by using values stored in the header.
-
-Required ORAC extensions are:
-
-ORACTIME: should be set to a decimal time that can be used for
-comparing the relative start times of frames. For IRCAM this
-number is decimal hours, for SCUBA this number is decimal
-UT days.
-
-ORACUT: This is the UT day of the frame in YYYYMMDD format.
-
-This method should be run after a header is set. Currently the header()
-method calls this whenever it is updated.
-
-The base class automatically generates the ORAC_ headers and 
-should be invoked by sub-classes.
-
-=cut
-
-sub calc_orac_headers {
-  my $self = shift;
-
-  my %new = ();  # Hash containing the derived headers
-
-  # Now create all the ORAC_ headers
-  # go through an array of headers and translate the
-  # ones we can find with associated methods
-  my @ORAC_ = ( qw/
-                   AIRMASS_START
-                   AIRMASS_END
-                   CHOP_ANGLE
-                   CHOP_THROW
-                   CONFIGURATION_INDEX
-                   DEC_BASE
-                   DEC_SCALE 
-                   DEC_TELESCOPE_OFFSET
-                   DETECTOR_BIAS
-                   DETECTOR_INDEX
-                   DETECTOR_READ_TYPE
-                   EQUINOX
-                   EXPOSURE_TIME 
-                   FILTER 
-                   GAIN
-                   GRATING_DISPERSION
-                   GRATING_NAME
-                   GRATING_ORDER
-                   GRATING_WAVELENGTH
-                   NSCAN_POSITIONS
-                   NUMBER_OF_EXPOSURES
-                   NUMBER_OF_OFFSETS 
-                   NUMBER_OF_READS
-                   OBJECT 
-                   OBSERVATION_MODE
-                   OBSERVATION_NUMBER
-                   OBSERVATION_TYPE 
-                   RA_BASE 
-                   RA_SCALE
-                   RA_TELESCOPE_OFFSET
-                   ROTATION 
-                   SCAN_INCREMENT
-                   SLIT_ANGLE
-                   SLIT_NAME
-                   SPEED_GAIN 
-                   STANDARD
-                   TELESCOPE
-                   UTDATE
-                   UTEND 
-                   UTSTART
-                   WAVEPLATE_ANGLE
-                   X_DIM
-                   Y_DIM
-                   X_LOWER_BOUND
-                   X_REFERENCE_PIXEL
-                   X_UPPER_BOUND
-                   Y_LOWER_BOUND
-                   Y_REFERENCE_PIXEL
-                   Y_UPPER_BOUND
-             /);
-
-  # Loop over all the headers
-  # Do nothing if a translation method does not exist
-  # This makes it safe for everyone
-  for my $key ( @ORAC_ ) {
-    my $method = "_to_$key";
-    #print "Trying method $method\n";
-    if ($self->can($method)) {
-      #print "Running method $method\n";
-      # This returns a single value
-      $new{"ORAC_$key"} = $self->$method();
-      $self->uhdr("ORAC_$key", $new{"ORAC_$key"});
-    }
-  }
-
-  return %new;
-}
 
 =item B<check_membership>
 
@@ -1211,6 +1108,9 @@ Set the tag in each of the members.
 
 Runs the C<tagset> method on each of the member frames.
 
+Note that $Grp->tagset() is used for the group filenames
+not the input files from Frame objects.
+
 =cut
 
 sub membertagset {
@@ -1227,6 +1127,9 @@ sub membertagset {
 Run the C<tagretrieve()> method for each of the members.
 
   $Grp->membertagretrieve
+
+Note that $Grp->tagretrieve() is used for the group filenames
+not the input files from Frame objects.
 
 =cut
 
@@ -1407,20 +1310,28 @@ sub gui_id {
 
 }
 
-=item B<nfiles>
+=back
 
-This method is used by the display system to determine the
-number of files to display. Since the Group base class can only
-ever contain one file name (as returned by file()) this method
-always returns a 1.
+=begin __PRIVATE__
+
+=head1 PRIVATE METHODS
+
+=over 4
+
+=item B<_orac_internal_headers>
+
+List of headers to be used for internal header translation (when not
+using Astro::FITS::HdrTrans)
 
 =cut
 
-sub nfiles {
-  return 1;
+sub _orac_internal_headers {
+  return @ORAC_INTERNAL_HEADERS;
 }
 
 =back
+
+=end __PRIVATE__
 
 =head1 SEE ALSO
 
