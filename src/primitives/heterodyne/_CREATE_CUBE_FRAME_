@@ -137,9 +137,9 @@ if( defined( $Grp->uhdr( "MAKECUBE_PARAMETERS" ) ) ) {
 
   $params = $Grp->uhdr( "MAKECUBE_PARAMETERS" );
 
-  if( defined( $Grp->uhdr( "REFRA" ) ) && defined( $Grp->uhdr( "REFDEC" ) ) ) {
-    $params .= " reflon='" . $Grp->uhdr( "REFRA" ) . "'";
-    $params .= " reflat='" . $Grp->uhdr( "REFDEC" ) . "'";
+  if( defined( $Grp->uhdr( "REFLAT" ) ) && defined( $Grp->uhdr( "REFLON" ) ) ) {
+    $params .= " reflat='" . $Grp->uhdr( "REFLAT" ) . "'";
+    $params .= " reflon='" . $Grp->uhdr( "REFLON" ) . "'";
   }
 
 } else {
@@ -206,11 +206,6 @@ if( defined( $Grp->uhdr( "MAKECUBE_PARAMETERS" ) ) ) {
   if( $pointing ) {
     $params .= " system=azel";
   }
-
-  # If we have a lower sideband observation and have to restrict the
-  # frequency axis, then we'll need to tell makecube to flip around
-  # the upper and lower bounds.
-  my $lsb = ( $Frm->hdr("OBS_SB") =~ /lsb/i );
 
   orac_print " Determining size of output cube...";
 
@@ -291,7 +286,7 @@ if( defined( $Grp->uhdr( "MAKECUBE_PARAMETERS" ) ) ) {
     # call) Autogrid is required because without it the pixel grid is
     # not positioned in an optimal way. (and the fractional pixel
     # shift is not stored in an output parameter at present).
-    $params .= " autogrid crota=$crota spread=$spread";
+    $params .= " crota=$crota spread=$spread";
 
     if (@pixsize > 1) {
       $params .= " pixsize=[".join(",",@pixsize) ."] ";
@@ -374,6 +369,7 @@ if( $ntile > 1 ) {
 
   orac_print " $ntile cubes formed: ";
 
+
   $Frm->files( @files );
   my $filestring = join ", ", @files;
   orac_print( "$filestring\n" );
@@ -387,15 +383,47 @@ if( $ntile > 1 ) {
   orac_print( "Cube formed in $outfile.\n" );
 }
 
-# Retrieve and set the Group RefRA/RefDec if they're not already set.
-if( ! defined( $Grp->uhdr( "REFRA" ) ) ) {
+# Retrieve and set the Group REFLAT/REFLON if they're not already set.
+if( ! defined( $Grp->uhdr( "REFLAT" ) ) ) {
   my $ndf = $Frm->file( 1 );
-  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$ndf mode=get name=RefRA" );
-  ( $ORAC_STATUS, my $refra ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
-  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$ndf mode=get name=RefDec" );
-  ( $ORAC_STATUS, my $refdec ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
-  $Grp->uhdr( "REFRA", $refra );
-  $Grp->uhdr( "REFDEC", $refdec );
+
+  # Determine which axis is latitude and which is longitude. Subtract
+  # 1 from these to turn them into Perl array indices.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$ndf mode=get name=LatAxis" );
+  ( $ORAC_STATUS, my $lataxis ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
+  my $plataxis = $lataxis - 1;
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$ndf mode=get name=LonAxis" );
+  ( $ORAC_STATUS, my $lonaxis ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
+  my $plonaxis = $lonaxis - 1;
+
+  # Retrieve the current format for the two axes, then set the format
+  # to 'dms.4' for the latitude axis and 'bdms.4' for the longitude
+  # axis to get some decent precision.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$ndf mode=get name=Format(1)" );
+  ( $ORAC_STATUS, my $format1 ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$ndf mode=get name=Format(2)" );
+  ( $ORAC_STATUS, my $format2 ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
+  my $latformat = "dms.4";
+  my $lonformat = "hms.4";
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$ndf mode=set name=Format($lataxis) newval=$latformat" );
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$ndf mode=set name=Format($lonaxis) newval=$lonformat" );
+
+  # Retrieve the SkyRef position and store it in the Grp uhdr. This is
+  # of the form 'dd:mm:ss.ssss, dd:mm:ss.ssss', so split on commas.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$ndf mode=get name=SkyRef" );
+  ( $ORAC_STATUS, my $skyref ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
+  my @skyref = split /, /, $skyref;
+  my $reflat = $skyref[$plataxis];
+  $reflat =~ s/ /:/g;
+  my $reflon = $skyref[$plonaxis];
+  $reflon =~ s/ /:/g;
+  $Grp->uhdr( "REFLAT", $reflat );
+  $Grp->uhdr( "REFLON", $reflon );
+
+  # Set the axis formats back to what they were.
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$ndf mode=set name=Format(1) newval=$format1" );
+  $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$ndf mode=set name=Format(2) newval=$format2" );
+
 }
 
 # Display.
