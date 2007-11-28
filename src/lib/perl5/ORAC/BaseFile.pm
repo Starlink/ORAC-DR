@@ -1088,7 +1088,6 @@ a reference to an array.
 
 sub configure {
   my $self = shift;
-  use Data::Dumper; print Dumper(\@_);
 
   # If two arguments (prefix and number) 
   # have to find the raw filename first
