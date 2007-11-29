@@ -30,7 +30,7 @@ the first image in the frame object is chosen as reference.
 
 =over 4
 
-=item SINGLESTEP
+=item B<SINGLESTEP>
 
 A flag to determine whether to perform the alignment and mosaicking in
 one step using WCSMOSAIC. Default is 1 (Yes). If set to 0, then the
@@ -38,7 +38,7 @@ following argument MUST be set. Note that the values of the METHOD and
 REBIN parameters are passed on to the primitives called if SINGLESTEP
 is 0.
 
-=item METHOD
+=item B<METHOD>
 
 Keyword specifying the method for determing how the output pixels are
 populated. The default is nearest-neighbour resampling
@@ -46,31 +46,31 @@ populated. The default is nearest-neighbour resampling
 further details. The recommended choices are C<nearest>, C<bilinear>,
 ir C<sincsinc>.
 
-=item REBIN
+=item B<REBIN>
 
 A flag to determine whether to rebin or resample. Default is
 resample. See the WCSMOSAIC/WCSALIGN documentation for further
 information.
 
-=item SKYALIGN
+=item B<SKYREF>
 
 A flag to denote whether to align the images to a celestial coordinate
 frame. The default is 0 (false) and the images will be aligned with
 either the group file if it exists or the first image in the Frame.
 
-=item FRAME
+=item B<FRAME>
 
 Celestial frame for reference image. No default but not used if
 SKYALIGN is false.
 
-=item COMBINE
+=item B<COMBINE>
 
 The method to be used to combine the images. In principle could be any
 value supported by MAKEMOS (see MAKEMOS documentation for further
 details). Currently, only MEAN or MEDIAN are supported. MEDIAN is the
 default.
 
-=item VERBOSE
+=item B<VERBOSE>
 
 A flag to denote whether the primitive should issue verbose
 information messages. Default is true (1).
@@ -141,14 +141,21 @@ my $verbose = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{VERBOSE} &&
                defined $_ALIGN_AND_MOSAIC_SUBARRAY_{VERBOSE}) ?
                $_ALIGN_AND_MOSAIC_SUBARRAY_{VERBOSE} : 1;
 
-# Placeholder
-my $skyalign = 0;
+# Are we aligning images in a SKY frame? Default to yes.
+my $skyalign = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{SKYREF} &&
+	       defined $_ALIGN_AND_MOSAIC_SUBARRAY_{SKYREF}) ?
+               $_ALIGN_AND_MOSAIC_SUBARRAY_{SKYREF} : 1;
 
 # If a single step, then check version of KAPPA is new enough
 if (starversion_lt('kappa', 'V1.5')) {
   $singlestep = 0;
   orac_warn "Kappa version does not support WCSMOSAIC, falling back on dual-step method";
 }
+
+# Determine reference image for aligning all images to. Use default
+# coordinate frame
+_GET_REFERENCE_IMAGE_ SKYREF=$skyalign VERBOSE=$verbose
+my $refimage = $_GET_REFERENCE_IMAGE_{REFIMAGE};
 
 # Check to see if we're doing this all in one step
 if ($singlestep) {
@@ -161,7 +168,8 @@ if ($singlestep) {
     # Of course, now we should ignore everything else...
   }
 
-  orac_print("Aligning and mosaicking subarray images with WCSMOSAIC \n");
+  orac_print("Aligning and mosaicking subarray images with WCSMOSAIC \n") 
+    if $verbose;
 
   # Set the WLIM parameter for WCSMOSAIC
   my $wlim = 0.2;
@@ -172,46 +180,39 @@ if ($singlestep) {
   # Array of output filenames to store in Frame object on completion
   my @out;
 
-  # Determine reference image for aligning all images to. If SKYALIGN
-  # is set, then create a reference image in the specified Celestial
-  # coordinate frame.
-  my $refimage;
-  if ( $skyalign ) {
-    # Set the output coordinate frame
-    my $celframe = "EQUATORIAL";# placeholder
-    _CREATE_REFERENCE_IMAGE_ SYSTEM=$celframe VERBOSE=1
-    $refimage = $_CREATE_REFERENCE_IMAGE_{REFIMAGE};
-  } else {
-    # if there's a Grp file, use that
-    if ($Grp->file_exists) {
-      $refimage = $Grp->file;
-    } else {
-      # Last resort use the first file in the current Frm
-      $refimage = $Frm->file(1);
-    }
-  }
-
   # Do we have sub-headers? If not, then we have just 4 (or
   # N_WORKING_SUBARRAYS) images to mosaic
   if ( defined $Frm->hdr->{SUBHEADERS}->[0]->{SEQSTART}  || 
        defined $Frm->hdr->{SUBHEADERS}->[0]->{NSUBSCAN} ) {
     # Hash to store each SEQSTART/NSUBSCAN combination as appropriate
-    # images are mosaicked
-    my %commonfiles;
+    # images are mosaicked, plus an indexing hash to associate groups
+    # of related files with the file index.
+    my (%commonfiles, %indxr);
 
     # Loop over number of files to store associations
+    my $j = 0;
     for my $i (1..$nfiles) {
-      my $seqstart = $Frm->hdrval('SEQSTART',0);
-      my $nsubscan = $Frm->hdrval('NSUBSCAN',0);
-      # Define a unique identified key from nsubscan and seqstart
-      push @{ $commonfiles{$seqstart."_".$nsubscan} }, $Frm->file($i);
+      my $seqstart = $Frm->hdrval('SEQSTART',$i-1);
+      my $nsubscan = $Frm->hdrval('NSUBSCAN',$i-1);
+      # Define a unique identified key from subscan number and seqstart
+      my $commonkey = $nsubscan."_".$seqstart;
+      push @{ $commonfiles{$commonkey} }, $Frm->file($i);
+      # Now we need a way to link the array of common files to the
+      # correct file name for creating the output files. Do this with
+      # another hash with the same keys as above with file indices as
+      # values. This takes advantage of how the files are stored in
+      # the Frm and ensures we match up files correctly.
+      if (@{ $commonfiles{$commonkey} } == 1) {
+	$j++;
+	$indxr{$commonkey} = $j;
+      }
     }
 
-    # Loop over groups of files to mosaic them
-    foreach my $arraygrp ( keys %commonfiles ) {
-      # Note this collapses all files into the first one: should really
-      # keep different nsubscan files separate
-      my ($in, $out) = $Frm->inout('_arr');
+    # Loop over groups of files to mosaic them - sort to preserve time
+    # order (KLUDGE: should sort on TIME not just on index)
+    foreach my $arraygrp ( sort { $indxr{$a} <=> $indxr{$b} } keys %indxr ) {
+      # For deciding the output file name 
+      my ($in, $out) = $Frm->inout('_arr',$indxr{$arraygrp});
       my $intmp = new ORAC::TempFile;
       my $numingrp = scalar( @{ $commonfiles{$arraygrp} } );
       # Write filenames into temp file
@@ -256,6 +257,6 @@ if ($singlestep) {
 
   # Call other primitives
   orac_print("Aligning and mosaicking subarray images in two stages \n");
-  _ALIGN_ARRAYS_  METHOD=$method REBIN=$rebin
+  _ALIGN_ARRAYS_  METHOD=$method REBIN=$rebin REFIMAGE=$refimage
   _MAKE_MOSAIC_FRAME_ COMBINE=$combine
 }
