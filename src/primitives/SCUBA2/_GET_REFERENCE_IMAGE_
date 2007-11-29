@@ -1,0 +1,124 @@
+#! -*-perl-*-
+
+=head1 NAME
+
+_GET_REFERENCE_IMAGE_ - Determine the name of a reference image for alignment to a common coordinate frame
+
+=head1 SYNOPSIS
+
+ _GET_REFERENCE_IMAGE_ SKYREF=1 COORD_FRAME=ICRS
+
+=head1 DESCRIPTION
+
+This primitive determines the name of a reference image to be used in
+aligning images to a common coordinate system. The name of the current
+Grp file is returned if one exists, else the Grp uhdr is queried for
+the name of a suitable reference. If none exists and the user requests
+alignment in a SKY frame then C<_CREATE_REFERENCE_IMAGE_> is called to
+create one. In all other cases the first image in the frame object is
+chosen as reference.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<SKYREF>
+
+A flag to denote whether to align the images to a celestial coordinate
+frame. The default is 0 (false) and the images will be aligned with
+either the group file if it exists or the first image in the Frame.
+
+=item B<COORD_FRAME>
+
+Celestial frame for reference image. No default but not used if
+SKYREF is false.
+
+=item B<VERBOSE>
+
+A flag to denote whether the primitive should issue verbose
+information messages. Default is 0 (false).
+
+=back
+
+=head1 EXTERNAL ALGORITHMS
+
+=over 4
+
+=item Starlink applications
+
+KAPPA WCSATTRIB
+
+=item Other primitives
+
+_CREATE_REFERENCE_IMAGE_
+
+=back
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2007 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
+=cut
+
+# Should I be verbose? (default to no)
+my $verbose = (exists $_GET_REFERENCE_IMAGE_{VERBOSE} &&
+               defined $_GET_REFERENCE_IMAGE_{VERBOSE}) ?
+               $_GET_REFERENCE_IMAGE_{VERBOSE} : 0;
+
+my $refimage;
+# If there's a Grp file, use that
+if ($Grp->file_exists) {
+  $refimage = $Grp->file;
+} elsif ( $Grp->uhdr("REFIMAGE") ) {
+  # Or use the current group reference image
+  $refimage = $Grp->uhdr("REFIMAGE");
+} else {
+  # OK so there's no reference image yet. Should we create one in a
+  # SKY frame? Default to yes.
+  my $skyalign = (exists $_GET_REFERENCE_IMAGE_{SKYREF} &&
+		  defined $_GET_REFERENCE_IMAGE_{SKYREF}) ?
+		  $_GET_REFERENCE_IMAGE_{SKYREF} : 1;
+
+  if ( $skyalign ) {
+    # Output mosaic coordinate frame
+    my $cosys_out = (exists $_GET_REFERENCE_IMAGE_{COORD_FRAME} &&
+		     defined $_GET_REFERENCE_IMAGE_{COORD_FRAME}) ? 
+		     lc($_GET_REFERENCE_IMAGE_{COORD_FRAME}) : ""; 
+    # If not set, just use the current system
+    if ( $cosys_out eq "" ) {
+      my $firstfile = $Frm->file(1);
+      $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$firstfile mode=get name=system");
+      (my $ORAC_STATUS, $cosys_out) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+    }
+    # Set the output coordinate frame: leave PIXEL_SCALE unset to use
+    # defaults
+    _CREATE_REFERENCE_IMAGE_ SYSTEM=$cosys_out VERBOSE=1
+    $refimage = $_CREATE_REFERENCE_IMAGE_{REFIMAGE};
+  } else {
+    # Last resort use the first file in the current Frm
+    $refimage = $Frm->file(1);
+  }
+}
+
+$_GET_REFERENCE_IMAGE_{REFIMAGE} = $refimage;
+
