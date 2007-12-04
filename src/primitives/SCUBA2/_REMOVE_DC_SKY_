@@ -117,14 +117,19 @@ if ( $method eq "MEAN" ) {
 }
 
 # Create a log file if necessary
-my $skylog;
+my ($skylog, $statlog);
 if ( $uselog ) {
   my $time = gmtime();
-  # Peak fluxes
+  # DC Sky
   $skylog = new ORAC::LogFile("log.sky");
-  $skylog->header("Sky properties log file - created on $time",
-		  "\n#  ID      Time        Filter    DC       Slope  PA  Seeing   El  CSO",
-		  "-----------------------------------------------------------------------");
+  $skylog->header("#Sky properties log file - created on $time",
+		  "#\n#  ID      Time        Filter    DC       Slope  PA  Seeing   El  CSO",
+		  "#-----------------------------------------------------------------------");
+  # Other statistics
+  $statlog = new ORAC::LogFile("log.stats");
+  $statlog->header("#Statistics log file - created on $time",
+		  "#\n#  ID      Time        Filter    Sigma  Seeing   El  CSO",
+		  "#-----------------------------------------------------------------------");
 }
 
 my @out;
@@ -135,7 +140,7 @@ for my $i (1..$Frm->nfiles) {
   _FIND_IMAGE_STATISTICS_ IMAGE=$Frm->file($i) VERBOSE=0 HISTOGRAM=$histo HISTAT=$histat
   my $sky = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$method};
   my $histomode = $_FIND_IMAGE_STATISTICS_{HISTOMODE};
-
+  my $sigma = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
   # Note that if things went wrong, the following has the effect of
   # permanently ignoring the current file. If something went wrong
   # computing the statistics, it may indicate a problem with the data,
@@ -146,7 +151,7 @@ for my $i (1..$Frm->nfiles) {
   if ( $histo && !$histomode ) {
     orac_warn "No valid pixels in image, unable to subtract sky with method=$method\n";
 
-  } elsif ( !$histo && !$histat && ($_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA} == 0.0) ) {
+  } elsif ( !$histo && !$histat && ($sigma == 0.0) ) {
     # Check that SIGMA was not set to zero if STATS was used
     orac_warn "Invalid result from STATS (sigma = 0): will not subtract the sky from current file (".$Frm->file($i).")\n";
   } else {
@@ -179,6 +184,11 @@ for my $i (1..$Frm->nfiles) {
 					  $Frm->hdrval('SEEINGEN',-1)) );
       # Since this is a DC sky removal so sky slope and PA are both 0
       $skylog->addentry("$obsnum $time $filt $sky  0.00000   0.0  $see    $el $cso");
+      # Only write stats entry if sigma was valid
+      if ( $sigma > 0 ) {
+	$sigma = sprintf "%10.9f", $sigma;
+	$statlog->addentry("$obsnum $time $filt $sigma  $see    $el $cso");
+      }
     }
 
     # Store the new sky-subtracted output file
