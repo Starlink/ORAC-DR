@@ -177,35 +177,9 @@ my $makemos_method = (exists $_MAKE_MOSAIC_{MAKEMOS_METHOD} &&
 my $in;
 my $out;
 
-# Define the reference image
-my $refimage;
-# If there's a Grp file, use that
-if ($Grp->file_exists) {
-  $refimage = $Grp->file;
-} elsif ( $Cal->refimage ) {
-  # Or use the current group reference image
-  $refimage = $Cal->refimage;
-} else {
-  if ( $skyalign ) {
-    # Output mosaic coordinate frame
-    my $cosys_out = (exists $_MAKE_MOSAIC_{COORD_FRAME} &&
-		    defined $_MAKE_MOSAIC_{COORD_FRAME}) ? 
-		    lc($_MAKE_MOSAIC_{COORD_FRAME}) : ""; 
-    # If not set, just use the current system
-    if ( $cosys_out eq "" ) {
-      my $firstfile = $Frm->file(1);
-      $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$firstfile mode=get name=system");
-      (my $ORAC_STATUS, $cosys_out) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-    }
-    # Set the output coordinate frame: leave PIXEL_SCALE unset to use
-    # defaults
-    _CREATE_REFERENCE_IMAGE_ SYSTEM=$cosys_out VERBOSE=1
-    $refimage = $_CREATE_REFERENCE_IMAGE_{REFIMAGE};
-  } else {
-    # Last resort use the first file in the current Frm
-    $refimage = $Frm->file(1);
-  }
-}
+# Define the reference image. Use default coordinate frame
+_GET_REFERENCE_IMAGE_ SKYREF=$skyalign VERBOSE=$verbose
+my $refimage = $_GET_REFERENCE_IMAGE_{REFIMAGE};
 
 # Retrieve coordinate system for the reference image
 $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$refimage mode=get name=system");
@@ -426,8 +400,13 @@ if ( $makemos ) {
 } else {
   # WCSMOSAIC
   my $wlim = 0.2;
+  # Note that to get wcsmosaic to calculate a variance based on
+  # variances already present in the input files the genvar parameter
+  # must be set to FALSE.
+  my $weighting = ( $usegrp ) ? "genvar=false variance=true" : 
+    "genvar=true variance=true";
   my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
-    "genvar=true out=$out in=^".$moslist;
+    "out=$out in=^".$moslist." $weighting";
   $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
 }
 
