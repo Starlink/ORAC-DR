@@ -76,29 +76,57 @@ USA
 
 =cut
 
-my $coadd_mode = uc($_MAKE_MOSAIC_GROUP_{COADD_MODE} || 'STACKALL');
-
 # Should I be verbose (default to no)
 my $verbose = (exists $_MAKE_MOSAIC_GROUP_{VERBOSE} &&
                defined $_MAKE_MOSAIC_GROUP_{VERBOSE}) ?
                $_MAKE_MOSAIC_GROUP_{VERBOSE} : 0;
 
-# Do we want to use makemos?
-my $makemos = (exists $_MAKE_MOSAIC_GROUP_{MAKEMOS} &&
-	       defined $_MAKE_MOSAIC_GROUP_{MAKEMOS}) ?
-               $_MAKE_MOSAIC_GROUP_{MAKEMOS} : 0;
+# Are we waiting until the observation has finished
+my $wait = (exists $_MAKE_MOSAIC_GROUP_{WAIT} &&
+	    defined $_MAKE_MOSAIC_GROUP_{WAIT}) ?
+            $_MAKE_MOSAIC_GROUP_{WAIT} : 0;
 
-# Method for determining the output pixel values
-my $method; 
-# Make sure we pass in self-consistent values
-if ( $makemos ) {
-  $method = (exists $_MAKE_MOSAIC_GROUP_{METHOD} &&
-	     defined $_MAKE_MOSAIC_GROUP_{METHOD}) ? 
-             lc($_MAKE_MOSAIC_GROUP_{METHOD}) : "mean"; 
-} else {
-  $method = (exists $_MAKE_MOSAIC_GROUP_{METHOD} &&
-	     defined $_MAKE_MOSAIC_GROUP_{METHOD}) ? 
-             lc($_MAKE_MOSAIC_GROUP_{METHOD}) : "nearest"; 
+# Coordinate frame
+my $coframe =  (exists $_MAKE_MOSAIC_GROUP_{COORD_FRAME} &&
+	       defined $_MAKE_MOSAIC_GROUP_{COORD_FRAME}) ?
+               lc($_MAKE_MOSAIC_GROUP_{COORD_FRAME}) : undef;
+
+if ( !$wait || ($wait && $Frm->hdrval('OBSEND', -1)) ) {
+
+  # Do we want to use makemos?
+  my $makemos = (exists $_MAKE_MOSAIC_GROUP_{MAKEMOS} &&
+		 defined $_MAKE_MOSAIC_GROUP_{MAKEMOS}) ?
+                 $_MAKE_MOSAIC_GROUP_{MAKEMOS} : 0;
+
+  my $coadd_mode = uc($_MAKE_MOSAIC_GROUP_{COADD_MODE} || 'STACKALL');
+
+  # Set the coordinate frame
+  unless ( $coframe ) {
+    my $in = $Frm->file(1);
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=system");
+    (my $ORAC_STATUS, $coframe) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+  }
+
+  # Method for determining the output pixel values
+  my $method; 
+  # Make sure we pass in self-consistent values
+  if ( $makemos ) {
+    $method = (exists $_MAKE_MOSAIC_GROUP_{METHOD} &&
+	       defined $_MAKE_MOSAIC_GROUP_{METHOD}) ? 
+	       lc($_MAKE_MOSAIC_GROUP_{METHOD}) : "mean"; 
+  } else {
+    $method = (exists $_MAKE_MOSAIC_GROUP_{METHOD} &&
+	       defined $_MAKE_MOSAIC_GROUP_{METHOD}) ? 
+	       lc($_MAKE_MOSAIC_GROUP_{METHOD}) : "nearest"; 
+  }
+
+  orac_print "Making GROUP mosaic\n";
+  # Unset the NewImage flag
+  $Grp->uhdr("NEWIMAGE",0);
+
+  _MAKE_MOSAIC_ USEGRP=1 MAKEMOS=$makemos METHOD=$method COADD_MODE=$coadd_mode VERBOSE=$verbose COORD_FRAME=$coframe
+
+  # Tell the display system that there's a new image to display
+  $Grp->uhdr("NEWIMAGE",1);
+
 }
-
-_MAKE_MOSAIC_ USEGRP=1 MAKEMOS=$makemos METHOD=$method COADD_MODE=$coadd_mode VERBOSE=$verbose
