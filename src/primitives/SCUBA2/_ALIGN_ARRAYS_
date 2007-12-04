@@ -36,12 +36,10 @@ C<sincsinc>.
 A flag to determine whether to rebin or resample. Default is 0
 (resample). See the WCSALIGN documentation for further information.
 
-=item B<REF>
+=item B<REFIMAGE>
 
 The name of the reference image to use for alignment in the SKY
-domain. If left blank, the primitive will use the Grp file if it
-exists, or the stored reference image in the Cal object, or lastly
-just use the first file in the Frm.
+domain. If left blank, the primitive will call _GET_REFERENCE_IMAGE_.
 
 =item B<FRAME_OBJ>
 
@@ -52,8 +50,15 @@ current Frm is used.
 
 =head1 ALGORITHMS
 
-Uses KAPPA WCSALIGN. This primitive is currently a very general
-implementation.
+=over 4
+
+=item Starlink applications
+
+KAPPA WCSALIGN
+
+=item ORAC-DR primitives
+
+_GET_REFERENCE_IMAGE_
 
 =head1 FILE SUFFIX
 
@@ -98,9 +103,9 @@ my $method = (exists $_ALIGN_ARRAYS_{METHOD} &&
               lc($_ALIGN_ARRAYS_{METHOD}) : "nearest"; 
 
 # Set reference image if specified
-my $ref = (exists $_ALIGN_ARRAYS_{REFIMAGE} &&
-	   defined $_ALIGN_ARRAYS_{REFIMAGE}) ? 
-           $_ALIGN_ARRAYS_{REFIMAGE} : "";
+my $refimage = (exists $_ALIGN_ARRAYS_{REFIMAGE} &&
+		defined $_ALIGN_ARRAYS_{REFIMAGE}) ? 
+                $_ALIGN_ARRAYS_{REFIMAGE} : "";
 
 # Has the user passed in a Frame object?
 my $Frmobj = (exists $_ALIGN_ARRAYS_{FRAME_OBJ} &&
@@ -113,20 +118,13 @@ unless ( UNIVERSAL::isa($Frmobj, "ORAC::Frame") ) {
 }
 
 # If refimage not given then use Group file or first file in Frame
-if ( $ref eq "" ) {
-  if ($Grp->file_exists) {
-    $ref = $Grp->file;
-  } elsif ( $Cal->refimage) {
-    $ref = $Cal->refimage;
-  } else {
-    # Make reference NDF with correct astrometry for the tracking
-    # centre of the current observation
-    $ref = $Frmobj->file(1);
-  }
+if ( $refimage eq "" ) {
+  _GET_REFERENCE_IMAGE_ SKYREF=$skyalign VERBOSE=$verbose
+  $refimage = $_GET_REFERENCE_IMAGE_{REFIMAGE};
 }
 
 # Check if we have a moving object
-$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$ref mode=get name=system");
+$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$refimage mode=get name=system");
 my ($ORAC_STATUS, $system) = $Mon{ndfpack_mon}->get("wcsattrib","value");
 my $moving = ( uc($system) eq "GAPPT" ) ? 1 : 0;
 
@@ -152,7 +150,7 @@ for my $i (1..$nfiles) {
 
 orac_print("Aligning $nfiles images ... ");
 
-$Mon{kappa_mon}->obeyw("wcsalign","ref=$ref lbnd=! ubnd=! method=$method out=^". $outtmp->file ." in=^". $intmp->file);
+$Mon{kappa_mon}->obeyw("wcsalign","ref=$refimage lbnd=! ubnd=! method=$method out=^". $outtmp->file ." in=^". $intmp->file);
 
 # Register new file names
 $Frmobj->files( @out );
