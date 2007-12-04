@@ -105,10 +105,10 @@ my $uselog = (exists $_CALC_SKY_NOISE_{LOGFILE} &&
 	      defined $_CALC_SKY_NOISE_{LOGFILE}) ?
               $_CALC_SKY_NOISE_{LOGFILE} : 1;
 
-# Should I be verbose? (Default to yes)
+# Should I be verbose? (Default to no)
 my $verbose = (exists $_CALC_SKY_NOISE_{VERBOSE} && 
 	       defined $_CALC_SKY_NOISE_{VERBOSE}) ?
-               $_CALC_SKY_NOISE_{VERBOSE} : 1;
+               $_CALC_SKY_NOISE_{VERBOSE} : 0;
 
 # Set aperture radius - default is 20 arcsec
 my $radius = ( exists $_CALC_SKY_NOISE_{RADIUS} && 
@@ -131,14 +131,16 @@ if ($uselog) {
   my $time = gmtime();
   # Sky noise
   $noiselog = new ORAC::LogFile("log.noise");
-  $noiselog->header("Noise log file - created on $time",
-		    "\n#  Time       Filter  El     Noise     Sky     Seeing   CSO",
-		    "---------------------------------------------------------------"
+  $noiselog->header("#Noise log file - created on $time",
+		    "#\n#  Time       Filter  El     Noise     Sky     Seeing   CSO",
+		    "#---------------------------------------------------------------"
 		    );
 }
 
 # Determine if the user wants to use the current stacked Grp or Frm image
 my $Obj;
+# Flag to denote whether this primitive can be executed
+my $calcnoise = 0;
 my $group = defined( $_CALC_SKY_NOISE_{GROUP} ) ? 
   $_CALC_SKY_NOISE_{GROUP} : 0;
 if ( $in eq "" ) {
@@ -149,6 +151,11 @@ if ( $in eq "" ) {
   }
   if ( $Obj->nfiles == 1 ) {
     $in = $Obj->file;
+    if ( $Obj->file_exists ) {
+      $calcnoise = 1;
+    } else {
+      orac_warn "File $in does not exist: skipping this primitive\n" if $verbose;
+    }
   } else {
     orac_throw "Error: _CALC_SKY_NOISE_ must be run after images have been combined\n";
   }
@@ -157,170 +164,181 @@ if ( $in eq "" ) {
   $uselog = 0;
 }
 
-my ($maskbright, $minap, $var);
-my $catalogue;
-if ( $skymethod =~ /^ma/ ) {
-  # Find all of the sources in the current frame
-  _FIND_SOURCES_ IMAGE=$in
-  # Retrieve catalogue
-  $catalogue = $_FIND_SOURCES_{CATALOGUE};
-  if ( $catalogue->sizeof == 0 ) {
-    orac_warn "Unable to use chosen MASK method for sky noise estimation - no sources in catalogue\nFalling back on default method `variance'\n";
+# Proceed if all's well
+if ( $calcnoise ) {
+  my ($maskbright, $minap, $var);
+  my $catalogue;
+  if ( $skymethod =~ /^ma/ ) {
+    # Find all of the sources in the current frame
+    _FIND_SOURCES_ IMAGE=$in
+    # Retrieve catalogue
+    $catalogue = $_FIND_SOURCES_{CATALOGUE};
+    if ( $catalogue->sizeof == 0 ) {
+      orac_warn "Unable to use chosen MASK method for sky noise estimation - no sources in catalogue\nFalling back on default method `variance'\n";
+      $maskbright = 0;
+      $var = 1;
+    } else {
+      $maskbright = 1;
+    }
+  } elsif ( $skymethod =~ /^mi/ ) {
+    $minap = 1;
+  } elsif ( $skymethod =~ /^var/ ) {
+    $var = 1;
+  } else{
+    orac_warn "Unknown choice for parameter SKYMETHOD, $skymethod - falling back on default value of `variance'\n";
     $maskbright = 0;
     $var = 1;
-  } else {
-    $maskbright = 1;
+    $minap = 0;
   }
-} elsif ( $skymethod =~ /^mi/ ) {
-  $minap = 1;
-} elsif ( $skymethod =~ /^var/ ) {
-  $var = 1;
-} else{
-  orac_warn "Unknown choice for parameter SKYMETHOD, $skymethod - falling back on default value of `variance'\n";
-  $maskbright = 0;
-  $var = 1;
-  $minap = 0;
-}
-my $sigma;
-my $ORAC_STATUS;
-# 1) Mask out bright sources
-if ( $maskbright ) {
-  # Create ARD file
-  my $ard = new ORAC::TempFile;
-  if (starversion_gt('kappa','V0.18-0')) {
-    print {$ard->handle} "COFRAME(SKY,System=FK5)\n";
-  }
-  # Loop over all sources in image
-  print {$ard->handle} "(\n";
-  my $imax = $catalogue->sizeof;
-  for my $i ( 1 .. $imax ) {
-    my $source = $catalogue->starbyindex( $i - 1 );
-    # Retrieve Astro::Coords object associated with current source
-    my $coords = $source->coords;
-    my $ra = $coords->ra;
-    my $dec = $coords->dec;
-    # Now retrieve morphology
-    my $morph = $source->morphology;
-    # Position angle
-    my $pa = $morph->position_angle_world;
-    # Major/minor axes - make 50% larger
-    my $a = 7200.0 * $morph->major_axis_world;
-    my $b = 7200.0 * $morph->minor_axis_world;
-    # Elliptical aperture
-    print {$ard->handle} "ELLIPSE($ra, $dec, 00:00:$a, 00:00:$b, $pa )\n";
-  }
-  print {$ard->handle} ")\n";
-  $ard->handle->close;
-  # Create temporary output file for ardmask
-  my $outobj = new ORAC::TempFile;
-  my $out = $outobj->file;
-  # Name of ARD file
-  my $ardin = $ard->file;
-  my $ardargs;
-  if (starversion_lt('kappa','V0.18-0')) {
-    $ardargs = " cosys=data ";
-  } else {
-    $ardargs = " "; # in the ard file
-  }
-  # Mask out the bright sources
-  $Mon{kappa_mon}->obeyw("ardmask", "in=$in out=$out ardfile=$ardin $ardargs");
-  # Calculate statistics for the rest of the image
-  $Mon{kappa_mon}->obeyw("stats","ndf=$out");
-  ($ORAC_STATUS, $sigma) = $Mon{kappa_mon}->get("stats","sigma");
-} elsif ( $minap ) {
-  # 2) Systematically plonk down an aperture across the image
-  # Calc stats within each aperture: lowest std dev = sky noise
-  _GET_PIXEL_SCALE_ IMAGE=$in VERBOSE=1 UNITS=arcsec WANTMAP=1
+  my $sigma = undef;
+  my $ORAC_STATUS;
+  # 1) Mask out bright sources
+  if ( $maskbright ) {
+    # Create ARD file
+    my $ard = new ORAC::TempFile;
+    if (starversion_gt('kappa','V0.18-0')) {
+      print {$ard->handle} "COFRAME(SKY,System=FK5)\n";
+    }
+    # Loop over all sources in image
+    print {$ard->handle} "(\n";
+    my $imax = $catalogue->sizeof;
+    for my $i ( 1 .. $imax ) {
+      my $source = $catalogue->starbyindex( $i - 1 );
+      # Retrieve Astro::Coords object associated with current source
+      my $coords = $source->coords;
+      my $ra = $coords->ra;
+      my $dec = $coords->dec;
+      # Now retrieve morphology
+      my $morph = $source->morphology;
+      # Position angle
+      my $pa = $morph->position_angle_world;
+      # Major/minor axes - make 50% larger
+      my $a = 7200.0 * $morph->major_axis_world;
+      my $b = 7200.0 * $morph->minor_axis_world;
+      # Elliptical aperture
+      print {$ard->handle} "ELLIPSE($ra, $dec, 00:00:$a, 00:00:$b, $pa )\n";
+    }
+    print {$ard->handle} ")\n";
+    $ard->handle->close;
+    # Create temporary output file for ardmask
+    my $outobj = new ORAC::TempFile;
+    my $out = $outobj->file;
+    # Name of ARD file
+    my $ardin = $ard->file;
+    my $ardargs;
+    if (starversion_lt('kappa','V0.18-0')) {
+      $ardargs = " cosys=data ";
+    } else {
+      $ardargs = " "; # in the ard file
+    }
+    # Mask out the bright sources
+    $Mon{kappa_mon}->obeyw("ardmask", "in=$in out=$out ardfile=$ardin $ardargs");
+    # Calculate statistics for the rest of the image
+    $Mon{kappa_mon}->obeyw("stats","ndf=$out");
+    ($ORAC_STATUS, $sigma) = $Mon{kappa_mon}->get("stats","sigma");
+  } elsif ( $minap ) {
+    # 2) Systematically plonk down an aperture across the image
+    # Calc stats within each aperture: lowest std dev = sky noise
+    _GET_PIXEL_SCALE_ IMAGE=$in VERBOSE=1 UNITS=arcsec WANTMAP=1
 
-  # Retrieve bounds in pixel coords - note the implicit assumption
-  # that the NDF has 2 dimensions.
-  $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
-  ($ORAC_STATUS, my $xmin, my $ymin) = $Mon{ndfpack_mon}->get("ndftrace","lbound");
-  ($ORAC_STATUS, my $xmax, my $ymax) = $Mon{ndfpack_mon}->get("ndftrace","ubound");
+    # Retrieve bounds in pixel coords - note the implicit assumption
+    # that the NDF has 2 dimensions.
+    $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
+    ($ORAC_STATUS, my $xmin, my $ymin) = $Mon{ndfpack_mon}->get("ndftrace","lbound");
+    ($ORAC_STATUS, my $xmax, my $ymax) = $Mon{ndfpack_mon}->get("ndftrace","ubound");
 
-  # Calculate size of image and determine number of apertures to use
-  my $xsize = ($xmax - $xmin)*$_GET_PIXEL_SCALE_{RESULTS}->[0];
-  my $ysize = ($ymax - $ymin)*$_GET_PIXEL_SCALE_{RESULTS}->[1];
-  my $numxap = int($xsize / (2*$radius));
-  my $numyap = int($ysize / (2*$radius));
+    # Calculate size of image and determine number of apertures to use
+    my $xsize = ($xmax - $xmin)*$_GET_PIXEL_SCALE_{RESULTS}->[0];
+    my $ysize = ($ymax - $ymin)*$_GET_PIXEL_SCALE_{RESULTS}->[1];
+    my $numxap = int($xsize / (2*$radius));
+    my $numyap = int($ysize / (2*$radius));
 
-  my $dx = int(($xmax - $xmin)/$numxap);
-  my $dy = int(($ymax - $ymin)/$numyap);
+    my $dx = int(($xmax - $xmin)/$numxap);
+    my $dy = int(($ymax - $ymin)/$numyap);
 
-  # Pixel to SKY mapping
-  my $pixtosky = $_GET_PIXEL_SCALE_{MAPPING};
+    # Pixel to SKY mapping
+    my $pixtosky = $_GET_PIXEL_SCALE_{MAPPING};
 
-  # Should we set an upper limit on the number of apertures, say, 100?
-  my (@xpixels, @ypixels);
-  for my $i (1..$numxap) {
-    for my $j (1..$numyap) {
-      push ( @xpixels, $xmin + $i*$dx );
-      push ( @ypixels, $ymin + $j*$dy );
+    # Should we set an upper limit on the number of apertures, say, 100?
+    my (@xpixels, @ypixels);
+    for my $i (1..$numxap) {
+      for my $j (1..$numyap) {
+	push ( @xpixels, $xmin + $i*$dx );
+	push ( @ypixels, $ymin + $j*$dy );
+      }
+    }
+    # Convert pixel positions to sky positions in one call
+    (my $xsky, my $ysky) = $pixtosky->Tran2( \@xpixels, \@ypixels, 1);
+
+    # Initialize the minimum sky level to something large
+    my $minsky = 1.0e9;
+
+    # Calculate number of pixels within an aperture
+    my $npix = 3.1415926535 * $radius*$radius / 
+      ($_GET_PIXEL_SCALE_{RESULTS}->[0] * $_GET_PIXEL_SCALE_{RESULTS}->[1]);
+
+    # Now loop over number of apertures
+    use Astro::Coords;
+    for my $i (1..$numxap*$numyap) {
+      # Convert X, Y positions to sexagesimal string via an Astro::Coords object
+      my $coords = new Astro::Coords( ra => $xsky->[$i-1], dec => $ysky->[$i-1], 
+				      units => 'radians', type => 'J2000' );
+      my @xy = ( $coords->ra(format=>'s'), $coords->dec(format=>'s') );
+#    my @xy = ($xsky->[$i-1], $ysky->[$i-1]);
+      _FIND_INTEGRATED_INTENSITY_ RADIUS=$radius IMAGE=$in XYPOS=\@xy VERBOSE=0
+	my $skynoise = $_FIND_INTEGRATED_INTENSITY_{SIGMA};
+      my $ngood = $_FIND_INTEGRATED_INTENSITY_{NUMGOOD};
+      $minsky = $skynoise if ( ($skynoise < $minsky) && ($ngood/$npix > 0.5) );
+    }
+
+    $sigma = $minsky;
+
+  } elsif ( $var ) {
+    # 3) Use the Variance component within the NDF as a measure of the noise
+    _FIND_VARIANCE_ IMAGE=$in COMP=err
+    $sigma = $_FIND_VARIANCE_{RESULT};
+    # Check if sigma is a BAD value
+    if ( $sigma == &NDF::VAL__BADD() ) {
+      undef $sigma;
     }
   }
-  # Convert pixel positions to sky positions in one call
-  (my $xsky, my $ysky) = $pixtosky->Tran2( \@xpixels, \@ypixels, 1);
 
-  # Initialize the minimum sky level to something large
-  my $minsky = 1.0e9;
+  if ( $sigma ) {
+    orac_print "Sigma = $sigma \n";
 
-  # Calculate number of pixels within an aperture
-  my $npix = 3.1415926535 * $radius*$radius / 
-    ($_GET_PIXEL_SCALE_{RESULTS}->[0] * $_GET_PIXEL_SCALE_{RESULTS}->[1]);
+    # Write info to log file if requested
+    if ( $uselog ) {
+      # UT string
+      my $time= sprintf "%12.7f", $Frm->hdrval('ORACTIME',0);
+      # Filter
+      my $filt= sprintf "%4s", $Frm->hdr('FILTER');
+      
+      # Get TAU from the header - should get from $Cal object?
+      my $cso = sprintf "%5.3f", 0.5*($Frm->hdrval('WVMTAUST', 0) + 
+				      $Frm->hdrval('WVMTAUEN',-1));
+      # Elevation
+      my $el = int ( 0.5 * ($Frm->hdrval('ELSTART',0) + 
+			    $Frm->hdrval('ELEND',-1) ) );
+      # Seeing
+      my $see = sprintf "%5.3f", ( 0.5 * ($Frm->hdrval('SEEINGST', 0) + 
+					  $Frm->hdrval('SEEINGEN',-1)) );
+      # Observation number
+      my $obsnum = sprintf "%05d", $Frm->hdr('OBSNUM');
+      # Noise
+      my $skynoise = sprintf "%10.9f", $sigma;
+      my $skylevel = 1.00;	# Placeholder
 
-  # Now loop over number of apertures
-  use Astro::Coords;
-  for my $i (1..$numxap*$numyap) {
-    # Convert X, Y positions to sexagesimal string via an Astro::Coords object
-    my $coords = new Astro::Coords( ra => $xsky->[$i-1], dec => $ysky->[$i-1], 
-				    units => 'radians', type => 'J2000' );
-    my @xy = ( $coords->ra(format=>'s'), $coords->dec(format=>'s') );
-#    my @xy = ($xsky->[$i-1], $ysky->[$i-1]);
-    _FIND_INTEGRATED_INTENSITY_ RADIUS=$radius IMAGE=$in XYPOS=\@xy VERBOSE=0
-    my $skynoise = $_FIND_INTEGRATED_INTENSITY_{SIGMA};
-    my $ngood = $_FIND_INTEGRATED_INTENSITY_{NUMGOOD};
-    $minsky = $skynoise if ( ($skynoise < $minsky) && ($ngood/$npix > 0.5) );
+      # Write the entry:
+      # UT, filter, El, Sky noise, Seeing, Sky level, tau225
+      $noiselog->addentry("$time  $filt    $el   $skynoise   $skylevel     $see   $cso");
+    }
+  } else {
+    orac_warn "No valid standard deviation found\n";
   }
 
-  $sigma = $minsky;
-
-} elsif ( $var ) {
-  # 3) Use the Variance component within the NDF as a measure of the noise
-  _FIND_VARIANCE_ IMAGE=$in COMP=err
-  $sigma = $_FIND_VARIANCE_{RESULT};
-}
-
-orac_print "Sigma = $sigma \n";
-
-# Write info to log file if requested
-if ( $uselog ) {
-  # UT string
-  my $time= sprintf "%12.3f", $Frm->hdrval('ORACTIME',0);
-  # Filter
-  my $filt= sprintf "%4s", $Frm->hdr('FILTER');
-
-  # Get TAU from the header - should get from $Cal object?
-  my $cso = sprintf "%5.3f", 0.5*($Frm->hdrval('WVMTAUST', 0) + 
-				  $Frm->hdrval('WVMTAUEN',-1));
-  # Elevation
-  my $el = int ( 0.5 * ($Frm->hdrval('ELSTART',0) + $Frm->hdrval('ELEND',-1) ) );
-  # Seeing
-  my $see = sprintf "%5.3f", ( 0.5 * ($Frm->hdrval('SEEINGST', 0) + 
-				      $Frm->hdrval('SEEINGEN',-1)) );
-
-  # Observation number
-  my $obsnum = sprintf "%05d", $Frm->hdr('OBSNUM');
-
-  my $skynoise = sprintf "%8.7f", $sigma;
-  my $skylevel = 1.00;	# Placeholder
-
-  # Write the entry:
-  # UT, filter, El, Sky noise, Seeing, Sky level, tau225
-  $noiselog->addentry("$time  $filt    $el   $skynoise   $skylevel     $see   $cso");
-}
-
-# If we are not logging these data to a file, store the noise in the
-# primitive hash
-unless ($uselog) {
-  $_CALC_SKY_NOISE_{SIGMA} = $sigma;
+  # If we are not logging these data to a file, store the noise in the
+  # primitive hash
+  unless ($uselog) {
+    $_CALC_SKY_NOISE_{SIGMA} = $sigma;
+  }
 }
