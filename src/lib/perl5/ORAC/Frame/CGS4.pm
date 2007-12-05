@@ -233,6 +233,53 @@ sub new {
 
 =over 4
 
+=item B<calc_orac_headers>
+
+This method calculates header values that are required by the pipeline
+by using values stored in the header. These required extensions are:
+
+ORACTIME: Decimal UT days.
+
+ORACUT: UT day in YYYYMMDD format.
+
+This method should be run after a header is set. Currently the
+readhdr() method calls this method whenever the header is updated.
+
+This method updates the Frame's hdr, and returns a hash containing the
+new keywords.
+
+=cut
+
+sub calc_orac_headers {
+  my $self = shift;
+
+  # Run the base class first since that does the ORAC_* headers.
+  my %new = $self->SUPER::calc_orac_headers;
+
+  # Grab the UT date.
+  my $utdate = defined( $self->hdr->{1}->{'IDATE'} ) ? $self->hdr->{1}->{'IDATE'}
+             : defined( $self->hdr->{'IDATE'} )      ? $self->hdr->{'IDATE'}
+             :                                         0;
+
+  # Grab the UT start time. This is in decimal hours, so we need to
+  # get it in decimal days by dividing by 24.
+  my $uttime = defined( $self->hdr->{1}->{'RUTSTART'} ) ? $self->hdr->{1}->{'RUTSTART'}
+             : defined( $self->hdr->{'RUTSTART'} )      ? $self->hdr->{'RUTSTART'}
+             :                                            0;
+  $uttime /= 24;
+
+  # ORACUT is just the UT date.
+  $self->hdr( "ORACUT", $utdate );
+  $new{'ORACUT'} = $utdate;
+
+  # ORACTIME is the date plus the time.
+  $self->hdr( "ORACTIME", $utdate + $uttime );
+  $new{'ORACTIME'} = $utdate + $uttime;
+
+  return %new;
+
+}
+
 =item B<configure>
 
 This method is used to configure the object. It is invoked
