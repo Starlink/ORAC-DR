@@ -108,7 +108,8 @@ sub _to_DEC_TELESCOPE_OFFSET {
   }
 
   my $ut = $hdr->{IDATE};
-  if( $ut < 20050315 ) {
+
+  if( defined( $ut ) && $ut < 20050315 ) {
     $return = $self->hdr->{DECOFF};
   } else {
     $return = $self->hdr->{TDECOFF};
@@ -138,7 +139,7 @@ sub _to_RA_TELESCOPE_OFFSET {
   }
 
   my $ut = $hdr->{IDATE};
-  if( $ut < 20050315 ) {
+  if( defined( $ut ) && $ut < 20050315 ) {
     $return = $self->hdr->{RAOFF};
   } else {
     $return = $self->hdr->{TRAOFF};
