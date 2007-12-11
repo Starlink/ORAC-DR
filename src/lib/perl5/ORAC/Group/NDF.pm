@@ -229,6 +229,10 @@ extension.
 sub file_exists {
   my $self = shift;
   my $file = $self->file;
+
+  # Strip anything after the first dot, in case extension is present.
+  $file =~ s/\..*$//;
+
   if (-e "$file.sdf") {
     return 1;
   } else {
