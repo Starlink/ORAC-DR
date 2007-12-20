@@ -41,6 +41,16 @@ information.
 Perform a syntax check on the recipe rather than writing the
 recipe contents to STDOUT.
 
+=item B<-listprim>
+
+When syntax checking, list the primitives that were used by the recipe.
+
+=item B<-mode>
+
+Some recipes make use of the observing mode to control which primitive
+should be read. This option allows the user to specify a mode that will
+be used for decision making.
+
 =back
 
 =head1 ENVIRONMENT
@@ -74,8 +84,22 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.edu<gt>
 
 =head1 COPYRIGHT
 
+Copyright (C) 2007 Science and Technology Facilities Council.
 Copyright (C) 2000-2001 Particle Physics and Astronomy Research Council.
 All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
@@ -86,19 +110,24 @@ use Getopt::Long;
 use ORAC::Recipe;
 use ORAC::Error qw / :try /;
 use ORAC::Constants qw / :status /;
+use ORAC::Frame;
 
 my %options = (
 	       "help" => 0,
 	       "man"  => 0,
 	       "debug" => 0,
 	       "syntax" => 0,
+               "listprim" => 0,
+               "mode" => undef,
 	      );
 
 GetOptions(\%options,
            "help",
            "man",
 	   "debug",
-	   "syntax"
+	   "syntax",
+           "listprim",
+           "mode=s",
           ) || pod2usage(2);
 
 pod2usage(1)  if ($options{help});
@@ -111,6 +140,11 @@ unless (@ARGV) {
 
 my $RecipeName = shift;
 
+my $Frm;
+if (defined $options{mode}) {
+  $Frm = ORAC::Frame->new();
+  $Frm->uhdr( "ORAC_OBSERVING_MODE", $options{mode} );
+}
 
 # Read instrument from $ORAC_INSTRUMENT
 
@@ -124,15 +158,33 @@ my $instrument = uc($ENV{ORAC_INSTRUMENT});
 my $recipe;
 try {
    $recipe = new ORAC::Recipe( NAME => $RecipeName,
-			       INSTRUMENT => $instrument);
+			       INSTRUMENT => $instrument,);
    $recipe->debug(1) if $options{debug};
-   $recipe->parse;
+   $recipe->frame( $Frm ) if defined $Frm;
 
    if ($options{syntax}) {
-      $recipe->check_syntax;
+      my @primitives = $recipe->check_syntax;
       print "Recipe Syntax OK\n" or die "Error printing success message\n";
+      if ($options{listprim}) {
+        print "Using the following primitives:\n";
+        print "\t$_\n" for @primitives;
+      }
    } else {
-      print @{ $recipe->_recipe };
+     # Get the primitive names
+     my @primitives = $recipe->primitives;
+
+     # The recipe is easy
+     print join("\n", $recipe->recipe->content )."\n";
+
+     # now we need to get the text for each one without compiling
+     my $parser = $recipe->parser;
+     $parser->nocompile( 1 );
+     for my $p (@primitives) {
+       my $prim = $parser->find( $p );
+       die "Could not read primitive '$p'" unless defined $prim;
+       print join("\n",$prim->content ). "\n";
+     }
+
    }
 
 }

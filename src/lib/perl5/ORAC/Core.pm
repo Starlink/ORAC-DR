@@ -310,12 +310,6 @@ sub orac_process_frame {
   $recipe->debug( $args{Debug} ) if exists $args{Debug};
   $recipe->batch( $args{Batch} ) if exists $args{Batch};
 
-
-  # parse the recipe if it hasn't already been parsed.
-  if( ! $recipe->have_parsed ) {
-    $recipe->parse($PRIMITIVE_LIST);
-  }
-
   # Execute the recipe
   try {
      $recipe->execute( $CURRENT_PRIMITIVE, $PRIMITIVE_LIST, $Frm, 
