@@ -316,18 +316,38 @@ sub _store_prim_params {
 Retrieve parameters associated with the specified primitive.
 
   $hashref = $parser->_find_prim_params( $primitive_name );
+  %hash = $parser->_find_prim_params( $primitive_name );
 
 Throws exception if the primitive has not previously been registered.
+
+Optional second argument can be used to indicate the calling primitive
+and line number to aid in error message reporting.
+
+  $hashref = $parser->_find_prim_params( $primitive_name, $caller, $cal_line );
 
 =cut
 
 sub _find_prim_params {
   my $self = shift;
   my $primname = shift;
+  my $caller = shift;
+  my $lineno = shift;
   if (exists $_PRIMITIVE_PARAMETERS{$primname} ) {
-    return $_PRIMITIVE_PARAMETERS{$primname};
+    if (wantarray) {
+      return %{$_PRIMITIVE_PARAMETERS{$primname}};
+    } else {
+      return $_PRIMITIVE_PARAMETERS{$primname};
+    }
   }
-  throw ORAC::Error::FatalError( "Requested primitive ('$primname') has not stored any parameters yet");
+
+  my $errmsg = "Requested primitive ('$primname') has not stored any parameters yet.";
+  if (defined $caller) {
+    $errmsg .= " Called from primitive '$caller'";
+    $errmsg .= " line $lineno" if defined $lineno;
+  }
+  $errmsg .= "\n";
+
+  throw ORAC::Error::FatalError( $errmsg );
 }
 
 =item B<_clear_prim_params>
@@ -746,9 +766,13 @@ sub _expand_primitive {
     }
   }
   # now insert the code to enable each lookup
+  # note that we change the values in the hash to correspond to 
+  # line numbers in @parsed so that they can be located easily
+  # later on
   for my $extprim (keys %inserted_primargs) {
     # print "Looking for args from $extprim inside ".$prim->name."\n";
-    push(@parsed, "my \%$extprim = $class". "->_find_prim_params(\"$extprim\");");
+    push(@parsed, "my \%$extprim = $class". "->_find_prim_params(\"$extprim\",\"".$prim->name."\");");
+    $inserted_primargs{$extprim} = $#parsed;
   }
 
   if ($self->debug) {
@@ -793,8 +817,19 @@ sub _expand_primitive {
       push(@parsed, $self->embed($primitive_name, $rest) );
       push(@children, $primitive_name);
 
+      # If it turns out we need this primitive results immediately
+      # we remove the previous line that was handling the args and
+      # add it here. 
+      if (exists $inserted_primargs{$primitive_name}) {
+        my $prevpos = $inserted_primargs{$primitive_name};
+        my $earlier = $parsed[$prevpos];
+        push(@parsed, $earlier);
+        # blank the earlier entry
+        $parsed[$prevpos] = "";
+      }
+
       # Reset line count
-      push(@parsed, "#line $lineno ". $prim->name() );
+      push(@parsed, "#line ".($lineno+1) ." ". $prim->name() );
 
     } elsif ($line =~ /->obeyw(.*)/) {
       # an obeyw
