@@ -701,7 +701,8 @@ sub _expand_primitive {
 
   # Sort out precanned variables
   push(@parsed, "my \$ORAC_PRIMITIVE = \"".$prim->name."\";");
-  push(@parsed, "my \$DEBUG = ". $self->debug .";"); # burn in debug status
+  push(@parsed, "my \$DEBUG = ". 
+       ($self->debug ? 1 : 0) .";"); # burn in debug status
   push(@parsed, "my %". $prim->name ." = \@_;");
   push(@parsed, "my \$_PRIM_ARGS_ = \\%". $prim->name.";");
 
