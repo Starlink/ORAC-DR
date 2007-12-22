@@ -271,8 +271,11 @@ sub embed {
   push(@lines, "my \$_prim_code = \$_prim_object->code();");
   push(@lines, "ORAC::Error::FatalError->throw('Could not get compiled primitive \"$primitive\"') unless defined \$_prim_code;");
 
+  # Convert the arguments to a hash form
+  my $primargs = $self->_parse_prim_arguments( $arguments );
+
   # Now run the routine
-  push(@lines, "\$_prim_code->(\$_PRIM_DEPTH_,\$Frm,\$Grp,\$Cal,\$Display,\$Mon,$class->_parse_prim_arguments(\"$arguments\"));");
+  push(@lines, "\$_prim_code->(\$_PRIM_DEPTH_,\$Frm,\$Grp,\$Cal,\$Display,\$Mon,$primargs);");
   push(@lines, "}"); # close scope
 
   if (wantarray) {
