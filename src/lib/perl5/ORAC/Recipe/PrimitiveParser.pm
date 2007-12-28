@@ -275,7 +275,8 @@ sub embed {
   my $primargs = $self->_parse_prim_arguments( $arguments );
 
   # Now run the routine
-  push(@lines, "\$_prim_code->(\$_PRIM_DEPTH_,\$Frm,\$Grp,\$Cal,\$Display,\$Mon,$primargs);");
+  push(@lines, "my \$_prim_exit_status = \$_prim_code->(\$_PRIM_DEPTH_,\$Frm,\$Grp,\$Cal,\$Display,\$Mon,$primargs);");
+  push(@lines,"return \$_prim_exit_status if \$_prim_exit_status != ORAC__OK;");
   push(@lines, "}"); # close scope
 
   if (wantarray) {
@@ -942,6 +943,7 @@ sub _expand_primitive {
 
   # At the end of the primitive file the primitive arguments hash and close the sub
   push(@parsed, $class . "->_store_prim_params(\"".$prim->name."\", \\%".$prim->name.");");
+  push(@parsed, " return ORAC__OK;");
   push(@parsed, "}","# End primitive". $prim->name,"");
 
 
@@ -1144,7 +1146,7 @@ sub _parse_prim_arguments {
       if( $wantarray ) {
         throw ORAC::Error::FatalError( "Cannot pass solitary Perl variables into primitives when called in list context", ORAC__FATAL );
       } else {
-        push( @kv, " $class->_parse_primitive_arguments($argument)" );
+        push( @kv, " $class->_parse_prim_arguments($argument)" );
       }
     }
   }
