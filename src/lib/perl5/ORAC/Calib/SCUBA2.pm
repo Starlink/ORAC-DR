@@ -772,7 +772,7 @@ sub fluxcal {
 
     if ($status != ORAC__OK) {
       orac_err "The FLUXES program did not run successfully\n";
-      return undef;
+      return;
     }
 
     # At this point we dont know whether we want the flux in the beam
@@ -785,7 +785,7 @@ sub fluxcal {
     }
     if ($status != ORAC__OK || $flux == -1) {
       orac_err "Error retrieving flux for filter $filter and planet $source\n";
-      return undef;
+      return;
     }
 
   }
@@ -1445,7 +1445,7 @@ sub _get_default_fcf {
   $ut = int($ut);  # only changes on integer days
 
   # First check to see if the filter is present in the %FCFS hash
-  return undef unless exists $FCFS{$filter};
+  return unless exists $FCFS{$filter};
 
   # Get the array
   my $details = $FCFS{$filter};
@@ -1470,13 +1470,13 @@ sub _get_default_fcf {
   }
 
   # If we did not match return undef
-  return undef unless defined $match;
+  return unless defined $match;
 
   # This is a little inefficient and repetitive but I want to retain
   # the ability to choose an aperture size for ARCSEC
 
   # We have a match so we now have to search for the correct units
-  return undef unless exists $match->{$units};
+  return unless exists $match->{$units};
 
   # Everything okay, return the answer
   return $match->{$units};

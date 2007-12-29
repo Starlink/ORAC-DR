@@ -339,7 +339,7 @@ sub calibratedarc {
 
     unless (defined $calibratedarc) {
       # Nothing suitable, return undef.
-      return undef;
+      return;
     }
 
     # Store the good value
@@ -347,7 +347,7 @@ sub calibratedarc {
 
   } else {
     # Nothing suitable, return undef.
-    return undef;
+    return;
   }
 }
 

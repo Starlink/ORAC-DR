@@ -583,7 +583,7 @@ sub indexentry {
   unless (exists $ {$self->indexref}{$name}) {
     orac_err "$name is unknown to oracdr and may not be used as calibration\n";
     orac_err "Make sure it is reduced by oracdr\n";
-    return undef;
+    return;
   };
 
   # take local copy of the calibration data index entry
@@ -598,7 +598,7 @@ sub indexentry {
     my $file = $self->indexfile;
     orac_err "Something has gone seriously wrong with the index file $file\n";
     orac_err "You will need to regenerate it\n";
-    return undef;
+    return;
   };
 
   # Now construct the entry hash
@@ -686,7 +686,7 @@ sub verify {
     my $file = $self->indexfile;
     orac_err "Something has gone seriously wrong with the index file $file\n";
     orac_err "You will need to regenerate it\n";
-    return undef;
+    return;
   };
 
   foreach my $key (sort keys %rules) {
@@ -721,7 +721,7 @@ sub verify {
 	orac_err "Eval error - check the syntax in your rules file\n";
 	orac_err "Rules was: '$CALVALUE' $rules{$key}\n";
 	orac_err "Error was: $@ \n";
-	return undef;
+	return;
       }
     }
     unless ($ok) {
@@ -900,7 +900,7 @@ sub choosebydt_generic {
   };
 
   # If we get to this point, we didn't find any suitable ones
-  return undef;
+  return;
 
 }
 
@@ -935,7 +935,7 @@ sub cmp_with_hash {
   my $hashref = shift;
 
   # Return undef if the hashref is undef
-  return undef unless defined $hashref;
+  return unless defined $hashref;
 
   # Croak if the argument is not a hash
   croak("cmp_with_hash: Argument is not a hash")
@@ -954,7 +954,7 @@ sub cmp_with_hash {
   }
 
   # If we get this far we have no match
-  return undef;
+  return;
 }
 
 =item B<scanindex>

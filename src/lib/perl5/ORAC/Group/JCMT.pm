@@ -26,19 +26,16 @@ to B<ORAC::Group::JCMT> objects. Some additional methods are supplied.
 # ORAC pipeline
 
 use 5.006;
+use strict;
 use warnings;
+use Carp;
 use ORAC::Group::NDF;
 
 # Let the object know that it is derived from ORAC::Frame;
-@ORAC::Group::JCMT::ISA = qw/ORAC::Group::NDF/;
+use base qw/ ORAC::Group::NDF /;
 
 use vars qw/$VERSION/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
-
- 
-# standard error module and turn on strict
-use Carp;
-use strict;
 
 =head1 PUBLIC METHODS
 

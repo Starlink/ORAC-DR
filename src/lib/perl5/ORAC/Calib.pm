@@ -1471,7 +1471,7 @@ sub find_file {
   my $self = shift;
 
   my $file = shift;
-  return undef if ! defined $file;
+  return if ! defined $file;
 
   my @directories = orac_determine_calibration_search_path( $ENV{'ORAC_INSTRUMENT'} );
 
@@ -1481,7 +1481,7 @@ sub find_file {
     }
   }
 
-  return undef;
+  return;
 }
 
 =item B<retrieve_by_column>
@@ -1499,8 +1499,8 @@ sub retrieve_by_column {
   my $index = shift;
   my $column = uc( shift );
 
-  return undef if ! defined( $index );
-  return undef if ! defined( $column );
+  return if ! defined( $index );
+  return if ! defined( $column );
 
   my $method = $index . "index";
 
@@ -1511,10 +1511,8 @@ sub retrieve_by_column {
   my $ref = $self->$method->indexentry( $basefile );
   if( exists( $ref->{$column} ) ) {
     return $ref->{$column};
-  } else {
-    return undef;
   }
-
+  return;
 }
 
 =back

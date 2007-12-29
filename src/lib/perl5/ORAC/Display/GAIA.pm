@@ -369,7 +369,7 @@ sub _open_gaia_socket {
     }
   }
 
-  return undef;
+  return;
 }
 
 # internal sub to launch a new gaia process

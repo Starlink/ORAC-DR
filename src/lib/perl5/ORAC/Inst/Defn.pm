@@ -2173,7 +2173,7 @@ sub p4_helper {
     $ENV{P4_ROOT} = $ENV{CGS4DR_ROOT};
   } else {
     orac_err('CGS4DR_ROOT environment variable not defined. Cannot find P4.\n');
-    return undef;
+    return;
   }
   $ENV{P4_CONFIG} = File::Spec->catdir($ENV{HOME}, ".oracdr");
   $ENV{P4_HOME} = $ENV{P4_ROOT};
@@ -2201,7 +2201,7 @@ sub p4_helper {
       orac_print("Creating ORACDR configuration directory...\n");
     } else {
       orac_err("Error creating ORACDR config dir: $!\n");
-      return undef;
+      return;
     }
   }
 

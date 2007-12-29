@@ -382,7 +382,7 @@ sub init_messys {
   }
 
   # Get here if nothing worked
-  return undef;
+  return;
 
 }
 

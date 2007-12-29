@@ -28,6 +28,10 @@ objects.
 # A package to describe a MichTemp group object for the
 # ORAC pipeline
 
+# standard error module and turn on strict
+use Carp;
+use strict;
+use warnings;
 use 5.006;
 use vars qw/$VERSION/;
 use ORAC::Frame::UKIRT;
@@ -40,11 +44,6 @@ use base qw/ORAC::Frame::UKIRT/;
 
 # Alias file_from_bits as pattern_from_bits.
 *pattern_from_bits = \&file_from_bits;
-
-# standard error module and turn on strict
-use Carp;
-use strict;
-use warnings;
 
 =head1 PUBLIC METHODS
 

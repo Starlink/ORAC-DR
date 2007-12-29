@@ -32,16 +32,17 @@ library in order to run.
 
 =cut
 
+use strict;
+use warnings;
 use 5.006;
 require Exporter;
-@ISA = (Exporter);
+use base qw/ Exporter /;
+use vars qw/ @EXPORT /;
 @EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist cosdeg
 	      sindeg dectodms hmstodec deg2rad rad2deg is_numeric
 	    );
 
 use Carp;
-use warnings;
-use strict;
 use vars qw/$VERSION/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);

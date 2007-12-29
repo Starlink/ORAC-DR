@@ -99,7 +99,8 @@ sub orac_loop_list {
 
   # Initialise variables
   my $obsno;
-  my $TestFrm = $class->new() if $skip; # Dummy Frame for file check
+  my $TestFrm;
+  $TestFrm = $class->new() if $skip; # Dummy Frame for file check
 
   # Shift files off the array until we get one that exists
   # or until we get to the end of the array [ie an undefined value]
@@ -152,7 +153,7 @@ sub orac_loop_list {
   }
 
   # If obsno is undef return undef
-  return undef unless defined $obsno;
+  return unless defined $obsno;
 
   my @Frms = link_and_read($class, $utdate, $obsno, 0);
 
@@ -189,7 +190,7 @@ sub orac_loop_inf {
   my ($class, $utdate, $obsref) = @_;
 
   # If obsno is undef return undef
-  return undef unless defined $$obsref[0];
+  return unless defined $$obsref[0];
 
   # Get the obsno
   my $obsno = $$obsref[0];
@@ -241,7 +242,7 @@ sub orac_loop_wait {
   my ($class, $utdate, $obsref, $skip) = @_;
 
   # If obsno is undef return undef
-  return undef unless defined $obsref->[0];
+  return unless defined $obsref->[0];
 
   # Get the obsno
   my $obsno = $obsref->[0];
@@ -350,7 +351,7 @@ sub orac_loop_wait {
     if ($timer > $timeout) {
       orac_print "\n";
       orac_err("Timeout whilst waiting for next data file: $fname\n");
-      return undef;
+      return;
     }
 
     # Show that we are thinking
@@ -406,7 +407,7 @@ sub orac_loop_flag {
   my ($class, $utdate, $obsref, $skip) = @_;
 
   # If obsno is undef return undef
-  return undef unless defined $obsref->[0];
+  return unless defined $obsref->[0];
 
   # Get the obsno
   my $obsno = $obsref->[0];
@@ -555,7 +556,7 @@ sub orac_loop_flag {
     if ($timer > $timeout) {
       orac_print "\n";
       orac_err("Timeout whilst waiting for next data file: $fnames[0]\n");
-      return undef;
+      return;
     }
 
     # Show that we are thinking
@@ -636,8 +637,8 @@ sub orac_loop_file {
   my $fname = shift(@$obsref);
 
   # If filename is undef or a blank line return undef
-  return undef unless defined $fname;
-  return undef unless $fname =~ /\w/;
+  return unless defined $fname;
+  return unless $fname =~ /\w/;
   orac_print("Checking for next data file: $fname");
 
   # Create a new frame in class
@@ -676,7 +677,7 @@ sub orac_loop_task {
   my @tasks = $class->data_detection_tasks();
   if (!@tasks) {
     orac_err("Frame class ($class) does not support the -loop task option\n");
-    return undef;
+    return;
   }
 
   # get the reference value
@@ -734,7 +735,7 @@ sub orac_loop_task {
 
 	if (!defined $tobj) {
 	  orac_err("Unable to connect to remote task $t. Is the data acquisition system running? Aborting loop.\n");
-	  return undef;
+	  return;
 	}
 
 	# get the parameter
@@ -796,7 +797,7 @@ sub orac_loop_task {
     if ($timer > $timeout) {
       orac_print "\n";
       orac_err("Timeout whilst waiting for next monitored data set\n");
-      return undef;
+      return;
     }
 
     # Show that we are thinking
@@ -832,7 +833,7 @@ sub orac_loop_task {
 
       # and convert to ORAC_DATA_OUT
       my ($cname) = _convert_and_link_nofrm( $infmt, $outfmt, $fname );
-      return undef if !defined $cname;
+      return if !defined $cname;
 
       push(@files, $cname );
       push(@istemp, 0 ); # This is a real file
@@ -855,7 +856,7 @@ sub orac_loop_task {
 	my $data = $current{$t}->{IMAGE}->{DATA_ARRAY};
 	if (!defined $data) {
 	    orac_err("Received IMAGE parameter did not include a DATA_ARRAY component\n");
-	    return undef;
+	    return;
 	}
 	$data->wndf( $fname );
 
@@ -871,12 +872,12 @@ sub orac_loop_task {
       } else {
 	# wibble
 	orac_err("Task monitoring loop does not (yet) know how to generate raw data in format $infmt...\n");
-	return undef;
+	return;
       }
 
     } else {
       orac_err("The monitored parameter does not seem to match the specification. It has neither FILENAME nor IMAGE component\n");
-      return undef;
+      return;
 
     }
 
@@ -884,7 +885,7 @@ sub orac_loop_task {
 
   if (!@files) {
     orac_err("Fatal error in orac_loop_task. Got to end without any files listed\n");
-    return undef;
+    return;
   }
   orac_print "\nFound\n";
 
@@ -1144,7 +1145,7 @@ sub link_and_read {
 
       if (!@names) {
 	orac_err "Internal error reading flag file. No new filenames detecting in flag file. This should not happen by this stage";
-	return undef;
+	return;
       }
 
       # now update the reference list
@@ -1176,7 +1177,7 @@ sub link_and_read {
   # Check if we actually have files.
   if( ! defined( $names[0] ) ) {
     orac_err("Could not find files for observation $num. Aborting.\n");
-    return undef;
+    return;
   }
 
   # Now we need to convert the files
@@ -1311,7 +1312,7 @@ sub _convert_and_link {
 
   if (!@names) {
     orac_err("Can not convert/link 0 files!");
-    return undef;
+    return;
   }
 
   # Read the input and output formats from the Frame object.
@@ -1320,7 +1321,7 @@ sub _convert_and_link {
 
   # convert the files
   my @bname = _convert_and_link_nofrm( $infmt, $outfmt, @names );
-  return undef unless @bname;
+  return unless @bname;
 
   return $Frm->framegroup( @bname );
 
@@ -1470,7 +1471,7 @@ sub _read_flagfiles {
 
   my @names;
   for my $flagname (@flagnames) {
-    open( my $flagfile, $flagname ) 
+    open( my $flagfile, "<", $flagname ) 
       or orac_throw "Unable to open flag file $flagname: $!";
 
     # Read the filenames from the file.

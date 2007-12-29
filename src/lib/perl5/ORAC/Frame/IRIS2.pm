@@ -568,7 +568,7 @@ sub gui_id {
 
   # Retrieve the Nth file name (start counting at 1)
   my $fname = $self->file($num);
-  return undef unless defined $fname;
+  return unless defined $fname;
 
   # IRIS2 uses a different file convention than UKIRT instruments,
   # so we need to determine the ID differently.

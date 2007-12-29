@@ -13,6 +13,10 @@ B<ORAC::Frame::GEMINI>.
 # A package to describe a GMOS group object for the
 # ORAC pipeline
 
+# standard error module and turn on strict
+use Carp;
+use strict;
+
 use 5.006;
 use warnings;
 use vars qw/$VERSION/;
@@ -27,10 +31,6 @@ use Starlink::HDSPACK qw/copobj/;
 
 # Let the object know that it is derived from ORAC::Frame::GEMINI;
 use base qw/ORAC::Frame::GEMINI/;
-
-# standard error module and turn on strict
-use Carp;
-use strict;
 
 =head1 PUBLIC METHODS
 

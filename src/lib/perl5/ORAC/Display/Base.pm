@@ -112,7 +112,7 @@ sub dev {
     if (exists $self->{Dev}->{$key}) {
       return $self->{Dev}->{$key};
     } else {
-      return undef;
+      return;
     }
   }
 
@@ -211,7 +211,7 @@ sub window_dev {
 # ky KAPVIEW. Not all subclasses use this.
 
 sub newdev {
-  return undef;
+  return;
 }
 
 

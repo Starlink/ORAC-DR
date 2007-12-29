@@ -409,7 +409,7 @@ sub orac_print_config_with_defaults {
   my ($MW, $win_str);
   if ( $log_options =~ /x/ )
     {
-      eval "use Tk; use Tk::TextANSIColor;";
+      eval { require Tk; require Tk::TextANSIColor; };
       unless( $@ ) {
 	$MW = MainWindow->new();
 	ORAC::Event->register("Tk"=>$MW); 
@@ -940,7 +940,7 @@ sub orac_parse_files {
 
   my $filename = cwd . "/" . $opt_files;
   my $fh;
-  unless ( open ( $fh, "<$filename" ) ) {
+  unless ( open ( $fh, "<", $filename ) ) {
     orac_err( " Could not open ($filename)\n" );
     throw ORAC::Error::FatalError( "Could not open $filename", ORAC__FATAL);
   }

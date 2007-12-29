@@ -79,7 +79,7 @@ ORAC::Frame::ACSIS->_generate_orac_lookup_methods( \%hdr );
 sub _to_UTSTART {
   my $self = shift;
   my $utstart = $self->hdr->{'DATE-OBS'};
-  return undef if ( ! defined( $utstart ) );
+  return if ( ! defined( $utstart ) );
   $utstart =~ /T(\d\d):(\d\d):(\d\d)/;
   my $hour = $1;
   my $minute = $2;
@@ -104,7 +104,7 @@ sub _from_UTSTART {
 sub _to_UTEND {
   my $self = shift;
   my $utend = $self->hdr->{'DATE-END'};
-  return undef if ( ! defined( $utend ) );
+  return if ( ! defined( $utend ) );
   $utend =~ /T(\d\d):(\d\d):(\d\d)/;
   my $hour = $1;
   my $minute = $2;

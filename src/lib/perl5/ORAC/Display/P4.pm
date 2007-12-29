@@ -408,7 +408,7 @@ If the window name is not supplied (WINDOW) then 'default' is assumed.
 sub process_options {
   my $self = shift;
 
-  return undef unless @_;
+  return unless @_;
 
   my %options = @_;
 
@@ -418,10 +418,10 @@ sub process_options {
     $port = $options{REGION};
     orac_print("Port is $port\n",'cyan') if $DEBUG;
     # Port must be an integer between 0 and 8
-    return undef unless ($port =~ /^[0-8]$/);
+    return unless ($port =~ /^[0-8]$/);
 
   } else {
-    return undef;
+    return;
   }
 
 
@@ -442,7 +442,7 @@ sub process_options {
   my $lnbs = $self->nbs->find($nbs_name);
   my $href = $lnbs->tienbs;
 
-  return undef unless defined $href;
+  return unless defined $href;
 
   # Configure the device name of the current port
   my $status;

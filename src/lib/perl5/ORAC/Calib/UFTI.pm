@@ -22,6 +22,11 @@ ORAC::Calib::UFTI objects.
 
 =cut
 
+# Use standard error module and turn on strict declarations.
+use Carp;
+use warnings;
+use strict;
+
 use ORAC::Calib;			# Use the base class.
 use ORAC::Print;
 use File::Spec;                         # Filename creation
@@ -30,10 +35,6 @@ use base qw/ORAC::Calib::IRCAM/;
 
 use vars qw/$VERSION/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
-
-# Use standard error module and turn on strict declarations.
-use Carp;
-use strict;
 
 =head1 METHODS
 

@@ -26,6 +26,10 @@ to B<ORAC::Frame::JCMT> objects. Some additional methods are supplied.
 # A package to describe a JCMT frame object for the
 # ORAC pipeline
 
+# standard error module and turn on strict
+use Carp;
+use strict;
+
 use 5.006;
 use warnings;
 use ORAC::Frame::NDF;
@@ -35,19 +39,12 @@ use ORAC::Print;
 use vars qw/$VERSION/;
 
 # Let the object know that it is derived from ORAC::Frame;
-@ORAC::Frame::JCMT::ISA = qw/ORAC::Frame::NDF/;
-
-# Use base doesn't seem to work...
-#use base qw/ ORAC::Frame /;
+use base qw/ ORAC::Frame::NDF /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 # Alias file_from_bits as pattern_from_bits.
 *pattern_from_bits = \&file_from_bits;
-
-# standard error module and turn on strict
-use Carp;
-use strict;
 
 =head1 PUBLIC METHODS
 

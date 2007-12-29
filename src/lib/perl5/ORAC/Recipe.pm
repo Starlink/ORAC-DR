@@ -26,6 +26,7 @@ shown in the SYNOPSIS.
 
 use strict;
 use 5.006;
+use vars qw/ $VERSION /;
 use warnings;
 use Carp;
 use File::Spec;  # For pedants everywhere
@@ -39,8 +40,10 @@ use ORAC::Recipe::PrimitiveParser;
 use ORAC::Constants qw/ :status /;
 use ORAC::Print;
 use ORAC::Basic;
-use ORAC::Error qw/ :try /; 
+use ORAC::Error qw/ :try /;
 use ORAC::Inst::Defn qw/ orac_determine_recipe_search_path /;
+
+'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 =head1 METHODS
 
@@ -544,7 +547,7 @@ sub execute {
     if ( ref($error) && $error->isa("Error") ) {
       # Exit from the pipeline with already existing error
       $error->throw;
-    } else {	
+    } else {
       # Exit from the pipeline by throwing a new error
       throw ORAC::Error::FatalError( "Exiting due to error executing recipe",
                                      ORAC__FATAL );

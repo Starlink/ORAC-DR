@@ -27,6 +27,10 @@ objects. Some additional methods are supplied.
 # A package to describe a UFTI group object for the
 # ORAC pipeline
 
+# standard error module and turn on strict
+use Carp;
+use strict;
+
 use 5.006;
 use warnings;
 use vars qw/$VERSION/;
@@ -42,10 +46,6 @@ use base qw/ORAC::Frame::UKIRT/;
 # Create an alias for file_from_bits().
 *pattern_from_bits = \&file_from_bits;
 
-# standard error module and turn on strict
-use Carp;
-use strict;
- 
 # For reading the header
 use NDF;
 

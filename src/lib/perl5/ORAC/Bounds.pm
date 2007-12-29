@@ -22,8 +22,11 @@ Bounding information will be incorrect for data encompassing a pole.
 
 =cut
 
+use strict;
+use warnings;
+
 use base qw/ Exporter /;
-use vars qw/ $VERSION @EXPORT $DEBUG /;
+use vars qw/ $VERSION @EXPORT_OK $DEBUG /;
 
 use Astro::Coords;
 use Carp;

@@ -27,6 +27,9 @@ objects. Some additional methods are supplied.
 # A package to describe a UFTI group object for the
 # ORAC pipeline
 
+# standard error module and turn on strict
+use Carp;
+use strict;
 use 5.006;
 use warnings;
 use vars qw/$VERSION/;
@@ -38,10 +41,6 @@ use ORAC::General;
 use base qw/ORAC::Frame::UKIRT/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
-
-# standard error module and turn on strict
-use Carp;
-use strict;
 
 # Translation tables for UFTI should go here
 my %hdr = (

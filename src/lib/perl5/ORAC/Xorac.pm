@@ -97,6 +97,7 @@ use ORAC::Constants qw/:status/;    # ORAC__ABORT ORAC__FATAL
 #
 # General modules
 #
+use File::Spec;
 use Tk;
 use Tk::TextANSIColor;
 use Tk::ORAC::RecipeSelect;
@@ -743,7 +744,7 @@ sub xorac_help {
   # Parent widget
   my ( $parent, $directory, $file ) = @_;
 
-  eval "use Tk::Pod";
+  eval { require Tk::Pod };
   if ( $@ ) { return; }
   
   # change working directories, this is a lousy kludge
@@ -848,8 +849,8 @@ sub xorac_editor {
   my ( $directory, $recipe ) = @_;
 
   # open the recipe
-  my $filename = $directory . "/" . $recipe;
-  open ( FH, $filename ) || throw ORAC::Error::FatalError(
+  my $filename = File::Spec->catfile($directory, $recipe);
+  open ( my $FH, "<",$filename ) || throw ORAC::Error::FatalError(
                               "Could not open $filename", ORAC__FATAL);
 
   # top level frame
@@ -938,10 +939,10 @@ sub xorac_editor {
   $label_frame->grid( -column => 0, -row => 2, -sticky => 'nsw' );
 
   # read the recipe 
-  while ( <FH> ) {
+  while ( <$FH> ) {
      $text->insert('end', $_ );
   }
-  close(FH);
+  close($FH);
 
   # bind any key input to add (modified) onto the recipe string
   $text->bind("<Key>", sub { 
@@ -961,11 +962,11 @@ sub xorac_save_recipe {
   my ( $recipe, $text ) = @_;
 
   my $filename = $ENV{"ORAC_RECIPE_DIR"} . "/" . $recipe;  
-  open ( FH, "+>$filename" ) || throw ORAC::Error::FatalError(
+  open ( my $FH, "+>",$filename ) || throw ORAC::Error::FatalError(
                               "Could not open $filename", ORAC__FATAL);
   my $custom = $$text->get('1.0','end');
-  print FH $custom;
-  close(FH);
+  print $FH $custom;
+  close($FH);
    
 }
  

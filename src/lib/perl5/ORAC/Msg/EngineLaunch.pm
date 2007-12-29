@@ -235,7 +235,7 @@ sub engine_id {
     } elsif (exists $self->{EngineID}->{$eng}) {
       return $self->{EngineID}->{$eng};
     } else {
-      return undef;
+      return;
     }
   }
   return $self->{EngineID};
@@ -424,7 +424,7 @@ sub launch {
       }
 
       my $messys = $self->_get_engine_messys_object( $engine )
-	or return undef;
+	or return;
 
       # First check to see if PATH is a coderef
       my ($path, $cleanup);
@@ -582,7 +582,7 @@ sub _get_engine_messys_object {
     return $messys;
 
   } else {
-    return undef;
+    return;
   }
 
 }

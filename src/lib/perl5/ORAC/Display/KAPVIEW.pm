@@ -601,7 +601,7 @@ If the window name is not supplied (WINDOW) then 'default' is assumed.
 sub select_region {
   my $self = shift;
 
-  return undef unless @_;
+  return unless @_;
 
   my %options = @_;
 
@@ -611,13 +611,13 @@ sub select_region {
     $region = $options{REGION};
     orac_print("Region is $region\n",'cyan') if $DEBUG;
   } else {
-    return undef;
+    return;
   }
 
   # Port must be an integer
   if ($region !~ /^\d+$/) {
     orac_err "Supplied region specification ($region) not a positive integer\n";
-    return undef;
+    return;
   }
 
   # Find the Window name
@@ -633,7 +633,7 @@ sub select_region {
   # Check that the requested region is defined
   unless (exists $self->regions->{$region} && defined $self->regions->{$region}) {
     orac_err "Supplied region specification ($region) does not correspond to a defined region on the device\n";
-    return undef;
+    return;
   }
 
   # The mapping of region number to picture name is stored in
@@ -648,7 +648,7 @@ sub select_region {
   # Check status
   if ($status != ORAC__OK) {
     orac_err("Error selecting picture $picname (Region $region)\n");
-    return undef;
+    return;
   }
 
   return $device;
@@ -794,7 +794,7 @@ sub select_section {
   if ($status != &NDF::SAI__OK) {
     err_annul($status);
     orac_err("Error reading bounds from input file: $file");
-    return undef;
+    return;
   }
 
   # Return the filename if all the autoscale flags are true
@@ -1019,7 +1019,7 @@ sub select_section {
 
       if ($status != ORAC__OK) {
         orac_err("Error running COMPAVE $compargs\n");
-        return undef;
+        return;
       }
 
       # Now reset $input to be the output of compave
@@ -1608,7 +1608,7 @@ sub sigma {
     if ($status != &NDF::SAI__OK) {
       err_annul($status);
       orac_err("Error reading num dims from input file: $file");
-      return undef;
+      return;
     }
     if ($ndim > 1) {
       # Reshape the NDF

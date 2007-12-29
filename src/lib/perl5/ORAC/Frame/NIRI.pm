@@ -13,6 +13,9 @@ B<ORAC::Frame::GEMINI>.
 # A package to describe a NIRI group object for the
 # ORAC pipeline
 
+# standard error module and turn on strict
+use Carp;
+use strict;
 use 5.006;
 use warnings;
 use vars qw/$VERSION/;
@@ -29,10 +32,6 @@ use base qw/ORAC::Frame::GEMINI/;
 
 # Alias file_from_bits as pattern_from_bits.
 *pattern_from_bits = \&file_from_bits;
-
-# standard error module and turn on strict
-use Carp;
-use strict;
 
 # These header translations may or may not be generic, so place here
 # for the moment.

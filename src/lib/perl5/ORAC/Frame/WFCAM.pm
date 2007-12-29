@@ -25,6 +25,10 @@ B<ORAC::Frame::WFCAM> objects. Some additional methods are supplied.
 
 =cut
 
+# standard error module and turn on strict
+use Carp;
+use strict;
+
 use 5.006;
 use warnings;
 use vars qw/$VERSION/;
@@ -39,10 +43,6 @@ use base qw/ ORAC::Frame::CGS4 /;
 '$Revision$' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 *pattern_from_bits = \&file_from_bits;
-
-# standard error module and turn on strict
-use Carp;
-use strict;
 
 # Translation tables for WFCAM should go here.
 

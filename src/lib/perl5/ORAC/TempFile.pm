@@ -115,10 +115,8 @@ sub new {
       $tmp->handle->close unless $_[0];
     }
     return $tmp;
-  } else {
-    return undef;
   }
-
+  return;
 }
 
 =back

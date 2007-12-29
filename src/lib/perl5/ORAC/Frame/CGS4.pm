@@ -26,6 +26,10 @@ to B<ORAC::Frame::CGS4> objects. Some additional methods are supplied.
 # A package to describe a UKIRT group object for the
 # ORAC pipeline
 
+# standard error module and turn on strict
+use Carp;
+use strict;
+
 use 5.006;
 use warnings;
 use ORAC::Frame::UKIRT;
@@ -36,10 +40,6 @@ use base  qw/ORAC::Frame::UKIRT/;
 
 use vars qw/$VERSION/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
-
-# standard error module and turn on strict
-use Carp;
-use strict;
 
 # For reading the header
 use NDF;

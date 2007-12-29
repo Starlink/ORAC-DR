@@ -447,7 +447,7 @@ sub badobs_index {
       $rulesfile = File::Spec->catfile($ENV{ORAC_DATA_OUT},"rules.badobs");
       if (!-e $rulesfile) {
 	orac_warnp("Creating temporary bad observation rules file\n");
-	open(my $fh, "> $rulesfile")
+	open(my $fh, ">", $rulesfile)
 	  or orac_throw("Could not create private rules.badobs file: $!");
 	print $fh 'ORACUT == $Hdr{ORACUT}'."\n";
 	print $fh 'ORACNUM == $Hdr{ORACNUM}'."\n";

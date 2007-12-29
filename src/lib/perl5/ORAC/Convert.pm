@@ -107,7 +107,7 @@ sub new {
   # Check if $CONVERT_DIR exists
   unless (defined $ENV{CONVERT_DIR}) {
     orac_err("CONVERT_DIR not defined. Can not convert data\n");
-    return undef;
+    return;
   }
 
   # Message system will start on demand
@@ -325,7 +325,7 @@ sub convert {
 
       # Try to do this using the Cirdr Perl modules. If either of them
       # fail, we'll fall back to use the convert_mon-based routines.
-      eval( "require Cirdr::Opt" );
+      eval { require Cirdr::Opt };
       if( $@ ) {
 
         orac_warn "Error in loading Cirdr::Opt: $@\n";
@@ -340,7 +340,7 @@ sub convert {
         Cirdr::Opt->import( qw/ cir_wfcam_convert / );
 
         # Now try to get Cirdr::Primitives.
-        eval( "require Cirdr::Primitives" );
+        eval { require Cirdr::Primitives };
         if( $@ ) {
 
           orac_warn "Error in loading Cirdr::Primitives: $@\n";
@@ -446,8 +446,7 @@ sub guessformat {
   $suffix eq '.fits' && (return 'FITS');
   $suffix eq '.fit' && (return 'FITS');
 
-  return undef;
-
+  return;
 }
 
 =item B<mon>
@@ -529,10 +528,8 @@ sub fits2ndf {
   # Return the filename (append .sdf) if everything okay.
   if ($status == ORAC__OK) {
     return $ndf;
-  } else {
-    return undef;
   }
-
+  return;
 }
 
 =item B<ndf2fits>
@@ -580,10 +577,9 @@ sub ndf2fits {
   # Return the filename (append .sdf) if everything okay.
   if ($status == ORAC__OK) {
     return $fitsfile;
-  } else {
-    return undef;
   }
-
+  
+  return;
 }
 
 sub hds2mef_wfcam {
@@ -597,7 +593,7 @@ sub hds2mef_wfcam {
 
   unless (-e $self->infile) {
     orac_err "Input filename (".$self->infile.") does not exist -- can not convert\n";
-    return undef;
+    return;
   }
 
   # Read the input file - we only want the basename (we know .sdf suffix)
@@ -658,7 +654,7 @@ sub hds2mef {
 
     unless (-e $self->infile) {
         orac_err "Input filename (".$self->infile.") does not exist -- can not convert\n";
-        return undef;
+        return;
     }
 
     # Read the input file - we only want the basename (we know .sdf suffix)
@@ -702,7 +698,7 @@ sub hds2mef {
 
     if ($status != ORAC__OK) {
 	orac_err "ndf2fits failed\n";
-	return undef;
+	return;
     }
 
     # Get a list of all of the temporary FITS files created in this last
@@ -719,7 +715,7 @@ sub hds2mef {
     if ($fitstatus != 0) {
 	unlink @alltmp;
 	orac_err "Couldn't create output file $outfile\n";
-	return undef;
+	return;
     }
 
     # Now loop for each of the temporary files...
@@ -737,7 +733,7 @@ sub hds2mef {
         if ($fitstatus != 0) {
 	    unlink @alltmp;
 	    orac_err "Couldn't open temporary FITS file $ifile\n";
-	    return undef;
+	    return;
 	}
 
         # Copy the input image to the output file... 
@@ -841,10 +837,9 @@ sub gmef2hds {
   # Return the filename (append .sdf) if everything okay.
   if ($status == ORAC__OK) {
     return $hds;
-  } else {
-    return undef;
   }
-
+  
+  return;
 }
 
 =item B<ingmef2hds>
@@ -918,10 +913,9 @@ sub ingmef2hds {
   # Return the filename (append .sdf) if everything okay.
   if ($status == ORAC__OK) {
     return $hds;
-  } else {
-    return undef;
   }
-
+  
+  return;
 }
 
 =item B<UKIRTio2hds>
@@ -960,7 +954,7 @@ sub UKIRTio2hds {
 
   unless (-e $ondfname) {
     orac_err "Input filename ($ondfname) does not exist -- can not convert\n";
-    return undef;
+    return;
   }
 
   # Theres a limit to what can be derived from first principals.
@@ -974,7 +968,7 @@ sub UKIRTio2hds {
   if ($status != &NDF::SAI__OK) {
     orac_err "Error reading FITS header from O-file $ondfname\n";
     err_annul($status);
-    return undef;
+    return;
   }
 
   # Calculate the output filename from the FITS header information
@@ -996,7 +990,7 @@ sub UKIRTio2hds {
   # Read in a list of the O-files
   opendir(IDIR, $idir) || do {
     orac_err "ORAC::Convert::UKIRTio2hds: Error opening IDIR: $idir\n";
-    return undef;
+    return;
   };
 
   # Calculate the I file root name
@@ -1014,7 +1008,7 @@ sub UKIRTio2hds {
   # Check that we have found some files
   if ($#ifiles == -1) {
     orac_err "No I-files found in IDIR ($idir) -- can not convert\n";
-    return undef;
+    return;
   }
 
   # First we need to create a container file in the current directory
@@ -1069,7 +1063,7 @@ sub UKIRTio2hds {
   if ($status != &NDF::SAI__OK) {
     err_flush($status);
     orac_err "Error copying I and O files to ouput container file\n";
-    return undef;
+    return;
   }
 
   # Everything okay - return the file name (with .sdf)
@@ -1101,7 +1095,7 @@ sub hds2ndf {
   # Check for the input file
   unless (-e $self->infile) {
     orac_err "Input filename (".$self->infile.") does not exist -- can not convert\n";
-    return undef;
+    return;
   }
 
   # Read the input file - we only want the basename (we know .sdf suffix)
@@ -1217,7 +1211,7 @@ sub hds2ndf {
   if ($status != &NDF::SAI__OK) {
     err_flush($status);
     err_end($status);
-    return undef;
+    return;
   }
 
   err_end($status);

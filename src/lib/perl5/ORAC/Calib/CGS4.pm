@@ -26,6 +26,10 @@ ORAC::Calib::UKIRT objects.
 
 =cut
 
+use strict;
+use Carp;
+use warnings;
+
 use ORAC::Calib;			# use base class
 use ORAC::Print;
 
@@ -35,11 +39,6 @@ use base qw/ORAC::Calib/;
 
 use vars qw/$VERSION/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
-# @ORAC::Calib::CGS4::ISA = qw/ORAC::Calib/; # set up inheritance
-
-# standard error module and turn on strict
-use Carp;
-use strict;
 
 =head1 METHODS
 

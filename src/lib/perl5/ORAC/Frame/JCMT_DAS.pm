@@ -24,6 +24,9 @@ Some additional methods are supplied.
 
 =cut
 
+# Standard error module and turn on strict.
+use Carp;
+use strict;
 use 5.006;
 use warnings;
 use ORAC::Frame::GSD;
@@ -39,10 +42,6 @@ use base qw/ ORAC::Frame::GSD /;
 
 # Alias file_from_bits as pattern_from_bits.
 *pattern_from_bits = \&file_from_bits;
-
-# Standard error module and turn on strict.
-use Carp;
-use strict;
 
 # For reading in the header.
 use GSD;

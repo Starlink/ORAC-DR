@@ -345,7 +345,7 @@ sub tempraw {
       }
     }
     if ($istemp && $isperm) {
-      return undef;
+      return;
     } elsif ($istemp) {
       return 1;
     } else {
@@ -507,7 +507,7 @@ sub file_from_bits {
 
 sub file_from_bits_extra {
   my $self = shift;
-  return undef;
+  return;
 }
 
 =item B<findgroup>
@@ -661,7 +661,7 @@ sub gui_id {
 
   # Retrieve the Nth file name (start counting at 1)
   my $fname = $self->file($num);
-  return undef unless defined $fname;
+  return unless defined $fname;
 
   # Split on underscore
   my (@split) = split(/_/,$fname);

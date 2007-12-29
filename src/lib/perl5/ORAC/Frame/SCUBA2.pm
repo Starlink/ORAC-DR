@@ -68,7 +68,7 @@ sub _to_UTSTART {
   my $self = shift;
   my $utstart = defined $self->hdr->{SUBHEADERS}->[0]->{'DATE-OBS'} ? 
     $self->hdr->{SUBHEADERS}->[0]->{'DATE-OBS'} : $self->hdr->{'DATE-OBS'};
-  return undef if ( ! defined( $utstart ) );
+  return if ( ! defined( $utstart ) );
   $utstart =~ /T(\d\d):(\d\d):(\d\d)/;
   my $hour = $1;
   my $minute = $2;
@@ -94,7 +94,7 @@ sub _to_UTEND {
   my $self = shift;
   my $utend = defined $self->hdr->{SUBHEADERS}->[-1]->{'DATE-END'} ? 
     $self->hdr->{SUBHEADERS}->[-1]->{'DATE-END'} : $self->hdr->{'DATE-END'};
-  return undef if ( ! defined( $utend ) );
+  return if ( ! defined( $utend ) );
   $utend =~ /T(\d\d):(\d\d):(\d\d)/;
   my $hour = $1;
   my $minute = $2;
@@ -676,7 +676,7 @@ sub hdrval {
   } else {
     # If no args, warn the user and return undef
     orac_warn "hdrval method requires at least a keyword argument\n";
-    return undef;
+    return;
   }
 
 }
