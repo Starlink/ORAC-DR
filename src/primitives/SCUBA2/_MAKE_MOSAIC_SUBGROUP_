@@ -1,0 +1,170 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_MAKE_MOSAIC_SUBGROUP_ - Create a sub-group mosaic
+
+=head1 SYNOPSIS
+
+ _MAKE_MOSAIC_SUBGROUP_  COADD_MODE=RUNNING
+
+=head1 DESCRIPTION
+
+This primitive takes all the aligned sub-scan frames from each
+sub-array or aligned frame mosaics and mosaics them into a single
+coadded output (sub)group image. In reality this primitive is a
+wrapper for the workhorse _MAKE_MOSAIC_ primitive with dedicated
+sub-group processing.
+
+The primary use of this primitive is for reducing FOCUS data.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<COADD_MODE>
+
+Controls the coadding mode for the primitive. If COADD_MODE=RUNNING,
+the new frames are combined with the existing group image. If
+COADD_MODE=STACKALL the group image is recreated from all the constituent
+frames each time it is called. Default mode is 'STACKALL'.
+
+=item B<KEYS>
+
+A comma-separated list of the FITS header keys to be used to define
+the subgroup. Mandatory option - primitive will exit with no
+processing if no keys are provided. This is probably not
+desireable. This argument is ignored for FOCUS observations, which use
+two pre-defined keys to establish sub-groups.
+
+=item B<VERBOSE>
+
+Flag to denote whether to display extra information. Default is 0
+(no).
+
+=back
+
+=head1 KNOWN ISSUES
+
+This primitive has no memory, in that if a particular subgroup has
+been created previously then none of the properties of that subgroup
+can be accessed.
+
+=head1 FILE SUFFIX
+
+Creates a single output group image with a suffix of '_mos'.
+
+=head1 AUTHORS
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>,
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
+=cut
+
+# Should I be verbose (default to no)
+my $verbose = (exists $_MAKE_MOSAIC_SUBGROUP_{VERBOSE} &&
+               defined $_MAKE_MOSAIC_SUBGROUP_{VERBOSE}) ?
+               $_MAKE_MOSAIC_SUBGROUP_{VERBOSE} : 0;
+
+# Coordinate frame
+my $coframe =  (exists $_MAKE_MOSAIC_SUBGROUP_{COORD_FRAME} &&
+	       defined $_MAKE_MOSAIC_SUBGROUP_{COORD_FRAME}) ?
+               lc($_MAKE_MOSAIC_SUBGROUP_{COORD_FRAME}) : undef;
+
+# Do we want to use makemos?
+my $makemos = (exists $_MAKE_MOSAIC_SUBGROUP_{MAKEMOS} &&
+	       defined $_MAKE_MOSAIC_SUBGROUP_{MAKEMOS}) ?
+               $_MAKE_MOSAIC_SUBGROUP_{MAKEMOS} : 0;
+
+# Array of keys to define the sub-group
+my $keys = (exists $_MAKE_MOSAIC_SUBGROUP_{KEYS} &&
+	    defined $_MAKE_MOSAIC_SUBGROUP_{KEYS}) ?
+            $_MAKE_MOSAIC_SUBGROUP_{KEYS} : undef;
+
+my $coadd_mode = uc($_MAKE_MOSAIC_SUBGROUP_{COADD_MODE} || 'RUNNING');
+
+# Set the coordinate frame
+unless ( $coframe ) {
+  my $in = $Frm->file(1);
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=system");
+  (my $ORAC_STATUS, $coframe) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+}
+
+# Method for determining the output pixel values
+my $method; 
+# Make sure we pass in self-consistent values
+if ( $makemos ) {
+  $method = (exists $_MAKE_MOSAIC_SUBGROUP_{METHOD} &&
+	     defined $_MAKE_MOSAIC_SUBGROUP_{METHOD}) ? 
+	     lc($_MAKE_MOSAIC_SUBGROUP_{METHOD}) : "mean"; 
+} else {
+  $method = (exists $_MAKE_MOSAIC_SUBGROUP_{METHOD} &&
+	     defined $_MAKE_MOSAIC_SUBGROUP_{METHOD}) ? 
+	     lc($_MAKE_MOSAIC_SUBGROUP_{METHOD}) : "nearest"; 
+}
+
+my $focusobs = ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) ? 1 : 0;
+
+# If we have a focus observation, then we use default keys
+if ( $keys || $focusobs ) {
+
+  my @keys = ( $focusobs ) ? ("FOCAXIS","FOCPOSN") : split( /,/, $keys );
+  my %subkeys;
+  # Use header values in current Frm to define the new sub-group.
+  foreach my $key ( @keys ) {
+    # Check that the desired key is defined
+    if ( defined $Frm->hdrval($key) ) {
+      $subkeys{$key} = $Frm->hdrval($key);
+    } else {
+      orac_warn "No key named $key in current Frame header\n";
+    }
+  }
+
+  # Create subgroup based on these keys
+  my $group = $Grp->subgrp( %subkeys );
+
+  # Create the sub-group mosaic if the sub-group has any members
+  if ( @{ $group->allmembers } ) {
+
+    # Define sub-group filename from Group filename plus list of
+    # values for given keys - use reverse sort to get desired order
+    # for FOCUS observations
+    my $grpname = join("_",$Grp->file,reverse sort values %subkeys);
+
+    # Replace any decimal points in the filename with a dash
+    $grpname =~ s/\./-/g;
+    # Register group (file)name
+    $group->name( $grpname."_mos" );
+    $group->file( $group->name );
+
+    orac_print "Making SUB-GROUP mosaic\n";
+
+    # Create sub-group mosaic
+    _MAKE_MOSAIC_ USEGRP=1 GROUP=$group MAKEMOS=$makemos METHOD=$method COADD_MODE=$coadd_mode VERBOSE=$verbose COORD_FRAME=$coframe
+    
+  } else {
+    orac_warn "No subgroup can be made with the keys provided: $keys\n";
+  }
+
+} else {
+  orac_warn "No keys provided to make subgroup - ignoring\n" if $verbose;
+}
