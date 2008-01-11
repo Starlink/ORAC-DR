@@ -35,7 +35,9 @@ A comma-separated list of the FITS header keys to be used to define
 the subgroup. Mandatory option - primitive will exit with no
 processing if no keys are provided. This is probably not
 desireable. This argument is ignored for FOCUS observations, which use
-two pre-defined keys to establish sub-groups.
+two pre-defined keys to establish sub-groups. In principle there is no
+limit to the number of keys that may be given, though a warning is
+issued if the number is greater than 5.
 
 =item B<VERBOSE>
 
@@ -128,6 +130,10 @@ my $focusobs = ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) ? 1 : 0;
 if ( $keys || $focusobs ) {
 
   my @keys = ( $focusobs ) ? ("FOCAXIS","FOCPOSN") : split( /,/, $keys );
+  # What if we have lots of keys? Things could get messy.
+  if ( @keys > 5 ) {
+    orac_warn "Large number of keys (@keys) specified. Sub-groups may not exist or contain very few members.\n";
+  }
   my %subkeys;
   # Use header values in current Frm to define the new sub-group.
   foreach my $key ( @keys ) {
@@ -156,6 +162,16 @@ if ( $keys || $focusobs ) {
     $group->name( $grpname."_mos" );
     $group->file( $group->name );
 
+    # Store sub-group names for FOCUS observations for later retrieval
+    if ( $focusobs ) {
+      if ( $Grp->uhdr("SUBGROUPS") ) {
+	my %subgroups = %{ $Grp->uhdr("SUBGROUPS") };
+	$subgroups{ $subkeys{'FOCPOSN'} } = $group->name;
+	$Grp->uhdr("SUBGROUPS", \%subgroups);
+      } else {
+	$Grp->uhdr("SUBGROUPS", { $subkeys{'FOCPOSN'} => $group->name } );
+      }
+    }
     orac_print "Making SUB-GROUP mosaic\n";
 
     # Create sub-group mosaic
