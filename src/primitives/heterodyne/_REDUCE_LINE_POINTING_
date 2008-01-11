@@ -87,43 +87,42 @@ if( $Frm->uhdr( "SPARSE_CUBE" ) ) {
 
 } else {
 
-  # Store the original Frame object.
-  my $origFrm = $Frm->new( $Frm->file );
+  # Tag the Frm for easy retrieval.
+  $Frm->tagset( "REDUCE_LINE_POINTING_BEGIN" );
 
-  {
+  # Remove the baseline.
+  _REMOVE_BASELINE_
 
-    _REMOVE_BASELINE_
+  # Create a variance.
+  _CREATE_CUBE_VARIANCE_
 
-    _CREATE_CUBE_VARIANCE_
+  # Retrieve the JCMT pointing catalogue and look up the object. If it
+  # is defined, then we use the line velocity width to collapse over
+  # the line. If it isn't, we'll just use the baseline regions to
+  # figure out where the line is.
 
-    # Retrieve the JCMT pointing catalogue and look up the object. If
-    # it is defined, then we use the line velocity width to collapse
-    # over the line. If it isn't, we'll just use the baseline regions
-    # to figure out where the line is.
+  use Astro::Catalog;
 
-    use Astro::Catalog;
+  my $object = $Frm->uhdr( "ORAC_OBJECT" );
+  my $poicat = $Cal->find_file( "poi.dat" );
+  my $jcmtcat = new Astro::Catalog( Format => 'JCMT',
+                                    File => $poicat );
+  my ($result) = $jcmtcat->popstarbyid( $object );
+  if( defined( $result ) &&
+      defined( $result->misc ) &&
+      defined( $result->misc->{'velocity_range'} ) ) {
 
-    my $object = $Frm->uhdr( "ORAC_OBJECT" );
-    my $poicat = $Cal->find_file( "poi.dat" );
-    my $jcmtcat = new Astro::Catalog( Format => 'JCMT',
-                                      File => $poicat );
-    my ($result) = $jcmtcat->popstarbyid( $object );
-    if( defined( $result ) &&
-        defined( $result->misc ) &&
-        defined( $result->misc->{'velocity_range'} ) ) {
+    my $range = $result->misc->{'velocity_range'};
+    _COLLAPSE_LINE_ CENTRE=0 RANGE=$range
 
-      my $range = $result->misc->{'velocity_range'};
-      _COLLAPSE_LINE_ CENTRE=0 RANGE=$range
-
-    } else {
-      _COLLAPSE_CENTRAL_LINE_
-    }
-
-    _CALCULATE_POINTING_ TYPE=LINE
-
+  } else {
+    _COLLAPSE_CENTRAL_LINE_
   }
 
+  _CALCULATE_POINTING_ TYPE=LINE
+
   # Reset the Frame object.
-  $Frm = $origFrm;
+  $Frm->tagretrieve( "REDUCE_LINE_POINTING_BEGIN" );
 
 }
+
