@@ -10,24 +10,13 @@ _EXTINCTION_CORRECT_FRAME_
 
 =head1 DESCRIPTION
 
-This primitive corrects each frame for atmospheric extinction. It can
-be run on a single mosaicked frame or with aligned subarray frames.
-
-=head1 ARGUMENTS
-
-=over 4
-
-=item B<EXTCOR_MODE>
-
-EXTCOR_MODE determines which extinction correction is applied. If set
-to FULL, then an accurate pixel-level correction is applied taking
-into account the airmass of individual pixels. If set to QUICKER then
-the image is corrected assuming a single value for the airmass across
-the array. 
-
-=back
-
-=head1 ALGORITHMS
+This primitive corrects each image in the current Frame for
+atmospheric extinction. The method for deriving the correction can be
+specified by the user depending on how accurate it should be and/or
+how fast it should be applied. The default is to use the quickest
+method possible, which is to calculate a mean optical depth and
+airmass for all the files in the current Frame and multiply each file
+by the same correction factor.
 
 In FULL mode SMURF EXTINCTION is used to apply the extinction
 correction on a per-pixel basis using information from the WVM stored
@@ -43,6 +32,32 @@ In QUICKER mode the extinction correction is calculated as a single
 value and is applied to all images in the Frame object using the KAPPA
 CMULT routine.
 
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<EXTCOR_MODE>
+
+EXTCOR_MODE determines which extinction correction is applied. If set
+to FULL, then an accurate pixel-level correction is applied taking
+into account the airmass of individual pixels. If set to QUICKER then
+the image is corrected assuming a single value for the airmass across
+the array. An intermediate level correction may be applied by
+specifying QUICK whereby the airmass and optical depth for each image
+is used to correct that image.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+=over 4
+
+=item Starlink 
+
+KAPPA: CMULT, SMURF: EXTINCTION
+
+=back
+
 =head1 KNOWN ISSUES
 
 To be accurate the mean tau and airmass should be read from each
@@ -51,11 +66,12 @@ requires that the extinction correction occurs before mosaicking
 in the non-QuickLook recipe.
 
 Note that this primitive relies on SMURF using its own internal tau
-conversion methods. These should be identical to those in JCMT::Tau.
+conversion methods. For consistency these should be identical to those
+in JCMT::Tau.
 
-=head1 FILE SUFFIX
+=head1 OUTPUT FILES
 
-Creates output files with a '_ext' suffix.
+Creates output files with suffix C<_ext>
 
 =head1 NOTES
 
@@ -89,7 +105,7 @@ USA
 =cut
 
 # Read the extinction correction argument if present
-my $extcor_mode = uc( $_EXTINCTION_CORRECT_FRAME_{EXTCOR_MODE} || 'FULL');
+my $extcor_mode = uc( $_EXTINCTION_CORRECT_FRAME_{EXTCOR_MODE} || 'QUICKER');
 
 my @out;
 
@@ -128,12 +144,11 @@ if ( $extcor_mode eq 'FULL' ) {
 
   for my $i (1..$Frm->nfiles) {
     # Tau at 225 GHz for this file
-    my $csotau = sprintf "%5.3f", 0.5*($Frm->hdrval('WVMTAUST', ($i-1)) + 
-				       $Frm->hdrval('WVMTAUEN', ($i-1)));
+    my $csotau = sprintf "%5.3f", $Frm->hdrval('MEANWVM', ($i-1));
 
     my ($in, $out) = $Frm->inout('_ext',$i);
     push(@out, $out);
-#    orac_print "Correcting extinction for file $in\n";
+
     my $extargs = "in=$in out=$out method=CSOTAU csotau=$csotau quick=true";
     $Mon{smurf_mon}->obeyw("extinction",$extargs);
   }
@@ -142,7 +157,7 @@ if ( $extcor_mode eq 'FULL' ) {
 
   # Use mean values from FITS header
   my ($tau, $airmass);
-  # CSO Tau
+  # CSO Tau - average of all values in current Frm
   my $csotau = sprintf "%5.3f", 0.5*($Frm->hdrval('WVMTAUST', 0) + 
 				     $Frm->hdrval('WVMTAUEN',-1));
 
@@ -161,8 +176,6 @@ if ( $extcor_mode eq 'FULL' ) {
 
   # Extinction correction factor
   my $extcor = exp($tau*$airmass);
-
-#  orac_print "QUICKER: Airmass = ".$airmass.", tau = ".$tau."\n";
 
   # Loop over all files and apply multiplier
   for my $i (1..$Frm->nfiles) {
