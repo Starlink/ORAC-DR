@@ -764,7 +764,7 @@ sub current_primitive {
   my $class = shift;
   my $primname = shift;
   my $depth = shift;
-  return if (defined $depth && $depth > 1 );
+  return if (defined $depth && $depth != 2 ); # Recipe viewer only shows top level
   $$CURRENT_PRIMITIVE = [ $primname ];
 }
 
