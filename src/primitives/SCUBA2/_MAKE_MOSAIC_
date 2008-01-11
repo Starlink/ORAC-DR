@@ -193,9 +193,10 @@ if ( uc($outsys) eq "GAPPT" ) {
 # Write text file with list of files to align and mosaic.
 my $filelist = new ORAC::TempFile;
 my $listhandle = $filelist->handle;
-my $tmpout;
-my $grpfrm;
-my $nfiles;
+my $tmpout; # Output file
+my $grpfrm; # Label to inform user of Frame/Group processing
+my $nfiles; # Number of files to mosaic
+my $Grpobj; # Group object if group processing
 
 # Now we obtain the list of files to mosaic - let user know
 orac_print "Collecting files to mosaic...\n";
@@ -204,15 +205,29 @@ if ( $usegrp ) {
   # GROUP PROCESSING
   # #################
   $grpfrm = "Group";
+  # Determine which group object to use - fall back on Grp if not defined
+  $Grpobj = (exists $_MAKE_MOSAIC_{GROUP} &&
+	     defined $_MAKE_MOSAIC_{GROUP}) ? 
+	     $_MAKE_MOSAIC_{GROUP} : $Grp;
+  # Check that the supplied GROUP object is indeed an ORAC-DR group object
+  unless (UNIVERSAL::isa($Grpobj, "ORAC::Group") ) {
+    orac_throw "Error: input GROUP is not an ORAC-DR Grp object\n";
+  }
   my $coadd_mode = uc($_MAKE_MOSAIC_{COADD_MODE} || 'RUNNING');
   # If the group file does not exist we can treat this as if
   # the coadd option is STACKALL
-  $coadd_mode = 'STACKALL' unless $Grp->file_exists;
+  my $fullname = $Grpobj->file.$Grpobj->filesuffix;
+  my $Grpobj_file_exists = ( -e $fullname ) ? 1 : 0;
+#  $coadd_mode = 'STACKALL' unless $Grpobj->file_exists;
+  $coadd_mode = 'STACKALL' unless $Grpobj_file_exists;
+
+  print "Making group mosaic for ".$Grpobj->file." ($coadd_mode : $fullname)\n";
 
   if ($coadd_mode eq 'RUNNING') {
-    if ($Grp->file_exists) {
+#    if ($Grpobj->file_exists) {
+    if ($Grpobj_file_exists) {
       $nfiles = 1;
-      print {$listhandle} $Grp->file ."\n";
+      print {$listhandle} $Grpobj->file ."\n";
       
       # Align the images in the current Frm before calling makemos
       if ( $makemos ) {
@@ -237,7 +252,7 @@ if ( $usegrp ) {
   } elsif ($coadd_mode eq 'STACKALL') {
     # Combine all the frames from all the groups
     $nfiles = 0;
-    for my $f ($Grp->members) {
+    for my $f ($Grpobj->members) {
       if ( $makemos ) {
 	_ALIGN_ARRAYS_ REFIMAGE=$refimage METHOD=$method REBIN=0 FRAME_OBJ=$f
       }
@@ -251,6 +266,7 @@ if ( $usegrp ) {
 	  $Mon{ndfpack_mon}->obeyw("wcsattrib","$alignargs");
 	}
 	print {$listhandle} "$fname\n";
+	print "$fname\n";
 	$nfiles++;
       }
     }
@@ -406,14 +422,15 @@ if ( $makemos ) {
 
 # HACK for renaming group output
 if ( $usegrp ) {
-  my $outname = $Grp->file;
+  my $outname = $Grpobj->file;
   $outname .= "_mos" unless $outname =~ /_mos$/; # horrible hack KLUGE
 
   rename $out .".sdf", $outname .".sdf" 
     or die "Error renaming temp file to output Group mosaic"; # horrible hack KLUGE
 
   # Register new output file with Grp
-  $Grp->file( $outname );
+  $Grpobj->file( $outname );
+
 } else {
   # Register new Frm file names
   $Frm->files( $out );
