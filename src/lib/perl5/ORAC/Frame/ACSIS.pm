@@ -569,6 +569,12 @@ sub findgroup {
                $self->hdr( "OBS_TYPE" ) .
                $self->hdr( "IFFREQ" ) .
                $restfreq;
+
+    # Add DATE-OBS if we're not doing a science observation.
+    if( uc( $self->hdr( "OBS_TYPE" ) ) ne 'SCIENCE' ) {
+      $hdrgrp .= $self->hdr( "DATE-OBS" );
+    }
+
   }
 
   $self->group($hdrgrp);
