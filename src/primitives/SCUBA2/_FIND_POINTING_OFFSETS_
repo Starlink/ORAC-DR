@@ -45,7 +45,9 @@ _CENTROID_IMAGE_, _FIND_BEAM_SIZE_
 
 =head1 OUTPUT DATA
 
-The frame object is not updated.
+This primitive writes a .ok file in $ORAC_DATA_OUT for the JCMT
+POINTING_FOCUS task to calculate the actual pointing offsets used by
+the telescope.
 
 =head1 AUTHOR
 
@@ -73,14 +75,30 @@ my $offmethod = (exists $_FIND_POINTING_OFFSETS_{METHOD} &&
                  lc($_FIND_POINTING_OFFSETS_{METHOD}) : "centroid";
 
 # Check that we have a pointing observation
-#if ( uc($Frm->hdr('OBS_TYPE')) ne "POINT" ) {
-#  orac_throw "Data are not from a POINTing observation\n";
+#if ( uc($Frm->hdr('OBS_TYPE')) ne "POINTING" ) {
+#  orac_throw "Data are not from a POINTING observation\n";
 #}
 # Other checks: should be a standard source
 
 # Do we have a completed observation? Check for OBSEND = T in the last
 # entry in the Frame object.
 if ( $Frm->hdrval('OBSEND',-1) ) {
+
+  # Write .ok in output directory
+  # Format obsnum
+  my $obsnum = sprintf "%05d", $Frm->hdrval('OBSNUM');
+  # Define filename
+  my $okfilename = ".s".$Frm->hdrval('UTDATE')."_".$obsnum.".ok";
+
+  # Open the file for writing
+  my $okfile = new IO::File("> $okfilename");
+  if ( defined $okfile ) {
+    print $okfile $Grp->file . $Grp->filesuffix ."\n";
+  } else {
+    orac_warn "Unable to create .ok file, $okfilename: $!\n";
+  }
+  # Close the file: the POINTING_FOCUS task can now do its thang
+  $okfile->close;
 
   # Initialize the log file if necessary
   my $pointinglog;
@@ -93,25 +111,23 @@ if ( $Frm->hdrval('OBSEND',-1) ) {
       );
   }
 
-  # By default use the current group file
-  my $group = defined( $_FIND_POINTING_OFFSETS_{GROUP} ) ? 
-                       $_FIND_POINTING_OFFSETS_{GROUP} : 1;
-
   # Determine pointing offsets
   my ($daz, $del);
-  if ( $offmethod eq "fit") {
+  # Placeholder - print warning message if an unsupported method is given
+  if ( $offmethod ne "centroid") {
     # METHOD = FIT
-    orac_print ("Oops METHOD=FIT not supported yet :-)\n", "red");
-  } else {
-    # METHOD = CENTROID
-    # Find source position offsets using the current Group image
-    _CENTROID_IMAGE_ GROUP=$group SYSTEM=AZEL OFFSET=1
- 
-    ($daz, $del) = @{ $_CENTROID_IMAGE_{RESULTS} };
-    # dAz and dEl are currently in degrees so convert to arcsec
-    $daz = sprintf "%4.2f", 3600.0*$daz;
-    $del = sprintf "%4.2f", 3600.0*$del;
+    orac_print "METHOD=$offmethod is not supported - falling back on CENTROID\n";
+    $offmethod = "centroid";
   }
+
+  # METHOD = CENTROID
+  # Find source position offsets using the current Group image
+  _CENTROID_IMAGE_ GROUP=1 SYSTEM=AZEL OFFSET=1
+ 
+  ($daz, $del) = @{ $_CENTROID_IMAGE_{RESULTS} };
+  # dAz and dEl are currently in degrees so convert to arcsec
+  $daz = sprintf "%4.2f", 3600.0*$daz;
+  $del = sprintf "%4.2f", 3600.0*$del;
 
   my $ORAC_STATUS;
   # Write info to log file if requested
@@ -138,15 +154,12 @@ if ( $Frm->hdrval('OBSEND',-1) ) {
     # Write the entry:
     # ObsNum, source, UT, filter, DAz, DEl, Seeing, tau225
     $pointinglog->addentry("$obsnum $source $time  $filt   $daz $del  $el   $see   $cso");
-  }
-
-  # If we are not logging these data to a file, store the noise in the
-  # primitive hash
-  unless ($uselog) {
+  } else {
+    # If we are not logging these data to a file, store the noise in the
+    # primitive hash
     $_FIND_POINTING_OFFSETS_{DAZ} = $daz;
     $_FIND_POINTING_OFFSETS_{DEL} = $del;
   }
 
   orac_print ("Pointing offsets are (dAz, dEl) = ($daz, $del) arcsec\n", "green");
-
 }
