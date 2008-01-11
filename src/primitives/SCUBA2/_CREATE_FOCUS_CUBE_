@@ -1,0 +1,191 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CREATE_FOCUS_CUBE_ - Create a cube suitable for analysis by the POINTING_FOCUS task
+
+=head1 DESCRIPTION
+
+This primitive create a 3-D data cube for analysis by the
+POINTING_FOCUS task to determine the FOCUS offsets for the current SMU
+axis. The primitive checks for the OBSEND flag in the FITS header and
+only proceeds if true. The sub-group mosaics created for each focus
+position (FOCPOSN) have a third axis added before combining into a
+cube. A new WCS component is created based on the existing SKY frame,
+but with a mapping from grid to mm offset for the third axis.
+
+Once the cube has been constructed, the primitive writes the name of
+the file into a flag file which the POINTING_FOCUS task reads before
+calculating the FOCUS offset.
+
+=head1 ARGUMENTS
+
+The following argument is supported:
+
+=item B<VERBOSE>
+
+Flag to indicate whether informational messages should be 
+given to the user. Default is 1 (true).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+=over 4
+
+=item ATOOLS
+
+ASTGETMAPPING, ASTWINMAP, ASTCMPMAP, ASTFRAME, ASTGETFRAME,
+ASTCMPFRAME, ASTADDFRAME, ASTFRAMESET
+
+=item KAPPA
+
+PASTE, SETBOUND 
+
+=back
+
+=head1 OUTPUT DATA
+
+This primitive writes a .ok file in $ORAC_DATA_OUT for the JCMT
+POINTING_FOCUS task to calculate the actual pointing offsets used by
+the telescope.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+Copyright (C) 2007 the University of British Columbia. All Rights
+Reserved.
+
+=cut
+
+# Should I be verbose? (Default to yes)
+my $verbose = (exists $_CREATE_FOCUS_CUBE_{VERBOSE} && 
+	       defined $_CREATE_FOCUS_CUBE_{VERBOSE}) ?
+               $_CREATE_FOCUS_CUBE_{VERBOSE} : 1;
+
+# Check that we have a FOCUS observation
+#if ( uc($Frm->hdr('OBS_TYPE')) ne "FOCUS" ) {
+#  orac_throw "Data are not from a FOCUS observation\n";
+#}
+# Other checks: should be a standard source
+
+# Do we have a completed observation? Check for OBSEND = T in the last
+# entry in the Frame object.
+if ( $Frm->hdrval('OBSEND',-1) ) {
+
+  # Which axis are we dealing with?
+  my $axis = $Frm->hdr("FOCAXIS");
+
+  # Retrieve list of sub-group names as defined by FOCPOSN
+  my %focposngrps = %{ $Grp->uhdr("SUBGROUPS") };
+
+  # Create the cube:
+  # 1) Retrieve SKY mapping/frame for later use
+  # 2) Add a third axis to each subgroup mosaic
+  # 3) Write name to file list
+  # 4) Define name (add _foc at end)
+  # 5) Paste the individual images together to make the cube
+  # 6) Create new 3-D WCS frameset for cube using stored SKY mapping &
+  #    frame
+
+  # Collect the sub-group images together
+#  my $skymapframe = 0;
+  my $skymapframe = ( -e "skymap1.lis" ) ? 1 : 0; #TMP for QL
+  my $inlist = new ORAC::TempFile;
+  my @focposns = sort keys %focposngrps;
+  my $focidx = 0;
+  foreach my $focposn ( @focposns ) {
+    my $infile = $focposngrps{$focposn};
+    # Obtain the 2-D skymapping & skyframe before adding extra dimensions
+    my $args;
+    unless ( $skymapframe ) {
+#      $args = "this=$infile iframe1=ast__base iframe2=ast__current result=skymap$$.ast";
+      $args = "this=$infile iframe1=ast__base iframe2=ast__current result=skymap1.lis"; #TMP for QL
+      $Mon{atools_mon}->obeyw("astgetmapping","$args");
+#      $args = "this=$infile iframe=ast__current result=skyframe$$.ast";
+      $args = "this=$infile iframe=ast__current result=skyframe1.lis"; #TMP for QL
+      $Mon{atools_mon}->obeyw("astgetframe","$args");
+      $skymapframe = 1;
+    }
+    $focidx++;
+    # TMP for QL
+    $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$infile");
+    my ($ORAC_STATUS, $ndim) = $Mon{ndfpack_mon}->get("ndftrace","ndim");
+    # If the data are 2-D, add a third axis -- TMP for QL
+    if ( $ndim == 2 ) {
+      # Now add a 1-pixel-wide third axis
+      $args = "ndf=$infile(,,$focidx:$focidx)";
+      $Mon{'ndfpack_mon'}->obeyw("setbound","$args");
+    }
+    # Finally add filename to list
+    print {$inlist->handle} $infile."\n";
+  }
+
+  # Define output cube name - replace _mos with _foc
+  my $cubename = $Grp->file;
+  if ( $cubename =~ /_mos$/) {
+    $cubename =~ s/_mos$/_foc/;
+  } else {
+    $cubename .= "_foc";
+  }
+  # Store complete filename for later use
+  $Grp->uhdr("FOCUS_CUBE", $cubename.$Grp->filesuffix);
+
+  # Combine individual FOCPOSN mosaics into a 3-D cube
+  my $args = "in=^".$inlist->file." p1=! out=$cubename title='FOCUS cube'";
+  $Mon{kappa_mon}->obeyw("paste","$args");
+  orac_print "Creating FOCUS cube..." if $verbose;
+  undef $inlist;
+
+  # Now create suitable 3-D frameset to ensure 3rd axis is offset in
+  # millimetres. Method mirrors that in _CREATE_CUBE_WCS_
+  # First create a FRAME for the focus offsets
+  $args = "naxes=1 result=focusframe$$.ast options='Title=Offset on SMU $axis axis,Label=Offset in mm,Unit=mm'";
+  $Mon{atools_mon}->obeyw("astframe","$args");
+  # Combine this FRAME with the above SKYFRAME to create a compound frame, CMPFRAME
+#  $args = "frame1=skyframe$$.ast frame2=focusframe$$.ast options=! result=cmpframe$$.ast";
+  $args = "frame1=skyframe1.lis frame2=focusframe$$.ast options=! result=cmpframe$$.ast"; #TMP for QL
+  $Mon{atools_mon}->obeyw("astcmpframe","$args");
+  # Define a WINMAP to describe the third axis
+  my $focmin = $focposns[0];
+  my $focmax = $focposns[-1];
+  $args = "ncoord=1 ina=1 inb=$focidx outa=$focmin outb=$focmax options=! result=focusmap$$.ast";
+  $Mon{atools_mon}->obeyw("astwinmap","$args");
+  # Combine this WINMAP with the above SKYMAP to create a compund mapping, CMPMAP
+#  $args = "map1=skymap$$.ast map2=focusmap$$.ast series=f options=! result=cmpmapping$$.ast";
+  $args = "map1=skymap1.lis map2=focusmap$$.ast series=f options=! result=cmpmapping$$.ast"; #TMP for QL
+  $Mon{atools_mon}->obeyw("astcmpmap","$args");
+  # Create an empty 3-D GRID frame
+  $args = "naxes=3 options='Domain=GRID' result=grid$$.ast";
+  $Mon{atools_mon}->obeyw("astframe","$args");
+  # Add it to a skeleton FRAMESET
+  $args = "frame=grid$$.ast options=! result=newwcs$$.ast";
+  $Mon{atools_mon}->obeyw("astframeset","$args");
+  # Add the CMPFRAME to the FRAMESET using the CMPMAP to tie it to the
+  # GRID frame. Store as WCS in the output cube.
+  $args = "this=newwcs$$.ast iframe=ast__base map=cmpmapping$$.ast frame=cmpframe$$.ast result=$cubename";
+  $Mon{atools_mon}->obeyw("astaddframe","$args");
+  orac_print " adding WCS..." if $verbose;
+
+  # Remove all of the .ast text files with the mapping/frame info
+  unlink glob( "*$$.ast" );
+
+  # OK a useable cube now exists - write the .ok file in output
+  # directory Format obsnum
+  my $obsnum = sprintf "%05d", $Frm->hdrval('OBSNUM');
+  # Define filename
+  my $okfilename = ".s".$Frm->hdrval('UTDATE')."_".$obsnum.".ok";
+
+  # Open the file for writing
+  my $okfile = new IO::File("> $okfilename");
+  if ( defined $okfile ) {
+    print $okfile $cubename . $Grp->filesuffix ."\n";
+  } else {
+    orac_warn "Unable to create .ok file, $okfilename: $!\n";
+  }
+  # Close the file: the POINTING_FOCUS task can now do its thang
+  $okfile->close;
+
+  orac_print " Done. Cube is ready for processing.\n" if $verbose;
+}
