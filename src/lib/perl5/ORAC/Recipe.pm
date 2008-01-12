@@ -667,7 +667,6 @@ sub _read_recipe {
     # The error is reported for the last attempt that has failed
     $RecErr = undef;
     try {
-      print "Trying recipe $recname\n";
       $recipe = $parser->find( $recname, \@path );
       $found = $recname if defined $recipe;
     } catch ORAC::Error::FatalError with {
