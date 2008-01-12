@@ -226,6 +226,7 @@ all the monoliths launched for this instrument.
                       CmdLineRecipe => $Override_Recipe,
                       Instrument => $instrument,
                       Batch => 0,
+                      RecSuffix => "A,B,C",
                      );
 
 Additional parameters are provided to configure the recipe
@@ -282,9 +283,6 @@ sub orac_process_frame {
     orac_print "Using recipe $RecipeName provided by the frame\n";
   };
 
-  # Set the Xoracdr status bar to have the current recipe name
-  $$CURRENT_RECIPE = "Currently doing: $RecipeName";
-
   # clear the primitive list variables
   if ( defined $PRIMITIVE_LIST && ref($PRIMITIVE_LIST) ) {
     @$PRIMITIVE_LIST = ( );
@@ -310,9 +308,12 @@ sub orac_process_frame {
   $recipe->debug( $args{Debug} ) if exists $args{Debug};
   $recipe->batch( $args{Batch} ) if exists $args{Batch};
 
+  # Configure recipe suffix
+  $recipe->suffices( @{$args{RecSuffix}}) if exists $args{RecSuffix};
+
   # Execute the recipe
   try {
-     $recipe->execute( $CURRENT_PRIMITIVE, $PRIMITIVE_LIST, $Frm, 
+     $recipe->execute( $CURRENT_RECIPE, $CURRENT_PRIMITIVE, $PRIMITIVE_LIST, $Frm, 
                        $Grp, $Cal, $Display, $Mon );
   }
   catch ORAC::Error::FatalError with
@@ -1096,7 +1097,7 @@ sub orac_process_argument_list {
 This routine handles the main data processing 
 
   orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume, 
-                       $opt_skip, $opt_debug, $loop, 
+                       $opt_skip, $opt_debug, $recsuffix, $loop, 
            $frameclass, $groupclass, 
            $instrument, $Mon, $Cal, \@obs, 
            $Display, $orac_prt,
@@ -1155,11 +1156,11 @@ Batch mode can be turned on with the -batch switch.
 
 sub orac_main_data_loop {
 
-  croak 'Usage: orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume, $opt_skip, $opt_debug, $loop, $frameclass, $groupclass, $instrument, $Mon, $Cal, \@obs, $Display, $orac_prt, $ORAC_MESSAGE, $CURRENT_RECIPE, \@PRIMITIVE_LIST, $CURRENT_PRIMITIVE, $Override_Recipe )'
-    unless scalar(@_) == 19;
+  croak 'Usage: orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume, $opt_skip, $opt_debug, $recsuffix, $loop, $frameclass, $groupclass, $instrument, $Mon, $Cal, \@obs, $Display, $orac_prt, $ORAC_MESSAGE, $CURRENT_RECIPE, \@PRIMITIVE_LIST, $CURRENT_PRIMITIVE, $Override_Recipe )'
+    unless scalar(@_) == 20;
 
   # Read the argument list
-  my ( $opt_batch, $opt_ut, $opt_resume, $opt_skip, $opt_debug,
+  my ( $opt_batch, $opt_ut, $opt_resume, $opt_skip, $opt_debug, $recsuffix,
        $loop, $frameclass, $groupclass, $instrument, $Mon, $Cal, $obs, 
        $Display, $orac_prt, $ORAC_MESSAGE, $CURRENT_RECIPE, $PRIMITIVE_LIST,
        $CURRENT_PRIMITIVE, $Override_Recipe ) = @_;
@@ -1223,6 +1224,7 @@ sub orac_main_data_loop {
                              CmdLineRecipe => $Override_Recipe,
                              Instrument => $instrument,
                              Batch => 0,
+                             RecSuffix => $recsuffix,
                             );
         }
         catch ORAC::Error::FatalError with {

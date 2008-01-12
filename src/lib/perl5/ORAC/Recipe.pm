@@ -78,6 +78,7 @@ sub new {
                    PrimitiveParser => undef,
                    RecipeName => undef,
                    Recipe => undef,
+                   RecSuffices => [],
                   }, $class;
 
   # Check for arguments
@@ -177,7 +178,7 @@ sub name {
     # reread if we do not have one stored and we know we have all the information
     # we can get (be pessimistic otherwise)
     if (!defined $compiled && defined $self->instrument && defined $self->frame) {
-      $self->read_recipe();
+      $self->_read_recipe();
     }
   }
 
@@ -187,6 +188,30 @@ sub name {
   } else {
     return $self->{RecipeName};
   }
+}
+
+=item B<suffices>
+
+Suffices that can be appended to recipe name when scanning for recipes. The recipe containing
+a suffix is used in preference to a recipe without the suffix. The suffices are stored in
+priority order.
+
+  @suffices = $rec->suffices;
+  $rec->suffices( @suffices );
+
+Note that suffices do not need to start with an underscore and one will be added if required.
+All recipes will be STUB_SUFFIX form.
+
+=cut
+
+sub suffices {
+  my $self = shift;
+  if (@_) {
+    # prepend underscore if needed so that we only do it once rather than each time we look
+    # for a recipe
+    @{$self->{RecSuffices}} = map { $_ = "_$_" unless /^_/; $_} @_;
+  }
+  return @{$self->{RecSuffices}};
 }
 
 =item B<batch>
@@ -357,7 +382,7 @@ Executes the recipes stored in the object.
 Also needs the current frame, group and calibration objects
 as well as the hash containing all the messaging objects.
 
-  $rec->execute( \$CURRENT_PRIMITIVE, \$PRIMITIVE_LIST, 
+  $rec->execute( \$CURRENT_RECIPE, \$CURRENT_PRIMITIVE, \$PRIMITIVE_LIST, 
                  $Frm, $Grp, $Cal, $Display, \%Mon);
 
 The following classes are avaiable to primitive writers:
@@ -370,6 +395,14 @@ Other classes can be loaded from within the recipe as needed.
 The objects accessible to the recipe are:
 
 =over 4
+
+=item B<$CURRENT_RECIPE>
+
+Reference to string describing the current recipe. Passed in here
+because the executed recipe can be different to the requested
+recipe. Will be set with the value:
+
+  Currently doing: $RecipeName
 
 =item B<$CURRENT_PRIMITIVE>
 
@@ -435,6 +468,7 @@ sub execute {
   # Read all args so that the only thing left will be the hidden arg,
   # note that $CURRENT_PRIMITIVE is passed since its used by the recipe
   # viewer window and added to the recipe code itself.
+  my $CURRENT_RECIPE = shift;
   my $CURRENT_PRIMITIVE = shift;
   my $PRIMITIVE_LIST =shift;
   my $Frm = shift;
@@ -448,6 +482,7 @@ sub execute {
 
   # Force the recipe to be read
   $self->_read_recipe();
+  $$CURRENT_RECIPE = "Currently doing: ".$self->name;
 
   # Store the top level primitive names in the global array
   if (defined $PRIMITIVE_LIST && ref($PRIMITIVE_LIST) ) {
@@ -622,11 +657,33 @@ sub _read_recipe {
   # If the path array is empty add cwd (should not happen in oracdr)
   @path = ( File::Spec->curdir ) unless @path;
 
-  # ask the parser to locate the recipe
-  my $recipe = $parser->find( $name, \@path );
+  # Now look for a recipe in that path, taking care to try the supplied suffices first
+  my $recipe;
+  my $found;
+  my $RecErr;
+  for my $suffix ( $self->suffices, '') {
+    my $recname = $name . $suffix;
+    # ask the parser to locate the recipe. We catch errors so that we can try a new name.
+    # The error is reported for the last attempt that has failed
+    $RecErr = undef;
+    try {
+      print "Trying recipe $recname\n";
+      $recipe = $parser->find( $recname, \@path );
+      $found = $recname if defined $recipe;
+    } catch ORAC::Error::FatalError with {
+      my $E = shift;
+      $RecErr = "$E";
+      $E->flush; # Need to clear the error stack else the higher reaches of the pipeline will re-throw
+    };
+    last if defined $recipe;
+  }
+  # Rethrow the exception for the last attempt at finding the recipe
+  if (!defined $recipe && defined $RecErr) {
+    throw ORAC::Error::FatalError("$RecErr");
+  }
   throw ORAC::Error::FatalError("Trouble reading recipe") unless defined $recipe;
   $self->recipe( $recipe );
-
+  $self->name( $found );
   return ORAC__OK;
 }
 
