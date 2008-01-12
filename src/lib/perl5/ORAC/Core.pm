@@ -109,15 +109,18 @@ is supplied purely so that the Group can be named (using the
 file_from_bits() method).
 
   orac_store_frm_in_correct_grp($Frm, $GrpType, \%Groups, \@Groups,
-        $ut, $resume);
+        $ut, $resume, $transient);
   orac_store_frm_in_correct_grp($Frm, $GrpType, \%Groups, undef, 
-        $ut, $resume);
+        $ut, $resume, $transient);
 
 The resume flag is used to determine the behaviour of the group when
 it is first created. If resume is false, any existing Group file is 
 removed before proceeding; if it is true, the Group file is retained
 and any coadd information is read using the coaddsread() Group
 method.
+
+The transient argument controls whether more than one group can be
+created. If transient is true only a single group is stored %Groups.
 
 The current Grp (ie the Group associated with the supplied Frm)
 is returned.
@@ -127,14 +130,14 @@ is returned.
 
 sub orac_store_frm_in_correct_grp {
 
-  croak 'Usage: orac_store_frm_in_correct_grp($Frm, $GrpType, $GrpHash, $GrpArr,$ut, $resume)'
-    unless scalar(@_) == 6;
+  croak 'Usage: orac_store_frm_in_correct_grp($Frm, $GrpType, $GrpHash, $GrpArr,$ut, $resume, $transient)'
+    unless scalar(@_) == 7;
 
   # Variable declaration - Frossie loves this stuff :-)
   my ($use_arr, $Grp);
 
   # Read the argument list
-  my ($Frm, $GrpObjectType, $GrpHash, $GrpArr, $ut, $resume) = @_;
+  my ($Frm, $GrpObjectType, $GrpHash, $GrpArr, $ut, $resume, $transient) = @_;
 
   # Check that we have a hash reference
   croak 'orac_store_frm_in_correct_grp: 3rd arg must be hash reference'
@@ -161,6 +164,9 @@ sub orac_store_frm_in_correct_grp {
   # Unless the primitive is written to recognise -resume
 
   do {
+
+    # Clear the group hash if we are transient
+    %$GrpHash = () if $transient;
 
     # Create the group
     $Grp = new $GrpObjectType($grpname);
@@ -1097,8 +1103,8 @@ sub orac_process_argument_list {
 This routine handles the main data processing 
 
   orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume, 
-                       $opt_skip, $opt_debug, $recsuffix, $loop, 
-           $frameclass, $groupclass, 
+                       $opt_skip, $opt_debug, $recsuffix, $grptrans,
+           $loop, $frameclass, $groupclass, 
            $instrument, $Mon, $Cal, \@obs, 
            $Display, $orac_prt,
            $ORAC_MESSAGE, $CURRENT_RECIPE, \@PRIMITIVE_LIST,
@@ -1156,12 +1162,12 @@ Batch mode can be turned on with the -batch switch.
 
 sub orac_main_data_loop {
 
-  croak 'Usage: orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume, $opt_skip, $opt_debug, $recsuffix, $loop, $frameclass, $groupclass, $instrument, $Mon, $Cal, \@obs, $Display, $orac_prt, $ORAC_MESSAGE, $CURRENT_RECIPE, \@PRIMITIVE_LIST, $CURRENT_PRIMITIVE, $Override_Recipe )'
-    unless scalar(@_) == 20;
+  croak 'Usage: orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume, $opt_skip, $opt_debug, $recsuffix, $grptrans, $loop, $frameclass, $groupclass, $instrument, $Mon, $Cal, \@obs, $Display, $orac_prt, $ORAC_MESSAGE, $CURRENT_RECIPE, \@PRIMITIVE_LIST, $CURRENT_PRIMITIVE, $Override_Recipe )'
+    unless scalar(@_) == 21;
 
   # Read the argument list
   my ( $opt_batch, $opt_ut, $opt_resume, $opt_skip, $opt_debug, $recsuffix,
-       $loop, $frameclass, $groupclass, $instrument, $Mon, $Cal, $obs, 
+       $grptrans, $loop, $frameclass, $groupclass, $instrument, $Mon, $Cal, $obs, 
        $Display, $orac_prt, $ORAC_MESSAGE, $CURRENT_RECIPE, $PRIMITIVE_LIST,
        $CURRENT_PRIMITIVE, $Override_Recipe ) = @_;
 
@@ -1203,7 +1209,7 @@ sub orac_main_data_loop {
 
         # Store the Frame in the Group
         my $Grp = orac_store_frm_in_correct_grp($Frm, $groupclass, \%Groups,
-                                                undef, $opt_ut, $opt_resume);
+                                                undef, $opt_ut, $opt_resume, $grptrans);
 
         # Actually process the observation
         # Includes recipe configurations since the recipe
@@ -1275,7 +1281,7 @@ sub orac_main_data_loop {
 
         # Store the Frame in the Group
         orac_store_frm_in_correct_grp($Frm, $groupclass, \%Groups, \@Groups,
-                                      $opt_ut, $opt_resume);
+                                      $opt_ut, $opt_resume, 0);
 
       }
 
@@ -1347,8 +1353,22 @@ Alasdair Allan E<lt>aa@astro.ex.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 2008 Science and Technology Facilities Council.
+Copyright (C) 1998-2007 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
