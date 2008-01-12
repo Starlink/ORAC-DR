@@ -328,15 +328,24 @@ sub _read_all_prims {
 }
 
 # recursive routine to check that each primitive is available
+# The depth optional parameter enables the hierarchy to be retained in string form by indenting
 sub _find_children {
   my $self = shift;
   my $parent = shift;
+  my $depth = shift;
+  my $prefix = '';
+  my $dprefix = '';
+  if (defined $depth) {
+    $depth++;
+    $prefix = ' ' x $depth;
+    $dprefix = $prefix . ' ';
+  }
   my $parser = $self->parser;
   my @primitives;
   for my $prim ($parent->children) {
     my $child = $parser->find($prim);
-    push(@primitives, $prim );
-    push(@primitives, $self->_find_children( $child ));
+    push(@primitives, $prefix . $prim );
+    push(@primitives, map { $dprefix . $_ } $self->_find_children( $child ));
   }
   return @primitives;
 }
