@@ -772,17 +772,22 @@ sub _expand_primitive {
   # now insert the code to enable each lookup
   # note that we change the values in the hash to correspond to 
   # line numbers in @parsed so that they can be located easily
-  # later on
+  # later on.
+  my %declared_primargs;
   for my $extprim (keys %inserted_primargs) {
     # print "Looking for args from $extprim inside ".$prim->name."\n";
     push(@parsed, "my \%$extprim = $class". "->_find_prim_params(\"$extprim\",\"".$prim->name."\");");
     $inserted_primargs{$extprim} = $#parsed;
+    $declared_primargs{$extprim} = "my \%$extprim;";
   }
 
   if ($self->debug) {
     push( @parsed, 'orac_print(">>Entering '.$prim->name().'\n","green");');
     push( @parsed, "my \$_primitive_start_time = [Time::HiRes::gettimeofday];" );
   }
+
+  # somewhere to keep primitive arguments that have been moved
+  my %previous_primargs;
 
   # first line of the primitive proper
   push( @parsed, "#line 1 " . $prim->name() );
@@ -825,11 +830,26 @@ sub _expand_primitive {
       # we remove the previous line that was handling the args and
       # add it here. 
       if (exists $inserted_primargs{$primitive_name}) {
-        my $prevpos = $inserted_primargs{$primitive_name};
-        my $earlier = $parsed[$prevpos];
+        my $earlier;
+        if (exists $previous_primargs{$primitive_name}) {
+          $earlier = $previous_primargs{$primitive_name};
+        } else {
+          my $prevpos = $inserted_primargs{$primitive_name};
+          $earlier = $parsed[$prevpos];
+
+          # remove the lexical declaration (bit of a hack)
+          # we need to expand scope to primitive since we do not know if multiple
+          # primitive calls to the same primitive will result in declaration in the same scope
+          $earlier =~ s/^\s*my\s*//;
+
+          # replace previous entry with a declaration only
+          $parsed[$prevpos] = $declared_primargs{$primitive_name};
+
+          # there is a chance that this primitive will be called multiple times
+          # so we need to store the line for later
+          $previous_primargs{$primitive_name} = $earlier;
+        }
         push(@parsed, $earlier);
-        # blank the earlier entry
-        $parsed[$prevpos] = "";
       }
 
       # Reset line count
