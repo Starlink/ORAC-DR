@@ -1,0 +1,118 @@
+=head1 NAME
+
+_ADD_POISSON_VARIANCE_ - Adds Poisson variance to the variance component.
+
+=head1 DESCRIPTION
+
+Adds Poisson variance to the variance component. We simply add the
+data_array to the variance component, taking into account the gain of
+the detector.
+
+The primitive reports a successful addition of the Poisson variance
+and the frames concerned. It also reports the percentage of background-
+limited pixels, i.e. those where the Poisson noise is greater than
+the read noise.
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# Bring in Starlink::HDSPACK
+use Starlink::HDSPACK qw/ copy_hdsobj create_hdsobj /;
+
+# Create tmp files
+my $tmp = new ORAC::TempFile;
+my $tmpfile=$tmp->file;
+
+my $temp = new ORAC::TempFile;
+my $tempfile=$temp->file;
+
+my $tmprn = new ORAC::TempFile;
+my $tmprnfile = $tmprn->file;
+
+my $tmppo = new ORAC::TempFile;
+my $tmppofile = $tmppo->file;
+
+# Get the gain.
+my $gain = $Frm->uhdr("ORAC_GAIN");
+
+# Get the number of exposures (NEXP)
+my $nexp = $Frm->uhdr("ORAC_NUMBER_OF_EXPOSURES");
+
+# Loop through the sub-files
+foreach my $i (1 .. $Frm->nfiles) {
+        # Generate the input and output file names
+        my ($in, $out) = $Frm->inout ("_pov", $i);
+	my $bglout = $Frm->inout("_bgl", $i);
+
+        # Units of in are DN/exp
+
+        # convert to total electrons - need to multiply by $gain and $nexp
+	my $factor = $gain * $nexp;
+        $Mon{'kappa_mon'}->obeyw("cmult", "in=$in scalar=$factor out=$tmpfile");
+        # Units in tmp are total electrons.
+
+        # Use setvar to set the variance array of the tmp file to be the Poisson variance
+        $Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$tmpfile variance=data");
+
+        # tmp is now the total electrons, with Poisson variance.
+	# We've thrown out the readnoise by doing the setvar on the tmp file
+
+	# Now convert the tmpfile back to DN per exposure
+        $Mon{'kappa_mon'}->obeyw("cdiv", "in=$tmpfile scalar=$factor out=$tempfile");
+	# tempfile is now in DN per exposure, with poisson (only) variance in the variance array
+
+	# Now work out how background limited we were
+	# copy the readnoise variance from $in into the tmprnfile
+	# and the poisson variance from $tempfile into tmppofile
+
+  my $ORAC_STATUS = ( create_hdsobj( $tmprnfile, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+  $ORAC_STATUS = ( copy_hdsobj( "$in.VARIANCE", "$tmprnfile.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
+
+  $ORAC_STATUS = ( create_hdsobj( $tmppofile, 'NDF', [ 0 ] ) ? ORAC__OK : ORAC__ERROR );
+  $ORAC_STATUS = ( copy_hdsobj( "$tempfile.VARIANCE", "$tmppofile.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
+
+	# Divide the poisson variance by the readnoise variance into bglout
+	$Mon{'kappa_mon'}->obeyw("div", "in1=$tmppofile in2=$tmprnfile out=$bglout title=$bglout");
+	
+	# bglout now contains the background limited-ness
+
+	# Need to push it off to the display system.
+	my $bglFrm = new $Frm;
+	$bglFrm->file($bglout);
+	$Display->display_data( $bglFrm ) if defined $Display;
+
+        # Now, we need to add the variance array of the temp file to that of
+        # the $in file, and call it $out.
+
+        # We can do this by using chpix to zero the data array of the temp file
+        # then simply adding the two files together.
+
+        $Mon{'kappa_mon'}->obeyw("chpix", "in=$tempfile out=$tmpfile comp=Data newval=0 section=':,:'");
+        $Mon{'kappa_mon'}->obeyw("add", "in1=$tmpfile in2=$in out=$out");
+
+        # Update Frame object
+        $Frm->file($i, $out);
+        orac_print "$in to $out: Poisson variance added\n";
+
+	# Now, pixels > 1 in bgl were background limited, <1 ones were not.
+	$Mon{'kappa_mon'}->obeyw("thresh", "in=$bglout out=$tmprnfile thrhi=1.001 thrlo=1 newhi=1 newlo=0");
+	$Mon{'ndfpack_mon'}->obeyw("setbad", "ndf=$tmprnfile value=TRUE");
+	
+	$Mon{'kappa_mon'}->obeyw("stats", "ndf=$tmprnfile");
+	( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get("stats", "mean");
+
+	$mean *=100;
+	$mean = sprintf ("%.1f", $mean);	
+
+	orac_print "  $mean% of the pixels in $in were background limited\n";
+}
+
+orac_print "\n";

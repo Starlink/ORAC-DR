@@ -1,0 +1,86 @@
+=head1 NAME
+
+_ADD_READNOSE_VARIANCE_ - Adds a variance array based on readnoise
+
+=head1 DESCRIPTION
+
+Adds an initial variance component, which is simply flat and equal to
+the readnoise of the detector, taking the number of array reads into
+account.
+
+The readnoise is obtained from the $Cal->readnoise object.
+- The Array Tests recipe files the readnoise into the Cal system
+when it measures it.
+
+=head1 NOTES
+
+The sum of n independent samples of a Normal distrubution 
+N(mu, sigma^2) is distributed as N(n*mu, n*sigma^2).
+
+A multiple, a, of a Normal distribution N(mu, sigma^2),
+a*N(mu, sigma^2) is distributed as N(a*mu, a^2*sigma^2)
+
+If the number of reads is less than 13, then the readnoise variance
+is calculated as RNE*(-0.0322*(NREADS-1)+1.0322).
+
+If the number of reads is greater than 51, then the readnoise
+variance is set to be 15.
+
+If the number of reads is between 13 and 51, inclusive, then the
+readnoise variance is calculated as 1.5616*RNE*(NREADS-1)^(-0.3568).
+
+=head1 AUTHOR
+
+Paul Hirst <p.hirst@jach.hawaii.edu>
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# Get the readnoise, in electrons
+# this is for a single read
+my $rne = $Cal->readnoise;
+
+my $nreads = $Frm->uhdr( "ORAC_NUMBER_OF_READS" ) || 2;
+
+my $var;
+if( ( $nreads - 1 ) < 12 ) {
+  $var = $rne * ( -0.0322 * ($nreads-1) + 1.0322);
+} elsif( ( $nreads - 1 ) > 50 ) {
+  $var = 15;
+} else {
+  $var = 1.5616 * $rne * ( ( $nreads - 1) ** (-0.3568) );
+}
+
+$var = $var**2;
+
+# Loop through the sub-files
+foreach my $i (1 .. $Frm->nfiles) {
+	# Generate the input and output file names
+	my ($in, $out) = $Frm->inout ("_rnv", $i);
+
+	# Copy the data frame to the output name
+	$Mon{'ndfpack_mon'}->obeyw("ndfcopy", "in=$in out=$out title=$out");
+
+  # Convert the number of electrons added to Data Units added
+  my $gain = $Frm->uhdr("ORAC_GAIN");
+	my $adu = $var / $gain**2;
+	$adu = sprintf ("%.2g", $adu);
+
+
+	# Set the variance on that to be what we calculated ($var)
+	$Mon{'ndfpack_mon'}->obeyw("setvar", "ndf=$out variance=$adu");
+
+	# Update Frame object
+	$Frm->file($i, $out);
+	my $electrons = sprintf ("%.1f", $var);
+
+  # And display the results.
+	orac_print("$in to $out: Read Noise variance added: $adu\n");
+}
+
+orac_print "\n";
