@@ -535,26 +535,26 @@ sub _retrieve_relevant_file {
       my @modes = orac_list_generic_observing_modes();
       for my $path (@found) {
 
-	# Determine mode.
-	my $thismode;
-	for my $mode (@modes) {
-	  # Check for match over word boundary
-	  if ($path =~ /\b$mode\b/) {
-	    $thismode = $mode;
-	    last;
-	  }
+        # Determine mode.
+        my $thismode;
+        for my $mode (@modes) {
+          # Check for match over word boundary
+          if ($path =~ /\b$mode\b/) {
+            $thismode = $mode;
+            last;
+          }
         }
 	
-	# if it did not match a generic mode it must be a
-	# specific observation - call it INST
-	$thismode = "INST" unless defined $thismode;
+        # if it did not match a generic mode it must be a
+        # specific observation - call it INST
+        $thismode = "INST" unless defined $thismode;
 
-	# If it is a specific instrument in a generic directory
-	# we will only choose it if it is first in the search path
-	# Store path in hash associated with mode (or INST)
-	# unless we have already done so (since we are going through
-	# the paths in priority order)
-	$best{$thismode} = $path unless exists $best{$thismode};
+        # If it is a specific instrument in a generic directory
+        # we will only choose it if it is first in the search path
+        # Store path in hash associated with mode (or INST)
+        # unless we have already done so (since we are going through
+        # the paths in priority order)
+        $best{$thismode} = $path unless exists $best{$thismode};
 
       }
 
@@ -566,11 +566,11 @@ sub _retrieve_relevant_file {
       if (exists $best{INST}) {
         $foundpath = $best{INST};
       } elsif ($#keys == 0) {
-	# We only have one choice remaining so should not be
-	# switching
+        # We only have one choice remaining so should not be
+        # switching
         $foundpath = $best{$keys[0]};
       } else {
-	# Else we have a choice of observing modes
+        # Else we have a choice of observing modes
         # Need to query the frame
         my $Frm = $self->frame();
         throw ORAC::Error::FatalError("Have a choice of primitive but no frame object registered")
