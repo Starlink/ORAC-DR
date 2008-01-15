@@ -421,6 +421,23 @@ sub allmembers {
   }
 }
 
+=item B<purge_members>
+
+Removes all frames from the group. Can be used to reduce the memory
+footprint of the pipeline when a recipe is designed such that it never
+needs to go back to the original members.
+
+  $Grp->purge_members;
+
+=cut
+
+sub purge_members {
+  my $self = shift;
+  @{$self->{AllMembers}} = ();
+  $self->check_membership;
+  return;
+}
+
 =item B<badobs_index>
 
 Return (or set) the index object associate with the bad observation
@@ -682,9 +699,9 @@ sub check_membership {
 
   }
 
-  # Update the good members list
-  $self->members(@good);
-
+  # Use the reference accessor so that an empty array will be accepted
+  @{$self->members} = @good;
+  return @good;
 }
 
 =item B<coaddspush>
