@@ -359,18 +359,16 @@ sub _find_children {
   my $parent = shift;
   my $depth = shift;
   my $prefix = '';
-  my $dprefix = '';
   if (defined $depth) {
     $depth++;
-    $prefix = ' ' x $depth;
-    $dprefix = $prefix . ' ';
+    $prefix = '  ' x $depth;
   }
   my $parser = $self->parser;
   my @primitives;
   for my $prim ($parent->children) {
     my $child = $parser->find($prim);
     push(@primitives, $prefix . $prim );
-    push(@primitives, map { $dprefix . $_ } $self->_find_children( $child ));
+    push(@primitives, $self->_find_children( $child, $depth ));
   }
   return @primitives;
 }
@@ -487,7 +485,7 @@ sub execute {
   # Store the top level primitive names in the global array
   if (defined $PRIMITIVE_LIST && ref($PRIMITIVE_LIST) ) {
     my $recobj = $self->recipe;
-    @$PRIMITIVE_LIST = $recobj->children;
+    @$PRIMITIVE_LIST = $self->_find_children( $recobj, -1);
   }
 
   # Info message for debugging
@@ -499,7 +497,7 @@ sub execute {
   # Execute the recipe
   use Time::HiRes qw/ gettimeofday /;
   my $execute_start = [gettimeofday];
-  my $status = ORAC::Recipe::Execution::orac_execute_recipe( $CURRENT_PRIMITIVE,
+  my $status = ORAC::Recipe::Execution::orac_execute_recipe( $PRIMITIVE_LIST, $CURRENT_PRIMITIVE,
                                                              $self,$Frm,
                                                              $Grp, $Cal,
                                                              $Display, $Mon,
@@ -604,7 +602,6 @@ sub execute {
     orac_err "Recipe completed with error status = $status\n";
     orac_err "Continuing but this may cause problems during group processing\n";
   }
-
 }
 
 =item B<_read_recipe>
@@ -787,10 +784,13 @@ not during execution.
 # Use package globals for global readonly state
 our $BATCH;
 
+# These allow reflected state in GUIs
 my $CURRENT_PRIMITIVE;
+my $PRIMITIVE_LIST;
+my @primitive_list_local;
 
 sub orac_execute_recipe {
-  my ( $current_primitive,
+  my ( $primitive_list, $current_primitive,
     $Recipe, $Frm, $Grp, $Cal, $Display, $Mon) = @_;
 
   # Is Batch mode enabled? Can be a runtime control.
@@ -802,6 +802,10 @@ sub orac_execute_recipe {
   # File the Current primitive with the internal method
   $CURRENT_PRIMITIVE = $current_primitive;
 
+  # and file the list of contents itself with a copy
+  $PRIMITIVE_LIST = $primitive_list;
+  @primitive_list_local = @$PRIMITIVE_LIST;
+
   # Clear stored primitive parameters
   ORAC::Recipe::PrimitiveParser->_clear_prim_params();
 
@@ -809,7 +813,7 @@ sub orac_execute_recipe {
   my $recobj = $Recipe->recipe;
   my $coderef = $recobj->code;
   if( defined( $coderef ) ) {
-    return $coderef->( 0, $Frm, $Grp, $Cal, $Display, $Mon );
+    return $coderef->( 0, [], $Frm, $Grp, $Cal, $Display, $Mon );
   } else {
     return ORAC__ERROR;
   }
@@ -819,17 +823,90 @@ sub orac_execute_recipe {
 
 Class method to set the current primitive during execution.
 
-  ORAC::Recipe::Execution->current_primitive( $primitive_name, $depth );
+  ORAC::Recipe::Execution->current_primitive( $primitive_name, \@callers );
 
-The depth is reported in case only top level updates are required.
+The caller array allows nested trees to be processed correctly if required and contains
+the full call stack. Each element is a reference to an array containing the calling primitive
+name and line number and the number of times this primitive was called from the caller.
 
 =cut
 
 sub current_primitive {
   my $class = shift;
   my $primname = shift;
-  my $depth = shift;
-  return if (defined $depth && $depth != 2 ); # Recipe viewer only shows top level
+  my $callers = shift;
+
+  return if (defined $callers && @$callers < 2 ); # Recipe level itself is not useful
+
+  # Get local copy of information
+  my @callers = map { [ @$_] } @$callers;
+
+  # and add the current primitive to the list
+  push(@callers, [$primname, 0, 0]);
+
+  # the repeat counts need to be shifted along by one slot because the caller information is telling
+  # the callee how many times it has been called and we will be walking through the callee information
+  for my $i (reverse 1..$#callers) {
+    $callers[$i]->[2] = $callers[$i-1]->[2];
+  }
+
+  # shift off the recipe level
+  shift(@callers);
+
+  # Reset the displayed list
+  @$PRIMITIVE_LIST = @primitive_list_local;
+
+  # if we have callers we can work out where to place the highlighter
+#  print ">>>>>>>>>>>> START LOOP for $primname\n";
+  my $pos = -1;
+  my $calldepth = 0;
+  CALLER: for my $caller (@callers) {
+    $calldepth++;
+    my ($prim, $line, $repeat) = @$caller;
+#    print "Looking for instance $repeat of '$prim' in list\n";
+
+    # go through looking for the correct starting point
+    while (1) {
+      $pos++;
+      if ($pos > $#primitive_list_local) {
+        # could not find anything
+        last CALLER;
+      }
+      # Note that call depth is adjusted to account for recipe name in list
+      # we are looking for a primitive of this name
+      my $lookfor = ('  'x ($calldepth-1)). $prim;
+
+      # and we have an error if we get to a new primitive with less indent
+      my $endprim;
+      $endprim = (' ' x ($calldepth - 2)). "_" if $calldepth > 1;
+
+#      print "Comparing '$lookfor' with '$primitive_list_local[$pos]'\n";
+      if ( $primitive_list_local[$pos] eq $lookfor) {
+        $repeat--;
+        if ($repeat == 0) {
+          # found it so set a little << on the primitive in the displayed list
+          $PRIMITIVE_LIST->[$pos] = $primitive_list_local[$pos] . " <<";
+          next CALLER;
+        }
+#        print "Got a match but need more\n";
+      } elsif ( defined $endprim && $primitive_list_local[$pos] =~ /^$endprim/) {
+        print STDERR "Got to end of primitive list without a match. Contact TIMJ.\n";
+        return;
+      }
+    }
+  }
+
+  if ($pos > $#primitive_list_local) {
+    # fell off the end of the list so nothing to highlight
+    return;
+  }
+
+  # make sure actual match is unique by adding an extra flourish
+  $PRIMITIVE_LIST->[$pos] .= "<";
+
+  # configure the primitive name to match
+  $primname = $PRIMITIVE_LIST->[$pos];
+
   $$CURRENT_PRIMITIVE = [ $primname ];
 }
 

@@ -249,12 +249,24 @@ containing the primitive arguments as a single string.
   @lines = $parser->embed( "_MY_PRIMITIVE_", $arguments );
   $lines = $parser->embed( "_MY_PRIMITIVE_" );
 
+The 3rd argument is a reference to  an array containing information similar to the caller() function.
+If used, the array should contain
+
+   Name of the primitive calling this primitive
+   Line number from that primitive
+   Number of times this primitive has been called already from the caller
+
+  @lines = $prser->embed( "_MY_PRIMITIVE_", $arguments, \@caller );
+
+Requires $_PRIM_DEPTH_ and $_PRIM_CALLERS to be in scope.
+
 =cut
 
 sub embed {
   my $self = _get_self(shift);
   my $primitive = shift;
   my $arguments = shift;
+  my $caller = shift;
   return () unless defined $primitive;
   my $class = ref($self);
 
@@ -274,8 +286,13 @@ sub embed {
   # Convert the arguments to a hash form
   my $primargs = $self->_parse_prim_arguments( $arguments );
 
+  # Store the call history in local array for retrieval by primitive
+  push(@lines, "my \@_THIS_PRIM_CALLERS_ = @\$_PRIM_CALLERS_; push(\@_THIS_PRIM_CALLERS_,[".
+       (defined $caller ? join(",", map { '"'. $_ .'"'} @$caller) : "" )
+       ."]);");
+
   # Now run the routine
-  push(@lines, "my \$_prim_exit_status = \$_prim_code->(\$_PRIM_DEPTH_,\$Frm,\$Grp,\$Cal,\$Display,\$Mon,$primargs);");
+  push(@lines, "my \$_prim_exit_status = \$_prim_code->(\$_PRIM_DEPTH_,\\\@_THIS_PRIM_CALLERS_,\$Frm,\$Grp,\$Cal,\$Display,\$Mon,$primargs);");
   push(@lines,"return \$_prim_exit_status if \$_prim_exit_status != ORAC__OK;");
   push(@lines, "}"); # close scope
 
@@ -710,13 +727,16 @@ sub _expand_primitive {
   # Read primitive depth first
   push(@parsed, "my \$_PRIM_DEPTH_ = shift;");
 
+  # and the call tree
+  push(@parsed, "my \$_PRIM_CALLERS_ = shift;");
+
   # increment recursion depth by one
   push(@parsed, "\$_PRIM_DEPTH_++;");
   push(@parsed,"die \"Primitive depth very high (\$_PRIM_DEPTH_). Possible recursive primitive\" if \$_PRIM_DEPTH_ > 10;");
 
   # Update the CURRENT_PRIMITIVE
   push(@parsed, "ORAC::Recipe::Execution->current_primitive( \"".$prim->name.
-       "\", \$_PRIM_DEPTH_);");
+       "\", \$_PRIM_CALLERS_);");
 
   # read subroutine args
   for my $ARG (qw/ $Frm $Grp $Cal $Display $Mon / ) {
@@ -789,6 +809,9 @@ sub _expand_primitive {
   # somewhere to keep primitive arguments that have been moved
   my %previous_primargs;
 
+  # Keep track of how many times a particular primitive has been embedded
+  my %embed_count;
+
   # first line of the primitive proper
   push( @parsed, "#line 1 " . $prim->name() );
 
@@ -822,8 +845,9 @@ sub _expand_primitive {
       my ($primitive_name, $rest) = split(/\s+/,$line,2);
       $rest = '' unless defined $rest; # -w protection for next line
 
+      $embed_count{$primitive_name}++;
       push(@parsed, "#line 1 ".$prim->name() . "_calling$primitive_name");
-      push(@parsed, $self->embed($primitive_name, $rest) );
+      push(@parsed, $self->embed($primitive_name, $rest, [$prim->name(), $lineno, $embed_count{$primitive_name} ]) );
       push(@children, $primitive_name);
 
       # If it turns out we need this primitive results immediately
