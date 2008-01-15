@@ -34,33 +34,77 @@ if( $Frm->uhdr( "PAIR_COMPLETE" ) ) {
   my $main;
   my $offset;
   my $mFrm;
+  my $oFrm;
 
   # If we're on source,
   if ($Frm->uhdr("ON_SOURCE")) {
+
     # This is the object / main-beam frame
-    $main = $Frm->file;
     $mFrm = $Frm;
+
     # The previous frame is the offset-beam frame
-    my $oFrm = ($Grp->members)[-2];
+    $oFrm = ($Grp->members)[-2];
     if ($oFrm->uhdr("ON_SOURCE")) {
       # Oh bugger, it's not.
       # Have a winge. 
       orac_warn "Problem figuring out which frame is the on-source frame\n Continuing regardless - this may or may not be doing something sensible.\n";
+      orac_warn "Using offsets to determine which frame is the offset-from-source frame.\n";
+
+      # Check the offsets. If the offset is greater than 45
+      # arcseconds, then the frame is the offset-beam.
+      my $oraoff = $oFrm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" );
+      my $odecoff = $oFrm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" );
+      my $ooffset_as = sqrt( $oraoff * $oraoff + $odecoff * $odecoff );
+
+      my $mraoff = $mFrm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" );
+      my $mdecoff = $mFrm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" );
+      my $moffset_as = sqrt( $mraoff * $mraoff + $mdecoff * $mdecoff );
+
+      if( $moffset_as > 15 ) {
+        $mFrm = ( $Grp->members )[-2];
+        $oFrm = $Frm;
+      }
+
     }
     $offset = $oFrm->file;
+    $main = $mFrm->file;
   } else {
+
     # This is the offset-beam frame
-    $offset = $Frm->file;
+    $oFrm = $Frm;
+
     # The previous frame is the main beam frame
-    my $oFrm = ($Grp->members)[-2];
-    if (!($oFrm->uhdr("ON_SOURCE"))) {
+    $mFrm = ($Grp->members)[-2];
+
+    if (!($mFrm->uhdr("ON_SOURCE"))) {
       # Oh bugger, it's not.
       # Have a winge. 
-      orac_warn "Problem figuring out which frame is the offset-from-source frame\n Continuing regardless - this may or may not be doing something sensible.\n"; 
+      orac_warn "Problem figuring out which frame is the offset-from-source frame\n Continuing regardless - this may or may not be doing something sensible.\n";
+      orac_warn "Using offsets to determine which frame is the offset-from-source frame.\n";
+
+      # Check the offsets. If the main-beam offset is greater than 45
+      # arcseconds, then we have things backwards and must switch
+      # them.
+      my $oraoff = $oFrm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" );
+      my $odecoff = $oFrm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" );
+      my $ooffset_as = sqrt( $oraoff * $oraoff + $odecoff * $odecoff );
+
+      my $mraoff = $mFrm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" );
+      my $mdecoff = $mFrm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" );
+      my $moffset_as = sqrt( $mraoff * $mraoff + $mdecoff * $mdecoff );
+
+      if( $moffset_as > 15 ) {
+        $mFrm = $Frm;
+        $oFrm = ( $Grp->members )[-2];
+      }
+
     }
-    $main = $oFrm->file;
-    $mFrm = $oFrm;
+    $offset = $oFrm->file;
+    $main = $mFrm->file;
   }
+
+  orac_print " Main beam:   $main\n";
+  orac_print " Offset beam: $offset\n";
 
   # Get the $out filename. We won't actually use $in as
   # $main and $offset now hold the appropriate filenames
@@ -71,6 +115,8 @@ if( $Frm->uhdr( "PAIR_COMPLETE" ) ) {
 
   # Update the Frm object
   $Frm->file($out);
+  $Frm->uhdr( "ORAC_RA_TELESCOPE_OFFSET", $mFrm->uhdr( "ORAC_RA_TELESCOPE_OFFSET" ) );
+  $Frm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET", $mFrm->uhdr( "ORAC_DEC_TELESCOPE_OFFSET" ) );
 
   # Tag this frame as being the result of the sky subtraction.
   $Frm->tagset( "SKY_SUBTRACTION_RESULT" );
