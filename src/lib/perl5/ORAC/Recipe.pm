@@ -804,7 +804,7 @@ sub orac_execute_recipe {
 
   # and file the list of contents itself with a copy
   $PRIMITIVE_LIST = $primitive_list;
-  @primitive_list_local = @$PRIMITIVE_LIST;
+  @primitive_list_local = @$PRIMITIVE_LIST if defined $PRIMITIVE_LIST;
 
   # Clear stored primitive parameters
   ORAC::Recipe::PrimitiveParser->_clear_prim_params();
@@ -837,6 +837,12 @@ sub current_primitive {
   my $callers = shift;
 
   return if (defined $callers && @$callers < 2 ); # Recipe level itself is not useful
+
+  # if we do not have a primitive list we simplify the logic
+  if (!defined $PRIMITIVE_LIST) {
+    $$CURRENT_PRIMITIVE = [ $primname ] if scalar(@$callers) == 2;
+    return;
+  }
 
   # Get local copy of information
   my @callers = map { [ @$_] } @$callers;
