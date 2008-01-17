@@ -1062,11 +1062,12 @@ The following subroutines are not exported.
 =item B<link_and_read>
 
 General subroutine for converting ut and number into file
-and creating a Frame object.
+and creating a Frame object or multiple frame objects (depending
+on instrument and mode).
 
-  $frm = link_and_read($class, $ut, $obsnum, $flag)
+  @frm = link_and_read($class, $ut, $obsnum, $flag)
 
-  $frm = link_and_read($class, $ut, $obsnum, $flag, \@reflist)
+  @frm = link_and_read($class, $ut, $obsnum, $flag, \@reflist)
 
 The five parameters are:
 
@@ -1101,8 +1102,9 @@ to this routine.
 
 =back
 
-undef is returned on error.
-A configured Frame object is returned if everything is okay
+Empty list is returned on error.
+
+Returns 1 or more configured frame objects on success.
 
 =cut
 
@@ -1300,9 +1302,9 @@ sub _to_abs_path {
 =item B<_convert_and_link>
 
 Given the supplied file names, convert and link each file to ORAC_DATA_OUT.
-Returns true if successful.
+If successful returns a list of C<ORAC::Frame> objects derived from the input frame.
 
-  _convert_and_link( $Frm, @files ) && return $Frm;
+  @frames = _convert_and_link( $Frm, @files );
 
 =cut
 
