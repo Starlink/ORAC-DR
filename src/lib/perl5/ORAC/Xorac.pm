@@ -431,7 +431,7 @@ sub xorac_setenv {
 This subroutine sets up the ORAC-DR Tk log window used by both oracdr
 and Xoracdr. The routine takes a text string specifying the identity
 of the Tk device used for the log window (usually either "Tk" for the
-MainWindow or "TL" for a TopLevel widget) and a pointer to the current
+MainWindow or "TL" for a TopLevel widget) and a reference to the current
 ORAC::Print object
 
   my ( $ORAC_MESSAGE, $TEXT1, $TEXT2, $TEXT3 ) = 
@@ -452,6 +452,8 @@ sub xorac_log_window {
   
   # Get the Window ID
   my $MW = ORAC::Event->query($win_str);
+  throw ORAC::Error::FatalError("Unexpectedly could not retrieve Tk window with id '$win_str'")
+    unless defined $MW;
   $MW->configure( -cursor => "tcross" );
 
   $MW->bind("<Destroy>", [ sub { 
@@ -569,19 +571,28 @@ MainWindow or "TL" for a TopLevel widget)
 returns references to the packed Tk array variabe $PRIMITIVE_LIST and 
 $CURRENT_PRIMITIVE.
 
+Optional takes a flag indicating that this widget should be packed into the MainWindow.
+It may be that we should be looking at the value of the $win_str identifier for that.
+If we pack into main window the "Close" button becomes an "Exit" button.
+
 =cut
 
 sub xorac_recipe_window {
 
-  croak 'Usage: xorac_recipe_window( $win_str, $CURRENT_RECIPE )'
-    unless scalar(@_) == 2;
+  croak 'Usage: xorac_recipe_window( $win_str, $CURRENT_RECIPE, [ $NeedMainWindow ] )'
+    if (scalar(@_) != 2 && scalar(@_) != 3);
 
-  my ( $win_str, $CURRENT_RECIPE ) = @_;
+  my ( $win_str, $CURRENT_RECIPE, $NeedMainWindow ) = @_;
 
   use ORAC::Inst::Defn qw/ orac_determine_recipe_search_path /;
      
   # Create new toplevel window
-  my $top_level = ORAC::Event->query($win_str)->Toplevel();
+  my $MW = ORAC::Event->query($win_str);
+  throw ORAC::Error::FatalError("Unexpectedly could not retrieve Tk window with id '$win_str'")
+    unless defined $MW;
+
+  # pack in main window if nothing else is there
+  my $top_level = ($NeedMainWindow ? $MW : $MW->Toplevel() );
   $top_level->title("Xoracdr Recipe Window");
   $top_level->iconname("Recipe Window");
   $top_level->geometry("+500+15");                  
@@ -648,16 +659,41 @@ sub xorac_recipe_window {
 		  } );
   $edit_button->grid( -column => 0 ,-row => 0, -sticky => 'e' );		           
   # Cancel button
+
+  # depends on whether this is the main window or not
+  my ($text, $sub);
+  if ($NeedMainWindow) {
+    $text = "Exit ORAC-DR";
+    $sub = sub {
+      untie @PRIMITIVE_LIST;
+      undef @PRIMITIVE_LIST;
+      untie $CURRENT_PRIMITIVE;
+      undef $CURRENT_PRIMITIVE;
+      # store an error to be flushed on the next update
+      record ORAC::Error::UserAbort( "Exited from recipe window",
+                                     ORAC__ABORT ); 
+      
+      # destroy the Tk widget
+      ORAC::Event->destroy($win_str);
+      ORAC::Event->unregister($win_str);
+    };
+  } else {
+    $text = "Close";
+    $sub = sub {
+      untie @PRIMITIVE_LIST;
+      undef @PRIMITIVE_LIST;
+      untie $CURRENT_PRIMITIVE;
+      undef $CURRENT_PRIMITIVE;
+      $top_level->destroy;
+    };
+  }
+
   my $cancel_button = $button_frame->Button( 
-                               -text=>'Close',
+                               -text=>$text,
 	                       -font=>$FONT,	
 			       -activeforeground => 'white',
                                -activebackground => 'blue',
-	 	               -command => sub { untie @PRIMITIVE_LIST;
-			                         undef @PRIMITIVE_LIST;
-						 untie $CURRENT_PRIMITIVE;
-						 undef $CURRENT_PRIMITIVE;
-			                         $top_level->destroy; } );
+	 	               -command => $sub );
   $cancel_button->grid( -column => 1 ,-row => 0, -sticky => 'e' );	
 
   $top_level->bind("<Destroy>", [ sub {  untie @PRIMITIVE_LIST;

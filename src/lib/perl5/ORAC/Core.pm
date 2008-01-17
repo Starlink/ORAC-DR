@@ -395,6 +395,7 @@ sub orac_print_config_with_defaults {
   my $log_options;
 
   # check for log options, we need to start the Tk early if using X Windows
+  # Note that -showcurrent also require Tk
   if (defined $opt{log}) 
     {
       # User is overriding logging options, lower case the options
@@ -413,17 +414,20 @@ sub orac_print_config_with_defaults {
 	}
     }
 
-  my ($MW, $win_str);
-  if ( $log_options =~ /x/ )
+  my $win_str;
+  if ( $log_options =~ /x/  || 
+       (exists $opt{showcurrent} && $opt{showcurrent}))
     {
-      eval { require Tk; require Tk::TextANSIColor; };
-      unless( $@ ) {
-	$MW = MainWindow->new();
-	ORAC::Event->register("Tk"=>$MW); 
-	$win_str = "Tk";
+      my $MW = orac_launch_tk("Tk");
+      if (defined $MW) {
+        $win_str = "Tk";
       } else {
-	$log_options = 'sf';
-      }     
+        # disable X logging option and replace with screen
+        $log_options =~ s/s//; # remove any existing "s"
+        $log_options =~ s/x/s/; # replace x with s
+        print STDERR "Error loading Tk modules - X logging not available\n";
+        print STDERR "Using screen instead\n";
+      }
     }
 
   # Now do the configuration
@@ -433,6 +437,35 @@ sub orac_print_config_with_defaults {
 				   $ORAC_ARGS,
 				   %opt
 				 );
+}
+
+=item B<orac_launch_tk>
+
+Attempt to load Tk and create a main window indexed by the identifying
+string.
+
+  $w = orac_launch_tk($win_str);
+
+This routine can safely be called multiple times.
+
+Returns the top level MainWindow object.
+
+=cut
+
+sub orac_launch_tk {
+  my $win_str = shift;
+
+  # first ask if ORAC::Event has a main window registered
+  my $MW = ORAC::Event->query($win_str);
+  return $MW if defined $MW;
+  
+  # now try to load Tk
+  eval { require Tk; require Tk::TextANSIColor; require ORAC::Xorac};
+  unless( $@ ) {
+    $MW = MainWindow->new();
+    ORAC::Event->register($win_str=>$MW); 
+  }
+  return $MW;
 }
 
 
@@ -517,8 +550,17 @@ sub orac_print_configuration {
   # define Tk packed variables
   my ($ORAC_MESSAGE, $PRIMITIVE_LIST, $CURRENT_PRIMITIVE);
 
+  # and defaults for these in case we are not using Tk
+  # Current primitive is a reference to a reference to an array! (this is what
+  # you get when you tie to a ListBox
+  $PRIMITIVE_LIST = [];
+  my $ARRAY = []; $CURRENT_PRIMITIVE = \$ARRAY;
+
   # defined references to the filehandles for the Tk widgets
   my ( $TEXT1, $TEXT2, $TEXT3);
+
+  # Flag to indicate that we need a main window
+  my $NeedMainWindow = 1;
 
   # If it only matches 's' then we dont bother with this block
   if ($log_options ne 's') {
@@ -527,65 +569,34 @@ sub orac_print_configuration {
     # back to using the screen if Tk is not found
     if ($log_options =~ /x/) {
 
-      # Delay X-loading until now
-      eval "use Tk; use Tk::TextANSIColor; use ORAC::Xorac;";
-      if ($@) {
-        print STDERR "Error loading Tk modules - X logging not available\n";
-        print STDERR "Using screen instead\n";
-        print STDERR "Error was: $@\n";
-        $log_options .= 's'; # Make sure we print to screen now
+      # Create the Tk log window
+      # Routine returns references to packed Tk variable and
+      # references to output, warning and error file handles
+      ( $ORAC_MESSAGE, $TEXT1, $TEXT2, $TEXT3 ) =
+        ORAC::Xorac::xorac_log_window( $win_str, \$orac_prt );
+      $NeedMainWindow = 0;
 
-        # $PRIMITIVE_LIST is a reference to an array
-        $PRIMITIVE_LIST = [ ];
-        # $CURRENT_PRIMITIVE is a reference to a reference to an array
-        my $ARRAY = [ ]; $CURRENT_PRIMITIVE = \$ARRAY;
-
-      } else {
-        # Create the Tk log window
-        # Routine returns references to packed Tk variable and
-        # references to output, warning and error file handles
-        ( $ORAC_MESSAGE, $TEXT1, $TEXT2, $TEXT3 ) =
-          ORAC::Xorac::xorac_log_window( $win_str, \$orac_prt );
-
-        # Create the Tk recipe window
-        if ($opt{showcurrent}) {
-          # Routine returns a reference to a tied array (listbox contents)
-          ( $PRIMITIVE_LIST, $CURRENT_PRIMITIVE ) =
-            ORAC::Xorac::xorac_recipe_window( $win_str, $CURRENT_RECIPE );
-        } else {
-          # otherwise use an anonymous arrays
-
-          # $PRIMITIVE_LIST is a reference to an array
-          $PRIMITIVE_LIST = [ ];
-          # $CURRENT_PRIMITIVE is a reference to a reference to an array
-          my $ARRAY = [ ]; $CURRENT_PRIMITIVE = \$ARRAY;
-        }
-
-        # Update and draw the screen
-        try {
-          ORAC::Event->update("Tk");
-        }
-        catch ORAC::Error::FatalError with {
-          my $Error = shift;
-          $Error->throw;
-        }
-        catch ORAC::Error::UserAbort with {
-          my $Error = shift;
-          $Error->throw;
-        }
-        otherwise {
-          # this should sucessfully catch croaks, we want to re-throw
-          # it as a ORAC::Error::FatalError, this should do it...
-          my $Error = shift;
-          throw ORAC::Error::FatalError("$Error", ORAC__FATAL );
-        };
-
-        # Store the filehandles
-        push (@out_hdl, $TEXT1);
-        push (@err_hdl, $TEXT3);
-        push (@war_hdl, $TEXT2, $TEXT1); # Display warnings with messages 
-      }
-
+      # Update and draw the screen
+      try {
+        ORAC::Event->update($win_str);
+      } catch ORAC::Error::FatalError with {
+        my $Error = shift;
+        $Error->throw;
+      } catch ORAC::Error::UserAbort with {
+        my $Error = shift;
+        $Error->throw;
+      } otherwise {
+        # this should sucessfully catch croaks, we want to re-throw
+        # it as a ORAC::Error::FatalError, this should do it...
+        my $Error = shift;
+        throw ORAC::Error::FatalError("$Error", ORAC__FATAL );
+      };
+      
+      # Store the filehandles
+      push (@out_hdl, $TEXT1);
+      push (@err_hdl, $TEXT3);
+      push (@war_hdl, $TEXT2, $TEXT1); # Display warnings with messages 
+      
     }
     # Request for SCREEN
     if ($log_options =~ /s/) {
@@ -674,6 +685,13 @@ sub orac_print_configuration {
     $orac_prt->warhdl(@war_hdl);
     $orac_prt->errhdl(@err_hdl);
 
+  }
+
+  # Now create the recipe viewer if required.
+  if ($opt{showcurrent}) {
+    # Routine returns a reference to a tied array (listbox contents)
+    ( $PRIMITIVE_LIST, $CURRENT_PRIMITIVE ) =
+      ORAC::Xorac::xorac_recipe_window( $win_str, $CURRENT_RECIPE, $NeedMainWindow );
   }
 
   # Generate tied filehandle for subsequent use by systems
