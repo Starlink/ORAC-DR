@@ -593,44 +593,32 @@ sub xorac_recipe_window {
 		                 -justify => 'left',
 			         -foreground =>'blue',
 			         -anchor  => 'w',
-		                 -borderwidth => 5 );
-  $label->grid( -column => 0 ,-row => 0, -columnspan => 2, -sticky => 'nsew' );		 
-  # listbox frame
-  my $lbox_frame = $top_level->Frame(  -relief      => 'flat',
-                                       -borderwidth => 10 );
-  $lbox_frame->grid( -column => 0, -row => 1, -sticky => 'nsew' );
-  
+		                 -borderwidth => 5 )->pack(-side=> 'top');
+
   # listbox
   my ( @PRIMITIVE_LIST, $CURRENT_PRIMITIVE );
 
   # scrolled listbox
-  my $scrollbar = $lbox_frame->Scrollbar();
-  		   
-  my $lbox = $lbox_frame->Listbox(-borderwidth        => 1,
-                                 -selectbackground    => 'blue',
-			         -selectforeground    => 'white',
-		  	         -background          => '#555555',
-			         -foreground          => 'white',
-			         -selectmode          => 'single',
-				 -font                => $FONT,
-				 -height              => 15,
-				 -width               => 65,
-				 -yscrollcommand      => ['set'=>$scrollbar]);
-
-  $scrollbar->configure(-command=>['yview'=>$lbox]);
+  my $lbox = $top_level->Scrolled('Listbox', -scrollbars => 'w',
+                                   -borderwidth        => 1,
+                                   -selectbackground    => 'blue',
+                                   -selectforeground    => 'white',
+                                   -background          => '#555555',
+                                   -foreground          => 'white',
+                                   -selectmode          => 'single',
+                                   -font                => $FONT,
+                                   -height              => 15,
+                                   -width               => 65,
+                                  )->pack(-side => 'top', -expand => 1, -fill=>'both'); ;
 
   tie @PRIMITIVE_LIST, "Tk::Listbox", $lbox;
   tie $CURRENT_PRIMITIVE, "Tk::Listbox", $lbox;
   
   # pack the listbox frame, pack scrollbar first!
-  $scrollbar->grid( -column => 1, -row => 0, -sticky => 'nsew' );
-  $lbox->grid( -column => 0, -row => 0 , -sticky => 'nsew');
 
   # about frame
   my $button_frame = $top_level->Frame( -relief      => 'flat',
-                                        -borderwidth => 2 );
-  $button_frame->grid( -column => 0, -row => 2, -sticky => 'e' );
-                      
+                                        -borderwidth => 2 )->pack(-side=>'top');
 		      
   # edit recipe button, not for public consumption perhaps?
   my $edit_button = $button_frame->Button( -text           => 'Current Recipe ',
