@@ -181,6 +181,7 @@ sub query {
    my ( $key ) = @_;
 
    return $hash{$key} if exists $hash{$key} and defined $hash{$key};
+   return; # No match
 }
 
 =item B<mainloop>
