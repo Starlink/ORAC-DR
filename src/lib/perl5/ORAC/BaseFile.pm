@@ -191,6 +191,9 @@ ie the first file is set to undef.
 The first time a filename is stored the name will also be stored in
 C<raw()> if no previous entries have been made in C<raw>.
 
+If the requested index is the number "0" an exception will be thrown since
+it is highly unlikely that you wanted a file name called "0".
+
 =cut
 
 sub file {
@@ -203,6 +206,11 @@ sub file {
   if (@_  && defined $_[0]) {
 
     my $firstarg = shift;
+
+    # special case zero
+    if ($firstarg eq "0") {
+      throw ORAC::Error::FatalError("Index out of range (0) for file() method. Possible programming error. Index should be at least 1");
+    }
 
     # This can either be an integer for retrieval or
     # an integer + filename for setting or just a filename for setting
