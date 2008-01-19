@@ -49,7 +49,6 @@ is not object-oriented.
 
 
 use 5.004;
-use Carp;
 use warnings;
 use strict;
 use vars qw/$VERSION $DEBUG $CURRENT @ISA @EXPORT $RDHDL/;
@@ -61,7 +60,7 @@ $DEBUG = 0;
 
 require Exporter;
 @ISA = qw/Exporter/;
-@EXPORT = qw/orac_print orac_err orac_warn orac_debug orac_read orac_throw
+@EXPORT = qw/orac_print orac_err orac_warn orac_debug orac_read orac_throw orac_carp
 	     orac_printp orac_print_prefix orac_warnp orac_errp /;
 
 # Create a Term::ReadLine handle
@@ -118,6 +117,18 @@ sub orac_warn {
   $prt->war(@_);
 }
 
+=item orac_carp( text, callers, [colour])
+
+Prints the supplied text as a warning message and appends the line number
+and name of the parent primitive. This information is obtained from the
+standard $_PRIM_CALLERS_ variable available to each primitive.
+
+=cut
+
+sub orac_carp {
+  my $prt = __curr_obj;
+  $prt->carp(@_);
+}
 
 =item orac_err( text, [colour])
 
@@ -616,7 +627,7 @@ sub war {
   my $text = shift;
 
   my $col = $self->warncol;
-  if (@_) { $col = shift; }
+  if (@_) { my $thiscol = shift;  $col = $thiscol if defined $thiscol; }
 
   my $fh = $self->warhdl;
   return unless defined $fh;
@@ -630,6 +641,30 @@ sub war {
 
   tk_update();
   
+}
+
+=item carp(text, callers, [col])
+
+=item orac_carp( text, callers, [colour])
+
+Prints the supplied text as a warning message and appends the line number
+and name of the parent primitive. This information is obtained from the
+standard $_PRIM_CALLERS_ variable available to each primitive.
+
+=cut
+
+sub carp {
+  my $self = shift;
+  my $text = shift;
+  my $callers = shift;
+  my $col = shift;
+
+  # add additional text
+  if (defined $callers) {
+    my $parent = $callers->[-1];
+    $text .= " at ". $parent->[0] . " line " . $parent->[1] ."\n";
+  }
+  $self->war( $text, $col );
 }
 
 =item err(text, [col])
