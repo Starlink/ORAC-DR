@@ -462,6 +462,17 @@ sub configure {
   # Everything okay so store the name of the GAIA window
   $self->dev('default', $default);
 
+  # Tweak the identity if we have an ORAC_INSTRUMENT
+  if (exists $ENV{ORAC_INSTRUMENT}) {
+    my $string = "$default configure -ident {$ENV{ORAC_INSTRUMENT} - }";
+    ($status, $result) = $self->send_to_gaia($string);
+    if ($status != ORAC__OK) {
+      orac_err "ORAC::Display::GAIA - unable to set instrument label in GAIA window\n";
+      orac_err "Error: $result\n";
+      return ORAC__ERROR;
+    }
+  }
+
   return ORAC__OK;
 
 }
