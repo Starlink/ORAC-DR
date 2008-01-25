@@ -105,6 +105,8 @@ Council, 2007 University of British Columbia. All Rights Reserved.
 # Units...
 my $units = "pW";
 
+unless ( $Frm->uhdr("SKY_SUBTRACTION") ) {
+
 # Tell user...
 orac_print "Removing sky by fitting and subtracting a plane\n";
 
@@ -131,6 +133,7 @@ if ( $uselog ) {
 		  "#\n#  ID      Time        Filter    DC       Slope  PA  Seeing   El  CSO",
 		  "#-----------------------------------------------------------------------");
 }
+my @out;
 # Loop over frames
 for my $i (1..$Frm->nfiles) {
 
@@ -142,7 +145,7 @@ for my $i (1..$Frm->nfiles) {
   my $tmpoutfile = $tmpout->file;
 
   # Arguments to SURFIT: the default estimator is MODE
-  my $args = " fittype=poly order=1 clip=[2,2,2] estimator=! wlim=0.5 evaluate=all fitclip=[2,2,2]";
+  my $args = " fittype=poly order=1 clip=[2,2,2] estimator=! wlim=0.5 evaluate=all fitclip=[2,2,2] genvar=true";
 
   # Run SURFIT
   $Mon{kappa_mon}->obeyw("surfit","in=$in out=$tmpoutfile $args reset");
@@ -156,10 +159,6 @@ for my $i (1..$Frm->nfiles) {
   ($ORAC_STATUS, my $sigmafitmean) = $Mon{kappa_mon}->get("stats","sigma");
   push (@fitmean, $fitmean);
   push (@sigmafitmean, $sigmafitmean);
-
-  # Add a blank variance to the fit to ensure propagation of the input
-  # variance to the output file
-  $Mon{ndfpack_mon}->obeyw("setvar","ndf=$tmpoutfile variance=0");
 
   # Subtract the fit
   $Mon{kappa_mon}->obeyw("sub","in1=$in in2=$tmpoutfile out=$out");
@@ -215,9 +214,10 @@ for my $i (1..$Frm->nfiles) {
 
   # Update the frame
   $Frm->file($i, $out);
-
+#  push ( @out, $out);
   undef $tmpout;
 }
+#$Frm->files(@out);
 # Calculate mean DC level
 my ($meanfitmean, $sigma_meanfitmean) = mean_and_sigma( \@fitmean );
 # Mean RMS of fit
@@ -249,6 +249,9 @@ $_REMOVE_PLANE_FROM_IMAGE_{RMS} = $meanfitrms;
 $_REMOVE_PLANE_FROM_IMAGE_{MEANSKY} = $meanfitmean;
 $_REMOVE_PLANE_FROM_IMAGE_{SIGMA} = $meansigmafitmean;
 $_REMOVE_PLANE_FROM_IMAGE_{CONSTGOOD} = $constisgoodapprox;
+
+# Set the sky subtraction flag
+$Frm->uhdr("SKY_SUBTRACTION",1);
 
 # Write to a logfile if desired
 if ( $uselog ) {
@@ -291,7 +294,9 @@ if ($verbose) {
     ."Mean level = $meanfitmean (mean std dev = $meansigmafitmean)\n"
     ."Mean RMS deviation of fit = $meanfitrms\n";
 }
-
+} else {
+  orac_warn "Sky subtraction already carried out on this Frame\n";
+}
 
 # Solve the equation of a plane, Ax + By + Cz + D = 0, given three
 # points in (x, y, z) space. In this case, it will probably be Az, El
