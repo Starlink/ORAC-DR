@@ -12,7 +12,18 @@ _MAKE_MOSAIC_GROUP_DESPIKE_ - Create a despiked group mosaic
 
 This primitive mosaics Frame images into a Group mosaic, but waits for
 a user-specified number of Frames before co-adding in order to provide
-a good variance estimator.
+a good variance estimator. It is designed to be used in the Quick-Look
+pipeline where a single Frame is generated on each pass through the
+recipe. 
+
+Compared with the standard _MAKE_MOSAIC_GROUP_ primitive, the Group
+image created here is effectively a running average of individual
+`stackall' images. If B<NMOS> is set to the total number of files in
+the observation, then this becomes a `stackall' image.
+
+In Quick-Look mode the B<DELETE_FRM> option should be set so that the
+intermediate files do not use up disk space unnecessarily and that the
+pipeline does not increase its memory usage.
 
 =head1 ARGUMENTS
 
@@ -23,6 +34,17 @@ a good variance estimator.
 Number of Frame images to mosaic together before coadding to
 Group. Default is 10.
 
+=item B<METHOD>
+
+Resampling method for WCSALIGN. Default is NEAREST for
+nearest-neighbour resampling.
+
+=item B<MAKEMOS_METHOD>
+
+The method by which MAKEMOS combines the images. Default is
+C<mean>. See the MAKEMOS documentation for a description of the
+possible values.
+
 =item B<VERBOSE>
 
 Flag to denote whether to display extra information. Default is 0
@@ -32,7 +54,8 @@ Flag to denote whether to display extra information. Default is 0
 
 =head1 ALGORITHMS
 
-Uses CCDPACK MAKEMOS.
+CCDPACK: MAKEMOS
+KAPPA: WCSALIGN
 
 =head1 FILE SUFFIX
 
@@ -70,10 +93,10 @@ USA
 
 =cut
 
-# Should I be verbose (default to no)
+# Should I be verbose (default to yes)
 my $verbose = (exists $_MAKE_MOSAIC_GROUP_DESPIKE_{VERBOSE} &&
                defined $_MAKE_MOSAIC_GROUP_DESPIKE_{VERBOSE}) ?
-               $_MAKE_MOSAIC_GROUP_DESPIKE_{VERBOSE} : 0;
+               $_MAKE_MOSAIC_GROUP_DESPIKE_{VERBOSE} : 1;
 
 # Number of Frames to mosaic for calculating a statistically-valid
 # variance
@@ -81,12 +104,24 @@ my $nmos = (exists $_MAKE_MOSAIC_GROUP_DESPIKE_{NMOS} &&
 	    defined $_MAKE_MOSAIC_GROUP_DESPIKE_{NMOS}) ? 
             $_MAKE_MOSAIC_GROUP_DESPIKE_{NMOS} : 5;
 
+# Image resampling method for WCSALIGN
+my $method = (exists $_MAKE_MOSAIC_GROUP_DESPIKE_{METHOD} &&
+	      defined $_MAKE_MOSAIC_GROUP_DESPIKE_{METHOD}) ? 
+              lc($_MAKE_MOSAIC_GROUP_DESPIKE_{METHOD}) : "nearest";
+
+# Image combination method for MAKEMOS
+my $makemos_method = (exists $_MAKE_MOSAIC_GROUP_DESPIKE_{MAKEMOS_METHOD} &&
+		      defined $_MAKE_MOSAIC_GROUP_DESPIKE_{MAKEMOS_METHOD}) ? 
+                      lc($_MAKE_MOSAIC_GROUP_DESPIKE_{MAKEMOS_METHOD}) : "mean"; 
+
 # Retrieve the Frames in the current Group, and get the number
 my @members = $Grp->members;
 my $nFrm = @members;
 
 # Is it time to make a mosaic? Only do so every $nmos files
 if ( $nFrm % $nmos == 0 ) {
+
+  orac_print("Making GROUP mosaic with $nmos files... ") if $verbose;
 
   # Start and end index
   my $start = $nFrm - $nmos;
@@ -132,7 +167,7 @@ if ( $nFrm % $nmos == 0 ) {
   $outname .= "_mos" unless $outname =~ /_mos$/; # horrible hack KLUGE
 
   # Use wcsalign to align the files
-  my $args = "ref=$refimage lbnd=! ubnd=! out=^".$alfrmmos->file
+  my $args = "ref=$refimage lbnd=! ubnd=! method=$method out=^".$alfrmmos->file
     ." in=^".$frmmoslist->file;
   $Mon{kappa_mon}->obeyw("wcsalign","$args");
 
@@ -140,20 +175,23 @@ if ( $nFrm % $nmos == 0 ) {
   # generating variance. 
   my $alignmos = new ORAC::TempFile; # Output aligned mosaic
   my $alignmosfile = $alignmos->file;
-  $args = "in=^".$alfrmmos->file." genvar nousevar method=sigma sigmas=4.0 out=".$alignmos->file;
+  $args = "in=^".$alfrmmos->file." genvar nousevar logto=neither method=sigma sigmas=4.0 out=".$alignmos->file;
   $Mon{ccdpack_reg}->obeyw("makemos","$args");
 
   # Finally call makemos again to mosaic the Grp and pseudo-Grp
   # images, using variance weighting. This step is only performed if
-  # the Group file laready exists.
+  # the Group file already exists.
   if ( $Grp->file_exists) {
+
+    orac_print("Coadding to GROUP file... ") if $verbose;
+
     my $moslist = new ORAC::TempFile;
     print {$moslist->handle} $Grp->file."\n".$alignmosfile."\n";
 
     my $tmpout = new ORAC::TempFile;
     my $mosaic = $tmpout->file;
 
-    $args = "in=^".$moslist->file." usevar genvar method=mean out=$mosaic";
+    $args = "in=^".$moslist->file." usevar genvar method=$makemos_method out=$mosaic";
     $Mon{ccdpack_reg}->obeyw("makemos","$args");
 
     rename $mosaic .".sdf", $outname .".sdf" 
@@ -165,4 +203,11 @@ if ( $nFrm % $nmos == 0 ) {
 
   # Store mosaic in Group
   $Grp->file( $outname );
+  $Grp->uhdr("NEWIMAGE", 1);
+  orac_print("done.\n") if $verbose;
+
+  # Log the variance
+  _CALC_SKY_NOISE_ SKYMETHOD=VARIANCE GROUP=1
+} else {
+  $Grp->uhdr("NEWIMAGE", 0) if $Grp->uhdr("NEWIMAGE");
 }
