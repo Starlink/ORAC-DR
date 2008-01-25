@@ -110,7 +110,7 @@ else
     oracut=`\date -u +%Y%m%d`
 fi
 
-export oracdr_args="-ut $oracut"
+export oracdr_args="-ut $oracut -grptrans"
 
 export ORAC_INSTRUMENT=WFCAM5
 export ORAC_DATA_IN=$ORAC_DATA_ROOT/raw/wfcam5/$oracut
