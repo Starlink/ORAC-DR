@@ -126,7 +126,7 @@ else
     oracut=`\date -u +%Y%m%d`
 fi
 
-export oracdr_args="-ut $oracut"
+export oracdr_args="-ut $oracut -grptrans"
 
 export ORAC_INSTRUMENT=UFTI2
 export ORAC_DATA_IN=$ORAC_DATA_ROOT/raw/ufti/$oracut/

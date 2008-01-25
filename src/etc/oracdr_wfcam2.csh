@@ -141,7 +141,7 @@ else
     set oracut = `\date -u +%Y%m%d`
 endif
 
-set oracdr_args = "-ut $oracut"
+set oracdr_args = "-ut $oracut -grptrans"
 
 setenv ORAC_INSTRUMENT WFCAM2
 setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/wfcam2/$oracut
