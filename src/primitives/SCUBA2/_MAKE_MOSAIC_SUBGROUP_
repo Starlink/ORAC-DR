@@ -12,11 +12,18 @@ _MAKE_MOSAIC_SUBGROUP_ - Create a sub-group mosaic
 
 This primitive takes all the aligned sub-scan frames from each
 sub-array or aligned frame mosaics and mosaics them into a single
-coadded output (sub)group image. In reality this primitive is a
-wrapper for the workhorse _MAKE_MOSAIC_ primitive with dedicated
-sub-group processing.
+coadded output (sub)group image. A new sub-group is created based on
+the supplied B<KEYS> parameter and only those files which match the
+values of those keys in the current global Frame will be combined.
 
-The primary use of this primitive is for reducing FOCUS data.
+This primitive is a wrapper for the main _MAKE_MOSAIC_ primitive with
+dedicated sub-group processing. It was written primarily to reducing
+FOCUS observations which must collect together data obtained at
+specific focus positions. 
+
+The user can supply arbitrary B<KEYS> though a warning is issued if
+more than 5 are given. The keys for a FOCUS observation are preset
+within this primitive and any others passed in are ignored.
 
 =head1 ARGUMENTS
 
@@ -39,6 +46,31 @@ two pre-defined keys to establish sub-groups. In principle there is no
 limit to the number of keys that may be given, though a warning is
 issued if the number is greater than 5.
 
+=item B<MAKEMOS>
+
+A flag to denote whether to use CCDPACK MAKEMOS for mosaicking the
+images. Default is 0 (no), which uses KAPPA WCSMOSAIC instead.
+
+=item B<METHOD>
+
+The method to be used for resampling the aligned images. This
+corresponds to the C<method> parameter for WCSMOSAIC and WCSALIGN,
+which is different from that for MAKEMOS. See WCSALIGN and/or
+WCSMOSAIC documentation for further details. Default value is
+C<nearest>.
+
+=item B<MAKEMOS_METHOD>
+
+The method by which MAKEMOS combines the images. Default is
+C<mean>. See the MAKEMOS documentation for a description of the
+possible values.
+
+=item B<COORD_FRAME>
+
+Name of desired coordinate frame for output image. May be any
+supported by C<AST>. Default value will be obtained from the current
+Frame.
+
 =item B<VERBOSE>
 
 Flag to denote whether to display extra information. Default is 0
@@ -54,7 +86,7 @@ can be accessed.
 
 =head1 FILE SUFFIX
 
-Creates a single output group image with a suffix of '_mos'.
+Creates a single output (sub)group image with a suffix of '_mos'.
 
 =head1 AUTHORS
 
@@ -87,15 +119,15 @@ my $verbose = (exists $_MAKE_MOSAIC_SUBGROUP_{VERBOSE} &&
                defined $_MAKE_MOSAIC_SUBGROUP_{VERBOSE}) ?
                $_MAKE_MOSAIC_SUBGROUP_{VERBOSE} : 0;
 
-# Coordinate frame
-my $coframe =  (exists $_MAKE_MOSAIC_SUBGROUP_{COORD_FRAME} &&
-	       defined $_MAKE_MOSAIC_SUBGROUP_{COORD_FRAME}) ?
-               lc($_MAKE_MOSAIC_SUBGROUP_{COORD_FRAME}) : undef;
-
 # Do we want to use makemos?
 my $makemos = (exists $_MAKE_MOSAIC_SUBGROUP_{MAKEMOS} &&
 	       defined $_MAKE_MOSAIC_SUBGROUP_{MAKEMOS}) ?
                $_MAKE_MOSAIC_SUBGROUP_{MAKEMOS} : 0;
+
+# Coordinate frame
+my $coframe =  (exists $_MAKE_MOSAIC_SUBGROUP_{COORD_FRAME} &&
+	       defined $_MAKE_MOSAIC_SUBGROUP_{COORD_FRAME}) ?
+               lc($_MAKE_MOSAIC_SUBGROUP_{COORD_FRAME}) : undef;
 
 # Array of keys to define the sub-group
 my $keys = (exists $_MAKE_MOSAIC_SUBGROUP_{KEYS} &&
@@ -111,34 +143,38 @@ unless ( $coframe ) {
   (my $ORAC_STATUS, $coframe) = $Mon{ndfpack_mon}->get("wcsattrib","value");
 }
 
-# Method for determining the output pixel values
-my $method; 
-# Make sure we pass in self-consistent values
+# Method for combining images in makemos 
+my $makemos_method = "";
 if ( $makemos ) {
-  $method = (exists $_MAKE_MOSAIC_SUBGROUP_{METHOD} &&
-	     defined $_MAKE_MOSAIC_SUBGROUP_{METHOD}) ? 
-	     lc($_MAKE_MOSAIC_SUBGROUP_{METHOD}) : "mean"; 
-} else {
-  $method = (exists $_MAKE_MOSAIC_SUBGROUP_{METHOD} &&
-	     defined $_MAKE_MOSAIC_SUBGROUP_{METHOD}) ? 
-	     lc($_MAKE_MOSAIC_SUBGROUP_{METHOD}) : "nearest"; 
+  $makemos_method = (exists $_MAKE_MOSAIC_SUBGROUP_{MAKEMOS_METHOD} &&
+		     defined $_MAKE_MOSAIC_SUBGROUP_{MAKEMOS_METHOD}) ? 
+		     lc($_MAKE_MOSAIC_SUBGROUP_{MAKEMOS_METHOD}) : "mean"; 
 }
+# Method for determining resampling the image during alignment
+my $method = (exists $_MAKE_MOSAIC_SUBGROUP_{METHOD} &&
+	      defined $_MAKE_MOSAIC_SUBGROUP_{METHOD}) ? 
+              lc($_MAKE_MOSAIC_SUBGROUP_{METHOD}) : "nearest"; 
 
+# Flag to indicate if we have a FOCUS observation
 my $focusobs = ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) ? 1 : 0;
+
+# If so, set keys manually
+$keys = ( $focusobs ) ? "FOCAXIS,FOCPOSN" : $keys;
 
 # If we have a focus observation, then we use default keys
 if ( $keys || $focusobs ) {
 
-  my @keys = ( $focusobs ) ? ("FOCAXIS","FOCPOSN") : split( /,/, $keys );
+  my @keys = split( /,/, $keys );
   # What if we have lots of keys? Things could get messy.
   if ( @keys > 5 ) {
     orac_warn "Large number of keys (@keys) specified. Sub-groups may not exist or contain very few members.\n";
   }
   my %subkeys;
+
   # Use header values in current Frm to define the new sub-group.
   foreach my $key ( @keys ) {
     # Check that the desired key is defined
-    if ( defined $Frm->hdrval($key) ) {
+    if ( defined $Frm->hdrval($key) && !$subkeys{$key} ) {
       $subkeys{$key} = $Frm->hdrval($key);
     } else {
       orac_warn "No key named $key in current Frame header\n";
@@ -158,9 +194,10 @@ if ( $keys || $focusobs ) {
 
     # Replace any decimal points in the filename with a dash
     $grpname =~ s/\./-/g;
-    # Register group (file)name
+    # Register group (file)name and file suffix
     $group->name( $grpname."_mos" );
     $group->file( $group->name );
+    $group->filesuffix($Grp->filesuffix);
 
     # Store sub-group names for FOCUS observations for later retrieval
     if ( $focusobs ) {
@@ -175,7 +212,7 @@ if ( $keys || $focusobs ) {
     orac_print "Making SUB-GROUP mosaic\n";
 
     # Create sub-group mosaic
-    _MAKE_MOSAIC_ USEGRP=1 GROUP=$group MAKEMOS=$makemos METHOD=$method COADD_MODE=$coadd_mode VERBOSE=$verbose COORD_FRAME=$coframe
+    _MAKE_MOSAIC_ USEGRP=1 GROUP=$group MAKEMOS=$makemos MAKEMOS_METHOD=$makemos_method METHOD=$method COADD_MODE=$coadd_mode VERBOSE=$verbose COORD_FRAME=$coframe
     
   } else {
     orac_warn "No subgroup can be made with the keys provided: $keys\n";
