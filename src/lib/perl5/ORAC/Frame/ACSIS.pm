@@ -258,9 +258,7 @@ in the current frame.
  @frames = ORAC::Frame->framegroup( @files );
 
 For ACSIS a single frame object is returned for single sub-system observations
-and multiple frame objects returned in multi-subsystem mode. One caveat is that
-if the multi-subsystem mode looks like a hybrid mode (bandwidth mode and IF frequency
-identical) then a single frame object is returned.
+and multiple frame objects returned in multi-subsystem mode.
 
 =cut
 
@@ -277,7 +275,7 @@ sub framegroup {
 
     my $hdr = new Astro::FITS::Header::NDF( File => $filename );
     tie my %header, "Astro::FITS::Header", $hdr;
-    push @{$groupings{$header{BWMODE}.$header{IFFREQ}}}, $filename;
+    push @{$groupings{$header{SUBSYSNR}}}, $filename;
   }
 
   # For each one of the groups, we need to create a new Frame object
