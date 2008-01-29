@@ -781,9 +781,12 @@ sub _expand_primitive {
     }
     next if $inpod;
     # Check for call to another primitive argument hash
+    # Make sure we handle commented code
     # Match multiple times and store the result.  This deals with a line
     # that refers to two primitives (presumably including the current one)
-    while ($line =~ /(_\w+_){/g) {
+    my $clean = $line;
+    $clean =~ s/\#.*//;
+    while ($clean =~ /(_\w+_){/g) {
       my $arg_prim = $1;
       next if $arg_prim eq $prim->name;
       $inserted_primargs{$arg_prim}++;
