@@ -1,0 +1,188 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_FIND_FOCUS_OFFSETS_ - Calculate best-fit focus position
+
+=head1 DESCRIPTION
+
+This primitive takes the data cube formed by _CREATE_FOCUS_CUBE_ and
+loops over each plane (SMU position) to fit the source with a PSF. The
+amplitude is stored and used to create a 1-D NDF of amplitude as a
+function of focus position. A quadratic is fitted to these data and
+the best-fit focus position calculated. The result is written to a log
+file if desired.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=item B<VERBOSE>
+
+Flag to indicate whether informational messages should be 
+given to the user. Default is 1 (true).
+
+=item B<LOGFILE>
+
+Flag to indicate whether to write results to a log file. Default is 1
+(yes).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+=over 4
+
+=item Starlink applications
+
+KAPPA: trandat, ndftrace. FIGARO: fitpoly.
+
+=item ORAC-DR primitives
+
+_CENTROID_IMAGE, _FIT_PSF_
+
+=back
+
+=head1 OUTPUT DATA
+
+log.focus
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+Copyright (C) 2008 the University of British Columbia. All Rights
+Reserved.
+
+=cut
+
+# Should I be verbose? (Default to yes)
+my $verbose = (exists $_FIND_FOCUS_OFFSETS_{VERBOSE} && 
+	       defined $_FIND_FOCUS_OFFSETS_{VERBOSE}) ?
+               $_FIND_FOCUS_OFFSETS_{VERBOSE} : 1;
+
+# Do we want the results written to a log file? Default is Yes.
+my $uselog = (exists $_FIND_FOCUS_OFFSETS_{USELOG} && 
+	      defined $_FIND_FOCUS_OFFSETS_{USELOG}) ?
+              $_FIND_FOCUS_OFFSETS_{USELOG} : 1;
+
+# Check that we have a FOCUS observation
+if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
+
+  # Do we have a focus cube to examine?
+  if ( $Grp->file_exists && $Grp->uhdr("FOCUS_CUBE") ) {
+
+    # Obtain name of cube to analyze
+    my $focuscube = $Grp->file;
+
+    orac_print "Processing FOCUS cube... " if $verbose;
+    print "Processing FOCUS cube...\n";
+
+    # Get the relevant info from the cube
+    $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$focuscube");
+    my ($ORAC_STATUS, @vals) = $Mon{ndfpack_mon}->get("ndftrace","lbound");
+    my $focsteplo = $vals[2];
+    ($ORAC_STATUS, @vals) = $Mon{ndfpack_mon}->get("ndftrace","ubound");
+    my $focstephi = $vals[2];
+
+    my (@amps, @fwhms, @focposns);
+    
+    orac_print "Locating and fitting peak positions... " if $verbose;
+    for my $plane ($focsteplo..$focstephi) {
+      # Retrieve filename to determine centroid
+      my $focusfile = "$focuscube(,,$plane)";
+      # Get estimate of source position for fitting
+      _CENTROID_IMAGE_ IMAGE=$focusfile
+
+      # Write position to ASCII file for reading into PSF
+      my $cofile = new ORAC::TempFile;
+      print {$cofile->handle} $_CENTROID_IMAGE_{RESULTS}->[0] ." "
+	                     .$_CENTROID_IMAGE_{RESULTS}->[1]."\n";
+      $cofile->handle->close;
+
+      # Fit a PSF to image
+      _FIT_PSF_ IMAGE=$focusfile COFILE=$cofile->file VERBOSE=0
+      # Store fit parameters
+      my $amp = $_FIT_PSF_{AMPLITUDE};
+      my $fwhm = $_FIT_PSF_{FWHM};
+      my $axisr = $_FIT_PSF_{AXISR};
+      $fwhm *= sqrt($axisr); # Convert to a mean FWHM
+      # Add the Amplitude and FWHM to the arrays if valid values were returned
+      push (@amps, $amp) if ( defined $amp );
+      push (@fwhms, $fwhm) if ( defined $fwhm );
+    }
+
+    orac_print "done\nCalculating best-fit focus position... \n" if $verbose;
+    if ( $Grp->uhdr("FOCPOSNS") ) {
+      @focposns = @{ $Grp->uhdr("FOCPOSNS") };
+    } else {
+      orac_err "Error: no list of FOCUS positions in header. Did something go wrong?\n";
+    }
+
+    # Write out positions to tmp file, subtract half a pixel to
+    # convert to pixel coordinates
+    my $inresfile = new ORAC::TempFile;
+    my $outresfile = new ORAC::TempFile;
+    foreach my $i (0 .. $#focposns) {
+      print {$inresfile->handle} ($focposns[$i]-0.5)." ".$amps[$i]."\n";
+    }
+    $inresfile->handle->close;
+    # Convert text array into a 1-D NDF with trandat
+    my $args = "dtype='_DOUBLE' poscols=1 valcol=2 pscale=1 freename=".$inresfile->file." ndf=".$outresfile->file;
+    $Mon{kappa_mon}->obeyw("trandat","$args");
+    # Run FITPOLY to get fit
+    $args = "device=! mask1=$focposns[0] order=2 mask2=$focposns[-1] dialog=f logfil=! comp=1 in=".$outresfile->file;
+    $Mon{figaro4}->obeyw("fitpoly","$args");
+    ($ORAC_STATUS, my @coeffs) = $Mon{figaro4}->get("fitpoly","fitcoeffs");
+    # Now find best-fit position, trap cases when either coefficient is zero
+    my $fmax = ( $coeffs[1] == 0 ) ? 0 : 
+      ( ($coeffs[2] == 0 ) ? undef : -$coeffs[1]/$coeffs[2] );
+    orac_print ("done\n") if $verbose;
+    # Tidy up
+    undef $inresfile;
+    undef $outresfile;
+
+    # FOCAXIS is constant for an observation so can just use value in
+    # current Frm
+    my $focaxis = $Frm->hdr('FOCAXIS');
+    # Print result for user to see
+    if ( defined $fmax ) {
+      orac_print ("Best-fit focus position along $focaxis axis = $fmax mm\n", "green");
+    } else {
+      orac_warn ("Unable to determine best-fit focus position along $focaxis axis\n");
+    }
+
+    # Write results to log file - if desired
+    if ( $uselog && (defined $fmax) ) {
+      my $time = gmtime();
+      my $focuslog = new ORAC::LogFile("log.focus");
+      $focuslog->header("Focus log file - created on $time",
+			"\n#  Time       Filter  El         Seeing   CSO",
+			"---------------------------------------------------------------"
+	);
+      # UT string at beginning of FOCUS observation
+      $time = sprintf "%12.3f", $Frm->hdrval('ORACTIME',0);
+      # Filter
+      my $filt = sprintf "%4s", $Frm->hdr('FILTER');
+      # Target source
+      my $source = $Frm->hdr('OBJECT');
+      # Get TAU from the header - should get from $Cal object?
+      my $cso = sprintf "%5.3f", 0.5*($Frm->hdrval('WVMTAUST', 0) + 
+				      $Frm->hdrval('WVMTAUEN',-1));
+      # Elevation
+      my $el = int ( 0.5 * ($Frm->hdrval('ELSTART',0) + $Frm->hdrval('ELEND',-1) ) );
+      my $az = int ( 0.5 * ($Frm->hdrval('AZSTART',0) + $Frm->hdrval('AZEND',-1) ) );
+      # Seeing
+      my $see = sprintf "%5.3f", ( 0.5 * ($Frm->hdrval('SEEINGST', 0) + 
+					  $Frm->hdrval('SEEINGEN',-1)) );
+      # Observation number
+      my $obsnum = sprintf "%05d", $Frm->hdr('OBSNUM');
+
+      # Write the entry:
+      # ObsNum, source, UT, filter, focus axis, Az, El, focus posn, Seeing, tau225
+      $focuslog->addentry("$obsnum $source $time  $filt  $focaxis  $az $el  $fmax $see   $cso");
+    }
+    
+  }
+
+} # FOCUS obs check
