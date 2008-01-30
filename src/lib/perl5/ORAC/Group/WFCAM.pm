@@ -73,8 +73,8 @@ ORAC::Group::WFCAM->_generate_orac_lookup_methods( \%hdr );
 
 sub _to_UTEND {
   my $self = shift;
-  $self->hdr->{ $self->nfiles }->{UTEND}
-    if exists $self->hdr->{ $self->nfiles };
+  $self->hdr->{ "I".$self->nfiles }->{UTEND}
+    if exists $self->hdr->{ "I".$self->nfiles };
 }
 
 sub _from_UTEND {
@@ -83,8 +83,8 @@ sub _from_UTEND {
 
 sub _to_UTSTART {
   my $self = shift;
-  $self->hdr->{ 1 }->{UTSTART}
-    if exists $self->hdr->{ 1 };
+  $self->hdr->{I1}->{UTSTART}
+    if exists $self->hdr->{I1};
 }
 
 sub _from_UTSTART {
@@ -214,8 +214,22 @@ Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2004 Particle Physics and Astronomy Research
+Copyright (C) 2008 Science and Technology Facilities Council.
+Copyright (C) 2004-2007 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 

@@ -125,8 +125,8 @@ sub _from_DEC_TELESCOPE_OFFSET {
 sub _to_DETECTOR_INDEX {
    my $self = shift;
 
-   if ( exists( $self->hdr->{ $self->nfiles } ) && exists( $self->hdr->{ $self->nfiles }->{DINDEX} ) ) {
-      $self->hdr->{ $self->nfiles }->{DINDEX};
+   if ( exists( $self->hdr->{ "I".$self->nfiles } ) && exists( $self->hdr->{ "I".$self->nfiles }->{DINDEX} ) ) {
+      $self->hdr->{ "I".$self->nfiles }->{DINDEX};
   }
 }
 
@@ -303,8 +303,8 @@ sub _to_UTDATE {
 
 sub _to_UTEND {
    my $self = shift;
-   if ( exists( $self->hdr->{ $self->nfiles } ) &&  exists( $self->hdr->{ $self->nfiles }->{UTEND} ) ) {
-      $self->hdr->{ $self->nfiles }->{UTEND};
+   if ( exists( $self->hdr->{ "I".$self->nfiles } ) &&  exists( $self->hdr->{ "I".$self->nfiles }->{UTEND} ) ) {
+      $self->hdr->{ "I".$self->nfiles }->{UTEND};
    }
 }
 
@@ -314,8 +314,8 @@ sub _from_UTEND {
 
 sub _to_UTSTART {
    my $self = shift;
-   if ( exists( $self->hdr->{ 1 } ) &&  exists( $self->hdr->{ 1 }->{UTSTART} ) ) {
-      $self->hdr->{ 1 }->{UTSTART};
+   if ( exists( $self->hdr->{I1} ) &&  exists( $self->hdr->{I1}->{UTSTART} ) ) {
+      $self->hdr->{I1}->{UTSTART};
    }
 }
 
@@ -494,12 +494,11 @@ sub calc_orac_headers {
 # Run the base class first since that does the ORAC headers.
    my %new = $self->SUPER::calc_orac_headers;
 
-
 # ORACTIME
 
 # Return zero if the date or time are unavailable.
    my $date = defined( $self->hdr( "UTDATE" ) ) ? $self->hdr( "UTDATE")  : 0;
-   my $time = defined( $self->hdr->{1}->{'UTSTART'}) ? $self->hdr->{1}->{'UTSTART'} / 24 : ( defined( $self->hdr->{'UTSTART'} ) ? $self->hdr->{'UTSTART'} / 24 : 0 );
+   my $time = defined( $self->hdr->{I1}->{'UTSTART'}) ? $self->hdr->{I1}->{'UTSTART'} / 24 : ( defined( $self->hdr->{'UTSTART'} ) ? $self->hdr->{'UTSTART'} / 24 : 0 );
    $self->hdr( 'ORACTIME', $date + $time );
 
    $new{'ORACTIME'} = $time;
@@ -509,6 +508,7 @@ sub calc_orac_headers {
    my $ut = $self->hdr( "UTDATE" );
    $ut = 0 unless defined $ut;
    $self->hdr('ORACUT', $ut);
+   $new{ORACUT} = $ut;
 
    return %new;
 }
@@ -531,9 +531,22 @@ Malcolm J. Currie (mjc@jach.hawaii.edu)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2004 Particle Physics and Astronomy Research
+Copyright (C) 2008 Science and Technology Facilities Council.
+Copyright (C) 1998-2007 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 

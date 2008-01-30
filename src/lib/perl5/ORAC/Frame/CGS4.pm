@@ -79,8 +79,8 @@ ORAC::Frame::CGS4->_generate_orac_lookup_methods( \%hdr );
 
 sub _to_UTEND {
   my $self = shift;
-  $self->hdr->{ $self->nfiles }->{RUTEND}
-    if exists $self->hdr->{ $self->nfiles };
+  $self->hdr->{ "I".$self->nfiles }->{RUTEND}
+    if exists $self->hdr->{ "I".$self->nfiles };
 }
 
 sub _from_UTEND {
@@ -89,8 +89,8 @@ sub _from_UTEND {
 
 sub _to_UTSTART {
   my $self = shift;
-  $self->hdr->{ 1 }->{RUTSTART}
-    if exists $self->hdr->{1};
+  $self->hdr->{I1}->{RUTSTART}
+    if exists $self->hdr->{I1};
 }
 
 sub _from_UTSTART {
@@ -101,8 +101,8 @@ sub _to_DEC_TELESCOPE_OFFSET {
   my $self = shift;
   my $return;
   my $hdr;
-  if( exists( $self->hdr->{1} ) ) {
-    $hdr = $self->hdr->{1};
+  if( exists( $self->hdr->{I1} ) ) {
+    $hdr = $self->hdr->{I1};
   } else {
     $hdr = $self->hdr;
   }
@@ -132,8 +132,8 @@ sub _to_RA_TELESCOPE_OFFSET {
   my $self = shift;
   my $return;
   my $hdr;
-  if( exists( $self->hdr->{1} ) ) {
-    $hdr = $self->hdr->{1};
+  if( exists( $self->hdr->{I1} ) ) {
+    $hdr = $self->hdr->{I1};
   } else {
     $hdr = $self->hdr;
   }
@@ -258,13 +258,13 @@ sub calc_orac_headers {
   my %new = $self->SUPER::calc_orac_headers;
 
   # Grab the UT date.
-  my $utdate = defined( $self->hdr->{1}->{'IDATE'} ) ? $self->hdr->{1}->{'IDATE'}
+  my $utdate = defined( $self->hdr->{I1}->{'IDATE'} ) ? $self->hdr->{I1}->{'IDATE'}
              : defined( $self->hdr->{'IDATE'} )      ? $self->hdr->{'IDATE'}
              :                                         0;
 
   # Grab the UT start time. This is in decimal hours, so we need to
   # get it in decimal days by dividing by 24.
-  my $uttime = defined( $self->hdr->{1}->{'RUTSTART'} ) ? $self->hdr->{1}->{'RUTSTART'}
+  my $uttime = defined( $self->hdr->{I1}->{'RUTSTART'} ) ? $self->hdr->{I1}->{'RUTSTART'}
              : defined( $self->hdr->{'RUTSTART'} )      ? $self->hdr->{'RUTSTART'}
              :                                            0;
   $uttime /= 24;
@@ -329,41 +329,29 @@ sub configure {
   $self->findnsubs;
 
   # Read the internal data structure
-  my @Components = @{ $self->{_Components} };
+  my @components;
+  @components = @{ $self->{_Components} } if defined $self->{_Components};
 
-  # Populate the header
-  # for hds container set header NDF to be in the .header extension
-  my $hdr_ext = $self->file;
-  $hdr_ext .= ".header" if @Components;
+  # Populate the header and merge components
 
-  $self->readhdr($hdr_ext);
-
-  # now read the subheaders 
-  my $i = 1;
-  foreach my $comp (@Components) {
-    # Read the header associated with the subframe
-    # KLUGE - Michelle chop data does not have a fits header
-    # in the .I1BEAMA components so we need to put in a nasty hack
-    # here
-    # Skip if we are in beamB
-    next if $comp =~ /BEAMB$/;
-
-    # Strip the chop information
-    (my $kluge = $comp) =~ s/BEAM[AB]$//;
-    #my ($href, $status) = fits_read_header($rootfile . ".$kluge");
-    my $hdr = new Astro::FITS::Header::NDF( File => $rootfile .".$kluge");
-    # Store the header associated with this subframe
-    $self->hdr->{$i} = $hdr if $hdr;
-
-    $i++;
+  # work out all possible paths. These will be obtained from the .HEADER component and
+  # the data NDFs. Place HEADER into the list first.
+  my $root = $self->file;
+  my @paths = ($root);
+  if (@components) {
+    @paths = map { $root . "." . $_ } ("header", @components);
   }
 
-  # ....and make sure calc_orac_headers is up-to-date after this
-  $self->calc_orac_headers;
+  # for hds container set header NDF to be in the .header extension
+  my $hdr_ext = $self->file;
+  $hdr_ext .= ".header" if @components;
+
+  # now read the combined header
+  $self->readhdr({nomerge=>1});
 
   # Filenames
-  $i = 1;
-  foreach my $comp (@Components) {
+  my $i = 1;
+  foreach my $comp (@components) {
     # Update the filename
     $self->file($i,$rootfile.".$comp");
     $i++;
@@ -407,39 +395,10 @@ sub findnsubs {
     $file = $self->file;
   }
 
-  # Now need to find the NDFs in the output HDS file
-  $status = &NDF::SAI__OK;
-  hds_open($file, 'READ', $loc, $status);
+  # Get a list of all the components
+  my @comps = $self->_find_ndf_children( { compnames => 1 }, $file );
 
-  # Need to rely on status being good before proceeding
-  my @comps;
-  if ($status == &NDF::SAI__OK) {
-
-    # Find out how many we have
-    dat_ncomp($loc, my $ncomp, $status);
-
-    # Get all the component names
-    for my $i (1..$ncomp) {
-
-      # Get locator to component
-      dat_index($loc, $i, my $cloc, $status);
-
-      # Find its name
-      dat_name($cloc, my $name, $status);
-      push(@comps, $name) if $status == &NDF::SAI__OK;
-
-      # Release locator
-      dat_annul($cloc, $status);
-
-      last if $status != &NDF::SAI__OK;
-    }
-
-  }
-
-  # Close file
-  dat_annul($loc, $status);
-
-  unless ($status == &NDF::SAI__OK) {
+  if (!@comps) {
     orac_err("Can't open $file for nsubs or error reading components\n");
     return 0;
   }
@@ -605,8 +564,23 @@ Paul Hirst (p.hirst@jach.hawaii.edu)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+Copyright (C) 2008 Science and Technology Facilities Council.
+Copyright (C) 1998-2007 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
+
 
 =cut
 

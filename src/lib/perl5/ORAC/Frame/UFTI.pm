@@ -306,7 +306,7 @@ sub calc_orac_headers {
   my %new = $self->SUPER::calc_orac_headers;
 
   # Grab the UT datetime from the DATE-OBS header.
-  my $dateobs = defined( $self->hdr->{1}->{'DATE-OBS'}) ? $self->hdr->{1}->{'DATE-OBS'} : 
+  my $dateobs = defined( $self->hdr->{I1}->{'DATE-OBS'}) ? $self->hdr->{I1}->{'DATE-OBS'} : 
                 ( defined($self->hdr->{'DATE-OBS'}) ? $self->hdr->{'DATE-OBS'} : "0000-00-00T00:00:00" );
 
   # Cope with null string present in early data.
@@ -480,9 +480,22 @@ Tim Jenness (timj@jach.hawaii.edu)
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Copyright (C) 2008 Science and Technology Facilities Council.
+Copyright (C) 1998-2007 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 

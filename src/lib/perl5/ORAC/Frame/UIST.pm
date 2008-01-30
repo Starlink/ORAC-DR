@@ -81,9 +81,9 @@ ORAC::Frame::UIST->_generate_orac_lookup_methods( \%hdr );
 sub _to_CHOP_ANGLE {
   my $self = shift;
   my $chop_angle = 0;
-  if( exists( $self->hdr->{ $self->nfiles } ) &&
-      exists( $self->hdr->{ $self->nfiles }->{CHPANGLE} ) ) {
-    $chop_angle = $self->hdr->{ $self->nfiles }->{CHPANGLE};
+  if( exists( $self->hdr->{ "I".$self->nfiles } ) &&
+      exists( $self->hdr->{ "I".$self->nfiles }->{CHPANGLE} ) ) {
+    $chop_angle = $self->hdr->{ "I".$self->nfiles }->{CHPANGLE};
   } elsif( exists( $self->hdr->{CHPANGLE} ) ) {
     $chop_angle = $self->hdr->{CHPANGLE};
   }
@@ -94,9 +94,9 @@ sub _to_CHOP_ANGLE {
 sub _to_CHOP_THROW {
   my $self = shift;
   my $chop_throw = 0;
-  if( exists( $self->hdr->{ $self->nfiles } ) &&
-      exists( $self->hdr->{ $self->nfiles }->{CHPTHROW} ) ) {
-    $chop_throw = $self->hdr->{ $self->nfiles }->{CHPTHROW};
+  if( exists( $self->hdr->{ "I".$self->nfiles } ) &&
+      exists( $self->hdr->{ "I".$self->nfiles }->{CHPTHROW} ) ) {
+    $chop_throw = $self->hdr->{ "I".$self->nfiles }->{CHPTHROW};
   } elsif( exists( $self->hdr->{CHPTHROW} ) ) {
     $chop_throw = $self->hdr->{CHPTHROW};
   }
@@ -107,8 +107,8 @@ sub _to_CHOP_THROW {
 sub _to_EXPOSURE_TIME {
   my $self = shift;
   my $exptime;
-  if( exists $self->hdr->{ $self->nfiles }  && exists $self->hdr->{$self->nfiles}->{EXP_TIME}) {
-    $exptime = $self->hdr->{ $self->nfiles }->{EXP_TIME};
+  if( exists $self->hdr->{ "I".$self->nfiles }  && exists $self->hdr->{"I".$self->nfiles}->{EXP_TIME}) {
+    $exptime = $self->hdr->{ "I".$self->nfiles }->{EXP_TIME};
   } else {
     $exptime = $self->hdr->{EXP_TIME};
   }
@@ -173,8 +173,8 @@ sub _from_SCAN_INCREMENT {
 sub _to_UTEND {
   my $self = shift;
   my $utend;
-  if( exists $self->hdr->{ $self->nfiles } && exists $self->hdr->{ $self->nfiles }->{UTEND} ) {
-    $utend = $self->hdr->{ $self->nfiles }->{UTEND};
+  if( exists $self->hdr->{ "I".$self->nfiles } && exists $self->hdr->{ "I".$self->nfiles }->{UTEND} ) {
+    $utend = $self->hdr->{ "I".$self->nfiles }->{UTEND};
   } else {
     $utend = $self->hdr->{UTEND};
   }
@@ -188,8 +188,8 @@ sub _from_UTEND {
 sub _to_UTSTART {
   my $self = shift;
   my $utstart;
-  if( exists $self->hdr->{ 1 } && exists $self->hdr->{ 1 }->{UTSTART} ) {
-    $utstart = $self->hdr->{ 1 }->{UTSTART};
+  if( exists $self->hdr->{I1} && exists $self->hdr->{I1}->{UTSTART} ) {
+    $utstart = $self->hdr->{I1}->{UTSTART};
   } else {
     $utstart = $self->hdr->{UTSTART};
   }
@@ -475,7 +475,7 @@ sub calc_orac_headers {
   my %new = $self->SUPER::calc_orac_headers;
 
   # Grab the UT datetime from the DATE-OBS header.
-  my $dateobs = defined( $self->hdr->{1}->{'DATE-OBS'}) ? $self->hdr->{1}->{'DATE-OBS'} : ( defined($self->hdr->{'DATE-OBS'}) ? $self->hdr->{'DATE-OBS'} : 0 );
+  my $dateobs = defined( $self->hdr->{I1}->{'DATE-OBS'}) ? $self->hdr->{I1}->{'DATE-OBS'} : ( defined($self->hdr->{'DATE-OBS'}) ? $self->hdr->{'DATE-OBS'} : 0 );
 
   # Split it into its constituent components.
   $dateobs =~ /^(\d\d\d\d)-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)/;
@@ -526,9 +526,22 @@ Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Copyright (C) 2008 Science and Technology Facilities Council.
+Copyright (C) 1998-2007 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 

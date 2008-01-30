@@ -74,8 +74,8 @@ sub _to_DEC_SCALE {
 
 # Assumes either x-y scales the same or the y corresponds to
 # declination.
-   if ( exists $self->hdr->{ 1 }->{CCDYPIXE} && exists $self->hdr->{INGPSCAL} ) {
-      $decscale = $self->hdr->{ 1 }->{CCDYPIXE} * 1000.0 * $self->hdr->{INGPSCAL};
+   if ( exists $self->hdr->{I1}->{CCDYPIXE} && exists $self->hdr->{INGPSCAL} ) {
+      $decscale = $self->hdr->{I1}->{CCDYPIXE} * 1000.0 * $self->hdr->{INGPSCAL};
    }
    return $decscale;
 }
@@ -86,8 +86,8 @@ sub _to_RA_SCALE {
 
 # Assumes either x-y scales the same or the x corresponds to right
 # ascension, and right ascension decrements with increasing x. 
-   if ( exists $self->hdr->{ 1 }->{CCDXPIXE} && exists $self->hdr->{INGPSCAL} ) {
-      $rascale = $self->hdr->{ 1 }->{CCDXPIXE} * -1000.0 * $self->hdr->{INGPSCAL};
+   if ( exists $self->hdr->{I1}->{CCDXPIXE} && exists $self->hdr->{INGPSCAL} ) {
+      $rascale = $self->hdr->{I1}->{CCDXPIXE} * -1000.0 * $self->hdr->{INGPSCAL};
    }
    return $rascale;
 }
@@ -174,8 +174,8 @@ sub _to_EQUINOX {
 sub _to_GAIN {
    my $self = shift;
    my $gain = 4.1;
-   if ( exists $self->hdr->{ 1 }->{GAIN} ) {
-      $gain =  $self->hdr->{ 1 }->{GAIN};
+   if ( exists $self->hdr->{I1}->{GAIN} ) {
+      $gain =  $self->hdr->{I1}->{GAIN};
    }
    return $gain;
 }
@@ -552,6 +552,7 @@ sub calc_orac_headers {
    my $ut = $self->get_UT_date();
    $ut = 0 unless defined $ut;
    $self->hdr( 'ORACUT', $ut );
+   $new{ORACUT} = $ut;
 
    return %new;
 }
@@ -770,9 +771,22 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Copyright (C) 2008 Science and Technology Facilities Council.
+Copyright (C) 1998-2007 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 

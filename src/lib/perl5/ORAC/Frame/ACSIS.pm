@@ -340,64 +340,6 @@ sub calc_orac_headers {
   return %new;
 }
 
-=item B<readhdr>
-
-This method reads the header from the first file in the list of
-files for the observation. This method sets the header in the object
-(in general that is done by configure() ).
-
-  $Frm->readhdr;
-
-The filename can be supplied if the one stored in the object
-is not required:
-
-  $Frm->readhdr($file);
-
-...but the header in $Frm is over-written.
-
-All existing header information is lost. The C<calc_orac_headers>
-method is invoked once the header information is read.
-
-If there is an error during the read a reference to an empty hash
-is returned.
-
-Currently this method assumes that the reduced group is stored in
-NDF format. Only the FITS header is retrieved from the NDF.
-
-There are no return arguments.
-
-=cut
-
-sub readhdr {
-  my $self = shift;
-
-  my ( $ref, $status );
-
-  my $file = ( @_ ? shift : $self->file(1) );
-
-  # Just read the NDF FITS header.
-  try {
-    my $hdr = new Astro::FITS::Header::NDF( File => $file );
-
-    # Mark it suitable for tie with array return of multi-values...
-    $hdr->tiereturnsref(1);
-
-    # ...and store it in the object.
-    $self->fits( $hdr );
-
-    # ...and the hdr object too.
-    tie my %header, ref( $hdr ), $hdr;
-    $self->hdr( %header );
-
-  };
-
-  # Calculate derived headers.
-  $self->calc_orac_headers;
-
-  return;
-
-}
-
 =item B<collate_headers>
 
 This method is used to collect all of the modified FITS headers for a
@@ -764,8 +706,22 @@ Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2004 Particle Physics and Astronomy Research
+Copyright (C) 2008 Science and Technology Facilities Council.
+Copyright (C) 2004-2007 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 

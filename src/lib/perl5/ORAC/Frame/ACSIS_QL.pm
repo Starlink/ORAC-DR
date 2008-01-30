@@ -290,58 +290,6 @@ sub calc_orac_headers {
   return %new;
 }
 
-=item B<readhdr>
-
-This method reads the header from the first file in the list of
-files for the observation. This method sets the header in the object
-(in general that is done by configure() ).
-
-  $Frm->readhdr;
-
-The filename can be supplied if the one stored in the object
-is not required:
-
-  $Frm->readhdr($file);
-
-...but the header in $Frm is over-written.
-
-All existing header information is lost. The C<calc_orac_headers>
-method is invoked once the header information is read.
-
-If there is an error during the read a reference to an empty hash
-is returned.
-
-Currently this method assumes that the reduced group is stored in
-NDF format. Only the FITS header is retrieved from the NDF.
-
-There are no return arguments.
-
-=cut
-
-sub readhdr {
-  my $self = shift;
-
-  my ( $ref, $status );
-
-  my $file = ( @_ ? shift : $self->file(1) );
-
-  # Just read the NDF FITS header.
-  try {
-    my $hdr = new Astro::FITS::Header::NDF( File => $file );
-
-    # Mark it suitable for tie with array return of multi-values...
-    $hdr->tiereturnsref(1);
-
-    # ...and store it in the object.
-    $self->fits( $hdr );
-  };
-
-  # Calculate derived headers.
-  $self->calc_orac_headers;
-
-  return;
-
-}
 
 =item B<file_from_bits>
 

@@ -21,6 +21,7 @@ use 5.006;
 use strict;
 use warnings;
 
+use NDF;
 use Astro::FITS::Header::NDF;
 use ORAC::Error qw/ :try /;
 use ORAC::Constants qw/ :status /;
@@ -44,12 +45,28 @@ that is done by configure() ).
 
     $Frm->readhdr;
 
-The filename can be supplied if the one stored in the object
+The filename or filenames can be supplied if the one stored in the object
 is not required:
 
     $Grp->readhdr($file);
 
-but the header in $Frm is over-written.
+but the header in $Frm is over-written. If multiple files are in the frame
+or if multiple filenames are given the header information will be merged.
+Merged headers will be stored as subheaders and accessible in the hash
+interface via $Frm->hdr->{SUBHEADERS}->[n]. By default only data that
+differs will be in a subheader.
+
+An options hash as first argument can be used to override the default
+behaviour. Specifically if a single file is given (or stored in the
+object) but it contains multiple NDF components, the headers can be
+returned such that the largest header is the primary and the subheaders
+are stored by component name.
+
+  $Frm->readhdr( { nomerge => 1 }, $filename );
+
+The subheaders will then be accessible as $Frm->hdr->{I1} (if the
+component is called "I1".
+
 All exisiting header information is lost. The C<calc_orac_headers()>
 method is invoked once the header information is read.
 If there is an error during the read a reference to an empty hash is 
@@ -66,15 +83,90 @@ sub readhdr {
 
   my $self = shift;
 
-   my ($ref, $status);
+  # get the options hash
+  my $opts;
+  $opts = shift if ref($_[0]);
 
-  my $file = (@_ ? shift : $self->file);
+  # get the files
+  my @files = ( @_ ? @_ : $self->files );
 
   my $Error;
 
-  # Just read the NDF fits header
+  # Just read the NDF fits headers
   try {
-    my $hdr = new Astro::FITS::Header::NDF( File => $file );
+
+    # Locate NDFs inside HDS containers
+    my @ndfs = $self->_find_ndf_children( @files );
+
+    # are we merging? The option for not merging is only relevant
+    # if we have one input file that becomes
+    # multiple ndf components.
+    my $domerge = 1;
+    if (@files == 1 && @ndfs > 1) {
+      $domerge = ($opts->{nomerge} ? 0 : 1);
+    }
+
+
+    # Read the headers. We have an explicit for loop so that we can
+    # catch failures in single read rather than aborting all reads
+    my %hdrs;
+    my @errors;
+    for my $f (@ndfs) {
+      eval {
+        $hdrs{$f} = Astro::FITS::Header::NDF->new( File => $f );
+      };
+      if ($@) {
+        push(@errors, $@);
+      }
+    }
+
+    # if we got errors but did not succeed in reading a single header
+    # then abort
+    if (!keys %hdrs) {
+      if (@errors) {
+        die "Error from read of header: ".join("\n",@errors);
+      } else {
+        die "Unexpectedly failed to read any headers from ".scalar(@ndfs)." NDF files";
+      }
+    }
+
+    # to merge or not to merge
+    my $hdr;
+    if ($domerge) {
+      # Now merge into the first (order not important)
+      my @hdrs = values %hdrs;
+      $hdr = shift(@hdrs);
+      if (@hdrs) {
+        my ($merged, @different) = $hdr->merge_primary( {merge_unique=>1}, @hdrs);
+        $merged->subhdrs( @different );
+        $hdr = $merged;
+      }
+    } else {
+      # choose the largest header as the primary
+      my $biggest_key;
+      my $maxncards = 0;
+      for my $k (keys %hdrs) {
+        my $sz = $hdrs{$k}->sizeof;
+        if ($sz > $maxncards) {
+          $maxncards = $sz;
+          $biggest_key = $k;
+        }
+      }
+      die "Internal error finding largest header" if !defined $biggest_key;
+
+      # select the primary
+      $hdr = $hdrs{$biggest_key};
+      delete $hdrs{$biggest_key};
+      
+      # now assign the subheaders
+      for my $k (keys %hdrs) {
+        my $name = (split(/\./,$k))[-1]; # split on dot and take suffix
+        my $item = Astro::FITS::Header::Item->new( Keyword => $name,
+                                              Value => $hdrs{$k});
+        $hdr->insert(-1, $item);
+      }
+
+    }
 
     # Mark it suitable for tie with array return of multi-values
     $hdr->tiereturnsref(1);
@@ -177,6 +269,89 @@ sub stripfname {
   return $name;
 }
 
+=item B<_find_ndf_children>
+
+Given an array of filenames, open each one using HDS and see whether 
+there are any top level NDFs inside.
+
+ @paths = $frm->_find_ndf_children( @files );
+
+If a filename looks like it includes an HDS path (ie a file suffix
+that is not ".sdf") it will be returned unmodified without being opened.
+
+Options can be used to control behaviour if the first argument is a reference
+to a hash
+
+ @paths = $frm->_find_ndf_children( { compnames => 1}, $file );
+
+If the "compnames" options is true only the names of component NDFs
+within an HDS structure will be returned, rather than the filename
+with paths.
+
+=cut
+
+sub _find_ndf_children {
+  my $self = shift;
+  my $opts = {};
+  $opts = shift(@_) if ref($_[0]) eq 'HASH';
+  my @files = @_;
+
+  my @out;
+  for my $f (@files) {
+    $f =~ s/\.sdf$//;
+    if ($f =~ /\./) {
+      # has an unrecognized extension
+      push(@out, $f) unless $opts->{compnames};
+      next;
+    }
+
+    # open the file
+    # Now need to find the NDFs in the output HDS file
+    my $status = &NDF::SAI__OK;
+    hds_open($f, 'READ', my $loc, $status);
+
+    # find the type - if it is an NDF just store it and try the next
+    dat_type($loc, my $type, $status);
+    if ($type eq 'NDF') {
+      push(@out,$f) unless $opts->{compnames};
+      next;
+    }
+
+    # Find out how many we have
+    dat_ncomp($loc, my $ncomp, $status);
+
+    # Get all the component names
+    for my $i (1..$ncomp) {
+
+      # Get locator to component
+      dat_index($loc, $i, my $cloc, $status);
+
+      # get the type
+      dat_type( $cloc, my $ctype, $status);
+
+      if ($ctype eq 'NDF') {
+
+        # Find its name
+        dat_name($cloc, my $name, $status);
+
+        my $result = $name;
+        $result = $f.".$name" unless $opts->{compnames};
+        push(@out, $result) if $status == &NDF::SAI__OK;
+      }
+
+      # Release locator
+      dat_annul($cloc, $status);
+
+      last if $status != &NDF::SAI__OK;
+    }
+
+    dat_annul($loc, $status);
+
+  }
+
+  return @out;
+}
+
 =back
 
 =head1 NOTES
@@ -200,7 +375,7 @@ and Frossie Economou  E<lt>frossie@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2007 Science and Technology Facilities Council.
+Copyright (C) 2007-2008 Science and Technology Facilities Council.
 Copyright (C) 1998-2007 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
@@ -216,7 +391,6 @@ PARTICULAR PURPOSE. See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 Place,Suite 330, Boston, MA  02111-1307, USA
-
 
 =cut
 
