@@ -409,9 +409,20 @@ sub file_from_bits {
   die "ACSIS has no file_from_bits() method. Use pattern_from_bits() instead\n";
 }
 
+=item B<file_from_bits_extra>
+
+Extra information that can be supplied to the Group file_from_bits
+methods when constructing the Group filename.
+
+ $extra = $Frm->file_from_bits_extra();
+
+=cut
+
 sub file_from_bits_extra {
   my $self = shift;
-  return $self->hdr( "SUBSYSNR" );
+  my (@subsysnrs) = $self->subsysnrs;
+  # for hybrid mode return the first subsystem number
+  return $subsysnrs[0];
 }
 
 =item B<flag_from_bits>
@@ -688,6 +699,40 @@ sub allow_header_sync {
   if( @_ ) { $self->{AllowHeaderSync} = shift; }
 
   return $self->{AllowHeaderSync};
+}
+
+=back
+
+=head1 <SPECIALIST METHODS>
+
+Methods specifically for ACSIS.
+
+=over 4
+
+=item B<subsysnrs>
+
+List of subsysnumbers in use for this frame. If there is more than
+one subsystem number this indicates a hybrid mode.
+
+  @numbers = $Frm->subsysnrs;
+
+In scalar context returns the total number of subsystems.
+
+  $number_of_subsystems = $Frm->subsysnrs;
+
+=cut
+
+sub subsysnrs {
+  my $self = shift;
+  my $hdr = $self->hdr;
+
+  my @numbers;
+  if (exists $hdr->{SUBSYSNR}) {
+    push(@numbers, $hdr->{SUBSYSNR});
+  } else {
+    @numbers = map { $_->{SUBSYSNR} } @{$hdr->{SUBHEADERS}};
+  }
+  return (wantarray ? @numbers : scalar(@numbers));
 }
 
 =back
