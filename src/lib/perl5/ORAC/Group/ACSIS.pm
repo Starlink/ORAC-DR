@@ -2,13 +2,13 @@ package ORAC::Group::ACSIS;
 
 =head1 NAME
 
-ORAC::Group::INGRID - INGRID class for dealing with observation groups in ORAC-DR
+ORAC::Group::ACSIS - ACSIS class for dealing with observation groups in ORAC-DR
 
 =head1 SYNOPSIS
 
   use ORAC::Group;
 
-  $Grp = new ORAC::Group::INGRID("group1");
+  $Grp = new ORAC::Group::ACSIS("group1");
   $Grp->file("group_file")
   $Grp->readhdr;
   $value = $Grp->hdr("KEYWORD");
@@ -16,13 +16,13 @@ ORAC::Group::INGRID - INGRID class for dealing with observation groups in ORAC-D
 =head1 DESCRIPTION
 
 This module provides methods for handling group objects that
-are specific to INGRID. It provides a class derived from B<ORAC::Group::NDF>.
+are specific to ACSIS. It provides a class derived from B<ORAC::Group::NDF>.
 All the methods available to B<ORAC::Group> objects are available
-to B<ORAC::Group::INGRID> objects.
+to B<ORAC::Group::ACSIS> objects.
 
 =cut
 
-# A package to describe a INGRID group object for the
+# A package to describe a ACSIS group object for the
 # ORAC pipeline
 
 use 5.006;
