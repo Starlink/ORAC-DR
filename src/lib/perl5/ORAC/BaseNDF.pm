@@ -314,35 +314,35 @@ sub _find_ndf_children {
     dat_type($loc, my $type, $status);
     if ($type eq 'NDF') {
       push(@out,$f) unless $opts->{compnames};
-      next;
-    }
+    } else {
 
-    # Find out how many we have
-    dat_ncomp($loc, my $ncomp, $status);
+      # Find out how many we have
+      dat_ncomp($loc, my $ncomp, $status);
 
-    # Get all the component names
-    for my $i (1..$ncomp) {
+      # Get all the component names
+      for my $i (1..$ncomp) {
 
-      # Get locator to component
-      dat_index($loc, $i, my $cloc, $status);
+        # Get locator to component
+        dat_index($loc, $i, my $cloc, $status);
 
-      # get the type
-      dat_type( $cloc, my $ctype, $status);
+        # get the type
+        dat_type( $cloc, my $ctype, $status);
 
-      if ($ctype eq 'NDF') {
+        if ($ctype eq 'NDF') {
 
-        # Find its name
-        dat_name($cloc, my $name, $status);
+          # Find its name
+          dat_name($cloc, my $name, $status);
 
-        my $result = $name;
-        $result = $f.".$name" unless $opts->{compnames};
-        push(@out, $result) if $status == &NDF::SAI__OK;
+          my $result = $name;
+          $result = $f.".$name" unless $opts->{compnames};
+          push(@out, $result) if $status == &NDF::SAI__OK;
+        }
+
+        # Release locator
+        dat_annul($cloc, $status);
+
+        last if $status != &NDF::SAI__OK;
       }
-
-      # Release locator
-      dat_annul($cloc, $status);
-
-      last if $status != &NDF::SAI__OK;
     }
 
     dat_annul($loc, $status);
