@@ -403,6 +403,8 @@ sub fits {
 	unless UNIVERSAL::isa($arg, "Astro::FITS::Header");
     }
     $self->{FitsHdr} = $arg;
+    # clear the tied version to force a resync
+    $self->{Header} = undef;
   }
 
   # Create a new fits object if we have not got one
