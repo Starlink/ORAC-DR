@@ -32,8 +32,7 @@ end
 cd $ORAC_PERL5LIB
 
 # Run the command
-set bindir = "/home/timj/perlmods/Pod/LaTeX/"
-$bindir/pod2latex -out $output -modify -h1level 2 -sections "\!AUTHORS" $input
+pod2latex -out $output -modify -h1level 2 -sections "\!AUTHORS" $input
 
 # These are the set of classes relevant for oracdr hackers
 
@@ -47,7 +46,7 @@ end
 echo $input
 
 # Run the command again
-$bindir/pod2latex -out $output -modify -h1level 2 -sections "\!AUTHORS" $input
+pod2latex -out $output -modify -h1level 2 -sections "\!AUTHORS" $input
 
 # Return to cwd - unnecessary
 
