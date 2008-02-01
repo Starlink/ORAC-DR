@@ -425,29 +425,6 @@ sub inout {
   return (wantarray ? ($infile, $outfile) : $outfile );
 }
 
-=item B<read_wcs>
-
-=cut
-
-sub read_wcs {
-  my $self = shift;
-
-  for my $i ( 1..$self->nfiles ) {
-
-    my $file = $self->file( $i );
-
-    my $status = &NDF::SAI__OK;
-    # Retrieve the WCS from the NDF.
-    ndf_begin();
-    ndf_find(&NDF::DAT__ROOT(), $file, my $indf, $status);
-    my $wcs = ndfGtwcs( $indf, $status );
-    ndf_annul($indf, $status);
-    ndf_end($status);
-
-    $self->wcs( $i, $wcs );
-  }
-}
-
 =back
 
 =head1 SEE ALSO

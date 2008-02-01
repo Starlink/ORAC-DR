@@ -235,6 +235,65 @@ sub sync_headers {
   }
 }
 
+=item B<read_wcs>
+
+Read the frameset and store the resulting C<Starlink::AST> object into the
+object for later retrieval via the C<wcs()> method.
+
+  $Frm->read_wcs();
+
+If a file name or filenames are provided the default behaviour is over-ridden and the frameset
+is only read for the provided files. The resultant framesets are returned without being
+stored in the object.
+
+  $wcs = $Frm->read_wcs( $file );
+
+In scalar context the first WCS object is returned.
+
+=cut
+
+sub read_wcs {
+  my $self = shift;
+
+  my $store_wcs;
+  my @files;
+  if (@_) {
+    @files = @_;
+  } else {
+    @files = $self->files;
+    $store_wcs = 1;
+  }
+
+  my $status = &NDF::SAI__OK;
+  err_begin($status);
+  ndf_begin();
+
+  my @wcs;
+  my $i = 0;
+  for my $f ( @files ) {
+    $i++;
+
+    # Retrieve the WCS from the NDF.
+    ndf_find(&NDF::DAT__ROOT(), $f, my $indf, $status);
+    my $wcs = ndfGtwcs( $indf, $status );
+    ndf_annul($indf, $status);
+
+    if ($status != &NDF::SAI__OK) {
+      err_annul($status);
+      next;
+    }
+
+    # store it if we are supposed to
+    push(@wcs, $wcs);
+    $self->wcs( $i, $wcs ) if $store_wcs;
+  }
+
+  ndf_end($status);
+  err_end($status);
+
+  return (wantarray ? @wcs : $wcs[0] );
+}
+
 
 =back
 
