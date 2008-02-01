@@ -44,8 +44,22 @@ Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
+Copyright (C) 2008 Science and Technology Facilities Council.
 Copyright (C) 2007 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
@@ -65,23 +79,16 @@ if( ! $Frm->uhdr( "SPARSE_CUBE" ) ) {
 
     my $in = $Frm->file;
 
-    # Set the offset coordinate system to Origin.
-    $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=get name=SkyRefIs" );
-    my ( $ORAC_STATUS, $skyrefis ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
-    $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name=SkyRefIs newval=Origin" );
+    # Read the reference WCS so that we can work out how to reset the frameset
+    # after we have called centroid
+    my $wcs = $Frm->read_wcs( $in );
 
-    # Retrieve the format of either axis, so that we can set them back
-    # when we're done processing.
-    $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=get name='Format(1)'" );
-    ( $ORAC_STATUS, my $format1 ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
-    $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=get name='Format(2)'" );
-    ( $ORAC_STATUS, my $format2 ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
 
-    # Set the format of the axes to arcseconds, with four decimal
-    # places.
+
+    # Set the offset coordinate system to Origin and the formatting of axes to arcseconds
+    # with 4 decimal places
     my $newformat = "s.4";
-    $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(1)' newval=$newformat" );
-    $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(2)' newval=$newformat" );
+    $Mon{ndfpack_mon}->obeyw("wcsattrib", "ndf=$in mode=mset setting='SkyRefIs=Origin,Format(1)=$newformat,Format(2)=$newformat'");
 
     # Calculate the centroid, using the centre of the array as the
     # initial position of the object.
@@ -89,7 +96,7 @@ if( ! $Frm->uhdr( "SPARSE_CUBE" ) ) {
     $Mon{'kappa_mon'}->obeyw( "centroid", "$params" );
 
     # Retrieve the x and y centre.
-    ( $ORAC_STATUS, my $xcen ) = $Mon{'kappa_mon'}->get( "centroid", "xcen" );
+    ( my $ORAC_STATUS, my $xcen ) = $Mon{'kappa_mon'}->get( "centroid", "xcen" );
     ( $ORAC_STATUS, my $ycen ) = $Mon{'kappa_mon'}->get( "centroid", "ycen" );
     ( $ORAC_STATUS, my $xerr ) = $Mon{'kappa_mon'}->get( "centroid", "xerr" );
     ( $ORAC_STATUS, my $yerr ) = $Mon{'kappa_mon'}->get( "centroid", "yerr" );
@@ -143,8 +150,9 @@ if( ! $Frm->uhdr( "SPARSE_CUBE" ) ) {
     # Create an input positions list file.
     my $psfcat = new ORAC::TempFile;
     my $psfcatfile = $psfcat->file;
-    open my $psfcatfile_h, ">", $psfcatfile or orac_err "Cannot open temporary file for writing PSF input position list: $!";
-    print $psfcatfile_h "$x_max $y_max\n";
+    open(my $psfcatfile_h, ">", $psfcatfile)
+        or orac_throw "Cannot open temporary file for writing PSF input position list: $!";
+    printf($psfcatfile_h "%.6f %.6f\n",$x_max, $y_max);
     close $psfcatfile_h;
 
     # Set up the parameters for PSF.
@@ -189,9 +197,7 @@ if( ! $Frm->uhdr( "SPARSE_CUBE" ) ) {
     $Cal->pointingindex->add( $Frm->file, \%calhash );
 
     # Set SkyRefIs and Format back to what they were before.
-    $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name=SkyRefIs newval=$skyrefis" );
-    $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(1)' newval=$format1" );
-    $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(2)' newval=$format2" );
+    $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=mset setting='SkyRefIs=$skyrefis,Format(1)=$format1,Format(2)=$format2'" );
 
     # Tidy-up output.
     orac_print "\n";

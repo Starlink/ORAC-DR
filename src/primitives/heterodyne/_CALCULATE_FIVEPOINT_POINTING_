@@ -51,8 +51,21 @@ Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2007 Science and Technology Facilities Council. All
+Copyright (C) 2007-2008 Science and Technology Facilities Council. All
 Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
@@ -64,31 +77,26 @@ my $type = ( defined( $_CALCULATE_FIVEPOINT_POINTING_{TYPE} ) ?
 
 my $in = $Frm->file;
 
+# Get the WCS for easy retrieval of attributes. Some are required to allow easy resetting
+# of the object afterwards
+my $wcs = $Frm->read_wcs( $in );
+
 # Retrieve the rest frequency so we can figure out what the FWHM is
 # for the FITGAUSS call later on. Even though we're dealing with an
 # image, all collapsed images and spectra are 3D to retain spectral
 # information.
-$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=get name=RestFreq" );
-my ( $ORAC_STATUS, $restfreq ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
+my $restfreq = $wcs->Get("RestFreq");
 my $fwhm = 0.024383119917 / $restfreq; # FWHM in radians.
 
-# Set the offset coordinate system to Origin, storing the original
-# value so we can restore it once we've finished.
-$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=get name=SkyRefIs" );
-( $ORAC_STATUS, my $skyrefis ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
-$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name=SkyRefIs newval=Origin" );
+# Original status of frameset
+my $skyrefis = $wcs->Get("SkyRefIs");
+my $format1 = $wcs->Get("Format(1)");
+my $format2 = $wcs->Get("Format(2)");
 
-# Retrieve the format of either axis, so that we can set them back
-# when we're done processing.
-$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=get name='Format(1)'" );
-( $ORAC_STATUS, my $format1 ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
-$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=get name='Format(2)'" );
-( $ORAC_STATUS, my $format2 ) = $Mon{'ndfpack_mon'}->get( "wcsattrib", "value" );
-
-# Set the format of the axes to arcseconds, with four decimal places.
+# Set the offset coordinate system to Origin and the formatting of axes to arcseconds
+# with 4 decimal places
 my $newformat = "s.4";
-$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(1)' newval=$newformat" );
-$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(2)' newval=$newformat" );
+$Mon{ndfpack_mon}->obeyw("wcsattrib", "ndf=$in mode=mset setting='SkyRefIs=Origin,Format(1)=$newformat,Format(2)=$newformat'");
 
 # We need to take two cuts of the data, one horizontal and the other
 # vertical. Then we'll fit a gaussian to both of these using
@@ -106,7 +114,7 @@ $Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$temp1_file dim=1 mode=wcs" );
 # Get stats on the cut so that we can set the peak and set the
 # baseline to zero, but only if both the min and max are negative.
 $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp1_file" );
-( $ORAC_STATUS, my $max ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
+( my $ORAC_STATUS, my $max ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
 ( $ORAC_STATUS, my $min ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
 
 my $peak = $max;
@@ -184,9 +192,7 @@ if( abs( $vert_centre ) > 10 ) {
 $Cal->pointingindex->add( $Frm->file, \%calhash );
 
 # Set SkyRefIs and Format back to what they were before.
-$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name=SkyRefIs newval=$skyrefis" );
-$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(1)' newval=$format1" );
-$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=set name='Format(2)' newval=$format2" );
+$Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=mset setting='SkyRefIs=$skyrefis,Format(1)=$format1,Format(2)=$format2'" );
 
 # Tidy-up output.
 orac_print "\n";
