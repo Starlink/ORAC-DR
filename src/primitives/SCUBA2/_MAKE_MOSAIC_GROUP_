@@ -1,4 +1,4 @@
-# -*-perl-*-
+#! -*-perl-*-
 
 =head1 NAME
 
@@ -25,8 +25,10 @@ supports the -batch command line option.
 
 Controls the coadding mode for the primitive. If COADD_MODE=RUNNING,
 the new frames are combined with the existing group image. If
-COADD_MODE=STACKALL the group image is recreated from all the constituent
-frames each time it is called. Default mode is 'STACKALL'.
+COADD_MODE=STACKALL the group image is recreated from all the
+constituent frames each time it is called. If COADD_MODE=DESPIKE then
+the mosaicking task is set to MAKEMOS and the parameter NMOS must be
+specified. Default mode is 'STACKALL'.
 
 =item B<MAKEMOS>
 
@@ -47,6 +49,11 @@ The method by which MAKEMOS combines the images. Default is
 C<mean>. See the MAKEMOS documentation for a description of the
 possible values.
 
+=item B<NMOS>
+
+Number of Frame images to mosaic together before coadding to
+Group. Only accessed if COADD_MODE=DESPIKE. Default is 5.
+
 =item B<COORD_FRAME>
 
 Name of desired coordinate frame for output image. May be any
@@ -65,6 +72,10 @@ Flag to denote whether to display extra information. Default is 0
 Assumes the _ALIGN_ARRAYS_ primitive has been run on the input images.
 
 Defining the output filename for the Group mosaic is a bit of a hack.
+
+_MAKE_MOSAIC_GROUP_DESPIKE_ is more efficient than using this
+primitive with COADD_MODE=DESPIKE and designed for use in the QUICK
+LOOK pipeline.
 
 =head1 FILE SUFFIX
 
@@ -119,6 +130,19 @@ if ( !$wait || ($wait && $Frm->hdrval('OBSEND', -1)) ) {
 		 defined $_MAKE_MOSAIC_GROUP_{MAKEMOS}) ?
                  $_MAKE_MOSAIC_GROUP_{MAKEMOS} : 0;
 
+  # Determine coadd mode as that may over-ride choice of makemos
+  # parameter
+  my $coadd_mode = uc($_MAKE_MOSAIC_GROUP_{COADD_MODE} || 'STACKALL');
+  my $nmos = 1;
+  if ( $coadd_mode eq 'DESPIKE' ) {
+    $makemos = 1;
+    # Number of Frames to mosaic for calculating a statistically-valid
+    # variance
+    $nmos = (exists $_MAKE_MOSAIC_GROUP_{NMOS} &&
+	     defined $_MAKE_MOSAIC_GROUP_{NMOS}) ? 
+	     $_MAKE_MOSAIC_GROUP_{NMOS} : 5;
+  }
+
   # Method for combining images in makemos 
   my $makemos_method = "";
   if ( $makemos ) {
@@ -126,8 +150,6 @@ if ( !$wait || ($wait && $Frm->hdrval('OBSEND', -1)) ) {
 		       defined $_MAKE_MOSAIC_GROUP_{MAKEMOS_METHOD}) ? 
 		       lc($_MAKE_MOSAIC_GROUP_{MAKEMOS_METHOD}) : "mean"; 
   }
-
-  my $coadd_mode = uc($_MAKE_MOSAIC_GROUP_{COADD_MODE} || 'STACKALL');
 
   # Set the coordinate frame
   unless ( $coframe ) {
@@ -141,13 +163,12 @@ if ( !$wait || ($wait && $Frm->hdrval('OBSEND', -1)) ) {
 		defined $_MAKE_MOSAIC_GROUP_{METHOD}) ? 
 		lc($_MAKE_MOSAIC_GROUP_{METHOD}) : "nearest"; 
 
-  orac_print "Making GROUP mosaic\n";
+#  orac_print "Making GROUP mosaic\n";
   # Unset the NewImage flag
   $Grp->uhdr("NEWIMAGE",0);
 
-  _MAKE_MOSAIC_ USEGRP=1 MAKEMOS=$makemos MAKEMOS_METHOD=$makemos_method METHOD=$method COADD_MODE=$coadd_mode VERBOSE=$verbose COORD_FRAME=$coframe
+  _MAKE_MOSAIC_ USEGRP=1 MAKEMOS=$makemos MAKEMOS_METHOD=$makemos_method METHOD=$method COADD_MODE=$coadd_mode VERBOSE=$verbose COORD_FRAME=$coframe NMOS=$nmos
 
   # Tell the display system that there's a new image to display
-  $Grp->uhdr("NEWIMAGE",1);
-
+  $Grp->uhdr("NEWIMAGE",1) if $_MAKE_MOSAIC_{NEWIMAGE};
 }
