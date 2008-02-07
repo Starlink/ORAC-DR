@@ -1,4 +1,4 @@
-# -*-perl-*-
+#! -*-perl-*-
 
 =head1 NAME
 
@@ -21,10 +21,6 @@ image created here is effectively a running average of individual
 `stackall' images. If B<NMOS> is set to the total number of files in
 the observation, then this becomes a `stackall' image.
 
-In Quick-Look mode the B<DELETE_FRM> option should be set so that the
-intermediate files do not use up disk space unnecessarily and that the
-pipeline does not increase its memory usage.
-
 =head1 ARGUMENTS
 
 =over 4
@@ -32,7 +28,7 @@ pipeline does not increase its memory usage.
 =item B<NMOS>
 
 Number of Frame images to mosaic together before coadding to
-Group. Default is 10.
+Group. Default is 5.
 
 =item B<METHOD>
 
@@ -65,7 +61,14 @@ Creates a single output group image with a suffix of '_mos'.
 
 This primitive is a specific realization of making such a mosaic. It
 ought to be possible to achieve the same goal with the conventional
-_MAKE_MOSAIC_ and _ALIGN_ARRAYS_ primitives.
+_MAKE_MOSAIC_ and _ALIGN_ARRAYS_ primitives. however, this version is
+slightly more efficient as it aligns all of the images in one step.
+
+Does not yet deal with moving sources.
+
+Should be upgraded to deal with arbitrary Group objects.
+
+Should add SIGMAS as a paremeter if MAKEMOS_METHOD is MODE or SIGMA
 
 =head1 AUTHORS
 
@@ -116,7 +119,7 @@ my $makemos_method = (exists $_MAKE_MOSAIC_GROUP_DESPIKE_{MAKEMOS_METHOD} &&
 
 # Retrieve the Frames in the current Group, and get the number
 my @members = $Grp->members;
-my $nFrm = @members;
+my $nFrm = scalar(@members);
 
 # Is it time to make a mosaic? Only do so every $nmos files
 if ( $nFrm % $nmos == 0 ) {
@@ -151,16 +154,9 @@ if ( $nFrm % $nmos == 0 ) {
   $frmmoslist->handle->close;
   $alfrmmos->handle->close;
 
-  # Determine the reference image for alignment. Use the current Group
-  # file if it exists, else use the first image in the list given.
-  # Note: by this stage, the images will probably be aligned in a
-  # celestial frame.
-  my $refimage;
-  if ($Grp->file_exists) {
-    $refimage = $Grp->file;
-  } else {
-    $refimage = "!";
-  }
+  # Determine the reference image for alignment.
+  _GET_REFERENCE_IMAGE_
+  my $refimage = $_GET_REFERENCE_IMAGE_{REFIMAGE};
 
   # Retrieve the Group filename - make sure it ends in _mos
   my $outname = $Grp->file;
@@ -201,13 +197,12 @@ if ( $nFrm % $nmos == 0 ) {
       or die "Error renaming temp file to output Group mosaic"; # horrible hack KLUGE
   }
 
-  # Store mosaic in Group
+  # Store mosaic in Group, set NEWIMAGE flag to display Grp image
   $Grp->file( $outname );
   $Grp->uhdr("NEWIMAGE", 1);
   orac_print("done.\n") if $verbose;
 
-  # Log the variance
-  _CALC_SKY_NOISE_ SKYMETHOD=VARIANCE GROUP=1
 } else {
+  # Unset NEWIMAGE flag
   $Grp->uhdr("NEWIMAGE", 0) if $Grp->uhdr("NEWIMAGE");
 }
