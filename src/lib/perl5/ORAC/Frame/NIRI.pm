@@ -533,7 +533,7 @@ sub template {
 I subclass this so that I do not have to have the no recipe warning each time...
 
 Method to determine the recipe name that should be used to reduce the
-observation.  The default method is to look for an "ORAC_RECIPE" entry
+observation.  The default method is to look for an "ORAC_DR_RECIPE" entry
 in the user header. If one cannot be found, we assume QUICK_LOOK.
 
   $recipe = $Frm->findrecipe;
@@ -546,7 +546,7 @@ The object is automatically updated to reflect this recipe.
 sub findrecipe {
   my $self = shift;
 
-  my $recipe = $self->uhdr('ORAC_RECIPE');
+  my $recipe = $self->uhdr('ORAC_DR_RECIPE');
 
   # Check to see whether there is something there
   # if not try to make something up
@@ -560,6 +560,7 @@ sub findrecipe {
 
   return $recipe;
 }
+
 =item B<mergehdr>
 
 Method to propagate the FITS header from an HDS container to an NDF

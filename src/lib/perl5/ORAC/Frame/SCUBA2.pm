@@ -54,7 +54,7 @@ my %hdr = ( FILTER => 'FILTER',
             INSTRUMENT => 'INSTRUME',
             OBJECT => 'OBJECT',
             OBSERVATION_NUMBER => 'OBSNUM',
-            RECIPE => 'RECIPE',
+            DR_RECIPE => 'RECIPE',
             STANDARD => 'STANDARD',
             UTDATE => 'UTDATE',
           );

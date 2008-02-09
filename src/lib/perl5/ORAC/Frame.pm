@@ -51,6 +51,7 @@ my @ORAC_INTERNAL_HEADERS = qw/
                                DETECTOR_BIAS
                                DETECTOR_INDEX
                                DETECTOR_READ_TYPE
+                               DR_RECIPE
                                EQUINOX
                                EXPOSURE_TIME
                                FILTER
@@ -74,7 +75,6 @@ my @ORAC_INTERNAL_HEADERS = qw/
                                RA_BASE
                                RA_SCALE
                                RA_TELESCOPE_OFFSET
-                               RECIPE
                                ROTATION
                                SCAN_INCREMENT
                                SLIT_ANGLE
@@ -569,7 +569,7 @@ sub findnsubs {
 =item B<findrecipe>
 
 Method to determine the recipe name that should be used to reduce the
-observation.  The default method is to look for an "ORAC_RECIPE" entry
+observation.  The default method is to look for an "ORAC_DR_RECIPE" entry
 in the user header. If one cannot be found, we assume QUICK_LOOK.
 
   $recipe = $Frm->findrecipe;
@@ -582,7 +582,7 @@ The object is automatically updated to reflect this recipe.
 sub findrecipe {
   my $self = shift;
 
-  my $recipe = $self->uhdr('ORAC_RECIPE');
+  my $recipe = $self->uhdr('ORAC_DR_RECIPE');
 
   # Check to see whether there is something there
   # if not try to make something up
