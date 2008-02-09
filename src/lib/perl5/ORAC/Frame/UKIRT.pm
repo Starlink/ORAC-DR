@@ -44,7 +44,6 @@ my %hdr = (
             OBJECT              => "OBJECT",
             OBSERVATION_NUMBER  => "OBSNUM",
             OBSERVATION_TYPE    => "OBSTYPE",
-            RA_BASE             => "RABASE",
 	    DR_RECIPE           => "RECIPE",
             ROTATION            => "CROTA2",
             SPEED_GAIN          => "SPD_GAIN",
@@ -67,6 +66,11 @@ ORAC::Frame::UKIRT->_generate_orac_lookup_methods( \%hdr );
 # Hardwire the TELESCOPE internal header to be UKIRT.
 sub _to_TELESCOPE {
   return "UKIRT";
+}
+
+sub _to_RA_BASE {
+  my $self = shift;
+  return ($self->hdr->{RABASE} * 15.0);
 }
 
 # A package to describe a UKIRT group object for the

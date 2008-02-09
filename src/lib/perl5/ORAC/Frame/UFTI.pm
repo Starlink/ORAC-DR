@@ -98,6 +98,7 @@ sub _to_RA_BASE {
          my @words = split( /\s+/, $ra );
          $ra = $words[ 0 ];
       }
+      $ra *= 15.0;
    }
    return $ra;
 }

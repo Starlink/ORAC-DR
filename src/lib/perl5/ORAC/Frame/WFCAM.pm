@@ -64,7 +64,6 @@ my %hdr = (
             OBJECT               => "OBJECT",
             OBSERVATION_NUMBER   => "OBSNUM",
             OBSERVATION_TYPE     => "OBSTYPE",
-            RA_BASE              => "RABASE",
             RA_SCALE             => "PIXLSIZE",
             RA_TELESCOPE_OFFSET  => "TRAOFF",
             DR_RECIPE            => "RECIPE",
@@ -168,6 +167,13 @@ sub _to_UTSTART {
 sub _from_UTSTART {
   "UTSTART", $_[0]->uhdr( "ORAC_UTSTART" );
 }
+
+sub _to_RA_BASE {
+  my $self = shift;
+  return ($self->hdr->{RABASE} * 15.0);
+}
+
+
 
 # Set the raw fixed parts for the four chips.
 my %rawfixedparts = ('1' => 'w',

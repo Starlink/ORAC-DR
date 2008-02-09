@@ -40,7 +40,6 @@ my %hdr = (
             OBJECT              => "OBJECT",
             OBSERVATION_NUMBER  => "OBSNUM",
             OBSERVATION_TYPE    => "OBSTYPE",
-            RA_BASE             => "RABASE",
             ROTATION            => "CROTA2",
             SPEED_GAIN          => "SPD_GAIN",
             STANDARD            => "STANDARD",
@@ -57,6 +56,11 @@ ORAC::Group::UKIRT->_generate_orac_lookup_methods( \%hdr );
 
 sub _to_TELESCOPE {
   return "UKIRT";
+}
+
+sub _to_RA_BASE {
+  my $self = shift;
+  return ($self->hdr->{RABASE} * 15.0);
 }
 
 =head1 REVISION

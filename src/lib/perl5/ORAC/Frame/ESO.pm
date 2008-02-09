@@ -242,7 +242,7 @@ sub _to_RA_BASE {
       $ra = $self->hdr->{RA};
    }
    $ra = defined( $ra ) ? $ra: 0.0; 
-   return $ra / 15.0;
+   return $ra;
 }
 
 sub _to_ROTATION {

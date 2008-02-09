@@ -89,7 +89,7 @@ sub _to_DEC_BASE {
 
 # Value stored in the headers is too imprecise.
 sub _to_DEC_SCALE {
-   -0.1182;
+    return (-0.1182/3600.0);
 }
 
 sub _to_DETECTOR_READ_TYPE {
@@ -189,7 +189,7 @@ sub _to_RA_BASE {
 
 # Value stored in the headers is too imprecise.
 sub _to_RA_SCALE {
-   -0.1160;
+  return (-0.1160/3600.0);
 }
 
 # Assume that the initial offset is 0.0, i.e. the base is the

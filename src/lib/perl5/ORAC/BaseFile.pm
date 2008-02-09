@@ -1015,26 +1015,10 @@ sub calc_orac_headers {
 
   my %new = ();  # Hash containing the derived headers
 
-  # ORACTIME
-  # For IRCAM the keyword is simply RUTSTART
-  # Just return it (zero if not available)
-  my $time = $self->hdr('RUTSTART');
-  $time = 0 unless (defined $time);
-  $self->hdr('ORACTIME', $time);
-
-  $new{'ORACTIME'} = $time;
-
-  # ORACUT
-  # For IRCAM this is simply the IDATE header value
-  my $ut = $self->hdr('IDATE');
-  $ut = 0 unless defined $ut;
-  $self->hdr('ORACUT', $ut);
-
   # Now create all the ORAC_ headers
   # First attempt is to use Astro::FITS::HdrTrans
   my %trans;
   eval {
-    die "HdrTrans not yet enabled\n";
     # we do have the advantage over HdrTrans in that we know
     # the instrument translation table to use via ORAC_INSTRUMENT
     # and this frame class. We may need to add a Frame instrument method
@@ -1067,6 +1051,20 @@ sub calc_orac_headers {
       }
     }
   }
+
+  # Store the standardised ORACUT and ORACTIME
+  $new{ORACUT} = $self->uhdr("ORAC_UTDATE");
+  $self->hdr( "ORACUT", $new{ORACUT});
+
+  my $start = $self->uhdr("ORAC_UTSTART");
+  my $oractime = 0;
+  if (defined $start) {
+    my $base = $new{ORACUT};
+    my $frac = ($start->hour + ($start->min / 60) + ($start->sec / 3600) / 24);
+    $oractime = $base + $frac;
+    $new{ORACTIME} = $oractime;
+  }
+  $self->hdr("ORACTIME", $oractime);
 
   return %new;
 }
@@ -1247,7 +1245,7 @@ sub _generate_orac_lookup_methods {
 
     # First generate the code to generate ORAC_ headers
     my $subname = "_to_$key";
-    my $sub = qq/ $p sub $subname { \$_[0]->hdr(\"$fhdr\"); } $ep /;
+    my $sub = qq/ $p sub $subname { print "$class :: $subname\n";\$_[0]->hdr(\"$fhdr\"); } $ep /;
     eval "$sub";
 
     # Now the from 

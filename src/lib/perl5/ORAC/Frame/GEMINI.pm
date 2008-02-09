@@ -55,7 +55,7 @@ sub _to_DEC_SCALE {
    my $cd22 = $self->hdr("CD2_2");
    my $sgn;
    if ( ( $cd11 * $cd22 - $cd12 * $cd21 ) < 0 ) { $sgn = -1; } else { $sgn = 1; }
-   abs( sqrt( $cd11**2 + $cd21**2 ) * 3600 );
+   abs( sqrt( $cd11**2 + $cd21**2 ) );
 }
 
 sub _to_DEC_TELESCOPE_OFFSET {
@@ -123,14 +123,14 @@ sub _to_RA_BASE {
       $ra = $self->hdr->{CRVAL1};
    }
    $ra = defined( $ra ) ? $ra: 0.0;
-   return $ra / 15.0;
+   return $ra;
 }
 
 sub _to_RA_SCALE {
    my $self = shift;
    my $cd12 = $self->hdr("CD1_2");
    my $cd22 = $self->hdr("CD2_2");
-   sqrt( $cd12**2 + $cd22**2 ) * 3600;
+   sqrt( $cd12**2 + $cd22**2 );
 }
  
 sub _to_RA_TELESCOPE_OFFSET {

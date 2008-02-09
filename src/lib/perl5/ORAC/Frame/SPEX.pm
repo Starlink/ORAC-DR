@@ -90,7 +90,7 @@ sub _to_DEC_BASE {
 
 # Value stored in the headers is too imprecise.
 sub _to_DEC_SCALE {
-   -0.1182;
+   return (-0.1182/3600.0);
 }
 
 sub _to_DETECTOR_READ_TYPE {
@@ -183,14 +183,14 @@ sub _to_RA_BASE {
    my $ra = 0.0;
    my $sexa = $self->hdr->{"RABASE"};
    if ( defined( $sexa ) ) {
-      $ra = $self->hms_to_degrees( $sexa ) / 15.0;
+      $ra = $self->hms_to_degrees( $sexa );
    }
    return $ra;
 }
 
 # Value stored in the headers is too imprecise.
 sub _to_RA_SCALE {
-   -0.116;
+   return (-0.116/3600.0);
 }
 
 # Assume that the initial offset is 0.0, i.e. the base is the
@@ -202,8 +202,8 @@ sub _to_RA_TELESCOPE_OFFSET {
    my $self = shift;
    my $offset;
 
-# Base RA is in decimal hours.
-   my $base = 15.0 * $self->_to_RA_BASE();
+# Base RA is in degrees.
+   my $base = $self->_to_RA_BASE();
 
 # Convert from sexagesimal right ascension h:m:s and declination
 # d:m:s to decimal degrees.
@@ -221,7 +221,7 @@ sub _to_RA_TELESCOPE_OFFSET {
    return $offset;
 }
 
-sub _to_RECIPE {
+sub _to_DR_RECIPE {
    my $self = shift;
    my $recipe = "JITTER_SELF_FLAT";
    if ( $self->_to_OBSERVATION_TYPE() eq "DARK" ) {

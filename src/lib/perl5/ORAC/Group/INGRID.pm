@@ -69,6 +69,7 @@ sub _to_DEC_SCALE {
    if ( exists $self->hdr->{CCDYPIXE} && exists $self->hdr->{INGPSCAL} ) {
       $decscale = $self->hdr->{CCDYPIXE} * 1000.0 * $self->hdr->{INGPSCAL};
    }
+   $decscale /= 3600;
    return $decscale;
 }
 
@@ -81,6 +82,7 @@ sub _to_RA_SCALE {
    if ( exists $self->hdr->{CCDXPIXE} && exists $self->hdr->{INGPSCAL} ) {
       $rascale = $self->hdr->{CCDXPIXE} * -1000.0 * $self->hdr->{INGPSCAL};
    }
+   $rascale /= 3600.0;
    return $rascale;
 }
 
