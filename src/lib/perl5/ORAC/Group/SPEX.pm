@@ -220,7 +220,7 @@ sub _to_RA_TELESCOPE_OFFSET {
    return $offset;
 }
 
-sub _to_RECIPE {
+sub _to_DR_RECIPE {
    my $self = shift;
    my $recipe = "JITTER_SELF_FLAT";
    if ( $self->_to_OBSERVATION_TYPE() eq "DARK" ) {
