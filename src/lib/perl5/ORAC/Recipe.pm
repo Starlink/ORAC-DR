@@ -896,7 +896,6 @@ sub current_primitive {
         }
 #        print "Got a match but need more\n";
       } elsif ( defined $endprim && $primitive_list_local[$pos] =~ /^$endprim/) {
-        print STDERR "Got to end of primitive list without a match. Contact TIMJ.\n";
         return;
       }
     }
