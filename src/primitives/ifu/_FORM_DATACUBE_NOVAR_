@@ -1,6 +1,5 @@
 # -*- perl -*-
 
-
 # Podule
 # ======
 
@@ -14,20 +13,21 @@ This primitive will not propagate the variance array. It is intended
 that this primitive, using Figaro routines to assemble the cube, will
 only be used when KAPPA 1.0 or newer is not available.
 
-The slices are extracted and placed in the datacube in the order in which
-their positions are given in the IFU_start and IFU_end arrays contained
-in the user header of the frame. The number of slices is given by the 
-IFU_slices header.
- 
+The slices are extracted and placed in the datacube in the order in
+which their positions are given in the IFU_start and IFU_end arrays
+contained in the user header of the frame. The number of slices is
+given by the IFU_slices header.
+
 Each area extracted from the input frame becomes one y,lambda plane of
 the datacube (with y->y, x->lambda).
-  
-This primitive is intended for use on a straightened, wavelength calibrated
-frame, but the IFU_xshift values are read and used, so it will work any 
-time after the headers have been written (by _LOCATE_SLICES_). If the
-image has not been scrunched when it is run then the wavelength axis will
-be in pixels (not Angstroms) and there will be small offsets (~1 pixel)
-in the wavelength axis from one slice to another.
+
+This primitive is intended for use on a straightened, wavelength
+calibrated frame, but the IFU_xshift values are read and used, so it
+will work any time after the headers have been written (by
+_LOCATE_SLICES_). If the image has not been scrunched when it is run
+then the wavelength axis will be in pixels (not Angstroms) and there
+will be small offsets (~1 pixel) in the wavelength axis from one slice
+to another.
 
 =head1 NOTES
 
@@ -71,20 +71,20 @@ SPT: Stephen P. Todd (Edinburgh University/UKATC)
 =head1 COPYRIGHT
 
 Copyright (C) 1998-2005 Particle Physics and Astronomy Research
-Council.  All Rights Reserved.
+Council. Copyright (C) 2008 Science & Technology Facilities Council.
+All Rights Reserved.
 
 =cut
-
 
 my ($in, $out);
 
 my $use_group = $_FORM_DATACUBE_{GRP} || 0;
 
 if ($use_group) {
-    $in = $Grp->file;
-    $out = $Grp->raw . "_cube";
+  $in = $Grp->file;
+  $out = $Grp->raw . "_cube";
 } else {
-    ($in, $out) = $Frm->inout( "_cube" );
+  ($in, $out) = $Frm->inout( "_cube" );
 }
 
 orac_print "Forming file $in into a datacube $out\n";
@@ -98,13 +98,13 @@ my $ymin = 0;
 my $ymax = 60;
 
 # and some temporary files
-my $tmp=new ORAC::TempFile;
+my $tmp = new ORAC::TempFile;
 my $tmp_slice = $tmp->file;
 
-my $tmp1=new ORAC::TempFile;
+my $tmp1 = new ORAC::TempFile;
 my $tmp_slice1 = $tmp1->file;
 
-my $tmp2=new ORAC::TempFile;
+my $tmp2 = new ORAC::TempFile;
 my $tmp_slice2 = $tmp2->file;
 
 # The first time through we want to force creation of a new datacube
@@ -123,85 +123,75 @@ my $param;
 my ($y_min, $y_max);
 
 for my $n (0..($n_slices-1)) {
-   
-    my $ystart = $Frm->uhdr->{"IFU_start"}->[$n];
-    my $yend = $Frm->uhdr->{"IFU_end"}->[$n];
-    my $yshift = $Frm->uhdr->{"IFU_yshift"}->[$n];
 
-    if (!defined($y_min) || $yshift + 1 < $y_min) {
-	$y_min = $yshift + 1;
-    }
+  my $ystart = $Frm->uhdr->{"IFU_start"}->[$n];
+  my $yend = $Frm->uhdr->{"IFU_end"}->[$n];
+  my $yshift = $Frm->uhdr->{"IFU_yshift"}->[$n];
 
-    if(!defined($y_max) || ($yshift + $yend - $ystart + 1) > $y_max) {
-	$y_max = $yshift + $yend - $ystart + 1;
-    }
+  if (!defined($y_min) || $yshift + 1 < $y_min) {
+    $y_min = $yshift + 1;
+  }
+
+  if(!defined($y_max) || ($yshift + $yend - $ystart + 1) > $y_max) {
+    $y_max = $yshift + $yend - $ystart + 1;
+  }
 }
+
 $y_max = int($y_max) + 1;
 $y_min = int($y_min) - 1;
 
 orac_print "Forming datacube ";
 
 for my $n (0..($n_slices-1)) {
-    
-    # Read the position of the nth slice as written into the headers.
-    my $ystart = $Frm->uhdr->{"IFU_start"}->[$n];
-    my $yend = $Frm->uhdr->{"IFU_end"}->[$n];
-    my $xshift = $Frm->uhdr->{"IFU_xshift"}->[$n];
-    my $yshift = $Frm->uhdr->{"IFU_yshift"}->[$n];
-    
-    # Keep the user aware of progress
-    orac_print ".";
-    
-    # Copy the area of the input frame containing the required slice
-    # to a temporary file.
-    $param = "in=$in(,$ystart:$yend) out=$tmp_slice";
-    $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
 
-    $param = "$tmp_slice [1,1]";  
-    $Mon{"ndfpack_mon"}->obeyw("setorigin", "$param");
+  # Read the position of the nth slice as written into the headers.
+  my $ystart = $Frm->uhdr->{"IFU_start"}->[$n];
+  my $yend = $Frm->uhdr->{"IFU_end"}->[$n];
+  my $xshift = $Frm->uhdr->{"IFU_xshift"}->[$n];
+  my $yshift = $Frm->uhdr->{"IFU_yshift"}->[$n];
 
-    # set the y bounds on the slice
-    $Mon{"ndfpack_mon"}->obeyw("setbound", "$tmp_slice(,$y_min:$y_max)");
+  # Keep the user aware of progress
+  orac_print ".";
 
-    # Shift it in the y-direction (and x if necessary)
-    $param = "in=$tmp_slice out=$tmp_slice1 abs=[$xshift,$yshift] method=linear";
-    $Mon{"kappa_mon"}->obeyw( "slide", "$param" );
+  # Copy the area of the input frame containing the required slice to
+  # a temporary file.
+  $param = "in=$in(,$ystart:$yend) out=$tmp_slice";
+  $Mon{"ndfpack_mon"}->obeyw( "ndfcopy", "$param" );
 
+  $param = "$tmp_slice [1,1]";
+  $Mon{"ndfpack_mon"}->obeyw("setorigin", "$param");
 
-    # Grow it into the datacube.
-    $param = "image=$tmp_slice1 cube=$out xstart=" . ($n+1) . " xend=" . ($n+1) . " new=$new xsize=$n_slices";
-    $Mon{"figaro1"}->obeyw( "growyt", "$param" );
+  # set the y bounds on the slice
+  $Mon{"ndfpack_mon"}->obeyw("setbound", "$tmp_slice(,$y_min:$y_max)");
 
-    $yshift = int($yshift) + 1;
-    my $section = "'" . ($n+1) . ",:$yshift,'";
-    $Mon{"kappa_mon"}->obeyw( "chpix", "in=$out out=$tmp_slice section=$section newval=bad" ); 
+  # Shift it in the y-direction (and x if necessary)
+  $param = "in=$tmp_slice out=$tmp_slice1 abs=[$xshift,$yshift] method=linear";
+  $Mon{"kappa_mon"}->obeyw( "slide", "$param" );
 
-    my $top = $yend - $ystart + $yshift;
-    $section = "'" . ($n+1) . ",$top:,'";
-    $Mon{"kappa_mon"}->obeyw( "chpix", "in=$tmp_slice out=$out section=$section newval=bad" ); 
-    
-    # We no longer want to force the creation of a new datacube
-    $new="f";
+  # Grow it into the datacube.
+  $param = "image=$tmp_slice1 cube=$out xstart=" . ($n+1) . " xend=" . ($n+1) . " new=$new xsize=$n_slices";
+  $Mon{"figaro1"}->obeyw( "growyt", "$param" );
+
+  $yshift = int($yshift) + 1;
+  my $section = "'" . ($n+1) . ",:$yshift,'";
+  $Mon{"kappa_mon"}->obeyw( "chpix", "in=$out out=$tmp_slice section=$section newval=bad" );
+
+  my $top = $yend - $ystart + $yshift;
+  $section = "'" . ($n+1) . ",$top:,'";
+  $Mon{"kappa_mon"}->obeyw( "chpix", "in=$tmp_slice out=$out section=$section newval=bad" );
+
+  # We no longer want to force the creation of a new datacube
+  $new="f";
 }
-
 
 orac_print "\n";
 orac_warn "Variance array lost.\n";
 
-    if ($use_group) {
-	$Grp->file($out);
-    } else {
-	$Frm->file( $out );
-    }
-    
-    $Grp->uhdr("NDIMS", 3);
-    $Frm->uhdr("NDIMS", 3);  
+if ($use_group) {
+  $Grp->file($out);
+} else {
+  $Frm->file( $out );
+}
 
-
-
-
-
-
-
-
-
+$Grp->uhdr("NDIMS", 3);
+$Frm->uhdr("NDIMS", 3);
