@@ -267,7 +267,7 @@ sub _to_RA_TELESCOPE_OFFSET {
 }
 
 # Derive the translation between observing template and recipe name.
-sub _to_RECIPE {
+sub _to_DR_RECIPE {
    my $self = shift;
    my $recipe = "QUICK_LOOK";
 

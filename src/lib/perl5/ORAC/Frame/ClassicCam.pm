@@ -188,7 +188,7 @@ sub _to_RA_SCALE {
    return $scale;
 }
 
-sub _to_RECIPE {
+sub _to_DR_RECIPE {
    my $self = shift;
    my $type = "OBJECT";
    my $recipe = "QUICK_LOOK";

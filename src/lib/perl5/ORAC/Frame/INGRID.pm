@@ -237,7 +237,7 @@ sub _to_RA_BASE {
 
 # No clue what the recipe is apart for a dark and assume a dither
 # pattern means JITTER_SELF_FLAT.
-sub _to_RECIPE {
+sub _to_DR_RECIPE {
    my $self = shift;
    my $recipe = "QUICK_LOOK";
 
