@@ -178,7 +178,7 @@ setenv ORAC_SUN
 source $ORAC_DIR/etc/oracdr_start.csh
 
 # Needed for CASU code.
-setenv PERL5LIB /ukirt_sw/cirdr/perlinstall:/ukirt_sw/cirdr/perllib
+setenv PERL5LIB /ukirt_sw/cirdr/perlinstall:/ukirt_sw/cirdr/perllib:${PERL5LIB}
 
 # Tidy up
 unset oracut
