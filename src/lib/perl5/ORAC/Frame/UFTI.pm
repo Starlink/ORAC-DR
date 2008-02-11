@@ -118,6 +118,8 @@ sub _to_UTDATE {
      if ( ref( $utdate ) eq 'ARRAY' ) {
         $utdate = $utdate->[0];
      }
+     # remove '-'
+     $utdate =~ s/-//g;
   }
   return $utdate;
 }
