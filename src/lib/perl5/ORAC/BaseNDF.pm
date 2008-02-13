@@ -97,6 +97,8 @@ sub readhdr {
 
     # Locate NDFs inside HDS containers
     my @ndfs = $self->_find_ndf_children( @files );
+    die "We were given ".@files." file(s) but asked to open ".scalar(@ndfs).
+      " headers!" if @ndfs == 0;
 
     # are we merging? The option for not merging is only relevant
     # if we have one input file that becomes
@@ -371,6 +373,14 @@ sub _find_ndf_children {
 
     # find the type - if it is an NDF just store it and try the next
     dat_type($loc, my $type, $status);
+
+    # if the type is blank this may be SCUBA data but we need to check for DATA_ARRAY
+    # These were early NDF data.
+    if ($type eq '') {
+      dat_there( $loc, "DATA_ARRAY", my $isthere, $status);
+      $type = 'NDF' if $isthere;
+    }
+
     if ($type eq 'NDF') {
       push(@out,$f) unless $opts->{compnames};
     } else {
