@@ -666,6 +666,9 @@ sub _read_recipe {
     try {
       $recipe = $parser->find( $recname, \@path );
       $found = $recname if defined $recipe;
+      if ($recname ne $recipe) {
+        orac_print "Actual recipe loaded is $found due to recipe suffix modifier\n";
+      }
     } catch ORAC::Error::FatalError with {
       my $E = shift;
       $RecErr = "$E";
