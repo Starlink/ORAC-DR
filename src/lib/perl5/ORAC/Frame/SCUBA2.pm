@@ -196,35 +196,6 @@ provided by B<ORAC::Frame>.
 
 =over 4
 
-=item B<calc_orac_headers>
-
-This method calculates header values that are required by the
-pipeline by using values stored in the header.
-
-=cut
-
-sub calc_orac_headers {
-  my $self = shift;
-
-  # Run the base class first since that does the ORAC_
-  # header translations.
-  my %new = $self->SUPER::calc_orac_headers;
-
-  # ORACTIME - in decimal UT days.
-  my $uthour = $self->uhdr('ORAC_UTSTART');
-  my $utday = $self->uhdr('ORAC_UTDATE');
-  $self->hdr('ORACTIME', $utday + ( $uthour / 24 ) );
-  $new{'ORACTIME'} = $utday + ( $uthour / 24 );
-
-  # ORACUT - in YYYYMMDD format
-  my $ut = $self->uhdr('ORAC_UTDATE');
-  $ut = 0 unless defined $ut;
-  $self->hdr('ORACUT', $ut);
-  $new{'ORACUT'} = $ut;
-
-  return %new;
-}
-
 =item B<configure>
 
 Configure the frame object. Usually called from the constructor.

@@ -261,8 +261,8 @@ sub _to_TELESCOPE {
 sub _to_UTDATE {
   my $self = shift;
   my $utdate;
-  if ( exists $self->hdr->{"DATE-OBS"} ) {
-     $utdate = $self->hdr->{"DATE-OBS"};
+  if ( exists $self->hdr->{"DATE_OBS"} ) {
+     $utdate = $self->hdr->{"DATE_OBS"};
 
 # This is a kludge to work with old data which has multiple values of
 # the DATE keyword with the last value being blank (these were early
@@ -271,6 +271,7 @@ sub _to_UTDATE {
      if ( ref( $utdate ) eq 'ARRAY' ) {
         $utdate = $utdate->[0];
      }
+     $utdate =~ s/-//g;
   }
   return $utdate;
 }
@@ -406,7 +407,7 @@ sub get_bounds {
 # Returns the UT date in yyyyMMdd format.
 sub get_UT_date {
    my $self = shift;
-   my $date = $self->hdr->{"DATE-OBS"};
+   my $date = $self->hdr->{"DATE_OBS"};
    $date =~ s/-//g;
    return $date;
 }
@@ -414,11 +415,11 @@ sub get_UT_date {
 # Returns the UT time of observation in decimal hours.
 sub get_UT_hours {
    my $self = shift;
-   if ( exists $self->hdr->{"TIME-OBS"} && $self->hdr->{"TIME-OBS"} =~ /:/ ) {
-      my ($hour, $minute, $second) = split( /:/, $self->hdr->{"TIME-OBS"} );
+   if ( exists $self->hdr->{"TIME_OBS"} && $self->hdr->{"TIME_OBS"} =~ /:/ ) {
+      my ($hour, $minute, $second) = split( /:/, $self->hdr->{"TIME_OBS"} );
       return $hour + ($minute / 60) + ($second / 3600);
    } else {
-      return $self->hdr->{"TIME-OBS"};
+      return $self->hdr->{"TIME_OBS"};
    }
 }
 
@@ -501,55 +502,6 @@ sub new {
 
 =over 4
 
-=item B<calc_orac_headers>
-
-This method calculates header values that are required by the
-pipeline by using values stored in the header.
-
-Required ORAC extensions are:
-
-ORACTIME: should be set to a decimal time that can be used for
-comparing the relative start times of frames.  
-
-ORACUT: This is the UT day of the frame in YYYYMMDD format.
-
-This method should be run after a header is set.  Currently the readhdr()
-method calls this whenever it is updated.
-
-This method updates the frame header.  It returns a hash containing the new
-keywords.
-
-=cut
-
-sub calc_orac_headers {
-   my $self = shift;
-
-# Run the base class first since that does the ORAC_
-# headers
-   my %new = $self->SUPER::calc_orac_headers;
-
-# ORACTIME
-# --------
-# For SPEX this is the TIME-OBS header value converted to decimal hours.
-   my $time = $self->get_UT_hours();
-
-# Just return it (zero if not available).
-   $time = 0 unless ( defined $time );
-   $self->hdr( 'ORACTIME', $time );
-
-   $new{'ORACTIME'} = $time;
-
-# ORACUT
-# ------
-# Get the UT date.
-   my $ut = $self->get_UT_date();
-   $ut = 0 unless defined $ut;
-   $self->hdr( 'ORACUT', $ut );
-
-   $new{'ORACUT'} = $ut;
-
-   return %new;
-}
 
 =item B<file_from_bits>
 

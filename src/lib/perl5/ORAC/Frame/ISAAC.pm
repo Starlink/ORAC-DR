@@ -432,27 +432,6 @@ sub new {
 
 =over 4
 
-=item B<calc_orac_headers>
-
-This method calculates header values that are required by the
-pipeline by using values stored in the header.
-
-This method should be run after a header is set.  Currently the readhdr()
-method calls this whenever it is updated.
-
-This method updates the frame header.
-Returns a hash containing the new keywords.
-
-=cut
-
-sub calc_orac_headers {
-   my $self = shift;
-
-# Run the base class first since that does the ORAC headers.
-   my %new = $self->SUPER::calc_orac_headers;
-   return %new;
-}
-
 =back
 
 =head1 SEE ALSO

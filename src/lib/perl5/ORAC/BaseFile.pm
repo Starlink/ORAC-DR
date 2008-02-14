@@ -1052,20 +1052,54 @@ sub calc_orac_headers {
     }
   }
 
-  # Store the standardised ORACUT and ORACTIME
+  # Store the standardised ORACUT and ORACTIME (and ORACDATETIME)
   $new{ORACUT} = $self->uhdr("ORAC_UTDATE");
   $self->hdr( "ORACUT", $new{ORACUT});
 
   my $start = $self->uhdr("ORAC_UTSTART");
   my $oractime = 0;
+  my $oracdatetime = '';
   if (defined $start) {
     my $base = $new{ORACUT};
-    my $frac = ($start->hour + ($start->min / 60) + ($start->sec / 3600) / 24);
+    my $frac;
+    if (ref($start) && $start->can("hour")) {
+      # This should be the case for Astro::FITS::HdrTrans
+      $frac = ($start->hour + ($start->min / 60) + ($start->sec / 3600) ) / 24;
+
+      # ORACDATETIME is therefore easy
+      $oracdatetime = $start->datetime;
+
+    } elsif ($start < 19000101) {
+      # This is the case for old UKIRT ORAC-DR header translation
+      # of hours in the UT night
+      $frac = $start / 24;
+    } else {
+      # already an oractime - rare
+      $frac = int($start);
+    }
     $oractime = $base + $frac;
     $new{ORACTIME} = $oractime;
+
+    # reconstruct from oractime
+    if (!$oracdatetime) {
+      my $year = substr($base, 0, 4);
+      my $month= substr($base, 4, 2);
+      my $day  = substr($base, 6, 2);
+      my $hours = $frac * 24;
+      my $h = int($hours);
+      my $minutes = ($hours - $h) * 60;
+      my $m = int($minutes);
+      my $s = ($minutes - $m) * 60;
+
+      $oracdatetime = sprintf("%04d-%02d-%02dT%02d:%02d:%02d", $year,
+                              $month, $day, $h, $m, int($s));
+      $new{ORACDATETIME} = $oracdatetime;
+    }
+
   }
   $self->hdr("ORACTIME", $oractime);
-
+  $self->hdr("ORACDATETIME", $oracdatetime);
+  
   return %new;
 }
 

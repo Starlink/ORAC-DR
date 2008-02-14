@@ -173,68 +173,6 @@ sub new {
 
 =over 4
 
-=item B<calc_orac_headers>
-
-This method calculates header values that are required by the
-pipeline by using values stored in the header.
-
-Required ORAC extensions are:
-
-ORACTIME: should be set to a decimal time that can be used for
-comparing the relative start times of frames.  For UIST this
-is decimal UT days.
-
-ORACUT: This is the UT day of the frame in YYYYMMDD format.
-
-ORACDATETIME: This is the UT date in ISO8601 format: YYYY-MM-DDThh:mm:ss.
-
-This method should be run after a header is set. Currently the readhdr()
-method calls this whenever it is updated.
-
-This method updates the frame header.
-Returns a hash containing the new keywords.
-
-=cut
-
-sub calc_orac_headers {
-  my $self = shift;
-
-  # Run the base class first since that does the ORAC
-  # headers
-  my %new = $self->SUPER::calc_orac_headers;
-
-  # Grab the UT datetime from the DATE-OBS header.
-  my $dateobs = defined( $self->hdr->{I1}->{'DATE-OBS'}) ? $self->hdr->{I1}->{'DATE-OBS'} : ( defined($self->hdr->{'DATE-OBS'}) ? $self->hdr->{'DATE-OBS'} : 0 );
-
-  # Split it into its constituent components.
-  $dateobs =~ /^(\d\d\d\d)-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)/;
-  my $year = $1;
-  my $month = $2;
-  my $day = $3;
-  my $hour = $4;
-  my $minute = $5;
-  my $second = $6;
-
-  # Now set ORACTIME to be decimal UT date.
-  my $date = $year . $month . $day;
-  my $time = $hour / 24 + ( $minute / ( 24 * 60 ) ) + ( $second / ( 24 * 60 * 60 ) );
-
-  $self->hdr('ORACTIME', $date + $time);
-
-  $new{'ORACTIME'} = $date + $time;
-
-  # ORACUT is just $date.
-  $self->hdr('ORACUT', $date );
-  $new{'ORACUT'} = $date;
-
-  # And set up the ORACDATETIME header too.
-  $dateobs =~ s/Z//g;
-  $self->hdr( 'ORACDATETIME', $dateobs );
-  $new{'ORACDATETIME'} = $dateobs;
-
-  return %new;
-}
-
 =back
 
 =head1 SEE ALSO

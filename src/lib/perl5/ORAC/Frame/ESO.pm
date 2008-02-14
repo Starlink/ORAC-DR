@@ -490,56 +490,7 @@ those available from ORAC::Frame.
 
 =over 4
 
-=item B<calc_orac_headers>
-
-This method calculates header values that are required by the
-pipeline by using values stored in the header.
-
-Required ORAC extensions are:
-
-ORACTIME: should be set to a decimal time that can be used for
-comparing the relative start times of frames.  For ESO this
-number is decimal hours + 12.
-
-ORACUT: This is the UT day of the frame in YYYYMMDD format.
-
-This method should be run after a header is set.  Currently the readhdr()
-method calls this whenever it is updated.
-
-This method updates the frame header.  It returns a hash containing the new
-keywords.
-
 =cut
-
-sub calc_orac_headers {
-   my $self = shift;
-
-# Run the base class first since that does the ORAC headers.
-   my %new = $self->SUPER::calc_orac_headers;
-
-# ORACTIME
-# --------
-# For ESO this is the UTC header value converted to decimal hours
-# and a 12-hour offset to avoid worrying about midnight UT.
-   my $time = $self->get_UT_hours() + 12.0;
-
-# Just return it (zero if not available).
-   $time = 0 unless ( defined $time );
-   $self->hdr( "ORACTIME", $time );
-
-   $new{'ORACTIME'} = $time;
-
-# ORACUT
-# ------
-# For ESO this is the UTC header value converted to decimal hours.
-   my $ut = $self->get_UT_date();
-   $ut = 0 unless defined $ut;
-   $self->hdr( "ORACUT", $ut );
-
-   $new{'ORACUT'} = $ut;
-
-   return %new;
-}
 
 # Supply a method to return the number associated with the observation
 

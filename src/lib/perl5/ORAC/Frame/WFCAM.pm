@@ -261,53 +261,6 @@ sub new {
 
 =over 4
 
-=item B<calc_orac_headers>
-
-This method calculates header values that are required by the
-pipeline by using values stored in the header.
-
-ORACTIME Is calculated - this is the time of the observation
-as UT day + fraction of day.
-
-ORACUT is simply YYYYMMDD.
-
-Should be run after a header is set. Currently the hdr()
-method calls this whenever it is updated.
-
-This method updates the frame header. Returns a hash containing
-the new keywords.
-
-=cut
-
-sub calc_orac_headers {
-  my $self = shift;
-
-  # Run the base class first to get the ORAC_ headers.
-  my %new = $self->SUPER::calc_orac_headers;
-
-  # ORACTIME
-  # For WFCAM this comes from DATE-OBS, which is in the
-  # form YYYY-MM-DDThh:mm:ss. We need to convert that into
-  # YYYYMMDD.fraction
-  my $ut = $self->hdr("DATE-OBS");
-  $ut =~ /(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)/;
-  my $utdate = '0'x(4-length(int($1))) . int($1) .
-               '0'x(2-length(int($2))) . int($2) .
-               '0'x(2-length(int($3))) . int($3);
-
-  my $uttime = ( $4 / 24 ) + ( $5 / 1440 ) + ( $6 / 86400 );
-
-  $self->hdr("ORACTIME", $utdate + $uttime);
-  $new{'ORACTIME'} = $utdate + $uttime;
-
-  # And ORACUT. Since this is YYYYMMDD, we've already got
-  # it in $utdate.
-  $self->hdr("ORACUT", $utdate);
-  $new{'ORACUT'} = $utdate;
-
-  return %new;
-}
-
 =item B<file_from_bits>
 
 Determine the raw data filename given the variable component

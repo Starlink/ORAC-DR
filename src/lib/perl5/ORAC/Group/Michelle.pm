@@ -282,63 +282,6 @@ sub new {
 
 =over 4
 
-=item B<calc_orac_headers>
-
-This method calculates header values that are required by the
-pipeline by using values stored in the header.
-
-Required ORAC extensions are:
-
-ORACTIME: should be set to a decimal time that can be used for
-comparing the relative start times of frames.  For UKIRT this
-number is decimal hours, for SCUBA this number is decimal
-UT days.
-
-ORACUT: This is the UT day of the frame in YYYYMMDD format.
-
-This method should be run after a header is set. Currently the readhdr()
-method calls this whenever it is updated.
-
-This method updates the frame header.
-Returns a hash containing the new keywords.
-
-=cut
-
-sub calc_orac_headers {
-  my $self = shift;
-
-  # Run the base class first since that does the ORAC
-  # headers
-  my %new = $self->SUPER::calc_orac_headers;
-
-
-  # ORACTIME
-  # For Michelle the time must be extracted from the DATE-OBS keyword
-  # and converted to decimal hours, formatted to five decimals. 
-  # Return zero if not available.
-  my $time;
-  my $epoch = $self->hdr('DATE-OBS');
-  if ( defined $epoch && $epoch =~ /:/ ) {
-    my @hms = split( /:/, substr( $epoch, index( $epoch, "T" ) + 1 ) );
-    $hms[ 2 ] =~ s/Z//;
-    $time = $hms[ 0 ] + $hms[ 1 ] / 60.0 + $hms[ 2 ] / 3600.0;
-    $time = sprintf( "%.5f", $time );
-  } else {
-    $time = 0;
-  }
-  $self->hdr('ORACTIME', $time);
-
-  $new{'ORACTIME'} = $time;
-
-  # ORACUT
-  # For Michelle this is simply the UTDATE header value.
-  my $ut = $self->hdr('UTDATE');
-  $ut = 0 unless defined $ut;
-  $self->hdr('ORACUT', $ut);
-
-  return %new;
-}
-
 =back
 
 =head1 SEE ALSO

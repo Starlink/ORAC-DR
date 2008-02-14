@@ -164,47 +164,6 @@ sub new {
 
 =over 4
 
-=item B<calc_orac_headers>
-
-This method calculates header values that are required by the
-pipeline by using values stored in the header.
-
-Should be run after a header is set. Currently the hdr() method
-calls this whenever it is updated.
-
-Calculates ORACUT and ORACTIME.
-
-ORACUT is the UT date in YYYYMMDD format.
-ORACTIME is the time of the observation in YYYYMMDD.fraction format.
-
-This method updates the frame header.
-
-This method returns a hash containing the new keywords.
-
-=cut
-
-sub calc_orac_headers {
-  my $self = shift;
-
-  # Run the base class first since that does the ORAC_
-  # header translations.
-  my %new = $self->SUPER::calc_orac_headers;
-
-  # ORACTIME - in decimal UT days.
-  my $uthour = $self->uhdr('ORAC_UTSTART');
-  my $utday = $self->uhdr('ORAC_UTDATE');
-  $self->hdr('ORACTIME', $utday + ( $uthour / 24 ) );
-  $new{'ORACTIME'} = $utday + ( $uthour / 24 );
-
-  # ORACUT - in YYYYMMDD format
-  my $ut = $self->uhdr('ORAC_UTDATE');
-  $ut = 0 unless defined $ut;
-  $self->hdr('ORACUT', $ut);
-  $new{'ORACUT'} = $ut;
-
-  return %new;
-}
-
 =item B<file>
 
 =cut
