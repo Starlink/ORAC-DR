@@ -20,7 +20,7 @@ use strict;
 use 5.006;
 use warnings;
 use vars qw/$VERSION/;
-use ORAC::Frame::GMOS;
+use ORAC::Frame::GEMINI;
 use ORAC::Constants;
 use ORAC::Print;
 use NDF;
@@ -138,40 +138,15 @@ sub configure {
   $self->findnsubs;
 
   # Read the internal data structure
-  my @Components = @{ $self->{_Components} };
+  my @components;
+  @components = @{ $self->{_Components} } if defined $self->{_Components};
 
-  # Populate the header
-  # for hds container set header NDF to be in the .header extension
-  my $hdr_ext = $self->file.".header";
-
-  $self->readhdr($hdr_ext);
-
-  # now read the subheaders 
-  my $i = 1;
-  foreach my $comp (@Components) {
-    # Read the header associated with the subframe
-    # KLUGE - Michelle chop data does not have a fits header
-    # in the .I1BEAMA components so we need to put in a nasty hack
-    # here
-    # Skip if we are in beamB
-    next if $comp =~ /BEAMB$/;
-
-    # Strip the chop information
-    (my $kluge = $comp) =~ s/BEAM[AB]$//;
-
-    my ($href, $status) = fits_read_header($rootfile . ".$kluge");
-    # Store the header associated with this subframe
-    $self->hdr->{$i} = $href if $status == &NDF::SAI__OK;
-
-    $i++;
-  }
-
-  # ....and make sure calc_orac_headers is up-to-date after this
-  $self->calc_orac_headers;
+  # now read the combined header
+  $self->readhdr({nomerge=>1});
 
   # Filenames
-  $i = 1;
-  foreach my $comp (@Components) {
+  my $i = 1;
+  foreach my $comp (@components) {
     # Update the filename
     $self->file($i,$rootfile.".$comp");
     $i++;
@@ -215,39 +190,10 @@ sub findnsubs {
     $file = $self->file;
   }
 
-  # Now need to find the NDFs in the output HDS file
-  $status = &NDF::SAI__OK;
-  hds_open($file, 'READ', $loc, $status);
+  # Get a list of all the components
+  my @comps = $self->_find_ndf_children( { compnames => 1 }, $file );
 
-  # Need to rely on status being good before proceeding
-  my @comps;
-  if ($status == &NDF::SAI__OK) {
-
-    # Find out how many we have
-    dat_ncomp($loc, my $ncomp, $status);
-
-    # Get all the component names
-    for my $i (1..$ncomp) {
-
-      # Get locator to component
-      dat_index($loc, $i, my $cloc, $status);
-
-      # Find its name
-      dat_name($cloc, my $name, $status);
-      push(@comps, $name) if $status == &NDF::SAI__OK;
-
-      # Release locator
-      dat_annul($cloc, $status);
-
-      last if $status != &NDF::SAI__OK;
-    }
-
-  }
-
-  # Close file
-  dat_annul($loc, $status);
-
-  unless ($status == &NDF::SAI__OK) {
+  if (!@comps) {
     orac_err("Can't open $file for nsubs or error reading components\n");
     return 0;
   }
