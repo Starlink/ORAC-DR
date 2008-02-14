@@ -229,6 +229,7 @@ sub new {
   return $self;
 
 }
+
 =item B<configure>
 
 This method is used to configure the object. It is invoked
