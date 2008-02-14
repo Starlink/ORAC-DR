@@ -54,9 +54,9 @@ sub _to_DEC_SCALE {
    my $scale;
    my $scale_def = 0.0271;
    if ( exists ( $self->hdr->{CDELT2} ) ) {
-      $scale = 3600.0 * $self->hdr->{CDELT2};
+      $scale = $self->hdr->{CDELT2};
    } elsif ( exists ( $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"} ) ) {
-      $scale = $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
+      $scale = $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"} / 3600.0;
    }
    $scale = defined( $scale ) ? $scale: $scale_def; 
    return $scale;
@@ -172,9 +172,9 @@ sub _to_RA_SCALE {
    my $scale;
    my $scale_def = -0.0271;
    if ( exists ( $self->hdr->{CDELT1} ) ) {
-      $scale = 3600.0 * $self->hdr->{CDELT1};
+      $scale = $self->hdr->{CDELT1};
    } elsif ( exists ( $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"} ) ) {
-      $scale = - $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"};
+      $scale = - $self->hdr->{"HIERARCH.ESO.INS.PIXSCALE"} / 3600.0;
    }
    $scale = defined( $scale ) ? $scale: $scale_def; 
    return $scale;
