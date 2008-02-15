@@ -41,25 +41,6 @@ use vars qw/$VERSION/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
-# Translation tables for IRCAM should. go here.
-my %hdr = (
-            DEC_SCALE            => "CDELT1",
-            DEC_TELESCOPE_OFFSET => "DECOFF",
-            DETECTOR_BIAS        => "DET_BIAS",
-            EXPOSURE_TIME        => "DEXPTIME",
-            GAIN                 => "DEPERDN",
-            RA_SCALE             => "CDELT2",
-            RA_TELESCOPE_OFFSET  => "RAOFF",
-            UTDATE               => "IDATE",
-            UTEND                => "RUTEND",
-            UTSTART              => "RUTSTART"
-	  );
-
-# Take this lookup table and generate methods that can be sub-classed by
-# other instruments.  Have to use the inherited version so that the new
-# subs appear in this class.
-ORAC::Group::IRCAM->_generate_orac_lookup_methods( \%hdr );
-
 =head1 PUBLIC METHODS
 
 The following methods are available in this class in addition to

@@ -37,64 +37,6 @@ use base qw/ ORAC::Group::UFTI /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
-# Translation tables for WFCAM should go here.
-my %hdr = (
-           EXPOSURE_TIME        => "EXP_TIME",
-           DEC_BASE             => "DECBASE",
-           DEC_TELESCOPE_OFFSET => "TDECOFF",
-           DETECTOR_READ_TYPE   => "READOUT",
-           EQUINOX              => "EQUINOX",
-           GAIN                 => "GAIN",
-           INSTRUMENT           => "INSTRUME",
-           NUMBER_OF_EXPOSURES  => "NEXP",
-           OBJECT               => "OBJECT",
-           OBSERVATION_NUMBER   => "OBSNUM",
-           OBSERVATION_TYPE     => "OBSTYPE",
-           RA_TELESCOPE_OFFSET  => "TRAOFF",
-           DR_RECIPE            => "RECIPE",
-           STANDARD             => "STANDARD",
-           UTDATE               => "UTDATE",
-           X_LOWER_BOUND        => "RDOUT_X1",
-           X_REFERENCE_PIXEL    => "CRPIX1",
-           X_UPPER_BOUND        => "RDOUT_X2",
-           Y_LOWER_BOUND        => "RDOUT_Y1",
-           Y_REFERENCE_PIXEL    => "CRPIX2",
-           Y_UPPER_BOUND        => "RDOUT_Y2",
-          );
-
-# Take this lookup table and generate methods that can be sub-classed
-# by other instruments.  Have to use the inherited version so that the
-# new subs appear in this class.
-ORAC::Group::WFCAM->_generate_orac_lookup_methods( \%hdr );
-
-# Some headers appear in the .In sub-frames, so special translation
-# rules are needed for these.
-
-sub _to_UTEND {
-  my $self = shift;
-  $self->hdr->{ "I".$self->nfiles }->{UTEND}
-    if exists $self->hdr->{ "I".$self->nfiles };
-}
-
-sub _from_UTEND {
-  "UTEND", $_[0]->uhdr( "ORAC_UTEND" );
-}
-
-sub _to_UTSTART {
-  my $self = shift;
-  $self->hdr->{I1}->{UTSTART}
-    if exists $self->hdr->{I1};
-}
-
-sub _from_UTSTART {
-  "UTSTART", $_[0]->uhdr( "ORAC_UTSTART" );
-}
-
-sub _to_RA_BASE {
-  my $self = shift;
-  return ($self->hdr->{RABASE} * 15.0);
-}
-
 # Set the group fixed parts for the four chips.
 my %groupfixedpart = ( '1' => 'gw',
                        '2' => 'gx',

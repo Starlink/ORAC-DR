@@ -24,7 +24,7 @@ use warnings;
 use vars qw/ $VERSION /;
 
 use Astro::FITS::Header;
-use Astro::FITS::HdrTrans;
+use Astro::FITS::HdrTrans 1.00;
 
 $VERSION = sprintf("%d", q$Revision$ =~ /(\d+)/);
 
@@ -1032,24 +1032,9 @@ sub calc_orac_headers {
     %new = (%new, %trans);
   };
 
-  # if we have no values do it the old way
+  # if we have no keys we can not process this observation
   if (!keys %trans) {
-    # go through an array of headers and translate the
-    # ones we can find with associated methods
-
-    # Loop over all the headers
-    # Do nothing if a translation method does not exist
-    # This makes it safe for everyone
-    for my $key ( $self->_orac_internal_headers ) {
-      my $method = "_to_$key";
-  #    print "Trying method $method\n";
-      if ($self->can($method)) {
-        #      print "Running method $method\n";
-        # This returns a single value
-        $new{"ORAC_$key"} = $self->$method();
-        $self->uhdr("ORAC_$key", $new{"ORAC_$key"});
-      }
-    }
+    die "There was an error translating headers for this observation: $@";
   }
 
   # Store the standardised ORACUT and ORACTIME (and ORACDATETIME)
@@ -1208,87 +1193,16 @@ sub translate_hdr {
   # will lend itself to subclassing
   # The translate_hdr() method itself will then not need to be 
   # subclassed at all
-  my $method = "_from_$key";
-  # print "trying method translate $method\n";
-  if ($self->can($method)) {
-    return $self->$method();
+  my $method = "from_$key";
 
+  # get the user header
+  my $translated = $self->uhdr;
+  my $class = $translated->{_TRANSLATION_CLASS};
+  if ($class && $self->can($method)) {
+    return $class->$method( $translated );
   } else {
     return ();
   }
-}
-
-=item B<_from_*>
-
-Methods to translate ORAC_ private headers to FITS headers
-required by the instrument. This is the reverse of C<_to_*> called
-from C<calc_orac_headers>.
-
-These methods should only be called by C<translate_hdr>
-
-Returns a hash containing the FITS key(s) and value(s).
-
-   %fits = $Frm->_from_AIRMASS_START();
-
-The method name does not include the ORAC_ prefix.
-
-=item B<_to_*>
-
-Methods to translate standard FITS headers to ORAC_ headers.
-These methods should be called just from C<orac_calc_headers>.
-
-Returns the translated value.
-
-  $val = $Frm->_to_AIRMASS_START();
-
-The method name does not include the ORAC_ prefix.
-
-=cut
-
-# Generate the methods automatically from a lookup table
-# This only works with one-to-one mappings of keywords.
-
-# This method generates all the internal methods
-# Expects a hash ref as argument and simply does a name
-# translation without any data processing
-# The hash is keyed by the ORAC_ name (without the ORAC_ prefix
-# (although that will be removed if it appears)
-# This is a class method (no object required)
-sub _generate_orac_lookup_methods {
-  my $class = shift;
-  my $lut = shift;
-
-  # Have to go into a different package
-  my $p = "{\n package $class;\n";
-  my $ep = "\n}"; # close the scope
-
-  # Loop over the keys to the hash
-  for my $key (keys %$lut) {
-
-    # Get the original FITS header name
-    my $fhdr = $lut->{$key};
-
-    # Remove leading ORAC_ if it is there since the method
-    # should not include it
-    $key =~ s/^ORAC_//;
-
-    # prepend ORAC_ for the actual key name
-    my $ohdr = "ORAC_$key";
-
-    # print "Processing $key and $ohdr and $fhdr\n";
-
-    # First generate the code to generate ORAC_ headers
-    my $subname = "_to_$key";
-    my $sub = qq/ $p sub $subname { print "$class :: $subname\n";\$_[0]->hdr(\"$fhdr\"); } $ep /;
-    eval "$sub";
-
-    # Now the from 
-    $subname = "_from_$key";
-    $sub = qq/ $p sub $subname { (\"$fhdr\", \$_[0]->uhdr(\"$ohdr\")); } $ep/;
-    eval "$sub";
-
-  }
-
 }
 
 =back

@@ -36,24 +36,6 @@ use base qw/ ORAC::Group::UKIRT /;
 
  '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
-# Translation tables for GMOS should go here
-my %hdr = (
-            EXPOSURE_TIME        => "EXP_TIME",
-            DEC_SCALE            => "CDELT2",
-            DEC_TELESCOPE_OFFSET => "TDECOFF",
-            GAIN                 => "GAIN",
-            RA_SCALE             => "CDELT1",
-            RA_TELESCOPE_OFFSET  => "TRAOFF",
-            UTDATE               => "DATE",
-            UTEND                => "UTEND",
-            UTSTART              => "UTSTART"
-	  );
-
-# Take this lookup table and generate methods that can be sub-classed
-# by other instruments.  Have to use the inherited version so that the
-# new subs appear in this class.
-ORAC::Group::GMOS->_generate_orac_lookup_methods( \%hdr );
-
 =head1 PUBLIC METHODS
 
 The following methods are available in this class in addition to

@@ -46,16 +46,6 @@ use base qw/ ORAC::Frame::GSD /;
 # For reading in the header.
 use GSD;
 
-# Translation headers for DAS should go here.
-my %hdr = (
-
-          );
-
-# Take this lookup table and generate methods that can be sub-classed by
-# other instruments.  Have to use the inherited version so that the new
-# subs appear in this class.
-ORAC::Frame::JCMT_DAS->_generate_orac_lookup_methods( \%hdr );
-
 =head1 PUBLIC METHODS
 
 The following are modifications to standard ORAC::Frame methods.

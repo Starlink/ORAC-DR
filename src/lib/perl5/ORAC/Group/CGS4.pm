@@ -38,36 +38,6 @@ use vars qw/$VERSION/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
-# Translation tables for CGS4 should go here.
-my %hdr = (
-            CONFIGURATION_INDEX  => "CNFINDEX",
-            DEC_TELESCOPE_OFFSET => "DECOFF",
-            DETECTOR_INDEX       => "DINDEX",
-            DETECTOR_READ_TYPE   => "MODE",
-            EXPOSURE_TIME        => "DEXPTIME",
-            GAIN                 => "DEPERDN",
-            GRATING_DISPERSION   => "GDISP",
-            GRATING_NAME         => "GRATING",
-            GRATING_ORDER        => "GORDER",
-            GRATING_WAVELENGTH   => "GLAMBDA",
-            NSCAN_POSITIONS      => "DETNINCR",
-            RA_TELESCOPE_OFFSET  => "RAOFF",
-            SCAN_INCREMENT       => "DETINCR",
-            SLIT_ANGLE           => "SANGLE",
-            SLIT_NAME            => "SLIT",
-            UTDATE               => "IDATE",
-            UTEND                => "RUTEND",
-            UTSTART              => "RUTSTART",
-            X_DIM                => "DCOLUMNS",
-            Y_DIM                => "DROWS"
-	  );
-
-# Take this lookup table and generate methods that can be sub-classed by
-# other instruments.  Have to use the inherited version so that the new
-# subs appear in this class.
-ORAC::Group::CGS4->_generate_orac_lookup_methods( \%hdr );
-
-
 =head1 PUBLIC METHODS
 
 The following methods are available in this class in addition to

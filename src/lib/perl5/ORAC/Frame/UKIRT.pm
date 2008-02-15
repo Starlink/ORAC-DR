@@ -30,49 +30,6 @@ use warnings;
 # Set pattern_from_bits() to be the same as file_from_bits()
 *pattern_from_bits = \&file_from_bits;
 
-# These are the UKIRT generic lookup tables
-my %hdr = (
-            AIRMASS_START       => "AMSTART",
-            AIRMASS_END         => "AMEND",
-            DEC_BASE            => "DECBASE",
-            DETECTOR_READ_TYPE  => "MODE",
-            EQUINOX             => "EQUINOX",
-            FILTER              => "FILTER",
-	    INSTRUMENT          => "INSTRUME",
-            NUMBER_OF_OFFSETS   => "NOFFSETS",
-            NUMBER_OF_EXPOSURES => "NEXP",
-            OBJECT              => "OBJECT",
-            OBSERVATION_NUMBER  => "OBSNUM",
-            OBSERVATION_TYPE    => "OBSTYPE",
-	    DR_RECIPE           => "RECIPE",
-            ROTATION            => "CROTA2",
-            SPEED_GAIN          => "SPD_GAIN",
-            STANDARD            => "STANDARD",
-            WAVEPLATE_ANGLE     => "WPLANGLE",
-            X_LOWER_BOUND       => "RDOUT_X1",
-            X_REFERENCE_PIXEL   => "CRPIX1",
-            X_UPPER_BOUND       => "RDOUT_X2",
-            Y_LOWER_BOUND       => "RDOUT_Y1",
-            Y_UPPER_BOUND       => "RDOUT_Y2",
-            Y_REFERENCE_PIXEL   => "CRPIX2",
-	    X_APERTURE          => "APER_X",
-	    Y_APERTURE          => "APER_Y"
-        );
-
-# Take this lookup table and generate methods that can
-# be sub-classed by other instruments
-ORAC::Frame::UKIRT->_generate_orac_lookup_methods( \%hdr );
-
-# Hardwire the TELESCOPE internal header to be UKIRT.
-sub _to_TELESCOPE {
-  return "UKIRT";
-}
-
-sub _to_RA_BASE {
-  my $self = shift;
-  return ($self->hdr->{RABASE} * 15.0);
-}
-
 # A package to describe a UKIRT group object for the
 # ORAC pipeline
 
