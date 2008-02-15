@@ -1333,6 +1333,7 @@ sub orac_main_data_loop {
                              CmdLineRecipe => $Override_Recipe,
                              Instrument => $instrument,
                              Batch => 1,
+                             RecSuffix => $recsuffix,
                             );
         }
         catch ORAC::Error::FatalError with {
