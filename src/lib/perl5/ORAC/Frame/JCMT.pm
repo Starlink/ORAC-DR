@@ -123,10 +123,10 @@ provided by B<ORAC::Frame>.
 This method calculates header values that are required by the
 pipeline by using values stored in the header.
 
-ORACTIME is calculated - this is the time of the observation as
-UT day + fraction of day.
+  %new = $Frm->calc_orac_headers();
 
-ORACUT is simply read from UTDATE converted to YYYYMMDD.
+This method calculates WVM statistics in addition to calling
+the standard base class calculations.
 
 This method updates the frame header.
 Returns a hash containing the new keywords.
@@ -136,44 +136,8 @@ Returns a hash containing the new keywords.
 sub calc_orac_headers {
   my $self = shift;
 
-  my %new = ();  # Hash containing the derived headers
-
-  # ORACTIME
-
-  # First get the time of day
-  my $time = $self->hdr('UTSTART');
-  if (defined $time) {
-    # Need to split on :
-    my ($h,$m,$s) = split(/:/,$time);
-
-    # some times, we get a dodgy seconds value
-    # See eg 19970921_dem_0025.sdf
-    if ($s > 61) {
-      # get it from the HSTSTART
-      my $hst = $self->hdr('HSTSTART');
-      if (defined $hst) {
-	my ($hh, $hm, $hs) = split(/:/, $hst);
-	$s = $hs;
-      } else {
-	# panic. Take the first 2 digits
-	$s = substr($s,0,2);
-      }
-    }
-    $time = $h + $m/60 + $s/3600;
-  } else {
-    $time = 0;
-  }
-
-  # Now get the UT date
-  my $date = $self->hdr('UTDATE');
-  if (defined $date) {
-    my ($y,$m,$d) = split(/:/, $date);
-    $date = $y . '0'x (2-length($m)) . $m . '0'x (2-length($d)) . $d;
-  } else {
-    $date = 0;
-  }
-
-  my $ut = $date + ( $time / 24.0 );
+  # Call the base class
+  my %new = $self->SUPER::calc_orac_headers();
 
   # WVM data from header if it is there
   my ($wvm, $wvmstdev);
@@ -182,15 +146,14 @@ sub calc_orac_headers {
     my $file = $self->file;
     $file .= ".sdf" unless $file =~ /sdf$/; # bizarrely
    ($wvm, $wvmstdev) = SCUBA::WVM::wvmtau( $file );
+    $new{ORAC_WVM_TAU} = $wvm;
+    $new{ORAC_WVM_TAU_STDEV} = $wvmstdev;
   };
 
   # Update the header
   $self->uhdr( 'ORAC_WVM_TAU', $wvm );
   $self->uhdr( 'ORAC_WVM_TAU_STDEV', $wvmstdev );
-  $self->hdr('ORACTIME', $ut);
-  $self->hdr('ORACUT',   $date);
 
-  $new{'ORACTIME'} = $ut;
   return %new;
 
 }
