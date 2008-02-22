@@ -170,20 +170,20 @@ if( $Frm->uhdr( "MAKE_MOSAIC" ) ) {
   # included in the mosaic. This is done to the physical file as well
   # as the ORAC-DR internal header.
   my $amendname = "ORAC_AIRMASS_END";
-  my %keywords = $Frm->translate_hdr( $amendname );
-  my @amendkey = keys( %keywords );
+  my %am_translated = $Grp->frame( $Grp->num )->translate_hdr( $amendname );
   my $amend = $Grp->frame( $Grp->num )->uhdr( $amendname );
   $Grp->uhdr( $amendname, $amend );
-  my $value = $keywords{ $amendkey[ 0 ] };
-  _SET_GROUP_FITS_ITEM_ KEY=$amendkey[0] VALUE=$value
+  while( ( my $key, my $value ) = each %am_translated ) {
+    _SET_GROUP_FITS_ITEM_ KEY=$key VALUE=$value
+  }
 
   my $utendname = "ORAC_UTEND";
-  %keywords = $Frm->translate_hdr( $utendname );
-  my @utendkey = keys( %keywords );
+  my %ut_translated = $Grp->frame( $Grp->num )->translate_hdr( $utendname );
   my $utend = $Grp->frame( $Grp->num )->uhdr( $utendname );
   $Grp->uhdr( $utendname, $utend );
-  $value = $keywords{ $utendkey[ 0 ] };
-  _SET_GROUP_FITS_ITEM_ KEY=$utendkey[0] VALUE=$value
+  while( ( my $key, my $value ) = each %ut_translated ) {
+    _SET_GROUP_FITS_ITEM_ KEY=$key VALUE=$value
+  }
 
   # Fill bad pixels, if requested.
   if( $fillbad ) {
@@ -230,6 +230,7 @@ if( $Frm->uhdr( "MAKE_MOSAIC" ) ) {
     # We're not on the first cycle, so add the current mosaic to the
     # grand mosaic. First, make a temporary file to hold a duplicate
     # of the main mosaic.
+    my $grpfile = $Grp->file;
     my $tempfile = new ORAC::TempFile;
     my $tempmos = $tempfile->file;
     $params = "in=$grandmos out=$tempmos";
@@ -245,8 +246,7 @@ if( $Frm->uhdr( "MAKE_MOSAIC" ) ) {
     # Obtain the name of the exposure time header and external FITS
     # keyword.
     my $exptimename = "ORAC_EXPOSURE_TIME";
-    %keywords = $Frm->translate_hdr( $exptimename );
-    my @expkey = keys( %keywords );
+    my %expt_translated = $Frm->translate_hdr( $exptimename );
 
     # Change the integration time of the grand mosaic by summing the
     # current value and that of the primary NDF used to make the
@@ -256,28 +256,28 @@ if( $Frm->uhdr( "MAKE_MOSAIC" ) ) {
     my $exptime = $Grp->uhdr( $exptimename )
                 + $cycleGrp->frame( 0 )->uhdr( $exptimename );
     $Grp->uhdr( $exptimename, $exptime );
-    $params = "ndf=". $Grp->file
-            . " keyword=$expkey[ 0 ] edit=update value=$exptime position=!";
-    $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$params comment=\\\$C" );
+    while( ( my $key, my $value ) = each %expt_translated ) {
+      _SET_FILE_FITS_ITEM_ FILE=$grpfile KEY=$key VALUE=$value
+    }
 
     # Change the end airmass to reflect the last frame included in the
     # grand mosaic.  Note this is done to the physical file as well as
     # the ORAC-DR internal header.
     $Grp->uhdr( $amendname, $amend );
-    if ( defined( $value ) ) {
-      $params = "ndf=" . $Grp->file . " keyword=$amendkey[ 0 ] "
-              . "edit=update value=$value position=!";
-      $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$params comment=\\\$C" );
+    if ( %am_translated ) {
+      while( ( my $key, my $value ) = each %am_translated ) {
+        _SET_FILE_FITS_ITEM_ FILE=$grpfile KEY=$key VALUE=$value
+      }
     }
 
     # Change the end UT time to reflect the last frame included in the
     # grand mosaic.  Note this is done to the physical file as well as
     # the ORAC-DR internal header.
     $Grp->uhdr( $utendname, $utend );
-    if ( defined( $utend ) ) {
-      $params = "ndf=" . $Grp->file . " keyword=$utendkey[ 0 ] "
-              . "edit=update value=$utend position=!";
-      $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$params comment=\\\$C" );
+    if ( %ut_translated ) {
+      while( ( my $key, my $value ) = each %ut_translated ) {
+        _SET_FILE_FITS_ITEM_ FILE=$grpfile KEY=$key VALUE=$value
+      }
     }
   }
 }
