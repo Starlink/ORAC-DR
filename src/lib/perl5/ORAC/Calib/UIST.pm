@@ -470,7 +470,7 @@ sub ifuprofile {
   return $self->ifuprofilename if $ok;
 
   if( defined( $ok ) ) {
-    my $ifuprofile = $self->ifuprofileindex->choosebydt( "ORACTIME", $self->thing );
+    my $ifuprofile = $self->ifuprofileindex->chooseby_negativedt( "ORACTIME", $self->thing );
 
     if( ! defined( $ifuprofile ) ) {
       croak "No suitable IFU profile file was found in index file";
