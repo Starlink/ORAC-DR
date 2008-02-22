@@ -362,6 +362,7 @@ sub inout {
   return ($infile, $outfile) if wantarray();  # Array context
   return $outfile;                            # Scalar context
 }
+
 =item B<mergehdr>
 
 Dummy method.
