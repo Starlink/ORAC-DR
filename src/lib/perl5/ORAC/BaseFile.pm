@@ -1196,10 +1196,14 @@ sub translate_hdr {
   my $method = "from_$key";
 
   # get the user header
-  my $translated = $self->uhdr;
-  my $class = $translated->{_TRANSLATION_CLASS};
-  if ($class && $self->can($method)) {
-    return $class->$method( $translated );
+  my %newhash;
+  while( ( my $key, my $value ) = each %{$self->uhdr} ) {
+    $key =~ s/^ORAC_//;
+    $newhash{$key} = $value;
+  }
+  my $class = $newhash{_TRANSLATION_CLASS};
+  if ($class && $class->can($method)) {
+    return $class->$method( \%newhash );
   } else {
     return ();
   }
