@@ -1,0 +1,159 @@
+# -*-perl-*-
+
+=head1 NAME
+
+=head1 DESCRIPTION
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item PARAMS = STRING (Returned)
+
+The parameters that can be passed to MAKECUBE for the given
+observation. The parameters do not include the IN or OUT parameters.
+
+=item PASS = INTEGER (Given)
+
+The MAKECUBE pass number. 1 for first pass, 2 for second pass. The
+first pass is typically used to determine output bounds without
+creating a cube in order to determine whether or not to create
+tiles. [1]
+
+=item TYPE = STRING (Given)
+
+The type of observation done. This must be one of 'jiggle', 'raster',
+'pointing', 'focus', or 'grid'. Case-insensitive. ['']
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+None.
+
+=back
+
+=head1 TASKS
+
+None.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2007 Science and Technology Facilities
+Council.  All Rights Reserved.
+
+=cut
+
+# Handle parameters.
+my $type = $_GET_MAKECUBE_PARAMS_{TYPE};
+if( ! defined( $type ) ) {
+  orac_throw "Observation type not defined for _GET_MAKECUBE_PARAMS_. Programming error."
+}
+$type = uc( $type );
+
+my $pass = defined( $_GET_MAKECUBE_PARAMS_{PASS} ) ?
+           $_GET_MAKECUBE_PARAMS_{PASS}            :
+           1;
+
+my $params;
+
+if( $type eq 'RASTER' ) {
+
+  # RASTERs do not use autogrid.
+  $params = "autogrid=no";
+
+  # Rasters use SincSinc resampling, using [2,2] for the PARAMS
+  # parameter to makecube. We get the pixel scale by multiplying
+  # SCAN_VEL and STEPTIME headers, and the position angle comes from
+  # the MAP_PA header. Force the position angle to be between -45 and
+  # 45 degrees. Set the system to azel if the LOCL_CRD header is AZEL.
+  my $pixsize = $Frm->hdr( "SCAN_VEL" ) * $Frm->hdr( "STEPTIME" );
+  my $crota = 90 - $Frm->hdr( "MAP_PA" );
+  while ( $crota < -45 || $crota > 40 ) {
+    if( $crota < -45 ) {
+      $crota += 90;
+    } elsif( $crota > 45 ) {
+      $crota -= 90;
+    }
+  }
+
+  # We also need to figure out the tiling size. This only depends on
+  # the number of channels in the data.
+  my $channels = $Frm->hdr( "NCHNSUBS" );
+  my $tiledims = int( sqrt( 100_000_000 / $channels ) );
+
+  $params .= " spread=nearest pixsize=$pixsize crota=$crota tiledims=$tiledims trimtiles=true";
+
+  if( uc( $Frm->uhdr( "LOCL_CRD" ) ) eq 'AZEL' ) {
+    $params .= " system=azel";
+  }
+
+} elsif( $type eq 'JIGGLE' ) {
+
+  # JIGGLEs always use autogrid.
+  $params = "autogrid=yes";
+
+  # HARP4 and HARP5 jiggles get done using SincSinc [2,2]. They also
+  # get their pixel scale set to 7.5 or 6, respectively.
+  my $jiggle_name = ( defined( $Frm->hdr( "JIGL_NAM" ) ) ?
+                      $Frm->hdr( "JIGL_NAM" )            :
+                      "" );
+  if( $jiggle_name =~ /harp([45])/i ) {
+    my $pixsize = ( $1 == 4 ? 7.5 : 6 );
+    $params .= " spread=sincsinc params=[2,2] pixsize=$pixsize";
+  }
+
+} elsif( $type eq 'GRID' ) {
+
+  # GRIDs just use autogrid.
+  $params = "autogrid=yes";
+
+} elsif( $type eq 'POINTING' ) {
+
+  # Check to see if a specific detector is to be used.
+  my $instap = ( defined( $Frm->hdr( "INSTAP" ) ) ?
+                 uc( $Frm->hdr( "INSTAP" ) )      :
+                 '' );
+
+  if( $pass == 1 ) {
+    $params = "autogrid=yes ";
+  }
+  if( $instap ne '' ) {
+    $params .= " detectors=$instap";
+  }
+  $params .= " system=azel";
+
+} elsif( $type eq 'FOCUS' ) {
+
+  # Just use autogrid for FOCUS observations.
+  $params = "autogrid=yes";
+
+} else {
+  orac_throw "Unable to determine MAKECUBE parameters for observation type $type."
+}
+
+# Wrap the parameters in spaces.
+$params = " $params ";
+
+# And set the return value.
+$_GET_MAKECUBE_PARAMS_{PARAMS} = $params;
+
+print "params: $params\n";
