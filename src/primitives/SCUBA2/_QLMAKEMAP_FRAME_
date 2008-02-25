@@ -20,18 +20,20 @@ single output file created.
 
 =item B<PIXSIZE>
 
-PIXSIZE is the size of the output pixels in arcsec. The default is
-equal to the pixel spacing (ie 6 arcsec).
+Size of the output pixels in arcsec. The default is to use the values
+stored in the calibration object (equal to the bolometer spacing)
+
+=item B<SPREAD>
+
+Desired pixel-spreading scheme. May be either C<nearest> for 
+nearest-neighbour resampling or C<linear> for bi-linear resampling. 
+Default is C<nearest>.
 
 =back
 
-=head1 KNOWN ISSUES
-
-...
-
 =head1 ALGORITHMS
 
-...
+SMURF: QLMAKEMAP
 
 =head1 FILE SUFFIX
 
@@ -43,8 +45,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2006 University of British Columbia and the Particle
-Physcis and Astronomy Research Council. All Rights Reserved.
+Copyright (C) 2006-2008 University of British Columbia. All Rights
+Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -63,18 +65,25 @@ USA
 
 =cut
 
-
 my @out;
-
-#my $mytime = localtime;
-#orac_print "Start qlmakemap ".$mytime ."\n";
 
 # What checks should we carry out?
 
 # Should be an argument
 my $pixsize = (exists $_QLMAKEMAP_FRAME_{PIXSIZE} && 
 	       defined $_QLMAKEMAP_FRAME_{PIXSIZE}) ?
-               $_QLMAKEMAP_FRAME_{PIXSIZE} : 6.28;
+               $_QLMAKEMAP_FRAME_{PIXSIZE} : $Cal->pixelscale;
+
+# Pixel-spreading scheme
+my $spread = (exists $_QLMAKEMAP_FRAME_{SPREAD} && 
+	      defined $_QLMAKEMAP_FRAME_{SPREAD}) ?
+              lc($_QLMAKEMAP_FRAME_{SPREAD}) : "nearest";
+
+# Reset to "nearest" if an unsupported scheme is given
+if ( ($spread ne "nearest") || ($spread ne "linear") ) {
+  orac_warn "Unsupported pixel-spreading scheme, $spread: using NEAREST\n";
+  $spread = "nearest";
+}
 
 # Retrieve list of files in current frame
 my @files = $Frm->files;
@@ -86,11 +95,11 @@ print {$intmp->handle} join("\n",@files[0..$#files]);
 # Set output filename
 my ($in, $out) = $Frm->inout('_map', 0);
 
-# Argument list - no doubt this will get longer...
-my $args = "in=^".$intmp->file." out=".$out." pixsize=".$pixsize." msg_filter=verbose accept";
+# Argument list
+my $args = "in=^".$intmp->file." out=$out pixsize=$pixsize spread=$spread";
 
-# Call makemap
-orac_print "Calling qlmakemap... (this may take a few seconds) \n";
+# Call qlmakemap
+orac_print "Calling qlmakemap... (this may take a few/several/many seconds) \n";
 $Mon{smurf_mon}->obeyw("qlmakemap",$args);
 
 # Register the new file name
@@ -98,3 +107,7 @@ $Frm->files( $out );
 
 orac_print "Image $out created\n";
 
+# Set sky subtraction and extinction flags as these steps are done
+# within qlmakemap
+$Frm->uhdr("SKY_SUBTRACTION",1);
+$Frm->uhdr("EXTINCTION",1);
