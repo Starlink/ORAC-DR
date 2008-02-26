@@ -161,18 +161,45 @@ sub orac_setup_display {
 
 =item B<orac_exit_normally>
 
-Exit handler for oracdr.
+Standard exit handler for oracdr. Should be called instead of C<exit()>
+when the pipeline is complete.
+
+Hash arguments control the behaviour. Allowed keys are:
+
+  quiet - Do not print any informational messages to stdout (default is false)
+  message - Any string to be printed
+  err   - true if the supplied message is an error message
+          or if the process should exit with bad status (default is false
+          unless error stack is populated)
+
+If called with a single argument, it is assumed to be an informational
+message and is equivalent to using the "message" argument. "err" will
+default to true if we are called when there are messages in the
+ORAC::Error stack.
+
+Message is printed using orac_err if we know it is an error message.
+It will be printed even if "quiet" is true.
 
 =cut
 
 sub orac_exit_normally {
-  my $message = '';
-  ( $message ) = shift if @_;
+  my %args = (quiet => 0,
+              message => '',
+              err => 0);
+
+  if (@_ == 1) { # backwards compatible
+    $args{message} = shift;
+  } else {
+    %args = (%args, @_ );
+  }
 
   # We are dying, and don't care about any further outstanding errors
   # flush the queue so we have a clean exit.
   my $error = ORAC::Error->prior;
-  ORAC::Error->flush if defined $error; 
+  if (defined $error) {
+    ORAC::Error->flush;
+    $args{err} = 1; # force true
+  } 
 
   # redefine the ORAC::Print bindings
   my $msg_prt  = new ORAC::Print; # For message system
@@ -180,7 +207,7 @@ sub orac_exit_normally {
   my $orac_prt = new ORAC::Print; # For general orac_print
 
   # Debug info
-  orac_print ("Exiting...\n","red");
+  orac_print ("Exiting...\n","red") unless $args{quiet};
 
   rmtree $ENV{'ADAM_USER'}             # delete process-specific adam dir
     if defined $ENV{ADAM_USER};
@@ -196,18 +223,26 @@ sub orac_exit_normally {
 
   # Flush the error stack if all we have is an ORAC::Error::UserAbort
 
-  if ($message ne '') {
-    orac_print ( "\n" );
-    orac_printp ("$message","red");
+  if ($args{message}) {
+    if ($args{err}) {
+      orac_errp ($args{message});
+    } elsif (!$args{quiet}) {
+      orac_err ( "\n" );
+      orac_printp ($args{message},"red");
+    }
   }
-  orac_print ( "\n" );
-  orac_printp ("Goodbye\n","red");
-  exit;
+  if (!$args{quiet}) {
+    orac_print ( "\n" );
+    orac_printp ("Goodbye\n","red");
+  }
+  orac_print("Error: $!");
+  ($args{err} ? exit -1 : exit 0);
 }
 
 =item B<orac_exit_abnormally>
 
-Exit handler when a problem has been encountered.
+Exit handler when a problem has been encountered. Normally
+used a signal handler for SIGINT.
 
 =cut
 
