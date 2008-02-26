@@ -798,10 +798,20 @@ sub orac_start_algorithm_engines {
 
     # Pre-launch. This will fail if we can not contact the
     # engines so need to eval it
-    eval { $Mon = $InstObj->start_algorithm_engines; };
-
-    if ($@) {
-      orac_err("Error contacting monoliths. Aborting.\n$@\n");
+    $Mon = undef;
+    my $err;
+    try {
+      $Mon = $InstObj->start_algorithm_engines;
+    } catch ORAC::Error with {
+      my $Error = shift;
+      $err = "$Error";
+    } otherwise {
+      my $Error = shift;
+      $err = "$Error";
+    };
+    if (!defined $Mon && defined $err) {
+      ORAC::Error->flush;
+      orac_err("Error contacting monoliths. Aborting.\n$err\n");
       throw ORAC::Error::FatalError("Error contacting monoliths",
                                     ORAC__FATAL);
     }
@@ -944,7 +954,7 @@ sub orac_calib_override {
 
 This routine parses the text file which has a list of the files to be
 processed, this should have one filename per line, filenames are
-assumed to be relative to ORAC_DATA_IN 
+assumed to be relative to ORAC_DATA_IN.
 
    my @obs = orac_parse_files( $opt_files );
 
@@ -963,7 +973,9 @@ sub orac_parse_files {
 
   my ( $opt_files ) = @_;
 
-  my $filename = cwd . "/" . $opt_files;
+  # Absolute path is okay, else will be relative to ORAC_DATA_IN
+  my $filename = $opt_files;
+
   my $fh;
   unless ( open ( $fh, "<", $filename ) ) {
     orac_err( " Could not open ($filename)\n" );
