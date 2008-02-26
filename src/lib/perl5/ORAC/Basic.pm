@@ -235,7 +235,6 @@ sub orac_exit_normally {
     orac_print ( "\n" );
     orac_printp ("Goodbye\n","red");
   }
-  orac_print("Error: $!");
   ($args{err} ? exit -1 : exit 0);
 }
 
