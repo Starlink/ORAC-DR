@@ -69,6 +69,9 @@ use ORAC::Msg::MessysLaunch;
 use Config;
 use Sys::Hostname;                      # For logfile
 use IO::File;
+use File::Spec;
+use File::Path;
+use Cwd;
 
 require Exporter;
 
@@ -960,16 +963,14 @@ assumed to be relative to ORAC_DATA_IN.
 
 it returns an array of files to be read.
 
+"#" is a comment character.
+
 =cut
 
 sub orac_parse_files {
 
   croak 'Usage: orac_parse_files( $opt_files )'
     unless scalar(@_) == 1 ;
-
-  use File::Spec;
-  use File::Path;
-  use Cwd;
 
   my ( $opt_files ) = @_;
 
@@ -981,8 +982,15 @@ sub orac_parse_files {
     orac_err( " Could not open ($filename)\n" );
     throw ORAC::Error::FatalError( "Could not open $filename", ORAC__FATAL);
   }
-  my @obs = <$fh>;
-  chomp @obs;
+  my @obs;
+  for my $f (<$fh>) {
+    chomp($f);
+    $f =~ s/\#.*//; # comments
+    $f =~ s/^\s+//; # leading whitespace
+    $f =~ s/\s+$//; # trailin whitespace
+    next unless $f =~ /\w/;
+    push(@obs, $f);
+  }
   close($fh);
 
   return ( @obs );
