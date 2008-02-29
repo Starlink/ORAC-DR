@@ -624,6 +624,9 @@ Call repeatedly to retrieve all the frame objects.
 
 The UT and skip parameters are ignored.
 
+The input filename is assumed to come from $ORAC_DATA_IN
+if it uses a relative path.
+
 =cut
 
 sub orac_loop_file {
@@ -643,6 +646,11 @@ sub orac_loop_file {
 
   # Create a new frame in class
   my $Frm = $class->new;
+
+  # If relative path assume ORAC_DATA_IN
+  if (!File::Spec->file_name_is_absolute($fname) ) {
+    $fname = File::Spec->catfile( $ENV{ORAC_DATA_IN}, $fname );
+  }
 
   # and convert it if required
   return _convert_and_link( $Frm, $fname );
