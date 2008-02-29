@@ -177,9 +177,11 @@ if ( $dx == 0.0 || $dy == 0.0 ) {
   orac_err "Pixel scales still set to zero - something went very wrong\n";
 }
 
+# Retrieve input WCS object
+my $wcs = $Frm->read_wcs( $datafile );
+
 # Get current INPUT coordinate system
-$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$datafile mode=get name=system");
-my ($ORAC_STATUS, $cosys_in) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+my $cosys_in = $wcs->Get("System");
 
 # Check that the OUTPUT coordinate system supported - use INPUT if not
 # recognized
@@ -197,24 +199,21 @@ if ( $cosys_out eq "" ) {
 # system to ICRS for creating the output WCS
 my $usesys = $cosys_in;
 if ( $cosys_in eq "GAPPT" ) {
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$datafile mode=set name=system newval=icrs");
+  $wcs->Set("System=ICRS");
   $usesys = "ICRS";
 }
 
 # Get coords of reference pixel in current SKY coordinate system
-$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$datafile mode=get name=skyref");
-($ORAC_STATUS, my $skyref) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+my $skyref = $wcs->Get("SkyRef");
 my ($xstr, $ystr) = split(/,/,$skyref,2);
 
 # Get equinox
-$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$datafile mode=get name=equinox");
-($ORAC_STATUS, my $equinox) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+my $equinox = $wcs->Get("Equinox");
 
 # Epoch - for GAPPT output retrieve from input data
 my $epoch;
 if ( $cosys_out eq "GAPPT" ) {
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$datafile mode=get name=epoch");
-  ($ORAC_STATUS, $epoch) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+  $epoch = $wcs->Get("Epoch");
 } else {
   # Else use equinox before redefining the equinox as a string
   $epoch = $equinox;
@@ -293,20 +292,12 @@ if ( $cosys_out eq "GAPPT" ) {
 
 # Now set the ObsLon/ObsLat to ensure correct conversion between
 # Equatorial and Horizontal coordinate systems
-$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$datafile mode=get name=obslon");
-($ORAC_STATUS, my $obslon) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$datafile mode=get name=obslat");
-($ORAC_STATUS, my $obslat) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+my $obslon = $wcs->Get("ObsLon");
+my $obslat = $wcs->Get("ObsLat");
 $args = "ndf=$refimage mode=set name=ObsLon newval='".$obslon."'";
 $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
 $args = "ndf=$refimage mode=set name=ObsLat newval='".$obslat."'";
 $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
-
-# If the input system is GAPPT and it was changed to ICRS for setting
-# up the coordinate frame, reset it before further processing
-if ( $cosys_in eq "GAPPT" && $usesys eq "ICRS" ) {
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$datafile mode=set name=system newval=$cosys_in");
-}
 
 # Store the reference image name in the primitive hash
 $_CREATE_REFERENCE_IMAGE_{REFIMAGE} = $refimage;
