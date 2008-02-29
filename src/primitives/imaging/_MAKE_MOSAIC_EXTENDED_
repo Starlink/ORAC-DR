@@ -227,7 +227,7 @@
 #             }
 
 # Report the status.
-#             orac_print "Rotation transformation joined\n";
+#             orac_print "Rotation transformation joined.\n";
 
 # Resampling
 # ==========
@@ -235,12 +235,12 @@
 # Create text files to hold the list of input and output files, one per line.
 # This is needed because expanded lists of files may make the command line
 # too long for the ADAM message system.
-             unlink( "tranndf.objlist$$", "tranndf.outlist$$" );
+             unlink( "tranndf.inlist$$", "tranndf.outlist$$" );
 
-             open( my $fh_objlist, ">tranndf.objlist$$" ) || 
-               orac_throw "Unable to open tranndf.objlist$$ to create a list of frames to resample.  Error: $!.\n";
-             print $fh_objlist join( "\n", @$inref ), "\n";
-             close( $fh_objlist );
+             open( my $fh_inlist, ">tranndf.inlist$$" ) || 
+               orac_throw "Unable to open tranndf.inlist$$ to create a list of frames to resample.  Error: $!.\n";
+             print $fh_inlist join( "\n", @$inref ), "\n";
+             close( $fh_inlist );
 
              open( my $fh_outlist, ">tranndf.outlist$$" ) || 
                orac_throw "Unable to open tranndf.outlist$$ to create a list of resampled frames.  Error: $!.\n";
@@ -249,7 +249,7 @@
 
 # Assign the other parameters.  Determime the bounds automatically.  It takes
 # the origin from the first target frame.
-             $param1 = "in='^tranndf.objlist$$' out='^tranndf.outlist$$'";
+             $param1 = "in='^tranndf.inlist$$' out='^tranndf.outlist$$'";
              $param2 = "shape=auto method=$intmethod title=!";
 
 # Shift and resample the flat-field object frames.  This determines
@@ -258,8 +258,8 @@
              $Mon{ "ccdpack_reg" }->obeyw( "tranndf", "$param1 $param2" );
 
 # Report the processing status.
-             orac_print "Frames $objlist resampled\n";
-             orac_print "Resampled frames are $outlist\n";
+             orac_print "Frames $objlist resampled.\n";
+             orac_print "Resampled frames are $outlist.\n";
 
           } else {
 
@@ -269,14 +269,14 @@
 # The matched offsets may not be with the first-ranked item, especially 
 # if it is extended, although most cases it will find a #1.  So prepare
 # to loop a few times until an identification number is available. 
-# Currently it is limited to nine id numbers, so it's far from perfect, but
-# it will be very rare (in practice once a year) for this not to work.
+# Currently it is limited to nineteen id numbers, so it's far from perfect,
+# but it will be very rare (in practice once a year) for this not to work.
 # It will be a faint or low surface-brightness  galaxy at low galactic
 # latitude where the stars relegate the galaxy to a high id number.
              my $id = 1;
              my $match = 0;
              my ( @xoffsets, @yoffsets );
-             NEXTID: while ( $id < 10 && !$match ) {
+             NEXTID: while ( $id < 20 && !$match ) {
 
 # Open the offset files and store the co-ordinates.  Note that this
 # assumes central-source or telescope offsets have been used, and that there
@@ -355,10 +355,10 @@
 # message system.
              unlink( "tranndf.outlist$$" );
 
-             open( my $fh_objlist, ">tranndf.outlist$$" ) ||
+             open( my $fh_inlist, ">tranndf.outlist$$" ) ||
                orac_throw "Unable to open tranndf.outlist$$ to create a list of frames to form mosaic.  Error: $!.\n";
-             print $fh_objlist join( "\n", @$inref ), "\n";
-             close( $fh_objlist );
+             print $fh_inlist join( "\n", @$inref ), "\n";
+             close( $fh_inlist );
 
 # Report the processing status.
              orac_print "Frames $objlist have origin shifted.\n";
@@ -406,10 +406,10 @@
 
 # Make the mosaic correcting for differences in offset.
           $Mon{ "ccdpack_reg" }->obeyw( "makemos", "$param1 $param2" );
-          unlink( "tranndf.objlist$$", "tranndf.outlist$$" );
+          unlink( "tranndf.inlist$$", "tranndf.outlist$$" );
 
 # Report the processing status.
-          orac_print "Mosaic $mosname formed\n";
+          orac_print "Mosaic $mosname formed.\n";
 
 # Display the resultant mosaic.
           $tarGrp->file( $mosname );
@@ -439,24 +439,22 @@
 # is done to the physical file as well as the ORAC-DR internal header.  This will
 # change the grand mosaic only on the first cycle.
           my $amendname = "ORAC_AIRMASS_END";
-          my %keywords = $Frm->translate_hdr( $amendname );
-          my @amendkey = keys( %keywords );
+          my $amendname = "ORAC_AIRMASS_END";
           my $amend = $tarGrp->frame( $tarGrp->num )->uhdr( $amendname );
-          $tarGrp->uhdr( $amendname, $amend );
-          my $value = $keywords{ $amendkey[ 0 ] };
-          $param1 = "ndf=$mosname keyword=$amendkey[ 0 ] edit=update value=$value position=!";
-          $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$param1 comment=\\\$C" );
+          my %am_translated = $tarGrp->frame( $tarGrp->num )->translate_hdr( $amendname );
+          while( ( my $key, my $value ) = each %am_translated ) {
+            _SET_FILE_FITS_ITEM_ FILE=$mosname KEY=$key VALUE=$value
+          }
 
 # Change the end UT time to reflect the last frame included in the mosaic.  Note this
 # is done to the physical file as well as the ORAC-DR internal header.  This will
 # change the grand mosaic only on the first cycle.
           my $utendname = "ORAC_UTEND";
-          %keywords = $Frm->translate_hdr( $utendname );
-          my @utendkey = keys( %keywords );
           my $utend = $tarGrp->frame( $tarGrp->num )->uhdr( $utendname );
-          $tarGrp->uhdr( $utendname, $utend );
-          $param1 = "ndf=$mosname keyword=$utendkey[ 0 ] edit=update value=$utend position=!";
-          $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$param1 comment=\\\$C" );
+          my %ut_translated = $tarGrp->frame( $tarGrp->num )->translate_hdr( $utendname );
+          while( ( my $key, my $value ) = each %ut_translated ) {
+            _SET_FILE_FITS_ITEM_ FILE=$mosname KEY=$key VALUE=$value
+          }
 
 # Display the resultant mosaic.
           $tarGrp->file( $mosname );
@@ -539,20 +537,20 @@
           } elsif ( $cycleno > 0 && $make_grand ) {
 
 # Make a duplicate of the main mosaic, using a temporary file.
+             my $grpfile = $Grp->file;
              my $tempfile = new ORAC::TempFile;
              my $tempmos = $tempfile->file;
-             $param1 = "in=" . $Grp->file . " out=$tempmos";
+             $param1 = "in=$grpfile out=$tempmos";
              $Mon{ "ndfpack_mon" }->obeyw( "ndfcopy", "$param1" );
 
 # Add the frames.  Note the main mosaic is the primary component, thus
 # its history records are retained.
-             $param1 = "in1=$tempmos in2=$mosname out=" . $Grp->file;
+             $param1 = "in1=$tempmos in2=$mosname out=$grpfile";
              $Mon{ "kappa_mon" }->obeyw( "add", "$param1" );
 
 # Obtain the name of the exposure time header and external FITS keyword.
              my $exptimename = "ORAC_EXPOSURE_TIME";
-             %keywords = $Frm->translate_hdr( $exptimename );
-             my @expkey = keys( %keywords );
+             my %expt_translated = $Frm->translate_hdr( $exptimename );
 
 # Change the integration time of the grand mosaic by summing the current
 # value and that of the primary NDF used to make the latest mosaic.  Note
@@ -561,24 +559,26 @@
              my $exptime = $Grp->uhdr( $exptimename ) +
                            $tarGrp->frame( 0 )->uhdr( $exptimename );
              $Grp->uhdr( $exptimename, $exptime );
-             $param1 = "ndf=". $Grp->file .
-                       " keyword=$expkey[ 0 ] edit=update value=$exptime position=!";
-             $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$param1 comment=\\\$C" );
+             while( ( my $key, my $value ) = each %expt_translated ) {
+               _SET_FILE_FITS_ITEM_ FILE=$grpfile KEY=$key VALUE=$value
+             }
 
 # Change the end airmass to reflect the last frame included in the grand mosaic.  Note this
 # is done to the physical file as well as the ORAC-DR internal header.
              $Grp->uhdr( $amendname, $amend );
-             if ( defined( $value ) ) {
-                $param1 = "ndf=" . $Grp->file . " keyword=$amendkey[ 0 ] edit=update value=$value position=!";
-                $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$param1 comment=\\\$C" );
+             if ( %am_translated ) {
+               while( ( my $key, my $value ) = each %am_translated ) {
+                 _SET_FILE_FITS_ITEM_ FILE=$grpfile KEY=$key VALUE=$value
+               }
              }
 
 # Change the end UT time to reflect the last frame included in the grand mosaic.  Note this
 # is done to the physical file as well as the ORAC-DR internal header.
              $Grp->uhdr( $utendname, $utend );
-             if ( defined( $utend ) ) {
-                $param1 = "ndf=" . $Grp->file . " keyword=$utendkey[ 0 ] edit=update value=$utend position=!";
-                $Mon{ "ndfpack_mon" }->obeyw( "fitsmod", "$param1 comment=\\\$C" );
+             if ( %ut_translated ) {
+               while( ( my $key, my $value ) = each %ut_translated ) {
+                 _SET_FILE_FITS_ITEM_ FILE=$grpfile KEY=$key VALUE=$value
+               }
              }
 
              orac_print "Current cycle's grand mosaic, $mosname, added into main grand mosaic " . $Grp->file . ".\n";
