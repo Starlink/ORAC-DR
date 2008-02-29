@@ -10,7 +10,7 @@
 #     C-shell script
 
 #  Invocation:
-#     source ${ORAC_DIR}/etc/oracdr_ircam.csh
+#     source ${ORAC_DIR}/etc/oracdr_ircam_old.csh
 
 #  Description:
 #     This script initialises the environment variables and command
@@ -111,14 +111,13 @@ endif
 
 if ($1 != "") then
     set oracut = $1
-    set oracsut = `echo $oracut |cut -c3-8`
 else
     set oracut = `date -u +%Y%m%d`
-    set oracsut = `date -u +%y%m%d`
 endif
 
-set oracdr_args = "-ut $oracsut"
+set oracdr_args = "-ut $oracut"
 
+echo "invoked with -ut $oracut"
 
 setenv ORAC_INSTRUMENT IRCAM
 setenv ORAC_DATA_IN $ORAC_DATA_ROOT/ircam_data/$oracut/rodir

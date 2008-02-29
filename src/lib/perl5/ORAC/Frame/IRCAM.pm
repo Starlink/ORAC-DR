@@ -62,8 +62,8 @@ those available from B<ORAC::Frame::UKIRT>.
 
 Create a new instance of a B<ORAC::Frame::IRCAM> object.
 This method also takes optional arguments:
-if 1 argument is  supplied it is assumed to be the name
-of the raw file associated with the observation. If 2 arguments
+if one argument is supplied it is assumed to be the name
+of the raw file associated with the observation. If two arguments
 are supplied they are assumed to be the raw file prefix and
 observation number. In any case, all arguments are passed to
 the configure() method which is run in addition to new()
@@ -86,7 +86,7 @@ sub new {
   my $class = ref($proto) || $proto;
 
   # Run the base class constructor with a hash reference
-  # defining additions to the class
+  # defining additions to the class.
   # Do not supply user-arguments yet.
   # This is because if we do run configure via the constructor
   # the rawfixedpart and rawsuffix will be undefined.
@@ -94,7 +94,7 @@ sub new {
 
   # Configure initial state - could pass these in with
   # the class initialisation hash - this assumes that I know
-  # the hash member name
+  # the hash member name.
   $self->rawfixedpart('ro');
   $self->rawsuffix('.sdf');
   $self->rawformat('NDF');
@@ -102,7 +102,7 @@ sub new {
  
   # If arguments are supplied then we can configure the object
   # Currently the argument will be the filename.
-  # If there are two args this becomes a prefix and number
+  # If there are two args this becomes a prefix and number.
   $self->configure(@_) if @_;
  
   return $self;
@@ -133,16 +133,20 @@ sub file_from_bits {
   my $prefix = shift;
   my $obsnum = shift;
 
-  # IRCAM form is  FIXED PREFIX _ NUM SUFFIX
+# Remove the century as these filenames feature the `millenium bug' to
+# leave YYMMDD.
+  $prefix = substr( $prefix, -6, 6 );
+
+    # IRCAM form is  FIXED PREFIX _ NUM SUFFIX
   return $self->rawfixedpart . $prefix . '_' . $obsnum . $self->rawsuffix;
 
 }
 
 =item B<flag_from_bits>
 
-Determine the name of the flag file given the variable
-component parts. A prefix (usually UT) and observation number
-should be supplied
+Determine the name of the flag file given the variable component
+parts. A prefix (usually UT) and observation number should be
+supplied.
 
   $flag = $Frm->flag_from_bits($prefix, $obsnum);
 
@@ -188,6 +192,7 @@ Tim Jenness (timj@jach.hawaii.edu)
 
 =head1 COPYRIGHT
 
+Copyright (C) 2008 Science & Technology Facilities Council
 Copyright (C) 1998-2000 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
