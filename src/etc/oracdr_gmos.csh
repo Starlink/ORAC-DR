@@ -126,7 +126,14 @@ endif
 
 set oracdr_args = "-ut $oracut"
 
-setenv ORAC_INSTRUMENT GMOS
+# The file naming convention changed on 2002 March 1 to accommodate
+# more than 1000 frames! 
+if ( $oracut < 20020301 ) then
+   setenv ORAC_INSTRUMENT GMOS2
+else
+   setenv ORAC_INSTRUMENT GMOS
+endif
+
 setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/gmos/$oracut/
 setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/gmos/$oracut/
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/gmos

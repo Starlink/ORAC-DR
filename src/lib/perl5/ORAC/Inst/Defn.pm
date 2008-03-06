@@ -461,6 +461,12 @@ sub orac_determine_inst_classes {
     $calclass = "ORAC::Calib::UIST";
     $instclass = "ORAC::Inst::GMOS";
 
+  } elsif ($inst eq 'GMOS2') {
+    $groupclass = "ORAC::Group::GMOS";
+    $frameclass = "ORAC::Frame::GMOS2";
+    $calclass = "ORAC::Calib::UIST";
+    $instclass = "ORAC::Inst::GMOS";
+
   } elsif ($inst eq 'NIRI') {
     $groupclass = "ORAC::Group::NIRI";
     $frameclass = "ORAC::Frame::NIRI";
@@ -683,7 +689,7 @@ sub orac_determine_recipe_search_path {
     push( @path, $imaging_root );
     push( @path, $spectro_root );
 
-  } elsif ($inst eq 'GMOS') {
+  } elsif ($inst eq 'GMOS' or $inst eq 'GMOS2') {
     push( @path, File::Spec->catdir( $root, "GMOS" ) );
     push( @path, File::Spec->catdir( $ifu_root, "GMOS" ) );
     push( @path, File::Spec->catdir( $imaging_root, "GMOS" ) );
@@ -859,7 +865,7 @@ sub orac_determine_primitive_search_path {
     push( @path, $spectro_root );
     push( @path, $general_root );
 
-  } elsif ($inst eq 'GMOS') {
+  } elsif ($inst eq 'GMOS' or $inst eq 'GMOS2') {
     push( @path, File::Spec->catdir( $root, "GMOS" ) );
     push( @path, File::Spec->catdir( $ifu_root, "GMOS" ) );
     push( @path, File::Spec->catdir( $imaging_root, "GMOS" ) );
@@ -988,7 +994,7 @@ sub orac_determine_calibration_search_path {
     push( @path, File::Spec->catdir( $root, 'sofi' ) );
     push( @path, $general_ir_root );
 
-  } elsif( $inst eq 'GMOS' ) {
+  } elsif( $inst eq 'GMOS' or $inst eq 'GMOS2' ) {
     push( @path, File::Spec->catdir( $root, 'gmos' ) );
     push( @path, $general_ir_root );
 
