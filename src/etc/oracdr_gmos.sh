@@ -37,7 +37,6 @@
 #        is set to $ORAC_CAL_ROOT/gmos` If ORAC_CAL_ROOT is not
 #        defined it defaults to "/jac_sw/oracdr_cal".
 
-
 #  Examples:
 #     oracdr_gmos
 #        Will set the variables assuming the current UT date.
@@ -132,7 +131,13 @@ fi
 
 export oracdr_args="-ut $oracut"
 
-export ORAC_INSTRUMENT=GMOS
+# The file naming convention changed on 2002 March 1 to accommodate
+# more than 1000 frames! 
+if ( $oracut < 20020301 ); then
+   export ORAC_INSTRUMENT=GMOS2
+else
+   export ORAC_INSTRUMENT=GMOS
+fi
 export ORAC_DATA_IN=$ORAC_DATA_ROOT/raw/gmos/$oracut/
 export ORAC_DATA_OUT=$ORAC_DATA_ROOT/reduced/gmos/$oracut/
 export ORAC_DATA_CAL=$ORAC_CAL_ROOT/gmos
