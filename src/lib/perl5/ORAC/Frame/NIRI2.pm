@@ -5,14 +5,13 @@ package ORAC::Frame::NIRI2;
 ORAC::Frame::NIRI2 - class for dealing with older NIRI observation files in ORAC-DR
 
 This module provides methods for handling Frame objects that are
-specific to early NIRI data. It provides a class derived from
-B<ORAC::Frame::NIRI>.  The main difference is the name format.
-The early data only have a three-digit name after the "S".
+specific to early (pre 2002 March 1) NIRI data.  It provides a class
+derived from B<ORAC::Frame::NIRI>.  The main difference is the name
+format.  The early data only have a three-digit name after the "S".
 
 =cut
 
-# A package to describe a NIRI frame object for the
-# ORAC pipeline
+# A package to describe a NIRI frame object for the ORAC-DR pipeline.
 
 use 5.006;
 use warnings;
@@ -91,13 +90,11 @@ L<ORAC::Group::NIRI>
 
 =head1 AUTHORS
 
-Malcolm J. Currie <mjc@star.rl.ac.uk>
-Paul Hirst <p.hirst@jach.hawaii.edu>
-Frossie Economou (frossie@jach.hawaii.edu)
-Tim Jenness (timj@jach.hawaii.edu)
+Malcolm J. Currie E<lt>mjc@star.rl.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
+Copyright (C) 2008 Science & Technology Facilities Council. 
 Copyright (C) 2004 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
