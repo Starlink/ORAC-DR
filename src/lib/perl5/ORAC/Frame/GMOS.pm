@@ -26,11 +26,11 @@ use ORAC::Print;
 use NDF;
 use Starlink::HDSPACK qw/copobj/;
 
-# Alias file_from_bits as pattern_from_bits.
-*pattern_from_bits = \&file_from_bits;
-
 # Let the object know that it is derived from ORAC::Frame::GEMINI;
 use base qw/ORAC::Frame::GEMINI/;
+
+# Alias file_from_bits as pattern_from_bits.
+*pattern_from_bits = \&file_from_bits;
 
 =head1 PUBLIC METHODS
 
@@ -331,6 +331,9 @@ sub file_from_bits {
 
   my $prefix = shift;
   my $obsnum = shift;
+
+# File numbers are padded to four digits.
+  $obsnum = sprintf( "%04d", $obsnum );
 
   return $self->rawfixedpart . $prefix . 'S' . $obsnum . $self->rawsuffix;
 
