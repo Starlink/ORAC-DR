@@ -920,7 +920,7 @@ sub frame {
 }
 
 
-=item B<inout>
+=item B<members_inout>
 
 Method to return the current filenames for each frame in the
 group (similar to the membernames() method) and a set of output
@@ -934,13 +934,13 @@ B<ORAC::Frame>). References to two arrays are returned when called
 in an array context; returns the output array ref when called
 from a scalar context
 
-  ($inref, $outref) = $Grp->inout("suffix");
-  ($inref, $outref) = $Grp->inout("suffix",2);
-  $outref= $Grp->inout("suffix");
+  ($inref, $outref) = $Grp->members_inout("suffix");
+  ($inref, $outref) = $Grp->members_inout("suffix",2);
+  $outref= $Grp->members_inout("suffix");
 
 =cut
 
-sub inout {
+sub members_inout {
 
   my $self = shift;
 
