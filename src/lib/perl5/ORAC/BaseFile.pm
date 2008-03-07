@@ -547,6 +547,90 @@ sub hdr {
   }
 }
 
+=item B<inout>
+
+Method to return the current input filename and the new output
+filename given a suffix.  For the base class the input filename is
+chopped at the last underscore and the suffix appended when the name
+contains at least 2 underscores. The suffix is simply appended if
+there is only one underscore. This prevents numbers being chopped when
+the name is of the form ut_num.
+
+Note that this method does not set the new output name in this
+object. This must still be done by the user.
+
+Returns $in and $out in an array context:
+
+   ($in, $out) = $Frm->inout($suffix);
+
+Returns $out in a scalar context:
+
+   $out = $Frm->inout($suffix);
+
+Therefore if in=file_db and suffix=_ff then out would
+become file_db_ff but if in=file_db_ff and suffix=dk then
+out would be file_db_dk.
+
+An optional second argument can be used to specify the
+file number to be used. Default is for this method to process
+the contents of file(1).
+
+  ($in, $out) = $Frm->inout($suffix, 2);
+
+will return the second file name and the name of the new output
+file derived from this.
+
+The last suffix is not removed if it consists solely of numbers.
+This is to prevent truncation of raw data filenames.
+
+=cut
+
+sub inout {
+
+  my $self = shift;
+
+  my $suffix = shift;
+
+  # Read the number
+  my $num = 1; 
+  if (@_) { $num = shift; }
+
+  my $infile = $self->file($num);
+
+  # Chop off at last underscore
+  # Must be able to do this with a clever pattern match
+  # Want to use s/_.*$// but that turns a_b_c to a and not a_b
+
+  # instead split on underscore and recombine using underscore
+  # but ignoring the last member of the split array
+  my ($junk, $fsuffix) = $self->_split_fname( $infile );
+
+  # Suffix is ignored
+  my @junk = @$junk;
+
+  # We only want to drop the SECOND underscore. If we only have
+  # two components we simply append. If we have more we drop the last
+  # This prevents us from dropping the observation number in
+  # ro970815_28
+  # We special case when the last thing is a number
+  if ($#junk > 1 && $junk[-1] !~ /^\d+$/) {
+    @junk = @junk[0..$#junk-1];
+  }
+
+  # Need to strip a leading underscore if we are using join_name
+  $suffix =~ s/^_//;
+  push(@junk, $suffix);
+
+  my $outfile = $self->_join_fname(\@junk, '');
+
+  # Generate a warning if output file equals input file
+  orac_warn("inout - output filename equals input filename ($outfile)\n")
+    if ($outfile eq $infile);
+
+  return ($infile, $outfile) if wantarray();  # Array context
+  return $outfile;                            # Scalar context
+}
+
 =item B<intermediates>
 
 An array containing all the intermediate file names used
