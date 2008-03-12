@@ -375,6 +375,21 @@ sub file_from_bits {
   croak "file_from_bits Method not supported since the number of files per observation is not predictable.\n";
 }
 
+=item B<file_from_bits_extra>
+
+Method to return C<extra> information to be used in the file name. For
+SCUBA-2 this is a string representing the wavelength.
+
+  my $extra = $Frm->file_from_bits_extra;
+
+=cut
+
+sub file_from_bits_extra {
+  my $self = shift;
+
+  return ( $self->hdr("FILTER") =~ /8/ ) ? "850" : "450";
+}
+
 =item B<pattern_from_bits>
 
 Determine the pattern for the raw filename given the variable component
