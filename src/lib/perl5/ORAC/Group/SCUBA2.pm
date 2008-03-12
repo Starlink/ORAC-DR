@@ -28,6 +28,7 @@ to B<ORAC::Group::SCUBA2> objects.
 use 5.006;
 use strict;
 use warnings;
+use Carp;
 our $VERSION;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
@@ -48,12 +49,12 @@ those available from B<ORAC::Group>.
 
 =item B<new>
 
-Create a new instance of an B<ORAC::Group::ACSIS> object. This method
+Create a new instance of an B<ORAC::Group::SCUBA2> object. This method
 takes an optional argument containing the name of the new group.
 The object identifier is returned.
 
-  $Grp = new ORAC::Group::ACSIS;
-  $Grp = new ORAC::Group::ACSIS("group_name");
+  $Grp = new ORAC::Group::SCUBA2;
+  $Grp = new ORAC::Group::SCUBA2("group_name");
 
 This method calls the base class constructor but initialises the group
 with a file suffix if ".sdf" and a fixed part of "ga".
@@ -74,6 +75,41 @@ sub new {
 
 # And return the new object.
   return $group;
+}
+
+=item B<file_from_bits>
+
+Method to return the group filename derived from a fixed variable part
+(eg UT), a group designator (usually obs number) and the observing
+wavelength. The full filename is returned (including suffix).
+
+  $file = $Grp->file_from_bits("UT","num","wavelen");
+
+For SCUBA-2 the return string is of the format
+
+  fixedpart . prefix . '_' . number . '_' . wavelen . suffix
+
+where the number is a 5-digit zero-padded integer and the wavelen is
+either 850 or 450.
+
+=cut
+
+sub file_from_bits {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $num = shift;
+  my $wavelen = shift;
+
+  if ( defined($prefix) && defined($num) && defined($wavelen) ) {
+    # Zero-pad the obsnum
+    $num = sprintf "%05d", $num;
+
+    # Return name
+    return $self->fixedpart . $prefix . '_' . $num . '_'.$wavelen . $self->filesuffix;
+  } else {
+    croak "Group file_from_bits method requires three arguments\n";
+  }
 }
 
 =back
