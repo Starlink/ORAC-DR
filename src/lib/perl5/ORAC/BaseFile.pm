@@ -1172,13 +1172,6 @@ sub calc_orac_headers {
   return %new;
 }
 
-# Base class does not have any internal headers
-
-sub _orac_internal_headers {
-  return ();
-}
-
-
 =item B<configure>
 
 This method is used to configure the object. It is invoked

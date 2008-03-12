@@ -37,69 +37,6 @@ use base qw/ ORAC::BaseFile /;
 
 $VERSION = sprintf("%d", q$Revision$ =~ /(\d+)/);
 
-my @ORAC_INTERNAL_HEADERS = qw/
-                               AIRMASS_START
-                               AIRMASS_END
-                               CAMERA_NUMBER
-                               CHOP_ANGLE
-                               CHOP_THROW
-                               CONFIGURATION_INDEX
-                               DATA_UNITS
-                               DEC_BASE
-                               DEC_SCALE
-                               DEC_TELESCOPE_OFFSET
-                               DETECTOR_BIAS
-                               DETECTOR_INDEX
-                               DETECTOR_READ_TYPE
-                               DR_RECIPE
-                               EQUINOX
-                               EXPOSURE_TIME
-                               FILTER
-                               GAIN
-                               GRATING_DISPERSION
-                               GRATING_NAME
-                               GRATING_ORDER
-                               GRATING_WAVELENGTH
-                               INSTRUMENT
-                               NSCAN_POSITIONS
-                               NUMBER_OF_EXPOSURES
-                               NUMBER_OF_JITTER_POSITIONS
-                               NUMBER_OF_MICROSTEP_POSITIONS
-                               NUMBER_OF_OFFSETS
-                               NUMBER_OF_READS
-                               OBJECT
-                               OBSERVATION_MODE
-                               OBSERVATION_NUMBER
-                               OBSERVATION_TYPE
-                               POLARIMETRY
-                               RA_BASE
-                               RA_SCALE
-                               RA_TELESCOPE_OFFSET
-                               ROTATION
-                               SCAN_INCREMENT
-                               SLIT_ANGLE
-                               SLIT_NAME
-                               SPEED_GAIN
-                               STANDARD
-                               TELESCOPE
-                               UTDATE
-                               UTEND
-                               UTSTART
-                               WAVEPLATE_ANGLE
-                               X_DIM
-                               Y_DIM
-                               X_LOWER_BOUND
-                               X_REFERENCE_PIXEL
-                               X_UPPER_BOUND
-                               Y_LOWER_BOUND
-                               Y_REFERENCE_PIXEL
-                               Y_UPPER_BOUND
-                               X_APERTURE
-                               Y_APERTURE
-                              /;
-
-# Setup the object structure
-
 =head1 PUBLIC METHODS
 
 The following methods are available in this class:
@@ -786,33 +723,6 @@ sub template {
   # Update the filename
   $self->file($fnum, $template);
 
-}
-
-=back
-
-=head1 PRIVATE METHODS
-
-The following methods are intended for use inside the module.
-They are included here so that authors of derived classes are 
-aware of them.
-
-=cut
-
-# Private method for removing file extensions from the filename strings
-# In the base class this does nothing. It is up to the derived classes
-# To do something special with this.
-
-=over 4
-
-=item B<_orac_internal_headers>
-
-List of headers to be used for internal header translation (when not
-using Astro::FITS::HdrTrans)
-
-=cut
-
-sub _orac_internal_headers {
-  return @ORAC_INTERNAL_HEADERS;
 }
 
 =back
