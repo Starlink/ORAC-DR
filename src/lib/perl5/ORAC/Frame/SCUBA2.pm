@@ -387,7 +387,7 @@ SCUBA-2 this is a string representing the wavelength.
 sub file_from_bits_extra {
   my $self = shift;
 
-  return ( $self->hdr("FILTER") =~ /8/ ) ? "850" : "450";
+  return ( $self->hdr("FILTER") =~ /^8/ ) ? "850" : "450";
 }
 
 =item B<pattern_from_bits>
