@@ -72,9 +72,13 @@ $DEBUG = 0;
 my (@FILES_TO_UNLINK, @DIRS_TO_UNLINK);
 
 # This code comes directly from File::Temp
+# Note that File::Temp also keeps track of the process
+# creating the directory/file so that it will not be deleted
+# on fork.
 
 END {
-  local $?; # make sure this does not trash exit status
+  local($., $@, $!, $^E, $?); # make sure this does not trash exit status
+
   # Files
   foreach my $file (@FILES_TO_UNLINK) {
 
