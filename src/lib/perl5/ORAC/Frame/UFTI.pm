@@ -42,18 +42,6 @@ use base qw/ORAC::Frame::UKIRT/;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
-# Translation tables for UFTI should go here
-my %hdr = (
-            EXPOSURE_TIME        => "EXP_TIME",
-            DEC_SCALE            => "CDELT2",
-            DEC_TELESCOPE_OFFSET => "TDECOFF",
-            GAIN                 => "GAIN",
-            RA_SCALE             => "CDELT1",
-            RA_TELESCOPE_OFFSET  => "TRAOFF",
-            UTEND                => "UTEND",
-            UTSTART              => "UTSTART"
-	  );
-
 # Alias file_from_bits as pattern_from_bits.
 *pattern_from_bits = \&file_from_bits;
 
