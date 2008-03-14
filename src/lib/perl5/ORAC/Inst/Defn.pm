@@ -74,6 +74,7 @@ my (@FILES_TO_UNLINK, @DIRS_TO_UNLINK);
 # This code comes directly from File::Temp
 
 END {
+  local $?; # make sure this does not trash exit status
   # Files
   foreach my $file (@FILES_TO_UNLINK) {
 
