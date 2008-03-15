@@ -26,6 +26,7 @@ package ORAC::Event;
 #     $Id$
 
 #  Copyright:
+#     Copyright (C) 2008 Science and Technology Facilities Council.
 #     Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.
 
@@ -73,6 +74,7 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
+Copyright (C) 2008 Science and Technology Facilities Council.
 Copyright (C) 1998-2001 Particle Physics and Astronomy Research Council.
 All Rights Reserved.
 
@@ -88,7 +90,6 @@ use ORAC::Error qw/ :try /;
 #
 # General modules
 #
-use Tk; 
 
 #
 # Routines for export
@@ -122,10 +123,12 @@ This method allows a Tk reference to be registered in the hash table, e.g.
 
 where in this case $MW is the reference to the Tk::MainWindow widget.
 
+Tk is loaded the first time register is called.
+
 =cut
 
 sub register {
-
+   require Tk;
    # Read the argument list
    my $self = shift;
    %hash = (%hash, @_);
@@ -198,7 +201,7 @@ sub mainloop {
    my $self = shift;
    my ( $key ) = @_;
 
-   MainLoop() if exists $hash{$key} and defined $hash{$key};
+   Tk::MainLoop() if exists $hash{$key} and defined $hash{$key};
 }
 
 =item B<unregister>
