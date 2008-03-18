@@ -23,6 +23,7 @@ use strict;
 use warnings;
 use vars qw/ $VERSION /;
 
+use ORAC::Print;
 use Astro::FITS::Header;
 use Astro::FITS::HdrTrans 1.00;
 
