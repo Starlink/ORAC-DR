@@ -1,0 +1,120 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_SUBTRACT_TIMESERIES_SIGNAL_
+
+=head1 DESCRIPTION
+
+This primitive subtracts a gross timeseries signal from raw heterodyne
+data. It first creates a median instrument spectrum by collapsing
+along the receptor axis, then collapses along the central 2/3rds of
+the channel axis. This creates a time-series spectrum, which is then
+grown to the size of the input cube. The time-series cube is
+subtracted from the input cube. The median value of the time-series
+spectrum is added back to the subtracted cube.
+
+=head1 ARGUMENTS
+
+=over 4
+
+None.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for heterodyne instruments.
+
+=item *
+
+The receptor axis is assumed to be the 2nd axis of the input cube.
+
+=item *
+
+This primitive operates on every file in the current Frame.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=back
+
+=head1 TASKS
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 Science and Technology Facilities
+Council.  All Rights Reserved.
+
+=cut
+
+foreach my $i ( 1 .. $Frm->nfiles ) {
+
+  my ( $in, $out ) = $Frm->inout( "_tss", $i );
+
+  # Get the dimensions of the input frame.
+  _GET_DIMENSIONS_ FILE=$in
+  my $lbound = $_GET_DIMENSIONS_{LBOUND};
+  my $ubound = $_GET_DIMENSIONS_{UBOUND};
+  my $dims = $_GET_DIMENSIONS_{DIMS};
+
+  # Collapse over the receptors into a temporary file.
+  my $temp1 = new ORAC::TempFile;
+  my $temp1file = $temp1->file;
+  my $params = "in=$in out=$temp1file estimator=median axis=2 variance=false wlim=0.0";
+  $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+  # Collapse over the inner 67% channels into another temporary file.
+  my $temp2 = new ORAC::TempFile;
+  my $temp2file = $temp2->file;
+  my $low = int( $lbound->[0] + 0.165 * $dims->[0] );
+  my $high = int( $ubound->[0] - 0.165 * $dims->[0] );
+  $Mon{'ndfpack_mon'}->obeyw( "wcsframe", "ndf=$temp1file frame=pixel" );
+  $params = "in=$temp1file out=$temp2file estimator=median axis=1 low=$low high=$high variance=false wlim=0.0";
+  $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+  # Re-expand into a cube.
+  my $temp3 = new ORAC::TempFile;
+  my $temp3file = $temp3->file;
+  my $temp4 = new ORAC::TempFile;
+  my $temp4file = $temp4->file;
+  $params = "in=$temp2file out=$temp3file axes=[0,1] lbound=" . $lbound->[0] . " ubound=" . $ubound->[0];
+  $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+  $params = "in=$temp3file out=$temp4file axes=[1,0,2] lbound=" . $lbound->[1] . " ubound=" . $ubound->[1];
+  $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+  # Subtract this from the original cube.
+  $params = "in1=$in in2=$temp4file out=$out";
+  $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+  # Report to the user.
+  orac_print "$in to $out:\n";
+  orac_print " Removed median time-series signal.\n";
+
+  # Set the product.
+  $Frm->product( "tss" );
+
+  # Update the Frame object;
+  $Frm->file( $i, $out );
+}
+
+# Display, if necessary.
+$Display->display_data( $Frm ) if defined $Display;
+
+# Tidy-up output.
+orac_print "\n";

@@ -1,0 +1,139 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_ITERATIVE_GROUP_PRODUCTION_ - Iteratively create group co-adds for
+heterodyne data.
+
+=head1 DESCRIPTION
+
+This primitive creates a group co-added cube from all members of the current group. It then baselines the cube and creates moments maps.
+
+In the process of baselining the group cube, this primitive also
+creates a baseline mask file, masking out emission. It then runs this
+mask through UNMAKECUBE to create time-series masks. These masks are
+applied to the original time-series data, which are then
+baselined. The baselined time-series data are then run through
+MAKECUBE to create individual baselined cubes for each
+observation. Moments maps are then made from these cubes.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item FREQUENCY_SMOOTH = INTEGER (Given)
+
+The number of channels to smooth in the frequency axis when smoothing
+to determine baselines. This number should be small (~10) for
+narrow-line observations and large (~25) for broad-line
+observations. [25]
+
+=item MOMENTS = STRING (Given)
+
+The moment maps to create. These are any of the values allowed for the
+ESTIMATOR parameter to the COLLAPSE method, but in reality this should
+probably be 'integ', 'iwc', and/or 'itd'. Any number of moments can be
+given in a comma-separated string. ['integ']
+
+=item ORDER = INTEGER (Given)
+
+The polynomial order that will be used when estimating baselines. [5]
+
+=item PARAMS = STRING (Given)
+
+The parameters to pass to MAKECUBE when using the Sinc, SincSinc,
+SincCos, SincGauss, Somb, SombCos, and Gauss spreading methods (see
+SPREAD parameter). ['']
+
+=item SPATIAL_SMOOTH = INTEGER (Given)
+
+The number of pixels to smooth in both spatial axes when smoothing to
+determine baselines. [3]
+
+=item SPREAD = STRING (Given)
+
+The method to use when spreading each input pixel value out between a
+group of neighbouring output pixels when using MAKECUBE to generate a
+cube. ['nearest']
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+This primitive is suitable for ACSIS data.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=back
+
+=head1 TASKS
+
+See _CREATE_CUBE_GROUP_, _REMOVE_BASELINE_THROUGH_SMOOTHING_,
+_CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_, _RECREATE_MASKED_TIMESERIES_
+_REMOVE_BASELINE_MASKED_TIMESERIES_, and
+_CREATE_CUBE_FRAME_FROM_GROUP_.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 Science and Technology Facilities
+Council.  All Rights Reserved.
+
+=cut
+
+# Handle arguments that get passed to later primitives.
+my $freqsmooth = ( defined( $_PRIM_ARGS_->{FREQUENCY_SMOOTH} ) ?
+                   $_PRIM_ARGS_->{FREQUENCY_SMOOTH}            :
+                   25 );
+my $moments = ( defined( $_PRIM_ARGS_->{MOMENTS} ) ?
+                $_PRIM_ARGS_->{MOMENTS}            :
+                'integ' );
+my $order = ( defined( $_PRIM_ARGS_->{ORDER} ) ?
+              $_PRIM_ARGS_->{ORDER}            :
+              5 );
+my $sp_params = ( defined( $_PRIM_ARGS_->{PARAMS} ) ?
+                  $_PRIM_ARGS_->{PARAMS}            :
+                  "''" );
+my $spatsmooth = ( defined( $_PRIM_ARGS_->{SPATIAL_SMOOTH} ) ?
+                   $_PRIM_ARGS_->{SPATIAL_SMOOTH}            :
+                   3 );
+my $spread = ( defined( $_PRIM_ARGS_->{SPREAD} ) ?
+               $_PRIM_ARGS_->{SPREAD}            :
+               'nearest' );
+
+# Only process if we're on the last member of a group.
+if( $Grp->lastmember( $Frm ) ) {
+
+  orac_print "Beginning iterative group production.\n";
+
+  _CREATE_CUBE_GROUP_ SPREAD=$spread PARAMS=$sp_params TILEBORDER=2
+
+  _REMOVE_BASELINE_THROUGH_SMOOTHING_ FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order GROUP=1
+
+  _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=1 MOMENTS=$moments
+
+  _RECREATE_MASKED_TIMESERIES_ SPREAD=$spread
+
+  _REMOVE_BASELINE_MASKED_TIMESERIES_
+
+  _CREATE_CUBE_FRAME_FROM_GROUP_ SPREAD=$spread PARAMS=$sp_params TILEBORDER=2
+
+  _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=2 MOMENTS=$moments
+
+}
+
+# Tidy-up output.
+orac_print "\n";

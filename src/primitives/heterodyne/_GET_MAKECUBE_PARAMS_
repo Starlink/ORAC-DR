@@ -75,19 +75,25 @@ my $pass = defined( $_GET_MAKECUBE_PARAMS_{PASS} ) ?
 
 my $params;
 
+orac_print "Determining MAKECUBE parameters for $type.\n";
+
+# Set up some defaults.
+my %return_hash = ( 'system' => 'icrs',
+                    'autogrid' => 'yes',
+                  );
+
 if( $type eq 'RASTER' ) {
 
   # RASTERs do not use autogrid.
   $params = "autogrid=no";
 
-  # Rasters use SincSinc resampling, using [2,2] for the PARAMS
-  # parameter to makecube. We get the pixel scale by multiplying
-  # SCAN_VEL and STEPTIME headers, and the position angle comes from
-  # the MAP_PA header. Force the position angle to be between -45 and
-  # 45 degrees. Set the system to azel if the LOCL_CRD header is AZEL.
+  # We get the pixel scale by multiplying SCAN_VEL and STEPTIME
+  # headers, and the position angle comes from the MAP_PA
+  # header. Force the position angle to be between -45 and 45
+  # degrees. Set the system to azel if the LOCL_CRD header is AZEL.
   my $pixsize = $Frm->hdr( "SCAN_VEL" ) * $Frm->hdr( "STEPTIME" );
   my $crota = 90 - $Frm->hdr( "MAP_PA" );
-  while ( $crota < -45 || $crota > 40 ) {
+  while ( $crota < -45 || $crota > 45 ) {
     if( $crota < -45 ) {
       $crota += 90;
     } elsif( $crota > 45 ) {
@@ -95,36 +101,39 @@ if( $type eq 'RASTER' ) {
     }
   }
 
-  # We also need to figure out the tiling size. This only depends on
-  # the number of channels in the data.
-  my $channels = $Frm->hdr( "NCHNSUBS" );
-  my $tiledims = int( sqrt( 100_000_000 / $channels ) );
+  $params .= " pixsize=$pixsize crota=$crota";
 
-  $params .= " spread=nearest pixsize=$pixsize crota=$crota tiledims=$tiledims trimtiles=true";
+  $return_hash{'autogrid'} = 'no';
+  $return_hash{'pixsize'} = $pixsize;
+  $return_hash{'crota'} = $crota;
 
   if( uc( $Frm->uhdr( "LOCL_CRD" ) ) eq 'AZEL' ) {
     $params .= " system=azel";
+    $return_hash{'system'} = 'azel';
   }
 
 } elsif( $type eq 'JIGGLE' ) {
 
   # JIGGLEs always use autogrid.
   $params = "autogrid=yes";
+  $return_hash{'autogrid'} = 'yes';
 
-  # HARP4 and HARP5 jiggles get done using SincSinc [2,2]. They also
-  # get their pixel scale set to 7.5 or 6, respectively.
+  # HARP4 and HARP5 jiggles get their pixel scale set to 7.5 or 6,
+  # respectively.
   my $jiggle_name = ( defined( $Frm->hdr( "JIGL_NAM" ) ) ?
                       $Frm->hdr( "JIGL_NAM" )            :
                       "" );
   if( $jiggle_name =~ /harp([45])/i ) {
     my $pixsize = ( $1 == 4 ? 7.5 : 6 );
-    $params .= " spread=sincsinc params=[2,2] pixsize=$pixsize";
+    $params .= " pixsize=$pixsize";
+    $return_hash{'pixsize'} = $pixsize;
   }
 
 } elsif( $type eq 'GRID' ) {
 
   # GRIDs just use autogrid.
   $params = "autogrid=yes";
+  $return_hash{'autogrid'} = 'yes';
 
 } elsif( $type eq 'POINTING' ) {
 
@@ -135,16 +144,20 @@ if( $type eq 'RASTER' ) {
 
   if( $pass == 1 ) {
     $params = "autogrid=yes ";
+    $return_hash{'autogrid'} = 'yes';
   }
   if( $instap ne '' ) {
     $params .= " detectors=$instap";
+    $return_hash{'detectors'} = $instap;
   }
   $params .= " system=azel";
+  $return_hash{'system'} = 'azel';
 
 } elsif( $type eq 'FOCUS' ) {
 
   # Just use autogrid for FOCUS observations.
   $params = "autogrid=yes";
+  $return_hash{'autogrid'} = 'yes';
 
 } else {
   orac_throw "Unable to determine MAKECUBE parameters for observation type $type."
@@ -155,5 +168,4 @@ $params = " $params ";
 
 # And set the return value.
 $_GET_MAKECUBE_PARAMS_{PARAMS} = $params;
-
-print "params: $params\n";
+$_GET_MAKECUBE_PARAMS_{HASH} = \%return_hash;

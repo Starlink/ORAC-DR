@@ -1,0 +1,105 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CREATE_BASELINE_MASK_
+
+=head1 DESCRIPTION
+
+=head1 ARGUMENTS
+
+=over 4
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=back
+
+=head1 TASKS
+
+=head1 REQUIRED PERL MODULES
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+my $group = ( defined( $_PRIM_ARGS_->{GROUP} ) ?
+              $_PRIM_ARGS_->{GROUP}            :
+              0 );
+my $freqsmooth = ( defined( $_PRIM_ARGS_->{FREQUENCY_SMOOTH} ) ?
+                   $_PRIM_ARGS_->{FREQUENCY_SMOOTH}            :
+                   25 );
+my $spatsmooth = ( defined( $_PRIM_ARGS_->{SPATIAL_SMOOTH} ) ?
+                   $_PRIM_ARGS_->{SPATIAL_SMOOTH}          :
+                   3 );
+my $order = ( defined( $_PRIM_ARGS_->{ORDER} ) ?
+              $_PRIM_ARGS_->{ORDER}            :
+              5 );
+
+my @objs;
+if( $group == 0 ) {
+  push @objs, $Frm;
+} elsif( $group == 1 ) {
+  push @objs, $Grp;
+} elsif( $group == 2 ) {
+  @objs = $Grp->members;
+}
+
+foreach my $Obj ( @objs ) {
+
+  my @baseline_masks;
+
+  orac_print "Creating baseline region mask.\n";
+
+  foreach my $i ( 1 .. $Obj->nfiles ) {
+
+    my ( $in, $mask ) = $Obj->inout( "_blmask", $i );
+
+    # Set up parameters. Do one smooth in frequency and a second in spatial.
+    my $temp1 = new ORAC::TempFile;
+    my $temp1file = $temp1->file;
+    my $params = "in=$in out=$temp1file axes=[1,3] box=[1,$freqsmooth]";
+    $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+
+    my $temp2 = new ORAC::TempFile;
+    my $temp2file = $temp2->file;
+    $params = "in=$temp1file out=$temp2file axes=[1,2] box=[$spatsmooth,$spatsmooth]";
+    $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+
+    # Find line-free regions in the smoothed cube. We do this by doing
+    # an 'auto' fit with a high-order baseline.
+    my $temp3 = new ORAC::TempFile;
+    my $temp3file = $temp3->file;
+    $params = "in=$temp2file out=$temp3file axis=3 order=$order auto mask=$mask method=single variance=false subtract=false";
+    $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+
+    # Report to user.
+    orac_print " $mask: baseline region mask created.\n";
+
+    $baseline_masks[$i] = $mask;
+
+  }
+
+  # Store the baseline mask names.
+  $Obj->uhdr( "BASELINE_MASKS", \@baseline_masks );
+
+}
+
+# Tidy-up output.
+orac_print "\n";

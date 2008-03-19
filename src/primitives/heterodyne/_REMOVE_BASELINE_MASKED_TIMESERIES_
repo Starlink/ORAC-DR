@@ -1,0 +1,108 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_REMOVE_BASELINE_MASKED_TIMESERIES_
+
+=head1 DESCRIPTION
+
+This primitive determines a baseline for a time-series cube using
+previously-masked time-series data, determined by the
+_RECREATE_MASKED_TIMESERIES_ primitive. A high-order polynomial is fit
+to the masked data to determine the baseline, which is then subtracted
+from the original (unmasked) time-series data.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item ORDER = INTEGER (Given)
+
+The polynomial order that will be used to determine the baseline. As
+the masked data will be used, a high order is recommended. [5]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS data.
+
+=item *
+
+The masked time-series data filenames must be stored in a hash
+reference in the Group MASKED_TIMESERIES uhdr, with the key being the
+original unmasked time-series data, and the value being the masked
+time-series data.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+Baselined time-series data with _blNNN suffix.
+
+=back
+
+=head1 TASKS
+
+KAPPA: MFITTREND, SUB
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+# Retrieve parameters.
+my $order = ( defined( $_PRIM_ARGS_->{ORDER} ) ?
+              $_PRIM_ARGS_->{ORDER}            :
+              5 );
+
+orac_print "Fitting baselines to masked time-series data and subtracting them from unmasked time-series data.\n";
+
+foreach my $mFrm ( $Grp->members ) {
+
+  foreach my $i ( 1 .. $mFrm->nfiles ) {
+
+    my ( $in, $out ) = $mFrm->inout( "_bl", $i );
+
+    my $masked_ref = $Grp->uhdr( "MASKED_TIMESERIES" );
+    my $masked = $masked_ref->{$in};
+
+    my $temp1 = new ORAC::TempFile;
+    my $temp1file = $temp1->file;
+
+    # Set up parameters to mfittrend.
+    my $params = "in=$masked out=$temp1file axis=1 order=$order auto=false ranges=\! variance=false subtract=false method=single";
+    $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+
+    # Subtract the mask from the input file.
+    $params = "in1=$in in2=$temp1file out=$out";
+    $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+    # Report to the user.
+    orac_print "$in to $out:\n";
+    orac_print " Subtracted baselines determined from $masked.\n";
+
+    # Update the Frm.
+    $mFrm->file( $i, $out );
+  }
+}
+
+orac_print "\n";

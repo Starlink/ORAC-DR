@@ -1,0 +1,102 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_REMOVE_BASELINE_THROUGH_SMOOTHING_
+
+=head1 DESCRIPTION
+
+=head1 ARGUMENTS
+
+=over 4
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=back
+
+=head1 TASKS
+
+=head1 REQUIRED PERL MODULES
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+# Handle parameters.
+my $group = ( defined( $_PRIM_ARGS_->{GROUP} ) ?
+              $_PRIM_ARGS_->{GROUP}            :
+              0 );
+my $freqsmooth = ( defined( $_PRIM_ARGS_->{FREQUENCY_SMOOTH} ) ?
+                   $_PRIM_ARGS_->{FREQUENCY_SMOOTH}            :
+                   25 );
+my $spatsmooth = ( defined( $_PRIM_ARGS_->{SPATIAL_SMOOTH} ) ?
+                   $_PRIM_ARGS_->{SPATIAL_SMOOTH}          :
+                   3 );
+my $order = ( defined( $_PRIM_ARGS_->{ORDER} ) ?
+              $_PRIM_ARGS_->{ORDER}            :
+              5 );
+
+orac_print "Removing baseline through smoothing and masking.\n";
+
+my @objs;
+if( $group == 0 ) {
+  push @objs, $Frm;
+} elsif( $group == 1 ) {
+  push @objs, $Grp;
+} elsif( $group == 2 ) {
+  @objs = $Grp->members;
+}
+
+_CREATE_BASELINE_MASK_ GROUP=$group FREQUENCY_SMOOTH=25 SPATIAL_SMOOTH=3 ORDER=5
+
+foreach my $Obj ( @objs ) {
+
+  foreach my $i ( 1 .. $Obj->nfiles ) {
+
+    my ( $in, $out ) = $Obj->inout( "_bl", $i );
+    my $mask = $Obj->uhdr( "BASELINE_MASKS" )->[$i];
+
+    # Mask out the non-baseline regions in the original cube.
+    my $temp1 = new ORAC::TempFile;
+    my $temp1file = $temp1->file;
+    my $params = "in1=$in in2=$mask out=$temp1file";
+    $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+
+    # Fit better baselines to the masked cube. We can use the whole
+    # range but don't use auto.
+    my $temp2 = new ORAC::TempFile;
+    my $temp2file = $temp2->file;
+    $params = "in=$temp1file out=$temp2file axis=3 order=$order auto=false ranges=\! variance=false subtract=false method=single";
+    $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+
+    # And subtract these baselines from the input cube.
+    $params = "in1=$in in2=$temp2file out=$out";
+    $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+    orac_print "$in to $out:\n";
+    orac_print " Removed baseline.\n";
+
+    $Obj->file( $i, $out );
+
+  }
+}
+
+# Tidy-up output.
+orac_print "\n";

@@ -102,22 +102,24 @@ Place,Suite 330, Boston, MA  02111-1307, USA
 orac_print "Creating cube.\n";
 
 # Deal with parameters.
-my $maxsize = ( defined( $_CREATE_CUBE_FRAME_{MAXSIZE} ) ?
-                $_CREATE_CUBE_FRAME_{MAXSIZE}            :
+my $maxsize = ( defined( $_PRIM_ARGS_->{MAXSIZE} ) ?
+                $_PRIM_ARGS_->{MAXSIZE}            :
                 512000000 );
 
-my $bytes_per_pixel = ( defined( $_CREATE_CUBE_FRAME_{BYTES_PER_PIXEL} ) ?
-                        $_CREATE_CUBE_FRAME_{BYTES_PER_PIXEL}            :
+my $bytes_per_pixel = ( defined( $_PRIM_ARGS_->{BYTES_PER_PIXEL} ) ?
+                        $_PRIM_ARGS_->{BYTES_PER_PIXEL}            :
                         4 );
-
-my $spread = ( defined( $_CREATE_CUBE_FRAME_{SPREAD} ) ?
-               $_CREATE_CUBE_FRAME_{SPREAD}            :
+my $spread = ( defined( $_PRIM_ARGS_->{SPREAD} ) ?
+               $_PRIM_ARGS_->{SPREAD}            :
                'nearest' );
-my $makecube_params = ( defined( $_CREATE_CUBE_FRAME_{PARAMS} ) ?
-                        $_CREATE_CUBE_FRAME_{PARAMS}            :
-                        '' );
-my $detectors = ( defined( $_CREATE_CUBE_FRAME_{DETECTORS} ) ?
-                  "'$_CREATE_CUBE_FRAME_{DETECTORS}'"        :
+my $sp_params = ( defined( $_PRIM_ARGS_->{PARAMS} ) ?
+                  $_PRIM_ARGS_->{PARAMS}            :
+                  "''" );
+my $tileborder = ( defined( $_PRIM_ARGS_->{TILEBORDER} ) ?
+                   $_PRIM_ARGS_->{TILEBORDER}            :
+                   0 );
+my $detectors = ( defined( $_PRIM_ARGS_->{DETECTORS} ) ?
+                  "'$_PRIM_ARGS_->{DETECTORS}'"        :
                   "''" );
 
 my @files;
@@ -158,163 +160,49 @@ if( defined( $Grp->uhdr( "MAKECUBE_PARAMETERS" ) ) ) {
 
 } else {
 
-  # Figure out which type of observation we're doing. This can be
-  # raster, pointing, jiggle, and grid position-switch.
-  my $type = '';
-  my $obs_type = lc( $Frm->hdr( "OBS_TYPE" ) );
-  if( $obs_type =~ /science/ ) {
-    my $sam_mode = lc( $Frm->hdr( "SAM_MODE" ) );
-    if( $sam_mode =~ /raster/ ) {
-      $type = "raster";
-    } elsif( $sam_mode =~ /grid/ ) {
-      $type = "grid";
-    } elsif( $sam_mode =~ /jiggle/ ) {
-      $type = "jiggle";
-    } else {
-      orac_throw "Unable to process science data with OBS_TYPE $obs_type and SAM_MODE $sam_mode";
+  # Determine the MAKECUBE parameters based on the
+  # ORAC_OBSERVATION_TYPE header.
+  my $type = $Frm->uhdr( "ORAC_OBSERVATION_TYPE" );
+
+  _GET_MAKECUBE_PARAMS_ TYPE=$type
+  my $mc_params = $_GET_MAKECUBE_PARAMS_{PARAMS};
+  my $mc_hash = $_GET_MAKECUBE_PARAMS_{HASH};
+
+  my ( $pixsize, $crota );
+  my $autogrid = $mc_hash->{autogrid};
+  my $system = $mc_hash->{system};
+
+  if( lc( $type ) ne "raster" ) {
+
+    my $inlist2 = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
+    my $inlist2_fh = $inlist2->handle;
+    foreach my $i ( 1 .. $Frm->nfiles ) {
+      print $inlist2_fh $Frm->file( $i ) . "\n";
     }
-  } else {
-    if( $obs_type =~ /focus/ ) {
-      $type = "focus";
-    } elsif( $obs_type =~ /pointing/ ) {
-      $type = "pointing";
-    } else {
-      orac_throw "Unable to process non-science data with OBS_TYPE $obs_type";
-    }
-  }
+    $inlist2->handle->close;
 
-  print "type: $type\n";
-
-  if( $type eq "raster" ) {
-
-    # RASTERs only require one pass through because we fix the pixel
-    # scale and rotation angle.
-    _GET_MAKECUBE_PARAMS_ TYPE=raster
-    $params = $_GET_MAKECUBE_PARAMS_{PARAMS};
-
-  } else {
-
-    # Everything else needs two passes.
-    _GET_MAKECUBE_PARAMS_ TYPE=$type
-    my $pass1params = $_GET_MAKECUBE_PARAMS_{PARAMS};
-
-    orac_print " Determining size of output cube...";
-
-    # Run MAKECUBE using these parameters.
-    $Mon{'smurf_mon'}->obeyw( "makecube", "$pass1params in='^" . $inlist->file . "' out=!" );
-
+    orac_print "Determining parameters for output cube...";
+    $Mon{'smurf_mon'}->obeyw( "makecube", "$mc_params in='^" . $inlist2->file . "' out=! spread=$spread params=$sp_params" );
     orac_print "done.\n";
 
-    # Check to see if we would have a sparse cube. If so, we don't have
-    # to go through this song and dance.
-    my ( $ORAC_STATUS, $sparse ) = $Mon{'smurf_mon'}->get( "makecube", "sparse" );
-    $Frm->uhdr( "SPARSE_CUBE", ( uc( $sparse ) eq 'TRUE' ) );
+    # Get the returned pixsize and crota.
+    ( my $ORAC_STATUS, $pixsize ) = $Mon{'smurf_mon'}->get( "makecube", "pixsize" );
+    ( $ORAC_STATUS, $crota ) = $Mon{'smurf_mon'}->get( "makecube", "crota" );
 
-    # Get output bounds, but only if we don't have a sparse cube.
-    if( ! $Frm->uhdr( "SPARSE_CUBE" ) ) {
+  } else {
+    $pixsize = $mc_hash->{pixsize};
+    $crota = $mc_hash->{crota};
+  }
 
-      ( $ORAC_STATUS, my @lbnd ) = $Mon{'smurf_mon'}->get( "makecube", "lbound" );
-      ( $ORAC_STATUS, my @ubnd ) = $Mon{'smurf_mon'}->get( "makecube", "ubound" );
-      ( $ORAC_STATUS, my @flbnd ) = $Mon{'smurf_mon'}->get( "makecube", "flbnd" );
-      ( $ORAC_STATUS, my @fubnd ) = $Mon{'smurf_mon'}->get( "makecube", "fubnd" );
+  $params  = "pixsize=$pixsize crota=$crota autogrid=$autogrid";
+  $params .= " system=$system spread=$spread params=$sp_params";
 
-      # And grid parameters to speed up next call
-      ($ORAC_STATUS, my @pixsize ) = $Mon{'smurf_mon'}->get( "makecube", 'pixsize' );
-      ($ORAC_STATUS, my $crota )   = $Mon{'smurf_mon'}->get( "makecube", 'crota' );
-
-      my $x_length = abs( $ubnd[0] - $lbnd[0] + 1 );
-      my $y_length = abs( $ubnd[1] - $lbnd[1] + 1 );
-      my $f_length = abs( $ubnd[2] - $lbnd[2] + 1 );
-      my $f_range = abs( $fubnd[2] - $flbnd[2] );
-
-      my $total_pixels = $x_length * $y_length * $f_length;
-      my $total_bytes = $total_pixels * $bytes_per_pixel;
-      orac_print " Total size of output cube: $total_pixels pixels ($total_bytes bytes)\n";
-      orac_print " This computer can handle $maxsize bytes.\n";
-
-      if( $maxsize < $total_bytes ) {
-
-        # We want square tiles. Find out how big the tiles would be if
-        # they were rectangular, then convert that spatial pixel area
-        # into a square.
-        my $x_out; # Length of the x-axis for each tile.
-        my $y_out; # Length of the y-axis for each tile.
-        my $ntiles = int( $total_bytes / $maxsize ) + 1;
-        if( $x_length > $y_length ) {
-          $x_out = int ( $x_length / $ntiles ) + 1;
-          $y_out = $y_length;
-        } else {
-          $x_out = $x_length;
-          $y_out = int( $y_length / $ntiles ) + 1;
-        }
-        my $tiledim = int( sqrt( $x_out * $y_out ) );
-
-        $params = "tiledims=$tiledim trimtiles=true tileborder=5";
-        orac_print " Output cubes will have dimensions [$tiledim,$tiledim,$f_length]\n";
-
-        $Frm->uhdr( "SPECTRAL_TRIMMED", 0 );
-        $Frm->uhdr( "TILED_CUBE", 1 );
-
-      } else {
-
-        $Frm->uhdr( "SPECTRAL_TRIMMED", 0 );
-        $Frm->uhdr( "TILED_CUBE", 0 );
-
-        $Grp->uhdr( "TILEDIMS", "!" );
-
-        $params = "tiledims=!";
-      }
-
-      # Make sure CROTA is between -45 and 45.
-      while ( $crota < -45 || $crota > 45 ) {
-        if( $crota < -45 ) {
-          $crota += 90;
-        } elsif( $crota > 45 ) {
-          $crota -= 90;
-        }
-      }
-
-      # Set up the parameters to MAKECUBE. (use hints from previous
-      # call) Autogrid is required because without it the pixel grid
-      # is not positioned in an optimal way. (and the fractional pixel
-      # shift is not stored in an output parameter at present).
-      $params .= " crota=$crota spread=$spread";
-
-      if (@pixsize > 1) {
-        $params .= " pixsize=[".join(",",@pixsize) ."] ";
-      } else {
-        $params .= " pixsize=$pixsize[0] ";
-      }
-
-      # If the data units are Kelvin, then we can generate a variance
-      # from TSYS. Otherwise, we can generate a variance from the
-      # spread of the input data values contributing to each output
-      # pixel.
-      $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$files[0] fullframe" );
-      ( $ORAC_STATUS, my $units ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
-      if( $units eq 'K' ) {
-        $params .= " genvar=tsys inweight=true";
-      } else {
-        $params .= " genvar=spread inweight=false";
-      }
-
-    } else {
-
-      # We have a sparse cube, so set up the parameters differently.
-      $params = "autogrid spread=$spread";
-
-      # Send a warning.
-      orac_warn "Sparse cube will be created in $out.\n";
-
-    }
-
-    _GET_MAKECUBE_PARAMS_ PASS=2 TYPE=$type
-    $params = $_GET_MAKECUBE_PARAMS_{PARAMS};
-
-    if( uc( $spread ) ne 'NEAREST' ) {
-      $params .= " params=$makecube_params";
-    }
-
+  # Get the tiling dimensions, but only if we're not doing a pointing
+  # or focus.
+  if( lc( $type ) ne 'pointing' && lc( $type ) ne 'focus' ) {
+    _GET_TILE_DIMENSIONS_ TILEBORDER=$tileborder
+    my $tiledims = $_GET_TILE_DIMENSIONS_{TILEDIMS};
+    $params .= " tiledims=$tiledims tileborder=$tileborder trimtiles=yes";
   }
 
   if ($Frm->uhdr("ISHYBRID")) {
@@ -325,9 +213,6 @@ if( defined( $Grp->uhdr( "MAKECUBE_PARAMETERS" ) ) ) {
     # badmask.
     $params .= " badmask=AND specunion=YES";
   }
-
-  # Tell user what we're doing.
-  orac_print( " Creating cube from " . join( ", ", @files ) . "..." );
 
   # Store the parameters for later use.
   $Grp->uhdr( "MAKECUBE_PARAMETERS", $params );

@@ -4,25 +4,25 @@ _IDENTIFY_SPECBOUNDS_ - Determine the spectral bounds of the emission within a s
 
 =head1 DESCRIPTION
 
-The Frame object (which should contain a spectral axis) is collapsed
-along each non-spectral axis to form a single spectrum. This is done
-using a "MAX" estimator so that regions of emission are not diluted by
-combining them with other regions of non-emission (such as would
-happen if, say, a "MEAN" estimator were used). A background curve is
-then estimated and subtracted from this collapsed spectrum, and the
-regions of emission are then identified using CUPID:FINDCLUMPS. The
-upper and lower spectral bounds each region of emission are stored in
-the group user-defined header, with key SPECBOUNDS, in the order
-lbnd1, ubnd1, lbnd2, ubnd2, etc.
+The group file (which should contain a spectral axis) is collapsed along
+each non-spectral axis to form a single spectrum. This is done using a
+"MAX" estimator so that regions of emission are not diluted by combining
+them with other regions of non-emission (such as would happen if, say, a
+"MEAN" estimator were used). A background curve is then estimated and 
+subtracted from this collapsed spectrum, and the regions of emission are
+then identified using CUPID:FINDCLUMPS. The upper and lower spectral bounds 
+each region of emission are stored in the group user-defined header, with 
+key SPECBOUNDS, in the order lbnd1, ubnd1, lbnd2, ubnd2, etc.
 
 =head1 PARAMETERS
 
 =over 4
 
-=item TRIM = BOOLEAN (Given)
+=item FRAME = LOGICAL (Given)
 
-Whether or not to trim 10% off either end of the cube in the spectral
-dimension. [0]
+If this parameter is true (1) then the current Frame object will
+be used to identify the spectral bounds. Otherwise, the current Group
+object will be used. [0]
 
 =back
 
@@ -39,46 +39,49 @@ Council. All Rights Reserved.
 
 orac_print "Identifying spectral bounds of emission regions.\n";
 
-my @sp_bounds;
+# Decide whether to process the group or the frame (defraults to group).
+my $Obj;
+my $frame = ($_IDENTIFY_SPECBOUNDS_{FRAME}) ? 1 : 0;
+my $filesuffix;
+if( $frame ) {
+  $Obj = $Frm;
+  $filesuffix = $Frm->rawsuffix;
+} else {
+  $Obj = $Grp;
+  $filesuffix = $Grp->filesuffix;
+}
 
-foreach my $i ( 1 .. $Frm->nfiles ) {
-
-  my $tmp2;
-  my $out2;
-  my $params;
-  my $att;
-  my $domain;
-  my $lbnd;
-  my $ubnd;
-  my $iclump;
-  my @bounds;
-  my @clump_bounds;
-  my $aref;
-
-# Compress the wavelength axis by a factor of 4 to improve
-# signal-to-noise.
-  my $in = $Frm->file( $i );
-  my $tempcmp = new ORAC::TempFile;
-  my $tempcmpfile = $tempcmp->file;
-  $Mon{'kappa_mon'}->obeyw( "compave", "in=$in out=$tempcmpfile compress=[1,1,6]" );
+# Do nothing if we have no group file. 
+if( -e $Obj->file . $filesuffix ) {
+   my $tmp2;
+   my $out2;
+   my $params;
+   my $att;
+   my $domain;
+   my $lbnd;
+   my $ubnd;
+   my $iclump;
+   my @bounds;
+   my @clump_bounds;
+   my $aref;
 
 # Get the number of WCS axes in the group file.
-  $Mon{'atools_mon'}->obeyw( "astget", "this=$tempcmpfile attrib=naxes" );
-  my ($ORAC_STATUS, $naxes) = $Mon{'atools_mon'}->get('astget', 'VALUE');
+   my $in = $Obj->file;
+   $Mon{'atools_mon'}->obeyw( "astget", "this=$in attrib=naxes" );
+   my ($ORAC_STATUS, $naxes) = $Mon{'atools_mon'}->get('astget', 'VALUE');
 
 # Create a temporary file to hold the 1D collapsed array.
    my $tmp = new ORAC::TempFile;
-  $in = $tempcmpfile;
    my $out = $tmp->file;
 
 # Compress the group file along each axis in turn, excluding the spectral axis,
-# until there is only one axis left.
+# until there is only one axis left. 
    my $iaxis = 1;
    while( $naxes > 1 ) {
 
 # Get the Domain for this axis.
       $att = "Domain($iaxis)";
-      $Mon{'atools_mon'}->obeyw( "astget", "this=$tempcmpfile attrib=$att" );
+      $Mon{'atools_mon'}->obeyw( "astget", "this=$in attrib=$att" );
       ($ORAC_STATUS, $domain) = $Mon{'atools_mon'}->get('astget', 'VALUE');
 
 # Only compress along this axis if the axis Domain name does not contain the
@@ -163,7 +166,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
       $bounds[ $iclump - 1 ] = [ @clump_bounds ];
    }
 
-   orac_print "Spectral bounds of emission in $in: ";
+   orac_print "Spectral bounds of emission: ";
    if( $nclump > 0 ) {
       for $aref ( @bounds ) {
          if( $aref ) {
@@ -173,13 +176,12 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
       orac_print "\n";
    } else {
       orac_print "<no spectral emission found>\n";
-   }
+   }      
 
-  push ( @sp_bounds, \@bounds );
+# Store them the Group user-defined header.
+   $Obj->uhdr( "SPECBOUNDS", \@bounds );
 
 }
-
-$Frm->uhdr( "SPECTRAL_BOUNDS", \@sp_bounds );
 
 # Tidy up output.
 orac_print "\n";

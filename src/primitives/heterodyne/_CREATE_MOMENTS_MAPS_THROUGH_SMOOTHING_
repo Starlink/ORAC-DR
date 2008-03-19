@@ -1,0 +1,169 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_
+
+=head1 DESCRIPTION
+
+=head1 ARGUMENTS
+
+=over 4
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=back
+
+=head1 TASKS
+
+=head1 REQUIRED PERL MODULES
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+# Handle parameters.
+my $group = ( defined( $_PRIM_ARGS_->{GROUP} ) ?
+              $_PRIM_ARGS_->{GROUP}            :
+              0 );
+my $moments = ( defined( $_PRIM_ARGS_->{MOMENTS} ) ?
+                $_PRIM_ARGS_->{MOMENTS}            :
+                'integ' );
+my $freqsmooth = ( defined( $_PRIM_ARGS_->{FREQUENCY_SMOOTH} ) ?
+                   $_PRIM_ARGS_->{FREQUENCY_SMOOTH}            :
+                   25 );
+my $spatsmooth = ( defined( $_PRIM_ARGS_->{SPATIAL_SMOOTH} ) ?
+                   $_PRIM_ARGS_->{SPATIAL_SMOOTH}          :
+                   3 );
+my $order = ( defined( $_PRIM_ARGS_->{ORDER} ) ?
+              $_PRIM_ARGS_->{ORDER}            :
+              5 );
+
+my @moments = split /,/, $moments;
+
+my @objs;
+if( $group == 0 ) {
+  push @objs, $Frm;
+} elsif( $group == 1 ) {
+  push @objs, $Grp;
+} elsif( $group == 2 ) {
+  @objs = $Grp->members;
+}
+
+foreach my $Obj ( @objs ) {
+
+  if( ! defined( $Obj->uhdr( "BASELINE_MASKS" ) ) ) {
+
+    _CREATE_BASELINE_MASK_ GROUP=$group FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order
+
+  }
+
+  foreach my $i ( 1 .. $Obj->nfiles ) {
+
+    ( my $in, undef ) = $Obj->inout( "_blah", $i );
+    my $masks = $Obj->uhdr( "BASELINE_MASKS" );
+    my $mask = $masks->[$i];
+
+    # Smooth the cube.
+    my $temp1 = new ORAC::TempFile;
+    my $temp1file = $temp1->file;
+    my $params = "in=$in out=$temp1file axes=[1,3] box=[1,$freqsmooth]";
+    $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+
+    my $temp2 = new ORAC::TempFile;
+    my $temp2file = "block_out";
+    $params = "in=$temp1file out=$temp2file axes=[1,2] box=[$spatsmooth,$spatsmooth]";
+    $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+
+    # Mask out lines.
+    my $temp3 = new ORAC::TempFile;
+    my $temp3file = $temp3->file;
+    $params = "in1=$temp2file in2=$mask out=$temp3file";
+    $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+
+    # Get stats on central-ish regions.
+    _GET_DIMENSIONS_ FILE=$temp3file
+    my $dims = $_GET_DIMENSIONS_{DIMS};
+    my $lbound = $_GET_DIMENSIONS_{LBOUND};
+    my $ubound = $_GET_DIMENSIONS_{UBOUND};
+    my $xlow  = int( $lbound->[0] + 0.165 * $dims->[0] + 0.5 );
+    my $xhigh = int( $ubound->[0] - 0.165 * $dims->[0] - 0.5 );
+    my $ylow  = int( $lbound->[1] + 0.165 * $dims->[1] + 0.5 );
+    my $yhigh = int( $ubound->[1] - 0.165 * $dims->[1] - 0.5 );
+    my $zlow  = int( $lbound->[2] + 0.165 * $dims->[2] + 0.5 );
+    my $zhigh = int( $ubound->[2] - 0.165 * $dims->[2] - 0.5 );
+    my $section = "$xlow:$xhigh,$ylow:$yhigh,$zlow:$zhigh";
+    $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp3file($section)" );
+    my ( $ORAC_STATUS, $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+
+    # Create parameter file for FINDCLUMPS.
+    my $fc_param = "findclumps$$.param";
+    open my $fc_fh, ">", $fc_param;
+    print $fc_fh "ClumpFind.Minpix=50\n";
+    print $fc_fh "ClumpFind.AllowEdge=1\n";
+    print $fc_fh "ClumpFind.FwhmBeam=0\n";
+    print $fc_fh "ClumpFind.MaxBad=9999\n";
+    print $fc_fh "ClumpFind.VeloRes=0\n";
+    print $fc_fh "ClumpFind.Tlow=4.5*RMS\n";
+    close $fc_fh;
+
+    # Run FINDCLUMPS.
+    my $temp4 = new ORAC::TempFile;
+    my $temp4file = "findclumps_out";
+    $params = "in=$temp2file rms=$sigma config='^$fc_param' method=clumpfind out=$temp4file outcat=\! deconv=no";
+    $Mon{'cupid_mon'}->obeyw( "findclumps", "$params" );
+    unlink( $fc_param );
+
+    # Set clumps to be 0 everywhere (i.e. "clump mask").
+    my $temp5 = new ORAC::TempFile;
+    my $temp5file = $temp5->file;
+    $params = "in=$temp4file scalar=0 out=$temp5file";
+    $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
+
+    # Add clump mask to input cube.
+    my $temp6 = new ORAC::TempFile;
+    my $temp6file = $temp6->file;
+    $params = "in1=$in in2=$temp5file out=$temp6file";
+    $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+
+    # For each moment, collapse the masked cube into a temporary file.
+    foreach my $moment ( @moments ) {
+
+      my $out = $Obj->inout( "_$moment", $i );
+      $params = "in=$temp6file out=$out estimator=$moment axis=3 variance=false wlim=0.0";
+      $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+      orac_print "$in to $out: $moment moment map created.\n";
+
+    }
+
+  }
+
+  # Paste together the files in @collapsed into $out.
+
+  # And get the SMURF extensions as well.
+
+  # If we've done an integrated intensity map, find the peak value so
+  # we can subsequently get a spectrum from the position of the
+  # strongest signal.
+
+}
+
+# Tidy-up output.
+orac_print "\n";

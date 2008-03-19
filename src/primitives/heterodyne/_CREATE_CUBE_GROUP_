@@ -1,0 +1,209 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CREATE_CUBE_GROUP_
+
+=head1 DESCRIPTION
+
+=head1 ARGUMENTS
+
+=over 4
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=back
+
+=head1 TASKS
+
+=head1 REQUIRED PERL MODULES
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+# Deal with parameters.
+my $spread = ( defined( $_PRIM_ARGS_->{SPREAD} ) ?
+               $_PRIM_ARGS_->{SPREAD}            :
+               'nearest' );
+my $sp_params = ( defined( $_PRIM_ARGS_->{PARAMS} ) ?
+                  $_PRIM_ARGS_->{PARAMS}            :
+                  "''" );
+my $tileborder = ( defined( $_PRIM_ARGS_->{TILEBORDER} ) ?
+                   $_PRIM_ARGS_->{TILEBORDER}            :
+                   0 );
+
+my $maxsize = ( defined( $_PRIM_ARGS_->{MAXSIZE} ) ?
+                $_PRIM_ARGS_->{MAXSIZE}            :
+                512000000 );
+
+my $bytes_per_pixel = ( defined( $_PRIM_ARGS_->{BYTES_PER_PIXEL} ) ?
+                        $_PRIM_ARGS_->{BYTES_PER_PIXEL}            :
+                        4 );
+
+# Only process if we're on the last member of a group.
+if( $Grp->lastmember( $Frm ) ) {
+
+  # We want to go through each member Frm in the Grp and determine the
+  # MAKECUBE parameters individually. Then, we'll take the smallest
+  # pixelscale and use that for the output cube.
+
+  my $obstype = $Frm->uhdr( "ORAC_OBSERVATION_TYPE" );
+  my %pixsize;
+  my %crota;
+  my %system;
+  foreach my $Frm ( $Grp->members ) {
+
+    _GET_MAKECUBE_PARAMS_ TYPE=$obstype
+    my $mc_params = $_GET_MAKECUBE_PARAMS_{PARAMS};
+    my $mc_hash = $_GET_MAKECUBE_PARAMS_{HASH};
+
+    if( lc( $obstype ) ne 'raster' ) {
+
+      # If we're not doing a raster, then we have to run MAKECUBE in
+      # autogrid, then determine the pixel scale from the result of
+      # that. _GET_MAKECUBE_PARAMS_ returns autogrid=yes for anything
+      # that isn't a raster.
+
+      my $inlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
+      my $inlist_fh = $inlist->handle;
+      foreach my $i ( 1 .. $Frm->nfiles ) {
+        print $inlist_fh $Frm->file( $i ) . "\n";
+      }
+      $inlist->handle->close;
+
+      orac_print "Determining parameters for output cube...";
+      $Mon{'smurf_mon'}->obeyw( "makecube", "$mc_params in='^" . $inlist->file . "' out=! spread=$spread params=$sp_params" );
+      orac_print "done.\n";
+
+      # Get the returned pixsize and crota.
+      my ( $ORAC_STATUS, $pixsize ) = $Mon{'smurf_mon'}->get( "makecube", "pixsize" );
+      ( $ORAC_STATUS, my $crota ) = $Mon{'smurf_mon'}->get( "makecube", "crota" );
+
+      # Stick these into the hash.
+      $pixsize{$Frm->file(1)} = $pixsize;
+      $crota{$Frm->file(1)} = $crota;
+    } else {
+      # Raster parameters come directly from the _GET_MAKECUBE_PARAMS_
+      # primitive results.
+      $pixsize{$Frm->file} = $mc_hash->{pixsize};
+      $crota{$Frm->file} = $mc_hash->{crota};
+    }
+    $system{$Frm->file(1)} = $mc_hash->{system};
+  }
+
+  # We have a hash with a bunch of pixel sizes in it. Find the smallest.
+  my $pixsize = 100;
+  foreach my $value ( values %pixsize ) {
+    $pixsize = ( $value > $pixsize ) ? $pixsize : $value;
+  }
+
+  # We have a hash with a bunch of rotation angles in it. If they're
+  # all the same, use that. Otherwise set the rotation angle to zero.
+  my %seen;
+  my @uniq = grep { ! $seen{$_} ++ } values %crota;
+  my $crota = ( $#uniq == 0 ? $uniq[0] : 0 );
+
+  # We have a hash with a bunch of systems in it. If they're all the
+  # same, use that. Otherwise set the system to 'ICRS'.
+  %seen = ();
+  @uniq = grep { ! $seen{$_} ++ } values %system;
+  my $system = ( $#uniq == 0 ? $uniq[0] : 'ICRS' );
+
+  # Find out how big our tiles are going to be.
+  _GET_TILE_DIMENSIONS_ TILEBORDER=$tileborder
+  my $tiledims = $_GET_TILE_DIMENSIONS_{TILEDIMS};
+
+  # Set up MAKECUBE parameters.
+  my $params = "pixsize=$pixsize crota=$crota spread=$spread params=$sp_params";
+  $params   .= " tiledims=$tiledims system=$system autogrid=no tileborder=$tileborder trimtiles=yes";
+
+  # Quick hack for hybrid mode observations.
+  if( $Frm->uhdr( "ISHYBRID" ) ) {
+    $params .= " badmask=AND specunion=YES";
+  }
+
+  # If the data units are Kelvin, then we can generate a variance from
+  # TSYS. Otherwise, we can generate a variance from the spread of the
+  # input data values contributing to each output pixel.
+  $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=" . $Frm->file(1) . " fullframe" );
+  my ( $ORAC_STATUS, $units ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
+  if( $units eq 'K' ) {
+    $params .= " genvar=tsys inweight=true";
+  } else {
+    $params .= " genvar=spread inweight=false";
+  }
+
+  my $inlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
+  my $inlist_fh = $inlist->handle;
+  foreach my $Frm ( $Grp->members ) {
+    foreach my $i ( 1 .. $Frm->nfiles ) {
+      print $inlist_fh $Frm->file( $i ) . "\n";
+    }
+  }
+  $inlist->handle->close;
+
+  my ( $in, $out ) = $Grp->inout( "_cube" );
+
+  orac_print "Creating cube...";
+  $Mon{'smurf_mon'}->obeyw( "makecube", "$params in='^" . $inlist->file . "' out=$out" );
+  orac_print "done.\n";
+
+  # Handle tiles.
+  ( $ORAC_STATUS, my $ntile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
+
+  # We need to rename the output cube(s), as MAKECUBE creates _N
+  # and we want _cubeNNN.
+  my @files;
+  if( $ntile > 1 ) {
+    foreach my $j ( 1 .. $ntile ) {
+      my $makecube_outfile = "${out}_$j.sdf";
+      my $outfile = sprintf( "$out%03d", $j ) . ".sdf";
+      rename( $makecube_outfile, $outfile );
+      $outfile =~ s/\.sdf$//;
+      push( @files, $outfile );
+    }
+  } else {
+    my $outfile = "${out}001.sdf";
+    rename( $out . ".sdf", $outfile );
+    $outfile =~ s/\.sdf$//;
+    push( @files, $outfile );
+  }
+  orac_print " $ntile cube" . ( $ntile > 1 ? 's' : '' ) . " formed: ";
+  $Grp->files( @files );
+  my $filestring = join ", ", @files;
+  orac_print "$filestring\n";
+
+  # Get DATE-OBS and DATE-END from the members of the group. Find the
+  # earliest DATE-OBS and the latest DATE-END and stick these into the
+  # Grp header.
+  my @utstart = sort map { $_->uhdr( "ORAC_UTSTART" ) } $Grp->members;
+  my @utend = sort map { $_->uhdr( "ORAC_UTEND" ) } $Grp->members;
+  my $dateobs = $utstart[0]->datetime;
+  my $dateend = $utend[-1]->datetime;
+
+  foreach my $file ( $Grp->files ) {
+    _SET_FILE_FITS_ITEM_ FILE=$file KEY=DATE-OBS VALUE=$dateobs
+    _SET_FILE_FITS_ITEM_ FILE=$file KEY=DATE-END VALUE=$dateend
+  }
+
+  $Grp->readhdr;
+
+}

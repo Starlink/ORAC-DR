@@ -13,6 +13,10 @@ using spectral windows that are assumed to be free of spectral lines.
 
 =over 4
 
+=item EDGES = REAL (Given)
+
+Percentage of the full range to fit on either edge of the spectrum. [0]
+
 =item ORDER = INTEGER (Given)
 
 The order of the fit to use for the baseline. Zero (the default) is a
@@ -61,6 +65,9 @@ Council.  All Rights Reserved.
 =cut
 
 # Deal with arguments.
+my $edges = ( defined( $_REMOVE_BASELINE_{EDGES} ) ?
+              $_REMOVE_BASELINE_{EDGES}            :
+              0 );
 my $order = ( defined( $_REMOVE_BASELINE_{ORDER} ) ?
               $_REMOVE_BASELINE_{ORDER}            :
               0 );
@@ -79,12 +86,25 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
   $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
   ( my $ORAC_STATUS, my @lbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
   ( $ORAC_STATUS, my @ubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
+  ( $ORAC_STATUS, my @flbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "flbnd" );
+  ( $ORAC_STATUS, my @fubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fubnd" );
   my $section = "'$lbnd[0]:$ubnd[0],$lbnd[1]:$ubnd[1],'";
 
-  # Set up parameters for MFITTREND; it uses the AUTO mode and a
-  # constant baseline.
-  my $params = "in=$in out=$out auto=true modifyin=false subtract=true";
+  # Set up parameters for MFITTREND.
+  my $params = "in=$in out=$out modifyin=false subtract=true";
   $params   .= " order=$order axis=3 section=$section method=$method";
+
+  # Add ranges parameter, if necessary.
+  if( $edges ) {
+    my $extent = $fubnd[2] - $flbnd[2] + 1;
+    my $low1 = int( $flbnd[2] );
+    my $high1 = int( $flbnd[2] + ( $extent * $edges / 100 ) );
+    my $low2 = int( $fubnd[2] - ( $extent * $edges / 100 ) );
+    my $high2 = int( $fubnd[2] );
+    $params .= " ranges='$low1,$high1,$low2,$high2' auto=false";
+  } else {
+    $params .= " auto=true";
+  }
 
   # Run MFITTREND.
   $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
