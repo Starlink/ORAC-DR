@@ -16,6 +16,11 @@ frequency axis, whereas _MASK_FREQUENCY_ENDS_ does.
 
 =over 4
 
+=item AXIS = INTEGER (Given)
+
+The axis to trim. For time-series data this should be set to 1. For
+spatial cubes this should be set to 3. [3]
+
 =item LOWER = REAL (Given)
 
 The percentage of the total frequency range to trim from the lower
@@ -85,6 +90,9 @@ Council.  All Rights Reserved.
 =cut
 
 # Deal with parameters.
+my $axis = ( defined( $_REMOVE_FREQUENCY_ENDS_{AXIS} ) ?
+             $_REMOVE_FREQUENCY_ENDS_{AXIS}            :
+             3 );
 my $percent = ( defined( $_REMOVE_FREQUENCY_ENDS_{PERCENT} ) ?
                 $_REMOVE_FREQUENCY_ENDS_{PERCENT}            :
                 10 );
@@ -114,26 +122,36 @@ if( ! defined( $Frm->uhdr( "SPECTRAL_TRIMMED" ) ) ||
     my ( $ORAC_STATUS, @lbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
     ( $ORAC_STATUS, my @ubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
 
-    # Get the extent of the 3rd axis.
-    my $extent = $ubnd[2] - $lbnd[2] + 1;
+    # Get the extent of the requested axis.
+    my $extent = $ubnd[$axis-1] - $lbnd[$axis-1] + 1;
 
     # Calculate the amount to blank off from either end.
     my $trim_lower = int( $extent * $lower / 100 );
     my $trim_upper = int( $extent * $upper / 100 );
 
     # Calculate the lower and upper extents.
-    my $lower_z = $lbnd[2] + $trim_lower;
-    my $upper_z = $ubnd[2] - $trim_upper;
+    my $lower_extent = $lbnd[$axis-1] + $trim_lower;
+    my $upper_extent = $ubnd[$axis-1] - $trim_upper;
+
+    # Set up the NDF section.
+    my $section;
+    if( $axis == 1 ) {
+      $section = "($lower_extent:$upper_extent,,)";
+    } elsif( $axis == 2 ) {
+      $section = "(,$lower_extent:$upper_extent,)";
+    } elsif( $axis == 3 ) {
+      $section = "(,,$lower_extent:$upper_extent)";
+    }
 
     # Run NDFCOPY.
-    my $params = "in=$in(,,$lower_z:$upper_z) out=$out";
+    my $params = "in=$in$section out=$out";
     $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
 
     # Report to user.
     orac_print "$in to $out:\n";
     orac_print " Trimmed $lower\% from lower end of frequency range.\n";
     orac_print " Trimmed $upper\% from upper end of frequency range.\n";
-    orac_print " Trimmed dimensions: [$lower_z:$upper_z]\n";
+    orac_print " Trimmed dimensions on axis $axis: [$lower_extent:$upper_extent]\n";
 
     # Set the product.
     $Frm->product( "em" );
