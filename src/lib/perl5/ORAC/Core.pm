@@ -52,15 +52,15 @@ use warnings;
 use Carp;
 
 # ORAC modules
-use ORAC::Basic;                        # Helper routines
+use ORAC::Basic;                # Helper routines
 use ORAC::Print;
 use ORAC::Version;
 use ORAC::Recipe;
-use ORAC::Loop;                         # Loop control
-use ORAC::Event;                        # Tk event 
-use ORAC::General;                      # parse_* routines
+use ORAC::Loop;                 # Loop control
+use ORAC::Event;                # Tk event 
+use ORAC::General;              # parse_* routines
 use ORAC::Error qw/:try/;
-use ORAC::Constants qw/:status/;        # ORAC status varaibles
+use ORAC::Constants qw/:status/; # ORAC status varaibles
 
 # Need to use this class so that we can pre-configure the
 # message systems on the basis of command line switches
@@ -68,7 +68,7 @@ use ORAC::Msg::MessysLaunch;
 
 #general modules
 use Config;
-use Sys::Hostname;                      # For logfile
+use Sys::Hostname;              # For logfile
 use IO::File;
 use File::Spec;
 use File::Path;
@@ -81,10 +81,10 @@ use vars qw/$VERSION @EXPORT @ISA /;
 @ISA = qw/Exporter/;
 @EXPORT = qw/orac_process_frame orac_store_frm_in_correct_grp 
              orac_print_configuration orac_message_launch
-	     orac_start_algorithm_engines orac_start_display
-	     orac_calib_override orac_process_argument_list 
-	     orac_main_data_loop orac_parse_files
-	     orac_print_config_with_defaults /;
+             orac_start_algorithm_engines orac_start_display
+             orac_calib_override orac_process_argument_list 
+             orac_main_data_loop orac_parse_files
+             orac_print_config_with_defaults /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
@@ -183,7 +183,7 @@ sub orac_store_frm_in_correct_grp {
     my $extra = $Frm->file_from_bits_extra;
 
     $Grp->file($Grp->file_from_bits($ut, $grpnum, $extra));
-    $GrpHash->{$grpname} = $Grp;    # store group object
+    $GrpHash->{$grpname} = $Grp; # store group object
     orac_print ("A new group ".$Grp->file." has been created\n","blue");
 
     # Store the Grp on the array as well
@@ -193,10 +193,10 @@ sub orac_store_frm_in_correct_grp {
     # Only relevant if the Group file already exists
     if ($Grp->file_exists) {
       if ($resume) {
-  $Grp->coaddsread;
-  $Grp->readhdr;
+        $Grp->coaddsread;
+        $Grp->readhdr;
       } else {
-  $Grp->erase;
+        $Grp->erase;
       }
     }
 
@@ -291,7 +291,8 @@ sub orac_process_frame {
     # copy it
     $RecipeName = $frmrecipe;
     orac_print "Using recipe $RecipeName provided by the frame\n";
-  };
+  }
+  ;
 
   # clear the primitive list variables
   if ( defined $PRIMITIVE_LIST && ref($PRIMITIVE_LIST) ) {
@@ -323,24 +324,24 @@ sub orac_process_frame {
 
   # Execute the recipe
   try {
-     $recipe->execute( $CURRENT_RECIPE, $CURRENT_PRIMITIVE, $PRIMITIVE_LIST, $Frm, 
-                       $Grp, $Cal, $Display, $Mon );
+    $recipe->execute( $CURRENT_RECIPE, $CURRENT_PRIMITIVE, $PRIMITIVE_LIST, $Frm, 
+                      $Grp, $Cal, $Display, $Mon );
   }
-  catch ORAC::Error::FatalError with
-  {
-     my $Error = shift;
-     $Error->throw;
-  }
-  catch ORAC::Error::UserAbort with
-  {
-     my $Error = shift;
-     $Error->throw;
-  }
-  otherwise
-  {
-     my $Error = shift;
-     throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
-  };
+    catch ORAC::Error::FatalError with
+      {
+        my $Error = shift;
+        $Error->throw;
+      }
+        catch ORAC::Error::UserAbort with
+          {
+            my $Error = shift;
+            $Error->throw;
+          }
+            otherwise
+              {
+                my $Error = shift;
+                throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
+              };
 
   # delete symlink to raw data file or actual data file if marked with
   # temporary status - we rely on the temporary flags even if 
@@ -356,7 +357,7 @@ sub orac_process_frame {
   # Only want to do this if we created it initially as a soft link
   # and if ORAC_DATA_IN is not the same directory as ORAC_DATA_OUT
   if (    File::Spec->canonpath($ENV{"ORAC_DATA_IN"}) 
-       ne File::Spec->canonpath($ENV{"ORAC_DATA_OUT"}) ) {
+          ne File::Spec->canonpath($ENV{"ORAC_DATA_OUT"}) ) {
     foreach my $raw ( $Frm->raw ) {
       unlink($raw) if (-l $raw);
     }
@@ -367,9 +368,11 @@ sub orac_process_frame {
 
   # clear the current primitive variables
   if ( defined $PRIMITIVE_LIST && ref($PRIMITIVE_LIST) ) {
-        @$PRIMITIVE_LIST = ( );  }
+    @$PRIMITIVE_LIST = ( );
+  }
   if ( defined $CURRENT_PRIMITIVE && ref($CURRENT_PRIMITIVE) ) {
-  $CURRENT_PRIMITIVE = []; }
+    $CURRENT_PRIMITIVE = [];
+  }
 
 }
 
@@ -400,47 +403,40 @@ sub orac_print_config_with_defaults {
 
   # check for log options, we need to start the Tk early if using X Windows
   # Note that -showcurrent also require Tk
-  if (defined $opt{log}) 
-    {
-      # User is overriding logging options, lower case the options
-      $log_options = lc($opt{log});
-    } 
-  else 
-    {
-      # fx is default if we have a DISPLAY variable
-      if (defined $ENV{DISPLAY}) 
-	{
-	  $log_options = 'fx';     # We use X Windows
-	} 
-      else 
-	{
-	  $log_options = 'sf';      # We use the console (icky!)
-	}
+  if (defined $opt{log}) {
+    # User is overriding logging options, lower case the options
+    $log_options = lc($opt{log});
+  } else {
+    # fx is default if we have a DISPLAY variable
+    if (defined $ENV{DISPLAY}) {
+      $log_options = 'fx';      # We use X Windows
+    } else {
+      $log_options = 'sf';      # We use the console (icky!)
     }
+  }
 
   my $win_str;
   if ( $log_options =~ /x/  || 
-       (exists $opt{showcurrent} && $opt{showcurrent}))
-    {
-      my $MW = orac_launch_tk("Tk");
-      if (defined $MW) {
-        $win_str = "Tk";
-      } else {
-        # disable X logging option and replace with screen
-        $log_options =~ s/s//; # remove any existing "s"
-        $log_options =~ s/x/s/; # replace x with s
-        print STDERR "Error loading Tk modules - X logging not available\n";
-        print STDERR "Using screen instead\n";
-      }
+       (exists $opt{showcurrent} && $opt{showcurrent})) {
+    my $MW = orac_launch_tk("Tk");
+    if (defined $MW) {
+      $win_str = "Tk";
+    } else {
+      # disable X logging option and replace with screen
+      $log_options =~ s/s//;    # remove any existing "s"
+      $log_options =~ s/x/s/;   # replace x with s
+      print STDERR "Error loading Tk modules - X logging not available\n";
+      print STDERR "Using screen instead\n";
     }
+  }
 
   # Now do the configuration
   return orac_print_configuration( $log_options, 
-				   $win_str, 
-				   \$CURRENT_RECIPE,
-				   $ORAC_ARGS,
-				   %opt
-				 );
+                                   $win_str, 
+                                   \$CURRENT_RECIPE,
+                                   $ORAC_ARGS,
+                                   %opt
+                                 );
 }
 
 =item B<orac_launch_tk>
@@ -514,9 +510,9 @@ sub orac_print_configuration {
 
   # First thing we need to do is create an ORAC::Print object
   # that we can fiddle with to adjust the output filehandles
-  $msg_prt  = new ORAC::Print; # For message system
+  $msg_prt  = new ORAC::Print;   # For message system
   $msgerr_prt = new ORAC::Print; # For errors from message system
-  $orac_prt = new ORAC::Print; # For general orac_print
+  $orac_prt = new ORAC::Print;   # For general orac_print
 
   # Debug info
   if ($opt{debug}) {
@@ -533,7 +529,8 @@ sub orac_print_configuration {
     # as possible if the pipeline crashes without flushing the buffer
     $fh->autoflush(1);
 
-  };
+  }
+  ;
 
   # Logging messages to a file
   # If log is not defined, we are defaulting to STDOUT
@@ -614,68 +611,69 @@ sub orac_print_configuration {
 
       # this is the log file for $ORAC_DATA_OUT
       if ($log_options =~ /f/) {
-	my $logfh = new IO::File(">.".$logfile_prefix."_$$.log") || do {
-	  orac_err "Error opening ORAC-DR logfile in ORAC_DATA_OUT: $!\n";
-	  throw ORAC::Error::FatalError("Error opening logfile",
-					ORAC__FATAL);
-	};
-	push(@logfiles, $logfh);
+        my $logfh = new IO::File(">.".$logfile_prefix."_$$.log") || do {
+          orac_err "Error opening ORAC-DR logfile in ORAC_DATA_OUT: $!\n";
+          throw ORAC::Error::FatalError("Error opening logfile",
+                                        ORAC__FATAL);
+        };
+        push(@logfiles, $logfh);
       }
 
       # Also write a file to the ORAC_LOGDIR for convenience
       if (exists $ENV{ORAC_LOGDIR} && -d $ENV{ORAC_LOGDIR}) {
-	my @time = gmtime();
-	my $host = (split( /\./, hostname))[0]; # only want first part of host
-	my $user = ($ENV{USER} ? "_$ENV{USER}" : "" );
-	my $inst = lc($ENV{ORAC_INSTRUMENT});
-	my $fname = sprintf($logfile_prefix.
-			    "_%04d%02d%02d_%02d%02d%02d_%s_%s%s.log",
-			    $time[5]+1900, $time[4]+1,$time[3],
-			    $time[2],$time[1],$time[0],$inst, $host, $user);
-	my $fh = new IO::File("> ". File::Spec->catfile($ENV{ORAC_LOGDIR},$fname)) || do {
-	  orac_err "Error opening $app logfile in log dir $ENV{ORAC_LOGDIR}/$fname: $!\n";
-	  throw ORAC::Error::FatalError("Error opening secondary log file", ORAC__FATAL);
-	};
-	push(@logfiles, $fh);
+        my @time = gmtime();
+        my $host = (split( /\./, hostname))[0]; # only want first part of host
+        my $user = ($ENV{USER} ? "_$ENV{USER}" : "" );
+        my $inst = lc($ENV{ORAC_INSTRUMENT});
+        my $fname = sprintf($logfile_prefix.
+                            "_%04d%02d%02d_%02d%02d%02d_%s_%s%s.log",
+                            $time[5]+1900, $time[4]+1,$time[3],
+                            $time[2],$time[1],$time[0],$inst, $host, $user);
+        my $fh = new IO::File("> ". File::Spec->catfile($ENV{ORAC_LOGDIR},$fname)) || do {
+          orac_err "Error opening $app logfile in log dir $ENV{ORAC_LOGDIR}/$fname: $!\n";
+          throw ORAC::Error::FatalError("Error opening secondary log file", ORAC__FATAL);
+        };
+        push(@logfiles, $fh);
       } 
 
       for my $logfh (@logfiles) {
-	$logfh->autoflush(1);
+        $logfh->autoflush(1);
 
-	# Write a header
-	print $logfh "$app logfile - created on " . scalar(gmtime) ." UT\n";
-	print $logfh "\nORAC Environment:\n\n";
-	print $logfh "\tPipeline Version: ". ORAC::Version->getVersion ."\n";
-	print $logfh "\tInstrument : $ENV{ORAC_INSTRUMENT}\n";
-	print $logfh "\tInput  Dir : ".(defined $ENV{ORAC_DATA_IN} ?
-					$ENV{ORAC_DATA_IN} : "<undefined>")."\n";
-	print $logfh "\tOutput Dir : $ENV{ORAC_DATA_OUT}\n";
-	print $logfh "\tCalibration: ".(defined $ENV{ORAC_DATA_CAL} ?
-					$ENV{ORAC_DATA_CAL} : "<undefined>")."\n";
-	print $logfh "\tORAC   Dir : $ENV{ORAC_DIR}\n";
-	print $logfh "\tORAC   Lib : $ENV{ORAC_PERL5LIB}\n";
-	my $rdir = ($ENV{ORAC_RECIPE_DIR} || '<undefined>');
-	my $pdir = ($ENV{ORAC_PRIMITIVE_DIR} || '<undefined>');
-	print $logfh "\tAdditional Recipe Dir   : $rdir\n";
-	print $logfh "\tAdditional Primitive Dir : $pdir\n";
+        # Write a header
+        print $logfh "$app logfile - created on " . scalar(gmtime) ." UT\n";
+        print $logfh "\nORAC Environment:\n\n";
+        print $logfh "\tPipeline Version: ". ORAC::Version->getVersion ."\n";
+        print $logfh "\tInstrument : $ENV{ORAC_INSTRUMENT}\n";
+        print $logfh "\tInput  Dir : ".(defined $ENV{ORAC_DATA_IN} ?
+                                        $ENV{ORAC_DATA_IN} : "<undefined>")."\n";
+        print $logfh "\tOutput Dir : $ENV{ORAC_DATA_OUT}\n";
+        print $logfh "\tCalibration: ".(defined $ENV{ORAC_DATA_CAL} ?
+                                        $ENV{ORAC_DATA_CAL} : "<undefined>")."\n";
+        print $logfh "\tORAC   Dir : $ENV{ORAC_DIR}\n";
+        print $logfh "\tORAC   Lib : $ENV{ORAC_PERL5LIB}\n";
+        my $rdir = ($ENV{ORAC_RECIPE_DIR} || '<undefined>');
+        my $pdir = ($ENV{ORAC_PRIMITIVE_DIR} || '<undefined>');
+        print $logfh "\tAdditional Recipe Dir   : $rdir\n";
+        print $logfh "\tAdditional Primitive Dir : $pdir\n";
 
 
-	print $logfh "\nSystem environment:\n\n";
-	print $logfh "\tHostname        : ". hostname . "\n";
-	print $logfh "\tUser name       : $ENV{USER}\n";
-	print $logfh "\tPerl version    : $]\n";
-	print $logfh "\tOperating System: $^O\n";
-	my $uname = "<unknown>";
-	{
-	  no warnings;
-	  my $tmp = `uname -a`;
-	  $uname = $tmp if $tmp;
-	};
-	print $logfh "\tSystem description: $uname\n";
+        print $logfh "\nSystem environment:\n\n";
+        print $logfh "\tHostname        : ". hostname . "\n";
+        print $logfh "\tUser name       : $ENV{USER}\n";
+        print $logfh "\tPerl version    : $]\n";
+        print $logfh "\tOperating System: $^O\n";
+        my $uname = "<unknown>";
+        {
+          no warnings;
+          my $tmp = `uname -a`;
+          $uname = $tmp if $tmp;
+        }
+        ;
+        print $logfh "\tSystem description: $uname\n";
 
-	print $logfh "\n$app Arguments: ".join(" ",@$ORAC_ARGS)."\n";
+        print $logfh "\n$app Arguments: ".join(" ",@$ORAC_ARGS)."\n";
 
-	print $logfh "\nSession:\n\n";
+        print $logfh "\nSession:\n\n";
       }
 
       # Store the filehandles
@@ -704,7 +702,7 @@ sub orac_print_configuration {
 
   # First generate a filehandle tied to the orac_print system
   tie *MSG, 'ORAC::Print', $msg_prt;
-  $msg_prt->outcol('clear'); # Cyan color for all messages
+  $msg_prt->outcol('clear');    # Cyan color for all messages
 
   # Tie a filehandle to the error messages from the alogrithm
   # engines and redirect to orac_err
@@ -792,7 +790,7 @@ sub orac_start_algorithm_engines {
   # Read the argument list
   my ($opt_noeng, $InstObj) = @_;
 
-  my $Mon = {}; # Hash reference
+  my $Mon = {};                 # Hash reference
   unless ($opt_noeng) {
 
     # start algorithm engines
@@ -860,9 +858,9 @@ sub orac_start_display {
   my $Display;
 
   if ($opt_nodisplay) {
-     orac_printp("No display will be used\n","blue");
-     # Enable monitoring output
-     $Display = orac_setup_display( nolocal => 1 );
+    orac_printp("No display will be used\n","blue");
+    # Enable monitoring output
+    $Display = orac_setup_display( nolocal => 1 );
   } else {
 
     # Local display and monitoring output
@@ -891,8 +889,8 @@ or as hash references.
 
 sub orac_calib_override {
 
-#  croak 'Usage: orac_calib_override( $opt_calib, $calclass )'
-#    unless scalar(@_) == 2 ;
+  #  croak 'Usage: orac_calib_override( $opt_calib, $calclass )'
+  #    unless scalar(@_) == 2 ;
 
   my ( $calclass, @calibs ) = @_;
 
@@ -941,9 +939,9 @@ sub orac_calib_override {
         $Cal->$noupdate(1) if $Cal->can($noupdate);
 
         orac_printp("Calibration $key set to $calibs{$key}\n",
-                   "blue");
+                    "blue");
 
-      } else {        # complain but continue
+      } else {                  # complain but continue
 
         orac_err (" Calibration ($key) unknown by this instrument. Ignored\n");
 
@@ -986,9 +984,9 @@ sub orac_parse_files {
   my @obs;
   for my $f (<$fh>) {
     chomp($f);
-    $f =~ s/\#.*//; # comments
-    $f =~ s/^\s+//; # leading whitespace
-    $f =~ s/\s+$//; # trailin whitespace
+    $f =~ s/\#.*//;             # comments
+    $f =~ s/^\s+//;             # leading whitespace
+    $f =~ s/\s+$//;             # trailin whitespace
     next unless $f =~ /\w/;
     push(@obs, $f);
   }
@@ -1272,18 +1270,18 @@ sub orac_main_data_loop {
                              RecSuffix => $recsuffix,
                             );
         }
-        catch ORAC::Error::FatalError with {
-          my $Error = shift;
-          $Error->throw;
-        }
-        catch ORAC::Error::UserAbort with {
-          my $Error = shift;
-          $Error->throw;
-        }
-        otherwise {
-          my $Error = shift;
-          throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
-        };
+          catch ORAC::Error::FatalError with {
+            my $Error = shift;
+            $Error->throw;
+          }
+            catch ORAC::Error::UserAbort with {
+              my $Error = shift;
+              $Error->throw;
+            }
+              otherwise {
+                my $Error = shift;
+                throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
+              };
 
         # Reset the obs number labels
         $orac_prt->errpre('Error: ');
@@ -1357,18 +1355,18 @@ sub orac_main_data_loop {
                              RecSuffix => $recsuffix,
                             );
         }
-        catch ORAC::Error::FatalError with {
-          my $Error = shift;
-          $Error->throw;
-        }
-        catch ORAC::Error::UserAbort with {
-          my $Error = shift;
-          $Error->throw;
-        }
-        otherwise {
-          my $Error = shift;
-          throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
-        };
+          catch ORAC::Error::FatalError with {
+            my $Error = shift;
+            $Error->throw;
+          }
+            catch ORAC::Error::UserAbort with {
+              my $Error = shift;
+              $Error->throw;
+            }
+              otherwise {
+                my $Error = shift;
+                throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
+              };
 
         # Reset the obs number labels
         $orac_prt->errpre('Error: ');
