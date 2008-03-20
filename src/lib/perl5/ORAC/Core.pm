@@ -32,10 +32,11 @@ ORAC::Core - core routines for data pipelining
                                $frameclass );
 
   orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume, $opt_skip, 
-                       $opt_debug, $loop, $frameclass, $groupclass, 
-           $instrument, $Mon, $Cal, \@obs, $Display, $orac_prt,
-           $ORAC_MESSAGE, \$STATUS_TEXT, $PRIMITIVE_LIST,
-           $Override_Recipe );
+                       $opt_debug, $recsuffix, $grptrans,
+                       $loop, $frameclass, $groupclass, 
+                       $instrument, $Mon, $Cal, \@obs, $Display, $orac_prt,
+                       $ORAC_MESSAGE, \$STATUS_TEXT, $PRIMITIVE_LIST,
+                       $Override_Recipe );
 
 =head1 DESCRIPTION
 
