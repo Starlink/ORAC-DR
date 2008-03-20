@@ -508,7 +508,7 @@ sub Populate {
 	    $FDialog->{'Can'}->invoke;
 	}
     });
-    $FDialog->transient($FDialog->toplevel);
+    $FDialog->transient($FDialog->Parent->toplevel);
 
     foreach (@TabOrder) {
 	$FDialog->{'TabSel'}->{$_} = 1;
