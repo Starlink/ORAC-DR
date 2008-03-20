@@ -76,7 +76,8 @@ my $offmethod = (exists $_FIND_POINTING_OFFSETS_{METHOD} &&
 
 # Check that we have a pointing observation
 #if ( uc($Frm->hdr('OBS_TYPE')) ne "POINTING" ) {
-#  orac_throw "Data are not from a POINTING observation\n";
+#  orac_warn "Data are not from a POINTING observation\n";
+#} else {
 #}
 # Other checks: should be a standard source
 
@@ -87,8 +88,10 @@ if ( $Frm->hdrval('OBSEND',-1) ) {
   # Pointing should be done at the end of an observation so always use
   # the Group file
   my $in = $Grp->file;
-  # Set WCS attributes for deriving AZEL offsets
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=mset name=system setting='skyrefis=origin,alignoffset=1,system=AZEL'");
+  # Set WCS attributes for deriving offsets. The system is left
+  # unchanged to allow the POINTING_FOCUS code to work things out
+  # itself. We take a copy of this file and do our own thing later.
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=mset setting='skyrefis=origin,alignoffset=1'");
 
   # Write .ok in output directory
   # Format obsnum
@@ -122,18 +125,27 @@ if ( $Frm->hdrval('OBSEND',-1) ) {
   # Placeholder - print warning message if an unsupported method is given
   if ( $offmethod ne "centroid") {
     # METHOD = FIT
-    orac_print "METHOD=$offmethod is not supported - falling back on CENTROID\n";
+    orac_warn "METHOD=$offmethod is not supported - falling back on CENTROID\n";
     $offmethod = "centroid";
   }
 
+  # Take a copy of the input file and set the attributes accordingly
+  my $incopy = new ORAC::TempFile;
+  my $incopyfile = $incopy->handle;
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","ndf=$in out=$incopyfile");
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$incopyfile mode=mset setting='skyrefis=origin,alignoffset=1,system=AZEL'");
+
   # METHOD = CENTROID
   # Find source position offsets using the current Group image
-  _CENTROID_IMAGE_ GROUP=1
+  _CENTROID_IMAGE_ IMAGE=$incopyfile
  
   ($daz, $del) = @{ $_CENTROID_IMAGE_{RESULTS} };
   # dAz and dEl are currently in degrees so convert to arcsec
   $daz = sprintf "%4.2f", 3600.0*$daz;
   $del = sprintf "%4.2f", 3600.0*$del;
+
+  # Delete the temporary file
+  undef $incopy;
 
   my $ORAC_STATUS;
   # Write info to log file if requested
