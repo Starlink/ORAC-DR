@@ -76,6 +76,12 @@ use ORAC::Basic;        # orac_exit_normally
 use ORAC::Event;        # Tk hash table
 use ORAC::General;
 use ORAC::Error qw/:try/;
+use ORAC::Print;     # Printing messages or errors
+use ORAC::Core;      # Core pipeline routines
+use ORAC::Constants; # ORAC__OK et al
+use ORAC::Xorac;
+use ORAC::Inst::Defn qw/ orac_determine_inst_classes /;
+use Tk;
 
 #
 # Routines for export
@@ -112,13 +118,6 @@ sub xorac_start_process {
   # Read the argument list
   my ( $options, $inst_select, $CURRENT_RECIPE, 
        $Override_Recipe, $obs, $fatal_dialog ) = @_;
-
-  use ORAC::Print;     # Printing messages or errors
-  use ORAC::Core;      # Core pipeline routines
-  use ORAC::Constants; # ORAC__OK et al
-  use ORAC::Xorac;
-  use ORAC::Inst::Defn qw/ orac_determine_inst_classes /;
-  use Tk;
 
   ####### C H E C K  E N V I R O N M E N T  V A R I A B L E S ################
 
@@ -335,7 +334,8 @@ sub xorac_start_process {
   try {
      orac_main_data_loop( ${$options}{"batch"}, ${$options}{"ut"}, 
                           ${$options}{"resume"}, ${$options}{"skip"},
-	   	          ${$options}{"debug"}, $loop, $frameclass, $groupclass,
+	   	          ${$options}{"debug"}, $options->{recsuffix},
+                          $options->{grptrans},$loop, $frameclass, $groupclass,
 		          $instrument, $Mon, $Cal, $obs, $Display, $orac_prt,
 		          $ORAC_MESSAGE, $CURRENT_RECIPE, $PRIMITIVE_LIST,
 			  $CURRENT_PRIMITIVE, $Use_Recipe );
