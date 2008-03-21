@@ -668,7 +668,7 @@ sub _read_recipe {
       $found = $recipe->name if defined $recipe;
       # print out a message if we found a recipe with a different
       # name to the one we were looking for
-      if (defined $found && $recname ne $found) {
+      if (defined $found && $name ne $found) {
         orac_print "Actual recipe loaded is $found due to recipe suffix modifier\n";
       }
     } catch ORAC::Error::FatalError with {
