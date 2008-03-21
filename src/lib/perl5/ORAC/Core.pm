@@ -184,7 +184,6 @@ sub orac_store_frm_in_correct_grp {
 
     $Grp->file($Grp->file_from_bits($ut, $grpnum, $extra));
     $GrpHash->{$grpname} = $Grp; # store group object
-    orac_print ("A new group ".$Grp->file." has been created\n","blue");
 
     # Store the Grp on the array as well
     push(@$GrpArr, $Grp) if $use_arr;
@@ -207,7 +206,15 @@ sub orac_store_frm_in_correct_grp {
 
   # push current Frame onto Group
   $Grp->push($Frm);
-  orac_print ("This observation is part of group ".$Grp->file."\n","blue");
+
+  # Report whether this was a new group or an existing group
+  # Do this after the Frame has been pushed on so that we can
+  # call the name() method
+  if ($Grp->num == 0) {
+    orac_print ("A new group ".$Grp->name." has been created\n","blue");
+  } else {
+    orac_print ("This observation is part of group ".$Grp->name."\n","blue");
+  }
 
   # Return the current Group
   return $GrpHash->{$grpname};

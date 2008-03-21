@@ -8,7 +8,7 @@ ORAC::Group - base class for dealing with observation groups in ORAC-DR
 
   use ORAC::Group;
 
-  $Grp = new ORAC::Group("group1");
+  $Grp = new ORAC::Group("groupid");
 
   $Grp->file("Group_file_name");
   $group_name = $Grp->name;
@@ -64,12 +64,12 @@ The following constructors are available:
 
 Create a new instance of a B<ORAC::Group> object.
 This method takes an optional argument containing the
-name of the new group. The object identifier is returned.
+identifier of the new group. The object identifier is returned.
 
    $Grp = new ORAC::Group;
-   $Grp = new ORAC::Group("group_name");
+   $Grp = new ORAC::Group("group_id");
 
-   $Grp = new ORAC::Group("group_name", $filename );
+   $Grp = new ORAC::Group("group_id", $filename );
 
 The base class constructor should be invoked by sub-class constructors.
 If this method is called with the last argument as a reference to
@@ -94,6 +94,7 @@ sub new {
                                                              FixedPart => undef,
                                                              Members => [],
                                                              Name => undef,
+                                                             GroupID => undef,
                                                             }, @_ );
   return $class->SUPER::new( @$args, $defaults) ;
 }
@@ -109,14 +110,14 @@ sub configure {
   my @args = @_;
 
   # Get the group name
-  my $name;
-  $name = shift(@args) if @args;
+  my $gid;
+  $gid = shift(@args) if @args;
 
   # use base class configure
   $self->SUPER::configure( @args ) if @args;
 
-  # Store the group name (this will not be available)
-  $self->name( $name ) if defined $name;
+  # Store the group ID (this will not be available)
+  $self->groupid( $gid ) if defined $gid;
 
   return 1;
 }
@@ -155,7 +156,7 @@ sub subgrp {
 
   # Create a new grp
   my @subgrp = (); # Storage array
-  my $parent_name = $self->name;
+  my $parent_name = $self->groupid;
   $parent_name = 'UNKNOWN' unless defined $parent_name; # -w protection
   my $subgrp = $self->new($parent_name . "_subgrp");
 
@@ -526,19 +527,56 @@ sub members {
 
 =item B<name>
 
-Set or retrieve the name of the group (ie the 
-group identifier)
+Retrieve or set the name of the group.
 
     $Grp->name("group_name");
     $group_name = $Grp->name;
+
+If no name is set but is retrieved, a name string will be
+set automatically based on the first frame in the group.
 
 =cut
 
 
 sub name {
   my $self = shift;
-  if (@_) { $self->{Name} = shift; }
+  if (@_) {
+    $self->{Name} = shift;
+  } elsif (!defined $self->{Name}) {
+    # make one up if we have enough information
+    # Need a frame
+    my @allmembers = $self->allmembers;
+    if (@allmembers) {
+      my $Frm = shift(@allmembers);
+      my $number = $Frm->number;
+      my $ut = $Frm->hdr("ORACUT");
+
+      # Append the extra information
+      my $extra = $Frm->file_from_bits_extra;
+
+      # join, but do not use $extra if it is false
+      $self->{Name} = join("#", $ut,$number, ($extra ? $extra : () ) );
+    }
+  }
   return $self->{Name};
+}
+
+=item B<groupid>
+
+Set or retrieve the group identifier. This will
+be the string derived from the OBSERVATION_GROUP
+header of the first input frame object.
+
+    $Grp->groupid("group_id");
+    $group_id = $Grp->groupid;
+
+=cut
+
+
+sub groupid {
+  my $self = shift;
+  if (@_) { $self->{GroupID} = shift; }
+  return $self->{GroupID};
 }
 
 =back
@@ -1280,9 +1318,22 @@ and Frossie Economou  E<lt>frossie@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 1998-2002 Particle Physics and Astronomy Research
+Copyright (C) 2007-2008 Science and Technology Facilities Council.
+Copyright (C) 1998-2004, 2006-2007 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
