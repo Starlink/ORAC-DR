@@ -38,6 +38,7 @@ use ORAC::Print;
 
 use NDF;
 use Starlink::HDSPACK qw/ retrieve_locs copobj /;
+use Starlink::AST;
 
 use vars qw/$VERSION/;
 
@@ -474,15 +475,93 @@ sub findgroup {
   my $self = shift;
   my $group;
 
-
+  # Use value in header if present 
   if (exists $self->hdr->{DRGROUP} && $self->hdr->{DRGROUP} ne 'UNKNOWN'
       && $self->hdr->{DRGROUP} =~ /\w/) {
     $group = $self->hdr->{DRGROUP};
   } else {
-    # construct group name
-#    $group = $self->hdr('MODE') .
-#      $self->hdr('OBJECT');
-    $group = "1";
+    # Construct group name - follow the ACSIS example
+    # Make some NDF calls to get into the JCMTSTATE structure.
+    # Note that in the cmp_getv* calls below we have to pass in the
+    # maximum expected size of the array. If files are written at no
+    # greater than 1 minute intervals then 12000 is the number to have
+    # here.
+    my ($trsys, $trra, $trdec);
+    my $status = &NDF::SAI__OK;
+    ndf_begin();
+    ndf_find( &NDF::DAT__ROOT(), $self->file, my $indf, $status );
+    ndf_xstat( $indf, 'JCMTSTATE', my $there, $status );
+
+    if( $there ) {
+      # First get the tracking system
+      ndf_xloc( $indf, 'JCMTSTATE', 'READ', my $xloc, $status );
+      dat_there( $xloc, 'TCS_TR_SYS', my $trsys_there, $status );
+      if( $trsys_there ) {
+        my( @trsys, $nel );
+        cmp_getvc( $xloc, 'TCS_TR_SYS', 12000, @trsys, $nel, $status );
+        if( $status == &NDF::SAI__OK ) {
+          $trsys = $trsys[0];
+        }
+      }
+      # Then get the BASE RA, Dec
+      dat_there( $xloc, 'TCS_TR_BC1', my $trbase_there, $status );
+      if( $trbase_there ) {
+        my( @trbc1, $nel );
+        cmp_getvd( $xloc, 'TCS_TR_BC1', 12000, @trbc1, $nel, $status );
+        if( $status == &NDF::SAI__OK ) {
+          $trra = $trbc1[0];
+        }
+      }
+      dat_there( $xloc, 'TCS_TR_BC2', $trbase_there, $status );
+      if( $trbase_there ) {
+        my( @trbc2, $nel );
+        cmp_getvd( $xloc, 'TCS_TR_BC2', 12000, @trbc2, $nel, $status );
+        if( $status == &NDF::SAI__OK ) {
+          $trdec = $trbc2[0];
+        }
+      }
+      dat_annul( $xloc, $status );
+    }
+
+    ndf_annul( $indf, $status );
+    ndf_end( $status );
+
+    if ( $trsys =~ /APP/ ) {
+      # Use object name if tracking in GAPPT
+      $group = $self->hdr( "OBJECT" );
+    } else {
+      # Tracking RA and Dec are in radians - convert to HHMMSS+-DMMSS
+      require Astro::Coords::Angle;
+      my $ra = new Astro::Coords::Angle( $trra, units => 'rad' );
+      $ra->range("2PI");
+      my $dec = new Astro::Coords::Angle( $trdec, units => 'rad' );
+      $dec->range("PI");
+
+      my @ra = $ra->components(0);
+      my @dec = $dec->components(0);
+      # Zero-pad the numbers
+      foreach my $i ( @ra[1..3] ) {
+	$i = sprintf "%02d", $i;
+      }
+      foreach my $i ( @dec[1..3] ) {
+	$i = sprintf "%02d", $i;
+      }
+
+      my $refra = join("",@ra[1..3]);
+      my $refdec = join("",@dec);
+
+      $group = $refra . $refdec;
+    }
+
+    $group .= $self->hdr( "SAM_MODE" ) .
+              $self->hdr( "OBS_TYPE" ) .
+              $self->hdr( "FILTER" ) ;
+
+    # Add DATE-OBS if we're not doing a science observation.
+    if( uc( $self->hdr( "OBS_TYPE" ) ) ne 'SCIENCE' ) {
+      $group .= $self->hdr( "DATE-OBS" );
+    }
+
   }
 
   # Update $group
@@ -497,7 +576,6 @@ sub findgroup {
 Forces the object to determine the number of sub-frames
 associated with the data by looking in the header (hdr()). 
 The result is stored in the object using nsubs().
-
 
 Unlike findgroup() this method will always search the header for
 the current state.
@@ -524,16 +602,16 @@ sub findrecipe {
   my $self = shift;
 
   my $recipe = undef;
-  my $mode = $self->hdr('MODE');
+  my $mode = $self->hdr('SAM_MODE');
 
-  # Check for DRRECIPE. Have to make sure it contains something (anything)
-  # other thant UNKNOWN.
-  if (exists $self->hdr->{DRRECIPE} && $self->hdr->{DRRECIPE} ne 'UNKNOWN'
-      && $self->hdr->{DRRECIPE} =~ /\w/) {
-    $recipe = $self->hdr->{DRRECIPE};
+  # Check for RECIPE. Have to make sure it contains something (anything)
+  # other than UNKNOWN.
+  if (exists $self->hdr->{RECIPE} && $self->hdr->{RECIPE} ne 'UNKNOWN'
+      && $self->hdr->{RECIPE} =~ /\w/) {
+    $recipe = $self->hdr->{RECIPE};
+  } else {
+    $recipe = 'QUICK_LOOK';
   }
-
-  $recipe = 'QUICK_LOOK';
 
   # Update the recipe
   $self->recipe($recipe);
