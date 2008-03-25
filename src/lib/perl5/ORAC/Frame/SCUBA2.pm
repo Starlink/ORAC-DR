@@ -419,6 +419,38 @@ sub pattern_from_bits {
 }
 
 
+=item B<number>
+
+Method to return the number of the observation. The number is
+determined by looking for a number after the UT date in the
+filename. This method is subclassed for SCUBA-2 to deal with
+SCUBA-2-specific filenames.
+
+The return value is -1 if no number can be determined.
+
+=cut
+
+sub number {
+  my $self = shift;
+  my $number;
+
+  my $raw = $self->raw;
+
+  if( defined( $raw ) ) {
+    if( ( $raw =~ /(\d+)_(\d{4})(\.\w+)?$/ ) ||
+        ( $raw =~ /(\d+)\.ok$/ ) ) {
+      # Drop leading zeroes.
+      $number = $1 * 1;
+    } else {
+      $number = -1;
+    }
+  } else {
+    # No match so set to -1.
+    $number = -1;
+  }
+  return $number;
+}
+
 =item B<flag_from_bits>
 
 Determine the flag filename given the variable component
@@ -480,88 +512,73 @@ sub findgroup {
       && $self->hdr->{DRGROUP} =~ /\w/) {
     $group = $self->hdr->{DRGROUP};
   } else {
-    # Construct group name - follow the ACSIS example
-    # Make some NDF calls to get into the JCMTSTATE structure.
-    # Note that in the cmp_getv* calls below we have to pass in the
-    # maximum expected size of the array. If files are written at no
-    # greater than 1 minute intervals then 12000 is the number to have
-    # here.
-    my ($trsys, $trra, $trdec);
+    # Construct group name - use same approach as in jcmtstate2cat
     my $status = &NDF::SAI__OK;
-    ndf_begin();
-    ndf_find( &NDF::DAT__ROOT(), $self->file, my $indf, $status );
-    ndf_xstat( $indf, 'JCMTSTATE', my $there, $status );
+    err_begin($status);
+    # Open file with HDS
+    hds_open( $self->file, "READ", my $loc, $status);
+    dat_find( $loc, "MORE", my $mloc, $status);
+    dat_find( $mloc, "JCMTSTATE", my $jloc, $status);
+    dat_annul( $mloc, $status);
 
-    if( $there ) {
-      # First get the tracking system
-      ndf_xloc( $indf, 'JCMTSTATE', 'READ', my $xloc, $status );
-      dat_there( $xloc, 'TCS_TR_SYS', my $trsys_there, $status );
-      if( $trsys_there ) {
-        my( @trsys, $nel );
-        cmp_getvc( $xloc, 'TCS_TR_SYS', 12000, @trsys, $nel, $status );
-        if( $status == &NDF::SAI__OK ) {
-          $trsys = $trsys[0];
-        }
+    my %state;
+    # Get Tracking system, and RA/Dec of BASE posn
+    for my $item (qw/ TCS_TR_SYS TCS_TR_BC1 TCS_TR_BC2 /) {
+      dat_there( $jloc, $item, my $isthere, $status );
+      if ($isthere) {
+	dat_find($jloc, $item, my $sloc, $status );
+	# Retrieve first value only - use an array slice
+	my @subscript = ( 1 ); # Fortran
+	dat_cell( $sloc, scalar(@subscript), @subscript, my $cloc, $status );
+	dat_get0c( $cloc, my $value, $status );
+	# Store in state hash
+	$state{$item} = $value;
+	dat_annul( $cloc, $status );
+	dat_annul( $sloc, $status );
       }
-      # Then get the BASE RA, Dec
-      dat_there( $xloc, 'TCS_TR_BC1', my $trbase_there, $status );
-      if( $trbase_there ) {
-        my( @trbc1, $nel );
-        cmp_getvd( $xloc, 'TCS_TR_BC1', 12000, @trbc1, $nel, $status );
-        if( $status == &NDF::SAI__OK ) {
-          $trra = $trbc1[0];
-        }
-      }
-      dat_there( $xloc, 'TCS_TR_BC2', $trbase_there, $status );
-      if( $trbase_there ) {
-        my( @trbc2, $nel );
-        cmp_getvd( $xloc, 'TCS_TR_BC2', 12000, @trbc2, $nel, $status );
-        if( $status == &NDF::SAI__OK ) {
-          $trdec = $trbc2[0];
-        }
-      }
-      dat_annul( $xloc, $status );
     }
-
-    ndf_annul( $indf, $status );
-    ndf_end( $status );
-
-    if ( $trsys =~ /APP/ ) {
-      # Use object name if tracking in GAPPT
-      $group = $self->hdr( "OBJECT" );
+    # Tidy up
+    dat_annul( $jloc, $status);
+    dat_annul( $loc, $status);
+    if ($status != &NDF::SAI__OK) {
+      my $errstr = err_flush_to_string($status);
+      orac_throw " Error reading JCMT state structure from input data: $errstr\n";
     } else {
-      # Tracking RA and Dec are in radians - convert to HHMMSS+-DMMSS
-      require Astro::Coords::Angle;
-      my $ra = new Astro::Coords::Angle( $trra, units => 'rad' );
-      $ra->range("2PI");
-      my $dec = new Astro::Coords::Angle( $trdec, units => 'rad' );
-      $dec->range("PI");
 
-      my @ra = $ra->components(0);
-      my @dec = $dec->components(0);
-      # Zero-pad the numbers
-      foreach my $i ( @ra[1..3] ) {
-	$i = sprintf "%02d", $i;
+      if ( $state{TCS_TR_SYS} =~ /APP/ ) {
+	# Use object name if tracking in GAPPT
+	$group = $self->hdr( "OBJECT" );
+      } else {
+	# Tracking RA and Dec are in radians - convert to HHMMSS+-DMMSS
+	require Astro::Coords::Angle;
+	my $ra = new Astro::Coords::Angle( $state{TCS_TR_BC1}, units => 'rad' );
+	$ra->range("2PI");
+	my $dec = new Astro::Coords::Angle( $state{TCS_TR_BC2}, units => 'rad' );
+	$dec->range("PI");
+
+	# Retrieve RA/Dec HH/DD, MM and SS as arrays, SS to nearest integer
+	my @ra = $ra->components(0);
+	my @dec = $dec->components(0);
+	# Zero-pad the numbers
+	foreach my $i ( @ra[1..3] ) {
+	  $i = sprintf "%02d", $i;
+	}
+	foreach my $i ( @dec[1..3] ) {
+	  $i = sprintf "%02d", $i;
+	}
+	# Construct RA/Dec string
+	$group = join("",@ra[1..3],@dec);
       }
-      foreach my $i ( @dec[1..3] ) {
-	$i = sprintf "%02d", $i;
-      }
 
-      my $refra = join("",@ra[1..3]);
-      my $refdec = join("",@dec);
-
-      $group = $refra . $refdec;
+      $group .= $self->hdr( "SAM_MODE" ) .
+	$self->hdr( "OBS_TYPE" ) .
+	$self->hdr( "FILTER" ) ;
     }
-
-    $group .= $self->hdr( "SAM_MODE" ) .
-              $self->hdr( "OBS_TYPE" ) .
-              $self->hdr( "FILTER" ) ;
-
-    # Add DATE-OBS if we're not doing a science observation.
-    if( uc( $self->hdr( "OBS_TYPE" ) ) ne 'SCIENCE' ) {
-      $group .= $self->hdr( "DATE-OBS" );
-    }
-
+    err_end($status);
+  }
+  # Add DATE-OBS if we're not doing a science observation.
+  if( uc( $self->hdr( "OBS_TYPE" ) ) ne 'SCIENCE' ) {
+    $group .= $self->hdrval( "DATE-OBS" );
   }
 
   # Update $group
