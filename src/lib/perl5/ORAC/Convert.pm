@@ -325,8 +325,8 @@ sub convert {
 
       # Try to do this using the Cirdr Perl modules. If either of them
       # fail, we'll fall back to use the convert_mon-based routines.
-      eval { require Cirdr::Opt };
-      if( $@ ) {
+      my $isok = eval { require Cirdr::Opt; 1; };
+      if( ! $isok ) {
 
         orac_warn "Error in loading Cirdr::Opt: $@\n";
 
@@ -340,8 +340,8 @@ sub convert {
         Cirdr::Opt->import( qw/ cir_wfcam_convert / );
 
         # Now try to get Cirdr::Primitives.
-        eval { require Cirdr::Primitives };
-        if( $@ ) {
+        $isok = eval { require Cirdr::Primitives };
+        if( ! $isok ) {
 
           orac_warn "Error in loading Cirdr::Primitives: $@\n";
 
