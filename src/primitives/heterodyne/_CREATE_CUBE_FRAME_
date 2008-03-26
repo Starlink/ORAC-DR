@@ -146,77 +146,81 @@ $out =~ s/_\d{4}_/_/;
 
 my $params = '';
 
-# Check to see if we've already run MAKECUBE once for this group. If
-# we have, don't bother the first MAKECUBE runthrough, just use the
-# previously-determined parameters.
-if( defined( $Grp->uhdr( "MAKECUBE_PARAMETERS" ) ) ) {
+# Determine the MAKECUBE parameters based on the
+# ORAC_OBSERVATION_TYPE header.
+my $type = $Frm->uhdr( "ORAC_OBSERVATION_TYPE" );
 
-  $params = $Grp->uhdr( "MAKECUBE_PARAMETERS" );
+_GET_MAKECUBE_PARAMS_ TYPE=$type
+my $mc_params = $_GET_MAKECUBE_PARAMS_{PARAMS};
+my $mc_hash = $_GET_MAKECUBE_PARAMS_{HASH};
 
-  if( defined( $Grp->uhdr( "REFLAT" ) ) && defined( $Grp->uhdr( "REFLON" ) ) ) {
-    $params .= " reflat='" . $Grp->uhdr( "REFLAT" ) . "'";
-    $params .= " reflon='" . $Grp->uhdr( "REFLON" ) . "'";
+my ( $pixsize, $crota );
+my $autogrid = $mc_hash->{autogrid};
+my $system = $mc_hash->{system};
+
+if( lc( $type ) ne "raster" ) {
+
+  my $inlist2 = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
+  my $inlist2_fh = $inlist2->handle;
+  foreach my $i ( 1 .. $Frm->nfiles ) {
+    print $inlist2_fh $Frm->file( $i ) . "\n";
+  }
+  $inlist2->handle->close;
+
+  orac_print "Determining parameters for output cube...";
+  $Mon{'smurf_mon'}->obeyw( "makecube", "$mc_params in='^" . $inlist2->file . "' out=! spread=$spread params=$sp_params" );
+  orac_print "done.\n";
+
+  # Check to see if we have a sparse cube.
+  $Frm->uhdr( "SPARSE", 0 );
+  my ( $ORAC_STATUS, $sparse ) = $Mon{'smurf_mon'}->get( "makecube", "sparse" );
+  if( uc( $sparse ) eq 'TRUE' ) {
+    orac_warn "Resulting cube will be sparse.\n";
+    $Frm->uhdr( "SPARSE", 1 );
+  } else {
+
+    # Get the returned pixsize and crota.
+    ( $ORAC_STATUS, $pixsize ) = $Mon{'smurf_mon'}->get( "makecube", "pixsize" );
+    ( $ORAC_STATUS, $crota ) = $Mon{'smurf_mon'}->get( "makecube", "crota" );
   }
 
 } else {
+  $pixsize = $mc_hash->{pixsize};
+  $crota = $mc_hash->{crota};
+}
 
-  # Determine the MAKECUBE parameters based on the
-  # ORAC_OBSERVATION_TYPE header.
-  my $type = $Frm->uhdr( "ORAC_OBSERVATION_TYPE" );
-
-  _GET_MAKECUBE_PARAMS_ TYPE=$type
-  my $mc_params = $_GET_MAKECUBE_PARAMS_{PARAMS};
-  my $mc_hash = $_GET_MAKECUBE_PARAMS_{HASH};
-
-  my ( $pixsize, $crota );
-  my $autogrid = $mc_hash->{autogrid};
-  my $system = $mc_hash->{system};
-
-  if( lc( $type ) ne "raster" ) {
-
-    my $inlist2 = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
-    my $inlist2_fh = $inlist2->handle;
-    foreach my $i ( 1 .. $Frm->nfiles ) {
-      print $inlist2_fh $Frm->file( $i ) . "\n";
-    }
-    $inlist2->handle->close;
-
-    orac_print "Determining parameters for output cube...";
-    $Mon{'smurf_mon'}->obeyw( "makecube", "$mc_params in='^" . $inlist2->file . "' out=! spread=$spread params=$sp_params" );
-    orac_print "done.\n";
-
-    # Get the returned pixsize and crota.
-    ( my $ORAC_STATUS, $pixsize ) = $Mon{'smurf_mon'}->get( "makecube", "pixsize" );
-    ( $ORAC_STATUS, $crota ) = $Mon{'smurf_mon'}->get( "makecube", "crota" );
-
-  } else {
-    $pixsize = $mc_hash->{pixsize};
-    $crota = $mc_hash->{crota};
-  }
-
+if( ! $Frm->uhdr( "SPARSE" ) ) {
   $params  = "pixsize=$pixsize crota=$crota autogrid=$autogrid";
-  $params .= " system=$system spread=$spread params=$sp_params";
+} else {
+  $params = "autogrid=yes";
+}
+$params .= " system=$system spread=$spread params=$sp_params";
 
-  # Get the tiling dimensions, but only if we're not doing a pointing
-  # or focus.
-  if( lc( $type ) ne 'pointing' && lc( $type ) ne 'focus' ) {
-    _GET_TILE_DIMENSIONS_ TILEBORDER=$tileborder
-    my $tiledims = $_GET_TILE_DIMENSIONS_{TILEDIMS};
-    $params .= " tiledims=$tiledims tileborder=$tileborder trimtiles=yes";
-  }
+if( defined( $mc_hash->{detectors} ) ) {
+  $params .= " detectors=" . $mc_hash->{detectors};
+}
 
-  if ($Frm->uhdr("ISHYBRID")) {
-    # As a quick hack until a proper fix is made. Still undecided
-    # whether to merge in makecube after baseline normalising or to
-    # merge after the cubes are created.  For now merge in makecube so
-    # that something happens.  Hybrid mode should use a different
-    # badmask.
-    $params .= " badmask=AND specunion=YES";
-  }
+# Get the tiling dimensions, but only if we're not doing a pointing
+# or focus.
+if( lc( $type ) ne 'pointing' && lc( $type ) ne 'focus' ) {
+  _GET_TILE_DIMENSIONS_ TILEBORDER=$tileborder
+  my $tiledims = $_GET_TILE_DIMENSIONS_{TILEDIMS};
+  $params .= " tiledims=$tiledims tileborder=$tileborder trimtiles=yes";
+}
 
-  # Store the parameters for later use.
+if ($Frm->uhdr("ISHYBRID")) {
+  # As a quick hack until a proper fix is made. Still undecided
+  # whether to merge in makecube after baseline normalising or to
+  # merge after the cubes are created.  For now merge in makecube so
+  # that something happens.  Hybrid mode should use a different
+  # badmask.
+  $params .= " badmask=AND specunion=YES";
+}
+
+# Store the parameters for later use, but only if we don't have a
+# sparse cube.
+if( ! $Frm->uhdr( "SPARSE" ) ) {
   $Grp->uhdr( "MAKECUBE_PARAMETERS", $params );
-
 }
 
 # Tell user what we're doing.
