@@ -93,13 +93,17 @@ if( $Grp->lastmember( $Frm ) ) {
       $Mon{'smurf_mon'}->obeyw( "makecube", "$mc_params in='^" . $inlist->file . "' out=! spread=$spread params=$sp_params" );
       orac_print "done.\n";
 
-      # Get the returned pixsize and crota.
-      my ( $ORAC_STATUS, $pixsize ) = $Mon{'smurf_mon'}->get( "makecube", "pixsize" );
-      ( $ORAC_STATUS, my $crota ) = $Mon{'smurf_mon'}->get( "makecube", "crota" );
+      # Get the returned pixsize and crota, but only if this isn't a
+      # sparse cube.
+      my ( $ORAC_STATUS, $sparse ) = $Mon{'smurf_mon'}->get( "makecube", "sparse" );
+      if( uc( $sparse ) eq 'FALSE' ) {
+        ( $ORAC_STATUS, my $pixsize ) = $Mon{'smurf_mon'}->get( "makecube", "pixsize" );
+        ( $ORAC_STATUS, my $crota ) = $Mon{'smurf_mon'}->get( "makecube", "crota" );
 
-      # Stick these into the hash.
-      $pixsize{$Frm->file(1)} = $pixsize;
-      $crota{$Frm->file(1)} = $crota;
+        # Stick these into the hash.
+        $pixsize{$Frm->file(1)} = $pixsize;
+        $crota{$Frm->file(1)} = $crota;
+      }
     } else {
       # Raster parameters come directly from the _GET_MAKECUBE_PARAMS_
       # primitive results.
@@ -109,31 +113,56 @@ if( $Grp->lastmember( $Frm ) ) {
     $system{$Frm->file(1)} = $mc_hash->{system};
   }
 
-  # We have a hash with a bunch of pixel sizes in it. Find the smallest.
-  my $pixsize = 100;
-  foreach my $value ( values %pixsize ) {
-    $pixsize = ( $value > $pixsize ) ? $pixsize : $value;
-  }
-
-  # We have a hash with a bunch of rotation angles in it. If they're
-  # all the same, use that. Otherwise set the rotation angle to zero.
-  my %seen;
-  my @uniq = grep { ! $seen{$_} ++ } values %crota;
-  my $crota = ( $#uniq == 0 ? $uniq[0] : 0 );
+  # Define a variable that'll hold parameters to MAKECUBE.
+  my $params = '';
 
   # We have a hash with a bunch of systems in it. If they're all the
   # same, use that. Otherwise set the system to 'ICRS'.
-  %seen = ();
-  @uniq = grep { ! $seen{$_} ++ } values %system;
+  my %seen = ();
+  my @uniq = grep { ! $seen{$_} ++ } values %system;
   my $system = ( $#uniq == 0 ? $uniq[0] : 'ICRS' );
 
-  # Find out how big our tiles are going to be.
-  _GET_TILE_DIMENSIONS_ TILEBORDER=$tileborder
-  my $tiledims = $_GET_TILE_DIMENSIONS_{TILEDIMS};
+  # Check to see if we have any pixel sizes back from the previous
+  # MAKECUBE runs. If we don't have any, then all of the resulting
+  # cubes will be sparse, so set autogrid=yes and ignore
+  # tiling. Otherwise, we want to find the smallest pixel size and go
+  # with that.
+  if ( scalar values %pixsize == 0 ) {
 
-  # Set up MAKECUBE parameters.
-  my $params = "pixsize=$pixsize crota=$crota spread=$spread params=$sp_params";
-  $params   .= " tiledims=$tiledims system=$system autogrid=no tileborder=$tileborder trimtiles=yes";
+    orac_warn "Resulting cube will be sparse.\n";
+    $Grp->uhdr( "SPARSE", 1 );
+    $params = "autogrid=yes spread=$spread params=$sp_params system=$system";
+
+  } else {
+
+    $Grp->uhdr( "SPARSE", 0 );
+
+    my $pixsize = 100;
+    foreach my $value ( values %pixsize ) {
+      $pixsize = ( $value > $pixsize ) ? $pixsize : $value;
+    }
+
+    # Check the pixel size. If it's smaller than a quarter of the
+    # beamsize, set it to a quarter of the beamsize.
+    my $lofreqs = $Frm->hdr( "LOFREQS" );
+    my $min_pixsize = int( $lofreqs * 0.011467099683 + 0.5 );
+    $pixsize = ( $pixsize < $min_pixsize ) ? $min_pixsize : $pixsize;
+
+    # We have a hash with a bunch of rotation angles in it. If they're
+    # all the same, use that. Otherwise set the rotation angle to zero.
+    %seen = ();
+    @uniq = grep { ! $seen{$_} ++ } values %crota;
+    my $crota = ( $#uniq == 0 ? $uniq[0] : 0 );
+
+    # Find out how big our tiles are going to be.
+    _GET_TILE_DIMENSIONS_ TILEBORDER=$tileborder
+    my $tiledims = $_GET_TILE_DIMENSIONS_{TILEDIMS};
+
+    # Set up MAKECUBE parameters.
+    $params  = "pixsize=$pixsize crota=$crota spread=$spread params=$sp_params";
+    $params .= " tiledims=$tiledims system=$system autogrid=yes tileborder=$tileborder trimtiles=yes";
+
+  }
 
   # Quick hack for hybrid mode observations.
   if( $Frm->uhdr( "ISHYBRID" ) ) {
