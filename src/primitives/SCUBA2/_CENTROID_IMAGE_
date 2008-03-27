@@ -14,6 +14,8 @@ Assumes that the peak value in the map is the value of the pixel at
 the centroid position. This is not necessarily true though if the
 centroid position contains a spike.
 
+Returns C<undef> if the centroid could not be determined.
+
 =head1 TASKS
 
 Uses the KAPPA CENTROID task.
@@ -68,7 +70,8 @@ the following keys:
 =item RESULTS
 
 An array containing the X, Y position of the source in the current
-coordinate frame.
+coordinate frame. These are set to C<undef> if the centroid could not
+be determined.
 
 =back
 
@@ -91,6 +94,7 @@ Reserved.
 
 =cut
 
+use NDF;
 
 # Set input file - leave undefined if not specified
 my $in = ( exists $_CENTROID_IMAGE_{IMAGE} ) && 
@@ -144,7 +148,7 @@ unless ( $cosys_out eq "" ) {
 my $offset = ($_CENTROID_IMAGE_{OFFSET} || 0);
 # Set the default initial position - this only changes if we are not
 # working in an offset coordinate system
-my $initpos = "0,0";
+my $initpos = "60,0";
 # Check if we need to set it first
 $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=skyrefis");
 ($ORAC_STATUS, my $skyrefis) = $Mon{ndfpack_mon}->get("wcsattrib","value");
@@ -181,22 +185,28 @@ if (starversion_lt('kappa','V0.14-0')) {
 
 $args .= " mode=i cerror=true search=$box";
 
-$Mon{kappa_mon}->obeyw("centroid","ndf=$in $args");
+$ORAC_STATUS = $Mon{kappa_mon}->obeyw("centroid","ndf=$in $args");
+if ( $ORAC_STATUS == ORAC__OK ) {
+  # Read the result
+  my @centre;
 
-# Read the result
-my @centre;
+  # KAPPA 14 returns the centre pos as a string, earlier versions
+  # return an array -- just use XCEN and YCEN with two ADAM calls
+  ($ORAC_STATUS, $centre[0]) = $Mon{kappa_mon}->get("centroid","xcen");
+  ($ORAC_STATUS, $centre[1]) = $Mon{kappa_mon}->get("centroid","ycen");
 
-# KAPPA 14 returns the centre pos as a string, earlier versions
-# return an array -- just use XCEN and YCEN with two ADAM calls
-($ORAC_STATUS, $centre[0]) = $Mon{kappa_mon}->get("centroid","xcen");
-($ORAC_STATUS, $centre[1]) = $Mon{kappa_mon}->get("centroid","ycen");
+  # Store the results
+  $_CENTROID_IMAGE_{RESULTS} = [@centre];
 
-# Store the results
-$_CENTROID_IMAGE_{RESULTS} = [@centre];
-
-# Reset the coordinate system if necessary
-unless ( $cosys_out eq "" ) {
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=set name=system newval=$cosys_in");
+  # Reset the coordinate system if necessary
+  unless ( $cosys_out eq "" ) {
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=set name=system newval=$cosys_in");
+  }
+} else {
+  orac_warn "Unable to determine position of centroid\n";
+  # Store the results
+  $_CENTROID_IMAGE_{RESULTS} = [undef,undef];
+  $ORAC_STATUS = ORAC__OK;
 }
 # Reset the SkyRefIs parameter if necessary
 if ( $offset ) {
