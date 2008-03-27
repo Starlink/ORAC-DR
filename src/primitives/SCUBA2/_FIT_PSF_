@@ -134,31 +134,33 @@ my $verbose = (exists $_FIT_PSF_{VERBOSE} &&
 	       defined $_FIT_PSF_{VERBOSE}) ?
   $_FIT_PSF_{VERBOSE} : 1;
 
-# We now run PSF if possible else simply use the peak position from
-# centroiding
+# We now run PSF if possible
 my ($amp, $axisr, $fwhm, $gamma, $orient, $total);
 my $ORAC_STATUS;
+my $psfstatus = ORAC__OK;
 if (starversion_lt('kappa', 'V0.15-0')) {
   # Return if Kappa is too old
+  $psfstatus = undef;
   orac_throw "Your Kappa version is too old to use PSF properly. Unable to fit PSF\n";
 } else {
   my $args = "incat=! device=! gauss=$gaussian cofile=$_FIT_PSF_{COFILE}";
 
   # Run PSF
-  $Mon{kappa_mon}->obeyw("psf","norm=no range=4 isize=15 in=$in $args");
+  $psfstatus = $Mon{kappa_mon}->obeyw("psf","norm=no range=4 isize=15 in=$in $args");
 
-  # Retrieve the answer
-  ( $ORAC_STATUS, $amp)    = $Mon{kappa_mon}->get("psf","amp1");
-  ( $ORAC_STATUS, $axisr)  = $Mon{kappa_mon}->get("psf","axisr");
-  ( $ORAC_STATUS, $fwhm)   = $Mon{kappa_mon}->get("psf","fwhm");
-  ( $ORAC_STATUS, $gamma)  = $Mon{kappa_mon}->get("psf","gamma");
-  ( $ORAC_STATUS, $orient) = $Mon{kappa_mon}->get("psf","orient");
-  ( $ORAC_STATUS, $total)  = $Mon{kappa_mon}->get("psf","total");
-
+  if ( $psfstatus == ORAC__OK ) {
+    # Retrieve the answers
+    ( $ORAC_STATUS, $amp)    = $Mon{kappa_mon}->get("psf","amp1");
+    ( $ORAC_STATUS, $axisr)  = $Mon{kappa_mon}->get("psf","axisr");
+    ( $ORAC_STATUS, $fwhm)   = $Mon{kappa_mon}->get("psf","fwhm");
+    ( $ORAC_STATUS, $gamma)  = $Mon{kappa_mon}->get("psf","gamma");
+    ( $ORAC_STATUS, $orient) = $Mon{kappa_mon}->get("psf","orient");
+    ( $ORAC_STATUS, $total)  = $Mon{kappa_mon}->get("psf","total");
+  }
 }
 
 # Store the result in the hash if successful
-if ( $ORAC_STATUS == ORAC__OK ) {
+if ( $psfstatus == ORAC__OK ) {
   $_FIT_PSF_{AMPLITUDE} = $amp;
   $_FIT_PSF_{FWHM} = $fwhm;
   $_FIT_PSF_{AXISR} = $axisr;
@@ -168,12 +170,10 @@ if ( $ORAC_STATUS == ORAC__OK ) {
   orac_print "Successful PSF fit: FWHM = ".$fwhm.", AXISR = ".$axisr.
              ", GAMMA = ". $gamma .", ORIENT = ".$orient."\n" if ($verbose);
 } else {
-  $_FIT_PSF_{AMPLITUDE} = undef;
-  $_FIT_PSF_{FWHM} = undef;
-  $_FIT_PSF_{AXISR} = undef;
-  $_FIT_PSF_{GAMMA} = undef;
-  $_FIT_PSF_{ORIENT} = undef;
-  $_FIT_PSF_{TOTALFLUX} = undef;
+  foreach my $item (qw/ AMPLITUDE FWHM AXISR GAMMA ORIENT TOTALFLUX /) {
+    $_FIT_PSF_{$item} = undef;
+  }
+  orac_print "Unable to fit a PSF profile in the current image\n" if $verbose;
 }
  
 
