@@ -507,80 +507,96 @@ sub findgroup {
   my $self = shift;
   my $group;
 
+  # Hash to store relevant parameters
+  my %state;
+
   # Use value in header if present 
   if (exists $self->hdr->{DRGROUP} && $self->hdr->{DRGROUP} ne 'UNKNOWN'
       && $self->hdr->{DRGROUP} =~ /\w/) {
     $group = $self->hdr->{DRGROUP};
   } else {
-    # Construct group name - use same approach as in jcmtstate2cat
-    my $status = &NDF::SAI__OK;
-    err_begin($status);
-    # Open file with HDS
-    hds_open( $self->file, "READ", my $loc, $status);
-    dat_find( $loc, "MORE", my $mloc, $status);
-    dat_find( $mloc, "JCMTSTATE", my $jloc, $status);
-    dat_annul( $mloc, $status);
-
-    my %state;
-    # Get Tracking system, and RA/Dec of BASE posn
-    for my $item (qw/ TCS_TR_SYS TCS_TR_BC1 TCS_TR_BC2 /) {
-      dat_there( $jloc, $item, my $isthere, $status );
-      if ($isthere) {
-	dat_find($jloc, $item, my $sloc, $status );
-	# Retrieve first value only - use an array slice
-	my @subscript = ( 1 ); # Fortran
-	dat_cell( $sloc, scalar(@subscript), @subscript, my $cloc, $status );
-	dat_get0c( $cloc, my $value, $status );
-	# Store in state hash
-	$state{$item} = $value;
-	dat_annul( $cloc, $status );
-	dat_annul( $sloc, $status );
-      }
+    # Create our own DRGROUP string
+    # Retrieve WCS
+    my $wcs = $self->read_wcs( $self->file );
+    my $domain = $wcs->Get("Domain");
+    my $skyref = undef;
+    if ( $domain =~ /SKY/ ) {
+      $skyref = $wcs->Get("SkyRef");
     }
-    # Tidy up
-    dat_annul( $jloc, $status);
-    dat_annul( $loc, $status);
-    if ($status != &NDF::SAI__OK) {
-      my $errstr = err_flush_to_string($status);
-      orac_throw " Error reading JCMT state structure from input data: $errstr\n";
+    if ( defined $skyref ) {
+      $state{TCS_TR_SYS} = $wcs->Get("System");
+      ($state{TCS_TR_BC1}, $state{TCS_TR_BC2}) = split( /,/, $skyref, 2);
+      # Unformat SkyRef into radians - assumes RA is axis 1 and Dec is axis 2
+      $state{TCS_TR_BC1} = $wcs->Unformat(1, $state{TCS_TR_BC1});
+      $state{TCS_TR_BC2} = $wcs->Unformat(2, $state{TCS_TR_BC2});
     } else {
+      # Read JCMTSTATE
+      my $status = &NDF::SAI__OK;
+      err_begin($status);
+      # Open file with HDS
+      hds_open( $self->file, "READ", my $loc, $status);
+      dat_find( $loc, "MORE", my $mloc, $status);
+      dat_find( $mloc, "JCMTSTATE", my $jloc, $status);
+      dat_annul( $mloc, $status);
 
-      if ( $state{TCS_TR_SYS} =~ /APP/ ) {
-	# Use object name if tracking in GAPPT
-	$group = $self->hdr( "OBJECT" );
-      } else {
-	# Tracking RA and Dec are in radians - convert to HHMMSS+-DMMSS
-	require Astro::Coords::Angle;
-	my $ra = new Astro::Coords::Angle( $state{TCS_TR_BC1}, units => 'rad' );
-	$ra->range("2PI");
-	my $dec = new Astro::Coords::Angle( $state{TCS_TR_BC2}, units => 'rad' );
-	$dec->range("PI");
-
-	# Retrieve RA/Dec HH/DD, MM and SS as arrays, SS to nearest integer
-	my @ra = $ra->components(0);
-	my @dec = $dec->components(0);
-	# Zero-pad the numbers
-	foreach my $i ( @ra[1..3] ) {
-	  $i = sprintf "%02d", $i;
+      # Get Tracking system, and RA/Dec of BASE posn
+      for my $item (qw/ TCS_TR_SYS TCS_TR_BC1 TCS_TR_BC2 /) {
+	dat_there( $jloc, $item, my $isthere, $status );
+	if ($isthere) {
+	  dat_find($jloc, $item, my $sloc, $status );
+	  # Retrieve first value only - use an array slice
+	  my @subscript = ( 1 ); # Fortran
+	  dat_cell( $sloc, scalar(@subscript), @subscript, my $cloc, $status );
+	  dat_get0c( $cloc, my $value, $status );
+	  # Store in state hash
+	  $state{$item} = $value;
+	  dat_annul( $cloc, $status );
+	  dat_annul( $sloc, $status );
 	}
-	foreach my $i ( @dec[1..3] ) {
-	  $i = sprintf "%02d", $i;
-	}
-	# Construct RA/Dec string
-	$group = join("",@ra[1..3],@dec);
       }
-
-      $group .= $self->hdr( "SAM_MODE" ) .
-	$self->hdr( "OBS_TYPE" ) .
-	$self->hdr( "FILTER" ) ;
+      # Tidy up
+      dat_annul( $jloc, $status);
+      dat_annul( $loc, $status);
+      if ($status != &NDF::SAI__OK) {
+	my $errstr = err_flush_to_string($status);
+	orac_throw " Error reading JCMT state structure from input data: $errstr";
+      } 
+      err_end($status);
     }
-    err_end($status);
-  }
-  # Add DATE-OBS if we're not doing a science observation.
-  if( uc( $self->hdr( "OBS_TYPE" ) ) ne 'SCIENCE' ) {
-    $group .= $self->hdrval( "DATE-OBS" );
-  }
 
+    # Now construct DRGROUP string
+    if ( $state{TCS_TR_SYS} =~ /APP/ ) {
+      # Use object name if tracking in GAPPT
+      $group = $self->hdr( "OBJECT" );
+    } else {
+      # Tracking RA and Dec are in radians - convert to HHMMSS+-DMMSS
+      require Astro::Coords::Angle;
+      my $ra = new Astro::Coords::Angle( $state{TCS_TR_BC1}, units => 'rad' );
+      $ra->range("2PI");
+      my $dec = new Astro::Coords::Angle( $state{TCS_TR_BC2}, units => 'rad' );
+      $dec->range("PI");
+
+      # Retrieve RA/Dec HH/DD, MM and SS as arrays, SS to nearest integer
+      my @ra = $ra->components(0);
+      my @dec = $dec->components(0);
+      # Zero-pad the numbers
+      foreach my $i ( @ra[1..3] ) {
+	$i = sprintf "%02d", $i;
+      }
+      foreach my $i ( @dec[1..3] ) {
+	$i = sprintf "%02d", $i;
+      }
+      # Construct RA/Dec string
+      $group = join("",@ra[1..3],@dec);
+    }
+    $group .= $self->hdr( "SAM_MODE" ) .
+      $self->hdr( "OBS_TYPE" ) .
+      $self->hdr( "FILTER" ) ;
+    # Add OBSNUM if we're not doing a science observation
+    if( uc( $self->hdr( "OBS_TYPE" ) ) ne 'SCIENCE' ) {
+      $group .= sprintf "%05d", $self->hdrval( "OBSNUM" );
+    }
+  }
   # Update $group
   $self->group($group);
 
