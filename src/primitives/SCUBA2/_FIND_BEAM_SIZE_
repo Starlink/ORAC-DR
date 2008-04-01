@@ -226,13 +226,13 @@ if ( $fitcosys ne $incosys ) {
   $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in name=system mode=set newval=$fitcosys");
 }
 
-orac_print "Deriving the beam in the $fitcosys coordinate system using $method\n";
-
 # Find the centroid of the source
 _CENTROID_IMAGE_ IMAGE=$in OFFSET=$offset SYSTEM=$fitcosys
 my @xy = @{ $_CENTROID_IMAGE_{RESULTS} };
 # If a source could be located then proceed with fit
 if ( defined $xy[0] && defined $xy[1] ) {
+
+  orac_print "Deriving the beam in the $fitcosys coordinate system using $method\n";
 
   my (@amp, @majfwhm, @minfwhm, $axisr, @orient, %badbeam);
   # Now fit the source using PSF or BEAMFIT
@@ -281,34 +281,34 @@ if ( defined $xy[0] && defined $xy[1] ) {
     }
 
   } else {
-    # Set args
+    # Set up args to beamfit
     my $pos = '"'.$xy[0].", ".$xy[1].'"';
-    my $fitarea = 15; # Use a 15x15 pixel area - should this change?
+    # Use a 15x15 pixel area - should this be an input variable?
+    my $fitarea = 15;
 
     # Check we have a valid variance component
-    my $status = $Mon{kappa_mon}->obeyw("stats","ndf=$in comp=var");
-    my $var = "false";
-    # If status is non-zero then the call to stats failed: i.e. there is
-    # no variance component in the image. This should not cause the
-    # primitive to fail so trap it.
-    if ( $status ) {
-      orac_warn "Input file, $in, has no VARIANCE component:\nBEAMFIT will not use variance weighting\n" if $verbose;
+    $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
+    ($ORAC_STATUS, my $var) = $Mon{ndfpack_mon}->get("ndftrace","variance");
+    if ( lc($var) eq "false" ) {
+      orac_warn "No VARIANCE in input file: will not use variance weighting\n" 
+	if $verbose;
     } else {
+      # OK we have variance but check we have enough good values to
+      # use variance weighting
       ($ORAC_STATUS, my $numgood) = $Mon{kappa_mon}->get("stats","numgood");
-      $var = ( $numgood > 0 ) ? "true" : "false";
+      $var = ( $numgood > $fitarea*$fitarea ) ? "true" : "false";
     }
 
+    # Define args to beamfit
     my $args = "mode=interface pos=".$pos." variance=$var fitarea=$fitarea";
-
     # Call beamfit
     $Mon{kappa_mon}->obeyw("beamfit","ndf=$in $args");
 
     # Retrieve parameters
-    my $ORAC_STATUS;
     ($ORAC_STATUS, @majfwhm) = $Mon{kappa_mon}->get("beamfit","majfwhm");
     ($ORAC_STATUS, @minfwhm) = $Mon{kappa_mon}->get("beamfit","minfwhm");
-    ($ORAC_STATUS, @orient) = $Mon{kappa_mon}->get("beamfit","orient");
-    ($ORAC_STATUS, @amp) = $Mon{kappa_mon}->get("beamfit","amp");
+    ($ORAC_STATUS, @orient)  = $Mon{kappa_mon}->get("beamfit","orient");
+    ($ORAC_STATUS, @amp)     = $Mon{kappa_mon}->get("beamfit","amp");
 
     # FWHM are returned in radians: convert to arcsec
     for my $i (0..1) {
@@ -317,11 +317,8 @@ if ( defined $xy[0] && defined $xy[1] ) {
     }
 
     # Now assess the fit. Check for highly elongated beam, for
-    # magnitude of uncertainty in major/minor axis FWHM and amplitude
-
-    # Warn user if the fit looks bad. Of course, this shouldn't happen
-    # since we have already selected sources which satisfy this
-    # criterion.
+    # magnitude of uncertainty in major/minor axis FWHM and amplitude.
+    # Warn user if any parts of the fit look bad.
     $axisr = $majfwhm[0] / $minfwhm[0];
     if ($axisr > 1.3333 || $axisr < 0.75) {
       orac_warn "PSF fit appears to be poor or beam highly elongated \n";
