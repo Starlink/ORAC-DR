@@ -23,6 +23,45 @@ single output file created.
 PIXSIZE is the size of the output pixels in arcsec. The default is
 equal to the pixel spacing (ie 6 arcsec).
 
+=item B<SYSTEM>
+
+Coordinate system for output image. May be any supported by
+C<AST>. Default is C<TRACKING>.
+
+=item B<SPREAD>
+
+Desired pixel-spreading scheme. May be either C<nearest> for 
+nearest-neighbour resampling or C<linear> for bi-linear resampling. 
+Default is C<nearest>.
+
+=item B<KEEP>
+
+Flag to denote whether to keep the intermeditate files produced by the
+iterative map-maker. Warning: setting this to true may result in
+significant disk space usage. Default is 0 (delete files).
+
+=item B<METHOD>
+
+Image reconstruction method. May be C<REBIN> to use a simple rebinning
+scheme or C<ITER> to use the iterative map-maker. If C<ITER> is
+specified then the following parameters must also be set to override
+the defaults (which may not do what you want).
+
+=item B<NUMITER>
+
+Number of iterations. Default is 1, which is clearly not a good
+choice.
+
+=item B<MODELORDER>
+
+Comma-separated list of model components. See the SMURF documentation
+for further details.
+
+=item B<EXPORTNDF>
+
+Flag to indicate whether intermediate files are written out in NDF
+format at the end. Default is 0 (do not write as NDF).
+
 =back
 
 =head1 KNOWN ISSUES
@@ -35,7 +74,7 @@ equal to the pixel spacing (ie 6 arcsec).
 
 =head1 FILE SUFFIX
 
-Creates a single output file with a '_map' suffix.
+Creates a single output file with a '_fmos' suffix.
 
 =head1 AUTHOR
 
@@ -43,7 +82,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2006 University of British Columbia and the Particle
+Copyright (C) 2008 University of British Columbia and the Particle
 Physcis and Astronomy Research Council. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -64,15 +103,42 @@ USA
 =cut
 
 
-my @out;
-
-
-# What checks should we carry out?
-
-# Should be an argument
+# Pixel size for output image
 my $pixsize = (exists $_MAKEMAP_FRAME_{PIXSIZE} && 
 	       defined $_MAKEMAP_FRAME_{PIXSIZE}) ?
-               $_MAKEMAP_FRAME_{PIXSIZE} : 6.28;
+               $_MAKEMAP_FRAME_{PIXSIZE} : $Cal->pixelscale;
+
+# Output coordinate system - default is TRACKING
+my $system = (exists $_MAKEMAP_FRAME_{SYSTEM} && 
+	       defined $_MAKEMAP_FRAME_{SYSTEM}) ?
+               $_MAKEMAP_FRAME_{SYSTEM} : "TRACKING";
+
+# Pixel-spreading scheme
+my $spread = (exists $_MAKEMAP_FRAME_{SPREAD} && 
+	      defined $_MAKEMAP_FRAME_{SPREAD}) ?
+              lc($_MAKEMAP_FRAME_{SPREAD}) : "nearest";
+
+# Reset to "nearest" if an unsupported scheme is given
+if ( ($spread ne "nearest") && ($spread ne "linear") ) {
+  orac_warn "Unsupported pixel-spreading scheme, $spread: using NEAREST\n";
+  $spread = "nearest";
+}
+
+# Method for reconstructing map
+my $method = (exists $_MAKEMAP_FRAME_{METHOD} && 
+	       defined $_MAKEMAP_FRAME_{METHOD}) ?
+               lc($_MAKEMAP_FRAME_{METHOD}) : "rebin";
+my $iterate = 0;
+# Minimum match on iterate method
+if ( $method =~ /iter/ ) {
+  $method = "iterate";
+  $iterate = 1;
+}
+
+# Verbosity - default to yes
+my $verbose = (exists $_MAKEMAP_FRAME_{VERBOSE} && 
+	       defined $_MAKEMAP_FRAME_{VERBOSE}) ?
+               lc($_MAKEMAP_FRAME_{VERBOSE}) : 1;
 
 # Retrieve list of files in current frame
 my @files = $Frm->files;
@@ -82,17 +148,75 @@ my $intmp = new ORAC::TempFile;
 print {$intmp->handle} join("\n",@files[0..$#files]);
 
 # Set output filename
-my ($in, $out) = $Frm->inout('_map', 0);
+my ($in, $out) = $Frm->inout('_fmos');
 
-# Argument list - no doubt this will get longer...
-my $args = "in=^".$intmp->file." out=".$out." pixsize=".$pixsize." method=rebin msg_filter=verbose accept";
+# Makemap argument list
+my $args = "in=^".$intmp->file." out=$out pixsize=$pixsize spread=$spread system=$system method=$method";
 
-# Call makemap
-orac_print "Calling makemap... (this may take a few seconds) \n";
+# Check for additional parameters for the iterative map-maker
+my ($exportndf, $keepdimm, $numiter, $modelorder, @modelorder, $config);
+if ( $iterate ) {
+  # Number of iterations - default to 1 to force user to make a
+  # decision
+  $numiter = (exists $_MAKEMAP_FRAME_{NUMITER} && 
+	      defined $_MAKEMAP_FRAME_{NUMITER}) ?
+	      $_MAKEMAP_FRAME_{NUMITER} : 1;
+
+  # Flag for whether to export work files to NDF
+  $exportndf = (exists $_MAKEMAP_FRAME_{EXPORTNDF} && 
+		defined $_MAKEMAP_FRAME_{EXPORTNDF}) ?
+		$_MAKEMAP_FRAME_{EXPORTNDF} : 0;
+
+  # Flag for whether to keep intermediate DIMM files
+  $keepdimm = (exists $_MAKEMAP_FRAME_{KEEP} && 
+	       defined $_MAKEMAP_FRAME_{KEEP}) ?
+	       $_MAKEMAP_FRAME_{KEEP} : 0;
+
+  # Flag for whether to export work files to NDF
+  $modelorder = (exists $_MAKEMAP_FRAME_{MODELORDER} && 
+		 defined $_MAKEMAP_FRAME_{MODELORDER}) ?
+		 lc($_MAKEMAP_FRAME_{MODELORDER}) : "com,noi";
+
+  # Split modelorder into components before recombining
+  @modelorder = split(/,/,$modelorder);
+  
+  # Concatenate list of model components into a single space-separated
+  # string
+  $modelorder = join(" ",@modelorder);
+
+  # Write parameters to config file
+  $config = new ORAC::TempFile;
+  print {$config->handle} "numiter=$numiter\n";
+  print {$config->handle} "exportndf=$exportndf\n";
+  print {$config->handle} "modelorder=$modelorder\n";
+  $config->handle->close;
+  $args .= " config=^".$config->file;
+}
+
+# Secret extra-verbose value ;-)
+if ( $verbose == 2 ) {
+  $args .= " msg_filter=verbose"
+}
+
+# Call makemap - really must have some sort of feedback to user
+orac_print "Calling makemap... using $method method (this may take... a while...)\n";
 $Mon{smurf_mon}->obeyw("makemap",$args);
+
+# Now, is there any analysis of the intermediate files that could be
+# useful?
+
+# Delete iterative map-maker files
+if ( $iterate ) {
+  orac_print "Removing model files from the iterative map-maker\n" 
+    if ($verbose != 0);
+  unlink <*.dimm>;
+}
 
 # Register the new file name
 $Frm->files( $out );
 
-orac_print "Image $out created\n";
+# Delete config file if present
+undef $config if ($config);
+
+orac_print "Thank you for waiting; image $out created\n";
 
