@@ -135,92 +135,98 @@ my $ORAC_STATUS;
 $Mon{kappa_mon}->obeyw("stats","ndf=$in");
 ($ORAC_STATUS, my $numgood) = $Mon{kappa_mon}->get("stats","numgood");
 
-# Define the minimum number of useful pixels as (2*$box)^2
-if ( $numgood > 4.*$box*$box ) {
+# Define the minimum number of useful pixels as (2*$box+1)^2
+my $minpix = 4.*($box+1)*($box+1);
+# Make sure it lies within the bounds of the image though!
+($ORAC_STATUS, my $numpix) = $Mon{kappa_mon}->get("stats","numpix");
+$minpix = $numpix if ( $minpix > $numpix );
 
-# Select the requested coordinate frame
-my $cosys_out = (exists $_CENTROID_IMAGE_{SYSTEM} &&
-		 defined $_CENTROID_IMAGE_{SYSTEM}) ? 
-                 lc($_CENTROID_IMAGE_{SYSTEM}) : ""; 
+# Proceed if we have enough good values
+if ( $numgood >= $minpix ) {
 
-my $cosys_in;
-unless ( $cosys_out eq "" ) {
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=system");
-  ($ORAC_STATUS, $cosys_in) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=set name=system newval=$cosys_out");
-}
+  # Select the requested coordinate frame
+  my $cosys_out = (exists $_CENTROID_IMAGE_{SYSTEM} &&
+		   defined $_CENTROID_IMAGE_{SYSTEM}) ? 
+		   lc($_CENTROID_IMAGE_{SYSTEM}) : ""; 
 
-# Are we insisting that the the centroid be returned in Offset
-# coordinates? Default is no: use the current system.
-my $offset = ($_CENTROID_IMAGE_{OFFSET} || 0);
-# Set the default initial position - this only changes if we are not
-# working in an offset coordinate system
-my $initpos = "0,0";
-# Check if we need to set it first
-$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=skyrefis");
-($ORAC_STATUS, my $skyrefis) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-# If we are not in an offset coord system...
-if ( lc($skyrefis) eq "ignored" ) {
-  # Do we want to change to an offset coord system?
-  if ( $offset ) {
-    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=set name=skyrefis newval=origin");
-    orac_print "Centroid will be determined in offset coordinates\n" if ($verbose);
-  } else {
-    # If we don't want offset, retrieve the formatted WCS position of
-    # the peak. NOTE: this will be fooled by the presence of a spike
-    # FUTURE: dealing with spikes, may need an iterative procedure
-    # (clip= option in stats).
-    $Mon{kappa_mon}->obeyw("stats","ndf=$in");
-    ($ORAC_STATUS, $initpos) = $Mon{kappa_mon}->get("stats","maxwcs");
-  }
-}
-
-# Initialize the results array
-$_CENTROID_IMAGE_{RESULTS} = [];
-
-# Need to check for kappa 0.14 or higher -- use the KAPVERSION_MINOR
-# global variable
-my $args;
-if (starversion_lt('kappa','V0.14-0')) {
-  $args = " cosys=d init=[$initpos]";
-} else {
-  # If we have KAPPA14 we have to first make sure the wcsframe is AXIS
-  # so that we can start searching from the coordinate centre
-#  $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=axis");
-  $args = " init='".$initpos."' ";
-}
-
-$args .= " mode=i cerror=true search=$box";
-
-$ORAC_STATUS = $Mon{kappa_mon}->obeyw("centroid","ndf=$in $args");
-if ( $ORAC_STATUS == ORAC__OK ) {
-  # Read the result
-  my @centre;
-
-  # KAPPA 14 returns the centre pos as a string, earlier versions
-  # return an array -- just use XCEN and YCEN with two ADAM calls
-  ($ORAC_STATUS, $centre[0]) = $Mon{kappa_mon}->get("centroid","xcen");
-  ($ORAC_STATUS, $centre[1]) = $Mon{kappa_mon}->get("centroid","ycen");
-
-  # Store the results
-  $_CENTROID_IMAGE_{RESULTS} = [@centre];
-
-  # Reset the coordinate system if necessary
+  my $cosys_in;
   unless ( $cosys_out eq "" ) {
-    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=set name=system newval=$cosys_in");
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=system");
+    ($ORAC_STATUS, $cosys_in) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=set name=system newval=$cosys_out");
   }
-} else {
-  orac_warn "Unable to determine position of centroid\n";
-  # Store the results
-  $_CENTROID_IMAGE_{RESULTS} = [undef,undef];
-  $ORAC_STATUS = ORAC__OK;
-}
-# Reset the SkyRefIs parameter if necessary
-if ( $offset ) {
+
+  # Are we insisting that the the centroid be returned in Offset
+  # coordinates? Default is no: use the current system.
+  my $offset = ($_CENTROID_IMAGE_{OFFSET} || 0);
+  # Set the default initial position - this only changes if we are not
+  # working in an offset coordinate system
+  my $initpos = "0,0";
+  # Check if we need to set it first
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=skyrefis");
+  ($ORAC_STATUS, my $skyrefis) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+  # If we are not in an offset coord system...
   if ( lc($skyrefis) eq "ignored" ) {
-    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=set name=skyrefis newval=$skyrefis");
+    # Do we want to change to an offset coord system?
+    if ( $offset ) {
+      $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=set name=skyrefis newval=origin");
+      orac_print "Centroid will be determined in offset coordinates\n" if ($verbose);
+    } else {
+      # If we don't want offset, retrieve the formatted WCS position of
+      # the peak. NOTE: this will be fooled by the presence of a spike
+      # FUTURE: dealing with spikes, may need an iterative procedure
+      # (clip= option in stats).
+      $Mon{kappa_mon}->obeyw("stats","ndf=$in");
+      ($ORAC_STATUS, $initpos) = $Mon{kappa_mon}->get("stats","maxwcs");
+    }
   }
-}
+
+  # Initialize the results array
+  $_CENTROID_IMAGE_{RESULTS} = [];
+
+  # Need to check for kappa 0.14 or higher -- use the KAPVERSION_MINOR
+  # global variable
+  my $args;
+  if (starversion_lt('kappa','V0.14-0')) {
+    $args = " cosys=d init=[$initpos]";
+  } else {
+    # If we have KAPPA14 we have to first make sure the wcsframe is AXIS
+    # so that we can start searching from the coordinate centre
+#    $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$in frame=axis");
+    $args = " init='".$initpos."' ";
+  }
+
+  $args .= " mode=i cerror=true search=$box";
+
+  $ORAC_STATUS = $Mon{kappa_mon}->obeyw("centroid","ndf=$in $args");
+  if ( $ORAC_STATUS == ORAC__OK ) {
+    # Read the result
+    my @centre;
+
+    # KAPPA 14 returns the centre pos as a string, earlier versions
+    # return an array -- just use XCEN and YCEN with two ADAM calls
+    ($ORAC_STATUS, $centre[0]) = $Mon{kappa_mon}->get("centroid","xcen");
+    ($ORAC_STATUS, $centre[1]) = $Mon{kappa_mon}->get("centroid","ycen");
+
+    # Store the results
+    $_CENTROID_IMAGE_{RESULTS} = [@centre];
+
+    # Reset the coordinate system if necessary
+    unless ( $cosys_out eq "" ) {
+      $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=set name=system newval=$cosys_in");
+    }
+  } else {
+    orac_warn "Centroid failed: unable to determine position of centroid\n";
+  # Store the results
+    $_CENTROID_IMAGE_{RESULTS} = [undef,undef];
+    $ORAC_STATUS = ORAC__OK;
+  }
+  # Reset the SkyRefIs parameter if necessary
+  if ( $offset ) {
+    if ( lc($skyrefis) eq "ignored" ) {
+      $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=set name=skyrefis newval=$skyrefis");
+    }
+  }
 
 } else {
   orac_warn "Unable to determine centroid: insufficient number of good pixels\n";
