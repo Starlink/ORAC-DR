@@ -44,7 +44,7 @@ my $group = ( defined( $_PRIM_ARGS_->{GROUP} ) ?
               $_PRIM_ARGS_->{GROUP}            :
               0 );
 my $moments = ( defined( $_PRIM_ARGS_->{MOMENTS} ) ?
-                $_PRIM_ARGS_->{MOMENTS}            :
+                lc( $_PRIM_ARGS_->{MOMENTS} )      :
                 'integ' );
 my $freqsmooth = ( defined( $_PRIM_ARGS_->{FREQUENCY_SMOOTH} ) ?
                    $_PRIM_ARGS_->{FREQUENCY_SMOOTH}            :
@@ -55,6 +55,9 @@ my $spatsmooth = ( defined( $_PRIM_ARGS_->{SPATIAL_SMOOTH} ) ?
 my $order = ( defined( $_PRIM_ARGS_->{ORDER} ) ?
               $_PRIM_ARGS_->{ORDER}            :
               5 );
+my $tag = ( defined( $_PRIM_ARGS_->{TAG} ) ?
+            lc( $_PRIM_ARGS_->{TAG} )      :
+            'integ' );
 
 my @moments = split /,/, $moments;
 
@@ -74,6 +77,9 @@ foreach my $Obj ( @objs ) {
     _CREATE_BASELINE_MASK_ GROUP=$group FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order
 
   }
+
+  my @collapsed;
+  my %paste_inputs;
 
   foreach my $i ( 1 .. $Obj->nfiles ) {
 
@@ -101,7 +107,7 @@ foreach my $Obj ( @objs ) {
         # Smooth the cube.
         my $temp1 = new ORAC::TempFile;
         my $temp1file = $temp1->file;
-        my $params = "in=$in out=$temp1file axes=[1,3] box=[1,$freqsmooth]";
+        my $params = "in=$in out=$temp1file axes=[1,3] box=[1,$freqsmooth] estimator=mean";
         $Mon{'kappa_mon'}->obeyw( "block", "$params" );
 
         my $temp2 = new ORAC::TempFile;
@@ -109,7 +115,7 @@ foreach my $Obj ( @objs ) {
         if( $dims->[0] < 3 || $dims->[1] < 3 ) {
           $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp1file out=$temp2file" );
         } else {
-          $params = "in=$temp1file out=$temp2file axes=[1,2] box=[$spatsmooth,$spatsmooth]";
+          $params = "in=$temp1file out=$temp2file axes=[1,2] box=[$spatsmooth,$spatsmooth] estimator=mean";
           $Mon{'kappa_mon'}->obeyw( "block", "$params" );
         }
 
@@ -118,6 +124,10 @@ foreach my $Obj ( @objs ) {
         my $temp3file = $temp3->file;
         $params = "in1=$temp2file in2=$mask out=$temp3file";
         $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+
+        # Copy the variance across.
+        $params = "ndf=$temp3file from=$temp2file comp=VARIANCE";
+        $Mon{'ndfpack_mon'}->obeyw( "setvar", "$params" );
 
         # Get stats on central-ish regions.
         my $xlow  = int( $lbound->[0] + 0.165 * $dims->[0] + 0.5 );
@@ -176,25 +186,113 @@ foreach my $Obj ( @objs ) {
         # For each moment, collapse the masked cube into a temporary file.
         foreach my $moment ( @moments ) {
 
-          my $out = $Obj->inout( "_$moment", $i );
-          $params = "in=$temp6file out=$out estimator=$moment axis=3 variance=false wlim=0.0";
+          if( ! exists( $paste_inputs{$moment} ) ) {
+            $paste_inputs{$moment} = ();
+          }
+
+          # Set any pixels with a non-zero QUALITY value to bad.
+          $params = "ndf=$temp6file bb=255";
+          $Mon{'ndfpack_mon'}->obeyw( "setbb", "$params" );
+
+          # Run the COLLAPSE.
+          my $temp7 = new ORAC::TempFile;
+          my $temp7file = $temp7->file;
+          $params = "in=$temp6file out=$temp7file estimator=$moment axis=3 variance=true wlim=0.0 trim=false";
           $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
-          orac_print "$in to $out: $moment moment map created.\n";
+
+          push @{$paste_inputs{$moment}}, $temp7file;
+          push @collapsed, $temp7;
 
         }
       }
     }
-
-    # Paste together the files in @collapsed into $out.
-
-    # And get the SMURF extensions as well.
-
-    # If we've done an integrated intensity map, find the peak value
-    # so we can subsequently get a spectrum from the position of the
-    # strongest signal.
-
   }
 
+  # Paste together the files in @collapsed into $out.
+  foreach my $moment ( @moments ) {
+
+    my( $in, $out ) = $Obj->inout( "_$moment" );
+
+    if( scalar( @{$paste_inputs{$moment}} ) == 1 ) {
+
+      my $params = "in=${$paste_inputs{$moment}}[0] out=$out";
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+      orac_print "Created $moment map in $out.\n";
+
+    } else {
+
+      # Write a file containing the input files to PASTE.
+      open my $paste_fh, ">", "paste$$.in" or die "Could not open input file for PASTE: $!\n";
+      open my $expt_fh, ">", "paste_expt$$.in" or die "Could not open input file for PASTE: $!\n";
+      open my $efft_fh, ">", "paste_efft$$.in" or die "Could not open input file for PASTE: $!\n";
+      open my $tsys_fh, ">", "paste_tsys$$.in" or die "Could not open input file for PASTE: $!\n";
+
+      print $paste_fh join "\n", @{$paste_inputs{$moment}};
+      print $expt_fh join "\n", map { "$_.MORE.SMURF.EXP_TIME" } @{$paste_inputs{$moment}};
+      print $efft_fh join "\n", map { "$_.MORE.SMURF.EFF_TIME" } @{$paste_inputs{$moment}};
+      print $tsys_fh join "\n", map { "$_.MORE.SMURF.TSYS" } @{$paste_inputs{$moment}};
+
+      close $paste_fh;
+      close $expt_fh;
+      close $efft_fh;
+      close $tsys_fh;
+
+      # And paste them together.
+      my $params = "in='^paste$$.in' out=$out confine=false transp=true title='$moment map'";
+      $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+
+      $params = "in='^paste_expt$$.in' out=$out.MORE.SMURF.EXP_TIME confine=false transp=true";
+      $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+      $params = "in='^paste_efft$$.in' out=$out.MORE.SMURF.EFF_TIME confine=false transp=true";
+      $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+      $params = "in='^paste_tsys$$.in' out=$out.MORE.SMURF.TSYS confine=false transp=true";
+      $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+
+      orac_print "Created $moment map in $out.\n";
+
+      unlink "paste$$.in";
+      unlink "paste_expt$$.in";
+      unlink "paste_efft$$.in";
+      unlink "paste_tsys$$.in";
+
+    }
+
+    # Tag the moment map if the current moment is the requested one.
+    if( $tag eq $moment ) {
+      {
+        $Frm = $Obj;
+        _TAG_AS_REPRESENTATIVE_IMAGE_ FILE=$out UPDATE=0
+      }
+    }
+
+    # Find the position of the peak, then extract a spectrum from that
+    # position, but only if the moment is 'integ'.
+    if( $moment eq 'integ' ) {
+
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$out" );
+      my( $ORAC_STATUS, $maxwcs ) = $Mon{'kappa_mon'}->get( "stats", "maxwcs" );
+      $maxwcs =~ /^(.*),(.*),.*$/;
+      my $ra = $1;
+      my $dec = $2;
+      $ra =~ s/\s//g;
+      $dec =~ s/\s//g;
+
+      my ( $pl_in, $pl_out ) = $Obj->inout( "_sp" );
+
+      my $params = "in=$pl_in pos='$ra,$dec' axes=VRAD method=linear out=$pl_out";
+      $Mon{'kappa_mon'}->obeyw( "pluck", "$params" );
+
+      orac_print "$pl_in to $pl_out:\n Extracted spectrum at $ra, $dec.\n";
+
+      {
+        $Frm = $Obj;
+        _TAG_AS_REPRESENTATIVE_SPECTRUM_ FILE=$pl_out UPDATE=0
+      }
+
+    }
+
+  }
 }
 
 # Tidy-up output.
