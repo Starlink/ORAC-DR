@@ -71,22 +71,29 @@ foreach my $Obj ( @objs ) {
 
     my ( $in, $mask ) = $Obj->inout( "_blmask", $i );
 
-    # Set up parameters. Do one smooth in frequency and a second in spatial.
+    # Smooth in frequency.
     my $temp1 = new ORAC::TempFile;
     my $temp1file = $temp1->file;
-    my $params = "in=$in out=$temp1file axes=[1,3] box=[1,$freqsmooth]";
+    my $params = "in=$in out=$temp1file axes=[1,3] box=[1,$freqsmooth] estimator=mean";
     $Mon{'kappa_mon'}->obeyw( "block", "$params" );
 
+    # Smooth in spatial, but only if we have enough pixels.
+    _GET_DIMENSIONS_ GROUP=$group
+    my $dims = $_GET_DIMENSIONS_{DIMS};
     my $temp2 = new ORAC::TempFile;
     my $temp2file = $temp2->file;
-    $params = "in=$temp1file out=$temp2file axes=[1,2] box=[$spatsmooth,$spatsmooth]";
-    $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+    if( $dims->[0] > 5 || $dims->[1] > 5 ) {
+      $params = "in=$temp1file out=$temp2file axes=[1,2] box=[$spatsmooth,$spatsmooth] estimator=mean";
+      $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+    } else {
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp1file out=$temp2file" );
+    }
 
     # Find line-free regions in the smoothed cube. We do this by doing
     # an 'auto' fit with a high-order baseline.
     my $temp3 = new ORAC::TempFile;
     my $temp3file = $temp3->file;
-    $params = "in=$temp2file out=$temp3file axis=3 order=$order auto mask=$mask method=single variance=false subtract=false";
+    $params = "in=$temp2file out=$temp3file axis=3 order=$order auto mask=$mask method=global variance=true subtract=false";
     $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
 
     # Report to user.
