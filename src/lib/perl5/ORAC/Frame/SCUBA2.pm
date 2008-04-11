@@ -590,8 +590,8 @@ sub findgroup {
       $group = join("",@ra[1..3],@dec);
     }
     $group .= $self->hdr( "SAM_MODE" ) .
-      $self->hdr( "OBS_TYPE" ) .
-      $self->hdr( "FILTER" ) ;
+              $self->hdr( "OBS_TYPE" ) .
+              $self->hdr( "FILTER" ) ;
     # Add OBSNUM if we're not doing a science observation
     if( uc( $self->hdr( "OBS_TYPE" ) ) ne 'SCIENCE' ) {
       $group .= sprintf "%05d", $self->hdrval( "OBSNUM" );
@@ -697,6 +697,73 @@ sub hdrval {
     return;
   }
 
+}
+
+=item B<inout>
+
+Method to return the current input filename and the new output
+filename given a suffix.  For the base class the input filename is
+chopped at the last underscore and the suffix appended when the name
+contains at least 2 underscores. The suffix is simply appended if
+there is only one underscore. This prevents numbers being chopped when
+the name is of the form ut_num.
+
+Note that this method does not set the new output name in this
+object. This must still be done by the user.
+
+Returns $in and $out in an array context:
+
+   ($in, $out) = $Frm->inout($suffix);
+
+Returns $out in a scalar context:
+
+   $out = $Frm->inout($suffix);
+
+Therefore if in=file_db and suffix=_ff then out would
+become file_db_ff but if in=file_db_ff and suffix=dk then
+out would be file_db_dk.
+
+An optional second argument can be used to specify the
+file number to be used. Default is for this method to process
+the contents of file(1).
+
+  ($in, $out) = $Frm->inout($suffix, 2);
+
+will return the second file name and the name of the new output file
+derived from this.  A value of zero is trapped and not passed on to
+the base class.
+
+The last suffix is not removed if it consists solely of numbers.
+This is to prevent truncation of raw data filenames.
+
+=cut
+
+sub inout {
+
+  my $self = shift;
+
+  # Parse input argument list
+  my $suffix = shift;
+  my $num = ( @_ ) ? shift : 0;
+
+  # Now set args to pass to base class
+  my @args = ( $num == 0 ) ? ($suffix) : ($suffix, $num);
+
+  # Call base class
+  my ($infile, $outfile) = $self->SUPER::inout( @args );
+
+  # Check if we have raw data - input filename ends in four digits
+  # only. In this case modify the prefix and suffix.
+  if ( $infile =~ /_\d\d\d\d$/ ) {
+    # Change prefix to remove subarray label
+    $outfile =~ s/^s\d\D/s/;
+    # Update suffix to add wavelength
+    my $wavelen = "_".$self->file_from_bits_extra;
+    $outfile =~ s/$suffix$/$wavelen$suffix/;
+  }
+
+  return ($infile, $outfile) if wantarray();  # Array context
+  return $outfile;                            # Scalar context
 }
 
 =back
