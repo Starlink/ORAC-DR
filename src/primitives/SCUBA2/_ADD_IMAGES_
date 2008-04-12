@@ -1,0 +1,126 @@
+#! -*-perl-*-
+
+=head1 NAME
+
+_ADD_IMAGES_ - Add together a number of NDFs
+
+=head1 SYNOPSIS
+
+ _ADD_IMAGES_ IN=$imagelistref OUT=$out
+
+ _ADD_IMAGES_ IN=$imagelistref OUT=$out COMP=EXP_TIME
+
+=head1 DESCRIPTION
+
+This primitive uses KAPPA C<MATHS> to add up a group of images. The
+default method is to add the data arrays, but the user can specify the
+name of an NDF (assumed to be located
+INPUT_FILE.MORE.SMURF.COMP). This is useful for calculating the total
+exposure time for a series of images which are mosaicked together.
+
+C<MATHS> can only handle 26 inputs so if the input list is larger than
+that, the list will be added together in groups.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<INLIST>
+
+Reference to array of image names. No default.
+
+=item B<OUT>
+
+Name of output file. No default.
+
+=item B<COMP>
+
+Name of NDF component to add. Default is the data array. If specified
+then the component is assumed to be under C<.MORE.SMURF>.
+
+=back
+
+=head1 ALGORITHMS
+
+=over 4
+
+=item Starlink applications
+
+KAPPA MATHS
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 the University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
+=cut
+
+# Check arguments
+my $inref = (exists $_ADD_IMAGES_{INLIST} &&
+	     defined $_ADD_IMAGES_{INLIST}) ?
+  $_ADD_IMAGES_{INLIST} : undef;
+
+my $out = (exists $_ADD_IMAGES_{OUT} &&
+	  defined $_ADD_IMAGES_{OUT}) ?
+  $_ADD_IMAGES_{OUT} : undef;
+
+
+my $comp = (exists $_ADD_IMAGES_{COMP} &&
+	  defined $_ADD_IMAGES_{COMP}) ?
+  $_ADD_IMAGES_{COMP} : undef;
+
+# No default values, so throw an error if no inputs
+unless ( defined $inref && defined $out ) {
+  orac_throw "Error: must supply input and output files to _ADD_IMAGES_\n";
+}
+
+my $maxalignfiles = 26; # Limitation on MATHS
+
+# Add component to end of output file name if necessary
+$out .= ".MORE.SMURF.".$comp if ( defined $comp );
+
+# Input list of files: string version for MATHS and array version for
+# constructing the string
+my ($inlist, @inlist);
+# Expression to combine images in MATHS
+my $expr;
+# Number of input files
+my $nfiles = scalar(@{ $inref });
+if ( $nfiles < $maxalignfiles ) {
+  if ( $nfiles > 1 ) {
+    orac_print "\nCalculating total exposure time...";
+    my $ia2z = "a";
+    foreach my $infile ( @{ $inref } ) {
+      $infile .= ".MORE.SMURF.".$comp if ( defined $comp );
+      $inlist .= "i$ia2z=$infile ";
+      push(@inlist, "i$ia2z");
+      $ia2z++;
+    }
+    $expr = join("+",@inlist);
+
+    $Mon{kappa_mon}->obeyw("maths","$inlist $expr out=$out");
+  }
+} else {
+  # Split the list into manageable chunks
+  orac_warn "Uh-oh: Too many files - can't do this yet\n";
+}
+
