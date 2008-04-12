@@ -52,6 +52,13 @@ either the group file if it exists or the first image in the Frame.
 An ORAC-DR Frm object with files to be aligned. If left unset, the
 current Frm is used.
 
+=item B<COMP>
+
+A flag to denote whether to also align any NDFs within the parent
+file. Default is 0 (do not align). The only sub-NDF currently
+supported is C<.MORE.SMURF.EXP_TIME>. Others should be added as
+necessary.
+
 =back
 
 =head1 ALGORITHMS
@@ -70,6 +77,11 @@ _GET_REFERENCE_IMAGE_
 
 Creates an output image per input image, each with a suffix of '_al'.
 
+=head1 NOTES
+
+There is currently no checking that other NDF components exist before
+alignment (if COMP = 1).
+
 =head1 AUTHOR
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
@@ -78,7 +90,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 =head1 COPYRIGHT
 
 Copyright (C) 2004-2007 Particle Physics and Astronomy Research
-Council, the University of British Columbia. All Rights Reserved.
+Council. Copyright (C) 2004-2008 the University of British
+Columbia. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -120,8 +133,13 @@ my $Frmobj = (exists $_ALIGN_ARRAYS_{FRAME_OBJ} &&
 
 # Are we aligning images in a SKY frame? Default to yes.
 my $skyalign = (exists $_ALIGN_ARRAYS_{SKYREF} &&
-	       defined $_ALIGN_ARRAYS_{SKYREF}) ?
-               $_ALIGN_ARRAYS_{SKYREF} : 1;
+		defined $_ALIGN_ARRAYS_{SKYREF}) ?
+                $_ALIGN_ARRAYS_{SKYREF} : 1;
+
+# Flag to decide whether to align other components
+my $comp = (exists $_ALIGN_ARRAYS_{COMP} &&
+	    defined $_ALIGN_ARRAYS_{COMP}) ?
+            lc($_ALIGN_ARRAYS_{COMP}) : 0;
 
 # Check that the user has really passed in a Frm!
 unless ( UNIVERSAL::isa($Frmobj, "ORAC::Frame") ) {
@@ -141,7 +159,7 @@ orac_print("Setting attributes for moving sources... ") if $moving;
 # Write alignment text files
 my $intmp = new ORAC::TempFile;
 my $outtmp = new ORAC::TempFile;
-my @out;
+my (@in, @out);
 my $nfiles = $Frmobj->nfiles;
 for my $i (1..$nfiles) {
   my $filei = $Frmobj->file($i);
@@ -151,16 +169,48 @@ for my $i (1..$nfiles) {
     my $args = "ndf=$filei mode=mset setting='skyrefis=origin,alignoffset=1'";
     $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
   }
-  my ($in, $out) = $Frmobj->inout( '_al',$i);
+  my ($in, $out) = $Frmobj->inout( '_al',$i );
   push(@out, $out);
+  push(@in, $in);
+  orac_warn "Input and output files are the same\n" if ( $in eq $out );
   print {$outtmp->handle} "$out\n";
 }
 
-orac_print("Aligning $nfiles images... ");
+orac_print("Aligning $nfiles ".( ($nfiles == 1) ? "image" : "images")."... ");
 
 $Mon{kappa_mon}->obeyw("wcsalign","ref=$refimage lbnd=! ubnd=! method=$method out=^". $outtmp->file ." in=^". $intmp->file);
 
+undef $intmp;
+undef $outtmp;
+
+# If we are also aligning any sub-components then do that now.
+if ( $comp ) {
+  # Start with exp_time - add more as necessary. Note that there is NO
+  # checking to see if the component exists before attempting to align.
+  my @comp = (".more.smurf.exp_time");
+  foreach my $ndfcomp ( @comp ) {
+    my $component = "exposure times" if ($ndfcomp =~ /exp_time$/);
+    orac_print "Aligning $component... ";
+  
+    $intmp = new ORAC::TempFile;
+    $outtmp = new ORAC::TempFile;
+    for my $i (0..$#in) {
+      # Set SkyRefIs and AlignOffset attributes for moving sources -
+      # note that these components have separate WCS and must therefore
+      # also be modified for moving sources
+      if ( $moving ) {
+	my $args = "ndf=$in[$i] mode=mset setting='skyrefis=origin,alignoffset=1'";
+	$Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+      }
+      print {$intmp->handle} $in[$i].$ndfcomp."\n";
+      print {$outtmp->handle} $out[$i].$ndfcomp."\n";
+    }
+    $Mon{kappa_mon}->obeyw("wcsalign","ref=$refimage lbnd=! ubnd=! method=$method out=^". $outtmp->file ." in=^". $intmp->file);
+  }
+}
+
 # Register new file names
+$Frmobj->uhdr("ALIGNED",1);
 $Frmobj->files( @out );
 
 orac_print("done.\n");
