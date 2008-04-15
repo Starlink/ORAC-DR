@@ -1,0 +1,137 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_SET_GROUP_FITS_ITEM_
+
+=head1 SYNOPSIS
+
+  _SET_PRODUCT_FITS_ITEM_  KEY=OBJECT VALUE=TEST COMMENT=Text|with|spaces|marked|by|vertical|bars
+  _SET_PRODUCT_FITS_ITEM_  TABLE=filename.table
+
+=head1 DESCRIPTION
+
+This primitive writes header key/value/comments into the FITS extension of the group file(s).
+Alternatively, the changes may be written into a change table.  See the documentation
+for fitsmod for the format of the table.
+
+The logic to determine which file to modify is the same as for _ADD_PROVENANCE_.
+
+The FITS extension must already exist. _ADD_PROVENANCE_ creates the FITS extension
+if it does not already exist, so _SET_PRODUCT_FITS_ITEM_ is safe after a call
+to _ADD_PROVENANCE_. 
+
+=head1 PARAMETERS
+
+=over 4
+
+=item B<KEY>
+
+The FITS keyword.
+
+=item B<VALUE>
+
+The new value for the KEY keyword.
+
+=item B<COMMENT>
+
+The comment string for the KEY keyword.  If it is not defined, the
+current comment will be retained.
+
+=item B<STRING>
+
+Boolean.  If true, the header item will be forced to a string, if
+false (but defined) the item will be forced to a numeric value.  If
+not defined, the new item will be a string if the item already exist
+and is currently a string, else the default FITSMOD behaviour will be
+used.
+
+=item B<TABLE>
+
+String.  A file name that should contain a table for the kappa fitsmod command
+describing a set of modifications to the FITS extension in an NDF.  See 
+"kaphelp fitsmod file_format" for more details.  If TABLE is specified, then the
+KEY, VALUE, COMMENT and STRING arguments are ignored.
+
+=back
+
+=head1 AUTHORS
+
+Russell O. Redman E<lt>Russell.Redman@nrc-cnrc.gc.ca<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2001-2005 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
+
+=cut
+
+# Get argument values.
+my $key = ( $_SET_PRODUCT_FITS_ITEM_{'KEY'} || undef );
+my $value = ( $_SET_PRODUCT_FITS_ITEM_{'VALUE'} || undef );
+my $comment = ( $_SET_PRODUCT_FITS_ITEM_{'COMMENT'} || undef );
+my $isstring = ( $_SET_PRODUCT_FITS_ITEM_{'STRING'} || undef );
+my $intable = ( $_SET_PRODUCT_FITS_ITEM_{'TABLE'} || undef );
+
+if ( (!(defined( $key ) && defined( $value ))) && (!defined( $intable)) ) {
+   orac_warn "Must specify either key/value pair or table for FITS header.\n";
+
+} 
+else 
+{
+   if ($Grp->lastmember($Frm)) {
+
+      foreach my $sub ($Frm->subs) {
+
+         # Get the file name for this sub-band
+         my $groupfile = $Grp->grpoutsub($sub);
+      
+         # Append the suffix if necessary
+         my $suff = $Grp->filesuffix;
+         $groupfile .= $suff unless $groupfile =~ /$suff$/;
+
+         # ROR 2006-08-30; special cases for BUNIT and TABLE
+         if ( defined($key) && $key =~ m/BUNIT/i )
+         {
+# Special case for BUNIT, which must be handled with the kappa setunit command
+            $Mon{ndfpack_mon}->obeyw("setunits","ndf=$groupfile units=$value");
+         }
+         elsif ( defined($intable) )
+         {
+            print "_SET_PRODUCT_FITS_ITEM_ SCUBA version: $groupfile $intable\n";
+            if ( -e $intable ) 
+            {
+               $Mon{'ndfpack_mon'}->obeyw("fitsmod","ndf=$groupfile mode=file table=$intable");
+            }
+            else
+            {
+               orac_warn("TABLE=$intable does not exist.\n");
+            }
+	 } else {
+            # Form argument strings for optional arguments.
+            my $commentarg = " ";
+            if ( defined( $comment ) ) { $commentarg = "COMMENT=$comment"; }
+            my $stringarg = " ";
+            if ( defined( $isstring ) ) { $stringarg = "STRING=$isstring"; }
+
+            _SET_FILE_FITS_ITEM_ FILE=$groupfile KEY=$key VALUE=$value $commentarg $stringarg
+         } # end if !defined($intable)
+ 
+      } # end of foreach my $sub ($Frm->subs)
+
+   } # end if ($Grp->lastmember($Frm)
+
+} # end if ( (!defined( $key ))  etc)
