@@ -106,6 +106,26 @@ sub file_from_bits {
   return $self->fixedpart . $prefix . '_' . $num . '_' . $extra . $self->filesuffix;
 }
 
+=item B<inout>
+
+Similar to base class except the frame number is appended to the
+output suffix. The frame number is padded with zeroes to make it three
+digits long.
+
+=cut
+
+sub inout {
+  my $self = shift;
+  my $suffix = shift;
+  my $number = shift;
+  if (defined $number) {
+    $suffix .= sprintf( "%03d", $number );
+
+  }
+  return $self->SUPER::inout( $suffix, (defined $number ? $number : () ) );
+
+}
+
 =back
 
 =head1 SEE ALSO
