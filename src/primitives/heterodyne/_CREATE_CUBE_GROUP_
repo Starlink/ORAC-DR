@@ -2,13 +2,47 @@
 
 =head1 NAME
 
-_CREATE_CUBE_GROUP_
+_CREATE_CUBE_GROUP_ -- Create a cube from a group of time-series ACSIS
+observations.
 
 =head1 DESCRIPTION
+
+This primitive takes time-series ACSIS cubes from each observation in
+the current group and runs MAKECUBE on them to create a
+spatial/spectral cube.
 
 =head1 ARGUMENTS
 
 =over 4
+
+=item BYTES_PER_PIXEL = INTEGER (Given)
+
+The number of bytes per pixel. [4]
+
+=item MAXSIZE = INTEGER (Given)
+
+The maximum size, in bytes, of the output cube. This value does not
+include extra information such as variance or weight arrays, FITS
+headers, or any other NDF extensions. [512000000]
+
+=item PARAMS = STRING (Given)
+
+An optional array which consists of additional parameters required by
+the Sinc, SincSinc, SincCos, SincGauss, Somb, SombCos, and Gauss
+spreading methods (see parameter SPREAD). See documentation for the
+PARAMS parameter for MAKECUBE. ['']
+
+=item SPREAD = STRING (Given)
+
+The interpolation method to use when regridding the cube. This can be
+any of those allowed by MAKECUBE, listed in the SPREAD
+parameter. ['nearest']
+
+=item TILEBORDER = INTEGER (Given)
+
+The size of the border to be added to tiles. This is used when
+smoothing the cube in spatial extent in later processing, so as to not
+add edge effects. [0]
 
 =back
 
@@ -16,17 +50,35 @@ _CREATE_CUBE_GROUP_
 
 =over 4
 
+=item *
+
+This primitive is suitable for ACSIS.
+
 =back
 
 =head1 OUTPUT DATA
 
 =over 4
 
+=item *
+
+A cube (or set of cubes) whose filename is of the form
+gaYYYYMMDD_NN_SS_cubeMMM.sdf, where YYYYMMDD is the UT date, NN is the
+observation number, SS is the zero-padded subsystem number, and MMM is
+the zero-padded tile number. Tiles are numbered starting from 1 and
+increasing monotonically, counting from the bottom left corner in
+spatial extent and proceeding in a raster fashion from left to right.
+
 =back
 
 =head1 TASKS
 
+KAPPA: NDFTRACE.
+SMURF: MAKECUBE.
+
 =head1 REQUIRED PERL MODULES
+
+None.
 
 =head1 AUTHORS
 
@@ -205,9 +257,11 @@ if( $Grp->lastmember( $Frm ) ) {
     foreach my $j ( 1 .. $ntile ) {
       my $makecube_outfile = "${out}_$j.sdf";
       my $outfile = sprintf( "$out%03d", $j ) . ".sdf";
-      rename( $makecube_outfile, $outfile );
-      $outfile =~ s/\.sdf$//;
-      push( @files, $outfile );
+      if( -e $makecube_outfile ) {
+        rename( $makecube_outfile, $outfile );
+        $outfile =~ s/\.sdf$//;
+        push( @files, $outfile );
+      }
     }
   } else {
     my $outfile = "${out}001.sdf";
@@ -215,7 +269,7 @@ if( $Grp->lastmember( $Frm ) ) {
     $outfile =~ s/\.sdf$//;
     push( @files, $outfile );
   }
-  orac_print " $ntile cube" . ( $ntile > 1 ? 's' : '' ) . " formed: ";
+  orac_print " " . scalar( @files ) . " cube" . ( $ntile > 1 ? 's' : '' ) . " formed: ";
   $Grp->files( @files );
   my $filestring = join ", ", @files;
   orac_print "$filestring\n";
