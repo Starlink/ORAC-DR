@@ -184,38 +184,40 @@ sub retrieve_bounds {
     my @ssb_bnds;
     my $x_min = 0.5;
     my $x_max = 0.5 + ( $ndf_ubnd[0] - $ndf_lbnd[0] ) + 1;
-    my $y_min = 0.5;
-    my $y_max = 0.5 + ( $ndf_ubnd[1] - $ndf_lbnd[1] ) + 1;
-    if( defined( $ndf_ubnd[2] ) ) {
-      my $z_min = 0.5;
-      my $z_max = 0.5 + ( $ndf_ubnd[2] - $ndf_lbnd[2] ) + 1;
+    if( $#ndf_ubnd > 0 ) {
+      my $y_min = 0.5;
+      my $y_max = 0.5 + ( $ndf_ubnd[1] - $ndf_lbnd[1] ) + 1;
+      if( defined( $ndf_ubnd[2] ) ) {
+        my $z_min = 0.5;
+        my $z_max = 0.5 + ( $ndf_ubnd[2] - $ndf_lbnd[2] ) + 1;
 
-      if( defined( $skyframe ) ) {
-        @wcs_bnds = $skyframe->TranP( 1,
-                                      [ $x_min, $x_min, $x_max, $x_max ],
+        if( defined( $skyframe ) ) {
+          @wcs_bnds = $skyframe->TranP( 1,
+                                        [ $x_min, $x_min, $x_max, $x_max ],
+                                        [ $y_min, $y_max, $y_min, $y_max ],
+                                        [ $z_min, $z_min, $z_min, $z_min ] );
+        }
+
+        if( defined( $specframe ) ) {
+
+          # Calculate the LSB info.
+          $specframe->Set( "SideBand", "observed" );
+          @ssb_bnds = $specframe->TranP( 1,
+                                         [ $x_min, $x_max ],
+                                         [ $y_min, $y_max ],
+                                         [ $z_min, $z_max ] );
+          # Calculate the USB info.
+          $specframe->Set( "SideBand", "image" );
+          @isb_bnds = $specframe->TranP( 1,
+                                         [ $x_min, $x_max ],
+                                         [ $y_min, $y_max ],
+                                         [ $z_min, $z_max ] );
+        }
+      } elsif( defined( $skyframe ) ) {
+        @wcs_bnds = $skyframe->Tran2( [ $x_min, $x_min, $x_max, $x_max ],
                                       [ $y_min, $y_max, $y_min, $y_max ],
-                                      [ $z_min, $z_min, $z_min, $z_min ] );
+                                      1 );
       }
-
-      if( defined( $specframe ) ) {
-
-        # Calculate the LSB info.
-        $specframe->Set( "SideBand", "observed" );
-        @ssb_bnds = $specframe->TranP( 1,
-                                       [ $x_min, $x_max ],
-                                       [ $y_min, $y_max ],
-                                       [ $z_min, $z_max ] );
-        # Calculate the USB info.
-        $specframe->Set( "SideBand", "image" );
-        @isb_bnds = $specframe->TranP( 1,
-                                       [ $x_min, $x_max ],
-                                       [ $y_min, $y_max ],
-                                       [ $z_min, $z_max ] );
-      }
-    } else {
-      @wcs_bnds = $skyframe->Tran2( [ $x_min, $x_min, $x_max, $x_max ],
-                                    [ $y_min, $y_max, $y_min, $y_max ],
-                                    1 );
     }
 
     # We now have enough information for the OBSRA/OBSDEC headers.
