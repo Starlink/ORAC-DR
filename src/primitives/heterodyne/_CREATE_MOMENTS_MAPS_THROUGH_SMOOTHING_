@@ -2,13 +2,61 @@
 
 =head1 NAME
 
-_CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_
+_CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ - Create moments maps by
+smoothing and detecting emission regions.
 
 =head1 DESCRIPTION
+
+This primitive is used to create moments maps. It first smooths the
+cube along the frequency axis, then in the spatial axes. It then masks
+out emission regions using a previously-determined mask (see
+_CREATE_BASELINE_MASK_), and then calculates the RMS in the
+emission-free regions. This RMS is used to set a threshold for
+clump-finding. The clumps are then turned into an emission mask
+(masking out non-clumps), and the masked cube is then collapsed to
+form the moment map.
 
 =head1 ARGUMENTS
 
 =over 4
+
+=item FREQUENCY_SMOOTH = INTEGER (Given)
+
+The number of channels to smooth in the frequency axis when smoothing
+to determine baselines. This number should be small (~10) for
+narrow-line observations and large (~25) for broad-line
+observations. [25]
+
+=item GROUP = INTEGER (Given)
+
+How to process group files. 0 means use the current Frame object. 1
+means use the current Group object. 2 means use each Frame member of
+the current Group object. [0]
+
+=item MOMENTS = STRING (Given)
+
+The moment maps to create. These are any of the values allowed for the
+ESTIMATOR parameter to the COLLAPSE method, but in reality this should
+probably be 'integ', 'iwc', and/or 'itd'. Any number of moments can be
+given in a comma-separated string. ['integ']
+
+=item ORDER = INTEGER (Given)
+
+The polynomial order that will be used when estimating baselines. [5]
+
+=item RMS_THRESHOLD = REAL (Given)
+
+The RMS threshold above which emission will be considered to be a
+clump. [4.5]
+
+=item SPATIAL_SMOOTH = INTEGER (Given)
+
+The number of pixels to smooth in both spatial axes when smoothing to
+determine baselines. [3]
+
+=item TAG = STRING (Given)
+
+Which moment map to tag as a representative image. ['integ']
 
 =back
 
@@ -16,17 +64,36 @@ _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_
 
 =over 4
 
+=item *
+
+This primitive is suitable for ACSIS cubes.
+
 =back
 
 =head1 OUTPUT DATA
 
 =over 4
 
+=item *
+
+The moments map(s) with suffix equal to the given moment(s) by the
+MOMENTS parameter.
+
 =back
 
 =head1 TASKS
 
+CUPID: FINDCLUMPS
+KAPPA: ADD, BLOCK, COLLAPSE, DIV, MULT, NDFCOPY, NDFTRACE, NOMAGIC,
+       PASTE, PLUCK, SETBB, SETVAR, STATS
+
 =head1 REQUIRED PERL MODULES
+
+None, but see _COMPONENT_EXISTS_.
+
+=head1 SEE ALSO
+
+_COMPONENT_EXISTS_, _CREATE_BASELINE_MASK_
 
 =head1 AUTHORS
 
@@ -49,6 +116,9 @@ my $moments = ( defined( $_PRIM_ARGS_->{MOMENTS} ) ?
 my $freqsmooth = ( defined( $_PRIM_ARGS_->{FREQUENCY_SMOOTH} ) ?
                    $_PRIM_ARGS_->{FREQUENCY_SMOOTH}            :
                    25 );
+my $rms_thresh = ( defined( $_PRIM_ARGS_->{RMS_THRESHOLD} ) ?
+                   $_PRIM_ARGS_->{RMS_THRESHOLD}            :
+                   4.5 );
 my $spatsmooth = ( defined( $_PRIM_ARGS_->{SPATIAL_SMOOTH} ) ?
                    $_PRIM_ARGS_->{SPATIAL_SMOOTH}          :
                    3 );
@@ -90,6 +160,9 @@ foreach my $Obj ( @objs ) {
     } else {
 
       ( my $in, undef ) = $Obj->inout( "_blah", $i );
+
+      orac_print "Creating moments maps for $in.\n";
+
       my $masks = $Obj->uhdr( "BASELINE_MASKS" );
       my $mask = $masks->[$i];
 
@@ -105,11 +178,13 @@ foreach my $Obj ( @objs ) {
       } else {
 
         # Smooth the cube.
+        orac_print " Smoothing cube in frequency with $freqsmooth-pixel tophat.\n";
         my $temp1 = new ORAC::TempFile;
         my $temp1file = $temp1->file;
         my $params = "in=$in out=$temp1file axes=[1,3] box=[1,$freqsmooth] estimator=mean";
         $Mon{'kappa_mon'}->obeyw( "block", "$params" );
 
+        orac_print " Smoothing cube in spatial with $spatsmooth-pixel tophat.\n";
         my $temp2 = new ORAC::TempFile;
         my $temp2file = $temp2->file;
         if( $dims->[0] < 3 || $dims->[1] < 3 ) {
@@ -120,14 +195,21 @@ foreach my $Obj ( @objs ) {
         }
 
         # Mask out lines.
+        orac_print " Masking out lines using $mask.\n";
         my $temp3 = new ORAC::TempFile;
         my $temp3file = $temp3->file;
         $params = "in1=$temp2file in2=$mask out=$temp3file";
         $Mon{'kappa_mon'}->obeyw( "add", "$params" );
 
-        # Copy the variance across.
-        $params = "ndf=$temp3file from=$temp2file comp=VARIANCE";
-        $Mon{'ndfpack_mon'}->obeyw( "setvar", "$params" );
+        # Copy the variance across, but only if the input cube has a
+        # variance.
+        $params = "ndf=$temp2file";
+        $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "$params" );
+        my ( $ORAC_STATUS, $var ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "variance" );
+        if( uc( $var ) eq 'TRUE' ) {
+          $params = "ndf=$temp3file from=$temp2file comp=VARIANCE";
+          $Mon{'ndfpack_mon'}->obeyw( "setvar", "$params" );
+        }
 
         # Get stats on central-ish regions.
         my $xlow  = int( $lbound->[0] + 0.165 * $dims->[0] + 0.5 );
@@ -138,7 +220,9 @@ foreach my $Obj ( @objs ) {
         my $zhigh = int( $ubound->[2] - 0.165 * $dims->[2] - 0.5 );
         my $section = "$xlow:$xhigh,$ylow:$yhigh,$zlow:$zhigh";
         $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp3file($section)" );
-        my ( $ORAC_STATUS, $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+        ( $ORAC_STATUS, my $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+
+        orac_print " RMS in baseline regions is " . sprintf( "%0.3f", $sigma ) . ".\n";
 
         # Create parameter file for FINDCLUMPS.
         my $fc_param = "findclumps$$.param";
@@ -152,6 +236,7 @@ foreach my $Obj ( @objs ) {
         close $fc_fh;
 
         # Run FINDCLUMPS.
+        orac_print " Finding clumps higher than 4.5-sigma.\n";
         my $temp4 = new ORAC::TempFile;
         my $temp4file = $temp4->file;
         $params = "in=$temp2file rms=$sigma config='^$fc_param' method=clumpfind out=$temp4file outcat=\! deconv=no";
@@ -163,49 +248,61 @@ foreach my $Obj ( @objs ) {
 
         # If we have no clumps, we can't make a clump mask, so skip the
         # masking and just go straight to the moment map creation.
-        my $temp6 = new ORAC::TempFile;
-        my $temp6file = $temp6->file;
+        my $temp5 = new ORAC::TempFile;
+        my $temp5file = $temp5->file;
         if( $nclumps ) {
 
-          # Set clumps to be 0 everywhere (i.e. "clump mask").
-          my $temp5 = new ORAC::TempFile;
-          my $temp5file = $temp5->file;
-          $params = "in=$temp4file scalar=0 out=$temp5file";
-          $Mon{'kappa_mon'}->obeyw( "cmult", "$params" );
+          # Set clumps to be 1 everywhere (i.e. "clump mask").
+          my $temp6 = new ORAC::TempFile;
+          my $temp6file = $temp6->file;
+          $params = "in1=$temp4file in2=$temp4file out=$temp6file";
+          $Mon{'kappa_mon'}->obeyw( "div", "$params" );
 
-          # Add clump mask to input cube.
-          $params = "in1=$in in2=$temp5file out=$temp6file";
-          $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+          # Set bad data to zero.
+          my $temp7 = new ORAC::TempFile;
+          my $temp7file = $temp7->file;
+          $params = "in=$temp6file out=$temp7file repval=0";
+          $Mon{'kappa_mon'}->obeyw( "nomagic", "$params" );
+
+          # Multiply clump mask by input cube.
+          orac_print " Masking non-clump data.\n";
+          $params = "in1=$in in2=$temp7file out=$temp5file";
+          $Mon{'kappa_mon'}->obeyw( "mult", "$params" );
 
         } else {
 
-          $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$temp6file" );
+          $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$temp5file" );
 
         }
 
         # For each moment, collapse the masked cube into a temporary file.
+        my $i = 1;
         foreach my $moment ( @moments ) {
 
           if( ! exists( $paste_inputs{$moment} ) ) {
             $paste_inputs{$moment} = ();
           }
 
-          # Set any pixels with a non-zero QUALITY value to bad.
-          $params = "ndf=$temp6file bb=255";
+          # Set any pixels with a BORDER QUALITY value to bad.
+          $params = "ndf=$temp5file bb=BORDER";
           $Mon{'ndfpack_mon'}->obeyw( "setbb", "$params" );
 
           # Run the COLLAPSE.
-          my $temp7 = new ORAC::TempFile;
-          my $temp7file = $temp7->file;
-          $params = "in=$temp6file out=$temp7file estimator=$moment axis=3 variance=true wlim=0.0 trim=false";
+          orac_print " Collapsing to form temporary $moment map.\n";
+          my $temp8 = new ORAC::TempFile;
+          my $temp8file = $temp8->file;
+          $params = "in=$temp5file out=$temp8file estimator=$moment axis=3 variance=true wlim=0.0 trim=false";
           $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
-          push @{$paste_inputs{$moment}}, $temp7file;
-          push @collapsed, $temp7;
-
+          push @{$paste_inputs{$moment}}, $temp8file;
+          push @collapsed, $temp8;
+          $i++;
         }
       }
     }
+
+    orac_print "\n";
+
   }
 
   # Paste together the files in @collapsed into $out.
@@ -222,21 +319,20 @@ foreach my $Obj ( @objs ) {
 
     } else {
 
+      orac_print " Pasting together temporary maps to form $moment map.\n";
+
       # Write a file containing the input files to PASTE.
       open my $paste_fh, ">", "paste$$.in" or die "Could not open input file for PASTE: $!\n";
       open my $expt_fh, ">", "paste_expt$$.in" or die "Could not open input file for PASTE: $!\n";
       open my $efft_fh, ">", "paste_efft$$.in" or die "Could not open input file for PASTE: $!\n";
-      open my $tsys_fh, ">", "paste_tsys$$.in" or die "Could not open input file for PASTE: $!\n";
 
       print $paste_fh join "\n", @{$paste_inputs{$moment}};
       print $expt_fh join "\n", map { "$_.MORE.SMURF.EXP_TIME" } @{$paste_inputs{$moment}};
       print $efft_fh join "\n", map { "$_.MORE.SMURF.EFF_TIME" } @{$paste_inputs{$moment}};
-      print $tsys_fh join "\n", map { "$_.MORE.SMURF.TSYS" } @{$paste_inputs{$moment}};
 
       close $paste_fh;
       close $expt_fh;
       close $efft_fh;
-      close $tsys_fh;
 
       # And paste them together.
       my $params = "in='^paste$$.in' out=$out confine=false transp=true title='$moment map'";
@@ -246,15 +342,28 @@ foreach my $Obj ( @objs ) {
       $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
       $params = "in='^paste_efft$$.in' out=$out.MORE.SMURF.EFF_TIME confine=false transp=true";
       $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
-      $params = "in='^paste_tsys$$.in' out=$out.MORE.SMURF.TSYS confine=false transp=true";
-      $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+
+      # Handle TSYS if we have it in every file.
+      my $tsys_exists = 0;
+      foreach my $paste_input ( @{$paste_inputs{$moment}} ) {
+        _COMPONENT_EXISTS_ FILE=$paste_input COMPONENT=MORE.SMURF.TSYS
+        $tsys_exists = $_COMPONENT_EXISTS_{EXISTS};
+        last unless $tsys_exists;
+      }
+      if( $tsys_exists ) {
+        open my $tsys_fh, ">", "paste_tsys$$.in" or die "Could not open input file for PASTE: $!\n";
+        print $tsys_fh join "\n", map { "$_.MORE.SMURF.TSYS" } @{$paste_inputs{$moment}};
+        close $tsys_fh;
+        $params = "in='^paste_tsys$$.in' out=$out.MORE.SMURF.TSYS confine=false transp=true";
+        $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+        unlink "paste_tsys$$.in";
+      }
 
       orac_print "Created $moment map in $out.\n";
 
       unlink "paste$$.in";
       unlink "paste_expt$$.in";
       unlink "paste_efft$$.in";
-      unlink "paste_tsys$$.in";
 
     }
 
