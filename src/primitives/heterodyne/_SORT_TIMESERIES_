@@ -59,3 +59,60 @@ Rights Reserved.
 
 =cut
 
+# Form two files, one holding input filenames and one holding output
+# filenames.
+my $infile = new ORAC::TempFile;
+my $infilename = $infile->file;
+my $outfile = new ORAC::TempFile;
+my $outfilename = $outfile->file;
+
+foreach my $i ( 1 .. $Frm->nfiles ) {
+
+  my ( $in, $out ) = $Frm->inout( "_ts", $i );
+
+  $out =~ s/_\d{4}_/_/;
+  print {$infile->handle} "$in\n";
+  print {$outfile->handle} "$out\n";
+
+}
+
+# Set up parameters for TIMESORT.
+my $params = "in='^$infilename' out='^$outfilename' outfiles=tsout$$.lis";
+$params .= " sizelimit=! merge=true detpurge=true";
+
+# Run TIMESORT.
+$Mon{'smurf_mon'}->obeyw( "timesort", "$params" );
+
+# Find out how many output files there were.
+my( $ORAC_STATUS, $nout ) = $Mon{'smurf_mon'}->get( "timesort", "nout" );
+
+open my $out_fh, "<", "tsout$$.lis" or die "Could not find TIMESORT output file list tsout$$.lis: $!\n";
+my @tsout_files = <$out_fh>;
+close $out_fh;
+
+# Update the Frm object.
+foreach my $i ( 1 .. $nout ) {
+
+  my ( $in, $out ) = $Frm->inout( "_ts", $i );
+
+  $out =~ s/_\d{4}_/_/;
+
+  # We need to rename the output files, as TIMESORT creates _N, and
+  # we've already told it to create files with the correct suffix
+  # (_tsNNN), so just remove the _N.
+  my $timesort_output = $tsout_files[$i-1];
+  chomp $timesort_output;
+  $timesort_output .= ".sdf";
+  my $outfile = "$out.sdf";
+  rename( $timesort_output, $outfile );
+  $outfile =~ s/\.sdf$//;
+
+  $Frm->file( $i, $outfile );
+
+  orac_print "$in to $out:\n Sorted time slices in increasing time.\n";
+}
+
+unlink "tsout$$.lis";
+
+# Tidy-up output.
+orac_print "\n";
