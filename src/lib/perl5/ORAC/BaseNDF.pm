@@ -108,7 +108,6 @@ sub readhdr {
       $domerge = ($opts->{nomerge} ? 0 : 1);
     }
 
-
     # Read the headers. We have an explicit for loop so that we can
     # catch failures in single read rather than aborting all reads
     my %hdrs;
@@ -144,24 +143,37 @@ sub readhdr {
         $hdr = $merged;
       }
     } else {
-      # choose the largest header as the primary
-      my $biggest_key;
-      my $maxncards = 0;
+      # need to decide on a primary header.
+      # Special case - choose one that ends in HEADER
+      my $primhdr;
       for my $k (keys %hdrs) {
-        my $sz = $hdrs{$k}->sizeof;
-        if ($sz > $maxncards) {
-          $maxncards = $sz;
-          $biggest_key = $k;
+        if ($k =~ /\.HEADER$/) {
+          $primhdr = $k;
+          last;
         }
       }
-      die "Internal error finding largest header" if !defined $biggest_key;
+
+      # else choose the largest header as the primary
+      if (!defined $primhdr) {
+        my $biggest_key;
+        my $maxncards = 0;
+        for my $k (keys %hdrs) {
+          my $sz = $hdrs{$k}->sizeof;
+          if ($sz > $maxncards) {
+            $maxncards = $sz;
+            $biggest_key = $k;
+          }
+        }
+        die "Internal error finding largest header" if !defined $biggest_key;
+        $primhdr = $biggest_key;
+      }
 
       # select the primary
-      $hdr = $hdrs{$biggest_key};
-      delete $hdrs{$biggest_key};
+      $hdr = $hdrs{$primhdr};
+      delete $hdrs{$primhdr};
       
       # now assign the subheaders
-      for my $k (keys %hdrs) {
+      for my $k (sort keys %hdrs) {
         my $name = (split(/\./,$k))[-1]; # split on dot and take suffix
         my $item = Astro::FITS::Header::Item->new( Keyword => $name,
                                               Value => $hdrs{$k});
