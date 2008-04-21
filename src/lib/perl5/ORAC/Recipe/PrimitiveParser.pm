@@ -901,7 +901,9 @@ sub _expand_primitive {
       my $debug_obey = 0;
       if ($self->debug && $line !~ /\#.+->obeyw/) {
         push(@parsed,
-             'orac_debug( $Frm->number . ":"."'.$prim->name .'".'."\":($remote)\t$arguments\n\");\n");
+             '{ my $__PREFIX = "?";'."\n",
+             '  if( $Frm->can( "number" ) ) { $__PREFIX = $Frm->number; } elsif( $Frm->can( "name" ) ) { $__PREFIX = $Frm->name; };' . "\n",
+             '  orac_debug( $__PREFIX . ":"."'.$prim->name .'".'."\":($remote)\t$arguments\n\"); }\n");
         $debug_obey = 1;
       }
 
