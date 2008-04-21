@@ -53,6 +53,9 @@ sub new {
   my $obj = $self->SUPER::new( @_ );
 
 # This assumes we have a hash object.
+  $obj->{BadDetectors} = undef;
+  $obj->{BadDetectorsIndex} = undef;
+  $obj->{BadDetectorsNoUpdate} = 0;
   $obj->{Pointing} = undef;
   $obj->{PointingIndex} = undef;
   $obj->{PointingNoUpdate} = 0;
@@ -65,6 +68,104 @@ sub new {
 =head2 Accessors
 
 =over 4
+
+=item B<bad_detectors>
+
+Return bad detectors.
+
+  $bad_detectors = $Cal->bad_detectors;
+
+=cut
+
+sub bad_detectors {
+  my $self = shift;
+
+  return $self->bad_detectorscache( shift ) if @_;
+
+  if( $self->bad_detectorsnoupdate ) {
+    my $cache = $self->bad_detectorscache;
+    return $cache if defined $cache;
+  }
+
+  # We need to set up some temporary headers for LOFREQ_MIN and
+  # LOFREQ_MAX. The "thing" method contains the merged uhdr and hdr,
+  # so just stick them in there. The uhdr is in "thingtwo".
+  my $lofreq = $self->thing->{'LOFREQS'};
+  my $thing2 = $self->thingtwo;
+  $thing2->{'LOFREQ_MIN'} = $lofreq;
+  $thing2->{'LOFREQ_MAX'} = $lofreq;
+  $self->thingtwo( $thing2 );
+
+  my $bdposition = $self->bad_detectorsindex->chooseby_negativedt( 'ORACTIME', $self->thing, 0 );
+  if( ! defined( $bdposition ) ) {
+    croak "No suitable bad detector value found in index file"
+  }
+
+  # Remove the temporary LOFREQ_MIN and LOFREQ_MAX headers.
+  $thing2 = $self->thingtwo;
+  delete $thing2->{'LOFREQ_MIN'};
+  delete $thing2->{'LOFREQ_MAX'};
+  $self->thingtwo( $thing2 );
+
+  # Retrieve the specific entry, and thus the detectors.
+  my $bdref = $self->bad_detectorsindex->indexentry( $bdposition );
+  if( exists( $bdref->{'DETECTORS'} ) ) {
+    return $bdref->{'DETECTORS'};
+  } else {
+    croak "Unable to obtain DETECTORS from index file entry $bdposition\n";
+  }
+
+}
+
+=item B<bad_detectorscache>
+
+Cached value of the bad detectors. Only used when noupdate is in effect.
+
+=cut
+
+sub bad_detectorscache {
+  my $self = shift;
+  if( @_ ) { $self->{BadDetectors} = shift unless $self->bad_detectorsnoupdate; }
+  return $self->{BadDetectors};
+}
+
+=item B<bad_detectorsnoupdate>
+
+Stops bad detectors object from updating itself with more recent data.
+
+Used when using a command-line override to the pipeline.
+
+=cut
+
+sub bad_detectorsnoupdate {
+  my $self = shift;
+  if( @_ ) { $self->{BadDetectorsNoUpdate} = shift; }
+  return $self->{BadDetectorsNoUpdate};
+}
+
+=item B<bad_detectorsindex>
+
+Return (or set) the index object associated with the bad detectors
+index file.
+
+=cut
+
+sub bad_detectorsindex {
+  my $self = shift;
+  if( @_ ) { $self->{BadDetectorsIndex} = shift; }
+
+  if( ! defined( $self->{BadDetectorsIndex} ) ) {
+    my $indexfile = $self->find_file( "index.bad_detectors" );
+    my $rulesfile = $self->find_file( "rules.bad_detectors" );
+    if( ! defined( $rulesfile ) ) {
+      croak "Bad detectors rules file could not be located\n";
+    }
+    $self->{BadDetectorsIndex} = new ORAC::Index( $indexfile, $rulesfile );
+  }
+
+  return $self->{BadDetectorsIndex};
+
+}
 
 =item B<pointing>
 
@@ -97,6 +198,7 @@ sub pointing {
   } else {
     croak "Unable to obtain DAZ and DEL from index file entry $pointingfile\n";
   }
+
 }
 
 =item B<pointingcache>
