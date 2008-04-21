@@ -16,7 +16,9 @@ size of the data files is reduced by purging bad detectors.
 
 =over 4
 
-None.
+=item MASK = LOGICAL (Given)
+
+Whether or not to mask bad detectors. [1]
 
 =back
 
@@ -59,6 +61,11 @@ Rights Reserved.
 
 =cut
 
+# Retrieve parameters.
+my $mask = ( defined( $_PRIM_ARGS_->{MASK} ) ?
+             $_PRIM_ARGS_->{MASK}            :
+             1 );
+
 # Form two files, one holding input filenames and one holding output
 # filenames.
 my $infile = new ORAC::TempFile;
@@ -72,12 +79,21 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 
   print {$infile->handle} "$in\n";
   print {$outfile->handle} "$out\n";
-
 }
 
 # Set up parameters for TIMESORT.
 my $params = "in='^$infilename' out='^$outfilename' outfiles=tsout$$.lis";
 $params .= " sizelimit=! merge=true detpurge=true";
+
+# Retrieve a list of detectors to not use, but only if we've been
+# asked to mask bad detectors.
+my $baddets;
+if( $mask ) {
+  $baddets = eval { $Cal->bad_detectors };
+  if( defined( $baddets ) ) {
+    $params .= " detectors='-$baddets'";
+  }
+}
 
 # Run TIMESORT.
 $Mon{'smurf_mon'}->obeyw( "timesort", "$params" );
@@ -109,6 +125,10 @@ foreach my $i ( 1 .. $nout ) {
   $Frm->file( $i, $outfile );
 
   orac_print "$in to $out:\n Sorted time slices in increasing time.\n";
+
+  if( defined( $baddets ) ) {
+    orac_print " Masked detectors $baddets.\n";
+  }
 }
 
 unlink "tsout$$.lis";
