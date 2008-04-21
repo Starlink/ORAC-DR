@@ -306,27 +306,36 @@ sub slurpindex {
 
   if (defined $handle) {
 
-    # if rules are not OK we need to read the first line of the
-    # index file in order to generate a set of dummy rules
-    # (so that we can allow simple look ups of index entries)
-    if (!$self->rulesok) {
-      # get first line
-      my $line = <$handle>;
-      chomp($line);
+    # Read the first line. This will give us the column order.
+    my $first = <$handle>;
+    chomp $first;
 
-      # strip off leading #
-      $line =~ s/^\#//;
+    # Strip off the leading #.
+    $first =~ s/^\#//;
+
+    # if rules are not OK we need to generate a set of dummy rules (so
+    # that we can allow simple look ups of index entries)
+    if (!$self->rulesok) {
 
       # Create pseudo-rules by splitting on space
-      my %rules = map { $_, '' } split(/\s+/,$line);
+      my %rules = map { $_, '' } split(/\s+/,$first);
 
       # store pseudo rules
       $self->rulesref( \%rules );
     }
 
+    my @unsorted = split( /\s+/, $first );
+    my @sorted = sort @unsorted;
+    my @order;
+    foreach my $i ( 0 .. $#sorted ) {
+      foreach my $j ( 0 .. $#sorted ) {
+        if( $unsorted[$j] eq $sorted[$i] ) {
+          push @order, $j;
+        }
+      }
+    }
 
     foreach my $line (<$handle>) {
-
       next if $line =~ /^\s*#/;
 
       $line =~ s/^\s+//g;		   # zap leading blanks
@@ -336,23 +345,22 @@ sub slurpindex {
       # Look for array or hash references that have been
       # serialised
       for my $entry (@data) {
-	# REF{ and REF[ should be fairly unique
-	if ($entry =~ /^REF(\[|\{)/) {
-	  # Strip the leading REF
-	  my $code = $entry;
-	  $code =~ s/^REF//;
-	  # First make sure it evals okay
-	  my $ref = eval "$code";
+        # REF{ and REF[ should be fairly unique
+        if ($entry =~ /^REF(\[|\{)/) {
+          # Strip the leading REF
+          my $code = $entry;
+          $code =~ s/^REF//;
+          # First make sure it evals okay
+          my $ref = eval "$code";
 
-	  # if everything is okay store the reference
-	  # otherwise we just keep it as is
-	  if ($@) {
-	    orac_warn "Error in eval reading index file: $entry\n";
-	  } else {
-	    $entry = $ref;
-	  }
-
-	}
+          # if everything is okay store the reference
+          # otherwise we just keep it as is
+          if ($@) {
+            orac_warn "Error in eval reading index file: $entry\n";
+          } else {
+            $entry = $ref;
+          }
+        }
       }
 
       # If we are using the key from the file then we
@@ -367,8 +375,12 @@ sub slurpindex {
         $name = tmpnam;
       }
 
+      # Sort the data as we did before. This sorts it in the same
+      # order that the keys will be sorted in.
+      my @sorteddata = @data[@order];
+
       # Store index entry in hash
-      $index{$name} = \@data;
+      $index{$name} = \@sorteddata;
 
     }
 
@@ -718,16 +730,16 @@ sub verify {
       # in 5.6.1 I dont get a problem. Add 'no warnings' to eval
       $ok = eval("no warnings 'void'; '$CALVALUE' $rules{$key}");
       if ($@) {
-	orac_err "Eval error - check the syntax in your rules file\n";
-	orac_err "Rules was: '$CALVALUE' $rules{$key}\n";
-	orac_err "Error was: $@ \n";
-	return;
+        orac_err "Eval error - check the syntax in your rules file\n";
+        orac_err "Rules was: '$CALVALUE' $rules{$key}\n";
+        orac_err "Error was: $@ \n";
+        return;
       }
     }
     unless ($ok) {
       if ($warn) {
-	orac_warn("$name not a suitable calibration: failed $key $rules{$key}\n");
-	orac_warn "Header:-".$Hdr{$key}."--Calvalue:-$CALVALUE-\n";
+        orac_warn("$name not a suitable calibration: failed $key $rules{$key}\n");
+        orac_warn "Header:-".$Hdr{$key}."--Calvalue:-$CALVALUE-\n";
       }
       return 0;
     }
@@ -873,7 +885,7 @@ sub choosebydt_generic {
   my %dthash = (); # this is the hash for the keys and the associated time differences
   foreach my $key (keys %index) {
     # calculate the value of the time difference wrt to the object
-    my $delta = $ {$index{$key}}[$pos]-$Hdr{$timekey};
+    my $delta = ${$index{$key}}[$pos]-$Hdr{$timekey};
 
     # Only store if we want POSITIVE/NEGATIVE or ABSOLUTE values
     if ($type eq 'ABS') {
