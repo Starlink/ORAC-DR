@@ -53,7 +53,6 @@ my $order = ( defined( $_PRIM_ARGS_->{ORDER} ) ?
               $_PRIM_ARGS_->{ORDER}            :
               5 );
 
-orac_print "Removing baseline through smoothing and masking.\n";
 
 my @objs;
 if( $group == 0 ) {
@@ -64,49 +63,57 @@ if( $group == 0 ) {
   @objs = $Grp->members;
 }
 
-_CREATE_BASELINE_MASK_ GROUP=$group FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order
+if( $group != 1 ||
+    ( ( $group == 1 ) && ( $Grp->lastmember( $Frm ) ) ) ) {
 
-foreach my $Obj ( @objs ) {
+  orac_print "Removing baseline through smoothing and masking.\n";
 
-  foreach my $i ( 1 .. $Obj->nfiles ) {
+  _CREATE_BASELINE_MASK_ GROUP=$group FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order
 
-    my ( $in, $out ) = $Obj->inout( "_bl", $i );
-    my $mask = $Obj->uhdr( "BASELINE_MASKS" )->[$i];
+  foreach my $Obj ( @objs ) {
 
-    # Mask out the non-baseline regions in the original cube.
-    my $temp1 = new ORAC::TempFile;
-    my $temp1file = $temp1->file;
-    my $params = "in1=$in in2=$mask out=$temp1file";
-    $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+    foreach my $i ( 1 .. $Obj->nfiles ) {
 
-    # Fit better baselines to the masked cube. We can use the whole
-    # range but don't use auto.
-    my $temp2 = new ORAC::TempFile;
-    my $temp2file = $temp2->file;
-    $params = "in=$temp1file out=$temp2file axis=3 order=$order auto=false ranges=\! variance=true subtract=false method=single";
-    $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+      my ( $in, $out ) = $Obj->inout( "_bl", $i );
+      my $mask = $Obj->uhdr( "BASELINE_MASKS" )->[$i];
 
-    # And subtract these baselines from the input cube.
-    $params = "in1=$in in2=$temp2file out=$out";
-    $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+      # Mask out the non-baseline regions in the original cube.
+      my $temp1 = new ORAC::TempFile;
+      my $temp1file = $temp1->file;
+      my $params = "in1=$in in2=$mask out=$temp1file";
+      $Mon{'kappa_mon'}->obeyw( "add", "$params" );
 
-    # Copy the variance across over from the input cube, but only if
-    # the input cube has a variance.
-    $params = "ndf=$in";
-    $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "$params" );
-    my( $ORAC_STATUS, $var ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "variance" );
-    if( uc( $var ) eq 'TRUE' ) {
-      $params = "ndf=$out from=$in comp=VARIANCE";
-      $Mon{'ndfpack_mon'}->obeyw( "setvar", "$params" );
+      # Fit better baselines to the masked cube. We can use the whole
+      # range but don't use auto.
+      my $temp2 = new ORAC::TempFile;
+      my $temp2file = $temp2->file;
+      $params = "in=$temp1file out=$temp2file axis=3 order=$order auto=false ranges=\! variance=true subtract=false method=single";
+      $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+
+      # And subtract these baselines from the input cube.
+      $params = "in1=$in in2=$temp2file out=$out";
+      $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
+
+      # Copy the variance across over from the input cube, but only if
+      # the input cube has a variance.
+      $params = "ndf=$in";
+      $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "$params" );
+      my( $ORAC_STATUS, $var ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "variance" );
+      if( uc( $var ) eq 'TRUE' ) {
+        $params = "ndf=$out from=$in comp=VARIANCE";
+        $Mon{'ndfpack_mon'}->obeyw( "setvar", "$params" );
+      }
+
+      orac_print "$in to $out:\n";
+      orac_print " Removed baseline.\n";
+
+      $Obj->file( $i, $out );
+
     }
-
-    orac_print "$in to $out:\n";
-    orac_print " Removed baseline.\n";
-
-    $Obj->file( $i, $out );
-
   }
+
+  # Tidy-up output.
+  orac_print "\n";
+
 }
 
-# Tidy-up output.
-orac_print "\n";
