@@ -18,9 +18,9 @@ mosaicking. A check is made to see if the version of KAPPA supports
 WCSMOSAIC.
 
 This primitive operates on the current Frame object and selects images
-in groups of four (one for each subarray) and produces a mosaic of
-these four. The number of output files is one quarter of the total
-number of files in the Frame.
+in groups of up to four (one for each subarray) and produces a mosaic
+of these images. No operation is performed is there is only a single
+subarray.
 
 If the output need not be aligned to a celestial reference frame, then
 if a group file exists, that is the reference for the alignment, else
@@ -30,21 +30,24 @@ the first image in the frame object is chosen as reference.
 
 =over 4
 
-=item B<SINGLESTEP>
+=item B<MAKEMOS>
 
-A flag to determine whether to perform the alignment and mosaicking in
-one step using WCSMOSAIC. Default is 1 (Yes). If set to 0, then the
-following argument MUST be set. Note that the values of the METHOD and
-REBIN parameters are passed on to the primitives called if SINGLESTEP
-is 0.
+A flag to denote whether to use CCDPACK MAKEMOS for mosaicking the
+images. Default is 0 (no), which uses KAPPA WCSMOSAIC instead.
 
 =item B<METHOD>
 
-Keyword specifying the method for determing how the output pixels are
-populated. The default is nearest-neighbour resampling
-(C<nearest>). See the documentation for WCSMOSAIC or WCSALIGN for
-further details. The recommended choices are C<nearest>, C<bilinear>,
-ir C<sincsinc>.
+The method to be used for resampling the aligned images. This
+corresponds to the C<method> parameter for WCSMOSAIC and WCSALIGN,
+which is different from that for MAKEMOS. See WCSALIGN and/or
+WCSMOSAIC documentation for further details. Default value is
+C<nearest>.
+
+=item B<MAKEMOS_METHOD>
+
+The method by which MAKEMOS combines the images. Default is
+C<mean>. See the MAKEMOS documentation for a description of the
+possible values.
 
 =item B<REBIN>
 
@@ -58,18 +61,6 @@ A flag to denote whether to align the images to a celestial coordinate
 frame. The default is 0 (false) and the images will be aligned with
 either the group file if it exists or the first image in the Frame.
 
-=item B<FRAME>
-
-Celestial frame for reference image. No default but not used if
-SKYALIGN is false.
-
-=item B<COMBINE>
-
-The method to be used to combine the images. In principle could be any
-value supported by MAKEMOS (see MAKEMOS documentation for further
-details). Currently, only MEAN or MEDIAN are supported. MEDIAN is the
-default.
-
 =item B<VERBOSE>
 
 A flag to denote whether the primitive should issue verbose
@@ -77,23 +68,14 @@ information messages. Default is true (1).
 
 =back
 
-=head1 KNOWN ISSUES
-
-If no group file is present the primitive should create a non-rotated
-RA/Dec reference based on the world coordinates of the first frame.
-Currently, if the world coordinates are rotated the output aligned
-frames will be rotated (as will be the case for a SCUBA-2 image
-aligned with Nasmyth coordinates).
-
 =head1 ALGORITHMS
 
-Uses KAPPA WCSMOSAIC. This primitive is currently a very general
-implementation.
+KAPPA: WCSMOSAIC, WCSALIGN. CCDPACK: MAKEMOS
 
 =head1 FILE SUFFIX
 
-An output file is created for each set of four subarray images in the
-Frame with a suffix of C<_arr>. 
+An output file is created for each set of up-to-four subarray images
+in the Frame with a suffix of C<_arr>.
 
 =head1 AUTHOR
 
@@ -101,7 +83,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2005-2007 University of British Columbia. All Rights
+Copyright (C) 2005-2008 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -121,55 +103,64 @@ USA
 
 =cut
 
-# First check for SINGLESTEP
-my $singlestep = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{SINGLESTEP} &&
-		  defined $_ALIGN_AND_MOSAIC_SUBARRAY_{SINGLESTEP}) ?
-                  $_ALIGN_AND_MOSAIC_SUBARRAY_{SINGLESTEP} : 1;
-
-# Rebin or resample? Default is resample (rebin = 0).
-my $rebin = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{REBIN} &&
-	     defined $_ALIGN_AND_MOSAIC_SUBARRAY_{REBIN}) ?
-             $_ALIGN_AND_MOSAIC_SUBARRAY_{REBIN} : 0;
-
-# Method for determining the output pixel values
-my $method = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{METHOD} &&
-	      defined $_ALIGN_AND_MOSAIC_SUBARRAY_{METHOD}) ? 
-              lc($_ALIGN_AND_MOSAIC_SUBARRAY_{METHOD}) : "nearest"; 
-
 # Should I be verbose? (default to yes)
 my $verbose = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{VERBOSE} &&
                defined $_ALIGN_AND_MOSAIC_SUBARRAY_{VERBOSE}) ?
                $_ALIGN_AND_MOSAIC_SUBARRAY_{VERBOSE} : 1;
 
-# Are we aligning images in a SKY frame? Default to yes.
-my $skyalign = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{SKYREF} &&
-	       defined $_ALIGN_AND_MOSAIC_SUBARRAY_{SKYREF}) ?
-               $_ALIGN_AND_MOSAIC_SUBARRAY_{SKYREF} : 1;
+# Check that we have more than one subarray to combine
+if ( $Frm->numsubarrays == 1 ) {
+  # Dummy warning for now
+  orac_warn "Note: data exist for only 1 subarray - skipping this primitive" 
+    if $verbose;
 
-# If a single step, then check version of KAPPA is new enough
-if (starversion_lt('kappa', 'V1.5')) {
-  $singlestep = 0;
-  orac_warn "Kappa version does not support WCSMOSAIC, falling back on dual-step method";
-}
+} else {
+  # Check for input paramters: MAKEMOS
+  my $makemos = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{MAKEMOS} &&
+		 defined $_ALIGN_AND_MOSAIC_SUBARRAY_{MAKEMOS}) ?
+		 $_ALIGN_AND_MOSAIC_SUBARRAY_{MAKEMOS} : 0;
 
-# Determine reference image for aligning all images to. Use default
-# coordinate frame
-_GET_REFERENCE_IMAGE_ SKYREF=$skyalign VERBOSE=$verbose
-my $refimage = $_GET_REFERENCE_IMAGE_{REFIMAGE};
+  # Rebin or resample? Default is resample (rebin = 0).
+  my $rebin = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{REBIN} &&
+	       defined $_ALIGN_AND_MOSAIC_SUBARRAY_{REBIN}) ?
+	       $_ALIGN_AND_MOSAIC_SUBARRAY_{REBIN} : 0;
 
-# Check to see if we're doing this all in one step
-if ($singlestep) {
+  # Method for determining the output pixel values (used by WCSMOSAIC
+  # and WCSALIGN
+  my $method = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{METHOD} &&
+		defined $_ALIGN_AND_MOSAIC_SUBARRAY_{METHOD}) ? 
+		lc($_ALIGN_AND_MOSAIC_SUBARRAY_{METHOD}) : "nearest"; 
 
-  # Check that we have more than one subarray to align
-  my $no_of_subarrays = $Frm->numsubarrays;
-  if ( $no_of_subarrays == 1 ) {
-    # Dummy warning for now
-    orac_warn "Note: data exist for only 1 subarray - skipping this primitive";
-    # Of course, now we should ignore everything else...
+  # Are we aligning images in a SKY frame? Default to yes.
+  my $skyalign = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{SKYREF} &&
+		  defined $_ALIGN_AND_MOSAIC_SUBARRAY_{SKYREF}) ?
+		  $_ALIGN_AND_MOSAIC_SUBARRAY_{SKYREF} : 1;
+
+  # MAKEMOS image combination method
+  my $makemos_method = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{MAKEMOS_METHOD} &&
+			defined $_ALIGN_AND_MOSAIC_SUBARRAY_{MAKEMOS_METHOD}) ?
+			lc($_ALIGN_AND_MOSAIC_SUBARRAY_{MAKEMOS_METHOD}) : "mean";
+
+
+  # Check version of KAPPA is new enough to use WCSMOSAIC
+  if (starversion_lt('kappa', 'V1.5')) {
+    $makemos = 1;
+    orac_warn "Installed Kappa version does not support WCSMOSAIC, falling back on WCSALIGN+MAKEMOS";
   }
 
-  orac_print("Aligning and mosaicking subarray images with WCSMOSAIC \n") 
-    if $verbose;
+  # Determine reference image for alignment. Use default coordinate
+  # frame
+  _GET_REFERENCE_IMAGE_ SKYREF=$skyalign VERBOSE=$verbose
+  my $refimage = $_GET_REFERENCE_IMAGE_{REFIMAGE};
+
+  # Check to see if we're using MAKEMOS
+  if ($makemos) {
+    orac_print("Aligning and mosaicking subarray images with WCSALIGN+MAKEMOS\n")
+      if $verbose;
+  } else {
+    orac_print("Aligning and mosaicking subarray images with WCSMOSAIC\n")
+      if $verbose;
+  }
 
   # Set the WLIM parameter for WCSMOSAIC
   my $wlim = 0.2;
@@ -215,14 +206,28 @@ if ($singlestep) {
       my ($in, $out) = $Frm->inout('_arr',$indxr{$arraygrp});
       my $intmp = new ORAC::TempFile;
       my $numingrp = scalar( @{ $commonfiles{$arraygrp} } );
-      # Write filenames into temp file
-      for my $i (1 .. $numingrp) {
-	print {$intmp->handle} $commonfiles{$arraygrp}->[$i-1] ."\n" ;
+      # Combine images with chosen method
+      if ( $makemos ) {
+	# Write filenames into temp file
+	my $otmp = new ORAC::TempFile;
+	for my $i (1 .. $numingrp) {
+	  print {$intmp->handle} $commonfiles{$arraygrp}->[$i-1] ."\n" ;
+	  print {$otmp->handle} $commonfiles{$arraygrp}->[$i-1] ."_al\n" ;
+	}
+	my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
+	  "out=^".$otmp->file." in=^".$intmp->file;
+	$Mon{kappa_mon}->obeyw("wcsalign","$args");
+	$args = "in=^".$otmp->file." method=$makemos_method out=$out";
+	$Mon{ccdpack_reg}->obeyw("makemos","$args");
+      } else {
+	# Write filenames into temp file
+	for my $i (1 .. $numingrp) {
+	  print {$intmp->handle} $commonfiles{$arraygrp}->[$i-1] ."\n" ;
+	}
+	my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
+	  "out=$out in=^".$intmp->file;
+	$Mon{kappa_mon}->obeyw("wcsmosaic","$args");
       }
-      # Run WCSMOSAIC
-      my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
-	"out=$out in=^".$intmp->file;
-      $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
       # Add to output array
       push (@out, $out);
       # Remove temp file
@@ -232,31 +237,33 @@ if ($singlestep) {
   } else {
     my ($in, $out) = $Frm->inout('_arr');
     my $intmp = new ORAC::TempFile;
-    # Write filenames into temp file
-    foreach my $i (1..$nfiles) {
-      print {$intmp->handle} $Frm->file($i) ."\n";
+    # Combine images with chosen method
+    if ( $makemos ) {
+      # Write filenames into temp file
+      my $otmp = new ORAC::TempFile;
+      for my $i (1 .. $nfiles) {
+	print {$intmp->handle} $Frm->file($i) ."\n" ;
+	print {$otmp->handle} $Frm->file($i) ."_al\n" ;
+      }
+      my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
+	"out=^".$otmp->file." in=^".$intmp->file;
+      $Mon{kappa_mon}->obeyw("wcsalign","$args");
+      $args = "in=^".$otmp->file." method=$makemos_method out=$out";
+      $Mon{ccdpack_reg}->obeyw("makemos","$args");
+    } else {
+      # Write filenames into temp file
+      foreach my $i (1..$nfiles) {
+	print {$intmp->handle} $Frm->file($i) ."\n";
+      }
+      my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
+	"out=$out in=^".$intmp->file;
+      $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
     }
-
-    # Run WCSMOSAIC
-    my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
-      "out=$out in=^".$intmp->file;
-    $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
     # Add to output array
     push (@out, $out);
     # Remove temp file
     undef $intmp;
   }
-
   # Store the output files
   $Frm->files( @out );
-
-} else { # OK, if SINGLESTEP is zero, check for COMBINE
-  my $combine = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{COMBINE} &&
-		 defined $_ALIGN_AND_MOSAIC_SUBARRAY_{COMBINE}) ?
-		 lc($_ALIGN_AND_MOSAIC_SUBARRAY_{COMBINE}) : "median";
-
-  # Call other primitives
-  orac_print("Aligning and mosaicking subarray images in two stages \n");
-  _ALIGN_ARRAYS_  METHOD=$method REBIN=$rebin REFIMAGE=$refimage SKYALIGN=$skyalign
-  _MAKE_MOSAIC_FRAME_ COMBINE=$combine
 }
