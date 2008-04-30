@@ -267,8 +267,10 @@ sub file {
       # Make sure the nokeep flag is unset
       $self->nokeep($filenum,0);
 
-      # Push onto file history array
-      push(@{$self->intermediates}, $self->files->[$index]);
+      # Push current file onto file history array. Not previous.
+      # We do this for consistency with files() method and to
+      # allow cleanup to remove current files.
+      $self->push_intermediates( $self->files->[$index] );
 
       # Sync the headers. Use the $firstarg value as that's the
       # 1-based index.
@@ -326,17 +328,22 @@ sub files {
     # get copies of current files
     my @oldfiles = @{$self->{Files}};
 
-    # delete the old files if required and store on intermediates array
+    # delete the old files if required
     for my $i (1..@oldfiles) {
       $self->erase( $i ) if $self->nokeep( $i );
     }
-    push(@{$self->intermediates}, @oldfiles);
 
     # Store the new versions
     @{ $self->{Files} } = @_;
 
     # Also in raw if raw is empty
     $self->raw( @{ $self->{Files} } ) unless defined $self->raw;;
+
+    # And store the new files on the intermediates array.
+    # Note that we store new and not old to guarantee
+    # that we can clear out the final files that are created if
+    # necessary. This means that intermediates also includes current
+    $self->push_intermediates( @_ );
 
     # unset noKeep flags
     for my $i (1..scalar(@_)) {
@@ -653,6 +660,8 @@ file in the files() array [ie was it stored as C<$Frm-E<gt>file(1)> or
 C<$Frm-E<gt>file(2)>]. The order simply reflects the order the files
 were given to the file() method.
 
+See also the push_intermediates() method.
+
 =cut
 
 sub intermediates {
@@ -668,6 +677,40 @@ sub intermediates {
     # In a scalar context, return the reference to the array
     return $self->{Intermediates};
   }
+}
+
+=item B<push_intermediates>
+
+Equivalent to
+
+  push(@{$Frm->intermediates}, @files);
+
+but ensures that raw frames are not stored on the intermediates
+array (do not want to risk deleting raw data).
+
+Returns the number of intermediates that were stored (ie
+either 0 or the number of file names supplied).
+
+=cut
+
+sub push_intermediates {
+  my $self = shift;
+
+  # get the input files
+  my @files = @_;
+
+  # Get the raw files.
+  # This is all a bit painful given that we expect raw to
+  # be stored only for an empty intermediates array but do
+  # we want to take the risk?
+  my %raw = map { $self->stripfname($_), undef } $self->raw;
+
+  # filter out raw
+  @files = grep { !exists $raw{$self->stripfname($_)} } @files;
+
+  # store them
+  push(@{$self->intermediates}, @files) if @files;
+  return scalar(@files);
 }
 
 =item B<raw>
