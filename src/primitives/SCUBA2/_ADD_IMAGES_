@@ -83,10 +83,15 @@ my $out = (exists $_ADD_IMAGES_{OUT} &&
 	  defined $_ADD_IMAGES_{OUT}) ?
   $_ADD_IMAGES_{OUT} : undef;
 
-
+# Name of component to add if defined
 my $comp = (exists $_ADD_IMAGES_{COMP} &&
 	  defined $_ADD_IMAGES_{COMP}) ?
   $_ADD_IMAGES_{COMP} : undef;
+
+# Addition method - default to pairwise ADD
+my $method = (exists $_ADD_IMAGES_{METHOD} &&
+	  defined $_ADD_IMAGES_{METHOD}) ?
+  uc($_ADD_IMAGES_{METHOD}) : "ADD";
 
 # No default values, so throw an error if no inputs
 unless ( defined $inref && defined $out ) {
@@ -105,22 +110,61 @@ my ($inlist, @inlist);
 my $expr;
 # Number of input files
 my $nfiles = scalar(@{ $inref });
-if ( $nfiles < $maxalignfiles ) {
-  if ( $nfiles > 1 ) {
-    orac_print "\nCalculating total exposure time...";
-    my $ia2z = "a";
-    foreach my $infile ( @{ $inref } ) {
-      $infile .= ".MORE.SMURF.".$comp if ( defined $comp );
-      $inlist .= "i$ia2z=$infile ";
-      push(@inlist, "i$ia2z");
-      $ia2z++;
+if ( $nfiles > 1 ) {
+  orac_print "\nCalculating total exposure time..." 
+    if ( lc($comp) =~ /exp_time/);
+  if ( $method eq "ADD" ) {
+    # Use ADD with a pairwise adding algorithm
+    my @filelist = @{ $inref };
+
+    # Create two temp file objects to alternate between
+    my $file1 = new ORAC::TempFile;
+    my $file2 = new ORAC::TempFile;
+    # Flag to denote which file to use as in2 and which as out
+    my $thistime = 1;
+
+    # Input files to ADD
+    my ($in1, $in2, $sum);
+    # Loop over input files, starting at 1 so we can define $in2
+    for my $i ( 1 .. $#filelist ) {
+      # Define first input file
+      $in1 = ( defined $comp ) ? $filelist[$i].".MORE.SMURF.".$comp : $filelist[$i];
+
+      # Define second input file
+      if ( $i == 1) {
+	$in2 = ( defined $comp ) ? $filelist[0].".MORE.SMURF.".$comp : $filelist[0];
+	$sum = $file1->file;
+      } else {
+	if ( $thistime ) {
+	  $thistime = 0;
+	  $in2 = $file1->file;
+	  $sum = $file2->file;
+	} else {
+	  $thistime = 1;
+	  $in2 = $file2->file;
+	  $sum = $file1->file;
+	}
+      }
+      # Add the two files
+      $Mon{kappa_mon}->obeyw("add","in1=$in1 in2=$in2 out=$sum");
     }
-    $expr = join("+",@inlist);
-
-    $Mon{kappa_mon}->obeyw("maths","$inlist $expr out=$out");
+    # Finally copy the result to the output file
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$sum out=$out");
+  } else {
+    if ( $nfiles < $maxalignfiles ) {
+      my $ia2z = "a";
+      foreach my $infile ( @{ $inref } ) {
+	$infile .= ".MORE.SMURF.".$comp if ( defined $comp );
+	$inlist .= "i$ia2z=$infile ";
+	push(@inlist, "i$ia2z");
+	$ia2z++;
+      }
+      $expr = join("+",@inlist);
+      
+      $Mon{kappa_mon}->obeyw("maths","$inlist $expr out=$out");
+    } else {
+      # Split the list into manageable chunks
+      orac_warn "Uh-oh: Too many files - can't do this yet\n";
+    }
   }
-} else {
-  # Split the list into manageable chunks
-  orac_warn "Uh-oh: Too many files - can't do this yet\n";
 }
-
