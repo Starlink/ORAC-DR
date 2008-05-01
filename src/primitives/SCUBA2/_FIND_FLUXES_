@@ -181,6 +181,19 @@ _FIND_SOURCES_ IMAGE=$in
 # Retrieve catalogue
 my $catalogue = $_FIND_SOURCES_{CATALOGUE};
 
+# Extractor does not understand offset coordinate systems, so we must
+# check and ensure we are working in an absolute system. In practice,
+# this means setting SkyRefIs = Ignored, AlignOffset = 0 and System =
+# ICRS. These attributes are reset on successful exit
+$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=system");
+my ($ORAC_STATUS, $cosys_in) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=skyrefis");
+($ORAC_STATUS, my $skyrefis) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+my $offset = ( lc($skyrefis) eq "origin" ) ? 1 : 0;
+if ( $offset ) {
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=mset setting='system=icrs,skyrefis=ignored,alignoffset=0'");
+}
+
 # Check that the catalogue has sources in it
 if ( $catalogue->sizeof == 0 ) {
   # Issue an error and skip the rest
@@ -288,6 +301,12 @@ if ( $catalogue->sizeof == 0 ) {
       push (@pkfluxes, $amp);
     }
   }
+}
+
+# Reset WCS to input
+if ( $offset ) {
+  my $args = "ndf=$in mode=mset setting='system=".$cosys_in.",skyrefis=origin,alignoffset=1'";
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
 }
 
 unless ($uselog) {
