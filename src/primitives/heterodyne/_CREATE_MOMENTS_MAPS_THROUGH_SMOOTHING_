@@ -314,102 +314,104 @@ if( $group != 1 || ( $group == 1 && $Grp->lastmember( $Frm ) ) ) {
 
       my( $in, $out ) = $Obj->inout( "_$moment" );
 
-      if( scalar( @{$paste_inputs{$moment}} ) == 1 ) {
+      if( defined( $paste_inputs{$moment} ) ) {
 
-        my $params = "in=${$paste_inputs{$moment}}[0] out=$out";
-        $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+        if( scalar( @{$paste_inputs{$moment}} ) == 1 ) {
 
-        orac_print "Created $moment map in $out.\n";
+          my $params = "in=${$paste_inputs{$moment}}[0] out=$out";
+          $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
 
-      } else {
+          orac_print "Created $moment map in $out.\n";
 
-        orac_print " Pasting together temporary maps to form $moment map.\n";
+        } else {
 
-        # Write a file containing the input files to PASTE.
-        open my $paste_fh, ">", "paste$$.in" or die "Could not open input file for PASTE: $!\n";
-        open my $expt_fh, ">", "paste_expt$$.in" or die "Could not open input file for PASTE: $!\n";
-        open my $efft_fh, ">", "paste_efft$$.in" or die "Could not open input file for PASTE: $!\n";
+          orac_print " Pasting together temporary maps to form $moment map.\n";
 
-        print $paste_fh join "\n", @{$paste_inputs{$moment}};
-        print $expt_fh join "\n", map { "$_.MORE.SMURF.EXP_TIME" } @{$paste_inputs{$moment}};
-        print $efft_fh join "\n", map { "$_.MORE.SMURF.EFF_TIME" } @{$paste_inputs{$moment}};
+          # Write a file containing the input files to PASTE.
+          open my $paste_fh, ">", "paste$$.in" or die "Could not open input file for PASTE: $!\n";
+          open my $expt_fh, ">", "paste_expt$$.in" or die "Could not open input file for PASTE: $!\n";
+          open my $efft_fh, ">", "paste_efft$$.in" or die "Could not open input file for PASTE: $!\n";
 
-        close $paste_fh;
-        close $expt_fh;
-        close $efft_fh;
+          print $paste_fh join "\n", @{$paste_inputs{$moment}};
+          print $expt_fh join "\n", map { "$_.MORE.SMURF.EXP_TIME" } @{$paste_inputs{$moment}};
+          print $efft_fh join "\n", map { "$_.MORE.SMURF.EFF_TIME" } @{$paste_inputs{$moment}};
 
-        # And paste them together.
-        my $params = "in='^paste$$.in' out=$out confine=false transp=true title='$moment map'";
-        $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+          close $paste_fh;
+          close $expt_fh;
+          close $efft_fh;
 
-        $params = "in='^paste_expt$$.in' out=$out.MORE.SMURF.EXP_TIME confine=false transp=true";
-        $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
-        $params = "in='^paste_efft$$.in' out=$out.MORE.SMURF.EFF_TIME confine=false transp=true";
-        $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
-
-        # Handle TSYS if we have it in every file.
-        my $tsys_exists = 0;
-        foreach my $paste_input ( @{$paste_inputs{$moment}} ) {
-          _COMPONENT_EXISTS_ FILE=$paste_input COMPONENT=MORE.SMURF.TSYS
-          $tsys_exists = $_COMPONENT_EXISTS_{EXISTS};
-          last unless $tsys_exists;
-        }
-        if( $tsys_exists ) {
-          open my $tsys_fh, ">", "paste_tsys$$.in" or die "Could not open input file for PASTE: $!\n";
-          print $tsys_fh join "\n", map { "$_.MORE.SMURF.TSYS" } @{$paste_inputs{$moment}};
-          close $tsys_fh;
-          $params = "in='^paste_tsys$$.in' out=$out.MORE.SMURF.TSYS confine=false transp=true";
+          # And paste them together.
+          my $params = "in='^paste$$.in' out=$out confine=false transp=true title='$moment map'";
           $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
-          unlink "paste_tsys$$.in";
+
+          $params = "in='^paste_expt$$.in' out=$out.MORE.SMURF.EXP_TIME confine=false transp=true";
+          $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+          $params = "in='^paste_efft$$.in' out=$out.MORE.SMURF.EFF_TIME confine=false transp=true";
+          $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+
+          # Handle TSYS if we have it in every file.
+          my $tsys_exists = 0;
+          foreach my $paste_input ( @{$paste_inputs{$moment}} ) {
+            _COMPONENT_EXISTS_ FILE=$paste_input COMPONENT=MORE.SMURF.TSYS
+            $tsys_exists = $_COMPONENT_EXISTS_{EXISTS};
+            last unless $tsys_exists;
+          }
+          if( $tsys_exists ) {
+            open my $tsys_fh, ">", "paste_tsys$$.in" or die "Could not open input file for PASTE: $!\n";
+            print $tsys_fh join "\n", map { "$_.MORE.SMURF.TSYS" } @{$paste_inputs{$moment}};
+            close $tsys_fh;
+            $params = "in='^paste_tsys$$.in' out=$out.MORE.SMURF.TSYS confine=false transp=true";
+            $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+            unlink "paste_tsys$$.in";
+          }
+
+          orac_print "Created $moment map in $out.\n";
+
+          unlink "paste$$.in";
+          unlink "paste_expt$$.in";
+          unlink "paste_efft$$.in";
+
         }
 
-        orac_print "Created $moment map in $out.\n";
+        _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=$moment
 
-        unlink "paste$$.in";
-        unlink "paste_expt$$.in";
-        unlink "paste_efft$$.in";
-
-      }
-
-      _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=$moment
-
-      # Tag the moment map if the current moment is the requested one.
-      if( $tag eq $moment ) {
-        {
-          $Frm = $Obj;
-          _TAG_AS_REPRESENTATIVE_IMAGE_ FILE=$out UPDATE=0
-        }
-      }
-
-      # Find the position of the peak, then extract a spectrum from that
-      # position, but only if the moment is 'integ'.
-      if( $moment eq 'integ' ) {
-
-        $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$out" );
-        my( $ORAC_STATUS, $maxwcs ) = $Mon{'kappa_mon'}->get( "stats", "maxwcs" );
-        $maxwcs =~ /^(.*),(.*),.*$/;
-        my $ra = $1;
-        my $dec = $2;
-        $ra =~ s/\s//g;
-        $dec =~ s/\s//g;
-
-        my ( $pl_in, $pl_out ) = $Obj->inout( "_sp" );
-
-        my $params = "in=$pl_in pos='$ra,$dec' axes=VRAD method=linear out=$pl_out";
-        $Mon{'kappa_mon'}->obeyw( "pluck", "$params" );
-
-        orac_print "$pl_in to $pl_out:\n Extracted spectrum at $ra, $dec.\n";
-
-        _SET_FILE_FITS_ITEM_ FILE=$pl_out KEY=PRODUCT VALUE=sp
-
-        {
-          $Frm = $Obj;
-          _TAG_AS_REPRESENTATIVE_SPECTRUM_ FILE=$pl_out UPDATE=0
+        # Tag the moment map if the current moment is the requested one.
+        if( $tag eq $moment ) {
+          {
+            $Frm = $Obj;
+            _TAG_AS_REPRESENTATIVE_IMAGE_ FILE=$out UPDATE=0
+          }
         }
 
-      }
+        # Find the position of the peak, then extract a spectrum from
+        # that position, but only if the moment is 'integ'.
+        if( $moment eq 'integ' ) {
 
+          $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$out" );
+          my( $ORAC_STATUS, $maxwcs ) = $Mon{'kappa_mon'}->get( "stats", "maxwcs" );
+          $maxwcs =~ /^(.*),(.*),.*$/;
+          my $ra = $1;
+          my $dec = $2;
+          $ra =~ s/\s//g;
+          $dec =~ s/\s//g;
+
+          my ( $pl_in, $pl_out ) = $Obj->inout( "_sp" );
+
+          my $params = "in=$pl_in pos='$ra,$dec' axes=3 method=linear out=$pl_out";
+          $Mon{'kappa_mon'}->obeyw( "pluck", "$params" );
+
+          orac_print "$pl_in to $pl_out:\n Extracted spectrum at $ra, $dec.\n";
+
+          _SET_FILE_FITS_ITEM_ FILE=$pl_out KEY=PRODUCT VALUE=sp
+
+            {
+              $Frm = $Obj;
+              _TAG_AS_REPRESENTATIVE_SPECTRUM_ FILE=$pl_out UPDATE=0
+            }
+          }
+      }
     }
+    orac_print "\n";
   }
 
   # Tidy-up output.
