@@ -89,9 +89,11 @@ sub collate_headers {
     push( @toappend, $mjdend );
   }
 
-  # Set the ASN_TYPE header. Default to 'obs'.
+  # Set the ASN_TYPE header. 'obs' is for frames, 'night' is for
+  # groups.
+  my $asnvalue = ( $self->is_frame ? 'obs' : 'night' );
   my $asntype = new Astro::FITS::Header::Item( Keyword => 'ASN_TYPE',
-                                               Value   => 'obs',
+                                               Value   => $asnvalue,
                                                Comment => 'Time-based selection criterion',
                                                Type    => 'STRING' );
   push(@toappend, $asntype);

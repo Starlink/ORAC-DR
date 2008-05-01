@@ -486,6 +486,19 @@ sub fixedpart {
   return $self->{FixedPart};
 }
 
+=item B<is_frame>
+
+Whether or not the current object is an ORAC::Frame object.
+
+  $is_frame = $self->is_frame;
+
+Returns 0 for Group objects.
+
+=cut
+
+sub is_frame {
+  return 0;
+}
 
 =item B<members>
 

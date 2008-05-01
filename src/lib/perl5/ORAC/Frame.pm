@@ -125,6 +125,19 @@ sub group {
   return $self->{Group};
 }
 
+=item B<is_frame>
+
+Whether or not the current object is an ORAC::Frame object.
+
+  $is_frame = $self->is_frame;
+
+Returns 1.
+
+=cut
+
+sub is_frame {
+  return 1;
+}
 
 =item B<isgood>
 
