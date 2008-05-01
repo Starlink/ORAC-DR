@@ -28,7 +28,6 @@ use warnings;
 use strict;
 use Carp;
 
-use ORAC::Bounds qw/ return_bounds_header /;
 use ORAC::Error qw/ :try /;
 use ORAC::Print qw/ orac_warn /;
 
@@ -40,7 +39,7 @@ use Starlink::AST;
 
 our $VERSION;
 
-use base qw/ ORAC::Frame::NDF /;
+use base qw/ ORAC::JSAFile ORAC::Frame::NDF /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ( $VERSION = $1 );
 
@@ -219,62 +218,6 @@ sub framegroup {
 
 =over 4
 
-=item B<collate_headers>
-
-This method is used to collect all of the modified FITS headers for a
-given Frame object and return an updated C<Astro::FITS::Header> object
-to be used by the C<sync_headers> method.
-
-  my $header = $Frm->collate_headers( $file );
-
-Takes one argument, the filename for which the header will be
-returned.
-
-=cut
-
-sub collate_headers {
-  my $self = shift;
-  my $file = shift;
-
-  return unless defined( $file );
-  if( $file !~ /\.sdf$/ ) { $file .= ".sdf"; }
-  return unless -e $file;
-
-  if( ! defined( $self->hdr ) || scalar( keys( %{$self->hdr} ) ) == 0 ) {
-    $self->readhdr;
-  }
-
-  # Get the generic headers from the base class and append RA/Dec/Freq bounds information
-  my $header = $self->SUPER::collate_headers( $file );
-  my $bounds_header = return_bounds_header( $file );
-
-  # Store the items so that we only append once for efficiency
-  my @toappend;
-  @toappend = $bounds_header->allitems if defined $bounds_header;
-
-  # Calculate MJD-OBS and MJD-END from DATE-OBS and DATE-END.
-  my $dateobs = DateTime::Format::ISO8601->parse_datetime( $self->hdr( "DATE-OBS" ) );
-  my $dateend = DateTime::Format::ISO8601->parse_datetime( $self->hdr( "DATE-END" ) );
-  my $mjdobs = new Astro::FITS::Header::Item( Keyword => 'MJD-OBS',
-                                              Value   => $dateobs->mjd,
-                                              Comment => 'MJD of start of observation',
-                                              Type    => 'FLOAT' );
-  my $mjdend = new Astro::FITS::Header::Item( Keyword => 'MJD-END',
-                                              Value   => $dateend->mjd,
-                                              Comment => 'MJD of end of observation',
-                                              Type    => 'FLOAT' );
-  push(@toappend, $mjdobs, $mjdend);
-
-  # Set the ASN_TYPE header.
-  my $asntype = new Astro::FITS::Header::Item( Keyword => 'ASN_TYPE',
-                                               Value   => 'obs',
-                                               Comment => 'Time-based selection criterion',
-                                               Type    => 'STRING' );
-  push(@toappend, $asntype);
-
-  $header->append( \@toappend );
-  return $header;
-}
 
 
 =item B<file_from_bits>

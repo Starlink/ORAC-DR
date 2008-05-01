@@ -32,9 +32,7 @@ our $VERSION;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
-use ORAC::Group::NDF;
-
-use base qw/ ORAC::Group::NDF /;
+use base qw/ ORAC::JSAFile ORAC::Group::NDF /;
 
 =head1 PUBLIC METHODS
 

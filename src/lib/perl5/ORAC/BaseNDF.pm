@@ -37,6 +37,58 @@ $VERSION = sprintf("%d", q$Revision$ =~ /(\d+)/);
 
 =over 4
 
+=item B<collate_headers>
+
+This method is used to collect all of the modified FITS headers for a
+given Frame object and return an updated C<Astro::FITS::Header> object
+to be used by the C<sync_headers> method.
+
+  my $header = $Frm->collate_headers( $file );
+
+Takes one argument, the filename for which the header will be
+returned.
+
+=cut
+
+sub collate_headers {
+  my $self = shift;
+  my $file = shift;
+
+  return unless defined( $file );
+  if( $file !~ /\.sdf$/ ) { $file .= ".sdf"; }
+  return unless -e $file;
+
+  my $header = new Astro::FITS::Header;
+  $header->removebyname( 'SIMPLE' );
+  $header->removebyname( 'END' );
+
+  # Update the version headers.
+  my $pipevers = new Astro::FITS::Header::Item( Keyword => 'PIPEVERS',
+                                                Value   => $VERSION,
+                                                Comment => 'Pipeline version',
+                                                Type    => 'STRING' );
+  my $engvers = new Astro::FITS::Header::Item( Keyword => 'ENGVERS',
+                                               Value   => 1,
+                                               Comment => 'Algorithm engine version',
+                                               Type    => 'STRING' );
+  $header->append( $pipevers );
+  $header->append( $engvers );
+
+  # Insert the PRODUCT header. This comes from the $self->product
+  # method. If the return value from this method is undefined, do not
+  # insert the header.
+  my $product = $self->product;
+  if( defined( $product ) ) {
+    my $prod = new Astro::FITS::Header::Item( Keyword => 'PRODUCT',
+                                              Value   => $product,
+                                              Comment => 'Pipeline product',
+                                              Type    => 'STRING' );
+    $header->append( $prod );
+  }
+
+  return $header;
+}
+
 =item B<readhdr>
 
 Reads the header from the observation file (the filename is stored in
@@ -239,7 +291,6 @@ sub sync_headers {
   foreach my $file ( @files ) {
 
     if( $file !~ /_(\d)+$/ ) {
-
       my $newheader = $self->collate_headers( $file );
       my $header = new Astro::FITS::Header::NDF( File => $file );
       $header->append( $newheader );
