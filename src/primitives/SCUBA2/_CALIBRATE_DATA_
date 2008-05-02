@@ -1,5 +1,3 @@
-#! -*-perl-*-
-
 =head1 NAME
 
 _CALIBRATE_DATA_ - Multiply data by the flux conversion factor
@@ -11,14 +9,13 @@ _CALIBRATE_DATA_ - Multiply data by the flux conversion factor
 
 =head1 DESCRIPTION
 
-Multiply SCUBA-2 data by the flux conversion factor (FCF). The value
-for the FCF depends on the filter and the type of calibration
-required. The calibration units are specified by an argument.
+Multiply SCUBA-2 data by the flux conversion factor (FCF).
+The value for the FCF depends on the filter and the type
+of calibration required. The calibration units are specified
+by an argument.
 
-This is a Frame operation and should be used before group operations.
-
-In SCUBA-2 terms, the FCF is simply a scaling from pW to Jy (or
-Jy/beam).
+Whilst this primitive can be run on a group, care must be taken
+that it is not run multiple times on a group image.
 
 =head1 ARGUMENTS
 
@@ -26,9 +23,13 @@ Jy/beam).
 
 =item UNITS
 
-Controls the units of the FCF. The options are BEAM for Jy/beam,
-ARCSEC for Jy/arcsec**2 and PIXEL for Jy (equivalent to
-Jy/pixel). PIXEL is the default.
+Controls the units of the FCF. The options are BEAM for
+Jy/beam/pW and ARCSEC for Jy/arcsec**2/pW. Default is BEAM.
+
+=item GROUP
+
+If true, the group file will be calibrated. No attempt is made
+to determine whether the calibration has already been applied.
 
 =back
 
@@ -40,7 +41,7 @@ The following external tasks are used:
 
 =item KAPPA
 
-CMULT
+CMULT, SETUNITS
 
 =back
 
@@ -51,66 +52,65 @@ Creates an output file with a C<_cal> extension.
 =head1 AUTHOR
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
-Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
-Copyright (C) 2005 Particle Physics and Astronomy Research Council and
-University of British Columbia. All Rights Reserved.
+Copyright (C) 2008 Science and Technology Facilities Council.
+Copyright (C) 1998-2000 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
 
 =cut
 
-# PI - must be able to get from somewhere else?
-my $pi = 3.141592654;
+# Read the arguments
+my $Obj = ($_PRIM_ARGS_->{GROUP} ? $Grp : $Frm );
 
-# Bandwidth of filter in GHz, frequency dependent.
-# Should be able to retrieve from header or somewhere else?
-my $bandGHz = 35; # 850 um
-
-# Telescope aperture area in m**2
-my $Atel = $pi * 7.5 * 7.5;
-
-# Units
-my $units =  (exists $_CALIBRATE_DATA_{UNITS} &&
-	      defined $_CALIBRATE_DATA_{UNITS}) ?
-              lc($_CALIBRATE_DATA_{UNITS}) : "pixel";
-
-my $unitstr;   # Units string
-my $gainunits; # Gain modifier determined by Units
-# May need to know beam size and/or pixel area
-if ($units eq "beam") {
-  $unitstr = "Jy/beam";
-  $gainunits = 1;
-} elsif ($units eq "arcsec") {
-  $unitstr = "Jy/arcsec**2";
-  $gainunits = 1;
-} elsif ($units eq "pixel") {
-  $unitstr = "Jy/pixel";
-  $gainunits = 1;
+my $units = 'BEAM';
+if (exists $_CALIBRATE_DATA_{UNITS} ) {
+  $units = uc( $_CALIBRATE_DATA_{UNITS});
+  if ($units ne 'BEAM' && $units ne 'ARCSEC') {
+    orac_throw "_CALIBRATE_DATA_: Units must be BEAM or ARCSEC not '$units'";
+  }
 }
 
-# Convert pW to Jy:
-# 1.0e5 factor = 1e26/(1e12*1e9)
-# 1e26 from 1 Jy = 1e-26 W/m**2/Hz
-# 1e12 from 1 pW = 1e-12 W
-# 1e9 from 1 GHz = 1e9 Hz
-my $gain = $gainunits * 1.0e5/ ( $Atel * $bandGHz );
+# Multiplication factor - convert to mJy
+my $mult = 1000.0;
+my $pre = 'm';  # for mJy
+# Units
+my $unitstr = $pre .( $units eq 'BEAM' ? 'Jy/beam/pW' : 'Jy/arcsec^2/pW');
+
+# For ARCSEC we need to multiply by the square of the pixel regrid
+# size.
 
 # Loop over sub-instruments
-for my $i (1..$Frm->nfiles) {
+for my $i (1..$Obj->nfiles) {
+  my $file = $Obj->file($i);
+  my $parea = 1.0; # Pixel area
+  if ($units eq 'ARCSEC') {
+    # Need pixel scale to get pixel area
+    _GET_PIXEL_SCALE_ IN=$file
+    $parea = $_GET_PIXEL_SCALE_{RESULTS}->[0] * 
+             $_GET_PIXEL_SCALE_{RESULTS}->[1];
+  }
 
-  # retrieve input and output names
-  my ($in, $out) = $Frm->inout("_cal", $i);
+  # Retrieve the current fcf value from the calibration
+  # object. This will calibrate our data in Jy and then
+  # if we multiply by an extra 1000 we get mJy
+  # The multiplication factor includes the /pixel correction in ARCSEC
+  my $gain = $Cal->gain($Obj->uhdr("ORAC_FILTER"), $units) * $mult * $parea;
+
+  # retrive input and output names
+  my ($in, $out) = $Obj->inout("_cal", $i);
   my $args = "scalar=$gain";
 
   # Multiply by the gain
   $Mon{kappa_mon}->obeyw("cmult","in=$in out=$out $args");
 
-  orac_print "Multiplying $in by $gain \n";
+  orac_print "Multiplying $in by $gain $unitstr\n";
 
   # Change the units
   $Mon{ndfpack_mon}->obeyw("setunits","ndf=$out units=$unitstr");
 
   # Update file
-  $Frm->file($i, $out);
+  $Obj->file($i, $out);
 
 }
 
