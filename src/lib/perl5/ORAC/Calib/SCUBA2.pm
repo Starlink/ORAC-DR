@@ -68,9 +68,9 @@ $DEBUG = 0; # Turn off debugging mode
 # due to improvements in throughput (not necessarily a change in filter)
 
 %DEFAULT_FCFS = (
-		 BEAM => {
-			  '850'  => 1.0,
-			  '450'  => 1.0,
+		 BEAM => { # Jy/pW/beam
+			  '850'  => 435,
+			  '450'  => 130,
 			 },
 		 ARCSEC => {
 			    '450' => 1.00,
@@ -87,16 +87,16 @@ $DEBUG = 0; # Turn off debugging mode
 
 %FCFS = ('850' => [ # Asumed to be in date order
 		    {
-		      START => 20080101, # Beginning of SCUBA-2 history
+		      START => 20060101, # Beginning of SCUBA-2 history
 		      ARCSEC=> 1.0 ,
-		      BEAM  => 1.0,
+		      BEAM  => 435,
 		    }
 		  ],
 	 '450' => [
 		   {
-		     START => 20080101, # Beginning of SCUBA-2 history
+		     START => 20060101, # Beginning of SCUBA-2 history
 		     ARCSEC => 1.0,
-		     BEAM   => 1.0,
+		     BEAM   => 130,
 		   }
 		  ],
 	 );
