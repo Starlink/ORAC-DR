@@ -1,0 +1,159 @@
+=head1 NAME
+
+_FIND_MAP_PEAK_ - Determine the peak signal of a point source
+
+=head1 DESCRIPTION
+
+Finds the peak signal of a point source located at the map origin.
+No attempt is made to search for sources not located at approximately
+the map centre.
+
+The peak signal is determined by fitting a gamma function.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item VERBOSE
+
+Flat to indicate whether informational messages should be 
+given to the user. Default is verbose (true).
+
+=item GROUP
+
+If true, the group file is used rather than the frame file.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+=over 4
+
+=item KAPPA
+
+PSF, WCSFRAME
+
+=back
+
+=head1 OUTPUT DATA
+
+On completion, the primitive hash C<%_FIND_MAP_PEAK_>
+contains the following keys:
+
+=over 4
+
+=item PEAK
+
+The peak signal. Contains C<undef> if the calculation did not
+complete sucessfully.
+
+=item POSITION
+
+The position of the peak. Reference to an array of x, y coordinates.
+
+=item PSF
+
+If the PSF fit was successful the PSF fit parameters are available
+as a reference to a hash in this parameters for _FIND_MAP_PEAK_.
+This allows the fit results to be obtained without an additional
+call to _FIT_PSF_ and also allows the programmer to know whether
+the fit was successful.
+
+=back
+
+=head1 OUTPUT FILES
+
+The following files are created:
+
+=over 4
+
+=item C<log.peak>
+
+Log of peak signals.
+
+=back
+
+The frame object is not updated.
+
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+Copyright (C) 2008 Science and Technology Facilities Council.
+Copyright (C) 2000 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful,but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place,Suite 330, Boston, MA  02111-1307, USA
+
+=cut
+
+# Should I be verbose (default to yes)
+my $verbose = (exists $_PRIM_ARGS_->{VERBOSE} && 
+	       defined $_PRIM_ARGS_->{VERBOSE}) ?
+  $_PRIM_ARGS_->{VERBOSE} : 1;
+
+# initialise the results array
+$_PRIM_ARGS_->{RESULTS} = [];
+
+my $Obj = ($_PRIM_ARGS_->{GROUP} ? $Grp : $Frm );
+
+# Get the centroid and the peak at the centroid
+_CENTROID_IMAGE_ GROUP=$_PRIM_ARGS_->{GROUP}
+
+my $in = $Obj->file;
+
+# we now run PSF if possible else simply use the peak from 
+# centroiding
+my $peak;
+
+# Create temporary file with the position in
+my $tmp = new ORAC::TempFile;
+my $tmpfile = $tmp->file;
+print { $tmp->handle } $_CENTROID_FRAME_{RESULTS}->[0]," ",
+  $_CENTROID_FRAME_{RESULTS}->[1], "\n";
+$tmp->handle->close;
+
+_FIT_PSF_ COFILE=$tmpfile GAUSSIAN=0 IMAGE=$in
+
+my $amp = $_FIT_PSF_{AMPLITUDE};
+my $axisr = $_FIT_PSF_{AXISR};
+my @posn = @{ $_FIT_PSF_{POSITION} };
+
+# Check the axis ratio
+if (!defined $axisr || $axisr > 1.4 || $axisr < 0.75) {
+  my $text = (defined $axisr ? $axisr : '<undef>');
+  orac_warn "Axis ratio of source out of specification (was $text). Ignoring fit.\n";
+
+  # Use stats peak
+  orac_warn "Using peak at centroid position for $in instead.\n";
+
+  my $pos = $_CENTROID_FRAME_{RESULTS}->[0].",".
+    $_CENTROID_FRAME_{RESULTS}->[1];
+  $Mon{kappa_mon}->obeyw("stats","NDF=$in($pos)");
+  (my $ORAC_STATUS,$peak) = $Mon{kappa_mon}->get("stats","maximum");
+  @posn = @{ $_CENTROID_FRAME_{RESULTS} };
+
+} else {
+  $peak = $amp;
+  my %psfpars = %_FIT_PSF_;
+  $_PRIM_ARGS_->{PSF} = \%psfpars;
+}
+
+# Store the result in the hash
+$_PRIM_ARGS_->{PEAK} = $peak;
+$_PRIM_ARGS_->{POSITION} = \@posn;
+
+orac_print "Calculated peak signal from map of $peak\n" if $verbose;
