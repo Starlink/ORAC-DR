@@ -760,7 +760,7 @@ sub fluxcal {
       my $h = int($dech);
       my $decm = ($dech - $h) * 60;
       my $m = int($decm);
-      my $decs = ($decm - $m) * 60;
+      my $decs = int(($decm - $m) * 60);
 
       $scutime = "$h $m $decs";
 
@@ -1009,7 +1009,7 @@ sub tau {
   if ($sys eq 'CSO') {
 
     # Read the value from the header of thing
-    my $csotau = $self->thing->{'TAU_225'};
+    my $csotau = $self->thing->{'MEANWVM'};
 
     ($tau, $status) = get_tau($filt, 'CSO', $csotau);
 
@@ -1067,7 +1067,7 @@ sub tau {
       # 850N skydips within a single night.
 
       my $found;
-      foreach my $f ( '850W', '850N' ) {
+      foreach my $f ( '850' ) {
 	$hdr{FILTER} = $f;
 
 	# Search for the requested filter
@@ -1132,7 +1132,7 @@ sub tau {
 
       orac_print "No suitable skydip found - converting from CSO tau\n";
       # Find CSO
-      my $csotau = $self->thing->{'TAU_225'};
+      my $csotau = $self->thing->{'MEANWVM'};
       ($tau, $status) = get_tau($filt, 'CSO', $csotau);
 
       if ($status == -1) {
