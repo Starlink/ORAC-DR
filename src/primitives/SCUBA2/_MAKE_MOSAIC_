@@ -224,16 +224,15 @@ unless ( $makemos ) {
 # Method for determining the output pixel values in WCSALIGN and WCSMOSAIC
 my $method = (exists $_MAKE_MOSAIC_{METHOD} &&
 	      defined $_MAKE_MOSAIC_{METHOD}) ? 
-              lc($_MAKE_MOSAIC_{METHOD}) : "nearest"; 
+              lc($_MAKE_MOSAIC_{METHOD}) : "bilinear"; 
 
 # Method for combining images in MAKEMOS
 my $makemos_method = (exists $_MAKE_MOSAIC_{MAKEMOS_METHOD} &&
 		      defined $_MAKE_MOSAIC_{MAKEMOS_METHOD}) ? 
                       lc($_MAKE_MOSAIC_{MAKEMOS_METHOD}) : "mean"; 
 
-# Input and output files...
-my $in;
-my $out;
+# Input/output files
+my ($in, $out);
 
 my $Grpobj = undef; # Group object if group processing
 # Number of Frames to mosaic for good variance - initialize to 1
@@ -299,6 +298,7 @@ if ( $usegrp ) {
     orac_print "Collecting files to mosaic...\n";
     if ($Grpobj->file_exists) {
       $nfiles = 1;
+      $in = $Grpobj->file;
       print {$listhandle} $Grpobj->file ."\n";
       push (@mosfiles, $Grpobj->file);
       
@@ -318,6 +318,7 @@ if ( $usegrp ) {
 	}
 	# Write current filename to list file
 	print {$listhandle} "$fname\n";
+	$in = $fname;
 	push (@mosfiles, $fname);
 	$nfiles++;
       }
@@ -384,6 +385,7 @@ if ( $usegrp ) {
 	    $Mon{ndfpack_mon}->obeyw("wcsattrib","$alignargs");
 	  }
 	  print {$listhandle} "$fname\n";
+	  $in = $fname;
 	  push (@mosfiles, $fname);
 	  $nfiles++;
 	}
@@ -436,12 +438,14 @@ if ( $usegrp ) {
       $Mon{ndfpack_mon}->obeyw("wcsattrib","$alignargs");
     }
     print {$listhandle} "$fname\n";
+    $in = $fname;
     push (@mosfiles, $fname);
     $nfiles++;
   }
   # Create output filename, derived from first input file
   # since this is a many to one operation
-  ($in, $out) = $Frm->inout('_fmos');
+#  ($in, $out) = $Frm->inout('_fmos');
+  $out = $Frm->inout('_fmos');
 
   $make_mosaic = 1;
 }
@@ -591,48 +595,43 @@ if ( $make_mosaic ) {
     my $wlim = 0.2;
     # Now to get the variance scheme correct. 
     #
-    # For processing FRAME images, we rely on the GENVAR switch to
-    # choose the correct scheme. GENVAR should be true if there are
-    # enough images to create a reliable variance, but should be false
-    # otherwise (e.g. in the QL pipeline). The variance flag should
-    # always be false.
+    # If there is only a single input image then set both GENVAR and
+    # VARIANCE to false in order to do nothing except propagate a
+    # variance if one exists. Except this doesn't work so we currently
+    # do an ndfcopy.
     #
-    # For processing GROUP images, we have to be aware of the origin
-    # and number of the input file(s). If the original data were in
-    # time-series format then (ql)makemap will have generated a
-    # variance, so that genvar must be false and variance=t. If the
-    # original data were in the form of DREAM/STARE images then genvar
-    # should only be true if the input (FRAME) images have no
-    # variance, such as will be the case in the QL pipeline. Else
-    # genvar is true and variance is false. 
+    # If there are multiple images then we have to be aware of the
+    # origin of these images. 
+    #
+    # For processing FRAME mosaics, the input images will have no
+    # variance so variance=f, but we still want an output variance
+    # based on the spread of input values and thus genvar=t
+    #
+    # For processing GROUP images then we assume that the input images
+    # have variance and that it should be used for weighting. This
+    # means that genvar must be false (we want to use the variances
+    # already present) and that variance must be true (we want to use
+    # those variances for weighting the data).
 
-    my $weighting = "genvar=f variance=f";
-#    my $weighting = ( $usegrp ) ? ( ($nfiles > 1) ? "genvar=false variance=true" : 
-#				    "genvar=f variance=f") : 
-#      ( ($genvar) ? "genvar=true variance=false" : "genvar=! variance=t" );
-    if ( $usegrp ) {
-      # Group mosaic
-      if ($nfiles > 1 && $genvar ) {
-	$weighting = "genvar=t variance=f";
-      }
+    if ( $nfiles > 1 ) {
+      my $weighting = "genvar=f variance=f";
+      $weighting = ( $usegrp ) ? "genvar=f variance=f" : "genvar=t variance=f";
+      my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
+	"out=$out in=^".$moslist." ilevel=3 $weighting";
+      $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
     } else {
-      # Frame mosaic - there are no internal variances so variance=f always
-      $weighting = ( $genvar ) ? "genvar=t variance=f" : 
-	                         "genvar=f variance=f";
+      # Just do an ndfcopy of the input file to the output. Note that
+      # if there is only one input file then $in will be it
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$out");
     }
-    print $weighting."\n";
-    my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
-      "out=$out in=^".$moslist." ilevel=3 $weighting";
-    $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
   }
-
   # HACK for renaming group output
   if ( $usegrp ) {
     my $outname = $Grpobj->file;
 
     $outname .= "_mos" unless $outname =~ /_mos$/; # horrible hack KLUGE
 
-    _ADD_IMAGES_ INLIST=\@mosfiles OUT=$out COMP=EXP_TIME
+#    _ADD_IMAGES_ INLIST=\@mosfiles OUT=$out COMP=EXP_TIME
    # Using the inout method generates a warning - it's harmless but
     # it might be off-putting so we'll stick with the hack above for
     # now.
