@@ -1,0 +1,190 @@
+#! -*-perl-*-
+
+=head1 NAME
+
+_CALC_DC_SKY_ - Calculate and optionally log a DC sky value
+
+=head1 SYNOPSIS
+
+  _CALC_DC_SKY_
+
+=head1 DESCRIPTION
+
+Calculates a mean sky value from an uncalibrated image. An error is
+generated if this primitive is run on calibrated data since it is
+assumed that this step will have been done already before calibration.
+
+This is a Frame operation and should be used before group operations.
+
+=head1 ARGUMENTS
+
+The following arguments are supported
+
+=over 4
+
+=item METHOD
+
+Valid options are MEAN, MEDIAN or MODE. Default is MEAN.
+
+=item LOGFILE
+
+Flag to denote whether to write results of sky removal to a log
+file. Default is 1 (true).
+
+=item VERBOSE
+
+Flag to denote whether to print informative messages to the
+screen. Default is false (0).
+
+=back
+
+=head1 External Tasks
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA
+
+C<csub>
+
+=back
+
+=head1 FILES
+
+Creates an output file with a C<_sky> extension.
+
+=head1 NOTES
+
+Only deals with 2-D images, not time-series data.
+
+=head1 KNOWN ISSUES
+
+Does not determine units from input data files.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+Copyright (C) 2005-2007 the University of British Columbia.  All
+Rights Reserved.
+
+
+=cut
+
+# Tell user...
+orac_print "Calculating a constant sky level\n";
+
+# Determine whether to subtract the mean, median or modal values from the image
+my $method = (exists $_CALC_DC_SKY_{METHOD} && 
+	      defined $_CALC_DC_SKY_{METHOD}) ?
+              uc($_CALC_DC_SKY_{METHOD}) : "MEAN";
+
+# Should I be verbose (default to no)
+my $verbose = (exists $_CALC_DC_SKY_{VERBOSE} && 
+	       defined $_CALC_DC_SKY_{VERBOSE}) ?
+               $_CALC_DC_SKY_{VERBOSE} : 0;
+
+# Write logfiles (default to true)
+my $uselog = (exists $_CALC_DC_SKY_{LOGFILE} &&
+              defined $_CALC_DC_SKY_{LOGFILE}) ?
+              $_CALC_DC_SKY_{LOGFILE} : 1;
+
+# Set the histo/histat flags. The latter is a placeholder in case user
+# wishes to override default choice which is to use HISTAT. Note that
+# histo and histat are mutually exclusive. Setting histo = 1 *must*
+# set histat = 0, but the reverse is not necessarily true. See the
+# documentation for _FIND_IMAGE_STATISTICS for further info.
+my ($methodnum, $histo, $histat); 
+if ( $method eq "MEAN" ) {
+  $histo = 0;
+  $histat = 1;
+} elsif ( $method eq "MEDIAN" ) {
+  $histo = 0;
+  $histat = 1;
+} elsif ( $method eq "MODE" ) {
+  $histo = 0;
+  $histat = 1;
+} else {
+  # If we got something unknown, continue using the mean
+  orac_warn "Unknown METHOD, $method: falling back on MEAN\n";
+  $method = "MEAN";
+}
+
+# Create a log file if necessary
+my ($skylog, $statlog);
+if ( $uselog ) {
+  my $time = gmtime();
+  # DC Sky
+  $skylog = new ORAC::LogFile("log.sky");
+  $skylog->header("#Sky properties log file - created on $time",
+		  "#\n#  ID      Time        Filter    DC       Slope  PA  Seeing   El  CSO",
+		  "#-----------------------------------------------------------------------");
+  # Other statistics
+  $statlog = new ORAC::LogFile("log.stats");
+  $statlog->header("#Statistics log file - created on $time",
+		  "#\n#  ID      Time        Filter    Sigma  Seeing   El  CSO",
+		  "#-----------------------------------------------------------------------");
+}
+
+my $meansky = 0.0;
+my $sigma = -1;
+# Loop over files in the Frm object
+for my $i (1..$Frm->nfiles) {
+  # Calculate the DC sky level.
+  _FIND_IMAGE_STATISTICS_ IMAGE=$Frm->file($i) VERBOSE=0 HISTOGRAM=$histo HISTAT=$histat
+  my $sky = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$method};
+  my $histomode = $_FIND_IMAGE_STATISTICS_{HISTOMODE};
+  $sigma = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
+  # Note that if things went wrong, the following has the effect of
+  # permanently ignoring the current file. If something went wrong
+  # computing the statistics, it may indicate a problem with the data,
+  # so this may be a good thing.
+
+  # Check that a valid value was returned if we are using the
+  # HISTOGRAM option to manually find the mode
+  if ( $histo && !$histomode ) {
+    orac_warn "No valid pixels in image, unable to calculate sky with method=$method\n";
+
+  } elsif ( !$histo && !$histat && ($sigma == 0.0) ) {
+    # Check that SIGMA was not set to zero if STATS was used
+    orac_warn "Invalid result from STATS (sigma = 0) with current file (".$Frm->file($i).")\n";
+  } else {
+    $meansky += $sky;
+  }
+}
+# HACK to get Q&D value - should really use the SUM and divide by
+# number of good pixels
+$meansky /= $Frm->nfiles;
+
+$meansky = sprintf "%12.7f", $meansky;
+orac_print "Calculated a $method sky level of $meansky\n";
+#  if ($verbose);
+# Write to a logfile if desired
+if ( $uselog ) {
+  # UT string
+  my $time = sprintf "%12.7f", $Frm->hdrval('ORACTIME',0);
+  # Observation number
+  my $obsnum = sprintf "%05d", $Frm->hdr('OBSNUM');
+  # Filter
+  my $filt = sprintf "%4s", $Frm->hdr('FILTER');
+  
+  # Get TAU from the header - should get from $Cal object?
+  my $cso = sprintf "%5.3f", 0.5*($Frm->hdrval('WVMTAUST', 0) + 
+				  $Frm->hdrval('WVMTAUEN',-1));
+
+  # Elevation
+  my $el = int ( 0.5 * ($Frm->hdrval('ELSTART',0) + $Frm->hdrval('ELEND',-1) ) );
+  # Seeing
+  my $see = sprintf "%5.3f", ( 0.5 * ($Frm->hdrval('SEEINGST', 0) + 
+					  $Frm->hdrval('SEEINGEN',-1)) );
+  # Since this is a DC sky removal so sky slope and PA are both 0
+  $skylog->addentry("$obsnum $time $filt $meansky  0.00000   0.0  $see    $el $cso");
+  # Only write stats entry if sigma was valid
+  if ( $sigma > 0 ) {
+    $sigma = sprintf "%10.9f", $sigma;
+    $statlog->addentry("$obsnum $time $filt $sigma  $see    $el $cso");
+  }
+}
+
+orac_print "DC sky calculation successful\n";
