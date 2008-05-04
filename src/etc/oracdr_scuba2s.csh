@@ -11,7 +11,7 @@
 #     C-shell script
 
 #  Invocation:
-#     source ${ORAC_DIR}/etc/oracdr_scuba2l.csh
+#     source ${ORAC_DIR}/etc/oracdr_scuba2s.csh
 
 #  Description:
 #     This script initialises the environment variables and command
@@ -126,7 +126,7 @@ else
     set oracut = `\date -u +%Y%m%d`
 endif
 
-set oracdr_args = "-ut $oracut"
+set oracdr_args = "-ut $oracut -nodisplay"
 
 setenv ORAC_INSTRUMENT SCUBA2_SHORT
 setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/scuba2/ok/$oracut
@@ -144,6 +144,9 @@ setenv RTD_REMOTE_DIR $ORAC_DATA_OUT
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
+
+# Set stripchart alias
+alias xstripchart xstripchart -cfg=$ORAC_DATA_CAL/jcmt.ini
 
 # Tidy up
 unset oracut
