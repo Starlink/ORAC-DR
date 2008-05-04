@@ -616,8 +616,40 @@ if ( $make_mosaic ) {
     if ( $nfiles > 1 ) {
       my $weighting = "genvar=f variance=f";
       $weighting = ( $usegrp ) ? "genvar=f variance=f" : "genvar=t variance=f";
-      my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
-	"out=$out in=^".$moslist." ilevel=3 $weighting";
+      # If we are creating the group image, first check the bounds to
+      # make sure the image will not exceed 2 GB on disk - this should
+      # probably be a separate primitive
+      my $bounds = "lbnd=! ubnd=!";
+      if ( $usegrp ) {
+	my $bndargs = "ref=$refimage method=$method wlim=$wlim lbnd=! ubnd=! ".
+	  "out=! $weighting in=^".$moslist;
+	$Mon{kappa_mon}->obeyw("wcsmosaic","$bndargs");
+	my ($ORAC_STATUS, @lbound) = $Mon{kappa_mon}->get("wcsmosaic","lbound");
+	($ORAC_STATUS, my @ubound) = $Mon{kappa_mon}->get("wcsmosaic","ubound");
+
+	my $xsize = $ubound[0] - $lbound[0] + 1;
+	my $ysize = $ubound[1] - $lbound[1] + 1;
+	my $numpix = $xsize*$ysize;
+	my $MAXPIX = 2e8;
+	if ( $numpix > $MAXPIX ) {
+	  my $scalefactor = sqrt($MAXPIX / $numpix);
+	  my $newxsize = int($xsize * $scalefactor);
+	  my $newysize = int($newxsize * $ysize / $xsize);
+	  my $dx = int($xsize * ( 1.0 - $scalefactor ) / 2.0);
+	  my $dy = int($ysize * ( 1.0 - $scalefactor ) / 2.0);
+	  # Reduce the bounds equally
+	  $lbound[0] += $dx;
+	  $ubound[0] -= $dx;
+	  $lbound[1] += $dy;
+	  $ubound[1] -= $dy;
+	  $scalefactor = sprintf "%5.3f", $scalefactor;
+	  print "\n";
+	  orac_warn "Output image will exceed maximum size, scaling each axis by $scalefactor\n";
+	  $bounds = "lbnd=[$lbound[0],$lbound[1]] ubnd=[$ubound[0],$ubound[1]]";
+	}
+      }
+      my $args = "ref=$refimage method=$method wlim=$wlim ".
+	"out=$out in=^".$moslist." $weighting $bounds";
       $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
     } else {
       # Just do an ndfcopy of the input file to the output. Note that
