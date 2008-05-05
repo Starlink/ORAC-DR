@@ -103,6 +103,43 @@ if ( ($spread ne "nearest") && ($spread ne "linear") ) {
 # Retrieve list of files in current frame
 my @files = $Frm->files;
 
+# Flag to indicate if we have a FOCUS observation
+my $focusobs = ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) ? 1 : 0;
+
+if ( $focusobs ) {
+  # If we have a focus observation, need to sort files by FOCUS axis
+  # and position
+  my $nfocstep = $Frm->hdr("NFOCSTEP");
+  my %focsteps;
+  foreach my $i ( 0 .. $#files ) {
+    my $focaxis = $Frm->hdrval("FOCAXIS",$i);
+    my $focpos = $Frm->hdrval("FOCPOSN",$i);
+    my @list = ( defined $focsteps{$focpos} ) ? @{ $focsteps{$focpos} } : ();
+    push (@list, $i+1);
+    $focsteps{$focpos} = \@list;
+  }
+
+  foreach my $focpos ( keys %focsteps ) {
+    my @filenums = @{ $focsteps{$focpos} };
+    my $intmp = new ORAC::TempFile;
+    foreach my $filenum ( @filenums ) {
+      print {$intmp->handle} $Frm->file($filenum) ."\n";
+    }
+
+    # Set output filename
+    $focpos =~ s/\./-/g;
+    my $out = join("_",$Frm->file, $focpos);
+
+    # Argument list
+    my $args = "in=^".$intmp->file." out=$out pixsize=$pixsize spread=$spread system=$system";
+
+    # Call qlmakemap
+    orac_print "Calling qlmakemap for Focus step $i+1... (this may take a few/several/many seconds) \n";
+    $Mon{smurf_mon}->obeyw("qlmakemap","$args");
+  }
+
+
+} else {
 # Write filenames to a temp file
 my $intmp = new ORAC::TempFile;
 print {$intmp->handle} join("\n",@files[0..$#files]);
@@ -158,3 +195,4 @@ orac_print "Image $out created\n" if $verbose;
 # within qlmakemap
 $Frm->uhdr("SKY_SUBTRACTION",1);
 $Frm->uhdr("EXTINCTION",1);
+}
