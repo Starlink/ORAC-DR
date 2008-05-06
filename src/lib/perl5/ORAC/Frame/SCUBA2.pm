@@ -675,6 +675,12 @@ Return the requested header entry, automatically dealing with
 subheaders. Essentially overrides the standard hdr method for
 retrieving a header value. Returns undef if no arguments are passed.
 
+    $value = $Frm->hdrval( "KEYWORD" );
+    $value = $Frm->hdrval( "KEYWORD", 0 );
+
+both return the values from the first sub-header (index 0)
+if the value is not present in the primary header.
+
 =cut
 
 sub hdrval {
