@@ -209,11 +209,11 @@ sub monitor_handle {
       # the reader to realise that the file has been reopened.
       unlink $MONITOR_FILE;
       open($fh, ">", $MONITOR_FILE)
-	or croak "Unable to open display monitoring file: $!";
+        or croak "Unable to open display monitoring file: $!";
     } else {
       if (-e $MONITOR_FILE) {
-	open($fh, "<", $MONITOR_FILE)
-	  or croak "Unable to read display monitoring file despite its existence: $!";
+        open($fh, "<", $MONITOR_FILE)
+          or croak "Unable to read display monitoring file despite its existence: $!";
       }
     }
     $self->{MONITOR_HDL} = $fh;
@@ -378,7 +378,7 @@ sub display_data {
       $frm_suffix = $frm->gui_id($n);
     } else {
       croak "ORAC::Display::display_data: supplied object can not implement\n".
-	" the gui_id() method";
+  " the gui_id() method";
     }
 
     # Set the current suffix in the object
@@ -416,9 +416,9 @@ sub display_data {
 
       # print the result
       if ($DEBUG) {
-	foreach (keys %display_info) {
-	  orac_print("$_ : $display_info{$_}\n",'cyan');
-	}
+        foreach (keys %display_info) {
+          orac_print("$_ : $display_info{$_}\n",'cyan');
+        }
       }
 
       # Now I suppose we need to decide whether the display tool is 
@@ -427,47 +427,47 @@ sub display_data {
 
       my $current_tool;
       unless (exists $self->display_tools->{$display_info{TOOL}}) {
-	orac_print("Creating new object for $display_info{TOOL}\n",'blue');
+        orac_print("Creating new object for $display_info{TOOL}\n",'blue');
 
-	# Dynamically load the required display class
-	# Very useful when some sites do not have access
-	# to all display systems
+        # Dynamically load the required display class
+        # Very useful when some sites do not have access
+        # to all display systems
 
-	# Class name
-	my $class = 'ORAC::Display::' . $display_info{TOOL};
-	eval "use $class";
+        # Class name
+        my $class = 'ORAC::Display::' . $display_info{TOOL};
+        eval "use $class";
 
-	if ($@) {
-	  orac_err "Error loading class $class. Can not even attempt to start this display\n$@";
-	  return;
-	}
+        if ($@) {
+          orac_err "Error loading class $class. Can not even attempt to start this display\n$@";
+          return;
+        }
 
-	# Check to see that we can create a new display object to
-	# connect to the current tool (maybe that it is simply not
-	# available)
-	if (UNIVERSAL::can($class, 'new')) {
+        # Check to see that we can create a new display object to
+        # connect to the current tool (maybe that it is simply not
+        # available)
+        if (UNIVERSAL::can($class, 'new')) {
 
-	  $current_tool = $class->new;	
+          $current_tool = $class->new;
 
-	  # If the returned value is undef then we had a problem creating
-	  # the tool
-	  unless (defined $current_tool) {
-	    orac_err("Error launching $display_info{TOOL}.\n");
-	    return;
-	  }
+          # If the returned value is undef then we had a problem creating
+          # the tool
+          unless (defined $current_tool) {
+            orac_err("Error launching $display_info{TOOL}.\n");
+            return;
+          }
 
-	} else {
-	  orac_err("Cant create a $class object. Maybe an interface to this display\ntool does not exist in ORACDR\n");
-	  return;
-	}
+        } else {
+          orac_err("Cant create a $class object. Maybe an interface to this display\ntool does not exist in ORACDR\n");
+          return;
+        }
 
 
-	$self->display_tools->{$display_info{TOOL}} = $current_tool;
+        $self->display_tools->{$display_info{TOOL}} = $current_tool;
 
       } else {
-	orac_print("Tool $display_info{TOOL} already running\n",'cyan')
-	  if $DEBUG;
-	$current_tool = $self->display_tools->{$display_info{TOOL}};
+        orac_print("Tool $display_info{TOOL} already running\n",'cyan')
+          if $DEBUG;
+        $current_tool = $self->display_tools->{$display_info{TOOL}};
       }
 
       # Now ask the tool to display the filename using the
@@ -580,46 +580,45 @@ sub parse_file_defn {
       # RAW is an allowed synonym
       my $RAW = 0;
       if ($test eq 'num' || $test eq 'raw') {
-	# Now if id is a number then the test is true
-	if ($id =~ /^\d+$/) {
-	  $test = $id;  # fool the following test
-	}
-	$RAW = 1;
+        # Now if id is a number then the test is true
+        if ($id =~ /^\d+$/) {
+          $test = $id;  # fool the following test
+        }
+        $RAW = 1;
       }
 
       # Do test
       if ($test eq $id) {
 
-	# If NUM was selected then we want a slightly different
+        # If NUM was selected then we want a slightly different
         # informational message
-	if ($DEBUG) {
-	  if ($RAW == 1) {
-	    orac_print("Display device determined (NUM:$test)\n",'blue');
-	  } else {
-	    orac_print("Display device determined ($test)\n",'blue');
-	  }
-	}
+        if ($DEBUG) {
+          if ($RAW == 1) {
+            orac_print("Display device determined (NUM:$test)\n",'blue');
+          } else {
+            orac_print("Display device determined ($test)\n",'blue');
+          }
+        }
 
-	orac_print("ID:$id LINE:$line\n",'cyan') if $DEBUG;
+        orac_print("ID:$id LINE:$line\n",'cyan') if $DEBUG;
 
-	# Create a new hash
-	my %defn = ();
+        # Create a new hash
+        my %defn = ();
 
-	# Go through each entry in the line, split on = and
-	# set in hash
-	shift(@junk);  # Remove first entry;
-	foreach my $keyval (@junk) {
-	  my ($key, $val) = split(/=/,$keyval);
-	  $key  = uc($key);
-	  $defn{$key} = $val;
-	}
+        # Go through each entry in the line, split on = and
+        # set in hash
+        shift(@junk);  # Remove first entry;
+        foreach my $keyval (@junk) {
+          my ($key, $val) = split(/=/,$keyval);
+          $key  = uc($key);
+          $defn{$key} = $val;
+        }
 
-	# Store the hash
-	push(@defn, \%defn);
+        # Store the hash
+        push(@defn, \%defn);
 
       }
     }
-
 
   }  else {
     orac_err("Error opening device definition:$!");
@@ -665,8 +664,8 @@ sub append_monitor {
   $frmclass =~ s/ORAC:://;
 
   # form the string
-  my $string = "$frmclass " . join(",", @files) . " $usedisp ".
-    join(" ", map { $_ . "=". $options->{$_} } keys %$options). "\n";
+  my $string = "$frmclass " . join(",", @files) . " $usedisp " .
+               join(" ", map { $_ . "=". $options->{$_} } keys %$options). "\n";
 
   # Get the filehandle for the output file
   my $mfh = $self->monitor_handle;
