@@ -523,6 +523,24 @@ sub findgroup {
     if ( $domain =~ /SKY/ ) {
       $skyref = $wcs->Get("SkyRef");
     }
+
+    # If we don't have a useful skyref at this point, re-create the
+    # WCS from the FITS header
+    unless ( defined $skyref ) {
+      my $fits = Astro::FITS::Header::NDF->new( File => $self->file );
+      my @cards = $fits->cards;
+      my $fchan = Starlink::AST::FitsChan->new();
+      foreach my $c (@cards) {
+	$fchan->PutFits("$c", 0);
+      }
+      $fchan->Clear("Card");
+      $wcs = $fchan->Read();
+      $skyref = $wcs->Get("SkyRef");
+    }
+
+    # If skyref is really not defined then the raw JCMTSTATE will have
+    # to be accessed. Note that if an error occurs while attempting to
+    # read the state structure, the pipeline will abort.
     if ( defined $skyref ) {
       $state{TCS_TR_SYS} = $wcs->Get("System");
       ($state{TCS_TR_BC1}, $state{TCS_TR_BC2}) = split( /,/, $skyref, 2);
@@ -750,7 +768,7 @@ sub inout {
 
   # Parse input argument list
   my $suffix = shift;
-  my $num = ( @_ ) ? shift : 0;
+  my $num = ( @_ ) ? shift : 1;
 
   # Now set args to pass to base class
   my @args = ( $num == 0 ) ? ($suffix) : ($suffix, $num);
@@ -828,7 +846,8 @@ In scalar context returns a single string with the values concatenated.
 
 sub _dacodes {
   my $self = shift;
-  my @letters = qw/ a b c d /;
+#  my @letters = qw/ a b c d /;
+  my @letters = qw/ a b /;
   return (wantarray ? @letters : join("",@letters) );
 }
 
