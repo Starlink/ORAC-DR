@@ -36,20 +36,20 @@ use warnings;
 use Carp;
 use vars qw/$VERSION %DEFAULT_FCFS %PHOTFLUXES @PLANETS $DEBUG %FCFS/;
 
-use Cwd;          # Directory change
+use Cwd;                        # Directory change
 
 # Derive from standard Calib class (even though nothing in common
 # for now)
-use ORAC::Calib;  # We are a Calib class
-use ORAC::Index;  # Use index file
-use ORAC::Print;  # Standardised printing
-use ORAC::Constants; # ORAC__OK
-use ORAC::Msg::EngineLaunch; # To launch fluxes monolith
+use ORAC::Calib;                # We are a Calib class
+use ORAC::Index;                # Use index file
+use ORAC::Print;                # Standardised printing
+use ORAC::Constants;            # ORAC__OK
+use ORAC::Msg::EngineLaunch;    # To launch fluxes monolith
 
 # External modules
 
-use JCMT::Tau;         # Tau conversion
-use JCMT::Tau::CsoFit; # Fits to CSO data
+use JCMT::Tau;                  # Tau conversion
+use JCMT::Tau::CsoFit;          # Fits to CSO data
 
 use File::Spec;
 
@@ -59,7 +59,7 @@ use File::Spec;
 #@ORAC::Calib::SCUBA2::ISA = qw/ORAC::Calib/;
 use base qw/ORAC::Calib/;
 
-$DEBUG = 0; # Turn off debugging mode
+$DEBUG = 0;                     # Turn off debugging mode
 
 # Define default SCUBA gains
 # These vary with a number of things including filter, and observing
@@ -68,15 +68,15 @@ $DEBUG = 0; # Turn off debugging mode
 # due to improvements in throughput (not necessarily a change in filter)
 
 %DEFAULT_FCFS = (
-		 BEAM => { # Jy/pW/beam
-			  '850'  => 435,
-			  '450'  => 130,
-			 },
-		 ARCSEC => {
-			    '450' => 1.00,
-			    '850' => 1.00,
-			   }
-		);
+                 BEAM => {      # Jy/pW/beam
+                          '850'  => 435,
+                          '450'  => 130,
+                         },
+                 ARCSEC => {
+                            '450' => 1.00,
+                            '850' => 1.00,
+                           }
+                );
 
 
 # FCF can vary with time. Index by filter and then ARCSEC/BEAM
@@ -85,21 +85,21 @@ $DEBUG = 0; # Turn off debugging mode
 # The arrays are populated in order
 # START and END are inclusive
 
-%FCFS = ('850' => [ # Asumed to be in date order
-		    {
-		      START => 20060101, # Beginning of SCUBA-2 history
-		      ARCSEC=> 1.0 ,
-		      BEAM  => 435,
-		    }
-		  ],
-	 '450' => [
-		   {
-		     START => 20060101, # Beginning of SCUBA-2 history
-		     ARCSEC => 1.0,
-		     BEAM   => 130,
-		   }
-		  ],
-	 );
+%FCFS = ('850' => [             # Asumed to be in date order
+                   {
+                    START => 20060101, # Beginning of SCUBA-2 history
+                    ARCSEC=> 1.0 ,
+                    BEAM  => 435,
+                   }
+                  ],
+         '450' => [
+                   {
+                    START => 20060101, # Beginning of SCUBA-2 history
+                    ARCSEC => 1.0,
+                    BEAM   => 130,
+                   }
+                  ],
+        );
 
 # Should probably put calibrator flux information in a different
 # file
@@ -108,27 +108,27 @@ $DEBUG = 0; # Turn off debugging mode
 # Use Jy
 
 %PHOTFLUXES = (
-	       'HLTAU' => {
-			   '850' => 2.32,
-			   '450' => 10.4,
-			  },
-	       'CRL618' => {
-			    '850' => 4.57,
-			    '450' => 11.9,
-			   },
-	       'CRL2688' => {
-			     '850' => 5.88,
-			     '450' => 24.8,
-			    },
-	       '16293-2422' => {
-				'850' => 16.3,
-				'450' => 78.1,
-			       },
-	       'OH231.8' => {
-			     '850' => 2.52,
-			     '450' => 10.53,
-			    }
-	      );
+               'HLTAU' => {
+                           '850' => 2.32,
+                           '450' => 10.4,
+                          },
+               'CRL618' => {
+                            '850' => 4.57,
+                            '450' => 11.9,
+                           },
+               'CRL2688' => {
+                             '850' => 5.88,
+                             '450' => 24.8,
+                            },
+               '16293-2422' => {
+                                '850' => 16.3,
+                                '450' => 78.1,
+                               },
+               'OH231.8' => {
+                             '850' => 2.52,
+                             '450' => 10.53,
+                            }
+              );
 
 
 # The planets that we can retrieve fluxes for
@@ -164,22 +164,22 @@ sub new {
 
   my $obj = {
              BadBols => undef,  # Bad bolometers
-	     BadBolsNoUpdate => 0,
+             BadBolsNoUpdate => 0,
              EngineLaunch => new ORAC::Msg::EngineLaunch,
-	     Gains => undef,	# Gains (Flux Conversion Factors)
-	     GainsIndex => undef,
-	     GainsNoUpdate => 0,
-	     SkydipIndex => undef,
-	     TauSys => undef,	# Tau system
-	     TauSysNoUpdate => 0,
-             TauCache => {},	# Cache for tau result
-	     Thing1 => {},	# Header of current frame
-	     Thing2 => {},	# Header of current frame
-	     CsoFit => undef,	# Polynomial tau fits
-	     Beam => {},	# Current best-fit beam parameters
-	     FWHM => undef,     # Current mean main-beam FWHM
-	     SkyRefImage => undef,	# Name of current reference image
-	    };
+             Gains => undef,    # Gains (Flux Conversion Factors)
+             GainsIndex => undef,
+             GainsNoUpdate => 0,
+             SkydipIndex => undef,
+             TauSys => undef,   # Tau system
+             TauSysNoUpdate => 0,
+             TauCache => {},    # Cache for tau result
+             Thing1 => {},      # Header of current frame
+             Thing2 => {},      # Header of current frame
+             CsoFit => undef,   # Polynomial tau fits
+             Beam => {},        # Current best-fit beam parameters
+             FWHM => undef,     # Current mean main-beam FWHM
+             SkyRefImage => undef, # Name of current reference image
+            };
 
   bless($obj, $class);
 
@@ -342,7 +342,9 @@ The value is always upper-cased.
 
 sub badbols {
   my $self = shift;
-  if (@_) { $self->{BadBols} = uc(shift) unless $self->badbolsnoupdate; }
+  if (@_) {
+    $self->{BadBols} = uc(shift) unless $self->badbolsnoupdate;
+  }
   $self->{BadBols} = 'FILE' unless (defined $self->{BadBols});
   return $self->{BadBols};
 }
@@ -357,13 +359,16 @@ index file. This index file is used if badbols() is set to index.
 sub badbolsindex {
 
   my $self = shift;
-  if (@_) { $self->{BadBolsIndex} = shift; }
+  if (@_) {
+    $self->{BadBolsIndex} = shift;
+  }
 
   unless (defined $self->{BadBolsIndex}) {
     my $indexfile = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.badbols" );
     my $rulesfile = $self->find_file("rules.badbols");
     $self->{BadBolsIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
+  }
+  ;
 
   return $self->{BadBolsIndex};
 }
@@ -378,7 +383,10 @@ processing.
 
 sub badbolsnoupdate {
   my $self = shift;
-  if (@_) { $self->{BadBolsNoUpdate} = shift };
+  if (@_) {
+    $self->{BadBolsNoUpdate} = shift;
+  }
+  ;
   return $self->{BadBolsNoUpdate};
 }
 
@@ -435,7 +443,9 @@ use the default gains. The value is upper-cased.
 
 sub gains {
   my $self = shift;
-  if (@_) { $self->{Gains} = uc(shift) unless $self->gainsnoupdate; }
+  if (@_) {
+    $self->{Gains} = uc(shift) unless $self->gainsnoupdate;
+  }
   $self->{Gains} = 'DEFAULT' unless (defined $self->{Gains});
   return $self->{Gains};
 }
@@ -450,13 +460,16 @@ index file. This index file is used if gains() is set to INDEX.
 sub gainsindex {
 
   my $self = shift;
-  if (@_) { $self->{GainsIndex} = shift; }
+  if (@_) {
+    $self->{GainsIndex} = shift;
+  }
 
   unless (defined $self->{GainsIndex}) {
     my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, "index.gains");
     my $rulesfile = $self->find_file("rules.gains");
     $self->{GainsIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
+  }
+  ;
 
   return $self->{GainsIndex};
 }
@@ -470,7 +483,10 @@ processing.
 
 sub gainsnoupdate {
   my $self = shift;
-  if (@_) { $self->{GainsNoUpdate} = shift };
+  if (@_) {
+    $self->{GainsNoUpdate} = shift;
+  }
+  ;
   return $self->{GainsNoUpdate};
 }
 
@@ -485,13 +501,16 @@ index file. This index file is used if tausys() is set to skydip.
 sub skydipindex {
 
   my $self = shift;
-  if (@_) { $self->{SkydipIndex} = shift; }
+  if (@_) {
+    $self->{SkydipIndex} = shift;
+  }
 
   unless (defined $self->{SkydipIndex}) {
     my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, "index.skydip");
     my $rulesfile = $self->find_file("rules.skydip");
     $self->{SkydipIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
+  }
+  ;
 
   return $self->{SkydipIndex};
 }
@@ -521,7 +540,9 @@ If tausys has not been set it defaults to 'CSO'.
 
 sub tausys {
   my $self = shift;
-  if (@_) { $self->{TauSys} = uc(shift) unless $self->tausysnoupdate; }
+  if (@_) {
+    $self->{TauSys} = uc(shift) unless $self->tausysnoupdate;
+  }
   $self->{TauSys} = 'CSO' unless (defined $self->{TauSys});
   return $self->{TauSys};
 }
@@ -535,7 +556,10 @@ processing.
 
 sub tausysnoupdate {
   my $self = shift;
-  if (@_) { $self->{TauSysNoUpdate} = shift };
+  if (@_) {
+    $self->{TauSysNoUpdate} = shift;
+  }
+  ;
   return $self->{TauSysNoUpdate};
 }
 
@@ -569,12 +593,15 @@ C<ORAC_DATA_CAL/csofit.dat>
 
 sub csofit {
   my $self = shift;
-  if (@_) { $self->{CsoFit} = shift; }
+  if (@_) {
+    $self->{CsoFit} = shift;
+  }
 
   unless (defined $self->{CsoFit}) {
     my $file = $self->find_file("csofit.dat");
     $self->{CsoFit} = new JCMT::Tau::CsoFit($file);
-  };
+  }
+  ;
 
   return $self->{CsoFit};
 }
@@ -634,10 +661,10 @@ sub badbol_list {
     if (defined $best) {
       my $entref = $self->badbolsindex->indexentry($best);
       if (defined $entref) {
-	my $list = $entref->{BADBOLS};
-	@badbols = split(",",$list);
+        my $list = $entref->{BADBOLS};
+        @badbols = split(",",$list);
       } else {
-	orac_err("Error reading entry $best from BadBols index");
+        orac_err("Error reading entry $best from BadBols index");
       }
     }
 
@@ -649,12 +676,12 @@ sub badbol_list {
       my $fh = new IO::File("< $file");
 
       if (defined $fh) {
-	# read first line
-	my $list = <$fh>;
-	# close the file
-	close $fh;
-	# Split on spaces
-	@badbols = split(/\s+/,$list);
+        # read first line
+        my $list = <$fh>;
+        # close the file
+        close $fh;
+        # Split on spaces
+        @badbols = split(/\s+/,$list);
       }
 
     }
@@ -1060,7 +1087,7 @@ sub tau {
       # Search for the requested filter
       $tau = $self->_search_skydip_index($sys, \%hdr);
 
-    } elsif ($sys =~ /^850/) { # scale from 850 filter
+    } elsif ($sys =~ /^850/) {  # scale from 850 filter
 
       # Need to loop over all 850 filters until we find one that
       # returns a match. In principal, we should search for all filters
@@ -1071,18 +1098,18 @@ sub tau {
 
       my $found;
       foreach my $f ( '850' ) {
-	$hdr{FILTER} = $f;
+        $hdr{FILTER} = $f;
 
-	# Search for the requested filter
-	$tau = $self->_search_skydip_index($sys, \%hdr);
+        # Search for the requested filter
+        $tau = $self->_search_skydip_index($sys, \%hdr);
 
-	# Jump out the loop if we have an answer
-	if (defined $tau) {
-	  $found = $f;
-	  last;
-	}
+        # Jump out the loop if we have an answer
+        if (defined $tau) {
+          $found = $f;
+          last;
+        }
 
-	orac_warn "Unable to find a valid skydip using filter $f\n";
+        orac_warn "Unable to find a valid skydip using filter $f\n";
 
       }
 
@@ -1093,33 +1120,33 @@ sub tau {
       # inside get_tau rather than here.
       if (defined $tau) {
 
-	orac_print "Using $found tau of ".sprintf("%6.3f",$tau)." to generate tau for filter $filt\n";
+        orac_print "Using $found tau of ".sprintf("%6.3f",$tau)." to generate tau for filter $filt\n";
 
-	# Now convert this tau to the requested filter
-	# This must be changed to work for 850N as well
-	($tau, $status) = get_tau($filt, $found, $tau);
+        # Now convert this tau to the requested filter
+        # This must be changed to work for 850N as well
+        ($tau, $status) = get_tau($filt, $found, $tau);
 
-	# If there is an error, try going through CSO
-	if ($status == -1) {
+        # If there is an error, try going through CSO
+        if ($status == -1) {
 
-	  (my $intermed_tau, $status) = get_tau('CSO', $found, $tau);
+          (my $intermed_tau, $status) = get_tau('CSO', $found, $tau);
 
-	  if ($status != -1) {
-	    ($tau, $status) = get_tau($filt, 'CSO', $intermed_tau);
+          if ($status != -1) {
+            ($tau, $status) = get_tau($filt, 'CSO', $intermed_tau);
 
-	    # On error - report conversion error then set tau to undef
-	    # so that we can try to adopt a CSO value
-	    if ($status == -1) {
-	      orac_warn("Error converting a $found tau to an opacity for filter '$filt'\n");
-	      $tau = undef;
-	    }
-	  }
+            # On error - report conversion error then set tau to undef
+            # so that we can try to adopt a CSO value
+            if ($status == -1) {
+              orac_warn("Error converting a $found tau to an opacity for filter '$filt'\n");
+              $tau = undef;
+            }
+          }
 
-	}
+        }
 
       }
 
-    } else { # Just want to use the requested filter
+    } else {                   # Just want to use the requested filter
 
       $hdr{FILTER} = $filt;
       $tau = $self->_search_skydip_index($sys, \%hdr);
@@ -1139,10 +1166,10 @@ sub tau {
       ($tau, $status) = get_tau($filt, 'CSO', $csotau);
 
       if ($status == -1) {
-	orac_warn("Error converting a CSO tau of ".
-            (defined $csotau ? $csotau : "<undef>"). 
-            " to an opacity for filter '$filt'\n");
-	$tau = undef;
+        orac_warn("Error converting a CSO tau of ".
+                  (defined $csotau ? $csotau : "<undef>"). 
+                  " to an opacity for filter '$filt'\n");
+        $tau = undef;
       }
     }
   } elsif ($sys eq 'CSOFIT') {
@@ -1156,10 +1183,10 @@ sub tau {
       ($tau, $status) = get_tau($filt, 'CSO', $csotau);
 
       if ($status == -1) {
-	orac_warn("Error converting a fitted CSO tau of ".
-            (defined $csotau ? $csotau : "<undef>").
-            " to an opacity for filter '$filt'\n");
-	$tau = undef;
+        orac_warn("Error converting a fitted CSO tau of ".
+                  (defined $csotau ? $csotau : "<undef>").
+                  " to an opacity for filter '$filt'\n");
+        $tau = undef;
       }
 
     } else {
@@ -1174,15 +1201,15 @@ sub tau {
 
     if ($wvm) {
       orac_print( sprintf("WVM data located in frame: %.4f +/- %.4f\n",
-			  $wvm, $wvm_err));
+                          $wvm, $wvm_err));
 
       ($tau, $status) = get_tau($filt, 'CSO', $wvm);
 
       # Check status
       if ($status == -1) {
-	orac_warn("Error converting a WVM tau of $sys to an opacity for filter '$filt'\n");
-	orac_warn("Setting tau to 0\n");
-	$tau = 0.0;
+        orac_warn("Error converting a WVM tau of $sys to an opacity for filter '$filt'\n");
+        orac_warn("Setting tau to 0\n");
+        $tau = 0.0;
       }
 
     } else {
@@ -1218,7 +1245,7 @@ sub beam {
   my $self = shift;
   my $arr = shift;
 
-# Default beam sizes
+  # Default beam sizes
   my @defaultbeam;
   if ($arr =~ /850/ || $arr =~ /L/) {
     @defaultbeam = (15.0, 15.0, 0.0); # 850 um
@@ -1315,7 +1342,7 @@ sub _search_skydip_index {
   # that a verification of the current skydip alone would be okay
 
   # This variable sets the threshold value for age
-  my $too_old = 3.0/24.0; # 3 hours as a day fraction
+  my $too_old = 3.0/24.0;       # 3 hours as a day fraction
 
   # Check that SYS matches 'interp' (interpolation)
   # and ask for two index searches [inefficient???]
@@ -1344,7 +1371,7 @@ sub _search_skydip_index {
       # Okay - see how old it is
       my $age = abs($high_ent->{ORACTIME} - $hdr->{ORACTIME});
       if ($age > $too_old) {
-	orac_warn(" the closest skydip (from above: $high) was too new [".sprintf('%5.2f',$age*24.0)." hours]\nUsing this value anyway...\n");
+        orac_warn(" the closest skydip (from above: $high) was too new [".sprintf('%5.2f',$age*24.0)." hours]\nUsing this value anyway...\n");
       }
     }
 
@@ -1353,7 +1380,7 @@ sub _search_skydip_index {
       # Okay - see how old it is
       my $age = abs($low_ent->{ORACTIME} - $hdr->{ORACTIME});
       if ($age > $too_old) {
-	orac_warn(" the closest skydip (from below: $low) was too old [".sprintf('%5.2f',$age*24.0)." hours]\nUsing this value anyway...\n");
+        orac_warn(" the closest skydip (from below: $low) was too old [".sprintf('%5.2f',$age*24.0)." hours]\nUsing this value anyway...\n");
       }
     }
 
@@ -1369,9 +1396,9 @@ sub _search_skydip_index {
 
       my $framet = $hdr->{ORACTIME};
 
-#	print "HIGH: $highz @ $hight\n";
-#	print "LOW: $lowz  @ $lowt\n";
-#	print "Now:  $framet\n";
+      #	print "HIGH: $highz @ $hight\n";
+      #	print "LOW: $lowz  @ $lowt\n";
+      #	print "Now:  $framet\n";
 
       # Calculate tau at time $framet
       # This is not as good as returning both tau values
@@ -1395,7 +1422,7 @@ sub _search_skydip_index {
     }
 
 
-  } else { # No interpolation, just use nearest
+  } else {                      # No interpolation, just use nearest
 
     # Retrieve the closest in time
     my $nearest = $self->skydipindex->choosebydt('ORACTIME', $hdr,0);
@@ -1412,14 +1439,14 @@ sub _search_skydip_index {
 
       # Check age
       if (defined $entref) {
-	my $age = abs($entref->{ORACTIME} - $hdr->{ORACTIME});
-	orac_warn("Skydip $nearest was taken ".sprintf('%5.2f',$age*24.0)." hours from this frame\nUsing this value anyway...\n")
-	  if $age > $too_old;
+        my $age = abs($entref->{ORACTIME} - $hdr->{ORACTIME});
+        orac_warn("Skydip $nearest was taken ".sprintf('%5.2f',$age*24.0)." hours from this frame\nUsing this value anyway...\n")
+          if $age > $too_old;
 
-	$tau = $entref->{TAUZ};
+        $tau = $entref->{TAUZ};
 
       } else {
-	orac_warn "Error reading index entry $nearest\n";
+        orac_warn "Error reading index entry $nearest\n";
       }
     }
 
@@ -1447,9 +1474,9 @@ sub _get_default_fcf {
   my $self = shift;
   my ($filter, $units, $ut) = @_;
 
-  $filter = uc($filter); # upper cased keys
+  $filter = uc($filter);        # upper cased keys
   $units  = uc($units);
-  $ut = int($ut);  # only changes on integer days
+  $ut = int($ut);               # only changes on integer days
 
   # First check to see if the filter is present in the %FCFS hash
   return unless exists $FCFS{$filter};
@@ -1460,7 +1487,7 @@ sub _get_default_fcf {
   # Now we step through the array until we find an entry that 
   # corresponds to the requested time
   my $match;
-  my $infstart = 19900101; # infinity low and high
+  my $infstart = 19900101;      # infinity low and high
   my $infend   = 30000101;
   for my $h (@$details) {
 
