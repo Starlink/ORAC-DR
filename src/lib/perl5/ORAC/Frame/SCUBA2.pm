@@ -277,8 +277,29 @@ sub configure {
       # merge with the child FITS headers if required
       if (defined $diff) {
         $stored_good = 1;
-        push(@subhdrs, map { $_->splice(-1,0,$diff->allitems); $_ } 
-             @{ $rfits{$f}->{SECONDARY}});
+
+        # if a header in the difference already exists in the SECONDARY
+        # component we just drop it on the floor and ignore it. This
+        # can happen if multiple subscans are combined each of which
+        # has a DATE-OBS from the .I1 which differs from .I2 .. .In
+        # The DATE-OBS in the primary header will differ in each subscan
+        # but the .In value is the important value. Similarly for airmass,
+        # elevation start/end values.
+        for my $sec (@{$rfits{$f}->{SECONDARY}}) {
+          for my $di ($diff->allitems) {
+            # see if the keyword is present
+            my $keyword = $di->keyword;
+            my $index = $sec->index($keyword);
+
+            if (!defined $index) { # index can be 0
+              # take a local copy so that we do not get action at a distance
+              my $copy = $di->copy;
+              $sec->insert( -1, $copy );
+            }
+          }
+          push(@subhdrs, $sec);
+        }
+
       } else {
         # just store what we have (which may be empty)
         for my $h (@{$rfits{$f}->{SECONDARY}}) {
@@ -307,10 +328,12 @@ sub configure {
       orac_err("Error forming sub-headers from FITS information. The number of subheaders does not equal the number of file paths (".
                scalar(@subhdrs) . " != " . scalar(@paths).")\n");
     }
+    $_->tiereturnsref(1) for @subhdrs;
     $primary->subhdrs( @subhdrs );
   }
 
   # Now make sure that the header is populated
+  $primary->tiereturnsref(1);
   $self->fits( $primary );
   $self->calc_orac_headers;
 
