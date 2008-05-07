@@ -1305,13 +1305,9 @@ that contain more than one output file per observation.
 sub gui_id {
   my $self = shift;
 
-  my $fname = $self->file;
+  my $gui_id = $self->SUPER::gui_id( @_ );
 
-  # Split on underscore
-  my (@split) = split(/_/,$fname);
-
-  return $split[-1];
-
+  return "g_$gui_id";
 }
 
 =back
