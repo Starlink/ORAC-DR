@@ -526,7 +526,7 @@ sub findgroup {
 
     # If we don't have a useful skyref at this point, re-create the
     # WCS from the FITS header
-    unless ( defined $skyref ) {
+    if ( !defined $skyref && ($self->hdr('SAM_MODE') ne "SCAN") ) {
       my $fits = Astro::FITS::Header::NDF->new( File => $self->file );
       my @cards = $fits->cards;
       my $fchan = Starlink::AST::FitsChan->new();
