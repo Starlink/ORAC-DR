@@ -535,7 +535,10 @@ sub findgroup {
       }
       $fchan->Clear("Card");
       $wcs = $fchan->Read();
-      $skyref = $wcs->Get("SkyRef");
+      # The WCS may not be present in the FITS file
+      if (defined $wcs) {
+        $skyref = $wcs->Get("SkyRef");
+      }
     }
 
     # If skyref is really not defined then the raw JCMTSTATE will have
