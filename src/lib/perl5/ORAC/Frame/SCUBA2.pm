@@ -134,10 +134,10 @@ sub configure {
   my $self = shift;
 
   my @fnames;
-  if( scalar( @_ ) == 1 ) {
+  if ( scalar( @_ ) == 1 ) {
     my $fnamesref = shift;
     @fnames = ( ref($fnamesref) ? @$fnamesref : $fnamesref );
-  } elsif( scalar( @_ ) == 2 ) {
+  } elsif ( scalar( @_ ) == 2 ) {
 
     # SCUBA-2 configure() cannot take 2 arguments.
     croak "configure() for SCUBA-2 cannot take two arguments";
@@ -176,20 +176,20 @@ sub configure {
       my @hdrs;
       for my $i (@internal) {
 
-	my $fits;
-	eval {
-	  $fits = new Astro::FITS::Header::NDF( File => $i );
-	  $fits->tiereturnsref(1);
-	};
-	if ($@) {
-	  # should not happen in real data but may happen in simulated
-	  # data
-	  $fits = new Astro::FITS::Header( Cards => []);
-	}
+        my $fits;
+        eval {
+          $fits = new Astro::FITS::Header::NDF( File => $i );
+          $fits->tiereturnsref(1);
+        };
+        if ($@) {
+          # should not happen in real data but may happen in simulated
+          # data
+          $fits = new Astro::FITS::Header( Cards => []);
+        }
 
-	# Just store each one in turn. We can not index by a unique
-	# name since I1 can be reused between files in the same frame
-	push(@hdrs, $fits);
+        # Just store each one in turn. We can not index by a unique
+        # name since I1 can be reused between files in the same frame
+        push(@hdrs, $fits);
 	
       }
 
@@ -221,7 +221,7 @@ sub configure {
       # make sure we always return an entry in @different
       my ($secfirst, @secrest) = @{ $rfits{$f}->{SECONDARY} };
       my ($same, @different) = $secfirst->merge_primary( { force_return_diffs => 1},
-							 @secrest );
+                                                         @secrest );
 
       # differences should now be written to the SECONDARY array
       # since those are now the unique headers.
@@ -231,8 +231,9 @@ sub configure {
       # in this case, headers that are not present in either the child
       # or the primary header should be included in the merged header.
       my ($merged, $funique, $cunique) = $rfits{$f}->{PRIMARY}->merge_primary(
-							     {merge_unique => 1},
-									   $same );
+                                                                              {
+                                                                               merge_unique => 1},
+                                                                              $same );
 
       # Since we have merged unique keys into the primary header, anything
       # that is present in the "different" headers will be problematic since
@@ -241,11 +242,11 @@ sub configure {
       # the .I components yet different to the primary header. This is a 
       # problem and we need to issue a warning
       if (defined $funique || defined $cunique) {
-	orac_warn("Headers are present in the primary FITS header of $f that clash with different values that are fixed amongst the processed components. This is not allowed.\n");
+        orac_warn("Headers are present in the primary FITS header of $f that clash with different values that are fixed amongst the processed components. This is not allowed.\n");
 	
-	orac_warn("Primary header:\n". $funique ."\n")
+        orac_warn("Primary header:\n". $funique ."\n")
           if defined $funique;
-	orac_warn("Component header:\n". $cunique ."\n")
+        orac_warn("Component header:\n". $cunique ."\n")
           if defined $cunique;
       }
 
@@ -275,26 +276,26 @@ sub configure {
 
       # merge with the child FITS headers if required
       if (defined $diff) {
-	$stored_good = 1;
-	push(@subhdrs, map { $_->splice(-1,0,$diff->allitems); $_ } 
-	    @{ $rfits{$f}->{SECONDARY}});
+        $stored_good = 1;
+        push(@subhdrs, map { $_->splice(-1,0,$diff->allitems); $_ } 
+             @{ $rfits{$f}->{SECONDARY}});
       } else {
-	# just store what we have (which may be empty)
-	for my $h (@{$rfits{$f}->{SECONDARY}}) {
-	  $stored_good = 1 if $h->sizeof > -1;
-	  push(@subhdrs, $h);
-	}
+        # just store what we have (which may be empty)
+        for my $h (@{$rfits{$f}->{SECONDARY}}) {
+          $stored_good = 1 if $h->sizeof > -1;
+          push(@subhdrs, $h);
+        }
       }
 
     } else {
       # we only had a primary header so this is only defined if we have
       # a difference
       if (defined $diff) {
-	$stored_good = 1; # indicate that we have at least one valid subhdr
-	push(@subhdrs, $diff);
+        $stored_good = 1; # indicate that we have at least one valid subhdr
+        push(@subhdrs, $diff);
       } else {
-	# store blank header
-	push(@subhdrs, new Astro::FITS::Header( Cards => []));
+        # store blank header
+        push(@subhdrs, new Astro::FITS::Header( Cards => []));
       }
     }
 
@@ -304,7 +305,7 @@ sub configure {
   if ($stored_good) {
     if (@subhdrs != @paths) {
       orac_err("Error forming sub-headers from FITS information. The number of subheaders does not equal the number of file paths (".
-	       scalar(@subhdrs) . " != " . scalar(@paths).")\n");
+               scalar(@subhdrs) . " != " . scalar(@paths).")\n");
     }
     $primary->subhdrs( @subhdrs );
   }
@@ -413,7 +414,7 @@ sub pattern_from_bits {
   my $letters = '['.$self->_dacodes.']';
 
   my $pattern = $self->rawfixedpart . $letters . '_'. $prefix . "_" . 
-     $padnum . '_\d\d\d\d\d' . $self->rawsuffix;
+    $padnum . '_\d\d\d\d\d' . $self->rawsuffix;
 
   return qr/$pattern/;
 }
@@ -436,9 +437,9 @@ sub number {
 
   my $raw = $self->raw;
 
-  if( defined( $raw ) ) {
-    if( ( $raw =~ /(\d+)_(\d{4})(\.\w+)?$/ ) ||
-        ( $raw =~ /(\d+)\.ok$/ ) ) {
+  if ( defined( $raw ) ) {
+    if ( ( $raw =~ /(\d+)_(\d{4})(\.\w+)?$/ ) ||
+         ( $raw =~ /(\d+)\.ok$/ ) ) {
       # Drop leading zeroes.
       $number = $1 * 1;
     } else {
@@ -531,7 +532,7 @@ sub findgroup {
       my @cards = $fits->cards;
       my $fchan = Starlink::AST::FitsChan->new();
       foreach my $c (@cards) {
-	$fchan->PutFits("$c", 0);
+        $fchan->PutFits("$c", 0);
       }
       $fchan->Clear("Card");
       $wcs = $fchan->Read();
@@ -562,25 +563,25 @@ sub findgroup {
 
       # Get Tracking system, and RA/Dec of BASE posn
       for my $item (qw/ TCS_TR_SYS TCS_TR_BC1 TCS_TR_BC2 /) {
-	dat_there( $jloc, $item, my $isthere, $status );
-	if ($isthere) {
-	  dat_find($jloc, $item, my $sloc, $status );
-	  # Retrieve first value only - use an array slice
-	  my @subscript = ( 1 ); # Fortran
-	  dat_cell( $sloc, scalar(@subscript), @subscript, my $cloc, $status );
-	  dat_get0c( $cloc, my $value, $status );
-	  # Store in state hash
-	  $state{$item} = $value;
-	  dat_annul( $cloc, $status );
-	  dat_annul( $sloc, $status );
-	}
+        dat_there( $jloc, $item, my $isthere, $status );
+        if ($isthere) {
+          dat_find($jloc, $item, my $sloc, $status );
+          # Retrieve first value only - use an array slice
+          my @subscript = ( 1 ); # Fortran
+          dat_cell( $sloc, scalar(@subscript), @subscript, my $cloc, $status );
+          dat_get0c( $cloc, my $value, $status );
+          # Store in state hash
+          $state{$item} = $value;
+          dat_annul( $cloc, $status );
+          dat_annul( $sloc, $status );
+        }
       }
       # Tidy up
       dat_annul( $jloc, $status);
       dat_annul( $loc, $status);
       if ($status != &NDF::SAI__OK) {
-	my $errstr = err_flush_to_string($status);
-	orac_throw " Error reading JCMT state structure from input data: $errstr";
+        my $errstr = err_flush_to_string($status);
+        orac_throw " Error reading JCMT state structure from input data: $errstr";
       } 
       err_end($status);
     }
@@ -602,19 +603,19 @@ sub findgroup {
       my @dec = $dec->components(0);
       # Zero-pad the numbers
       foreach my $i ( @ra[1..3] ) {
-	$i = sprintf "%02d", $i;
+        $i = sprintf "%02d", $i;
       }
       foreach my $i ( @dec[1..3] ) {
-	$i = sprintf "%02d", $i;
+        $i = sprintf "%02d", $i;
       }
       # Construct RA/Dec string
       $group = join("",@ra[1..3],@dec);
     }
     $group .= $self->hdr( "SAM_MODE" ) .
-              $self->hdr( "OBS_TYPE" ) .
-              $self->hdr( "FILTER" ) ;
+      $self->hdr( "OBS_TYPE" ) .
+        $self->hdr( "FILTER" ) ;
     # Add OBSNUM if we're not doing a science observation
-    if( uc( $self->hdr( "OBS_TYPE" ) ) ne 'SCIENCE' ) {
+    if ( uc( $self->hdr( "OBS_TYPE" ) ) ne 'SCIENCE' ) {
       $group .= sprintf "%05d", $self->hdrval( "OBSNUM" );
     }
   }
@@ -714,7 +715,7 @@ sub hdrval {
 
     my $hdrval = ( defined $self->hdr->{SUBHEADERS}->[$subindex]->{$keyword}) ? 
       $self->hdr->{SUBHEADERS}->[$subindex]->{$keyword} : 
-      $self->hdr("$keyword");
+        $self->hdr("$keyword");
 
     return $hdrval;
 
@@ -789,8 +790,8 @@ sub inout {
     $outfile =~ s/$suffix$/$wavelen$suffix/;
   }
 
-  return ($infile, $outfile) if wantarray();  # Array context
-  return $outfile;                            # Scalar context
+  return ($infile, $outfile) if wantarray(); # Array context
+  return $outfile;                           # Scalar context
 }
 
 =back
@@ -849,7 +850,7 @@ In scalar context returns a single string with the values concatenated.
 
 sub _dacodes {
   my $self = shift;
-#  my @letters = qw/ a b c d /;
+  #  my @letters = qw/ a b c d /;
   my @letters = qw/ a b /;
   return (wantarray ? @letters : join("",@letters) );
 }
