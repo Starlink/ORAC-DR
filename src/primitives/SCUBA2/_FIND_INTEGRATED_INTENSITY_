@@ -222,6 +222,54 @@ $Mon{kappa_mon}->obeyw("stats","ndf=$out");
 ($ORAC_STATUS, my $npix) = $Mon{kappa_mon}->get("stats","numpix");
 ($ORAC_STATUS, my $sigma) = $Mon{kappa_mon}->get("stats","sigma");
 
+
+# Now repeat for the rest of the image - it mask out the central
+# source and calculate a mean background
+# Create another temporary file for the new ard description
+$ard = new ORAC::TempFile;
+
+# Write the ard description - start with the coordinate frame
+print {$ard->handle} "COFRAME(SKY,System=$cosys)\n";
+
+# Mask out a circle centred on X, Y as above
+if ( $cosys eq "AZEL" || $cosys eq "GALACTIC" ) {
+  my $dradius = $radius/3600.0;
+  print {$ard->handle} "CIRCLE($x, $y, $dradius)\n";
+} else {
+  # All other supported systems are HMS/DMS so need to format
+  # correctly
+  if ( $radius < 60.0 ) {
+    print {$ard->handle} "CIRCLE($x, $y, 00:00:$radius)\n";
+  } else {
+    my $mradius = int( $radius / 60.0 );
+    my $sradius = $radius - ($mradius * 60);
+    print {$ard->handle} "CIRCLE($x, $y, 00:$mradius:$sradius)\n";
+  }
+}
+
+# Close the ard file
+$ard->handle->close;
+
+# Get a temporary output file
+my $bgoutobj = new ORAC::TempFile;
+my $bgout = $bgoutobj->file;
+$ardin = $ard->file;
+
+# Run ardmask to mask out source
+$Mon{kappa_mon}->obeyw("ardmask", "in=$in out=$bgout ardfile=$ardin ");
+
+# Now calculate stats of the masked file to get the mean (background)
+# level outside the source aperture
+$Mon{kappa_mon}->obeyw("stats","ndf=$bgout");
+
+# Retrieve mean of background
+($ORAC_STATUS, my $meanbg) = $Mon{kappa_mon}->get("stats","mean");
+# This is mean value per pixel, so reduce maxflux and sum accordingly
+$maxflux -= $meanbg;
+$sum -= ($meanbg * $ngood);
+
+
+# Done - now report findings
 if ($verbose) {
   my $outsum = sprintf "%6.3f", $sum;
   orac_print "Sum calculated to be $outsum UNITS from $npix pixels\n";
