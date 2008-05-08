@@ -16,6 +16,11 @@ Notes section for further information.
 
 =over 4
 
+=item GROUP = LOGICAL (Given)
+
+Whether to operate on the current Frame or Group object. Defaults to
+Frame. [0]
+
 =item TAG = LOGICAL (Given)
 
 Whether or not to tag the resulting spectrum as representative. [0]
@@ -57,6 +62,8 @@ primitive.
 
 =head1 TASKS
 
+KAPPA: PLUCK.
+
 =head1 REQUIRED PERL MODULES
 
 None.
@@ -73,9 +80,17 @@ Council.  All Rights Reserved.
 =cut
 
 # Deal with parameters.
+my $group = ( $_PRIM_ARGS_->{GROUP} ? 1 : 0 );
 my $tag = ( $_EXTRACT_MAXVALUE_SPECTRUM_{TAG} ?
             $_EXTRACT_MAXVALUE_SPECTRUM_{TAG} :
             0 );
+
+my $Obj;
+if( $group ) {
+  $Obj = $Grp;
+} else {
+  $Obj = $Frm;
+}
 
 my $out;
 
@@ -89,33 +104,10 @@ if( $dims->[0] == 1 &&
     $dims->[1] == 1 ) {
 
   # In this case the cube is the spectrum. Just copy the cube over.
-  ( my $in, $out ) = $Frm->inout( "_sp001" );
+  ( my $in, $out ) = $Obj->inout( "_sp001" );
   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$out" );
 
   orac_print "Spectrum created in $out.\n";
-
-  my $tmpFrm = $Frm->new( $out );
-  $tmpFrm->sync_headers;
-
-  # Fix up provenance.
-  $Frm->readhdr( $out );
-  my $hdr = $Frm->hdr;
-  my $prvcnt = $hdr->{'PRVCNT'};
-  foreach my $i ( 1 .. $prvcnt ) {
-    my $header = sprintf( "PRV%05d", $i );
-    my $params = "ndf=$out edit=delete keyword=$header mode=interface";
-    $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$params" );
-  }
-
-  # Fix up headers.
-  _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRVCNT VALUE=1
-  _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRV00001 VALUE=$in
-  _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=sp
-  _DELETE_FILE_FITS_ITEM_ FILE=$out KEY=NUMTILES
-  _DELETE_FILE_FITS_ITEM_ FILE=$out KEY=TILENUM
-
-  # And display.
-  _DISPLAY_FILE_ FILE=$out
 
 } else {
 
@@ -123,16 +115,16 @@ if( $dims->[0] == 1 &&
   # position from the integrated intensity image. If we don't have
   # that information, collapse the entire cube in spatial directions
   # to create a spectrum.
-  if( defined( $Frm->uhdr( "INTEG_MAX_POS" ) ) ) {
+  if( defined( $Obj->uhdr( "INTEG_MAX_POS" ) ) ) {
 
-    my $maxpos = $Frm->uhdr( "INTEG_MAX_POS" );
+    my $maxpos = $Obj->uhdr( "INTEG_MAX_POS" );
 
     # We need to find which frame contains this position. Go through
     # each one in turn, finding the dimensions.
     my $fileno = 0;
-    foreach my $i ( 1 .. $Frm->nfiles ) {
+    foreach my $i ( 1 .. $Obj->nfiles ) {
 
-      my $file = $Frm->file( $i );
+      my $file = $Obj->file( $i );
       $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$file" );
 
       my ( $ORAC_STATUS, @lbound ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
@@ -148,38 +140,29 @@ if( $dims->[0] == 1 &&
     }
 
     # Copy out the spectrum from the given file.
-    my $in = $Frm->file( $fileno );
-    ( undef, $out ) = $Frm->inout( "_sp001" );
+    my $in = $Obj->file( $fileno );
+    ( undef, $out ) = $Obj->inout( "_sp001" );
     my $params = "in=$in(" . $maxpos->[0] . "," . $maxpos->[1] . ",) out=$out trim=false";
     $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
 
     orac_print "Spectrum created in $out.\n";
 
-    my $tmpFrm = $Frm->new( $out );
-    $tmpFrm->sync_headers;
-
-    # Fix up provenance.
-    $Frm->readhdr( $out );
-    my $hdr = $Frm->hdr;
-    my $prvcnt = $hdr->{'PRVCNT'};
-    foreach my $i ( 1 .. $prvcnt ) {
-      my $header = sprintf( "PRV%05d", $i );
-      my $params = "ndf=$out edit=delete keyword=$header mode=interface";
-      $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$params" );
-    }
-
-    # Fix up headers.
-    _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRVCNT VALUE=1
-    _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRV00001 VALUE=$in
-    _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=sp
-    _DELETE_FILE_FITS_ITEM_ FILE=$out KEY=NUMTILES
-    _DELETE_FILE_FITS_ITEM_ FILE=$out KEY=TILENUM
-
-    # And display.
-    _DISPLAY_FILE_ FILE=$out
+    my $tmpObj = $Obj->new( $out );
+    $tmpObj->sync_headers;
   }
 }
 
+# Fix up headers.
+my $tmpFrm = $Obj->new( $out );
+$tmpFrm->sync_headers;
+_DELETE_FILE_FITS_ITEM_ FILE=$out KEY=NUMTILES
+_DELETE_FILE_FITS_ITEM_ FILE=$out KEY=TILENUM
+_SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=sp
+
+# And display.
+_DISPLAY_FILE_ FILE=$out
+
+# Tag if requested.
 if( $tag ) {
-  _TAG_AS_REPRESENTATIVE_SPECTRUM_ FILE=$out
+  _TAG_AS_REPRESENTATIVE_SPECTRUM_ FILE=$out UPDATE=0 GROUP=$group
 }
