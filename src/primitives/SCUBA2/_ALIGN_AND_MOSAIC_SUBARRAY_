@@ -106,164 +106,164 @@ USA
 # Should I be verbose? (default to yes)
 my $verbose = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{VERBOSE} &&
                defined $_ALIGN_AND_MOSAIC_SUBARRAY_{VERBOSE}) ?
-               $_ALIGN_AND_MOSAIC_SUBARRAY_{VERBOSE} : 1;
+    $_ALIGN_AND_MOSAIC_SUBARRAY_{VERBOSE} : 1;
 
 # Check that we have more than one subarray to combine
 if ( $Frm->numsubarrays == 1 ) {
-  # Dummy warning for now
-  orac_warn "Note: data exist for only 1 subarray - skipping this primitive" 
-    if $verbose;
+    # Dummy warning for now
+    orac_warn "Note: data exist for only 1 subarray - skipping this primitive" 
+        if $verbose;
 
 } else {
-  # Check for input paramters: MAKEMOS
-  my $makemos = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{MAKEMOS} &&
-		 defined $_ALIGN_AND_MOSAIC_SUBARRAY_{MAKEMOS}) ?
-		 $_ALIGN_AND_MOSAIC_SUBARRAY_{MAKEMOS} : 0;
+    # Check for input paramters: MAKEMOS
+    my $makemos = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{MAKEMOS} &&
+                   defined $_ALIGN_AND_MOSAIC_SUBARRAY_{MAKEMOS}) ?
+                   $_ALIGN_AND_MOSAIC_SUBARRAY_{MAKEMOS} : 0;
 
-  # Rebin or resample? Default is resample (rebin = 0).
-  my $rebin = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{REBIN} &&
-	       defined $_ALIGN_AND_MOSAIC_SUBARRAY_{REBIN}) ?
-	       $_ALIGN_AND_MOSAIC_SUBARRAY_{REBIN} : 0;
+    # Rebin or resample? Default is resample (rebin = 0).
+    my $rebin = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{REBIN} &&
+                 defined $_ALIGN_AND_MOSAIC_SUBARRAY_{REBIN}) ?
+                 $_ALIGN_AND_MOSAIC_SUBARRAY_{REBIN} : 0;
 
-  # Method for determining the output pixel values (used by WCSMOSAIC
-  # and WCSALIGN
-  my $method = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{METHOD} &&
-		defined $_ALIGN_AND_MOSAIC_SUBARRAY_{METHOD}) ? 
-		lc($_ALIGN_AND_MOSAIC_SUBARRAY_{METHOD}) : "bilinear"; 
+    # Method for determining the output pixel values (used by WCSMOSAIC
+    # and WCSALIGN
+    my $method = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{METHOD} &&
+                  defined $_ALIGN_AND_MOSAIC_SUBARRAY_{METHOD}) ? 
+                  lc($_ALIGN_AND_MOSAIC_SUBARRAY_{METHOD}) : "bilinear"; 
 
-  # Are we aligning images in a SKY frame? Default to yes.
-  my $skyalign = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{SKYREF} &&
-		  defined $_ALIGN_AND_MOSAIC_SUBARRAY_{SKYREF}) ?
-		  $_ALIGN_AND_MOSAIC_SUBARRAY_{SKYREF} : 1;
+    # Are we aligning images in a SKY frame? Default to yes.
+    my $skyalign = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{SKYREF} &&
+                    defined $_ALIGN_AND_MOSAIC_SUBARRAY_{SKYREF}) ?
+                    $_ALIGN_AND_MOSAIC_SUBARRAY_{SKYREF} : 1;
 
-  # MAKEMOS image combination method
-  my $makemos_method = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{MAKEMOS_METHOD} &&
-			defined $_ALIGN_AND_MOSAIC_SUBARRAY_{MAKEMOS_METHOD}) ?
-			lc($_ALIGN_AND_MOSAIC_SUBARRAY_{MAKEMOS_METHOD}) : "mean";
+    # MAKEMOS image combination method
+    my $makemos_method = (exists $_ALIGN_AND_MOSAIC_SUBARRAY_{MAKEMOS_METHOD} &&
+                          defined $_ALIGN_AND_MOSAIC_SUBARRAY_{MAKEMOS_METHOD}) ?
+                          lc($_ALIGN_AND_MOSAIC_SUBARRAY_{MAKEMOS_METHOD}) : "mean";
 
 
-  # Check version of KAPPA is new enough to use WCSMOSAIC
-  if (starversion_lt('kappa', 'V1.5')) {
-    $makemos = 1;
-    orac_warn "Installed Kappa version does not support WCSMOSAIC, falling back on WCSALIGN+MAKEMOS";
-  }
-
-  # Determine reference image for alignment. Use default coordinate
-  # frame
-  _GET_REFERENCE_IMAGE_ SKYREF=$skyalign VERBOSE=$verbose
-  my $refimage = $_GET_REFERENCE_IMAGE_{REFIMAGE};
-
-  # Check to see if we're using MAKEMOS
-  if ($makemos) {
-    orac_print("Aligning and mosaicking subarray images with WCSALIGN+MAKEMOS\n")
-      if $verbose;
-  } else {
-    orac_print("Aligning and mosaicking subarray images with WCSMOSAIC\n")
-      if $verbose;
-  }
-
-  # Set the WLIM parameter for WCSMOSAIC
-  my $wlim = 0.2;
-
-  # Number of files in current frame
-  my $nfiles = $Frm->nfiles;
-
-  # Array of output filenames to store in Frame object on completion
-  my @out;
-
-  # Do we have sub-headers? If not, then we have just 4 (or
-  # N_WORKING_SUBARRAYS) images to mosaic
-  if ( defined $Frm->hdr->{SUBHEADERS}->[0]->{SEQSTART}  || 
-       defined $Frm->hdr->{SUBHEADERS}->[0]->{NSUBSCAN} ) {
-    # Hash to store each SEQSTART/NSUBSCAN combination as appropriate
-    # images are mosaicked, plus an indexing hash to associate groups
-    # of related files with the file index.
-    my (%commonfiles, %indxr);
-
-    # Loop over number of files to store associations
-    my $j = 0;
-    for my $i (1..$nfiles) {
-      my $seqstart = $Frm->hdrval('SEQSTART',$i-1);
-      my $nsubscan = $Frm->hdrval('NSUBSCAN',$i-1);
-      # Define a unique identified key from subscan number and seqstart
-      my $commonkey = $nsubscan."_".$seqstart;
-      push @{ $commonfiles{$commonkey} }, $Frm->file($i);
-      # Now we need a way to link the array of common files to the
-      # correct file name for creating the output files. Do this with
-      # another hash with the same keys as above with file indices as
-      # values. This takes advantage of how the files are stored in
-      # the Frm and ensures we match up files correctly.
-      if (@{ $commonfiles{$commonkey} } == 1) {
-	$j++;
-	$indxr{$commonkey} = $j;
-      }
+    # Check version of KAPPA is new enough to use WCSMOSAIC
+    if (starversion_lt('kappa', 'V1.5')) {
+        $makemos = 1;
+        orac_warn "Installed Kappa version does not support WCSMOSAIC, falling back on WCSALIGN+MAKEMOS";
     }
 
-    # Loop over groups of files to mosaic them - sort to preserve time
-    # order (KLUDGE: should sort on TIME not just on index)
-    foreach my $arraygrp ( sort { $indxr{$a} <=> $indxr{$b} } keys %indxr ) {
-      # For deciding the output file name 
-      my ($in, $out) = $Frm->inout('_arr',$indxr{$arraygrp});
-      my $intmp = new ORAC::TempFile;
-      my $numingrp = scalar( @{ $commonfiles{$arraygrp} } );
-      # Combine images with chosen method
-      if ( $makemos ) {
-	# Write filenames into temp file
-	my $otmp = new ORAC::TempFile;
-	for my $i (1 .. $numingrp) {
-	  print {$intmp->handle} $commonfiles{$arraygrp}->[$i-1] ."\n" ;
-	  print {$otmp->handle} $commonfiles{$arraygrp}->[$i-1] ."_al\n" ;
-	}
-	my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
-	  "out=^".$otmp->file." in=^".$intmp->file;
-	$Mon{kappa_mon}->obeyw("wcsalign","$args");
-	$args = "in=^".$otmp->file." method=$makemos_method out=$out";
-	$Mon{ccdpack_reg}->obeyw("makemos","$args");
-      } else {
-	# Write filenames into temp file
-	for my $i (1 .. $numingrp) {
-	  print {$intmp->handle} $commonfiles{$arraygrp}->[$i-1] ."\n" ;
-	}
-	my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
-	  "out=$out in=^".$intmp->file;
-	$Mon{kappa_mon}->obeyw("wcsmosaic","$args");
-      }
-      # Add to output array
-      push (@out, $out);
-      # Remove temp file
-      undef $intmp;
-    }
+    # Determine reference image for alignment. Use default coordinate
+    # frame
+    _GET_REFERENCE_IMAGE_ SKYREF=$skyalign VERBOSE=$verbose
+    my $refimage = $_GET_REFERENCE_IMAGE_{REFIMAGE};
 
-  } else {
-    my ($in, $out) = $Frm->inout('_arr');
-    my $intmp = new ORAC::TempFile;
-    # Combine images with chosen method
-    if ( $makemos ) {
-      # Write filenames into temp file
-      my $otmp = new ORAC::TempFile;
-      for my $i (1 .. $nfiles) {
-	print {$intmp->handle} $Frm->file($i) ."\n" ;
-	print {$otmp->handle} $Frm->file($i) ."_al\n" ;
-      }
-      my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
-	"out=^".$otmp->file." in=^".$intmp->file;
-      $Mon{kappa_mon}->obeyw("wcsalign","$args");
-      $args = "in=^".$otmp->file." method=$makemos_method out=$out";
-      $Mon{ccdpack_reg}->obeyw("makemos","$args");
+    # Check to see if we're using MAKEMOS
+    if ($makemos) {
+        orac_print("Aligning and mosaicking subarray images with WCSALIGN+MAKEMOS\n")
+            if $verbose;
     } else {
-      # Write filenames into temp file
-      foreach my $i (1..$nfiles) {
-	print {$intmp->handle} $Frm->file($i) ."\n";
-      }
-      my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
-	"out=$out in=^".$intmp->file;
-      $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
+        orac_print("Aligning and mosaicking subarray images with WCSMOSAIC\n")
+            if $verbose;
     }
-    # Add to output array
-    push (@out, $out);
-    # Remove temp file
-    undef $intmp;
-  }
-  # Store the output files
-  $Frm->files( @out );
+
+    # Set the WLIM parameter for WCSMOSAIC
+    my $wlim = 0.2;
+
+    # Number of files in current frame
+    my $nfiles = $Frm->nfiles;
+
+    # Array of output filenames to store in Frame object on completion
+    my @out;
+
+    # Do we have sub-headers? If not, then we have just 4 (or
+    # N_WORKING_SUBARRAYS) images to mosaic
+    if ( defined $Frm->hdr->{SUBHEADERS}->[0]->{SEQSTART}  || 
+         defined $Frm->hdr->{SUBHEADERS}->[0]->{NSUBSCAN} ) {
+        # Hash to store each SEQSTART/NSUBSCAN combination as appropriate
+        # images are mosaicked, plus an indexing hash to associate groups
+        # of related files with the file index.
+        my (%commonfiles, %indxr);
+
+        # Loop over number of files to store associations
+        my $j = 0;
+        for my $i (1..$nfiles) {
+            my $seqstart = $Frm->hdrval('SEQSTART',$i-1);
+            my $nsubscan = $Frm->hdrval('NSUBSCAN',$i-1);
+            # Define a unique identified key from subscan number and seqstart
+            my $commonkey = $nsubscan."_".$seqstart;
+            push @{ $commonfiles{$commonkey} }, $Frm->file($i);
+            # Now we need a way to link the array of common files to the
+            # correct file name for creating the output files. Do this with
+            # another hash with the same keys as above with file indices as
+            # values. This takes advantage of how the files are stored in
+            # the Frm and ensures we match up files correctly.
+            if (@{ $commonfiles{$commonkey} } == 1) {
+                $j++;
+                $indxr{$commonkey} = $j;
+            }
+        }
+
+        # Loop over groups of files to mosaic them - sort to preserve time
+        # order (KLUDGE: should sort on TIME not just on index)
+        foreach my $arraygrp ( sort { $indxr{$a} <=> $indxr{$b} } keys %indxr ) {
+            # For deciding the output file name 
+            my ($in, $out) = $Frm->inout('_arr',$indxr{$arraygrp});
+            my $intmp = new ORAC::TempFile;
+            my $numingrp = scalar( @{ $commonfiles{$arraygrp} } );
+            # Combine images with chosen method
+            if ( $makemos ) {
+                # Write filenames into temp file
+                my $otmp = new ORAC::TempFile;
+                for my $i (1 .. $numingrp) {
+                    print {$intmp->handle} $commonfiles{$arraygrp}->[$i-1] ."\n" ;
+                    print {$otmp->handle} $commonfiles{$arraygrp}->[$i-1] ."_al\n" ;
+                }
+                my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
+                    "out=^".$otmp->file." in=^".$intmp->file;
+                $Mon{kappa_mon}->obeyw("wcsalign","$args");
+                $args = "in=^".$otmp->file." method=$makemos_method out=$out";
+                $Mon{ccdpack_reg}->obeyw("makemos","$args");
+            } else {
+                # Write filenames into temp file
+                for my $i (1 .. $numingrp) {
+                    print {$intmp->handle} $commonfiles{$arraygrp}->[$i-1] ."\n" ;
+                }
+                my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
+                    "out=$out in=^".$intmp->file;
+                $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
+            }
+            # Add to output array
+            push (@out, $out);
+            # Remove temp file
+            undef $intmp;
+        }
+
+    } else {
+        my ($in, $out) = $Frm->inout('_arr');
+        my $intmp = new ORAC::TempFile;
+        # Combine images with chosen method
+        if ( $makemos ) {
+            # Write filenames into temp file
+            my $otmp = new ORAC::TempFile;
+            for my $i (1 .. $nfiles) {
+                print {$intmp->handle} $Frm->file($i) ."\n" ;
+                print {$otmp->handle} $Frm->file($i) ."_al\n" ;
+            }
+            my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
+                "out=^".$otmp->file." in=^".$intmp->file;
+            $Mon{kappa_mon}->obeyw("wcsalign","$args");
+            $args = "in=^".$otmp->file." method=$makemos_method out=$out";
+            $Mon{ccdpack_reg}->obeyw("makemos","$args");
+        } else {
+            # Write filenames into temp file
+            foreach my $i (1..$nfiles) {
+                print {$intmp->handle} $Frm->file($i) ."\n";
+            }
+            my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
+                "out=$out in=^".$intmp->file;
+            $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
+        }
+        # Add to output array
+        push (@out, $out);
+        # Remove temp file
+        undef $intmp;
+    }
+    # Store the output files
+    $Frm->files( @out );
 }
