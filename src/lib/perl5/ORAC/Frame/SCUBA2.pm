@@ -37,7 +37,7 @@ use ORAC::Constants;
 use ORAC::Print;
 
 use NDF;
-use Starlink::HDSPACK qw/ retrieve_locs copobj /;
+use Starlink::HDSPACK qw/ retrieve_locs delete_hdsobj /;
 use Starlink::AST;
 
 use vars qw/$VERSION/;
@@ -764,6 +764,10 @@ unchanged.
 
   $outfile = $Frm->rewrite_outfile_subarray( $old_outfile );
 
+The output file, or output HDS extension in a container, will be
+removed by this routine. If no HDS container exists and it looks like
+one will be required, it is created.
+
 =cut
 
 sub rewrite_outfile_subarray {
@@ -787,6 +791,12 @@ sub rewrite_outfile_subarray {
     # Get the suffix
     my ($bitsref, $suffix) = $self->_split_fname( $new );
     if (defined $suffix && length($suffix)) {
+      # delete the output file so that it can be created fresh
+      # each time. HDS containers seem to require that the out
+      # component does not pre-exist. We either have to delete the
+      # .I1 if it exists or delete the whole container
+
+
       # see if we have an output file
       my $root = $new;
       $root =~ s/\..*$//;
@@ -801,6 +811,11 @@ sub rewrite_outfile_subarray {
                  0,@null,my $loc,$status);
         dat_annul($loc, $status);
         err_end($status);
+      } else {
+        # make sure the child structure is not present
+        # since HDS will complain if it tries to write to a
+        # pre-existing component.
+        delete_hdsobj( $new );
       }
 
     }
