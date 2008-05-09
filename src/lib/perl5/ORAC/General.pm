@@ -470,7 +470,7 @@ primitive.
 
 =cut
 
-sub write_file_group_inout {
+sub write_file_list_inout {
   my $Obj = shift;
   my $suffix = shift;
   my $istmp = shift;
