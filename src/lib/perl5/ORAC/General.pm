@@ -482,7 +482,7 @@ sub write_group_file_inout {
   my @outfiles = map { scalar $Obj->inout($suffix, $_ ) } (1..$Obj->nfiles);
 
   # store on intermediates if temporary
-  $Obj->push_intermediates( @outfiles );
+  $Obj->push_intermediates( @outfiles ) if $istmp;
 
   # write to group file
   my $outfiles = write_group_file( @outfiles );
