@@ -436,7 +436,10 @@ sub mergehdr {
   my $self = shift;
   my $status;
 
-  my $old = pop(@{$self->intermediates});
+  my $old = ${$self->intermediates}[-2];
+  if( ! defined $old ) {
+    $old = $self->raw;
+  }
   my $new = $self->file;
 
   my ($root, $rest) = $self->_split_name($old);
