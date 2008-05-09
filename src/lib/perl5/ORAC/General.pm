@@ -40,6 +40,7 @@ use base qw/ Exporter /;
 use vars qw/ @EXPORT /;
 @EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist cosdeg
 	      sindeg dectodms hmstodec deg2rad rad2deg is_numeric
+        get_prim_arg
 	    );
 
 use Carp;
@@ -409,10 +410,23 @@ sub parse_obslist {
   return @obs;
 }
 
+=item B<get_prim_arg>
 
+Retrieve a primitive argument safely using exists and defined
+and if necessary returning the supplied default.
 
+  my $val = get_prim_arg( $_PRIM_ARGS_, $key, $default );
 
+=cut
 
+sub get_prim_arg {
+  my $argref = shift;
+  my $key = shift;
+  my $default = shift;
+
+  return (exists $argref->{$key} && defined $argref->{$key})
+    ? $argref->{$key} : $default;
+}
 
 =back
 
@@ -434,6 +448,7 @@ Paul Hirst E<lt>p.hirst@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
+Copyright (C) 2008 Science and Technology Facilities Council.
 Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
