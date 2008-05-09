@@ -444,7 +444,7 @@ group parameters.
 =cut
 
 sub write_file_list {
-   my @files = shift;
+   my @files = @_;
    my $intmp = ORAC::TempFile->new();
    for my $f (@files) {
      print {$intmp->handle} "$f\n";
