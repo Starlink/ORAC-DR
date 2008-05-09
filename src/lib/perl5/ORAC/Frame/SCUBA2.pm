@@ -171,7 +171,7 @@ sub configure {
   for my $f (@fnames) {
     my @internal = $self->_find_processed_images( $f );
     if (@internal) {
-      @internal = @internal[0..1];
+
       push(@paths, @internal );
       # and read the FITS headers
       my @hdrs;
@@ -751,71 +751,62 @@ sub hdrval {
 
 }
 
-=item B<inout>
+=item B<rewrite_outfile_subarray>
 
-Method to return the current input filename and the new output
-filename given a suffix.  For the base class the input filename is
-chopped at the last underscore and the suffix appended when the name
-contains at least 2 underscores. The suffix is simply appended if
-there is only one underscore. This prevents numbers being chopped when
-the name is of the form ut_num.
+This method modifies the supplied filename to remove specific
+subarray designation and replace it with a generic filter
+designation.
 
-Note that this method does not set the new output name in this
-object. This must still be done by the user.
+Should be used when subarrays are merged into a single file.
 
-Returns $in and $out in an array context:
+If the s8a/s4a designation is missing the filename will be returned
+unchanged.
 
-   ($in, $out) = $Frm->inout($suffix);
-
-Returns $out in a scalar context:
-
-   $out = $Frm->inout($suffix);
-
-Therefore if in=file_db and suffix=_ff then out would
-become file_db_ff but if in=file_db_ff and suffix=dk then
-out would be file_db_dk.
-
-An optional second argument can be used to specify the
-file number to be used. Default is for this method to process
-the contents of file(1).
-
-  ($in, $out) = $Frm->inout($suffix, 2);
-
-will return the second file name and the name of the new output file
-derived from this.  A value of zero is trapped and not passed on to
-the base class.
-
-The last suffix is not removed if it consists solely of numbers.
-This is to prevent truncation of raw data filenames.
+  $outfile = $Frm->rewrite_outfile_subarray( $old_outfile );
 
 =cut
 
-sub inout {
-
+sub rewrite_outfile_subarray {
   my $self = shift;
+  my $old = shift;
 
-  # Parse input argument list
-  my $suffix = shift;
-  my $num = ( @_ ) ? shift : 1;
+  # see if we have a subarray designation
+  my $new = $old;
+  if ($old =~ /^s[48][abcd]/) {
 
-  # Now set args to pass to base class
-  my @args = ( $num == 0 ) ? ($suffix) : ($suffix, $num);
+    # filter information
+    my $filt = $self->file_from_bits_extra;
 
-  # Call base class
-  my ($infile, $outfile) = $self->SUPER::inout( @args );
+    # we would expect the filter information to go after
+    # the four digit subscan number
+    $new =~ s/(_\d\d\d\d_)/$1${filt}_/;
 
-  # Check if we have raw data - input filename ends in four digits
-  # only. In this case modify the prefix and suffix.
-  if ( $infile =~ /_\d\d\d\d$/ ) {
-    # Change prefix to remove subarray label
-    $outfile =~ s/^s\d\D/s/;
-    # Update suffix to add wavelength
-    my $wavelen = "_".$self->file_from_bits_extra;
-    $outfile =~ s/$suffix$/$wavelen$suffix/;
+    # remove the subarray designation
+    $new =~ s/^s[48][abcd]/s/;
+
+    # Get the suffix
+    my ($bitsref, $suffix) = $self->_split_fname( $new );
+    if (defined $suffix && length($suffix)) {
+      # see if we have an output file
+      my $root = $new;
+      $root =~ s/\..*$//;
+      if (!-e "$root.sdf") {
+        # need to make the container
+        # Create the new HDS container and name the root component after the
+        # first 9 characters of the output filename
+        my $status = &NDF::SAI__OK;
+        err_begin($status);
+        my @null = (0);
+        hds_new ($root,substr($root,0,9),"ORACDR_HDS",
+                 0,@null,my $loc,$status);
+        dat_annul($loc, $status);
+        err_end($status);
+      }
+
+    }
+
   }
-
-  return ($infile, $outfile) if wantarray(); # Array context
-  return $outfile;                           # Scalar context
+  return $new;
 }
 
 =back
