@@ -40,7 +40,7 @@ use base qw/ Exporter /;
 use vars qw/ @EXPORT /;
 @EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist cosdeg
 	      sindeg dectodms hmstodec deg2rad rad2deg is_numeric
-        get_prim_arg write_group_file write_group_file_inout
+        get_prim_arg write_file_list write_file_list_inout
 	    );
 
 use Carp;
@@ -428,7 +428,7 @@ sub get_prim_arg {
     ? $argref->{$key} : $default;
 }
 
-=item B<write_group_file>
+=item B<write_file_list>
 
 Given an array of file names, open a temp file, write the filenames
 to it and return the name of the file. The returned object stringifies
@@ -436,14 +436,14 @@ to the actual filename. It must be returned as an object so that
 the temp file will be deleted automatically when the variable
 goes out of scope.
 
-  $fobject = write_group_file( $Frm->files );
+  $fobject = write_file_list( $Frm->files );
 
 Suitable for creating a file to be used for Starlink application
 group parameters.
 
 =cut
 
-sub write_group_file {
+sub write_file_list {
    my @files = shift;
    my $intmp = ORAC::TempFile->new();
    for my $f (@files) {
@@ -453,12 +453,12 @@ sub write_group_file {
    return $intmp;
 }
 
-=item B<write_group_file_inout>
+=item B<write_file_list_inout>
 
-Write an input group file and an output group file using the
+Write an input indirection file and an output indirection file using the
 supplied file suffix.
 
-  ($in, $out) = write_group_file_inout( $Frm, "_al", $istmp );
+  ($in, $out) = write_file_list_inout( $Frm, "_al", $istmp );
 
 The first argument is the frame or group object that will be used
 for the inout() method and the second argument is the suffix to
@@ -470,13 +470,13 @@ primitive.
 
 =cut
 
-sub write_group_file_inout {
+sub write_file_group_inout {
   my $Obj = shift;
   my $suffix = shift;
   my $istmp = shift;
 
   # input files are easy
-  my $infiles = write_group_file( $Obj->files );
+  my $infiles = write_file_list( $Obj->files );
 
   # output files need to be calculated using inout()
   my @outfiles = map { scalar $Obj->inout($suffix, $_ ) } (1..$Obj->nfiles);
@@ -485,7 +485,7 @@ sub write_group_file_inout {
   $Obj->push_intermediates( @outfiles ) if $istmp;
 
   # write to group file
-  my $outfiles = write_group_file( @outfiles );
+  my $outfiles = write_file_list( @outfiles );
 
   return ($infiles, $outfiles);
 }
