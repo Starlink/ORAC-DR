@@ -40,7 +40,7 @@ use base qw/ Exporter /;
 use vars qw/ @EXPORT /;
 @EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist cosdeg
 	      sindeg dectodms hmstodec deg2rad rad2deg is_numeric
-        get_prim_arg
+        get_prim_arg write_group_file write_group_file_inout
 	    );
 
 use Carp;
@@ -426,6 +426,68 @@ sub get_prim_arg {
 
   return (exists $argref->{$key} && defined $argref->{$key})
     ? $argref->{$key} : $default;
+}
+
+=item B<write_group_file>
+
+Given an array of file names, open a temp file, write the filenames
+to it and return the name of the file. The returned object stringifies
+to the actual filename. It must be returned as an object so that
+the temp file will be deleted automatically when the variable
+goes out of scope.
+
+  $fobject = write_group_file( $Frm->files );
+
+Suitable for creating a file to be used for Starlink application
+group parameters.
+
+=cut
+
+sub write_group_file {
+   my @files = shift;
+   my $intmp = ORAC::TempFile->new();
+   for my $f (@files) {
+     print {$intmp->handle} "$f\n";
+   }
+   close($intmp->handle);
+   return $intmp;
+}
+
+=item B<write_group_file_inout>
+
+Write an input group file and an output group file using the
+supplied file suffix.
+
+  ($in, $out) = write_group_file_inout( $Frm, "_al", $istmp );
+
+The first argument is the frame or group object that will be used
+for the inout() method and the second argument is the suffix to
+be supplied to the inout() method. If the third (optional) argument
+is true the output files will be pushed onto the intermediates
+array associated with the supplied frame/group object. This ensures
+the files will be cleared up even if they are not output from a 
+primitive.
+
+=cut
+
+sub write_group_file_inout {
+  my $Obj = shift;
+  my $suffix = shift;
+  my $istmp = shift;
+
+  # input files are easy
+  my $infiles = write_group_file( $Obj->files );
+
+  # output files need to be calculated using inout()
+  my @outfiles = map { scalar $Obj->inout($suffix, $_ ) } (1..$Obj->nfiles);
+
+  # store on intermediates if temporary
+  $Obj->push_intermediates( @outfiles );
+
+  # write to group file
+  my $outfiles = write_group_file( @outfiles );
+
+  return ($infiles, $outfiles);
 }
 
 =back
