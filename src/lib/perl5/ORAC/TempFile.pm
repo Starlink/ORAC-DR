@@ -36,6 +36,8 @@ use Carp;
 use File::Temp qw/ tempfile /;
 use vars qw/$VERSION $DEBUG/;
 
+use overload '""' => "STRINGIFY", fallback => 1;
+
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 $DEBUG = 0;
 
@@ -151,12 +153,19 @@ Return the file name associated with the temporary file.
 
   $name = $tmp->file;
 
+The file name is also returned on stringification of the object.
+
 =cut
 
 sub file {
   my $self = shift;
   $self->{File} = shift if @_;
   return $self->{File};
+}
+
+sub STRINGIFY {
+  my $self = shift;
+  return $self->file;
 }
 
 =back
@@ -312,6 +321,7 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
+Copyright (C) 2008 Science and Technology Facilities Council.
 Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
