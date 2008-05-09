@@ -458,15 +458,21 @@ sub write_file_list {
 Write an input indirection file and an output indirection file using the
 supplied file suffix.
 
-  ($in, $out) = write_file_list_inout( $Frm, "_al", $istmp );
+  ($in, $out, @outfiles) = write_file_list_inout( $Frm, "_al" );
 
 The first argument is the frame or group object that will be used
 for the inout() method and the second argument is the suffix to
-be supplied to the inout() method. If the third (optional) argument
+be supplied to the inout() method. The names of the derived output files
+are returned in the list. The object is not updated automatically.
+
+If the third (optional) argument
 is true the output files will be pushed onto the intermediates
 array associated with the supplied frame/group object. This ensures
 the files will be cleared up even if they are not output from a 
-primitive.
+primitive. If istmp is true, the output files are not returned to
+the caller.
+
+ ($in, $out) = write_file_list_inout( $Frm, "_al", 1);
 
 =cut
 
@@ -481,13 +487,16 @@ sub write_file_list_inout {
   # output files need to be calculated using inout()
   my @outfiles = map { scalar $Obj->inout($suffix, $_ ) } (1..$Obj->nfiles);
 
-  # store on intermediates if temporary
-  $Obj->push_intermediates( @outfiles ) if $istmp;
-
   # write to group file
   my $outfiles = write_file_list( @outfiles );
 
-  return ($infiles, $outfiles);
+  if ($istmp) {
+    # store on intermediates if temporary
+    $Obj->push_intermediates( @outfiles );
+    return ($infiles, $outfiles);
+  } else {
+    return ($infiles, $outfiles, @outfiles);
+  }
 }
 
 =back
