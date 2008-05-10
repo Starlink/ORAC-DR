@@ -107,7 +107,7 @@ USA
 unless ( $Frm->uhdr("EXTINCTION") ) {
 
 # Read the extinction correction argument if present
-my $extcor_mode = uc( $_EXTINCTION_CORRECT_FRAME_{EXTCOR_MODE} || 'QUICKER');
+my $extcor_mode = uc(get_prim_arg($_PRIM_ARGS_, "EXTCOR_MODE", "QUICKER" ));
 
 my @out;
 
@@ -134,16 +134,16 @@ if ( $extcor_mode eq 'FULL' ) {
     $extmethod = "WVMR";
   }
 
-  # Loop over all files in the Frm
-  for my $i (1..$Frm->nfiles) {
-    my ($in, $out) = $Frm->inout('_ext',$i);
-    push(@out, $out);
-    my $extargs = "in=$in out=$out method=$extmethod quick=false accept";
-    $Mon{smurf_mon}->obeyw("extinction",$extargs);
-  }
+  # Process all files at once since they share arguments
+  my ($inlist, $outlist, @outfiles) = write_file_list_inout($Frm, "_ext");
+  my $extargs = "in=^$inlist out=^$outlist method=$extmethod noquick hasskyrem accept";
+  $Mon{smurf_mon}->obeyw("extinction",$extargs);
+  push(@out, @outfiles);
 
 } elsif ( $extcor_mode eq 'QUICK' ) {
 
+  # process files one at a time since the mean wvm value can change
+  # during a single frame.
   for my $i (1..$Frm->nfiles) {
     # Tau at 225 GHz for this file
     my $csotau = sprintf "%5.3f", $Frm->hdrval('MEANWVM', ($i-1));
@@ -151,7 +151,7 @@ if ( $extcor_mode eq 'FULL' ) {
     my ($in, $out) = $Frm->inout('_ext',$i);
     push(@out, $out);
 
-    my $extargs = "in=$in out=$out method=CSOTAU csotau=$csotau quick=true";
+    my $extargs = "in=$in out=$out method=CSOTAU csotau=$csotau quick hasskyrem";
     $Mon{smurf_mon}->obeyw("extinction",$extargs);
   }
 
@@ -179,14 +179,11 @@ if ( $extcor_mode eq 'FULL' ) {
   # Extinction correction factor
   my $extcor = exp($tau*$airmass);
 
-  # Loop over all files and apply multiplier
-  for my $i (1..$Frm->nfiles) {
+  # Apply same multiplier to each frame
+  my ($inlist, $outlist, @outfiles) = write_file_list_inout($Frm, "_ext");
+  $Mon{kappa_mon}->obeyw("cmult","in=^$inlist scalar=$extcor out=^$outlist");
+  push(@out,@outfiles);
 
-    my ($in, $out) = $Frm->inout('_ext',$i);
-    # Just multiply images by e^tA
-    $Mon{kappa_mon}->obeyw("cmult","in=$in scalar=$extcor out=$out");
-    push(@out, $out);
-  }
 } else {
   orac_err("Unrecognized EXTCOR_MODE, $extcor_mode");
   my $ORAC_STATUS = ORAC__ERROR;
