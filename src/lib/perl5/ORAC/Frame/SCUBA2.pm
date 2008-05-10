@@ -146,9 +146,6 @@ sub configure {
     croak "Wrong number of arguments to configure: 1 or 2 args only";
   }
 
-  # Set the raw files.
-  $self->raw( @fnames );
-
   # Read the fits headers from all the raw files (since they should all have
   # .FITS)
   my %rfits;
@@ -200,6 +197,9 @@ sub configure {
       push(@paths, $f );
     }
   }
+
+  # Set the raw file to include the path
+  $self->raw( @paths );
 
   # first thing we need to do is find which keys differ
   # between the .I1 and .IN processed images
