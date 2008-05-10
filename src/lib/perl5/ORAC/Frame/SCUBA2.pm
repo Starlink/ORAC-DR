@@ -462,8 +462,8 @@ sub number {
   my $raw = $self->raw;
 
   if ( defined( $raw ) ) {
-    if ( ( $raw =~ /(\d+)_(\d{4})(\.\w+)?$/ ) ||
-         ( $raw =~ /(\d+)\.ok$/ ) ) {
+    if ( ( $raw =~ /^s[48]?[a-d]?\d{8}_(\d{5})_(\d{4})/ ) ||
+         ( $raw =~ /_(\d{5})\.ok$/ ) ) {
       # Drop leading zeroes.
       $number = $1 * 1;
     } else {
