@@ -20,6 +20,7 @@ use 5.006;
 use warnings;
 use strict;
 use Carp;
+use Digest::MD5 qw/ md5_hex /;
 
 use ORAC::Bounds qw/ return_bounds_header /;
 
@@ -97,6 +98,15 @@ sub collate_headers {
                                                Comment => 'Time-based selection criterion',
                                                Type    => 'STRING' );
   push(@toappend, $asntype);
+
+  if( ! $self->is_frame ) {
+    my $md5 = md5_hex($self->groupid);
+    my $asnid = new Astro::FITS::Header::Item( Keyword => 'ASN_ID',
+                                               Value   => $md5,
+                                               Comment => 'ASN ID checksum',
+                                               Type    => 'STRING' );
+    push ( @toappend, $asnid );
+  }
 
   $header->append( \@toappend );
   return $header;
