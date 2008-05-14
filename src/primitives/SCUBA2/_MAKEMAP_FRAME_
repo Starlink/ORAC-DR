@@ -104,19 +104,13 @@ USA
 
 
 # Pixel size for output image
-my $pixsize = (exists $_MAKEMAP_FRAME_{PIXSIZE} && 
-	       defined $_MAKEMAP_FRAME_{PIXSIZE}) ?
-               $_MAKEMAP_FRAME_{PIXSIZE} : $Cal->pixelscale;
+my $pixsize = get_prim_arg( $_PRIM_ARGS_, "PIXSIZE", $Cal->pixelscale)
 
 # Output coordinate system - default is TRACKING
-my $system = (exists $_MAKEMAP_FRAME_{SYSTEM} && 
-	       defined $_MAKEMAP_FRAME_{SYSTEM}) ?
-               $_MAKEMAP_FRAME_{SYSTEM} : "TRACKING";
+my $system = get_prim_arg( $_PRIM_ARGS_, "SYSTEM", "TRACKING");
 
 # Pixel-spreading scheme
-my $spread = (exists $_MAKEMAP_FRAME_{SPREAD} && 
-	      defined $_MAKEMAP_FRAME_{SPREAD}) ?
-              lc($_MAKEMAP_FRAME_{SPREAD}) : "nearest";
+my $spread = lc(get_prim_arg( $_PRIM_ARGS_, "SPREAD", "nearest"));
 
 # Reset to "nearest" if an unsupported scheme is given
 if ( ($spread ne "nearest") && ($spread ne "linear") ) {
@@ -125,9 +119,7 @@ if ( ($spread ne "nearest") && ($spread ne "linear") ) {
 }
 
 # Method for reconstructing map
-my $method = (exists $_MAKEMAP_FRAME_{METHOD} && 
-	       defined $_MAKEMAP_FRAME_{METHOD}) ?
-               lc($_MAKEMAP_FRAME_{METHOD}) : "rebin";
+my $method = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "rebin"));
 my $iterate = 0;
 # Minimum match on iterate method
 if ( $method =~ /iter/ ) {
@@ -136,9 +128,7 @@ if ( $method =~ /iter/ ) {
 }
 
 # Verbosity - default to yes
-my $verbose = (exists $_MAKEMAP_FRAME_{VERBOSE} && 
-	       defined $_MAKEMAP_FRAME_{VERBOSE}) ?
-               lc($_MAKEMAP_FRAME_{VERBOSE}) : 1;
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1)
 
 # Retrieve list of files in current frame
 my @files = $Frm->files;
@@ -150,41 +140,34 @@ print {$intmp->handle} join("\n",@files[0..$#files]);
 # Set output filename
 my ($in, $out) = $Frm->inout('_fmos');
 
+# Maximum map-size - set to 2 GB as a default, increase later if the
+# iterative map-maker is being used and processing is done in memory
+my $maxmem = 2048;
+
 # Makemap argument list
-my $args = "in=^".$intmp->file." out=$out pixsize=$pixsize spread=$spread system=$system method=$method";
+my $args = "in=^".$intmp->file." out=$out pixsize=$pixsize spread=$spread system=$system method=$method maxmem=$maxmem";
 
 # Check for additional parameters for the iterative map-maker
 my ($exportndf, $keepdimm, $numiter, $memiter, $modelorder, @modelorder, $config);
 if ( $iterate ) {
   # Number of iterations - default to 1 to force user to make a
   # decision
-  $numiter = (exists $_MAKEMAP_FRAME_{NUMITER} && 
-	      defined $_MAKEMAP_FRAME_{NUMITER}) ?
-	      $_MAKEMAP_FRAME_{NUMITER} : 1;
+  $numiter = get_prim_arg( $_PRIM_ARGS_, "NUMITER", 1);
 
   # Should iterations be done in memory?
-  $memiter = (exists $_MAKEMAP_FRAME_{MEMITER} && 
-	      defined $_MAKEMAP_FRAME_{MEMITER}) ?
-	      $_MAKEMAP_FRAME_{MEMITER} : 1;
+  $memiter = get_prim_arg( $_PRIM_ARGS_, "MEMITER", 1);
 
   # Maximum memory available to iterative map-maker
-  my $maxmem = ( $memiter ) ? 10000 : 1000 ;
+  $maxmem = 10000 if ( $memiter );
 
   # Flag for whether to export work files to NDF
-  $exportndf = (exists $_MAKEMAP_FRAME_{EXPORTNDF} && 
-		defined $_MAKEMAP_FRAME_{EXPORTNDF}) ?
-		$_MAKEMAP_FRAME_{EXPORTNDF} : 0;
+  $exportndf = get_prim_arg( $_PRIM_ARGS_, "EXPORTNDF", 0);
 
   # Flag for whether to keep intermediate DIMM files
-  $keepdimm = (exists $_MAKEMAP_FRAME_{KEEP} && 
-	       defined $_MAKEMAP_FRAME_{KEEP}) ?
-	       $_MAKEMAP_FRAME_{KEEP} : 0;
+  $keepdimm = get_prim_arg( $_PRIM_ARGS_, "KEEP", 0);
 
   # Flag for whether to export work files to NDF
-  $modelorder = (exists $_MAKEMAP_FRAME_{MODELORDER} && 
-		 defined $_MAKEMAP_FRAME_{MODELORDER}) ?
-		 lc($_MAKEMAP_FRAME_{MODELORDER}) : "com,ext,noi";
-
+  $modelorder = get_prim_arg( $_PRIM_ARGS_, "MODELORDER", "com,ext,noi");
   # Split modelorder into components before recombining
   @modelorder = split(/,/,$modelorder);
   
@@ -208,28 +191,35 @@ if ( $iterate ) {
     ."maxlen=0\n"
     ."badfrac=0.05\n";
   $config->handle->close;
-  $args .= " maxmem=$maxmem config=^".$config->file;
+  $args .= " config=^".$config->file;
 }
 
 # Call makemap - really must have some sort of feedback to user
 orac_print "Calling makemap... using $method method (this may take... a while...)\n";
-$Mon{smurf_mon}->obeyw("makemap","$args");
 
-# Now, is there any analysis of the intermediate files that could be
-# useful?
+my $SMURF_STATUS = $Mon{smurf_mon}->obeyw("makemap","$args");
 
-# Delete iterative map-maker files
-if ( $iterate && !$memiter ) {
-  orac_print "Removing model files from the iterative map-maker\n" 
-    if ($verbose != 0);
-  unlink <*.dimm>;
+# Check for SMF__NOMEM return status
+if ( $SMURF_STATUS == 235176770 ) {
+  orac_warn "Output image will exceed 2 GB - will not continue\n";
+} elsif ( $SMURF_STATUS == ORAC__OK ) {
+
+  # Now, is there any analysis of the intermediate files that could be
+  # useful?
+
+  # Delete iterative map-maker files
+  if ( $iterate && !$memiter ) {
+    orac_print "Removing model files from the iterative map-maker\n" 
+      if ($verbose != 0);
+    unlink <*.dimm>;
+  }
+
+  # Register the new file name
+  $Frm->file( $out );
+
+  orac_print "Thank you for waiting; image $out created\n";
 }
-
-# Register the new file name
-$Frm->files( $out );
-
 # Delete config file if present
 undef $config if ($config);
 
-orac_print "Thank you for waiting; image $out created\n";
 
