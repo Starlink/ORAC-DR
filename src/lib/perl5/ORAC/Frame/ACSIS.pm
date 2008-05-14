@@ -352,11 +352,14 @@ sub findgroup {
                $self->hdr( "INSTRUME" ) .
                $self->hdr( "OBS_TYPE" ) .
                $self->hdr( "IFFREQ" ) .
+               $self->hdr( "SIMULATE" ) .
                $restfreq;
 
     # Add DATE-OBS if we're not doing a science observation.
     if( uc( $self->hdr( "OBS_TYPE" ) ) ne 'SCIENCE' ) {
       $hdrgrp .= $self->hdr( "DATE-OBS" );
+    } else {
+      $hdrgrp .= $self->hdr( "ORACUT" );
     }
 
   }
