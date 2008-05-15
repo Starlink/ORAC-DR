@@ -32,14 +32,19 @@ Group. Default is 5.
 
 =item B<METHOD>
 
-Resampling method for WCSALIGN. Default is NEAREST for
-nearest-neighbour resampling.
+Resampling method for WCSALIGN. Default is C<bilinear> for
+bi-linear interpolation.
 
 =item B<MAKEMOS_METHOD>
 
 The method by which MAKEMOS combines the images. Default is
-C<mean>. See the MAKEMOS documentation for a description of the
+C<sigma>. See the MAKEMOS documentation for a description of the
 possible values.
+
+=item B<SIGMAS>
+
+Number of standard-deviations at which to reject values for B<SIGMA>
+image combination method. Default is 4.
 
 =item B<VERBOSE>
 
@@ -76,8 +81,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2007 the University of British Columbia.  All Rights
-Reserved.
+Copyright (C) 2007-2008 the University of British Columbia.  All
+Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -97,25 +102,26 @@ USA
 =cut
 
 # Should I be verbose (default to yes)
-my $verbose = (exists $_MAKE_MOSAIC_GROUP_DESPIKE_{VERBOSE} &&
-               defined $_MAKE_MOSAIC_GROUP_DESPIKE_{VERBOSE}) ?
-               $_MAKE_MOSAIC_GROUP_DESPIKE_{VERBOSE} : 1;
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
 
 # Number of Frames to mosaic for calculating a statistically-valid
 # variance
-my $nmos = (exists $_MAKE_MOSAIC_GROUP_DESPIKE_{NMOS} &&
-	    defined $_MAKE_MOSAIC_GROUP_DESPIKE_{NMOS}) ? 
-            $_MAKE_MOSAIC_GROUP_DESPIKE_{NMOS} : 5;
+my $nmos = get_prim_arg($_PRIM_ARGS_, "NMOS", 5);
 
 # Image resampling method for WCSALIGN
-my $method = (exists $_MAKE_MOSAIC_GROUP_DESPIKE_{METHOD} &&
-	      defined $_MAKE_MOSAIC_GROUP_DESPIKE_{METHOD}) ? 
-              lc($_MAKE_MOSAIC_GROUP_DESPIKE_{METHOD}) : "nearest";
+my $method = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "bilinear" ));
 
 # Image combination method for MAKEMOS
-my $makemos_method = (exists $_MAKE_MOSAIC_GROUP_DESPIKE_{MAKEMOS_METHOD} &&
-		      defined $_MAKE_MOSAIC_GROUP_DESPIKE_{MAKEMOS_METHOD}) ? 
-                      lc($_MAKE_MOSAIC_GROUP_DESPIKE_{MAKEMOS_METHOD}) : "mean"; 
+my $makemos_method = lc(get_prim_arg($_PRIM_ARGS_, "MAKEMOS_METHOD", "sigma"));
+
+# Number of sigmas to use if makemos_method = sigma (sigma-clipped mean)
+my $sigmas = get_prim_arg($_PRIM_ARGS_, "SIGMAS", 4.0);
+
+# If we are using sigma clipping then add the sigmas parameter to the
+# makemos_method
+if ( $makemos_method eq "sigma" ) {
+  $makemos_method .= " sigmas=$sigmas";
+}
 
 # Retrieve the Frames in the current Group, and get the number
 my @members = $Grp->members;
@@ -124,7 +130,8 @@ my $nFrm = scalar(@members);
 # Is it time to make a mosaic? Only do so every $nmos files
 if ( $nFrm % $nmos == 0 ) {
 
-  orac_print("Making GROUP mosaic with $nmos files... ") if $verbose;
+  orac_print("Making GROUP mosaic with $nmos files using DESPIKE method")
+    if $verbose;
 
   # Start and end index
   my $start = $nFrm - $nmos;
@@ -158,9 +165,8 @@ if ( $nFrm % $nmos == 0 ) {
   _GET_REFERENCE_IMAGE_
   my $refimage = $_GET_REFERENCE_IMAGE_{REFIMAGE};
 
-  # Retrieve the Group filename - make sure it ends in _mos
-  my $outname = $Grp->file;
-  $outname .= "_mos" unless $outname =~ /_mos$/; # horrible hack KLUGE
+  # Retrieve the Group filename
+  my $outname = $Grpobj->inout("_mos");
 
   # Use wcsalign to align the files
   my $args = "ref=$refimage lbnd=! ubnd=! method=$method out=^".$alfrmmos->file
