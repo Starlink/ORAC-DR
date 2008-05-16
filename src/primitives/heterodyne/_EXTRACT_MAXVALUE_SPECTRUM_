@@ -81,88 +81,105 @@ Council.  All Rights Reserved.
 
 # Deal with parameters.
 my $group = ( $_PRIM_ARGS_->{GROUP} ? 1 : 0 );
-my $tag = ( $_EXTRACT_MAXVALUE_SPECTRUM_{TAG} ?
-            $_EXTRACT_MAXVALUE_SPECTRUM_{TAG} :
-            0 );
+my $tag = get_prim_arg( $_PRIM_ARGS_, "TAG", 0 );
 
-my $Obj;
-if( $group ) {
-  $Obj = $Grp;
-} else {
-  $Obj = $Frm;
+my @objs;
+if( $group == 0 ) {
+  push @objs, $Frm;
+} elsif( $group == 1 ) {
+  push @objs, $Grp;
+} elsif( $group == 2 ) {
+  @objs = $Grp->members;
 }
 
-my $out;
+foreach my $Obj ( @objs ) {
 
-# Only extract a representative spectrum if we've created an
-# integrated intensity image (and thus have the peak value), or if the
-# cube is 1x1xN.
-_GET_DIMENSIONS_
-my $dims = $_GET_DIMENSIONS_{DIMS};
+  my $out;
 
-if( $dims->[0] == 1 &&
-    $dims->[1] == 1 ) {
+  # Only extract a representative spectrum if we've created an
+  # integrated intensity image (and thus have the peak value), or if
+  # the cube is 1x1xN.
+  _GET_DIMENSIONS_
+  my $dims = $_GET_DIMENSIONS_{DIMS};
 
-  # In this case the cube is the spectrum. Just copy the cube over.
-  ( my $in, $out ) = $Obj->inout( "_sp001" );
-  $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$out" );
+  if( $dims->[0] == 1 &&
+      $dims->[1] == 1 ) {
 
-  orac_print "Spectrum created in $out.\n";
-
-} else {
-
-  # We have a proper cube, so we have to retrieve the maximum flux
-  # position from the integrated intensity image. If we don't have
-  # that information, collapse the entire cube in spatial directions
-  # to create a spectrum.
-  if( defined( $Obj->uhdr( "INTEG_MAX_POS" ) ) ) {
-
-    my $maxpos = $Obj->uhdr( "INTEG_MAX_POS" );
-
-    # We need to find which frame contains this position. Go through
-    # each one in turn, finding the dimensions.
-    my $fileno = 0;
-    foreach my $i ( 1 .. $Obj->nfiles ) {
-
-      my $file = $Obj->file( $i );
-      $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$file" );
-
-      my ( $ORAC_STATUS, @lbound ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
-      ( $ORAC_STATUS, my @ubound ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
-      if( $maxpos->[0] >= $lbound[0] &&
-          $maxpos->[0] <= $ubound[0] &&
-          $maxpos->[1] >= $lbound[1] &&
-          $maxpos->[1] <= $ubound[1] ) {
-
-        $fileno = $i;
-        last;
-      }
-    }
-
-    # Copy out the spectrum from the given file.
-    my $in = $Obj->file( $fileno );
-    ( undef, $out ) = $Obj->inout( "_sp001" );
-    my $params = "in=$in(" . $maxpos->[0] . "," . $maxpos->[1] . ",) out=$out trim=false";
-    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+    # In this case the cube is the spectrum. Just copy the cube over.
+    ( my $in, $out ) = $Obj->inout( "_sp001" );
+    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$out" );
 
     orac_print "Spectrum created in $out.\n";
 
-    my $tmpObj = $Obj->new( $out );
-    $tmpObj->sync_headers;
+  } else {
+
+    # We have a proper cube, so we have to retrieve the maximum flux
+    # position from the integrated intensity image. If we don't have
+    # that information, collapse the entire cube in spatial directions
+    # to create a spectrum.
+    if( defined( $Obj->uhdr( "INTEG_MAX_POS" ) ) ) {
+
+      my $maxpos = $Obj->uhdr( "INTEG_MAX_POS" );
+
+      # We need to find which frame contains this position. Go through
+      # each one in turn, finding the dimensions.
+      my $fileno = 0;
+      foreach my $i ( 1 .. $Obj->nfiles ) {
+
+        my $file = $Obj->file( $i );
+        $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$file" );
+
+        my ( $ORAC_STATUS, @lbound ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
+        ( $ORAC_STATUS, my @ubound ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
+        if( $maxpos->[0] >= $lbound[0] &&
+            $maxpos->[0] <= $ubound[0] &&
+            $maxpos->[1] >= $lbound[1] &&
+            $maxpos->[1] <= $ubound[1] ) {
+
+          $fileno = $i;
+          last;
+        }
+      }
+
+      # Copy out the spectrum from the given file.
+      my $in = $Obj->file( $fileno );
+      ( undef, $out ) = $Obj->inout( "_sp001" );
+      my $params = "in=$in(" . $maxpos->[0] . "," . $maxpos->[1] . ",) out=$out trim=false";
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+      orac_print "Spectrum created in $out.\n";
+
+      my $tmpObj = $Obj->new( $out );
+      $tmpObj->sync_headers;
+    }
   }
-}
 
-# Fix up headers.
-my $tmpFrm = $Obj->new( $out );
-$tmpFrm->sync_headers;
-_DELETE_FILE_FITS_ITEM_ FILE=$out KEY=NUMTILES
-_DELETE_FILE_FITS_ITEM_ FILE=$out KEY=TILENUM
-_SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=sp
+  # Fix up headers.
+  my $tmpFrm = $Obj->new( $out );
+  $tmpFrm->sync_headers;
+  _DELETE_FILE_FITS_ITEM_ FILE=$out KEY=NUMTILES
+  _DELETE_FILE_FITS_ITEM_ FILE=$out KEY=TILENUM
+  _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=sp
 
-# And display.
-_DISPLAY_FILE_ FILE=$out
+  # Copy to Group if requested.
+  if( $group != 1 && $Grp->uhdr( "COPY_FRAME_CUBE" ) ) {
+    ( undef, my $groupout ) = $Grp->inout( "_sp" );
+    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$out out=$groupout" );
+    orac_print "$out to $groupout:\n";
+    orac_print " Copied to Group file.\n";
 
-# Tag if requested.
-if( $tag ) {
-  _TAG_AS_REPRESENTATIVE_SPECTRUM_ FILE=$out UPDATE=0 GROUP=$group
+    if( $tag ) {
+      _TAG_AS_REPRESENTATIVE_ FILE=$groupout UPDATE=0 GROUP=1 SUFFIX=rsp
+    }
+
+  }
+
+  # And display.
+  _DISPLAY_FILE_ FILE=$out
+
+  # Tag if requested.
+  if( $tag ) {
+    my $tempgroup = ( $group == 2 ? 0 : $group );
+    _TAG_AS_REPRESENTATIVE_ FILE=$out UPDATE=0 GROUP=$tempgroup SUFFIX=rsp
+  }
 }
