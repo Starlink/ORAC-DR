@@ -69,9 +69,8 @@ the following keys:
 
 =item RESULTS
 
-An array containing the X, Y position of the source in the current
-coordinate frame. These are set to C<undef> if the centroid could not
-be determined.
+Reference to an array containing the X, Y position of the source in the current
+coordinate frame. Empty if the centroid failed due to lack of source.
 
 =back
 
@@ -88,31 +87,26 @@ _CENTROID_FRAME_ and as such looks very similar.
 =head1 AUTHOR
 
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
+Copyright (C) 2008 Science and Technology Facilities Council.
 Copyright (C) 2007 the University of British Columbia. All Rights
 Reserved.
 
 =cut
 
-use NDF;
-
 # Set input file - leave undefined if not specified
-my $in = ( exists $_CENTROID_IMAGE_{IMAGE} ) && 
-         ( defined $_CENTROID_IMAGE_{IMAGE}) ? 
-         $_CENTROID_IMAGE_{IMAGE} : undef;
+my $in = get_prim_arg($_PRIM_ARGS_, "IMAGE", undef);
 
 # Should I be verbose? (Default to yes)
-my $verbose = (exists $_CENTROID_IMAGE_{VERBOSE} && 
-	       defined $_CENTROID_IMAGE_{VERBOSE}) ?
-               $_CENTROID_IMAGE_{VERBOSE} : 1;
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
 # If not input file was defined use the current group or frame
 unless ( defined $in ) {
   # Determine if the user wants to use the current stacked Grp or Frm
   # image
   my ($Obj, $Frmgrp);
-  my $group = defined( $_CENTROID_IMAGE_{GROUP} ) ? 
-    $_CENTROID_IMAGE_{GROUP} : 0;
+  my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
   if( $group ) {
     $Obj = $Grp;
     $Frmgrp = "Grp";
@@ -127,7 +121,7 @@ unless ( defined $in ) {
   }
 }
 
-my $box = ( $_CENTROID_IMAGE_{BOX} || 9 );
+my $box = get_prim_arg($_PRIM_ARGS_, "BOX", 9);
 
 my $ORAC_STATUS;
 
@@ -145,9 +139,7 @@ $minpix = $numpix if ( $minpix > $numpix );
 if ( $numgood >= $minpix ) {
 
   # Select the requested coordinate frame
-  my $cosys_out = (exists $_CENTROID_IMAGE_{SYSTEM} &&
-		   defined $_CENTROID_IMAGE_{SYSTEM}) ? 
-		   lc($_CENTROID_IMAGE_{SYSTEM}) : ""; 
+  my $cosys_out = lc(get_prim_arg($_PRIM_ARGS_,"SYSTEM", ""));
 
   my $cosys_in;
   unless ( $cosys_out eq "" ) {
@@ -158,7 +150,7 @@ if ( $numgood >= $minpix ) {
 
   # Are we insisting that the the centroid be returned in Offset
   # coordinates? Default is no: use the current system.
-  my $offset = ($_CENTROID_IMAGE_{OFFSET} || 0);
+  my $offset = get_prim_arg($_PRIM_ARGS_, "OFFSET", 0);
   # Set the default initial position - this only changes if we are not
   # working in an offset coordinate system
   my $initpos = "0,0";
@@ -199,8 +191,8 @@ if ( $numgood >= $minpix ) {
   $args .= " mode=i cerror=true search=$box";
 
   my $CENTROID_STATUS = $Mon{kappa_mon}->obeyw("centroid","ndf=$in $args");
-  # Use hard-code integer error code for KPG__NOCEN 
-  if ( $CENTROID_STATUS != 234521384 ) {
+
+  if ( $CENTROID_STATUS == ORAC__OK ) {
     # Read the result
     my @centre;
 
@@ -216,11 +208,14 @@ if ( $numgood >= $minpix ) {
     unless ( $cosys_out eq "" ) {
       $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=set name=system newval=$cosys_in");
     }
+
+  } elsif ($CENTROID_STATUS == 234521384) {
+      # Use hard-code integer error code for KPG__NOCEN 
+      orac_warn "Centroid failed: unable to determine position of centroid\n";
   } else {
-    orac_warn "Centroid failed: unable to determine position of centroid\n";
-  # Store the results
-    $_CENTROID_IMAGE_{RESULTS} = [undef,undef];
-    $ORAC_STATUS = ORAC__OK;
+      # Unexpected error status
+      orac_err("Centroid failed in unexpected manner. Aborting.");
+      $ORAC_STATUS = $CENTROID_STATUS;
   }
   # Reset the SkyRefIs parameter if necessary
   if ( $offset ) {
@@ -231,5 +226,4 @@ if ( $numgood >= $minpix ) {
 
 } else {
   orac_warn "Unable to determine centroid: insufficient number of good pixels\n";
-  $_CENTROID_IMAGE_{RESULTS} = [undef,undef];
 }
