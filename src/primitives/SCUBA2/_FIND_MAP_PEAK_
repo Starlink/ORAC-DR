@@ -101,59 +101,62 @@ Place,Suite 330, Boston, MA  02111-1307, USA
 =cut
 
 # Should I be verbose (default to yes)
-my $verbose = (exists $_PRIM_ARGS_->{VERBOSE} && 
-	       defined $_PRIM_ARGS_->{VERBOSE}) ?
-  $_PRIM_ARGS_->{VERBOSE} : 1;
-
-# initialise the results array
-$_PRIM_ARGS_->{RESULTS} = [];
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
 my $Obj = ($_PRIM_ARGS_->{GROUP} ? $Grp : $Frm );
 
 # Get the centroid and the peak at the centroid
 _CENTROID_IMAGE_ GROUP=$_PRIM_ARGS_->{GROUP}
 
-my $in = $Obj->file;
-
-# we now run PSF if possible else simply use the peak from 
-# centroiding
 my $peak;
+my @posn;
+if (@{$_CENTROID_IMAGE_{RESULTS}} && 0) {
+  my $in = $Obj->file;
 
-# Create temporary file with the position in
-my $tmp = new ORAC::TempFile;
-my $tmpfile = $tmp->file;
-print { $tmp->handle } $_CENTROID_IMAGE_{RESULTS}->[0]," ",
-  $_CENTROID_IMAGE_{RESULTS}->[1], "\n";
-$tmp->handle->close;
+  # we now run PSF if possible else simply use the peak from 
+  # centroiding
 
-_FIT_PSF_ COFILE=$tmpfile GAUSSIAN=0 IMAGE=$in
+  # Create temporary file with the position in
+  my $tmp = new ORAC::TempFile;
+  my $tmpfile = $tmp->file;
+  print { $tmp->handle } $_CENTROID_IMAGE_{RESULTS}->[0]," ",
+    $_CENTROID_IMAGE_{RESULTS}->[1], "\n";
+  $tmp->handle->close;
 
-my $amp = $_FIT_PSF_{AMPLITUDE};
-my $axisr = $_FIT_PSF_{AXISR};
-my @posn = @{ $_FIT_PSF_{POSITION} };
+  _FIT_PSF_ COFILE=$tmpfile GAUSSIAN=0 IMAGE=$in
 
-# Check the axis ratio
-if (!defined $axisr || $axisr > 1.4 || $axisr < 0.75) {
-  my $text = (defined $axisr ? $axisr : '<undef>');
-  orac_warn "Axis ratio of source out of specification (was $text). Ignoring fit.\n";
+  my $amp = $_FIT_PSF_{AMPLITUDE};
+  my $axisr = $_FIT_PSF_{AXISR};
+  @posn = @{ $_FIT_PSF_{POSITION} };
 
-  # Use stats peak
-  orac_warn "Using peak at centroid position for $in instead.\n";
+  # Check the axis ratio
+  if (!defined $axisr || $axisr > 1.4 || $axisr < 0.75) {
+    my $text = (defined $axisr ? $axisr : '<undef>');
+    orac_warn "Axis ratio of source out of specification (was $text). Ignoring fit.\n";
 
-  my $pos = $_CENTROID_IMAGE_{RESULTS}->[0].",".
-    $_CENTROID_IMAGE_{RESULTS}->[1];
-  $Mon{kappa_mon}->obeyw("stats","NDF=$in($pos)");
-  (my $ORAC_STATUS,$peak) = $Mon{kappa_mon}->get("stats","maximum");
-  @posn = @{ $_CENTROID_IMAGE_{RESULTS} };
+    # Use stats peak
+    orac_warn "Using peak at centroid position for $in instead.\n";
+
+    my $pos = $_CENTROID_IMAGE_{RESULTS}->[0].",".
+      $_CENTROID_IMAGE_{RESULTS}->[1];
+    $Mon{kappa_mon}->obeyw("stats","NDF=$in($pos)");
+    (my $ORAC_STATUS,$peak) = $Mon{kappa_mon}->get("stats","maximum");
+    @posn = @{ $_CENTROID_IMAGE_{RESULTS} };
+
+  } else {
+    $peak = $amp;
+    my %psfpars = %_FIT_PSF_;
+    $_PRIM_ARGS_->{PSF} = \%psfpars;
+  }
+
+  orac_print "Calculated peak signal from map of $peak\n" if $verbose;
 
 } else {
-  $peak = $amp;
-  my %psfpars = %_FIT_PSF_;
-  $_PRIM_ARGS_->{PSF} = \%psfpars;
+  orac_warn "Unable to fit peak because centroid was invalid.";
 }
 
 # Store the result in the hash
 $_PRIM_ARGS_->{PEAK} = $peak;
 $_PRIM_ARGS_->{POSITION} = \@posn;
 
-orac_print "Calculated peak signal from map of $peak\n" if $verbose;
+
