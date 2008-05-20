@@ -92,6 +92,31 @@ sub new {
   return $class->SUPER::new( @$args, $defaults );
 }
 
+=item B<framegroup>
+
+Create new instances of objects (of this class) from multiple
+input files.
+
+  @frames = ORAC::Frame->framegroup( @files );
+
+In most cases this is identical to simply passing the files directly
+to the constructor. In some subclasses, files from the same
+observation will be grouped into multiple file objects and processed
+independently.
+
+Note that framegroup() accepts multiple filenames in a list, as opposed
+to the frame constructors that only take single files or reference to
+an array.
+
+=cut
+
+sub framegroup {
+  my $class = shift;
+  # if there are multiple files, pass a reference to the constructor
+  my $files = ( @_ > 1 ? [@_] : $_[0] );
+  return ( $class->new( $files ) );
+}
+
 =head2 Accessor Methods
 
 The following methods are available for accessing the 
