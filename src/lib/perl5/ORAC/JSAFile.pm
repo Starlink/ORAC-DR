@@ -103,7 +103,7 @@ sub collate_headers {
     my $md5 = md5_hex($self->groupid);
     my $asnid = new Astro::FITS::Header::Item( Keyword => 'ASN_ID',
                                                Value   => $md5,
-                                               Comment => 'ASN ID checksum',
+                                               Comment => 'Association Identifier',
                                                Type    => 'STRING' );
     push ( @toappend, $asnid );
   }
