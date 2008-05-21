@@ -904,6 +904,9 @@ sub _expand_primitive {
              '{ my $__PREFIX = "?";'."\n",
              '  if( $Frm->can( "number" ) ) { $__PREFIX = $Frm->number; } elsif( $Frm->can( "name" ) ) { $__PREFIX = $Frm->name; };' . "\n",
              '  orac_debug( $__PREFIX . ":"."'.$prim->name .'".'."\":($remote)\t$arguments\n\"); }\n");
+        my ($monolith, $task, $args) = $self->_parse_obey_line( $line );
+        $monolith = "<Unknown Monolith>" unless defined $monolith;
+        push(@parsed,'orac_print("++ Calling '.$task .' in '. $monolith.' ","green");');
         $debug_obey = 1;
       }
 
@@ -922,6 +925,7 @@ sub _expand_primitive {
         push (@parsed,
               "#line 1 ".$prim->name()."_calling_$remote",
               "{  # Create block to prevent warnings from my OBEYW_STATUS",
+              ($debug_obey ? "my \$_obey_start_time = [Time::HiRes::gettimeofday];" : ""),
               "#line $lineno ". $prim->name,
               'my $OBEYW_STATUS = ' .$line,
               "#line 3 ".$prim->name()."_calling_$remote",
@@ -930,7 +934,8 @@ sub _expand_primitive {
         # If debugging add a statement before the status is checked
         # so that we can store the status value in the file
         push(@parsed,
-             'orac_debug( "Returned with status = ". $OBEYW_STATUS . "\n");'."\n"
+             'orac_print("took ".sprintf("%.3f",Time::HiRes::tv_interval($_obey_start_time))." seconds\n","green");',
+             'orac_debug( "Returned with status = ". $OBEYW_STATUS . "\n");'."\n",
             ) if $debug_obey;
 
         # Now complete the obey error checking
@@ -1080,36 +1085,26 @@ a new one is launched.
 sub _check_obey_status_string {
   my $self = shift;
 
-  my ($monolith, $task, $args);
-
   # Get the name of the monlith from the obeyw
   my $line = shift;
-
-  # Do the regexp separately so that we can handle the situation
-  # where the monolith path is not stored in a hash
-  $line =~ /\{\s*[\'\"]*(\w+)[\'\"]*\s*\}->obeyw/ && ($monolith = $1);
-  $line =~ /->obeyw\(\s*\"(\w+)\"/ && ($task = $1);
-  $line =~ /->obeyw\(\s*\"\w+\"\s*,\s*\"(.+)\"/ && ($args = $1);
-  $args = '(No arguments)' unless defined $args;
-  my $none = "(None!!)";
-  $monolith = $none unless defined $monolith;
-  $task = '(Unknown)' unless defined $task;
+  my ($monolith, $task, $args) = $self->_parse_obey_line($line);
 
   # Need to be careful of what gets expanded when the
   # lines are added to the recipe and what gets expanded
   # when the recipe is executed.
 
+  my $montext = (defined $monolith ? $monolith : "(None)");
   my @statuslines = (
 		     'if ($OBEYW_STATUS != ORAC__OK) {',
-		     "  orac_err (\"Error in obeyw to monolith $monolith (task=$task): \$OBEYW_STATUS\\n\");" ,
+		     "  orac_err (\"Error in obeyw to monolith $montext (task=$task): \$OBEYW_STATUS\\n\");" ,
 		     '  my $obeyw_args = "'. $args . '";',
 		     '  orac_print("Arguments were: ","blue");',
                      '  orac_print("$obeyw_args\n\n","red"); '
 		    );
 
   # If we have been unable to determine the monolith name we can not
-  # add the following - could use splice rather than to pushes
-  if ($monolith ne $none) {
+  # add the following - could use splice rather than two pushes
+  if (defined $monolith) {
     push (@statuslines,
 	  '  if ($OBEYW_STATUS == ORAC__BADENG) {',
 	  "    orac_err(\"Monolith $monolith seems to be dead. Removing it...\\n\");",
@@ -1131,6 +1126,31 @@ sub _check_obey_status_string {
   # Return the extra lines.
   return @statuslines;
 
+}
+
+=item B<_parse_obey_line>
+
+Split the line containing the obeyw into the Monolith name,
+the task name and the argument string.
+
+ ($mon, $task, $args) = $parser->_parse_obey_line( $line );
+
+=cut
+
+sub _parse_obey_line {
+  my $self = shift;
+  my $line = shift;
+
+  my ($monolith, $task, $args);
+  # Do the regexp separately so that we can handle the situation
+  # where the monolith path is not stored in a hash
+  $line =~ /\{\s*[\'\"]*(\w+)[\'\"]*\s*\}->obeyw/ && ($monolith = $1);
+  $line =~ /->obeyw\(\s*\"(\w+)\"/ && ($task = $1);
+  $line =~ /->obeyw\(\s*\"\w+\"\s*,\s*\"(.+)\"/ && ($args = $1);
+  $args = '(No arguments)' unless defined $args;
+  $task = '(Unknown)' unless defined $task;
+
+  return ($monolith, $task, $args);
 }
 
 =item B<_parse_prim_arguments>
