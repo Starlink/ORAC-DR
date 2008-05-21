@@ -66,24 +66,14 @@ Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
-my $comp = (exists $_FIND_VARIANCE_{COMP} && 
-	    defined $_FIND_VARIANCE_{COMP})
-            ? lc($_FIND_VARIANCE_{COMP}) : "err";
+# Choose VARiance or ERRor
+my $comp = lc(get_prim_arg($_PRIM_ARGS_, "COMP", "err"));
 
-my $ndf =  (exists $_FIND_VARIANCE_{IMAGE} && 
-	    defined $_FIND_VARIANCE_{IMAGE}) ?
-            $_FIND_VARIANCE_{IMAGE} : $Grp->file;
+# Get name of file to query
+my $ndf =  get_prim_arg($_PRIM_ARGS_, "IMAGE", $Grp->file);
 
-# Just want the first 3 characters
+# Just want the first 3 characters of the component
 $comp = substr($comp,0,3);
-
-if ($comp eq "var" ) {
-  orac_print("Returning variance\n");
-} elsif ($comp eq "err") {
-  orac_print("Returning error statistic\n");
-} else {
-  orac_throw "Error: unsupported component, $comp - must be either Variance or Error\n";
-}
 
 # Does the Variance or Error component exist in the file?
 $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$ndf quiet=true");
@@ -91,13 +81,21 @@ my $ORAC_STATUS;
 ($ORAC_STATUS, my $varexists) = $Mon{ndfpack_mon}->get("ndftrace","variance");
 
 if ($varexists eq "TRUE") {
+  # Inform user of returned value
+  if ($comp eq "var" ) {
+    orac_print("Returning variance\n");
+  } else {
+    orac_print("Returning error statistic\n");
+  }
+
+  # Calculate statistics of the request component
   $Mon{kappa_mon}->obeyw("stats","ndf=$ndf comp=$comp");
 
-  # Retrieve the mean value which is the variance
-  ($ORAC_STATUS, my $mean) = $Mon{kappa_mon}->get("stats","mean");
+  # Retrieve the mean value which is the variance/error
+  ($ORAC_STATUS, my $result) = $Mon{kappa_mon}->get("stats","mean");
 
   # Store in primitive hash
-  $_FIND_VARIANCE_{RESULT} = $mean;
+  $_FIND_VARIANCE_{RESULT} = $result;
 } else {
   $_FIND_VARIANCE_{RESULT} = &NDF::VAL__BADD();
   orac_print "Variance component not present in input file\n";
