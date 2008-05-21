@@ -209,6 +209,46 @@ sub get {
   return ($self->_to_orac_status($status),@values);
 }
 
+=item B<mget>
+
+Get multiple parameter values. This method is a wrapper around
+the get() method, returning the values in a hash indexed
+by parameter name. If a parameter has only one value it will
+be stored in the hash directly, else if multiple values are
+returned for a parameter a reference to an array will be stored
+in the return hash.
+
+  ($status, %params) = $obj->mget("task", @params);
+
+Status will only be good if all parameter gets return good
+status. Status will take on the last bad status value but
+an attempt will be made to get all parameter values even if
+some return with bad status.
+
+=cut
+
+sub mget {
+  my $self = shift;
+  my $task = shift;
+  my @params = @_;
+  croak "Must supply at least one parameter to mget()"
+    unless @params;
+
+  # this is a convenience wrapper, not necessarily designed for
+  # speed.
+  my %results;
+  my $exstat = ORAC__OK;
+  for my $param (@params) {
+    my ($status, @values) = $self->get( $task, $param );
+    if ($status == ORAC__OK && @values) {
+      $results{$param} = (@values == 1 ? $values[0] : \@values)
+    } else {
+      $exstat = $status if $exstat == ORAC__OK;
+    }
+  }
+  return ($exstat, %results);
+}
+
 =item B<set>
 
 Set the value of a parameter
