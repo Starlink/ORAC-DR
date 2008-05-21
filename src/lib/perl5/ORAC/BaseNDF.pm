@@ -21,6 +21,7 @@ use 5.006;
 use strict;
 use warnings;
 
+use Carp;
 use NDF;
 use Astro::FITS::Header::NDF;
 use ORAC::Error qw/ :try /;
@@ -111,15 +112,15 @@ differs will be in a subheader.
 An options hash as first argument can be used to override the default
 behaviour. Specifically if a single file is given (or stored in the
 object) but it contains multiple NDF components, the headers can be
-returned such that the largest header is the primary and the subheaders
-are stored by component name.
+returned such that the component named HEADER or largest header is the
+primary and the subheaders are stored by component name.
 
   $Frm->readhdr( { nomerge => 1 }, $filename );
 
 The subheaders will then be accessible as $Frm->hdr->{I1} (if the
-component is called "I1".
+component is called "I1").
 
-All exisiting header information is lost. The C<calc_orac_headers()>
+All existing header information is lost. The C<calc_orac_headers()>
 method is invoked once the header information is read.
 If there is an error during the read a reference to an empty hash is 
 returned.
@@ -127,7 +128,10 @@ returned.
 Currently this method assumes that the reduced group is stored in
 NDF format. Only the FITS header is retrieved from the NDF.
 
-There are no return arguments.
+If used as a class method, the filename(s) must be supplied
+and calc_orac_headers() will not be called.
+
+Returns the FITS header object.
 
 =cut
 
@@ -135,16 +139,28 @@ sub readhdr {
 
   my $self = shift;
 
+  my $is_class_method = (ref $self ? 0 : 1);
+
   # get the options hash
   my $opts;
   $opts = shift if ref($_[0]);
 
   # get the files
-  my @files = ( @_ ? @_ : $self->files );
+  my @files;
+  if (@_) {
+    @files = @_;
+  } else {
+    if (!$is_class_method) {
+      @files = $self->files;
+    } else {
+      croak "Can not call readhdr() as class method without supplying file names";
+    }
+  }
 
   my $Error;
 
   # Just read the NDF fits headers
+  my $hdr;
   try {
 
     # Locate NDFs inside HDS containers
@@ -184,7 +200,6 @@ sub readhdr {
     }
 
     # to merge or not to merge
-    my $hdr;
     if ($domerge) {
       # Now merge into the first (order not important)
       my @hdrs = values %hdrs;
@@ -238,7 +253,7 @@ sub readhdr {
     $hdr->tiereturnsref(1);
 
     # And store it in the object
-    $self->fits( $hdr );
+    $self->fits( $hdr ) unless $is_class_method;
   } otherwise {
     $Error = shift;
   };
@@ -248,9 +263,9 @@ sub readhdr {
   };
 
   # calc derived headers
-  $self->calc_orac_headers;
+  $self->calc_orac_headers() unless $is_class_method;
 
-  return;
+  return $hdr;
 }
 
 =item B<sync_headers>

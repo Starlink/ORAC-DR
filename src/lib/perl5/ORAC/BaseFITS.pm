@@ -20,6 +20,7 @@ use 5.006;
 use strict;
 use warnings;
 
+use Carp;
 use Astro::FITS::Header::CFITSIO;
 use ORAC::Error qw/ :try /;
 
@@ -54,7 +55,10 @@ method is invoked once the header information is read.
 If there is an error during the read a reference to an empty hash is 
 returned.
 
-There are no return arguments.
+If used as a class method, the filename must be supplied
+and calc_orac_headers() will not be called.
+
+Returns the C<Astro::FITS::Header> object.
 
 =cut
 
@@ -62,25 +66,40 @@ sub readhdr {
 
   my $self = shift;
 
+  my $is_class_method = (ref $self ? 0 : 1);
+
+  # get the files
+  my @files;
+  if (@_) {
+    @files = @_;
+  } else {
+    if (!$is_class_method) {
+      @files = $self->files;
+    } else {
+      croak "Can not call readhdr() as class method without supplying file names";
+    }
+  }
+
   my ($ref, $status);
 
-  my $file = (@_ ? shift : $self->file);
+  my $file = (@_ ? shift(@files) : $self->file);
 
   # Just read the fits header
+  my $hdr;
   try {
-    my $hdr = new Astro::FITS::Header::CFITSIO( File => $file );
+    $hdr = new Astro::FITS::Header::CFITSIO( File => $file );
 
     # Mark it suitable for tie with array return of multi-values
     $hdr->tiereturnsref(1);
 
     # And store it in the object
-    $self->fits( $hdr );
+    $self->fits( $hdr ) unless $is_class_method;
   };
 
   # calc derived headers
-  $self->calc_orac_headers;
+  $self->calc_orac_headers unless $is_class_method;
 
-  return;
+  return $hdr;
 }
 
 =item B<parsefname>

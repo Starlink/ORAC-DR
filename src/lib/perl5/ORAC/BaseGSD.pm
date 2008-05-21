@@ -21,6 +21,7 @@ use 5.006;
 use strict;
 use warnings;
 
+use Carp;
 use Astro::FITS::Header::GSD;
 use ORAC::Error qw/ :try /;
 
@@ -53,7 +54,10 @@ returned.
 Currently this method assumes that the reduced group is stored in
 GSD format. Only the FITS header is retrieved from the GSD.
 
-There are no return arguments.
+If used as a class method, the filename must be supplied
+and calc_orac_headers() will not be called.
+
+Returns the C<Astro::FITS::Header> object.
 
 =cut
 
@@ -61,11 +65,26 @@ sub readhdr {
 
   my $self = shift;
 
-   my ($ref, $status);
+  my $is_class_method = (ref $self ? 0 : 1);
 
-  my $file = (@_ ? shift : $self->file);
+  # get the files
+  my @files;
+  if (@_) {
+    @files = @_;
+  } else {
+    if (!$is_class_method) {
+      @files = $self->files;
+    } else {
+      croak "Can not call readhdr() as class method without supplying file names";
+    }
+  }
 
-  # Just read the NDF fits header
+  my ($ref, $status);
+
+  my $file = (@_ ? shift(@files) : $self->file);
+
+  # Just read the GSD fits header
+  my $hdr;
   try {
     my $hdr = new Astro::FITS::Header::GSD( File => $file );
 
@@ -73,13 +92,13 @@ sub readhdr {
     $hdr->tiereturnsref(1);
 
     # And store it in the object
-    $self->fits( $hdr );
+    $self->fits( $hdr ) unless $is_class_method;
   };
 
   # calc derived headers
-  $self->calc_orac_headers;
+  $self->calc_orac_headers unless $is_class_method;
 
-  return;
+  return $hdr;
 }
 
 =back
