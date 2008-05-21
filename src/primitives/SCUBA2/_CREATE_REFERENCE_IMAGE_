@@ -289,14 +289,21 @@ my $fitshdr = new Astro::FITS::Header::NDF( File => $datafile );
 $fitshdr->writehdr( File => $refimage );
 
 # Store the SkyRef attribute in reference image
+# SkyRef can not be stored using mset since astSet does not allow
+# attribute values that include commas.
 my $args = "ndf=$refimage mode=set name=skyref newval='".$skyref."'";
 $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
 
+# Need to set the Observatory location
+my $obslon = $wcs->Get("ObsLon");
+my $obslat = $wcs->Get("ObsLat");
+
+# Work out which AST attributes need to be set
+my $attrs = "obslon=$obslon,obslat=$obslat";
+
 # If necessary, set the SkyRefIs, AlignOffset and System attributes
 if ( $cosys_out eq "GAPPT" ) {
-  $args = "ndf=$refimage setting='skyrefis=origin,alignoffset=1,system=GAPPT,epoch=$epoch' mode=mset";
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
-
+  $attrs .=",skyrefis=origin,alignoffset=1,system=GAPPT,epoch=$epoch";
   # Set a flag for moving sources
   $Grp->uhdr("MOVING",1);
 } else {
@@ -304,14 +311,8 @@ if ( $cosys_out eq "GAPPT" ) {
   $Grp->uhdr("MOVING",0);
 }
 
-# Now set the ObsLon/ObsLat to ensure correct conversion between
-# Equatorial and Horizontal coordinate systems
-my $obslon = $wcs->Get("ObsLon");
-my $obslat = $wcs->Get("ObsLat");
-$args = "ndf=$refimage mode=set name=ObsLon newval='".$obslon."'";
-$Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
-$args = "ndf=$refimage mode=set name=ObsLat newval='".$obslat."'";
-$Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+# Now set the attributes
+$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$refimage mode=mset setting='$attrs'");
 
 # Store the reference image name in the primitive hash
 $_CREATE_REFERENCE_IMAGE_{REFIMAGE} = $refimage;
