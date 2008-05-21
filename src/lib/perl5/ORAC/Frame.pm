@@ -108,13 +108,44 @@ Note that framegroup() accepts multiple filenames in a list, as opposed
 to the frame constructors that only take single files or reference to
 an array.
 
+If the C<framegroupkeys> method returns a list, those keys
+are used as FITS headers that should be used to group the input
+files.
+
 =cut
 
 sub framegroup {
   my $class = shift;
-  # if there are multiple files, pass a reference to the constructor
-  my $files = ( @_ > 1 ? [@_] : $_[0] );
-  return ( $class->new( $files ) );
+  my @files = @_;
+
+  # see if we have any grouping keys
+  my @grpkeys = $class->framegroupkeys();
+
+  my %Grouped;
+  if (@grpkeys) {
+    # we have a request to group
+
+    for my $filename (@files) {
+      my $hdr = $class->readhdr($filename);
+      tie my %header, "Astro::FITS::Header", $hdr;
+      my $groupkey = '';
+      for my $i (@grpkeys) {
+        $groupkey .= $header{$i} if defined $header{$i};
+      }
+      croak "File $filename does not have a defined grouping key"
+        unless $groupkey;
+      push @{$Grouped{$groupkey}}, $filename;
+    }
+
+
+  } else {
+    # no grouping
+    $Grouped{ALL} = \@files;
+  }
+
+  # for each group, create a frame object
+  my @Frms = map { $class->new($_) } values %Grouped;
+  return @Frms;
 }
 
 =head2 Accessor Methods
@@ -148,6 +179,20 @@ sub group {
   my $self = shift;
   if (@_) { $self->{Group} = shift;}
   return $self->{Group};
+}
+
+=item B<framegroupkeys>
+
+Returns the FITS header keys that should be used to group
+files into distinct Frame objects. Used by the C<framegroup>
+method to determine grouping.
+
+Returns empty list in the base class.
+
+=cut
+
+sub framegroupkeys {
+  return ();
 }
 
 =item B<is_frame>

@@ -382,6 +382,26 @@ sub data_detection_tasks {
   return map { "SCU2_$pre" . uc($_) } @codes;
 }
 
+=item B<framegroupkeys>
+
+For SCUBA-2 a single frame object is returned in most cases. For focus
+observations each focus position is returned as a separate Frame
+object. This simplifies the recipes and allows the QL and standard
+recipes to work in the same way.
+
+Observation number is also kept separate in case the pipeline gets so
+far behind that the system detects the end of one observation and the
+start of the next.
+
+ @keys = $Frm->framegroupkeys;
+
+=cut
+
+sub framegroupkeys {
+  return (qw/ OBSNUM FOCPOSN /);
+}
+
+
 =item B<file_from_bits>
 
 Determine the raw data filename given the variable component

@@ -169,47 +169,23 @@ sub configure {
   return 1;
 }
 
-=item B<framegroup>
+=item B<framegroupkeys>
 
-Create new instances of objects (of this class) from the input files
-in the current frame.
+Returns the keys that should be used for determining whether files
+from a single observation should be treated independently.
 
- @frames = ORAC::Frame->framegroup( @files );
+For ACSIS a single frame object is returned for single sub-system
+observations and multiple frame objects returned in multi-subsystem
+mode. One caveat is that if the multi-subsystem mode looks like a
+hybrid mode (bandwidth mode and IF frequency identical) then a single
+frame object is returned.
 
-For ACSIS a single frame object is returned for single sub-system observations
-and multiple frame objects returned in multi-subsystem mode. One caveat is that
-if the multi-subsystem mode looks like a hybrid mode (bandwidth mode and IF frequency
-identical) then a single frame object is returned.
+ @keys = $Frm->framegroupkeys;
 
 =cut
 
-sub framegroup {
-  my $class = shift;
-
-  my %groupings;
-
-  # For each file, we need to read its header and create a hash of
-  # arrays with the key being the value of the BWMODE and IFFREQ headers and the
-  # value being the filename. SUBSYSNR does not handle the hybrid modes that are meant
-  # to be combined.
-  foreach my $filename ( @_ ) {
-
-    my $hdr = new Astro::FITS::Header::NDF( File => $filename );
-    tie my %header, "Astro::FITS::Header", $hdr;
-    push @{$groupings{$header{BWMODE}.$header{IFFREQ}}}, $filename;
-  }
-
-  # For each one of the groups, we need to create a new Frame object
-  # using the filenames listed.
-  my @Frms;
-  foreach my $files ( values %groupings ) {
-
-    push @Frms, $class->new( $files );
-
-  }
-
-  return @Frms;
-
+sub framegroupkeys {
+  return (qw/ BWMODE IFFREQ /);
 }
 
 =back
