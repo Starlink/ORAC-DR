@@ -59,27 +59,18 @@ Reserved.
 =cut
 
 # Write logfiles (default to true)
-my $uselog = (exists $_FIND_POINTING_OFFSETS_{LOGFILE} &&
-	      defined $_FIND_POINTING_OFFSETS_{LOGFILE}) ?
-              $_FIND_POINTING_OFFSETS_{LOGFILE} : 1;
+my $uselog = get_prim_arg( $_PRIM_ARGS_, "LOGFILE", 1);
 
 # Should I be verbose? (Default to yes)
-my $verbose = (exists $_FIND_POINTING_OFFSETS_{VERBOSE} && 
-	       defined $_FIND_POINTING_OFFSETS_{VERBOSE}) ?
-               $_FIND_POINTING_OFFSETS_{VERBOSE} : 1;
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
 
 # Which method is being requested for calculating the offsets? Default
 # is to use KAPPA centroid
-my $offmethod = (exists $_FIND_POINTING_OFFSETS_{METHOD} &&
-		 defined  $_FIND_POINTING_OFFSETS_{METHOD}) ?
-                 lc($_FIND_POINTING_OFFSETS_{METHOD}) : "centroid";
+my $offmethod = get_prim_arg( $_PRIM_ARGS_, "METHOD", "centroid");
 
 # Check that we have a pointing observation
-#if ( uc($Frm->hdr('OBS_TYPE')) ne "POINTING" ) {
-#  orac_warn "Data are not from a POINTING observation\n";
-#} else {
-#}
 # Other checks: should be a standard source
+if ( uc($Frm->hdr('OBS_TYPE')) eq "POINTING" ) {
 
 # Do we have a completed observation? Check for OBSEND = T in the last
 # entry in the Frame object.
@@ -95,7 +86,7 @@ if ( $Frm->hdrval('OBSEND',-1) ) {
 
   # Write .ok in output directory
   # Format obsnum
-  my $obsnum = sprintf "%05d", $Frm->hdrval('OBSNUM');
+  my $obsnum = sprintf "%05d", $Grp->uhdr('ORAC_OBSERVATION_NUMBER');
   # Define filename
   my $okfilename = ".s".$Frm->hdrval('UTDATE')."_".$obsnum.".ok";
 
@@ -114,9 +105,9 @@ if ( $Frm->hdrval('OBSEND',-1) ) {
   if ($uselog) {
     my $time = gmtime();
     $pointinglog = new ORAC::LogFile("log.pointing");
-    $pointinglog->header("Pointing log file - created on $time",
-			 "\n# ID  Object    Time     Filter  dAz   dEl   El  Seeing   CSO",
-			 "----------------------------------------------------------------"
+    $pointinglog->header("Pointing log file - created on $time UT",
+			 "\n# UT                HST   Obs Source       Mode           Filter El CSO    Tau   Seeing  dAz    dEl",
+			 "-----------------------------------------------------------------------------------------------------"
       );
   }
 
@@ -143,37 +134,21 @@ if ( $Frm->hdrval('OBSEND',-1) ) {
   ($daz, $del) = @{ $_CENTROID_IMAGE_{RESULTS} };
   if ( defined $daz && defined $del ) {
     # dAz and dEl are currently in degrees so convert to arcsec
-    $daz = sprintf "%4.2f", 3600.0*$daz;
-    $del = sprintf "%4.2f", 3600.0*$del;
+    $daz = sprintf "%5.2f", 3600.0*$daz;
+    $del = sprintf "%5.2f", 3600.0*$del;
 
     # Delete the temporary file
     undef $incopy;
 
-    my $ORAC_STATUS;
     # Write info to log file if requested
     if ( $uselog ) {
-      # UT string
-      my $time = sprintf "%12.3f", $Frm->hdrval('ORACTIME', 0);
-      # Filter
-      my $filt = sprintf "%4s", $Frm->hdr('FILTER');
-      # Target source
-      my $source = $Frm->hdr('OBJECT');
-      # Tau at 225 GHz
-      my $cso = sprintf "%5.3f", 0.5*($Frm->hdrval('WVMTAUST', 0) +
-				      $Frm->hdrval('WVMTAUEN', -1));
-      # Seeing
-      my $see = sprintf "%5.3f", 0.5*($Frm->hdrval('SEEINGST', 0) + 
-				      $Frm->hdrval('SEEINGEN',-1));
-      # Azimuth
-#    my $az = int ( 0.5 * ( $Frm->hdrval('AZSTART', 0) + $Frm->hdrval('AZEND', -1) ) );
-      # Elevation - should always be >10 deg so no need to re-format for printing
-      my $el = int ( 0.5 * ( $Frm->hdrval('ELSTART',0) + $Frm->hdrval('ELEND',-1) ) );
-      # Observation number
-      my $obsnum = sprintf "%05d", $Frm->hdr('OBSNUM');
+      # Get basic logging parameters from Group file
+      _GET_LOG_PARAMETERS_ GROUP=1
+      my ( $uttime, $hst, $run, $src, $mode, $filter, $el, $cso, $tau, $see ) 
+        = @{ $_GET_LOG_PARAMETERS_{PARAMS} };
       
-      # Write the entry:
       # ObsNum, source, UT, filter, DAz, DEl, Seeing, tau225
-      $pointinglog->addentry("$obsnum $source $time  $filt   $daz $del  $el   $see   $cso");
+      $pointinglog->addentry("$uttime $hst $run $src $mode $filter    $el $cso $tau  $see   $daz  $del");
     } else {
       # If we are not logging these data to a file, store the noise in the
       # primitive hash
@@ -186,3 +161,8 @@ if ( $Frm->hdrval('OBSEND',-1) ) {
     orac_warn "Unable to determine pointing offsets\n";
   }
 }
+} else {
+  orac_warn "Data are not from a POINTING observation\n";
+}
+
+
