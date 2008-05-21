@@ -1386,6 +1386,10 @@ A suffix is anything after the first "." in the filename.
 sub _split_fname {
   my $self = shift;
   my $file = shift;
+  
+  if (!defined $file) {
+    Carp::confess("File supplied to _split_fname is not defined. Possible programming error");
+  }
 
   # Split the thing on dots first
   my @dots = split(/\./, $file, 2);
