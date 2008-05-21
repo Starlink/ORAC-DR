@@ -91,7 +91,7 @@ Reference to array of peak fluxes. Undef if no sources found.
 
 =head1 OUTPUT FILES
 
-The following file is created:
+The following files are created:
 
 =over 4
 
@@ -111,56 +111,31 @@ The frame object is not updated.
 
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
-Copyright (C) 2007 the University of British Columbia.  All Rights
-Reserved.
+Copyright (C) 2007-2008 the University of British Columbia.  All
+Rights Reserved.
 
 =cut
 
 # Should check that this has been run after calibration?
 
-# Write logfiles (default to true)
-my $uselog = (exists $_FIND_FLUXES_{LOGFILE} &&
-	      defined $_FIND_FLUXES_{LOGFILE}) ?
-              $_FIND_FLUXES_{LOGFILE} : 1;
+# Write logfiles (default to yes)
+my $uselog = get_prim_arg($_PRIM_ARGS_, "LOGFILE", 1);
 
 # Should I be verbose? (Default to yes)
-my $verbose = (exists $_FIND_FLUXES_{VERBOSE} && 
-	       defined $_FIND_FLUXES_{VERBOSE}) ?
-               $_FIND_FLUXES_{VERBOSE} : 1;
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
 # Check the desired flux calculation method.
-my $usepsf = (exists $_FIND_FLUXES_{USEPSF} &&
-	      defined $_FIND_FLUXES_{USEPSF}) ?
-              $_FIND_FLUXES_{USEPSF} : 0;
+my $usepsf = get_prim_arg($_PRIM_ARGS_, "USEPSF", 0);
 
 # Set aperture radius - default is 20 arcsec
-my $radius = ( exists $_FIND_FLUXES_{RADIUS} && 
-	       defined $_FIND_FLUXES_{RADIUS} ) ?
-               $_FIND_FLUXES_{RADIUS} : 20;
-
+my $radius = get_prim_arg($_PRIM_ARGS_, "RADIUS", 20);
 
 # Initialize the log files if necessary
 my ($pklog, $intlog);
-if ($uselog) {
-  my $time = gmtime();
-  # Peak fluxes
-  $pklog = new ORAC::LogFile("log.peak");
-  $pklog->header("#Peak flux log file - created on $time",
-                 "#\n#  ID      Time          RA          Dec       Filter  Peak  FWHM   Seeing   El  CSO",
-                 "#------------------------------------------------------------------------------------"
-		 );
-  # Integrated fluxes
-  $intlog = new ORAC::LogFile("log.integrated");
-  $intlog->header("#Integrated flux log file - created on $time",
-                 "#\n#  ID      Time          RA          Dec       Filter  Flux  Seeing   El  CSO",
-                 "#------------------------------------------------------------------------------------"
-		 );
-}
 
-# Determine if the user wants to use the current stacked Grp or Frm image
+# Determine if the user wants to use the current Grp or Frm image
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
 my ($Obj, $in);
-my $group = defined( $_FIND_FLUXES_{GROUP} ) ? 
-  $_FIND_FLUXES_{GROUP} : 0;
 if( $group ) {
   $Obj = $Grp;
 } else {
@@ -178,6 +153,8 @@ if ( $group  && $Grp->file_exists ) {
 my (@intfluxes, @pkfluxes);
 
 # Are the data calibrated?
+
+# If we are observing a standard source then just find the centroid.
 
 # Find all of the sources in the current frame
 _FIND_SOURCES_ IMAGE=$in
@@ -209,35 +186,6 @@ if ( $catalogue->sizeof == 0 ) {
     $usepsf = 0;
   }
 
-  # Set up log file entries - these will be the same for all sources in the field
-  my ($time, $filt, $cso, $see, $el, $obsnum);
-  if ($uselog) {
-
-    # Note: if the Grp object is being used, the current Frm will be
-    # the most recent and thus the `average' values calculated below
-    # will not be representative of the Grp but only of the most
-    # recent observation. This is probably fine for logging purposes.
-
-    # UT string
-    $time= sprintf "%12.3f", $Frm->hdrval('ORACTIME');
-    # Filter
-    $filt= sprintf "%4s", $Frm->hdr('FILTER');
-
-    # Tau at 225 GHz
-    $cso = sprintf "%5.3f", 0.5*($Frm->hdrval('WVMTAUST', 0) +
-				 $Frm->hdrval('WVMTAUEN',-1));
-
-    # Seeing
-    $see = sprintf "%5.3f", 0.5*($Frm->hdrval('SEEINGST', 0) + 
-				 $Frm->hdrval('SEEINGEN',-1));
-
-    # Elevation - should always be >10 deg so no need to re-format for printing
-    $el = int ( 0.5 * ( $Frm->hdrval('ELSTART',0) + $Frm->hdrval('ELEND',-1) ) );
-
-    # Observation number
-    $obsnum = sprintf "%05d", $Frm->hdr('OBSNUM');
-  }
-
   my $fluxcorr = 1.0;
   my $ORAC_STATUS;
 
@@ -248,6 +196,25 @@ if ( $catalogue->sizeof == 0 ) {
   }
   # Define all the parameters we might need
   my ($amp, $fwhm, $axisr, $totalflux);
+
+  # Set up log file entries - these will be the same for all sources in the field
+  if ($uselog) {
+    my $time = gmtime();
+    # Peak fluxes
+    $pklog = new ORAC::LogFile("log.peak");
+    $pklog->header("#Peak flux log file - created on $time UT",
+		   "#\n# UT                HST   Obs Source       Mode         Filter  El CSO    Tau  Seeing ID    RA          Dec       Peak       FWHM",
+		   "#---------------------------------------------------------------------------------------------------------------------------------------");
+    # Integrated fluxes
+    $intlog = new ORAC::LogFile("log.integrated");
+    $intlog->header("#Integrated flux log file - created on $time UT",
+		    "#\n# UT                HST   Obs Source       Mode         Filter El CSO    Tau  Seeing ID    RA          Dec       Flux",
+		    "#---------------------------------------------------------------------------------------------------------------------------");
+  }
+  # Retrieve logging parameters anyway
+  _GET_LOG_PARAMETERS_ GROUP=$group
+  my ( $uttime, $hst, $obsnum, $src, $mode, $filter, $el, $cso, $tau, $see ) 
+    = @{ $_GET_LOG_PARAMETERS_{PARAMS} };
 
   # Loop over all sources in the catalogue and run desired
   # flux-calculation method
@@ -289,16 +256,14 @@ if ( $catalogue->sizeof == 0 ) {
       # Format for printing
       $totalflux = sprintf "%6.3f", $totalflux;
       $amp = sprintf "%6.3f", $amp;
-      # Set source ID - assumes there will be <100 objects in frame
-      my $srcnum = sprintf "_%02d", $i;
-      my $sourceid = $obsnum.$srcnum;
+      # Set source ID - assumes there will be <100 objects in image
+      my $srcnum = sprintf "%02d", $i;
 
       $fwhm = sprintf "%6.2f", $fwhm;
 
       # Write the entry:
-      # source_id UT ra dec filter flux rms s/n fwhm/apdiam numpix rms/pix Seeing el tau225
-      $pklog->addentry("$sourceid $time $ra $dec  $filt   $amp  $fwhm  $see   $el $cso");
-      $intlog->addentry("$sourceid $time $ra $dec  $filt   $totalflux  $see  $el $cso");
+      $pklog->addentry( "$uttime $hst $obsnum $src $mode   $filter   $el $cso $tau $see  $srcnum $ra $dec  $amp  $fwhm");
+      $intlog->addentry("$uttime $hst $obsnum $src $mode   $filter   $el $cso $tau $see  $srcnum $ra $dec  $totalflux");
     } else {
       push (@intfluxes, $totalflux);
       push (@pkfluxes, $amp);
