@@ -99,198 +99,174 @@ Tim Jenness, Andy Gibb
 
 Copyright (C) 2008 Science and Technology Facilities Council.
 Copyright (C) 1998-2000 Particle Physics and Astronomy Research
-Council, 2007 University of British Columbia. All Rights Reserved.
+Council, 2007-2008 University of British Columbia. All Rights
+Reserved.
 
 =cut
 
 unless ( $Frm->uhdr("SKY_SUBTRACTION") ) {
+  # Tell user...
+  orac_print "Removing sky by fitting and subtracting a plane\n";
 
-# Tell user...
-orac_print "Removing sky by fitting and subtracting a plane\n";
+  # Write logfiles (default to true)
+  my $uselog = get_prim_arg( $_PRIM_ARGS_, "LOGFILE", 1 );
 
-# Write logfiles (default to true)
-my $uselog = get_prim_arg( $_PRIM_ARGS_, "LOGFILE", 1 );
+  # Should I be verbose (default to yes)
+  my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
 
-# Should I be verbose (default to yes)
-my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
+  # Mean sky level and RMS deviation for each file
+  my (@fitmean, @sigmafitmean, @fitrms, @gradients, @PAs);
 
-# Mean sky level and RMS deviation for each file
-my (@fitmean, @sigmafitmean, @fitrms, @gradients, @PAs);
+  my @out;
+  # Loop over frames
+  for my $i (1..$Frm->nfiles) {
 
-# Create a log file if necessary
-my $skylog;
-if ( $uselog ) {
-  my $time = gmtime();
-  # Peak fluxes
-  $skylog = new ORAC::LogFile("log.sky");
-  $skylog->header("#Sky properties log file - created on $time",
-		  "#\n#  ID      Time        Filter    DC       Slope  PA  Seeing   El  CSO",
-		  "#-----------------------------------------------------------------------");
-}
-my @out;
-# Loop over frames
-for my $i (1..$Frm->nfiles) {
+    # Input file and final output
+    my ($in, $out) = $Frm->inout('_sky', $i);
 
-  # Input file and final output
-  my ($in, $out) = $Frm->inout('_sky', $i);
+    # temp output file
+    my $tmpout = new ORAC::TempFile;
+    my $tmpoutfile = $tmpout->file;
 
-  # temp output file
-  my $tmpout = new ORAC::TempFile;
-  my $tmpoutfile = $tmpout->file;
+    # Arguments to SURFIT: the default estimator is MODE
+    my $args = " fittype=poly order=1 clip=[2,2,2] estimator=! wlim=0.5 evaluate=all fitclip=[2,2,2] genvar=true bindim=9";
 
-  # Arguments to SURFIT: the default estimator is MODE
-  my $args = " fittype=poly order=1 clip=[2,2,2] estimator=! wlim=0.5 evaluate=all fitclip=[2,2,2] genvar=true bindim=9";
+    # Run SURFIT
+    $Mon{kappa_mon}->obeyw("surfit","in=$in out=$tmpoutfile $args reset");
 
-  # Run SURFIT
-  $Mon{kappa_mon}->obeyw("surfit","in=$in out=$tmpoutfile $args reset");
+    # Run stats on the fit to get the mean sky level
+    $Mon{kappa_mon}->obeyw("stats","ndf=$tmpoutfile");
 
-  # Run stats on the fit to get the mean sky level
-  $Mon{kappa_mon}->obeyw("stats","ndf=$tmpoutfile");
+    # Retrieve mean value of fit as an estimate of DC sky background
+    my $ORAC_STATUS;
+    ($ORAC_STATUS, my $fitmean) = $Mon{kappa_mon}->get("stats","mean");
+    ($ORAC_STATUS, my $sigmafitmean) = $Mon{kappa_mon}->get("stats","sigma");
+    push (@fitmean, $fitmean);
+    push (@sigmafitmean, $sigmafitmean);
 
-  # Retrieve mean value of fit as an estimate of DC sky background
-  my $ORAC_STATUS;
-  ($ORAC_STATUS, my $fitmean) = $Mon{kappa_mon}->get("stats","mean");
-  ($ORAC_STATUS, my $sigmafitmean) = $Mon{kappa_mon}->get("stats","sigma");
-  push (@fitmean, $fitmean);
-  push (@sigmafitmean, $sigmafitmean);
+    # Subtract the fit
+    $Mon{kappa_mon}->obeyw("sub","in1=$in in2=$tmpoutfile out=$out");
 
-  # Subtract the fit
-  $Mon{kappa_mon}->obeyw("sub","in1=$in in2=$tmpoutfile out=$out");
+    # Now retrieve RMS to get idea of sky noise
+    ($ORAC_STATUS, my $fitrms) = $Mon{kappa_mon}->get("surfit","rms");
+    # What do we do with it now? Too many values to log, surely?
+    push (@fitrms, $fitrms);
 
-  # Now retrieve RMS to get idea of sky noise
-  ($ORAC_STATUS, my $fitrms) = $Mon{kappa_mon}->get("surfit","rms");
-  # What do we do with it now? Too many values to log, surely?
-  push (@fitrms, $fitrms);
+    # If the spread of values is greater than the RMS of the fit, then
+    # the sky might have a significant gradient, so calculate the
+    # gradient in this case
+    if ( $fitrms < $sigmafitmean ) {
+      # Derive gradient in sky background and PA of slope (in AzEl frame)
+      # The actual gradient is obtained from Pythagoras' theorem, and the
+      # position angle by the inverse tangent of the two gradients.
+      my (@x, @y, @z);
+      # query the NDF containing the fit at three corners to derive Az, El
+      # and Sky.
 
-  # If the spread of values is greater than the RMS of the fit, then
-  # the sky might have a significant gradient, so calculate the
-  # gradient in this case
-  if ( $fitrms < $sigmafitmean ) {
-    # Derive gradient in sky background and PA of slope (in AzEl frame)
-    # The actual gradient is obtained from Pythagoras' theorem, and the
-    # position angle by the inverse tangent of the two gradients.
-    my (@x, @y, @z);
-    # query the NDF containing the fit at three corners to derive Az, El
-    # and Sky.
+      # Get the image dimensions in GRID coords with ndftrace
+      $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$tmpoutfile");
+      ($ORAC_STATUS, my @dims) = $Mon{ndfpack_mon}->get("ndftrace","dims");
 
-    # Get the image dimensions in GRID coords with ndftrace
-    $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$tmpoutfile");
-    ($ORAC_STATUS, my @dims) = $Mon{ndfpack_mon}->get("ndftrace","dims");
+      # Use WCSTRAN to convert to WCS for three corners
+      my $wcstranargs = "ndf=$tmpoutfile framein=grid frameout=azel epochout=2000";
+      $Mon{kappa_mon}->obeyw("wcstran","$wcstranargs posin='1 1'");
+      ($ORAC_STATUS, my $xystr) = $Mon{kappa_mon}->get("wcstran","posout");
+      ($x[0], $y[0]) = split(/\s+/,$xystr,2);
+      $Mon{kappa_mon}->obeyw("wcstran","$wcstranargs posin='1 $dims[1]'");
+      ($ORAC_STATUS, $xystr) = $Mon{kappa_mon}->get("wcstran","posout");
+      ($x[1], $y[1]) = split(/\s+/,$xystr,2);
+      $Mon{kappa_mon}->obeyw("wcstran","$wcstranargs posin='$dims[0] $dims[1]'");
+      ($ORAC_STATUS, $xystr) = $Mon{kappa_mon}->get("wcstran","posout");
+      ($x[2], $y[2]) = split(/\s+/,$xystr,2);
 
-    # Use WCSTRAN to convert to WCS for three corners
-    my $wcstranargs = "ndf=$tmpoutfile framein=grid frameout=azel epochout=2000";
-    $Mon{kappa_mon}->obeyw("wcstran","$wcstranargs posin='1 1'");
-    ($ORAC_STATUS, my $xystr) = $Mon{kappa_mon}->get("wcstran","posout");
-    ($x[0], $y[0]) = split(/\s+/,$xystr,2);
-    $Mon{kappa_mon}->obeyw("wcstran","$wcstranargs posin='1 $dims[1]'");
-    ($ORAC_STATUS, $xystr) = $Mon{kappa_mon}->get("wcstran","posout");
-    ($x[1], $y[1]) = split(/\s+/,$xystr,2);
-    $Mon{kappa_mon}->obeyw("wcstran","$wcstranargs posin='$dims[0] $dims[1]'");
-    ($ORAC_STATUS, $xystr) = $Mon{kappa_mon}->get("wcstran","posout");
-    ($x[2], $y[2]) = split(/\s+/,$xystr,2);
+      # Set system to GRID before call to retrieve sky values
+      $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$tmpoutfile frame=grid");
 
-    # Set system to GRID before call to retrieve sky values
-    $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$tmpoutfile frame=grid");
+      # LOOK at the values at the three corners
+      $Mon{kappa_mon}->obeyw("look","centre='1 1' size=1,1 ndf=$tmpoutfile");
+      ($ORAC_STATUS, $z[0]) = $Mon{kappa_mon}->get("look","value");
+      $Mon{kappa_mon}->obeyw("look","centre='1 $dims[1]' size=1,1 ndf=$tmpoutfile");
+      ($ORAC_STATUS, $z[1]) = $Mon{kappa_mon}->get("look","value");
+      $Mon{kappa_mon}->obeyw("look","centre='$dims[0] $dims[1]' size=1,1 ndf=$tmpoutfile");
+      ($ORAC_STATUS, $z[2]) = $Mon{kappa_mon}->get("look","value");
 
-    # LOOK at the values at the three corners
-    $Mon{kappa_mon}->obeyw("look","centre='1 1' size=1,1 ndf=$tmpoutfile");
-    ($ORAC_STATUS, $z[0]) = $Mon{kappa_mon}->get("look","value");
-    $Mon{kappa_mon}->obeyw("look","centre='1 $dims[1]' size=1,1 ndf=$tmpoutfile");
-    ($ORAC_STATUS, $z[1]) = $Mon{kappa_mon}->get("look","value");
-    $Mon{kappa_mon}->obeyw("look","centre='$dims[0] $dims[1]' size=1,1 ndf=$tmpoutfile");
-    ($ORAC_STATUS, $z[2]) = $Mon{kappa_mon}->get("look","value");
+      # Calculate the gradient and PA of line of steepest descent
+      my ($skygradient, $pa) = calc_sky_gradient( \@x, \@y, \@z );
+      push ( @gradients, $skygradient );
+      push ( @PAs, $pa );
+    }
 
-    # Calculate the gradient and PA of line of steepest descent
-    my ($skygradient, $pa) = calc_sky_gradient( \@x, \@y, \@z );
-    push ( @gradients, $skygradient );
-    push ( @PAs, $pa );
+    # Update the frame
+    $Frm->file($i, $out);
+#    push ( @out, $out);
+    undef $tmpout;
   }
+#  $Frm->files(@out);
+  # Calculate mean DC level
+  my ($meanfitmean, $sigma_meanfitmean) = mean_and_sigma( \@fitmean );
+  # Mean RMS of fit
+  my ($meanfitrms, $sigma_meanfitrms) = mean_and_sigma( \@fitrms );
+  # Mean std deviation
+  my ($meansigmafitmean, $sigma_meansigmafitmean) = mean_and_sigma( \@sigmafitmean );
 
-  # Update the frame
-  $Frm->file($i, $out);
-#  push ( @out, $out);
-  undef $tmpout;
-}
-#$Frm->files(@out);
-# Calculate mean DC level
-my ($meanfitmean, $sigma_meanfitmean) = mean_and_sigma( \@fitmean );
-# Mean RMS of fit
-my ($meanfitrms, $sigma_meanfitrms) = mean_and_sigma( \@fitrms );
-# Mean std deviation
-my ($meansigmafitmean, $sigma_meansigmafitmean) = mean_and_sigma( \@sigmafitmean );
-
-# Calculate mean sky gradient and position angle
-my ($meanskygradient, $sigma_gradient) = (0,0);
-if ( defined $gradients[0] ) {
+  # Calculate mean sky gradient and position angle
+  my ($meanskygradient, $sigma_gradient) = (0,0);
+  if ( defined $gradients[0] ) {
     ($meanskygradient, $sigma_gradient) = mean_and_sigma( \@gradients );
-}
-my ($meanpa, $sigma_pa) = (0,0);
-if ( defined $PAs[0] ) {
-  ($meanpa, $sigma_pa) = mean_and_sigma( \@PAs );
-}
-# Is a constant sky level a good approximation?
-my $constisgoodapprox = ( $meanskygradient < $meanfitrms) ? 1 : 0;
+  }
+  my ($meanpa, $sigma_pa) = (0,0);
+  if ( defined $PAs[0] ) {
+    ($meanpa, $sigma_pa) = mean_and_sigma( \@PAs );
+  }
+  # Is a constant sky level a good approximation?
+  my $constisgoodapprox = ( $meanskygradient < $meanfitrms) ? 1 : 0;
 
-# Extra checks on the physical reasonableness of the fit could/should
-# be inserted here
-if ( $meanskygradient > 0 ) {
-  my $g = sprintf "%g", $meanskygradient;
-  orac_print "Caution - sky gradient, $g, is positive => sky brighter at high elevation\n", 'red';
-}
-
-# Return mean values of RMS and MEAN sky level
-$_REMOVE_PLANE_FROM_IMAGE_{RMS} = $meanfitrms;
-$_REMOVE_PLANE_FROM_IMAGE_{MEANSKY} = $meanfitmean;
-$_REMOVE_PLANE_FROM_IMAGE_{SIGMA} = $meansigmafitmean;
-$_REMOVE_PLANE_FROM_IMAGE_{CONSTGOOD} = $constisgoodapprox;
-
-# Set the sky subtraction flag
-$Frm->uhdr("SKY_SUBTRACTION",1);
-
-# Write to a logfile if desired
-if ( $uselog ) {
-  # UT string
-  my $time = sprintf "%12.7f", $Frm->hdrval('ORACTIME');
-  # Observation number
-  my $obsnum = sprintf "%05d", $Frm->hdr('OBSNUM');
-  # Filter
-  my $filt = sprintf "%4s", $Frm->hdr('FILTER');
-
-  # Tau at 225 GHz
-  my $cso = sprintf "%5.3f", 0.5*( $Frm->hdrval('WVMTAUST',0) + $Frm->hdrval('WVMTAUEN',-1));
-
-  # Seeing
-  my $see = sprintf "%5.3f", 0.5*($Frm->hdrval('SEEINGST',0) + $Frm->hdrval('SEEINGEN',-1));
-
-  # Elevation - should always be >10 deg and OK to quote to nearest
-  # integer value, so no need to re-format for printing
-  my $el = int ( 0.5 * ( $Frm->hdrval('ELSTART',0) + $Frm->hdrval('ELEND',-1) ) );
-
-  # 
-  my $dcsky = sprintf "%12.7f", $meanfitmean;
-  my $skygrad = sprintf "%10.7f", $meanskygradient;
-  my $gradpa = sprintf "%3.1f", $meanpa;
-  $skylog->addentry("$obsnum $time $filt $dcsky $skygrad $gradpa  $see    $el $cso");
-}
-
-if ($verbose) {
-  # See if the sky gradient is small
-  if ( $constisgoodapprox ) {
-    orac_print "OK - sky background appears to be well approximated to a constant level\n", 'green';
-  } else {
-    orac_print "Caution - sky background appears to have a significant gradient, interpret these results with care\n", 'red';
+  # Extra checks on the physical reasonableness of the fit could/should
+  # be inserted here
+  if ( $meanskygradient > 0 ) {
+    my $g = sprintf "%g", $meanskygradient;
+    orac_print "Caution - sky gradient, $g, is positive => sky brighter at high elevation\n", 'red';
   }
 
-  $meanfitrms = sprintf "%6.5f", $meanfitrms;
-  $meanfitmean = sprintf "%6.5f", $meanfitmean;
-  $meansigmafitmean = sprintf "%6.5f", $meansigmafitmean;
-  orac_print "Plane removed from images\n"
-    ."Mean level = $meanfitmean (mean std dev = $meansigmafitmean)\n"
-    ."Mean RMS deviation of fit = $meanfitrms\n";
-}
+  # Return mean values of RMS and MEAN sky level
+  $_REMOVE_PLANE_FROM_IMAGE_{RMS} = $meanfitrms;
+  $_REMOVE_PLANE_FROM_IMAGE_{MEANSKY} = $meanfitmean;
+  $_REMOVE_PLANE_FROM_IMAGE_{SIGMA} = $meansigmafitmean;
+  $_REMOVE_PLANE_FROM_IMAGE_{CONSTGOOD} = $constisgoodapprox;
+
+  # Set the sky subtraction flag
+  $Frm->uhdr("SKY_SUBTRACTION",1);
+
+  # Write to a logfile if desired
+  if ( $uselog ) {
+    my $dcsky = sprintf "%12.7f", $meanfitmean;
+    my $skygrad = sprintf "%10.7f", $meanskygradient;
+    my $gradpa = sprintf "%3.1f", $meanpa;
+    _ADD_SKY_LOG_ENTRY_ DCSKY=$dcsky SKYGRAD=$skygrad SKYPA=$gradpa
+  }
+
+  if ($verbose) {
+    # See if the sky gradient is small
+    if ( $constisgoodapprox ) {
+      orac_print "OK - sky background appears to be well approximated to a constant level\n", 'green';
+    } else {
+      orac_print "Caution - sky background appears to have a significant gradient, interpret these results with care\n", 'red';
+    }
+
+    $meanfitrms = sprintf "%6.5f", $meanfitrms;
+    $meanfitmean = sprintf "%6.5f", $meanfitmean;
+    $meansigmafitmean = sprintf "%6.5f", $meansigmafitmean;
+    orac_print "Plane removed from images\n"
+      ."Mean level = $meanfitmean (mean std dev = $meansigmafitmean)\n"
+      ."Mean RMS deviation of fit = $meanfitrms\n";
+  }
 } else {
   orac_warn "Sky subtraction already carried out on this Frame\n";
 }
+
+# ##########################
+# Private subroutines below
+# ##########################
 
 no warnings 'redefine';
 
