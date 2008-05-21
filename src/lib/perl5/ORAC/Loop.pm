@@ -56,7 +56,7 @@ use Cwd;
 
 use ORAC::Print;
 use ORAC::Convert;
-use ORAC::Msg::EngineLaunch; # For -loop 'task'
+use ORAC::Msg::EngineLaunch;    # For -loop 'task'
 
 require Exporter;
 
@@ -90,77 +90,77 @@ the loop will abort if the file is not present
 
 =cut
 
-sub orac_loop_list {
-#print "in orac_loop_list\n";
-  croak 'Wrong number of args: orac_loop_list(class, ut, arr_ref, skip)'
-    unless scalar(@_) == 4; 
+  sub orac_loop_list {
+    #print "in orac_loop_list\n";
+    croak 'Wrong number of args: orac_loop_list(class, ut, arr_ref, skip)'
+      unless scalar(@_) == 4; 
 
-  my ($class, $utdate, $obsref, $skip) = @_;
+    my ($class, $utdate, $obsref, $skip) = @_;
 
-  # Initialise variables
-  my $obsno;
-  my $TestFrm;
-  $TestFrm = $class->new() if $skip; # Dummy Frame for file check
+    # Initialise variables
+    my $obsno;
+    my $TestFrm;
+    $TestFrm = $class->new() if $skip; # Dummy Frame for file check
 
-  # Shift files off the array until we get one that exists
-  # or until we get to the end of the array [ie an undefined value]
-  # If we dont worry about missing observations we immediately
-  # jump out of the loop (ie just read the array once).
-  # If we do care about the existence of the file we have to check
-  # for the input file (-e) and loop round again if it isn't there.
+    # Shift files off the array until we get one that exists
+    # or until we get to the end of the array [ie an undefined value]
+    # If we dont worry about missing observations we immediately
+    # jump out of the loop (ie just read the array once).
+    # If we do care about the existence of the file we have to check
+    # for the input file (-e) and loop round again if it isn't there.
 
-  while (defined ($obsno = shift(@$obsref))) {
+    while (defined ($obsno = shift(@$obsref))) {
 
-    # If we dont care whether the file is there or not (ie default mode)
-    # we jump out of the loop immediately and rely on the link_and_read
-    # routine to abort the main loop for us (by returning undef)
-    last unless $skip;
+      # If we dont care whether the file is there or not (ie default mode)
+      # we jump out of the loop immediately and rely on the link_and_read
+      # routine to abort the main loop for us (by returning undef)
+      last unless $skip;
 
-    # Ok - we are interested in finding out whether the file is there
-    # or not. There is a slight overhead here in that we have to
-    # do the -e test twice for any successful file. Once here and
-    # once again in link_and_read -- presumably I could have a variant
-    # on link_and_read that gets passed the file name directly
-    # on the understanding that the file is there but for now
-    # I will just do the -e in both places. Note that this relies
-    # on the file being present in ORAC_DATA_IN. It will not look
-    # in ORAC_DATA_OUT first (eg after a FITS conversion)
-    # At some point we need to merge the link_and_read with this
-    # so that this routine has the same robustness as link_and_read.
+      # Ok - we are interested in finding out whether the file is there
+      # or not. There is a slight overhead here in that we have to
+      # do the -e test twice for any successful file. Once here and
+      # once again in link_and_read -- presumably I could have a variant
+      # on link_and_read that gets passed the file name directly
+      # on the understanding that the file is there but for now
+      # I will just do the -e in both places. Note that this relies
+      # on the file being present in ORAC_DATA_IN. It will not look
+      # in ORAC_DATA_OUT first (eg after a FITS conversion)
+      # At some point we need to merge the link_and_read with this
+      # so that this routine has the same robustness as link_and_read.
 
-    my $pattern = $TestFrm->pattern_from_bits($utdate, $obsno);
+      my $pattern = $TestFrm->pattern_from_bits($utdate, $obsno);
 
-    if( ref( $pattern ) eq 'Regexp' ) {
+      if ( ref( $pattern ) eq 'Regexp' ) {
 
-      # If we have a regular expression, find all the files that match
-      # that pattern. If the resulting array is empty, we skip that
-      # observation number and go to the next. If it's not empty, then
-      # we exit out of this loop via the 'last'.
-      my @names;
-      find sub { my $file = $_; push @names, $File::Find::name if ( $file =~ /$pattern/ ) }, $ENV{'ORAC_DATA_IN'};
-      last if ( scalar( @names ) > 0 );
-      orac_warn("No input files for observation $obsno found -- skipping\n");
-    } else {
+        # If we have a regular expression, find all the files that match
+        # that pattern. If the resulting array is empty, we skip that
+        # observation number and go to the next. If it's not empty, then
+        # we exit out of this loop via the 'last'.
+        my @names;
+        find sub { my $file = $_; push @names, $File::Find::name if ( $file =~ /$pattern/ ) }, $ENV{'ORAC_DATA_IN'};
+        last if ( scalar( @names ) > 0 );
+        orac_warn("No input files for observation $obsno found -- skipping\n");
+      } else {
 
-      # We have a string returned from pattern_from_bits() so assume
-      # that that's a filename. Just check to see if that file exists.
-      # If it does, exit out of this loop via 'last', otherwise skip
-      # to the next observation number.
-      last if -e File::Spec->catfile($ENV{ORAC_DATA_IN},$pattern);
-      orac_warn("Input file $pattern not found -- skipping\n");
+        # We have a string returned from pattern_from_bits() so assume
+        # that that's a filename. Just check to see if that file exists.
+        # If it does, exit out of this loop via 'last', otherwise skip
+        # to the next observation number.
+        last if -e File::Spec->catfile($ENV{ORAC_DATA_IN},$pattern);
+        orac_warn("Input file $pattern not found -- skipping\n");
+      }
+
     }
 
+    # If obsno is undef return undef
+    return unless defined $obsno;
+
+    my @Frms = link_and_read($class, $utdate, $obsno, 0);
+
+    # Return frame
+    return @Frms;
+
   }
-
-  # If obsno is undef return undef
-  return unless defined $obsno;
-
-  my @Frms = link_and_read($class, $utdate, $obsno, 0);
-
-  # Return frame
-  return @Frms;
-
-}
 
 =item B<orac_loop_inf>
 
@@ -183,7 +183,7 @@ flag is ignored in this loop.
 =cut
 
 sub orac_loop_inf {
-#print "in orac_loop_inf\n";
+  #print "in orac_loop_inf\n";
   croak 'Wrong number of args: orac_loop_inf(class, ut, arr_ref)'
     unless (scalar(@_) == 3 || scalar(@_) == 4);
 
@@ -235,7 +235,7 @@ a specified number of scans (default is 1 dot per scan and one scan every
 =cut
 
 sub orac_loop_wait {
-#  print "in orac_loop_wait\n";
+  #  print "in orac_loop_wait\n";
   croak 'Wrong number of args: orac_loop_wait(class, ut, arr_ref, skip)'
     unless scalar(@_) == 4;
 
@@ -256,7 +256,7 @@ sub orac_loop_wait {
   # If we actually have a pattern, crash out because we don't
   # want to deal with that situation. Tell the user to use some
   # other option like '-loop flag'.
-  if( ref( $fname ) eq 'Regexp' ) {
+  if ( ref( $fname ) eq 'Regexp' ) {
     orac_throw("Cannot run under '-loop wait' for this instrument.\nTry '-loop flag' instead.\n");
   }
 
@@ -265,16 +265,16 @@ sub orac_loop_wait {
 
   # Now loop until the file appears
 
-  my $timeout = 43200; # 12 hours timeout
+  my $timeout = 43200;          # 12 hours timeout
   my $timer   = 0.0;
-  my $pause   = 2.0;   # Time between checks
-  my $dot     = 1;     # Number of pauses for each dot printed
-  my $npauses = 0;     # number of pauses so far (reset each time dot printed)
+  my $pause   = 2.0;           # Time between checks
+  my $dot     = 1;             # Number of pauses for each dot printed
+  my $npauses = 0; # number of pauses so far (reset each time dot printed)
 
   # Get the full path to the filename
   my $actual = _to_abs_path( $fname );
 
-  my $old = 0;   # Initial size of the file
+  my $old = 0;                  # Initial size of the file
 
 
   # was looping with
@@ -327,13 +327,13 @@ sub orac_loop_wait {
 
           # Okay - it wasnt the expected observation number
           $obsno = $next;
-          $obsref->[0] = $obsno;  # And set the array value
+          $obsref->[0] = $obsno; # And set the array value
 
           # Create new filename. We can do this string concatenation
           # straight off because we know that pattern_from_bits()
           # won't return a regex, since we checked for that above.
           $actual = File::Spec->catfile($ENV{ORAC_DATA_IN},
-					$Frm->pattern_from_bits($utdate,$next));
+                                        $Frm->pattern_from_bits($utdate,$next));
 
           orac_print("Next available observation is number $obsno");
 
@@ -400,7 +400,7 @@ supplied array contains undef in the first entry.
 =cut
 
 sub orac_loop_flag {
-#print "in orac_loop_flag\n";
+  #print "in orac_loop_flag\n";
   croak 'Wrong number of args: orac_loop_flag(class, ut, arr_ref, skip)'
     unless scalar(@_) == 4;
 
@@ -445,11 +445,11 @@ sub orac_loop_flag {
 
   # Now loop until the file appears
 
-  my $timeout = 43200; # 12 hour timeout
+  my $timeout = 43200;          # 12 hour timeout
   my $timer   = 0.0;
-  my $pause   = 2.0;   # Pause for 2 seconds
-  my $dot     = 1;     # Number of pauses per dot
-  my $npauses = 0;     # number of pauses so far (reset each time dot printed)
+  my $pause   = 2.0;            # Pause for 2 seconds
+  my $dot     = 1;              # Number of pauses per dot
+  my $npauses = 0; # number of pauses so far (reset each time dot printed)
 
   # Get a full path to the flag files
   my @actual = _to_abs_path( @fnames );
@@ -497,7 +497,7 @@ sub orac_loop_flag {
 
     if ($skip) {
 
-      my $lookahead = 10; # Maximum number of files to look ahead.
+      my $lookahead = 10;     # Maximum number of files to look ahead.
 
       for my $i ( $obsno .. $obsno + $lookahead ) {
 
@@ -584,14 +584,15 @@ sub orac_loop_flag {
     @Frms = link_and_read($class, $utdate, $obsno, 1, \@local);
     @$prev = @local;
   };
-  if( $@ || !defined $Frms[0] ) {
+  if ( $@ || !defined $Frms[0] ) {
     # that failed. This may indicate a sync issue so pause
     # for a couple of seconds and retry without the eval
     ORAC::Error->flush;
     orac_warn "Error loading file for observation $obsno. Sleeping for 2 seconds...\n";
     orac_sleep(2);
     @Frms = link_and_read($class, $utdate, $obsno, 1, $prev);
-  };
+  }
+  ;
 
   # we can only increment the observation number if we are dealing
   # with non-zero length flag files
@@ -694,11 +695,11 @@ sub orac_loop_task {
   orac_print("Checking for data set newer than frame $refframe\n");
 
   # Use dots and timeouts as for the other systems
-  my $timeout = 43200; # 12 hours timeout
+  my $timeout = 43200;          # 12 hours timeout
   my $timer   = 0.0;
-  my $pause   = 0.4;   # Time between checks (do not divide into 1 exactly)
-  my $dot     = 4;     # Number of pauses for each dot printed
-  my $npauses = 0;     # number of pauses so far (reset each time dot printed)
+  my $pause   = 0.4; # Time between checks (do not divide into 1 exactly)
+  my $dot     = 4;   # Number of pauses for each dot printed
+  my $npauses = 0; # number of pauses so far (reset each time dot printed)
 
 
   # This is the data we have retrieved so far whilst waiting
@@ -729,52 +730,52 @@ sub orac_loop_task {
       # by convention we are looking for a "QL" parameter in that task
       # Ask each task for data
       for my $t (@tasks) {
-	# if we already have the requested frame from this task
-	# skip. This is a bit problematic if the frame number 
-	# increments in the middle of this task loop
-	next if (defined $wantframe && exists $received{$wantframe}{$t});
-	if (defined $wantframe) {
-	  orac_print "Looking at task $t for frame $wantframe\n";
-	} else {
-	  orac_print "Looking for a frame from tasks $t\n";
-	}
-	# get the task object
-	my $tobj = $ENGINE_LAUNCH->engine( $t );
+        # if we already have the requested frame from this task
+        # skip. This is a bit problematic if the frame number 
+        # increments in the middle of this task loop
+        next if (defined $wantframe && exists $received{$wantframe}{$t});
+        if (defined $wantframe) {
+          orac_print "Looking at task $t for frame $wantframe\n";
+        } else {
+          orac_print "Looking for a frame from tasks $t\n";
+        }
+        # get the task object
+        my $tobj = $ENGINE_LAUNCH->engine( $t );
 
-	if (!defined $tobj) {
-	  orac_err("Unable to connect to remote task $t. Is the data acquisition system running? Aborting loop.\n");
-	  return;
-	}
+        if (!defined $tobj) {
+          orac_err("Unable to connect to remote task $t. Is the data acquisition system running? Aborting loop.\n");
+          return;
+        }
 
-	# get the parameter
-	my $current = $tobj->get( "QL" );
+        # get the parameter
+        my $current = $tobj->get( "QL" );
 
-	my $thisframe;
-	$thisframe = $current->{FRAMENUM} if exists $current->{FRAMENUM};
+        my $thisframe;
+        $thisframe = $current->{FRAMENUM} if exists $current->{FRAMENUM};
 
-	# Is this frame number relevant?
-	# No need to warn if we haven't picked anything up before.
-	if (defined $thisframe && $thisframe > $refframe) {
-	  if ($refframe > 1 && $thisframe - $refframe > 1) {
-	    orac_err "Got frame $thisframe when expecting ".($refframe+1).
-	      " from task $t\n";
-	  }
+        # Is this frame number relevant?
+        # No need to warn if we haven't picked anything up before.
+        if (defined $thisframe && $thisframe > $refframe) {
+          if ($refframe > 1 && $thisframe - $refframe > 1) {
+            orac_err "Got frame $thisframe when expecting ".($refframe+1).
+              " from task $t\n";
+          }
 
-	  # see whether we skipped one again
-	  if (defined $wantframe && $thisframe > $wantframe) {
-	    orac_err "Frame mismatch ($thisframe != $wantframe) so trying again\n";
+          # see whether we skipped one again
+          if (defined $wantframe && $thisframe > $wantframe) {
+            orac_err "Frame mismatch ($thisframe != $wantframe) so trying again\n";
 
-	    # delete the earlier frame
-	    delete $received{$wantframe};
-	  }
+            # delete the earlier frame
+            delete $received{$wantframe};
+          }
 
-	  # this is now the one we need
-	  $wantframe = $thisframe;
+          # this is now the one we need
+          $wantframe = $thisframe;
 
-	  # Store the information
-	  $received{$wantframe}{$t} = $current;
+          # Store the information
+          $received{$wantframe}{$t} = $current;
 
-	}
+        }
 
       }
 
@@ -844,7 +845,7 @@ sub orac_loop_task {
       return if !defined $cname;
 
       push(@files, $cname );
-      push(@istemp, 0 ); # This is a real file
+      push(@istemp, 0 );        # This is a real file
 
     } elsif (exists $current{$t}->{IMAGE}) {
       # need to choose a filename. Make one up for the moment
@@ -858,29 +859,29 @@ sub orac_loop_task {
       my $fname = lc($root) . '_' . $tstr;
 
       if ($infmt eq 'NDF') {
-	# write the DATA_ARRAY out as a piddle
-	# defer depending on PDL::IO::NDF
-	require PDL::IO::NDF;
-	my $data = $current{$t}->{IMAGE}->{DATA_ARRAY};
-	if (!defined $data) {
-	    orac_err("Received IMAGE parameter did not include a DATA_ARRAY component\n");
-	    return;
-	}
-	$data->wndf( $fname );
+        # write the DATA_ARRAY out as a piddle
+        # defer depending on PDL::IO::NDF
+        require PDL::IO::NDF;
+        my $data = $current{$t}->{IMAGE}->{DATA_ARRAY};
+        if (!defined $data) {
+          orac_err("Received IMAGE parameter did not include a DATA_ARRAY component\n");
+          return;
+        }
+        $data->wndf( $fname );
 
-	# and write the FITS header
-	require Astro::FITS::Header::NDF;
-	my $hdr = new Astro::FITS::Header::NDF( Cards => $current{$t}->{IMAGE}->{FITS} );
-	$hdr->writehdr( File => $fname );
+        # and write the FITS header
+        require Astro::FITS::Header::NDF;
+        my $hdr = new Astro::FITS::Header::NDF( Cards => $current{$t}->{IMAGE}->{FITS} );
+        $hdr->writehdr( File => $fname );
 
-	$fname .= ".sdf";
-	push(@files, $fname);
-	push(@istemp, 1); # this is a temporary file
+        $fname .= ".sdf";
+        push(@files, $fname);
+        push(@istemp, 1);       # this is a temporary file
 
       } else {
-	# wibble
-	orac_err("Task monitoring loop does not (yet) know how to generate raw data in format $infmt...\n");
-	return;
+        # wibble
+        orac_err("Task monitoring loop does not (yet) know how to generate raw data in format $infmt...\n");
+        return;
       }
 
     } else {
@@ -986,7 +987,7 @@ sub orac_check_data_dir {
     # so get a dummy flag file
     my @dflags = $DummyFrm->flag_from_bits('p',1);
     if ($dflags[0] =~ /\.ok$/) {
-      $pattern = '\.ok$';   # ' - dummy quote for emacs colour
+      $pattern = '\.ok$';       # ' - dummy quote for emacs colour
     } else {
       # look for a hidden file that starts with a . and has
       # the fixed part string in it
@@ -1003,7 +1004,7 @@ sub orac_check_data_dir {
     # where the UT fits into the filename convention
 
     $pattern = $DummyFrm->rawfixedpart . '.*' . 
-      $DummyFrm->rawsuffix . '$';  # ' dummy quote again
+      $DummyFrm->rawsuffix . '$'; # ' dummy quote again
 
   }
 
@@ -1016,8 +1017,8 @@ sub orac_check_data_dir {
   # Do this with a sort/map/grep combination
 
   my @sort = sort { $a <=> $b }
-               map { $DummyFrm->raw($_); $DummyFrm->number }
-                 grep { /$pattern/ } readdir($DATADIR);
+    map { $DummyFrm->raw($_); $DummyFrm->number }
+      grep { /$pattern/ } readdir($DATADIR);
 
 
   # Close data directory
@@ -1029,7 +1030,7 @@ sub orac_check_data_dir {
   # slice since the index in the sort array is not related to the
   # observation number
 
-  my $next = undef;   # Next number up
+  my $next = undef;             # Next number up
   foreach (@sort) {
     if ($_ > $obsnum) {
       $next = $_;
@@ -1127,7 +1128,7 @@ sub link_and_read {
   my $Frm = $class->new();
 
   my @flagnames;
-  if( $flag ) {
+  if ( $flag ) {
 
     # Get the flagname(s).
     @flagnames = _to_abs_path( $Frm->flag_from_bits($ut, $num) );
@@ -1138,7 +1139,7 @@ sub link_and_read {
   my @names;
 
   # If we have a flagfile and it's non-zero size...
-  if( $flag && &_files_nonzero(@flagnames) ) {
+  if ( $flag && &_files_nonzero(@flagnames) ) {
 
     @names = _read_flagfiles( @flagnames );
 
@@ -1154,8 +1155,8 @@ sub link_and_read {
       @names = grep { !exists $old{$_} } keys %all;
 
       if (!@names) {
-	orac_err "Internal error reading flag file. No new filenames detecting in flag file. This should not happen by this stage";
-	return;
+        orac_err "Internal error reading flag file. No new filenames detecting in flag file. This should not happen by this stage";
+        return;
       }
 
       # now update the reference list
@@ -1169,7 +1170,7 @@ sub link_and_read {
 
     # If the pattern is actually a regex, find all files in subdirectories
     # of $ORAC_DATA_IN.
-    if( ref( $pattern ) eq "Regexp" ) {
+    if ( ref( $pattern ) eq "Regexp" ) {
 
       # Run a nifty bit of File::Find.
       find sub { my $file = $_; push @names, $File::Find::name if( $file =~ /$pattern/ ) }, $ENV{'ORAC_DATA_IN'};
@@ -1185,7 +1186,7 @@ sub link_and_read {
   }
 
   # Check if we actually have files.
-  if( ! defined( $names[0] ) ) {
+  if ( ! defined( $names[0] ) ) {
     orac_err("Could not find files for observation $num. Aborting.\n");
     return;
   }
@@ -1301,9 +1302,9 @@ In scalar context, returns the first path.
 
 sub _to_abs_path {
   my @out = map { $_ = File::Spec->catfile( $ENV{ORAC_DATA_IN}, $_ )
-		    unless File::Spec->file_name_is_absolute($_);
-		  $_;
-		} @_;
+                    unless File::Spec->file_name_is_absolute($_);
+                  $_;
+                } @_;
   return (wantarray ? @out : $out[0] );
 }
 
@@ -1362,7 +1363,9 @@ sub _convert_and_link_nofrm {
   # include the full path to the file.
 
   # Deal with conversion of files.
-  unless( defined $CONVERT ) { $CONVERT = new ORAC::Convert; }
+  unless ( defined $CONVERT ) {
+    $CONVERT = new ORAC::Convert;
+  }
 
   # Convert the files.
   my @cname;
@@ -1401,7 +1404,7 @@ sub _convert_and_link_nofrm {
   # definedness for all of @cname. We can keep this test if the
   # loop does not store the output filename in @cname if it is
   # not defined
-  if( ( scalar(@cname) != scalar(@names) ) || ( ! defined( $cname[0] ) ) ) {
+  if ( ( scalar(@cname) != scalar(@names) ) || ( ! defined( $cname[0] ) ) ) {
     orac_err("Error in data conversion tool\n");
     return ();
   }
@@ -1447,12 +1450,12 @@ sub _convert_and_link_nofrm {
       # Now we should try to create a symlink and say something
       # if it fails
       symlink(File::Spec->catfile($ENV{ORAC_DATA_IN},$fname), $bname) ||
-      do {
-        orac_err("Error creating symlink named $bname from ORAC_DATA_OUT to '".
-		 File::Spec->catfile($ENV{ORAC_DATA_IN},$fname). "'\n");
-        orac_err("$!\n");
-        return ();
-      };
+        do {
+          orac_err("Error creating symlink named $bname from ORAC_DATA_OUT to '".
+                   File::Spec->catfile($ENV{ORAC_DATA_IN},$fname). "'\n");
+          orac_err("$!\n");
+          return ();
+        };
 
       # Note that -e checks through symlinks
       # This final check SHOULD work else something really wacky is
