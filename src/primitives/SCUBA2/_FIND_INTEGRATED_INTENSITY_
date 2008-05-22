@@ -15,9 +15,17 @@ _FIND_INTEGRATED_INTENSITY_ - aperture photometry of image using statistics
 This primitive calculates the integrated intensity, in whatever units
 the image is currently using, around a single (point) source that is
 assumed to be the only source on the map (so that the sky contribution
-can be calculated). The value is corrected for pixel area. The SKY
-domain is used throughout; the coordinate system used is the current
-one as obtained from the C<system> WCS attrobute.
+can be calculated). The value is corrected for pixel area and has a
+background level subtracted from it. The SKY domain is used
+throughout; the coordinate system used is the current one as obtained
+from the C<system> WCS attribute.
+
+The background is estimated by masking out the source and calculating
+the mean value in the image. This method will work well for
+DREAM/STARE images or SCAN images made with the iterative map-maker
+which have a single point source. The rebinning map maker for SCAN
+data will produce a bowl around a bright source which this method will
+not cope with.
 
 The integrated intensity is calculated using the following technique:
 
@@ -129,7 +137,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 Copyright (C) 2008 Science and Technology Facilities Council.
 Copyright (C) 2005-2007 Particle Physics and Astronomy Research
-Council and University of British Columbia.  All Rights Reserved.
+Council. Copyright (C) 2005-2008 University of British Columbia. All
+Rights Reserved.
 
 =cut
 
@@ -213,15 +222,20 @@ $Mon{kappa_mon}->obeyw("ardmask", "in=$in out=$out ardfile=$ardin ");
 $Mon{kappa_mon}->obeyw("stats","ndf=$out");
 
 # Get sum and number of valid pixels
-($ORAC_STATUS, my $sum) = $Mon{kappa_mon}->get("stats","total");
-($ORAC_STATUS, my $maxflux) = $Mon{kappa_mon}->get("stats","maximum");
-($ORAC_STATUS, my $ngood) = $Mon{kappa_mon}->get("stats","numgood");
-($ORAC_STATUS, my $npix) = $Mon{kappa_mon}->get("stats","numpix");
-($ORAC_STATUS, my $sigma) = $Mon{kappa_mon}->get("stats","sigma");
+my @params = qw/ total maximum numgood numpix sigma /;
+($ORAC_STATUS, my %results) = $Mon{kappa_mon}->mget("stats",@params);
+my $sum     = $results{sum};
+my $maxflux = $results{maximum};
+my $ngood   = $results{numgood};
+my $npix    = $results{numpix};
+my $sigma   = $results{sigma};
 
+# Now repeat for the rest of the image - mask out the central source
+# and calculate a mean background. Note this will only provide a
+# useful result for DREAM/STARE images with a single point source in
+# the centre. The QL scan-mapmaker will produce a bowl around a bright
+# source which this method will not deal with.
 
-# Now repeat for the rest of the image - it mask out the central
-# source and calculate a mean background
 # Create another temporary file for the new ard description
 $ard = new ORAC::TempFile;
 
@@ -265,23 +279,14 @@ $Mon{kappa_mon}->obeyw("stats","ndf=$bgout");
 $maxflux -= $meanbg;
 $sum -= ($meanbg * $ngood);
 
-
-# Done - now report findings
-if ($verbose) {
-  my $outsum = sprintf "%6.3f", $sum;
-  orac_print "Sum calculated to be $outsum UNITS from $npix pixels\n";
-}
-
 if ( $ORAC_STATUS == ORAC__OK ) {
-  # Retrieve pixel scale so totalflux is returned as a flux with units
-  # of signal*arcsec^2
-  $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$out");
-  ($ORAC_STATUS, my @dxy) = $Mon{ndfpack_mon}->get("ndftrace","fpixscale");
-  my $dx = $dxy[0];
-  my $dy = $dxy[1];
+  # Retrieve pixel scale in arcsec so totalflux is returned as a flux
+  # with units of signal*arcsec^2
+  _GET_PIXEL_SCALE_ IMAGE=$out
+  my $pixarea = $_GET_PIXEL_SCALE_{AREA}
 
   # Store sum in the hash
-  $_PRIM_ARGS_->{TOTALFLUX} = $sum*$dx*$dy;
+  $_PRIM_ARGS_->{TOTALFLUX} = $sum*$pixarea;
   $_PRIM_ARGS_->{SUM} = $sum;
   $_PRIM_ARGS_->{PEAKFLUX} = $maxflux;
   $_PRIM_ARGS_->{SIGMA} = $sigma;
