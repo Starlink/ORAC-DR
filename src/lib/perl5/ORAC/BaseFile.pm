@@ -921,11 +921,13 @@ sub tagset {
 Retrieve the files names from the tag and make them the default
 filenames for the object.
 
-  $Frm->tagretrieve('REBIN');
+  my $status = $Frm->tagretrieve('REBIN');
 
-Nothing happens if the tag does not previously exist.
 The current filenames are stored in the 'PREVIOUS' tag (unless the
 PREVIOUS tag is requested).
+
+If the given tag does not exist, then this function returns
+false. Otherwise returns true.
 
 =cut
 
@@ -939,7 +941,9 @@ sub tagretrieve {
       # Retrieve the current values
       $self->files( @{ $self->tags->{$tag} } );
     }
+    return exists $self->tags->{$tag};
   }
+  return 0;
 }
 
 
