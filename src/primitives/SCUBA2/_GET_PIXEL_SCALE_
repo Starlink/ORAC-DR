@@ -70,6 +70,10 @@ contains the following keys:
 Array reference with pixel scales in the X and Y directions in the
 requested units.
 
+=item AREA
+
+Pixel area in units**2
+
 =back
 
 =head1 KNOWN ISSUES
@@ -101,38 +105,41 @@ unless (exists $_GET_PIXEL_SCALE_{IMAGE} && defined $_GET_PIXEL_SCALE_{IMAGE}) {
 my $in = $_GET_PIXEL_SCALE_{IMAGE};
 
 # Should I be verbose? (default to yes)
-my $verbose = (exists $_GET_PIXEL_SCALE_{VERBOSE} && 
-	       defined $_GET_PIXEL_SCALE_{VERBOSE}) ?
-	       $_GET_PIXEL_SCALE_{VERBOSE} : 1;
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
 # Values will be returned in these units:
-my $units = (exists $_GET_PIXEL_SCALE_{UNITS} && 
-	     defined $_GET_PIXEL_SCALE_{UNITS}) ?
-             lc($_GET_PIXEL_SCALE_{UNITS}) : "arcsec";
+my $units = lc(get_prim_arg($_PRIM_ARGS_, "UNITS", "arcsec"));
 
 # Do we want to return the mapping?
-my $wantmap = (exists $_GET_PIXEL_SCALE_{WANTMAP} && 
-	     defined $_GET_PIXEL_SCALE_{WANTMAP}) ?
-             lc($_GET_PIXEL_SCALE_{WANTMAP}) : 0;
+my $wantmap = get_prim_arg($_PRIM_ARGS_, "WANTMAP", 0);
+
+# Are we being asked to derive it ourselves? Default is no.
+my $derive = get_prim_arg($_PRIM_ARGS_, "DERIVE". 0);
+
+if ( $derive == 0 ) {
+  # Note the WANTMAP option is incompatible with DERIVE=0
+  if ( $wantmap && $verbose ) {
+    orac_warn "Unable to return mapping with DERIVE=0";
+    $wantmap = 0;
+  }
+  if ($units ne "arcsec" && $verbose ) {
+    orac_warn "Ndftrace call requested: pixel scales will be returned in arcsec";
+  }
+}
 
 my $unitconv;
-if ( $units eq "arcsec" ) {
+if ( $units =~ /arcsec/ ) {
   $unitconv = 206264.806;
-} elsif ( $units eq "arcmin" ) {
+} elsif ( $units =~ /arcmin/ ) {
   $unitconv = 3437.74677;
-} elsif ( $units =~ "deg" ) {
+} elsif ( $units =~ /deg/ ) {
   $unitconv = 57.2957795;
-} elsif ( $units =~ "rad" ) {
+} elsif ( $units =~ /rad/ ) {
   $unitconv = 1.0;
 } else {
   orac_warn "_GET_PIXEL_SCALE_: Unknown output units, $units - assuming arcsec\n";
   $unitconv = 206264.806;
 }
-
-# Are we being asked to derive it ourselves? Default is no.
-my $derive = (exists $_GET_PIXEL_SCALE_{DERIVE} && 
-	     defined $_GET_PIXEL_SCALE_{DERIVE}) ?
-             $_GET_PIXEL_SCALE_{DERIVE} : 0;
 
 # initialise the results array
 $_GET_PIXEL_SCALE_{RESULTS} = [];
@@ -142,12 +149,9 @@ my ($avxscale, $avyscale) = (0.0, 0.0);
 my $mapping = undef;
 
 if ( $derive ) {
-
   my $indomain = "PIXEL";
   # Check the desired output frame - default is SKY
-  my $outdomain = (exists $_GET_PIXEL_SCALE_{DOMAIN} &&
-		   defined $_GET_PIXEL_SCALE_{DOMAIN}) ?
-		   uc($_GET_PIXEL_SCALE_{DOMAIN}) : "SKY";
+  my $outdomain = uc(get_prim_arg($_PRIM_ARGS_, "DOMAIN", "SKY"));
 
   # For now only sky domains are supported. Shouldn't be too much of a
   # problem as I can't see anyone wanting any of the intermediate
@@ -248,21 +252,17 @@ if ( $derive ) {
   # Calculate average value to use
   $avxscale /= 5;
   $avyscale /= 5;
+
 } else {
   # Alternatively, use ndftrace to get the pixel scale. This may or
-  # may not be a better estimate.
+  # may not be a better estimate. Note this always returns arcsec.
   $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
   ($ORAC_STATUS, $avxscale, $avyscale) = $Mon{ndfpack_mon}->get("ndftrace","fpixscale");
-  # Note the WANTMAP option is incompatible with DERIVE=0
-  if ( $wantmap ) {
-    orac_warn "Unable to return mapping with DERIVE=0" if $verbose;
-    $wantmap = 0;
-  }
-
 }
 
-# Store the result in the hash
+# Store the results in the hash
 $_GET_PIXEL_SCALE_{RESULTS} = [$avxscale, $avyscale];
+$_GET_PIXEL_SCALE_{AREA} = $avxscale*$avyscale;
 
 # If the caller would like access to the mapping then store that too
 if ( $wantmap ) {
