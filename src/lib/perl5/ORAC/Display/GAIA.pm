@@ -269,7 +269,11 @@ sub launch {
   # Set the RTD_REMOTE_DIR environment variable to $ORAC_DATA_OUT
   # if it's not already set.
   if( ! defined( $ENV{'RTD_REMOTE_DIR'} ) ) {
-    $ENV{'RTD_REMOTE_DIR'} = $ENV{'ORAC_DATA_OUT'};
+    if (exists $ENV{ORAC_DATA_OUT} && defined $ENV{ORAC_DATA_OUT}) {
+      $ENV{'RTD_REMOTE_DIR'} = $ENV{'ORAC_DATA_OUT'};
+    } else {
+      croak "ORAC-DR requires that either ORAC_DATA_OUT or RTD_REMOTE_DIR are set";
+    }
   }
 
  # First attempt to simply connect
@@ -323,8 +327,7 @@ sub launch {
 
 
 # internal method to open the socket
-# no arguments. Looks for .rtd-remote file in $RTD_REMOTE_DIR and
-# then home directory
+# no arguments. Looks for .rtd-remote file in $RTD_REMOTE_DIR
 # Returns a socket object if successful, otherwise returns undef
 # Does not update the object state
 
@@ -675,6 +678,9 @@ Takes a file name and arguments stored in a hash.
 Currently no image sectioning is supported.
 Display range can be adjusted with ZAUTOSCALE, ZMIN and ZMAX.
 
+Component can be selected with COMP option. DATA is the default.
+QUALITY and VARIANCE are supported.
+
 Note that for GAIA, ZAUTOSCALE implies a 95 percent cut level and
 not 100 percent.
 
@@ -733,6 +739,8 @@ sub image {
     }
   }
 
+  # default component is DATA
+  $options{COMP} = "DATA" unless exists $options{COMP};
 
   # Get the window name from the options hash
   my $window = 'default';
@@ -795,8 +803,16 @@ sub image {
     return ORAC__ERROR;
   }
 
-  # Just send to GAIA - configure the new file
+  # Just send to GAIA - configure the new file with the correct component.
   my $junk;
+
+  ($status, $junk) = $self->send_to_gaia("$device configure -component $options{COMP}");
+  if ($status != ORAC__OK) {
+    orac_err "Error: $junk\n";
+    orac_err "ORAC::Display::GAIA - Error selecting component $options{COMP}\n";
+    return ORAC__ERROR;
+  }
+
 #  ($status, $junk) = $self->send_to_gaia("$image configure -file $file");
   ($status, $junk) = $self->send_to_gaia("$device open $file");
 
