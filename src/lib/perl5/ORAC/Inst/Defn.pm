@@ -920,7 +920,7 @@ to locate calibration files for the specified instrument.
   @paths = orac_determine_calibration_search_path( $instrument );
 
 Root location is specified by the C<ORAC_CAL_ROOT> environment
-variable.
+variable. ORAC_DATA_CAL is included if it is set explicitly.
 
 =cut
 
@@ -1018,6 +1018,11 @@ sub orac_determine_calibration_search_path {
   } else {
 
     croak "Calibration directories: Unrecognised instrument: $inst\n";
+  }
+
+  # Add ORAC_DATA_CAL to the end of the search path if it exists
+  if (exists $ENV{ORAC_DATA_CAL}) {
+    push(@path, $ENV{ORAC_DATA_CAL});
   }
 
   return @path;
