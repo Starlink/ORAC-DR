@@ -474,22 +474,25 @@ sub mask {
 
     unless (defined $mask) {
 
-      # Nothing suitable, default to fallback position
+      # Nothing suitable, default to fallback position.
       # Check that exists and be careful not to set this as the
       # maskname() value since it has no corresponding index entry
-      my $defmask = $self->find_file( "bpm_fallback.sdf" );
-      if( defined( $defmask ) ) {
-        $defmask =~ s/\.sdf$//;
-      }
+      my $deffile = "bpm_fallback.sdf";
 
       # If we're in spectroscopy mode, over-ride this to be bpm_sp
       # $uhdrref is a reference to the Frame uhdr hash
       my $uhdrref = $self->thingtwo;
       if ($uhdrref->{'ORAC_OBSERVATION_MODE'} eq 'spectroscopy') {
-        $defmask = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "bpm_sp" ) ;
+        $deffile = "bpm_sp.sdf";
       }
 
-      return $defmask if -e $defmask . ".sdf";
+      # find it in the file system
+      my $defmask = eval { $self->find_file( $deffile ); };
+
+      if (defined $defmask && -e $defmask) {
+        $defmask =~ s/\.sdf$//;
+        return $defmask;
+      }
 
       # give up...
       croak "No suitable bad pixel mask was found in index file"
