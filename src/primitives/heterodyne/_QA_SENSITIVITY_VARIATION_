@@ -1,0 +1,88 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_QA_SENSITIVITY_VARIATION_
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 Science and Technology Facilities Council. All
+Rights Reserved.
+
+=cut
+
+use JCMT::ACSIS::Array;
+
+orac_print "Running RMS sensitivity variation QA check.\n";
+
+foreach my $i ( 1 .. $Frm->nfiles ) {
+
+  my $infile = $Frm->file( $i );
+
+  orac_print "Processing $infile.\n";
+
+  my $temp1 = new ORAC::TempFile;
+  my $temp2 = new ORAC::TempFile;
+  my $temp3 = new ORAC::TempFile;
+
+  # Fit a background to the spectrum.
+  my $params = "in=$infile out=$temp1 mask=$temp2 order=5 subtract=true";
+  $params .= " modifyin=false rmsclip=! axis=spec auto=true method=single";
+  $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+
+  # Mask out the baselined file.
+  $Mon{'kappa_mon'}->obeyw( "add", "in1=$temp1 in2=$temp2 out=$temp3" );
+
+  # Find dimensions.
+  _GET_DIMENSIONS_
+  my @lbnd = @{$_GET_DIMENSIONS_{LBOUND}};
+  my @ubnd = @{$_GET_DIMENSIONS_{UBOUND}};
+
+  # Find the extent along the first axis (which for CALs is the
+  # frequency axis)
+  my $extent = $ubnd[0] - $lbnd[0];
+
+  # Only use the central 85%. This avoids noisy ends.
+  $extent = int( $extent * 0.85 );
+
+  # Get stats for this extent across all detectors.
+  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp3(~$extent,,)" );
+  my ( $ORAC_STATUS, $rmsmean ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+
+  orac_print sprintf( " Average RMS across all receptors: %6.3f\n", $rmsmean );
+
+  # Get stats for each receptor.
+  my $array = new JCMT::ACSIS::Array( File => $infile );
+
+  my %rms;
+
+  foreach my $receptor ( $array->receptors ) {
+
+    my $pixel = $array->pixel( $receptor );
+    $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp3(~$extent,$pixel,)" );
+    ( $ORAC_STATUS, my $pixrms ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
+
+    my $p_pixrms;
+    if( $pixrms > 0 ) {
+      $p_pixrms = sprintf( "%6.3f", $pixrms );
+      $rms{$receptor} = $pixrms;
+    } else {
+      $p_pixrms = "   bad";
+      $rms{$receptor} = "bad";
+    }
+
+    orac_print " RMS for receptor $receptor: $p_pixrms\n";
+
+  }
+
+  # Store the information on receptors in the uhdr.
+  $Frm->uhdr( "QA_RMS_VALUES", \%rms );
+
+}
+
+# Tidy-up output.
+orac_print "\n";

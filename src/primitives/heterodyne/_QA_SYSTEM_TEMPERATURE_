@@ -1,0 +1,77 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_QA_SYSTEM_TEMPERATURE_ - Run system temperature QA checks.
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 Science and Technology Facilities Council. All
+Rights Reserved.
+
+=cut
+
+use Starlink::HDSPACK qw/ create_hdsobj copy_hdsobj /;
+use JCMT::ACSIS::Array;
+
+orac_print "Running Tsys QA check.\n";
+
+foreach my $i ( 1 .. $Frm->nfiles ) {
+
+  my %tsys;
+
+  my $infile = $Frm->file( $i );
+
+  orac_print "Processing $infile.\n";
+
+  my $tmptsys = new ORAC::TempFile;
+
+  # Copy the Tsys array out to a temporary NDF.
+  my $ORAC_STATUS = ( create_hdsobj( "$tmptsys", 'NDF' ) ? ORAC__OK : ORAC__ERROR );
+  $ORAC_STATUS = ( copy_hdsobj( "$infile.MORE.ACSIS.TSYS", "$tmptsys.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
+
+  # Get stats on the Tsys array.
+  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$tmptsys" );
+
+  ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+
+  orac_print sprintf( " Tsys for entire array:   %7.2f K\n", $mean );
+
+  $tsys{'array'} = $mean;
+
+  # Get stats for each receptor.
+  my $array = new JCMT::ACSIS::Array( File => $infile );
+  my @receptors = $array->receptors;
+
+  foreach my $receptor ( @receptors ) {
+    my $pixel = $array->pixel( $receptor );
+    $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$tmptsys($pixel,)" );
+    ( $ORAC_STATUS, my $pixmean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+
+    # Format for printing.
+    my $p_pixmean;
+    if( $pixmean < 0 ) {
+      $p_pixmean = " bad     ";
+    } else {
+      $p_pixmean = sprintf( "%7.2f K", $pixmean );
+    }
+    orac_print " Tsys for receptor $receptor:   $p_pixmean\n";
+
+    if( $pixmean < 0 ) {
+      $tsys{$receptor} = "bad";
+    } else {
+      $tsys{$receptor} = $pixmean;
+    }
+  }
+
+  # Store the information on receptors in the uhdr.
+  $Frm->uhdr( "QA_TSYS_VALUES", \%tsys );
+
+}
+
+# Tidy-up output.
+orac_print "\n";
