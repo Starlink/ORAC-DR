@@ -121,6 +121,9 @@ sub framegroup {
   # see if we have any grouping keys
   my @grpkeys = $class->framegroupkeys();
 
+  # some times we need to retain the order of the input files
+  my @grporder;
+
   my %Grouped;
   if (@grpkeys) {
     # we have a request to group
@@ -134,6 +137,9 @@ sub framegroup {
       }
       croak "File $filename does not have a defined grouping key"
         unless $groupkey;
+      if (!exists $Grouped{$groupkey}) {
+        push(@grporder, $groupkey);
+      }
       push @{$Grouped{$groupkey}}, $filename;
     }
 
@@ -141,10 +147,18 @@ sub framegroup {
   } else {
     # no grouping
     $Grouped{ALL} = \@files;
+    push(@grporder, keys %Grouped);
   }
 
   # for each group, create a frame object
-  my @Frms = map { $class->new($_) } values %Grouped;
+  my @Frms;
+  for my $k (@grporder) {
+    # sanity check
+    croak "Grouping key '$k' does not exist in hash. Possible programming error"
+      unless exists $Grouped{$k};
+    my $Frm = $class->new($Grouped{$k});
+    push(@Frms, $Frm);
+  }
   return @Frms;
 }
 
