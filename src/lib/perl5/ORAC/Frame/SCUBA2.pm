@@ -482,8 +482,12 @@ sub number {
   my $raw = $self->raw;
 
   if ( defined( $raw ) ) {
+    # Raw files as seen in raw data directory,
+    # Flag files
+    # Temp files written by pipeline in task mode
     if ( ( $raw =~ /^s[48]?[a-d]?\d{8}_(\d{5})_(\d{4})/ ) ||
-         ( $raw =~ /_(\d{5})\.ok$/ ) ) {
+         ( $raw =~ /_(\d{5})\.ok$/ ) ||
+         ( $raw =~ /_(\d{5})_\d{4}\.sdf$/ ) ) {
       # Drop leading zeroes.
       $number = $1 * 1;
     } else {

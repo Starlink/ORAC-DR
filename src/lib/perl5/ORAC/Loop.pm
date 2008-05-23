@@ -58,6 +58,8 @@ use ORAC::Print;
 use ORAC::Convert;
 use ORAC::Msg::EngineLaunch;    # For -loop 'task'
 
+use Astro::FITS::HdrTrans qw/ translate_from_FITS /;
+
 require Exporter;
 
 use vars qw/$VERSION @EXPORT @ISA $CONVERT $ENGINE_LAUNCH/;
@@ -848,15 +850,28 @@ sub orac_loop_task {
       push(@istemp, 0 );        # This is a real file
 
     } elsif (exists $current{$t}->{IMAGE}) {
+
       # need to choose a filename. Make one up for the moment
       # it needs to be unique per task so use the task name and
       # the timestamp. We may benefit from a simple counter
-      # in the remote parameter.
+      # in the remote parameter. People also like to have the
+      # observation number in the header so we need some translation
+      require Astro::FITS::Header;
+      my $hdr = Astro::FITS::Header->new( Cards => $current{$t}->{IMAGE}->{FITS});
+      my %header;
+      tie %header, "Astro::FITS::Header", $hdr;
+      my $class = Astro::FITS::HdrTrans::determine_class( \%header );
+      my $obsnum = $class->to_OBSERVATION_NUMBER( \%header );
+
+      # Also include the FRAMENUM like a Subscan number. Makes it easier to parse out the
+      # observation number
+
       my $tstr = sprintf("%.2f",$current{$t}->{TIMESTAMP});
       $tstr =~ s/\./_/;
       my $root = $t;
       $root =~ s/\@.*//; # @a.b.c in DRAMA task will cause HDS and ADAM problems
-      my $fname = lc($root) . '_' . $tstr;
+      my $fname = lc($root) . '_' . $tstr . '_' . sprintf("%05d",$obsnum). '_'.
+        sprintf("%04d", $current{$t}->{FRAMENUM});
 
       if ($infmt eq 'NDF') {
         # write the DATA_ARRAY out as a piddle
@@ -871,7 +886,7 @@ sub orac_loop_task {
 
         # and write the FITS header
         require Astro::FITS::Header::NDF;
-        my $hdr = new Astro::FITS::Header::NDF( Cards => $current{$t}->{IMAGE}->{FITS} );
+        bless $hdr, "Astro::FITS::Header::NDF";
         $hdr->writehdr( File => $fname );
 
         $fname .= ".sdf";
