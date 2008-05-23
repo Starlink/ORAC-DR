@@ -667,8 +667,8 @@ that is updating its parameters each time new data are available.
 
   $Frm = orac_loop_task( $class, \@array, $skip );
 
-The array supplied to this routine is used to store the most recent
-frame number (to prevent returning the same data file more than once).
+The array supplied to this routine is used to store the next frame
+number of interest (to prevent returning the same data file more than once).
 
 In this looping scheme the UT date and skip flags are ignored since we
 only know about the data most recently written.
@@ -692,9 +692,12 @@ sub orac_loop_task {
   }
 
   # get the reference value
-  my $refframe = shift(@$arr) || 0;
+  my $refframe = shift(@$arr) || 1;
 
-  orac_print("Checking for data set newer than frame $refframe\n");
+  orac_print("Checking for data set equal to or newer than frame $refframe\n");
+
+  # rejig to say that we are looking for frames newer than this value
+  $refframe--;
 
   # Use dots and timeouts as for the other systems
   my $timeout = 43200;          # 12 hours timeout
@@ -924,8 +927,8 @@ sub orac_loop_task {
   # [KLUGE - header translation not enabled for SCUBA-2 yet]
   $Frm->group( $Frm->hdr("OBSNUM") );
 
-  # Store the current reftime
-  $arr->[0] = $refframe;
+  # Store the next reference frame number
+  $arr->[0] = $refframe + 1;
 
   # return the frame object
   return $Frm;
