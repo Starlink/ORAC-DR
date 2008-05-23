@@ -1457,13 +1457,16 @@ sub thingtwo {
 
 =item B<find_file>
 
-Returns the full path and filename of the requested file.
+Returns the full path and filename of the requested file (the first
+file found in the search path).
 
   $filename = $Cal->find_file("fs_izjhklm.dat");
 
-Returns undef if the requested file cannot be found. See
-B<ORAC::Inst::Defn::orac_determine_calibration_search_path>
-for information on setting up calibration directories.
+croaks if the file can not be found. It's likely that this is a bit
+drastic but it will indicate something bad is going on before some
+other unexpected behaviour occurs.  See
+B<ORAC::Inst::Defn::orac_determine_calibration_search_path> for
+information on setting up calibration directories.
 
 =cut
 
@@ -1471,7 +1474,8 @@ sub find_file {
   my $self = shift;
 
   my $file = shift;
-  return if ! defined $file;
+  croak "No file supplied to find_file() method"
+    if ! defined $file;
 
   my @directories = orac_determine_calibration_search_path( $ENV{'ORAC_INSTRUMENT'} );
 
@@ -1481,7 +1485,9 @@ sub find_file {
     }
   }
 
-  return;
+  croak "Could not find rules files '$file' in dirs ".join(",",@directories)
+    ." (possible programming error or your environment variables are incorrect)";
+
 }
 
 =item B<retrieve_by_column>
