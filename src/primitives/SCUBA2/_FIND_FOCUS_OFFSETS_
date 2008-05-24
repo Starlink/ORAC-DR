@@ -80,7 +80,7 @@ if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
     ($ORAC_STATUS, @vals) = $Mon{ndfpack_mon}->get("ndftrace","ubound");
     my $focstephi = $vals[2];
 
-    my (@amps, @fwhms, @focposns);
+    my (@amps, @fwhms, @focposns, @fitted);
     # Retrieve list of focus positions
     if ( $Grp->uhdr("FOCPOSNS") ) {
       @focposns = @{ $Grp->uhdr("FOCPOSNS") };
@@ -95,8 +95,9 @@ if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
       # Retrieve filename to determine centroid
       my $focusfile = "$focuscube(,,$plane)";
       # Get estimate of source position for fitting in offset coords
-      _CENTROID_IMAGE_ IMAGE=$focusfile OFFSET=1 VERBOSE=0 BOX=15
-      my ( $x, $y ) = @{ $_CENTROID_IMAGE_{RESULTS} };
+      _CENTROID_IMAGE_ IMAGE=$focusfile OFFSET=1 VERBOSE=0 BOX=120
+      my $results = $_CENTROID_IMAGE_{RESULTS};
+      my ( $x, $y ) = (defined $results) ? @{ $results } : (undef, undef);
       if ( defined $x && defined $y ) {
 	# Write position to ASCII file for reading into PSF
 	my $cofile = new ORAC::TempFile;
@@ -104,7 +105,7 @@ if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
 	$cofile->handle->close;
 
 	# Fit a PSF to image
-	_FIT_PSF_ IMAGE=$focusfile COFILE=$cofile->file VERBOSE=0
+	_FIT_PSF_ IMAGE=$focusfile COFILE=$cofile->file VERBOSE=0 GAUSSIAN=0
 	# Store fit parameters
 	my $amp = $_FIT_PSF_{AMPLITUDE};
 	my $fwhm = $_FIT_PSF_{FWHM};
@@ -115,6 +116,7 @@ if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
 	  # Add the Amplitude and FWHM to the arrays if valid values were returned
 	  push (@amps, $amp);
 	  push (@fwhms, $fwhm);
+	  push (@fitted, $plane);
 	} else {
 	  orac_warn " Unable to fit source for plane $plane in focus cube\n";
 	}
@@ -138,14 +140,14 @@ if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
       my $inresfile = new ORAC::TempFile;
       my $outresfile = new ORAC::TempFile;
       foreach my $i (0 .. $#amps) {
-	print {$inresfile->handle} ($focposns[$i]-0.5)." ".$amps[$i]."\n";
+	print {$inresfile->handle} ($focposns[$fitted[$i]]-0.5)." ".$amps[$i]."\n";
       }
       $inresfile->handle->close;
       # Convert text array into a 1-D NDF with trandat
       my $args = "dtype='_DOUBLE' poscols=1 valcol=2 pscale=1 freename=".$inresfile->file." ndf=".$outresfile->file;
       $Mon{kappa_mon}->obeyw("trandat","$args");
       # Run FITPOLY to get fit
-      $args = "device=! mask1=$focposns[0] order=2 mask2=$focposns[-1] dialog=f logfil=! comp=1 in=".$outresfile->file;
+      $args = "device=! mask1=$focposns[$fitted[0]] order=2 mask2=$focposns[$fitted[-1]] dialog=f logfil=! comp=1 in=".$outresfile->file;
       $Mon{figaro4}->obeyw("fitpoly","$args");
       ($ORAC_STATUS, my @coeffs) = $Mon{figaro4}->get("fitpoly","fitcoeffs");
       # Now find best-fit position, trap cases when either coefficient is zero
