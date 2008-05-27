@@ -124,75 +124,88 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2005-2008 University of British Columbia.  All Rights
+Copyright (C) 2005-2007 University of British Columbia.  All Rights
 Reserved.
 
 =cut
 
 # Set input file
-my $in = get_prim_arg( $_PRIM_ARGS_, "IMAGE", undef );
+my $in = (exists $_FIND_IMAGE_STATISTICS_{IMAGE} && 
+	  defined $_FIND_IMAGE_STATISTICS_{IMAGE}) ?
+          $_FIND_IMAGE_STATISTICS_{IMAGE} : "";
 
-unless ( defined $in ) {
+if ( $in eq "" ) {
   orac_throw "Error: no input image given to _FIND_IMAGE_STATISTICS_\n";
 }
 
 # Should I be verbose (default to yes)
-my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
+my $verbose = (exists $_FIND_IMAGE_STATISTICS_{VERBOSE} && 
+	       defined $_FIND_IMAGE_STATISTICS_{VERBOSE}) ?
+               $_FIND_IMAGE_STATISTICS_{VERBOSE} : 1;
 
 # Optional CLIP argument, default to blank (no clipping)
-my $clip = get_prim_arg( $_PRIM_ARGS_, "CLIP", "" );
+my $clip = (exists $_FIND_IMAGE_STATISTICS_{CLIP} && 
+	    defined $_FIND_IMAGE_STATISTICS_{CLIP}) ?
+            $_FIND_IMAGE_STATISTICS_{CLIP} : "";
 
 # Do we want to use the histogram method to get the mode?
-my $histo = get_prim_arg( $_PRIM_ARGS_, "HISTO", 0 );
+my $histo = (exists $_FIND_IMAGE_STATISTICS_{HISTO} && 
+	     defined $_FIND_IMAGE_STATISTICS_{HISTO}) ?
+             $_FIND_IMAGE_STATISTICS_{HISTO} : 0;
 
 # Do we want to use KAPPA HISTAT or STATS?
-my $histat = get_prim_arg( $_PRIM_ARGS_, "HISTAT", 1 );
+my $histat = (exists $_FIND_IMAGE_STATISTICS_{HISTAT} && 
+		defined $_FIND_IMAGE_STATISTICS_{HISTAT}) ?
+                $_FIND_IMAGE_STATISTICS_{HISTAT} : 1;
 
 # Initialise the results array
 $_FIND_IMAGE_STATISTICS_{RESULTS} = [];
 
 # Declare useful variables
 my $ORAC_STATUS;
-my @params = (qw/ mean numgood numpix numbad minimum maximum /);
-my %results;
+my ( $avg, $stdev, $ngood, $ntotal, $nbad, $min, $max, $median, $mode);
+
 if ( $histat ) {
-  # Set the HISTO argument to false
-  $histo = 0;
 
   # Check for other parameters for HISTAT
   # Default to MOMENTS method for calculating mode (as in KAPPA docs)
-  my $modemethod = get_prim_arg( $_PRIM_ARGS_, "MODE_METHOD", "MOMENTS" );
+  my $modemethod = (exists $_FIND_IMAGE_STATISTICS_{MODE_METHOD} && 
+		    defined $_FIND_IMAGE_STATISTICS_{MODE_METHOD}) ?
+		    uc($_FIND_IMAGE_STATISTICS_{MODE_METHOD}) : "MOMENTS";
 
   # Use HISTAT to calculate statistics
   $Mon{kappa_mon}->obeyw("histat","ndf=$in method=$modemethod");
   # Retrieve the values
-  push ( @params, "mode");
-  push ( @params, "median");
-  ($ORAC_STATUS, %results) = $Mon{kappa_mon}->mget("histat", @params);
-  $results{sigma} = -1.0;
+  ($ORAC_STATUS, $avg) = $Mon{kappa_mon}->get("histat","mean");
+  ($ORAC_STATUS, $median) = $Mon{kappa_mon}->get("histat","median");
+  ($ORAC_STATUS, $mode) = $Mon{kappa_mon}->get("histat","mode");
+  ($ORAC_STATUS, $ngood) = $Mon{kappa_mon}->get("histat","numgood");
+  ($ORAC_STATUS, $ntotal) = $Mon{kappa_mon}->get("histat","numpix");
+  ($ORAC_STATUS, $nbad) = $Mon{kappa_mon}->get("histat","numbad");
+  ($ORAC_STATUS, $min) = $Mon{kappa_mon}->get("histat","minimum");
+  ($ORAC_STATUS, $max) = $Mon{kappa_mon}->get("histat","maximum");
+  $stdev = -1.0;
+
+  # If HISTAT was used, then the HISTO argument is set to false
+  $histo = 0;
+
 } else {
   # Now calculate stats of the masked file to get the mean and the
   # standard deviation
   my $args = ($clip ne "") ? "clip=[$clip]" : "" ;
   $Mon{kappa_mon}->obeyw("stats","ndf=$in $args");
-  push ( @params, "sigma");
   # Retrieve the values
-  ($ORAC_STATUS, %results) = $Mon{kappa_mon}->mget("stats", @params);
-  
+  ($ORAC_STATUS, $avg) = $Mon{kappa_mon}->get("stats","mean");
+  ($ORAC_STATUS, $stdev) = $Mon{kappa_mon}->get("stats","sigma");
+  ($ORAC_STATUS, $ngood) = $Mon{kappa_mon}->get("stats","numgood");
+  ($ORAC_STATUS, $ntotal) = $Mon{kappa_mon}->get("stats","numpix");
+  ($ORAC_STATUS, $nbad) = $Mon{kappa_mon}->get("stats","numbad");
+  ($ORAC_STATUS, $min) = $Mon{kappa_mon}->get("stats","minimum");
+  ($ORAC_STATUS, $max) = $Mon{kappa_mon}->get("stats","maximum");
+  $median = undef;
+  $mode = undef;
   # Stats returns sigma = 0 if anything went wrong
-  $results{median} = undef;
-  $results{mode} = undef;
 }
-
-my $avg    = $results{mean};
-my $stdev  = $results{sigma};
-my $min    = $results{minimum};
-my $max    = $results{maximum};
-my $median = $results{median};
-my $mode   = $results{mode};
-my $ngood  = $results{numgood};
-my $ntotal = $results{numpix};
-my $nbad   = $results{numbad};
 
 orac_warn "All pixels in region are bad!\n" if $ngood == 0;
 my $fracgood = $ngood/$ntotal;
@@ -256,4 +269,4 @@ $_FIND_IMAGE_STATISTICS_{RESULTS} = { MEAN => $avg,
 				    };
 $_FIND_IMAGE_STATISTICS_{HISTOMODE} = ($maxval == -1.0e9) ? 0 : 1;
 
-orac_print "Calculated image statistics\n" if $verbose;
+orac_print "Calculated sky statistics\n" if $verbose;

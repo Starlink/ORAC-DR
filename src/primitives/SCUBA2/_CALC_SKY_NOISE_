@@ -2,18 +2,14 @@
 
 =head1 NAME
 
-_CALC_NOISE_ - Determine noise in an image
+_CALC_SKY_NOISE_ - Determine background sky noise
 
 =head1 DESCRIPTION
 
-This primitive is the top-level method for calculating the image
-noise. It may be used on a particular image or the current Frame or
-Group file. If no image is specified via the B<IMAGE> parameter then
-the B<GROUP> flag is used to determine whether to use the Frame or
-Group image. If an image is given the standard deviation is returned
-as an entry in the primitive hash and no log entry is written.
+This primitive is the top-level method for calculating the sky
+noise. Three methods are available which are described below.
 
-The noise can be estimated using one of three available methods:
+The sky noise can be estimated using one of three available methods:
 
 =over 4
 
@@ -39,28 +35,23 @@ of the stacked image via the VARIANCE component of the input file.
 
 The following arguments are supported:
 
-=item B<IMAGE>
+=item B<SKYMETHOD>
 
-Name of an image to be analyzed. 
-
-=item B<METHOD>
-
-Method by which the noise is determined. Valid values are C<minimum>,
-C<mask> and C<variance>. Default is variance. Minimum matching is
-supported.
+Method by which the sky noise is determined. Valid values are
+`minimum', `mask' and 'variance'. Default is variance. Minimum
+matching is supported.
 
 =item B<RADIUS>
 
-Radius of apertures to use for aperture photometry and/or noise
-estimates. Default is 20 arcsec. A special value of -1 may be
-specified in which case the aperture is set by the major and minor
-axes of the object.
+Radius of apertures to use for aperture photometry (if USEPSF is 0)
+and/or noise estimates. Default is 20 arcsec. A special value of -1
+may be specified in which case the aperture is set by the major and
+minor axes of the object.
 
 =item B<LOGFILE>
 
 A flag to indicate whether log files should be written containing the
-results of the flux and noise calculations. Default is 1
-(true). However, if an input file is specified no log is written.
+results of the flux and noise calculations. Default is true.
 
 =item B<GROUP>
 
@@ -90,14 +81,13 @@ _GET_PIXEL_SCALE_, _FIND_INTEGRATED_INTENSITY_, _FIND_VARIANCE_
 
 =head1 OUTPUT DATA
 
-The following entry in the primitive hash is returned unless a log
-file entry is written:
+The following entry in the primitive hash is returned:
 
 =over 4
 
 =item SIGMA
 
-The standard deviation in the image
+Sky noise
 
 =back
 
@@ -130,29 +120,49 @@ USA
 =cut
 
 # Write logfiles (default to true)
-my $uselog = get_prim_arg( $_PRIM_ARGS_, "LOGFILE", 1 );
+my $uselog = (exists $_CALC_SKY_NOISE_{LOGFILE} &&
+	      defined $_CALC_SKY_NOISE_{LOGFILE}) ?
+              $_CALC_SKY_NOISE_{LOGFILE} : 1;
 
 # Should I be verbose? (Default to no)
-my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 0);
+my $verbose = (exists $_CALC_SKY_NOISE_{VERBOSE} && 
+	       defined $_CALC_SKY_NOISE_{VERBOSE}) ?
+               $_CALC_SKY_NOISE_{VERBOSE} : 0;
 
 # Set aperture radius - default is 20 arcsec
-my $radius = get_prim_arg( $_PRIM_ARGS_, "RADIUS", 20);
+my $radius = ( exists $_CALC_SKY_NOISE_{RADIUS} && 
+	       defined $_CALC_SKY_NOISE_{RADIUS} ) ?
+               $_CALC_SKY_NOISE_{RADIUS} : 20;
 
 # Determine method for calculating noise
-my $skymethod = lc(get_prim_arg( $_PRIM_ARGS_, "SKYMETHOD", "var" ));
+my $skymethod = ( exists ($_CALC_SKY_NOISE_{SKYMETHOD}) && 
+		  defined ($_CALC_SKY_NOISE_{SKYMETHOD}) ) ? 
+		  lc($_CALC_SKY_NOISE_{SKYMETHOD}): "var";
 
 # See if an input file has been specified
-my $in = get_prim_arg( $_PRIM_ARGS_, "IMAGE", undef );
+my $in = (exists $_CALC_SKY_NOISE_{IMAGE} &&
+	  defined $_CALC_SKY_NOISE_{IMAGE}) ?
+          $_CALC_SKY_NOISE_{IMAGE} : "";
 
-# Define PI
-use constant PI => 3.1415926535;
+# Initialize the log files if necessary
+my $noiselog;
+if ($uselog) {
+  my $time = gmtime();
+  # Sky noise
+  $noiselog = new ORAC::LogFile("log.noise");
+  $noiselog->header("#Noise log file - created on $time",
+		    "#\n#  Time       Filter  El     Noise     Sky     Seeing   CSO",
+		    "#---------------------------------------------------------------"
+		    );
+}
 
 # Determine if the user wants to use the current stacked Grp or Frm image
 my $Obj;
 # Flag to denote whether this primitive can be executed
 my $calcnoise = 0;
-my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
-unless ( defined $in ) {
+my $group = defined( $_CALC_SKY_NOISE_{GROUP} ) ? 
+  $_CALC_SKY_NOISE_{GROUP} : 0;
+if ( $in eq "" ) {
   if( $group ) {
     $Obj = $Grp;
   } else {
@@ -181,7 +191,7 @@ unless ( defined $in ) {
 
 # Proceed if all's well
 if ( $calcnoise ) {
-  my ($maskbright, $minap, $var) = (0, 0, 1);
+  my ($maskbright, $minap, $var) = ( 0, 0, 1);
   my $catalogue;
   if ( $skymethod =~ /^ma/ ) {
     # Find all of the sources in the current frame
@@ -289,7 +299,7 @@ if ( $calcnoise ) {
     my $minsky = 1.0e9;
 
     # Calculate number of pixels within an aperture
-    my $npix = PI * $radius*$radius / 
+    my $npix = 3.1415926535 * $radius*$radius / 
       ($_GET_PIXEL_SCALE_{RESULTS}->[0] * $_GET_PIXEL_SCALE_{RESULTS}->[1]);
 
     # Now loop over number of apertures
@@ -299,8 +309,9 @@ if ( $calcnoise ) {
       my $coords = new Astro::Coords( ra => $xsky->[$i-1], dec => $ysky->[$i-1], 
 				      units => 'radians', type => 'J2000' );
       my @xy = ( $coords->ra(format=>'s'), $coords->dec(format=>'s') );
+#    my @xy = ($xsky->[$i-1], $ysky->[$i-1]);
       _FIND_INTEGRATED_INTENSITY_ RADIUS=$radius IMAGE=$in XYPOS=\@xy VERBOSE=0
-      my $skynoise = $_FIND_INTEGRATED_INTENSITY_{SIGMA};
+	my $skynoise = $_FIND_INTEGRATED_INTENSITY_{SIGMA};
       my $ngood = $_FIND_INTEGRATED_INTENSITY_{NUMGOOD};
       $minsky = $skynoise if ( ($skynoise < $minsky) && ($ngood/$npix > 0.5) );
     }
@@ -318,12 +329,34 @@ if ( $calcnoise ) {
   }
 
   if ( $sigma ) {
+    orac_print "Sigma = $sigma \n";
+
     # Write info to log file if requested
     if ( $uselog ) {
-      _ADD_NOISE_LOG_ENTRY_ SIGMA=$sigma
+      # UT string
+      my $time= sprintf "%12.7f", $Frm->hdrval('ORACTIME',0);
+      # Filter
+      my $filt= sprintf "%4s", $Frm->hdr('FILTER');
+      
+      # Get TAU from the header - should get from $Cal object?
+      my $cso = sprintf "%5.3f", 0.5*($Frm->hdrval('WVMTAUST', 0) + 
+				      $Frm->hdrval('WVMTAUEN',-1));
+      # Elevation
+      my $el = int ( 0.5 * ($Frm->hdrval('ELSTART',0) + 
+			    $Frm->hdrval('ELEND',-1) ) );
+      # Seeing
+      my $see = sprintf "%5.3f", ( 0.5 * ($Frm->hdrval('SEEINGST', 0) + 
+					  $Frm->hdrval('SEEINGEN',-1)) );
+      # Observation number
+      my $obsnum = sprintf "%05d", $Frm->hdr('OBSNUM');
+      # Noise
+      my $skynoise = sprintf "%10.9f", $sigma;
+      my $skylevel = 1.00;	# Placeholder
+
+      # Write the entry:
+      # UT, filter, El, Sky noise, Seeing, Sky level, tau225
+      $noiselog->addentry("$time  $filt    $el   $skynoise   $skylevel     $see   $cso");
     }
-    $sigma = sprintf "%7.3f", $sigma;
-    orac_print "Noise in image = $sigma \n";
   } else {
     orac_warn "No valid standard deviation found\n";
   }

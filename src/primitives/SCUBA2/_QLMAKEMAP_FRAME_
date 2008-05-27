@@ -75,16 +75,24 @@ my @out;
 # What checks should we carry out?
 
 # Verbosity - default to no
-my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 0);
+my $verbose = (exists $_QLMAKEMAP_FRAME_{VERBOSE} && 
+	       defined $_QLMAKEMAP_FRAME_{VERBOSE}) ?
+               $_QLMAKEMAP_FRAME_{VERBOSE} : 0;
 
 # Output coordinate system - default is TRACKING
-my $system = get_prim_arg($_PRIM_ARGS_, "SYSTEM", "TRACKING");
+my $system = (exists $_QLMAKEMAP_FRAME_{SYSTEM} && 
+	       defined $_QLMAKEMAP_FRAME_{SYSTEM}) ?
+               $_QLMAKEMAP_FRAME_{SYSTEM} : "TRACKING";
 
 # Should be an argument
-my $pixsize = get_prim_arg($_PRIM_ARGS_, "PIXSIZE", $Cal->pixelscale);
+my $pixsize = (exists $_QLMAKEMAP_FRAME_{PIXSIZE} && 
+	       defined $_QLMAKEMAP_FRAME_{PIXSIZE}) ?
+               $_QLMAKEMAP_FRAME_{PIXSIZE} : $Cal->pixelscale;
 
 # Pixel-spreading scheme
-my $spread = lc(get_prim_arg($_PRIM_ARGS_, "SPREAD", "nearest"));
+my $spread = (exists $_QLMAKEMAP_FRAME_{SPREAD} && 
+	      defined $_QLMAKEMAP_FRAME_{SPREAD}) ?
+              lc($_QLMAKEMAP_FRAME_{SPREAD}) : "nearest";
 
 # Reset to "nearest" if an unsupported scheme is given
 if ( ($spread ne "nearest") && ($spread ne "linear") ) {
@@ -95,15 +103,56 @@ if ( ($spread ne "nearest") && ($spread ne "linear") ) {
 # Retrieve list of files in current frame
 my @files = $Frm->files;
 
-# Write filenames to a file
-my $inlist = new ORAC::TempFile;
-$inlist = write_file_list( @files );
+# Flag to indicate if we have a FOCUS observation
+my $focusobs = ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) ? 1 : 0;
+
+if ( $focusobs ) {
+  # If we have a focus observation, need to sort files by FOCUS axis
+  # and position
+  my $nfocstep = $Frm->hdr("NFOCSTEP");
+  my %focsteps;
+  foreach my $i ( 0 .. $#files ) {
+    my $focaxis = $Frm->hdrval("FOCAXIS",$i);
+    my $focpos = $Frm->hdrval("FOCPOSN",$i);
+    my @list = ( defined $focsteps{$focpos} ) ? @{ $focsteps{$focpos} } : ();
+    push (@list, $i+1);
+    $focsteps{$focpos} = \@list;
+  }
+
+  my @out;
+  foreach my $focpos ( keys %focsteps ) {
+    my @filenums = @{ $focsteps{$focpos} };
+    my $intmp = new ORAC::TempFile;
+    my $focaxis = $Frm->hdrval("FOCAXIS",$filenums[0]);
+    foreach my $filenum ( @filenums ) {
+      print {$intmp->handle} $Frm->file($filenum) ."\n";
+    }
+
+    orac_print "Calling qlmakemap for FOCUS position $focaxis = $focpos mm (this may take a few/several/many seconds) \n";
+    # Set output filename
+    $focpos =~ s/\./-/g;
+#    my $out = join("_",$Frm->file, $focpos);
+    my $out = $Frm->inout("_$focpos");
+
+    # Argument list
+    my $args = "in=^".$intmp->file." out=$out pixsize=$pixsize spread=$spread system=$system";
+
+    # Call qlmakemap
+    $Mon{smurf_mon}->obeyw("qlmakemap","$args");
+    push (@out, $out);
+  }
+  $Frm->files(@out);
+
+} else {
+# Write filenames to a temp file
+my $intmp = new ORAC::TempFile;
+print {$intmp->handle} join("\n",@files[0..$#files]);
 
 # Set output filename
 my $out = $Frm->inout('_fmos');
 
 # Argument list
-my $args = "in=^$inlist out=$out pixsize=$pixsize spread=$spread system=$system";
+my $args = "in=^".$intmp->file." out=$out pixsize=$pixsize spread=$spread system=$system";
 
 # Call qlmakemap
 orac_print "Calling qlmakemap... (this may take a few/several/many seconds) \n";
@@ -113,17 +162,33 @@ $Mon{smurf_mon}->obeyw("qlmakemap","$args");
 my ($ORAC_STATUS, $sky) = $Mon{smurf_mon}->get("qlmakemap","meansky");
 $sky = sprintf "%12.7f", $sky;
 
-# Since this is a DC sky removal so sky slope and PA are both 0
-_ADD_SKY_LOG_ENTRY_ DCSKY=$sky
+# HACK - write entry to log file
+my $time = gmtime();
+# DC Sky
+my $skylog = new ORAC::LogFile("log.sky");
+$skylog->header("#Sky properties log file - created on $time",
+		"#\n#  ID      Time        Filter    DC       Slope  PA  Seeing   El  CSO",
+		"#-----------------------------------------------------------------------");
 
-# Make sure the image is in an offset coordinate frame for moving sources:
-$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$out mode=get name=system");
-($ORAC_STATUS, $system) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-if ( $system eq "GAPPT" ) {
-  # Set SkyRefIs and AlignOffset accordingly
-  my $args = "ndf=$out mode=mset setting='skyrefis=origin,alignoffset=1'";
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
-}
+# UT string
+$time = sprintf "%12.7f", $Frm->hdrval('ORACTIME',0);
+# Observation number
+my $obsnum = sprintf "%05d", $Frm->hdr('OBSNUM');
+# Filter
+my $filt = sprintf "%4s", $Frm->hdr('FILTER');
+
+# Get TAU from the header - should get from $Cal object?
+my $cso = sprintf "%5.3f", 0.5*($Frm->hdrval('WVMTAUST', 0) + 
+				$Frm->hdrval('WVMTAUEN',-1));
+
+# Elevation
+my $el = int ( 0.5 * ($Frm->hdrval('ELSTART',0) + $Frm->hdrval('ELEND',-1) ) );
+# Seeing
+my $see = sprintf "%5.3f", ( 0.5 * ($Frm->hdrval('SEEINGST', 0) + 
+				    $Frm->hdrval('SEEINGEN',-1)) );
+# Since this is a DC sky removal so sky slope and PA are both 0
+$skylog->addentry("$obsnum $time $filt $sky  0.00000   0.0  $see    $el $cso");
+
 
 # Register the new file name
 $Frm->files( $out );
@@ -134,3 +199,4 @@ orac_print "Image $out created\n" if $verbose;
 # within qlmakemap
 $Frm->uhdr("SKY_SUBTRACTION",1);
 $Frm->uhdr("EXTINCTION",1);
+}
