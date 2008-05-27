@@ -126,6 +126,28 @@ if ( $focusobs && $Frm->hdrval('OBSEND',-1) ) {
   my $args;
   foreach my $i ( 0 .. $#Frms ) {
     my $newFrm = $Frms[$i];
+    my $focposn = $newFrm->hdr("FOCPOSN");
+    # Define output file based on Group file name
+    my $planeimage = $Grp->inout( $focposidx{$focposn} );
+    # Set the NDF title string
+    my $title = $focposidx{$focposn};
+    $title =~ s/\_foc//;	# remove underscores
+    $title = "'Focus".$title." $axis=$focposn mm'";
+
+    # Create single image for the current focus plane
+    if ( $newFrm->files > 1 ) {
+      my $moslist = write_file_list( $newFrm->files );
+      my $mosargs = "in=^".$moslist." out=$planeimage method=median ref=! logto=neither nousevar nogenvar title=$title";
+      $Mon{ccdpack_reg}->obeyw("makemos","$mosargs");
+    } else {
+      my $cpargs = "in=".$newFrm->file." out=$planeimage title=$title";
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","$cpargs");
+    }
+    # Store output file in Frm
+    $newFrm->files( $planeimage );
+    # Display this image
+    $Display->display_data( $newFrm ) if (defined $Display);
+
     # Derive sky mapping and frame
     unless ( $skymapframe ) {
       my $infile = $newFrm->file;
@@ -137,21 +159,6 @@ if ( $focusobs && $Frm->hdrval('OBSEND',-1) ) {
       $Mon{atools_mon}->obeyw("astgetframe","$args");
       $skymapframe = 1;
     }
-
-    my $focposn = $newFrm->hdr("FOCPOSN");
-    # Define output file based on Group file name
-    my $planeimage = $Grp->inout( $focposidx{$focposn} );
-
-    # Create single image for the current focus plane
-    if ( $newFrm->files > 1 ) {
-      my $moslist = write_file_list( $newFrm->files );
-      my $mosargs = "in=^".$moslist." out=$planeimage method=median ref=! ";
-      $Mon{ccdpack_reg}->obeyw("makemos","$mosargs");
-    } else {
-      my $cpargs = "in=".$newFrm->file." out=$planeimage";
-      $Mon{ndfpack_mon}->obeyw("ndfcopy","$cpargs");
-    }
-
     # Add third axis to image
     $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$planeimage");
     my ($ORAC_STATUS, $ndim) = $Mon{ndfpack_mon}->get("ndftrace","ndim");
@@ -165,8 +172,7 @@ if ( $focusobs && $Frm->hdrval('OBSEND',-1) ) {
       $Mon{ndfpack_mon}->obeyw("setorigin","$args");
     }
 
-    # Store output file in Frm
-    $newFrm->file( $planeimage );
+    # Store image name in array for pasting into the cube
     push ( @planes, $planeimage );
   }
 
