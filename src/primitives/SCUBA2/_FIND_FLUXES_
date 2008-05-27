@@ -116,8 +116,6 @@ Rights Reserved.
 
 =cut
 
-# Should check that this has been run after calibration?
-
 # Write logfiles (default to yes)
 my $uselog = get_prim_arg($_PRIM_ARGS_, "LOGFILE", 1);
 
@@ -132,6 +130,9 @@ my $radius = get_prim_arg($_PRIM_ARGS_, "RADIUS", 20);
 
 # Initialize the log files if necessary
 my ($pklog, $intlog);
+
+# Define PI
+use constant PI => 3.1415926535;
 
 # Determine if the user wants to use the current Grp or Frm image
 my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
@@ -175,10 +176,7 @@ if ( $offset ) {
 }
 
 # Check that the catalogue has sources in it
-if ( $catalogue->sizeof == 0 ) {
-  # Issue an error and skip the rest
-  orac_warn "Unable to determine fluxes, no sources found\n";
-} else {
+if ( $catalogue->sizeof > 0 ) {
   # Check if installed version of Kappa has a PSF task we can use
   if ( $usepsf && starversion_lt('kappa', 'V0.15-0')) {
     # warn
@@ -186,13 +184,38 @@ if ( $catalogue->sizeof == 0 ) {
     $usepsf = 0;
   }
 
-  my $fluxcorr = 1.0;
+  # Define a flux conversion which allows the calculated `flux' to be
+  # converted into a real value depending on whether the data are
+  # calibrated in `per beam' or `per square arcsec' units (or even
+  # uncalibrated).
+  my $fluxcorr;
+  # Determine Pixel scale in arcsec
+  _GET_PIXEL_SCALE_ IMAGE=$in VERBOSE=0
+  my $pixelarea = $_GET_PIXEL_SCALE_{AREA};
+  my $units = $Obj->uhdr("ORAC_DATA_UNITS");
+  if ($units =~ /beam/) {
+    # Retrieve beam dimensions
+    my $fwhm = $Cal->fwhm;
+    my $beamarea = PI * $fwhm * $fwhm / 4.0; # sq arcsec
+    $fluxcorr = ($usepsf) ? $beamarea : $beamarea/$pixelarea ;
+  } elsif ($units =~ /arcsec/) {
+    $fluxcorr = ($usepsf) ? 1.0 : 1.0/$pixelarea;
+  } elsif ($units =~ /pW/) { # pW is effectively pW/pixel
+    $fluxcorr = ($usepsf) ? $pixelarea : 1.0;
+  } else {
+    orac_throw "Error: unknown units, $units \n";
+  }
+  # The flux units will be data_units * area (for calibrated data), so
+  # strip off the per beam or per arcsec**2 portion of the units
+  # string. Uncalibrated data will be unchanged
+  my @fluxunits = split(/\//, $units, 2);
+
   my $ORAC_STATUS;
 
-  if ($usepsf) {
-    orac_print "Calculating fluxes by fitting a PSF\n" if $verbose;
+  if ($usepsf && $verbose) {
+    orac_print "Calculating fluxes by fitting a PSF\n";
   } else {
-    orac_print "Calculating fluxes by aperture photometry\n" if $verbose;
+    orac_print "Calculating fluxes by aperture photometry\n";
   }
   # Define all the parameters we might need
   my ($amp, $fwhm, $axisr, $totalflux);
@@ -203,12 +226,12 @@ if ( $catalogue->sizeof == 0 ) {
     # Peak fluxes
     $pklog = new ORAC::LogFile("log.peak");
     $pklog->header("#Peak flux log file - created on $time UT",
-		   "#\n# UT                HST   Obs Source       Mode         Filter  El CSO    Tau  Seeing ID    RA          Dec       Peak       FWHM",
-		   "#---------------------------------------------------------------------------------------------------------------------------------------");
+		   "#\n# UT                HST   Obs Source       Mode         Filter  El CSO    Tau  Seeing ID    RA          Dec       Peak       FWHM Units",
+		   "#----------------------------------------------------------------------------------------------------------------------------------------");
     # Integrated fluxes
     $intlog = new ORAC::LogFile("log.integrated");
     $intlog->header("#Integrated flux log file - created on $time UT",
-		    "#\n# UT                HST   Obs Source       Mode         Filter El CSO    Tau  Seeing ID    RA          Dec       Flux",
+		    "#\n# UT                HST   Obs Source       Mode         Filter El CSO    Tau  Seeing ID    RA          Dec       Flux Units",
 		    "#---------------------------------------------------------------------------------------------------------------------------");
   }
   # Retrieve logging parameters anyway
@@ -256,19 +279,21 @@ if ( $catalogue->sizeof == 0 ) {
       # Format for printing
       $totalflux = sprintf "%6.3f", $totalflux;
       $amp = sprintf "%6.3f", $amp;
+      $fwhm = sprintf "%6.2f", $fwhm;
       # Set source ID - assumes there will be <100 objects in image
       my $srcnum = sprintf "%02d", $i;
 
-      $fwhm = sprintf "%6.2f", $fwhm;
-
       # Write the entry:
-      $pklog->addentry( "$uttime $hst $obsnum $src $mode   $filter   $el $cso $tau $see  $srcnum $ra $dec  $amp  $fwhm");
-      $intlog->addentry("$uttime $hst $obsnum $src $mode   $filter   $el $cso $tau $see  $srcnum $ra $dec  $totalflux");
+      $pklog->addentry( "$uttime $hst $obsnum $src $mode   $filter   $el $cso $tau $see  $srcnum $ra $dec  $amp  $fwhm $fluxunits[0]");
+      $intlog->addentry("$uttime $hst $obsnum $src $mode   $filter   $el $cso $tau $see  $srcnum $ra $dec  $totalflux $fluxunits[0]");
     } else {
       push (@intfluxes, $totalflux);
       push (@pkfluxes, $amp);
     }
   }
+} else {
+  # Issue an error and skip the rest
+  orac_warn "Unable to determine fluxes, no sources found\n";
 }
 
 # Reset WCS to input
