@@ -139,7 +139,6 @@ setenv ORAC_LOOP flag
 setenv ORAC_SUN  xxx
 
 # some other things
-setenv HDS_MAP 0
 setenv RTD_REMOTE_DIR $ORAC_DATA_OUT
 
 # Source general alias file and print welcome screen

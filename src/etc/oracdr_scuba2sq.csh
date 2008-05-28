@@ -127,7 +127,8 @@ else
 endif
 
 # QL-specific args
-set oracdr_args = "-ut $oracut -loop task -recsuffix QL -nodisplay"
+#set oracdr_args = "-ut $oracut -loop task -recsuffix QL -nodisplay"
+set oracdr_args = "-ut $oracut -loop flag -recsuffix QL -nodisplay"
 
 setenv ORAC_INSTRUMENT SCUBA2_SHORT
 setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/scuba2/ok/$oracut
@@ -143,7 +144,6 @@ setenv ORAC_LOOP flag
 setenv ORAC_SUN  xxx
 
 # some other things
-setenv HDS_MAP 0
 setenv RTD_REMOTE_DIR $ORAC_DATA_OUT
 
 # Source general alias file and print welcome screen
