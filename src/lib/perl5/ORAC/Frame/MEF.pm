@@ -219,7 +219,8 @@ sub configure {
 
     my $fname;
     if (scalar(@_) == 1) {
-        $fname = shift;
+      my $fnamesref = shift;
+      $fname = ( ref $fnamesref ? $fnamesref->[0] : $fnamesref );
     } elsif (scalar(@_) == 2) {
 	$fname = $self->pattern_from_bits(@_);
     } else {

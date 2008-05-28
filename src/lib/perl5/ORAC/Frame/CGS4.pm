@@ -132,7 +132,8 @@ sub configure {
   # else assume we are being given the raw filename
   my $fname;
   if (scalar(@_) == 1) {
-    $fname = shift;
+    my $fnamesref = shift;
+    $fname = ( ref $fnamesref ? $fnamesref->[0] : $fnamesref );
   } elsif (scalar(@_) == 2) {
     # For CGS4 pattern_from_bits() returns a string, so this is okay.
     $fname = $self->pattern_from_bits(@_);
@@ -142,7 +143,7 @@ sub configure {
 
   # set the filename
 
-  $self->file($fname);
+  $self->file( $fname );
   my $rootfile = $self->file;
 
   # Set the raw data file name
@@ -212,7 +213,6 @@ sub findnsubs {
 
   # Get a list of all the components
   my @comps = $self->_find_ndf_children( { compnames => 1 }, $file );
-
   if (!@comps) {
     orac_err("Can't open $file for nsubs or error reading components\n");
     return 0;
