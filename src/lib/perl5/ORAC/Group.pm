@@ -1307,7 +1307,8 @@ sub gui_id {
 
   my $gui_id = $self->SUPER::gui_id( @_ );
 
-  return "g_$gui_id";
+#  return "g_$gui_id";
+  return "$gui_id";
 }
 
 =back
