@@ -370,7 +370,17 @@ needs to go back to the original members.
 
 sub purge_members {
   my $self = shift;
-  @{$self->{AllMembers}} = ();
+#  @{$self->{AllMembers}} = ();
+  # Allows last Frame to be kept
+  my $keeplast = 0;
+  if ( @_ ) {
+    $keeplast = shift;
+  }
+  if ( $keeplast ) {
+    @{$self->{AllMembers}} = ( ($self->members->[-1]) );
+  } else {
+    @{$self->{AllMembers}} = ();
+  }
   $self->check_membership;
   return;
 }
@@ -1307,8 +1317,7 @@ sub gui_id {
 
   my $gui_id = $self->SUPER::gui_id( @_ );
 
-#  return "g_$gui_id";
-  return "$gui_id";
+  return "g_$gui_id";
 }
 
 =back

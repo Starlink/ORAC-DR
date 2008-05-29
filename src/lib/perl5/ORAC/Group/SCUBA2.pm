@@ -120,6 +120,39 @@ sub file_from_bits {
 
 =back
 
+=head1 DISPLAY COMPATIBILITY
+
+These methods are provided for compatibility with the ORAC display
+system.
+
+=over 4
+
+=item B<gui_id>
+
+Returns the identification string that is used to compare the
+current frame with the frames selected for display in the
+display definition file.
+
+In the default case, this method returns everything after the
+last suffix stored in file().
+
+In some derived implementation of this method an argument
+may be used so that multiple IDs can be extracted from objects
+that contain more than one output file per observation.
+
+=cut
+
+sub gui_id {
+  my $self = shift;
+
+  my $gui_id = $self->SUPER::gui_id( @_ );
+
+  # Temporarily strip off leading "g_"
+  $gui_id =~ s/^g\_// if ($gui_id =~ /^g\_/) ;
+
+  return "$gui_id";
+}
+
 =head1 SEE ALSO
 
 L<ORAC::Group::NDF>
