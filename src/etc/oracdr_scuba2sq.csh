@@ -127,8 +127,7 @@ else
 endif
 
 # QL-specific args
-#set oracdr_args = "-ut $oracut -loop task -recsuffix QL -nodisplay"
-set oracdr_args = "-ut $oracut -loop flag -recsuffix QL -nodisplay"
+set oracdr_args = "-ut $oracut -loop task -recsuffix QL -nodisplay"
 
 setenv ORAC_INSTRUMENT SCUBA2_SHORT
 setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/scuba2/ok/$oracut
