@@ -126,7 +126,7 @@ else
     set oracut = `\date -u +%Y%m%d`
 endif
 
-set oracdr_args = "-ut $oracut -nodisplay"
+set oracdr_args = "-ut $oracut"
 
 setenv ORAC_INSTRUMENT SCUBA2_LONG
 setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/scuba2/ok/$oracut
