@@ -168,7 +168,7 @@ sub configure {
   for my $f (@fnames) {
     my @internal = $self->_find_processed_images( $f );
     if (@internal) {
-
+      use Data::Dumper; print Dumper(\@internal);
       push(@paths, @internal );
       # and read the FITS headers
       my @hdrs;
@@ -241,14 +241,34 @@ sub configure {
       # it implies that we have headers that are present in both the .I
       # components and the primary header but that are identical between
       # the .I components yet different to the primary header. This is a 
-      # problem and we need to issue a warning
+      # problem and we need to issue a warning.
+      # Provide a special case for the OBSEND header since that is allowed to 
+      # differ in the very last entry when all others were 0. The above code expects
+      # that frames that differ will differ in all .In headers.
       if (defined $funique || defined $cunique) {
-        orac_warn("Headers are present in the primary FITS header of $f that clash with different values that are fixed amongst the processed components. This is not allowed.\n");
+        # remove OBSEND if present and TRUE trumps false for the global header
+        my @remf = $funique->removebyname("OBSEND");
+        my @remc = $cunique->removebyname("OBSEND");
+        if (@remf && @remc) {
+          my $oe = $merged->itembyname("OBSEND");
+          if (defined $oe) {
+            $oe->value(1);
+          } else {
+            use Data::Dumper; print Dumper(\@remf,\@remc);
+            $merged->insert( -1, $remf[0]);
+            $remf[0]->value(1);
+          }
+        }
+
+        if ($funique->sizeof > 0 && $cunique->sizeof > 0) {
+
+          orac_warn("Headers are present in the primary FITS header of $f that clash with different values that are fixed amongst the processed components. This is not allowed.\n");
 	
-        orac_warn("Primary header:\n". $funique ."\n")
-          if defined $funique;
-        orac_warn("Component header:\n". $cunique ."\n")
-          if defined $cunique;
+          orac_warn("Primary header:\n". $funique ."\n")
+            if defined $funique;
+          orac_warn("Component header:\n". $cunique ."\n")
+            if defined $cunique;
+        }
       }
 
       # Now reset the PRIMARY header to be the merge
@@ -772,6 +792,23 @@ sub hdrval {
     orac_warn "hdrval method requires at least a keyword argument\n";
     return;
   }
+
+}
+
+=item B<hdrvals>
+
+Return all the different values associated with a single FITS
+header taken from all subheaders.
+
+  @values = $Frm->hdrvals( $keyword );
+
+Only unique values are returned. Quickly enables the caller to determine
+how many distinct states are in the Frame.
+
+=cut
+
+sub hdrvals {
+  my $self = shift;
 
 }
 
