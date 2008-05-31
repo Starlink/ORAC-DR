@@ -168,7 +168,6 @@ sub configure {
   for my $f (@fnames) {
     my @internal = $self->_find_processed_images( $f );
     if (@internal) {
-      use Data::Dumper; print Dumper(\@internal);
       push(@paths, @internal );
       # and read the FITS headers
       my @hdrs;
