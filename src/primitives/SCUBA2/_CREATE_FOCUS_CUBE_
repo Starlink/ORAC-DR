@@ -86,26 +86,19 @@ if ( $focusobs && $Frm->hdrval('OBSEND',-1) ) {
   # Which axis are we dealing with?
   my $axis = $Frm->hdr("FOCAXIS");
 
-  my @listoffiles;
-  foreach my $f ( $Grp->allmembers ) {
-    push ( @listoffiles, $f->file );
-  }
-  my @Frms = $Frm->framegroup( @listoffiles );
+  # Work out how many focus positions we have actually got
+  my @focposns = $Grp->memberhdrvals( "FOCPOSN" );
 
   # Reminder to think about this
-  if ( scalar(@Frms) ne $Frm->hdr("NFOCSTEP") ) {
-    orac_warn "uh oh - number of frames (".scalar(@Frms).") is not the same as the number of focus positions (".$Frm->hdr("NFOCSTEP").")";
+  if ( scalar(@focposns) ne $Frm->hdr("NFOCSTEP") ) {
+    orac_warn "uh oh - number of focus positions found (".scalar(@focposns).") is not the same as the number of focus positions indicated in the header (".$Frm->hdr("NFOCSTEP").")";
   }
 
-  my %focposidx;
-  foreach my $newFrm ( @Frms ) {
-    $focposidx{$newFrm->hdr("FOCPOSN")} = 1;
-  }
-  my @focposns = sort { $a <=> $b } keys %focposidx;
   # Store this list for subsequent use by _FIND_FOCUS_OFFSETS_
   $Grp->uhdr("FOCPOSNS",\@focposns);
   # Create lookup table for focus position and plane file extension
   my $nfoc = scalar( @focposns);
+  my %focposidx;
   for my $i ( 0 .. $#focposns) {
     $focposidx{$focposns[$i]} = "_foc".($i+1);
   }
@@ -120,13 +113,22 @@ if ( $focusobs && $Frm->hdrval('OBSEND',-1) ) {
   #    frame
   # 6) Write .ok file for the POINTING_FOCUS task to pick up
 
+  # group all the frames by FOCPOSN (which is guaranteed to be distinct
+  # in each Frm)
+  my @subgrps = $Grp->subgrps( "FOCPOSN" );
+
   # Loop over each Frame to create a Frame mosaic
   my @planes;
   my $skymapframe = ( -e "skymap1.lis" ) ? 1 : 0; #TMP for QL
   my $args;
-  foreach my $i ( 0 .. $#Frms ) {
-    my $newFrm = $Frms[$i];
-    my $focposn = $newFrm->hdr("FOCPOSN");
+  my $i = 0;
+  foreach my $subgrp ( @subgrps ) {
+    $i++;
+    my @focfiles = map { $_->files } $subgrp->members;
+    my $focposn = $subgrp->members->[0]->hdrval("FOCPOSN");
+    orac_print "Processing focus position = $focposn (offset #$i)\n"
+        if $verbose;
+
     # Define output file based on Group file name
     my $planeimage = $Grp->inout( $focposidx{$focposn} );
     # Set the NDF title string
@@ -135,27 +137,26 @@ if ( $focusobs && $Frm->hdrval('OBSEND',-1) ) {
     $title = "'Focus".$title." $axis=$focposn mm'";
 
     # Create single image for the current focus plane
-    if ( $newFrm->files > 1 ) {
-      my $moslist = write_file_list( $newFrm->files );
+    if ( @focfiles > 1 ) {
+      my $moslist = write_file_list( @focfiles );
       my $mosargs = "in=^".$moslist." out=$planeimage method=median ref=! logto=neither nousevar nogenvar title=$title";
       $Mon{ccdpack_reg}->obeyw("makemos","$mosargs");
     } else {
-      my $cpargs = "in=".$newFrm->file." out=$planeimage title=$title";
+      my $cpargs = "in=".$focfiles[0]." out=$planeimage title=$title";
       $Mon{ndfpack_mon}->obeyw("ndfcopy","$cpargs");
     }
     # Store output file in Frm
-    $newFrm->files( $planeimage );
+    $subgrp->files( $planeimage );
     # Display this image
-    $Display->display_data( $newFrm ) if (defined $Display);
+    $Display->display_data( $subgrp ) if (defined $Display);
 
     # Derive sky mapping and frame
     unless ( $skymapframe ) {
-      my $infile = $newFrm->file;
-#      $args = "this=$infile iframe1=ast__base iframe2=ast__current result=skymap$$.ast";
-      $args = "this=$infile iframe1=ast__base iframe2=ast__current result=skymap1.lis"; #TMP for QL
+#      $args = "this=$planeimage iframe1=ast__base iframe2=ast__current result=skymap$$.ast";
+      $args = "this=$planeimage iframe1=ast__base iframe2=ast__current result=skymap1.lis"; #TMP for QL
       $Mon{atools_mon}->obeyw("astgetmapping","$args");
-#      $args = "this=$infile iframe=ast__current result=skyframe$$.ast";
-      $args = "this=$infile iframe=ast__current result=skyframe1.lis"; #TMP for QL
+#      $args = "this=$planeimage iframe=ast__current result=skyframe$$.ast";
+      $args = "this=$planeimage iframe=ast__current result=skyframe1.lis"; #TMP for QL
       $Mon{atools_mon}->obeyw("astgetframe","$args");
       $skymapframe = 1;
     }
