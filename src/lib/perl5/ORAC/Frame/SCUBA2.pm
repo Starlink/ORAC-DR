@@ -808,7 +808,29 @@ how many distinct states are in the Frame.
 
 sub hdrvals {
   my $self = shift;
+  my $keyword = shift;
+  my @values;
+  my %uniq;
 
+  # do not use hdrval since we only want to check the primary header once
+  my $hdr = $self->hdr;
+  if (exists $self->hdr->{$keyword} ) {
+    my $primary = $self->hdr->{$keyword};
+    push(@values, $primary);
+    $uniq{$primary}++;
+  }
+
+  # sub headers
+  for my $sh (@{$hdr->{SUBHEADERS}}) {
+    if (exists $sh->{$keyword}) {
+      my $sec = $sh->{$keyword};
+      if (!exists $uniq{$sec}) {
+        push(@values, $sec);
+        $uniq{$sec}++;
+      }
+    }
+  }
+  return @values;
 }
 
 =item B<rewrite_outfile_subarray>

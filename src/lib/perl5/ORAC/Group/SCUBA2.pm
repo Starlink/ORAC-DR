@@ -118,6 +118,39 @@ sub file_from_bits {
 
 =over 4
 
+=item B<frmhdrvals>
+
+Returns all the FITS header values associated with a particular keyword
+used in all of the Frames that are members of this group (disabled frames
+are not used).
+
+ @values = $Grp->memberhdrvals( $keyword );
+
+Calls the C<hdrvals> method in each member and collates the results to remove
+duplicates. Order is retained.
+
+=cut
+
+sub memberhdrvals {
+  my $self = shift;
+  my $keyword = shift;
+
+  my @output;
+  my %uniq;
+
+  for my $m ($self->members) {
+    my @values = $m->hdrvals( $keyword );
+
+    for my $v (@values) {
+      if (!exists $uniq{$v}) {
+        push(@output, $v);
+        $uniq{$v}++;
+      }
+    }
+  }
+  return @output;
+}
+
 =back
 
 =head1 DISPLAY COMPATIBILITY
