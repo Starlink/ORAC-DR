@@ -145,7 +145,7 @@ setenv RTD_REMOTE_DIR $ORAC_DATA_OUT
 source $ORAC_DIR/etc/oracdr_start.csh
 
 # Set stripchart alias
-alias xstripchart "xstripchart -cfg=$ORAC_DATA_CAL/jcmt.ini &"
+alias xstripchart "xstripchart -cfg=$ORAC_DATA_CAL/jcmt_short.ini &"
 
 # Tidy up
 unset oracut
