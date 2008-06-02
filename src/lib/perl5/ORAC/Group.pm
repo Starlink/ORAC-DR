@@ -250,6 +250,9 @@ will be returned in a single subgrp (since that group guarantees
 that the specified header item is not different - it simply
 is not there).
 
+The order of the subgroups will match the position of the first
+member in the original group.
+
 =cut
 
 sub subgrps {
@@ -259,6 +262,9 @@ sub subgrps {
   # We can create a unique key in a hash for the header values
   # specified. So create a temporary hash.
   my %store = ();
+
+  # Subgroups in the order of creation
+  my @subgrps;
 
   # Loop over all members of current group
 
@@ -283,6 +289,8 @@ sub subgrps {
       # Copy the header
       %{$store{$key}->hdr}  = %{$self->hdr};
       %{$store{$key}->uhdr} = %{$self->uhdr};
+      # also store the group in an array so that we can retain ordering
+      push(@subgrps, $store{$key});
     }
 
     # Store the frame (this is inefficient since it
@@ -293,7 +301,7 @@ sub subgrps {
   }
 
   # Return the values
-  return values %store;
+  return @subgrps;
 }
 
 
