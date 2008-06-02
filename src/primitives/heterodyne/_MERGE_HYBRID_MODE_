@@ -1,0 +1,199 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_MERGE_HYBRID_MODE_ - Merge hybrid mode observations in the frequency
+domain.
+
+=head1 DESCRIPTION
+
+This primitive operates on hybrid mode observations. It first
+determines a DC-level offset between corresponding subscan
+observations, using the overlap region to determine statistics. If no
+overlap region exists, then the entire spectrum is used. The DC offset
+is added to or removed from the subscan spectra, and the corresponding
+subscans are mosaicked together to form time-series cubes with a
+greater frequency extent.
+
+=head1 ARGUMENTS
+
+=over 4
+
+None.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS data taken in hybrid mode.
+
+=item *
+
+This primitive only operates if the ISHYBRID user header is set for
+the current Frame object.
+
+=item *
+
+This primitive currently only operates on observations with one
+subscan.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The DC-corrected time-series cubes with suffix _dc.
+
+=item *
+
+The merged time-series cube with suffix _merge.
+
+=back
+
+=head1 TASKS
+
+KAPPA: COLLAPSE, MANIC, MATHS, NDFTRACE, WCSMOSAIC.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+if( $Frm->uhdr( "ISHYBRID" ) ) {
+
+  orac_print "Hybrid mode observations. Merging spectra.\n";
+
+  if( $Frm->nfiles != 2 ) {
+    orac_warn "Cannot merge " . $Frm->nfiles . " timeseries cubes\n";
+  } else {
+
+    my @flbnds;
+    my @fubnds;
+    my @lbounds;
+    my @ubounds;
+
+    my @infiles;
+    my @outfiles;
+
+    foreach my $file ( $Frm->files ) {
+
+      # Determine spectral extent.
+      $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$file" );
+      my ( $ORAC_STATUS, @flbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "flbnd" );
+      ( $ORAC_STATUS, my @fubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fubnd" );
+      ( $ORAC_STATUS, my @lbound ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
+      ( $ORAC_STATUS, my @ubound ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
+
+      push @flbnds, \@flbnd;
+      push @fubnds, \@fubnd;
+      push @lbounds, \@lbound;
+      push @ubounds, \@ubound;
+
+    }
+
+    my ( $flow, $fhigh );
+    if( $fubnds[0]->[0] > $flbnds[0]->[0] ) {
+      if( $flbnds[1]->[0] > $flbnds[0]->[0] ) {
+        $flow = $flbnds[1]->[0];
+        $fhigh = $fubnds[0]->[0];
+      } else {
+        $flow = $flbnds[0]->[0];
+        $fhigh = $fubnds[1]->[0];
+      }
+    } else {
+      if( $fubnds[1]->[0] > $fubnds[0]->[0] ) {
+        $flow = $fubnds[1]->[0];
+        $fhigh = $flbnds[0]->[0];
+      } else {
+        $flow = $fubnds[0]->[0];
+        $fhigh = $flbnds[1]->[0];
+      }
+    }
+
+    orac_print sprintf( " Overlap range: [%.3f:%.3f]\n", $flow, $fhigh );
+
+    my $frange = "$flow:$fhigh";
+    if( $flow > $fhigh ) {
+      orac_warn "No overlap between the input cubes. Using median over whole spectrum to determine DC offset";
+      $frange = "";
+    }
+
+    # Use collapse to find the median for each spectrum.
+    my $temp1file = new ORAC::TempFile;
+    my $temp2file = new ORAC::TempFile;
+
+    my $params = "in=" . $Frm->file(1) . "($frange,,) out=$temp1file";
+    $params .= " estimator=median axis=spec variance=true wlim=0.0";
+    $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+    $params = "in=" . $Frm->file(2) . "($frange,,) out=$temp2file";
+    $params .= " estimator=median axis=spec variance=true wlim=0.0";
+    $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+    # DC level adjustment is half the difference.
+    my $temp3file = new ORAC::TempFile;
+    $params = "exp=((ib-ia)/2) ia=$temp1file ib=$temp2file out=$temp3file";
+    $Mon{'kappa_mon'}->obeyw( "maths", "$params" );
+
+    # Grow this DC adjustment into a cube and add it to the first file.
+    my $temp4file = new ORAC::TempFile;
+    $params = "in=$temp3file out=$temp4file axes=[0,1,2]";
+    $params .= "lbound=" . $lbounds[0]->[0] . " ubound=" . $ubounds[0]->[0];
+    $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+    my( $in, $out ) = $Frm->inout( "_dc", 1 );
+    $Mon{'kappa_mon'}->obeyw( "add", "in1=$in in2=$temp4file out=$out" );
+    orac_print "$in to $out:\n";
+    orac_print " Removed DC-level offset.\n";
+    push @infiles, $in;
+    push @outfiles, $out;
+
+    # Grow the DC adjustment into another cube and subtract it from
+    # the second file.
+    my $temp5file = new ORAC::TempFile;
+    $params = "in=$temp3file out=$temp5file axes=[0,1,2]";
+    $params .= "lbound=" . $lbounds[1]->[0] . " ubound=" . $ubounds[1]->[0];
+    $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+    ( $in, $out ) = $Frm->inout( "_dc", 2 );
+    $Mon{'kappa_mon'}->obeyw( "sub", "in1=$in in2=$temp5file out=$out" );
+    orac_print "$in to $out:\n";
+    orac_print " Removed DC-level offset.\n";
+    push @infiles, $in;
+    push @outfiles, $out;
+
+    # We have two DC-corrected files, now WCSMOSAIC them.
+    ( $in, $out ) = $Frm->inout( "_merge", 1 );
+    $params = "in='" . ( join ',',@outfiles ) . "' out=$out method=nearest";
+    $params .= " lbnd=! ubnd=! ref=! variance=true genvar=false wlim=0";
+    $Mon{'kappa_mon'}->obeyw( "wcsmosaic", "$params" );
+
+    orac_print join ',', @infiles;
+    orac_print " to $out:\n";
+    orac_print " Merged hybrid-mode files.\n";
+
+    $Frm->product( "merge" );
+    $Frm->files( ( $out ) );
+
+    # Tidy-up output.
+    orac_print "\n";
+  }
+
+}
