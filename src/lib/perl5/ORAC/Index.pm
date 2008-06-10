@@ -572,10 +572,10 @@ sub index_to_text {
 
   } @{$self->indexref->{$entry}};
 
-  # major problem
+  # major problem - look for undefs or empty strings
   my $hasundef;
   for my $e (@entries) {
-    if (!defined $e) {
+    if (!defined $e || $e eq '') { # 0 is okay so can not use false
       $hasundef++;
       last;
     }
