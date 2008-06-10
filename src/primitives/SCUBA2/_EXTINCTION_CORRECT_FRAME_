@@ -6,7 +6,7 @@ _EXTINCTION_CORRECT_FRAME_
 
 =head1 SYNOPSIS
 
-  _EXTINCTION_CORRECT_FRAME_ EXTCOR_MODE=QUICK
+  _EXTINCTION_CORRECT_FRAME_ EXTCOR=QUICK
 
 =head1 DESCRIPTION
 
@@ -36,15 +36,16 @@ CMULT routine.
 
 =over 4
 
-=item B<EXTCOR_MODE>
+=item B<EXTCOR>
 
-EXTCOR_MODE determines which extinction correction is applied. If set
-to FULL, then an accurate pixel-level correction is applied taking
-into account the airmass of individual pixels. If set to QUICKER then
-the image is corrected assuming a single value for the airmass across
-the array. An intermediate level correction may be applied by
-specifying QUICK whereby the airmass and optical depth for each image
-is used to correct that image.
+Type of extinction correction to be applied. If set to FULL, then an
+accurate pixel-level correction is applied taking into account the
+airmass of individual pixels. If set to QUICKER then the image is
+corrected assuming a single value for the airmass across the image for
+all images in the current Frame. An intermediate level correction may
+be applied by specifying QUICK whereby the airmass and optical depth
+for each file is used to correct that file. Default value is
+C<QUICKER>.
 
 =back
 
@@ -73,19 +74,14 @@ in JCMT::Tau.
 
 Creates output files with suffix C<_ext>
 
-=head1 NOTES
-
-Timing tests show that QUICKER is not any quicker than QUICK so it may
-be deprecated.
-
 =head1 AUTHOR
 
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2004-2007 University of British Columbia and the
-Particle Physcis and Astronomy Research Council. All Rights Reserved.
+Copyright (C) 2004-2008 University of British Columbia. All Rights
+Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -106,96 +102,88 @@ USA
 
 unless ( $Frm->uhdr("EXTINCTION") ) {
 
-# Read the extinction correction argument if present
-my $extcor_mode = uc(get_prim_arg($_PRIM_ARGS_, "EXTCOR_MODE", "QUICKER" ));
+  # Read the extinction correction argument if present
+  my $extcor = uc(get_prim_arg($_PRIM_ARGS_, "EXTCOR", "QUICKER" ));
 
-my @out;
+  # Check for valid value, use QUICKER if not recognized
+  unless ( ( $extcor eq "QUICK" ) || ( $extcor eq "QUICKER" ) || ( $extcor eq "FULL" ) ) {
+    orac_warn "Unrecognized extinction correction method, $extcor: assuming QUICKER\n";
+    $extcor = "QUICKER";
+  }
 
-orac_print "Correcting for extinction in $extcor_mode mode\n";
-if ( $extcor_mode eq 'FULL' ) {
+  # Tell user what we're doing
+  orac_print "Correcting for extinction using $extcor method\n";
 
-  # Check input data for dimensionality as the `FULL' method means
-  # different things depending on whether the data re in the form of
-  # 2-D images or 3-D timestream.
+  # Define list of input and output files
+  my ($inlist, $outlist, @out) = write_file_list_inout($Frm, "_ext");
 
-  # Use the fact that all images in a Frm will have same
-  # dimensionality. Use first file in Frm.
-  $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=".$Frm->file);
-  my ($ORAC_STATUS, $ndim) = $Mon{ndfpack_mon}->get("ndftrace","ndim");
+  if ( $extcor eq 'FULL' ) {
+    # Check input data for dimensionality as the `FULL' method means
+    # different things depending on whether the data are in the form of
+    # 2-D images or 3-D timestream.
+
+    # Use the fact that all images in a Frm will have same
+    # dimensionality. Use first file in Frm.
+    $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=".$Frm->file);
+    my ($ORAC_STATUS, $ndim) = $Mon{ndfpack_mon}->get("ndftrace","ndim");
  
-  # Check for 2 or 3-D and set method accordingly
-  my $extmethod;
-  if ( $ndim == 2 ) {
-    # For method CSOTAU we will let the extinction task select the
-    # value from the header
-    $extmethod = "CSOT";
-  } elsif ( $ndim == 3 ) {
-    # Else use the raw WVM data
-    $extmethod = "WVMR";
-  }
-
-  # Process all files at once since they share arguments
-  my ($inlist, $outlist, @outfiles) = write_file_list_inout($Frm, "_ext");
-  my $extargs = "in=^$inlist out=^$outlist method=$extmethod noquick hasskyrem accept";
-  $Mon{smurf_mon}->obeyw("extinction",$extargs);
-  push(@out, @outfiles);
-
-} elsif ( $extcor_mode eq 'QUICK' ) {
-
-  # process files one at a time since the mean wvm value can change
-  # during a single frame.
-  for my $i (1..$Frm->nfiles) {
-    # Tau at 225 GHz for this file
-    my $csotau = sprintf "%5.3f", $Frm->hdrval('MEANWVM', ($i-1));
-
-    my ($in, $out) = $Frm->inout('_ext',$i);
-    push(@out, $out);
-
-    my $extargs = "in=$in out=$out method=CSOTAU csotau=$csotau quick hasskyrem";
+    # Check for 2 or 3-D and set method accordingly
+    my $extmethod;
+    if ( $ndim == 2 ) {
+      # For method CSOTAU we will let the extinction task select the
+      # value from the header
+      $extmethod = "CSOTAU";
+    } elsif ( $ndim == 3 ) {
+      # Else use the raw WVM data
+      $extmethod = "WVMR";
+    }
+    # Process all files at once since they share arguments
+    my $extargs = "in=^$inlist out=^$outlist method=$extmethod noquick hasskyrem accept";
     $Mon{smurf_mon}->obeyw("extinction",$extargs);
+  } elsif ( $extcor eq 'QUICK' ) {
+
+    # Use the QUICK method, let extinction obtain MEANWVM from FITS
+    # header
+    my $extargs = "in=^$inlist out=^$outlist method=CSOTAU csotau=! quick hasskyrem";
+    $Mon{smurf_mon}->obeyw("extinction",$extargs);
+
+  } else {
+    # OK if the user has not specified FULL or QUICK then use the
+    # quickest possible method, QUICKER
+
+    # Use mean values from FITS header
+    my ($tau, $airmass);
+    # CSO Tau - use average of first and last value. If tau changes
+    # significantly over the duration of the Frame then this method is
+    # not appropriate.
+    my $csotau = 0.5*($Frm->hdrval('WVMTAUST', 0) + $Frm->hdrval('WVMTAUEN',-1));
+
+    # Get wavelength via name of filter. Assume that the string `850' or
+    # `450' will form part of the filter name.
+    my $filter = $Frm->uhdr('ORAC_FILTER');
+    my $wavelen = ( $filter =~ /850/ ) ? "850" : "450";
+
+    # Use JCMT::Tau module for tau conversions
+    use JCMT::Tau;
+    # Convert WVM TAU (which is 225 GHz) to filter TAU
+    ($tau, my $status) = get_tau( $wavelen, 'CSO', $csotau );
+
+    # Pseudo-average Airmass, should be close enough
+    $airmass = 0.5 * ($Frm->hdrval('AMSTART',0) + $Frm->hdrval('AMEND',-1));
+
+    # Extinction correction factor
+    my $extcor = exp($tau*$airmass);
+
+    # Apply same multiplier to each frame
+    $Mon{kappa_mon}->obeyw("cmult","in=^$inlist scalar=$extcor out=^$outlist");
   }
 
-} elsif ( $extcor_mode eq 'QUICKER' ) {
+  # Register new file names
+  $Frm->files( @out );
 
-  # Use mean values from FITS header
-  my ($tau, $airmass);
-  # CSO Tau - average of all values in current Frm
-  my $csotau = sprintf "%5.3f", 0.5*($Frm->hdrval('WVMTAUST', 0) + 
-				     $Frm->hdrval('WVMTAUEN',-1));
-
-  # Get wavelength vie name of filter. Assume that the string `850' or
-  # `450' will form part of the filter name.
-  my $filter = $Frm->hdr('FILTER');
-  my $wavelen = ( $filter =~ /850/ ) ? "850" : "450";
-
-  # Use JCMT::Tau module for tau conversions
-  use JCMT::Tau;
-  # Convert WVM TAU (which is 225 GHz) to filter TAU
-  ($tau, my $status) = get_tau( $wavelen, 'CSO', $csotau );
-
-  # Airmass
-  $airmass = 0.5 * ($Frm->hdrval('AMSTART',0) + $Frm->hdrval('AMEND',-1));
-
-  # Extinction correction factor
-  my $extcor = exp($tau*$airmass);
-
-  # Apply same multiplier to each frame
-  my ($inlist, $outlist, @outfiles) = write_file_list_inout($Frm, "_ext");
-  $Mon{kappa_mon}->obeyw("cmult","in=^$inlist scalar=$extcor out=^$outlist");
-  push(@out,@outfiles);
-
-} else {
-  orac_err("Unrecognized EXTCOR_MODE, $extcor_mode");
-  my $ORAC_STATUS = ORAC__ERROR;
-}
-
-# Register new file names
-$Frm->files( @out );
-
-orac_print "Extinction corrected (mode = $extcor_mode) \n";
-
-$Frm->uhdr("EXTINCTION",1);
-
+  # Print Done message and set uhdr flag
+  orac_print "Extinction corrected (method = $extcor) \n";
+  $Frm->uhdr("EXTINCTION",1);
 } else {
   orac_warn "Extinction correction already applied to this Frame\n";
 }
