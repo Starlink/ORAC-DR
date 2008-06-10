@@ -14,12 +14,13 @@ This primitive mosaics Frame images into a Group mosaic, but waits for
 a user-specified number of Frames before co-adding in order to provide
 a good variance estimator. It is designed to be used in the Quick-Look
 pipeline where a single Frame is generated on each pass through the
-recipe. 
+recipe. If the observation ends before the number of Frame files is
+reached, the Group mosaic is created with those files that exist.
 
 Compared with the standard _MAKE_MOSAIC_GROUP_ primitive, the Group
 image created here is effectively a running average of individual
-`stackall' images. If B<NMOS> is set to the total number of files in
-the observation, then this becomes a `stackall' image.
+C<stackall> images. If B<NMOS> is set to the total number of files in
+the observation, then this becomes a C<stackall> image.
 
 =head1 ARGUMENTS
 
@@ -29,11 +30,6 @@ the observation, then this becomes a `stackall' image.
 
 Number of Frame images to mosaic together before coadding to
 Group. Default is 5.
-
-=item B<METHOD>
-
-Resampling method for WCSALIGN. Default is C<bilinear> for
-bi-linear interpolation.
 
 =item B<MAKEMOS_METHOD>
 
@@ -56,7 +52,6 @@ Flag to denote whether to display extra information. Default is 0
 =head1 ALGORITHMS
 
 CCDPACK: MAKEMOS
-KAPPA: WCSALIGN
 
 =head1 FILE SUFFIX
 
@@ -64,16 +59,8 @@ Creates a single output group image with a suffix of '_mos'.
 
 =head1 Notes
 
-This primitive is a specific realization of making such a mosaic. It
-ought to be possible to achieve the same goal with the conventional
-_MAKE_MOSAIC_ and _ALIGN_ARRAYS_ primitives. however, this version is
-slightly more efficient as it aligns all of the images in one step.
-
-Does not yet deal with moving sources.
-
-Should be upgraded to deal with arbitrary Group objects.
-
-Should add SIGMAS as a paremeter if MAKEMOS_METHOD is MODE or SIGMA
+Does not explicitly deal with moving sources but this should have been
+handled at the Frame mosaic stage.
 
 =head1 AUTHORS
 
@@ -108,9 +95,6 @@ my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
 # variance
 my $nmos = get_prim_arg($_PRIM_ARGS_, "NMOS", 5);
 
-# Image resampling method for WCSALIGN
-my $method = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "bilinear" ));
-
 # Image combination method for MAKEMOS
 my $makemos_method = lc(get_prim_arg($_PRIM_ARGS_, "MAKEMOS_METHOD", "sigma"));
 
@@ -123,95 +107,68 @@ if ( $makemos_method eq "sigma" ) {
   $makemos_method .= " sigmas=$sigmas";
 }
 
-# Retrieve the Frames in the current Group, and get the number
-my @members = $Grp->members;
-my $nFrm = scalar(@members);
+# Retrieve the Frame file names in the current Group, and get the number
+my @membernames = $Grp->membernames;
+my $nFrm = scalar(@membernames);
+
 # If this is the end of the current observation then make the mosaic
 # anyway using whatever files are present
-if ( $Frm->hdrval("OBSEND", -1) && ( $nFrm < $nmos ) ) {
+if ( $Frm->uhdr("OBSEND") && ( $nFrm < $nmos ) ) {
   $nmos = $nFrm;
 }
 
 # Is it time to make a mosaic? Only do so every $nmos files
 if ( $nFrm % $nmos == 0 ) {
-
-  orac_print("Making GROUP mosaic with $nmos files using DESPIKE method")
+  orac_print "Making GROUP mosaic with $nmos files using DESPIKE method\n"
     if $verbose;
 
   # Start and end index
   my $start = $nFrm - $nmos;
   my $end = $nFrm;
 
-  # List of aligned Frm files
-  my $alfrmmos = new ORAC::TempFile;
-  # Now we need to create output aligned files to go with the input files
-  my @outfiles;
-  for my $i (1..$nmos) {
-    my $outfile = new ORAC::TempFile;
-    push (@outfiles, $outfile);
-  }
-
-  # Retrieve relevant Frms for this mosaic
-  my @Frms = @members[-$nmos..-1];
-
   # File to store list of Frm files
   my $frmmoslist = new ORAC::TempFile;
-  for my $i (1..$nmos ) {
-    my $CurFrm = $Frms[$i-1];
-    # write file name to file
-    print {$frmmoslist->handle} $CurFrm->file . "\n";
-    my $ofile = $outfiles[$i-1];
-    print {$alfrmmos->handle} $ofile->file . "\n";
-  }
+  print {$frmmoslist->handle} join ("\n",@membernames);
   $frmmoslist->handle->close;
-  $alfrmmos->handle->close;
-
-  # Determine the reference image for alignment.
-  _GET_REFERENCE_IMAGE_
-  my $refimage = $_GET_REFERENCE_IMAGE_{REFIMAGE};
+  my $frmmoslistfile = $frmmoslist->file;
 
   # Retrieve the Group filename
   my $outname = $Grp->inout("_mos");
 
-  # Use wcsalign to align the files
-  my $args = "ref=$refimage lbnd=! ubnd=! method=$method out=^".$alfrmmos->file
-    ." in=^".$frmmoslist->file;
-  $Mon{kappa_mon}->obeyw("wcsalign","$args");
-
-  # Now they are aligned, call makemos to make a pseudo-Grp mosaic,
-  # generating variance. 
-  my $alignmos = new ORAC::TempFile; # Output aligned mosaic
-  my $alignmosfile = $alignmos->file;
-  $args = "in=^".$alfrmmos->file." genvar nousevar logto=neither method=sigma sigmas=4.0 out=".$alignmos->file;
+  # Call makemos to make a pseudo-Grp mosaic, generating variance.
+  my $outmos = new ORAC::TempFile;
+  my $outmosfile = $outmos->file;
+  my $args = "in=^$frmmoslistfile genvar nousevar logto=neither method=sigma sigmas=4.0 out=$outmosfile";
   $Mon{ccdpack_reg}->obeyw("makemos","$args");
 
-  # Finally call makemos again to mosaic the Grp and pseudo-Grp
-  # images, using variance weighting. This step is only performed if
-  # the Group file already exists.
+  # Call makemos again to mosaic the Grp and pseudo-Grp images, using
+  # variance weighting. This step is only performed if the Group file
+  # already exists.
   if ( $Grp->file_exists) {
 
     orac_print("Coadding to GROUP file... ") if $verbose;
 
-    my $moslist = new ORAC::TempFile;
-    print {$moslist->handle} $Grp->file."\n".$alignmosfile."\n";
+    my $grpmoslist = new ORAC::TempFile;
+    print {$grpmoslist->handle} join("\n",$Grp->file, $outmosfile);
 
     my $tmpout = new ORAC::TempFile;
     my $mosaic = $tmpout->file;
 
-    $args = "in=^".$moslist->file." usevar genvar method=$makemos_method out=$mosaic";
+    $args = "in=^".$grpmoslist->file." usevar genvar method=$makemos_method out=$mosaic";
     $Mon{ccdpack_reg}->obeyw("makemos","$args");
 
     rename $mosaic .".sdf", $outname .".sdf" 
       or die "Error renaming temp file to output Group mosaic"; # horrible hack KLUGE
   } else {
-    rename $alignmosfile .".sdf", $outname .".sdf" 
+    orac_print("Creating new GROUP file... ") if $verbose;
+    rename $outmosfile .".sdf", $outname .".sdf" 
       or die "Error renaming temp file to output Group mosaic"; # horrible hack KLUGE
   }
 
   # Store mosaic in Group, set NEWIMAGE flag to display Grp image
   $Grp->file( $outname );
   $Grp->uhdr("NEWIMAGE", 1);
-  orac_print("done.\n") if $verbose;
+  orac_print "done.\n" if $verbose;
 
 } else {
   # Unset NEWIMAGE flag
