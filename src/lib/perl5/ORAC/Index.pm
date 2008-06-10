@@ -575,7 +575,7 @@ sub index_to_text {
   # major problem
   my $hasundef;
   for my $e (@entries) {
-    if (!$e) {
+    if (!defined $e) {
       $hasundef++;
       last;
     }
