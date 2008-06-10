@@ -346,7 +346,7 @@ sub slurpindex {
       # serialised
       for my $entry (@data) {
         # REF{ and REF[ should be fairly unique
-        if ($entry =~ /^REF(\[|\{)/) {
+        if (defined $entry && $entry =~ /^REF(\[|\{)/) {
           # Strip the leading REF
           my $code = $entry;
           $code =~ s/^REF//;
@@ -375,8 +375,14 @@ sub slurpindex {
         $name = tmpnam;
       }
 
+      # Sanity check on read to make sure we have the correct number
+      # of colums.
+      $self->_sanity_check($name, \@data);
+
       # Sort the data as we did before. This sorts it in the same
-      # order that the keys will be sorted in.
+      # order that the keys will be sorted in. Note that this sort will
+      # insert undefs for missing columns if we have not previously
+      # sanity checked.
       my @sorteddata = @data[@order];
 
       # Store index entry in hash
@@ -566,6 +572,20 @@ sub index_to_text {
 
   } @{$self->indexref->{$entry}};
 
+  # major problem
+  my $hasundef;
+  for my $e (@entries) {
+    if (!$e) {
+      $hasundef++;
+      last;
+    }
+  }
+  if ($hasundef) {
+    use Data::Dumper;
+    my $dump = Dumper(\@entries);
+    croak "Some entries in index file (".$self->indexfile
+      .") are undefined or blank. Are you using an old index file that was created for a different instrument? ($dump)";
+  }
 
   return $entry . " " . join(" ",@entries);
 }
@@ -604,14 +624,7 @@ sub indexentry {
   my %rules = %{$self->rulesref};
 
   # check that number of rules match index entries
-  # This should probably be a method???
-  unless ($#calibdata == (scalar(keys %rules) - 1)) {
-    print '$#calibdata is ',$#calibdata,'(scalar(keys %rules) - 1)) is ',(scalar(keys %rules) - 1),"\n";
-    my $file = $self->indexfile;
-    orac_err "Something has gone seriously wrong with the index file $file\n";
-    orac_err "You will need to regenerate it\n";
-    return;
-  };
+  $self->_sanity_check($name, \@calibdata);
 
   # Now construct the entry hash
   # This is very similar to writing out the values to file
@@ -692,14 +705,7 @@ sub verify {
   my %Hdr = %$hashref;
 
   # check that number of rules match index entries
-  # This should probably be a method???
-  unless ($#calibdata == (scalar(keys %rules) - 1)) {
-    print '$#calibdata is ',$#calibdata,'(scalar(keys %rules) - 1)) is ',(scalar(keys %rules) - 1),"\n";
-    my $file = $self->indexfile;
-    orac_err "Something has gone seriously wrong with the index file $file\n";
-    orac_err "You will need to regenerate it\n";
-    return;
-  };
+  $self->_sanity_check( $name, \@calibdata );
 
   foreach my $key (sort keys %rules) {
     # remember, by design the index file data is already sorted by rule order
@@ -1030,6 +1036,38 @@ sub scanindex {
     }
 
   return @match;
+}
+
+=item B<_sanity_check>
+
+Make sure that the rules and index entry are consistent.
+
+ $Idx->_sanity_check( \@calibdata );
+
+Takes the entry data as argument (does not try to 
+work out that information itself).
+
+Will die if they are inconsistent.
+
+=cut
+
+sub _sanity_check {
+  my $self = shift;
+  my $name = shift;
+  my $calibdata = shift;
+  my %rules = %{$self->rulesref};
+
+  # This should probably be a method???
+  unless (scalar @$calibdata == (scalar(keys %rules))) {
+    orac_err "Number of (non-filename) columns for entry '$name' in index file (".(scalar @$calibdata).
+      ") does not match the number of keys in the rules file (".
+        scalar(keys %rules).")\n";
+    my $file = $self->indexfile;
+    orac_err "Something has gone seriously wrong with the index file $file\n";
+    croak "You will need to regenerate it.\n";
+  };
+
+  return;
 }
 
 
