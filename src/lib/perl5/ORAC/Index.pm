@@ -310,6 +310,9 @@ sub slurpindex {
     my $first = <$handle>;
     chomp $first;
 
+    croak "Index files always start with a # character. This one does not!"
+      unless $first =~ /^\#/;
+
     # Strip off the leading #.
     $first =~ s/^\#//;
 
