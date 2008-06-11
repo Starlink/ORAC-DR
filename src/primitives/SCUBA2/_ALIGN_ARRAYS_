@@ -111,97 +111,106 @@ USA
 =cut
 
 # Check arguments
-# Rebin or resample? Default is resample (rebin = 0).
-my $rebin = get_prim_arg( $_PRIM_ARGS_, "REBIN", 0 );
-
-# Method for determining the output pixel values
-my $method = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "nearest" )); 
-
-# Set reference image if specified
-my $refimage = get_prim_arg( $_PRIM_ARGS_, "REFIMAGE", "" );
-
 # Has the user passed in a Frame object?
 my $Frmobj = get_prim_arg( $_PRIM_ARGS_, "FRAME", $Frm );
 
-# Are we aligning images in a SKY frame? Default to yes.
-my $skyalign = get_prim_arg( $_PRIM_ARGS_, "SKYREF", 1 );
-
-# Flag to decide whether to align other components
-my $comp = get_prim_arg( $_PRIM_ARGS_, "COMP", 0 );
-
-# Verbose?
-my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 0 );
-
 # Check that the user has really passed in a Frm!
 unless ( UNIVERSAL::isa($Frmobj, "ORAC::Frame") ) {
-  orac_throw "Error: input FRAME is not an ORAC-DR Frm object\n";
+  orac_throw "Error: input FRAME to _ALIGN_ARRAYS_ is not an ORAC-DR Frm object\n";
 }
 
-# If refimage not given then retrieve current reference image
-if ( $refimage eq "" ) {
-  _GET_REFERENCE_IMAGE_ SKYREF=$skyalign
-  $refimage = $_GET_REFERENCE_IMAGE_{REFIMAGE};
-}
+# Has the Frame object already been aligned? Only proceed if not.
+my $aligned = $Frmobj->uhdr("ALIGNED");
+if ( !$aligned ) {
+  # Rebin or resample? Default is resample (rebin = 0).
+  my $rebin = get_prim_arg( $_PRIM_ARGS_, "REBIN", 0 );
 
-# Check if we have a moving object
-my $moving = $Grp->uhdr("MOVING");
-#orac_print("Setting attributes for moving sources... ") if $moving;
+  # Method for determining the output pixel values
+  my $method = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "linear" )); 
 
-# Write alignment text files
-my $intmp = new ORAC::TempFile;
-my $outtmp = new ORAC::TempFile;
-my (@in, @out);
-my $nfiles = $Frmobj->nfiles;
-for my $i (1..$nfiles) {
-  my $filei = $Frmobj->file($i);
-  print {$intmp->handle} $filei ."\n";
-  # Set SkyRefIs and AlignOffset attributes for moving sources
-  if ( $moving ) {
-    my $args = "ndf=$filei mode=mset setting='skyrefis=origin,alignoffset=1'";
-    $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+  # Set reference image if specified
+  my $refimage = get_prim_arg( $_PRIM_ARGS_, "REFIMAGE", "" );
+
+  # Are we aligning images in a SKY frame? Default to yes.
+  my $skyalign = get_prim_arg( $_PRIM_ARGS_, "SKYREF", 1 );
+
+  # Flag to decide whether to align other components
+  my $comp = get_prim_arg( $_PRIM_ARGS_, "COMP", 0 );
+
+  # Verbose?
+  my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 0 );
+
+  # If refimage not given then retrieve current reference image
+  if ( $refimage eq "" ) {
+    _GET_REFERENCE_IMAGE_ SKYREF=$skyalign
+    $refimage = $_GET_REFERENCE_IMAGE_{REFIMAGE};
   }
-  my ($in, $out) = $Frmobj->inout( '_al',$i );
-  push(@out, $out);
-  push(@in, $in);
-  orac_warn "Input and output files are the same\n" if ( $in eq $out );
-  print {$outtmp->handle} "$out\n";
-}
 
-orac_print("Aligning $nfiles ".( ($nfiles == 1) ? "image" : "images")." to common coordinate frame...\n");
+  # Check if we have a moving object
+  my $moving = $Grp->uhdr("MOVING");
+  orac_print("Setting attributes for moving sources... ") 
+    if ($moving && $verbose);
 
-$Mon{kappa_mon}->obeyw("wcsalign","ref=$refimage lbnd=! ubnd=! method=$method out=^". $outtmp->file ." in=^". $intmp->file);
-
-undef $intmp;
-undef $outtmp;
-
-# If we are also aligning any sub-components then do that now.
-if ( $comp ) {
-  # Start with exp_time - add more as necessary. Note that there is NO
-  # checking to see if the component exists before attempting to align.
-  my @comp = (".more.smurf.exp_time");
-  foreach my $ndfcomp ( @comp ) {
-    my $component = "exposure times" if ($ndfcomp =~ /exp_time$/);
-    orac_print "Aligning $component... " if $verbose;
-  
-    $intmp = new ORAC::TempFile;
-    $outtmp = new ORAC::TempFile;
-    for my $i (0..$#in) {
-      # Set SkyRefIs and AlignOffset attributes for moving sources -
-      # note that these components have separate WCS and must therefore
-      # also be modified for moving sources
-      if ( $moving ) {
-	my $args = "ndf=$in[$i] mode=mset setting='skyrefis=origin,alignoffset=1'";
-	$Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
-      }
-      print {$intmp->handle} $in[$i].$ndfcomp."\n";
-      print {$outtmp->handle} $out[$i].$ndfcomp."\n";
+  # Write alignment text files
+  my $intmp = new ORAC::TempFile;
+  my $outtmp = new ORAC::TempFile;
+  my (@in, @out);
+  my $nfiles = $Frmobj->nfiles;
+  for my $i (1..$nfiles) {
+    my $filei = $Frmobj->file($i);
+    print {$intmp->handle} $filei ."\n";
+    # Set SkyRefIs and AlignOffset attributes for moving sources
+    if ( $moving ) {
+      my $args = "ndf=$filei mode=mset setting='skyrefis=origin,alignoffset=1'";
+      $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
     }
-    $Mon{kappa_mon}->obeyw("wcsalign","ref=$refimage lbnd=! ubnd=! method=$method out=^". $outtmp->file ." in=^". $intmp->file);
+    my ($in, $out) = $Frmobj->inout( '_al',$i );
+    push(@out, $out);
+    push(@in, $in);
+    orac_warn "Input and output files are the same\n" if ( $in eq $out );
+    print {$outtmp->handle} "$out\n";
   }
+
+  orac_print("Aligning $nfiles ".( ($nfiles == 1) ? "image" : "images")." to common coordinate frame...\n");
+
+  $Mon{kappa_mon}->obeyw("wcsalign","ref=$refimage lbnd=! ubnd=! method=$method out=^". $outtmp->file ." in=^". $intmp->file);
+
+  undef $intmp;
+  undef $outtmp;
+
+  # If we are also aligning any sub-components then do that now.
+  if ( $comp ) {
+    # Start with exp_time - add more as necessary. Note that there is NO
+    # checking to see if the component exists before attempting to align.
+    my @comp = (".more.smurf.exp_time");
+    foreach my $ndfcomp ( @comp ) {
+      my $component = "exposure times" if ($ndfcomp =~ /exp_time$/);
+      orac_print "Aligning $component... " if $verbose;
+  
+      $intmp = new ORAC::TempFile;
+      $outtmp = new ORAC::TempFile;
+      for my $i (0..$#in) {
+	# Set SkyRefIs and AlignOffset attributes for moving sources -
+	# note that these components have separate WCS and must therefore
+	# also be modified for moving sources
+	if ( $moving ) {
+	  my $args = "ndf=$in[$i] mode=mset setting='skyrefis=origin,alignoffset=1'";
+	  $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+	}
+	print {$intmp->handle} $in[$i].$ndfcomp."\n";
+	print {$outtmp->handle} $out[$i].$ndfcomp."\n";
+      }
+      $Mon{kappa_mon}->obeyw("wcsalign","ref=$refimage lbnd=! ubnd=! method=$method out=^". $outtmp->file ." in=^". $intmp->file);
+    }
+  }
+
+  # Set uhdr variables to indicate the files in the given Frame object
+  # are now aligned to a common coordinate frame, store the name of
+  # the reference image for sanity checking.
+  $Frmobj->uhdr("ALIGNED",1);
+  $Frmobj->uhdr("REFIMAGE",$refimage);
+  # Register new file names
+  $Frmobj->files( @out );
+
+  orac_print("done.\n") if $verbose;
 }
-
-# Register new file names
-$Frmobj->uhdr("ALIGNED",1);
-$Frmobj->files( @out );
-
-orac_print("done.\n") if $verbose;
