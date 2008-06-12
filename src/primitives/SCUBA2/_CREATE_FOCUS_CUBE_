@@ -10,9 +10,10 @@ This primitive create a 3-D data cube for analysis by the
 POINTING_FOCUS task to determine the FOCUS offsets for the current SMU
 axis. The primitive checks for the OBSEND flag in the FITS header and
 only proceeds if true. The sub-group mosaics created for each focus
-position (FOCPOSN) have a third axis added before combining into a
-cube. A new WCS component is created based on the existing SKY frame,
-but with a mapping from grid to mm offset for the third axis.
+position (FOCPOSN) have a third axis added before they are combined
+into a cube. A new WCS component is created based on the existing SKY
+frame with the addition of a mapping from grid to mm offset for the
+third axis.
 
 Once the cube has been constructed, the primitive writes the name of
 the file into a flag file which the POINTING_FOCUS task reads before
@@ -40,7 +41,11 @@ ASTCMPFRAME, ASTADDFRAME, ASTFRAMESET
 
 =item KAPPA
 
-PASTE, SETBOUND 
+NDFCOPY, PASTE, SETBOUND, SETORIGIN
+
+=item CCDPACK
+
+MAKEMOS
 
 =back
 
@@ -56,14 +61,6 @@ Things to add:
 i) Check the number of subgroups = NFOCSTEP; 
 ii) Crop images around source
 
-=head1 KNOWN ISSUES
-
-The current version of this primitive contains a number of lines of
-code marked with the comment C<TMP for QL>. These are lines necessary
-to test the primitive with current simulator data, but will be
-replaced by the lines commented out immediately before them in the
-production version.
-
 =head1 AUTHOR
 
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>
@@ -77,12 +74,11 @@ Reserved.
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
 # Flag to indicate if we have a FOCUS observation
-my $focusobs = ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) ? 1 : 0;
+my $focusobs = ( uc($Frm->uhdr('ORAC_OBSERVATION_TYPE')) eq "FOCUS" ) ? 1 : 0;
 
-# Do we have a completed FOCUS observation? Check for OBSEND = T in
-# the last entry in the current Frame object. Other checks: should be
-# a standard source
-if ( $focusobs && $Frm->hdrval('OBSEND',-1) ) {
+# Do we have a completed FOCUS observation, and does the cube already
+# exist? Other checks: should be a standard source
+if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
   # Which axis are we dealing with?
   my $axis = $Frm->hdr("FOCAXIS");
 
@@ -128,7 +124,6 @@ if ( $focusobs && $Frm->hdrval('OBSEND',-1) ) {
 
   # Loop over each Frame to create a Frame mosaic
   my @planes;
-  my $skymapframe = ( -e "skymap1.lis" ) ? 1 : 0; #TMP for QL
   my $args;
   my $i = 0;
   foreach my $subgrp ( @subgrps ) {
@@ -160,27 +155,17 @@ if ( $focusobs && $Frm->hdrval('OBSEND',-1) ) {
     $Display->display_data( $subgrp ) if (defined $Display);
 
     # Derive sky mapping and frame
-    unless ( $skymapframe ) {
-#      $args = "this=$planeimage iframe1=ast__base iframe2=ast__current result=skymap$$.ast";
-      $args = "this=$planeimage iframe1=ast__base iframe2=ast__current result=skymap1.lis"; #TMP for QL
-      $Mon{atools_mon}->obeyw("astgetmapping","$args");
-#      $args = "this=$planeimage iframe=ast__current result=skyframe$$.ast";
-      $args = "this=$planeimage iframe=ast__current result=skyframe1.lis"; #TMP for QL
-      $Mon{atools_mon}->obeyw("astgetframe","$args");
-      $skymapframe = 1;
-    }
-    # Add third axis to image
-    $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$planeimage");
-    my ($ORAC_STATUS, $ndim) = $Mon{ndfpack_mon}->get("ndftrace","ndim");
-    # If the data are 2-D, add a third axis -- TMP for QL
-    if ( $ndim == 2 ) {
-      # Now add a 1-pixel-wide third axis
-      $args = "ndf=$planeimage(,,1:1)";
-      $Mon{ndfpack_mon}->obeyw("setbound","$args");
-      # Set the origin accordingly
-      $args = "ndf=$planeimage origin=[1,1,$i]";
-      $Mon{ndfpack_mon}->obeyw("setorigin","$args");
-    }
+    $args = "this=$planeimage iframe1=ast__base iframe2=ast__current result=skymap$$.ast";
+    $Mon{atools_mon}->obeyw("astgetmapping","$args");
+    $args = "this=$planeimage iframe=ast__current result=skyframe$$.ast";
+    $Mon{atools_mon}->obeyw("astgetframe","$args");
+
+    # Now add a 1-pixel-wide third axis
+    $args = "ndf=$planeimage(,,1:1)";
+    $Mon{ndfpack_mon}->obeyw("setbound","$args");
+    # Set the origin accordingly
+    $args = "ndf=$planeimage origin=[1,1,$i]";
+    $Mon{ndfpack_mon}->obeyw("setorigin","$args");
 
     # Store image name in array for pasting into the cube
     push ( @planes, $planeimage );
@@ -208,18 +193,15 @@ if ( $focusobs && $Frm->hdrval('OBSEND',-1) ) {
   $args = "naxes=1 result=focusframe$$.ast options='Title=SMU offset on $axis axis,Label=SMU offset,Unit=mm,Domain=SMU-POSN'";
   $Mon{atools_mon}->obeyw("astframe","$args");
   # Combine this FRAME with the above SKYFRAME to create a compound frame, CMPFRAME
-#  $args = "frame1=skyframe$$.ast frame2=focusframe$$.ast options=! result=cmpframe$$.ast";
-  $args = "frame1=skyframe1.lis frame2=focusframe$$.ast options=! result=cmpframe$$.ast"; #TMP for QL
+  $args = "frame1=skyframe$$.ast frame2=focusframe$$.ast options=! result=cmpframe$$.ast";
   $Mon{atools_mon}->obeyw("astcmpframe","$args");
   # Define a WINMAP to describe the third axis
   my $focmin = $focposns[0];
   my $focmax = $focposns[-1];
-#  $args = "ncoord=1 ina=1 inb=$focidx outa=$focmin outb=$focmax options=! result=focusmap$$.ast";
   $args = "ncoord=1 ina=1 inb=$nfoc outa=$focmin outb=$focmax options=! result=focusmap$$.ast";
   $Mon{atools_mon}->obeyw("astwinmap","$args");
   # Combine this WINMAP with the above SKYMAP to create a compund mapping, CMPMAP
-#  $args = "map1=skymap$$.ast map2=focusmap$$.ast series=f options=! result=cmpmapping$$.ast";
-  $args = "map1=skymap1.lis map2=focusmap$$.ast series=f options=! result=cmpmapping$$.ast"; #TMP for QL
+  $args = "map1=skymap$$.ast map2=focusmap$$.ast series=f options=! result=cmpmapping$$.ast";
   $Mon{atools_mon}->obeyw("astcmpmap","$args");
   # Create an empty 3-D GRID frame
   $args = "naxes=3 options='Domain=GRID' result=grid$$.ast";
@@ -258,6 +240,6 @@ if ( $focusobs && $Frm->hdrval('OBSEND',-1) ) {
   orac_print (" done.\n");
   orac_print ("Cube created successfully and ready for processing.\n", 'green');
   $Grp->uhdr("FOCUS_CUBE",1);
-}else {
+} else {
   $Grp->uhdr("FOCUS_CUBE",0);
 }
