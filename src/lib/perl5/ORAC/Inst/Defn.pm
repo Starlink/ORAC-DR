@@ -759,15 +759,16 @@ sub orac_determine_primitive_search_path {
   my $het_root     =  File::Spec->catdir( $root, "heterodyne" );
   my $general_root =  File::Spec->catdir( $root, "general" );
   my $casu_root    =  File::Spec->catdir( $root, "casu");
+  my $jsa_root     =  File::Spec->catdir( $root, "JSA");
 
   if ($inst eq 'SCUBA') {
     push( @path, File::Spec->catdir( $root, 'SCUBA' ) );
-    push( @path, $general_root );
+    push( @path, $jsa_root, $general_root );
 
   } elsif( $inst =~ /^SCUBA2/ ) {
     push( @path, File::Spec->catdir( $root, 'SCUBA2') );
     push( @path, $imaging_root );
-    push( @path, $general_root );
+    push( @path, $jsa_root, $general_root );
 
   } elsif( $inst eq 'JCMT_DAS' ) {
     push( @path, File::Spec->catdir( $het_root, 'JCMT_DAS') );
@@ -777,7 +778,7 @@ sub orac_determine_primitive_search_path {
   } elsif( $inst eq 'ACSIS' ) {
     push( @path, File::Spec->catdir( $het_root, 'ACSIS' ) );
     push( @path, $het_root );
-    push( @path, $general_root );
+    push( @path, $jsa_root, $general_root );
 
   } elsif( $inst eq 'ACSIS_QL' ) {
     push( @path, File::Spec->catdir( $het_root, 'ACSIS_QL' ) );
