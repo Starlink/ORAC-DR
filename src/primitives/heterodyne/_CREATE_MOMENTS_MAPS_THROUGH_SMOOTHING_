@@ -153,6 +153,9 @@ if( $group != 1 || ( $group == 1 && $Grp->lastmember( $Frm ) ) ) {
 
         } else {
 
+          # We need NDF for the VAL__BADD constant.
+          use NDF;
+
           ( my $in, undef ) = $Obj->inout( "_blah", $i );
 
           orac_print "Creating moments maps for $in.\n";
@@ -225,58 +228,65 @@ if( $group != 1 || ( $group == 1 && $Grp->lastmember( $Frm ) ) ) {
             $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp3file($section)" );
             ( $ORAC_STATUS, my $sigma ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
 
-            orac_print " RMS in baseline regions is " . sprintf( "%0.3f", $sigma ) . ".\n";
+            my $colin = new ORAC::TempFile;
 
-            # Create parameter file for FINDCLUMPS.
-            my $fc_param = "findclumps$$.param";
-            open my $fc_fh, ">", $fc_param;
-            print $fc_fh "ClumpFind.Minpix=50\n";
-            print $fc_fh "ClumpFind.AllowEdge=1\n";
-            print $fc_fh "ClumpFind.FwhmBeam=0\n";
-            print $fc_fh "ClumpFind.MaxBad=9999\n";
-            print $fc_fh "ClumpFind.VeloRes=0\n";
-            print $fc_fh "ClumpFind.Tlow=$rms_thresh*RMS\n";
-            close $fc_fh;
+            if( $sigma != &NDF::VAL__BADD() ) {
 
-            # Run FINDCLUMPS.
-            orac_print " Finding clumps higher than $rms_thresh-sigma.\n";
-            my $temp4 = new ORAC::TempFile;
-            my $temp4file = $temp4->file;
-            $params = "in=$temp2file rms=$sigma config='^$fc_param' method=clumpfind out=$temp4file outcat=\! deconv=no";
-            $Mon{'cupid_mon'}->obeyw( "findclumps", "$params" );
-            unlink( $fc_param );
+              orac_print " RMS in baseline regions is " . sprintf( "%0.3f", $sigma ) . ".\n";
 
-            # Check number of clumps using NCLUMPS.
-            ( $ORAC_STATUS, my $nclumps ) = $Mon{'cupid_mon'}->get( "findclumps", "nclumps" );
+              # Create parameter file for FINDCLUMPS.
+              my $fc_param = "findclumps$$.param";
+              open my $fc_fh, ">", $fc_param;
+              print $fc_fh "ClumpFind.Minpix=50\n";
+              print $fc_fh "ClumpFind.AllowEdge=1\n";
+              print $fc_fh "ClumpFind.FwhmBeam=0\n";
+              print $fc_fh "ClumpFind.MaxBad=9999\n";
+              print $fc_fh "ClumpFind.VeloRes=0\n";
+              print $fc_fh "ClumpFind.Tlow=$rms_thresh*RMS\n";
+              close $fc_fh;
 
-            # If we have no clumps, we can't make a clump mask, so
-            # skip the masking and just go straight to the moment map
-            # creation.
-            my $temp5 = new ORAC::TempFile;
-            my $temp5file = $temp5->file;
-            if( $nclumps ) {
+              # Run FINDCLUMPS.
+              orac_print " Finding clumps higher than $rms_thresh-sigma.\n";
+              my $temp4 = new ORAC::TempFile;
+              my $temp4file = $temp4->file;
+              $params = "in=$temp2file rms=$sigma config='^$fc_param' method=clumpfind out=$temp4file outcat=\! deconv=no";
+              $Mon{'cupid_mon'}->obeyw( "findclumps", "$params" );
+              unlink( $fc_param );
 
-              # Set clumps to be 1 everywhere (i.e. "clump mask").
-              my $temp6 = new ORAC::TempFile;
-              my $temp6file = $temp6->file;
-              $params = "in1=$temp4file in2=$temp4file out=$temp6file";
-              $Mon{'kappa_mon'}->obeyw( "div", "$params" );
+              # Check number of clumps using NCLUMPS.
+              ( $ORAC_STATUS, my $nclumps ) = $Mon{'cupid_mon'}->get( "findclumps", "nclumps" );
 
-              # Set bad data to zero.
-              my $temp7 = new ORAC::TempFile;
-              my $temp7file = $temp7->file;
-              $params = "in=$temp6file out=$temp7file repval=0";
-              $Mon{'kappa_mon'}->obeyw( "nomagic", "$params" );
+              # If we have no clumps, we can't make a clump mask, so
+              # skip the masking and just go straight to the moment
+              # map creation.
+              if( $nclumps ) {
 
-              # Multiply clump mask by input cube.
-              orac_print " Masking non-clump data.\n";
-              $params = "in1=$in in2=$temp7file out=$temp5file";
-              $Mon{'kappa_mon'}->obeyw( "mult", "$params" );
+                # Set clumps to be 1 everywhere (i.e. "clump mask").
+                my $temp6 = new ORAC::TempFile;
+                $params = "in1=$temp4file in2=$temp4file out=$temp6";
+                $Mon{'kappa_mon'}->obeyw( "div", "$params" );
+
+                # Set bad data to zero.
+                my $temp7 = new ORAC::TempFile;
+                $params = "in=$temp6 out=$temp7 repval=0";
+                $Mon{'kappa_mon'}->obeyw( "nomagic", "$params" );
+
+                # Multiply clump mask by input cube.
+                orac_print " Masking non-clump data.\n";
+                $params = "in1=$in in2=$temp7 out=$colin";
+                $Mon{'kappa_mon'}->obeyw( "mult", "$params" );
+
+              } else {
+
+                orac_print " No clumps found, using full cube for map creation.\n";
+                $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$colin" );
+
+              }
 
             } else {
 
-              orac_print " No clumps found, using full cube for map creation.\n";
-              $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$temp5file" );
+              orac_print " Bad value returned for RMS determination. Using full cube for map creation.\n";
+              $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$colin" );
 
             }
 
@@ -290,18 +300,18 @@ if( $group != 1 || ( $group == 1 && $Grp->lastmember( $Frm ) ) ) {
               }
 
               # Set any pixels with a BORDER QUALITY value to bad.
-              $params = "ndf=$temp5file bb=255";
+              $params = "ndf=$colin bb=255";
               $Mon{'ndfpack_mon'}->obeyw( "setbb", "$params" );
 
               # Copy the variance from the input cube.
-              $params = "ndf=$temp5file from=$in comp=VARIANCE";
+              $params = "ndf=$colin from=$in comp=VARIANCE";
               $Mon{'ndfpack_mon'}->obeyw( "setvar", "$params" );
 
               # Run the COLLAPSE.
               orac_print " Collapsing to form temporary $moment map.\n";
               my $temp8 = new ORAC::TempFile;
               my $temp8file = $temp8->file;
-              $params = "in=$temp5file out=$temp8file estimator=$moment ";
+              $params = "in=$colin out=$temp8file estimator=$moment ";
               $params .= "axis=SPEC wlim=0.0 trim=false";
               if( uc( $moment ) eq 'IWC' ) {
                 $params .= " variance=false";
