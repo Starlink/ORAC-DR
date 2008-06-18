@@ -10,8 +10,10 @@ _CALC_DC_SKY_ - Calculate and optionally log a DC sky value
 
 =head1 DESCRIPTION
 
-Calculates a mean sky value from all the uncalibrated images in the
-current Frame.
+Calculates a mean sky value from either the specified image or all the
+images in the current Frame. This primitive should be called before
+calibration or mosaicking. If called with an input file, the sky value
+will be returned in the primitive hash as C<DCSKY>.
 
 This is a Frame operation and should be used before group operations.
 
@@ -21,16 +23,21 @@ The following arguments are supported
 
 =over 4
 
-=item METHOD
+=item B<IMAGE>
+
+Name of image to calculate sky level for. If left unset, the sky level
+will be calculated for all the files in the current Frame.
+
+=item B<METHOD>
 
 Valid options are MEAN, MEDIAN or MODE. Default is MEAN.
 
-=item LOGFILE
+=item B<LOGFILE>
 
 Flag to denote whether to write results of sky removal to a log
 file. Default is 1 (true).
 
-=item VERBOSE
+=item B<VERBOSE>
 
 Flag to denote whether to print informative messages to the
 screen. Default is false (0).
@@ -43,16 +50,11 @@ The following external tasks are used:
 
 =over 4
 
-=item KAPPA
+=item SCUBA-2 primitives
 
-C<csub>
+_FIND_IMAGE_STATISTICS_, _ADD_SKY_LOG_ENTRY_
 
 =back
-
-=head1 KNOWN ISSUES
-
-Does not determine units from input data files. Largely the same code
-as in _REMOVE_DC_SKY_ which is not very elegant.
 
 =head1 AUTHOR
 
@@ -60,7 +62,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 Copyright (C) 2008 Science and Technology Facilities Council.
-Copyright (C) 2005-2007 the University of British Columbia.  All
+Copyright (C) 2005-2008 the University of British Columbia.  All
 Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -83,14 +85,27 @@ USA
 # Tell user...
 orac_print "Calculating a mean sky level\n";
 
+# Retrieve name of input image if given, else calculate for all files
+# in current Frame
+my @images;
+my $image = get_prim_arg( $_PRIM_ARGS_, "IMAGE", "" );
+if ( defined $image ) {
+  push (@images, $image);
+} else {
+  push (@images, $Frm->files);
+}
+my $nfiles = scalar(@images);
+
 # Determine whether to subtract the mean, median or modal values from the image
 my $method = uc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "MEAN"));
 
 # Should I be verbose (default to no)
 my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 0);
 
-# Write logfiles (default to true)
-my $uselog = get_prim_arg( $_PRIM_ARGS_, "LOGFILE", 1);
+# Write logfiles? Default to true, unless the user has specified an
+# input file.
+my $uselog = ( defined $image ) ? 0 :
+  get_prim_arg( $_PRIM_ARGS_, "LOGFILE", 1);
 
 # Set the histo/histat flags. The latter is a placeholder in case user
 # wishes to override default choice which is to use HISTAT. Note that
@@ -116,9 +131,9 @@ if ( $method eq "MEAN" ) {
 my $meansky = 0.0;
 my $sigma = -1;
 # Loop over files in the Frm object
-for my $i (1..$Frm->nfiles) {
+for my $infile ( @images ) {
   # Calculate the DC sky level.
-  _FIND_IMAGE_STATISTICS_ IMAGE=$Frm->file($i) VERBOSE=0 HISTOGRAM=$histo HISTAT=$histat
+  _FIND_IMAGE_STATISTICS_ IMAGE=$infile VERBOSE=0 HISTOGRAM=$histo HISTAT=$histat
   my $sky = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$method};
   my $histomode = $_FIND_IMAGE_STATISTICS_{HISTOMODE};
   $sigma = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
@@ -134,19 +149,22 @@ for my $i (1..$Frm->nfiles) {
 
   } elsif ( !$histo && !$histat && ($sigma == 0.0) ) {
     # Check that SIGMA was not set to zero if STATS was used
-    orac_warn "Invalid result from STATS (sigma = 0) with current file (".$Frm->file($i).")\n";
+    orac_warn "Invalid result from STATS (sigma = 0) with current file ($infile)\n";
   } else {
     # Write sky value to a logfile if desired
     if ( $uselog ) {
       _ADD_SKY_LOG_ENTRY_ DCSKY=$sky
+    } else {
+      # Store in primitive hash
+      $_CALC_DC_SKY_{DCSKY} = $sky;
     }
     $meansky += $sky;
   }
 }
 # HACK to get Q&D value for printing to screen - should really use the
 # SUM and divide by number of good pixels
-$meansky /= $Frm->nfiles;
+$meansky /= $nfiles;
 $meansky = sprintf "%12.7f", $meansky;
-orac_print "Calculated a $method sky level of $meansky\n";
+orac_print "Calculated a $method sky level of $meansky\n" if $verbose;
 
-orac_print "DC sky calculation successful\n";
+orac_print "DC sky calculation successful\n" if $verbose;
