@@ -12,7 +12,10 @@ _REMOVE_DC_SKY_ - Removes a DC sky value
 
 Subtracts a mean sky value from an uncalibrated image. An error is
 generated if this primitive is run on calibrated data since it is
-assumed that this step will have been done already before calibration.
+assumed that this step will have been done already before
+calibration. The primitives operates on all files in the current
+Frame, and will only perform the action if sky removal has not already
+been carried out on this Frame.
 
 This primitive is an alternative to _REMOVE_PLANE_FROM_IMAGE_.
 
@@ -24,19 +27,19 @@ The following arguments are supported
 
 =over 4
 
-=item METHOD
+=item B<METHOD>
 
 Valid options are MEAN, MEDIAN or MODE. Default is MEAN.
 
-=item LOGFILE
+=item B<LOGFILE>
 
 Flag to denote whether to write results of sky removal to a log
 file. Default is 1 (true).
 
-=item VERBOSE
+=item B<VERBOSE>
 
 Flag to denote whether to print informative messages to the
-screen. Default is false (0).
+screen. Default is true (1).
 
 =back
 
@@ -50,121 +53,89 @@ The following external tasks are used:
 
 C<csub>
 
+=item SCUBA-2 primitives
+
+_CALC_DC_SKY_, ADD_SKY_LOG_ENTRY_
+
 =back
 
 =head1 FILES
 
-Creates an output file with a C<_sky> extension.
-
-=head1 NOTES
-
-Only deals with 2-D images, not time-series data.
+Creates output files with a C<_sky> extension.
 
 =head1 KNOWN ISSUES
 
-Does not determine units from input data files.
+Does not determine units from input data files so it cannot do the
+promised calibration check.
 
 =head1 AUTHOR
 
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
-Copyright (C) 2005-2007 the University of British Columbia.  All
+Copyright (C) 2005-2008 the University of British Columbia.  All
 Rights Reserved.
 
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
 
 =cut
 
-# Units for these data - should be obtained from header
-my $rawunits = "pW";
-
 unless ( $Frm->uhdr("SKY_SUBTRACTION") ) {
 
-# Tell user...
-orac_print "Removing sky by calculating and subtracting a constant level\n";
+  # Tell user...
+  orac_print "Removing sky by calculating and subtracting a constant level\n";
 
-# Determine whether to subtract the mean, median or modal values from the image
-my $method = (exists $_REMOVE_DC_SKY_{METHOD} && 
-	      defined $_REMOVE_DC_SKY_{METHOD}) ?
-              uc($_REMOVE_DC_SKY_{METHOD}) : "MEAN";
+  # Determine whether to subtract the mean, median or modal values from the image
+  my $method = uc(get_prim_arg($_PRIM_ARGS_,"METHOD", "MEAN"));
 
-# Should I be verbose (default to yes)
-my $verbose = (exists $_REMOVE_DC_SKY_{VERBOSE} && 
-	       defined $_REMOVE_DC_SKY_{VERBOSE}) ?
-               $_REMOVE_DC_SKY_{VERBOSE} : 1;
+  # Should I be verbose (default to yes)
+  my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
 
-# Write logfiles (default to true)
-my $uselog = (exists $_REMOVE_DC_SKY_{LOGFILE} &&
-              defined $_REMOVE_DC_SKY_{LOGFILE}) ?
-              $_REMOVE_DC_SKY_{LOGFILE} : 1;
+  # Write logfiles (default to true)
+  my $uselog = get_prim_arg( $_PRIM_ARGS_, "LOGFILE", 1);
 
-# Set the histo/histat flags. The latter is a placeholder in case user
-# wishes to override default choice which is to use HISTAT. Note that
-# histo and histat are mutually exclusive. Setting histo = 1 *must*
-# set histat = 0, but the reverse is not necessarily true. See the
-# documentation for _FIND_IMAGE_STATISTICS for further info.
-my ($methodnum, $histo, $histat); 
-if ( $method eq "MEAN" ) {
-  $histo = 0;
-  $histat = 1;
-} elsif ( $method eq "MEDIAN" ) {
-  $histo = 0;
-  $histat = 1;
-} elsif ( $method eq "MODE" ) {
-  $histo = 0;
-  $histat = 1;
-} else {
-  # If we got something unknown, continue using the mean
-  orac_warn "Unknown METHOD, $method: falling back on MEAN\n";
-  $method = "MEAN";
-}
+  my @out;
+  # Loop over files in the Frm object
+  for my $i (1..$Frm->nfiles) {
+    # Calculate the DC sky level.
+    _CALC_DC_SKY_ IMAGE=$Frm->file($i) METHOD=$method
+    my $sky = $_CALC_DC_SKY_{DCSKY};
 
-my @out;
-# Loop over files in the Frm object
-for my $i (1..$Frm->nfiles) {
-
-  # Calculate the DC sky level.
-  _FIND_IMAGE_STATISTICS_ IMAGE=$Frm->file($i) VERBOSE=0 HISTOGRAM=$histo HISTAT=$histat
-  my $sky = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$method};
-  my $histomode = $_FIND_IMAGE_STATISTICS_{HISTOMODE};
-  my $sigma = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
-  # Note that if things went wrong, the following has the effect of
-  # permanently ignoring the current file. If something went wrong
-  # computing the statistics, it may indicate a problem with the data,
-  # so this may be a good thing.
-
-  # Check that a valid value was returned if we are using the
-  # HISTOGRAM option to manually find the mode
-  if ( $histo && !$histomode ) {
-    orac_warn "No valid pixels in image, unable to subtract sky with method=$method\n";
-
-  } elsif ( !$histo && !$histat && ($sigma == 0.0) ) {
-    # Check that SIGMA was not set to zero if STATS was used
-    orac_warn "Invalid result from STATS (sigma = 0): will not subtract the sky from current file (".$Frm->file($i).")\n";
-  } else {
-    # Everything's OK so subtract a DC sky level. 
-    # Retrieve input and output names
-    my ($in, $out) = $Frm->inout("_sky", $i);
-    # Subtract the sky
-    $Mon{kappa_mon}->obeyw("csub","in=$in out=$out scalar=$sky");
+    if ( defined $sky ) {
+      # Everything's OK so subtract a DC sky level. 
+      # Retrieve input and output names
+      my ($in, $out) = $Frm->inout("_sky", $i);
+      # Subtract the sky
+      $Mon{kappa_mon}->obeyw("csub","in=$in out=$out scalar=$sky");
     
-    $sky = sprintf "%12.7f", $sky;
-    orac_print "Subtracting a constant sky level of $sky from $in (method=$method)\n" 
-      if ($verbose);
-    # Write to a logfile if desired
-    if ( $uselog ) {
-      _ADD_SKY_LOG_ENTRY_ DCSKY=$sky
+      $sky = sprintf "%12.7f", $sky;
+      orac_print "Subtracting a constant sky level of $sky from $in (method=$method)\n" 
+	if ($verbose);
+      # Write to a logfile if desired
+      if ( $uselog ) {
+	_ADD_SKY_LOG_ENTRY_ DCSKY=$sky
+      }
+      # Store the new sky-subtracted output file
+      push(@out, $out);
     }
-    # Store the new sky-subtracted output file
-    push(@out, $out);
   }
-}
-$Frm->files(@out);
+  $Frm->files(@out);
 
-orac_print "DC sky subtraction successful\n";
+  orac_print "DC sky subtraction successful\n";
 
-# Set the sky subtraction flag
-$Frm->uhdr("SKY_SUBTRACTION",1);
+  # Set the sky subtraction flag
+  $Frm->uhdr("SKY_SUBTRACTION",1);
 
-} else {
-  orac_warn "Sky subtraction already carried out on this Frame\n";
 }
