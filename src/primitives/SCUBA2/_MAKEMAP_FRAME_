@@ -102,6 +102,7 @@ USA
 
 =cut
 
+# Define the maximum number of pixels in a tile
 use constant MAXPIX => 60e6;
 
 # Pixel size for output image
@@ -122,33 +123,36 @@ if ( ($spread ne "nearest") && ($spread ne "linear") ) {
 # Method for reconstructing map
 my $method = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "rebin"));
 my $iterate = 0;
-# Minimum match on iterate method
-if ( $method =~ /iter/ ) {
+# Minimum match on method
+if ( $method =~ /^iter/ ) {
   $method = "iterate";
   $iterate = 1;
+} elsif ( $method =~ /^reb/ ) {
+  $method = "rebin";
+} else {
+  orac_warn "Unrecognized MAKEMAP METHOD, $method: assuming REBIN\n";
+  $method = "rebin";
 }
 
 # Verbosity - default to yes
 my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
 
-# Retrieve list of files in current frame
-my @files = $Frm->files;
-
-# Write filenames to a temp file
-my $intmp = new ORAC::TempFile;
-print {$intmp->handle} join("\n",@files[0..$#files]);
+# Write list of filenames to a temp file
+my $inlist = write_file_list( $Frm->files );
 
 # Set output filename
 my ($in, $out) = $Frm->inout('_fmos');
 
 # Maximum map-size - set to 2 GB as a default, increase later if the
 # iterative map-maker is being used and processing is done in memory
-my $maxmem = 2048;
+#my $maxmem = 2048;
+#my $maxmem = 3072; # 1.5 factor to get max file size of 2 GB
+my $maxmem = 4096; # 1.5 factor to get max file size of 2 GB
 
 my $tiledims = sqrt(MAXPIX);
 
 # Makemap argument list
-my $args = "in=^".$intmp->file." out=$out pixsize=$pixsize spread=$spread system=$system method=$method maxmem=$maxmem tiledims=$tiledims";
+my $args = "in=^$inlist out=$out pixsize=$pixsize spread=$spread system=$system method=$method maxmem=$maxmem tiledims=$tiledims";
 
 # Check for additional parameters for the iterative map-maker
 my ($exportndf, $keepdimm, $numiter, $memiter, $modelorder, @modelorder, $config);
@@ -198,11 +202,44 @@ if ( $iterate ) {
 }
 
 # Call makemap - really must have some sort of feedback to user
-orac_print "Calling makemap... using $method method (this may take... a while...)\n";
+orac_print "Calling makemap using $method method (this may take... a while...)\n";
+# First time round, determine number of pixels in the output map by
+# setting out=! Use method=rebin to avoid needing to specify any
+# further unecessary parameters.
+orac_print "Checking output map size... ";
+my $mapszargs = "in=^$inlist out=! pixsize=$pixsize method=rebin maxmem=$maxmem";
+$Mon{smurf_mon}->obeyw("makemap","$mapszargs");
+my ($ORAC_STATUS, @lbound) = $Mon{smurf_mon}->get("makemap","lbound");
+($ORAC_STATUS, my @ubound) = $Mon{smurf_mon}->get("makemap","ubound");
+
+my $xsize = $ubound[0] - $lbound[0] + 1;
+my $ysize = $ubound[1] - $lbound[1] + 1;
+my $outpix = $xsize*$ysize;
+if ( $outpix > MAXPIX ) {
+  orac_print "Old image dimensions are $xsize x $ysize\n";
+  my $scalefactor = sqrt( MAXPIX/$outpix );
+  my $newxsize = int($xsize * $scalefactor);
+  my $newysize = int($newxsize * $ysize / $xsize);
+  my $dx = int($xsize * ( 1.0 - $scalefactor ) / 2.0);
+  my $dy = int($ysize * ( 1.0 - $scalefactor ) / 2.0);
+  # Reduce the bounds equally.
+  $lbound[0] += $dx;
+  $ubound[0] -= $dx;
+  $lbound[1] += $dy;
+  $ubound[1] -= $dy;
+  $scalefactor = sprintf "%5.3f", $scalefactor;
+  $scalefactor *= (100*$scalefactor);
+  orac_warn "\nSize will exceed 2 GB, reducing to include central $scalefactor % of mapped area\n";
+  orac_print "New image dimensions are $newxsize x $newysize\n";
+  # Append the new bounds to the list of arguments
+  $args .= " lbnd=[$lbound[0],$lbound[1]] ubnd=[$ubound[0],$ubound[1]]";
+}
+# Now create output map using the new bounds if necessary
+orac_print "Making map...\n";
 my $SMURF_STATUS = $Mon{smurf_mon}->obeyw("makemap","$args");
 # Check for SMF__NOMEM return status
 if ( $SMURF_STATUS == 235176770 ) {
-  orac_warn "Output image will exceed 2 GB - will not continue\n";
+  orac_warn "Output image will exceed maximum size $maxmem MB - will not continue\n";
 } elsif ( $SMURF_STATUS == ORAC__OK ) {
 
   # Now, is there any analysis of the intermediate files that could be
@@ -211,7 +248,7 @@ if ( $SMURF_STATUS == 235176770 ) {
   # Delete iterative map-maker files
   if ( $iterate && !$memiter ) {
     orac_print "Removing model files from the iterative map-maker\n" 
-      if ($verbose != 0);
+      if ($verbose);
     unlink <*.dimm>;
   }
 
