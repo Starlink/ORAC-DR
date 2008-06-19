@@ -17,10 +17,20 @@ using spectral windows that are assumed to be free of spectral lines.
 
 Percentage of the full range to fit on either edge of the spectrum. [0]
 
+=item GROUP = LOGICAL (Given)
+
+Whether or not to operate on the current Group object. [0]
+
 =item ORDER = INTEGER (Given)
 
 The order of the fit to use for the baseline. Zero (the default) is a
 constant, one is linear, etc. [0]
+
+=item METHOD = STRING (Given)
+
+The method used to define the baseline regions in automatic mode. The
+allowed values are 'region', 'single', and 'global'. This is not used
+if the EDGES argument is defined. ['region']
 
 =back
 
@@ -47,7 +57,7 @@ the baseline from continuum observations may not be desirable.
 
 =head1 TASKS
 
-KAPPA: MFITTREND.
+KAPPA: MFITTREND, NDFTRACE.
 
 =head1 REQUIRED PERL MODULES
 
@@ -59,84 +69,93 @@ Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2007 Particle Physics and Astronomy Research
-Council.  All Rights Reserved.
+Copyright (C) 2007 Particle Physics and Astronomy Research Council.
+Copyright (C) 2008 Science and Technology Facilities Council.
+All Rights Reserved.
 
 =cut
 
 # Deal with arguments.
-my $edges = ( defined( $_REMOVE_BASELINE_{EDGES} ) ?
-              $_REMOVE_BASELINE_{EDGES}            :
-              0 );
-my $order = ( defined( $_REMOVE_BASELINE_{ORDER} ) ?
-              $_REMOVE_BASELINE_{ORDER}            :
-              0 );
-my $method = ( defined( $_REMOVE_BASELINE_{METHOD} ) ?
-               lc( $_REMOVE_BASELINE_{METHOD} )      :
-               "region" );
+my $edges = get_prim_arg( $_PRIM_ARGS_, "EDGES", 0 );
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+my $method = lc( get_prim_arg( $_PRIM_ARGS_, "method", "region" ) );
+my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 0 );
+
+# Handle group/file.
+my $Obj;
+if( $group ) {
+  $Obj = $Grp;
+} else {
+  $Obj = $Frm;
+}
 
 # Create an array to hold the baselined regions for each individual
 # file.
 my @bl_regions;
 
-foreach my $i ( 1 .. $Frm->nfiles ) {
+if( ! $group ||
+    $group && $Grp->lastmember( $Frm ) ) {
 
-  my ( $in, $out ) = $Frm->inout( "_bl", $i );
+  foreach my $i ( 1 .. $Obj->nfiles ) {
 
-  $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
-  ( my $ORAC_STATUS, my @lbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
-  ( $ORAC_STATUS, my @ubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
-  ( $ORAC_STATUS, my @flbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "flbnd" );
-  ( $ORAC_STATUS, my @fubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fubnd" );
-  my $section = "'$lbnd[0]:$ubnd[0],$lbnd[1]:$ubnd[1],'";
+    my ( $in, $out ) = $Obj->inout( "_bl", $i );
 
-  # Set up parameters for MFITTREND.
-  my $params = "in=$in out=$out modifyin=false subtract=true";
-  $params   .= " order=$order axis=3 section=$section method=$method";
+    $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
+    ( my $ORAC_STATUS, my @lbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
+    ( $ORAC_STATUS, my @ubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
+    ( $ORAC_STATUS, my @flbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "flbnd" );
+    ( $ORAC_STATUS, my @fubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fubnd" );
+    my $section = "'$lbnd[0]:$ubnd[0],$lbnd[1]:$ubnd[1],'";
 
-  # Add ranges parameter, if necessary.
-  if( $edges ) {
-    my $extent = $fubnd[2] - $flbnd[2] + 1;
-    my $low1 = int( $flbnd[2] );
-    my $high1 = int( $flbnd[2] + ( $extent * $edges / 100 ) );
-    my $low2 = int( $fubnd[2] - ( $extent * $edges / 100 ) );
-    my $high2 = int( $fubnd[2] );
-    $params .= " ranges='$low1,$high1,$low2,$high2' auto=false";
-  } else {
-    $params .= " auto=true";
+    # Set up parameters for MFITTREND.
+    my $params = "in=$in out=$out modifyin=false subtract=true";
+    $params   .= " order=$order axis=3 section=$section method=$method";
+
+    # Add ranges parameter, if necessary.
+    if( $edges ) {
+      my $extent = $fubnd[2] - $flbnd[2] + 1;
+      my $low1 = int( $flbnd[2] );
+      my $high1 = int( $flbnd[2] + ( $extent * $edges / 100 ) );
+      my $low2 = int( $fubnd[2] - ( $extent * $edges / 100 ) );
+      my $high2 = int( $fubnd[2] );
+      $params .= " ranges='$low1,$high1,$low2,$high2' auto=false";
+    } else {
+      $params .= " auto=true";
+    }
+
+    # Run MFITTREND.
+    $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+
+    # Report to user.
+    orac_print "$in to $out:\n";
+    orac_print " Removed baseline using $order-order polynomial.\n";
+
+    if( $method eq 'region' && ! $edges ) {
+      ( $ORAC_STATUS, my @regions ) = $Mon{'kappa_mon'}->get( "mfittrend", "aranges" );
+      push( @bl_regions, \@regions );
+      orac_print " Baseline regions: [";
+      orac_print join ",", ( grep { defined } map { $_ % 2 ? undef : join ":", $regions[$_], $regions[$_+1] } 0..$#regions );
+      orac_print "]\n";
+
+    }
+
+    # Update the product.
+    $Obj->product( "bl" );
+
+    # Update Frame object;
+    $Obj->file( $i, $out );
+
   }
 
-  # Run MFITTREND.
-  $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
-
-  # Report to user.
-  orac_print "$in to $out:\n";
-  orac_print " Removed baseline using $order-order polynomial.\n";
-
+  # Put the baselined regions in the Frame's user header.
   if( $method eq 'region' ) {
-    ( $ORAC_STATUS, my @regions ) = $Mon{'kappa_mon'}->get( "mfittrend", "aranges" );
-    push( @bl_regions, \@regions );
-    orac_print " Baseline regions: [";
-    orac_print join ",", ( grep { defined } map { $_ % 2 ? undef : join ":", $regions[$_], $regions[$_+1] } 0..$#regions );
-    orac_print "]\n";
-
+    $Obj->uhdr( "BASELINE_REGIONS", \@bl_regions );
   }
 
-  # Update the product.
-  $Frm->product( "bl" );
+  # Display.
+  $Display->display_data( $Obj ) if defined $Display;
 
-  # Update Frame object;
-  $Frm->file( $i, $out );
+  # Tidy-up output.
+  orac_print "\n";
 
 }
-
-# Put the baselined regions in the Frame's user header.
-if( $method eq 'region' ) {
-  $Frm->uhdr( "BASELINE_REGIONS", \@bl_regions );
-}
-
-# Display.
-$Display->display_data( $Frm ) if defined $Display;
-
-# Tidy-up output.
-orac_print "\n";
