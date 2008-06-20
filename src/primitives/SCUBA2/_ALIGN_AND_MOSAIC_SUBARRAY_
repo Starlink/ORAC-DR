@@ -33,7 +33,9 @@ the first image in the frame object is chosen as reference.
 =item B<MAKEMOS>
 
 A flag to denote whether to use CCDPACK MAKEMOS for mosaicking the
-images. Default is 0 (no), which uses KAPPA WCSMOSAIC instead.
+images. Default is 0 (no), which uses KAPPA WCSMOSAIC instead. Note
+that WCSMOSAIC is considerably faster than calling WCSALIGN and
+MAKEMOS separately.
 
 =item B<METHOD>
 
@@ -41,7 +43,7 @@ The method to be used for resampling the aligned images. This
 corresponds to the C<method> parameter for WCSMOSAIC and WCSALIGN,
 which is different from that for MAKEMOS. See WCSALIGN and/or
 WCSMOSAIC documentation for further details. Default value is
-C<nearest>.
+C<bilinear>.
 
 =item B<MAKEMOS_METHOD>
 
@@ -112,6 +114,8 @@ if ( $Frm->numsubarrays == 1 ) {
   orac_warn "Note: data exist for only 1 subarray - skipping this primitive" 
     if $verbose;
 
+  # Images will not yet be aligned to a common reference image
+  $Frm->uhdr("ALIGNED",0);
 } else {
   # Check for input paramters: MAKEMOS
   my $makemos = get_prim_arg( $_PRIM_ARGS_, "MAKEMOS", 0 );
@@ -121,7 +125,7 @@ if ( $Frm->numsubarrays == 1 ) {
 
   # Method for determining the output pixel values (used by WCSMOSAIC
   # and WCSALIGN
-  my $method = get_prim_arg( $_PRIM_ARGS_, "METHOD", "bilinear" );
+  my $method = get_prim_arg( $_PRIM_ARGS_, "METHOD", "nearest" );
 
   # Are we aligning images in a SKY frame? Default to yes.
   my $skyalign = get_prim_arg( $_PRIM_ARGS_, "SKYREF", 1);
@@ -135,10 +139,17 @@ if ( $Frm->numsubarrays == 1 ) {
     orac_warn "Installed Kappa version does not support WCSMOSAIC, falling back on WCSALIGN+MAKEMOS";
   }
 
+  # Some non-obvious stuff here. GROUPREF should be 0 for moving
+  # sources observed in a POINTING or FOCUS observation.
+  my $pointfocus = ( $Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /focus/i ||
+		     $Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /point/i) ? 1 : 0;
+  my $groupref = ( $pointfocus ) ? 0 : 1;
+
   # Determine reference image for alignment. Use current coordinate
   # frame
-  _GET_REFERENCE_IMAGE_ SKYREF=$skyalign VERBOSE=$verbose
+  _GET_REFERENCE_IMAGE_ SKYREF=$skyalign VERBOSE=$verbose GROUPREF=$groupref
   my $refimage = $_GET_REFERENCE_IMAGE_{REFIMAGE};
+  my $moving = $Grp->uhdr("MOVING");
 
   # Set the WLIM parameter for WCSMOSAIC/WCSALIGN
   my $wlim = 0.2;
@@ -147,7 +158,7 @@ if ( $Frm->numsubarrays == 1 ) {
   my $nfiles = $Frm->nfiles;
   my $nsubim = $nfiles / ( $Frm->numsubarrays );
 
-  # Inform user of number of 
+  # Inform user of number of images being created
   if ( $verbose ) {
     my $outmethod;
     if ($makemos) {
@@ -157,6 +168,26 @@ if ( $Frm->numsubarrays == 1 ) {
     }
     orac_print("Aligning and mosaicking $nfiles files into $nsubim subarray images with $outmethod\n");
   }
+
+  # Set the attributes for moving sources for SCIENCE observations
+  if ( $moving  && !$pointfocus ) {
+    orac_print "Setting attributes for moving sources...\n";
+    for my $i (1..$nfiles) {
+      my $in = $Frm->file($i);
+      my $args = "ndf=$in mode=mset setting='skyrefis=origin,alignoffset=1'";
+      $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+    }
+  }
+
+  # Align all the images in the Frame if we're using MAKEMOS.
+  if ( $makemos ) {
+    _ALIGN_ARRAYS_ SKYREF=$skyalign REFIMAGE=$refimage
+  }
+
+  # Set the reference image to be used
+  my $ref = ( $pointfocus ) ? "!" : $refimage;
+
+  print "Moving = $moving Groupref = $groupref Ref = $ref\n";
 
   # Array of output filenames to store in Frame object on completion
   my @out;
@@ -211,20 +242,14 @@ if ( $Frm->numsubarrays == 1 ) {
       }
 
       my $numingrp = scalar( @{ $commonfiles{$arraygrp} } );
+      # Write filenames into temp file
+      my $infiles = write_file_list( @{ $commonfiles{$arraygrp} } );
       # Combine images with chosen method
       if ( $makemos ) {
-	# Write filenames into temp file
-	my ($infiles, $alfiles) = write_file_list_inout( $Frm, "_al", 1 );
-	  
-	my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
-	  "out=^$alfiles in=^$infiles";
-	$Mon{kappa_mon}->obeyw("wcsalign","$args");
-	$args = "in=^$alfiles method=$makemos_method out=$out";
+	my $args = "in=^$infiles method=$makemos_method out=$out";
 	$Mon{ccdpack_reg}->obeyw("makemos","$args");
       } else {
-	# Write filenames into temp file
-	my $infiles = write_file_list( @{ $commonfiles{$arraygrp} } );
-	my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
+	my $args = "ref=$ref method=$method lbnd=! ubnd=! wlim=$wlim ".
 	  "out=$out in=^$infiles";
 	$Mon{kappa_mon}->obeyw("wcsmosaic","$args");
       }
@@ -235,20 +260,15 @@ if ( $Frm->numsubarrays == 1 ) {
 
   } else {
     my ($in, $out) = $Frm->inout('_arr');
+    # Write filenames into temp file - note the files have been
+    # aligned already if makemos has been chosen
+    my $infiles = write_file_list( $Frm->files );
     # Combine images with chosen method
     if ( $makemos ) {
-      # Write filenames into temp file
-      my ($infiles, $alfiles) = write_file_list_inout( $Frm, "_al", 1 );
-
-      my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
-	"out=^$alfiles in=^$infiles";
-      $Mon{kappa_mon}->obeyw("wcsalign","$args");
-      $args = "in=^$alfiles method=$makemos_method out=$out";
+      my $args = "in=^$infiles method=$makemos_method out=$out";
       $Mon{ccdpack_reg}->obeyw("makemos","$args");
     } else {
-      # Write filenames into temp file
-      my $infiles = write_file_list( $Frm->files );
-      my $args = "ref=$refimage method=$method lbnd=! ubnd=! wlim=$wlim ".
+      my $args = "ref=$ref method=$method lbnd=! ubnd=! wlim=$wlim ".
 	"out=$out in=^$infiles";
       $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
     }
@@ -258,4 +278,11 @@ if ( $Frm->numsubarrays == 1 ) {
   # Store the output files and merged subhdrs
   $Frm->files( @out );
   $fits->subhdrs(@subhdrs);
+
+  # Now is the time to align the images into a sky coordinate frame
+  # for POINTING and FOCUS observations
+  if ( $pointfocus ) {
+    _ALIGN_ARRAYS_ METHOD=$method REFIMAGE=$refimage VERBOSE=1
+  }
+  $Frm->uhdr("ALIGNED",1);
 }
