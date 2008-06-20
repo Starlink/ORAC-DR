@@ -20,6 +20,11 @@ The tag to retrieve. This argument is mandatory, and an error will be
 thrown if it is not defined. If the tag has not been previously used,
 then the current frame will not be changed.
 
+=item THROW = LOGICAL (Given)
+
+Whether or not to throw an error if the requested tag does not
+exist. [1]
+
 =back
 
 =head1 NOTES
@@ -63,13 +68,36 @@ my $tag = $_PRIM_ARGS_->{TAG};
 if( ! defined( $tag ) ) {
   orac_throw "TAG argument not defined in _RETRIEVE_TAG_: Programming error.\n";
 }
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+my $throw = get_prim_arg( $_PRIM_ARGS_, "THROW", 1 );
 
-my $product_ref = $Frm->uhdr( "TAG_PRODUCT" );
-if( defined( $product_ref ) ) {
-  my $product = $product_ref->{uc( $tag )};
-  if( defined( $product ) ) {
-    $Frm->product( $product );
-  }
+my @objs;
+if( $group == 0 ) {
+  push @objs, $Frm;
+} elsif( $group == 1 ) {
+  push @objs, $Grp;
+} elsif( $group == 2 ) {
+  push @objs, $Grp->members;
 }
 
-$Frm->tagretrieve( $tag );
+my $status = 1;
+foreach my $Obj ( @objs ) {
+  my $product_ref = $Obj->uhdr( "TAG_PRODUCT" );
+  if( defined( $product_ref ) ) {
+    my $product = $product_ref->{uc( $tag )};
+    if( defined( $product ) ) {
+      $Obj->product( $product );
+    }
+  }
+
+  my $tempstatus = $Obj->tagretrieve( $tag );
+
+  if( ! $status && $throw ) {
+    orac_throw "Possible programming error: Requested tag $tag does not exist.\n";
+  }
+
+  $status &&= $tempstatus;
+
+}
+
+$_PRIM_ARGS_->{STATUS} = $status;
