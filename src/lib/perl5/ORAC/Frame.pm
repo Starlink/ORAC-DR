@@ -28,6 +28,7 @@ use Carp;
 use Starlink::Versions qw/ starversion /;
 use vars qw/$VERSION/;
 use Astro::FITS::Header;
+use Astro::FITS::HdrTrans qw/ translate_from_FITS /;
 
 use ORAC::Print;
 use ORAC::Constants;
@@ -120,6 +121,7 @@ sub framegroup {
 
   # see if we have any grouping keys
   my @grpkeys = $class->framegroupkeys();
+  push @grpkeys, "ORAC_OBSERVATION_NUMBER";
 
   # some times we need to retain the order of the input files
   my @grporder;
@@ -131,9 +133,12 @@ sub framegroup {
     for my $filename (@files) {
       my $hdr = $class->readhdr($filename);
       tie my %header, "Astro::FITS::Header", $hdr;
+      my %gen_header = translate_from_FITS( \%header,
+                                            prefix => 'ORAC_' );
       my $groupkey = '';
       for my $i (@grpkeys) {
         $groupkey .= $header{$i} if defined $header{$i};
+        $groupkey .= $gen_header{$i} if defined $gen_header{$i};
       }
       croak "File $filename does not have a defined grouping key"
         unless $groupkey;
