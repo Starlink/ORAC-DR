@@ -615,20 +615,17 @@ sub orac_loop_flag {
 
 =item B<orac_loop_file>
 
-Takes a list of files and returns back a frame object
-for the first  file, removing it from the input array.
+Takes a list of files and returns back frame objects for the files,
+removing them from the input array.
 
-  $Frm = orac_loop_file($class, $ut, \@array, $skip );
+  @Frms = orac_loop_file($class, $ut, \@array, $skip );
 
-undef is returned on error or when all members of the
-list have been returned.
-
-Call repeatedly to retrieve all the frame objects.
+undef is returned on error or if the list of files is empty.
 
 The UT and skip parameters are ignored.
 
-The input filename is assumed to come from $ORAC_DATA_IN
-if it uses a relative path.
+The input filenames are assumed to come from $ORAC_DATA_IN if they use
+a relative path.
 
 =cut
 
@@ -639,24 +636,28 @@ sub orac_loop_file {
 
   my ($class, $utdate, $obsref, $skip) = @_;
 
-  # grab a filename from the observation array
-  my $fname = shift(@$obsref);
+  my @fnames;
+  while ( my $fname = shift @$obsref ) {
 
-  # If filename is undef or a blank line return undef
-  return unless defined $fname;
-  return unless $fname =~ /\w/;
-  orac_print("Checking for next data file: $fname");
+    # If filename is undef or a blank line skip to the next one.
+    next unless defined $fname;
+    next unless $fname =~ /\w/;
+    orac_print( "Checking for next data file: $fname\n" );
 
-  # Create a new frame in class
-  my $Frm = $class->new;
+    # If we have a relative path, assume it's relative to
+    # $ORAC_DATA_IN.
+    if( ! File::Spec->file_name_is_absolute( $fname ) ) {
+      $fname = File::Spec->catfile( $ENV{'ORAC_DATA_IN'}, $fname );
+    }
 
-  # If relative path assume ORAC_DATA_IN
-  if (!File::Spec->file_name_is_absolute($fname) ) {
-    $fname = File::Spec->catfile( $ENV{ORAC_DATA_IN}, $fname );
+    push @fnames, $fname;
   }
 
-  # and convert it if required
-  return _convert_and_link( $Frm, $fname );
+  return undef if ! scalar @fnames;
+
+  my $Frm = $class->new;
+
+  return _convert_and_link( $Frm, @fnames );
 
 }
 
