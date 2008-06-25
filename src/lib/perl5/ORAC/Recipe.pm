@@ -508,6 +508,7 @@ sub execute {
 
   $status = ORAC__OK unless defined $status;
   $status = ORAC__OK if $status eq '';
+  $status = ORAC__OK if $status == ORAC__TERM;
 
   # We must grab $@ immediately because the debug code will reset
   # its value, causing us to lose errors. As do ref() and isa()
