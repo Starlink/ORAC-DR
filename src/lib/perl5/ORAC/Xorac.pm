@@ -511,10 +511,10 @@ sub xorac_log_window {
                           -scrollbars=>'w',
                           -background=>'#555555',
                           -foreground=>'white',
-                          -height => 30,
                           -width  => 90,
                           -font    => $FONT
-                         )->pack;
+                         )->pack( -expand => 1,
+                                  -fill => 'both' );
   $textw1->tagConfigure('ANSIfgmagenta', -foreground => '#ccccff');
   $textw1->tagConfigure('ANSIfgblue', -foreground => '#33ff33');
   $textw1->insert('end',"ORAC-DR status log\n");
@@ -529,7 +529,7 @@ sub xorac_log_window {
                           -height => 5,
                           -width  => 90,
                           -font    => $FONT
-                         )->pack;
+                         )->pack( -fill => 'x' );
   $textw2->insert('end',"ORAC-DR warning messages\n");
   tie *TEXT2,  "Tk::TextANSIColor", $textw2;
 
@@ -542,7 +542,7 @@ sub xorac_log_window {
                           -height => 5,
                           -width  => 90,
                           -font    => $FONT
-                         )->pack;
+                         )->pack( -fill => 'x' );
   $textw3->insert('end',"ORAC-DR error messages\n");
   $textw3->tagConfigure('ANSIfgred', -foreground => '#ffcccc');
   tie *TEXT3,  "Tk::TextANSIColor", $textw3;
