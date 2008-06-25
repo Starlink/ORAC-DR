@@ -721,7 +721,6 @@ sub _expand_primitive {
   push(@parsed, "#line 1 ".$prim->name() ."_header");
   push(@parsed, "package ORAC::Recipe::Execution;");
   push(@parsed, "use strict; use warnings;");
-  push(@parsed, "our \$BATCH;");
   push( @parsed, "sub {\n" );
 
   # Read primitive depth first
@@ -739,7 +738,7 @@ sub _expand_primitive {
        "\", \$_PRIM_CALLERS_);");
 
   # read subroutine args
-  for my $ARG (qw/ $Frm $Grp $Cal $Display $Mon / ) {
+  for my $ARG (qw/ $Frm $Grp $Cal $Display $Mon $ORAC_Recipe_Info / ) {
     push(@parsed, "my $ARG = shift;");
   }
 

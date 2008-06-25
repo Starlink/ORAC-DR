@@ -416,7 +416,7 @@ class C<ORAC::Frame> (or subclass thereof).
 
 The group object associated with the current frame to be
 processed. This is of class C<ORAC::Group> (or subclass thereof).
-The C<$BATCH> variable controls how many frames are visible
+The C<<$ORAC_Recipe_Info->{Batch}>> variable controls how many frames are visible
 to the group object.
 
 =item B<$Cal>
@@ -442,15 +442,13 @@ The following global variables are also available to the recipe:
 
 Hash containing all the algorithm engine objects.
 
-=item B<$DEBUG>
+=item B<$ORAC_Recipe_Info>
 
-This flag can be used to turn on some debugging features.
+Reference to a hash containing information that may be of use
+to the primitive. Keys are
 
-=item B<$BATCH>
-
-Flag to indicate whether the groups have been populated before
-the recipe is executed (ie whether the pipeline is running in
-batch mode or not).
+  Batch - flag to indicate that batch mode is enabled
+  Name  - name of the recipe that was loaded.
 
 =back
 
@@ -787,9 +785,6 @@ not during execution.
 
 =cut
 
-# Use package globals for global readonly state
-our $BATCH;
-
 # These allow reflected state in GUIs
 my $CURRENT_PRIMITIVE;
 my $PRIMITIVE_LIST;
@@ -798,9 +793,6 @@ my @primitive_list_local;
 sub orac_execute_recipe {
   my ( $primitive_list, $current_primitive,
     $Recipe, $Frm, $Grp, $Cal, $Display, $Mon) = @_;
-
-  # Is Batch mode enabled? Can be a runtime control.
-  $BATCH = $Recipe->batch;
 
   # initial recursion depth
   my $DEPTH = 0;
@@ -819,7 +811,10 @@ sub orac_execute_recipe {
   my $recobj = $Recipe->recipe;
   my $coderef = $recobj->code;
   if( defined( $coderef ) ) {
-    return $coderef->( 0, [], $Frm, $Grp, $Cal, $Display, $Mon );
+    return $coderef->( 0, [], $Frm, $Grp, $Cal, $Display, $Mon,
+                       { Batch => $Recipe->batch, 
+                         Name => $Recipe->name,
+                       });
   } else {
     return ORAC__ERROR;
   }
