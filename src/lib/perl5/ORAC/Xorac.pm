@@ -449,111 +449,107 @@ sub xorac_log_window {
 
   my ( $win_str, $orac_prt ) = @_;
   my ($msg1, $lab1, $textw1, $textw2, $textw3, $lab2);
-  
+
   # Get the Window ID
   my $MW = ORAC::Event->query($win_str);
   throw ORAC::Error::FatalError("Unexpectedly could not retrieve Tk window with id '$win_str'")
     unless defined $MW;
   $MW->configure( -cursor => "tcross" );
 
-  $MW->bind("<Destroy>", [ sub { 
-	          $$orac_prt->outhdl(\*STDOUT);
-                  $$orac_prt->warhdl(\*STDOUT);
-                  $$orac_prt->errhdl(\*STDERR);			       
-	          record ORAC::Error::UserAbort( "Destroy from Log Window",
-		                                 ORAC__ABORT );
+  $MW->bind("<Destroy>", [ sub {
+                             $$orac_prt->outhdl(\*STDOUT);
+                             $$orac_prt->warhdl(\*STDOUT);
+                             $$orac_prt->errhdl(\*STDERR);
+                             record ORAC::Error::UserAbort( "Destroy from Log Window",
+                                                            ORAC__ABORT );
 
-	          # destroy the Tk widget
-		  ORAC::Event->destroy($win_str);
-		  ORAC::Event->unregister($win_str);
+                             # destroy the Tk widget
+                             ORAC::Event->destroy($win_str);
+                             ORAC::Event->unregister($win_str);
+                           } ] );
 
-		  } ] );
+  # New frame for the top messages
+  my $frame = $MW->Frame->pack(-padx => 0, -pady => 5);
 
-   # New frame for the top messages
-   my $frame = $MW->Frame->pack(-padx => 0, -pady => 5);
-        
-   # Create easy exit button
-   $frame->Button( -text=>'Exit ORAC-DR',
-	           -font=>$FONT,
-                   -activeforeground => 'white',
-                   -activebackground => 'blue',
-		   -command => sub {
+  # Create easy exit button
+  $frame->Button( -text=>'Exit ORAC-DR',
+                  -font=>$FONT,
+                  -activeforeground => 'white',
+                  -activebackground => 'blue',
+                  -command => sub {
 			
-		        # Need to remove the tie - just use STDOUT and STDERR
-		        $$orac_prt->outhdl(\*STDOUT);
-                        $$orac_prt->warhdl(\*STDOUT);
-                        $$orac_prt->errhdl(\*STDERR);
+                    # Need to remove the tie - just use STDOUT and STDERR
+                    $$orac_prt->outhdl(\*STDOUT);
+                    $$orac_prt->warhdl(\*STDOUT);
+                    $$orac_prt->errhdl(\*STDERR);
 			
-			# store an error to be flushed on the next update
-		        record ORAC::Error::UserAbort( "Exited from log window",
-			                               ORAC__ABORT ); 
+                    # store an error to be flushed on the next update
+                    record ORAC::Error::UserAbort( "Exited from log window",
+                                                   ORAC__ABORT );
 			
-			# destroy the Tk widget
-			ORAC::Event->destroy($win_str);
-			ORAC::Event->unregister($win_str);
+                    # destroy the Tk widget
+                    ORAC::Event->destroy($win_str);
+                    ORAC::Event->unregister($win_str);
+                  })->pack(-side => "left");
 			
-		        })->pack(-side => "left");
-			
-   # Create a pause button
-   $frame->Button( -text=>'Pause ORAC-DR',
-	           -font=>$FONT,
-                   -activeforeground => 'white',
-                   -activebackground => 'blue',
-		   -command => sub { 
-		                       xorac_pause ( $MW ); 
-		                   } )->pack(-side => "left");
-			 		 
-   # ORAC_PRINT messages
-   my $ORAC_MESSAGE = 'ORAC-DR reducing observation --';
-   $msg1   = $frame->
-         Label(-width=>60,
-	       -textvariable=>\$ORAC_MESSAGE,
-	       -font=>$FONT)->pack(-side => "left");
+  # Create a pause button
+  $frame->Button( -text=>'Pause ORAC-DR',
+                  -font=>$FONT,
+                  -activeforeground => 'white',
+                  -activebackground => 'blue',
+                  -command => sub {
+                    xorac_pause ( $MW );
+                  } )->pack(-side => "left");
 
-   $textw1 = $MW->Scrolled('TextANSIColor',
-	  		        -scrollbars=>'w',
-		  	        -background=>'#555555',
-			        -foreground=>'white',
-			        -height => 30,
-			        -width  => 90,
-				-font    => $FONT
-			   )->pack;
-   $textw1->tagConfigure('ANSIfgmagenta', -foreground => '#ccccff');
-   $textw1->tagConfigure('ANSIfgblue', -foreground => '#33ff33');
-   $textw1->insert('end',"ORAC-DR status log\n");
-   tie *TEXT1,  "Tk::TextANSIColor", $textw1;
+  # ORAC_PRINT messages
+  my $ORAC_MESSAGE = 'ORAC-DR reducing observation --';
+  $msg1   = $frame->Label(-width=>60,
+                          -textvariable=>\$ORAC_MESSAGE,
+                          -font=>$FONT)->pack(-side => "left");
 
-   # ORAC_WARN messages
-   $lab2   = $MW->Label(-text=>'Warnings',-font=>$FONT)->pack;
-   $textw2 = $MW->Scrolled('TextANSIColor',
-	  		        -scrollbars=>'w',
-			        -background=>'#555555',
-			        -foreground=>'white',
-			        -height => 5,
-			        -width  => 90,
-				-font    => $FONT
-			   )->pack;
-   $textw2->insert('end',"ORAC-DR warning messages\n");
-   tie *TEXT2,  "Tk::TextANSIColor", $textw2;
+  $textw1 = $MW->Scrolled('TextANSIColor',
+                          -scrollbars=>'w',
+                          -background=>'#555555',
+                          -foreground=>'white',
+                          -height => 30,
+                          -width  => 90,
+                          -font    => $FONT
+                         )->pack;
+  $textw1->tagConfigure('ANSIfgmagenta', -foreground => '#ccccff');
+  $textw1->tagConfigure('ANSIfgblue', -foreground => '#33ff33');
+  $textw1->insert('end',"ORAC-DR status log\n");
+  tie *TEXT1,  "Tk::TextANSIColor", $textw1;
 
-   # ORAC Error messages
-   $lab1   = $MW->Label(-text=>'Errors',-font=>$FONT)->pack;
-   $textw3 = $MW->Scrolled('TextANSIColor',
-			        -scrollbars=>'w',
-			        -background=>'#555555',
-			        -foreground=>'white',
-			        -height => 5,
-			        -width  => 90,
-				-font    => $FONT
-			   )->pack;
-    $textw3->insert('end',"ORAC-DR error messages\n");
-    $textw3->tagConfigure('ANSIfgred', -foreground => '#ffcccc');
-    tie *TEXT3,  "Tk::TextANSIColor", $textw3;
+  # ORAC_WARN messages
+  $lab2   = $MW->Label(-text=>'Warnings',-font=>$FONT)->pack;
+  $textw2 = $MW->Scrolled('TextANSIColor',
+                          -scrollbars=>'w',
+                          -background=>'#555555',
+                          -foreground=>'white',
+                          -height => 5,
+                          -width  => 90,
+                          -font    => $FONT
+                         )->pack;
+  $textw2->insert('end',"ORAC-DR warning messages\n");
+  tie *TEXT2,  "Tk::TextANSIColor", $textw2;
 
-    # Routine returns references to packed Tk variable and
-    # references to output, warning and error file handles
-    return ( \$ORAC_MESSAGE, \*TEXT1, \*TEXT2, \*TEXT3 );
+  # ORAC Error messages
+  $lab1   = $MW->Label(-text=>'Errors',-font=>$FONT)->pack;
+  $textw3 = $MW->Scrolled('TextANSIColor',
+                          -scrollbars=>'w',
+                          -background=>'#555555',
+                          -foreground=>'white',
+                          -height => 5,
+                          -width  => 90,
+                          -font    => $FONT
+                         )->pack;
+  $textw3->insert('end',"ORAC-DR error messages\n");
+  $textw3->tagConfigure('ANSIfgred', -foreground => '#ffcccc');
+  tie *TEXT3,  "Tk::TextANSIColor", $textw3;
 
+  # Routine returns references to packed Tk variable and
+  # references to output, warning and error file handles
+  return ( \$ORAC_MESSAGE, \*TEXT1, \*TEXT2, \*TEXT3 );
 }
 
 # xorac_recipe_window() ---------------------------------------------------
