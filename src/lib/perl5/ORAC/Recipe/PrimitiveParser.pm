@@ -292,7 +292,7 @@ sub embed {
        ."]);");
 
   # Now run the routine
-  push(@lines, "my \$_prim_exit_status = \$_prim_code->(\$_PRIM_DEPTH_,\\\@_THIS_PRIM_CALLERS_,\$Frm,\$Grp,\$Cal,\$Display,\$Mon,$primargs);");
+  push(@lines, "my \$_prim_exit_status = \$_prim_code->(\$_PRIM_DEPTH_,\\\@_THIS_PRIM_CALLERS_,\$Frm,\$Grp,\$Cal,\$Display,\$Mon,\$ORAC_Recipe_Info,$primargs);");
   push(@lines,"return \$_prim_exit_status if \$_prim_exit_status != ORAC__OK;");
   push(@lines, "}"); # close scope
 
