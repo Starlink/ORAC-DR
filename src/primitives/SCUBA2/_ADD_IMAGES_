@@ -2,24 +2,21 @@
 
 =head1 NAME
 
-_ADD_IMAGES_ - Add together a number of NDFs
+_ADD_IMAGES_ - Add together a series of NDFs
 
 =head1 SYNOPSIS
 
  _ADD_IMAGES_ IN=$imagelistref OUT=$out
 
- _ADD_IMAGES_ IN=$imagelistref OUT=$out COMP=EXP_TIME
-
 =head1 DESCRIPTION
 
-This primitive uses KAPPA C<MATHS> to add up a group of images. The
-default method is to add the data arrays, but the user can specify the
-name of an NDF (assumed to be located
-INPUT_FILE.MORE.SMURF.COMP). This is useful for calculating the total
-exposure time for a series of images which are mosaicked together.
-
-C<MATHS> can only handle 26 inputs so if the input list is larger than
-that, the list will be added together in groups.
+This primitive uses KAPPA C<MSTATS> to add up a list of images. The
+user specifies the names of one or more NDFs (assumed to be located
+under the .MORE.SMURF.COMP hierarchy). This is useful for calculating
+the total exposure time and weights for a series of images which are
+mosaicked together. Note that the sum is carried out on a
+pixel-for-pixel basis so the images must be aligned to a common
+coordinate system before calling this primitive.
 
 =head1 ARGUMENTS
 
@@ -33,10 +30,11 @@ Reference to array of image names. No default.
 
 Name of output file. No default.
 
-=item B<COMP>
+=item B<COMPS>
 
-Name of NDF component to add. Default is the data array. If specified
-then the component is assumed to be under C<.MORE.SMURF>.
+Comma-separated list of NDF components to add. Default is the
+C<EXP_TIME> and C<WEIGHTS> components under the C<.MORE.SMURF>
+extension. 
 
 =back
 
@@ -46,7 +44,7 @@ then the component is assumed to be under C<.MORE.SMURF>.
 
 =item Starlink applications
 
-KAPPA MATHS
+KAPPA MSTATS
 
 =head1 AUTHOR
 
@@ -75,96 +73,45 @@ USA
 =cut
 
 # Check arguments
-my $inref = (exists $_ADD_IMAGES_{INLIST} &&
-	     defined $_ADD_IMAGES_{INLIST}) ?
-  $_ADD_IMAGES_{INLIST} : undef;
+my $inref = get_prim_arg( $_PRIM_ARGS_, "INLIST", undef );
+# No default value, so throw an error if no input list
+orac_throw "Error: must supply reference to list of input files to _ADD_IMAGES_\n" 
+  unless ( defined $inref );
 
-my $out = (exists $_ADD_IMAGES_{OUT} &&
-	  defined $_ADD_IMAGES_{OUT}) ?
-  $_ADD_IMAGES_{OUT} : undef;
+# Input list of files
+my @infiles = @{ $inref };
 
-# Name of component to add if defined
-my $comp = (exists $_ADD_IMAGES_{COMP} &&
-	  defined $_ADD_IMAGES_{COMP}) ?
-  $_ADD_IMAGES_{COMP} : undef;
+# Output file - default to current Frame file
+my $outfile = get_prim_arg( $_PRIM_ARGS_, "OUT", $Frm->file );
 
-# Addition method - default to pairwise ADD
-my $method = (exists $_ADD_IMAGES_{METHOD} &&
-	  defined $_ADD_IMAGES_{METHOD}) ?
-  uc($_ADD_IMAGES_{METHOD}) : "ADD";
+# Name of components to add if defined - default to exp_time and weights
+my $complist = uc(get_prim_arg( $_PRIM_ARGS_, "COMPS", "exp_time,weights" ));
+# Split on commas to get list of componentsa
+my @comps = split(/,/, $complist);
 
-# No default values, so throw an error if no inputs
-unless ( defined $inref && defined $out ) {
-  orac_throw "Error: must supply input and output files to _ADD_IMAGES_\n";
-}
-
-my $maxalignfiles = 26; # Limitation on MATHS
-
-# Add component to end of output file name if necessary
-$out .= ".MORE.SMURF.".$comp if ( defined $comp );
-
-# Input list of files: string version for MATHS and array version for
-# constructing the string
-my ($inlist, @inlist);
-# Expression to combine images in MATHS
-my $expr;
-# Number of input files
-my $nfiles = scalar(@{ $inref });
+# Number of input files - if there is only one file then do nothing
+my $nfiles = scalar(@infiles);
 if ( $nfiles > 1 ) {
-  orac_print "\nCalculating total exposure time..." 
-    if ( lc($comp) =~ /exp_time/);
-  if ( $method eq "ADD" ) {
-    # Use ADD with a pairwise adding algorithm
-    my @filelist = @{ $inref };
-
-    # Create two temp file objects to alternate between
-    my $file1 = new ORAC::TempFile;
-    my $file2 = new ORAC::TempFile;
-    # Flag to denote which file to use as in2 and which as out
-    my $thistime = 1;
-
-    # Input files to ADD
-    my ($in1, $in2, $sum);
-    # Loop over input files, starting at 1 so we can define $in2
-    for my $i ( 1 .. $#filelist ) {
-      # Define first input file
-      $in1 = ( defined $comp ) ? $filelist[$i].".MORE.SMURF.".$comp : $filelist[$i];
-
-      # Define second input file
-      if ( $i == 1) {
-	$in2 = ( defined $comp ) ? $filelist[0].".MORE.SMURF.".$comp : $filelist[0];
-	$sum = $file1->file;
-      } else {
-	if ( $thistime ) {
-	  $thistime = 0;
-	  $in2 = $file1->file;
-	  $sum = $file2->file;
-	} else {
-	  $thistime = 1;
-	  $in2 = $file2->file;
-	  $sum = $file1->file;
-	}
-      }
-      # Add the two files
-      $Mon{kappa_mon}->obeyw("add","in1=$in1 in2=$in2 out=$sum");
+  foreach my $comp ( @comps ) {
+    my @inlist = @infiles;
+    # Add component to end of output file name if necessary
+    my $out = $outfile.".MORE.SMURF.".$comp;
+    # Delete the existing version of the current component in the output file
+    if ( $Frm->uhdr("$comp") ){
+      $Mon{ndfpack_mon}->obeyw("erase","object=$out ok=true");
     }
-    # Finally copy the result to the output file
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$sum out=$out");
-  } else {
-    if ( $nfiles < $maxalignfiles ) {
-      my $ia2z = "a";
-      foreach my $infile ( @{ $inref } ) {
-	$infile .= ".MORE.SMURF.".$comp if ( defined $comp );
-	$inlist .= "i$ia2z=$infile ";
-	push(@inlist, "i$ia2z");
-	$ia2z++;
-      }
-      $expr = join("+",@inlist);
-      
-      $Mon{kappa_mon}->obeyw("maths","$inlist $expr out=$out");
-    } else {
-      # Split the list into manageable chunks
-      orac_warn "Uh-oh: Too many files - can't do this yet\n";
+    # Feedback for user
+    orac_print "\nCalculating total exposure time..." 
+      if ( lc($comp) =~ /exp_time/);
+    orac_print " Calculating total weights..." 
+      if ( lc($comp) =~ /weights/);
+
+    # Use MSTATS with estimator=sum
+    foreach (@inlist) {
+      $_ .= ".more.smurf.".$comp;
     }
+    my $inlist = write_file_list( @inlist );
+    my $args = "in=^$inlist wlim=0 variance=f estimator=sum single=false out=$out";
+    $Mon{kappa_mon}->obeyw("mstats","$args");
   }
 }
