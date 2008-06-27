@@ -43,7 +43,8 @@ The method to be used for resampling the aligned images. This
 corresponds to the C<method> parameter for WCSMOSAIC and WCSALIGN,
 which is different from that for MAKEMOS. See WCSALIGN and/or
 WCSMOSAIC documentation for further details. Default value is
-C<bilinear>.
+C<nearest>, which is recommended for robust processing of exposure
+time and weights components.
 
 =item B<MAKEMOS_METHOD>
 
@@ -107,6 +108,7 @@ USA
 
 # Should I be verbose? (default to yes)
 my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
+#$ORAC::TempFile::DEBUG = 1;
 
 # Check that we have more than one subarray to combine
 if ( $Frm->numsubarrays == 1 ) {
@@ -124,7 +126,8 @@ if ( $Frm->numsubarrays == 1 ) {
   my $rebin = get_prim_arg( $_PRIM_ARGS_, "REBIN", 0);
 
   # Method for determining the output pixel values (used by WCSMOSAIC
-  # and WCSALIGN
+  # and WCSALIGN - use of NEAREST is advised in order to obtain
+  # accurate EXP_TIME and WEIGHTS handling
   my $method = get_prim_arg( $_PRIM_ARGS_, "METHOD", "nearest" );
 
   # Are we aligning images in a SKY frame? Default to yes.
@@ -193,8 +196,6 @@ if ( $Frm->numsubarrays == 1 ) {
   # Set the reference image to be used
   my $ref = ( $pointfocus ) ? "!" : $refimage;
 
-  print "Moving = $moving Groupref = $groupref Ref = $ref\n";
-
   # Array of output filenames to store in Frame object on completion
   my @out;
 
@@ -247,9 +248,10 @@ if ( $Frm->numsubarrays == 1 ) {
 	($refhdr, my @different) = $refhdr->merge_primary(@thesehdrs);
       }
 
-      my $numingrp = scalar( @{ $commonfiles{$arraygrp} } );
+      my @files = @{ $commonfiles{$arraygrp} };
+      my $numingrp = scalar( @files );
       # Write filenames into temp file
-      my $infiles = write_file_list( @{ $commonfiles{$arraygrp} } );
+      my $infiles = write_file_list( @files );
       # Combine images with chosen method
       if ( $makemos ) {
 	my $args = "in=^$infiles method=$makemos_method out=$out";
@@ -259,6 +261,7 @@ if ( $Frm->numsubarrays == 1 ) {
 	  "out=$out in=^$infiles";
 	$Mon{kappa_mon}->obeyw("wcsmosaic","$args");
       }
+
       # Add to output array
       push (@out, $out);
       push (@subhdrs, $refhdr);
@@ -285,10 +288,19 @@ if ( $Frm->numsubarrays == 1 ) {
   $Frm->files( @out );
   $fits->subhdrs(@subhdrs);
 
+  # Create EXP_TIME and WEIGHTS components - only reliable if
+  # Nearest-neighbour rebinning has been used
+  if ( $method eq "nearest" ) {
+    _CREATE_COMPS_DREAMSTARE_
+    # Set Frame headers that might come in handy later
+    $Frm->uhdr("EXP_TIME",1);
+    $Frm->uhdr("WEIGHTS",1);
+  }
+
   # Now is the time to align the images into a sky coordinate frame
   # for POINTING and FOCUS observations
   if ( $pointfocus ) {
-    _ALIGN_ARRAYS_ METHOD=$method REFIMAGE=$refimage VERBOSE=1
+    _ALIGN_ARRAYS_ METHOD=$method REFIMAGE=$refimage VERBOSE=1 COMP=1
   }
   $Frm->uhdr("ALIGNED",1);
 }
