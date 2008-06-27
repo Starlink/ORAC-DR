@@ -1,0 +1,93 @@
+# -*-perl-*-
+
+=head1 NAME
+
+ _CREATE_COMPS_DREAMSTARE_ - Create EXP_TIME and WEIGHTS components for DREAM/STARE images
+
+=head1 SYNOPSIS
+
+ _CREATE_COMPS_DREAMSTARE_
+
+=head1 DESCRIPTION
+
+Modifies files in place so no need to return anything
+
+=head1 KNOWN ISSUES
+
+TBD
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2005 Particle Physics and Astronomy Research Council.
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
+=cut
+
+my $nfiles = $Frm->nfiles;
+
+orac_print "Creating EXP_TIME and WEIGHTS components for $nfiles input files\n";
+
+# Loop over all files in current Frame and add EXP_TIME/WEIGHTS
+# extension into the image NDF
+for my $i ( 1 .. $nfiles ) {
+
+#  my $template = $Frm->file($i);
+  my $infile = $Frm->file($i);
+
+  # Create EXP_TIME template - assume time is the same for all images
+  # in the Frame. This may not be true for offline processing.
+  my $exptime = new ORAC::TempFile;
+  my $exptimefile = $exptime->file;
+  my $texp = $Frm->hdr("EXP_TIME");
+  my $args = "like=$infile variance=false mode=FL mean=$texp out=$exptimefile";
+  $Mon{kappa_mon}->obeyw("creframe","$args");
+
+  # Create EXP_TIME image
+  # Copy over bad pixels into EXP_TIME extension
+  my $out = $infile.".MORE.SMURF.EXP_TIME";
+  $args = "in=$exptimefile out=$out ref=$infile";
+  $Mon{kappa_mon}->obeyw("copybad", "$args");
+
+  # Now copy WCS
+  $Mon{ndfpack_mon}->obeyw("wcscopy","ndf=$out like=$infile");
+
+  # Repeat for WEIGHTS image - check if T_exp is 1s first and if so we
+  # can just copy the EXP_TIME NDF in its entirety.
+  if ( $texp == 1.0 ) {
+    my $src = $out;
+    my $dest = $infile.".MORE.SMURF.WEIGHTS";
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$src out=$dest");
+  } else {
+    # Create WEIGHTS template
+    my $wgts = new ORAC::TempFile;
+    my $wgtsfile = $wgts->file;
+    $args = "like=$infile variance=false mode=FL mean=1.0 out=$wgtsfile";
+    $Mon{kappa_mon}->obeyw("creframe","$args");
+
+    # Copy over bad pixels into WEIGHTS extension
+    $out = $infile.".MORE.SMURF.WEIGHTS";
+    $args = "in=$wgtsfile out=$out ref=$infile";
+    $Mon{kappa_mon}->obeyw("copybad", "$args");
+    # Now copy WCS
+    $Mon{ndfpack_mon}->obeyw("wcscopy","ndf=$out like=$infile");
+  }
+}
