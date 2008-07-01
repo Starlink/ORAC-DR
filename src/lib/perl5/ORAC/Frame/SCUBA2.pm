@@ -579,7 +579,8 @@ sub findgroup {
   my %state;
 
   # Use value in header if present 
-  if (exists $self->hdr->{DRGROUP} && $self->hdr->{DRGROUP} ne 'UNKNOWN'
+  if (exists $self->hdr->{DRGROUP} && defined $self->hdr->{DRGROUP}
+      && $self->hdr->{DRGROUP} ne 'UNKNOWN'
       && $self->hdr->{DRGROUP} =~ /\w/) {
     $group = $self->hdr->{DRGROUP};
   } else {
