@@ -1320,11 +1320,51 @@ In scalar context, returns the first path.
 =cut
 
 sub _to_abs_path {
-  my @out = map { $_ = File::Spec->catfile( $ENV{ORAC_DATA_IN}, $_ )
+  my @out = map { $_ = _clean_path(File::Spec->catfile( $ENV{ORAC_DATA_IN}, $_ ))
                     unless File::Spec->file_name_is_absolute($_);
                   $_;
                 } @_;
   return (wantarray ? @out : $out[0] );
+}
+
+=item B<_clean_path>
+
+Splits path up and resolves "../" entries. This is done because normally if you
+use a symlink ../ ends up on the other end of the directory symlink.
+
+ $clean = _clean_path( $notclean );
+
+This may be dangerous....
+
+=cut
+
+sub _clean_path {
+  my $dirty = shift;
+  my ($vol, $dir, $file) = File::Spec->splitpath( $dirty );
+  my @dirs = File::Spec->splitdir($dir);
+  my @outdirs;
+  for my $d (@dirs) {
+    if ($d eq '..') {
+       # remove last entry from dir list unless the last entry
+       # is a relative path identifier or root dir
+       if (@outdirs && $outdirs[-1] ne ".." && $outdirs[-1] ne "."
+           && $outdirs[-1] ne "") {
+         pop(@outdirs);
+       } else {
+         push(@outdirs, $d);
+       }
+    } elsif ($d eq '.') {
+       # ignore it unless we are first entry 
+       if (!@outdirs) {
+         push(@outdirs, $d);
+       }
+       
+    } else {
+       # Store it
+       push(@outdirs, $d);
+    }
+  }
+  return File::Spec->catpath( $vol, File::Spec->catdir(@outdirs), $file);
 }
 
 =item B<_convert_and_link>
