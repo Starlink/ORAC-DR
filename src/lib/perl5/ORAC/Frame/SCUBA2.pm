@@ -417,7 +417,7 @@ start of the next.
 =cut
 
 sub framegroupkeys {
-  return (qw/ OBSNUM FOCPOSN /);
+  return (qw/ OBSNUM FOCPOSN SHUTTER /);
 }
 
 
@@ -736,6 +736,11 @@ sub findrecipe {
     $recipe = 'QUICK_LOOK';
   }
 
+  # Darks will cause trouble
+  if ($self->hdr("SHUTTER") eq 'CLOSED') {
+    $recipe = "REDUCE_DARK";
+  }
+
   # Update the recipe
   $self->recipe($recipe);
 
@@ -964,7 +969,7 @@ In scalar context returns a single string with the values concatenated.
 sub _dacodes {
   my $self = shift;
   #  my @letters = qw/ a b c d /;
-  my @letters = qw/ a b /;
+  my @letters = qw/ a /;
   return (wantarray ? @letters : join("",@letters) );
 }
 
