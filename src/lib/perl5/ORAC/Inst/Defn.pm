@@ -1022,9 +1022,9 @@ sub orac_determine_calibration_search_path {
     croak "Calibration directories: Unrecognised instrument: $inst\n";
   }
 
-  # Add ORAC_DATA_CAL to the end of the search path if it exists
+  # Add ORAC_DATA_CAL to the front of the search path if it exists
   if (exists $ENV{ORAC_DATA_CAL}) {
-    push(@path, $ENV{ORAC_DATA_CAL});
+    unshift(@path, $ENV{ORAC_DATA_CAL});
   }
 
   return @path;
