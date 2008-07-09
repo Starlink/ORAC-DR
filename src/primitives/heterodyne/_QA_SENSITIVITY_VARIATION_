@@ -17,25 +17,48 @@ Rights Reserved.
 
 use JCMT::ACSIS::Array;
 
-orac_print "Running RMS sensitivity variation QA check.\n";
-
 foreach my $i ( 1 .. $Frm->nfiles ) {
 
   my $infile = $Frm->file( $i );
 
-  orac_print "Processing $infile.\n";
+  orac_print "Calculating RMS values for $infile.\n";
 
   my $temp1 = new ORAC::TempFile;
   my $temp2 = new ORAC::TempFile;
   my $temp3 = new ORAC::TempFile;
 
-  # Fit a background to the spectrum.
-  my $params = "in=$infile out=$temp1 mask=$temp2 order=5 subtract=true";
-  $params .= " modifyin=false rmsclip=! axis=spec auto=true method=single";
-  $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+  # Retrieve the JCMT pointing catalogue and look up the current
+  # object. If it is defined, then we use the line velocity and width
+  # to mask out the line, then use the remaining (hopefully line-free)
+  # regions to determine the RMS. If the object isn't defined, then
+  # we'll mask out the central 25% and hope that takes out the line.
+  use Astro::Catalog;
+  my $object = $Frm->uhdr( "ORAC_OBJECT" );
+  my $poicat = $Cal->find_file( "poi.dat" );
+  my $jcmtcat = new Astro::Catalog( Format => 'JCMT',
+                                    File => $poicat );
+  my ( $result ) = $jcmtcat->popstarbyid( $object );
+  if( defined( $result ) &&
+      defined( $result->misc ) &&
+      defined( $result->misc->{'velocity_range'} ) ) {
 
-  # Mask out the baselined file.
-  $Mon{'kappa_mon'}->obeyw( "add", "in1=$temp1 in2=$temp2 out=$temp3" );
+    my $range = $result->misc->{'velocity_range'};
+    my $centre = $result->coords->rv;
+
+    my $params = "in=$infile out=$temp3 section='$centre~$range,,' newval=bad";
+    $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+
+  } else {
+
+    # Fit a background to the spectrum.
+    my $params = "in=$infile out=$temp1 mask=$temp2 order=5 subtract=true";
+    $params .= " modifyin=false rmsclip=! axis=spec auto=true method=single";
+    $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+
+    # Mask out the baselined file.
+    $Mon{'kappa_mon'}->obeyw( "add", "in1=$temp1 in2=$temp2 out=$temp3" );
+
+  }
 
   # Find dimensions.
   _GET_DIMENSIONS_
@@ -59,24 +82,42 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
   my $array = new JCMT::ACSIS::Array( File => $infile );
 
   my %rms;
+  my $dstring = '';
+  my $rstring = '';
+  my @dstrings;
+  my @rstrings;
 
-  foreach my $receptor ( $array->receptors ) {
+  foreach my $receptor ( sort $array->receptors ) {
 
     my $pixel = $array->pixel( $receptor );
     $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp3(~$extent,$pixel,)" );
     ( $ORAC_STATUS, my $pixrms ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
 
-    my $p_pixrms;
     if( $pixrms > 0 ) {
-      $p_pixrms = sprintf( "%6.3f", $pixrms );
+      $rstring .= sprintf( " %6.3f", $pixrms );
       $rms{$receptor} = $pixrms;
     } else {
-      $p_pixrms = "   bad";
+      $rstring .= "    bad";
       $rms{$receptor} = "bad";
     }
 
-    orac_print " RMS for receptor $receptor: $p_pixrms\n";
+    $dstring .= "    $receptor";
 
+    if( length( $dstring ) > 72 ) {
+      push @dstrings, $dstring;
+      push @rstrings, $rstring;
+      $dstring = '';
+      $rstring = '';
+    }
+
+  }
+
+  push @dstrings, $dstring;
+  push @rstrings, $rstring;
+
+  orac_print " RMS values for each receptor:\n";
+  foreach my $i ( 0 .. $#dstrings ) {
+    orac_print "$dstrings[$i]\n$rstrings[$i]\n";
   }
 
   # Store the information on receptors in the uhdr.
