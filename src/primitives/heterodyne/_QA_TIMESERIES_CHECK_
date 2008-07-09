@@ -37,26 +37,54 @@ Rights Reserved.
 
 =cut
 
-# Load the JSA::QA module.
 my $isok = eval { require JSA::QA; 1; };
 if( ! $isok ) {
   orac_warn "Could not load the JSA::QA Perl module: $@\n";
   orac_warn "Continuing with data reduction.\n";
 } else {
 
-  my $output = sub { orac_print @_; };
-
   my $tsys_values_href = $Frm->uhdr( "QA_TSYS_VALUES" );
-  my $tsysvar_result = &JSA::QA::analyse_tsysvar( $tsys_values_href,
-                                                  $output );
-
-  my $tsysmax_result = &JSA::QA::analyse_tsysmax( $tsys_values_href,
-                                                  $output );
-
   my $rms_values_href = $Frm->uhdr( "QA_RMS_VALUES" );
-  my $rms_result = &JSA::QA::analyse_timeseries_rms( $rms_values_href,
-                                                     $output );
-#  orac_print "Results for RMS sensitivity variation QA:\n";
-#  analyse_jsa_qa_results( $rms_result, $output );
 
+  my $survey = $Frm->hdr( "SURVEY" );
+
+  my ( $tsys_result, $rms_result, %result );
+
+  if( ! defined( $survey ) ) {
+    $tsys_result = JSA::QA::analyse_tsys( $tsys_values_href );
+    $rms_result = JSA::QA::analyse_timeseries_rms( $rms_values_href );
+  } else {
+    $tsys_result = JSA::QA::analyse_tsys( $tsys_values_href,
+                                     'survey' => $survey );
+    $rms_result = JSA::QA::analyse_timeseries_rms( $rms_values_href,
+                                                   'survey' => $survey );
+  }
+
+  # Merge the results. If any of the tests fail, then the whole survey QA test fails.
+  foreach my $result_survey ( keys %$tsys_result ) {
+    my $merged_result = new JSA::QA::Result;
+    $merged_result->pass( $tsys_result->{$result_survey}->pass &&
+                          $rms_result->{$result_survey}->pass );
+    $merged_result->add_fail_reason( $tsys_result->{$result_survey}->fail_reasons );
+    $merged_result->add_fail_reason( $rms_result->{$result_survey}->fail_reasons );
+
+    $result{$result_survey} = $merged_result;
+  }
+
+  # Display the results.
+  foreach my $result_survey ( sort keys %result ) {
+    my $pass = $result{$result_survey}->pass;
+    orac_print "Time-series QA ";
+    orac_print ( ( $pass ? "passed" : " failed " ),
+                 ( $pass ? "green" : "bold white on_red" ) );
+    orac_print " for $result_survey.\n";
+    if( ! $pass ) {
+      orac_print " Failure reason" . ( scalar @{$result{$result_survey}->fail_reasons} > 1 ?
+                                       "s"                                                   :
+                                       "" );
+      orac_print ":\n";
+      orac_print " " . join( "\n ", @{$result{$result_survey}->fail_reasons} );
+      orac_print "\n";
+    }
+  }
 }
