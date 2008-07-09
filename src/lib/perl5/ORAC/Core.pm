@@ -1055,9 +1055,15 @@ sub orac_process_argument_list {
 
         # Special case if we are doing data detection since the
         # final obs number is changing
-        if (!defined $opt{loop} or ($opt{loop} ne 'wait' and $opt{loop} ne 'flag')) {
+        if ( ! defined $opt{loop} or
+             ( $opt{loop} ne 'wait' and $opt{loop} ne 'flag' ) or
+             ( $opt{loop} eq 'flag' and defined( $opt{batch} ) ) ) {
 
-          my ($next, $high) = orac_check_data_dir($frameclass, $opt{from}, 0);
+          my $flag = ( defined( $opt{loop} ) and
+                       $opt{loop} eq 'flag'  and
+                       defined( $opt{batch} ) );
+
+          my ($next, $high) = orac_check_data_dir($frameclass, $opt{from}, $flag);
 
           if (defined $high) {
 
@@ -1075,7 +1081,7 @@ sub orac_process_argument_list {
 
         } else {
 
-          # If we are using -loop wait and flag we can not optimize 
+          # If we are using -loop wait and flag we can not optimize
           # to -list since the file count is changing
           @$obs = ( $opt{from} );
           $loop = $opt{loop};
