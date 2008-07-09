@@ -18,15 +18,13 @@ Rights Reserved.
 use Starlink::HDSPACK qw/ create_hdsobj copy_hdsobj /;
 use JCMT::ACSIS::Array;
 
-orac_print "Running Tsys QA check.\n";
-
 foreach my $i ( 1 .. $Frm->nfiles ) {
 
   my %tsys;
 
   my $infile = $Frm->file( $i );
 
-  orac_print "Processing $infile.\n";
+  orac_print "Retrieving Tsys values for $infile.\n";
 
   my $tmptsys = new ORAC::TempFile;
 
@@ -41,31 +39,44 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 
   orac_print sprintf( " Tsys for entire array:   %7.2f K\n", $mean );
 
-  $tsys{'array'} = $mean;
-
   # Get stats for each receptor.
   my $array = new JCMT::ACSIS::Array( File => $infile );
   my @receptors = $array->receptors;
+
+  my $dstring = '';
+  my $rstring = '';
+  my @dstrings;
+  my @rstrings;
 
   foreach my $receptor ( @receptors ) {
     my $pixel = $array->pixel( $receptor );
     $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$tmptsys($pixel,)" );
     ( $ORAC_STATUS, my $pixmean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
 
-    # Format for printing.
-    my $p_pixmean;
-    if( $pixmean < 0 ) {
-      $p_pixmean = " bad     ";
-    } else {
-      $p_pixmean = sprintf( "%7.2f K", $pixmean );
-    }
-    orac_print " Tsys for receptor $receptor:   $p_pixmean\n";
-
-    if( $pixmean < 0 ) {
-      $tsys{$receptor} = "bad";
-    } else {
+    if( $pixmean > 0 ) {
+      $rstring .= sprintf( " %8.3f", $pixmean );
       $tsys{$receptor} = $pixmean;
+    } else {
+      $rstring .= "      bad";
+      $tsys{$receptor} = "bad";
     }
+
+    $dstring .= "      $receptor";
+
+    if( length( $dstring ) > 72 ) {
+      push @dstrings, $dstring;
+      push @rstrings, $rstring;
+      $dstring = '';
+      $rstring = '';
+    }
+  }
+
+  push @dstrings, $dstring;
+  push @rstrings, $rstring;
+
+  orac_print " Tsys values for each receptor:\n";
+  foreach my $i ( 0 .. $#dstrings ) {
+    orac_print "$dstrings[$i]\n$rstrings[$i]\n";
   }
 
   # Store the information on receptors in the uhdr.
