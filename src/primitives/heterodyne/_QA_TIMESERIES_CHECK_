@@ -48,20 +48,32 @@ if( ! $isok ) {
 
   my $survey = $Frm->hdr( "SURVEY" );
 
-  my ( $tsys_result, $rms_result, %result );
+  my ( $tsys_result, %result );
 
   if( ! defined( $survey ) ) {
     $tsys_result = JSA::QA::analyse_tsys( $tsys_values_href );
-    $rms_result = JSA::QA::analyse_timeseries_rms( $rms_values_href );
   } else {
     $tsys_result = JSA::QA::analyse_tsys( $tsys_values_href,
                                      'survey' => $survey );
-    $rms_result = JSA::QA::analyse_timeseries_rms( $rms_values_href,
-                                                   'survey' => $survey );
   }
 
-  # Merge the results. If any of the tests fail, then the whole survey QA test fails.
+  # Now for each survey in the Tsys results, we need to filter out
+  # those flagged as bad. Then get the RMS result for the rest.
   foreach my $result_survey ( keys %$tsys_result ) {
+    my %bad_receptors = map { $_, 1 } @{$tsys_result->{$result_survey}->bad_receptors};
+
+    my %temp_rms;
+    foreach my $receptor ( keys %$tsys_values_href ) {
+      next if exists $bad_receptors{$receptor};
+      $temp_rms{$receptor} = $rms_values_href->{$receptor};
+    }
+
+    # Now run the RMS test with the new "clean" RMS hash.
+    my $rms_result = JSA::QA::analyse_timeseries_rms( \%temp_rms,
+                                                      'survey' => $survey );
+
+    # Merge the results. If any of the tests fail, then the whole
+    # survey QA test fails.
     my $merged_result = new JSA::QA::Result;
     $merged_result->pass( $tsys_result->{$result_survey}->pass &&
                           $rms_result->{$result_survey}->pass );
