@@ -17,9 +17,11 @@ Rights Reserved.
 
 use JCMT::ACSIS::Array;
 
+my @masked_files;
+
 foreach my $i ( 1 .. $Frm->nfiles ) {
 
-  my $infile = $Frm->file( $i );
+  my ( $infile, $outfile ) = $Frm->inout( "_msk", $i );
 
   orac_print "Calculating RMS values for $infile.\n";
 
@@ -45,7 +47,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
     my $range = $result->misc->{'velocity_range'};
     my $centre = $result->coords->rv;
 
-    my $params = "in=$infile out=$temp3 section='$centre~$range,,' newval=bad";
+    my $params = "in=$infile out=$outfile section='$centre~$range,,' newval=bad";
     $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
 
   } else {
@@ -56,7 +58,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
     $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
 
     # Mask out the baselined file.
-    $Mon{'kappa_mon'}->obeyw( "add", "in1=$temp1 in2=$temp2 out=$temp3" );
+    $Mon{'kappa_mon'}->obeyw( "add", "in1=$temp1 in2=$temp2 out=$outfile" );
 
   }
 
@@ -73,7 +75,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
   $extent = int( $extent * 0.85 );
 
   # Get stats for this extent across all detectors.
-  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp3(~$extent,,)" );
+  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$outfile(~$extent,,)" );
   my ( $ORAC_STATUS, $rmsmean ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
 
   orac_print sprintf( " Average RMS across all receptors: %6.3f\n", $rmsmean );
@@ -90,7 +92,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
   foreach my $receptor ( sort $array->receptors ) {
 
     my $pixel = $array->pixel( $receptor );
-    $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp3(~$extent,$pixel,)" );
+    $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$outfile(~$extent,$pixel,)" );
     ( $ORAC_STATUS, my $pixrms ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
 
     if( $pixrms > 0 ) {
@@ -123,7 +125,15 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
   # Store the information on receptors in the uhdr.
   $Frm->uhdr( "QA_RMS_VALUES", \%rms );
 
+  # Store the name of the masked file. We can't update the frame
+  # object because we want to continue on doing stats on the original
+  # file.
+  $masked_files[$i] = $outfile;
+
 }
+
+# Store the array of masked files.
+$Frm->uhdr( "QA_MASKED_FILES", \@masked_files );
 
 # Tidy-up output.
 orac_print "\n";
