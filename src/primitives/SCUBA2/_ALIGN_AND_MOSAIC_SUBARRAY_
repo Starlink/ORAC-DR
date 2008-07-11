@@ -108,148 +108,141 @@ USA
 
 # Should I be verbose? (default to yes)
 my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
-#$ORAC::TempFile::DEBUG = 1;
 
-# Check that we have more than one subarray to combine
-if ( $Frm->numsubarrays == 1 ) {
-  # Dummy warning for now
-  orac_warn "Note: data exist for only 1 subarray - skipping this primitive" 
-    if $verbose;
+# Check for input parameters: MAKEMOS
+my $makemos = get_prim_arg( $_PRIM_ARGS_, "MAKEMOS", 0 );
 
-  # Images will not yet be aligned to a common reference image
-  $Frm->uhdr("ALIGNED",0);
-} else {
-  # Check for input paramters: MAKEMOS
-  my $makemos = get_prim_arg( $_PRIM_ARGS_, "MAKEMOS", 0 );
+# Rebin or resample? Default is resample (rebin = 0).
+my $rebin = get_prim_arg( $_PRIM_ARGS_, "REBIN", 0);
 
-  # Rebin or resample? Default is resample (rebin = 0).
-  my $rebin = get_prim_arg( $_PRIM_ARGS_, "REBIN", 0);
+# Method for determining the output pixel values (used by WCSMOSAIC
+# and WCSALIGN - use of NEAREST is advised in order to obtain accurate
+# EXP_TIME and WEIGHTS handling
+my $method = get_prim_arg( $_PRIM_ARGS_, "METHOD", "nearest" );
 
-  # Method for determining the output pixel values (used by WCSMOSAIC
-  # and WCSALIGN - use of NEAREST is advised in order to obtain
-  # accurate EXP_TIME and WEIGHTS handling
-  my $method = get_prim_arg( $_PRIM_ARGS_, "METHOD", "nearest" );
+# Are we aligning images in a SKY frame? Default to yes.
+my $skyalign = get_prim_arg( $_PRIM_ARGS_, "SKYREF", 1);
 
-  # Are we aligning images in a SKY frame? Default to yes.
-  my $skyalign = get_prim_arg( $_PRIM_ARGS_, "SKYREF", 1);
+# MAKEMOS image combination method
+my $makemos_method = get_prim_arg( $_PRIM_ARGS_, "MAKEMOS_METHOD", "mean" );
 
-  # MAKEMOS image combination method
-  my $makemos_method = get_prim_arg( $_PRIM_ARGS_, "MAKEMOS_METHOD", "mean" );
+# Check version of KAPPA is new enough to use WCSMOSAIC
+if (starversion_lt('kappa', 'V1.5')) {
+  $makemos = 1;
+  orac_warn "Installed Kappa version does not support WCSMOSAIC, falling back on WCSALIGN+MAKEMOS";
+}
 
-  # Check version of KAPPA is new enough to use WCSMOSAIC
-  if (starversion_lt('kappa', 'V1.5')) {
-    $makemos = 1;
-    orac_warn "Installed Kappa version does not support WCSMOSAIC, falling back on WCSALIGN+MAKEMOS";
+my $moving = $Grp->uhdr("MOVING");
+# Some non-obvious stuff here. GROUPREF should be 0 for moving
+# sources. First time through, the MOVING flag will not be set so
+# GROUPREF will be 1, but that doesn't matter at this stage because
+# the group file will not exist. The moving flag must be checked after
+# the refereince image has been created for correct subsequent
+# processing.
+my $pointfocus = ( $Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /focus/i ||
+		   $Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /point/i) ? 1 : 0;
+my $groupref = ( $moving ) ? 0 : 1;
+
+# Determine reference image for alignment. Use current coordinate
+# frame
+_GET_REFERENCE_IMAGE_ SKYREF=$skyalign VERBOSE=$verbose GROUPREF=$groupref
+my $refimage = $_GET_REFERENCE_IMAGE_{REFIMAGE};
+# Query moving flag again
+$moving = $Grp->uhdr("MOVING");
+
+# Set the WLIM parameter for WCSMOSAIC/WCSALIGN
+my $wlim = 0.2;
+
+# Number of files in current frame
+my $nfiles = $Frm->nfiles;
+my $nsubim = $nfiles / ( $Frm->numsubarrays );
+
+# Inform user of number of images being created
+if ( $verbose && ($nsubim != $nfiles) ) {
+  my $outmethod;
+  if ($makemos) {
+    $outmethod = "WCSALIGN+MAKEMOS";
+  } else {
+    $outmethod = "WCSMOSAIC";
   }
+  orac_print("Aligning and mosaicking $nfiles files into $nsubim subarray images with $outmethod\n");
+}
 
-  my $moving = $Grp->uhdr("MOVING");
-  # Some non-obvious stuff here. GROUPREF should be 0 for moving
-  # sources. First time through, the MOVING flag will not be set so
-  # GROUPREF will be 1, but that doesn't matter at this stage because
-  # the group file will not exist. The moving flag must be checked
-  # after the refereince image has been created for correct subsequent
-  # processing.
-  my $pointfocus = ( $Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /focus/i ||
-		     $Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /point/i) ? 1 : 0;
-  my $groupref = ( $moving ) ? 0 : 1;
+# Set the attributes for moving sources for SCIENCE observations
+if ( $moving  && !$pointfocus ) {
+  orac_print "Setting attributes for moving sources...\n";
+  for my $i (1..$nfiles) {
+    my $in = $Frm->file($i);
+    my $args = "ndf=$in mode=mset setting='skyrefis=origin,alignoffset=1'";
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+  }
+}
 
-  # Determine reference image for alignment. Use current coordinate
-  # frame
-  _GET_REFERENCE_IMAGE_ SKYREF=$skyalign VERBOSE=$verbose GROUPREF=$groupref
-  my $refimage = $_GET_REFERENCE_IMAGE_{REFIMAGE};
-  # Query moving flag again
-  $moving = $Grp->uhdr("MOVING");
+# Align all the images in the Frame if we're using MAKEMOS.
+if ( $makemos ) {
+  _ALIGN_ARRAYS_ SKYREF=$skyalign REFIMAGE=$refimage
+}
 
-  # Set the WLIM parameter for WCSMOSAIC/WCSALIGN
-  my $wlim = 0.2;
+# Set the reference image to be used
+my $ref = ( $pointfocus ) ? "!" : $refimage;
 
-  # Number of files in current frame
-  my $nfiles = $Frm->nfiles;
-  my $nsubim = $nfiles / ( $Frm->numsubarrays );
+# Array of output filenames to store in Frame object on completion
+my @out;
 
-  # Inform user of number of images being created
-  if ( $verbose ) {
-    my $outmethod;
-    if ($makemos) {
-      $outmethod = "WCSALIGN+MAKEMOS";
-    } else {
-      $outmethod = "WCSMOSAIC";
+# Array of input subheaders
+my $fits = $Frm->fits;
+my @insubhdrs = $fits->subhdrs;
+
+# Array of output subheaders to associate with each frame in @out
+my @subhdrs;
+
+# Do we have sub-headers? If not, then we have just 4 (or
+# N_WORKING_SUBARRAYS) images to mosaic
+if ( defined $Frm->hdr->{SUBHEADERS}->[0]->{SEQSTART}  || 
+     defined $Frm->hdr->{SUBHEADERS}->[0]->{NSUBSCAN} ) {
+  # Hash to store each SEQSTART/NSUBSCAN combination as appropriate
+  # images are mosaicked, plus an indexing hash to associate groups of
+  # related files with the file index.
+  my (%commonfiles, %indxr);
+
+  # Loop over number of files to store associations
+  my $j = 0;
+  for my $i (1..$nfiles) {
+    my $seqstart = $Frm->hdrval('SEQSTART',$i-1);
+    my $nsubscan = $Frm->hdrval('NSUBSCAN',$i-1);
+    # Define a unique identified key from subscan number and seqstart
+    my $commonkey = $nsubscan."_".$seqstart;
+    push @{ $commonfiles{$commonkey} }, $Frm->file($i);
+    # Now we need a way to link the array of common files to the
+    # correct file name for creating the output files. Do this with
+    # another hash with the same keys as above with file indices as
+    # values. This takes advantage of how the files are stored in the
+    # Frm and ensures we match up files correctly.
+    push(@{ $indxr{$commonkey}}, $i );
+  }
+  # Loop over groups of files to mosaic them - sort to preserve time
+  # order (KLUDGE: should sort on TIME not just on index)
+  foreach my $arraygrp ( sort { $indxr{$a}->[0] <=> $indxr{$b}->[0] } keys %indxr ) {
+    # For deciding the output file name we no longer need subarray designation
+    # Input: s8aYYYYMMDD_OBSNUM_SUBSCAN_suffix
+    # Output: sYYYYMMDD_OBSNUM_SUBSCAN_suffix
+    my $out = $Frm->inout('_arr',$indxr{$arraygrp}[0]);
+    $out = $Frm->rewrite_outfile_subarray( $out );
+
+    # Need to merge the headers associated with these files note that
+    # Frm->file index is off by one relative to subhdrs
+    my ($refhdr, @thesehdrs) = map { $insubhdrs[$_-1] } @{$indxr{$arraygrp}};
+
+    # drop anything that is different
+    if (@thesehdrs) {
+      ($refhdr, my @different) = $refhdr->merge_primary(@thesehdrs);
     }
-    orac_print("Aligning and mosaicking $nfiles files into $nsubim subarray images with $outmethod\n");
-  }
 
-  # Set the attributes for moving sources for SCIENCE observations
-  if ( $moving  && !$pointfocus ) {
-    orac_print "Setting attributes for moving sources...\n";
-    for my $i (1..$nfiles) {
-      my $in = $Frm->file($i);
-      my $args = "ndf=$in mode=mset setting='skyrefis=origin,alignoffset=1'";
-      $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
-    }
-  }
-
-  # Align all the images in the Frame if we're using MAKEMOS.
-  if ( $makemos ) {
-    _ALIGN_ARRAYS_ SKYREF=$skyalign REFIMAGE=$refimage
-  }
-
-  # Set the reference image to be used
-  my $ref = ( $pointfocus ) ? "!" : $refimage;
-
-  # Array of output filenames to store in Frame object on completion
-  my @out;
-
-  # Array of input subheaders
-  my $fits = $Frm->fits;
-  my @insubhdrs = $fits->subhdrs;
-
-  # Array of output subheaders to associate with each frame in @out
-  my @subhdrs;
-
-  # Do we have sub-headers? If not, then we have just 4 (or
-  # N_WORKING_SUBARRAYS) images to mosaic
-  if ( defined $Frm->hdr->{SUBHEADERS}->[0]->{SEQSTART}  || 
-       defined $Frm->hdr->{SUBHEADERS}->[0]->{NSUBSCAN} ) {
-    # Hash to store each SEQSTART/NSUBSCAN combination as appropriate
-    # images are mosaicked, plus an indexing hash to associate groups
-    # of related files with the file index.
-    my (%commonfiles, %indxr);
-
-    # Loop over number of files to store associations
-    my $j = 0;
-    for my $i (1..$nfiles) {
-      my $seqstart = $Frm->hdrval('SEQSTART',$i-1);
-      my $nsubscan = $Frm->hdrval('NSUBSCAN',$i-1);
-      # Define a unique identified key from subscan number and seqstart
-      my $commonkey = $nsubscan."_".$seqstart;
-      push @{ $commonfiles{$commonkey} }, $Frm->file($i);
-      # Now we need a way to link the array of common files to the
-      # correct file name for creating the output files. Do this with
-      # another hash with the same keys as above with file indices as
-      # values. This takes advantage of how the files are stored in
-      # the Frm and ensures we match up files correctly.
-      push(@{ $indxr{$commonkey}}, $i );
-    }
-    # Loop over groups of files to mosaic them - sort to preserve time
-    # order (KLUDGE: should sort on TIME not just on index)
-    foreach my $arraygrp ( sort { $indxr{$a}->[0] <=> $indxr{$b}->[0] } keys %indxr ) {
-      # For deciding the output file name we no longer need subarray designation
-      # Input: s8aYYYYMMDD_OBSNUM_SUBSCAN_suffix
-      # Output: sYYYYMMDD_OBSNUM_SUBSCAN_suffix
-      my $out = $Frm->inout('_arr',$indxr{$arraygrp}[0]);
-      $out = $Frm->rewrite_outfile_subarray( $out );
-
-      # Need to merge the headers associated with these files
-      # note that Frm->file index is off by one relative to subhdrs
-      my ($refhdr, @thesehdrs) = map { $insubhdrs[$_-1] } @{$indxr{$arraygrp}};
-
-      # drop anything that is different
-      if (@thesehdrs) {
-	($refhdr, my @different) = $refhdr->merge_primary(@thesehdrs);
-      }
-
-      my @files = @{ $commonfiles{$arraygrp} };
-      my $numingrp = scalar( @files );
+    my @files = @{ $commonfiles{$arraygrp} };
+    my $numingrp = scalar( @files );
+    # If numingrp == 1 we have only a single subarray so we just
+    # ndfcopy the input to output
+    if ( $numingrp > 1 ) {
       # Write filenames into temp file
       my $infiles = write_file_list( @files );
       # Combine images with chosen method
@@ -261,14 +254,23 @@ if ( $Frm->numsubarrays == 1 ) {
 	  "out=$out in=^$infiles";
 	$Mon{kappa_mon}->obeyw("wcsmosaic","$args");
       }
-
-      # Add to output array
-      push (@out, $out);
-      push (@subhdrs, $refhdr);
+    } else {
+      # Only 1 subarray - @files will have only 1 element
+      my $in = $files[0];
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$out");
     }
 
-  } else {
-    my ($in, $out) = $Frm->inout('_arr');
+    # Add to output array
+    push (@out, $out);
+    push (@subhdrs, $refhdr);
+  }
+
+} else {
+  # If there are no subheaders, this must be the first data to be
+  # processed. This means the number of files in the Frame will be
+  # equal to the number of subarrays.
+  my ($in, $out) = $Frm->inout('_arr');
+  if ( $nfiles > 1 ) {
     # Write filenames into temp file - note the files have been
     # aligned already if makemos has been chosen
     my $infiles = write_file_list( $Frm->files );
@@ -280,27 +282,38 @@ if ( $Frm->numsubarrays == 1 ) {
       my $args = "ref=$ref method=$method lbnd=! ubnd=! wlim=$wlim ".
 	"out=$out in=^$infiles";
       $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
-    }
-    # Add to output array
-    push (@out, $out);
+    } 
+  } else {
+    # Only 1 file - ie 1 subarray
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$out");
   }
-  # Store the output files and merged subhdrs
-  $Frm->files( @out );
-  $fits->subhdrs(@subhdrs);
-
-  # Create EXP_TIME and WEIGHTS components - only reliable if
-  # Nearest-neighbour rebinning has been used
-  if ( $method eq "nearest" ) {
-    _CREATE_COMPS_DREAMSTARE_
-    # Set Frame headers that might come in handy later
-    $Frm->uhdr("EXP_TIME",1);
-    $Frm->uhdr("WEIGHTS",1);
-  }
-
-  # Now is the time to align the images into a sky coordinate frame
-  # for POINTING and FOCUS observations
-  if ( $pointfocus ) {
-    _ALIGN_ARRAYS_ METHOD=$method REFIMAGE=$refimage VERBOSE=1 COMP=1
-  }
-  $Frm->uhdr("ALIGNED",1);
+  # Add to output array
+  push (@out, $out);
 }
+
+# Store the output files and merged subhdrs
+$Frm->files( @out );
+$fits->subhdrs(@subhdrs);
+
+# Create EXP_TIME and WEIGHTS components - only reliable if
+# Nearest-neighbour rebinning has been used
+if ( $method eq "nearest" ) {
+  _CREATE_COMPS_DREAMSTARE_
+  # Set Frame headers that might come in handy later
+  $Frm->uhdr("EXP_TIME",1);
+  $Frm->uhdr("WEIGHTS",1);
+} else {
+  orac_warn "Exp_time and weights not created for method = $method\n";
+  $Frm->uhdr("EXP_TIME",0);
+  $Frm->uhdr("WEIGHTS",0);
+}
+
+# Now is the time to align the images into a sky coordinate frame for
+# POINTING and FOCUS observations or data taken with only a single
+# subarray
+if ( $pointfocus || ($Frm->numsubarrays == 1)) {
+  _ALIGN_ARRAYS_ METHOD=$method REFIMAGE=$refimage VERBOSE=1 COMP=1
+}
+
+# Set the aligned flag so we don't waste time repeating it again later
+$Frm->uhdr("ALIGNED",1);
