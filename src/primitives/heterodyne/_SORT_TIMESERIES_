@@ -16,6 +16,10 @@ size of the data files is reduced by purging bad detectors.
 
 =over 4
 
+=item GENVAR = LOGICAL (Given)
+
+Whether or not to generate a variance component based on Tsys. [0]
+
 =item MASK = LOGICAL (Given)
 
 Whether or not to mask bad detectors. [1]
@@ -67,6 +71,7 @@ Rights Reserved.
 =cut
 
 # Retrieve parameters.
+my $genvar = get_prim_arg( $_PRIM_ARGS_, "GENVAR", 0 );
 my $mask = get_prim_arg( $_PRIM_ARGS_, "MASK", 1 );
 my $purge = get_prim_arg( $_PRIM_ARGS_, "PURGE", 1 );
 
@@ -82,7 +87,6 @@ my $outfilename = $outfile->file;
 foreach my $i ( 1 .. $Frm->nfiles ) {
 
   my ( $in, $out ) = $Frm->inout( "_ts", $i );
-
   print {$infile->handle} "$in\n";
   print {$outfile->handle} "$out\n";
 }
@@ -90,19 +94,16 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 # Set up parameters for TIMESORT.
 my $params = "in='^$infilename' out='^$outfilename' outfiles=tsout$$.lis";
 $params .= " sizelimit=! merge=true ";
-if( $purge ) {
-  $params .= " detpurge=true";
-} else {
-  $params .= " detpurge=false";
-}
+$params .= " genvar=" . ( $genvar ? "true" : "false" );
+$params .= " detpurge=" . ( $purge ? "true" : "false" );
 
 # Retrieve a list of detectors to not use, but only if we've been
 # asked to mask bad detectors.
-my $baddets;
+my @baddets;
 if( $mask ) {
-  $baddets = eval { $Cal->bad_detectors };
-  if( defined( $baddets ) ) {
-    $params .= " detectors='-$baddets'";
+  @baddets = $Cal->bad_receptors_list;
+  if( defined( $baddets[0] ) ) {
+    $params .= " detectors='-" . ( join ",",@baddets ) . "'";
   }
 }
 
@@ -140,8 +141,8 @@ foreach my $i ( 1 .. $nout ) {
 
   orac_print "$in to $out:\n Sorted time slices in increasing time.\n";
 
-  if( defined( $baddets ) ) {
-    orac_print " Masked detectors $baddets.\n";
+  if( defined( $baddets[0] ) ) {
+    orac_print " Masked detectors " . ( join ",",sort @baddets ) . ".\n";
   }
 }
 
