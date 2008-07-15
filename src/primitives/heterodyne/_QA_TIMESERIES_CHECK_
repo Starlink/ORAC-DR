@@ -46,57 +46,87 @@ if( ! $isok ) {
   my $tsys_values_href = $Frm->uhdr( "QA_TSYS_VALUES" );
   my $rms_values_href = $Frm->uhdr( "QA_RMS_VALUES" );
 
-  my $survey = $Frm->hdr( "SURVEY" );
+  foreach my $file ( sort keys %$tsys_values_href ) {
 
-  my ( $tsys_result, %result );
+    my $tsys_values = $tsys_values_href->{$file};
+    my $rms_values = $rms_values_href->{$file};
 
-  if( ! defined( $survey ) ) {
-    $tsys_result = JSA::QA::analyse_tsys( $tsys_values_href );
-  } else {
-    $tsys_result = JSA::QA::analyse_tsys( $tsys_values_href,
-                                     'survey' => $survey );
-  }
+    my $survey = $Frm->hdr( "SURVEY" );
 
-  # Now for each survey in the Tsys results, we need to filter out
-  # those flagged as bad. Then get the RMS result for the rest.
-  foreach my $result_survey ( keys %$tsys_result ) {
-    my %bad_receptors = map { $_, 1 } @{$tsys_result->{$result_survey}->bad_receptors};
+    my ( $tsys_result, %result );
 
-    my %temp_rms;
-    foreach my $receptor ( keys %$tsys_values_href ) {
-      next if exists $bad_receptors{$receptor};
-      $temp_rms{$receptor} = $rms_values_href->{$receptor};
+    if( ! defined( $survey ) ) {
+      $tsys_result = JSA::QA::analyse_tsys( $tsys_values );
+    } else {
+      $tsys_result = JSA::QA::analyse_tsys( $tsys_values,
+                                            'survey' => $survey );
     }
 
-    # Now run the RMS test with the new "clean" RMS hash.
-    my $rms_result = JSA::QA::analyse_timeseries_rms( \%temp_rms,
+    # Now for each survey in the Tsys results, we need to filter out
+    # those flagged as bad. Then get the RMS result for the rest.
+    foreach my $result_survey ( keys %$tsys_result ) {
+      my %bad_receptors = map { $_, 1 } @{$tsys_result->{$result_survey}->bad_receptors};
+
+      my %temp_rms;
+      foreach my $receptor ( keys %$tsys_values ) {
+        next if exists $bad_receptors{$receptor};
+        $temp_rms{$receptor} = $rms_values->{$receptor};
+      }
+
+      # Now run the RMS test with the new "clean" RMS hash.
+      my $rms_result = JSA::QA::analyse_timeseries_rms( \%temp_rms,
                                                       'survey' => $survey );
 
-    # Merge the results. If any of the tests fail, then the whole
-    # survey QA test fails.
-    my $merged_result = new JSA::QA::Result;
-    $merged_result->pass( $tsys_result->{$result_survey}->pass &&
-                          $rms_result->{$result_survey}->pass );
-    $merged_result->add_fail_reason( $tsys_result->{$result_survey}->fail_reasons );
-    $merged_result->add_fail_reason( $rms_result->{$result_survey}->fail_reasons );
+      # Merge the results. If any of the tests fail, then the whole
+      # survey QA test fails.
+      my $merged_result = new JSA::QA::Result;
+      $merged_result->pass( $tsys_result->{$result_survey}->pass &&
+                            $rms_result->{$result_survey}->pass );
+      $merged_result->add_fail_reason( $tsys_result->{$result_survey}->fail_reasons );
+      $merged_result->add_fail_reason( $rms_result->{$result_survey}->fail_reasons );
+      $merged_result->add_bad_receptor( $tsys_result->{$result_survey}->bad_receptors );
+      $merged_result->add_bad_receptor( $rms_result->{$result_survey}->bad_receptors );
 
-    $result{$result_survey} = $merged_result;
-  }
+      $result{$result_survey} = $merged_result;
+    }
 
-  # Display the results.
-  foreach my $result_survey ( sort keys %result ) {
-    my $pass = $result{$result_survey}->pass;
-    orac_print "Time-series QA ";
-    orac_print ( ( $pass ? "passed" : " failed " ),
-                 ( $pass ? "green" : "bold white on_red" ) );
-    orac_print " for $result_survey.\n";
-    if( ! $pass ) {
-      orac_print " Failure reason" . ( scalar @{$result{$result_survey}->fail_reasons} > 1 ?
-                                       "s"                                                   :
-                                       "" );
-      orac_print ":\n";
-      orac_print " " . join( "\n ", @{$result{$result_survey}->fail_reasons} );
-      orac_print "\n";
+    # Display the results.
+    foreach my $result_survey ( sort keys %result ) {
+      my $pass = $result{$result_survey}->pass;
+      orac_print "Time-series QA ";
+      orac_print ( ( $pass ? " passed " : " failed " ),
+                   ( $pass ? "bold white on_green" : "bold white on_red" ) );
+      orac_print " for $result_survey for $file.\n";
+      if( ! $pass ) {
+        orac_print " Failure reason" . ( scalar @{$result{$result_survey}->fail_reasons} > 1 ?
+                                         "s"                                                 :
+                                         "" );
+        orac_print ":\n";
+        orac_print " " . join( "\n ", @{$result{$result_survey}->fail_reasons} );
+        orac_print "\n";
+      }
+    }
+
+    # Sort out bad receptors. They'll be added to the calibration system
+    # for either the specific survey or for everything, and only for the
+    # current LOFREQ +/- 1 GHz.
+    my $lofreq = $Frm->hdr( "LOFREQS" );
+    my $survey_br = $Frm->uhdr( "SURVEY_BR" );
+    my @bad_receptors;
+    if( defined( $survey ) ) {
+      @bad_receptors = @{$result{$survey}->bad_receptors};
+    } else {
+      @bad_receptors = @{$result{'Telescope'}->bad_receptors};
+    }
+    if( $#bad_receptors > 0 ) {
+      my %recep_hash = ( %{$Frm->hdr},
+                         LOFREQ_MAX => $lofreq + 1,
+                         LOFREQ_MIN => $lofreq - 1,
+                         DETECTORS => ( join ',',@bad_receptors ),
+                         SURVEY_BR => $survey_br,
+                       );
+      $Cal->bad_receptors_qa_index->add( $file, \%recep_hash );
     }
   }
 }
+
