@@ -212,18 +212,16 @@ sub bad_receptors_list {
     if( $sys =~ /MASTER/ ) {
 
       my $brposition = $self->bad_receptors_index->chooseby_negativedt( 'ORACTIME', $self->thing, 0 );
-      if( ! defined( $brposition ) ) {
-        croak "No suitable bad receptor value found in index file"
-      }
 
-      # Retrieve the specific entry, and thus the receptors.
-      my $brref = $self->bad_receptors_index->indexentry( $brposition );
-      if( exists( $brref->{'DETECTORS'} ) ) {
-        @master_bad = split /,/, $brref->{'DETECTORS'};
-      } else {
-        croak "Unable to obtain DETECTORS from master index file entry $brposition\n";
+      if( defined( $brposition ) ) {
+        # Retrieve the specific entry, and thus the receptors.
+        my $brref = $self->bad_receptors_index->indexentry( $brposition );
+        if( exists( $brref->{'DETECTORS'} ) ) {
+          @master_bad = split /,/, $brref->{'DETECTORS'};
+        } else {
+          croak "Unable to obtain DETECTORS from master index file entry $brposition\n";
+        }
       }
-
     }
 
     if ( $sys =~ /INDEX/ ) {
@@ -239,7 +237,7 @@ sub bad_receptors_list {
       }
       $self->thingtwo( $thing2 );
 
-      my $brposition = $self->bad_receptors_qa_index->chooseby_negativedt( 'ORACTIME', $self->thing, 0 );
+      my $brposition = $self->bad_receptors_qa_index->chooseby_negativedt( 'ORACTIME', $self->thing, - );
 
       if( defined( $brposition ) ) {
         # Retrieve the specific entry, and thus the receptors.
