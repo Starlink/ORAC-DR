@@ -412,33 +412,43 @@ if ( $usegrp ) {
   $grpfrm = "Frame";
   orac_print "Collecting files to mosaic...\n";
 
-  # Align images in the current Frm to a reference image
-  if ( $makemos ) {
-    _ALIGN_ARRAYS_ METHOD=$method REFIMAGE=$refimage FRAME=$Frmobj
-  }
-
-  # Write names of all files to temp file and set attributes for
-  # moving sources if necessary
-  orac_print("Setting attributes for moving sources... ") 
-    if ( !$makemos && $moving );
-  $nfiles = 0;
-  for my $fname ($Frmobj->files) {
-    # If we're using wcsmosaic for a moving source, SkyRefIs must be
-    # set to origin and AlignOffset to 1. If we're using makemos this
-    # will have been done by the _ALIGN_ARRAYS_ call above.
-    if ( !$makemos && $moving ) {
-      my $alignargs = "ndf=$fname mode=mset setting='skyrefis=origin,alignoffset=1'";
-      $Mon{ndfpack_mon}->obeyw("wcsattrib","$alignargs");
+  # If we have only 1 subarray and 1 file this means we're in QL mode
+  # so just align this image to the reference
+  if ($Frmobj->numsubarrays == 1 && $Frmobj->nfiles == 1) {
+    _ALIGN_ARRAYS_ METHOD=$method REFIMAGE=$refimage FRAME=$Frmobj REBIN=1 VERBOSE=1
+    ($in, $out) = $Frmobj->inout('_fmos');
+    # This should be 0 anyway, but absolutely insist on it here to make sure
+    $makemos = 0;
+    $nfiles = $Frmobj->nfiles;
+  } else {
+    # Align images in the current Frm to a reference image
+    if ( $makemos ) {
+      _ALIGN_ARRAYS_ METHOD=$method REFIMAGE=$refimage FRAME=$Frmobj REBIN=1
     }
-    print {$listhandle} "$fname\n";
-    $in = $fname;
-    push (@mosfiles, $fname);
-    $nfiles++;
+
+    # Write names of all files to temp file and set attributes for
+    # moving sources if necessary
+    orac_print("Setting attributes for moving sources... ") 
+      if ( !$makemos && $moving );
+    $nfiles = 0;
+    for my $fname ($Frmobj->files) {
+      # If we're using wcsmosaic for a moving source, SkyRefIs must be
+      # set to origin and AlignOffset to 1. If we're using makemos this
+      # will have been done by the _ALIGN_ARRAYS_ call above.
+      if ( !$makemos && $moving ) {
+	my $alignargs = "ndf=$fname mode=mset setting='skyrefis=origin,alignoffset=1'";
+	$Mon{ndfpack_mon}->obeyw("wcsattrib","$alignargs");
+      }
+      print {$listhandle} "$fname\n";
+      $in = $fname;
+      push (@mosfiles, $fname);
+      $nfiles++;
+    }
+    orac_print("done\n") if ( !$makemos && $moving );
+    # Create output filename, derived from first input file
+    # since this is a many to one operation
+    $out = $Frmobj->inout('_fmos');
   }
-  orac_print("done\n") if ( !$makemos && $moving );
-  # Create output filename, derived from first input file
-  # since this is a many to one operation
-  $out = $Frmobj->inout('_fmos');
 
   $make_mosaic = 1;
 }
@@ -457,7 +467,6 @@ if ( $make_mosaic ) {
 
   my $args;
   # Retrieve name of file which will hold the list of images to mosaic
-  my $moslist = $filelist->file;
   if ( $makemos ) {
     # ########
     # MAKEMOS
@@ -506,6 +515,7 @@ if ( $make_mosaic ) {
     $args .= " method=$makemos_method logto=neither";
 
     # Check number of files and generate intermediate mosaics if necessary
+    my $moslist = $filelist->file;
     if ( $nfiles > $maxmosfiles ) {
       use POSIX qw/ ceil /;
       my $nsteps = ceil($nfiles/$maxmosfiles);
@@ -590,6 +600,7 @@ if ( $make_mosaic ) {
     # those variances for weighting the data).
 
     if ( $nfiles > 1 ) {
+      my $moslist = $filelist->file;
       my $weighting = "genvar=f variance=f";
       $weighting = ( $usegrp ) ? "genvar=f variance=f" : "genvar=t variance=f";
       # If we are creating the group image, first check the bounds to
