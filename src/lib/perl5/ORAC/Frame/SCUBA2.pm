@@ -594,7 +594,7 @@ sub findgroup {
     }
 
     # If we don't have a useful skyref at this point, re-create the
-    # WCS from the FITS header
+    # WCS from the FITS header for DREAM/STARE images
     if ( !defined $skyref && ($self->hdr('SAM_MODE') ne "SCAN") ) {
       my $fits = Astro::FITS::Header::NDF->new( File => $self->file );
       my @cards = $fits->cards;
@@ -737,7 +737,7 @@ sub findrecipe {
   }
 
   # Darks will cause trouble
-  if ($self->hdr("SHUTTER") eq 'CLOSED') {
+  if ($self->hdr("SHUTTER") == 0.0) {
     $recipe = "REDUCE_DARK";
   }
 
