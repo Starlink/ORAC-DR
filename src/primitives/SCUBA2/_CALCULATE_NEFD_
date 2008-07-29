@@ -1,0 +1,136 @@
+#! -*-perl-*-
+
+=head1 NAME
+
+_CALCULATE_NEFD_
+
+=head1 DESCRIPTION
+
+Calculate the Noise Equivalent Flux Density (NEFD) of the current
+observation.
+
+The NEFD is calculated using the formula:
+
+   NEFD = noise * sqrt(time)
+
+where noise is in mJy, the time is the total on+off integration
+time in seconds. The units of NEFD are therefore mJy/rtHz.
+
+The results are written to a log file (log.nefd).
+
+=head1 ARGUMENTS
+
+The following argument is supported
+
+=over 4
+
+=item B<GROUP>
+
+Flag to indicate whether to obtain results from the Group
+file. Default is 0 (use the current Frame).
+
+=item B<METHOD>
+
+Preferred estimator for integration time. Valid options are C<MEAN>,
+C<MEDIAN> or C<MODE>. Default is C<MEDIAN>.
+
+=item B<USELOG>
+
+Flag to indicate whether or not to write a log file to disk. Default
+is 1 (write a log file).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following SCUBA-2 primitives are used: _FIND_IMAGE_STATISTICS_,
+_GET_LOG_PARAMETERS_, _FIND_VARIANCE_
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>,
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
+=cut
+
+# Has the user requested the use of the Group image?
+my $groupflag = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+my $Obj = ( $groupflag ) ? $Grp : $Frm;
+
+# Integration time estimator - default is MEDIAN
+my $estimator = uc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "MEDIAN" ));
+# Check we were given something sensible
+unless ( $estimator eq "MEDIAN" || $estimator eq "MEAN" || $estimator eq "MODE" ) {
+  orac_warn "_CALCULATE_NEFD_: Unrecognized estimator for integration time, $estimator\n falling back on default (MEDIAN)\n";
+  $estimator = "MEDIAN";
+}
+
+# Write a log file? Default to yes
+my $uselog = get_prim_arg( $_PRIM_ARGS_, "USELOG", 1 );
+
+# This primitive must be run after files have been combined into a
+# mosaic
+if ( $Obj->nfiles == 1 ) {
+
+  # Retrieve current file associated with Frame or Group
+  my $datafile = $Obj->file;
+
+  # Obtain variance of current image
+  _FIND_VARIANCE_ IMAGE=$datafile COMP=err
+  my $noise = $_FIND_VARIANCE_{RESULT};
+
+  # Obtain median exposure time
+  $datafile .= ".MORE.SMURF.EXP_TIME";
+  _FIND_IMAGE_STATISTICS_ IMAGE=$datafile VERBOSE=0
+  my $texp = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$estimator};
+
+  # Calculate NEFD
+  my $nefd = $noise * sqrt( $texp );
+
+  if ( $uselog ) {
+    # Write entry to a log file
+    my $time = gmtime();
+    my $nefdlog = new ORAC::LogFile("log.nefd");
+    $nefdlog->header("#NEFD log file - created on $time UT",
+		     "#\n# UT                HST   Obs Source       Mode           Filter  El CSO    Tau  Seeing  NEFD",
+		     "#----------------------------------------------------------------------------------------------------");
+
+    # Get general parameters for logging
+    _GET_LOG_PARAMETERS_ GROUP=$groupflag
+    my ($uttime, $hst, $obsnum, $src, $mode, $filter, $el, $cso, $tau, $see) = 
+      @{ $_GET_LOG_PARAMETERS_{PARAMS} };
+
+    # Reformat NEFD for printing
+    $nefd = sprintf "%9.5f", $nefd;
+
+    # Write entry
+    $nefdlog->addentry("$uttime $hst $obsnum $src $mode   $filter   $el $cso $tau $see  $nefd");
+  } else {
+
+    # If we're not writing a log file, return the NEFD to the caller    
+    $_CALCULATE_NEFD_{NEFD} = $nefd;
+
+  }
+
+} else {
+  orac_warn "_CALCULATE_NEFD_ must be run after files have been combined\n";
+}
