@@ -1,0 +1,115 @@
+#! -*-perl-*-
+
+=head1 NAME
+
+_REMOVE_PLANE_FROM_TIMESERIES_ -  remove a plane from timeseries data
+
+=head1 SYNOPSIS
+
+  _REMOVE_PLANE_FROM_TIMESERIES_
+
+=head1 DESCRIPTION
+
+This primitive fits a 2-d plane to each sample in 3-d timeseries data.
+
+No action is taken if the SKY_SUBTRACTION flag is set in the Frame uhdr.
+
+See the C<REMSKY> documentation for full details.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<FIT>
+
+Options are subtract a mean value (MEAN), or to fit a 2-D plane in
+elevation only (ELEV) or an arbitrary plane (PLANE). Default is
+MEAN. ELEV is slowest.
+
+=item B<RELATED>
+
+A flag to denote whether to group related files and fit across all
+subarrays at a given sample. Default is 0 (do not group related files).
+
+=item B<VERBOSE>
+
+=head1 EXTERNAL TASKS
+
+=over 4
+
+=item B<SMURF>
+
+C<remsky>
+
+=back
+
+=head1 OUTPUT FILES
+
+Creates output files with the suffix C<_sky>
+
+=head1 NOTES
+
+Only works on Frames. Does not return or log the subtracted sky values.
+
+=head1 AUTHOR
+
+Andy Gibb
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
+=cut
+
+unless ( $Frm->uhdr("SKY_SUBTRACTION") ) {
+  # Tell user...
+  orac_print "Removing sky from timeseries data by fitting and subtracting a plane\n";
+
+  # Should I be verbose (default to yes)
+  my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
+
+  # Are related files to be grouped together in the fit?
+  my $related = get_prim_arg( $_PRIM_ARGS_, "RELATED", 0);
+  my $group = ( $related ) ? "group" : "nogroup";
+
+  # Choice of fit - either slope or plane
+  my $fit = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "plane"));
+  $fit = "slope" if ( $fit eq "elev" );
+  # Check that the fit parameter is valid
+  if ( $fit ne "slope" && $fit ne "plane" && $fit ne "mean" ) {
+    orac_warn "Unrecognized fit method, $fit - falling back on default (mean)\n";
+    $fit = "mean";
+  }
+
+  # Get list of input/output files
+  my ($inlist, $outlist, @out) = write_file_list_inout($Frm, "_sky");
+
+  # Call remsky
+  my $args = "in=^$inlist out=^$outlist method=plane fit=$fit $group";
+  $Mon{smurf_mon}->obeyw("remsky","$args");
+
+  # Store output files in Frame
+  $Frm->files(@out);
+  # Set the sky subtraction flag
+  $Frm->uhdr("SKY_SUBTRACTION",1);
+
+} else {
+  orac_warn "Sky subtraction already carried out on this Frame\n";
+}
+
