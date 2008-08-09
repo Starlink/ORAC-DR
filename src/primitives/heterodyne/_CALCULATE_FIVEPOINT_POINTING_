@@ -129,67 +129,77 @@ if( $min < 0 && $max < 0 ) {
 my $params = "in=$temp2_file device=! dialog=f varuse=true mask1=[-10]";
 $params   .= " mask2=[10] ncomp=1 centre=0 cont=0 peak=$peak fwhm=$fwhm";
 $params   .= " cf=[0] pf=[0] wf=[1] logfil=! comp=1";
-$Mon{'figaro4'}->obeyw( "fitgauss", "$params" );
+my $FitStatus = $Mon{'figaro4'}->obeyw( "fitgauss", "$params" );
 
-# Retrieve the fit information.
-( $ORAC_STATUS, my @horiz_centre ) = $Mon{'figaro4'}->get( "fitgauss", "fcentre" );
-my $horiz_centre = $horiz_centre[0] * 206265;
+if ($FitStatus == ORAC__OK) {
 
-$Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in(1,) out=$temp1_file trim trimwcs" );
-$Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$temp1_file dim=1 mode=wcs" );
+  # Retrieve the fit information.
+  ( $ORAC_STATUS, my @horiz_centre ) = $Mon{'figaro4'}->get( "fitgauss", "fcentre" );
+  my $horiz_centre = $horiz_centre[0] * 206265;
 
-# Again, get the stats.
-$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp1_file" );
-( $ORAC_STATUS, $max ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
-( $ORAC_STATUS, $min ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
+  $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in(1,) out=$temp1_file trim trimwcs" );
+  $Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$temp1_file dim=1 mode=wcs" );
 
-$peak = $max;
-if( $min < 0 && $max < 0 ) {
-  $Mon{'kappa_mon'}->obeyw( "csub", "in=$temp1_file out=$temp2_file scalar=$min" );
-  $peak = $min - $max;
+  # Again, get the stats.
+  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp1_file" );
+  ( $ORAC_STATUS, $max ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
+  ( $ORAC_STATUS, $min ) = $Mon{'kappa_mon'}->get( "stats", "minimum" );
+
+  $peak = $max;
+  if( $min < 0 && $max < 0 ) {
+    $Mon{'kappa_mon'}->obeyw( "csub", "in=$temp1_file out=$temp2_file scalar=$min" );
+    $peak = $min - $max;
+  } else {
+    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp1_file out=$temp2_file" );
+  }
+
+  # Fit the polynomial.
+  $params  = "in=$temp2_file device=! dialog=f varuse=true mask1=[-10]";
+  $params .= " mask2=[10] ncomp=1 centre=0 cont=0 peak=$peak fwhm=$fwhm";
+  $params .= " cf=[0] pf=[0] wf=[1] logfil=! comp=1";
+  $FitStatus = $Mon{'figaro4'}->obeyw( "fitgauss", "$params" );
+
+  if ($FitStatus == ORAC__OK) {
+
+    # Retrieve the fit information.
+    ( $ORAC_STATUS, my @vert_centre ) = $Mon{'figaro4'}->get( "fitgauss", "fcentre" );
+    my $vert_centre = $vert_centre[0] * 206265;
+
+    # Display the results to the user.
+    my $p_horiz_centre = sprintf( "%.2f", $horiz_centre );
+    my $p_vert_centre = sprintf( "%.2f", $vert_centre );
+    orac_print( "Pointing results using Gaussian fit:\n", "blue" );
+    orac_print( " DAZ: $p_horiz_centre\n DEL: $p_vert_centre\n", "blue" );
+
+    # Store with the calibration system.
+    my %calhash = ( %{$Frm->hdr},
+                    DAZ => $horiz_centre,
+                    DEL => $vert_centre,
+                    DAZ_ERR => 0,
+                    DEL_ERR => 0,
+                    POINTING_TYPE => $type,
+                    METHOD => 'FIVEPOINT',
+                  );
+
+    # Display a warning if values are large.
+    if( abs( $horiz_centre ) > 10 ) {
+      orac_err "Absolute DAZ pointing value greater than 10 arcseconds.\n";
+    } elsif( abs( $horiz_centre ) > 5 ) {
+      orac_warn "Absolute DAZ pointing value greater than 5 arcseconds.\n";
+    }
+    if( abs( $vert_centre ) > 10 ) {
+      orac_err "Absolute DEL pointing value greater than 10 arcseconds.\n";
+    } elsif( abs( $vert_centre ) > 5 ) {
+      orac_warn "Absolute DEL pointing value greater than 5 arcseconds.\n";
+    }
+
+    $Cal->pointingindex->add( $Frm->file, \%calhash );
+  } else {
+    orac_err "Error fitting pointing data second time.\n";
+  }
 } else {
-  $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp1_file out=$temp2_file" );
+  orac_err "Error fitting gaussian to pointing data.\n";
 }
-
-# Fit the polynomial.
-$params  = "in=$temp2_file device=! dialog=f varuse=true mask1=[-10]";
-$params .= " mask2=[10] ncomp=1 centre=0 cont=0 peak=$peak fwhm=$fwhm";
-$params .= " cf=[0] pf=[0] wf=[1] logfil=! comp=1";
-$Mon{'figaro4'}->obeyw( "fitgauss", "$params" );
-
-# Retrieve the fit information.
-( $ORAC_STATUS, my @vert_centre ) = $Mon{'figaro4'}->get( "fitgauss", "fcentre" );
-my $vert_centre = $vert_centre[0] * 206265;
-
-# Display the results to the user.
-my $p_horiz_centre = sprintf( "%.2f", $horiz_centre );
-my $p_vert_centre = sprintf( "%.2f", $vert_centre );
-orac_print( "Pointing results using Gaussian fit:\n", "blue" );
-orac_print( " DAZ: $p_horiz_centre\n DEL: $p_vert_centre\n", "blue" );
-
-# Store with the calibration system.
-my %calhash = ( %{$Frm->hdr},
-                DAZ => $horiz_centre,
-                DEL => $vert_centre,
-                DAZ_ERR => 0,
-                DEL_ERR => 0,
-                POINTING_TYPE => $type,
-                METHOD => 'FIVEPOINT',
-              );
-
-# Display a warning if values are large.
-if( abs( $horiz_centre ) > 10 ) {
-  orac_err "Absolute DAZ pointing value greater than 10 arcseconds.\n";
-} elsif( abs( $horiz_centre ) > 5 ) {
-  orac_warn "Absolute DAZ pointing value greater than 5 arcseconds.\n";
-}
-if( abs( $vert_centre ) > 10 ) {
-  orac_err "Absolute DEL pointing value greater than 10 arcseconds.\n";
-} elsif( abs( $vert_centre ) > 5 ) {
-  orac_warn "Absolute DEL pointing value greater than 5 arcseconds.\n";
-}
-
-$Cal->pointingindex->add( $Frm->file, \%calhash );
 
 # Set SkyRefIs and Format back to what they were before.
 $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=mset setting='SkyRefIs=$skyrefis,Format(1)=$format1,Format(2)=$format2'" );

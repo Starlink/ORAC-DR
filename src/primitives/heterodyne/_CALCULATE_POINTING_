@@ -157,42 +157,51 @@ if( ! $Frm->uhdr( "SPARSE_CUBE" ) ) {
     $params = "in=$in incat=! cofile=$psfcatfile device=! gauss=false out=!";
 
     # Run PSF.
-    $Mon{'kappa_mon'}->obeyw( "psf", "$params" );
+    my $PSF_STATUS = $Mon{'kappa_mon'}->obeyw( "psf", "$params" );
 
-    # Retrieve the position.
-    ( $ORAC_STATUS, my $psf_xcen ) = $Mon{'kappa_mon'}->get( "psf", "xcen" );
-    ( $ORAC_STATUS, my $psf_ycen ) = $Mon{'kappa_mon'}->get( "psf", "ycen" );
+    # Integer error code for KAP__PSFSN
+    if ( $PSF_STATUS == 257327122 ) {
+      orac_warn "Unable to fit a PSF profile in the current image\n"
+    } elsif ($PSF_STATUS == ORAC__OK) {
 
-    # Make these pretty for output.
-    my $p_psf_xcen = sprintf( "%.2f", $psf_xcen );
-    my $p_psf_ycen = sprintf( "%.2f", $psf_ycen );
+      # Retrieve the position.
+      ( $ORAC_STATUS, my $psf_xcen ) = $Mon{'kappa_mon'}->get( "psf", "xcen" );
+      ( $ORAC_STATUS, my $psf_ycen ) = $Mon{'kappa_mon'}->get( "psf", "ycen" );
 
-    # Display the results to the user.
-    orac_print( "Pointing results using PSF:\n", "blue" );
-    orac_print( " DAZ: $p_psf_xcen\n DEL: $p_psf_ycen\n", "blue" );
+      # Make these pretty for output.
+      my $p_psf_xcen = sprintf( "%.2f", $psf_xcen );
+      my $p_psf_ycen = sprintf( "%.2f", $psf_ycen );
 
-    # Display a warning if values are large.
-    if( abs( $psf_xcen ) > 10 ) {
-      orac_err "Absolute DAZ pointing value greater than 10 arcseconds.\n";
-    } elsif( abs( $psf_xcen ) > 5 ) {
-      orac_warn "Absolute DAZ pointing value greater than 5 arcseconds.\n";
+      # Display the results to the user.
+      orac_print( "Pointing results using PSF:\n", "blue" );
+      orac_print( " DAZ: $p_psf_xcen\n DEL: $p_psf_ycen\n", "blue" );
+
+      # Display a warning if values are large.
+      if( abs( $psf_xcen ) > 10 ) {
+        orac_err "Absolute DAZ pointing value greater than 10 arcseconds.\n";
+      } elsif( abs( $psf_xcen ) > 5 ) {
+        orac_warn "Absolute DAZ pointing value greater than 5 arcseconds.\n";
+      }
+      if( abs( $psf_ycen ) > 10 ) {
+        orac_err "Absolute DEL pointing value greater than 10 arcseconds.\n";
+      } elsif( abs( $psf_ycen ) > 5 ) {
+        orac_warn "Absolute DEL pointing value greater than 5 arcseconds.\n";
+      }
+
+      # Store with the calibration system.
+      %calhash = ( %{$Frm->hdr},
+                   DAZ => $psf_xcen,
+                   DEL => $psf_ycen,
+                   DAZ_ERR => 0,
+                   DEL_ERR => 0,
+                   POINTING_TYPE => $type,
+                   METHOD => 'PSF',
+                 );
+      $Cal->pointingindex->add( $Frm->file, \%calhash );
+    } else {
+      # some untrappable error
+      $ORAC_STATUS = $PSF_STATUS;
     }
-    if( abs( $psf_ycen ) > 10 ) {
-      orac_err "Absolute DEL pointing value greater than 10 arcseconds.\n";
-    } elsif( abs( $psf_ycen ) > 5 ) {
-      orac_warn "Absolute DEL pointing value greater than 5 arcseconds.\n";
-    }
-
-    # Store with the calibration system.
-    %calhash = ( %{$Frm->hdr},
-                 DAZ => $psf_xcen,
-                 DEL => $psf_ycen,
-                 DAZ_ERR => 0,
-                 DEL_ERR => 0,
-                 POINTING_TYPE => $type,
-                 METHOD => 'PSF',
-               );
-    $Cal->pointingindex->add( $Frm->file, \%calhash );
 
     # Set SkyRefIs and Format back to what they were before.
     my $skyrefis = $wcs->Get("SkyRefIs");
