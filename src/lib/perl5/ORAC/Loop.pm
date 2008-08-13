@@ -716,6 +716,9 @@ sub orac_loop_task {
   # This is the frame number we completed
   my $wantframe;
 
+  # timestamp of most recent accepted frame
+  my $reftime = 0;
+
   # We will poll inside this loop until we get all 4 monitors
   # with newer data than the reference. This is the outer loop that allows
   # us to pause before trying again (used if none of the data we got were
@@ -759,6 +762,10 @@ sub orac_loop_task {
         my $thisframe;
         $thisframe = $current->{FRAMENUM} if exists $current->{FRAMENUM};
 
+        # Get the timestamp
+        my $timestamp;
+        $timestamp = $current->{TIMESTAMP} if exists $current->{TIMESTAMP};
+
         # Is this frame number relevant?
         # No need to warn if we haven't picked anything up before.
         if (defined $thisframe && $thisframe > $refframe) {
@@ -777,10 +784,21 @@ sub orac_loop_task {
 
           # this is now the one we need
           $wantframe = $thisframe;
+          $reftime = $timestamp;
 
           # Store the information
           $received{$wantframe}{$t} = $current;
 
+        } elsif (defined $thisframe && $thisframe < $refframe &&
+                $timestamp > $reftime ) {
+          # Looks like we have reset our observation
+          orac_print "Detected observation reset. Looks like a new observation is beginning.\n";
+
+          # Code duplication. 
+          delete $received{$wantframe} if defined $wantframe;
+          $reftime = $timestamp;
+          $wantframe = $thisframe;
+          $received{$wantframe}{$t} = $current;
         }
 
       }
