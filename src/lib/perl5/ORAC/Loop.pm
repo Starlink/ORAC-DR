@@ -723,7 +723,7 @@ sub orac_loop_task {
   # with newer data than the reference. This is the outer loop that allows
   # us to pause before trying again (used if none of the data we got were
   # new)
-  while ( 1 ) {
+ OUTER: while ( 1 ) {
 
     # Since we know that we would like all the received parameters
     # to have the same FRAMENUM number and since we also can cache
@@ -751,9 +751,16 @@ sub orac_loop_task {
         # get the task object
         my $tobj = $ENGINE_LAUNCH->engine( $t );
 
+        my $sleep = 5;
         if (!defined $tobj) {
-          orac_err("Unable to connect to remote task $t. Is the data acquisition system running? Aborting loop.\n");
-          return;
+          orac_err("Unable to connect to remote task $t. Is the data acquisition system running? Will retry in $sleep seconds.\n");
+          sleep($sleep);
+          next OUTER;
+        } elsif (!$tobj->contact) {
+          orac_err("Lost connection to remote task $t. Has the data acquisition system died? Will retry in $sleep seconds.\n");
+          use Data::Dumper; print Dumper($tobj);
+          sleep($sleep);
+          next OUTER;
         }
 
         # get the parameter
