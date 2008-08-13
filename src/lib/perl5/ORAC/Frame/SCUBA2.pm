@@ -586,7 +586,6 @@ sub findgroup {
   } else {
     # Create our own DRGROUP string
     # Retrieve WCS
-    print "File = ".$self->file."\n";
     my $wcs = $self->read_wcs( $self->file );
     my $skyref;
     if (defined $wcs) {
