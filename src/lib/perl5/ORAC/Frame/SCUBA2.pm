@@ -253,7 +253,7 @@ sub configure {
           if (defined $oe) {
             $oe->value(1);
           } else {
-            use Data::Dumper; print Dumper(\@remf,\@remc);
+            #use Data::Dumper; print Dumper(\@remf,\@remc);
             $merged->insert( -1, $remf[0]);
             $remf[0]->value(1);
           }
@@ -586,11 +586,14 @@ sub findgroup {
   } else {
     # Create our own DRGROUP string
     # Retrieve WCS
+    print "File = ".$self->file."\n";
     my $wcs = $self->read_wcs( $self->file );
-    my $domain = $wcs->Get("Domain");
-    my $skyref = undef;
-    if ( $domain =~ /SKY/ ) {
-      $skyref = $wcs->Get("SkyRef");
+    my $skyref;
+    if (defined $wcs) {
+      my $domain = $wcs->Get("Domain");
+      if ( $domain =~ /SKY/ ) {
+        $skyref = $wcs->Get("SkyRef");
+      }
     }
 
     # If we don't have a useful skyref at this point, re-create the
@@ -610,9 +613,8 @@ sub findgroup {
       }
     }
 
-    # If skyref is really not defined then the raw JCMTSTATE will have
-    # to be accessed. Note that if an error occurs while attempting to
-    # read the state structure, the pipeline will abort.
+    # if SkyRef is still not defined use the BASEC1/C2 headers and 
+    # TRACKSYS
     if ( defined $skyref ) {
       $state{TCS_TR_SYS} = $wcs->Get("System");
       ($state{TCS_TR_BC1}, $state{TCS_TR_BC2}) = split( /,/, $skyref, 2);
@@ -620,38 +622,26 @@ sub findgroup {
       $state{TCS_TR_BC1} = $wcs->Unformat(1, $state{TCS_TR_BC1});
       $state{TCS_TR_BC2} = $wcs->Unformat(2, $state{TCS_TR_BC2});
     } else {
-      # Read JCMTSTATE
-      my $status = &NDF::SAI__OK;
-      err_begin($status);
-      # Open file with HDS
-      hds_open( $self->file, "READ", my $loc, $status);
-      dat_find( $loc, "MORE", my $mloc, $status);
-      dat_find( $mloc, "JCMTSTATE", my $jloc, $status);
-      dat_annul( $mloc, $status);
 
-      # Get Tracking system, and RA/Dec of BASE posn
-      for my $item (qw/ TCS_TR_SYS TCS_TR_BC1 TCS_TR_BC2 /) {
-        dat_there( $jloc, $item, my $isthere, $status );
-        if ($isthere) {
-          dat_find($jloc, $item, my $sloc, $status );
-          # Retrieve first value only - use an array slice
-          my @subscript = ( 1 ); # Fortran
-          dat_cell( $sloc, scalar(@subscript), @subscript, my $cloc, $status );
-          dat_get0c( $cloc, my $value, $status );
-          # Store in state hash
-          $state{$item} = $value;
-          dat_annul( $cloc, $status );
-          dat_annul( $sloc, $status );
-        }
+      $state{TCS_TR_SYS} = $self->hdr->{TRACKSYS};
+      if (!defined $state{TCS_TR_SYS}) {
+        $state{TCS_TR_SYS} = "ICRS";
+        orac_warn "TRACKSYS header is missing\n";
       }
-      # Tidy up
-      dat_annul( $jloc, $status);
-      dat_annul( $loc, $status);
-      if ($status != &NDF::SAI__OK) {
-        my $errstr = err_flush_to_string($status);
-        orac_throw " Error reading JCMT state structure from input data: $errstr";
-      } 
-      err_end($status);
+
+      # Note that these are in degrees
+      require Astro::Coords::Angle;
+      for my $c (qw/ C1 C2 /) {
+        my $key1 = "BASE$c";
+        my $key2 = "TCS_TR_B$c";
+        my $val = $self->hdr->{$key1};
+        if (!defined $val) {
+          $val = 0.0;
+          orac_warn "Seem to be missing header $key1\n";
+        }
+        $val = Astro::Coords::Angle->new( $val, units => "deg" );
+        $state{$key2} = $val->radians;
+      }
     }
 
     # Now construct DRGROUP string
@@ -660,6 +650,9 @@ sub findgroup {
       $group = $self->hdr( "OBJECT" );
     } else {
       # Tracking RA and Dec are in radians - convert to HHMMSS+-DMMSS
+      # Note that we have not necessarily converted coordinate systems
+      # to ICRS. We could do that easily for the case where $wcs is
+      # defined.
       require Astro::Coords::Angle;
       my $ra = new Astro::Coords::Angle( $state{TCS_TR_BC1}, units => 'rad' );
       $ra->range("2PI");
