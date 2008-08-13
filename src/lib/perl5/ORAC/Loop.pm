@@ -754,12 +754,11 @@ sub orac_loop_task {
         my $sleep = 5;
         if (!defined $tobj) {
           orac_err("Unable to connect to remote task $t. Is the data acquisition system running? Will retry in $sleep seconds.\n");
-          sleep($sleep);
+          orac_sleep($sleep);
           next OUTER;
         } elsif (!$tobj->contact) {
           orac_err("Lost connection to remote task $t. Has the data acquisition system died? Will retry in $sleep seconds.\n");
-          use Data::Dumper; print Dumper($tobj);
-          sleep($sleep);
+          orac_sleep($sleep);
           next OUTER;
         }
 
