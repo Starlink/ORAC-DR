@@ -707,7 +707,6 @@ sub orac_loop_task {
   my $dot     = 4;   # Number of pauses for each dot printed
   my $npauses = 0; # number of pauses so far (reset each time dot printed)
 
-
   # This is the data we have retrieved so far whilst waiting
   # for this frame number. Indexed by frame number and then task
   # name.
@@ -866,7 +865,9 @@ sub orac_loop_task {
   my @istemp;
   for my $t (keys %current) {
 
-    if (exists $current{$t}->{FILENAME}) {
+    # Filename is blanked for DREAM/STARE but not deleted
+    if (exists $current{$t}->{FILENAME} 
+       && $current{$t}->{FILENAME} =~ /\w/ ) {
       # simple filename relative to ORAC_DATA_IN
       my $fname =  _to_abs_path( $current{$t}->{FILENAME} );
 
