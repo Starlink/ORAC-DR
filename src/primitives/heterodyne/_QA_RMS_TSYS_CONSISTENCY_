@@ -1,0 +1,165 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_QA_RMS_TSYS_CONSISTENCY_ - Compare Tsys-calculated RMS values with
+measured RMS values.
+
+=head1 DESCRIPTION
+
+=head1 ARGUMENTS
+
+=over 4
+
+None.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS data.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=back
+
+=head1 TASKS
+
+=head1 REQUIRED PERL MODULES
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+# Determine if we're supposed to use this as a mask for a survey.
+my $mask = get_prim_arg( $_PRIM_ARGS_, "MASK", undef );
+
+use Starlink::HDSPACK qw/ create_hdsobj copy_hdsobj /;
+use JCMT::ACSIS::Array;
+use JSA::QA;
+
+my $masked_files = $Frm->uhdr( "QA_MASKED_FILES" );
+
+foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
+
+  my ( $infile, $outfile ) = $Frm->inout( "_tsmsk", $i );
+  my $masked_file = $masked_files->[$i];
+
+  my $temp1file = new ORAC::TempFile;
+  my $temp2file = new ORAC::TempFile;
+  my $temp3file = new ORAC::TempFile;
+  my $temp4file = new ORAC::TempFile;
+  my $temp5file = new ORAC::TempFile;
+
+  # Make sure this file has a VARIANCE component.
+  _COMPONENT_EXISTS_ FILE=$infile COMPONENT=VARIANCE
+  my $exists = $_COMPONENT_EXISTS_{EXISTS};
+  if( ! $exists ) {
+    orac_throw "Cannot perform Tsys/RMS consistency checks on a file that has no VARIANCE component\n";
+  }
+
+  # We need to collapse down the masked file around the central 85%.
+  _GET_DIMENSIONS_
+  my $lbnd = $_GET_DIMENSIONS_{LBOUND};
+  my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+  my $extent = int( ( $ubnd->[0] - $lbnd->[0] ) * 0.85 );
+
+  # Collapse it using the RMS estimator.
+  my $params = "in=$masked_file(~$extent,,) out=$temp1file estimator=rms axis=spec trim=true wlim=0.0";
+  $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+  # Square it.
+  $params = "in=$temp1file out=$temp2file power=2";
+  $Mon{'kappa_mon'}->obeyw( "pow", "$params" );
+
+  # Now copy a frequency slice out of the input file. It doesn't
+  # matter where, since we're interested in the variance component and
+  # that doesn't vary with frequency.
+  $params = "in=$infile(100,,) out=$temp3file trim=true";
+  $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+  # Create an HDS object into which we can copy the variance array.
+  my $ORAC_STATUS = ( create_hdsobj( $temp4file, 'NDF', [0] ) ? ORAC__OK : ORAC__ERROR );
+  $ORAC_STATUS = ( copy_hdsobj( "$temp3file.VARIANCE", "$temp4file.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
+
+  # Divide the measured RMS by the calculated RMS.
+  $params = "in1=$temp2file in2=$temp4file out=$temp5file";
+  $Mon{'kappa_mon'}->obeyw( "div", "$params" );
+
+  # Retrieve the constant(s) for the difference tolerance and the
+  # questionable/bad limits.
+  my $survey = $Frm->hdr( 'SURVEY' );
+  my $rmstol_const      = 'RMSTSYSTOL';
+  my $rmstolquest_const = 'RMSTSYSTOL_QUEST';
+  my $rmstolfail_const  = 'RMSTSYSTOL_FAIL';
+  my $rmstol = retrieve_constant( $rmstol_const, $survey );
+  my $rmstolquest = retrieve_constant( $rmstolquest_const, $survey );
+  my $rmstolfail = retrieve_constant( $rmstolfail_const, $survey );
+
+  # For each survey, count the number of pixels in the comparison
+  # image that are above the RMS/Tsys tolerance.
+  foreach my $result_survey ( sort keys %$rmstol ) {
+
+    my $tol = $rmstol->{$result_survey} + 1;
+    $params = "in=$temp5file value=$tol above";
+    $Mon{'kappa_mon'}->obeyw( "numb", "$params" );
+    ( $ORAC_STATUS, my $numb_above ) = $Mon{'kappa_mon'}->get( "numb", "number" );
+
+    # Find out how many pixels are below the tolerance to get a ratio.
+    $params = "in=$temp5file value=$tol noabove";
+    $Mon{'kappa_mon'}->obeyw( "numb", "$params" );
+    ( $ORAC_STATUS, my $numb_below ) = $Mon{'kappa_mon'}->get( "numb", "number" );
+
+    # Figure out if this is a pass, a questionable, or a fail.
+    my $percent = $numb_above / ( $numb_above + $numb_below );
+
+    orac_print "Tsys versus RMS consistency check ";
+
+    if( $percent > $rmstolfail->{$result_survey} ) {
+      orac_print( " failed ", "bold white on_red" );
+    } elsif( $percent > $rmstolquest->{$result_survey} ) {
+      orac_print( " is questionable ", "bold black on_yellow" );
+    } else {
+      orac_print( " passed ", "bold white on_green" );
+    }
+
+    orac_print " for $result_survey for $infile.\n";
+
+    orac_print sprintf( " %.2f%% of the samples had a calculated RMS that differed by more than %d%% from the measured RMS.\n", $percent * 100, $rmstol->{$result_survey} * 100 );
+
+    # Mask out the bad pixels, if requested.
+    if( defined( $mask ) && uc( $result_survey ) eq uc( $mask ) ) {
+
+      my $temp6file = new ORAC::TempFile;
+      my $temp7file = new ORAC::TempFile;
+      $params = "in=$temp5file out=$temp6file thrlo=-100000 newlo=bad thrhi=$tol newhi=bad";
+      $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+      # Expand out to size of input cube.
+      $params = "in=$temp6file out=$temp7file axes=[0,1,2] lbound=" . $lbnd->[0] . " ubound=" . $ubnd->[0];
+      $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+      # Copy bad pixels from this to output cube.
+      $params = "in=$infile ref=$temp7file out=$outfile";
+      $Mon{'kappa_mon'}->obeyw( "copybad", "$params" );
+
+      # Update the Frame object.
+      $Frm->file( $i, $outfile );
+    }
+  }
+}
