@@ -61,7 +61,7 @@ $DEBUG = 0;
 require Exporter;
 @ISA = qw/Exporter/;
 @EXPORT = qw/orac_print orac_err orac_warn orac_debug orac_read orac_throw orac_carp
-	     orac_printp orac_print_prefix orac_warnp orac_errp /;
+	     orac_printp orac_print_prefix orac_warnp orac_errp orac_say orac_sayp /;
 
 # Create a Term::ReadLine handle
 # For read on STDIN and output on STDOUT
@@ -103,6 +103,17 @@ for primtives).
 sub orac_print {
   my $prt = __curr_obj;
   $prt->out(@_);
+}
+
+=item orac_say( text, [colour] )
+
+Print the supplied text to the ORAC output device(s) using the (optional) supplied colour. A carriage return is automatically appended to the text to be printed.
+
+=cut
+
+sub orac_say {
+  my $prt = __curr_obj;
+  $prt->say(@_);
 }
 
 =item orac_warn( text, [colour])
@@ -221,6 +232,22 @@ sub orac_printp {
   my $current = $prt->outpre;
   $prt->outpre( $PREFIX );
   orac_print( @_ );
+  $prt->outpre( $current );
+}
+
+=item B<orac_sayp>
+
+As for C<orac_say> but includes the prefix that has been specified by using C<orac_print_prefix>
+
+  orac_sayp( $text, $color );
+
+=cut
+
+sub orac_sayp {
+  my $prt = __curr_obj;
+  my $current = $prt->outpre;
+  $prt->outpre( $PREFIX );
+  orac_say( @_ );
   $prt->outpre( $current );
 }
 
@@ -376,7 +403,7 @@ Retrieve (or set) the colour currently used for printing error
 messages.
 
   $col = $prt->errcol;
-  $prt->outcol('red');
+  $prt->errcol('red');
 
 Currently no check is made that the supplied colour is acceptable.
 
@@ -613,6 +640,25 @@ sub out {
   
 }
 
+=item say( text, [col] )
+
+Print output messages, appending a carriage return to the text string.
+
+By default messages are written to STDOUT. This can be overridden with the outhdl() method.
+
+=cut
+
+sub say {
+  my $self = shift;
+  return unless @_;
+  my $text = shift;
+
+  my $col = $self->outcol;
+  if( @_ ) { $col = shift; }
+
+  $self->out( $text . "\n", $col );
+}
+
 =item war(text, [col])
 
 Print warning messages.
@@ -830,6 +876,8 @@ sub PRINT {
   # and use the current object and filehandles
   if ($obj->{_outtype} eq 'out') {
     foreach (@_) { orac_print $_, $obj->outcol; }
+  } elsif ($obj->{_outtype} eq 'say') {
+    foreach (@_) { orac_say $_, $obj->outcol; }
   } elsif ($obj->{_outtype} eq 'war') {
     foreach (@_) { orac_warn $_, $obj->warncol; }
   } else {
