@@ -1,0 +1,172 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CREATE_NOISE_MAP_ - Create a map of the noise for a given cube.
+
+=head1 DESCRIPTION
+
+This primitive is used to create a noise map. It first masks out emission regions using a previously-defined mask (see _CREATE_BASELINE_MASK_), and then collapses the resulting cube along the frequency axis using the RMS estimator.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item GROUP = INTEGER (Given)
+
+How to process group files. 0 means use the current Frame object. 1 means use the current Group object. 2 means use each Frame member of the current Group object. [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS cubes.
+
+=item *
+
+Neither the current Frame nor the current Group object are updated.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The noise map with suffix _noise.
+
+=back
+
+=head1 TASKS
+
+KAPPA: ADD, COLLAPSE, PASTE.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 Science and Technology Facilities Council.  All Rights Reserved.
+
+=cut
+
+# Handle parameters.
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+
+# Figure out what we're doing with groups/frames.
+my @objs;
+if( $group == 0 ) {
+  push @objs, $Frm;
+} elsif( $group == 1 ) {
+  push @objs, $Grp;
+} elsif( $group == 2 ) {
+  @objs = %Grp->members;
+} else {
+  orac_throw "Programming error: GROUP parameter to _CREATE_NOISE_MAP_ must be 0, 1, or 2";
+}
+
+if( $group != 1 || ( $group == 1 && $Grp->lastmember( $Frm ) ) ) {
+
+  if( ! ( $group == 1 && $Grp->uhdr( "COPY_FRAME_CUBE" ) ) ) {
+
+    foreach my $Obj ( @objs ) {
+
+      # Create a baseline mask if we don't already have one.
+      if( ! defined( $Obj->uhdr( "BASELINE_MASKS" ) ) ) {
+
+        _CREATE_BASELINE_MASK_ GROUP=$group FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order
+
+      }
+
+      # Mask and collapse each of the files making up the current object.
+      my @collapsed;
+
+      foreach my $i ( 1 .. $Obj->nfiles ) {
+
+        if( $Obj->uhdr( "SPARSE" ) ) {
+
+          orac_warn $Obj->file( $i ) . " is a sparse cube. Cannot create noise map for a sparse cube.\n";
+
+        } else {
+
+          orac_say "Creating noise map for $in.";
+
+          my ( $in, $out ) = $Obj->inout( "_noise", $i );
+
+          my $masks = $Obj->uhdr( "BASELINE_MASKS" );
+          my $mask = $masks->[$i];
+
+          # Mask out emission.
+          orac_say " Masking out lines using $mask.";
+          my $masked = new ORAC::TempFile;
+          my $params = "in1=$in in2=$mask out=$masked";
+          $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+
+          # Collapse the cube.
+          orac_say " Collapsing to form temporary noise map.";
+          my $collapsed = new ORAC::TempFile;
+          $params  = "in=$masked out=$collapsed estimator=rms ";
+          $params .= "axis=SPEC wlim=0.0 trim=false variance=false";
+          $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+          push @collapsed, $collapsed;
+        }
+      }
+
+      # At this point we've collapsed all of the tiles for the given Obj, so paste them all together. Of course, just copy it over if there's only one.
+      if( scalar( @collapsed ) == 1 ) {
+
+        $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$collapsed[0] out=$out" );
+        orac_say "Created noise map in $out.";
+
+      } else {
+
+        orac_say "\n Pasting together temporary noise maps to form full noise map.";
+
+        # Write a file containing the input files to PASTE.
+        open my $paste_fh, ">", "paste$$.in" or die "Could not open input file for PASTE: $@\n";
+        print $paste_fh join "\n", @collapsed;
+        close $paste_fh;
+
+        # And paste them together.
+        my $params = "in='^paste$$.in' out=$out confine=false transp=true";
+        $params   .= "title='Noise map'";
+        $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+
+        orac_say "Created noise map in $out.";
+
+        unlink "paste$$.in";
+
+      }
+
+      _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=noise
+      $Obj->sync_headers;
+
+      # Copy the output to a group file if requested.
+      if( $group != 1 && $Grp->uhdr( "COPY_FRAME_CUBE" ) ) {
+        ( undef, my $groupout ) = $Grp->inout( "_noise" );
+
+        $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$out out=$groupout" );
+
+        my $tGrp = new $Grp;
+        $tGrp->groupid( $Grp->groupid );
+        $tGrp->allow_header_sync(1);
+        $tGrp->file( $groupout );
+
+        orac_say "$out to $groupout:";
+        orac_say " Copied to Group file.";
+      }
+    }
+  }
+}
+
