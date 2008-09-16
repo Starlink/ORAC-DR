@@ -6,7 +6,10 @@ _CREATE_NOISE_MAP_ - Create a map of the noise for a given cube.
 
 =head1 DESCRIPTION
 
-This primitive is used to create a noise map. It first masks out emission regions using a previously-defined mask (see _CREATE_BASELINE_MASK_), and then collapses the resulting cube along the frequency axis using the RMS estimator.
+This primitive is used to create a noise map. It first masks out
+emission regions using a previously-defined mask (see
+_CREATE_BASELINE_MASK_), and then collapses the resulting cube along
+the frequency axis using the RMS estimator.
 
 =head1 ARGUMENTS
 
@@ -14,7 +17,14 @@ This primitive is used to create a noise map. It first masks out emission region
 
 =item GROUP = INTEGER (Given)
 
-How to process group files. 0 means use the current Frame object. 1 means use the current Group object. 2 means use each Frame member of the current Group object. [0]
+How to process group files. 0 means use the current Frame object. 1
+means use the current Group object. 2 means use each Frame member of
+the current Group object. [0]
+
+=item QA = LOGICAL (Given)
+
+Whether or not to perform quality assurance calculations on the
+resulting noise map. [0]
 
 =back
 
@@ -60,10 +70,14 @@ Copyright (C) 2008 Science and Technology Facilities Council.  All Rights Reserv
 
 =cut
 
+# Bring in Starlink::HDSPACK for NDF creation.
+use Starlink::HDSPACK qw/ create_hdsobj copy_hdsobj /;
+
 # Handle parameters.
 my $freqsmooth = get_prim_arg( $_PRIM_ARGS_, "FREQUENCY_SMOOTH", 25 );
 my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
 my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 5 );
+my $qa = get_prim_arg( $_PRIM_ARGS_, "QA", 0 );
 my $spatsmooth = get_prim_arg( $_PRIM_ARGS_, "SPATIAL_SMOOTH", 3 );
 
 # Figure out what we're doing with groups/frames.
@@ -86,13 +100,6 @@ if( $group != 1 || ( $group == 1 && $Grp->lastmember( $Frm ) ) ) {
 
       my ( undef, $out ) = $Obj->inout( "_noise" );
 
-      # Create a baseline mask if we don't already have one.
-      if( ! defined( $Obj->uhdr( "BASELINE_MASKS" ) ) ) {
-
-        _CREATE_BASELINE_MASK_ GROUP=$group FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order
-
-      }
-
       # Mask and collapse each of the files making up the current object.
       my @collapsed;
 
@@ -108,24 +115,56 @@ if( $group != 1 || ( $group == 1 && $Grp->lastmember( $Frm ) ) ) {
 
           orac_say "Creating noise map for $in.";
 
-          my $masks = $Obj->uhdr( "BASELINE_MASKS" );
-          my $mask = $masks->[$i];
-
-          # Mask out emission.
-          orac_say " Masking out lines using $mask.";
-          my $masked = new ORAC::TempFile;
-          my $params = "in1=$in in2=$mask out=$masked";
-          $Mon{'kappa_mon'}->obeyw( "add", "$params" );
-
-          # Collapse the cube.
-          orac_say " Collapsing to form temporary noise map.";
           my $collapsed = new ORAC::TempFile;
-          $params  = "in=$masked out=$collapsed estimator=rms ";
-          $params .= "axis=SPEC wlim=0.0 trim=false variance=false";
-          $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+          # Check to see if we have a variance component. If so,
+          # collapse that using MEAN (to preserve the frequency
+          # bounds).
+          $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
+          my ( $ORAC_STATUS, $varexists ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "variance" );
+
+          if( uc( $varexists ) eq 'TRUE' ) {
+
+            orac_say " Using variance array in $in to create temporary noise map.";
+
+            my $tempfile = new ORAC::TempFile;
+
+            # Collapse. This gives us the variance when we want the RMS, remember.
+            $Mon{'kappa_mon'}->obeyw( "collapse", "in=$in out=$tempfile axis=spec wlim=0.0 estimator=mean comp=var" );
+
+            # Take the square root.
+            $Mon{'kappa_mon'}->obeyw( "pow", "in=$tempfile out=$collapsed power=0.5" );
+
+          } else {
+
+            # Create a baseline mask if we don't already have one.
+            if( ! defined( $Obj->uhdr( "BASELINE_MASKS" ) ) ) {
+
+              _CREATE_BASELINE_MASK_ GROUP=$group FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order
+
+            }
+
+            my $masks = $Obj->uhdr( "BASELINE_MASKS" );
+            my $mask = $masks->[$i];
+
+            # Mask out emission.
+            orac_say " Masking out lines using $mask.";
+            my $masked = new ORAC::TempFile;
+            my $params = "in1=$in in2=$mask out=$masked";
+            $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+
+            # Collapse the cube.
+            orac_say " Collapsing to form temporary noise map.";
+            $params  = "in=$masked out=$collapsed estimator=rms ";
+            $params .= "axis=SPEC wlim=0.0 trim=false variance=false";
+            $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+          }
 
           push @collapsed, $collapsed;
+
         }
+
       }
 
       # At this point we've collapsed all of the tiles for the given Obj, so paste them all together. Of course, just copy it over if there's only one.
@@ -171,6 +210,14 @@ if( $group != 1 || ( $group == 1 && $Grp->lastmember( $Frm ) ) ) {
         orac_say "$out to $groupout:";
         orac_say " Copied to Group file.";
       }
+
+      orac_say "";
+
+      # Run QA if requested.
+      if( $qa ) {
+        _QA_MAP_RMS_SPATIAL_UNIFORMITY_ FILE=$out
+      }
+
     }
   }
 }
