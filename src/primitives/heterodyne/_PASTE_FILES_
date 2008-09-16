@@ -1,0 +1,95 @@
+# -*-perl-*-
+
+=head1 NAME
+
+=head1 DESCRIPTION
+
+=head1 ARGUMENTS
+
+=over 4
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=back
+
+=head1 TASKS
+
+=head1 REQUIRED PERL MODULES
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+my $files = get_prim_arg( $_PRIM_ARGS_, "FILES", undef );
+if( ! defined( $files ) ) {
+  orac_throw "FILES parameter to _PASTE_FILES_ not defined: programming error";
+}
+my $out = get_prim_arg( $_PRIM_ARGS_, "OUT", undef );
+if( ! defined( $out ) ) {
+  orac_throw "OUT parameter to _PASTE_FILES_ not defined: programming error";
+}
+
+# List of possible extensions to paste along with their respective
+# median FITS header name.
+my %extensions = ( 'MORE.SMURF.EXP_TIME' => 'EXP_TIME',
+                   'MORE.SMURF.EFF_TIME' => 'EFF_TIME',
+                   'MORE.SMURF.TSYS' => 'MEDTSYS',
+                 );
+
+# First, the standard data.
+open my $paste_fh, ">", "paste$$.in" or die "Could not open input file for PASTE: $!\n";
+print $paste_fh join "\n", @{$files};
+close $paste_fh;
+
+my $params = "in='^paste$$.in' out=$out confine=false transp=true title='Noise Map'";
+$Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+
+unlink "paste$$.in";
+
+# Now go through the extensions.
+foreach my $extension ( keys %extensions ) {
+
+  # Check to see if the extension exists before trying to paste it.
+  my $exists = 0;
+  foreach my $file ( @{$files} ) {
+    _COMPONENT_EXISTS_ FILE=$file COMPONENT=$extension
+    $exists = $_COMPONENT_EXISTS_{EXISTS};
+    last unless $exists;
+  }
+
+  if( $exists ) {
+
+    open my $extpaste_fh, ">", "paste_ext$$.in" or die "Could not open input file for PASTE: $!\n";
+    print $extpaste_fh join "\n", map { "$_.$extension" } @{$files};
+    close $extpaste_fh;
+
+    $params = "in='^paste_ext$$.in' out=$out.$extension confine=false transp=true";
+    $Mon{'kappa_mon'}->obeyw( "paste", "$params" );
+
+    unlink "paste_ext$$.in";
+
+    # Calculate the median.
+    $Mon{'kappa_mon'}->obeyw( "histat", "ndf=$out.$extension" );
+    my ( $ORAC_STATUS, $median ) = $Mon{'kappa_mon'}->get( "histat", "median" );
+    _SET_FILE_FITS_ITEM_ FILE=$out KEY=$extensions{$extension} VALUE=$median
+
+  }
+
+}
