@@ -1,0 +1,170 @@
+# -*-perl-*-
+
+=head1 NAME
+
+=head1 DESCRIPTION
+
+=head1 ARGUMENTS
+
+=over 4
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=back
+
+=head1 TASKS
+
+=head1 REQUIRED PERL MODULES
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+# We need to bring in the smoothing parameters and baselining
+# parameters in case we don't already have a baseline mask.
+my $freqsmooth = get_prim_arg( $_PRIM_ARGS_, "FREQUENCY_SMOOTH", 25 );
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 5 );
+my $spatsmooth = get_prim_arg( $_PRIM_ARGS_, "SPATIAL_SMOOTH", 3 );
+
+# Figure out what we're doing with groups/frames.
+my @objs;
+if( $group == 0 ) {
+  push @objs, $Frm;
+} elsif( $group == 1 ) {
+  push @objs, $Grp;
+} elsif( $group == 2 ) {
+  @objs = $Grp->members;
+} else {
+  orac_throw "Programming error: GROUP parameter to _QA_MAP_RMS_UNIFORMITY__ must be 0, 1, or 2";
+}
+
+if( $group != 1 || ( $group == 1 && $Grp->lastmember( $Frm ) ) ) {
+
+  if( ! ( $group == 1 && $Grp->uhdr( "COPY_FRAME_CUBE" ) ) ) {
+
+    foreach my $Obj ( @objs ) {
+
+      my ( undef, $outlo ) = $Obj->inout( "_rmslo" );
+      my ( undef, $outhi ) = $Obj->inout( "_rmshi" );
+
+      # Two arrays holding collapsed regions from high and low
+      # frequency ends.
+      my @collapsedlo;
+      my @collapsedhi;
+
+      foreach my $i ( 1 .. $Obj->nfiles ) {
+
+        my ( $in, undef ) = $Obj->inout( "_blah", $i );
+
+        if( $Obj->uhdr( "SPARSE" ) ) {
+
+          orac_warn $Obj->file( $i ) . " is a sparse cube. Cannot currently process QA on sparse cubes.\n";
+
+        } else {
+
+          orac_say "Checking RMS uniformity for $in.";
+
+          my $collapsedlo = new ORAC::TempFile;
+          my $collapsedhi = new ORAC::TempFile;
+
+          # Make sure a baseline mask is available.
+          if( ! defined( $Obj->uhdr( "BASELINE_MASKS" ) ) ) {
+
+            _CREATE_BASELINE_MASK_ GROUP=$group FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order
+
+          }
+
+          my $masks = $Obj->uhdr( "BASELINE_MASKS" );
+          my $mask = $masks->[$i];
+
+          # Mask out the emission.
+          orac_say " Masking out lines using $mask.";
+          my $masked = new ORAC::TempFile;
+          my $params = "in1=$in in2=$mask out=$masked";
+          $Mon{'kappa_mon'}->obeyw( "add", "$params" );
+
+          # Get dimensions of the masked cube.
+          _GET_DIMENSIONS_ FILE=$masked
+          my $lbound = $_GET_DIMENSIONS_{LBOUND};
+          my $ubound = $_GET_DIMENSIONS_{UBOUND};
+          my $dims = $_GET_DIMENSIONS_{DIMS};
+
+          # Take 10% from either end to collapse over.
+          my $ubnd_spread = ( $ubound->[2] - int( $dims->[2] * 0.1 ) ) . ":" . $ubound->[2];
+          my $lbnd_spread = $lbound->[2] . ":" . ( $lbound->[2] + int( $dims->[2] * 0.1 ) );
+
+          # Collapse.
+          $params  = "in=$in(,,$lbnd_spread) out=$collapsedlo estimator=rms";
+          $params .= " axis=SPEC wlim=0.0 trim=false variance=false";
+          $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+          $params  = "in=$in(,,$ubnd_spread) out=$collapsedhi estimator=rms";
+          $params .= " axis=SPEC wlim=0.0 trim=false variance=false";
+          $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+          push @collapsedlo, $collapsedlo;
+          push @collapsedhi, $collapsedhi;
+
+        }
+      }
+
+      if( scalar( @collapsedlo ) == 1 ) {
+
+        $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$collapsedlo[0] out=$outlo" );
+        $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$collapsedhi[0] out=$outhi" );
+
+      } else {
+
+        orac_say "\n Pasting together temporary noise maps to form full noise maps.";
+
+      }
+
+      # Report to user.
+      orac_say " RMS map from lower 10% of frequency range created in $outlo.";
+      orac_say " RMS map from upper 10% of frequency range created in $outhi.";
+
+      # Get the mean RMS for the low and high.
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$outlo" );
+      my ( $ORAC_STATUS, $rmslo ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$outhi" );
+      ( $ORAC_STATUS, my $rmshi ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+
+      # Report to user.
+      orac_say sprintf( " RMS in lower 10%%: %.4fK", $rmslo );
+      orac_say sprintf( " RMS in upper 10%%: %.4fK", $rmshi );
+
+      my $perc = 100 * abs( $rmslo - $rmshi ) / ( ( $rmslo < $rmshi ) ? $rmslo : $rmshi );
+
+      orac_say sprintf( " Percentage difference: %.2f%%", $perc );
+
+      my $RMSVAR_SPEC = 0.1;
+      orac_print " Frequency RMS uniformity ";
+      if( $perc < $RMSVAR_SPEC * 100 ) {
+        orac_print( " passed ", "bold white on_green" );
+      } else {
+        orac_print( " failed ", "bold white on_red" );
+      }
+      orac_say " for GBS for current map.";
+      orac_say "";
+
+    }
+  }
+}
