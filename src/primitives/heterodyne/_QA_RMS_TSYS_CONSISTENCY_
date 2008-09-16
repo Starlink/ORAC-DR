@@ -3,15 +3,30 @@
 =head1 NAME
 
 _QA_RMS_TSYS_CONSISTENCY_ - Compare Tsys-calculated RMS values with
-measured RMS values.
+measured RMS values and optionally mask out those that fail to meet a
+given threshold.
 
 =head1 DESCRIPTION
+
+This primitive compares RMS values calculated from the Tsys with those
+measured from the data. Each spectrum has two RMS values calculated
+for it, and if these values differ by more than a given amount, then
+the spectrum fails the test. If a given percentage of spectra out of
+the entire observation fail the test, then the observation is flagged
+as either questionable or bad.
+
+Failed spectra can be optionally masked.
 
 =head1 ARGUMENTS
 
 =over 4
 
-None.
+=item MASK = STRING (Given)
+
+The name of the survey to use when masking spectra. The special
+"telescope" survey can be used to mask spectra failing the
+less-stringent telescope thresholds. If left undefined, then no
+spectra will be masked. ['']
 
 =back
 
@@ -29,11 +44,20 @@ This primitive is suitable for ACSIS data.
 
 =over 4
 
+=item *
+
+If masking is done (see MASK argument), then the masked timeseries
+data with suffix _tsmsk.
+
 =back
 
 =head1 TASKS
 
+KAPPA: COLLAPSE, COPYBAD, DIV, MANIC, NDFCOPY, NUMB, POW, THRESH.
+
 =head1 REQUIRED PERL MODULES
+
+JCMT::ACSIS::Array, JSA::QA, Starlink::HDSPACK.
 
 =head1 AUTHORS
 
@@ -47,7 +71,7 @@ Rights Reserved.
 =cut
 
 # Determine if we're supposed to use this as a mask for a survey.
-my $mask = get_prim_arg( $_PRIM_ARGS_, "MASK", undef );
+my $mask = uc( get_prim_arg( $_PRIM_ARGS_, "MASK", undef ) );
 
 use Starlink::HDSPACK qw/ create_hdsobj copy_hdsobj /;
 use JCMT::ACSIS::Array;
@@ -143,7 +167,8 @@ foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
     orac_print sprintf( " %.2f%% of the samples had a calculated RMS that differed by more than %d%% from the measured RMS.\n", $percent * 100, $rmstol->{$result_survey} * 100 );
 
     # Mask out the bad pixels, if requested.
-    if( defined( $mask ) && uc( $result_survey ) eq uc( $mask ) ) {
+    if( defined( $mask ) && ( uc( $result_survey ) eq $mask or
+                              $mask eq 'TELESCOPE' ) ) {
 
       my $temp6file = new ORAC::TempFile;
       my $temp7file = new ORAC::TempFile;
@@ -158,8 +183,13 @@ foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
       $params = "in=$infile ref=$temp7file out=$outfile";
       $Mon{'kappa_mon'}->obeyw( "copybad", "$params" );
 
+      orac_say "Masked out bad samples to form $outfile.";
+
       # Update the Frame object.
       $Frm->file( $i, $outfile );
     }
   }
 }
+
+# Tidy up output.
+orac_say;
