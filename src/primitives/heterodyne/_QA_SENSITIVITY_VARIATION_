@@ -19,6 +19,10 @@ use JCMT::ACSIS::Array;
 
 my @masked_files;
 my %rms;
+my %receptor_rms;
+my $key =  $Frm->uhdr( "ORAC_OBSERVATION_NUMBER" ) . $Frm->hdr( $Frm->uhdr( "ORAC_SUBSYSTEM_IDKEY" ) );
+
+my $array_rms = 0;
 
 foreach my $i ( 1 .. $Frm->nfiles ) {
 
@@ -79,16 +83,10 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$outfile(~$extent,,)" );
   my ( $ORAC_STATUS, $rmsmean ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
 
-  orac_print sprintf( " Average RMS across all receptors: %6.3f\n", $rmsmean );
+  $array_rms += $rmsmean;
 
   # Get stats for each receptor.
   my $array = new JCMT::ACSIS::Array( File => $infile );
-
-  my %receptor_rms;
-  my $dstring = '';
-  my $rstring = '';
-  my @dstrings;
-  my @rstrings;
 
   foreach my $receptor ( sort $array->receptors ) {
 
@@ -97,34 +95,12 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
     ( $ORAC_STATUS, my $pixrms ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
 
     if( $pixrms > 0 ) {
-      $rstring .= sprintf( " %6.3f", $pixrms );
-      $receptor_rms{$receptor} = $pixrms;
+      $receptor_rms{$receptor} += $pixrms;
     } else {
-      $rstring .= "    bad";
       $receptor_rms{$receptor} = "bad";
     }
 
-    $dstring .= "    $receptor";
-
-    if( length( $dstring ) > 72 ) {
-      push @dstrings, $dstring;
-      push @rstrings, $rstring;
-      $dstring = '';
-      $rstring = '';
-    }
-
   }
-
-  push @dstrings, $dstring;
-  push @rstrings, $rstring;
-
-  orac_print " RMS values for each receptor:\n";
-  foreach my $i ( 0 .. $#dstrings ) {
-    orac_print "$dstrings[$i]\n$rstrings[$i]\n";
-  }
-
-  # Store the information on RMS values.
-  $rms{$infile} = \%receptor_rms;
 
   # Store the name of the masked file. We can't update the frame
   # object because we want to continue on doing stats on the original
@@ -132,6 +108,19 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
   $masked_files[$i] = $outfile;
 
 }
+
+$array_rms /= $Frm->nfiles;
+foreach my $receptor ( keys %receptor_rms ) {
+  if( $receptor_rms{$receptor} ne 'bad' ) {
+    $receptor_rms{$receptor} /= $Frm->nfiles;
+  }
+}
+
+orac_say sprintf( " RMS for entire array:   %7.2f K", $array_rms );
+
+_PRETTYPRINT_RECEPTOR_QA_ HASH=\%receptor_rms TYPE=RMS
+
+$rms{$key} = \%receptor_rms;
 
 # Store the hash of RMS hashes.
 $Frm->uhdr( "QA_RMS_VALUES", \%rms );

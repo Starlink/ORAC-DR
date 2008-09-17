@@ -19,14 +19,17 @@ use Starlink::HDSPACK qw/ create_hdsobj copy_hdsobj /;
 use JCMT::ACSIS::Array;
 
 my %tsys;
+my %receptor_tsys;
+
+my $key = $Frm->uhdr( "ORAC_OBSERVATION_NUMBER" ) . $Frm->hdr( $Frm->uhdr( "ORAC_SUBSYSTEM_IDKEY" ) );
+
+my $array_tsys = 0;
 
 foreach my $i ( 1 .. $Frm->nfiles ) {
 
-  my %receptor_tsys;
-
   my $infile = $Frm->file( $i );
 
-  orac_print "Retrieving Tsys values for $infile.\n";
+  orac_say "Retrieving Tsys values from $infile.";
 
   my $tmptsys = new ORAC::TempFile;
 
@@ -39,16 +42,11 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 
   ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
 
-  orac_print sprintf( " Tsys for entire array:   %7.2f K\n", $mean );
+  $array_tsys += $mean;
 
   # Get stats for each receptor.
   my $array = new JCMT::ACSIS::Array( File => $infile );
   my @receptors = $array->receptors;
-
-  my $dstring = '';
-  my $rstring = '';
-  my @dstrings;
-  my @rstrings;
 
   foreach my $receptor ( @receptors ) {
     my $pixel = $array->pixel( $receptor );
@@ -56,35 +54,25 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
     ( $ORAC_STATUS, my $pixmean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
 
     if( $pixmean > 0 ) {
-      $rstring .= sprintf( " %8.3f", $pixmean );
-      $receptor_tsys{$receptor} = $pixmean;
+      $receptor_tsys{$receptor} += $pixmean;
     } else {
-      $rstring .= "      bad";
       $receptor_tsys{$receptor} = "bad";
     }
-
-    $dstring .= "      $receptor";
-
-    if( length( $dstring ) > 72 ) {
-      push @dstrings, $dstring;
-      push @rstrings, $rstring;
-      $dstring = '';
-      $rstring = '';
-    }
   }
-
-  push @dstrings, $dstring;
-  push @rstrings, $rstring;
-
-  orac_print " Tsys values for each receptor:\n";
-  foreach my $i ( 0 .. $#dstrings ) {
-    orac_print "$dstrings[$i]\n$rstrings[$i]\n";
-  }
-
-  # Store the information on Tsys values.
-  $tsys{$infile} = \%receptor_tsys;
-
 }
+
+$array_tsys /= $Frm->nfiles;
+foreach my $receptor ( keys %receptor_tsys ) {
+  if( $receptor_tsys{$receptor} ne 'bad' ) {
+    $receptor_tsys{$receptor} /= $Frm->nfiles;
+  }
+}
+
+orac_say sprintf( " Tsys for entire array:   %7.2f K", $array_tsys );
+
+_PRETTYPRINT_RECEPTOR_QA_ HASH=\%receptor_tsys TYPE=Tsys
+
+$tsys{$key} = \%receptor_tsys;
 
 # Store the hash of Tsys values.
 $Frm->uhdr( "QA_TSYS_VALUES", \%tsys );
