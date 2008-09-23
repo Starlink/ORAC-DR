@@ -61,12 +61,6 @@ Things to add:
 i) Check the number of subgroups = NFOCSTEP; 
 ii) Crop images around source
 
-=head1 NOTES
-
-The current method for determining whether enough data have been
-collected to create the cube is too slow with QL (for which this
-method is supposed to solve the missing OBSEND flag problem).
-
 =head1 AUTHOR
 
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>
@@ -82,59 +76,76 @@ my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 # Flag to indicate if we have a FOCUS observation
 my $focusobs = ( uc($Frm->uhdr('ORAC_OBSERVATION_TYPE')) eq "FOCUS" ) ? 1 : 0;
 
-# Work out how many focus positions we have actually got
-my @focposns = $Grp->memberhdrvals( "FOCPOSN" );
+# Get current focus position
+my $curfocposn = $Frm->hdrval("FOCPOSN");
 
-# Since QL has no OBSEND FITS header the pipeline has to make its own
-# check to determine whether there is sufficient data to continue
-# processing. This block makes that check and sets the OBSEND flag
-# accordingly. Check if the number of actual focus positions matches
-# the intended number listed in the FITS header.
-if ( scalar(@focposns) == $Frm->hdr("NFOCSTEP") ) {
-  # OK we're on the last Focus position...
-  my $mean;
-
-  # Next check is how many images we have so far in the current
-  # subgroup and compare it with the average number in the other
-  # subgroups
-  my $curfocposn = $Frm->hdr("FOCPOSN");
-  my $cursubgrp = $Grp->subgrp(FOCPOSN => $curfocposn);
-  my $curnum = $cursubgrp->num + 1;
-
-  # In QL mode this block will be reached multiple times so store
-  # results as Grp uhdr entries for easy retrieval rather than
-  # repeating the calculation each time round.
-  if ( $Grp->uhdr("FOCMEANUM") ) {
-    $mean = $Grp->uhdr("FOCMEANUM");
-  } else {
-    my @subgrps = $Grp->subgrps("FOCPOSN");
-    # Remove last one which will be the current subgrp
-    pop(@subgrps);
-    my @numbers;
-    foreach my $subgrp (@subgrps) {
-      my $num = $subgrp->num + 1;
-      push (@numbers, $num);
+# Work out how many focus positions we have actually got, store
+# results as hash reference. Note that as the Grp gets larger, the
+# memberhdrvals method becomes too slow to use in QL mode which is why
+# we are counting.
+my @focposns;
+if ( $Grp->uhdr("FOCPOSNS") ) {
+  @focposns = @{ $Grp->uhdr("FOCPOSNS") };
+  # Flag for determining whether we have a new focus position
+  my $new = 1;
+  foreach my $focposn ( @focposns ) {
+    if ( $curfocposn == $focposn ) {
+      $new = 0;
     }
-    # Find mean number
-    use Statistics::Descriptive;
-    my $stats = Statistics::Descriptive::Sparse->new();
-    $stats->add_data( @numbers );
-    $mean = $stats->mean;
-    # Convert to an integer, round down
-    $Grp->uhdr("FOCMEANUM",int($mean));
   }
-
-  # If we have enough data then set the private OBSEND flag to true
-  # and continue processing
-  if ( $curnum >= $mean ) {
-    $Grp->uhdr("OBSEND", 1);
+  # If NEW is still set, then we have a new FOCPOSN to add to the array
+  if ($new) {
+    push (@focposns, $curfocposn);
+    $Grp->uhdr("FOCPOSNS", \@focposns);
   }
 } else {
-  # Just for safety ensure OBSEND is false
-  $Grp->uhdr("OBSEND", 0);
+  push (@focposns, $curfocposn);
+  $Grp->uhdr("FOCPOSNS", \@focposns);
 }
 
+# Determinre the mean number of Frames per focus position. Count the
+# number of times this primitive is entered, and store the results in
+# a hash (reference) indexed by the focus position. The mean is
+# calculated every time.
+my %focusnum;
+if ( $Grp->uhdr("FOCUSNUM") ) {
+  %focusnum = %{ $Grp->uhdr("FOCUSNUM") };
+  if ( defined $focusnum{$curfocposn} ) {
+    $focusnum{$curfocposn}++;
+  } else {
+    $focusnum{$curfocposn} = 1;
+  }
 
+  # NOTE - at the moment this is the mean of ALL of the focus
+  # positions whereas it should be the mean of all except the current
+  # focposn. In practice it doesn't make much difference.
+  my @numbers = values %focusnum;
+  use Statistics::Descriptive;
+  my $stats = Statistics::Descriptive::Sparse->new();
+  $stats->add_data( @numbers );
+  my $mean = $stats->mean;
+  # Convert to an integer, round down
+  $Grp->uhdr("FOCMEANUM",int($mean));
+  # Store hash reference for next time
+  $Grp->uhdr("FOCUSNUM",\%focusnum);
+} else {
+  # Enter first key/value pair in hash and store reference in uhdr
+  $focusnum{$curfocposn} = 1;
+  $Grp->uhdr("FOCUSNUM",\%focusnum);
+}
+
+# Check if we are on the last focus position and whether we have
+# enough data to create the Focus cube, by setting the OBSEND flag to
+# true.
+if ( scalar(@focposns) == $Frm->hdr("NFOCSTEP") ) {
+  my $curnum = $focusnum{$curfocposn};
+  my $mean = $Grp->uhdr("FOCMEANUM");
+  if ( $curnum >= $mean ) {
+    $Grp->uhdr("OBSEND", 1);
+  } else {
+    $Grp->uhdr("OBSEND", 0);
+  }
+}
 
 # Do we have a completed FOCUS observation, and does the cube already
 # exist? Other checks: should be a standard source
