@@ -10,6 +10,14 @@ _CALCULATE_FIVEPOINT_POINTING_
 
 =over 4
 
+=item CACHE = LOGICAL (Given)
+
+Whether or not to cache the results in internal headers. [0]
+
+=item REPORT = LOGICAL (Given)
+
+Whether or not to report results to the user. [1]
+
 =item TYPE = STRING (Given)
 
 The type of pointing being calculated. This is purely for bookkeeping
@@ -69,11 +77,10 @@ Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
-# Find out what type of pointing we're doing, line or
-# continuum. Default to line.
-my $type = ( defined( $_CALCULATE_FIVEPOINT_POINTING_{TYPE} ) ?
-             uc( $_CALCULATE_FIVEPOINT_POINTING_{TYPE} ) :
-             'LINE' );
+# Handle arguments.
+my $cache = get_prim_arg( $_PRIM_ARGS_, "CACHE", 0 );
+my $report = get_prim_arg( $_PRIM_ARGS_, "REPORT", 1 );
+my $type = uc( get_prim_arg( $_PRIM_ARGS_, "TYPE", "LINE" ) );
 
 my $in = $Frm->file;
 
@@ -168,29 +175,40 @@ if ($FitStatus == ORAC__OK) {
     # Display the results to the user.
     my $p_horiz_centre = sprintf( "%.2f", $horiz_centre );
     my $p_vert_centre = sprintf( "%.2f", $vert_centre );
-    orac_print( "Pointing results using Gaussian fit:\n", "blue" );
-    orac_print( " DAZ: $p_horiz_centre\n DEL: $p_vert_centre\n", "blue" );
+    orac_say( "Pointing results using Gaussian fit:", "blue" ) if $report;
+    orac_say( " DAZ: $p_horiz_centre\n DEL: $p_vert_centre", "blue" ) if $report;
 
     # Store with the calibration system.
+    my %pointinghash = ( DAZ => $horiz_centre,
+                         DEL => $vert_centre,
+                         DAZ_ERR => 0,
+                         DEL_ERR => 0,
+                         POINTING_TYPE => $type,
+                         METHOD => 'FIVEPOINT',
+                       );
     my %calhash = ( %{$Frm->hdr},
-                    DAZ => $horiz_centre,
-                    DEL => $vert_centre,
-                    DAZ_ERR => 0,
-                    DEL_ERR => 0,
-                    POINTING_TYPE => $type,
-                    METHOD => 'FIVEPOINT',
+                    %pointinghash,
                   );
+
+    if( $cache ) {
+      if( ! defined( $Frm->uhdr( "POINTING_INFO" ) ) ) {
+        $Frm->uhdr( "POINTING_INFO", [] );
+      }
+      my $pointing_info = $Frm->uhdr( "POINTING_INFO" );
+      push @$pointing_info, \%pointinghash;
+      $Frm->uhdr( "POINTING_INFO", $pointing_info );
+    }
 
     # Display a warning if values are large.
     if( abs( $horiz_centre ) > 10 ) {
-      orac_err "Absolute DAZ pointing value greater than 10 arcseconds.\n";
+      orac_err "Absolute DAZ pointing value greater than 10 arcseconds.\n" if $report;
     } elsif( abs( $horiz_centre ) > 5 ) {
-      orac_warn "Absolute DAZ pointing value greater than 5 arcseconds.\n";
+      orac_warn "Absolute DAZ pointing value greater than 5 arcseconds.\n" if $report;
     }
     if( abs( $vert_centre ) > 10 ) {
-      orac_err "Absolute DEL pointing value greater than 10 arcseconds.\n";
+      orac_err "Absolute DEL pointing value greater than 10 arcseconds.\n" if $report;
     } elsif( abs( $vert_centre ) > 5 ) {
-      orac_warn "Absolute DEL pointing value greater than 5 arcseconds.\n";
+      orac_warn "Absolute DEL pointing value greater than 5 arcseconds.\n" if $report;
     }
 
     $Cal->pointingindex->add( $Frm->file, \%calhash );
@@ -205,4 +223,4 @@ if ($FitStatus == ORAC__OK) {
 $Mon{'ndfpack_mon'}->obeyw( "wcsattrib", "ndf=$in mode=mset setting='SkyRefIs=$skyrefis,Format(1)=$format1,Format(2)=$format2'" );
 
 # Tidy-up output.
-orac_print "\n";
+orac_say "";
