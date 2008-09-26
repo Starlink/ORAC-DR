@@ -72,9 +72,9 @@ my $offmethod = get_prim_arg( $_PRIM_ARGS_, "METHOD", "centroid");
 # Other checks: should be a standard source
 if ( uc($Frm->hdr('OBS_TYPE')) eq "POINTING" ) {
 
-# Do we have a completed observation? Check for OBSEND = T in the last
-# entry in the Frame object.
-if ( $Frm->hdrval('OBSEND',-1) ) {
+# Do we have a completed observation? Check for OBSEND = T in the
+# current Frame uhdr.
+if ( $Frm->uhdr("OBSEND") ) {
 
   # Pointing should be done at the end of an observation so always use
   # the Group file
@@ -89,6 +89,8 @@ if ( $Frm->hdrval('OBSEND',-1) ) {
   my $obsnum = sprintf "%05d", $Grp->uhdr('ORAC_OBSERVATION_NUMBER');
   # Define filename
   my $okfilename = ".s".$Frm->hdrval('UTDATE')."_".$obsnum.".ok";
+  # Store filename in header
+  $Grp->uhdr("FLAGFILE", $okfilename);
 
   # Open the file for writing
   my $okfile = new IO::File("> $okfilename");
@@ -127,6 +129,13 @@ if ( $Frm->hdrval('OBSEND',-1) ) {
   $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$incopyfile");
   $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$incopyfile mode=mset setting='skyrefis=origin,alignoffset=1,system=AZEL'");
 
+  # Look for a point source in the image
+  _FIND_POINT_SOURCES_
+  my $ptsrccat = $_FIND_POINT_SOURCES_{CATALOGUE};
+  if ( $ptsrccat->sizeof == 0 ) {
+    orac_warn "Unable to calculate pointing offsets - image appears to contain no point sources\n";
+  } else {
+
   # METHOD = CENTROID
   # Find source position offsets using the temporary copy of the Grp image
   _CENTROID_IMAGE_ IMAGE=$incopyfile
@@ -151,7 +160,7 @@ if ( $Frm->hdrval('OBSEND',-1) ) {
       # ObsNum, source, UT, filter, DAz, DEl, Seeing, tau225
       $pointinglog->addentry("$uttime $hst $run $src $mode $filter    $el $cso $tau  $see   $daz  $del");
     } else {
-      # If we are not logging these data to a file, store the noise in the
+      # If we are not logging these data to a file, store the offsets in the
       # primitive hash
       $_FIND_POINTING_OFFSETS_{DAZ} = $daz;
       $_FIND_POINTING_OFFSETS_{DEL} = $del;
@@ -160,6 +169,7 @@ if ( $Frm->hdrval('OBSEND',-1) ) {
     orac_print ("Pointing offsets are (dAz, dEl) = ($daz, $del) arcsec\n", "green");
   } else {
     orac_warn "Unable to calculate pointing offsets - could not determine centroid\n";
+  }
   }
 }
 } else {
