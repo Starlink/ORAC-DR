@@ -945,7 +945,11 @@ sub orac_calib_override {
         my $noupdate = $key."noupdate";
         $Cal->$noupdate(1) if $Cal->can($noupdate);
 
-        orac_printp("Calibration $key set to $calibs{$key}\n",
+        my $keyprint = $calibs{$key};
+        if( ref( $calibs{$key} ) eq 'ARRAY' ) {
+          $keyprint = join ',', @{$calibs{$key}};
+        }
+        orac_printp("Calibration $key set to $keyprint\n",
                     "blue");
 
       } else {                  # complain but continue
