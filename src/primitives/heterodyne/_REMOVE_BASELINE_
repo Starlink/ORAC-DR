@@ -82,7 +82,7 @@ All Rights Reserved.
 # Deal with arguments.
 my $edges = get_prim_arg( $_PRIM_ARGS_, "EDGES", 0 );
 my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
-my $method = lc( get_prim_arg( $_PRIM_ARGS_, "method", "region" ) );
+my $method = uc( get_prim_arg( $_PRIM_ARGS_, "METHOD", "REGION" ) );
 my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 0 );
 my $tag = get_prim_arg( $_PRIM_ARGS_, "TAG", 0 );
 
@@ -127,9 +127,12 @@ if( ! $group ||
 
   } else {
 
+    my @baseline_masks;
+
     foreach my $i ( 1 .. $Obj->nfiles ) {
 
       my ( $in, $out ) = $Obj->inout( "_bl", $i );
+      ( undef, my $mask ) = $Obj->inout( "_blmask", $i );
 
       $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
       ( my $ORAC_STATUS, my @lbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
@@ -141,6 +144,11 @@ if( ! $group ||
       # Set up parameters for MFITTREND.
       my $params = "in=$in out=$out modifyin=false subtract=true";
       $params   .= " order=$order axis=3 section=$section method=$method";
+
+      # If we're in 'SINGLE' method, we can get masks out.
+      if( $method eq 'SINGLE' ) {
+        $params .= " mask=$mask";
+      }
 
       # Add ranges parameter, if necessary.
       if( $edges ) {
@@ -161,7 +169,7 @@ if( ! $group ||
       orac_print "$in to $out:\n";
       orac_print " Removed baseline using $order-order polynomial.\n";
 
-      if( $method eq 'region' && ! $edges ) {
+      if( $method eq 'REGION' && ! $edges ) {
         ( $ORAC_STATUS, my @regions ) = $Mon{'kappa_mon'}->get( "mfittrend", "aranges" );
         push( @bl_regions, \@regions );
         orac_print " Baseline regions: [";
@@ -176,11 +184,22 @@ if( ! $group ||
       # Update Frame object;
       $Obj->file( $i, $out );
 
+      # Store the mask, if in 'SINGLE' method.
+      if( $method eq 'SINGLE' ) {
+        $baseline_masks[$i] = $mask;
+        orac_say " $mask: baseline region mask created.";
+      }
+
     }
 
     # Put the baselined regions in the Frame's user header.
-    if( $method eq 'region' ) {
+    if( $method eq 'REGION' ) {
       $Obj->uhdr( "BASELINE_REGIONS", \@bl_regions );
+    }
+
+    # Store the baseline mask names, if we're in 'SINGLE' method.
+    if( $method eq 'SINGLE' ) {
+      $Obj->uhdr( "BASELINE_MASKS", \@baseline_masks );
     }
 
     # Display.
