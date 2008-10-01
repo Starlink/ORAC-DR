@@ -99,67 +99,99 @@ if( $group != 1 || ( $group == 1 && $Grp->lastmember( $Frm ) ) ) {
 
   foreach my $Obj ( @Objs ) {
 
-    foreach my $moment ( @moments ) {
+    my $masks;
+    if( defined( $Obj->uhdr( "BASELINE_MASKS" ) ) ) {
+      $masks = $Obj->uhdr( "BASELINE_MASKS" );
+    }
 
-      orac_say "Creating $moment moment map.";
+    my %paste_inputs;
 
-      my @paste_inputs;
+    foreach my $i ( 1 .. $Obj->nfiles ) {
 
-      foreach my $i ( 1 .. $Obj->nfiles ) {
+      if( $Obj->uhdr( "SPARSE" ) ) {
+        orac_warn $Obj->file( $i ) . " is a sparse cube. Cannot create moments map for a sparse cube.\n";
+      } else {
 
-        if( $Obj->uhdr( "SPARSE" ) ) {
-          orac_warn $Obj->file( $i ) . " is a sparse cube. Cannot create moments map for a sparse cube.\n";
+        my $in = $Obj->file( $i );
+
+        orac_say "Creating moments maps for $in.";
+
+        # Only collapse if the cube isn't 1xMxN or Mx1xN.
+        _GET_DIMENSIONS_ FILE=$in
+        my $dims = $_GET_DIMENSIONS_{DIMS};
+        my $lbound = $_GET_DIMENSIONS_{LBOUND};
+        my $ubound = $_GET_DIMENSIONS_{UBOUND};
+
+        if( $dims->[0] == 1 ||
+            $dims->[1] == 1 ) {
+          orac_warn "Cannot create moment map with a " . $dims->[0] . "x" . $dims->[1] . "x" . $dims->[2] . " cube.\n";
+
+          # If both dimensions are 1, then copy this file into the _sp.
+          if( $dims->[0] == 1 && $dims->[1] == 1 ) {
+
+            {
+              my $Frm = $Obj;
+              $Frm->uhdr( "INTEG_MAX_POS", [ 1, 1 ] );
+              _EXTRACT_MAXVALUE_SPECTRUM_ TAG=1 GROUP=0
+            }
+
+          }
         } else {
 
-          my $in = $Obj->file( $i );
+          # Create a temporary file.
+          my $temp1file = new ORAC::TempFile;
 
-          # Only collapse if the cube isn't 1xMxN or Mx1xN.
-          _GET_DIMENSIONS_ FILE=$in
-          my $dims = $_GET_DIMENSIONS_{DIMS};
-          my $lbound = $_GET_DIMENSIONS_{LBOUND};
-          my $ubound = $_GET_DIMENSIONS_{UBOUND};
+          # Mask, if we have a mask.
+          if( defined( $masks ) ) {
+            my $mask = $masks->[$i];
 
-          if( $dims->[0] == 1 ||
-              $dims->[1] == 1 ) {
-            orac_warn "Cannot create moment map with a " . $dims->[0] . "x" . $dims->[1] . "x" . $dims->[2] . " cube.\n";
+            orac_say " Using mask $mask to mask out baseline regions.";
 
-            # If both dimensions are 1, then copy this file into the _sp.
-            if( $dims->[0] == 1 && $dims->[1] == 1 ) {
+            my $params = "in=$in out=$temp1file ref=$mask invert=true";
+            $Mon{'kappa_mon'}->obeyw( "copybad", "$params" );
 
-              {
-                my $Frm = $Obj;
-                $Frm->uhdr( "INTEG_MAX_POS", [ 1, 1 ] );
-                _EXTRACT_MAXVALUE_SPECTRUM_ TAG=1 GROUP=0
-              }
-
-            }
           } else {
+            $temp1file = $in;
+          }
 
-            # Create a temporary file.
-            my $tempfile = new ORAC::TempFile;
+          # For each moment, collapse.
+          foreach my $moment ( @moments ) {
+
+            if( ! exists( $paste_inputs{$moment} ) ) {
+              $paste_inputs{$moment} = ();
+            }
+
+            orac_say " Creating temporary $moment moment map.";
+
+            my $temp2file = new ORAC::TempFile;
 
             # Collapse the cube.
-            orac_say " Collapsing $in along frequency axis.";
-            my $params = "in=$in out=$tempfile estimator=$moment axis=spec wlim=0.0";
+            orac_say " Collapsing along frequency axis.";
+            my $params = "in=$temp1file out=$temp2file estimator=$moment axis=spec wlim=0.0";
             $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+            $Mon{'ndfpack_mon'}->obeyw( "setbb", "ndf=$temp2file bb=255" );
 
-            push @paste_inputs, $tempfile;
-
+            push @{$paste_inputs{$moment}}, $temp2file;
           }
         }
       }
+    }
+
+    # Now we've collapsed each file for the given Obj in each
+    # moment, so paste them together.
+    foreach my $moment ( @moments ) {
 
       my ( $in, $out ) = $Obj->inout( "_$moment" );
-      if( scalar( @paste_inputs ) == 1 ) {
+      if( scalar( @{$paste_inputs{$moment}} ) == 1 ) {
 
         # We only have one input file, so just copy it over.
-        my $params = "in=$paste_inputs[0] out=$out";
+        my $params = "in=${$paste_inputs{$moment}}[0] out=$out";
         $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
 
       } else {
 
         orac_say " Pasting together temporary maps to form $moment map.";
-        _PASTE_FILES_ FILES=\@paste_inputs OUT=$out
+        _PASTE_FILES_ FILES=$paste_inputs{$moment} OUT=$out
 
       }
 
@@ -174,9 +206,8 @@ if( $group != 1 || ( $group == 1 && $Grp->lastmember( $Frm ) ) ) {
         } else {
           _TAG_AS_REPRESENTATIVE_ FILE=$out GROUP=$group SUFFIX=rimg UPDATE=0
         }
-
       }
-
     }
   }
 }
+
