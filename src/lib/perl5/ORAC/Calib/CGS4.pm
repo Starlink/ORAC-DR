@@ -69,6 +69,8 @@ sub new {
   $obj->{Profile}     = undef;
   $obj->{ProfileIndex}= undef;
   $obj->{ProfileNoUpdate} = undef;
+  $obj->{Engineering} = undef;
+  $obj->{EngineeringIndex} = undef;
 
   return $obj;
 
@@ -80,6 +82,26 @@ sub new {
 =head2 Accessors
 
 =over 4
+
+=item B<engineeringindex>
+
+Return (or set) the index object associated with the engineering
+parameters index file.
+
+=cut
+
+sub engineeringindex {
+  my $self = shift;
+  if( @_ ) { $self->{EngineeringIndex} = shift; }
+  unless( defined( $self->{EngineeringIndex} ) ) {
+    my $indexfile = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'},
+                                         "index.engineering" );
+    my $rulesfile = $self->find_file( "rules.engineering" );
+    croak "engineering rules file could not be located\n" unless defined $rulesfile;
+    $self->{EngineeringIndex} = new ORAC::Index( $indexfile, $rulesfile );
+  }
+  return $self->{EngineeringIndex};
+}
 
 =item B<maskname>
 
