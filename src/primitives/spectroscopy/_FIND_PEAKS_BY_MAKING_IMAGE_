@@ -1,72 +1,114 @@
-#+
-# Name:
-#    _FIND_PEAKS_BY_MAKING_IMAGE_
-#
-# Purpose:
-#    Finds spectral beams in a wavelength-collapsed profile of a 2-d spectrum.
-#
-# Language:
-#    Perl5
-#
-# Description:
-#    This primitive takes a profile of a 2-d spectrum collapsed along
-#    the wavelength axis, and turns it into a 5-pixel wide image, from
-#    which objects are detected.  This is non-parametric unlike
-#    Figaro:EMLT, which depends on the profile shape, and can prefer
-#    faint blips over strong beams.  Objects are detected as positive
-#    signal above the background.  So to detect negative features, the
-#    profile should be multiplied by minus one and reanalysed.
-#
-# Arguments:
-#    FOUND = INTEGER (Returned)
-#       The number of peaks found up to MAXPEAKS.
-#    MAXPEAKS = INTEGER (Given)
-#       The maximum number of peaks to find.  [1]
-#    PARFILE = LITERAL (Given)
-#       The name of the paramater file.  The default is derived from
-#       $Cal->find_file->(extractor_peaks.sex).  []
-#    PEAK( FOUND ) = REAL (Returned)
-#       The intensity of the peaks in order of descending intensity.
-#    POS( FOUND ) = REAL (Returned)
-#       The pixel positions of the peaks in order of descending
-#       intensity.
-#    PROFILE = NDF (Given)
-#       The one-dimensional profile to be analysed for peaks.
-#
-# Notes:
-#    -  Applies to any spectral profile.
-#    -  The calibration files for the extraction are 
-#    extraction_peaks.sex and extraction_peaks.param.  These are
-#    generic and are found in $ORAC_CAL_ROOT/general-IR.  However,
-#    extraction_peaks.sex may be tailored to different instruments,
-#    notably the detection threshold; thus an instrument-specific
-#    version may be placed in $ORAC_DATA_CAL.  An instrument version
-#    the extraction_peaks.param file can be made (but not advised)
-#    provided the PARAMETERS_NAME field is modified to point to
-#    its location ($ORAC_DATA_CAL).  The results catalogue reports
-#    the pixel co-ordinate of the peak and its flux, from which the
-#    brightest MAXPEAKS are returned.  The detection threshold may
-#    be changed by editing the DETECT_THRESH parameter in the
-#    extraction_peaks.sex file, defaulting to 1.5 standard
-#    deviations above the background.
-#    -  The detection level is reported.
-#    -  The image is the original profile flanked by symmetric half-
-#    and quarter-strength copies.
-#
-# Tasks:
-#    KAPPA: CMULT, MANIC, NDFCOPY, PASTE; EXTRACTOR.
-#
-# Deficiencies:
-#    -  No validation that the profile is one-dimensional.
+=head1 NAME
 
-# Authors:
-#    MJC: Malcolm J. Currie (Starlink)
-#
-# Copyright:
-#    Copyright (C) 2003-2005 Particle Physics and Astronomy Research
-#    Council.  All Rights Reserved.
-#
-#-
+_FIND_PEAKS_BY_MAKING_IMAGE_ -- Finds spectral beams in a a
+wavelength-collapsed profile of a 2-d spectrum.
+
+=head1 DESCRIPTION
+
+This primitive takes a profile of a 2-d spectrum collapsed along the
+wavelength axis, and turns it into a 5-pixel wide image, from which
+objects are detected.  This is non-parametric unlike Figaro:EMLT,
+which depends on the profile shape, and can prefer faint blips over
+strong beams.  Objects are detected as positive signal above the
+background.  So to detect negative features, the profile should be
+multiplied by minus one and reanalysed.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item FOUND = INTEGER (Returned)
+
+The number of peaks found up to MAXPEAKS.
+
+=item FWHM( FOUND ) = REAL (Returned)
+
+The width of the peaks in order of descending intensity.
+
+=item MAXPEAKS = INTEGER (Given)
+
+The maximum number of peaks to find.  [1]
+
+=item PARFILE = LITERAL (Given)
+
+The name of the paramater file.  The default is derived from
+$Cal-E<gt>find_file-E<gt>(extractor_peaks.sex).  []
+
+=item PEAK( FOUND ) = REAL (Returned)
+
+The intensity of the peaks in order of descending intensity.
+
+=item POS( FOUND ) = REAL (Returned)
+
+The pixel positions of the peaks in order of descending intensity.
+
+=item PROFILE = NDF (Given)
+
+The one-dimensional profile to be analysed for peaks.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+Applies to any spectral profile.
+
+=item *
+
+The calibration files for the extraction are extraction_peaks.sex and
+extraction_peaks.param.  These are generic and are found in
+F<$ORAC_CAL_ROOT/general-IR>.  However, extraction_peaks.sex may be
+tailored to different instruments, notably the detection threshold;
+thus an instrument-specific version may be placed in
+F<$ORAC_DATA_CAL>.  An instrument version the extraction_peaks.param
+file can be made (but not advised) provided the PARAMETERS_NAME field
+is modified to point to its location (F<$ORAC_DATA_CAL>).  The results
+catalogue reports the pixel co-ordinate of the peak and its flux, from
+which the brightest MAXPEAKS are returned.  The detection threshold
+may be changed by editing the DETECT_THRESH parameter in the
+extraction_peaks.sex file, defaulting to 1.5 standard deviations above
+the background.
+
+=item *
+
+The detection level is reported.
+
+=item *
+
+The image is the original profile flanked by symmetric half- and
+quarter-strength copies.
+
+=back
+
+=head1 TASKS
+
+KAPPA: CMULT, MANIC, NDFCOPY, PASTE; EXTRACTOR.
+
+=head1 DEFICIENCIES
+
+=over 4
+
+=item *
+
+No validation that the profile is one-dimensional.
+
+=back
+
+=head1 AUTHORS
+
+Malcolm J. Currie (Starlink) <mjc@star.rl.ac.uk>
+Brad Cavanagh (JAC) <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2003-2007 Particle Physics and Astronomy Research
+Council. 2007-2008 Science and Technology Facilities Council. All
+Rights Reserved.
+
+=cut
 
 # For OS-independent filename creation.
     use File::Spec;
@@ -94,7 +136,7 @@
 
     $parfile = $Cal->find_file( $parfile );
 
-    my ( $beams_found, @pos, @peak );
+    my ( $beams_found, @pos, @peak, @fwhm );
 
 # Form image version of the profile
 # =================================
@@ -222,24 +264,29 @@
 
           push( @pos, $fields[1] );
           push( @peak, $fields[2] );
+          push( @fwhm, $fields[3] );
        }
 
 # Now take the desired number of peaks.
        if ( $beams_wanted < $numpeaks ) {
-          my @tmpos = ();
-	  my @tmpeak = ();
-          for ( my $i = 0; $i < $beams_wanted; $i++ ) {
-             my $p = pop( @pos );
-	     push( @tmpos, $p );
-             $p = pop( @peak );
-	     push( @tmpeak, $p );
-          }
+         my @tmpos = ();
+         my @tmpeak = ();
+         my @tmpfwhm = ();
+         for ( my $i = 0; $i < $beams_wanted; $i++ ) {
+           my $p = pop( @pos );
+           push( @tmpos, $p );
+           $p = pop( @peak );
+           push( @tmpeak, $p );
+           $p = pop( @fwhm );
+           push( @tmpfwhm, $p );
+         }
 
-          @pos = @tmpos;
-	  @peak = @tmpeak;
-          $beams_found = $beams_wanted;
+         @pos = @tmpos;
+         @peak = @tmpeak;
+         @fwhm = @tmpfwhm;
+         $beams_found = $beams_wanted;
        } else {
-          $beams_found = $numpeaks;
+         $beams_found = $numpeaks;
        }
 
     } else {
@@ -253,111 +300,8 @@
     $_FIND_PEAKS_BY_MAKING_IMAGE_{FOUND} = $beams_found;
     $_FIND_PEAKS_BY_MAKING_IMAGE_{POS} = \@pos;
     $_FIND_PEAKS_BY_MAKING_IMAGE_{PEAK} = \@peak;
+    $_FIND_PEAKS_BY_MAKING_IMAGE_{FWHM} = \@fwhm;
 
 # Podule
 # ======
 
-=head1 NAME
-
-_FIND_PEAKS_BY_MAKING_IMAGE_ -- Finds spectral beams in a a wavelength-collapsed profile of a 2-d spectrum.
-
-=head1 DESCRIPTION
-
-This primitive takes a profile of a 2-d spectrum collapsed along the
-wavelength axis, and turns it into a 5-pixel wide image, from which
-objects are detected.  This is non-parametric unlike Figaro:EMLT,
-which depends on the profile shape, and can prefer faint blips over
-strong beams.  Objects are detected as positive signal above the
-background.  So to detect negative features, the profile should be
-multiplied by minus one and reanalysed.
-
-=head1 ARGUMENTS
-
-=over 4
-
-=item FOUND = INTEGER (Returned)
-
-The number of peaks found up to MAXPEAKS.
-
-=item MAXPEAKS = INTEGER (Given)
-
-The maximum number of peaks to find.  [1]
-
-=item PARFILE = LITERAL (Given)
-
-The name of the paramater file.  The default is derived from
-$Cal-E<gt>find_file-E<gt>(extractor_peaks.sex).  []
-
-=item PEAK( FOUND ) = REAL (Returned)
-
-The intensity of the peaks in order of descending intensity.
-
-POS( FOUND ) = REAL (Returned)
-
-The pixel positions of the peaks in order of descending intensity.
-=item PROFILE = NDF (Given)
-
-The one-dimensional profile to be analysed for peaks.
-
-=back
-
-=head1 NOTES
-
-=over 4
-
-=item *
-
-Applies to any spectral profile.
-
-=item *
-
-The calibration files for the extraction are 
-extraction_peaks.sex and extraction_peaks.param.  These are
-generic and are found in F<$ORAC_CAL_ROOT/general-IR>.  However,
-extraction_peaks.sex may be tailored to different instruments,
-notably the detection threshold; thus an instrument-specific
-version may be placed in F<$ORAC_DATA_CAL>.  An instrument version
-the extraction_peaks.param file can be made (but not advised)
-provided the PARAMETERS_NAME field is modified to point to
-its location (F<$ORAC_DATA_CAL>).  The results catalogue reports
-the pixel co-ordinate of the peak and its flux, from which the
-brightest MAXPEAKS are returned.  The detection threshold may
-be changed by editing the DETECT_THRESH parameter in the
-extraction_peaks.sex file, defaulting to 1.5 standard
-deviations above the background.
-
-=item *
-
-The detection level is reported.
-
-=item *
-
-The image is the original profile flanked by symmetric half-
-and quarter-strength copies.
-
-=back
-
-=head1 TASKS
-
-KAPPA: CMULT, MANIC, NDFCOPY, PASTE; EXTRACTOR.
-
-=head1 DEFICIENCIES
-
-=over 4
-
-=item *
-
-No validation that the profile is one-dimensional.
-
-=back
-
-=head1 AUTHORS
-
-Malcolm J. Currie (Starlink) <mjc@star.rl.ac.uk>
-
-=head1 COPYRIGHT
-
-Copyright (C) 2003-2005 Particle Physics and Astronomy Research
-Council.  All Rights Reserved.
-
-=cut
