@@ -1,0 +1,163 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_ENGINEERING_STATS_ - Calculate engineering statistics for CGS4.
+
+=head1 DESCRIPTION
+
+This primitive is used to help the instrument scientist calibrate
+CGS4's internal mechanisms. It takes two rows, finds the location of
+the strongest line in those rows, and calculates the line width and
+the line angle.
+
+If only one row is given, then no angle is calculated.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=head1 COL1 = INTEGER (Given)
+
+Starting column between which the line fitting will occur. [100]
+
+=head1 COL2 = INTEGER (Given)
+
+Ending column between which the line fitting will occur. [300]
+
+=head1 ROW1 = INTEGER (Given)
+
+The first row to find lines on. [100]
+
+=head1 ROW2 = INTEGER (Given)
+
+The second row to find lines on. [150]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+If ROW1 and ROW2 are equal, then the angle reported is zero.
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 TASKS
+
+KAPPA: NDFCOPY.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+my $row1 = get_prim_arg( $_PRIM_ARGS_, "ROW1", 100 );
+my $row2 = get_prim_arg( $_PRIM_ARGS_, "ROW2", 150 );
+my $col1 = get_prim_arg( $_PRIM_ARGS_, "COL1", 100 );
+my $col2 = get_prim_arg( $_PRIM_ARGS_, "COL2", 300 );
+
+foreach my $i ( 1 .. $Frm->nfiles ) {
+
+  my $in = $Frm->file( $i );
+
+  # Do the first row.
+  my $temp1file = new ORAC::TempFile;
+  my $params = "in=$in($col1:$col2,$row1) out=$temp1file trim";
+  $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+  orac_say "Finding line on row $row1.";
+
+  _FIND_PEAKS_BY_MAKING_IMAGE_ PROFILE=$temp1file
+  my $found1 = $_FIND_PEAKS_BY_MAKING_IMAGE_{FOUND};
+  my $pos1 = $_FIND_PEAKS_BY_MAKING_IMAGE_{POS};
+  my $fwhm1 = $_FIND_PEAKS_BY_MAKING_IMAGE_{FWHM};
+
+  orac_say "Line on row $row1 is at $pos1->[0] and has FWHM of $fwhm1->[0].";
+
+  # And the second row.
+  my $temp2file = new ORAC::TempFile;
+  $params = "in=$in($col1:$col2,$row2) out=$temp2file";
+  $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+  orac_say "Finding line on row $row2.";
+
+  _FIND_PEAKS_BY_MAKING_IMAGE_ PROFILE=$temp2file
+  my $found2 = $_FIND_PEAKS_BY_MAKING_IMAGE_{FOUND};
+  my $pos2 = $_FIND_PEAKS_BY_MAKING_IMAGE_{POS};
+  my $fwhm2 = $_FIND_PEAKS_BY_MAKING_IMAGE_{FWHM};
+
+  orac_say "Line on row $row2 is at $pos2->[0] and has FWHM of $fwhm2->[0].";
+
+  # Run some maths.
+  my $angle_deg;
+  if( $row1 != $row2 ) {
+
+    my $rowdiff = $row2-$row1;
+    my $posdiff = $pos2->[0] - $pos1->[0];
+
+    my $angle = atan2( $rowdiff, $posdiff );
+
+    $angle_deg = $angle * 180 / 3.14159265359;
+
+    if( $angle_deg > 90 ) { $angle_deg -= 180; }
+
+    orac_say sprintf( "Line angle: %.2f degrees", $angle_deg );
+
+  } else {
+    $angle_deg = 0;
+  }
+
+  # Calculate the positions and FWHM in microns.
+  my $disp = $Frm->uhdr( "ORAC_GRATING_DISPERSION" );
+  my $fwhm1_micron = $disp * $fwhm1->[0];
+  my $fwhm2_micron = $disp * $fwhm2->[0];
+
+  my $cenwavl = $Frm->uhdr( "ORAC_GRATING_WAVELENGTH" );
+
+  _GET_DIMENSIONS_
+  my $lbnd = $_GET_DIMENSIONS_{LBOUND};
+  my $ubnd = $_GET_DIMENSIONS_{UBOUND};
+
+  my $cen = int( ( $ubnd->[0] - $lbnd->[0] ) / 2 );
+
+  my $pos1_micron = $cenwavl + ( $pos1->[0] - $cen ) * $disp;
+  my $pos2_micron = $cenwavl + ( $pos2->[0] - $cen ) * $disp;
+
+  my %enghash = ( %{$Frm->hdr},
+                  FWHM_PIXELS => $fwhm1->[0],
+                  FWHM_MICRONS => $fwhm1_micron,
+                  ANGLE => $angle_deg,
+                  POSITION_PIXELS => $pos1->[0],
+                  POSITION_MICRONS => $pos1_micron,
+                );
+  $Cal->engineeringindex->add( $Frm->file . "-row1", \%enghash );
+
+  %enghash = ( %{$Frm->hdr},
+               FWHM_PIXELS => $fwhm2->[0],
+               FWHM_MICRONS => $fwhm2_micron,
+               ANGLE => $angle_deg,
+               POSITION_PIXELS => $pos2->[0],
+               POSITION_MICRONS => $pos2_micron,
+             );
+  $Cal->engineeringindex->add( $Frm->file . "-row2", \%enghash );
+
+  orac_say "Added engineering stats to index.engineering.\n";
+
+}
