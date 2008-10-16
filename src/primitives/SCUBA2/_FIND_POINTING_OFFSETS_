@@ -72,108 +72,106 @@ my $offmethod = get_prim_arg( $_PRIM_ARGS_, "METHOD", "centroid");
 # Other checks: should be a standard source
 if ( uc($Frm->hdr('OBS_TYPE')) eq "POINTING" ) {
 
-# Do we have a completed observation? Check for OBSEND = T in the
-# current Frame uhdr.
-if ( $Frm->uhdr("OBSEND") ) {
+  # Do we have a completed observation? Check for OBSEND = T in the
+  # current Frame uhdr.
+  if ( $Frm->uhdr("OBSEND") ) {
 
-  # Pointing should be done at the end of an observation so always use
-  # the Group file
-  my $in = $Grp->file;
-  # Set WCS attributes for deriving offsets. The system is left
-  # unchanged to allow the POINTING_FOCUS code to work things out
-  # itself. We take a copy of this file and do our own thing later.
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=mset setting='skyrefis=origin,alignoffset=1'");
+    # Pointing should be done at the end of an observation so always use
+    # the Group file
+    my $in = $Grp->file;
+    # Set WCS attributes for deriving offsets. The system is left
+    # unchanged to allow the POINTING_FOCUS code to work things out
+    # itself. We take a copy of this file and do our own thing later.
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=mset setting='skyrefis=origin,alignoffset=1'");
 
-  # Write .ok in output directory
-  # Format obsnum
-  my $obsnum = sprintf "%05d", $Grp->uhdr('ORAC_OBSERVATION_NUMBER');
-  # Define filename
-  my $okfilename = ".s".$Frm->hdrval('UTDATE')."_".$obsnum.".ok";
-  # Store filename in header
-  $Grp->uhdr("FLAGFILE", $okfilename);
+    # Write .ok in output directory
+    # Format obsnum
+    my $obsnum = sprintf "%05d", $Grp->uhdr('ORAC_OBSERVATION_NUMBER');
+    # Define filename
+    my $okfilename = ".s".$Frm->hdrval('UTDATE')."_".$obsnum.".ok";
+    # Store filename in header
+    $Grp->uhdr("FLAGFILE", $okfilename);
 
-  # Open the file for writing
-  my $okfile = new IO::File("> $okfilename");
-  if ( defined $okfile ) {
-    print $okfile $Grp->file . $Grp->filesuffix ."\n";
-  } else {
-    orac_warn "Unable to create .ok file, $okfilename: $!\n";
-  }
-  # Close the file: the POINTING_FOCUS task can now do its thang
-  $okfile->close;
-
-  # Initialize the log file if necessary
-  my $pointinglog;
-  if ($uselog) {
-    my $time = gmtime();
-    $pointinglog = new ORAC::LogFile("log.pointing");
-    $pointinglog->header("#Pointing log file - created on $time UT",
-			 "#\n# UT                HST   Obs Source       Mode           Filter El CSO    Tau   Seeing  dAz    dEl",
-			 "#-----------------------------------------------------------------------------------------------------"
-      );
-  }
-
-  # Determine pointing offsets
-  # Placeholder - print warning message if an unsupported method is given
-  if ( $offmethod ne "centroid") {
-    # METHOD = FIT
-    orac_warn "METHOD=$offmethod is not supported - falling back on CENTROID\n";
-    $offmethod = "centroid";
-  }
-
-  # Take a temporary copy of the input file and set the attributes
-  # accordingly for our purposes. This avoids any access/attribute
-  # conflicts with the official POINTING_FOCUS task.
-  my $incopy = new ORAC::TempFile;
-  my $incopyfile = $incopy->file;
-  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$incopyfile");
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$incopyfile mode=mset setting='skyrefis=origin,alignoffset=1,system=AZEL'");
-
-  # Look for a point source in the image
-  _FIND_POINT_SOURCES_
-  my $ptsrccat = $_FIND_POINT_SOURCES_{CATALOGUE};
-  if ( $ptsrccat->sizeof == 0 ) {
-    orac_warn "Unable to calculate pointing offsets - image appears to contain no point sources\n";
-  } else {
-
-  # METHOD = CENTROID
-  # Find source position offsets using the temporary copy of the Grp image
-  _CENTROID_IMAGE_ IMAGE=$incopyfile
- 
-  # Returned values are undef if there was a problem determining the centroid
-  if ( defined $_CENTROID_IMAGE_{RESULTS} ) {
-    my ($daz, $del) = @{ $_CENTROID_IMAGE_{RESULTS} };
-    # dAz and dEl are currently in degrees so convert to arcsec
-    $daz = sprintf "%5.2f", 3600.0*$daz;
-    $del = sprintf "%5.2f", 3600.0*$del;
-
-    # Delete the temporary file
-    undef $incopy;
-
-    # Write info to log file if requested
-    if ( $uselog ) {
-      # Get basic logging parameters from Group file
-      _GET_LOG_PARAMETERS_ GROUP=1
-      my ( $uttime, $hst, $run, $src, $mode, $filter, $el, $cso, $tau, $see ) 
-        = @{ $_GET_LOG_PARAMETERS_{PARAMS} };
-      
-      # ObsNum, source, UT, filter, DAz, DEl, Seeing, tau225
-      $pointinglog->addentry("$uttime $hst $run $src $mode $filter    $el $cso $tau  $see   $daz  $del");
+    # Open the file for writing
+    my $okfile = new IO::File("> $okfilename");
+    if ( defined $okfile ) {
+      print $okfile $Grp->file . $Grp->filesuffix ."\n";
     } else {
-      # If we are not logging these data to a file, store the offsets in the
-      # primitive hash
-      $_FIND_POINTING_OFFSETS_{DAZ} = $daz;
-      $_FIND_POINTING_OFFSETS_{DEL} = $del;
+      orac_warn "Unable to create .ok file, $okfilename: $!\n";
+    }
+    # Close the file: the POINTING_FOCUS task can now do its thang
+    $okfile->close;
+
+    # Initialize the log file if necessary
+    my $pointinglog;
+    if ($uselog) {
+      my $time = gmtime();
+      $pointinglog = new ORAC::LogFile("log.pointing");
+      $pointinglog->header("#Pointing log file - created on $time UT",
+			   "#\n# UT                HST   Obs Source       Mode           Filter El CSO    Tau   Seeing  dAz    dEl",
+			   "#-----------------------------------------------------------------------------------------------------"
+	);
     }
 
-    orac_print ("Pointing offsets are (dAz, dEl) = ($daz, $del) arcsec\n", "green");
-  } else {
-    orac_warn "Unable to calculate pointing offsets - could not determine centroid\n";
-  }
-  }
-}
+    # Determine pointing offsets
+    # Placeholder - print warning message if an unsupported method is given
+    if ( $offmethod ne "centroid") {
+      # METHOD = FIT
+      orac_warn "METHOD=$offmethod is not supported - falling back on CENTROID\n";
+      $offmethod = "centroid";
+    }
+
+    # Take a temporary copy of the input file and set the attributes
+    # accordingly for our purposes. This avoids any access/attribute
+    # conflicts with the official POINTING_FOCUS task.
+    my $incopy = new ORAC::TempFile;
+    my $incopyfile = $incopy->file;
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$incopyfile");
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$incopyfile mode=mset setting='skyrefis=origin,alignoffset=1,system=AZEL'");
+
+    # Look for a point source in the image
+    _FIND_POINT_SOURCES_
+    my $ptsrccat = $_FIND_POINT_SOURCES_{CATALOGUE};
+    if ( $ptsrccat->sizeof == 0 ) {
+      orac_warn "Unable to calculate pointing offsets - image appears to contain no point sources\n";
+    } else {
+
+      # METHOD = CENTROID
+      # Find source position offsets using the temporary copy of the Grp image
+      _CENTROID_IMAGE_ IMAGE=$incopyfile
+	
+      # Returned values are undef if there was a problem determining the centroid
+      if ( defined $_CENTROID_IMAGE_{RESULTS} ) {
+	my ($daz, $del) = @{ $_CENTROID_IMAGE_{RESULTS} };
+	# dAz and dEl are currently in degrees so convert to arcsec
+	$daz = sprintf "%5.2f", 3600.0*$daz;
+	$del = sprintf "%5.2f", 3600.0*$del;
+
+	# Delete the temporary file
+	undef $incopy;
+
+	# Write info to log file if requested
+	if ( $uselog ) {
+	  # Get basic logging parameters from Group file
+	  _GET_LOG_PARAMETERS_ GROUP=1
+          my ( $uttime, $hst, $run, $src, $mode, $filter, $el, $cso, $tau, $see ) 
+	  = @{ $_GET_LOG_PARAMETERS_{PARAMS} };
+      
+	  # ObsNum, source, UT, filter, DAz, DEl, Seeing, tau225
+	  $pointinglog->addentry("$uttime $hst $run $src $mode $filter    $el $cso $tau  $see   $daz  $del");
+	} else {
+	  # If we are not logging these data to a file, store the offsets in the
+	  # primitive hash
+	  $_FIND_POINTING_OFFSETS_{DAZ} = $daz;
+	  $_FIND_POINTING_OFFSETS_{DEL} = $del;
+	}
+
+	orac_print ("Pointing offsets are (dAz, dEl) = ($daz, $del) arcsec\n", "green");
+      } else {
+	orac_warn "Unable to calculate pointing offsets - could not determine centroid\n";
+      } # If results returned from _CENTROID_IMAGE_
+    } # If point sources found
+  } # If OBSEND
 } else {
   orac_warn "Data are not from a POINTING observation\n";
 }
-
-
