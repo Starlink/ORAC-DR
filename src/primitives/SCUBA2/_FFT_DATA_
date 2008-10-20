@@ -1,0 +1,130 @@
+#! -*-perl-*-
+
+=head1 NAME
+
+_FFT_DATA_ - Fourier transform time stream data
+
+=head1 SYNOPSIS
+
+ _FFT_DATA_ 
+
+=head1 DESCRIPTION
+
+This primitive calculates the forward Fourier transform for all files
+in the current Frame object with time stream data. A check is made
+that the input data are three-dimensional, though it is assumed that
+this corresponds to two spatial dimensions and a time axis.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<POLAR>
+
+Flag to indicate whether the FFT is written in Polar form. Default is
+0 (no).
+
+=item B<POWER>
+
+Flag to indicate whether the FFT is written in Polar form with squared
+amplitudes. Default is 0 (no). If true, then B<POLAR> must also be true.
+
+=item B<VERBOSE>
+
+Flag to denote whether to display extra information. Default is 0
+(no).
+
+=back
+
+=head1 EXTERNAL ALGORITHMS
+
+=over 4
+
+=item Starlink applications
+
+SMURF: SC2FFT
+
+=back
+
+=head1 NOTES
+
+This primitives works on Frames only. At the moment only forward
+transforms are supported.
+
+=head1 FILE SUFFIX
+
+Creates an output file with a suffix of C<_fft>, corresponding to each
+input file.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>,
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
+=cut
+
+# Check for input arguments
+
+# Is the FT to be written in Polar form?
+my $polar = get_prim_arg( $_PRIM_ARGS_, "POLAR", 0);
+$polar = ($polar) ? "polar" : "nopolar";
+
+# Is the FT to be written in Polar form with squared amplitudes?
+my $power = get_prim_arg( $_PRIM_ARGS_, "POWER", 0);
+# Use power flag to set some other things before setting to a string
+my ($ext, $ftpow) = ($power) ? ("_pow", "power spectrum") 
+                             : ("_fft", "Fourier transform");
+# Set power to a string for passing to sc2fft
+$power = ($power) ? "power" : "nopower";
+
+# Polar must be true if power is true
+$polar = "polar" if ( $power eq "power" );
+
+# Should I be verbose (default to no)
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 0);
+
+# Announce what's going on
+orac_print "Calculating $ftpow for current data\n";
+
+# Transform each file in the current frame
+my @ffts;
+for my $i ( 1 .. $Frm->nfiles ) {
+  # Get input and output file names
+  my ($in, $fft) = $Frm->inout($ext, $i);
+
+  # Check that we have 3-d time series data
+  $Mon{ndfpack_mon}->obeyw("ndftrace","$in");
+  my ( $ORAC_STATUS, $ndims ) = $Mon{ndfpack_mon}->get("ndftrace","ndim");
+  if ( $ndims == 3 ) {
+    my $args = "in=$in out=$fft $polar $power";
+    $Mon{smurf_mon}->obeyw("sc2fft","$args");
+    push (@ffts, $fft);
+  } else {
+    if ( $verbose ) {
+      orac_warn "Input file $in is not 3-D - unable to calculate Fourier transform\n";
+    }
+  }
+
+}
+
+# Register with Frame object if successful
+$Frm->files(@ffts) if ( defined $ffts[0] );
