@@ -133,19 +133,25 @@ unless ( $Frm->uhdr("SKY_SUBTRACTION") ) {
 
     # Run SURFIT
     my $status = $Mon{kappa_mon}->obeyw("surfit","in=$in out=$tmpoutfile $args reset");
+    my $fitrms;
 
-    # HACK
+    # HACK - If the fit failed do a simple DC subtraction
+    my $ORAC_STATUS;
     if ($status != ORAC__OK) {
-       $Mon{kappa_mon}->obeyw("stats", "ndf=$in");
-       my ($ORAC_STATUS, $mean) = $Mon{kappa_mon}->get("stats","mean");
-       $Mon{kappa_mon}->obeyw("thresh", "in=$in out=$tmpoutfile newlo=$mean newhi=$mean thrlo=1E20 thrhi=1E20");
+      orac_warn "Sky fit failed for file $in - falling back on a simple DC sky subtraction\nNote this usually means the regridding step has failed - check image for errors\n";
+      $Mon{kappa_mon}->obeyw("stats", "ndf=$in");
+      ($ORAC_STATUS, my $mean) = $Mon{kappa_mon}->get("stats","mean");
+      ($ORAC_STATUS, $fitrms) = $Mon{kappa_mon}->get("stats","sigma");
+      $Mon{kappa_mon}->obeyw("thresh", "in=$in out=$tmpoutfile newlo=$mean newhi=$mean thrlo=1E20 thrhi=1E20");
+    } else {
+      # Retrieve RMS to get idea of sky noise
+      ($ORAC_STATUS, $fitrms) = $Mon{kappa_mon}->get("surfit","rms");
     }
 
     # Run stats on the fit to get the mean sky level
     $Mon{kappa_mon}->obeyw("stats","ndf=$tmpoutfile");
 
     # Retrieve mean value of fit as an estimate of DC sky background
-    my $ORAC_STATUS;
     ($ORAC_STATUS, my $fitmean) = $Mon{kappa_mon}->get("stats","mean");
     ($ORAC_STATUS, my $sigmafitmean) = $Mon{kappa_mon}->get("stats","sigma");
     push (@fitmean, $fitmean);
@@ -154,8 +160,6 @@ unless ( $Frm->uhdr("SKY_SUBTRACTION") ) {
     # Subtract the fit
     $Mon{kappa_mon}->obeyw("sub","in1=$in in2=$tmpoutfile out=$out");
 
-    # Now retrieve RMS to get idea of sky noise
-    ($ORAC_STATUS, my $fitrms) = $Mon{kappa_mon}->get("surfit","rms");
     # What do we do with it now? Too many values to log, surely?
     push (@fitrms, $fitrms);
 
