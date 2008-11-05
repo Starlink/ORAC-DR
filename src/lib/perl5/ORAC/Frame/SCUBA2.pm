@@ -625,7 +625,7 @@ sub findgroup {
       $state{TCS_TR_SYS} = $self->hdr->{TRACKSYS};
       if (!defined $state{TCS_TR_SYS}) {
         $state{TCS_TR_SYS} = "ICRS";
-        orac_warn "TRACKSYS header is missing\n";
+        orac_warn " TRACKSYS header is missing\n";
       }
 
       # Note that these are in degrees
@@ -636,7 +636,7 @@ sub findgroup {
         my $val = $self->hdr->{$key1};
         if (!defined $val) {
           $val = 0.0;
-          orac_warn "Seem to be missing header $key1\n";
+          orac_warn " Seem to be missing header $key1\n";
         }
         $val = Astro::Coords::Angle->new( $val, units => "deg" );
         $state{$key2} = $val->radians;
@@ -876,7 +876,6 @@ sub rewrite_outfile_subarray {
       # component does not pre-exist. We either have to delete the
       # .I1 if it exists or delete the whole container
 
-
       # see if we have an output file
       my $root = $new;
       $root =~ s/\..*$//;
@@ -902,6 +901,65 @@ sub rewrite_outfile_subarray {
 
   }
   return $new;
+}
+
+=item B<subarray>
+
+Return the name of the subarray given either a filename or the index
+into a Frame object. Takes a sole argument which is the file index or
+name. If the Frame header has subheaders then the subarray is obtained
+from the FITS header of the file and an entry is added to the Frame
+uhdr. Returns undef if the FITS header could not be retrieved.
+
+  my $subarray = $Frm->subarray( $i );
+  my $subarray = $Frm->subarray( $Frm->file($i) );
+  $Frm->subarray( $file );
+
+Works on the current frame only.
+
+=cut
+
+sub subarray {
+
+  my $self = shift;
+
+  # Check - if there are sub-headers then we need to delve further
+  if ( exists $self->hdr->{'SUBHEADERS'} ) {
+    # OK now check that there are SUBARRAY subheaders - retrieve hash
+    # keys from first element (hash ref) in SUBHEADERS array
+    my @subhdrs = keys %{ $self->hdr->{'SUBHEADERS'}->[0] };
+    if ( grep ("SUBARRAY", @subhdrs) ) {
+      # If Subarray is present in the subheaders then we have to dig
+      # deeper - now we take notice of the input argument
+      my $inarg = shift;
+      my $subarray;
+
+      # Does the input argument look like a number?
+      my $file = ( $inarg =~ /^\d+/ ) ? $self->file( $inarg ) : $inarg;
+
+      # Retrieve FITS header
+      use Astro::FITS::Header::NDF;
+      my $fitshdr = new Astro::FITS::Header::NDF( File => $file );
+      if ( $fitshdr ) {
+	$subarray = $fitshdr->value("SUBARRAY");
+      } else {
+	# Error...
+	orac_warn "Unable to read FITS header for file $file - subarray unknown\n";
+	$subarray = undef;
+      }
+
+      # Store in Frm uhdr if defined
+      $self->uhdr("SUBARRAY", $subarray) if (defined $subarray);
+      return $subarray;
+    } else {
+      # No subarray in subheaders, return subarray from top-level header
+      return $self->hdr("SUBARRAY");
+    }
+
+  } else {
+    # No subheaders => only 1 subarray
+    return $self->hdr("SUBARRAY");
+  }
 }
 
 =back
