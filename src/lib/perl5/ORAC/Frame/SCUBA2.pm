@@ -1018,8 +1018,23 @@ In scalar context returns a single string with the values concatenated.
 
 sub _dacodes {
   my $self = shift;
-  #  my @letters = qw/ a b c d /;
-  my @letters = qw/ a /;
+  my @letters;
+
+  # If the following environment variable is set then we are in QL
+  # mode so split the list of tasks and pick out the dacodes
+  if ( $ENV{ORAC_REMOTE_TASK} =~ /^SC/ ) {
+    my @tasks = split(/,/,$ENV{ORAC_REMOTE_TASK} );
+    # HACK: pick out last letter of each task name
+    foreach my $task ( @tasks ) {
+      my @bits = split(//, $task);
+      my $letter = lc($bits[-1]);	# Uh-oh fugly HACK alert...
+      push (@letters, $letter);
+    }
+  } else {
+#    @letters = qw/ a b c d /;
+    @letters = qw/ a /;
+  }
+
   return (wantarray ? @letters : join("",@letters) );
 }
 
