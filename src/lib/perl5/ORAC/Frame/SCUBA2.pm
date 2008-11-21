@@ -1022,13 +1022,15 @@ sub _dacodes {
 
   # If the following environment variable is set then we are in QL
   # mode so split the list of tasks and pick out the dacodes
-  if ( $ENV{ORAC_REMOTE_TASK} =~ /^SC/ ) {
+  if ( defined $ENV{ORAC_REMOTE_TASK} ) {
     my @tasks = split(/,/,$ENV{ORAC_REMOTE_TASK} );
     # HACK: pick out last letter of each task name
     foreach my $task ( @tasks ) {
-      my @bits = split(//, $task);
-      my $letter = lc($bits[-1]);	# Uh-oh fugly HACK alert...
-      push (@letters, $letter);
+      # Split on @ as QL is usually running on remote machines
+      my @tsk = split(/@/, $task); 
+      # Now split the task name itself and pick off the last letter
+      my @bits = split(//,$tsk[0]);
+      push (@letters, lc($bits[-1]) );
     }
   } else {
 #    @letters = qw/ a b c d /;
