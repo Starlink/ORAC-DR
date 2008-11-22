@@ -131,7 +131,7 @@ set oracdr_args = "-ut $oracut -loop task -recsuffix QL -nodisplay"
 
 setenv ORAC_INSTRUMENT SCUBA2_LONG
 setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/scuba2/ok/$oracut
-setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/scuba2_long/$oracut
+setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/scuba2ql_long/$oracut
 setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/scuba2
 
 # DRAMA task names - 2 subarrays to begin with
