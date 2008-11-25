@@ -60,6 +60,9 @@ sub new {
   $obj->{Pointing} = undef;
   $obj->{PointingIndex} = undef;
   $obj->{PointingNoUpdate} = 0;
+  $obj->{QAParams} = undef;
+  $obj->{QAParamsIndex} = undef;
+  $obj->{QAParamsNoUpdate} = 0;
 
   return $obj;
 }
@@ -230,12 +233,14 @@ sub bad_receptors_list {
       # the SURVEY header.
       my $survey = $self->thing->{'SURVEY'};
       my $thing2 = $self->thingtwo;
-      if( defined( $survey ) ) {
-        $thing2->{'SURVEY_BR'} = $survey;
-      } else {
-        $thing2->{'SURVEY_BR'} = 'Telescope';
+      if( ! defined( $thing2->{'SURVEY_BR'} ) ) {
+        if( defined( $survey ) ) {
+          $thing2->{'SURVEY_BR'} = $survey;
+        } else {
+          $thing2->{'SURVEY_BR'} = 'Telescope';
+        }
+        $self->thingtwo( $thing2 );
       }
-      $self->thingtwo( $thing2 );
 
       my $brposition = $self->bad_receptors_qa_index->chooseby_negativedt( 'ORACTIME', $self->thing, 0 );
 
@@ -248,11 +253,6 @@ sub bad_receptors_list {
           croak "Unable to obtain DETECTORS from QA index file entry $brposition\n";
         }
       }
-
-      # Remove the temporary SURVEY_BR header.
-      $thing2 = $self->thingtwo;
-      delete $thing2->{'SURVEY_BR'};
-      $self->thingtwo( $thing2 );
 
     }
 
@@ -372,6 +372,87 @@ sub pointingindex {
 
 }
 
+=item B<qaparams>
+
+Return or set the filename for QA parameters.
+
+  my $qaparams = $Cal->qaparams;
+
+=cut
+
+sub qaparams {
+  my $self = shift;
+
+  # Handle arguments.
+  return $self->qaparamscache( shift ) if @_;
+
+  if( $self->qaparamsnoupdate ) {
+    my $cache = $self->qaparamscache;
+    return $cache if defined $cache;
+  }
+
+  my $qaparamsfile = $self->qaparamsindex->choosebydt( 'ORACTIME', $self->thing );
+  if( ! defined( $qaparamsfile ) ) {
+    croak "No suitable QA parameters file found in index file"
+  }
+
+  return File::Spec->catfile( $ENV{'ORAC_DATA_CAL'}, $qaparamsfile );
+
+}
+
+=item B<qaparamscache>
+
+Cached value for the QA parameters file. Only used when noupdate is in
+effect.
+
+=cut
+
+sub qaparamscache {
+  my $self = shift;
+  if( @_ ) { $self->{QAParams} = shift unless $self->qaparamsnoupdate; }
+  return $self->{QAParams};
+}
+
+=item B<qaparamsnoupdate>
+
+Stops QA params object from updating itself.
+
+Used when using a command-line override to the pipeline.
+
+=cut
+
+sub qaparamsnoupdate {
+  my $self = shift;
+  if( @_ ) { $self->{QAParamsNoUpdate} = shift; }
+  return $self->{QAParamsNoUpdate};
+}
+
+=item B<qaparamsindex>
+
+Return or set the index object associated with the QA parameters index
+file.
+
+=cut
+
+sub qaparamsindex {
+  my $self = shift;
+  if( @_ ) { $self->{QAParamsIndex} = shift; }
+
+  if( ! defined( $self->{QAParamsIndex} ) ) {
+    my $indexfile = $self->find_file( "index.qaparams" );
+    if( ! defined( $indexfile ) ) {
+      croak "QA parameters index file could not be located\n";
+    }
+    my $rulesfile = $self->find_file( "rules.qaparams" );
+    if( ! defined( $rulesfile ) ) {
+      croak "QA parameters rules file could not be located\n";
+    }
+    $self->{QAParamsIndex} = new ORAC::Index( $indexfile, $rulesfile );
+  }
+
+  return $self->{QAParamsIndex};
+}
+
 =back
 
 =head1 REVISION
@@ -384,8 +465,8 @@ Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2007 Science and Technology Facilities Council.  All
-Rights Reserved.
+Copyright (C) 2007-2008 Science and Technology Facilities Council.
+All Rights Reserved.
 
 =cut
 
