@@ -37,6 +37,10 @@ Rights Reserved.
 
 =cut
 
+my $survey = get_prim_arg( $_PRIM_ARGS_, "SURVEY", undef );
+
+my @surveys = qw/ GBS SLS NGS Telescope /;
+
 my $isok = eval { require JSA::QA; 1; };
 if( ! $isok ) {
   orac_warn "Could not load the JSA::QA Perl module: $@\n";
@@ -46,25 +50,57 @@ if( ! $isok ) {
   my $tsys_values_href = $Frm->uhdr( "QA_TSYS_VALUES" );
   my $rms_values_href = $Frm->uhdr( "QA_RMS_VALUES" );
 
+  my $qaparamfile = $Cal->qaparams;
+
+  # Set up new QA object using this file.
+  my $qa = new JSA::QA( file => $qaparamfile );
+
   foreach my $file ( sort keys %$tsys_values_href ) {
 
     my $tsys_values = $tsys_values_href->{$file};
     my $rms_values = $rms_values_href->{$file};
-    my $survey = $Frm->uhdr( "SURVEY_BR" );
 
-    my ( $tsys_result, %result );
-
-    if( ! defined( $survey ) ) {
-      $tsys_result = JSA::QA::analyse_tsys( $tsys_values );
-    } else {
-      $tsys_result = JSA::QA::analyse_tsys( $tsys_values,
-                                            'survey' => $survey );
+    if( ! defined( $tsys_values ) ) {
+      orac_warn "Must run Tsys QA calculations before running Tsys QA checks for file $file.\n";
+      orac_warn "Possible programming error.\n";
+      next;
+    }
+    if( ! defined( $rms_values ) ) {
+      orac_warn "Must run RMS QA calculations before running RMS QA checks for file $file.\n";
+      orac_warn "Possible programming error.\n";
+      next;
     }
 
-    # Now for each survey in the Tsys results, we need to filter out
-    # those flagged as bad. Then get the RMS result for the rest.
-    foreach my $result_survey ( keys %$tsys_result ) {
-      my %bad_receptors = map { $_, 1 } @{$tsys_result->{$result_survey}->bad_receptors};
+    my ( $tsys_result, %result, %opts );
+
+    # Set up a hash of options to pass to the QA object.
+    _SETUP_QA_OPTIONS_
+    my $opts = $_SETUP_QA_OPTIONS_{'OPTS'};
+    %opts = %$opts;
+
+    # Set up a list of surveys to analyse.
+    my @analyse_surveys;
+    if( defined( $survey ) ) {
+      if( uc( $survey ) eq 'ALL' ) {
+        @analyse_surveys = @surveys;
+      } else {
+        push @analyse_surveys, $survey;
+      }
+    } else {
+      push @analyse_surveys, ( defined( $Frm->hdr( "SURVEY" ) ) ?
+                               $Frm->hdr( "SURVEY" )            :
+                               "Telescope" );
+    }
+
+    # Run QA analysis on each requested survey.
+    foreach my $analyse_survey ( @analyse_surveys ) {
+
+      $opts{'survey'} = $analyse_survey;
+      $tsys_result = $qa->analyse_tsys( $tsys_values, %opts );
+
+      # Now we need to filter out those flagged as bad. Then get the
+      # RMS result for the rest.
+      my %bad_receptors = map { $_, 1 } @{$tsys_result->bad_receptors};
 
       my %temp_rms;
       foreach my $receptor ( keys %$tsys_values ) {
@@ -73,47 +109,60 @@ if( ! $isok ) {
       }
 
       # Now run the RMS test with the new "clean" RMS hash.
-      my $rms_result = JSA::QA::analyse_timeseries_rms( \%temp_rms,
-                                                      'survey' => $survey );
+      my $rms_result = $qa->analyse_timeseries_rms( \%temp_rms,
+                                                    %opts );
 
       # Merge the results. If any of the tests fail, then the whole
       # survey QA test fails.
-      my $merged_result = $tsys_result->{$result_survey}->merge( $rms_result->{$result_survey} );
-      $merged_result->rms_stats( $rms_result->{$result_survey}->rms_stats );
-      $merged_result->tsys_stats( $tsys_result->{$result_survey}->tsys_stats );
+      my $merged_result = $tsys_result->merge( $rms_result );
 
-      $result{$result_survey} = $merged_result;
+      $result{$analyse_survey} = $merged_result;
     }
 
     # Display the results.
+    if( defined( $opts{'molecule'} ) ) {
+      my $transition = $Frm->hdr( "TRANSITI" );
+      $transition =~ s/\s+//g;
+      orac_print "QA results for " . $Frm->hdr( "MOLECULE" ) . " $transition:\n";
+    } else {
+      orac_print sprintf( "QA results at %.4f GHz:\n", $Frm->hdr( "LOFREQS" ) );
+    }
     foreach my $result_survey ( sort keys %result ) {
       my $pass = $result{$result_survey}->pass;
       my $rms_stats = $result{$result_survey}->rms_stats;
       my $tsys_stats = $result{$result_survey}->tsys_stats;
-      orac_print "Time-series QA ";
+      my $notes = $result{$result_survey}->notes;
+      my $fail_reasons = $result{$result_survey}->fail_reasons;
+      orac_print " Time-series QA ";
       orac_print ( ( $pass ? " passed " : " failed " ),
                    ( $pass ? "bold white on_green" : "bold white on_red" ) );
       orac_say " for $result_survey.";
       if( defined( $rms_stats ) ) {
-        orac_print " RMS statistics: ";
+        orac_print "  RMS statistics: ";
         orac_say sprintf( "minimum: %.2f maximum: %.2f mean: %.2f",
                             $rms_stats->{min},
                             $rms_stats->{max},
                             $rms_stats->{mean} );
       }
       if( defined( $tsys_stats ) ) {
-        orac_print " Tsys statistics: ";
+        orac_print "  Tsys statistics: ";
         orac_say sprintf( "minimum: %.2f maximum: %.2f mean: %.2f",
                             $tsys_stats->{min},
                             $tsys_stats->{max},
                             $tsys_stats->{mean} );
       }
+      if( defined( $notes ) &&
+          scalar @$notes >= 1 ) {
+        orac_print "  QA note" . ( scalar @$notes > 1 ? "s" : "" ) . ":\n";
+        orac_print "   " . join( "\n ", @$notes );
+        orac_print "\n";
+      }
       if( ! $pass ) {
-        orac_print " Failure reason" . ( scalar @{$result{$result_survey}->fail_reasons} > 1 ?
+        orac_print "  Failure reason" . ( scalar @$fail_reasons > 1 ?
                                          "s"                                                 :
                                          "" );
         orac_say ":";
-        orac_print " " . join( "\n ", @{$result{$result_survey}->fail_reasons} );
+        orac_print "   " . join( "\n ", @$fail_reasons );
         orac_say "";
       }
       orac_say "";
@@ -125,8 +174,8 @@ if( ! $isok ) {
     my $lofreq = $Frm->hdr( "LOFREQS" );
     my $survey_br = $Frm->uhdr( "SURVEY_BR" );
     my @bad_receptors;
-    if( defined( $survey ) ) {
-      @bad_receptors = @{$result{$survey}->bad_receptors};
+    if( defined( $survey_br ) ) {
+      @bad_receptors = @{$result{$survey_br}->bad_receptors};
     } else {
       @bad_receptors = @{$result{'Telescope'}->bad_receptors};
     }
