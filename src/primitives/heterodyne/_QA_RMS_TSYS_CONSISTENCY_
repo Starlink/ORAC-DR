@@ -71,7 +71,10 @@ Rights Reserved.
 =cut
 
 # Determine if we're supposed to use this as a mask for a survey.
-my $mask = uc( get_prim_arg( $_PRIM_ARGS_, "MASK", undef ) );
+my $mask = get_prim_arg( $_PRIM_ARGS_, "MASK", undef );
+my $survey = get_prim_arg( $_PRIM_ARGS_, "SURVEY", undef );
+
+my @surveys = qw/ GBS NGS SLS Telescope /;
 
 use Starlink::HDSPACK qw/ create_hdsobj copy_hdsobj /;
 use JSA::QA;
@@ -83,11 +86,11 @@ foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
   my ( $infile, $outfile ) = $Frm->inout( "_tsmsk", $i );
   my $masked_file = $masked_files->[$i];
 
-  my $temp1file = new ORAC::TempFile;
+  my $temp1file = "measured_rms";#new ORAC::TempFile;
   my $temp2file = new ORAC::TempFile;
   my $temp3file = new ORAC::TempFile;
-  my $temp4file = new ORAC::TempFile;
-  my $temp5file = new ORAC::TempFile;
+  my $temp4file = "calculated_rms";#new ORAC::TempFile;
+  my $temp5file = "divided";#new ORAC::TempFile;
 
   # Make sure this file has a VARIANCE component.
   _COMPONENT_EXISTS_ FILE=$infile COMPONENT=VARIANCE
@@ -102,8 +105,9 @@ foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
   my $ubnd = $_GET_DIMENSIONS_{UBOUND};
   my $extent = int( ( $ubnd->[0] - $lbnd->[0] ) * 0.85 );
 
-  # Collapse it using the RMS estimator.
-  my $params = "in=$masked_file(~$extent,,) out=$temp1file estimator=rms axis=spec trim=true wlim=0.0 variance=false";
+  # Collapse it using the sigma estimator to get the standard
+  # deviation.
+  my $params = "in=$masked_file(~$extent,,) out=$temp1file estimator=sigma axis=spec trim=true wlim=0.0 variance=false";
   $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
   # Now copy a frequency slice out of the input file. It doesn't
@@ -119,7 +123,6 @@ foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
   # Square-root it.
   $params = "in=$temp3file out=$temp4file power=0.5";
   $Mon{'kappa_mon'}->obeyw( "pow", "$params" );
-
 
   # At this point, if we're doing an RxA sample the temp4file could be
   # 1D, so turn it into 2D.
@@ -138,21 +141,44 @@ foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
   $params = "in1=$temp1file in2=$temp4file out=$temp5file";
   $Mon{'kappa_mon'}->obeyw( "div", "$params" );
 
-  # Retrieve the constant(s) for the difference tolerance and the
-  # questionable/bad limits.
-  my $survey = $Frm->uhdr( 'SURVEY_BR' );
-  my $rmstol_const      = 'RMSTSYSTOL';
-  my $rmstolquest_const = 'RMSTSYSTOL_QUEST';
-  my $rmstolfail_const  = 'RMSTSYSTOL_FAIL';
-  my $rmstol = retrieve_constant( $rmstol_const, $survey );
-  my $rmstolquest = retrieve_constant( $rmstolquest_const, $survey );
-  my $rmstolfail = retrieve_constant( $rmstolfail_const, $survey );
+  # Retrieve the QA parameters file and set up a new JSA::QA object.
+  my $qaparamfile = $Cal->qaparams;
+  my $qa = new JSA::QA( file => $qaparamfile );
 
-  # For each survey, count the number of pixels in the comparison
-  # image that are above the RMS/Tsys tolerance.
-  foreach my $result_survey ( sort keys %$rmstol ) {
+  # Set up a hash of options to pass to the QA object.
+  _SETUP_QA_OPTIONS_
+  my $opts = $_SETUP_QA_OPTIONS_{'OPTS'};
+  my %opts = %$opts;
 
-    my $tol = $rmstol->{$result_survey} + 1;
+  # Set up a list of surveys to analyse.
+  my @analyse_surveys;
+  if( defined( $survey ) ) {
+    if( uc( $survey ) eq 'ALL' ) {
+      @analyse_surveys = @surveys;
+    } else {
+      push @analyse_surveys, $survey;
+    }
+  } else {
+    push @analyse_surveys, ( defined( $Frm->hdr( "SURVEY" ) ) ?
+                             $Frm->hdr( "SURVEY" )            :
+                             "Telescope" );
+  }
+
+  # Run QA analysis on each requested survey.
+  foreach my $analyse_survey ( @analyse_surveys ) {
+
+    $opts{'survey'} = $analyse_survey;
+
+    # Retrieve the constant(s) for the difference tolerance and the
+    # questionable/bad limits.
+    my $rmstol_const      = 'RMSTSYSTOL';
+    my $rmstolquest_const = 'RMSTSYSTOL_QUEST';
+    my $rmstolfail_const  = 'RMSTSYSTOL_FAIL';
+    my $rmstol = $qa->get_data( key => $rmstol_const, %opts );
+    my $rmstolquest = $qa->get_data( key => $rmstolquest_const, %opts );
+    my $rmstolfail = $qa->get_data( key => $rmstolfail_const, %opts );
+
+    my $tol = $rmstol + 1;
     $params = "in=$temp5file value=$tol above";
     $Mon{'kappa_mon'}->obeyw( "numb", "$params" );
     ( $ORAC_STATUS, my $numb_above ) = $Mon{'kappa_mon'}->get( "numb", "number" );
@@ -167,20 +193,20 @@ foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
 
     orac_print "Tsys versus RMS consistency check ";
 
-    if( $percent > $rmstolfail->{$result_survey} ) {
+    if( $percent > $rmstolfail ) {
       orac_print( " failed ", "bold white on_red" );
-    } elsif( $percent > $rmstolquest->{$result_survey} ) {
+    } elsif( $percent > $rmstolquest ) {
       orac_print( " is questionable ", "bold black on_yellow" );
     } else {
       orac_print( " passed ", "bold white on_green" );
     }
 
-    orac_print " for $result_survey for $infile.\n";
+    orac_print " for $analyse_survey for $infile.\n";
 
-    orac_print sprintf( " %.2f%% of the samples had a calculated RMS that differed by more than %d%% from the measured RMS.\n", $percent * 100, $rmstol->{$result_survey} * 100 );
+    orac_print sprintf( " %.2f%% of the samples had a calculated RMS that differed by more than %d%% from the measured RMS.\n", $percent * 100, $rmstol * 100 );
 
     # Mask out the bad pixels, if requested.
-    if( defined( $mask ) && ( uc( $result_survey ) eq $mask ) ) {
+    if( defined( $mask ) && ( uc( $analyse_survey ) eq $mask ) ) {
 
       my $temp6file = new ORAC::TempFile;
       my $temp7file = new ORAC::TempFile;
