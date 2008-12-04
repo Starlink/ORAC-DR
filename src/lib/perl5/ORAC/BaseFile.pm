@@ -1143,6 +1143,9 @@ sub calc_orac_headers {
     # and this frame class. We may need to add a Frame instrument method
     # that will allow us to hint HdrTrans.
     my $hdr = $self->hdr;
+    if( ! keys %$hdr ) {
+      die "This observation is missing its FITS headers";
+    }
     %trans = Astro::FITS::HdrTrans::translate_from_FITS( $hdr,
 							prefix => 'ORAC_');
 
