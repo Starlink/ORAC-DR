@@ -2,11 +2,45 @@
 
 =head1 NAME
 
+_QA_MAP_RMS_FREQ_UNIFORMITY_ - Run quality-assurance test to check for
+uniformity in RMS across the frequency range of a reduced map.
+
 =head1 DESCRIPTION
+
+This primitive tests line-free regions of reduced cubes for average
+RMS noise. It compares the RMS in the upper and lower 10% of the
+frequency bounds, after masking out lines, and if the RMS values
+differ by more than a given percentage (which varies from survey to
+survey), then the test is considered to fail.
+
+A line mask is obtained from the BASELINE_MASKS internal user
+header. If no such masks are available, then new masks are created
+using the _CREATE_BASELINE_MASK_ primitive.
 
 =head1 ARGUMENTS
 
 =over 4
+
+=item FREQUENCY_SMOOTH = INTEGER (Given)
+
+If a baseline mask has not already been found, then smooth in
+frequency space by the given number of pixels. [25]
+
+=item GROUP = INTEGER (Given)
+
+How to process group files. 0 means use the current Frame object. 1
+means use the current Group object. 2 means use each Frame member of
+the current Group object. [0]
+
+=item ORDER = INTEGER (Given)
+
+The polynomial order that will be used when estimating baselines. Only
+used if baselining has not been done. [5]
+
+=item SPATIAL_SMOOTH = INTEGER (Given)
+
+The number of pixels to smooth in both spatial axes when smoothing to
+determine baselines. [3]
 
 =back
 
@@ -14,17 +48,35 @@
 
 =over 4
 
+=item *
+
+This primitive is suitable for reduced ACSIS cubes.
+
+=item *
+
+The survey name is obtained from the SURVEY FITS header. If this
+header is blank, then the special pseudo-survey "Telescope" is used.
+
 =back
 
 =head1 OUTPUT DATA
 
 =over 4
 
+=item *
+
+RMS maps for the lower and upper bounds in cubes with suffix _rmslo
+and _rmshi.
+
 =back
 
 =head1 TASKS
 
+KAPPA: ADD, COLLAPSE, NDFCOPY, STATS.
+
 =head1 REQUIRED PERL MODULES
+
+JSA::QA.
 
 =head1 AUTHORS
 
@@ -36,6 +88,8 @@ Copyright (C) 2008 Science and Technology Facilities Council.  All
 Rights Reserved.
 
 =cut
+
+use JSA::QA;
 
 # We need to bring in the smoothing parameters and baselining
 # parameters in case we don't already have a baseline mask.
@@ -53,7 +107,7 @@ if( $group == 0 ) {
 } elsif( $group == 2 ) {
   @objs = $Grp->members;
 } else {
-  orac_throw "Programming error: GROUP parameter to _QA_MAP_RMS_UNIFORMITY__ must be 0, 1, or 2";
+  orac_throw "Programming error: GROUP parameter to _QA_MAP_RMS_UNIFORMITY_ must be 0, 1, or 2";
 }
 
 if( $group != 1 || ( $group == 1 && $Grp->lastmember( $Frm ) ) ) {
@@ -161,14 +215,24 @@ if( $group != 1 || ( $group == 1 && $Grp->lastmember( $Frm ) ) ) {
 
       orac_say sprintf( " Percentage difference: %.2f%%", $perc );
 
-      my $RMSVAR_SPEC = 0.2;
+      # Do QA tests.
+      _SETUP_QA_OPTIONS_
+      my %opts = %{$_SETUP_QA_OPTIONS_{'OPTS'}};
+      $opts{'survey'} = ( defined( $Frm->hdr( "SURVEY" ) ) ?
+                          $Frm->hdr( "SURVEY" )            :
+                          "Telescope" );
+
+      my $qaparamfile = $Cal->qaparams;
+      my $qa = new JSA::QA( file => $qaparamfile );
+
+      my $RMSVAR_SPEC = $qa->get_data( key => 'RMSVAR_SPEC', %opts );
       orac_print " Frequency RMS uniformity ";
       if( $perc < $RMSVAR_SPEC * 100 ) {
         orac_print( " passed ", "bold white on_green" );
       } else {
         orac_print( " failed ", "bold white on_red" );
       }
-      orac_say " for GBS for current map.";
+      orac_say " for $opts{'survey'} for current map.";
       orac_say "";
 
     }
