@@ -122,7 +122,15 @@ if ($?ORAC_PRIMITIVE_DIR) then
     unsetenv ORAC_PRIMITIVE_DIR
 endif
 
-# See if a UT date was given on the command line
+# Check for -eng flag with hack to prevent the shell trying to evalute -e
+if ( X$1 == "X-eng" ) then
+    set eng = 1
+    shift
+else
+    set eng = 0
+endif
+
+# Now see if a UT date was given on the command line
 if ($1 != "") then
     set oracut = $1
 else
@@ -136,7 +144,11 @@ set oracdr_args = "-ut $oracut -loop task -recsuffix QL -nodisplay"
 setenv ORAC_INSTRUMENT SCUBA2_LONG
 
 # Data directories
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/scuba2/ok/$oracut
+if ($eng == 1) then
+    setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/scuba2/ok/eng/$oracut
+else
+    setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/scuba2/ok/$oracut
+endif
 setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/scuba2ql_long/$oracut
 
 # Calibration directory
