@@ -1485,7 +1485,7 @@ sub find_file {
     }
   }
 
-  croak "Could not find rules files '$file' in dirs ".join(",",@directories)
+  croak "Could not find '$file' in dirs ".join(",",@directories)
     ." (possible programming error or your environment variables are incorrect)";
 
 }
