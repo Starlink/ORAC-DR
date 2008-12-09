@@ -343,8 +343,8 @@ sub mask {
       # Nothing suitable, default to fallback position
       # Check that exists and be careful not to set this as the
       # maskname() value since it has no corresponding index enrty
-      my $defmask = $self->find_file("fpa46_long");
-      return $defmask if -e $defmask . ".sdf";
+      my $defmask = $self->find_file("fpa46_long.sdf");
+      return $defmask if -e $defmask;
 
       # give up...
       croak "No suitable bad pixel mask was found in index file"
