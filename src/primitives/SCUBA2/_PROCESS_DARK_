@@ -1,0 +1,108 @@
+#! -*-perl-*-
+
+=head1 NAME
+
+_CALCULATE_DARK_ - Process dark frames
+
+=head1 SYNOPSIS
+
+  _CALCULATE_DARK_
+
+=head1 DESCRIPTION
+
+This primitive deals with dark frames. For the most part it is a no-op
+as the raw dark data must be passed to the appropriate map maker for
+SCAN data. However, it is conceivable that the mean dark frame is a
+desired entity at some point so the ability is there to calculate that.
+
+Note that this primitive should only be called from the REDUCE_DARK
+recipe which will in turn only be called if all the files in the
+current Frame object are dark frames.
+
+The outcome of this primitive is that dark frames are stored in the
+calibration system, regardless of whether they are processed by
+C<calcdark>.
+
+This is a Frame operation and should be used before group operations.
+
+=head1 ARGUMENTS
+
+This primitive has no arguments
+
+=head1 External Tasks
+
+The following external tasks are used:
+
+=over 4
+
+=item SMURF
+
+C<calcdark>
+
+=back
+
+=head1 FILES
+
+Creates C<_drk> which is registered with the calibration system
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+Copyright (C) 2008 the University of British Columbia.  All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
+=cut
+
+# If this primitive is called then the Frame contains dark frames only
+my @outdarks;
+
+# For SCAN data there is no reason to process dark frames as they
+# should be passed directly to (ql)makemap, so make this a no-op,
+# other than storing the dark names in the Cal system.
+my $process_dark = 0;
+
+if ( $process_dark ) {
+  (my $in, my $out, @outdarks) = write_file_list_inout( $Frm, "_drk" );
+  $Mon{smurf_mon}->obeyw("calcdark","in=^$in out=^$out");
+} else {
+  # Otherwise just ndfcopy the dark frames
+  foreach my $i ( 1 .. $Frm->nfiles ) {
+    my ($in, $out) = $Frm->inout( "_drk", $i );
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$out");
+    push (@outdarks, $out);
+  }
+}
+
+# @outdarks contains the list of output darks - store in the
+# calibration object - must set the appropriate subarray first
+foreach my $darkfile ( @outdarks ) {
+  $Frm->subarray( $darkfile );
+  $Cal->darkindex->add( $darkfile, {%{$Frm->hdr}, %{$Frm->uhdr}} );
+}
+
+if ( $process_dark ) {
+  # Store output darks in Frame
+  $Frm->files(@outdarks);
+}
+
+# Convince the Grp that these data frames are no good so they are not
+# picked up for mosaicking
+$Frm->isgood(0);
+
+
