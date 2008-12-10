@@ -417,7 +417,7 @@ start of the next.
 =cut
 
 sub framegroupkeys {
-  return (qw/ OBSNUM FOCPOSN SHUTTER /);
+  return (qw/ OBSNUM FOCPOSN /);
 }
 
 
@@ -728,8 +728,9 @@ sub findrecipe {
     $recipe = 'QUICK_LOOK';
   }
 
-  # Darks will cause trouble
-  if ($self->hdr("SHUTTER") == 0.0) {
+  # Darks will cause trouble - if we have ONLY darks in the Frame then
+  # set the recipe to something suitable
+  if ((defined $self->hdr("SHUTTER")) && ($self->hdr("SHUTTER") == 0.0)) {
     $recipe = "REDUCE_DARK";
   }
 
