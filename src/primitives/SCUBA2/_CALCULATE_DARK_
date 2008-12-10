@@ -2,7 +2,7 @@
 
 =head1 NAME
 
-_CALCULATE_DARK_ - Calculate dark frames from a dark observation
+_CALCULATE_DARK_ - Process dark frames
 
 =head1 SYNOPSIS
 
@@ -10,7 +10,18 @@ _CALCULATE_DARK_ - Calculate dark frames from a dark observation
 
 =head1 DESCRIPTION
 
-Calculate a mean dark frame from a DARK observation.
+This primitive deals with dark frames. For the most part it is a no-op
+as the raw dark data must be passed to the appropriate map maker for
+SCAN data. However, it is conceivable that the mean dark frame is a
+desired entity at some point so the ability is there to calculate that.
+
+Note that this primitive should only be called from the REDUCE_DARK
+recipe which will in turn only be called if all the files in the
+current Frame object are dark frames.
+
+The outcome of this primitive is that dark frames are stored in the
+calibration system, regardless of whether they are processed by
+C<calcdark>.
 
 This is a Frame operation and should be used before group operations.
 
@@ -58,22 +69,40 @@ USA
 
 =cut
 
-# Just darks
-my ($in, $out, @outdarks) = write_file_list_inout( $Frm, "_drk" );
+# If this primitive is called then the Frame contains dark frames only
+my @outdarks;
 
-$Mon{smurf_mon}->obeyw("calcdark","in=^$in out=^$out");
+# For SCAN data there is no reason to process dark frames as they
+# should be passed directly to (ql)makemap, so make this a no-op,
+# other than storing the dark names in the Cal system.
+my $process_dark = 0;
 
-# @outfiles contains the list of output darks - store in the
+if ( $process_dark ) {
+  (my $in, my $out, @outdarks) = write_file_list_inout( $Frm, "_drk" );
+  $Mon{smurf_mon}->obeyw("calcdark","in=^$in out=^$out");
+} else {
+  # Otherwise just ndfcopy the dark frames
+  foreach my $i ( 1 .. $Frm->nfiles ) {
+    my ($in, $out) = $Frm->inout( "_drk", $i );
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$out");
+    push (@outdarks, $out);
+  }
+}
+
+# @outdarks contains the list of output darks - store in the
 # calibration object - must set the appropriate subarray first
 foreach my $darkfile ( @outdarks ) {
   $Frm->subarray( $darkfile );
   $Cal->darkindex->add( $darkfile, {%{$Frm->hdr}, %{$Frm->uhdr}} );
 }
 
-# Store output darks in Frame
-$Frm->files(@outdarks);
+if ( $process_dark ) {
+  # Store output darks in Frame
+  $Frm->files(@outdarks);
+}
 
 # Convince the Grp that these data frames are no good so they are not
 # picked up for mosaicking
 $Frm->isgood(0);
+
 
