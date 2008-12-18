@@ -30,6 +30,11 @@ The following arguments are supported:
 Input image. No default, and an error will be given if no image is
 supplied.
 
+=item COMP
+
+Component of input image to obtain statistics for. Valid values are
+C<DATA>, C<VAR> and C<ERR>. Default is C<DATA>.
+
 =item HISTOGRAM
 
 Flag to indicate whether to calculate a histogram of values to find
@@ -137,6 +142,21 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 Copyright (C) 2005-2008 University of British Columbia.  All Rights
 Reserved.
 
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
 =cut
 
 # Set input file
@@ -145,6 +165,10 @@ my $in = get_prim_arg( $_PRIM_ARGS_, "IMAGE", undef );
 unless ( defined $in ) {
   orac_throw "Error: no input image given to _FIND_IMAGE_STATISTICS_\n";
 }
+
+# Which component of the input file are the statistics to be
+# calculated for?
+my $comp = get_prim_arg( $_PRIM_ARGS_, "COMP", "data" );
 
 # Should I be verbose (default to yes)
 my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
@@ -171,17 +195,17 @@ if ( $histat ) {
   my $modemethod = get_prim_arg( $_PRIM_ARGS_, "MODE_METHOD", "MOMENTS" );
 
   # Use HISTAT to calculate statistics
-  $Mon{kappa_mon}->obeyw("histat","ndf=$in method=$modemethod");
+  $Mon{kappa_mon}->obeyw("histat","ndf=$in method=$modemethod comp=$comp");
   # Retrieve the values
   push ( @params, "mode");
   push ( @params, "median");
   ($ORAC_STATUS, %results) = $Mon{kappa_mon}->mget("histat", @params);
   $results{sigma} = -1.0;
 } else {
-  # Now calculate stats of the masked file to get the mean and the
+  # Calculate stats of the masked file to get the mean and the
   # standard deviation
   my $args = ($clip ne "") ? "clip=[$clip]" : "" ;
-  $Mon{kappa_mon}->obeyw("stats","ndf=$in $args");
+  $Mon{kappa_mon}->obeyw("stats","ndf=$in $args comp=$comp");
   push ( @params, "sigma");
   # Retrieve the values
   ($ORAC_STATUS, %results) = $Mon{kappa_mon}->mget("stats", @params);
@@ -201,7 +225,10 @@ my $ngood  = $results{numgood};
 my $ntotal = $results{numpix};
 my $nbad   = $results{numbad};
 
-orac_warn "All pixels in region are bad!\n" if $ngood == 0;
+if ($ngood == 0) {
+  orac_warn "All pixels in region are bad!\n";
+  
+}
 my $fracgood = $ngood/$ntotal;
 
 # If the user wants to use STATS and wants a modal value as well...
@@ -222,7 +249,7 @@ if ( $histo && $stdev ) {
   my $histname = $histfile->file;
   undef $histfile;
   my $args = "numbin=$numbin range=! device=! logfile=".$histname;
-  $Mon{kappa_mon}->obeyw("histogram","in=$in $args");
+  $Mon{kappa_mon}->obeyw("histogram","in=$in $args comp=$comp");
 
   # Now analyze results - first open log file with hist results
   open my $HISTFH, "< $histname"
