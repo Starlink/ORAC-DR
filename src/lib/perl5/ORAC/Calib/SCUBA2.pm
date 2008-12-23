@@ -172,6 +172,9 @@ sub new {
 	     Mask => undef,	# Bad bolometer mask
 	     MaskIndex => undef, # Index file for picking best bad bolo mask
 	     MaskNoUpdate => 0,
+	     Resp => undef,		# Responsivity solution
+	     RespIndex => undef,       	# Index file for responsivities
+	     RespStats => undef,	# RMS uncertainties for responsivity fit
              SkydipIndex => undef,
              TauSys => undef,   # Tau system
              TauSysNoUpdate => 0,
@@ -356,7 +359,7 @@ sub mask {
 
   if( defined( $ok ) ) {
     my $mask = $self->maskindex->choosebydt( 'ORACTIME', $self->thing, 0 );
-    croak "No suitable mask was found in index file"
+    orac_warn "No suitable mask was found in index file\n"
       unless defined $mask;
     $self->maskname( $mask );
     return $self->maskname;
@@ -402,39 +405,6 @@ sub masknoupdate {
   return $self->{MaskNoUpdate};
 
 }
-
-=item B<dark>
-
-Return (or set) the name of the current dark - checks suitability on return.
-This is subclassed for SCUBA-2 so that the warning messages when going through
-the list of possible darks are suppressed.
-
-=cut
-
-sub dark {
-  my $self = shift;
-  if (@_) {
-    # if we are setting, accept the value and return
-    return $self->darkname(shift);
-  };
-
-  my $ok = $self->darkindex->verify($self->darkname,$self->thing, 0);
-
-  # happy ending - frame is ok
-  if ($ok) {return $self->darkname};
-
-  croak("Override dark is not suitable! Giving up") if $self->darknoupdate;
-
-  # not so good
-  if (defined $ok) {
-    my $dark = $self->darkindex->choosebydt('ORACTIME',$self->thing, 0);
-    croak "No suitable dark calibration was found in index file"
-      unless defined $dark;
-    $self->darkname($dark);
-  } else {
-    croak("Error in dark calibration checking - giving up");
-  };
-};
 
 =item B<engine_launch_object>
 
@@ -1276,6 +1246,137 @@ sub tau {
 
 }
 
+=item B<respname>
+
+Return (or set) the name of the current responsivity solution.
+
+  $resp = $Cal->respname;
+
+The C<resp()> method should be used if a test for suitability is
+required.
+
+=cut
+
+
+sub respname {
+  my $self = shift;
+
+  if (@_) { $self->{Resp} = shift; }
+  return $self->{Resp};
+}
+
+=item B<resp>
+
+Return (or set) the name of the current responsivity solution.
+
+  $resp = $Cal->resp;
+
+Note that unless the current Frame has been derived from a sub-group,
+the user must set the subarray with the Frame class C<subarray()>
+method before a suitable calibration entry can be found. This is due
+to the fact that it is not possible to search the Frame subheaders
+when evaluating the rules.
+
+=cut
+
+sub resp {
+  my $self = shift;
+  if( @_ ) {
+    return $self->respname( shift );
+  }
+
+  my $ok = $self->respindex->verify( $self->respname, $self->thing, 0 );
+
+  # Happy ending. Current entry is OK.
+  if( $ok ) { return $self->respname; }
+
+  if( defined( $ok ) ) {
+    my $resp = $self->respindex->choosebydt( 'ORACTIME', $self->thing, 0 );
+    orac_warn "No suitable responsivity solution was found in index file\n"
+      unless defined $resp;
+    $self->respname( $resp );
+    return $self->respname;
+  } else {
+    croak( "Error in resp calibration checking - giving up" );
+  }
+}
+
+=item B<respindex>
+
+Return or set the index object associated with the responsivity.
+
+  $index = $Cal->respindex;
+
+An index object is created automatically the first time this method
+is run.
+
+=cut
+
+sub respindex {
+  my $self = shift;
+
+  if (@_) { $self->{RespIndex} = shift; }
+  unless ( defined $self->{RespIndex} ) {
+    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.resp" );
+    my $rulesfile = $self->find_file("rules.resp");
+    $self->{RespIndex} = new ORAC::Index( $indexfile, $rulesfile );
+  }
+  return $self->{RespIndex};
+}
+
+=item B<respstats>
+
+Get/set the statistics associated with the most recent flatfield
+solution. If setting, the user must supply a subarray and hash
+reference with the relevant statistics. No check is made to verify the
+contents of the hash. The user may pass in an optional subarray
+argument if retrieving the stored values, otherwise the entire hash
+reference is returned. If so then a hash reference is returned whicih
+contains only the relevant info for the given subarray. A value of
+undef is returned if no data exist for that subarray.
+
+  my %allrespstats = %{ $Cal->respstats };
+
+  my $respstatsref = $Cal->respstats( $subarray );
+
+  $Cal->respstats( $subarray, \%respstats );
+
+=cut
+
+sub respstats {
+  my $self = shift;
+
+  # If we have any arguments then we are storing a hash reference
+  if ( @_ ) {
+    my $subarray = shift;
+    # Check subarray looks like a subarray designation
+    orac_throw "Subarray argument, $subarray, is not a valid designation\n" 
+      unless $subarray =~ /^s\d[a-d]/;
+    # Now look for remaining arguments - must be a hash reference if present
+    if ( @_ ) {
+      my $respref = shift;
+      if ( ref($respref) eq "HASH" ) {
+	$self->{RespStats} = { $subarray => $respref };
+	return $self->{RespStats};
+      } else {
+	orac_throw "Error: second argument must be a hash reference";      
+      }
+    } else {
+      # With just one argument, return info for given subarray if
+      # defined, else return undef
+      my $respref = $self->{RespStats};
+      if ( defined $$respref{$subarray} ) {
+	return $$respref{$subarray};
+      } else {
+	return undef;
+      }
+    }
+  }
+
+  # Returns hash reference
+  return $self->{RespStats};
+}
+
 =item B<beam>
 
 Returns the beamsize associated with the supplied array.
@@ -1292,7 +1393,7 @@ sub beam {
 
   # Default beam sizes
   my @defaultbeam;
-  if ($arr =~ /850/ || $arr =~ /L/) {
+  if ($arr =~ /^850/ || $arr =~ /^L/) {
     @defaultbeam = (15.0, 15.0, 0.0); # 850 um
   } else {
     @defaultbeam = (8.0, 8.0, 0.0); # 450 um
