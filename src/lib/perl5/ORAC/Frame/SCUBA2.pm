@@ -729,8 +729,10 @@ sub findrecipe {
   }
 
   # Darks will cause trouble - if we have ONLY darks in the Frame then
-  # set the recipe to something suitable
-  if ((defined $self->hdr("SHUTTER")) && ($self->hdr("SHUTTER") == 0.0)) {
+  # set the recipe to something suitable. Have to trap Flatfields
+  # since they are all `dark'.
+  if ((defined $self->hdr("SHUTTER")) && ($self->hdr("SHUTTER") == 0.0)
+    && lc($self->hdr("OBS_TYPE")) ne "flatfield" ) {
     $recipe = "REDUCE_DARK";
   }
 
@@ -907,10 +909,11 @@ sub rewrite_outfile_subarray {
 =item B<subarray>
 
 Return the name of the subarray given either a filename or the index
-into a Frame object. Takes a sole argument which is the file index or
-name. If the Frame header has subheaders then the subarray is obtained
-from the FITS header of the file and an entry is added to the Frame
-uhdr. Returns undef if the FITS header could not be retrieved.
+into a Frame object. Takes a mandatory sole argument which is the file
+index or name. If the Frame header has subheaders then the subarray is
+obtained from the FITS header of the file and an entry is added to the
+Frame uhdr. Returns undef if the FITS header could not be retrieved or
+if no arguement was given.
 
   my $subarray = $Frm->subarray( $i );
   my $subarray = $Frm->subarray( $Frm->file($i) );
@@ -929,10 +932,13 @@ sub subarray {
     # OK now check that there are SUBARRAY subheaders - retrieve hash
     # keys from first element (hash ref) in SUBHEADERS array
     my @subhdrs = keys %{ $self->hdr->{'SUBHEADERS'}->[0] };
-    if ( grep ("SUBARRAY", @subhdrs) ) {
+    if ( grep (/SUBARRAY/, @subhdrs) ) {
       # If Subarray is present in the subheaders then we have to dig
       # deeper - now we take notice of the input argument
       my $inarg = shift;
+      if ( !defined $inarg ) {
+	orac_err "No input file: unable to determine subarray from subheaders\n";
+      }
       my $subarray;
 
       # Does the input argument look like a number?
@@ -1029,9 +1035,8 @@ sub _dacodes {
     foreach my $task ( @tasks ) {
       # Split on @ as QL is usually running on remote machines
       my @tsk = split(/@/, $task); 
-      # Now split the task name itself and pick off the last letter
-      my @bits = split(//,$tsk[0]);
-      push (@letters, lc($bits[-1]) );
+      # Add lower-cased last letter of taskname
+      push (@letters, lc(substr($tsk[0],-1,1)) );
     }
   } else {
 #    @letters = qw/ a b c d /;
