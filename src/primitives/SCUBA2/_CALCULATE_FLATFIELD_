@@ -1,0 +1,150 @@
+#! -*-perl-*-
+
+=head1 NAME
+
+_CALCULATE_FLATFIELD_ - Calculate flatfield solution
+
+=head1 SYNOPSIS
+
+_CALCULATE_FLATFIELD_ RESIST=$resistorlistfile
+
+=head1 DESCRIPTION
+
+Calculate a flatfield solution from a dedicated flatfield observation
+
+Writes a flag file...
+
+This is a Frame operation and should be used before group operations.
+
+=head1 ARGUMENTS
+
+This primitive supports the following arguments
+
+=over 4
+
+=item B<REFRES>
+
+Value of reference resistance. Default is 2.0 ohms.
+
+=item B<RESIST>
+
+Text file listing the resistor settings for each bolometer. Filename
+must include full path. Default is C<resist.cfg> located in
+$ORAC_DATA_CAL.
+
+=item B<RESPMASK>
+
+Flag to denote whether the responsivity should be used to mask
+bolometers in the flatfield. Default is 1 (true).
+
+=item B<RESP>
+
+Name of an output responsivity image. Default is the null parameter
+C<!> which will not write an output image.
+
+=back
+
+=head1 External Tasks
+
+The following external tasks are used:
+
+=over 4
+
+=item SMURF
+
+calcflat
+
+=back
+
+=head1 FILES
+
+Creates C<_flat> which is registered with the calibration system
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+Copyright (C) 2008 the University of British Columbia.  All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
+=cut
+
+
+# Flatfield can only be calculated after the observation has ended
+if ( $Frm->uhdr("OBSEND") ) {
+
+  # Issues:
+  # - Resist must be given for each subarray
+  # - Resp must be given for each subarray, unless generated automatically
+  #   (then resp is a flag)
+  # - Need to get all DARKs and include them in the input file list
+
+  # Input arguments
+
+  # Reference resistor value
+  my $refres = get_prim_arg( $_PRIM_ARGS_, "REFRES", 2.0 );
+
+  # List of resistor settings - currently the same config file is used
+  # for all subarrays
+  my $resist = get_prim_arg( $_PRIM_ARGS_, "RESIST", undef );
+  unless (defined $resist) {
+    $resist = $ENV{ORAC_DATA_CAL} . "/resist.cfg";
+  }
+
+  # Mask bolometers based on responsivity?
+  my $respmask = get_prim_arg( $_PRIM_ARGS_, "RESPMASK", 1 );
+  $respmask = ( $respmask ) ? "respmask" : "norespmask";
+
+  # The only acceptable input value for resp is the null parameter,
+  # !. Anything else will ensure the pipeline determines an output
+  # file name. Also this primitive has to deal with multiple
+  # subarrays, which will have different output results.
+  my $resp = get_prim_arg( $_PRIM_ARGS_, "RESP", "");
+  if ( $resp eq "!" ) {
+    orac_warn "No responsivity image will be written: flatfield solution can not be analyzed\n";
+#  } else {
+#    undef $resp;
+  }
+
+  # Loop over subarrays. Use subgrps method to return a list of Groups
+  # sorted by subarray.
+  my @Grps = $Grp->subgrps( "SUBARRAY" );
+  foreach my $Subgrp ( @Grps ) {
+    # Retrieve all the Frames - probably just a single one
+    my @frames = $Subgrp->allmembers;
+    foreach my $Frmobj ( @frames ) {
+      my $subarray = $Frmobj->hdr("SUBARRAY");
+      # Determine input and output files
+      my $in = write_file_list( $Frmobj->files );
+      my $out = $Frmobj->inout( "_flat" );
+      # Set name of output responsivity file if desired
+      $resp = $Frmobj->inout( "_resp" ) unless ($resp eq "!");
+
+      my $args = "in=^$in out=$out refres=$refres resist=^$resist $respmask resp=$resp";
+      $Mon{smurf_mon}->obeyw("calcflat","$args");
+      my ( $ORAC_STATUS, $numresp ) = $Mon{smurf_mon}->get("calcflat","ngood");
+      orac_print ("Subarray $subarray has $numresp good responsivities\n", "green");
+      # Store output files
+      push (my @out, $out);
+      push (@out, $resp) unless ( $resp eq "!" );
+      $Frmobj->files(@out);
+    }
+  }
+
+}
+

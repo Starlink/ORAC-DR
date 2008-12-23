@@ -1,0 +1,190 @@
+#! -*-perl-*-
+
+=head1 NAME
+
+_ANALYZE_FLATFIELD_ - Analyze the current flatfield solution
+
+=head1 SYNOPSIS
+
+_ANALYZE_FLATFIELD_ 
+
+=head1 DESCRIPTION
+
+Analyze the current flatfield solution and compare with previous
+flatfields
+
+This is a Frame operation and should be used before group operations.
+
+=head1 ARGUMENTS
+
+This primitive supports the following arguments
+
+=over 4
+
+=item B<VERBOSE>
+
+How much verbiage do you want? Default is 1 (yes, lots please).
+
+=back
+
+=head1 External Tasks
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA
+
+Insert kappa tasks here....
+
+=back
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+Copyright (C) 2008 the University of British Columbia.  All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
+=cut
+
+# compare the new values with the previous flatfield and flag any
+# large differences
+
+# create a flag file containing the names of each subarray that was processed
+# (similar naming convention to pointing/focus)
+
+# @outfiles contains the list of output flatfield solutions - store in
+# the calibration object - must set the appropriate subarray first
+
+
+# Flatfield can only be calculated after the observation has ended
+if ( $Frm->uhdr("OBSEND") ) {
+
+  # Loop over subarrays... Use subgrps method to return list of Groups
+  # sorted by subarray
+  my @Grps = $Grp->subgrps( "SUBARRAY" );
+  
+  foreach my $Subgrp ( @Grps ) {
+    my @frames = $Subgrp->allmembers;
+    # Hmm what if @frames contains >1 ?
+    foreach my $Frmobj ( @frames ) {
+      # Retrieve flatfield solution
+      my $flatfile = $Frmobj->file(1);
+      # Get responsivity file - this will be the same as the flatfile
+      # if there is responsivity file in the current Frame object
+      my $respfile = $Frmobj->file(2);
+
+      # Check if we really have a responsivity file
+      my $subarray = $Frmobj->hdr('SUBARRAY');
+      if ($respfile eq $flatfile ) {
+	orac_warn "No responsivity file for subarray $subarray\n";
+      } else {
+	# Analyze resp file - use HISTAT
+	_FIND_IMAGE_STATISTICS_ IMAGE=$respfile COMP=err
+	my %results = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
+	# Now get the std deviation using plain STATS
+	_FIND_IMAGE_STATISTICS_ IMAGE=$respfile COMP=err HISTAT=0 VERBOSE=0
+	$results{SIGMA} = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
+
+	# Print out results from current solution
+	orac_print ("---- Uncertainties in responsivity fits for subarray $subarray ---- \n", "green");
+	foreach my $stat ( qw/ MEAN MEDIAN SIGMA MAX MIN / ) {
+	  my $value = sprintf "%11.4f", $results{$stat};
+	  my $string = pack( "A1 A8 A*", " ", $stat, " = $value A/W\n");
+	  orac_print ( $string, "green");
+	}
+	orac_print (" NGOOD    = $results{NUMGOOD} solutions\n", "green");
+
+	# Compare these values with the previous ones if they exist
+	my %previous;
+	if ( defined $Cal->respstats ) {
+	  %previous = %{ $Cal->respstats($subarray) };
+	  orac_print "\nComparing with previous solution\n";
+	} else {
+	  # If nothing stored in the in-memory Cal system, attempt to
+	  # get a suitable entry from the index file
+	  my $previous = $Cal->resp;
+	  if ( defined $previous ) {
+	    orac_print "\nComparing with previous solution in file $previous\n";
+	    _FIND_IMAGE_STATISTICS_ IMAGE=$previous COMP=err VERBOSE=0
+	    %previous = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
+	    # Now get the std deviation using plain STATS
+	    _FIND_IMAGE_STATISTICS_ IMAGE=$respfile COMP=err HISTAT=0 VERBOSE=0
+            $previous{SIGMA} = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
+	  }
+	}
+	# Bulk comparisons go here if we have the data to compare
+	if ( %previous ) {
+	  orac_print ("---- Changes from previous flatfield for $subarray ----\n", 
+	             "green");
+	  foreach my $stat ( qw/ MEAN MEDIAN SIGMA MAX MIN / ) {
+	    my $diff = sprintf "%11.4f", ($results{$stat} - $previous{$stat});
+	    my $incdec = ( $diff == 0) ? "change" : 
+	                 (( $diff > 0 ) ? "increase" : "decrease");
+	    my $x = abs($diff / $results{$stat});
+	    my $string = pack( "A A8 A*", 
+			       " ", $stat, " = $diff A/W ( $x % $incdec)\n");
+	    orac_print ( $string, "green");
+	  }
+
+	  # Now print out the change in the number of good solutions
+	  my $numstring = " no change in the number of";
+	  my $numdiff = $results{NUMGOOD} - $previous{NUMGOOD};
+	  if ( $numdiff > 0 ) {
+	    $numstring = "$numdiff more";
+	  } elsif ( $numdiff < 0 ){
+	    $numstring = -$numdiff ." fewer";
+	  }
+	  orac_print (" NGOOD    = $numstring good solutions\n", "green");
+
+	} else {
+	  # Nothing to compare - tell user
+	  orac_warn "Unable to retrieve previous responsivity data\n";
+	}
+
+	# Store current results
+	$Cal->respstats( $subarray, \%results );
+      }
+
+      # Now create an ok file to indicate processing is complete
+      # Format obsnum
+      my $obsnum = sprintf "%05d", $Frmobj->uhdr('ORAC_OBSERVATION_NUMBER');
+
+      # Define filename
+      my $okfilename = "." . $Frmobj->hdr('SUBARRAY') . $Frmobj->uhdr('ORAC_UTDATE')
+                     . "_" . $obsnum.".ok";
+
+      # Open the file for writing
+      my $okfile = new IO::File("> $okfilename");
+      if ( defined $okfile ) {
+	print $okfile $flatfile . $Grp->filesuffix ."\n";
+      } else {
+	orac_warn "Unable to create .ok file, $okfilename: $!\n";
+      }
+      # Close the file
+      $okfile->close;
+
+      # Finally register the flatfield with the Calibration system
+      $Cal->flatindex->add( $flatfile, {%{$Frmobj->hdr}, %{$Frmobj->uhdr}} );
+      $Cal->respindex->add( $respfile, {%{$Frmobj->hdr}, %{$Frmobj->uhdr}} );
+
+    }
+  }
+}
+
