@@ -84,55 +84,29 @@ if( $Frm->uhdr( "ISHYBRID" ) ) {
     orac_warn "Cannot merge " . $Frm->nfiles . " timeseries cubes\n";
   } else {
 
-    my @flbnds;
-    my @fubnds;
-    my @lbounds;
-    my @ubounds;
-
     my @infiles;
     my @outfiles;
 
-    foreach my $file ( $Frm->files ) {
+    # Get the overlap range.
+    _CALCULATE_HYBRID_OVERLAP_
+    my $low = $_CALCULATE_HYBRID_OVERLAP_{LBOUND};
+    my $high = $_CALCULATE_HYBRID_OVERLAP_{UBOUND};
 
-      # Determine spectral extent.
-      $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$file" );
-      my ( $ORAC_STATUS, @flbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "flbnd" );
-      ( $ORAC_STATUS, my @fubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fubnd" );
-      ( $ORAC_STATUS, my @lbound ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
-      ( $ORAC_STATUS, my @ubound ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
+    # Retrieve bounds for each file.
+    _GET_DIMENSIONS_ FILE=$Frm->file(1)
+    my $lbounds1 = $_GET_DIMENSIONS_{LBOUND};
+    my $ubounds1 = $_GET_DIMENSIONS_{UBOUND};
 
-      push @flbnds, \@flbnd;
-      push @fubnds, \@fubnd;
-      push @lbounds, \@lbound;
-      push @ubounds, \@ubound;
+    _GET_DIMENSIONS_ FILE=$Frm->file(2)
+    my $lbounds2 = $_GET_DIMENSIONS_{LBOUND};
+    my $ubounds2 = $_GET_DIMENSIONS_{UBOUND};
 
-    }
+    orac_print sprintf( " Overlap range: [%d:%d]\n", $low, $high );
 
-    my ( $flow, $fhigh );
-    if( $fubnds[0]->[0] > $flbnds[0]->[0] ) {
-      if( $flbnds[1]->[0] > $flbnds[0]->[0] ) {
-        $flow = $flbnds[1]->[0];
-        $fhigh = $fubnds[0]->[0];
-      } else {
-        $flow = $flbnds[0]->[0];
-        $fhigh = $fubnds[1]->[0];
-      }
-    } else {
-      if( $fubnds[1]->[0] > $fubnds[0]->[0] ) {
-        $flow = $fubnds[1]->[0];
-        $fhigh = $flbnds[0]->[0];
-      } else {
-        $flow = $fubnds[0]->[0];
-        $fhigh = $flbnds[1]->[0];
-      }
-    }
-
-    orac_print sprintf( " Overlap range: [%.3f:%.3f]\n", $flow, $fhigh );
-
-    my $frange = "$flow:$fhigh";
-    if( $flow > $fhigh ) {
+    my $range = "$low:$high";
+    if( $low > $high ) {
       orac_warn "No overlap between the input cubes. Using median over whole spectrum to determine DC offset";
-      $frange = "";
+      $range = "";
     }
 
     # Retrieve the units so we can set them back to whatever they are
@@ -144,11 +118,11 @@ if( $Frm->uhdr( "ISHYBRID" ) ) {
     my $temp1file = new ORAC::TempFile;
     my $temp2file = new ORAC::TempFile;
 
-    my $params = "in=" . $Frm->file(1) . "($frange,,) out=$temp1file";
+    my $params = "in=" . $Frm->file(1) . "($range,,) out=$temp1file";
     $params .= " estimator=median axis=spec variance=true wlim=0.0";
     $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
-    $params = "in=" . $Frm->file(2) . "($frange,,) out=$temp2file";
+    $params = "in=" . $Frm->file(2) . "($range,,) out=$temp2file";
     $params .= " estimator=median axis=spec variance=true wlim=0.0";
     $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
@@ -160,7 +134,7 @@ if( $Frm->uhdr( "ISHYBRID" ) ) {
     # Grow this DC adjustment into a cube and add it to the first file.
     my $temp4file = new ORAC::TempFile;
     $params = "in=$temp3file out=$temp4file axes=[0,1,2]";
-    $params .= "lbound=" . $lbounds[0]->[0] . " ubound=" . $ubounds[0]->[0];
+    $params .= "lbound=" . $lbounds1->[0] . " ubound=" . $ubounds1->[0];
     $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
     my( $in, $out ) = $Frm->inout( "_dc", 1 );
@@ -176,7 +150,7 @@ if( $Frm->uhdr( "ISHYBRID" ) ) {
     # the second file.
     my $temp5file = new ORAC::TempFile;
     $params = "in=$temp3file out=$temp5file axes=[0,1,2]";
-    $params .= "lbound=" . $lbounds[1]->[0] . " ubound=" . $ubounds[1]->[0];
+    $params .= "lbound=" . $lbounds2->[0] . " ubound=" . $ubounds2->[0];
     $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
     ( $in, $out ) = $Frm->inout( "_dc", 2 );
@@ -194,7 +168,7 @@ if( $Frm->uhdr( "ISHYBRID" ) ) {
     $params .= " lbnd=! ubnd=! ref=! variance=true genvar=false wlim=0";
     $Mon{'kappa_mon'}->obeyw( "wcsmosaic", "$params" );
 
-    orac_print join ',', @infiles;
+    orac_print join ',', @outfiles;
     orac_print " to $out:\n";
     orac_print " Merged hybrid-mode files.\n";
 
