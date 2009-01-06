@@ -1,0 +1,206 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_REMOVE_FREQUENCY_ENDS_ADVANCED_ - Intelligently find high-noise
+regions at end of frequency bounds and remove them.
+
+=head1 DESCRIPTION
+
+This primitive first collapses the input cube along the time and
+receptor axes using the COLLAPSE SIGMA estimator to form a single
+spectrum, then fits a constant value background to the resulting
+spectrum. The fitting regions are used to determine where the spectrum
+gets noisier (i.e. higher RMS values in the RMS spectrum), and these
+high-noise regions are trimmed from the ends in the frequency axis.
+
+Hybrid mode observations have an additional check done to ensure that
+too many channels are not trimmed.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS time-series data.
+
+=item *
+
+The frequency axis is assumed to be the first axis of the input cube.
+
+=item *
+
+This primitive can only handle the case where there are two subbands
+in the hybrid-mode observation.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+Cube with removed frequency ends, with the _em suffix appended to the
+filename.
+
+=back
+
+=head1 TASKS
+
+=head1 REQUIRED PERL MODULES
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2008 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+# First, check to see if we even want to do this. Only perform
+# advanced method if the number of pixels in either collapse direction
+# is five or greater.
+_GET_DIMENSIONS_ FILE=$Frm->file(1)
+my $dims = $_GET_DIMENSIONS_{DIMS};
+if( $dims->[1] < 5 && $dims->[2] < 5 ) {
+
+  # Handle parameters to pass on to _REMOVE_FREQUENCY_ENDS_.
+  my $axis = get_prim_arg( $_PRIM_ARGS_, "AXIS", 3 );
+  my $percent = get_prim_arg( $_PRIM_ARGS_, "PERCENT", 10 );
+  my $lower = $_PRIM_ARGS_->{LOWER};
+  my $upper = $_PRIM_ARGS_->{UPPER};
+
+  if( defined( $lower ) || defined( $upper ) ) {
+
+    $lower = ( defined( $lower ) ? $lower : 0 );
+    $upper = ( defined( $upper ) ? $upper : 0 );
+
+  } else {
+    $lower = $percent;
+    $upper = $percent;
+  }
+
+  _REMOVE_FREQUENCY_ENDS_ LOWER=$lower UPPER=$upper AXIS=$axis
+
+} else {
+
+  # Next, calculate the overlap region if we're doing hybrid mode
+  # observations. Keep this around for later.
+  my $overlap_range;
+  my $NI_loaded = 0;
+  if( $Frm->uhdr( "ISHYBRID" ) ) {
+    _CALCULATE_HYBRID_OVERLAP_
+    my $lbound = $_CALCULATE_HYBRID_OVERLAP_{LBOUND};
+    my $ubound = $_CALCULATE_HYBRID_OVERLAP_{UBOUND};
+    my $isok = eval { require Number::Interval; 1; };
+    if( ! $isok ) {
+      orac_warn "Could not load the Number::Interval Perl module: $@\n";
+      orac_warn "Continuing with data reduction, but hybrid merging may be incorrect.\n";
+    } else {
+      $NI_loaded = 1;
+      $overlap_range = new Number::Interval( Min => $lbound,
+                                             Max => $ubound,
+                                             IncMin => 1,
+                                             IncMax => 1 );
+    }
+  }
+
+  foreach my $i ( 1 .. $Frm->nfiles ) {
+
+    my $params;
+
+    # Set/get filenames.
+    my ( $in, $out ) = $Frm->inout( "_em", $i );
+
+    # Retrieve dimensions.
+    _GET_DIMENSIONS_ FILE=$in
+    my @lbnd = @{$_GET_DIMENSIONS_{LBOUND}};
+    my @ubnd = @{$_GET_DIMENSIONS_{UBOUND}};
+
+    my $temp1file = new ORAC::TempFile;
+    my $temp2file = new ORAC::TempFile;
+    my $temp3file = new ORAC::TempFile;
+    my $temp4file = new ORAC::TempFile;
+
+    # Collapse along third axis, but only if it's non-degenerate.
+    if( ( $ubnd[2] - $lbnd[2] + 1 ) != 1 ) {
+      $params = "in=$in out=$temp1file axis=3 wlim=0.0 estimator=sigma trim";
+      $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+    } else {
+      $temp1file = $in;
+    }
+
+    # Collapse along second axis of resulting cube, but only if it's
+    # non-degenerate.
+    if( ( $ubnd[1] - $lbnd[1] + 1 ) != 1 ) {
+      $params = "in=$temp1file out=$temp2file axis=2 wlim=0.0 estimator=sigma trim";
+      $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+    } else {
+      $temp2file = $temp1file;
+    }
+
+    # Now run MFITTREND.
+    $params = "in=$temp2file out=$temp3file axis=1 method=region auto=true order=0";
+    $params .= " numbin=" . ( int( ( $ubnd[0] - $lbnd[0] + 1 ) / 2 ) );
+    $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+    my ( $ORAC_STATUS, @aranges ) = $Mon{'kappa_mon'}->get( "mfittrend", "aranges" );
+
+    my $trim_lower = $aranges[0];
+    my $trim_upper = $aranges[-1];
+
+    # If we're doing hybrid mode, we need to make sure that we don't
+    # blow away too much data.
+    if( $Frm->uhdr( "ISHYBRID" ) && $NI_loaded ) {
+
+      my $mfittrend_range = new Number::Interval( Min => $trim_lower,
+                                                  Max => $trim_upper,
+                                                  IncMin => 1,
+                                                  IncMax => 1 );
+      my $overlap = $overlap_range->intersection( $mfittrend_range );
+
+      if( ! $overlap ) {
+
+        # Find out if the overlap region is lower or higher than the
+        # region returned by MFITTREND, then set the new trim region
+        # accordingly.
+        if( $trim_lower > $overlap_range->max ) {
+          $trim_lower = int( ( $overlap_range->max + $overlap_range->min ) / 2 );
+        } elsif( $trim_upper < $overlap_range->min ) {
+          $trim_upper = int( ( $overlap_range->max + $overlap_range->min ) / 2 );
+        }
+
+      }
+    }
+
+    # Copy out the region from the input file into the output file.
+    $params = "in=$in($trim_lower:$trim_upper,,) out=$out";
+    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+    orac_say "$in to $out:";
+    orac_say " Removed high-noise ends from frequency range.";
+    orac_say " Trimmed dimensions: [$trim_lower:$trim_upper]";
+
+    # Set the product.
+    $Frm->product( "em" );
+
+    # Update the Frame object.
+    $Frm->file( $i, $out );
+
+  }
+
+  # Display if necessary.
+  $Display->display_data( $Frm ) if defined $Display;
+
+  # Tidy-up output.
+  orac_say "";
+
+}
