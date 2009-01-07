@@ -76,9 +76,35 @@ my $survey = get_prim_arg( $_PRIM_ARGS_, "SURVEY", undef );
 
 my @surveys = qw/ GBS NGS SLS Telescope /;
 
+my %result; # Hash containing percentages per file per survey.
+
 use Starlink::HDSPACK qw/ create_hdsobj copy_hdsobj /;
 use JSA::QA;
 
+# Retrieve the QA parameters file and set up a new JSA::QA object.
+my $qaparamfile = $Cal->qaparams;
+my $qa = new JSA::QA( file => $qaparamfile );
+
+# Set up a hash of options to pass to the QA object.
+_SETUP_QA_OPTIONS_
+my $opts = $_SETUP_QA_OPTIONS_{'OPTS'};
+my %opts = %$opts;
+
+# Set up a list of surveys to analyse.
+my @analyse_surveys;
+if( defined( $survey ) ) {
+  if( uc( $survey ) eq 'ALL' ) {
+    @analyse_surveys = @surveys;
+  } else {
+    push @analyse_surveys, $survey;
+  }
+} else {
+  push @analyse_surveys, ( defined( $Frm->hdr( "SURVEY" ) ) ?
+                           $Frm->hdr( "SURVEY" )            :
+                           "Telescope" );
+}
+
+# Retrieve the list of previously masked files.
 my $masked_files = $Frm->uhdr( "QA_MASKED_FILES" );
 
 foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
@@ -141,29 +167,6 @@ foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
   $params = "in1=$temp1file in2=$temp4file out=$temp5file";
   $Mon{'kappa_mon'}->obeyw( "div", "$params" );
 
-  # Retrieve the QA parameters file and set up a new JSA::QA object.
-  my $qaparamfile = $Cal->qaparams;
-  my $qa = new JSA::QA( file => $qaparamfile );
-
-  # Set up a hash of options to pass to the QA object.
-  _SETUP_QA_OPTIONS_
-  my $opts = $_SETUP_QA_OPTIONS_{'OPTS'};
-  my %opts = %$opts;
-
-  # Set up a list of surveys to analyse.
-  my @analyse_surveys;
-  if( defined( $survey ) ) {
-    if( uc( $survey ) eq 'ALL' ) {
-      @analyse_surveys = @surveys;
-    } else {
-      push @analyse_surveys, $survey;
-    }
-  } else {
-    push @analyse_surveys, ( defined( $Frm->hdr( "SURVEY" ) ) ?
-                             $Frm->hdr( "SURVEY" )            :
-                             "Telescope" );
-  }
-
   # Run QA analysis on each requested survey.
   foreach my $analyse_survey ( @analyse_surveys ) {
 
@@ -188,22 +191,10 @@ foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
     $Mon{'kappa_mon'}->obeyw( "numb", "$params" );
     ( $ORAC_STATUS, my $numb_below ) = $Mon{'kappa_mon'}->get( "numb", "number" );
 
-    # Figure out if this is a pass, a questionable, or a fail.
+    # Calculate the percentage above the threshold, and store it in a
+    # hash for future printing.
     my $percent = $numb_above / ( $numb_above + $numb_below );
-
-    orac_print "Tsys versus RMS consistency check ";
-
-    if( $percent > $rmstolfail ) {
-      orac_print( " failed ", "bold white on_red" );
-    } elsif( $percent > $rmstolquest ) {
-      orac_print( " is questionable ", "bold black on_yellow" );
-    } else {
-      orac_print( " passed ", "bold white on_green" );
-    }
-
-    orac_print " for $analyse_survey for $infile.\n";
-
-    orac_print sprintf( " %.2f%% of the samples had a calculated RMS that differed by more than %d%% from the measured RMS.\n", $percent * 100, $rmstol * 100 );
+    $result{$analyse_survey}{$infile} = $percent;
 
     # Mask out the bad pixels, if requested.
     if( defined( $mask ) && ( uc( $analyse_survey ) eq $mask ) ) {
@@ -227,6 +218,37 @@ foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
       $Frm->file( $i, $outfile );
     }
   }
+}
+
+foreach my $survey ( sort keys %result ) {
+  my $sum = 0;
+  foreach my $value ( values %{$result{$survey}} ) {
+    $sum += $value;
+  }
+  my $avg = $sum / scalar( values %{$result{$survey}} );
+
+  $opts{'survey'} = $survey;
+
+  my $rmstol_const      = 'RMSTSYSTOL';
+  my $rmstolquest_const = 'RMSTSYSTOL_QUEST';
+  my $rmstolfail_const  = 'RMSTSYSTOL_FAIL';
+  my $rmstol = $qa->get_data( key => $rmstol_const, %opts );
+  my $rmstolquest = $qa->get_data( key => $rmstolquest_const, %opts );
+  my $rmstolfail = $qa->get_data( key => $rmstolfail_const, %opts );
+
+  orac_print "Tsys versus RMS consistency check ";
+
+  if( $avg > $rmstolfail ) {
+    orac_print( " failed ", "bold white on_red" );
+  } elsif( $avg > $rmstolquest ) {
+    orac_print( " is questionable ", "bold black on_yellow" );
+  } else {
+    orac_print( " passed ", "bold white on_green" );
+  }
+
+  orac_print " for $survey.\n";
+
+  orac_print sprintf( " %.2f%% of the samples had a calculated RMS that differed by more than %d%% from the measured RMS.\n", $avg * 100, $rmstol * 100 );
 }
 
 # Tidy up output.
