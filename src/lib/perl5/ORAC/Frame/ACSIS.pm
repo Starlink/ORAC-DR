@@ -185,7 +185,7 @@ frame object is returned.
 =cut
 
 sub framegroupkeys {
-  return (qw/ BWMODE IFFREQ /);
+  return (qw/ BWMODE IFFREQ UTDATE /);
 }
 
 =back
