@@ -242,7 +242,7 @@ sub bad_receptors_list {
         $self->thingtwo( $thing2 );
       }
 
-      my $brposition = $self->bad_receptors_qa_index->chooseby_negativedt( 'ORACTIME', $self->thing, 0 );
+      my $brposition = $self->bad_receptors_qa_index->choosebydt( 'ORACTIME', $self->thing, 0 );
 
       if( defined( $brposition ) ) {
         # Retrieve the specific entry, and thus the receptors.
