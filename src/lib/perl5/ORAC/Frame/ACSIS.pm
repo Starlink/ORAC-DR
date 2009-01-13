@@ -323,7 +323,7 @@ sub findgroup {
     my $restfreq = $wcs->GetC("RestFreq");
 
     $hdrgrp .= $self->hdr( "BWMODE" ) .
-               $self->hdr( "SAM_MODE" ) .
+               ( uc( $self->hdr( "SAM_MODE" ) ) eq 'RASTER' ? 'SCAN' : uc( $self->hdr( "SAM_MODE" ) ) ) .
                $self->hdr( "SW_MODE" ) .
                $self->hdr( "INSTRUME" ) .
                $self->hdr( "OBS_TYPE" ) .
