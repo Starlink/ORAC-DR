@@ -32,6 +32,8 @@ use ORAC::Error qw/ :try /;
 use ORAC::Print qw/ orac_warn /;
 
 use Astro::Coords;
+use Astro::Coords::Angle;
+use Astro::Coords::Angle::Hour;
 use DateTime;
 use DateTime::Format::ISO8601;
 use NDF;
@@ -275,7 +277,7 @@ sub findgroup {
 
     # Check to see what tracking system we're in. To get this, we need
     # to make some NDF calls to get into the JCMTSTATE structure.
-    my $trsys;
+    my %state;
     my $status = &NDF::SAI__OK;
     ndf_begin();
     ndf_find( &NDF::DAT__ROOT(), $self->file, my $indf, $status );
@@ -283,13 +285,20 @@ sub findgroup {
 
     if( $there ) {
       ndf_xloc( $indf, 'JCMTSTATE', 'READ', my $xloc, $status );
-      dat_there( $xloc, 'TCS_TR_SYS', my $trsys_there, $status );
-
-      if( $trsys_there ) {
-        my( @trsys, $el );
-        cmp_getvc( $xloc, 'TCS_TR_SYS', 10000, @trsys, $el, $status );
-        if( $status == &NDF::SAI__OK ) {
-          $trsys = $trsys[0];
+      for my $cmp (qw/ TCS_TR_SYS TCS_TR_BC1 TCS_TR_BC2 / ) {
+        dat_there( $xloc, $cmp, my $there, $status );
+        if ($there) {
+          dat_find( $xloc, $cmp, my $sloc, $status );
+          my @dims = (1);
+          # just need the first element
+          dat_cell( $sloc, 1, @dims, my $cloc, $status );
+          # and always read it as a number
+          dat_get0c( $cloc, my $val, $status );
+          if ($status == &NDF::SAI__OK) {
+            $state{$cmp} = $val;
+          }
+          dat_annul( $cloc, $status );
+          dat_annul( $sloc, $status );
         }
       }
       dat_annul( $xloc, $status );
@@ -298,7 +307,7 @@ sub findgroup {
     ndf_annul( $indf, $status );
     ndf_end( $status );
 
-    if( defined( $trsys ) && $trsys =~ /APP/ ) {
+    if( exists $state{TCS_TR_SYS} && $state{TCS_TR_SYS} =~ /APP/ ) {
 
       # We're tracking in geocentric apparent, so instead of using the
       # RefRA/RefDec position (which will be moving with the object)
@@ -307,10 +316,24 @@ sub findgroup {
 
     } else {
 
-      # Use the RefRA/RefDec position with colons stripped out and to
-      # the nearest arcsecond.
-      my $refra = $wcs->GetC("RefRA");
-      my $refdec = $wcs->GetC("RefDec");
+      # Sometimes it seems that the RefRA/RefDec position stored in the
+      # specframe is not the same as the actual base position.
+      # eg 20081007 #54
+      # To be robust we use the JCMTSTATE extension
+      my ($refra, $refdec);
+      if (exists $state{TCS_TR_BC1} && exists $state{TCS_TR_BC2} ) {
+        my $ang = Astro::Coords::Angle::Hour->new( $state{TCS_TR_BC1},
+                                                   units => 'rad' );
+        $refra = $ang->string;
+        $ang = Astro::Coords::Angle->new( $state{TCS_TR_BC2},
+                                          units => 'rad' );
+        $refdec = $ang->string;
+      } else {
+        # Use the RefRA/RefDec position with colons stripped out and to
+        # the nearest arcsecond.
+        $refra = $wcs->GetC("RefRA");
+        $refdec = $wcs->GetC("RefDec");
+      }
       $refra =~ s/\..*$//;
       $refdec =~ s/\..*$//;
       $refra =~ s/://g;
