@@ -88,9 +88,6 @@ if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
       orac_throw "Number of microsteps undefined.\n";
     }
 
-    # A running exposure time.
-    my $exptime = 0;
-
     # Grab the frames that match this jitter position.
     my $cycleno = $Frm->uhdr( "CYCLE_NUMBER" );
     $cycleno = defined( $cycleno ) ? $cycleno : 0;
@@ -143,12 +140,6 @@ if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
         my $new_x_origin = $Frame->uhdr("NEW_X_ORIGIN");
         my $new_y_origin = $Frame->uhdr("NEW_Y_ORIGIN");
 
-        # Grab the exposure time of the current frame so that we can
-        # set the exposure time of the interleaved frame later on.
-        $exptime += $Frame->uhdr( "ORAC_EXPOSURE_TIME" );
-
-#        orac_print "Setting origin of $in to $new_x_origin,$new_y_origin "
-#                   . "in preparation for interleaving.\n";
         my $params = "ndf=$in origin=[$new_x_origin,$new_y_origin]";
         $Mon{'ndfpack_mon'}->obeyw( "setorigin", "$params" );
 
@@ -163,11 +154,15 @@ if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
       _GET_EXPANSION_RATIO_
       my $x_expand = $_GET_EXPANSION_RATIO_{X_EXPANSION};
       my $y_expand = $_GET_EXPANSION_RATIO_{Y_EXPANSION};
-      my $params = "in='^" . $interleave_input->file . "' out=$out "
+      my $temp13 = new ORAC::TempFile;
+      my $params = "in='^" . $interleave_input->file . "' out=$temp13 "
                  . "expand=[$x_expand,$y_expand] "
                  . "fill=bad trim=false title=!"
                  ;
       $Mon{'kappa_mon'}->obeyw( "interleave", "$params" );
+
+      $Mon{'kappa_mon'}->obeyw( "setmagic", "in=$temp13 out=$out repval=0" );
+
       orac_print " done.\n";
 
     } else {
@@ -184,10 +179,6 @@ if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
         my $i = $_;
         my $Frame = $interleave_frames[$i];
 
-        # Add the exposure time of the frame to the running exposure
-        # time sum.
-        $exptime += $Frame->uhdr( "ORAC_EXPOSURE_TIME" );
-
         my $in = $Frame->file;
 
         # Add a new coordinate frame with the domain "MICRO" which
@@ -196,8 +187,7 @@ if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
         # frame.
         my $new_x_origin = $Frame->uhdr("NEW_X_ORIGIN");
         my $new_y_origin = $Frame->uhdr("NEW_Y_ORIGIN");
-#        orac_print "Setting origin of $in to $new_x_origin,$new_y_origin "
-#                   . "in preparation for interleaving.\n";
+
         my $params = "ndf=$in frame=pixel domain=micro maptype=shift "
                    . "shift=[$new_x_origin,$new_y_origin] accept";
         $Mon{'ndfpack_mon'}->obeyw( "wcsadd", "$params" );
@@ -257,16 +247,6 @@ if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
     $Frm->uhdr( $utendname, $utend );
     $value = $keywords{ $utendkey[0] };
     $param = "ndf=$out keyword=$utendkey[0] edit=update value=$value position=!";
-    $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$param comment=\\\$C" );
-
-    # Set the exposure time to be the sum of the exposure times from
-    # the interleaved frames.
-    my $exptimename = "ORAC_EXPOSURE_TIME";
-    %keywords = $Frm->translate_hdr( $exptimename );
-    my @exptimekey = keys( %keywords );
-    $Frm->uhdr( $exptimename, $exptime );
-    $value = $keywords{ $exptimekey[0] };
-    $param = "ndf=$out keyword=$exptimekey[0] edit=update value=$value position=!";
     $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$param comment=\\\$C" );
 
     # Get the original platescale, divide it by the interleaving

@@ -91,9 +91,6 @@ if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
       orac_throw "Number of microsteps undefined.\n";
     }
 
-    # A running exposure time.
-    my $exptime = 0;
-
     # Grab the last N frames in the group.
     my @interleave_frames = ($Grp->members)[(-$n_usteps)..-1];
 
@@ -123,10 +120,6 @@ if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
         # _JITTER_STEER_.
         my $new_x_origin = $Frame->uhdr("NEW_X_ORIGIN");
         my $new_y_origin = $Frame->uhdr("NEW_Y_ORIGIN");
-
-        # Grab the exposure time of the current frame so that we can
-        # set the exposure time of the interleaved frame later on.
-        $exptime += $Frame->uhdr( "ORAC_EXPOSURE_TIME" );
 
         orac_print "Setting origin of $in to $new_x_origin,$new_y_origin "
                    . "in preparation for interleaving.\n";
@@ -162,10 +155,6 @@ if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
       for(0..$#interleave_frames) {
         my $i = $_;
         my $Frame = $interleave_frames[$i];
-
-        # Add the exposure time of the frame to the running exposure
-        # time sum.
-        $exptime += $Frame->uhdr( "ORAC_EXPOSURE_TIME" );
 
         my $in = $Frame->file;
 
@@ -222,8 +211,7 @@ if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
     my @amendkey = keys( %keywords );
     my $amend = $interleave_frames[$#interleave_frames]->uhdr( $amendname );
     $Frm->uhdr( $amendname, $amend );
-    my $value = $keywords{ $amendkey[0] };
-    my $param = "ndf=$out keyword=$amendkey[0] edit=update value=$value position=!";
+    my $param = "ndf=$out keyword=$amendkey[0] edit=update value=$amend position=!";
     $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$param comment=\\\$C" );
 
     # Set the end UT time to reflect the last frame included in the interleave.
@@ -232,18 +220,7 @@ if( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) =~ /OBJECT|SKY/ ) {
     my @utendkey = keys( %keywords );
     my $utend = $interleave_frames[$#interleave_frames]->uhdr( $utendname );
     $Frm->uhdr( $utendname, $utend );
-    $value = $keywords{ $utendkey[0] };
-    $param = "ndf=$out keyword=$utendkey[0] edit=update value=$value position=!";
-    $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$param comment=\\\$C" );
-
-    # Set the exposure time to be the sum of the exposure times from
-    # the interleaved frames.
-    my $exptimename = "ORAC_EXPOSURE_TIME";
-    %keywords = $Frm->translate_hdr( $exptimename );
-    my @exptimekey = keys( %keywords );
-    $Frm->uhdr( $exptimename, $exptime );
-    $value = $keywords{ $exptimekey[0] };
-    $param = "ndf=$out keyword=$exptimekey[0] edit=update value=$value position=!";
+    $param = "ndf=$out keyword=$utendkey[0] edit=update value=$utend position=!";
     $Mon{'ndfpack_mon'}->obeyw( "fitsmod", "$param comment=\\\$C" );
 
     # Get the original platescale, divide it by the interleaving
