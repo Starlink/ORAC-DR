@@ -434,7 +434,7 @@ sub prefix {
 =item outpre
 
 Prefix that is prepended to all strings printed with the
-out() method. Default is to have no prefix.
+out() or say() methods. Default is to have no prefix.
 
   $pre = $prt->outpre;
   $prt->outpre('ORAC says:');
@@ -450,7 +450,7 @@ sub outpre {
 =item warpre
 
 Prefix that is prepended to all strings printed with the
-out() method. Default is to have the string 'Warning:' prepended.
+war() or carp() methods. Default is to have the string 'Warning:' prepended.
 
   $pre = $prt->warpre;
   $prt->warpre('ORAC Warning:');
@@ -466,7 +466,7 @@ sub warpre {
 =item errpre
 
 Prefix that is prepended to all strings printed with the
-out() method. Default is to have the string 'Error:' prepended.
+err() method. Default is to have the string 'Error:' prepended.
 
   $pre = $prt->errpre;
   $prt->errpre('ORAC Error:');
