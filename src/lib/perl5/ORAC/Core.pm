@@ -167,6 +167,8 @@ sub orac_store_frm_in_correct_grp {
   # over the lifetime of the pipeline
   # Unless the primitive is written to recognise -resume
 
+  my $check_remove = 0;
+
   do {
 
     # Clear the group hash if we are transient
@@ -175,29 +177,15 @@ sub orac_store_frm_in_correct_grp {
     # Create the group
     $Grp = new $GrpObjectType($grpname);
 
-    # File name from constrituent parts
-    # If the group name is a number itself we should
-    # use it rather than the current frame number
-    my $grpnum = ( $grpname =~ /^\d+$/ ? $grpname : $Frm->number);
-
-    my $extra = $Frm->file_from_bits_extra;
-
-    $Grp->file($Grp->file_from_bits($ut, $grpnum, $extra));
-    $GrpHash->{$grpname} = $Grp; # store group object
+    # Store the Group object.
+    $GrpHash->{$grpname} = $Grp;
 
     # Store the Grp on the array as well
     push(@$GrpArr, $Grp) if $use_arr;
 
-    # Deal with the resume flag
-    # Only relevant if the Group file already exists
-    if ($Grp->file_exists) {
-      if ($resume) {
-        $Grp->coaddsread;
-        $Grp->readhdr;
-      } else {
-        $Grp->erase;
-      }
-    }
+    # We'll need to check to see if the file exists later on and if it
+    # needs to be removed, based on the $resume flag.
+    $check_remove = 1;
 
   } unless (exists $GrpHash->{$grpname});
 
@@ -212,8 +200,22 @@ sub orac_store_frm_in_correct_grp {
   # call the name() method
   if ($Grp->num == 0) {
     orac_print ("A new group ".$Grp->name." has been created\n","blue");
+    $Grp->file( $Grp->file_from_name );
   } else {
     orac_print ("This observation is part of group ".$Grp->name."\n","blue");
+  }
+
+  # If we were previously requested to check if the file exists, do so
+  # now and erase it if the $resume flag is not set.
+  if( $check_remove ) {
+    if( $Grp->file_exists ) {
+      if( $resume ) {
+        $Grp->coaddsread;
+        $Grp->readhdr;
+      } else {
+        $Grp->erase;
+      }
+    }
   }
 
   # Return the current Group

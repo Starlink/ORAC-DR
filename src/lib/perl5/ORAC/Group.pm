@@ -850,6 +850,35 @@ sub file_from_bits {
 
 }
 
+=item B<file_from_name>
+
+Method to return the group filename using the name() method of the
+current Group object. The full filename is returned (including
+suffix).
+
+  $file = $Grp->file_from_name;
+
+If the name() has not been initialized, then this method returns
+undef. Otherwise, it removes all hashes in the string returned by
+name() and replaces them with underscores.
+
+The fixedpart() and filesuffix() are prepended and appended,
+respectively.
+
+=cut
+
+sub file_from_name {
+  my $self = shift;
+
+  if( ! defined( $self->name ) ) {
+    return undef;
+  }
+
+  my $name = $self->name;
+  $name =~ s/#/_/g;
+  return $self->fixedpart . $name . $self->filesuffix;
+}
+
 =item B<frame>
 
 Retrieve the nth frame of the group.
