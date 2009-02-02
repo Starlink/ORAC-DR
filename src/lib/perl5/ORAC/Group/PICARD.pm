@@ -87,6 +87,30 @@ sub file_from_bits {
 
 }
 
+=item B<file_from_name>
+
+=cut
+
+sub file_from_name {
+  my $self = shift;
+
+  if( ! defined( $self->name ) ) {
+    return undef;
+  }
+  my $name = $self->name;
+  $name =~ s/#/_/g;
+  $name =~ s/-//g;
+  return $self->fixedpart . $name . $self->filesuffix;
+}
+
+sub fixedpart {
+  return "pg";
+}
+
+sub filesuffix {
+  return ".sdf";
+}
+
 =back
 
 =head1 SEE ALSO
