@@ -124,7 +124,10 @@ and any coadd information is read using the coaddsread() Group
 method.
 
 The transient argument controls whether more than one group can be
-created. If transient is true only a single group is stored %Groups.
+created. If transient is 1 only a single group is stored in %Groups,
+although multiple may be created during processing. If transient is -1
+then only one group is ever created, and every Frame object goes into
+that group.
 
 The current Grp (ie the Group associated with the supplied Frm)
 is returned.
@@ -157,43 +160,54 @@ sub orac_store_frm_in_correct_grp {
     $use_arr = 0;
   }
 
-  # query Frame for its group
-
-  my $grpname = $Frm->group;
-
-  # create a new group object and remove the previous file
-  # unless such an object already exists
-  # note that the "existence" of this group is only meaningful
-  # over the lifetime of the pipeline
-  # Unless the primitive is written to recognise -resume
-
   my $check_remove = 0;
 
-  do {
+  # If we've been asked to only do one group ever (i.e. $transient is
+  # -1) then skip all of the stuff that sorts out which Group this
+  # Frame is in and just put it in the Group.
+  my $grpname;
 
-    # Clear the group hash if we are transient
-    %$GrpHash = () if $transient;
-
-    # Create the group
-    $Grp = new $GrpObjectType($grpname);
-
-    # Store the Group object.
+  if( defined( $transient ) && $transient == -1 ) {
+    $grpname = "ALL";
     $GrpHash->{$grpname} = $Grp;
+    $Grp->push( $Frm );
+  } else {
 
-    # Store the Grp on the array as well
-    push(@$GrpArr, $Grp) if $use_arr;
+    # query Frame for its group
+    $grpname = $Frm->group;
 
-    # We'll need to check to see if the file exists later on and if it
-    # needs to be removed, based on the $resume flag.
-    $check_remove = 1;
+    # create a new group object and remove the previous file
+    # unless such an object already exists
+    # note that the "existence" of this group is only meaningful
+    # over the lifetime of the pipeline
+    # Unless the primitive is written to recognise -resume
 
-  } unless (exists $GrpHash->{$grpname});
+    do {
 
-  # Retrieve the current group object
-  $Grp = $GrpHash->{$grpname};
+      # Clear the group hash if we are transient
+      %$GrpHash = () if $transient;
 
-  # push current Frame onto Group
-  $Grp->push($Frm);
+      # Create the group
+      $Grp = new $GrpObjectType($grpname);
+
+      # Store the Group object.
+      $GrpHash->{$grpname} = $Grp;
+
+      # Store the Grp on the array as well
+      push(@$GrpArr, $Grp) if $use_arr;
+
+      # We'll need to check to see if the file exists later on and if
+      # it needs to be removed, based on the $resume flag.
+      $check_remove = 1;
+
+    } unless (exists $GrpHash->{$grpname});
+
+    # Retrieve the current group object
+    $Grp = $GrpHash->{$grpname};
+
+    # push current Frame onto Group
+    $Grp->push($Frm);
+  }
 
   # Report whether this was a new group or an existing group
   # Do this after the Frame has been pushed on so that we can
@@ -365,8 +379,10 @@ sub orac_process_frame {
   # files
   # Only want to do this if we created it initially as a soft link
   # and if ORAC_DATA_IN is not the same directory as ORAC_DATA_OUT
-  if (    File::Spec->canonpath($ENV{"ORAC_DATA_IN"}) 
-          ne File::Spec->canonpath($ENV{"ORAC_DATA_OUT"}) ) {
+  if ( defined( $ENV{'ORAC_DATA_IN'} ) &&
+       defined( $ENV{'ORAC_DATA_OUT'} ) &&
+       File::Spec->canonpath($ENV{"ORAC_DATA_IN"})
+         ne File::Spec->canonpath($ENV{"ORAC_DATA_OUT"}) ) {
     foreach my $raw ( $Frm->raw ) {
       unlink($raw) if (-l $raw);
     }
