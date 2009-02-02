@@ -121,7 +121,6 @@ sub framegroup {
 
   # see if we have any grouping keys
   my @grpkeys = $class->framegroupkeys();
-  push @grpkeys, "ORAC_OBSERVATION_NUMBER";
 
   # some times we need to retain the order of the input files
   my @grporder;
