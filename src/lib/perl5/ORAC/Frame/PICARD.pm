@@ -101,6 +101,16 @@ sub findgroup {
   return $self->group;
 }
 
+=item B<framegroupkeys>
+
+For PICARD, return an empty list.
+
+=cut
+
+sub framegroupkeys {
+  return ();
+}
+
 =back
 
 =head1 SEE ALSO
