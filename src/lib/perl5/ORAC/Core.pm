@@ -1007,7 +1007,7 @@ sub orac_parse_files {
 
   my $fh;
   unless ( open ( $fh, "<", $filename ) ) {
-    orac_err( " Could not open ($filename)\n" );
+    orac_err( " Could not open ($filename): $!\n" );
     throw ORAC::Error::FatalError( "Could not open $filename", ORAC__FATAL);
   }
   my @obs;
