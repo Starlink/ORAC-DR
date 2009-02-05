@@ -13,8 +13,6 @@ ORAC::Core - core routines for data pipelining
 
   orac_store_frm_in_correct_grp($Frm, $GrpType, $GrpHash, $GrpArr, $ut);
 
-  orac_handle_args( \@ORAC_ARGS );
-
   orac_print_configuration( $opt_debug, $opt_showcurrent, $log_options,
                             $win_str, \$STATUS_TEXT  );
 
