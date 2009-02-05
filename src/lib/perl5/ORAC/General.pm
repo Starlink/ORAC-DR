@@ -523,5 +523,6 @@ Copyright (C) 2008 Science and Technology Facilities Council.
 Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
-
 =cut
+
+1;
