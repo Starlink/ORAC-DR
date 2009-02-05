@@ -712,6 +712,9 @@ sub orac_print_configuration {
 
   }
 
+  # Register the arguments
+  orac_loginfo( Arguments => join(" ", @$ORAC_ARGS ) );
+
   # Now create the recipe viewer if required.
   if ($opt{showcurrent}) {
     # Routine returns a reference to a tied array (listbox contents)

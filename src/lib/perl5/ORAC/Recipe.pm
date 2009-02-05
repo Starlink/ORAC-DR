@@ -492,6 +492,16 @@ sub execute {
      orac_debug "***** Starting recipe '$recipe_name' *****\n";
   }
 
+  # Clear logged messages and register the RECIPE name just in case
+  # some messages turn up
+  orac_clearlog();
+  orac_logging( 1 ); # will be set earlier as a command line argument
+  orac_logkey( $self->name );
+  orac_loginfo( Recipe => $self->name,
+                Software => $0,
+                Version => ORAC::Version->getVersion(),
+              );
+
   # Execute the recipe
   use Time::HiRes qw/ gettimeofday /;
   my $execute_start = [gettimeofday];

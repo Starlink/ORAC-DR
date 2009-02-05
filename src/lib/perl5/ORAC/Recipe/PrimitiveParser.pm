@@ -283,7 +283,8 @@ sub embed {
   push(@lines, "my \$_prim_code = \$_prim_object->code();");
   push(@lines, "ORAC::Error::FatalError->throw('Could not get compiled primitive \"$primitive\"') unless defined \$_prim_code;");
 
-  # Convert the arguments to a hash form
+  # Convert the arguments to a hash form (and register with logging system)
+  push(@lines, "orac_loginfo( 'Primitive Arguments' => \"".$arguments."\");");
   my $primargs = $self->_parse_prim_arguments( $arguments );
 
   # Store the call history in local array for retrieval by primitive
@@ -748,6 +749,8 @@ sub _expand_primitive {
        ($self->debug ? 1 : 0) .";"); # burn in debug status
   push(@parsed, "my %". $prim->name ." = \@_;");
   push(@parsed, "my \$_PRIM_ARGS_ = \\%". $prim->name.";");
+  push(@parsed, "my \$_PRIM_EPOCH_ = &Time::HiRes::gettimeofday();");
+  push(@parsed, "orac_logkey(\"".$prim->name."\");");
 
   # convert $Mon to a tied hash since for historical reasons we have to use %Mon{} not $Mon->{}
   push(@parsed, "my \%Mon;");
