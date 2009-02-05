@@ -498,9 +498,12 @@ sub flush_messages {
 
         # Merge with the header, indenting the messages by 1
         # for consistency with NDF default history
-        my @lines = (@header, "Messages:");
-        for my $l (@{$msg->[2]}) {
-          push(@lines, " $l");
+        my @lines = @header;
+        if (@{$msg->[2]}) {
+          push(@lines, "Messages:");
+          for my $l (@{$msg->[2]}) {
+            push(@lines, " $l");
+          }
         }
 
         ndf_hput( 'NORMAL', $msg->[0], 1, scalar(@lines), @lines,
