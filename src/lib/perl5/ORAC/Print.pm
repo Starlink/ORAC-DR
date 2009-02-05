@@ -70,7 +70,7 @@ require Exporter;
 @ISA = qw/Exporter/;
 @EXPORT = qw/orac_print orac_err orac_warn orac_debug orac_read orac_throw orac_carp
 	     orac_printp orac_print_prefix orac_warnp orac_errp orac_say orac_sayp
-            orac_msglog orac_clearlog orac_logkey orac_logging/;
+            orac_msglog orac_clearlog orac_logkey orac_logging orac_loginfo /;
 
 # Create a Term::ReadLine handle
 # For read on STDIN and output on STDOUT
@@ -294,6 +294,34 @@ sub orac_errp {
   $prt->errpre( $current );
 }
 
+=item B<orac_loginfo>
+
+Register additional information for logging to the file.
+
+  orac_loginfo( %info );
+
+This information is added to the current set although duplicate keys will
+overwrite information.
+
+An explicit undef will clear the current information.
+
+  orac_loginfo( undef );
+
+A reference to a hash will force an overwrite of the stored information.
+
+  orac_loginfo( \%info );
+
+To obtain the messages use no arguments:
+
+  %information = orac_loginfo();
+
+=cut
+
+sub orac_loginfo {
+  my $prt = __curr_obj;
+  $prt->loginfo( @_ );
+}
+
 =item B<orac_clearlog>
 
 Clear the message log
@@ -399,6 +427,7 @@ sub new {
   $prt->{Log}      = [];           # Message log
   $prt->{LogKey}   = "NONE";       # Key for log messages
   $prt->{LogMessages} = 0;         # Are we logging messages?
+  $prt->{LogInfo}  = {};           # Additional static info
 
   bless($prt, $class);
 
@@ -509,6 +538,45 @@ sub logkey {
   my $self = shift;
   if (@_) { $self->{LogKey} = shift; }
   return $self->{LogKey};
+}
+
+=item loginfo
+
+Register additional information for logging to the file.
+
+  $prt->loginfo( %info );
+
+This information is added to the current set although duplicate keys will
+overwrite information.
+
+An explicit undef will clear the current information.
+
+  $prt->loginfo( undef );
+
+A reference to a hash will force an overwrite of the stored information.
+
+  $prt->loginfo( \%info );
+
+To obtain the messages use no arguments:
+
+  %information = $prt->loginfo();
+
+=cut
+
+sub loginfo {
+  my $self = shift;
+  if (@_) {
+    my %info;
+    if (! defined( $_[0] ) ) {
+      %info = ();
+    } elsif ( ref($_[0]) eq "HASH" ) {
+      %info = %{$_[0]};
+    } else {
+      %info = (%{$self->{LogInfo}}, @_);
+    }
+    %{$self->{LogInfo}} = %info;
+  }
+  return %{$self->{LogInfo}};
 }
 
 =item msglog
@@ -1025,6 +1093,7 @@ Does nothing if logging() is false.
 sub _store_msg {
   my $self = shift;
   my $text = shift;
+
   return unless $self->logging();
   my $date = gettimeofday();
 

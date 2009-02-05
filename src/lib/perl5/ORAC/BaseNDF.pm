@@ -409,6 +409,16 @@ sub flush_messages {
     $PENDING{$hashkey} = $msg;
   }
 
+  # Form the fixed block of text describing the recipe/primitive
+  my %info = orac_loginfo();
+  my @header;
+  for my $key (sort keys %info) {
+    my $value = $info{$key};
+    $value = "<undefined>" unless defined $value;
+    push(@header, "$key: $value");
+  }
+  print "HEADER=\n".join("\n",@header),"\n\n" if $DEBUG;
+
   # Date parser for NDF
   my $Strp = DateTime::Format::Strptime->new(
                                              locale => 'C',
@@ -419,7 +429,6 @@ sub flush_messages {
   err_begin($status);
   ndf_begin();
   for my $f (@files) {
-
     # open the file for READ
     ndf_find( &NDF::DAT__ROOT(), $f, my $indf, $status );
 
@@ -487,7 +496,13 @@ sub flush_messages {
         print "Appn: ".$msg->[0]." ($str)\n" if $DEBUG;
         print "  Message: ".join("\n",@{$msg->[2]})."\n" if $DEBUG;
 
-        my @lines = @{$msg->[2]};
+        # Merge with the header, indenting the messages by 1
+        # for consistency with NDF default history
+        my @lines = (@header, "Messages:");
+        for my $l (@{$msg->[2]}) {
+          push(@lines, " $l");
+        }
+
         ndf_hput( 'NORMAL', $msg->[0], 1, scalar(@lines), @lines,
                   0, 0, 0, $indf, $status );
 
