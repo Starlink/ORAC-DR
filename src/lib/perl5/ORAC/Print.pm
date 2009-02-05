@@ -26,6 +26,12 @@ ORAC::Print - ORAC output message printing
   $prt->outcol("magenta");
   $prt->errbeep(1);
 
+  $prt->logging(1);
+  $prt->logkey( "_PRIMITIVE_NAME_" );
+  $prt->out("Log a message" );
+  @messages = $prt->msglog();
+  $prt->clearlog();
+
   tie *HANDLE, 'ORAC::Print', $ptr;
 
 =head1 DESCRIPTION
@@ -54,6 +60,8 @@ use strict;
 use vars qw/$VERSION $DEBUG $CURRENT @ISA @EXPORT $RDHDL/;
 use subs qw/__curr_obj/;
 
+use Time::HiRes qw/ gettimeofday /;
+
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
 $DEBUG = 0;
@@ -61,7 +69,8 @@ $DEBUG = 0;
 require Exporter;
 @ISA = qw/Exporter/;
 @EXPORT = qw/orac_print orac_err orac_warn orac_debug orac_read orac_throw orac_carp
-	     orac_printp orac_print_prefix orac_warnp orac_errp orac_say orac_sayp /;
+	     orac_printp orac_print_prefix orac_warnp orac_errp orac_say orac_sayp
+            orac_msglog orac_clearlog orac_logkey orac_logging/;
 
 # Create a Term::ReadLine handle
 # For read on STDIN and output on STDOUT
@@ -285,6 +294,62 @@ sub orac_errp {
   $prt->errpre( $current );
 }
 
+=item B<orac_clearlog>
+
+Clear the message log
+
+  orac_clearlog();
+
+=cut
+
+sub orac_clearlog {
+  my $prt = __curr_obj;
+  $prt->clearlog;
+}
+
+=item B<orac_logkey>
+
+Set the logging key. Usually the primitive name.
+
+  orac_logkey( $primitive );
+
+=cut
+
+sub orac_logkey {
+  my $prt = __curr_obj;
+  $prt->logkey( @_ );
+}
+
+=item B<orac_logging>
+
+Enable or disable logging.
+
+  orac_logging( 1 );
+
+=cut
+
+sub orac_logging {
+  my $prt = __curr_obj;
+  $prt->logging( @_ );
+}
+
+=item B<orac_msglog>
+
+Returns the logged messages.
+
+ @messages = orac_msglog();
+ @messages = orac_msglog( $refepoch );
+
+See the msglog() documentation for more information. An undefined reference
+epoch is equivalent to no reference epoch.
+
+=cut
+
+sub orac_msglog {
+  my $prt = __curr_obj;
+  my @messages = $prt->msglog(@_);
+  return @messages;
+}
 
 # __curr_obj returns the current Print object or creates a new
 # one if one has not been created already.
@@ -331,6 +396,9 @@ sub new {
   $prt->{WarPre}   = 'Warning:';   # Prefix for warning messages
   $prt->{ErrPre}   = 'Error:';     # Prefix for error messages
   $prt->{ErrBeep}  = 0;            # Beep with error messages
+  $prt->{Log}      = [];           # Message log
+  $prt->{LogKey}   = "NONE";       # Key for log messages
+  $prt->{LogMessages} = 0;         # Are we logging messages?
 
   bless($prt, $class);
 
@@ -360,6 +428,17 @@ sub debugmsg {
   return $self->{Debug};
 }
 
+=item logging
+
+Enables or disables logging of messages. Default is off.
+
+=cut
+
+sub logging {
+  my $self = shift;
+  if (@_) { $self->{LogMessages} = shift; }
+  return $self->{LogMessages};
+}
 
 =item outcol(colour)
 
@@ -413,6 +492,72 @@ sub errcol {
   my $self = shift;
   if (@_) { $self->{ErrColour} = shift; }
   return $self->{ErrColour};
+}
+
+=item logkey
+
+String to be associated with output messages. This key will be used when
+building up the message stack and can be used for grouping purposes.
+
+  $prt->logkey( "_IMAGING_HELLO_" );
+
+Usually this would reflect the current primitive.
+
+=cut
+
+sub logkey {
+  my $self = shift;
+  if (@_) { $self->{LogKey} = shift; }
+  return $self->{LogKey};
+}
+
+=item msglog
+
+Array of all logged messages.
+
+ @messages = $self->msglog();
+
+Each entry is a reference to an array with elements
+
+ 0 logkey value at time of message
+ 1 epoch of message
+ 2 reference to array of messages
+
+ie [ prim1, epoch, \@msg ], [ prim2, epoch2, \@msg ]
+
+Messages will be in epoch order. If an argument is given
+this will be a reference epoch. Only messages more recent
+than this will be returned. Only works in list context.
+
+ @messages = $self->msglog( $refepoch );
+
+An undefined reference epoch is ignored.
+
+=cut
+
+sub msglog {
+  my $self = shift;
+  my $refepoch = shift;
+  if (defined $refepoch) {
+    my $ref = shift;
+    my $LOG = $self->{Log};
+    # we could use a clever bisection algorithm since we know
+    # they are in order but until the profiler tells me there
+    # is a problem we will do it the easy way
+    my $refindex;
+    for my $i (0..$#$LOG) {
+      if ($LOG->[$i]->[1] >= $ref) {
+        $refindex = $i;
+      }
+    }
+
+    if (defined $refindex) {
+      return @$LOG[$refindex..$#$LOG];
+    }
+    return ();
+  } else {
+    return (wantarray ? @{$self->{Log}} : $self->{Log} );
+  }
 }
 
 =item prefix
@@ -634,7 +779,11 @@ sub out {
   my $outpre = $self->outpre;
   $outpre = '' unless defined $outpre;
 
-  print $fh colored($prefix . $outpre . $text ,$col);
+  my $outtext = $prefix . $outpre . $text;
+  print $fh colored($outtext ,$col);
+
+  # store the message
+  $self->_store_msg( $outtext );
   
   tk_update();
   
@@ -683,7 +832,11 @@ sub war {
   my $warpre = $self->warpre;
   $warpre = '' unless defined $warpre;
 
-  print $fh colored($prefix . $warpre .$text,$col);
+  my $outtext = $prefix . $warpre . $text;
+  print $fh colored($outtext,$col);
+
+  # store the message
+  $self->_store_msg( $outtext );
 
   tk_update();
   
@@ -737,7 +890,11 @@ sub err {
   my $errpre = $self->errpre;
   $errpre = '' unless defined $errpre;
 
-  print $fh colored($prefix . $errpre . $text,$col);
+  my $outtext = $prefix . $errpre . $text;
+  print $fh colored($outtext,$col);
+
+  # store the message
+  $self->_store_msg( $outtext );
 
   # Beep if required
   print STDOUT chr(7) if $self->errbeep;
@@ -819,6 +976,80 @@ sub tk_update {
   };
 
 }
+
+=item clearlog
+
+Clear the log. This can be used to reset logged messages when a new recipe
+begins.
+
+  $prt->clearlog();
+
+=cut
+
+sub clearlog {
+  my $self = shift;
+  my $LOG = $self->msglog;
+  @$LOG = ();
+  return;
+}
+
+=begin PRIVATE METHODS
+
+=item B<_store_msg>
+
+Store the supplied text along with a datestamp and any registered associated
+key.
+
+  $prt->_store_msg( $text );
+
+Messages are stored in an array in the order they were printed. Colours
+and prefixes are retained.
+
+Each entry in the array is a reference to an array with elements:
+
+ 0 log key associated with message (Eg primitive name)
+ 1 gettimeofday() floating point epoch
+ 2 reference to array of messages in order
+
+so if multiple messages arrive from a single logkey value they are combined.
+
+ie [ prim1, epoch, \@msg ], [ prim2, epoch2, \@msg ]
+
+Only one epoch stored per log key, since we are only interested in writing
+a single history block per primitive.
+
+Does nothing if logging() is false.
+
+=cut
+
+sub _store_msg {
+  my $self = shift;
+  my $text = shift;
+  return unless $self->logging();
+  my $date = gettimeofday();
+
+  my $LOG = $self->msglog();
+  my $logkey = $self->logkey;
+
+  # see if we have a match to the current logkey already
+  if (@$LOG && $LOG->[-1]->[0] eq $logkey) {
+    # already have a slot
+  } else {
+    # create a new slot
+    push(@$LOG, [ $logkey, $date, [] ] );
+  }
+
+  # Break the supplied text into an array with breaks on newlines
+  my @textlines = split(/\n/,$text);
+
+  # store the message
+  push(@{$LOG->[-1]->[2]}, @textlines);
+
+  return;
+}
+
+
+=end PRIVATE METHODS
 
 =back
 

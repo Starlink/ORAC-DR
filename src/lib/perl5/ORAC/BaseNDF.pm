@@ -27,10 +27,14 @@ use Astro::FITS::Header::NDF;
 use ORAC::Error qw/ :try /;
 use ORAC::Constants qw/ :status /;
 use ORAC::Print;
+use DateTime;
+use DateTime::Format::Strptime;
 
-use vars qw/ $VERSION /;
+use vars qw/ $VERSION $DEBUG /;
 
 $VERSION = sprintf("%d", q$Revision$ =~ /(\d+)/);
+
+$DEBUG = 0;
 
 =head1 METHODS
 
@@ -374,6 +378,136 @@ sub read_wcs {
   return (wantarray ? @wcs : $wcs[0] );
 }
 
+=item B<flush_messages>
+
+Flush any pending oracdr log messages to the history block of the associated
+file or files. Each file in the object is modified. Only new history is written to the file.
+
+  $Frm->flush_messages();
+  $Grp->flush_messages();
+
+Specifying a reference epoch will mean that only a log messages since that
+epoch will be considered.
+
+  $Frm->flush_messages( $refepoch );
+
+=cut
+
+sub flush_messages {
+  my $self = shift;
+  my $refepoch = shift;
+  my @files = $self->files();
+
+  # get the log messages (assume we reuse the global Print object)
+  my @messages = orac_msglog($refepoch);
+
+  # create a hash indexed by LOGKEY+EPOCH pointing to each message
+  my %PENDING;
+  for my $msg (@messages) {
+    # put date first to aid sorting
+    my $hashkey = sprintf("%.3f", $msg->[1] ) . $msg->[0];
+    $PENDING{$hashkey} = $msg;
+  }
+
+  # Date parser for NDF
+  my $Strp = DateTime::Format::Strptime->new(
+                                             locale => 'C',
+                                             pattern => '%Y-%b-%d %H:%M:%S',
+                                             time_zone => 'UTC',);
+
+  my $status = &NDF::SAI__OK;
+  err_begin($status);
+  ndf_begin();
+  for my $f (@files) {
+
+    # open the file for READ
+    ndf_find( &NDF::DAT__ROOT(), $f, my $indf, $status );
+
+    # find out how many history records there are, read them and
+    # put flags in a hash indexed by application name and date
+    ndf_hnrec( $indf, my $nrec, $status );
+
+    # local copy
+    my %towrite = %PENDING;
+    # go through the records in reverse order so we can stop
+    # early if our reference epoch is passed (since we know history
+    # is stored in date order)
+    for my $i (reverse 1..$nrec) {
+      # from our point of view application and date are enough
+      # to test.
+      ndf_hinfo( $indf, 'DATE', $i, my $value, $status );
+
+      # Strip fraction and parse
+      my $frac = 0;
+      if ($value =~ s/(\.\d+)$// ) {
+        $frac = $1;
+      };
+      my $dt = $Strp->parse_datetime( $value );
+      my $epoch = $dt->epoch;
+      $epoch += $frac;
+
+      if (defined $refepoch && $epoch < $refepoch) {
+        last;
+      }
+
+      # need the application name
+      ndf_hinfo( $indf, 'APPLICATION', $i, $value, $status );
+      my $hashkey = sprintf( "%.3f", $epoch ) . $value;
+
+      print "Read key from history in NDF file: $hashkey\n" if $DEBUG;
+
+      # if this is in the pending list remove it since we do not need
+      # to write it.
+      delete $towrite{$hashkey} if exists $towrite{$hashkey};
+    }
+
+    # can now close the file that we opened for READ access
+    ndf_annul( $indf, $status );
+
+    # anything left in %towrite needs to be written to the file
+    if (keys %towrite) {
+      # open for update. NDF requires that you have to open and close
+      # the file for each HISTORY update otherwise it combines the
+      # ndf_hput information into a single history field.
+
+      for my $msg (sort values %towrite) {
+        ndf_open( &NDF::DAT__ROOT, $f, 'UPDATE', 'OLD', my $indf, my $place,
+                  $status );
+
+        print "Processing message...\n" if $DEBUG;
+        # set update date - datetime() ignores nanosecon
+        my $dt = DateTime->from_epoch( time_zone => 'UTC',
+                                       epoch => $msg->[1] );
+        my $str = $dt->datetime();
+        my $nano = sprintf("%.3f",$dt->nanosecond() / 1E9);
+        $nano =~ s/^0//;
+        $str .= $nano;
+        ndf_hsdat( $str, $indf, $status );
+
+        print "Appn: ".$msg->[0]." ($str)\n" if $DEBUG;
+        print "  Message: ".join("\n",@{$msg->[2]})."\n" if $DEBUG;
+
+        my @lines = @{$msg->[2]};
+        ndf_hput( 'NORMAL', $msg->[0], 1, scalar(@lines), @lines,
+                  0, 0, 0, $indf, $status );
+
+        ndf_annul( $indf, $status );
+      }
+
+    }
+
+    last if $status != &NDF::SAI__OK;
+  }
+
+  my $errstr;
+  if ($status != &NDF::SAI__OK) {
+    $errstr = &NDF::err_flush_to_string( $status );
+  }
+
+  ndf_end( $status );
+  err_end( $status );
+  orac_throw($errstr) if defined $errstr;
+}
 
 =back
 
