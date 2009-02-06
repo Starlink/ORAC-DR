@@ -410,6 +410,58 @@ sub parse_obslist {
   return @obs;
 }
 
+=item B<convert_args_to_string>
+
+Convert a hash as returned by
+ORAC::Recipe::PrimitiveParser->_parse_prim_arguments into a string
+that can be output for logging.
+
+  my $str = convert_args_to_string( $args );
+
+Frame objects passed in will be stringified to "Frame::<class>". Group
+objects passed in will be stringified to "Group::<class>". Undefined
+variables will be stringified to "undef".
+
+=cut
+
+sub convert_args_to_string {
+  my %args = @_;
+  if( ! %args ) {
+    return "";
+  }
+  my @strs;
+  foreach my $key ( keys %args ) {
+    if( ! defined( $args{$key} ) ) {
+      push @strs, "$key=undef";
+    } elsif( UNIVERSAL::isa( $args{$key}, "ORAC::Frame" ) ||
+             UNIVERSAL::isa( $args{$key}, "ORAC::Group" ) ) {
+      my $str = "$args{$key}";
+      $str =~ s/^ORAC:://;
+      $str =~ s/=[\w()]+$//;
+      push @strs, "$key=$str";
+    } elsif( UNIVERSAL::isa( $args{$key}, "ORAC::TempFile" ) ) {
+      push @strs, "$key=" . $args{$key}->file;
+    } elsif( UNIVERSAL::isa( $args{$key}, "HASH" ) ) {
+      if( scalar keys %{$args{$key}} <= 5 ) {
+        push @strs, "$key={" . ( join ",", map { "$_=>$args{$key}{$_}" } keys %{$args{$key}} ) . "}";
+      } else {
+        push @strs, "$key={" . ( scalar keys %{$args{$key}} ) . " element hash}";
+      }
+    } elsif( UNIVERSAL::isa( $args{$key}, "ARRAY" ) ) {
+      if( scalar @{$args{$key}} <= 5 ) {
+        push @strs, "$key=[" . ( join ",", @{$args{$key}} ) . "]";
+      } else {
+        push @strs, "$key=[" . ( scalar @{$args{$key}} ) . " element array]";
+      }
+    } else {
+      push @strs, "$key=$args{$key}";
+    }
+  }
+
+  return join( " ", @strs );
+
+}
+
 =item B<get_prim_arg>
 
 Retrieve a primitive argument safely using exists and defined
