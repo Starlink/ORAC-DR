@@ -284,8 +284,9 @@ sub embed {
   push(@lines, "ORAC::Error::FatalError->throw('Could not get compiled primitive \"$primitive\"') unless defined \$_prim_code;");
 
   # Convert the arguments to a hash form (and register with logging system)
-  push(@lines, "orac_loginfo( 'Primitive Arguments' => \"".$arguments."\");");
-  my $primargs = $self->_parse_prim_arguments( $arguments );
+  my $args = $self->_parse_prim_arguments( $arguments );
+  push( @lines, "my \$str = ORAC::General::convert_args_to_string( $args );" );
+  push(@lines, "orac_loginfo( 'Primitive Arguments' => \"\$str\" );" );
 
   # Store the call history in local array for retrieval by primitive
   push(@lines, "my \@_THIS_PRIM_CALLERS_ = @\$_PRIM_CALLERS_; push(\@_THIS_PRIM_CALLERS_,[".
@@ -293,6 +294,7 @@ sub embed {
        ."]);");
 
   # Now run the routine
+  my $primargs = $self->_parse_prim_arguments( $arguments );
   push(@lines, "my \$_prim_exit_status = \$_prim_code->(\$_PRIM_DEPTH_,\\\@_THIS_PRIM_CALLERS_,\$Frm,\$Grp,\$Cal,\$Display,\$Mon,\$ORAC_Recipe_Info,$primargs);");
   push(@lines,"return \$_prim_exit_status if \$_prim_exit_status != ORAC__OK;");
   push(@lines, "}"); # close scope
