@@ -545,9 +545,14 @@ sub logkey {
 Register additional information for logging to the file.
 
   $prt->loginfo( %info );
+  $prt->loginfo( KEY => 'value' );
 
 This information is added to the current set although duplicate keys will
 overwrite information.
+
+An undef will delete the key
+
+  $prt->loginfo( KEY => undef );
 
 An explicit undef will clear the current information.
 
@@ -561,6 +566,9 @@ To obtain the messages use no arguments:
 
   %information = $prt->loginfo();
 
+The information is associated with each change of logkey and so can be
+updated each time a logkey is updated.
+
 =cut
 
 sub loginfo {
@@ -573,6 +581,10 @@ sub loginfo {
       %info = %{$_[0]};
     } else {
       %info = (%{$self->{LogInfo}}, @_);
+    }
+    # remove undefs
+    for my $k (keys %info) {
+      delete $info{$k} unless defined $info{$k};
     }
     %{$self->{LogInfo}} = %info;
   }
@@ -590,8 +602,9 @@ Each entry is a reference to an array with elements
  0 logkey value at time of message
  1 epoch of message
  2 reference to array of messages
+ 3 reference to hash of log information
 
-ie [ prim1, epoch, \@msg ], [ prim2, epoch2, \@msg ]
+ie [ prim1, epoch, \@msg, \%info ], [ prim2, epoch2, \@msg, \%info ]
 
 Messages will be in epoch order. If an argument is given
 this will be a reference epoch. Only messages more recent
@@ -1078,10 +1091,11 @@ Each entry in the array is a reference to an array with elements:
  0 log key associated with message (Eg primitive name)
  1 gettimeofday() floating point epoch
  2 reference to array of messages in order
+ 3 reference to hash of loginfo
 
 so if multiple messages arrive from a single logkey value they are combined.
 
-ie [ prim1, epoch, \@msg ], [ prim2, epoch2, \@msg ]
+ie [ prim1, epoch, \@msg, \%info ], [ prim2, epoch2, \@msg, \%info ]
 
 Only one epoch stored per log key, since we are only interested in writing
 a single history block per primitive.
@@ -1097,15 +1111,17 @@ sub _store_msg {
   return unless $self->logging();
   my $date = gettimeofday();
 
+  # Get the message, key and info
   my $LOG = $self->msglog();
   my $logkey = $self->logkey;
+  my %info = $self->loginfo;
 
   # see if we have a match to the current logkey already
   if (@$LOG && $LOG->[-1]->[0] eq $logkey) {
     # already have a slot
   } else {
     # create a new slot
-    push(@$LOG, [ $logkey, $date, [] ] );
+    push(@$LOG, [ $logkey, $date, [], \%info ] );
   }
 
   # Break the supplied text into an array with breaks on newlines

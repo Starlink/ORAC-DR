@@ -409,16 +409,6 @@ sub flush_messages {
     $PENDING{$hashkey} = $msg;
   }
 
-  # Form the fixed block of text describing the recipe/primitive
-  my %info = orac_loginfo();
-  my @header;
-  for my $key (sort keys %info) {
-    my $value = $info{$key};
-    $value = "<undefined>" unless defined $value;
-    push(@header, "$key: $value");
-  }
-  print "HEADER=\n".join("\n",@header),"\n\n" if $DEBUG;
-
   # Date parser for NDF
   my $Strp = DateTime::Format::Strptime->new(
                                              locale => 'C',
@@ -484,7 +474,7 @@ sub flush_messages {
                   $status );
 
         print "Processing message...\n" if $DEBUG;
-        # set update date - datetime() ignores nanosecon
+        # set update date - datetime() ignores nanosecond
         my $dt = DateTime->from_epoch( time_zone => 'UTC',
                                        epoch => $msg->[1] );
         my $str = $dt->datetime();
@@ -493,7 +483,16 @@ sub flush_messages {
         $str .= $nano;
         ndf_hsdat( $str, $indf, $status );
 
+        # Form the block of text describing the recipe/primitive
+        my %info = %{$msg->[3]};
+        my @header;
+        for my $key (sort keys %info) {
+          my $value = $info{$key};
+          $value = "<undefined>" unless defined $value;
+          push(@header, "$key: $value");
+        }
         print "Appn: ".$msg->[0]." ($str)\n" if $DEBUG;
+        print "  HEADER=\n".join("\n",@header),"\n\n" if $DEBUG;
         print "  Message: ".join("\n",@{$msg->[2]})."\n" if $DEBUG;
 
         # Merge with the header, indenting the messages by 1
