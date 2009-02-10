@@ -283,10 +283,8 @@ sub embed {
   push(@lines, "my \$_prim_code = \$_prim_object->code();");
   push(@lines, "ORAC::Error::FatalError->throw('Could not get compiled primitive \"$primitive\"') unless defined \$_prim_code;");
 
-  # Convert the arguments to a hash form (and register with logging system)
-  my $args = $self->_parse_prim_arguments( $arguments );
-  push( @lines, "my \$str = ORAC::General::convert_args_to_string( $args );" );
-  push(@lines, "orac_loginfo( 'Primitive Arguments' => \"\$str\" );" );
+  # Convert the arguments to a hash form
+  my $primargs = $self->_parse_prim_arguments( $arguments );
 
   # Store the call history in local array for retrieval by primitive
   push(@lines, "my \@_THIS_PRIM_CALLERS_ = @\$_PRIM_CALLERS_; push(\@_THIS_PRIM_CALLERS_,[".
@@ -294,9 +292,9 @@ sub embed {
        ."]);");
 
   # Now run the routine
-  my $primargs = $self->_parse_prim_arguments( $arguments );
   push(@lines, "my \$_prim_exit_status = \$_prim_code->(\$_PRIM_DEPTH_,\\\@_THIS_PRIM_CALLERS_,\$Frm,\$Grp,\$Cal,\$Display,\$Mon,\$ORAC_Recipe_Info,$primargs);");
   push(@lines,"return \$_prim_exit_status if \$_prim_exit_status != ORAC__OK;");
+  push(@lines, "orac_loginfo( 'Primitive Arguments' => \$_PRIM_ARGS_STRING_ );"); # Reset loginfo on exit
   push(@lines, "}"); # close scope
 
   if (wantarray) {
@@ -751,6 +749,8 @@ sub _expand_primitive {
        ($self->debug ? 1 : 0) .";"); # burn in debug status
   push(@parsed, "my %". $prim->name ." = \@_;");
   push(@parsed, "my \$_PRIM_ARGS_ = \\%". $prim->name.";");
+  push(@parsed, "my \$_PRIM_ARGS_STRING_ = ORAC::General::convert_args_to_string( \%\$_PRIM_ARGS_ );");
+  push(@parsed, "orac_loginfo( 'Primitive Arguments' => \$_PRIM_ARGS_STRING_ );");
   push(@parsed, "my \$_PRIM_EPOCH_ = &Time::HiRes::gettimeofday();");
   push(@parsed, "orac_logkey(\"".$prim->name."\");");
 
@@ -854,7 +854,8 @@ sub _expand_primitive {
 
       $embed_count{$primitive_name}++;
       push(@parsed, "#line 1 ".$prim->name() . "_calling$primitive_name");
-      push(@parsed, $self->embed($primitive_name, $rest, [$prim->name(), $lineno, $embed_count{$primitive_name} ]) );
+      push(@parsed, $self->embed($primitive_name, $rest,
+                                 [$prim->name(), $lineno, $embed_count{$primitive_name} ]) );
       push(@children, $primitive_name);
 
       # If it turns out we need this primitive results immediately
@@ -921,6 +922,7 @@ sub _expand_primitive {
       # themselves.
       if ($line !~ /(\#|=).+?->obeyw/x) {
 
+        my (undef, $rtask, $rargs ) = $self->_parse_obey_line( $line );
         # Now add the OBEYW status checking lines
         # prepending the OBEYW_STATUS line
         # Put it in a block of its own to prevent warnings
@@ -929,10 +931,16 @@ sub _expand_primitive {
         push (@parsed,
               "#line 1 ".$prim->name()."_calling_$remote",
               "{  # Create block to prevent warnings from my OBEYW_STATUS",
+              "orac_loginfo( 'Primitive Arguments' => undef);",  # clear arguments
+              "orac_loginfo( 'Engine Arguments' => \"$rargs\");",
+              "orac_logkey( \"".$prim->name."->"."\".uc(\"$rtask\") );",
               ($debug_obey ? "my \$_obey_start_time = [Time::HiRes::gettimeofday];" : ""),
               "#line $lineno ". $prim->name,
               'my $OBEYW_STATUS = ' .$line,
               "#line 3 ".$prim->name()."_calling_$remote",
+              "orac_loginfo( 'Engine Arguments' => undef );",
+              "orac_loginfo( 'Primitive Arguments' => \$_PRIM_ARGS_STRING_ );", # put back arguments
+              "orac_logkey( \"". $prim->name ."\");",
              );
 
         # If debugging add a statement before the status is checked
