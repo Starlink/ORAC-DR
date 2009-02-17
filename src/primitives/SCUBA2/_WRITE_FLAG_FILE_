@@ -1,0 +1,103 @@
+#! -*-perl-*-
+
+=head1 NAME
+
+_WRITE_FLAG_FILE_
+
+=head1 SYNOPSIS
+
+_WRITE_FLAG_FILE_ FRAME=$Frm FILE=$myflagfile
+
+=head1 DESCRIPTION
+
+Write an ORAC-DR flag file (also known as an OK file) which can be
+read by an external task. The flag file contains a single
+filename. The naming scheme for the flag file consists of a prefix
+(which defaults to the name of the current subarray), the UT date and
+the current observation number, ending with a C<.ok> extension. The
+flag file is a hidden file and thus the name begins with a dot C<.>
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<FILE>
+
+Name of the data file to write into the flag file. May have the suffix
+C<.sdf>, but if not this will be added. Default is the file associated
+with the Group object (see below).
+
+=item B<FRAME>
+
+Frame object to obtain parameters from. Default is $Frm.
+
+=item B<GROUP>
+
+Group object to obtain parameters from. Default is $Grp.
+
+=item B<PREFIX>
+
+Prefix for the flag file name. Default is to use the name of the
+current subarray obtained from the header.
+
+=back
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+Copyright (C) 2009 the University of British Columbia.  All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
+=cut
+
+# Get Frame object to use
+my $Frmobj = get_prim_arg( $_PRIM_ARGS_, "FRAME", $Frm );
+
+# Get Group object to use
+my $Grpobj = get_prim_arg( $_PRIM_ARGS_, "GROUP", $Grp );
+
+# Get prefix to use for flag file name
+my $prefix = get_prim_arg( $_PRIM_ARGS_, "PREFIX", $Frmobj->hdr('SUBARRAY') );
+# Catch cases where data are from multiple subarrays and hdr method
+# returns undef
+$prefix = "s" unless (defined $prefix);
+
+# Get name of file to write into flag file
+my $filename = get_prim_arg( $_PRIM_ARGS_, "FILE", $Grpobj->file );
+$filename .= $Grpobj->filesuffix unless ( $filename =~ /.sdf$/);
+
+# Format the observation number
+my $obsnum = sprintf "%05d", (defined $Grpobj->uhdr('ORAC_OBSERVATION_NUMBER')) ? $Grpobj->uhdr('ORAC_OBSERVATION_NUMBER') : $Frmobj->uhdr('ORAC_OBSERVATION_NUMBER');
+
+# Define filename
+my $okfilename = ".".$prefix.$Frmobj->hdrval('UTDATE')."_".$obsnum.".ok";
+
+# Open the file for writing
+my $okfile = new IO::File("> $okfilename");
+if ( defined $okfile ) {
+  print $okfile $filename ."\n";
+  # Store filename in header of Group object if successful
+  $Grpobj->uhdr("FLAGFILE", $okfilename);
+  orac_print "Flag file $okfilename written\n";
+} else {
+  orac_warn "Unable to create .ok file, $okfilename: $!\n";
+}
+# Close the file - ready for further processing
+$okfile->close;
+
