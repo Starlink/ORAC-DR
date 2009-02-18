@@ -42,6 +42,13 @@ used if baselining has not been done. [5]
 The number of pixels to smooth in both spatial axes when smoothing to
 determine baselines. [3]
 
+=item SURVEY = STRING (Given)
+
+If supplied, run QA using the given survey's QA parameters. If 'all'
+is given, then run QA using every survey's QA parameters. If left
+undefined, then use the survey as supplied in the SURVEY FITS
+header. ['']
+
 =back
 
 =head1 NOTES
@@ -97,6 +104,23 @@ my $freqsmooth = get_prim_arg( $_PRIM_ARGS_, "FREQUENCY_SMOOTH", 25 );
 my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
 my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 5 );
 my $spatsmooth = get_prim_arg( $_PRIM_ARGS_, "SPATIAL_SMOOTH", 3 );
+my $survey = get_prim_arg( $_PRIM_ARGS_, "SURVEY", undef );
+
+my @surveys = qw/ GBS NGS SLS Telescope /;
+
+# Set up a list of surveys to analyse.
+my @analyse_surveys;
+if( defined( $survey ) ) {
+  if( uc( $survey ) eq 'ALL' ) {
+    @analyse_surveys = @surveys;
+  } else {
+    push @analyse_surveys, $survey;
+  }
+} else {
+  push @analyse_surveys, ( defined( $Frm->hdr( "SURVEY" ) ) ?
+                           $Frm->hdr( "SURVEY" )            :
+                           "Telescope" );
+}
 
 # Figure out what we're doing with groups/frames.
 my @objs;
@@ -218,21 +242,24 @@ if( $group != 1 || ( $group == 1 && $Grp->lastmember( $Frm ) ) ) {
       # Do QA tests.
       _SETUP_QA_OPTIONS_
       my %opts = %{$_SETUP_QA_OPTIONS_{'OPTS'}};
-      $opts{'survey'} = ( defined( $Frm->hdr( "SURVEY" ) ) ?
-                          $Frm->hdr( "SURVEY" )            :
-                          "Telescope" );
-
       my $qaparamfile = $Cal->qaparams;
       my $qa = new JSA::QA( file => $qaparamfile );
 
-      my $RMSVAR_SPEC = $qa->get_data( key => 'RMSVAR_SPEC', %opts );
-      orac_print " Frequency RMS uniformity ";
-      if( $perc < $RMSVAR_SPEC * 100 ) {
-        orac_print( " passed ", "bold white on_green" );
-      } else {
-        orac_print( " failed ", "bold white on_red" );
+      # Go through each survey and report QA results.
+      foreach my $analyse_survey ( sort @analyse_surveys ) {
+
+        $opts{'survey'} = $analyse_survey;
+
+        my $RMSVAR_SPEC = $qa->get_data( key => 'RMSVAR_SPEC', %opts );
+        orac_print " Frequency RMS uniformity ";
+        if( $perc < $RMSVAR_SPEC * 100 ) {
+          orac_print( " passed ", "bold white on_green" );
+        } else {
+          orac_print( " failed ", "bold white on_red" );
+        }
+        orac_say " for $opts{'survey'} for current map.";
       }
-      orac_say " for $opts{'survey'} for current map.";
+
       orac_say "";
 
     }

@@ -22,6 +22,13 @@ sense. []
 The file to perform quality assurance calculations on. If not defined,
 this primitive will throw an error.
 
+=item SURVEY = STRING (Given)
+
+If supplied, run QA using the given survey's QA parameters. If 'all'
+is given, then run QA using every survey's QA parameters. If left
+undefined, then use the survey as supplied in the SURVEY FITS
+header. ['']
+
 =back
 
 =head1 NOTES
@@ -44,7 +51,7 @@ KAPPA: STATS.
 
 =head1 REQUIRED PERL MODULES
 
-None.
+JSA::QA.
 
 =head1 AUTHORS
 
@@ -57,12 +64,17 @@ Rights Reserved.
 
 =cut
 
+use JSA::QA;
+
 my $file = get_prim_arg( $_PRIM_ARGS_, "FILE", undef );
 if( ! defined( $file ) ) {
   orac_throw "FILE argument must be passed to _QA_MAP_RMS_SPATIAL_UNIFORMITY_: programming error";
 }
 
 my $central = get_prim_arg( $_PRIM_ARGS_, "CENTRAL", undef );
+my $survey = get_prim_arg( $_PRIM_ARGS_, "SURVEY", undef );
+
+my @surveys = qw/ GBS NGS SLS Telescope /;
 
 orac_say "Checking RMS spatial uniformity for $file.";
 
@@ -88,49 +100,57 @@ if( ( $dims->[0] < 3 && $dims->[1] < 3 ) || $region eq "(~0,~0)" ) {
   ( $ORAC_STATUS, my $numpix ) = $Mon{'kappa_mon'}->get( "stats", "numpix" );
   ( $ORAC_STATUS, my $numbad ) = $Mon{'kappa_mon'}->get( "stats", "numbad" );
 
-  # Obtain QA parameters.
-  _SETUP_QA_OPTIONS_
-  my %opts = %{$_SETUP_QA_OPTIONS_{'OPTS'}};
-  $opts{'survey'} = ( defined( $Frm->hdr( "SURVEY" ) ) ?
-                      $Frm->hdr( "SURVEY" )            :
-                      "Telescope" );
-
-  my $qaparamfile = $Cal->qaparams;
-  my $qa = new JSA::QA( file => $qaparamfile );
-
-  my $RMSVAR_MAP = $qa->get_data( key => 'RMSVAR_MAP', %opts );
-  my $BADPIX_MAP = $qa->get_data( key => 'BADPIX_MAP', %opts );
-
   orac_say sprintf( " minimum: %.2f maximum: %.2f mean: %.2f",
                     $min, $max, $mean );
-
-  orac_print " Spatial RMS uniformity ";
-
-  if( $min > $mean * ( 1 - $RMSVAR_MAP ) &&
-      $max < $mean * ( 1 + $RMSVAR_MAP ) ) {
-
-    orac_print( " passed ", "bold white on_green" );
-
-  } else {
-    orac_print( " failed ", "bold white on_red" );
-  }
-
-  orac_say " for $opts{'survey'} for $file.";
-  orac_say "";
 
   orac_say sprintf( " Number of pixels used: %5d", $numpix );
   orac_say sprintf( " Number of bad pixels:  %5d", $numbad );
   orac_say sprintf( " Percentage bad: %.2f%%", $numbad / $numpix * 100 );
+  orac_say "";
 
-  orac_print " QA based on bad pixels in final map ";
-
-  if( $numbad / $numpix < $BADPIX_MAP ) {
-    orac_print( " passed ", "bold white on_green" );
-
+  # Set up a list of surveys to analyse.
+  my @analyse_surveys;
+  if( defined( $survey ) ) {
+    if( uc( $survey ) eq 'ALL' ) {
+      @analyse_surveys = @surveys;
+    } else {
+      push @analyse_surveys, $survey;
+    }
   } else {
-    orac_print( " failed ", "bold white on_red" );
+    push @analyse_surveys, ( defined( $Frm->hdr( "SURVEY" ) ) ?
+                             $Frm->hdr( "SURVEY" )            :
+                             "Telescope" );
   }
 
-  orac_say " for $opts{'survey'} for $file.";
-  orac_say "";
+  # Obtain QA parameters.
+  _SETUP_QA_OPTIONS_
+  my %opts = %{$_SETUP_QA_OPTIONS_{'OPTS'}};
+  my $qaparamfile = $Cal->qaparams;
+  my $qa = new JSA::QA( file => $qaparamfile );
+
+  # Go through the surveys and report QA results.
+  foreach my $analyse_survey ( sort @analyse_surveys ) {
+
+    $opts{'survey'} = $analyse_survey;
+
+    my $RMSVAR_MAP = $qa->get_data( key => 'RMSVAR_MAP', %opts );
+    my $BADPIX_MAP = $qa->get_data( key => 'BADPIX_MAP', %opts );
+
+    orac_print " Spatial RMS uniformity ";
+    if( $min > $mean * ( 1 - $RMSVAR_MAP ) &&
+        $max < $mean * ( 1 + $RMSVAR_MAP ) ) {
+      orac_print( " passed ", "bold white on_green" );
+    } else {
+      orac_print( " failed ", "bold white on_red" );
+    }
+    orac_say " for $opts{'survey'} for $file.";
+
+    orac_print " QA based on bad pixels in final map ";
+    if( $numbad / $numpix < $BADPIX_MAP ) {
+      orac_print( " passed ", "bold white on_green" );
+    } else {
+      orac_print( " failed ", "bold white on_red" );
+    }
+    orac_say " for $opts{'survey'} for $file.\n";
+  }
 }
