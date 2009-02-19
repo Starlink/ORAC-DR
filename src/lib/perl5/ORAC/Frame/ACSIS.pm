@@ -517,7 +517,7 @@ sub subsysnrs {
   } else {
     @numbers = map { $_->{SUBSYSNR} } @{$hdr->{SUBHEADERS}};
   }
-  return (wantarray ? @numbers : scalar(@numbers));
+  return (wantarray ? sort @numbers : scalar(@numbers));
 }
 
 =back
