@@ -1,0 +1,160 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_REMOVE_FLAT_FIELD_ - Remove flat-field effects.
+
+=head1 DESCRIPTION
+
+This primitive removes a global flat-field from a baselined time-series
+cube. It collapses the cube along the frequency and time axes, then
+normalizes the flux in the receptors to the tracking receptor's
+flux. It then uses this multiplicative factor to normalize the input
+time-series data.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item GROUP = INTEGER (Given)
+
+How to process group files. 0 means use the current Frame object. 1
+means use the current Group object. 2 means use each Frame member of
+the current Group object. [0]
+
+=item REFERENCE_RECEPTOR = STRING (Given)
+
+Which receptor is the reference receptor to which the others are
+normalized. ['H05'}
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive should only be used when you can be assured that each
+receptor has sampled the same amount of flux across the
+observation. Rasters of clouds are good candidates, jiggles or grids
+are not.
+
+=item *
+
+This primitive is suitable for baselined time-series ACSIS cubes.
+
+=item *
+
+The cube is collapsed along the time and frequency axes using the
+'sum' estimator.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The flat-fielded time-series cube with suffix _ff
+
+=back
+
+=head1 TASKS
+
+KAPPA: CDIV, COLLAPSE, DIV, MANIC, STATS.
+
+=head1 REQUIRED PERL MODULES
+
+JCMT::ACSIS::Array.
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+my $reference_receptor = get_prim_arg( $_PRIM_ARGS_, "REFERENCE_RECEPTOR", 'H05' );
+
+my $isok = eval { require JCMT::ACSIS::Array; 1; };
+if( ! $isok ) {
+  orac_warn "Could not load the JCMT::ACSIS::Array Perl module: $@\n";
+  orac_warn "Cannot remove flat-field.\n";
+} else {
+
+  my @Objs;
+  if( $group == 0 ) {
+    push @Objs, $Frm;
+  } elsif( $group == 1 ) {
+    push @Objs, $Grp;
+  } elsif( $group == 2 ) {
+    @Objs = $Grp->members;
+  }
+
+  # Only do this if we're not doing a Group, or if we are doing a
+  # Group and this Frame is the last member of the Group.
+  if( $group != 1 ||
+      ( $group == 1 && $Grp->lastmember( $Frm ) ) ) {
+
+    foreach my $Obj ( @Objs ) {
+
+      foreach my $i ( 1 .. $Obj->nfiles ) {
+
+        # Set up some temporary files.
+        my $temp1file = new ORAC::TempFile;
+        my $temp2file = new ORAC::TempFile;
+        my $temp3file = new ORAC::TempFile;
+        my $temp4file = new ORAC::TempFile;
+
+        my ( $in, $out ) = $Obj->inout( "_ff", $i );
+
+        # Retrieve dimensions of input cube.
+        _GET_DIMENSIONS_ FILE=$in
+        my $lbound = $_GET_DIMENSIONS_{'LBOUND'};
+        my $ubound = $_GET_DIMENSIONS_{'UBOUND'};
+
+        # Collapse along the time axis.
+        my $params = "in=$in out=$temp1file estimator=sum wlim=0.0 axis=3";
+        $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+        # Collapse along the velocity axis.
+        $params = "in=$temp1file out=$temp2file estimator=sum wlim=0.0 axis=1";
+        $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+        # Normalize to the value in the reference receptor.
+        my $array = new JCMT::ACSIS::Array( File => $temp2file );
+        my $pixel = $array->pixel( $reference_receptor );
+        $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp2file($pixel)" );
+        my( $ORAC_STATUS, $refvalue ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+        $Mon{'kappa_mon'}->obeyw( "cdiv", "in=$temp2file out=$temp3file scalar=$refvalue" );
+
+        # Grow this back into a cube.
+        $params = "in=$temp3file out=$temp4file axes=[0,1,0] lbound=[";
+        $params .= join( ',', $lbound->[0], $lbound->[2] );
+        $params .= "] ubound=[";
+        $params .= join( ',', $ubound->[0], $ubound->[2] );
+        $params .= "]";
+        $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+
+        # Divide this flat-field cube into the input cube, creating
+        # the output.
+        $params = "in1=$in in2=$temp4file out=$out";
+        $Mon{'kappa_mon'}->obeyw( "div", "$params" );
+
+        # Update the Object.
+        $Obj->file( $i, $out );
+
+        orac_say "$in to $out:";
+        orac_say " Removed flat-field.\n";
+
+      }
+    }
+  }
+}
