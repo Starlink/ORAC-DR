@@ -168,6 +168,28 @@ sub file_from_bits {
 
 }
 
+=item B<file_from_name>
+
+Override the version in the base class since SCUBA group files
+use a non-standard component order.
+
+Does not use the B<name> method.
+
+=cut
+
+sub file_from_name {
+  my $self = shift;
+  my $file;
+  my @allmembers = $self->allmembers;
+  if (@allmembers) {
+    my $Frm = shift(@allmembers);
+    my $number = $Frm->number;
+    my $ut = $Frm->hdr( "ORACUT" );
+    $file = $self->file_from_bits( $ut, $number );
+  }
+  return $file;
+}
+
 =item B<gui_id>
 
 The file identification for comparison with the B<ORAC::Display>
