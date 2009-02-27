@@ -6,7 +6,7 @@ _ANALYZE_FLATFIELD_ - Analyze the current flatfield solution
 
 =head1 SYNOPSIS
 
-_ANALYZE_FLATFIELD_ 
+_ANALYZE_FLATFIELD_ ERR=1
 
 =head1 DESCRIPTION
 
@@ -21,9 +21,16 @@ This primitive supports the following arguments
 
 =over 4
 
-=item B<VERBOSE>
+=item B<ERR>
 
-How much verbiage do you want? Default is 1 (yes, lots please).
+Flag to denote whether to analyze the error in the responsivities
+rather than the responsivities themselves. Default is 0 (false), use
+the responsivity data.
+
+=item B<CLIP>
+
+Level at which to clip the data before calculating statistics, given
+in number of standard deviations. Default is 0, no clipping.
 
 =back
 
@@ -43,8 +50,8 @@ Insert kappa tasks here....
 
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
-Copyright (C) 2008 the University of British Columbia.  All Rights
-Reserved.
+Copyright (C) 2008-2009 the University of British Columbia.  All
+Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -66,15 +73,19 @@ USA
 # compare the new values with the previous flatfield and flag any
 # large differences
 
-# create a flag file containing the names of each subarray that was processed
-# (similar naming convention to pointing/focus)
-
-# @outfiles contains the list of output flatfield solutions - store in
-# the calibration object - must set the appropriate subarray first
-
-
 # Flatfield can only be calculated after the observation has ended
 if ( $Frm->uhdr("OBSEND") ) {
+
+  # Get ERR argument
+  my $err = get_prim_arg( $_PRIM_ARGS_, "ERR", 0 );
+
+  # Which component to analyze?
+  my $comp = ( $err ) ? "err" : "data";
+
+  # Level to clip the data before calculating statistics?
+  my $clip = get_prim_arg( $_PRIM_ARGS_, "CLIP", "" );
+
+  my $preftext = ( $err ) ? "Uncertainties in" : "Values of";
 
   # Loop over subarrays... Use subgrps method to return list of Groups
   # sorted by subarray
@@ -95,74 +106,63 @@ if ( $Frm->uhdr("OBSEND") ) {
       if ($respfile eq $flatfile ) {
 	orac_warn "No responsivity file for subarray $subarray\n";
       } else {
-	# Analyze resp file - use HISTAT
-	_FIND_IMAGE_STATISTICS_ IMAGE=$respfile COMP=err
+	# Analyze current resp file - use STATS for sigma-clipping
+	_FIND_IMAGE_STATISTICS_ IMAGE=$respfile COMP=$comp VERBOSE=0 CLIP=$clip HISTAT=0 
 	my %results = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
-	# Now get the std deviation using plain STATS
-	_FIND_IMAGE_STATISTICS_ IMAGE=$respfile COMP=err HISTAT=0 VERBOSE=0
-	$results{SIGMA} = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
+	# Now get the median and mode using HISTAT
+	_FIND_IMAGE_STATISTICS_ IMAGE=$respfile COMP=$comp VERBOSE=0 CLIP=$clip
+	$results{MEDIAN} = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
+	$results{MODE} = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MODE};
 
-	# Print out results from current solution
-	orac_print ("---- Uncertainties in responsivity fits for subarray $subarray ---- \n", "green");
-	foreach my $stat ( qw/ MEAN MEDIAN SIGMA MAX MIN / ) {
+	# Calculate how many values have been dropped due to
+	# sigma-clipping and what proportion that represents
+	my $totalgood = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
+	my $dn = $totalgood - $results{NUMGOOD};
+	my $dnpc = sprintf "%5.1f", 100.0 * $dn/$totalgood;
+
+	# Obtain statistics for the previous solution
+	my %previous;
+	# Retrieve the previous entry from the index file
+	my $previous = $Cal->resp;
+	if ( defined $previous ) {
+	  # Find stats with STATS to get sigma-clipped statistics
+	  _FIND_IMAGE_STATISTICS_ IMAGE=$previous COMP=$comp VERBOSE=0 CLIP=$clip HISTAT=0 
+	  %previous = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
+	  # Now get the median and mode using HISTAT
+	  _FIND_IMAGE_STATISTICS_ IMAGE=$previous COMP=$comp VERBOSE=0 CLIP=$clip
+          $previous{MEDIAN} = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
+
+	  # Add this file to the Frame object for display purposes
+	  $Frmobj->uhdr( "PREVIOUS", $previous );
+	}
+
+	# Print out results from current solution and calculate
+	# percentage changes from previous solution
+	orac_print ("---- $preftext responsivity fits for subarray $subarray ---- \n", "green");
+	orac_print ("---- Clipped at $clip sigma ($dn solutions omitted = $dnpc %) ----\n", "green") 
+	  if ($clip ne "");
+	foreach my $stat ( qw/ MEDIAN MEAN SIGMA MAX MIN / ) {
 	  my $value = sprintf "%11.4f", $results{$stat};
+	  my $diff = sprintf "%11.4f", ($results{$stat} - $previous{$stat});
+	  my $incdec = ( $diff == 0) ? "change" : 
+	               (( $diff > 0 ) ? "increase" : "decrease");
+	  my $deltapc = sprintf "%4.1f", 100*abs($diff / $previous{$stat});
 	  # Align the output for easy reading
 	  my $outstat = sprintf "%-8s", $stat;
-	  orac_print ( " $outstat = $value A/W\n", "green");
+	  orac_print ( " $outstat = $value A/W ( $deltapc % $incdec )\n", "green");
 	}
-	orac_print (" NGOOD    = $results{NUMGOOD} solutions\n", "green");
-
-	# Compare these values with the previous ones if they exist
-	my %previous;
-	if ( defined $Cal->respstats ) {
-	  %previous = %{ $Cal->respstats($subarray) };
-	  orac_print "\nComparing with previous solution\n";
-	} else {
-	  # If nothing stored in the in-memory Cal system, attempt to
-	  # get a suitable entry from the index file
-	  my $previous = $Cal->resp;
-	  if ( defined $previous ) {
-	    orac_print "\nComparing with previous solution in file $previous\n";
-	    _FIND_IMAGE_STATISTICS_ IMAGE=$previous COMP=err VERBOSE=0
-	    %previous = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
-	    # Now get the std deviation using plain STATS
-	    _FIND_IMAGE_STATISTICS_ IMAGE=$respfile COMP=err HISTAT=0 VERBOSE=0
-            $previous{SIGMA} = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
-	  }
+	# Now print out the change in the number of good solutions
+	my $numstring = "no change";
+	my $numdiff = $results{NUMGOOD} - $previous{NUMGOOD};
+	my $deltapc = sprintf "%4.1f", 100*abs($numdiff / $previous{NUMGOOD});
+	if ( $numdiff > 0 ) {
+	  $numstring = "$numdiff / $deltapc % more";
+	} elsif ( $numdiff < 0 ){
+	  $numstring = -$numdiff ." / $deltapc % fewer";
 	}
-	# Bulk comparisons go here if we have the data to compare
-	if ( %previous ) {
-	  # Inform the user of the changes between the current and
-	  # previous solutions
-	  orac_print ("---- Changes from previous flatfield for $subarray ----\n", 
-	             "green");
-	  foreach my $stat ( qw/ MEAN MEDIAN SIGMA MAX MIN / ) {
-	    my $diff = sprintf "%11.4f", ($results{$stat} - $previous{$stat});
-	    my $incdec = ( $diff == 0) ? "change" : 
-	                 (( $diff > 0 ) ? "increase" : "decrease");
-	    my $deltapc = 100*abs($diff / $results{$stat});
-	    # Align the output for easy reading
-	    my $outstat = sprintf "%-8s", $stat;
-	    orac_print ( " $outstat = $diff A/W ( $deltapc % $incdec)\n", "green");
-	  }
-
-	  # Now print out the change in the number of good solutions
-	  my $numstring = " no change in the number of";
-	  my $numdiff = $results{NUMGOOD} - $previous{NUMGOOD};
-	  if ( $numdiff > 0 ) {
-	    $numstring = "$numdiff more";
-	  } elsif ( $numdiff < 0 ){
-	    $numstring = -$numdiff ." fewer";
-	  }
-	  orac_print (" NGOOD    = $numstring good solutions\n", "green");
-
-	} else {
-	  # Nothing to compare - tell user
-	  orac_warn "Unable to retrieve previous responsivity data\n";
-	}
-
-	# Store current results
-	$Cal->respstats( $subarray, \%results );
+	orac_print (" NGOOD    = $results{NUMGOOD} solutions ( $numstring )\n", "green");
+	# Now display the results
+	_DISPLAY_RESPONSIVITIES_ FRAME=$Frmobj CLIP=$clip
       }
 
       # Now create an ok file to indicate processing is complete
