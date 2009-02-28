@@ -39,7 +39,7 @@ use ORAC::Print;
 use vars qw/$VERSION/;
 
 # Let the object know that it is derived from ORAC::Frame;
-use base qw/ ORAC::Frame::NDF /;
+use base qw/ ORAC::JSAFile ORAC::Frame::NDF /;
 
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
 
