@@ -1005,11 +1005,17 @@ PREVIOUS tag is requested).
 If the given tag does not exist, then this function returns
 false. Otherwise returns true.
 
+Automatic header syncing is disabled inside this method.
+
 =cut
 
 sub tagretrieve {
   my $self = shift;
   if (@_) {
+    # Do not want the files() method to trigger header rewrites of the
+    # old files
+    my $sync = $self->allow_header_sync();
+    $self->allow_header_sync( 0 );
     my $tag = shift;
     if (exists $self->tags->{$tag}) {
       # Store the previous values
@@ -1017,6 +1023,7 @@ sub tagretrieve {
       # Retrieve the current values
       $self->files( @{ $self->tags->{$tag} } );
     }
+    $self->allow_header_sync( $sync );
     return exists $self->tags->{$tag};
   }
   return 0;
