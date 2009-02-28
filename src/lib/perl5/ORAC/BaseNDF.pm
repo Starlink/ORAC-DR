@@ -29,6 +29,8 @@ use ORAC::Constants qw/ :status /;
 use ORAC::Print;
 use DateTime;
 use DateTime::Format::Strptime;
+use Starlink::Versions qw/ starversion_global /;
+use ORAC::Version;
 
 use vars qw/ $VERSION $DEBUG /;
 
@@ -69,15 +71,30 @@ sub collate_headers {
 
   # Update the version headers.
   my $pipevers = new Astro::FITS::Header::Item( Keyword => 'PIPEVERS',
-                                                Value   => $VERSION,
+                                                Value   => ORAC::Version->getVersion,
                                                 Comment => 'Pipeline version',
                                                 Type    => 'STRING' );
+
+  # We assume Starlink is the Engine if we are using NDF
+  my ($vstring, $commit, $commitdate) = starversion_global();
   my $engvers = new Astro::FITS::Header::Item( Keyword => 'ENGVERS',
-                                               Value   => 1,
+                                               Value   => $commit,
                                                Comment => 'Algorithm engine version',
                                                Type    => 'STRING' );
+
+  # Need to choose most recent commit date - converted to number
+  if ($commitdate) {
+    $commitdate = $commitdate->strftime('%Y%m%d%H%M%S' );
+  }
+  my $procvers = new Astro::FITS::Header::Item( Keyword => 'PROCVERS',
+                                                Value   => $commitdate,
+                                                Comment => 'Date of most recent commit',
+                                                Type    => 'STRING' );
+
+
   $header->append( $pipevers );
   $header->append( $engvers );
+  $header->append( $procvers );
 
   # Insert the PRODUCT header. This comes from the $self->product
   # method. If the return value from this method is undefined, do not
