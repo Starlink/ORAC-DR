@@ -41,6 +41,7 @@ use Starlink::Versions qw/ :Funcs /; # Need to know which kappa version
 use ORAC::Print;
 use ORAC::Constants qw/:status/;        #  Constants
 use ORAC::General;                      # Max and min
+use ORAC::TempFile;
 
 use ORAC::Msg::EngineLaunch;
 
@@ -524,10 +525,10 @@ sub config_regions {
 
   }
 
-  # Now we can create the 2x2  and 4x4 grids
-  foreach my $n (2,4) {
-    my $nx = $n;
-    my $ny = $n;
+  # Now we can create the 2x2, 4x2 and 4x4 grids
+  foreach my $n (2,3,4) {
+    my $nx = ($n % 2 == 0) ? $n : $n+1;
+    my $ny = ($n % 2 == 0) ? $n : $n-1;
     my $ntot = $nx * $ny;
 
     my $prefix = "ORAC${n}_";
@@ -543,9 +544,9 @@ sub config_regions {
     # for ORAC-DR
 
     # The region number must be relative to some offset
-    # For 2x2 the numbering should start at 1, for 4x4 numbering
-    # should start at 17
-    my $offset = ($n == 2 ? 0 : 16);
+    # For 2x2 the numbering should start at 1, for 4x2 the numbering
+    # should start at 9 and for 4x4 numbering should start at 17
+    my $offset = ($n == 2 ? 0 : ($n == 3 ? 8 : 16));
 
     for my $i (1..$ntot) {
       orac_print("Looping $i..." ,'cyan') if $DEBUG;
@@ -1152,7 +1153,7 @@ sub image {
   return $status if $status != ORAC__OK;
 
   # Do the obeyw
-  $status = $self->obj->obeyw("display", "device=$device in=$file axes clear=true $optstring accept");
+  $status = $self->obj->obeyw("display", "device=$device in=$file axes clear=true $optstring badcol=grey50 accept");
   if ($status != ORAC__OK) {
     orac_err("Error displaying image\n");
     orac_err("Trying to execute: display device=$device axes clear=true $optstring in=$file\n");
@@ -1915,8 +1916,10 @@ Arguments:
   ZAUTOSCALE - use full Z-range
   NBINS      - Number of bins to be used for histogram calculation
   COMP       - Component to display (Data (default), Variance or Error)
+  SIGMA      - Number of sigma to clip data before computing histogram
 
-Default is for autoscaling and for NBINS=20.
+Default is for autoscaling and for NBINS=20. Note that the presence of
+SIGMA overrides ZMIN/ZMAX.
 
 ORAC status is returned.
 
@@ -1977,15 +1980,19 @@ sub histogram {
 
   if (exists $options{ZAUTOSCALE}) {
     unless ($options{ZAUTOSCALE}) {
-      # Set the Y range
-      my $min = 0;
-      my $max = 1;
-      $min = $options{ZMIN} if defined $options{ZMIN};
-      $max = $options{ZMAX} if defined $options{ZMAX};
-      if (starversion_gt('kappa','0.15-3')) { # Histogram changed at 0.15-4
-	$range = "range='$min,$max'";
+      if (defined $options{SIGMA}) {
+	$range = "range='sig,$options{SIGMA}'";
       } else {
-	$range = "range=[$min,$max]";
+	# Set the Y range
+	my $min = 0;
+	my $max = 1;
+	$min = $options{ZMIN} if defined $options{ZMIN};
+	$max = $options{ZMAX} if defined $options{ZMAX};
+	if (starversion_gt('kappa','0.15-3')) { # Histogram changed at 0.15-4
+	  $range = "range='$min,$max'";
+	} else {
+	  $range = "range=[$min,$max]";
+	}
       }
     }
   }
