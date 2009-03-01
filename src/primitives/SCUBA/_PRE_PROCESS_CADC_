@@ -1,0 +1,161 @@
+=head1 NAME
+
+_PRE_PROCESS_ - Perform initialisation steps for SCUBA data reduction
+
+=head1 SYNOPSIS
+
+ _PRE_PROCESS_
+
+=head1 DESCRIPTION
+
+Primitive for pre-processing SCUBA data.
+This includes removing the nods, splitting
+the raw data into Data, Variance and Quality.
+
+This primitive must be run at the start of all SCUBA data
+reduction sequences involving SURF
+
+=head1 NOTES
+
+This routine can be run on SKYDIP data if required (although it
+is optional) but can not be used to override the calibration temperatures
+in a SKYDIP. This is currently a feature but will be changed if a
+demand is seen.
+
+=head1 TASKS
+
+The following tasks are used:
+
+=over 4
+
+=item B<SURF>
+
+C<REDUCE_SWITCH>
+
+Requires SURF V1.5-3 or newer when processing skydips (for the 
+TARRAY parameter).
+
+=back
+
+=head1 OUTPUT FILES
+
+The following files are generated:
+
+=over 4
+
+=item B<*_resw>
+
+Output frame after pre-processing. This frame can not be displayed.
+
+=back
+
+=head1 AUTHOR
+
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998-2003 Particle Physics and Astronomy Research
+Council. All Rights Reserved.
+
+=cut
+
+# First thing to do is set the current filename
+# Do not want to use the raw filename. This means that
+# I am assuming this is the first primitive in the pipeline
+# to access the demodulated data. Frossie won't like this
+# and neither do I. This can not be helped if we are
+# using SURF since REDUCE_SWITCH must be run before
+# anything else.
+
+# One test I will do is only to change the file() if
+# it is the same as raw(). This will let the file be processed
+# before I get to it since I won't change it if that is the case
+
+my $raw = $Frm->raw;
+$raw =~ s/\.sdf$//; # Very naughty - should use method for this
+
+my ($in,$out);
+if ($raw eq $Frm->file) {
+
+  # Note that the template() Frame method must be changed to
+  # understand the change in naming convention here since that
+  # method works by replacing numbers with other numbers (without
+  # knowing the original number)
+
+  # Set in to be the raw without the _dem
+  $in = $raw;
+  $out = $Frm->inout("_resw");
+  $out =~ s/_dem//;
+
+#  $out = $Frm->file("o".$Frm->number);
+#  $in = $raw; # Cant use raw as such since this has .sdf extension
+} else {
+  # Standard way of generating input and output names
+  ($in, $out) = $Frm->inout("_resw");
+}
+
+
+# Take default parameters for REDUCE_SWITCH
+# Use TARRAY=TRUE for SKYDIPS.
+# and it is the only thing that can be done with a skydip.
+# Assume that the SKYDIP tasks knows better than us what the 
+# temperatures should be. If the temperatures need to be overridden
+# in the future then we will need to add extra arguments or have 
+# an separate primitive.
+# Abort if older than V1.5-3
+
+my $optargs = '';
+if ($Frm->hdr('MODE') eq 'SKYDIP') {
+  if (starversion_lt('surf','V1.5-3')) {
+    orac_warn "Skydip pre-processing can only be automated with SURF V1.5-3 or newer\n";
+    my $ORAC_STATUS = ORAC__ERROR;
+  } else {
+    $optargs = 'TARRAY=TRUE';
+  }
+}
+
+# if this very first step fails then we should remove it from
+# the group since there is nothing that can happen further.
+# We must do this explicitly until we modify the pipeline
+# such that we can automatically remove from the group on error
+# if we have not reached a group processing step yet.
+# We should in principal do this explicitly in all frame primitives
+# but since I am lazy we do it in the most important step.
+my $mystat = $Mon{surf_mon}->obeyw("reduce_switch", "in=$in out=$out $optargs reset accept");
+if ($mystat != ORAC__OK) {
+      # Remove the frame from the group
+      orac_warn "Error in very first stage of processing. Removing from group.\n";
+      $Frm->isgood(0);
+
+      # Indicate that we have changed group membership
+      # [this is not automatic in batch mode]
+      $Grp->check_membership;
+
+      # Need bad status to abort
+      my $ORAC_STATUS = ORAC__ERROR;
+
+}
+
+my $provstat = $Mon{'ndfpack_mon'}->obeyw("provadd","ndf=$out parent=$in isroot creator='oracdr' moretext='OBSIDSS=$raw'");
+#if ($provstat != ORAC__OK) {
+if (0) {
+      # Remove the frame from the group
+      orac_warn "Error setting provenance. Removing from group.\n";
+      $Frm->isgood(0);
+
+      # Indicate that we have changed group membership
+      # [this is not automatic in batch mode]
+      $Grp->check_membership;
+
+      # Need bad status to abort
+      my $ORAC_STATUS = ORAC__ERROR;
+
+}
+
+$Frm->file($out);                       # obligatory update step
+
+orac_printp "Pre-processing complete\n";
+
+
+
