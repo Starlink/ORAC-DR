@@ -50,149 +50,152 @@ my $Sig2N = get_prim_arg( $_PRIM_ARGS_, "S2N", 2 );
 # Check that we are processing the last frame of the group
 if ($Grp->lastmember($Frm) && $Grp->num >=1) {
 
-  # Loop over sub-instruments and group members
-  # and generate
-  my @out;  # Averaged cube names
+    # Loop over sub-instruments and group members
+    # and generate
+    my @out;  # Averaged cube names
 
-  # Loop over sub instruments that are found in the current frame
-  foreach my $sub ($Frm->subs) {
+    # Loop over sub instruments that are found in the current frame
+    foreach my $sub ($Frm->subs) {
 
-    # Now need to find all the input frames for this sub-instrument
-    # that are part of this group
-    my @members = $Grp->membernamessub($sub);
-    my $ncubes = $#members + 1;
+        # Now need to find all the input frames for this sub-instrument
+        # that are part of this group
+        my @members = $Grp->membernamessub($sub);
+        my $ncubes = $#members + 1;
 
 
-    # No point averaging one cube
-    if ($ncubes > 1) {
-      # Generate a temp output name from the group
-      my $out = $Grp->grpoutsub($sub) . '_avcube';
-      push(@out, $out);
+        # No point averaging one cube
+        if ($ncubes > 1) {
+            # Generate a temp output name from the group
+            my $out = $Grp->grpoutsub($sub) . '_avcube';
+            push(@out, $out);
 
-      orac_print "Calculating mean of IQU cubes for sub $sub from $ncubes cubes.\n";
+            orac_print "Calculating mean of IQU cubes for sub $sub from $ncubes cubes.\n";
 
-      if (defined $Mon{ccdpack_reg}) {
+            if (defined $Mon{ccdpack_reg}) {
 
-	orac_print "Mosaicing the following frames:\n".join("\n",@members)."\n";
+                orac_print "Mosaicing the following frames:\n".join("\n",@members)."\n";
 
-	# If block to make it easy to switch between mosaicing methods
-	# - default is to mosaic cubes all in one go.
-	if (1) {
+                # If block to make it easy to switch between mosaicing methods
+                # - default is to mosaic cubes all in one go.
+                if (1) {
 
-	  # Mosaic all 3 planes in one go (only need to mosaic planes
-	  # separately if we are scaling and correcting for zero point
-	
-	  # Create text file for mosaic names
-	  my $tmp = new ORAC::TempFile || 
-	    die "Error opening makemos input file\n";
+                    # Mosaic all 3 planes in one go (only need to mosaic planes
+                    # separately if we are scaling and correcting for zero point
 
-	  print {$tmp->handle} join("\n", @members) ."\n";
-	  $tmp->handle->close || die "Error closing makemos input file\n";
+                    # Create text file for mosaic names
+                    my $tmp = new ORAC::TempFile ||
+                        die "Error opening makemos input file\n";
 
-	  # Arguments
-	  my $args = "in=^". $tmp->file ." noscale nozero method=mean usevar genvar title='Average IQU cube'";
+                    print {$tmp->handle} join("\n", @members) ."\n";
+                    $tmp->handle->close || die "Error closing makemos input file\n";
 
-	  # Run CCDPACK makemos
-	  $Mon{ccdpack_reg}->obeyw("makemos","$args out=${out}");
+                    # Arguments
+                    my $args = "in=^". $tmp->file .
+                        " noscale nozero method=mean usevar genvar title='Average IQU cube'";
 
-	} else {
+                    # Run CCDPACK makemos
+                    $Mon{ccdpack_reg}->obeyw("makemos","$args out=${out}");
 
-	  # Do this instead if we want to turn on scale or zero correction
+                } else {
 
-	  # need to mosaic the I, Q and U planes separately and then
-	  # regenerate the cube
+                    # Do this instead if we want to turn on scale or zero correction
 
-	  my @planes = qw(I Q U);
+                    # need to mosaic the I, Q and U planes separately and then
+                    # regenerate the cube
 
-	  foreach my $i (0..$#planes) {
-	    my $plane = $i + 1;
-	    orac_print "Mosaicing the $planes[$i] data\n";
+                    my @planes = qw(I Q U);
 
-	    # Create text file for mosaic names
-	    my $tmp = new ORAC::TempFile || 
-	      die "Error opening makemos input file\n";
+                    foreach my $i (0..$#planes) {
+                        my $plane = $i + 1;
+                        orac_print "Mosaicing the $planes[$i] data\n";
 
-	    print {$tmp->handle} join("(,,$plane)\n", @members) ."(,,$plane)\n";
-	    $tmp->handle->close || die "Error closing makemos input file\n";
+                        # Create text file for mosaic names
+                        my $tmp = new ORAC::TempFile || 
+                            die "Error opening makemos input file\n";
 
-	    # We are using the first member as a reference
-	    my $ref = $members[0] . "(,,$plane)";
+                        print {$tmp->handle} join("(,,$plane)\n", @members) ."(,,$plane)\n";
+                        $tmp->handle->close || die "Error closing makemos input file\n";
 
-	    my $args = "in=^". $tmp->file ." noscale nozero method=mean usevar genvar title='Average $planes[$i]'";
+                        # We are using the first member as a reference
+                        my $ref = $members[0] . "(,,$plane)";
 
-	    # Run CCDPACK -- currently with noscale/nozero [simply change
-	    # previous line to turn on these corrections]
-	    $Mon{ccdpack_reg}->obeyw("makemos","$args out=${out}_mos$planes[$i] ref=$ref");
+                        my $args = "in=^". $tmp->file .
+                            " noscale nozero method=mean usevar genvar title='Average $planes[$i]'";
 
-	  }
+                        # Run CCDPACK -- currently with noscale/nozero [simply change
+                        # previous line to turn on these corrections]
+                        $Mon{ccdpack_reg}->obeyw("makemos","$args out=${out}_mos$planes[$i] ref=$ref");
 
-	  orac_print "Putting cube back together...\n";
-	  # Now paste the planes back into the cube
-	  $Mon{kappa_mon}->obeyw("paste","in=${out}_mos$planes[0] p1=${out}_mos$planes[1] p2=${out}_mos$planes[2] title='Average IQU cube' out=$out");
+                    }
 
-	}
+                    orac_print "Putting cube back together...\n";
+                    # Now paste the planes back into the cube
+                    $Mon{kappa_mon}->obeyw("paste","in=${out}_mos$planes[0] p1=${out}_mos$planes[1] p2=${out}_mos$planes[2] title='Average IQU cube' out=$out");
 
-	# Copy world coordinates
-	$Mon{ndfpack_mon}->obeyw("wcscopy","ndf=$out like=$members[0] ok=true");
+                }
 
-      } else {
-	orac_print "MAKEMOS not available -- using KAPPA instead.\n This will lead to truncation of non-overlapping regions\n";
+                # Copy world coordinates
+                $Mon{ndfpack_mon}->obeyw("wcscopy","ndf=$out like=$members[0] ok=true");
 
-	# Kappa maths can only combine up to 26 input files
-	if ($#members > 25) {
-	  orac_err("Can only process a maximum of 26 IQU cubes\n");
-	  my $ORAC_STATUS = ORAC__ERROR;
-	}
+            } else {
+                orac_print "MAKEMOS not available -- using KAPPA instead.\n";
+                orac_print "This will lead to truncation of non-overlapping regions\n";
 
-	# Create maths string (not unicode compliant!)
-	# generate "ia + ib + ic .... " expression for kappa maths
-	my $exp = '('.join ("+",grep {$_ = "i".chr($_+96)} (1..$ncubes)) . ")/$ncubes";
+                # Kappa maths can only combine up to 26 input files
+                if ($#members > 25) {
+                    orac_err("Can only process a maximum of 26 IQU cubes\n");
+                    my $ORAC_STATUS = ORAC__ERROR;
+                }
 
-	# Generate "ia=cube1 ib=cube2...."
-	my $args = join(" ", grep {
-	  $_ = "i".chr($_+96)."=" . $members[$_-1];
-	} (1..$ncubes));
+                # Create maths string (not unicode compliant!)
+                # generate "ia + ib + ic .... " expression for kappa maths
+                my $exp = '('.join ("+",grep {$_ = "i".chr($_+96)} (1..$ncubes)) . ")/$ncubes";
 
-	# Run maths
-	$Mon{kappa_mon}->obeyw("maths","exp='$exp' out=$out $args title='Average IQU'");
-	
-      }
-    } else {
-      push(@out, $members[0]);
+                # Generate "ia=cube1 ib=cube2...."
+                my $args = join(" ", grep {
+                    $_ = "i".chr($_+96)."=" . $members[$_-1];
+                                } (1..$ncubes));
+
+                # Run maths
+                $Mon{kappa_mon}->obeyw("maths","exp='$exp' out=$out $args title='Average IQU'");
+
+            }
+        } else {
+            push(@out, $members[0]);
+        }
+
     }
 
-  }
+    # Dont really like this next bit but I cant work out how to
+    # have a primitive that truly can be used for frame and
+    # group calculations
 
-  # Dont really like this next bit but I cant work out how to 
-  # have a primitive that truly can be used for frame and
-  # group calculations
+    my $TFrm = new $Frm;
+    {
+        # Now we want to call the frame cal_pol primitive
+        # Need to create a $Frm that maskes the main $Frm
+        # So that the primitive will use our pseudo frame
+        # This frame will know nothing except the file names
+        # so dont expect to use header information or sub instruments
+        my $Frm = new $TFrm;
 
-  my $TFrm = new $Frm;
-  {
-    # Now we want to call the frame cal_pol primitive
-    # Need to create a $Frm that maskes the main $Frm
-    # So that the primitive will use our pseudo frame
-    # This frame will know nothing except the file names
-    # so dont expect to use header information or sub instruments
-    my $Frm = new $TFrm;
+        $Frm->files(@out);  # Load it up with the output cube names
 
-    $Frm->files(@out);  # Load it up with the output cube names
+        # Copy the important headers from the first member of group
+        $Frm->hdr("OBJECT", $Grp->members->[0]->hdr("OBJECT"));
+        $Frm->hdr("RUN", $Grp->members->[0]->hdr("RUN") . "[GRP]");
 
-    # Copy the important headers from the first member of group
-    $Frm->hdr("OBJECT", $Grp->members->[0]->hdr("OBJECT"));
-    $Frm->hdr("RUN", $Grp->members->[0]->hdr("RUN") . "[GRP]");
+        # The only problem is that the gui_id will return sN**
+        # rather than gN**. Will live with this for now
+        # Easiest fix is the make the prefix configurable in the Frame
+        # object ->   $Frm->gui_prefix('g');
 
-    # The only problem is that the gui_id will return sN**
-    # rather than gN**. Will live with this for now
-    # Easiest fix is the make the prefix configurable in the Frame
-    # object ->   $Frm->gui_prefix('g');
+        _CALCULATE_POLARISATION_FROM_CUBE_FRAME_ BIN=$bin S2N=$Sig2N
 
-    _CALCULATE_POLARISATION_FROM_CUBE_FRAME_ BIN=$bin S2N=$Sig2N
+        # Note that we do not erase the average cube
 
-    # Note that we do not erase the average cube
-
-  }
-  undef $TFrm;
+    }
+    undef $TFrm;
 
 }
 
