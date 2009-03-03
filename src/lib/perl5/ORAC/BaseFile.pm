@@ -701,7 +701,8 @@ the contents of file(1).
   ($in, $out) = $Frm->inout($suffix, 2);
 
 will return the second file name and the name of the new output
-file derived from this.
+file derived from this. An explicit undefined value will cause the
+file() method to be invoked without arguments.
 
 The last suffix is not removed if it consists solely of numbers.
 This is to prevent truncation of raw data filenames.
@@ -718,7 +719,8 @@ sub inout {
   my $num = 1; 
   if (@_) { $num = shift; }
 
-  my $infile = $self->file($num);
+  # pass no argument if the number is not defined
+  my $infile = $self->file(defined $num ? $num : ());
 
   # Chop off at last underscore
   # Must be able to do this with a clever pattern match
