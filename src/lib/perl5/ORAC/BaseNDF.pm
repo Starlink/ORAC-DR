@@ -178,6 +178,8 @@ sub readhdr {
     }
   }
 
+  Carp::confess( "Asked to read header from zero files!" ) unless @files;
+
   my $Error;
 
   # Just read the NDF fits headers
