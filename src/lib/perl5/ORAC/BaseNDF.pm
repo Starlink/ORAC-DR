@@ -298,7 +298,8 @@ stored in e.g. the World Coordinate System.
   $Frm->sync_headers(1);
 
 This method takes one optional parameter, the index of the file to
-sync headers for. This index starts at 1 instead of 0.
+sync headers for. This index starts at 1 instead of 0. If a non-number
+is given it is assumed to be the name of a file.
 
 Headers are only synced if the value returned by C<allow_header_sync>
 is true.
@@ -310,7 +311,7 @@ sub sync_headers {
 
   return unless $self->allow_header_sync;
 
-  my $index = 0;
+  my $index;
 
   if( @_ ) {
     $index = shift;
@@ -318,8 +319,12 @@ sub sync_headers {
 
   my @files;
 
-  if( $index ) {
-    push @files, $self->file( $index );
+  if( defined $index ) {
+    if ($index =~ /^\d+$/) {
+      push @files, $self->file( $index );
+    } else {
+      @files = ($index);
+    }
   } else {
     @files = $self->files;
   }
