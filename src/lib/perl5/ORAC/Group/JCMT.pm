@@ -32,7 +32,7 @@ use Carp;
 use ORAC::Group::NDF;
 
 # Let the object know that it is derived from ORAC::Frame;
-use base qw/ ORAC::Group::NDF /;
+use base qw/ ORAC::JSAFile ORAC::Group::NDF /;
 
 use vars qw/$VERSION/;
 '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
@@ -254,8 +254,47 @@ sub nfiles {
   return $frm->nfiles;
 }
 
+=item B<inout>
 
+Local version of C<inout>. This version does not take a numeric argument
+since that would force the file() method to return the sub-instrument as
+part of the name.
 
+  ($inroot, $outroot) = $Grp->inout( "reb" );
+  $outroot = $Grp->inout( "reduced" );
+
+=cut
+
+sub inout {
+  my $self = shift;
+  my $suffix = shift;
+  # force root name to be used
+  return $self->SUPER::inout( $suffix, undef );
+}
+
+=item B<files>
+
+Returns all the filenames associated with the group.
+
+ @files = $Grp->files();
+
+Unlike the standard implementation this can not be used to update the list
+of files since that is derived from the root filename and the sub-instruments.
+
+=cut
+
+sub files {
+  my $self = shift;
+
+  # Find last frame
+  my $frm = $self->frame( $self->num );
+
+  if (defined $frm) {
+    return map { $self->grpoutsub( $_ ) } $frm->subs;
+  } else {
+    return ();
+  }
+}
 
 =back
 
