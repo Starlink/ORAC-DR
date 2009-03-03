@@ -48,7 +48,7 @@ my $bin = get_prim_arg( $_PRIM_ARGS_, "BIN", 2 );
 my $Sig2N = get_prim_arg( $_PRIM_ARGS_, "S2N", 2 );
 
 # Check that we are processing the last frame of the group
-if ($Grp->lastmember($Frm) && $Grp->num >=1) {
+if ($Grp->lastmember($Frm)) {
 
     # Loop over sub-instruments and group members
     # and generate
@@ -62,108 +62,104 @@ if ($Grp->lastmember($Frm) && $Grp->num >=1) {
         my @members = $Grp->membernamessub($sub);
         my $ncubes = $#members + 1;
 
+        # Generate group even for a single member.
+        # Generate a temp output name from the group
+        my $outroot = $Grp->inout( "iqu" );
+        $Grp->file($outroot);
+        my $out = $Grp->grpoutsub($sub);
+        push(@out, $out);
 
-        # No point averaging one cube
-        if ($ncubes > 1) {
-            # Generate a temp output name from the group
-            my $out = $Grp->grpoutsub($sub) . '_avcube';
-            push(@out, $out);
+        orac_print "Calculating mean of IQU cubes for sub $sub from $ncubes cubes.\n";
 
-            orac_print "Calculating mean of IQU cubes for sub $sub from $ncubes cubes.\n";
+        if (defined $Mon{ccdpack_reg}) {
 
-            if (defined $Mon{ccdpack_reg}) {
+            orac_print "Mosaicing the following frames:\n".join("\n",@members)."\n";
 
-                orac_print "Mosaicing the following frames:\n".join("\n",@members)."\n";
+            # If block to make it easy to switch between mosaicing methods
+            # - default is to mosaic cubes all in one go.
+            if (1) {
 
-                # If block to make it easy to switch between mosaicing methods
-                # - default is to mosaic cubes all in one go.
-                if (1) {
+                # Mosaic all 3 planes in one go (only need to mosaic planes
+                # separately if we are scaling and correcting for zero point
 
-                    # Mosaic all 3 planes in one go (only need to mosaic planes
-                    # separately if we are scaling and correcting for zero point
+                # Create text file for mosaic names
+                my $tmp = new ORAC::TempFile ||
+                    die "Error opening makemos input file\n";
 
-                    # Create text file for mosaic names
-                    my $tmp = new ORAC::TempFile ||
-                        die "Error opening makemos input file\n";
+                print {$tmp->handle} join("\n", @members) ."\n";
+                $tmp->handle->close || die "Error closing makemos input file\n";
 
-                    print {$tmp->handle} join("\n", @members) ."\n";
-                    $tmp->handle->close || die "Error closing makemos input file\n";
+                # Arguments
+                my $args = "in=^". $tmp->file .
+                    " noscale nozero method=mean usevar genvar title='Average IQU cube'";
 
-                    # Arguments
-                    my $args = "in=^". $tmp->file .
-                        " noscale nozero method=mean usevar genvar title='Average IQU cube'";
-
-                    # Run CCDPACK makemos
-                    $Mon{ccdpack_reg}->obeyw("makemos","$args out=${out}");
-
-                } else {
-
-                    # Do this instead if we want to turn on scale or zero correction
-
-                    # need to mosaic the I, Q and U planes separately and then
-                    # regenerate the cube
-
-                    my @planes = qw(I Q U);
-
-                    foreach my $i (0..$#planes) {
-                        my $plane = $i + 1;
-                        orac_print "Mosaicing the $planes[$i] data\n";
-
-                        # Create text file for mosaic names
-                        my $tmp = new ORAC::TempFile || 
-                            die "Error opening makemos input file\n";
-
-                        print {$tmp->handle} join("(,,$plane)\n", @members) ."(,,$plane)\n";
-                        $tmp->handle->close || die "Error closing makemos input file\n";
-
-                        # We are using the first member as a reference
-                        my $ref = $members[0] . "(,,$plane)";
-
-                        my $args = "in=^". $tmp->file .
-                            " noscale nozero method=mean usevar genvar title='Average $planes[$i]'";
-
-                        # Run CCDPACK -- currently with noscale/nozero [simply change
-                        # previous line to turn on these corrections]
-                        $Mon{ccdpack_reg}->obeyw("makemos","$args out=${out}_mos$planes[$i] ref=$ref");
-
-                    }
-
-                    orac_print "Putting cube back together...\n";
-                    # Now paste the planes back into the cube
-                    $Mon{kappa_mon}->obeyw("paste","in=${out}_mos$planes[0] p1=${out}_mos$planes[1] p2=${out}_mos$planes[2] title='Average IQU cube' out=$out");
-
-                }
-
-                # Copy world coordinates
-                $Mon{ndfpack_mon}->obeyw("wcscopy","ndf=$out like=$members[0] ok=true");
+                # Run CCDPACK makemos
+                $Mon{ccdpack_reg}->obeyw("makemos","$args out=${out}");
 
             } else {
-                orac_print "MAKEMOS not available -- using KAPPA instead.\n";
-                orac_print "This will lead to truncation of non-overlapping regions\n";
 
-                # Kappa maths can only combine up to 26 input files
-                if ($#members > 25) {
-                    orac_err("Can only process a maximum of 26 IQU cubes\n");
-                    my $ORAC_STATUS = ORAC__ERROR;
+                # Do this instead if we want to turn on scale or zero correction
+
+                # need to mosaic the I, Q and U planes separately and then
+                # regenerate the cube
+
+                my @planes = qw(I Q U);
+
+                foreach my $i (0..$#planes) {
+                    my $plane = $i + 1;
+                    orac_print "Mosaicing the $planes[$i] data\n";
+
+                    # Create text file for mosaic names
+                    my $tmp = new ORAC::TempFile || 
+                        die "Error opening makemos input file\n";
+
+                    print {$tmp->handle} join("(,,$plane)\n", @members) ."(,,$plane)\n";
+                    $tmp->handle->close || die "Error closing makemos input file\n";
+
+                    # We are using the first member as a reference
+                    my $ref = $members[0] . "(,,$plane)";
+
+                    my $args = "in=^". $tmp->file .
+                        " noscale nozero method=mean usevar genvar title='Average $planes[$i]'";
+
+                    # Run CCDPACK -- currently with noscale/nozero [simply change
+                    # previous line to turn on these corrections]
+                    $Mon{ccdpack_reg}->obeyw("makemos","$args out=${out}_mos$planes[$i] ref=$ref");
+
                 }
 
-                # Create maths string (not unicode compliant!)
-                # generate "ia + ib + ic .... " expression for kappa maths
-                my $exp = '('.join ("+",grep {$_ = "i".chr($_+96)} (1..$ncubes)) . ")/$ncubes";
-
-                # Generate "ia=cube1 ib=cube2...."
-                my $args = join(" ", grep {
-                    $_ = "i".chr($_+96)."=" . $members[$_-1];
-                                } (1..$ncubes));
-
-                # Run maths
-                $Mon{kappa_mon}->obeyw("maths","exp='$exp' out=$out $args title='Average IQU'");
+                orac_print "Putting cube back together...\n";
+                # Now paste the planes back into the cube
+                $Mon{kappa_mon}->obeyw("paste","in=${out}_mos$planes[0] p1=${out}_mos$planes[1] p2=${out}_mos$planes[2] title='Average IQU cube' out=$out");
 
             }
-        } else {
-            push(@out, $members[0]);
-        }
 
+            # Copy world coordinates
+            $Mon{ndfpack_mon}->obeyw("wcscopy","ndf=$out like=$members[0] ok=true");
+
+        } else {
+            orac_print "MAKEMOS not available -- using KAPPA instead.\n";
+            orac_print "This will lead to truncation of non-overlapping regions\n";
+
+            # Kappa maths can only combine up to 26 input files
+            if ($#members > 25) {
+                orac_err("Can only process a maximum of 26 IQU cubes\n");
+                my $ORAC_STATUS = ORAC__ERROR;
+            }
+
+            # Create maths string (not unicode compliant!)
+            # generate "ia + ib + ic .... " expression for kappa maths
+            my $exp = '('.join ("+",grep {$_ = "i".chr($_+96)} (1..$ncubes)) . ")/$ncubes";
+
+            # Generate "ia=cube1 ib=cube2...."
+            my $args = join(" ", grep {
+                $_ = "i".chr($_+96)."=" . $members[$_-1];
+                            } (1..$ncubes));
+
+            # Run maths
+            $Mon{kappa_mon}->obeyw("maths","exp='$exp' out=$out $args title='Average IQU'");
+
+        }
     }
 
     # Dont really like this next bit but I cant work out how to
