@@ -29,32 +29,31 @@ Rights Reserved.
 
 =cut
 
-my $inroot = $Grp->file;
+if ($Grp->lastmember($Frm)) {
 
-# Need to hack a mini inout method
-my ($junk, $suffix) = $Grp->_split_fname( $inroot );
-pop(@$junk); # remove last entry
-push(@$junk, "reduced");
-my $outroot = $Grp->_join_fname( $junk, $suffix );
+    # Get all the input files
+    my @infiles = map { $Grp->grpoutsub($_) } $Frm->subs;
 
-# derive each file name
-for my $sub ($Frm->subs) {
-
-    # current filename
-    my $in = $Grp->grpoutsub( $sub );
-
-    # No inout method
+    # Change the suffix
+    my $outroot = $Grp->inout( "reduced" );
     $Grp->file( $outroot );
-    my $out = $Grp->grpoutsub( $sub );
-    $Grp->file( $inroot );
 
-    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$out" );
+    # Get all the output files
+    my @outfiles = map { $Grp->grpoutsub($_) } $Frm->subs;
 
-    orac_print "$in to $out:\n Tagged as reduced product.\n";
-
+    # Allow syncing
+    my $prevsync = $Grp->allow_header_sync;
     $Grp->allow_header_sync(1);
-    $Grp->product( "reduced" );
-    $Grp->sync_headers($out);
-}
 
-$Grp->file( $outroot );
+    # Copy to new files
+    for my $i (0..$#infiles) {
+        $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$infiles[$i] out=$outfiles[$i]" );
+
+        orac_print "$infiles[$i] to $outfiles[$i]:\n";
+        orac_print " Tagged as reduced group product.\n";
+
+        $Grp->product( "reduced" );
+        $Grp->sync_headers($outfiles[$i]);
+    }
+    $Grp->allow_header_sync($prevsync);
+}
