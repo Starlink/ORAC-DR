@@ -157,8 +157,6 @@ if ( $jcmt != '' ) then
 
       chmod g+rws $ORAC_DATA_OUT
 
-      setenv RTD_REMOTE_DIR $ORAC_DATA_OUT
-
     else if ($df_out > 1) then
 
       # get the name of the NFS host
