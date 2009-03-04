@@ -268,14 +268,14 @@ sub launch {
 
   # Set the RTD_REMOTE_DIR environment variable to $ORAC_DATA_OUT
   # if it's not already set.
-  if( ! defined( $ENV{'RTD_REMOTE_DIR'} ) ) {
+  if( ! ( $ENV{'ORAC_RESPECT_RTD_REMOTE'} && defined( $ENV{'RTD_REMOTE_DIR'} ) ) ) {
     if (exists $ENV{ORAC_DATA_OUT} && defined $ENV{ORAC_DATA_OUT}) {
       $ENV{'RTD_REMOTE_DIR'} = $ENV{'ORAC_DATA_OUT'};
     } else {
-      croak "ORAC-DR requires that either ORAC_DATA_OUT or RTD_REMOTE_DIR are set";
+      croak "ORAC_DATA_OUT does not exist whilst attempting to set RTD_REMOTE_DIR";
     }
   }
-
+print "rtd: " . $ENV{'RTD_REMOTE_DIR'} . "\n";
  # First attempt to simply connect
   my $sock = $self->_open_gaia_socket();
 
