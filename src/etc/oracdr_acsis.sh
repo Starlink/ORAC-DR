@@ -113,7 +113,11 @@ export ORAC_DATA_CAL=$ORAC_CAL_ROOT/acsis
 export ORAC_DATA_ROOT=/jcmtdata
 export ORAC_DATA_IN=$ORAC_DATA_ROOT/raw/acsis/$oracut/
 export ORAC_DATA_OUT=$ORAC_DATA_ROOT/reduced/acsis/$oracut/
- 
+
+if( -d ${ORAC_DATA_OUT} ); then
+    export RTD_REMOTE_DIR=$ORAC_DATA_OUT
+fi
+
 # screen things
 export ORAC_PERSON=bradc
 export ORAC_LOOP='flag'
