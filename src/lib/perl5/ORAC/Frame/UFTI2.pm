@@ -40,7 +40,7 @@ use ORAC::Constants;
 # Let the object know that it is derived from ORAC::Frame::UFTI;
 use base qw/ORAC::Frame::UFTI/;
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 =head1 PUBLIC METHODS
 

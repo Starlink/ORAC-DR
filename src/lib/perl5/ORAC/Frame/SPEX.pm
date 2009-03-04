@@ -39,7 +39,7 @@ use ORAC::General;
 # Let the object know that it is derived from ORAC::Frame::UKIRT;
 use base qw/ORAC::Frame::UKIRT/;
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 =head1 PUBLIC METHODS
 

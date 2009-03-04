@@ -40,7 +40,7 @@ use Carp;
 
 use vars qw/$VERSION/;
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 
 # Need to do some tests before using this for real

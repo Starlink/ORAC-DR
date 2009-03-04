@@ -28,7 +28,7 @@ use Carp;
 use strict;
 use ORAC::Print;
 
-$VERSION = sprintf("%d", q$Revision: 7007 $ =~ /(\d+)/);
+$VERSION = '1.0';
 
 =head1 PUBLIC METHODS
 

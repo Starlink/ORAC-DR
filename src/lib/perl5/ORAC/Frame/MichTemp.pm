@@ -40,7 +40,7 @@ use ORAC::Constants;
 # Let the object know that it is derived from ORAC::Frame;
 use base qw/ORAC::Frame::UKIRT/;
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 # Alias file_from_bits as pattern_from_bits.
 *pattern_from_bits = \&file_from_bits;

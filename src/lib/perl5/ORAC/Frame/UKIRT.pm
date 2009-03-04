@@ -44,7 +44,7 @@ use Starlink::HDSPACK qw/copobj/;
 # Let the object know that it is derived from ORAC::Frame::NDF;
 use base qw/ORAC::Frame::NDF/;
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 
 # standard error module and turn on strict

@@ -49,7 +49,7 @@ use vars qw/$VERSION/;
 # Special Name of the NDF that contains the HEADER component of an HDS
 my $HDR = 'HEADER';
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 =head1 PUBLIC METHODS
 

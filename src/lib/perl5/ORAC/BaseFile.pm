@@ -27,7 +27,7 @@ use ORAC::Print;
 use Astro::FITS::Header;
 use Astro::FITS::HdrTrans 1.00;
 
-$VERSION = sprintf("%d", q$Revision$ =~ /(\d+)/);
+$VERSION = '1.0';
 
 =head1 PUBLIC METHODS
 

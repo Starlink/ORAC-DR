@@ -29,7 +29,7 @@ use Carp;
 use File::Spec;
 
 use vars qw/ $VERSION /;
-$VERSION = sprintf("%d", q$Revision: 7007 $ =~ /(\d+)/);
+$VERSION = '1.0';
 
 =head1 CLASS METHODS
 

@@ -61,7 +61,7 @@ $DEBUG = 0;
   orac_list_generic_observing_modes
   orac_determine_loop_behaviour /;
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 
 # Cleanup END blocks. Useful if helper tasks create temporary

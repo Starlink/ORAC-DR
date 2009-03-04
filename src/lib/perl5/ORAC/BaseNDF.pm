@@ -34,7 +34,7 @@ use ORAC::Version;
 
 use vars qw/ $VERSION $DEBUG /;
 
-$VERSION = sprintf("%d", q$Revision$ =~ /(\d+)/);
+$VERSION = '1.0';
 
 $DEBUG = 0;
 

@@ -23,7 +23,7 @@ Algorithm engine definitions can be found in C<ORAC::Inst::Defn>.
 use Carp;
 use strict;
 use vars qw/ $VERSION /;
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 use base qw/ ORAC::Inst /;
 

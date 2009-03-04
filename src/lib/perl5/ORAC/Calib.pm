@@ -44,7 +44,7 @@ use ORAC::Print;
 use ORAC::Inst::Defn qw/ orac_determine_calibration_search_path /;
 use File::Spec;
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 # Setup the object structure
 

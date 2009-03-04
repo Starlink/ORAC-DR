@@ -35,7 +35,7 @@ use ORAC::General;
 # Set inheritance.
 use base qw/ ORAC::Group::UFTI /;
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 # Set the group fixed parts for the four chips.
 my %groupfixedpart = ( '1' => 'gw',

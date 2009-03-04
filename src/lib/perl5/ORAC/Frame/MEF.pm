@@ -42,7 +42,7 @@ use Astro::FITS::CFITSIO qw(:longnames :constants);
 
 use vars qw/$VERSION/;
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 =head1 PUBLIC METHODS
 
@@ -418,34 +418,4 @@ Copyright (C) 2003-2006 Cambridge Astronomy Survey Unit. All Rights Reserved.
 
 =cut
 
-#
-#
-# $Log$
-# Revision 1.8  2004/09/27 07:00:47  jrl
-# Modified so that extension headers inherit the primary header
-#
-# Revision 1.7  2004/09/22 21:49:12  bradc
-# merge from acsis-dev-20040607, use pattern_from_bits()
-#
-# Revision 1.6.2.1  2004/06/30 23:25:01  bradc
-# alias file_from_bits as pattern_from_bits
-#
-# Revision 1.6  2004/05/05 11:41:58  jrl
-# Added routine fitssuffix
-#
-# Revision 1.5  2003/10/24 08:48:49  jrl
-# Modifed to use new version Astro::FITS::Header
-#
-# Revision 1.3  2003/09/25 10:03:54  jrl
-# Updated to for MEFs and SEFs
-#
-# Revision 1.2  2003/09/17 13:13:32  jrl
-# Small updates to error handling and to cope with extra processing steps
-#
-# Revision 1.1  2003/06/30 09:40:17  jrl
-# Initial entry into CVS
-#
-#
-#
- 
 1;

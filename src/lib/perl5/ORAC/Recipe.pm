@@ -43,7 +43,7 @@ use ORAC::Basic;
 use ORAC::Error qw/ :try /;
 use ORAC::Inst::Defn qw/ orac_determine_recipe_search_path /;
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 =head1 METHODS
 

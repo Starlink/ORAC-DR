@@ -27,7 +27,7 @@ use base qw/ORAC::Frame::NDF/;
 use Carp;
 use strict;
 
-$VERSION = sprintf("%d", q$Revision: 7007 $ =~ /(\d+)/);
+$VERSION = '1.0';
 
 =head1 PUBLIC METHODS
 

@@ -39,7 +39,7 @@ use ORAC::Constants qw/:status/;
   orac_force_abspath orac_chdir_output_dir
   /;
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 $Beep    = 0;       # True if ORAC should make noises
 

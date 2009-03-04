@@ -59,7 +59,7 @@ use vars qw/$VERSION @EXPORT @ISA /;
 @ISA = qw/Exporter/;
 @EXPORT = qw/orac_proc_kill orac_ipcs_kill/;
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 =head1 SUBROUTINES
 

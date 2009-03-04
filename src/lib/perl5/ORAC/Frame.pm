@@ -36,7 +36,7 @@ use ORAC::Constants;
 use ORAC::BaseFile;
 use base qw/ ORAC::BaseFile /;
 
-$VERSION = sprintf("%d", q$Revision$ =~ /(\d+)/);
+$VERSION = '1.0';
 
 =head1 PUBLIC METHODS
 
