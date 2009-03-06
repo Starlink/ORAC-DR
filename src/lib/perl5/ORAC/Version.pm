@@ -28,6 +28,8 @@ use Carp;
 
 use File::Spec;
 
+use Starlink::Versions;
+
 use vars qw/ $VERSION /;
 $VERSION = sprintf("%d", q$Revision: 7007 $ =~ /(\d+)/);
 
@@ -61,39 +63,59 @@ my $CACHE_VER;
 sub getVersion {
   my $class = shift;
   return $CACHE_VER if defined $CACHE_VER;
-  my $version;
+  my ( $branch, $version, $date ) = oracversion_global();
 
-  my $verfile = File::Spec->catfile( $ENV{'ORAC_DIR'}, ".version" );
-  if( -e $verfile ) {
-    open(my $verfh, "<", $verfile)
-      or die "Could not open ORAC-DR version file: $!";
-    my @contents = <$verfh>;
-    close($verfh) or die "Error closing ORAC-DR version file: $!";
-    chomp $contents[0];
-    $version = $contents[0];
-  } else {
-    my $checkdir;
-    my $updir = $ENV{'ORAC_DIR'} . File::Spec->updir;
-    # see if we have a tree that includes a "cal" dir in the parent
-    # or if we are called "src".
-    if( -e File::Spec->catdir( $updir, "src" ) ) {
-      $checkdir = $updir;
-    } else {
-      $checkdir = $ENV{'ORAC_DIR'};
-    }
-    my $return = `svnversion $checkdir`;
-    if( ! defined( $return ) ||
-        $return eq 'exported' ) {
-      $version = 'UNKNOWN';
-    } else {
-      $version = $return;
-    }
+  if( ! defined( $version ) ) {
+    $version = "unknown";
   }
+
   chomp($version) if defined $version;
   $CACHE_VER = $version;
   return $version;
 }
 }
+
+sub oracversion_global {
+  my %version = oracversion() or return();
+  if( wantarray ) {
+    return ( $version{'STRING'}, $version{'COMMIT'}, $version{'COMMITDATE'} );
+  } else {
+    return $version{'STRING'};
+  }
+}
+
+  {
+    my %CACHE_VERSION;
+    sub oracversion {
+      if( ! defined( $CACHE_VERSION{'NOTFOUND'} ) &&
+          ! $CACHE_VERSION{'NOTFOUND'} &&
+          ! defined( $CACHE_VERSION{'STRING'} ) ) {
+        my $script = File::Spec->catfile( $ENV{'ORAC_DIR'}, "version.sh" );
+        my $info;
+        if( -e $script ) {
+          local $ENV{'GIT_DIR'} = File::Spec->catdir( $ENV{'ORAC_DIR'}, File::Spec->updir, ".git" );
+          if( open my $proch, "sh $script 2>/dev/null |" ) {
+            my @output = <$proch>;
+            close $proch;
+            if( @output ) {
+              chomp @output;
+              $info = Starlink::Versions::_get_git_version( Data => \@output );
+            }
+          }
+        }
+        if( ! defined( $info ) ) {
+          my $file = File::Spec->catfile( $ENV{'ORAC_DIR'}, "oracdr.version" );
+          $info = Starlink::Versions::_get_git_version( File => $file );
+        }
+        if( defined( $info ) ) {
+          %CACHE_VERSION = %$info;
+        } else {
+          $CACHE_VERSION{'NOTFOUND'} = 1;
+        }
+      }
+      return %CACHE_VERSION;
+    }
+  }
 
 =item B<setApp>
 

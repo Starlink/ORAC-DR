@@ -69,9 +69,10 @@ sub collate_headers {
   $header->removebyname( 'SIMPLE' );
   $header->removebyname( 'END' );
 
+  my ( $pstring, $pcommit, $pcommitdate ) = ORAC::Version::oracversion_global();
   # Update the version headers.
   my $pipevers = new Astro::FITS::Header::Item( Keyword => 'PIPEVERS',
-                                                Value   => ORAC::Version->getVersion,
+                                                Value   => $pcommit,
                                                 Comment => 'Pipeline version',
                                                 Type    => 'STRING' );
 
@@ -83,11 +84,14 @@ sub collate_headers {
                                                Type    => 'STRING' );
 
   # Need to choose most recent commit date - converted to number
-  if ($commitdate) {
-    $commitdate = $commitdate->strftime('%Y%m%d%H%M%S' );
+  my $procvers_value;
+  if ($commitdate && $pcommitdate) {
+    $procvers_value = ( $commitdate > $pcommitdate ?
+                        $commitdate->strftime( "%Y%m%d%H%M%S" ) :
+                        $pcommitdate->strftime( "%Y%m%d%H%M%S" ) );
   }
   my $procvers = new Astro::FITS::Header::Item( Keyword => 'PROCVERS',
-                                                Value   => $commitdate,
+                                                Value   => $procvers_value,
                                                 Comment => 'Date of most recent commit',
                                                 Type    => 'STRING' );
 
