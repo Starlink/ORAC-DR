@@ -28,6 +28,9 @@ use warnings;
 use base qw/ Exporter /;
 use vars qw/ $VERSION @EXPORT_OK $DEBUG /;
 
+$VERSION = '1.0';
+$DEBUG = 0;
+
 use Astro::Coords;
 use Carp;
 

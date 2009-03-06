@@ -64,7 +64,7 @@ require Exporter;
 
 use vars qw/$VERSION @EXPORT @ISA $CONVERT $ENGINE_LAUNCH/;
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 @ISA = qw/Exporter/;
 @EXPORT = qw/ orac_loop_list  orac_loop_wait orac_loop_inf orac_loop_task

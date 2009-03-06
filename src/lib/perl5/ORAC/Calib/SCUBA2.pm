@@ -53,7 +53,7 @@ use JCMT::Tau::CsoFit;          # Fits to CSO data
 
 use File::Spec;
 
-'$Revision: 7074 $ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 # Let the object know that it is derived from ORAC::Frame;
 #@ORAC::Calib::SCUBA2::ISA = qw/ORAC::Calib/;

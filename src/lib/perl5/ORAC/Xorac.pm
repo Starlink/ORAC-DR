@@ -114,7 +114,7 @@ use vars qw/$VERSION @EXPORT @ISA /;
               xorac_about xorac_pause xorac_help xorac_select_recipe
 	      xorac_calib xorac_select_filelist xorac_editor /;
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 # S U B R O U T I N E S -----------------------------------------------------
 

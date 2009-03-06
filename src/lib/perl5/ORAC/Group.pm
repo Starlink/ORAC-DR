@@ -38,7 +38,7 @@ use strict;
 use warnings;
 use vars qw/$VERSION/;
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 # Associated classes
 use ORAC::Print;          # Print statements

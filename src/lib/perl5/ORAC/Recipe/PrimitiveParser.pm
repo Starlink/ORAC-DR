@@ -43,7 +43,7 @@ use ORAC::Print;
 use ORAC::Recipe::Primitive;
 use ORAC::Inst::Defn qw/ orac_determine_primitive_search_path orac_list_generic_observing_modes /;
 
-our $VERSION = sprintf("%d", q$Revision: 7256 $ =~ /(\d+)/);
+our $VERSION = '1.0';
 
 # Cached version of object. Most recently created object. Returned
 # when the core methods are used as class methods from within recipes.

@@ -38,7 +38,7 @@ use vars qw/$VERSION $DEBUG/;
 
 use overload '""' => "STRINGIFY", fallback => 1;
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 $DEBUG = 0;
 
 =head1 PUBLIC METHODS

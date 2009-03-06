@@ -30,7 +30,7 @@ use base qw/ ORAC::BaseNDF /;
 
 our $VERSION;
 
-'$Revision $ ' =~ /.*:\s(.*)\s\$/ && ( $VERSION = $1 );
+$VERSION = '1.0';
 
 =head1 PUBLIC METHODS
 

@@ -34,7 +34,7 @@ use ORAC::Group::UKIRT;
 # Set inheritance
 use base qw/ ORAC::Group::UKIRT /;
 
- '$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 =head1 PUBLIC METHODS
 

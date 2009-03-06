@@ -41,7 +41,7 @@ use ORAC::Constants qw/:status/;
 
 use vars qw/$VERSION/;
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 # We need to read NDF files
 use NDF;

@@ -32,7 +32,7 @@ use ORAC::Print;
 use Data::Dumper;      # For serialization of arrays and hashes
 use POSIX qw/tmpnam/;  # For unique keys
 
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 use constant NO_RULES => '__NO_RULES__';
 

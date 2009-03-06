@@ -39,7 +39,7 @@ use ORAC::Print;
 use base  qw/ORAC::Frame::UKIRT/;
 
 use vars qw/$VERSION/;
-'$Revision$ ' =~ /.*:\s(.*)\s\$/ && ($VERSION = $1);
+$VERSION = '1.0';
 
 # For reading the header
 use NDF;

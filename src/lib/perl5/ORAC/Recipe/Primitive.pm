@@ -26,7 +26,7 @@ use Carp;
 
 use File::Basename;
 
-our $VERSION = sprintf("%d", q$Revision: 7256 $ =~ /(\d+)/);
+our $VERSION = '1.0';
 
 =head1 METHODS
 
