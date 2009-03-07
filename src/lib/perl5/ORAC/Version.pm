@@ -69,7 +69,11 @@ sub getVersion {
     $version = "unknown";
   }
 
-  chomp($version) if defined $version;
+  if( defined( $version ) ) {
+    chomp($version);
+    $version = substr( $version, 0, 12 );
+  }
+
   $CACHE_VER = $version;
   return $version;
 }
