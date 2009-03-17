@@ -86,15 +86,16 @@ Output frames other than SKY are not yet supported.
 =head1 AUTHOR
 
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
+Copyright (C) 2009 Science and Technology Facilities Council.
 Copyright (C) 2005-2007 the University of British Columbia.  All
 Rights Reserved.
 
 =cut
 
-# Load AST & NDF modules
+# Load AST module
 use Starlink::AST;
-use NDF;
 
 # Determine that we have an image as an argument...
 unless (exists $_GET_PIXEL_SCALE_{IMAGE} && defined $_GET_PIXEL_SCALE_{IMAGE}) {
@@ -108,7 +109,7 @@ my $in = $_GET_PIXEL_SCALE_{IMAGE};
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
 # Values will be returned in these units:
-my $units = lc(get_prim_arg($_PRIM_ARGS_, "UNITS", "arcsec"));
+my $units = get_prim_arg($_PRIM_ARGS_, "UNITS", "arcsec");
 
 # Do we want to return the mapping?
 my $wantmap = get_prim_arg($_PRIM_ARGS_, "WANTMAP", 0);
@@ -122,23 +123,6 @@ if ( $derive == 0 ) {
     orac_warn "Unable to return mapping with DERIVE=0";
     $wantmap = 0;
   }
-  if ($units ne "arcsec" && $verbose ) {
-    orac_warn "Ndftrace call requested: pixel scales will be returned in arcsec";
-  }
-}
-
-my $unitconv;
-if ( $units =~ /arcsec/ ) {
-  $unitconv = 206264.806;
-} elsif ( $units =~ /arcmin/ ) {
-  $unitconv = 3437.74677;
-} elsif ( $units =~ /deg/ ) {
-  $unitconv = 57.2957795;
-} elsif ( $units =~ /rad/ ) {
-  $unitconv = 1.0;
-} else {
-  orac_warn "_GET_PIXEL_SCALE_: Unknown output units, $units - assuming arcsec\n";
-  $unitconv = 206264.806;
 }
 
 # initialise the results array
@@ -147,6 +131,7 @@ $_GET_PIXEL_SCALE_{RESULTS} = [];
 my $ORAC_STATUS;
 my ($avxscale, $avyscale) = (0.0, 0.0);
 my $mapping = undef;
+my $in_unit;
 
 if ( $derive ) {
   my $indomain = "PIXEL";
@@ -161,13 +146,7 @@ if ( $derive ) {
   }
 
   # Create FrameSet from the WCS info in the input file
-  my $STATUS = 0;
-  ndf_begin();
-  ndf_find( &NDF::DAT__ROOT(), $in, my $indf, $STATUS );
-
-  my $frameset = ndfGtwcs( $indf, $STATUS );
-  ndf_annul( $indf, $STATUS );
-  ndf_end( $STATUS );
+  my $frameset = $Frm->read_wcs( $in );
 
   # Frame numbers corresponding to the given in/out domain names
   my $indom;
@@ -239,12 +218,6 @@ if ( $derive ) {
     $pt2 = [ $xsky[1], $ysky[1] ] ;
     my $yscale = $outframe->Distance($pt1, $pt2);
 
-    # Now, xscale and yscale are in radians, and so must be converted to
-    # the output units.
-    unless ( $unitconv == 1.0 ) {
-      $xscale *= $unitconv;
-      $yscale *= $unitconv;
-    }
     # Add to sum
     $avxscale += $xscale;
     $avyscale += $yscale;
@@ -253,12 +226,20 @@ if ( $derive ) {
   $avxscale /= 5;
   $avyscale /= 5;
 
+  # Using radians
+  $in_unit = "rad";
+
 } else {
   # Alternatively, use ndftrace to get the pixel scale. This may or
   # may not be a better estimate. Note this always returns arcsec.
   $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
   ($ORAC_STATUS, $avxscale, $avyscale) = $Mon{ndfpack_mon}->get("ndftrace","fpixscale");
+  $in_unit = "arcsec";
 }
+
+# now convert to correct output unit
+$avxscale = Astro::Coords::Angle->new( $avxscale, units => $in_unit)->in_format( $units );
+$avyscale = Astro::Coords::Angle->new( $avyscale, units => $in_unit)->in_format( $units );
 
 # Store the results in the hash
 $_GET_PIXEL_SCALE_{RESULTS} = [$avxscale, $avyscale];
