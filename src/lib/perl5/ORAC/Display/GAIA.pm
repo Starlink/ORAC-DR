@@ -266,17 +266,18 @@ sub launch {
   my $timegap_to_check  = 3;  # in seconds
   my $timegap_to_launch = 20; # in units of $timegap_to_check
 
-  # Set the RTD_REMOTE_DIR environment variable to $ORAC_DATA_OUT
-  # if it's not already set.
-  if( ! ( $ENV{'ORAC_RESPECT_RTD_REMOTE'} && defined( $ENV{'RTD_REMOTE_DIR'} ) ) ) {
+  # Set the RTD_REMOTE_DIR environment variable to $ORAC_DATA_OUT unless
+  # it is already set and we have been instructed to respect it.
+  if( ! ( exists $ENV{'ORAC_RESPECT_RTD_REMOTE'} && exists $ENV{RTD_REMOTE_DIR} &&
+          defined $ENV{'RTD_REMOTE_DIR'} ) ) {
     if (exists $ENV{ORAC_DATA_OUT} && defined $ENV{ORAC_DATA_OUT}) {
       $ENV{'RTD_REMOTE_DIR'} = $ENV{'ORAC_DATA_OUT'};
     } else {
       croak "ORAC_DATA_OUT does not exist whilst attempting to set RTD_REMOTE_DIR";
     }
   }
-print "rtd: " . $ENV{'RTD_REMOTE_DIR'} . "\n";
- # First attempt to simply connect
+
+  # First attempt to simply connect
   my $sock = $self->_open_gaia_socket();
 
   if ($sock) {
