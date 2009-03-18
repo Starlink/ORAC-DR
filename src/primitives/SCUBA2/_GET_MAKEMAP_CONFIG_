@@ -1,0 +1,144 @@
+#! -*-perl-*-
+
+=head1 NAME
+
+_GET_MAKEMAP_CONFIG_
+
+=head1 SYNOPSIS
+
+_GET_MAKEMAP_CONFIG ARGS=$argref CONFIG=$cfg
+
+=head1 DESCRIPTION
+
+Returns a configuration file which may be used by SMURF makemap. The
+default behaviour is to return the system-installed default
+configuration file. The user may specify a hash reference containing
+makemap configuration parameters and if so must also supply an
+ORAC::TempFile object which will be used to write the desired
+configuration information. Parameters supplied using the B<ARGS>
+argument will override any existing in the system default
+configuration file.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<ARGS>
+
+A hash reference containing the keyword-value pairs for makemap config
+parameters. No default.
+
+=item B<CONFIG>
+
+An ORAC::TempFile object for the makemap configuration file to be
+written. No default.
+
+=back
+
+=head1 RESULTS
+
+The following entry exists in the primitive hash
+
+=over 4
+
+=item B<CONFIG>
+
+Name of the makemap configuration file to be used.
+
+=back
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA
+
+=cut
+
+my $argref = get_prim_arg( $_PRIM_ARGS_, "ARGS", undef );
+my $config = get_prim_arg( $_PRIM_ARGS_, "CONFIG", undef );
+
+# Locate system config file
+my $syscfg = $ENV{'STARLINK_DIR'} ."/share/smurf/dimmconfig.lis";
+
+if ( defined $argref && defined $config ) {
+
+  # Check supplied config argument is an ORAC::TempFile
+  if (UNIVERSAL::isa($config, "ORAC::TempFile")) {
+
+    my %args = %{ $argref };
+
+    # Filter out irrelevant parameters
+    my @notneeded = qw/ VERBOSE MYCONFIG PIXSIZE SYSTEM SPREAD METHOD /;
+    foreach my $notneeded ( @notneeded ) {
+      delete $args{$notneeded} if (exists $args{$notneeded});
+    }
+
+    # Get list of remaining parameters
+    my @params = keys %args;
+
+    # Search for config parameters that might have to be specified as
+    # a comma-separated list as an argument to the makemap primitive
+    # yet must be specified as a space-separated list in the config
+    # file. Currently this is only modelorder
+    my @specials = qw/ MODELORDER /;
+    foreach my $special (@specials) {
+      if (exists $args{$special} && defined $args{$special}) {
+	my @line = split( /,/, $args{$special} );
+	$args{$special} = join(" ", @line);
+      }
+    }
+
+    # Read config parameters from system config file
+    open my $CFG, "< $syscfg" 
+      or orac_err "Unable to read system config file: $!";
+
+    my %params;
+    while ( <$CFG> ) {
+      chomp;
+      next if (/^\#/ || /^[ ]\s+/ || !length);
+      my ($var, $value) = split(/\s*=\s*/, $_, 2);
+      $params{$var} = $value;
+    }
+    close($CFG);
+
+    # Replace any values given in ARGS
+    foreach my $param ( @params ) {
+      $params{lc($param)} = $args{$param};
+    }
+    
+    # Get new list of parameters
+    @params = keys %params;
+
+    # Write out each parameter given in argument list
+    foreach my $param ( @params ) {
+      print {$config->handle} $param." = ".$params{$param} ."\n";
+    }
+
+    $_GET_MAKEMAP_CONFIG_{CONFIG} = $config->file;
+  } else {
+    orac_warn "CONFIG argument is not an ORAC::TempFile - falling back on default system config file\n";
+    $_GET_MAKEMAP_CONFIG_{CONFIG} = $syscfg;
+  }
+
+} else {
+  $_GET_MAKEMAP_CONFIG_{CONFIG} = $syscfg;
+}
