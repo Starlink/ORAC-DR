@@ -16,6 +16,8 @@ single output file created.
 
 =head1 ARGUMENTS
 
+The following arguments are supported.
+
 =over 4
 
 =item B<PIXSIZE>
@@ -34,12 +36,6 @@ Desired pixel-spreading scheme. May be either C<nearest> for
 nearest-neighbour resampling or C<linear> for bi-linear resampling. 
 Default is C<nearest>.
 
-=item B<KEEP>
-
-Flag to denote whether to keep the intermeditate files produced by the
-iterative map-maker. Warning: setting this to true may result in
-significant disk space usage. Default is 0 (delete files).
-
 =item B<METHOD>
 
 Image reconstruction method. May be C<REBIN> to use a simple rebinning
@@ -47,22 +43,16 @@ scheme or C<ITER> to use the iterative map-maker. If C<ITER> is
 specified then the following parameters must also be set to override
 the defaults (which may not do what you want).
 
-=item B<NUMITER>
+=item B<MYCONFIG>
 
-Number of iterations. Default is 1, which is clearly not a good
-choice.
-
-=item B<MODELORDER>
-
-Comma-separated list of model components. See the SMURF documentation
-for further details.
-
-=item B<EXPORTNDF>
-
-Flag to indicate whether intermediate files are written out in NDF
-format at the end. Default is 0 (do not write as NDF).
+A flag to denote that the a user-defined config file is to be
+used. Default is 0 (use system config file).
 
 =back
+
+In addition, configuration parameters for B<MAKEMAP> may be specified,
+provided the B<MYCONFIG> argument is true. See the B<MAKEMAP>
+documentation for supported parameters.
 
 =head1 KNOWN ISSUES
 
@@ -82,8 +72,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008 University of British Columbia and the Particle
-Physcis and Astronomy Research Council. All Rights Reserved.
+Copyright (C) 2008-2009 University of British Columbia and the
+Particle Physcis and Astronomy Research Council. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -153,53 +143,21 @@ my $maxmem = 4096; # 1.5 factor to get max file size of 2 GB
 my $tiledims = int(sqrt(MAXPIX));
 
 # Makemap argument list
-my $args = "in=^$inlist out=$out pixsize=$pixsize spread=$spread system=$system method=$method maxmem=$maxmem tiledims=$tiledims";
+my $args = "in=^$inlist out=$out pixsize=$pixsize spread=$spread "
+          ."system=$system method=$method maxmem=$maxmem tiledims=$tiledims";
 
-# Check for additional parameters for the iterative map-maker
-my ($exportndf, $keepdimm, $numiter, $memiter, $modelorder, @modelorder, $config);
+my $config;
 if ( $iterate ) {
-  # Number of iterations - default to 1 to force user to make a
-  # decision
-  $numiter = get_prim_arg( $_PRIM_ARGS_, "NUMITER", 1);
+  # Obtain a suitable config file - if the user has specified the
+  # MYCONFIG parameter then write our own config file, else use the
+  # system-wide default.
+  my $myconfig = get_prim_arg( $_PRIM_ARGS_, "MYCONFIG",  0 );
+  if ( $myconfig ) {
+    $config = new ORAC::TempFile;
+  }
 
-  # Should iterations be done in memory?
-  $memiter = get_prim_arg( $_PRIM_ARGS_, "MEMITER", 1);
-
-  # Maximum memory available to iterative map-maker
-  $maxmem = 10000 if ( $memiter );
-
-  # Flag for whether to export work files to NDF
-  $exportndf = get_prim_arg( $_PRIM_ARGS_, "EXPORTNDF", 0);
-
-  # Flag for whether to keep intermediate DIMM files
-  $keepdimm = get_prim_arg( $_PRIM_ARGS_, "KEEP", 0);
-
-  # Flag for whether to export work files to NDF
-  $modelorder = get_prim_arg( $_PRIM_ARGS_, "MODELORDER", "com,ext,noi");
-  # Split modelorder into components before recombining
-  @modelorder = split(/,/,$modelorder);
-  
-  # Concatenate list of model components into a single space-separated
-  # string
-  $modelorder = join(" ",@modelorder);
-
-  # Write parameters to config file
-  $config = new ORAC::TempFile;
-  print {$config->handle} "numiter=$numiter\n"
-    ."exportndf=$exportndf\n"
-    ."modelorder=$modelorder\n"
-    ."chitol=1e-6\n"
-    ."com_boxcar=400\n"
-    ."com_boxfact=0.5\n"
-    ."com_boxmin=100\n"
-    ."noispikethresh=10\n"
-    ."noispikeiter=0\n"
-    ."varmapmethod=0\n"
-    ."memiter=$memiter\n"
-    ."maxlen=0\n"
-    ."badfrac=0.05\n";
-  $config->handle->close;
-  $args .= " config=^".$config->file;
+  _GET_MAKEMAP_CONFIG_ ARGS=$_PRIM_ARGS_ CONFIG=$config
+  $args .= " config=^".$_GET_MAKEMAP_CONFIG_{CONFIG};
 }
 
 # Call makemap - really must have some sort of feedback to user
@@ -250,7 +208,7 @@ if ( $SMURF_STATUS == 235176770 ) {
   # useful?
 
   # Delete iterative map-maker files
-  if ( $iterate && !$memiter ) {
+  if ( $iterate ) {
     orac_print "Removing model files from the iterative map-maker\n" 
       if ($verbose);
     unlink <*.dimm>;
