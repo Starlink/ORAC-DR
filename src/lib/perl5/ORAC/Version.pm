@@ -31,7 +31,7 @@ use File::Spec;
 use Starlink::Versions;
 
 use vars qw/ $VERSION /;
-$VERSION = '1.0';
+$VERSION = '1.01';
 
 =head1 CLASS METHODS
 
@@ -39,19 +39,17 @@ $VERSION = '1.0';
 
 =item B<getVersion>
 
-Uses the $ORAC_DIR environment variable and the svnversion command
-to determine the site-wide version number string.
+Returns a simple string representation of the ORAC-DR global version
+number. This should be sufficient to locate the specific repository
+revision associated with the release. For git repositories it will
+be the short form of the SHA1 commit id.
 
  $version = ORAC::Version->getVersion();
 
-If a file called C<.version> is present in $ORAC_DIR it is assumed
-to contain the global version number. If not present the svnversion
-command will be run to determine the state of the source code checkout
-tree. If $ORAC_DIR refers to an exported tree then the version will
-be "UNKNOWN".
+Note that if the source tree has been locally modified this will not
+necessarily be reflected in the version string.
 
-Note that if the source code tree has been locally modified the
-version string will not be a single number.
+If the version can not be determined a string "unknown" will be returned.
 
 The value is cached (and assumes that once calculated it will not
 change during runtime).
@@ -79,14 +77,82 @@ sub getVersion {
 }
 }
 
+=item B<oracversion_global>
+
+Returns the global ORAC-DR version for the system.
+
+In list context returns the string representation, the commit ID
+and the date of that commit.
+
+ ($string, $commit, $commitdate) = ORAC:::Version->oracversion_global();
+
+In scalar context returns just the string representation:
+
+  $string = starversion_global();
+
+=cut
+
 sub oracversion_global {
-  my %version = oracversion() or return();
+  my %version = _oracversion() or return();
   if( wantarray ) {
     return ( $version{'STRING'}, $version{'COMMIT'}, $version{'COMMITDATE'} );
   } else {
     return $version{'STRING'};
   }
 }
+
+=item B<setApp>
+
+Sets the global application name. Defaults to "ORAC-DR".
+
+  ORAC::Version->setApp( "App" );
+
+=item B<getApp>
+
+Returns the global application name.
+
+  $app = ORAC::Version->getApp();
+
+=cut
+
+{
+my $APP = "ORAC-DR";
+sub setApp {
+  my $class = shift;
+  $APP = shift;
+}
+sub getApp {
+  return $APP;
+}
+}
+
+=back
+
+=begin __PRIVATE__
+
+=head1 PRIVATE FUNCTIONS
+
+=over 4
+
+=item B<_oracversion>
+
+Attempts to find out the global version information. Returns a hash with keys
+
+ STRING - String form of commit including branch as well as commit id and date
+ COMMIT - Commit identifier
+ COMMITDATE - Date of that commit
+
+This information is obtained through a number of methods:
+
+ 1. Locating $GIT_DIR in the checkout tree and running $ORAC_DIR/version.sh
+
+ 2. Locating a file $ORAC_DIR/oracdr.version containing the output from version.sh
+
+So the presence of a git repository is always preferable to a hard-wired version file.
+
+Is cached, since the version number will not change during pipeline execution (or at least it shouldn't).
+
+=cut
 
   {
     my %CACHE_VERSION;
@@ -121,42 +187,23 @@ sub oracversion_global {
     }
   }
 
-=item B<setApp>
-
-Sets the global application name. Defaults to "ORAC-DR".
-
-  ORAC::Version->setApp( "App" );
-
-=item B<getApp>
-
-Returns the global application name.
-
-  $app = ORAC::Version->getApp();
-
-=cut
-
-{
-my $APP = "ORAC-DR";
-sub setApp {
-  my $class = shift;
-  $APP = shift;
-}
-sub getApp {
-  return $APP;
-}
-}
-
-
 
 =back
 
+=end __PRIVATE__
+
+=head1 SEE ALSO
+
+L<Starlink::Versions>
+
 =head1 AUTHORS
 
-Tim Jenness (t.jenness@jach.hawaii.edu)
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2007 Science and Technology Facilities Council.
+Copyright (C) 2007, 2009 Science and Technology Facilities Council.
 All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
