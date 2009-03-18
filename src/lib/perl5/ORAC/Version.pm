@@ -156,7 +156,7 @@ Is cached, since the version number will not change during pipeline execution (o
 
   {
     my %CACHE_VERSION;
-    sub oracversion {
+    sub _oracversion {
       if( ! defined( $CACHE_VERSION{'NOTFOUND'} ) &&
           ! $CACHE_VERSION{'NOTFOUND'} &&
           ! defined( $CACHE_VERSION{'STRING'} ) ) {
