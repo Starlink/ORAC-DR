@@ -21,14 +21,16 @@
 #  History:
 #     2007-08-20 (TIMJ):
 #        First implementation. Copied from oracdr_start.sh
+#     2009-03-17 (TIMJ):
+#        Modified for git. Uses perl in the first instance.
 
 #  Notes:
-#     - Currently reimplements the logic found in ORAC::Version
-#       perl code.
-#     - Requires $ORAC_DIR to be set
+#     - Preferentially calls ORAC::Version->getVersion in perl to get
+#       the version. Then falls back to reimplementation in shell.
+#     - Requires $ORAC_DIR and $ORAC_PERL5LIB to be set.
 
 #  Copyright:
-#     Copyright (C) 2007 Science and Technology Facilities Council.
+#     Copyright (C) 2007, 2009 Science and Technology Facilities Council.
 #     All Rights Reserved.
 
 #  Licence:
@@ -53,14 +55,28 @@
 # would be substituted during install.
 pkgvers=PKG_VERS
 
-if test -e $ORAC_DIR/.version; then
-  pkgvers=`cat $ORAC_DIR/.version`
-elif test -e $ORAC_DIR/../.svn; then
-  pkgvers=`svnversion $ORAC_DIR/../`
-elif test -e $ORAC_DIR/.svn; then
-  pkgvers=`svnversion $ORAC_DIR`
-elif test -z "${ORACDR_VERSION}"; then
-  pkgvers=$ORACDR_VERSION
+# Find a perl
+starperl=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
+
+# Use the standard oracdr perl logic. This should hopefully work
+# most of the time
+if test -e $starperl; then
+  ppkgvers=`$starperl -I${ORAC_PERL5LIB} -MORAC::Version -e 'print ORAC::Version->getVersion()' 2>/dev/null`
+  if test -n "$ppkgvers"; then
+    pkgvers="$ppkgvers"
+  fi
+fi
+
+# if that failed, fall back to reimplementing the logic
+if test "$pkgvers" == "PKG_VERS"; then
+  if test -e $ORAC_DIR/version.sh; then
+    export GIT_DIR=${ORAC_DIR}/../.git
+    pkgvers=`sh ${ORAC_DIR}/version.sh 2>/dev/null | head -2 | tail -1 | cut -c 1-12`
+  elif test -e $ORAC_DIR/oracdr.version; then
+    pkgvers=`cat $ORAC_DIR/oracdr.version | head -2 | tail -1 | cut -c 1-12`
+  elif test -n "${ORACDR_VERSION}"; then
+    pkgvers=$ORACDR_VERSION
+  fi
 fi
 
 echo $pkgvers
