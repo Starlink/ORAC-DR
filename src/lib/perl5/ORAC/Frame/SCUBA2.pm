@@ -838,7 +838,7 @@ into a Frame object. Takes a mandatory sole argument which is the file
 index or name. If the Frame header has subheaders then the subarray is
 obtained from the FITS header of the file and an entry is added to the
 Frame uhdr. Returns undef if the FITS header could not be retrieved or
-if no arguement was given.
+if no argument was given.
 
   my $subarray = $Frm->subarray( $i );
   my $subarray = $Frm->subarray( $Frm->file($i) );
@@ -893,6 +893,46 @@ sub subarray {
     return $self->hdr("SUBARRAY");
   }
 }
+
+
+=item B<filter_darks>
+
+Standard image-based DREAM and STARE processing has no need for dark
+frames and so these should be filtered out as early as possible to
+prevent weird errors. The translated header for the observation mode
+is used. From this point on, no dark frames will be returned unless
+the user accesses the raw data. 
+
+  $Frm->filter_darks;
+
+=cut
+
+sub filter_darks {
+
+  my $self = shift;
+
+  # Filter out Dark frames from DREAM/STARE data
+  if ( ($self->uhdr("ORAC_OBSERVATION_MODE") =~ /dream/ || 
+	$self->uhdr("ORAC_OBSERVATION_MODE") =~ /stare/) &&
+       $self->uhdr("ORAC_OBSERVATION_TYPE") !~ /flatfield/ ) {
+
+    my (@darks, @nondarks);
+    for my $i ( 1 .. $self->nfiles ) {
+      if ( $self->hdrval("SHUTTER", $i-1) == 1.0 ) {
+	push ( @nondarks, $self->file($i) );
+      } else {
+	push ( @darks, $self->file($i) );
+      }
+    }
+    my $ndarks = $#darks + 1;
+    my $dark = ($ndarks == 1) ? "dark" : "darks";
+    orac_say "Removing $ndarks $dark from the current observation";
+    $self->files( @nondarks );
+  }
+
+  return;
+}
+
 
 =back
 
