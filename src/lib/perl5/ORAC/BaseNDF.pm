@@ -69,6 +69,8 @@ sub collate_headers {
   $header->removebyname( 'SIMPLE' );
   $header->removebyname( 'END' );
 
+  my @items;
+
   my ( $pstring, $pcommit, $pcommitdate ) = ORAC::Version::oracversion_global();
   # Update the version headers.
   my $pipevers = new Astro::FITS::Header::Item( Keyword => 'PIPEVERS',
@@ -118,15 +120,13 @@ sub collate_headers {
         if (defined $ori) {
           my $new = $ori->copy;
           $new->value( $fits{$keyword} );
-          $header->append( $new );
+          push(@items, $new);
         }
       }
     }
   }
 
-  $header->append( $pipevers );
-  $header->append( $engvers );
-  $header->append( $procvers );
+  push(@items, $pipevers, $engvers, $procvers );
 
   # Insert the PRODUCT header. This comes from the $self->product
   # method. If the return value from this method is undefined, do not
@@ -137,8 +137,10 @@ sub collate_headers {
                                               Value   => $product,
                                               Comment => 'Pipeline product',
                                               Type    => 'STRING' );
-    $header->append( $prod );
+    push(@items, $prod );
   }
+
+  $header->append( \@items );
 
   return $header;
 }
