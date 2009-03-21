@@ -95,6 +95,34 @@ sub collate_headers {
                                                 Comment => 'Date of most recent commit',
                                                 Type    => 'STRING' );
 
+  # Calculate the new data reduction recipe header. This is only done
+  # if the generic header exists
+  my $uhdr = $self->uhdr;
+  if (exists $uhdr->{ORAC_DR_RECIPE}) {
+    my %cleaned = Astro::FITS::HdrTrans::clean_prefix( $uhdr, "ORAC_" );
+    my $class = Astro::FITS::HdrTrans::determine_class( \%cleaned, undef, 0 );
+    my %fits = $class->from_DR_RECIPE( \%cleaned );
+
+    # At this point we should be updating the hdr() values but we do
+    # not want to do that here because this method returns a new
+    # header that is appended (with replace) to the hdr(). The trick
+    # is to retain comments from the original FITS header whilst also
+    # working within the paradigm of this merthod. To do that we need
+    # the FITS header not the tie. A bit more convoluted than one
+    # would expect. Other options is to do all this in an explicit
+    # "work on $self->hdr" method.
+    if (keys %fits) {
+      my $fitshdr = $self->fits;
+      for my $keyword (keys %fits) {
+        my $ori = $fitshdr->itembyname( $keyword );
+        if (defined $ori) {
+          my $new = $ori->copy;
+          $new->value( $fits{$keyword} );
+          $header->append( $new );
+        }
+      }
+    }
+  }
 
   $header->append( $pipevers );
   $header->append( $engvers );

@@ -793,6 +793,9 @@ batch variables are passed in as recipe globals.
 Note that $DEBUG in recipes and primitives is set during compile time and
 not during execution.
 
+The ORAC_DR_RECIPE user header of the Frame and Group objects are updated
+to reflect the name of the actual recipe being used.
+
 =cut
 
 # These allow reflected state in GUIs
@@ -816,6 +819,10 @@ sub orac_execute_recipe {
 
   # Clear stored primitive parameters
   ORAC::Recipe::PrimitiveParser->_clear_prim_params();
+
+  # Tell the Frame and Group what recipe this is
+  $Frm->uhdr( "ORAC_DR_RECIPE", $Recipe->name );
+  $Grp->uhdr( "ORAC_DR_RECIPE", $Recipe->name );
 
   # run the recipe
   my $recobj = $Recipe->recipe;
