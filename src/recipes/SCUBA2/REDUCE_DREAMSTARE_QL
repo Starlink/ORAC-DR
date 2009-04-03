@@ -2,16 +2,40 @@
 
 =head1 NAME
 
-REDUCE_DREAMSTARE_QL - Process DREAM/STARE images
+REDUCE_DREAMSTARE_QL - Quick-Look recipe for processing DREAM/STARE images
 
 =head1 DESCRIPTION
 
 Basic processing recipe suitable for DREAM/STARE images with the
-quick-look pipeline.
+quick-look pipeline. The data are processed completely as they arrive:
+images from different subarrays are combined, a mean sky level
+subtracted, then corrected for extinction and calibrated.
 
-=head1 KNOWN ISSUES
+The calibrated Frame image is displayed. Creation of a new Group image
+is deferred until a minimum number of Frame images have been created
+to deal with any spikes in the Frame images. This number is set to 10
+and may be changed: see the NMOS parameter for
+_MAKE_MOSAIC_GROUP_DESPIKE_ below. The new Group image is displayed
+and its noise properties are calculated and logged.
 
-This primitive can not handle time series observing modes.
+=head1 NOTES
+
+This primitive can not handle time series data.
+
+The number of images to combine into a new Group image is set by the
+C<NMOS> parameter for _MAKE_MOSAIC_GROUP_DESPIKE_. Smaller numbers
+will result in more frequent updates of the Group image at the expense
+of de-spiking and good variance estimation.
+
+The current noise level is stored in C<log.noise>, the positions and
+fluxes of any sources are stored in C<log.flux>.
+
+=head1 DISPLAY
+
+The Frame image is displayed in Gaia window 1.
+
+The Group image is displayed in Gaia window 2; its variance is
+displayed in window 3.
 
 =head1 AUTHOR
 
@@ -20,9 +44,10 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2004-2008 University of British Columbia and the
-Particle Physics and Astronomy Research Council. Copyright (C) 2007
-Science and Technology Facilities Council. All Rights Reserved.
+Copyright (C) 2004-2008 University of British Columbia. Copyright (C)
+2004-2007 the Particle Physics and Astronomy Research
+Council. Copyright (C) 2007 Science and Technology Facilities
+Council. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -37,13 +62,14 @@ General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
-USA
+USA.
 
 =cut
 
+# Standard introduction
 _SCUBA2_HELLO_
 
-# For QL, the Frame consists of only 4 (related) files collected as
+# For QL, the Frame consists of (up to) 4 (related) files collected as
 # DRAMA parameters so there is no need to collate related
 # images. Therefore, make the Frame mosaic first so that subsequent
 # primitives only have a single file to deal with. This results in a
@@ -60,7 +86,7 @@ _EXTINCTION_CORRECT_FRAME_ EXTCOR=QUICKER
 _FIND_CALIBRATION_MAP_
 _CALIBRATE_DATA_
 
-# Display the frame mosaic
+# Display the frame mosaic in Gaia window 1
 _DISPLAY_FRAME_
 
 # Add the new frame mosaic into the group, but only create the Group
@@ -68,18 +94,22 @@ _DISPLAY_FRAME_
 # variance using the DESPIKE coadd mode
 _MAKE_MOSAIC_GROUP_DESPIKE_ NMOS=10
 
-# Determine the mean sky noise from the variance in the image
+# Determine the mean sky noise from the variance in the image. Store
+# in log file log.noise.
 _CALC_IMAGE_NOISE_ METHOD=VARIANCE GROUP=1
 
-# Display the group mosaic
+# Display the group mosaic in Gaia window 2 and its variance in window 3
 _DISPLAY_GROUP_
 
-# Tidy up...
-# Delete excess Frame objects from the Group
+# Delete excess Frame objects from the Group. In QL mode, there is one
+# Frame object created per second which causes a significant increase
+# in memory use and thus slowdown over time. Since the QL pipeline has
+# no history requirements these Frame objects can be deleted safely.
 _PURGE_FRAMES_
 
-# Note that the last file created by the frame will not be
-# deleted because it is never replaced by anything so will never
-# get pushed onto the intermediates array
+# Delete temporary files, keeping only calibrated data. Note that the
+# last file created by the frame will not be deleted because it is
+# never replaced by anything so will never get pushed onto the
+# intermediates array
 _DELETE_TEMP_FILES_ KEEP=_cal
 

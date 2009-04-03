@@ -2,15 +2,33 @@
 
 =head1 NAME
 
-REDUCE_DREAMSTARE - Basic recipe for reducing DREAM/Stare images
+REDUCE_DREAMSTARE - Recipe for processing DREAM/STARE images
 
 =head1 DESCRIPTION
 
-Basic processing recipe suitable for DREAM/STARE images.
+Basic processing recipe suitable for DREAM/STARE images. Input data
+from the individual subarrays are combined to produce a single mosaic
+for each time step. Sky removal and extinction correction take place
+on these images before they are combined into a single Frame image.
 
-=head1 KNOWN ISSUES
+The Frame image is calibrated and displayed, before being combined
+with the Group image in a running average. The noise properties of the
+new Group image are calculated and logged, and the image searched for
+sources.
 
-This primitive can not handle time series observing modes.
+=head1 NOTES
+
+This primitive can not handle time series data.
+
+The current noise level is stored in C<log.noise>, the positions and
+fluxes of any sources are stored in C<log.flux>.
+
+=head1 DISPLAY
+
+The Frame image is displayed in Gaia window 1.
+
+The Group image is displayed in Gaia window 2; its variance is
+displayed in window 3.
 
 =head1 AUTHOR
 
@@ -36,46 +54,53 @@ General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
-USA
+USA.
 
 =cut
 
+# Standard introduction
 _SCUBA2_HELLO_
 
-# Combine the subarrays into a single image for further processing
+# Combine the subarrays into a single image for further
+# processing. This will produce a series of images resampled onto an
+# RA/Dec grid. Use bilinear sampling for nicer-looking images.
 _ALIGN_AND_MOSAIC_SUBARRAY_ METHOD=BILINEAR
 
-# Remove sky by fitting a 2-D plane
+# Remove sky by fitting a 2-D plane. See documentation for this
+# primitive for fitting options. The mean sky level is written to a
+# log file, log.sky.
 _REMOVE_PLANE_FROM_IMAGE_ LOGFILE=1 VERBOSE=0
 
-# Correct for extinction, using the WVM values in the header
+# Correct for extinction, using the WVM values in the header to apply
+# a single correction to all data values.
 _EXTINCTION_CORRECT_FRAME_ EXTCOR=QUICKER
 
 # Mosaic subimages together to create the Frame mosaic. Use Median
 # stacking to reduce impact of spikes
-#_MAKE_MOSAIC_FRAME_ MAKEMOS=1 MAKEMOS_METHOD=MEDIAN GENVAR=1
 _MAKE_MOSAIC_FRAME_ MAKEMOS=1 MAKEMOS_METHOD=SIGMA GENVAR=1
 
 # Calibrate data
 #_FIND_CALIBRATION_MAP_
 _CALIBRATE_DATA_
 
-# Display the frame mosaic
+# Display the frame mosaic in Gaia window 1
 _DISPLAY_FRAME_
 
-# Add the new frame mosaic into the group
+# Combine the new frame mosaic with the group
 _MAKE_MOSAIC_GROUP_ COADD_MODE=RUNNING
 
-# Calculate noise properties
+# Calculate noise properties - stored in log.noise
 _CALC_IMAGE_NOISE_ METHOD=VARIANCE GROUP=1
 
 # Locate sources and derive fluxes
 _FIND_FLUXES_ VERBOSE=0 GROUP=1
 
-# Display the group mosaic and the variance map
+# Display the group mosaic in Gaia window 2 and the variance map in
+# window 3
 _DISPLAY_GROUP_
 
-# Note that the last file created by the frame will not be
-# deleted because it is never replaced by anything so will never
-# get pushed onto the intermediates array
+# Delete temporary files, keeping only calibrated data. Note that the
+# last file created by the frame will not be deleted because it is
+# never replaced by anything so will never get pushed onto the
+# intermediates array.
 _DELETE_TEMP_FILES_ KEEP=_cal

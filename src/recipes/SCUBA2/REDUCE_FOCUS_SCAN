@@ -2,30 +2,46 @@
 
 =head1 NAME
 
-REDUCE_FOCUS - Recipe for deriving pointing information
+REDUCE_FOCUS_SCAN - Recipe for deriving focus information from SCAN data
 
 =head1 DESCRIPTION
 
-This recipe combines images from a focus observation, removes sky
-emission and corrects for extinction before calculating the offsets in
-millimetres from the nominal (0,0) position. A .ok flag file is
-written to indicate to the online POINTING_FOCUS task that processing
-is complete. For its own record keeping, the recipe also makes its own
+This recipe processes data from a SCAN FOCUS observation. The
+time-series data are processed into an image, sky emission removed and
+corrected for extinction. When enough data exist - defined as the
+existence of data for each of the expected focus positions - the
+images for each focus position are combined (if there are multiple
+images per position) and a data cube is created with SMU offset in mm
+as the third axis.
+
+Once the cube has been created, a C<.ok> flag file is written to
+indicate to the online POINTING_FOCUS task that processing is
+complete. For its own record keeping, the recipe also makes its own
 estimate of the best-fit focus position which is written to a log
-file.
+file, C<log.focus>. Note, however, that these results may not be
+identical to those derived by the POINTING_FOCUS task.
 
-=head1 KNOWN ISSUES
+=head1 NOTES
 
-This recipe is designed to operate in QUICK LOOK mode where each input
-Frame object corresponds to one file. A further limitation is that the
-recipe will only work if the data are processed by one focus position
-at a time. Allowing the observation to finish and then beginning the
-processing will cause this recipe to fail as the mosaicking steps
-cannot adequately filter out data for different focus positions.
+The best-fit focus position is written to C<log.focus>.
+
+In practice each Frame will correspond to a single focus position (due
+to the finite time to create a small scan map), so the cube will be
+created once the data from the last focus position have been
+processed.
+
+No data are displayed until the cube of focus images has been created.
+
+=head1 DISPLAY
+
+The Frame image is not displayed.
+
+The Group data are displayed in a Kapview window with the image at
+each focus pisition displayed in a separate panel.
 
 =head1 AUTHOR
 
-Andy Gibb E<lt>agg@astro.ubc.caE<gt>,
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
@@ -45,21 +61,20 @@ General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
-USA
+USA.
 
 =cut
 
-# Standard intro
+# Standard introduction
 _SCUBA2_HELLO_
 
 # Create image to analyze - use bilinear method to allow the peak
-# position to be determined more accurately. Note that sky subtraction
-# and extinction correction are done within the call to QLMAKEMAP
+# position to be determined more accurately. The sky subtraction
+# and extinction correction are handled within this primitive.
 _QLMAKEMAP_FRAME_ SPREAD=LINEAR
 
+# Apply the most recent calibration factor
 _CALIBRATE_DATA_
-
-_DISPLAY_FRAME_
 
 # Create cube for further processing - the pipeline hands off control
 # to the telescope POINTING_FOCUS task at this point
@@ -69,9 +84,10 @@ _CREATE_FOCUS_CUBE_
 # current axis
 _FIND_FOCUS_OFFSETS_
 
-# Note that the last file created by the frame will not be
-# deleted because it is never replaced by anything so will never
-# get pushed onto the intermediates array
+# Delete temporary files, keeping only calibrated data. Note that the
+# last file created by the frame will not be deleted because it is
+# never replaced by anything so will never get pushed onto the
+# intermediates array
 _DELETE_TEMP_FILES_ KEEP=_cal
 
 #_DELETE_FRAME_FILE_
