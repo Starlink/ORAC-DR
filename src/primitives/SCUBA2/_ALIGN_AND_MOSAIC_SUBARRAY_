@@ -1,12 +1,12 @@
-#! -*-perl-*-
+# -*-perl-*-
 
 =head1 NAME
 
-_ALIGN_AND_MOSAIC_SUBARRAY - Align and mosaic subarray frames together
+_ALIGN_AND_MOSAIC_SUBARRAY_ - Align and mosaic subarray frames together
 
 =head1 SYNOPSIS
 
- _ALIGN_AND_MOSAIC_SUBARRAY
+_ALIGN_AND_MOSAIC_SUBARRAY_ MAKEMOS=0 REBIN=0 METHOD=NEAREST
 
 =head1 DESCRIPTION
 
@@ -14,17 +14,12 @@ This primitive aligns and mosaics the individual subarray frames into
 array images either by using KAPPA WCSALIGN followed by CCDPACK
 MAKEMOS or performing both steps with KAPPA WCSMOSAIC. The former
 approach calls two other primitives to do the aligning and
-mosaicking. A check is made to see if the version of KAPPA supports
-WCSMOSAIC.
+mosaicking. 
 
 This primitive operates on the current Frame object and selects images
 in groups of up to four (one for each subarray) and produces a mosaic
 of these images. No operation is performed is there is only a single
 subarray.
-
-If the output need not be aligned to a celestial reference frame, then
-if a group file exists, that is the reference for the alignment, else
-the first image in the frame object is chosen as reference.
 
 =head1 ARGUMENTS
 
@@ -34,8 +29,14 @@ the first image in the frame object is chosen as reference.
 
 A flag to denote whether to use CCDPACK MAKEMOS for mosaicking the
 images. Default is 0 (no), which uses KAPPA WCSMOSAIC instead. Note
-that WCSMOSAIC is considerably faster than calling WCSALIGN and
+that WCSMOSAIC is significantly faster than calling WCSALIGN and
 MAKEMOS separately.
+
+=item B<MAKEMOS_METHOD>
+
+The method by which MAKEMOS combines the images. Default is
+C<MEAN>. See the MAKEMOS documentation for a description of the
+possible values.
 
 =item B<METHOD>
 
@@ -43,14 +44,8 @@ The method to be used for resampling the aligned images. This
 corresponds to the C<method> parameter for WCSMOSAIC and WCSALIGN,
 which is different from that for MAKEMOS. See WCSALIGN and/or
 WCSMOSAIC documentation for further details. Default value is
-C<nearest>, which is recommended for robust processing of exposure
+C<NEAREST>, which is recommended for robust processing of exposure
 time and weights components.
-
-=item B<MAKEMOS_METHOD>
-
-The method by which MAKEMOS combines the images. Default is
-C<mean>. See the MAKEMOS documentation for a description of the
-possible values.
 
 =item B<REBIN>
 
@@ -71,14 +66,45 @@ information messages. Default is true (1).
 
 =back
 
-=head1 ALGORITHMS
+=head1 EXTERNAL TASKS
 
-KAPPA: WCSMOSAIC, WCSALIGN. CCDPACK: MAKEMOS
+The following external tasks are used:
 
-=head1 FILE SUFFIX
+=over 4
+
+=item KAPPA: 
+
+NDFCOPY, WCSMOSAIC
+
+=item CCDPACK:
+
+MAKEMOS
+
+=item ORAC-DR PRIMITIVES:
+
+_GET_REFERENCE_IMAGE_, _ALIGN_ARRAYS_, _CREATE_COMPS_DREAMSTARE_
+
+=back
+
+=head1 OUTPUT DATA
+
+The uhdr entry C<ALIGNED> is set to 1 on success to indicate that the
+images in the Frame are aligned to a common coordinate frame.
+
+The uhdr entries C<EXP_TIME> and C<WEIGHTS> are set to 1 if B<METHOD>
+is C<NEAREST> and the exp_time and weights NDF extensions were
+created. They are set to 0 (rather than leaving undef) for all other
+values of B<METHOD>.
+
+=head1 OUTPUT FILES
 
 An output file is created for each set of up-to-four subarray images
 in the Frame with a suffix of C<_arr>.
+
+=head1 NOTES
+
+If the installed version of KAPPA does not support WCSMOSAIC then
+B<SINGLESTEP> is set to 0.
 
 =head1 AUTHOR
 
@@ -102,7 +128,7 @@ General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
-USA
+USA.
 
 =cut
 
@@ -113,7 +139,7 @@ my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
 my $makemos = get_prim_arg( $_PRIM_ARGS_, "MAKEMOS", 0 );
 
 # Rebin or resample? Default is resample (rebin = 0).
-my $rebin = get_prim_arg( $_PRIM_ARGS_, "REBIN", 0);
+my $rebin = get_prim_arg( $_PRIM_ARGS_, "REBIN", 0 );
 
 # Method for determining the output pixel values (used by WCSMOSAIC
 # and WCSALIGN - use of NEAREST is advised in order to obtain accurate
@@ -121,7 +147,7 @@ my $rebin = get_prim_arg( $_PRIM_ARGS_, "REBIN", 0);
 my $method = get_prim_arg( $_PRIM_ARGS_, "METHOD", "nearest" );
 
 # Are we aligning images in a SKY frame? Default to yes.
-my $skyalign = get_prim_arg( $_PRIM_ARGS_, "SKYREF", 1);
+my $skyalign = get_prim_arg( $_PRIM_ARGS_, "SKYREF", 1 );
 
 # MAKEMOS image combination method
 my $makemos_method = get_prim_arg( $_PRIM_ARGS_, "MAKEMOS_METHOD", "mean" );
@@ -133,10 +159,10 @@ if (starversion_lt('kappa', 'V1.5')) {
 }
 
 my $moving = $Grp->uhdr("MOVING");
-# Some non-obvious stuff here. GROUPREF should be 0 for moving
-# sources. First time through, the MOVING flag will not be set so
-# GROUPREF will be 1, but that doesn't matter at this stage because
-# the group file will not exist.
+# Some non-obvious stuff here. GROUPREF should be 0 for moving sources
+# in order for them to mosaic correctly. First time through, the
+# MOVING flag will not be set so GROUPREF will be 1, but that doesn't
+# matter at this stage because the group file will not exist.
 my $pointfocus = ( $Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /focus/i ||
 		   $Frm->uhdr("ORAC_OBSERVATION_TYPE") =~ /point/i) ? 1 : 0;
 my $groupref = ( $moving ) ? 0 : 1;

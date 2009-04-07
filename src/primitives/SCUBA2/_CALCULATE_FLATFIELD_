@@ -1,4 +1,4 @@
-#! -*-perl-*-
+# -*-perl-*-
 
 =head1 NAME
 
@@ -10,21 +10,24 @@ _CALCULATE_FLATFIELD_ RESIST=$resistorlistfile
 
 =head1 DESCRIPTION
 
-Calculate a flatfield solution from a dedicated flatfield observation
-
-Writes a flag file...
-
-This is a Frame operation and should be used before group operations.
+Calculate a flatfield solution from a dedicated flatfield
+observation. On completion of the observation (the OBSEND FITS header
+flag must be true) the new flatfield solution is determined for each
+subarray. A responsivity image may be generated from this solution and
+will be used for subsequent analysis of the flatfield. A similar image
+is derived for the existing flatfield solution (which will be included
+in the raw data) and stored for comparison with the current
+responsivity data.
 
 =head1 ARGUMENTS
 
-This primitive supports the following arguments
+This primitive supports the following arguments:
 
 =over 4
 
 =item B<REFRES>
 
-Value of reference resistance. Default is 2.0 ohms.
+Value of reference resistance in ohms. Default is 2.0 ohms.
 
 =item B<RESIST>
 
@@ -32,39 +35,65 @@ Text file listing the resistor settings for each bolometer. Filename
 must include full path. Default is C<resist.cfg> located in
 $ORAC_DATA_CAL.
 
+=item B<RESP>
+
+Flag to denote whether to generate a responsivity image. Use the null
+parameter C<!> for no responsivity image (false). Any other value
+(including 0) will generate an image.
+
 =item B<RESPMASK>
 
 Flag to denote whether the responsivity should be used to mask
 bolometers in the flatfield. Default is 1 (true).
 
-=item B<RESP>
-
-Name of an output responsivity image. Default is the null parameter
-C<!> which will not write an output image.
-
 =back
 
-=head1 External Tasks
+=head1 EXTERNAL TASKS
 
 The following external tasks are used:
 
 =over 4
 
-=item SMURF
+=item SMURF:
 
-calcflat
+CALCFLAT, CALCRESP
 
 =back
 
-=head1 FILES
+=head1 NOTES
 
-Creates C<_flat> which is registered with the calibration system
+Analysis of the flatfield solution can only take place if responsivity
+images exist. Thus avoid setting B<RESP=!>.
+
+The name of the responsivity image(s) is determined automatically
+using the Frame inout method.
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+On exit there will be one or three files stored in the Frame object
+associated with each of the subgroups defined by the different
+subarrays.
+
+The flatfield soluions are stored in files with suffix C<_flat>, one
+for each subarray.
+
+Responsivity files for the current and previous flatfield solutions
+are generated with the suffix C<_resp> and C<_prsp>
+respectively. There will be one of each for each subarray. These are
+considered temporary files and will be deleted on completion of the
+recipe.
 
 =head1 AUTHOR
 
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
-Copyright (C) 2008 the University of British Columbia.  All Rights
+=head1 COPYRIGHT
+
+Copyright (C) 2008 University of British Columbia.  All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -80,7 +109,7 @@ General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
-USA
+USA.
 
 =cut
 
@@ -117,8 +146,6 @@ if ( $Frm->uhdr("OBSEND") ) {
   my $resp = get_prim_arg( $_PRIM_ARGS_, "RESP", "");
   if ( $resp eq "!" ) {
     orac_warn "No responsivity image will be written: flatfield solution can not be analyzed\n";
-#  } else {
-#    undef $resp;
   }
 
   # Loop over subarrays. Use subgrps method to return a list of Groups
@@ -152,6 +179,12 @@ if ( $Frm->uhdr("OBSEND") ) {
 	$Mon{smurf_mon}->obeyw("calcresp","$args");
 	push (@out, $previous);
       }
+      # The current Frame object for this subgroup now has either 1 or
+      # 3 files stored in it:
+      # $Frmobj->file(1) = Flatfield solution
+      # $Frmobj->file(2) = Current responsivity image
+      # $Frmobj->file(3) = Previous responsivity image
+      # The analysis carried out in _ANALYZE_FLATFIELD_ relies on this order.
       $Frmobj->files(@out);
     }
   }

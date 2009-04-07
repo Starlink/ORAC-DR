@@ -1,4 +1,4 @@
-#! -*-perl-*-
+# -*-perl-*-
 
 =head1 NAME
 
@@ -6,26 +6,59 @@ _ADD_GAUSSIAN_NOISE_ - add Gaussian noise
 
 =head1 SYNOPSIS
 
-    _ADD_GAUSSIAN_NOISE_
-
-    _ADD_GAUSSIAN_NOISE_ SIGMA=0.1
+_ADD_GAUSSIAN_NOISE_ SIGMA=0.1
 
 =head1 DESCRIPTION
 
-Adds Gaussian noise to an input image. First, a noise image is created
-with KAPPA CREFRAME (using the input file as a template) which is then
-added to the original image. The noise may be specified through the
-SIGMA and/or FWHM parameters. Note: SIGMA overrides FWHM if both are
-specified.
+Adds Gaussian noise (with zero mean) to all files in the current
+Frame. First, a noise image is created (using the input file as a
+template) which is then added to the original image. The standard
+deviation of the noise may be specified through the B<SIGMA>
+parameter.
 
-=head1 ALGORITHMS
+This is a Frame operation.
 
-Uses KAPPA CREFRAME to generate the noise image, KAPPA MATHS to
-combine the noise and input images.
+=head1 ARGUMENTS
 
-=head1 FILE SUFFIX
+The following argument is supported:
 
-Creates output files with suffix of '_gn'
+=over 4
+
+=item B<SIGMA>
+
+Standard deviation of noise to be added to input image. Default is
+30e-3 which is probably not useful.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA:
+
+ADD, CREFRAME
+
+=back
+
+=head1 NOTES
+
+Designed to be used with 2-D images, though it will work with
+time-series data.
+
+The value of B<SIGMA> must be in the same units as the input files in
+order to be meaningful. No check is made, so the user must be aware of
+the typical values going in to this primitive.
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+Creates output files with suffix C<_gn>.
 
 =head1 AUTHOR
 
@@ -33,41 +66,46 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2005 University of British Columbia. All Rights Reserved.
+Copyright (C) 2005-2009 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
 
 =cut
 
-# Check if sigma and/or fwhm are specified
-my $sigma = (exists $_ADD_GAUSSIAN_NOISE_{SIGMA} &&
-	     defined $_ADD_GAUSSIAN_NOISE_{SIGMA}) ?
-    $_ADD_GAUSSIAN_NOISE_{SIGMA} : 30e-3;
-
-my $fwhm = 2.355*$sigma; # Calculate FWHM
-
-unless (defined $_ADD_GAUSSIAN_NOISE_{SIGMA}) {
-    $fwhm = (exists $_ADD_GAUSSIAN_NOISE_{FWHM} &&
-	     defined $_ADD_GAUSSIAN_NOISE_{FWHM}) ?
-	     $_ADD_GAUSSIAN_NOISE_{FWHM} : 70.65e-3;
-}
+# Obtain sigma
+my $sigma = get_prim_arg( $_PRIM_ARGS_, "SIGMA", 30e-3 );
 
 # Loop over files
 foreach my $i (1..$Frm->nfiles) {
 
-    # Create output filename: use input filename and add _gn suffix
-    my ($in, $out) = $Frm->inout('_gn', $i);
+  # Create output filename: use input filename and add _gn suffix
+  my ($in, $out) = $Frm->inout('_gn', $i);
 
-    orac_print "Adding noise to file $in and writing to $out\n";
+  orac_print "Adding noise to file $in and writing to $out\n";
 
-    # Use KAPPA CREFRAME to generate a noise image to match the mosaicked image.
-    my $outtmp = new ORAC::TempFile;
-    $Mon{kappa_mon}->obeyw("creframe","mode=gn mean=0.0 sigma=$sigma like=$in out=".$outtmp->file);
+  # Use KAPPA CREFRAME to generate a noise image to match the mosaicked image.
+  my $outtmp = new ORAC::TempFile;
+  my $args = "mode=gn mean=0.0 sigma=$sigma like=$in out=".$outtmp->file;
+  $Mon{kappa_mon}->obeyw("creframe","$args");
 
-    # Add to or multiply input image by noise image
-#    my $exp = "IA + IB";
-#    $Mon{kappa_mon}->obeyw("maths","ia=$in ib=".$outtmp->file." exp=$exp out=$out");
-    $Mon{kappa_mon}->obeyw("add","in1=$in in2=".$outtmp->file." out=$out");
+  # Add the noise image to the input image
+  $args = "in1=$in in2=".$outtmp->file." out=$out";
+  $Mon{kappa_mon}->obeyw("add","$args");
     
-    # Register new output filename
-    $Frm->file( $i, $out );
-
+  # Register new output filename
+  $Frm->file( $i, $out );
 }
