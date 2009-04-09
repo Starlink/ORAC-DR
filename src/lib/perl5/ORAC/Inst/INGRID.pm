@@ -96,6 +96,6 @@ Malcolm J. Currie E<lt>mjc@jach.hawaii.eduE<gt>.
 Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
-
 =cut
 
+1;
