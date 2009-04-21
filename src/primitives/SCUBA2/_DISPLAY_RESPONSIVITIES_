@@ -119,29 +119,23 @@ if ( defined $Frmobj ) {
   my $subarray = uc($Frmobj->hdr('SUBARRAY'));
 
   # Get current and previous responsivity solutions
-  my $current = $Frmobj->file(2);
-  my $previous = $Frmobj->uhdr("PREVIOUS");
+  my $current = $Frmobj->uhdr("RESP_NEW");
+  my $previous = $Frmobj->uhdr("RESP_OLD");
 
   # Set coord frame to pixel for current file
   my $args = "ndf=$current frame=pixel";
   $Mon{ndfpack_mon}->obeyw("wcsframe","$args");
 
-  # Create copies of responsivity files with the correct suffix for
-  # display. First deal with the current solution
-  my $subletter = lc(substr($subarray, -1));
-  my $suffix = "resp".$subletter;
-  my $out = $Frmobj->inout("_".$suffix);
-  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$current out=$out");
   # Set the title to something meaningful
-  $args = "ndf=$out title='$subarray current responsivity solution'";
+  $args = "ndf=$current title='$subarray current responsivity solution'";
   $Mon{ndfpack_mon}->obeyw("settitle","$args");
   # Store in Frame object and display
-  $Frmobj->files($out);
+  $Frmobj->files($current);
   my %options = ( TYPE => 'image', REGION => 1, WINDOW => 0, TOOL => 'kapview',
 		  ZAUTOSCALE => 1, KEY => 'true' );
-  $Display->display_data($Frmobj, \%options);
+  $Display->display_data($Frmobj, \%options, 0);
   # Find min/max so previous image can be displayed on same scale
-  _FIND_IMAGE_STATISTICS_ IMAGE=$out HISTAT=0 COMP=$comp VERBOSE=0
+  _FIND_IMAGE_STATISTICS_ IMAGE=$current HISTAT=0 COMP=$comp VERBOSE=0
   my $zmin = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MIN};
   my $zmax = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
 
@@ -152,7 +146,7 @@ if ( defined $Frmobj ) {
   }
 
   # Display the histogram
-  %options = ( TYPE => 'histogram', REGION => 13, WINDOW => 0, TOOL => 'kapview', 
+  %options = ( TYPE => 'histogram', REGION => 13, WINDOW => 0, TOOL => 'kapview',
 	       ZAUTOSCALE => 0, SIGMA => $clip );
   $Display->display_data($Frmobj, \%options, 0);
 
@@ -162,37 +156,35 @@ if ( defined $Frmobj ) {
     $args = "ndf=$previous frame=pixel";
     $Mon{ndfpack_mon}->obeyw("wcsframe","$args");
 
-    $out = $Frmobj->inout("_p".$suffix);
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$previous out=$out");
     # Set the title to something meaningful
-    $args = "ndf=$out title='$subarray previous responsivity solution'";
+    $args = "ndf=$previous title='$subarray previous responsivity solution'";
     $Mon{ndfpack_mon}->obeyw("settitle","$args");
     # Store in Frame object
-    $Frmobj->files($out);
+    $Frmobj->files($previous);
     # Display - define options here entirely; there is no disp.dat
     # entry for these files. Display the image and histogram separately.
-    %options = ( TYPE => 'image', REGION => 2, WINDOW => 0, TOOL => 'kapview', 
+    %options = ( TYPE => 'image', REGION => 2, WINDOW => 0, TOOL => 'kapview',
 		 ZAUTOSCALE => 0, ZMIN => $zmin, ZMAX => $zmax, KEY => 'true' );
     $Display->display_data($Frmobj, \%options, 0);
-    %options = ( TYPE => 'histogram', REGION => 14, WINDOW => 0, TOOL => 'kapview', 
+    %options = ( TYPE => 'histogram', REGION => 14, WINDOW => 0, TOOL => 'kapview',
 		 ZAUTOSCALE => 0, SIGMA => $clip );
     $Display->display_data($Frmobj, \%options, 0);
 
-    # Next create the `percentage change' image
-    $suffix = "_pcrsp".$subletter;
-    $out = $Frmobj->inout($suffix);
-    my $exp = "PA*(IA-IB)/IB";
-    $args = "exp=$exp IA=$current IB=$previous PA=100.0 out=$out";
-    $Mon{kappa_mon}->obeyw("maths","$args");
-    # Set the title to something meaningful
-    $args = "ndf=$out title='Responsivity change for $subarray (%)'";
-    $Mon{ndfpack_mon}->obeyw("settitle","$args");
-    # Store in current Frame object and display
-    $Frmobj->files( $out );
-    ($zmin, $zmax) = ($Frmobj->hdr('FILTER') =~ /850/) ? (-5.0, 5.0) : (-10.0, 10.0);
-    %options = ( TYPE => 'image', REGION => 4, WINDOW => 0, TOOL => 'kapview',
-		 ZAUTOSCALE => 0, ZMIN => $zmin, ZMAX => $zmax, KEY => 'TRUE' );
-    $Display->display_data( $Frmobj, \%options, 0 );
+    # Retrieve percentage change image. Store in current Frame object
+    # and display
+    my $pcresp = $Frmobj->uhdr("RESP_DELTA");
+    if ( defined $pcresp ) {
+      $Frmobj->files( $pcresp );
+      ($zmin, $zmax) = ($Frmobj->hdr('FILTER') =~ /850/) ? (-5.0, 5.0) : (-10.0, 10.0);
+      %options = ( TYPE => 'image', REGION => 4, WINDOW => 0, TOOL => 'kapview',
+		   ZAUTOSCALE => 0, ZMIN => $zmin, ZMAX => $zmax, KEY => 'TRUE' );
+      $Display->display_data( $Frmobj, \%options, 0 );
+    } else {
+      orac_warn "Previous solution defined, but not percentage-change image\n";
+    }
+
+  } else {
+    orac_warn "No previous solution defined - only current information is displayed\n";
   }
 
 } else {
