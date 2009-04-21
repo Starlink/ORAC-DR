@@ -59,6 +59,9 @@ _DISPLAY_RESPONSIVITIES_, _FIND_IMAGE_STATISTICS_, _WRITE_FLAG_FILE_
 The name of each flatfield solution is stored in the calibration
 system in C<index.flat>.
 
+The ratio of the current and previous responsivity images (if they
+exist) is stored as an NDF extension within the flatfield solution.
+
 =head1 OUTPUT FILES
 
 A (hidden) flag file is written for each subarray, with the extension
@@ -94,9 +97,6 @@ USA.
 
 =cut
 
-# Compare the new values with the previous flatfield and flag any
-# large differences
-
 # Flatfield can only be calculated after the observation has ended
 if ( $Frm->uhdr("OBSEND") ) {
 
@@ -117,81 +117,102 @@ if ( $Frm->uhdr("OBSEND") ) {
   
   foreach my $Subgrp ( @Grps ) {
     my @frames = $Subgrp->allmembers;
-    # Hmm what if @frames contains >1 ?
-    foreach my $Frmobj ( @frames ) {
-      # Retrieve flatfield solution
-      my $flatfile = $Frmobj->file(1);
-      # Get responsivity file - this will be the same as the flatfile
-      # if there is responsivity file in the current Frame object
-      my $respfile = $Frmobj->file(2);
+    # Retrieve the representative Frame object
+    my $Frmobj = $frames[0];
+    # Retrieve flatfield solution
+    my $flatfile = $Frmobj->file;
+    # Get responsivity file names
+    my $respfile = $Frmobj->uhdr("RESP_NEW");
+    my $previous = $Frmobj->uhdr("RESP_OLD");
 
-      # Check if we really have a responsivity file
-      my $subarray = $Frmobj->hdr('SUBARRAY');
-      if ($respfile eq $flatfile ) {
-	orac_warn "No responsivity file for subarray $subarray\n";
-      } else {
-	# Analyze current resp file - use STATS for sigma-clipping
-	_FIND_IMAGE_STATISTICS_ IMAGE=$respfile COMP=$comp VERBOSE=0 CLIP=$clip HISTAT=0 
-	my %results = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
-	# Now get the median using HISTAT
-	_FIND_IMAGE_STATISTICS_ IMAGE=$respfile COMP=$comp VERBOSE=0 CLIP=$clip
-	$results{MEDIAN} = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
+    # Check if we really have a responsivity file
+    my $subarray = $Frmobj->hdr('SUBARRAY');
+    if ( $respfile && $previous ) {
+      # Analyze current resp file - use STATS for sigma-clipping
+      _FIND_IMAGE_STATISTICS_ IMAGE=$respfile COMP=$comp VERBOSE=0 CLIP=$clip HISTAT=0
+      my %results = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
+      # Now get the median using HISTAT
+      _FIND_IMAGE_STATISTICS_ IMAGE=$respfile COMP=$comp VERBOSE=0 CLIP=$clip
+      $results{MEDIAN} = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
 
-	# Calculate how many values have been dropped due to
-	# sigma-clipping and what proportion that represents
-	my $totalgood = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
-	my $dn = $totalgood - $results{NUMGOOD};
-	my $dnpc = sprintf "%5.1f", 100.0 * $dn/$totalgood;
+      # Calculate how many values have been dropped due to
+      # sigma-clipping and what proportion that represents
+      my $totalgood = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
+      my $dn = $totalgood - $results{NUMGOOD};
+      my $dnpc = sprintf "%5.1f", 100.0 * $dn/$totalgood;
 
-	# Obtain statistics for the previous responsivity solution.
-	my $previous = $Frmobj->file(3);
+      # Obtain statistics for the previous responsivity solution.
 
-	# Analyze previous resp solution - use STATS to get sigma-clipped statistics
-	_FIND_IMAGE_STATISTICS_ IMAGE=$previous COMP=$comp VERBOSE=0 CLIP=$clip HISTAT=0 
-	my %previous = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
-	# Now get the median using HISTAT
-	_FIND_IMAGE_STATISTICS_ IMAGE=$previous COMP=$comp VERBOSE=0 CLIP=$clip
-        $previous{MEDIAN} = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
+      # Analyze previous resp solution - use STATS to get sigma-clipped statistics
+      _FIND_IMAGE_STATISTICS_ IMAGE=$previous COMP=$comp VERBOSE=0 CLIP=$clip HISTAT=0
+      my %previous = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
+      # Now get the median using HISTAT
+      _FIND_IMAGE_STATISTICS_ IMAGE=$previous COMP=$comp VERBOSE=0 CLIP=$clip
+      $previous{MEDIAN} = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
 
-	# Add this file to the Frame object for display purposes
-	$Frmobj->uhdr( "PREVIOUS", $previous );
-
-	# Print out results from current solution and calculate
-	# percentage changes from previous solution
-	orac_print ("---- $preftext responsivity fits for subarray $subarray ---- \n", "green");
-	orac_print ("---- Clipped at $clip sigma ($dn solutions omitted = $dnpc %) ----\n", "green") 
-	  if ($clip ne "");
-	foreach my $stat ( qw/ MEDIAN MEAN SIGMA MAX MIN / ) {
-	  my $value = sprintf "%11.4f", $results{$stat};
-	  my $diff = sprintf "%11.4f", ($results{$stat} - $previous{$stat});
-	  my $incdec = ( $diff == 0) ? "change" : 
-	               (( $diff > 0 ) ? "increase" : "decrease");
-	  my $deltapc = sprintf "%4.1f", 100*abs($diff / $previous{$stat});
-	  # Align the output for easy reading
-	  my $outstat = sprintf "%-8s", $stat;
-	  orac_print ( " $outstat = $value A/W ( $deltapc % $incdec )\n", "green");
-	}
-	# Now print out the change in the number of good solutions
-	my $numstring = "no change";
-	my $numdiff = $results{NUMGOOD} - $previous{NUMGOOD};
-	my $deltapc = sprintf "%4.1f", 100*abs($numdiff / $previous{NUMGOOD});
-	if ( $numdiff > 0 ) {
-	  $numstring = "$numdiff / $deltapc % more";
-	} elsif ( $numdiff < 0 ){
-	  $numstring = -$numdiff ." / $deltapc % fewer";
-	}
-	orac_print (" NGOOD    = $results{NUMGOOD} solutions ( $numstring )\n", "green");
-	# Now display the results
-	_DISPLAY_RESPONSIVITIES_ FRAME=$Frmobj CLIP=$clip
+      # Print out results from current solution and calculate
+      # percentage changes from previous solution
+      orac_print ("---- $preftext responsivity fits for subarray $subarray ---- \n", "green");
+      orac_print ("---- Clipped at $clip sigma ($dn solutions omitted = $dnpc %) ----\n", "green")
+	if ($clip ne "");
+      foreach my $stat ( qw/ MEDIAN MEAN SIGMA MAX MIN / ) {
+	my $value = sprintf "%11.4f", $results{$stat};
+	my $diff = sprintf "%11.4f", ($results{$stat} - $previous{$stat});
+	my $incdec = ( $diff == 0) ? "change" :
+	  (( $diff > 0 ) ? "increase" : "decrease");
+	my $deltapc = sprintf "%4.1f", 100*abs($diff / $previous{$stat});
+	# Align the output for easy reading
+	my $outstat = sprintf "%-8s", $stat;
+	orac_print ( " $outstat = $value A/W ( $deltapc % $incdec )\n", "green");
       }
+      # Now print out the change in the number of good solutions
+      my $numstring = "no change";
+      my $numdiff = $results{NUMGOOD} - $previous{NUMGOOD};
+      my $deltapc = sprintf "%4.1f", 100*abs($numdiff / $previous{NUMGOOD});
+      if ( $numdiff > 0 ) {
+	$numstring = "$numdiff / $deltapc % more";
+      } elsif ( $numdiff < 0 ) {
+	$numstring = -$numdiff ." / $deltapc % fewer";
+      }
+      orac_print (" NGOOD    = $results{NUMGOOD} solutions ( $numstring )\n", "green");
 
-      # Now create an ok file to indicate processing is complete.
-      _WRITE_FLAG_FILE_ FRAME=$Frmobj FILE=$flatfile
+      # Next create the `percentage change' image
+      my $delta = new ORAC::TempFile;
+      my $deltafile = $delta->file;
+      my $exp = "PA*(IA-IB)/IB";
+      my $args = "exp=$exp IA=$respfile IB=$previous PA=100.0 out=$deltafile";
+      $Mon{kappa_mon}->obeyw("maths","$args");
+      # Set the title to something meaningful
+      $args = "ndf=$deltafile title='Responsivity change for $subarray (%)'";
+      $Mon{ndfpack_mon}->obeyw("settitle","$args");
 
-      # Finally register the flatfield with the Calibration system
-      $Cal->flatindex->add( $flatfile, {%{$Frmobj->hdr}, %{$Frmobj->uhdr}} );
+      # Store this as another extension in flatfield file - delete the
+      # .more extension as it's the same as the container file
+      $Mon{hdstools_mon}->obeyw("hdelete","$deltafile.more");
+      my $pcresp = $flatfile.".MORE.SMURF.RESP_DELTA";
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$deltafile out=$pcresp");
+      $Frmobj->uhdr("RESP_DELTA", $pcresp);
 
+      # Now display the results
+      _DISPLAY_RESPONSIVITIES_ FRAME=$Frmobj CLIP=$clip
+    } else {
+      orac_warn "No responsivity file for subarray $subarray\n";
     }
+
+    # Now create an ok file to indicate processing is complete.
+    _WRITE_FLAG_FILE_ FRAME=$Frmobj FILE=$flatfile
+
+    # Finally register the flatfield with the Calibration system
+    $Cal->flatindex->add( $flatfile, {%{$Frmobj->hdr}, %{$Frmobj->uhdr}} );
+
+    # HACK - remove the .more.smurf.resp* files from the intermediates
+    # array so they are not deleted. This is obviously not a good way
+    # to keep files hanging around.
+    my @intermediates = $Frmobj->intermediates;
+    foreach my $interfile ( @intermediates ) {
+      pop @intermediates if ( $intermediates[-1] =~ /.more.smurf.resp/i);
+    }
+    $Frmobj->intermediates(@intermediates);
+
   }
 }
-
