@@ -146,7 +146,6 @@ export ORAC_SUN=xxx
 
 # some other things
 export HDS_MAP=0
-export RTD_REMOTE_DIR=$ORAC_DATA_OUT
 
 # Source general alias file and print welcome screen
 . $ORAC_DIR/etc/oracdr_start.sh
