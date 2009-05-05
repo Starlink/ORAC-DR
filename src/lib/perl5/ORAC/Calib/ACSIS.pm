@@ -135,7 +135,7 @@ sub bad_receptors_index {
 
   if( ! defined( $self->{BadReceptorsIndex} ) ) {
 
-    my $indexfile = File::Spec->catfile( $ENV{'ORAC_DATA_CAL'}, "index.bad_receptors" );
+    my $indexfile = $self->find_file( "index.bad_receptors" );
     my $rulesfile = $self->find_file( "rules.bad_receptors" );
 
     $self->{BadReceptorsIndex} = new ORAC::Index( $indexfile, $rulesfile );
@@ -396,7 +396,7 @@ sub qaparams {
     croak "No suitable QA parameters file found in index file"
   }
 
-  return File::Spec->catfile( $ENV{'ORAC_DATA_CAL'}, $qaparamsfile );
+  return $self->find_file( $qaparamsfile );
 
 }
 
