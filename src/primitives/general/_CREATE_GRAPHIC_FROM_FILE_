@@ -1,0 +1,113 @@
+=head1 NAME
+
+_CREATE_GRAPHIC_FROM_FILE_ - Create a PNG, GIF, or JPG graphic from a
+given file.
+
+=head1 DESCRIPTION
+
+This primitive creates a PNG, GIF, or JPG graphic from the supplied
+file. It currently only supports 1-D and 2-D files.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item ADDRES = LOGICAL (Given)
+
+Whether or not to append the resolution to the filename. If true, the
+output filename will have the form <file>_<xres>x<yres>.<type>, or if
+the XRES and YRES parameters are equal, <file>_<xres>.<type>. [0]
+
+=item FILE = CHARACTER (Returned)
+
+The name of the file to convert to the given graphic file. Must be
+given.
+
+=item TYPE = CHARACTER (Returned)
+
+The type of graphic to create. Can be gif, jpg, or png. ['gif']
+
+=item XRES = INTEGER (Returned)
+
+The number of pixels along the x-axis of the output graphic file. [64]
+
+=item YRES = INTEGER (Returned)
+
+The number of pixels along the y-axis of the output graphic file. [64]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable only for 1-D and 2-D input files.
+
+=item *
+
+The graphic file will have the same root filename as the input file,
+with the appropriate file extension.
+
+=back
+
+=head1 AUTHORS
+
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+my $file = get_prim_arg( $_PRIM_ARGS_, 'FILE', undef );
+if( ! defined( $file ) ) {
+  orac_throw "Programming error: Must supply FILE parameter to _CREATE_GRAPHIC_FROM_FILE_.";
+}
+
+my $addres = get_prim_arg( $_PRIM_ARGS_, 'ADDRES', 0 );
+my $type = uc( get_prim_arg( $_PRIM_ARGS_, 'TYPE', 'GIF' ) );
+my $xres = get_prim_arg( $_PRIM_ARGS_, 'XRES', 64 );
+my $yres = get_prim_arg( $_PRIM_ARGS_, 'YRES', 64 );
+
+my $outfile;
+
+if( $addres ) {
+  if( $xres == $yres ) {
+    $outfile = "${file}_$xres." . lc( $type );
+  } else {
+    $outfile = "${file}_${xres}x${yres}." . lc( $type );
+  }
+} else {
+  $outfile = join ".", $file, lc( $type );
+}
+
+# Set the x- and y-resolution. This unfortunately needs to be done via
+# an environment variable, which has a different name depending on
+# what type of file we're writing.
+my $xresenv = "PGPLOT_" . $type . "_WIDTH";
+my $yresenv = "PGPLOT_" . $type . "_HEIGHT";
+
+$ENV{$xresenv} = $xres;
+$ENV{$yresenv} = $yres;
+
+# Check to see if we're 1-D or 2-D.
+_GET_DIMENSIONS_ FILE=$file
+my $dims = $_GET_DIMENSIONS_{DIMS};
+my @nondegen = grep { $_ != 1 } @$dims;
+if( $#nondegen == 0 ) {
+
+  my $params = "ndf=$file device=\"$outfile/$type\" margin=0 axes=no mode=histogram";
+  $Mon{'kapview_mon'}->obeyw( "linplot", "$params" );
+
+} elsif( $#nondegen == 1 ) {
+
+  my $params = "in=$file device=\"$outfile/$type\" margin=0 axes=no mode=scale accept";
+  $Mon{'kapview_mon'}->obeyw( "display", "$params" );
+
+} else {
+  orac_warn "Programming error: cannot create graphic from file that's not 1-D or 2-D\n";
+}
