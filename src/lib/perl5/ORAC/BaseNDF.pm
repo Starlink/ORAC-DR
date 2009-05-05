@@ -101,7 +101,7 @@ sub collate_headers {
                                                 Value   => $procvers_value,
                                                 Comment => 'Date of most recent commit',
                                                 Type    => 'STRING' );
-print STDERR "CommDate= $commitdate PComm=$pcommitdate\n";
+
   # Calculate the new data reduction recipe header. This is only done
   # if the generic header exists
   my $uhdr = $self->uhdr;
