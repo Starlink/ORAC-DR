@@ -91,12 +91,17 @@ sub collate_headers {
     $procvers_value = ( $commitdate > $pcommitdate ?
                         $commitdate->strftime( "%Y%m%d%H%M%S" ) :
                         $pcommitdate->strftime( "%Y%m%d%H%M%S" ) );
+  } else {
+    my @sys;
+    push(@sys, "pipeline") unless defined $pcommitdate;
+    push(@sys, "engine") unless defined $commitdate;
+    print STDERR "Problem reading ".join(" and ",@sys)." version information\n";
   }
   my $procvers = new Astro::FITS::Header::Item( Keyword => 'PROCVERS',
                                                 Value   => $procvers_value,
                                                 Comment => 'Date of most recent commit',
                                                 Type    => 'STRING' );
-
+print STDERR "CommDate= $commitdate PComm=$pcommitdate\n";
   # Calculate the new data reduction recipe header. This is only done
   # if the generic header exists
   my $uhdr = $self->uhdr;
