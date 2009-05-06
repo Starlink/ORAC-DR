@@ -370,10 +370,7 @@ if ($calib && $dofit) {
       }
 
     } else {
-      # Set up args to beamfit
-      my $pos = '"'.$xy[0].", ".$xy[1].'"';
-      # Use a 15x15 pixel area - should this be an input variable?
-      my $fitarea = 15;
+      # Use BEAMFIT
 
       # Check we have a valid variance component
 #      $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
@@ -390,6 +387,9 @@ if ($calib && $dofit) {
 
       # Define args to beamfit
       my $var = "false";
+      my $pos = '"'.$xy[0].", ".$xy[1].'"';
+      # Use a 15x15 pixel area - should this be an input variable?
+      my $fitarea = 15;
       my $args = "mode=interface pos=".$pos." variance=$var fitarea=$fitarea";
       # Call beamfit
       $Mon{kappa_mon}->obeyw("beamfit","ndf=$in $args");
@@ -398,11 +398,11 @@ if ($calib && $dofit) {
       my @params = (qw/ majfwhm minfwhm orient amp /);
       ($ORAC_STATUS, my %bfitres) = $Mon{kappa_mon}->mget("beamfit",@params);
 
-      # read the FWHM and convert to arcsec
+      # Read the FWHM and convert to arcsec
       @majfwhm = map {$_ * RAD2ASEC} @{$bfitres{majfwhm}};
       @minfwhm = map {$_ * RAD2ASEC} @{$bfitres{minfwhm}};
 
-      # amplitude and orientation with error
+      # Amplitude and orientation with error
       @orient = @{$bfitres{orient}};
       @amp = @{$bfitres{amp}};
 
@@ -422,19 +422,26 @@ if ($calib && $dofit) {
 	orac_warn "Large uncertainty in FWHM for minor axis\n" if $verbose;
 	$badbeam{MINFWHM} = 1;
       }
-      if ( $minfwhm[1] > $minfwhm[0] ) {
+      if ( $amp[1] > $amp[0] ) {
 	orac_warn "Large uncertainty in fitted amplitude\n" if $verbose;
 	$badbeam{AMP} = 1;
       }
+      if ( $amp[0] < 0 ) {
+	orac_warn "Fitted amplitude is negative\n" if $verbose;
+	$badbeam{AMP} = 1;
+      }
+      $totalflux = 1.133 * $amp[0] * $majfwhm[0] * $minfwhm[0];
     }
 
-    # Check on status of fit
-    if ( defined $badbeam{ELONG} && defined $badbeam{MAJFWHM} && 
-	 defined $badbeam{MINFWHM} && defined $badbeam{AMP} ) {
-      orac_warn "Beam fit looks poor - ignoring, fit will not be logged\n";
+    # Check on status of fit - count the number of defined badbeam flags
+    my $nbadbflags = 0;
+    foreach my $flag ( qw/ AMP ELONG MAJFWHM MINFWHM /) {
+      $nbadbflags++ if ( defined $badbeam{$flag} );
+    }
+    # Define a bad fit if 2 or more flags are set
+    if ( $nbadbflags > 1 ) {
+      orac_warn "Beam fit looks poor - fit will not be logged\n";
       $badbeam{BEAM} = 1;
-    } else {
-      $totalflux = 1.133 * $amp[0] * $majfwhm[0] * $minfwhm[0];
     }
 
     my ($beama, $beamb, $pa, $errfrac);
