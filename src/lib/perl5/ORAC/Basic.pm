@@ -233,7 +233,7 @@ sub orac_exit_normally {
   }
 
   if ($args{err}) {
-    orac_print("Will be exiting with bad status -1\n",red);
+    orac_print("Will be exiting with bad status -1\n",'red');
   }
 
   if (!$args{quiet}) {
