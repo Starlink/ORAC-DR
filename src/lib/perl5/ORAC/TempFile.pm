@@ -191,6 +191,7 @@ true (the default is false)
 =cut
 
 sub DESTROY {
+  local($., $@, $!, $^E, $?);
   my $self = shift;
 
   unless ($DEBUG) {
