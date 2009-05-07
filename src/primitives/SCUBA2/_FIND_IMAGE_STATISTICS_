@@ -1,4 +1,4 @@
-#! -*-perl-*-
+# -*-perl-*-
 
 =head1 NAME
 
@@ -8,16 +8,20 @@ _FIND_IMAGE_STATISTICS_ - determine the statistics of an image
 
  _FIND_IMAGE_STATISTICS_
 
- _FIND_IMAGE_STATISTICS_ CLIP=2,2
+ _FIND_IMAGE_STATISTICS_ CLIP=2,2 IMAGE=$Frm->file
 
- _FIND_IMAGE_STATISTICS_ HISTAT=1
+ _FIND_IMAGE_STATISTICS_ HISTAT=1 IMAGE=$image
 
 =head1 DESCRIPTION
 
-This primitive calculates the statistics of regions within a given
-image. It is expected that this primitive will usually be called from
-another which removes the sky contribution, and thus will pass it the
-IMAGE argument.
+This primitive calculates the statistics of a given image, or
+optionally, its variance or error component. It is expected that this
+primitive will usually be called from another, and thus will pass in
+the B<IMAGE> argument. The method by which certain parameters (such as
+the median and mode) are derived is user-controllable.
+
+The results are stored in the primitive hash so the calling primitive
+may retrieve the desired values.
 
 =head1 ARGUMENTS
 
@@ -25,47 +29,41 @@ The following arguments are supported:
 
 =over 4
 
-=item IMAGE
-
-Input image. No default, and an error will be given if no image is
-supplied.
-
-=item COMP
-
-Component of input image to obtain statistics for. Valid values are
-C<DATA>, C<VAR> and C<ERR>. Default is C<DATA>.
-
-=item HISTOGRAM
-
-Flag to indicate whether to calculate a histogram of values to find
-the sky level via the mode. Default is 0 (false).
-
-=item VERBOSE
-
-Flag to indicate whether informational messages should be given to the
-user. Default is 1 (true).
-
-=item CLIP
+=item B<CLIP>
 
 A comma-separated list of up to 5 numbers specifying the clip levels
 at which to evaluate the statistics. See the documentation for KAPPA
 C<stats> for further details. Default is blank (no clipping).
 
-=item HISTAT
+=item B<COMP>
+
+Component of input image to obtain statistics for. Valid values are
+C<DATA>, C<VAR> and C<ERR>. Default is C<DATA>.
+
+=item B<HISTAT>
 
 Flag to denote whether to use the Kappa HISTAT command rather than the
 regular STATS application. Default is 1 (true).
 
-=back
+=item B<HISTOGRAM>
 
-The following are only accessed if HISTAT is true.
+Flag to indicate whether to calculate a histogram of values to find
+the sky level via the mode. Default is 0 (false).
 
-=over 4
+=item B<IMAGE>
 
-=item MODE_METHOD
+Input image. No default, and an error will be given if no image is
+supplied.
+
+=item B<MODE_METHOD>
 
 The method used by HISTAT to calculate the mode. The default is
-C<MOMENTS> as in the KAPPA manual.
+C<MOMENTS>. Only accessed it B<HISTAT> is true.
+
+=item B<VERBOSE>
+
+Flag to indicate whether informational messages should be given to the
+user. Default is 1 (true).
 
 =back
 
@@ -75,11 +73,20 @@ The following external tasks are used:
 
 =over 4
 
-=item KAPPA
+=item KAPPA:
 
-C<stats>, C<histogram>, C<histat>
+HISTAT, HISTOGRAM, STATS
 
 =back
+
+=head1 NOTES
+
+Only takes the average of the entire image so if used for estimating
+sky properties it assumes that the sky dominates the emission. A more
+sophisticated routine is needed for the pathological cases when there
+is a lot of extended (source) emission which lies at the several sigma
+level. Masking of known sources should probably take place before
+calling this primitive.
 
 =head1 OUTPUT DATA
 
@@ -90,27 +97,27 @@ contains the following keys:
 
 =item RESULTS
 
-A hash containing the following keys and values:
+A reference to a hash containing the following keys and values:
 
 =over 4
 
-=item MEAN - mean level
+=item MEAN    - mean level
 
-=item MODE - modal value (only if HISTOGRAM or HISTAT are true)
+=item MODE    - modal value (only if HISTOGRAM or HISTAT are true)
 
-=item MEDIAN - median (only if HISTAT is true)
+=item MEDIAN  - median (only if HISTAT is true)
 
-=item SIGMA - standard deviation (only if HISTAT is false)
+=item SIGMA   - standard deviation (only if HISTAT is false)
 
-=item SUM - sum
+=item SUM     - sum
 
-=item NUMPIX - total number of pixels
+=item NUMPIX  - total number of pixels
 
 =item NUMGOOD - number of good pixels
 
-=item MAX - maximum value
+=item MAX     - maximum value
 
-=item MIN - minimum value
+=item MIN     - minimum value
 
 =back
 
@@ -122,16 +129,7 @@ A true/false flag to indicate if the HISTO method returned a valid value
 
 =back
 
-The frame object is not updated.
-
-=head1 KNOWN ISSUES
-
-Only takes the average of the entire image so if used for estimating
-sky properties it assumes that the sky dominates the emission. A more
-sophisticated routine is needed for the pathological cases when there
-is a lot of extended (source) emission which lies at the several sigma
-level. Masking of known sources should probably take place before
-calling this primitive.
+The Frame object is not updated.
 
 =head1 AUTHOR
 
@@ -155,7 +153,7 @@ General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
-USA
+USA.
 
 =cut
 
@@ -209,7 +207,7 @@ if ( $histat ) {
   push ( @params, "sigma");
   # Retrieve the values
   ($ORAC_STATUS, %results) = $Mon{kappa_mon}->mget("stats", @params);
-  
+
   # Stats returns sigma = 0 if anything went wrong
   $results{median} = undef;
   $results{mode} = undef;
@@ -227,7 +225,6 @@ my $nbad   = $results{numbad};
 
 if ($ngood == 0) {
   orac_warn "All pixels in region are bad!\n";
-  
 }
 my $fracgood = $ngood/$ntotal;
 
@@ -256,10 +253,10 @@ if ( $histo && $stdev ) {
     or die "Unable to open file, $histname: $!\n";
   my (@lines, @values);
   # Read all the relevant lines, delete file when done
-  while (<$HISTFH>){
+  while (<$HISTFH>) {
     chomp;
     # We only want lines with the word pixels in it
-    push (@lines, $_) if ($_ =~ /pixels/); 
+    push (@lines, $_) if ($_ =~ /pixels/);
   }
   close $HISTFH;
   unlink $histname;
@@ -274,18 +271,18 @@ if ( $histo && $stdev ) {
   # Now find the maximum value - this is the MODE
   my $maxpix = 0;
   foreach my $lineref (@values) {
-    if ($lineref->[2] > $maxpix){
+    if ($lineref->[2] > $maxpix) {
       $maxpix = $lineref->[2];
-      $maxval = 0.5*($lineref->[0] + $lineref->[1]) ;
+      $maxval = 0.5*($lineref->[0] + $lineref->[1]);
     }
   }
   $mode = $maxval;
 }
 
 # Store mean DC level, standard deviation and mode in the hash
-$_FIND_IMAGE_STATISTICS_{RESULTS} = { MEAN => $avg, 
-				      SIGMA => $stdev, 
-				      MODE => $mode, 
+$_FIND_IMAGE_STATISTICS_{RESULTS} = { MEAN => $avg,
+				      SIGMA => $stdev,
+				      MODE => $mode,
 				      MEDIAN => $median,
 				      NUMPIX => $ntotal,
 				      NUMGOOD => $ngood,
