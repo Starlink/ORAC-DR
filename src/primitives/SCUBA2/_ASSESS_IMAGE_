@@ -1,0 +1,275 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_ASSESS_IMAGE_ - simple assessment to determine point source at image centre
+
+=head1 SYNOPSIS
+
+_ASSESS_IMAGE_ GROUP=1
+
+=head1 DESCRIPTION
+
+This primitive performs a simple analysis of an image which is
+expected to contain a point source near the origin in world
+coordinates. The image should be in an offset coordinate frame. The
+user may choose to determine the centroid if a suitable source is
+found.
+
+The assessment proceeds as follows. A search region is defined using
+the B<SIZE> parameter below. If the peak signal-to-noise ratio in that
+region exceeds 15 then the search region is thresholded at half the
+peak signal. Simple analysis shows that for an image with a pixel size
+of one-third the resolution, a point source should have significant
+signal (defined as half the peak or greater) in at least 7
+pixels. Thus if there are at least 7 significant pixels, there is a
+chance the image contains a point-like source near the
+centre. 
+
+Clearly, if the entire search region contains significant pixels, the
+emission is extended. A check is made that the number of significant
+pixels does not exceed a certain fraction. Currently, if the fraction
+is less than half the source is classified as point-like. If the
+fraction is less than two-thirds the source is classified as nearly
+point-like (resolved). In both cases the C<POINT> parameter in the
+primitive hash is set non-zero.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<CENTROID>
+
+Flag to specify whether or not to determine the centroid
+position. Default is 0 (do not determine centroid).
+
+=item B<GROUP>
+
+Flag to denote whether to use the current Group file. Default is 0
+(use the current Frame file).
+
+=item B<IMAGE>
+
+Name of image to analyze. Default is to use the current file in either
+the Frame or Group (see B<GROUP> parameter).
+
+=item B<SIZE>
+
+Diameter of region to analyze in pixels. Must be an odd
+integer. Default is 9.
+
+=item B<VERBOSE>
+
+Flag to denote whether informational messages are printed. Default is
+1 (yes).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA
+
+THRESH, WCSATTRIB
+
+=item ORAC-DR PRIMITIVES
+
+_CENTROID_IMAGE_, _FIND_IMAGE_STATISTICS_
+
+=back
+
+=head1 NOTES
+
+The analysis assumes that the pixel size is one-third of the
+resolution, though this is probably not critical.
+
+The signal-to-noise criteria of 15 is subject to revision with
+further real-world experience.
+
+The B<SIZE> argument should not be smaller than 7 to ensure the
+maximum lies within the search box centred on (0,0). Values that are
+too large may lead to classifying an isolated extended source as
+point-like.
+
+No check is made that the B<SIZE> argument is smaller than the image
+size.
+
+The input image should be in an offset coordinate system but no checks
+are made. Weird things may happen as a result.
+
+=head1 OUTPUT DATA
+
+On exit, the primitive hash C<%_ASSESS_IMAGE_> will contain the
+following keys:
+
+=over 4
+
+=item POINT
+
+A flag to denote whether or not a well-defined centre peak was located
+in the search region. A value of 1 indicates a point-like source, -1
+indicates a resolved source and 0 indicates no source.
+
+=item POSITION
+
+An array reference with the X, Y offsets from (0,0) in arcsec of the
+peak. Will be undef if the centroid was not calculated.
+
+=back
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 the University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Determine the centroid if a suitable source is detected?
+my $centroid = get_prim_arg($_PRIM_ARGS_, "CENTROID", 0);
+
+# Get the Group flag and set the object type
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+my $Obj = ($group) ? $Grp : $Frm;
+
+# Obtain the image, either specified or use current object file
+my $image = get_prim_arg($_PRIM_ARGS_, "IMAGE", $Obj->file );
+
+# Get size of region to query
+my $size = get_prim_arg($_PRIM_ARGS_, "SIZE", 9);
+
+# Print lots of info? Default to yes.
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
+
+# Obtain noise/sigma from variance in given image
+_FIND_IMAGE_STATISTICS_ IMAGE=$image COMP=ERR VERBOSE=0
+my $sigma = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEAN};
+
+# Check sigma was defined
+unless ( $sigma ) {
+  # Use simple alternative method
+  _FIND_IMAGE_STATISTICS_ IMAGE=$image HISTAT=0 VERBOSE=0
+  $sigma = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
+}
+
+# Define a region according to SIZE
+my $args = "ndf=$image mode=get name=system";
+$Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+my ($ORAC_STATUS, $system) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+
+my $ndfsection;
+if ( $system eq "AZEL" || $system eq "GALACTIC" ) {
+  $ndfsection = "0.0~$size,0.0~$size";
+} else {
+  # assume anything else is an RA/Dec frame
+  $ndfsection = "00:00:00~$size,00:00:00~$size";
+}
+
+my $region = "$image($ndfsection)";
+# Find statistics on the centre region
+_FIND_IMAGE_STATISTICS_ IMAGE=$region VERBOSE=0
+my %results = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
+my $max = $results{MAX};
+my $peak_sn = $max / $sigma;
+
+# If the peak signal-to-noise ratio exceeds 15, then things are
+# looking promising. From experience, 10 isn't high enough to exclude
+# nonsense.
+if ( $peak_sn > 15 ) {
+  my $numpix = $results{NUMPIX};
+  my $numgood = $results{NUMGOOD};
+  my $numbad = 0;
+  if ( $numpix != $numgood ) {
+    $numbad = $numpix - $numgood;
+    orac_warn "Search region contains $numbad bad pixels\n";
+  }
+
+  # Threshold this region to find the number of pixels with a value
+  # exceeding half of the peak signal-to-noise
+  my $thresh = $max / 2;
+  my $threshed = new ORAC::TempFile;
+  my $thrfile = $threshed->file;
+  $args = "in=$region out=$thrfile thrlo=$thresh thrhi=$max newlo=bad newhi=$max";
+  $Mon{kappa_mon}->obeyw("thresh","$args");
+  _FIND_IMAGE_STATISTICS_ IMAGE=$thrfile VERBOSE=0
+  my %results = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
+  my $numsig = $results{NUMGOOD};
+  my $numnotsig = $results{NUMPIX} - $numsig;
+
+  # What's the definition of a good source? Must be at least 7
+  # pixels. If it's a point source, then the number of significant
+  # pixels should be less than half the total. If it's extended but
+  # still centrally peak then let's say that the number of significant
+  # pixels can be 2/3 the total. Any more than that and the source is
+  # not sufficiently centrally-peaked.
+  my $point = 0;
+  if ( $numsig >= 7 ) {
+    my $fracsig = $numsig / $numpix;
+    if ($numsig < $numnotsig) {
+      $point = 1;
+    } elsif ($fracsig < 0.67) {
+      $point = -1;
+    }
+    if ($point) {
+      # Find the centroid if requested
+      my $pointtext = ( $point == 1 ) ? "point-like " : "";
+      if ( $centroid ) {
+	_CENTROID_IMAGE_ IMAGE=$region
+	if ( defined $_CENTROID_IMAGE_{RESULTS} ) {
+	  $_ASSESS_IMAGE_{POSITION} = $_CENTROID_IMAGE_{RESULTS};
+	  # OK we have a source and a centroid
+	  orac_say "Image $image appears to have a ".$pointtext."centroid near (0,0)"
+	    if $verbose;
+	} else {
+	  # We have a source but no centroid
+	  orac_warn "Image $image appears to contain a significant peak but no centroid could be determined\n"
+	    if $verbose;
+	}
+      } else {
+	# User decided not to determine a centroid
+	orac_say "Image $image appears to have a ".$pointtext."source near (0,0)"
+	  if $verbose;
+      }
+    } else {
+      # We have emission but it's too extended
+      orac_warn "Image $image contains significant emission but appears to be extended\n"
+	if $verbose;
+    }
+  } else {
+    # We have emission but not enough of it
+    orac_warn "Image $image has significent emission but probably no source\n"
+      if $verbose;
+  }
+  $_ASSESS_IMAGE_{POINT} = $point;
+} else {
+  # No significant emission
+  orac_warn "Image $image does not contain a significant peak\n"
+    if $verbose;
+}
