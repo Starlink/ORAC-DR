@@ -271,41 +271,59 @@ sub findgroup {
     $hdrgrp = $self->hdr('DRGROUP');
   } else {
 
-    # Get the WCS.
-    $self->read_wcs;
-    my $wcs = $self->wcs;
-
-    # Check to see what tracking system we're in. To get this, we need
-    # to make some NDF calls to get into the JCMTSTATE structure.
+    # Check to see if we have the tracking system and base position in the header. If we don't, we'll have to get it from the WCS.©
     my %state;
-    my $status = &NDF::SAI__OK;
-    ndf_begin();
-    ndf_find( &NDF::DAT__ROOT(), $self->file, my $indf, $status );
-    ndf_xstat( $indf, 'JCMTSTATE', my $there, $status );
+    my $wcs;
+    if( defined( $self->hdr( 'TRACKSYS' ) ) ) {
 
-    if( $there ) {
-      ndf_xloc( $indf, 'JCMTSTATE', 'READ', my $xloc, $status );
-      for my $cmp (qw/ TCS_TR_SYS TCS_TR_BC1 TCS_TR_BC2 / ) {
-        dat_there( $xloc, $cmp, my $there, $status );
-        if ($there) {
-          dat_find( $xloc, $cmp, my $sloc, $status );
-          my @dims = (1);
-          # just need the first element
-          dat_cell( $sloc, 1, @dims, my $cloc, $status );
-          # and always read it as a number
-          dat_get0c( $cloc, my $val, $status );
-          if ($status == &NDF::SAI__OK) {
-            $state{$cmp} = $val;
-          }
-          dat_annul( $cloc, $status );
-          dat_annul( $sloc, $status );
-        }
+      $state{'TCS_TR_SYS'} = $self->hdr( 'TRACKSYS' );
+
+      if( $self->hdr( 'TRACKSYS' ) ne 'APP' &&
+        defined( $self->hdr( 'BASEC1' ) ) &&
+        defined( $self->hdr( 'BASEC2' ) ) ) {
+
+        $state{'TCS_TR_BC1'} = $self->hdr( 'BASEC1' );
+        $state{'TCS_TR_BC2'} = $self->hdr( 'BASEC2' );
+
       }
-      dat_annul( $xloc, $status );
-    }
 
-    ndf_annul( $indf, $status );
-    ndf_end( $status );
+    } else {
+
+      # Get the WCS.
+      $self->read_wcs;
+      $wcs = $self->wcs;
+
+      # Check to see what tracking system we're in. To get this, we need
+      # to make some NDF calls to get into the JCMTSTATE structure.
+      my $status = &NDF::SAI__OK;
+      ndf_begin();
+      ndf_find( &NDF::DAT__ROOT(), $self->file, my $indf, $status );
+      ndf_xstat( $indf, 'JCMTSTATE', my $there, $status );
+
+      if( $there ) {
+        ndf_xloc( $indf, 'JCMTSTATE', 'READ', my $xloc, $status );
+        for my $cmp (qw/ TCS_TR_SYS TCS_TR_BC1 TCS_TR_BC2 / ) {
+          dat_there( $xloc, $cmp, my $there, $status );
+          if ($there) {
+            dat_find( $xloc, $cmp, my $sloc, $status );
+            my @dims = (1);
+            # just need the first element
+            dat_cell( $sloc, 1, @dims, my $cloc, $status );
+            # and always read it as a number
+            dat_get0c( $cloc, my $val, $status );
+            if ($status == &NDF::SAI__OK) {
+              $state{$cmp} = $val;
+            }
+            dat_annul( $cloc, $status );
+            dat_annul( $sloc, $status );
+          }
+        }
+        dat_annul( $xloc, $status );
+      }
+
+      ndf_annul( $indf, $status );
+      ndf_end( $status );
+    }
 
     if( exists $state{TCS_TR_SYS} && $state{TCS_TR_SYS} =~ /APP/ ) {
 
@@ -328,7 +346,7 @@ sub findgroup {
         $ang = Astro::Coords::Angle->new( $state{TCS_TR_BC2},
                                           units => 'rad' );
         $refdec = $ang->string;
-      } else {
+      } elsif( defined( $wcs ) ) {
         # Use the RefRA/RefDec position with colons stripped out and to
         # the nearest arcsecond.
         $refra = $wcs->GetC("RefRA");
@@ -343,7 +361,17 @@ sub findgroup {
 
     }
 
-    my $restfreq = $wcs->GetC("RestFreq");
+    my $restfreq;
+    if( defined( $self->hdr( "FRQSIGLO" ) ) &&
+        defined( $self->hdr( "FRQSIGHI" ) ) ) {
+      $restfreq = sprintf( "%.2f", ( $self->hdr( "FRQSIGLO" ) +
+                                     $self->hdr( "FRQSIGHI" ) ) /
+                                     2 );
+    } else {
+      $self->read_wcs;
+      $wcs = $self->wcs;
+      $restfreq = $wcs->GetC("RestFreq");
+    }
 
     $hdrgrp .= $self->hdr( "BWMODE" ) .
                ( uc( $self->hdr( "SAM_MODE" ) ) eq 'RASTER' ? 'SCAN' : uc( $self->hdr( "SAM_MODE" ) ) ) .
