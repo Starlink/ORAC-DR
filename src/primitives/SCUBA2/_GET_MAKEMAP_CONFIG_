@@ -1,20 +1,20 @@
-#! -*-perl-*-
+# -*-perl-*-
 
 =head1 NAME
 
-_GET_MAKEMAP_CONFIG_
+_GET_MAKEMAP_CONFIG_ - Return a config file suitable for use with MAKEMAP
 
 =head1 SYNOPSIS
 
-_GET_MAKEMAP_CONFIG ARGS=$argref CONFIG=$cfg
+ _GET_MAKEMAP_CONFIG ARGS=$argref CONFIG=$cfg
 
 =head1 DESCRIPTION
 
-Returns a configuration file which may be used by SMURF makemap. The
-default behaviour is to return the system-installed default
-configuration file. The user may specify a hash reference containing
-makemap configuration parameters and if so must also supply an
-ORAC::TempFile object which will be used to write the desired
+Returns the name of a configuration file which may be used by SMURF
+MAKEMAP. The default behaviour is to return the system-installed
+default configuration file. The user may specify a hash reference
+containing makemap configuration parameters and if so must also supply
+an ORAC::TempFile object which will be used to write the desired
 configuration information. Parameters supplied using the B<ARGS>
 argument will override any existing in the system default
 configuration file.
@@ -31,13 +31,14 @@ parameters. No default.
 =item B<CONFIG>
 
 An ORAC::TempFile object for the makemap configuration file to be
-written. No default.
+written. No default, but if left unspecified, the system default is
+returned (see below).
 
 =back
 
-=head1 RESULTS
+=head1 OUTPUT DATA
 
-The following entry exists in the primitive hash
+On exit, the following entry exists in the primitive hash:
 
 =over 4
 
@@ -46,6 +47,16 @@ The following entry exists in the primitive hash
 Name of the makemap configuration file to be used.
 
 =back
+
+=head1 NOTES
+
+Note that the B<CONFIG> parameter is used twice. On entry it contains
+an ORAC::TempFile object (if the user is defining their own); on exit
+it contains the name of the config file.
+
+It is implicitly assumed the user understands the implications of
+specifying parameters in the argument list. B<No sanity checks are made
+on user-supplied parameters>.
 
 =head1 AUTHOR
 
@@ -69,7 +80,7 @@ General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
-USA
+USA.
 
 =cut
 
@@ -86,14 +97,13 @@ if ( defined $argref && defined $config ) {
 
     my %args = %{ $argref };
 
+    my $myconfig = ( defined $args{MYCONFIG} ) ? 1 : 0;
+
     # Filter out irrelevant parameters
     my @notneeded = qw/ VERBOSE MYCONFIG PIXSIZE SYSTEM SPREAD METHOD /;
     foreach my $notneeded ( @notneeded ) {
       delete $args{$notneeded} if (exists $args{$notneeded});
     }
-
-    # Get list of remaining parameters
-    my @params = keys %args;
 
     # Search for config parameters that might have to be specified
     # differently in the config file compared with how they are read
@@ -119,20 +129,55 @@ if ( defined $argref && defined $config ) {
     }
     close($CFG);
 
-    # Replace any values given in ARGS
-    foreach my $param ( @params ) {
-      $params{lc($param)} = $args{$param};
+    # This block determines the number of samples in the data and
+    # checks that it exceeds the apodization length in the default
+    # config file by at least a factor of 4
+    my $numsamp;
+    my $seqstart = $Frm->hdr("SEQSTART");
+    my $seqend = $Frm->hdr("SEQEND");
+    # If both of these headers are defined, then there are no
+    # subheaders and thus all the data files have the same length
+    if ( $seqstart && $seqend ) {
+      $numsamp = $seqend - $seqstart + 1;
+    } else {
+      # Find the minimum number of samples which will dictate the
+      # apodization length
+      my $min = 1e6;
+      foreach my $subhdr ( $Frm->hdr("SUBHEADERS") ) {
+	# Pick out data files with non-zero SHUTTER values
+	if ( $subhdr->{SHUTTER} > 0 ) {
+	  my $nsamp = $subhdr->{SEQEND} - $subhdr->{SEQSTART} + 1;
+	  # We have data...
+	  $min = $nsamp if ( $nsamp < $min );
+	}
+      }
+      $numsamp = $min;
     }
+    # Redefine apod in the parameter hash and set myconfig so that a
+    # new config file is written
+    my $apod = ( defined $params{apod} ) ? $params{apod} : 0;
+    if ( $numsamp < 4*$apod ) {	# 4 is the minimum
+      # A factor of 10 is probably overkill but it should guarantee
+      # that enough data remains to make a map after apodizing
+      $params{apod} = int($numsamp / 10);
+      orac_warn "Reducing APOD from $apod to ".$params{apod}." samples due to short integration\n";
+      $myconfig = 1;
+    }
+    # Write out a new config file if necessary
+    if ( $myconfig ) {
+      # Replace any values given in ARGS
+      foreach my $param ( keys %args ) {
+	$params{lc($param)} = $args{$param};
+      }
     
-    # Get new list of parameters
-    @params = keys %params;
-
-    # Write out each parameter given in argument list
-    foreach my $param ( @params ) {
-      print {$config->handle} $param." = ".$params{$param} ."\n";
+      # Write out each parameter given in argument list
+      foreach my $param ( keys %params ) {
+	print {$config->handle} $param." = ".$params{$param} ."\n";
+      }
+      $_GET_MAKEMAP_CONFIG_{CONFIG} = $config->file;
+    } else {
+      $_GET_MAKEMAP_CONFIG_{CONFIG} = $syscfg;
     }
-
-    $_GET_MAKEMAP_CONFIG_{CONFIG} = $config->file;
   } else {
     orac_warn "CONFIG argument is not an ORAC::TempFile - falling back on default system config file\n";
     $_GET_MAKEMAP_CONFIG_{CONFIG} = $syscfg;
