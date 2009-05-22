@@ -183,11 +183,32 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing") {
     my $in = $Grp->file;
     # Set WCS attributes for deriving offsets. The system is left
     # unchanged to allow the POINTING_FOCUS code to work things out
-    # itself. We take a copy of this file and do our own thing later.
+    # itself. 
     $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=mset setting='skyrefis=origin,alignoffset=1'");
 
-    # Write .ok flag file in output directory
+    # We take a temporary copy of the input file and set the
+    # attributes accordingly for our purposes. This avoids any
+    # access/attribute conflicts with the official POINTING_FOCUS
+    # task. Do this step before the system attempts to access the
+    # Group file.
+    my $incopy = new ORAC::TempFile;
+    my $incopyfile = $incopy->file;
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$incopyfile");
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$incopyfile mode=mset setting='skyrefis=origin,alignoffset=1,system=AZEL'");
+
+    # Write .ok flag file in output directory - the POINTING_FOCUS task
+    # can pick up from here.
     _WRITE_FLAG_FILE_ PREFIX=s
+
+    # ##############################################################
+    # Now we proceed with our own derivation of the pointing offsets
+    # ##############################################################
+    # Placeholder - print warning message if an unsupported method is given
+    if ( $offmethod ne "centroid") {
+      # METHOD = FIT
+      orac_warn "METHOD=$offmethod is not supported - falling back on CENTROID\n";
+      $offmethod = "centroid";
+    }
 
     # Initialize the log file if necessary
     my $pointinglog;
@@ -200,30 +221,9 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing") {
 	);
     }
 
-    # Determine pointing offsets
-    # Placeholder - print warning message if an unsupported method is given
-    if ( $offmethod ne "centroid") {
-      # METHOD = FIT
-      orac_warn "METHOD=$offmethod is not supported - falling back on CENTROID\n";
-      $offmethod = "centroid";
-    }
-
-    # Take a temporary copy of the input file and set the attributes
-    # accordingly for our purposes. This avoids any access/attribute
-    # conflicts with the official POINTING_FOCUS task.
-    my $incopy = new ORAC::TempFile;
-    my $incopyfile = $incopy->file;
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$incopyfile");
-    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$incopyfile mode=mset setting='skyrefis=origin,alignoffset=1,system=AZEL'");
-
-    # Look for a point source in the image
-    _FIND_POINT_SOURCES_
-    my $ptsrccat = $_FIND_POINT_SOURCES_{CATALOGUE};
-    if ( $ptsrccat->sizeof == 0 ) {
-      orac_warn "Unable to calculate pointing offsets - image appears to contain no point sources\n";
-    } else {
-
-      # METHOD = CENTROID
+    # See if the image has a suitable point source
+    _ASSESS_IMAGE_ IMAGE=$incopyfile VERBOSE=0
+    if ( $_ASSESS_IMAGE_{POINT} == 1 ) {
       # Find source position offsets using the temporary copy of the Grp image
       _CENTROID_IMAGE_ IMAGE=$incopyfile
 	
@@ -245,7 +245,7 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing") {
 	  # Get basic logging parameters from Group file
 	  _GET_LOG_PARAMETERS_ GROUP=1
           my ( $uttime, $hst, $run, $src, $mode, $filter, $el, $cso, $tau, $see ) 
-	  = @{ $_GET_LOG_PARAMETERS_{PARAMS} };
+	    = @{ $_GET_LOG_PARAMETERS_{PARAMS} };
       
 	  # ObsNum, source, UT, filter, DAz, DEl, Seeing, tau225
 	  $pointinglog->addentry("$uttime $hst $run $src $mode $filter    $el $cso $tau  $see   $daz  $del");
@@ -260,7 +260,9 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing") {
       } else {
 	orac_warn "Unable to calculate pointing offsets - could not determine centroid\n";
       } # If results returned from _CENTROID_IMAGE_
-    } # If point sources found
+    } else {
+      orac_warn "Unable to locate a point source to determine pointing offsets\n";
+    } # If image OK
   } # If OBSEND
 } else {
   orac_warn "Data are not from a POINTING observation\n";
