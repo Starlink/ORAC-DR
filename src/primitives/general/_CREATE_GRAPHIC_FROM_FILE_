@@ -77,131 +77,135 @@ my $yres = get_prim_arg( $_PRIM_ARGS_, 'YRES', 64 );
 
 my $outfile;
 
-if( $addres ) {
-  if( $xres == $yres ) {
-    $outfile = "${file}_$xres." . lc( $type );
-  } else {
-    $outfile = "${file}_${xres}x${yres}." . lc( $type );
-  }
-} else {
-  $outfile = join ".", $file, lc( $type );
-}
+# Only do this processing if we have KAPPA v1.10 or greater.
+if( starversion_gt( 'KAPPA', 'v1.10-0' ) {
 
-# Set the x- and y-resolution. This needs to be done via an
-# environment variable, which has a different name depending on what
-# type of file we're writing.
-my $xresenv = "PGPLOT_" . $type . "_WIDTH";
-my $yresenv = "PGPLOT_" . $type . "_HEIGHT";
-
-$Mon{'kapview_mon'}->control( "setenv", "$xresenv=$xres" );
-$Mon{'kapview_mon'}->control( "setenv", "$yresenv=$yres" );
-
-# Check to see if we're 1-D or 2-D.
-_GET_DIMENSIONS_ FILE=$file
-my $dims = $_GET_DIMENSIONS_{DIMS};
-my @nondegen = grep { $_ != 1 } @$dims;
-if( $#nondegen == 0 ) {
-
-  my $params = "ndf=$file device=\"$outfile/$type\" margin=0 axes=no mode=histogram";
-  $Mon{'kapview_mon'}->obeyw( "linplot", "$params" );
-
-} elsif( $#nondegen == 1 ) {
-
-  my $params = "in=$file device=\"$outfile/$type\" margin=0 axes=no mode=faint lut=$ENV{KAPPA_DIR}/bgyrw_lut.sdf accept";
-  $Mon{'kapview_mon'}->obeyw( "display", "$params" );
-
-} else {
-  orac_warn "Programming error: cannot create graphic from file that's not 1-D or 2-D\n";
-}
-
-orac_say "$file to $outfile: Created graphic.";
-
-# Try to load the Image::ExifTool module to add a header.
-my $isok = eval "use Image::ExifTool qw/ :Public /; 1; ";
-if( $isok ) {
-  orac_say " Adding EXIF header to $outfile.";
-
-  my @keywords;
-
-  # Get the FITS header so we can add the ASN_TYPE.
-  my $hdr = new Astro::FITS::Header::NDF( File => $file );
-  my $asn_type = $hdr->value( "ASN_TYPE" );
-  push @keywords, "jsa:asn_type=$asn_type";
-
-  # Get the RA/Dec.
-  my $bounds = ORAC::Bounds::retrieve_bounds( $file );
-  my $ra = $bounds->{'centre'}->ra->degrees;
-  my $dec = $bounds->{'centre'}->dec->degrees;
-
-  push @keywords, "astro:RA=$ra";
-  push @keywords, "astro:Dec=$dec";
-
-  push @keywords, "astro:name=" . $hdr->value( "OBJECT" );
-
-  if( $#nondegen == 1 ) {
-
-    # Retrieve the orientation.
-    my $lbound = $_GET_DIMENSIONS_{LBOUND};
-    my $ubound = $_GET_DIMENSIONS_{UBOUND};
-    my $wcs = $Frm->read_wcs( $file );
-    my $skytemplate = Starlink::AST::SkyFrame->new( "" );
-    $skytemplate->Set( 'MaxAxes' => 3,
-                       'MinAxes' => 1 );
-    my $skyframe = $wcs->FindFrame( $skytemplate, "" );
-    $skyframe->Set( 'system' => 'ICRS' );
-
-    my $cen_x = 0.5 + ( $lbound->[0] + $ubound->[0] ) / 2;
-    my $cen_y = 0.5 + ( $lbound->[1] + $ubound->[1] ) / 2;
-
-    # Add an arcminute to the central Dec position, then find which
-    # pixel that's at, then find the angle.
-    my $dec_new = $bounds->{'centre'}->dec->radians + 0.000290888209;
-    my @new_pos = $skyframe->TranP( 0,
-                                    [ $bounds->{'centre'}->ra->radians ],
-                                    [ $dec_new ] );
-
-    # Calculate the angle.
-    my $x = $new_pos[0]->[0] - $cen_x;
-    my $y = $new_pos[1]->[0] - $cen_y;
-    my $angle = atan2( $y, $x );
-    my $angle_deg = $angle * 180 / ( atan2( 1, 1 ) * 4 );
-
-    # Handle quadrant.
-    if( $x < 0 ) {
-      if( $y < 0 ) {
-        $angle_deg = 90 - $angle_deg;
-      } else {
-        $angle_deg = 450 - $angle_deg;
-      }
+  if( $addres ) {
+    if( $xres == $yres ) {
+      $outfile = "${file}_$xres." . lc( $type );
     } else {
-      $angle_deg = 90 - $angle_deg;
+      $outfile = "${file}_${xres}x${yres}." . lc( $type );
     }
-    push @keywords, "astro:orientation=$angle_deg";
-
-    # Find the pixel scale of the original NDF, then scale the pixel
-    # scale accordingly.
-    $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$file" );
-    my ( $ORAC_STATUS, @fpixscale ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fpixscale" );
-    my $pixscale_orig = sqrt( $fpixscale[0] * $fpixscale[0] +
-                              $fpixscale[1] * $fpixscale[1] );
-    my $longest_file = ( $nondegen[0] > $nondegen[1] ? $nondegen[0] : $nondegen[1] );
-    my $longest_img = ( $xres > $yres ? $xres : $yres );
-    my $pixscale_new = $longest_file * $pixscale_orig / $longest_img;
-    push @keywords, "astro:pixelScale=$pixscale_new";
-
+  } else {
+    $outfile = join ".", $file, lc( $type );
   }
 
-  # Write the EXIF information.
-  my $exif = new Image::ExifTool;
-  foreach my $keyword ( @keywords ) {
-    $exif->SetNewValue( Keywords => $keyword );
+  # Set the x- and y-resolution. This needs to be done via an
+  # environment variable, which has a different name depending on what
+  # type of file we're writing.
+  my $xresenv = "PGPLOT_" . $type . "_WIDTH";
+  my $yresenv = "PGPLOT_" . $type . "_HEIGHT";
+
+  $Mon{'kapview_mon'}->control( "setenv", "$xresenv=$xres" );
+  $Mon{'kapview_mon'}->control( "setenv", "$yresenv=$yres" );
+
+  # Check to see if we're 1-D or 2-D.
+  _GET_DIMENSIONS_ FILE=$file
+  my $dims = $_GET_DIMENSIONS_{DIMS};
+  my @nondegen = grep { $_ != 1 } @$dims;
+  if( $#nondegen == 0 ) {
+
+    my $params = "ndf=$file device=\"$outfile/$type\" margin=0 axes=no mode=histogram";
+    $Mon{'kapview_mon'}->obeyw( "linplot", "$params" );
+
+  } elsif( $#nondegen == 1 ) {
+
+    my $params = "in=$file device=\"$outfile/$type\" margin=0 axes=no mode=faint lut=$ENV{KAPPA_DIR}/bgyrw_lut.sdf accept";
+    $Mon{'kapview_mon'}->obeyw( "display", "$params" );
+
+  } else {
+    orac_warn "Programming error: cannot create graphic from file that's not 1-D or 2-D\n";
   }
-  $exif->WriteInfo( $outfile );
+
+  orac_say "$file to $outfile: Created graphic.";
+
+  # Try to load the Image::ExifTool module to add a header.
+  my $isok = eval "use Image::ExifTool qw/ :Public /; 1; ";
+  if( $isok ) {
+    orac_say " Adding EXIF header to $outfile.";
+
+    my @keywords;
+
+    # Get the FITS header so we can add the ASN_TYPE.
+    my $hdr = new Astro::FITS::Header::NDF( File => $file );
+    my $asn_type = $hdr->value( "ASN_TYPE" );
+    push @keywords, "jsa:asn_type=$asn_type";
+
+    # Get the RA/Dec.
+    my $bounds = ORAC::Bounds::retrieve_bounds( $file );
+    my $ra = $bounds->{'centre'}->ra->degrees;
+    my $dec = $bounds->{'centre'}->dec->degrees;
+
+    push @keywords, "astro:RA=$ra";
+    push @keywords, "astro:Dec=$dec";
+
+    push @keywords, "astro:name=" . $hdr->value( "OBJECT" );
+
+    if( $#nondegen == 1 ) {
+
+      # Retrieve the orientation.
+      my $lbound = $_GET_DIMENSIONS_{LBOUND};
+      my $ubound = $_GET_DIMENSIONS_{UBOUND};
+      my $wcs = $Frm->read_wcs( $file );
+      my $skytemplate = Starlink::AST::SkyFrame->new( "" );
+      $skytemplate->Set( 'MaxAxes' => 3,
+                         'MinAxes' => 1 );
+      my $skyframe = $wcs->FindFrame( $skytemplate, "" );
+      $skyframe->Set( 'system' => 'ICRS' );
+
+      my $cen_x = 0.5 + ( $lbound->[0] + $ubound->[0] ) / 2;
+      my $cen_y = 0.5 + ( $lbound->[1] + $ubound->[1] ) / 2;
+
+      # Add an arcminute to the central Dec position, then find which
+      # pixel that's at, then find the angle.
+      my $dec_new = $bounds->{'centre'}->dec->radians + 0.000290888209;
+      my @new_pos = $skyframe->TranP( 0,
+                                      [ $bounds->{'centre'}->ra->radians ],
+                                      [ $dec_new ] );
+
+      # Calculate the angle.
+      my $x = $new_pos[0]->[0] - $cen_x;
+      my $y = $new_pos[1]->[0] - $cen_y;
+      my $angle = atan2( $y, $x );
+      my $angle_deg = $angle * 180 / ( atan2( 1, 1 ) * 4 );
+
+      # Handle quadrant.
+      if( $x < 0 ) {
+        if( $y < 0 ) {
+          $angle_deg = 90 - $angle_deg;
+        } else {
+          $angle_deg = 450 - $angle_deg;
+        }
+      } else {
+        $angle_deg = 90 - $angle_deg;
+      }
+      push @keywords, "astro:orientation=$angle_deg";
+
+      # Find the pixel scale of the original NDF, then scale the pixel
+      # scale accordingly.
+      $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$file" );
+      my ( $ORAC_STATUS, @fpixscale ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fpixscale" );
+      my $pixscale_orig = sqrt( $fpixscale[0] * $fpixscale[0] +
+                                $fpixscale[1] * $fpixscale[1] );
+      my $longest_file = ( $nondegen[0] > $nondegen[1] ? $nondegen[0] : $nondegen[1] );
+      my $longest_img = ( $xres > $yres ? $xres : $yres );
+      my $pixscale_new = $longest_file * $pixscale_orig / $longest_img;
+      push @keywords, "astro:pixelScale=$pixscale_new";
+
+    }
+
+    # Write the EXIF information.
+    my $exif = new Image::ExifTool;
+    foreach my $keyword ( @keywords ) {
+      $exif->SetNewValue( Keywords => $keyword );
+    }
+    $exif->WriteInfo( $outfile );
 
 #  my $url = "http://www.worldwidetelescope.org/wwtweb/ShowImage.aspx?scale=$pixscale_new&name=" . $hdr->value( "OBJECT" ) . "&imageurl=http://www.jach.hawaii.edu/~bradc/images/$outfile&ra=$ra&dec=$dec&rotation=$angle_deg&x=" . ( int( $xres / 2 )) . "&y=" . ( int( $yres / 2 ) );
 #
 #  print "URL: $url\n";
 
-} else {
-  orac_warn "Could not load Image::ExifTool: $@\n";
+  } else {
+    orac_warn "Could not load Image::ExifTool: $@\n";
+  }
 }
