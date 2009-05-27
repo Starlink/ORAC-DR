@@ -1040,11 +1040,35 @@ it is the last member and a zero otherwise.
 sub lastmember {
   my $self = shift;
   my $member = shift;
-
+print "self num: " . $self->num . "\n";
+print "member: $member\n";
+print "frame: " . $self->frame( $self->num ) . "\n";
   if ($member eq $self->frame($self->num)) {
     return 1;
   }
 
+  return 0;
+}
+
+=item B<lastallmembers>
+
+Method to determine whether the supplied argument matches the last
+member of the group. This method differs from lastmember() in that
+this method does not care about badness, i.e., it looks at the
+allmembers() list instead of the members() list.
+
+Returns true if the supplied argument is the last member, and false
+otherwise.
+
+=cut
+
+sub lastallmembers {
+  my $self = shift;
+  my $member = shift;
+  my @allmembers = $self->allmembers;
+  if( $member eq $allmembers[-1] ) {
+    return 1;
+  }
   return 0;
 }
 
