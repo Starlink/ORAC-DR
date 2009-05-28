@@ -1,14 +1,14 @@
-package ORAC::Group::JCMT;
+package ORAC::Group::SCUBA;
 
 =head1 NAME
 
-ORAC::Group::JCMT - JCMT class for dealing with observation groups in ORAC-DR
+ORAC::Group::SCUBA - SCUBA class for dealing with observation groups in ORAC-DR
 
 =head1 SYNOPSIS
 
-  use ORAC::Group::JCMT;
+  use ORAC::Group::SCUBA;
 
-  $Grp = new ORAC::Group::JCMT("group1");
+  $Grp = new ORAC::Group::SCUBA("group1");
   $Grp->file("group_file")
   $Grp->readhdr;
   $value = $Grp->hdr("KEYWORD");
@@ -16,9 +16,9 @@ ORAC::Group::JCMT - JCMT class for dealing with observation groups in ORAC-DR
 =head1 DESCRIPTION
 
 This module provides methods for handling group objects that
-are specific to JCMT. It provides a class derived from B<ORAC::Group::NDF>.
+are specific to SCUBA. It provides a class derived from B<ORAC::Group::NDF>.
 All the methods available to B<ORAC::Group> objects are available
-to B<ORAC::Group::JCMT> objects. Some additional methods are supplied.
+to B<ORAC::Group::SCUBA> objects. Some additional methods are supplied.
 
 =cut
 
@@ -48,12 +48,12 @@ those available from B<ORAC::Group>.
 
 =item B<new>
 
-Create a new instance of a B<ORAC::Group::JCMT> object.
+Create a new instance of a B<ORAC::Group::SCUBA> object.
 This method takes an optional argument containing the
 name of the new group. The object identifier is returned.
 
-   $Grp = new ORAC::Group::JCMT;
-   $Grp = new ORAC::Group::JCMT("group_name");
+   $Grp = new ORAC::Group::SCUBA;
+   $Grp = new ORAC::Group::SCUBA("group_name");
 
 This method calls the base class constructor but initialises
 the group with a file suffix of '.sdf' and a fixed part
@@ -301,7 +301,7 @@ sub files {
 =head1 NEW METHODS
 
 This section describes methods that are available to the
-JCMT implementation of ORAC::Group.
+SCUBA implementation of ORAC::Group.
 
 =over 4
 

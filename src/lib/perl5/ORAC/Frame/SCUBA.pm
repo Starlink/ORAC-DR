@@ -1,14 +1,14 @@
-package ORAC::Frame::JCMT;
+package ORAC::Frame::SCUBA;
 
 =head1 NAME
 
-ORAC::Frame::JCMT - JCMT class for dealing with observation files in ORACDR
+ORAC::Frame::SCUBA - SCUBA class for dealing with observation files in ORACDR
 
 =head1 SYNOPSIS
 
-  use ORAC::Frame::JCMT;
+  use ORAC::Frame::SCUBA;
 
-  $Frm = new ORAC::Frame::JCMT("filename");
+  $Frm = new ORAC::Frame::SCUBA("filename");
   $Frm->file("file")
   $Frm->readhdr;
   $Frm->configure;
@@ -17,13 +17,13 @@ ORAC::Frame::JCMT - JCMT class for dealing with observation files in ORACDR
 =head1 DESCRIPTION
 
 This module provides methods for handling Frame objects that
-are specific to JCMT. It provides a class derived from B<ORAC::Frame>.
+are specific to SCUBA. It provides a class derived from B<ORAC::Frame>.
 All the methods available to B<ORAC::Frame> objects are available
-to B<ORAC::Frame::JCMT> objects. Some additional methods are supplied.
+to B<ORAC::Frame::SCUBA> objects. Some additional methods are supplied.
 
 =cut
 
-# A package to describe a JCMT frame object for the
+# A package to describe a SCUBA frame object for the
 # ORAC pipeline
 
 # standard error module and turn on strict
@@ -56,7 +56,7 @@ The following are modifications to standard ORAC::Frame methods.
 
 =item B<new>
 
-Create a new instance of a B<ORAC::Frame::JCMT> object.
+Create a new instance of a B<ORAC::Frame::SCUBA> object.
 This method also takes optional arguments:
 if 1 argument is  supplied it is assumed to be the name
 of the raw file associated with the observation. If 2 arguments
@@ -66,9 +66,9 @@ the configure() method which is run in addition to new()
 when arguments are supplied.
 The object identifier is returned.
 
-   $Frm = new ORAC::Frame::JCMT;
-   $Frm = new ORAC::Frame::JCMT("file_name");
-   $Frm = new ORAC::Frame::JCMT("UT","number");
+   $Frm = new ORAC::Frame::SCUBA;
+   $Frm = new ORAC::Frame::SCUBA("file_name");
+   $Frm = new ORAC::Frame::SCUBA("UT","number");
 
 This method runs the base class constructor and then modifies
 the rawsuffix and rawfixedpart to be '.sdf' and '_dem_'
@@ -113,7 +113,7 @@ sub new {
 =head2 Subclassed methods
 
 The following methods are provided for manipulating
-B<ORAC::Frame::JCMT> objects. These methods override those
+B<ORAC::Frame::SCUBA> objects. These methods override those
 provided by B<ORAC::Frame>.
 
 =over 4
@@ -553,7 +553,7 @@ sub template {
 
 =back
 
-=head1 NEW METHODS FOR JCMT
+=head1 NEW METHODS FOR SCUBA
 
 This section describes methods that are available in addition
 to the standard methods found in B<ORAC::Frame>.

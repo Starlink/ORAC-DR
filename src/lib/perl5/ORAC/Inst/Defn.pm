@@ -425,8 +425,8 @@ sub orac_determine_inst_classes {
     $inst = 'CGS4'; # to pick up CGS4 recipes and primitives
 
   } elsif ($inst eq 'SCUBA') {
-    $groupclass = "ORAC::Group::JCMT";
-    $frameclass = "ORAC::Frame::JCMT";
+    $groupclass = "ORAC::Group::SCUBA";
+    $frameclass = "ORAC::Frame::SCUBA";
     $calclass   = "ORAC::Calib::SCUBA";
     $instclass  = "ORAC::Inst::SCUBA";
 
