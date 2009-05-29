@@ -41,7 +41,7 @@ use Starlink::AST;
 
 our $VERSION;
 
-use base qw/ ORAC::JSAFile ORAC::Frame::NDF /;
+use base qw/ ORAC::JSAFile ORAC::Frame::JCMT ORAC::Frame::NDF /;
 
 $VERSION = '1.0';
 
