@@ -74,6 +74,10 @@ Astro::Coords object for the bottom left corner of the bounding box.
 
 Astro::Coords object for the bottom right corner of the bounding box.
 
+=item centre
+
+Astro::Coords object for the central pixel in the NDF.
+
 =item frq_sig_lo
 
 Barycentric frequency, in gigahertz, of the lower end of the signal sideband.
@@ -183,13 +187,16 @@ sub retrieve_bounds {
     # counts from 0.5. We need to find out how big the NDF is, which
     # we can do from the @ndf_lbnd and @ndf_ubnd arrays.
     my @wcs_bnds;
+    my @cen;
     my @isb_bnds;
     my @ssb_bnds;
     my $x_min = 0.5;
     my $x_max = 0.5 + ( $ndf_ubnd[0] - $ndf_lbnd[0] ) + 1;
+    my $x_cen = ( $x_min + $x_max ) / 2;
     if( $#ndf_ubnd > 0 ) {
       my $y_min = 0.5;
       my $y_max = 0.5 + ( $ndf_ubnd[1] - $ndf_lbnd[1] ) + 1;
+      my $y_cen = ( $y_min + $y_max ) / 2;
       if( defined( $ndf_ubnd[2] ) ) {
         my $z_min = 0.5;
         my $z_max = 0.5 + ( $ndf_ubnd[2] - $ndf_lbnd[2] ) + 1;
@@ -199,6 +206,9 @@ sub retrieve_bounds {
                                         [ $x_min, $x_min, $x_max, $x_max ],
                                         [ $y_min, $y_max, $y_min, $y_max ],
                                         [ $z_min, $z_min, $z_min, $z_min ] );
+
+          @cen = $skyframe->TranP( 1, [ $x_cen ], [ $y_cen ], [ $z_min ] );
+
         }
 
         if( defined( $specframe ) ) {
@@ -220,6 +230,7 @@ sub retrieve_bounds {
         @wcs_bnds = $skyframe->Tran2( [ $x_min, $x_min, $x_max, $x_max ],
                                       [ $y_min, $y_max, $y_min, $y_max ],
                                       1 );
+        @cen = $skyframe->Tran2( [ $x_cen ], [ $y_cen ], 1 );
       }
     }
 
@@ -239,6 +250,12 @@ sub retrieve_bounds {
                                       units => 'radians' );
 
       $return{'reference'} = $obsref;
+
+      my $obs_cen = new Astro::Coords( ra => $cen[0]->[0],
+                                       dec => $cen[1]->[0],
+                                       type => 'J2000',
+                                       units => 'radians' );
+      $return{'centre'} = $obs_cen;
 
       my $obsrabl_rad = ( $wcs_bnds[0]->[0] < -1e100 ? undef : $wcs_bnds[0]->[0] );
       my $obsratl_rad = ( $wcs_bnds[0]->[1] < -1e100 ? undef : $wcs_bnds[0]->[1] );

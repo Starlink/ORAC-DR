@@ -4,7 +4,13 @@
 
 _FIND_POINTING_OFFSETS_ - Determine the pointing offsets in Az/El
 
+=head1 SYNOPSIS
+
+ _FIND_POINTING_OFFSETS_
+
 =head1 DESCRIPTION
+
+Finds the position offsets from (0,0) in the Az/El coordinate frame.
 
 The user may specify the method by which the source position is to be
 determined, either by fitting a Gaussian or by calculating the
@@ -15,46 +21,142 @@ as offsets in arcsecs.
 
 The following arguments are supported:
 
-=item B<METHOD>
-
-Method to calculate the source position. Supported values are
-C<CENTROID> and C<FIT>. The latter calls the _FIND_BEAM_SIZE_
-primitive. The default is C<CENTROID>.
+=over 4
 
 =item B<LOGFILE>
 
 A flag to indicate whether log files should be written containing the
 results of the flux and noise calculations. Default is true.
 
+=item B<METHOD>
+
+Method to calculate the source position. Supported values are
+C<CENTROID> and C<FIT>. The latter calls the _FIND_BEAM_SIZE_
+primitive. The default is C<CENTROID>.
+
 =item B<VERBOSE>
 
 Flag to indicate whether informational messages should be 
-given to the user. Default is true.
+given to the user. Default is 1 (true).
 
 =back
 
 =head1 EXTERNAL TASKS
 
+The following external tasks are used:
+
 =over 4
 
-=item ORAC-DR primitives
+=item KAPPA
 
-_CENTROID_IMAGE_, _FIND_BEAM_SIZE_
+NDFCOPY, WCSATTRIB
+
+=item ORAC-DR PRIMITIVES
+
+_CENTROID_IMAGE_, _FIND_BEAM_SIZE_, _FIND_POINT_SOURCES_,
+_GET_LOG_PARAMETERS_, _WRITE_FLAG_FILE_
 
 =back
 
+=head1 NOTES
+
+Methods other than C<CENTROID> are not supported yet.
+
+The primitive proceeds only once an observation has ended and thus
+uses the current Froup file.
+
 =head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
 
 This primitive writes a .ok file in $ORAC_DATA_OUT for the JCMT
 POINTING_FOCUS task to calculate the actual pointing offsets used by
 the telescope.
 
+A log file <log.pointing> is written.
+
+=head1 LOGFILE FORMAT
+
+The logfile has the following columns:
+
+=over 4
+
+=item UT
+
+The UT date in C<YYYYMMDD.frac> format.
+
+=item HST
+
+The time of the observation in Hawaii.
+
+=item Obs
+
+The observation number.
+
+=item Source
+
+The source name.
+
+=item Mode
+
+The observing mode.
+
+=item Filter
+
+The filter name.
+
+=item Elevation
+
+The elevation of the observation.
+
+=item CSO
+
+Equivalent CSO tau derived from the tau used to reduce
+the observation.
+
+=item Tau
+
+The tau value used for the reduction.
+
+=item Seeing
+
+The seeing value as stored in the header.
+
+=item DAz
+
+Azimuth offset from reference position in arcsec.
+
+=item DEl
+
+Elevation offset from reference position in arcsec.
+
+=back
+
 =head1 AUTHOR
 
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
+=head1 COPYRIGHT
+
 Copyright (C) 2007 the University of British Columbia. All Rights
 Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
 
 =cut
 
@@ -81,11 +183,32 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing") {
     my $in = $Grp->file;
     # Set WCS attributes for deriving offsets. The system is left
     # unchanged to allow the POINTING_FOCUS code to work things out
-    # itself. We take a copy of this file and do our own thing later.
+    # itself. 
     $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=mset setting='skyrefis=origin,alignoffset=1'");
 
-    # Write .ok flag file in output directory
+    # We take a temporary copy of the input file and set the
+    # attributes accordingly for our purposes. This avoids any
+    # access/attribute conflicts with the official POINTING_FOCUS
+    # task. Do this step before the system attempts to access the
+    # Group file.
+    my $incopy = new ORAC::TempFile;
+    my $incopyfile = $incopy->file;
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$incopyfile");
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$incopyfile mode=mset setting='skyrefis=origin,alignoffset=1,system=AZEL'");
+
+    # Write .ok flag file in output directory - the POINTING_FOCUS task
+    # can pick up from here.
     _WRITE_FLAG_FILE_ PREFIX=s
+
+    # ##############################################################
+    # Now we proceed with our own derivation of the pointing offsets
+    # ##############################################################
+    # Placeholder - print warning message if an unsupported method is given
+    if ( $offmethod ne "centroid") {
+      # METHOD = FIT
+      orac_warn "METHOD=$offmethod is not supported - falling back on CENTROID\n";
+      $offmethod = "centroid";
+    }
 
     # Initialize the log file if necessary
     my $pointinglog;
@@ -98,30 +221,9 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing") {
 	);
     }
 
-    # Determine pointing offsets
-    # Placeholder - print warning message if an unsupported method is given
-    if ( $offmethod ne "centroid") {
-      # METHOD = FIT
-      orac_warn "METHOD=$offmethod is not supported - falling back on CENTROID\n";
-      $offmethod = "centroid";
-    }
-
-    # Take a temporary copy of the input file and set the attributes
-    # accordingly for our purposes. This avoids any access/attribute
-    # conflicts with the official POINTING_FOCUS task.
-    my $incopy = new ORAC::TempFile;
-    my $incopyfile = $incopy->file;
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$incopyfile");
-    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$incopyfile mode=mset setting='skyrefis=origin,alignoffset=1,system=AZEL'");
-
-    # Look for a point source in the image
-    _FIND_POINT_SOURCES_
-    my $ptsrccat = $_FIND_POINT_SOURCES_{CATALOGUE};
-    if ( $ptsrccat->sizeof == 0 ) {
-      orac_warn "Unable to calculate pointing offsets - image appears to contain no point sources\n";
-    } else {
-
-      # METHOD = CENTROID
+    # See if the image has a suitable point source
+    _ASSESS_IMAGE_ IMAGE=$incopyfile VERBOSE=0
+    if ( $_ASSESS_IMAGE_{POINT} == 1 ) {
       # Find source position offsets using the temporary copy of the Grp image
       _CENTROID_IMAGE_ IMAGE=$incopyfile
 	
@@ -143,7 +245,7 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing") {
 	  # Get basic logging parameters from Group file
 	  _GET_LOG_PARAMETERS_ GROUP=1
           my ( $uttime, $hst, $run, $src, $mode, $filter, $el, $cso, $tau, $see ) 
-	  = @{ $_GET_LOG_PARAMETERS_{PARAMS} };
+	    = @{ $_GET_LOG_PARAMETERS_{PARAMS} };
       
 	  # ObsNum, source, UT, filter, DAz, DEl, Seeing, tau225
 	  $pointinglog->addentry("$uttime $hst $run $src $mode $filter    $el $cso $tau  $see   $daz  $del");
@@ -158,7 +260,9 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing") {
       } else {
 	orac_warn "Unable to calculate pointing offsets - could not determine centroid\n";
       } # If results returned from _CENTROID_IMAGE_
-    } # If point sources found
+    } else {
+      orac_warn "Unable to locate a point source to determine pointing offsets\n";
+    } # If image OK
   } # If OBSEND
 } else {
   orac_warn "Data are not from a POINTING observation\n";

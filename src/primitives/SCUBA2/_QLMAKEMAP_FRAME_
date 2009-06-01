@@ -1,48 +1,73 @@
-#! -*-perl-*-
+# -*-perl-*-
 
 =head1 NAME
 
-_MAKEMAP_FRAME_
+_QLMAKEMAP_FRAME_ - make a map using a simple rebinning algorithm
 
 =head1 SYNOPSIS
 
-  _MAKEMAP_FRAME_ PIXSIZE=7.5
+_QLMAKEMAP_FRAME_ PIXSIZE=7.5 SPREAD=LINEAR
 
 =head1 DESCRIPTION
 
-This primitive takes timeseries data for the current frame and
-constructs an image. This is a many to one operation, with only a
-single output file created.
+This primitive takes raw time-series data for the current Frame and
+constructs an image. The data are corrected for dark current drifts
+(provided dark frames are included), a mean sky signal is removed and
+a simple quick extinction correction applied. The data are rebinned
+onto a map pixels using a specified pixel-spreading scheme.
+
+This is a many to one operation, with only a single output file
+created.
 
 =head1 ARGUMENTS
+
+The following arguments are supported:
 
 =over 4
 
 =item B<PIXSIZE>
 
 Size of the output pixels in arcsec. The default is to use the values
-stored in the calibration object (equal to the bolometer spacing)
+stored in the calibration system: 5.8 arcsec at 850 microns, 2.9
+arcsec at 450 microns.
 
 =item B<SYSTEM>
 
 Coordinate system for output image. May be any supported by
-C<AST>. Default is C<TRACKING>.
+B<AST>. Default is C<TRACKING>.
 
 =item B<SPREAD>
 
-Desired pixel-spreading scheme. May be either C<nearest> for 
-nearest-neighbour resampling or C<linear> for bi-linear resampling. 
-Default is C<nearest>.
+Desired pixel-spreading scheme. May be either C<NEAREST> for 
+nearest-neighbour resampling or C<LINEAR> for bi-linear resampling. 
+Default is C<NEAREST>.
 
 =back
 
-=head1 ALGORITHMS
+=head1 EXTERNAL TASKS
 
-SMURF: QLMAKEMAP
+The following external task is used:
 
-=head1 FILE SUFFIX
+=over 4
 
-Creates a single output file with a '_map' suffix.
+=item SMURF: 
+
+QLMAKEMAP
+
+=back
+
+=head1 OUTPUT DATA
+
+The Frame uhdr entries C<SKY_SUBTRACTION> and C<EXTINCTION> are set to
+1 on success.
+
+=head1 OUTPUT FILES
+
+Creates a single output file with a C<_fmos> suffix.
+
+=head1 NOTES
+
+The mean sky level is logged in C<log.sky>.
 
 =head1 AUTHOR
 
@@ -66,7 +91,7 @@ General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
-USA
+USA.
 
 =cut
 
@@ -95,6 +120,21 @@ if ( ($spread ne "nearest") && ($spread ne "linear") ) {
 # Retrieve list of files in current frame
 my @files = $Frm->files;
 
+# If there are no darks, as will be the case for the QL pipeline, look
+# for a suitable dark frame in the calibration system. Look for
+# SHUTTER subheaders and if there are none, select a dark frame.
+if ( defined $Frm->hdr("SUBHEADERS")) {
+  my %subheaders = %{ $Frm->hdr->{SUBHEADERS}->[0] };
+  # Subheaders should always be defined in offline mode
+  unless ( defined $subheaders{"SHUTTER"} ) {
+    if ( $Cal->dark ) {
+      push (@files, $Cal->dark);
+    } else {
+      orac_warn "No suitable dark frame found for current observation\n";
+    }
+  }
+}
+
 # Write filenames to a file
 my $inlist = new ORAC::TempFile;
 $inlist = write_file_list( @files );
@@ -114,7 +154,7 @@ $Mon{smurf_mon}->obeyw("qlmakemap","$args");
 my ($ORAC_STATUS, $sky) = $Mon{smurf_mon}->get("qlmakemap","meansky");
 $sky = sprintf "%12.7f", $sky;
 
-# Since this is a DC sky removal so sky slope and PA are both 0
+# Since this is a DC sky removal, sky slope and PA are both 0
 _ADD_SKY_LOG_ENTRY_ DCSKY=$sky
 
 # Register the new file name

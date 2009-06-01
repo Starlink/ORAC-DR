@@ -171,6 +171,12 @@ Is cached, since the version number will not change during pipeline execution (o
               chomp @output;
               $info = Starlink::Versions::_get_git_version( Data => \@output );
             }
+	    # it is possible that git is installed but it is a version that
+	    # can not read the pack files. eg CADC has 1.5.0.2 which won't
+	    # read the commit log/date from a 1.6 repository.
+	    if (!exists $info->{COMMITDATE}) {
+	      $info = undef;
+	    }
           }
         }
         if( ! defined( $info ) ) {

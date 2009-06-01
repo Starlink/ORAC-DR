@@ -231,11 +231,18 @@ sub orac_exit_normally {
       orac_printp ($args{message},"red");
     }
   }
+
   if (!$args{quiet}) {
     orac_print ( "\n" );
     orac_printp ("Goodbye\n","red");
   }
-  ($args{err} ? exit -1 : exit 0);
+
+  if ($args{err}) {
+    orac_print("Will be exiting with bad status\n",'red');
+    exit 1;
+  } else {
+    exit 0;
+  }
 }
 
 =item B<orac_exit_abnormally>

@@ -1,0 +1,165 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_ASSESS_BEAM_FIT_ - primitive to perform quality assessment of beam fit
+
+=head1 SYNOPSIS
+
+_ASSESS_BEAM_FIT_ AMP=@amp MAJOR=@majorfhwm MINOR=@minorfwhm AXISR=$axisr
+
+=head1 DESCRIPTION
+
+This primitive performs basic quality assessment on the parameters
+derived from an attempt to fit the beam. A flag is returned to
+indicate success of failure.
+
+=head1 ARGUMENTS
+
+The following mandatory arguments are supported:
+
+=over 4
+
+=item B<AMP>
+
+Array containing fitted amplitude and its error
+
+=item B<AXISR>
+
+The ratio of the major axis to the minor axis
+
+=item B<MAJOR>
+
+Array containing fitted FWHM for the major axis and its error
+
+=item B<MINOR>
+
+Array containing fitted FWHM for the minor axis and its error
+
+=item B<VERBOSE>
+
+Flag to indicate whether informational messages should be given to the
+user. Default is 1 (print messages).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+None.
+
+=head1 NOTES
+
+All four fit parameters must be supplied. The primitive will report
+failure if not all are provided.
+
+A fit using PSF is more likely to be assessed as good simply because
+PSF does not return uncertainties and thus there may not be enough
+criteria to judge how good the fit really is.
+
+=head1 OUTPUT DATA
+
+On exit, the primitive hash C<%_ASSESS_BEAM_FIT_> contains the
+following key:
+
+=over 4
+
+=item BEAM
+
+Flag to denote whether the fit appears to have been successful. A 1
+indicates success; 0 indicates failure.
+
+=back
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 the University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Since all four are mandatory there are no default values so just
+# access the primitive hash argument directly
+my @amp = (defined $_ASSESS_BEAM_FIT_{AMP}) ? @{$_ASSESS_BEAM_FIT_{AMP}} : ();
+my $axisr = $_ASSESS_BEAM_FIT_{AXISR};
+my @majfwhm = (defined $_ASSESS_BEAM_FIT_{MAJOR}) 
+  ? @{$_ASSESS_BEAM_FIT_{MAJOR}} : ();
+my @minfwhm = (defined $_ASSESS_BEAM_FIT_{MINOR}) 
+  ? @{$_ASSESS_BEAM_FIT_{MINOR}} : ();
+
+# Should I be verbose? (Default to yes)
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
+
+my %badbeam;
+# Step 1: check that the minor axis FWHM, axis ratio and amplitude are
+# defined
+if ( defined $minfwhm[0] && defined $axisr && defined $amp[0] ) {
+  # Check for elongated sources
+  if ($axisr > 1.3333 || $axisr < 0.75) {
+    orac_warn "Fit appears to be poor or beam highly elongated \n";
+    $badbeam{ELONG} = 1;
+  }
+
+  if ( $majfwhm[1] > $majfwhm[0] ) {
+    orac_warn "Large uncertainty in FWHM for major axis\n" if $verbose;
+    $badbeam{MAJFWHM} = 1;
+  }
+  if ( $minfwhm[1] > $minfwhm[0] ) {
+    orac_warn "Large uncertainty in FWHM for minor axis\n" if $verbose;
+    $badbeam{MINFWHM} = 1;
+  }
+  if ( $amp[1] > $amp[0] ) {
+    orac_warn "Large uncertainty in fitted amplitude\n" if $verbose;
+    $badbeam{AMP} = 1;
+  }
+  if ( $amp[0] < 0 ) {
+    orac_warn "Fitted amplitude is negative\n" if $verbose;
+    $badbeam{AMP} = 1;
+  }
+} else {
+  $badbeam{MAJFWHM} = 1;
+  $badbeam{MINFWHM} = 1;
+  $badbeam{AMP} = 1;
+  $badbeam{ELONG} = 1;
+  orac_warn "Fit failed: FWHM and amplitude could not be determined\n";
+}
+
+# Check on status of fit - count the number of defined badbeam flags
+my $nbadbflags = 0;
+foreach my $flag ( qw/ AMP ELONG MAJFWHM MINFWHM /) {
+  $nbadbflags++ if ( defined $badbeam{$flag} );
+}
+# Define a bad fit if 2 or more flags are set
+if ( $nbadbflags > 1 ) {
+  orac_warn "Beam fit failed or looks poor\n";
+  $badbeam{BEAM} = 1;
+}
+
+# Set the BEAM flag: 1 is a good fit, 0 is a bad fit
+if ( defined $badbeam{BEAM} ) {
+  $_ASSESS_BEAM_FIT_{BEAM} = 0;
+} else {
+  $_ASSESS_BEAM_FIT_{BEAM} = 1;
+}

@@ -1,4 +1,4 @@
-#! -*-perl-*-
+# -*-perl-*-
 
 =head1 NAME
 
@@ -6,9 +6,9 @@ _FIND_INTEGRATED_INTENSITY_ - aperture photometry of image using statistics
 
 =head1 SYNOPSIS
 
- _FIND_INTEGRATED_INTENSITY_ IMAGE=$image
+ _FIND_INTEGRATED_INTENSITY_ IMAGE=$image XYPOS=\@xy
 
- _FIND_INTEGRATED_INTENSITY_ IMAGE=$image LOGFILE=0 RADIUS=50
+ _FIND_INTEGRATED_INTENSITY_ IMAGE=$image XYPOS=\@xy RADIUS=50
 
 =head1 DESCRIPTION
 
@@ -18,7 +18,7 @@ assumed to be the only source on the map (so that the sky contribution
 can be calculated). The value is corrected for pixel area and has a
 background level subtracted from it. The SKY domain is used
 throughout; the coordinate system used is the current one as obtained
-from the C<system> WCS attribute.
+from the WCS C<system> attribute.
 
 The background is estimated by masking out the source and calculating
 the mean value in the image. This method will work well for
@@ -27,7 +27,7 @@ which have a single point source. The rebinning map maker for SCAN
 data will produce a bowl around a bright source which this method will
 not cope with.
 
-The integrated intensity is calculated using the following technique:
+The integrated intensity is calculated using the following procedure:
 
 =over 4
 
@@ -45,34 +45,31 @@ Calculate the sum of all valid pixels.
 
 =back
 
+Results are returned in the primitive hash.
+
 =head1 ARGUMENTS
 
 The following arguments are supported:
 
 =over 4
 
-=item IMAGE
+=item B<IMAGE>
 
 Input image. No default.
 
-=item RADIUS
+=item B<RADIUS>
 
 The radius of the aperture in arcsec. Default is 20 arcsec.
 
-=item XYPOS
-
-An array reference containing the formatted X, Y coordinates in the
-chosen frame. No default.
-
-=item LOGFILE
-
-A flag to indicate whether a log file should be written containing the
-results of the integrated intensity calculation. Default is true.
-
-=item VERBOSE
+=item B<VERBOSE>
 
 Flag to indicate whether informational messages should be given to the
 user. Default is true.
+
+=item B<XYPOS>
+
+An array reference containing the formatted X, Y coordinates in the
+chosen frame. No default.
 
 =back
 
@@ -82,35 +79,29 @@ The following external tasks are used:
 
 =over 4
 
-=item KAPPA
+=item KAPPA:
 
-C<ardmask>, C<stats>, C<histat>
+ARDMASK, WCSATTRIB
+
+=item ORAC-DR PRIMITIVES:
+
+_FIND_IMAGE_STATISTICS_, _GET_PIXEL_SCALE_
 
 =back
 
+=head1 NOTES
+
+The current coordinate frame must be a SKY frame. No checks are made.
+
+It may be desireable to allow different (e.g. PIXEL) frames to be used.
+
 =head1 OUTPUT DATA
 
-On completion, the primitive hash C<%_FIND_INTEGRATED_INTENSITY_>
-contains the following keys:
+On successful completion, the primitive hash
+C<%_FIND_INTEGRATED_INTENSITY_> contains the following keys (undef if
+the method failed):
 
 =over 4
-
-=item SUM
-
-The sum of all the pixels within the aperture.
-
-=item TOTALFLUX
-
-The total flux within the aperture in units of
-signal_units*pixel_units^2.
-
-=item PEAKFLUX
-
-The peak intensity in the aperture
-
-=item SIGMA
-
-The standard deviation in the image
 
 =item NUMGOOD
 
@@ -120,13 +111,30 @@ The number of pixels which contribute to the estimate of the flux
 
 The total number of pixels in the image
 
+=item PEAKFLUX
+
+The peak intensity in the aperture
+
+=item SIGMA
+
+The standard deviation in the image
+
+=item SUM
+
+The sum of the data values from all pixels within the aperture
+
+=item TOTALFLUX
+
+The total flux within the aperture in units of
+signal_units*pixel_units^2
+
 =back
 
-The frame object is not updated.
+The Frame object is not updated.
 
-=head1 NOTES
+=head1 OUTPUT FILES
 
-It may be desireable to allow different domains to be used.
+None.
 
 =head1 AUTHOR
 
@@ -153,22 +161,19 @@ General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
-USA
+USA.
 
 =cut
 
 # Set the input file name
-my $in = get_prim_arg( $_PRIM_ARGS_, "IMAGE", undef);
+my $in = get_prim_arg( $_PRIM_ARGS_, "IMAGE", undef );
 
 unless ( defined ($in) ) {
   orac_throw "Error: _FIND_INTEGRATED_INTENSITY_ must be supplied with an image\n";
 }
 
-# Write logfile (default to true)
-my $uselog = get_prim_arg($_PRIM_ARGS_, "LOGFILE", 1);
-
 # Should I be verbose (default to yes)
-my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
 
 # Define X and Y positions
 my $xypos = get_prim_arg( $_PRIM_ARGS_, "XYPOS", undef );
@@ -183,7 +188,7 @@ if (defined $xypos && ref($xypos) eq 'ARRAY') {
 }
 
 # Set radius of mask - default is 20 arcsec
-my $radius = get_prim_arg($_PRIM_ARGS_,"RADIUS", 20.0);
+my $radius = get_prim_arg( $_PRIM_ARGS_,"RADIUS", 20.0 );
 
 # Initialize entries in primitive hash
 foreach my $item (qw/ PEAKFLUX TOTALFLUX SUM SIGMA NUMGOOD NUMPIX /) {
@@ -282,7 +287,10 @@ $Mon{kappa_mon}->obeyw("ardmask", "in=$in out=$bgout ardfile=$ardin ");
 # Now calculate stats of the masked file to get the mean (background)
 # level outside the source aperture
 _FIND_IMAGE_STATISTICS_ IMAGE=$bgout VERBOSE=0 HISTAT=0
-my $meanbg = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEAN};
+my $meanbg = ($_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD}) 
+  ? $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEAN} : 0.0;
+
+orac_warn "Unable to determine background level: integrated intensity may be over/underestimated\n" unless $meanbg;
 
 # This is mean value per pixel, so reduce maxflux and sum accordingly
 $maxflux -= $meanbg;

@@ -1,4 +1,4 @@
-#! -*-perl-*-
+# -*-perl-*-
 
 =head1 NAME
 
@@ -10,21 +10,24 @@ _CALCULATE_FLATFIELD_ RESIST=$resistorlistfile
 
 =head1 DESCRIPTION
 
-Calculate a flatfield solution from a dedicated flatfield observation
-
-Writes a flag file...
-
-This is a Frame operation and should be used before group operations.
+Calculate a flatfield solution from a dedicated flatfield
+observation. On completion of the observation (the OBSEND FITS header
+flag must be true) the new flatfield solution is determined for each
+subarray. A responsivity image may be generated from this solution and
+will be used for subsequent analysis of the flatfield. A similar image
+is derived for the existing flatfield solution (which will be included
+in the raw data) and stored for comparison with the current
+responsivity data.
 
 =head1 ARGUMENTS
 
-This primitive supports the following arguments
+This primitive supports the following arguments:
 
 =over 4
 
 =item B<REFRES>
 
-Value of reference resistance. Default is 2.0 ohms.
+Value of reference resistance in ohms. Default is 2.0 ohms.
 
 =item B<RESIST>
 
@@ -32,39 +35,60 @@ Text file listing the resistor settings for each bolometer. Filename
 must include full path. Default is C<resist.cfg> located in
 $ORAC_DATA_CAL.
 
+=item B<RESP>
+
+Flag to denote whether to generate a responsivity image. Use the null
+parameter C<!> for no responsivity image (false). Any other value
+(including 0) will generate an image.
+
 =item B<RESPMASK>
 
 Flag to denote whether the responsivity should be used to mask
 bolometers in the flatfield. Default is 1 (true).
 
-=item B<RESP>
-
-Name of an output responsivity image. Default is the null parameter
-C<!> which will not write an output image.
-
 =back
 
-=head1 External Tasks
+=head1 EXTERNAL TASKS
 
 The following external tasks are used:
 
 =over 4
 
-=item SMURF
+=item SMURF:
 
-calcflat
+CALCFLAT, CALCRESP
 
 =back
 
-=head1 FILES
+=head1 NOTES
 
-Creates C<_flat> which is registered with the calibration system
+Analysis of the flatfield solution can only take place if responsivity
+images exist. Thus avoid setting B<RESP=!>.
+
+The name of the responsivity image(s) is determined automatically
+using the Frame inout method.
+
+=head1 OUTPUT DATA
+
+If desired, the current and previous responsivity images are stored as
+NDF extensions within the flatfield file.
+
+=head1 OUTPUT FILES
+
+On exit there will be one file (the flatfield solution) stored in the
+Frame object associated with each of the subgroups defined by the
+different subarrays.
+
+The flatfield soluions are stored in files with suffix C<_flat>, one
+for each subarray.
 
 =head1 AUTHOR
 
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
-Copyright (C) 2008 the University of British Columbia.  All Rights
+=head1 COPYRIGHT
+
+Copyright (C) 2008-2009 University of British Columbia.  All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -80,7 +104,7 @@ General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
-USA
+USA.
 
 =cut
 
@@ -117,34 +141,74 @@ if ( $Frm->uhdr("OBSEND") ) {
   my $resp = get_prim_arg( $_PRIM_ARGS_, "RESP", "");
   if ( $resp eq "!" ) {
     orac_warn "No responsivity image will be written: flatfield solution can not be analyzed\n";
-#  } else {
-#    undef $resp;
   }
 
   # Loop over subarrays. Use subgrps method to return a list of Groups
   # sorted by subarray.
   my @Grps = $Grp->subgrps( "SUBARRAY" );
   foreach my $Subgrp ( @Grps ) {
-    # Retrieve all the Frames - probably just a single one
+    # Retrieve all the Frames
     my @frames = $Subgrp->allmembers;
+
+    # Store the first as a template Frame object for retrieving header
+    # info and storing files
+    my $Frmobj = $frames[0];
+
+    # Determine name of output file
+    my $out = $Frmobj->inout( "_flat" );
+
+    # Set name of output responsivity file if desired
+    $resp = new ORAC::TempFile unless ($resp eq "!");
+    my $respfile = $resp->file;
+
+    # Get list of files to process
+    my @inputfiles;
     foreach my $Frmobj ( @frames ) {
-      my $subarray = $Frmobj->hdr("SUBARRAY");
-      # Determine input and output files
-      my $in = write_file_list( $Frmobj->files );
-      my $out = $Frmobj->inout( "_flat" );
-      # Set name of output responsivity file if desired
-      $resp = $Frmobj->inout( "_resp" ) unless ($resp eq "!");
-
-      my $args = "in=^$in out=$out refres=$refres resist=^$resist $respmask resp=$resp";
-      $Mon{smurf_mon}->obeyw("calcflat","$args");
-      my ( $ORAC_STATUS, $numresp ) = $Mon{smurf_mon}->get("calcflat","ngood");
-      orac_print ("Subarray $subarray has $numresp good responsivities\n", "green");
-      # Store output files
-      push (my @out, $out);
-      push (@out, $resp) unless ( $resp eq "!" );
-      $Frmobj->files(@out);
+      push(@inputfiles, $Frmobj->files);
     }
-  }
+    my $in = write_file_list( @inputfiles );
 
+    # Retrieve the subarray for this subgroup
+    my $subarray = $Frmobj->hdr("SUBARRAY");
+
+    # Call calcflat and retrieve the number of good solutions
+    my $args = "in=^$in out=$out refres=$refres resist=^$resist $respmask resp=$resp";
+    $Mon{smurf_mon}->obeyw("calcflat","$args");
+    my ( $ORAC_STATUS, $numresp ) = $Mon{smurf_mon}->get("calcflat","ngood");
+    orac_print ("Subarray $subarray has $numresp good responsivities\n", "green");
+
+    # Store the responsivity file if created, and calculate the
+    # previous solution
+    unless ( $resp eq "!" ) {
+      # Calculate previous responsivity solution and store it as an
+      # extension in the flatfield file
+      my $previous = $out.".MORE.SMURF.RESP_OLD";
+      $args = "in=".$Frmobj->file." out=$previous";
+      $Mon{smurf_mon}->obeyw("calcresp","$args");
+      # Add this file to the Frame object uhdr, to be used later for
+      # display purposes
+      $Frmobj->uhdr( "RESP_OLD", $previous );
+
+      # Store current responsivity solution as an extension in the
+      # flatfield file
+      my $current = $out.".MORE.SMURF.RESP_NEW";
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$respfile out=$current");
+      # For simplicity just store name in uhdr
+      $Frmobj->uhdr( "RESP_NEW", $current );
+    }
+
+    # Store the flatfield file in the template Frame object
+    $Frmobj->files($out);
+  }
+} else {
+  # If we're not processing this time round, make a copy so the data
+  # are available when the time comes.
+  orac_say "Copying raw data to output directory...";
+  for my $i ( 1 .. $Frm->nfiles ) {
+    my ($in, $out) = $Frm->inout("_raw",$i);
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$out");
+    $Frm->file($i, $out);
+  }
 }
+
 

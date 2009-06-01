@@ -99,8 +99,8 @@ if( defined( $survey ) ) {
     push @analyse_surveys, $survey;
   }
 } else {
-  push @analyse_surveys, ( defined( $Frm->hdr( "SURVEY" ) ) ?
-                           $Frm->hdr( "SURVEY" )            :
+  push @analyse_surveys, ( defined( $Frm->uhdr( "ORAC_SURVEY" ) ) ?
+                           $Frm->uhdr( "ORAC_SURVEY" )            :
                            "Telescope" );
 }
 
@@ -170,6 +170,10 @@ foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
   $params = "in=$temp3file out=$temp4file power=0.5";
   $Mon{'kappa_mon'}->obeyw( "pow", "$params" );
 
+  # Find stats on this variance array.
+  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp4file" );
+  ( $ORAC_STATUS, my $rmsmeantsys ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+
   # At this point, if we're doing an RxA sample the temp4file could be
   # 1D, so turn it into 2D.
   _GET_DIMENSIONS_ FILE=$temp4file
@@ -197,11 +201,15 @@ foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
     my $rmstol_const      = 'RMSTSYSTOL';
     my $rmstolquest_const = 'RMSTSYSTOL_QUEST';
     my $rmstolfail_const  = 'RMSTSYSTOL_FAIL';
+    my $rmsmeantsystol_const = 'RMSMEANTSYSTOL';
     my $rmstol = $qa->get_data( key => $rmstol_const, %opts );
     my $rmstolquest = $qa->get_data( key => $rmstolquest_const, %opts );
     my $rmstolfail = $qa->get_data( key => $rmstolfail_const, %opts );
+    my $rmsmeantsystol = $qa->get_data( key => $rmsmeantsystol_const, %opts );
 
     my $tol = $rmstol + 1;
+    my $meantol = $rmsmeantsys * ( $rmsmeantsystol + 1 );
+
     $params = "in=$temp5file value=$tol above";
     $Mon{'kappa_mon'}->obeyw( "numb", "$params" );
     ( $ORAC_STATUS, my $numb_above ) = $Mon{'kappa_mon'}->get( "numb", "number" );
@@ -221,15 +229,33 @@ foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
 
       my $temp6file = new ORAC::TempFile;
       my $temp7file = new ORAC::TempFile;
+      my $temp8file = new ORAC::TempFile;
+      my $temp9file = new ORAC::TempFile;
+      my $temp10file = new ORAC::TempFile;
+
+      # Threshold the comparison image.
       $params = "in=$temp5file out=$temp6file thrlo=-100000 newlo=bad thrhi=$tol newhi=bad";
       $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
 
-      # Expand out to size of input cube.
+      # Threshold measured RMS array.
+      orac_say "Thresholding samples with RMS above " . sprintf( "%.2f", $meantol ) . " K";
+      $params = "in=$temp1file out=$temp8file thrlo=-100000 newlo=bad thrhi=$meantol newhi=bad comp=VAR";
+      $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+      if( starversion_gt( 'KAPPA', 'V1.10-0' ) ) {
+        ( $ORAC_STATUS, my $numhi ) = $Mon{'kappa_mon'}->get( "thresh", "numhi" );
+        orac_say sprintf( " %d samples had RMS above %.2f K", $numhi, $meantol );
+      }
+
+      # Expand both out to size of input cube.
       $params = "in=$temp6file out=$temp7file axes=[0,1,2] lbound=" . $lbnd->[0] . " ubound=" . $ubnd->[0];
       $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
+      $params = "in=$temp8file out=$temp10file axes=[0,1,2] lbound=" . $lbnd->[0] . " ubound=" . $ubnd->[0];
+      $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
-      # Copy bad pixels from this to output cube.
-      $params = "in=$infile ref=$temp7file out=$outfile";
+      # Copy bad pixels from both to output cube.
+      $params = "in=$infile ref=$temp7file out=$temp9file";
+      $Mon{'kappa_mon'}->obeyw( "copybad", "$params" );
+      $params = "in=$temp9file ref=$temp10file out=$outfile";
       $Mon{'kappa_mon'}->obeyw( "copybad", "$params" );
 
       orac_say "Masked out bad samples to form $outfile.";
@@ -269,6 +295,12 @@ foreach my $survey ( sort keys %result ) {
   orac_print " for $survey.\n";
 
   orac_print sprintf( " %.2f%% of the samples had a calculated RMS that differed by more than %d%% from the measured RMS.\n", $avg * 100, $rmstol * 100 );
+
+  if( $avg > $rmstolfail && scalar keys %result == 1 ) {
+    $Frm->isgood( 0 );
+    orac_say " Will not add current frame to group.";
+  }
+
 }
 
 # If we masked, test the first output file. If it's all bad, don't

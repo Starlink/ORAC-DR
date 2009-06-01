@@ -1,27 +1,50 @@
-#! -*-perl-*-
+# -*-perl-*-
 
 =head1 NAME
 
-_MAKEMAP_FRAME_
+_MAKEMAP_FRAME_ - convert time-series data into an image
 
 =head1 SYNOPSIS
 
   _MAKEMAP_FRAME_ PIXSIZE=7.5
 
+  _MAKEMAP_FRAME_ MYCONFIG=1 NUMITER=10 BADFRAC=0.1
+
 =head1 DESCRIPTION
 
-This primitive takes timeseries data for the current frame and
-constructs an image. This is a many to one operation, with only a
-single output file created.
+This primitive takes time-series data for the current frame and uses
+SMURF MAKEMAP to construct an image. The user may specify either the
+simple rebinning method or the full iterative solution.
+
+For the iterative map-maker a configuration file must be specified. By
+default, the system configuration file is used. However, the user may
+override any parameter by specifying the B<MYCONFIG> option and
+listing the name and new value of the parameter.
+
+This is a many to one operation, with only a single output file
+created.
 
 =head1 ARGUMENTS
 
+The following arguments are supported:
+
 =over 4
+
+=item B<METHOD>
+
+Image reconstruction method. May be C<REBIN> to use a simple rebinning
+scheme or C<ITER> to use the iterative map-maker. The default is
+C<REBIN>.
+
+=item B<MYCONFIG>
+
+A flag to denote that the a user-defined config file is to be
+used. Default is 0 (use system config file).
 
 =item B<PIXSIZE>
 
-PIXSIZE is the size of the output pixels in arcsec. The default is
-equal to the pixel spacing (ie 6 arcsec).
+Size of the output map pixels in arcsec. The default is wavelength
+dependent (6 arcsec at 850 um, 3 arcsec at 450 um).
 
 =item B<SYSTEM>
 
@@ -30,51 +53,43 @@ C<AST>. Default is C<TRACKING>.
 
 =item B<SPREAD>
 
-Desired pixel-spreading scheme. May be either C<nearest> for 
-nearest-neighbour resampling or C<linear> for bi-linear resampling. 
-Default is C<nearest>.
-
-=item B<KEEP>
-
-Flag to denote whether to keep the intermeditate files produced by the
-iterative map-maker. Warning: setting this to true may result in
-significant disk space usage. Default is 0 (delete files).
-
-=item B<METHOD>
-
-Image reconstruction method. May be C<REBIN> to use a simple rebinning
-scheme or C<ITER> to use the iterative map-maker. If C<ITER> is
-specified then the following parameters must also be set to override
-the defaults (which may not do what you want).
-
-=item B<NUMITER>
-
-Number of iterations. Default is 1, which is clearly not a good
-choice.
-
-=item B<MODELORDER>
-
-Comma-separated list of model components. See the SMURF documentation
-for further details.
-
-=item B<EXPORTNDF>
-
-Flag to indicate whether intermediate files are written out in NDF
-format at the end. Default is 0 (do not write as NDF).
+Desired pixel-spreading scheme for the rebin method. May be either
+C<NEAREST> for nearest-neighbour resampling or C<LINEAR> for bi-linear
+resampling.  Default is C<NEAREST>.
 
 =back
 
-=head1 KNOWN ISSUES
+In addition, configuration parameters for B<MAKEMAP> may be specified,
+provided the B<MYCONFIG> argument is true. See the B<MAKEMAP>
+documentation for supported parameters.
 
-...
+=head1 EXTERNAL TASKS
 
-=head1 ALGORITHMS
+The following external tasks are used:
 
-...
+=over 4
 
-=head1 FILE SUFFIX
+=item SMURF
 
-Creates a single output file with a '_fmos' suffix.
+MAKEMAP
+
+=item ORAC-DR PRIMITIVES
+
+_GET_MAKEMAP_CONFIG_
+
+=back
+
+=head1 OUTPUT DATA
+
+The Frame C<isgood> flag is set to false if MAKEMAP fails for any
+reason.
+
+The Frame uhdr entries C<EXP_TIME>, C<WEIGHTS>, C<SKY_SUBTRACTION> and
+C<EXTINCTION> are set to 1 on success.
+
+=head1 OUTPUT FILES
+
+Creates a single output file with a C<_fmos> suffix.
 
 =head1 AUTHOR
 
@@ -82,8 +97,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008 University of British Columbia and the Particle
-Physcis and Astronomy Research Council. All Rights Reserved.
+Copyright (C) 2008-2009 University of British Columbia and the
+Particle Physics and Astronomy Research Council. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -98,7 +113,7 @@ General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
-USA
+USA.
 
 =cut
 
@@ -134,72 +149,55 @@ if ( $method =~ /^iter/ ) {
   $method = "rebin";
 }
 
-# Verbosity - default to yes
-my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
+# If there are no darks, as will be the case for the online pipeline,
+# look for a suitable dark frame in the calibration system. Look for
+# SHUTTER subheaders and if there are none, select a dark frame.
+my @files = $Frm->files;
+if ( defined $Frm->hdr("SUBHEADERS")) {
+  my %subheaders = %{ $Frm->hdr->{SUBHEADERS}->[0] };
+  # Subheaders should always be defined in offline mode
+  unless ( defined $subheaders{"SHUTTER"} ) {
+    if ( $Cal->dark ) {
+      push (@files, $Cal->dark);
+    } else {
+      orac_warn "No suitable dark frame found for current observation\n";
+    }
+  }
+}
 
 # Write list of filenames to a temp file
-my $inlist = write_file_list( $Frm->files );
+my $inlist = write_file_list( @files );
 
 # Set output filename
 my ($in, $out) = $Frm->inout('_fmos');
 $out = $Frm->rewrite_outfile_subarray( $out );
 
 # Maximum map-size - set to 2 GB as a default, increase later if the
-# iterative map-maker is being used and processing is done in memory
-#my $maxmem = 2048;
-#my $maxmem = 3072; # 1.5 factor to get max file size of 2 GB
-my $maxmem = 4096; # 1.5 factor to get max file size of 2 GB
+# iterative map-maker is being used and processing is done in memory.
+# Makemap uses maxmem to denote the maximum amount of memory available
+# to process the data, not necessarily the size of the output
+# map. This primitive uses it to limit the output file size. The
+# difference between the two usages amounts to about a factor of 2.
+my $maxmem = 4096;
 
 my $tiledims = int(sqrt(MAXPIX));
 
 # Makemap argument list
-my $args = "in=^$inlist out=$out pixsize=$pixsize spread=$spread system=$system method=$method maxmem=$maxmem tiledims=$tiledims";
+my $args = "in=^$inlist out=$out pixsize=$pixsize spread=$spread "
+          ."system=$system method=$method maxmem=$maxmem tiledims=$tiledims";
 
-# Check for additional parameters for the iterative map-maker
-my ($exportndf, $keepdimm, $numiter, $memiter, $modelorder, @modelorder, $config);
+my $config;
 if ( $iterate ) {
-  # Number of iterations - default to 1 to force user to make a
-  # decision
-  $numiter = get_prim_arg( $_PRIM_ARGS_, "NUMITER", 1);
-
-  # Should iterations be done in memory?
-  $memiter = get_prim_arg( $_PRIM_ARGS_, "MEMITER", 1);
-
-  # Maximum memory available to iterative map-maker
-  $maxmem = 10000 if ( $memiter );
-
-  # Flag for whether to export work files to NDF
-  $exportndf = get_prim_arg( $_PRIM_ARGS_, "EXPORTNDF", 0);
-
-  # Flag for whether to keep intermediate DIMM files
-  $keepdimm = get_prim_arg( $_PRIM_ARGS_, "KEEP", 0);
-
-  # Flag for whether to export work files to NDF
-  $modelorder = get_prim_arg( $_PRIM_ARGS_, "MODELORDER", "com,ext,noi");
-  # Split modelorder into components before recombining
-  @modelorder = split(/,/,$modelorder);
-  
-  # Concatenate list of model components into a single space-separated
-  # string
-  $modelorder = join(" ",@modelorder);
-
-  # Write parameters to config file
+  # Obtain a suitable config file
+  my $myconfig = get_prim_arg( $_PRIM_ARGS_, "MYCONFIG",  0 );
+  # A new config file might not always be necessary, but should
+  # internal consistency checks fail, a modified version will have to
+  # be written even if MYCONFIG is 0. Therefore pass in a suitable
+  # ORAC::TempFile object.
   $config = new ORAC::TempFile;
-  print {$config->handle} "numiter=$numiter\n"
-    ."exportndf=$exportndf\n"
-    ."modelorder=$modelorder\n"
-    ."chitol=1e-6\n"
-    ."com_boxcar=400\n"
-    ."com_boxfact=0.5\n"
-    ."com_boxmin=100\n"
-    ."noispikethresh=10\n"
-    ."noispikeiter=0\n"
-    ."varmapmethod=0\n"
-    ."memiter=$memiter\n"
-    ."maxlen=0\n"
-    ."badfrac=0.05\n";
-  $config->handle->close;
-  $args .= " config=^".$config->file;
+
+  _GET_MAKEMAP_CONFIG_ ARGS=$_PRIM_ARGS_ CONFIG=$config
+  $args .= " config=^".$_GET_MAKEMAP_CONFIG_{CONFIG};
 }
 
 # Call makemap - really must have some sort of feedback to user
@@ -243,18 +241,14 @@ orac_print "Making map: this... may... take... a... while...\n";
 my $SMURF_STATUS = $Mon{smurf_mon}->obeyw("makemap","$args");
 # Check for SMF__NOMEM return status
 if ( $SMURF_STATUS == 235176770 ) {
-  orac_warn "Output image will exceed maximum size $maxmem MB - will not continue\n";
+  # Since makemap failed mark this frame as BAD so it's not included
+  # in further processing. Throw an error to skip the rest of the recipe.
+  $Frm->isgood(0);
+  orac_throw "Output image will exceed maximum size $maxmem MB - will not continue\n";
 } elsif ( $SMURF_STATUS == ORAC__OK ) {
 
-  # Now, is there any analysis of the intermediate files that could be
-  # useful?
-
-  # Delete iterative map-maker files
-  if ( $iterate && !$memiter ) {
-    orac_print "Removing model files from the iterative map-maker\n" 
-      if ($verbose);
-    unlink <*.dimm>;
-  }
+  # Now, is there any analysis of the model component files that could
+  # be useful?
 
   # Register the new file name
   $Frm->files( $out );
@@ -262,8 +256,19 @@ if ( $SMURF_STATUS == 235176770 ) {
   # Set Frame EXP_TIME and WEIGHTS flags
   $Frm->uhdr("EXP_TIME",1);
   $Frm->uhdr("WEIGHTS",1);
+  # And of course sky subtraction and extinction correction have been
+  # applied, though there really isn't much point to setting these
+  # other than a desire for consistency.
+  $Frm->uhdr("SKY_SUBTRACTION",1);
+  $Frm->uhdr("EXTINCTION",1);
 
   orac_print "Thank you for waiting; image $out created\n";
+} else {
+  # If makemap failed for any other reason, mark this frame as
+  # BAD. Throw an error to skip the rest of the recipe.
+  $Frm->isgood(0);
+  orac_throw "Makemap failed: data from this Frame will be ignored\n";
 }
-# Delete config file if present
+
+# Delete temporary config file generated by this primitive if present
 undef $config if ($config);

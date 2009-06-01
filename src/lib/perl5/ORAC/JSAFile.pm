@@ -68,27 +68,38 @@ sub collate_headers {
   # Get the generic headers from the base class and append RA/Dec/Freq bounds information
   my $header = $self->SUPER::collate_headers( $file );
   my $bounds_header = return_bounds_header( $file );
+  my $hdr = $self->readhdr( $file );
 
   # Store the items so that we only append once for efficiency
   my @toappend;
   @toappend = $bounds_header->allitems if defined $bounds_header;
 
   # Calculate MJD-OBS and MJD-END from DATE-OBS and DATE-END.
-
+  my $dateobs;
   if( defined( $self->hdr( "DATE-OBS" ) ) ) {
-    my $dateobs = DateTime::Format::ISO8601->parse_datetime( $self->hdr( "DATE-OBS" ) );
+    $dateobs = DateTime::Format::ISO8601->parse_datetime( $self->hdr( "DATE-OBS" ) );
+  } elsif( defined( $hdr->value( "DATE-OBS" ) ) ) {
+    $dateobs = DateTime::Format::ISO8601->parse_datetime( $hdr->value( "DATE-OBS" ) );
+  }
+  if( defined( $dateobs ) ) {
     my $mjdobs = new Astro::FITS::Header::Item( Keyword => 'MJD-OBS',
                                                 Value   => $dateobs->mjd,
                                                 Comment => 'MJD of start of observation',
                                                 Type    => 'FLOAT' );
     push( @toappend, $mjdobs );
   }
+
+  my $dateend;
   if( defined( $self->hdr( "DATE-END" ) ) ) {
-    my $dateend = DateTime::Format::ISO8601->parse_datetime( $self->hdr( "DATE-END" ) );
+    $dateend = DateTime::Format::ISO8601->parse_datetime( $self->hdr( "DATE-END" ) );
+  } elsif( defined( $hdr->value( "DATE-END" ) ) ) {
+    $dateend = DateTime::Format::ISO8601->parse_datetime( $hdr->value( "DATE-END" ) );
+  }
+  if( defined( $dateend ) ) {
     my $mjdend = new Astro::FITS::Header::Item( Keyword => 'MJD-END',
-                                                Value   => $dateend->mjd,
-                                                Comment => 'MJD of end of observation',
-                                                Type    => 'FLOAT' );
+                                             Value   => $dateend->mjd,
+                                             Comment => 'MJD of end of observation',
+                                             Type    => 'FLOAT' );
     push( @toappend, $mjdend );
   }
 

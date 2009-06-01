@@ -205,12 +205,15 @@ Returns the FITS header keys that should be used to group
 files into distinct Frame objects. Used by the C<framegroup>
 method to determine grouping.
 
-Returns empty list in the base class.
+Returns UTDATE and OBSERVATION_NUMBER in base class, to allow
+simple disambiguation. This is required to allow the -file
+option to work since that relies on framegroupkeys as it
+reads all files at once.
 
 =cut
 
 sub framegroupkeys {
-  return ();
+  return ( "ORAC_UTDATE", "ORAC_OBSERVATION_NUMBER" );
 }
 
 =item B<is_frame>

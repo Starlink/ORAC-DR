@@ -1,8 +1,8 @@
-#! -*-perl-*-
+# -*-perl-*-
 
 =head1 NAME
 
-_DISPLAY_RESPONSIVITIES_ - Analyze the current flatfield solution
+_DISPLAY_RESPONSIVITIES_ - Display the current and previous bolometer responsivity maps
 
 =head1 SYNOPSIS
 
@@ -10,44 +10,78 @@ _DISPLAY_RESPONSIVITIES_ ERR=1
 
 =head1 DESCRIPTION
 
-Display the current and previous responsivity solutions side by side,
-and plot a histogram of the current solution
-
-Cheats by using KAPPA SLIDE and then CCDPACK MAKEMOS to create a
-single image. However, this has the advantage that they are naturally
-displayed on the same colour scale.
+This primitive displays the current and previous bolometer
+responsivity data in a single Kapview window. Images of the bolometer
+responsivities are displayed on the same scale, along with histograms
+of values (also on the same scale). The percentage change in
+responsivity between the current and previous solutions is also
+displayed as a 2-D image.
 
 =head1 ARGUMENTS
 
-This primitive supports the following arguments
+This primitive supports the following arguments:
 
 =over 4
+
+=item B<CLIP>
+
+Number of standard deviations at which to clip the data before
+displaying the data on a histogram. The default (undef) is no
+clipping.
+
+=item B<COMP>
+
+Component to display. Supported values are C<DATA> and C<ERR>. Default
+is C<DATA>.
 
 =item B<FRAME>
 
 Name of ORAC::FRAME object to use. No default.
 
-=item B<COMP>
-
-Component to display. Default is C<DATA>.
-
 =back
 
-=head1 External Tasks
+=head1 EXTERNAL TASKS
 
-The following external tasks are used by this primitive.
+The following external tasks are used by this primitive:
 
 =over 4
 
-=item KAPPA
+=item KAPPA:
 
-SLIDE
+MATHS, NDFCOPY, SETTITLE, WCSFRAME
+
+=item ORAC-DR PRIMITIVES:
+
+_FIND_IMAGE_STATISTICS_
 
 =back
+
+=head1 NOTES
+
+The B<CLIP> parameter applies to the data in the current solution. The
+corresponding absolute value is used to define the range of values to
+be displayed from the previous solution.
+
+This primitive relies on the current and previous responsivity files
+corresponding to file numbers 2 and 3 in the given Frame object.
+
+=head1 OUTPUT FILES
+
+Files are created with C<_respX>, C<_prespX> and C<_pcrspX>, where
+C<X> is the letter designation for the current subarray. These files
+correspond to the current, previous and percentage change in the
+responsivities respectively.
+
+If not required for subsequent offline analysis (and since the concept
+of current and previous is relative) files created in this primitive
+should be deleted on exit from the calling recipe using
+_DELETE_TEMP_FILES_.
 
 =head1 AUTHOR
 
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
 
 Copyright (C) 2009 the University of British Columbia.  All Rights
 Reserved.
@@ -75,78 +109,86 @@ my $comp = lc(get_prim_arg( $_PRIM_ARGS_, "COMP", "data" ));
 $comp = "data" unless ( $comp =~ /^err/ );
 
 my $Frmobj = get_prim_arg( $_PRIM_ARGS_, "FRAME", undef );
-my $clip = get_prim_arg( $_PRIM_ARGS_, "CLIP", "" );
 
 if ( defined $Frmobj ) {
+
+  # Retrieve CLIP parameter
+  my $clip = get_prim_arg( $_PRIM_ARGS_, "CLIP", "" );
 
   # Retrieve subarray name
   my $subarray = uc($Frmobj->hdr('SUBARRAY'));
 
   # Get current and previous responsivity solutions
-  my $current = $Frmobj->file(2);
-  my $previous = $Frmobj->uhdr("PREVIOUS");
+  my $current = $Frmobj->uhdr("RESP_NEW");
+  my $previous = $Frmobj->uhdr("RESP_OLD");
 
-  # Set coord frame to pixel for current and previous files
+  # Set coord frame to pixel for current file
   my $args = "ndf=$current frame=pixel";
   $Mon{ndfpack_mon}->obeyw("wcsframe","$args");
-  $args = "ndf=$previous frame=pixel";
-  $Mon{ndfpack_mon}->obeyw("wcsframe","$args");
 
-  # Create copies of responsivity files with the correct suffix for
-  # display. First deal with the current solution
-  my $subletter = lc(substr($subarray, -1));
-  my $suffix = "resp".$subletter;
-  my $out = $Frmobj->inout("_".$suffix);
-  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$current out=$out");
   # Set the title to something meaningful
-  $args = "ndf=$out title='$subarray current responsivity solution'";
+  $args = "ndf=$current title='$subarray current responsivity solution'";
   $Mon{ndfpack_mon}->obeyw("settitle","$args");
   # Store in Frame object and display
-  $Frmobj->files($out);
+  $Frmobj->files($current);
   my %options = ( TYPE => 'image', REGION => 1, WINDOW => 0, TOOL => 'kapview',
 		  ZAUTOSCALE => 1, KEY => 'true' );
-  $Display->display_data($Frmobj, \%options);
+  $Display->display_data($Frmobj, \%options, 0);
   # Find min/max so previous image can be displayed on same scale
-  _FIND_IMAGE_STATISTICS_ IMAGE=$out COMP=$comp VERBOSE=0
+  _FIND_IMAGE_STATISTICS_ IMAGE=$current HISTAT=0 COMP=$comp VERBOSE=0
   my $zmin = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MIN};
   my $zmax = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
 
-  %options = ( TYPE => 'histogram', REGION => 13, WINDOW => 0, TOOL => 'kapview', 
+  # If not specified, set the clip parameter from data range to ensure
+  # all data are shown in the histogram
+  if ( $clip eq "" ) {
+    $clip = max(abs($zmin), abs($zmax)) / $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
+  }
+
+  # Display the histogram
+  %options = ( TYPE => 'histogram', REGION => 13, WINDOW => 0, TOOL => 'kapview',
 	       ZAUTOSCALE => 0, SIGMA => $clip );
   $Display->display_data($Frmobj, \%options, 0);
 
-  # Previous solution
-  $out = $Frmobj->inout("_p".$suffix);
-  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$previous out=$out");
-  # Set the title to something meaningful
-  $args = "ndf=$out title='$subarray previous responsivity solution'";
-  $Mon{ndfpack_mon}->obeyw("settitle","$args");
-  # Store in Frame object
-  $Frmobj->files($out);
-  # Display - define options here entirely; there is no disp.dat
-  # entry for these files. Display the image and histogram separately.
-  %options = ( TYPE => 'image', REGION => 2, WINDOW => 0, TOOL => 'kapview', 
-	       ZAUTOSCALE => 0, ZMIN => $zmin, ZMAX => $zmax, KEY => 'true' );
-  $Display->display_data($Frmobj, \%options, 0);
-  %options = ( TYPE => 'histogram', REGION => 14, WINDOW => 0, TOOL => 'kapview', 
-	       ZAUTOSCALE => 0, SIGMA => $clip );
-  $Display->display_data($Frmobj, \%options, 0);
+  # Now display the previous solution
+  if ( defined $previous ) {
+    # Set coord frame to pixel
+    $args = "ndf=$previous frame=pixel";
+    $Mon{ndfpack_mon}->obeyw("wcsframe","$args");
 
-  # Next create the `percentage change' image
-  $suffix = "_pcrsp".$subletter;
-  $out = $Frmobj->inout($suffix);
-  my $exp = "PA*(IA-IB)/IB";
-  $args = "exp=$exp IA=$current IB=$previous PA=100.0 out=$out";
-  $Mon{kappa_mon}->obeyw("maths","$args");
-  # Set the title to something meaningful
-  $args = "ndf=$out title='Responsivity change for $subarray (%)'";
-  $Mon{ndfpack_mon}->obeyw("settitle","$args");
-  # Store in current Frame object and display
-  $Frmobj->files( $out );
-  ($zmin, $zmax) = ($Frmobj->hdr('FILTER') =~ /850/) ? (-5.0, 5.0) : (-10.0, 10.0);
-  %options = ( TYPE => 'image', REGION => 4, WINDOW => 0, TOOL => 'kapview',
-	       ZAUTOSCALE => 0, ZMIN => $zmin, ZMAX => $zmax, KEY => 'TRUE' );
-  $Display->display_data( $Frmobj, \%options, 0 );
+    # Set the title to something meaningful
+    $args = "ndf=$previous title='$subarray previous responsivity solution'";
+    $Mon{ndfpack_mon}->obeyw("settitle","$args");
+    # Store in Frame object
+    $Frmobj->files($previous);
+    # Display - define options here entirely; there is no disp.dat
+    # entry for these files. Display the image and histogram separately.
+    %options = ( TYPE => 'image', REGION => 2, WINDOW => 0, TOOL => 'kapview',
+		 ZAUTOSCALE => 0, ZMIN => $zmin, ZMAX => $zmax, KEY => 'true' );
+    $Display->display_data($Frmobj, \%options, 0);
+    %options = ( TYPE => 'histogram', REGION => 14, WINDOW => 0, TOOL => 'kapview',
+		 ZAUTOSCALE => 0, SIGMA => $clip );
+    $Display->display_data($Frmobj, \%options, 0);
+
+    # Retrieve percentage change image. Store in current Frame object
+    # and display
+    my $pcresp = $Frmobj->uhdr("RESP_DELTA");
+    if ( defined $pcresp ) {
+      # Set coord frame to pixel
+      $args = "ndf=$pcresp frame=pixel";
+      $Mon{ndfpack_mon}->obeyw("wcsframe","$args");
+      $Frmobj->files( $pcresp );
+      ($zmin, $zmax) = ($Frmobj->hdr('FILTER') =~ /850/) ? (-5.0, 5.0) : (-10.0, 10.0);
+      %options = ( TYPE => 'image', REGION => 4, WINDOW => 0, TOOL => 'kapview',
+		   ZAUTOSCALE => 0, ZMIN => $zmin, ZMAX => $zmax, KEY => 'TRUE' );
+      $Display->display_data( $Frmobj, \%options, 0 );
+    } else {
+      orac_warn "Previous solution defined, but not percentage-change image\n";
+    }
+
+  } else {
+    orac_warn "No previous solution defined - only current information is displayed\n";
+  }
 
 } else {
   orac_warn "Must supply FRAME argument - will not display responsivity results\n";

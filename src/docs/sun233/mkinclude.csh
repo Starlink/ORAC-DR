@@ -20,7 +20,7 @@ set output = "$thisdir/sun233_classes.tex"
 
 # These are  the classes relevant to recipe writers
 set input = ""
-foreach i ( Calib.pm Calib/SCUBA.pm Constants.pm  Display.pm Frame.pm Frame/NDF.pm Frame/UKIRT.pm Frame/JCMT.pm General.pm Group.pm Group/NDF.pm Group/UFTI.pm Group/JCMT.pm Index.pm LogFile.pm Loop.pm Msg/Control/AMS.pm Msg/Task/ADAM.pm Print.pm TempFile.pm)
+foreach i ( Calib.pm Calib/SCUBA.pm Constants.pm  Display.pm Frame.pm Frame/NDF.pm Frame/UKIRT.pm Frame/SCUBA.pm General.pm Group.pm Group/NDF.pm Group/UFTI.pm Group/SCUBA.pm Index.pm LogFile.pm Loop.pm Msg/Control/AMS.pm Msg/Task/ADAM.pm Print.pm TempFile.pm)
   echo $i
   set input = "$input ORAC/$i"
 end

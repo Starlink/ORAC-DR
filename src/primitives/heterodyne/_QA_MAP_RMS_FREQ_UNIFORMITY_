@@ -117,8 +117,8 @@ if( defined( $survey ) ) {
     push @analyse_surveys, $survey;
   }
 } else {
-  push @analyse_surveys, ( defined( $Frm->hdr( "SURVEY" ) ) ?
-                           $Frm->hdr( "SURVEY" )            :
+  push @analyse_surveys, ( defined( $Frm->uhdr( "ORAC_SURVEY" ) ) ?
+                           $Frm->uhdr( "ORAC_SURVEY" )            :
                            "Telescope" );
 }
 
@@ -134,7 +134,7 @@ if( $group == 0 ) {
   orac_throw "Programming error: GROUP parameter to _QA_MAP_RMS_UNIFORMITY_ must be 0, 1, or 2";
 }
 
-if( $group != 1 || ( $group == 1 && $Grp->lastmember( $Frm ) ) ) {
+if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
 
   if( ! ( $group == 1 && $Grp->uhdr( "COPY_FRAME_CUBE" ) ) ) {
 
@@ -186,15 +186,17 @@ if( $group != 1 || ( $group == 1 && $Grp->lastmember( $Frm ) ) ) {
           my $dims = $_GET_DIMENSIONS_{DIMS};
 
           # Take 10% from either end to collapse over.
-          my $ubnd_spread = ( $ubound->[2] - int( $dims->[2] * 0.1 ) ) . ":" . $ubound->[2];
-          my $lbnd_spread = $lbound->[2] . ":" . ( $lbound->[2] + int( $dims->[2] * 0.1 ) );
+          my $ubnd_spread = ( $ubound->[2] - int( $dims->[2] * 0.15 ) ) . ":" .
+                            ( $ubound->[2] - int( $dims->[2] * 0.05 ) );
+          my $lbnd_spread = ( $lbound->[2] + int( $dims->[2] * 0.05 ) ) . ":" .
+                            ( $lbound->[2] + int( $dims->[2] * 0.15 ) );
 
           # Collapse.
-          $params  = "in=$in(,,$lbnd_spread) out=$collapsedlo estimator=rms";
+          $params  = "in=$in(,,$lbnd_spread) out=$collapsedlo estimator=sigma";
           $params .= " axis=SPEC wlim=0.0 trim=false variance=false";
           $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
-          $params  = "in=$in(,,$ubnd_spread) out=$collapsedhi estimator=rms";
+          $params  = "in=$in(,,$ubnd_spread) out=$collapsedhi estimator=sigma";
           $params .= " axis=SPEC wlim=0.0 trim=false variance=false";
           $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
@@ -228,10 +230,10 @@ if( $group != 1 || ( $group == 1 && $Grp->lastmember( $Frm ) ) ) {
       _SET_FILE_FITS_ITEM_ FILE=$outhi KEY=PRODUCT VALUE=rmshi
 
       # Get the mean RMS for the low and high.
-      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$outlo" );
-      my ( $ORAC_STATUS, $rmslo ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
-      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$outhi" );
-      ( $ORAC_STATUS, my $rmshi ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+      $Mon{'kappa_mon'}->obeyw( "histat", "ndf=$outlo" );
+      my ( $ORAC_STATUS, $rmslo ) = $Mon{'kappa_mon'}->get( "histat", "median" );
+      $Mon{'kappa_mon'}->obeyw( "histat", "ndf=$outhi" );
+      ( $ORAC_STATUS, my $rmshi ) = $Mon{'kappa_mon'}->get( "histat", "median" );
 
       # Report to user.
       orac_say sprintf( " RMS in lower 10%%: %.4fK", $rmslo );

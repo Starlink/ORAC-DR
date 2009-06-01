@@ -69,6 +69,8 @@ sub collate_headers {
   $header->removebyname( 'SIMPLE' );
   $header->removebyname( 'END' );
 
+  my @items;
+
   my ( $pstring, $pcommit, $pcommitdate ) = ORAC::Version::oracversion_global();
   # Update the version headers.
   my $pipevers = new Astro::FITS::Header::Item( Keyword => 'PIPEVERS',
@@ -89,16 +91,47 @@ sub collate_headers {
     $procvers_value = ( $commitdate > $pcommitdate ?
                         $commitdate->strftime( "%Y%m%d%H%M%S" ) :
                         $pcommitdate->strftime( "%Y%m%d%H%M%S" ) );
+  } else {
+    my @sys;
+    push(@sys, "pipeline") unless defined $pcommitdate;
+    push(@sys, "engine") unless defined $commitdate;
+    print STDERR "Problem reading ".join(" and ",@sys)." version information\n";
   }
   my $procvers = new Astro::FITS::Header::Item( Keyword => 'PROCVERS',
                                                 Value   => $procvers_value,
                                                 Comment => 'Date of most recent commit',
                                                 Type    => 'STRING' );
 
+  # Calculate the new data reduction recipe header. This is only done
+  # if the generic header exists
+  my $uhdr = $self->uhdr;
+  if (exists $uhdr->{ORAC_DR_RECIPE}) {
+    my %cleaned = Astro::FITS::HdrTrans::clean_prefix( $uhdr, "ORAC_" );
+    my $class = Astro::FITS::HdrTrans::determine_class( \%cleaned, undef, 0 );
+    my %fits = $class->from_DR_RECIPE( \%cleaned );
 
-  $header->append( $pipevers );
-  $header->append( $engvers );
-  $header->append( $procvers );
+    # At this point we should be updating the hdr() values but we do
+    # not want to do that here because this method returns a new
+    # header that is appended (with replace) to the hdr(). The trick
+    # is to retain comments from the original FITS header whilst also
+    # working within the paradigm of this merthod. To do that we need
+    # the FITS header not the tie. A bit more convoluted than one
+    # would expect. Other options is to do all this in an explicit
+    # "work on $self->hdr" method.
+    if (keys %fits) {
+      my $fitshdr = $self->fits;
+      for my $keyword (keys %fits) {
+        my $ori = $fitshdr->itembyname( $keyword );
+        if (defined $ori) {
+          my $new = $ori->copy;
+          $new->value( $fits{$keyword} );
+          push(@items, $new);
+        }
+      }
+    }
+  }
+
+  push(@items, $pipevers, $engvers, $procvers );
 
   # Insert the PRODUCT header. This comes from the $self->product
   # method. If the return value from this method is undefined, do not
@@ -109,8 +142,10 @@ sub collate_headers {
                                               Value   => $product,
                                               Comment => 'Pipeline product',
                                               Type    => 'STRING' );
-    $header->append( $prod );
+    push(@items, $prod );
   }
+
+  $header->append( \@items );
 
   return $header;
 }

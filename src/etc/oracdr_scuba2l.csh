@@ -211,9 +211,6 @@ setenv ORAC_PERSON agibb
 setenv ORAC_LOOP flag
 setenv ORAC_SUN  xxx
 
-# some other things
-setenv RTD_REMOTE_DIR $ORAC_DATA_OUT
-
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
 

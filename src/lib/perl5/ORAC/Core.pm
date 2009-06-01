@@ -166,46 +166,45 @@ sub orac_store_frm_in_correct_grp {
   my $grpname;
 
   if( defined( $transient ) && $transient == -1 ) {
-    $grpname = "ALL";
-    $GrpHash->{$grpname} = $Grp;
-    $Grp->push( $Frm );
+    $grpname = 'ALL';
   } else {
-
     # query Frame for its group
     $grpname = $Frm->group;
-
-    # create a new group object and remove the previous file
-    # unless such an object already exists
-    # note that the "existence" of this group is only meaningful
-    # over the lifetime of the pipeline
-    # Unless the primitive is written to recognise -resume
-
-    do {
-
-      # Clear the group hash if we are transient
-      %$GrpHash = () if $transient;
-
-      # Create the group
-      $Grp = new $GrpObjectType($grpname);
-
-      # Store the Group object.
-      $GrpHash->{$grpname} = $Grp;
-
-      # Store the Grp on the array as well
-      push(@$GrpArr, $Grp) if $use_arr;
-
-      # We'll need to check to see if the file exists later on and if
-      # it needs to be removed, based on the $resume flag.
-      $check_remove = 1;
-
-    } unless (exists $GrpHash->{$grpname});
-
-    # Retrieve the current group object
-    $Grp = $GrpHash->{$grpname};
-
-    # push current Frame onto Group
-    $Grp->push($Frm);
   }
+
+  # create a new group object and remove the previous file
+  # unless such an object already exists
+  # note that the "existence" of this group is only meaningful
+  # over the lifetime of the pipeline
+  # Unless the primitive is written to recognise -resume
+
+  do {
+
+    # Clear the group hash if we are transient
+    if( defined( $transient ) && $transient == 1 ) {
+      %$GrpHash = ();
+    }
+
+    # Create the group
+    $Grp = new $GrpObjectType($grpname);
+
+    # Store the Group object.
+    $GrpHash->{$grpname} = $Grp;
+
+    # Store the Grp on the array as well
+    push(@$GrpArr, $Grp) if $use_arr;
+
+    # We'll need to check to see if the file exists later on and if it
+    # needs to be removed, based on the $resume flag.
+    $check_remove = 1;
+
+  } unless (exists $GrpHash->{$grpname});
+
+  # Retrieve the current group object
+  $Grp = $GrpHash->{$grpname};
+
+  # push current Frame onto Group
+  $Grp->push($Frm);
 
   # Report whether this was a new group or an existing group
   # Do this after the Frame has been pushed on so that we can
@@ -1354,7 +1353,7 @@ sub orac_main_data_loop {
 
         # Store the Frame in the Group
         orac_store_frm_in_correct_grp($Frm, $groupclass, \%Groups, \@Groups,
-                                      $opt_ut, $opt_resume, 0);
+                                      $opt_ut, $opt_resume, $grptrans);
 
       }
 

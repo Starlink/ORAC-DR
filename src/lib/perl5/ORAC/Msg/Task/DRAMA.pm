@@ -467,6 +467,7 @@ it was started by this object.
 =cut
 
 sub DESTROY {
+  local($., $@, $!, $^E, $?);
   my $self = shift;
 #  print "IN DESTROY WITH : ". $self->taskname . " using ". 
 #    (defined $self->_pid ? $self->_pid : "<NOT STARTED>") ."\n";
