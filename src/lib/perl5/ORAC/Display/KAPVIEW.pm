@@ -1153,7 +1153,7 @@ sub image {
   return $status if $status != ORAC__OK;
 
   # Do the obeyw
-  $status = $self->obj->obeyw("display", "device=$device in=$file axes clear=true $optstring badcol=grey50 accept");
+  $status = $self->obj->obeyw("display", "device=$device in=$file axes clear=true $optstring badcol=grey50 margin=0.15 accept");
   if ($status != ORAC__OK) {
     orac_err("Error displaying image\n");
     orac_err("Trying to execute: display device=$device axes clear=true $optstring in=$file\n");
