@@ -1040,9 +1040,7 @@ it is the last member and a zero otherwise.
 sub lastmember {
   my $self = shift;
   my $member = shift;
-print "self num: " . $self->num . "\n";
-print "member: $member\n";
-print "frame: " . $self->frame( $self->num ) . "\n";
+
   if ($member eq $self->frame($self->num)) {
     return 1;
   }
