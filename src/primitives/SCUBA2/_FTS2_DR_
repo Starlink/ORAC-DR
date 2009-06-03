@@ -1,0 +1,121 @@
+#! -*-perl-*-
+
+=head1 NAME
+
+_FTS2_DR_ - Call FTS2 data engine
+
+=head1 SYNOPSIS
+
+_FTS2_DR_ 
+
+=head1 DESCRIPTION
+
+This primitive reduces FTS-2 data
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<MYCONFIGFILE>
+
+This parameter allows the user to specify a custom parameters file 
+for the sc2fts routines. If this parameter is set the default system 
+configuration file and any other parameters will be ignored.
+
+
+=item B<SC2FTS Params>
+
+Any sc2fts parameters can be passed to this primative. This will 
+cause the default value to be overwritten by the givin value. If 
+MYCONFIGFILE is used these parameters will be ignored and the 
+values in the specified file will be used.
+
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=head1 OUTPUT DATA
+
+
+=head1 OUTPUT FILES
+
+
+
+=head1 NOTES
+
+
+
+=head1 AUTHOR
+
+Regan Dahl E<lt>regan.dahl@uleth.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 University of Lethbridge. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+my $ext ="_fts";
+
+# Announce what's going on
+orac_print "Calculating fts for current data\n";
+my $fts_conn = $Frm->hdr('FTS_CONN');
+#orac_print "$fts_conn\n";
+# Transform each file in the current frame
+my @ftss;
+use Astro::FITS::Header::NDF;
+for my $i ( 1 .. $Frm->nfiles ) {
+
+  # Get input and output file names
+  my ($in, $fts) = $Frm->inout($ext, $i);
+  $Mon{FTS2DR}->obeyw("SETPARAMETERS","");
+#  orac_print "params set $in $fts $config\n";
+  $Mon{FTS2DR}->obeyw("DATAREDUCTION","in=$in out=$fts");
+    my $args = "in=$fts out=$fts";
+
+   my $config;
+   my $configfile = get_prim_arg( $_PRIM_ARGS_, "MYCONFIGFILE",  0 );
+   if(!$configfile)
+   {
+   	$config = new ORAC::TempFile;
+   	_GET_FTS_CONFIG_ ARGS=$_PRIM_ARGS_ CONFIG=$config
+	$configfile = $_GET_FTS_CONFIG_{CONFIG};
+   }
+  $args .= " parslist=^".$configfile;
+
+    $Mon{smurf_mon}->obeyw("sc2fts","$args");
+  push (@ftss, $fts);
+}
+
+# Register with Frame object if successful
+$Frm->files(@ftss) if ( defined $ftss[0] );
+      $Display->display_data( $Frm );
+
+    # Copy out the spectrum from the given file.
+    my $in = $Frm->file( 1 );
+    my ( undef, $out ) = $Frm->inout( "_rsp" );
+    my $params = "in=$in(20,16,) out=$out trim=false";
+    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+    orac_print "Representative spectrum created in $out.\n";
+      $Frm->file( $out );
+      $Display->display_data( $Frm );
