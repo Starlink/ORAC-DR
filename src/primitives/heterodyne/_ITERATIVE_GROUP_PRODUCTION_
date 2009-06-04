@@ -44,11 +44,29 @@ given in a comma-separated string. ['integ']
 
 The polynomial order that will be used when estimating baselines. [5]
 
-=item PARAMS = STRING (Given)
+=item PARAM1 = REAL (Given)
 
-The parameters to pass to MAKECUBE when using the Sinc, SincSinc,
-SincCos, SincGauss, Somb, SombCos, and Gauss spreading methods (see
-SPREAD parameter). ['']
+The first parameter required by the spreading method. This parameter
+is required by all methods, and specifies how many arcseconds on
+either side of the output position are to receive contributions from
+the input pixel. A value of zero indicates that a suitable number
+should be calculated automatically. [0]
+
+=item PARAM2 = REAL (Given)
+
+The second parameter required by the spreading method, but only for
+SombCos, Gauss, SincSinc, SincCos, and SincGauss schemes. For the
+SombCos, SincSinc, and SincCos schemes, it specifies the number of
+arcseconds at which the envelope of the function goes to zero. The
+minimum value is 1.0, and the run-time default value is 2.0.  For the
+Gauss and SincGauss scheme, it specifies the full-width at
+half-maximum (FWHM) of the Gaussian envelope.  The minimum value is
+0.1, and the run-time default is 1.0. []
+
+=item PIXSIZE = REAL (Given)
+
+The output pixel scale. If not defined, this value is automatically
+determined from the data. []
 
 =item SPATIAL_SMOOTH = INTEGER (Given)
 
@@ -105,44 +123,55 @@ my $freqsmooth = get_prim_arg( $_PRIM_ARGS_, "FREQUENCY_SMOOTH", 25 );
 my $moments = get_prim_arg( $_PRIM_ARGS_, "MOMENTS", 'integ' );
 my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 5 );
 my $pixsize = get_prim_arg( $_PRIM_ARGS_, "PIXSIZE", undef );
-my $sp_params = get_prim_arg( $_PRIM_ARGS_, "PARAMS", "''" );
+my $sp_param1 = get_prim_arg( $_PRIM_ARGS_, "PARAM1", 0 );
+my $sp_param2 = get_prim_arg( $_PRIM_ARGS_, "PARAM2", undef );
 my $spatsmooth = get_prim_arg( $_PRIM_ARGS_, "SPATIAL_SMOOTH", 3 );
 my $spread = get_prim_arg( $_PRIM_ARGS_, "SPREAD", 'nearest' );
 
-my @good = $Grp->check_membership;
-if( ! @good ) {
-  orac_warn "No good members in current group. Cannot do group processing.\n";
-} else {
+_RETRIEVE_TAG_ TAG=POST_TIMESERIES_REMOVAL THROW=0 GROUP=2
 
-  # Only process if we're on the last member of a group.
-  if( $Grp->lastmember( $Frm ) ) {
+# Only process if we're on the last member of a group.
+if( $Grp->lastallmembers( $Frm ) ) {
+
+  my @good = $Grp->check_membership;
+  if( ! @good ) {
+    orac_warn "No good members in current group. Cannot do group processing.\n";
+  } else {
 
     orac_print "Beginning iterative group production.\n";
+    my $iter = 1;
+    while( $iter < 2 ) {
 
-    _RETRIEVE_TAG_ TAG=POST_TIMESERIES_REMOVAL THROW=0 GROUP=2
+      orac_say "Iteration $iter.\n";
 
-    _CREATE_CUBE_GROUP_ SPREAD=$spread PARAMS=$sp_params TILEBORDER=5 PIXSIZE=$pixsize
+      _CREATE_CUBE_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=5 PIXSIZE=$pixsize
 
-    _REMOVE_BASELINE_THROUGH_SMOOTHING_ FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order GROUP=1
+      _REMOVE_BASELINE_THROUGH_SMOOTHING_ FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order GROUP=1
 
-    _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=1 MOMENTS=$moments FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ
+      _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=1 MOMENTS=$moments FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ
 
-    _CREATE_NOISE_MAP_ GROUP=1 QA=1
+      _CREATE_NOISE_MAP_ GROUP=1 QA=1
 
-    _RECREATE_MASKED_TIMESERIES_ INTERP=$spread PARAMS=$sp_params
+      _RECREATE_MASKED_TIMESERIES_ INTERP=$spread PARAMS=$sp_params
 
-    _REMOVE_BASELINE_MASKED_TIMESERIES_
+      _REMOVE_BASELINE_MASKED_TIMESERIES_
 
-    if( $flatfield ) {
-      _REMOVE_FLAT_FIELD_ GROUP=2
+      _SET_TAG_ TAG=TIMESERIES_MASKED_BASELINED GROUP=2
+
+      if( $flatfield ) {
+        _REMOVE_FLAT_FIELD_ GROUP=2
+      }
+
+      _CREATE_CUBE_FRAME_FROM_GROUP_ SPREAD=$spread PARAMS=$sp_params TILEBORDER=5
+
+      _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=2 MOMENTS=$moments FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ
+
+      _CREATE_NOISE_MAP_ GROUP=2 QA=1
+
+      _RETRIEVE_TAG_ TAG=TIMESERIES_MASKED_BASELINED GROUP=2
+
+      $iter++;
     }
-
-    _CREATE_CUBE_FRAME_FROM_GROUP_ SPREAD=$spread PARAMS=$sp_params TILEBORDER=5
-
-    _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=2 MOMENTS=$moments FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ
-
-    _CREATE_NOISE_MAP_ GROUP=2 QA=0
-
   }
 
 }
