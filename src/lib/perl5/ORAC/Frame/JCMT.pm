@@ -74,7 +74,6 @@ sub jcmtstate {
 
   # First, check our cache.
   if( exists $self->{JCMTSTATE} ) {
-    print "going to cache\n";
     return $self->{JCMTSTATE}->{$which}->{$keyword};
   }
 
