@@ -20,11 +20,27 @@ through UNMAKECUBE using the original time-series data as references.
 The method to use when resampling the input sky cube pixel
 values. ['nearest']
 
-=item PARAMS = STRING (Given)
+=item PARAM1 = REAL (Given)
 
-An array which consists of additional parameters required by the Sinc,
-SincSinc, SincCos, SincGauss, Somb, and SombCos interpolation schemes
-(see INTERP argument). ['']
+The first parameter required by the spreading method. This parameter
+is required by all methods, and specifies how many arcseconds on
+either side of the output position are to receive contributions from
+the input pixel. A value of zero indicates that a suitable number
+should be calculated automatically. [0]
+
+=item PARAM2 = REAL (Given)
+
+The second parameter required by the spreading method, but only for
+SombCos, Gauss, SincSinc, SincCos, and SincGauss schemes. For the
+SombCos, SincSinc, and SincCos schemes, it specifies the number of
+arcseconds at which the envelope of the function goes to zero. The
+minimum value is 1.0 pixels, and the run-time default value is 2.0
+pixels.  For the Gauss and SincGauss scheme, it specifies the
+full-width at half-maximum (FWHM) of the Gaussian envelope.  The
+minimum value is 0.1 pixels, and the run-time default is 1.0
+pixels. Note that these numbers are given in pixels and this parameter
+takes the number of requested arcseconds. This is done because the
+pixel scale could be automatically determined from the data. []
 
 =back
 
@@ -89,12 +105,9 @@ Rights Reserved.
 =cut
 
 # Handle parameters.
-my $interp = ( defined( $_PRIM_ARGS_->{INTERP} ) ?
-               $_PRIM_ARGS_->{INTERP}            :
-               'nearest' );
-my $interp_params = ( defined( $_PRIM_ARGS_->{PARAMS} ) ?
-                      $_PRIM_ARGS_->{PARAMS}            :
-                      "''" );
+my $interp = get_prim_arg( $_PRIM_ARGS_, 'INTERP', 'NEAREST' );
+my $param1 = get_prim_arg( $_PRIM_ARGS_, 'PARAM1', 0 );
+my $param2 = get_prim_arg( $_PRIM_ARGS_, 'PARAM2', undef );
 
 my @ref;
 my @tsmask;
@@ -126,6 +139,14 @@ print $outlist_fh join "\n", @tsmask;
 close $inlist_fh;
 close $reflist_fh;
 close $outlist_fh;
+
+# Get parameter string for UNMAKECUBE. To do this we need the pixel
+# scale of one of the input NDFs.
+$Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=" . $Frm->file(1) );
+my( $ORAC_STATUS, @fpixsize ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fpixscale" );
+my $pixsize = sqrt( $fpixsize[0] * $fpixsize[0] + $fpixsize[1] * $fpixsize[1] );
+_GET_SPREAD_PARAMS_ PARAM1=$param1 PARAM2=$param2 INTERP=$interp PIXSIZE=$pixsize
+my $interp_params = $_GET_SPREAD_PARAMS_{PARAMSTRING};
 
 # Set up parameters to UNMAKECUBE.
 my $params = "in='^$inlist' ref='^$reflist' out='^$outlist' interp=$interp params=$interp_params";
