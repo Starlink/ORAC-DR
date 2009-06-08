@@ -293,36 +293,12 @@ sub findgroup {
       $self->read_wcs;
       $wcs = $self->wcs;
 
-      # Check to see what tracking system we're in. To get this, we need
-      # to make some NDF calls to get into the JCMTSTATE structure.
-      my $status = &NDF::SAI__OK;
-      ndf_begin();
-      ndf_find( &NDF::DAT__ROOT(), $self->file, my $indf, $status );
-      ndf_xstat( $indf, 'JCMTSTATE', my $there, $status );
+      # Retrieve the TCS_TR_SYS, TCS_TR_BC1 and TCS_TR_BC2 values from
+      # the JCMTSTATE structure.
+      $state{'TCS_TR_SYS'} = $self->jcmtstate( "TCS_TR_SYS" );
+      $state{'TCS_TR_BC1'} = $self->jcmtstate( "TCS_TR_BC1" );
+      $state{'TCS_TR_BC2'} = $self->jcmtstate( "TCS_TR_BC2" );
 
-      if( $there ) {
-        ndf_xloc( $indf, 'JCMTSTATE', 'READ', my $xloc, $status );
-        for my $cmp (qw/ TCS_TR_SYS TCS_TR_BC1 TCS_TR_BC2 / ) {
-          dat_there( $xloc, $cmp, my $there, $status );
-          if ($there) {
-            dat_find( $xloc, $cmp, my $sloc, $status );
-            my @dims = (1);
-            # just need the first element
-            dat_cell( $sloc, 1, @dims, my $cloc, $status );
-            # and always read it as a number
-            dat_get0c( $cloc, my $val, $status );
-            if ($status == &NDF::SAI__OK) {
-              $state{$cmp} = $val;
-            }
-            dat_annul( $cloc, $status );
-            dat_annul( $sloc, $status );
-          }
-        }
-        dat_annul( $xloc, $status );
-      }
-
-      ndf_annul( $indf, $status );
-      ndf_end( $status );
     }
 
     if( exists $state{TCS_TR_SYS} && $state{TCS_TR_SYS} =~ /APP/ ) {
