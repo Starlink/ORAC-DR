@@ -1,4 +1,4 @@
-#! -*-perl-*-
+# -*-perl-*-
 
 =head1 NAME
 
@@ -6,7 +6,7 @@ _MAKE_MOSAIC_SUBGROUP_ - Create a sub-group mosaic
 
 =head1 SYNOPSIS
 
- _MAKE_MOSAIC_SUBGROUP_  COADD_MODE=RUNNING
+_MAKE_MOSAIC_SUBGROUP_  COADD_MODE=RUNNING
 
 =head1 DESCRIPTION
 
@@ -27,29 +27,38 @@ within this primitive and any others passed in are ignored.
 
 =head1 ARGUMENTS
 
+The following arguments are supported.
+
 =over 4
 
 =item B<COADD_MODE>
 
-Controls the coadding mode for the primitive. If COADD_MODE=RUNNING,
-the new frames are combined with the existing group image. If
-COADD_MODE=STACKALL the group image is recreated from all the constituent
-frames each time it is called. Default mode is 'STACKALL'.
+Controls the coadding mode for the primitive. If C<RUNNING>, the new
+frames are combined with the existing group image. If C<STACKALL> the
+group image is recreated from all the constituent frames each time it
+is called. Default is C<STACKALL>. Passed directly to _MAKE_MOSAIC_.
 
 =item B<KEYS>
 
 A comma-separated list of the FITS header keys to be used to define
-the subgroup. Mandatory option - primitive will exit with no
-processing if no keys are provided. This is probably not
-desireable. This argument is ignored for FOCUS observations, which use
-two pre-defined keys to establish sub-groups. In principle there is no
-limit to the number of keys that may be given, though a warning is
-issued if the number is greater than 5.
+the subgroup. Mandatory option - the primitive will exit with no
+processing if no keys are provided. The exception is for FOCUS
+observations, which use two pre-defined keys to establish
+sub-groups. In principle there is no limit to the number of keys that
+may be given, though a warning is issued if the number is greater than
+5.
 
 =item B<MAKEMOS>
 
 A flag to denote whether to use CCDPACK MAKEMOS for mosaicking the
-images. Default is 0 (no), which uses KAPPA WCSMOSAIC instead.
+images. Default is 0 (no), which uses KAPPA WCSMOSAIC instead.  Passed
+directly to _MAKE_MOSAIC_.
+
+=item B<MAKEMOS_METHOD>
+
+The method by which MAKEMOS combines the images. Default is
+C<MEAN>. See the MAKEMOS documentation for a description of the
+possible values. Passed directly to _MAKE_MOSAIC_.
 
 =item B<METHOD>
 
@@ -57,43 +66,56 @@ The method to be used for resampling the aligned images. This
 corresponds to the C<method> parameter for WCSMOSAIC and WCSALIGN,
 which is different from that for MAKEMOS. See WCSALIGN and/or
 WCSMOSAIC documentation for further details. Default value is
-C<nearest>.
-
-=item B<MAKEMOS_METHOD>
-
-The method by which MAKEMOS combines the images. Default is
-C<mean>. See the MAKEMOS documentation for a description of the
-possible values.
-
-=item B<COORD_FRAME>
-
-Name of desired coordinate frame for output image. May be any
-supported by C<AST>. Default value will be obtained from the current
-Frame.
+C<NEAREST>. Passed directly to _MAKE_MOSAIC_.
 
 =item B<VERBOSE>
 
 Flag to denote whether to display extra information. Default is 0
-(no).
+(no). Also passed to _MAKE_MOSAIC_.
 
 =back
 
-=head1 KNOWN ISSUES
+=head1 EXTERNAL TASKS
+
+The following external task is used:
+
+=over 4
+
+=item ORAC-DR PRIMITIVES
+
+_MAKE_MOSAIC_
+
+=back
+
+=head1 NOTES
 
 This primitive has no memory, in that if a particular subgroup has
 been created previously then none of the properties of that subgroup
 can be accessed.
 
 This primitive relies on the Grp->subgrp method which will fail if
-one of the supplied keys is in the list of SUBHEADERs.
+one of the supplied keys is in the list of SUBHEADERS.
 
-=head1 FILE SUFFIX
+=head1 OUTPUT DATA
 
-Creates a single output (sub)group image with a suffix of '_mos'.
+For FOCUS observations, the Group uhdr has an entry called SUBGROUPS
+on exit.  This entry is a hash with keys equal to the focus positions
+(C<FOCPOSN>) and values of the associated subgroup filename. This
+overcomes the lack of history capability mentioned above and allows
+the images at each focus position to be retrieved.
 
-=head1 AUTHORS
+=head1 OUTPUT FILES
 
-Andy Gibb E<lt>agg@astro.ubc.caE<gt>,
+Creates an output group image with a suffix of C<_mos> for each
+subgroup. The file name is derived from the current Group file name
+plus the values of the keys used to create the subgroups joined by
+underscores. Any values which contain decimal points have a dash
+substituted to avoid problems with NDF attempting to access a file
+extension.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
@@ -113,50 +135,26 @@ General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
-USA
+USA.
 
 =cut
 
 # Should I be verbose (default to no)
-my $verbose = (exists $_MAKE_MOSAIC_SUBGROUP_{VERBOSE} &&
-               defined $_MAKE_MOSAIC_SUBGROUP_{VERBOSE}) ?
-               $_MAKE_MOSAIC_SUBGROUP_{VERBOSE} : 0;
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 0);
 
 # Do we want to use makemos?
-my $makemos = (exists $_MAKE_MOSAIC_SUBGROUP_{MAKEMOS} &&
-	       defined $_MAKE_MOSAIC_SUBGROUP_{MAKEMOS}) ?
-               $_MAKE_MOSAIC_SUBGROUP_{MAKEMOS} : 0;
-
-# Coordinate frame
-my $coframe =  (exists $_MAKE_MOSAIC_SUBGROUP_{COORD_FRAME} &&
-	       defined $_MAKE_MOSAIC_SUBGROUP_{COORD_FRAME}) ?
-               lc($_MAKE_MOSAIC_SUBGROUP_{COORD_FRAME}) : undef;
+my $makemos = get_prim_arg($_PRIM_ARGS_, "MAKEMOS", 0);
 
 # Array of keys to define the sub-group
-my $keys = (exists $_MAKE_MOSAIC_SUBGROUP_{KEYS} &&
-	    defined $_MAKE_MOSAIC_SUBGROUP_{KEYS}) ?
-            $_MAKE_MOSAIC_SUBGROUP_{KEYS} : undef;
+my $keys = get_prim_arg($_PRIM_ARGS_, "KEYS", undef);
 
 my $coadd_mode = uc($_MAKE_MOSAIC_SUBGROUP_{COADD_MODE} || 'RUNNING');
 
-# Set the coordinate frame
-unless ( $coframe ) {
-  my $in = $Frm->file(1);
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=system");
-  (my $ORAC_STATUS, $coframe) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-}
-
 # Method for combining images in makemos 
-my $makemos_method = "";
-if ( $makemos ) {
-  $makemos_method = (exists $_MAKE_MOSAIC_SUBGROUP_{MAKEMOS_METHOD} &&
-		     defined $_MAKE_MOSAIC_SUBGROUP_{MAKEMOS_METHOD}) ? 
-		     lc($_MAKE_MOSAIC_SUBGROUP_{MAKEMOS_METHOD}) : "mean"; 
-}
+my $makemos_method = get_prim_arg($_PRIM_ARGS_, "MAKEMOS_METHOD", "mean");
+
 # Method for determining resampling the image during alignment
-my $method = (exists $_MAKE_MOSAIC_SUBGROUP_{METHOD} &&
-	      defined $_MAKE_MOSAIC_SUBGROUP_{METHOD}) ? 
-              lc($_MAKE_MOSAIC_SUBGROUP_{METHOD}) : "bilinear"; 
+my $method =  get_prim_arg($_PRIM_ARGS_, "METHOD", "bilinear");
 
 # Flag to indicate if we have a FOCUS observation
 my $focusobs = ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) ? 1 : 0;
@@ -215,7 +213,7 @@ if ( $keys || $focusobs ) {
     orac_print "Making SUB-GROUP mosaic\n";
 
     # Create sub-group mosaic
-    _MAKE_MOSAIC_ USEGRP=1 GROUP=$group MAKEMOS=$makemos MAKEMOS_METHOD=$makemos_method METHOD=$method COADD_MODE=$coadd_mode VERBOSE=$verbose COORD_FRAME=$coframe GENVAR=0
+    _MAKE_MOSAIC_ USEGRP=1 GROUP=$group MAKEMOS=$makemos MAKEMOS_METHOD=$makemos_method METHOD=$method COADD_MODE=$coadd_mode VERBOSE=$verbose GENVAR=0
     
   } else {
     orac_warn "No subgroup can be made with the keys provided: $keys\n";
