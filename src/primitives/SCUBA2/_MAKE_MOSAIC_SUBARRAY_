@@ -6,26 +6,55 @@ _MAKE_MOSAIC_SUBARRAY_ - Create mosaic from the four subarrays
 
 =head1 SYNOPSIS
 
- _MAKE_MOSAIC_SUBARRAY_
+_MAKE_MOSAIC_SUBARRAY_
 
 =head1 DESCRIPTION
 
 This primitive takes the aligned sub-scan frames from each sub-array
 and mosaics them into a single output image. Its use is optional but
-it helps speed up _MAKE_MOSAIC_FRAME_ by reducing the number of
-intercomparisons.
+it decreases processing time in the DREAM/STARE pipeline by reducing
+the number of intercomparisons at the Frame mosaicking stage.
 
-=head1 KNOWN ISSUES
+=head1 ARGUMENTS
 
-Assumes the _ALIGN_ARRAYS_ primitive has been run on the input images.
+The following argument is supported:
 
-=head1 ALGORITHMS
+=over 4
 
-CCDPACK: MAKEMOS. 
+=item B<VERBOSE>
 
-=head1 FILE SUFFIX
+Flag to denote whether helpful messages should be printed. Default is
+0 (no).
 
-Creates an output image with a suffix of '_arr'.
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external task is used:
+
+=over 4
+
+=item CCDPACK
+
+MAKEMOS
+
+=back
+
+=head1 NOTES
+
+Assumes the input images have been aligned to a common (sky)
+coordinate frame. If not, the images will be mosaicked in pixel
+coordinates.
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+Creates output images with a suffix of C<_arr> which are stored in the
+current Frame object. The number of output files is reduced by a
+factor equal to the number of subarrays (which should be 4).
 
 =head1 AUTHOR
 
@@ -37,22 +66,24 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 Copyright (C) 2004-2005 Particle Physics and Astronomy Research
 Council and University of British Columbia.  All Rights Reserved.
 
-This program is free software; you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation; either version 3 of the License, or (at your option) any later
-version.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
 
-This program is distributed in the hope that it will be useful, but WITHOUT ANY
-WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
 
-You should have received a copy of the GNU General Public License along with
-this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-Place, Suite 330, Boston, MA  02111-1307, USA
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
 
 =cut
 
-my $verbose = 0;
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 0);
 
 my $nfiles = $Frm->nfiles;
 my $no_of_subarrays = $Frm->numsubarrays;
@@ -64,16 +95,22 @@ my @out;
 # Loop over number of output files
 foreach my $j (1..$maxscan) {
 
+  # Note that this naming scheme works because the Frame likely has
+  # all the A files listed before then B, which are before C and D. If
+  # the listing went with subscan number then this would produce
+  # mis-named output files.
   my ($in, $out) = $Frm->inout('_arr', $j);
-  my $intmp = new ORAC::TempFile;
+  my $inlis = new ORAC::TempFile;
   # Collate subarray files based on subscan number
   foreach my $i (1..$nfiles) {
-    print {$intmp->handle} $Frm->file($i) ."\n" 
+    print {$inlis->handle} $Frm->file($i) ."\n" 
       if ($Frm->hdrval("NSUBSCAN", $i-1) == $j);
   }
 
+  # Input images have NO variance so don't try and use it in the
+  # mosaicking
   orac_print("Mosaicking subarrays \n") if $verbose;
-  $Mon{ccdpack_reg}->obeyw("makemos","in=^".$intmp->file." nousevar out=$out");
+  $Mon{ccdpack_reg}->obeyw("makemos","in=^".$inlis->file." nousevar out=$out");
   push (@out, $out);
 }
 

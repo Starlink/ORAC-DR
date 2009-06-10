@@ -1,4 +1,4 @@
-#! -*-perl-*-
+# -*-perl-*-
 
 =head1 NAME
 
@@ -6,34 +6,62 @@ _MAKE_MOSAIC_GROUP_ - Create group mosaic
 
 =head1 SYNOPSIS
 
- _MAKE_MOSAIC_GROUP_  COADD_MODE=RUNNING
+_MAKE_MOSAIC_GROUP_  COADD_MODE=RUNNING
 
 =head1 DESCRIPTION
 
-This primitive takes all the aligned sub-scan frames from each
-sub-array or aligned frame mosaics and mosaics them into a single
-coadded output group image.
+This primitive creates a new Group mosaic from the newest Frame
+image(s). The input images may be combined in one of two ways, using
+the B<COADD_MODE> parameter, depending on processing time
+constraints. The quickest way is to simply mosaic the current Frame
+and Group images together (C<RUNNING>). Output variances from this
+method rely entirely on the presence of input variances. The other
+method (C<STACKALL>) is to ignore any existing Group image (though it
+may still be used as a reference image) and combine all of the
+available Frame images to create a new Group mosaic. Output variances
+may be derived from input variances or using the contributions to the
+output pixels.
 
-Does not require the use of _MAKE_MOSAIC_FRAME_. This primitive
-supports the -batch command line option.
+A half-way house option (C<DESPIKE>) exists which allows processing to
+be delayed until a sufficient number of Frame images exist to permit a
+reasonable variance to be estimated assuming the input Frame images
+have no internal variances. This method also deals with the presence
+of spikes and/or outlying values. See the C<COADD_MODE> parameter
+below for full details.
+
+The mosaicking task may be specified using the B<MAKEMOS> parameter
+below.
+
+The user may also specify that all processing should wait until the
+current observation is complete. This is relevant only for running the
+pipeline at the telescope.
 
 =head1 ARGUMENTS
+
+The following arguments are supported:
 
 =over 4
 
 =item B<COADD_MODE>
 
-Controls the coadding mode for the primitive. If COADD_MODE=RUNNING,
-the new frames are combined with the existing group image. If
-COADD_MODE=STACKALL the group image is recreated from all the
-constituent frames each time it is called. If COADD_MODE=DESPIKE then
-the mosaicking task is set to MAKEMOS and the parameter NMOS must be
-specified. Default mode is 'STACKALL'.
+Controls the coadding mode for the primitive. If C<RUNNING>, the new
+frames are combined with the existing group image. If C<STACKALL> the
+group image is recreated from all the constituent Frames each time it
+is called. If C<DESPIKE> then the mosaicking task is set to MAKEMOS
+and the parameter B<NMOS> must be specified. Default mode is
+C<STACKALL>. Passed to _MAKE_MOSAIC_.
 
 =item B<MAKEMOS>
 
 A flag to denote whether to use CCDPACK MAKEMOS for mosaicking the
-images. Default is 0 (no), which uses KAPPA WCSMOSAIC instead.
+images. Default is 0 (no), which uses KAPPA WCSMOSAIC instead. Passed
+directly to _MAKE_MOSAIC_.
+
+=item B<MAKEMOS_METHOD>
+
+The method by which MAKEMOS combines the images. Default is
+C<mean>. See the MAKEMOS documentation for a description of the
+possible values. Passed directly to _MAKE_MOSAIC_.
 
 =item B<METHOD>
 
@@ -41,35 +69,31 @@ The method to be used for resampling the aligned images. This
 corresponds to the C<method> parameter for WCSMOSAIC and WCSALIGN,
 which is different from that for MAKEMOS. See WCSALIGN and/or
 WCSMOSAIC documentation for further details. Default value is
-C<nearest>.
-
-=item B<MAKEMOS_METHOD>
-
-The method by which MAKEMOS combines the images. Default is
-C<mean>. See the MAKEMOS documentation for a description of the
-possible values.
+C<nearest>. Passed directly to _MAKE_MOSAIC_.
 
 =item B<NMOS>
 
 Number of Frame images to mosaic together before coadding to
-Group. Only accessed if COADD_MODE=DESPIKE. Default is 5.
-
-=item B<COORD_FRAME>
-
-Name of desired coordinate frame for output image. May be any
-supported by C<AST>. Default value will be obtained from the current
-Frame.
+Group. Only used if B<COADD_MODE> is DESPIKE. Default is 5. Passed
+directly to _MAKE_MOSAIC_.
 
 =item B<VERBOSE>
 
 Flag to denote whether to display extra information. Default is 0
-(no).
+(no). Passed directly to _MAKE_MOSAIC_.
+
+=item B<WAIT>
+
+Flag to denote whether to wait until the current observation has ended
+before processing the data. Only relevant for online processing at the
+telescope. Default is 0 (no).
 
 =back
 
-=head1 KNOWN ISSUES
+=head1 NOTES
 
-Assumes the _ALIGN_ARRAYS_ primitive has been run on the input images.
+It is assumed that all of the input images are aligned to the same
+coordinate frame.
 
 Defining the output filename for the Group mosaic is a bit of a hack.
 
@@ -77,9 +101,14 @@ _MAKE_MOSAIC_GROUP_DESPIKE_ is more efficient than using this
 primitive with COADD_MODE=DESPIKE and designed for use in the QUICK
 LOOK pipeline.
 
-=head1 FILE SUFFIX
+=head1 OUTPUT DATA
 
-Creates a single output group image with a suffix of '_mos'.
+On exit, the Group uhdr contains the entry NEWIMAGE which is set to 1
+if a new Group file was created.
+
+=head1 OUTPUT FILES
+
+Creates a single output Group image with a suffix of C<_mos>.
 
 =head1 AUTHORS
 
@@ -104,70 +133,42 @@ General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
-USA
+USA.
 
 =cut
 
 # Should I be verbose (default to no)
-my $verbose = (exists $_MAKE_MOSAIC_GROUP_{VERBOSE} &&
-               defined $_MAKE_MOSAIC_GROUP_{VERBOSE}) ?
-               $_MAKE_MOSAIC_GROUP_{VERBOSE} : 0;
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 0);
 
 # Are we waiting until the observation has finished
-my $wait = (exists $_MAKE_MOSAIC_GROUP_{WAIT} &&
-	    defined $_MAKE_MOSAIC_GROUP_{WAIT}) ?
-            $_MAKE_MOSAIC_GROUP_{WAIT} : 0;
-
-# Coordinate frame
-my $coframe =  (exists $_MAKE_MOSAIC_GROUP_{COORD_FRAME} &&
-	       defined $_MAKE_MOSAIC_GROUP_{COORD_FRAME}) ?
-               lc($_MAKE_MOSAIC_GROUP_{COORD_FRAME}) : undef;
+my $wait = get_prim_arg($_PRIM_ARGS_, "WAIT", 0);
 
 if ( !$wait || ($wait && $Frm->uhdr('OBSEND')) ) {
 
   # Do we want to use makemos?
-  my $makemos = (exists $_MAKE_MOSAIC_GROUP_{MAKEMOS} &&
-		 defined $_MAKE_MOSAIC_GROUP_{MAKEMOS}) ?
-                 $_MAKE_MOSAIC_GROUP_{MAKEMOS} : 0;
+  my $makemos = get_prim_arg($_PRIM_ARGS_, "MAKEMOS", 0);
 
   # Determine coadd mode as that may over-ride choice of makemos
   # parameter
-  my $coadd_mode = uc($_MAKE_MOSAIC_GROUP_{COADD_MODE} || 'STACKALL');
+  my $coadd_mode = uc(get_prim_arg($_PRIM_ARGS_, "COADD_MODE", "STACKALL"));
   my $nmos = 1;
   if ( $coadd_mode eq 'DESPIKE' ) {
     $makemos = 1;
     # Number of Frames to mosaic for calculating a statistically-valid
     # variance
-    $nmos = (exists $_MAKE_MOSAIC_GROUP_{NMOS} &&
-	     defined $_MAKE_MOSAIC_GROUP_{NMOS}) ? 
-	     $_MAKE_MOSAIC_GROUP_{NMOS} : 5;
+    $nmos = get_prim_arg($_PRIM_ARGS_, "NMOS", 5);
   }
 
   # Method for combining images in makemos 
-  my $makemos_method = "";
-  if ( $makemos ) {
-    $makemos_method = (exists $_MAKE_MOSAIC_GROUP_{MAKEMOS_METHOD} &&
-		       defined $_MAKE_MOSAIC_GROUP_{MAKEMOS_METHOD}) ? 
-		       lc($_MAKE_MOSAIC_GROUP_{MAKEMOS_METHOD}) : "mean"; 
-  }
-
-  # Set the coordinate frame
-  unless ( $coframe ) {
-    my $in = $Frm->file(1);
-    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=system");
-    (my $ORAC_STATUS, $coframe) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-  }
+  my $makemos_method = get_prim-arg($_PRIM_ARGS_, "MAKEMOS_METHOD", "mean");
 
   # Method for determining resampling the image during alignment
-  my $method = (exists $_MAKE_MOSAIC_GROUP_{METHOD} &&
-		defined $_MAKE_MOSAIC_GROUP_{METHOD}) ? 
-		lc($_MAKE_MOSAIC_GROUP_{METHOD}) : "nearest"; 
+  my $method = get_prim_arg($_PRIM_ARGS_, "METHOD", "nearest");
 
-#  orac_print "Making GROUP mosaic\n";
-  # Unset the NewImage flag
+  # Unset the NEWIMAGE flag
   $Grp->uhdr("NEWIMAGE",0);
 
-  _MAKE_MOSAIC_ USEGRP=1 MAKEMOS=$makemos MAKEMOS_METHOD=$makemos_method METHOD=$method COADD_MODE=$coadd_mode VERBOSE=$verbose COORD_FRAME=$coframe NMOS=$nmos
+  _MAKE_MOSAIC_ USEGRP=1 MAKEMOS=$makemos MAKEMOS_METHOD=$makemos_method METHOD=$method COADD_MODE=$coadd_mode VERBOSE=$verbose NMOS=$nmos
 
   # Tell the display system that there's a new image to display
   $Grp->uhdr("NEWIMAGE",1) if $_MAKE_MOSAIC_{NEWIMAGE};

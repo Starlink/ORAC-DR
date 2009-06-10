@@ -785,6 +785,10 @@ sub intermediates {
   my $self = shift;
   if (@_) { @{ $self->{Intermediates} } = @_;}
 
+  # Ensure the intermediates list is unique.
+  my %seen = ();
+  @{$self->{Intermediates}} = grep { ! $seen{$_} ++ } @{$self->{Intermediates}};
+
   if (wantarray) {
 
     # In an array context, return the array itself

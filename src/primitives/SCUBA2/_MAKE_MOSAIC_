@@ -1,4 +1,4 @@
-#! -*-perl-*-
+# -*-perl-*-
 
 =head1 NAME
 
@@ -6,9 +6,9 @@ _MAKE_MOSAIC_ - Main primitive for mosaicking images
 
 =head1 SYNOPSIS
 
- _MAKE_MOSAIC_ USEGRP=1 COADD_MODE=RUNNING
+_MAKE_MOSAIC_ USEGRP=1 COADD_MODE=RUNNING
 
- _MAKE_MOSAIC_ USEGRP=0 MAKEMOS=1
+_MAKE_MOSAIC_ USEGRP=0 MAKEMOS=1
 
 =head1 DESCRIPTION
 
@@ -18,7 +18,7 @@ flag. It is designed to be called from a wrapper primitive
 specifically for processing either Frame or Group objects. 
 
 The user has the choice of specifying the mosaicking application:
-either makemos (CCDPACK) or wcsmosaic (KAPPA). Generally for quick
+either MAKEMOS (CCDPACK) or WCSMOSAIC (KAPPA). Generally for quick
 mosaics of similar data, the latter is used, while the former has more
 advanced image combination features.
 
@@ -34,15 +34,42 @@ running average or stacking all of the images in the Group object.
 Other arguments control the method used to combine the images.
 
 For mosaicking images in a SKY frame, a reference image must be
-created. If a Grp file exists, that will be taken as the reference. If
-not, then the Cal object is queried to return a reference image. If
-there is no reference by this stage, then the C<SKYREF> parameter is
-used to determine whether or not a new sky-aligned reference image
-should be created.
+created. If a Group file exists, that will be taken as the
+reference. If not, then the Calibration object is queried to return a
+reference image. If there is no reference by this stage, then the
+C<SKYREF> parameter is used to determine whether or not a new
+sky-aligned reference image should be created.
 
 =head1 ARGUMENTS
 
+The following arguments are supported, some of which are specific to
+Frame and Group processing respectively (as noted):
+
 =over 4
+
+=item B<COADD_MODE>
+
+Group-processing parameter. Method for combining images into a group
+mosaic. Valid options are C<RUNNING>, C<STACKALL> and
+C<DESPIKE>. C<RUNNING> means the images in the current Frame will be
+combined with the current Group mosaic. C<STACKALL> will combine all
+of the images in all of the Frames within the Group object. If the
+C<DESPIKE> option is given then the user must also specify the number
+of images to combine in one step with the C<NMOS> parameter. The
+default is C<RUNNING>, though if there is no Group image C<STACKALL>
+is chosen.
+
+=item B<GENVAR>
+
+Flag to determine whether or not to generate variances when
+mosaicking. Default is 1 (yes).
+
+=item B<GROUP>
+
+A Group object may be passed in and a mosaic formed from the members
+within that, rather than using the global Grp. A warning is issued if
+the parameter is not a member of ORAC::Group class. Optional
+parameter: default is Grp.
 
 =item B<MAKEMOS>
 
@@ -53,7 +80,7 @@ WCSMOSAIC. Default is 0 (use WCSMOSAIC).
 
 The method to be used by MAKEMOS to combine the images. May be any
 value supported by MAKEMOS (see MAKEMOS documentation for further
-details). Default is C<MEAN>.
+details). Default is C<MEAN>. Only accessed if B<MAKEMOS> is true.
 
 =item B<METHOD>
 
@@ -61,42 +88,22 @@ Image resampling method used by WCSALIGN or WCSMOSAIC. May be any
 value supported by those tasks. Default is C<NEAREST>
 (nearest-neighbour).
 
-=item B<GENVAR>
+=item B<NMOS>
 
-Flag to determine whether or not to use genvar when
-mosaicking. Default is 1 (yes),
+Group-processing parameter. The number of images to combine to create
+the group mosaic. Default is 1, forcing the user to specify a suitable
+value if the DESPIKE method is requested.
 
 =item B<SKYREF>
 
 Flag to indicate whether to align images in a SKY coordinate
-frame. Default is 1 (yes). Note that this flag is only used if there
-is no prior reference image. If set to 0 (no) then the images will be
-aligned to the first image in the Frame, which may or may not be
-desireable.
+frame. Default is 1 (yes). Only used if no reference image currently
+exists. If set to 0 (no) then the images will be aligned to the first
+image in the Frame, which may or may not be desireable.
 
-=item B<GROUP>
+=item B<USEGRP>
 
-A Group object may be passed in and a mosaic formed from the members
-within that, rather than using the global Grp. A warning is issued if
-the parameter is not a member of ORAC::Group class. Optional
-parameter: default is Grp.
-
-=item B<COADD_MODE>
-
-Method for combining images into a group mosaic. Valid options are
-C<RUNNING>, C<STACKALL> and C<DESPIKE>. C<RUNNING> means the images in
-the current Frame will be combined with the current Group
-mosaic. C<STACKALL> will combine all of the images in all of the
-Frames within the Group object. If the C<DESPIKE> option is given then
-the user must also specify the number of images to combine in one step
-with the C<NMOS> parameter. The default is C<RUNNING>, though if there
-is no Group image C<STACKALL> is chosen.
-
-=item B<NMOS>
-
-The number of images to combine to create the group mosaic. Default
-is 1, forcing the user to specify a suitable value if the DESPIKE
-method is requested.
+A flag to denote Group processing. Default is 0 (Frame processing).
 
 =item B<VERBOSE>
 
@@ -104,6 +111,71 @@ Flag to denote whether to display extra information. Default is 0
 (no).
 
 =back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA
+
+NDFCOPY, NDFTRACE, WCSMOSAIC
+
+=item CCDPACK
+
+MAKEMOS
+
+=item ORAC-DR PRIMITIVES
+
+_ADD_IMAGES_, _ALIGN_ARRAYS_, _GET_REFERENCE_IMAGE_
+
+=back
+
+=head1 NOTES
+
+Getting valid variances in output images can only be achieved under
+the right circumstances as it depends on the nature of the original
+input data, the method used to combine these at the Frame level (set
+primarily by the type of pipeline being run) and the chosen method for
+combining Group level images. Furthermore, the user can choose one of
+two mosaicking algorithms which have slightly different methods for
+how variances are or are not calculated. See the respective
+documentation for CCDPACK MAKEMOS and KAPPA WCSMOSAIC for full
+details.
+
+For Frame processing, the B<GENVAR> parameter should be set to false
+in the QL pipeline, otherwise true. The input images have no intrinsic
+variance component so the C<variance> (WCSMOSAIC) and C<usevar>
+(MAKEMOS) arguments should be false. (Note that in practice,
+Frame-level mosaicking is only relevant for DREAM/STARE processing.)
+
+For Group processing, B<GENVAR> can only be true if the number of
+input files is > 1 (ideally as many as necessary to get a valid
+variance estimate).
+
+If estimating variances is crucial then setting B<COADD_MODE> to
+DESPIKE is recommended (which forces the use of MAKEMOS) and the
+number of files to use to estimate a variance is set by the B<NMOS>
+parameter.
+
+See also the documentation for the
+L<_MAKE_MOSAIC_FRAME_|_MAKE_MOSAIC_FRAME_> and
+L<_MAKE_MOSAIC_GROUP_|_MAKE_MOSAIC_GROUP_> primitives.
+
+=head1 OUTPUT DATA
+
+On exit, the primitive hash C<%_MAKE_MOSAIC_> contains the key
+NEWIMAGE which is either 1 or 0 depending on whether a new image was
+created.
+
+The Frame or Group is updated to contain the new image.
+
+=head1 OUTPUT FILES
+
+Creates a single output image with a suffix of C<_fmos> for Frame
+mosaics, or C<_mos> for Group mosaics which is registered with the
+appropriate object.
 
 =head1 KNOWN ISSUES
 
@@ -113,52 +185,6 @@ the number of intermediate mosaics also exceeds the maximum number of
 files. Thus the effective limit to the number of files to mosaic is
 $maxmos**2. For the most recent versions of MAKEMOS and WCSMOSAIC,
 this amounts to 1 million files.
-
-=head1 NOTES
-
-Getting variances in output images can only be achieved under the
-right circumstances since it depends on the nature of the original
-input data, the method used to combine these at the Frame level (set
-primarily by the type of pipeline being run) and the chosen method for
-combining Group level images. Furthermore, the user can choose one of
-two mosaicking algorithms which have slightly different methods for
-how variances are or are not calculated. Please see the respective
-documentation for CCDPACK MAKEMOS and KAPPA WCSMOSAIC for full
-details.
-
-For FRAME processing, the genvar parameter should be set to false in
-the QL pipeline, otherwise true. The input images have no intrinsic
-variance component so variance (WCSMOSAIC) and usevar (MAKEMOS) should
-be false. (Note that in practice, FRAME-level mosaicking is only
-relevant for DREAM/STARE processing.)
-
-For GROUP processing, genvar can only be true if the number of input
-files is > 1 (ideally as many as necessary to get a valid variance
-estimate). 
-
-If estimating variances is crucial then the DESPIKE option is
-recommended (which forces the use of MAKEMOS) and the number of files
-to use to estimate a variance is set by NMOS.
-
-=head1 EXTERNAL ALGORITHMS
-
-=over 4
-
-=item Starlink applications
-
-CCDPACK MAKEMOS, KAPPA WCSMOSAIC
-
-=item Other primitives
-
-_ALIGN_ARRAYS_, _CREATE_REFERENCE_IMAGE_
-
-=back
-
-=head1 FILE SUFFIX
-
-Creates a single output image with a suffix of '_fmos' for Frame
-mosaics, or `_mos' for Group mosaics which is registered with the
-appropriate object.
 
 =head1 AUTHOR
 
@@ -185,7 +211,7 @@ General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
-USA
+USA.
 
 =cut
 

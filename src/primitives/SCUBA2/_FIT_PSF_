@@ -4,11 +4,29 @@
 
 _FIT_PSF_ - Determine the PSF from one or more point sources
 
+=head1 SYNOPSIS
+
+  _FIT_PSF_ IMAGE=$image COFILE=$cofile
+
+  _FIT_PSF_ IMAGE=$image COFILE=$cofile GAUSSIAN=1
+
 =head1 DESCRIPTION
 
-Determines the point-spread function (PSF) from a given image. The
-Starlink Kappa routine PSF is used, and must be supplied with the name
-of a file containing an estimate of the source position.
+Determines the point-spread function (PSF) from a point source in the
+given image. The KAPPA routine PSF is used, and must be supplied with
+the name of a file containing an estimate of the source position.
+
+A check is made that the number of good pixels in the image is at
+least as large as the number of pixels in the fitting region. Since
+the fitting region will (should) be smaller than the image, this
+allows for the presence of bad pixels within the fitting
+region.
+
+The user may specify the size of the region used in the fit. If so, a
+check is made that the choice does not exceed the image size. In this
+case, the fitting region is set to the image size. Note that in
+general using the entire image to fit a single source may not result
+in a good fit as too much weight will be given to outlying points.
 
 =head1 ARGUMENTS
 
@@ -16,78 +34,80 @@ The following arguments are supported:
 
 =over 4
 
-=item IMAGE
+=item B<BOX>
 
-Name of image to fit PSF. No default.
+Size of square area in pixels in which to carry out the fit. Must be
+odd and lie between 3 and 101. Default is 15.
 
-=item COFILE
+=item B<COFILE>
 
 Name of file containing estimate of position of (point) sources. No
 default. The positions in this file must be in the same coordinate
 frame as that of the image.
 
-=item GAUSSIAN
+=item B<GAUSSIAN>
 
 If true (non-zero), then the PSF fit is forced to be a
 gaussian. Default is 1 (true).
 
-=item BOX
+=item B<IMAGE>
 
-Size of square area in pixels in which to carry out the fit. Must be
-odd and lie between 3 and 101. Default is 15.
+Name of image to fit PSF. No default.
 
-=item VERBOSE
+=item B<VERBOSE>
 
 Flag to indicate whether informational messages should be given to the
 user. Default is 1 (true).
 
 =back
 
-=head1 STARLINK TASKS
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
 
 =over 4
 
-=item KAPPA
+=item KAPPA:
 
-PSF
+PSF, STATS
 
 =back
 
 =head1 OUTPUT DATA
 
 On completion, the primitive hash C<%_FIT_PSF_> contains the following
-key:
+keys:
 
 =over 4
 
 =item AMPLITUDE
 
-Amplitude of first star in fit
+Amplitude of first fitted source
 
 =item AXISR
 
 Axial ratio of PSF
 
-=item GAMMA
-
-Radial fall off parameter, gamma
-
 =item FWHM
 
 The FWHM of minor axis, or C<seeing disc>
+
+=item GAMMA
+
+Radial fall off parameter, gamma. Will be 2 if B<GAUSSIAN> was true.
 
 =item ORIENT
 
 Orientation of PSF, degrees east of north in current coordinate frame
 
-=item TOTALFLUX
-
-Total area under fit, in units of AMP*FWHM^2
-
 =item POSITION
 
 The position of the fitted peak, reference to an array of
 x, y coordinates.
+
+=item TOTALFLUX
+
+Total area under fit, in units of AMP*FWHM^2
 
 =back
 
@@ -96,33 +116,40 @@ If the fit failed for some reason, each of these is set to C<undef>.
 =head1 KNOWN ISSUES
 
 If the fit is in a celestial coordinate frame the beam PA will rotate
-during the course of a single night.
+during the course of a night. It is recommended that the system be set
+to AZEL before entry to this primitive.
 
 =head1 AUTHOR
 
-Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>,
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
 
 Copyright (C) 2008 Science and Technology Facilities Council.
 Copyright (C) 2005-2007 the University of British Columbia. All
 Rights Reserved.
 
-=head1 TODO
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
 
-=over 4
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
 
-=item - If COFILE is false then another keyword could be used to
-specify the source position (RADEC=...)
-
-=item - Add further PSF parameters
-
-=back
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
 
 =cut
 
 # Determine that we have an image as an argument...
 my $in = get_prim_arg($_PRIM_ARGS_, "IMAGE", undef);
-orac_throw "Error: _FIT_PSF_ requires an image file as input \n"
+orac_throw "Error: _FIT_PSF_ requires an image file as input\n"
     unless defined $in;
 
 # Check for COFILE
@@ -130,7 +157,7 @@ my $cofile = get_prim_arg($_PRIM_ARGS_, "COFILE", undef);
 orac_throw "Error: _FIT_PSF_ requires a file containing an estimate of the source position(s) \n"
     unless defined $cofile;
 
-# Are we forcing a gaussian?
+# Are we forcing a gaussian fit?
 my $gaussian = get_prim_arg($_PRIM_ARGS_, "GAUSSIAN", 1);
 
 # Convert flag to logical
@@ -139,15 +166,15 @@ $gaussian = ( $gaussian ) ? "true" : "false";
 # How large a box are we fitting in?
 my $box = get_prim_arg( $_PRIM_ARGS_, "BOX", 15);
 
-# Should we be verbose? (Default to yes)
-my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
-
 # Check that $box is an odd number
 if ( $box % 2 == 0) {
   orac_warn "Given value for BOX ($box) is even: adding 1 to make it odd\n" 
     if $verbose;
   $box++;
 }
+
+# Should we be verbose? (Default to yes)
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
 # Initialize entries in primitive hash
 foreach my $item (qw/ AMPLITUDE FWHM AXISR GAMMA ORIENT TOTALFLUX /) {
@@ -156,7 +183,7 @@ foreach my $item (qw/ AMPLITUDE FWHM AXISR GAMMA ORIENT TOTALFLUX /) {
 $_PRIM_ARGS_->{POSITION} = [];
 
 # Check that we have enough good values in the image before attempting
-# to fit the psf.
+# to fit the psf
 $Mon{kappa_mon}->obeyw("stats","ndf=$in");
 (my $ORAC_STATUS, my $numgood) = $Mon{kappa_mon}->get("stats","numgood");
 
@@ -169,7 +196,7 @@ $minpix = $numpix if ( $minpix > $numpix );
 # We now run PSF if possible
 if ( $numgood >= $minpix ) {
 
-    my $args = "incat=! device=! gauss=$gaussian isize=$box cofile=$cofile";
+  my $args = "incat=! device=! gauss=$gaussian isize=$box cofile=$cofile";
 
   # Everything looks OK, so call PSF
   my $PSF_STATUS = $Mon{kappa_mon}->obeyw("psf","norm=no range=4 isize=15 in=$in $args");

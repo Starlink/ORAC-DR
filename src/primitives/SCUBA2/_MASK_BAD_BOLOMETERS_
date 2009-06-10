@@ -1,4 +1,4 @@
-#! -*-perl-*-
+# -*-perl-*-
 
 =head1 NAME
 
@@ -6,45 +6,60 @@ _MASK_BAD_BOLOMETERS_ - Mask out bad bolometers
 
 =head1 SYNOPSIS
 
-  _MASK_BAD_BOLOMETERS_
+_MASK_BAD_BOLOMETERS_
 
 =head1 DESCRIPTION
 
-This is a Frame operation and should be used before group operations.
+This primitive applies an appropriate bad bolometer mask to files in
+the current Frame. Non-valid bolometers are set to C<BAD>. The bad
+bolometer mask is retrieved from the calibration system. If no
+appropriate mask exists, the input files are simply copied to output
+and stored.
+
+Data should be masked before any mosaicking or imaging steps.
 
 =head1 ARGUMENTS
 
-The following argument is supported
+The following argument is supported:
 
 =over 4
 
 =item B<VERBOSE>
 
 Flag to denote whether to print informative messages to the
-screen. Default is true (1).
+screen. Default is 0 (no).
 
 =back
 
-=head1 External Tasks
+=head1 EXTERNAL TASKS
 
-KAPPA: COPYBAD
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA
+
+COPYBAD, NDFCOPY
 
 =back
 
-=head1 FILES
+=head1 NOTES
+
+Assumes that a bad bolometer mask exists for each subarray.
+
+=head1 OUTPUT DATA
+
+The masked files are stored in the Frame object.
+
+=head1 OUTPUT FILES
 
 Creates output files with a C<_msk> extension.
-
-=head1 KNOWN ISSUES
-
-Does not determine units from input data files so it cannot do the
-promised calibration check.
 
 =head1 AUTHOR
 
 Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
-Copyright (C) 2005-2008 the University of British Columbia.  All
+Copyright (C) 2008-2009 the University of British Columbia.  All
 Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -60,7 +75,7 @@ General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
-USA
+USA.
 
 =cut
 
@@ -68,7 +83,7 @@ my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 0);
 
 my @maskedfiles;
 
-for my $i ( 1.. $Frm->nfiles ) {
+for my $i ( 1 .. $Frm->nfiles ) {
   # Get input file
   my ( $file, $out ) = $Frm->inout("_msk", $i);
 
@@ -81,10 +96,13 @@ for my $i ( 1.. $Frm->nfiles ) {
     # Copy the bad bolometers over to the raw data files
     my $args = "in=$file out=$out ref=$mask";
     $Mon{kappa_mon}->obeyw("copybad","$args");
-    push(@maskedfiles, $out);
+  } else {
+    # If no mask, just copy input to output
+    orac_warn "No mask available for current file, $file\n" if $verbose;
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$file out=$out");
   }
+  push(@maskedfiles, $out);
 }
 
-# What if some of the files are masked and others are not? Surely the
-# current method ends up ignoring the unmasked files?
+# Store masked files
 $Frm->files( @maskedfiles ) if (@maskedfiles);

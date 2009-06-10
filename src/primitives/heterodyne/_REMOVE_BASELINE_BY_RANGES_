@@ -2,7 +2,7 @@
 
 =head1 NAME
 
-_REMOVE_BASELINE_
+_REMOVE_BASELINE_BY_RANGES_
 
 =head1 DESCRIPTION
 
@@ -13,10 +13,6 @@ using spectral windows that are assumed to be free of spectral lines.
 
 =over 4
 
-=item EDGES = REAL (Given)
-
-Percentage of the full range to fit on either edge of the spectrum. [0]
-
 =item GROUP = LOGICAL (Given)
 
 Whether or not to operate on the current Group object. [0]
@@ -26,11 +22,12 @@ Whether or not to operate on the current Group object. [0]
 The order of the fit to use for the baseline. Zero (the default) is a
 constant, one is linear, etc. [1]
 
-=item METHOD = STRING (Given)
+=item RANGES = STRING (Given)
 
-The method used to define the baseline regions in automatic mode. The
-allowed values are 'region', 'single', and 'global'. This is not used
-if the EDGES argument is defined. ['region']
+A comma-separated list of ranges that denote the baseline regions in
+units of the current world co-ordinate system that corresponds to the
+trend axis, typically km/s. If not given, then the entire range will
+be used. []
 
 =item TAG = LOGICAL (Given)
 
@@ -80,11 +77,15 @@ All Rights Reserved.
 =cut
 
 # Deal with arguments.
-my $edges = get_prim_arg( $_PRIM_ARGS_, "EDGES", 0 );
 my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
-my $method = uc( get_prim_arg( $_PRIM_ARGS_, "METHOD", "REGION" ) );
+my $keepbl = get_prim_arg( $_PRIM_ARGS_, "KEEPBL", 0 );
 my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 1 );
+my $ranges = get_prim_arg( $_PRIM_ARGS_, "RANGES", "!" );
 my $tag = get_prim_arg( $_PRIM_ARGS_, "TAG", 0 );
+
+if( $ranges ne '!' ) {
+  $ranges = "\"$ranges\"";
+}
 
 # Handle group/file.
 my $Obj;
@@ -133,35 +134,11 @@ if( ! $group ||
     foreach my $i ( 1 .. $Obj->nfiles ) {
 
       my ( $in, $out ) = $Obj->inout( "_bl", $i );
-      ( undef, my $mask ) = $Obj->inout( "_blmask", $i );
-
-      $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
-      ( my $ORAC_STATUS, my @lbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "lbound" );
-      ( $ORAC_STATUS, my @ubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "ubound" );
-      ( $ORAC_STATUS, my @flbnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "flbnd" );
-      ( $ORAC_STATUS, my @fubnd ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fubnd" );
-      my $section = "'$lbnd[0]:$ubnd[0],$lbnd[1]:$ubnd[1],'";
+      ( undef, my $baselines ) = $Obj->inout( "_baselines", $i );
 
       # Set up parameters for MFITTREND.
-      my $params = "in=$in out=$out modifyin=false subtract=true";
-      $params   .= " order=$order axis=3 section=$section method=$method";
-
-      # If we're in 'SINGLE' method, we can get masks out.
-      if( $method eq 'SINGLE' ) {
-        $params .= " mask=$mask";
-      }
-
-      # Add ranges parameter, if necessary.
-      if( $edges ) {
-        my $extent = $fubnd[2] - $flbnd[2];
-        my $low1 = $flbnd[2] ;
-        my $high1 = $flbnd[2] + ( $extent * $edges / 100 ) ;
-        my $low2 = $fubnd[2] - ( $extent * $edges / 100 ) ;
-        my $high2 = $fubnd[2] ;
-        $params .= " ranges='$low1,$high1,$low2,$high2' auto=false";
-      } else {
-        $params .= " auto=true";
-      }
+      my $params = "in=$in out=$out modifyin=false subtract=true auto=false";
+      $params   .= " order=$order axis=3 ranges=$ranges";
 
       # Run MFITTREND.
       $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
@@ -170,38 +147,18 @@ if( ! $group ||
       orac_print "$in to $out:\n";
       orac_print " Removed baseline using $order-order polynomial.\n";
 
-      if( $method eq 'REGION' && ! $edges ) {
-        ( $ORAC_STATUS, my @regions ) = $Mon{'kappa_mon'}->get( "mfittrend", "aranges" );
-        push( @bl_regions, \@regions );
-        orac_print " Baseline regions: [";
-        orac_print join ",", ( grep { defined } map { $_ % 2 ? undef : join ":", $regions[$_], $regions[$_+1] } 0..$#regions );
-        orac_print "]\n";
-
-      }
-
       # Update the product.
       $Obj->product( "bl" );
 
       # Update Frame object;
       $Obj->file( $i, $out );
 
-      # Store the mask, if in 'SINGLE' method.
-      if( $method eq 'SINGLE' ) {
-        $baseline_masks[$i] = $mask;
-        orac_say " $mask: baseline region mask created.";
-        _SET_FILE_FITS_ITEM_ FILE=$mask KEY=PRODUCT VALUE=blmask
+      # Create the baseline file, if requested.
+      if( $keepbl ) {
+        $Mon{'kappa_mon'}->obeyw( "sub", "in1=$in in2=$out out=$baselines" );
+        orac_say " Baselines stored in $baselines";
       }
 
-    }
-
-    # Put the baselined regions in the Frame's user header.
-    if( $method eq 'REGION' ) {
-      $Obj->uhdr( "BASELINE_REGIONS", \@bl_regions );
-    }
-
-    # Store the baseline mask names, if we're in 'SINGLE' method.
-    if( $method eq 'SINGLE' ) {
-      $Obj->uhdr( "BASELINE_MASKS", \@baseline_masks );
     }
 
     # Display.

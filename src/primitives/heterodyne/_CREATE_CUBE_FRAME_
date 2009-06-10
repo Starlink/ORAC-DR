@@ -29,12 +29,32 @@ The maximum size, in bytes, of the output cube. This value does not
 include extra information such as variance or weight arrays, FITS
 headers, or any other NDF extensions. [512000000]
 
-=item PARAMS = STRING (Given)
+=item PARAM1 = REAL (Given)
 
-An optional array which consists of additional parameters required by
-the Sinc, SincSinc, SincCos, SincGauss, Somb, SombCos, and Gauss
-spreading methods (see parameter SPREAD). See documentation for the
-PARAMS parameter for MAKECUBE. ['']
+The first parameter required by the spreading method. This parameter
+is required by all methods, and specifies how many arcseconds on
+either side of the output position are to receive contributions from
+the input pixel. A value of zero indicates that a suitable number
+should be calculated automatically. [0]
+
+=item PARAM2 = REAL (Given)
+
+The second parameter required by the spreading method, but only for
+SombCos, Gauss, SincSinc, SincCos, and SincGauss schemes. For the
+SombCos, SincSinc, and SincCos schemes, it specifies the number of
+arcseconds at which the envelope of the function goes to zero. The
+minimum value is 1.0 pixels, and the run-time default value is 2.0
+pixels.  For the Gauss and SincGauss scheme, it specifies the
+full-width at half-maximum (FWHM) of the Gaussian envelope.  The
+minimum value is 0.1 pixels, and the run-time default is 1.0
+pixels. Note that these numbers are given in pixels and this parameter
+takes the number of requested arcseconds. This is done because the
+pixel scale could be automatically determined from the data. []
+
+=item PIXSIZE = REAL (Given)
+
+The output pixel scale. If not defined, this value is automatically
+determined from the data . []
 
 =item SPREAD = STRING (Given)
 
@@ -119,8 +139,10 @@ orac_print "Creating cube.\n";
 # Deal with parameters.
 my $bytes_per_pixel = get_prim_arg( $_PRIM_ARGS_, "BYTES_PER_PIXEL", 4 );
 my $maxsize = get_prim_arg( $_PRIM_ARGS_, "MAXSIZE", 512_000_000 );
-my $spread = get_prim_arg( $_PRIM_ARGS_, "SPREAD", 'nearest' );
-my $sp_params = get_prim_arg( $_PRIM_ARGS_, "PARAMS", "''" );
+my $spread = uc( get_prim_arg( $_PRIM_ARGS_, "SPREAD", 'nearest' ) );
+my $param1 = get_prim_arg( $_PRIM_ARGS_, "PARAM1", 0 );
+my $param2 = get_prim_arg( $_PRIM_ARGS_, "PARAM2", undef );
+my $pixsize = get_prim_arg( $_PRIM_ARGS_, "PIXSIZE", undef );
 my $tag = get_prim_arg( $_PRIM_ARGS_, "TAG", 0 );
 my $tileborder = get_prim_arg( $_PRIM_ARGS_, "TILEBORDER", 0 );
 
@@ -163,7 +185,7 @@ _GET_MAKECUBE_PARAMS_ TYPE=$type
 my $mc_params = $_GET_MAKECUBE_PARAMS_{PARAMS};
 my $mc_hash = $_GET_MAKECUBE_PARAMS_{HASH};
 
-my ( $pixsize, $crota );
+my ( $ppixsize, $crota );
 my $autogrid = $mc_hash->{autogrid};
 my $system = $mc_hash->{system};
 my $badmask = $mc_hash->{badmask};
@@ -179,7 +201,7 @@ if( lc( $type ) ne "raster" ) {
   $inlist2->handle->close;
 
   orac_print "Determining parameters for output cube...";
-  $Mon{'smurf_mon'}->obeyw( "makecube", "$mc_params in='^" . $inlist2->file . "' out=! spread=$spread params=$sp_params" );
+  $Mon{'smurf_mon'}->obeyw( "makecube", "$mc_params in='^" . $inlist2->file . "' out=!" );
   orac_print "done.\n";
 
   # Check to see if we have a sparse cube.
@@ -191,14 +213,24 @@ if( lc( $type ) ne "raster" ) {
   } else {
 
     # Get the returned pixsize and crota.
-    ( $ORAC_STATUS, $pixsize ) = $Mon{'smurf_mon'}->get( "makecube", "pixsize" );
+    ( $ORAC_STATUS, $ppixsize ) = $Mon{'smurf_mon'}->get( "makecube", "pixsize" );
     ( $ORAC_STATUS, $crota ) = $Mon{'smurf_mon'}->get( "makecube", "crota" );
   }
 
 } else {
-  $pixsize = $mc_hash->{pixsize};
+  $ppixsize = $mc_hash->{pixsize};
   $crota = $mc_hash->{crota};
 }
+
+# If we haven't been given an override pixel scale, use the one we
+# just determined.
+if( ! defined( $pixsize ) ) {
+  $pixsize = $ppixsize;
+}
+
+# Figure out the spread parameters.
+_GET_SPREAD_PARAMS_ PARAM1=$param1 PARAM2=$param2 SPREAD=$spread PIXSIZE=$pixsize
+my $sp_params = $_GET_SPREAD_PARAMS_{PARAMSTRING};
 
 if( ! $Frm->uhdr( "SPARSE" ) ) {
   $params  = "pixsize=$pixsize crota=$crota autogrid=$autogrid";
