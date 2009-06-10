@@ -1,0 +1,185 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_REMOVE_BASELINE_BY_RANGES_
+
+=head1 DESCRIPTION
+
+This primitive removes the baseline from each spectrum in a cube,
+using spectral windows that are assumed to be free of spectral lines.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item GROUP = LOGICAL (Given)
+
+Whether or not to operate on the current Group object. [0]
+
+=item ORDER = INTEGER (Given)
+
+The order of the fit to use for the baseline. Zero (the default) is a
+constant, one is linear, etc. [1]
+
+=item RANGES = STRING (Given)
+
+A comma-separated list of ranges that denote the baseline regions in
+units of the current world co-ordinate system that corresponds to the
+trend axis, typically km/s. If not given, then the entire range will
+be used. []
+
+=item TAG = LOGICAL (Given)
+
+Whether or not to tag the resulting cubes as 'reduced'. [0]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS observations.
+
+=item *
+
+This primitive is suitable for spectral line observations. Removing
+the baseline from continuum observations may not be desirable.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=back
+
+=head1 TASKS
+
+KAPPA: MFITTREND, NDFTRACE.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2007 Particle Physics and Astronomy Research Council.
+Copyright (C) 2008 Science and Technology Facilities Council.
+All Rights Reserved.
+
+=cut
+
+# Deal with arguments.
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+my $keepbl = get_prim_arg( $_PRIM_ARGS_, "KEEPBL", 0 );
+my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 1 );
+my $ranges = get_prim_arg( $_PRIM_ARGS_, "RANGES", "!" );
+my $tag = get_prim_arg( $_PRIM_ARGS_, "TAG", 0 );
+
+if( $ranges ne '!' ) {
+  $ranges = "\"$ranges\"";
+}
+
+# Handle group/file.
+my $Obj;
+if( $group ) {
+  $Obj = $Grp;
+} else {
+  $Obj = $Frm;
+}
+
+# Create an array to hold the baselined regions for each individual
+# file.
+my @bl_regions;
+
+if( ! $group ||
+    $group && $Grp->lastallmembers( $Frm ) ) {
+
+  if( $group == 1 && $Grp->uhdr( "COPY_FRAME_CUBE" ) ) {
+
+    # Retrieve the baselined Frame.
+    _RETRIEVE_TAG_ TAG=BASELINED_FRAME
+
+    foreach my $i ( 1 .. $Frm->nfiles ) {
+      my $in = $Frm->file( $i );
+      ( undef, my $out ) = $Grp->inout( "_bl", $i );
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$out" );
+      orac_say "$in to $out:";
+      orac_say " Copied to baselined Group file.";
+
+      $Grp->allow_header_sync( 1 );
+      $Grp->file( $i, $out );
+      $Grp->product( "baselined" );
+      $Grp->sync_headers( $i );
+    }
+
+    if( $tag ) {
+      _TAG_AS_REDUCED_PRODUCT_ UPDATE=1 GROUP=1
+    }
+
+    # Reset the tag.
+    _RETRIEVE_TAG_ TAG=PREVIOUS
+
+  } else {
+
+    my @baseline_masks;
+
+    foreach my $i ( 1 .. $Obj->nfiles ) {
+
+      my ( $in, $out ) = $Obj->inout( "_bl", $i );
+      ( undef, my $baselines ) = $Obj->inout( "_baselines", $i );
+
+      # Set up parameters for MFITTREND.
+      my $params = "in=$in out=$out modifyin=false subtract=true auto=false";
+      $params   .= " order=$order axis=3 ranges=$ranges";
+
+      # Run MFITTREND.
+      $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+
+      # Report to user.
+      orac_print "$in to $out:\n";
+      orac_print " Removed baseline using $order-order polynomial.\n";
+
+      # Update the product.
+      $Obj->product( "bl" );
+
+      # Update Frame object;
+      $Obj->file( $i, $out );
+
+      # Create the baseline file, if requested.
+      if( $keepbl ) {
+        $Mon{'kappa_mon'}->obeyw( "sub", "in1=$in in2=$out out=$baselines" );
+        orac_say " Baselines stored in $baselines";
+      }
+
+    }
+
+    # Display.
+    $Display->display_data( $Obj ) if defined $Display;
+
+    # Tidy-up output.
+    orac_say "";
+
+    # Tag, if requested.
+    if( $tag ) {
+      _TAG_AS_REDUCED_PRODUCT_ GROUP=$group UPDATE=1
+    }
+
+    if( ! $group ) {
+      _SET_TAG_ TAG=BASELINED_FRAME
+    } else {
+      _SET_TAG_ TAG=BASELINED_GROUP
+    }
+
+    # Tidy-up output.
+    orac_print "\n";
+
+  }
+}
