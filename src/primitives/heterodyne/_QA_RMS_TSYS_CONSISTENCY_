@@ -104,19 +104,20 @@ if( defined( $survey ) ) {
                            "Telescope" );
 }
 
-# Retrieve the list of previously masked files.
-my $masked_files = $Frm->uhdr( "QA_MASKED_FILES" );
+# Retrieve the list of previously-determined RMS files.
+my $rms_files = $Frm->uhdr( "QA_RMS_FILES" );
 
-foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
+foreach my $i ( 1 .. scalar( @$rms_files ) - 1 ) {
 
   my ( $infile, $outfile ) = $Frm->inout( "_tsmsk", $i );
-  my $masked_file = $masked_files->[$i];
+  my $rms_file = $rms_files->[$i];
 
   my $temp1file = new ORAC::TempFile;
   my $temp2file = new ORAC::TempFile;
   my $temp3file = new ORAC::TempFile;
   my $temp4file = new ORAC::TempFile;
   my $temp5file = new ORAC::TempFile;
+  my $temp6file = new ORAC::TempFile;
 
   # Make sure this file has a VARIANCE component.
   _COMPONENT_EXISTS_ FILE=$infile COMPONENT=VARIANCE
@@ -125,22 +126,32 @@ foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
     orac_throw "Cannot perform Tsys/RMS consistency checks on a file that has no VARIANCE component\n";
   }
 
-  # We need to collapse down the masked file around the central 85%.
+  # We need to collapse down the masked file around the central 85%,
+  # but ignoring the central 10% in case of background fitting
+  # artefacts.
   _GET_DIMENSIONS_ FILE=$infile
   my $lbnd = $_GET_DIMENSIONS_{LBOUND};
   my $ubnd = $_GET_DIMENSIONS_{UBOUND};
-  my $extent = int( ( $ubnd->[0] - $lbnd->[0] ) * 0.85 );
+  my $extent = int( $ubnd->[0] - $lbnd->[0] );
+
+  my $lower     = int( $lbnd->[0] + 0.075 * $extent );
+  my $lower_mid = int( $lbnd->[0] + 0.450 * $extent );
+  my $upper_mid = int( $lbnd->[0] + 0.550 * $extent );
+  my $upper     = int( $lbnd->[0] + 0.925 * $extent );
+
+  my $params = "in=$rms_file out=$temp1file newval=bad section=\"$lower_mid:$upper_mid,,\"";
+  $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
 
   # Collapse it using the sigma estimator to get the standard
   # deviation.
-  my $params = "in=$masked_file(~$extent,,) out=$temp1file estimator=sigma axis=spec trim=true wlim=0.0 variance=false";
+  $params = "in=$temp1file($lower:$upper,,) out=$temp2file estimator=sigma axis=spec trim=true wlim=0.0 variance=false";
   $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
   # Check to see how many good pixels we have.
-  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp1file" );
+  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp2file" );
   my ( $ORAC_STATUS, $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
   if( $numgood == 0 ) {
-    orac_err "No good pixels were found in $masked_file. Cannot perform Tsys/RMS consistency checks.\n";
+    orac_err "No good pixels were found in $rms_file. Cannot perform Tsys/RMS consistency checks.\n";
     $Frm->isgood(0);
     $ORAC_STATUS = ORAC__TERM;
   }
@@ -149,46 +160,46 @@ foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
   # matter where, since we're interested in the variance component and
   # that doesn't vary with frequency.
   if( $lbnd->[2] == $ubnd->[2] ) {
-    $params = "in=$infile(~1,,) out=$temp2file trim=false";
+    $params = "in=$infile(~1,,) out=$temp3file trim=false";
     $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
-    $params = "ndf=$temp2file origin=[1,1,1]";
+    $params = "ndf=$temp3file origin=[1,1,1]";
     $Mon{'ndfpack_mon'}->obeyw( "setorigin", "$params" );
   } else {
-    $params = "in=$infile(~1,,) out=$temp2file trim=true";
+    $params = "in=$infile(~1,,) out=$temp3file trim=true";
     $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
   }
 
   # Create an HDS object into which we can copy the variance array.
-  $ORAC_STATUS = ( create_hdsobj( $temp3file, 'NDF', [0] ) ? ORAC__OK : ORAC__ERROR );
-  $ORAC_STATUS = ( copy_hdsobj( "$temp2file.VARIANCE", "$temp3file.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
+  $ORAC_STATUS = ( create_hdsobj( $temp4file, 'NDF', [0] ) ? ORAC__OK : ORAC__ERROR );
+  $ORAC_STATUS = ( copy_hdsobj( "$temp3file.VARIANCE", "$temp4file.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
 
   # Add a provenance so it's tracked properly.
-  $params = "ndf=$temp3file parent=$temp2file";
+  $params = "ndf=$temp4file parent=$temp3file";
   $Mon{'ndfpack_mon'}->obeyw( "provadd", "$params" );
 
   # Square-root it.
-  $params = "in=$temp3file out=$temp4file power=0.5";
+  $params = "in=$temp4file out=$temp5file power=0.5";
   $Mon{'kappa_mon'}->obeyw( "pow", "$params" );
 
   # Find stats on this variance array.
-  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp4file" );
+  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp5file" );
   ( $ORAC_STATUS, my $rmsmeantsys ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
 
   # At this point, if we're doing an RxA sample the temp4file could be
   # 1D, so turn it into 2D.
-  _GET_DIMENSIONS_ FILE=$temp4file
+  _GET_DIMENSIONS_ FILE=$temp5file
   my $temp4dims = $_GET_DIMENSIONS_{DIMS};
   if( scalar( @{$temp4dims} ) == 1 ) {
 
-    my $temp6file = new ORAC::TempFile;
-    $params = "in=$temp4file out=$temp6file axes=[0,1] lbound=1 ubound=1";
+    my $temp7file = new ORAC::TempFile;
+    $params = "in=$temp5file out=$temp7file axes=[0,1] lbound=1 ubound=1";
     $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
-    $temp4file = $temp6file;
+    $temp5file = $temp7file;
   }
 
   # Divide the measured RMS by the calculated RMS.
-  $params = "in1=$temp1file in2=$temp4file out=$temp5file";
+  $params = "in1=$temp2file in2=$temp5file out=$temp6file";
   $Mon{'kappa_mon'}->obeyw( "div", "$params" );
 
   # Run QA analysis on each requested survey.
@@ -210,12 +221,12 @@ foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
     my $tol = $rmstol + 1;
     my $meantol = $rmsmeantsys * ( $rmsmeantsystol + 1 );
 
-    $params = "in=$temp5file value=$tol above";
+    $params = "in=$temp6file value=$tol above";
     $Mon{'kappa_mon'}->obeyw( "numb", "$params" );
     ( $ORAC_STATUS, my $numb_above ) = $Mon{'kappa_mon'}->get( "numb", "number" );
 
     # Find out how many pixels are below the tolerance to get a ratio.
-    $params = "in=$temp5file value=$tol noabove";
+    $params = "in=$temp6file value=$tol noabove";
     $Mon{'kappa_mon'}->obeyw( "numb", "$params" );
     ( $ORAC_STATUS, my $numb_below ) = $Mon{'kappa_mon'}->get( "numb", "number" );
 
@@ -227,19 +238,19 @@ foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
     # Mask out the bad pixels, if requested.
     if( defined( $mask ) && ( uc( $analyse_survey ) eq $mask ) ) {
 
-      my $temp6file = new ORAC::TempFile;
       my $temp7file = new ORAC::TempFile;
       my $temp8file = new ORAC::TempFile;
       my $temp9file = new ORAC::TempFile;
       my $temp10file = new ORAC::TempFile;
+      my $temp11file = new ORAC::TempFile;
 
       # Threshold the comparison image.
-      $params = "in=$temp5file out=$temp6file thrlo=-100000 newlo=bad thrhi=$tol newhi=bad";
+      $params = "in=$temp6file out=$temp7file thrlo=-100000 newlo=bad thrhi=$tol newhi=bad";
       $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
 
       # Threshold measured RMS array.
       orac_say "Thresholding samples with RMS above " . sprintf( "%.2f", $meantol ) . " K";
-      $params = "in=$temp1file out=$temp8file thrlo=-100000 newlo=bad thrhi=$meantol newhi=bad comp=VAR";
+      $params = "in=$temp2file out=$temp9file thrlo=-100000 newlo=bad thrhi=$meantol newhi=bad comp=VAR";
       $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
       if( starversion_gt( 'KAPPA', 'V1.10-0' ) ) {
         ( $ORAC_STATUS, my $numhi ) = $Mon{'kappa_mon'}->get( "thresh", "numhi" );
@@ -247,15 +258,15 @@ foreach my $i ( 1 .. scalar( @$masked_files ) - 1 ) {
       }
 
       # Expand both out to size of input cube.
-      $params = "in=$temp6file out=$temp7file axes=[0,1,2] lbound=" . $lbnd->[0] . " ubound=" . $ubnd->[0];
+      $params = "in=$temp7file out=$temp8file axes=[0,1,2] lbound=" . $lbnd->[0] . " ubound=" . $ubnd->[0];
       $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
-      $params = "in=$temp8file out=$temp10file axes=[0,1,2] lbound=" . $lbnd->[0] . " ubound=" . $ubnd->[0];
+      $params = "in=$temp9file out=$temp11file axes=[0,1,2] lbound=" . $lbnd->[0] . " ubound=" . $ubnd->[0];
       $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
       # Copy bad pixels from both to output cube.
-      $params = "in=$infile ref=$temp7file out=$temp9file";
+      $params = "in=$infile ref=$temp8file out=$temp10file";
       $Mon{'kappa_mon'}->obeyw( "copybad", "$params" );
-      $params = "in=$temp9file ref=$temp10file out=$outfile";
+      $params = "in=$temp10file ref=$temp11file out=$outfile";
       $Mon{'kappa_mon'}->obeyw( "copybad", "$params" );
 
       orac_say "Masked out bad samples to form $outfile.";
