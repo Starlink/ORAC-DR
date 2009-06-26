@@ -70,7 +70,7 @@ Rights Reserved.
 use JCMT::ACSIS::Array;
 use NDF;
 
-my @masked_files;
+my @rms_files;
 my %rms;
 my %receptor_rms;
 
@@ -80,7 +80,7 @@ my $array_rms = 0;
 
 foreach my $i ( 1 .. $Frm->nfiles ) {
 
-  my ( $infile, $outfile ) = $Frm->inout( "_msk", $i );
+  my ( $infile, $outfile ) = $Frm->inout( "_rms", $i );
 
   orac_print "Calculating RMS values for $infile.\n";
 
@@ -119,14 +119,9 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
   my @lbnd = @{$_GET_DIMENSIONS_{LBOUND}};
   my @ubnd = @{$_GET_DIMENSIONS_{UBOUND}};
 
-  # Fit a background to the spectrum.
-  my $params = "in=$temp1 out=$temp2 mask=$temp3 order=1 subtract=true";
-  $params .= " modifyin=false rmsclip=! axis=spec auto=true method=single";
-  $params .= " numbin=" . ( int( ( $ubnd[0] - $lbnd[0] + 1 ) / 4 ) );
-  $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
-
-  # Mask out the baselined file.
-  $Mon{'kappa_mon'}->obeyw( "add", "in1=$temp2 in2=$temp3 out=$outfile" );
+  # Fit and subtract a background from the spectrum.
+  my $params = "in=$temp1 out=$outfile box=[15,1] sub=true accept";
+  $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
 
   # Find the extent along the first axis (which for CALs is the
   # frequency axis)
@@ -160,10 +155,10 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 
   }
 
-  # Store the name of the masked file. We can't update the frame
+  # Store the name of the RMS file. We can't update the frame
   # object because we want to continue on doing stats on the original
   # file. Add it to the intermediates list so we can clean it up later.
-  $masked_files[$i] = $outfile;
+  $rms_files[$i] = $outfile;
   $Frm->push_intermediates( $outfile );
 
 }
@@ -189,7 +184,7 @@ $rms{$key} = \%receptor_rms;
 $Frm->uhdr( "QA_RMS_VALUES", \%rms );
 
 # Store the array of masked files.
-$Frm->uhdr( "QA_MASKED_FILES", \@masked_files );
+$Frm->uhdr( "QA_RMS_FILES", \@rms_files );
 
 # Tidy-up output.
 orac_print "\n";
