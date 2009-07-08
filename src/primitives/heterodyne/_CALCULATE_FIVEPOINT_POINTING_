@@ -84,9 +84,12 @@ my $type = uc( get_prim_arg( $_PRIM_ARGS_, "TYPE", "LINE" ) );
 
 my $in = $Frm->file;
 
-# Get the WCS for easy retrieval of attributes. Some are required to allow easy resetting
-# of the object afterwards
+# Get the WCS for easy retrieval of attributes. Some are required to
+# allow easy resetting of the object afterwards
 my $wcs = $Frm->read_wcs( $in );
+my $skytemplate = Starlink::AST::SkyFrame->new( "" );
+$skytemplate->Set( 'MaxAxes' => 3, 'MinAxes' => 1 );
+my $skyframe = $wcs->FindFrame( $skytemplate, "" );
 
 # Retrieve the rest frequency so we can figure out what the FWHM is
 # for the FITGAUSS call later on. Even though we're dealing with an
@@ -116,7 +119,7 @@ my $temp2 = new ORAC::TempFile;
 my $temp2_file = $temp2->file;
 
 $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in(,1) out=$temp1_file trim trimwcs" );
-$Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$temp1_file dim=1 mode=wcs" );
+$Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$temp1_file dim=1 mode=pixel" );
 
 # Get stats on the cut so that we can set the peak and set the
 # baseline to zero, but only if both the min and max are negative.
@@ -134,18 +137,20 @@ if( $min < 0 && $max < 0 ) {
 
 # Fit the gaussian.
 my $params = "in=$temp2_file device=! dialog=f varuse=true mask1=[-10]";
-$params   .= " mask2=[10] ncomp=1 centre=0 cont=0 peak=$peak fwhm=$fwhm";
-$params   .= " cf=[0] pf=[0] wf=[1] logfil=! comp=1";
+$params   .= " mask2=[10] ncomp=1 centre=0 cont=0 peak=$peak fwhm=1";
+$params   .= " cf=[0] pf=[1] wf=[0] logfil=! comp=1";
 my $FitStatus = $Mon{'figaro4'}->obeyw( "fitgauss", "$params" );
 
 if ($FitStatus == ORAC__OK) {
 
   # Retrieve the fit information.
   ( $ORAC_STATUS, my @horiz_centre ) = $Mon{'figaro4'}->get( "fitgauss", "fcentre" );
-  my $horiz_centre = $horiz_centre[0] * 206265;
+  my $horiz_centre = $horiz_centre[0] + 1.5; # We need to add 1.5 to
+                                             # convert from pixel to
+                                             # grid coordinates.
 
   $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in(1,) out=$temp1_file trim trimwcs" );
-  $Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$temp1_file dim=1 mode=wcs" );
+  $Mon{'ndfpack_mon'}->obeyw( "setaxis", "ndf=$temp1_file dim=1 mode=pixel" );
 
   # Again, get the stats.
   $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp1_file" );
@@ -162,25 +167,37 @@ if ($FitStatus == ORAC__OK) {
 
   # Fit the polynomial.
   $params  = "in=$temp2_file device=! dialog=f varuse=true mask1=[-10]";
-  $params .= " mask2=[10] ncomp=1 centre=0 cont=0 peak=$peak fwhm=$fwhm";
-  $params .= " cf=[0] pf=[0] wf=[1] logfil=! comp=1";
+  $params .= " mask2=[10] ncomp=1 centre=0 cont=0 peak=$peak fwhm=1";
+  $params .= " cf=[0] pf=[1] wf=[0] logfil=! comp=1";
   $FitStatus = $Mon{'figaro4'}->obeyw( "fitgauss", "$params" );
 
   if ($FitStatus == ORAC__OK) {
 
     # Retrieve the fit information.
     ( $ORAC_STATUS, my @vert_centre ) = $Mon{'figaro4'}->get( "fitgauss", "fcentre" );
-    my $vert_centre = $vert_centre[0] * 206265;
+    my $vert_centre = $vert_centre[0] + 1.5; # We need to add 1.5 to
+                                             # convert from pixel to
+                                             # grid coordinates.
+
+    # The $horiz_centre and $vert_centre are in pixel coordinates. Set
+    # the WCS to AZEL and convert these coordinates into AzEl
+    # coordinates.
+    $skyframe->Set( 'System=AzEl,SkyRefIs=Origin,Format(1)=s.4,Format(2)=s.4' );
+    my @azel = $skyframe->TranP( 1, [ $horiz_centre ], [ $vert_centre ], [ 1 ] );
+
+    # Convert these into arcseconds.
+    my $daz = $skyframe->Format( 1, $azel[0]->[0] );
+    my $del = $skyframe->Format( 1, $azel[1]->[0] );
 
     # Display the results to the user.
-    my $p_horiz_centre = sprintf( "%.2f", $horiz_centre );
-    my $p_vert_centre = sprintf( "%.2f", $vert_centre );
+    my $p_daz = sprintf( "%.2f", $daz );
+    my $p_del = sprintf( "%.2f", $del );
     orac_say( "Pointing results using Gaussian fit:", "blue" ) if $report;
-    orac_say( " DAZ: $p_horiz_centre\n DEL: $p_vert_centre", "blue" ) if $report;
+    orac_say( " DAZ: $p_daz\n DEL: $p_del", "blue" ) if $report;
 
     # Store with the calibration system.
-    my %pointinghash = ( DAZ => $horiz_centre,
-                         DEL => $vert_centre,
+    my %pointinghash = ( DAZ => $daz,
+                         DEL => $del,
                          DAZ_ERR => 0,
                          DEL_ERR => 0,
                          POINTING_TYPE => $type,
@@ -200,14 +217,14 @@ if ($FitStatus == ORAC__OK) {
     }
 
     # Display a warning if values are large.
-    if( abs( $horiz_centre ) > 10 ) {
+    if( abs( $daz ) > 10 ) {
       orac_err "Absolute DAZ pointing value greater than 10 arcseconds.\n" if $report;
-    } elsif( abs( $horiz_centre ) > 5 ) {
+    } elsif( abs( $daz ) > 5 ) {
       orac_warn "Absolute DAZ pointing value greater than 5 arcseconds.\n" if $report;
     }
-    if( abs( $vert_centre ) > 10 ) {
+    if( abs( $del ) > 10 ) {
       orac_err "Absolute DEL pointing value greater than 10 arcseconds.\n" if $report;
-    } elsif( abs( $vert_centre ) > 5 ) {
+    } elsif( abs( $del ) > 5 ) {
       orac_warn "Absolute DEL pointing value greater than 5 arcseconds.\n" if $report;
     }
 
