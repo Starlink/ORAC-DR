@@ -63,6 +63,9 @@ sub new {
   $obj->{QAParams} = undef;
   $obj->{QAParamsIndex} = undef;
   $obj->{QAParamsNoUpdate} = 0;
+  $obj->{Standard} = undef;
+  $obj->{StandardIndex} = undef;
+  $obj->{StandardNoUpdate} = 0;
 
   return $obj;
 }
@@ -451,6 +454,53 @@ sub qaparamsindex {
   }
 
   return $self->{QAParamsIndex};
+}
+
+sub standard {
+  my $self = shift;
+
+  return $self->standardcache(shift) if @_;
+
+  if( $self->standardnoupdate ) {
+    my $cache = $self->standardcache;
+    return $cache if defined $cache;
+  }
+
+  my $standardfile = $self->standardindex->choosebydt( 'ORACTIME', $self->thing );
+
+  if( ! defined( $standardfile ) ) {
+    croak "No suitable standard found in index file"
+  }
+
+  my $standardref = $self->standardindex->indexentry( $standardfile );
+  if( exists( $standardref->{'INTEGINT'} ) &&
+      exists( $standardref->{'PEAK'} ) &&
+      exists( $standardref->{'L_BOUND'} ) &&
+      exists( $standardref->{'H_BOUND'} ) ) {
+    return $standardref;
+  } else {
+    croak "Unable to obtain INTEGINT, PEAK, L_BOUND, and H_BOUND from index file entry $standardfile\n";
+  }
+}
+
+sub standardindex {
+  my $self = shift;
+  if( @_ ) { $self->{StandardIndex} = shift; }
+
+  if( ! defined( $self->{StandardIndex} ) ) {
+    my $indexfile = $self->find_file( "index.standard" );
+    my $rulesfile = $self->find_file( "rules.standard" );
+
+    if( ! defined( $indexfile ) ) {
+      croak "Standard index file could not be found\n";
+    }
+    if( ! defined( $rulesfile ) ) {
+      croak "Standard rules file could not be found\n";
+    }
+    $self->{StandardIndex} = new ORAC::Index( $indexfile, $rulesfile );
+  }
+
+  return $self->{StandardIndex};
 }
 
 =back
