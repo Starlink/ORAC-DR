@@ -894,6 +894,49 @@ sub subarray {
   }
 }
 
+=item B<subarrays>
+
+Return a list of the subarrays associated with the current Frame
+object. Searches the subheaders for presence of SUBARRAY keyword which
+will be present if data from multiple subarrays are stored in the
+current Frame. If not found then just use the SUBARRAY entry in the
+hdr.
+
+  @subarrays = $Frm->subarrays;
+
+Returns an array.
+
+=cut
+
+sub subarrays {
+  my $self = shift;
+
+  my @subarrays;
+  # Check for sub-headers
+  if ( exists $self->hdr->{'SUBHEADERS'} ) {
+    # OK now check that there are SUBARRAY subheaders - retrieve hash
+    # keys from first element (hash ref) in SUBHEADERS array
+    my @subhdrs = keys %{ $self->hdr->{'SUBHEADERS'}->[0] };
+    if ( grep (/SUBARRAY/, @subhdrs) ) {
+      my %subarrays;
+      my @allsubhdrs = @{ $self->hdr->{'SUBHEADERS'} };
+      foreach my $subhdr (@allsubhdrs) {
+	$subarrays{$subhdr->{'SUBARRAY'}} = 1;
+      }
+      push(@subarrays, keys %subarrays);
+    } else {
+      # No SUBARRAY entry in subheaders so only one subarray
+      push( @subarrays, $self->hdr("SUBARRAY") );
+    }
+  } else {
+    # No subheaders so only one subarray
+    push( @subarrays, $self->hdr("SUBARRAY") );
+  }
+
+  return @subarrays;
+}
+
+
 
 =item B<filter_darks>
 
