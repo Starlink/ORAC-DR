@@ -40,7 +40,7 @@ use base qw/ Exporter /;
 use vars qw/ @EXPORT /;
 @EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist cosdeg
 	      sindeg dectodms hmstodec deg2rad rad2deg is_numeric
-        get_prim_arg write_file_list write_file_list_inout
+        get_prim_arg write_file_list write_file_list_inout read_file_list
 	    );
 
 use Carp;
@@ -478,6 +478,40 @@ sub get_prim_arg {
 
   return (exists $argref->{$key} && defined $argref->{$key})
     ? $argref->{$key} : $default;
+}
+
+=item B<read_file_list>
+
+Given either a filename or an ORAC::TempFile object, read the contents
+(usually filenames) and return a list.
+
+  @files = read_file_list( $listfile );
+
+Returns array or array reference depending on calling context. Returns
+undef if the given file does not exist.
+
+=cut
+
+sub read_file_list {
+  my $intmp = shift;
+
+  my $fh;
+  if (UNIVERSAL::isa( $intmp, "ORAC::TempFile" )) {
+    $fh = $intmp->handle;
+  } else {
+    if ( -e $intmp ) {
+      open $fh, "< $intmp";
+    } else {
+      return undef;
+    }
+  }
+  my @contents;
+  while ( <$fh> ) {
+    chomp;
+    push( @contents, $_ );
+  }
+
+  return (wantarray ? @contents : \@contents);
 }
 
 =item B<write_file_list>
