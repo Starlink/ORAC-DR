@@ -1,0 +1,141 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CREATE_CUBE_MASK_FRAME_FROM_GROUP_ - Create a cube masking out lines
+from a timeseries mask.
+
+=head1 DESCRIPTION
+
+This primitive takes a timeseries cube with its lines masked out and
+creates a spatial cube from it.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item PARAM1 = REAL (Given)
+
+The first parameter required by the spreading method. This parameter
+is required by all methods, and specifies how many arcseconds on
+either side of the output position are to receive contributions from
+the input pixel. A value of zero indicates that a suitable number
+should be calculated automatically. [0]
+
+=item PARAM2 = REAL (Given)
+
+The second parameter required by the spreading method, but only for
+SombCos, Gauss, SincSinc, SincCos, and SincGauss schemes. For the
+SombCos, SincSinc, and SincCos schemes, it specifies the number of
+arcseconds at which the envelope of the function goes to zero. The
+minimum value is 1.0, and the run-time default value is 2.0.  For the
+Gauss and SincGauss scheme, it specifies the full-width at
+half-maximum (FWHM) of the Gaussian envelope.  The minimum value is
+0.1, and the run-time default is 1.0. []
+
+=item PIXSIZE = REAL (Given)
+
+The output pixel scale. If not defined, this value is automatically
+determined from the data. []
+
+=item SPREAD = STRING (Given)
+
+The method to use when spreading each input pixel out between a group
+of neighbouring output pixels when using MAKECUBE to generate the
+cube. ['nearest']
+
+=item TILEBORDER = INTEGER (Given)
+
+The number of pixels to add as a border when creating tiled
+cubes. This should be large enough to compensate for edge effects for
+non-nearest spread functions. [5]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+The timeseries masks are obtained from the TIMESERIES_MASKS Group uhdr.
+
+=item *
+
+The output masks are stored in the Group's member Frame objects uhdrs
+as an array reference in the BASELINE_MASKS uhdr. The first index
+(i.e. index 0) is undef.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The cube masking out lines with suffix _cubemask.
+
+=back
+
+=head1 TASKS
+
+None, but see _CREATE_CUBE_FRAME_.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+# Handle parameters.
+my $spread = uc( get_prim_arg( $_PRIM_ARGS_, "SPREAD", 'NEAREST' ) );
+my $param1 = get_prim_arg( $_PRIM_ARGS_, "PARAM1", 0 );
+my $param2 = get_prim_arg( $_PRIM_ARGS_, "PARAM2", undef );
+my $pixsize = get_prim_arg( $_PRIM_ARGS_, "PIXSIZE", undef );
+my $tileborder = get_prim_arg( $_PRIM_ARGS_, "TILEBORDER", 5 );
+
+my $timeseries_masks = $Grp->uhdr( "TIMESERIES_MASKS" );
+
+orac_say "Creating cubes from timeseries masks.";
+
+foreach my $mFrm ( $Grp->members ) {
+
+  my @inlist;
+  my @outlist;
+
+  foreach my $i ( 1 .. $mFrm->nfiles ) {
+    my ( $in, undef ) = $mFrm->inout( "_cubemask", $i );
+    push @inlist, $timeseries_masks->{$in};
+  }
+
+  # Create a temporary Frame object.
+  my $tmpFrm = new $Frm;
+  $tmpFrm->files( @inlist );
+
+  {
+
+    my $Frm = $tmpFrm;
+    _CREATE_CUBE_FRAME_ SPREAD=$spread PARAM1=$param1 PARAM2=$param2 TILEBORDER=5 PIXSIZE=$pixsize SUFFIX=_cubemask PRODUCT=baseline_mask
+    my @files = $Frm->files;
+
+    # We need to form a second array because later primitives expect
+    # an undef in the 0th position.
+    my @files2 = ( undef, @files );
+    $tmpFrm->uhdr( "BASELINE_MASKS", \@files2 );
+  }
+
+  $mFrm->uhdr( "BASELINE_MASKS", $tmpFrm->uhdr( "BASELINE_MASKS" ) );
+}
+
+# Tidy-up output.
+orac_say "";
