@@ -183,10 +183,14 @@ endif
 setenv ORAC_PERSON bradc
 setenv ORAC_LOOP 'flag'
 setenv ORAC_SUN XXX
- 
+
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
- 
+
+# Display note about advanced processing mode.
+echo "To perform advanced processing, add '-recsuffix ADV' to your command-line."
+echo ""
+
 # Tidy up
 unset oracut
 unset oracdr_args

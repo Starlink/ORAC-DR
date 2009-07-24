@@ -122,6 +122,9 @@ export ORAC_SUN=???
 # Source general alias file and print welcome screen
 . $ORAC_DIR/etc/oracdr_start.sh
  
+# Display note about advanced processing mode.
+echo "To perform advanced processing, add '-recsuffix ADV' to your command-line."
+
 # Tidy up
 unset oracut
 unset oracdr_args
