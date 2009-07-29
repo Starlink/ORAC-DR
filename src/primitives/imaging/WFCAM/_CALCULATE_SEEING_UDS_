@@ -1,0 +1,118 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CALCULATE_SEEING_UDS_
+
+=head1 DESCRIPTION
+
+This primitive calculates the seeing for observations taken in the
+UKIDSS Ultra-Deep Survey. Using a catalogue of stars known to be in
+the field, the seeing value is calculated for the current Group.
+
+=head1 ARGUMENTS
+
+=over 4
+
+None.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+This primitive is suitable for WFCAM observations taken of the UKIDSS
+Ultra-Deep Survey.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+None.
+
+=back
+
+=head1 TASKS
+
+KAPPA: PSF.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+my $cofile = $Cal->find_file( "uds-stars.dat" );
+if( defined $cofile ) {
+  my $params = "in=" . $Grp->file . " cofile=$cofile isize=101 incat=! logfile=! device=!";
+  $Mon{'kappa_mon'}->obeyw( "psf", "$params" );
+
+  # Retrieve bits we care about.
+  my ( $ORAC_STATUS, $fwhm ) = $Mon{'kappa_mon'}->get( "psf", "fwhm" );
+  ( $ORAC_STATUS, my $axisr ) = $Mon{'kappa_mon'}->get( "psf", "axisr" );
+  ( $ORAC_STATUS, my $orient ) = $Mon{'kappa_mon'}->get( "psf", "orient" );
+
+  # Calculate the K-band equivalent seeing. It goes as
+  # (wavelength^(-0.2)), so we need to get the current wavelength and
+  # the K wavelength, do the division and the power, and scale the
+  # measured FWHM.
+  _GET_FILTER_PARAMETERS_
+  my $wavelength = $_GET_FILTER_PARAMETERS_{WAVELENGTH};
+  my $k_wavelength = 2.25;
+  my $scale = ( $wavelength / $k_wavelength ) ** ( 0.2 );
+  my $k_fwhm = $scale * $fwhm;
+  my $airmass = 0.5 * ( $Grp->uhdr( "ORAC_AIRMASS_START" ) +
+                        $Grp->uhdr( "ORAC_AIRMASS_END" ) );
+  my $k_fwhm_zen = $k_fwhm * ( 1 / $airmass ) ** ( 0.6 );
+
+  # Calculate the ellipticity from the axial ratio.
+  my $ell = 1 - 1 / $axisr;
+
+  # Report these numbers.
+  my $p_axial = sprintf( "%.3f", $axisr );
+  my $p_ellipticity = sprintf( "%.3f", $ell );
+  my $p_fwhm = sprintf( "%.3f", $fwhm );
+  my $p_k_fwhm = sprintf( "%.3f", $k_fwhm );
+  my $p_k_fwhm_zen = sprintf( "%.3f", $k_fwhm_zen );
+  my $p_orient = sprintf( "%.3f", $orient );
+
+  orac_say( "Image quality statistics on " . $Grp->file . " (UDS-specific):", "blue" );
+  orac_say( " Axial ratio:   $p_axial", "blue" );
+  orac_say( " Ellipticity:   $p_ellipticity", "blue" );
+  orac_say( " FWHM:          $p_fwhm arcseconds", "blue" );
+  orac_say( " K-band equiv:  $p_k_fwhm arcseconds", "blue" );
+  orac_say( "  ...at zenith: $p_k_fwhm_zen arcseconds", "blue" );
+  orac_say( " Orientation:   $p_orient degrees east of north", "blue" );
+
+  # File with the calibration system.
+  my %calhash = ( %{$Grp->hdr},
+                  AIRMASS => $airmass,
+                  AXIALRATIO => $axisr,
+                  ELLIPTICITY => $ell,
+                  FWHM => $fwhm,
+                  FWHM_K => $k_fwhm,
+                  FWHM_K_ZEN => $k_fwhm_zen,
+                  GAMMA => "-",
+                  MAG_LIMIT => "-",
+                  ORIENT => $orient,
+                  SKY_VALUE => "-",
+                  SKY_VALUE_ERROR => "-",
+                  SKY_VALUE_MAG => "-",
+                  ZEROPOINT => "-",
+                  ZEROPOINT_ERROR => "-",
+                );
+  $Cal->dqcindex->add( $Grp->file . "-UDS", \%calhash );
+
+}
