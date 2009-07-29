@@ -154,7 +154,7 @@ echo " "
 echo "     ORAC Data Reduction Pipeline -- (ORAC-DR Version $pkgvers)"
 echo "     Configured for instrument $ORAC_INSTRUMENT"
 echo " "
-echo '     Type "oracdr -h" for usage'
+echo '     Type "oracdr -man" for usage'
 echo "     Type $doc_command to browse the hypertext documentation"
 echo " "
 echo " "
