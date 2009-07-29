@@ -86,6 +86,8 @@ if( $group ) {
   $Obj = $Frm;
 }
 
+my $hack = 0;
+
 # Get the magnitude type, defaulting to MAG_ISO.
 my $magnitude_type = $_CALCULATE_IMAGE_STATISTICS_{MAGNITUDE_TYPE} || 'MAG_ISO';
 
@@ -345,6 +347,13 @@ if( defined( $image_catalogue ) ) {
         uc( $filter ) eq '1.619NBH' ) {
       $phot = 0;
     }
+
+    # Temporary hack for 1-0S1 filters.
+    if( uc( $filter ) eq '1-0S1' ) {
+      $phot = 1;
+      $hack = 1;
+    }
+
     my $extcor = 0;
     my @zps;
     if( $match && $phot ) {
@@ -353,6 +362,10 @@ if( defined( $image_catalogue ) ) {
       my $waveband = $_GET_FILTER_PARAMETERS_{WAVEBAND};
       my $extinction = $_GET_FILTER_PARAMETERS_{EXTINCTION};
       my $filter = $Frm->uhdr( "ORAC_FILTER" );
+
+      if( $hack ) {
+        $filter = "K";
+      }
 
       # Derive the extinction correction using the IR standard of
       # one airmass.
@@ -384,6 +397,10 @@ if( defined( $image_catalogue ) ) {
         my $kmag = $catmatchitem->get_flux_quantity( waveband => 'K',
                                                      type => 'MAG_CATALOG' );
 
+        if( $hack ) {
+          $kmag += 2.5;
+        }
+
         # Calculate the Z, Y, J, H, and K magnitudes in the MK system.
         my $mk_zmag = $jmag + 0.95  * ( $jmag - $hmag );
         my $mk_ymag = $jmag + 0.5   * ( $jmag - $hmag );
@@ -392,8 +409,14 @@ if( defined( $image_catalogue ) ) {
         my $mk_kmag = $kmag - 0.015 * ( $jmag - $kmag );
 
         # Get the magnitude in the current waveband.
+        if( $hack ) {
+          $filter = "1-0S1";
+        }
         my $im_mag = $catmatchitem->get_flux_quantity( waveband => $filter,
                                                        type => $magnitude_type );
+        if( $hack ) {
+          $filter = "K";
+        }
 
         # Skip if the magnitude is fainter than 10 (which denotes
         # something bad).
@@ -478,9 +501,14 @@ if( defined( $image_catalogue ) ) {
 
         # Calculate magnitudes for all detected objects.
         foreach my $item ( $image_catalogue->stars ) {
-
+          if( $hack ) {
+            $filter = "1-0S1";
+          }
           my $im_mag = $item->get_flux_quantity( waveband => $filter,
                                                  type => $magnitude_type );
+          if( $hack ) {
+            $filter = "K";
+          }
           next if $im_mag > 50;
 
           # Correct for exposure time, extinction, and zeropoint.
@@ -577,6 +605,12 @@ if( defined( $image_catalogue ) ) {
     orac_print( "Photometric statistics on " .
                 ( $group ? $Grp->file : $Frm->file ) .
                 ":\n", "blue" );
+
+    if( $hack ) {
+      orac_print (" 1-0S1 filter observed. K-band magnitudes used for estimate.", "white on_red");
+      orac_print "\n";
+    }
+
     orac_print( " Instrumental zero-point: $p_zp +/- $p_zp_var\n", "blue" );
     orac_print( " Limiting magnitude:      $p_limmag\n", "blue" );
     orac_print( " Background sky level:    $p_sky_value +/- $p_sky_value_variance counts.\n",
