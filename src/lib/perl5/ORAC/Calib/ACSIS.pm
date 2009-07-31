@@ -466,10 +466,24 @@ sub standard {
     return $cache if defined $cache;
   }
 
-  my $standardfile = $self->standardindex->choosebydt( 'ORACTIME', $self->thing );
+  # We need to convert the transition in the header into something we
+  # can use. This means stripping out spaces. Also strip out dashes
+  # from the molecule.
+  my $transition = $self->thing->{'TRANSITI'};
+  my $molecule = $self->thing->{'MOLECULE'};
+  my $thing2 = $self->thingtwo;
+  $transition =~ s/\s+//g;
+  $thing2->{'TRANSITION'} = $transition;
+  $molecule =~ s/\s+//g;
+  $molecule =~ s/-//g;
+  $thing2->{'MOLECULE'} = $molecule;
+
+  $self->thingtwo( $thing2 );
+
+  my $standardfile = $self->standardindex->choosebydt( 'ORACTIME', $self->thing, 0 );
 
   if( ! defined( $standardfile ) ) {
-    croak "No suitable standard found in index file"
+    return undef;
   }
 
   my $standardref = $self->standardindex->indexentry( $standardfile );
