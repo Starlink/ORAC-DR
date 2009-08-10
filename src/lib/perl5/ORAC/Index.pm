@@ -35,6 +35,7 @@ use POSIX qw/tmpnam/;  # For unique keys
 $VERSION = '1.0';
 
 use constant NO_RULES => '__NO_RULES__';
+use constant BLANK_VALUE => '***BLANK***';
 
 
 =head1 PUBLIC METHODS
@@ -364,6 +365,10 @@ sub slurpindex {
             $entry = $ref;
           }
         }
+        # Check for the special blank value.
+        if( defined( $entry ) && uc( $entry ) eq BLANK_VALUE ) {
+          $entry = " ";
+        }
       }
 
       # If we are using the key from the file then we
@@ -570,7 +575,11 @@ sub index_to_text {
       $serial = "REF". substr($serial,6); # Remove $VAR1=
       $serial;
     } else {
-      $_
+      if( /^\s+$/ ) {
+        BLANK_VALUE;
+      } else {
+        $_
+      }
     }
 
   } @{$self->indexref->{$entry}};
