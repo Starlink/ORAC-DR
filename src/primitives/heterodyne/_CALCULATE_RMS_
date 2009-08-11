@@ -1,0 +1,185 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CALCULATE_RMS_
+
+=head1 DESCRIPTION
+
+This primitive calculates the RMS for a set of cubes. It first fits a
+background to each cube along the frequency axis, removing any lines
+or large background drifts. It then masks out the central 20% of the
+frequency axis to remove any central lines. It then collapses each
+cube using the RMS estimator, ignoring the outer 10% of the frequency
+axis to avoid bringing in any high-noise ends. The resulting collapsed
+images are then pasted together and an median RMS is determined.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item AXIS = INTEGER (Given)
+
+The frequency axis. [3]
+
+=item BOX = INTEGER (Given)
+
+The size of the box used for determining the background. See the BOX
+parameter for the CUPID FINDBACK task for more details. [15]
+
+=item GROUP = INTEGER (Given)
+
+How to process group files. 0 means use the current Frame object. 1
+means use the current Group object. 2 means use each Frame member of
+the current Group object. [0]
+
+=item RMS = REAL (Returned)
+
+The median RMS.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+This primitive is suitable for ACSIS data.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+None.
+
+=back
+
+=head1 TASKS
+
+CUPID: FINDBACK.
+KAPPA: COLLAPSE, STATS.
+
+=head1 REQUIRED PERL MODULES
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+# Handle input parameters.
+my $axis = get_prim_arg( $_PRIM_ARGS_, "AXIS", 3 );
+my $box = get_prim_arg( $_PRIM_ARGS_, "BOX", 15 );
+my $files = get_prim_arg( $_PRIM_ARGS_, "FILES", undef );
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+
+if( $axis < 1 || $axis > 3 ) {
+  orac_err "Programming error: AXIS parameter to _CALCULATE_RMS_ must be 1, 2, or 3\n";
+}
+
+my @Objs;
+if( $group == 0 ) {
+  push @Objs, $Frm;
+} elsif( $group == 1 ) {
+  push @Objs, $Grp;
+} elsif( $group == 2 ) {
+  @Objs = $Grp->members;
+}
+
+# The FILES parameter overrides the GROUP parameter.
+if( defined( $files ) ) {
+  my $Obj = new $Frm;
+  $Obj->files( @$files );
+  @Objs = ( $Obj );
+}
+
+foreach my $Obj ( @Objs ) {
+
+  my @paste_inputs;
+  my @paste_files;
+  foreach my $i ( 1 .. $Obj->nfiles ) {
+
+    my $in = $Obj->file( $i );
+
+    # Set up some temporary files.
+    my $temp1 = new ORAC::TempFile;
+    my $temp2 = new ORAC::TempFile;
+    my $temp3 = new ORAC::TempFile;
+    my $temp3file = $temp3->file;
+
+    # Run FINDBACK, but first determine the box parameter, and only if
+    # the box size is not 1.
+    if( $box != 1 ) {
+      my $boxparam = '';
+      if( $axis == 1 ) {
+        $boxparam = "[$box,1,1]";
+      } elsif( $axis == 2 ) {
+        $boxparam = "[1,$box,1]";
+      } elsif( $axis == 3 ) {
+        $boxparam = "[1,1,$box]";
+      }
+      my $params = "in=$in out=$temp1 box=$boxparam sub=true accept";
+      $Mon{'cupid_mon'}->obeyw( "findback", "$params" );
+    } else {
+      link( "$in.sdf", "$temp1.sdf" );
+    }
+
+    # Mask out the central 20%.
+    my $chpix_section = '';
+    my $chpix_mask = 20;
+    if( $axis == 1 ) {
+      $chpix_section = "~$chpix_mask\%,,";
+    } elsif( $axis == 2 ) {
+      $chpix_section = ",~$chpix_mask\%,";
+    } elsif( $axis == 3 ) {
+      $chpix_section = ",,$chpix_mask\%";
+    }
+    my $params = "in=$temp1 out=$temp2 section='$chpix_section' newval=bad";
+    $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+
+    # Set any quality pixels to bad.
+    $Mon{'ndfpack_mon'}->obeyw( "setbb", "ndf=$temp2 bb=255" );
+
+    # Collapse this using the RMS estimator, but only the central 80%.
+    my $collapse_section = '';
+    my $collapse_dist = 80;
+    if( $axis == 1 ) {
+      $collapse_section = "(~$collapse_dist\%,,)";
+    } elsif( $axis == 2 ) {
+      $collapse_section = "(,~$collapse_dist\%,)";
+    } elsif( $axis == 3 ) {
+      $collapse_section = "(,,~$collapse_dist\%)";
+    }
+    $params = "in=${temp2}$collapse_section out=$temp3file estimator=rms wlim=0.0 axis=spec";
+    $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+    push @paste_inputs, $temp3;
+    push @paste_files, $temp3file;
+  }
+
+  # Paste together the results, but only if there is more than one
+  # file.
+  my $temp4 = new ORAC::TempFile;
+  my $temp4file = $temp4->file;
+
+  if( $#paste_files > 0 ) {
+    _PASTE_FILES_ FILES=\@paste_files OUT=$temp4file
+  } else {
+    link( $paste_files[0] . ".sdf", $temp4file . ".sdf" );
+  }
+
+  # Find the median value in this file.
+  my $params = "ndf=$temp4file order=true";
+  $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
+  my( $ORAC_STATUS, $median ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+
+  # Return the value.
+  $_CALCULATE_RMS_{RMS} = $median;
+
+}
