@@ -6,10 +6,10 @@
 #     Initialise ORAC-DR environment for use with ACSIS
 
 #  Language:
-#     C-shell script
+#     sh shell script
 
 #  Invocation:
-#     source ${ORAC_DIR}/etc/oracdr_acsis.csh
+#     source ${ORAC_DIR}/etc/oracdr_acsis.sh
 
 #  Description:
 #     This script initialises the environment variables and command
@@ -50,7 +50,7 @@
 #     - $ORAC_DATA_OUT is set to the current working directory by default.
 #     - $ORAC_DATA_OUT and $ORAC_DATA_IN may have to be
 #     may have to be set manually after this command is issued.
-#     - aliases are set in the oracdr_start.csh script sourced by
+#     - aliases are set in the oracdr_start.sh script sourced by
 #     this routine.
  
  
@@ -61,78 +61,66 @@
 #     {enter_new_authors_here}
  
 #  History:
-#     07-JUN-2004 (BRADC):
-#        Initial import
-#     27-OCT-2006 (BRADC):
-#        fix ORAC_SUN definition
-#     30-OCT-2006 (BRADC):
-#        move ORAC_DATA_IN
-#     02-NOV-2006 (BRADC):
-#        create $ORAC_DATA_OUT if at JCMT and if does not exist
-#     06-NOV-2006 (BRADC):
-#        - use alternate method for determining if we are at JCMT or not
-#        - fix syntax errors
-#     09-NOV-2006 (BRADC):
-#        set umask to 2 before creating ORAC_DATA_OUT
-#     20-DEC-2006 (BRADC):
-#        set ORAC_DATA_IN to spectra directory
-#     04-MAY-2007 (TIMJ):
-#        Use of /sbin/ip is non-portable
+#     $Log$
+#     Revision 1.2  2006/09/07 00:35:16  bradc
+#     fix for proper bash scripting
+#
+#     Revision 1.1  2006/09/06 02:29:49  bradc
+#     initial addition
  
 #  Revision:
 #     $Id$
  
 #  Copyright:
-#     Copyright (C) 1998-2004,2006 Particle Physics and Astronomy Research
-#     Council. Copyright (C) 2007 Science and Technology Facilities
+#     Copyright (C) 1998-2004 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.
  
 #-
  
 # Calibration root
-if !($?ORAC_CAL_ROOT) then
-    setenv ORAC_CAL_ROOT /jcmt_sw/oracdr_cal
-endif
+if test -z "$ORAC_CAL_ROOT"; then
+    export ORAC_CAL_ROOT=/jcmt_sw/oracdr_cal
+fi
  
 # Recipe dir
-if ($?ORAC_RECIPE_DIR) then
+if ! test -z "$ORAC_RECIPE_DIR"; then
     echo "Warning: resetting ORAC_RECIPE_DIR"
-    unsetenv ORAC_RECIPE_DIR
-endif
+    unset ORAC_RECIPE_DIR
+fi
  
 # primitive dir
-if ($?ORAC_PRIMITIVE_DIR) then
+if ! test -z "$ORAC_PRIMITIVE_DIR"; then
     echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unsetenv ORAC_PRIMITIVE_DIR
-endif
+    unset ORAC_PRIMITIVE_DIR
+fi
  
 #  Read the input UT date
-if ($1 != "") then
-    set oracut = $1
+if test ! -z "$1"; then
+    oracut=$1
 else
-    set oracut = `date -u +%Y%m%d`
-endif
+    oracut=`date -u +%Y%m%d`
+fi
  
-set oracdr_args = "-ut $oracut"
+export oracdr_args="-ut $oracut -recsuffix SUMMIT"
  
 # Instrument
-setenv ORAC_INSTRUMENT ACSIS
+export ORAC_INSTRUMENT=ACSIS
 
 # Cal Directories
-setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/acsis
+export ORAC_DATA_CAL=$ORAC_CAL_ROOT/acsis
  
 # Data directories
-setenv ORAC_DATA_ROOT /jcmtdata
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/acsis/spectra/$oracut
-setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/acsis/$oracut/
-
+export ORAC_DATA_ROOT=/jcmtdata
+export ORAC_DATA_IN=$ORAC_DATA_ROOT/raw/acsis/$oracut/
+export ORAC_DATA_OUT=$ORAC_DATA_ROOT/reduced/acsis/$oracut/
+ 
 # screen things
-setenv ORAC_PERSON bradc
-setenv ORAC_LOOP 'flag'
-setenv ORAC_SUN XXX
+export ORAC_PERSON=bradc
+export ORAC_LOOP='flag'
+export ORAC_SUN=???
  
 # Source general alias file and print welcome screen
-source $ORAC_DIR/etc/oracdr_start.csh
+. $ORAC_DIR/etc/oracdr_start.sh
  
 # Tidy up
 unset oracut
