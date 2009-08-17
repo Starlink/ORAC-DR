@@ -148,6 +148,8 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
       my @masked;
       my @mask_obj;
 
+      my $nomap = 0;
+
       foreach my $i ( 1 .. $Obj->nfiles ) {
 
         if( $Obj->uhdr( "SPARSE" ) ) {
@@ -178,6 +180,8 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
 
             # If both dimensions are 1, then copy this file into the _sp.
             if( $dims->[0] == 1 && $dims->[1] == 1 ) {
+
+              $nomap = 1;
 
               {
                 my $Frm = $Obj;
@@ -235,185 +239,190 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
       use Data::Dumper;
 #print Dumper \@smoothed;
 
-      # Get the RMS for the smoothed files.
-      _CALCULATE_RMS_ FILES=\@masked BOX=1
-      my $median = $_CALCULATE_RMS_{RMS};
-      orac_say "Median RMS in smoothed observation is " . sprintf( "%0.3f", $median );
+      if( ! $nomap ) {
 
-      for my $i ( 1 .. $Obj->nfiles ) {
-        my $in = $Obj->file( $i );
-        my $file = $smoothed[$i-1];
+        # Get the RMS for the smoothed files.
+        _CALCULATE_RMS_ FILES=\@masked BOX=1
+        my $median = $_CALCULATE_RMS_{RMS};
+        orac_say "Median RMS in smoothed observation is " . sprintf( "%0.3f", $median );
 
-        my $colin = new ORAC::TempFile;
+        for my $i ( 1 .. $Obj->nfiles ) {
+          my $in = $Obj->file( $i );
+          my $file = $smoothed[$i-1];
 
-        # Create parameter file for FINDCLUMPS.
-        my $fc_param = "findclumps$$.param";
-        open my $fc_fh, ">", $fc_param;
-        print $fc_fh "ClumpFind.Minpix=50\n";
-        print $fc_fh "ClumpFind.AllowEdge=1\n";
-        print $fc_fh "ClumpFind.FwhmBeam=0\n";
-        print $fc_fh "ClumpFind.MaxBad=9999\n";
-        print $fc_fh "ClumpFind.VeloRes=0\n";
-        print $fc_fh "ClumpFind.Tlow=$rms_thresh*RMS\n";
-        close $fc_fh;
+          my $colin = new ORAC::TempFile;
 
-        # Run FINDCLUMPS.
-        orac_say " Finding clumps higher than $rms_thresh-sigma.";
-        my $temp4 = new ORAC::TempFile;
-        my $temp4file = $temp4->file;
-        my $params = "in=$file rms=$median config='^$fc_param' method=clumpfind out=$temp4file outcat=\! deconv=no";
-        $Mon{'cupid_mon'}->obeyw( "findclumps", "$params" );
-        unlink( $fc_param );
+          # Create parameter file for FINDCLUMPS.
+          my $fc_param = "findclumps$$.param";
+          open my $fc_fh, ">", $fc_param;
+          print $fc_fh "ClumpFind.Minpix=50\n";
+          print $fc_fh "ClumpFind.AllowEdge=1\n";
+          print $fc_fh "ClumpFind.FwhmBeam=0\n";
+          print $fc_fh "ClumpFind.MaxBad=9999\n";
+          print $fc_fh "ClumpFind.VeloRes=0\n";
+          print $fc_fh "ClumpFind.Tlow=$rms_thresh*RMS\n";
+          close $fc_fh;
 
-        # Check number of clumps using NCLUMPS.
-        my ( $ORAC_STATUS, $nclumps ) = $Mon{'cupid_mon'}->get( "findclumps", "nclumps" );
+          # Run FINDCLUMPS.
+          orac_say " Finding clumps higher than $rms_thresh-sigma.";
+          my $temp4 = new ORAC::TempFile;
+          my $temp4file = $temp4->file;
+          my $params = "in=$file rms=$median config='^$fc_param' method=clumpfind out=$temp4file outcat=\! deconv=no";
+          $Mon{'cupid_mon'}->obeyw( "findclumps", "$params" );
+          unlink( $fc_param );
 
-        # If we have no clumps, we can't make a clump mask, so skip
-        # the masking and just go straight to the moment map creation.
-        if( $nclumps ) {
+          # Check number of clumps using NCLUMPS.
+          my ( $ORAC_STATUS, $nclumps ) = $Mon{'cupid_mon'}->get( "findclumps", "nclumps" );
 
-          # Set clumps to be 1 everywhere (i.e. "clump mask").
-          my $temp6 = new ORAC::TempFile;
-          $params = "in1=$temp4file in2=$temp4file out=$temp6";
-          $Mon{'kappa_mon'}->obeyw( "div", "$params" );
+          # If we have no clumps, we can't make a clump mask, so skip
+          # the masking and just go straight to the moment map
+          # creation.
+          if( $nclumps ) {
 
-          # Set bad data to zero.
-          my $temp7 = new ORAC::TempFile;
-          $params = "in=$temp6 out=$temp7 repval=0";
-          $Mon{'kappa_mon'}->obeyw( "nomagic", "$params" );
+            # Set clumps to be 1 everywhere (i.e. "clump mask").
+            my $temp6 = new ORAC::TempFile;
+            $params = "in1=$temp4file in2=$temp4file out=$temp6";
+            $Mon{'kappa_mon'}->obeyw( "div", "$params" );
 
-          # Multiply clump mask by input cube.
-          orac_say " Masking non-clump data.";
-          $params = "in1=$in in2=$temp7 out=$colin";
-          $Mon{'kappa_mon'}->obeyw( "mult", "$params" );
+            # Set bad data to zero.
+            my $temp7 = new ORAC::TempFile;
+            $params = "in=$temp6 out=$temp7 repval=0";
+            $Mon{'kappa_mon'}->obeyw( "nomagic", "$params" );
 
-        } else {
+            # Multiply clump mask by input cube.
+            orac_say " Masking non-clump data.";
+            $params = "in1=$in in2=$temp7 out=$colin";
+            $Mon{'kappa_mon'}->obeyw( "mult", "$params" );
 
-          orac_say " No clumps found, using full cube for map creation.";
-          $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$colin" );
+          } else {
 
+            orac_say " No clumps found, using full cube for map creation.";
+            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$colin" );
+
+          }
+
+          # For each moment, collapse the masked cube into a temporary
+          # file.
+          my $i = 1;
+          foreach my $moment ( @moments ) {
+
+            if( ! exists( $paste_inputs{$moment} ) ) {
+              $paste_inputs{$moment} = ();
+            }
+
+            # Set any pixels with a BORDER QUALITY value to bad.
+            $params = "ndf=$colin bb=255";
+            $Mon{'ndfpack_mon'}->obeyw( "setbb", "$params" );
+
+            # Copy the variance from the input cube.
+            $params = "ndf=$colin from=$in comp=VARIANCE";
+            $Mon{'ndfpack_mon'}->obeyw( "setvar", "$params" );
+
+            # Run the COLLAPSE.
+            orac_say " Collapsing to form temporary $moment map.";
+            my $temp8 = new ORAC::TempFile;
+            my $temp8file = $temp8->file;
+            $params = "in=$colin out=$temp8file estimator=$moment ";
+            $params .= "axis=SPEC wlim=0.0 trim=false";
+            if( uc( $moment ) eq 'IWC' ) {
+              $params .= " variance=false";
+            } else {
+              $params .= " variance=true";
+            }
+            $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+            push @{$paste_inputs{$moment}}, $temp8file;
+            push @collapsed, $temp8;
+            $i++;
+          }
         }
 
-        # For each moment, collapse the masked cube into a temporary
-        # file.
-        my $i = 1;
+        orac_say;
+
+        # Paste together the files in @collapsed into $out.
         foreach my $moment ( @moments ) {
 
-          if( ! exists( $paste_inputs{$moment} ) ) {
-            $paste_inputs{$moment} = ();
-          }
+          my( $in, $out ) = $Obj->inout( "_$moment" );
 
-          # Set any pixels with a BORDER QUALITY value to bad.
-          $params = "ndf=$colin bb=255";
-          $Mon{'ndfpack_mon'}->obeyw( "setbb", "$params" );
+          if( defined( $paste_inputs{$moment} ) ) {
 
-          # Copy the variance from the input cube.
-          $params = "ndf=$colin from=$in comp=VARIANCE";
-          $Mon{'ndfpack_mon'}->obeyw( "setvar", "$params" );
+            if( scalar( @{$paste_inputs{$moment}} ) == 1 ) {
 
-          # Run the COLLAPSE.
-          orac_say " Collapsing to form temporary $moment map.";
-          my $temp8 = new ORAC::TempFile;
-          my $temp8file = $temp8->file;
-          $params = "in=$colin out=$temp8file estimator=$moment ";
-          $params .= "axis=SPEC wlim=0.0 trim=false";
-          if( uc( $moment ) eq 'IWC' ) {
-            $params .= " variance=false";
-          } else {
-            $params .= " variance=true";
-          }
-          $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+              my $params = "in=${$paste_inputs{$moment}}[0] out=$out";
+              $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
 
-          push @{$paste_inputs{$moment}}, $temp8file;
-          push @collapsed, $temp8;
-          $i++;
-        }
-      }
+            } else {
 
-      orac_say;
+              orac_say " Pasting together temporary maps to form $moment map.";
 
-      # Paste together the files in @collapsed into $out.
-      foreach my $moment ( @moments ) {
+              my $title = $Frm->uhdr( "ORAC_OBJECT" );
+              _PASTE_FILES_ FILES=$paste_inputs{$moment} OUT=$out TITLE=$title
 
-        my( $in, $out ) = $Obj->inout( "_$moment" );
+            }
 
-        if( defined( $paste_inputs{$moment} ) ) {
+            orac_say "Created $moment map in $out.";
 
-          if( scalar( @{$paste_inputs{$moment}} ) == 1 ) {
+            _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=$moment
+            $Obj->sync_headers;
 
-            my $params = "in=${$paste_inputs{$moment}}[0] out=$out";
-            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+            # Copy the output to a group file if requested.
+            if( $group != 1 && $Grp->uhdr( "COPY_FRAME_CUBE" ) ) {
+              ( undef, my $groupout ) = $Grp->inout( "_$moment" );
 
-          } else {
+              $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$out out=$groupout" );
 
-            orac_say " Pasting together temporary maps to form $moment map.";
+              my $tGrp = new $Grp;
+              $tGrp->groupid( $Grp->groupid );
+              $tGrp->allow_header_sync(1);
+              $tGrp->file( $groupout );
 
-            my $title = $Frm->uhdr( "ORAC_OBJECT" );
-            _PASTE_FILES_ FILES=$paste_inputs{$moment} OUT=$out TITLE=$title
+              orac_say "$out to $groupout:";
+              orac_say " Copied to Group file.";
 
-          }
+              if( defined( $tag ) && $tag eq $moment ) {
+                _TAG_AS_REPRESENTATIVE_ FILE=$groupout UPDATE=0 GROUP=1 SUFFIX=rimg
+              }
 
-          orac_say "Created $moment map in $out.";
+            }
 
-          _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=$moment
-          $Obj->sync_headers;
-
-          # Copy the output to a group file if requested.
-          if( $group != 1 && $Grp->uhdr( "COPY_FRAME_CUBE" ) ) {
-            ( undef, my $groupout ) = $Grp->inout( "_$moment" );
-
-            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$out out=$groupout" );
-
-            my $tGrp = new $Grp;
-            $tGrp->groupid( $Grp->groupid );
-            $tGrp->allow_header_sync(1);
-            $tGrp->file( $groupout );
-
-            orac_say "$out to $groupout:";
-            orac_say " Copied to Group file.";
-
+            # Tag the moment map if the current moment is the
+            # requested one.
             if( defined( $tag ) && $tag eq $moment ) {
-              _TAG_AS_REPRESENTATIVE_ FILE=$groupout UPDATE=0 GROUP=1 SUFFIX=rimg
+              if( $group == 2 ) {
+                my $Frm = new $Obj;
+                $Frm->file( $out );
+                _TAG_AS_REPRESENTATIVE_ FILE=$out UPDATE=0 GROUP=$group2 SUFFIX=rimg
+              } else {
+                _TAG_AS_REPRESENTATIVE_ FILE=$out UPDATE=0 GROUP=$group SUFFIX=rimg
+              }
             }
 
-          }
+            # Find the position of the peak, then extract a spectrum
+            # from that position, but only if the moment is 'integ'.
+            if( $moment eq 'integ' ) {
 
-          # Tag the moment map if the current moment is the requested one.
-          if( defined( $tag ) && $tag eq $moment ) {
-            if( $group == 2 ) {
-              my $Frm = new $Obj;
-              $Frm->file( $out );
-              _TAG_AS_REPRESENTATIVE_ FILE=$out UPDATE=0 GROUP=$group2 SUFFIX=rimg
-            } else {
-              _TAG_AS_REPRESENTATIVE_ FILE=$out UPDATE=0 GROUP=$group SUFFIX=rimg
-            }
-          }
+              $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$out" );
+              my( $ORAC_STATUS, @maxpos ) = $Mon{'kappa_mon'}->get( "stats", "maxpos" );
+              $Obj->uhdr( "INTEG_MAX_POS", \@maxpos );
 
-          # Find the position of the peak, then extract a spectrum
-          # from that position, but only if the moment is 'integ'.
-          if( $moment eq 'integ' ) {
+              my $tagspec = defined( $tag );
 
-            $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$out" );
-            my( $ORAC_STATUS, @maxpos ) = $Mon{'kappa_mon'}->get( "stats", "maxpos" );
-            $Obj->uhdr( "INTEG_MAX_POS", \@maxpos );
-
-            my $tagspec = defined( $tag );
-
-            if( $group == 2 ) {
-              my $Frm = new $Obj;
-              $Frm->files( $Obj->files );
-              $Frm->uhdr( "INTEG_MAX_POS", \@maxpos );
-              _EXTRACT_MAXVALUE_SPECTRUM_ TAG=$tagspec GROUP=$group2
-            } else {
-              _EXTRACT_MAXVALUE_SPECTRUM_ TAG=$tagspec GROUP=$group
+              if( $group == 2 ) {
+                my $Frm = new $Obj;
+                $Frm->files( $Obj->files );
+                $Frm->uhdr( "INTEG_MAX_POS", \@maxpos );
+                _EXTRACT_MAXVALUE_SPECTRUM_ TAG=$tagspec GROUP=$group2
+              } else {
+                _EXTRACT_MAXVALUE_SPECTRUM_ TAG=$tagspec GROUP=$group
+              }
             }
           }
         }
+
+        # Tidy-up output.
+        orac_say "";
+
       }
-
-      # Tidy-up output.
-      orac_say "";
-
     }
   }
 }
