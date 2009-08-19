@@ -79,8 +79,35 @@ USA.
 
 orac_print "Flatfielding raw data... ";
 
-# Write list of files to process
-my ($inlist, $outlist, @out) = write_file_list_inout( $Frm, "_ff" );
+# If there are no darks, as will be the case for the online pipeline,
+# look for a suitable dark frame in the calibration system. Look for
+# SHUTTER subheaders and if there are none, select a dark frame.
+my @files = $Frm->files;
+if ( defined $Frm->hdr("SUBHEADERS") ) {
+  my %subheaders = %{ $Frm->hdr->{SUBHEADERS}->[0] };
+  # Subheaders should always be defined in offline mode
+  unless ( defined $subheaders{"SHUTTER"} ) {
+    foreach my $subarray ( $Frm->subarrays ) {
+      $Frm->subarray( $subarray );
+      if ( $Cal->dark ) {
+	push (@files, $Cal->dark);
+      } else {
+	orac_warn "No suitable dark frame found for subarray $subarray in current observation\n";
+      }
+    }
+  }
+}
+
+# Write list of filenames to a temp file
+my $inlist = write_file_list( @files );
+
+# Establish list of output files.
+my @out;
+for my $i ( 1 .. $Frm->nfiles ) {
+  my $out = $Frm->inout("_ff", $i);
+  push ( @out, $out );
+}
+my $outlist = write_file_list( @out );
 
 # Define the bad-bolometer mask parameter - set to default then
 # retrieve available masks, which are written to a file if they exist.
@@ -111,6 +138,8 @@ unlink $outfiles;
 
 # Register new file names
 $Frm->files( @out );
+
+$Frm->uhdr("FLATFIELD",1);
 
 # Finished.
 orac_print "Flatfield applied\n";
