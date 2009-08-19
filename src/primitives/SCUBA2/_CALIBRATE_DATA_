@@ -18,6 +18,9 @@ required. The calibration units are specified by an argument.
 Whilst this primitive can be run on a group, care must be taken that
 it is not run multiple times on a group image.
 
+Note that data will not be calibrated if the C<NOCALIB> uhdr entry is
+set.
+
 =head1 ARGUMENTS
 
 The following arguments are supported:
@@ -62,10 +65,12 @@ Creates an output file with a C<_cal> extension.
 
 =head1 AUTHOR
 
-Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
+Copyright (C) 2009 The University of British Columbia.
 Copyright (C) 2008 Science and Technology Facilities Council.
 Copyright (C) 1998-2000 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
@@ -85,61 +90,63 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
 USA.
 
-
 =cut
 
 # Read the arguments
 my $Obj = ($_PRIM_ARGS_->{GROUP} ? $Grp : $Frm );
 
-my $units = 'BEAM';
-if (exists $_CALIBRATE_DATA_{UNITS} ) {
-  $units = uc( $_CALIBRATE_DATA_{UNITS});
-  if ($units ne 'BEAM' && $units ne 'ARCSEC') {
-    orac_throw "_CALIBRATE_DATA_: Units must be BEAM or ARCSEC not '$units'";
-  }
-}
+# Only proceed if the NOCALIB header is NOT set.
+unless ( $Obj->uhdr("NOCALIB") ) {
 
-# Multiplication factor - convert to mJy
-my $mult = 1000.0;
-my $pre = 'm';  # for mJy
-# Units
-my $unitstr = $pre .( $units eq 'BEAM' ? 'Jy/beam/pW' : 'Jy/arcsec^2/pW');
-
-# For ARCSEC we need to multiply by the square of the pixel regrid
-# size.
-
-# Loop over all files in the object
-for my $i (1..$Obj->nfiles) {
-  my $file = $Obj->file($i);
-  my $parea = 1.0; # Pixel area
-  if ($units eq 'ARCSEC') {
-    # Need pixel scale to get pixel area
-    _GET_PIXEL_SCALE_ IN=$file
-    $parea = $_GET_PIXEL_SCALE_{RESULTS}->[0] * 
-             $_GET_PIXEL_SCALE_{RESULTS}->[1];
+  my $units = 'BEAM';
+  if (exists $_CALIBRATE_DATA_{UNITS} ) {
+    $units = uc( $_CALIBRATE_DATA_{UNITS});
+    if ($units ne 'BEAM' && $units ne 'ARCSEC') {
+      orac_throw "_CALIBRATE_DATA_: Units must be BEAM or ARCSEC not '$units'";
+    }
   }
 
-  # Retrieve the current fcf value from the calibration
-  # object. This will calibrate our data in Jy and then
-  # if we multiply by an extra 1000 we get mJy
-  # The multiplication factor includes the /pixel correction in ARCSEC
-  my $gain = $Cal->gain($Obj->uhdr("ORAC_FILTER"), $units) * $mult * $parea;
+  # Multiplication factor - convert to mJy
+  my $mult = 1000.0;
+  my $pre = 'm';  # for mJy
+  # Units
+  my $unitstr = $pre .( $units eq 'BEAM' ? 'Jy/beam/pW' : 'Jy/arcsec^2/pW');
 
-  # retrive input and output names
-  my ($in, $out) = $Obj->inout("_cal", $i);
-  my $args = "scalar=$gain";
+  # For ARCSEC we need to multiply by the square of the pixel regrid
+  # size.
 
-  # Multiply by the gain
-  $Mon{kappa_mon}->obeyw("cmult","in=$in out=$out $args");
+  # Loop over all files in the object
+  for my $i (1..$Obj->nfiles) {
+    my $file = $Obj->file($i);
+    my $parea = 1.0; # Pixel area
+    if ($units eq 'ARCSEC') {
+      # Need pixel scale to get pixel area
+      _GET_PIXEL_SCALE_ IN=$file
+      $parea = $_GET_PIXEL_SCALE_{RESULTS}->[0] * 
+	       $_GET_PIXEL_SCALE_{RESULTS}->[1];
+    }
 
-  orac_print "Multiplying $in by $gain $unitstr\n";
+    # Retrieve the current fcf value from the calibration object. This
+    # will calibrate our data in Jy and then if we multiply by an
+    # extra 1000 we get mJy.
+    # The multiplication factor includes the /pixel correction in ARCSEC
+    my $gain = $Cal->gain($Obj->uhdr("ORAC_FILTER"), $units) * $mult * $parea;
 
-  # Change the units
-  $Mon{ndfpack_mon}->obeyw("setunits","ndf=$out units=$unitstr");
+    # Retrieve input and output names
+    my ($in, $out) = $Obj->inout("_cal", $i);
+    my $args = "scalar=$gain";
 
-  # Update file
-  $Obj->file($i, $out);
+    # Multiply by the gain
+    $Mon{kappa_mon}->obeyw("cmult","in=$in out=$out $args");
 
+    orac_print "Multiplying $in by $gain $unitstr\n";
+
+    # Change the units
+    $Mon{ndfpack_mon}->obeyw("setunits","ndf=$out units=$unitstr");
+
+    # Update file
+    $Obj->file($i, $out);
+  }
+
+  orac_printp "Data calibrated in $unitstr\n";
 }
-
-orac_printp "Data calibrated in $unitstr\n";
