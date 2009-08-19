@@ -1,0 +1,151 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_PROCESS_SCAN_DATA_ - deal with new scan mode data, making an image if appropriate
+
+=head1 SYNOPSIS
+
+_PROCESS_SCAN_DATA_ PERCENT_CMP=75
+
+=head1 DESCRIPTION
+
+A general-purpose primitive which processes scan data according to
+given criteria. The processing is directed by the map-making method
+and, if the iterative map-maker is to be used, the
+percentage-completion parameter which delays the creation of a map
+until a certain proportion of the observation has been completed. If
+the criteria are not satisfied, the data are flatfielded as an
+intermediate step which will help speed up the final map-making step.
+
+For the simple rebinning map-maker, the data have the atmosphere
+subtracted and are extinction corrected before creating the map.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<METHOD>
+
+Method to use in making the map. Valid options are C<ITERATE> or
+C<REBIN>. Default is C<ITERATE>.
+
+=item B<PERCENT_CMP>
+
+If specified, this number is the minimum percentage of the observation
+that has been completed. The default is 0 to process each file as it
+appears on disk. Only accessed if B<METHOD> is C<ITERATE>.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item ORAC-DR PRIMITIVES
+
+_EXTINCTION_CORRECT_FRAME_, _FLATFIELD_, _MAKEMAP_FRAME_,
+_REMOVE_PLANE_FROM_IMAGE_
+
+=back
+
+=head1 NOTES
+
+Configuration parameters for the iterative map-maker may be passed to
+_MAKEMAP_FRAME_. Set C<MYCONFIG=1> for them to take effect. See the
+SMURF C<makemap> documentation for details on the available config
+parameters.
+
+=head1 OUTPUT DATA
+
+If the completion criteria are not satisfied the Frame uhdr entry
+C<NOCALIB> is set to 1, otherwise set to 0.
+
+=head1 OUTPUT FILES
+
+Flatfielded data with suffix C<_ff> are written out during execution,
+but deleted once a map has been made (C<ITERATE> only).
+
+A frame mosaic file with extension C<_fmos> will exist once the
+percentage-completion criteria are satisfied.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Map-making method: iterate or rebin
+my $method = lc(get_prim_arg($_PRIM_ARGS_, "METHOD", "iterate"));
+
+# 
+if ( $method =~ /^it/ ) {
+  # #### ITERATE ####
+
+  # Percentage-completion parameter - default to 0 to pick up every
+  # file as it is written to disk.
+  my $completion = get_prim_arg($_PRIM_ARGS_, "PERCENT_CMP", 0);
+
+  # If the ORAC_PERCENT_CMP environment variable is set then use that
+  if ( exists $ENV{'ORAC_PERCENT_CMP'} && defined $ENV{'ORAC_PERCENT_CMP'} ) {
+    $completion = $ENV{'ORAC_PERCENT_CMP'};
+  }
+
+  if ( $Frm->uhdr("PERCENT_CMP") > $completion ) {
+    # Pass all the current data to makemap
+    orac_print "Observation greater than $completion % complete - making image\n";
+    _FLATFIELD_
+    _MAKEMAP_FRAME_ METHOD=ITER INFILES=ALL
+
+    # Unset the NOCALIB flag now we have a map
+    $Frm->uhdr("NOCALIB",0);
+    # Set the OBSEND flag as the observation has effectively ended as
+    # far as the pipeline is concerned
+    $Frm->uhdr("OBSEND",1);
+  } else {
+    # If there is insufficient data to pass to makemap, do something
+    # useful, such as flatfield the data
+    orac_print "No enough data yet to make an image - proceeding with flatfield\n";
+    _FLATFIELD_
+    # Set the NOCALIB flag so data won't be calibrated
+    $Frm->uhdr("NOCALIB",1);
+  }
+
+} elsif ( $method =~ /^re/ ) {
+  # #### REBIN ####
+
+  # If the rebin method has been chosen, we must separately remove the
+  # atmosphere and correct for extinction
+  _REMOVE_PLANE_FROM_IMAGE_
+  _EXTINCTION_CORRECT_FRAME_
+
+  # Create image with current data
+  _MAKEMAP_FRAME_ METHOD=REBIN
+
+  # Make sure the NOCALIB flag is unset
+  $Frm->uhdr("NOCALIB",0);
+}
