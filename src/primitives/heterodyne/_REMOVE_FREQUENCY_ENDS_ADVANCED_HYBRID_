@@ -1,0 +1,281 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_REMOVE_FREQUENCY_ENDS_ADVANCED_HYBRID_
+
+=head1 DESCRIPTION
+
+This primitive removes the high-noise regions at either end of the
+frequency bounds for hybrid-mode observations. It acts similarly to
+_REMOVE_FREQUENCY_ENDS_ADVANCED_, but before doing any trimming,
+ensures that there is sufficient overlap in the two subbands to
+calculate a proper DC offset for hybrid mode merging. If there is not
+enough offset, then a fixed number of channels is removed.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item LOWER = REAL (Given)
+
+The percentage of the total frequency range to trim from the lower end
+of the frequency range. For example, if a cube has 1024 channels, and
+the percentage to trim is 10, then 102 channels will be trimmed. This
+parameter is only used if the advanced algorithm trims too much data
+such that not enough channels would overlap when merging the
+hybrid-mode observations. [undef]
+
+=item MINIMUM_OVERLAP = INTEGER (Given)
+
+The minimum number of desired channels that will overlap after doing
+trimming. If the number of channels is lower than this, then the fixed
+number of channels will be trimmed according to the C<LOWER> and
+C<UPPER> arguments. [5]
+
+=item UPPER = REAL (Given)
+
+The percentage of the total frequency range to trim from the upper end
+of the frequency range. For example, if a cube has 1024 channels, and
+the percentage to trim is 10, then 102 channels will be trimmed. This
+parameter is only used if the advanced algorithm trims too much data
+such that not enough channels would overlap when merging the
+hybrid-mode observations. [undef]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is only suitable for ACSIS time-series cubes.
+
+=item *
+
+This primitive will only run if the ISHYBRID uhdr is true.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+Cube with removed frequency ends, with the _em suffix appended to the
+filename.
+
+=back
+
+=head1 TASKS
+
+KAPPA: COLLAPSE, MFITTREND, NDFCOPY, WCSALIGN.
+
+=head1 REQUIRED PERL MODULES
+
+Number::Interval.
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+# Handle parameters.
+my $lower = get_prim_arg( $_PRIM_ARGS_, "LOWER", 5 );
+my $upper = get_prim_arg( $_PRIM_ARGS_, "UPPER", 5 );
+my $min_overlap = get_prim_arg( $_PRIM_ARGS_, "MINIMUM_OVERLAP", 5 );
+
+# Only do this if we're doing hybrid mode.
+if( $Frm->uhdr( "ISHYBRID" ) ) {
+
+  # Split up the files into pairs, paired by NSUBSCAN header.
+  my %newFrms;
+  foreach my $file ( $Frm->files ) {
+    my $tmpFrm = new $Frm;
+    $tmpFrm->file( $file );
+    push @{$newFrms{$tmpFrm->hdr( "NSUBSCAN" )}}, $file;
+  }
+
+  # Create an inout hash for the files.
+  my %inout;
+  foreach my $i ( 1 .. $Frm->nfiles ) {
+    my ( $in, $out ) = $Frm->inout( "_em", $i );
+    $inout{$in} = $out;
+  }
+
+  # For each pair, run MFITTREND and find out if there's enough
+  # overlap between the two resulting trims.
+  foreach my $nsubscan ( sort keys %newFrms ) {
+
+    my $files = $newFrms{$nsubscan};
+
+    # Set up some temporary files.
+    my $temp1file = new ORAC::TempFile;
+    my $temp2file = new ORAC::TempFile;
+    my $temp3file = new ORAC::TempFile;
+    my $temp4file = new ORAC::TempFile;
+    my $temp5file = new ORAC::TempFile;
+    my $temp6file = new ORAC::TempFile;
+    my $temp7file = new ORAC::TempFile;
+    my $temp8file = new ORAC::TempFile;
+
+    # Retrieve bounds for each file.
+    _GET_DIMENSIONS_ FILE=$files->[0]
+    my $lbounds1 = $_GET_DIMENSIONS_{LBOUND};
+    my $ubounds1 = $_GET_DIMENSIONS_{UBOUND};
+    _GET_DIMENSIONS_ FILE=$files->[1]
+    my $lbounds2 = $_GET_DIMENSIONS_{LBOUND};
+    my $ubounds2 = $_GET_DIMENSIONS_{UBOUND};
+
+    # Collapse along third axis, but only if it's non-degenerate.
+    if( ( $ubounds1->[2] - $lbounds1->[2] + 1 ) != 1 ) {
+      my $params = "in=$files->[0] out=$temp1file axis=3 wlim=0.0 estimator=sigma trim";
+      $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+    } else {
+      $temp1file = $files->[0];
+    }
+
+    # Collapse along second axis of resulting cube, but only if it's
+    # non-degenerate.
+    if( ( $ubounds1->[1] - $lbounds1->[1] + 1 ) != 1 ) {
+      my $params = "in=$temp1file out=$temp2file axis=2 wlim=0.0 estimator=sigma trim";
+      $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+    } else {
+      $temp2file = $temp1file;
+    }
+
+    # And now for the second input file.
+    if( ( $ubounds2->[2] - $lbounds2->[2] + 1 ) != 1 ) {
+      my $params = "in=$files->[1] out=$temp3file axis=3 wlim=0.0 estimator=sigma trim";
+      $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+    } else {
+      $temp3file = $files->[1];
+    }
+
+    # Collapse along second axis of resulting cube, but only if it's
+    # non-degenerate.
+    if( ( $ubounds2->[1] - $lbounds2->[1] + 1 ) != 1 ) {
+      my $params = "in=$temp3file out=$temp4file axis=2 wlim=0.0 estimator=sigma trim";
+      $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+    } else {
+      $temp4file = $temp3file;
+    }
+
+    # Align them.
+    my $params = "in='$temp2file,$temp4file' out='$temp5file,$temp6file' insitu=false lbnd=! ubnd=! ref=!";
+    $Mon{'kappa_mon'}->obeyw( "wcsalign", "$params" );
+
+    # Run MFITTREND.
+    my $numbin1 = int( ( $ubounds1->[0] - $lbounds1->[0] + 1 ) / 4 );
+    $params = "in=$temp5file out=$temp7file axis=1 method=region auto=true";
+    $params .= " order=0 numbin=$numbin1";
+    $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+    my ( $ORAC_STATUS, @aranges1 ) = $Mon{'kappa_mon'}->get( "mfittrend", "aranges" );
+
+    my $numbin2 = int( ( $ubounds2->[0] - $lbounds2->[0] + 1 ) / 4 );
+    $params = "in=$temp6file out=$temp8file axis=1 method=region auto=true";
+    $params .= " order=0 numbin=$numbin2";
+    $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+    ( $ORAC_STATUS, my @aranges2 ) = $Mon{'kappa_mon'}->get( "mfittrend", "aranges" );
+
+    # Get the resulting overlap range.
+    my $trimmed = 0;
+    my $isok = eval { require Number::Interval; 1; };
+    if( ! $isok ) {
+      orac_throw "Cannot do advanced hybrid mode merging without Number::Interval";
+    }
+    my $range1 = new Number::Interval( Min => $aranges1[0],
+                                       Max => $aranges1[-1],
+                                       IncMin => 1,
+                                       IncMax => 1 );
+
+    my $range2 = new Number::Interval( Min => $aranges2[0],
+                                       Max => $aranges2[-1],
+                                       IncMin => 1,
+                                       IncMax => 1 );
+
+    my $overlap = $range1->intersection( $range2 );
+    if( $overlap ) {
+      my $size = $range1->sizeof();
+
+      if( $size + 1 >= $min_overlap ) {
+
+        $trimmed = 1;
+
+        # We have enough overlap, so re-do the MFITTREND on the
+        # unaligned data (which should still give the same results but
+        # in the proper pixel frame), then NDFCOPY out the resulting
+        # section.
+        $params = "in=$temp2file out=$temp7file axis=1 method=region auto=true";
+        $params .= " order=0 numbin=$numbin1";
+        $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+        ( $ORAC_STATUS, @aranges1 ) = $Mon{'kappa_mon'}->get( "mfittrend", "aranges" );
+        $params = "in=$files->[0]($aranges1[0]:$aranges1[-1],,) out=$inout{$files->[0]}";
+        $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+        orac_say "$files->[0] to $inout{$files->[0]}:";
+        orac_say " Removed high-noise ends from frequency range.";
+        orac_say " Trimmed dimensions: [$aranges1[0]:$aranges1[-1]]";
+
+        $params = "in=$temp4file out=$temp8file axis=1 method=region auto=true";
+        $params .= " order=0 numbin=$numbin2";
+        $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+        ( $ORAC_STATUS, @aranges2 ) = $Mon{'kappa_mon'}->get( "mfittrend", "aranges" );
+        $params = "in=$files->[1]($aranges2[0]:$aranges2[-1],,) out=$inout{$files->[1]}";
+        $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+        orac_say "$files->[1] to $inout{$files->[1]}:";
+        orac_say " Removed high-noise ends from frequency range.";
+        orac_say " Trimmed dimensions: [$aranges2[0]:$aranges2[-1]]";
+
+      }
+    }
+
+    if ( ! $trimmed ) {
+
+      my $extent1 = $ubounds1->[0] - $lbounds1->[0] + 1;
+      my $trim_lower1 = int( $extent1 * $lower / 100 );
+      my $trim_upper1 = int( $extent1 * $upper / 100 );
+      my $lower_extent1 = $lbounds1->[0] + $trim_lower1;
+      my $upper_extent1 = $ubounds1->[0] - $trim_upper1;
+
+      my $extent2 = $ubounds2->[0] - $lbounds2->[0] + 1;
+      my $trim_lower2 = int( $extent2 * $lower / 100 );
+      my $trim_upper2 = int( $extent2 * $upper / 100 );
+      my $lower_extent2 = $lbounds2->[0] + $trim_lower2;
+      my $upper_extent2 = $ubounds2->[0] - $trim_upper2;
+
+      $params = "in=$files->[0]($lower_extent1:$upper_extent1,,) out=$inout{$files->[0]}";
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+      orac_say "$files->[0] to $inout{$files->[0]}:";
+      orac_say " Removed high-noise ends from frequency range.";
+      orac_say " Trimmed dimensions: [$lower_extent1:$upper_extent1]";
+
+      $params = "in=$files->[1]($lower_extent2:$upper_extent2,,) out=$inout{$files->[1]}";
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+      orac_say "$files->[1] to $inout{$files->[1]}:";
+      orac_say " Removed high-noise ends from frequency range.";
+      orac_say " Trimmed dimensions: [$lower_extent1:$upper_extent1]";
+
+    }
+
+
+  }
+
+  use Data::Dumper;
+  print Dumper \%inout;
+
+  $Frm->files( sort values %inout );
+  $Frm->product( "em" );
+
+  orac_say "";
+
+}
