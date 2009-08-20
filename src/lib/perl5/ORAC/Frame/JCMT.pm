@@ -25,14 +25,12 @@ use strict;
 use warnings;
 
 use vars qw/ $VERSION /;
-use ORAC::Frame::NDF;
+use JSA::Headers qw/ read_jcmtstate /;
 
 use Carp;
-use NDF;
-
 use base qw/ ORAC::Frame::NDF /;
 
-$VERSION = '1.0';
+$VERSION = '1.01';
 
 =head1 PUBLIC METHODS
 
@@ -81,99 +79,24 @@ sub jcmtstate {
   my $first = $self->file( 1 );
   my $last = $self->file( $self->nfiles );
 
-  # Open up the file, retrieve the JCMTSTATE structure, and store it
-  # in our cache.
-  my $status = &NDF::SAI__OK();
-  err_begin($status);
+  # Reference to hash bucket in cache to simplify
+  # references in code later on
+  my $startref = \$self->{JCMTSTATE}->{START}->{$keyword};
+  my $endref = \$self->{JCMTSTATE}->{END}->{$keyword};
 
-  hds_open( $first, "READ", my $loc, $status);
-  dat_find( $loc, "MORE", my $mloc, $status);
-  dat_find( $mloc, "JCMTSTATE", my $jloc, $status);
-  dat_annul( $mloc, $status);
-
-  # find out how many extensions we have
-  dat_ncomp( $jloc, my $ncomp, $status );
-
-  # Loop over each
-  for my $i (1..$ncomp) {
-    dat_index( $jloc, $i, my $iloc, $status );
-    dat_name( $iloc, my $name, $status );
-    dat_size( $iloc, my $size, $status );
-    dat_type( $iloc, my $type, $status );
-
-    my $coderef;
-    if ($type =~ /^_(DOUBLE|REAL)$/) {
-      $coderef = \&dat_get0d;
-    } elsif ($type eq '_INTEGER') {
-      $coderef = \&dat_get0i;
-    } else {
-      $coderef = \&dat_get0c;
-    }
-
-    my @cell = ( 1 );
-    dat_cell( $iloc, 1, @cell, my $cloc, $status );
-    $coderef->( $cloc, $self->{JCMTSTATE}->{START}->{$name}, $status );
-    dat_annul( $cloc, $status );
-
-    if( uc( $first ) eq uc( $last ) ) {
-      @cell = ( $size );
-      dat_cell( $iloc, 1, @cell, my $cloc2, $status );
-      $coderef->(  $cloc2, $self->{JCMTSTATE}->{END}->{$name}, $status );
-      dat_annul( $cloc2, $status );
-    }
-
-    dat_annul( $iloc, $status );
+  # if we have a single file read the start and end
+  # read the start and end into the cache regardless
+  # of what was requested in order to minimize file opening.
+  if ($first eq $last ) {
+    my %values = read_jcmtstate( $first, [qw/ start end /], $keyword );
+    $$startref = $values{$keyword}->[0];
+    $$endref = $values{$keyword}->[1];
+  } else {
+    my %values = read_jcmtstate( $first, 'start', $keyword );
+    $$startref = $values{$keyword};
+    %values = read_jcmtstate( $last, 'end', $keyword );
+    $$endref = $values{$keyword};
   }
-
-  dat_annul($jloc, $status );
-  dat_annul( $loc, $status );
-
-  if ($status != &NDF::SAI__OK()) {
-    croak err_flush_to_string( "Error reading file $first:\n".$status );
-  }
-
-  # If there's more than one file in the Frame, open the last one.
-  if( uc( $first ) ne uc( $last ) ) {
-    hds_open( $last, "READ", my $loc, $status);
-    dat_find( $loc, "MORE", my $mloc, $status);
-    dat_find( $mloc, "JCMTSTATE", my $jloc, $status);
-    dat_annul( $mloc, $status);
-
-    # find out how many extensions we have
-    dat_ncomp( $jloc, my $ncomp, $status );
-
-    # Loop over each
-    for my $i (1..$ncomp) {
-      dat_index( $jloc, $i, my $iloc, $status );
-      dat_name( $iloc, my $name, $status );
-      dat_size( $iloc, my $size, $status );
-      dat_type( $iloc, my $type, $status );
-
-      my $coderef;
-      if ($type =~ /^_(DOUBLE|REAL)$/) {
-        $coderef = \&dat_get0d;
-      } elsif ($type eq '_INTEGER') {
-        $coderef = \&dat_get0i;
-      } else {
-        $coderef = \&dat_get0c;
-      }
-
-      my @cell = ( $size );
-      dat_cell( $iloc, 1, @cell, my $cloc, $status );
-      $coderef->( $cloc, $self->{JCMTSTATE}->{END}->{$name}, $status );
-      dat_annul( $cloc, $status );
-      dat_annul( $iloc, $status );
-
-    }
-    dat_annul($jloc, $status );
-    dat_annul( $loc, $status );
-  }
-
-  if ($status != &NDF::SAI__OK()) {
-    croak err_flush_to_string( "Error reading file $first:\n".$status );
-  }
-  err_end($status);
-
   return $self->{JCMTSTATE}->{$which}->{$keyword};
 }
 
