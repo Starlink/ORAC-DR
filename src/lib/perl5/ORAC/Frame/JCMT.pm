@@ -81,21 +81,24 @@ sub jcmtstate {
 
   # Reference to hash bucket in cache to simplify
   # references in code later on
-  my $startref = \$self->{JCMTSTATE}->{START}->{$keyword};
-  my $endref = \$self->{JCMTSTATE}->{END}->{$keyword};
+  my $startref = $self->{JCMTSTATE}->{START} = {};
+  my $endref = $self->{JCMTSTATE}->{END} = {};
 
   # if we have a single file read the start and end
   # read the start and end into the cache regardless
   # of what was requested in order to minimize file opening.
   if ($first eq $last ) {
-    my %values = read_jcmtstate( $first, [qw/ start end /], $keyword );
-    $$startref = $values{$keyword}->[0];
-    $$endref = $values{$keyword}->[1];
+    my %values = read_jcmtstate( $first, [qw/ start end /] );
+    for my $key ( keys %values ) {
+      $startref->{$key} = $values{$key}->[0];
+      $endref->{$key} = $values{$key}->[1];
+    }
   } else {
-    my %values = read_jcmtstate( $first, 'start', $keyword );
-    $$startref = $values{$keyword};
-    %values = read_jcmtstate( $last, 'end', $keyword );
-    $$endref = $values{$keyword};
+    my %values = read_jcmtstate( $first, 'start' );
+    %$startref = %values;
+    %values = read_jcmtstate( $last, 'end' );
+    %$endref = %values;
+
   }
   return $self->{JCMTSTATE}->{$which}->{$keyword};
 }
