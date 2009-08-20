@@ -32,8 +32,6 @@ use warnings;
 use strict;
 use Carp;
 
-use ORAC::Frame::NDF;
-use ORAC::Frame::JCMT;
 use ORAC::Constants;
 use ORAC::Print;
 
@@ -45,7 +43,7 @@ use vars qw/$VERSION/;
 
 # Let the object know that it is derived from ORAC::Frame::JCMT and
 # ORAC::Frame::NDF;
-use base qw/ ORAC::Frame::JCMT ORAC::Frame::NDF /;
+use base qw/ ORAC::Frame::JCMT /;
 
 # Use base doesn't seem to work...
 #use base qw/ ORAC::Frame /;
