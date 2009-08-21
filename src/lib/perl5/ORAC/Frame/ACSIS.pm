@@ -247,7 +247,7 @@ sub flag_from_bits {
 
   # Pad the observation number with leading zeros to make it five
   # digits long.
-  my $padnum = '0'x(5-length($obsnum)) . $obsnum;
+  my $padnum = $self->_padnum( $obsnum );
 
   my $flag = File::Spec->catfile('.' . $self->rawfixedpart . $prefix . '_' . $padnum . '.ok');
 
@@ -319,7 +319,7 @@ sub pattern_from_bits {
   my $prefix = shift;
   my $obsnum = shift;
 
-  my $padnum = '0'x(5-length($obsnum)) . $obsnum;
+  my $padnum = $self->_padnum( $obsnum );
 
   my $pattern = $self->rawfixedpart . $prefix . "_" . $padnum . '_\d\d_\d{4}' . $self->rawsuffix;
 

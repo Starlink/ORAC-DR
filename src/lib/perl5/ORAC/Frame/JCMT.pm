@@ -328,6 +328,32 @@ sub findnsubs {
 
 =back
 
+=begin __PROTECTED_METHODS__
+
+=head1 PROTECTED METHODS
+
+These methods are for subclasses.
+
+=over 4
+
+=item B<_padnum>
+
+Pad an observation number.
+
+ $padded = $frm->_padnum( $raw );
+
+=cut
+
+sub _padnum {
+  my $self = shift;
+  my $raw = shift;
+  return sprintf( "%05d", $raw);
+}
+
+=back
+
+=end __PROTECTED_METHODS__
+
 =head1 SEE ALSO
 
 L<ORAC::Group>, L<ORAC::Frame::NDF>, L<ORAC::Frame>

@@ -860,20 +860,6 @@ sub filter_darks {
 
 =over 4
 
-=item B<_padnum>
-
-Pad an observation number.
-
- $padded = $frm->_padnum( $raw );
-
-=cut
-
-sub _padnum {
-  my $self = shift;
-  my $raw = shift;
-  return sprintf( "%05d", $raw);
-}
-
 =item B<_wavelength_prefix>
 
 Return the relevent wavelength code that will be used to specify the
