@@ -581,27 +581,6 @@ sub findgroup {
   return $self->SUPER::findgroup( $extra );
 }
 
-
-=item B<findnsubs>
-
-Forces the object to determine the number of sub-frames
-associated with the data by looking in the header (hdr()). 
-The result is stored in the object using nsubs().
-
-Unlike findgroup() this method will always search the header for
-the current state.
-
-=cut
-
-sub findnsubs {
-  my $self = shift;
-  my @files = $self->raw;
-  my $nsubs = scalar( @files );
-  $self->nsubs( $nsubs );
-  return $nsubs;
-}
-
-
 =item B<findrecipe>
 
 Return the recipe associated with the frame.  The state of the object

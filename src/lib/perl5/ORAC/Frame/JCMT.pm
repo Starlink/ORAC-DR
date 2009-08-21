@@ -306,6 +306,26 @@ sub findgroup {
   return $hdrgrp;
 }
 
+=item B<findnsubs>
+
+Find the number of sub-frames associated by the frame by looking
+at the list of raw files associated with object. Usually run
+by configure().
+
+  $nsubs = $Frm->findnsubs;
+
+The state of the object is updated automatically.
+
+=cut
+
+sub findnsubs {
+  my $self = shift;
+  my @files = $self->raw;
+  my $nsubs = scalar( @files );
+  $self->nsubs( $nsubs );
+  return $nsubs;
+}
+
 =back
 
 =head1 SEE ALSO
