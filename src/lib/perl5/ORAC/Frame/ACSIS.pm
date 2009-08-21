@@ -266,108 +266,24 @@ this value.
 sub findgroup {
   my $self = shift;
 
-  my $hdrgrp;
-  if( defined( $self->hdr('DRGROUP') ) ) {
-    $hdrgrp = $self->hdr('DRGROUP');
+  # Read extra information required for group disambiguation
+  my $restfreq;
+  if( defined( $self->hdr( "FRQSIGLO" ) ) &&
+      defined( $self->hdr( "FRQSIGHI" ) ) ) {
+    $restfreq = sprintf( "%.2f", ( $self->hdr( "FRQSIGLO" ) +
+                                   $self->hdr( "FRQSIGHI" ) ) /
+                         2 );
   } else {
-
-    # Check to see if we have the tracking system and base position in the header. If we don't, we'll have to get it from the WCS.©
-    my %state;
-    my $wcs;
-    if( defined( $self->hdr( 'TRACKSYS' ) ) ) {
-
-      $state{'TCS_TR_SYS'} = $self->hdr( 'TRACKSYS' );
-
-      if( $self->hdr( 'TRACKSYS' ) ne 'APP' &&
-        defined( $self->hdr( 'BASEC1' ) ) &&
-        defined( $self->hdr( 'BASEC2' ) ) ) {
-
-        $state{'TCS_TR_BC1'} = $self->hdr( 'BASEC1' );
-        $state{'TCS_TR_BC2'} = $self->hdr( 'BASEC2' );
-
-      }
-
-    } else {
-
-      # Get the WCS.
-      $self->read_wcs;
-      $wcs = $self->wcs;
-
-      # Retrieve the TCS_TR_SYS, TCS_TR_BC1 and TCS_TR_BC2 values from
-      # the JCMTSTATE structure.
-      $state{'TCS_TR_SYS'} = $self->jcmtstate( "TCS_TR_SYS" );
-      $state{'TCS_TR_BC1'} = $self->jcmtstate( "TCS_TR_BC1" );
-      $state{'TCS_TR_BC2'} = $self->jcmtstate( "TCS_TR_BC2" );
-
-    }
-
-    if( exists $state{TCS_TR_SYS} && $state{TCS_TR_SYS} =~ /APP/ ) {
-
-      # We're tracking in geocentric apparent, so instead of using the
-      # RefRA/RefDec position (which will be moving with the object)
-      # use the object name.
-      $hdrgrp = $self->hdr( "OBJECT" );
-
-    } else {
-
-      # Sometimes it seems that the RefRA/RefDec position stored in the
-      # specframe is not the same as the actual base position.
-      # eg 20081007 #54
-      # To be robust we use the JCMTSTATE extension
-      my ($refra, $refdec);
-      if (exists $state{TCS_TR_BC1} && exists $state{TCS_TR_BC2} ) {
-        my $ang = Astro::Coords::Angle::Hour->new( $state{TCS_TR_BC1},
-                                                   units => 'rad' );
-        $refra = $ang->string;
-        $ang = Astro::Coords::Angle->new( $state{TCS_TR_BC2},
-                                          units => 'rad' );
-        $refdec = $ang->string;
-      } elsif( defined( $wcs ) ) {
-        # Use the RefRA/RefDec position with colons stripped out and to
-        # the nearest arcsecond.
-        $refra = $wcs->GetC("RefRA");
-        $refdec = $wcs->GetC("RefDec");
-      }
-      $refra =~ s/\..*$//;
-      $refdec =~ s/\..*$//;
-      $refra =~ s/://g;
-      $refdec =~ s/://g;
-
-      $hdrgrp = $refra . $refdec;
-
-    }
-
-    my $restfreq;
-    if( defined( $self->hdr( "FRQSIGLO" ) ) &&
-        defined( $self->hdr( "FRQSIGHI" ) ) ) {
-      $restfreq = sprintf( "%.2f", ( $self->hdr( "FRQSIGLO" ) +
-                                     $self->hdr( "FRQSIGHI" ) ) /
-                                     2 );
-    } else {
-      $self->read_wcs;
-      $wcs = $self->wcs;
-      $restfreq = $wcs->GetC("RestFreq");
-    }
-
-    $hdrgrp .= $self->hdr( "BWMODE" ) .
-               ( uc( $self->hdr( "SAM_MODE" ) ) eq 'RASTER' ? 'SCAN' : uc( $self->hdr( "SAM_MODE" ) ) ) .
-               $self->hdr( "SW_MODE" ) .
-               $self->hdr( "INSTRUME" ) .
-               $self->hdr( "OBS_TYPE" ) .
-               $self->hdr( "IFFREQ" ) .
-               $self->hdr( "SIMULATE" ) .
-               $restfreq;
-
-    # Add DATE-OBS if we're not doing a science observation.
-    if( uc( $self->hdr( "OBS_TYPE" ) ) ne 'SCIENCE' ) {
-      $hdrgrp .= $self->hdr( "DATE-OBS" );
-    }
-
+    # Read rest frequency from the WCS
+    my $wcs = $self->read_wcs;
+    $restfreq = $wcs->GetC("RestFreq");
   }
 
-  $self->group($hdrgrp);
+  my $extra =  $self->hdr( "BWMODE" ) .
+    $self->hdr( "IFFREQ" ) .
+      $restfreq;
 
-  return $hdrgrp;
+  return $self->SUPER::findgroup( $extra );
 }
 
 =item B<findnsubs>

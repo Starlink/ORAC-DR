@@ -236,7 +236,77 @@ sub find_base_position {
   return %state;
 }
 
+=item B<findgroup>
+
+Returns the group name from the header or a string formed automatically
+on observation metadata.
+
+ $Frm->findgroup();
+
+An optional argument can be provided which will be appended to the group
+name. This can be used by subclasses to provide additional information
+required to disambiguate groups. This string is only used if the group
+identifier is not present in the DRGROUP header.
+
+ $Frm->findgroup( $string );
+
+The group name stored in the object is automatically update using this
+value.
+
 =cut
+
+sub findgroup {
+  my $self = shift;
+  my $extra = shift;
+
+  my $hdrgrp;
+  # Use value in header if present
+  if (exists $self->hdr->{DRGROUP} && defined $self->hdr->{DRGROUP}
+      && $self->hdr->{DRGROUP} ne 'UNKNOWN'
+      && $self->hdr->{DRGROUP} =~ /\w/) {
+    $hdrgrp = $self->hdr->{DRGROUP};
+  } else {
+    # Create our own DRGROUP string
+    # Read the base position information from the file
+    my %state = $self->find_base_position();
+    if (exists $state{TCS_TR_BC1_STR} && exists $state{TCS_TR_BC2_STR}) {
+      # Define group key based on stringified form of TCS base position
+      $hdrgrp = $state{TCS_TR_BC1_STR} . $state{TCS_TR_BC2_STR};
+
+    } else {
+      # We're tracking in geocentric apparent, so instead of using the
+      # RefRA/RefDec position (which will be moving with the object)
+      # use the object name.
+      $hdrgrp = $self->hdr( "OBJECT" );
+    }
+
+    # JCMT disambiguates on these headers
+    # Note that we normalize RASTER and SCAN mode for historical data
+    $hdrgrp .=
+      ( uc( $self->hdr( "SAM_MODE" ) ) eq 'RASTER' ? 'SCAN' : uc( $self->hdr( "SAM_MODE" ) ) ) .
+        $self->hdr( "SW_MODE" ) .
+          $self->hdr( "INSTRUME" ) .
+            $self->hdr( "OBS_TYPE" ) .
+                $self->hdr( "SIMULATE" );
+
+    # Add DATE-OBS if we're not doing a science observation.
+    # to ensure that they are not combined into groups
+    if( uc( $self->hdr( "OBS_TYPE" ) ) ne 'SCIENCE' ) {
+      $hdrgrp .= $self->hdr( "DATE-OBS" );
+    }
+
+    # Add any extra information from subclass
+    $hdrgrp .= $extra if defined $extra;
+
+  }
+
+  # Update the group
+  $self->group($hdrgrp);
+
+  return $hdrgrp;
+}
+
+=back
 
 =head1 SEE ALSO
 

@@ -573,116 +573,12 @@ the object via the group() method.
 sub findgroup {
 
   my $self = shift;
-  my $group;
 
-  # Hash to store relevant parameters
-  my %state;
+  # Extra information required for group disambiguation
+  my $extra = $self->hdr("FILTER" );
 
-  # Use value in header if present 
-  if (exists $self->hdr->{DRGROUP} && defined $self->hdr->{DRGROUP}
-      && $self->hdr->{DRGROUP} ne 'UNKNOWN'
-      && $self->hdr->{DRGROUP} =~ /\w/) {
-    $group = $self->hdr->{DRGROUP};
-  } else {
-    # Create our own DRGROUP string
-    # Retrieve WCS
-    my $wcs = $self->read_wcs( $self->file );
-    my $skyref;
-    if (defined $wcs) {
-      my $domain = $wcs->Get("Domain");
-      if ( $domain =~ /SKY/ ) {
-        $skyref = $wcs->Get("SkyRef");
-      }
-    }
-
-    # If we don't have a useful skyref at this point, re-create the
-    # WCS from the FITS header for DREAM/STARE images
-    if ( !defined $skyref && ($self->hdr('SAM_MODE') ne "SCAN") ) {
-      my $fits = Astro::FITS::Header::NDF->new( File => $self->file );
-      my @cards = $fits->cards;
-      my $fchan = Starlink::AST::FitsChan->new();
-      foreach my $c (@cards) {
-        $fchan->PutFits("$c", 0);
-      }
-      $fchan->Clear("Card");
-      $wcs = $fchan->Read();
-      # The WCS may not be present in the FITS file
-      if (defined $wcs) {
-        $skyref = $wcs->Get("SkyRef");
-      }
-    }
-
-    # if SkyRef is still not defined use the BASEC1/C2 headers and 
-    # TRACKSYS
-    if ( defined $skyref ) {
-      $state{TCS_TR_SYS} = $wcs->Get("System");
-      ($state{TCS_TR_BC1}, $state{TCS_TR_BC2}) = split( /,/, $skyref, 2);
-      # Unformat SkyRef into radians - assumes RA is axis 1 and Dec is axis 2
-      $state{TCS_TR_BC1} = $wcs->Unformat(1, $state{TCS_TR_BC1});
-      $state{TCS_TR_BC2} = $wcs->Unformat(2, $state{TCS_TR_BC2});
-    } else {
-
-      $state{TCS_TR_SYS} = $self->hdr->{TRACKSYS};
-      if (!defined $state{TCS_TR_SYS}) {
-        $state{TCS_TR_SYS} = "ICRS";
-        orac_warn " TRACKSYS header is missing\n";
-      }
-
-      # Note that these are in degrees
-      require Astro::Coords::Angle;
-      for my $c (qw/ C1 C2 /) {
-        my $key1 = "BASE$c";
-        my $key2 = "TCS_TR_B$c";
-        my $val = $self->hdr->{$key1};
-        if (!defined $val) {
-          $val = 0.0;
-          orac_warn " Seem to be missing header $key1\n";
-        }
-        $val = Astro::Coords::Angle->new( $val, units => "deg" );
-        $state{$key2} = $val->radians;
-      }
-    }
-
-    # Now construct DRGROUP string
-    if ( $state{TCS_TR_SYS} =~ /APP/ ) {
-      # Use object name if tracking in GAPPT
-      $group = $self->hdr( "OBJECT" );
-    } else {
-      # Tracking RA and Dec are in radians - convert to HHMMSS+-DMMSS
-      # Note that we have not necessarily converted coordinate systems
-      # to ICRS. We could do that easily for the case where $wcs is
-      # defined.
-      require Astro::Coords::Angle;
-      my $ra = new Astro::Coords::Angle( $state{TCS_TR_BC1}, units => 'rad' );
-      $ra->range("2PI");
-      my $dec = new Astro::Coords::Angle( $state{TCS_TR_BC2}, units => 'rad' );
-      $dec->range("PI");
-
-      # Retrieve RA/Dec HH/DD, MM and SS as arrays, SS to nearest integer
-      my @ra = $ra->components(0);
-      my @dec = $dec->components(0);
-      # Zero-pad the numbers
-      foreach my $i ( @ra[1..3] ) {
-        $i = sprintf "%02d", $i;
-      }
-      foreach my $i ( @dec[1..3] ) {
-        $i = sprintf "%02d", $i;
-      }
-      # Construct RA/Dec string
-      $group = join("",@ra[1..3],@dec);
-    }
-    $group .= $self->hdr( "SAM_MODE" ) .
-      $self->hdr( "OBS_TYPE" ) .
-        $self->hdr( "FILTER" ) ;
-    # Add OBSNUM if we're not doing a science observation
-    if ( uc( $self->hdr( "OBS_TYPE" ) ) ne 'SCIENCE' ) {
-      $group .= sprintf "%05d", $self->hdrval( "OBSNUM" );
-    }
-  }
-  # Update $group
-  $self->group($group);
-
-  return $group;
+  # Call the base class
+  return $self->SUPER::findgroup( $extra );
 }
 
 
