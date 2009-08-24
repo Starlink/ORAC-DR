@@ -292,7 +292,7 @@ sub findgroup {
     # Add DATE-OBS if we're not doing a science observation.
     # to ensure that they are not combined into groups
     if( uc( $self->hdr( "OBS_TYPE" ) ) ne 'SCIENCE' ) {
-      $hdrgrp .= $self->hdr( "DATE-OBS" );
+      $hdrgrp .= $self->hdr( "OBSID" );
     }
 
     # Add any extra information from subclass
