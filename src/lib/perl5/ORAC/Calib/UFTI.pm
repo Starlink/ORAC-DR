@@ -27,7 +27,6 @@ use Carp;
 use warnings;
 use strict;
 
-use ORAC::Calib;			# Use the base class.
 use ORAC::Print;
 use File::Spec;                         # Filename creation
 

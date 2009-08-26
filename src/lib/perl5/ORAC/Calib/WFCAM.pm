@@ -17,8 +17,8 @@ use ORAC::Calib::WFCAM;
 
 This module contains methods for specifying WFCAM-specific calibration
 objects when using Starlink software for reduction. It provides a class
-derived from ORAC::Calib. All the methods available to ORAC::Calib objects
-are available to ORAC::Calib::WFCAM objects.
+derived from ORAC::Calib::Imaging. All the methods available to
+ORAC::Calib::Imaging objects are available to ORAC::Calib::WFCAM objects.
 
 =cut
 
@@ -26,12 +26,10 @@ use Carp;
 use warnings;
 use strict;
 
-use ORAC::Calib::UFTI;
 use ORAC::Print;
-
 use File::Spec;
 
-use base qw/ ORAC::Calib::UFTI /;
+use base qw/ ORAC::Calib::Imaging /;
 
 use vars qw/ $VERSION /;
 $VERSION = '1.0';
@@ -102,25 +100,6 @@ sub skyflatname {
 
   if( @_ ) { $self->{SkyFlat} = shift unless $self->skyflatnoupdate; }
   return $self->{SkyFlat};
-}
-
-=item B<maskname>
-
-Return (or set) the name of the current bad pixel mask
-
-  $mask = $Cal->maskname;
-
-The C<mask()> method should be used if a test for suitability of the
-mask is required.
-
-=cut
-
-
-sub maskname {
-  my $self = shift;
-
-  if (@_) { $self->{Mask} = shift unless $self->masknoupdate; }
-  return $self->{Mask};
 }
 
 =item B<interleavemaskindex>
@@ -202,21 +181,6 @@ sub interleavemasknoupdate {
   my $self = shift;
   if( @_ ) { $self->{InterleaveMaskNoUpdate} = shift; }
   return $self->{InterleaveMaskNoUpdate};
-}
-
-=item B<masknoupdate>
-
-Stops object from updating itself with more recent data.
-Used when overrding the mask file from the command-line.
-
-=cut
-
-sub masknoupdate {
-
-  my $self = shift;
-  if (@_) { $self->{MaskNoUpdate} = shift; }
-  return $self->{MaskNoUpdate};
-
 }
 
 =item B<skyflatnoupdate>
@@ -435,10 +399,6 @@ sub flatindex {
 }
 
 =back
-
-=head1 REVISION
-
-$Id$
 
 =head1 AUTHORS
 
