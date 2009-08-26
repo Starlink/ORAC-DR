@@ -35,6 +35,7 @@ if( $inst =~ /^WFCAM/ ) {
 # Default ORAC_DATA_ROOT directories.
 my %dataroot = ( 'ACSIS'  => "/jcmtdata",
                  'CGS4'   => "/ukirtdata",
+                 'IRCAM'  => "/ukirtdata",
                  'IRCAM2' => "/ukirtdata",
                  'WFCAM'  => "/ukirtdata",
                );
@@ -57,6 +58,14 @@ my %envs = ( 'ACSIS'  => { ORAC_DATA_CAL => File::Spec->catfile( $ENV{'ORAC_CAL_
                            ORAC_PERSON => 'bradc',
                            ORAC_LOOP => 'flag',
                            ORAC_SUN => '230',
+                         },
+             'IRCAM'  => { ORAC_DATA_CAL => File::Spec->catfile( $ENV{'ORAC_CAL_ROOT'}, "ircam" ),
+                           ORAC_DATA_ROOT => $dataroot,
+                           ORAC_DATA_IN => File::Spec->catfile( $dataroot, "ircam_data", $ut, "rodir" ),
+                           ORAC_DATA_OUT => File::Spec->catfile( $dataroot, "ircam_data", $ut, "rodir" ),
+                           ORAC_PERSON => 'mjc',
+                           ORAC_LOOP => 'wait',
+                           ORAC_SUN => '232',
                          },
              'IRCAM2' => { ORAC_DATA_CAL => File::Spec->catfile( $ENV{'ORAC_CAL_ROOT'}, "ircam" ),
                            ORAC_DATA_ROOT => $dataroot,

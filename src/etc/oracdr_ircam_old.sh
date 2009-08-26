@@ -95,48 +95,23 @@
 
 #-
 
-# orac things
-if test -z "$ORAC_DATA_ROOT"; then
-    export ORAC_DATA_ROOT=/ukirtdata
+export ORAC_INSTRUMENT='IRCAM'
+
+# Set the UT date.
+oracut=`csh ${ORAC_DIR}/etc/oracdr_set_ut.csh $1`
+
+# Find Perl.
+starperl=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
+
+# Run initialization.
+orac_env_setup=`$starperl ${ORAC_DIR}/etc/setup_oracdr_env.pl bash $oracut`
+if test ! $?; then
+  echo "hello"
+  exit 255
 fi
+eval $orac_env_setup
 
-if test -z "$ORAC_CAL_ROOT"; then
-    export ORAC_CAL_ROOT=/jac_sw/oracdr_cal
-fi
-
-if ! test -z "$ORAC_RECIPE_DIR"; then
-    echo "Warning: resetting ORAC_RECIPE_DIR"
-    unset ORAC_RECIPE_DIR
-fi
-
-if ! test -z "$ORAC_PRIMITIVE_DIR"; then
-    echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unset ORAC_PRIMITIVE_DIR
-fi
-
-
-if test ! -z "$1"; then
-    oracut=$1
-    oracsut=`echo $oracut |cut -c3-8`
-else
-    oracut=`date -u +%Y%m%d`
-    oracsut=`date -u +%y%m%d`
-fi
-
-export oracdr_args="-ut $oracsut"
-
-
-export ORAC_INSTRUMENT=IRCAM
-export ORAC_DATA_IN=$ORAC_DATA_ROOT/ircam_data/$oracut/rodir
-export ORAC_DATA_OUT=$ORAC_DATA_ROOT/ircam_data/$oracut/rodir
-export ORAC_DATA_CAL=$ORAC_CAL_ROOT/ircam
-
-
-# screen things
-export ORAC_PERSON=mjc
-export ORAC_LOOP=wait
-export ORAC_SUN=232
-
+oracdr_args="-ut $oracut -grptrans"
 
 # Source general alias file and print welcome screen
 . $ORAC_DIR/etc/oracdr_start.sh
@@ -144,4 +119,4 @@ export ORAC_SUN=232
 # Tidy up
 unset oracut
 unset oracdr_args
-unset oracsut
+unset starperl

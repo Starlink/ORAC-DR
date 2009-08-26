@@ -1,7 +1,7 @@
 
 #+
 #  Name:
-#     oracdr_ircam
+#     oracdr_ircam_old
 
 #  Purpose:
 #     Initialise ORAC-DR environment for use with IRCAM
@@ -89,47 +89,23 @@
 
 #-
 
-# orac things
-if !($?ORAC_DATA_ROOT) then
-    setenv ORAC_DATA_ROOT /ukirtdata
-endif
+setenv ORAC_INSTRUMENT IRCAM
 
-if !($?ORAC_CAL_ROOT) then
-    setenv ORAC_CAL_ROOT /jac_sw/oracdr_cal
-endif
+# Set the UT date.
+set oracut=`${ORAC_DIR}/etc/oracdr_set_ut.csh $1`
 
-if ($?ORAC_RECIPE_DIR) then
-    echo "Warning: resetting ORAC_RECIPE_DIR"
-    unsetenv ORAC_RECIPE_DIR
-endif
+# Find Perl.
+set starperl=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
 
-if ($?ORAC_PRIMITIVE_DIR) then
-    echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unsetenv ORAC_PRIMITIVE_DIR
+# Run initialization.
+set orac_env_setup=`$starperl ${ORAC_DIR}/etc/setup_oracdr_env.pl csh $oracut`
+if ( $? != 0 ) then
+  echo "**** ERROR IN setup_oracdr_env.pl ****"
+  exit 255
 endif
-
-
-if ($1 != "") then
-    set oracut = $1
-else
-    set oracut = `date -u +%Y%m%d`
-endif
+eval $orac_env_setup
 
 set oracdr_args = "-ut $oracut"
-
-echo "invoked with -ut $oracut"
-
-setenv ORAC_INSTRUMENT IRCAM
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/ircam_data/$oracut/rodir
-setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/ircam_data/$oracut/rodir
-setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/ircam
-
-
-# screen things
-setenv ORAC_PERSON mjc
-setenv ORAC_LOOP wait
-setenv ORAC_SUN 232
-
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
@@ -137,4 +113,4 @@ source $ORAC_DIR/etc/oracdr_start.csh
 # Tidy up
 unset oracut
 unset oracdr_args
-unset oracsut
+unset starperl
