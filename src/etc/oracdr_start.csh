@@ -95,6 +95,17 @@ if ( ! $?ORAC_LOGDIR ) then
     endif
 endif
 
+# Unset ORAC_RECIPE_DIR and ORAC_PRIMITIVE_DIR
+if ($?ORAC_RECIPE_DIR) then
+    echo "Warning: resetting ORAC_RECIPE_DIR"
+    unsetenv ORAC_RECIPE_DIR
+endif
+
+if ($?ORAC_PRIMITIVE_DIR) then
+    echo "Warning: resetting ORAC_PRIMITIVE_DIR"
+    unsetenv ORAC_PRIMITIVE_DIR
+endif
+
 # These are perl programs
 
 if ( -e $starperl ) then
