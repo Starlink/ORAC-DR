@@ -33,6 +33,7 @@ use strict;
 
 use ORAC::Print;
 
+use File::Copy;
 use File::Spec;
 
 use base qw/ORAC::Calib::Imaging ORAC::Calib::Spectroscopy/;
@@ -106,50 +107,9 @@ and IFU to be F<index.flat_sp>.
 
 =cut
 
-
 sub flatindex {
   my $self = shift;
-
-  if (@_) { $self->{FlatIndex} = shift; }
-
-  if( $self->is_imaging_mode() ) {
-    $self->flatindex_im( $self->{FlatIndex} );
-  } else {
-    $self->flatindex_sp( $self->{FlatIndex} );
-  }
-
-  return $self->{FlatIndex};
-
-}
-
-sub flatindex_im {
-  my $self = shift;
-
-  if( @_ ) { $self->{FlatIndex} = shift; }
-
-  if( !defined( $self->{FlatIndex} ) ||
-      $self->{FlatIndex}->indexfile !~ /_im$/ ) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.flat_im" );
-    my $rulesfile = $self->find_file("rules.flat_im");
-    $self->{FlatIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-
-  return $self->{FlatIndex};
-}
-
-sub flatindex_sp {
-  my $self = shift;
-
-  if( @_ ) { $self->{FlatIndex} = shift; }
-
-  if( !defined( $self->{FlatIndex} ) ||
-      $self->{FlatIndex}->indexfile !~ /_sp$/ ) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.flat_sp" );
-    my $rulesfile = $self->find_file("rules.flat_sp");
-    $self->{FlatIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-
-  return $self->{FlatIndex};
+  return $self->chooseindex( "flat", 0, @_ );
 }
 
 =item B<skyindex>
@@ -158,11 +118,9 @@ Uses F<rules.sky_im> and <rules.sky_sp>
 
 =cut
 
-
 sub skyindex {
   my $self = shift;
-  my $index = $self->SUPER::skyindex;
-  $self->_set_index_rules($index, 'rules.sky_im', 'rules.sky_sp');
+  return $self->chooseindex( "sky", 0, @_ );
 }
 
 =back
@@ -171,47 +129,61 @@ sub skyindex {
 
 =over 4
 
-=item B<_set_index_rules>
+=item B<chooseindex>
 
-Internal method to modify the state of an index object to reflect
-the camera mode of Michelle or UIST.
+Given a key root and knowledge that this is imaging or spectroscopy, choose
+the correct index file. The key root should correspond to the names of
+the index and rules files.
 
-  $Cal->_set_index_rules($index, $imaging_rules, $spec_rules);
+  $index = $Cal->choosindex( "flat" );
 
-ORAC_DATA_CAL is prepended if no path is provided.
+A second argument, if true, indicates that a pre-existing index file
+can be copied from the calibration directory. If false it will just
+define the index file to exist in the data directory.
 
-Returns the index object.
+  $index = $Cal->chooseindex( "flat", 1 );
+
+Optionally can be given an index to store. It will be cached in the
+correct slot.
+
+  $index = $Cal->chooseindex( "flat", 1, $index );
+
+In the latter case all 3 arguments must be provided.
 
 =cut
 
-sub _set_index_rules {
-
+sub chooseindex {
   my $self = shift;
-  my $index = shift;
-  my $im = shift;
-  my $sp = shift;
+  my $root = shift;
+  my $docopy = shift;
 
-  # Prefix ORAC_DATA_CAL if required
-  # This is non-portable (kluge)
-  $im = $self->find_file($im)
-    unless $im =~ /\//;
-  $sp = $self->find_file($sp)
-    unless $sp =~ /\//;
-
-  # Get the current name of the rules file in case we don't need to
-  # update it
-  my $current = $index->indexrulesfile;
-
-  # Now change the rules file
-  if ($self->is_imaging_mode) {
-    $index->indexrulesfile($im)
-      unless $im eq $current;
+  # Choose the correct slot and correct rules/index root
+  my $key = ucfirst($root);
+  my $indrul = $root;
+  if ($self->is_imaging_mode() ) {
+    $key .= "ImagingIndex";
+    $indrul .= "_im";
   } else {
-    $index->indexrulesfile($sp)
-      unless $sp eq $current;
+    $key .= "SpectroscopyIndex";
+    $indrul .= "_sp";
   }
-  # and return the object
-  return $index;
+
+  # Store any supplied argument
+  if (@_) {
+    $self->{$key} = shift;
+  }
+
+  # Now create one if required
+  if (!defined $self->{$key}) {
+    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.$indrul" );
+    if( $docopy && ! -e $indexfile ) {
+      copy( $self->find_file( "index.mask_im" ), $indexfile );
+    }
+    my $rulesfile = $self->find_file("rules.$indrul");
+    $self->{$key} = new ORAC::Index( $indexfile, $rulesfile );
+  }
+
+  return $self->{$key};
 }
 
 =back

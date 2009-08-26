@@ -23,8 +23,7 @@ ORAC::Calib::IRIS2;
 This module contains methods for specifying IRIS2-specific calibration
 objects. It provides a class derived from ORAC::Calib::ImagSpec.  All the
 methods available to ORAC::Calib::ImagSpec objects are available to
-ORAC::Calib::IRIS2 objects. Written for Michelle and adpated for UIST
-and IRIS2.
+ORAC::Calib::IRIS2 objects.
 
 =cut
 
@@ -32,16 +31,10 @@ use Carp;
 use warnings;
 use strict;
 
-use ORAC::Print;
-
-use File::Spec;
-use File::Copy;
-
 use base qw/ORAC::Calib::ImagSpec/;
 
 use vars qw/$VERSION/;
 $VERSION = '1.0';
-
 
 =head1 METHODS
 
@@ -64,66 +57,7 @@ is run.
 
 sub maskindex {
   my $self = shift;
-
-  if (@_) { $self->{MaskIndex} = shift; }
-
-  # Switch on observation mode.
-  if( $self->thingtwo->{ORAC_OBSERVATION_MODE} =~ /spectroscopy/ ) {
-    $self->maskindex_sp( $self->{MaskIndex} );
-  } else {
-    $self->maskindex_im( $self->{MaskIndex} );
-  }
-
-  return $self->{MaskIndex};
-
-};
-
-sub maskindex_im {
-  my $self = shift;
-
-  if( @_ ) { $self->{MaskIndex} = shift; }
-
-  if( ! defined( $self->{MaskIndex} ) ||
-      $self->{MaskIndex}->indexfile !~ /_im$/ ) {
-
-    # Copy the index file from ORAC_DATA_CAL into ORAC_DATA_OUT,
-    # unless it already exists there. Then use the one in
-    # ORAC_DATA_OUT.
-    if( ! -e File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.mask_im" ) ) {
-      copy( $self->find_file( "index.mask_im" ),
-            File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.mask_im" ) );
-    }
-    my $indexfile = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.mask_im" );
-    my $rulesfile = $self->find_file( "rules.mask_im" );
-
-    $self->{MaskIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-
-  return $self->{MaskIndex};
-}
-
-sub maskindex_sp {
-  my $self = shift;
-
-  if( @_ ) { $self->{MaskIndex} = shift; }
-
-  if( ! defined( $self->{MaskIndex} ) ||
-      $self->{MaskIndex}->indexfile !~ /_sp$/ ) {
-
-    # Copy the index file from ORAC_DATA_CAL into ORAC_DATA_OUT,
-    # unless it already exists there. Then use the one in
-    # ORAC_DATA_OUT.
-    if( ! -e File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.mask_sp" ) ) {
-      copy( $self->find_file( "index.mask_sp" ),
-            File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.mask_sp" ) );
-    }
-    my $indexfile = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.mask_sp" );
-    my $rulesfile = $self->find_file( "rules.mask_sp" );
-
-    $self->{MaskIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-
-  return $self->{MaskIndex};
+  return $self->chooseindex( "mask", 0, @_ );
 }
 
 =back
