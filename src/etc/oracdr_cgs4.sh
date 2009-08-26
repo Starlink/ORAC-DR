@@ -103,45 +103,23 @@
 
 #-
 
+export ORAC_INSTRUMENT='CGS4'
 
+# Set the UT date.
+oracut=`csh ${ORAC_DIR}/etc/oracdr_set_ut.csh $1`
 
-# orac things
-if test -z "$ORAC_DATA_ROOT"; then
-    export ORAC_DATA_ROOT=/ukirtdata
+# Find Perl.
+starperl=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
+
+# Run initialization.
+orac_env_setup=`$starperl ${ORAC_DIR}/etc/setup_oracdr_env.pl bash $oracut`
+if test ! $?; then
+  echo "hello"
+  exit 255
 fi
+eval $orac_env_setup
 
-if test -z "$ORAC_CAL_ROOT"; then
-    export ORAC_CAL_ROOT=/jac_sw/oracdr_cal
-fi
-
-if ! test -z "$ORAC_RECIPE_DIR"; then
-    echo "Warning: resetting ORAC_RECIPE_DIR"
-    unset ORAC_RECIPE_DIR
-fi
-
-if ! test -z "$ORAC_PRIMITIVE_DIR"; then
-    echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unset ORAC_PRIMITIVE_DIR
-fi
-
-
-if test ! -z "$1"; then
-    oracut=$1
-else
-    oracut=`\date -u +%Y%m%d`
-fi
-
-export oracdr_args="-ut $oracut -grptrans"
-
-export ORAC_INSTRUMENT=CGS4
-export ORAC_DATA_IN=$ORAC_DATA_ROOT/raw/cgs4/$oracut
-export ORAC_DATA_OUT=$ORAC_DATA_ROOT/reduced/cgs4/$oracut
-export ORAC_DATA_CAL=$ORAC_CAL_ROOT/cgs4
-
-# screen things
-export ORAC_PERSON=bradc
-export ORAC_LOOP=flag
-export ORAC_SUN=230
+oracdr_args="-ut $oracut -grptrans"
 
 # Source general alias file and print welcome screen
 . $ORAC_DIR/etc/oracdr_start.sh
