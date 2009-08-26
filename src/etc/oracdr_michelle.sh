@@ -71,52 +71,29 @@
 
 #-
 
-# ORAC things.
-# ===========
-
-# Define root directories of data and calibration source.
-    if !( $?ORAC_DATA_ROOT ); then
-       export ORAC_DATA_ROOT=/ukirtdata
-    fi
-
-    if !( $?ORAC_CAL_ROOT ); then
-       export ORAC_CAL_ROOT=/jac_sw/oracdr_cal
-    fi
-
-# Remove private source directories from code search paths.
-    if ( $?ORAC_RECIPE_DIR ); then
-       echo "Warning: resetting ORAC_RECIPE_DIR"
-       unset ORAC_RECIPE_DIR
-    fi
-
-    if ( $?ORAC_PRIMITIVE_DIR ); then
-       echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-       unset ORAC_PRIMITIVE_DIR
-    fi
+export ORAC_INSTRUMENT='IRCAM2'
 
 # Set the UT date.
-if test ! -z "$1"; then
-       oracut=$1
-    else
-       oracut=`\date -u +%Y%m%d`
-    fi
+oracut=`csh ${ORAC_DIR}/etc/oracdr_set_ut.csh $1`
 
-    export oracdr_args="-ut $oracut"
+# Find Perl.
+starperl=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
 
-# Define input and output data, and calibration directories.
-    export ORAC_INSTRUMENT=MICHELLE
-    export ORAC_DATA_IN=$ORAC_DATA_ROOT/raw/michelle/$oracut
-    export ORAC_DATA_OUT=$ORAC_DATA_ROOT/reduced/michelle/$oracut
-    export ORAC_DATA_CAL=$ORAC_CAL_ROOT/michelle
+# Run initialization.
+orac_env_setup=`$starperl ${ORAC_DIR}/etc/setup_oracdr_env.pl bash $oracut`
+if test ! $?; then
+  echo "hello"
+  exit 255
+fi
+eval $orac_env_setup
 
-# Define screen environment variables.
-    export ORAC_PERSON=mjc
-    export ORAC_LOOP=flag
-    export ORAC_SUN=232,236
+oracdr_args="-ut $oracut -grptrans"
 
-# Source general alias file and print welcome screen.
-    . $ORAC_DIR/etc/oracdr_start.sh
+# Source general alias file and print welcome screen
+. $ORAC_DIR/etc/oracdr_start.sh
 
-# Tidy up.
-    unset oracut
-    unset oracdr_args
+# Tidy up
+unset oracut
+unset oracdr_args
+unset orac_env_setup
+unset starperl
