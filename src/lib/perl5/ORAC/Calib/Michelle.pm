@@ -20,8 +20,8 @@ ORAC::Calib::Michelle;
 =head1 DESCRIPTION
 
 This module contains methods for specifying Michelle-specific calibration
-objects. It provides a class derived from ORAC::Calib.  All the
-methods available to ORAC::Calib objects are available to
+objects. It provides a class derived from ORAC::Calib::ImagSpec.  All the
+methods available to ORAC::Calib::ImagSpec objects are available to
 ORAC::Calib::UKIRT objects.
 
 =cut
@@ -47,27 +47,11 @@ $VERSION = '1.0';
 
 =over 4
 
-
 =back
 
 =head2 Accessor Methods
 
 =over 4
-
-=item B<flatindex>
-
-Uses F<rules.flat_im> and <rules.flat_sp>
-
-But indexfile is "index.flat".
-
-=cut
-
-
-sub flatindex {
-  my $self = shift;
-  my $index = $self->SUPER::flatindex;
-  $self->_set_index_rules($index, 'rules.flat_im', 'rules.flat_sp');
-}
 
 =item B<emisname>
 

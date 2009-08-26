@@ -20,9 +20,9 @@ ORAC::Calib::NACO;
 =head1 DESCRIPTION
 
 This module contains methods for specifying NACO-specific calibration
-objects.  It provides a class derived from ORAC::Calib.  All the
-methods available to ORAC::Calib objects are available to
-ORAC::Calib::UKIRT objects.  Written for Michelle and adapted for NACO.
+objects.  It provides a class derived from ORAC::Calib::ImagSpec.  All the
+methods available to ORAC::Calib::ImageSpec objects are available to
+ORAC::Calib::NACO objects.
 
 =cut
 
@@ -30,42 +30,10 @@ use Carp;
 use warnings;
 use strict;
 
-use ORAC::Print;
-
-use File::Spec;
-
 use base qw/ORAC::Calib::ImagSpec/;
 
 use vars qw/$VERSION/;
-$VERSION = '1.0';
-
-
-=head1 METHODS
-
-=head2 Index and Rules files
-
-For NACO some of the rules files are keyed on the current value of
-the CAMERA FITS header item.  This sub-class automatically changes the
-rules file of the underlying index object.
-
-=over 4
-
-=item B<flatindex>
-
-Uses F<rules.flat_im> and <rules.flat_sp>
-
-Does not use base class implementation since the index file is still
-called index.flat (as for Michelle).
-
-=cut
-
-sub flatindex {
-  my $self = shift;
-  my $index = $self->SUPER::flatindex;
-  $self->_set_index_rules($index, 'rules.flat_im', 'rules.flat_sp');
-}
-
-=back
+$VERSION = '1.01';
 
 =head1 AUTHORS
 

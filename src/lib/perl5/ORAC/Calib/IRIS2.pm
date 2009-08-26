@@ -128,29 +128,6 @@ sub maskindex_sp {
 
 =back
 
-=head2 Index and Rules files
-
-For IRIS2 some of the rules files are keyed on the current
-value of the CAMERA FITS header item. This sub-class
-automatically changes the rules file of the underlying index
-object.
-
-=over 4
-
-=item B<flatindex>
-
-Uses F<rules.flat_im> and <rules.flat_sp>
-
-=cut
-
-sub flatindex {
-  my $self = shift;
-  my $index = $self->SUPER::flatindex;
-  $self->_set_index_rules($index, 'rules.flat_im', 'rules.flat_sp');
-}
-
-=back
-
 =head2 General Methods
 
 =over 4
