@@ -25,43 +25,60 @@ if( ! defined( $ut ) ) {
   $ut = `date -u +\%Y\%m\%d`;
 }
 
+my $inst = uc( $ENV{'ORAC_INSTRUMENT'} );
+
+# Special case for WFCAM.
+if( $inst =~ /^WFCAM/ ) {
+  $inst = "WFCAM";
+}
+
+# Default ORAC_DATA_ROOT directories.
+my %dataroot = ( 'ACSIS'  => "/jcmtdata",
+                 'CGS4'   => "/ukirtdata",
+                 'IRCAM2' => "/ukirtdata",
+                 'WFCAM'  => "/ukirtdata",
+               );
+
+my $dataroot = ( defined( $ENV{'ORAC_DATA_ROOT'} ) ? $ENV{'ORAC_DATA_ROOT'} : $dataroot{$inst} );
+
 # Environment variable hash.
-my %envs = ( 'ACSIS' => { ORAC_DATA_CAL => File::Spec->catfile( $ENV{'ORAC_CAL_ROOT'}, "acsis" ),
-                          ORAC_DATA_ROOT => "/jcmtdata",
-                          ORAC_DATA_IN => File::Spec->catfile( "/jcmtdata", "raw", "acsis", "spectra", $ut ),
-                          ORAC_DATA_OUT => File::Spec->catfile( "/jcmtdata", "reduced", "acsis", "spectra", $ut ),
-                          ORAC_LOOP => 'flag',
-                          ORAC_PERSON => 'bradc',
-                          ORAC_SUN => 'xxx',
-                        },
-             'CGS4'  => { ORAC_DATA_CAL => File::Sepc->catfile( $ENV{'ORAC_CAL_ROOT'}, "cgs4" ),
-                          ORAC_DATA_ROOT => "/ukirtdata",
-                          ORAC_DATA_IN => File::Spec->catfile( "/ukirtdata", "raw", "cgs4", $ut ),
-                          ORAC_DATA_OUT => File::Spec->catfile( "/ukirtdata", "reduced", "cgs4", $ut ),
-                          ORAC_PERSON => 'bradc',
-                          ORAC_LOOP => 'flag',
-                          ORAC_SUN => '230',
-                        },
-             'WFCAM' => { ORAC_DATA_CAL => File::Spec->catfile( $ENV{'ORAC_CAL_ROOT'}, "wfcam" ),
-                          ORAC_DATA_ROOT => "/ukirtdata",
-                          ORAC_DATA_IN => File::Spec->catfile( "/ukirtdata", "raw", lc( $ENV{'ORAC_INSTRUMENT'} ), $ut ),
-                          ORAC_DATA_OUT => File::Spec->catfile( "/ukirtdata", "reduced", lc( $ENV{'ORAC_INSTRUMENT'} ), $ut ),
-                          ORAC_PERSON => 'bradc',
-                          ORAC_LOOP => 'flag',
-                          ORAC_SUN => '',
-                          HDS_MAP => 0,
-                        },
+my %envs = ( 'ACSIS'  => { ORAC_DATA_CAL => File::Spec->catfile( $ENV{'ORAC_CAL_ROOT'}, "acsis" ),
+                           ORAC_DATA_ROOT => $dataroot,
+                           ORAC_DATA_IN => File::Spec->catfile( $dataroot, "raw", "acsis", "spectra", $ut ),
+                           ORAC_DATA_OUT => File::Spec->catfile( $dataroot, "reduced", "acsis", "spectra", $ut ),
+                           ORAC_LOOP => 'flag',
+                           ORAC_PERSON => 'bradc',
+                           ORAC_SUN => 'xxx',
+                         },
+             'CGS4'   => { ORAC_DATA_CAL => File::Spec->catfile( $ENV{'ORAC_CAL_ROOT'}, "cgs4" ),
+                           ORAC_DATA_ROOT => $dataroot,
+                           ORAC_DATA_IN => File::Spec->catfile( $dataroot, "raw", "cgs4", $ut ),
+                           ORAC_DATA_OUT => File::Spec->catfile( $dataroot, "reduced", "cgs4", $ut ),
+                           ORAC_PERSON => 'bradc',
+                           ORAC_LOOP => 'flag',
+                           ORAC_SUN => '230',
+                         },
+             'IRCAM2' => { ORAC_DATA_CAL => File::Spec->catfile( $ENV{'ORAC_CAL_ROOT'}, "ircam" ),
+                           ORAC_DATA_ROOT => $dataroot,
+                           ORAC_DATA_IN => File::Spec->catfile( $dataroot, "raw", "ircam", $ut ),
+                           ORAC_DATA_OUT => File::Spec->catfile( $dataroot, "reduced", "ircam", $ut ),
+                           ORAC_PERSON => 'mjc',
+                           ORAC_LOOP => 'flag',
+                           ORAC_SUN => '232',
+                         }
+             'WFCAM'  => { ORAC_DATA_CAL => File::Spec->catfile( $ENV{'ORAC_CAL_ROOT'}, "wfcam" ),
+                           ORAC_DATA_ROOT => $dataroot,
+                           ORAC_DATA_IN => File::Spec->catfile( $dataroot, "raw", lc( $ENV{'ORAC_INSTRUMENT'} ), $ut ),
+                           ORAC_DATA_OUT => File::Spec->catfile( $dataroot, "reduced", lc( $ENV{'ORAC_INSTRUMENT'} ), $ut ),
+                           ORAC_PERSON => 'bradc',
+                           ORAC_LOOP => 'flag',
+                           ORAC_SUN => '',
+                           HDS_MAP => 0,
+                         },
            );
 
 # List of instrument-agnostic variables to send back.
 my @orac_envs = qw/ ORAC_CAL_ROOT ORAC_PERL5LIB /;
-
-my $inst = uc( $ENV{'ORAC_INSTRUMENT'} );
-
-# Special-case for WFCAM.
-if( $inst =~ /^WFCAM/ ) {
-  $inst = "WFCAM";
-}
 
 # Print out the environment variable settings.
 foreach my $env ( keys %{$envs{$inst}} ) {
