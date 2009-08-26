@@ -36,7 +36,7 @@
 #        is derived from this variable by adding the appropriate
 #        value of $ORAC_INSTRUMENT. In this case $ORAC_DATA_CAL
 #        is set to $ORAC_CAL_ROOT/wfcam. If ORAC_CAL_ROOT is not
-#        defined it defaults to "/jac_sw/oracdr_cal".
+#        defined it defaults to "$ORAC_DIR/../cal".
 
 
 #  Examples:
@@ -62,123 +62,42 @@
 #     Brad Cavanagh (b.cavanagh@jach.hawaii.edu)
 #     {enter_new_authors_here}
 
-#  History:
-#     $Log$
-#     Revision 1.12  2006/11/15 20:18:17  bradc
-#     set PERL5LIB to point to ukirt_sw for CIRDR stuff
-#
-#     Revision 1.11  2006/11/15 20:00:48  bradc
-#     change ukirt_sw and/or jcmt_sw to jac_sw
-#
-#     Revision 1.10  2006/10/28 01:37:40  bradc
-#     set PERL5LIB for CASU code
-#
-#     Revision 1.9  2006/10/23 18:59:40  bradc
-#     set RTD_REMOTE_DIR back to be the same as ORAC_DATA_OUT
-#
-#     Revision 1.8  2006/10/03 00:20:06  bradc
-#     replaced with ex-SWFCAM version
-#
-#     Revision 1.5  2006/07/21 02:09:08  bradc
-#     set RTD_REMOTE_DIR to $ORAC_DATA_OUT/.., create ORAC_DATA_OUT directory if it does not exist and we are being run on a wfdr machine
-#
-#     Revision 1.4  2004/11/12 01:22:02  phirst
-#      setenv RTD_REMOTE_DIR and HDS_MAP
-#
-#     Revision 1.3  2004/11/10 02:31:49  bradc
-#     ORAC_DATA_CAL is in wfcam, not wfcam now
-#
-#     Revision 1.2  2004/11/06 01:08:26  bradc
-#     set ORAC_INSTRUMENT to WFCAMn
-#
-#     Revision 1.1  2004/09/14 21:17:37  bradc
-#     initial addition for WFCAM
-#
-#     Revision 1.2  2004/05/05 11:38:57  jrl
-#     Modified to add ORAC_DATA_CASU definition and a small tidy
-#
-#     Revision 1.1  2003/06/30 09:43:05  jrl
-#     initial entry into CVS
-#
-#     Revision 1.1  2003/01/22 11:54:49  jrl
-#     Initial Entry
-#
-#
-#     21 Jan 2003 (jrl)
-#        Original Version based on oracdr_wfcam.csh
-
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 1998-2002 Particle Physics and Astronomy Research
-#     Council. All Rights Reserved.
+#     Council. 2009 Science and Technology Facilities Council. All
+#     Rights Reserved.
 
 #-
 
+setenv ORAC_INSTRUMENT WFCAM4
 
+# Set the UT date.
+set oracut=`${ORAC_DIR}/etc/oracdr_set_ut.csh $1`
 
-# orac things
-if !($?ORAC_DATA_ROOT) then
-    setenv ORAC_DATA_ROOT /ukirtdata
+# Find Perl.
+set starperl=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
+
+# Run initialization.
+set orac_env_setup=`$starperl ${ORAC_DIR}/etc/setup_oracdr_env.pl csh $oracut`
+if ( $? != 0 ) then
+  echo "**** ERROR IN setup_oracdr_env.pl ****"
+  exit 255
 endif
-
-if !($?ORAC_CAL_ROOT) then
-    setenv ORAC_CAL_ROOT /jac_sw/oracdr_cal
-endif
-
-if ($?ORAC_RECIPE_DIR) then
-    echo "Warning: resetting ORAC_RECIPE_DIR"
-    unsetenv ORAC_RECIPE_DIR
-endif
-
-if ($?ORAC_PRIMITIVE_DIR) then
-    echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unsetenv ORAC_PRIMITIVE_DIR
-endif
-
-
-if ($1 != "") then
-    set oracut = $1
-else
-    set oracut = `\date -u +%Y%m%d`
-endif
+eval $orac_env_setup
 
 set oracdr_args = "-ut $oracut -grptrans"
 
-setenv ORAC_INSTRUMENT WFCAM4
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/wfcam4/$oracut
-setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/wfcam4/$oracut
-setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/wfcam
+# Create WFCAM output data directory if necessary.
+source $ORAC_DIR/etc/create_wfcam_dir.csh
 
-# some other things
-setenv HDS_MAP 0
-
-# Determine the host, and if we're on a wfdr machine, create
-# $ORAC_DATA_OUT if it doesn't already exist.
-set hostname = `/bin/hostname`
-if( $hostname == "wfdr1" || $hostname == "wfdr2" || $hostname == "wfdr3" || $hostname == "wfdr4" ) then
-    if( ! -d ${ORAC_DATA_OUT} ) then
-        mkdir $ORAC_DATA_OUT
-    endif
-endif
-
-# Set the RTD_REMOTE_DIR environment variable, but only if the
-# directory actually exists.
-if ( -e $ORAC_DATA_OUT/.. ) then
-  setenv ORAC_RESPECT_RTD_REMOTE 1
-  setenv RTD_REMOTE_DIR $ORAC_DATA_OUT/..
-endif
-
-# screen things
-setenv ORAC_PERSON bradc
-setenv ORAC_LOOP flag
-setenv ORAC_SUN
+# Set additional WFCAM environment variables.
+source $ORAC_DIR/etc/oracdr_wfcam_env.csh
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
 
 # Tidy up
 unset oracut
+unset starperl
 unset oracdr_args
 

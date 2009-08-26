@@ -36,7 +36,7 @@
 #        is derived from this variable by adding the appropriate
 #        value of $ORAC_INSTRUMENT. In this case $ORAC_DATA_CAL
 #        is set to $ORAC_CAL_ROOT/wfcam. If ORAC_CAL_ROOT is not
-#        defined it defaults to "/jac_sw/oracdr_cal".
+#        defined it defaults to "$ORAC_DIR/../cal".
 
 
 #  Examples:
@@ -62,54 +62,10 @@
 #     Brad Cavanagh (b.cavanagh@jach.hawaii.edu)
 #     {enter_new_authors_here}
 
-#  History:
-#     $Log$
-#     Revision 1.11  2006/11/15 20:18:16  bradc
-#     set PERL5LIB to point to ukirt_sw for CIRDR stuff
-#
-#     Revision 1.10  2006/11/15 20:00:46  bradc
-#     change ukirt_sw and/or jcmt_sw to jac_sw
-#
-#     Revision 1.9  2006/10/28 01:37:40  bradc
-#     set PERL5LIB for CASU code
-#
-#     Revision 1.8  2006/10/23 18:59:39  bradc
-#     set RTD_REMOTE_DIR back to be the same as ORAC_DATA_OUT
-#
-#     Revision 1.7  2006/10/03 00:20:06  bradc
-#     replaced with ex-SWFCAM version
-#
-#     Revision 1.4  2006/07/21 02:09:08  bradc
-#     set RTD_REMOTE_DIR to $ORAC_DATA_OUT/.., create ORAC_DATA_OUT directory if it does not exist and we are being run on a wfdr machine
-#
-#     Revision 1.3  2004/11/12 01:22:02  phirst
-#      setenv RTD_REMOTE_DIR and HDS_MAP
-#
-#     Revision 1.2  2004/11/10 02:31:49  bradc
-#     ORAC_DATA_CAL is in wfcam, not wfcam now
-#
-#     Revision 1.1  2004/09/14 21:17:37  bradc
-#     initial addition for WFCAM
-#
-#     Revision 1.2  2004/05/05 11:38:57  jrl
-#     Modified to add ORAC_DATA_CASU definition and a small tidy
-#
-#     Revision 1.1  2003/06/30 09:43:05  jrl
-#     initial entry into CVS
-#
-#     Revision 1.1  2003/01/22 11:54:49  jrl
-#     Initial Entry
-#
-#
-#     21 Jan 2003 (jrl)
-#        Original Version based on oracdr_wfcam.csh
-
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 1998-2002 Particle Physics and Astronomy Research
-#     Council. All Rights Reserved.
+#     Council. 2009 Science and Technology Facilities Council. All
+#     Rights Reserved.
 
 #-
 
