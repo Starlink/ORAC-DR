@@ -92,7 +92,7 @@
 
 #-
 
-setenv ORAC_INSTRUMENT IRCAM2
+setenv ORAC_INSTRUMENT UFTI
 
 # Set the UT date.
 set oracut=`${ORAC_DIR}/etc/oracdr_set_ut.csh $1`
