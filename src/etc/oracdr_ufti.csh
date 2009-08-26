@@ -92,45 +92,23 @@
 
 #-
 
+setenv ORAC_INSTRUMENT IRCAM2
 
+# Set the UT date.
+set oracut=`${ORAC_DIR}/etc/oracdr_set_ut.csh $1`
 
-# orac things
-if !($?ORAC_DATA_ROOT) then
-    setenv ORAC_DATA_ROOT /ukirtdata
+# Find Perl.
+set starperl=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
+
+# Run initialization.
+set orac_env_setup=`$starperl ${ORAC_DIR}/etc/setup_oracdr_env.pl csh $oracut`
+if ( $? != 0 ) then
+  echo "**** ERROR IN setup_oracdr_env.pl ****"
+  exit 255
 endif
-
-if !($?ORAC_CAL_ROOT) then
-    setenv ORAC_CAL_ROOT /jac_sw/oracdr_cal
-endif
-
-if ($?ORAC_RECIPE_DIR) then
-    echo "Warning: resetting ORAC_RECIPE_DIR"
-    unsetenv ORAC_RECIPE_DIR
-endif
-
-if ($?ORAC_PRIMITIVE_DIR) then
-    echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unsetenv ORAC_PRIMITIVE_DIR
-endif
-
-
-if ($1 != "") then
-    set oracut = $1
-else
-    set oracut = `\date -u +%Y%m%d`
-endif
+eval $orac_env_setup
 
 set oracdr_args = "-ut $oracut -grptrans"
-
-setenv ORAC_INSTRUMENT UFTI2
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/ufti/$oracut/
-setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/ufti/$oracut/
-setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/ufti
-
-# screen things
-setenv ORAC_PERSON bradc
-setenv ORAC_LOOP flag
-setenv ORAC_SUN  232
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
@@ -138,3 +116,5 @@ source $ORAC_DIR/etc/oracdr_start.csh
 # Tidy up
 unset oracut
 unset oracdr_args
+unset starperl
+unset orac_env_setup
