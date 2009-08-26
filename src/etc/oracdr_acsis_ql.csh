@@ -3,20 +3,20 @@
 #     oracdr_acsis
 
 #  Purpose:
-#     Initialise ORAC-DR environment for use with ACSIS at JCMT.
+#     Initialise ORAC-DR environment for use with ACSIS
 
 #  Language:
 #     C-shell script
 
 #  Invocation:
-#     source ${ORAC_DIR}/etc/oracdr_acsis_ql.csh
+#     source ${ORAC_DIR}/etc/oracdr_acsis.csh
 
 #  Description:
 #     This script initialises the environment variables and command
-#     aliases required to run the ORAC-DR pipeline with ACSIS data in
-#     a quick-look fashion.  An optional argument is the UT date. This
-#     is used to configure the input and output data directories but
-#     assumes an ACSIS style directory configuration.
+#     aliases required to run the ORAC-DR pipeline with ACSIS data.
+#     An optional argument is the UT date. This is used to configure
+#     the input and output data directories but assumes an ACSIS
+#     style directory configuration.
 
 #  ADAM Parameters:
 #     UT = INTEGER (Given)
@@ -52,13 +52,15 @@
 #     may have to be set manually after this command is issued.
 #     - aliases are set in the oracdr_start.csh script sourced by
 #     this routine.
-
+ 
+ 
 #  Authors:
 #     Tim Jenness (t.jenness@jach.hawaii.edu)
 #     Frossie Economou (frossie@jach.hawaii.edu)
 #     Brad Cavanagh (b.cavanagh@jach.hawaii.edu)
 #     {enter_new_authors_here}
-
+ 
+#  History:
 #     07-JUN-2004 (BRADC):
 #        Initial import
 #     27-OCT-2006 (BRADC):
@@ -76,30 +78,39 @@
 #        set ORAC_DATA_IN to spectra directory
 #     04-MAY-2007 (TIMJ):
 #        Use of /sbin/ip is non-portable
-
+ 
 #  Revision:
 #     $Id$
-
+ 
 #  Copyright:
 #     Copyright (C) 1998-2004,2006 Particle Physics and Astronomy Research
 #     Council. Copyright (C) 2007 Science and Technology Facilities
 #     Council. All Rights Reserved.
-
+ 
 #-
 
-# Run basic ACSIS setup.
-source $ORAC_DIR/etc/oracdr_acsis_basic.csh $1
+setenv ORAC_INSTRUMENT ACSIS
+
+# Set the UT date.
+set oracut=`${ORAC_DIR}/etc/oracdr_set_ut.csh $1`
+
+# Find Perl.
+set starperl=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
+
+# Run initialization.
+set orac_env_setup=`$starperl ${ORAC_DIR}/etc/setup_oracdr_env.pl csh $oracut`
+if ( $? != 0 ) then
+  echo "**** ERROR IN setup_oracdr_env.pl ****"
+  exit 255
+endif
+eval $orac_env_setup
 
 set oracdr_args = "-ut $oracut -recsuffix QL"
 
-# Check to see if we're at JCMT. If we are, then create the
-# ORAC_DATA_OUT directory.
-source $ORAC_DIR/etc/create_jcmt_dir.csh
-
-# Source general alias file and print welcome screen
+# Run oracdr_start.
 source $ORAC_DIR/etc/oracdr_start.csh
 
-# Tidy up
-unset oracut
 unset oracdr_args
-unset orachost
+unset oracut
+unset starperl
+unset orac_env_setup

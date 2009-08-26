@@ -89,4 +89,5 @@ oracdr_args="-ut $oracut"
 # Tidy up
 unset oracut
 unset oracdr_args
-unset oracut
+unset starperl
+unset orac_env_setup

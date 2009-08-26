@@ -113,3 +113,4 @@ source $ORAC_DIR/etc/oracdr_start.csh
 unset oracdr_args
 unset oracut
 unset starperl
+unset orac_env_setup

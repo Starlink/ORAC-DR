@@ -3,13 +3,13 @@
 #     oracdr_acsis
 
 #  Purpose:
-#     Initialise ORAC-DR environment for use with ACSIS at JCMT.
+#     Initialise ORAC-DR environment for use with ACSIS
 
 #  Language:
 #     C-shell script
 
 #  Invocation:
-#     source ${ORAC_DIR}/etc/oracdr_acsis_summit.csh
+#     source ${ORAC_DIR}/etc/oracdr_acsis.csh
 
 #  Description:
 #     This script initialises the environment variables and command
@@ -89,19 +89,28 @@
  
 #-
 
-# Run basic ACSIS setup.
-source $ORAC_DIR/etc/oracdr_acsis_basic.csh $1
+setenv ORAC_INSTRUMENT ACSIS
+
+# Set the UT date.
+set oracut=`${ORAC_DIR}/etc/oracdr_set_ut.csh $1`
+
+# Find Perl.
+set starperl=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
+
+# Run initialization.
+set orac_env_setup=`$starperl ${ORAC_DIR}/etc/setup_oracdr_env.pl csh $oracut`
+if ( $? != 0 ) then
+  echo "**** ERROR IN setup_oracdr_env.pl ****"
+  exit 255
+endif
+eval $orac_env_setup
 
 set oracdr_args = "-ut $oracut -recsuffix SUMMIT"
 
-# Check to see if we're at JCMT. If we are, then create the
-# ORAC_DATA_OUT directory.
-source $ORAC_DIR/etc/create_jcmt_dir.csh
-
-# Source general alias file and print welcome screen
+# Run oracdr_start.
 source $ORAC_DIR/etc/oracdr_start.csh
- 
-# Tidy up
-unset oracut
+
 unset oracdr_args
-unset orachost
+unset oracut
+unset starperl
+unset orac_env_setup
