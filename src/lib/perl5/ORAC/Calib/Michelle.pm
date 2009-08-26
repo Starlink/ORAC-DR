@@ -33,12 +33,16 @@ use strict;
 use ORAC::Print;
 
 use File::Spec;
-use File::Copy;
-
 use base qw/ORAC::Calib::ImagSpec/;
 
 use vars qw/$VERSION/;
 $VERSION = '1.0';
+
+__PACKAGE__->CreateBasicAccessors(
+                                  emis => {},
+                                  # override default mask since we copy it
+                                  mask => { copyindex => 1 },
+);
 
 
 =head1 METHODS
@@ -52,20 +56,6 @@ $VERSION = '1.0';
 =head2 Accessor Methods
 
 =over 4
-
-=item B<emisname>
-
-Return (or set) the name of the current emissivity frame - no checking
-
-  $emis = $Cal->emisname;
-
-=cut
-
-sub emisname {
-  my $self = shift;
-  if( @_ ) { $self->{Emissivity} = shift unless $self->emisnoupdate; }
-  return $self->{Emissivity};
-}
 
 =item B<emis>
 
@@ -96,77 +86,22 @@ sub emis {
   }
 }
 
-=item B<emisnoupdate>
-
-Stops emissivity calibration object from updating itself with more
-recent data. Used when using a command-line override to the pipeline.
-
-=cut
-
-sub emisnoupdate {
-  my $self = shift;
-  if( @_ ) { $self->{EmissivityNoUpdate} = shift; }
-  return $self->{EmissivityNoUpdate};
-}
-
-=item B<emisindex>
-
-Return (or set) the index object associated with the emissivity index file.
-
-=cut
-
-sub emisindex {
-  my $self = shift;
-  if( @_ ) { $self->{EmissivityIndex} = shift; }
-
-  unless( defined $self->{EmissivityIndex} ) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.emis" );
-    my $rulesfile = $self->find_file("rules.emis");
-    $self->{EmissivityIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-
-  return $self->{EmissivityIndex};
-}
-
 =back
 
-=head2 General Methods
+=head2 Support Methods
 
-=over 4
+Each of the methods above has a support implementation to obtain
+the index file, current name and whether the value can be updated
+or not. For method "cal" there will be corresponding methods
+"calindex", "calname" and "calnoupdate". "calcache" is an
+allowed synonym for "calname".
 
-=item B<maskindex>
+  $current = $Cal->calcache();
+  $index = $Cal->calindex();
+  $noup = $Cal->calnoupdate();
 
-Returns the index object associated with the mask index file. The mask
-index file is date-dependant if we don't already have a mask index file
-in $ORAC_DATA_OUT.
-
-=cut
-
-sub maskindex {
-  my $self = shift;
-  if( @_ ) { $self->{MaskIndex} = shift; }
-
-  unless( defined( $self->{MaskIndex} ) ) {
-
-# Copy the index file from ORAC_DATA_CAL into ORAC_DATA_OUT, unless
-# it already exists there. Then use the one in ORAC_DATA_OUT.
-    if ( ! -e File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" ) ) {
-      copy( $self->find_file("index.mask"),
-            File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" ) );
-    }
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" );
-
-# The rules file is always in $ORAC_DATA_CAL.
-    my $rulesfile = $self->find_file("rules.mask");
-
-    $self->{MaskIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-
-  return $self->{MaskIndex};
-
-}
-
-=back
+Mask overrides base class since the reference index file must be
+read from the calibration directory.
 
 =head1 AUTHORS
 

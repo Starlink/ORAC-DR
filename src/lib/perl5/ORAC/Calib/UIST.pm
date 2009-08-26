@@ -39,6 +39,10 @@ use base qw/ORAC::Calib::ImagSpec/;
 use vars qw/$VERSION/;
 $VERSION = '1.0';
 
+__PACKAGE__->CreateBasicAccessors(
+                                  ifuprofile => { staticindex => 1 },
+                                  offset => {},
+);
 
 =head1 METHODS
 
@@ -72,54 +76,6 @@ sub ifuprofile {
   }
 }
 
-=item B<ifuprofileindex>
-
-=cut
-
-sub ifuprofileindex {
-  my $self = shift;
-  if( @_ ) {
-    $self->{IFUProfileIndex} = shift;
-  }
-
-  if( ! defined( $self->{IFUProfileIndex} ) ) {
-    my $indexfile = $self->find_file( "index.ifuprofile" );
-    my $rulesfile = $self->find_file( "rules.ifuprofile" );
-
-    $self->{IFUProfileIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-
-  return $self->{IFUProfileIndex};
-}
-
-=item B<ifuprofilename>
-
-=cut
-
-sub ifuprofilename {
-  my $self = shift;
-  if( @_ ) {
-    $self->{IFUProfile} = shift;
-  }
-  return $self->{IFUProfile};
-}
-
-=item B<offsetval>
-
-Return (or set) the current offset value - no checking
-
-  $iar = $Cal->offset;
-
-
-=cut
-
-sub offsetval {
-  my $self = shift;
-  if (@_) { $self->{Offset} = shift; }
-  return $self->{Offset};
-}
-
-
 =item B<offset>
 
 Returns the appropriate y-offset value.
@@ -131,13 +87,13 @@ sub offset {
 
   my $self = shift;
   if (@_) {
-    return $self->offsetval(shift);
+    return $self->offsetcache(shift);
   };
 
-  my $ok = $self->offsetindex->verify($self->offsetval,$self->thing);
+  my $ok = $self->offsetindex->verify($self->offsetcache,$self->thing);
 
   # happy ending
-  return $self->offsetval if $ok;
+  return $self->offsetcache if $ok;
 
   if (defined $ok) {
     my $offset = $self->offsetindex->choosebydt('ORACTIME',$self->thing);
@@ -148,7 +104,7 @@ sub offset {
     }
 
     # Store the good value
-    $self->offsetval($offset);
+    $self->offsetcache($offset);
 
   } else {
     # All fall down....
@@ -156,34 +112,19 @@ sub offset {
   }
 }
 
-
-
-=item B<offsetindex>
-
-Returns the index object associated with the offset values. 
-
-=cut
-
-sub offsetindex {
-    my $self = shift;
-    if (@_) { $self->{OffsetIndex} = shift; }
-    
-    unless (defined $self->{OffsetIndex}) {
-        my $indexfile = "index.offset";
-        my $rulesfile = $self->find_file("rules.offset");
-        $self->{OffsetIndex} = new ORAC::Index($indexfile,$rulesfile);
-    }
-
-    return $self->{OffsetIndex}; 
-}
-
-
-
 =back
 
-=head1 REVISION
+=head2 Support Methods
 
-$Id$
+Each of the methods above has a support implementation to obtain
+the index file, current name and whether the value can be updated
+or not. For method "cal" there will be corresponding methods
+"calindex", "calname" and "calnoupdate". "calcache" is an
+allowed synonym for "calname".
+
+  $current = $Cal->calcache();
+  $index = $Cal->calindex();
+  $noup = $Cal->calnoupdate();
 
 =head1 AUTHORS
 

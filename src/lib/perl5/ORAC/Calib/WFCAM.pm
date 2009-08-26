@@ -34,169 +34,17 @@ use base qw/ ORAC::Calib::Imaging /;
 use vars qw/ $VERSION /;
 $VERSION = '1.0';
 
+__PACKAGE__->CreateBasicAccessors(
+                                  interleavemask => { staticindex => 1 },
+                                  skyflat => {},
+                                  # override base mask implementations
+                                  mask => { staticindex => 1 },
+                                  sky => {staticindex => 1 },
+);
+
 =head1 METHODS
 
 The following methods are available:
-
-=head2 Constructor
-
-=over 4
-
-=item B<new>
-
-Sub-classed constructor. Adds knowledge of interleave mask and bad
-pixel mask.
-
-  my $Cal = new ORAC::Calib::WFCAM;
-
-=cut
-
-sub new {
-  my $self = shift;
-  my $obj = $self->SUPER::new(@_);
-
-# Assumes we have a hash object.
-  $obj->{InterleaveMask} = undef;
-  $obj->{InterleaveMaskIndex} = undef;
-  $obj->{InterleaveMaskNoUpdate} = 0;
-  $obj->{SkyFlat} = undef;
-  $obj->{SkyFlatIndex} = undef;
-  $obj->{SkyFlatNoUpdate} = 0;
-
-  return $obj;
-}
-
-=back
-
-=head2 Accessors
-
-=over 4
-
-=item B<interleavemaskname>
-
-Return (or set) the mask used in the interleaving process.
-
-  $interleavemask = $Cal->interleavemaskname;
-
-=cut
-
-sub interleavemaskname {
-  my $self = shift;
-
-  if( @_ ) { $self->{InterleaveMask} = shift unless $self->interleavemasknoupdate; }
-  return $self->{InterleaveMask};
-}
-
-=item B<skyflatname>
-
-Return (or set) the skyflat used.
-
-  $skyflat = $Cal->skyflatname;
-
-=cut
-
-sub skyflatname {
-  my $self = shift;
-
-  if( @_ ) { $self->{SkyFlat} = shift unless $self->skyflatnoupdate; }
-  return $self->{SkyFlat};
-}
-
-=item B<interleavemaskindex>
-
-Return or set the index object associated with the interleave mask.
-
-  $index = $Cal->interleavemaskindex;
-
-An index object is created automatically the first time this method
-is run.
-
-=cut
-
-sub interleavemaskindex {
-  my $self = shift;
-  if ( @_ ) { $self->{InterleaveMaskIndex} = shift; }
-  unless ( defined $self->{InterleaveMaskIndex} ) {
-    my $indexfile = $self->find_file("index.interleavemask");
-    my $rulesfile = $self->find_file("rules.interleavemask");
-    $self->{InterleaveMaskIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-  return $self->{InterleaveMaskIndex};
-}
-
-=item B<maskindex>
-
-Return or set the index object associated with the bad pixel mask.
-
-  $index = $Cal->maskindex;
-
-An index object is created automatically the first time this method
-is run.
-
-=cut
-
-sub maskindex {
-  my $self = shift;
-
-  if (@_) { $self->{MaskIndex} = shift; }
-  unless ( defined $self->{MaskIndex} ) {
-    my $indexfile = $self->find_file("index.mask");
-    my $rulesfile = $self->find_file("rules.mask");
-    $self->{MaskIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-  return $self->{MaskIndex};
-}
-
-=item B<skyflatindex>
-
-Return or set the index object associated with the skyflat.
-
-  $index = $Cal->skyflatindex;
-
-An index object is created automatically the first time this method is
-run.
-
-=cut
-
-sub skyflatindex {
-  my $self = shift;
-
-  if( @_ ) { $self->{SkyFlatIndex} = shift; }
-  unless( defined( $self->{SkyFlatIndex} ) ) {
-    my $indexfile = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.skyflat" );
-    my $rulesfile = $self->find_file( "rules.skyflat" );
-    $self->{SkyFlatIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-  return $self->{SkyFlatIndex};
-}
-
-=item B<interleavemasknoupdate>
-
-Stops object from updating itself with more recent data.
-Used when overriding the interleave mask from the commandline.
-
-=cut
-
-sub interleavemasknoupdate {
-  my $self = shift;
-  if( @_ ) { $self->{InterleaveMaskNoUpdate} = shift; }
-  return $self->{InterleaveMaskNoUpdate};
-}
-
-=item B<skyflatnoupdate>
-
-Stos object from updating itself with more recent data. Used when
-overriding the skyflat file from the commandline.
-
-=cut
-
-sub skyflatnoupdate {
-  my $self = shift;
-  if( @_ ) { $self->{SkyFlatNoUpdate} = shift; }
-  return $self->{SkyFlatNoUpdate};
-}
-
-=back
 
 =head2 General Methods
 
@@ -370,35 +218,22 @@ sub skyflat {
   }
 }
 
-=item B<flatindex>
-
-Return or set the index for the flat.
-
-  $index = $Cal->flatindex;
-  $Cal->flatindex( $index );
-
-This method is subclassed for WFCAM to use the find_file() method to
-find the default index.flat file, so that it can be located in either
-the C<ORAC_DATA_CAL> or C<ORAC_DATA_OUT> directories.
-
-=cut
-
-sub flatindex {
-
-  my $self = shift;
-  if (@_) { $self->{FlatIndex} = shift; }
-
-  unless (defined $self->{FlatIndex}) {
-    my $indexfile = $self->find_file("index.flat");
-    my $rulesfile = $self->find_file("rules.flat");
-    $self->{FlatIndex} = new ORAC::Index($indexfile,$rulesfile);
-  }
-
-  return $self->{FlatIndex};
-
-}
-
 =back
+
+=head2 Support Methods
+
+Each of the methods above has a support implementation to obtain
+the index file, current name and whether the value can be updated
+or not. For method "cal" there will be corresponding methods
+"calindex", "calname" and "calnoupdate". "calcache" is an
+allowed synonym for "calname".
+
+  $current = $Cal->calcache();
+  $index = $Cal->calindex();
+  $noup = $Cal->calnoupdate();
+
+Additionally, "flat" and "mask" are locally modified to support
+a static index location.
 
 =head1 AUTHORS
 

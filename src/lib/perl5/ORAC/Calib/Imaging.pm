@@ -31,67 +31,21 @@ use base qw/ ORAC::Calib::OIR /;
 
 $VERSION = '1.0';
 
-# Setup the object structure
+__PACKAGE__->CreateBasicAccessors( baseshift => { isarray => 1 },
+                                   dqc => {},
+                                   polrefang => {},
+                                   referenceoffset => { isarray => 1 },
+                                   rotation => {},
+                                   skybrightness => {},
+                                   zeropoint => {} );
 
 =head1 PUBLIC METHODS
 
 The following methods are available in this class.
 
-=head2 Constructors
-
-=over 4
-
-=item B<new>
-
-Create a new instance of a ORAC::Calib::Imaging object.
-The object identifier is returned.
-
-  $Cal = new ORAC::Calib::Imaging;
-
-=cut
-
-sub new {
-
-  my $self = shift;
-  my $obj = $self->SUPER::new( @_ );
-
-  $obj->{BaseShift} = undef;
-  $obj->{DQC} = undef;
-  $obj->{PolRefAng} = undef;
-  $obj->{ReferenceOffset} = undef;
-  $obj->{Rotation} = undef;
-  $obj->{SkyBrightness} = undef;
-  $obj->{Zeropoint} = undef;
-
-  $obj->{BaseShiftIndex} = undef;
-  $obj->{DQCIndex} = undef;
-  $obj->{PolRefAngIndex} = undef;
-  $obj->{ReferenceOffsetIndex} = undef;
-  $obj->{RotationIndex} = undef;
-  $obj->{SkyBrightnessIndex} = undef;
-  $obj->{ZeropointIndex} = undef;
-
-  $obj->{BaseShiftNoUpdate} = 0;
-  $obj->{PolRefAngNoUpdate} = 0;
-  $obj->{ReferenceShiftNoUpdate} = 0;
-  $obj->{SkyBrightnessNoUpdate} = 0;
-  $obj->{ZeropointNoUpdate} = 0;
-
-  # Take no arguments at present
-  return $obj;
-
-}
-
-=back
-
 =head2 Accessor Methods
 
 =over 4
-
-=cut
-
-# Methods to access the data.
-# ---------------------------
 
 =item B<baseshift>
 
@@ -405,285 +359,19 @@ sub zeropoint {
 
 }
 
-# *name methods
-# -------------
-# Used when a file name is required.
-
-# *cache methods
-# --------------
-# Used when a value or values (rather than a file) is required.
-
-=item B<baseshiftcache>
-
-Cached value of the baseshift.  Only used when noupdate is in effect.
-
-=cut
-
-sub baseshiftcache {
-  my $self = shift;
-  my @values;
-  if ( ref($_[0]) eq 'ARRAY' ) {
-     @values = @{ $_[0] };
-  } else {
-     @values = ( $_[0] );
-  }
-                  
-  if (@_) { $self->{BaseShift} = \@values unless $self->baseshiftnoupdate; }
-  return $self->{BaseShift};
-}
-
-=item B<polrefangcache>
-
-Cached value of the angle to the polarisation reference direction.  Only
-used when noupdate is in effect.
-
-=cut
-
-sub polrefangcache {
-  my $self = shift;
-  if (@_) { $self->{PolRefAng} = shift unless $self->polrefangnoupdate; }
-  return $self->{PolRefAng};
-}
-
-=item B<referenceoffsetcache>
-
-Cached value of the referenceoffset.  Only used when noupdate is in effect.
-
-=cut
-
-sub referenceoffsetcache {
-  my $self = shift;
-  my @values;
-  if ( ref($_[0]) eq 'ARRAY' ) {
-     @values = @{ $_[0] };
-  } else {
-     @values = ( $_[0] );
-  }
-
-  if (@_) { $self->{ReferenceOffset} = \@values unless $self->referenceoffsetnoupdate; }
-  return $self->{ReferenceOffset};
-}
-
-=item B<zeropointcache>
-
-Cached value of the zeropoint.  Only used when noupdate is in effect.
-
-=cut
-
-sub zeropointcache {
-  my $self = shift;
-  if (@_) { $self->{Zeropoint} = shift unless $self->zeropointnoupdate; }
-  return $self->{Zeropoint};
-}
-
-# *noupdate methods
-# -----------------
-
-=item B<baseshiftnoupdate>
-
-Stops baseshift object from updating itself with more recent data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub baseshiftnoupdate {
-  my $self = shift;
-  if (@_) { $self->{BaseShiftNoUpdate} = shift; }
-  return $self->{BaseShiftNoUpdate};
-}
-
-=item B<polrefangnoupdate>
-
-Stops polrefang object from updating itself with more recent data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub polrefangnoupdate {
-  my $self = shift;
-  if (@_) { $self->{PolRefAngNoUpdate} = shift; }
-  return $self->{PolRefAngNoUpdate};
-}
-
-=item B<referenceoffsetnoupdate>
-
-Stops referenceoffset object from updating itself with more recent data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub referenceoffsetnoupdate {
-  my $self = shift;
-  if (@_) { $self->{ReferenceOffsetNoUpdate} = shift; }
-  return $self->{ReferenceOffsetNoUpdate};
-}
-
-=item B<skybrightnessnoupdate>
-
-Stops sky brightness object from updating itself with more recent
-data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub skybrightnessnoupdate {
-  my $self = shift;
-  if (@_) { $self->{SkyBrightnessNoUpdate} = shift; }
-  return $self->{SkyBrightnessNoUpdate};
-}
-
-=item B<zeropointnoupdate>
-
-Stops zeropoint object from updating itself with more recent data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub zeropointnoupdate {
-  my $self = shift;
-  if (@_) { $self->{ZeropointNoUpdate} = shift; }
-  return $self->{ZeropointNoUpdate};
-}
-
-# *index methods
-# --------------
-
-=item B<baseshiftindex>
-
-Return (or set) the index object associated with the baseshift index file.
-
-=cut
-
-sub baseshiftindex {
-
-  my $self = shift;
-  if (@_) { $self->{BaseShiftIndex} = shift; }
-
-  unless (defined $self->{BaseShiftIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.baseshift" );
-    my $rulesfile = $self->find_file("rules.baseshift");
-    croak "baseshift rules file could not be located\n" unless defined $rulesfile;
-    $self->{BaseShiftIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-  return $self->{BaseShiftIndex};
-}
-
-=item B<dqcindex>
-
-Return (or set) the index object associated with the data quality
-parameters index file.
-
-=cut
-
-sub dqcindex {
-
-  my $self = shift;
-  if (@_) { $self->{DQCIndex} = shift; }
-
-  unless (defined $self->{DQCIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.dqc" );
-    my $rulesfile = $self->find_file("rules.dqc");
-    croak "dqc rules file could not be located\n" unless defined $rulesfile;
-    $self->{DQCStats} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-  return $self->{DQCStats};
-
-}
-
-=item B<polrefangindex>
-
-Return (or set) the index object associated with the polrefang index file.
-The index is static, therefore it resides in the calibration directory.
-
-=cut
-
-sub polrefangindex {
-
-  my $self = shift;
-  if (@_) { $self->{PolRefAngIndex} = shift; }
-
-  unless (defined $self->{PolRefAngIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "index.polrefang" );
-    my $rulesfile = $self->find_file("rules.polrefang");
-    croak "polrefang rules file could not be located\n"
-      unless defined $rulesfile;
-    $self->{PolRefAngIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-  return $self->{PolRefAngIndex};
-}
-
-=item B<referenceoffsetindex>
-
-Return (or set) the index object associated with the referenceoffset index file.
-
-=cut
-
-sub referenceoffsetindex {
-
-  my $self = shift;
-  if (@_) { $self->{ReferenceOffsetIndex} = shift; }
-
-  unless (defined $self->{ReferenceOffsetIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.referenceoffset" );
-    my $rulesfile = $self->find_file("rules.referenceoffset");
-    croak "referenceoffset rules file could not be located\n"
-      unless defined $rulesfile;
-    $self->{ReferenceOffsetIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-  return $self->{ReferenceOffsetIndex};
-}
-
-=item B<skybrightnessindex>
-
-Return (or set) the index object associated with the sky brightness
-index file.
-
-=cut
-
-sub skybrightnessindex {
-
-  my $self = shift;
-  if (@_) { $self->{SkyBrightnessIndex} = shift; }
-
-  unless (defined $self->{SkyBrightnessIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.skybrightness" );
-    my $rulesfile = $self->find_file("rules.skybrightness");
-    $self->{SkyBrightnessIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-  return $self->{SkyBrightnessIndex};
-}
-
-=item B<zeropointindex>
-
-Return (or set) the index object associated with the zeropoint index file.
-
-=cut
-
-sub zeropointindex {
-
-  my $self = shift;
-  if (@_) { $self->{ZeropointIndex} = shift; }
-
-  unless (defined $self->{ZeropointIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.zeropoint" );
-    my $rulesfile = $self->find_file("rules.zeropoint");
-    $self->{ZeropointIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-  return $self->{ZeropointIndex};
-}
-
 =back
+
+=head2 Support Methods
+
+Each of the methods above has a support implementation to obtain
+the index file, current name and whether the value can be updated
+or not. For method "cal" there will be corresponding methods
+"calindex", "calname" and "calnoupdate". "calcache" is an
+allowed synonym for "calname".
+
+  $current = $Cal->calcache();
+  $index = $Cal->calindex();
+  $noup = $Cal->calnoupdate();
 
 =head1 SEE ALSO
 

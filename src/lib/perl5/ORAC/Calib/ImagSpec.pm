@@ -109,7 +109,7 @@ and IFU to be F<index.flat_sp>.
 
 sub flatindex {
   my $self = shift;
-  return $self->chooseindex( "flat", 0, @_ );
+  return $self->chooseindex( "flat", "dynamic", @_ );
 }
 
 =item B<skyindex>
@@ -120,7 +120,7 @@ Uses F<rules.sky_im> and <rules.sky_sp>
 
 sub skyindex {
   my $self = shift;
-  return $self->chooseindex( "sky", 0, @_ );
+  return $self->chooseindex( "sky", "dynamic", @_ );
 }
 
 =back
@@ -137,16 +137,16 @@ the index and rules files.
 
   $index = $Cal->choosindex( "flat" );
 
-A second argument, if true, indicates that a pre-existing index file
-can be copied from the calibration directory. If false it will just
-define the index file to exist in the data directory.
+A second argument controls how the index file will be determined. It
+should be a string with values that are listed in the documentation
+to the ORAC::Calib::GenericIndex() method.
 
-  $index = $Cal->chooseindex( "flat", 1 );
+  $index = $Cal->chooseindex( "flat", "copy" );
 
 Optionally can be given an index to store. It will be cached in the
 correct slot.
 
-  $index = $Cal->chooseindex( "flat", 1, $index );
+  $index = $Cal->chooseindex( "flat", "static", $index );
 
 In the latter case all 3 arguments must be provided.
 
@@ -155,35 +155,15 @@ In the latter case all 3 arguments must be provided.
 sub chooseindex {
   my $self = shift;
   my $root = shift;
-  my $docopy = shift;
 
-  # Choose the correct slot and correct rules/index root
-  my $key = ucfirst($root);
-  my $indrul = $root;
+  # Select the correct root
   if ($self->is_imaging_mode() ) {
-    $key .= "ImagingIndex";
-    $indrul .= "_im";
+    $root .= "_im";
   } else {
-    $key .= "SpectroscopyIndex";
-    $indrul .= "_sp";
+    $root .= "_sp";
   }
 
-  # Store any supplied argument
-  if (@_) {
-    $self->{$key} = shift;
-  }
-
-  # Now create one if required
-  if (!defined $self->{$key}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.$indrul" );
-    if( $docopy && ! -e $indexfile ) {
-      copy( $self->find_file( "index.mask_im" ), $indexfile );
-    }
-    my $rulesfile = $self->find_file("rules.$indrul");
-    $self->{$key} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-
-  return $self->{$key};
+  return $self->GenericIndex( $root, @_ );
 }
 
 =back

@@ -31,63 +31,18 @@ use base qw/ ORAC::Calib::OIR /;
 
 $VERSION = '1.0';
 
-# Setup the object structure
+__PACKAGE__->CreateBasicAccessors( arc => {},
+                                   arlines => { staticindex => 1, },
+                                   calibratedarc => { staticindex => 1, },
+                                   iar => {},
+                                   profile => {},
+                                   row => {},
+                                   standard => {},
+                                 );
 
 =head1 PUBLIC METHODS
 
 The following methods are available in this class.
-
-=head2 Constructors
-
-=over 4
-
-=item B<new>
-
-Create a new instance of a ORAC::Calib::Spectroscopy object.
-The object identifier is returned.
-
-  $Cal = new ORAC::Calib::Spectroscopy;
-
-=cut
-
-sub new {
-
-  my $self = shift;
-  my $obj = $self->SUPER::new( @_ );
-
-  $obj->{Arc} = undef;
-  $obj->{Arlines} = undef;
-  $obj->{CalibratedArc} = undef;
-  $obj->{Iar} = undef;
-  $obj->{Offset} = undef;
-  $obj->{Profile} = undef;
-  $obj->{Row} = undef;
-  $obj->{Standard} = undef;
-
-  $obj->{ArcIndex} = undef;
-  $obj->{ArlinesIndex} = undef;
-  $obj->{CalibratedArcIndex} = undef;
-  $obj->{IarIndex} = undef;
-  $obj->{OffsetIndex} = undef;
-  $obj->{ProfileIndex} = undef;
-  $obj->{RowIndex} = undef;
-  $obj->{StandardIndex} = undef;
-
-  $obj->{ArcNoUpdate} = 0;
-  $obj->{ArlinesNoUpdate} = 0;
-  $obj->{CalibratedArcNoUpdate} = 0;
-  $obj->{IarNoUpdate} = 0;
-  $obj->{OffsetNoUpdate} = 0;
-  $obj->{ProfileNoUpdate} = 0;
-  $obj->{RowNoUpdate} = 0;
-  $obj->{StandardNoUpdate} = 0;
-
-  # Take no arguments at present
-  return $obj;
-
-}
-
-=back
 
 =head2 Accessor Methods
 
@@ -367,335 +322,25 @@ sub standard {
 
 }
 
-# *name methods
-# -------------
-# Used when a file name is required.
+=back
 
-=item B<arcname>
+=head2 Support Methods
 
-Return (or set) the name of the current arc---no checking.
+Each of the methods above has a support implementation to obtain
+the index file, current name and whether the value can be updated
+or not. For method "cal" there will be corresponding methods
+"calindex", "calname" and "calnoupdate". "calcache" is an
+allowed synonym for "calname".
 
-  $arc = $Cal->arcname;
+  $current = $Cal->calcache();
+  $index = $Cal->calindex();
+  $noup = $Cal->calnoupdate();
 
-
-=cut
-
-sub arcname {
-  my $self = shift;
-  if (@_) { $self->{Arc} = shift unless $self->arcnoupdate; }
-  return $self->{Arc};
-}
-
-=item B<arlinesname>
-
-Return (or set) the name of the current arlines.lis file - no checking
-
-  $arlines = $Cal->arlinesname;
-
-=cut
-
-sub arlinesname {
-  my $self = shift;
-  if (@_) { $self->{Arlines} = shift; }
-  return $self->{Arlines};
-}
-
-=item B<calibratedarcname>
-
-Return (or set) the name of the current calibrated arc file - no checking.
-
-  $calibratedarc = $Cal->calibratedarcname;
-
-=cut
-
-sub calibratedarcname {
-  my $self = shift;
-  if ( @_ ) { $self->{CalibratedArc} = shift; }
-  return $self->{CalibratedArc};
-}
-
-=item B<iarname>
-
-Return (or set) the name of the current Iarc file - no checking
-
-  $iar = $Cal->iarname;
-
-
-=cut
-
-sub iarname {
-  my $self = shift;
-  if (@_) { $self->{Iar} = shift; }
-  return $self->{Iar};
-}
-
-=item B<profilename>
-
-Return (or set) the name of the current profile - no checking
-
-  $profile = $Cal->profilename;
-
-The C<profile()> method should be used if a test for suitability of the
-profile is required.
-
-=cut
-
-
-sub profilename {
-  my $self = shift;
-  if (@_) { $self->{Profile} = shift unless $self->profilenoupdate; }
-  return $self->{Profile};
-};
-
-=item B<rowname>
-
-Returns the name of the key to use in the index file to retrieve
+rowname() returns the name of the key to use in the index file to retrieve
 the currently accepted positions of the positive and negative row.
 The value should be compared with the current frame header in order
 to guarantee its suitability. The name is usually the name of the
 observation frame used to calculate the row positions.
-
-Can be used to set or retrieve the name.
-
-  $name = $Cal->rowname;
-  $Cal->rowname($name);
-
-=cut
-
-sub rowname {
-  my $self = shift;
-  if (@_) { $self->{RowName} = shift; }
-  return $self->{RowName};
-}
-
-=item B<standardname>
-
-Return (or set) the name of the current standard frame---no checking.
-
-  $dark = $Cal->standardname;
-
-=cut
-
-sub standardname {
-  my $self = shift;
-  if (@_) { $self->{Standard} = shift unless $self->standardnoupdate; }
-  return $self->{Standard};
-}
-
-
-# *cache methods
-# --------------
-# Used when a value or values (rather than a file) is required.
-
-
-# *noupdate methods
-# -----------------
-
-=item B<arcnoupdate>
-
-Stops arc object from updating itself with more recent data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub arcnoupdate {
-  my $self = shift;
-  if (@_) { $self->{ArcNoUpdate} = shift; }
-  return $self->{ArcNoUpdate};
-}
-
-
-=item B<profilenoupdate>
-
-Stops object from updating itself with more recent data.
-Used when overrding the profile file from the command-line.
-
-=cut
-
-sub profilenoupdate {
-
-  my $self = shift;
-  if (@_) { $self->{ProfileNoUpdate} = shift; }
-  return $self->{ProfileNoUpdate};
-
-}
-
-=item B<standardnoupdate>
-
-Stops standard object from updating itself with more recent data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub standardnoupdate {
-  my $self = shift;
-  if (@_) { $self->{StandardNoUpdate} = shift; }
-  return $self->{StandardNoUpdate};
-}
-
-# *index methods
-# --------------
-
-=item B<arcindex>
-
-Return (or set) the index object associated with the arc index file
-
-=cut
-
-sub arcindex {
-
-  my $self = shift;
-  if (@_) { $self->{ArcIndex} = shift; }
-
-  unless (defined $self->{ArcIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.arc" );
-    my $rulesfile = $self->find_file("rules.arc");
-    croak "arc rules file could not be located\n" unless defined $rulesfile;
-    $self->{ArcIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-
-  return $self->{ArcIndex}; 
-
-
-};
-
-
-=item B<arlinesindex>
-
-Returns the index object associated with the arlines index file. Index is 
-static therefore in calibration directory.
-
-=cut
-
-sub arlinesindex {
-
-    my $self = shift;
-    if (@_) { $self->{ArlinesIndex} = shift; }
-    
-    unless (defined $self->{ArlinesIndex}) {
-      my $indexfile = $self->find_file("index.arlines");
-      my $rulesfile = $self->find_file("rules.arlines");
-      $self->{ArlinesIndex} = new ORAC::Index($indexfile,$rulesfile);
-    }
-
-    return $self->{ArlinesIndex}; 
-}
-
-=item B<calibratedarcindex>
-
-Returns the index object associated with the calibratedarc index file.
-Index is static and therefore in calibration directory.
-
-=cut
-
-sub calibratedarcindex {
-  my $self = shift;
-  if ( @_ ) { $self->{CalibratedArcIndex} = shift; }
-
-  unless ( defined( $self->{CalibratedArcIndex} ) ) {
-    my $indexfile = $self->find_file("index.calibratedarc");
-    my $rulesfile = $self->find_file("rules.calibratedarc");
-    $self->{CalibratedArcIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-  return $self->{CalibratedArcIndex};
-}
-
-
-
-=item B<iarindex>
-
-Returns the index object associated with the iar file. 
-
-=cut
-
-sub iarindex {
-    my $self = shift;
-    if (@_) { $self->{IarIndex} = shift; }
-    
-    unless (defined $self->{IarIndex}) {
-        my $indexfile = "index.iar";
-        my $rulesfile = $self->find_file("rules.iar");
-        $self->{IarIndex} = new ORAC::Index($indexfile,$rulesfile);
-    }
-
-    return $self->{IarIndex}; 
-}
-
-=item B<profileindex>
-
-Return or set the index object associated with the profile.
-
-  $index = $Cal->profileindex;
-
-An index object is created automatically the first time this method
-is run.
-
-=cut
-
-sub profileindex {
-
-  my $self = shift;
-  if (@_) { $self->{ProfileIndex} = shift; }
-  unless (defined $self->{ProfileIndex}) {
-    my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, "index.profile");
-    my $rulesfile = $self->find_file("rules.profile");
-    $self->{ProfileIndex} = new ORAC::Index($indexfile,$rulesfile);
-   };
-
-  return $self->{ProfileIndex};
-
-};
-
-=item B<rowindex>
-
-The ORAC::Index object associated with the extraction row.
-
-=cut
-
-sub rowindex {
-  my $self = shift;
-
-  if (@_) { $self->{RowIndex} = shift; }
-
-  unless (defined $self->{RowIndex}) {
-    my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, "index.row");
-    my $rulesfile = $self->find_file("rules.row");
-    $self->{RowIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-
-  return $self->{RowIndex}; 
-
-}
-
-=item B<standardindex> 
-
-Return (or set) the index object associated with the standard index file
-
-=cut
-
-sub standardindex {
-
-  my $self = shift;
-  if (@_) { $self->{StandardIndex} = shift; }
-
-  unless (defined $self->{StandardIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.standard" );
-    my $rulesfile = $self->find_file("rules.standard");
-    croak "standard rules file could not be located\n" unless defined $rulesfile;
-    $self->{StandardIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-
-  return $self->{StandardIndex}; 
-
-
-};
-
-=back
 
 =head1 SEE ALSO
 

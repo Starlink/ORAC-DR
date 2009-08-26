@@ -57,7 +57,7 @@ is run.
 
 sub maskindex {
   my $self = shift;
-  return $self->chooseindex( "mask", 0, @_ );
+  return $self->chooseindex( "mask", "copy", @_ );
 }
 
 =back

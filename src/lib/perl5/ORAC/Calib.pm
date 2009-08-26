@@ -43,6 +43,7 @@ use ORAC::Index;
 use ORAC::Print;
 use ORAC::Inst::Defn qw/ orac_determine_calibration_search_path /;
 use File::Spec;
+use File::Copy;
 
 $VERSION = '1.0';
 
@@ -226,6 +227,167 @@ sub retrieve_by_column {
   my $ref = $self->$method->indexentry( $basefile );
   if( exists( $ref->{$column} ) ) {
     return $ref->{$column};
+  }
+  return;
+}
+
+=back
+
+=head1 DYNAMIC METHODS
+
+These methods create methods for the standard calibration schemes for subclasses.
+By default calibration "xxx" needs to create standard accessors for "xxxnoupdate",
+"xxxname" and "xxxindex".
+
+=over 4
+
+=item B<GenericIndex>
+
+Helper routine that creates an index object and returns it. Updates the
+object based on the root name.
+
+ $index = $Cal->CreateIndex( "flat", "dynamic" );
+
+Where the first argument should match the root name of the index and rules
+file. The second argument can have three modes:
+
+  dynamic - index file is assumed to be in ORAC_DATA_OUT
+  static  - index file is assumed to be in the calibration tree
+  copy    - index file will be copied to ORAC_DATA_OUT from
+            ORAC_DATA_CAL if not present in ORAC_DATA_OUT
+
+If a third argument is supplied it is assumed to be an ORAC::Index
+object to be stored in the calibration object.
+
+=cut
+
+sub GenericIndex {
+  my $self = shift;
+  my $root = shift;
+  my $modestr = (shift || "dynamic");
+
+  # The key for the internal object hash
+  my $key = ucfirst($root) . "Index";
+
+  # Store anything that we've been given
+  if (@_) {
+    $self->{$key} = shift;
+  }
+
+  # Now create one if required
+  if (!defined $self->{$key}) {
+    my $indexfile;
+    my $idxroot = "index.$root";
+    if ($modestr =~ /dynamic|copy/) {
+      $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, $idxroot );
+      if( $modestr eq 'copy' && ! -e $indexfile ) {
+        copy( $self->find_file( $idxroot ), $indexfile );
+      }
+
+    } else {
+      $indexfile = $self->find_file($idxroot);
+    }
+    my $rulesfile = $self->find_file("rules.$root");
+    croak "$root rules file could not be located\n" unless defined $rulesfile;
+    $self->{$key} = new ORAC::Index( $indexfile, $rulesfile );
+  }
+
+  return $self->{$key};
+}
+
+=item B<CreateBasicAccessors>
+
+Dynamically create default accessors for "xxxnoupdate", "xxxname" and "xxxindex" methods.
+
+ __PACKAGE__->CreateAccessors( "xxx", "yyy", "zzz" );
+
+=cut
+
+sub CreateBasicAccessors {
+  my $caller = shift;
+  my %methods = @_;
+
+  my $header = "{\n package $caller;\n use strict;\n use warnings;\nuse Carp;\n";
+  my $footer = "\n}\n1;\n";
+
+  # noupdate
+  my $noupdate = q{
+sub PREFIXnoupdate {
+  my $self = shift;
+  if (@_) { $self->{PREFIXNoUpdate} = shift; }
+  return $self->{PREFIXNoUpdate};
+}
+};
+
+  # name
+  my $name = q{
+sub PREFIXname {
+  my $self = shift;
+  if (@_) {
+    my $arg = shift;
+    HANDLEARRAY
+    $self->{PREFIX} = $arg unless $self->PREFIXnoupdate;
+  }
+  return $self->{PREFIX};
+}
+
+# Allow "cache" to be a synonym
+*PREFIXcache = *PREFIXname;
+};
+
+  # index
+  my $index = q{
+sub PREFIXindex {
+  my $self = shift;
+  return $self->GenericIndex( "PREFIX", INDEXMODE, @_ );
+}
+};
+
+  # Array handling code for name/cache method
+  my $array = q{
+  my @values;
+  if (ref($arg) eq 'ARRAY') {
+    @values = @$arg;
+  } else {
+    @values = ($arg, @_);
+  }
+  $arg = \@values;
+};
+
+  # Now construct the methods using string eval
+  for my $m (sort keys %methods) {
+    my $string = $header;
+    $string .= $noupdate;
+    $string .= $name;
+    $string .= $index;
+    $string .= $footer;
+
+    # Handle array processing
+    if ($methods{$m}->{isarray}) {
+      $string =~ s/HANDLEARRAY/$array/g;
+    } else {
+      $string =~ s/HANDLEARRAY//g;
+    }
+
+    # Handle index location
+    my $imode;
+    if ($methods{$m}->{staticindex}) {
+      $imode = '"static"';
+    } elsif ($methods{$m}->{copyindex}) {
+      $imode = '"copy"';
+    } else {
+      $imode = '"dynamic"';
+    }
+    $string =~ s/INDEXMODE/$imode/g;
+
+    # Replace prefix with requested name
+    $string =~ s/PREFIX/$m/g;
+
+    # run the code
+    my $retval = eval $string;
+    if (!$retval) {
+      croak "Error running method creation code: $@\n Code: $string\n";
+    }
   }
   return;
 }

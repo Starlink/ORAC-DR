@@ -30,71 +30,18 @@ use strict;
 use Carp;
 use warnings;
 
-use ORAC::Print;
-
-use File::Spec;       # for catfile
-
 use base qw/ORAC::Calib::Spectroscopy/;
 
 use vars qw/$VERSION/;
 $VERSION = '1.0';
 
+__PACKAGE__->CreateBasicAccessors(
+                                  engineering => {},
+);
+
 =head1 METHODS
 
 The following methods are available:
-
-=head2 Constructor
-
-=over 4
-
-=item B<new>
-
-Sub-classed constructor. Adds knowledge of extraction rows.
-
-  my $Cal = new ORAC::Calib::CGS4;
-
-=cut
-
-sub new {
-  my $self = shift;
-  my $obj = $self->SUPER::new(@_);
-
-  # Assumes we have a hash object
-  $obj->{Engineering} = undef;
-  $obj->{EngineeringIndex} = undef;
-
-  return $obj;
-
-}
-
-
-=back
-
-=head2 Accessors
-
-=over 4
-
-=item B<engineeringindex>
-
-Return (or set) the index object associated with the engineering
-parameters index file.
-
-=cut
-
-sub engineeringindex {
-  my $self = shift;
-  if( @_ ) { $self->{EngineeringIndex} = shift; }
-  unless( defined( $self->{EngineeringIndex} ) ) {
-    my $indexfile = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'},
-                                         "index.engineering" );
-    my $rulesfile = $self->find_file( "rules.engineering" );
-    croak "engineering rules file could not be located\n" unless defined $rulesfile;
-    $self->{EngineeringIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-  return $self->{EngineeringIndex};
-}
-
-=back
 
 =head2 General Methods
 
@@ -112,9 +59,19 @@ sub default_mask {
 
 =back
 
-=head1 REVISION
+=head2 Support Methods
 
-$Id$
+Each of the methods above has a support implementation to obtain
+the index file, current name and whether the value can be updated
+or not. For method "cal" there will be corresponding methods
+"calindex", "calname" and "calnoupdate". "calcache" is an
+allowed synonym for "calname".
+
+  $current = $Cal->calcache();
+  $index = $Cal->calindex();
+  $noup = $Cal->calnoupdate();
+
+This class adds an "engineering" set.
 
 =head1 AUTHORS
 
