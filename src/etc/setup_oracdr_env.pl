@@ -50,7 +50,7 @@ my $dataroot = ( defined( $ENV{'ORAC_DATA_ROOT'} ) ? $ENV{'ORAC_DATA_ROOT'} : $d
 my %envs = ( 'ACSIS'  => { ORAC_DATA_CAL => File::Spec->catfile( $ENV{'ORAC_CAL_ROOT'}, "acsis" ),
                            ORAC_DATA_ROOT => $dataroot,
                            ORAC_DATA_IN => File::Spec->catfile( $dataroot, "raw", "acsis", "spectra", $ut ),
-                           ORAC_DATA_OUT => File::Spec->catfile( $dataroot, "reduced", "acsis", "spectra", $ut ),
+                           ORAC_DATA_OUT => File::Spec->catfile( $dataroot, "reduced", "acsis", $ut ),
                            ORAC_LOOP => 'flag',
                            ORAC_PERSON => 'bradc',
                            ORAC_SUN => 'xxx',
