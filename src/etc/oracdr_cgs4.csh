@@ -99,6 +99,9 @@
 
 setenv ORAC_INSTRUMENT CGS4
 
+# Set the UT date.
+set oracut=`${ORAC_DIR}/etc/oracdr_set_ut.csh $1`
+
 # Find Perl.
 set starperl=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
 
