@@ -107,6 +107,8 @@ eval $orac_env_setup
 
 set oracdr_args = "-ut $oracut -recsuffix QL"
 
+source $ORAC_DIR/etc/create_jcmt_dir.csh
+
 # Run oracdr_start.
 source $ORAC_DIR/etc/oracdr_start.csh
 
