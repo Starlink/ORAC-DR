@@ -71,7 +71,7 @@
 
 #-
 
-export ORAC_INSTRUMENT='IRCAM2'
+export ORAC_INSTRUMENT='MICHELLE'
 
 # Set the UT date.
 oracut=`csh ${ORAC_DIR}/etc/oracdr_set_ut.csh $1`
