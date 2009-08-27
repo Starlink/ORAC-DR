@@ -35,7 +35,6 @@ __PACKAGE__->CreateBasicAccessors( baseshift => { isarray => 1 },
                                    dqc => {},
                                    polrefang => {},
                                    referenceoffset => { isarray => 1 },
-                                   rotation => {},
                                    skybrightness => {},
                                    zeropoint => {} );
 
