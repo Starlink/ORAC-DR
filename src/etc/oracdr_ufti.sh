@@ -98,7 +98,7 @@
 
 #-
 
-export ORAC_INSTRUMENT='UFTI'
+export ORAC_INSTRUMENT='UFTI2'
 
 # Set the UT date.
 oracut=`csh ${ORAC_DIR}/etc/oracdr_set_ut.csh $1`
