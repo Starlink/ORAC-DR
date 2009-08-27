@@ -388,6 +388,8 @@ my %PHOTFLUXES = (
 
 
 # Setup the object structure
+__PACKAGE__->CreateBasicAccessors( badbols => {},
+);
 
 =head1 PUBLIC METHODS
 
@@ -412,14 +414,8 @@ The object identifier is returned.
 sub new {
   my $self = shift;
   my $obj = $self->SUPER::new( @_ );
-
-# This assumes we have a hash object
-  $obj->{BadBols} = undef;     # Bad bolometers
-  $obj->{BadBolsNoUpdate} = 0;
-
   # Specify default tausys
-  $obj->{TauSys} = "850SKYDIP";
-
+  $obj->tausys( "850SKYDIP" );
 
   return $obj;
 }
@@ -491,44 +487,9 @@ The value is always upper-cased.
 
 sub badbols {
   my $self = shift;
-  if (@_) { $self->{BadBols} = uc(shift) unless $self->badbolsnoupdate; }
-  $self->{BadBols} = 'FILE' unless (defined $self->{BadBols});
-  return $self->{BadBols};
-}
-
-=item B<badbolsindex>
-
-Return (or set) the index object associated with the bad bolometers
-index file. This index file is used if badbols() is set to index.
-
-=cut
-
-sub badbolsindex {
-
-  my $self = shift;
-  if (@_) { $self->{BadBolsIndex} = shift; }
-
-  unless (defined $self->{BadBolsIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.badbols" );
-    my $rulesfile = $self->find_file("rules.badbols");
-    $self->{BadBolsIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-  return $self->{BadBolsIndex};
-}
-
-
-=item B<badbolsnoupdate>
-
-Flag to prevent the badbols system from being modified during data
-processing.
-
-=cut
-
-sub badbolsnoupdate {
-  my $self = shift;
-  if (@_) { $self->{BadBolsNoUpdate} = shift };
-  return $self->{BadBolsNoUpdate};
+  # Use the automatically created method
+  my $bb = $self->badbolscache(@_);
+  return (defined $bb ? $bb : "FILE" );
 }
 
 =back
@@ -614,10 +575,6 @@ sub badbol_list {
 =head1 SEE ALSO
 
 L<ORAC::Calib::JCMTCont>
-
-=head1 REVISION
-
-$Id$
 
 =head1 AUTHORS
 

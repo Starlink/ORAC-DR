@@ -108,6 +108,9 @@ my %PHOTFLUXES = (
 
 
 # Setup the object structure
+__PACKAGE__->CreateBasicAccessors( mask => {},
+                                   resp => {},
+);
 
 =head1 PUBLIC METHODS
 
@@ -134,18 +137,12 @@ sub new {
   my $obj = $self->SUPER::new( @_ );
 
 # This assumes we have a hash object
-	$obj->{Mask} = undef,	       # Bad bolometer mask
-	$obj->{MaskIndex} = undef,   # Index file for picking best bad bolo mask
-	$obj->{MaskNoUpdate} = 0,
-	$obj->{Resp} = undef,	       # Responsivity solution
-	$obj->{RespIndex} = undef,  # Index file for responsivities
-	$obj->{RespStats} = undef,   # RMS uncertainties for responsivity fit
   $obj->{Beam} = {},           # Current best-fit beam parameters
   $obj->{FWHM} = undef,        # Current mean main-beam FWHM
   $obj->{SkyRefImage} = undef; # Name of current reference image
 
   # Specify default tausys
-  $obj->{TauSys} = "CSO";
+  $self->tausys( "CSO" );
 
   return $obj;
 }
@@ -291,25 +288,6 @@ sub refimage {
   return $self->{SkyRefImage};
 }
 
-=item B<maskname>
-
-Return (or set) the name of the current bad pixel mask
-
-  $mask = $Cal->maskname;
-
-The C<mask()> method should be used if a test for suitability of the
-mask is required.
-
-=cut
-
-
-sub maskname {
-  my $self = shift;
-
-  if (@_) { $self->{Mask} = shift unless $self->masknoupdate; }
-  return $self->{Mask};
-}
-
 =item B<mask>
 
 Return (or set) the name of the current bad bolometer mask.
@@ -348,44 +326,6 @@ sub mask {
   }
 }
 
-=item B<maskindex>
-
-Return or set the index object associated with the bad pixel mask.
-
-  $index = $Cal->maskindex;
-
-An index object is created automatically the first time this method
-is run.
-
-=cut
-
-sub maskindex {
-  my $self = shift;
-
-  if (@_) { $self->{MaskIndex} = shift; }
-  unless ( defined $self->{MaskIndex} ) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.mask" );
-    my $rulesfile = $self->find_file("rules.mask");
-    $self->{MaskIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-  return $self->{MaskIndex};
-}
-
-=item B<masknoupdate>
-
-Stops object from updating itself with more recent data.
-Used when overriding the mask file from the command-line.
-
-=cut
-
-sub masknoupdate {
-
-  my $self = shift;
-  if (@_) { $self->{MaskNoUpdate} = shift; }
-  return $self->{MaskNoUpdate};
-
-}
-
 =back
 
 =head2 General methods
@@ -407,25 +347,6 @@ sub pixelscale {
   my $pixelscale = ( $self->{Thing1}->{FILTER}  =~ /^85/ ) ? 5.80 : 3.09;
 
   return $pixelscale;
-}
-
-=item B<respname>
-
-Return (or set) the name of the current responsivity solution.
-
-  $resp = $Cal->respname;
-
-The C<resp()> method should be used if a test for suitability is
-required.
-
-=cut
-
-
-sub respname {
-  my $self = shift;
-
-  if (@_) { $self->{Resp} = shift; }
-  return $self->{Resp};
 }
 
 =item B<resp>
@@ -462,29 +383,6 @@ sub resp {
   } else {
     croak( "Error in resp calibration checking - giving up" );
   }
-}
-
-=item B<respindex>
-
-Return or set the index object associated with the responsivity.
-
-  $index = $Cal->respindex;
-
-An index object is created automatically the first time this method
-is run.
-
-=cut
-
-sub respindex {
-  my $self = shift;
-
-  if (@_) { $self->{RespIndex} = shift; }
-  unless ( defined $self->{RespIndex} ) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.resp" );
-    my $rulesfile = $self->find_file("rules.resp");
-    $self->{RespIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-  return $self->{RespIndex};
 }
 
 =item B<respstats>
@@ -584,13 +482,22 @@ sub store_beam {
 
 =back
 
+
+=head2 Support Methods
+
+The "mask" and "resp" methods have support implementations to obtain
+the index file, current name and whether the value can be updated
+or not. For method "cal" there will be corresponding methods
+"calindex", "calname" and "calnoupdate". "calcache" is an
+allowed synonym for "calname".
+
+  $current = $Cal->calcache();
+  $index = $Cal->calindex();
+  $noup = $Cal->calnoupdate();
+
 =head1 SEE ALSO
 
 L<ORAC::Calib::JCMTCont>
-
-=head1 REVISION
-
-$Id: SCUBA2.pm,v 1.47 2005/03/31 21:07:38 timj Exp $
 
 =head1 AUTHORS
 
@@ -598,6 +505,7 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 
 =head1 COPYRIGHT
 
+Copyright (C) 2007-2009 Science and Technology Facilities Council.
 Copyright (C) 1998-2005 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 

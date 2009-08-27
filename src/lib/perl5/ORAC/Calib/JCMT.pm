@@ -33,39 +33,13 @@ use base qw/ ORAC::Calib /;
 use vars qw/ $VERSION /;
 $VERSION = '1.0';
 
+__PACKAGE__->CreateBasicAccessors( pointing => {},
+                                   qaparams => { staticindex => 1 },
+);
 
 =head1 METHODS
 
 The following methods are available:
-
-=head2 Constructor
-
-=over 4
-
-=item B<new>
-
-Sub-classed constructor. Adds knowledge of pointing, reference
-spectrum, beam efficiency, and other ACSIS-specific calibration
-information.
-
-=cut
-
-sub new {
-  my $self = shift;
-  my $obj = $self->SUPER::new( @_ );
-
-# This assumes we have a hash object.
-  $obj->{Pointing} = undef;
-  $obj->{PointingIndex} = undef;
-  $obj->{PointingNoUpdate} = 0;
-  $obj->{QAParams} = undef;
-  $obj->{QAParamsIndex} = undef;
-  $obj->{QAParamsNoUpdate} = 0;
-
-  return $obj;
-}
-
-=back
 
 =head2 Accessors
 
@@ -105,56 +79,6 @@ sub pointing {
 
 }
 
-=item B<pointingcache>
-
-Cached value of the pointing. Only used when noupdate is in effect.
-
-=cut
-
-sub pointingcache {
-  my $self = shift;
-  if( @_ ) { $self->{Pointing} = shift unless $self->pointingnoupdate; }
-  return $self->{Pointing};
-}
-
-=item B<pointingnoupdate>
-
-Stops pointing object from updating itself with more recent data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub pointingnoupdate {
-  my $self = shift;
-  if( @_ ) { $self->{PointingNoUpdate} = shift; }
-  return $self->{PointingNoUpdate};
-}
-
-=item B<pointingindex>
-
-Return (or set) the index object associated with the pointing index
-file.
-
-=cut
-
-sub pointingindex {
-  my $self = shift;
-  if( @_ ) { $self->{PointingIndex} = shift; }
-
-  if( ! defined( $self->{PointingIndex} ) ) {
-    my $indexfile = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.pointing" );
-    my $rulesfile = $self->find_file( "rules.pointing" );
-    if( ! defined( $rulesfile ) ) {
-      croak "pointing rules file could not be located\n";
-    }
-    $self->{PointingIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-
-  return $self->{PointingIndex};
-
-}
-
 =item B<qaparams>
 
 Return or set the filename for QA parameters.
@@ -183,64 +107,19 @@ sub qaparams {
 
 }
 
-=item B<qaparamscache>
-
-Cached value for the QA parameters file. Only used when noupdate is in
-effect.
-
-=cut
-
-sub qaparamscache {
-  my $self = shift;
-  if( @_ ) { $self->{QAParams} = shift unless $self->qaparamsnoupdate; }
-  return $self->{QAParams};
-}
-
-=item B<qaparamsnoupdate>
-
-Stops QA params object from updating itself.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub qaparamsnoupdate {
-  my $self = shift;
-  if( @_ ) { $self->{QAParamsNoUpdate} = shift; }
-  return $self->{QAParamsNoUpdate};
-}
-
-=item B<qaparamsindex>
-
-Return or set the index object associated with the QA parameters index
-file.
-
-=cut
-
-sub qaparamsindex {
-  my $self = shift;
-  if( @_ ) { $self->{QAParamsIndex} = shift; }
-
-  if( ! defined( $self->{QAParamsIndex} ) ) {
-    my $indexfile = $self->find_file( "index.qaparams" );
-    if( ! defined( $indexfile ) ) {
-      croak "QA parameters index file could not be located\n";
-    }
-    my $rulesfile = $self->find_file( "rules.qaparams" );
-    if( ! defined( $rulesfile ) ) {
-      croak "QA parameters rules file could not be located\n";
-    }
-    $self->{QAParamsIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-
-  return $self->{QAParamsIndex};
-}
-
 =back
 
-=head1 REVISION
+=head2 Support Methods
 
-$Id$
+Each of the methods above has a support implementation to obtain
+the index file, current name and whether the value can be updated
+or not. For method "cal" there will be corresponding methods
+"calindex", "calname" and "calnoupdate". "calcache" is an
+allowed synonym for "calname".
+
+  $current = $Cal->calcache();
+  $index = $Cal->calindex();
+  $noup = $Cal->calnoupdate();
 
 =head1 AUTHORS
 

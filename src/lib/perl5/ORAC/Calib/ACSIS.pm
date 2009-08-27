@@ -33,6 +33,11 @@ use base qw/ ORAC::Calib::JCMT /;
 use vars qw/ $VERSION /;
 $VERSION = '1.0';
 
+__PACKAGE__->CreateBasicAccessors( bad_receptors => { staticindex => 1 },
+                                   standard => { staticindex => 1 },
+);
+
+
 =head1 METHODS
 
 The following methods are available:
@@ -112,34 +117,16 @@ will always be in upper-case.
 
 sub bad_receptors {
   my $self = shift;
-
-  if( @_ ) { $self->{BadReceptors} = uc( shift ) unless $self->bad_receptors_noupdate; }
-  $self->{BadReceptors} = 'INDEXORMASTER' unless ( defined $self->{BadReceptors} );
-  return $self->{BadReceptors};
+  # Use the automatically created method
+  my $br = $self->bad_receptorscache(map { uc($_) } @_);
+  return (defined $br ? $br : "INDEXORMASTER" );
 }
 
-=item B<bad_receptors_index>
+=item B<bad_receptorsindex>
 
 Return (or set) the index object associated with the master bad
 receptors index file. This index file is used if bad_receptors() is
 set to 'MASTER' or 'INDEXORMASTER'.
-
-=cut
-
-sub bad_receptors_index {
-  my $self = shift;
-  if( @_ ) { $self->{BadReceptorsIndex} = shift; }
-
-  if( ! defined( $self->{BadReceptorsIndex} ) ) {
-
-    my $indexfile = $self->find_file( "index.bad_receptors" );
-    my $rulesfile = $self->find_file( "rules.bad_receptors" );
-
-    $self->{BadReceptorsIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-
-  return $self->{BadReceptorsIndex};
-}
 
 =item B<bad_receptors_qa_index>
 
@@ -151,30 +138,7 @@ if bad_receptors() is set to 'INDEX' or 'INDEXORMASTER'.
 
 sub bad_receptors_qa_index {
   my $self = shift;
-  if( @_ ) { $self->{BadReceptorsQAIndex} = shift; }
-
-  if( ! defined( $self->{BadReceptorsQAIndex} ) ) {
-
-    my $indexfile = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.bad_receptors_qa" );
-    my $rulesfile = $self->find_file( "rules.bad_receptors_qa" );
-
-    $self->{BadReceptorsQAIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-
-  return $self->{BadReceptorsQAIndex};
-}
-
-=item B<bad_receptors_noupdate>
-
-Flag to prevent the bad_receptors system from being modified during
-data processing.
-
-=cut
-
-sub bad_receptors_noupdate {
-  my $self = shift;
-  if( @_ ) { $self->{BadReceptorsNoUpdate} = shift; }
-  return $self->{BadReceptorsNoUpdate};
+  return $self->GenericIndex( "bad_receptors_qa", "dynamic", @_ );
 }
 
 =item B<bad_receptors_list>
@@ -211,11 +175,11 @@ sub bad_receptors_list {
 
     if( $sys =~ /MASTER/ ) {
 
-      my $brposition = $self->bad_receptors_index->chooseby_negativedt( 'ORACTIME', $self->thing, 0 );
+      my $brposition = $self->bad_receptorsindex->chooseby_negativedt( 'ORACTIME', $self->thing, 0 );
 
       if( defined( $brposition ) ) {
         # Retrieve the specific entry, and thus the receptors.
-        my $brref = $self->bad_receptors_index->indexentry( $brposition );
+        my $brref = $self->bad_receptorsindex->indexentry( $brposition );
         if( exists( $brref->{'DETECTORS'} ) ) {
           @master_bad = split /,/, $brref->{'DETECTORS'};
         } else {
@@ -285,6 +249,12 @@ sub bad_receptors_list {
   return @bad_receptors;
 }
 
+=item B<standard>
+
+Retrieve the relevant standard.
+
+=cut
+
 sub standard {
   my $self = shift;
 
@@ -326,31 +296,19 @@ sub standard {
   }
 }
 
-sub standardindex {
-  my $self = shift;
-  if( @_ ) { $self->{StandardIndex} = shift; }
-
-  if( ! defined( $self->{StandardIndex} ) ) {
-    my $indexfile = $self->find_file( "index.standard" );
-    my $rulesfile = $self->find_file( "rules.standard" );
-
-    if( ! defined( $indexfile ) ) {
-      croak "Standard index file could not be found\n";
-    }
-    if( ! defined( $rulesfile ) ) {
-      croak "Standard rules file could not be found\n";
-    }
-    $self->{StandardIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-
-  return $self->{StandardIndex};
-}
-
 =back
 
-=head1 REVISION
+=head2 Support Methods
 
-$Id$
+Each of the methods above has a support implementation to obtain
+the index file, current name and whether the value can be updated
+or not. For method "cal" there will be corresponding methods
+"calindex", "calname" and "calnoupdate". "calcache" is an
+allowed synonym for "calname".
+
+  $current = $Cal->calcache();
+  $index = $Cal->calindex();
+  $noup = $Cal->calnoupdate();
 
 =head1 AUTHORS
 
@@ -358,7 +316,7 @@ Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2007-2008 Science and Technology Facilities Council.
+Copyright (C) 2007-2009 Science and Technology Facilities Council.
 All Rights Reserved.
 
 =cut

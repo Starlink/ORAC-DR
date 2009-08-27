@@ -281,11 +281,14 @@ sub GenericIndex {
     if ($modestr =~ /dynamic|copy/) {
       $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, $idxroot );
       if( $modestr eq 'copy' && ! -e $indexfile ) {
-        copy( $self->find_file( $idxroot ), $indexfile );
+        my $static = $self->find_file( $idxroot );
+        croak "$root index file could not be located\n" unless defined $static;
+        copy( $static, $indexfile );
       }
 
     } else {
       $indexfile = $self->find_file($idxroot);
+      croak "$root index file could not be located\n" unless defined $indexfile;
     }
     my $rulesfile = $self->find_file("rules.$root");
     croak "$root rules file could not be located\n" unless defined $rulesfile;

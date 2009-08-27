@@ -44,6 +44,11 @@ $VERSION = '1.0';
 # The planets that we can retrieve fluxes for
 @PLANETS = qw/ MARS JUPITER SATURN URANUS NEPTUNE /;
 
+__PACKAGE__->CreateBasicAccessors( gains => {},
+                                   tausys => {},
+);
+
+
 =head1 METHODS
 
 The following methods are available:
@@ -66,12 +71,7 @@ sub new {
 
 # This assumes we have a hash object.
   $obj->{EngineLaunch} = new ORAC::Msg::EngineLaunch;
-  $obj->{Gains} = undef;    # Gains (Flux Conversion Factors)
-  $obj->{GainsIndex} = undef;
-  $obj->{GainsNoUpdate} = 0;
   $obj->{SkydipIndex} = undef;
-  $obj->{TauSys} = undef;      # Tau system
-  $obj->{TauSysNoUpdate} = 0;
   $obj->{TauCache} = {};
   $obj->{CsoFit} = undef;      # Polynomial tau fits
 
@@ -161,45 +161,10 @@ use the default gains. The value is upper-cased.
 
 sub gains {
   my $self = shift;
-  if (@_) { $self->{Gains} = uc(shift) unless $self->gainsnoupdate; }
-  $self->{Gains} = 'DEFAULT' unless (defined $self->{Gains});
-  return $self->{Gains};
+  # Use the automatically created method
+  my $g = $self->gainscache(@_);
+  return (defined $g ? $g : "DEFAULT" );
 }
-
-=item B<gainsindex>
-
-Return (or set) the index object associated with the gains
-index file. This index file is used if gains() is set to INDEX.
-
-=cut
-
-sub gainsindex {
-
-  my $self = shift;
-  if (@_) { $self->{GainsIndex} = shift; }
-
-  unless (defined $self->{GainsIndex}) {
-    my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, "index.gains");
-    my $rulesfile = $self->find_file("rules.gains");
-    $self->{GainsIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-  return $self->{GainsIndex};
-}
-
-=item B<gainsnoupdate>
-
-Flag to prevent the gains selection from being modified during data
-processing.
-
-=cut
-
-sub gainsnoupdate {
-  my $self = shift;
-  if (@_) { $self->{GainsNoUpdate} = shift };
-  return $self->{GainsNoUpdate};
-}
-
 
 =item B<skydipindex>
 
@@ -209,19 +174,9 @@ index file. This index file is used if tausys() is set to skydip.
 =cut
 
 sub skydipindex {
-
   my $self = shift;
-  if (@_) { $self->{SkydipIndex} = shift; }
-
-  unless (defined $self->{SkydipIndex}) {
-    my $indexfile = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, "index.skydip");
-    my $rulesfile = $self->find_file("rules.skydip");
-    $self->{SkydipIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-  return $self->{SkydipIndex};
+  return $self->GenericIndex( "skydip", "dynamic", @_);
 }
-
 
 =item B<tausys>
 
@@ -248,22 +203,9 @@ can be over-ridden in subclass.
 
 sub tausys {
   my $self = shift;
-  if (@_) { $self->{TauSys} = uc(shift) unless $self->tausysnoupdate; }
-  $self->{TauSys} = 'CSO' unless (defined $self->{TauSys});
-  return $self->{TauSys};
-}
-
-=item B<tausysnoupdate>
-
-Flag to prevent the tau system from being modified during data
-processing.
-
-=cut
-
-sub tausysnoupdate {
-  my $self = shift;
-  if (@_) { $self->{TauSysNoUpdate} = shift };
-  return $self->{TauSysNoUpdate};
+  # Use the automatically created method
+  my $t = $self->tausyscache(@_);
+  return (defined $t ? $t : "CSO" );
 }
 
 =item B<taucache>
@@ -1097,9 +1039,17 @@ sub _get_default_fcf {
 
 =end __PRIVATE_METHODS__
 
-=head1 REVISION
+=head2 Support Methods
 
-$Id$
+The "gains" and "tausys" methods have support implementations to obtain
+the index file, current name and whether the value can be updated
+or not. For method "cal" there will be corresponding methods
+"calindex", "calname" and "calnoupdate". "calcache" is an
+allowed synonym for "calname".
+
+  $current = $Cal->calcache();
+  $index = $Cal->calindex();
+  $noup = $Cal->calnoupdate();
 
 =head1 AUTHORS
 
