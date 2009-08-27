@@ -51,32 +51,13 @@ Return (or set) the most recent pointing values.
 
   $pointing = $Cal->pointing;
 
+Returns the entire index entry.
+
 =cut
 
 sub pointing {
   my $self = shift;
-
-  # Handle arguments.
-  return $self->pointingcache( shift ) if @_;
-
-  if( $self->pointingnoupdate ) {
-    my $cache = $self->pointingcache;
-    return $cache if defined $cache;
-  }
-
-  my $pointingfile = $self->pointingindex->choosebydt( 'ORACTIME', $self->thing );
-  if( ! defined( $pointingfile ) ) {
-    croak "No suitable pointing value found in index file"
-  }
-
-  my $pointingref = $self->pointingindex->indexentry( $pointingfile );
-  if( exists( $pointingref->{DAZ} ) &&
-      exists( $pointingref->{DEL} ) ) {
-    return $pointingref;
-  } else {
-    croak "Unable to obtain DAZ and DEL from index file entry $pointingfile\n";
-  }
-
+  return $self->GenericIndexEntryAccessor( "pointing", [qw/ DAZ DEL /], @_ );
 }
 
 =item B<qaparams>
@@ -89,22 +70,9 @@ Return or set the filename for QA parameters.
 
 sub qaparams {
   my $self = shift;
-
-  # Handle arguments.
-  return $self->qaparamscache( shift ) if @_;
-
-  if( $self->qaparamsnoupdate ) {
-    my $cache = $self->qaparamscache;
-    return $cache if defined $cache;
-  }
-
-  my $qaparamsfile = $self->qaparamsindex->choosebydt( 'ORACTIME', $self->thing );
-  if( ! defined( $qaparamsfile ) ) {
-    croak "No suitable QA parameters file found in index file"
-  }
-
+  my $qaparamsfile = $self->GenericIndexAccessor( "qaparams", 0, 0, @_ );
+  # Find this file on disk because it will not be in ORAC_DATA_OUT
   return $self->find_file( $qaparamsfile );
-
 }
 
 =back

@@ -73,32 +73,7 @@ The index file must include a column named BASESHIFT.
 
 sub baseshift {
   my $self = shift;
-
-  # Handle arguments
-  return $self->baseshiftcache(shift) if @_;
-
-  # If noupdate is in effect we should return the cached value
-  # unless it is not defined.  This effectively allows the command-line
-  # value to be used to override without verifying its suitability.
-  if ($self->baseshiftnoupdate) {
-    my $cache = $self->baseshiftcache;
-    return $cache if defined $cache;
-  }
-
-  # Now we are looking for a value from the index file
-  my $basefile = $self->baseshiftindex->choosebydt('ORACTIME',$self->thing);
-  croak "No suitable pixel location of the base found in index file."
-    unless defined $basefile;
-
-  # This gives us the filename, we now need to get the actual value
-  # of the pixel location of the base.
-  my $baseref = $self->baseshiftindex->indexentry( $basefile );
-  if (exists $baseref->{BASESHIFT}) {
-    return $baseref->{BASESHIFT};
-  } else {
-    croak "Unable to obtain BASESHIFT from index file entry $basefile.\n";
-  }
-
+  return $self->GenericIndexEntryAccessor( "baseshift", "BASESHIFT", @_ );
 }
 
 =item B<polrefang>
@@ -125,33 +100,7 @@ The index file must include a column named POLREFANG.
 
 sub polrefang {
   my $self = shift;
-
-  # Handle arguments
-  return $self->polrefangcache(shift) if @_;
-
-  # If noupdate is in effect we should return the cached value
-  # unless it is not defined.  This effectively allows the command-line
-  # value to be used to override without verifying its suitability.
-  if ($self->polrefangnoupdate) {
-    my $cache = $self->polrefangcache;
-    return $cache if defined $cache;
-  }
-
-  # Now we are looking for a value from the index file
-  my $prafile = $self->polrefangindex->choosebydt('ORACTIME',$self->thing);
-  croak "No suitable angle to the polarisation reference direction " .
-        "found in index file."
-    unless defined $prafile;
-
-  # This gives us the filename, we now need to get the actual value
-  # of the angle to the reference direction.
-  my $polref = $self->polrefangindex->indexentry( $prafile );
-  if (exists $polref->{POLREFANG}) {
-    return $polref->{POLREFANG};
-  } else {
-    croak "Unable to obtain POLREFANG from index file entry $prafile.\n";
-  }
-
+  return $self->GenericIndexEntryAccessor( "polrefang", "POLREFANG", @_ );
 }
 
 =item B<referenceoffset>
@@ -188,32 +137,7 @@ The index file must include a column named REFERENCEOFFSET.
 
 sub referenceoffset {
   my $self = shift;
-
-  # Handle arguments
-  return $self->referenceoffsetcache(shift) if @_;
-
-  # If noupdate is in effect we should return the cached value
-  # unless it is not defined.  This effectively allows the command-line
-  # value to be used to override without verifying its suitability.
-  if ($self->referenceoffsetnoupdate) {
-    my $cache = $self->referenceoffsetcache;
-    return $cache if defined $cache;
-  }
-
-  # Now we are looking for a value from the index file.
-  my $refofffile = $self->referenceoffsetindex->choosebydt('ORACTIME',$self->thing);
-  croak "No suitable offset of the reference pixel found in index file."
-    unless defined $refofffile;
-
-  # This gives us the filename, we now need to get the actual value
-  # of the pixel offsets of the reference pixel.
-  my $refoffref = $self->referenceoffsetindex->indexentry( $refofffile );
-  if (exists $refoffref->{REFERENCEOFFSET}) {
-    return $refoffref->{REFERENCEOFFSET};
-  } else {
-    croak "Unable to obtain REFERENCEOFFSET from index file entry $refofffile.\n";
-  }
-
+  return $self->GenericIndexEntryAccessor( "referenceoffset", "REFERENCEOFFSET", @_ );
 }
 
 =item B<default_rotation_file>
@@ -279,32 +203,7 @@ The index file must include a column named SKY_BRIGHTNESS.
 
 sub skybrightness {
   my $self = shift;
-
-  # Handle arguments
-  return $self->skybrightnesscache(shift) if @_;
-
-  # If noupdate is in effect we should return the cached value
-  # unless it is not defined. This effectively allows the command-line
-  # value to be used to override without verifying its suitability
-  if ($self->skybrightnessnoupdate) {
-    my $cache = $self->skybrightnesscache;
-    return $cache if defined $cache;
-  }
-
-  # Now we are looking for a value from the index file
-  my $sbfile = $self->skybrightnessindex->choosebydt('ORACTIME',$self->thing);
-  croak "No suitable sky brightness value found in index file"
-    unless defined $sbfile;
-
-  # This gives us the filename, we now need to get the actual value
-  # of the sky brightness.
-  my $noiseref = $self->skybrightnessindex->indexentry( $sbfile );
-  if (exists $noiseref->{SKY_BRIGHTNESS}) {
-    return $noiseref->{SKY_BRIGHTNESS};
-  } else {
-    croak "Unable to obtain SKY_BRIGHTNESS from index file entry $sbfile\n";
-  }
-
+  return $self->GenericIndexEntryAccessor( "skybrightness", "SKY_BRIGHTNESS", @_ );
 }
 
 =item B<zeropoint>
@@ -330,32 +229,7 @@ The index file must include a column named ZEROPOINT.
 
 sub zeropoint {
   my $self = shift;
-
-  # Handle arguments
-  return $self->zeropointcache(shift) if @_;
-
-  # If noupdate is in effect we should return the cached value
-  # unless it is not defined. This effectively allows the command-line
-  # value to be used to override without verifying its suitability
-  if ($self->zeropointnoupdate) {
-    my $cache = $self->zeropointcache;
-    return $cache if defined $cache;
-  }
-
-  # Now we are looking for a value from the index file
-  my $zpfile = $self->zeropointindex->choosebydt('ORACTIME',$self->thing);
-  croak "No suitable zeropoint value found in index file"
-    unless defined $zpfile;
-
-  # This gives us the filename, we now need to get the actual value of
-  # the zeropoint.
-  my $zpref = $self->zeropointindex->indexentry( $zpfile );
-  if (exists $zpref->{ZEROPOINT}) {
-    return $zpref->{ZEROPOINT};
-  } else {
-    croak "Unable to obtain ZEROPOINT from index file entry $zpfile\n";
-  }
-
+  return $self->GenericIndexEntryAccessor( "zeropoint", "ZEROPOINT", @_ );
 }
 
 =back

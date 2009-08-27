@@ -56,24 +56,7 @@ __PACKAGE__->CreateBasicAccessors(
 
 sub ifuprofile {
   my $self = shift;
-  if( @_ ) {
-    return $self->ifuprofilename( @_ );
-  }
-
-  my $ok = $self->ifuprofileindex->verify( $self->ifuprofilename, $self->thing );
-
-  return $self->ifuprofilename if $ok;
-
-  if( defined( $ok ) ) {
-    my $ifuprofile = $self->ifuprofileindex->chooseby_negativedt( "ORACTIME", $self->thing );
-
-    if( ! defined( $ifuprofile ) ) {
-      croak "No suitable IFU profile file was found in index file";
-    }
-    $self->ifuprofilename( $ifuprofile );
-  } else {
-    croak "Error in determining IFU profile file - giving up";
-  }
+  return $self->GenericIndexAccessor( "ifuprofile", -1, 0, @_ );
 }
 
 =item B<offset>
@@ -84,32 +67,8 @@ Returns the appropriate y-offset value.
 
 
 sub offset {
-
   my $self = shift;
-  if (@_) {
-    return $self->offsetcache(shift);
-  };
-
-  my $ok = $self->offsetindex->verify($self->offsetcache,$self->thing);
-
-  # happy ending
-  return $self->offsetcache if $ok;
-
-  if (defined $ok) {
-    my $offset = $self->offsetindex->choosebydt('ORACTIME',$self->thing);
-
-    unless (defined $offset) {
-      # Nothing suitable, give up...
-      croak "No suitable offset value was found in index file"
-    }
-
-    # Store the good value
-    $self->offsetcache($offset);
-
-  } else {
-    # All fall down....
-    croak("Error in determining offset value - giving up");
-  }
+  return $self->GenericIndexAccessor( "offset", 0, 0, @_ );
 }
 
 =back

@@ -304,26 +304,7 @@ possible to search the Frame subheaders when evaluating the rules.
 
 sub mask {
   my $self = shift;
-  if( @_ ) {
-    return $self->maskname( shift );
-  }
-
-  my $ok = $self->maskindex->verify( $self->maskname, $self->thing, 0 );
-
-  # Happy ending. Current entry is OK.
-  if( $ok ) { return $self->maskname; }
-
-  croak( "Override mask is not suitable! Giving up" ) if $self->masknoupdate;
-
-  if( defined( $ok ) ) {
-    my $mask = $self->maskindex->choosebydt( 'ORACTIME', $self->thing, 0 );
-    orac_warn "No suitable mask was found in index file\n"
-      unless defined $mask;
-    $self->maskname( $mask );
-    return $self->maskname;
-  } else {
-    croak( "Error in mask calibration checking - giving up" );
-  }
+  return $self->GenericIndexAccessor( "mask", 0, 0, @_ );
 }
 
 =back
@@ -365,24 +346,7 @@ when evaluating the rules.
 
 sub resp {
   my $self = shift;
-  if( @_ ) {
-    return $self->respname( shift );
-  }
-
-  my $ok = $self->respindex->verify( $self->respname, $self->thing, 0 );
-
-  # Happy ending. Current entry is OK.
-  if( $ok ) { return $self->respname; }
-
-  if( defined( $ok ) ) {
-    my $resp = $self->respindex->choosebydt( 'ORACTIME', $self->thing, 0 );
-    orac_warn "No suitable responsivity solution was found in index file\n"
-      unless defined $resp;
-    $self->respname( $resp );
-    return $self->respname;
-  } else {
-    croak( "Error in resp calibration checking - giving up" );
-  }
+  return $self->GenericIndexAccessor( "resp", 0, 0, @_ );
 }
 
 =item B<respstats>

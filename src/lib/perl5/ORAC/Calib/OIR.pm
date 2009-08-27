@@ -87,28 +87,8 @@ Return (or set) the name of the current bias.
 
 sub bias {
   my $self = shift;
-  if (@_) {
-    # if we are setting, accept the value and return
-    return $self->biasname(shift);
-  };
-
-  my $ok = $self->biasindex->verify($self->biasname,$self->thing);
-
-  # happy ending - frame is ok
-  if ($ok) {return $self->biasname};
-
-  croak("Override bias is not suitable! Giving up") if $self->biasnoupdate;
-
-  # not so good
-  if (defined $ok) {
-    my $bias = $self->biasindex->choosebydt('ORACTIME',$self->thing);
-    croak "No suitable bias calibration was found in index file"
-      unless defined $bias;
-    $self->biasname($bias);
-  } else {
-    croak("Error in bias calibration checking - giving up");
-  };
-};
+  return $self->GenericIndexAccessor( "bias", 0, 0, @_ );
+}
 
 =item B<dark>
 
@@ -120,28 +100,8 @@ checks suitability on return.
 
 sub dark {
   my $self = shift;
-  if (@_) {
-    # if we are setting, accept the value and return
-    return $self->darkname(shift);
-  };
-
-  my $ok = $self->darkindex->verify($self->darkname,$self->thing);
-
-  # happy ending - frame is ok
-  if ($ok) {return $self->darkname};
-
-  croak("Override dark is not suitable! Giving up") if $self->darknoupdate;
-
-  # not so good
-  if (defined $ok) {
-    my $dark = $self->darkindex->choosebydt('ORACTIME',$self->thing);
-    croak "No suitable dark calibration was found in index file"
-      unless defined $dark;
-    $self->darkname($dark);
-  } else {
-    croak("Error in dark calibration checking - giving up");
-  };
-};
+  return $self->GenericIndexAccessor( "dark", 0, 0, @_ );
+}
 
 =item B<flat>
 
@@ -154,28 +114,8 @@ Return (or set) the name of the current flat.
 
 sub flat {
   my $self = shift;
-  if (@_) {
-    # if we are setting, accept the value and return
-    return $self->flatname(shift);
-  };
-
-  my $ok = $self->flatindex->verify($self->flatname,$self->thing);
-
-  # happy ending - frame is ok
-  if ($ok) {return $self->flatname};
-
-  croak("Override flat is not suitable! Giving up") if $self->flatnoupdate;
-
-  # not so good
-  if (defined $ok) {
-    my $flat = $self->flatindex->choosebydt('ORACTIME',$self->thing);
-    croak "No suitable flat was found in index file"
-      unless defined $flat;
-    $self->flatname($flat);
-  } else {
-    croak("Error in flat calibration checking - giving up");
-  };
-};
+  return $self->GenericIndexAccessor( "flat", 0, 0, @_ );
+}
 
 =item B<default_mask>
 
@@ -204,49 +144,16 @@ entry for this default mask.
 =cut
 
 sub mask {
-
   my $self = shift;
-
-  if (@_) {
-    return $self->maskname(shift);
-  };
-
-  my $ok = $self->maskindex->verify($self->maskname,$self->thing);
-
-  # happy ending
-  return $self->maskname if $ok;
-
-  croak ("Override mask is not suitable! Giving up") if $self->masknoupdate;
-
-  if (defined $ok) {
-
-    my $mask = $self->maskindex->choosebydt('ORACTIME',$self->thing);
-
-    unless (defined $mask) {
-
-      # Nothing suitable, default to fallback position
-      # Check that exists and be careful not to set this as the
-      # maskname() value since it has no corresponding index enrty
-      my $defmask = $self->default_mask;
-      $defmask = $self->find_file($defmask);
-      if( defined( $defmask ) ) {
-        $defmask =~ s/\.sdf//;
-        return $defmask;
-      }
-
-      # give up...
-      croak "No suitable bad pixel mask was found in index file"
-    }
-
-    # Store the good value
-    $self->maskname($mask);
-
-  } else {
-
-    # All fall down....
-    croak("Error in determining bad pixel mask - giving up");
-  }
-
+  return $self->GenericIndexAccessor( "mask", 0,
+                                      sub {
+                                        my $defmask = $self->default_mask;
+                                        $defmask = $self->find_file($defmask);
+                                        if( defined( $defmask ) ) {
+                                          $defmask =~ s/\.sdf//;
+                                          return $defmask;
+                                        }
+                                      }, @_ );
 }
 
 =item B<readnoise>
@@ -274,32 +181,7 @@ The index file must include a column named READNOISE.
 
 sub readnoise {
   my $self = shift;
-
-  # Handle arguments
-  return $self->readnoisecache(shift) if @_;
-
-  # If noupdate is in effect we should return the cached value
-  # unless it is not defined. This effectively allows the command-line
-  # value to be used to override without verifying its suitability
-  if ($self->readnoisenoupdate) {
-    my $cache = $self->readnoisecache;
-    return $cache if defined $cache;
-  }
-
-  # Now we are looking for a value from the index file
-  my $noisefile = $self->readnoiseindex->choosebydt('ORACTIME',$self->thing);
-  croak "No suitable readnoise value found in index file"
-    unless defined $noisefile;
-
-  # This gives us the filename, we now need to get the actual value
-  # of the readnoise.
-  my $noiseref = $self->readnoiseindex->indexentry( $noisefile );
-  if (exists $noiseref->{READNOISE}) {
-    return $noiseref->{READNOISE};
-  } else {
-    croak "Unable to obtain READNOISE from index file entry $noisefile\n";
-  }
-
+  return $self->GenericIndexEntryAccessor( "readnoise", "READNOISE", @_ );
 }
 
 =item B<sky>
@@ -310,27 +192,7 @@ Return (or set) the name of the current "sky" frame
 
 sub sky {
   my $self = shift;
-  if (@_) {
-    # if we are setting, accept the value and return
-    return $self->skyname(shift);
-  };
-
-  my $ok = $self->skyindex->verify($self->skyname,$self->thing);
-
-  # happy ending - frame is ok
-  if ($ok) {return $self->skyname};
-
-  croak("Override sky is not suitable! Giving up") if $self->skynoupdate;
-
-  # not so good
-  if (defined $ok) {
-    my $sky= $self->skyindex->choosebydt('ORACTIME',$self->thing);
-    croak "No suitable sky frame was found in index file"
-      unless defined $sky;
-    $self->skyname($sky);
-  } else {
-    croak("Error in sky frame calibration checking - giving up");
-  };
+  return $self->GenericIndexAccessor( "sky", 0, 0, @_ );
 }
 
 =back

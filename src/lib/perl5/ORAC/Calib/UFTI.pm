@@ -71,31 +71,7 @@ The index file must include a column named FPCENTRE.
 
 sub fpcentre {
    my $self = shift;
-
-# Handle arguments.
-   return $self->fpcentrecache(shift) if @_;
-
-# If noupdate is in effect we should return the cached value
-# unless it is not defined.  This effectively allows the command-line
-# value to be used to override without verifying its suitability.
-   if ( $self->fpcentrenoupdate ) {
-      my $cache = $self->fpcentrecache;
-      return $cache if defined $cache;
-   }
-
-# Now we are looking for a value from the index file.
-   my $fpcfile = $self->fpcentreindex->choosebydt( 'ORACTIME', $self->thing );
-   croak "No suitable pixel location of the FP centre found in index file."
-   unless defined $fpcfile;
-
-# This gives us the filename, we now need to get the actual value
-# of the pixel location of the centre of FP transmission.
-   my $fpcref = $self->fpcentreindex->indexentry( $fpcfile );
-   if ( exists $fpcref->{FPCENTRE} ) {
-      return $fpcref->{FPCENTRE};
-   } else {
-      croak "Unable to obtain FPCENTRE from index file entry $fpcfile.\n";
-   }
+  return $self->GenericIndexEntryAccessor( "fpcentre", "FPCENTRE", @_ );
 }
 
 =back

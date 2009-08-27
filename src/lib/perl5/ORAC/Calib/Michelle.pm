@@ -66,24 +66,7 @@ suitability on return.
 
 sub emis {
   my $self = shift;
-  if( @_ ) {
-    return $self->emisname( shift );
-  };
-
-  my $ok = $self->emisindex->verify( $self->emisname, $self->thing );
-
-  if( $ok ) { return $self->emisname };
-
-  croak("Override emissivity frame is not suitable. Giving up") if $self->emisnoupdate;
-
-  if( defined $ok ) {
-    my $emis = $self->emisindex->choosebydt( 'ORACTIME', $self->thing );
-    croak "No suitable emissivity calibration was found in the index file"
-      unless defined $emis;
-    $self->emisname( $emis );
-  } else {
-    croak("Error in emissivity calibration checking - giving up");
-  }
+  return $self->GenericIndexAccessor( "emis", 0, 0, @_ );
 }
 
 =back

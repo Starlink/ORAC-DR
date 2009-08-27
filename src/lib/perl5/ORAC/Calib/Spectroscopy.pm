@@ -59,66 +59,29 @@ Return (or set) the name of the current arc.
 
   $arc = $Cal->arc;
 
+Uses the nearest suitable calibration in time and croaks
+if a calibration can not be found.
+
 =cut
 
 sub arc {
   my $self = shift;
-  if (@_) { 
-    # if we are setting, accept the value and return
-    return $self->arcname(shift);
-  };
-
-  my $ok = $self->arcindex->verify($self->arcname,$self->thing);
-
-  # happy ending - frame is ok
-  if ($ok) {return $self->arcname};
-
-  croak("Override arc is not suitable! Giving up") if $self->arcnoupdate;
-
-  # not so good
-  if (defined $ok) {
-    my $arc = $self->arcindex->choosebydt('ORACTIME',$self->thing);
-    croak "No suitable arc was found in index file"
-      unless defined $arc;
-    $self->arcname($arc);
-  } else {
-    croak("Error in arc calibration checking - giving up");
-  };
-};
+  return $self->GenericIndexAccessor( "arc", 0, 0, @_ );
+}
 
 =item B<arlines>
 
 Returns the name of a suitable arlines file.
 
+Uses the closest previous observation and croaks if no suitable
+file can be found.
+
 =cut
 
 sub arlines {
-
   my $self = shift;
-  if (@_) {
-    return $self->arlinesname(shift);
-  };
 
-  my $ok = $self->arlinesindex->verify($self->arlinesname,$self->thing);
-
-  # happy ending
-  return $self->arlinesname if $ok;
-
-  if (defined $ok) {
-    my $arlines = $self->arlinesindex->chooseby_negativedt('ORACTIME',$self->thing, 0);
-
-    unless (defined $arlines) {
-      # Nothing suitable, give up...
-      croak "No suitable arlines file was found in index file"
-    }
-
-    # Store the good value
-    $self->arlinesname($arlines);
-
-  } else {
-    # All fall down....
-    croak("Error in determining arlines file - giving up");
-  }
+  return $self->GenericIndexAccessor( "arlines", -1, 0, @_ );
 }
 
 =item B<calibratedarc>
@@ -128,68 +91,26 @@ arc file can be found, this method returns <undef> rather than croaking as
 other calibration options do. This is so this calibration can be skipped if
 no calibration arc can be found.
 
+Uses the closest previous observation.
+
 =cut
 
 sub calibratedarc {
   my $self = shift;
-  if (@_) {
-    return $self->calibratedarcname(shift);
-  };
-
-  my $ok = $self->calibratedarcindex->verify($self->calibratedarcname,$self->thing);
-
-  # happy ending
-  return $self->calibratedarcname if $ok;
-
-  if (defined $ok) {
-   my $calibratedarc = $self->calibratedarcindex->chooseby_negativedt('ORACTIME',$self->thing, 0);
-
-    unless (defined $calibratedarc) {
-      # Nothing suitable, return undef.
-      return;
-    }
-
-    # Store the good value
-    $self->calibratedarcname($calibratedarc);
-
-  } else {
-    # Nothing suitable, return undef.
-    return;
-  }
+  return $self->GenericIndexAccessor( "calibratedarc", -1, 1, @_ );
 }
 
 =item B<iar>
 
 Returns the name of a suitable Iarc file.
 
-=cut
+Uses the closest relevant calibration and croaks if none can be found.
 
+=cut
 
 sub iar {
   my $self = shift;
-  if (@_) {
-    return $self->iarname(shift);
-  };
-
-  my $ok = $self->iarindex->verify($self->iarname,$self->thing);
-
-  # happy ending
-  return $self->iarname if $ok;
-
-  if (defined $ok) {
-    my $iar = $self->iarindex->choosebydt('ORACTIME',$self->thing);
-
-    unless (defined $iar) {
-      # Nothing suitable, give up...
-      croak "No suitable Iarc file was found in index file"
-    }
-    # Store the good value
-    $self->iarname($iar);
-
-  } else {
-    # All fall down....
-    croak("Error in determining Iarc file - giving up");
-  }
+  return $self->GenericIndexAccessor( "iar", 0, 0, @_ );
 }
 
 =item B<profile>
@@ -198,34 +119,14 @@ Return (or set) the name of the current profile
 
    $profile = $Cal->profile;
 
+Uses the closest relevant calibration and croaks if none can be found.
+
 =cut
 
 sub profile {
   my $self = shift;
-  if (@_) {
-    # if we are setting, accept the value and return
-    return $self->profilename(shift);
-  };
-
-  my $ok = $self->profileindex->verify($self->profilename,$self->thing);
-
-  # happy ending - frame is ok
-  if ($ok) {return $self->profilename};
-
-  croak("Override profile is not suitable! Giving up") if $self->profilenoupdate;
-
-  # not so good
-  if (defined $ok) {
-    my $profile = $self->profileindex->choosebydt('ORACTIME',$self->thing);
-    croak "No suitable profile was found in index file"
-      unless defined $profile;
-    $self->profilename($profile);
-  } else {
-    croak("Error in profile calibration checking - giving up");
-  };
-};
-
-
+  return $self->GenericIndexAccessor( "profile", 0, 0, @_ );
+}
 
 =item B<rows>
 
@@ -293,33 +194,13 @@ Return (or set) the name of the current standard.
 
   $standard = $Cal->standard;
 
+Returns the closest standard and croaks if none can be found.
+
 =cut
 
 sub standard {
-
   my $self = shift;
-  if (@_) {
-    # if we are setting, accept the value and return
-    return $self->standardname(shift);
-  };
-
-  my $ok = $self->standardindex->verify($self->standardname,$self->thing);
-
-  # happy ending - frame is ok
-  if ($ok) {return $self->standardname};
-
-  croak("Override standard is not suitable! Giving up") if $self->standardnoupdate;
-
-  # not so good
-  if (defined $ok) {
-    my $standard= $self->standardindex->choosebydt('ORACTIME',$self->thing);
-    croak "No suitable standard frame was found in index file"
-      unless defined $standard;
-    $self->standardname($standard);
-  } else {
-    croak("Error in standard calibration checking - giving up");
-  };
-
+  return $self->GenericIndexAccessor( "standard", 0, 0, @_ );
 }
 
 =back

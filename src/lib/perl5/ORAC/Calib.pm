@@ -298,6 +298,146 @@ sub GenericIndex {
   return $self->{$key};
 }
 
+=item B<GenericIndexAccessor>
+
+Generic method for retrieving or setting the current value based on index
+and verification. Uses ORACTIME to verify.
+
+  $val = $Cal->GenericIndexAccessor( "sky", 0, 1, @_ );
+
+First argument indicates the root name for methods to be called. ie "sky" would
+call "skyname", "skynoupdate", and "skyindex".
+
+Second argument controls whether the time comparison should be
+nearest in time (0), or earlier in time (-1).
+
+Third argument controls croaking behaviour. False indicates that the method
+should croak if a suitable calibration can not be found. True indicates
+that it should return undef. If a code ref is provided, it will be executed
+if no suitable calibration is found. If it returns a defined value it
+will be assumed to be a valid match, and if it returns undef the method
+will croak as no suitable calibration will be available. This allows defaults
+to be inserted.
+
+  $val = $Cal->GenericIndexAccessor( "mask", 0, sub { return "bpm.sdf" }, @_ );
+
+=cut
+
+sub GenericIndexAccessor {
+  my $self = shift;
+  my $root = shift;
+  my $timesearch = shift;
+  my $nocroak = shift;
+
+  my $namemeth = $root ."name";
+  my $indexmeth = $root ."index";
+  my $noupmeth = $root . "noupdate";
+
+  # if we are setting, accept the value and return
+  return $self->$namemeth(shift) if @_;
+
+  my $ok = $self->$indexmeth->verify($self->$namemeth,$self->thing);
+
+  # happy ending - frame is ok
+  return $self->$namemeth() if $ok;
+
+  croak("Override $root is not suitable! Giving up") if $self->$noupmeth;
+
+  # not so good
+  if (defined $ok) {
+    # Choose time selection method
+    my $choosemeth;
+    if (!$timesearch) {
+      $choosemeth = "choosebydt";
+    } elsif ($timesearch == -1) {
+      $choosemeth = "chooseby_negativedt";
+    } else {
+      croak "Unable to decide on time selection method with arg '$timesearch'";
+    }
+
+    my $match = $self->$indexmeth->$choosemeth('ORACTIME',$self->thing);
+
+    # Error behaviour
+    if (!defined $match) {
+      if (ref($nocroak) eq 'CODE') {
+        $match = $nocroak->();
+        croak "No suitable $root found from default callback"
+          unless defined $match;
+      } elsif ($nocroak) {
+        return undef;
+      }
+      croak "No suitable $root frame was found in index file";
+    }
+    $self->$namemeth($match);
+  } else {
+    croak("Error in $root frame calibration checking - giving up");
+  }
+
+}
+
+=item B<GenericIndexEntryAccessor>
+
+Like C<GenericIndexAccessor> except that a particular value from the index
+is retrieved rather than a indexing key (filename).
+
+No verification is performed.
+
+  $val = $Cal->GenericIndexAccessor( "sky", "INDEX_COLUMN", @_ );
+
+First argument indicates the root name for methods to be called. ie "sky" would
+call "skycache", "skynoupdate", and "skyindex".
+
+If a reference to an array or columns is given in argument 2, all values
+are checked and the row reference is returned instead of a single value.
+
+  $entryref = $Cal->GenericIndexAccessor( "sky", [qw/ col1 col2 /], @_ );
+
+=cut
+
+sub GenericIndexEntryAccessor {
+  my $self = shift;
+  my $root = shift;
+  my $col  = shift;
+
+  my $cachemeth = $root ."cache";
+  my $indexmeth = $root ."index";
+  my $noupmeth = $root . "noupdate";
+
+  # Handle arguments
+  return $self->$cachemeth(shift) if @_;
+
+  # If noupdate is in effect we should return the cached value
+  # unless it is not defined. This effectively allows the command-line
+  # value to be used to override without verifying its suitability
+  if ($self->$noupmeth) {
+    my $cache = $self->$cachemeth;
+    return $cache if defined $cache;
+  }
+
+  # Now we are looking for a value from the index file
+  my $match = $self->$indexmeth->choosebydt('ORACTIME',$self->thing);
+  croak "No suitable $root value found in index file"
+    unless defined $match;
+
+  # This gives us the filename, we now need to get the actual value
+  # of the readnoise.
+  my $rowref = $self->$indexmeth->indexentry( $match );
+  if (ref($col) eq 'ARRAY') {
+    for my $c (@$col) {
+      next if exists $rowref->{$c};
+      croak "Unable to find column $c for index file entry $match";
+    }
+    # Return entire row
+    return $rowref;
+  } else {
+    if (exists $rowref->{$col}) {
+      return $rowref->{$col};
+    } else {
+      croak "Unable to obtain $col from index file entry $match\n";
+    }
+  }
+}
+
 =item B<CreateBasicAccessors>
 
 Dynamically create default accessors for "xxxnoupdate", "xxxname" and "xxxindex" methods.
