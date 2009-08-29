@@ -40,6 +40,7 @@ __PACKAGE__->CreateBasicAccessors(
                                   # override base mask implementations
                                   mask => { staticindex => 1 },
                                   sky => {staticindex => 1 },
+                                  flat => { staticindex => 1 },
 );
 
 =head1 METHODS
