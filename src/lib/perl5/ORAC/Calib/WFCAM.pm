@@ -39,7 +39,6 @@ __PACKAGE__->CreateBasicAccessors(
                                   skyflat => {},
                                   # override base mask implementations
                                   mask => { staticindex => 1 },
-                                  sky => {staticindex => 1 },
                                   flat => { staticindex => 1 },
 );
 
