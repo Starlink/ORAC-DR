@@ -41,6 +41,7 @@ use vars qw/ @EXPORT /;
 @EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist cosdeg
 	      sindeg dectodms hmstodec deg2rad rad2deg is_numeric
         get_prim_arg write_file_list write_file_list_inout read_file_list
+              hardlink
 	    );
 
 use Carp;
@@ -583,6 +584,38 @@ sub write_file_list_inout {
   } else {
     return ($infiles, $outfiles, @outfiles);
   }
+}
+
+=item B<hardlink>
+
+Create a hard link from an input file to an output file.
+
+  $status = hardlink( $file, $link );
+
+If $out exists, then it will be overwritten by the link.
+
+Returns 1 if successful, 0 otherwise, and puts the error code into $!.
+
+=cut
+
+sub hardlink {
+  my $file = shift;
+  my $link = shift;
+
+  if( ! defined( $file ) ||
+      ! defined( $link ) ) {
+    $! = "Must define both file and link to hardlink()";
+    return 0;
+  }
+
+  if( -e $link ) {
+    my $unlinkstatus = unlink( $link );
+    if( ! $unlinkstatus ) {
+      return $unlinkstatus;
+    }
+  }
+  my $linkstatus = link( $file, $link );
+  return $linkstatus;
 }
 
 =back
