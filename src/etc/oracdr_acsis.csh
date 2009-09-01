@@ -79,10 +79,7 @@
 #     04-MAY-2007 (TIMJ):
 #        Use of /sbin/ip is non-portable
  
-#  Revision:
-#     $Id$
- 
-#  Copyright:
+ #  Copyright:
 #     Copyright (C) 1998-2004,2006 Particle Physics and Astronomy Research
 #     Council. Copyright (C) 2007 Science and Technology Facilities
 #     Council. All Rights Reserved.
@@ -91,26 +88,5 @@
 
 setenv ORAC_INSTRUMENT ACSIS
 
-# Set the UT date.
-set oracut=`${ORAC_DIR}/etc/oracdr_set_ut.csh $1`
-
-# Find Perl.
-set starperl=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
-
-# Run initialization.
-set orac_env_setup=`$starperl ${ORAC_DIR}/etc/setup_oracdr_env.pl csh $oracut`
-if ( $? != 0 ) then
-  echo "**** ERROR IN setup_oracdr_env.pl ****"
-  exit 255
-endif
-eval $orac_env_setup
-
-set oracdr_args = "-ut $oracut"
-
 # Run oracdr_start.
 source $ORAC_DIR/etc/oracdr_start.csh
-
-unset oracdr_args
-unset oracut
-unset starperl
-unset orac_env_setup

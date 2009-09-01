@@ -92,60 +92,13 @@
 #     02 Jun 1999 (frossie)
 #        Original Version
 
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 1998-2002 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.
 
 #-
 
-
-
-# orac things
-if test -z "$ORAC_DATA_ROOT"; then
-    export ORAC_DATA_ROOT=/ukirtdata
-fi
-
-if test -z "$ORAC_CAL_ROOT"; then
-    export ORAC_CAL_ROOT=/jac_sw/oracdr_cal
-fi
-
-if ! test -z "$ORAC_RECIPE_DIR"; then
-    echo "Warning: resetting ORAC_RECIPE_DIR"
-    unset ORAC_RECIPE_DIR
-fi
-
-if ! test -z "$ORAC_PRIMITIVE_DIR"; then
-    echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unset ORAC_PRIMITIVE_DIR
-fi
-
-
-if test ! -z "$1"; then
-    oracut=$1
-else
-    oracut=`\date -u +%Y%m%d`
-fi
-
-export oracdr_args="-ut $oracut"
-
-# The file naming convention changed on 2002 March 1 to accommodate
-# more than 1000 frames! 
-if ( $oracut < 20020301 ); then
-   export ORAC_INSTRUMENT=GMOS2
-else
-   export ORAC_INSTRUMENT=GMOS
-fi
-export ORAC_DATA_IN=$ORAC_DATA_ROOT/raw/gmos/$oracut/
-export ORAC_DATA_OUT=$ORAC_DATA_ROOT/reduced/gmos/$oracut/
-export ORAC_DATA_CAL=$ORAC_CAL_ROOT/gmos
-
-# screen things
-export ORAC_PERSON=p.hirst
-export ORAC_LOOP=flag
-export ORAC_SUN=XXX
+export ORAC_INSTRUMENT=GMOS
 
 # Source general alias file and print welcome screen
 . $ORAC_DIR/etc/oracdr_start.sh
@@ -155,11 +108,5 @@ echo "Although it basically works, it has not been refined or verified to be"
 echo "scientifically valid. GMOS support was added to oracdr basically as a"
 echo "demonstration of the ease of adding support for a new telescope and"
 echo "instrumentation suite."
-echo "Contact Paul Hirst <p.hirst@jach.hawaii.edu> for more info."
+echo "Contact Paul Hirst <p.hirst@gemini.edu> for more info."
 echo ""
-
-
-
-# Tidy up
-unset oracut
-unset oracdr_args

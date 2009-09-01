@@ -88,27 +88,5 @@
 
 setenv ORAC_INSTRUMENT UIST
 
-# Set the UT date.
-set oracut=`${ORAC_DIR}/etc/oracdr_set_ut.csh $1`
-
-# Find Perl.
-set starperl=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
-
-# Run initialization.
-set orac_env_setup=`$starperl ${ORAC_DIR}/etc/setup_oracdr_env.pl csh $oracut`
-if ( $? != 0 ) then
-  echo "**** ERROR IN setup_oracdr_env.pl ****"
-  exit 255
-endif
-eval $orac_env_setup
-
-set oracdr_args = "-ut $oracut -grptrans"
-
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
-
-# Tidy up
-unset oracut
-unset oracdr_args
-unset starperl
-unset orac_env_setup

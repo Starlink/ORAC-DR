@@ -54,9 +54,6 @@
 #     22-AUG-2007 (TIMJ):
 #        Factor out perl and version determination
 
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 1998-2002 Particle Physics and Astronomy Research Council
 #     Copyright (C) 2007 Science and Technology Facilities Council.
@@ -87,8 +84,6 @@ set starperl=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
 # Set up back door for the version number
 set pkgvers = `${ORAC_DIR}/etc/oracdr_version.sh`
 
-source ${ORAC_DIR}/etc/oracdr_setenv.csh
-
 # Unset ORAC_RECIPE_DIR and ORAC_PRIMITIVE_DIR
 if ($?ORAC_RECIPE_DIR) then
     echo "Warning: resetting ORAC_RECIPE_DIR"
@@ -103,6 +98,18 @@ endif
 # These are perl programs
 
 if ( -e $starperl ) then
+
+  # Run initialization. Passing in all shell args and any extras
+  if !($?oracdr_setup_args) set oracdr_setup_args=""
+  set orac_env_setup=`$starperl ${ORAC_DIR}/etc/setup_oracdr_env.pl csh $* $oracdr_setup_args`
+  if ( $? != 0 ) then
+  echo "**** ERROR IN setup_oracdr_env.pl ****"
+  exit 255
+  endif
+  eval $orac_env_setup
+  unset orac_env_setup
+  unset oracdr_setup_args
+
 
   # ORAC-DR
   # Might have an argument to oracdr passed in to this routine.
@@ -119,7 +126,63 @@ if ( -e $starperl ) then
   alias oracdr_parse_recipe "$starperl ${ORAC_DIR}/bin/oracdr_parse_recipe"
   alias oracdr_monitor "$starperl ${ORAC_DIR}/bin/oracdr_monitor"
 
+  # These are shell scripts
+
+  alias oracman     'csh ${ORAC_DIR}/bin/oracman'
+
+  # Define default documentation instruction.
+  set doc_command = "'showme sun${ORAC_SUN}'"
+
+  # Allow for more than one document per instrument.  Determine whether
+  # or not there is a comma in document number.
+  set comma_index = `echo ${ORAC_SUN} | awk '{print index($0,",")}'`
+  if ( $comma_index > 0 ) then
+
+    # Extract the document numbers.
+    set doc_numbers = `echo ${ORAC_SUN} | awk '{i=1;while(i<=split($0,a,",")){print a[i];i++}}'`
+
+    # Form concatenated instruction giving options for finding documentation. 
+    set doc_command = "'showme sun$doc_numbers[1]'"
+    shift doc_numbers
+    foreach doc ( $doc_numbers )
+      set doc_command = "$doc_command or 'showme sun$doc'"
+    end
+  endif
+
+  # Start up message
+  echo " "
+  echo "     ORAC Data Reduction Pipeline -- (ORAC-DR Version $pkgvers)"
+  echo "     Configured for instrument $ORAC_INSTRUMENT"
+  echo " "
+  echo '     Type "oracdr -man" for usage'
+  echo "     Type $doc_command to browse the hypertext documentation"
+  echo " "
+  echo " "
+  echo " Raw data will be read from $ORAC_DATA_IN"
+
+  # Check for that `in' directory
+  if !( -d $ORAC_DATA_IN ) then
+    echo '     \!\!\!\!\!\!\!\!\!\!\!\! but that directory does not exist \!\!\!\!\!\!\!\!\! '
+  endif
+
+  echo " Reduced data will appear in $ORAC_DATA_OUT"
+
+  # Check for that `out' directory
+  if !(-d $ORAC_DATA_OUT) then
+    echo '     \!\!\!\!\!\!\!\!\!\!\!\! but that directory does not exist \!\!\!\!\!\!\!\!\! '
+  endif
+
+  echo " "
+  echo "+++++++++ For online $ORAC_INSTRUMENT reduction use oracdr -loop $ORAC_LOOP +++++++++"
+  echo ""
+  echo For comments specific to $ORAC_INSTRUMENT data reduction mail $ORAC_PERSON@jach.hawaii.edu
+  echo 'For problems with the ORAC-DR system mail oracdr@jach.hawaii.edu'
+  echo '         http://www.oracdr.org'
+  echo ""
+  echo ""
+
 else
+  # Nothing is going to work
   echo "************ Starlink perl could not be located. ********"
   echo "************       Please install STARPERL       ********"
 
@@ -131,57 +194,5 @@ else
 
 endif
 
-# These are shell scripts
-
-alias oracman     'csh ${ORAC_DIR}/bin/oracman'
-
-# Define default documentation instruction.
-set doc_command = "'showme sun${ORAC_SUN}'"
-
-# Allow for more than one document per instrument.  Determine whether
-# or not there is a comma in document number.
-set comma_index = `echo ${ORAC_SUN} | awk '{print index($0,",")}'`
-if ( $comma_index > 0 ) then
-
-# Extract the document numbers.
-   set doc_numbers = `echo ${ORAC_SUN} | awk '{i=1;while(i<=split($0,a,",")){print a[i];i++}}'`
-
-# Form concatenated instruction giving options for finding documentation. 
-   set doc_command = "'showme sun$doc_numbers[1]'"
-   shift doc_numbers
-   foreach doc ( $doc_numbers )
-      set doc_command = "$doc_command or 'showme sun$doc'"
-   end
-endif
-
-# Start up message
-echo " "
-echo "     ORAC Data Reduction Pipeline -- (ORAC-DR Version $pkgvers)"
-echo "     Configured for instrument $ORAC_INSTRUMENT"
-echo " "
-echo '     Type "oracdr -man" for usage'
-echo "     Type $doc_command to browse the hypertext documentation"
-echo " "
-echo " "
-echo " Raw data will be read from $ORAC_DATA_IN"
-
-# Check for that `in' directory
-if !( -d $ORAC_DATA_IN ) then
-  echo '     \!\!\!\!\!\!\!\!\!\!\!\! but that directory does not exist \!\!\!\!\!\!\!\!\! '
-endif
-
-echo " Reduced data will appear in $ORAC_DATA_OUT"
-
-# Check for that `out' directory
-if !(-d $ORAC_DATA_OUT) then
-  echo '     \!\!\!\!\!\!\!\!\!\!\!\! but that directory does not exist \!\!\!\!\!\!\!\!\! '
-endif
-
-echo " "
-echo "+++++++++ For online $ORAC_INSTRUMENT reduction use oracdr -loop $ORAC_LOOP +++++++++"
-echo ""
-echo For comments specific to $ORAC_INSTRUMENT data reduction mail $ORAC_PERSON@jach.hawaii.edu
-echo 'For problems with the ORAC-DR system mail helpme@jach.hawaii.edu'
-echo '         http://www.jach.hawaii.edu/UKIRT/software/oracdr/'
-echo ""
-echo ""
+unset oracdr_args
+unset starperl

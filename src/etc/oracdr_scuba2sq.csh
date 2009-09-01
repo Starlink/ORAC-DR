@@ -92,9 +92,6 @@
 #     21 Jan 2003 (jrl)
 #        Original Version based on oracdr_wfcam.csh
 
-#  Revision:
-#     $Id: oracdr_scuba2s.csh 5923 2005-02-26 08:15:04Z timj $
-
 #  Copyright:
 #     Copyright (C) 1998-2005 Particle Physics and Astronomy Research
 #     Council. Copyright (C) 2008 University of British Columbia. All
@@ -102,126 +99,12 @@
 
 #-
 
-# ORAC data and calibration root locations
-if !($?ORAC_DATA_ROOT) then
-    setenv ORAC_DATA_ROOT /jcmtdata
-endif
-
-if !($?ORAC_CAL_ROOT) then
-    setenv ORAC_CAL_ROOT /jcmt_sw/oracdr_cal
-endif
-
-# Unset existing recipe & primitive directory definitions
-if ($?ORAC_RECIPE_DIR) then
-    echo "Warning: resetting ORAC_RECIPE_DIR"
-    unsetenv ORAC_RECIPE_DIR
-endif
-
-if ($?ORAC_PRIMITIVE_DIR) then
-    echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unsetenv ORAC_PRIMITIVE_DIR
-endif
-
-# Check for -eng flag with hack to prevent the shell trying to evalute -e
-if ( X$1 == "X-eng" ) then
-    set eng = 1
-    shift
-else
-    set eng = 0
-endif
-
-# Now see if a UT date was given on the command line
-if ($1 != "") then
-    set oracut = $1
-else
-    set oracut = `\date -u +%Y%m%d`
-endif
-
-# QL-specific args - in QL the display is handled by oracdr_monitor
-set oracdr_args = "-ut $oracut -loop task -recsuffix QL -nodisplay"
-
 # Define instrument
 setenv ORAC_INSTRUMENT SCUBA2_SHORT
 
-# Data directories
-if ($eng == 1) then
-    setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/scuba2/ok/eng/$oracut
-else
-    setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/scuba2/ok/$oracut
-endif
-setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/scuba2ql_short/$oracut
-
-# Calibration directory
-setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/scuba2
-
-# DRAMA task names - 1 subarray to begin with
-setenv ORAC_REMOTE_TASK SC2DA4D@sc2da4d
-
-# Check to see if we're at JCMT. If we are, then create the
-# ORAC_DATA_OUT directory.
-set jcmt = ''
-if ($?SITE) then
-  if ($SITE == 'jcmt') then
-     set jcmt = $SITE
-  endif
-endif
-if ( $jcmt != '' ) then
-  if ( ! -d $ORAC_DATA_OUT ) then
-
-    umask 002
-
-    echo "CREATING OUTPUT DIRECTORY: $ORAC_DATA_OUT"
-
-    mkdir $ORAC_DATA_OUT
-   # Set the sticky bit for group write
-   # Need to rsh to the NFS server of the partition of it is not local
-
-    # check if ORAC_DATA_OUT is an NFS-mounted partition -
-
-    set df_out = `df -t nfs $ORAC_DATA_OUT | wc -l`
-
-    # if it is 1 that's just the df header, so we're local
-    # if it is 3 we're NFS
-    # if it is anything else, the df format is not what we thought it was
-
-    if ($df_out == 1) then
-
-      chmod g+rws $ORAC_DATA_OUT
-
-    else if ($df_out > 1) then
-
-      # get the name of the NFS host
-      set nfs_host  = `df -t nfs $ORAC_DATA_OUT | head -2 | tail -1 | awk -F: '{print $1}'`
-      # do the deed
-      rsh $nfs_host chmod g+rws $ORAC_DATA_OUT
-      # whinge to user
-      echo '***************************************************'
-      echo '* Your ORAC_DATA_OUT is not local to your machine  '
-      echo '* If you intend to run ORAC-DR you should be       '
-      echo "* using $nfs_host instead, which is where          "
-      echo "* $ORAC_DATA_OUT is located *"
-      echo '***************************************************'
-    else
-
-      echo Unable to establish whether $ORAC_DATA_OUT is local or remote
-      echo Please report this error to the JAC software group
-
-    endif
-  endif
-endif
-
-# Misc things for printing to screen
-setenv ORAC_PERSON agibb
-setenv ORAC_LOOP flag
-setenv ORAC_SUN  xxx
-
 # Source general alias file and print welcome screen
+set oracdr_setup_args="--drmode=QL"
 source $ORAC_DIR/etc/oracdr_start.csh
 
 # Set stripchart alias
 alias xstripchart "xstripchart -cfg=$ORAC_DATA_CAL/jcmt_ql.ini &"
-
-# Tidy up
-unset oracut
-unset oracdr_args
-

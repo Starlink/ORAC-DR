@@ -17,7 +17,7 @@
 #     sources the appropriate oracdr_wfcam?.sh file
 
 #  Parameters:
-      # Parameters are simply passed on to the oracdr_wfcam?.sh
+#     Parameters are simply passed on to the oracdr_wfcam?.sh
 
 #  Authors:
 #     Brad Cavanagh <b.cavanagh@jach.hawaii.edu>

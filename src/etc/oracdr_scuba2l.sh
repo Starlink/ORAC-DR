@@ -95,62 +95,13 @@
 #     21 Jan 2003 (jrl)
 #        Original Version based on oracdr_wfcam.sh
 
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 1998-2005 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.
 
 #-
 
-
-
-# orac things
-if test -z "$ORAC_DATA_ROOT"; then
-    export ORAC_DATA_ROOT=/jcmtdata
-fi
-
-if test -z "$ORAC_CAL_ROOT"; then
-    export ORAC_CAL_ROOT=/jcmt_sw/oracdr_cal
-fi
-
-if ! test -z "$ORAC_RECIPE_DIR"; then
-    echo "Warning: resetting ORAC_RECIPE_DIR"
-    unset ORAC_RECIPE_DIR
-fi
-
-if ! test -z "$ORAC_PRIMITIVE_DIR"; then
-    echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unset ORAC_PRIMITIVE_DIR
-fi
-
-
-if test ! -z "$1"; then
-    oracut=$1
-else
-    oracut=`\date -u +%Y%m%d`
-fi
-
-export oracdr_args="-ut $oracut"
-
 export ORAC_INSTRUMENT=SCUBA2_LONG
-export ORAC_DATA_IN=$ORAC_DATA_ROOT/raw/scuba2/ok/$oracut
-export ORAC_DATA_OUT=$ORAC_DATA_ROOT/reduced/scuba2_long/$oracut
-export ORAC_DATA_CAL=$ORAC_CAL_ROOT/scuba2
-
-# screen things
-export ORAC_PERSON=agibb
-export ORAC_LOOP=flag
-export ORAC_SUN=xxx
-
-# some other things
-export HDS_MAP=0
 
 # Source general alias file and print welcome screen
 . $ORAC_DIR/etc/oracdr_start.sh
-
-# Tidy up
-unset oracut
-unset oracdr_args
-

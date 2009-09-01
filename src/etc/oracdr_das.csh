@@ -67,69 +67,14 @@
 #     initial addition
 #
 
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.
 
 #-
 
-# Calibration root
-if !($?ORAC_CAL_ROOT) then
-    setenv ORAC_CAL_ROOT /jcmt_sw/oracdr_cal
-endif
-
-# Recipe dir
-if ($?ORAC_RECIPE_DIR) then
-    echo "Warning: resetting ORAC_RECIPE_DIR"
-    unsetenv ORAC_RECIPE_DIR
-endif
-
-# primitive dir
-if ($?ORAC_PRIMITIVE_DIR) then
-    echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unsetenv ORAC_PRIMITIVE_DIR
-endif
-
-#  Read the input UT date
-if ($1 != "") then
-    set oracut = $1
-else
-    set oracut = `date -u +%Y%m%d`
-endif
-
-set oracdr_args = "-ut $oracut"
-
 # Instrument
 setenv ORAC_INSTRUMENT JCMT_DAS
 
-# Cal Directories
-setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/jcmt_das
-
-# Data directories
-setenv ORAC_DATA_ROOT /jcmtdata
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/heterodyne/$oracut/
-setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/heterodyne/$oracut/
-
-# screen things
-setenv ORAC_PERSON bradc
-setenv ORAC_LOOP 'flag -skip'
-setenv ORAC_SUN  231
-
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
-
-# Print additional warning if required
-set orachost = `hostname`
-if ($orachost != 'kolea') then
-  echo '*****************************************************'
-  echo '**** PLEASE USE KOLEA FOR ORAC-DR DATA REDUCTION ****'
-  echo '*****************************************************'
-endif
-
-# Tidy up
-unset oracut
-unset oracdr_args
-unset orachost

@@ -67,27 +67,5 @@
 # Instrument.
 export ORAC_INSTRUMENT='ACSIS'
 
-# Set the UT date.
-oracut=`csh ${ORAC_DIR}/etc/oracdr_set_ut.csh $1`
-
-# Find Perl.
-starperl=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
-
-# Run initialization.
-orac_env_setup=`$starperl ${ORAC_DIR}/etc/setup_oracdr_env.pl bash $oracut`
-if test ! $?; then
-  echo "**** ERROR IN setup_oracdr_env.pl ****"
-  exit 255
-fi
-eval $orac_env_setup
-
-oracdr_args="-ut $oracut"
-
 # Source general alias file and print welcome screen
 . $ORAC_DIR/etc/oracdr_start.sh
- 
-# Tidy up
-unset oracut
-unset oracdr_args
-unset starperl
-unset orac_env_setup

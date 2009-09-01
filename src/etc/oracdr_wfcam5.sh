@@ -73,72 +73,12 @@
 #     replaced with ex-SWFCAM version
 #
 
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 1998-2002 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.
 
 #-
-
-
-
-# orac things
-if test -z "$ORAC_DATA_ROOT"; then
-    export ORAC_DATA_ROOT=/ukirtdata
-fi
-
-if test -z "$ORAC_CAL_ROOT"; then
-    export ORAC_CAL_ROOT=/jac_sw/oracdr_cal
-fi
-
-if ! test -z "$ORAC_RECIPE_DIR"; then
-    echo "Warning: resetting ORAC_RECIPE_DIR"
-    unset ORAC_RECIPE_DIR
-fi
-
-if ! test -z "$ORAC_PRIMITIVE_DIR"; then
-    echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unset ORAC_PRIMITIVE_DIR
-fi
-
-
-if test ! -z "$1"; then
-    oracut=$1
-else
-    oracut=`\date -u +%Y%m%d`
-fi
-
-export oracdr_args="-ut $oracut -grptrans"
-
 export ORAC_INSTRUMENT=WFCAM5
-export ORAC_DATA_IN=$ORAC_DATA_ROOT/raw/wfcam5/$oracut
-export ORAC_DATA_OUT=$ORAC_DATA_ROOT/reduced/wfcam5/$oracut
-export ORAC_DATA_CAL=$ORAC_CAL_ROOT/wfcam
-
-# some other things
-export HDS_MAP=0
-export RTD_REMOTE_DIR=$ORAC_DATA_OUT/..
-
-# Determine the host, and if we're on a wfdr machine, create
-# $ORAC_DATA_OUT if it doesn't already exist.
-hostname=`/bin/hostname`
-if( $hostname == "wfdr1" || $hostname == "wfdr2" || $hostname == "wfdr3" || $hostname == "wfdr4" ); then
-    if( ! -d ${ORAC_DATA_OUT} ); then
-        mkdir $ORAC_DATA_OUT
-    fi
-fi
-
-# screen things
-export ORAC_PERSON=bradc
-export ORAC_LOOP=flag
-export ORAC_SUN
 
 # Source general alias file and print welcome screen
 . $ORAC_DIR/etc/oracdr_start.sh
-
-# Tidy up
-unset oracut
-unset oracdr_args
-
