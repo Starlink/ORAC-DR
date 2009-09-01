@@ -245,7 +245,7 @@ sub utdate {
   my ($day,$month,$year) = (gmtime)[3..5];
   $month++;
   $year += 1900;
-  my $yyyymmdd = $year . '0'x (2-length($month)) . $month . '0'x (2-length($day)) . $day;
+  return sprintf( "%04d%02d%02d", $year, $month, $day );
 
 }
 
