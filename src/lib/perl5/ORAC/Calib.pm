@@ -363,6 +363,7 @@ sub GenericIndexAccessor {
         $match = $nocroak->();
         croak "No suitable $root found from default callback"
           unless defined $match;
+        return $match;
       } elsif ($nocroak) {
         return undef;
       }
