@@ -485,7 +485,7 @@ sub orac_calc_instrument_settings {
 =item B<is_nfs_disk>
 
 Returns the name of the remote NFS server if the path corresponds to an NFS disk,
-undef if it is local.
+undef if it is local or if it does not actually exist.
 
   $isnfs = is_nfs_disk( $path );
 
@@ -495,6 +495,7 @@ Will not be portable since "df" is called.
 
 sub is_nfs_disk {
   my $path = shift;
+  return unless -d $path;
 
   my $df_args;
   if ($^O eq 'linux') {
