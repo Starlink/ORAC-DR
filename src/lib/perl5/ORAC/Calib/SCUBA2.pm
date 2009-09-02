@@ -110,6 +110,8 @@ my %PHOTFLUXES = (
 # Setup the object structure
 __PACKAGE__->CreateBasicAccessors( mask => {},
                                    resp => {},
+				   flat => {},
+				   dark => {},
 );
 
 =head1 PUBLIC METHODS
