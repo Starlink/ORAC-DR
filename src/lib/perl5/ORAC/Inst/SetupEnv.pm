@@ -535,7 +535,7 @@ sub is_nfs_disk {
 
 =item B<orac_determine_location>
 
-Returns "hilo", "jcmt", "ukirt", "aat", "ing" or undef depending on whether
+Returns "hilo", "jcmt", "ukirt", "aat", "ing" or false depending on whether
 the code is running in Hilo, JCMT, UKIRT, AAT or elsewhere.
 
 The value is cached since it will not change during execution.
@@ -546,7 +546,7 @@ The value is cached since it will not change during execution.
 my $site;
 sub orac_determine_location {
   return $site if defined $site;
-  my $dname;
+  my $dname = '';
   if (exists $ENV{SITE}) {
     $dname = $ENV{SITE};
     if ($dname =~ /hilo/i) {
@@ -577,7 +577,7 @@ sub orac_determine_location {
   }
 
   # got here we do not know
-  return;
+  return $site;
 }
 }
 
