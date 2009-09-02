@@ -107,4 +107,6 @@ set oracdr_setup_args="--drmode=QL"
 source $ORAC_DIR/etc/oracdr_start.csh
 
 # Set stripchart alias
-alias xstripchart "xstripchart -cfg=$ORAC_DATA_CAL/jcmt_ql.ini &"
+if ( $?ORAC_DATA_CAL ) then
+  alias xstripchart "xstripchart -cfg=$ORAC_DATA_CAL/jcmt_ql.ini &"
+endif

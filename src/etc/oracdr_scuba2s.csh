@@ -106,4 +106,6 @@ setenv ORAC_INSTRUMENT SCUBA2_SHORT
 source $ORAC_DIR/etc/oracdr_start.csh
 
 # Set stripchart alias
-alias xstripchart "xstripchart -cfg=$ORAC_DATA_CAL/jcmt_short.ini &"
+if ( $?ORAC_DATA_CAL ) then
+  alias xstripchart "xstripchart -cfg=$ORAC_DATA_CAL/jcmt_short.ini &"
+endif

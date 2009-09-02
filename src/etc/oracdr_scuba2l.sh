@@ -105,3 +105,8 @@ export ORAC_INSTRUMENT=SCUBA2_LONG
 
 # Source general alias file and print welcome screen
 . $ORAC_DIR/etc/oracdr_start.sh
+
+# Set stripchart alias
+if test -z $ORAC_DATA_CAL; then
+  alias xstripchart="xstripchart -cfg=$ORAC_DATA_CAL/jcmt_short.ini &"
+fi
