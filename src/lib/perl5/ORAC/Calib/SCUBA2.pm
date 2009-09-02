@@ -142,7 +142,7 @@ sub new {
   $obj->{SkyRefImage} = undef; # Name of current reference image
 
   # Specify default tausys
-  $self->tausys( "CSO" );
+  $obj->tausys( "CSO" );
 
   return $obj;
 }
