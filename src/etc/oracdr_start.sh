@@ -84,9 +84,10 @@ if test -e $starperl; then
 
   # Run initialization.
   orac_env_setup=`$starperl ${ORAC_DIR}/etc/setup_oracdr_env.pl bash $*`
-  if test ! $?; then
+  if test $? != 0; then
     echo "**** ERROR IN setup_oracdr_env.pl ****"
-    exit 255
+    # Can not exit since the shell that is sourcing this will exit
+    return
   fi
   eval $orac_env_setup
   unset orac_env_setup
