@@ -268,7 +268,6 @@ sub checkdir {
   while ( my $next = pop(@dirs) ) {
     unshift( @test, $next ); # put on to front
     my $new = File::Spec->catdir( File::Spec->curdir, @test );
-    print STDERR "Testing $new\n";
     return File::Spec->rel2abs( $new ) if -d $new;
   }
   return;
