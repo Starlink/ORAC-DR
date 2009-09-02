@@ -543,10 +543,10 @@ The value is cached since it will not change during execution.
 =cut
 
 {
-my $site;
+my $site = '';
 sub orac_determine_location {
-  return $site if defined $site;
-  my $dname = '';
+  return $site if $site;
+  my $dname;
   if (exists $ENV{SITE}) {
     $dname = $ENV{SITE};
     if ($dname =~ /hilo/i) {
@@ -556,7 +556,7 @@ sub orac_determine_location {
     } elsif ($dname =~ /ukirt/i) {
       $site = "ukirt";
     }
-    return $site if defined $site;
+    return $site if $site;
   }
 
   if (!defined $ENV{ORAC_NO_NET}) {
@@ -573,7 +573,7 @@ sub orac_determine_location {
     } elsif ($dname =~ /ing/i) {
       $site = "ing";
     }
-    return $site if defined $site;
+    return $site if $site;
   }
 
   # got here we do not know
