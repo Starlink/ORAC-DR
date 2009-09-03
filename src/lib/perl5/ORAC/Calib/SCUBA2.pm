@@ -306,7 +306,45 @@ possible to search the Frame subheaders when evaluating the rules.
 
 sub mask {
   my $self = shift;
-  return $self->GenericIndexAccessor( "mask", 0, 0, @_ );
+  return $self->GenericIndexAccessor( "mask", 0, 1, @_ );
+}
+
+=item B<dark>
+
+Return (or set) the name of the current dark frame.
+
+  $dark = $Cal->dark;
+
+This method is subclassed for SCUBA-2 because we have dark frames for
+each subarray. Note that the user must set the subarray with the Frame
+class C<subarray()> method before a suitable calibration entry can be
+found. This is due to the fact that it is not possible to search the
+Frame subheaders when evaluating the rules.
+
+=cut
+
+sub dark {
+  my $self = shift;
+  return $self->GenericIndexAccessor( "dark", 0, 1, @_ );
+}
+
+=item B<flat>
+
+Return (or set) the name of the current flatfield solution.
+
+  $flat = $Cal->flat;
+
+This method is subclassed for SCUBA-2 because we have one flatfield
+per subarray. Note that the user must set the subarray with the Frame
+class C<subarray()> method before a suitable calibration entry can be
+found. This is due to the fact that it is not possible to search the
+Frame subheaders when evaluating the rules.
+
+=cut
+
+sub flat {
+  my $self = shift;
+  return $self->GenericIndexAccessor( "flat", 0, 1, @_ );
 }
 
 =back
