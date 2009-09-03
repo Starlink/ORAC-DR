@@ -53,10 +53,15 @@ as a reference to a hash.
 Argument is the ORAC-DR instrument name and the UT date. Additional
 switches can be supplied as a hash. Allowed keys are:
 
+ cwd => Use the current working directory for ORAC_DATA_OUT
+ honour => If ORAC_DATA_OUT is set, do not override it
  ut => Specify UT date. Defaults to current.
  eng => Boolean indicating whether engineering directories
         are to be selected.
  mode => QL or SUMMIT pipeline. Undef defaults to standard.
+
+If both cwd and honour are supplied, honour will take precedence
+if a valid directory is present in ORAC_DATA_OUT.
 
 =cut
 
@@ -87,6 +92,17 @@ sub orac_calc_instrument_settings {
 
   # Place to put the results
   my %env;
+
+  # Set ORAC_DATA_OUT here if required
+  my $fixout;
+  if ($options{honour} && exists $ENV{ORAC_DATA_OUT} &&
+      defined $ENV{ORAC_DATA_OUT} && -d $ENV{ORAC_DATA_OUT}) {
+    $env{ORAC_DATA_OUT} = $ENV{ORAC_DATA_OUT};
+    $fixout = 1;
+  } elsif ($options{cwd}) {
+    $env{ORAC_DATA_OUT} = File::Spec->rel2abs( File::Spec->curdir );
+    $fixout = 1;
+  }
 
   # Some instrumentation changes internal ORAC instrument based on UT
   # date.
@@ -203,7 +219,7 @@ sub orac_calc_instrument_settings {
     my @eng = ($options{eng} ? ("eng") : ());
     return ( ORAC_DATA_CAL => File::Spec->catdir( $env{'ORAC_CAL_ROOT'}, $root ),
              ORAC_DATA_IN => File::Spec->catdir( $dataroot, "raw", @eng, $root, $localut ),
-             ORAC_DATA_OUT => File::Spec->catdir( $dataroot, "reduced", @eng, $root, $localut ),
+             ( $fixout ? () : (ORAC_DATA_OUT => File::Spec->catdir( $dataroot, "reduced", @eng, $root, $localut ))),
              ORAC_SUN => $sun,
              ORAC_PERSON => $auth,
            );
@@ -221,7 +237,7 @@ sub orac_calc_instrument_settings {
       $defaults{ORAC_DATA_IN} = File::Spec->catdir( File::Spec->rootdir, "data_vme10",
                                                     "aatobs", "iris2_data", $ut );
       $defaults{ORAC_DATA_OUT} = File::Spec->catdir( File::Spec->rootdir, "iris2_reduce",
-                                                     "iris2red", $ut );
+                                                     "iris2red", $ut ) unless $fixout;
       _mkdir( $defaults{ORAC_DATA_OUT} );
     }
     return %defaults;
@@ -237,7 +253,7 @@ sub orac_calc_instrument_settings {
     return ( ORAC_DATA_CAL => File::Spec->catdir( $env{'ORAC_CAL_ROOT'}, "scuba" ),
             "ORAC_DATA_IN" => File::Spec->catdir( $dataroot, "scuba",
                                                   $sem, $options{ut} ),
-            ORAC_DATA_OUT => File::Spec->catdir( $dataroot, "reduced", "scuba", $options{ut}),
+            ( $fixout ? () : (ORAC_DATA_OUT => File::Spec->catdir( $dataroot, "reduced", "scuba", $options{ut}))),
            );
   };
 
@@ -249,10 +265,15 @@ sub orac_calc_instrument_settings {
     my %defaults = $ukirt_con->( "wfcam", @_ );
     $defaults{ORAC_DATA_IN} = File::Spec->catdir( $dataroot, "raw", @eng,
                                                    lc($oracinst), $options{ut} );
-    my $outdir =  File::Spec->catdir( $dataroot, "reduced", @eng,
-                                       lc($oracinst), $options{ut} );
-    _mkdir_wfcam($outdir);
-    $defaults{ORAC_DATA_OUT} = $outdir;
+    my $outdir;
+    if ($fixout) {
+      $outdir = $env{ORAC_DATA_OUT};
+    } else {
+      $outdir =  File::Spec->catdir( $dataroot, "reduced", @eng,
+                                     lc($oracinst), $options{ut} );
+      _mkdir_wfcam($outdir);
+      $defaults{ORAC_DATA_OUT} = $outdir;
+    }
 
     # Make sure that we use a shared RTD_REMOTE_DIR for each night
     if (!$options{eng}) {
@@ -277,7 +298,8 @@ sub orac_calc_instrument_settings {
     # call UKIRT to do basics
     my %defaults = $ukirt_con->( "acsis", @_ );
     # but we are allowed to create the output directory
-    $defaults{ORAC_DATA_OUT} = _mkdir_jcmt( $defaults{ORAC_DATA_OUT});
+    $defaults{ORAC_DATA_OUT} = _mkdir_jcmt( $defaults{ORAC_DATA_OUT})
+      unless $fixout;
     return %defaults;
   };
 
@@ -318,7 +340,7 @@ sub orac_calc_instrument_settings {
 
     return ( ORAC_DATA_IN => File::Spec->catdir( $dataroot, "raw", "scuba2", "ok", @eng, $options{ut} ),
              ORAC_DATA_CAL => File::Spec->catdir( $env{ORAC_CAL_ROOT}, "scuba2" ),
-             ORAC_DATA_OUT => $outdir,
+             ($fixout ? () : (ORAC_DATA_OUT => $outdir)),
              %remote,
            );
   };
@@ -386,7 +408,9 @@ sub orac_calc_instrument_settings {
                        # This is old IRCAM
                        'IRCAM'  => { ORAC_DATA_CAL => File::Spec->catfile( $env{'ORAC_CAL_ROOT'}, "ircam" ),
                                      ORAC_DATA_IN => File::Spec->catfile( $dataroot, "raw", "ircam",$options{ut}, "rodir" ),
-                                     ORAC_DATA_OUT => File::Spec->catfile( $dataroot, "raw", "ircam", $options{ut}, "rodir" ),
+                                     ($fixout ? () :
+                                      (ORAC_DATA_OUT => File::Spec->catfile( $dataroot,
+                                                                             "raw", "ircam", $options{ut}, "rodir" ))),
                                      ORAC_PERSON => 'b.cavanagh',
                                      ORAC_SUN => '232',
                                      ORAC_LOOP => "wait",
@@ -659,6 +683,91 @@ sub orac_determine_loop_behaviour {
 
 }
 
+=item B<orac_validate_datadirs>
+
+Given a hash reference containing keys ORAC_DATA_OUT and ORAC_DATA_IN,
+see if those values are valid and update if required.
+
+  orac_validate_datadirs( \%env );
+
+Messages are sent to STDERR.
+
+=cut
+
+sub orac_validate_datadirs {
+  my $env = shift;
+
+  # Cache current working directory
+  my $curdir = File::Spec->rel2abs( File::Spec->curdir );
+
+  # Special case. If ORAC_DATA_OUT/.. corresponds to a local
+  # directory and it is not on NFS, attempt to create it.
+  if (!-d $env->{ORAC_DATA_OUT}) {
+    my $updir = _parentdir($env->{ORAC_DATA_OUT});
+    if (-d $updir && !is_nfs_disk($updir)) {
+      _mkdir( $env->{ORAC_DATA_OUT} );
+    }
+  }
+
+  # Check the data directories and suggest alternatives if available
+  my $newin = _checkdir( $env->{ORAC_DATA_IN} );
+  my $newout = _checkdir( $env->{ORAC_DATA_OUT} );
+
+  if ( ! defined $newin ) {
+    print STDERR "Unable to locate a raw data directory. Please fix ORAC_DATA_IN\n";
+  }
+
+  if ( ! defined $newout ) {
+    print STDERR "Default output directory does not exist. Assuming current directory.\n";
+    $env->{ORAC_DATA_OUT} = $curdir;
+  }
+
+  if (defined $newin && defined $newout) {
+    # if input and output are the same, we are not really
+    # sure which one to use. This would usually indicate that
+    # we found a UT date directory in the current directory
+
+    # How clever do we want to be?
+    if ($newin eq $newout) {
+      my $usein;                # use it as input directory
+      my $useout;               # use it as output directory
+      opendir my $dh, $newin or die "Could not read directory $newin: $!\n";
+      my @files = readdir( $dh );
+      # these are all just guesses. .sdf can be in either directory in reality
+      if (scalar grep /\.ok$/, @files) {
+        # this is an input directory.
+        $usein = 1;
+      } elsif (scalar grep /^(\.orac|index)/, @files) {
+        # has pipeline files in it
+        $useout = 1;
+      } else {
+        # if we were really clever we would ask the ORAC::Frame class to see if there
+        # are a few files in the directory that it recognizes
+      }
+
+      if ($usein) {
+        $env->{ORAC_DATA_IN} = $newin;
+        $env->{ORAC_DATA_OUT} = $curdir;
+        print STDERR "ORAC_DATA_OUT does not exist. Using current working directory.\n";
+      } elsif ($useout) {
+        $env->{ORAC_DATA_OUT} = $newout;
+        print STDERR "ORAC_DATA_IN does not exist. Please set before running pipeline.\n";
+      } else {
+        $env->{ORAC_DATA_OUT} = $curdir;
+        $env->{ORAC_DATA_IN} = $newin;
+        print STDERR "ORAC_DATA_OUT does not exist. Using current working directory.\n";
+        print STDERR "ORAC_DATA_IN does not exist. Guesing but please set before running pipeline.\n";
+      }
+
+    } else {
+      # assume these are the right ones
+      $env->{ORAC_DATA_IN} = $newin;
+      $env->{ORAC_DATA_OUT} = $newout;
+    }
+  }
+
+}
+
 =back
 
 =begin __PRIVATE__METHODS__
@@ -685,7 +794,9 @@ sub _mkdir {
   my $nfs = is_nfs_disk( $updir );
   if (!$nfs) {
     mkdir $path
-      or croak "Unable to create output directory $path";
+      or croak "Unable to create directory $path";
+
+    print STDERR "**** Created data directory '$path' ****\n";
 
     # Make sure it is writeable with group gid bit set
     chmod  S_ISGID|S_IRWXU|S_IRWXG|S_IROTH|S_IXOTH, $path;
@@ -762,6 +873,36 @@ sub _parentdir {
   pop(@dirs);
   my $updir = File::Spec->catdir(@dirs);
   return $updir;
+}
+
+=item B<_checkdir>
+
+Checks to see if the directory exists. If it doesn't then starting
+from the bottom up it looks in the current directory to see whether
+parts of that tree are present locally
+
+   $dir = _checkdir( $dir );
+
+Returns a new (or the old) path if one is found, returns undef
+if nothing suitable was located.
+
+=cut
+
+sub _checkdir {
+  my $dir = shift;
+
+  return $dir if -d $dir;
+
+  my @dirs = File::Spec->splitdir( $dir );
+
+  # Try the smallest part first and then augment
+  my @test;
+  while ( my $next = pop(@dirs) ) {
+    unshift( @test, $next ); # put on to front
+    my $new = File::Spec->catdir( File::Spec->curdir, @test );
+    return File::Spec->rel2abs( $new ) if -d $new;
+  }
+  return;
 }
 
 =item B<_determine_semester>
