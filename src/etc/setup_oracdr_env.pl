@@ -38,6 +38,10 @@ from the shell since oracdr_xxx initialisation scripts do not use
 command-line option syntax. Shell mode must be supplied when specifying
 a UT.
 
+=item * -cwd
+
+Set ORAC_DATA_OUT to the current working directory.
+
 =item * -eng
 
 Run in engineering mode. Usually means that alternate
@@ -47,6 +51,11 @@ date directories are used.
 
 For pipelines that support it, switch to alternative reduction
 mode. "SUMMIT" and "QL" are supported by some instruments.
+
+=item * -honour
+
+Do not set ORAC_DATA_OUT if it is already set and is a valid directory.
+Supercedes the -cwd option.
 
 =item * --help
 
@@ -88,12 +97,14 @@ use Pod::Usage;
 use ORAC::Inst::SetupEnv;
 
 # Handle arguments.
-my ($help, $man, $debug, $eng, $drmode);
+my ($help, $man, $debug, $eng, $drmode, $honour, $cwd);
 my $opt_status = GetOptions( "help" => \$help,
                              "man" => \$man,
                              "debug" => \$debug,
                              "eng" => \$eng,
                              "drmode=s" => \$drmode,
+                             "honour" => \$honour,
+                             "cwd" => \$cwd,
                            );
 pod2usage(1) if $help;
 pod2usage(-exitstatus => 0, -verbose => 2) if $man;
@@ -106,7 +117,10 @@ my $ut = shift(@ARGV);
 my %env = ORAC::Inst::SetupEnv::orac_calc_instrument_settings( $ENV{ORAC_INSTRUMENT},
                                                                eng => $eng,
                                                                mode => $drmode,
-                                                               ut => $ut);
+                                                               ut => $ut,
+                                                               cwd => $cwd,
+                                                               honour => $honour,
+                                                             );
 
 # List of instrument-agnostic variables to send back.
 my @orac_envs = qw/ ORAC_PERL5LIB /;

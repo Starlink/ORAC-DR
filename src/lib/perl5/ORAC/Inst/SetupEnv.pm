@@ -53,10 +53,15 @@ as a reference to a hash.
 Argument is the ORAC-DR instrument name and the UT date. Additional
 switches can be supplied as a hash. Allowed keys are:
 
+ cwd => Use the current working directory for ORAC_DATA_OUT
+ honour => If ORAC_DATA_OUT is set, do not override it
  ut => Specify UT date. Defaults to current.
  eng => Boolean indicating whether engineering directories
         are to be selected.
  mode => QL or SUMMIT pipeline. Undef defaults to standard.
+
+If both cwd and honour are supplied, honour will take precedence
+if a valid directory is present in ORAC_DATA_OUT.
 
 =cut
 
@@ -87,6 +92,17 @@ sub orac_calc_instrument_settings {
 
   # Place to put the results
   my %env;
+
+  # Set ORAC_DATA_OUT here if required
+  my $fixout;
+  if ($options{honour} && exists $ENV{ORAC_DATA_OUT} &&
+      defined $ENV{ORAC_DATA_OUT} && -d $ENV{ORAC_DATA_OUT}) {
+    $env{ORAC_DATA_OUT} = $ENV{ORAC_DATA_OUT};
+    $fixout = 1;
+  } elsif ($options{cwd}) {
+    $env{ORAC_DATA_OUT} = File::Spec->rel2abs( File::Spec->curdir );
+    $fixout = 1;
+  }
 
   # Some instrumentation changes internal ORAC instrument based on UT
   # date.
@@ -203,7 +219,7 @@ sub orac_calc_instrument_settings {
     my @eng = ($options{eng} ? ("eng") : ());
     return ( ORAC_DATA_CAL => File::Spec->catdir( $env{'ORAC_CAL_ROOT'}, $root ),
              ORAC_DATA_IN => File::Spec->catdir( $dataroot, "raw", @eng, $root, $localut ),
-             ORAC_DATA_OUT => File::Spec->catdir( $dataroot, "reduced", @eng, $root, $localut ),
+             ( $fixout ? () : (ORAC_DATA_OUT => File::Spec->catdir( $dataroot, "reduced", @eng, $root, $localut ))),
              ORAC_SUN => $sun,
              ORAC_PERSON => $auth,
            );
@@ -221,7 +237,7 @@ sub orac_calc_instrument_settings {
       $defaults{ORAC_DATA_IN} = File::Spec->catdir( File::Spec->rootdir, "data_vme10",
                                                     "aatobs", "iris2_data", $ut );
       $defaults{ORAC_DATA_OUT} = File::Spec->catdir( File::Spec->rootdir, "iris2_reduce",
-                                                     "iris2red", $ut );
+                                                     "iris2red", $ut ) unless $fixout;
       _mkdir( $defaults{ORAC_DATA_OUT} );
     }
     return %defaults;
@@ -237,7 +253,7 @@ sub orac_calc_instrument_settings {
     return ( ORAC_DATA_CAL => File::Spec->catdir( $env{'ORAC_CAL_ROOT'}, "scuba" ),
             "ORAC_DATA_IN" => File::Spec->catdir( $dataroot, "scuba",
                                                   $sem, $options{ut} ),
-            ORAC_DATA_OUT => File::Spec->catdir( $dataroot, "reduced", "scuba", $options{ut}),
+            ( $fixout ? () : (ORAC_DATA_OUT => File::Spec->catdir( $dataroot, "reduced", "scuba", $options{ut}))),
            );
   };
 
@@ -249,10 +265,15 @@ sub orac_calc_instrument_settings {
     my %defaults = $ukirt_con->( "wfcam", @_ );
     $defaults{ORAC_DATA_IN} = File::Spec->catdir( $dataroot, "raw", @eng,
                                                    lc($oracinst), $options{ut} );
-    my $outdir =  File::Spec->catdir( $dataroot, "reduced", @eng,
-                                       lc($oracinst), $options{ut} );
-    _mkdir_wfcam($outdir);
-    $defaults{ORAC_DATA_OUT} = $outdir;
+    my $outdir;
+    if ($fixout) {
+      $outdir = $env{ORAC_DATA_OUT};
+    } else {
+      $outdir =  File::Spec->catdir( $dataroot, "reduced", @eng,
+                                     lc($oracinst), $options{ut} );
+      _mkdir_wfcam($outdir);
+      $defaults{ORAC_DATA_OUT} = $outdir;
+    }
 
     # Make sure that we use a shared RTD_REMOTE_DIR for each night
     if (!$options{eng}) {
@@ -277,7 +298,8 @@ sub orac_calc_instrument_settings {
     # call UKIRT to do basics
     my %defaults = $ukirt_con->( "acsis", @_ );
     # but we are allowed to create the output directory
-    $defaults{ORAC_DATA_OUT} = _mkdir_jcmt( $defaults{ORAC_DATA_OUT});
+    $defaults{ORAC_DATA_OUT} = _mkdir_jcmt( $defaults{ORAC_DATA_OUT})
+      unless $fixout;
     return %defaults;
   };
 
@@ -318,7 +340,7 @@ sub orac_calc_instrument_settings {
 
     return ( ORAC_DATA_IN => File::Spec->catdir( $dataroot, "raw", "scuba2", "ok", @eng, $options{ut} ),
              ORAC_DATA_CAL => File::Spec->catdir( $env{ORAC_CAL_ROOT}, "scuba2" ),
-             ORAC_DATA_OUT => $outdir,
+             ($fixout ? () : (ORAC_DATA_OUT => $outdir)),
              %remote,
            );
   };
@@ -386,7 +408,9 @@ sub orac_calc_instrument_settings {
                        # This is old IRCAM
                        'IRCAM'  => { ORAC_DATA_CAL => File::Spec->catfile( $env{'ORAC_CAL_ROOT'}, "ircam" ),
                                      ORAC_DATA_IN => File::Spec->catfile( $dataroot, "raw", "ircam",$options{ut}, "rodir" ),
-                                     ORAC_DATA_OUT => File::Spec->catfile( $dataroot, "raw", "ircam", $options{ut}, "rodir" ),
+                                     ($fixout ? () :
+                                      (ORAC_DATA_OUT => File::Spec->catfile( $dataroot,
+                                                                             "raw", "ircam", $options{ut}, "rodir" ))),
                                      ORAC_PERSON => 'b.cavanagh',
                                      ORAC_SUN => '232',
                                      ORAC_LOOP => "wait",
