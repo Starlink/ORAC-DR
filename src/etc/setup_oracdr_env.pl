@@ -131,65 +131,8 @@ if (exists $env{args}) {
   print toshellvar( $shell, "oracdr_args", $oracdr_args );
 }
 
-# Cache current working directory
-my $curdir = File::Spec->rel2abs( File::Spec->curdir );
-
-# Check the data directories and suggest alternatives if available
-my $newin = checkdir( $env{ORAC_DATA_IN} );
-my $newout = checkdir( $env{ORAC_DATA_OUT} );
-
-if ( ! defined $newin ) {
-  print STDERR "Unable to locate a raw data directory. Please fix ORAC_DATA_IN\n";
-}
-
-if ( ! defined $newout ) {
-  print STDERR "Default output directory does not exist. Assuming current directory.\n";
-  $env{ORAC_DATA_OUT} = $curdir;
-}
-
-if (defined $newin && defined $newout) {
-  # if input and output are the same, we are not really
-  # sure which one to use. This would usually indicate that
-  # we found a UT date directory in the current directory
-
-  # How clever do we want to be?
-  if ($newin eq $newout) {
-    my $usein;   # use it as input directory
-    my $useout;  # use it as output directory
-    opendir my $dh, $newin or die "Could not read directory $newin: $!\n";
-    my @files = readdir( $dh );
-    # these are all just guesses. .sdf can be in either directory in reality
-    if (scalar grep /\.ok$/, @files) {
-      # this is an input directory.
-      $usein = 1;
-    } elsif (scalar grep /^(\.orac|index)/, @files) {
-      # has pipeline files in it
-      $useout = 1;
-    } else {
-      # if we were really clever we would ask the ORAC::Frame class to see if there
-      # are a few files in the directory that it recognizes
-    }
-
-    if ($usein) {
-      $env{ORAC_DATA_IN} = $newin;
-      $env{ORAC_DATA_OUT} = $curdir;
-      print STDERR "ORAC_DATA_OUT does not exist. Using current working directory.\n";
-    } elsif ($useout) {
-      $env{ORAC_DATA_OUT} = $newout;
-      print STDERR "ORAC_DATA_IN does not exist. Please set before running pipeline.\n";
-    } else {
-      $env{ORAC_DATA_OUT} = $curdir;
-      $env{ORAC_DATA_IN} = $newin;
-      print STDERR "ORAC_DATA_OUT does not exist. Using current working directory.\n";
-      print STDERR "ORAC_DATA_IN does not exist. Guesing but please set before running pipeline.\n";
-    }
-
-  } else {
-    # assume these are the right ones
-    $env{ORAC_DATA_IN} = $newin;
-    $env{ORAC_DATA_OUT} = $newout;
-  }
-}
+# Validate the data directories
+ORAC::Inst::SetupEnv::orac_validate_datadirs( \%env );
 
 # Warn people if ORAC_DATA_OUT looks like it is going to be a NFS mounted
 # disk.
@@ -245,30 +188,6 @@ sub toshellvar {
     return "$k='$v' ; ";
   } else {
     die "Unrecognized shell: $s\n";
-  }
-  return;
-}
-
-# Checks to see if the directory exists. If it doesn't then starting
-# from the bottom up it looks in the current directory to see whether
-# parts of that tree are present locally
-#   $dir = checkdir( $dir );
-# Returns a new (or the old) path if one is found, returns undef
-# if nothing suitable was located.
-
-sub checkdir {
-  my $dir = shift;
-
-  return $dir if -d $dir;
-
-  my @dirs = File::Spec->splitdir( $dir );
-
-  # Try the smallest part first and then augment
-  my @test;
-  while ( my $next = pop(@dirs) ) {
-    unshift( @test, $next ); # put on to front
-    my $new = File::Spec->catdir( File::Spec->curdir, @test );
-    return File::Spec->rel2abs( $new ) if -d $new;
   }
   return;
 }
