@@ -14,12 +14,14 @@ ORAC::Print - ORAC output message printing
   orac_err("error text");
   orac_print("some text");
   orac_warn("some warning");
+  orac_notify("some notification");
   orac_throw("error text");
 
   $value = orac_read("Prompt");
 
   $prt = new ORAC::Print;
   $prt->out("Message","colour");
+  $prt->notify("OS notification");
   $prt->err("Error message"); 
   $prt->war("warning message");
   $prt->errcol("red");
@@ -69,7 +71,7 @@ $DEBUG = 0;
 require Exporter;
 @ISA = qw/Exporter/;
 @EXPORT = qw/orac_print orac_err orac_warn orac_debug orac_read orac_throw orac_carp
-	     orac_printp orac_print_prefix orac_warnp orac_errp orac_say orac_sayp
+	     orac_printp orac_print_prefix orac_warnp orac_errp orac_say orac_sayp orac_notify
             orac_msglog orac_clearlog orac_logkey orac_logging orac_loginfo /;
 
 # Create a Term::ReadLine handle
@@ -86,6 +88,29 @@ use IO::File;
 use IO::Tee;
 use Term::ANSIColor;
 use Term::ReadLine;
+
+# Notification definitions
+use constant APPNAME => "ORAC-DR";
+use constant NOT__INIT => "Initialise Environment";
+use constant NOT__GENERAL => "General Information";
+use constant NOT__STARTOBS => "Start Observation";
+use constant NOT__ENDOBS  => "End Observation";
+use constant NOT__COMPLETE => "Pipeline Completed";
+
+my $NOTIFY;
+BEGIN {
+  my $used = eval {
+    use Mac::Growl;
+    Mac::Growl::RegisterNotifications( APPNAME,
+                                       [ NOT__INIT, NOT__GENERAL, NOT__STARTOBS,
+                                         NOT__ENDOBS, NOT__COMPLETE ],
+                                       [ NOT__INIT, NOT__GENERAL, NOT__STARTOBS,
+                                         NOT__ENDOBS, NOT__COMPLETE ]);
+    1;
+  };
+  $NOTIFY = "GROWL" if $used;
+}
+
 
 # Non-OO interface globals
 my $PREFIX;
@@ -135,6 +160,17 @@ colour.
 sub orac_warn {
   my $prt = __curr_obj;
   $prt->war(@_);
+}
+
+=item orac_notify( text )
+
+Use the OS notification system (if possible) to report the message.
+
+=cut
+
+sub orac_notify {
+  my $prt = __curr_obj;
+  $prt->notify(@_);
 }
 
 =item orac_carp( text, callers, [colour])
@@ -689,6 +725,22 @@ sub warpre {
   return $self->{WarPre};
 }
 
+=item notifypre
+
+Prefix that is prepended to all strings printed with the
+notify() methods. Default is to have no string prepended.
+
+  $pre = $prt->notifypre;
+  $prt->warpre('ORAC-DR:');
+
+=cut
+
+sub notifypre {
+  my $self = shift;
+  if (@_) { $self->{NotifyPre} = shift; }
+  return $self->{NotifyPre};
+}
+
 =item errpre
 
 Prefix that is prepended to all strings printed with the
@@ -868,6 +920,41 @@ sub out {
   
   tk_update();
   
+}
+
+=item notify(name, title, text)
+
+Send message to the OS notification system if available. The title
+is required.
+
+The name (or type) or message must be from an approved list defined
+as module constants. They are defined at the end of this document.
+
+  $prt->notify( NOT__INIT, "Initialised pipeline", "Called oracdr_start" );
+
+=cut
+
+sub notify {
+  my $self = shift;
+  return unless @_; # Return if no second argument
+  my $name = shift;
+  my $title = shift;
+  my $text = shift;
+
+  my $prefix = $self->prefix;
+  $prefix = '' unless defined $prefix;
+  my $notifypre = $self->notifypre;
+  $notifypre = '' unless defined $notifypre;
+
+  my $outtext = $prefix . $notifypre . $text;
+
+  if ($NOTIFY eq 'GROWL') {
+    Mac::Growl::PostNotification( APPNAME, $name, $title, $outtext, 0, 0,
+                                File::Spec->catfile( $ENV{ORAC_DIR},"images", "orac_logo.gif"));
+  }
+
+  # just as an opportunity to sync the gui
+  tk_update();
 }
 
 =item say( text, [col] )
@@ -1212,9 +1299,15 @@ sub PRINTF {
 
 L<Term::ANSIColor>, L<IO::Tee>.
 
-=head1 REVISION
+=head1 NOTIFICATION TYPES
 
-$Id$
+The following notification types are available
+
+  NOT__INIT - An initialisation event
+  NOT__GENERAL  - General unnamed event
+  NOT__STARTOBS - Detected a new observation
+  NOT__ENDOBS   - Finished processing an observation
+  NOT__COMPLETE - Processing has finished
 
 =head1 AUTHORS
 
@@ -1224,6 +1317,7 @@ Alasdair Allan E<lt>aa@astro.ex.ac.ukE<gt>
 
 =head1 COPYRIGHT
 
+Copyright (C) 2009 Science and Technology Facilities Council.
 Copyright (C) 1998-2001 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
 
