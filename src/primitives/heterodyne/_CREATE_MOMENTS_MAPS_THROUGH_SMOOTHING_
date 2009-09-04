@@ -3,7 +3,7 @@
 =head1 NAME
 
 _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ - Create moments maps by
-smoothing and detecting emission regions.
+smoothing and detecting emission regions using various methods.
 
 =head1 DESCRIPTION
 
@@ -11,10 +11,20 @@ This primitive is used to create moments maps. It first smooths the
 cube along the frequency axis, then in the spatial axes. It then masks
 out emission regions using a previously-determined mask (see
 _CREATE_BASELINE_MASK_), and then calculates the RMS in the
-emission-free regions. This RMS is used to set a threshold for
-clump-finding. The clumps are then turned into an emission mask
-(masking out non-clumps), and the masked cube is then collapsed to
-form the moment map.
+emission-free regions. This RMS is used to set a threshold for the
+various emission-selection methods. Selected regions are then turned
+into an emission mask (masking out non-emission) to be applied to the
+original resolution cube which is then collapsed to form the moment
+maps.
+
+Three emission selection methods are available:
+  CUPID::Clumpfind: selects emission by walking down peaks to lower
+        intensities.
+  CUPID::Fellwalker: selects emission by walking up along line of
+        steepest accent until a peak or a previous found clump is
+        found.
+  KAPPA:Thresh: selects emission by simply accepting all data 
+        above a specified RMS threshold.
 
 =head1 ARGUMENTS
 
@@ -44,10 +54,19 @@ given in a comma-separated string. ['integ']
 
 The polynomial order that will be used when estimating baselines. [1]
 
-=item RMS_THRESHOLD = REAL (Given)
+=item METHOD = STRING (Given)
+
+Method to use to find emission in the data: 'clumpfind', 'fellwalker',
+or 'thresh'. ['clumpfind']
+
+=item RMS_THRESHOLD = REALS (Given)
 
 The RMS threshold above which emission will be considered to be a
-clump. [4.5]
+clump. A separate threshold can be specified for each moments map
+requested. The last specified number will be applied to any further
+moments requested. Typically 'integ' can tolerate a rms of 3-sigma,
+but the higher order moments need a higher threshold. Comma-separated
+string in the same order as the requested MOMENTS. [3.0,4.0]
 
 =item SPATIAL_SMOOTH = INTEGER (Given)
 
@@ -85,7 +104,7 @@ MOMENTS parameter.
 
 CUPID: FINDCLUMPS
 KAPPA: ADD, BLOCK, COLLAPSE, DIV, MULT, NDFCOPY, NDFTRACE, NOMAGIC,
-       PASTE, PLUCK, SETBB, SETVAR, STATS
+       PASTE, PLUCK, SETBB, SETVAR, STATS, THRESH
 
 =head1 REQUIRED PERL MODULES
 
@@ -110,14 +129,24 @@ Rights Reserved.
 my $freqsmooth = get_prim_arg( $_PRIM_ARGS_, "FREQUENCY_SMOOTH", 25 );
 my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
 my $moments = get_prim_arg( $_PRIM_ARGS_, "MOMENTS", 'integ' );
+my $method = get_prim_arg( $_PRIM_ARGS_, "METHOD", 'clumpfind' );
 my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 1 );
-my $rms_thresh = get_prim_arg( $_PRIM_ARGS_, "RMS_THRESHOLD", 4.5 );
+my $rms_thrhlds = get_prim_arg( $_PRIM_ARGS_, "RMS_THRESHOLD", '3.0,4.0' );
 my $spatsmooth = get_prim_arg( $_PRIM_ARGS_, "SPATIAL_SMOOTH", 3 );
 my $tag = get_prim_arg( $_PRIM_ARGS_, "TAG", undef );
 
 my $group2 = ( $group == 2 ? 0 : $group );
 
 my @moments = split /,/, $moments;
+my @rms_thrhlds = split /,/, $rms_thrhlds;
+
+if( $method =~ /^t/i ) {
+  $method = "thresh";
+} elsif( $method =~ /^f/i ) {
+  $method = "fellwalker";
+} else {
+  $method = "clumpfind";
+}
 
 my @objs;
 if( $group == 0 ) {
@@ -238,8 +267,8 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
 
         # Get the RMS for the smoothed files.
         _CALCULATE_RMS_ FILES=\@masked BOX=1
-        my $median = $_CALCULATE_RMS_{RMS};
-        orac_say "Median RMS in smoothed observation is " . sprintf( "%0.3f", $median );
+        my $medianrms = $_CALCULATE_RMS_{RMS};
+        orac_say "Median RMS in smoothed observation is " . sprintf( "%0.3f", $medianrms );
 
         for my $i ( 1 .. $Obj->nfiles ) {
           my $in = $Obj->file( $i );
@@ -247,66 +276,116 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
 
           my $colin = new ORAC::TempFile;
 
-          # Create parameter file for FINDCLUMPS.
-          my $fc_param = "findclumps$$.param";
-          open my $fc_fh, ">", $fc_param;
-          print $fc_fh "ClumpFind.Minpix=50\n";
-          print $fc_fh "ClumpFind.AllowEdge=1\n";
-          print $fc_fh "ClumpFind.FwhmBeam=0\n";
-          print $fc_fh "ClumpFind.MaxBad=9999\n";
-          print $fc_fh "ClumpFind.VeloRes=0\n";
-          print $fc_fh "ClumpFind.Tlow=$rms_thresh*RMS\n";
-          close $fc_fh;
-
-          # Run FINDCLUMPS.
-          orac_say " Finding clumps higher than $rms_thresh-sigma.";
-          my $temp4 = new ORAC::TempFile;
-          my $temp4file = $temp4->file;
-          my $params = "in=$file rms=$median config='^$fc_param' method=clumpfind out=$temp4file outcat=\! deconv=no";
-          $Mon{'cupid_mon'}->obeyw( "findclumps", "$params" );
-          unlink( $fc_param );
-
-          # Check number of clumps using NCLUMPS.
-          my ( $ORAC_STATUS, $nclumps ) = $Mon{'cupid_mon'}->get( "findclumps", "nclumps" );
-
-          # If we have no clumps, we can't make a clump mask, so skip
-          # the masking and just go straight to the moment map
-          # creation.
-          if( $nclumps ) {
-
-            # Set clumps to be 1 everywhere (i.e. "clump mask").
-            my $temp6 = new ORAC::TempFile;
-            $params = "in1=$temp4file in2=$temp4file out=$temp6";
-            $Mon{'kappa_mon'}->obeyw( "div", "$params" );
-
-            # Set bad data to zero.
-            my $temp7 = new ORAC::TempFile;
-            $params = "in=$temp6 out=$temp7 repval=0";
-            $Mon{'kappa_mon'}->obeyw( "nomagic", "$params" );
-
-            # Multiply clump mask by input cube.
-            orac_say " Masking non-clump data.";
-            $params = "in1=$in in2=$temp7 out=$colin";
-            $Mon{'kappa_mon'}->obeyw( "mult", "$params" );
-
-          } else {
-
-            orac_say " No clumps found, using full cube for map creation.";
-            $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$colin" );
-
-          }
-
-          # For each moment, collapse the masked cube into a temporary
-          # file.
-          my $i = 1;
+          # Do the emission selection and collapse for each moment
+          my $mom = 0;
           foreach my $moment ( @moments ) {
+
+            # Select appropriate threshold from user specification
+            my $rms_thresh;
+            if($mom <= $#rms_thrhlds) {
+              $rms_thresh = $rms_thrhlds[$mom];
+            } else {
+              $rms_thresh = $rms_thrhlds[$#rms_thrhlds];
+              orac_say " Warning: no threshold level for this moment, using previous: $rms_thresh*RMS";
+            }
+
+            # Only repeat if different threshold needed
+            if( $mom == 0 || $rms_thresh != $rms_thrhlds[$mom-1] ) {
+
+              # Initialize output file for masks
+              my $temp4 = new ORAC::TempFile;
+              my $temp4file = $temp4->file;
+              my $nclumps = 0;
+              my $ORAC_STATUS;
+
+              # Find emission/clumps
+              # --------------------
+              # RPT: this section could go into a _FIND_EMISSION_ primitive
+              # if there is an elegant way to handle the temp output file.
+
+              # Method is Thresholding: run kappa::thresh
+              if( $method eq 'thresh' ) {
+
+                orac_say " Finding emission higher than $rms_thresh-sigma using $method.";
+                my $clip = $medianrms*$rms_thresh;
+                my $params = "in=$file out=$temp4file thrlo=$clip thrhi=-1.0e30 newlo=bad";
+                $Mon{'kappa_mon'}->obeyw( "thresh", "$params" );
+
+                $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp4file" );
+                ( $ORAC_STATUS, $nclumps ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+
+              # Else use cupid::findclumps
+              } else {
+
+                # Create parameter file for FINDCLUMPS with both
+                # parameters for clumpfind and fellwalker
+                my $fc_param = "findclumps$$.param";
+                open my $fc_fh, ">", $fc_param;
+                print $fc_fh "ClumpFind.Minpix=50\n";
+                print $fc_fh "ClumpFind.AllowEdge=1\n";
+                print $fc_fh "ClumpFind.FwhmBeam=0\n";
+                print $fc_fh "ClumpFind.MaxBad=9999\n";
+                print $fc_fh "ClumpFind.VeloRes=0\n";
+                print $fc_fh "ClumpFind.Tlow=$rms_thresh*RMS\n";
+                print $fc_fh "FellWalker.Minpix=50\n";
+                print $fc_fh "FellWalker.AllowEdge=1\n";
+                print $fc_fh "FellWalker.FwhmBeam=0\n";
+                print $fc_fh "FellWalker.MaxBad=9999\n";
+                print $fc_fh "FellWalker.VeloRes=0\n";
+                print $fc_fh "FellWalker.Noise=$rms_thresh*RMS\n";
+                print $fc_fh "FellWalker.FlatSlope=1.0*RMS\n";
+                print $fc_fh "FellWalker.MinHeight=$rms_thresh*RMS\n";
+                close $fc_fh;
+
+                # Run findclumps with clumpfind or fellwalker
+                orac_say " Finding clumps higher than $rms_thresh-sigma using $method.";
+                my $params = "in=$file rms=$medianrms config='^$fc_param' method=$method out=$temp4file outcat=\! deconv=no";
+                $Mon{'cupid_mon'}->obeyw( "findclumps", "$params" );
+                unlink( $fc_param );
+
+                # Check number of clumps using NCLUMPS.
+                ( $ORAC_STATUS, $nclumps ) = $Mon{'cupid_mon'}->get( "findclumps", "nclumps" );
+	      }
+              # --------------------
+
+              # If we have no clumps, we can't make a clump mask, so skip
+              # the masking and just go straight to the moment map
+              # creation.
+              if( $nclumps ) {
+
+                # Set clumps to be 1 everywhere (i.e. "clump mask").
+                my $temp6 = new ORAC::TempFile;
+                my $params = "in1=$temp4file in2=$temp4file out=$temp6";
+                $Mon{'kappa_mon'}->obeyw( "div", "$params" );
+
+                # Set bad data to zero.
+                my $temp7 = new ORAC::TempFile;
+                $params = "in=$temp6 out=$temp7 repval=0";
+                $Mon{'kappa_mon'}->obeyw( "nomagic", "$params" );
+
+                # Multiply clump mask by input cube.
+                orac_say " Masking non-clump data.";
+                $params = "in1=$in in2=$temp7 out=$colin";
+                $Mon{'kappa_mon'}->obeyw( "mult", "$params" );
+
+              } else {
+
+                orac_say " No clumps found, using full cube for map creation.";
+                $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$colin" );
+
+              }
+
+            }
+
+            # For the moment collapse the masked cube into a temporary
+            # file.
 
             if( ! exists( $paste_inputs{$moment} ) ) {
               $paste_inputs{$moment} = ();
             }
 
             # Set any pixels with a BORDER QUALITY value to bad.
-            $params = "ndf=$colin bb=255";
+            my $params = "ndf=$colin bb=255";
             $Mon{'ndfpack_mon'}->obeyw( "setbb", "$params" );
 
             # Copy the variance from the input cube.
@@ -328,9 +407,9 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
 
             push @{$paste_inputs{$moment}}, $temp8file;
             push @collapsed, $temp8;
-            $i++;
+            $mom++;
           }
-        }
+	}
 
         orac_say;
 
