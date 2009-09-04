@@ -756,7 +756,7 @@ sub orac_validate_datadirs {
         $env->{ORAC_DATA_OUT} = $curdir;
         $env->{ORAC_DATA_IN} = $newin;
         print STDERR "ORAC_DATA_OUT does not exist. Using current working directory.\n";
-        print STDERR "ORAC_DATA_IN does not exist. Guesing but please set before running pipeline.\n";
+        print STDERR "ORAC_DATA_IN does not exist. Guessing but please set before running pipeline.\n";
       }
 
     } else {
