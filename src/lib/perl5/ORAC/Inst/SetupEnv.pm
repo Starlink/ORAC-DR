@@ -201,7 +201,7 @@ sub orac_calc_instrument_settings {
     # if we still have nothing just take a guess
     if (!defined $dataroot) {
       $dataroot = File::Spec->rel2abs( File::Spec->curdir );
-      print "Can not find data directory in default locations so using current directory\n";
+      print STDERR "Can not find data directory in default locations so using current directory\n";
     }
     $env{ORAC_DATA_ROOT} = $dataroot;
   }
