@@ -33,7 +33,7 @@ $VERSION = '1.0';
 
 __PACKAGE__->CreateBasicAccessors( baseshift => { isarray => 1 },
                                    dqc => {},
-                                   polrefang => {},
+                                   polrefang => { staticindex => 1 },
                                    referenceoffset => { isarray => 1 },
                                    skybrightness => {},
                                    zeropoint => {} );
