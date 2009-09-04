@@ -461,7 +461,7 @@ sub orac_calc_instrument_settings {
                        'UFTI2'    => { code => sub { $ukirt_con->( "ufti", "b.cavanagh\@jach.hawaii.edu", "232" ) },
                                        ORAC_LOOP => "flag -skip",
                                        args => { $ukirt_args->() }, },
-                       'UFTI_CASU' => { code => sub { $ukirt_con->( "ufti", "jrl@ast.cam.ac.uk", "232" ) },
+                       'UFTI_CASU' => { code => sub { $ukirt_con->( "ufti", "jrl\@ast.cam.ac.uk", "232" ) },
                                         ORAC_DATA_CAL => File::Spec->catdir($env{ORAC_DATA_CAL}, "ufti_casu" ),
                                         ORAC_LOOP => "flag -skip",
                                         args => { $ukirt_args->() }, },
