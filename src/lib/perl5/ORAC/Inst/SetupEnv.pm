@@ -498,6 +498,14 @@ sub orac_calc_instrument_settings {
   # Copy in the standard static values
   %env = ( %env, %{$this_env});
 
+  # Use notification system. Put in an eval since we do not want
+  # to stop initialisation
+  eval {
+    require ORAC::Print;
+    ORAC::Print::orac_notify( ORAC::Print::NOT__INIT(),
+                              "Pipeline initialisation complete",
+                              "Initialised for instrument $inst and UT date $options{ut}" );
+  };
 
   if ($DEBUG) {
     $Data::Dumper::SortKeys = 1;
