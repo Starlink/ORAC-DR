@@ -43,13 +43,16 @@
 #        fix argument check
 #     22-AUG-2007 (TIMJ):
 #        Factor out perl and version determination
+#     2009 September 4 (MJC):
+#        ORAC_PERSON now contains the full e-mail address, so remove the
+#        "@jach.hawaii.edu".
 
 #  Revision:
 #     $Id$
 
 #  Copyright:
 #     Copyright (C) 2006 Particle Physics and Astronomy Research
-#     Council. Copyright (C) 2007 Science and Technology Facilities
+#     Council. Copyright (C) 2007, 2009 Science and Technology Facilities
 #     Council. All Rights Reserved.
 
 #  Licence:
@@ -163,7 +166,7 @@ fi
 echo " "
 echo "+++++++++ For online $ORAC_INSTRUMENT reduction use oracdr -loop $ORAC_LOOP +++++++++"
 echo ""
-echo For comments specific to $ORAC_INSTRUMENT data reduction mail $ORAC_PERSON@jach.hawaii.edu
+echo For comments specific to $ORAC_INSTRUMENT data reduction mail $ORAC_PERSON
 echo 'For problems with the ORAC-DR system mail oracdr@jach.hawaii.edu'
 echo '         http://www.oracdr.org'
 echo ""
