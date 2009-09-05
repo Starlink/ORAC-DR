@@ -764,6 +764,17 @@ sub orac_loop_task {
         # get the parameter
         my $current = $tobj->get( "QL" );
 
+        # Check data valid
+        my $isvalid = "NO";
+        $isvalid = $current->{DATAVALID} if exists $current->{DATAVALID};
+        if ($isvalid eq 'NO') {
+          # no point going further so we sleep again for a little bit and
+          # then retry this task
+          $timer += orac_sleep($pause);
+          $npauses++;
+          redo;
+        }
+
         my $thisframe;
         $thisframe = $current->{FRAMENUM} if exists $current->{FRAMENUM};
 
