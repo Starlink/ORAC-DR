@@ -98,17 +98,24 @@ use constant NOT__ENDOBS  => "End Observation";
 use constant NOT__COMPLETE => "Pipeline Completed";
 
 my $NOTIFY;
+my $DBUS;  # The  Desktop::Notify object
 BEGIN {
-  my $used = eval {
+  my $use_growl = eval {
     require Mac::Growl;
     Mac::Growl::RegisterNotifications( APPNAME,
                                        [ NOT__INIT, NOT__GENERAL, NOT__STARTOBS,
                                          NOT__ENDOBS, NOT__COMPLETE ],
                                        [ NOT__INIT, NOT__GENERAL, NOT__STARTOBS,
                                          NOT__ENDOBS, NOT__COMPLETE ]);
+    $NOTIFY = "GROWL";
     1;
   };
-  $NOTIFY = "GROWL" if $used;
+  my $use_dbus = eval {
+    require Desktop::Notify;
+    $DBUS = Desktop::Notify->new( app_name => APPNAME );
+    $NOTIFY = "DBUS";
+    1;
+  };
 }
 
 
@@ -948,9 +955,17 @@ sub notify {
 
   my $outtext = $prefix . $notifypre . $text;
 
-  if ($NOTIFY eq 'GROWL') {
-    Mac::Growl::PostNotification( APPNAME, $name, $title, $outtext, 0, 0,
-                                File::Spec->catfile( $ENV{ORAC_DIR},"images", "orac_logo.gif"));
+  if (defined $NOTIFY) {
+    my $icon = File::Spec->catfile( $ENV{ORAC_DIR},"images", "orac_logo.gif");
+    if ($NOTIFY eq 'GROWL') {
+      Mac::Growl::PostNotification( APPNAME, $name, $title, $outtext, 0, 0, $icon );
+    } elsif ($NOTIFY eq 'DBUS' && defined $DBUS) {
+      my $notification = $DBUS->create( summary => $title,
+                                        body => $outtext,
+                                        app_icon => $icon,
+                                        timeout => -1 );
+      $notification->show();
+    }
   }
 
   # just as an opportunity to sync the gui
