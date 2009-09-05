@@ -100,7 +100,7 @@ use constant NOT__COMPLETE => "Pipeline Completed";
 my $NOTIFY;
 BEGIN {
   my $used = eval {
-    use Mac::Growl;
+    require Mac::Growl;
     Mac::Growl::RegisterNotifications( APPNAME,
                                        [ NOT__INIT, NOT__GENERAL, NOT__STARTOBS,
                                          NOT__ENDOBS, NOT__COMPLETE ],
