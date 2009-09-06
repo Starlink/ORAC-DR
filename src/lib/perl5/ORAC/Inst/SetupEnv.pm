@@ -228,7 +228,7 @@ sub orac_calc_instrument_settings {
   # IRIS-2 has truncated ut data directories
   my $iris2_con = sub {
     # AAT uses truncated directory names
-    my $auth = "oracdr_iris2";
+    my $auth = "oracdr_iris2\@jach.hawaii.edu";
     my $sun = "230,232,236";
     my $ut = substr($options{ut},2);
     my %defaults = $ukirt_con->( "iris2", $auth, $sun, $ut );
