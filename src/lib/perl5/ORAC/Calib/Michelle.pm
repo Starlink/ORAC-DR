@@ -69,6 +69,22 @@ sub emis {
   return $self->GenericIndexAccessor( "emis", 0, 0, @_ );
 }
 
+=item B<mask>
+
+Retrieve the mask from the file. Look for the mask in both the calibration
+directory and ORAC_DATA_OUT.
+
+  $mask = $Cal->mask();
+
+=cut
+
+sub mask {
+  my $self = shift;
+  my $mask = $self->GenericIndexAccessor( "mask", 0, 0, @_ );
+  $mask .= ".sdf" unless $mask =~ /\.sdf$/;
+  return $self->find_file( $mask );
+}
+
 =back
 
 =head2 Support Methods
