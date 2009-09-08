@@ -579,7 +579,13 @@ sub name {
     my @allmembers = $self->allmembers;
     if (@allmembers) {
       my $Frm = shift(@allmembers);
-      my $number = $Frm->number;
+      my $number;
+      if( defined( $Frm->uhdr( "ORAC_DR_GROUP" ) ) &&
+          $Frm->uhdr( "ORAC_DR_GROUP" ) =~ /^\d+$/ ) {
+        $number = $Frm->uhdr( "ORAC_DR_GROUP" );
+      } else {
+        $number = $Frm->number;
+      }
       my $ut = $Frm->hdr("ORACUT");
 
       # Append the extra information
