@@ -40,6 +40,11 @@ Flag to denote whether to analyze the error in the responsivities
 rather than the responsivities themselves. Default is 0 (false), use
 the responsivity data.
 
+=item B<LOGFILE>
+
+Flag to denote whether or not to write a log file. Default is 1
+(yes). Log file is called C<log.flatfield>.
+
 =back
 
 =head1 EXTERNAL TASKS
@@ -50,9 +55,16 @@ The following external tasks are used:
 
 =item ORAC-DR PRIMITIVES:
 
-_DISPLAY_RESPONSIVITIES_, _FIND_IMAGE_STATISTICS_, _WRITE_FLAG_FILE_
+_ADD_FLATFIELD_LOG_ENTRY_, _DISPLAY_RESPONSIVITIES_,
+_FIND_IMAGE_STATISTICS_, _WRITE_FLAG_FILE_
 
 =back
+
+=head1 NOTES
+
+It might be more logical to write the flag file and store the
+flatfield in the calibration system in _CALCULATE_FLATFIELD_ rather
+than here.
 
 =head1 OUTPUT DATA
 
@@ -67,11 +79,12 @@ exist) is stored as an NDF extension within the flatfield solution.
 A (hidden) flag file is written for each subarray, with the extension
 C<.ok>.
 
-=head1 NOTES
-
-It might be more logical to write the flag file and store the
-flatfield in the calibration system in _CALCULATE_FLATFIELD_ rather
-than here.
+If B<LOGFILE> is true, then the file C<log.flatfield> is written with
+the current subarray, median, mean, sigma, max, min and number of good
+solutions along with assoaicted changes compared with previous
+solutions. See the documentation for
+L<_ADD_FLATFIELD_LOG_ENTRY_|_ADD_FLATFIELD_LOG_ENTRY_> for more
+details.
 
 =head1 AUTHOR
 
@@ -99,6 +112,9 @@ USA.
 
 # Flatfield can only be calculated after the observation has ended
 if ( $Frm->uhdr("OBSEND") ) {
+
+  # Flag to denote whether to write a log file
+  my $uselog = get_prim_arg( $_PRIM_ARGS_, "LOGFILE", 1 );
 
   # Get ERR argument
   my $err = get_prim_arg( $_PRIM_ARGS_, "ERR", 0 );
@@ -155,6 +171,7 @@ if ( $Frm->uhdr("OBSEND") ) {
       orac_print ("---- $preftext responsivity fits for subarray $subarray ---- \n", "green");
       orac_print ("---- Clipped at $clip sigma ($dn solutions omitted = $dnpc %) ----\n", "green")
 	if ($clip ne "");
+      my @logparms = ($subarray);
       foreach my $stat ( qw/ MEDIAN MEAN SIGMA MAX MIN / ) {
 	my $value = sprintf "%11.4f", $results{$stat};
 	my $diff = sprintf "%11.4f", ($results{$stat} - $previous{$stat});
@@ -163,7 +180,12 @@ if ( $Frm->uhdr("OBSEND") ) {
 	my $deltapc = sprintf "%4.1f", 100*abs($diff / $previous{$stat});
 	# Align the output for easy reading
 	my $outstat = sprintf "%-8s", $stat;
-	orac_print ( " $outstat = $value A/W ( $deltapc % $incdec )\n", "green");
+	if ($uselog) {
+	  push (@logparms, $value, $diff);
+	} else {
+	  orac_print ( " $outstat = $value A/W ( $deltapc % $incdec )\n",
+		       "green");
+	}
       }
       # Now print out the change in the number of good solutions
       my $numstring = "no change";
@@ -174,7 +196,12 @@ if ( $Frm->uhdr("OBSEND") ) {
       } elsif ( $numdiff < 0 ) {
 	$numstring = -$numdiff ." / $deltapc % fewer";
       }
-      orac_print (" NGOOD    = $results{NUMGOOD} solutions ( $numstring )\n", "green");
+      if ($uselog) {
+	push (@logparms, $results{NUMGOOD}, $numdiff);
+	_ADD_FLATFIELD_LOG_ENTRY_ PARAMS=\@logparms
+      }
+      orac_print (" NGOOD    = $results{NUMGOOD} solutions ( $numstring )\n",
+		  "green");
 
       # Next create the `percentage change' image
       my $deltafile = $Frmobj->inout("_pcrsp");
