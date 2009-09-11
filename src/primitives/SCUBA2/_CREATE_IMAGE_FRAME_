@@ -1,0 +1,132 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CREATE_IMAGE_FRAME_ - generic primitive to create a Frame image
+
+=head1 SYNOPSIS
+
+_CREATE_IMAGE_FRAME_ METHOD=LINEAR GENVAR=0
+
+=head1 DESCRIPTION
+
+A basic generic primitive to deal with SCAN and DREAM/STARE image
+creation designed to be used by non-science recipes, usually in QL
+mode. Calls other primitives specific to the current
+observing-mode. However, not all arguments to those primitives are
+supported.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<GENVAR>
+
+A flag to denote whether to generate variances. Default depends on the
+presence of the C<QUICKLOOK> uhdr entry. For SCAN observations the
+default is 1 (generate variances); for DREAM/STARE the default is 0.
+
+=item B<METHOD>
+
+The map-making method to be used by C<makemap>. May be C<ITERATE> or
+C<REBIN>. Default is C<ITERATE>. If called as part of a quick-look
+recipe, B<METHOD> is set to C<QL> and qlmakemap is used.
+
+=item B<SPREAD>
+
+Pixel-spreading scheme for the image-making process. Default is
+C<NEAREST>.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item ORAC-DR PRIMITIVES
+
+_MAKE_MOSAIC_FRAME_, _MAKEMAP_FRAME_, _QLMAKEMAP_FRAME_
+
+=back
+
+=head1 NOTES
+
+This primitive only supports the most useful arguments to the other
+primitives and should only be used where the default values are good
+enough.
+
+=head1 OUTPUT DATA
+
+For SCAN data, the Frame uhdr entries C<SKY_SUBTRACTION> and
+C<EXTINCTION> will be defined.
+
+=head1 OUTPUT FILES
+
+See the documentation on the primitives used.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Pixel-spreading scheme (aka method for makemos/wcsmosaic)
+my $pixelspread = get_prim_arg($_PRIM_ARGS_, "SPREAD", "NEAREST");
+
+# Retrieve the QUICKLOOK parameter
+my $ql = $Frm->uhdr("QUICKLOOK");
+# Catch the case that this is not the QL pipeline in which case
+# QUICKLOOK will be undef
+$ql = 0 unless defined $ql;
+
+# Generate variances? Default to no for DREAM/STARE quick-look, yes
+# otherwise.
+my $genvar = ( $ql == 1 ) ? 0 : 1;
+$genvar = get_prim_arg($_PRIM_ARGS_, "GENVAR", $genvar);
+
+# Translated headers are lower case
+if ( $Frm->uhdr("ORAC_OBSERVATION_MODE") =~ /scan/ ) {
+  # SCAN data processing - makemap/qlmakemap use LINEAR for bi-linear
+  # interpolation
+  $pixelspread = "LINEAR" if $pixelspread =~ /linear$/i;
+
+  # Map-making method
+  my $method = get_prim_arg($_PRIM_ARGS_, "METHOD", "ITERATE");
+  $method = "QL" if ( $ql );
+
+  if ( $method eq  "QL" ) {
+    _QLMAKEMAP_FRAME_ SPREAD=$pixelspread GENVAR=$genvar
+  } else {
+    _MAKEMAP_FRAME_ SPREAD=$pixelspread GENVAR=$genvar METHOD=$method
+  }
+
+} else {
+  # DREAM/STARE data processing - note that makemos/wcsmosaic use
+  # BILINEAR
+  $pixelspread = "BILINEAR" if $pixelspread =~ /linear$/i;
+  _MAKE_MOSAIC_FRAME_ METHOD=$pixelspread GENVAR=$genvar
+}
