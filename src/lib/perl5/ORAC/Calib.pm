@@ -303,7 +303,7 @@ sub GenericIndex {
 Generic method for retrieving or setting the current value based on index
 and verification. Uses ORACTIME to verify.
 
-  $val = $Cal->GenericIndexAccessor( "sky", 0, 1, @_ );
+  $val = $Cal->GenericIndexAccessor( "sky", 0, 1, 0, 1, @_ );
 
 First argument indicates the root name for methods to be called. ie "sky" would
 call "skyname", "skynoupdate", and "skyindex".
@@ -319,6 +319,12 @@ will be assumed to be a valid match, and if it returns undef the method
 will croak as no suitable calibration will be available. This allows defaults
 to be inserted.
 
+Fourth argument controls whether calibration object verification is
+not done.
+
+Fifth argument controls whether warnings are displayed when searching
+through the index file for a suitable calibration. Default is to warn.
+
   $val = $Cal->GenericIndexAccessor( "mask", 0, sub { return "bpm.sdf" }, @_ );
 
 =cut
@@ -328,6 +334,8 @@ sub GenericIndexAccessor {
   my $root = shift;
   my $timesearch = shift;
   my $nocroak = shift;
+  my $noverify = shift;
+  my $warn = shift;
 
   my $namemeth = $root ."name";
   my $indexmeth = $root ."index";
@@ -336,12 +344,17 @@ sub GenericIndexAccessor {
   # if we are setting, accept the value and return
   return $self->$namemeth(shift) if @_;
 
-  my $ok = $self->$indexmeth->verify($self->$namemeth,$self->thing);
+  my $ok;
+  if( ! $noverify ) {
+    $ok = $self->$indexmeth->verify($self->$namemeth,$self->thing,$warn);
 
-  # happy ending - frame is ok
-  return $self->$namemeth() if $ok;
+    # happy ending - frame is ok
+    return $self->$namemeth() if $ok;
 
-  croak("Override $root is not suitable! Giving up") if $self->$noupmeth;
+    croak("Override $root is not suitable! Giving up") if $self->$noupmeth;
+  } else {
+    $ok = 1;
+  }
 
   # not so good
   if (defined $ok) {
@@ -355,7 +368,7 @@ sub GenericIndexAccessor {
       croak "Unable to decide on time selection method with arg '$timesearch'";
     }
 
-    my $match = $self->$indexmeth->$choosemeth('ORACTIME',$self->thing);
+    my $match = $self->$indexmeth->$choosemeth('ORACTIME',$self->thing,$warn);
 
     # Error behaviour
     if (!defined $match) {

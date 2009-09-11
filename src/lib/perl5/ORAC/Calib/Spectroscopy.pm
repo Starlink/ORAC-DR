@@ -66,7 +66,7 @@ if a calibration can not be found.
 
 sub arc {
   my $self = shift;
-  return $self->GenericIndexAccessor( "arc", 0, 0, @_ );
+  return $self->GenericIndexAccessor( "arc", 0, 0, 0, 1, @_ );
 }
 
 =item B<arlines>
@@ -81,7 +81,7 @@ file can be found.
 sub arlines {
   my $self = shift;
 
-  return $self->GenericIndexAccessor( "arlines", -1, 0, @_ );
+  return $self->GenericIndexAccessor( "arlines", -1, 0, 0, 1, @_ );
 }
 
 =item B<calibratedarc>
@@ -97,7 +97,7 @@ Uses the closest previous observation.
 
 sub calibratedarc {
   my $self = shift;
-  return $self->GenericIndexAccessor( "calibratedarc", -1, 1, @_ );
+  return $self->GenericIndexAccessor( "calibratedarc", -1, 1, 0, 1, @_ );
 }
 
 =item B<iar>
@@ -110,7 +110,7 @@ Uses the closest relevant calibration and croaks if none can be found.
 
 sub iar {
   my $self = shift;
-  return $self->GenericIndexAccessor( "iar", 0, 0, @_ );
+  return $self->GenericIndexAccessor( "iar", 0, 0, 0, 1, @_ );
 }
 
 =item B<profile>
@@ -125,7 +125,7 @@ Uses the closest relevant calibration and croaks if none can be found.
 
 sub profile {
   my $self = shift;
-  return $self->GenericIndexAccessor( "profile", 0, 0, @_ );
+  return $self->GenericIndexAccessor( "profile", 0, 0, 0, 1, @_ );
 }
 
 =item B<rows>
@@ -200,7 +200,7 @@ Returns the closest standard and croaks if none can be found.
 
 sub standard {
   my $self = shift;
-  return $self->GenericIndexAccessor( "standard", 0, 0, @_ );
+  return $self->GenericIndexAccessor( "standard", 0, 0, 0, 1, @_ );
 }
 
 =back

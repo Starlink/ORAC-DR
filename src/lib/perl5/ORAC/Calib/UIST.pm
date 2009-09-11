@@ -56,7 +56,7 @@ __PACKAGE__->CreateBasicAccessors(
 
 sub ifuprofile {
   my $self = shift;
-  return $self->GenericIndexAccessor( "ifuprofile", -1, 0, @_ );
+  return $self->GenericIndexAccessor( "ifuprofile", -1, 0, 0, 1, @_ );
 }
 
 =item B<offset>
@@ -68,7 +68,7 @@ Returns the appropriate y-offset value.
 
 sub offset {
   my $self = shift;
-  return $self->GenericIndexAccessor( "offset", 0, 0, @_ );
+  return $self->GenericIndexAccessor( "offset", 0, 0, 0, 1, @_ );
 }
 
 =back

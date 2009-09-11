@@ -87,7 +87,7 @@ Return (or set) the name of the current bias.
 
 sub bias {
   my $self = shift;
-  return $self->GenericIndexAccessor( "bias", 0, 0, @_ );
+  return $self->GenericIndexAccessor( "bias", 0, 0, 0, 1, @_ );
 }
 
 =item B<dark>
@@ -100,7 +100,7 @@ checks suitability on return.
 
 sub dark {
   my $self = shift;
-  return $self->GenericIndexAccessor( "dark", 0, 0, @_ );
+  return $self->GenericIndexAccessor( "dark", 0, 0, 0, 1, @_ );
 }
 
 =item B<flat>
@@ -114,7 +114,7 @@ Return (or set) the name of the current flat.
 
 sub flat {
   my $self = shift;
-  return $self->GenericIndexAccessor( "flat", 0, 0, @_ );
+  return $self->GenericIndexAccessor( "flat", 0, 0, 0, 1, @_ );
 }
 
 =item B<default_mask>
@@ -153,7 +153,7 @@ sub mask {
                                           $defmask =~ s/\.sdf//;
                                           return $defmask;
                                         }
-                                      }, @_ );
+                                      }, 0, 1, @_ );
 }
 
 =item B<readnoise>
@@ -192,7 +192,7 @@ Return (or set) the name of the current "sky" frame
 
 sub sky {
   my $self = shift;
-  return $self->GenericIndexAccessor( "sky", 0, 0, @_ );
+  return $self->GenericIndexAccessor( "sky", 0, 0, 0, 1, @_ );
 }
 
 =back

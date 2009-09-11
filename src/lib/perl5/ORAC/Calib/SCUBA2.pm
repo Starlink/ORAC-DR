@@ -306,7 +306,7 @@ possible to search the Frame subheaders when evaluating the rules.
 
 sub mask {
   my $self = shift;
-  return $self->GenericIndexAccessor( "mask", 0, 1, @_ );
+  return $self->GenericIndexAccessor( "mask", 0, 1, 0, 1, @_ );
 }
 
 =item B<dark>
@@ -325,7 +325,7 @@ Frame subheaders when evaluating the rules.
 
 sub dark {
   my $self = shift;
-  return $self->GenericIndexAccessor( "dark", 0, 1, @_ );
+  return $self->GenericIndexAccessor( "dark", 0, 1, 0, 1, @_ );
 }
 
 =item B<flat>
@@ -344,7 +344,7 @@ Frame subheaders when evaluating the rules.
 
 sub flat {
   my $self = shift;
-  return $self->GenericIndexAccessor( "flat", 0, 1, @_ );
+  return $self->GenericIndexAccessor( "flat", 0, 1, 0, 1, @_ );
 }
 
 =back
@@ -386,7 +386,7 @@ when evaluating the rules.
 
 sub resp {
   my $self = shift;
-  return $self->GenericIndexAccessor( "resp", 0, 0, @_ );
+  return $self->GenericIndexAccessor( "resp", 0, 0, 0, 1, @_ );
 }
 
 =item B<respstats>

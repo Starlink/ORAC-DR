@@ -66,7 +66,7 @@ suitability on return.
 
 sub emis {
   my $self = shift;
-  return $self->GenericIndexAccessor( "emis", 0, 0, @_ );
+  return $self->GenericIndexAccessor( "emis", 0, 0, 0, 1, @_ );
 }
 
 =item B<mask>
@@ -80,7 +80,7 @@ directory and ORAC_DATA_OUT.
 
 sub mask {
   my $self = shift;
-  my $mask = $self->GenericIndexAccessor( "mask", 0, 0, @_ );
+  my $mask = $self->GenericIndexAccessor( "mask", 0, 0, 0, 1, @_ );
   $mask .= ".sdf" unless $mask =~ /\.sdf$/;
   return $self->find_file( $mask );
 }
