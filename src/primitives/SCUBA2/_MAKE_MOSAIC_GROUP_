@@ -74,8 +74,14 @@ C<nearest>. Passed directly to _MAKE_MOSAIC_.
 =item B<NMOS>
 
 Number of Frame images to mosaic together before coadding to
-Group. Only used if B<COADD_MODE> is DESPIKE. Default is 5. Passed
+Group. Only used if B<COADD_MODE> is DESPIKE or for DREAM/STARE data
+being processed by the quick-look pipeline. Default is 10. Passed
 directly to _MAKE_MOSAIC_.
+
+=item B<SIGMAS>
+
+If B<MAKEMOS_METHOD> is C<sigma>, then this is the number of standard
+deviations at which to clip the data before combining. Default is 4.
 
 =item B<VERBOSE>
 
@@ -90,6 +96,18 @@ telescope. Default is 0 (no).
 
 =back
 
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item ORAC-DR PRIMITIVES
+
+_MAKE_MOSAIC, _MAKE_MOSAIC_GROUP_DESPIKE_
+
+=back
+
 =head1 NOTES
 
 It is assumed that all of the input images are aligned to the same
@@ -97,9 +115,8 @@ coordinate frame.
 
 Defining the output filename for the Group mosaic is a bit of a hack.
 
-_MAKE_MOSAIC_GROUP_DESPIKE_ is more efficient than using this
-primitive with COADD_MODE=DESPIKE and designed for use in the QUICK
-LOOK pipeline.
+For the DREAM/STARE quick-look pipeline _MAKE_MOSAIC_GROUP_DESPIKE_
+is called as it is optimized for that use.
 
 =head1 OUTPUT DATA
 
@@ -140,9 +157,12 @@ USA.
 # Should I be verbose (default to no)
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 0);
 
-# Are we waiting until the observation has finished
+# Are we waiting until the observation has finished?
 my $wait = get_prim_arg($_PRIM_ARGS_, "WAIT", 0);
 
+# Check whether the proceed conditions are met - proceed if we're not
+# waiting until the obs has ended, OR if we *are* waiting and the obs
+# has ended.
 if ( !$wait || ($wait && $Frm->uhdr('OBSEND')) ) {
 
   # Do we want to use makemos?
@@ -151,27 +171,56 @@ if ( !$wait || ($wait && $Frm->uhdr('OBSEND')) ) {
   # Determine coadd mode as that may over-ride choice of makemos
   # parameter
   my $coadd_mode = uc(get_prim_arg($_PRIM_ARGS_, "COADD_MODE", "STACKALL"));
-  my $nmos = 1;
-  if ( $coadd_mode eq 'DESPIKE' ) {
-    $makemos = 1;
-    # Number of Frames to mosaic for calculating a statistically-valid
-    # variance
-    $nmos = get_prim_arg($_PRIM_ARGS_, "NMOS", 5);
+
+  # Is this the DREAM/STARE quick-look pipeline?
+  my $qlflag = $Frm->uhdr("QUICKLOOK");
+  my $ql = 0;
+  if ( defined $qlflag ) {
+    $ql = 1 if ($qlflag == 1);
   }
 
-  # Method for combining images in makemos 
-  my $makemos_method = get_prim_arg($_PRIM_ARGS_, "MAKEMOS_METHOD", "mean");
+  my $nmos = 1;
+  if ( $coadd_mode eq 'DESPIKE' || $ql ) {
+    $makemos = 1;
+    # Number of images to mosaic for calculating a statistically-valid
+    # variance
+    $nmos = get_prim_arg($_PRIM_ARGS_, "NMOS", 10);
+  }
 
-  # Method for determining resampling the image during alignment
-  my $method = get_prim_arg($_PRIM_ARGS_, "METHOD", "nearest");
+  my ($makemos_method, $sigmas);
+  if ( $makemos ) {
+    # Method for combining images in makemos 
+    $makemos_method = get_prim_arg($_PRIM_ARGS_, "MAKEMOS_METHOD", "mean");
 
-  # Unset the NEWIMAGE flag
-  $Grp->uhdr("NEWIMAGE",0);
+    # Number of sigmas to use if makemos_method = sigma (sigma-clipped mean)
+    $sigmas = get_prim_arg($_PRIM_ARGS_, "SIGMAS", 4.0);
+  }
 
-  _MAKE_MOSAIC_ USEGRP=1 MAKEMOS=$makemos MAKEMOS_METHOD=$makemos_method METHOD=$method COADD_MODE=$coadd_mode VERBOSE=$verbose NMOS=$nmos
+  # If this is the DREAM/STARE quick-look pipeline, use the
+  # ql-optimized primitive which waits until NMOS images exist before
+  # creating the Group image
+  if ( $ql ) {
+    # This primitive always uses makemos, default method is SIGMA so
+    # pass on SIGMAS parameter
+    _MAKE_MOSAIC_GROUP_DESPIKE_ NMOS=$nmos VERBOSE=$verbose SIGMAS=$sigmas
+    # Tell the display system that there's a new image to display
+    $Grp->uhdr("NEWIMAGE",1) if $_MAKE_MOSAIC_GROUP_DESPIKE_{NEWIMAGE};
 
-  # Tell the display system that there's a new image to display
-  $Grp->uhdr("NEWIMAGE",1) if $_MAKE_MOSAIC_{NEWIMAGE};
+  } else {
+
+    # Method for determining resampling the image during alignment
+    my $method = get_prim_arg($_PRIM_ARGS_, "METHOD", "nearest");
+
+    # Unset the NEWIMAGE flag
+    $Grp->uhdr("NEWIMAGE",0);
+
+    _MAKE_MOSAIC_ USEGRP=1 MAKEMOS=$makemos MAKEMOS_METHOD=$makemos_method METHOD=$method COADD_MODE=$coadd_mode VERBOSE=$verbose NMOS=$nmos
+
+    # Tell the display system that there's a new image to display
+    $Grp->uhdr("NEWIMAGE",1) if $_MAKE_MOSAIC_{NEWIMAGE};
+  }
 } else {
+  # If the proceed conditions were not met, tell the pipeline that no
+  # new Group image was created this time round
   $Grp->uhdr("NEWIMAGE",0);
 }
