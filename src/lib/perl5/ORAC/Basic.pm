@@ -32,6 +32,7 @@ use ORAC::Print;
 use ORAC::Display;
 use ORAC::Error qw/:try/;
 use ORAC::Constants qw/:status/;
+use ORAC::Inst::SetupEnv;
 
 @ISA = qw(Exporter);
 
@@ -293,6 +294,13 @@ sub orac_chdir_output_dir {
   orac_force_abspath();
 
   if (exists $ENV{ORAC_DATA_OUT}) {
+
+    my $nfs = ORAC::Inst::SetupEnv::is_nfs_disk( $ENV{ORAC_DATA_OUT});
+    if ($nfs) {
+      orac_err( "ORAC_DATA_OUT appears to be on a disk mounted from $nfs.\n" );
+      orac_err( "Please use a local disk for data processing.\n" );
+      orac_exit_normally();
+    }
 
     # change to output  dir
     chdir($ENV{ORAC_DATA_OUT}) ||
