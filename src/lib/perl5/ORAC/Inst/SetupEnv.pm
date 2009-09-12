@@ -79,11 +79,13 @@ sub orac_calc_instrument_settings {
   croak "ORAC_DIR environment variable does not point to a directory"
     unless -d $ENV{ORAC_DIR};
 
-  # Default to today if not given.
+  # Default to today if not given. Also check to see if we have
+  # been told to use today
   my $today = ORAC::General::utdate();
   if (!defined $options{ut}) {
     $options{ut} = $today;
   }
+  my $istoday = ($options{ut} == $today ? 1 : 0);
 
   # Place to put the results
   my %env;
@@ -343,8 +345,10 @@ sub orac_calc_instrument_settings {
   # Arguments to use for the alias.
 
   # Always return -ut argument.
+  # Use -batch if it is not today.
   my $oracdr_args = sub {
-    return ( "-ut" => $options{ut} );
+    my %extras = ( $istoday ? () : ("-batch" => undef));
+    return ( "-ut" => $options{ut}, %extras );
   };
 
   # UKIRT instruments use transient groups
