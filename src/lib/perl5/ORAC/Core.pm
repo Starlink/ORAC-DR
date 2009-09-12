@@ -344,8 +344,12 @@ sub orac_process_frame {
 
   # Execute the recipe
   try {
+    orac_notify( ORAC::Print::NOT__STARTOBS, "Start reducing observation",
+                 "Processing observation ".$Frm->number." with recipe $RecipeName");
     $recipe->execute( $CURRENT_RECIPE, $CURRENT_PRIMITIVE, $PRIMITIVE_LIST, $Frm, 
                       $Grp, $Cal, $Display, $Mon );
+    orac_notify( ORAC::Print::NOT__ENDOBS, "Reduced observation",
+                 "Observation ".$Frm->number. " has been reduced");
   }
     catch ORAC::Error::FatalError with
       {
@@ -1334,6 +1338,8 @@ sub orac_main_data_loop {
     my @Groups = ();
     my %Groups = ();
 
+    orac_notify( ORAC::Print::NOT__GENERAL,"Analyzing files",
+                 "Parsing files for batch mode processing");
     while (1) {
       # Return back the current frame
       # This will also configure the frame object
@@ -1410,6 +1416,8 @@ sub orac_main_data_loop {
       }
     }
   }
+  orac_notify( ORAC::Print::NOT__COMPLETE, "ORAC-DR completed",
+               "All pipeline processing has completed");
 }
 
 =back
