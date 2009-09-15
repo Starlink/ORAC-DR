@@ -345,9 +345,8 @@ sub orac_calc_instrument_settings {
   # Arguments to use for the alias.
 
   # Always return -ut argument.
-  # Use -batch if it is not today.
   my $oracdr_args = sub {
-    my %extras = ( $istoday ? () : ("-batch" => undef));
+    my %extras = ( );
     return ( "-ut" => $options{ut}, %extras );
   };
 
@@ -359,6 +358,7 @@ sub orac_calc_instrument_settings {
   };
 
   # SCUBA-2 and ACSIS support recsuffix options
+  # Add -batch if not today.
   my $jcmt_args = sub {
     my @rec;
     if (exists $options{mode} && defined $options{mode}) {
@@ -371,6 +371,9 @@ sub orac_calc_instrument_settings {
       } elsif ($options{mode} eq 'SUMMIT') {
         push(@rec, "-recsuffix", "SUMMIT");
       }
+    }
+    if( ! $istoday ) {
+      push( @rec, "-batch" => undef );
     }
     return ( $oracdr_args->(), @rec );
   };
