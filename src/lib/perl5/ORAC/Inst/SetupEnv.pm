@@ -451,7 +451,7 @@ sub orac_calc_instrument_settings {
                                         args => { $oracdr_args->(), "-loop" => "flag", "-skip" => undef },
                                       },
                        "SCUBA2"   => { code => sub { $scuba2_con->() },
-                                       ORAC_PERSON => "a.gibb\@phas.ubc.ca",
+                                       ORAC_PERSON => "agg\@phas.ubc.ca",
                                        ORAC_SUN  => "264",
                                        ORAC_LOOP => "flag -skip",
                                        args => { $jcmt_args->() },
