@@ -273,18 +273,18 @@ sub orac_calc_instrument_settings {
     }
 
     # Make sure that we use a shared RTD_REMOTE_DIR for each night
-    if (!$options{eng}) {
-      my $updir = _parentdir( $outdir );
-      if (-d $updir) {
-        $defaults{ORAC_RESPECT_RTD_REMOTE} = 1;
-        $defaults{RTD_REMOTE_DIR} = $updir;
+    # but only if we are at the summit
+    if ($site eq 'ukirt') {
+      my $rtddir;
+      if (!$options{eng}) {
+        $rtddir = _parentdir( $outdir );
+      } else {
+        # in -eng mode we make sure we use the non-eng directory tree
+        $rtddir = File::Spec->catdir( $dataroot, "reduced", lc($oracinst) );
       }
-    } else {
-      # in -eng mode we make sure we use the non-eng directory tree
-      my $newout = File::Spec->catdir( $dataroot, "reduced", lc($oracinst) );
-      if (-d $newout) {
+      if (-d $rtddir) {
         $defaults{ORAC_RESPECT_RTD_REMOTE} = 1;
-        $defaults{RTD_REMOTE_DIR} = $newout;
+        $defaults{RTD_REMOTE_DIR} = $rtddir;
       }
     }
 
