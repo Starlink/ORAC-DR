@@ -1,0 +1,147 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_RESTRICT_VELOCITY_RANGE_
+
+=head1 DESCRIPTION
+
+This primitive trims an ACSIS observation to a specific velocity range.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item AXIS = INTEGER (Given)
+
+The velocity axis. [1]
+
+=item GROUP = INTEGER (Given)
+
+How to process group files. 0 means use the current Frame object. 1
+means use the current Group object. 2 means use each Frame member of
+the current Group object. [0]
+
+=item LOWER = REAL (Given)
+
+The requested lower velocity, in km/s. [undef]
+
+=item UPPER = REAL (Given)
+
+The requested upper velocity, in km/s. [undef]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable for ACSIS time-series (with AXIS=1) and
+spatial cube (with AXIS=3) data.
+
+=item *
+
+Either the LOWER or UPPER parameter (or both) must be defined.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The cube with trimmed velocity range with suffix _rvr.
+
+=back
+
+=head1 TASKS
+
+KAPPA: NDFCOPY.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+# Handle arguments.
+my $axis = get_prim_arg( $_PRIM_ARGS_, "AXIS", 1 );
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+my $lower = get_prim_arg( $_PRIM_ARGS_, "LOWER", undef );
+my $upper = get_prim_arg( $_PRIM_ARGS_, "UPPER", undef );
+
+# Return if both lower and upper are undefined.
+if( ! defined( $lower ) && ! defined( $upper ) ) {
+  orac_throw "Must define both LOWER and UPPER velocities to _RESTRICT_VELOCITY_RANGE_\n";
+}
+
+# Handle Frame/Group.
+my @Objs;
+if( $group == 0 ) {
+  push @Objs, $Frm;
+} elsif( $group == 1 ) {
+  push @Objs, $Grp;
+} elsif( $group == 2 ) {
+  @Objs = $Grp->members;
+}
+
+# Variable to handle NDF section.
+my $section = '';
+
+# Explain what we're doing.
+if( defined( $lower ) && defined( $upper ) ) {
+  orac_say sprintf( "Trimming velocity range to %0.2f : %0.2f km/s.", $lower, $upper );
+  $section = "$lower:$upper";
+} elsif( defined( $lower ) ) {
+  orac_say sprintf( "Trimming lower velocity limit to %0.2f km/s.", $lower );
+  $section = "$lower:";
+} else {
+  orac_say sprintf( "Trimming upper velocity limit to %0.2f km/s.", $upper );
+  $section = ":$upper";
+}
+
+# Set up the NDF section string, which depends on the axis.
+my $ndfsection = '';
+if( $axis == 1 ) {
+  $ndfsection = "($section,,)";
+} elsif( $axis == 2 ) {
+  $ndfsection = "(,$section,)";
+} elsif( $axis == 3 ) {
+  $ndfsection = "(,,$section)";
+} else {
+  orac_throw "AXIS parameter to _RESTRICT_VELOCITY_RANGE_ must be 1, 2, or 3.\n";
+}
+
+foreach my $Obj ( @Objs ) {
+  foreach my $i ( 1 .. $Obj->nfiles ) {
+
+    my ( $in, $out ) = $Obj->inout( "_rvr", $i );
+
+    # Do the copy.
+    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in$ndfsection out=$out" );
+
+    # Report to user.
+    orac_say "$in to $out:";
+    orac_say " Restricted velocity range.";
+
+    # Update the object.
+    $Obj->product( "rvr" );
+    $Obj->file( $i, $out );
+
+  }
+}
+
+# Tidy up output.
+orac_say "";
