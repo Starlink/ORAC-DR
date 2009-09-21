@@ -117,6 +117,9 @@ sub orac_calc_instrument_settings {
   # where are we running
   my $site = orac_determine_location();
 
+  # What's our computer name?
+  my $hostname = hostname();
+
   # Work out our default calibration root directory
   if ( exists $ENV{ORAC_CAL_ROOT} && defined $ENV{ORAC_CAL_ROOT} ) {
     $env{ORAC_CAL_ROOT} = $ENV{ORAC_CAL_ROOT};
@@ -175,6 +178,12 @@ sub orac_calc_instrument_settings {
                            'WFCAM'  => "ukirtdata",
                          );
 
+  # Default drN directories for ACSIS and SCUBA-2.
+  my %dr_default = ( 'acsis'        => 'dr1',
+                     'scuba2_long'  => 'dr1',
+                     'scuba2_short' => 'dr1',
+                   );
+
   # We check to make sure that ORAC_DATA_ROOT exists if set
   if (exists $ENV{ORAC_DATA_ROOT} && defined $ENV{ORAC_DATA_ROOT}) {
     croak "ORAC_DATA_ROOT set to '$ENV{ORAC_DATA_ROOT}' but this directory does not exist"
@@ -217,6 +226,31 @@ sub orac_calc_instrument_settings {
     return ( ORAC_DATA_CAL => File::Spec->catdir( $env{'ORAC_CAL_ROOT'}, $root ),
              ORAC_DATA_IN => File::Spec->catdir( $dataroot, "raw", @eng, $root, $localut ),
              ( $fixout ? () : (ORAC_DATA_OUT => File::Spec->catdir( $dataroot, "reduced", @eng, $root, $localut ))),
+             ORAC_SUN => $sun,
+             ORAC_PERSON => $auth,
+           );
+  };
+
+  # Constructor for JCMT-style instruments.
+  my $jcmt_con = sub {
+    my $root = shift;
+    my $auth = shift;
+    my $sun  = shift;
+    my $localut = shift || $options{'ut'};
+    my @eng = ( $options{'eng'} ? ( "eng" ) : () );
+
+    # Set up the reduced data directory. This depends on the hostname,
+    # but strip off the sc2.
+    my $drN = $hostname;
+    $drN =~ s/sc2//;
+    if( $drN !~ /^dr\d$/ ) {
+      $drN = $dr_default{$root};
+      print STDERR "Not running pipeline on sc2drN machine. Using default $drN as part of output directory structure.\n";
+    }
+
+    return ( ORAC_DATA_CAL => File::Spec->catdir( $env{'ORAC_CAL_ROOT'}, $root ),
+             ORAC_DATA_IN  => File::Spec->catdir( $dataroot, "raw", @eng, $root, $localut ),
+             ( $fixout ? () : ( ORAC_DATA_OUT => File::Spec->catdir( $dataroot, "reduced", $drN, @eng, $root, $localut ) ) ),
              ORAC_SUN => $sun,
              ORAC_PERSON => $auth,
            );
@@ -292,32 +326,26 @@ sub orac_calc_instrument_settings {
   };
 
   my $acsis_con = sub {
-    # call UKIRT to do basics
-    my %defaults = $ukirt_con->( "acsis", @_ );
-    # but we are allowed to create the output directory
-    $defaults{ORAC_DATA_OUT} = _mkdir_jcmt( $defaults{ORAC_DATA_OUT})
+    my %defaults = $jcmt_con->( "acsis", @_ );
+    $defaults{ORAC_DATA_OUT} = _mkdir_jcmt( $defaults{ORAC_DATA_OUT} )
       unless $fixout;
     return %defaults;
   };
 
   # SCUBA-2 reads from a ok directory
   my $scuba2_con = sub {
-    my @eng = ($options{eng} ? ("eng") : ());
+    # The summit reduced directory depends on the orac_instrument variable.
+    my %path = ( SCUBA2_LONG => "scuba2_long",
+                 SCUBA2_SHORT => "scuba2_short",);
 
-    # The summit reduced directory depends on the orac_instrument variable and
-    # the processing mode.
-    my %path;
-    if ( exists $options{mode} && defined $options{mode} && $options{mode} eq 'QL') {
-      %path = ( SCUBA2_LONG => "scuba2ql_long",
-                SCUBA2_SHORT => "scuba2ql_short");
-    } else {
-      %path = ( SCUBA2_LONG => "scuba2_long",
-                SCUBA2_SHORT => "scuba2_short",);
-    }
     if (!exists $path{$oracinst}) {
       print STDERR "Unrecognized SCUBA-2 instrument type: $oracinst. Using SCUBA2_LONG\n";
       $oracinst = "SCUBA2_LONG";
     }
+
+    my %defaults = $jcmt_con->( $path{$oracinst}, @_ );
+
+    my @eng = ($options{eng} ? ("eng") : ());
 
     my %remote;
     if (exists $options{mode} && defined $options{mode}) {
@@ -331,15 +359,14 @@ sub orac_calc_instrument_settings {
       }
     }
 
-    # Calculate the parent output directory so we can check path
-    my $outdir = File::Spec->catdir( $dataroot, "reduced", $path{$oracinst}, $options{ut} );
-    $outdir = _mkdir_jcmt( $outdir );
+    $defaults{ORAC_DATA_OUT} = _mkdir_jcmt( $defaults{ORAC_DATA_OUT} )
+      unless $fixout;
 
-    return ( ORAC_DATA_IN => File::Spec->catdir( $dataroot, "raw", "scuba2", "ok", @eng, $options{ut} ),
-             ORAC_DATA_CAL => File::Spec->catdir( $env{ORAC_CAL_ROOT}, "scuba2" ),
-             ($fixout ? () : (ORAC_DATA_OUT => $outdir)),
-             %remote,
-           );
+    # Override defaults.
+    $defaults{'ORAC_DATA_CAL'} = File::Spec->catdir( $env{'ORAC_CAL_ROOT'}, "scuba2" );
+    $defaults{'ORAC_DATA_IN'} = File::Spec->catdir( $dataroot, "raw", "scuba2", "ok", @eng, $options{ut} );
+
+    return ( %defaults, %remote );
   };
 
   # Arguments to use for the alias.
