@@ -46,6 +46,8 @@ while ( <$fh> ) {
   }
 }
 
+close $fh;
+
 foreach my $recipe ( sort keys %rec_time ) {
   my $sum = 0;
   my $max = 0;
@@ -74,6 +76,10 @@ foreach my $recipe ( sort keys %rec_time ) {
 
 }
 
+my $totaltime = 0;
+my %total;
+my %calls;
+my %average;
 foreach my $task ( sort keys %task_time ) {
   my $tasksum = 0;
   my $taskmax = 0;
@@ -92,32 +98,40 @@ foreach my $task ( sort keys %task_time ) {
   print sprintf( "\nAverage runtime for %s: %.3f seconds\n",
                  $task,
                  $taskavg );
+  print sprintf( "Total runtime for %s: %.3f seconds\n",
+                 $task,
+                 $tasksum );
   print "Range: $taskmin to $taskmax seconds\n";
   print "$ncalls call" . ( $ncalls == 1 ? '' : 's' ) . " to $task\n";
+
+  $total{$task} = $tasksum;
+  $calls{$task} = $ncalls;
+  $average{$task} = $taskavg;
+  $totaltime += $tasksum;
+
+}
+
+my $limit = 10;
+
+print sprintf( "\nTotal runtime: %.3f seconds\n",
+               $totaltime );
+print "\nTop $limit tasks by total time:\n";
+my %reverse = reverse %total;
+my $i = 0;
+foreach my $key ( reverse sort { $a <=> $b } keys %reverse ) {
+  $i++;
+  print sprintf( "%2d: %12s: %7.2f seconds (%5.2f%% of total)\n", $i, $reverse{$key}, $key, $key / $totaltime * 100 );
+  last if $i >= $limit;
+}
+
+print "\nTop $limit tasks by average time:\n";
+%reverse = reverse %average;
+$i = 0;
+foreach my $key ( reverse sort { $a <=> $b } keys %reverse ) {
+  $i++;
+  print sprintf( "%2d: %12s: %7.2f seconds (%3d calls)\n", $i, $reverse{$key}, $key, $calls{$reverse{$key}} );
+  last if $i >= $limit;
 }
 
 
-
-
-
-
-
-=comment
-
-  my $pdl = pdl values %{$exec_time{$recipe}};
-
-  if( nelem( $pdl ) > 1 ) {
-    my $hist = hist( $pdl, $min, $max, 1 );
-
-    if( nelem( $hist ) > 1 ) {
-
-      dev( '/xw' );
-      bin $hist;
-      sleep 30;
-    }
-  }
-
-=cut
-
-close $fh;
 
