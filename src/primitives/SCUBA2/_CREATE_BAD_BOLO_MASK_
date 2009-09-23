@@ -39,8 +39,8 @@ the lower frequency. Default is 1 (i.e. no binning).
 =item B<FREQHI>
 
 Comma-separated pair of numbers indicating the frequency range (Hz) to
-measure white noise portion of power spectrum. Default is 4,10
-(i.e. 4-10 Hz).
+measure white noise portion of power spectrum. Default is 2,10
+(i.e. 2-10 Hz).
 
 =item B<FREQLO>
 
@@ -78,10 +78,16 @@ Fourier-transformed data only.
 No bad-bolometer mask will be generated if the frequencies do not lie
 within range.
 
+=head1 OUTPUT DATA
+
+The Frame is updated to contain the white noise images on completion.
+
 =head1 OUTPUT FILES
 
 Creates an output file for each subarray present with suffix C<_bpm>,
 which is stored in the calibration system.
+
+Creates a white noise image for each subarray with suffix C<_noi>.
 
 =head1 AUTHOR
 
@@ -89,7 +95,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008 University of British Columbia. All Rights
+Copyright (C) 2008-2009 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -116,7 +122,7 @@ my $freqlo = get_prim_arg( $_PRIM_ARGS_, "FREQLO", 0.1 );
 
 # High frequency measurement range for estimating white part of
 # spectrum
-my @freqhi = split( /\,/, get_prim_arg( $_PRIM_ARGS_, "FREQHI", "4,10" ), 2 );
+my @freqhi = split( /\,/, get_prim_arg( $_PRIM_ARGS_, "FREQHI", "2,10" ), 2 );
 
 # Value of the power ratio to use as criteria for setting bolometers
 # to bad.
@@ -136,6 +142,9 @@ orac_print "Deriving a bad bolometer mask from noise observation\n";
 orac_print "Estimating low-frequency noise at $freqlo Hz\n"
           ."Estimating white noise level between $freqhi[0] and $freqhi[1] Hz\n"
           ."Setting threshold for bad bolometers at a ratio of $maskval\n";
+
+# White noise files
+my @noisefiles;
 
 # Loop over the files in the Frame - there should be no more than 4
 # files (future check), corresponding to each of the four subarrays at
@@ -166,16 +175,14 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
     }
 
     # Make sure RANGE is not too large - obviously it should not be
-    # greater than the frequency range in the file, and probably
-    # should not exceed 10 per cent. This can be varied according to
-    # real world analysis.
+    # greater than the frequency range in the file. In principle there
+    # might be good reasons to check that it's not too large a
+    # fraction of the total frequency range. This can be implemented
+    # according to real world experience.
     my $extent = sprintf "%5.2f", ($maxfreq - $minfreq);
     my $range = sprintf "%5.2f", ($freqhi[1] - $freqhi[0]);
     if ( $range > $extent ) {
       orac_warn "RANGE, $range, exceeds frequency extent in file, $extent\n";
-      last;
-    } elsif ( $range > 0.1*$extent ) {
-      orac_warn "RANGE, $range, exceeds 10 per cent of frequency extent, $extent\n";
       last;
     }
 
@@ -200,10 +207,10 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
     $args = "in=$fftfile($freqhi[0]:$freqhi[1],,,1) out=$spechifile trim trimwcs";
     $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
     # Collapse along frequency axis to get estimate of white noise power
-    my $wnoise = new ORAC::TempFile;
-    my $wnoisefile = $wnoise->file;
+    my $wnoisefile = $Frm->inout("_noi");
     $args = "axis=1 in=$spechifile estimator=mean out=$wnoisefile";
     $Mon{kappa_mon}->obeyw("collapse","$args");
+    push(@noisefiles, $wnoisefile);
 
     # Form the ratio of the two files
     my $ratio = new ORAC::TempFile;
@@ -236,4 +243,8 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
     }
   }
 }
+
+# Store the noise files if created
+$Frm->files(@noisefiles) if ( @noisefiles );
+
 orac_print "Done\n";
