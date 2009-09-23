@@ -240,17 +240,21 @@ sub orac_calc_instrument_settings {
     my @eng = ( $options{'eng'} ? ( "eng" ) : () );
 
     # Set up the reduced data directory. This depends on the hostname,
-    # but strip off the sc2.
-    my $drN = $hostname;
-    $drN =~ s/sc2//;
-    if( $drN !~ /^dr\d$/ ) {
-      $drN = $dr_default{$root};
-      print STDERR "Not running pipeline on sc2drN machine. Using default $drN as part of output directory structure.\n";
+    # and site, but strip off the sc2.
+    my @drn;
+    if ($site eq 'jcmt') {
+      my $drN = $hostname;
+      $drN =~ s/sc2//;
+      if( $drN !~ /^dr\d$/ ) {
+	$drN = $dr_default{$root};
+	print STDERR "Not running pipeline on sc2drN machine. Using default $drN as part of output directory structure.\n";
+      }
+      push(@drn, $drN);
     }
 
     return ( ORAC_DATA_CAL => File::Spec->catdir( $env{'ORAC_CAL_ROOT'}, $root ),
-             ORAC_DATA_IN  => File::Spec->catdir( $dataroot, "raw", @eng, $root, $localut ),
-             ( $fixout ? () : ( ORAC_DATA_OUT => File::Spec->catdir( $dataroot, "reduced", $drN, @eng, $root, $localut ) ) ),
+             ORAC_DATA_IN  => File::Spec->catdir( $dataroot, "raw", $root, @eng, $localut ),
+             ( $fixout ? () : ( ORAC_DATA_OUT => File::Spec->catdir( $dataroot, "reduced", @drn, $root, @eng, $localut ) ) ),
              ORAC_SUN => $sun,
              ORAC_PERSON => $auth,
            );
@@ -343,7 +347,7 @@ sub orac_calc_instrument_settings {
       $oracinst = "SCUBA2_LONG";
     }
 
-    my %defaults = $jcmt_con->( $path{$oracinst}, @_ );
+    my %defaults = $jcmt_con->( $path{$oracinst} );
 
     my @eng = ($options{eng} ? ("eng") : ());
 
@@ -755,7 +759,7 @@ sub orac_validate_datadirs {
   }
 
   if ( ! defined $newout ) {
-    print STDERR "Default output directory does not exist. Assuming current directory.\n";
+    print STDERR "Default output directory ($env->{ORAC_DATA_OUT}) does not exist. Assuming current directory.\n";
     $env->{ORAC_DATA_OUT} = $curdir;
   }
 
