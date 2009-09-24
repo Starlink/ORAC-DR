@@ -1,17 +1,17 @@
 
 #+
 #  Name:
-#     oracdr_scuba2l
+#     oracdr_scuba2_450
 
 #  Purpose:
-#     Initialise ORAC-DR environment for use with the long-wave
+#     Initialise ORAC-DR environment for use with the short-wave
 #     SCUBA-2 arrays
 
 #  Language:
 #     C-shell script
 
 #  Invocation:
-#     source ${ORAC_DIR}/etc/oracdr_scuba2l.csh
+#     source ${ORAC_DIR}/etc/oracdr_scuba2_450.csh
 
 #  Description:
 #     This script initialises the environment variables and command
@@ -40,9 +40,9 @@
 
 
 #  Examples:
-#     oracdr_scuba2l
+#     oracdr_scuba2_450
 #        Will set the variables assuming the current UT date.
-#     oracdr_scuba2l 20081101
+#     oracdr_scuba2_450 20081101
 #        Use UT date 20081101.
 
 #  Notes:
@@ -100,12 +100,12 @@
 #-
 
 # Define instrument
-setenv ORAC_INSTRUMENT SCUBA2_LONG
+setenv ORAC_INSTRUMENT SCUBA2_450
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
 
 # Set stripchart alias
 if ( $?ORAC_DATA_CAL ) then
-  alias xstripchart "xstripchart -cfg=$ORAC_DATA_CAL/jcmt_long.ini &"
+  alias xstripchart "xstripchart -cfg=$ORAC_DATA_CAL/jcmt_450.ini &"
 endif

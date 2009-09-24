@@ -1,17 +1,17 @@
 
 #+
 #  Name:
-#     oracdr_scuba2s
+#     oracdr_scuba2_850_summit
 
 #  Purpose:
-#     Initialise ORAC-DR environment for use with the short-wave
-#     SCUBA-2 arrays
+#     Initialise ORAC-DR environment for use with the long-wave
+#     SCUBA-2 arrays in SUMMIT mode
 
 #  Language:
 #     C-shell script
 
 #  Invocation:
-#     source ${ORAC_DIR}/etc/oracdr_scuba2s.csh
+#     source ${ORAC_DIR}/etc/oracdr_scuba2_850_summit.csh
 
 #  Description:
 #     This script initialises the environment variables and command
@@ -40,9 +40,9 @@
 
 
 #  Examples:
-#     oracdr_scuba2s
+#     oracdr_scuba2_850_summit
 #        Will set the variables assuming the current UT date.
-#     oracdr_scuba2s 20081101
+#     oracdr_scuba2_850_summit 20081101
 #        Use UT date 20081101.
 
 #  Notes:
@@ -100,12 +100,13 @@
 #-
 
 # Define instrument
-setenv ORAC_INSTRUMENT SCUBA2_SHORT
+setenv ORAC_INSTRUMENT SCUBA2_850
 
 # Source general alias file and print welcome screen
+set oracdr_setup_args="--drmode=SUMMIT"
 source $ORAC_DIR/etc/oracdr_start.csh
 
 # Set stripchart alias
 if ( $?ORAC_DATA_CAL ) then
-  alias xstripchart "xstripchart -cfg=$ORAC_DATA_CAL/jcmt_short.ini &"
+  alias xstripchart "xstripchart -cfg=$ORAC_DATA_CAL/jcmt_850.ini &"
 endif

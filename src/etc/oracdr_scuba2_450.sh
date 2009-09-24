@@ -1,17 +1,17 @@
 
 #+
 #  Name:
-#     oracdr_scuba2sq
+#     oracdr_swfcam1
 
 #  Purpose:
 #     Initialise ORAC-DR environment for use with the short-wave
-#     SCUBA-2 arrays in QUICK-LOOK mode
+#     SCUBA-2 arrays
 
 #  Language:
-#     C-shell script
+#     sh shell script
 
 #  Invocation:
-#     source ${ORAC_DIR}/etc/oracdr_scuba2sq.csh
+#     source ${ORAC_DIR}/etc/oracdr_scuba2_850.sh
 
 #  Description:
 #     This script initialises the environment variables and command
@@ -40,33 +40,35 @@
 
 
 #  Examples:
-#     oracdr_scuba2sq
+#     oracdr_scuba2_850
 #        Will set the variables assuming the current UT date.
-#     oracdr_scuba2sq 20081101
-#        Use UT date 20081101.
+#     oracdr_scuba2_850 19991015
+#        Use UT data 19991015
 
 #  Notes:
 #     - The environment variables $ORAC_RECIPE_DIR and $ORAC_PRIMITIVE_DIR
-#       are UNSET by this routine if they have been set.
+#     are unset by this routine if they have been set.
 #     - The data directories are assumed to be in directories "raw"
-#       (for input) and "reduced" (for output) from root
-#       $ORAC_DATA_ROOT/scuba2/sx/UT
+#     (for input) and "reduced" (for output) from root
+#     $ORAC_DATA_ROOT/scuba2/sx/UT
 #     - $ORAC_DATA_OUT and $ORAC_DATA_IN will have to be
-#       set manually if the JAC directory structure is not in use.
-#     - aliases are set in the oracdr_start.csh script sourced by
-#       this routine.
+#     set manually if the JAC directory structure is not in use.
+#     - aliases are set in the oracdr_start.sh script sourced by
+#     this routine.
 
 #  Authors:
 #     Frossie Economou (frossie@jach.hawaii.edu)
 #     Tim Jenness (t.jenness@jach.hawaii.edu)
 #     Brad Cavanagh (b.cavanagh@jach.hawaii.edu)
-#     Andy Gibb (agg@astro.ubc.ca)
 #     {enter_new_authors_here}
 
 #  History:
 #     $Log$
-#     Revision 1.2  2008/12/05 08:15:04  agg
-#     Create output directory if at JCMT
+#     Revision 1.2  2006/09/07 00:35:25  bradc
+#     fix for proper bash scripting
+#
+#     Revision 1.1  2006/09/06 02:30:05  bradc
+#     initial addition
 #
 #     Revision 1.1  2005/02/26 08:15:04  timj
 #     Initial commit of scuba2 init script
@@ -89,24 +91,22 @@
 #     Revision 1.1  2003/01/22 11:54:49  jrl
 #     Initial Entry
 #
+#
 #     21 Jan 2003 (jrl)
-#        Original Version based on oracdr_wfcam.csh
+#        Original Version based on oracdr_wfcam.sh
 
 #  Copyright:
 #     Copyright (C) 1998-2005 Particle Physics and Astronomy Research
-#     Council. Copyright (C) 2008 University of British Columbia. All
-#     Rights Reserved.
+#     Council. All Rights Reserved.
 
 #-
 
-# Define instrument
-setenv ORAC_INSTRUMENT SCUBA2_SHORT
+export ORAC_INSTRUMENT=SCUBA2_450
 
 # Source general alias file and print welcome screen
-set oracdr_setup_args="--drmode=QL"
-source $ORAC_DIR/etc/oracdr_start.csh
+. $ORAC_DIR/etc/oracdr_start.sh
 
 # Set stripchart alias
-if ( $?ORAC_DATA_CAL ) then
-  alias xstripchart "xstripchart -cfg=$ORAC_DATA_CAL/jcmt_ql.ini &"
-endif
+if test -z $ORAC_DATA_CAL; then
+  alias xstripchart="xstripchart -cfg=$ORAC_DATA_CAL/jcmt_long.ini &"
+fi

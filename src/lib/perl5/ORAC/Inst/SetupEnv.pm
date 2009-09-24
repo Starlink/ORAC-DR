@@ -180,8 +180,8 @@ sub orac_calc_instrument_settings {
 
   # Default drN directories for ACSIS and SCUBA-2.
   my %dr_default = ( 'acsis'        => 'dr1',
-                     'scuba2_long'  => 'dr1',
-                     'scuba2_short' => 'dr1',
+                     'scuba2_850'  => 'dr1',
+                     'scuba2_450' => 'dr1',
                    );
 
   # We check to make sure that ORAC_DATA_ROOT exists if set
@@ -339,12 +339,12 @@ sub orac_calc_instrument_settings {
   # SCUBA-2 reads from a ok directory
   my $scuba2_con = sub {
     # The summit reduced directory depends on the orac_instrument variable.
-    my %path = ( SCUBA2_LONG => "scuba2_long",
-                 SCUBA2_SHORT => "scuba2_short",);
+    my %path = ( SCUBA2_850 => "scuba2_850",
+                 SCUBA2_450 => "scuba2_450",);
 
     if (!exists $path{$oracinst}) {
-      print STDERR "Unrecognized SCUBA-2 instrument type: $oracinst. Using SCUBA2_LONG\n";
-      $oracinst = "SCUBA2_LONG";
+      print STDERR "Unrecognized SCUBA-2 instrument type: $oracinst. Using SCUBA2_850\n";
+      $oracinst = "SCUBA2_850";
     }
 
     my %defaults = $jcmt_con->( $path{$oracinst} );
@@ -355,9 +355,9 @@ sub orac_calc_instrument_settings {
     if (exists $options{mode} && defined $options{mode}) {
       if ($options{mode} eq 'QL') {
         # Decide which remote tasks to talk to
-        if ($oracinst eq 'SCUBA2_LONG') {
+        if ($oracinst eq 'SCUBA2_850') {
           $remote{ORAC_REMOTE_TASK} = 'SC2DA8A@sc2da8a';
-        } elsif ($oracinst eq 'SCUBA2_SHORT') {
+        } elsif ($oracinst eq 'SCUBA2_450') {
           $remote{ORAC_REMOTE_TASK} = 'SC2DA4A@sc2da4a';
         }
       }

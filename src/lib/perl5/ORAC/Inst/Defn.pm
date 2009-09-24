@@ -1230,11 +1230,11 @@ sub orac_configure_for_instrument {
     # Instrument.
     $ENV{'ORAC_INSTRUMENT'} = 'ACSIS';
 
-  } elsif ( $instrument eq 'SCUBA-2 (850)' || $instrument eq 'SCUBA2_LONG') {
-    $ENV{ORAC_INSTRUMENT} = "SCUBA2_LONG";
+  } elsif ( $instrument eq 'SCUBA-2 (850)' || $instrument eq 'SCUBA2_850') {
+    $ENV{ORAC_INSTRUMENT} = "SCUBA2_850";
 
-  } elsif ( $instrument eq 'SCUBA-2 (450)' || $instrument eq 'SCUBA2_SHORT') {
-    $ENV{ORAC_INSTRUMENT} = "SCUBA2_SHORT";
+  } elsif ( $instrument eq 'SCUBA-2 (450)' || $instrument eq 'SCUBA2_450') {
+    $ENV{ORAC_INSTRUMENT} = "SCUBA2_450";
 
   } elsif ( $instrument eq "UFTI" or $instrument eq "UFTI2") {
 
