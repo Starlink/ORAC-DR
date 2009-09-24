@@ -146,6 +146,10 @@ orac_print "Estimating low-frequency noise at $freqlo Hz\n"
 # White noise files
 my @noisefiles;
 
+# This factor scales the noise image to be (square of) the noise in 1
+# second
+my $powsec = 2.0 / ($Frm->hdrval("STEPTIME"));
+
 # Loop over the files in the Frame - there should be no more than 4
 # files (future check), corresponding to each of the four subarrays at
 # the current wavelength.
@@ -207,10 +211,10 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
     $args = "in=$fftfile($freqhi[0]:$freqhi[1],,,1) out=$spechifile trim trimwcs";
     $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
     # Collapse along frequency axis to get estimate of white noise power
-    my $wnoisefile = $Frm->inout("_noi");
+    my $wnoise = new ORAC::TempFile;
+    my $wnoisefile = $wnoise->file;
     $args = "axis=1 in=$spechifile estimator=mean out=$wnoisefile";
     $Mon{kappa_mon}->obeyw("collapse","$args");
-    push(@noisefiles, $wnoisefile);
 
     # Form the ratio of the two files
     my $ratio = new ORAC::TempFile;
@@ -237,6 +241,19 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
     $Frm->subarray($i);
     $Cal->maskindex->add($mask, {%{$Frm->hdr}, %{$Frm->uhdr}});
 
+    # Now turn the `white noise' image into a real noise image -
+    # multiply by 2, divide by the step-time and take the square root
+    # to get the noise in 1 second
+    my $noisesec = new ORAC::TempFile;
+    my $noisesecfile = $noisesec->file;
+    $args = "in=$wnoisefile out=$noisesecfile scalar=$powsec";
+    $Mon{kappa_mon}->obeyw("cmult","$args");
+
+    my $noisefile = $Frm->inout("_noi");
+    $args = "ia=$noisesecfile exp=sqrt(ia) out=$noisefile";
+    $Mon{kappa_mon}->obeyw("maths","$args");
+
+    push(@noisefiles, $noisefile);
   } else {
     if ( $verbose ) {
       orac_warn "Input file $fftfile does not contain Fourier transform data\n";
