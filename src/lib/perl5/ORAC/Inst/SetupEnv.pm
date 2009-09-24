@@ -367,8 +367,8 @@ sub orac_calc_instrument_settings {
       unless $fixout;
 
     # Now that we know ORAC_DATA_OUT we need to publish the location
-    # if we are on a DR machine at the summit
-    if ( $site eq 'jcmt' && $hostname =~ /^sc2dr/) {
+    # if we are on a DR machine at the summit and it is the current UT
+    if ( $site eq 'jcmt' && $istoday && $hostname =~ /^sc2dr/) {
       my $flagdir = "/jac_sw/oracdr-locations";
       if (-d $flagdir) {
 	my $type = lc($oracinst);
