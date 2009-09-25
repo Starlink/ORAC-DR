@@ -668,8 +668,8 @@ sub append_monitor {
   my @files = grep { defined $_ && $_ =~ /\w/ } $frm->files;
   return unless @files;
 
-  # make sure that usedisp is defined
-  $usedisp = ($usedisp ? 1 : 0 );
+  # make sure that usedisp is defined - if so, use it
+  $usedisp = ($usedisp ? $usedisp : 0 );
 
   # Store the class name without the leading ORAC:: chunk
   # This is safer than allowing some one to edit the display file
