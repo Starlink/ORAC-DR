@@ -11,9 +11,9 @@ _FFT_DATA_ - Fourier transform time stream data
 =head1 DESCRIPTION
 
 This primitive calculates the forward Fourier transform for all files
-in the current Frame object with time stream data. A check is made
-that the input data are three-dimensional, though it is assumed that
-this corresponds to two spatial dimensions and a time axis.
+in the current Frame object with time stream data. The datafiles are
+first concatenated if requested in order to sample low frequencies
+effectively.
 
 The Frame is updated with the new output files.
 
@@ -22,6 +22,11 @@ The Frame is updated with the new output files.
 The following arguments are supported:
 
 =over 4
+
+=item B<CONCAT>
+
+Flag to denote whether or not to concatenate the data before computing
+the FFT. Default is 1 (yes).
 
 =item B<POLAR>
 
@@ -43,13 +48,13 @@ Flag to denote whether to display extra information. Default is 0
 
 =head1 EXTERNAL TASKS
 
-The following external task is used:
+The following external tasks are used:
 
 =over 4
 
 =item SMURF:
 
-SC2FFT
+SC2CONCAT, SC2FFT
 
 =back
 
@@ -91,14 +96,17 @@ USA.
 
 # Check for input arguments
 
+# Concatenate the data?
+my $concat = get_prim_arg( $_PRIM_ARGS_, "CONCAT", 1 );
+
 # Is the FT to be written in Polar form?
-my $polar = get_prim_arg( $_PRIM_ARGS_, "POLAR", 0);
+my $polar = get_prim_arg( $_PRIM_ARGS_, "POLAR", 0 );
 $polar = ($polar) ? "polar" : "nopolar";
 
 # Is the FT to be written in Polar form with squared amplitudes?
 my $power = get_prim_arg( $_PRIM_ARGS_, "POWER", 0);
 # Use power flag to set some other things before setting to a string
-my ($ext, $ftpow) = ($power) ? ("_pow", "power spectrum") 
+my ($ext, $ftpow) = ($power) ? ("_pow", "power spectrum")
                              : ("_fft", "Fourier transform");
 # Set power to a string for passing to sc2fft
 $power = ($power) ? "power" : "nopower";
@@ -110,28 +118,34 @@ $polar = "polar" if ( $power eq "power" );
 my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 0);
 
 # Announce what's going on
-orac_print "Calculating $ftpow for current data\n";
+orac_print "Calculating $ftpow for current data:\n";
+
+# Concatenate time streams
+if ( $concat ) {
+  orac_print "Concatenating time streams...";
+  my ($inlist, $conlist) = write_file_list_inout( $Frm, "_con", 1 );
+  my $outfiles = "concat.$$";
+  $Mon{smurf_mon}->obeyw("sc2concat","in=^$inlist out=^$conlist outfiles=$outfiles");
+  my @confiles = read_file_list( $outfiles );
+  $Frm->files( @confiles );
+  orac_print "done\n";
+  unlink $outfiles;
+}
 
 # Transform each file in the current frame
 my @ffts;
-for my $i ( 1 .. $Frm->nfiles ) {
+my $nfiles = $Frm->nfiles;
+orac_print "Calculating FFTs for $nfiles files...";
+for my $i ( 1 .. $nfiles ) {
   # Get input and output file names
   my ($in, $fft) = $Frm->inout($ext, $i);
 
-  # Check that we have 3-d time series data
-  $Mon{ndfpack_mon}->obeyw("ndftrace","$in");
-  my ( $ORAC_STATUS, $ndims ) = $Mon{ndfpack_mon}->get("ndftrace","ndim");
-  if ( $ndims == 3 ) {
-    my $args = "in=$in out=$fft $polar $power";
-    $Mon{smurf_mon}->obeyw("sc2fft","$args");
-    push (@ffts, $fft);
-  } else {
-    if ( $verbose ) {
-      orac_warn "Input file $in is not 3-D - unable to calculate Fourier transform\n";
-    }
-  }
-
+  # Run sc2fft
+  my $args = "in=$in out=$fft $polar $power";
+  $Mon{smurf_mon}->obeyw("sc2fft","$args");
+  push (@ffts, $fft);
 }
+orac_print "done\n";
 
 # Register with Frame object if successful
 $Frm->files(@ffts) if ( defined $ffts[0] );
