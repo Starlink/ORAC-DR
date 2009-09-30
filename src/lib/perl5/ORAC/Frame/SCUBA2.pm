@@ -187,7 +187,7 @@ sub configure {
         # Just store each one in turn. We can not index by a unique
         # name since I1 can be reused between files in the same frame
         push(@hdrs, $fits);
-	
+
       }
 
       $rfits{$f}->{SECONDARY} = \@hdrs;
@@ -239,9 +239,9 @@ sub configure {
       # that is present in the "different" headers will be problematic since
       # it implies that we have headers that are present in both the .I
       # components and the primary header but that are identical between
-      # the .I components yet different to the primary header. This is a 
+      # the .I components yet different to the primary header. This is a
       # problem and we need to issue a warning.
-      # Provide a special case for the OBSEND header since that is allowed to 
+      # Provide a special case for the OBSEND header since that is allowed to
       # differ in the very last entry when all others were 0. The above code expects
       # that frames that differ will differ in all .In headers.
       if (defined $funique || defined $cunique) {
@@ -262,7 +262,7 @@ sub configure {
         if ($funique->sizeof > 0 && $cunique->sizeof > 0) {
 
           orac_warn("Headers are present in the primary FITS header of $f that clash with different values that are fixed amongst the processed components. This is not allowed.\n");
-	
+
           orac_warn("Primary header:\n". $funique ."\n")
             if defined $funique;
           orac_warn("Component header:\n". $cunique ."\n")
@@ -476,7 +476,7 @@ sub pattern_from_bits {
 
   my $letters = '['.$self->_dacodes.']';
 
-  my $pattern = $self->rawfixedpart . $letters . '_'. $prefix . "_" . 
+  my $pattern = $self->rawfixedpart . $letters . '_'. $prefix . "_" .
     $padnum . '_\d\d\d\d\d' . $self->rawsuffix;
 
   return qr/$pattern/;
@@ -819,7 +819,7 @@ Standard image-based DREAM and STARE processing has no need for dark
 frames and so these should be filtered out as early as possible to
 prevent weird errors. The translated header for the observation mode
 is used. From this point on, no dark frames will be returned unless
-the user accesses the raw data. 
+the user accesses the raw data.
 
   $Frm->filter_darks;
 
@@ -830,7 +830,7 @@ sub filter_darks {
   my $self = shift;
 
   # Filter out Dark frames from DREAM/STARE data
-  if ( ($self->uhdr("ORAC_OBSERVATION_MODE") =~ /dream/ || 
+  if ( ($self->uhdr("ORAC_OBSERVATION_MODE") =~ /dream/ ||
 	$self->uhdr("ORAC_OBSERVATION_MODE") =~ /stare/) &&
        $self->uhdr("ORAC_OBSERVATION_TYPE") !~ /flatfield/ ) {
 
@@ -873,7 +873,7 @@ microns.
 sub _wavelength_prefix {
   my $self = shift;
   my $code;
-  if ($ENV{ORAC_INSTRUMENT} =~ /_LONG/) {
+  if ($ENV{ORAC_INSTRUMENT} =~ /_850/) {
     $code = '8';
   } else {
     $code = '4';
@@ -903,7 +903,7 @@ sub _dacodes {
     # HACK: pick out last letter of each task name
     foreach my $task ( @tasks ) {
       # Split on @ as QL is usually running on remote machines
-      my @tsk = split(/@/, $task); 
+      my @tsk = split(/@/, $task);
       # Add lower-cased last letter of taskname
       push (@letters, lc(substr($tsk[0],-1,1)) );
     }
