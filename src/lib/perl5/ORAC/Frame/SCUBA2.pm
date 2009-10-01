@@ -457,8 +457,10 @@ sub file_from_bits_extra {
 
 =item B<pattern_from_bits>
 
-Determine the pattern for the raw filename given the variable component
-parts. A prefix (usually UT) and observation number should be supplied.
+Determines the pattern for the flag file. This differs from other
+instruments in that SCUBA-2 writes the flag files to ORAC_DATA_IN
+but the data are written to completely distinct trees (not sub
+directories of ORAC_DATA_IN).
 
   $pattern = $Frm->pattern_from_bits( $prefix, $obsnum );
 
@@ -474,10 +476,9 @@ sub pattern_from_bits {
 
   my $padnum = $self->_padnum( $obsnum );
 
-  my $letters = '['.$self->_dacodes.']';
-
-  my $pattern = $self->rawfixedpart . $letters . '_'. $prefix . "_" .
-    $padnum . '_\d\d\d\d\d' . $self->rawsuffix;
+  # Assume that ORAC_DATA_IN will not mix up 450 and 850 data
+  my $pattern = $self->rawfixedpart . "[a-z]". $prefix . "_$padnum"
+    . ".ok";
 
   return qr/$pattern/;
 }

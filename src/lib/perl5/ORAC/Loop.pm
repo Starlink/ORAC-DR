@@ -132,23 +132,11 @@ the loop will abort if the file is not present
 
       my $pattern = $TestFrm->pattern_from_bits($utdate, $obsno);
 
+      my @names = _find_from_pattern( $pattern );
+      last if @names;
       if ( ref( $pattern ) eq 'Regexp' ) {
-
-        # If we have a regular expression, find all the files that match
-        # that pattern. If the resulting array is empty, we skip that
-        # observation number and go to the next. If it's not empty, then
-        # we exit out of this loop via the 'last'.
-        my @names;
-        find sub { my $file = $_; push @names, $File::Find::name if ( $file =~ /$pattern/ ) }, $ENV{'ORAC_DATA_IN'};
-        last if ( scalar( @names ) > 0 );
         orac_warn("No input files for observation $obsno found -- skipping\n");
       } else {
-
-        # We have a string returned from pattern_from_bits() so assume
-        # that that's a filename. Just check to see if that file exists.
-        # If it does, exit out of this loop via 'last', otherwise skip
-        # to the next observation number.
-        last if -e File::Spec->catfile($ENV{ORAC_DATA_IN},$pattern);
         orac_warn("Input file $pattern not found -- skipping\n");
       }
 
@@ -1222,21 +1210,7 @@ sub link_and_read {
   } else {
 
     my $pattern = $Frm->pattern_from_bits( $ut, $num );
-
-    # If the pattern is actually a regex, find all files in subdirectories
-    # of $ORAC_DATA_IN.
-    if ( ref( $pattern ) eq "Regexp" ) {
-
-      # Run a nifty bit of File::Find.
-      find sub { my $file = $_; push @names, $File::Find::name if( $file =~ /$pattern/ ) }, $ENV{'ORAC_DATA_IN'};
-
-    } else {
-
-      # It's not a regex, so it must be a string (brilliant logic there!)
-      # Prepend $ORAC_DATA_IN.
-      push @names, _to_abs_path( $pattern );
-
-    }
+    @names = _find_from_pattern( $pattern );
 
   }
 
@@ -1300,6 +1274,49 @@ sub orac_sleep {
 
   return $actual;
 
+}
+
+=item B<_find_from_pattern>
+
+Given a pattern or string, look in ORAC_DATA_IN and return all the files
+that are applicable.
+
+  @files = _find_from_pattern( $pattern );
+
+If the pattern finds .ok files they will be opened. It is assumed that this
+routine will not be triggered in dynamic flag mode.
+
+=cut
+
+sub _find_from_pattern {
+  my $pattern = shift;
+
+  my @files;
+  if ( ref( $pattern ) eq 'Regexp' ) {
+
+    # If we have a regular expression, find all the files that match
+    # that pattern.
+    find sub { my $file = $_; push @files, $File::Find::name if ( $file =~ /$pattern/ ) }, $ENV{'ORAC_DATA_IN'};
+
+    my @new;
+    for my $f (@files) {
+      if ( $f =~ /\.ok/) {
+        push(@new, _read_flagfiles($f));
+      } else {
+        push(@new, $f);
+      }
+    }
+    @files = @new;
+
+  } else {
+
+    # We have a string returned from pattern_from_bits() so assume
+    # that that's a filename. Just check to see if that file exists.
+    my $file = File::Spec->catfile($ENV{ORAC_DATA_IN},$pattern);
+    push(@files, _to_abs_path($file)) if -e $file;
+  }
+
+  return @files;
 }
 
 =item B<_files_there>
