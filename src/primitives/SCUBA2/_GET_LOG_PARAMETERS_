@@ -11,13 +11,15 @@ _GET_LOG_PARAMETERS_ - Obtain logging parameters common to all log files
 =head1 DESCRIPTION
 
 Retrieve logging parameters from the specified Frame or Group
-object. The paramters returned are those common to all log files
+object. The parameters returned are those common to all log files
 written by the SCUBA-2 pipeline. They are returned as an array
-reference (see C<OUTPUT DATA> below).
+reference (see C<OUTPUT DATA> below). The user may optionally return a
+basic set of parameters suitable for non-tracking observing modes
+(e.g. NOISE or FLATFIELD).
 
 =head1 ARGUMENTS
 
-The following argument is supported:
+The following arguments are supported:
 
 =over 4
 
@@ -25,6 +27,10 @@ The following argument is supported:
 
 Flag to indicate whether to obtain parameters from the Group
 object. Default is 0 (use the current Frame).
+
+=item B<PARLIST>
+
+Define the amount of information returned. May be C<FULL> or C<BRIEF>.
 
 =back
 
@@ -121,6 +127,8 @@ USA.
 # Read arguments
 my $Obj = ($_PRIM_ARGS_->{GROUP} ? $Grp : $Frm);
 
+my $paramlist = uc(get_prim_arg( $_PRIM_ARGS_, "PARLIST", "FULL"));
+
 # ORACUT
 my $utdate = $Obj->hdr('ORACUT');
 my $uttime = sprintf "%.7f", $Obj->hdr('ORACTIME');
@@ -152,29 +160,34 @@ $mode = sprintf "%-11s", $mode;
 # Filter System
 my $filter = $Obj->uhdr("ORAC_FILTER");
 
-# Average of start and end elevation
-my $el = "**";
-if (defined $Obj->uhdr('ORAC_ELEVATION_START') &&
-    defined $Obj->uhdr('ORAC_ELEVATION_END') ) {
-  $el = ($Obj->uhdr('ORAC_ELEVATION_START') + $Obj->uhdr('ORAC_ELEVATION_END'))/ 2.0;
-  $el = sprintf "%2.0f", $el;
+if ( $paramlist eq "FULL" ) {
+
+  # Average of start and end elevation
+  my $el = "**";
+  if (defined $Obj->uhdr('ORAC_ELEVATION_START') &&
+      defined $Obj->uhdr('ORAC_ELEVATION_END') ) {
+    $el = ($Obj->uhdr('ORAC_ELEVATION_START') + $Obj->uhdr('ORAC_ELEVATION_END'))/ 2.0;
+    $el = sprintf "%2.0f", $el;
+  }
+
+  # TAU from calibration object
+  my $tauval = $Cal->tau($filter);
+  my $tau = "*****";
+  $tau = sprintf "%5.2f", $tauval if defined $tauval;
+
+  # Use that tau to calculate CSO
+  my $cso = "*****";
+  if (defined $tauval) {
+    my ($csoval, $status) = JCMT::Tau::get_tau('CSO',$filter, $tauval);
+    $cso = sprintf "%5.3f", $csoval if ($status == 0 && defined $csoval);
+  }
+
+  # Seeing
+  my $seeing = $Frm->hdr('SEEING');
+  my $see = "*****";
+  $see = sprintf "%5.2f", $seeing if defined $seeing;
+
+  $_GET_LOG_PARAMETERS_{PARAMS} = [$uttime, $hst, $obsnum, $src, $mode, $filter, $el, $cso, $tau, $see];
+} else {
+  $_GET_LOG_PARAMETERS_{PARAMS} = [$uttime, $hst, $obsnum, $src, $mode, $filter];
 }
-
-# TAU from calibration object
-my $tauval = $Cal->tau($filter);
-my $tau = "*****";
-$tau = sprintf "%5.2f", $tauval if defined $tauval;
-
-# Use that tau to calculate CSO
-my $cso = "*****";
-if (defined $tauval) {
-  my ($csoval, $status) = JCMT::Tau::get_tau('CSO',$filter, $tauval);
-  $cso = sprintf "%5.3f", $csoval if ($status == 0 && defined $csoval) ;    
-}
-
-# Seeing
-my $seeing = $Frm->hdr('SEEING');
-my $see = "*****";
-$see = sprintf "%5.2f", $seeing if defined $seeing;
-
-$_GET_LOG_PARAMETERS_{PARAMS} = [$uttime, $hst, $obsnum, $src, $mode, $filter, $el, $cso, $tau, $see];
