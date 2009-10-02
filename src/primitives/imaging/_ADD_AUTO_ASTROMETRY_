@@ -85,6 +85,8 @@ Council.  All Rights Reserved.
 
 =cut
 
+use Time::HiRes qw/ gettimeofday tv_interval /;
+
 # Only do this if we're told.
 if( $Frm->uhdr( "ADD_ASTROMETRY" ) ) {
 
@@ -161,10 +163,13 @@ if( $Frm->uhdr( "ADD_ASTROMETRY" ) ) {
     # Retrieve the SkyCat configuration file.
     my $skycat_cfg = $Cal->find_file( "skycat.cfg" );
 
+    # Retrieve the SkyCat catalogue list.
+    my $skycat_cats = $Cal->skycat_catalogue;
+
     # Create a new Starlink::Autoastrom object.
     my $auto = new Starlink::Autoastrom( ndf => $in,
                                          aperture => $aperture_pixel,
-                                         catalogue => '2MASS@UKIRT,2MASS@CDS,2MASS@CADC',
+                                         catalogue => $skycat_cats,
                                          detected_catalogue => $output_catalogue,
                                          detection_threshold => 5.0,
                                          skycatconfig => $skycat_cfg,
@@ -189,6 +194,8 @@ if( $Frm->uhdr( "ADD_ASTROMETRY" ) ) {
     my $catalogue;
     my $merged_catalogue;
 
+    my $starttime = [ gettimeofday ];
+    my $endtime;
     # Find the solution, wrapping in an eval to trap any errors.
     eval{
 
@@ -209,8 +216,25 @@ if( $Frm->uhdr( "ADD_ASTROMETRY" ) ) {
     };
     if( $@ ) {
 
+      my $endtime = [ gettimeofday ];
+      my $elapsed = tv_interval( $starttime, $endtime );
+
       orac_warn "Error adding accurate astrometry to $in: $@";
       undef $@;
+
+      if( $elapsed > 60 ) {
+
+        my @cats = split ",", $skycat_cats;
+        push( @cats, shift( @cats ) );
+        $skycat_cats = join ",", @cats;
+
+        orac_warn "Automated astrometry took longer than 60 seconds. Assuming something wrong with query catalogue. Setting order to $skycat_cats.\n";
+
+        $Cal->skycat_catalogueindex->add( 2, { SKYCAT_CATALOGUE => $skycat_cats,
+                                               ORACTIME => $Frm->hdr( "ORACTIME" ) } );
+
+      }
+
       if( defined( $auto->rawcatalogue ) &&
           $auto->rawcatalogue->sizeof > 0 ) {
         orac_warn "Objects were detected, so can calculate some image quality statistics.\n";
