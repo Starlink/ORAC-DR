@@ -1915,6 +1915,7 @@ Arguments:
   NBINS      - Number of bins to be used for histogram calculation
   COMP       - Component to display (Data (default), Variance or Error)
   SIGMA      - Number of sigma to clip data before computing histogram
+  TITLE      - title string to label the histogram
 
 Default is for autoscaling and for NBINS=20. Note that the presence of
 SIGMA overrides ZMIN/ZMAX.
@@ -2003,6 +2004,13 @@ sub histogram {
   # Select component
   if (exists $options{COMP} && defined $options{COMP}) {
     $args .= " COMP=$options{COMP}";
+  }
+
+  # If a title has been specified
+  if (exists $options{TITLE} && defined $options{TITLE}) {
+    $args .= " style='title=$options{TITLE},label(1)=Data value'";
+  } else {
+    $args .= " style='label(1)=Data value'";
   }
 
   # Run histogram
