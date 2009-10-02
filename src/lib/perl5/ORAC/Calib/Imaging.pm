@@ -36,6 +36,7 @@ __PACKAGE__->CreateBasicAccessors( baseshift => { isarray => 1 },
                                    polrefang => { staticindex => 1 },
                                    referenceoffset => { isarray => 1 },
                                    skybrightness => {},
+                                   skycat_catalogue => { copyindex => 1 },
                                    zeropoint => {} );
 
 =head1 PUBLIC METHODS
@@ -204,6 +205,15 @@ The index file must include a column named SKY_BRIGHTNESS.
 sub skybrightness {
   my $self = shift;
   return $self->GenericIndexEntryAccessor( "skybrightness", "SKY_BRIGHTNESS", @_ );
+}
+
+=item B<skycat_catalogue>
+
+=cut
+
+sub skycat_catalogue {
+  my $self = shift;
+  return $self->GenericIndexEntryAccessor( "skycat_catalogue", "SKYCAT_CATALOGUE", @_ );
 }
 
 =item B<zeropoint>
