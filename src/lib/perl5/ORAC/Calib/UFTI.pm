@@ -27,7 +27,6 @@ use Carp;
 use warnings;
 use strict;
 
-use ORAC::Calib;			# Use the base class.
 use ORAC::Print;
 use File::Spec;                         # Filename creation
 
@@ -36,111 +35,13 @@ use base qw/ORAC::Calib::IRCAM/;
 use vars qw/$VERSION/;
 $VERSION = '1.0';
 
+__PACKAGE__->CreateBasicAccessors(
+                                  fpcentre => { isarray => 1 },
+);
+
 =head1 METHODS
 
 The following methods are available:
-
-=head2 Constructor
-
-=over 4
-
-=item B<new>
-
-Sub-classed constructor.  Adds knowledge of Fabry-Perot centre.
-
-  my $Cal = new ORAC::Calib::UFTI;
-
-=cut
-
-sub new {
-   my $self = shift;
-   my $obj = $self->SUPER::new(@_);
-
-# Assumes we have a hash object.
-   $obj->{FpCentre} = undef;
-   $obj->{FpCentreIndex} = undef;
-   $obj->{FpCentreNoUpdate} = 0;
-  
-   return $obj;
-}
-
-=back
-
-=head2 Accessors
-
-=over 4
-
-=item B<fpcentrecache>
-
-Cached value of the fpcentre.  Only used when noupdate is in effect.
-
-=cut
-
-sub fpcentrecache {
-   my $self = shift;
-   my @values;
-   if ( ref($_[0]) eq 'ARRAY' ) {
-       @values = @{ $_[0] };
-   } else {
-       @values = ( $_[0] );
-   }
-                  
-   if (@_) { $self->{FpCentre} = \@values unless $self->fpcentrenoupdate; }
-   return $self->{FpCentre};
-}
-
-=item B<fpcentrename>
-
-Return (or set) the pixel co-ordinates of the Fabry-Perot centre.
-
-  $fp_centre = $Cal->fp_centrename;
-
-=cut
-
-sub fpcentrename {
-   my $self = shift;
-   if (@_) { $self->{FpCentre} = shift unless $self->fpcentrenoupdate; }
-   return $self->{FpCentre}; 
-}
-
-=item B<fpcentreindex>
-
-Return or set the index object associated with the FP centre
-co-ordinates.
-
-  $index = $Cal->fpcentreindex;
-
-An index object is created automatically the first time this method
-is run.
-
-=cut
-
-sub fpcentreindex {
-
-   my $self = shift;
-   if (@_) { $self->{FpCentreIndex} = shift; }
-   unless ( defined $self->{FpCentreIndex} ) {
-      my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.fpcentre" );
-      my $rulesfile = $self->find_file("rules.fpcentre");
-      $self->{FpCentreIndex} = new ORAC::Index( $indexfile, $rulesfile );
-   }
-   return $self->{FpCentreIndex};
-}
-
-=item B<fpcentrenoupdate>
-
-Stops object from updating itself with more recent data.
-Used when overrding the centre co-ordinates from the command-line.
-
-=cut
-
-sub fpcentrenoupdate {
-   my $self = shift;
-   if (@_) { $self->{FpCentreNoUpdate} = shift; }
-   return $self->{FpCentreNoUpdate};
-}
-
-=back
 
 =head2 General Methods
 
@@ -170,38 +71,22 @@ The index file must include a column named FPCENTRE.
 
 sub fpcentre {
    my $self = shift;
-
-# Handle arguments.
-   return $self->fpcentrecache(shift) if @_;
-
-# If noupdate is in effect we should return the cached value
-# unless it is not defined.  This effectively allows the command-line
-# value to be used to override without verifying its suitability.
-   if ( $self->fpcentrenoupdate ) {
-      my $cache = $self->fpcentrecache;
-      return $cache if defined $cache;
-   }
-
-# Now we are looking for a value from the index file.
-   my $fpcfile = $self->fpcentreindex->choosebydt( 'ORACTIME', $self->thing );
-   croak "No suitable pixel location of the FP centre found in index file."
-   unless defined $fpcfile;
-
-# This gives us the filename, we now need to get the actual value
-# of the pixel location of the centre of FP transmission.
-   my $fpcref = $self->fpcentreindex->indexentry( $fpcfile );
-   if ( exists $fpcref->{FPCENTRE} ) {
-      return $fpcref->{FPCENTRE};
-   } else {
-      croak "Unable to obtain FPCENTRE from index file entry $fpcfile.\n";
-   }
+  return $self->GenericIndexEntryAccessor( "fpcentre", "FPCENTRE", @_ );
 }
 
 =back
 
-=head1 REVISION
+=head2 Support Methods
 
-$Id$
+Each of the methods above has a support implementation to obtain
+the index file, current name and whether the value can be updated
+or not. For method "cal" there will be corresponding methods
+"calindex", "calname" and "calnoupdate". "calcache" is an
+allowed synonym for "calname".
+
+  $current = $Cal->calcache();
+  $index = $Cal->calindex();
+  $noup = $Cal->calnoupdate();
 
 =head1 AUTHORS
 

@@ -17,7 +17,7 @@
 #     sources the appropriate oracdr_wfcam?.sh file
 
 #  Parameters:
-      # Parameters are simply passed on to the oracdr_wfcam?.sh
+#     Parameters are simply passed on to the oracdr_wfcam?.sh
 
 #  Authors:
 #     Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
@@ -34,23 +34,23 @@ hostname=`/bin/hostname`
 
 script="none"
 
-if ($hostname == "wfdr1"); then
+if test $hostname == "wfdr1"; then
     script=oracdr_wfcam1.csh
 fi
 
-if ($hostname == "wfdr2"); then
+if test $hostname == "wfdr2"; then
     script=oracdr_wfcam2.csh
 fi
 
-if ($hostname == "wfdr3"); then
+if test $hostname == "wfdr3"; then
     script=oracdr_wfcam3.csh
 fi
 
-if ($hostname == "wfdr4"); then
+if test $hostname == "wfdr4"; then
     script=oracdr_wfcam4.csh
 fi
 
-if ($script == "none"); then
+if test $script == "none"; then
     echo "You must be logged onto a wfcamdr machine for oracdr_wfcam to work"
     echo "Otherwise, use oracdr_wfcamN where N=camera number"
 else

@@ -83,60 +83,13 @@
 #     02 Jun 1999 (frossie)
 #        Original Version
 
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 1998-2002 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.
 
 #-
 
-# orac things
-if !($?ORAC_DATA_ROOT) then
-    setenv ORAC_DATA_ROOT /ukirtdata
-endif
-
-if !($?ORAC_CAL_ROOT) then
-    setenv ORAC_CAL_ROOT /jac_sw/oracdr_cal
-endif
-
-if ($?ORAC_RECIPE_DIR) then
-    echo "Warning: resetting ORAC_RECIPE_DIR"
-    unsetenv ORAC_RECIPE_DIR
-endif
-
-if ($?ORAC_PRIMITIVE_DIR) then
-    echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unsetenv ORAC_PRIMITIVE_DIR
-endif
-
-
-if ($1 != "") then
-    set oracut = $1
-else
-    set oracut = `\date -u +%Y%m%d`
-endif
-
-set oracdr_args = "-ut $oracut"
-
-
 setenv ORAC_INSTRUMENT IRCAM2
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/ircam/$oracut/
-setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/ircam/$oracut/
-setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/ircam
-
-
-# screen things
-setenv ORAC_PERSON mjc
-setenv ORAC_LOOP flag
-setenv ORAC_SUN 232
-
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
-
-# Tidy up
-unset oracut
-unset oracdr_args
-unset oracsut

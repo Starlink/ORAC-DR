@@ -1,0 +1,132 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_REBIN_VELOCITY_SCALE_
+
+=head1 DESCRIPTION
+
+This primitive rebins the velocity axis of a cube to a given
+resolution.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item GROUP = INTEGER (Given)
+
+How to process group files. 0 means use the current Frame object. 1
+means use the current Group object. 2 means use each Frame member of
+the current Group object. [0]
+
+=item PIXELSCALE = REAL (Given)
+
+The requested velocity resolution, in kilometers per second. [0.1]
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+This primitive is suitable only for ACSIS spatial/spectral cubes,
+where the velocity axis lies along the third axis of the input NDF.
+
+=item *
+
+No rebinning will be done if the velocity resolution of the input cube
+is lower than the requested velocity resolution.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=item *
+
+The rebinned cube with suffix _<res>bin. The resolution is passed into
+the filename such that the decimal point is replaced with a 'p', and
+two decimal places are included. For example, for a requested velocity
+resolution of 0.1 km/s, the output filename will have a _0p10bin
+suffix, and for a requested velocity resolution of 10 km/s, the output
+filename will have a _10p00bin suffix.
+
+=back
+
+=head1 TASKS
+
+KAPPA: SQORST.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+# Handle parameters.
+my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+my $method = get_prim_arg( $_PRIM_ARGS_, "METHOD", "AUTO" );
+my $pixelscale = get_prim_arg( $_PRIM_ARGS_, "PIXELSCALE", 0.1 );
+
+# Handle Frame/Group.
+my @Objs;
+if( $group == 0 ) {
+  push @Objs, $Frm;
+} elsif( $group == 1 ) {
+  push @Objs, $Grp;
+} elsif( $group == 2 ) {
+  @Objs = $Grp->members;
+}
+
+if( ! $group ||
+    $group && $Grp->lastallmembers( $Frm ) ) {
+
+  orac_say sprintf( "Rebinning velocity axis to a %0.2f km/s pixel scale.", $pixelscale );
+
+  foreach my $Obj ( @Objs ) {
+
+    my $outsuffix = sprintf( "_%0.2f bin", $pixelscale );
+    $outsuffix =~ s/\./p/g;
+    $outsuffix =~ s/\s+//g;
+
+    foreach my $i ( 1 .. $Obj->nfiles ) {
+
+      my( $in, $out ) = $Obj->inout( $outsuffix, $i );
+
+      # Check the velocity resolution of the input. If it's lower
+      # (i.e. larger number) than the requested, don't rebin.
+      $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$in" );
+      my ( $ORAC_STATUS, @funit ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "funit" );
+      if( $funit[2] eq 'km/s' ) {
+        ( $ORAC_STATUS, my @fpixscale ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "fpixscale" );
+        if( $fpixscale[2] > $pixelscale ) {
+          orac_warn sprintf( "Requested rebinned velocity scale is %0.3f, whereas velocity scale of %s is %0.3f km/s. Not rebinning.\n", $pixelscale, $in, $fpixscale[2] );
+          next;
+        }
+      }
+
+      my $params = "in=$in out=$out mode=pixelscale axis=3 pixscale=$pixelscale method=$method";
+      $Mon{'kappa_mon'}->obeyw( "sqorst", "$params" );
+
+      _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=rebinned 
+
+      orac_say "$in to $out:";
+      orac_say sprintf( " Rebinned to %0.2f km/s pixelscale.", $pixelscale );
+    }
+  }
+
+  orac_say "";
+
+}

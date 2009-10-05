@@ -38,6 +38,14 @@ The following arguments are supported:
 
 =over 4
 
+=item B<INFILES>
+
+A switch to determine how many files are given to makemap.  Valid
+values are C<FRAME> (default) for all files in the current Frame
+object, C<OBS> for all files which are part of the current
+observation, or C<ALL> for all valid files for all Frames in the
+current Group object.
+
 =item B<METHOD>
 
 Image reconstruction method. May be C<REBIN> to use a simple rebinning
@@ -86,6 +94,20 @@ MAKEMAP
 _GET_MAKEMAP_CONFIG_
 
 =back
+
+=head1 NOTES
+
+The user should take care when calling with the B<INFILES> parameter
+set to C<ALL> or C<OBS>. It is possible that makemap will be run
+multiple times on almost the same set of data files. This is probably
+not desireable. See L<_SUMMIT_STEER_|_SUMMIT_STEER_> and
+L<_PROCESS_SCAN_DATA_|_PROCESS_SCAN_DATA_> for information on one way
+to avoid this.
+
+For B<INFILES>=C<FRAME> it is assumed that the data are not
+flatfielded and thus dark frames need to be added to the list of input
+files. Conversely, for C<ALL> it is assumed that the input data are
+already flatfielded and thus there is no need for dark frames.
 
 =head1 OUTPUT DATA
 
@@ -157,24 +179,39 @@ if ( $method =~ /^iter/ ) {
   $method = "rebin";
 }
 
-# If there are no darks, as will be the case for the online pipeline,
-# look for a suitable dark frame in the calibration system. Look for
-# SHUTTER subheaders and if there are none, select a dark frame.
-my @files = $Frm->files;
-if ( defined $Frm->hdr("SUBHEADERS")) {
-  my %subheaders = %{ $Frm->hdr->{SUBHEADERS}->[0] };
-  # Subheaders should always be defined in offline mode
-  unless ( defined $subheaders{"SHUTTER"} ) {
-    if ( $Cal->dark ) {
-      push (@files, $Cal->dark);
-    } else {
-      orac_warn "No suitable dark frame found for current observation\n";
-    }
+# How many files are we making a map with?
+my $infiles = get_prim_arg($_PRIM_ARGS_, "INFILES", "FRAME");
+
+my @infiles;
+if ( $infiles eq "FRAME" ) {
+  @infiles = $Frm->files;
+
+  # ASSUMPTION: if this option is set, the files are not
+  # flatfielded. Therefore need to include darks in the list of files.
+
+  # Retrieve dark frames if necessary
+  _RETRIEVE_DARK_FRAMES_
+  push ( @infiles, @{$_RETRIEVE_DARK_FRAMES_{DARKS}} )
+    if ( defined $_RETRIEVE_DARK_FRAMES_{DARKS} );
+
+} elsif ( $infiles eq "OBS" ) {
+  # Create a sub-group for the current observation only
+  # ASSUMPTION: if this option is set, all files here are flatfielded,
+  # thus there is no need for darks
+  my $subGrp = $Grp->subgrp(OBSNUM => $Frm->hdr("OBSNUM"));
+  foreach my $frmobj ( $subGrp->members ) {
+    push (@infiles, $frmobj->files);
+  }
+} elsif ( $infiles eq "ALL" ) {
+  # ASSUMPTION: if this option is set, all files here are flatfielded,
+  # thus there is no need for darks
+  foreach my $frmobj ( $Grp->members ) {
+    push (@infiles, $frmobj->files);
   }
 }
 
 # Write list of filenames to a temp file
-my $inlist = write_file_list( @files );
+my $inlist = write_file_list( @infiles );
 
 # Set output filename
 my ($in, $out) = $Frm->inout('_fmos');

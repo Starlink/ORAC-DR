@@ -229,15 +229,27 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
       _SET_FILE_FITS_ITEM_ FILE=$outlo KEY=PRODUCT VALUE=rmslo
       _SET_FILE_FITS_ITEM_ FILE=$outhi KEY=PRODUCT VALUE=rmshi
 
-      # Get the mean RMS for the low and high.
-      $Mon{'kappa_mon'}->obeyw( "histat", "ndf=$outlo" );
-      my ( $ORAC_STATUS, $rmslo ) = $Mon{'kappa_mon'}->get( "histat", "median" );
-      $Mon{'kappa_mon'}->obeyw( "histat", "ndf=$outhi" );
-      ( $ORAC_STATUS, my $rmshi ) = $Mon{'kappa_mon'}->get( "histat", "median" );
+      # Get the median RMS for the low and high. First get the mean
+      # (and thus the number of good pixels) and if we have two or
+      # more good pixels, get the median.
+      my ( $rmslo, $rmshi );
+      my $gotmedian = 0;
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$outlo" );
+      ( my $ORAC_STATUS, $rmslo ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$outhi" );
+      ( $ORAC_STATUS, $rmshi ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+      ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+      if( $numgood > 1 ) {
+        $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$outlo order=true" );
+        ( $ORAC_STATUS, $rmslo ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+        $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$outhi order=true" );
+        ( $ORAC_STATUS, $rmshi ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+        $gotmedian = 1;
+      }
 
       # Report to user.
-      orac_say sprintf( " RMS in lower 10%%: %.4fK", $rmslo );
-      orac_say sprintf( " RMS in upper 10%%: %.4fK", $rmshi );
+      orac_say ( ( $gotmedian ? " Median" : " Mean" ) . sprintf( " RMS in lower 10%%: %.4fK", $rmslo ) );
+      orac_say ( ( $gotmedian ? " Median" : " Mean" ) . sprintf( " RMS in upper 10%%: %.4fK", $rmshi ) );
 
       my $perc = 100 * abs( $rmslo - $rmshi ) / ( ( $rmslo < $rmshi ) ? $rmslo : $rmshi );
 

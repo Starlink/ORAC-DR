@@ -32,6 +32,7 @@ use ORAC::Print;
 use ORAC::Display;
 use ORAC::Error qw/:try/;
 use ORAC::Constants qw/:status/;
+use ORAC::Inst::SetupEnv;
 
 @ISA = qw(Exporter);
 
@@ -286,13 +287,29 @@ Change to the output directory. If that fails, exit the pipeline.
 Default output directory is controlled by ORAC_DATA_OUT environment
 variable.
 
+Takes one argument, a boolean dictating whether or not a check that
+the data is on an NFS disk should be done. By default this check is
+done, and if ORAC_DATA_OUT is on an NFS-mounted disk, then the
+pipeline will exit.
+
 =cut
 
 sub orac_chdir_output_dir {
+  my $nfs_check = shift;
+
   # Force absolute path
   orac_force_abspath();
 
   if (exists $ENV{ORAC_DATA_OUT}) {
+
+    if( ! defined( $nfs_check ) || $nfs_check ) {
+      my $nfs = ORAC::Inst::SetupEnv::is_nfs_disk( $ENV{ORAC_DATA_OUT});
+      if ($nfs) {
+        orac_err( "ORAC_DATA_OUT appears to be on a disk mounted from $nfs.\n" );
+        orac_err( "Please use a local disk for data processing.\n" );
+        orac_exit_normally();
+      }
+    }
 
     # change to output  dir
     chdir($ENV{ORAC_DATA_OUT}) ||

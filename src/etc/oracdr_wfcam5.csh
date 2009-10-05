@@ -107,77 +107,13 @@
 #     21 Jan 2003 (jrl)
 #        Original Version based on oracdr_wfcam.csh
 
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 1998-2002 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.
 
 #-
 
-
-
-# orac things
-if !($?ORAC_DATA_ROOT) then
-    setenv ORAC_DATA_ROOT /ukirtdata
-endif
-
-if !($?ORAC_CAL_ROOT) then
-    setenv ORAC_CAL_ROOT /jac_sw/oracdr_cal
-endif
-
-if ($?ORAC_RECIPE_DIR) then
-    echo "Warning: resetting ORAC_RECIPE_DIR"
-    unsetenv ORAC_RECIPE_DIR
-endif
-
-if ($?ORAC_PRIMITIVE_DIR) then
-    echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unsetenv ORAC_PRIMITIVE_DIR
-endif
-
-
-if ($1 != "") then
-    set oracut = $1
-else
-    set oracut = `\date -u +%Y%m%d`
-endif
-
-set oracdr_args = "-ut $oracut -grptrans"
-
 setenv ORAC_INSTRUMENT WFCAM5
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/wfcam5/$oracut
-setenv ORAC_DATA_OUT $ORAC_DATA_ROOT/reduced/wfcam5/$oracut
-setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/wfcam
-
-# some other things
-setenv HDS_MAP 0
-
-# Determine the host, and if we're on a wfdr machine, create
-# $ORAC_DATA_OUT if it doesn't already exist.
-set hostname = `/bin/hostname`
-if( $hostname == "wfdr1" || $hostname == "wfdr2" || $hostname == "wfdr3" || $hostname == "wfdr4" ) then
-    if( ! -d ${ORAC_DATA_OUT} ) then
-        mkdir $ORAC_DATA_OUT
-    endif
-endif
-
-# Set the RTD_REMOTE_DIR environment variable, but only if the
-# directory actually exists.
-if ( -e $ORAC_DATA_OUT/.. ) then
-  setenv RTD_REMOTE_DIR $ORAC_DATA_OUT
-endif
-
-# screen things
-setenv ORAC_PERSON bradc
-setenv ORAC_LOOP flag
-setenv ORAC_SUN
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
-
-# Tidy up
-unset oracut
-unset oracdr_args
-

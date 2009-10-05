@@ -93,7 +93,7 @@ sub new {
   # goes out of scope the kapview monolith will be killed.
   # The assumption is that if the kapview monolith had problems there
   # is no point keeping it around.
-  # A related problem is that once we have tried to launch kapview 
+  # A related problem is that once we have tried to launch kapview
   # (and managed to start a monolith the first time) the messaging
   # system never gets informed that the monolith died so next time
   # you try it the system thinks kapview is running and so doesn't launch
@@ -423,7 +423,7 @@ sub configure {
   # open the GWM window
   # and configure the lookup table
 #  $status = $self->create_dev('default');
-#  return $status unless $status == ORAC__OK; 
+#  return $status unless $status == ORAC__OK;
 
   my $startup = "$ENV{ORAC_DIR}/images/orac_start";
 
@@ -497,9 +497,9 @@ sub config_regions {
 
   my %regions = (
 		 0 => "cc [1,1]",
-		 5 => "cl [0.5,1.0]", 
+		 5 => "cl [0.5,1.0]",
 		 6 => "cr [0.5,1.0]",
-		 7 => "tl [1.0,0.5]", 
+		 7 => "tl [1.0,0.5]",
 		 8 => "bl [1.0,0.5]",
 		);
 
@@ -553,7 +553,7 @@ sub config_regions {
       # To map from bottom-left-corner to top-left you need
       # ( N = number starting from top left)
 
-      # KappaN = N - Ntotal - Nx + 
+      # KappaN = N - Ntotal - Nx +
       #                        2 * Nx * (Ny +1 - int( (N + Nx - 1) / Nx ))
 
       my $kappan = $i - $ntot - $nx + ( 2 * $nx * ($ny + 1 - int(($i + $nx - 1)/ $nx)));
@@ -664,7 +664,7 @@ a filename with an attached NDF section.
 
   $newfile = $Display->select_section($file, \%options, $dimensionality);
 
-An optional 3rd argument can be used to specify the required 
+An optional 3rd argument can be used to specify the required
 dimensionality. If the number of dimensions in the data file is
 greater than that requested, sections in higher dimensions
 are set to 1 by compressing the undesired dimension
@@ -683,7 +683,7 @@ NDF section attached.
 Relevant keywords in options hash:
 
   CUT  - Specify the significant dimension[s] (X,Y,3,4,5)
-         Should be a comma-separated list specifying 
+         Should be a comma-separated list specifying
          dimensionality - number of entries should equal the
          requested dimensionality. For a graph only 1 value
          is required since a graph is 1-D
@@ -707,7 +707,7 @@ For NDFs the maximum dimensionality is 7.
 
 The bounds of the input file are compared to the supplied bounds.
 If any of the requested bounds are exceeded, the maximum value
-will be used instead. 
+will be used instead.
 
 Returns undef on error.
 The unmodified file name is returned if no options hash can be found.
@@ -753,7 +753,7 @@ sub select_section {
   return $file if ref($options) ne 'HASH';
 
   # Maximum number of allowed dimensions for an NDF
-  my $maxdim = 7;  
+  my $maxdim = 7;
 
   # Read the dimensionality (default to 7)
   my $max_requested = $maxdim;
@@ -808,11 +808,11 @@ sub select_section {
   #    needs to be present in NDIMS (ie no use cutting on dim 3
   #    if only a 2-D image requesting a 1-D slice
   # 2. NDIMS must be greater than requested dims
-  # 3. The number of supplied cut dimensions has to equal the 
+  # 3. The number of supplied cut dimensions has to equal the
   #    number of requested dimensions. If too few cuts are specified
   #    (eg a 3-d to 2-d requires 2 cut axes - ie two axes that
   #    are unaffected, the 3rd dimension is averaged), say
-  #    only Y is specified for a 3-d to 2-d conversion, the 
+  #    only Y is specified for a 3-d to 2-d conversion, the
   #    X dimension will also be retained. The signifcant (ie retained)
   #    dimensions are counted lowest to highest - X,Y,3,4,5...)
 
@@ -881,7 +881,7 @@ sub select_section {
         # Read the bounds from the hash
         my $pre = $lookup[$index];
 
-        # Lower bound is maximum of $lbnd[$dim-1] and 
+        # Lower bound is maximum of $lbnd[$dim-1] and
         # and the minimum of $options{?MIN} and the upper bound
         my $lower = max($lbnd[$index],min($options{"${pre}MIN"},$ubnd[$index]));
         my $upper = min($ubnd[$index],max($options{"${pre}MAX"},$lbnd[$index]));
@@ -903,7 +903,7 @@ sub select_section {
 
     # Now we have read the MIN and MAX values from the hash
     # We now need to modify the section a little to cover the
-    # case where we are reducing dimensionality without averaging. 
+    # case where we are reducing dimensionality without averaging.
     # In that case we want sections that are higher than the requested
     # dimensionality to be set to the min value (ie 1 pixel
     # wide). If we are reducing dimensiona by averaging the section
@@ -1011,7 +1011,7 @@ sub select_section {
     if ($use_compave) {
       my $compress = '[' . join(",",@compress) . ']';
 
-      my $out = "secave$$"; 
+      my $out = "secave$$";
       my $compargs = "WLIM=0.1 in=$input out=$out compress=$compress";
       orac_print "COMPAVE $compargs\n","cyan" if $DEBUG;
 
@@ -1153,7 +1153,7 @@ sub image {
   return $status if $status != ORAC__OK;
 
   # Do the obeyw
-  $status = $self->obj->obeyw("display", "device=$device in=$file axes clear=true $optstring badcol=grey50 margin=0.15 accept");
+  $status = $self->obj->obeyw("display", "device=$device in=$file axes clear=true $optstring badcol=grey50 margin=0.15 style='size(title)=1.5' accept");
   if ($status != ORAC__OK) {
     orac_err("Error displaying image\n");
     orac_err("Trying to execute: display device=$device axes clear=true $optstring in=$file\n");
@@ -1190,11 +1190,11 @@ Display keywords:
                present)
 
 Default is to autoscale. Note that the X/Y cuts are converted
-to a 1-D slice before displaying by averaging over the section. 
+to a 1-D slice before displaying by averaging over the section.
 
 For example:
 
-   XMIN=5 XMAX=5 YAUTOSCALE=YES 
+   XMIN=5 XMAX=5 YAUTOSCALE=YES
 
 would display column 5 (ie the whole of Y for X=5).
 [CUT is irrelevant since the resulting image section is 1-D]
@@ -1270,7 +1270,7 @@ sub graph {
         $range = "axlim=true abslim=! ordlim=[$min,$max]";
       } else {
         # New form to specify range of Y axis
-        $range = "ytop=$max ybot=$min";	
+        $range = "ytop=$max ybot=$min";
       }
     }
   }
@@ -1520,7 +1520,7 @@ sub contour {
     # Set default scaling
     $optstring .= " mode=au ";
   }
-  $optstring .= " ncont=$ncont ";  
+  $optstring .= " ncont=$ncont ";
 
   # Select component
   if (exists $options{COMP} && defined $options{COMP}) {
@@ -1555,7 +1555,7 @@ points.
 By default a range of +/-5 sigma with dashed lines at +/-3 sigma
 are used.
 
-These values can be overriden by using the RANGE and DASHED 
+These values can be overriden by using the RANGE and DASHED
 keywords.
 
 Takes a file name and arguments stored in a hash.
@@ -1563,7 +1563,7 @@ Note that currently it does not take a format argument
 and NDF is assumed.
 
 If we are running KAPPA 0.13, the NDF is converted
-to 1-DIM with the kappa RESHAPE command before 
+to 1-DIM with the kappa RESHAPE command before
 displaying.
 
 ORAC status is returned.
@@ -1639,7 +1639,7 @@ sub sigma {
   # Select component
   my $args = '';
   if (exists $options{COMP} && defined $options{COMP}) {
-    $args .= " COMP=$options{COMP}"; 
+    $args .= " COMP=$options{COMP}";
   }
 
   my $status;
@@ -1684,7 +1684,7 @@ sub sigma {
 
   # A resetpars also seems to be necessary to instruct kappa to
   # update its current frame for plotting. Without this the new PICDEF
-  # regions are not picked up correctly. This may be fixed when 
+  # regions are not picked up correctly. This may be fixed when
   # running as an A-task rather than an I-task.
 
   $status = $self->obj->resetpars;
@@ -1834,7 +1834,7 @@ sub datamodel {
 	$range = "axlim=true abslim=! ordlim=[$min,$max]";
       } else {
 	# New form to specify range of Y axis
-	$range = "ytop=$max ybot=$min";	
+	$range = "ytop=$max ybot=$min";
       }
     }
   }
@@ -1899,12 +1899,10 @@ sub datamodel {
 
 =item B<histogram>
 
-Display a histogram of the data values present in the 
-data array.
+Display a histogram of the data values present in the data array.
 
-Takes a file name and arguments stored in a hash.
-Note that currently it does not take a format argument
-and NDF is assumed.
+Takes a file name and arguments stored in a hash. Note that currently
+it does not take a format argument and NDF is assumed.
 
 Arguments:
 
@@ -1917,6 +1915,7 @@ Arguments:
   NBINS      - Number of bins to be used for histogram calculation
   COMP       - Component to display (Data (default), Variance or Error)
   SIGMA      - Number of sigma to clip data before computing histogram
+  TITLE      - title string to label the histogram
 
 Default is for autoscaling and for NBINS=20. Note that the presence of
 SIGMA overrides ZMIN/ZMAX.
@@ -2005,6 +2004,13 @@ sub histogram {
   # Select component
   if (exists $options{COMP} && defined $options{COMP}) {
     $args .= " COMP=$options{COMP}";
+  }
+
+  # If a title has been specified
+  if (exists $options{TITLE} && defined $options{TITLE}) {
+    $args .= " style='title=$options{TITLE},label(1)=Data value'";
+  } else {
+    $args .= " style='label(1)=Data value'";
   }
 
   # Run histogram
@@ -2107,7 +2113,7 @@ sub vector {
              $status = $self->polpack->obeyw( "polplot", "$param $stylearg" );
              $command = "polplot $param $stylearg";
           }
-       
+
 # Vectors drawn as single lines, the default.
        } else {
           $status = $self->polpack->obeyw( "polplot", "$param" );

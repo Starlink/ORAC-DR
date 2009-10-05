@@ -43,13 +43,16 @@
 #        fix argument check
 #     22-AUG-2007 (TIMJ):
 #        Factor out perl and version determination
+#     2009 September 4 (MJC):
+#        ORAC_PERSON now contains the full e-mail address, so remove the
+#        "@jach.hawaii.edu".
 
 #  Revision:
 #     $Id$
 
 #  Copyright:
 #     Copyright (C) 2006 Particle Physics and Astronomy Research
-#     Council. Copyright (C) 2007 Science and Technology Facilities
+#     Council. Copyright (C) 2007, 2009 Science and Technology Facilities
 #     Council. All Rights Reserved.
 
 #  Licence:
@@ -78,17 +81,19 @@ starperl=`${ORAC_DIR}/etc/oracdr_locateperl.sh`
 # Set up back door for the version number
 pkgvers=`${ORAC_DIR}/etc/oracdr_version.sh`
 
-# Set ORAC_LOGDIR if it is not already set and if we have a /jac_logs
-
-if test -z "${ORAC_LOGDIR}"; then
-    if test -e /jac_logs/oracdr; then
-       export ORAC_LOGDIR=/jac_logs/oracdr
-    fi
-fi
-
 # These are perl programs
 
 if test -e $starperl; then
+
+  # Run initialization.
+  orac_env_setup=`$starperl ${ORAC_DIR}/etc/setup_oracdr_env.pl bash $*`
+  if test $? != 0; then
+    echo "**** ERROR IN setup_oracdr_env.pl ****"
+    # Can not exit since the shell that is sourcing this will exit
+    return
+  fi
+  eval $orac_env_setup
+  unset orac_env_setup
 
   # ORAC-DR
   # Might have an argument to oracdr passed in to this routine.
@@ -104,18 +109,6 @@ alias oracdr_nuke="$starperl ${ORAC_DIR}/bin/oracdr_nuke"
 alias oracdisp="$starperl ${ORAC_DIR}/bin/oracdisp"
 alias oracdr_parse_recipe="$starperl ${ORAC_DIR}/bin/oracdr_parse_recipe"
 alias oracdr_monitor="$starperl ${ORAC_DIR}/bin/oracdr_monitor"
-
-else
-  echo "************ Starlink perl could not be located. ********"
-  echo "************       Please install STARPERL       ********"
-
-alias oracdr="echo 'Command not available - needs Starlink PERL'"
-alias oracdr_db="echo 'Command not available - needs Starlink PERL'"
-alias oracdr_nuke="echo 'Command not available - needs Starlink PERL'"
-alias oracdisp="echo 'Command not available - needs Starlink PERL'"
-alias oracdr_monitor="echo 'Command not available - needs Starlink PERL'"
-
-fi
 
 # These are shell scripts
 
@@ -152,7 +145,7 @@ echo " "
 echo "     ORAC Data Reduction Pipeline -- (ORAC-DR Version $pkgvers)"
 echo "     Configured for instrument $ORAC_INSTRUMENT"
 echo " "
-echo '     Type "oracdr -h" for usage'
+echo '     Type "oracdr -man" for usage'
 echo "     Type $doc_command to browse the hypertext documentation"
 echo " "
 echo " "
@@ -173,8 +166,24 @@ fi
 echo " "
 echo "+++++++++ For online $ORAC_INSTRUMENT reduction use oracdr -loop $ORAC_LOOP +++++++++"
 echo ""
-echo For comments specific to $ORAC_INSTRUMENT data reduction mail $ORAC_PERSON@jach.hawaii.edu
-echo 'For problems with the ORAC-DR system mail helpme@jach.hawaii.edu'
-echo '         http://www.jach.hawaii.edu/UKIRT/software/oracdr/'
+echo For comments specific to $ORAC_INSTRUMENT data reduction mail $ORAC_PERSON
+echo 'For problems with the ORAC-DR system mail oracdr@jach.hawaii.edu'
+echo '         http://www.oracdr.org'
 echo ""
 echo ""
+
+else
+  # Nothing is going to work
+  echo "************ Starlink perl could not be located. ********"
+  echo "************       Please install STARPERL       ********"
+
+alias oracdr="echo 'Command not available - needs Starlink PERL'"
+alias oracdr_db="echo 'Command not available - needs Starlink PERL'"
+alias oracdr_nuke="echo 'Command not available - needs Starlink PERL'"
+alias oracdisp="echo 'Command not available - needs Starlink PERL'"
+alias oracdr_monitor="echo 'Command not available - needs Starlink PERL'"
+
+fi
+
+unset starperl
+unset oracdr_args

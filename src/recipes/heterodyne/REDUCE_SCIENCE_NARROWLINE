@@ -2,16 +2,28 @@
 
 =head1 NAME
 
-REDUCE_SCIENCE_NARROWLINE - Reduce a narrowline ACSIS science
-observation.
+REDUCE_SCIENCE_ADV - Reduce an ACSIS narrow-line science observation
+using advanced algorithms.
 
 =head1 DESCRIPTION
 
-This recipe reduces an ACSIS science observation. It does so by first
-converting a time-series cube (or more than one, as the case may be)
-as written by the ACSIS specwriter into a spatial/spectral cube. This
-cube is then coadded to other cubes in the same group to form a higher
-signal-to-noise ratio cube.
+This recipe is used for advanced narrow-line ACSIS data processing.
+
+This recipe first creates a spatial cube from the raw time series
+data. Then, working on the raw time series data, it subtracts a median
+time-series signal, thresholds the data, then trims the ends of the
+frequency range to remove high-noise regions.
+
+After the time-series manipulation has been done to every member of
+the current group, every member is run through MAKECUBE to create a
+group spatial cube. This cube then has its baseline removed through a
+smoothing process, and moments maps are created.
+
+A baseline mask formed from the group cube is run through UNMAKECUBE
+to form baseline masks for the input time-series data, which are then
+baselined. The baselined time-series data are then run through
+MAKECUBE to create observation cubes, from which moments maps are
+created.
 
 =head1 NOTES
 
@@ -19,13 +31,16 @@ signal-to-noise ratio cube.
 
 =item *
 
-This recipe is suitable for ACSIS using either the RxA3i or HARP
-backends.
+This recipe is suitable for ACSIS data.
 
 =item *
 
-This recipe differs from REDUCE_SCIENCE in that it uses a [5,5,10] box
-smooth when finding baselines.
+The 'nearest' method is used for creating cubes with MAKECUBE.
+
+=item *
+
+A 10-pixel box smooth is used in the frequency domain. This may be too
+large for some narrow-line data.
 
 =back
 
@@ -35,23 +50,32 @@ smooth when finding baselines.
 
 =item *
 
-A spatial/spectral cube whose filename is of the form
-aYYYYMMDD_NNNNN_SS_MMMM_cube.sdf, where YYYYMMDD is the UT date, NNNNN
-is the zero-padded observation number, SS is the zero-padded subsystem
-number, and MMMM is the first zero-padded sub-scan number for the
-given observation and subsystem.
+For individual time-series data: median time-series removed with the
+_tss suffix; thresholded data with the _thr suffix; frequency ends
+removed with the _em suffix; baseline-only mask with the _tsmask
+suffix; non-baseline regions masked with the _msk suffix; baselined
+data with the _bl suffix.
 
 =item *
 
-A spatial/spectral cube whose filename is of the form gaYYYYMMDD_N,
-where YYYYMMDD is the UT date, and N is the group number. This is the
-coadded group file.
+For individual spatial/spectral cubes: baselined cube with the _cube
+suffix; baseline region ma sk with the _blmask suffix.
+
+=item *
+
+For group cubes: cube with the _cube suffix; baseline region mask with
+the _blmask suffix; baselined cube with the _bl suffix;
+
+=item *
+
+For moments maps: integrated intensity map with the _integ suffix;
+velocity map with the _iwc suffix.
 
 =back
 
 =head1 RELATED RECIPES
 
-REDUCE_SCIENCE
+REDUCE_SCIENCE_ADV
 
 =head1 AUTHORS
 
@@ -59,37 +83,30 @@ Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2006 Particle Physics and Astronomy Research Council.
+Copyright (C) 2008 Science and Technology Facilities Council.
 All Rights Reserved.
 
 =cut
 
-_REDUCE_SCIENCE_STEER_
+_STOP_PROCESSING_IF_SIMULATED_
+
+_REDUCE_SCIENCE_STEER_ COPY_FRAME=0
 
 _INSTRUMENT_HELLO_
 
-_SORT_TIMESERIES_
+_COPY_RAW_DATA_
 
-_REMOVE_FREQUENCY_ENDS_ LOWER=2.75 UPPER=3 AXIS=1
+_CREATE_CUBE_PER_SUBSYSTEM_
+
+_QA_WITH_MASKING_
+
+_REMOVE_FREQUENCY_ENDS_ADVANCED_ AXIS=1 LOWER=2.75 UPPER=2.75
 
 _MERGE_HYBRID_MODE_
 
-_SET_TAG_ TAG=SUBTRACTED_TIMESERIES_SIGNAL
+_THRESHOLD_DATA_ LOW=-150 HIGH=150 NEWLOW=bad NEWHIGH=bad
 
-_CREATE_CUBE_FRAME_ SPREAD=nearest
+_DELETE_TEMP_FILES_ KEEP=raw,thr
 
-_REMOVE_BASELINE_ GROUP=0 ORDER=1 METHOD=single TAG=1
+_ITERATIVE_GROUP_PRODUCTION_ SPREAD=nearest FREQUENCY_SMOOTH=10 SPATIAL_SMOOTH=5 ORDER=1 MOMENTS=integ,iwc TILEBORDER=15
 
-_CREATE_MOMENTS_MAPS_ GROUP=0 MOMENTS=integ,iwc TAG=integ
-
-_CREATE_NOISE_MAP_ GROUP=0 QA=0
-
-_RETRIEVE_TAG_ TAG=SUBTRACTED_TIMESERIES_SIGNAL
-
-_CREATE_CUBE_GROUP_ SPREAD=nearest
-
-_REMOVE_BASELINE_ GROUP=1 ORDER=1 METHOD=single TAG=1
-
-_CREATE_MOMENTS_MAPS_ GROUP=1 MOMENTS=integ,iwc TAG=integ
-
-_CREATE_NOISE_MAP_ GROUP=1 QA=0

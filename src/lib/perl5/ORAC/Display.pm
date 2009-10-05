@@ -312,10 +312,12 @@ gui_id.
   $Display->display_data($Frm, { TOOL => 'GAIA'});
   $Display->display_data($Frm, { TOOL => 'GAIA'}, $usedisp);
 
-A third optional argument can be used in conjunction with the
-options hash to indicate whether these options should be used
-instead of the display definition file (false) or in addition
-to (true - the default) 
+A third optional argument can be used in conjunction with the options
+hash to indicate whether these options should be used instead of the
+display definition file (false) or in addition to (true - the
+default). In addition this argument may take the value of -1 in which
+case the entries in $optref will be used to overwrite or supplement
+existing entries.
 
 =cut
 
@@ -398,8 +400,20 @@ sub display_data {
     my @defn;
     @defn = $self->definition if $usedisp;
 
-    # push additional entries onto the definition array
-    push (@defn,$optref) if (defined $optref);
+    # Check for additional options
+    if (defined $optref) {
+      # If -1, then the optref will be used to overwrite/supplement
+      # existing entries rather than adding a new display entry.
+      if ( $usedisp == -1 ) {
+	foreach my $defn ( @defn ) {
+	  $defn = { %$defn, %$optref };
+	}
+      } else {
+	# push additional entries onto the definition array for a new
+	# display
+	push (@defn, $optref);
+      }
+    }
 
     # Now need to loop over all members of @defn
     # This will just jump out if there are no matches stored in the array
@@ -654,8 +668,8 @@ sub append_monitor {
   my @files = grep { defined $_ && $_ =~ /\w/ } $frm->files;
   return unless @files;
 
-  # make sure that usedisp is defined
-  $usedisp = ($usedisp ? 1 : 0 );
+  # make sure that usedisp is defined - if so, use it
+  $usedisp = ($usedisp ? $usedisp : 0 );
 
   # Store the class name without the leading ORAC:: chunk
   # This is safer than allowing some one to edit the display file

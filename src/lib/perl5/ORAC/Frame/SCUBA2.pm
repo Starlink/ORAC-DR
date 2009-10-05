@@ -32,7 +32,6 @@ use warnings;
 use strict;
 use Carp;
 
-use ORAC::Frame::NDF;
 use ORAC::Constants;
 use ORAC::Print;
 
@@ -42,8 +41,9 @@ use Starlink::AST;
 
 use vars qw/$VERSION/;
 
-# Let the object know that it is derived from ORAC::Frame;
-use base qw/ ORAC::Frame::NDF /;
+# Let the object know that it is derived from ORAC::Frame::JCMT and
+# ORAC::Frame::NDF;
+use base qw/ ORAC::Frame::JCMT /;
 
 # Use base doesn't seem to work...
 #use base qw/ ORAC::Frame /;
@@ -187,7 +187,7 @@ sub configure {
         # Just store each one in turn. We can not index by a unique
         # name since I1 can be reused between files in the same frame
         push(@hdrs, $fits);
-	
+
       }
 
       $rfits{$f}->{SECONDARY} = \@hdrs;
@@ -239,9 +239,9 @@ sub configure {
       # that is present in the "different" headers will be problematic since
       # it implies that we have headers that are present in both the .I
       # components and the primary header but that are identical between
-      # the .I components yet different to the primary header. This is a 
+      # the .I components yet different to the primary header. This is a
       # problem and we need to issue a warning.
-      # Provide a special case for the OBSEND header since that is allowed to 
+      # Provide a special case for the OBSEND header since that is allowed to
       # differ in the very last entry when all others were 0. The above code expects
       # that frames that differ will differ in all .In headers.
       if (defined $funique || defined $cunique) {
@@ -262,7 +262,7 @@ sub configure {
         if ($funique->sizeof > 0 && $cunique->sizeof > 0) {
 
           orac_warn("Headers are present in the primary FITS header of $f that clash with different values that are fixed amongst the processed components. This is not allowed.\n");
-	
+
           orac_warn("Primary header:\n". $funique ."\n")
             if defined $funique;
           orac_warn("Component header:\n". $cunique ."\n")
@@ -457,8 +457,10 @@ sub file_from_bits_extra {
 
 =item B<pattern_from_bits>
 
-Determine the pattern for the raw filename given the variable component
-parts. A prefix (usually UT) and observation number should be supplied.
+Determines the pattern for the flag file. This differs from other
+instruments in that SCUBA-2 writes the flag files to ORAC_DATA_IN
+but the data are written to completely distinct trees (not sub
+directories of ORAC_DATA_IN).
 
   $pattern = $Frm->pattern_from_bits( $prefix, $obsnum );
 
@@ -474,10 +476,9 @@ sub pattern_from_bits {
 
   my $padnum = $self->_padnum( $obsnum );
 
-  my $letters = '['.$self->_dacodes.']';
-
-  my $pattern = $self->rawfixedpart . $letters . '_'. $prefix . "_" . 
-    $padnum . '_\d\d\d\d\d' . $self->rawsuffix;
+  # Assume that ORAC_DATA_IN will not mix up 450 and 850 data
+  my $pattern = $self->rawfixedpart . "[a-z]". $prefix . "_$padnum"
+    . ".ok";
 
   return qr/$pattern/;
 }
@@ -573,138 +574,13 @@ the object via the group() method.
 sub findgroup {
 
   my $self = shift;
-  my $group;
 
-  # Hash to store relevant parameters
-  my %state;
+  # Extra information required for group disambiguation
+  my $extra = $self->hdr("FILTER" );
 
-  # Use value in header if present 
-  if (exists $self->hdr->{DRGROUP} && defined $self->hdr->{DRGROUP}
-      && $self->hdr->{DRGROUP} ne 'UNKNOWN'
-      && $self->hdr->{DRGROUP} =~ /\w/) {
-    $group = $self->hdr->{DRGROUP};
-  } else {
-    # Create our own DRGROUP string
-    # Retrieve WCS
-    my $wcs = $self->read_wcs( $self->file );
-    my $skyref;
-    if (defined $wcs) {
-      my $domain = $wcs->Get("Domain");
-      if ( $domain =~ /SKY/ ) {
-        $skyref = $wcs->Get("SkyRef");
-      }
-    }
-
-    # If we don't have a useful skyref at this point, re-create the
-    # WCS from the FITS header for DREAM/STARE images
-    if ( !defined $skyref && ($self->hdr('SAM_MODE') ne "SCAN") ) {
-      my $fits = Astro::FITS::Header::NDF->new( File => $self->file );
-      my @cards = $fits->cards;
-      my $fchan = Starlink::AST::FitsChan->new();
-      foreach my $c (@cards) {
-        $fchan->PutFits("$c", 0);
-      }
-      $fchan->Clear("Card");
-      $wcs = $fchan->Read();
-      # The WCS may not be present in the FITS file
-      if (defined $wcs) {
-        $skyref = $wcs->Get("SkyRef");
-      }
-    }
-
-    # if SkyRef is still not defined use the BASEC1/C2 headers and 
-    # TRACKSYS
-    if ( defined $skyref ) {
-      $state{TCS_TR_SYS} = $wcs->Get("System");
-      ($state{TCS_TR_BC1}, $state{TCS_TR_BC2}) = split( /,/, $skyref, 2);
-      # Unformat SkyRef into radians - assumes RA is axis 1 and Dec is axis 2
-      $state{TCS_TR_BC1} = $wcs->Unformat(1, $state{TCS_TR_BC1});
-      $state{TCS_TR_BC2} = $wcs->Unformat(2, $state{TCS_TR_BC2});
-    } else {
-
-      $state{TCS_TR_SYS} = $self->hdr->{TRACKSYS};
-      if (!defined $state{TCS_TR_SYS}) {
-        $state{TCS_TR_SYS} = "ICRS";
-        orac_warn " TRACKSYS header is missing\n";
-      }
-
-      # Note that these are in degrees
-      require Astro::Coords::Angle;
-      for my $c (qw/ C1 C2 /) {
-        my $key1 = "BASE$c";
-        my $key2 = "TCS_TR_B$c";
-        my $val = $self->hdr->{$key1};
-        if (!defined $val) {
-          $val = 0.0;
-          orac_warn " Seem to be missing header $key1\n";
-        }
-        $val = Astro::Coords::Angle->new( $val, units => "deg" );
-        $state{$key2} = $val->radians;
-      }
-    }
-
-    # Now construct DRGROUP string
-    if ( $state{TCS_TR_SYS} =~ /APP/ ) {
-      # Use object name if tracking in GAPPT
-      $group = $self->hdr( "OBJECT" );
-    } else {
-      # Tracking RA and Dec are in radians - convert to HHMMSS+-DMMSS
-      # Note that we have not necessarily converted coordinate systems
-      # to ICRS. We could do that easily for the case where $wcs is
-      # defined.
-      require Astro::Coords::Angle;
-      my $ra = new Astro::Coords::Angle( $state{TCS_TR_BC1}, units => 'rad' );
-      $ra->range("2PI");
-      my $dec = new Astro::Coords::Angle( $state{TCS_TR_BC2}, units => 'rad' );
-      $dec->range("PI");
-
-      # Retrieve RA/Dec HH/DD, MM and SS as arrays, SS to nearest integer
-      my @ra = $ra->components(0);
-      my @dec = $dec->components(0);
-      # Zero-pad the numbers
-      foreach my $i ( @ra[1..3] ) {
-        $i = sprintf "%02d", $i;
-      }
-      foreach my $i ( @dec[1..3] ) {
-        $i = sprintf "%02d", $i;
-      }
-      # Construct RA/Dec string
-      $group = join("",@ra[1..3],@dec);
-    }
-    $group .= $self->hdr( "SAM_MODE" ) .
-      $self->hdr( "OBS_TYPE" ) .
-        $self->hdr( "FILTER" ) ;
-    # Add OBSNUM if we're not doing a science observation
-    if ( uc( $self->hdr( "OBS_TYPE" ) ) ne 'SCIENCE' ) {
-      $group .= sprintf "%05d", $self->hdrval( "OBSNUM" );
-    }
-  }
-  # Update $group
-  $self->group($group);
-
-  return $group;
+  # Call the base class
+  return $self->SUPER::findgroup( $extra );
 }
-
-
-=item B<findnsubs>
-
-Forces the object to determine the number of sub-frames
-associated with the data by looking in the header (hdr()). 
-The result is stored in the object using nsubs().
-
-Unlike findgroup() this method will always search the header for
-the current state.
-
-=cut
-
-sub findnsubs {
-  my $self = shift;
-  my @files = $self->raw;
-  my $nsubs = scalar( @files );
-  $self->nsubs( $nsubs );
-  return $nsubs;
-}
-
 
 =item B<findrecipe>
 
@@ -894,6 +770,49 @@ sub subarray {
   }
 }
 
+=item B<subarrays>
+
+Return a list of the subarrays associated with the current Frame
+object. Searches the subheaders for presence of SUBARRAY keyword which
+will be present if data from multiple subarrays are stored in the
+current Frame. If not found then just use the SUBARRAY entry in the
+hdr.
+
+  @subarrays = $Frm->subarrays;
+
+Returns an array.
+
+=cut
+
+sub subarrays {
+  my $self = shift;
+
+  my @subarrays;
+  # Check for sub-headers
+  if ( exists $self->hdr->{'SUBHEADERS'} ) {
+    # OK now check that there are SUBARRAY subheaders - retrieve hash
+    # keys from first element (hash ref) in SUBHEADERS array
+    my @subhdrs = keys %{ $self->hdr->{'SUBHEADERS'}->[0] };
+    if ( grep (/SUBARRAY/, @subhdrs) ) {
+      my %subarrays;
+      my @allsubhdrs = @{ $self->hdr->{'SUBHEADERS'} };
+      foreach my $subhdr (@allsubhdrs) {
+	$subarrays{$subhdr->{'SUBARRAY'}} = 1;
+      }
+      push(@subarrays, keys %subarrays);
+    } else {
+      # No SUBARRAY entry in subheaders so only one subarray
+      push( @subarrays, $self->hdr("SUBARRAY") );
+    }
+  } else {
+    # No subheaders so only one subarray
+    push( @subarrays, $self->hdr("SUBARRAY") );
+  }
+
+  return @subarrays;
+}
+
+
 
 =item B<filter_darks>
 
@@ -901,7 +820,7 @@ Standard image-based DREAM and STARE processing has no need for dark
 frames and so these should be filtered out as early as possible to
 prevent weird errors. The translated header for the observation mode
 is used. From this point on, no dark frames will be returned unless
-the user accesses the raw data. 
+the user accesses the raw data.
 
   $Frm->filter_darks;
 
@@ -912,7 +831,7 @@ sub filter_darks {
   my $self = shift;
 
   # Filter out Dark frames from DREAM/STARE data
-  if ( ($self->uhdr("ORAC_OBSERVATION_MODE") =~ /dream/ || 
+  if ( ($self->uhdr("ORAC_OBSERVATION_MODE") =~ /dream/ ||
 	$self->uhdr("ORAC_OBSERVATION_MODE") =~ /stare/) &&
        $self->uhdr("ORAC_OBSERVATION_TYPE") !~ /flatfield/ ) {
 
@@ -942,20 +861,6 @@ sub filter_darks {
 
 =over 4
 
-=item B<_padnum>
-
-Pad an observation number.
-
- $padded = $frm->_padnum( $raw );
-
-=cut
-
-sub _padnum {
-  my $self = shift;
-  my $raw = shift;
-  return sprintf( "%05d", $raw);
-}
-
 =item B<_wavelength_prefix>
 
 Return the relevent wavelength code that will be used to specify the
@@ -969,7 +874,7 @@ microns.
 sub _wavelength_prefix {
   my $self = shift;
   my $code;
-  if ($ENV{ORAC_INSTRUMENT} =~ /_LONG/) {
+  if ($ENV{ORAC_INSTRUMENT} =~ /_850/) {
     $code = '8';
   } else {
     $code = '4';
@@ -999,7 +904,7 @@ sub _dacodes {
     # HACK: pick out last letter of each task name
     foreach my $task ( @tasks ) {
       # Split on @ as QL is usually running on remote machines
-      my @tsk = split(/@/, $task); 
+      my @tsk = split(/@/, $task);
       # Add lower-cased last letter of taskname
       push (@letters, lc(substr($tsk[0],-1,1)) );
     }

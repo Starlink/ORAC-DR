@@ -89,68 +89,12 @@
 #     02 Jun 1999 (frossie)
 #        Original Version
 
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 1998-2000 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.
 
 #-
-
-
-
-# orac things
-if test -z "$ORAC_DATA_ROOT"; then
-#    setenv ORAC_DATA_ROOT /irisdata
-fi
-
-if test -z "$ORAC_CAL_ROOT"; then
-    # Need to choose somewhere sensible although
-    # this is a fallback as we normally expect
-    # ORAC_CAL_ROOT to be set in the same way as ORAC_DIR
-    export ORAC_CAL_ROOT=/iris2_soft/oracdr_cal/oracdr_cal
-fi
-
-if ! test -z "$ORAC_RECIPE_DIR"; then
-    echo "Warning: resetting ORAC_RECIPE_DIR"
-    unset ORAC_RECIPE_DIR
-fi
-
-if ! test -z "$ORAC_PRIMITIVE_DIR"; then
-    echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unset ORAC_PRIMITIVE_DIR
-fi
-
-
-if test ! -z "$1"; then
-    oracut=$1
-else
-    oracut=`\date -u +%Y%m%d`
-fi
-
-export oracdr_args="-ut $oracut"
-
-# Data directories for IRIS2 only have a 2 digit year
-
-oracut_cut=`echo $oracut | cut -c 3-8`
-
 export ORAC_INSTRUMENT=IRIS2
-export ORAC_DATA_IN=/data_vme10/aatobs/iris2_data/$oracut_cut
-export ORAC_DATA_OUT=/iris2_reduce/iris2red/$oracut_cut
-export ORAC_DATA_CAL=$ORAC_CAL_ROOT/iris2
-
-if (! -d ${ORAC_DATA_OUT} ) mkdir ${ORAC_DATA_OUT}
-
-# screen things
-export ORAC_PERSON=oracdr_iris2
-export ORAC_LOOP=wait
-export ORAC_SUN=230,232,236
 
 # Source general alias file and print welcome screen
 . $ORAC_DIR/etc/oracdr_start.sh
-
-# Tidy up
-unset oracut_cut
-unset oracut
-unset oracdr_args

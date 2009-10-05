@@ -1,0 +1,117 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_RETRIEVE_DARK_FRAMES_ - retrieve dark frames from the calibration system
+
+=head1 SYNOPSIS
+
+ _RETRIEVE_DARK_FRAMES_
+
+ _RETRIEVE_DARK_FRAMES_ SUBARRAY=S8A
+
+=head1 DESCRIPTION
+
+This primitive retrieves dark frames from the calibration system and
+stores them in an array which is stored in the primitive hash. The
+user may optionally specify an ORAC-DR Frame object, or a subarray to
+retrieve darks for.
+
+=head1 ARGUMENTS
+
+The following argumens are supported:
+
+=over 4
+
+=item B<FRM>
+
+An ORAC::Frame object. Default is the current $Frm.
+
+=item B<SUBARRAY>
+
+The user may specify which subarray to return dark frames for. Default
+is to return darks for all subarrays.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+None.
+
+=head1 OUTPUT DATA
+
+On completion, the primitive hash C<%_RETRIEVE_DARK_FRAMES_> contains
+the following key:
+
+=over 4
+
+=item DARKS
+
+A reference to an array containing the names of the dark frames.
+
+=back
+
+=head1 OUTPUT FILES
+
+None
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Frame object to use
+my $Frmobj = get_prim_arg( $_PRIM_ARGS_, "FRM", $Frm );
+
+# Subarray to retrieve darks for
+my $darksub = get_prim_arg( $_PRIM_ARGS_, "SUBARRAY", undef );
+
+# If there are no darks, as will be the case for the online pipeline,
+# look for a suitable dark frame in the calibration system. Look for
+# SHUTTER subheaders and if there are none, select a dark
+# frame. SHUTTER subheaders will be present if the Frame already
+# contains a mixture of darks and non-darks.
+
+my @darks;
+
+if ( defined $Frmobj->hdr("SUBHEADERS") ) {
+  my %subheaders = %{ $Frmobj->hdr->{SUBHEADERS}->[0] };
+  # Subheaders should always be defined in offline mode
+  unless ( defined $subheaders{"SHUTTER"} ) {
+    orac_say "Retrieving dark frames";
+    foreach my $subarray ( $Frmobj->subarrays ) {
+      $Frmobj->subarray( $subarray );
+      if ( $Cal->dark ) {
+	push (@darks, $Cal->dark);
+      } else {
+	orac_warn "No suitable dark frame found for subarray $subarray in current observation\n";
+      }
+      # Finish if darks are only being retrieved for the current
+      # subarray
+      last if ( $darksub && (lc($darksub) eq lc($subarray)) );
+    }
+  }
+}
+
+$_RETRIEVE_DARK_FRAMES_{DARKS} = \@darks if ( @darks );

@@ -65,56 +65,13 @@
 #     2002 Feb 20 (MJC):
 #        Original version.
 
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 1998-2003 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.
 
 #-
 
-# orac things
-if test -z "$ORAC_DATA_ROOT"; then
-    export ORAC_DATA_ROOT=/ukirtdata
-fi
-
-if test -z "$ORAC_CAL_ROOT"; then
-    export ORAC_CAL_ROOT=/jac_sw/oracdr_cal
-fi
-
-if ! test -z "$ORAC_RECIPE_DIR"; then
-    echo "Warning: resetting ORAC_RECIPE_DIR"
-    unset ORAC_RECIPE_DIR
-fi
-
-if ! test -z "$ORAC_PRIMITIVE_DIR"; then
-    echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unset ORAC_PRIMITIVE_DIR
-fi
-
-
-if test ! -z "$1"; then
-    oracut=$1
-else
-    oracut=`\date -u +%Y%m%d`
-fi
-
-export oracdr_args="-ut $oracut"
-
 export ORAC_INSTRUMENT=INGRID
-export ORAC_DATA_IN=$ORAC_DATA_ROOT/raw/ingrid/$oracut/
-export ORAC_DATA_OUT=$ORAC_DATA_ROOT/reduced/ingrid/$oracut/
-export ORAC_DATA_CAL=$ORAC_CAL_ROOT/ingrid
-
-# screen things
-export ORAC_PERSON=mjc
-export ORAC_LOOP=flag
-export ORAC_SUN=232
 
 # Source general alias file and print welcome screen
 . $ORAC_DIR/etc/oracdr_start.sh
-
-# Tidy up
-unset oracut
-unset oracdr_args

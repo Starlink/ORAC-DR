@@ -20,6 +20,8 @@ to return an ORAC__ABORT or ORAC__FATAL status using ORAC::Error.
 use strict;
 use warnings;
 
+use NDF;
+
 use vars qw/ $VERSION @ISA %EXPORT_TAGS @EXPORT_OK/;
 $VERSION = '1.0';
 
@@ -29,15 +31,17 @@ require Exporter;
 
 @EXPORT_OK = qw/ORAC__OK ORAC__ERROR ORAC__BADENG
                 ORAC__ABORT ORAC__FATAL ORAC__PARSE_ERROR
-                ORAC__TERM /;
+                ORAC__TERM VAL__BADD /;
 
 %EXPORT_TAGS = (
-		'status'=>[qw/ ORAC__OK ORAC__ERROR ORAC__BADENG
-		               ORAC__ABORT ORAC__FATAL ORAC__PARSE_ERROR
-                   ORAC__TERM /]
+                'status'=>[qw/ ORAC__OK ORAC__ERROR ORAC__BADENG
+                               ORAC__ABORT ORAC__FATAL ORAC__PARSE_ERROR
+                               ORAC__TERM / ],
+                'badvalues' => [qw/ VAL__BADD / ],
 	       );
 
 Exporter::export_tags('status');
+Exporter::export_ok_tags( 'badvalues' );
 
 =head1 CONSTANTS
 
@@ -110,6 +114,15 @@ error.
 
 use constant ORAC__TERM => -5;
 
+=item B<VAL__BADD>
+
+This constant denotes the numerical value for the special "bad" value
+in NDF, for doubles.
+
+=cut
+
+use constant VAL__BADD => NDF::VAL__BADD;
+
 =back
 
 =head1 TAGS
@@ -128,6 +141,10 @@ The available tags are:
 =item :status
 
 Constants associated with ORAC status checking: ORAC__OK and ORAC__ERROR.
+
+=item :badvalues
+
+Constants associated with bad values.
 
 =back
 

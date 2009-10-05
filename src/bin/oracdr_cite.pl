@@ -20,6 +20,7 @@ my @bibcodes = qw[
                   2005ASPC..343...83L
                   2005ASPC..347..580C
                   2005ASPC..347..585G
+                  2008AN....329..295C
                  ];
 
 print "<html><head><title>Papers referencing ORAC-DR papers</title></head>\n";

@@ -20,6 +20,14 @@ each file.
 
 Which axis is the frequency axis. [1]
 
+=item FILE1 = STRING (Given)
+
+The first filename to check overlap for.
+
+=item FILE2 = STRING (Given)
+
+The second filename to check overlap for.
+
 =item LBOUND = INTEGER (Returned)
 
 The lower bound of the overlap region.
@@ -36,8 +44,8 @@ The upper bound of the overlap region.
 
 =item *
 
-This primitive can only handle the case where there are two subbands
-in the hybrid-mode observation.
+Both FILE1 and FILE2 arguments must be passed. If this is not the
+case, an error will be thrown.
 
 =back
 
@@ -66,46 +74,50 @@ Rights Reserved.
 
 # Handle parameters.
 my $axis = get_prim_arg( $_PRIM_ARGS_, "AXIS", 1 );
+my $file1 = get_prim_arg( $_PRIM_ARGS_, "FILE1", undef );
+my $file2 = get_prim_arg( $_PRIM_ARGS_, "FILE2", undef );
 
-if( $Frm->uhdr( "ISHYBRID" ) &&
-    $Frm->nfiles == 2 ) {
+if( ! defined( $file1 ) ||
+    ! defined( $file2 ) ) {
 
-  # First, do a WCSALIGN in-situ to get the frequency channels on the
-  # same scale.
-  my $params = "in='" . ( join ",", $Frm->files ) . "' insitu=true lbnd=! ubnd=! ref=!";
-  $Mon{'kappa_mon'}->obeyw( "wcsalign", "$params" );
-
-  # Now retrieve the NDF bounds.
-  my @lbounds;
-  my @ubounds;
-  foreach my $file ( $Frm->files ) {
-    _GET_DIMENSIONS_ FILE=$file
-    push @lbounds, $_GET_DIMENSIONS_{LBOUND};
-    push @ubounds, $_GET_DIMENSIONS_{UBOUND};
-  }
-
-  my $perlaxis = $axis - 1;
-  my ( $low, $high );
-  if( $ubounds[0]->[0] > $lbounds[0]->[0] ) {
-    if( $lbounds[1]->[0] > $lbounds[0]->[0] ) {
-      $low = $lbounds[1]->[0];
-      $high = $ubounds[0]->[0];
-    } else {
-      $low = $lbounds[0]->[0];
-      $high = $ubounds[1]->[0];
-    }
-  } else {
-    if( $ubounds[1]->[0] > $ubounds[0]->[0] ) {
-      $low = $ubounds[1]->[0];
-      $high = $lbounds[0]->[0];
-    } else {
-      $low = $ubounds[0]->[0];
-      $high = $lbounds[1]->[0];
-    }
-  }
-
-  # Set return values.
-  $_PRIM_ARGS_->{LBOUND} = $low;
-  $_PRIM_ARGS_->{UBOUND} = $high;
-
+  orac_throw "Programming error: both FILE1 and FILE2 arguments to _CALCULATE_HYBRID_OVERLAP_ must be defined";
 }
+
+# First, do a WCSALIGN in-situ to get the frequency channels on the
+# same scale.
+my $params = "in='$file1,$file2' insitu=true lbnd=! ubnd=! ref=!";
+$Mon{'kappa_mon'}->obeyw( "wcsalign", "$params" );
+
+# Now retrieve the NDF bounds.
+my @lbounds;
+my @ubounds;
+_GET_DIMENSIONS_ FILE=$file1
+push @lbounds, $_GET_DIMENSIONS_{LBOUND};
+push @ubounds, $_GET_DIMENSIONS_{UBOUND};
+_GET_DIMENSIONS_ FILE=$file2
+push @lbounds, $_GET_DIMENSIONS_{LBOUND};
+push @ubounds, $_GET_DIMENSIONS_{UBOUND};
+
+my $perlaxis = $axis - 1;
+my ( $low, $high );
+if( $ubounds[0]->[0] > $lbounds[0]->[0] ) {
+  if( $lbounds[1]->[0] > $lbounds[0]->[0] ) {
+    $low = $lbounds[1]->[0];
+    $high = $ubounds[0]->[0];
+  } else {
+    $low = $lbounds[0]->[0];
+    $high = $ubounds[1]->[0];
+  }
+} else {
+  if( $ubounds[1]->[0] > $ubounds[0]->[0] ) {
+    $low = $ubounds[1]->[0];
+    $high = $lbounds[0]->[0];
+  } else {
+    $low = $ubounds[0]->[0];
+    $high = $lbounds[1]->[0];
+  }
+}
+
+# Set return values.
+$_PRIM_ARGS_->{LBOUND} = $low;
+$_PRIM_ARGS_->{UBOUND} = $high;

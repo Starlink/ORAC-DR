@@ -40,7 +40,8 @@ use base qw/ Exporter /;
 use vars qw/ @EXPORT /;
 @EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist cosdeg
 	      sindeg dectodms hmstodec deg2rad rad2deg is_numeric
-        get_prim_arg write_file_list write_file_list_inout
+        get_prim_arg write_file_list write_file_list_inout read_file_list
+              hardlink
 	    );
 
 use Carp;
@@ -244,7 +245,7 @@ sub utdate {
   my ($day,$month,$year) = (gmtime)[3..5];
   $month++;
   $year += 1900;
-  my $yyyymmdd = $year . '0'x (2-length($month)) . $month . '0'x (2-length($day)) . $day;
+  return sprintf( "%04d%02d%02d", $year, $month, $day );
 
 }
 
@@ -480,6 +481,40 @@ sub get_prim_arg {
     ? $argref->{$key} : $default;
 }
 
+=item B<read_file_list>
+
+Given either a filename or an ORAC::TempFile object, read the contents
+(usually filenames) and return a list.
+
+  @files = read_file_list( $listfile );
+
+Returns array or array reference depending on calling context. Returns
+undef if the given file does not exist.
+
+=cut
+
+sub read_file_list {
+  my $intmp = shift;
+
+  my $fh;
+  if (UNIVERSAL::isa( $intmp, "ORAC::TempFile" )) {
+    $fh = $intmp->handle;
+  } else {
+    if ( -e $intmp ) {
+      open $fh, "< $intmp";
+    } else {
+      return undef;
+    }
+  }
+  my @contents;
+  while ( <$fh> ) {
+    chomp;
+    push( @contents, $_ );
+  }
+
+  return (wantarray ? @contents : \@contents);
+}
+
 =item B<write_file_list>
 
 Given an array of file names, open a temp file, write the filenames
@@ -549,6 +584,38 @@ sub write_file_list_inout {
   } else {
     return ($infiles, $outfiles, @outfiles);
   }
+}
+
+=item B<hardlink>
+
+Create a hard link from an input file to an output file.
+
+  $status = hardlink( $file, $link );
+
+If $out exists, then it will be overwritten by the link.
+
+Returns 1 if successful, 0 otherwise, and puts the error code into $!.
+
+=cut
+
+sub hardlink {
+  my $file = shift;
+  my $link = shift;
+
+  if( ! defined( $file ) ||
+      ! defined( $link ) ) {
+    $! = "Must define both file and link to hardlink()";
+    return 0;
+  }
+
+  if( -e $link ) {
+    my $unlinkstatus = unlink( $link );
+    if( ! $unlinkstatus ) {
+      return $unlinkstatus;
+    }
+  }
+  my $linkstatus = link( $file, $link );
+  return $linkstatus;
 }
 
 =back

@@ -43,6 +43,7 @@ use ORAC::Index;
 use ORAC::Print;
 use ORAC::Inst::Defn qw/ orac_determine_calibration_search_path /;
 use File::Spec;
+use File::Copy;
 
 $VERSION = '1.0';
 
@@ -76,62 +77,6 @@ sub new {
   $obj->{Thing1} = {};		# ditto
   $obj->{Thing2} = {};		# ditto
 
-  $obj->{Arc} = undef;
-  $obj->{BaseShift} = undef;
-  $obj->{Bias} = undef;
-  $obj->{CalibratedArc} = undef;
-  $obj->{Dark} = undef;
-  $obj->{Emissivity} = undef;
-  $obj->{Flat} = undef;
-  $obj->{DQC} = undef;
-  $obj->{Mask} = undef;
-  $obj->{Photometricity} = undef;
-  $obj->{PolRefAng} = undef;
-  $obj->{ReadNoise} = undef;
-  $obj->{ReferenceOffset} = undef;
-  $obj->{Rotation} = undef;
-  $obj->{Sky} = undef;
-  $obj->{SkyBrightness} = undef;
-  $obj->{Standard} = undef;
-  $obj->{Zeropoint} = undef;
-
-  $obj->{ArcIndex} = undef;
-  $obj->{BaseShiftIndex} = undef;
-  $obj->{BiasIndex} = undef;
-  $obj->{CalibratedArcIndex} = undef;
-  $obj->{DarkIndex} = undef;
-  $obj->{EmissivityIndex} = undef;
-  $obj->{FlatIndex} = undef;
-  $obj->{DQCIndex} = undef;
-  $obj->{PhotometricityIndex} = undef;
-  $obj->{PolRefAngIndex} = undef;
-  $obj->{ReadNoiseIndex} = undef;
-  $obj->{SkyIndex} = undef;
-  $obj->{SkyBrightnessIndex} = undef;
-  $obj->{StandardIndex} = undef;
-  $obj->{ZeropointIndex} = undef;
-
-  $obj->{ArcNoUpdate} = 0;
-  $obj->{BaseShiftNoUpdate} = 0;
-  $obj->{BiasNoUpdate} = 0;
-  $obj->{DarkNoUpdate} = 0;
-  $obj->{EmissivityNoUpdate} = 0;
-  $obj->{FlatNoUpdate} = 0;
-  $obj->{PolRefAngNoUpdate} = 0;
-  $obj->{ReadNoiseNoUpdate} = 0;
-  $obj->{ReferenceShiftNoUpdate} = 0;
-  $obj->{SkyNoUpdate} = 0;
-  $obj->{SkyBrightnessNoUpdate} = 0;
-  $obj->{ZeropointNoUpdate} = 0;
-
-  # Used in UIST IFU reduction
-  $obj->{Arlines} = undef;
-  $obj->{ArlinesIndex} = undef;
-  $obj->{Iar} = undef;
-  $obj->{IarIndex} = undef;
-  $obj->{Offset} = undef;
-  $obj->{OffsetIndex} = undef;
-
   bless($obj, $class);
 
   # Take no arguments at present
@@ -146,1243 +91,6 @@ sub new {
 =over 4
 
 =cut
-
-# Methods to access the data.
-# ---------------------------
-
-=item B<arc>
-
-Return (or set) the name of the current arc.
-
-  $arc = $Cal->arc;
-
-=cut
-
-sub arc {
-  my $self = shift;
-  if (@_) { 
-    # if we are setting, accept the value and return
-    return $self->arcname(shift);
-  };
-
-  my $ok = $self->arcindex->verify($self->arcname,$self->thing);
-
-  # happy ending - frame is ok
-  if ($ok) {return $self->arcname};
-
-  croak("Override arc is not suitable! Giving up") if $self->arcnoupdate;
-
-  # not so good
-  if (defined $ok) {
-    my $arc = $self->arcindex->choosebydt('ORACTIME',$self->thing);
-    croak "No suitable arc was found in index file"
-      unless defined $arc;
-    $self->arcname($arc);
-  } else {
-    croak("Error in arc calibration checking - giving up");
-  };
-};
-
-=item B<baseshift>
-
-Determine the pixel indices of the base position to be used for the
-current observation.  This allows for incorrect instrument apertures.
-In theory a 0;0 offset should place a source at the base position.
-This method returns a semicolon-separated doublet "x;y" string rather
-than a particular file even though it uses an index file.  Semicolon
-is used to avoid problems with command-line parsing.
-
-Croaks if it was not possible to determine a valid base location
-(usually indicating that a standard has not been observed).
-
-  $base = $Cal->baseshift;
-
-The index file is queried every time (usually not a problem since the
-index is cached in memory) unless the noupdate flag is true.
-
-If the noupdate flag is set there is no verification that the base
-location meets the specified rules (this is because the command-line
-override uses a value rather than a file).
-
-The index file must include a column named BASESHIFT.
-
-=cut
-
-sub baseshift {
-  my $self = shift;
-
-  # Handle arguments
-  return $self->baseshiftcache(shift) if @_;
-
-  # If noupdate is in effect we should return the cached value
-  # unless it is not defined.  This effectively allows the command-line
-  # value to be used to override without verifying its suitability.
-  if ($self->baseshiftnoupdate) {
-    my $cache = $self->baseshiftcache;
-    return $cache if defined $cache;
-  }
-
-  # Now we are looking for a value from the index file
-  my $basefile = $self->baseshiftindex->choosebydt('ORACTIME',$self->thing);
-  croak "No suitable pixel location of the base found in index file."
-    unless defined $basefile;
-
-  # This gives us the filename, we now need to get the actual value
-  # of the pixel location of the base.
-  my $baseref = $self->baseshiftindex->indexentry( $basefile );
-  if (exists $baseref->{BASESHIFT}) {
-    return $baseref->{BASESHIFT};
-  } else {
-    croak "Unable to obtain BASESHIFT from index file entry $basefile.\n";
-  }
-
-}
-
-
-=item B<bias>
-
-Return (or set) the name of the current bias.
-
-  $bias = $Cal->bias;
-
-=cut
-
-sub bias {
-  my $self = shift;
-  if (@_) {
-    # if we are setting, accept the value and return
-    return $self->biasname(shift);
-  };
-
-  my $ok = $self->biasindex->verify($self->biasname,$self->thing);
-
-  # happy ending - frame is ok
-  if ($ok) {return $self->biasname};
-
-  croak("Override bias is not suitable! Giving up") if $self->biasnoupdate;
-
-  # not so good
-  if (defined $ok) {
-    my $bias = $self->biasindex->choosebydt('ORACTIME',$self->thing);
-    croak "No suitable bias calibration was found in index file"
-      unless defined $bias;
-    $self->biasname($bias);
-  } else {
-    croak("Error in bias calibration checking - giving up");
-  };
-};
-
-=item B<dark>
-
-Return (or set) the name of the current dark - 
-checks suitability on return.
-
-=cut
-
-
-sub dark {
-  my $self = shift;
-  if (@_) {
-    # if we are setting, accept the value and return
-    return $self->darkname(shift);
-  };
-
-  my $ok = $self->darkindex->verify($self->darkname,$self->thing);
-
-  # happy ending - frame is ok
-  if ($ok) {return $self->darkname};
-
-  croak("Override dark is not suitable! Giving up") if $self->darknoupdate;
-
-  # not so good
-  if (defined $ok) {
-    my $dark = $self->darkindex->choosebydt('ORACTIME',$self->thing);
-    croak "No suitable dark calibration was found in index file"
-      unless defined $dark;
-    $self->darkname($dark);
-  } else {
-    croak("Error in dark calibration checking - giving up");
-  };
-};
-
-=item B<flat>
-
-Return (or set) the name of the current flat.
-
-  $flat = $Cal->flat;
-
-=cut
-
-
-sub flat {
-  my $self = shift;
-  if (@_) {
-    # if we are setting, accept the value and return
-    return $self->flatname(shift);
-  };
-
-  my $ok = $self->flatindex->verify($self->flatname,$self->thing);
-
-  # happy ending - frame is ok
-  if ($ok) {return $self->flatname};
-
-  croak("Override flat is not suitable! Giving up") if $self->flatnoupdate;
-
-  # not so good
-  if (defined $ok) {
-    my $flat = $self->flatindex->choosebydt('ORACTIME',$self->thing);
-    croak "No suitable flat was found in index file"
-      unless defined $flat;
-    $self->flatname($flat);
-  } else {
-    croak("Error in flat calibration checking - giving up");
-  };
-};
-
-
-=item B<mask>
-
-Return (or set) the name of the bad pixel mask
-
-  $mask = $Cal->mask;
-
-=cut
-
-sub mask {
-  my $self = shift;
-  if (@_) { $self->{Mask} = shift; }
-  return $self->{Mask};
-}
-
-=item B<polrefang>
-
-Determine the anti-clockwise angle of the first (X) axis to the
-polarimeter reference direction.  This, in essence, is the angle in
-degrees to correct the measured positional angles to their true
-orientations, thereby allowing for instrumental misalignment.
-
-Croaks if it was not possible to determine a valid angle.
-
-  $angle = $Cal->polrefang;
-
-The index file is queried every time (usually not a problem since the
-index is cached in memory) unless the noupdate flag is true.
-
-If the noupdate flag is set there is no verification that the
-polarisation reference angle meets the specified rules (this is because
-the command-line override uses a value rather than a file).
-
-The index file must include a column named POLREFANG.
-
-=cut
-
-sub polrefang {
-  my $self = shift;
-
-  # Handle arguments
-  return $self->polrefangcache(shift) if @_;
-
-  # If noupdate is in effect we should return the cached value
-  # unless it is not defined.  This effectively allows the command-line
-  # value to be used to override without verifying its suitability.
-  if ($self->polrefangnoupdate) {
-    my $cache = $self->polrefangcache;
-    return $cache if defined $cache;
-  }
-
-  # Now we are looking for a value from the index file
-  my $prafile = $self->polrefangindex->choosebydt('ORACTIME',$self->thing);
-  croak "No suitable angle to the polarisation reference direction " .
-        "found in index file."
-    unless defined $prafile;
-
-  # This gives us the filename, we now need to get the actual value
-  # of the angle to the reference direction.
-  my $polref = $self->polrefangindex->indexentry( $prafile );
-  if (exists $polref->{POLREFANG}) {
-    return $polref->{POLREFANG};
-  } else {
-    croak "Unable to obtain POLREFANG from index file entry $prafile.\n";
-  }
-
-}
-
-
-=item B<readnoise>
-
-Determine the readnoise to be used for the current observation.
-This method returns a number rather than a particular file even
-though it uses an index file.
-
-Croaks if it was not possible to determine a valid readnoise.
-(usually indicating that ARRAY_TESTS have not been reduced).
-
-  $readnoise = $Cal->readnoise;
-
-The index file is queried every time (usually not a problem since there
-are only a limited number of array tests per night and the index
-is cached in memory) unless the noupdate flag is true.
-
-If the noupdate flag is set there is no verification that the readnoise
-meets the specified rules (this is because the command-line override
-uses a value rather than a file).
-
-The index file must include a column named READNOISE.
-
-=cut
-
-sub readnoise {
-  my $self = shift;
-
-  # Handle arguments
-  return $self->readnoisecache(shift) if @_;
-
-  # If noupdate is in effect we should return the cached value
-  # unless it is not defined. This effectively allows the command-line
-  # value to be used to override without verifying its suitability
-  if ($self->readnoisenoupdate) {
-    my $cache = $self->readnoisecache;
-    return $cache if defined $cache;
-  }
-
-  # Now we are looking for a value from the index file
-  my $noisefile = $self->readnoiseindex->choosebydt('ORACTIME',$self->thing);
-  croak "No suitable readnoise value found in index file"
-    unless defined $noisefile;
-
-  # This gives us the filename, we now need to get the actual value
-  # of the readnoise.
-  my $noiseref = $self->readnoiseindex->indexentry( $noisefile );
-  if (exists $noiseref->{READNOISE}) {
-    return $noiseref->{READNOISE};
-  } else {
-    croak "Unable to obtain READNOISE from index file entry $noisefile\n";
-  }
-
-}
-
-
-=item B<referenceoffset>
-
-Determine the pixel offsets of the reference pixel with respect to the
-frame centre to be used for the current observation.  This allows for 
-the source to be placed away from the centre avoiding defects and the
-joins of quadrants.
-
-This method returns a semicolon-separated doublet "x;y" string rather than
-a particular file even though it uses an index file.  Semicolon is
-used to avoid problems with command-line parsing.
-
-In theory a 0;0 offset should place the reference position at the
-centre of the frame.  When this is not the case because of say poor
-co-ordinates of the source, or incorrect instrument apertures,
-calibration baseshift may be used, which in essence, measures the
-displacement of the reference position from nominal.
-
-Croaks if it was not possible to determine a valid reference pixel.
-
-  $shift = $Cal->referenceoffset;
-
-The index file is queried every time (usually not a problem since the
-index is cached in memory) unless the noupdate flag is true.
-
-If the noupdate flag is set there is no verification that the base
-location meets the specified rules (this is because the command-line
-override uses a value rather than a file).
-
-The index file must include a column named REFERENCEOFFSET.
-
-=cut
-
-sub referenceoffset {
-  my $self = shift;
-
-  # Handle arguments
-  return $self->referenceoffsetcache(shift) if @_;
-
-  # If noupdate is in effect we should return the cached value
-  # unless it is not defined.  This effectively allows the command-line
-  # value to be used to override without verifying its suitability.
-  if ($self->referenceoffsetnoupdate) {
-    my $cache = $self->referenceoffsetcache;
-    return $cache if defined $cache;
-  }
-
-  # Now we are looking for a value from the index file.
-  my $refofffile = $self->referenceoffsetindex->choosebydt('ORACTIME',$self->thing);
-  croak "No suitable offset of the reference pixel found in index file."
-    unless defined $refofffile;
-
-  # This gives us the filename, we now need to get the actual value
-  # of the pixel offsets of the reference pixel.
-  my $refoffref = $self->referenceoffsetindex->indexentry( $refofffile );
-  if (exists $refoffref->{REFERENCEOFFSET}) {
-    return $refoffref->{REFERENCEOFFSET};
-  } else {
-    croak "Unable to obtain REFERENCEOFFSET from index file entry $refofffile.\n";
-  }
-
-}
-
-
-=item B<rotation>
-
-Return (or set) the name of the rotation transformation matrix
-
-  $rotation = $Cal->rotation;
-
-=cut
-
-sub rotation {
-  my $self = shift;
-  if (@_) { $self->{Rotation} = shift; }
-  return $self->{Rotation};
-}
-
-
-=item B<sky>
-
-Return (or set) the name of the current "sky" frame
-
-=cut
-
-sub sky {
-  my $self = shift;
-  if (@_) {
-    # if we are setting, accept the value and return
-    return $self->skyname(shift);
-  };
-
-  my $ok = $self->skyindex->verify($self->skyname,$self->thing);
-
-  # happy ending - frame is ok
-  if ($ok) {return $self->skyname};
-
-  croak("Override sky is not suitable! Giving up") if $self->skynoupdate;
-
-  # not so good
-  if (defined $ok) {
-    my $sky= $self->skyindex->choosebydt('ORACTIME',$self->thing);
-    croak "No suitable sky frame was found in index file"
-      unless defined $sky;
-    $self->skyname($sky);
-  } else {
-    croak("Error in sky frame calibration checking - giving up");
-  };
-};
-
-=item B<skybrightness>
-
-Determine the sky brightness to be used for the current observation.
-This method returns a number rather than a particular file even though
-it uses an index file.
-
-Croaks if it was not possible to determine a valid sky brightness,
-which usually indicates that photometric calculations have not been
-made.
-
-  $skybrightness = $Cal->skybrightness;
-
-The index file is queried every time unless the noupdate flag is true.
-
-If the noupdate flag is set there is no verification that the sky
-brightness meets the specified rules (this is because the command-line
-override uses a value rather than a file).
-
-The index file must include a column named SKY_BRIGHTNESS.
-
-=cut
-
-sub skybrightness {
-  my $self = shift;
-
-  # Handle arguments
-  return $self->skybrightnesscache(shift) if @_;
-
-  # If noupdate is in effect we should return the cached value
-  # unless it is not defined. This effectively allows the command-line
-  # value to be used to override without verifying its suitability
-  if ($self->skybrightnessnoupdate) {
-    my $cache = $self->skybrightnesscache;
-    return $cache if defined $cache;
-  }
-
-  # Now we are looking for a value from the index file
-  my $sbfile = $self->skybrightnessindex->choosebydt('ORACTIME',$self->thing);
-  croak "No suitable sky brightness value found in index file"
-    unless defined $sbfile;
-
-  # This gives us the filename, we now need to get the actual value
-  # of the sky brightness.
-  my $noiseref = $self->skybrightnessindex->indexentry( $sbfile );
-  if (exists $noiseref->{SKY_BRIGHTNESS}) {
-    return $noiseref->{SKY_BRIGHTNESS};
-  } else {
-    croak "Unable to obtain SKY_BRIGHTNESS from index file entry $sbfile\n";
-  }
-
-}
-
-=item B<standard>
-
-Return (or set) the name of the current standard.
-
-  $standard = $Cal->standard;
-
-=cut
-
-sub standard {
-
-  my $self = shift;
-  if (@_) {
-    # if we are setting, accept the value and return
-    return $self->standardname(shift);
-  };
-
-  my $ok = $self->standardindex->verify($self->standardname,$self->thing);
-
-  # happy ending - frame is ok
-  if ($ok) {return $self->standardname};
-
-  croak("Override standard is not suitable! Giving up") if $self->standardnoupdate;
-
-  # not so good
-  if (defined $ok) {
-    my $standard= $self->standardindex->choosebydt('ORACTIME',$self->thing);
-    croak "No suitable standard frame was found in index file"
-      unless defined $standard;
-    $self->standardname($standard);
-  } else {
-    croak("Error in standard calibration checking - giving up");
-  };
-
-}
-
-=item B<zeropoint>
-
-Determine the zeropoint to be used for the current observation.
-This method returns a number rather than a particular file even
-though it uses an index file.
-
-Croaks if it was not possible to determine a valid zeropoint, which
-usually indicating that an _APHOT recipe was not run.
-
-  $zeropoint = $Cal->zeropoint;
-
-The index file is queried every time unless the noupdate flag is true.
-
-If the noupdate flag is set there is no verification that the
-readnoise meets the specified rules (this is because the command-line
-override uses a value rather than a file).
-
-The index file must include a column named ZEROPOINT.
-
-=cut
-
-sub zeropoint {
-  my $self = shift;
-
-  # Handle arguments
-  return $self->zeropointcache(shift) if @_;
-
-  # If noupdate is in effect we should return the cached value
-  # unless it is not defined. This effectively allows the command-line
-  # value to be used to override without verifying its suitability
-  if ($self->zeropointnoupdate) {
-    my $cache = $self->zeropointcache;
-    return $cache if defined $cache;
-  }
-
-  # Now we are looking for a value from the index file
-  my $zpfile = $self->zeropointindex->choosebydt('ORACTIME',$self->thing);
-  croak "No suitable zeropoint value found in index file"
-    unless defined $zpfile;
-
-  # This gives us the filename, we now need to get the actual value of
-  # the zeropoint.
-  my $zpref = $self->zeropointindex->indexentry( $zpfile );
-  if (exists $zpref->{ZEROPOINT}) {
-    return $zpref->{ZEROPOINT};
-  } else {
-    croak "Unable to obtain ZEROPOINT from index file entry $zpfile\n";
-  }
-
-}
-
-# *name methods
-# -------------
-# Used when a file name is required.
-
-=item B<arcname>
-
-Return (or set) the name of the current arc---no checking.
-
-  $arc = $Cal->arcname;
-
-
-=cut
-
-sub arcname {
-  my $self = shift;
-  if (@_) { $self->{Arc} = shift unless $self->arcnoupdate; }
-  return $self->{Arc};
-}
-
-=item B<biasname>
-
-Return (or set) the name of the current bias---no checking.
-
-  $dark = $Cal->biasname;
-
-
-=cut
-
-sub biasname {
-  my $self = shift;
-  if (@_) { $self->{Bias} = shift unless $self->biasnoupdate; }
-  return $self->{Bias};
-}
-
-=item B<darkname>
-
-Return (or set) the name of the current dark--no checking.
-
-  $dark = $Cal->darkname;
-
-
-=cut
-
-sub darkname {
-  my $self = shift;
-  if (@_) { $self->{Dark} = shift unless $self->darknoupdate; }
-  return $self->{Dark};
-}
-
-=item B<flatname>
-
-Return (or set) the name of the current flat---no checking.
-
-  $flat = $Cal->flatname;
-
-
-=cut
-
-sub flatname {
-  my $self = shift;
-  if (@_) { $self->{Flat} = shift unless $self->flatnoupdate; }
-  return $self->{Flat};
-}
-
-=item B<skyname>
-
-Return (or set) the name of the current sky frame---no checking.
-
-  $dark = $Cal->skyname;
-
-
-=cut
-
-sub skyname {
-  my $self = shift;
-  if (@_) { $self->{Sky} = shift unless $self->skynoupdate; }
-  return $self->{Sky};
-}
-
-=item B<standardname>
-
-Return (or set) the name of the current standard frame---no checking.
-
-  $dark = $Cal->standardname;
-
-
-=cut
-
-sub standardname {
-  my $self = shift;
-  if (@_) { $self->{Standard} = shift unless $self->standardnoupdate; }
-  return $self->{Standard};
-}
-
-
-# *cache methods
-# --------------
-# Used when a value or values (rather than a file) is required.
-
-=item B<baseshiftcache>
-
-Cached value of the baseshift.  Only used when noupdate is in effect.
-
-=cut
-
-sub baseshiftcache {
-  my $self = shift;
-  my @values;
-  if ( ref($_[0]) eq 'ARRAY' ) {
-     @values = @{ $_[0] };
-  } else {
-     @values = ( $_[0] );
-  }
-                  
-  if (@_) { $self->{BaseShift} = \@values unless $self->baseshiftnoupdate; }
-  return $self->{BaseShift};
-}
-
-=item B<polrefangcache>
-
-Cached value of the angle to the polarisation reference direction.  Only
-used when noupdate is in effect.
-
-=cut
-
-sub polrefangcache {
-  my $self = shift;
-  if (@_) { $self->{PolRefAng} = shift unless $self->polrefangnoupdate; }
-  return $self->{PolRefAng};
-}
-
-=item B<readnoisecache>
-
-Cached value of the readnoise.  Only used when noupdate is in effect.
-
-=cut
-
-sub readnoisecache {
-  my $self = shift;
-  if (@_) { $self->{ReadNoise} = shift unless $self->readnoisenoupdate; }
-  return $self->{ReadNoise};
-}
-
-=item B<referenceoffsetcache>
-
-Cached value of the referenceoffset.  Only used when noupdate is in effect.
-
-=cut
-
-sub referenceoffsetcache {
-  my $self = shift;
-  my @values;
-  if ( ref($_[0]) eq 'ARRAY' ) {
-     @values = @{ $_[0] };
-  } else {
-     @values = ( $_[0] );
-  }
-
-  if (@_) { $self->{ReferenceOffset} = \@values unless $self->referenceoffsetnoupdate; }
-  return $self->{ReferenceOffset};
-}
-
-=item B<zeropointcache>
-
-Cached value of the zeropoint.  Only used when noupdate is in effect.
-
-=cut
-
-sub zeropointcache {
-  my $self = shift;
-  if (@_) { $self->{Zeropoint} = shift unless $self->zeropointnoupdate; }
-  return $self->{Zeropoint};
-}
-
-=item B<referenceoffsetcache>
-
-Cached value of the referenceoffset.  Only used when noupdate is in effect.
-
-=cut
-
-# *noupdate methods
-# -----------------
-
-=item B<arcnoupdate>
-
-Stops arc object from updating itself with more recent data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub arcnoupdate {
-  my $self = shift;
-  if (@_) { $self->{ArcNoUpdate} = shift; }
-  return $self->{ArcNoUpdate};
-}
-
-=item B<baseshiftnoupdate>
-
-Stops baseshift object from updating itself with more recent data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub baseshiftnoupdate {
-  my $self = shift;
-  if (@_) { $self->{BaseShiftNoUpdate} = shift; }
-  return $self->{BaseShiftNoUpdate};
-}
-
-
-=item B<biasnoupdate>
-
-Stops bias object from updating itself with more recent data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub biasnoupdate {
-  my $self = shift;
-  if (@_) { $self->{BiasNoUpdate} = shift; }
-  return $self->{BiasNoUpdate};
-}
-
-
-=item B<darknoupdate>
-
-Stops dark object from updating itself with more recent data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub darknoupdate {
-  my $self = shift;
-  if (@_) { $self->{DarkNoUpdate} = shift; }
-  return $self->{DarkNoUpdate};
-}
-
-=item B<flatnoupdate>
-
-Stops flat object from updating itself with more recent data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub flatnoupdate {
-  my $self = shift;
-  if (@_) { $self->{FlatNoUpdate} = shift; }
-  return $self->{FlatNoUpdate};
-}
-
-=item B<polrefangnoupdate>
-
-Stops polrefang object from updating itself with more recent data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub polrefangnoupdate {
-  my $self = shift;
-  if (@_) { $self->{PolRefAngNoUpdate} = shift; }
-  return $self->{PolRefAngNoUpdate};
-}
-
-=item B<readnoisenoupdate>
-
-Stops readnoise object from updating itself with more recent data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub readnoisenoupdate {
-  my $self = shift;
-  if (@_) { $self->{ReadNoiseNoUpdate} = shift; }
-  return $self->{ReadNoiseNoUpdate};
-}
-
-
-=item B<referenceoffsetnoupdate>
-
-Stops referenceoffset object from updating itself with more recent data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub referenceoffsetnoupdate {
-  my $self = shift;
-  if (@_) { $self->{ReferenceOffsetNoUpdate} = shift; }
-  return $self->{ReferenceOffsetNoUpdate};
-}
-
-
-=item B<skynoupdate>
-
-Stops sky object from updating itself with more recent data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub skynoupdate {
-  my $self = shift;
-  if (@_) { $self->{SkyNoUpdate} = shift; }
-  return $self->{SkyNoUpdate};
-}
-
-=item B<skybrightnessnoupdate>
-
-Stops sky brightness object from updating itself with more recent
-data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub skybrightnessnoupdate {
-  my $self = shift;
-  if (@_) { $self->{SkyBrightnessNoUpdate} = shift; }
-  return $self->{SkyBrightnessNoUpdate};
-}
-
-=item B<standardnoupdate>
-
-Stops standard object from updating itself with more recent data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub standardnoupdate {
-  my $self = shift;
-  if (@_) { $self->{StandardNoUpdate} = shift; }
-  return $self->{StandardNoUpdate};
-}
-
-=item B<zeropointnoupdate>
-
-Stops zeropoint object from updating itself with more recent data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub zeropointnoupdate {
-  my $self = shift;
-  if (@_) { $self->{ZeropointNoUpdate} = shift; }
-  return $self->{ZeropointNoUpdate};
-}
-
-# *index methods
-# --------------
-
-=item B<arcindex>
-
-Return (or set) the index object associated with the arc index file
-
-=cut
-
-sub arcindex {
-
-  my $self = shift;
-  if (@_) { $self->{ArcIndex} = shift; }
-
-  unless (defined $self->{ArcIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.arc" );
-    my $rulesfile = $self->find_file("rules.arc");
-    croak "arc rules file could not be located\n" unless defined $rulesfile;
-    $self->{ArcIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-
-  return $self->{ArcIndex}; 
-
-
-};
-
-
-
-=item B<baseshiftindex>
-
-Return (or set) the index object associated with the baseshift index file.
-
-=cut
-
-sub baseshiftindex {
-
-  my $self = shift;
-  if (@_) { $self->{BaseShiftIndex} = shift; }
-
-  unless (defined $self->{BaseShiftIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.baseshift" );
-    my $rulesfile = $self->find_file("rules.baseshift");
-    croak "baseshift rules file could not be located\n" unless defined $rulesfile;
-    $self->{BaseShiftIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-  return $self->{BaseShiftIndex};
-}
-
-=item B<biasindex> 
-
-Return (or set) the index object associated with the bias index file
-
-=cut
-
-sub biasindex {
-
-  my $self = shift;
-  if (@_) { $self->{BiasIndex} = shift; }
-
-  unless (defined $self->{BiasIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.bias" );
-    my $rulesfile = $self->find_file("rules.bias");
-    croak "bias rules file could not be located\n" unless defined $rulesfile;
-    $self->{BiasIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-
-  return $self->{BiasIndex}; 
-
-};
-
-=item B<darkindex> 
-
-Return (or set) the index object associated with the dark index file
-
-=cut
-
-sub darkindex {
-
-  my $self = shift;
-  if (@_) { $self->{DarkIndex} = shift; }
-
-  unless (defined $self->{DarkIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.dark" );
-    my $rulesfile = $self->find_file("rules.dark");
-    croak "dark rules file could not be located\n" unless defined $rulesfile;
-    $self->{DarkIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-
-  return $self->{DarkIndex}; 
-
-
-};
-
-=item B<flatindex>
-
-Return (or set) the index object associated with the flat index file
-
-=cut
-
-sub flatindex {
-
-  my $self = shift;
-  if (@_) { $self->{FlatIndex} = shift; }
-
-  unless (defined $self->{FlatIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.flat" );
-    my $rulesfile = $self->find_file("rules.flat");
-    croak "flat rules file could not be located\n" unless defined $rulesfile;
-    $self->{FlatIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-
-  return $self->{FlatIndex}; 
-
-
-};
-
-=item B<dqcindex>
-
-Return (or set) the index object associated with the data quality
-parameters index file.
-
-=cut
-
-sub dqcindex {
-
-  my $self = shift;
-  if (@_) { $self->{DQCIndex} = shift; }
-
-  unless (defined $self->{DQCIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.dqc" );
-    my $rulesfile = $self->find_file("rules.dqc");
-    croak "dqc rules file could not be located\n" unless defined $rulesfile;
-    $self->{DQCStats} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-  return $self->{DQCStats};
-
-}
-
-=item B<photindex>
-
-Return (or set) the index object associated with the photmetric
-information index file.
-
-=cut
-
-sub photindex {
-  my $self = shift;
-  if( @_ ) {
-    $self->{PhotometricityIndex} = shift;
-  }
-  unless( defined $self->{PhotometricityIndex} ) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.phot" );
-    my $rulesfile = $self->find_file( "rules.phot" );
-    croak "phot rules file could not be located\n" unless defined $rulesfile;
-    $self->{Photometricity} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-
-  return $self->{Photometricity};
-}
-
-=item B<polrefangindex>
-
-Return (or set) the index object associated with the polrefang index file.
-The index is static, therefore it resides in the calibration directory.
-
-=cut
-
-sub polrefangindex {
-
-  my $self = shift;
-  if (@_) { $self->{PolRefAngIndex} = shift; }
-
-  unless (defined $self->{PolRefAngIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_CAL}, "index.polrefang" );
-    my $rulesfile = $self->find_file("rules.polrefang");
-    croak "polrefang rules file could not be located\n"
-      unless defined $rulesfile;
-    $self->{PolRefAngIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-  return $self->{PolRefAngIndex};
-}
-
-=item B<readnoiseindex>
-
-Return (or set) the index object associated with the readnoise index file.
-
-=cut
-
-sub readnoiseindex {
-
-  my $self = shift;
-  if (@_) { $self->{ReadNoiseIndex} = shift; }
-
-  unless (defined $self->{ReadNoiseIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.readnoise" );
-    my $rulesfile = $self->find_file("rules.readnoise");
-    croak "readnoise rules file could not be located\n" unless defined $rulesfile;
-    $self->{ReadNoiseIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-  return $self->{ReadNoiseIndex};
-}
-
-=item B<referenceoffsetindex>
-
-Return (or set) the index object associated with the referenceoffset index file.
-
-=cut
-
-sub referenceoffsetindex {
-
-  my $self = shift;
-  if (@_) { $self->{ReferenceOffsetIndex} = shift; }
-
-  unless (defined $self->{ReferenceOffsetIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.referenceoffset" );
-    my $rulesfile = $self->find_file("rules.referenceoffset");
-    croak "referenceoffset rules file could not be located\n"
-      unless defined $rulesfile;
-    $self->{ReferenceOffsetIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-  return $self->{ReferenceOffsetIndex};
-}
-
-
-=item B<skyindex>
-
-Return (or set) the index object associated with the sky index file
-
-=cut
-
-sub skyindex {
-
-  my $self = shift;
-  if (@_) { $self->{SkyIndex} = shift; }
-
-  unless (defined $self->{SkyIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.sky" );
-    my $rulesfile = $self->find_file("rules.sky");
-    croak "sky rules file could not be located\n" unless defined $rulesfile;
-    $self->{SkyIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-  return $self->{SkyIndex};
-};
-
-=item B<skybrightnessindex>
-
-Return (or set) the index object associated with the sky brightness
-index file.
-
-=cut
-
-sub skybrightnessindex {
-
-  my $self = shift;
-  if (@_) { $self->{SkyBrightnessIndex} = shift; }
-
-  unless (defined $self->{SkyBrightnessIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.skybrightness" );
-    my $rulesfile = $self->find_file("rules.skybrightness");
-    $self->{SkyBrightnessIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-  return $self->{SkyBrightnessIndex};
-}
-
-=item B<standardindex> 
-
-Return (or set) the index object associated with the standard index file
-
-=cut
-
-sub standardindex {
-
-  my $self = shift;
-  if (@_) { $self->{StandardIndex} = shift; }
-
-  unless (defined $self->{StandardIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.standard" );
-    my $rulesfile = $self->find_file("rules.standard");
-    croak "standard rules file could not be located\n" unless defined $rulesfile;
-    $self->{StandardIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-
-  return $self->{StandardIndex}; 
-
-
-};
-
-=item B<zeropointindex>
-
-Return (or set) the index object associated with the zeropoint index file.
-
-=cut
-
-sub zeropointindex {
-
-  my $self = shift;
-  if (@_) { $self->{ZeropointIndex} = shift; }
-
-  unless (defined $self->{ZeropointIndex}) {
-    my $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, "index.zeropoint" );
-    my $rulesfile = $self->find_file("rules.zeropoint");
-    $self->{ZeropointIndex} = new ORAC::Index($indexfile,$rulesfile);
-  };
-
-  return $self->{ZeropointIndex};
-}
 
 # Frossie's things
 # ----------------
@@ -1477,7 +185,9 @@ sub find_file {
   croak "No file supplied to find_file() method"
     if ! defined $file;
 
-  my @directories = orac_determine_calibration_search_path( $ENV{'ORAC_INSTRUMENT'} );
+  # Get the search path and also look in ORAC_DATA_OUT
+  my @directories = ($ENV{ORAC_DATA_OUT},
+                     orac_determine_calibration_search_path( $ENV{'ORAC_INSTRUMENT'} ));
 
   foreach my $directory (@directories) {
     if( -e ( File::Spec->catdir( $directory, $file ) ) ) {
@@ -1517,6 +227,324 @@ sub retrieve_by_column {
   my $ref = $self->$method->indexentry( $basefile );
   if( exists( $ref->{$column} ) ) {
     return $ref->{$column};
+  }
+  return;
+}
+
+=back
+
+=head1 DYNAMIC METHODS
+
+These methods create methods for the standard calibration schemes for subclasses.
+By default calibration "xxx" needs to create standard accessors for "xxxnoupdate",
+"xxxname" and "xxxindex".
+
+=over 4
+
+=item B<GenericIndex>
+
+Helper routine that creates an index object and returns it. Updates the
+object based on the root name.
+
+ $index = $Cal->CreateIndex( "flat", "dynamic" );
+
+Where the first argument should match the root name of the index and rules
+file. The second argument can have three modes:
+
+  dynamic - index file is assumed to be in ORAC_DATA_OUT
+  static  - index file is assumed to be in the calibration tree
+  copy    - index file will be copied to ORAC_DATA_OUT from
+            ORAC_DATA_CAL if not present in ORAC_DATA_OUT
+
+If a third argument is supplied it is assumed to be an ORAC::Index
+object to be stored in the calibration object.
+
+=cut
+
+sub GenericIndex {
+  my $self = shift;
+  my $root = shift;
+  my $modestr = (shift || "dynamic");
+
+  # The key for the internal object hash
+  my $key = ucfirst($root) . "Index";
+
+  # Store anything that we've been given
+  if (@_) {
+    $self->{$key} = shift;
+  }
+
+  # Now create one if required
+  if (!defined $self->{$key}) {
+    my $indexfile;
+    my $idxroot = "index.$root";
+    if ($modestr =~ /dynamic|copy/) {
+      $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, $idxroot );
+      if( $modestr eq 'copy' && ! -e $indexfile ) {
+        my $static = $self->find_file( $idxroot );
+        croak "$root index file could not be located\n" unless defined $static;
+        copy( $static, $indexfile );
+      }
+
+    } else {
+      $indexfile = $self->find_file($idxroot);
+      croak "$root index file could not be located\n" unless defined $indexfile;
+    }
+    my $rulesfile = $self->find_file("rules.$root");
+    croak "$root rules file could not be located\n" unless defined $rulesfile;
+    $self->{$key} = new ORAC::Index( $indexfile, $rulesfile );
+  }
+
+  return $self->{$key};
+}
+
+=item B<GenericIndexAccessor>
+
+Generic method for retrieving or setting the current value based on index
+and verification. Uses ORACTIME to verify.
+
+  $val = $Cal->GenericIndexAccessor( "sky", 0, 1, 0, 1, @_ );
+
+First argument indicates the root name for methods to be called. ie "sky" would
+call "skyname", "skynoupdate", and "skyindex".
+
+Second argument controls whether the time comparison should be
+nearest in time (0), or earlier in time (-1).
+
+Third argument controls croaking behaviour. False indicates that the method
+should croak if a suitable calibration can not be found. True indicates
+that it should return undef. If a code ref is provided, it will be executed
+if no suitable calibration is found. If it returns a defined value it
+will be assumed to be a valid match, and if it returns undef the method
+will croak as no suitable calibration will be available. This allows defaults
+to be inserted.
+
+Fourth argument controls whether calibration object verification is
+not done.
+
+Fifth argument controls whether warnings are displayed when searching
+through the index file for a suitable calibration. Default is to warn.
+
+  $val = $Cal->GenericIndexAccessor( "mask", 0, sub { return "bpm.sdf" }, @_ );
+
+=cut
+
+sub GenericIndexAccessor {
+  my $self = shift;
+  my $root = shift;
+  my $timesearch = shift;
+  my $nocroak = shift;
+  my $noverify = shift;
+  my $warn = shift;
+
+  my $namemeth = $root ."name";
+  my $indexmeth = $root ."index";
+  my $noupmeth = $root . "noupdate";
+
+  # if we are setting, accept the value and return
+  return $self->$namemeth(shift) if @_;
+
+  my $ok;
+  if( ! $noverify ) {
+    $ok = $self->$indexmeth->verify($self->$namemeth,$self->thing,$warn);
+
+    # happy ending - frame is ok
+    return $self->$namemeth() if $ok;
+
+    croak("Override $root is not suitable! Giving up") if $self->$noupmeth;
+  } else {
+    $ok = 1;
+  }
+
+  # not so good
+  if (defined $ok) {
+    # Choose time selection method
+    my $choosemeth;
+    if (!$timesearch) {
+      $choosemeth = "choosebydt";
+    } elsif ($timesearch == -1) {
+      $choosemeth = "chooseby_negativedt";
+    } else {
+      croak "Unable to decide on time selection method with arg '$timesearch'";
+    }
+
+    my $match = $self->$indexmeth->$choosemeth('ORACTIME',$self->thing,$warn);
+
+    # Error behaviour
+    if (!defined $match) {
+      if (ref($nocroak) eq 'CODE') {
+        $match = $nocroak->();
+        croak "No suitable $root found from default callback"
+          unless defined $match;
+        return $match;
+      } elsif ($nocroak) {
+        return undef;
+      }
+      croak "No suitable $root frame was found in index file";
+    }
+    $self->$namemeth($match);
+  } else {
+    croak("Error in $root frame calibration checking - giving up");
+  }
+
+}
+
+=item B<GenericIndexEntryAccessor>
+
+Like C<GenericIndexAccessor> except that a particular value from the index
+is retrieved rather than a indexing key (filename).
+
+No verification is performed.
+
+  $val = $Cal->GenericIndexAccessor( "sky", "INDEX_COLUMN", @_ );
+
+First argument indicates the root name for methods to be called. ie "sky" would
+call "skycache", "skynoupdate", and "skyindex".
+
+If a reference to an array or columns is given in argument 2, all values
+are checked and the row reference is returned instead of a single value.
+
+  $entryref = $Cal->GenericIndexAccessor( "sky", [qw/ col1 col2 /], @_ );
+
+=cut
+
+sub GenericIndexEntryAccessor {
+  my $self = shift;
+  my $root = shift;
+  my $col  = shift;
+
+  my $cachemeth = $root ."cache";
+  my $indexmeth = $root ."index";
+  my $noupmeth = $root . "noupdate";
+
+  # Handle arguments
+  return $self->$cachemeth(shift) if @_;
+
+  # If noupdate is in effect we should return the cached value
+  # unless it is not defined. This effectively allows the command-line
+  # value to be used to override without verifying its suitability
+  if ($self->$noupmeth) {
+    my $cache = $self->$cachemeth;
+    return $cache if defined $cache;
+  }
+
+  # Now we are looking for a value from the index file
+  my $match = $self->$indexmeth->choosebydt('ORACTIME',$self->thing);
+  croak "No suitable $root value found in index file"
+    unless defined $match;
+
+  # This gives us the filename, we now need to get the actual value
+  # of the readnoise.
+  my $rowref = $self->$indexmeth->indexentry( $match );
+  if (ref($col) eq 'ARRAY') {
+    for my $c (@$col) {
+      next if exists $rowref->{$c};
+      croak "Unable to find column $c for index file entry $match";
+    }
+    # Return entire row
+    return $rowref;
+  } else {
+    if (exists $rowref->{$col}) {
+      return $rowref->{$col};
+    } else {
+      croak "Unable to obtain $col from index file entry $match\n";
+    }
+  }
+}
+
+=item B<CreateBasicAccessors>
+
+Dynamically create default accessors for "xxxnoupdate", "xxxname" and "xxxindex" methods.
+
+ __PACKAGE__->CreateAccessors( "xxx", "yyy", "zzz" );
+
+=cut
+
+sub CreateBasicAccessors {
+  my $caller = shift;
+  my %methods = @_;
+
+  my $header = "{\n package $caller;\n use strict;\n use warnings;\nuse Carp;\n";
+  my $footer = "\n}\n1;\n";
+
+  # noupdate
+  my $noupdate = q{
+sub PREFIXnoupdate {
+  my $self = shift;
+  if (@_) { $self->{PREFIXNoUpdate} = shift; }
+  return $self->{PREFIXNoUpdate};
+}
+};
+
+  # name
+  my $name = q{
+sub PREFIXname {
+  my $self = shift;
+  if (@_) {
+    my $arg = shift;
+    HANDLEARRAY
+    $self->{PREFIX} = $arg unless $self->PREFIXnoupdate;
+  }
+  return $self->{PREFIX};
+}
+
+# Allow "cache" to be a synonym
+*PREFIXcache = *PREFIXname;
+};
+
+  # index
+  my $index = q{
+sub PREFIXindex {
+  my $self = shift;
+  return $self->GenericIndex( "PREFIX", INDEXMODE, @_ );
+}
+};
+
+  # Array handling code for name/cache method
+  my $array = q{
+  my @values;
+  if (ref($arg) eq 'ARRAY') {
+    @values = @$arg;
+  } else {
+    @values = ($arg, @_);
+  }
+  $arg = \@values;
+};
+
+  # Now construct the methods using string eval
+  for my $m (sort keys %methods) {
+    my $string = $header;
+    $string .= $noupdate;
+    $string .= $name;
+    $string .= $index;
+    $string .= $footer;
+
+    # Handle array processing
+    if ($methods{$m}->{isarray}) {
+      $string =~ s/HANDLEARRAY/$array/g;
+    } else {
+      $string =~ s/HANDLEARRAY//g;
+    }
+
+    # Handle index location
+    my $imode;
+    if ($methods{$m}->{staticindex}) {
+      $imode = '"static"';
+    } elsif ($methods{$m}->{copyindex}) {
+      $imode = '"copy"';
+    } else {
+      $imode = '"dynamic"';
+    }
+    $string =~ s/INDEXMODE/$imode/g;
+
+    # Replace prefix with requested name
+    $string =~ s/PREFIX/$m/g;
+
+    # run the code
+    my $retval = eval $string;
+    if (!$retval) {
+      croak "Error running method creation code: $@\n Code: $string\n";
+    }
   }
   return;
 }

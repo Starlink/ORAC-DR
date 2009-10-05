@@ -65,17 +65,15 @@ be displayed from the previous solution.
 This primitive relies on the current and previous responsivity files
 corresponding to file numbers 2 and 3 in the given Frame object.
 
+=head1 OUTPUT DATA
+
+On exit the given Frame object will contain the name of the percentage
+change image. However, note that this file will be deleted at the end
+of processing by the REDUCE_FLATFIELD recipe.
+
 =head1 OUTPUT FILES
 
-Files are created with C<_respX>, C<_prespX> and C<_pcrspX>, where
-C<X> is the letter designation for the current subarray. These files
-correspond to the current, previous and percentage change in the
-responsivities respectively.
-
-If not required for subsequent offline analysis (and since the concept
-of current and previous is relative) files created in this primitive
-should be deleted on exit from the calling recipe using
-_DELETE_TEMP_FILES_.
+None.
 
 =head1 AUTHOR
 
@@ -99,7 +97,7 @@ General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
-USA
+USA.
 
 =cut
 
@@ -115,80 +113,57 @@ if ( defined $Frmobj ) {
   # Retrieve CLIP parameter
   my $clip = get_prim_arg( $_PRIM_ARGS_, "CLIP", "" );
 
+  # Define the lookup table between subarray letter and kapview window
+  my %subwindow = ( 'a' => 0, 'b' => 1, 'c' => 2, 'd' => 3 );
+
   # Retrieve subarray name
-  my $subarray = uc($Frmobj->hdr('SUBARRAY'));
+  my $subarray = lc($Frmobj->hdr('SUBARRAY'));
+  # Set the Kapview window accordingly
+  my $window = $subwindow{substr($subarray,-1)};
 
   # Get current and previous responsivity solutions
   my $current = $Frmobj->uhdr("RESP_NEW");
+  push (my @files, $current);
   my $previous = $Frmobj->uhdr("RESP_OLD");
+  push (@files, $previous);
 
-  # Set coord frame to pixel for current file
-  my $args = "ndf=$current frame=pixel";
-  $Mon{ndfpack_mon}->obeyw("wcsframe","$args");
-
-  # Set the title to something meaningful
-  $args = "ndf=$current title='$subarray current responsivity solution'";
+  # Set the titles of the current and previous images to something meaningful
+  my $args = "ndf=$current title='$subarray new responsivity solution'";
   $Mon{ndfpack_mon}->obeyw("settitle","$args");
-  # Store in Frame object and display
-  $Frmobj->files($current);
-  my %options = ( TYPE => 'image', REGION => 1, WINDOW => 0, TOOL => 'kapview',
-		  ZAUTOSCALE => 1, KEY => 'true' );
-  $Display->display_data($Frmobj, \%options, 0);
-  # Find min/max so previous image can be displayed on same scale
+  $args = "ndf=$previous title='$subarray existing responsivity solution'";
+  $Mon{ndfpack_mon}->obeyw("settitle","$args");
+
+  # Set coordinate frame to PIXEL for each image
+  foreach my $file ( @files ) {
+    $args = "ndf=$file frame=pixel";
+    $Mon{ndfpack_mon}->obeyw("wcsframe","$args");
+  }
+
+  # Store both files in the current Frame object
+  $Frmobj->files(@files);
+
+  # Find min/max of current responsivity image so previous image can
+  # be displayed on same scale
   _FIND_IMAGE_STATISTICS_ IMAGE=$current HISTAT=0 COMP=$comp VERBOSE=0
   my $zmin = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MIN};
   my $zmax = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
-
-  # If not specified, set the clip parameter from data range to ensure
-  # all data are shown in the histogram
   if ( $clip eq "" ) {
     $clip = max(abs($zmin), abs($zmax)) / $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
   }
 
-  # Display the histogram
-  %options = ( TYPE => 'histogram', REGION => 13, WINDOW => 0, TOOL => 'kapview',
-	       ZAUTOSCALE => 0, SIGMA => $clip );
-  $Display->display_data($Frmobj, \%options, 0);
+  my %options = ( WINDOW => $window, SIGMA => $clip, ZMIN => $zmin, ZMAX => $zmax );
 
-  # Now display the previous solution
-  if ( defined $previous ) {
-    # Set coord frame to pixel
-    $args = "ndf=$previous frame=pixel";
-    $Mon{ndfpack_mon}->obeyw("wcsframe","$args");
+  $Display->display_data($Frmobj, \%options, -1);
 
-    # Set the title to something meaningful
-    $args = "ndf=$previous title='$subarray previous responsivity solution'";
-    $Mon{ndfpack_mon}->obeyw("settitle","$args");
-    # Store in Frame object
-    $Frmobj->files($previous);
-    # Display - define options here entirely; there is no disp.dat
-    # entry for these files. Display the image and histogram separately.
-    %options = ( TYPE => 'image', REGION => 2, WINDOW => 0, TOOL => 'kapview',
-		 ZAUTOSCALE => 0, ZMIN => $zmin, ZMAX => $zmax, KEY => 'true' );
-    $Display->display_data($Frmobj, \%options, 0);
-    %options = ( TYPE => 'histogram', REGION => 14, WINDOW => 0, TOOL => 'kapview',
-		 ZAUTOSCALE => 0, SIGMA => $clip );
-    $Display->display_data($Frmobj, \%options, 0);
+  # Now display the percentage change image
+  my $delta = $Frmobj->uhdr("RESP_DELTA");
+  $Mon{ndfpack_mon}->obeyw("wcsframe","ndf=$delta frame=pixel");
+  $Frmobj->files( ($delta) );
+  # Display limits for delta image
+  ($zmin, $zmax) = ($Frmobj->hdr('FILTER') =~ /850/) ? (-5.0, 5.0) : (-10.0, 10.0);
 
-    # Retrieve percentage change image. Store in current Frame object
-    # and display
-    my $pcresp = $Frmobj->uhdr("RESP_DELTA");
-    if ( defined $pcresp ) {
-      # Set coord frame to pixel
-      $args = "ndf=$pcresp frame=pixel";
-      $Mon{ndfpack_mon}->obeyw("wcsframe","$args");
-      $Frmobj->files( $pcresp );
-      ($zmin, $zmax) = ($Frmobj->hdr('FILTER') =~ /850/) ? (-5.0, 5.0) : (-10.0, 10.0);
-      %options = ( TYPE => 'image', REGION => 4, WINDOW => 0, TOOL => 'kapview',
-		   ZAUTOSCALE => 0, ZMIN => $zmin, ZMAX => $zmax, KEY => 'TRUE' );
-      $Display->display_data( $Frmobj, \%options, 0 );
-    } else {
-      orac_warn "Previous solution defined, but not percentage-change image\n";
-    }
-
-  } else {
-    orac_warn "No previous solution defined - only current information is displayed\n";
-  }
+  %options = ( WINDOW => $window, SIGMA => $clip, ZMIN => $zmin, ZMAX => $zmax );
+  $Display->display_data($Frmobj, \%options, -1);
 
 } else {
   orac_warn "Must supply FRAME argument - will not display responsivity results\n";

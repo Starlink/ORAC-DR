@@ -1,0 +1,164 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_DISPLAY_NOISE_ - Display bolometer noise
+
+=head1 SYNOPSIS
+
+_DISPLAY_NOISE_
+
+=head1 DESCRIPTION
+
+This primitive displays the bolometer noise data in a Kapview
+window. Each noise image in the current Frame object is displayed in
+turn, each in a separate Kapview window. An image is displayed on the
+left side and a histogram on the right. The statistics (mean, median
+and sigma) are reported.
+
+If the C<CLIP> argument is given, the noise statistics are
+re-calculated using sigma-clipping and reported in addition to the
+unclipped values.
+
+The scale for the display is set by the clipped values if appropriate
+in case of significant outliers.
+
+=head1 ARGUMENTS
+
+This primitive supports the following arguments:
+
+=over 4
+
+=item B<CLIP>
+
+Number of standard deviations at which to clip the data before
+displaying the data on a histogram. The default (undef) is no
+clipping.
+
+=item B<COMP>
+
+Component to display. Supported values are C<DATA> and C<ERR>. Default
+is C<DATA>.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used by this primitive:
+
+=over 4
+
+=item KAPPA:
+
+SETTITLE, WCSFRAME
+
+=item ORAC-DR PRIMITIVES:
+
+_FIND_IMAGE_STATISTICS_
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 the University of British Columbia.  All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Which component is being displayed?
+my $comp = lc(get_prim_arg( $_PRIM_ARGS_, "COMP", "data" ));
+# Reset comp if we get something we don't recognize
+$comp = "data" unless ( $comp =~ /^err/ );
+
+# Retrieve CLIP parameter for calculating sigma-clipped statistics
+my $clip = get_prim_arg( $_PRIM_ARGS_, "CLIP", "" );
+
+# Loop over each file in the current Frame
+for my $i ( 1 .. $Frm->nfiles ) {
+
+  my $noisefile = $Frm->file($i);
+  my $window = $i - 1;
+  my $subarray = $Frm->hdrval("SUBARRAY",$window);
+
+  # Set the titles of the current and previous images to something meaningful
+  my $args = "ndf=$noisefile title='Noise map for $subarray'";
+  $Mon{ndfpack_mon}->obeyw("settitle","$args");
+
+  # Set coordinate frame to PIXEL
+  $args = "ndf=$noisefile frame=pixel";
+  $Mon{ndfpack_mon}->obeyw("wcsframe","$args");
+
+  # Find unclipped statistics for reporting
+  _FIND_IMAGE_STATISTICS_ IMAGE=$noisefile HISTAT=0 COMP=$comp VERBOSE=0
+  my $min = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MIN};
+  my $max = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
+
+  my $mean = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEAN};
+  my $median = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
+  my $sigma = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
+
+  my $zmin = max($mean - 5*$sigma, $min-0.2*$min);
+  my $zmax = $mean + 5*$sigma;
+
+  my $numgood = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
+
+  orac_print "Noise statistics for subarray $subarray ($numgood bolometers):\n", "green";
+  orac_print " Mean   = $mean W\n", "green";
+  orac_print " Median = $median W\n", "green";
+  orac_print " Sigma  = $sigma W\n\n", "green";
+
+  # Find sigma-clipped statistics for reporting if requested
+  my ($cmean, $cmedian, $csigma) = ("", "", "");
+  if ( $clip ne "" ) {
+    _FIND_IMAGE_STATISTICS_ IMAGE=$noisefile HISTAT=0 COMP=$comp VERBOSE=0 CLIP=$clip
+
+    $min = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MIN};
+    $max = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
+
+    $cmean = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEAN};
+    $cmedian = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
+    $csigma = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
+
+    $zmin = max($cmean - 5*$csigma, $min-0.2*$min);
+    $zmax = $cmean + 5*$csigma;
+    my $numdiff = $numgood - $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
+
+    orac_print "Sigma-clipped at $clip sigma (drops $numdiff bolometers):\n",
+               "green";
+    orac_print " Mean   = $cmean W\n", "green";
+    orac_print " Median = $cmedian W\n", "green";
+    orac_print " Sigma  = $csigma W\n\n", "green";
+  }
+
+  my %options = ( WINDOW => $window, ZMIN => $zmin, ZMAX => $zmax,
+		  ZAUTOSCALE => 0 );
+
+  $Display->display_data($Frm, \%options, -1);
+}

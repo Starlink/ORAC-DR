@@ -36,11 +36,6 @@ This primitive is suitable for ACSIS data taken in hybrid mode.
 This primitive only operates if the ISHYBRID user header is set for
 the current Frame object.
 
-=item *
-
-This primitive currently only operates on observations with one
-subscan.
-
 =back
 
 =head1 OUTPUT DATA
@@ -80,24 +75,35 @@ if( $Frm->uhdr( "ISHYBRID" ) ) {
 
   orac_print "Hybrid mode observations. Merging spectra.\n";
 
-  if( $Frm->nfiles != 2 ) {
-    orac_warn "Cannot merge " . $Frm->nfiles . " timeseries cubes\n";
-  } else {
+  my %newFrms;
+  my @newfrmout;
 
-    my @infiles;
+  # Split up the files into pairs, paired by NSUBSCAN header.
+  foreach my $file ( $Frm->files ) {
+    my $tmpFrm = new $Frm;
+    $tmpFrm->file( $file );
+    push @{$newFrms{$tmpFrm->hdr( "NSUBSCAN" )}}, $file;
+  }
+
+  foreach my $nsubscan ( sort keys %newFrms ) {
+
+    my $files = $newFrms{$nsubscan};
+
     my @outfiles;
 
+    orac_say " Calculating overlap for subscan $nsubscan.";
+
     # Get the overlap range.
-    _CALCULATE_HYBRID_OVERLAP_
+    _CALCULATE_HYBRID_OVERLAP_ FILE1=$files->[0] FILE2=$files->[1]
     my $low = $_CALCULATE_HYBRID_OVERLAP_{LBOUND};
     my $high = $_CALCULATE_HYBRID_OVERLAP_{UBOUND};
 
     # Retrieve bounds for each file.
-    _GET_DIMENSIONS_ FILE=$Frm->file(1)
+    _GET_DIMENSIONS_ FILE=$files->[0]
     my $lbounds1 = $_GET_DIMENSIONS_{LBOUND};
     my $ubounds1 = $_GET_DIMENSIONS_{UBOUND};
 
-    _GET_DIMENSIONS_ FILE=$Frm->file(2)
+    _GET_DIMENSIONS_ FILE=$files->[1]
     my $lbounds2 = $_GET_DIMENSIONS_{LBOUND};
     my $ubounds2 = $_GET_DIMENSIONS_{UBOUND};
 
@@ -111,18 +117,18 @@ if( $Frm->uhdr( "ISHYBRID" ) ) {
 
     # Retrieve the units so we can set them back to whatever they are
     # now. MATHS trounces units.
-    $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=" . $Frm->file(1) );
+    $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=" . $files->[0] );
     my ( $ORAC_STATUS, $units ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
 
     # Use collapse to find the median for each spectrum.
     my $temp1file = new ORAC::TempFile;
     my $temp2file = new ORAC::TempFile;
 
-    my $params = "in=" . $Frm->file(1) . "($range,,) out=$temp1file";
+    my $params = "in=" . $files->[0] . "($range,,) out=$temp1file";
     $params .= " estimator=median axis=spec variance=true wlim=0.0";
     $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
-    $params = "in=" . $Frm->file(2) . "($range,,) out=$temp2file";
+    $params = "in=" . $files->[1] . "($range,,) out=$temp2file";
     $params .= " estimator=median axis=spec variance=true wlim=0.0";
     $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
@@ -137,13 +143,13 @@ if( $Frm->uhdr( "ISHYBRID" ) ) {
     $params .= "lbound=" . $lbounds1->[0] . " ubound=" . $ubounds1->[0];
     $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
-    my( $in, $out ) = $Frm->inout( "_dc", 1 );
-    $Mon{'kappa_mon'}->obeyw( "add", "in1=$in in2=$temp4file out=$out" );
+    ( undef, my $out ) = $Frm->inout( "_dc", $nsubscan );
+    $params = "in1=" . $files->[0] . " in2=$temp4file out=$out";
+    $Mon{'kappa_mon'}->obeyw( "add", "$params" );
     $Mon{'ndfpack_mon'}->obeyw( "setunits", "ndf=$out units=$units" );
-    orac_print "$in to $out:\n";
+    orac_print $files->[0] . " to $out:\n";
     orac_print " Removed DC-level offset.\n";
 
-    push @infiles, $in;
     push @outfiles, $out;
 
     # Grow the DC adjustment into another cube and subtract it from
@@ -153,17 +159,18 @@ if( $Frm->uhdr( "ISHYBRID" ) ) {
     $params .= "lbound=" . $lbounds2->[0] . " ubound=" . $ubounds2->[0];
     $Mon{'kappa_mon'}->obeyw( "manic", "$params" );
 
-    ( $in, $out ) = $Frm->inout( "_dc", 2 );
-    $Mon{'kappa_mon'}->obeyw( "sub", "in1=$in in2=$temp5file out=$out" );
+    $out = $files->[1];
+    $out =~ s/_[a-z]+/_dc/;
+    $params = "in1=" . $files->[1] . " in2=$temp5file out=$out";
+    $Mon{'kappa_mon'}->obeyw( "sub", "$params" );
     $Mon{'ndfpack_mon'}->obeyw( "setunits", "ndf=$out units=$units" );
-    orac_print "$in to $out:\n";
+    orac_print $files->[1] . " to $out:\n";
     orac_print " Removed DC-level offset.\n";
 
-    push @infiles, $in;
     push @outfiles, $out;
 
     # We have two DC-corrected files, now WCSMOSAIC them.
-    ( $in, $out ) = $Frm->inout( "_merge", 1 );
+    ( undef, $out ) = $Frm->inout( "_merge", $nsubscan );
     $params = "in='" . ( join ',',@outfiles ) . "' out=$out method=nearest";
     $params .= " lbnd=! ubnd=! ref=! variance=true genvar=false wlim=0";
     $Mon{'kappa_mon'}->obeyw( "wcsmosaic", "$params" );
@@ -172,11 +179,12 @@ if( $Frm->uhdr( "ISHYBRID" ) ) {
     orac_print " to $out:\n";
     orac_print " Merged hybrid-mode files.\n";
 
-    $Frm->product( "merge" );
-    $Frm->files( ( $out ) );
-
-    # Tidy-up output.
-    orac_print "\n";
+    push @newfrmout, $out;
   }
 
+  $Frm->product( "merge" );
+  $Frm->files( @newfrmout );
+
+  # Tidy-up output.
+  orac_print "\n";
 }

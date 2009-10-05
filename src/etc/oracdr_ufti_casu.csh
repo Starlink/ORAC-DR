@@ -76,59 +76,14 @@
 #     21 Jan 2003 (jrl)
 #        Original Version based on oracdr_ufti.csh
 
-#  Revision:
-#     $Id$
-
 #  Copyright:
 #     Copyright (C) 1998-2002 Particle Physics and Astronomy Research
 #     Council. All Rights Reserved.
 
 #-
 
-
-
-# orac things
-if !($?ORAC_DATA_ROOT) then
-    setenv ORAC_DATA_ROOT /ukirtdata
-endif
-
-if !($?ORAC_CAL_ROOT) then
-    setenv ORAC_CAL_ROOT /jac_sw/oracdr_cal
-endif
-
-if ($?ORAC_RECIPE_DIR) then
-    echo "Warning: resetting ORAC_RECIPE_DIR"
-    unsetenv ORAC_RECIPE_DIR
-endif
-
-if ($?ORAC_PRIMITIVE_DIR) then
-    echo "Warning: resetting ORAC_PRIMITIVE_DIR"
-    unsetenv ORAC_PRIMITIVE_DIR
-endif
-
-
-if ($1 != "") then
-    set oracut = $1
-else
-    set oracut = `\date -u +%Y%m%d`
-endif
-
-set oracdr_args = "-ut $oracut"
-
 setenv ORAC_INSTRUMENT UFTI_CASU
-setenv ORAC_DATA_IN $ORAC_DATA_ROOT/raw/ufti/$oracut/
-setenv ORAC_DATA_OUT  $ORAC_DATA_ROOT/reduced/ufti/$oracut/
-setenv ORAC_DATA_CAL $ORAC_CAL_ROOT/ufti_casu
-setenv PERL5LIB ${ORAC_PERL5LIB}:/jac_sw/cirdr/perlinstall
-
-# screen things
-setenv ORAC_PERSON jrl
-setenv ORAC_LOOP flag
-setenv ORAC_SUN  232
 
 # Source general alias file and print welcome screen
 source $ORAC_DIR/etc/oracdr_start.csh
-
-# Tidy up
-unset oracut
-unset oracdr_args
+setenv PERL5LIB ${ORAC_PERL5LIB}:/jac_sw/cirdr/perlinstall

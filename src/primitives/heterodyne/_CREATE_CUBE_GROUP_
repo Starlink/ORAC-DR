@@ -306,16 +306,18 @@ if( $Grp->lastallmembers( $Frm ) ) {
 
     my $inlist = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
     my $inlist_fh = $inlist->handle;
+    my @infiles;
     foreach my $Frm ( $Grp->members ) {
       foreach my $i ( 1 .. $Frm->nfiles ) {
         print $inlist_fh $Frm->file( $i ) . "\n";
+        push @infiles, $Frm->file( $i );
       }
     }
     $inlist->handle->close;
 
     my ( $in, $out ) = $Grp->inout( "_cube" );
 
-    orac_print "Creating cube...";
+    orac_say "Creating cube from " . join( ", ", @infiles );
 
     $Mon{'smurf_mon'}->obeyw( "makecube", "$params in='^" . $inlist->file . "' out=$out" );
     orac_print "done.\n";
@@ -335,10 +337,11 @@ if( $Grp->lastallmembers( $Frm ) ) {
     # we want _cubeNNN.
     my @files;
     my $numbad = 0;
+    my $outfilenumber = 1;
     if( $ntile > 1 ) {
       foreach my $j ( 1 .. $ntile ) {
         my $makecube_outfile = "${out}_$j.sdf";
-        my $outfile = sprintf( "$out%03d", $j ) . ".sdf";
+        my $outfile = sprintf( "$out%03d", $outfilenumber ) . ".sdf";
 
         if( -e $makecube_outfile ) {
 
@@ -346,17 +349,19 @@ if( $Grp->lastallmembers( $Frm ) ) {
           $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$makecube_outfile" );
           ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
           if( $numgood == 0 ) {
+            unlink( $makecube_outfile );
             $numbad++;
             next;
           }
 
-          rename( $makecube_outfile, $outfile );
+          rename( $makecube_outfile, $outfile ) or die "Could not rename $makecube_outfile to $outfile: $!\n";
           $outfile =~ s/\.sdf$//;
 
           _SET_FILE_FITS_ITEM_ FILE=$outfile KEY=DATE-OBS VALUE=$dateobs
           _SET_FILE_FITS_ITEM_ FILE=$outfile KEY=DATE-END VALUE=$dateend
 
           push( @files, $outfile );
+          $outfilenumber++;
         }
       }
     } else {

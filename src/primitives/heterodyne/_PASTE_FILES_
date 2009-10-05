@@ -63,6 +63,8 @@ All Rights Reserved.
 
 =cut
 
+use ORAC::Constants qw/ :badvalues /;
+
 my $files = get_prim_arg( $_PRIM_ARGS_, "FILES", undef );
 if( ! defined( $files ) ) {
   orac_throw "FILES parameter to _PASTE_FILES_ not defined: programming error";
@@ -113,9 +115,19 @@ foreach my $extension ( keys %extensions ) {
     unlink "paste_ext$$.in";
 
     # Calculate the median.
-    $Mon{'kappa_mon'}->obeyw( "histat", "ndf=$out.$extension" );
-    my ( $ORAC_STATUS, $median ) = $Mon{'kappa_mon'}->get( "histat", "median" );
-    _SET_FILE_FITS_ITEM_ FILE=$out KEY=$extensions{$extension} VALUE=$median
+    my $median;
+    if( starversion_lt( 'KAPPA', 'V1.10-6' ) ) {
+      $Mon{'kappa_mon'}->obeyw( "histat", "ndf=$out.$extension" );
+      ( my $ORAC_STATUS, $median ) = $Mon{'kappa_mon'}->get( "histat", "median" );
+    } else {
+      $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$out.$extension order=true" );
+      ( my $ORAC_STATUS, $median ) = $Mon{'kappa_mon'}->get( "stats", "median" );
+    }
+
+    # Only write the median if it's not bad.
+    if( $median != VAL__BADD ) {
+      _SET_FILE_FITS_ITEM_ FILE=$out KEY=$extensions{$extension} VALUE=$median
+    }
 
   }
 

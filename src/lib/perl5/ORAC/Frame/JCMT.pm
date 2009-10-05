@@ -23,16 +23,27 @@ objects are also available to B<ORAC::Frame::JCMT> objects.
 use 5.006;
 use strict;
 use warnings;
+use warnings::register;
 
 use vars qw/ $VERSION /;
-use ORAC::Frame::NDF;
-
 use Carp;
-use NDF;
-
 use base qw/ ORAC::Frame::NDF /;
 
-$VERSION = '1.0';
+use JSA::Headers qw/ read_jcmtstate /;
+use ORAC::Error qw/ :try /;
+
+$VERSION = '1.01';
+
+# Map AST Sky SYSTEM to JCMT TRACKSYS
+my %astToJCMT = (
+                 AZEL => "AZEL",
+                 GAPPT => "APP",
+                 GALACTIC => "GAL",
+                 ICRS => "ICRS",
+                 FK4 => "B1950",
+                 FK5 => "J2000",
+                );
+
 
 =head1 PUBLIC METHODS
 
@@ -81,101 +92,266 @@ sub jcmtstate {
   my $first = $self->file( 1 );
   my $last = $self->file( $self->nfiles );
 
-  # Open up the file, retrieve the JCMTSTATE structure, and store it
-  # in our cache.
-  my $status = &NDF::SAI__OK();
-  err_begin($status);
+  # Reference to hash bucket in cache to simplify
+  # references in code later on
+  my $startref = $self->{JCMTSTATE}->{START} = {};
+  my $endref = $self->{JCMTSTATE}->{END} = {};
 
-  hds_open( $first, "READ", my $loc, $status);
-  dat_find( $loc, "MORE", my $mloc, $status);
-  dat_find( $mloc, "JCMTSTATE", my $jloc, $status);
-  dat_annul( $mloc, $status);
-
-  # find out how many extensions we have
-  dat_ncomp( $jloc, my $ncomp, $status );
-
-  # Loop over each
-  for my $i (1..$ncomp) {
-    dat_index( $jloc, $i, my $iloc, $status );
-    dat_name( $iloc, my $name, $status );
-    dat_size( $iloc, my $size, $status );
-    dat_type( $iloc, my $type, $status );
-
-    my $coderef;
-    if ($type =~ /^_(DOUBLE|REAL)$/) {
-      $coderef = \&dat_get0d;
-    } elsif ($type eq '_INTEGER') {
-      $coderef = \&dat_get0i;
-    } else {
-      $coderef = \&dat_get0c;
+  # if we have a single file read the start and end
+  # read the start and end into the cache regardless
+  # of what was requested in order to minimize file opening.
+  if ($first eq $last ) {
+    my %values = read_jcmtstate( $first, [qw/ start end /] );
+    for my $key ( keys %values ) {
+      $startref->{$key} = $values{$key}->[0];
+      $endref->{$key} = $values{$key}->[1];
     }
+  } else {
+    my %values = read_jcmtstate( $first, 'start' );
+    %$startref = %values;
+    %values = read_jcmtstate( $last, 'end' );
+    %$endref = %values;
 
-    my @cell = ( 1 );
-    dat_cell( $iloc, 1, @cell, my $cloc, $status );
-    $coderef->( $cloc, $self->{JCMTSTATE}->{START}->{$name}, $status );
-    dat_annul( $cloc, $status );
-
-    if( uc( $first ) eq uc( $last ) ) {
-      @cell = ( $size );
-      dat_cell( $iloc, 1, @cell, my $cloc2, $status );
-      $coderef->(  $cloc2, $self->{JCMTSTATE}->{END}->{$name}, $status );
-      dat_annul( $cloc2, $status );
-    }
-
-    dat_annul( $iloc, $status );
   }
-
-  dat_annul($jloc, $status );
-  dat_annul( $loc, $status );
-
-  if ($status != &NDF::SAI__OK()) {
-    croak err_flush_to_string( "Error reading file $first:\n".$status );
-  }
-
-  # If there's more than one file in the Frame, open the last one.
-  if( uc( $first ) ne uc( $last ) ) {
-    hds_open( $last, "READ", my $loc, $status);
-    dat_find( $loc, "MORE", my $mloc, $status);
-    dat_find( $mloc, "JCMTSTATE", my $jloc, $status);
-    dat_annul( $mloc, $status);
-
-    # find out how many extensions we have
-    dat_ncomp( $jloc, my $ncomp, $status );
-
-    # Loop over each
-    for my $i (1..$ncomp) {
-      dat_index( $jloc, $i, my $iloc, $status );
-      dat_name( $iloc, my $name, $status );
-      dat_size( $iloc, my $size, $status );
-      dat_type( $iloc, my $type, $status );
-
-      my $coderef;
-      if ($type =~ /^_(DOUBLE|REAL)$/) {
-        $coderef = \&dat_get0d;
-      } elsif ($type eq '_INTEGER') {
-        $coderef = \&dat_get0i;
-      } else {
-        $coderef = \&dat_get0c;
-      }
-
-      my @cell = ( $size );
-      dat_cell( $iloc, 1, @cell, my $cloc, $status );
-      $coderef->( $cloc, $self->{JCMTSTATE}->{END}->{$name}, $status );
-      dat_annul( $cloc, $status );
-      dat_annul( $iloc, $status );
-
-    }
-    dat_annul($jloc, $status );
-    dat_annul( $loc, $status );
-  }
-
-  if ($status != &NDF::SAI__OK()) {
-    croak err_flush_to_string( "Error reading file $first:\n".$status );
-  }
-  err_end($status);
-
   return $self->{JCMTSTATE}->{$which}->{$keyword};
 }
+
+=item B<find_base_position>
+
+Determine the base position of a data file. If the file name
+is not provided it will be read from the object.
+
+  %base = $Frm->find_base_position( $file );
+
+Returns hash with keys
+
+  TCS_TR_SYS   Tracking system for base
+  TCS_TR_BC1   Longitude of base position (radians)
+  TCS_TR_BC2   Latitude of base position (radians)
+
+The latter will be absent if this is an observation of a moving
+source. In addition, returns sexagesimal strings of the base
+position as
+
+  TCS_TR_BC1_STR
+  TCS_TR_BC2_STR
+
+=cut
+
+sub find_base_position {
+  my $self = shift;
+  my $file = shift;
+  $file = $self->file unless defined $file;
+
+  my %state;
+
+  # First read the FITS header (assume that TRACKSYS presence implies BASEC1/C2)
+  if (defined $self->hdr("TRACKSYS") ) {
+    $state{TCS_TR_SYS} = $self->hdr("TRACKSYS");
+
+    if ($state{TCS_TR_SYS} ne 'APP' &&
+        defined $self->hdr("BASEC1") &&
+        defined $self->hdr("BASEC2") ) {
+      # converting degrees to radians
+      for my $c (qw/ C1 C2 /) {
+        my $ang = Astro::Coords::Angle->new( $self->hdr("BASE$c"), units => "deg");
+        $state{"TCS_TR_B$c"} = $ang->radians;
+      }
+    }
+  } else {
+    # Attempt to read from JCMTSTATE
+    try {
+      $state{TCS_TR_SYS} = $self->jcmtstate( "TCS_TR_SYS" );
+      if ($state{TCS_TR_SYS} ne 'APP') {
+        for my $i (qw/ TCS_TR_BC1 TCS_TR_BC2 / ) {
+          $state{$i} = $self->jcmtstate( $i );
+        }
+      }
+    };
+
+    # if that doesn't work we probably have SCUBA-2 processed images
+    # or some very odd ACSIS files
+    if (!exists $state{TCS_TR_SYS}) {
+      # need the WCS
+      my $wcs = $self->read_wcs( $file );
+
+      # if no WCS read, attempt to read it from FITS headers
+      # QL images use this technique. Need the raw header, not a merged one
+      if (!defined $wcs) {
+        my $fits = Astro::FITS::Header::NDF->new( File => $file );
+        $wcs = $fits->get_wcs;
+      }
+
+      if (defined $wcs) {
+        # Find a Sky frame
+        my $skytemplate = Starlink::AST::SkyFrame->new( "MaxAxes=3,MinAxes=1" );
+        my $skyframe = $wcs->FindFrame( $skytemplate, "" );
+
+        if (defined $skyframe) {
+          # Get the sky reference position and system
+          my $astsys = $wcs->Get("System");
+          if ( exists $astToJCMT{$astsys}) {
+            $state{TCS_TR_SYS} = $astToJCMT{$astsys};
+          } else {
+            warnings::warnif("Could not understand coordinate frame $astsys. Using ICRS");
+            $state{TCS_TR_SYS} = "ICRS";
+          }
+
+          if ($state{TCS_TR_SYS} ne "APP") {
+            $state{TCS_TR_BC1} = $wcs->Get("SkyRef(1)");
+            $state{TCS_TR_BC2} = $wcs->Get("SkyRef(2)");
+          }
+        } else {
+          # look for a specframe
+          my $spectemplate = Starlink::AST::SpecFrame->new( "MaxAxes=3" );
+          my $findspecfs = $wcs->FindFrame( $spectemplate, ",," );
+          my $specframe = $findspecfs->GetFrame( 2 );
+          ($state{TCS_TR_BC1}, $state{TCS_TR_BC2}) =
+            $specframe->GetRefPos( Starlink::AST::SkyFrame->new("System=J2000") );
+          $state{TCS_TR_SYS} = "J2000"; # by definition
+        }
+      }
+    }
+  }
+
+  # See if we managed to read a tracking system
+  if (!exists $state{TCS_TR_SYS}) {
+    croak "Completely unable to read a tracking system from file $file !!!\n";
+  }
+
+  # if we have base positions, create string versions
+  if (exists $state{TCS_TR_BC1} && exists $state{TCS_TR_BC2} ) {
+    for my $c (qw/ 1 2 /) {
+      my $class = "Astro::Coords::Angle" . ($c == 1 ? "::Hour" : "");
+      my $ang = $class->new( $state{"TCS_TR_BC$c"},
+                             units => 'rad' );
+      $ang->str_ndp(0); # no decimal places
+      $ang = $ang->string;
+      $ang =~ s/\D//g; # keep numbers
+      $state{"TCS_TR_BC$c"."_STR"} = $ang;
+    }
+  }
+
+  return %state;
+}
+
+=item B<findgroup>
+
+Returns the group name from the header or a string formed automatically
+on observation metadata.
+
+ $Frm->findgroup();
+
+An optional argument can be provided which will be appended to the group
+name. This can be used by subclasses to provide additional information
+required to disambiguate groups. This string is only used if the group
+identifier is not present in the DRGROUP header.
+
+ $Frm->findgroup( $string );
+
+The group name stored in the object is automatically update using this
+value.
+
+=cut
+
+sub findgroup {
+  my $self = shift;
+  my $extra = shift;
+
+  my $hdrgrp;
+  # Use value in header if present
+  if (exists $self->hdr->{DRGROUP} && defined $self->hdr->{DRGROUP}
+      && $self->hdr->{DRGROUP} ne 'UNKNOWN'
+      && $self->hdr->{DRGROUP} =~ /\w/) {
+    $hdrgrp = $self->hdr->{DRGROUP};
+  } else {
+    # Create our own DRGROUP string
+    # Read the base position information from the file
+    my %state = $self->find_base_position();
+    if (exists $state{TCS_TR_BC1_STR} && exists $state{TCS_TR_BC2_STR}) {
+      # Define group key based on stringified form of TCS base position
+      $hdrgrp = $state{TCS_TR_BC1_STR} . $state{TCS_TR_BC2_STR};
+
+    } else {
+      # We're tracking in geocentric apparent, so instead of using the
+      # RefRA/RefDec position (which will be moving with the object)
+      # use the object name.
+      $hdrgrp = $self->hdr( "OBJECT" );
+    }
+
+    # JCMT disambiguates on these headers
+    # Note that we normalize RASTER and SCAN mode for historical data
+    $hdrgrp .=
+      ( uc( $self->hdr( "SAM_MODE" ) ) eq 'RASTER' ? 'SCAN' : uc( $self->hdr( "SAM_MODE" ) ) ) .
+        $self->hdr( "SW_MODE" ) .
+          $self->hdr( "INSTRUME" ) .
+            $self->hdr( "OBS_TYPE" ) .
+                $self->hdr( "SIMULATE" );
+
+    # Add DATE-OBS if we're not doing a science observation.
+    # to ensure that they are not combined into groups
+    if( uc( $self->hdr( "OBS_TYPE" ) ) ne 'SCIENCE' ) {
+      $hdrgrp .= $self->hdr( "OBSID" );
+    }
+
+    # Add any extra information from subclass
+    $hdrgrp .= $extra if defined $extra;
+
+  }
+
+  # Update the group
+  $self->group($hdrgrp);
+
+  return $hdrgrp;
+}
+
+=item B<findnsubs>
+
+Find the number of sub-frames associated by the frame by looking
+at the list of raw files associated with object. Usually run
+by configure().
+
+  $nsubs = $Frm->findnsubs;
+
+The state of the object is updated automatically.
+
+=cut
+
+sub findnsubs {
+  my $self = shift;
+  my @files = $self->raw;
+  my $nsubs = scalar( @files );
+  $self->nsubs( $nsubs );
+  return $nsubs;
+}
+
+=back
+
+=begin __PROTECTED_METHODS__
+
+=head1 PROTECTED METHODS
+
+These methods are for subclasses.
+
+=over 4
+
+=item B<_padnum>
+
+Pad an observation number.
+
+ $padded = $frm->_padnum( $raw );
+
+=cut
+
+sub _padnum {
+  my $self = shift;
+  my $raw = shift;
+  return sprintf( "%05d", $raw);
+}
+
+=back
+
+=end __PROTECTED_METHODS__
 
 =head1 SEE ALSO
 

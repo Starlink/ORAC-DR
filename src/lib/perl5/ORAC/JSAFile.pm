@@ -121,6 +121,20 @@ sub collate_headers {
     push ( @toappend, $asnid );
   }
 
+  # Check to see if the OBSIDSS header exists. If it doesn't, create
+  # it.
+  if( ! defined( $self->hdr( "OBSIDSS" ) ) &&
+      defined( $self->hdr( "OBSID" ) ) &&
+      defined( $self->hdr( "SUBSYSNR" ) ) ) {
+    my $obsidss = $self->hdr( "OBSID" ) . "_" . $self->hdr( "SUBSYSNR" );
+    $self->hdr( "OBSIDSS", $obsidss );
+    my $obsidss_hdr = new Astro::FITS::Header::Item( Keyword => 'OBSIDSS',
+                                                     Value   => $obsidss,
+                                                     Comment => 'Unique observation subsys identifier',
+                                                     Type    => 'STRING' );
+    push ( @toappend, $obsidss_hdr );
+  }
+
   $header->append( \@toappend );
   return $header;
 }

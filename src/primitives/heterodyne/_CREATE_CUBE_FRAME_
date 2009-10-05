@@ -77,6 +77,12 @@ Override the default "cube" product designation.
 Whether or not to tag the resulting cube(s) as 'reduced'. See the
 _TAG_AS_REDUCED_PRODUCT_ primitive. [0]
 
+=item TILEBORDER = INTEGER (Given)
+
+The size of the border to be added to tiles. This is used when
+smoothing the cube in spatial extent in later processing, so as to not
+add edge effects. [0]
+
 =back
 
 =head1 NOTES
@@ -134,8 +140,6 @@ Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
-orac_print "Creating cube.\n";
-
 # Deal with parameters.
 my $bytes_per_pixel = get_prim_arg( $_PRIM_ARGS_, "BYTES_PER_PIXEL", 4 );
 my $maxsize = get_prim_arg( $_PRIM_ARGS_, "MAXSIZE", 512_000_000 );
@@ -151,7 +155,6 @@ my $detectors = ( defined( $_PRIM_ARGS_->{DETECTORS} ) ?
                   "''" );
 my $suffix = get_prim_arg( $_PRIM_ARGS_, "SUFFIX", "_cube" );
 my $product = get_prim_arg( $_PRIM_ARGS_, "PRODUCT", "cube" );
-
 
 my @files;
 
@@ -229,7 +232,7 @@ if( ! defined( $pixsize ) ) {
 }
 
 # Figure out the spread parameters.
-_GET_SPREAD_PARAMS_ PARAM1=$param1 PARAM2=$param2 SPREAD=$spread PIXSIZE=$pixsize
+_GET_SPREAD_PARAMS_ PARAM1=$param1 PARAM2=$param2 METHOD=$spread PIXSIZE=$pixsize
 my $sp_params = $_GET_SPREAD_PARAMS_{PARAMSTRING};
 
 if( ! $Frm->uhdr( "SPARSE" ) ) {
@@ -285,9 +288,10 @@ if( $ntile > 1 ) {
   # and we want _cubeNNN.
   my @files;
   my $numbad = 0;
+  my $outfilenumber = 1;
   foreach my $j ( 1 .. $ntile ) {
     my $makecube_outfile = "${out}_$j.sdf";
-    my $outfile = "${out}" . sprintf( "%03d", $j ) . ".sdf";
+    my $outfile = "${out}" . sprintf( "%03d", $outfilenumber ) . ".sdf";
 
     if( -e $makecube_outfile ) {
 
@@ -295,6 +299,7 @@ if( $ntile > 1 ) {
       $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$makecube_outfile" );
       ( $ORAC_STATUS, my $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
       if( $numgood == 0 ) {
+        unlink( $makecube_outfile );
         $numbad++;
         next;
       }
@@ -302,6 +307,7 @@ if( $ntile > 1 ) {
       rename( $makecube_outfile, $outfile );
       $outfile =~ s/\.sdf$//;
       push( @files, $outfile );
+      $outfilenumber++;
     }
   }
 
@@ -370,7 +376,3 @@ _SET_TAG_ TAG=POST_CREATE_CUBE_FRAME
 
 # Display.
 $Display->display_data( $Frm ) if defined $Display;
-
-# Tidy-up output.
-orac_print "\n";
-

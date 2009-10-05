@@ -14,7 +14,15 @@ use.
 
 =head1 ARGUMENTS
 
-None.
+=item METHOD = STRING (Given)
+
+How to detect and mask out emission so as to not confuse matters when
+the RMS is determined. 'NARROW' tells the primitive to mask out the
+central 10% of the bandpass. 'STANDARD' tells the primitive to mask
+out the central 25% of the bandpass. 'WIDE' tells the primitive to
+mask out the central 50% of the bandpass. 'AUTO' tells the pipeline to
+use MFITTREND to attempt to automatically find emission and mask that
+out. ['AUTO']
 
 =head1 OUTPUT DATA
 
@@ -22,7 +30,7 @@ None.
 
 =item *
 
-Files with emission lines masked out are created with the suffix _msk.
+Files with emission lines masked out are created with the suffix _rms.
 
 =back
 
@@ -38,9 +46,7 @@ This primitive is suitable for ACSIS time-series data.
 
 If the observed object is located in the JCMT Pointing Catalogue, then
 the line velocity and width is used to mask out the emission
-line. Otherwise, a linear baseline is fit to the data, and any values
-clipped by successive 2-, 2-, 2.5-, and 3-sigma clipping levels are
-masked.
+line.
 
 =item *
 
@@ -68,11 +74,15 @@ Rights Reserved.
 =cut
 
 use JCMT::ACSIS::Array;
-use NDF;
+use ORAC::Constants qw/ :badvalues /;
 
-my @masked_files;
+# Handle parameters.
+my $method = uc( get_prim_arg( $_PRIM_ARGS_, "METHOD", "AUTO" ) );
+
+my @rms_files;
 my %rms;
 my %receptor_rms;
+my %numgood;
 
 my $key = $Frm->uhdr( "ORAC_OBSERVATION_ID" ) . "_" . $Frm->uhdr( "ORAC_SUBSYSTEM_IDKEY" );
 
@@ -80,7 +90,7 @@ my $array_rms = 0;
 
 foreach my $i ( 1 .. $Frm->nfiles ) {
 
-  my ( $infile, $outfile ) = $Frm->inout( "_msk", $i );
+  my ( $infile, $outfile ) = $Frm->inout( "_rms", $i );
 
   orac_print "Calculating RMS values for $infile.\n";
 
@@ -114,32 +124,42 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
     $temp1 = $infile;
   }
 
-  # Find dimensions.
-  _GET_DIMENSIONS_
-  my @lbnd = @{$_GET_DIMENSIONS_{LBOUND}};
-  my @ubnd = @{$_GET_DIMENSIONS_{UBOUND}};
+  if( $method eq 'AUTO' ) {
 
-  # Fit a background to the spectrum.
-  my $params = "in=$temp1 out=$temp2 mask=$temp3 order=1 subtract=true";
-  $params .= " modifyin=false rmsclip=! axis=spec auto=true method=single";
-  $params .= " numbin=" . ( int( ( $ubnd[0] - $lbnd[0] + 1 ) / 4 ) );
-  $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
+    # Find dimensions.
+    _GET_DIMENSIONS_
+    my @lbnd = @{$_GET_DIMENSIONS_{LBOUND}};
+    my @ubnd = @{$_GET_DIMENSIONS_{UBOUND}};
 
-  # Mask out the baselined file.
-  $Mon{'kappa_mon'}->obeyw( "add", "in1=$temp2 in2=$temp3 out=$outfile" );
+    # Fit and subtract a background from the spectrum.
+    my $params = "in=$temp1 out=$temp2 mask=$temp3 order=1 subtract=true";
+    $params .= " modifyin=false rmsclip=! axis=spec auto=true method=single";
+    $params .= " numbin=" . ( int( ( $ubnd[0] - $lbnd[0] + 1 ) / 4 ) );
+    $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
 
-  # Find the extent along the first axis (which for CALs is the
-  # frequency axis)
-  my $extent = $ubnd[0] - $lbnd[0];
+    # Mask out the baselined file.
+    $Mon{'kappa_mon'}->obeyw( "add", "in1=$temp2 in2=$temp3 out=$outfile" );
 
-  # Only use the central 85%. This avoids noisy ends.
-  $extent = int( $extent * 0.85 );
+  } else {
 
-  # Get stats for this extent across all detectors.
-  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$outfile(~$extent,,)" );
+    my $centmask = 25;
+    if( $method eq 'NARROW' ) {
+      $centmask = 10;
+    } elsif( $method eq 'WIDE' ) {
+      $centmask = 50;
+    }
+
+    # Mask out the requested central portion.
+    my $params = "in=$temp1 out=$outfile section='~$centmask\%,,' newval=bad";
+    $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
+
+  }
+
+  # Get stats for the central 85% across all detectors.
+  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$outfile(~85\%,,) clip=[3]" );
   my ( $ORAC_STATUS, $rmsmean ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
 
-  if( $rmsmean != &NDF::VAL__BADD ) {
+  if( $rmsmean != VAL__BADD ) {
     $array_rms += $rmsmean;
   }
 
@@ -149,29 +169,33 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
   foreach my $receptor ( sort $array->receptors ) {
 
     my $pixel = $array->pixel( $receptor );
-    $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$outfile(~$extent,$pixel,)" );
+    $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$outfile(~85\%,$pixel,) clip=[3]" );
     ( $ORAC_STATUS, my $pixrms ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
 
-    if( $pixrms > 0 && $pixrms != &NDF::VAL__BADD ) {
-      $receptor_rms{$receptor} += $pixrms;
-    } else {
-      $receptor_rms{$receptor} = "bad";
+    if( ! defined( $receptor_rms{$receptor} ) ) {
+      $receptor_rms{$receptor} = 0;
+      $numgood{$receptor} = 0;
     }
-
+    if( $pixrms > 0 && $pixrms != VAL__BADD ) {
+      $receptor_rms{$receptor} += $pixrms;
+      $numgood{$receptor}++;
+    }
   }
 
-  # Store the name of the masked file. We can't update the frame
+  # Store the name of the RMS file. We can't update the frame
   # object because we want to continue on doing stats on the original
   # file. Add it to the intermediates list so we can clean it up later.
-  $masked_files[$i] = $outfile;
+  $rms_files[$i] = $outfile;
   $Frm->push_intermediates( $outfile );
 
 }
 
 $array_rms /= $Frm->nfiles;
 foreach my $receptor ( keys %receptor_rms ) {
-  if( $receptor_rms{$receptor} ne 'bad' ) {
+  if( $receptor_rms{$receptor} != 0 ) {
     $receptor_rms{$receptor} /= $Frm->nfiles;
+  } else {
+    $receptor_rms{$receptor} = 'bad';
   }
 }
 
@@ -189,7 +213,7 @@ $rms{$key} = \%receptor_rms;
 $Frm->uhdr( "QA_RMS_VALUES", \%rms );
 
 # Store the array of masked files.
-$Frm->uhdr( "QA_MASKED_FILES", \@masked_files );
+$Frm->uhdr( "QA_RMS_FILES", \@rms_files );
 
 # Tidy-up output.
 orac_print "\n";

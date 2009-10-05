@@ -28,10 +28,15 @@ use ORAC::Print;
 use File::Copy;
 use File::Spec;
 
-use base qw/ ORAC::Calib /;
+use base qw/ ORAC::Calib::JCMT /;
 
 use vars qw/ $VERSION /;
 $VERSION = '1.0';
+
+__PACKAGE__->CreateBasicAccessors( bad_receptors => { staticindex => 1 },
+                                   standard => { staticindex => 1 },
+);
+
 
 =head1 METHODS
 
@@ -57,12 +62,9 @@ sub new {
   $obj->{BadReceptors} = undef;
   $obj->{BadReceptorsIndex} = undef;
   $obj->{BadReceptorsNoUpdate} = 0;
-  $obj->{Pointing} = undef;
-  $obj->{PointingIndex} = undef;
-  $obj->{PointingNoUpdate} = 0;
-  $obj->{QAParams} = undef;
-  $obj->{QAParamsIndex} = undef;
-  $obj->{QAParamsNoUpdate} = 0;
+  $obj->{Standard} = undef;
+  $obj->{StandardIndex} = undef;
+  $obj->{StandardNoUpdate} = 0;
 
   return $obj;
 }
@@ -115,34 +117,16 @@ will always be in upper-case.
 
 sub bad_receptors {
   my $self = shift;
-
-  if( @_ ) { $self->{BadReceptors} = uc( shift ) unless $self->bad_receptors_noupdate; }
-  $self->{BadReceptors} = 'INDEXORMASTER' unless ( defined $self->{BadReceptors} );
-  return $self->{BadReceptors};
+  # Use the automatically created method
+  my $br = $self->bad_receptorscache(map { uc($_) } @_);
+  return (defined $br ? $br : "INDEXORMASTER" );
 }
 
-=item B<bad_receptors_index>
+=item B<bad_receptorsindex>
 
 Return (or set) the index object associated with the master bad
 receptors index file. This index file is used if bad_receptors() is
 set to 'MASTER' or 'INDEXORMASTER'.
-
-=cut
-
-sub bad_receptors_index {
-  my $self = shift;
-  if( @_ ) { $self->{BadReceptorsIndex} = shift; }
-
-  if( ! defined( $self->{BadReceptorsIndex} ) ) {
-
-    my $indexfile = $self->find_file( "index.bad_receptors" );
-    my $rulesfile = $self->find_file( "rules.bad_receptors" );
-
-    $self->{BadReceptorsIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-
-  return $self->{BadReceptorsIndex};
-}
 
 =item B<bad_receptors_qa_index>
 
@@ -154,30 +138,7 @@ if bad_receptors() is set to 'INDEX' or 'INDEXORMASTER'.
 
 sub bad_receptors_qa_index {
   my $self = shift;
-  if( @_ ) { $self->{BadReceptorsQAIndex} = shift; }
-
-  if( ! defined( $self->{BadReceptorsQAIndex} ) ) {
-
-    my $indexfile = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.bad_receptors_qa" );
-    my $rulesfile = $self->find_file( "rules.bad_receptors_qa" );
-
-    $self->{BadReceptorsQAIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-
-  return $self->{BadReceptorsQAIndex};
-}
-
-=item B<bad_receptors_noupdate>
-
-Flag to prevent the bad_receptors system from being modified during
-data processing.
-
-=cut
-
-sub bad_receptors_noupdate {
-  my $self = shift;
-  if( @_ ) { $self->{BadReceptorsNoUpdate} = shift; }
-  return $self->{BadReceptorsNoUpdate};
+  return $self->GenericIndex( "bad_receptors_qa", "dynamic", @_ );
 }
 
 =item B<bad_receptors_list>
@@ -214,11 +175,11 @@ sub bad_receptors_list {
 
     if( $sys =~ /MASTER/ ) {
 
-      my $brposition = $self->bad_receptors_index->chooseby_negativedt( 'ORACTIME', $self->thing, 0 );
+      my $brposition = $self->bad_receptorsindex->chooseby_negativedt( 'ORACTIME', $self->thing, 0 );
 
       if( defined( $brposition ) ) {
         # Retrieve the specific entry, and thus the receptors.
-        my $brref = $self->bad_receptors_index->indexentry( $brposition );
+        my $brref = $self->bad_receptorsindex->indexentry( $brposition );
         if( exists( $brref->{'DETECTORS'} ) ) {
           @master_bad = split /,/, $brref->{'DETECTORS'};
         } else {
@@ -288,176 +249,66 @@ sub bad_receptors_list {
   return @bad_receptors;
 }
 
-=item B<pointing>
+=item B<standard>
 
-Return (or set) the most recent pointing values.
-
-  $pointing = $Cal->pointing;
+Retrieve the relevant standard.
 
 =cut
 
-sub pointing {
+sub standard {
   my $self = shift;
 
-  # Handle arguments.
-  return $self->pointingcache( shift ) if @_;
+  return $self->standardcache(shift) if @_;
 
-  if( $self->pointingnoupdate ) {
-    my $cache = $self->pointingcache;
+  if( $self->standardnoupdate ) {
+    my $cache = $self->standardcache;
     return $cache if defined $cache;
   }
 
-  my $pointingfile = $self->pointingindex->choosebydt( 'ORACTIME', $self->thing );
-  if( ! defined( $pointingfile ) ) {
-    croak "No suitable pointing value found in index file"
+  # We need to convert the transition in the header into something we
+  # can use. This means stripping out spaces. Also strip out dashes
+  # from the molecule.
+  my $transition = $self->thing->{'TRANSITI'};
+  my $molecule = $self->thing->{'MOLECULE'};
+  my $thing2 = $self->thingtwo;
+  $transition =~ s/\s+//g;
+  $thing2->{'TRANSITION'} = $transition;
+  $molecule =~ s/\s+//g;
+  $molecule =~ s/-//g;
+  $thing2->{'MOLECULE'} = $molecule;
+
+  $self->thingtwo( $thing2 );
+
+  my $standardfile = $self->standardindex->choosebydt( 'ORACTIME', $self->thing, 0 );
+
+  if( ! defined( $standardfile ) ) {
+    return undef;
   }
 
-  my $pointingref = $self->pointingindex->indexentry( $pointingfile );
-  if( exists( $pointingref->{DAZ} ) &&
-      exists( $pointingref->{DEL} ) ) {
-    return $pointingref;
+  my $standardref = $self->standardindex->indexentry( $standardfile );
+  if( exists( $standardref->{'INTEGINT'} ) &&
+      exists( $standardref->{'PEAK'} ) &&
+      exists( $standardref->{'L_BOUND'} ) &&
+      exists( $standardref->{'H_BOUND'} ) ) {
+    return $standardref;
   } else {
-    croak "Unable to obtain DAZ and DEL from index file entry $pointingfile\n";
+    croak "Unable to obtain INTEGINT, PEAK, L_BOUND, and H_BOUND from index file entry $standardfile\n";
   }
-
-}
-
-=item B<pointingcache>
-
-Cached value of the pointing. Only used when noupdate is in effect.
-
-=cut
-
-sub pointingcache {
-  my $self = shift;
-  if( @_ ) { $self->{Pointing} = shift unless $self->pointingnoupdate; }
-  return $self->{Pointing};
-}
-
-=item B<pointingnoupdate>
-
-Stops pointing object from updating itself with more recent data.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub pointingnoupdate {
-  my $self = shift;
-  if( @_ ) { $self->{PointingNoUpdate} = shift; }
-  return $self->{PointingNoUpdate};
-}
-
-=item B<pointingindex>
-
-Return (or set) the index object associated with the pointing index
-file.
-
-=cut
-
-sub pointingindex {
-  my $self = shift;
-  if( @_ ) { $self->{PointingIndex} = shift; }
-
-  if( ! defined( $self->{PointingIndex} ) ) {
-    my $indexfile = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, "index.pointing" );
-    my $rulesfile = $self->find_file( "rules.pointing" );
-    if( ! defined( $rulesfile ) ) {
-      croak "pointing rules file could not be located\n";
-    }
-    $self->{PointingIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-
-  return $self->{PointingIndex};
-
-}
-
-=item B<qaparams>
-
-Return or set the filename for QA parameters.
-
-  my $qaparams = $Cal->qaparams;
-
-=cut
-
-sub qaparams {
-  my $self = shift;
-
-  # Handle arguments.
-  return $self->qaparamscache( shift ) if @_;
-
-  if( $self->qaparamsnoupdate ) {
-    my $cache = $self->qaparamscache;
-    return $cache if defined $cache;
-  }
-
-  my $qaparamsfile = $self->qaparamsindex->choosebydt( 'ORACTIME', $self->thing );
-  if( ! defined( $qaparamsfile ) ) {
-    croak "No suitable QA parameters file found in index file"
-  }
-
-  return $self->find_file( $qaparamsfile );
-
-}
-
-=item B<qaparamscache>
-
-Cached value for the QA parameters file. Only used when noupdate is in
-effect.
-
-=cut
-
-sub qaparamscache {
-  my $self = shift;
-  if( @_ ) { $self->{QAParams} = shift unless $self->qaparamsnoupdate; }
-  return $self->{QAParams};
-}
-
-=item B<qaparamsnoupdate>
-
-Stops QA params object from updating itself.
-
-Used when using a command-line override to the pipeline.
-
-=cut
-
-sub qaparamsnoupdate {
-  my $self = shift;
-  if( @_ ) { $self->{QAParamsNoUpdate} = shift; }
-  return $self->{QAParamsNoUpdate};
-}
-
-=item B<qaparamsindex>
-
-Return or set the index object associated with the QA parameters index
-file.
-
-=cut
-
-sub qaparamsindex {
-  my $self = shift;
-  if( @_ ) { $self->{QAParamsIndex} = shift; }
-
-  if( ! defined( $self->{QAParamsIndex} ) ) {
-    my $indexfile = $self->find_file( "index.qaparams" );
-    if( ! defined( $indexfile ) ) {
-      croak "QA parameters index file could not be located\n";
-    }
-    my $rulesfile = $self->find_file( "rules.qaparams" );
-    if( ! defined( $rulesfile ) ) {
-      croak "QA parameters rules file could not be located\n";
-    }
-    $self->{QAParamsIndex} = new ORAC::Index( $indexfile, $rulesfile );
-  }
-
-  return $self->{QAParamsIndex};
 }
 
 =back
 
-=head1 REVISION
+=head2 Support Methods
 
-$Id$
+Each of the methods above has a support implementation to obtain
+the index file, current name and whether the value can be updated
+or not. For method "cal" there will be corresponding methods
+"calindex", "calname" and "calnoupdate". "calcache" is an
+allowed synonym for "calname".
+
+  $current = $Cal->calcache();
+  $index = $Cal->calindex();
+  $noup = $Cal->calnoupdate();
 
 =head1 AUTHORS
 
@@ -465,7 +316,7 @@ Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2007-2008 Science and Technology Facilities Council.
+Copyright (C) 2007-2009 Science and Technology Facilities Council.
 All Rights Reserved.
 
 =cut
