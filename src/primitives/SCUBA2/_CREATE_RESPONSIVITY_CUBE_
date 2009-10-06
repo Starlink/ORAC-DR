@@ -1,0 +1,121 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CREATE_RESP_CUBE_ - Create a cube of responsivity images
+
+=head1 SYNOPSIS
+
+_CREATE_RESP_CUBE_
+
+=head1 DESCRIPTION
+
+This primitive creates a 3-d cube of responsivity images as a function
+of time to allow stable bolometers to be identified. A cube is created
+for each subarray. A new cube is created each time this primitive is
+called and existing ones are not deleted.
+
+This is a Frame operation, though output filenames are based on the
+Group name.
+
+=head1 ARGUMENTS
+
+This primitive has no arguments.
+
+=head1 EXTERNAL TASKS
+
+The following external task is used:
+
+=over 4
+
+=item SMURF
+
+STACKFRAMES
+
+=back
+
+=head1 NOTES
+
+Notes go here
+
+=head1 OUTPUT DATA
+
+Notes on output data go here
+
+=head1 OUTPUT FILES
+
+Creates an output file for each subarray with the suffix C<_resp>.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+Copyright (C) 2009 the University of British Columbia.  All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Retrieve the flatfield index object
+my $index = $Cal->flatindex;
+
+# The list of keys is the filenames
+my @keys = $index->indexkeys;
+
+# Return the subarrays in use
+my @subarrays = $Frm->subarrays;
+
+# Store filenames grouped by subarray
+my %respinfo;
+foreach my $subarray (@subarrays) {
+  foreach my $key ( @keys ) {
+    # Index entries
+    my $indexentry = $index->indexentry( $key );
+
+    # Subarray for this entry
+    my $indexsubarray = $indexentry->{SUBARRAY};
+
+    # Retrieve existing list if present
+    my @resp = ($respinfo{$subarray}) ? @{ $respinfo{$subarray} } : ();
+    if ($indexsubarray eq $subarray) {
+      # Add the NDF extension path
+      push(@resp, $key.".more.smurf.resp_new");
+      # Store updated array of filenames in hash
+      $respinfo{$subarray} = \@resp;
+    }
+  }
+}
+
+# Write a responsivity image cube for each subarray
+foreach my $resparray ( keys %respinfo ) {
+
+  my @respfiles = @{ $respinfo{$resparray} };
+
+  # Only create resp cube if we have more than 1 image
+  if ( $#respfiles > 0 ) {
+    my $inlist = write_file_list( @respfiles );
+
+    # Define output filename
+    my $suffix = "rsp".substr($resparray,-1);
+    my $out = $Grp->inout($suffix);
+
+    orac_print "Creating resp cube $out for subarray $resparray...\n";
+
+    my $args = "in=^$inlist out=$out";
+    $Mon{smurf_mon}->obeyw("stackframes","$args");
+  }
+}
