@@ -55,44 +55,70 @@ Rights Reserved.
 
 =cut
 
+# Set up some variables that will be used for calibration information.
+my ( $low, $high, $cal_integ, $cal_peak );
+( my $molecule = $Frm->hdr( "MOLECULE" ) ) =~ s/\s//g;
+( my $transition = $Frm->hdr( "TRANSITI" ) ) =~ s/\s//g;
+( my $object = $Frm->hdr( "OBJECT" ) ) =~ s/\s//g;
+
 # Retrieve standard information from calibration system.
 my $stdref = $Cal->standard;
 if( ! defined $stdref ) {
-  orac_warn "No suitable calibration information could be found for this observation.\n";
+  orac_warn "No standard calibration information could be found for this observation.\n";
+
 } else {
 
   # Pick out info from the calibration system.
-  my $low = $stdref->{'L_BOUND'};
-  my $high = $stdref->{'H_BOUND'};
-  my $cal_integ = $stdref->{'INTEGINT'};
-  my $cal_peak = $stdref->{'PEAK'};
-  my $molecule = $stdref->{'MOLECULE'};
-  my $transition = $stdref->{'TRANSITION'};
-  my $object = $stdref->{'OBJECT'};
+  $low = $stdref->{'L_BOUND'};
+  $high = $stdref->{'H_BOUND'};
+  $cal_integ = $stdref->{'INTEGINT'};
+  $cal_peak = $stdref->{'PEAK'};
+  $molecule = $stdref->{'MOLECULE'};
+  $transition = $stdref->{'TRANSITION'};
+  $object = $stdref->{'OBJECT'};
 
-  my $file = $Frm->file;
+  orac_say "Retrieved calibration information for $object from database.";
+}
 
-  my $temp1 = new ORAC::TempFile;
+my $file = $Frm->file;
 
-  # Calculate the integrated intensity.
-  my $params = "in=$file(1,1,) out=$temp1 axis=spec low=$low high=$high estimator=integ wlim=0.0";
-  $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
-  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp1" );
-  my ( $ORAC_STATUS, $integ ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
+my $temp1 = new ORAC::TempFile;
 
-  # And the peak value.
+# Calculate the integrated intensity.
+my $params = "in=$file(1,1,) out=$temp1 axis=spec estimator=integ wlim=0.0";
+if( defined( $low ) && defined( $high ) ) {
+  $params .= " low=$low high=$high";
+}
+$Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp1" );
+my ( $ORAC_STATUS, $integ ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
+
+# And the peak value.
+if( defined( $low ) && defined( $high ) ) {
   $params = "ndf=$file(1,1,$low:$high)";
-  $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
-  ( $ORAC_STATUS, my $peak ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
+} else {
+  $params = "ndf=$file(1,1,)";
+}
+$Mon{'kappa_mon'}->obeyw( "stats", "$params" );
+( $ORAC_STATUS, my $peak ) = $Mon{'kappa_mon'}->get( "stats", "maximum" );
 
-  # Compare to standard values.
-  my $integ_perc = ( $integ - $cal_integ ) / $cal_integ * 100;
-  my $peak_perc = ( $peak - $cal_peak ) / $cal_peak * 100;
+# Compare to standard values, if we have them.
+my $integ_perc;
+if( defined( $cal_integ ) ) {
+  $integ_perc = ( $integ - $cal_integ ) / $cal_integ * 100;
+}
+my $peak_perc;
+if( defined( $cal_peak ) ) {
+  $peak_perc = ( $peak - $cal_peak ) / $cal_peak * 100;
+}
 
-  # Report to user.
-  orac_say "Flux calibration information for $object $molecule $transition:";
+# Report to user.
+orac_say "Flux calibration information for $object $molecule $transition:";
+if( defined( $cal_integ ) ) {
   orac_say sprintf   " Reference integrated intensity: %.2fK", $cal_integ;
-  orac_print sprintf " Measured integrated intensity:  %.2fK", $integ;
+}
+orac_print sprintf " Measured integrated intensity:  %.2fK", $integ;
+if( defined( $integ_perc ) ) {
   orac_say sprintf ( " (%.2f%% " . ( $integ_perc > 0 ? "higher" : "lower" ) . ")", abs( $integ_perc ) );
 
   # Handle warnings.
@@ -101,10 +127,16 @@ if( ! defined $stdref ) {
   } elsif( abs( $integ_perc ) > 10 ) {
     orac_say( " Integrated intensity differs by more than 10%", "yellow" );
   }
+} else {
+  orac_say "";
+}
 
-  # And the peak.
+# And the peak.
+if( defined( $cal_peak ) ) {
   orac_say sprintf   " Reference peak flux: %.2fK", $cal_peak;
-  orac_print sprintf " Measured peak flux:  %.2fK", $peak;
+}
+orac_print sprintf " Measured peak flux:  %.2fK", $peak;
+if( defined( $peak_perc ) ) {
   orac_say sprintf ( " (%.2f%% " . ( $peak_perc > 0 ? "higher" : "lower" ) . ")", abs( $peak_perc ) );
 
   if( abs( $peak_perc ) > 20 ) {
@@ -112,43 +144,44 @@ if( ! defined $stdref ) {
   } elsif( abs( $peak_perc ) > 10 ) {
     orac_say( " Peak flux differs by more than 10%", "yellow" );
   }
-
-  # Write this information to a separate logging file.
-  my $obsdate = $Frm->uhdr( "ORAC_UTSTART" )->datetime;
-  my $obsnum = $Frm->uhdr( "ORAC_OBSERVATION_NUMBER" );
-  my $obsid = $Frm->uhdr( "ORAC_OBSERVATION_ID" );
-  my $inst = $Frm->uhdr( "ORAC_INSTRUMENT" );
-  my $lofreq = $Frm->hdr( "LOFREQS" );
-  my $mode = $Frm->uhdr( "ORAC_SWITCH_MODE" );
-  my $bandwidth = $Frm->uhdr( "ORAC_BANDWIDTH_MODE" );
-  my $sideband = $Frm->hdr( "OBS_SB" );
-  my $tau = $Frm->hdr( "TAU225ST" );
-  my $elevation = $Frm->uhdr( "ORAC_ELEVATION_START" );
-
-  my $logfile = "log.standard";
-  my $log = new ORAC::LogFile( $logfile );
-  $log->header( "OBSDATE OBSNUM OBSID INST LOFREQ SOURCE MOLECULE LINE MODE BANDWIDTH SIDEBAND TAU ELEVATION INTEGINT PEAK L_BOUND H_BOUND" );
-  $log->addentry( sprintf( "%s %02d %s %s %.3f %s %s %s %s %s %s %.3f %.2f %.2f %.2f %.2f %.2f",
-                           $obsdate,
-                           $obsnum,
-                           $obsid,
-                           $inst,
-                           $lofreq,
-                           $object,
-                           $molecule,
-                           $transition,
-                           $mode,
-                           $bandwidth,
-                           $sideband,
-                           $tau,
-                           $elevation,
-                           $integ,
-                           $peak,
-                           $low,
-                           $high ) );
-
-  orac_say " Calibration information written to $logfile";
-
+} else {
   orac_say "";
-
 }
+
+# Write this information to a separate logging file.
+my $obsdate = $Frm->uhdr( "ORAC_UTSTART" )->datetime;
+my $obsnum = $Frm->uhdr( "ORAC_OBSERVATION_NUMBER" );
+my $obsid = $Frm->uhdr( "ORAC_OBSERVATION_ID" );
+my $inst = $Frm->uhdr( "ORAC_INSTRUMENT" );
+my $lofreq = $Frm->hdr( "LOFREQS" );
+my $mode = $Frm->uhdr( "ORAC_SWITCH_MODE" );
+my $bandwidth = $Frm->uhdr( "ORAC_BANDWIDTH_MODE" );
+my $sideband = $Frm->hdr( "OBS_SB" );
+my $tau = $Frm->hdr( "TAU225ST" );
+my $elevation = $Frm->uhdr( "ORAC_ELEVATION_START" );
+
+my $logfile = "log.standard";
+my $log = new ORAC::LogFile( $logfile );
+$log->header( "OBSDATE OBSNUM OBSID INST LOFREQ SOURCE MOLECULE LINE MODE BANDWIDTH SIDEBAND TAU ELEVATION INTEGINT PEAK L_BOUND H_BOUND" );
+$log->addentry( sprintf( "%s %02d %s %s %.3f %s %s %s %s %s %s %.3f %.2f %.2f %.2f %.2f %.2f",
+                         $obsdate,
+                         $obsnum,
+                         $obsid,
+                         $inst,
+                         $lofreq,
+                         $object,
+                         $molecule,
+                         $transition,
+                         $mode,
+                         $bandwidth,
+                         $sideband,
+                         $tau,
+                         $elevation,
+                         $integ,
+                         $peak,
+                         defined( $low ) ? $low : 0,
+                         defined( $high ) ? $high : 0 ) );
+
+orac_say " Calibration information written to $logfile";
+
+orac_say "";
