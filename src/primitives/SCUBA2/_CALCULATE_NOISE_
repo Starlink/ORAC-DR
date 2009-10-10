@@ -2,7 +2,7 @@
 
 =head1 NAME
 
-_CALCULATE_NOISE_ - calculate a white noise for each subarray
+_CALCULATE_NOISE_ - calculate a white noise image for each subarray
 
 =head1 SYNOPSIS
 
@@ -10,7 +10,12 @@ _CALCULATE_NOISE_
 
 =head1 DESCRIPTION
 
-This primitive calculates a noise image for each subarray.
+This primitive calculates a noise image for each subarray. The noise
+calculation should proceed differently depending on which pipeline is
+being used. Usually, Frames which are only composed of darks are
+ignored unless the observation is a Noise-Dark. If called from the
+SUMMIT pipeline processing is deferred until the observation has
+ended.
 
 =head1 ARGUMENTS
 
@@ -35,6 +40,9 @@ Notes go here
 =head1 OUTPUT DATA
 
 The current Frame object is updated with the output noise files.
+
+The Frame uhdr is updated to set an entry called C<NOISE> which is 1
+if noise images were calculated, otherwise 0.
 
 =head1 OUTPUT FILES
 
@@ -66,21 +74,70 @@ USA.
 
 =cut
 
-# Collect files
-orac_print "Calculating noise...\n";
+# Determine if the time is right to calculate the noise properties. If
+# this is just a dark then there is probably nothing to do
+my $proceed = 0 if ( $Frm->uhdr("DARKONLY") );
 
-# Retrieve lists of input/output files
-my ($inlist, $outlist, @infiles) = write_file_list_inout( $Frm, "_noi");
+# For NOISE-DARK observations which span multiple files, we don't want
+# to ignore all the data until the last file appears, so check for a
+# DARK object.
+if ( $Frm->uhdr("DARKONLY") ) {
+  $proceed = 1 if ( $Frm->hdr("OBJECT") eq "DARK" );
+}
 
-# Calculate the noise
-my $outfiles = "calcnoise.$$";
-my $args = "in=^$inlist out=^$outlist outfiles=$outfiles";
-$Mon{smurf_mon}->obeyw("calcnoise","$args");
+# Do not proceed if this is the SUMMIT pipeline
+$proceed  = 0 if $Frm->uhdr("SUMMIT");
 
-# Read the actual list of output files written
-my @outfiles = read_file_list( $outfiles );
+# Always proceed at the end of an observation
+$proceed = 1 if $Frm->uhdr("OBSEND");
 
-unlink $outfiles;
+if ( $proceed ) {
+  # Collect files
+  my ($inlist, $outlist);
 
-# Store in the Frame
-$Frm->files(@outfiles);
+  # For the summit pipeline we need to wait until the end of the
+  # observation and use all available data to calculate the noise. The
+  # offline pipeline will do the same thing effectively as all the
+  # input files will be in the current Frame.
+  if ( $Frm->uhdr("SUMMIT") ) {
+    my (@infiles, @outfiles);
+    # Loop over all members of current Group
+    foreach my $frmobj ( $Grp->members ) {
+      # Store input files
+      push ( @infiles, $frmobj->files );
+
+      # Define output file names
+      push ( @outfiles, map { scalar $frmobj->inout("_noi", $_ ) }
+	     (1..$frmobj->nfiles) );
+    }
+
+    # Write list of input files and output file names
+    $inlist = write_file_list( @infiles );
+    $outlist = write_file_list( @outfiles );
+  } else {
+    # Non-SUMMIT pipeline just uses everything in the current Frame
+    ($inlist, $outlist) = write_file_list_inout( $Frm, "_noi" );
+  }
+
+  orac_print "Calculating noise...\n";
+  # Calculate the noise
+  my $outfiles = "calcnoise.$$";
+  my $args = "in=^$inlist out=^$outlist outfiles=$outfiles";
+  $Mon{smurf_mon}->obeyw("calcnoise","$args");
+
+  # Read the actual list of output files written
+  my @outfiles = read_file_list( $outfiles );
+
+  unlink $outfiles;
+
+  # Store in the Frame
+  $Frm->files(@outfiles);
+
+  $Frm->uhdr("NOISE",1);
+} else {
+  if ( $Frm->uhdr("SUMMIT") ) {
+    _COPY_RAW_DATA_
+  }
+  $Frm->uhdr("NOISE",0);
+}
+
