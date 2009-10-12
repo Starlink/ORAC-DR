@@ -144,20 +144,6 @@ sub retrieve_bounds {
     }
     err_end( $STATUS );
 
-#    my $mapping = $wcs->GetMapping( AST__BASE, AST__CURRENT );
-#    my @glbnd_out;
-#    my @gubnd_out;
-#    my @wcslbnd_out;
-#    my @wcsubnd_out;
-#    for( my $i = 0; $i < 3; $i++ ) {
-#      $glbnd_out[$i] = 0.5;
-#      $gubnd_out[$i] = $ndf_ubnd[$i] - $ndf_lbnd[$i] + 1.5;
-#      $mapping->MapBox( \@glbnd_out, \@gubnd_out, 1, $i+1, $wcslbnd_out[$i],$wcsubnd_out[$i] );
-#    }
-#    use Data::Dumper;
-#    print Dumper \@wcslbnd_out;
-#    print Dumper \@wcsubnd_out;
-
     # Retrieve spatial information.
     my $skytemplate = Starlink::AST::SkyFrame->new( "" );
     $skytemplate->Set( 'MaxAxes' => 3,
