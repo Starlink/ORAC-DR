@@ -1121,9 +1121,8 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 =head1 COPYRIGHT
 
 Copyright (C) 1998-2001 Particle Physics and Astronomy Research
-  Council. All Rights Reserved.
+Council. All Rights Reserved.
 
+=cut
 
-  =cut
-
-  1;
+1;
