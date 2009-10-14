@@ -19,7 +19,7 @@ ORAC::Recipe - Recipe parsing and execution
 =head1 DESCRIPTION
 
 Class for reading and executing ORAC-DR recipes.
-In general the methods should be called in the order 
+In general the methods should be called in the order
 shown in the SYNOPSIS.
 
 =cut
@@ -29,8 +29,8 @@ use 5.006;
 use vars qw/ $VERSION /;
 use warnings;
 use Carp;
-use File::Spec;  # For pedants everywhere
-use IO::File;    # until perl5.6 is guaranteed
+use File::Spec;                 # For pedants everywhere
+use IO::File;                   # until perl5.6 is guaranteed
 use Text::Balanced qw/ extract_bracketed /;
 use Time::HiRes qw( gettimeofday tv_interval );
 
@@ -216,7 +216,7 @@ sub suffices {
 
 =item B<batch>
 
-Set or return the batch processing status. If batch is set to true 
+Set or return the batch processing status. If batch is set to true
 the recipe will process groups that have been pre-populated with
 unprocessed frames..
 
@@ -226,13 +226,16 @@ unprocessed frames..
 
 sub batch {
   my $self = shift;
-  if (@_) { $self->{BATCH} = shift };
+  if (@_) {
+    $self->{BATCH} = shift;
+  }
+  ;
   return $self->{BATCH};
 }
 
 =item B<debug>
 
-Set or return the debug status. If debug is set to true 
+Set or return the debug status. If debug is set to true
 the processed recipe will include additional debug statements.
 
   $rec->debug(1);
@@ -250,7 +253,7 @@ sub debug {
 =item B<frame>
 
 Set or return the C<ORAC::Frame> associated with the recipe execution.
-This controls 
+This controls
 
   $rec->frame($Frm);
 
@@ -380,7 +383,7 @@ Executes the recipes stored in the object.
 Also needs the current frame, group and calibration objects
 as well as the hash containing all the messaging objects.
 
-  $rec->execute( \$CURRENT_RECIPE, \$CURRENT_PRIMITIVE, \$PRIMITIVE_LIST, 
+  $rec->execute( \$CURRENT_RECIPE, \$CURRENT_PRIMITIVE, \$PRIMITIVE_LIST,
                  $Frm, $Grp, $Cal, $Display, \%Mon);
 
 The following classes are avaiable to primitive writers:
@@ -489,13 +492,13 @@ sub execute {
   # Info message for debugging
   my $recipe_name = $self->name;
   if ($self->debug) {
-     orac_debug "***** Starting recipe '$recipe_name' *****\n";
+    orac_debug "***** Starting recipe '$recipe_name' *****\n";
   }
 
   # Clear logged messages and register the RECIPE name just in case
   # some messages turn up
   orac_clearlog();
-  orac_logging( 1 ); # will be set earlier as a command line argument
+  orac_logging( 1 );  # will be set earlier as a command line argument
   orac_logkey( $self->name );
   orac_loginfo( Recipe => $self->name,
                 Software => $0,
@@ -509,7 +512,7 @@ sub execute {
                                                              $self,$Frm,
                                                              $Grp, $Cal,
                                                              $Display, $Mon,
-                                                            );
+                                                           );
   my $execute_elapsed = tv_interval( $execute_start );
   my $p_execute_elapsed = sprintf( "%.3f", $execute_elapsed );
   orac_print "Recipe took $p_execute_elapsed seconds to evaluate and execute.\n\n";
@@ -527,20 +530,19 @@ sub execute {
     orac_debug "***** Recipe '$recipe_name' completed with status $status *****\n";
   }
 
-  # Check for an error from perl (eg a croak), but evaluate in string 
+  # Check for an error from perl (eg a croak), but evaluate in string
   # context so that thrown errors are caught, they should all have values
   # attached (e.g. ORAC__ABORT or ORAC__FATAL) but don't take chances
   if (defined $error && "$error") {
 
-    # Check for previously thrown UserAbort errors	
+    # Check for previously thrown UserAbort errors
     if ( ref($error) && $error->isa("Error") ) {
-      if ( $error == ORAC__ABORT )
-        {
-          # We have a UserAbort, no hassle, throw it and return to
-          # the Tk Mainloop without printing any junk about the
-          # error
-          $error->throw;
-        }
+      if ( $error == ORAC__ABORT ) {
+        # We have a UserAbort, no hassle, throw it and return to
+        # the Tk Mainloop without printing any junk about the
+        # error
+        $error->throw;
+      }
     }
 
     # Since we have an error we can not trust the current
@@ -562,23 +564,23 @@ sub execute {
       "$error" =~ /line (\d+)/ && do {
         my $num = $1;
         orac_err("Error in line $num\n", 'red');
-#        orac_err("Relevant recipe lines (with numbers):\n\n", 'red');
+        #        orac_err("Relevant recipe lines (with numbers):\n\n", 'red');
 
         # Calculate number of lines to print
-#        my $inc = 15;
-#        my $start = ($num > $inc ? $num - $inc : 0 );
-#        my $end   = ($num < $#recipe - $inc ? $num + $inc : $#recipe);
+        #        my $inc = 15;
+        #        my $start = ($num > $inc ? $num - $inc : 0 );
+        #        my $end   = ($num < $#recipe - $inc ? $num + $inc : $#recipe);
 
-#        # Print out the relevant chunk with line numbers
-#        for (my $i=$start; $i < $end; $i++) {
-#          orac_err("$i: ", 'blue');
-#          orac_err("$new[$i]\n", 'red');
-#        }
+        #        # Print out the relevant chunk with line numbers
+        #        for (my $i=$start; $i < $end; $i++) {
+        #          orac_err("$i: ", 'blue');
+        #          orac_err("$new[$i]\n", 'red');
+        #        }
         orac_err("End recipe dump\n\n",'blue');
       };
 
     } elsif ("$error" =~ /^Died/) {
-      # Else check if the recipe died. Usually a die is caused 
+      # Else check if the recipe died. Usually a die is caused
       # by a control C from the user.
 
       orac_err("Recipe died during execution\n");
@@ -589,12 +591,12 @@ sub execute {
     if ($self->debug) {
       my $fh = new IO::File("> ORACDR_RECIPE.dump");
       if (defined $fh) {
-#        print $fh join('',@recipe). "\n";
+        #        print $fh join('',@recipe). "\n";
         orac_err("Recipe contents dumped to ORACDR_RECIPE.dump\n")
       }
     }
 
-    # Check for previously thrown non-UserAbort errors	
+    # Check for previously thrown non-UserAbort errors
     if ( ref($error) && $error->isa("Error") ) {
       # Exit from the pipeline with already existing error
       $error->throw;
@@ -766,7 +768,8 @@ eval 'use LWP::Simple qw/$ua get is_success status_message/';
 if ($@) {
   orac_warn("The LWP::Simple module is not installed in your perl distribution\n");
   orac_warn("Features of the pipeline requiring HTTP access will not be available\n");
-};
+}
+;
 
 
 use Starlink::Versions qw/ :Funcs /;
@@ -782,7 +785,7 @@ These recipe runtime functions are provided:
 Simple wrapper to eval in this namespace in order to execute recipes
 without fear of possible contamination of the base recipe namespace.
 
-  $status = orac_execute_recipe( $CURRENT_PRIMITIVE, $Recipe, $Frm, $Grp, 
+  $status = orac_execute_recipe( $CURRENT_PRIMITIVE, $Recipe, $Frm, $Grp,
                                  $Cal, $Display, $Mon);
 
 The recipe is a C<ORAC::Recipe> object. The basic objects have to
@@ -805,7 +808,7 @@ my @primitive_list_local;
 
 sub orac_execute_recipe {
   my ( $primitive_list, $current_primitive,
-    $Recipe, $Frm, $Grp, $Cal, $Display, $Mon) = @_;
+       $Recipe, $Frm, $Grp, $Cal, $Display, $Mon) = @_;
 
   # initial recursion depth
   my $DEPTH = 0;
@@ -827,9 +830,9 @@ sub orac_execute_recipe {
   # run the recipe
   my $recobj = $Recipe->recipe;
   my $coderef = $recobj->code;
-  if( defined( $coderef ) ) {
+  if ( defined( $coderef ) ) {
     return $coderef->( 0, [], $Frm, $Grp, $Cal, $Display, $Mon,
-                       { Batch => $Recipe->batch, 
+                       { Batch => $Recipe->batch,
                          Name => $Recipe->name,
                        });
   } else {
@@ -881,13 +884,13 @@ sub current_primitive {
   @$PRIMITIVE_LIST = @primitive_list_local;
 
   # if we have callers we can work out where to place the highlighter
-#  print ">>>>>>>>>>>> START LOOP for $primname\n";
+  #  print ">>>>>>>>>>>> START LOOP for $primname\n";
   my $pos = -1;
   my $calldepth = 0;
-  CALLER: for my $caller (@callers) {
+ CALLER: for my $caller (@callers) {
     $calldepth++;
     my ($prim, $line, $repeat) = @$caller;
-#    print "Looking for instance $repeat of '$prim' in list\n";
+    #    print "Looking for instance $repeat of '$prim' in list\n";
 
     # go through looking for the correct starting point
     while (1) {
@@ -904,7 +907,7 @@ sub current_primitive {
       my $endprim;
       $endprim = (' ' x ($calldepth - 2)). "_" if $calldepth > 1;
 
-#      print "Comparing '$lookfor' with '$primitive_list_local[$pos]'\n";
+      #      print "Comparing '$lookfor' with '$primitive_list_local[$pos]'\n";
       if ( $primitive_list_local[$pos] eq $lookfor) {
         $repeat--;
         if ($repeat == 0) {
@@ -912,7 +915,7 @@ sub current_primitive {
           $PRIMITIVE_LIST->[$pos] = $primitive_list_local[$pos] . " <<";
           next CALLER;
         }
-#        print "Got a match but need more\n";
+        #        print "Got a match but need more\n";
       } elsif ( defined $endprim && $primitive_list_local[$pos] =~ /^$endprim/) {
         return;
       }

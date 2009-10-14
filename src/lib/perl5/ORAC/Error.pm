@@ -28,19 +28,19 @@ ORAC::Error - Exception handling in an object orientated manner.
     try {
        stuff();
     }
-    catch ORAC::Error::UserAbort with 
+    catch ORAC::Error::UserAbort with
     {
-	# normally we just want to catch and then ignore UserAborts
+        # normally we just want to catch and then ignore UserAborts
         my $Error = shift;
-	orac_exit_normally();
+        orac_exit_normally();
     }
-    catch ORAC::Error::FatalError with 
+    catch ORAC::Error::FatalError with
     {
         # its a fatal error
         my $Error = shift;
-	orac_exit_normally($Error);
+        orac_exit_normally($Error);
     }
-    otherwise 
+    otherwise
     {
        # this block catches croaks and other dies
        my $Error = shift;
@@ -120,10 +120,10 @@ initialized with the arguments that are passed to it's
 constructor. The elements that are used by, or are retrievable by the
 C<ORAC::Error> class are listed below, other classes may add to these.
 
-	-file
-	-line
-	-text
-	-value
+        -file
+        -line
+        -text
+        -value
 
 If C<-file> or C<-line> are not specified in the constructor arguments
 then these will be initialized with the file name and line number
@@ -155,7 +155,7 @@ Create a new C<ORAC::Error> object and returns it. This is defined for
 syntactic sugar, eg
 
     record ORAC::Error::UserAbort ( $message, ORAC__ABORT )
-	and return;
+        and return;
 
 =back
 

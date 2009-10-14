@@ -39,10 +39,10 @@ require Exporter;
 use base qw/ Exporter /;
 use vars qw/ @EXPORT /;
 @EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist cosdeg
-	      sindeg dectodms hmstodec deg2rad rad2deg is_numeric
-        get_prim_arg write_file_list write_file_list_inout read_file_list
+              sindeg dectodms hmstodec deg2rad rad2deg is_numeric
+              get_prim_arg write_file_list write_file_list_inout read_file_list
               hardlink
-	    );
+           );
 
 use Carp;
 use vars qw/$VERSION/;
@@ -101,8 +101,10 @@ sub dectodms {
   $dms[ 0 ] = int( $dec );
   $dms[ 1 ] = int( ( $dec - int( $dec ) ) * 60 );
   $dms[ 2 ] = ( ( $dec - $dms[ 0 ] ) * 60 -
-		int( ( $dec - $dms[ 0 ] ) * 60 ) ) * 60;
-  if( $neg ) { $dms[0] *= -1 }
+                int( ( $dec - $dms[ 0 ] ) * 60 ) ) * 60;
+  if ( $neg ) {
+    $dms[0] *= -1;
+  }
   return @dms;
 }
 
@@ -214,7 +216,8 @@ sub log10 {
   my $in = shift;
 
   return POSIX::log10($in);
-};
+}
+;
 
 
 =item B<nint>
@@ -225,14 +228,15 @@ value. 0.5 is rounded up.
 =cut
 
 sub nint {
-    my $value = shift;
+  my $value = shift;
 
-    if ($value >= 0) {
-        return (int($value + 0.5));
-    } else {
-        return (int($value - 0.5));
-    }
-};
+  if ($value >= 0) {
+    return (int($value + 0.5));
+  } else {
+    return (int($value - 0.5));
+  }
+}
+;
 
 =item B<utdate>
 
@@ -299,13 +303,13 @@ sub parse_keyvalues {
     if ($split[$i] =~ /^[\'\"\[\{\(]/ ) {
       my ($extract, $remainder);
       if ($split[$i] =~ /^[\'\"]/ ) {
-	# Delimiting character
-	($extract, $remainder) = extract_delimited( $split[$i],
-						    substr($split[$i],0,1));
+        # Delimiting character
+        ($extract, $remainder) = extract_delimited( $split[$i],
+                                                    substr($split[$i],0,1));
 
       } elsif ($split[$i] =~ /^[\[\(\{]/ ) {
-	# bracketing character
-	($extract, $remainder) = extract_bracketed( $split[$i], '(){}[]<>' );
+        # bracketing character
+        ($extract, $remainder) = extract_bracketed( $split[$i], '(){}[]<>' );
 
       }
 
@@ -365,7 +369,7 @@ For example,
 
 is converted to
 
-   (5,9,10,11) 
+   (5,9,10,11)
 
 =cut
 
@@ -427,29 +431,29 @@ variables will be stringified to "undef".
 
 sub convert_args_to_string {
   my %args = @_;
-  if( ! %args ) {
+  if ( ! %args ) {
     return "";
   }
   my @strs;
   foreach my $key ( keys %args ) {
-    if( ! defined( $args{$key} ) ) {
+    if ( ! defined( $args{$key} ) ) {
       push @strs, "$key=undef";
-    } elsif( UNIVERSAL::isa( $args{$key}, "ORAC::Frame" ) ||
-             UNIVERSAL::isa( $args{$key}, "ORAC::Group" ) ) {
+    } elsif ( UNIVERSAL::isa( $args{$key}, "ORAC::Frame" ) ||
+              UNIVERSAL::isa( $args{$key}, "ORAC::Group" ) ) {
       my $str = "$args{$key}";
       $str =~ s/^ORAC:://;
       $str =~ s/=[\w()]+$//;
       push @strs, "$key=$str";
-    } elsif( UNIVERSAL::isa( $args{$key}, "ORAC::TempFile" ) ) {
+    } elsif ( UNIVERSAL::isa( $args{$key}, "ORAC::TempFile" ) ) {
       push @strs, "$key=" . $args{$key}->file;
-    } elsif( UNIVERSAL::isa( $args{$key}, "HASH" ) ) {
-      if( scalar keys %{$args{$key}} <= 5 ) {
+    } elsif ( UNIVERSAL::isa( $args{$key}, "HASH" ) ) {
+      if ( scalar keys %{$args{$key}} <= 5 ) {
         push @strs, "$key={" . ( join ",", map { "$_=>$args{$key}{$_}" } keys %{$args{$key}} ) . "}";
       } else {
         push @strs, "$key={" . ( scalar keys %{$args{$key}} ) . " element hash}";
       }
-    } elsif( UNIVERSAL::isa( $args{$key}, "ARRAY" ) ) {
-      if( scalar @{$args{$key}} <= 5 ) {
+    } elsif ( UNIVERSAL::isa( $args{$key}, "ARRAY" ) ) {
+      if ( scalar @{$args{$key}} <= 5 ) {
         push @strs, "$key=[" . ( join ",", @{$args{$key}} ) . "]";
       } else {
         push @strs, "$key=[" . ( scalar @{$args{$key}} ) . " element array]";
@@ -531,13 +535,13 @@ group parameters.
 =cut
 
 sub write_file_list {
-   my @files = @_;
-   my $intmp = ORAC::TempFile->new();
-   for my $f (@files) {
-     print {$intmp->handle} "$f\n";
-   }
-   close($intmp->handle);
-   return $intmp;
+  my @files = @_;
+  my $intmp = ORAC::TempFile->new();
+  for my $f (@files) {
+    print {$intmp->handle} "$f\n";
+  }
+  close($intmp->handle);
+  return $intmp;
 }
 
 =item B<write_file_list_inout>
@@ -555,7 +559,7 @@ are returned in the list. The object is not updated automatically.
 If the third (optional) argument
 is true the output files will be pushed onto the intermediates
 array associated with the supplied frame/group object. This ensures
-the files will be cleared up even if they are not output from a 
+the files will be cleared up even if they are not output from a
 primitive. If istmp is true, the output files are not returned to
 the caller.
 
@@ -602,15 +606,15 @@ sub hardlink {
   my $file = shift;
   my $link = shift;
 
-  if( ! defined( $file ) ||
-      ! defined( $link ) ) {
+  if ( ! defined( $file ) ||
+       ! defined( $link ) ) {
     $! = "Must define both file and link to hardlink()";
     return 0;
   }
 
-  if( -e $link ) {
+  if ( -e $link ) {
     my $unlinkstatus = unlink( $link );
-    if( ! $unlinkstatus ) {
+    if ( ! $unlinkstatus ) {
       return $unlinkstatus;
     }
   }

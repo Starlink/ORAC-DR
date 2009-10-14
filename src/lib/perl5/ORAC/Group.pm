@@ -20,7 +20,7 @@ ORAC::Group - base class for dealing with observation groups in ORAC-DR
 =head1 DESCRIPTION
 
 This module provides the basic methods available to all
-B<ORAC::Group> objects. This class should be used when 
+B<ORAC::Group> objects. This class should be used when
 storing information relating to a group of observations
 processed in the B<ORAC-DR> data reduction pipeline.
 
@@ -41,8 +41,8 @@ use vars qw/$VERSION/;
 $VERSION = '1.0';
 
 # Associated classes
-use ORAC::Print;          # Print statements
-use ORAC::Index::Extern;  # For bad observation index list
+use ORAC::Print;                # Print statements
+use ORAC::Index::Extern;        # For bad observation index list
 use ORAC::Constants;
 use ORAC::General;
 use ORAC::BaseFile;
@@ -134,13 +134,13 @@ frame.
   $subgrp = $Grp->subgrp(NAME => 'CRL618', CHOP=> 60.0);
 
 The new subgrp is blessed into the same class as $Grp.
-All header information (hdr() and uhdr()) is copied 
+All header information (hdr() and uhdr()) is copied
 from the main group to the sub-group.
 
 This method is generally used where access to members of the
 group by some search criterion is required.
 
-It is possible that the returned group will contain no 
+It is possible that the returned group will contain no
 members....
 
 If the value looks like a number a numeric comparison will be performed.
@@ -155,7 +155,7 @@ sub subgrp {
   my %hash = @_;
 
   # Create a new grp
-  my @subgrp = (); # Storage array
+  my @subgrp = ();              # Storage array
   my $parent_name = $self->groupid;
   $parent_name = 'UNKNOWN' unless defined $parent_name; # -w protection
   my $subgrp = $self->new($parent_name . "_subgrp");
@@ -168,19 +168,19 @@ sub subgrp {
   # the hash
   foreach my $member ($self->members) {
 
-    my $match = 1;  # Assume a match
+    my $match = 1;              # Assume a match
 
     # We are doing a string comparison
     foreach my $key (keys %hash) {
       unless (defined $hash{$key}) {
-	orac_warn "SUBGRP: Key $key does not have a value in comparison hash\n";
+        orac_warn "SUBGRP: Key $key does not have a value in comparison hash\n";
       }
       # Need to check hdr() and uhdr()
       my $val1 = $member->hdr($key);
       my $val2 = $member->uhdr($key);
 
       unless (defined $val1 or defined $val2) {
-	orac_warn "SUBGRP: Key $key is not defined in the header for " . $member->file . "\n";
+        orac_warn "SUBGRP: Key $key is not defined in the header for " . $member->file . "\n";
       }
 
       # -w protection
@@ -194,18 +194,18 @@ sub subgrp {
       # is_numeric function in ORAC::General
 
       if (is_numeric($val1) and is_numeric($val2)) {
-	# Compare with the selected key as number.
-	unless ( ($hash{$key} == $val1) or ($hash{$key} == $val2)) {
-	  $match = 0;
-	  last;
-	}
+        # Compare with the selected key as number.
+        unless ( ($hash{$key} == $val1) or ($hash{$key} == $val2)) {
+          $match = 0;
+          last;
+        }
       } else {
-	
-	# Compare with the selected key.
-	unless ( ($hash{$key} eq $val1) or ($hash{$key} eq $val2)) {
-	  $match = 0;
-	  last;
-	}
+
+        # Compare with the selected key.
+        unless ( ($hash{$key} eq $val1) or ($hash{$key} eq $val2)) {
+          $match = 0;
+          last;
+        }
       }
     }
 
@@ -240,7 +240,7 @@ method:
 The groups in @grps are blessed into the same class as $Grp.
 For example, if @keys = ('MODE','CHOP') then you can gurantee
 that the members of each sub group will have the same values
-for MODE and CHOP. 
+for MODE and CHOP.
 
 All header information from the main group is copied to the
 sub groups.
@@ -276,9 +276,9 @@ sub subgrps {
       my $val1 = $member->hdr($hdr);
       my $val2 = $member->uhdr($hdr);
       if (defined $val1) {
-	$key .= $val1;
+        $key .= $val1;
       } elsif (defined $val2) {
-	$key .= $val2;
+        $key .= $val2;
       }
     }
 
@@ -310,7 +310,7 @@ sub subgrps {
 
 =head2 Accessor methods
 
-The following methods are available for accessing the 
+The following methods are available for accessing the
 'instance' data.
 
 =over 4
@@ -347,7 +347,7 @@ rather than the array.
 
 Do not use this array reference to change the contents of the array
 directly unless the check_membership() method is run immediately
-afterwards. The check_membership() method is responsible for 
+afterwards. The check_membership() method is responsible for
 checking the state of each member and copying them to the members()
 array.
 
@@ -355,9 +355,9 @@ array.
 
 sub allmembers {
   my $self = shift;
-  if (@_) { 
+  if (@_) {
     @{ $self->{AllMembers} } = @_;
-    $self->check_membership; # Check valid frames.
+    $self->check_membership;    # Check valid frames.
   }
   if (wantarray()) {
     return @{ $self->{AllMembers} };
@@ -378,7 +378,7 @@ needs to go back to the original members.
 
 sub purge_members {
   my $self = shift;
-#  @{$self->{AllMembers}} = ();
+  #  @{$self->{AllMembers}} = ();
   # Allows last Frame to be kept
   my $keeplast = 0;
   if ( @_ ) {
@@ -396,7 +396,7 @@ sub purge_members {
 =item B<badobs_index>
 
 Return (or set) the index object associate with the bad observation
-index file. A index of class B<ORAC::Index::Extern> is used since 
+index file. A index of class B<ORAC::Index::Extern> is used since
 this index is modified by an external user/program.
 
 The index is created automatically the first time this method
@@ -407,7 +407,9 @@ is invoked.
 sub badobs_index {
 
   my $self = shift;
-  if (@_) { $self->{BadObsIndex} = shift }
+  if (@_) {
+    $self->{BadObsIndex} = shift;
+  }
 
   # If undef we can create a new index object
   unless (defined $self->{BadObsIndex}) {
@@ -418,19 +420,20 @@ sub badobs_index {
       # Make a default one
       $rulesfile = File::Spec->catfile($ENV{ORAC_DATA_OUT},"rules.badobs");
       if (!-e $rulesfile) {
-	orac_warnp("Creating temporary bad observation rules file\n");
-	open(my $fh, ">", $rulesfile)
-	  or orac_throw("Could not create private rules.badobs file: $!");
-	print $fh 'ORACUT == $Hdr{ORACUT}'."\n";
-	print $fh 'ORACNUM == $Hdr{ORACNUM}'."\n";
-	close($fh);
+        orac_warnp("Creating temporary bad observation rules file\n");
+        open(my $fh, ">", $rulesfile)
+          or orac_throw("Could not create private rules.badobs file: $!");
+        print $fh 'ORACUT == $Hdr{ORACUT}'."\n";
+        print $fh 'ORACNUM == $Hdr{ORACNUM}'."\n";
+        close($fh);
       }
     }
 
     $self->{BadObsIndex} = new ORAC::Index::Extern($indexfile,$rulesfile);
-  };
+  }
+  ;
 
-  return $self->{BadObsIndex}; 
+  return $self->{BadObsIndex};
 }
 
 
@@ -451,7 +454,7 @@ group).
 Returns an array reference in a scalar context, an array in an
 array context.
 
-The contents of this array are not automatically written to the 
+The contents of this array are not automatically written to the
 group file when changed, see the coaddspush() or coaddswrite() methods
 for further information on object persistence. The array is simply
 meant as a storage area for the pipeline.
@@ -460,7 +463,9 @@ meant as a storage area for the pipeline.
 
 sub coadds {
   my $self = shift;
-  if (@_) { @{$self->{Coadds}} = @_; }
+  if (@_) {
+    @{$self->{Coadds}} = @_;
+  }
   if (wantarray()) {
     return @{$self->{Coadds}};
   } else {
@@ -482,7 +487,10 @@ reduced group.
 
 sub filesuffix {
   my $self = shift;
-  if (@_) { $self->{FileSuffix} = shift;};
+  if (@_) {
+    $self->{FileSuffix} = shift;
+  }
+  ;
   return $self->{FileSuffix};
 }
 
@@ -500,7 +508,10 @@ this.
 
 sub fixedpart {
   my $self = shift;
-  if (@_) { $self->{FixedPart} = shift;};
+  if (@_) {
+    $self->{FixedPart} = shift;
+  }
+  ;
   return $self->{FixedPart};
 }
 
@@ -527,7 +538,7 @@ Retrieve the array containing the valid objects within the group
 This is the safest way to access the group members
 since it only returns valid frames to the caller.
 
-Use the allmembers() method to return all members of the group 
+Use the allmembers() method to return all members of the group
 regardless of the state of the individual frames.
 
 Group membership should not be set using ths method since that may lead
@@ -580,8 +591,8 @@ sub name {
     if (@allmembers) {
       my $Frm = shift(@allmembers);
       my $number;
-      if( defined( $Frm->uhdr( "ORAC_DR_GROUP" ) ) &&
-          $Frm->uhdr( "ORAC_DR_GROUP" ) =~ /^\d+$/ ) {
+      if ( defined( $Frm->uhdr( "ORAC_DR_GROUP" ) ) &&
+           $Frm->uhdr( "ORAC_DR_GROUP" ) =~ /^\d+$/ ) {
         $number = $Frm->uhdr( "ORAC_DR_GROUP" );
       } else {
         $number = $Frm->number;
@@ -612,7 +623,9 @@ header of the first input frame object.
 
 sub groupid {
   my $self = shift;
-  if (@_) { $self->{GroupID} = shift; }
+  if (@_) {
+    $self->{GroupID} = shift;
+  }
   return $self->{GroupID};
 }
 
@@ -651,7 +664,7 @@ The UT and observation number are compared with each member of
 the group (the full list of members - see allmembers()).
 For each group member, the following test is performed to test
 for validity. First it is queried to check whether it is in a
-good state (ie has been processed successfully). 
+good state (ie has been processed successfully).
 A frame will be marked as bad if the recipe fails to execute
 successfully. If the frame is good (from the pipeline viewpoint)
 the UT date and observation number is then compared with the
@@ -661,9 +674,9 @@ group members (see the members() method).
 
 The format of the index file should be of the form:
 
- 24 19980716 
- 27 19980716 
- 43 19980815 
+ 24 19980716
+ 27 19980716
+ 43 19980815
  ...
 
 =cut
@@ -693,17 +706,17 @@ sub check_membership {
       # order constrained by the Index class and must match the
       # order used in the user-supplied index file
 
-      my $badobs = 
-          $self->badobs_index->cmp_with_hash({
-					      ORACNUM => $member->number,
-					      ORACUT => $member->hdr('ORACUT')
-					     });
+      my $badobs =
+        $self->badobs_index->cmp_with_hash({
+                                            ORACNUM => $member->number,
+                                            ORACUT => $member->hdr('ORACUT')
+                                           });
 
       # if the $badobs is not defined then we have a good observation
       unless (defined $badobs) {
-	push (@good, $member);
+        push (@good, $member);
       } else {
-	orac_warn "Removing observation ". $member->number ." from group\n";
+        orac_warn "Removing observation ". $member->number ." from group\n";
       }
 
     }
@@ -876,7 +889,7 @@ respectively.
 sub file_from_name {
   my $self = shift;
 
-  if( ! defined( $self->name ) ) {
+  if ( ! defined( $self->name ) ) {
     return undef;
   }
 
@@ -922,7 +935,7 @@ sub frame {
 
   # Seems that we are setting the value
   # We need to be clever here
-  if (@_) { 
+  if (@_) {
     my $new = shift;
     # If the number is greater than the current number of members
     # just do a push
@@ -934,19 +947,19 @@ sub frame {
 
       # Search through allmembers looking for this frame
       # and replace it
-      my $replace = 0; 
+      my $replace = 0;
 
       if (defined $current) {
-	foreach my $frm ($self->allmembers) {
-	  if ($frm eq $current) {
-	    $frm = $new;
-	    $replace = 1;
-	    last;
-	  }
-	}
+        foreach my $frm ($self->allmembers) {
+          if ($frm eq $current) {
+            $frm = $new;
+            $replace = 1;
+            last;
+          }
+        }
       }
 
-      # If we have not found the value push this frame 
+      # If we have not found the value push this frame
       # using a low-level push to prevent us running
       # check_membership twice
       push(@{$self->allmembers}, $new) unless $replace;
@@ -1026,7 +1039,7 @@ sub firstmember {
   my $self = shift;
   my $member = shift;
 
-  if( $member eq $self->frame(0)) {
+  if ( $member eq $self->frame(0)) {
     return 1;
   }
 
@@ -1070,7 +1083,7 @@ sub lastallmembers {
   my $self = shift;
   my $member = shift;
   my @allmembers = $self->allmembers;
-  if( $member eq $allmembers[-1] ) {
+  if ( $member eq $allmembers[-1] ) {
     return 1;
   }
   return 0;
@@ -1114,7 +1127,7 @@ routine does not check to make sure this is possible - the program
 will die if you try to use a SCALAR member.
 
 If an argument list is given the file names for each member of the
-group are updated. This will only be attempted if the number of 
+group are updated. This will only be attempted if the number of
 arguments given matches the number of members in the group.
 
   $Grp->membernames(@newnames);
@@ -1135,8 +1148,8 @@ sub membernames {
     # The number of members in the group
     if ($self->num == $#_) {
       foreach my $member ($self->members) {
-	my $newname = shift;
-	$member->file($newname);
+        my $newname = shift;
+        $member->file($newname);
       }
     }
 
@@ -1297,15 +1310,15 @@ sub template {
 
 This method updates the current filename of each member of the group
 when supplied with a suffix (and optionally, a file number -- see the
-inout() method in B<ORAC::Frame> for more information). The inout() 
-method (of the individual frame) is invoked for each member to 
+inout() method in B<ORAC::Frame> for more information). The inout()
+method (of the individual frame) is invoked for each member to
 generate the output name.
 
   $Grp->updateout("suffix");
   $Grp->updateout("suffix", 5);
 
 This can be used to update the member filenames after an operation
-has been applied to every file in the group. Alternatively the 
+has been applied to every file in the group. Alternatively the
 membernames() method can be invoked with the output of the inout()
 method.
 
@@ -1346,7 +1359,7 @@ sub updateout {
 
 #
 #  return $self->frame($self->num);
-#  
+#
 #}
 
 
@@ -1416,9 +1429,9 @@ WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License along with
-this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-Place,Suite 330, Boston, MA  02111-1307, USA
+  this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+  Place,Suite 330, Boston, MA  02111-1307, USA
 
-=cut
+  =cut
 
-1;
+  1;

@@ -79,7 +79,7 @@ The following loop facilities are available:
 
 =item B<orac_loop_list>
 
-Takes a list of numbers and returns back a frame object 
+Takes a list of numbers and returns back a frame object
 for each number (one frame object per call)
 
   $Frm = orac_loop_list($class, $UT, \@array, $noskip);
@@ -88,14 +88,14 @@ undef is returned on error or when all members of the
 list have been returned. If the 'skip' flag is true
 missing files in the list will be ignored and the next
 element of the list selected. If 'skip' is false
-the loop will abort if the file is not present 
+the loop will abort if the file is not present
 
 =cut
 
   sub orac_loop_list {
     #print "in orac_loop_list\n";
     croak 'Wrong number of args: orac_loop_list(class, ut, arr_ref, skip)'
-      unless scalar(@_) == 4; 
+      unless scalar(@_) == 4;
 
     my ($class, $utdate, $obsref, $skip) = @_;
 
@@ -165,7 +165,7 @@ undef is returned on error or when there are no more data files
 available.
 
 This loop does not have a facility for skipping files when observations
-are not present. This behaviour is obtained by combining 
+are not present. This behaviour is obtained by combining
 orac_check_data_dir with the list looping option so that the last
 observation number can be determined before running the loop. The skip
 flag is ignored in this loop.
@@ -634,7 +634,7 @@ sub orac_loop_file {
 
     # If we have a relative path, assume it's relative to
     # $ORAC_DATA_IN.
-    if( ! File::Spec->file_name_is_absolute( $fname ) ) {
+    if ( ! File::Spec->file_name_is_absolute( $fname ) ) {
       $fname = File::Spec->catfile( $ENV{'ORAC_DATA_IN'}, $fname );
     }
 
@@ -727,7 +727,7 @@ sub orac_loop_task {
       # Ask each task for data
       for my $t (@tasks) {
         # if we already have the requested frame from this task
-        # skip. This is a bit problematic if the frame number 
+        # skip. This is a bit problematic if the frame number
         # increments in the middle of this task loop
         next if (defined $wantframe && exists $received{$wantframe}{$t});
         if (defined $wantframe) {
@@ -794,11 +794,11 @@ sub orac_loop_task {
           $received{$wantframe}{$t} = $current;
 
         } elsif (defined $thisframe && $thisframe < $refframe &&
-                $timestamp > $reftime ) {
+                 $timestamp > $reftime ) {
           # Looks like we have reset our observation
           orac_print "Detected observation reset. Looks like a new observation is beginning.\n";
 
-          # Code duplication. 
+          # Code duplication.
           delete $received{$wantframe} if defined $wantframe;
           $reftime = $timestamp;
           $wantframe = $thisframe;
@@ -865,8 +865,8 @@ sub orac_loop_task {
   for my $t (keys %current) {
 
     # Filename is blanked for DREAM/STARE but not deleted
-    if (exists $current{$t}->{FILENAME} 
-       && $current{$t}->{FILENAME} =~ /\w/ ) {
+    if (exists $current{$t}->{FILENAME}
+        && $current{$t}->{FILENAME} =~ /\w/ ) {
       # simple filename relative to ORAC_DATA_IN
       my $fname =  _to_abs_path( $current{$t}->{FILENAME} );
 
@@ -1046,13 +1046,13 @@ sub orac_check_data_dir {
     # may be tricky). Cant match the UT date since I dont know
     # where the UT fits into the filename convention
 
-    $pattern = $DummyFrm->rawfixedpart . '.*' . 
+    $pattern = $DummyFrm->rawfixedpart . '.*' .
       $DummyFrm->rawsuffix . '$'; # ' dummy quote again
 
   }
 
   # Now open the directory
-  opendir(my $DATADIR, "$ENV{ORAC_DATA_IN}") 
+  opendir(my $DATADIR, "$ENV{ORAC_DATA_IN}")
     or die "Error opening ORAC_DATA_IN: $!";
 
   # Read the directory, extract the number and sort the list
@@ -1068,7 +1068,7 @@ sub orac_check_data_dir {
   closedir $DATADIR;
 
   # Now need to compare with the supplied observation number
-  # Go through the sorted list until we find a number that is 
+  # Go through the sorted list until we find a number that is
   # greater than the current observation. Cant simply take the
   # slice since the index in the sort array is not related to the
   # observation number
@@ -1082,7 +1082,7 @@ sub orac_check_data_dir {
   }
 
   # If $next is defined, that means we have found the next observation
-  # in the list. 
+  # in the list.
 
   # If we are in a scalar context we also need the highest number found
   # The highest value is the last member unless $next
@@ -1163,7 +1163,7 @@ Returns 1 or more configured frame objects on success.
 sub link_and_read {
 
   croak 'Wrong number of args: link_and_read(class, ut, num, flag)'
-    if (scalar(@_) != 4 && scalar(@_) != 5); 
+    if (scalar(@_) != 4 && scalar(@_) != 5);
 
   my ($class, $ut, $num, $flag, $reflist) = @_;
 
@@ -1398,23 +1398,23 @@ sub _clean_path {
   my @outdirs;
   for my $d (@dirs) {
     if ($d eq '..') {
-       # remove last entry from dir list unless the last entry
-       # is a relative path identifier or root dir
-       if (@outdirs && $outdirs[-1] ne ".." && $outdirs[-1] ne "."
-           && $outdirs[-1] ne "") {
-         pop(@outdirs);
-       } else {
-         push(@outdirs, $d);
-       }
+      # remove last entry from dir list unless the last entry
+      # is a relative path identifier or root dir
+      if (@outdirs && $outdirs[-1] ne ".." && $outdirs[-1] ne "."
+          && $outdirs[-1] ne "") {
+        pop(@outdirs);
+      } else {
+        push(@outdirs, $d);
+      }
     } elsif ($d eq '.') {
-       # ignore it unless we are first entry 
-       if (!@outdirs) {
-         push(@outdirs, $d);
-       }
-       
+      # ignore it unless we are first entry
+      if (!@outdirs) {
+        push(@outdirs, $d);
+      }
+
     } else {
-       # Store it
-       push(@outdirs, $d);
+      # Store it
+      push(@outdirs, $d);
     }
   }
   return File::Spec->catpath( $vol, File::Spec->catdir(@outdirs), $file);
@@ -1453,7 +1453,7 @@ sub _convert_and_link {
 
 =item B<_convert_and_link_nofrm>
 
-This is the low level file conversion/linking routine used by 
+This is the low level file conversion/linking routine used by
 C<_convert_and_link>.
 
   @converted = _convert_and_link_nofrm( $infmt, $outfmt, @input);
@@ -1554,7 +1554,7 @@ sub _convert_and_link_nofrm {
           orac_err("$!\n");
         } else {
           orac_err("File $fname does exist in ORAC_DATA_OUT but is a link\n");
-          orac_err("pointing to nowhere. It points to: $nowhere\n");	
+          orac_err("pointing to nowhere. It points to: $nowhere\n");
         }
         return ();
       }
@@ -1596,7 +1596,7 @@ sub _read_flagfiles {
 
   my @names;
   for my $flagname (@flagnames) {
-    open( my $flagfile, "<", $flagname ) 
+    open( my $flagfile, "<", $flagname )
       or orac_throw "Unable to open flag file $flagname: $!";
 
     # Read the filenames from the file.

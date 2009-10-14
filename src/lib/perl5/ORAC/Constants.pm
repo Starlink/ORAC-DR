@@ -38,7 +38,7 @@ require Exporter;
                                ORAC__ABORT ORAC__FATAL ORAC__PARSE_ERROR
                                ORAC__TERM / ],
                 'badvalues' => [qw/ VAL__BADD / ],
-	       );
+               );
 
 Exporter::export_tags('status');
 Exporter::export_ok_tags( 'badvalues' );
@@ -127,7 +127,7 @@ use constant VAL__BADD => NDF::VAL__BADD;
 
 =head1 TAGS
 
-Individual sets of constants can be imported by 
+Individual sets of constants can be imported by
 including the module with tags. For example:
 
   use ORAC::Constants qw/:status/;

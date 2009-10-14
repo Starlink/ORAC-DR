@@ -36,13 +36,13 @@ use ORAC::Inst::SetupEnv;
 
 @ISA = qw(Exporter);
 
-@EXPORT = qw/  orac_setup_display orac_exit_normally orac_exit_abnormally 
-  orac_force_abspath orac_chdir_output_dir
-  /;
+@EXPORT = qw/  orac_setup_display orac_exit_normally orac_exit_abnormally
+               orac_force_abspath orac_chdir_output_dir
+            /;
 
 $VERSION = '1.0';
 
-$Beep    = 0;       # True if ORAC should make noises
+$Beep    = 0;                   # True if ORAC should make noises
 
 
 #------------------------------------------------------------------------
@@ -108,8 +108,8 @@ sub orac_setup_display {
   if (!$options{monitor}) {
     if (!$options{nolocal}) {
       unless (exists $ENV{DISPLAY}) {
-	$options{nolocal} = 1;
-	warn 'DISPLAY environment variable unset - configuring display for monitoring';
+        $options{nolocal} = 1;
+        warn 'DISPLAY environment variable unset - configuring display for monitoring';
       }
     }
   } elsif ($options{monitor}) {
@@ -132,7 +132,7 @@ sub orac_setup_display {
       $Display->does_master_display( 0 );
     } else {
       $Display->does_master_display( 1 );
-    } 
+    }
   }
 
   # Set the location of the display definition file
@@ -147,11 +147,17 @@ sub orac_setup_display {
   my $defaultdisp = File::Spec->catfile($ENV{'ORAC_DATA_CAL'}, "disp.dat");
   my $dispdef = File::Spec->catfile($ENV{'ORAC_DATA_OUT'}, "disp.dat");
 
-  unless (-e $defaultdisp) {$defaultdisp = $systemdisp};
+  unless (-e $defaultdisp) {
+    $defaultdisp = $systemdisp;
+  }
+  ;
 
-  unless (-e $dispdef) {copy($defaultdisp,$dispdef)};
+  unless (-e $dispdef) {
+    copy($defaultdisp,$dispdef);
+  }
+  ;
 
-  # Set the display filename 
+  # Set the display filename
   $Display->filename($dispdef);
 
   # GUI launching goes here....
@@ -188,7 +194,7 @@ sub orac_exit_normally {
               message => '',
               err => 0);
 
-  if (@_ == 1) { # backwards compatible
+  if (@_ == 1) {                # backwards compatible
     $args{message} = shift;
   } else {
     %args = (%args, @_ );
@@ -199,23 +205,25 @@ sub orac_exit_normally {
   my $error = ORAC::Error->prior;
   if (defined $error) {
     ORAC::Error->flush;
-    $args{err} = 1; # force true
-  } 
+    $args{err} = 1;             # force true
+  }
 
   # redefine the ORAC::Print bindings
-  my $msg_prt  = new ORAC::Print; # For message system
+  my $msg_prt  = new ORAC::Print;   # For message system
   my $msgerr_prt = new ORAC::Print; # For errors from message system
-  my $orac_prt = new ORAC::Print; # For general orac_print
+  my $orac_prt = new ORAC::Print;   # For general orac_print
 
   # Debug info
   orac_print ("Exiting...\n","red") unless $args{quiet};
 
-  rmtree $ENV{'ADAM_USER'}             # delete process-specific adam dir
+  rmtree $ENV{'ADAM_USER'}      # delete process-specific adam dir
     if defined $ENV{ADAM_USER};
 
   # Ring a bell when exiting if required
   if ($Beep) {
-    for (1..5) {print STDOUT "\a"; select undef,undef,undef,0.2}
+    for (1..5) {
+      print STDOUT "\a"; select undef,undef,undef,0.2;
+    }
   }
 
   # Cleanup Tk window(s) if they are still hanging around
@@ -258,9 +266,9 @@ sub orac_exit_abnormally {
   $signal = shift if @_;
 
   # redefine the ORAC::Print bindings
-  my $msg_prt  = new ORAC::Print; # For message system
+  my $msg_prt  = new ORAC::Print;   # For message system
   my $msgerr_prt = new ORAC::Print; # For errors from message system
-  my $orac_prt = new ORAC::Print; # For general orac_print
+  my $orac_prt = new ORAC::Print;   # For general orac_print
 
   # Try and cleanup, untested, I can't get it to exit abnormally
   ORAC::Event->destroy("Tk");
@@ -270,7 +278,9 @@ sub orac_exit_abnormally {
 
   # ring my bell, baby
   if ($Beep) {
-    for (1..10) {print STDOUT "\a"; select undef,undef,undef,0.2}
+    for (1..10) {
+      print STDOUT "\a"; select undef,undef,undef,0.2;
+    }
   }
 
   die "\n\nAborting from ".ORAC::Version->getApp." - $signal received\n";
@@ -302,7 +312,7 @@ sub orac_chdir_output_dir {
 
   if (exists $ENV{ORAC_DATA_OUT}) {
 
-    if( ! defined( $nfs_check ) || $nfs_check ) {
+    if ( ! defined( $nfs_check ) || $nfs_check ) {
       my $nfs = ORAC::Inst::SetupEnv::is_nfs_disk( $ENV{ORAC_DATA_OUT});
       if ($nfs) {
         orac_err( "ORAC_DATA_OUT appears to be on a disk mounted from $nfs.\n" );
@@ -313,9 +323,9 @@ sub orac_chdir_output_dir {
 
     # change to output  dir
     chdir($ENV{ORAC_DATA_OUT}) ||
-      do { 
-	orac_err("Could not change directory to ORAC_DATA_OUT: $!");
-	orac_exit_normally();
+      do {
+        orac_err("Could not change directory to ORAC_DATA_OUT: $!");
+        orac_exit_normally();
       };
 
   } else {

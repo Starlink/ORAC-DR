@@ -10,7 +10,7 @@ ORAC::Frame - base class for dealing with observation frames in ORAC-DR
 
   $Frm = new ORAC::Frame("filename");
   $Frm->file("prefix_flat");
-  $num = $Frm->number;  
+  $num = $Frm->number;
 
 
 =head1 DESCRIPTION
@@ -168,7 +168,7 @@ sub framegroup {
 
 =head2 Accessor Methods
 
-The following methods are available for accessing the 
+The following methods are available for accessing the
 'instance' data.
 
 =over 4
@@ -195,7 +195,9 @@ method.
 
 sub group {
   my $self = shift;
-  if (@_) { $self->{Group} = shift;}
+  if (@_) {
+    $self->{Group} = shift;
+  }
   return $self->{Group};
 }
 
@@ -243,7 +245,9 @@ This flag is used by the B<ORAC::Group> class to determine membership.
 
 sub isgood {
   my $self = shift;
-  if (@_) { $self->{IsGood} = shift;  }
+  if (@_) {
+    $self->{IsGood} = shift;
+  }
   $self->{IsGood} = 1 unless defined $self->{IsGood};
   return $self->{IsGood};
 }
@@ -264,14 +268,17 @@ header (using findnsubs()) or by using findnsubs() directly.
 
 sub nsubs {
   my $self = shift;
-  if (@_) { $self->{Nsubs} = shift; };
+  if (@_) {
+    $self->{Nsubs} = shift;
+  }
+  ;
   return $self->{Nsubs};
 }
 
 =item B<rawfixedpart>
 
 Return (or set) the constant part of the raw filename associated
-with the raw data file. (ie the bit that stays fixed for every 
+with the raw data file. (ie the bit that stays fixed for every
 observation)
 
   $fixed = $self->rawfixedpart;
@@ -280,7 +287,9 @@ observation)
 
 sub rawfixedpart {
   my $self = shift;
-  if (@_) { $self->{RawFixedPart} = shift; }
+  if (@_) {
+    $self->{RawFixedPart} = shift;
+  }
   return $self->{RawFixedPart};
 }
 
@@ -294,7 +303,9 @@ recognisable by C<ORAC::Convert>.
 
 sub rawformat {
   my $self = shift;
-  if (@_) { $self->{RawFormat} = shift; }
+  if (@_) {
+    $self->{RawFormat} = shift;
+  }
   return $self->{RawFormat};
 }
 
@@ -309,7 +320,9 @@ the raw data file.
 
 sub rawsuffix {
   my $self = shift;
-  if (@_) { $self->{RawSuffix} = shift; }
+  if (@_) {
+    $self->{RawSuffix} = shift;
+  }
   return $self->{RawSuffix};
 }
 
@@ -330,7 +343,9 @@ method.
 
 sub recipe {
   my $self = shift;
-  if (@_) { $self->{Recipe} = shift;}
+  if (@_) {
+    $self->{Recipe} = shift;
+  }
   return $self->{Recipe};
 }
 
@@ -406,26 +421,26 @@ B<ORAC::Frame> objects:
 =over 4
 
 
-=item B<configure>	 
+=item B<configure>
 
-This method is used to configure the object. It is invoked	 
-automatically if the new() method is invoked with an argument. The	 
-file(), raw(), readhdr(), findgroup(), findrecipe and findnsubs()	 
-methods are invoked by this command. Arguments are required.  If there	 
-is one argument it is assumed that this is the raw filename. If there	 
-are two arguments the filename is constructed assuming that argument 1	 
-is the prefix and argument 2 is the observation number.	 
+This method is used to configure the object. It is invoked
+automatically if the new() method is invoked with an argument. The
+file(), raw(), readhdr(), findgroup(), findrecipe and findnsubs()
+methods are invoked by this command. Arguments are required.  If there
+is one argument it is assumed that this is the raw filename. If there
+are two arguments the filename is constructed assuming that argument 1
+is the prefix and argument 2 is the observation number.
 
-  $Frm->configure("fname");	 
-  $Frm->configure("UT","num");	 
+  $Frm->configure("fname");
+  $Frm->configure("UT","num");
 
-Multiple raw file names can be provided in the first argument using	 
-a reference to an array.	 
+Multiple raw file names can be provided in the first argument using
+a reference to an array.
 
-=cut	 
-	 
-sub configure {	 
-  my $self = shift;	 
+=cut
+
+sub configure {
+  my $self = shift;
   my @args = @_;
 
   # if we have two arguments we need to convert to a single
@@ -441,17 +456,17 @@ sub configure {
   # Set the raw data file name from the files list
   $self->raw($self->files);
 
-  # Find the group name and set it	 
-  $self->findgroup;	 
+  # Find the group name and set it
+  $self->findgroup;
 
-  # Find the recipe name	 
-  $self->findrecipe;	 
+  # Find the recipe name
+  $self->findrecipe;
 
-  # Find nsubs	 
-  $self->findnsubs;	 
+  # Find nsubs
+  $self->findnsubs;
 
-  # Return something	 
-  return 1;	 
+  # Return something
+  return 1;
 }
 
 =item B<data_detection_tasks>
@@ -568,7 +583,7 @@ sub findgroup {
 
   if ($self->hdr('GRPMEM')) {
     $amiagroup = 1;
-  } elsif (!defined $self->hdr('GRPMEM')){
+  } elsif (!defined $self->hdr('GRPMEM')) {
     $amiagroup = 1;
   } else {
     $amiagroup = 0;
@@ -753,7 +768,10 @@ sub template {
   my $template = shift;
 
   my $fnum = 1;
-  if (@_) { $fnum = shift; };
+  if (@_) {
+    $fnum = shift;
+  }
+  ;
 
   my $num = $self->number;
   # Change the first number

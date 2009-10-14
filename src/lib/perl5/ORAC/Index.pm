@@ -29,8 +29,8 @@ use warnings::register;
 use vars qw/$VERSION/;
 use ORAC::Print;
 
-use Data::Dumper;      # For serialization of arrays and hashes
-use POSIX qw/tmpnam/;  # For unique keys
+use Data::Dumper;             # For serialization of arrays and hashes
+use POSIX qw/tmpnam/;         # For unique keys
 
 $VERSION = '1.0';
 
@@ -63,17 +63,20 @@ sub new {
   my $class = ref($proto) || $proto;
 
   my $index = {
-	       IndexEntries => {},
-	       IndexFile => undef,
-	       IndexFileHandle => undef,
-	       IndexRules => {},
-	       IndexRulesFile => undef,
-	       RulesOK => 0,
-	      };
+               IndexEntries => {},
+               IndexFile => undef,
+               IndexFileHandle => undef,
+               IndexRules => {},
+               IndexRulesFile => undef,
+               RulesOK => 0,
+              };
 
   bless($index, $class);
 
-  if (@_) { $index->configure(@_)};
+  if (@_) {
+    $index->configure(@_);
+  }
+  ;
 
   return $index;
 }
@@ -98,7 +101,8 @@ sub configure {
   # make sure rules files are read before we read the contents
   $self->indexrulesfile($rules);
   $self->indexfile($file);
-};
+}
+;
 
 
 =item B<indexfile>
@@ -116,9 +120,11 @@ sub indexfile {
   if (@_) {
     $self->{IndexFile} = shift;
     $self->slurpindex;
-  };
+  }
+  ;
   return $self->{IndexFile};
-};
+}
+;
 
 =item B<rulesok>
 
@@ -165,7 +171,8 @@ sub indexrulesfile {
     }
   }
   return $self->{IndexRulesFile};
-};
+}
+;
 
 
 =item B<rulesref>
@@ -195,7 +202,7 @@ Returns or sets the reference to the hash containing the index
 sub indexref {
   my $self = shift;
 
-  if (@_) { 
+  if (@_) {
     my $arg = shift;
     croak("Argument is not a hash") unless ref($arg) eq "HASH";
     $self->{IndexEntries} = $arg;
@@ -250,11 +257,11 @@ sub slurprules {
 
       next if $line =~ /^\s*\#/;
 
-      $line =~ s/^\s+//g;		# zap leading blanks
+      $line =~ s/^\s+//g;       # zap leading blanks
       my ($header,$rule)=split(/\s+/,$line,2);
 
-      next unless defined $header;	# skip blank lines
-      chomp($rule);                     # Remove carriage return
+      next unless defined $header; # skip blank lines
+      chomp($rule);                # Remove carriage return
       $rules{$header} = $rule;
 
     }
@@ -279,8 +286,8 @@ argument.  The supplied argument is used to control the behaviour of
 the read. If the 'usekey' flag is true the first string in each row
 (space separated) is used as a key for the index hash.
 
-If 'usekey' is false the key for each row is created 
-automatically. This is useful for indexes where the contents 
+If 'usekey' is false the key for each row is created
+automatically. This is useful for indexes where the contents
 of the index is more important than any particular key.
 
   $index->slurpindex(0); # Auto-generate keys
@@ -296,7 +303,9 @@ sub slurpindex {
 
   # Read arguments
   my $usekey = 1;
-  if (@_) { $usekey = shift; }
+  if (@_) {
+    $usekey = shift;
+  }
 
   # Look for index file
   my $file = $self->indexfile;
@@ -333,7 +342,7 @@ sub slurpindex {
     my @order;
     foreach my $i ( 0 .. $#sorted ) {
       foreach my $j ( 0 .. $#sorted ) {
-        if( $unsorted[$j] eq $sorted[$i] ) {
+        if ( $unsorted[$j] eq $sorted[$i] ) {
           push @order, $j;
         }
       }
@@ -342,9 +351,9 @@ sub slurpindex {
     foreach my $line (<$handle>) {
       next if $line =~ /^\s*#/;
 
-      $line =~ s/^\s+//g;		   # zap leading blanks
+      $line =~ s/^\s+//g;                  # zap leading blanks
       my ($name,@data)=split(/\s+/,$line); # Split on spaces
-      next unless defined $name;	   # skip blank lines
+      next unless defined $name;           # skip blank lines
 
       # Look for array or hash references that have been
       # serialised
@@ -366,7 +375,7 @@ sub slurpindex {
           }
         }
         # Check for the special blank value.
-        if( defined( $entry ) && uc( $entry ) eq BLANK_VALUE ) {
+        if ( defined( $entry ) && uc( $entry ) eq BLANK_VALUE ) {
           $entry = " ";
         }
       }
@@ -430,7 +439,8 @@ sub writeindex {
 
     foreach my $entry (sort keys %{$self->indexref}) {
       print $handle $self->index_to_text($entry) . "\n";
-    };
+    }
+    ;
 
   } else {
 
@@ -459,7 +469,7 @@ sub add {
   # warn if we have empty rules (rulesok state does not matter in this
   # case since if we have any rules they will be fine for write)
   warnings::warnif("No rules specified. Entry will look a bit strange")
-    unless keys %{$self->rulesref};
+      unless keys %{$self->rulesref};
 
   my @entry = ();
   foreach my $key (sort keys %{$self->rulesref}) {
@@ -467,8 +477,10 @@ sub add {
       push (@entry,$$hashref{$key});
     } else {
       croak "Rules file specifies entry $key unknown to file header";
-    };
-  };
+    }
+    ;
+  }
+  ;
 
   # Decide whether we are adding a brand new index entry
   # (ie $name is not in index) OR this is a modification
@@ -533,7 +545,7 @@ sub append_to_index {
         print $handle $self->index_to_text($entry) . "\n";
 
       } else {
-         croak "Couldn't open index $file : $!";
+        croak "Couldn't open index $file : $!";
       }
 
     } else {
@@ -554,7 +566,7 @@ writing to an index file. Called by writeindex() and append_to_index()
 
   $text = $Ind->index_to_text($entry);
 
-Returns the text string (including the entry name but no carriage 
+Returns the text string (including the entry name but no carriage
 return).
 
 ARRAY or HASH references are serialised (although the current output
@@ -571,11 +583,11 @@ sub index_to_text {
 
     if (ref($_)) {
       my $serial = Dumper($_);
-      $serial =~ s/\s//g; # remove whitespace
+      $serial =~ s/\s//g;                 # remove whitespace
       $serial = "REF". substr($serial,6); # Remove $VAR1=
       $serial;
     } else {
-      if( /^\s+$/ ) {
+      if ( /^\s+$/ ) {
         BLANK_VALUE;
       } else {
         $_
@@ -628,7 +640,8 @@ sub indexentry {
     orac_err "$name is unknown to oracdr and may not be used as calibration\n";
     orac_err "Make sure it is reduced by oracdr\n";
     return;
-  };
+  }
+  ;
 
   # take local copy of the calibration data index entry
   my @calibdata = @{$ {$self->indexref}{$name}};
@@ -655,9 +668,9 @@ sub indexentry {
 
 =item B<verify>
 
-verifies a frame (in the form of a hash reference) against a 
+verifies a frame (in the form of a hash reference) against a
 (calibration) index entry (ie by supplying the hash key to the index
-entry). An optional third argument is available to turn off warning 
+entry). An optional third argument is available to turn off warning
 messages -- default is for warning messages to be turned on (true)
 
   $result = $index->verify(indexkey, \%hash, $warn);
@@ -670,7 +683,7 @@ sub verify {
 
   my $self=shift;
   # expect the name of the calibration file and the object header hash
-  croak('Usage: verify($calibration,$hashref)') 
+  croak('Usage: verify($calibration,$hashref)')
     unless (scalar(@_)==2 || scalar(@_)== 3);
 
   my $name = shift;
@@ -682,7 +695,9 @@ sub verify {
   my $hashref = shift;
 
   my $warn = 1;
-  if (@_) { $warn = shift; }
+  if (@_) {
+    $warn = shift;
+  }
 
   croak("Argument is not a hash") unless ref($hashref) eq "HASH";
   return 0 unless defined $name;
@@ -698,12 +713,13 @@ sub verify {
     orac_err "$name is unknown to oracdr and may not be used as calibration\n";
     orac_err "Make sure it is reduced by oracdr\n";
     return 0;
-  };
+  }
+  ;
 
   # Take a local copy of the calibration data index entry, depending
   # on if we're looking at the untokenized one or not.
   my @calibdata;
-  if( exists( $temp_index{$name} ) ) {
+  if ( exists( $temp_index{$name} ) ) {
     @calibdata = @{ $temp_index{$name} };
   } else {
     @calibdata = @{ $self->indexref->{$name} };
@@ -721,7 +737,7 @@ sub verify {
 
   foreach my $key (sort keys %rules) {
     # remember, by design the index file data is already sorted by rule order
-    my $CALVALUE = shift(@calibdata);	# value of nth index entry
+    my $CALVALUE = shift(@calibdata); # value of nth index entry
 
     # ignore if there is no rule attached to the keyword
     next unless $rules{$key} =~ /\w/;
@@ -781,7 +797,7 @@ be compared with the index rules. $warn is an optional third argument
 that can be used to turn off warning messages from verify (default
 is to report messages - true).
 
-This method returns the name of the calibration frame closest in 
+This method returns the name of the calibration frame closest in
 time that has met the selection criteria.
 
 If a suitable calibration can not be found an undefined value is returned.
@@ -796,7 +812,7 @@ sub choosebydt {
 
 =item B<chooseby_positivedt>
 
-Chooses the calibration frame closest in time from above by looking 
+Chooses the calibration frame closest in time from above by looking
 in the index file (ie difference between the index file entry and
 the current frame is positive).
 
@@ -808,7 +824,7 @@ be compared with the index rules. $warn is an optional third argument
 that can be used to turn off warning messages from verify (default
 is to report messages - true).
 
-This method returns the name of the calibration frame closest in 
+This method returns the name of the calibration frame closest in
 time that has met the selection criteria.
 
 This is similar to the choosebydt() method except that only
@@ -828,8 +844,8 @@ sub chooseby_positivedt {
 
 =item B<chooseby_negativedt>
 
-Chooses the calibration frame closest in time from below by looking 
-in the index file (ie delta time between the index entry and the 
+Chooses the calibration frame closest in time from below by looking
+in the index file (ie delta time between the index entry and the
 current frame is negative).
 
   $calibration = $Index->chooseby_negativedt($key, \%header, $warn);
@@ -840,12 +856,12 @@ be compared with the index rules. $warn is an optional third argument
 that can be used to turn off warning messages from verify (default
 is to report messages - true).
 
-This method returns the name of the calibration frame closest in 
+This method returns the name of the calibration frame closest in
 time that has met the selection criteria.
 
 This is similar to the choosebydt() method except that only
 calibrations taken before the current time (read from the
-header) can be chosen. undef is returned if no suitable 
+header) can be chosen. undef is returned if no suitable
 calibration can be found.
 
 =cut
@@ -858,12 +874,12 @@ sub chooseby_negativedt {
 
 =item B<choosebydt_generic>
 
-Internal routine for handling calibraion matches using a 
+Internal routine for handling calibraion matches using a
 time difference.
 
   $calibration = $Index->choosebydt_generic(TYPE, $key, \%header, $warn);
 
-TYPES can be 'ABS' (chooses the closest calibration in time), 
+TYPES can be 'ABS' (chooses the closest calibration in time),
 'POSITIVE' (chooses the closest in time from calibrations earlier
 than the current header) and 'NEGATIVE' (chooses calibrations after
 the current observation [as described by %header]).
@@ -896,7 +912,8 @@ sub choosebydt_generic {
   foreach my $key (sort keys %{$self->rulesref}) {
     $pos++;
     last if $key eq $timekey;
-  };
+  }
+  ;
 
   ($pos < 0) && croak("Key $timekey not in rules - how can I be expected to work under these conditions?");
 
@@ -916,7 +933,8 @@ sub choosebydt_generic {
     } else {
       croak "choosebydt_generic: Unrecognised flag: $type\n";
     }
-  };
+  }
+  ;
 
   # sort index keys by value (delta-tee)
   # as described by Economou (1997) TPJ 2 2 :-) :-)
@@ -927,7 +945,8 @@ sub choosebydt_generic {
     my $ok = $self->verify($calibration,\%Hdr, $warn);
 
     return $calibration if ($ok);
-  };
+  }
+  ;
 
   # If we get to this point, we didn't find any suitable ones
   return;
@@ -940,8 +959,8 @@ sub choosebydt_generic {
 =item B<cmp_with_hash>
 
 Compares each index entry with the values in the supplied hash
-(supplied as a hash reference). The key to the first matching 
-index entry is returned. undef is returned if no match could be 
+(supplied as a hash reference). The key to the first matching
+index entry is returned. undef is returned if no match could be
 found.
 
   $key = $index->cmp_with_hash(\%hash);
@@ -1011,7 +1030,7 @@ sub scanindex {
   my %filter = @_;
 
   foreach my $key ( keys %filter ) {
-    if( $filter{$key} =~ m|^/| ) {
+    if ( $filter{$key} =~ m|^/| ) {
       my $regex = $filter{$key};
       $regex =~ s|^/||;
       $regex =~ s|/$||;
@@ -1020,32 +1039,32 @@ sub scanindex {
   }
 
   my $id;
-  if( exists( $filter{':ID'} ) &&
-      defined( $filter{':ID'} ) ) {
+  if ( exists( $filter{':ID'} ) &&
+       defined( $filter{':ID'} ) ) {
     $id = $filter{':ID'};
     delete $filter{':ID'};
   }
 
   # Loop over hash keys in index (random order)
   my @match;
-  OUTER: for my $key ($self->indexkeys) {
+ OUTER: for my $key ($self->indexkeys) {
 
-      if( defined( $id ) ) {
-        if( ref( $id ) ) {
-          next OUTER unless $key =~ $id;
-        } else {
-          next OUTER unless $key eq $id;
-        }
+    if ( defined( $id ) ) {
+      if ( ref( $id ) ) {
+        next OUTER unless $key =~ $id;
+      } else {
+        next OUTER unless $key eq $id;
       }
-
-      my $entry = $self->indexentry($key);
-
-      for my $f (keys %filter) {
-	next OUTER unless $entry->{$f} eq $filter{$f};
-      }
-      push(@match, $entry);
-
     }
+
+    my $entry = $self->indexentry($key);
+
+    for my $f (keys %filter) {
+      next OUTER unless $entry->{$f} eq $filter{$f};
+    }
+    push(@match, $entry);
+
+  }
 
   return @match;
 }
@@ -1056,7 +1075,7 @@ Make sure that the rules and index entry are consistent.
 
  $Idx->_sanity_check( \@calibdata );
 
-Takes the entry data as argument (does not try to 
+Takes the entry data as argument (does not try to
 work out that information itself).
 
 Will die if they are inconsistent.
@@ -1077,7 +1096,8 @@ sub _sanity_check {
     my $file = $self->indexfile;
     orac_err "Something has gone seriously wrong with the index file $file\n";
     croak "You will need to regenerate it.\n";
-  };
+  }
+  ;
 
   return;
 }
@@ -1101,9 +1121,9 @@ Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
 =head1 COPYRIGHT
 
 Copyright (C) 1998-2001 Particle Physics and Astronomy Research
-Council. All Rights Reserved.
+  Council. All Rights Reserved.
 
 
-=cut
+  =cut
 
-1;
+  1;

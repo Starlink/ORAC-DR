@@ -22,7 +22,7 @@ ORAC::Print - ORAC output message printing
   $prt = new ORAC::Print;
   $prt->out("Message","colour");
   $prt->notify("OS notification");
-  $prt->err("Error message"); 
+  $prt->err("Error message");
   $prt->war("warning message");
   $prt->errcol("red");
   $prt->outcol("magenta");
@@ -46,7 +46,7 @@ messages is controlled by the object configuration.
 If the C<ORAC::Print::TKMW> variable is set, it is assumed that this
 is the Tk object referring to the MainWindow, and the
 C<Tk-E<gt>update()> method is run whenever the C<orac_*> commands are
-executed via the method in the ORAC::Event class.  This can be used to 
+executed via the method in the ORAC::Event class.  This can be used to
 keep a Tk log window updating even though no X-events are being processed.
 
 A simplified interface to Term::ReadLine is provided for use with
@@ -71,8 +71,8 @@ $DEBUG = 0;
 require Exporter;
 @ISA = qw/Exporter/;
 @EXPORT = qw/orac_print orac_err orac_warn orac_debug orac_read orac_throw orac_carp
-	     orac_printp orac_print_prefix orac_warnp orac_errp orac_say orac_sayp orac_notify
-            orac_msglog orac_clearlog orac_logkey orac_logging orac_loginfo /;
+             orac_printp orac_print_prefix orac_warnp orac_errp orac_say orac_sayp orac_notify
+             orac_msglog orac_clearlog orac_logkey orac_logging orac_loginfo /;
 
 # Create a Term::ReadLine handle
 # For read on STDIN and output on STDOUT
@@ -98,7 +98,7 @@ use constant NOT__ENDOBS  => "End Observation";
 use constant NOT__COMPLETE => "Pipeline Completed";
 
 my $NOTIFY;
-my $DBUS;  # The  Desktop::Notify object
+my $DBUS;                       # The  Desktop::Notify object
 BEGIN {
   my $use_growl = eval {
     require Mac::Growl;
@@ -457,20 +457,20 @@ sub new {
   $prt->{OutColour} = 'magenta';
   $prt->{ErrColour} = 'red';
   $prt->{WarnColour} = 'cyan';
-  $prt->{Debug}  = 0;           # Turns on/off debug messages
-  $prt->{DebugHdl} = undef;        # Debug file handle (IO object)
-  $prt->{OutHdl}   = undef;        # orac_print file handles
-  $prt->{ErrHdl}   = undef;        # List of error file handles
-  $prt->{WarHdl}   = undef;        # List of warning file handles
-  $prt->{Prefix}   = undef;        # Prefix string
-  $prt->{OutPre}   = undef;        # Output prefix
-  $prt->{WarPre}   = 'Warning:';   # Prefix for warning messages
-  $prt->{ErrPre}   = 'Error:';     # Prefix for error messages
-  $prt->{ErrBeep}  = 0;            # Beep with error messages
-  $prt->{Log}      = [];           # Message log
-  $prt->{LogKey}   = "NONE";       # Key for log messages
-  $prt->{LogMessages} = 0;         # Are we logging messages?
-  $prt->{LogInfo}  = {};           # Additional static info
+  $prt->{Debug}  = 0;            # Turns on/off debug messages
+  $prt->{DebugHdl} = undef;      # Debug file handle (IO object)
+  $prt->{OutHdl}   = undef;      # orac_print file handles
+  $prt->{ErrHdl}   = undef;      # List of error file handles
+  $prt->{WarHdl}   = undef;      # List of warning file handles
+  $prt->{Prefix}   = undef;      # Prefix string
+  $prt->{OutPre}   = undef;      # Output prefix
+  $prt->{WarPre}   = 'Warning:'; # Prefix for warning messages
+  $prt->{ErrPre}   = 'Error:';   # Prefix for error messages
+  $prt->{ErrBeep}  = 0;          # Beep with error messages
+  $prt->{Log}      = [];         # Message log
+  $prt->{LogKey}   = "NONE";     # Key for log messages
+  $prt->{LogMessages} = 0;       # Are we logging messages?
+  $prt->{LogInfo}  = {};         # Additional static info
 
   bless($prt, $class);
 
@@ -496,7 +496,9 @@ Turns debugging messages on or off. Default is off.
 
 sub debugmsg {
   my $self = shift;
-  if (@_) { $self->{Debug} = shift; }
+  if (@_) {
+    $self->{Debug} = shift;
+  }
   return $self->{Debug};
 }
 
@@ -508,7 +510,9 @@ Enables or disables logging of messages. Default is off.
 
 sub logging {
   my $self = shift;
-  if (@_) { $self->{LogMessages} = shift; }
+  if (@_) {
+    $self->{LogMessages} = shift;
+  }
   return $self->{LogMessages};
 }
 
@@ -526,7 +530,9 @@ Currently no check is made that the supplied colour is acceptable.
 
 sub outcol {
   my $self = shift;
-  if (@_) { $self->{OutColour} = shift; }
+  if (@_) {
+    $self->{OutColour} = shift;
+  }
   return $self->{OutColour};
 }
 
@@ -544,7 +550,9 @@ Currently no check is made that the supplied colour is acceptable.
 
 sub warncol {
   my $self = shift;
-  if (@_) { $self->{WarnColour} = shift; }
+  if (@_) {
+    $self->{WarnColour} = shift;
+  }
   return $self->{WarnColour};
 }
 
@@ -562,7 +570,9 @@ Currently no check is made that the supplied colour is acceptable.
 
 sub errcol {
   my $self = shift;
-  if (@_) { $self->{ErrColour} = shift; }
+  if (@_) {
+    $self->{ErrColour} = shift;
+  }
   return $self->{ErrColour};
 }
 
@@ -579,7 +589,9 @@ Usually this would reflect the current primitive.
 
 sub logkey {
   my $self = shift;
-  if (@_) { $self->{LogKey} = shift; }
+  if (@_) {
+    $self->{LogKey} = shift;
+  }
   return $self->{LogKey};
 }
 
@@ -696,7 +708,9 @@ Default is to have no prefix.
 
 sub prefix {
   my $self = shift;
-  if (@_) { $self->{Prefix} = shift; }
+  if (@_) {
+    $self->{Prefix} = shift;
+  }
   return $self->{Prefix};
 }
 
@@ -712,7 +726,9 @@ out() or say() methods. Default is to have no prefix.
 
 sub outpre {
   my $self = shift;
-  if (@_) { $self->{OutPre} = shift; }
+  if (@_) {
+    $self->{OutPre} = shift;
+  }
   return $self->{OutPre};
 }
 
@@ -728,7 +744,9 @@ war() or carp() methods. Default is to have the string 'Warning:' prepended.
 
 sub warpre {
   my $self = shift;
-  if (@_) { $self->{WarPre} = shift; }
+  if (@_) {
+    $self->{WarPre} = shift;
+  }
   return $self->{WarPre};
 }
 
@@ -744,7 +762,9 @@ notify() methods. Default is to have no string prepended.
 
 sub notifypre {
   my $self = shift;
-  if (@_) { $self->{NotifyPre} = shift; }
+  if (@_) {
+    $self->{NotifyPre} = shift;
+  }
   return $self->{NotifyPre};
 }
 
@@ -760,7 +780,9 @@ err() method. Default is to have the string 'Error:' prepended.
 
 sub errpre {
   my $self = shift;
-  if (@_) { $self->{ErrPre} = shift; }
+  if (@_) {
+    $self->{ErrPre} = shift;
+  }
   return $self->{ErrPre};
 }
 
@@ -810,7 +832,9 @@ Default is to use STDOUT.
 sub warhdl {
   my $self = shift;
 
-  if(!defined(@_)) { return; }
+  if (!defined(@_)) {
+    return;
+  }
 
   # Read any args and redefine IO object
   $self->{WarHdl} = new IO::Tee(@_) if @_;
@@ -863,13 +887,15 @@ message is printed. Default is not to beep (false).
 
 sub errbeep {
   my $self = shift;
-  if (@_) { $self->{ErrBeep} = shift;}
+  if (@_) {
+    $self->{ErrBeep} = shift;
+  }
   return $self->{ErrBeep};
 }
 
 =item debughdl
 
-This specifies the debug file handle. Defaults to STDERR if not 
+This specifies the debug file handle. Defaults to STDERR if not
 defined. Returns an IO::Tee object that can be used as a single
 filehandle.
 
@@ -886,7 +912,7 @@ sub debughdl {
 
   return $self->{DebugHdl};
 }
- 
+
 # Methods that do things...
 
 =back
@@ -905,11 +931,13 @@ the outhdl() method.
 
 sub out {
   my $self = shift;
-  return unless @_; # Return if no second argument
+  return unless @_;             # Return if no second argument
   my $text = shift;
 
   my $col = $self->outcol;
-  if (@_) { $col = shift; }
+  if (@_) {
+    $col = shift;
+  }
 
   my $fh = $self->outhdl;
   return unless defined $fh;
@@ -924,9 +952,9 @@ sub out {
 
   # store the message
   $self->_store_msg( $outtext );
-  
+
   tk_update();
-  
+
 }
 
 =item notify(name, title, text)
@@ -943,7 +971,7 @@ as module constants. They are defined at the end of this document.
 
 sub notify {
   my $self = shift;
-  return unless @_; # Return if no second argument
+  return unless @_;             # Return if no second argument
   my $name = shift;
   my $title = shift;
   my $text = shift;
@@ -986,7 +1014,9 @@ sub say {
   my $text = shift;
 
   my $col = $self->outcol;
-  if( @_ ) { $col = shift; }
+  if ( @_ ) {
+    $col = shift;
+  }
 
   $self->out( $text . "\n", $col );
 }
@@ -1001,11 +1031,13 @@ the warhdl() method.
 
 sub war {
   my $self = shift;
-  return unless @_; # Return if nothing to print
+  return unless @_;             # Return if nothing to print
   my $text = shift;
 
   my $col = $self->warncol;
-  if (@_) { my $thiscol = shift;  $col = $thiscol if defined $thiscol; }
+  if (@_) {
+    my $thiscol = shift;  $col = $thiscol if defined $thiscol;
+  }
 
   my $fh = $self->warhdl;
   return unless defined $fh;
@@ -1022,7 +1054,7 @@ sub war {
   $self->_store_msg( $outtext );
 
   tk_update();
-  
+
 }
 
 =item carp(text, callers, [col])
@@ -1059,11 +1091,13 @@ method.
 
 sub err {
   my $self = shift;
-  return unless @_; # Return if nothing to print
+  return unless @_;             # Return if nothing to print
   my $text = shift;
 
   my $col = $self->errcol;
-  if (@_) { $col = shift; }
+  if (@_) {
+    $col = shift;
+  }
 
   my $fh = $self->errhdl;
   return unless defined $fh;
@@ -1083,7 +1117,7 @@ sub err {
   print STDOUT chr(7) if $self->errbeep;
 
   tk_update();
-  
+
 }
 
 
@@ -1136,27 +1170,27 @@ Does an Tk update on the Main Window widget
 
 sub tk_update {
 
-  # There is a chance that we have just updated 
+  # There is a chance that we have just updated
   # a Tk text widget. On the off-chance that we have,
   # we should do a Tk update
   try {
-     ORAC::Event->update("Tk");
+    ORAC::Event->update("Tk");
   }
-  catch ORAC::Error::FatalError with
-  {
-     my $Error = shift;
-     $Error->throw;    
-  }
-  catch ORAC::Error::UserAbort with
-  {
-     my $Error = shift;
-     $Error->throw;
-  }
-  otherwise
-  {
-     my $Error = shift;
-     throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
-  };
+    catch ORAC::Error::FatalError with
+      {
+        my $Error = shift;
+        $Error->throw;
+      }
+        catch ORAC::Error::UserAbort with
+          {
+            my $Error = shift;
+            $Error->throw;
+          }
+            otherwise
+              {
+                my $Error = shift;
+                throw ORAC::Error::FatalError("$Error", ORAC__FATAL);
+              };
 
 }
 
@@ -1278,7 +1312,7 @@ It is not possible to read from this tied filehandle.
 sub TIEHANDLE {
   my $class = shift;
   my $obj = shift;
-  my $out = 'out'; # default to orac_print
+  my $out = 'out';              # default to orac_print
   $out = lc(shift) if @_;
 
   # Store the selected output stream
@@ -1293,13 +1327,21 @@ sub PRINT {
   # Run orac_* (ie lose all reference to the object)
   # and use the current object and filehandles
   if ($obj->{_outtype} eq 'out') {
-    foreach (@_) { orac_print $_, $obj->outcol; }
+    foreach (@_) {
+      orac_print $_, $obj->outcol;
+    }
   } elsif ($obj->{_outtype} eq 'say') {
-    foreach (@_) { orac_say $_, $obj->outcol; }
+    foreach (@_) {
+      orac_say $_, $obj->outcol;
+    }
   } elsif ($obj->{_outtype} eq 'war') {
-    foreach (@_) { orac_warn $_, $obj->warncol; }
+    foreach (@_) {
+      orac_warn $_, $obj->warncol;
+    }
   } else {
-    foreach (@_) { orac_err $_, $obj->errcol; }
+    foreach (@_) {
+      orac_err $_, $obj->errcol;
+    }
   }
 
 }
@@ -1327,17 +1369,17 @@ The following notification types are available
 =head1 AUTHORS
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>,
-Frossie Economou  E<lt>frossie@jach.hawaii.eduE<gt>,
-Alasdair Allan E<lt>aa@astro.ex.ac.ukE<gt>
+  Frossie Economou  E<lt>frossie@jach.hawaii.eduE<gt>,
+  Alasdair Allan E<lt>aa@astro.ex.ac.ukE<gt>
 
-=head1 COPYRIGHT
+  =head1 COPYRIGHT
 
-Copyright (C) 2009 Science and Technology Facilities Council.
-Copyright (C) 1998-2001 Particle Physics and Astronomy Research
-Council. All Rights Reserved.
+  Copyright (C) 2009 Science and Technology Facilities Council.
+  Copyright (C) 1998-2001 Particle Physics and Astronomy Research
+  Council. All Rights Reserved.
 
-=cut
+  =cut
 
 
-1;
+  1;
 

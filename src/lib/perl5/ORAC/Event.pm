@@ -2,7 +2,7 @@ package ORAC::Event;
 
 # ---------------------------------------------------------------------------
 
-#+ 
+#+
 #  Name:
 #    ORAC::Event
 
@@ -34,9 +34,9 @@ package ORAC::Event;
 
 # ---------------------------------------------------------------------------
 
-use strict;          # smack! Don't do it again!
+use strict;                     # smack! Don't do it again!
 use warnings;
-use Carp;            # Transfer the blame to someone else
+use Carp;                       # Transfer the blame to someone else
 
 # P O D  D O C U M E N T A T I O N ------------------------------------------
 
@@ -80,7 +80,7 @@ All Rights Reserved.
 
 =cut
 
-# L O A D  M O D U L E S --------------------------------------------------- 
+# L O A D  M O D U L E S ---------------------------------------------------
 
 #
 #  ORAC modules
@@ -102,7 +102,7 @@ use vars qw/$VERSION @EXPORT @ISA /;
 
 $VERSION = '1.0';
 
-# 
+#
 # File globals
 #
 my ( %hash );
@@ -128,10 +128,10 @@ Tk is loaded the first time register is called.
 =cut
 
 sub register {
-   require Tk;
-   # Read the argument list
-   my $self = shift;
-   %hash = (%hash, @_);
+  require Tk;
+  # Read the argument list
+  my $self = shift;
+  %hash = (%hash, @_);
 
 }
 
@@ -147,24 +147,24 @@ where $key is the key to widget entry in the hash table
 
 sub update {
 
-   # Read the argument list
-   my $self = shift;
-   my ( $key ) = @_;
+  # Read the argument list
+  my $self = shift;
+  my ( $key ) = @_;
 
-   my ( $error );
+  my ( $error );
 
-   # Pre-flush the error stack
-   $error = ORAC::Error->prior;
-   ORAC::Error->flush if defined $error;
-   $error->throw if defined $error;
+  # Pre-flush the error stack
+  $error = ORAC::Error->prior;
+  ORAC::Error->flush if defined $error;
+  $error->throw if defined $error;
 
-   # Call Tk::update on the widget
-   $hash{$key}->update if defined $hash{$key};
+  # Call Tk::update on the widget
+  $hash{$key}->update if defined $hash{$key};
 
-   # Post-flush the error stack
-   $error = ORAC::Error->prior;
-   ORAC::Error->flush if defined $error;
-   $error->throw if defined $error;
+  # Post-flush the error stack
+  $error = ORAC::Error->prior;
+  ORAC::Error->flush if defined $error;
+  $error->throw if defined $error;
 }
 
 =item B<query>
@@ -179,12 +179,12 @@ where $key is the key to the widget entry in the hash table
 
 sub query {
 
-   # Read the argument list
-   my $self = shift;
-   my ( $key ) = @_;
+  # Read the argument list
+  my $self = shift;
+  my ( $key ) = @_;
 
-   return $hash{$key} if exists $hash{$key} and defined $hash{$key};
-   return; # No match
+  return $hash{$key} if exists $hash{$key} and defined $hash{$key};
+  return;                       # No match
 }
 
 =item B<mainloop>
@@ -197,11 +197,11 @@ This method wraps Tk::MainLoop
 
 sub mainloop {
 
-   # Read the argument list
-   my $self = shift;
-   my ( $key ) = @_;
+  # Read the argument list
+  my $self = shift;
+  my ( $key ) = @_;
 
-   Tk::MainLoop() if exists $hash{$key} and defined $hash{$key};
+  Tk::MainLoop() if exists $hash{$key} and defined $hash{$key};
 }
 
 =item B<unregister>
@@ -216,11 +216,11 @@ where $key is the key to the widget entry in the hash table.
 
 sub unregister {
 
-   # Read the argument list
-   my $self = shift;
-   my ( $key ) = @_;
+  # Read the argument list
+  my $self = shift;
+  my ( $key ) = @_;
 
-   delete $hash{$key} if exists $hash{$key};
+  delete $hash{$key} if exists $hash{$key};
 }
 
 =item B<destroy>
@@ -236,11 +236,11 @@ where $key is the key to the widget entry in the hash table.
 
 sub destroy {
 
-   # Read the argument list
-   my $self = shift;
-   my ( $key ) = @_;
+  # Read the argument list
+  my $self = shift;
+  my ( $key ) = @_;
 
-   $hash{$key}->destroy() if exists $hash{$key} and defined $hash{$key};
+  $hash{$key}->destroy() if exists $hash{$key} and defined $hash{$key};
 }
 
 #----------------------------------------------------------------------------

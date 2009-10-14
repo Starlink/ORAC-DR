@@ -112,9 +112,11 @@ sub retrieve_bounds {
 
   return if ! defined $filename;
 
-  if( $filename !~ /\.sdf$/ ) { $filename .= ".sdf"; }
+  if ( $filename !~ /\.sdf$/ ) {
+    $filename .= ".sdf";
+  }
 
-  if( -e $filename ) {
+  if ( -e $filename ) {
 
     # Read in the file, get the bounds via ndf_bound, and retrieve the
     # frameset.
@@ -132,7 +134,7 @@ sub retrieve_bounds {
     ndf_annul( $ndf_id, $STATUS );
     ndf_end( $STATUS );
 
-    if( $STATUS != &NDF::SAI__OK ) {
+    if ( $STATUS != &NDF::SAI__OK ) {
       my ( $oplen, @errs );
       do {
         err_load( my $param, my $parlen, my $opstr, $oplen, $STATUS );
@@ -151,7 +153,7 @@ sub retrieve_bounds {
     my $skyframe = $wcs->FindFrame( $skytemplate, "" );
 
     # We want the skyframe system to be ICRS.
-    if( defined( $skyframe ) ) {
+    if ( defined( $skyframe ) ) {
       $skyframe->Set( 'system' => 'ICRS' );
     }
 
@@ -162,7 +164,7 @@ sub retrieve_bounds {
 
     # We want the units returned in GHz, the system to be frequency,
     # and to use the barycentric standard of rest.
-    if( defined( $specframe ) ) {
+    if ( defined( $specframe ) ) {
       $specframe->Set( 'system' => 'FREQ',
                        'unit'   => 'GHz',
                        'stdofrest' => 'BARY',
@@ -179,15 +181,15 @@ sub retrieve_bounds {
     my $x_min = 0.5;
     my $x_max = 0.5 + ( $ndf_ubnd[0] - $ndf_lbnd[0] ) + 1;
     my $x_cen = ( $x_min + $x_max ) / 2;
-    if( $#ndf_ubnd > 0 ) {
+    if ( $#ndf_ubnd > 0 ) {
       my $y_min = 0.5;
       my $y_max = 0.5 + ( $ndf_ubnd[1] - $ndf_lbnd[1] ) + 1;
       my $y_cen = ( $y_min + $y_max ) / 2;
-      if( defined( $ndf_ubnd[2] ) ) {
+      if ( defined( $ndf_ubnd[2] ) ) {
         my $z_min = 0.5;
         my $z_max = 0.5 + ( $ndf_ubnd[2] - $ndf_lbnd[2] ) + 1;
 
-        if( defined( $skyframe ) ) {
+        if ( defined( $skyframe ) ) {
           @wcs_bnds = $skyframe->TranP( 1,
                                         [ $x_min, $x_min, $x_max, $x_max ],
                                         [ $y_min, $y_max, $y_min, $y_max ],
@@ -197,7 +199,7 @@ sub retrieve_bounds {
 
         }
 
-        if( defined( $specframe ) ) {
+        if ( defined( $specframe ) ) {
 
           # Calculate the LSB info.
           $specframe->Set( "SideBand", "observed" );
@@ -212,7 +214,7 @@ sub retrieve_bounds {
                                          [ $y_min, $y_max ],
                                          [ $z_min, $z_max ] );
         }
-      } elsif( defined( $skyframe ) ) {
+      } elsif ( defined( $skyframe ) ) {
         @wcs_bnds = $skyframe->Tran2( [ $x_min, $x_min, $x_max, $x_max ],
                                       [ $y_min, $y_max, $y_min, $y_max ],
                                       1 );
@@ -221,7 +223,7 @@ sub retrieve_bounds {
     }
 
     # We now have enough information for the OBSRA/OBSDEC headers.
-    if( defined( $skyframe ) ) {
+    if ( defined( $skyframe ) ) {
 
       # Find out which axis is the latitude (declination) and which is
       # the longitude (RA).
@@ -252,7 +254,7 @@ sub retrieve_bounds {
       my $obsdecbr_rad = ( $wcs_bnds[1]->[2] < -1e100 ? undef : $wcs_bnds[1]->[2] );
       my $obsdectr_rad = ( $wcs_bnds[1]->[3] < -1e100 ? undef : $wcs_bnds[1]->[3] );
 
-      if( defined( $obsrabl_rad ) && defined( $obsdecbl_rad ) ) {
+      if ( defined( $obsrabl_rad ) && defined( $obsdecbl_rad ) ) {
         my $bl = new Astro::Coords( ra => $obsrabl_rad,
                                     dec => $obsdecbl_rad,
                                     type => 'J2000',
@@ -262,7 +264,7 @@ sub retrieve_bounds {
       } else {
         $return{'bottom_left'} = undef;
       }
-      if( defined( $obsratl_rad ) && defined( $obsdectl_rad ) ) {
+      if ( defined( $obsratl_rad ) && defined( $obsdectl_rad ) ) {
         my $tl = new Astro::Coords( ra => $obsratl_rad,
                                     dec => $obsdectl_rad,
                                     type => 'J2000',
@@ -271,7 +273,7 @@ sub retrieve_bounds {
       } else {
         $return{'top_left'} = undef;
       }
-      if( defined( $obsrabr_rad ) && defined( $obsdecbr_rad ) ) {
+      if ( defined( $obsrabr_rad ) && defined( $obsdecbr_rad ) ) {
         my $br = new Astro::Coords( ra => $obsrabr_rad,
                                     dec => $obsdecbr_rad,
                                     type => 'J2000',
@@ -280,7 +282,7 @@ sub retrieve_bounds {
       } else {
         $return{'bottom_right'} = undef;
       }
-      if( defined( $obsratr_rad ) && defined( $obsdectr_rad ) ) {
+      if ( defined( $obsratr_rad ) && defined( $obsdectr_rad ) ) {
         my $tr = new Astro::Coords( ra => $obsratr_rad,
                                     dec => $obsdectr_rad,
                                     type => 'J2000',
@@ -292,7 +294,7 @@ sub retrieve_bounds {
     }
 
     # Only write the sideband bounds if we have them.
-    if( defined( $ssb_bnds[0] ) ) {
+    if ( defined( $ssb_bnds[0] ) ) {
 
       $return{'freq_sig_lo'} = ( $ssb_bnds[0]->[0] < $ssb_bnds[0]->[1] ?
                                  $ssb_bnds[0]->[0]                     :
@@ -358,11 +360,13 @@ sub return_bounds_header {
 
   return if ! defined $filename;
 
-  if( $filename !~ /\.sdf$/ ) { $filename .= ".sdf"; }
+  if ( $filename !~ /\.sdf$/ ) {
+    $filename .= ".sdf";
+  }
 
   my $header;
 
-  if( -e $filename ) {
+  if ( -e $filename ) {
 
     # Read the current header.
     $header = new Astro::FITS::Header( File => $filename );
@@ -373,7 +377,7 @@ sub return_bounds_header {
     my $bounds = retrieve_bounds( $filename );
 
     # Create  if the specific values are defined.
-    if( defined( $bounds->{'reference'} ) ) {
+    if ( defined( $bounds->{'reference'} ) ) {
       my $item = new Astro::FITS::Header::Item( Keyword => 'OBSRA',
                                                 Value   => $bounds->{'reference'}->ra( format => 'deg' ),
                                                 Comment => '[deg] Reference ICRS RA coordinate',
@@ -398,7 +402,7 @@ sub return_bounds_header {
                                              Type    => 'UNDEF' );
     }
 
-    if( defined( $bounds->{'bottom_left'} ) ) {
+    if ( defined( $bounds->{'bottom_left'} ) ) {
       my $item = new Astro::FITS::Header::Item( Keyword => 'OBSRABL',
                                                 Value   => $bounds->{'bottom_left'}->ra( format => 'deg' ),
                                                 Comment => '[deg] Bottom left ICRS RA coordinate',
@@ -423,7 +427,7 @@ sub return_bounds_header {
                                              Type    => 'UNDEF' );
     }
 
-    if( defined( $bounds->{'top_left'} ) ) {
+    if ( defined( $bounds->{'top_left'} ) ) {
       my $item = new Astro::FITS::Header::Item( Keyword => 'OBSRATL',
                                                 Value   => $bounds->{'top_left'}->ra( format => 'deg' ),
                                                 Comment => '[deg] Top left ICRS RA coordinate',
@@ -448,7 +452,7 @@ sub return_bounds_header {
                                              Type    => 'UNDEF' );
     }
 
-    if( defined( $bounds->{'bottom_right'} ) ) {
+    if ( defined( $bounds->{'bottom_right'} ) ) {
       my $item = new Astro::FITS::Header::Item( Keyword => 'OBSRABR',
                                                 Value   => $bounds->{'bottom_right'}->ra( format => 'deg' ),
                                                 Comment => '[deg] Bottom right ICRS RA coordinate',
@@ -474,7 +478,7 @@ sub return_bounds_header {
       $header->append( $item );
     }
 
-    if( defined( $bounds->{'top_right'} ) ) {
+    if ( defined( $bounds->{'top_right'} ) ) {
       my $item = new Astro::FITS::Header::Item( Keyword => 'OBSRATR',
                                                 Value   => $bounds->{'top_right'}->ra( format => 'deg' ),
                                                 Comment => '[deg] Top right ICRS RA coordinate',
@@ -499,7 +503,7 @@ sub return_bounds_header {
                                              Type    => 'UNDEF' );
     }
 
-    if( defined( $bounds->{'freq_sig_lo'} ) ) {
+    if ( defined( $bounds->{'freq_sig_lo'} ) ) {
       my $item = new Astro::FITS::Header::Item( Keyword => 'FRQSIGLO',
                                                 Value   => $bounds->{'freq_sig_lo'},
                                                 Comment => '[GHz] Lower barycentric freq bound, signal sideband',
@@ -513,7 +517,7 @@ sub return_bounds_header {
       $header->append( $item );
     }
 
-    if( defined( $bounds->{'freq_sig_hi'} ) ) {
+    if ( defined( $bounds->{'freq_sig_hi'} ) ) {
       my $item = new Astro::FITS::Header::Item( Keyword => 'FRQSIGHI',
                                                 Value   => $bounds->{'freq_sig_hi'},
                                                 Comment => '[GHz] Upper barycentric freq bound, signal sideband',
@@ -527,21 +531,21 @@ sub return_bounds_header {
       $header->append( $item );
     }
 
-    if( defined( $bounds->{'freq_img_lo'} ) ) {
+    if ( defined( $bounds->{'freq_img_lo'} ) ) {
       my $item = new Astro::FITS::Header::Item( Keyword => 'FRQIMGLO',
                                                 Value   => $bounds->{'freq_img_lo'},
                                                 Comment => '[GHz] Lower barycentric freq bound, image sideband',
                                                 Type    => 'FLOAT' );
       $header->append( $item );
     } else {
-       my $item = new Astro::FITS::Header::Item( Keyword => 'FRQIMGLO',
+      my $item = new Astro::FITS::Header::Item( Keyword => 'FRQIMGLO',
                                                 Value   => undef,
                                                 Comment => '[GHz] Lower barycentric freq bound, image sideband',
                                                 Type    => 'UNDEF' );
       $header->append( $item );
     }
 
-    if( defined( $bounds->{'freq_img_hi'} ) ) {
+    if ( defined( $bounds->{'freq_img_hi'} ) ) {
       my $item = new Astro::FITS::Header::Item( Keyword => 'FRQIMGHI',
                                                 Value   => $bounds->{'freq_img_hi'},
                                                 Comment => '[GHz] Upper barycentric freq bound, image sideband',
@@ -604,7 +608,7 @@ sub update_bounds_headers {
   my $filename = shift;
 
   my $header = return_bounds_header( $filename );
-  if( defined( $header ) ) {
+  if ( defined( $header ) ) {
     $header->writehdr( File => $filename );
   }
 }

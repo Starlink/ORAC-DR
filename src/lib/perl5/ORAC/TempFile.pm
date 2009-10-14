@@ -58,7 +58,7 @@ Create a new instance of a B<ORAC::TempFile> object.
   $temp = new ORAC::TempFile;
 
 If a false argument is supplied the temporary file
-name will be allocated (and the file opened) but the 
+name will be allocated (and the file opened) but the
 file itself will be closed before the new object is returned.
 This is so that the temporary file name can be passed directly
 to another process without wanting to write anything to the
@@ -99,9 +99,9 @@ sub new {
 
   # Define the initial state
   my $tmp = {
-	     Handle => undef,
-	     File   => undef,
-	    };
+             Handle => undef,
+             File   => undef,
+            };
 
   # Bless it
   bless $tmp, $class;
@@ -126,14 +126,14 @@ sub new {
 =head2 Accessor Methods
 
 
-The following methods are available for accessing the 
+The following methods are available for accessing the
 'instance' data.
 
 =over 4
 
 =item B<handle>
 
-Return (or set) the file handle associated with the temporary 
+Return (or set) the file handle associated with the temporary
 file.
 
   print {$tmp->handle} "some information\n";
@@ -214,7 +214,7 @@ sub DESTROY {
 =head1 PRIVATE METHODS
 
 The following methods are intended for use inside the module.
-They are included here so that authors of derived classes are 
+They are included here so that authors of derived classes are
 aware of them.
 
 =over 4
@@ -223,8 +223,8 @@ aware of them.
 
 This method is used to initialise the object. It is called
 automatically by the object constructor. It generates
-a temporary file name and attempts to open it. If the 
-open is not successful the state of the object remains 
+a temporary file name and attempts to open it. If the
+open is not successful the state of the object remains
 unchanged. In general, this means that the object
 constructor has failed.
 
@@ -234,12 +234,12 @@ sub Initialise {
   my $self = shift;
 
   my %args;
-  if( @_ > 1 ) {
+  if ( @_ > 1 ) {
     %args = @_;
   }
 
   # If the user supplied a directory, don't honour it.
-  if( defined( $args{'DIR'} ) ) {
+  if ( defined( $args{'DIR'} ) ) {
     delete $args{'DIR'};
   }
   my $dir = $ENV{'ORAC_DATA_OUT'};
@@ -253,7 +253,7 @@ sub Initialise {
   # Remove dots since NDF does not like them But have to be careful
   # that original directory path might contain a .  even if absolute,
   # and only do it if we don't have a SUFFIX parameter in %args.
-  if( ! defined( $args{'SUFFIX'} ) ) {
+  if ( ! defined( $args{'SUFFIX'} ) ) {
     substr($file,length($dir)) =~ s/\./_/g;
   }
 
@@ -303,7 +303,7 @@ examined at a later time.
 sub DEBUG {
   my $self = shift;
   $DEBUG = shift if @_;
-  return $DEBUG; 
+  return $DEBUG;
 }
 
 =back

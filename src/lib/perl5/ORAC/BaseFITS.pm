@@ -52,7 +52,7 @@ is not required:
 but the header in $Frm is over-written.
 All exisiting header information is lost. The C<calc_orac_headers()>
 method is invoked once the header information is read.
-If there is an error during the read a reference to an empty hash is 
+If there is an error during the read a reference to an empty hash is
 returned.
 
 If used as a class method, the filename must be supplied
@@ -116,19 +116,19 @@ the argument stripping off the extension relevant to the object...
 =cut
 
 sub parsefname {
-    my $self = shift;
+  my $self = shift;
 
-    my $fname = (@_ ? shift : $self->file);
-    my ($fname2,$extn);
-    if ($fname =~ /^(.*?)\[(\d+)\]/) {
-        $extn = $2;
-        $fname2 = $1;
-    } else {
-        $fname2 = $fname;
-        undef $extn;
-    }
-    my ($basename,$dir,$suffix) = fileparse($fname2,@FITSEXTNS);
-    return($basename,$dir,$suffix,$extn);
+  my $fname = (@_ ? shift : $self->file);
+  my ($fname2,$extn);
+  if ($fname =~ /^(.*?)\[(\d+)\]/) {
+    $extn = $2;
+    $fname2 = $1;
+  } else {
+    $fname2 = $fname;
+    undef $extn;
+  }
+  my ($basename,$dir,$suffix) = fileparse($fname2,@FITSEXTNS);
+  return($basename,$dir,$suffix,$extn);
 }
 
 =back

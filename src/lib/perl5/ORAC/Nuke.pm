@@ -25,7 +25,7 @@ This module contains the routines called from oracdr_nuke that handle the cullin
 All shared memory owned by the current user is removed even if
 it is not directly associated with an ORAC-DR process.
 
-=item * 
+=item *
 
 Will not attempt to remove shared memory owned by another user.
 
@@ -74,14 +74,14 @@ exluding those processing that match the exclude pattern.
 
    orac_proc_kill( $pattern, $exclude );
 
-The exlusion pattern is optional and is only required when certain 
-processes that match the more general pattern should be excluded. 
+The exlusion pattern is optional and is only required when certain
+processes that match the more general pattern should be excluded.
 
-The PID of the nuke process will never be killed regardless of 
+The PID of the nuke process will never be killed regardless of
 whether this process matches the required pattern!!!
 
-Relies on knowing the format and location of the standard ps for 
-all supported OSs. This is a pain -- Should be using 
+Relies on knowing the format and location of the standard ps for
+all supported OSs. This is a pain -- Should be using
 Proc::ProcessTable instead
 
 =cut
@@ -91,10 +91,12 @@ sub orac_proc_kill {
   my $pat = shift;
 
   my $exclude = '____NOTHING_TO_EXCLUDE___';
-  if (@_) { $exclude = shift; }
+  if (@_) {
+    $exclude = shift;
+  }
 
   # The command to use for ps
-  my $cmd; 
+  my $cmd;
   # this is the position of the pid in the ps output
   my $pos;
   if ($^O eq 'linux') {
@@ -123,25 +125,25 @@ sub orac_proc_kill {
       # Check the exclusion pattern
       if ($line !~ /$exclude/) {
 
-	# Split on space to extract the pid
-	$line =~ s/^\s+//;  # Strip leading blanks
-	my @a = split(/\s+/, $line);
-	
-	my $pid = $a[$pos];
+        # Split on space to extract the pid
+        $line =~ s/^\s+//;      # Strip leading blanks
+        my @a = split(/\s+/, $line);
 
-	# Check two things, first that the pid is a number
-	# and secondly that the pid does not match $$ (the pid
-	# of this nuke command)
+        my $pid = $a[$pos];
 
-	if ($pid =~ /^\d+$/) {
+        # Check two things, first that the pid is a number
+        # and secondly that the pid does not match $$ (the pid
+        # of this nuke command)
 
-	  # Now kill the relevant PID
-	  kill 'KILL', $pid
-	    unless $pid == $$;
+        if ($pid =~ /^\d+$/) {
 
-	} else {
-	  die "Error, PID ($pid) does not seem to be a number\n";
-	}
+          # Now kill the relevant PID
+          kill 'KILL', $pid
+            unless $pid == $$;
+
+        } else {
+          die "Error, PID ($pid) does not seem to be a number\n";
+        }
 
       }
 
