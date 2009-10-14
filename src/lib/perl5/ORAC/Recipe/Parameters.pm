@@ -27,7 +27,7 @@ use Data::Dumper;
 use Config::IniFiles;
 use File::Spec;
 
-$DEBUG = 1;
+$DEBUG = 0;
 $VERSION = '0.1';
 
 =head1 METHODS
@@ -59,7 +59,7 @@ sub new {
                   }, $class;
 
   my $path = $obj->_locate_file( $file );
-  print "PATH = ". (defined $path ? $path : "<undef>")."\n";
+  print "PATH = ". (defined $path ? $path : "<undef>")."\n" if $DEBUG;
   return undef unless defined $path;
 
   # update filename and parse it
