@@ -79,6 +79,7 @@ sub new {
                    RecipeName => undef,
                    Recipe => undef,
                    RecSuffices => [],
+                   RecParams => {},
                   }, $class;
 
   # Check for arguments
@@ -212,6 +213,26 @@ sub suffices {
     @{$self->{RecSuffices}} = map { $_ = "_$_" unless /^_/; $_} @_;
   }
   return @{$self->{RecSuffices}};
+}
+
+=item B<parameters>
+
+General ORAC::Recipe::Parameters object, not parameters necesarily
+associated with this recipe.
+
+  $par = $rec->parameters
+
+=cut
+
+# Store the full object here in case we would wish to add
+# primitive parameters that could be injected by the parser
+
+sub parameters {
+  my $self = shift;
+  if (@_) {
+    $self->{RecParams} = shift;
+  }
+  return $self->{RecParams};
 }
 
 =item B<batch>
@@ -827,6 +848,13 @@ sub orac_execute_recipe {
   $Frm->uhdr( "ORAC_DR_RECIPE", $Recipe->name );
   $Grp->uhdr( "ORAC_DR_RECIPE", $Recipe->name );
 
+  # Get the recipe parameters
+  my $allpars = $Recipe->parameters;
+  my %recpars;
+  if ($allpars) {
+    %recpars = $allpars->for_recipe( $Recipe->name );
+  }
+
   # run the recipe
   my $recobj = $Recipe->recipe;
   my $coderef = $recobj->code;
@@ -834,6 +862,7 @@ sub orac_execute_recipe {
     return $coderef->( 0, [], $Frm, $Grp, $Cal, $Display, $Mon,
                        { Batch => $Recipe->batch,
                          Name => $Recipe->name,
+                         Parameters => \%recpars,
                        });
   } else {
     return ORAC__ERROR;

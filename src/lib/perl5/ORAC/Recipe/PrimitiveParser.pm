@@ -754,6 +754,9 @@ sub _expand_primitive {
   push(@parsed, "my \$_PRIM_EPOCH_ = &Time::HiRes::gettimeofday();");
   push(@parsed, "orac_logkey(\"".$prim->name."\");");
 
+  # Promote the recipe parameters to a recipe global variable
+  push(@parsed, "my \%RECPARS = %{\$ORAC_Recipe_Info->{Parameters}};");
+
   # convert $Mon to a tied hash since for historical reasons we have to use %Mon{} not $Mon->{}
   push(@parsed, "my \%Mon;");
   push(@parsed, "  if (tied \%\$Mon) {",

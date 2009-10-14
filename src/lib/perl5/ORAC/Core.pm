@@ -59,6 +59,7 @@ use ORAC::Event;                # Tk event
 use ORAC::General;              # parse_* routines
 use ORAC::Error qw/:try/;
 use ORAC::Constants qw/:status/; # ORAC status varaibles
+use ORAC::Recipe::Parameters;
 
 # Need to use this class so that we can pre-configure the
 # message systems on the basis of command line switches
@@ -81,7 +82,7 @@ use vars qw/$VERSION @EXPORT @ISA /;
              orac_print_configuration orac_message_launch
              orac_start_algorithm_engines orac_start_display
              orac_calib_override orac_process_argument_list
-             orac_main_data_loop orac_parse_files
+             orac_main_data_loop orac_parse_files orac_parse_recparams
              orac_print_config_with_defaults /;
 
 $VERSION = '1.0';
@@ -257,6 +258,7 @@ all the monoliths launched for this instrument.
                       Instrument => $instrument,
                       Batch => 0,
                       RecSuffix => "A,B,C",
+                      RecPars => $parameterfile,
                      );
 
 Additional parameters are provided to configure the recipe
@@ -339,8 +341,9 @@ sub orac_process_frame {
   $recipe->debug( $args{Debug} ) if exists $args{Debug};
   $recipe->batch( $args{Batch} ) if exists $args{Batch};
 
-  # Configure recipe suffix
+  # Configure recipe suffix and parameters
   $recipe->suffices( @{$args{RecSuffix}}) if exists $args{RecSuffix};
+  $recipe->parameters( $args{RecPars} ) if exists $args{RecPars};
 
   # Execute the recipe
   try {
@@ -1029,6 +1032,20 @@ sub orac_parse_files {
   return ( @obs );
 }
 
+=item B<orac_parse_recparams>
+
+Parse the command line argument specifying recipe parameters and return
+either a ORAC::Recipe::Parameters object or undef.
+
+ $params = orac_parse_recparams( $params );
+
+=cut
+
+sub orac_parse_recparams {
+  my $file = shift;
+  return ORAC::Recipe::Parameters->new( $file );
+}
+
 =item B<orac_process_argument_list>
 
 This routine checks that your data exists and decides which data
@@ -1180,8 +1197,8 @@ sub orac_process_argument_list {
 This routine handles the main data processing
 
   orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume,
-                       $opt_skip, $opt_debug, $recsuffix, $grptrans,
-                       $loop, $frameclass, $groupclass,
+                       $opt_skip, $opt_debug, $recsuffix, $recpars,
+                       $grptrans, $loop, $frameclass, $groupclass,
                        $instrument, $Mon, $Cal, \@obs,
                        $Display, $orac_prt,
                        $ORAC_MESSAGE, $CURRENT_RECIPE, \@PRIMITIVE_LIST,
@@ -1239,11 +1256,11 @@ Batch mode can be turned on with the -batch switch.
 
 sub orac_main_data_loop {
 
-  croak 'Usage: orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume, $opt_skip, $opt_debug, $recsuffix, $grptrans, $loop, $frameclass, $groupclass, $instrument, $Mon, $Cal, \@obs, $Display, $orac_prt, $ORAC_MESSAGE, $CURRENT_RECIPE, \@PRIMITIVE_LIST, $CURRENT_PRIMITIVE, $Override_Recipe )'
-    unless scalar(@_) == 21;
+  croak 'Usage: orac_main_data_loop( $opt_batch, $opt_ut, $opt_resume, $opt_skip, $opt_debug, $recsuffix, $recpars, $grptrans, $loop, $frameclass, $groupclass, $instrument, $Mon, $Cal, \@obs, $Display, $orac_prt, $ORAC_MESSAGE, $CURRENT_RECIPE, \@PRIMITIVE_LIST, $CURRENT_PRIMITIVE, $Override_Recipe )'
+    unless scalar(@_) == 22;
 
   # Read the argument list
-  my ( $opt_batch, $opt_ut, $opt_resume, $opt_skip, $opt_debug, $recsuffix,
+  my ( $opt_batch, $opt_ut, $opt_resume, $opt_skip, $opt_debug, $recsuffix, $recpars,
        $grptrans, $loop, $frameclass, $groupclass, $instrument, $Mon, $Cal, $obs,
        $Display, $orac_prt, $ORAC_MESSAGE, $CURRENT_RECIPE, $PRIMITIVE_LIST,
        $CURRENT_PRIMITIVE, $Override_Recipe ) = @_;
@@ -1308,6 +1325,7 @@ sub orac_main_data_loop {
                              Instrument => $instrument,
                              Batch => 0,
                              RecSuffix => $recsuffix,
+                             RecPars => $recpars,
                             );
         }
           catch ORAC::Error::FatalError with {
@@ -1395,6 +1413,7 @@ sub orac_main_data_loop {
                              Instrument => $instrument,
                              Batch => 1,
                              RecSuffix => $recsuffix,
+                             RecPars => $recpars,
                             );
         }
           catch ORAC::Error::FatalError with {
