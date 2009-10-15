@@ -8,43 +8,21 @@ _CREATE_BAD_BOLO_MASK_ - Create a bad bolometer mask
 
  _CREATE_BAD_BOLO_MASK_ MASKVAL=10.0
 
- _CREATE_BAD_BOLO_MASK_ MASKVAL=10.0 FREQLO=0.1 FREQHI=5,10
-
 =head1 DESCRIPTION
 
-This primitive creates a bad bolometer mask based on the power
-spectrum of raw time series data.
-
-The method involves calculating the ratio of power at two
-user-specified frequencies. In practice, the high-frequency point is
-the average over a range of frequencies expected to lie in the white
-noise part of the spectrum. The low-frequency point should lie
-somewhere in the 1/f regime. The relative power at the two frequencies
-yields an estimate of contribution of the 1/f portion of the
-spectrum. Out-of-spec bolometers are defined as those having more
-power at low frequencies (hence less stable) and will be set to a
-C<BAD> value in the output mask.
+This primitive creates a bad bolometer mask based on the relative
+power at two frequencies, one which samples the white-noise region of
+the spectrum and the other which samples the low (1/f) region. This
+ratio image was calculated previously in
+L<_CALCULATE_NOISE_|_CALCULATE_NOISE_>. Out-of-spec bolometers are
+defined as those having more power at low frequencies (hence less
+stable) and will be set to a C<BAD> value in the output mask.
 
 =head1 ARGUMENTS
 
 The following arguments are supported:
 
 =over 4
-
-=item B<BIN>
-
-Number of samples to bin together to measure the power spectrum at
-the lower frequency. Default is 1 (i.e. no binning).
-
-=item B<FREQHI>
-
-Comma-separated pair of numbers indicating the frequency range (Hz) to
-measure white noise portion of power spectrum. Default is 2,10
-(i.e. 2-10 Hz).
-
-=item B<FREQLO>
-
-Lower frequency to measure power spectrum. Default is 0.1 Hz.
 
 =item B<MASKVAL>
 
@@ -60,34 +38,24 @@ Flag to denote whether to display extra information. Default is 0
 
 =head1 EXTERNAL TASKS
 
-The following external tasks are used:
+The following external task is used:
 
 =over 4
 
-=item KAPPA: 
+=item KAPPA:
 
-COLLAPSE, DIV, NDFCOPY, NDFTRACE, THRESH
+THRESH
 
 =back
 
-=head1 NOTES
-
-This primitive must be run on power spectra or otherwise
-Fourier-transformed data only.
-
-No bad-bolometer mask will be generated if the frequencies do not lie
-within range.
-
 =head1 OUTPUT DATA
 
-The Frame is updated to contain the white noise images on completion.
+None.
 
 =head1 OUTPUT FILES
 
 Creates an output file for each subarray present with suffix C<_bpm>,
 which is stored in the calibration system.
-
-Creates a white noise image for each subarray with suffix C<_noi>.
 
 =head1 AUTHOR
 
@@ -115,116 +83,34 @@ USA.
 
 =cut
 
-# Check for input arguments
+# First step: do noise data exist from which to create a bad-bolo mask?
+if ( $Frm->uhdr("NOISE") ) {
 
-# Low frequency measurement point
-my $freqlo = get_prim_arg( $_PRIM_ARGS_, "FREQLO", 0.1 );
+  # Check for input arguments
+  # Value of the power ratio to use as criteria for setting bolometers
+  # to bad.
+  my $maskval = get_prim_arg( $_PRIM_ARGS_, "MASKVAL", 10.0 );
 
-# High frequency measurement range for estimating white part of
-# spectrum
-my @freqhi = split( /\,/, get_prim_arg( $_PRIM_ARGS_, "FREQHI", "2,10" ), 2 );
+  # Should I be verbose (default to no)
+  my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
 
-# Value of the power ratio to use as criteria for setting bolometers
-# to bad.
-my $maskval = get_prim_arg( $_PRIM_ARGS_, "MASKVAL", 10.0 );
+  # Announce our presence to the world
+  orac_print "Deriving a bad bolometer mask from noise observation\n"
+    . "Setting threshold for bad bolometers at a ratio of $maskval\n"
+    if ($verbose);
 
-# The number of samples to average to measure power at the lower
-# frequency. Set a not-very-useful default value of 1 to force the
-# user to choose.
-my $bin = get_prim_arg( $_PRIM_ARGS_, "BIN", 1 );
+  # Loop over the files in the Frame - there should be no more than 4
+  # files (future check), corresponding to each of the four subarrays
+  # at the current wavelength.
+  foreach my $i ( 1 .. $Frm->nfiles ) {
 
-# Should I be verbose (default to no)
-my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 0);
-
-# Announce our presence to the world
-orac_print "Deriving a bad bolometer mask from noise observation\n";
-# Ideally this should go after range checking...
-orac_print "Estimating low-frequency noise at $freqlo Hz\n"
-          ."Estimating white noise level between $freqhi[0] and $freqhi[1] Hz\n"
-          ."Setting threshold for bad bolometers at a ratio of $maskval\n";
-
-# White noise files
-my @noisefiles;
-
-# This factor scales the noise image to be (square of) the noise in 1
-# second
-my $powsec = 2.0 / ($Frm->hdrval("STEPTIME"));
-
-# Loop over the files in the Frame - there should be no more than 4
-# files (future check), corresponding to each of the four subarrays at
-# the current wavelength.
-foreach my $i ( 1 .. $Frm->nfiles ) {
-  my $fftfile = $Frm->file( $i );
-  orac_print "Determining bad bolometer mask from $fftfile\n" if $verbose;
-  $Mon{ndfpack_mon}->obeyw("ndftrace","$fftfile");
-  my ( $ORAC_STATUS, $ndim ) = $Mon{ndfpack_mon}->get("ndftrace","ndim");
-  if ( $ndim == 4 ) {
-    # Determine frequency resolution
-    ($ORAC_STATUS, my @pixscale) = $Mon{ndfpack_mon}->get("ndftrace","fpixscale");
-    my $halfpix = $pixscale[0] / 2.0;
-    my $deltaf = $halfpix * $bin;
-
-    # Check frequencies are within bounds
-    ($ORAC_STATUS, my @lbnd) = $Mon{ndfpack_mon}->get("ndftrace","flbnd");
-    my $minfreq = sprintf "%5.2f", ($lbnd[0] + $halfpix);
-    if ( $freqlo < $minfreq || $freqlo < 0 ) {
-      orac_warn "FREQLO, $freqlo, out of range (min = $minfreq)\n";
-      last;
-    }
-    ($ORAC_STATUS, my @ubnd) = $Mon{ndfpack_mon}->get("ndftrace","fubnd");
-    my $maxfreq = sprintf "%5.2f", ($ubnd[0] - $halfpix);
-    if ( $freqhi[1] >= $maxfreq ) {
-      orac_warn "FREQHI, $freqhi[1], out of range (max = $maxfreq)\n";
-      last;
-    }
-
-    # Make sure RANGE is not too large - obviously it should not be
-    # greater than the frequency range in the file. In principle there
-    # might be good reasons to check that it's not too large a
-    # fraction of the total frequency range. This can be implemented
-    # according to real world experience.
-    my $extent = sprintf "%5.2f", ($maxfreq - $minfreq);
-    my $range = sprintf "%5.2f", ($freqhi[1] - $freqhi[0]);
-    if ( $range > $extent ) {
-      orac_warn "RANGE, $range, exceeds frequency extent in file, $extent\n";
-      last;
-    }
-
-    # OK all's well - next step is to obtain the desired ndf sections,
-    # starting with the lower frequency (1/f) noise part of the
-    # spectrum. This is a single-channel estimate of the low-frequency
-    # noise power.
-    my $speclo = new ORAC::TempFile;
-    my $speclofile = $speclo->file;
-    my $freq1 = $freqlo - $deltaf;
-    # Catch -ve frequencies, set to lowest non-zero frequency
-    $freq1 = $minfreq + 2.*$halfpix if ( $freq1 <=0 );
-    my $freq2 = $freqlo + $deltaf;
-    my $args = "in=$fftfile($freq1:$freq2,,,1) out=$speclofile trim trimwcs";
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
-
-    # Use high frequency region to estimate white noise power. This is
-    # an estimate of the mean noise power across a region of the power
-    # spectrum which is expected to be flat.
-    my $spechi = new ORAC::TempFile;
-    my $spechifile = $spechi->file;
-    $args = "in=$fftfile($freqhi[0]:$freqhi[1],,,1) out=$spechifile trim trimwcs";
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
-    # Collapse along frequency axis to get estimate of white noise power
-    my $wnoise = new ORAC::TempFile;
-    my $wnoisefile = $wnoise->file;
-    $args = "axis=1 in=$spechifile estimator=mean out=$wnoisefile";
-    $Mon{kappa_mon}->obeyw("collapse","$args");
-
-    # Form the ratio of the two files
-    my $ratio = new ORAC::TempFile;
-    my $ratiofile = $ratio->file;
-    $Mon{kappa_mon}->obeyw("div","in1=$speclofile in2=$wnoisefile out=$ratiofile");
+    # Noise ratio file
+    my $ratio = $Frm->file( $i ).".MORE.SMURF.NOISERATIO";
 
     # Threshold to set out-of-range values to bad
     my $thresh = new ORAC::TempFile;
     my $threshfile = $thresh->file;
-    $args = "in=$ratiofile out=$threshfile thrhi=$maskval thrlo=0 newhi=bad newlo=bad";
+    my $args = "in=$ratio out=$threshfile thrhi=$maskval thrlo=0 newhi=bad newlo=bad";
     $Mon{kappa_mon}->obeyw("thresh","$args");
 
     # Threshold again with inverted selection to set everything to
@@ -240,28 +126,5 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
     # uhdr entry for SUBARRAY and put the right value in it.
     $Frm->subarray($i);
     $Cal->maskindex->add($mask, {%{$Frm->hdr}, %{$Frm->uhdr}});
-
-    # Now turn the `white noise' image into a real noise image -
-    # multiply by 2, divide by the step-time and take the square root
-    # to get the noise in 1 second
-    my $noisesec = new ORAC::TempFile;
-    my $noisesecfile = $noisesec->file;
-    $args = "in=$wnoisefile out=$noisesecfile scalar=$powsec";
-    $Mon{kappa_mon}->obeyw("cmult","$args");
-
-    my $noisefile = $Frm->inout("_noi");
-    $args = "ia=$noisesecfile exp=sqrt(ia) out=$noisefile";
-    $Mon{kappa_mon}->obeyw("maths","$args");
-
-    push(@noisefiles, $noisefile);
-  } else {
-    if ( $verbose ) {
-      orac_warn "Input file $fftfile does not contain Fourier transform data\n";
-    }
   }
 }
-
-# Store the noise files if created
-$Frm->files(@noisefiles) if ( @noisefiles );
-
-orac_print "Done\n";
