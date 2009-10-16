@@ -152,11 +152,11 @@ if ( $Frm->uhdr("OBSEND") ) {
 
     my $subarray = $Frmobj->hdr('SUBARRAY');
 
-    # Check there are enough solutions to analyze
+    # Check there are enough solutions to analyze - unset the CLIP parameter
     if ( $Frmobj->uhdr("NUMGOOD") < 10 ) {
       my $numgood = $Frmobj->uhdr("NUMGOOD");
-      orac_warn "Too few good solutions to analyze for subarray $subarray ($numgood)\n";
-      next;
+      orac_warn "Very few good solutions for subarray $subarray ($numgood)\n";
+      $clip = "";
     }
 
     # Check if we really have a responsivity file
@@ -174,10 +174,11 @@ if ( $Frm->uhdr("OBSEND") ) {
       # sigma-clipping and what proportion that represents
       my $totalgood = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
       my $dn = $totalgood - $results{NUMGOOD};
-      my $dnpc = sprintf "%5.1f", 100.0 * $dn/$totalgood;
+      # Trap division by zero - set a dummy 100% as a default
+      my $dnpc = ($totalgood > 0) ? sprintf "%5.1f", 100.0 * $dn/$totalgood
+	: 100;
 
       # Obtain statistics for the previous responsivity solution.
-
       # Analyze previous resp solution - use STATS to get sigma-clipped statistics
       _FIND_IMAGE_STATISTICS_ IMAGE=$previous COMP=$comp VERBOSE=0 CLIP=$clip HISTAT=0
       my %previous = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
@@ -255,7 +256,9 @@ if ( $Frm->uhdr("OBSEND") ) {
       orac_warn "No responsivity file for subarray $subarray\n";
     }
 
-    # Finally register the flatfield with the Calibration system
+    # Finally register the flatfield with the Calibration system -
+    # note this has to be done after the analysis in order to store
+    # the results in the index file
     $Cal->flatindex->add( $flatfile, {%{$Frmobj->hdr}, %{$Frmobj->uhdr}} );
 
     # HACK - remove the .more.smurf.resp* files from the intermediates
