@@ -229,7 +229,7 @@ sub _parse_file {
 
 =item B<_clean_entry>
 
-Clean up an entry in the config hash. Will lower case keys and convert
+Clean up an entry in the config hash. Will upper case keys and convert
 comma-separated entries into arrays references.
 
  ($newkey, $newval) = $cfg->_clean_entry( $oldkey, $oldval );
