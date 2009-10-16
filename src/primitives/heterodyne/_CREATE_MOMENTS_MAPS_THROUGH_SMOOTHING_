@@ -220,29 +220,41 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
 
           } else {
 
-            # Smooth the cube.
-            orac_say " Smoothing cube in frequency with $freqsmooth-pixel tophat.";
-
             # Temporarily disable bad-bits mask.
             $Mon{'ndfpack_mon'}->obeyw( "setbb", "ndf=$in bb=0" );
 
-            my $temp1 = new ORAC::TempFile;
-            my $temp1file = $temp1->file;
-            my $params = "in=$in out=$temp1file axes=[1,3] box=[1,$freqsmooth] estimator=mean";
-            $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+            my $temp2 = new ORAC::TempFile;
+            my $temp2file = $temp2->file;
+
+            if( starversion_gt( 'KAPPA', 'v1.11-7' ) ) {
+
+              # We can use N-D BLOCK.
+              orac_say " Smoothing cube with [$spatsmooth,$spatsmooth,$freqsmooth] tophat.";
+              my $params = "in=$in out=$temp2file box=[$spatsmooth,$spatsmooth,$freqsmooth] estimator=mean";
+              $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+            } else {
+
+              # Need to do two BLOCK calls.
+              my $temp1 = new ORAC::TempFile;
+              my $temp1file = $temp1->file;
+
+              orac_say " Smoothing cube in frequency with $freqsmooth-pixel tophat.";
+
+              my $params = "in=$in out=$temp1file axes=[1,3] box=[1,$freqsmooth] estimator=mean";
+              $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+
+              orac_say " Smoothing cube in spatial with $spatsmooth-pixel tophat.";
+
+              if( $dims->[0] < 3 || $dims->[1] < 3 ) {
+                $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp1file out=$temp2file" );
+              } else {
+                $params = "in=$temp1file out=$temp2file axes=[1,2] box=[$spatsmooth,$spatsmooth] estimator=mean";
+                $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+              }
+            }
 
             # Restore bad-bits mask.
             $Mon{'ndfpack_mon'}->obeyw( "setbb", "ndf=$in bb=255" );
-
-            orac_say " Smoothing cube in spatial with $spatsmooth-pixel tophat.";
-            my $temp2 = new ORAC::TempFile;
-            my $temp2file = $temp2->file;
-            if( $dims->[0] < 3 || $dims->[1] < 3 ) {
-              $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp1file out=$temp2file" );
-            } else {
-              $params = "in=$temp1file out=$temp2file axes=[1,2] box=[$spatsmooth,$spatsmooth] estimator=mean";
-              $Mon{'kappa_mon'}->obeyw( "block", "$params" );
-            }
 
             push @smoothed, $temp2file;
             push @smo_obj, $temp2;
@@ -251,7 +263,7 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
             orac_say " Masking out lines using $mask.";
             my $temp3 = new ORAC::TempFile;
             my $temp3file = $temp3->file;
-            $params = "in1=$temp2file in2=$mask out=$temp3file";
+            my $params = "in1=$temp2file in2=$mask out=$temp3file";
             $Mon{'kappa_mon'}->obeyw( "add", "$params" );
 
             # Copy the variance across, but only if the input cube has
@@ -331,7 +343,7 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
                 open my $fc_fh, ">", $fc_param;
                 print $fc_fh "ClumpFind.Minpix=50\n";
                 print $fc_fh "ClumpFind.AllowEdge=1\n";
-                print $fc_fh "ClumpFind.FwhmBeam=0\n";
+                print $fc_fh "ClumpFind.FwhmBeam=1\n";
                 print $fc_fh "ClumpFind.MaxBad=9999\n";
                 print $fc_fh "ClumpFind.VeloRes=0\n";
                 print $fc_fh "ClumpFind.Tlow=$rms_thresh*RMS\n";
@@ -498,7 +510,12 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
             # from that position, but only if the moment is 'integ'.
             if( $moment eq 'integ' ) {
 
-              $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$out" );
+              my $tempfile = new ORAC::TempFile;
+
+              # Do a smooth first.
+              $Mon{'kappa_mon'}->obeyw( "block", "in=$out out=$tempfile box=3" );
+
+              $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$tempfile" );
               my( $ORAC_STATUS, @maxpos ) = $Mon{'kappa_mon'}->get( "stats", "maxpos" );
               $Obj->uhdr( "INTEG_MAX_POS", \@maxpos );
 
@@ -523,3 +540,5 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
     }
   }
 }
+
+
