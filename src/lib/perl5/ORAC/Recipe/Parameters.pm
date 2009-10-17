@@ -27,6 +27,8 @@ use Data::Dumper;
 use Config::IniFiles;
 use File::Spec;
 
+use ORAC::Print;
+
 $DEBUG = 0;
 $VERSION = '0.1';
 
@@ -120,6 +122,33 @@ sub for_recipe {
   return ();
 }
 
+=item B<verify_parameters>
+
+Check parameters retrieved by system against those that are allowed by
+the recipe.
+
+  verify_parameters( \%RECPARS, \@valid_params );
+
+This function will print a warning if a parameter is in the parameter
+ini file but not known to the recipe.
+
+This function takes an array reference listing the valid parameters.
+
+=cut
+
+sub verify_parameters {
+  my $recpars = shift;
+  my $valid = shift;
+  my %recpars_copy = %$recpars;
+  foreach my $valid_par ( @$valid ) {
+    if( defined( $recpars_copy{$valid_par} ) ) {
+      delete $recpars_copy{$valid_par};
+    }
+  }
+  foreach my $invalid ( sort keys %recpars_copy ) {
+    orac_warn "Recipe parameter $invalid not valid for current recipe!\n";
+  }
+}
 
 =back
 
