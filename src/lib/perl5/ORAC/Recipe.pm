@@ -529,22 +529,38 @@ sub execute {
   # Execute the recipe
   use Time::HiRes qw/ gettimeofday /;
   my $execute_start = [gettimeofday];
-  my $status = ORAC::Recipe::Execution::orac_execute_recipe( $PRIMITIVE_LIST, $CURRENT_PRIMITIVE,
-                                                             $self,$Frm,
-                                                             $Grp, $Cal,
-                                                             $Display, $Mon,
-                                                           );
+  my $status = eval { ORAC::Recipe::Execution::orac_execute_recipe( $PRIMITIVE_LIST, $CURRENT_PRIMITIVE,
+                                                                    $self,$Frm,
+                                                                    $Grp, $Cal,
+                                                                    $Display, $Mon,
+                                                                  ); };
+
+  # We must grab $@ immediately because the debug code will reset
+  # its value, causing us to lose errors. As do ref() and isa()
+  my $error;
+  if (!defined $status && $@) {
+    $error = $@;
+    ORAC::Error->flush; # Need to clear the error stack else the higher reaches of the pipeline will re-throw
+    # if this is a termination request then we do not really care
+    # about the exception at this point
+    if (defined $error && ref($error) && $error->isa( "ORAC::Error::TermProcessing" )) {
+      $error = undef;
+      $status = ORAC__TERM;
+    }
+  }
+
+  my $etext = '';
+  if (defined $status && $status == ORAC__TERM) {
+    $etext = ' (recipe terminated early)';
+  }
+
   my $execute_elapsed = tv_interval( $execute_start );
   my $p_execute_elapsed = sprintf( "%.3f", $execute_elapsed );
-  orac_print "Recipe took $p_execute_elapsed seconds to evaluate and execute.\n\n";
+  orac_print "Recipe took $p_execute_elapsed seconds to evaluate and execute.$etext\n\n";
 
   $status = ORAC__OK unless defined $status;
   $status = ORAC__OK if $status eq '';
   $status = ORAC__OK if $status == ORAC__TERM;
-
-  # We must grab $@ immediately because the debug code will reset
-  # its value, causing us to lose errors. As do ref() and isa()
-  my $error = $@;
 
   # Some extra info
   if ($self->debug) {
@@ -557,13 +573,11 @@ sub execute {
   if (defined $error && "$error") {
 
     # Check for previously thrown UserAbort errors
-    if ( ref($error) && $error->isa("Error") ) {
-      if ( $error == ORAC__ABORT ) {
-        # We have a UserAbort, no hassle, throw it and return to
-        # the Tk Mainloop without printing any junk about the
-        # error
-        $error->throw;
-      }
+    if ( ref($error) && $error->isa("ORAC::Error::UserAbort") ) {
+      # We have a UserAbort, no hassle, throw it and return to
+      # the Tk Mainloop without printing any junk about the
+      # error
+      $error->throw;
     }
 
     # Since we have an error we can not trust the current
@@ -575,32 +589,7 @@ sub execute {
     # Report error
     orac_err ("RECIPE ERROR: $error","blue");
 
-    # If this was a syntax error print out the recipe, string context!
-    if ("$error" =~ /syntax error|object method/) {
-
-      # This is broken if the real primitive line numbers are provided
-      # rather than the line numbering of the entire recipe.
-
-      # Extract info from the error message, string context!
-      "$error" =~ /line (\d+)/ && do {
-        my $num = $1;
-        orac_err("Error in line $num\n", 'red');
-        #        orac_err("Relevant recipe lines (with numbers):\n\n", 'red');
-
-        # Calculate number of lines to print
-        #        my $inc = 15;
-        #        my $start = ($num > $inc ? $num - $inc : 0 );
-        #        my $end   = ($num < $#recipe - $inc ? $num + $inc : $#recipe);
-
-        #        # Print out the relevant chunk with line numbers
-        #        for (my $i=$start; $i < $end; $i++) {
-        #          orac_err("$i: ", 'blue');
-        #          orac_err("$new[$i]\n", 'red');
-        #        }
-        orac_err("End recipe dump\n\n",'blue');
-      };
-
-    } elsif ("$error" =~ /^Died/) {
+    if ("$error" =~ /^Died/) {
       # Else check if the recipe died. Usually a die is caused
       # by a control C from the user.
 
@@ -610,7 +599,7 @@ sub execute {
 
     # If debugging is turned on, dump the recipe on error
     if ($self->debug) {
-      my $fh = new IO::File("> ORACDR_RECIPE.dump");
+      open my $fh, ">", "ORACDR_RECIPE.dump";
       if (defined $fh) {
         #        print $fh join('',@recipe). "\n";
         orac_err("Recipe contents dumped to ORACDR_RECIPE.dump\n")
