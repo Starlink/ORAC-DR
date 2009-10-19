@@ -265,6 +265,9 @@ package ORAC::Error::FatalError;
 
 use base qw/ ORAC::Error /;
 
+package ORAC::Error::TermProcessing;
+use base qw/ ORAC::Error /;
+
 # --------------------------------------------------------------------------
 
 1;

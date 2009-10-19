@@ -72,7 +72,7 @@ require Exporter;
 @ISA = qw/Exporter/;
 @EXPORT = qw/orac_print orac_err orac_warn orac_debug orac_read orac_throw orac_carp
              orac_printp orac_print_prefix orac_warnp orac_errp orac_say orac_sayp orac_notify
-             orac_msglog orac_clearlog orac_logkey orac_logging orac_loginfo /;
+             orac_msglog orac_clearlog orac_logkey orac_logging orac_loginfo orac_term /;
 
 # Create a Term::ReadLine handle
 # For read on STDIN and output on STDOUT
@@ -209,13 +209,28 @@ sub orac_err {
 
 Identical to C<orac_err> except that an exception is thrown (see
 C<ORAC::Error>) of type C<ORAC::Error::FatalError> immediately after
-the text message has been printed.
+the text message has been printed. Will cause the pipeline to stop
+processing all data.
 
 =cut
 
 sub orac_throw {
   my $prt = __curr_obj;
   $prt->throw(@_);
+}
+
+=item orac_term( text, [colour])
+
+Identical to C<orac_throw> except that an exception of class
+C<ORAC::Error::TermProcessing> is thrown to force the current recipe
+to terminate safely. orac_throw will cause the pipeline to abort when
+called within a recipe.
+
+=cut
+
+sub orac_term {
+  my $prt = __curr_obj;
+  $prt->term(@_);
 }
 
 =item orac_debug( text)
@@ -1135,8 +1150,24 @@ The message itself is part of the exception that is thrown.
 
 sub throw {
   my $self = shift;
-  $self->err(@_);
-  ORAC::Error::FatalError->throw(shift);
+  $self->_throw( "ORAC::Error::FatalError", @_);
+}
+
+=item term (text,[colour])
+
+  $prt->term( "An error message" );
+
+Similar to orac_throw but can be used in primitives to throw a TermProcessing
+exception to allow the current recipe to be stopped. orac_throw throws a
+FatalError exception and so that will completely stop the pipeline.
+
+Not recommended for use outside the recipe execution environment.
+
+=cut
+
+sub term {
+  my $self = shift;
+  $self->_throw( "ORAC::Error::TermProcessing", @_);
 }
 
 =item debug (text)
@@ -1169,7 +1200,7 @@ Does an Tk update on the Main Window widget
 =cut
 
 sub tk_update {
-
+  local $@;
   # There is a chance that we have just updated
   # a Tk text widget. On the off-chance that we have,
   # we should do a Tk update
@@ -1269,6 +1300,28 @@ sub _store_msg {
   return;
 }
 
+=item B<_throw>
+
+Method suitable for calling from both throw() and term() methods
+to handle the difference in exception object to be thrown.
+
+  $prt->_throw( $exception_class, $text, $colored );
+
+=cut
+
+sub _throw {
+  my $self = shift;
+  my $class = shift;
+  my $text = shift;
+  my $errtext = $text;
+  if ($errtext) {
+    # ensure that we have a new line for the text we send to the "err" command
+    chomp($errtext);
+    $errtext .= "\n";
+  }
+  $self->err($errtext, @_);
+  $class->throw($text);
+}
 
 =end PRIVATE METHODS
 
