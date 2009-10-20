@@ -327,6 +327,35 @@ sub primitives {
 
 =over 4
 
+=item B<as_string>
+
+Returns the full recipe as a single string.
+
+ $string = $rec->as_string();
+
+=cut
+
+sub as_string {
+  my $self = shift;
+
+  # The recipe is easy
+  my $str .= join("\n", $self->recipe->content )."\n";
+
+  # Get the primitive names
+  my @primitives = $self->primitives;
+
+  # now we need to get the text for each one without compiling
+  my $parser = $self->parser;
+  my $nocomp = $parser->nocompile( 1 );
+  for my $p (@primitives) {
+    my $prim = $parser->find( $p );
+    croak "Could not read primitive '$p'" unless defined $prim;
+    $str .= join("\n",$prim->content ). "\n";
+  }
+  $parser->nocompile( $nocomp );
+  return $str;
+}
+
 =item B<check_syntax>
 
 Loads and compiles each primitive in the recipe.
@@ -601,7 +630,7 @@ sub execute {
     if ($self->debug) {
       open my $fh, ">", "ORACDR_RECIPE.dump";
       if (defined $fh) {
-        #        print $fh join('',@recipe). "\n";
+        print $fh $self->as_string(). "\n";
         orac_err("Recipe contents dumped to ORACDR_RECIPE.dump\n")
       }
     }
