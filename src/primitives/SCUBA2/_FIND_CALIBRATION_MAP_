@@ -88,7 +88,9 @@ USA.
 
 =cut
 
-my $Obj = ($_PRIM_ARGS_->{GROUP} ? $Grp : $Frm );
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+
+my $Obj = ( $group ? $Grp : $Frm );
 
 my $obsend = ( $Frm->uhdr("OBSEND") ) ? 1 : 0;
 
@@ -102,70 +104,74 @@ if ($Cal->iscalsource($Obj->uhdr("ORAC_OBJECT")) && $obsend ) {
   # Find the peak
   _FIND_MAP_PEAK_ LOGFILE=0 VERBOSE=0 GROUP=$_PRIM_ARGS_->{GROUP}
 
-  # Find the integrated intensity
-  # turn off logfile in production code
+  # Retrieve the position - if successful, continue on to derive
+  # an FCF
   my $posn = $_FIND_MAP_PEAK_{POSITION};
   if (@$posn) {
-      _FIND_INTEGRATED_INTENSITY_  LOGFILE=0 VERBOSE=0 IMAGE=$in XYPOS=$posn
-  }
+    # Find the integrated intensity - no need to write a logfile
+    _FIND_INTEGRATED_INTENSITY_  LOGFILE=0 VERBOSE=0 IMAGE=$in XYPOS=$posn
 
-  # Retrieve the results
-  my %results = (
-		 BEAM => $_FIND_MAP_PEAK_{PEAK},
-		 ARCSEC => $_FIND_INTEGRATED_INTENSITY_{TOTALFLUX},
-		);
+    # Retrieve the results
+    my %results = ( BEAM => $_FIND_MAP_PEAK_{PEAK},
+		    ARCSEC => $_FIND_INTEGRATED_INTENSITY_{TOTALFLUX} );
 
-  # precalculate filter
-  my $filter = $Obj->uhdr("ORAC_FILTER");
+    # Precalculate filter
+    my $filter = $Obj->uhdr("ORAC_FILTER");
 
-  # Loop over the different type of results
-  foreach my $type (keys %results) {
+    # Loop over the different type of results
+    foreach my $type (keys %results) {
 
-    # Type specific configurations
-    my ($ismap, $units);
-    if ($type eq 'ARCSEC') {
-      $ismap = 1;  # Need full integrated flux
-      $units = "Jy/arcsec**2/pW";
-    } else {
-      $ismap = 0;
-      $units = "Jy/beam/pW";
-    }
+      # Type specific configurations
+      my ($ismap, $units);
+      if ($type eq 'ARCSEC') {
+	$ismap = 1;  # Need full integrated flux
+	$units = "Jy/arcsec**2/pW";
+      } else {
+	$ismap = 0;
+	$units = "Jy/beam/pW";
+      }
 
-    orac_print "Determining calibration of type $type\n";
+      orac_print "Determining calibration of type $type\n";
 
-    next unless defined $results{$type};
+      next unless defined $results{$type};
 
-    # Now get the flux for this filter
-    my $flux = $Cal->fluxcal($Obj->uhdr("ORAC_OBJECT"),
-			     $filter, $ismap);
+      # Now get the flux for this filter
+      my $flux = $Cal->fluxcal($Obj->uhdr("ORAC_OBJECT"), $filter, $ismap);
 
-    if (defined $flux) {
+      # If we have a flux, store the FCF in the calibration system
+      if (defined $flux) {
+	orac_print "Flux: $type $flux, ". $results{$type}. "\n";
 
-      orac_print "Flux: $type $flux, ". $results{$type}. "\n";
+	# Calculate the new gain
+	my $fcf = $flux / $results{$type};
 
-      # Calculate the new gain
-      my $fcf = $flux / $results{$type};
+	# Announce the new gain
+	orac_print("Storing new gain for $filter: $fcf $units\n",'yellow');
 
-      # Announce the new gain
-      orac_print("Storing new gain for $filter:".
-		 " $fcf $units\n",'yellow');
+	# Set the current gain - add to index file
+	# This means that we have to create a hash with the
+	# new keyword GAIN and the selected filter FILTER
+	$Obj->uhdr("GAIN",$fcf);
+	$Obj->uhdr("UNITS", $type);
 
-      # Set the current gain - add to index file
-      # This means that we have to create a hash with the
-      # new keyword GAIN and the selected filter FILTER
-      $Obj->uhdr("GAIN",$fcf);
-      $Obj->uhdr("UNITS", $type);
+	# Need to append type to file name so that the keys are unique
+	$Cal->gainsindex->add($Obj->file() ."_$type",
+			      { %{$Obj->hdr}, %{$Obj->uhdr}});
 
-      # Need to append type to file name so that the keys are unique
-      $Cal->gainsindex->add($Obj->file() ."_$type",
-			    { %{$Obj->hdr}, %{$Obj->uhdr}});
+	# Additionally it seems that a user-friendly logfile is
+	# a requirement
+	_ADD_FCF_LOG_ENTRY_ FILTER=$filter FCF=$fcf UNITS=$type GROUP=$group
 
-      # Additionally it seems that a user-friendly logfile is
-      # a requirement
-      _ADD_FCF_LOG_ENTRY_ FILTER=$filter FCF=$fcf UNITS=$type GROUP=$_PRIM_ARGS_->{GROUP}
+      }
 
     }
-
+  } else {
+    # If this is a Frame object and no FCF could be determined then
+    # the data should be ignored.
+    if ( !$group ) {
+      $Obj->isgood(0);
+    }
+    orac_warn "Unable to determine a FCF for this observation\n";
   }
 
 }
