@@ -322,19 +322,21 @@ if ( $usegrp ) {
   # Set despike flag
   $despike = ( $coadd_mode eq 'DESPIKE' ) ? 1 : 0;
 
-  # If we are in RUNNING mode, check that we have enough images to get
-  # a variance and/or that the Group object file exists
-  my $nimages = scalar($Frm->files);
-  if ( ($coadd_mode eq 'RUNNING') &&
-       (($nimages < 3) && $genvar || !$Grpobj->file_exists) ) {
-    # If not, then we must use STACKALL
-    $coadd_mode = 'STACKALL';
+  # If we are in RUNNING mode, check that the Group object file exists
+  # Note that for DREAM/STARE data this might cause issues with
+  # variance generation - needs to be tested. For SCAN data, variances
+  # are already present.
+  my $nimages = $Frm->nfiles;
+  if ( ($coadd_mode eq 'RUNNING') && !$Grp->file_exists ) {
+    # Use FRAME if no Group file exists to combine images in the
+    # current Frame
+    $coadd_mode = 'FRAME';
   }
 
   # #####################
   # COADD_MODE = RUNNING
   # #####################
-  if ($coadd_mode eq 'RUNNING') {
+  if ($coadd_mode eq 'RUNNING' || $coadd_mode eq 'FRAME') {
     # Combine all the images in the current Frm with the Grp image
     orac_print "Collecting files to mosaic...\n";
     if ($Grpobj->file_exists) {
@@ -342,19 +344,21 @@ if ( $usegrp ) {
       $in = $Grpobj->file;
       print {$listhandle} $Grpobj->file ."\n";
       push (@mosfiles, $Grpobj->file);
-
-      for my $fname ($Frm->files) {
-	# Write current filename to list file
-	print {$listhandle} "$fname\n";
-	$in = $fname;
-	push (@mosfiles, $fname);
-	$nfiles++;
-      }
-      # Everything's OK, we can make the mosaic
-      $make_mosaic = 1;
     } else {
-      orac_warn "Managed to get into RUNNING average without a group file";
+      orac_warn "Managed to get into RUNNING average without a group file"
+	if ($coadd_mode eq 'RUNNING');
+      $nfiles = 0;
     }
+
+    for my $fname ($Frm->files) {
+      # Write current filename to list file
+      print {$listhandle} "$fname\n";
+      $in = $fname;
+      push (@mosfiles, $fname);
+      $nfiles++;
+    }
+    # Everything's OK, we can make the mosaic
+    $make_mosaic = 1;
   } elsif ($coadd_mode eq 'STACKALL' || $despike ) {
     # #################################
     # COADD_MODE = STACKALL or DESPIKE
