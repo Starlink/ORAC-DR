@@ -325,7 +325,7 @@ if ($calib && $dofit) {
     if ( defined $xy[0] && defined $xy[1] ) {
     orac_print "Deriving the beam in the $fitcosys coordinate system using $method\n";
 
-    my (@amp, @majfwhm, @minfwhm, $axisr, @orient, $totalflux, %badbeam);
+    my (@amp, @majfwhm, @minfwhm, $axisr, @orient, $totalflux, @posn, %badbeam);
     # Now fit the source using PSF or BEAMFIT
     if ( $usepsf ) {
       # Use PSF
@@ -357,30 +357,17 @@ if ($calib && $dofit) {
       $orient[1] = 0.0;
 
     } else {
-      # Use BEAMFIT - define args
-      my $var = "false";
-      my $pos = '"'.$xy[0].", ".$xy[1].'"';
-      # Use a 15x15 pixel area - should this be an input variable?
-      my $fitarea = 15;
-      my $args = "mode=interface pos=".$pos." variance=$var fitarea=$fitarea";
-      # Call beamfit
-      $Mon{kappa_mon}->obeyw("beamfit","ndf=$in $args");
+      # Use BEAMFIT
+      _FIT_BEAM_ IMAGE=$in XYPOS=\@xy
 
-      # Retrieve fit parameters
-      my @params = (qw/ majfwhm minfwhm orient amp /);
-      ($ORAC_STATUS, my %bfitres) = $Mon{kappa_mon}->mget("beamfit",@params);
+      @amp = @{ $_FIT_BEAM_{AMPLITUDE} };
+      $axisr = $_FIT_BEAM_{AXISR};
+      @majfwhm = @{ $_FIT_BEAM_{MAJFWHM} };
+      @minfwhm = @{ $_FIT_BEAM_{MINFWHM} };
+      @orient = @{ $_FIT_BEAM_{ORIENT} };
+      @posn = @{ $_FIT_BEAM_{POSITION} };
+      $totalflux = $_FIT_BEAM_{TOTALFUX};
 
-      # Read the FWHM and convert to arcsec
-      @majfwhm = map {$_ * RAD2ASEC} @{$bfitres{majfwhm}};
-      @minfwhm = map {$_ * RAD2ASEC} @{$bfitres{minfwhm}};
-      $axisr = $majfwhm[0] / $minfwhm[0];
-
-      # Amplitude and orientation with error
-      @orient = @{$bfitres{orient}};
-      @amp = @{$bfitres{amp}};
-
-      # Calculate total flux under the gaussian
-      $totalflux = 1.133 * $amp[0] * $majfwhm[0] * $minfwhm[0];
     }
 
     # Check whether the fit was successful
@@ -464,7 +451,8 @@ if ($calib && $dofit) {
       # Write to logfile
       $beamlog->addentry("$uttime $hst $run $src $mode $filter    $el $cso $tau  $see   $beama  $da  $beamb   $db   $pa   $dpa  $errfrac");
     }
-    orac_print "Beam size: $beama x $beamb arcsec^2 at a PA of $pa deg E of N\n" if ($verbose && $goodbeam);
+    orac_print "Beam size: $beama x $beamb arcsec^2 at a PA of $pa deg E of N\n"
+      if ($verbose && $goodbeam);
     } else {
       orac_warn "Unable to locate a source near the centre of the image\n";
     }
