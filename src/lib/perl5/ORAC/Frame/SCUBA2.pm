@@ -417,7 +417,7 @@ start of the next.
 =cut
 
 sub framegroupkeys {
-  return (qw/ OBSNUM FOCPOSN /);
+  return (qw/ OBSNUM FOCPOSN FOCAXIS /);
 }
 
 
