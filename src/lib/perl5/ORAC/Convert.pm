@@ -286,7 +286,7 @@ sub convert {
           orac_err("$!\n");
           return ($filename,undef);
         };
-    } else {
+    } elsif( -l $outfile ) {
       orac_warn("Symlink from ORAC_DATA_OUT to $filename already exists. Continuing...\n");
     }
     return ( $filename, $outfile );
