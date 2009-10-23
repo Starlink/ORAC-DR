@@ -49,6 +49,7 @@ use strict;
 use warnings;
 use Carp;
 
+use IO::Uncompress::Gunzip qw/ gunzip $GunzipError /;
 use Time::HiRes;
 use File::Basename;
 use File::Find;
@@ -1488,6 +1489,16 @@ sub _convert_and_link_nofrm {
     chomp($file);
     orac_print "Converting $file from $infmt to $outfmt...\n"
       if $infmt ne $outfmt;
+
+    # The input file might be gzipped, so copy it over and unzip it.
+    if( $file =~ /\.gz$/ ) {
+      orac_print "Copying and unzipping $file...";
+      my $out = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, basename( $file ) );
+      $out =~ s/\.gz$//;
+      gunzip $file => $out or orac_throw "gunzip failed: $GunzipError\n";
+      $file = $out;
+      orac_say "done.";
+    }
 
     # we still do the conversion even if the formats are the same
     # because convert() propogates the file from DATA_IN to DATA_OUT
