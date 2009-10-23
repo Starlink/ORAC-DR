@@ -1,0 +1,120 @@
+# -*-perl-*-
+
+=head1 NAME
+
+=head1 DESCRIPTION
+
+=head1 ARGUMENTS
+
+=over 4
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+=back
+
+=head1 TASKS
+
+=head1 REQUIRED PERL MODULES
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+# Handle parameters.
+my $rms_result = get_prim_arg( $_PRIM_ARGS_, "RMS", undef );
+my $survey = get_prim_arg( $_PRIM_ARGS_, "SURVEY", undef );
+my $tsys_result = get_prim_arg( $_PRIM_ARGS_, "TSYS", undef );
+my $write = get_prim_arg( $_PRIM_ARGS_, "WRITE", 1 );
+
+my @entries;
+
+_SETUP_QA_OPTIONS_
+my $opts = $_SETUP_QA_OPTIONS_{'OPTS'};
+my %opts = %$opts;
+
+my $tune_info;
+if( defined( $opts{'molecule'} ) ) {
+  my $transition = $Frm->hdr( "TRANSITI" );
+  $transition =~ s/\s+//g;
+  $tune_info = join ' ', $Frm->hdr( "MOLECULE" ), $transition;
+} else {
+  $tune_info = $Frm->hdr( "LOFREQS" ) . " GHz";
+}
+
+my $header = "QA information for $survey for ";
+$header .= join ' ', $Frm->uhdr( "ORAC_UTDATE" ),
+                     $Frm->uhdr( "ORAC_OBSERVATION_NUMBER" ),
+                     "$tune_info:";
+
+push @entries, $header;
+
+my $merged = $tsys_result->merge( $rms_result );
+
+push @entries, "Receptor report:";
+
+if( $merged->pass ) {
+  push @entries, " Observation PASSED receptor-based QA tests.";
+} else {
+  push @entries, " Observation FAILED receptor-based QA tests. Reasons:";
+  foreach my $reason ( @{$merged->fail_reasons} ) {
+    push @entries, "  $reason";
+  }
+}
+
+
+
+if( scalar( @{$tsys_result->bad_receptors} ) > 0 ) {
+  push @entries, " " . ( join ",", sort @{$tsys_result->bad_receptors} ) . " flagged on Tsys.";
+} else {
+  push @entries, " No receptors flagged on Tsys.";
+}
+
+if( scalar( @{$rms_result->bad_receptors} ) > 0 ) {
+  push @entries, " " . ( join ",", sort @{$rms_result->bad_receptors} ) . " flagged on RMS.";
+} else {
+  push @entries, " No receptors flagged on RMS.";
+}
+
+push @entries, sprintf( " Mean Tsys of good receptors: %.2f", $tsys_result->tsys_stats->{mean} );
+push @entries, sprintf( " Mean RMS of good receptors: %.2f", $rms_result->rms_stats->{mean} );
+
+push @entries, " Receptor information:";
+push @entries, "  Name    Tsys      RMS";
+my $tsys_values = $Frm->uhdr( "QA_TSYS_VALUES" );
+my $rms_values = $Frm->uhdr( "QA_RMS_VALUES" );
+foreach my $key ( sort keys %{$tsys_values} ) {
+  foreach my $receptor ( sort keys %{$tsys_values->{$key}} ) {
+    push @entries, sprintf( "   %3s  %8.3f %8.3f", $receptor, $tsys_values->{$key}->{$receptor},
+                            $rms_values->{$key}->{$receptor} );
+  }
+}
+
+if( $write ) {
+  my $logfile = new ORAC::LogFile( "log.qa" );
+  $logfile->addentry( @entries );
+}
+
+# Stash these in a uhdr for later use.
+my %qa_log_entries;
+if( defined( $Frm->uhdr( "QA_LOG_ENTRIES" ) ) ) {
+  %qa_log_entries = %{$Frm->uhdr( "QA_LOG_ENTRIES" )};
+}
+$qa_log_entries{$survey} = \@entries;
+$Frm->uhdr( "QA_LOG_ENTRIES", \%qa_log_entries );
