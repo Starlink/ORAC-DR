@@ -1492,7 +1492,7 @@ sub _convert_and_link_nofrm {
 
     # The input file might be gzipped, so copy it over and unzip it.
     if( $file =~ /\.gz$/ ) {
-      orac_print "Copying and unzipping $file...";
+      orac_print "Unzipping $file...";
       my $out = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, basename( $file ) );
       $out =~ s/\.gz$//;
       gunzip $file => $out or orac_throw "gunzip failed: $GunzipError\n";
