@@ -132,21 +132,24 @@ unless (defined $in) {
 # than 9, so check and set it to the minimum. Note that fitarea may be
 # null, "!", so check that before attempting to do a numerical comparison.
 my $fitarea = get_prim_arg($_PRIM_ARGS_, "BOX", 25);
-if ( $fitarea ne "!") {
-  $fitarea = 10 if ( $fitarea < 10 );
-}
+my $minpix;
 
 # Check that we have enough good values in the image before attempting
 # to fit the beam
 $Mon{kappa_mon}->obeyw("stats","ndf=$in");
 (my $ORAC_STATUS, my $numgood) = $Mon{kappa_mon}->get("stats","numgood");
-
-# Define the minimum number of useful pixels as ($fitarea+1)^2
-my $minpix = ($fitarea+1)*($fitarea+1);
-
-# Make sure it lies within the bounds of the image though!
 ($ORAC_STATUS, my $numpix) = $Mon{kappa_mon}->get("stats","numpix");
-$minpix = $numpix if ( $minpix > $numpix );
+if ( $fitarea ne "!") {
+  $fitarea = 10 if ( $fitarea < 10 );
+
+  # Define the minimum number of useful pixels as ($fitarea+1)^2
+  $minpix = ($fitarea+1)*($fitarea+1);
+  # Make sure it lies within the bounds of the image though!
+  $minpix = $numpix if ( $minpix > $numpix );
+} else {
+  $minpix = $numgood;
+}
+
 
 # We now run PSF if possible
 if ( $numgood >= $minpix ) {
@@ -160,43 +163,54 @@ if ( $numgood >= $minpix ) {
   my $args = "mode=interface pos=$pos variance=$var fitarea=$fitarea";
 
   # Call beamfit
-  $Mon{kappa_mon}->obeyw("beamfit","ndf=$in $args");
+  my $BEAM_STATUS = $Mon{kappa_mon}->obeyw("beamfit","ndf=$in $args");
 
-  # Retrieve fit parameters
-  my @params = (qw/ majfwhm minfwhm orient amp centre /);
-  ($ORAC_STATUS, my %bfitres) = $Mon{kappa_mon}->mget("beamfit",@params);
+  if ( $BEAM_STATUS == ORAC__OK ) {
 
-  # Read the FWHM and convert to arcsec
-  my @majfwhm = map {$_ * RAD2ASEC} @{$bfitres{majfwhm}};
-  my @minfwhm = map {$_ * RAD2ASEC} @{$bfitres{minfwhm}};
-  my $axisr = $majfwhm[0] / $minfwhm[0];
+    # Retrieve fit parameters
+    my @params = (qw/ majfwhm minfwhm orient amp centre /);
+    ($ORAC_STATUS, my %bfitres) = $Mon{kappa_mon}->mget("beamfit",@params);
 
-  # Amplitude and orientation with error
-  my @orient = @{$bfitres{orient}};
-  my @amp = @{$bfitres{amp}};
+    # Read the FWHM and convert to arcsec
+    my @majfwhm = map {$_ * RAD2ASEC} @{$bfitres{majfwhm}};
+    my @minfwhm = map {$_ * RAD2ASEC} @{$bfitres{minfwhm}};
+    my $axisr = $majfwhm[0] / $minfwhm[0];
 
-  # Calculate total flux under the gaussian
-  my $totalflux = 1.133 * $amp[0] * $majfwhm[0] * $minfwhm[0];
+    # Amplitude and orientation with error
+    my @orient = @{$bfitres{orient}};
+    my @amp = @{$bfitres{amp}};
 
-  # Fitted peak position
-  my @posn = split(/\s+/, $bfitres{centre}->[0], 2);
+    # Calculate total flux under the gaussian
+    my $totalflux = 1.133 * $amp[0] * $majfwhm[0] * $minfwhm[0];
 
-  # Store results in primitive hash
-  $_FIT_BEAM_{AMPLITUDE} = \@amp;
-  $_FIT_BEAM_{AXISR}     = $axisr;
-  $_FIT_BEAM_{MAJFWHM}   = \@majfwhm;
-  $_FIT_BEAM_{MINFWHM}   = \@minfwhm;
-  $_FIT_BEAM_{ORIENT}    = \@orient;
-  $_FIT_BEAM_{POSITION}  = \@posn;
-  $_FIT_BEAM_{TOTALFUX}  = $totalflux;
+    # Fitted peak position
+    my @posn = split(/\s+/, $bfitres{centre}->[0], 2);
 
-  # Tell user of success if requested
-  if ($verbose) {
-    my $fwhm1 = sprintf "%5.2f", $minfwhm[0];
-    my $orient = sprintf "%5.2f", $orient[0];
-    my $fwhm2 = sprintf "%5.2f", $axisr*$fwhm1;
-    orac_print "Successful 2-D Gaussian fit: FWHM = $fwhm1 x $fwhm2 arcsec^2, ORIENT = $orient deg\n";
-  }
+    # Store results in primitive hash
+    $_FIT_BEAM_{AMPLITUDE} = \@amp;
+    $_FIT_BEAM_{AXISR}     = $axisr;
+    $_FIT_BEAM_{MAJFWHM}   = \@majfwhm;
+    $_FIT_BEAM_{MINFWHM}   = \@minfwhm;
+    $_FIT_BEAM_{ORIENT}    = \@orient;
+    $_FIT_BEAM_{POSITION}  = \@posn;
+    $_FIT_BEAM_{TOTALFUX}  = $totalflux;
+
+    # Tell user of success if requested
+    if ($verbose) {
+      my $fwhm1 = sprintf "%5.2f", $minfwhm[0];
+      my $orient = sprintf "%5.2f", $orient[0];
+      my $fwhm2 = sprintf "%5.2f", $axisr*$fwhm1;
+      orac_print "Successful 2-D Gaussian fit: FWHM = $fwhm1 x $fwhm2 arcsec^2, ORIENT = $orient deg\n";
+    }
+  } else {
+    orac_err "Beamfit failed\n";
+    # Return some dummy values to prevent dereferencing errors
+    $_FIT_BEAM_{AMPLITUDE} = [0, undef];
+    $_FIT_BEAM_{MAJFWHM}   = [0, undef];
+    $_FIT_BEAM_{MINFWHM}   = [-1, undef];
+    $_FIT_BEAM_{ORIENT}    = [0, 0];
+    $_FIT_BEAM_{POSITION}  = [0, 0];
+}
 
 } else {
   orac_warn "Insufficient number of good values to fit a 2-D Gaussian profile in the current image\n"
