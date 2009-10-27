@@ -40,7 +40,7 @@ use base qw/ Exporter /;
 use vars qw/ @EXPORT /;
 @EXPORT = qw( max min log10 nint utdate parse_keyvalues parse_obslist cosdeg
               sindeg dectodms hmstodec deg2rad rad2deg is_numeric
-              get_prim_arg write_file_list write_file_list_inout read_file_list
+              write_file_list write_file_list_inout read_file_list
               hardlink
            );
 
@@ -465,24 +465,6 @@ sub convert_args_to_string {
 
   return join( " ", @strs );
 
-}
-
-=item B<get_prim_arg>
-
-Retrieve a primitive argument safely using exists and defined
-and if necessary returning the supplied default.
-
-  my $val = get_prim_arg( $_PRIM_ARGS_, $key, $default );
-
-=cut
-
-sub get_prim_arg {
-  my $argref = shift;
-  my $key = shift;
-  my $default = shift;
-
-  return (exists $argref->{$key} && defined $argref->{$key})
-    ? $argref->{$key} : $default;
 }
 
 =item B<read_file_list>

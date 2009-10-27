@@ -819,6 +819,35 @@ These recipe runtime functions are provided:
 
 =over 4
 
+=item B<get_prim_arg>
+
+Retrieve a primitive argument safely using exists and defined
+and if necessary returning the supplied default.
+
+  my $val = get_prim_arg( $_PRIM_ARGS_, $key, $default, $error_if_undef );
+
+The fourth argument is optional. If it is defined and true, then an
+error will be thrown (via orac_term) if the primitive argument is
+undefined.
+
+=cut
+
+sub get_prim_arg {
+  my $argref = shift;
+  my $key = shift;
+  my $default = shift;
+  my $error_if_undef = shift;
+
+  if( defined( $error_if_undef ) && $error_if_undef &&
+      ! exists( $argref->{$key} ) && ! defined( $argref->{$key} ) ) {
+    my ( $package, $filename, $line ) = caller;
+    orac_term( "$key argument to $filename must be defined! Programming error!" );
+  }
+
+  return (exists $argref->{$key} && defined $argref->{$key})
+    ? $argref->{$key} : $default;
+}
+
 =item B<orac_execute_recipe>
 
 Simple wrapper to eval in this namespace in order to execute recipes
