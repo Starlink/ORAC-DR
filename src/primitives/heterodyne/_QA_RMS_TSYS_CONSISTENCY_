@@ -104,6 +104,10 @@ if( defined( $survey ) ) {
                            "Telescope" );
 }
 
+# Hash to store information so we can pass it to the primitive that
+# writes the QA log.
+my %timeseries;
+
 # Retrieve the list of previously-determined RMS files.
 my $rms_files = $Frm->uhdr( "QA_RMS_FILES" );
 
@@ -238,6 +242,8 @@ foreach my $i ( 1 .. scalar( @$rms_files ) - 1 ) {
       if( starversion_gt( 'KAPPA', 'V1.10-0' ) ) {
         ( $ORAC_STATUS, my $numhi ) = $Mon{'kappa_mon'}->get( "thresh", "numhi" );
         orac_say sprintf( " %d samples had RMS above %.2f K", $numhi, $meantol );
+        $timeseries{$analyse_survey}{'rmsmeantsysnum'} = $numhi;
+        $timeseries{$analyse_survey}{'rmsmeantsysval'} = $meantol;
       }
 
       # Expand both out to size of input cube.
@@ -260,6 +266,7 @@ foreach my $i ( 1 .. scalar( @$rms_files ) - 1 ) {
   }
 }
 
+
 foreach my $survey ( sort keys %result ) {
   my $sum = 0;
   foreach my $value ( values %{$result{$survey}} ) {
@@ -278,11 +285,15 @@ foreach my $survey ( sort keys %result ) {
 
   orac_print "Tsys versus RMS consistency check ";
 
+  my $status;
   if( $avg > $rmstolfail ) {
+    $status = "failed";
     orac_print( " failed ", "bold white on_red" );
   } elsif( $avg > $rmstolquest ) {
+    $status = "questionable";
     orac_print( " is questionable ", "bold black on_yellow" );
   } else {
+    $status = "passed";
     orac_print( " passed ", "bold white on_green" );
   }
 
@@ -290,12 +301,18 @@ foreach my $survey ( sort keys %result ) {
 
   orac_print sprintf( " %.2f%% of the samples had a calculated RMS that differed by more than %d%% from the measured RMS.\n", $avg * 100, $rmstol * 100 );
 
+  $timeseries{$survey}{'percentage'} = $avg;
+  $timeseries{$survey}{'rmstol'} = $rmstol;
+  $timeseries{$survey}{'status'} = $status;
+
   if( $avg > $rmstolfail && scalar keys %result == 1 ) {
     $Frm->isgood( 0 );
     orac_say " Will not add current frame to group.";
   }
 
 }
+
+_QA_WRITE_TIMESERIES_REPORT_ TIMESERIES=\%timeseries WRITE=0
 
 # If we masked, test the first output file. If it's all bad, don't
 # continue as we can't do anything with the data anyhow.
