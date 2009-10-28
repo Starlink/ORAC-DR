@@ -1,0 +1,106 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_MASK_RECEPTORS_
+
+=head1 DESCRIPTION
+
+This primitive masks a list of receptors from ACSIS timeseries
+data. The receptors are marked as bad.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item RECEPTORS = ARRAY REFERENCE (Given)
+
+The list of receptors to mask. If not defined, an error will be
+thrown.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+This primitive is suitable for ACSIS timeseries data.
+
+=back
+
+=head1 OUTPUT DATA
+
+=over 4
+
+The masked timeseries cube(s) with suffix _rmsk.
+
+=back
+
+=head1 TASKS
+
+KAPPA: ARDMASK.
+
+=head1 REQUIRED PERL MODULES
+
+JCMT::ACSIS::Array.
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+my $receptors = get_prim_arg( $_PRIM_ARGS_, "RECEPTORS", undef, 1 );
+
+# Load the JCMT::ACSIS::Array module.
+my $isok = eval{ require JCMT::ACSIS::Array; 1; };
+if( ! $isok ) {
+  orac_warn "Could not load the JCMT::ACSIS::Array Perl module: $@\n";
+  orac_warn "Cannot mask receptors.\n";
+} else {
+
+  foreach my $i ( 1 .. $Frm->nfiles ) {
+    my ( $in, $out ) = $Frm->inout( "_rmsk", $i );
+
+    # Retrieve pixel bounds.
+    _GET_DIMENSIONS_ FILE=$in
+    my $lbound = $_GET_DIMENSIONS_{LBOUND};
+    my $ubound = $_GET_DIMENSIONS_{UBOUND};
+
+    # Create the ARDMASK for the given receptors and file.
+    my $array = new JCMT::ACSIS::Array( File => $in );
+    my @pixels = $array->pixel( @$receptors );
+    open my $ardmask_fh, ">", "ardmask$$.dat" or orac_term "Could not open ARDMASK input file ardmask$$.dat: $!\n";
+    print $ardmask_fh "DIMENSION(3)\n";
+    foreach my $pixel ( @pixels ) {
+      my $str = "RECT(" . ( join ",", $lbound->[0] - 1,
+                                      $pixel - 1,
+                                      $lbound->[2] - 1,
+                                      $ubound->[0],
+                                      $pixel,
+                                      $ubound->[2] ) . ")\n";
+      print $ardmask_fh $str;
+    }
+    close $ardmask_fh;
+
+    # Run ARDMASK.
+    $Mon{'kappa_mon'}->obeyw( "ardmask", "in=$in ardfile=ardmask$$.dat out=$out" );
+
+    # Report to user.
+    orac_say "$in to $out:";
+    orac_say " Masked receptor" . ( scalar( @pixels ) > 1 ? "s" : "" ) . " " . ( join ",", sort @$receptors ) . ".";
+
+    $Frm->file( $i, $out );
+
+    unlink( "ardmask$$.dat" );
+
+  }
+
+  orac_say "";
+
+}
