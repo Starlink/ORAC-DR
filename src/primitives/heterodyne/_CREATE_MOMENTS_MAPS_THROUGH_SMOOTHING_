@@ -43,6 +43,12 @@ How to process group files. 0 means use the current Frame object. 1
 means use the current Group object. 2 means use each Frame member of
 the current Group object. [0]
 
+=item LOWER_VELOCITY = REAL (Given)
+
+An optional lower velocity in km/s, below which no data will be used
+when creating the moments map. This argument can be overridden by the
+RECPAR_MOMENTS_LOWER uhdr via the recipe parameter system. [undef]
+
 =item MOMENTS = STRING (Given)
 
 The moment maps to create. These are any of the values allowed for the
@@ -77,6 +83,12 @@ determine baselines. [3]
 =item TAG = STRING (Given)
 
 Which moment map to tag as a representative image. ['']
+
+=item UPPER_VELOCITY = REAL (Given)
+
+An optional upper velocity in km/s, above which no data will be used
+when creating the moments map. This argument can be overridden by the
+RECPAR_MOMENTS_UPPER uhdr via the recipe parameter system. [undef]
 
 =back
 
@@ -130,17 +142,25 @@ All Rights Reserved.
 # Handle parameters.
 my $freqsmooth = get_prim_arg( $_PRIM_ARGS_, "FREQUENCY_SMOOTH", 25 );
 my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+my $lower_velocity = get_prim_arg( $_PRIM_ARGS_, "LOWER_VELOCITY", undef );
 my $moments = get_prim_arg( $_PRIM_ARGS_, "MOMENTS", 'integ' );
 my $method = get_prim_arg( $_PRIM_ARGS_, "METHOD", 'clumpfind' );
 my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 1 );
 my $rms_thrhlds = get_prim_arg( $_PRIM_ARGS_, "RMS_THRESHOLD", '3.0,4.5' );
 my $spatsmooth = get_prim_arg( $_PRIM_ARGS_, "SPATIAL_SMOOTH", 3 );
 my $tag = get_prim_arg( $_PRIM_ARGS_, "TAG", undef );
+my $upper_velocity = get_prim_arg( $_PRIM_ARGS_, "UPPER_VELOCITY", undef );
 
 # Handle recipe parameters.
+$lower_velocity = ( defined( $Frm->uhdr( "RECPAR_MOMENTS_LOWER" ) ) ?
+                    $Frm->uhdr( "RECPAR_MOMENTS_LOWER" )            :
+                    $lower_velocity );
 $moments = ( defined( $Frm->uhdr( "RECPAR_MOMENTS" ) ) ?
              $Frm->uhdr( "RECPAR_MOMENTS" )            :
              $moments );
+$upper_velocity = ( defined( $Frm->uhdr( "RECPAR_MOMENTS_UPPER" ) ) ?
+                    $Frm->uhdr( "RECPAR_MOMENTS_UPPER" )            :
+                    $upper_velocity );
 
 my $group2 = ( $group == 2 ? 0 : $group );
 
@@ -418,11 +438,35 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
             $params = "ndf=$colin from=$in comp=VARIANCE";
             $Mon{'ndfpack_mon'}->obeyw( "setvar", "$params" );
 
+            # Set up the NDF section that we're collapsing over.
+            my $section = '';
+            if( defined( $lower_velocity ) || defined( $upper_velocity ) ) {
+              _GET_DIMENSIONS_ FILE=$colin
+              my $flbound = $_GET_DIMENSIONS_{FLBOUND};
+              my $fubound = $_GET_DIMENSIONS_{FUBOUND};
+              if( defined( $lower_velocity ) && defined( $upper_velocity ) ) {
+                $section = "$lower_velocity:$upper_velocity";
+              } elsif( defined( $lower_velocity ) ) {
+                $section = "$lower_velocity:" . $fubound->[2];
+              } elsif( defined( $upper_velocity ) ) {
+                $section = $flbound->[2] . ":$upper_velocity";
+              }
+              $section = "(,,$section)";
+            }
+
             # Run the COLLAPSE.
             orac_say " Collapsing to form temporary $moment map.";
+
+            if( defined( $lower_velocity ) ) {
+              orac_say " Using lower velocity of $lower_velocity km/s.";
+            }
+            if( defined( $upper_velocity ) ) {
+              orac_say " Using upper velocity of $upper_velocity km/s.";
+            }
+
             my $temp8 = new ORAC::TempFile;
             my $temp8file = $temp8->file;
-            $params = "in=$colin out=$temp8file estimator=$moment ";
+            $params = "in=$colin$section out=$temp8file estimator=$moment ";
             $params .= "axis=SPEC wlim=0.0 trim=false";
             if( uc( $moment ) eq 'IWC' ) {
               $params .= " variance=false";
