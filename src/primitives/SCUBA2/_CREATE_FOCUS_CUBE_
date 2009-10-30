@@ -232,9 +232,10 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
   # 4) Paste the individual images together to make the cube
   # 5) Create new 3-D WCS frameset for cube using stored SKY mapping &
   #    frame
-  # 6) Write .ok file for the POINTING_FOCUS task to pick up
+  # 6) Shift the WCS so source in middle focus position lies at 0,0
+  # 7) Write .ok file for the POINTING_FOCUS task to pick up
 
-  # group all the frames by FOCPOSN (which is guaranteed to be distinct
+  # Group all the frames by FOCPOSN (which is guaranteed to be distinct
   # in each Frm)
   my @unsortedsubgrps = $Grp->subgrps( "FOCPOSN" );
 
@@ -254,7 +255,16 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
   my $obs = $Frm->hdr("OBSNUM");
   foreach my $subgrp ( @subgrps ) {
     $i++;
-    my @focfiles = map { $_->files } $subgrp->members;
+    my @foclist = map { $_->files } $subgrp->members;
+
+    # Trim third axis from images
+    my @focfiles;
+    for my $j (0 .. $#foclist) {
+      my $newfocfile = $subgrp->members->[0]->inout("_tmp");
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$foclist[0] out=$newfocfile trim trimwcs");
+      push (@focfiles, $newfocfile);
+    }
+
     my $focposn = $subgrp->members->[0]->hdrval("FOCPOSN");
     orac_print "Processing focus position $axis = $focposn mm (offset #$i)\n"
         if $verbose;
@@ -275,10 +285,14 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
       my $cpargs = "in=".$focfiles[0]." out=$planeimage title=$title";
       $Mon{ndfpack_mon}->obeyw("ndfcopy","$cpargs");
     }
-    # Store output file in Frm
+    # Store output file in current subgrp
     $subgrp->files( $planeimage );
-    # Display this image
-    $Display->display_data( $subgrp ) if (defined $Display);
+
+    # This seems unsatisfying...
+    foreach my $tmpfile (@focfiles) {
+      $tmpfile .= ".sdf" unless ($tmpfile =~ /sdf$/);
+      unlink $tmpfile;
+    }
 
     # Derive sky mapping and frame
     $args = "this=$planeimage iframe1=ast__base iframe2=ast__current result=skymap$$.ast";
@@ -300,30 +314,11 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
     push ( @planes, $planeimage );
   }
 
+  $Grp->files(@planes);
+
   # Check that we can make at least 3 planes on a cube to fit a quadratic
   orac_warn "Number of SMU positions is not sufficient to create a valid FOCUS cube\n"
     if ( $nfoc < 3 );
-
-  # Find the peak position of the centre focus step (presumed to be
-  # nearest the actual focus). Nfoc should be odd but make it an int
-  # just in case...
-  my $midplane = int(($nfoc + 1) / 2) - 1;
-  _CENTROID_IMAGE_ IMAGE=$planes[$midplane]
-  my @xypos = ( $_CENTROID_IMAGE_{RESULTS}->[0],
-		$_CENTROID_IMAGE_{RESULTS}->[1]);
-  # Now slide all the images so that the source lies at 0,0
-  if ( defined $xypos[0] && defined $xypos[1] ) {
-    _FIT_BEAM_ IMAGE=$planes[$midplane] XYPOS=\@xypos BOX=! VERBOSE=0
-    my @newpos = ($_FIT_BEAM_{POSITION}->[0], $_FIT_BEAM_{POSITION}->[1]);
-    if ( $newpos[0] ne "0" && $newpos[1] ne "0" ) {
-      my $args = "stype=relative fid='0:00:00.0,0:00:00.0' obj='".
-	$newpos[0].",".$newpos[1]."'";
-      foreach my $plane (@planes) {
-	$args .= " ndf=$plane";
-	$Mon{kappa_mon}->obeyw("wcsslide","$args");
-      }
-    }
-  }
 
   # Define output cube name - replace _mos with _foc
   my $cubename = $Grp->inout("_foc");
@@ -366,15 +361,65 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
   # Remove all of the .ast text files with the mapping/frame info
   unlink glob( "*$$.ast" );
 
+  # Find the peak position of the centre focus step (presumed to be
+  # nearest the actual focus). Nfoc should be odd but make it an int
+  # just in case...
+  my $midplane = int(($nfoc + 1) / 2);
+  my $midfile = "$cubename(,,$midplane)";
+  # Find the centroid just in case the source is way off centre - in
+  # practice just using 0,0 seems to work well enough
+  _CENTROID_IMAGE_ IMAGE=$midfile
+  my @xypos = ( $_CENTROID_IMAGE_{RESULTS}->[0],
+		$_CENTROID_IMAGE_{RESULTS}->[1]);
+  # Now slide all the images so that the source lies at 0,0
+  if ( defined $xypos[0] && defined $xypos[1] ) {
+    _FIT_BEAM_ IMAGE=$midfile XYPOS=\@xypos BOX=! VERBOSE=0
+    my @newpos = ($_FIT_BEAM_{POSITION}->[0], $_FIT_BEAM_{POSITION}->[1]);
+    if ( $newpos[0] ne "0" && $newpos[1] ne "0" ) {
+      my $args = "stype=relative fid='0:00:00.0,0:00:00.0,0' obj='".
+	$newpos[0].",".$newpos[1].",0' ndf=$cubename";
+      orac_print "\nShifting WCS from $newpos[0], $newpos[1]...";
+      $Mon{kappa_mon}->obeyw("wcsslide","$args");
+    }
+  } else {
+    orac_warn "Unable to determine centroid of source at centre focus position: cube will not be adjusted\n";
+  }
+
+  orac_print (" done.\n");
   # Store the cube name as the Grp file
   $Grp->file($cubename);
-  orac_print (" done.\n");
 
   # Write the .ok file in the output directory
   _WRITE_FLAG_FILE_ FILE=$cubename PREFIX=s
 
   orac_print ("Cube created successfully and ready for processing.\n", 'green');
   $Grp->uhdr("FOCUS_CUBE",1);
+
+  # Now display the data
+  my ($min, $max) = (1.0e10, -1.0e10);
+  # Find the stats in a 25 pixel-square box at the image centre,
+  # which should include the source if detected
+  orac_print "Finding min/max for displaying focus positions\n" if $verbose;
+  foreach my $plane ($Grp->files) {
+    my $args = "$plane(0:00:00.0~25,0:00:00.0~25,)";
+    $Mon{kappa_mon}->obeyw("stats","$args");
+    my ($ORAC_STATUS, $planemin) = $Mon{kappa_mon}->get("stats","minimum");
+    ($ORAC_STATUS, my $planemax) = $Mon{kappa_mon}->get("stats","maximum");
+    $min = $planemin if ($planemin < $min);
+    $max = $planemax if ($planemax > $max);
+  }
+  my %options = ( ZAUTOSCALE => 0, ZMIN => $min, ZMAX => $max );
+  if ( $min == 1.0e-10 || $max == 1.0e10 ) {
+    orac_warn "Could not determine min/max for images in cube - images will be autoscaled\n";
+    %options = (ZAUTOSCALE => 1);
+  }
+  # For some reason we need to loop over the subgrps and display each
+  # in turn, rather than give the display system everything at
+  # once. This should be investigated.
+  foreach my $subgrp (@subgrps) {
+    $Display->display_data( $subgrp, \%options, -1 );
+  }
+
 } else {
   $Grp->uhdr("FOCUS_CUBE",0);
 }
