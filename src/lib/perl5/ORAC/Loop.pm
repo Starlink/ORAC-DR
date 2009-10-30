@@ -1495,9 +1495,13 @@ sub _convert_and_link_nofrm {
       orac_print "Unzipping $file...";
       my $out = File::Spec->catfile( $ENV{'ORAC_DATA_OUT'}, basename( $file ) );
       $out =~ s/\.gz$//;
-      gunzip $file => $out or orac_throw "gunzip failed: $GunzipError\n";
+      if( ! -e $out ) {
+        gunzip $file => $out or orac_throw "gunzip failed: $GunzipError\n";
+        orac_say "done.";
+      } else {
+        orac_say " file already exists in ORAC_DATA_OUT!"
+      }
       $file = $out;
-      orac_say "done.";
     }
 
     # we still do the conversion even if the formats are the same
