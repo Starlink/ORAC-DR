@@ -421,7 +421,7 @@ sub orac_calc_instrument_settings {
         push(@rec, "-recsuffix", "QL" );
         # SCUBA2 disables the display in QL mode and uses DRAMA
         if ($inst eq 'SCUBA2') {
-          push(@rec, "-nodisplay" => undef, "-loop" => "task" );
+          push(@rec,  "-loop" => "task" );
         }
       } elsif ($options{mode} eq 'SUMMIT') {
         push(@rec, "-recsuffix", "SUMMIT");
