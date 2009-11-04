@@ -33,6 +33,7 @@ use strict;
 use warnings;
 
 use File::Copy;
+use Sys::Hostname;
 use Cwd;
 
 use NDF;  # To read image bounds
@@ -245,13 +246,24 @@ each 'win'.
 
 =cut
 
-sub newdev {
-  my $self = shift;
-  my $win = shift;
+{
+  # cache hostname
+  my $hostname;
 
-  my $dev = "xwindows;" . "$win" ."_oracdrxwin";
+  sub newdev {
+    my $self = shift;
+    my $win = shift;
 
-  return $dev;
+    if (!defined $hostname) {
+      $hostname = hostname;
+      # just the minimal bit
+      $hostname =~ s/\..*//;
+    }
+
+    my $dev = "xwindows;" . "$win" ."_oracdrxwin_$hostname";
+
+    return $dev;
+  }
 }
 
 =item B<calc_centre_region>
