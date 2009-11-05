@@ -40,6 +40,11 @@ The masked output file. Must be defined.
 The AST Region is obtained from the MAP_ASTREGION uhdr of either the
 current Frame or Group object (see the C<GROUP> argument).
 
+=item *
+
+If the resulting trimmed map has no pixels, then no trimming will be
+done.
+
 =back
 
 =head1 OUTPUT DATA
@@ -98,9 +103,24 @@ if( defined( $region ) ) {
   my $params = "in=$in out=$temp2 region=$temp1 const=bad inside=false";
   $Mon{'kappa_mon'}->obeyw( "regionmask", "$params" );
 
-  # Trim off the bad pixels.
-  $params = "in=$temp2 out=$out trimbad=true";
-  $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+  # Calculate statistics on the resulting file. If it's all bad, just
+  # copy the input to the output.
+  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$temp2" );
+  my ( $ORAC_STATUS, $numgood ) = $Mon{'kappa_mon'}->get( "stats", "numgood" );
+
+  if( $numgood != 0 ) {
+
+    # Trim off the bad pixels.
+    $params = "in=$temp2 out=$out trimbad=true";
+    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
+
+  } else {
+
+    # We didn't have any good pixels from trimmed map, so print a
+    # warning and do the copy.
+    orac_warn "Trimming non-map regions resulted in a blank map; not trimming map to requested map size.\n";
+    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$out" );
+  }
 
 } else {
 
