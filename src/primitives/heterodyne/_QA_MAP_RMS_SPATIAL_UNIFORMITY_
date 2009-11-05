@@ -66,13 +66,11 @@ Rights Reserved.
 
 use JSA::QA;
 
-my $file = get_prim_arg( $_PRIM_ARGS_, "FILE", undef );
-if( ! defined( $file ) ) {
-  orac_throw "FILE argument must be passed to _QA_MAP_RMS_SPATIAL_UNIFORMITY_: programming error";
-}
-
+my $file = get_prim_arg( $_PRIM_ARGS_, "FILE", undef, 1 );
 my $central = get_prim_arg( $_PRIM_ARGS_, "CENTRAL", undef );
+my $Obj = get_prim_arg( $_PRIM_ARGS_, "OBJ", undef, 1 );
 my $survey = get_prim_arg( $_PRIM_ARGS_, "SURVEY", undef );
+my $storeqa = get_prim_arg( $_PRIM_ARGS_, "STOREQA", 0 );
 
 my @surveys = qw/ GBS NGS SLS Telescope /;
 
@@ -140,6 +138,9 @@ if( ( $dims->[0] < 3 && $dims->[1] < 3 ) || $region eq "(~0,~0)" ) {
   # Go through the surveys and report QA results.
   foreach my $analyse_survey ( sort @analyse_surveys ) {
 
+    # Array to hold string of messages to be written to log file.
+    my @entries;
+
     $opts{'survey'} = $analyse_survey;
 
     my $RMSVAR_MAP = $qa->get_data( key => 'RMSVAR_MAP', %opts );
@@ -149,17 +150,45 @@ if( ( $dims->[0] < 3 && $dims->[1] < 3 ) || $region eq "(~0,~0)" ) {
     if( $min > $mean * ( 1 - $RMSVAR_MAP ) &&
         $max < $mean * ( 1 + $RMSVAR_MAP ) ) {
       orac_print( " passed ", "bold white on_green" );
+      push @entries, "Map-based spatial RMS uniformity status: passed";
     } else {
       orac_print( " failed ", "bold white on_red" );
+      push @entries, "Map-based spatial RMS uniformity status: failed";
     }
     orac_say " for $opts{'survey'} for $file.";
+    if( $mean < 1e14 ) {
+      push @entries, sprintf( " Minimum RMS: %.2f\n Mean RMS: %.2f\n Maximum RMS: %.2f",
+                              $min, $mean, $max );
+    } else {
+      push @entries, " Minimum RMS: bad\n Mean RMS: bad\n Maximum RMS: bad";
+    }
 
     orac_print " QA based on bad pixels in final map ";
     if( $numbad / $numpix < $BADPIX_MAP ) {
       orac_print( " passed ", "bold white on_green" );
+      push @entries, "Map-based bad pixel threshold status: passed";
     } else {
       orac_print( " failed ", "bold white on_red" );
+      push @entries, "Map-based bad pixel threshold status: failed";
     }
     orac_say " for $opts{'survey'} for $file.\n";
+    push @entries, " Number of pixels: $numpix";
+    push @entries, sprintf( " Number of bad pixels: %d (%.2f%% of total)",
+                            $numbad, $numbad / $numpix * 100 );
+    push @entries, sprintf( " Requested threshold: %.2f%%", $BADPIX_MAP * 100 );
+
+    if( $storeqa ) {
+      my %qa_log_entries;
+      if( defined( $Obj->uhdr( "QA_MAP_LOG_ENTRIES" ) ) ) {
+        %qa_log_entries = %{$Obj->uhdr( "QA_MAP_LOG_ENTRIES" )};
+      }
+      if( exists( $qa_log_entries{$analyse_survey} ) ) {
+        push @{$qa_log_entries{$analyse_survey}}, @entries;
+      } else {
+        $qa_log_entries{$analyse_survey} = \@entries;
+      }
+      $Obj->uhdr( "QA_MAP_LOG_ENTRIES", \%qa_log_entries );
+    }
   }
 }
+
