@@ -192,10 +192,23 @@ $rebin = ( defined( $Frm->uhdr( "RECPAR_REBIN" ) ) ?
 # Only process if we're on the last member of a group.
 if( $Grp->lastallmembers( $Frm ) ) {
 
-  my @good = $Grp->check_membership;
-  if( ! @good ) {
+  my @members = $Grp->members;
+  my ( $good, $bad ) = $Grp->check_membership;
+  if( ! @$good ) {
     orac_warn "No good members in current group. Cannot do group processing.\n";
+
+    # Write the QA information for each member.
+    foreach my $Obj ( @members ) {
+      _QA_WRITE_REPORT_ OBJ=$Obj
+    }
+
   } else {
+
+    # We need to write QA info for each member that didn't end up in
+    # the group (i.e. that failed QA)
+    foreach my $badObj ( @$bad ) {
+      _QA_WRITE_REPORT_ OBJ=$badObj
+    }
 
     orac_print "Beginning iterative group production.\n";
 
@@ -242,7 +255,7 @@ if( $Grp->lastallmembers( $Frm ) ) {
       _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=2 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ
 
       my $writeqa = ( $iter == $iterations );
-      _CREATE_NOISE_MAP_ GROUP=2 QA=$qa WRITEQA=$writeqa
+      _CREATE_NOISE_MAP_ GROUP=2 QA=$qa STOREQA=$writeqa
 
       _RETRIEVE_TAG_ TAG=TIMESERIES_MASKED_BASELINED GROUP=2
 
@@ -261,13 +274,19 @@ if( $Grp->lastallmembers( $Frm ) ) {
 
     _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=1 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ
 
-    _CREATE_NOISE_MAP_ GROUP=1 QA=$qa WRITEQA=1
+    _CREATE_NOISE_MAP_ GROUP=1 QA=$qa STOREQA=1
 
     if( defined( $rebin ) ) {
       foreach my $res ( split ",", $rebin ) {
         _REBIN_VELOCITY_SCALE_ GROUP=1 PIXELSCALE=$res
       }
     }
+
+    # Write QA report.
+    foreach my $goodObj( $Grp->members ) {
+      _QA_WRITE_REPORT_ OBJ=$goodObj
+    }
+    _QA_WRITE_REPORT_ OBJ=$Grp
 
   }
 

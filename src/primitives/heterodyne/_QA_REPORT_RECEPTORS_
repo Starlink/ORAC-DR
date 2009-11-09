@@ -2,11 +2,12 @@
 
 =head1 NAME
 
-_QA_WRITE_RECEPTOR_REPORT_
+_QA_REPORT_RECEPTORS_
 
 =head1 DESCRIPTION
 
-This primitive writes receptor-based QA information to a log file.
+This primitive records receptor-based QA information and stores it in
+the current Frame's uhdr.
 
 =head1 ARGUMENTS
 
@@ -24,10 +25,6 @@ The name of the survey for which the QA was calculated.
 
 The JSA::QA::Result object obtained by testing Tsys statistics.
 
-=item WRITE = LOGICAL (Given)
-
-Whether or not to write the information to a log file. [1]
-
 =back
 
 =head1 NOTES
@@ -36,25 +33,14 @@ Whether or not to write the information to a log file. [1]
 
 =item *
 
-The log file written will be named log.qa and will be written in
-$ORAC_DATA_OUT.
-
-=item *
-
-The strings written to the log file will be stored in the current
-Frame's uhdr object, under the QA_LOG_ENTRIES key. They will be stored
-as a hash reference, with the survey name being the key and the
-strings stored as an array reference in the value.
+QA report information will be stored in the current Frame's
+QA_REPORT_INFO uhdr.
 
 =back
 
 =head1 OUTPUT DATA
 
-=over 4
-
 None.
-
-=back
 
 =head1 TASKS
 
@@ -79,18 +65,24 @@ Rights Reserved.
 my $rms_result = get_prim_arg( $_PRIM_ARGS_, "RMS", undef, 1 );
 my $survey = get_prim_arg( $_PRIM_ARGS_, "SURVEY", undef, 1 );
 my $tsys_result = get_prim_arg( $_PRIM_ARGS_, "TSYS", undef, 1 );
-my $write = get_prim_arg( $_PRIM_ARGS_, "WRITE", 1 );
 
 my @entries;
 
-if( $write ) {
-  _QA_WRITE_REPORT_HEADER_ SURVEY=$survey
-  my @header_entries = @{$_QA_WRITE_REPORT_HEADER_{'ENTRIES'}};
-  push @entries, @header_entries;
+# Retrieve QA report info from the current Frame. If there isn't any
+# such info, start a new hash.
+my %qa_info;
+if( defined( $Frm->uhdr( "QA_REPORT_INFO" ) ) ) {
+  %qa_info = %{$Frm->uhdr( "QA_REPORT_INFO" )};
 }
 
+# Retrieve the report header.
+_QA_REPORT_HEADER_ SURVEY=$survey
+my $header = $_QA_REPORT_HEADER_{'HEADER'};
+
+# Merge the two Result objects.
 my $merged = $tsys_result->merge( $rms_result );
 
+# Set up the strings to add to the report.
 push @entries, "Receptor report:";
 
 if( $merged->pass ) {
@@ -101,8 +93,6 @@ if( $merged->pass ) {
     push @entries, "  $reason";
   }
 }
-
-
 
 if( scalar( @{$tsys_result->bad_receptors} ) > 0 ) {
   push @entries, " " . ( join ",", sort @{$tsys_result->bad_receptors} ) . " flagged on Tsys.";
@@ -142,22 +132,15 @@ foreach my $key ( sort keys %{$tsys_values} ) {
   }
 }
 
-push @entries, "";
-
-if( $write ) {
-  my $logfile = new ORAC::LogFile( "log.qa" );
-  $logfile->addentry( @entries );
-}
-
-# Stash these in a uhdr for later use.
-my %qa_log_entries;
-if( defined( $Frm->uhdr( "QA_LOG_ENTRIES" ) ) ) {
-  %qa_log_entries = %{$Frm->uhdr( "QA_LOG_ENTRIES" )};
-}
-if( exists( $qa_log_entries{$survey} ) ) {
-  push @{$qa_log_entries{$survey}}, @entries;
+# If we already have an entry for this header, push the entries on the
+# end. Otherwise, create the array reference.
+if( exists( $qa_info{$header} ) ) {
+  push @{$qa_info{$header}{entries}}, @entries;
+  $qa_info{$header}{pass} &= $merged->pass;
 } else {
-  $qa_log_entries{$survey} = \@entries;
+  $qa_info{$header}{entries} = \@entries;
+  $qa_info{$header}{pass} = $merged->pass;
 }
 
-$Frm->uhdr( "QA_LOG_ENTRIES", \%qa_log_entries );
+# And update the uhdr.
+$Frm->uhdr( "QA_REPORT_INFO", \%qa_info );

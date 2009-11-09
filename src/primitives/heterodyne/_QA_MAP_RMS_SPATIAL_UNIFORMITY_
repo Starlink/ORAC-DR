@@ -135,11 +135,25 @@ if( ( $dims->[0] < 3 && $dims->[1] < 3 ) || $region eq "(~0,~0)" ) {
   my $qaparamfile = $Cal->qaparams;
   my $qa = new JSA::QA( file => $qaparamfile );
 
+
+  # Retrieve QA report info from the Obs.
+  my %qa_info;
+  if( defined( $Obj->uhdr( "QA_REPORT_INFO" ) ) ) {
+    %qa_info = %{$Obj->uhdr( "QA_REPORT_INFO" )};
+  }
+
   # Go through the surveys and report QA results.
   foreach my $analyse_survey ( sort @analyse_surveys ) {
 
     # Array to hold string of messages to be written to log file.
     my @entries;
+
+    # Retrieve QA report header.
+    _QA_REPORT_HEADER_ SURVEY=$analyse_survey OBJ=$Obj
+    my $header = $_QA_REPORT_HEADER_{HEADER};
+
+    # Default pass.
+    my $pass = 1;
 
     $opts{'survey'} = $analyse_survey;
 
@@ -153,6 +167,7 @@ if( ( $dims->[0] < 3 && $dims->[1] < 3 ) || $region eq "(~0,~0)" ) {
       push @entries, "Map-based spatial RMS uniformity status: passed";
     } else {
       orac_print( " failed ", "bold white on_red" );
+      $pass = 0;
       push @entries, "Map-based spatial RMS uniformity status: failed";
     }
     orac_say " for $opts{'survey'} for $file.";
@@ -169,6 +184,7 @@ if( ( $dims->[0] < 3 && $dims->[1] < 3 ) || $region eq "(~0,~0)" ) {
       push @entries, "Map-based bad pixel threshold status: passed";
     } else {
       orac_print( " failed ", "bold white on_red" );
+      $pass = 0;
       push @entries, "Map-based bad pixel threshold status: failed";
     }
     orac_say " for $opts{'survey'} for $file.\n";
@@ -177,18 +193,22 @@ if( ( $dims->[0] < 3 && $dims->[1] < 3 ) || $region eq "(~0,~0)" ) {
                             $numbad, $numbad / $numpix * 100 );
     push @entries, sprintf( " Requested threshold: %.2f%%", $BADPIX_MAP * 100 );
 
+    # Store the QA report info if we've been told to.
     if( $storeqa ) {
-      my %qa_log_entries;
-      if( defined( $Obj->uhdr( "QA_MAP_LOG_ENTRIES" ) ) ) {
-        %qa_log_entries = %{$Obj->uhdr( "QA_MAP_LOG_ENTRIES" )};
-      }
-      if( exists( $qa_log_entries{$analyse_survey} ) ) {
-        push @{$qa_log_entries{$analyse_survey}}, @entries;
+
+      # If we already have a QA report entry for this header, push the
+      # entries on the end. Otherwise, create the array reference.
+      if( exists( $qa_info{$header} ) ) {
+        push @{$qa_info{$header}{entries}}, @entries;
+        $qa_info{$header}{pass} &= $pass;
       } else {
-        $qa_log_entries{$analyse_survey} = \@entries;
+        $qa_info{$header}{entries} = \@entries;
+        $qa_info{$header}{pass} = $pass;
       }
-      $Obj->uhdr( "QA_MAP_LOG_ENTRIES", \%qa_log_entries );
+
+      $Obj->uhdr( "QA_REPORT_INFO", \%qa_info );
     }
+
   }
 }
 
