@@ -839,7 +839,7 @@ sub get_prim_arg {
   my $error_if_undef = shift;
 
   if( defined( $error_if_undef ) && $error_if_undef &&
-      ! exists( $argref->{$key} ) && ! defined( $argref->{$key} ) ) {
+      ( ! exists( $argref->{$key} ) || ! defined( $argref->{$key} ) ) ) {
     my ( $package, $filename, $line ) = caller;
     orac_term( "$key argument to $filename must be defined! Programming error!" );
   }
