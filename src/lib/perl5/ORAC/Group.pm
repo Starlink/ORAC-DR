@@ -679,6 +679,10 @@ The format of the index file should be of the form:
  43 19980815
  ...
 
+This method returns a list, the first element being an array reference
+to the good members, and the second being an array reference to the
+bad (or removed) members.
+
 =cut
 
 sub check_membership {
@@ -686,6 +690,9 @@ sub check_membership {
 
   # Array of good frames
   my @good = ();
+
+  # Array of bad frames
+  my @bad = ();
 
   # Need to loop over all members of the group
   foreach my $member ($self->allmembers) {
@@ -717,7 +724,13 @@ sub check_membership {
         push (@good, $member);
       } else {
         orac_warn "Removing observation ". $member->number ." from group\n";
+        push @bad, $member;
       }
+
+    } else {
+
+      orac_warn "Removing observation " . $member->number . " from group\n";
+      push @bad, $member;
 
     }
 
@@ -725,7 +738,7 @@ sub check_membership {
 
   # Use the reference accessor so that an empty array will be accepted
   @{$self->members} = @good;
-  return @good;
+  return ( \@good, \@bad );
 }
 
 =item B<coaddspush>
