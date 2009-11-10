@@ -42,6 +42,11 @@ used if baselining has not been done. [1]
 The number of pixels to smooth in both spatial axes when smoothing to
 determine baselines. [3]
 
+=item STOREQA = LOGICAL (Given)
+
+Whether or not to store QA report information in the object's
+QA_REPORT_INFO uhder. [0]
+
 =item SURVEY = STRING (Given)
 
 If supplied, run QA using the given survey's QA parameters. If 'all'
@@ -104,6 +109,7 @@ my $freqsmooth = get_prim_arg( $_PRIM_ARGS_, "FREQUENCY_SMOOTH", 25 );
 my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
 my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 1 );
 my $spatsmooth = get_prim_arg( $_PRIM_ARGS_, "SPATIAL_SMOOTH", 3 );
+my $storeqa = get_prim_arg( $_PRIM_ARGS_, "STOREQA", 0 );
 my $survey = get_prim_arg( $_PRIM_ARGS_, "SURVEY", undef );
 
 my @surveys = qw/ GBS NGS SLS Telescope /;
@@ -261,8 +267,24 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
       my $qaparamfile = $Cal->qaparams;
       my $qa = new JSA::QA( file => $qaparamfile );
 
+      # Retrieve QA report info from the Obs.
+      my %qa_info;
+      if( defined( $Obj->uhdr( "QA_REPORT_INFO" ) ) ) {
+        %qa_info = %{$Obj->uhdr( "QA_REPORT_INFO" )};
+      }
+
       # Go through each survey and report QA results.
       foreach my $analyse_survey ( sort @analyse_surveys ) {
+
+        # Array to hold string of messages to be written to log file.
+        my @entries;
+
+        # Default pass.
+        my $pass = 1;
+
+        # Retrieve QA report header.
+        _QA_REPORT_HEADER_ SURVEY=$analyse_survey OBJ=$Obj
+        my $header = $_QA_REPORT_HEADER_{HEADER};
 
         $opts{'survey'} = $analyse_survey;
 
@@ -270,10 +292,37 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
         orac_print " Frequency RMS uniformity ";
         if( $perc < $RMSVAR_SPEC * 100 ) {
           orac_print( " passed ", "bold white on_green" );
+          push @entries, "Map-based frequency RMS uniformity status: passed";
         } else {
           orac_print( " failed ", "bold white on_red" );
+          push @entries, "Map-based frequency RMS uniformity status: failed";
+          $pass = 0;
         }
         orac_say " for $opts{'survey'} for current map.";
+
+        if( $gotmedian ) {
+          push @entries, sprintf( " Median RMS in lower 10%%: %.4fK", $rmslo );
+          push @entries, sprintf( " Median RMS in upper 10%%: %.4fK", $rmshi );
+        } else {
+          push @entries, sprintf( " Mean RMS in lower 10%%: %.4fK", $rmslo );
+          push @entries, sprintf( " Mean RMS in lower 10%%: %.4fK", $rmshi );
+        }
+
+        push @entries, sprintf( " Perentage difference: %.2f%%", $perc );
+        push @entries, sprintf( " Requested difference: %.2f%%", $RMSVAR_SPEC * 100 );
+
+        if( $storeqa ) {
+          if( exists( $qa_info{$header} ) ) {
+            push @{$qa_info{$header}{entries}}, @entries;
+            $qa_info{$header}{pass} &= $pass;
+          } else {
+            $qa_info{$header}{entries} = \@entries;
+            $qa_info{$header}{pass} = $pass;
+          }
+
+          $Obj->uhdr( "QA_REPORT_INFO", \%qa_info );
+        }
+
       }
 
       orac_say "";
