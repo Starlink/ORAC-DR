@@ -38,7 +38,7 @@ and values are the corresponding Tsys.
 
 =head1 REQUIRED PERL MODULES
 
-JCMT::ACSIS::Array, Starlink::HDSPACK.
+JCMT::ACSIS::Array, Starlink::HDSPACK, Statistics::Descriptive.
 
 =head1 AUTHORS
 
@@ -56,11 +56,11 @@ use JCMT::ACSIS::Array;
 
 my %tsys;
 my %receptor_tsys;
-my %numgood;
+my %receptor_stats;
 
 my $key = $Frm->uhdr( "ORAC_OBSERVATION_ID" ) . "_" . $Frm->hdr( $Frm->uhdr( "ORAC_SUBSYSTEM_IDKEY" ) );
 
-my $array_tsys = 0;
+my $array_stats = new Statistics::Descriptive::Sparse;
 
 foreach my $i ( 1 .. $Frm->nfiles ) {
 
@@ -79,7 +79,7 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 
   ( $ORAC_STATUS, my $mean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
 
-  $array_tsys += $mean;
+  $array_stats->add_data( $mean );
 
   # Get stats for each receptor.
   my $array = new JCMT::ACSIS::Array( File => $infile );
@@ -90,21 +90,19 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
     $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$tmptsys($pixel,)" );
     ( $ORAC_STATUS, my $pixmean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
 
-    if( ! defined( $receptor_tsys{$receptor} ) ) {
-      $receptor_tsys{$receptor} = 0;
-      $numgood{$receptor} = 0;
+    if( ! defined( $receptor_stats{$receptor} ) ) {
+      $receptor_stats{$receptor} = new Statistics::Descriptive::Sparse;
     }
     if( $pixmean > 0 ) {
-      $receptor_tsys{$receptor} += $pixmean;
-      $numgood{$receptor}++;
+      $receptor_stats{$receptor}->add_data( $pixmean );
     }
   }
 }
 
-$array_tsys /= $Frm->nfiles;
-foreach my $receptor ( keys %receptor_tsys ) {
-  if( $receptor_tsys{$receptor} != 0 ) {
-    $receptor_tsys{$receptor} /= $numgood{$receptor};
+my $array_tsys = $array_stats->mean();
+foreach my $receptor ( keys %receptor_stats ) {
+  if( $receptor_stats{$receptor}->count != 0 ) {
+    $receptor_tsys{$receptor} = $receptor_stats{$receptor}->mean();
   } else {
     $receptor_tsys{$receptor} = 'bad';
   }
