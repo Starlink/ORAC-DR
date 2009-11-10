@@ -55,6 +55,7 @@ use File::Basename;
 use File::Find;
 use Cwd;
 
+use ORAC::Error qw/ :try /;
 use ORAC::Print;
 use ORAC::Convert;
 use ORAC::Msg::EngineLaunch;    # For -loop 'task'
@@ -117,39 +118,60 @@ the loop will abort if the file is not present
       # If we dont care whether the file is there or not (ie default mode)
       # we jump out of the loop immediately and rely on the link_and_read
       # routine to abort the main loop for us (by returning undef)
-      last unless $skip;
+      if( $skip ) {
 
-      # Ok - we are interested in finding out whether the file is there
-      # or not. There is a slight overhead here in that we have to
-      # do the -e test twice for any successful file. Once here and
-      # once again in link_and_read -- presumably I could have a variant
-      # on link_and_read that gets passed the file name directly
-      # on the understanding that the file is there but for now
-      # I will just do the -e in both places. Note that this relies
-      # on the file being present in ORAC_DATA_IN. It will not look
-      # in ORAC_DATA_OUT first (eg after a FITS conversion)
-      # At some point we need to merge the link_and_read with this
-      # so that this routine has the same robustness as link_and_read.
+        # Ok - we are interested in finding out whether the file is
+        # there or not. There is a slight overhead here in that we
+        # have to do the -e test twice for any successful file. Once
+        # here and once again in link_and_read -- presumably I could
+        # have a variant on link_and_read that gets passed the file
+        # name directly on the understanding that the file is there
+        # but for now I will just do the -e in both places. Note that
+        # this relies on the file being present in ORAC_DATA_IN. It
+        # will not look in ORAC_DATA_OUT first (eg after a FITS
+        # conversion) At some point we need to merge the link_and_read
+        # with this so that this routine has the same robustness as
+        # link_and_read.
 
-      my $pattern = $TestFrm->pattern_from_bits($utdate, $obsno);
+        my $pattern = $TestFrm->pattern_from_bits($utdate, $obsno);
 
-      my @names = _find_from_pattern( $pattern );
-      last if @names;
-      if ( ref( $pattern ) eq 'Regexp' ) {
-        orac_warn("No input files for observation $obsno found -- skipping\n");
+        my @names = _find_from_pattern( $pattern );
+
+        if ( ! scalar( @names ) ) {
+          if ( ref( $pattern ) eq 'Regexp' ) {
+            orac_warn("No input files for observation $obsno found -- skipping\n");
+          } else {
+            orac_warn("Input file $pattern not found -- skipping\n");
+          }
+          next;
+        }
+      }
+
+      # If obsno is undef return undef
+      return unless defined $obsno;
+
+      my @Frms;
+      my $Error;
+      try {
+        @Frms = link_and_read( $class, $utdate, $obsno, 0 );
+      } otherwise {
+        $Error = shift;
+      };
+      if( defined( $Error ) ) {
+        ORAC::Error->flush;
+        if( $skip ) {
+          orac_warn "${Error}-skip mode, skipping to next file\n";
+        } else {
+          orac_throw "$Error";
+          return undef;
+        }
       } else {
-        orac_warn("Input file $pattern not found -- skipping\n");
+        return @Frms;
       }
 
     }
 
-    # If obsno is undef return undef
-    return unless defined $obsno;
-
-    my @Frms = link_and_read($class, $utdate, $obsno, 0);
-
-    # Return frame
-    return @Frms;
+    return undef;
 
   }
 
