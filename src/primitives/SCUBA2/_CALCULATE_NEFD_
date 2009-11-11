@@ -124,17 +124,43 @@ if ($usenoise) {
     my @noisefiles = $Frm->files;
 
     # FCF, tau and airmass are independent of subarray
+    # But for a skydip we are going to need to choose different
+    # airmasses rather than using an average
     my $fcf = $Cal->gain($Frm->uhdr("ORAC_FILTER"), "BEAM") * 1000;
 
-    my $tau = $Frm->uhdr("ORAC_TAU");
-    my $airmass = 0.5*($Frm->uhdr("ORAC_AIRMASS_START") +
-                       $Frm->uhdr("ORAC_AIRMASS_END"));
+    # so if we have multiple files for nefd calculation
+    # we will read information from each file
+    # else just use the header values
+    my @fileinfo;
 
-    my $extcor = exp($tau * $airmass);
+    my $calc_extcor = sub {
+      my $frm = shift;
+      my $tau = $frm->uhdr("ORAC_TAU");
+      my $airmass = 0.5*($frm->uhdr("ORAC_AIRMASS_START") +
+                         $frm->uhdr("ORAC_AIRMASS_END"));
+      return { airmass => $airmass,
+               tau => $tau,
+               extcor => exp($tau * $airmass) };
+    };
+
+    if (@noisefiles == 1) {
+      @fileinfo = ( $calc_extcor->( $Frm ) );
+    } else {
+      # read the files and translate the headers
+      for my $f (@noisefiles) {
+        my $tmpfrm = $Frm->new();
+        $tmpfrm->raw( $f );
+        $tmpfrm->file( $f );
+        $tmpfrm->readhdr;
+        push(@fileinfo, $calc_extcor->($tmpfrm) );
+      }
+    }
 
     # FCF is in Jy/beam/pW; NEP is in W Hz**-0.5. Therefore need to
     # multiply by 1e12 to get the units right.
-    my $mult = $extcor * $fcf * 1.0e12;
+    for my $item (@fileinfo) {
+      $item->{mult} = $item->{extcor} * $fcf * 1.0e12;
+    }
 
     # Calculate NEFD for each file
     foreach my $noisefile (@noisefiles) {
@@ -143,15 +169,16 @@ if ($usenoise) {
 
       my $nefd = new ORAC::TempFile;
       my $nefdimage = $nefd->file;
-      $Mon{kappa_mon}->obeyw("cmult","in=$nep out=$nefdimage scalar=$mult");
+      my $info = shift(@fileinfo);
+      $Mon{kappa_mon}->obeyw("cmult","in=$nep out=$nefdimage scalar=".$info->{mult});
 
       _FIND_IMAGE_STATISTICS_ IMAGE=$nefdimage VERBOSE=0 HISTAT=1 COMP=DATA
 
-        my $median = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
+      my $median = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
       if (defined $median) {
-        my $trans = sprintf "%3d", 100.0 / $extcor;
+        my $trans = sprintf "%3d", 100.0 / $info->{extcor};
         $median = sprintf "%6.2f", $median;
-        $airmass = sprintf "%6.4f", $airmass;
+        my $airmass = sprintf "%6.4f", $info->{airmass};
         orac_print ("NEFD = $median mJy/beam/Hz**0.5, "
                     ."Sky trans = $trans %, A = $airmass\n", "yellow");
       } else {
