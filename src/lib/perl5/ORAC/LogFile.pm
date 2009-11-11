@@ -36,7 +36,7 @@ The following methods are available:
 
 =item B<new>
 
-Create a new instance of ORAC::LogFile and associate it with the 
+Create a new instance of ORAC::LogFile and associate it with the
 specified log file.
 
   $log = new ORAC::LogFile($logfile);
@@ -58,7 +58,7 @@ sub new {
 
   # initialise
   $log->{LogFile} = undef;
-  $log->{TimeStamp} = 0;  # No timestamping by default
+  $log->{TimeStamp} = 0;        # No timestamping by default
 
   bless $log, $class;
 
@@ -137,7 +137,7 @@ sub header {
 
   # Print the header
   if (defined $fh) {
-    print $fh join("\n", @_) . "\n";  
+    print $fh join("\n", @_) . "\n";
   } else {
     croak "Unable to open $logfile for write: $!\n";
   }
@@ -182,14 +182,14 @@ sub addentry {
 
   # Write the entry
   if (defined $fh) {
-    # Read entries 
+    # Read entries
     my @entries = @_;
 
     # If necessary prepend a timestamp to each entry
     if ($self->timestamp) {
       my $stamp = gmtime() . " ";
       foreach (@entries) {
-	$_ = $stamp . $_;
+        $_ = $stamp . $_;
       }
     }
 

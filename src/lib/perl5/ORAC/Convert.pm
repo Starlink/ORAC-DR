@@ -60,15 +60,15 @@ use warnings;
 use Carp;
 use vars qw/$VERSION/;
 
-use File::Basename;  # Get file suffix
-use File::Spec;      # Not really necessary -- a bit anal I suppose
+use File::Basename;     # Get file suffix
+use File::Spec;         # Not really necessary -- a bit anal I suppose
 use NDF;
-use Starlink::HDSPACK qw/copy_hdsobj copobj 
-  delete_hdsobj create_hdsobj set_hdsobj/; # copobj/creobj/delobj/setobj
+use Starlink::HDSPACK qw/copy_hdsobj copobj
+                         delete_hdsobj create_hdsobj set_hdsobj/; # copobj/creobj/delobj/setobj
 
 use ORAC::Print;
-use ORAC::Msg::EngineLaunch; # To launch convert monolith
-use ORAC::Constants qw/:status/;        #  Constants
+use ORAC::Msg::EngineLaunch;     # To launch convert monolith
+use ORAC::Constants qw/:status/; #  Constants
 
 $VERSION = '1.0';
 
@@ -96,11 +96,11 @@ sub new {
   my $proto = shift;
   my $class = ref($proto) || $proto;
 
-  my $conv = {};  # Anon hash
+  my $conv = {};                # Anon hash
 
   $conv->{EngineLaunch} = new ORAC::Msg::EngineLaunch;
   $conv->{InFile} = undef;
-  $conv->{OverWrite} = 0;      # Do not overwrite files of same name
+  $conv->{OverWrite} = 0;       # Do not overwrite files of same name
 
   bless($conv, $class);
 
@@ -122,7 +122,7 @@ sub new {
 
 =head2 Accessor Methods
 
-The following methods are available for accessing the 
+The following methods are available for accessing the
 'instance' data.
 
 =over 4
@@ -154,7 +154,9 @@ Used by default if omitted from convert() methods.
 
 sub infile {
   my $self = shift;
-  if (@_) { $self->{InFile} = shift;  }
+  if (@_) {
+    $self->{InFile} = shift;
+  }
   return $self->{InFile};
 }
 
@@ -169,7 +171,9 @@ If false, the file will be converted regardless.
 
 sub overwrite {
   my $self = shift;
-  if (@_) { $self->{OverWrite} = shift;  }
+  if (@_) {
+    $self->{OverWrite} = shift;
+  }
   return $self->{OverWrite};
 }
 
@@ -224,7 +228,7 @@ sub convert {
   if (ref($_[-1]) eq 'HASH') {
     my $href = pop;
     foreach my $key (keys %$href) {
-      $options{uc($key)} = uc($$href{$key}); 
+      $options{uc($key)} = uc($$href{$key});
     }
   }
 
@@ -265,11 +269,11 @@ sub convert {
       orac_err("Link exists in output directory but it does not point to an existing file\n");
       my $pointee = readlink( $outfile );
       if (defined $pointee) {
-	if ($filename eq $pointee) {
-	  orac_err("The link does point to the correct place but the file at the other end is missing\n");
-	} else {
-	  orac_err("The link does not point to the correct place. Please remove ORAC_DATA_OUT/$outfile and retry ['$filename' ne '$pointee']\n");
-	}
+        if ($filename eq $pointee) {
+          orac_err("The link does point to the correct place but the file at the other end is missing\n");
+        } else {
+          orac_err("The link does not point to the correct place. Please remove ORAC_DATA_OUT/$outfile and retry ['$filename' ne '$pointee']\n");
+        }
       }
 
       return ($filename,undef);
@@ -277,12 +281,12 @@ sub convert {
 
     unless( -e $outfile ) {
       symlink( $filename, $outfile ) ||
-      do {
-        orac_err("Error creating symlink from ORAC_DATA_OUT to '$filename'\n");
-        orac_err("$!\n");
-        return ($filename,undef);
-      };
-    } else {
+        do {
+          orac_err("Error creating symlink from ORAC_DATA_OUT to '$filename'\n");
+          orac_err("$!\n");
+          return ($filename,undef);
+        };
+    } elsif( -l $outfile ) {
       orac_warn("Symlink from ORAC_DATA_OUT to $filename already exists. Continuing...\n");
     }
     return ( $filename, $outfile );
@@ -306,61 +310,61 @@ sub convert {
 
   } elsif ($options{'IN'} eq 'HDS' && $options{'OUT'} eq 'FITS') {
     # Implement HDS2FITS
-#    orac_print("Converting from HDS to FITS...\n");
-#    $outfile = $self->hds2ndf;
-#    my ($base, $dir, $suffix) = fileparse($outfile, '.sdf');
-#    $base =~ s/_raw//;
-#    my $outfile2 = $base . $suffix;
-#    rename($outfile,$outfile2);
-#    $self->infile($outfile2);
-#    $outfile = $self->ndf2fits;
-#    unlink $outfile2;
-#    orac_print("...done\n");
+    #    orac_print("Converting from HDS to FITS...\n");
+    #    $outfile = $self->hds2ndf;
+    #    my ($base, $dir, $suffix) = fileparse($outfile, '.sdf');
+    #    $base =~ s/_raw//;
+    #    my $outfile2 = $base . $suffix;
+    #    rename($outfile,$outfile2);
+    #    $self->infile($outfile2);
+    #    $outfile = $self->ndf2fits;
+    #    unlink $outfile2;
+    #    orac_print("...done\n");
     # Implement HDS2MEF
-      orac_print("Converting from HDS to MEF...\n");
-      $outfile = $self->hds2mef;
-      orac_print("...done\n");
+    orac_print("Converting from HDS to MEF...\n");
+    $outfile = $self->hds2mef;
+    orac_print("...done\n");
   } elsif ($options{'IN'} eq 'HDS' && $options{'OUT'} eq 'WFCAM_MEF') {
-      orac_print("Converting WFCAM file from HDS to MEF...\n");
+    orac_print("Converting WFCAM file from HDS to MEF...\n");
 
-      # Try to do this using the Cirdr Perl modules. If either of them
-      # fail, we'll fall back to use the convert_mon-based routines.
-      my $isok = eval { require Cirdr::Opt; 1; };
-      if( ! $isok ) {
+    # Try to do this using the Cirdr Perl modules. If either of them
+    # fail, we'll fall back to use the convert_mon-based routines.
+    my $isok = eval { require Cirdr::Opt; 1; };
+    if ( ! $isok ) {
 
-        orac_warn "Error in loading Cirdr::Opt: $@\n";
+      orac_warn "Error in loading Cirdr::Opt: $@\n";
 
-        # Couldn't load Cirdr::Opt for some reason, so fall back to
-        # use the convert_mon-based routines.
+      # Couldn't load Cirdr::Opt for some reason, so fall back to
+      # use the convert_mon-based routines.
+      $outfile = $self->hds2mef;
+
+    } else {
+
+      # Import the required method.
+      Cirdr::Opt->import( qw/ cir_wfcam_convert / );
+
+      # Now try to get Cirdr::Primitives.
+      $isok = eval { require Cirdr::Primitives };
+      if ( ! $isok ) {
+
+        orac_warn "Error in loading Cirdr::Primitives: $@\n";
+
+        # Oops, couldn't load this one either.
         $outfile = $self->hds2mef;
 
       } else {
 
-        # Import the required method.
-        Cirdr::Opt->import( qw/ cir_wfcam_convert / );
+        # Import the required list of constants.
+        Cirdr::Primitives->import( qw/ :constants / );
 
-        # Now try to get Cirdr::Primitives.
-        $isok = eval { require Cirdr::Primitives };
-        if( ! $isok ) {
+        # At this point we've got both of the Cirdr modules, so
+        # use the appropriate method.
+        $outfile = $self->hds2mef_wfcam;
 
-          orac_warn "Error in loading Cirdr::Primitives: $@\n";
-
-          # Oops, couldn't load this one either.
-          $outfile = $self->hds2mef;
-
-        } else {
-
-          # Import the required list of constants.
-          Cirdr::Primitives->import( qw/ :constants / );
-
-          # At this point we've got both of the Cirdr modules, so
-          # use the appropriate method.
-          $outfile = $self->hds2mef_wfcam;
-
-        }
       }
+    }
 
-      orac_print("...done\n");
+    orac_print("...done\n");
 
   } elsif ($options{'IN'} eq 'HDS' && $options{OUT} eq 'NDF') {
     # Implement HDS2NDF
@@ -437,7 +441,7 @@ sub guessformat {
   }
 
   # Check via file extension
-  my $suffix = (fileparse($name, '\..*' ) )[-1]; 
+  my $suffix = (fileparse($name, '\..*' ) )[-1];
 
   # Could also do this by checking the suffix AND trying to open
   # file (eg ndf_open or see if first line is SIMPLE = T)
@@ -555,7 +559,7 @@ sub ndf2fits {
 
   # We know that an NDF ends with .sdf -- append it.
   my $fitsfile = $out . ".fit";
-#  $out .= ".I1";
+  #  $out .= ".I1";
 
   # Check the output file name and whether we are allowed to
   # overwrite it.
@@ -578,15 +582,15 @@ sub ndf2fits {
   if ($status == ORAC__OK) {
     return $fitsfile;
   }
-  
+
   return;
 }
 
 sub hds2mef_wfcam {
   my $self = shift;
 
-#    use Cirdr::Primitives qw(:constants);
-#    use Cirdr::Opt qw(cir_wfcam_convert);
+  #    use Cirdr::Primitives qw(:constants);
+  #    use Cirdr::Opt qw(cir_wfcam_convert);
   require ORAC::Frame::WFCAM;
 
   # Check for the input file
@@ -600,7 +604,7 @@ sub hds2mef_wfcam {
 
   my ($base,$dir,$suffix) = fileparse($self->infile,'.sdf');
 
-  # The HDS file for the HDS system is the base name and directory 
+  # The HDS file for the HDS system is the base name and directory
   # but no suffix
 
   my $hdsfile = File::Spec->catfile($dir,$base);
@@ -643,125 +647,125 @@ Convert a HDS file into a multi-extension FITS file
 =cut
 
 sub hds2mef {
-    my $self = shift;
+  my $self = shift;
 
-    # Need CFITSIO now, so load it
+  # Need CFITSIO now, so load it
 
-    require Astro::FITS::CFITSIO;
-    Astro::FITS::CFITSIO->import(qw(:constants :longnames));
+  require Astro::FITS::CFITSIO;
+  Astro::FITS::CFITSIO->import(qw(:constants :longnames));
 
-    # Check for the input file
+  # Check for the input file
 
-    unless (-e $self->infile) {
-        orac_err "Input filename (".$self->infile.") does not exist -- can not convert\n";
-        return;
-    }
+  unless (-e $self->infile) {
+    orac_err "Input filename (".$self->infile.") does not exist -- can not convert\n";
+    return;
+  }
 
-    # Read the input file - we only want the basename (we know .sdf suffix)
+  # Read the input file - we only want the basename (we know .sdf suffix)
 
-    my ($base,$dir,$suffix) = fileparse($self->infile,'.sdf');
+  my ($base,$dir,$suffix) = fileparse($self->infile,'.sdf');
 
-    # The HDS file for the HDS system is the base name and directory 
-    # but no suffix
+  # The HDS file for the HDS system is the base name and directory
+  # but no suffix
 
-    my $hdsfile = File::Spec->catfile($dir,$base);
+  my $hdsfile = File::Spec->catfile($dir,$base);
 
-    # Get an output file name
+  # Get an output file name
 
-    my $outfile = $base . ".fit";
+  my $outfile = $base . ".fit";
 
-    # Check for the existence of the output file in the current dir
-    # and whether we can overwrite it.
+  # Check for the existence of the output file in the current dir
+  # and whether we can overwrite it.
 
-    if (-e $outfile && ! $self->overwrite) {
-        orac_warn "The converted file ($outfile) already exists - won't convert again\n";
-        return $outfile;
-    }
+  if (-e $outfile && ! $self->overwrite) {
+    orac_warn "The converted file ($outfile) already exists - won't convert again\n";
+    return $outfile;
+  }
 
-    # Define a file prefix for the temporary FITS files.
+  # Define a file prefix for the temporary FITS files.
 
-    my $prefix = "tmp_" . time;
-    my $fitsfile = $prefix . "*";
+  my $prefix = "tmp_" . time;
+  my $fitsfile = $prefix . "*";
 
-    # Right, now convert each of the NDF components to a FITS file...
-    # First check to see if fits2ndf monolith is running
+  # Right, now convert each of the NDF components to a FITS file...
+  # First check to see if fits2ndf monolith is running
 
-    my $status = ORAC__ERROR;
-    if (defined $self->mon('convert_mon')) {
+  my $status = ORAC__ERROR;
+  if (defined $self->mon('convert_mon')) {
 
-        # Do the conversion
+    # Do the conversion
 
-        $status = $self->mon('convert_mon')->obeyw("ndf2fits","in=$hdsfile out=$fitsfile profits encoding=\'FITS-IRAF\'");
-    }
+    $status = $self->mon('convert_mon')->obeyw("ndf2fits","in=$hdsfile out=$fitsfile profits encoding=\'FITS-IRAF\'");
+  }
 
-    # Check to make sure this succeeded
+  # Check to make sure this succeeded
 
-    if ($status != ORAC__OK) {
-	orac_err "ndf2fits failed\n";
-	return;
-    }
+  if ($status != ORAC__OK) {
+    orac_err "ndf2fits failed\n";
+    return;
+  }
 
-    # Get a list of all of the temporary FITS files created in this last
-    # operation. (NB: the HEADER extension is alphabetically first before
-    # the I extensions, so this will put this in the correct order).
+  # Get a list of all of the temporary FITS files created in this last
+  # operation. (NB: the HEADER extension is alphabetically first before
+  # the I extensions, so this will put this in the correct order).
 
-    my @alltmp = sort glob $fitsfile;
-    my $ntmp = @alltmp;
+  my @alltmp = sort glob $fitsfile;
+  my $ntmp = @alltmp;
 
-    # Create the output file
+  # Create the output file
 
-    my $fitstatus = 0;
-    my $optr = Astro::FITS::CFITSIO::create_file($outfile,$fitstatus);
-    if ($fitstatus != 0) {
-	unlink @alltmp;
-	orac_err "Couldn't create output file $outfile\n";
-	return;
-    }
-
-    # Now loop for each of the temporary files...
-
-    my $ifileno;
-    for ($ifileno = 0; $ifileno < $ntmp; $ifileno++) {
-        my ($naxis,@naxes,$bitpix);
-
-        # Open the input temporary file. Get the size of the image if it's
-	# not the primary
-
-	my $ifile = $alltmp[$ifileno];
-        my $iptr = Astro::FITS::CFITSIO::open_file($ifile,
-						   &Astro::FITS::CFITSIO::READONLY,$fitstatus);
-        if ($fitstatus != 0) {
-	    unlink @alltmp;
-	    orac_err "Couldn't open temporary FITS file $ifile\n";
-	    return;
-	}
-
-        # Copy the input image to the output file... 
-
-        $iptr->copy_hdu($optr,0,$status);
-
-        # Resize the PHU to get rid of silly starlink 'feature'...
-
-	if ($ifileno == 0) {
-	    $naxis = 0;
-	    @naxes = ();
-            $bitpix = &Astro::FITS::CFITSIO::BYTE_IMG;
-            $optr->resize_img($bitpix,$naxis,\@naxes,$status);
-	}
-
-        # Close up the input file
-
-        $iptr->close_file($fitstatus);
-    }
-
-    # Now close up the output file
-
-    $optr->close_file($fitstatus);
-
-    # Now tidy up and get out of here
-
+  my $fitstatus = 0;
+  my $optr = Astro::FITS::CFITSIO::create_file($outfile,$fitstatus);
+  if ($fitstatus != 0) {
     unlink @alltmp;
-    return($outfile);
+    orac_err "Couldn't create output file $outfile\n";
+    return;
+  }
+
+  # Now loop for each of the temporary files...
+
+  my $ifileno;
+  for ($ifileno = 0; $ifileno < $ntmp; $ifileno++) {
+    my ($naxis,@naxes,$bitpix);
+
+    # Open the input temporary file. Get the size of the image if it's
+    # not the primary
+
+    my $ifile = $alltmp[$ifileno];
+    my $iptr = Astro::FITS::CFITSIO::open_file($ifile,
+                                               &Astro::FITS::CFITSIO::READONLY,$fitstatus);
+    if ($fitstatus != 0) {
+      unlink @alltmp;
+      orac_err "Couldn't open temporary FITS file $ifile\n";
+      return;
+    }
+
+    # Copy the input image to the output file...
+
+    $iptr->copy_hdu($optr,0,$status);
+
+    # Resize the PHU to get rid of silly starlink 'feature'...
+
+    if ($ifileno == 0) {
+      $naxis = 0;
+      @naxes = ();
+      $bitpix = &Astro::FITS::CFITSIO::BYTE_IMG;
+      $optr->resize_img($bitpix,$naxis,\@naxes,$status);
+    }
+
+    # Close up the input file
+
+    $iptr->close_file($fitstatus);
+  }
+
+  # Now close up the output file
+
+  $optr->close_file($fitstatus);
+
+  # Now tidy up and get out of here
+
+  unlink @alltmp;
+  return($outfile);
 }
 
 =item B<gmef2hds>
@@ -808,7 +812,7 @@ sub gmef2hds {
     orac_print "Using extable: $extable\n";
     $status = $self->mon('fits2ndf')->obeyw("fits2ndf","container=true encodings=FITS-IRAF extable=$extable in=$name out=$out profits=true fmtcnv=true");
 
-    # This leaves us with an invalid file as the HEADER doesn't contain 
+    # This leaves us with an invalid file as the HEADER doesn't contain
     # a data array with a value, and it's of the wrong data type.  First
     # copy the HEADER structure, delete the original HEADER, and replace
     # it with a new HEADER structure of type NDF.  [There is no renobj
@@ -838,7 +842,7 @@ sub gmef2hds {
   if ($status == ORAC__OK) {
     return $hds;
   }
-  
+
   return;
 }
 
@@ -884,7 +888,7 @@ sub ingmef2hds {
     my $param = "container=true encodings=FITS-WCS profits=true fmtcnv=true";
     $status = $self->mon('fits2ndf')->obeyw("fits2ndf","extable=$extable in=$name out=$out $param");
 
-    # This leaves us with an invalid file as the HEADER doesn't contain 
+    # This leaves us with an invalid file as the HEADER doesn't contain
     # a data array with a value, and it's of the wrong data type.  First
     # copy the HEADER structure, delete the original HEADER, and replace
     # it with a new HEADER structure of type NDF.  [There is no renobj
@@ -914,7 +918,7 @@ sub ingmef2hds {
   if ($status == ORAC__OK) {
     return $hds;
   }
-  
+
   return;
 }
 
@@ -997,7 +1001,7 @@ sub UKIRTio2hds {
   # ie change 'o' to 'i' and use the root
   my $root;
   ($root = $ofile) =~ s/^o/i/;
-  $root .= '_';  # add underscore to constrain pattern match
+  $root .= '_';            # add underscore to constrain pattern match
 
   # Read all the Ifiles that look like they are related to the O file
   my @ifiles = grep /^$root/, readdir IDIR;
@@ -1015,9 +1019,9 @@ sub UKIRTio2hds {
   $status = &NDF::SAI__OK;
   my @dims = ();
   hds_new($output, substr($output, 0, &NDF::DAT__SZNAM),'ORAC_HDS', 0,
-    @dims, my $floc, $status);
+          @dims, my $floc, $status);
 
-  # Then open the header file  
+  # Then open the header file
   hds_open(File::Spec->catfile($odir,$ofile), 'READ', my $oloc, $status);
 
   # Copy the header NDF
@@ -1077,7 +1081,7 @@ sub UKIRTio2hds {
 
 Converts frames taken as HDS container files (container file with
 .HEADER and .I1) to a simple NDF file. This method only works
-for the first frame (.I1). 
+for the first frame (.I1).
 
   $ndf = $Cvt->hds2ndf;
 
@@ -1146,7 +1150,7 @@ sub hds2ndf {
   if ($status == &NDF::SAI__OK && scalar(@dim) > 1) {
     $status = &NDF::SAI__ERROR;
     err_rep(' ',"hsd2ndf: Dimensionality of .HEADER FITS array should be 1 but is $ndim",
-      $status);
+            $status);
   }
 
   # Read the FITS array

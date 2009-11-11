@@ -1,0 +1,99 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_QA_WRITE_TIMESERIES_REPORT_
+
+=head1 DESCRIPTION
+
+This primitive records timeseries-based QA information and stores it
+in the current Frame's uhdr.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item TIMESERIES = HASH REFERENCE (Given)
+
+A hash reference with keys being survey names and values being
+timeseries QA information. Must be defined.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+QA report information will be stored in the current Frame's
+QA_REPORT_INFO uhdr.
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 TASKS
+
+None.
+
+=head1 REQUIRED PERL MODULES
+
+None.
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+# Handle arguments.
+my $timeseries = get_prim_arg( $_PRIM_ARGS_, "TIMESERIES", undef, 1 );
+
+# Loop through the surveys in the timeseries hash.
+foreach my $survey ( keys %{$timeseries} ) {
+
+  my @entries;
+
+  # Retrieve QA report info from the current Frame. If there isn't any
+  # such info, start a new hash.
+  my %qa_info;
+  if( defined( $Frm->uhdr( "QA_REPORT_INFO" ) ) ) {
+    %qa_info = %{$Frm->uhdr( "QA_REPORT_INFO" )};
+  }
+
+  # Retrieve the report header.
+  _QA_REPORT_HEADER_ SURVEY=$survey
+  my $header = $_QA_REPORT_HEADER_{HEADER};
+
+  # Set up the strings to add to the report.
+  push @entries, "Timeseries data report:";
+  push @entries, " Observation timeseries QA status: " . $timeseries->{$survey}->{status};
+  push @entries, sprintf( " %.2f%% of timeseries data more than %.1f%% from Tsys prediction.", $timeseries->{$survey}->{percentage} * 100, $timeseries->{$survey}->{rmstol} * 100 );
+
+  if( defined( $timeseries->{$survey}->{rmsmeantsysnum} ) ) {
+    push @entries, sprintf( " %d samples had RMS above %.2f", $timeseries->{$survey}->{rmsmeantsysnum}, $timeseries->{$survey}->{rmsmeantsysval} );
+  }
+
+  # If we already have an entry for this header, push the entries on
+  # the end. Otherwise, create the array reference.
+  if( exists( $qa_info{$header} ) ) {
+    push @{$qa_info{$header}{entries}}, @entries;
+
+    $qa_info{$header}{pass} &= ( $timeseries->{$survey}->{status} eq 'passed' );
+
+  } else {
+    $qa_info{$header}{entries} = \@entries;
+    $qa_info{$header}{pass} = ( $timeseries->{$survey}->{status} eq 'passed' );
+  }
+
+  $Frm->uhdr( "QA_REPORT_INFO", \%qa_info );
+
+}

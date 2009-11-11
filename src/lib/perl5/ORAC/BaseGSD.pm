@@ -48,7 +48,7 @@ is not required:
 but the header in $Frm is over-written.
 All exisiting header information is lost. The C<calc_orac_headers()>
 method is invoked once the header information is read.
-If there is an error during the read a reference to an empty hash is 
+If there is an error during the read a reference to an empty hash is
 returned.
 
 Currently this method assumes that the reduced group is stored in

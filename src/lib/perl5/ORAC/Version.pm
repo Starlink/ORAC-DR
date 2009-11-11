@@ -57,24 +57,24 @@ change during runtime).
 =cut
 
 {
-my $CACHE_VER;
-sub getVersion {
-  my $class = shift;
-  return $CACHE_VER if defined $CACHE_VER;
-  my ( $branch, $version, $date ) = oracversion_global();
+  my $CACHE_VER;
+  sub getVersion {
+    my $class = shift;
+    return $CACHE_VER if defined $CACHE_VER;
+    my ( $branch, $version, $date ) = oracversion_global();
 
-  if( ! defined( $version ) ) {
-    $version = "unknown";
+    if ( ! defined( $version ) ) {
+      $version = "unknown";
+    }
+
+    if ( defined( $version ) ) {
+      chomp($version);
+      $version = substr( $version, 0, 12 );
+    }
+
+    $CACHE_VER = $version;
+    return $version;
   }
-
-  if( defined( $version ) ) {
-    chomp($version);
-    $version = substr( $version, 0, 12 );
-  }
-
-  $CACHE_VER = $version;
-  return $version;
-}
 }
 
 =item B<oracversion_global>
@@ -94,7 +94,7 @@ In scalar context returns just the string representation:
 
 sub oracversion_global {
   my %version = _oracversion() or return();
-  if( wantarray ) {
+  if ( wantarray ) {
     return ( $version{'STRING'}, $version{'COMMIT'}, $version{'COMMITDATE'} );
   } else {
     return $version{'STRING'};
@@ -116,14 +116,14 @@ Returns the global application name.
 =cut
 
 {
-my $APP = "ORAC-DR";
-sub setApp {
-  my $class = shift;
-  $APP = shift;
-}
-sub getApp {
-  return $APP;
-}
+  my $APP = "ORAC-DR";
+  sub setApp {
+    my $class = shift;
+    $APP = shift;
+  }
+  sub getApp {
+    return $APP;
+  }
 }
 
 =back
@@ -154,44 +154,44 @@ Is cached, since the version number will not change during pipeline execution (o
 
 =cut
 
-  {
-    my %CACHE_VERSION;
-    sub _oracversion {
-      if( ! defined( $CACHE_VERSION{'NOTFOUND'} ) &&
-          ! $CACHE_VERSION{'NOTFOUND'} &&
-          ! defined( $CACHE_VERSION{'STRING'} ) ) {
-        my $script = File::Spec->catfile( $ENV{'ORAC_DIR'}, "version.sh" );
-        my $info;
-        if( -e $script ) {
-          local $ENV{'GIT_DIR'} = File::Spec->catdir( $ENV{'ORAC_DIR'}, File::Spec->updir, ".git" );
-          if( open my $proch, "sh $script 2>/dev/null |" ) {
-            my @output = <$proch>;
-            close $proch;
-            if( @output ) {
-              chomp @output;
-              $info = Starlink::Versions::_get_git_version( Data => \@output );
-            }
-	    # it is possible that git is installed but it is a version that
-	    # can not read the pack files. eg CADC has 1.5.0.2 which won't
-	    # read the commit log/date from a 1.6 repository.
-	    if (!exists $info->{COMMITDATE}) {
-	      $info = undef;
-	    }
+{
+  my %CACHE_VERSION;
+  sub _oracversion {
+    if ( ! defined( $CACHE_VERSION{'NOTFOUND'} ) &&
+         ! $CACHE_VERSION{'NOTFOUND'} &&
+         ! defined( $CACHE_VERSION{'STRING'} ) ) {
+      my $script = File::Spec->catfile( $ENV{'ORAC_DIR'}, "version.sh" );
+      my $info;
+      if ( -e $script ) {
+        local $ENV{'GIT_DIR'} = File::Spec->catdir( $ENV{'ORAC_DIR'}, File::Spec->updir, ".git" );
+        if ( open my $proch, "sh $script 2>/dev/null |" ) {
+          my @output = <$proch>;
+          close $proch;
+          if ( @output ) {
+            chomp @output;
+            $info = Starlink::Versions::_get_git_version( Data => \@output );
+          }
+          # it is possible that git is installed but it is a version that
+          # can not read the pack files. eg CADC has 1.5.0.2 which won't
+          # read the commit log/date from a 1.6 repository.
+          if (!exists $info->{COMMITDATE}) {
+            $info = undef;
           }
         }
-        if( ! defined( $info ) ) {
-          my $file = File::Spec->catfile( $ENV{'ORAC_DIR'}, "oracdr.version" );
-          $info = Starlink::Versions::_get_git_version( File => $file );
-        }
-        if( defined( $info ) ) {
-          %CACHE_VERSION = %$info;
-        } else {
-          $CACHE_VERSION{'NOTFOUND'} = 1;
-        }
       }
-      return %CACHE_VERSION;
+      if ( ! defined( $info ) ) {
+        my $file = File::Spec->catfile( $ENV{'ORAC_DIR'}, "oracdr.version" );
+        $info = Starlink::Versions::_get_git_version( File => $file );
+      }
+      if ( defined( $info ) ) {
+        %CACHE_VERSION = %$info;
+      } else {
+        $CACHE_VERSION{'NOTFOUND'} = 1;
+      }
     }
+    return %CACHE_VERSION;
   }
+}
 
 
 =back

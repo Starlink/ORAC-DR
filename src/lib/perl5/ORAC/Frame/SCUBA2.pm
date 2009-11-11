@@ -417,7 +417,7 @@ start of the next.
 =cut
 
 sub framegroupkeys {
-  return (qw/ OBSNUM FOCPOSN /);
+  return (qw/ OBSNUM FOCPOSN FOCAXIS /);
 }
 
 
@@ -602,14 +602,6 @@ sub findrecipe {
     $recipe = $self->hdr->{RECIPE};
   } else {
     $recipe = 'QUICK_LOOK';
-  }
-
-  # Darks will cause trouble - if we have ONLY darks in the Frame then
-  # set the recipe to something suitable. Have to trap Flatfields
-  # since they are all `dark'.
-  if ((defined $self->hdr("SHUTTER")) && ($self->hdr("SHUTTER") == 0.0)
-    && lc($self->hdr("OBS_TYPE")) ne "flatfield" ) {
-    $recipe = "REDUCE_DARK";
   }
 
   # Update the recipe

@@ -12,7 +12,7 @@ Finds the peak signal of a point source located at the map origin.
 No attempt is made to search for sources not located at approximately
 the map centre.
 
-The peak signal is determined by fitting a gamma function.
+The peak signal is determined by fitting a 2-D Gaussian function.
 
 =head1 ARGUMENTS
 
@@ -43,7 +43,7 @@ STATS
 
 =item ORAC-DR PRIMITIVES:
 
-_CENTROID_IMAGE_, _FIT_PSF_
+_CENTROID_IMAGE_, _FIND_BEAM_SIZE_
 
 =back
 
@@ -66,13 +66,6 @@ complete sucessfully.
 The position of the peak. Reference to an array of x, y coordinates in
 the current coordinate frame.
 
-=item PSF
-
-If the PSF fit was successful the PSF fit parameters are available as
-a reference to a hash in this parameter.  This allows the fit results
-to be obtained without an additional call to _FIT_PSF_ and also allows
-the programmer to know whether the fit was successful.
-
 =back
 
 The Frame object is not updated.
@@ -84,7 +77,9 @@ None.
 =head1 AUTHOR
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
+Copyright (C) 2009 University of British Columbia.
 Copyright (C) 2008 Science and Technology Facilities Council.
 Copyright (C) 2000 Particle Physics and Astronomy Research Council.
 All Rights Reserved.
@@ -110,61 +105,59 @@ USA.
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
 my $Obj = ($_PRIM_ARGS_->{GROUP} ? $Grp : $Frm );
+my $in = $Obj->file;
 
-# Get the centroid and the peak at the centroid
+# Peak position and reference to array with X,Y position
+my ($peak, $posn);
+
+# Determine centroid position
 _CENTROID_IMAGE_ GROUP=$_PRIM_ARGS_->{GROUP}
+my @xy = (defined $_CENTROID_IMAGE_{RESULTS}->[0] &&
+	  defined $_CENTROID_IMAGE_{RESULTS}->[1]) ?
+  @{ $_CENTROID_IMAGE_{RESULTS} } : ();
 
-my $peak;
-my @posn;
-if ( defined $_CENTROID_IMAGE_{RESULTS} ) {
-  my $in = $Obj->file;
+if ( defined $xy[0] && defined $xy[1] ) {
 
-  # we now run PSF if possible else simply use the peak from 
-  # centroiding
+# Fit a 2-d gaussian to the source to determine the peak signal
+_FIT_BEAM_ IMAGE=$in XYPOS=\@xy
 
-  # Create temporary file with the position in
-  my $tmp = new ORAC::TempFile;
-  my $tmpfile = $tmp->file;
-  print { $tmp->handle } $_CENTROID_IMAGE_{RESULTS}->[0]," ",
-    $_CENTROID_IMAGE_{RESULTS}->[1], "\n";
-  $tmp->handle->close;
+# Retrieve fit parameters
+my $amp = $_FIT_BEAM_{AMPLITUDE};
+$posn = $_FIT_BEAM_{POSITION};
 
-  _FIT_PSF_ COFILE=$tmpfile GAUSSIAN=0 IMAGE=$in
+# The amplitude should be non-zero - in principle it should always be
+# positive but you never know...
+my $goodfit = ($amp != 0 ) ? 1 : 0;
 
-  my $amp = $_FIT_PSF_{AMPLITUDE};
-  my $axisr = $_FIT_PSF_{AXISR};
-  @posn = @{ $_FIT_PSF_{POSITION} };
+# Store the amplitude if the fit to the source was good
+if ( $goodfit ) {
+  $peak = $amp->[0];
+  my %fitpars = %_FIT_BEAM_;
+  $_PRIM_ARGS_->{BEAM} = \%fitpars;
+} else {
+  # If not, use peak from stats
+  orac_warn "Poor fit to beam - using peak at centroid position for $in instead.\n";
+  # Note the position is in a colon-delimited format, so specify a
+  # 1-pixel search region to ensure the NDF section is interpreted
+  # correctly.
+  my $pos = $xy[0]."~1,".$xy[1]."~1";
+  $Mon{kappa_mon}->obeyw("stats","NDF=$in($pos)");
+  (my $ORAC_STATUS, $peak) = $Mon{kappa_mon}->get("stats","maximum");
+  $posn = \@xy;
+}
 
-  # Check the axis ratio
-  if (!defined $axisr || $axisr > 1.4 || $axisr < 0.75) {
-    my $text = (defined $axisr ? $axisr : '<undef>');
-    orac_warn "Axis ratio of source out of specification (was $text). Ignoring fit.\n";
-
-    # Use stats peak
-    orac_warn "Using peak at centroid position for $in instead.\n";
-    # Note the position is in a colon-delimited format, so specify a
-    # 1-pixel search region to ensure the NDF section is interpreted
-    # correctly.
-    my $pos = $_CENTROID_IMAGE_{RESULTS}->[0]."~1,".
-      $_CENTROID_IMAGE_{RESULTS}->[1]."~1";
-    $Mon{kappa_mon}->obeyw("stats","NDF=$in($pos)");
-    (my $ORAC_STATUS,$peak) = $Mon{kappa_mon}->get("stats","maximum");
-    @posn = @{ $_CENTROID_IMAGE_{RESULTS} };
-
-  } else {
-    $peak = $amp;
-    my %psfpars = %_FIT_PSF_;
-    $_PRIM_ARGS_->{PSF} = \%psfpars;
-  }
-
-  orac_print "Calculated peak signal from map of $peak\n" if $verbose;
+orac_print "Calculated peak signal from map of $peak\n" if $verbose;
 
 } else {
-  orac_warn "Unable to fit peak because centroid was invalid.";
+  orac_warn "Unable to locate map peak\n";
+
+  # Return undef
+  $peak = undef;
+  $posn = [];
+
 }
 
 # Store the result in the hash
 $_PRIM_ARGS_->{PEAK} = $peak;
-$_PRIM_ARGS_->{POSITION} = \@posn;
-
+$_PRIM_ARGS_->{POSITION} = $posn;
 

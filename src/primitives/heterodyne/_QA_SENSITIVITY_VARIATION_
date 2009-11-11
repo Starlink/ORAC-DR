@@ -82,11 +82,11 @@ my $method = uc( get_prim_arg( $_PRIM_ARGS_, "METHOD", "AUTO" ) );
 my @rms_files;
 my %rms;
 my %receptor_rms;
-my %numgood;
+my %receptor_stats;
 
-my $key = $Frm->uhdr( "ORAC_OBSERVATION_ID" ) . "_" . $Frm->uhdr( "ORAC_SUBSYSTEM_IDKEY" );
+my $key = $Frm->uhdr( "ORAC_OBSERVATION_ID" ) . "_" . $Frm->hdr( $Frm->uhdr( "ORAC_SUBSYSTEM_IDKEY" ) );
 
-my $array_rms = 0;
+my $array_stats = new Statistics::Descriptive::Sparse;
 
 foreach my $i ( 1 .. $Frm->nfiles ) {
 
@@ -156,11 +156,11 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
   }
 
   # Get stats for the central 85% across all detectors.
-  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$outfile(~85\%,,) clip=[3]" );
+  $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$outfile(~85\%,,)" );
   my ( $ORAC_STATUS, $rmsmean ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
 
   if( $rmsmean != VAL__BADD ) {
-    $array_rms += $rmsmean;
+    $array_stats->add_data( $rmsmean );
   }
 
   # Get stats for each receptor.
@@ -169,16 +169,14 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
   foreach my $receptor ( sort $array->receptors ) {
 
     my $pixel = $array->pixel( $receptor );
-    $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$outfile(~85\%,$pixel,) clip=[3]" );
+    $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$outfile(~85\%,$pixel,)" );
     ( $ORAC_STATUS, my $pixrms ) = $Mon{'kappa_mon'}->get( "stats", "sigma" );
 
-    if( ! defined( $receptor_rms{$receptor} ) ) {
-      $receptor_rms{$receptor} = 0;
-      $numgood{$receptor} = 0;
+    if( ! defined( $receptor_stats{$receptor} ) ) {
+      $receptor_stats{$receptor} = new Statistics::Descriptive::Sparse;
     }
     if( $pixrms > 0 && $pixrms != VAL__BADD ) {
-      $receptor_rms{$receptor} += $pixrms;
-      $numgood{$receptor}++;
+      $receptor_stats{$receptor}->add_data( $pixrms );
     }
   }
 
@@ -190,10 +188,10 @@ foreach my $i ( 1 .. $Frm->nfiles ) {
 
 }
 
-$array_rms /= $Frm->nfiles;
-foreach my $receptor ( keys %receptor_rms ) {
-  if( $receptor_rms{$receptor} != 0 ) {
-    $receptor_rms{$receptor} /= $Frm->nfiles;
+my $array_rms = $array_stats->mean();
+foreach my $receptor ( keys %receptor_stats ) {
+  if( $receptor_stats{$receptor}->count != 0 ) {
+    $receptor_rms{$receptor} = $receptor_stats{$receptor}->mean();
   } else {
     $receptor_rms{$receptor} = 'bad';
   }

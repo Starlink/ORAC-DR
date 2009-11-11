@@ -58,36 +58,49 @@ Council.  All Rights Reserved.
 
 =cut
 
+my $filecopied = 0;
+
 foreach my $i ( 1 .. $Frm->nfiles ) {
 
   my( $in, $out ) = $Frm->inout( "_raw", $i );
 
-  # There is no need for the 4 digit subscan number
-  # in the output name because that information is duplicated by
-  # the counter in the _raw suffix
+  # There is no need for the 4 digit subscan number in the output name
+  # because that information is duplicated by the counter in the _raw
+  # suffix
   $out =~ s/_\d{4}_/_/;
 
-  my $file = $out;
-  $file =~ s/\..*$//;
+  # We only need to do this if the input "file" is a softlink to the
+  # raw data.
+  if( -l "$in.sdf" ) {
 
-  if( ! -e "$file.sdf" ) {
+    my $file = $out;
+    $file =~ s/\..*$//;
 
-    orac_print "Copying $in to $out...";
+    if( ! -e "$file.sdf" ) {
 
-    $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$out" );
+      orac_print "Copying $in to $out...";
 
-    orac_print "done.\n";
+      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$out" );
+
+      orac_print "done.\n";
+
+      $filecopied = 1;
+
+    }
+
+  } else {
+
+    hardlink( "$in.sdf", "$out.sdf" ) or orac_throw "Could not link $in.sdf to $out.sdf: $!\n";
 
   }
 
   my $recipe = $Frm->uhdr( "ORAC_DR_RECIPE" );
   $Frm->file( $i, $out );
   $Frm->uhdr( "ORAC_DR_RECIPE", $recipe );
-
 }
 
 # Make sure the data is okay.
 _VERIFY_DATA_
 
-# Tidy up output.
-orac_print "\n";
+# Tidy up output if we've actually written output.
+orac_print "\n" if $filecopied;

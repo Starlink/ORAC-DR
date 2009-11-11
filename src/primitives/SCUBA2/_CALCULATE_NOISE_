@@ -1,0 +1,191 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_CALCULATE_NOISE_ - calculate a white noise image for each subarray
+
+=head1 SYNOPSIS
+
+_CALCULATE_NOISE_
+
+=head1 DESCRIPTION
+
+This primitive calculates a noise image for each subarray. The noise
+calculation should proceed differently depending on which pipeline is
+being used. Usually, Frames which are only composed of darks are
+ignored unless the observation is a Noise-Dark. If called from the
+SUMMIT pipeline processing is deferred until the observation has
+ended.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=item B<FREQHI>
+
+Comma-separated pair of numbers indicating the frequency range (Hz)
+over which to measure white noise portion of power spectrum. Default
+is 2,10 (i.e. 2-10 Hz).
+
+=item B<FREQLO>
+
+Lower frequency at which to measure power spectrum. Default is 0.5 Hz.
+
+=item B<VERBOSE>
+
+Flag to denote whether to display extra information. Default is 0
+(no).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external task is used:
+
+=over 4
+
+=item SMURF:
+
+CALCNOISE
+
+=back
+
+=head1 NOTES
+
+Notes go here
+
+=head1 OUTPUT DATA
+
+The current Frame object is updated with the output noise files.
+
+The Frame uhdr is updated to set an entry called C<NOISE> which is 1
+if noise images were calculated, otherwise 0.
+
+=head1 OUTPUT FILES
+
+A noise file is created for each subarray with the suffix C<_noi>
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Determine if the time is right to calculate the noise properties. If
+# this is just a dark then there is probably nothing to do. Otherwise
+# assume we wish to proceed.
+my $proceed = ( $Frm->uhdr("DARKONLY") ) ? 0 : 1;
+
+# For NOISE-DARK observations which span multiple files, we don't want
+# to ignore all the data until the last file appears, so check for a
+# DARK object. This is really only needed for the QL pipeline.
+if ( $Frm->uhdr("DARKONLY") ) {
+  $proceed = 1 if ( $Frm->hdr("OBJECT") eq "DARK" );
+}
+
+# Do not proceed if this is the SUMMIT pipeline
+$proceed  = 0 if $Frm->uhdr("SUMMIT");
+
+# Always proceed at the end of an observation
+$proceed = 1 if $Frm->uhdr("OBSEND");
+
+if ( $proceed ) {
+  # OK now deal with input parameters
+
+  # Should we be verbose (default to no)?
+  my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
+
+  # Low frequency measurement point
+  my $freqlo = get_prim_arg( $_PRIM_ARGS_, "FREQLO", 0.5 );
+  # High frequency measurement range for estimating white part of
+  # spectrum
+  my $freqhi = get_prim_arg( $_PRIM_ARGS_, "FREQHI", "2,10" );
+
+  # Print out some information for the user
+  if ($verbose) {
+    my @freqhi = split( /\,/, $freqhi, 2);
+    orac_print "Estimating low-frequency noise at $freqlo Hz\n"
+      ."Estimating white noise level between $freqhi[0] and $freqhi[1] Hz\n";
+  }
+
+  # Collect files
+  my ($inlist, $outlist);
+
+  # For the summit pipeline we need to wait until the end of the
+  # observation and use all available data to calculate the noise. The
+  # offline pipeline will do the same thing effectively as all the
+  # input files will be in the current Frame.
+  if ( $Frm->uhdr("SUMMIT") ) {
+    my (@infiles, @outfiles);
+    # Loop over all members of current Group
+    foreach my $frmobj ( $Grp->members ) {
+      # Store input files
+      push ( @infiles, $frmobj->files );
+
+      # Define output file names
+      push ( @outfiles, map { scalar $frmobj->inout("_noi", $_ ) }
+	     (1..$frmobj->nfiles) );
+    }
+
+    # Write list of input files and output file names
+    $inlist = write_file_list( @infiles );
+    $outlist = write_file_list( @outfiles );
+  } else {
+    # Non-SUMMIT pipeline just uses everything in the current Frame
+    ($inlist, $outlist) = write_file_list_inout( $Frm, "_noi" );
+  }
+
+  # Inform the user which subarrays are being used to calculate noise for
+  my @subarrays = $Frm->subarrays;
+  my $subinfostr;
+  if ( $#subarrays == 0 ) {
+    $subinfostr = "subarray $subarrays[0]";
+  } else {
+    $subinfostr = "subarrays ".join(", ",@subarrays);
+  }
+  orac_print "Calculating noise for $subinfostr...\n";
+
+  # Calculate the noise
+  my $outfiles = "calcnoise.$$";
+  my $args = "in=^$inlist out=^$outlist outfiles=$outfiles power=! freq=[$freqhi] flow=$freqlo";
+  $Mon{smurf_mon}->obeyw("calcnoise","$args");
+
+  # Read the actual list of output files written
+  my @outfiles = read_file_list( $outfiles );
+
+  unlink $outfiles;
+
+  # Store in the Frame
+  $Frm->files(@outfiles);
+
+  # Set the NOISE uhdr flag to indicate a NOISE calculation was made
+  $Frm->uhdr("NOISE",1);
+} else {
+  # Copy raw data to output for the SUMMIT pipeline
+  if ( $Frm->uhdr("SUMMIT") ) {
+    _COPY_RAW_DATA_
+  }
+  # Unset the NOISE uhdr flag
+  $Frm->uhdr("NOISE",0);
+}
+

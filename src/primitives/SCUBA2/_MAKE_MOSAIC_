@@ -15,7 +15,7 @@ _MAKE_MOSAIC_ USEGRP=0 MAKEMOS=1
 This is the work-horse mosaicking primitive for SCUBA-2 data. It will
 create a Frame or Group mosaic depending on the specified processing
 flag. It is designed to be called from a wrapper primitive
-specifically for processing either Frame or Group objects. 
+specifically for processing either Frame or Group objects.
 
 The user has the choice of specifying the mosaicking application:
 either MAKEMOS (CCDPACK) or WCSMOSAIC (KAPPA). Generally for quick
@@ -301,7 +301,7 @@ my $filelist = new ORAC::TempFile;
 my $listhandle = $filelist->handle;
 my $tmpout; # Output file
 # Label to inform user of Frame/Group processing
-my $grpfrm; 
+my $grpfrm;
 # Number of files to mosaic
 my $nfiles;
 # Flag to indicate whether to go ahead with the mosaicking step
@@ -322,19 +322,21 @@ if ( $usegrp ) {
   # Set despike flag
   $despike = ( $coadd_mode eq 'DESPIKE' ) ? 1 : 0;
 
-  # If we are in RUNNING mode, check that we have enough images to get
-  # a variance and/or that the Group object file exists
-  my $nimages = scalar($Frm->files);
-  if ( ($coadd_mode eq 'RUNNING') && 
-       (($nimages < 3) && $genvar || !$Grpobj->file_exists) ) {
-    # If not, then we must use STACKALL
-    $coadd_mode = 'STACKALL';
+  # If we are in RUNNING mode, check that the Group object file exists
+  # Note that for DREAM/STARE data this might cause issues with
+  # variance generation - needs to be tested. For SCAN data, variances
+  # are already present.
+  my $nimages = $Frm->nfiles;
+  if ( ($coadd_mode eq 'RUNNING') && !$Grp->file_exists ) {
+    # Use FRAME if no Group file exists to combine images in the
+    # current Frame
+    $coadd_mode = 'FRAME';
   }
 
   # #####################
   # COADD_MODE = RUNNING
   # #####################
-  if ($coadd_mode eq 'RUNNING') {
+  if ($coadd_mode eq 'RUNNING' || $coadd_mode eq 'FRAME') {
     # Combine all the images in the current Frm with the Grp image
     orac_print "Collecting files to mosaic...\n";
     if ($Grpobj->file_exists) {
@@ -342,19 +344,21 @@ if ( $usegrp ) {
       $in = $Grpobj->file;
       print {$listhandle} $Grpobj->file ."\n";
       push (@mosfiles, $Grpobj->file);
-
-      for my $fname ($Frm->files) {
-	# Write current filename to list file
-	print {$listhandle} "$fname\n";
-	$in = $fname;
-	push (@mosfiles, $fname);
-	$nfiles++;
-      }
-      # Everything's OK, we can make the mosaic
-      $make_mosaic = 1;
     } else {
-      orac_warn "Managed to get into RUNNING average without a group file";
+      orac_warn "Managed to get into RUNNING average without a group file"
+	if ($coadd_mode eq 'RUNNING');
+      $nfiles = 0;
     }
+
+    for my $fname ($Frm->files) {
+      # Write current filename to list file
+      print {$listhandle} "$fname\n";
+      $in = $fname;
+      push (@mosfiles, $fname);
+      $nfiles++;
+    }
+    # Everything's OK, we can make the mosaic
+    $make_mosaic = 1;
   } elsif ($coadd_mode eq 'STACKALL' || $despike ) {
     # #################################
     # COADD_MODE = STACKALL or DESPIKE
@@ -366,7 +370,7 @@ if ( $usegrp ) {
     # statistically-valid variance - set a default of 1 so that the
     # user must specify NMOS for the DESPIKE method
     $nmos = get_prim_arg($_PRIM_ARGS_,"NMOS", 1);
-    
+
     # If the OBSEND flag is set then make a group mosaic anyway even
     # if the number of files is less than NMOS
     my $lastfrm = $Grpobj->frame(-1);
@@ -428,7 +432,7 @@ if ( $usegrp ) {
   # If all is well and we're on the mosaicking path, provide feedback
   # and setup name of output Group object file
   if ( $make_mosaic ) {
-    orac_print "GROUP mosaic: coadd_mode = $coadd_mode\n" 
+    orac_print "GROUP mosaic: coadd_mode = $coadd_mode\n"
       if $verbose;
     # Define output file for Group images HACK
     if ( $usegrp ) {
@@ -564,7 +568,7 @@ if ( $make_mosaic ) {
       for my $i (1 .. $nsteps ) {
 	# Retrieve name of current intermediate mosaic
 	$curmosfile = $intermosaics[$i-1];
-	
+
 	# Define start and end indices of array of images to include
 	my $start = ($i-1) * $nsteps;
 	my $end = $start + $stepsize - 1;
@@ -601,7 +605,7 @@ if ( $make_mosaic ) {
     # WCSMOSAIC
     # ##########
     my $wlim = 0.2;
-    # Now to get the variance scheme correct. 
+    # Now to get the variance scheme correct.
     #
     # If there is only a single input image then set both GENVAR and
     # VARIANCE to false in order to do nothing except propagate a
@@ -609,7 +613,7 @@ if ( $make_mosaic ) {
     # do an ndfcopy.
     #
     # If there are multiple images then we have to be aware of the
-    # origin of these images. 
+    # origin of these images.
     #
     # For processing FRAME mosaics, the input images will have no
     # variance so variance=f, but we still want an output variance
@@ -678,9 +682,8 @@ if ( $make_mosaic ) {
   }
   # HACK for renaming group output
   if ( $usegrp ) {
-    # Use the inout method to get filename. Note that it generates a
-    # warning but it's harmless
-    my $outname = $Grpobj->inout("_mos");
+    # Use the inout method to get filename if it's not defined already.
+    my $outname = ($Grp->file_exists) ? $Grp->file : $Grpobj->inout("_mos");
 
     my $bounds = ( scalar(@bounds) == 4 ) ? \@bounds : undef;
     # Add up the exp_time and weights components

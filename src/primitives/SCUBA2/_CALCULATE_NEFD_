@@ -31,8 +31,8 @@ The following arguments are supported:
 
 =item B<GROUP>
 
-Flag to indicate whether to obtain results from the Group
-file. Default is 0 (use the current Frame).
+Flag to indicate whether to obtain results from the Group file. Only
+accessed if B<USENOISE>=0. Default is 0 (use the current Frame).
 
 =item B<LOGFILE>
 
@@ -42,7 +42,13 @@ is 1 (write a log file).
 =item B<METHOD>
 
 Preferred estimator for integration time. Valid options are C<MEAN>,
-C<MEDIAN> or C<MODE>. Default is C<MEDIAN>.
+C<MEDIAN> or C<MODE>. Only accessed if B<USENOISE>=0. Default is
+C<MEDIAN>.
+
+=item B<USENOISE>
+
+Flag to denote whether to determine the NEFD from noise data or from a
+map. Default is 1 (use noise data).
 
 =back
 
@@ -51,6 +57,10 @@ C<MEDIAN> or C<MODE>. Default is C<MEDIAN>.
 The following external tasks are used:
 
 =over 4
+
+=item KAPPA
+
+CMULT
 
 =item ORAC-DR PRIMITIVES:
 
@@ -61,6 +71,9 @@ _FIND_IMAGE_STATISTICS_, _FIND_VARIANCE_, _GET_LOG_PARAMETERS_
 =head1 NOTES
 
 This primitive must be run on calibrated images.
+
+For the case when B<USENOISE>=1, this primitive will give erroneous
+results in offline mode.
 
 =head1 OUTPUT DATA
 
@@ -97,6 +110,57 @@ USA.
 
 =cut
 
+# Write a log file? Default to yes
+my $uselog = get_prim_arg( $_PRIM_ARGS_, "LOGFILE", 1 );
+
+# Use the noise image or object image?
+my $usenoise = get_prim_arg( $_PRIM_ARGS_, "USENOISE", "1");
+
+if ($usenoise) {
+
+  if ( $Frm->uhdr("NOISE") ) {
+  # Obtain the files in the current Frame - there will be one file per
+  # subarray at this point.
+  my @noisefiles = $Frm->files;
+
+  # FCF, tau and airmass are independent of subarray
+  my $fcf = $Cal->gain($Frm->uhdr("ORAC_FILTER"), "BEAM") * 1000;
+
+  my $tau = $Frm->uhdr("ORAC_TAU");
+  my $airmass = 0.5*($Frm->uhdr("ORAC_AIRMASS_START") +
+		     $Frm->uhdr("ORAC_AIRMASS_END"));
+
+  my $extcor = exp($tau * $airmass);
+
+  # FCF is in Jy/beam/pW; NEP is in W Hz**-0.5. Therefore need to
+  # multiply by 1e12 to get the units right.
+  my $mult = $extcor * $fcf * 1.0e12;
+
+  # Calculate NEFD for each file
+  foreach my $noisefile (@noisefiles) {
+
+    my $nep = $noisefile.".more.smurf.nep";
+
+    my $nefd = new ORAC::TempFile;
+    my $nefdimage = $nefd->file;
+    $Mon{kappa_mon}->obeyw("cmult","in=$nep out=$nefdimage scalar=$mult");
+
+    _FIND_IMAGE_STATISTICS_ IMAGE=$nefdimage VERBOSE=0 HISTAT=1 COMP=DATA
+
+    my $median = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
+    if (defined $median) {
+      my $trans = sprintf "%3d", 100.0 / $extcor;
+      $median = sprintf "%6.2f", $median;
+      $airmass = sprintf "%6.4f", $airmass;
+      orac_print ("NEFD = $median mJy/beam/Hz**0.5, "
+		  ."Sky trans = $trans %, A = $airmass\n", "yellow");
+    } else {
+      orac_warn "Could not determine median NEFD for $noisefile\n";
+    }
+  }
+  }
+} else {
+
 # Has the user requested the use of the Group image?
 my $groupflag = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
 my $Obj = ( $groupflag ) ? $Grp : $Frm;
@@ -108,9 +172,6 @@ unless ( $estimator eq "MEDIAN" || $estimator eq "MEAN" || $estimator eq "MODE" 
   orac_warn "_CALCULATE_NEFD_: Unrecognized estimator for integration time, $estimator\n falling back on default (MEDIAN)\n";
   $estimator = "MEDIAN";
 }
-
-# Write a log file? Default to yes
-my $uselog = get_prim_arg( $_PRIM_ARGS_, "LOGFILE", 1 );
 
 # This primitive must be run after files have been combined into a
 # mosaic
@@ -141,7 +202,7 @@ if ( $Obj->nfiles == 1 ) {
 
     # Get general parameters for logging
     _GET_LOG_PARAMETERS_ GROUP=$groupflag
-    my ($uttime, $hst, $obsnum, $src, $mode, $filter, $el, $cso, $tau, $see) = 
+    my ($uttime, $hst, $obsnum, $src, $mode, $filter, $el, $cso, $tau, $see) =
       @{ $_GET_LOG_PARAMETERS_{PARAMS} };
 
     # Reformat NEFD for printing
@@ -151,11 +212,12 @@ if ( $Obj->nfiles == 1 ) {
     $nefdlog->addentry("$uttime $hst $obsnum $src $mode   $filter   $el $cso $tau $see  $nefd");
   } else {
 
-    # If we're not writing a log file, return the NEFD to the caller    
+    # If we're not writing a log file, return the NEFD to the caller
     $_CALCULATE_NEFD_{NEFD} = $nefd;
 
   }
 
 } else {
   orac_warn "_CALCULATE_NEFD_ must be run after files have been combined\n";
+}
 }

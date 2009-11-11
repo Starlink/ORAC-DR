@@ -170,11 +170,16 @@ if( ! $isok ) {
       orac_print sprintf( "QA results at %.4f GHz:\n", $Frm->hdr( "LOFREQS" ) );
     }
 
+    my %tsys_result;
+    my %rms_result;
+
     # Run QA analysis on each requested survey.
     foreach my $analyse_survey ( @analyse_surveys ) {
 
       $opts{'survey'} = $analyse_survey;
       $tsys_result = $qa->analyse_tsys( $tsys_values, %opts );
+
+      $tsys_result{$analyse_survey} = $tsys_result;
 
       # Now we need to filter out those flagged as bad. Then get the
       # RMS result for the rest.
@@ -197,6 +202,7 @@ if( ! $isok ) {
 
         } else {
           $result{$analyse_survey} = $tsys_result;
+          $rms_result{$analyse_survey} = new JSA::QA::Result( pass => 0 );
           next;
         }
       }
@@ -204,6 +210,8 @@ if( ! $isok ) {
       # Now run the RMS test with the new "clean" RMS hash.
       my $rms_result = $qa->analyse_timeseries_rms( \%temp_rms,
                                                     %opts );
+
+      $rms_result{$analyse_survey} = $rms_result;
 
       # Merge the results. If any of the tests fail, then the whole
       # survey QA test fails.
@@ -264,6 +272,9 @@ if( ! $isok ) {
 
       }
       orac_say "";
+
+      _QA_REPORT_RECEPTORS_ RMS=$rms_result{$result_survey} SURVEY=$result_survey TSYS=$tsys_result{$result_survey}
+
     }
 
     # Sort out bad receptors. They'll be added to the calibration system
@@ -285,7 +296,7 @@ if( ! $isok ) {
       orac_say "Using $survey_br results to mask out receptors " . join( ",", sort @bad_receptors );
 
       $Cal->bad_receptors_qa_index->add( $file, \%recep_hash );
-      _SORT_TIMESERIES_
+      _MASK_RECEPTORS_ RECEPTORS=\@bad_receptors
       _QA_SYSTEM_TEMPERATURE_
       _QA_SENSITIVITY_VARIATION_ METHOD=$method
     }

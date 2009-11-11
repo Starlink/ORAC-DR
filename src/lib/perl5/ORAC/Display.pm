@@ -69,14 +69,14 @@ sub new {
   my $proto = shift;
   my $class = ref($proto) || $proto;
 
-  my $disp = {};  # Anonymous hash
+  my $disp = {};                # Anonymous hash
 
-  $disp->{FileName} = undef; # Name of file containing device info
-  $disp->{UseNBS} = 0;       # Use shared memory
-  $disp->{Tools} = {};       # List of display tool objects
-  $disp->{ID}    = undef;    # Current ID string
+  $disp->{FileName} = undef;    # Name of file containing device info
+  $disp->{UseNBS} = 0;          # Use shared memory
+  $disp->{Tools} = {};          # List of display tool objects
+  $disp->{ID}    = undef;       # Current ID string
   $disp->{MONITOR_HDL} = undef; # File handle for monitor file opened for write
-  $disp->{IS_MASTER} = 1;       # By default this class is a master not a monitor
+  $disp->{IS_MASTER} = 1; # By default this class is a master not a monitor
   $disp->{DOES_MASTER_DISPLAY} = 1; # Controls whether the Master does any displaying at all
 
   bless ($disp, $class);
@@ -133,7 +133,9 @@ definition. Only used when usenbs() is false.
 
 sub filename {
   my $self = shift;
-  if (@_) { $self->{FileName} = shift; }
+  if (@_) {
+    $self->{FileName} = shift;
+  }
   return $self->{FileName};
 }
 
@@ -151,7 +153,9 @@ separate device allocation GUI).
 
 sub idstring {
   my $self = shift;
-  if (@_) { $self->{ID} = shift; }
+  if (@_) {
+    $self->{ID} = shift;
+  }
   return $self->{ID};
 }
 
@@ -167,7 +171,9 @@ display device definition. Default is false.
 
 sub usenbs {
   my $self = shift;
-  if (@_) { $self->{UseNBS} = shift; }
+  if (@_) {
+    $self->{UseNBS} = shift;
+  }
   return $self->{UseNBS};
 }
 
@@ -259,7 +265,7 @@ sub does_master_display {
 
 =item B<definition>
 
-Method to read a display definition, compare it with the idstring 
+Method to read a display definition, compare it with the idstring
 stored in the object (this is usually a file suffix)
 and return back an array of  hashes containing all the relevant entries
 from the definition. If an argument is given, the object updates
@@ -305,7 +311,7 @@ and gui_id() methods.
 The optional hash can be used to supply extra entries in the
 display definition file (or in fact do away with the definition file
 completely). Note that the contents of the options hash will be used
-even if no display definition can be found to match the current 
+even if no display definition can be found to match the current
 gui_id.
 
   $Display->display_data($Frm) if defined $Display;
@@ -380,7 +386,7 @@ sub display_data {
       $frm_suffix = $frm->gui_id($n);
     } else {
       croak "ORAC::Display::display_data: supplied object can not implement\n".
-  " the gui_id() method";
+        " the gui_id() method";
     }
 
     # Set the current suffix in the object
@@ -394,8 +400,8 @@ sub display_data {
     # to a matching line
     # This allows a single file to be displayed on multiple
     # devices
-  
-    # Do not read the disp.dat if we are only using the supplied 
+
+    # Do not read the disp.dat if we are only using the supplied
     # values
     my @defn;
     @defn = $self->definition if $usedisp;
@@ -405,13 +411,13 @@ sub display_data {
       # If -1, then the optref will be used to overwrite/supplement
       # existing entries rather than adding a new display entry.
       if ( $usedisp == -1 ) {
-	foreach my $defn ( @defn ) {
-	  $defn = { %$defn, %$optref };
-	}
+        foreach my $defn ( @defn ) {
+          $defn = { %$defn, %$optref };
+        }
       } else {
-	# push additional entries onto the definition array for a new
-	# display
-	push (@defn, $optref);
+        # push additional entries onto the definition array for a new
+        # display
+        push (@defn, $optref);
       }
     }
 
@@ -435,7 +441,7 @@ sub display_data {
         }
       }
 
-      # Now I suppose we need to decide whether the display tool is 
+      # Now I suppose we need to decide whether the display tool is
       # already open to us.
       # Query the tools hash
 
@@ -596,7 +602,7 @@ sub parse_file_defn {
       if ($test eq 'num' || $test eq 'raw') {
         # Now if id is a number then the test is true
         if ($id =~ /^\d+$/) {
-          $test = $id;  # fool the following test
+          $test = $id;          # fool the following test
         }
         $RAW = 1;
       }
@@ -621,7 +627,7 @@ sub parse_file_defn {
 
         # Go through each entry in the line, split on = and
         # set in hash
-        shift(@junk);  # Remove first entry;
+        shift(@junk);           # Remove first entry;
         foreach my $keyval (@junk) {
           my ($key, $val) = split(/=/,$keyval);
           $key  = uc($key);
@@ -634,7 +640,7 @@ sub parse_file_defn {
       }
     }
 
-  }  else {
+  } else {
     orac_err("Error opening device definition:$!");
   }
   return @defn;
@@ -679,12 +685,12 @@ sub append_monitor {
 
   # form the string
   my $string = "$frmclass " . join(",", @files) . " $usedisp " .
-               join(" ", map { $_ . "=". $options->{$_} } keys %$options). "\n";
+    join(" ", map { $_ . "=". $options->{$_} } keys %$options). "\n";
 
   # Get the filehandle for the output file
   my $mfh = $self->monitor_handle;
   if ($mfh) {
-    local $| = 1; # need to be unbuffered
+    local $| = 1;               # need to be unbuffered
     print $mfh $string;
     $mfh->flush;
   }

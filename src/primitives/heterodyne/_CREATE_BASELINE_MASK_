@@ -28,7 +28,8 @@ Frame member in the current Group is used. [0]
 
 =item ORDER = INTEGER (Given)
 
-The order of fit used for the baseline. [1]
+The order of fit used for the baseline. This can be overridden by the
+RECPAR_BASELINE_ORDER recipe parameter. [1]
 
 =item SPATIAL_SMOOTH = INTEGER (Given)
 
@@ -94,6 +95,11 @@ my $freqsmooth = get_prim_arg( $_PRIM_ARGS_, "FREQUENCY_SMOOTH", 25 );
 my $spatsmooth = get_prim_arg( $_PRIM_ARGS_, "SPATIAL_SMOOTH", 3 );
 my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 1 );
 
+# Override order if we've been given a recipe parameter.
+$order = ( defined( $Frm->uhdr( "RECPAR_BASELINE_ORDER" ) ) ?
+           $Frm->uhdr( "RECPAR_BASELINE_ORDER" )            :
+           $order );
+
 my @objs;
 if( $group == 0 ) {
   push @objs, $Frm;
@@ -113,29 +119,38 @@ foreach my $Obj ( @objs ) {
 
     my ( $in, $mask ) = $Obj->inout( "_blmask", $i );
 
-    # Smooth in frequency.
-    my $temp1 = new ORAC::TempFile;
-    my $temp1file = $temp1->file;
-    my $params = "in=$in out=$temp1file axes=[1,3] box=[1,$freqsmooth] estimator=mean";
-    $Mon{'kappa_mon'}->obeyw( "block", "$params" );
-
-    # Smooth in spatial, but only if we have enough pixels.
-    _GET_DIMENSIONS_ FILE=$in
-    my $dims = $_GET_DIMENSIONS_{DIMS};
     my $temp2 = new ORAC::TempFile;
     my $temp2file = $temp2->file;
-    if( $dims->[0] > 5 || $dims->[1] > 5 ) {
-      $params = "in=$temp1file out=$temp2file axes=[1,2] box=[$spatsmooth,$spatsmooth] estimator=mean";
+
+    if( starversion_gt( 'KAPPA', 'V1.11-7' ) ) {
+
+      orac_say " Smoothing cube with [$spatsmooth,$spatsmooth,$freqsmooth] tophat.";
+      my $params = "in=$in out=$temp2file box=[$spatsmooth,$spatsmooth,$freqsmooth] estimator=mean";
       $Mon{'kappa_mon'}->obeyw( "block", "$params" );
     } else {
-      $temp2file = $temp1file;
+
+      # Smooth in frequency.
+      my $temp1 = new ORAC::TempFile;
+      my $temp1file = $temp1->file;
+      my $params = "in=$in out=$temp1file axes=[1,3] box=[1,$freqsmooth] estimator=mean";
+      $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+
+      # Smooth in spatial, but only if we have enough pixels.
+      _GET_DIMENSIONS_ FILE=$in
+      my $dims = $_GET_DIMENSIONS_{DIMS};
+      if( $dims->[0] > 5 || $dims->[1] > 5 ) {
+        $params = "in=$temp1file out=$temp2file axes=[1,2] box=[$spatsmooth,$spatsmooth] estimator=mean";
+        $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+      } else {
+        $temp2file = $temp1file;
+      }
     }
 
     # Find line-free regions in the smoothed cube. We do this by doing
     # an 'auto' fit with a high-order baseline.
     my $temp3 = new ORAC::TempFile;
     my $temp3file = $temp3->file;
-    $params = "in=$temp2file out=$temp3file axis=3 order=$order auto mask=$mask method=single variance=true subtract=false";
+    my $params = "in=$temp2file out=$temp3file axis=3 order=$order auto mask=$mask method=single variance=true subtract=false";
     $Mon{'kappa_mon'}->obeyw( "mfittrend", "$params" );
 
     # Report to user.

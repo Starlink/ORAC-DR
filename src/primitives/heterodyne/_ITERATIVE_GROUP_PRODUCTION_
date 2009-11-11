@@ -30,7 +30,9 @@ automatic baseline detection. [0]
 
 =item FLATFIELD = BOOLEAN (Given)
 
-Whether or not to flat-field the baselined time-series data. [0]
+Whether or not to flat-field the baselined time-series data. This
+argument can be overridden by the RECPAR_FLATFIELD uhdr via the recipe
+parameter system. [0]
 
 =item FREQUENCY_SMOOTH = INTEGER (Given)
 
@@ -100,7 +102,8 @@ Whether or not to perform quality assurance tests on output files. [1]
 
 A comma-separated list of requested rebinning resolutions, in km/s. A
 rebinned cube will be created for each requested resolution. Only the
-group cube will be rebinned. []
+group cube will be rebinned. This argument can be overridden by the
+RECPAR_REBIN uhdr via the recipe parameter system. []
 
 =item SPATIAL_SMOOTH = INTEGER (Given)
 
@@ -112,6 +115,8 @@ determine baselines. [3]
 The method to use when spreading each input pixel value out between a
 group of neighbouring output pixels when using MAKECUBE to generate a
 cube. ['nearest']
+
+=item SYSTEM = STRING (Given)
 
 =item TILEBORDER = INTEGER (Given)
 
@@ -173,23 +178,51 @@ my $sp_param1 = get_prim_arg( $_PRIM_ARGS_, "PARAM1", 0 );
 my $sp_param2 = get_prim_arg( $_PRIM_ARGS_, "PARAM2", undef );
 my $spatsmooth = get_prim_arg( $_PRIM_ARGS_, "SPATIAL_SMOOTH", 3 );
 my $spread = get_prim_arg( $_PRIM_ARGS_, "SPREAD", 'nearest' );
+my $system = get_prim_arg( $_PRIM_ARGS_, "SYSTEM", undef );
 my $tileborder = get_prim_arg( $_PRIM_ARGS_, "TILEBORDER", 0 );
+
+# Handle recipe parameter overrides.
+$flatfield = ( defined( $Frm->uhdr( "RECPAR_FLATFIELD" ) ) ?
+               $Frm->uhdr( "RECPAR_FLATFIELD" )            :
+               $flatfield );
+$rebin = ( defined( $Frm->uhdr( "RECPAR_REBIN" ) ) ?
+           $Frm->uhdr( "RECPAR_REBIN" )            :
+           $rebin );
 
 # Only process if we're on the last member of a group.
 if( $Grp->lastallmembers( $Frm ) ) {
 
-  my @good = $Grp->check_membership;
-  if( ! @good ) {
+  my @members = $Grp->members;
+  my ( $good, $bad ) = $Grp->check_membership;
+  if( ! @$good ) {
     orac_warn "No good members in current group. Cannot do group processing.\n";
+
+    # Write the QA information for each member.
+    foreach my $Obj ( @members ) {
+      _QA_WRITE_REPORT_ OBJ=$Obj
+    }
+
   } else {
 
+    # We need to write QA info for each member that didn't end up in
+    # the group (i.e. that failed QA)
+    foreach my $badObj ( @$bad ) {
+      _QA_WRITE_REPORT_ OBJ=$badObj
+    }
+
     orac_print "Beginning iterative group production.\n";
+
+    # Merge AST Regions for scans only.
+    if( lc( $Frm->uhdr( "ORAC_SAMPLE_MODE" ) ) eq 'scan' ) {
+      _MERGE_AST_REGIONS_
+    }
+
     my $iter = 1;
     while( $iter <= $iterations ) {
 
       orac_say "Iteration $iter of $iterations.\n";
 
-      _CREATE_CUBE_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize
+      _CREATE_CUBE_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system
 
       if( $edges ) {
         _REMOVE_BASELINE_ EDGES=$edges ORDER=$order GROUP=1 TAG=1
@@ -217,11 +250,12 @@ if( $Grp->lastallmembers( $Frm ) ) {
 
       _SET_TAG_ TAG=TIMESERIES_MASKED_BASELINED GROUP=2
 
-      _CREATE_CUBE_FRAME_FROM_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize
+      _CREATE_CUBE_FRAME_FROM_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system
 
       _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=2 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ
 
-      _CREATE_NOISE_MAP_ GROUP=2 QA=$qa
+      my $writeqa = ( $iter == $iterations );
+      _CREATE_NOISE_MAP_ GROUP=2 QA=$qa STOREQA=$writeqa
 
       _RETRIEVE_TAG_ TAG=TIMESERIES_MASKED_BASELINED GROUP=2
 
@@ -230,7 +264,7 @@ if( $Grp->lastallmembers( $Frm ) ) {
 
     orac_say "Iterations completed. Creating final group files.\n";
 
-    _CREATE_CUBE_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize
+    _CREATE_CUBE_GROUP_ SPREAD=$spread PARAM1=$sp_param1 PARAM2=$sp_param2 TILEBORDER=$tileborder PIXSIZE=$pixsize SYSTEM=$system
 
     if( $edges ) {
       _REMOVE_BASELINE_ EDGES=$edges ORDER=$order GROUP=1 TAG=1
@@ -240,13 +274,19 @@ if( $Grp->lastallmembers( $Frm ) ) {
 
     _CREATE_MOMENTS_MAPS_THROUGH_SMOOTHING_ GROUP=1 MOMENTS=$moments METHOD=$method RMS_THRESHOLD=$rms_levels FREQUENCY_SMOOTH=$freqsmooth SPATIAL_SMOOTH=$spatsmooth ORDER=$order TAG=integ
 
-    _CREATE_NOISE_MAP_ GROUP=1 QA=$qa
+    _CREATE_NOISE_MAP_ GROUP=1 QA=$qa STOREQA=1
 
     if( defined( $rebin ) ) {
       foreach my $res ( split ",", $rebin ) {
         _REBIN_VELOCITY_SCALE_ GROUP=1 PIXELSCALE=$res
       }
     }
+
+    # Write QA report.
+    foreach my $goodObj( $Grp->members ) {
+      _QA_WRITE_REPORT_ OBJ=$goodObj
+    }
+    _QA_WRITE_REPORT_ OBJ=$Grp
 
   }
 

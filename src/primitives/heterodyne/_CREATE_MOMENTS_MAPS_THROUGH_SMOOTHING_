@@ -43,12 +43,19 @@ How to process group files. 0 means use the current Frame object. 1
 means use the current Group object. 2 means use each Frame member of
 the current Group object. [0]
 
+=item LOWER_VELOCITY = REAL (Given)
+
+An optional lower velocity in km/s, below which no data will be used
+when creating the moments map. This argument can be overridden by the
+RECPAR_MOMENTS_LOWER uhdr via the recipe parameter system. [undef]
+
 =item MOMENTS = STRING (Given)
 
 The moment maps to create. These are any of the values allowed for the
 ESTIMATOR parameter to the COLLAPSE method, but in reality this should
 probably be 'integ', 'iwc', and/or 'itd'. Any number of moments can be
-given in a comma-separated string. ['integ']
+given in a comma-separated string. This argument can be overridden by
+the RECPAR_MOMENTS uhdr via the recipe parameter system. ['integ']
 
 =item ORDER = INTEGER (Given)
 
@@ -76,6 +83,12 @@ determine baselines. [3]
 =item TAG = STRING (Given)
 
 Which moment map to tag as a representative image. ['']
+
+=item UPPER_VELOCITY = REAL (Given)
+
+An optional upper velocity in km/s, above which no data will be used
+when creating the moments map. This argument can be overridden by the
+RECPAR_MOMENTS_UPPER uhdr via the recipe parameter system. [undef]
 
 =back
 
@@ -129,12 +142,25 @@ All Rights Reserved.
 # Handle parameters.
 my $freqsmooth = get_prim_arg( $_PRIM_ARGS_, "FREQUENCY_SMOOTH", 25 );
 my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+my $lower_velocity = get_prim_arg( $_PRIM_ARGS_, "LOWER_VELOCITY", undef );
 my $moments = get_prim_arg( $_PRIM_ARGS_, "MOMENTS", 'integ' );
 my $method = get_prim_arg( $_PRIM_ARGS_, "METHOD", 'clumpfind' );
 my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 1 );
 my $rms_thrhlds = get_prim_arg( $_PRIM_ARGS_, "RMS_THRESHOLD", '3.0,4.5' );
 my $spatsmooth = get_prim_arg( $_PRIM_ARGS_, "SPATIAL_SMOOTH", 3 );
 my $tag = get_prim_arg( $_PRIM_ARGS_, "TAG", undef );
+my $upper_velocity = get_prim_arg( $_PRIM_ARGS_, "UPPER_VELOCITY", undef );
+
+# Handle recipe parameters.
+$lower_velocity = ( defined( $Frm->uhdr( "RECPAR_MOMENTS_LOWER" ) ) ?
+                    $Frm->uhdr( "RECPAR_MOMENTS_LOWER" )            :
+                    $lower_velocity );
+$moments = ( defined( $Frm->uhdr( "RECPAR_MOMENTS" ) ) ?
+             $Frm->uhdr( "RECPAR_MOMENTS" )            :
+             $moments );
+$upper_velocity = ( defined( $Frm->uhdr( "RECPAR_MOMENTS_UPPER" ) ) ?
+                    $Frm->uhdr( "RECPAR_MOMENTS_UPPER" )            :
+                    $upper_velocity );
 
 my $group2 = ( $group == 2 ? 0 : $group );
 
@@ -220,22 +246,41 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
 
           } else {
 
-            # Smooth the cube.
-            orac_say " Smoothing cube in frequency with $freqsmooth-pixel tophat.";
-            my $temp1 = new ORAC::TempFile;
-            my $temp1file = $temp1->file;
-            my $params = "in=$in out=$temp1file axes=[1,3] box=[1,$freqsmooth] estimator=mean";
-            $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+            # Temporarily disable bad-bits mask.
+            $Mon{'ndfpack_mon'}->obeyw( "setbb", "ndf=$in bb=0" );
 
-            orac_say " Smoothing cube in spatial with $spatsmooth-pixel tophat.";
             my $temp2 = new ORAC::TempFile;
             my $temp2file = $temp2->file;
-            if( $dims->[0] < 3 || $dims->[1] < 3 ) {
-              $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp1file out=$temp2file" );
-            } else {
-              $params = "in=$temp1file out=$temp2file axes=[1,2] box=[$spatsmooth,$spatsmooth] estimator=mean";
+
+            if( starversion_gt( 'KAPPA', 'v1.11-7' ) ) {
+
+              # We can use N-D BLOCK.
+              orac_say " Smoothing cube with [$spatsmooth,$spatsmooth,$freqsmooth] tophat.";
+              my $params = "in=$in out=$temp2file box=[$spatsmooth,$spatsmooth,$freqsmooth] estimator=mean";
               $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+            } else {
+
+              # Need to do two BLOCK calls.
+              my $temp1 = new ORAC::TempFile;
+              my $temp1file = $temp1->file;
+
+              orac_say " Smoothing cube in frequency with $freqsmooth-pixel tophat.";
+
+              my $params = "in=$in out=$temp1file axes=[1,3] box=[1,$freqsmooth] estimator=mean";
+              $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+
+              orac_say " Smoothing cube in spatial with $spatsmooth-pixel tophat.";
+
+              if( $dims->[0] < 3 || $dims->[1] < 3 ) {
+                $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp1file out=$temp2file" );
+              } else {
+                $params = "in=$temp1file out=$temp2file axes=[1,2] box=[$spatsmooth,$spatsmooth] estimator=mean";
+                $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+              }
             }
+
+            # Restore bad-bits mask.
+            $Mon{'ndfpack_mon'}->obeyw( "setbb", "ndf=$in bb=255" );
 
             push @smoothed, $temp2file;
             push @smo_obj, $temp2;
@@ -244,7 +289,7 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
             orac_say " Masking out lines using $mask.";
             my $temp3 = new ORAC::TempFile;
             my $temp3file = $temp3->file;
-            $params = "in1=$temp2file in2=$mask out=$temp3file";
+            my $params = "in1=$temp2file in2=$mask out=$temp3file";
             $Mon{'kappa_mon'}->obeyw( "add", "$params" );
 
             # Copy the variance across, but only if the input cube has
@@ -324,7 +369,7 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
                 open my $fc_fh, ">", $fc_param;
                 print $fc_fh "ClumpFind.Minpix=50\n";
                 print $fc_fh "ClumpFind.AllowEdge=1\n";
-                print $fc_fh "ClumpFind.FwhmBeam=0\n";
+                print $fc_fh "ClumpFind.FwhmBeam=1\n";
                 print $fc_fh "ClumpFind.MaxBad=9999\n";
                 print $fc_fh "ClumpFind.VeloRes=0\n";
                 print $fc_fh "ClumpFind.Tlow=$rms_thresh*RMS\n";
@@ -393,11 +438,35 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
             $params = "ndf=$colin from=$in comp=VARIANCE";
             $Mon{'ndfpack_mon'}->obeyw( "setvar", "$params" );
 
+            # Set up the NDF section that we're collapsing over.
+            my $section = '';
+            if( defined( $lower_velocity ) || defined( $upper_velocity ) ) {
+              _GET_DIMENSIONS_ FILE=$colin
+              my $flbound = $_GET_DIMENSIONS_{FLBOUND};
+              my $fubound = $_GET_DIMENSIONS_{FUBOUND};
+              if( defined( $lower_velocity ) && defined( $upper_velocity ) ) {
+                $section = "$lower_velocity:$upper_velocity";
+              } elsif( defined( $lower_velocity ) ) {
+                $section = "$lower_velocity:" . $fubound->[2];
+              } elsif( defined( $upper_velocity ) ) {
+                $section = $flbound->[2] . ":$upper_velocity";
+              }
+              $section = "(,,$section)";
+            }
+
             # Run the COLLAPSE.
             orac_say " Collapsing to form temporary $moment map.";
+
+            if( defined( $lower_velocity ) ) {
+              orac_say " Using lower velocity of $lower_velocity km/s.";
+            }
+            if( defined( $upper_velocity ) ) {
+              orac_say " Using upper velocity of $upper_velocity km/s.";
+            }
+
             my $temp8 = new ORAC::TempFile;
             my $temp8file = $temp8->file;
-            $params = "in=$colin out=$temp8file estimator=$moment ";
+            $params = "in=$colin$section out=$temp8file estimator=$moment ";
             $params .= "axis=SPEC wlim=0.0 trim=false";
             if( uc( $moment ) eq 'IWC' ) {
               $params .= " variance=false";
@@ -410,7 +479,7 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
             push @collapsed, $temp8;
             $mom++;
           }
-	}
+        }
 
         orac_say;
 
@@ -421,9 +490,15 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
 
           if( defined( $paste_inputs{$moment} ) ) {
 
+            # We need two temporary files at this point, one to hold
+            # the pasted file pre-map masking, and one to hold an AST
+            # Region.
+            my $temp10 = new ORAC::TempFile;
+            my $temp11 = new ORAC::TempFile;
+
             if( scalar( @{$paste_inputs{$moment}} ) == 1 ) {
 
-              my $params = "in=${$paste_inputs{$moment}}[0] out=$out";
+              my $params = "in=${$paste_inputs{$moment}}[0] out=$temp10";
               $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
 
             } else {
@@ -431,8 +506,17 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
               orac_say " Pasting together temporary maps to form $moment map.";
 
               my $title = $Frm->uhdr( "ORAC_OBJECT" );
-              _PASTE_FILES_ FILES=$paste_inputs{$moment} OUT=$out TITLE=$title
+              _PASTE_FILES_ FILES=$paste_inputs{$moment} OUT=$temp10 TITLE=$title
 
+            }
+
+            # For SCANs only...
+            if( $Frm->uhdr( "ORAC_SAMPLE_MODE" ) eq 'scan' ) {
+
+              _MASK_AST_REGION_ IN=$temp10 OUT=$out GROUP=$group
+
+            } else {
+              $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp10 out=$out" );
             }
 
             orac_say "Created $moment map in $out.";
@@ -476,7 +560,12 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
             # from that position, but only if the moment is 'integ'.
             if( $moment eq 'integ' ) {
 
-              $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$out" );
+              my $tempfile = new ORAC::TempFile;
+
+              # Do a smooth first.
+              $Mon{'kappa_mon'}->obeyw( "block", "in=$out out=$tempfile box=3" );
+
+              $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$tempfile" );
               my( $ORAC_STATUS, @maxpos ) = $Mon{'kappa_mon'}->get( "stats", "maxpos" );
               $Obj->uhdr( "INTEG_MAX_POS", \@maxpos );
 
@@ -501,3 +590,5 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
     }
   }
 }
+
+

@@ -1,0 +1,163 @@
+# -*-perl-*-
+
+=head1 NAME
+
+_QA_REPORT_RECEPTORS_
+
+=head1 DESCRIPTION
+
+This primitive records receptor-based QA information and stores it in
+the current Frame's uhdr.
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item RMS = JSA::QA::Result object (Given)
+
+The JSA::QA::Result object obtained by testing RMS statistics.
+
+=item SURVEY = STRING (Given)
+
+The name of the survey for which the QA was calculated.
+
+=item TSYS = JSA::QA::Result object (Given)
+
+The JSA::QA::Result object obtained by testing Tsys statistics.
+
+=back
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+QA report information will be stored in the current Frame's
+QA_REPORT_INFO uhdr.
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 TASKS
+
+None.
+
+=head1 REQUIRED PERL MODULES
+
+JSA::QA::Result.
+
+=head1 AUTHORS
+
+Brad Cavanagh E<lt>b.cavanagh@jach.hawaii.eduE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 Science and Technology Facilities Council.  All
+Rights Reserved.
+
+=cut
+
+# Handle parameters.
+my $rms_result = get_prim_arg( $_PRIM_ARGS_, "RMS", undef, 1 );
+my $survey = get_prim_arg( $_PRIM_ARGS_, "SURVEY", undef, 1 );
+my $tsys_result = get_prim_arg( $_PRIM_ARGS_, "TSYS", undef, 1 );
+
+my @entries;
+
+# Retrieve QA report info from the current Frame. If there isn't any
+# such info, start a new hash.
+my %qa_info;
+if( defined( $Frm->uhdr( "QA_REPORT_INFO" ) ) ) {
+  %qa_info = %{$Frm->uhdr( "QA_REPORT_INFO" )};
+}
+
+# Retrieve the report header.
+_QA_REPORT_HEADER_ SURVEY=$survey
+my $header = $_QA_REPORT_HEADER_{'HEADER'};
+
+# Merge the two Result objects.
+my $merged = $tsys_result->merge( $rms_result );
+
+# Set up the strings to add to the report.
+if( $merged->pass ) {
+  push @entries, " Receptor-based QA status: passed";
+} else {
+  push @entries, " Receptor-based QA status: failed";
+  push @entries, "  Failure reasons:";
+  foreach my $reason ( @{$merged->fail_reasons} ) {
+    push @entries, "  $reason";
+  }
+}
+
+if( scalar( @{$tsys_result->bad_receptors} ) > 0 ) {
+  push @entries, " " . ( join ",", sort @{$tsys_result->bad_receptors} ) . " flagged on Tsys.";
+} else {
+  push @entries, " No receptors flagged on Tsys.";
+}
+
+if( scalar( @{$rms_result->bad_receptors} ) > 0 ) {
+  push @entries, " " . ( join ",", sort @{$rms_result->bad_receptors} ) . " flagged on RMS.";
+} else {
+  push @entries, " No receptors flagged on RMS.";
+}
+
+if( defined( $tsys_result->tsys_stats->{mean} ) ) {
+  push @entries, sprintf( " Mean Tsys of good receptors: %.2fK", $tsys_result->tsys_stats->{mean} );
+} else {
+  my $stat = new Statistics::Descriptive::Sparse;
+  my $tsys_values = $Frm->uhdr( "QA_TSYS_VALUES" );
+  foreach my $key ( keys %{$tsys_values} ) {
+    foreach my $receptor ( keys %{$tsys_values->{$key}} ) {
+      next if $tsys_values->{$key}->{$receptor} eq 'bad';
+      $stat->add_data( $tsys_values->{$key}->{$receptor} );
+    }
+  }
+  my $mean = $stat->mean();
+  push @entries, sprintf( " Mean Tsys of good receptors: %.2fK", $mean );
+}
+if( defined( $rms_result->rms_stats->{mean} ) ) {
+  push @entries, sprintf( " Mean RMS of good receptors: %.2fK", $rms_result->rms_stats->{mean} );
+} else {
+  my $stat = new Statistics::Descriptive::Sparse;
+  my $rms_values = $Frm->uhdr( "QA_RMS_VALUES" );
+  foreach my $key ( keys %{$rms_values} ) {
+    foreach my $receptor ( keys %{$rms_values->{$key}} ) {
+      next if $rms_values->{$key}->{$receptor} eq 'bad';
+      $stat->add_data( $rms_values->{$key}->{$receptor} );
+    }
+  }
+  my $mean = $stat->mean();
+  push @entries, sprintf( " Mean RMS of good receptors: %.2fK", $mean );
+}
+
+push @entries, " Receptor information:";
+push @entries, "  Name    Tsys      RMS";
+my $tsys_values = $Frm->uhdr( "QA_TSYS_VALUES" );
+my $rms_values = $Frm->uhdr( "QA_RMS_VALUES" );
+foreach my $key ( sort keys %{$tsys_values} ) {
+  foreach my $receptor ( sort keys %{$tsys_values->{$key}} ) {
+    my $format = "   %3s  ";
+    $format .= ( $tsys_values->{$key}->{$receptor} eq 'bad' ? "%8s " : "%8.3f " );
+    $format .= ( $rms_values->{$key}->{$receptor} eq 'bad' ? "%8s" : "%8.3f" );
+
+    push @entries, sprintf( "$format", $receptor, $tsys_values->{$key}->{$receptor},
+                            $rms_values->{$key}->{$receptor} );
+  }
+}
+
+# If we already have an entry for this header, push the entries on the
+# end. Otherwise, create the array reference.
+if( exists( $qa_info{$header} ) ) {
+  push @{$qa_info{$header}{entries}}, @entries;
+  $qa_info{$header}{pass} &= $merged->pass;
+} else {
+  $qa_info{$header}{entries} = \@entries;
+  $qa_info{$header}{pass} = $merged->pass;
+}
+
+# And update the uhdr.
+$Frm->uhdr( "QA_REPORT_INFO", \%qa_info );

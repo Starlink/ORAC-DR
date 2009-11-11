@@ -31,7 +31,7 @@ use Carp;
 
 use ORAC::Constants qw/ :status /;
 use ORAC::Print;
-use ORAC::Msg::EngineLaunch;   # In order to dynamic load
+use ORAC::Msg::EngineLaunch;    # In order to dynamic load
 
 use vars qw/ $DEBUG /;
 
@@ -55,8 +55,8 @@ sub new {
   my $class = ref($proto) || $proto;
 
   my $inst = {
-	      AlgEng => {},
-	     };
+              AlgEng => {},
+             };
 
   bless($inst, $class);
 
@@ -81,19 +81,21 @@ tied.
 If this hash is tied it could be possible for it to contain
 all active engines not just those that were started by this
 class (it will include those launched dynamically).
-It is possible that this hash will be 
+It is possible that this hash will be
 
 =cut
 
 sub _algeng {
   my $self = shift;
-  if (@_) { $self->{AlgEng} = shift; }
+  if (@_) {
+    $self->{AlgEng} = shift;
+  }
   return $self->{AlgEng};
 }
 
 =item B<retrieve_algorithm_engines>
 
-Returns a hash of all the algorithm engine objects that are 
+Returns a hash of all the algorithm engine objects that are
 currently active.
 
 =cut
@@ -113,7 +115,7 @@ This section describes the general methods.
 =item B<start_algorithm_engines>
 
 Start the algorithm engines required by the current instrument.
-A sub-class is responsible for defining which algorithms are 
+A sub-class is responsible for defining which algorithms are
 required and launching them. Returns a hash containing the
 name of the algorithm engine and the corresponding object.
 

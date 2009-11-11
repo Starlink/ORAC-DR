@@ -58,10 +58,12 @@ sub collate_headers {
   my $file = shift;
 
   return unless defined( $file );
-  if( $file !~ /\.sdf$/ ) { $file .= ".sdf"; }
+  if ( $file !~ /\.sdf$/ ) {
+    $file .= ".sdf";
+  }
   return unless -e $file;
 
-  if( ! defined( $self->hdr ) || scalar( keys( %{$self->hdr} ) ) == 0 ) {
+  if ( ! defined( $self->hdr ) || scalar( keys( %{$self->hdr} ) ) == 0 ) {
     $self->readhdr;
   }
 
@@ -76,12 +78,12 @@ sub collate_headers {
 
   # Calculate MJD-OBS and MJD-END from DATE-OBS and DATE-END.
   my $dateobs;
-  if( defined( $self->hdr( "DATE-OBS" ) ) ) {
+  if ( defined( $self->hdr( "DATE-OBS" ) ) ) {
     $dateobs = DateTime::Format::ISO8601->parse_datetime( $self->hdr( "DATE-OBS" ) );
-  } elsif( defined( $hdr->value( "DATE-OBS" ) ) ) {
+  } elsif ( defined( $hdr->value( "DATE-OBS" ) ) ) {
     $dateobs = DateTime::Format::ISO8601->parse_datetime( $hdr->value( "DATE-OBS" ) );
   }
-  if( defined( $dateobs ) ) {
+  if ( defined( $dateobs ) ) {
     my $mjdobs = new Astro::FITS::Header::Item( Keyword => 'MJD-OBS',
                                                 Value   => $dateobs->mjd,
                                                 Comment => 'MJD of start of observation',
@@ -90,16 +92,16 @@ sub collate_headers {
   }
 
   my $dateend;
-  if( defined( $self->hdr( "DATE-END" ) ) ) {
+  if ( defined( $self->hdr( "DATE-END" ) ) ) {
     $dateend = DateTime::Format::ISO8601->parse_datetime( $self->hdr( "DATE-END" ) );
-  } elsif( defined( $hdr->value( "DATE-END" ) ) ) {
+  } elsif ( defined( $hdr->value( "DATE-END" ) ) ) {
     $dateend = DateTime::Format::ISO8601->parse_datetime( $hdr->value( "DATE-END" ) );
   }
-  if( defined( $dateend ) ) {
+  if ( defined( $dateend ) ) {
     my $mjdend = new Astro::FITS::Header::Item( Keyword => 'MJD-END',
-                                             Value   => $dateend->mjd,
-                                             Comment => 'MJD of end of observation',
-                                             Type    => 'FLOAT' );
+                                                Value   => $dateend->mjd,
+                                                Comment => 'MJD of end of observation',
+                                                Type    => 'FLOAT' );
     push( @toappend, $mjdend );
   }
 
@@ -112,7 +114,7 @@ sub collate_headers {
                                                Type    => 'STRING' );
   push(@toappend, $asntype);
 
-  if( ! $self->is_frame ) {
+  if ( ! $self->is_frame ) {
     my $md5 = md5_hex($self->groupid);
     my $asnid = new Astro::FITS::Header::Item( Keyword => 'ASN_ID',
                                                Value   => $md5,
@@ -123,9 +125,9 @@ sub collate_headers {
 
   # Check to see if the OBSIDSS header exists. If it doesn't, create
   # it.
-  if( ! defined( $self->hdr( "OBSIDSS" ) ) &&
-      defined( $self->hdr( "OBSID" ) ) &&
-      defined( $self->hdr( "SUBSYSNR" ) ) ) {
+  if ( ! defined( $self->hdr( "OBSIDSS" ) ) &&
+       defined( $self->hdr( "OBSID" ) ) &&
+       defined( $self->hdr( "SUBSYSNR" ) ) ) {
     my $obsidss = $self->hdr( "OBSID" ) . "_" . $self->hdr( "SUBSYSNR" );
     $self->hdr( "OBSIDSS", $obsidss );
     my $obsidss_hdr = new Astro::FITS::Header::Item( Keyword => 'OBSIDSS',

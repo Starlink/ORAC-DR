@@ -117,15 +117,17 @@ Defaults to false (0).
 
 sub allow_header_sync {
   my $self = shift;
-  if( @_ ) { $self->{AllowHeaderSync} = shift; }
+  if ( @_ ) {
+    $self->{AllowHeaderSync} = shift;
+  }
   return $self->{AllowHeaderSync};
 }
 
 =item B<file>
 
-This method can be used to retrieve or set the file names that are 
+This method can be used to retrieve or set the file names that are
 currently associated with the frame. Multiple file names can be stored
-if required (for example the names associated with different 
+if required (for example the names associated with different
 SCUBA sub-instruments).
 
   $first_file = $Frm->file;     # First file name
@@ -135,7 +137,7 @@ SCUBA sub-instruments).
   $Frm->file(value);            # Set the first filename
   $Frm->file(10, value);        # Set the tenth file name
 
-Note that counting starts at 1 (and not 0 as is normal for Perl 
+Note that counting starts at 1 (and not 0 as is normal for Perl
 arrays) and that the filename can not be an integer (otherwise
 it will be treated as an array index). Use files() to retrieve
 all the values in an array context.
@@ -194,9 +196,9 @@ sub file {
     # $filenum is the lookup into the file number (starting at 1)
     # and can correspond to the supplied integer.
 
-    my $filenum = 1; # default if none supplied
+    my $filenum = 1;            # default if none supplied
 
-    my $filename; # if we have been given a filename
+    my $filename;               # if we have been given a filename
 
     # Check for int and non-zero (since strings eval as 0)
     # Cant use int() since this extracts integers from the start of a
@@ -299,7 +301,7 @@ C<raw()> if no previous entries have been made in C<raw>.
 
 sub files {
   my $self = shift;
-  if (@_) { 
+  if (@_) {
     # get copies of current files
     my @oldfiles = @{$self->{Files}};
 
@@ -379,7 +381,9 @@ sub gui_id {
 
   # Read the number
   my $num = 1;
-  if (@_) { $num = shift; }
+  if (@_) {
+    $num = shift;
+  }
 
   # Retrieve the Nth file name (start counting at 1)
   my $fname = $self->file($num);
@@ -447,7 +451,7 @@ sub fits {
     # Test its type unless it is undef
     if (defined $arg) {
       croak "Argument to fits() must be of class Astro::FITS::Header"
-	unless UNIVERSAL::isa($arg, "Astro::FITS::Header");
+        unless UNIVERSAL::isa($arg, "Astro::FITS::Header");
     }
     $self->{FitsHdr} = $arg;
     # clear the tied version to force a resync
@@ -457,13 +461,13 @@ sub fits {
   # Create a new fits object if we have not got one
   # Code cribbed from OMP::Info::Obs
   my $fits = $self->{FitsHdr};
-  if( ! defined( $fits ) ) {
+  if ( ! defined( $fits ) ) {
 
     # Note that the hdr() method calls the fits() method if
     # no hash exists. To prevent recursion problems we do not use
     # the accessor method here
     my $hdrhash = $self->{Header};
-    if( defined( $hdrhash ) ) {
+    if ( defined( $hdrhash ) ) {
 
       my @items = map { new Astro::FITS::Header::Item( Keyword => $_,
                                                        Value => $hdrhash->{$_}
@@ -495,7 +499,9 @@ recognisable by C<ORAC::Convert>.
 
 sub format {
   my $self = shift;
-  if (@_) { $self->{Format} = shift; }
+  if (@_) {
+    $self->{Format} = shift;
+  }
   return $self->{Format};
 }
 
@@ -514,7 +520,7 @@ A hash can be used to set multiple values (but does not overwrite
 other keys).
 
   $Grp->hdr("INSTRUME" => "IRCAM");
-  $Frm->hdr("INSTRUME" => "SCUBA", 
+  $Frm->hdr("INSTRUME" => "SCUBA",
             "TELESCOP" => 'JCMT');
 
 If no arguments are provided, the reference to the header hash
@@ -574,20 +580,20 @@ sub hdr {
       # has not been verified by benchmarks
       my %new = @_;
       for my $key (keys %new) {
-	# print "Storing $new{$key} in key $key\n";
-	$hdr->{$key} = $new{$key};
+        # print "Storing $new{$key} in key $key\n";
+        $hdr->{$key} = $new{$key};
       }
     }
   } else {
     # No arguments, return the header hash reference
     # or tie it to the new one
     my $hdr = $self->{Header};
-    if( ! defined( $hdr ) || scalar keys %$hdr == 0) {
+    if ( ! defined( $hdr ) || scalar keys %$hdr == 0) {
       my $fits = $self->fits();
-      if( defined( $fits ) ) {
-	my $FITS_header = $fits;
-	tie my %header, ref($FITS_header), $FITS_header;
-	$self->{Header} = \%header;
+      if ( defined( $fits ) ) {
+        my $FITS_header = $fits;
+        tie my %header, ref($FITS_header), $FITS_header;
+        $self->{Header} = \%header;
       }
     }
     return $self->{Header};
@@ -617,8 +623,8 @@ sub hdrval {
     my $subindex = @_ ? shift : 0;
 
     my $hdrval = ( defined $self->hdr->{SUBHEADERS}->[$subindex]->{$keyword}) ?
-                   $self->hdr->{SUBHEADERS}->[$subindex]->{$keyword} :
-                   $self->hdr("$keyword");
+      $self->hdr->{SUBHEADERS}->[$subindex]->{$keyword} :
+        $self->hdr("$keyword");
 
     return $hdrval;
 
@@ -716,8 +722,10 @@ sub inout {
   my $suffix = shift;
 
   # Read the number
-  my $num = 1; 
-  if (@_) { $num = shift; }
+  my $num = 1;
+  if (@_) {
+    $num = shift;
+  }
 
   # pass no argument if the number is not defined
   my $infile = $self->file(defined $num ? $num : ());
@@ -752,8 +760,8 @@ sub inout {
   orac_warn("inout - output filename equals input filename ($outfile)\n")
     if ($outfile eq $infile);
 
-  return ($infile, $outfile) if wantarray();  # Array context
-  return $outfile;                            # Scalar context
+  return ($infile, $outfile) if wantarray(); # Array context
+  return $outfile;                           # Scalar context
 }
 
 =item B<intermediates>
@@ -783,7 +791,9 @@ See also the push_intermediates() method.
 
 sub intermediates {
   my $self = shift;
-  if (@_) { @{ $self->{Intermediates} } = @_;}
+  if (@_) {
+    @{ $self->{Intermediates} } = @_;
+  }
 
   # Ensure the intermediates list is unique.
   my %seen = ();
@@ -853,7 +863,9 @@ initial object configuration).
 
 sub raw {
   my $self = shift;
-  if (@_) { @{$self->{RawName}} = @_; }
+  if (@_) {
+    @{$self->{RawName}} = @_;
+  }
   if (wantarray) {
     return @{$self->{RawName}};
   } else {
@@ -935,7 +947,9 @@ string.
 
 sub nokeepArr {
   my $self = shift;
-  if (@_) { @{ $self->{NoKeepArr} } = @_;}
+  if (@_) {
+    @{ $self->{NoKeepArr} } = @_;
+  }
 
   if (wantarray) {
 
@@ -964,7 +978,10 @@ is. For example, in an imaging pipeline this might be
 
 sub product {
   my $self = shift;
-  if( @_ ) { $self->{Product} = shift; };
+  if ( @_ ) {
+    $self->{Product} = shift;
+  }
+  ;
   return $self->{Product};
 }
 
@@ -1038,8 +1055,8 @@ sub tagretrieve {
 
 =item B<uhdr>
 
-This method allows specific entries in the user-defined header to be 
-accessed. The input argument should correspond to the keyword in the 
+This method allows specific entries in the user-defined header to be
+accessed. The input argument should correspond to the keyword in the
 user header hash.
 
   $tel = $Grp->uhdr("Telescope");
@@ -1050,7 +1067,7 @@ A hash can be used to set multiple values (but does not overwrite
 other keys).
 
   $Grp->uhdr("Instrument" => "IRCAM");
-  $Frm->uhdr("Instrument" => "SCUBA", 
+  $Frm->uhdr("Instrument" => "SCUBA",
              "Telescope" => 'JCMT');
 
 If no arguments are provided, the reference to the header hash
@@ -1081,8 +1098,8 @@ sub uhdr {
       # has not been verified by benchmarks
       my %new = @_;
       for my $key (keys %new) {
-	# print "Storing $new{$key} in key $key\n";
-	$self->{UHeader}->{$key} = $new{$key};
+        # print "Storing $new{$key} in key $key\n";
+        $self->{UHeader}->{$key} = $new{$key};
       }
 
     }
@@ -1128,28 +1145,28 @@ sub wcs {
   my $index = 0;
 
   # Check the arguments.
-  if( @_ && defined( $_[0] ) ) {
+  if ( @_ && defined( $_[0] ) ) {
 
     my $firstarg = shift;
 
     # If this is an integer, then we have to grab the second argument
     # and place that in the appropriate place in the array. Otherwise,
     # check to make sure it's an AST::FrameSet object.
-    if( defined( $firstarg ) &&
-        UNIVERSAL::isa( $firstarg, "Starlink::AST::FrameSet" ) ) {
+    if ( defined( $firstarg ) &&
+         UNIVERSAL::isa( $firstarg, "Starlink::AST::FrameSet" ) ) {
 
       $self->{WCS}->[0] = $firstarg;
 
-    } elsif( defined( $firstarg ) &&
-             $firstarg =~ /^\d+$/ &&
-             $firstarg != 0 ) {
+    } elsif ( defined( $firstarg ) &&
+              $firstarg =~ /^\d+$/ &&
+              $firstarg != 0 ) {
 
       $index = $firstarg - 1;
 
-      if( @_ ) {
+      if ( @_ ) {
 
         my $wcs = shift;
-        if( UNIVERSAL::isa( $wcs, "Starlink::AST::FrameSet" ) ) {
+        if ( UNIVERSAL::isa( $wcs, "Starlink::AST::FrameSet" ) ) {
 
           $self->{WCS}->[$index] = $wcs;
 
@@ -1221,7 +1238,7 @@ containing the new keywords.
 sub calc_orac_headers {
   my $self = shift;
 
-  my %new = ();  # Hash containing the derived headers
+  my %new = ();                 # Hash containing the derived headers
 
   # Now create all the ORAC_ headers
   # First attempt is to use Astro::FITS::HdrTrans
@@ -1232,11 +1249,11 @@ sub calc_orac_headers {
     # and this frame class. We may need to add a Frame instrument method
     # that will allow us to hint HdrTrans.
     my $hdr = $self->hdr;
-    if( ! keys %$hdr ) {
+    if ( ! keys %$hdr ) {
       die "This observation is missing its FITS headers";
     }
     %trans = Astro::FITS::HdrTrans::translate_from_FITS( $hdr,
-							prefix => 'ORAC_');
+                                                         prefix => 'ORAC_');
 
     # store them in the object and append them to the return hash
     $self->uhdr( %trans );
@@ -1295,7 +1312,7 @@ sub calc_orac_headers {
   }
   $self->hdr("ORACTIME", $oractime);
   $self->hdr("ORACDATETIME", $oracdatetime);
-  
+
   return %new;
 }
 
@@ -1320,7 +1337,7 @@ a reference to an array.
 sub configure {
   my $self = shift;
 
-  # If two arguments (prefix and number) 
+  # If two arguments (prefix and number)
   # have to find the raw filename first
   # else assume we are being given the raw filename
   my @fnames;
@@ -1371,7 +1388,7 @@ to the equivalent FITS header(s).
 
   %fits = $Frm->translate_hdr( "ORAC_TIME" );
 
-In some cases a single ORAC-DR header can be decomposed into 
+In some cases a single ORAC-DR header can be decomposed into
 multiple FITS headers (for example for SCUBA, ORAC_TIME is
 a combination of the UTDATE and UTSTART). The hash returned
 by translate_hdr() will include all the key/value pairs required
@@ -1395,13 +1412,13 @@ sub translate_hdr {
   # Each translation is performed by an individual method
   # This adds a overhead for method lookups but hopefully
   # will lend itself to subclassing
-  # The translate_hdr() method itself will then not need to be 
+  # The translate_hdr() method itself will then not need to be
   # subclassed at all
   my $method = "from_$key";
 
   # get the user header
   my %newhash;
-  while( ( my $key, my $value ) = each %{$self->uhdr} ) {
+  while ( ( my $key, my $value ) = each %{$self->uhdr} ) {
     $key =~ s/^ORAC_//;
     $newhash{$key} = $value;
   }
@@ -1482,7 +1499,7 @@ A suffix is anything after the first "." in the filename.
 sub _split_fname {
   my $self = shift;
   my $file = shift;
-  
+
   if (!defined $file) {
     Carp::confess("File supplied to _split_fname is not defined. Possible programming error");
   }

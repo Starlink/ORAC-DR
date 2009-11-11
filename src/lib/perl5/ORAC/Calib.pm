@@ -73,9 +73,9 @@ sub new {
   my $proto = shift;
   my $class = ref($proto) || $proto;
 
-  my $obj = {};  # Anon hash reference
-  $obj->{Thing1} = {};		# ditto
-  $obj->{Thing2} = {};		# ditto
+  my $obj = {};                 # Anon hash reference
+  $obj->{Thing1} = {};          # ditto
+  $obj->{Thing2} = {};          # ditto
 
   bless($obj, $class);
 
@@ -190,7 +190,7 @@ sub find_file {
                      orac_determine_calibration_search_path( $ENV{'ORAC_INSTRUMENT'} ));
 
   foreach my $directory (@directories) {
-    if( -e ( File::Spec->catdir( $directory, $file ) ) ) {
+    if ( -e ( File::Spec->catdir( $directory, $file ) ) ) {
       return File::Spec->catdir( $directory, $file );
     }
   }
@@ -206,7 +206,7 @@ Returns the value for the specified column in the specified index.
 
   $value = $Cal->retrieve_by_column( "readnoise", "ORACTIME" );
 
-The first argument is a queryable 
+The first argument is a queryable
 
 =cut
 
@@ -225,7 +225,7 @@ sub retrieve_by_column {
     unless defined $basefile;
 
   my $ref = $self->$method->indexentry( $basefile );
-  if( exists( $ref->{$column} ) ) {
+  if ( exists( $ref->{$column} ) ) {
     return $ref->{$column};
   }
   return;
@@ -280,7 +280,7 @@ sub GenericIndex {
     my $idxroot = "index.$root";
     if ($modestr =~ /dynamic|copy/) {
       $indexfile = File::Spec->catfile( $ENV{ORAC_DATA_OUT}, $idxroot );
-      if( $modestr eq 'copy' && ! -e $indexfile ) {
+      if ( $modestr eq 'copy' && ! -e $indexfile ) {
         my $static = $self->find_file( $idxroot );
         croak "$root index file could not be located\n" unless defined $static;
         copy( $static, $indexfile );
@@ -345,7 +345,7 @@ sub GenericIndexAccessor {
   return $self->$namemeth(shift) if @_;
 
   my $ok;
-  if( ! $noverify ) {
+  if ( ! $noverify ) {
     $ok = $self->$indexmeth->verify($self->$namemeth,$self->thing,$warn);
 
     # happy ending - frame is ok
@@ -554,7 +554,7 @@ sub PREFIXindex {
 =head1 SEE ALSO
 
 L<ORAC::Group> and
-L<ORAC::Frame> 
+L<ORAC::Frame>
 
 =head1 REVISION
 

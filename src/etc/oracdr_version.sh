@@ -68,7 +68,7 @@ if test -e $starperl; then
 fi
 
 # if that failed, fall back to reimplementing the logic
-if test "$pkgvers" == "PKG_VERS"; then
+if test "$pkgvers" = "PKG_VERS"; then
   if test -e $ORAC_DIR/version.sh; then
     export GIT_DIR=${ORAC_DIR}/../.git
     pkgvers=`sh ${ORAC_DIR}/version.sh 2>/dev/null | head -2 | tail -1 | cut -c 1-12`

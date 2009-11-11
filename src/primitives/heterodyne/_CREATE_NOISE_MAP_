@@ -39,6 +39,10 @@ resulting noise map. [0]
 The number of pixels in both spatial dimensions over which the cube is
 smoothed. [3]
 
+=item STOREQA = LOGICAL (Given)
+
+Whether or not to write QA results to a log file. [0]
+
 =item SURVEY = STRING (Given)
 
 If supplied, run QA using the given survey's QA parameters. If 'all'
@@ -99,6 +103,7 @@ my $group = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
 my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 1 );
 my $qa = get_prim_arg( $_PRIM_ARGS_, "QA", 0 );
 my $spatsmooth = get_prim_arg( $_PRIM_ARGS_, "SPATIAL_SMOOTH", 3 );
+my $storeqa = get_prim_arg( $_PRIM_ARGS_, "STOREQA", 0 );
 my $survey = get_prim_arg( $_PRIM_ARGS_, "SURVEY", undef );
 
 # Figure out what we're doing with groups/frames.
@@ -203,17 +208,25 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
       # if there's only one.
       if( scalar( @collapsed ) != 0 ) {
 
+        my $tempfile = new ORAC::TempFile;
+
         if( scalar( @collapsed ) == 1 ) {
 
-          $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$collapsed[0] out=$out" );
+          $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$collapsed[0] out=$tempfile" );
 
         } else {
 
           orac_say "\n Pasting together temporary noise maps to form full noise map.";
 
           my $title = "Noise Map";
-          _PASTE_FILES_ FILES=\@collapsed OUT=$out TITLE=$title
+          _PASTE_FILES_ FILES=\@collapsed OUT=$tempfile TITLE=$title
 
+        }
+
+        if( $Frm->uhdr( "ORAC_SAMPLE_MODE" ) eq 'scan' ) {
+          _MASK_AST_REGION_ IN=$tempfile OUT=$out GROUP=$group
+        } else {
+          $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$tempfile out=$out" );
         }
 
         orac_say "Created noise map in $out.";
@@ -240,14 +253,15 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
 
         # Run QA if requested.
         if( $qa ) {
-          _QA_MAP_RMS_SPATIAL_UNIFORMITY_ FILE=$out CENTRAL=50 SURVEY=$survey
+          _QA_MAP_RMS_SPATIAL_UNIFORMITY_ FILE=$out CENTRAL=50 SURVEY=$survey OBJ=$Obj STOREQA=$storeqa
         }
       }
     }
 
     if( $qa ) {
-      _QA_MAP_RMS_FREQ_UNIFORMITY_ GROUP=$group SURVEY=$survey
+      _QA_MAP_RMS_FREQ_UNIFORMITY_ GROUP=$group SURVEY=$survey STOREQA=$storeqa
     }
+
   }
 }
 

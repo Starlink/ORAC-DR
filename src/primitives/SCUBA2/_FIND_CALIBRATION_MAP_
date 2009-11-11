@@ -43,6 +43,10 @@ The following external tasks are used:
 
 =over 4
 
+=item KAPPA
+
+NDFTRACE
+
 =item ORAC-DR PRIMITIVES
 
 _ADD_FCF_LOG_ENTRY_, _FIND_INTEGRATED_INTENSITY_, _FIND_MAP_PEAK_
@@ -51,7 +55,8 @@ _ADD_FCF_LOG_ENTRY_, _FIND_INTEGRATED_INTENSITY_, _FIND_MAP_PEAK_
 
 =head1 NOTES
 
-This primitive is frame based (C<$Frm>).
+This primitive is frame based (C<$Frm>), though with care it may also
+be used on Groups.
 
 =head1 OUTPUT DATA
 
@@ -64,9 +69,11 @@ Entry in C<log.fcf> log file if the frame is a calibrator.
 =head1 AUTHOR
 
 Tim Jenness E<lt>t.jenness@jach.hawaii.eduE<gt>
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1  COPYRIGHT
 
+Copyright (C) 2009 University of British Columbia.
 Copyright (C) 2008 Science and Technology Facilities Council.
 Copyright (C) 1998-2000 Particle Physics and Astronomy Research
 Council. All Rights Reserved.
@@ -88,82 +95,112 @@ USA.
 
 =cut
 
-my $Obj = ($_PRIM_ARGS_->{GROUP} ? $Grp : $Frm );
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+
+my $Obj = ( $group ? $Grp : $Frm );
 
 my $obsend = ( $Frm->uhdr("OBSEND") ) ? 1 : 0;
+
+$obsend = 0 if $Frm->uhdr("DARKONLY");
 
 # Check that we are a calibrator (regardless of filter)
 if ($Cal->iscalsource($Obj->uhdr("ORAC_OBJECT")) && $obsend ) {
 
   my $in = $Obj->file;
 
-  # Find the peak
+  # Get the current units so we quote the calibration factor
+  $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
+  my ($ORAC_STATUS, $dataunits) = $Mon{ndfpack_mon}->get("ndftrace","units");
+
+  # Find the peak signal in the image
   _FIND_MAP_PEAK_ LOGFILE=0 VERBOSE=0 GROUP=$_PRIM_ARGS_->{GROUP}
 
-  # Find the integrated intensity
-  # turn off logfile in production code
+  # Retrieve the position - if successful, continue on to derive
+  # an FCF
   my $posn = $_FIND_MAP_PEAK_{POSITION};
   if (@$posn) {
-      _FIND_INTEGRATED_INTENSITY_  LOGFILE=0 VERBOSE=0 IMAGE=$in XYPOS=$posn
-  }
+    # Find the integrated intensity - no need to write a logfile
+    _FIND_INTEGRATED_INTENSITY_  LOGFILE=0 VERBOSE=0 IMAGE=$in XYPOS=$posn
 
-  # Retrieve the results
-  my %results = (
-		 BEAM => $_FIND_MAP_PEAK_{PEAK},
-		 ARCSEC => $_FIND_INTEGRATED_INTENSITY_{TOTALFLUX},
-		);
+    # Retrieve the results
+    my %results = ( BEAM => $_FIND_MAP_PEAK_{PEAK},
+		    ARCSEC => $_FIND_INTEGRATED_INTENSITY_{TOTALFLUX} );
 
-  # precalculate filter
-  my $filter = $Obj->uhdr("ORAC_FILTER");
+    # Precalculate filter
+    my $filter = $Obj->uhdr("ORAC_FILTER");
 
-  # Loop over the different type of results
-  foreach my $type (keys %results) {
+    # Loop over the different type of results
+    foreach my $type (keys %results) {
 
-    # Type specific configurations
-    my ($ismap, $units);
-    if ($type eq 'ARCSEC') {
-      $ismap = 1;  # Need full integrated flux
-      $units = "Jy/arcsec**2/pW";
+      # Type specific configurations
+      my ($ismap, $units);
+      if ($type eq 'ARCSEC') {
+	$ismap = 1;  # Need full integrated flux
+	$units = "Jy/arcsec**2/$dataunits";
+      } else {
+	$ismap = 0;
+	$units = "Jy/beam/$dataunits";
+      }
+
+      orac_print "Determining calibration of type $type";
+
+      next unless (defined $results{$type});
+      # Trap zero when things have gone very badly wrong
+      if ( $results{$type} == 0) {
+	# This is obviously a Bad Thing (TM)
+	orac_print " - Failed!\n";
+	orac_err "Calibration returned zero!\n";
+	if ( !$group ) {
+	  $Obj->isgood(0);
+	  $Grp->check_membership;
+	  orac_term "Unable to determine a FCF for this observation\n";
+	}
+      } else {
+	orac_print "\n";
+      }
+
+      # Now get the flux for this filter
+      my $flux = $Cal->fluxcal($Obj->uhdr("ORAC_OBJECT"), $filter, $ismap);
+
+      # If we have a flux, store the FCF in the calibration system
+      if (defined $flux) {
+	orac_print "Flux: $type $flux, ". $results{$type}. "\n";
+
+	# Calculate the new gain
+	my $fcf = $flux / $results{$type};
+
+	# Announce the new gain
+	orac_print("Storing new gain for $filter: $fcf $units\n",'yellow');
+
+	# Set the current gain - add to index file
+	# This means that we have to create a hash with the
+	# new keyword GAIN and the selected filter FILTER
+	$Obj->uhdr("GAIN",$fcf);
+	$Obj->uhdr("UNITS", $type);
+
+	# Need to append type to file name so that the keys are unique
+	$Cal->gainsindex->add($Obj->file() ."_$type",
+			      { %{$Obj->hdr}, %{$Obj->uhdr}});
+
+	# Additionally it seems that a user-friendly logfile is
+	# a requirement
+	_ADD_FCF_LOG_ENTRY_ FILTER=$filter FCF=$fcf UNITS=$type GROUP=$group
+
+      }
+
+    }
+  } else {
+    # If this is a Frame object and no FCF could be determined then
+    # the data are undoubtedly bad and should be ignored. In this case
+    # terminate the recipe - there is no need to do anything more.
+    if ( !$group ) {
+      $Obj->isgood(0);
+      $Grp->check_membership;
+      orac_term "Unable to determine a FCF for this observation\n";
     } else {
-      $ismap = 0;
-      $units = "Jy/beam/pW";
+      # Just issue a warning otherwise
+      orac_warn "Unable to determine a FCF for this observation\n";
     }
-
-    orac_print "Determining calibration of type $type\n";
-
-    next unless defined $results{$type};
-
-    # Now get the flux for this filter
-    my $flux = $Cal->fluxcal($Obj->uhdr("ORAC_OBJECT"),
-			     $filter, $ismap);
-
-    if (defined $flux) {
-
-      orac_print "Flux: $type $flux, ". $results{$type}. "\n";
-
-      # Calculate the new gain
-      my $fcf = $flux / $results{$type};
-
-      # Announce the new gain
-      orac_print("Storing new gain for $filter:".
-		 " $fcf $units\n",'yellow');
-
-      # Set the current gain - add to index file
-      # This means that we have to create a hash with the
-      # new keyword GAIN and the selected filter FILTER
-      $Obj->uhdr("GAIN",$fcf);
-      $Obj->uhdr("UNITS", $type);
-
-      # Need to append type to file name so that the keys are unique
-      $Cal->gainsindex->add($Obj->file() ."_$type",
-			    { %{$Obj->hdr}, %{$Obj->uhdr}});
-
-      # Additionally it seems that a user-friendly logfile is
-      # a requirement
-      _ADD_FCF_LOG_ENTRY_ FILTER=$filter FCF=$fcf UNITS=$type GROUP=$_PRIM_ARGS_->{GROUP}
-
-    }
-
   }
 
 }

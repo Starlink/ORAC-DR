@@ -61,18 +61,18 @@ $DEBUG = 0;                     # Turn off debugging mode
 # The arrays are populated in order
 # START and END are inclusive
 
-my %FCFS = ('850' => [             # Asumed to be in date order
+my %FCFS = ('850' => [             # Assumed to be in date order
                    {
                     START => 20060101, # Beginning of SCUBA-2 history
-                    ARCSEC=> 1.0 ,
-                    BEAM  => 435,
+                    ARCSEC=> 2.0,
+                    BEAM  => 650,
                    }
                   ],
          '450' => [
                    {
                     START => 20060101, # Beginning of SCUBA-2 history
-                    ARCSEC => 1.0,
-                    BEAM   => 130,
+                    ARCSEC => 6.0,
+                    BEAM   => 1100,
                    }
                   ],
         );
@@ -219,7 +219,7 @@ must be specified. The beam dimensions and orientation must be passed
 as array references. A hash reference containing the beam parameters
 is returned.
 
-  $Cal->beampar( majfwhm => \@majfwhm, minfwhm => \@minfwhm, 
+  $Cal->beampar( majfwhm => \@majfwhm, minfwhm => \@minfwhm,
 		 orient => \@orient, errfrac => $errfrac );
 
   my $beampar_ref = $Cal->beampar;
@@ -415,7 +415,7 @@ sub respstats {
   if ( @_ ) {
     my $subarray = shift;
     # Check subarray looks like a subarray designation
-    orac_throw "Subarray argument, $subarray, is not a valid designation\n" 
+    orac_throw "Subarray argument, $subarray, is not a valid designation\n"
       unless $subarray =~ /^s\d[a-d]/;
     # Now look for remaining arguments - must be a hash reference if present
     if ( @_ ) {
@@ -424,7 +424,7 @@ sub respstats {
 	$self->{RespStats} = { $subarray => $respref };
 	return $self->{RespStats};
       } else {
-	orac_throw "Error: second argument must be a hash reference";      
+	orac_throw "Error: second argument must be a hash reference";
       }
     } else {
       # With just one argument, return info for given subarray if
@@ -448,7 +448,7 @@ Returns the beamsize associated with the supplied array.
 
   @beam = $Cal->beam($arr);
 
-The values returned are FWHM major axis, FWHM minor axis, PA. 
+The values returned are FWHM major axis, FWHM minor axis, PA.
 
 =cut
 

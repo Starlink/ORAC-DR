@@ -66,21 +66,37 @@ USA.
 
 =cut
 
-my $duration = $Frm->uhdr("ORAC_UTEND") -
-    $Frm->uhdr("ORAC_UTSTART");
+my $duration = $Frm->uhdr("ORAC_UTEND") - $Frm->uhdr("ORAC_UTSTART");
 $duration = sprintf("%.1f",$duration->minutes);
+
+# Do we have just darks?
+if ((defined $Frm->hdr("SHUTTER")) && ($Frm->hdr("SHUTTER") == 0.0)) {
+  $Frm->uhdr("DARKONLY",1);
+
+  # Mark as bad for all observations where the shutter will be open at
+  # some point because we don't want to try and mosaic darks with
+  # images. Darks and Flatfields must allow dark frames through.
+  unless ( $Frm->uhdr("ORAC_OBSERVATION_MODE") =~ /flatfield/i ||
+       $Frm->uhdr("ORAC_OBSERVATION_MODE") =~ /noise/i ) {
+    $Frm->isgood(0);
+  }
+}
 
 # Print welcome message
 orac_print "Obs #".$Frm->uhdr("ORAC_OBSERVATION_NUMBER").
     " Observing mode: ". $Frm->uhdr("ORAC_OBSERVATION_MODE").
     ( $Frm->hdr("STANDARD") ? " / standard":  "" ) .
-    " / Observation duration: $duration min".
-    "\n";
+  " / Observation duration: $duration min\n";
 
 if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "focus") {
-    orac_print "Focus Axis ". $Frm->hdr("FOCAXIS").
-        " and focus position ". $Frm->hdr("FOCPOSN") ." mm\n";
+  orac_print "Focus axis ". $Frm->hdrval("FOCAXIS").
+    " and focus position ". $Frm->hdr("FOCPOSN") ." mm\n"
+    unless ( $Frm->uhdr("DARKONLY") );
 }
+
+my $extra = ($Frm->uhdr("DARKONLY")) ? " (dark frame only - ignoring)" : "";
+orac_print "This is an observation of ".$Frm->uhdr("ORAC_OBJECT")."$extra\n"
+  if ( defined $Frm->uhdr("ORAC_OBJECT") ) ;
 
 # Obtain the percent_complete value from the state structure
 $Frm->uhdr("PERCENT_CMP", $Frm->jcmtstate("TCS_PERCENT_CMP", "end") );
@@ -88,19 +104,13 @@ $Frm->uhdr("PERCENT_CMP", $Frm->jcmtstate("TCS_PERCENT_CMP", "end") );
 # See if the OBSEND flag is set
 my $obsend = ( $Frm->hdrval("OBSEND",-1) ) ? 1 : 0;
 
-# Make an addition check for SCAN POINTING - the presence of dark
-# frames prevents the obsend flag turning up in science data. For scan
-# pointing observations, the source will be bright enough to detect in
-# one scan so set always obsend to true regardless of how many
-# subscans are in the Frame.
-$obsend = 1 if ( $Frm->uhdr("ORAC_OBSERVATION_MODE") eq "scan_pointing" );
-
 # Pass this value on to the current Frame
 $Frm->uhdr("OBSEND", $obsend);
 
 # Filter out dark frames from science observations if necessary
-$Frm->filter_darks;
+# (applies to DREAM/STARE mode only)
+#$Frm->filter_darks;
 
 if ($Frm->hdr("SIMULATE")) {
-    orac_warn(" *** This observation is simulated data! ***\n");
+  orac_warn(" *** This observation is simulated data! ***\n");
 }

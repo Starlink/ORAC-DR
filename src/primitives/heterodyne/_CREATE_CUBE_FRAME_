@@ -29,13 +29,19 @@ The maximum size, in bytes, of the output cube. This value does not
 include extra information such as variance or weight arrays, FITS
 headers, or any other NDF extensions. [512000000]
 
+=item OVERRIDE = LOGICAL (Given)
+
+Whether or not specific arguments can be overridden by the recipe
+parameter system. [1]
+
 =item PARAM1 = REAL (Given)
 
 The first parameter required by the spreading method. This parameter
 is required by all methods, and specifies how many arcseconds on
 either side of the output position are to receive contributions from
 the input pixel. A value of zero indicates that a suitable number
-should be calculated automatically. [0]
+should be calculated automatically. This argument can be overridden
+by the RECPAR_PARAM1 uhdr via the recipe parameter system. [0]
 
 =item PARAM2 = REAL (Given)
 
@@ -49,24 +55,34 @@ full-width at half-maximum (FWHM) of the Gaussian envelope.  The
 minimum value is 0.1 pixels, and the run-time default is 1.0
 pixels. Note that these numbers are given in pixels and this parameter
 takes the number of requested arcseconds. This is done because the
-pixel scale could be automatically determined from the data. []
+pixel scale could be automatically determined from the data. This
+argument can be overridden by the RECPAR_PARAM2 uhdr via the recipe
+parameter system. []
 
 =item PIXSIZE = REAL (Given)
 
 The output pixel scale. If not defined, this value is automatically
-determined from the data . []
+determined from the data. This argument can be overridden by the
+RECPAR_PIXSIZE uhdr via the recipe parameter system. []
 
 =item SPREAD = STRING (Given)
 
 The interpolation method to use when regridding the cube. This can be
-any of those allowed by MAKECUBE, listed in the SPREAD
-parameter. ['nearest']
+any of those allowed by MAKECUBE, listed in the SPREAD parameter. This
+argument can be overridden by the RECPAR_SPREAD_METHOD uhdr via the
+recipe parameter system. ['nearest']
 
 =item SUFFIX = STRING (Given)
 
 Override the default "_cube" suffix with a new value. This is useful
 when processing an iterative result where we do not want to improve
 the initial product (the whole point being to retain it).
+
+=item SYSTEM = STRING (Given)
+
+The celestial coordinate system for the output cube. This argument can
+be overridden by the RECPAR_SYSTEM uhdr via the recipe parameter
+system. ['ICRS']
 
 =item PRODUCT = STRING (Given)
 
@@ -122,7 +138,7 @@ Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
 =head1 COPYRIGHT
 
 Copyright (C) 2008 Science and Technology Facilities Council.
-Copyright (C) 2006-2007 Particle Physics and Astronomy Research
+Copyright (C) 2006-2009 Particle Physics and Astronomy Research
 Council.  All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
@@ -154,7 +170,28 @@ my $detectors = ( defined( $_PRIM_ARGS_->{DETECTORS} ) ?
                   "'$_PRIM_ARGS_->{DETECTORS}'"        :
                   "''" );
 my $suffix = get_prim_arg( $_PRIM_ARGS_, "SUFFIX", "_cube" );
+my $system_arg = get_prim_arg( $_PRIM_ARGS_, "SYSTEM", undef );
 my $product = get_prim_arg( $_PRIM_ARGS_, "PRODUCT", "cube" );
+my $override = get_prim_arg( $_PRIM_ARGS_, "OVERRIDE", 1 );
+
+# Override various parameters via the recipe parameter system.
+if( $override ) {
+  $param1 = ( defined( $Frm->uhdr( "RECPAR_PARAM1" ) ) ?
+              $Frm->uhdr( "RECPAR_PARAM1" )            :
+              $param1 );
+  $param2 = ( defined( $Frm->uhdr( "RECPAR_PARAM2" ) ) ?
+              $Frm->uhdr( "RECPAR_PARAM2" )            :
+              $param2 );
+  $pixsize = ( defined( $Frm->uhdr( "RECPAR_PIXSIZE" ) ) ?
+               $Frm->uhdr( "RECPAR_PIXSIZE" )            :
+               $pixsize );
+  $spread = ( defined( $Frm->uhdr( "RECPAR_SPREAD_METHOD" ) ) ?
+              $Frm->uhdr( "RECPAR_SPREAD_METHOD" )            :
+              $spread );
+  $system_arg = ( defined( $Frm->uhdr( "RECPAR_SYSTEM" ) ) ?
+                  $Frm->uhdr( "RECPAR_SYSTEM" )            :
+                  $system_arg );
+}
 
 my @files;
 
@@ -190,7 +227,7 @@ my $mc_hash = $_GET_MAKECUBE_PARAMS_{HASH};
 
 my ( $ppixsize, $crota );
 my $autogrid = $mc_hash->{autogrid};
-my $system = $mc_hash->{system};
+my $system = defined( $system_arg ) ? $system_arg : $mc_hash->{system};
 my $badmask = $mc_hash->{badmask};
 my $alignsys = $mc_hash->{alignsys};
 
@@ -218,11 +255,28 @@ if( lc( $type ) ne "raster" ) {
     # Get the returned pixsize and crota.
     ( $ORAC_STATUS, $ppixsize ) = $Mon{'smurf_mon'}->get( "makecube", "pixsize" );
     ( $ORAC_STATUS, $crota ) = $Mon{'smurf_mon'}->get( "makecube", "crota" );
+
+    # Check the pixel size. If it's smaller than a quarter of the
+    # beamsize, set it to a quarter of the beamsize.
+    my $lofreqs = defined( $Frm->hdr( "LOFREQS" ) ) ?
+                  $Frm->hdr( "LOFREQS" )            :
+                  $Frm->jcmtstate( "FE_LOFREQ" );
+
+    my $min_pixsize = int( $lofreqs * 0.011467099683 + 0.5 );
+    $ppixsize = ( $ppixsize < $min_pixsize ) ? $min_pixsize : $ppixsize;
+
   }
 
 } else {
   $ppixsize = $mc_hash->{pixsize};
   $crota = $mc_hash->{crota};
+}
+
+# Override the system and crota if the system has been passed in as an
+# argument.
+if( defined( $system_arg ) ) {
+  $system = $system_arg;
+  $crota = 0;
 }
 
 # If we haven't been given an override pixel scale, use the one we
@@ -335,7 +389,7 @@ $Frm->sync_headers;
 
 # Tag as reduced, if requested.
 if( $tag ) {
-  _TAG_AS_REDUCED_PRODUCT_ GROUP=0 UPDATE=1
+  _TAG_AS_REDUCED_PRODUCT_ GROUP=0 UPDATE=1 FLAG_QUAL_BAD=1
 }
 
 # Retrieve and set the Group REFLAT/REFLON if they're not already set.

@@ -52,11 +52,18 @@ pixel scale could be automatically determined from the data. []
 The output pixel scale. If not defined, this value is automatically
 determined from the data. []
 
+=item OVERRIDE = LOGICAL (Given)
+
+Whether or not specific arguments can be overridden by the recipe
+parameter system. [1]
+
 =item SPREAD = STRING (Given)
 
 The interpolation method to use when regridding the cube. This can be
 any of those allowed by MAKECUBE, listed in the SPREAD
 parameter. ['nearest']
+
+=item SYSTEM = STRING (Given)
 
 =item TAG = BOOLEAN (Given)
 
@@ -117,6 +124,7 @@ Rights Reserved.
 =cut
 
 # Deal with parameters.
+my $system_arg = get_prim_arg( $_PRIM_ARGS_, "SYSTEM", undef );
 my $spread = uc( get_prim_arg( $_PRIM_ARGS_, "SPREAD", 'NEAREST' ) );
 my $sp_param1 = get_prim_arg( $_PRIM_ARGS_, "PARAM1", 0 );
 my $sp_param2 = get_prim_arg( $_PRIM_ARGS_, "PARAM2", undef );
@@ -125,6 +133,27 @@ my $tileborder = get_prim_arg( $_PRIM_ARGS_, "TILEBORDER", 0 );
 my $tag = get_prim_arg( $_PRIM_ARGS_, "TAG", 0 );
 my $maxsize = get_prim_arg( $_PRIM_ARGS_, "MAXSIZE", 512000000 );
 my $bytes_per_pixel = get_prim_arg( $_PRIM_ARGS_, "BYTES_PER_PIXEL", 4 );
+my $override = get_prim_arg( $_PRIM_ARGS_, "OVERRIDE", 1 );
+
+# Override various parameters via the recipe parameter system.
+if( $override ) {
+  $sp_param1 = ( defined( $Frm->uhdr( "RECPAR_PARAM1" ) ) ?
+                 $Frm->uhdr( "RECPAR_PARAM1" )            :
+                 $sp_param1 );
+  $sp_param2 = ( defined( $Frm->uhdr( "RECPAR_PARAM2" ) ) ?
+                 $Frm->uhdr( "RECPAR_PARAM2" )            :
+                 $sp_param2 );
+  $ppixsize = ( defined( $Frm->uhdr( "RECPAR_PIXSIZE" ) ) ?
+                $Frm->uhdr( "RECPAR_PIXSIZE" )            :
+                $ppixsize );
+  $spread = ( defined( $Frm->uhdr( "RECPAR_SPREAD_METHOD" ) ) ?
+              $Frm->uhdr( "RECPAR_SPREAD_METHOD" )            :
+              $spread );
+  $system_arg = ( defined( $Frm->uhdr( "RECPAR_SYSTEM" ) ) ?
+                  $Frm->uhdr( "RECPAR_SYSTEM" )            :
+                  $system_arg );
+}
+
 
 # Only process if we're on the last member of a group.
 if( $Grp->lastallmembers( $Frm ) ) {
@@ -226,6 +255,8 @@ if( $Grp->lastallmembers( $Frm ) ) {
     my @uniq = grep { ! $seen{$_} ++ } values %system;
     my $system = ( $#uniq == 0 ? $uniq[0] : 'ICRS' );
 
+    $system = ( defined( $system_arg ) ? $system_arg : $system );
+
     # Ditto with USEDETPOS, but default to 'no'.
     %seen = ();
     @uniq = grep { ! $seen{$_} ++ } values %usedetpos;
@@ -264,12 +295,16 @@ if( $Grp->lastallmembers( $Frm ) ) {
         $pixsize = $ppixsize;
       }
 
-      # We have a hash with a bunch of rotation angles in it. If
-      # they're all the same, use that. Otherwise set the rotation
-      # angle to zero.
-      %seen = ();
-      @uniq = grep { ! $seen{$_} ++ } values %crota;
-      my $crota = ( $#uniq == 0 ? $uniq[0] : 0 );
+      # We have a hash with a bunch of rotation angles in it. Set the
+      # rotation angle to be the average of all of these.
+      my $crota = 0;
+      map { $crota += $_ } values %crota;
+      $crota /= scalar values %crota;
+
+      # However! If we have a user-defined system, set the CROTA to 0.
+      if( defined( $system_arg ) ) {
+        $crota = 0;
+      }
 
       # Find out how big our tiles are going to be.
       _GET_TILE_DIMENSIONS_ TILEBORDER=$tileborder
@@ -317,10 +352,10 @@ if( $Grp->lastallmembers( $Frm ) ) {
 
     my ( $in, $out ) = $Grp->inout( "_cube" );
 
-    orac_say "Creating cube from " . join( ", ", @infiles );
+    orac_print "Creating cube from " . join( ", ", @infiles ) . "... ";
 
     $Mon{'smurf_mon'}->obeyw( "makecube", "$params in='^" . $inlist->file . "' out=$out" );
-    orac_print "done.\n";
+    orac_say "done.";
 
     # Handle tiles.
     ( $ORAC_STATUS, my $ntile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
@@ -389,7 +424,8 @@ if( $Grp->lastallmembers( $Frm ) ) {
 
   # Tag as reduced, if requested.
   if( $tag ) {
-    _TAG_AS_REDUCED_PRODUCT_ GROUP=1 UPDATE=1
+    orac_say "";
+    _TAG_AS_REDUCED_PRODUCT_ GROUP=1 UPDATE=1 FLAG_QUAL_BAD=1
   }
 
   $Grp->readhdr;

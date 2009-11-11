@@ -62,7 +62,9 @@ sub collate_headers {
   my $file = shift;
 
   return unless defined( $file );
-  if( $file !~ /\.sdf$/ ) { $file .= ".sdf"; }
+  if ( $file !~ /\.sdf$/ ) {
+    $file .= ".sdf";
+  }
   return unless -e $file;
 
   my $header = new Astro::FITS::Header;
@@ -137,7 +139,7 @@ sub collate_headers {
   # method. If the return value from this method is undefined, do not
   # insert the header.
   my $product = $self->product;
-  if( defined( $product ) ) {
+  if ( defined( $product ) ) {
     my $prod = new Astro::FITS::Header::Item( Keyword => 'PRODUCT',
                                               Value   => $product,
                                               Comment => 'Pipeline product',
@@ -182,7 +184,7 @@ component is called "I1").
 
 All existing header information is lost. The C<calc_orac_headers()>
 method is invoked once the header information is read.
-If there is an error during the read a reference to an empty hash is 
+If there is an error during the read a reference to an empty hash is
 returned.
 
 Currently this method assumes that the reduced group is stored in
@@ -300,12 +302,12 @@ sub readhdr {
       # select the primary
       $hdr = $hdrs{$primhdr};
       delete $hdrs{$primhdr};
-      
+
       # now assign the subheaders
       for my $k (sort keys %hdrs) {
         my $name = (split(/\./,$k))[-1]; # split on dot and take suffix
         my $item = Astro::FITS::Header::Item->new( Keyword => $name,
-                                              Value => $hdrs{$k});
+                                                   Value => $hdrs{$k});
         $hdr->insert(-1, $item);
       }
 
@@ -319,10 +321,11 @@ sub readhdr {
   } otherwise {
     $Error = shift;
   };
-  if( defined( $Error ) ) {
+  if ( defined( $Error ) ) {
     ORAC::Error->flush;
     throw ORAC::Error::FatalError( "$Error" );
-  };
+  }
+  ;
 
   # calc derived headers
   $self->calc_orac_headers() unless $is_class_method;
@@ -354,13 +357,13 @@ sub sync_headers {
 
   my $index;
 
-  if( @_ ) {
+  if ( @_ ) {
     $index = shift;
   }
 
   my @files;
 
-  if( defined $index ) {
+  if ( defined $index ) {
     if ($index =~ /^\d+$/) {
       push @files, $self->file( $index );
     } else {
@@ -372,7 +375,7 @@ sub sync_headers {
 
   foreach my $file ( @files ) {
 
-    if( $file !~ /_(\d)+$/ ) {
+    if ( $file !~ /_(\d)+$/ ) {
       my $newheader = $self->collate_headers( $file );
       my $header = new Astro::FITS::Header::NDF( File => $file );
       $header->append( $newheader );
@@ -503,7 +506,8 @@ sub flush_messages {
       my $frac = 0;
       if ($value =~ s/(\.\d+)$// ) {
         $frac = $1;
-      };
+      }
+      ;
       my $dt = $Strp->parse_datetime( $value );
       my $epoch = $dt->epoch;
       $epoch += $frac;
@@ -594,7 +598,7 @@ sub flush_messages {
 =head1 PRIVATE METHODS
 
 The following methods are intended for use inside the module.
-They are included here so that authors of derived classes are 
+They are included here so that authors of derived classes are
 aware of them.
 
 =over 4
@@ -624,7 +628,7 @@ sub stripfname {
 
 =item B<_find_ndf_children>
 
-Given an array of filenames, open each one using HDS and see whether 
+Given an array of filenames, open each one using HDS and see whether
 there are any top level NDFs inside.
 
  @paths = $frm->_find_ndf_children( @files );

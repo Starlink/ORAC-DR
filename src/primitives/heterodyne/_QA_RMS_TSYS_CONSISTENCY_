@@ -104,6 +104,10 @@ if( defined( $survey ) ) {
                            "Telescope" );
 }
 
+# Hash to store information so we can pass it to the primitive that
+# writes the QA log.
+my %timeseries;
+
 # Retrieve the list of previously-determined RMS files.
 my $rms_files = $Frm->uhdr( "QA_RMS_FILES" );
 
@@ -126,25 +130,19 @@ foreach my $i ( 1 .. scalar( @$rms_files ) - 1 ) {
     orac_throw "Cannot perform Tsys/RMS consistency checks on a file that has no VARIANCE component\n";
   }
 
-  # We need to collapse down the masked file around the central 85%,
-  # but ignoring the central 10% in case of background fitting
-  # artefacts.
+  # We need the dimensions of the input file for later.
   _GET_DIMENSIONS_ FILE=$infile
   my $lbnd = $_GET_DIMENSIONS_{LBOUND};
   my $ubnd = $_GET_DIMENSIONS_{UBOUND};
-  my $extent = int( $ubnd->[0] - $lbnd->[0] );
 
-  my $lower     = int( $lbnd->[0] + 0.075 * $extent );
-  my $lower_mid = int( $lbnd->[0] + 0.450 * $extent );
-  my $upper_mid = int( $lbnd->[0] + 0.550 * $extent );
-  my $upper     = int( $lbnd->[0] + 0.925 * $extent );
-
-  my $params = "in=$rms_file out=$temp1file newval=bad section=\"$lower_mid:$upper_mid,,\"";
+  # Mask out the central 10%.
+  my $params = "in=$rms_file out=$temp1file newval=bad section=\"~10\%,,\"";
   $Mon{'kappa_mon'}->obeyw( "chpix", "$params" );
 
-  # Collapse it using the sigma estimator to get the standard
-  # deviation.
-  $params = "in=$temp1file($lower:$upper,,) out=$temp2file estimator=sigma axis=spec trim=true wlim=0.0 variance=false";
+  # Collapse around the central 85% using the sigma estimator to get
+  # the standard deviation.
+  $params  = "in=$rms_file(~85\%,,) out=$temp2file estimator=sigma";
+  $params .= " axis=spec trim=true wlim=0.0 variance=false";
   $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
   # Check to see how many good pixels we have.
@@ -244,6 +242,8 @@ foreach my $i ( 1 .. scalar( @$rms_files ) - 1 ) {
       if( starversion_gt( 'KAPPA', 'V1.10-0' ) ) {
         ( $ORAC_STATUS, my $numhi ) = $Mon{'kappa_mon'}->get( "thresh", "numhi" );
         orac_say sprintf( " %d samples had RMS above %.2f K", $numhi, $meantol );
+        $timeseries{$analyse_survey}{'rmsmeantsysnum'} = $numhi;
+        $timeseries{$analyse_survey}{'rmsmeantsysval'} = $meantol;
       }
 
       # Expand both out to size of input cube.
@@ -266,6 +266,7 @@ foreach my $i ( 1 .. scalar( @$rms_files ) - 1 ) {
   }
 }
 
+
 foreach my $survey ( sort keys %result ) {
   my $sum = 0;
   foreach my $value ( values %{$result{$survey}} ) {
@@ -284,11 +285,15 @@ foreach my $survey ( sort keys %result ) {
 
   orac_print "Tsys versus RMS consistency check ";
 
+  my $status;
   if( $avg > $rmstolfail ) {
+    $status = "failed";
     orac_print( " failed ", "bold white on_red" );
   } elsif( $avg > $rmstolquest ) {
+    $status = "questionable";
     orac_print( " is questionable ", "bold black on_yellow" );
   } else {
+    $status = "passed";
     orac_print( " passed ", "bold white on_green" );
   }
 
@@ -296,12 +301,18 @@ foreach my $survey ( sort keys %result ) {
 
   orac_print sprintf( " %.2f%% of the samples had a calculated RMS that differed by more than %d%% from the measured RMS.\n", $avg * 100, $rmstol * 100 );
 
+  $timeseries{$survey}{'percentage'} = $avg;
+  $timeseries{$survey}{'rmstol'} = $rmstol;
+  $timeseries{$survey}{'status'} = $status;
+
   if( $avg > $rmstolfail && scalar keys %result == 1 ) {
     $Frm->isgood( 0 );
     orac_say " Will not add current frame to group.";
   }
 
 }
+
+_QA_REPORT_TIMESERIES_ TIMESERIES=\%timeseries
 
 # If we masked, test the first output file. If it's all bad, don't
 # continue as we can't do anything with the data anyhow.
