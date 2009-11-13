@@ -75,6 +75,13 @@ moments requested. Typically 'integ' can tolerate a rms of 3-sigma,
 but the higher order moments need a higher threshold. Comma-separated
 string in the same order as the requested MOMENTS. [3.0,4.5]
 
+=item SNR = LOGICAL (Given)
+
+Whether or not to do clump detection on an SNR cube instead of the
+signal cube. Useful for data taken in varying conditions. This
+argument can be overridden by the RECPAR_MOMENTS_SNR uhdr via the
+recipe parameter system. [0]
+
 =item SPATIAL_SMOOTH = INTEGER (Given)
 
 The number of pixels to smooth in both spatial axes when smoothing to
@@ -147,6 +154,7 @@ my $moments = get_prim_arg( $_PRIM_ARGS_, "MOMENTS", 'integ' );
 my $method = get_prim_arg( $_PRIM_ARGS_, "METHOD", 'clumpfind' );
 my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 1 );
 my $rms_thrhlds = get_prim_arg( $_PRIM_ARGS_, "RMS_THRESHOLD", '3.0,4.5' );
+my $snr = get_prim_arg( $_PRIM_ARGS_, "SNR", 0 );
 my $spatsmooth = get_prim_arg( $_PRIM_ARGS_, "SPATIAL_SMOOTH", 3 );
 my $tag = get_prim_arg( $_PRIM_ARGS_, "TAG", undef );
 my $upper_velocity = get_prim_arg( $_PRIM_ARGS_, "UPPER_VELOCITY", undef );
@@ -158,6 +166,9 @@ $lower_velocity = ( defined( $Frm->uhdr( "RECPAR_MOMENTS_LOWER" ) ) ?
 $moments = ( defined( $Frm->uhdr( "RECPAR_MOMENTS" ) ) ?
              $Frm->uhdr( "RECPAR_MOMENTS" )            :
              $moments );
+$snr = ( defined( $Frm->uhdr( "RECPAR_MOMENTS_SNR" ) ) ?
+         $Frm->uhdr( "RECPAR_MOMENTS_SNR" )            :
+         $snr );
 $upper_velocity = ( defined( $Frm->uhdr( "RECPAR_MOMENTS_UPPER" ) ) ?
                     $Frm->uhdr( "RECPAR_MOMENTS_UPPER" )            :
                     $upper_velocity );
@@ -249,56 +260,67 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
             # Temporarily disable bad-bits mask.
             $Mon{'ndfpack_mon'}->obeyw( "setbb", "ndf=$in bb=0" );
 
-            my $temp2 = new ORAC::TempFile;
-            my $temp2file = $temp2->file;
-
-            if( starversion_gt( 'KAPPA', 'v1.11-7' ) ) {
-
-              # We can use N-D BLOCK.
-              orac_say " Smoothing cube with [$spatsmooth,$spatsmooth,$freqsmooth] tophat.";
-              my $params = "in=$in out=$temp2file box=[$spatsmooth,$spatsmooth,$freqsmooth] estimator=mean";
-              $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+            # Make SNR cube, if requested.
+            my $snrtemp = new ORAC::TempFile;
+            my $snrtempfile = $snrtemp->file;
+            if( $snr ) {
+              orac_say " Creating SNR cube.";
+              my $params = "in=$in out=$snrtempfile minvar=0.01";
+              $Mon{'kappa_mon'}->obeyw( "makesnr", "$params" );
             } else {
-
-              # Need to do two BLOCK calls.
-              my $temp1 = new ORAC::TempFile;
-              my $temp1file = $temp1->file;
-
-              orac_say " Smoothing cube in frequency with $freqsmooth-pixel tophat.";
-
-              my $params = "in=$in out=$temp1file axes=[1,3] box=[1,$freqsmooth] estimator=mean";
-              $Mon{'kappa_mon'}->obeyw( "block", "$params" );
-
-              orac_say " Smoothing cube in spatial with $spatsmooth-pixel tophat.";
-
-              if( $dims->[0] < 3 || $dims->[1] < 3 ) {
-                $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp1file out=$temp2file" );
-              } else {
-                $params = "in=$temp1file out=$temp2file axes=[1,2] box=[$spatsmooth,$spatsmooth] estimator=mean";
-                $Mon{'kappa_mon'}->obeyw( "block", "$params" );
-              }
+              $snrtempfile = $in;
             }
 
             # Restore bad-bits mask.
             $Mon{'ndfpack_mon'}->obeyw( "setbb", "ndf=$in bb=255" );
 
-            push @smoothed, $temp2file;
-            push @smo_obj, $temp2;
+            my $temp1 = new ORAC::TempFile;
+            my $temp1file = $temp1->file;
+
+            if( starversion_gt( 'KAPPA', 'v1.11-7' ) ) {
+
+              # We can use N-D BLOCK.
+              orac_say " Smoothing cube with [$spatsmooth,$spatsmooth,$freqsmooth] tophat.";
+              my $params = "in=$snrtempfile out=$temp1file box=[$spatsmooth,$spatsmooth,$freqsmooth] estimator=mean";
+              $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+            } else {
+
+              # Need to do two BLOCK calls.
+              my $temp2 = new ORAC::TempFile;
+              my $temp2file = $temp2->file;
+
+              orac_say " Smoothing cube in frequency with $freqsmooth-pixel tophat.";
+
+              my $params = "in=$snrtempfile out=$temp2file axes=[1,3] box=[1,$freqsmooth] estimator=mean";
+              $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+
+              orac_say " Smoothing cube in spatial with $spatsmooth-pixel tophat.";
+
+              if( $dims->[0] < 3 || $dims->[1] < 3 ) {
+                $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp2file out=$temp1file" );
+              } else {
+                $params = "in=$temp2file out=$temp1file axes=[1,2] box=[$spatsmooth,$spatsmooth] estimator=mean";
+                $Mon{'kappa_mon'}->obeyw( "block", "$params" );
+              }
+            }
+
+            push @smoothed, $temp1file;
+            push @smo_obj, $temp1;
 
             # Mask out lines.
             orac_say " Masking out lines using $mask.";
             my $temp3 = new ORAC::TempFile;
             my $temp3file = $temp3->file;
-            my $params = "in1=$temp2file in2=$mask out=$temp3file";
+            my $params = "in1=$temp1file in2=$mask out=$temp3file";
             $Mon{'kappa_mon'}->obeyw( "add", "$params" );
 
             # Copy the variance across, but only if the input cube has
             # a variance.
-            $params = "ndf=$temp2file";
+            $params = "ndf=$temp1file";
             $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "$params" );
             my ( $ORAC_STATUS, $var ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "variance" );
             if( uc( $var ) eq 'TRUE' ) {
-              $params = "ndf=$temp3file from=$temp2file comp=VARIANCE";
+              $params = "ndf=$temp3file from=$temp1file comp=VARIANCE";
               $Mon{'ndfpack_mon'}->obeyw( "setvar", "$params" );
             }
 
