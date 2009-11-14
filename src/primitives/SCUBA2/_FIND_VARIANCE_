@@ -13,8 +13,8 @@ _FIND_VARIANCE_ - Retrieves the variance from a mosaicked image
 =head1 DESCRIPTION
 
 This primitive determines the statistics of the variance or error
-components within an NDF and reports the mean and standard
-deviation. The mean is expected to be a good estimate of the noise.
+components within an NDF and reports the chosen statistic
+(mean, median or mode).
 
 The result is stored in the primitive hash, C<undef> if no variance
 component could be found.
@@ -33,7 +33,13 @@ Component to probe in NDF. May be variance C<VAR>, or error C<ERR>
 =item B<ESTIMATOR>
 
 Preferred estimator for variance. Valid options are C<MEAN>, C<MEDIAN>
-or C<MODE>. Default is C<MEDIAN>.
+or C<MODE>. Choosing C<MODE> overrides B<HISTAT> since STATS cannot
+derive a mode. Default is C<MEDIAN>.
+
+=item B<HISTAT>
+
+Flag to specify whether or not to use KAPPA HISTAT or STATS. Default
+is 0 (use STATS).
 
 =item B<IMAGE>
 
@@ -55,7 +61,7 @@ The following external tasks are used:
 
 =item KAPPA
 
-HISTAT, NDFTRACE
+HISTAT, NDFTRACE, STATS
 
 =head1 OUTPUT DATA
 
@@ -107,6 +113,11 @@ my $comp = lc(get_prim_arg($_PRIM_ARGS_, "COMP", "err"));
 
 # Estimator - default is MEDIAN
 my $estimator = uc(get_prim_arg( $_PRIM_ARGS_, "ESTIMATOR", "MEDIAN" ));
+# Check we were given something sensible
+unless ( $estimator eq "MEDIAN" || $estimator eq "MEAN" || $estimator eq "MODE" ) {
+  orac_warn "_FIND_VARIANCE_: Unrecognized estimator, $estimator: using MEDIAN\n";
+  $estimator = "MEDIAN";
+}
 
 # Should I be verbose (default to no)
 my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 0 );
@@ -130,11 +141,21 @@ if ($varexists eq "TRUE") {
     orac_print("Returning error statistic\n") if $verbose;
   }
 
+  # Use histat or stats? Default to no.
+  my $histat = get_prim_arg( $_PRIM_ARGS_, "HISTAT", 0 );
+  # But override choice if the user has specified MODE
+  $histat = 1 if ($estimator eq "MODE");
+
+  # Set up task arguments
+  my $stat = ($histat) ? "histat" : "stats";
+  my $args = "ndf=$ndf comp=$comp";
+  $args .= " order=true" unless ($histat);
+
   # Calculate statistics of the request component
-  $Mon{kappa_mon}->obeyw("histat","ndf=$ndf comp=$comp");
+  $Mon{kappa_mon}->obeyw("$stat","$args");
 
   # Retrieve the mean value which is the variance/error
-  ($ORAC_STATUS, my $result) = $Mon{kappa_mon}->get("histat","$estimator");
+  ($ORAC_STATUS, my $result) = $Mon{kappa_mon}->get("$stat","$estimator");
 
   # Store in primitive hash
   $_FIND_VARIANCE_{RESULT} = $result;
