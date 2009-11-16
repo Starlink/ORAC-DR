@@ -631,7 +631,8 @@ sub numsubarrays {
 
 This method modifies the supplied filename to remove specific
 subarray designation and replace it with a generic filter
-designation.
+designation. 4 digit subscan information is also removed but not
+if this is a Focus observation.
 
 Should be used when subarrays are merged into a single file.
 
@@ -657,9 +658,13 @@ sub rewrite_outfile_subarray {
     # filter information
     my $filt = $self->file_from_bits_extra;
 
-    # we would expect the filter information to go after
-    # the four digit subscan number
-    $new =~ s/(_\d\d\d\d_)/$1${filt}_/;
+    # Replace the subscan number with the filter name
+    my $obsmode = $self->hdr( "OBS_TYPE" );
+    if ($obsmode =~ /focus/i) {
+      $new =~ s/(_\d\d\d\d_)/$1${filt}_/;
+    } else {
+      $new =~ s/(_\d\d\d\d_)/_${filt}_/;
+    }
 
     # remove the subarray designation
     $new =~ s/^s[48][abcd]/s/;
