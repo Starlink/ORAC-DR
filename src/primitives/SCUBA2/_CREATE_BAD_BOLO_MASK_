@@ -24,27 +24,29 @@ The following arguments are supported:
 
 =over 4
 
-=item B<MASKVAL>
+=item B<RELAX>
 
-Ratio of low-frequency to white noise power below which a bolometer is
-deemed to be not operating within spec. Default is 10.
+A factor by which the NEP criteria can be relaxed to include
+out-of-spec bolometers. A special value of 0 may be given which skips
+the creation of a bad-bolo mask (i.e. continue to use all working
+bolometers). Default is 1 (no relaxation).
 
 =item B<VERBOSE>
 
-Flag to denote whether to display extra information. Default is 0
-(no).
+Flag to denote whether to display extra information. Default is 1
+(yes).
 
 =back
 
 =head1 EXTERNAL TASKS
 
-The following external task is used:
+The following external tasks are used:
 
 =over 4
 
 =item KAPPA:
 
-THRESH
+STATS, THRESH
 
 =back
 
@@ -86,45 +88,61 @@ USA.
 # First step: do noise data exist from which to create a bad-bolo mask?
 if ( $Frm->uhdr("NOISE") ) {
 
-  # Check for input arguments
-  # Value of the power ratio to use as criteria for setting bolometers
-  # to bad.
-  my $maskval = get_prim_arg( $_PRIM_ARGS_, "MASKVAL", 10.0 );
-
-  # Should I be verbose (default to no)
+  # Should we be verbose (default to yes)?
   my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
 
-  # Announce our presence to the world
-  orac_print "Deriving a bad bolometer mask from noise observation\n"
-    . "Setting threshold for bad bolometers at a ratio of $maskval\n"
-    if ($verbose);
+  # Are the NEP criteria being relaxed?
+  my $relax = get_prim_arg( $_PRIM_ARGS_, "RELAX", "1.0" );
 
-  # Loop over the files in the Frame - there should be no more than 4
-  # files (future check), corresponding to each of the four subarrays
-  # at the current wavelength.
-  foreach my $i ( 1 .. $Frm->nfiles ) {
+  # Only proceed if relax is non-zero
+  if ( $relax > 0 ) {
+    # Catch numbers which look like sqrt(2)
+    $relax = sqrt(2) if ($relax =~ /^1.4/);
 
-    # Noise ratio file
-    my $ratio = $Frm->file( $i ).".MORE.SMURF.NOISERATIO";
+    # Define NEP spec for defining the mask
+    my $nep_spec = $relax * $Cal->nep;
 
-    # Threshold to set out-of-range values to bad
-    my $thresh = new ORAC::TempFile;
-    my $threshfile = $thresh->file;
-    my $args = "in=$ratio out=$threshfile thrhi=$maskval thrlo=0 newhi=bad newlo=bad";
-    $Mon{kappa_mon}->obeyw("thresh","$args");
+    # Announce our presence to the world
+    if ($verbose) {
+      my $factor = ($relax > 1) ? "with NEP criteria relaxed by ".(sprintf "%3.1f", $relax) : "";
+      orac_print "Deriving a bad bolometer mask $factor\n";
+    }
 
-    # Threshold again with inverted selection to set everything to
-    # unity and hey presto - instant bad bolo mask
-    # Define name of mask from name of current file
-    my $mask = $Frm->inout("_bpm", $i);
-    $args = "in=$threshfile out=$mask thrhi=0 thrlo=$maskval newlo=1";
-    $Mon{kappa_mon}->obeyw("thresh","$args");
-    orac_print "Bad bolometer mask $mask created\n" if $verbose;
+    # Loop over the files in the Frame - there should be no more than
+    # 4 files (future check), corresponding to each of the four
+    # subarrays at the current wavelength.
+    foreach my $i ( 1 .. $Frm->nfiles ) {
 
-    # Register with the Calibration system - note that cal system must
-    # deal with the different subarrays. The easiest way is to add a
-    # uhdr entry for SUBARRAY and put the right value in it.
-    $Frm->subarray($i);
-    $Cal->maskindex->add($mask, {%{$Frm->hdr}, %{$Frm->uhdr}});
+      # NEP file
+      my $nepfile = $Frm->file( $i ).".MORE.SMURF.NEP";
+
+      # Threshold to set out-of-range values to bad
+      my $thresh = new ORAC::TempFile;
+      my $threshfile = $thresh->file;
+      my $args = "in=$nepfile out=$threshfile thrhi=$nep_spec thrlo=0 newhi=bad newlo=bad";
+      $Mon{kappa_mon}->obeyw("thresh","$args");
+
+      # Threshold again with inverted selection to set everything to
+      # unity and hey presto - instant bad bolo mask
+      # Define name of mask from name of current file
+      my $mask = $Frm->inout("_bbm", $i);
+      $args = "in=$threshfile out=$mask thrhi=0 thrlo=$nep_spec newlo=1";
+      $Mon{kappa_mon}->obeyw("thresh","$args");
+
+      # Find number of good bolometers in output mask
+      if ($verbose) {
+	$Mon{kappa_mon}->obeyw("stats","ndf=$mask");
+	my ($ORAC_STATUS, $ngood) = $Mon{kappa_mon}->get("stats","numgood");
+	orac_print "Bad bolometer mask $mask created from $ngood bolometers\n";
+      }
+
+      # Register with the Calibration system - note that cal system must
+      # deal with the different subarrays. The easiest way is to add a
+      # uhdr entry for SUBARRAY and put the right value in it.
+      $Frm->subarray($i);
+      $Cal->maskindex->add($mask, {%{$Frm->hdr}, %{$Frm->uhdr}});
+    }
+  } else {
+    orac_warn "Skipping creation of bad-bolometer mask\n" if ($verbose);
   }
 }
