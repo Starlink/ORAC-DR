@@ -117,6 +117,9 @@ sub new {
       $tmp->handle->close unless $_[0];
     }
     return $tmp;
+  } elsif (defined $tmp->{File}) {
+    # did get a file that must have been closed
+    return $tmp;
   }
   return;
 }
@@ -165,7 +168,8 @@ sub file {
 
 sub STRINGIFY {
   my $self = shift;
-  return $self->file;
+  my $file = $self->file();
+  return "$file";
 }
 
 =back
@@ -257,8 +261,10 @@ sub Initialise {
     substr($file,length($dir)) =~ s/\./_/g;
   }
 
+  return if (!defined $fh && !defined $file);
+
   # Set autoflush
-  $fh->autoflush(1);
+  $fh->autoflush(1) if defined $fh;
 
   # Store the state
   $self->handle($fh);
