@@ -514,6 +514,9 @@ goes out of scope.
 Suitable for creating a file to be used for Starlink application
 group parameters.
 
+Note that overwriting the return value (by, say, string concatenation)
+runs the destructor which unlinks the temporary file.
+
 =cut
 
 sub write_file_list {
