@@ -802,7 +802,7 @@ sub intermediates {
   if (wantarray) {
 
     # In an array context, return the array itself
-    return @{ $self->{Intermediates} } if wantarray();
+    return @{ $self->{Intermediates} };
 
   } else {
     # In a scalar context, return the reference to the array
