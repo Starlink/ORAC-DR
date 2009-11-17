@@ -77,6 +77,10 @@ my %FCFS = ('850' => [             # Assumed to be in date order
                   ],
         );
 
+# These NEPs are the specifications in the dark which the arrays are
+# expected to meet
+my %NEP = ( '850' => 7.0e-17, '450' => 2.1e-16 );
+
 # Should probably put calibrator flux information in a different
 # file
 
@@ -263,6 +267,21 @@ sub beampar {
 
   return $self->{Beam};
 
+}
+
+=item B<nep>
+
+Method to return the NEP spec for the current wavelength
+
+=cut
+
+sub nep {
+
+  my $self = shift;
+  my $filter = $self->thingone->{FILTER};
+  my $nepkey = ( $filter =~ /^85/ ) ? "850" : "450";
+
+  return $NEP{$nepkey};
 }
 
 =item B<refimage>
