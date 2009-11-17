@@ -255,15 +255,7 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
   my $obs = $Frm->hdr("OBSNUM");
   foreach my $subgrp ( @subgrps ) {
     $i++;
-    my @foclist = map { $_->files } $subgrp->members;
-
-    # Trim third axis from images
-    my @focfiles;
-    for my $j (0 .. $#foclist) {
-      my $newfocfile = $subgrp->members->[0]->inout("_tmp");
-      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$foclist[0] out=$newfocfile trim trimwcs");
-      push (@focfiles, $newfocfile);
-    }
+    my @focfiles = map { $_->files } $subgrp->members;
 
     my $focposn = $subgrp->members->[0]->hdrval("FOCPOSN");
     orac_print "Processing focus position $axis = $focposn mm (offset #$i)\n"
@@ -277,22 +269,19 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
     $title = "'Foc".$title." $axis=$focposn mm / Obs $obs'";
 
     # Create single image for the current focus plane
-    if ( @focfiles > 1 ) {
+    # strip frequency axis for now
+    if ( @focfiles == 1 ) {
+      my $tmpfile = ORAC::TempFile->new( OPEN => 0, SUFFIX => ".sdf" );
       my $moslist = write_file_list( @focfiles );
-      my $mosargs = "in=^".$moslist." out=$planeimage method=median ref=! logto=neither nousevar nogenvar title=$title";
+      my $mosargs = "in=^".$moslist." out=$tmpfile method=median ref=! logto=neither nousevar nogenvar title=$title";
       $Mon{ccdpack_reg}->obeyw("makemos","$mosargs");
+      $Mon{ndfpack_mon}->obeyw("ndfcopy", "in=$tmpfile out=$planeimage trim trimwcs" );
     } else {
       my $cpargs = "in=".$focfiles[0]." out=$planeimage title=$title";
-      $Mon{ndfpack_mon}->obeyw("ndfcopy","$cpargs");
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","$cpargs trim trimwcs");
     }
     # Store output file in current subgrp
     $subgrp->files( $planeimage );
-
-    # This seems unsatisfying...
-    foreach my $tmpfile (@focfiles) {
-      $tmpfile .= ".sdf" unless ($tmpfile =~ /sdf$/);
-      unlink $tmpfile;
-    }
 
     # Derive sky mapping and frame
     $args = "this=$planeimage iframe1=ast__base iframe2=ast__current result=skymap$$.ast";
