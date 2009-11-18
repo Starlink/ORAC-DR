@@ -704,6 +704,23 @@ sub rewrite_outfile_subarray {
   return $new;
 }
 
+=item B<strip_subscan>
+
+Strip subscan number from supplied filename. This can be used when going
+from a group of files from a single subarray to a file associated with
+that subarray but no subscan.
+
+ $new = $Frm->strip_subscan( $old );
+
+=cut
+
+sub strip_subscan {
+  my $self = shift;
+  my $new = shift;
+  $new =~ s/_\d\d\d\d_/_/;
+  return $new;
+}
+
 =item B<subarray>
 
 Return the name of the subarray given either a filename or the index
