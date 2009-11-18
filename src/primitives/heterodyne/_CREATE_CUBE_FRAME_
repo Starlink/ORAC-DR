@@ -328,6 +328,28 @@ if ($Frm->uhdr("ISHYBRID")) {
   $params .= " badmask=AND specunion=YES";
 }
 
+# Check the Tsys values. If the mean is negative, then create the
+# variance from the spread of input pixels. Otherwise, test the
+# units. If the data units are Kelvin, then we can generate the
+# variance from the Tsys values instead.
+my $tmptsys = new ORAC::TempFile;
+my $ORAC_STATUS = ( create_hdsobj( "$tmptsys", 'NDF' ) ? ORAC__OK : ORAC__ERROR );
+$ORAC_STATUS = ( copy_hdsobj( "$files[0].MORE.ACSIS.TSYS", "$tmptsys.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
+$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$tmptsys" );
+( $ORAC_STATUS, my $tsysmean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+if( $tsysmean < 0 ) {
+  orac_warn "Mean Tsys negative. Using spread of input pixels for variance creation.\n";
+  $params .= " genvar=spread inweight=false";
+} else {
+  $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$files[0]" );
+  ( $ORAC_STATUS, my $units ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
+  if( $units eq 'K' ) {
+    $params .= " genvar=tsys inweight=true";
+  } else {
+    $params .= " genvar=spread inweight=false";
+  }
+}
+
 # Store the parameters for later use, but only if we don't have a
 # sparse cube.
 if( ! $Frm->uhdr( "SPARSE" ) ) {
@@ -343,7 +365,7 @@ $Mon{'smurf_mon'}->obeyw( "makecube", "$params in='^" . $inlist->file . "' out=$
 orac_print( "done.\n" );
 
 # Retrieve the number of tiles created.
-my ( $ORAC_STATUS, $ntile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
+( $ORAC_STATUS, my $ntile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
 
 if( $ntile > 1 ) {
 
