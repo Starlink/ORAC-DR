@@ -42,11 +42,8 @@ use Starlink::AST;
 use vars qw/$VERSION/;
 
 # Let the object know that it is derived from ORAC::Frame::JCMT and
-# ORAC::Frame::NDF;
-use base qw/ ORAC::Frame::JCMT /;
-
-# Use base doesn't seem to work...
-#use base qw/ ORAC::Frame /;
+# ORAC::JSAFile
+use base qw/ ORAC::JSAFile ORAC::Frame::JCMT /;
 
 $VERSION = '1.0';
 
