@@ -1250,7 +1250,18 @@ sub calc_orac_headers {
     # that will allow us to hint HdrTrans.
     my $hdr = $self->hdr;
     if ( ! keys %$hdr ) {
-      die "This observation is missing its FITS headers";
+      my @files = $self->files;
+      @files = $self->raw unless @files;
+      my $text = '';
+      if (@files) {
+        $text = ' associated with file';
+        if (@files == 1) {
+          $text .= $files[0];
+        } else {
+          $text .= "s ".join(", ",@files);
+        }
+      }
+      die "The observation $text has no FITS headers";
     }
     %trans = Astro::FITS::HdrTrans::translate_from_FITS( $hdr,
                                                          prefix => 'ORAC_');
