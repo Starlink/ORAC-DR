@@ -38,11 +38,8 @@ use ORAC::Constants qw/ ORAC__OK /;
 
 use base qw/ ORAC::Calib::JCMT /;
 
-use vars qw/ $VERSION @PLANETS /;
+use vars qw/ $VERSION /;
 $VERSION = '1.0';
-
-# The planets that we can retrieve fluxes for
-@PLANETS = qw/ MARS JUPITER SATURN URANUS NEPTUNE /;
 
 __PACKAGE__->CreateBasicAccessors( gains => {},
                                    tausys => {},
@@ -297,7 +294,7 @@ sub fluxcal {
       $flux = $PHOTFLUXES{$source}{$filter};
     }
 
-  } elsif ( grep(/$source/, @PLANETS) ) {
+  } elsif ( $self->isplanet( $source ) ) {
     # Else if we have a planet name
 
     # Construct argument string for fluxes
@@ -508,8 +505,7 @@ sub iscalsource {
   # If we match a planet straightaway then it is a calibrator
   # regardless of filter (unless the filter is not available in fluxes)
 
-  return 1 if grep /$source/, @PLANETS;
-
+  return 1 if $self->isplanet( $source );
 
   # Start off being pessimistic
   my $iscal = 0;
