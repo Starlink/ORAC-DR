@@ -359,35 +359,6 @@ sub number {
 
 =back
 
-=head2 Accessors
-
-=over 4
-
-=item B<allow_header_sync>
-
-Whether or not to allow automatic header synchronization when the
-Frame is updated via either the C<file> or C<files> method.
-
-  $Frm->allow_header_sync( 1 );
-
-For ACSIS, defaults to true (1).
-
-=cut
-
-sub allow_header_sync {
-  my $self = shift;
-
-  if( ! defined( $self->{AllowHeaderSync} ) ) {
-    $self->{AllowHeaderSync} = 1;
-  }
-
-  if( @_ ) { $self->{AllowHeaderSync} = shift; }
-
-  return $self->{AllowHeaderSync};
-}
-
-=back
-
 =head1 <SPECIALIST METHODS>
 
 Methods specifically for ACSIS.
