@@ -80,49 +80,59 @@ my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
        if ( $#extensions > -1 ) {
           orac_print "Removing temporary files...\n" if $verbose;
 
-# Get the list of intermediate files from the frame.
-          my @intermediates = $Frm->intermediates;
+# Create a code ref for handling the removal since we need to call
+# it once for $Frm and once for $Grp. This is required because the
+# file setting and erasing can trigger header updates that need
+# to know the group vs frame.
 
-# and the group
-          push (@intermediates, $Grp->intermediates)
-            if get_prim_arg( $_PRIM_ARGS_, "ALSOGRP" );
+          my $CleanUp = sub {
+            my $Obj = shift;
+            my @intermediates = $Obj->intermediates;
 
 # Create temporary frame object to handle the deletion.
-          my $tempFrm = new $Frm;
+            my $tempFrm = new $Obj;
 
 # Loop over intermediate files and compare with the list of
 # extensions to be kept.
-          foreach my $file ( @intermediates ) {
+            foreach my $file ( @intermediates ) {
               orac_print "Checking $file...\t" if $verbose;
 # Loop round if the filename ends in  _number, since we will
 # treat these as special e.g. raw data files.  Also preserve
 # components of the raw data.
               if ($file =~ /_\d+$/ || $file =~ /_\d+\.I\d+[A-Z]?$/) {
-                  orac_print "Keeping raw\n" if $verbose;
-                  next;
+                orac_print "Keeping raw\n" if $verbose;
+                next;
               }
 
 # May want to also check for special case of files having
 # no extension at all (e.g. o65).
 
 # Compare with the extensions.
-             unless ( grep {$file =~ /$_(\d+)?$/} @extensions ) {
-                 orac_print "Removing\n", 'red' if $verbose;
+              unless ( grep {$file =~ /$_(\d+)?$/} @extensions ) {
+                orac_print "Removing\n", 'red' if $verbose;
 # This means the file can be removed.  The easiest thing is to
 # ask the Frame to remove the file.
                 $tempFrm->file( $file );
                 $tempFrm->erase;
-             } else {
-                 orac_print "Keeping extension\n","green" if $verbose;
-             }
-          }
+              } else {
+                orac_print "Keeping extension\n","green" if $verbose;
+              }
+            }
 
 # Undefine the tempFrm object.
-          undef $tempFrm;
+            undef $tempFrm;
 
 # Frossie wants to save memory by clearing the intermediates
 # array.  We don't need it anyway...
-          @{$Frm->intermediates} = ();
+            @{$Obj->intermediates} = ();
+          };
+
+# Clean up frame files
+          $CleanUp->( $Frm );
+
+# and the group
+          $CleanUp->( $Grp )
+            if get_prim_arg( $_PRIM_ARGS_, "ALSOGRP" );
 
         } else {
            orac_warn "Primitive called without specifying any files to be kept\nNot deleting any temporary files....\n";
