@@ -163,8 +163,7 @@ if ($usenoise) {
                          $frm->uhdr("ORAC_AIRMASS_END"));
       return { airmass => $airmass,
                tau => $tau,
-               extcor => exp($tau * $airmass),
-               zenextcor => exp($tau) };
+               extcor => exp($tau * $airmass), };
     };
 
     if (@noisefiles == 1) {
@@ -178,12 +177,6 @@ if ($usenoise) {
         $tmpfrm->readhdr;
         push(@fileinfo, $calc_extcor->($tmpfrm) );
       }
-    }
-
-    # FCF is already in the right units here (see above)
-    for my $item (@fileinfo) {
-      $item->{mult} = $item->{extcor} * $fcf;
-      $item->{zenmult} = $item->{zenextcor} * $fcf;
     }
 
     # Calculate NEFD for each file
@@ -211,23 +204,25 @@ if ($usenoise) {
 
       # Multiply NEP by combined FCF/transmission factor to get NEFD
       my $info = shift(@fileinfo);
-      $nefd = $nep * $info->{mult};
-      # Similarly calculate zenith NEFD
-      $znefd = $nep * $info->{zenmult};
+
+      # NEFD at airmass just needs the FCF
+      $nefd = $nep * $fcf;
+
+      # Similarly calculate zenith NEFD which must be a smaller number
+      # and accounts for airmass and tau
+      $znefd = $nefd / $info->{extcor};
 
       if (defined $nefd) {
 	my $subarray = $Frm->subarray($noisefile);
-        my $trans = sprintf "%3d", 100.0 / $info->{extcor};
-	my $ztrans = sprintf "%3d", 100.0 / $info->{zenextcor};
+        my $trans = sprintf "%.1f", 100.0 / $info->{extcor};
 	my $pnefd = sprintf "%6.2f", $nefd;
 	my $pznefd = sprintf "%6.2f", $znefd;
         my $airmass = sprintf "%6.4f", $info->{airmass};
 
 	orac_print("Subarray $subarray:\n","green");
-	orac_print ("Calculated NEFD = $pnefd mJy/beam s**0.5, "
+	orac_print ("Measured NEFD = $pnefd mJy/beam s**0.5, "
 		    ."sky trans = $trans %, A = $airmass\n", "green");
-	orac_print ("    Zenith NEFD = $pznefd mJy/beam s**0.5, "
-		    ."sky trans = $ztrans %\n", "green");
+	orac_print ("  Zenith NEFD = $pznefd mJy/beam s**0.5\n", "green");
 
       } else {
 	orac_warn "Could not determine ".(lc($estimator))." NEFD for $noisefile\n";
