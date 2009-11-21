@@ -72,6 +72,7 @@ use IO::File;
 use File::Spec;
 use File::Path;
 use Cwd;
+use Fcntl ":mode";
 
 require Exporter;
 
@@ -83,7 +84,7 @@ use vars qw/$VERSION @EXPORT @ISA /;
              orac_start_algorithm_engines orac_start_display
              orac_calib_override orac_process_argument_list
              orac_main_data_loop orac_parse_files orac_parse_recparams
-             orac_print_config_with_defaults /;
+             orac_print_config_with_defaults orac_declare_location /;
 
 $VERSION = '1.0';
 
@@ -497,6 +498,67 @@ sub orac_launch_tk {
   return $MW;
 }
 
+=item B<orac_declare_location>
+
+Write a file indicating where the pipeline is going to be writing
+any output data (ie ORAC_DATA_OUT). This file will be written into
+a directory obtained from the ORAC_LOCATION_DIR or else fall back
+to the default JAC location of "/jac_sw/oracdr-locations".
+
+The file will be named for the ORAC_INSTRUMENT environment variable
+and any recipe suffices that are in use. For example "scuba2_450-ql".
+The file will contain one line with the value of $ORAC_DATA_OUT.
+
+A file is only written if the UT date being used is the current
+UT date.
+
+  orac_declare_location( %options );
+
+where %options is the command line options hash.
+
+=cut
+
+sub orac_declare_location {
+  my %options = @_;
+
+  # get the output dir
+  my $locdir = "/jac_sw/oracdr-locations";
+  $locdir = $ENV{ORAC_LOCATION_DIR} if (exists $ENV{ORAC_LOCATION_DIR} &&
+                                        defined $ENV{ORAC_LOCATION_DIR});
+  return unless -d $locdir;
+
+  # Default to today if not given. Also check to see if we have
+  # been told to use today
+  my $istoday;
+  if (!defined $options{ut}) {
+    $istoday = 1;
+  } else {
+    my $today = ORAC::General::utdate();
+    $istoday = ($options{ut} == $today ? 1 : 0);
+  }
+
+  return unless $istoday;
+
+  my $type = lc($ENV{ORAC_INSTRUMENT});
+
+  # get the mode information from recsuffix
+  if (exists $options{recsuffix}) {
+    for my $rs ( @{$options{recsuffix}} ) {
+      my $sfx = lc($rs);
+      $sfx =~ s/^_//;
+      $type .= "-$sfx";
+    }
+  }
+
+  my $locfile = File::Spec->catdir( $locdir, $type );
+  if ( open(my $fh, ">", $locfile) ) {
+    print $fh $ENV{ORAC_DATA_OUT} ."\n";
+    close($fh);
+    chmod  S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH, $locfile;
+  } else {
+    print STDERR "Unable to write file to locate DR ($locfile) : $!\n";
+  }
+}
 
 =item B<orac_print_configuration>
 
