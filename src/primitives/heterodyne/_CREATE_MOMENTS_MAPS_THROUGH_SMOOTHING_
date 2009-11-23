@@ -153,6 +153,7 @@ my $lower_velocity = get_prim_arg( $_PRIM_ARGS_, "LOWER_VELOCITY", undef );
 my $moments = get_prim_arg( $_PRIM_ARGS_, "MOMENTS", 'integ' );
 my $method = get_prim_arg( $_PRIM_ARGS_, "METHOD", 'clumpfind' );
 my $order = get_prim_arg( $_PRIM_ARGS_, "ORDER", 1 );
+my $per_line = get_prim_arg( $_PRIM_ARGS_, "PER_LINE", 0 );
 my $rms_thrhlds = get_prim_arg( $_PRIM_ARGS_, "RMS_THRESHOLD", '3.0,4.5' );
 my $snr = get_prim_arg( $_PRIM_ARGS_, "SNR", 0 );
 my $spatsmooth = get_prim_arg( $_PRIM_ARGS_, "SPATIAL_SMOOTH", 3 );
@@ -338,6 +339,54 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
         my $medianrms = $_CALCULATE_RMS_{RMS};
         orac_say "Median RMS in smoothed observation is " . sprintf( "%0.3f", $medianrms );
 
+        # Find bounds for each identified line, if requested.
+        if( $per_line ) {
+          my @bounds;
+          foreach my $smoothed ( @smoothed ) {
+            _IDENTIFY_SPECBOUNDS_ FILE=$smoothed
+            my $bounds = $_IDENTIFY_SPECBOUNDS_{'BOUNDS'};
+            push @bounds, $bounds;
+          }
+          # Check to see if we have Number::Range. If we don't, we
+          # can't do the linteg range determination (and print a
+          # warning saying such.
+          my $isok = eval { require Number::Range; 1; };
+          if( $isok ) {
+            my $range = new Number::Range;
+            foreach my $b1 ( @bounds ) {
+              foreach my $b2 ( @$b1 ) {
+                {
+                  # We need to temporarily turn off warnings because
+                  # Number::Range annoyingly throws a warning if we
+                  # add a number that's already in the range...
+                  no warnings;
+                  $range->addrange( $b2->[0] . ".." . $b2->[1] );
+                }
+              }
+            }
+
+            # Stringify the range.
+            my $str = $range->range;
+
+            # At this point the range is of the form
+            # "32..183,317..324", so split it by commas into
+            # individual ranges, then split it be two periods to get
+            # the min and the max.
+            my @ranges = split ',', $str;
+            my @frmranges;
+            foreach my $range ( @ranges ) {
+              my ( $min, $max ) = split '\.\.', $range;
+              push @frmranges, [ $min, $max ];
+            }
+
+            # Store the ranges in the SPECTRAL_BOUNDS uhdr for future
+            # use.
+            $Obj->uhdr( "SPECTRAL_BOUNDS", \@frmranges );
+          } else {
+            orac_warn "Cannot load Number::Range and thus cannot create moments maps for individual lines.\n";
+          }
+        }
+
         for my $i ( 1 .. $Obj->nfiles ) {
           my $in = $Obj->file( $i );
           my $file = $smoothed[$i-1];
@@ -413,7 +462,7 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
 
                 # Check number of clumps using NCLUMPS.
                 ( $ORAC_STATUS, $nclumps ) = $Mon{'cupid_mon'}->get( "findclumps", "nclumps" );
-	      }
+              }
               # --------------------
 
               # If we have no clumps, we can't make a clump mask, so skip
@@ -447,7 +496,6 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
 
             # For the moment collapse the masked cube into a temporary
             # file.
-
             if( ! exists( $paste_inputs{$moment} ) ) {
               $paste_inputs{$moment} = ();
             }
@@ -460,45 +508,67 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
             $params = "ndf=$colin from=$in comp=VARIANCE";
             $Mon{'ndfpack_mon'}->obeyw( "setvar", "$params" );
 
-            # Set up the NDF section that we're collapsing over.
-            my $section = '';
-            if( defined( $lower_velocity ) || defined( $upper_velocity ) ) {
+            # For each requested spectral range, collapse. The
+            # @specbounds array will have the full range (or the
+            # user-requested range) as the first element, and then any
+            # ranges identified for line-specific moments maps after
+            # that.
+            my @specbounds;
+            if( defined( $Obj->uhdr( "SPECTRAL_BOUNDS" ) ) ) {
               _GET_DIMENSIONS_ FILE=$colin
               my $flbound = $_GET_DIMENSIONS_{FLBOUND};
               my $fubound = $_GET_DIMENSIONS_{FUBOUND};
-              if( defined( $lower_velocity ) && defined( $upper_velocity ) ) {
-                $section = "$lower_velocity:$upper_velocity";
-              } elsif( defined( $lower_velocity ) ) {
-                $section = "$lower_velocity:" . $fubound->[2];
-              } elsif( defined( $upper_velocity ) ) {
-                $section = $flbound->[2] . ":$upper_velocity";
-              }
-              $section = "(,,$section)";
-            }
-
-            # Run the COLLAPSE.
-            orac_say " Collapsing to form temporary $moment map.";
-
-            if( defined( $lower_velocity ) ) {
-              orac_say " Using lower velocity of $lower_velocity km/s.";
-            }
-            if( defined( $upper_velocity ) ) {
-              orac_say " Using upper velocity of $upper_velocity km/s.";
-            }
-
-            my $temp8 = new ORAC::TempFile;
-            my $temp8file = $temp8->file;
-            $params = "in=$colin$section out=$temp8file estimator=$moment ";
-            $params .= "axis=SPEC wlim=0.0 trim=false";
-            if( uc( $moment ) eq 'IWC' ) {
-              $params .= " variance=false";
+              push @specbounds, [ $flbound->[2], $fubound->[2] ];
+              push @specbounds, @{$Obj->uhdr( "SPECTRAL_BOUNDS" ) };
+            } elsif( defined( $lower_velocity ) || defined( $upper_velocity ) ) {
+              push @specbounds, [ $lower_velocity, $upper_velocity ];
             } else {
-              $params .= " variance=true";
+              _GET_DIMENSIONS_ FILE=$colin
+              my $flbound = $_GET_DIMENSIONS_{FLBOUND};
+              my $fubound = $_GET_DIMENSIONS_{FUBOUND};
+              push @specbounds, [ $flbound->[2], $fubound->[2] ];
             }
-            $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
-            push @{$paste_inputs{$moment}}, $temp8file;
-            push @collapsed, $temp8;
+            for my $i ( 0 .. $#specbounds ) {
+              my $lower = $specbounds[$i]->[0];
+              my $upper = $specbounds[$i]->[1];
+
+              if( ! defined( $lower ) ) {
+                _GET_DIMENSIONS_ FILE=$colin
+                $lower = $_GET_DIMENSIONS_{FLBOUND};
+              }
+              if( ! defined( $upper ) ) {
+                _GET_DIMENSIONS_ FILE=$colin
+                $upper = $_GET_DIMENSIONS_{FUBOUND};
+              }
+
+              # Set up the NDF section that we're collapsing over.
+              my $section = "(,,$lower:$upper)";
+
+              # Run the COLLAPSE.
+              orac_say " Collapsing to form temporary $moment map.";
+
+              if( defined( $lower_velocity ) ) {
+                orac_say " Using lower velocity of $lower_velocity km/s.";
+              }
+              if( defined( $upper_velocity ) ) {
+                orac_say " Using upper velocity of $upper_velocity km/s.";
+              }
+
+              my $temp8 = new ORAC::TempFile;
+              my $temp8file = $temp8->file;
+              $params = "in=$colin$section out=$temp8file estimator=$moment ";
+              $params .= "axis=SPEC wlim=0.0 trim=false";
+              if( uc( $moment ) eq 'IWC' ) {
+                $params .= " variance=false";
+              } else {
+                $params .= " variance=true";
+              }
+              $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+              push @{$paste_inputs{$moment}{$i}}, $temp8file;
+              push @collapsed, $temp8;
+            }
             $mom++;
           }
         }
@@ -508,99 +578,120 @@ if( $group != 1 || ( $group == 1 && $Grp->lastallmembers( $Frm ) ) ) {
         # Paste together the files in @collapsed into $out.
         foreach my $moment ( @moments ) {
 
-          my( $in, $out ) = $Obj->inout( "_$moment" );
-
           if( defined( $paste_inputs{$moment} ) ) {
 
-            # We need two temporary files at this point, one to hold
-            # the pasted file pre-map masking, and one to hold an AST
-            # Region.
-            my $temp10 = new ORAC::TempFile;
-            my $temp11 = new ORAC::TempFile;
+            foreach my $region ( sort keys %{$paste_inputs{$moment}} ) {
 
-            if( scalar( @{$paste_inputs{$moment}} ) == 1 ) {
-
-              my $params = "in=${$paste_inputs{$moment}}[0] out=$temp10";
-              $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
-
-            } else {
-
-              orac_say " Pasting together temporary maps to form $moment map.";
-
-              my $title = $Frm->uhdr( "ORAC_OBJECT" );
-              _PASTE_FILES_ FILES=$paste_inputs{$moment} OUT=$temp10 TITLE=$title
-
-            }
-
-            # For SCANs only...
-            if( $Frm->uhdr( "ORAC_SAMPLE_MODE" ) eq 'scan' ) {
-
-              _MASK_AST_REGION_ IN=$temp10 OUT=$out GROUP=$group
-
-            } else {
-              $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp10 out=$out" );
-            }
-
-            orac_say "Created $moment map in $out.";
-
-            _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=$moment
-            $Obj->sync_headers;
-
-            # Copy the output to a group file if requested.
-            if( $group != 1 && $Grp->uhdr( "COPY_FRAME_CUBE" ) ) {
-              ( undef, my $groupout ) = $Grp->inout( "_$moment" );
-
-              $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$out out=$groupout" );
-
-              my $tGrp = new $Grp;
-              $tGrp->groupid( $Grp->groupid );
-              $tGrp->allow_header_sync(1);
-              $tGrp->file( $groupout );
-
-              orac_say "$out to $groupout:";
-              orac_say " Copied to Group file.";
-
-              if( defined( $tag ) && $tag eq $moment ) {
-                _TAG_AS_REPRESENTATIVE_ FILE=$groupout UPDATE=0 GROUP=1 SUFFIX=rimg
-              }
-
-            }
-
-            # Tag the moment map if the current moment is the
-            # requested one.
-            if( defined( $tag ) && $tag eq $moment ) {
-              if( $group == 2 ) {
-                my $Frm = new $Obj;
-                $Frm->file( $out );
-                _TAG_AS_REPRESENTATIVE_ FILE=$out UPDATE=0 GROUP=$group2 SUFFIX=rimg
+              my $suffix;
+              if( $per_line && $region != 0 ) {
+                $suffix = sprintf( "_l%s%03d", $moment, $region );
               } else {
-                _TAG_AS_REPRESENTATIVE_ FILE=$out UPDATE=0 GROUP=$group SUFFIX=rimg
+                $suffix = "_$moment";
               }
-            }
 
-            # Find the position of the peak, then extract a spectrum
-            # from that position, but only if the moment is 'integ'.
-            if( $moment eq 'integ' ) {
+              my( $in, $out ) = $Obj->inout( "$suffix" );
 
-              my $tempfile = new ORAC::TempFile;
+              # We need two temporary files at this point, one to hold
+              # the pasted file pre-map masking, and one to hold an
+              # AST Region.
+              my $temp10 = new ORAC::TempFile;
+              my $temp11 = new ORAC::TempFile;
 
-              # Do a smooth first.
-              $Mon{'kappa_mon'}->obeyw( "block", "in=$out out=$tempfile box=3" );
+              if( scalar( @{$paste_inputs{$moment}{$region}} ) == 1 ) {
 
-              $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$tempfile" );
-              my( $ORAC_STATUS, @maxpos ) = $Mon{'kappa_mon'}->get( "stats", "maxpos" );
-              $Obj->uhdr( "INTEG_MAX_POS", \@maxpos );
+                my $params = "in=${$paste_inputs{$moment}{$region}}[0] out=$temp10";
+                $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "$params" );
 
-              my $tagspec = defined( $tag );
-
-              if( $group == 2 ) {
-                my $Frm = new $Obj;
-                $Frm->files( $Obj->files );
-                $Frm->uhdr( "INTEG_MAX_POS", \@maxpos );
-                _EXTRACT_MAXVALUE_SPECTRUM_ TAG=$tagspec GROUP=$group2
               } else {
-                _EXTRACT_MAXVALUE_SPECTRUM_ TAG=$tagspec GROUP=$group
+
+                orac_say " Pasting together temporary maps to form $moment map.";
+
+                my $title = $Frm->uhdr( "ORAC_OBJECT" );
+                _PASTE_FILES_ FILES=$paste_inputs{$moment}{$region} OUT=$temp10 TITLE=$title
+
               }
+
+              # For SCANs only...
+              if( $Frm->uhdr( "ORAC_SAMPLE_MODE" ) eq 'scan' ) {
+
+                _MASK_AST_REGION_ IN=$temp10 OUT=$out GROUP=$group
+
+              } else {
+                $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$temp10 out=$out" );
+              }
+
+              orac_say "Created $moment map in $out.";
+
+              if( $per_line && $region != 0 ) {
+                _GET_DIMENSIONS_ FILE=$out
+                my $flbound = $_GET_DIMENSIONS_{FLBOUND};
+                my $fubound = $_GET_DIMENSIONS_{FUBOUND};
+                orac_say sprintf( " Collapsed over velocity range: %.3f to %.3f km/s",
+                                  $flbound->[2], $fubound->[2] );
+              }
+
+              _SET_FILE_FITS_ITEM_ FILE=$out KEY=PRODUCT VALUE=$moment
+              $Obj->sync_headers;
+
+              # Copy the output to a group file if requested.
+              if( $group != 1 && $Grp->uhdr( "COPY_FRAME_CUBE" ) ) {
+                ( undef, my $groupout ) = $Grp->inout( "_$moment" );
+
+                $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$out out=$groupout" );
+
+                my $tGrp = new $Grp;
+                $tGrp->groupid( $Grp->groupid );
+                $tGrp->allow_header_sync(1);
+                $tGrp->file( $groupout );
+
+                orac_say "$out to $groupout:";
+                orac_say " Copied to Group file.";
+
+                if( defined( $tag ) && $tag eq $moment && $region == 0 ) {
+                  _TAG_AS_REPRESENTATIVE_ FILE=$groupout UPDATE=0 GROUP=1 SUFFIX=rimg
+                }
+
+              }
+
+              # Tag the moment map if the current moment is the
+              # requested one.
+              if( defined( $tag ) && $tag eq $moment && $region == 0 ) {
+                if( $group == 2 ) {
+                  my $Frm = new $Obj;
+                  $Frm->file( $out );
+                  _TAG_AS_REPRESENTATIVE_ FILE=$out UPDATE=0 GROUP=$group2 SUFFIX=rimg
+                } else {
+                  _TAG_AS_REPRESENTATIVE_ FILE=$out UPDATE=0 GROUP=$group SUFFIX=rimg
+                }
+              }
+
+              # Find the position of the peak, then extract a spectrum
+              # from that position, but only if the moment is 'integ'.
+              if( $moment eq 'integ' && $region == 0 ) {
+
+                my $tempfile = new ORAC::TempFile;
+
+                # Do a smooth first.
+                $Mon{'kappa_mon'}->obeyw( "block", "in=$out out=$tempfile box=3" );
+
+                $Mon{'kappa_mon'}->obeyw( "stats", "ndf=$tempfile" );
+                my( $ORAC_STATUS, @maxpos ) = $Mon{'kappa_mon'}->get( "stats", "maxpos" );
+                $Obj->uhdr( "INTEG_MAX_POS", \@maxpos );
+
+                my $tagspec = defined( $tag );
+
+                if( $group == 2 ) {
+                  my $Frm = new $Obj;
+                  $Frm->files( $Obj->files );
+                  $Frm->uhdr( "INTEG_MAX_POS", \@maxpos );
+                  _EXTRACT_MAXVALUE_SPECTRUM_ TAG=$tagspec GROUP=$group2
+                } else {
+                  _EXTRACT_MAXVALUE_SPECTRUM_ TAG=$tagspec GROUP=$group
+                }
+              }
+
+              orac_say "";
+
             }
           }
         }
