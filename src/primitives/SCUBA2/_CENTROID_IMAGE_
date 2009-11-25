@@ -162,6 +162,7 @@ unless ( defined $in ) {
 my $boxarcsec = get_prim_arg($_PRIM_ARGS_, "BOX", 60);
 _GET_PIXEL_SCALE_ IMAGE=$in VERBOSE=0
 my ($dx, $dy) = @{ $_GET_PIXEL_SCALE_{RESULTS}};
+# Use the mean pixel scale - they shouldn't be drastically different anyway
 my $pixscale = 0.5 * ($dx + $dy);
 my $box = int($boxarcsec / $pixscale);
 # Make sure box is an odd integer
@@ -212,11 +213,21 @@ if ( $numgood >= $minpix ) {
       orac_print "Centroid will be determined in offset coordinates\n" if ($verbose);
     } else {
       # If we don't want offset, retrieve the formatted WCS position
-      # of the peak. NOTE: this will be fooled by the presence of a
-      # spike FUTURE: dealing with spikes, may need an iterative
-      # procedure (clip= option in stats).
-      $Mon{kappa_mon}->obeyw("stats","ndf=$in");
-      ($ORAC_STATUS, $initpos) = $Mon{kappa_mon}->get("stats","maxwcs");
+      # of the peak. If we have a calibrator, use the SkyRef. For
+      # other sources, find the peak position.
+      if ( $Cal->iscalsource($Frm->hdr('OBJECT'))) {
+        $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=skyref");
+        ($ORAC_STATUS, $initpos) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+      } else {
+        # Otherwise search the defined map area (in pixels) for the
+        # brightest peak
+        my $maph = int($Frm->hdr("MAP_HGHT") / $pixscale);
+        my $mapw = int($Frm->hdr("MAP_WDTH") / $pixscale);
+        my $ndf = $in."(~$mapw,~$maph,)";
+        $Mon{kappa_mon}->obeyw("stats","ndf=$ndf");
+        ($ORAC_STATUS, $initpos) = $Mon{kappa_mon}->get("stats","maxwcs");
+      }
+
       # Make sure that we only pass an X,Y coordinate pair to
       # centroid. First strip out any commas, then split on spaces and
       # use the first two elements as the initial position.
