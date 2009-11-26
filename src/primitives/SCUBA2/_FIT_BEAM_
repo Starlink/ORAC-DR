@@ -19,6 +19,8 @@ along the major and minor axes, and the beam position angle on the sky
 at the time of obseration. The fit is performed in the SKY domain so
 the FWHM is returned in arcsec.
 
+See also L<_FIT_PSF_|_FIT_PSF_>
+
 =head1 ARGUMENTS
 
 The following arguments are supported:
@@ -48,16 +50,13 @@ chosen frame. Default is (0,0).
 
 =head1 EXTERNAL TASKS
 
+The following external tasks are used.
+
 =over 4
 
 =item KAPPA:
 
 BEAMFIT, STATS
-
-=item ORAC-DR PRIMITIVES:
-
-_CENTROID_IMAGE_, _FIT_PSF_, _FIND_INTEGRATED_INTENSITY_,
-_GET_LOG_PARAMETERS_
 
 =back
 
@@ -72,22 +71,53 @@ to rotate during the course of an observation.
 
 =head1 OUTPUT DATA
 
-The following keys are returned in the primitive hash:
+The following keys are returned in the primitive hash. If the fit
+fails for any reason, array references will be returned as [0, undef]
+for values with uncertainties, otherwise [0,0] to prevent
+de-referencing errors. Scalars are left undefined.
 
 =over 4
 
 =item AMPLITUDE
 
-The peak signal in the current units.
+Array reference with the peak signal and its uncertainty in the
+current units.
+
+=item AXISR
+
+Axial ratio of the beam.
+
+=item MAJFWHM
+
+Array reference with the FWHM of the major axis and its uncertainty.
+
+=item MINFWHM
+
+Array reference with the FWHM of the minor axis and its uncertainty.
+
+=item ORIENT
+
+Array reference with the beam orientation and its uncertainty, in
+degrees east of north in current coordinate frame
 
 =item POSITION
 
 The position at which the beam is centred.
 
+=item RMS
+
+The RMS of the fit, in the current units.
+
+=item TOTALFLUX
+
+Array reference with the total area under fit and its uncertainty, in
+units of AMP*FWHM^2.
+
 =back
 
 =head1 OUTPUT FILES
 
+None
 
 =head1 AUTHOR
 
@@ -125,7 +155,7 @@ my $in = get_prim_arg($_PRIM_ARGS_, "IMAGE", undef);
 # Go no further if no input image was given
 unless (defined $in) {
   orac_err "Error: _FIT_BEAM_ requires an image file as input\n";
-  return ORAC__OK;
+  return ORAC__TERM;
 }
 
 # Fitarea (corresponds to BOX parameter of _FIT_PSF_). Must be greater
@@ -168,20 +198,32 @@ if ( $numgood >= $minpix ) {
   if ( $BEAM_STATUS == ORAC__OK ) {
 
     # Retrieve fit parameters
-    my @params = (qw/ majfwhm minfwhm orient amp centre /);
+    my @params = (qw/ majfwhm minfwhm orient amp centre back rms /);
     ($ORAC_STATUS, my %bfitres) = $Mon{kappa_mon}->mget("beamfit",@params);
 
     # Read the FWHM and convert to arcsec
     my @majfwhm = map {$_ * RAD2ASEC} @{$bfitres{majfwhm}};
     my @minfwhm = map {$_ * RAD2ASEC} @{$bfitres{minfwhm}};
-    my $axisr = $majfwhm[0] / $minfwhm[0];
+    orac_err "Beamfit appeared to be successful but no FWHM was derived"
+      if (!defined $minfwhm[0] || !defined $majfwhm[0]);
+    # Set axisr to a non-physical value if no fwhm could be obtained
+    my $axisr = ( $minfwhm[0] > 0 ) ? $majfwhm[0] / $minfwhm[0] : -1;
 
-    # Amplitude and orientation with error
-    my @orient = @{$bfitres{orient}};
+    # Amplitude, RMS and orientation with error
     my @amp = @{$bfitres{amp}};
+    my @orient = @{$bfitres{orient}};
+    my $rms = $bfitres{rms};
+
+    # Background level
+    my @backgr = @{$bfitres{back}};
 
     # Calculate total flux under the gaussian
     my $totalflux = 1.133 * $amp[0] * $majfwhm[0] * $minfwhm[0];
+    # Estimate error assuming uncertainties add in quadrature
+    my $fluxerr = $totalflux * ( $amp[1]*$amp[1]/($amp[0]*$amp[0]) +
+			         $minfwhm[1]*$minfwhm[1]/($minfwhm[0]*$minfwhm[0]) +
+			         $majfwhm[1]*$majfwhm[1]/($majfwhm[0]*$majfwhm[0])
+			       );
 
     # Fitted peak position
     my @posn = split(/\s+/, $bfitres{centre}->[0], 2);
@@ -193,14 +235,22 @@ if ( $numgood >= $minpix ) {
     $_FIT_BEAM_{MINFWHM}   = \@minfwhm;
     $_FIT_BEAM_{ORIENT}    = \@orient;
     $_FIT_BEAM_{POSITION}  = \@posn;
-    $_FIT_BEAM_{TOTALFUX}  = $totalflux;
+    $_FIT_BEAM_{TOTALFLUX} = [$totalflux, $fluxerr];
+    $_FIT_BEAM_{RMS}  = $rms;
 
     # Tell user of success if requested
     if ($verbose) {
+      $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
+      ($ORAC_STATUS, my $units) = $Mon{ndfpack_mon}->get("ndftrace","units");
+      $units = "unknown" if (!defined $units);
       my $fwhm1 = sprintf "%5.2f", $minfwhm[0];
       my $orient = sprintf "%5.2f", $orient[0];
       my $fwhm2 = sprintf "%5.2f", $axisr*$fwhm1;
-      orac_print "Successful 2-D Gaussian fit: FWHM = $fwhm1 x $fwhm2 arcsec^2, ORIENT = $orient deg\n";
+      my $amp1 = sprintf "%5.2e", $amp[0];
+      my $flux1 = sprintf "%5.2e", $totalflux;
+      orac_print "Successful 2-D Gaussian fit:\n"
+	."  FWHM = $fwhm1 x $fwhm2 arcsec**2, ORIENT = $orient deg\n"
+	."  AMP  = $amp1 $units, TOTAL FLUX = $flux1 ($units arcsec**2)\n";
     }
   } else {
     orac_err "Beamfit failed\n";
@@ -210,6 +260,7 @@ if ( $numgood >= $minpix ) {
     $_FIT_BEAM_{MINFWHM}   = [-1, undef];
     $_FIT_BEAM_{ORIENT}    = [0, 0];
     $_FIT_BEAM_{POSITION}  = [0, 0];
+    $_FIT_BEAM_{TOTALFLUX} = [0, undef];
 }
 
 } else {
@@ -222,5 +273,6 @@ if ( $numgood >= $minpix ) {
   $_FIT_BEAM_{MINFWHM}   = [-1, undef];
   $_FIT_BEAM_{ORIENT}    = [0, 0];
   $_FIT_BEAM_{POSITION}  = [0, 0];
+  $_FIT_BEAM_{TOTALFLUX} = [0, undef];
 
 }
