@@ -200,7 +200,7 @@ sub _locate_file {
 
   # fully specified path and file exists. Great.
   if (File::Spec->file_name_is_absolute($file)) {
-    print "ABSOLUTE FILENAME: $file\n";
+    print "ABSOLUTE FILENAME: $file\n" if $DEBUG;
     return (-e $file ? $file : undef);
   }
 
