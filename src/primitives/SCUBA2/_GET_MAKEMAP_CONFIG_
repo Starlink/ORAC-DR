@@ -6,33 +6,50 @@ _GET_MAKEMAP_CONFIG_ - Return a config file suitable for use with MAKEMAP
 
 =head1 SYNOPSIS
 
- _GET_MAKEMAP_CONFIG ARGS=$argref CONFIG=$cfg
+ _GET_MAKEMAP_CONFIG CONFIG=$cfg
 
 =head1 DESCRIPTION
 
 Returns the name of a configuration file which may be used by SMURF
 MAKEMAP. The default behaviour is to return the system-installed
-default configuration file. The user may specify a hash reference
-containing makemap configuration parameters and if so must also supply
-an ORAC::TempFile object which will be used to write the desired
-configuration information. Parameters supplied using the B<ARGS>
-argument will override any existing in the system default
-configuration file.
+default configuration file. The Frame uhdr entry
+C<MAKEMAP_CONFIG_TYPE> is used to determine the name of the config
+file if specified.
 
-=head1 ARGUMENTS
+The user may over-ride the default behaviour with the name of a
+customized config file. If not specififed as an absolute path, the
+file must exist in one of three locations:
 
 =over 4
 
-=item B<ARGS>
+=item *
 
-A hash reference containing the keyword-value pairs for makemap config
-parameters. No default.
+the current working directory;
+
+=item *
+
+the directory specififed by $ORAC_DATA_OUT;
+
+=item *
+
+the directory specififed by $ORAC_DATA_CAL.
+
+=back
+
+The system default is used if the file can not be found.
+
+=head1 ARGUMENTS
+
+The following argument is supported:
+
+=over 4
 
 =item B<CONFIG>
 
-An ORAC::TempFile object for the makemap configuration file to be
-written. No default, but if left unspecified, the system default is
-returned (see below).
+An optional alternative config file name. May be given as an absolute
+path, or relative to the current working directory, ORAC_DATA_OUT or
+ORAC_DATA_CAL. No default, but if left unspecified, the system default
+is returned.
 
 =back
 
@@ -42,21 +59,11 @@ On exit, the following entry exists in the primitive hash:
 
 =over 4
 
-=item B<CONFIG>
+=item B<CONFIGFILE>
 
-Name of the makemap configuration file to be used.
+Full path to the makemap configuration file to be used.
 
 =back
-
-=head1 NOTES
-
-Note that the B<CONFIG> parameter is used twice. On entry it contains
-an ORAC::TempFile object (if the user is defining their own); on exit
-it contains the name of the config file.
-
-It is implicitly assumed the user understands the implications of
-specifying parameters in the argument list. B<No sanity checks are made
-on user-supplied parameters>.
 
 =head1 AUTHOR
 
@@ -84,7 +91,7 @@ USA.
 
 =cut
 
-my $argref = get_prim_arg( $_PRIM_ARGS_, "ARGS", undef );
+use File::Spec;
 my $config = get_prim_arg( $_PRIM_ARGS_, "CONFIG", undef );
 
 # Define name of system config file
@@ -92,109 +99,46 @@ my $configname = "dimmconfig";
 my $config_type = $Frm->uhdr("MAKEMAP_CONFIG_TYPE");
 $configname .= "_".$config_type unless ( $config_type eq "normal" );
 $configname .= ".lis";
-my $syscfg = $ENV{'STARLINK_DIR'} ."/share/smurf/$configname";
+my $syscfg = File::Spec->catfile( $ENV{'STARLINK_DIR'}, "/share/smurf/",
+				  $configname );
 
 # Of course, it could have any old name so check that the file
 # actually exists...
 unless ( -e $syscfg ) {
   orac_warn "Requested config file, $configname, does not exist - using default\n";
   $configname = "dimmconfig.lis";
-  $syscfg = $ENV{'STARLINK_DIR'} ."/share/smurf/$configname";
+  $syscfg = File::Spec->catfile( $ENV{'STARLINK_DIR'}, "/share/smurf/",
+				 $configname );
 }
+$_GET_MAKEMAP_CONFIG_{CONFIGFILE} = $syscfg;
 
-if ( defined $argref && defined $config ) {
-
-  # Check supplied config argument is an ORAC::TempFile
-  if (UNIVERSAL::isa($config, "ORAC::TempFile")) {
-
-    my %args = %{ $argref };
-
-    my $myconfig = ( defined $args{MYCONFIG} ) ? 1 : 0;
-
-    # Filter out irrelevant parameters
-    my @notneeded = qw/ VERBOSE MYCONFIG PIXSIZE SYSTEM SPREAD METHOD /;
-    foreach my $notneeded ( @notneeded ) {
-      delete $args{$notneeded} if (exists $args{$notneeded});
-    }
-
-    # Search for config parameters that might have to be specified
-    # differently in the config file compared with how they are read
-    # as an argument to this primitive. Anything given as a
-    # comma-separated list needs parentheses wrapped around the list.
-    my @specials = qw/ MODELORDER FILT_NOTCHLOW FILT_NOTCHHIGH /;
-    foreach my $special (@specials) {
-      if (exists $args{$special} && defined $args{$special}) {
-	$args{$special} = "(".$args{$special}.")";
-      }
-    }
-
-    # Read config parameters from system config file
-    open my $CFG, "< $syscfg"
-      or orac_err "Unable to read system config file: $!";
-
-    my %params;
-    while ( <$CFG> ) {
-      chomp;
-      next if (/^\#/ || /^[ ]\s+/ || !length);
-      my ($var, $value) = split(/\s*=\s*/, $_, 2);
-      $params{$var} = $value;
-    }
-    close($CFG);
-
-    # This block determines the number of samples in the data and
-    # checks that it exceeds the apodization length in the default
-    # config file by at least a factor of 4
-    my $numsamp;
-    my $seqstart = $Frm->hdr("SEQSTART");
-    my $seqend = $Frm->hdr("SEQEND");
-    # If both of these headers are defined, then there are no
-    # subheaders and thus all the data files have the same length
-    if ( $seqstart && $seqend ) {
-      $numsamp = $seqend - $seqstart + 1;
-    } else {
-      # Find the minimum number of samples which will dictate the
-      # apodization length
-      my $min = 1e6;
-      foreach my $subhdr ( $Frm->hdr("SUBHEADERS") ) {
-	# Pick out data files with non-zero SHUTTER values
-	if ( $subhdr->{SHUTTER} > 0 ) {
-	  my $nsamp = $subhdr->{SEQEND} - $subhdr->{SEQSTART} + 1;
-	  # We have data...
-	  $min = $nsamp if ( $nsamp < $min );
-	}
-      }
-      $numsamp = $min;
-    }
-    # Redefine apod in the parameter hash and set myconfig so that a
-    # new config file is written
-    my $apod = ( defined $params{apod} ) ? $params{apod} : 0;
-    if ( $numsamp < 4*$apod ) {	# 4 is the minimum
-      # A factor of 10 is probably overkill but it should guarantee
-      # that enough data remains to make a map after apodizing
-      $params{apod} = int($numsamp / 10);
-      orac_warn "Reducing APOD from $apod to ".$params{apod}." samples due to short integration\n";
-      $myconfig = 1;
-    }
-    # Write out a new config file if necessary
-    if ( $myconfig ) {
-      # Replace any values given in ARGS
-      foreach my $param ( keys %args ) {
-	$params{lc($param)} = $args{$param};
-      }
-
-      # Write out each parameter given in argument list
-      foreach my $param ( keys %params ) {
-	print {$config->handle} $param." = ".$params{$param} ."\n";
-      }
-      $_GET_MAKEMAP_CONFIG_{CONFIG} = $config->file;
-    } else {
-      $_GET_MAKEMAP_CONFIG_{CONFIG} = $syscfg;
-    }
+# A specified config file over-rides the default (maybe except for the
+# QL pipeline?)
+my $configfile;
+if ( defined $config ) {
+  # Test for an absolute path
+  my $abs = File::Spec->file_name_is_absolute( $config );
+  if ( $abs ) {
+    # Use this fle if it exists
+    $configfile = $config if ( -e $config );
   } else {
-    orac_warn "CONFIG argument is not an ORAC::TempFile - falling back on default system config file\n";
-    $_GET_MAKEMAP_CONFIG_{CONFIG} = $syscfg;
+    # OK not an absolute path - is it in the current working directory?
+    use Cwd;
+    my @locations = ( getcwd(), $ENV{ORAC_DATA_OUT}, $ENV{ORAC_DATA_CAL} );
+    foreach my $testlocation ( @locations ) {
+      my $new_config = File::Spec->catfile( $testlocation, $config);
+      if ( -e $new_config ) {
+	$configfile = $new_config;
+	last;
+      }
+    }
   }
 
-} else {
-  $_GET_MAKEMAP_CONFIG_{CONFIG} = $syscfg;
+  # If the specified config file exists then store it, otherwise fall
+  # back on the default defined above.
+  if (defined $configfile) {
+    $_GET_MAKEMAP_CONFIG_{CONFIGFILE} = $configfile;
+  } else {
+    orac_warn "Unable to locate given config file, $config - using default\n";
+  }
 }
