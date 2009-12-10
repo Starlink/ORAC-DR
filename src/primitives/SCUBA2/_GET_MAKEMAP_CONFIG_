@@ -94,26 +94,26 @@ USA.
 use File::Spec;
 my $config = get_prim_arg( $_PRIM_ARGS_, "CONFIG", undef );
 
-# Define name of system config file
-my $configname = "dimmconfig";
-my $config_type = $Frm->uhdr("MAKEMAP_CONFIG_TYPE");
-$configname .= "_".$config_type unless ( $config_type eq "normal" );
-$configname .= ".lis";
-my $syscfg = File::Spec->catfile( $ENV{'STARLINK_DIR'}, "/share/smurf/",
-				  $configname );
+my $syscfg;
+# Define a basic default config file
+if ( $Frm->uhdr("QUICKLOOK") ) {
+  # QL-specific default
+  $syscfg = $Cal->makemap_config( ql => 1,
+				  filter => $Frm->uhdr("ORAC_FILTER") );
+} else {
+  # Non-QL default config file
+  $syscfg = $Cal->makemap_config( config_type => $Frm->uhdr("MAKEMAP_CONFIG_TYPE"));
 
-# Of course, it could have any old name so check that the file
-# actually exists...
-unless ( -e $syscfg ) {
-  orac_warn "Requested config file, $configname, does not exist - using default\n";
-  $configname = "dimmconfig.lis";
-  $syscfg = File::Spec->catfile( $ENV{'STARLINK_DIR'}, "/share/smurf/",
-				 $configname );
+  # Of course, it could have any old name so check that the file
+  # actually exists...
+  unless ( -e $syscfg ) {
+    orac_warn "Requested config file, $config, does not exist - using default\n";
+    $syscfg = $Cal->makemap_config;
+  }
 }
 $_GET_MAKEMAP_CONFIG_{CONFIGFILE} = $syscfg;
 
-# A specified config file over-rides the default (maybe except for the
-# QL pipeline?)
+# A specified config file over-rides the default
 my $configfile;
 if ( defined $config ) {
   # Test for an absolute path
@@ -122,11 +122,12 @@ if ( defined $config ) {
     # Use this fle if it exists
     $configfile = $config if ( -e $config );
   } else {
-    # OK not an absolute path - is it in the current working directory?
+    # OK not an absolute path - check in current working dir, and up
+    # to two other places if necessary
     use Cwd;
     my @locations = ( getcwd(), $ENV{ORAC_DATA_OUT}, $ENV{ORAC_DATA_CAL} );
     foreach my $testlocation ( @locations ) {
-      my $new_config = File::Spec->catfile( $testlocation, $config);
+      my $new_config = File::Spec->catfile( $testlocation, $config );
       if ( -e $new_config ) {
 	$configfile = $new_config;
 	last;
