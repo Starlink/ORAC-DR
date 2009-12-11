@@ -71,10 +71,8 @@ to rotate during the course of an observation.
 
 =head1 OUTPUT DATA
 
-The following keys are returned in the primitive hash. If the fit
-fails for any reason, array references will be returned as [0, undef]
-for values with uncertainties, otherwise [0,0] to prevent
-de-referencing errors. Scalars are left undefined.
+The following keys are returned in the primitive hash if the fit was
+successful.
 
 =over 4
 
@@ -86,6 +84,11 @@ current units.
 =item AXISR
 
 Axial ratio of the beam.
+
+=item FIT
+
+Contains 1 on success, 0 on failure. Will be the only entry defined on
+failure.
 
 =item MAJFWHM
 
@@ -196,7 +199,6 @@ if ( $numgood >= $minpix ) {
   my $BEAM_STATUS = $Mon{kappa_mon}->obeyw("beamfit","ndf=$in $args");
 
   if ( $BEAM_STATUS == ORAC__OK ) {
-
     # Retrieve fit parameters
     my @params = (qw/ majfwhm minfwhm orient amp centre back rms /);
     ($ORAC_STATUS, my %bfitres) = $Mon{kappa_mon}->mget("beamfit",@params);
@@ -229,6 +231,7 @@ if ( $numgood >= $minpix ) {
     my @posn = split(/\s+/, $bfitres{centre}->[0], 2);
 
     # Store results in primitive hash
+    $_FIT_BEAM_{FIT} = 1;
     $_FIT_BEAM_{AMPLITUDE} = \@amp;
     $_FIT_BEAM_{AXISR}     = $axisr;
     $_FIT_BEAM_{MAJFWHM}   = \@majfwhm;
@@ -252,27 +255,21 @@ if ( $numgood >= $minpix ) {
 	."  FWHM = $fwhm1 x $fwhm2 arcsec**2, ORIENT = $orient deg\n"
 	."  AMP  = $amp1 $units, TOTAL FLUX = $flux1 ($units arcsec**2)\n";
     }
+  } elsif ( $BEAM_STATUS == 234127368 ) {
+    # PDA error status: PDA__FICMX: Failed to invert the curvature
+    # matrix to derive fit errors
+    orac_warn "Beamfit failed: unable to determine fit errors\n";
+    $_FIT_BEAM_{FIT} = 0;
+
   } else {
-    orac_err "Beamfit failed\n";
-    # Return some dummy values to prevent dereferencing errors
-    $_FIT_BEAM_{AMPLITUDE} = [0, undef];
-    $_FIT_BEAM_{MAJFWHM}   = [0, undef];
-    $_FIT_BEAM_{MINFWHM}   = [-1, undef];
-    $_FIT_BEAM_{ORIENT}    = [0, 0];
-    $_FIT_BEAM_{POSITION}  = [0, 0];
-    $_FIT_BEAM_{TOTALFLUX} = [0, undef];
-}
+    orac_err "Beamfit failed in an unexpected manner\n";
+    $_FIT_BEAM_{FIT} = 0;
+    $ORAC_STATUS = $BEAM_STATUS;
+  }
 
 } else {
   orac_warn "Insufficient number of good values to fit a 2-D Gaussian profile in the current image\n"
     if $verbose;
 
-  # Return some dummy values to prevent dereferencing errors
-  $_FIT_BEAM_{AMPLITUDE} = [0, undef];
-  $_FIT_BEAM_{MAJFWHM}   = [0, undef];
-  $_FIT_BEAM_{MINFWHM}   = [-1, undef];
-  $_FIT_BEAM_{ORIENT}    = [0, 0];
-  $_FIT_BEAM_{POSITION}  = [0, 0];
-  $_FIT_BEAM_{TOTALFLUX} = [0, undef];
-
+  $_FIT_BEAM_{FIT} = 0;
 }
