@@ -19,8 +19,8 @@ of the calibrator:
 
 This value is then stored in the index file C<index.gains>.
 
-Additionally, the peak response is calculated by finding the
-peak flux and the fitted peak signal.
+Additionally, the peak response is calculated by finding the peak flux
+and the fitted peak signal (derived from a 2-D Gaussian fit).
 
   fcf = P_peak / S_peak
 
@@ -34,6 +34,11 @@ The following arguments are supported:
 
 True if the Group image should be used. Otherwise the current Frame is
 used.
+
+=item B<STORE>
+
+Flag to denote whether to store the results in the Calibration
+system. Default us 1 (yes).
 
 =back
 
@@ -96,6 +101,9 @@ USA.
 =cut
 
 my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+
+# Flag to denote whether to store the result in the Calibration system
+my $store = get_prim_arg($_PRIM_ARGS_, "STORE", 1);
 
 my $Obj = ( $group ? $Grp : $Frm );
 
@@ -170,23 +178,28 @@ if ($Cal->iscalsource($Obj->uhdr("ORAC_OBJECT")) && $obsend ) {
 
       # If we have a flux, store the FCF in the calibration system
       if (defined $flux) {
-	orac_print "Flux: $type $flux, ". $results{$type}. "\n";
+	orac_print "Flux ($type) = $flux; Data = ". $results{$type}. "\n";
 
 	# Calculate the new gain
 	my $fcf = $flux / $results{$type};
 
-	# Announce the new gain
-	orac_print("Storing new gain for $filter: $fcf $units\n",'yellow');
+	# Store the result in the calibration system
+	if ( $store ) {
+	  # Announce the new gain
+	  orac_print("Storing new gain for $filter: $fcf $units\n",'yellow');
 
-	# Set the current gain - add to index file
-	# This means that we have to create a hash with the
-	# new keyword GAIN and the selected filter FILTER
-	$Obj->uhdr("GAIN",$fcf);
-	$Obj->uhdr("UNITS", $type);
+	  # Set the current gain - add to index file
+	  # This means that we have to create a hash with the
+	  # new keyword GAIN and the selected filter FILTER
+	  $Obj->uhdr("GAIN",$fcf);
+	  $Obj->uhdr("UNITS", $type);
 
-	# Need to append type to file name so that the keys are unique
-	$Cal->gainsindex->add($Obj->file() ."_$type",
-			      { %{$Obj->hdr}, %{$Obj->uhdr}});
+	  # Need to append type to file name so that the keys are unique
+	  $Cal->gainsindex->add($Obj->file() ."_$type",
+				{ %{$Obj->hdr}, %{$Obj->uhdr}});
+	} else {
+	  orac_print ("Derived FCF for $filter: $fcf $units\n", "yellow");
+	}
 
 	# Additionally it seems that a user-friendly logfile is
 	# a requirement
