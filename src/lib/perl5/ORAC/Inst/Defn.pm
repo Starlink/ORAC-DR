@@ -907,6 +907,7 @@ sub orac_determine_primitive_search_path {
 
   } elsif ($inst eq 'PICARD') {
     push( @path, File::Spec->catdir( $root, "PICARD" ) );
+    push( @path, File::Spec->catdir( $root, 'SCUBA2') );
     push( @path, $het_root );
     push( @path, $jsa_root );
     push( @path, $general_root );
