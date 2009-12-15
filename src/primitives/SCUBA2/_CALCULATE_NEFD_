@@ -49,6 +49,10 @@ Frame).
 Flag to indicate whether or not to write a log file to disk. Default
 is 1 (write a log file).
 
+=item B<VERBOSE>
+
+Flag to denote whether to print extra messages. Default is 0 (no).
+
 =back
 
 =head1 EXTERNAL TASKS
@@ -59,24 +63,35 @@ The following external tasks are used:
 
 =item KAPPA
 
-CMULT
+COPYBAD
 
 =item ORAC-DR PRIMITIVES:
 
-_FIND_IMAGE_STATISTICS_, _FIND_VARIANCE_, _GET_LOG_PARAMETERS_
+_FIND_IMAGE_STATISTICS_, _FIND_VARIANCE_, _GET_LOG_PARAMETERS_,
+_MASK_AST_REGION_
 
 =back
 
 =head1 NOTES
 
-This primitive must be run on calibrated images.
+Points to note when deriving the NEFD from an image:
 
-When deriving the NEFD from an image, the data are masked to only
-include values within the bounds of the requested map (as defined by
-the FITS headers). This ensures that noisy pixels at the edge of the
-map do not affect the calculation.
+=over 4
 
-This primitive will give erroneous results in offline mode for
+=item * The data must be calibrated.
+
+=item * The data are masked to only include values within the bounds
+of the requested map (as defined by the FITS headers). This ensures
+that noisy pixels at the edge of the map do not affect the
+calculation.
+
+=item * This primitive assumes the current Frame or Group contains
+only a single file, and is a no-op if there are multiple files. A
+warning is issued in this case.
+
+=back
+
+This primitive currently gives erroneous results in offline mode for
 deriving the NEFD from noise data.
 
 =head1 OUTPUT DATA
@@ -114,8 +129,14 @@ USA.
 
 =cut
 
+# Return immediately if the Frame only contains darks
+return ORAC__OK if $Frm->uhdr("DARKONLY");
+
 # Write a log file? Default to yes
 my $uselog = get_prim_arg( $_PRIM_ARGS_, "LOGFILE", 1 );
+
+# Be verbose?
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 0 );
 
 # Has the user requested the use of the Group image?
 my $groupflag = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
@@ -259,10 +280,16 @@ if ($usenoise) {
 
     my $frmgrp = ($groupflag) ? "Group" : "Frame";
     if (defined $noise && $noise > 0) {
-      # Obtain median exposure time
+      # Obtain exposure time
       $maskeddatafile .= ".MORE.SMURF.EXP_TIME";
       _FIND_IMAGE_STATISTICS_ IMAGE=$maskeddatafile VERBOSE=0
       my $texp = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$estimator};
+      if ($verbose) {
+	my $pnoise = sprintf "%4.2f", $noise;
+	my $ptexp = sprintf "%4.2f", $texp;
+	orac_print "$estimator noise = $pnoise mJy/beam, "
+	  ."$estimator integration time = $ptexp s\n";
+      }
 
       # Calculate NEFD
       $nefd = $noise * sqrt( $texp );
