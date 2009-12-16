@@ -1,0 +1,114 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CALC_SCUBA2_FCF_ - derive FCFs from input images of SCUBA-2 calibration sources
+
+=head1 SYNOPSIS
+
+_CALC_SCUBA2_FCF_
+
+=head1 DESCRIPTION
+
+This PICARD primitive is designed to calculate flux conversion factors
+(FCFs) from images of SCUBA-2 calibration sources.
+
+=head1 ARGUMENTS
+
+This primitive has no arguments.
+
+=head1 EXTERNAL TASKS
+
+The following external task is used:
+
+=over 4
+
+=item ORAC-DR primitives:
+
+SCUBA2: _FIND_CALIBRATION_MAP_
+
+=back
+
+=head1 OUTPUT DATA
+
+FCFs are written to a log file C<log.fcf>. See
+L<_ADD_FCF_LOG_ENTRY_|_ADD_FCF_LOG_ENTRY_> for details on the format.
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+orac_print ("\nCalling _CALC_SCUBA2_FCF_: calculate an FCF for uncalibrated SCUBA-2 data\n", "yellow");
+
+# Retrieve the original headers
+my $thing1 = $Cal->thingone;
+my $thing2 = $Cal->thingtwo;
+
+$Cal = orac_calib_override( "ORAC::Calib::SCUBA2" );
+
+# Store the header things in the new Calib object
+$Cal->thingone($thing1);
+$Cal->thingtwo($thing2);
+
+# Check the units - we can ONLY derive an FCF for uncalibrated data,
+# ie pW
+if ( $Frm->uhdr("DATA_UNITS") eq "pW") {
+
+  # Now, _FIND_CALIBRATION_MAP_ only operates on the current Frame or
+  # Group file, so we need to trick it. Loop over all the files in the
+  # Frame, store each in turn as the Frame file and derive the FCF.
+  my $nfiles = $Frm->nfiles;
+  my @files = $Frm->files;
+  # Make a copy to restore later
+  my $inFrm = $Frm;
+
+  # Create a new temporary Frame object
+  $Frm = $Frm->new;
+
+  # Process each file
+  foreach my $i ( 1 .. $nfiles ) {
+    $Frm->files($files[$i-1]);
+    $Frm->readhdr;
+    my $object = $Frm->hdr("OBJECT");
+    if ( $Cal->iscalsource($object) ) {
+      orac_print "\nCalculating FCF for $files[$i-1] ($object)\n";
+      # Set store=0 because we don't want to try and store the FCF in the
+      # calibration system
+      _FIND_CALIBRATION_MAP_ STORE=0 GROUP=0
+    } else {
+      orac_print "\nSkipping $files[$i-1] ($object): not a calibrator\n";
+    }
+  }
+  # Restore the Frame to its input state
+  $Frm = $inFrm;
+
+} else {
+  orac_warn "Unable to calculate an FCF: data are already calibrated (in "
+    .$Frm->uhdr("DATA_UNITS").")\n";
+}
