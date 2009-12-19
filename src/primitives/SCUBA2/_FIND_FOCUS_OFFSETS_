@@ -172,7 +172,7 @@ if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
     ($ORAC_STATUS, @vals) = $Mon{ndfpack_mon}->get("ndftrace","ubound");
     my $focstephi = $vals[2];
 
-    my (@amps, @fwhms, @focposns, @fitted);
+    my (@amps, @fwhms, @focposns, @fitted, @damps);
     # Retrieve list of focus positions
     if ( $Grp->uhdr("FOCPOSNS") ) {
       @focposns = @{ $Grp->uhdr("FOCPOSNS") };
@@ -188,24 +188,22 @@ if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
       # Get estimate of source position for fitting in offset coords
       _CENTROID_IMAGE_ IMAGE=$focusfile VERBOSE=0
       my $results = $_CENTROID_IMAGE_{RESULTS};
-      my ( $x, $y ) = (defined $results) ? @{ $results } : (undef, undef);
-      if ( defined $x && defined $y ) {
-	# Write position to ASCII file for reading into PSF
-	my $cofile = new ORAC::TempFile;
-	print {$cofile->handle} $x ." ".$y."\n";
-	$cofile->handle->close;
-
-	# Fit a PSF to image
-	_FIT_PSF_ IMAGE=$focusfile COFILE=$cofile->file VERBOSE=0 GAUSSIAN=0
-	# Store fit parameters
-	my $amp = $_FIT_PSF_{AMPLITUDE};
-	my $fwhm = $_FIT_PSF_{FWHM};
-	my $axisr = $_FIT_PSF_{AXISR};
-	if ( defined $amp && defined $fwhm ) {
+      my @xy = (defined $results) ? @{ $results } : (undef, undef);
+      if ( defined $xy[0] && defined $xy[1] ) {
+	# Fit a 2-D gaussian to the source
+	_FIT_BEAM_ IMAGE=$focusfile XYPOS=\@xy VERBOSE=0 BOX=21
+	if ( $_FIT_BEAM_{FIT} == 1 ) {
+	  # Store fit parameters
+	  my $amp = $_FIT_BEAM_{AMPLITUDE}->[0];
+	  my $damp = $_FIT_BEAM_{AMPLITUDE}->[1];
+	  my $fwhm = $_FIT_BEAM_{MINFWHM}->[0];
+	  my $axisr = $_FIT_BEAM_{AXISR};
 	  # Calculate mean FWHM
 	  $fwhm *= sqrt($axisr);
-	  # Add the Amplitude and FWHM to the arrays if valid values were returned
+	  # Add the Amplitude, its uncertainty and FWHM to the arrays
+	  # if valid values were returned
 	  push (@amps, $amp);
+	  push (@damps, $damp);
 	  push (@fwhms, $fwhm);
 	  push (@fitted, $plane-1);
 	} else {
@@ -226,17 +224,20 @@ if ( uc($Frm->hdr('OBS_TYPE')) eq "FOCUS" ) {
       orac_print "Calculating best-fit focus position with $npts measurements... "
 	if $verbose;
 
-      # Write out positions to tmp file, subtract half a pixel to
-      # convert to pixel coordinates
+      # Write out positions to tmp file
       my $inresfile = new ORAC::TempFile;
       my $outresfile = new ORAC::TempFile;
       foreach my $i (0 .. $#amps) {
-	print {$inresfile->handle} ($focposns[$fitted[$i]]-0.5)." ".$amps[$i]."\n";
+	print {$inresfile->handle} ($focposns[$fitted[$i]])." ".$amps[$i]." ".$damps[$i]."\n";
       }
       $inresfile->handle->close;
-      # Convert text array into a 1-D NDF with trandat
-      my $args = "dtype='_DOUBLE' poscols=1 valcol=2 pscale=1 freename=".$inresfile->file." ndf=".$outresfile->file;
-      $Mon{kappa_mon}->obeyw("trandat","$args");
+
+      # Convert text array into a 1-D NDF with Figaro ASCIN. Write
+      # uncertainties to file to get a weighted fit from fitpoly.
+      my $args = "in=".$inresfile->file." out=".$outresfile->file
+	." lines=[1,$npts] colaxes=1 coldata=[2,3] colwidth=0.3";
+      $Mon{figaro4}->obeyw("ascin","$args");
+
       # Run FITPOLY to get fit
       $args = "device=! mask1=$focposns[$fitted[0]] order=2 mask2=$focposns[$fitted[-1]] dialog=f logfil=! comp=1 in=".$outresfile->file;
       $Mon{figaro4}->obeyw("fitpoly","$args");
