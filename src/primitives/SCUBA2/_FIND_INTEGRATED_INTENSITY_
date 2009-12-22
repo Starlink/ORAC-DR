@@ -85,7 +85,7 @@ ARDMASK, WCSATTRIB
 
 =item ORAC-DR PRIMITIVES:
 
-_FIND_IMAGE_STATISTICS_, _GET_PIXEL_SCALE_
+_FIND_IMAGE_STATISTICS_, _GET_PIXEL_SCALE_, _MASK_IMAGE_
 
 =back
 
@@ -194,48 +194,12 @@ my $radius = get_prim_arg( $_PRIM_ARGS_,"RADIUS", 20.0 );
 foreach my $item (qw/ PEAKFLUX TOTALFLUX SUM SIGMA NUMGOOD NUMPIX /) {
   $_PRIM_ARGS_->{$item} = undef;
 }
-
-# Create the temporary file for the ard description
-my $ard = new ORAC::TempFile;
-
-my $ORAC_STATUS;
-# Get current coordinate system
-$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=system(1)");
-($ORAC_STATUS, my $cosys) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-# Convert string to upper case
-$cosys = uc($cosys);
-
-# Write the ard description - start with the coordinate frame
-print {$ard->handle} "COFRAME(SKY,System=$cosys)\n";
-
-# Mask out everything EXCEPT a circle centred on X, Y. Radius has to
-# be specified correctly in current coordinate system.
-# If AzEl or Galactic, convert to degrees
-if ( $cosys eq "AZEL" || $cosys eq "GALACTIC" ) {
-  my $dradius = $radius/3600.0;
-  print {$ard->handle} ".NOT.CIRCLE($x, $y, $dradius)\n";
-} else {
-  # All other supported systems are HMS/DMS so need to format
-  # correctly
-  if ( $radius < 60.0 ) {
-    print {$ard->handle} ".NOT.CIRCLE($x, $y, 00:00:$radius)\n";
-  } else {
-    my $mradius = int( $radius / 60.0 );
-    my $sradius = $radius - ($mradius * 60);
-    print {$ard->handle} ".NOT.CIRCLE($x, $y, 00:$mradius:$sradius)\n";
-  }
-}
-
-# Close the file
-$ard->handle->close;
-
 # Get temporary output file
 my $outobj = new ORAC::TempFile;
 my $out = $outobj->file;
-my $ardin = $ard->file;
 
-# Run ardmask
-$Mon{kappa_mon}->obeyw("ardmask", "in=$in out=$out ardfile=$ardin ");
+# Mask the input image - mask everything *outside* the aperture
+_MASK_IMAGE_ IMAGE=$in MASKED=$out XYPOS=$xypos INVERT=1
 
 # Find stats on the masked image to get the flux in the aperture
 _FIND_IMAGE_STATISTICS_ IMAGE=$out VERBOSE=0 HISTAT=0
@@ -251,38 +215,12 @@ my $sigma   = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
 # the centre. The QL scan-mapmaker will produce a bowl around a bright
 # source which this method will not deal with.
 
-# Create another temporary file for the new ard description
-$ard = new ORAC::TempFile;
-
-# Write the ard description - start with the coordinate frame
-print {$ard->handle} "COFRAME(SKY,System=$cosys)\n";
-
-# Mask out a circle centred on X, Y as above
-if ( $cosys eq "AZEL" || $cosys eq "GALACTIC" ) {
-  my $dradius = $radius/3600.0;
-  print {$ard->handle} "CIRCLE($x, $y, $dradius)\n";
-} else {
-  # All other supported systems are HMS/DMS so need to format
-  # correctly
-  if ( $radius < 60.0 ) {
-    print {$ard->handle} "CIRCLE($x, $y, 00:00:$radius)\n";
-  } else {
-    my $mradius = int( $radius / 60.0 );
-    my $sradius = $radius - ($mradius * 60);
-    print {$ard->handle} "CIRCLE($x, $y, 00:$mradius:$sradius)\n";
-  }
-}
-
-# Close the ard file
-$ard->handle->close;
-
 # Get a temporary output file
 my $bgoutobj = new ORAC::TempFile;
 my $bgout = $bgoutobj->file;
-$ardin = $ard->file;
 
-# Run ardmask to mask out source
-$Mon{kappa_mon}->obeyw("ardmask", "in=$in out=$bgout ardfile=$ardin ");
+# Mask the input image - mask everything *inside* the aperture
+_MASK_IMAGE_ IMAGE=$in MASKED=$bgout XYPOS=$xypos INVERT=0
 
 # Now calculate stats of the masked file to get the mean (background)
 # level outside the source aperture
@@ -310,3 +248,4 @@ if ( $ORAC_STATUS == ORAC__OK ) {
   $_PRIM_ARGS_->{NUMGOOD} = $ngood;
   $_PRIM_ARGS_->{NUMPIX} = $npix;
 }
+
