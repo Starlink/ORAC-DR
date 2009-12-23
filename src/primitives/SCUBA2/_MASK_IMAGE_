@@ -117,44 +117,17 @@ unless ( defined ($masked) ) {
 # Should I be verbose (default to yes)
 my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
 
-# Get current coordinate system
-$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=system(1)");
-my ($ORAC_STATUS, my $cosys) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-# Convert string to upper case
-$cosys = uc($cosys);
-
-my $azel = ($cosys eq "AZEL") ? 1 : 0;
-my $galactic = ($cosys eq "GALACTIC") ? 1 : 0;
-
-# Define X and Y positions
-my $xypos = get_prim_arg( $_PRIM_ARGS_, "XYPOS", undef );
-my ($x, $y);
-if (defined $xypos && ref($xypos) eq 'ARRAY') {
-  ($x, $y) = @$xypos;
-  # what should happen if we have undef x and y?
-  orac_throw "Error: Empty position provided to _MASK_IMAGE_\n"
-      unless (defined $x && defined $y);
-} else {
-  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=skyrefis");
-  ($ORAC_STATUS, my $offset) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-
-  # If we're using an offset coordinate system, assume the source is as 0, 0
-  if ( lc($offset) eq "origin" ) {
-    ($x, $y) = (0.0, 0.0);
-  } else {
-    # Otherwise use the SkyRef attribute
-    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=skyref");
-    ($ORAC_STATUS, my $skyref) = $Mon{ndfpack_mon}->get("wcsattrib","value");
-    if ( defined $skyref ) {
-      ($x, $y) = split( /,/, $skyref, 2);
-    } else {
-      orac_throw "Unable to determine a position for the mask in _MASK_IMAGE_\n";
-    }
-  }
-}
-
 # Set radius of mask - default is 20 arcsec
 my $radius = get_prim_arg( $_PRIM_ARGS_,"RADIUS", 20.0 );
+
+# Optional position of aperture
+my $xypos = get_prim_arg( $_PRIM_ARGS_, "XYPOS", undef );
+
+my $aperture = get_prim_arg( $_PRIM_ARGS_, "APERTURE", undef );
+unless ( defined $aperture ) {
+  _DEFINE_APERTURE_ IMAGE=$in XYPOS=$xypos RADIUS=$radius
+  $aperture = $_DEFINE_APERTURE_{APERTURE};
+}
 
 # Create the temporary file for the ard description
 my $ard = new ORAC::TempFile;
@@ -164,25 +137,10 @@ my $invert = get_prim_arg( $_PRIM_ARGS_, "INVERT", 0 );
 my $circle = ( $invert ) ? ".NOT.CIRCLE" : "CIRCLE";
 
 # Write the ard description - start with the coordinate frame
-print {$ard->handle} "COFRAME(SKY,System=$cosys)\n";
+print {$ard->handle} "COFRAME(SKY,System=".$aperture->{cosys}.")\n";
 
-# Mask out everything EXCEPT a circle centred on X, Y. Radius has to
-# be specified correctly in current coordinate system.
-# If AzEl or Galactic, convert to degrees
-if ( $azel || $galactic ) {
-  my $dradius = $radius/3600.0;
-  print {$ard->handle} "$circle($x, $y, $dradius)\n";
-} else {
-  # All other supported systems are HMS/DMS so need to format
-  # correctly
-  if ( $radius < 60.0 ) {
-    print {$ard->handle} "$circle($x, $y, 00:00:$radius)\n";
-  } else {
-    my $mradius = int( $radius / 60.0 );
-    my $sradius = $radius - ($mradius * 60);
-    print {$ard->handle} "$circle($x, $y, 00:$mradius:$sradius)\n";
-  }
-}
+print {$ard->handle} "$circle(".$aperture->{coords}
+                    .", ".($aperture->{radius}).")\n";
 
 # Close the file
 $ard->handle->close;
