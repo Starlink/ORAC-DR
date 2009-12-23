@@ -1,0 +1,188 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CALC_NOISE_TEXP_ - calculate the flux of a source
+
+=head1 SYNOPSIS
+
+_CALC_NOISE_TEXP_
+
+=head1 DESCRIPTION
+
+This PICARD primitive obtains and stores a variety of information
+about each image of a calibration source, calculating the mean noise
+level and exposure time within a specified aperture.
+
+The default aperture has a radius of 30", though this is overridden by
+the presence of the C<APERTURE_RADIUS> recipe parameter.
+
+=head1 ARGUMENTS
+
+This primitive has no arguments.
+
+=head1 EXTERNAL TASKS
+
+The following external task is used:
+
+=over 4
+
+=item ORAC-DR primitives:
+
+SCUBA2: _FIND_INTEGRATED_INTENSITY_, _GET_PIXEL_SCALE_
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+Creates files with suffix C<_err> for all images of calibrators which
+contain the square-root of the variance component for that image.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+orac_print ("\nCalling _CALC_NOISE_TEXP_: calculate fluxes, FCFs, noise etc\n", "yellow");
+
+# Tau conversion
+use JCMT::Tau;
+
+# Override the default calibration object
+my $thing1 = $Cal->thingone;
+my $thing2 = $Cal->thingtwo;
+# Create the new Cal object
+$Cal = orac_calib_override( "ORAC::Calib::SCUBA2" );
+# Store the header things in the new Calib object
+$Cal->thingone($thing1);
+$Cal->thingtwo($thing2);
+
+# Define the aperture radius
+my $radius = ( defined $Frm->uhdr("RECPAR_APERTURE_RADIUS") ) ?
+  $Frm->uhdr("RECPAR_APERTURE_RADIUS") : 30.0;
+$Frm->uhdr("APERTURE_RADIUS", $radius);
+
+# Coefficients for calculating NEFD based on that in CfP
+my ( $mult, $const, $off );
+if ( $Frm->uhdr("ORAC_FILTER") =~ /^850/ ) {
+  orac_warn "CfP NEFDs will not be correct! Using 450 um numbers...\n";
+  ( $mult, $const, $off ) = ( 7.5e4, 70.0, 0.02);
+} else {
+  ( $mult, $const, $off ) = ( 7.5e4, 70.0, 0.02);
+}
+
+# Store the default beamsize
+$Frm->uhdr("FWHM", $Cal->fwhm);
+
+# Now, some SCUBA2 primitives only operates on the current Frame or
+# Group file, so we need to trick it. Loop over all the files in the
+# Frame, store each in turn as the Frame file and work on that file
+# alone.
+my $nfiles = $Frm->nfiles;
+my @files = $Frm->files;
+my $inFrm = $Frm;
+
+# Create a new Frame object
+$Frm = $Frm->new;
+
+# Sources hash - indexed by filename
+my %sources;
+# Calculate the mean noise and exposure time within an aperture
+# centred on the source
+orac_print "Calculating noise and exposure time...";
+foreach my $i (1 .. $nfiles) {
+
+  my $file = $inFrm->file($i);
+  $Frm->files($file);
+
+  $Frm->readhdr;
+  my $source = $Frm->hdr("OBJECT");
+  unless ( $Cal->iscalsource($source) ) {
+    orac_print "\n";
+    orac_warn "Skipping non-calibrator, $source\n";
+    next;
+  }
+  my %current_source;
+  $current_source{source} = $source;
+
+  # Get actual flux density of source
+  $current_source{source_flux} = $Cal->fluxcal( $current_source{source},
+						$Frm->uhdr("ORAC_FILTER"), 0 );
+
+  # Use CSO tau conversions but pass in the WVM tau
+  my $tau = 0.5 * ($Frm->hdr("WVMTAUST") + $Frm->hdr("WVMTAUEN"));
+  $current_source{wvm} = $tau;
+  ($current_source{tau}, my $status) = get_tau( $Frm->uhdr("ORAC_FILTER"),
+						"CSO", $tau);
+  $current_source{airmass} = 0.5 * ( $Frm->uhdr("ORAC_AIRMASS_END") +
+				     $Frm->uhdr("ORAC_AIRMASS_START"));
+
+  # NEFD at this tau based on values given in the Call for Proposals
+  $current_source{nefd_cfp} = $mult * ($tau - $off)*($tau - $off) + $const;
+
+  # Get the pixel scale and calculate the beam area in pixels - in
+  # principle this could be done only once as it's likely that all the
+  # input files have the same pixel scale but let's not make that
+  # assumption just yet.
+  _GET_PIXEL_SCALE_ IMAGE=$file VERBOSE=0
+  my $pixscale = 0.5 * ( $_GET_PIXEL_SCALE_{RESULTS}->[0] +
+			 $_GET_PIXEL_SCALE_{RESULTS}->[1] );
+  my $pixarea = $_GET_PIXEL_SCALE_{AREA};
+  $current_source{pixscale} = $pixscale;
+  $current_source{beam_area} = 1.133 * ($Cal->fwhm * $Cal->fwhm) / $pixarea;
+
+  # NOISE
+  my $varnoise = $Frm->inout("_err");
+  $Mon{kappa_mon}->obeyw("maths","exp=sqrt(va) va=$file out=$varnoise");
+
+  _FIND_INTEGRATED_INTENSITY_ IMAGE=$varnoise RADIUS=$radius MASK=0
+  my $sum = $_FIND_INTEGRATED_INTENSITY_{SUM};
+  my $ngood = $_FIND_INTEGRATED_INTENSITY_{NUMGOOD};
+  my $mean = $sum / $ngood;
+  $current_source{noise} = $mean;
+
+  # EXP_TIME
+  my $exptime = $file . ".more.smurf.exp_time";
+  _FIND_INTEGRATED_INTENSITY_ IMAGE=$exptime RADIUS=$radius MASK=0
+  $sum = $_FIND_INTEGRATED_INTENSITY_{SUM};
+  $ngood = $_FIND_INTEGRATED_INTENSITY_{NUMGOOD};
+  $mean = $sum / $ngood;
+  $current_source{texp} = $mean;
+
+  # Store this source in the hash
+  $sources{$file} = \%current_source;
+}
+
+# Restore Frame object
+$Frm = $inFrm;
+
+orac_print " done\n";
+
+# Store the sources hash
+$Frm->uhdr("SOURCES",\%sources);
+
