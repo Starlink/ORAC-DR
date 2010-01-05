@@ -1,0 +1,191 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CHECK_MAP_BOUNDS_ - check image size and return modified image bounds
+
+=head1 SYNOPSIS
+
+ _CHECK_MAP_BOUNDS_
+
+=head1 DESCRIPTION
+
+This primitive checks the size of an output image which would be
+created by the given input data. If the image exceeds a size which
+would result in a file on disk larger than 2 GB, the image bounds are
+reduced.
+
+The user B<must> specify a filename containing the list of files to
+process and the task to be used to process those data. The primitive
+makes no assumptions about how to process the input data.
+
+The primitive returns the new bounds in the primitive hash if they
+were calculated.
+
+=head1 ARGUMENTS
+
+The following two mandatory arguments are supported:
+
+=over 4
+
+=item B<IN>
+
+List of input files. Must be a filename, such as that provided by
+C<write_file_list>. No default.
+
+=item B<TASK>
+
+The Starlink task to use to process the input files. Supported options
+are C<MAKEMAP> and C<WCSMOSAIC> for processing raw SCUBA-2 data or
+image data respectively. No default.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+=over 4
+
+=item KAPPA
+
+WCSMOSAIC
+
+=item SMURF
+
+MAKEMAP
+
+=back
+
+=head1 OUTPUT DATA
+
+On completion, the primitive hash C<%_CHECK_MAP_BOUNDS_> contains the
+following keys:
+
+=over 4
+
+=item NEWBOUNDS
+
+A flag to denote whether new bounds were calculated, 1 if yes, 0 if no.
+
+=item LBOUND
+
+An array reference with the lower bounds.
+
+=item UBOUND
+
+An array reference with the upper bounds.
+
+=back
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 NOTES
+
+Only scales the X and Y axes. Leaves the bounds of other axes
+unchanged. This may cause problems if higher axes have more than one
+pixel.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2010 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Input files to process
+my $inlist = get_prim_arg($_PRIM_ARGS_, "IN", undef);
+if ( !defined $inlist ) {
+  orac_throw "_CHECK_MAP_BOUNDS_: Must provide a list of input files\n";
+}
+
+# Which task to use to check the map bounds? The user MUST supply this as
+my $task = get_prim_arg($_PRIM_ARGS_, "TASK", undef);
+if ( !defined $task ) {
+  orac_throw "_CHECK_MAP_BOUNDS_: Must provide task name for processing input files\n";
+}
+# Check that the given task is supported
+unless ($task =~ /^makemap/i || $task =~ /^wcsmos/i) {
+  orac_throw "_CHECK_MAP_BOUNDS_: invalid task, $task. Must be MAKEMAP or WCSMOSAIC\n";
+}
+
+# Define the maximum number of pixels in an image before it has to be
+# resized/or tiled
+use constant MAXPIX => 60e6;
+
+orac_print "Calculating output map size... ";
+
+# Determine the lower/upper bounds of the output image
+my (@lbound, @ubound);
+if ( $task eq "makemap" ) {
+  # Makemap arguments - use default pixel scale
+  my $mapszargs = "in=^$inlist out=! method=rebin";
+
+  $Mon{smurf_mon}->obeyw("makemap","$mapszargs");
+  (my $ORAC_STATUS, @lbound) = $Mon{smurf_mon}->get("makemap","lbound");
+  ($ORAC_STATUS,    @ubound) = $Mon{smurf_mon}->get("makemap","ubound");
+
+} else {
+  my $refimage = (defined $Grp->uhdr("REFIMAGE")) ? $Grp->uhdr("REFIMAGE") : "!";
+  my $bndargs = "ref=$refimage method=nearest wlim=0.2 lbnd=! ubnd=! "
+    ."out=! in=^$inlist";
+  $Mon{kappa_mon}->obeyw("wcsmosaic","$bndargs");
+  (my $ORAC_STATUS, @lbound) = $Mon{kappa_mon}->get("wcsmosaic","lbound");
+  ($ORAC_STATUS,    @ubound) = $Mon{kappa_mon}->get("wcsmosaic","ubound");
+}
+
+# Calculate output image size
+my $xsize = $ubound[0] - $lbound[0] + 1;
+my $ysize = $ubound[1] - $lbound[1] + 1;
+my $outpix = $xsize*$ysize;
+# Reset the bounds if necessary
+if ( $outpix > MAXPIX ) {
+  # Warn user
+  my $scalefactor = sqrt( MAXPIX/$outpix );
+  $scalefactor = sprintf "%5.3f", $scalefactor;
+  $scalefactor *= (100*$scalefactor);
+  orac_print "\n";
+  orac_warn "Size will exceed 2 GB: reducing to include central $scalefactor % of mapped area\n";
+
+  my $newxsize = int($xsize * $scalefactor);
+  my $newysize = int($newxsize * $ysize / $xsize);
+  my $dx = int($xsize * ( 1.0 - $scalefactor ) / 2.0);
+  my $dy = int($ysize * ( 1.0 - $scalefactor ) / 2.0);
+  # Reduce the X, Y bounds equally.
+  $lbound[0] += $dx;
+  $ubound[0] -= $dx;
+  $lbound[1] += $dy;
+  $ubound[1] -= $dy;
+
+  orac_print "Determining new bounds for output image:\n";
+  orac_print "Old image dimensions are $xsize x $ysize\n";
+  orac_print "New image dimensions are $newxsize x $newysize\n";
+
+  # Set some entries in the primitive hash
+  $_CHECK_MAP_BOUNDS_{NEWBOUNDS} = 1;
+  $_CHECK_MAP_BOUNDS_{LBOUND} = \@lbound;
+  $_CHECK_MAP_BOUNDS_{UBOUND} = \@ubound;
+} else {
+  orac_print "Size within limits, no need to tile.\n";
+  # No new bounds were calculated
+  $_CHECK_MAP_BOUNDS_{NEWBOUNDS} = 0;
+}
