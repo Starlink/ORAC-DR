@@ -487,7 +487,7 @@ if ( $make_mosaic ) {
   # First, some user feedback
   my $mostask = ( $makemos ) ? "MAKEMOS" : "WCSMOSAIC";
   orac_print "Mosaicking $grpfrm file with $mostask: "
-    .( ($nfiles == 1) ? "using $nfiles file" : "combining $nfiles files")."...";
+    .( ($nfiles == 1) ? "using $nfiles file" : "combining $nfiles files")."... ";
 
   my $args;
   # Retrieve name of file which will hold the list of images to mosaic
@@ -630,46 +630,21 @@ if ( $make_mosaic ) {
       my $weighting = "genvar=f variance=f";
       $weighting = ( $usegrp ) ? "genvar=f variance=f" : "genvar=t variance=f";
       # If we are creating the group image, first check the bounds to
-      # make sure the image will not exceed 2 GB on disk - this should
-      # probably be a separate primitive
+      # make sure the image will not exceed 2 GB on disk
       my $bounds = "lbnd=! ubnd=!";
       if ( $usegrp ) {
-	my $bndargs = "ref=$refimage method=$method wlim=$wlim lbnd=! ubnd=! "
-	  ."out=! $weighting in=^$moslist";
-	$Mon{kappa_mon}->obeyw("wcsmosaic","$bndargs");
-	my ($ORAC_STATUS, @lbound) = $Mon{kappa_mon}->get("wcsmosaic","lbound");
-	($ORAC_STATUS, my @ubound) = $Mon{kappa_mon}->get("wcsmosaic","ubound");
 
-	my $xsize = $ubound[0] - $lbound[0] + 1;
-	my $ysize = $ubound[1] - $lbound[1] + 1;
-	my $numpix = $xsize*$ysize;
-	# MAXPIX is derived from tests with MAKEMAP and represents the
-	# largest number of pixels a map can have before the file size
-	# exceeds 2 GB when listed with --si. This allows for the
-	# presence of DATA and VARIANCE arrays along with EXP_TIME and
-	# WEIGHTS components.
-	if ( $numpix > MAXPIX ) {
-	  my $scalefactor = sqrt(MAXPIX / $numpix);
-	  my $newxsize = int($xsize * $scalefactor);
-	  my $newysize = int($newxsize * $ysize / $xsize);
-	  my $dx = int($xsize * ( 1.0 - $scalefactor ) / 2.0);
-	  my $dy = int($ysize * ( 1.0 - $scalefactor ) / 2.0);
-	  # Reduce the bounds equally. NOTE: exp_time handling will
-	  # also have to take notice of this
-	  $lbound[0] += $dx;
-	  $ubound[0] -= $dx;
-	  $lbound[1] += $dy;
-	  $ubound[1] -= $dy;
-	  $scalefactor = sprintf "%5.3f", $scalefactor;
-	  orac_warn "Output image will exceed maximum size, scaling each axis by $scalefactor\n";
-	  # Convert scalefactor to a percentage of original area
-	  $scalefactor *= (100*$scalefactor);
-	  $scalefactor = sprintf "%4.1f", $scalefactor;
-	  orac_warn "Output image will only contain inner $scalefactor % of mapped area\n";
-	  $bounds = "lbnd=[$lbound[0],$lbound[1]] ubnd=[$ubound[0],$ubound[1]]";
-	  push (@bounds, @lbound);
-	  push (@bounds, @ubound);
+	_CHECK_MAP_BOUNDS_ IN=$moslist TASK=WCSMOSAIC
+	if ( $_CHECK_MAP_BOUNDS_{NEWBOUNDS} == 1 ) {
+	  my @lbound = @{ $_CHECK_MAP_BOUNDS_{LBOUND} };
+	  my @ubound = @{ $_CHECK_MAP_BOUNDS_{UBOUND} };
+
+	  $bounds = "lbnd=[".join(",",@lbound)."] ubnd=[".join(",",@ubound)."]";
+	  # Only store the X, Y bounds for later use
+	  push (@bounds, @lbound[0..1]);
+	  push (@bounds, @ubound[0..1]);
 	}
+
       }
       my $args = "ref=$refimage method=$method wlim=$wlim ".
 	"out=$out in=^".$moslist." $weighting $bounds";

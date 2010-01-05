@@ -257,41 +257,13 @@ if ($Frm->uhdr("DARKONLY")) {
   orac_print "Calling makemap using $method method\n";
 
   unless ( $Frm->uhdr("QUICKLOOK") ) {
-    # First time round, determine number of pixels in the output map by
-    # setting out=! Use method=rebin to avoid needing to specify any
-    # further unecessary parameters.
-    orac_print "Checking output map size... ";
-    my $mapszargs = "in=^$inlist out=! method=rebin";
-    $mapszargs .= " pixsize=$pixsize" if (defined $pixsize);
-
-    $Mon{smurf_mon}->obeyw("makemap","$mapszargs");
-    my ($ORAC_STATUS, @lbound) = $Mon{smurf_mon}->get("makemap","lbound");
-    ($ORAC_STATUS, my @ubound) = $Mon{smurf_mon}->get("makemap","ubound");
-
-    my $xsize = $ubound[0] - $lbound[0] + 1;
-    my $ysize = $ubound[1] - $lbound[1] + 1;
-    my $outpix = $xsize*$ysize;
-    if ( $outpix > MAXPIX ) {
-      orac_print "Old image dimensions are $xsize x $ysize\n";
-      my $scalefactor = sqrt( MAXPIX/$outpix );
-      my $newxsize = int($xsize * $scalefactor);
-      my $newysize = int($newxsize * $ysize / $xsize);
-      my $dx = int($xsize * ( 1.0 - $scalefactor ) / 2.0);
-      my $dy = int($ysize * ( 1.0 - $scalefactor ) / 2.0);
-      # Reduce the bounds equally.
-      $lbound[0] += $dx;
-      $ubound[0] -= $dx;
-      $lbound[1] += $dy;
-      $ubound[1] -= $dy;
-      $scalefactor = sprintf "%5.3f", $scalefactor;
-      $scalefactor *= (100*$scalefactor);
-      orac_print "\n";
-      orac_warn "Size will exceed 2 GB, reducing to include central $scalefactor % of mapped area\n";
-      orac_print "New image dimensions are $newxsize x $newysize\n";
+    # First time round, determine number of pixels in the output map
+    _CHECK_MAP_BOUNDS_ IN=$inlist TASK=MAKEMAP
+    if ( $_CHECK_MAP_BOUNDS_{NEWBOUNDS} == 1 ) {
+      my @lbound = @{ $_CHECK_MAP_BOUNDS_{LBOUND} };
+      my @ubound = @{ $_CHECK_MAP_BOUNDS_{UBOUND} };
       # Append the new bounds to the list of arguments
-      $args .= " lbnd=[$lbound[0],$lbound[1]] ubnd=[$ubound[0],$ubound[1]]";
-    } else {
-      orac_print "Size within limits, no need to tile.\n";
+      $args .= " lbnd=[".join(",",@lbound)."] ubnd=[".join(",",@ubound)."]";
     }
   }
   # Now create output map using the new bounds if necessary
