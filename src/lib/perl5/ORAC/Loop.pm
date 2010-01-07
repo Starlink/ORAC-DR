@@ -729,6 +729,10 @@ sub orac_loop_task {
   # timestamp of most recent accepted frame
   my $reftime = 0;
 
+  # This hash keeps track of how many times we look for a task
+  # so that we can control message printing
+  my %looked;
+
   # We will poll inside this loop until we get all 4 monitors
   # with newer data than the reference. This is the outer loop that allows
   # us to pause before trying again (used if none of the data we got were
@@ -756,7 +760,15 @@ sub orac_loop_task {
         if (defined $wantframe) {
           orac_print "Looking at task $t for frame $wantframe\n";
         } else {
-          orac_print "Looking for a frame from tasks $t\n";
+          # we want to prefill with 0 rather than ++ starting us at 1
+          if (exists $looked{$t}) {
+            $looked{$t}++;
+          } else {
+            $looked{$t} = 0;
+          }
+          # and only print a message every so often (in seconds)
+          orac_print "Looking for a frame from task $t\n"
+            if ($looked{$t} % (30.0/$pause) == 0);
         }
         # get the task object
         my $tobj = $ENGINE_LAUNCH->engine( $t );

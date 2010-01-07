@@ -80,9 +80,18 @@ the initial product (the whole point being to retain it).
 
 =item SYSTEM = STRING (Given)
 
-The celestial coordinate system for the output cube. This argument can
-be overridden by the RECPAR_SYSTEM uhdr via the recipe parameter
-system. ['ICRS']
+The celestial coordinate system for the output cube. Can be any one of
+ICRS, GAPPT, FK5, FK4, FK4-NO-E, AZEL, GALACTIC, or ECLIPTIC. A
+special value of TRACKING can also be given, in which case the system
+used will be that used as the tracking system during the observation.
+
+If this argument is not defined, then the system is determined from
+the data and is typically set to 'tracking'. The only case where this
+does not apply is if the observation is a scan and the scanning was
+done in AZ/EL, in which case the system will be set to 'AZEL'.
+
+This argument can be overridden by the RECPAR_SYSTEM uhdr via the
+recipe parameter system. [undef]
 
 =item PRODUCT = STRING (Given)
 
@@ -156,6 +165,9 @@ Place,Suite 330, Boston, MA  02111-1307, USA
 
 =cut
 
+use ORAC::Constants qw/ :badvalues /;
+use Starlink::HDSPACK qw/ create_hdsobj copy_hdsobj /;
+
 # Deal with parameters.
 my $bytes_per_pixel = get_prim_arg( $_PRIM_ARGS_, "BYTES_PER_PIXEL", 4 );
 my $maxsize = get_prim_arg( $_PRIM_ARGS_, "MAXSIZE", 512_000_000 );
@@ -219,7 +231,7 @@ my $params = '';
 
 # Determine the MAKECUBE parameters based on the
 # ORAC_OBSERVATION_TYPE header.
-my $type = $Frm->uhdr( "ORAC_OBSERVATION_TYPE" );
+my $type = lc( $Frm->uhdr( "ORAC_OBSERVATION_TYPE" ) );
 
 _GET_MAKECUBE_PARAMS_ TYPE=$type
 my $mc_params = $_GET_MAKECUBE_PARAMS_{PARAMS};
@@ -231,7 +243,7 @@ my $system = defined( $system_arg ) ? $system_arg : $mc_hash->{system};
 my $badmask = $mc_hash->{badmask};
 my $alignsys = $mc_hash->{alignsys};
 
-if( lc( $type ) ne "raster" ) {
+if( $type ne "raster" ) {
 
   my $inlist2 = new ORAC::TempFile( OPEN => 1, SUFFIX => '.lis' );
   my $inlist2_fh = $inlist2->handle;
@@ -257,14 +269,16 @@ if( lc( $type ) ne "raster" ) {
     ( $ORAC_STATUS, $crota ) = $Mon{'smurf_mon'}->get( "makecube", "crota" );
 
     # Check the pixel size. If it's smaller than a quarter of the
-    # beamsize, set it to a quarter of the beamsize.
-    my $lofreqs = defined( $Frm->hdr( "LOFREQS" ) ) ?
-                  $Frm->hdr( "LOFREQS" )            :
-                  $Frm->jcmtstate( "FE_LOFREQ" );
+    # beamsize, set it to a quarter of the beamsize, unless it's a
+    # pointing.
+    if( $type ne 'pointing' ) {
+      my $lofreqs = defined( $Frm->hdr( "LOFREQS" ) ) ?
+                    $Frm->hdr( "LOFREQS" )            :
+                    $Frm->jcmtstate( "FE_LOFREQ" );
 
-    my $min_pixsize = int( $lofreqs * 0.011467099683 + 0.5 );
-    $ppixsize = ( $ppixsize < $min_pixsize ) ? $min_pixsize : $ppixsize;
-
+      my $min_pixsize = int( $lofreqs * 0.011467099683 + 0.5 );
+      $ppixsize = ( $ppixsize < $min_pixsize ) ? $min_pixsize : $ppixsize;
+    }
   }
 
 } else {
@@ -305,7 +319,7 @@ foreach my $mc_param ( qw/ detectors usedetpos badmask alignsys / ) {
 # Get the tiling dimensions, but only if we're not doing a pointing
 # or focus.
 if( lc( $type ) ne 'pointing' && lc( $type ) ne 'focus' ) {
-  _GET_TILE_DIMENSIONS_ TILEBORDER=$tileborder
+  _GET_TILE_DIMENSIONS_ TILEBORDER=$tileborder MAXSIZE=$maxsize BYTES_PER_PIXE=$bytes_per_pixel
   my $tiledims = $_GET_TILE_DIMENSIONS_{TILEDIMS};
   $params .= " tiledims=$tiledims tileborder=$tileborder trimtiles=yes";
 }
@@ -317,6 +331,28 @@ if ($Frm->uhdr("ISHYBRID")) {
   # that something happens.  Hybrid mode should use a different
   # badmask.
   $params .= " badmask=AND specunion=YES";
+}
+
+# Check the Tsys values. If the mean is negative, then create the
+# variance from the spread of input pixels. Otherwise, test the
+# units. If the data units are Kelvin, then we can generate the
+# variance from the Tsys values instead.
+my $tmptsys = new ORAC::TempFile;
+my $ORAC_STATUS = ( create_hdsobj( "$tmptsys", 'NDF' ) ? ORAC__OK : ORAC__ERROR );
+$ORAC_STATUS = ( copy_hdsobj( "$files[0].MORE.ACSIS.TSYS", "$tmptsys.DATA_ARRAY" ) ? ORAC__OK : ORAC__ERROR );
+$Mon{'kappa_mon'}->obeyw( "stats", "ndf=$tmptsys" );
+( $ORAC_STATUS, my $tsysmean ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+if( $tsysmean < 0 && $tsysmean != VAL__BADD ) {
+  orac_warn "Mean Tsys negative ($tsysmean). Using spread of input pixels for variance creation.\n";
+  $params .= " genvar=spread inweight=false";
+} else {
+  $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$files[0]" );
+  ( $ORAC_STATUS, my $units ) = $Mon{'ndfpack_mon'}->get( "ndftrace", "units" );
+  if( $units eq 'K' ) {
+    $params .= " genvar=tsys inweight=true";
+  } else {
+    $params .= " genvar=spread inweight=false";
+  }
 }
 
 # Store the parameters for later use, but only if we don't have a
@@ -334,7 +370,7 @@ $Mon{'smurf_mon'}->obeyw( "makecube", "$params in='^" . $inlist->file . "' out=$
 orac_print( "done.\n" );
 
 # Retrieve the number of tiles created.
-my ( $ORAC_STATUS, $ntile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
+( $ORAC_STATUS, my $ntile ) = $Mon{'smurf_mon'}->get( "makecube", "ntile" );
 
 if( $ntile > 1 ) {
 

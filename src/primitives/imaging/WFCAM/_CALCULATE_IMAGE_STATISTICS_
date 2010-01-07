@@ -86,6 +86,8 @@ if( $group ) {
   $Obj = $Frm;
 }
 
+my $minhist = 20; # Minimum number of objects needed to do histogram-based stats.
+
 my $hack = 0;
 
 # Get the magnitude type, defaulting to MAG_ISO.
@@ -121,6 +123,8 @@ if( defined( $image_catalogue ) ) {
   my $fwhm_step = 0.02;
   my %ell_hist;
   my %fwhm_hist;
+  my $ell_total = 0;
+  my $fwhm_total = 0;
 
   my $cat;
   if( $match ) {
@@ -150,8 +154,11 @@ if( defined( $image_catalogue ) ) {
     push @gooditems, $item;
 
     my $fwhm = $item->morphology->fwhm_pixel->value * $platescale;
+    $fwhm_total += $fwhm;
     $fwhm_hist{ int( $fwhm / $fwhm_step ) * $fwhm_step }++;
+
     my $ext_ell = $item->morphology->ellipticity->value;
+    $ell_total += $ext_ell;
     $ell_hist{ int( $ext_ell / $ell_step ) * $ell_step }++;
 
     $avg_x += $item->morphology->major_axis_pixel->value
@@ -191,20 +198,31 @@ if( defined( $image_catalogue ) ) {
     }
   }
 
+  # Set up a bunch of variables for later use.
+  my ( $axialratio, $ext_ellipticity, $fwhm, $k_fwhm, $k_fwhm_zen, $orient, $zeropoint );
+  my ( $zeropoint_variance, $limiting_magnitude, $extcor, $sky_value, $sky_value_variance );
+  my ( $sky_brightness, @zps );
+
+  # Calculate the "average" position angle.
+  $orient = 90 - ( atan2( $avg_x, $avg_y ) / $pi * 180 );
+
+  # Obtain the airmass from the FITS headers. Find the approximate
+  # mean airmass from the start and end values. This should be
+  # adequate unless it is a long integration with the source crossing
+  # the meridian.
+  my $amstart = $Obj->uhdr( "ORAC_AIRMASS_START" );
+  my $amend   = $Obj->uhdr( "ORAC_AIRMASS_END" );
+  my $airmass = 0.5 * ( $amstart + $amend );
+
   if( $num_objs == 0 ) {
     orac_err "Not enough objects were found to determine image quality statistics.\n";
+  } elsif( $num_objs < $minhist ) {
+
+    # Just do "normal" stats.
+    $fwhm = $fwhm_total / $num_objs;
+    $ext_ellipticity = $ell_total / $num_objs;
+
   } else {
-
-    # Calculate the "average" position angle.
-    my $orient = 90 - ( atan2( $avg_x, $avg_y ) / $pi * 180 );
-
-    # Obtain the airmass from the FITS headers. Find the
-    # approximate mean airmass from the start and end values. This
-    # should be adequate unless it is a long integration with the
-    # source crossing the meridian.
-    my $amstart = $Obj->uhdr( "ORAC_AIRMASS_START" );
-    my $amend   = $Obj->uhdr( "ORAC_AIRMASS_END" );
-    my $airmass = 0.5 * ( $amstart + $amend );
 
     # Calculate the ellipticity from our histogram.
     my $maxell = 0;
@@ -217,7 +235,6 @@ if( defined( $image_catalogue ) ) {
     }
     # We have ellipticity bin that has the most counts in it, so take
     # two on either side and calculate the average of those.
-    my $ext_ellipticity;
     if( $maxellbin eq '0' ) {
 
       # Take 0, 0.01 and 0.02.
@@ -260,8 +277,6 @@ if( defined( $image_catalogue ) ) {
       $ext_ellipticity = $sum_ell / $sum_counts;
     }
 
-    my $axialratio = 1 / ( 1 - $ext_ellipticity );
-
     # Calculate the FWHM from our histogram.
     my $maxfwhm = 0;
     my $maxfwhmbin = 0;
@@ -273,7 +288,6 @@ if( defined( $image_catalogue ) ) {
     }
     # We have FWHM bin that has the most counts in it, so take
     # two on either side and calculate the average of those.
-    my $fwhm;
     if( $maxfwhmbin eq '0' ) {
 
       # Take 0, 0.01 and 0.02.
@@ -315,29 +329,32 @@ if( defined( $image_catalogue ) ) {
                    ;
       $fwhm = $sum_fwhm / $sum_counts;
     }
+  }
+
+  if( $num_objs > 0 ) {
 
     # Calculate the K-band equivalent seeing. It goes as
-    # (wavelength^(-0.2)), so we need to get the current wavelength and
-    # the K wavelength, do the division and the power, and scale the
-    # measured FWHM.
+    # (wavelength^(-0.2)), so we need to get the current wavelength
+    # and the K wavelength, do the division and the power, and scale
+    # the measured FWHM.
     _GET_FILTER_PARAMETERS_
     my $wavelength = $_GET_FILTER_PARAMETERS_{WAVELENGTH};
     my $k_wavelength = 2.25;
     my $scale = ( $wavelength / $k_wavelength ) ** ( 0.2 );
-    my $k_fwhm = $scale * $fwhm;
-    my $k_fwhm_zen = $k_fwhm * ( 1 / $airmass ) ** ( 0.6 );
+    $k_fwhm = $scale * $fwhm;
+    $k_fwhm_zen = $k_fwhm * ( 1 / $airmass ) ** ( 0.6 );
 
     # Determine the sky background values.
     my $params = "ndf=" . $Obj->file . " clip=[2,3,3]";
     $Mon{'kappa_mon'}->obeyw( "stats", "$params" );
-    ( my $ORAC_STATUS, my $sky_value ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
-    ( $ORAC_STATUS, my $sky_value_variance ) = $Mon{'kappa_mon'}->get( "stats",  "sigma" );
+    ( my $ORAC_STATUS, $sky_value ) = $Mon{'kappa_mon'}->get( "stats", "mean" );
+    ( $ORAC_STATUS, $sky_value_variance ) = $Mon{'kappa_mon'}->get( "stats",  "sigma" );
 
     # Set up defaults for photometric values.
-    my $zeropoint = 0;
-    my $zeropoint_variance = 0;
-    my $limiting_magnitude = 0;
-    my $sky_brightness = 0;
+    $zeropoint = 0;
+    $zeropoint_variance = 0;
+    $limiting_magnitude = 0;
+    $sky_brightness = 0;
 
     # We can only do the following calculations (zeropoint, sky
     # brightness, etc). if we have a catalogue of objects that matched
@@ -356,8 +373,7 @@ if( defined( $image_catalogue ) ) {
       $hack = 1;
     }
 
-    my $extcor = 0;
-    my @zps;
+    $extcor = 0;
     if( $match && $phot ) {
 
       # Obtain the mean extinction coefficient.
@@ -564,6 +580,11 @@ if( defined( $image_catalogue ) ) {
 
       } # end photometric calculations.
     }
+  }
+
+  if( $num_objs > 0 ) {
+
+    $axialratio = 1 / ( 1 - $ext_ellipticity );
 
     # Create printable versions.
     my $p_axial = sprintf( "%.3f", $axialratio );
@@ -597,6 +618,10 @@ if( defined( $image_catalogue ) ) {
     orac_print( "Image quality statistics on " .
                 ( $group ? $Grp->file : $Frm->file ) .
                 ":\n", "blue" );
+    orac_print( " Number of objects used in calculations: $num_objs\n", "blue" );
+    if( $num_objs < $minhist ) {
+      orac_print( " Number of objects fewer than $minhist. Standard mean calculated.\n", "white on_red" );
+    }
     orac_print( " Axial ratio:   $p_axial\n", "blue" );
     orac_print( " Ellipticity:   $p_ellipticity\n", "blue" );
     orac_print( " FWHM:          $p_fwhm arcseconds\n", "blue" );
@@ -607,7 +632,7 @@ if( defined( $image_catalogue ) ) {
     orac_print( "Photometric statistics on " .
                 ( $group ? $Grp->file : $Frm->file ) .
                 ":\n", "blue" );
-
+    orac_print( " Number of objects used in calculations: $p_num_obj\n", "blue" );
     if( $hack ) {
       orac_print (" 1-0S1 filter observed. K-band magnitudes used for estimate.", "white on_red");
       orac_print "\n";

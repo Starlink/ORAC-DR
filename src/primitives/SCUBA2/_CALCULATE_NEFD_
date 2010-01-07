@@ -6,20 +6,28 @@ _CALCULATE_NEFD_
 
 =head1 SYNOPSIS
 
-_CALCULATE_NEFD_ METHOD=MEAN
+_CALCULATE_NEFD_ ESTIMATOR=MEAN
 
 =head1 DESCRIPTION
 
 Calculate the Noise Equivalent Flux Density (NEFD) of the current
 observation.
 
-The NEFD is calculated using the formula:
+The NEFD is calculated in one of two ways. One method is suitable for
+use with NOISE observations and scales the noise equivalent power
+(NEP) by the flux conversion factor (FCF) and corrects for atmospheric
+attenuation. The other method, suitable for use with image data,
+estimates the noise in the image (from the variance) and multiplies by
+the square-root of the integration time.
 
+<<<<<<< HEAD:src/primitives/SCUBA2/_CALCULATE_NEFD_
 NEFD = noise * sqrt(time)
+=======
+The units of NEFD are mJy sqrt(s). The integration time is derived from
+the C<EXP_TIME> extension in the image.
+>>>>>>> master:src/primitives/SCUBA2/_CALCULATE_NEFD_
 
-where noise is in mJy, the time is the total integration time in
-seconds. The units of NEFD are therefore mJy/rtHz. The integration
-time is derived from the C<EXP_TIME> extension in the image.
+The choice of method is dictated by the observing mode.
 
 The results are written to a log file, C<log.nefd>.
 
@@ -29,26 +37,25 @@ The following arguments are supported:
 
 =over 4
 
+=item B<ESTIMATOR>
+
+Preferred estimator for integration time or NEP. Valid options are
+C<MEAN>, C<MEDIAN> or C<MODE>. Default is C<MEDIAN>.
+
 =item B<GROUP>
 
 Flag to indicate whether to obtain results from the Group file. Only
-accessed if B<USENOISE>=0. Default is 0 (use the current Frame).
+accessed for non-NOISE observations. Default is 0 (use the current
+Frame).
 
 =item B<LOGFILE>
 
 Flag to indicate whether or not to write a log file to disk. Default
 is 1 (write a log file).
 
-=item B<METHOD>
+=item B<VERBOSE>
 
-Preferred estimator for integration time. Valid options are C<MEAN>,
-C<MEDIAN> or C<MODE>. Only accessed if B<USENOISE>=0. Default is
-C<MEDIAN>.
-
-=item B<USENOISE>
-
-Flag to denote whether to determine the NEFD from noise data or from a
-map. Default is 1 (use noise data).
+Flag to denote whether to print extra messages. Default is 0 (no).
 
 =back
 
@@ -60,20 +67,36 @@ The following external tasks are used:
 
 =item KAPPA
 
-CMULT
+COPYBAD
 
 =item ORAC-DR PRIMITIVES:
 
-_FIND_IMAGE_STATISTICS_, _FIND_VARIANCE_, _GET_LOG_PARAMETERS_
+_FIND_IMAGE_STATISTICS_, _FIND_VARIANCE_, _GET_LOG_PARAMETERS_,
+_MASK_AST_REGION_
 
 =back
 
 =head1 NOTES
 
-This primitive must be run on calibrated images.
+Points to note when deriving the NEFD from an image:
 
-For the case when B<USENOISE>=1, this primitive will give erroneous
-results in offline mode.
+=over 4
+
+=item * The data must be calibrated.
+
+=item * The data are masked to only include values within the bounds
+of the requested map (as defined by the FITS headers). This ensures
+that noisy pixels at the edge of the map do not affect the
+calculation.
+
+=item * This primitive assumes the current Frame or Group contains
+only a single file, and is a no-op if there are multiple files. A
+warning is issued in this case.
+
+=back
+
+This primitive currently gives erroneous results in offline mode for
+deriving the NEFD from noise data.
 
 =head1 OUTPUT DATA
 
@@ -90,7 +113,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008 University of British Columbia. All Rights
+Copyright (C) 2008-2009 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -110,9 +133,13 @@ USA.
 
 =cut
 
+# Return immediately if the Frame only contains darks
+return ORAC__OK if $Frm->uhdr("DARKONLY");
+
 # Write a log file? Default to yes
 my $uselog = get_prim_arg( $_PRIM_ARGS_, "LOGFILE", 1 );
 
+<<<<<<< HEAD:src/primitives/SCUBA2/_CALCULATE_NEFD_
 # Use the noise image or object image?
 my $usenoise = get_prim_arg( $_PRIM_ARGS_, "USENOISE", "1");
 
@@ -220,4 +247,203 @@ if ($usenoise) {
   } else {
     orac_warn "_CALCULATE_NEFD_ must be run after files have been combined\n";
   }
+=======
+# Be verbose?
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 0 );
+
+# Has the user requested the use of the Group image?
+my $groupflag = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0 );
+
+# Use the noise image or object image?
+my $usenoise = ($Frm->uhdr("ORAC_OBSERVATION_TYPE" ) =~ /noise/i ||
+                $Frm->uhdr("ORAC_OBSERVATION_TYPE" ) =~ /skydip/i) ? 1 : 0;
+
+# Estimator - default is MEDIAN
+my $estimator = uc(get_prim_arg( $_PRIM_ARGS_, "ESTIMATOR", "MEDIAN" ));
+
+# Check we were given something sensible
+unless ( $estimator eq "MEDIAN" || $estimator eq "MEAN" || $estimator eq "MODE" ) {
+  orac_warn "_CALCULATE_NEFD_: Unrecognized estimator for integration time, $estimator\n falling back on default (MEDIAN)\n";
+  $estimator = "MEDIAN";
+}
+# Only use HISTAT to calculate the mode
+my $histat = ($estimator eq "MODE") ? 1 : 0;
+my ($nefd, $znefd, $nefdmethod);
+if ($usenoise) {
+  # First check we have noise data available in the current Frame
+  if ( $Frm->uhdr("NOISE") ) {
+    $nefdmethod = "NOISE";
+    # Obtain the files in the current Frame - for NOISE observations
+    # there will be one file per subarray at this point; for SKYDIPs,
+    # there will be one file per elevation per subarray.
+    my @noisefiles = $Frm->files;
+
+    # FCF, tau and airmass are independent of subarray. Multiply by
+    # 1000 and 1e12 to get FCF in mJy per beam per W (rather than
+    # Jy/beam/pW) because NEP is in W Hz**-0.5
+    # But for a skydip we are going to need to choose different
+    # airmasses rather than using an average
+    my $fcf = $Cal->gain($Frm->uhdr("ORAC_FILTER"), "BEAM") * 1.0e15;
+
+    # so if we have multiple files for nefd calculation
+    # we will read information from each file
+    # else just use the header values
+    my @fileinfo;
+
+    my $calc_extcor = sub {
+      my $frm = shift;
+      my $tau = $Cal->tau ( $frm->uhdr("ORAC_FILTER") );
+      my $airmass = 0.5*($frm->uhdr("ORAC_AIRMASS_START") +
+                         $frm->uhdr("ORAC_AIRMASS_END"));
+      return { airmass => $airmass,
+               tau => $tau,
+               extcor => exp($tau * $airmass), };
+    };
+
+    if (@noisefiles == 1) {
+      @fileinfo = ( $calc_extcor->( $Frm ) );
+    } else {
+      # read the files and translate the headers
+      for my $f (@noisefiles) {
+        my $tmpfrm = $Frm->new();
+        $tmpfrm->raw( $f );
+        $tmpfrm->file( $f );
+        $tmpfrm->readhdr;
+        push(@fileinfo, $calc_extcor->($tmpfrm) );
+      }
+    }
+
+    # Calculate NEFD for each file
+    foreach my $noisefile (@noisefiles) {
+
+      my $nepimage = $noisefile.".more.smurf.nep";
+
+      # Mask the NEP image to get the best NEFD. Set the subarray so
+      # the correct mask is returned
+      $Frm->subarray( $noisefile );
+      my $bbmask = $Cal->mask;
+
+      # Masked file
+      my $mask = new ORAC::TempFile;
+      my $maskedfile = $mask->file;
+      if ( $bbmask ) {
+	# If we have a mask, proceed
+	$Mon{kappa_mon}->obeyw("copybad","in=$nepimage ref=$bbmask out=$maskedfile");
+      } else {
+	$maskedfile = $nepimage;
+      }
+
+      _FIND_IMAGE_STATISTICS_ IMAGE=$maskedfile VERBOSE=0 HISTAT=$histat COMP=DATA
+      my $nep = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$estimator};
+
+      # Multiply NEP by combined FCF/transmission factor to get NEFD
+      my $info = shift(@fileinfo);
+
+      # NEFD at airmass just needs the FCF. Divide by sqrt(2)
+      # because...
+      $nefd = $nep * $fcf / sqrt(2.0);
+
+      # Similarly calculate zenith NEFD which must be a smaller number
+      # and accounts for airmass and tau
+      $znefd = $nefd / $info->{extcor};
+
+      if (defined $nefd) {
+	my $subarray = $Frm->subarray($noisefile);
+        my $trans = sprintf "%.1f", 100.0 / $info->{extcor};
+	my $pnefd = sprintf "%6.2f", $nefd;
+	my $pznefd = sprintf "%6.2f", $znefd;
+        my $airmass = sprintf "%6.4f", $info->{airmass};
+
+	orac_print("Subarray $subarray:\n","green");
+	orac_print ("Measured NEFD = $pnefd mJy/beam s**0.5, "
+		    ."sky trans = $trans %, A = $airmass\n", "green");
+	orac_print ("  Zenith NEFD = $pznefd mJy/beam s**0.5\n", "green");
+
+      } else {
+	orac_warn "Could not determine ".(lc($estimator))." NEFD for $noisefile\n";
+      }
+    }
+  } else {
+    # No data to analyze yet so don't write a log file
+    $uselog = 0;
+  }
+} else {
+
+  my $Obj = ( $groupflag ) ? $Grp : $Frm;
+
+  # This primitive must be run after files have been combined into a
+  # mosaic
+  if ( $Obj->nfiles == 1 ) {
+    $nefdmethod = ($groupflag) ? "GROUP" : "FRAME";
+
+    # Retrieve current file associated with Frame or Group
+    my $datafile = $Obj->file;
+
+    use JCMT::MapArea;
+    my $astregion = &JCMT::MapArea::region( header => $Obj->hdr );
+    $Obj->uhdr("MAP_ASTREGION",$astregion);
+
+    my $maskeddata = new ORAC::TempFile;
+    my $maskeddatafile = $maskeddata->file;
+    _MASK_AST_REGION_ IN=$datafile OUT=$maskeddatafile GROUP=$groupflag
+
+    # Obtain the median error of current image
+    _FIND_VARIANCE_ IMAGE=$maskeddatafile VERBOSE=0 ESTIMATOR=$estimator
+    my $noise = $_FIND_VARIANCE_{RESULT};
+
+    my $frmgrp = ($groupflag) ? "Group" : "Frame";
+    if (defined $noise && $noise > 0) {
+      # Obtain exposure time
+      $maskeddatafile .= ".MORE.SMURF.EXP_TIME";
+      _FIND_IMAGE_STATISTICS_ IMAGE=$maskeddatafile VERBOSE=0
+      my $texp = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$estimator};
+      if ($verbose) {
+	my $pnoise = sprintf "%4.2f", $noise;
+	my $ptexp = sprintf "%4.2f", $texp;
+	orac_print "$estimator noise = $pnoise mJy/beam, "
+	  ."$estimator integration time = $ptexp s\n";
+      }
+
+      # Calculate NEFD
+      $nefd = $noise * sqrt( $texp );
+
+      my $pnefd = sprintf "%6.2f", $nefd;
+      orac_print ("Calculated NEFD = $pnefd mJy/beam s**0.5 from $frmgrp image $datafile\n",
+		  "green");
+
+    } else {
+      orac_warn "Unable to derive NEFD using current $frmgrp image\n";
+      $uselog = 0;
+    }
+
+  } else {
+    orac_warn "_CALCULATE_NEFD_ must be run after files have been combined\n";
+    $uselog = 0;
+  }
+}
+
+# Write results to a log file if desired
+if ( $uselog && defined $nefd ) {
+  # Write entry to a log file
+  my $time = gmtime();
+  my $nefdlog = new ORAC::LogFile("log.nefd");
+  $nefdlog->header("#NEFD log file - created on $time UT",
+		   "#\n# UT                HST   Obs Source       Mode           Filter  El CSO    Tau  Seeing  NEFD Zenith NEFD  Method",
+		   "#----------------------------------------------------------------------------------------------------");
+
+  # Get general parameters for logging
+  _GET_LOG_PARAMETERS_ GROUP=$groupflag
+  my ($uttime, $hst, $obsnum, $src, $mode, $filter, $el, $cso, $tau, $see) =
+    @{ $_GET_LOG_PARAMETERS_{PARAMS} };
+
+  # Reformat NEFD for printing
+  $nefd = sprintf "%9.5f", $nefd;
+  $znefd = (defined $znefd) ? sprintf "%9.5f", $znefd : "*****";
+
+  # Write entry
+  $nefdlog->addentry("$uttime $hst $obsnum $src $mode   $filter   $el $cso $tau $see  $nefd $znefd $nefdmethod");
+} else {
+  # If we're not writing a log file, return the NEFD to the caller
+  $_CALCULATE_NEFD_{NEFD} = $nefd;
+>>>>>>> master:src/primitives/SCUBA2/_CALCULATE_NEFD_
 }

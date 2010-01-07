@@ -1,0 +1,122 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CALC_SCUBA2_NEFD_ - derive FCFs from input images of SCUBA-2 calibration sources
+
+=head1 SYNOPSIS
+
+_CALC_SCUBA2_NEFD_
+
+=head1 DESCRIPTION
+
+This PICARD primitive is designed to calculate noise equivalent flux
+densities (NEFDs) from images of SCUBA-2 sources. The data are
+calibrated if necessary using the default conversion factors in the
+pipeline.
+
+=head1 ARGUMENTS
+
+This primitive has no arguments.
+
+=head1 EXTERNAL TASKS
+
+The following external task is used:
+
+=over 4
+
+=item ORAC-DR primitives:
+
+SCUBA2: _CALCULATE_NEFD_, _CALIBRATE_DATA_
+
+=back
+
+=head1 NOTES
+
+This primitive creates new files on disk if the data require
+calibrating.
+
+=head1 OUTPUT DATA
+
+FCFs are written to a log file C<log.nefd>. See
+L<_ADD_NEFD_LOG_ENTRY_|_ADD_NEFD_LOG_ENTRY_> for details on the format.
+
+=head1 OUTPUT FILES
+
+New output files with the suffix C<_cal> will be created if the data
+need calibrating.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# First step is to redefine the calibration object as SCUBA2. Retrieve
+# the original headers
+my $thing1 = $Cal->thingone;
+my $thing2 = $Cal->thingtwo;
+# Create the new Cal object
+$Cal = orac_calib_override( "ORAC::Calib::SCUBA2" );
+# Store the header things in the new Calib object
+$Cal->thingone($thing1);
+$Cal->thingtwo($thing2);
+
+# Tell the user what's going on
+orac_print ("\nCalling _CALC_SCUBA2_NEFD_: calculate NEFD for calibrated SCUBA-2 image data\n", "yellow");
+
+# Calibrate the data if necessary - use the default calibration of
+# `per beam'
+_CALIBRATE_DATA_
+
+# Now, _CALCULATE_NEFD_ only operates on the current Frame or Group
+# file, so we need to trick it. First we store the list of files in
+# the Frame, then we take a copy of the Frame before creating a new
+# template SCUBA2 Frame object.  Then loop over all the files in the
+# Frame, read the header from each and store as the Frame file. Now
+# we can derive the FCF.
+
+# Retrieve info about files in Frame
+my $nfiles = $Frm->nfiles;
+my @files = $Frm->files;
+# Make a copy to restore later
+my $inFrm = $Frm;
+
+# Create a new Frame object
+$Frm = $Frm->new;
+
+# Loop over each file
+foreach my $i ( 1 .. $nfiles ) {
+  # Define the header for the new Frame
+  $Frm->files($files[$i-1]);
+  $Frm->readhdr;
+
+  my $object = $Frm->hdr("OBJECT");
+  # If the data are from a single observation, print that number
+  my $obs = $Frm->hdr("OBSNUM");
+  my $extra = ( defined $obs ) ? ", obs $obs" : "";
+  orac_print "\nCalculating NEFD for $files[$i-1] (".$object.$extra.")\n";
+  _CALCULATE_NEFD_ GROUP=0 VERBOSE=1 ESTIMATOR=MEDIAN
+}
+# Since no new files were created, restore the original Frame object
+$Frm = $inFrm;

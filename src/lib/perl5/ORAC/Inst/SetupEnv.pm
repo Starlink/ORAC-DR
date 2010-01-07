@@ -366,30 +366,6 @@ sub orac_calc_instrument_settings {
     $defaults{ORAC_DATA_OUT} = _mkdir_jcmt( $defaults{ORAC_DATA_OUT} )
       unless $fixout;
 
-    # Now that we know ORAC_DATA_OUT we need to publish the location
-    # if we are on a DR machine at the summit and it is the current UT
-    if ( $site eq 'jcmt' && $istoday && $hostname =~ /^sc2dr/) {
-      my $flagdir = "/jac_sw/oracdr-locations";
-      if (-d $flagdir) {
-	my $type = lc($oracinst);
-	if (exists $options{mode} && defined $options{mode}) {
-	  if ($options{mode} eq 'QL') {
-	    $type .= "-ql";
-	  } elsif ($options{mode} eq 'SUMMIT') {
-	    $type .= "-summit";
-	  }
-	}
-	my $flagfile = File::Spec->catdir( $flagdir, $type );
-	if ( open(my $fh, ">", $flagfile) ) {
-	  print $fh $defaults{ORAC_DATA_OUT} ."\n";
-	  close($fh);
-	  chmod  S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH, $flagfile;
-	} else {
-	  print STDERR "Unable to write file for JOS to locate DR ($flagfile) : $!\n";
-	}
-      }
-    }
-
     # Override defaults.
     $defaults{'ORAC_DATA_CAL'} = File::Spec->catdir( $env{'ORAC_CAL_ROOT'}, "scuba2" );
     $defaults{'ORAC_DATA_IN'} = File::Spec->catdir( $dataroot, "raw", "scuba2", "ok", @eng, $options{ut} );

@@ -338,6 +338,9 @@ Returns the full recipe as a single string.
 sub as_string {
   my $self = shift;
 
+  # Force the recipe to be read
+  $self->_read_recipe;
+
   # The recipe is easy
   my $str .= join("\n", $self->recipe->content )."\n";
 

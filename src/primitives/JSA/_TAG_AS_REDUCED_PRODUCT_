@@ -23,6 +23,13 @@ reduced. This argument allows an explicit file to be tagged.
 Whether or not to flag any pixels with a non-zero quality flag as
 bad. [0]
 
+=item GRAPHIC = LOGICAL (Given)
+
+If true, create a PNG file of the reduced data. Default is to do
+nothing. No special check is made to make sure the dimensionality
+of the reduced data are suitable. No graphic will be created if there
+is more than one file to be marked "reduced".
+
 =item GROUP = LOGICAL (Given)
 
 Whether to operate on the current Frame or Group object. Defaults to
@@ -63,6 +70,7 @@ my $file = get_prim_arg( $_PRIM_ARGS_, "FILE", undef );
 my $flag = get_prim_arg( $_PRIM_ARGS_, "FLAG_QUAL_BAD", 0 );
 my $group = ( $_PRIM_ARGS_->{GROUP} ? 1 : 0 );
 my $update = ( $_PRIM_ARGS_->{UPDATE} ? 1 : 0 );
+my $graphic = ( $_PRIM_ARGS_->{GRAPHIC} ? 1 : 0 );
 
 my $Obj;
 if( $group ) {
@@ -71,11 +79,28 @@ if( $group ) {
   $Obj = $Frm;
 }
 
+# A little callback
+my $create_graphic = sub {
+  my $out = shift;
+  if ($graphic) {
+    _CREATE_GRAPHIC_FROM_FILE_ FILE=$out ADDRES=1 TYPE=PNG
+    _CREATE_GRAPHIC_FROM_FILE_ FILE=$out ADDRES=1 XRES=256 YRES=256 TYPE=PNG
+    _CREATE_GRAPHIC_FROM_FILE_ FILE=$out ADDRES=1 XRES=1024 YRES=1024 TYPE=PNG
+  }
+};
+
 if( ! defined( $file ) ) {
 
   foreach my $i ( 1 .. $Obj->nfiles ) {
 
-    my( $in, $out ) = $Obj->inout( "_reduced", $i );
+    my $in = $Obj->file( $i );
+    my $out;
+    if ($in =~ /reduced$/) {
+      # it is already tagged
+      $out = $in;
+    } else {
+      ( $in, $out ) = $Obj->inout( "_reduced", $i );
+    }
 
     if( $flag ) {
 
@@ -91,7 +116,9 @@ if( ! defined( $file ) ) {
     # which sets the PRODUCT header, and we want the original file to
     # remain untouched.
     if( $update ) {
-      $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$out" );
+      if ($in ne $out) {
+        $Mon{'ndfpack_mon'}->obeyw( "ndfcopy", "in=$in out=$out" );
+      }
       my $prevsync = $Obj->allow_header_sync;
       $Obj->allow_header_sync(1);
       $Obj->product( "reduced" );
@@ -100,8 +127,9 @@ if( ! defined( $file ) ) {
 
     } else {
 
-      hardlink( "$in.sdf", "$out.sdf" ) or orac_throw "Could not link $in.sdf to $out.sdf: $!\n";
-
+      if ($in ne $out) {
+        hardlink( "$in.sdf", "$out.sdf" ) or orac_throw "Could not link $in.sdf to $out.sdf: $!\n";
+      }
     }
 
     orac_say "$in to $out:\n Tagged as reduced product.";
@@ -109,6 +137,13 @@ if( ! defined( $file ) ) {
     _DISPLAY_FILE_ FILE=$out GROUP=$group
 
   }
+
+  # We should be tagging as representative if we have more than
+  # one file. Not trying to create multiple images
+  if ($Obj->nfiles == 1) {
+    $create_graphic->( $Obj->file( 1 ) );
+  }
+
 } else {
 
   my $in = $file;
@@ -131,7 +166,6 @@ if( ! defined( $file ) ) {
   orac_say "$in to $out:\n Tagged as reduced product.";
 
   _DISPLAY_FILE_ FILE=$out GROUP=$group
+  $create_graphic->( $out );
 
 }
-
-

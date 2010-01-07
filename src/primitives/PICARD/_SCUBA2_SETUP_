@@ -1,0 +1,101 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_SCUBA2_SETUP_ - make SCUBA-2 infrastructure available to PICARD
+
+=head1 SYNOPSIS
+
+_SCUBA2_SETUP_
+
+=head1 DESCRIPTION
+
+Sets up a few useful user-header entries for dealing with SCUBA-2 data.
+
+=head1 ARGUMENTS
+
+This primitive has no arguments.
+
+=head1 EXTERNAL TASKS
+
+The following external task is used:
+
+=over 4
+
+=item KAPPA
+
+NDFTRACE
+
+=back
+
+=head1 NOTES
+
+Since the first file is used to set the current units, and downstream
+decisions may be made based on those units, passing in a mix of
+calibrated and uncalibrated data is likely to lead to strange results
+and is not recommended.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Use a SCUBA2 calibration object
+use ORAC::Core qw/ orac_calib_override /;
+use ORAC::Calib::SCUBA2;
+
+# For Picard, the observation has always ended :-)
+$Frm->uhdr("OBSEND",1);
+
+# Get the current units so we quote the calibration factor - assume
+# that all input data have the same units, so pick the first file in
+# the Frame and use that as a template.
+my $in = $Frm->file(1);
+$Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
+my ($ORAC_STATUS, $dataunits) = $Mon{ndfpack_mon}->get("ndftrace","units");
+$Frm->uhdr("DATA_UNITS", $dataunits);
+
+# Check the units to see if the data need calibrating. For example,
+# NEFDs can only be calculated for calibrated data.
+if ( $Frm->uhdr("DATA_UNITS") eq "pW") {
+  $Frm->uhdr("NOCALIB", 0);
+} else {
+  $Frm->uhdr("NOCALIB", 1);
+}
+
+# For the purposes of Picard, say that sky subtraction has been done
+# so background-subtracted images have the suffix _back
+$Frm->uhdr("SKY_SUBTRACTION", 1);
+
+# Tell user how many files we're processing
+my $nfiles = $Frm->nfiles;
+my $files = ($nfiles == 1) ? "file" : "files";
+orac_print "Processing $nfiles $files...\n";
+
+# Recipe parameters
+ORAC::Recipe::Parameters::verify_parameters( \%RECPARS, ['APERTURE_RADIUS'] );
+
+if ( defined $RECPARS{'APERTURE_RADIUS'} ) {
+  $Frm->uhdr("RECPAR_APERTURE_RADIUS", $RECPARS{APERTURE_RADIUS});
+}

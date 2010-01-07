@@ -1,6 +1,7 @@
 =head1 NAME                                     -*-cperl-*-
 
-_IDENTIFY_SPECBOUNDS_ - Determine the spectral bounds of the emission within a spectral cube.
+_IDENTIFY_SPECBOUNDS_ - Determine the spectral bounds of the emission
+within a spectral cube.
 
 =head1 DESCRIPTION
 
@@ -10,177 +11,110 @@ using a "MAX" estimator so that regions of emission are not diluted by
 combining them with other regions of non-emission (such as would
 happen if, say, a "MEAN" estimator were used). A background curve is
 then estimated and subtracted from this collapsed spectrum, and the
-regions of emission are then identified using CUPID:FINDCLUMPS. The
-upper and lower spectral bounds each region of emission are stored in
-the group user-defined header, with key SPECBOUNDS, in the order
-lbnd1, ubnd1, lbnd2, ubnd2, etc.
+regions of emission are then identified using CUPID:FINDCLUMPS.
 
 =head1 PARAMETERS
 
 =over 4
 
-=item TRIM = BOOLEAN (Given)
+=item BOUNDS = ARRAY REFERENCE (Given)
 
-Whether or not to trim 10% off either end of the cube in the spectral
-dimension. [0]
+An array reference to a list of arrays holding the bounds of detected
+emission, in pixelspace.
+
+=item FILE = STRING (Given)
+
+The file to detect lines in. Must be defined.
+
+=item MINIMUM_WIDTH = INTEGER (Given)
+
+The minimum width of a line, in channels. This argument can be
+overridden by the RECPAR_MINIMUM_LINE_WIDTH uhdr via the recipe
+parameter system. [7]
+
+=item RMS = REAL (Given)
+
+The RMS above which a line will be detected. [3.0]
 
 =back
 
-=head1 AUTHOR
+=head1 AUTHORS
 
-David Berry <d.berry@jach.hawaii.edu>
+David Berry <d.berry@jach.hawaii.edu>,
+Brad Cavanagh <b.cavanagh@jach.hawaii.edu>
 
 =head1 COPYRIGHT
 
 Copyright (C) 2007 Particle Physics and Astronomy Research
-Council. All Rights Reserved.
+Council. (C) 2009 Science and Technology Facilities Council. All
+Rights Reserved.
 
 =cut
 
-orac_print "Identifying spectral bounds of emission regions.\n";
+my $file = get_prim_arg( $_PRIM_ARGS_, "FILE", undef, 1 );
+my $minwidth = get_prim_arg( $_PRIM_ARGS_, "MINIMUM_WIDTH", 7 );
+my $rms = get_prim_arg( $_PRIM_ARGS_, "RMS", 3.0 );
 
-my @sp_bounds;
+# Override various parameters via the recipe parameter system.
+$minwidth = ( defined( $Frm->uhdr( "RECPAR_MINIMUM_LINE_WIDTH" ) ) ?
+              $Frm->uhdr( "RECPAR_MINIMUM_LINE_WIDTH" )            :
+              $minwidth );
 
-foreach my $i ( 1 .. $Frm->nfiles ) {
+# Collapse along the first axis, then the second (which is the first
+# in the collapsed image).
+my $temp1 = new ORAC::TempFile;
+my $temp1file = $temp1->file;
+my $params = "in=$file out=$temp1file axis=1 estimator=max wlim=0.0";
+$Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
 
-  my $tmp2;
-  my $out2;
-  my $params;
-  my $att;
-  my $domain;
-  my $lbnd;
-  my $ubnd;
-  my $iclump;
-  my @bounds;
+my $temp2 = new ORAC::TempFile;
+my $temp2file = $temp2->file;
+$params = "in=$temp1file out=$temp2file axis=1 estimator=max wlim=0.0";
+$Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
+
+# Retrieve bounds so we know what to set the boxsize to for FINDBACK.
+_GET_DIMENSIONS_ FILE=$temp2file
+my $lbound = $_GET_DIMENSIONS_{'LBOUND'};
+my $ubound = $_GET_DIMENSIONS_{'UBOUND'};
+
+# The boxsize for FINDBACK will be one quarter of the length of the
+# spectrum.
+my $boxsize = int( 0.25 * ( $ubound->[0] - $lbound->[0] ) );
+
+# Use CUPID:FINDBACK to identify and remove any background features
+# that have scale size larger than one quarter of the length of the
+# usable part of the spectrum (i.e. twice the size of the margin).
+my $temp3 = new ORAC::TempFile;
+my $temp3file = $temp3->file;
+$params = "in=$temp2file out=$temp3file box=$boxsize sub=yes accept";
+$Mon{'cupid_mon'}->obeyw( "findback", $params );
+
+# Use CUPID:FINDCLUMPS to identify the regions with emission higher
+# than the requested threshold.
+my $temp4 = new ORAC::TempFile;
+my $temp4file = $temp4->file;
+$params = "in=$temp3file out=$temp4file outcat=! method=fellwalker ";
+$params .= "config='noise=rms,mindip=1.0E10,minheight=$rms*RMS,minpix=$minwidth' accept";
+$Mon{'cupid_mon'}->obeyw( "findclumps", $params );
+
+# Loop round all the clumps found above, using a one-based index as
+# required by CLUMPINFO.
+my @bounds;
+my ( $ORAC_STATUS, $nclump ) = $Mon{'cupid_mon'}->get('findclumps', 'NCLUMPS');
+for( my $iclump = 1; $iclump <= $nclump; $iclump++ ) {
+
+# Use CUPID:CLUMPINFO to get the upper and lower bounds of the
+# spectral bounding box containing the current clump. Concatentate
+# them into the @bounds array in the order lbnd1, ubnd1, lbnd2, ubnd2,
+# etc.
   my @clump_bounds;
-  my $aref;
+  $params = "ndf=$temp4file clumps=$iclump";
+  $Mon{'cupid_mon'}->obeyw( "clumpinfo", $params );
 
-# Compress the wavelength axis by a factor of 4 to improve
-# signal-to-noise.
-  my $in = $Frm->file( $i );
-  my $tempcmp = new ORAC::TempFile;
-  my $tempcmpfile = $tempcmp->file;
-  $Mon{'kappa_mon'}->obeyw( "compave", "in=$in out=$tempcmpfile compress=[1,1,6]" );
-
-# Get the number of WCS axes in the group file.
-  $Mon{'atools_mon'}->obeyw( "astget", "this=$tempcmpfile attrib=naxes" );
-  my ($ORAC_STATUS, $naxes) = $Mon{'atools_mon'}->get('astget', 'VALUE');
-
-# Create a temporary file to hold the 1D collapsed array.
-   my $tmp = new ORAC::TempFile;
-  $in = $tempcmpfile;
-   my $out = $tmp->file;
-
-# Compress the group file along each axis in turn, excluding the spectral axis,
-# until there is only one axis left.
-   my $iaxis = 1;
-   while( $naxes > 1 ) {
-
-# Get the Domain for this axis.
-      $att = "Domain($iaxis)";
-      $Mon{'atools_mon'}->obeyw( "astget", "this=$tempcmpfile attrib=$att" );
-      ($ORAC_STATUS, $domain) = $Mon{'atools_mon'}->get('astget', 'VALUE');
-
-# Only compress along this axis if the axis Domain name does not contain the
-# string "SPECTRUM".
-      if( !( $domain =~ /SPECTRUM/ ) ) {
-
-# Collapse the array along the current axis. If this is the last axis to be 
-# collapsed put the output into the primary output array. Otherwise put it 
-# into a new temporary array that will be deleted when it goes out of scope.
-# Use the output array as the input for the next collapse.
-         $params = "in=$in";
-
-         if( $naxes == 2 ) {
-            $params = "$params out=$out";
-            $in = $out;
-
-         } else {
-            $tmp2 = new ORAC::TempFile;
-            $out2 = $tmp2->file;
-            $params = "$params out=$out2";
-            $in = $out2;
-         }
-
-         $params = "$params axis=$iaxis estimator=max";
-         $Mon{'kappa_mon'}->obeyw( "collapse", "$params" );
-
-# Decrement the number of axes remaining in the array.
-         $naxes--;
-
-# If this is a spectral axis, move on to the next axis without decrementing 
-# the number of remaining axes.
-      } else {
-         $iaxis++;
-      }
-   }
-
-# There often seems to be grot in the first and last 10% of the spectrum
-# created above. So get the pixel index bounds of the usable section of the
-# spectrum (assumed to be the central 80%).
-   $Mon{'ndfpack_mon'}->obeyw( "ndftrace", "ndf=$out quiet=yes" );
-   ($ORAC_STATUS, $lbnd) = $Mon{'ndfpack_mon'}->get('ndftrace', 'LBOUND');
-   ($ORAC_STATUS, $ubnd) = $Mon{'ndfpack_mon'}->get('ndftrace', 'UBOUND');
-
-   my $margin = int( 0.1*( $ubnd - $lbnd ) );
-   $lbnd = $lbnd + $margin;
-   $ubnd = $ubnd - $margin;
-
-# Use CUPID:FINDBACK to identify and remove any background features that
-# have scale size larger than one quarter of the length of the usable part
-# of the spectrum (i.e. twice the size of the margin). 
-   my $tmp3 = new ORAC::TempFile;
-   my $out3 = $tmp3->file;
-   my $box = 2*$margin;
-   my $opts = "in=$out($lbnd:$ubnd) box=$box sub=yes out=$out3 accept";
-   $Mon{'cupid_mon'}->obeyw( "findback", $opts );
-
-# Use CUPID:FINDCLUMPS to identify the regions of significant emission in 
-# the spectrum.
-   my $tmp4 = new ORAC::TempFile;
-   my $out4 = $tmp4->file;
-
-   my $tmp5 = new ORAC::TempFile;
-   my $cat = $tmp5->file;
-
-   $opts = "in=$out3 out=$out4 outcat=$cat method=fellwalker config='noise=rms,mindip=1.0E10,minheight=2*RMS' accept";
-   $Mon{'cupid_mon'}->obeyw( "findclumps", $opts );
-
-# Loop round all the clumps found above, using a one-based index as required 
-# by CLUMPINFO.
-   ($ORAC_STATUS, my $nclump) = $Mon{'cupid_mon'}->get('findclumps', 'NCLUMPS');
-   for( $iclump = 1; $iclump <= $nclump; $iclump++ ) {
-
-# Use CUPID:CLUMPINFO to get the upper and lower bounds of the spectral 
-# bounding box containing the current clump. Concatentate them into the 
-# @bounds array in the order lbnd1, ubnd1, lbnd2, ubnd2, etc.
-
-      $opts = "ndf=$out4 clumps=$iclump quiet=yes";
-      $Mon{'cupid_mon'}->obeyw( "clumpinfo", $opts );
-
-      ($ORAC_STATUS, $clump_bounds[ 0 ] ) = $Mon{'cupid_mon'}->get('clumpinfo', 'FLBND');
-      ($ORAC_STATUS, $clump_bounds[ 1 ] ) = $Mon{'cupid_mon'}->get('clumpinfo', 'FUBND');
-      $bounds[ $iclump - 1 ] = [ @clump_bounds ];
-   }
-
-   orac_print "Spectral bounds of emission in $in: ";
-   if( $nclump > 0 ) {
-      for $aref ( @bounds ) {
-         if( $aref ) {
-            orac_print " [ @$aref ]";
-         }
-      }
-      orac_print "\n";
-   } else {
-      orac_print "<no spectral emission found>\n";
-   }
-
-  push ( @sp_bounds, \@bounds );
-
+  ($ORAC_STATUS, $clump_bounds[ 0 ] ) = $Mon{'cupid_mon'}->get('clumpinfo', 'lbound');
+  ($ORAC_STATUS, $clump_bounds[ 1 ] ) = $Mon{'cupid_mon'}->get('clumpinfo', 'ubound');
+  $bounds[ $iclump - 1 ] = [ @clump_bounds ];
 }
 
-$Frm->uhdr( "SPECTRAL_BOUNDS", \@sp_bounds );
-
-# Tidy up output.
-orac_print "\n";
+$_IDENTIFY_SPECBOUNDS_{'BOUNDS'} = \@bounds;
 

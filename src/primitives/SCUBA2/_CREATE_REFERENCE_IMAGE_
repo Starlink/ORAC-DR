@@ -217,15 +217,15 @@ if ( $cosys_out eq "" ) {
   $cosys_out = $cosys_in;
 } elsif ( ( $cosys_out ne "ICRS" ) && ( $cosys_out ne "GAPPT" )
      && ( $cosys_out ne "EQUATORIAL" ) && ( $cosys_out ne "GALACTIC" )
-     && ( $cosys_out ne "FK5" ) && ( $cosys_out ne "FK4" ) ) {
-  orac_warn " Unsupported coordinate frame, $cosys_out. Using default (ICRS)\n";
+     && ( $cosys_out ne "FK5" ) && ( $cosys_out ne "FK4" ) && ( $cosys_out ne 'AZEL' ) ) {
+  orac_warn " Unsupported coordinate frame, $cosys_out. Using default ($cosys_in)\n";
   $cosys_out = $cosys_in;
 }
 
 # If we are dealing with a moving source, set the input coordinate
 # system to ICRS for creating the output WCS
 my $usesys = $cosys_in;
-if ( $cosys_in eq "GAPPT" ) {
+if ( $cosys_in =~ /GAPPT|AZEL/ ) {
   $wcs->Set("System=ICRS");
   $usesys = "ICRS";
 }
@@ -239,7 +239,7 @@ my $equinox = $wcs->Get("Equinox");
 
 # Epoch - for GAPPT output retrieve from input data
 my $epoch;
-if ( $cosys_out eq "GAPPT" ) {
+if ( $cosys_out =~ /GAPPT|AZEL/ ) {
   $epoch = $wcs->Get("Epoch");
 } else {
   # Else use equinox before redefining the equinox as a string
@@ -314,8 +314,12 @@ my $obslat = $wcs->Get("ObsLat");
 # Work out which AST attributes need to be set
 my $attrs = "obslon=$obslon,obslat=$obslat";
 
+# Work out whether we were tracking a moving source
+my $tracksys = $Frm->hdrval("TRACKSYS");
+
 # If necessary, set the SkyRefIs, AlignOffset and System attributes
-if ( $cosys_out eq "GAPPT" ) {
+if ( $cosys_out eq "GAPPT" ||
+   ( defined $tracksys && $tracksys eq 'APP' )) {
   $attrs .=",skyrefis=origin,alignoffset=1,system=$cosys_out,epoch=$epoch";
   # Set a flag for moving sources
   $Grp->uhdr("MOVING",1);
@@ -329,6 +333,9 @@ $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$refimage mode=mset setting='$attrs'")
 
 # Store the reference image name in the primitive hash
 $_CREATE_REFERENCE_IMAGE_{REFIMAGE} = $refimage;
+
+# Store the name in the Grp so that we can clean up
+$Grp->push_intermediates( $refimage );
 
 # Store name of created reference image in Grp uhdr. Note this is not
 # done for FOCUS observations because it messes up the FITS headers

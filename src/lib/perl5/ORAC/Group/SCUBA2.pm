@@ -33,9 +33,7 @@ our $VERSION;
 
 $VERSION = '1.0';
 
-use ORAC::Group::NDF;
-
-use base qw/ ORAC::Group::NDF /;
+use base qw/ ORAC::JSAFile ORAC::Group::NDF /;
 
 
 =head1 PUBLIC METHODS

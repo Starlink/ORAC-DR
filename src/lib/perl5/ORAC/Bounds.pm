@@ -31,7 +31,9 @@ use vars qw/ $VERSION @EXPORT_OK $DEBUG /;
 $VERSION = '1.0';
 $DEBUG = 0;
 
+use Astro::FITS::Header::NDF;
 use Astro::Coords;
+use Starlink::AST;
 use Carp;
 
 use NDF qw/ :ndf :err /;
@@ -130,37 +132,45 @@ sub retrieve_bounds {
     # Retrieve the WCS.
     my $wcs = ndfGtwcs( $ndf_id, $STATUS );
 
+    # Read the FITS header
+    my $fitshdr = Astro::FITS::Header::NDF->new( ndfID => $ndf_id );
+    my $tracksys = $fitshdr->value("TRACKSYS");
+
     # Finish the NDF handling and deal with errors.
     ndf_annul( $ndf_id, $STATUS );
     ndf_end( $STATUS );
 
     if ( $STATUS != &NDF::SAI__OK ) {
-      my ( $oplen, @errs );
-      do {
-        err_load( my $param, my $parlen, my $opstr, $oplen, $STATUS );
-        push @errs, $opstr;
-      } until ( $oplen == 1 );
-      err_annul( $STATUS );
+      my @errs = err_flush_to_string( $STATUS );
       err_end( $STATUS );
       croak "Error retrieving WCS from NDF:\n" . join "\n", @errs;
     }
     err_end( $STATUS );
 
     # Retrieve spatial information.
-    my $skytemplate = Starlink::AST::SkyFrame->new( "" );
-    $skytemplate->Set( 'MaxAxes' => 3,
-                       'MinAxes' => 1 );
+    my $skytemplate = Starlink::AST::SkyFrame->new( "MaxAxes=3,MinAxes=1" );
     my $skyframe = $wcs->FindFrame( $skytemplate, "" );
 
     # We want the skyframe system to be ICRS.
+    # And not to be in a offset system
     if ( defined( $skyframe ) ) {
-      $skyframe->Set( 'system' => 'ICRS' );
+      $skyframe->Set( 'system' => 'ICRS',
+                      SkyRefIs => "ignored" );
     }
 
-    # Retrieve spectral information.
-    my $spectemplate = Starlink::AST::SpecFrame->new( "" );
-    $spectemplate->Set( 'MaxAxes' => 3 );
+    # Retrieve spectral information. Can be dual sideband or straight specFrame
+    my $spectemplate = Starlink::AST::SpecFrame->new( "MaxAxes=3" );
     my $specframe = $wcs->FindFrame( $spectemplate, "" );
+
+    my $dsbspectemplate = Starlink::AST::DSBSpecFrame->new( "MaxAxes=3" );
+    my $dsbspecframe = $wcs->FindFrame( $dsbspectemplate, "DSBSPECTRUM" );
+
+    my $has_dsb;
+    if (defined $dsbspecframe) {
+      $has_dsb = 1;
+      $specframe = $dsbspecframe;
+      undef $dsbspecframe;
+    }
 
     # We want the units returned in GHz, the system to be frequency,
     # and to use the barycentric standard of rest.
@@ -202,17 +212,19 @@ sub retrieve_bounds {
         if ( defined( $specframe ) ) {
 
           # Calculate the LSB info.
-          $specframe->Set( "SideBand", "observed" );
+          $specframe->Set( "SideBand", "observed" ) if $has_dsb;
           @ssb_bnds = $specframe->TranP( 1,
                                          [ $x_min, $x_max ],
                                          [ $y_min, $y_max ],
                                          [ $z_min, $z_max ] );
           # Calculate the USB info.
-          $specframe->Set( "SideBand", "image" );
-          @isb_bnds = $specframe->TranP( 1,
-                                         [ $x_min, $x_max ],
-                                         [ $y_min, $y_max ],
-                                         [ $z_min, $z_max ] );
+          if ($has_dsb) {
+            $specframe->Set( "SideBand", "image" );
+            @isb_bnds = $specframe->TranP( 1,
+                                           [ $x_min, $x_max ],
+                                           [ $y_min, $y_max ],
+                                           [ $z_min, $z_max ] );
+          }
         }
       } elsif ( defined( $skyframe ) ) {
         @wcs_bnds = $skyframe->Tran2( [ $x_min, $x_min, $x_max, $x_max ],
@@ -237,7 +249,9 @@ sub retrieve_bounds {
                                       type => 'J2000',
                                       units => 'radians' );
 
-      $return{'reference'} = $obsref;
+      # Not interested in reference position for moving sources
+      $return{'reference'} = $obsref
+        unless ($tracksys eq 'APP' || $tracksys eq 'AZEL');
 
       my $obs_cen = new Astro::Coords( ra => $cen[0]->[0],
                                        dec => $cen[1]->[0],
@@ -302,6 +316,9 @@ sub retrieve_bounds {
       $return{'freq_sig_hi'} = ( $ssb_bnds[0]->[0] < $ssb_bnds[0]->[1] ?
                                  $ssb_bnds[0]->[1]                     :
                                  $ssb_bnds[0]->[0]                     );
+    }
+    if ( defined( $isb_bnds[0] ) ) {
+
       $return{'freq_img_lo'} = ( $isb_bnds[0]->[0] < $isb_bnds[0]->[1] ?
                                  $isb_bnds[0]->[0]                     :
                                  $isb_bnds[0]->[1]                     );
@@ -400,6 +417,7 @@ sub return_bounds_header {
                                              Value   => undef,
                                              Comment => '[deg] Reference ICRS Dec coordinate',
                                              Type    => 'UNDEF' );
+      $header->append( $item );
     }
 
     if ( defined( $bounds->{'bottom_left'} ) ) {

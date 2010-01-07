@@ -1,0 +1,152 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_MASK_IMAGE_ - mask out a circular region in an image
+
+=head1 SYNOPSIS
+
+ _MASK_IMAGE_ IMAGE=$image MASKED=$masked
+
+ _MASK_IMAGE_ IMAGE=$image MASKED=$masked XYPOS=\@xy RADIUS=50
+
+=head1 DESCRIPTION
+
+This primitive masks a circular region within the given image,
+returning the masked image. The user may optionally choose to mask the
+image outside the aperture, rather than within (the default
+behaviour).
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<IMAGE>
+
+Input image. No default.
+
+=item B<INVERT>
+
+Flag to denote whether to mask all data within the aperture or
+without. Default is 0 (mask within).
+
+=item B<MASKED>
+
+Output masked image. No default.
+
+=item B<RADIUS>
+
+The radius of the aperture in arcsec. Default is 20 arcsec.
+
+=item B<VERBOSE>
+
+Flag to indicate whether informational messages should be given to the
+user. Default is true.
+
+=item B<XYPOS>
+
+An array reference containing the formatted X, Y coordinates in the
+chosen frame. Default is to use the position in the SkyRef WCS
+attribute for absolute coordinate systems or (0,0) for offset
+coordinate systems. Primitive aborts with an error if no default could
+be identified.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA:
+
+ARDMASK, WCSATTRIB
+
+=back
+
+=head1 OUTPUT DATA
+
+The Frame object is not updated.
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Set the input/output file names
+my $in = get_prim_arg( $_PRIM_ARGS_, "IMAGE", undef );
+
+unless ( defined ($in) ) {
+  orac_throw "Error: _MASK_IMAGE_ must be supplied with an input image\n";
+}
+
+my $masked = get_prim_arg( $_PRIM_ARGS_, "MASKED", undef );
+
+unless ( defined ($masked) ) {
+  orac_throw "Error: _MASK_IMAGE_ must be supplied with an output image name\n";
+}
+
+# Should I be verbose (default to yes)
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
+
+# Set radius of mask - default is 20 arcsec
+my $radius = get_prim_arg( $_PRIM_ARGS_,"RADIUS", 20.0 );
+
+# Optional position of aperture
+my $xypos = get_prim_arg( $_PRIM_ARGS_, "XYPOS", undef );
+
+my $aperture = get_prim_arg( $_PRIM_ARGS_, "APERTURE", undef );
+unless ( defined $aperture ) {
+  _DEFINE_APERTURE_ IMAGE=$in XYPOS=$xypos RADIUS=$radius
+  $aperture = $_DEFINE_APERTURE_{APERTURE};
+}
+
+# Create the temporary file for the ard description
+my $ard = new ORAC::TempFile;
+
+# Are we masking everything outside the aperture?
+my $invert = get_prim_arg( $_PRIM_ARGS_, "INVERT", 0 );
+my $circle = ( $invert ) ? ".NOT.CIRCLE" : "CIRCLE";
+
+# Write the ard description - start with the coordinate frame
+print {$ard->handle} "COFRAME(SKY,System=".$aperture->{cosys}.")\n";
+
+print {$ard->handle} "$circle(".$aperture->{coords}
+                    .", ".($aperture->{radius}).")\n";
+
+# Close the file
+$ard->handle->close;
+
+my $ardin = $ard->file;
+
+# Run ardmask
+$Mon{kappa_mon}->obeyw("ardmask", "in=$in out=$masked ardfile=$ardin");
+

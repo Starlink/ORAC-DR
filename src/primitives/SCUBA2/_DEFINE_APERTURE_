@@ -1,0 +1,190 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_DEFINE_APERTURE_ - define a circular aperture
+
+=head1 SYNOPSIS
+
+ _DEFINE_APERTURE_ IMAGE=$image RADIUS=50 XYPOS=\@xy
+
+=head1 DESCRIPTION
+
+This primitive determines the X, Y positions and radius of a given
+aperture, returning values suitably formatted for use with other
+primitives or tasks.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<IMAGE>
+
+Input image. No default.
+
+=item B<RADIUS>
+
+The radius of the aperture in arcsec. Default is 20 arcsec.
+
+=item B<VERBOSE>
+
+Flag to indicate whether informational messages should be given to the
+user. Default is true.
+
+=item B<XYPOS>
+
+An array reference containing the formatted X, Y coordinates in the
+chosen frame. Default is to use the position in the SkyRef WCS
+attribute for absolute coordinate systems or (0,0) for offset
+coordinate systems. Primitive aborts with an error if no default could
+be identified.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA:
+
+ARDMASK, WCSATTRIB
+
+=back
+
+=head1 OUTPUT DATA
+
+On completion, the primitive hash C<%_DEFINE_APERTURE_> contains a
+single key labelled C<APERTURE> which stores a hash reference with the
+following keys:
+
+=over 4
+
+=item * coords: formatted coordinate string in the current coordinate
+system
+
+=item * cosys: current coordinate system
+
+=item * diam: formatted diameter string in the current coordinate
+system
+
+=item * radius: formatted radius string in the current coordinate
+system
+
+=item * xpos: X-coordinate for aperture centre
+
+=item * ypos: Y-coordinate for aperture centre
+
+=back
+
+The Frame object is not updated.
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Set the input/output file names
+my $in = get_prim_arg( $_PRIM_ARGS_, "IMAGE", undef );
+
+unless ( defined ($in) ) {
+  orac_throw "Error: _DEFINE_APERTURE_ must be supplied with an input image\n";
+}
+
+# Should I be verbose (default to yes)
+my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
+
+# Get current coordinate system
+$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=system(1)");
+my ($ORAC_STATUS, my $cosys) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+# Convert string to upper case
+$cosys = uc($cosys);
+
+# Define X and Y positions
+my $xypos = get_prim_arg( $_PRIM_ARGS_, "XYPOS", undef );
+my ($x, $y);
+if (defined $xypos) {
+  ($x, $y) = @$xypos;
+  # what should happen if we have undef x and y?
+  orac_throw "Error: Empty position provided to _DEFINE_APERTURE_\n"
+      unless (defined $x && defined $y);
+} else {
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=skyrefis");
+  ($ORAC_STATUS, my $skyrefis) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+
+  # If we're using an offset coordinate system, assume the source is as 0, 0
+  if ( lc($skyrefis) eq "origin" ) {
+    ($x, $y) = (0.0, 0.0);
+  } else {
+    # Otherwise use the SkyRef attribute
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=skyref");
+    ($ORAC_STATUS, my $skyref) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+    if ( defined $skyref ) {
+      ($x, $y) = split( /,/, $skyref, 2);
+    } else {
+      orac_throw "Unable to determine a position for the aperture in _DEFINE_APERTURE_\n";
+    }
+  }
+}
+
+# Set radius of aperture - default is 20 arcsec
+my $radius = get_prim_arg( $_PRIM_ARGS_, "RADIUS", 20.0 );
+my $diam = 2.0*$radius;
+
+# Return a formatted aperture size
+my $distance = sub {
+  my $dist = shift;
+  my $cosys = shift;
+  my $formatted_distance;
+  if ( $cosys eq "AZEL" || $cosys =~ /^GAL/ ) {
+    $formatted_distance = $dist/3600.0;
+  } else {
+    # All other supported systems are HMS/DMS so need to format
+    # correctly
+    if ( $dist < 60.0 ) {
+      $formatted_distance = "00:00:$dist";
+    } else {
+      my $distmin = int( $dist / 60.0 );
+      my $distsec = $dist - ($distmin * 60);
+      $formatted_distance = "00:$distmin:$distsec";
+    }
+  }
+  return $formatted_distance;
+};
+
+my $ap_radius = $distance->( $radius, $cosys );
+my $ap_diam = $distance->( $diam, $cosys );
+
+my %aperture = ( xpos => $x, ypos => $y, coords => "$x, $y",
+		 radius => $ap_radius, diam => $ap_diam, cosys => $cosys );
+
+# Return aperture properties
+$_PRIM_ARGS_->{APERTURE} = \%aperture;

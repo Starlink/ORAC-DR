@@ -42,11 +42,8 @@ use Starlink::AST;
 use vars qw/$VERSION/;
 
 # Let the object know that it is derived from ORAC::Frame::JCMT and
-# ORAC::Frame::NDF;
-use base qw/ ORAC::Frame::JCMT /;
-
-# Use base doesn't seem to work...
-#use base qw/ ORAC::Frame /;
+# ORAC::JSAFile
+use base qw/ ORAC::JSAFile ORAC::Frame::JCMT /;
 
 $VERSION = '1.0';
 
@@ -631,7 +628,8 @@ sub numsubarrays {
 
 This method modifies the supplied filename to remove specific
 subarray designation and replace it with a generic filter
-designation.
+designation. 4 digit subscan information is also removed but not
+if this is a Focus observation.
 
 Should be used when subarrays are merged into a single file.
 
@@ -657,9 +655,13 @@ sub rewrite_outfile_subarray {
     # filter information
     my $filt = $self->file_from_bits_extra;
 
-    # we would expect the filter information to go after
-    # the four digit subscan number
-    $new =~ s/(_\d\d\d\d_)/$1${filt}_/;
+    # Replace the subscan number with the filter name
+    my $obsmode = $self->hdr( "OBS_TYPE" );
+    if ($obsmode =~ /focus/i) {
+      $new =~ s/(_\d\d\d\d_)/$1${filt}_/;
+    } else {
+      $new =~ s/(_\d\d\d\d_)/_${filt}_/;
+    }
 
     # remove the subarray designation
     $new =~ s/^s[48][abcd]/s/;
@@ -696,6 +698,23 @@ sub rewrite_outfile_subarray {
     }
 
   }
+  return $new;
+}
+
+=item B<strip_subscan>
+
+Strip subscan number from supplied filename. This can be used when going
+from a group of files from a single subarray to a file associated with
+that subarray but no subscan.
+
+ $new = $Frm->strip_subscan( $old );
+
+=cut
+
+sub strip_subscan {
+  my $self = shift;
+  my $new = shift;
+  $new =~ s/_\d\d\d\d_/_/;
   return $new;
 }
 

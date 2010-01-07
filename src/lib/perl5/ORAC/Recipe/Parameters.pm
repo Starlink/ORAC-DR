@@ -182,8 +182,8 @@ sub _parameters {
 
 =item B<_locate_file>
 
-Find the specified file and return the full path.
-Looks in cwd, ORAC_DATA_OUT and ORAC_DATA_CAL in that
+Find the specified file and return the full path.  Looks in cwd,
+ORAC_DATA_OUT, ORAC_DATA_CAL, and ORAC_DATA_CAL/recpars, in that
 order, unless it's a fully-specified path.
 
  $path = $self->_locate_file( $file );
@@ -200,13 +200,15 @@ sub _locate_file {
 
   # fully specified path and file exists. Great.
   if (File::Spec->file_name_is_absolute($file)) {
-    print "ABSOLUTE FILENAME: $file\n";
+    print "ABSOLUTE FILENAME: $file\n" if $DEBUG;
     return (-e $file ? $file : undef);
   }
 
   # Start looking around
-  for my $dir ( File::Spec->curdir, $ENV{ORAC_DATA_OUT},
-                $ENV{ORAC_DATA_CAL} ) {
+  for my $dir ( File::Spec->curdir,
+                $ENV{ORAC_DATA_OUT},
+                $ENV{ORAC_DATA_CAL},
+                File::Spec->catfile( $ENV{'ORAC_DATA_CAL'}, 'recpars' ) ) {
     my $path = File::Spec->catfile( $dir, $file );
     if ( -e $path) {
       return File::Spec->rel2abs($path);

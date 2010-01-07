@@ -30,8 +30,11 @@ use File::Spec;
 
 use base qw/ ORAC::Calib /;
 
-use vars qw/ $VERSION /;
+use vars qw/ $VERSION @PLANETS /;
 $VERSION = '1.0';
+
+# The planets that we can retrieve fluxes for.
+@PLANETS = qw/ MARS JUPITER SATURN URANUS NEPTUNE /;
 
 __PACKAGE__->CreateBasicAccessors( pointing => {},
                                    qaparams => { staticindex => 1 },
@@ -76,6 +79,26 @@ sub qaparams {
 }
 
 =back
+
+=head2 General Methods
+
+=over 4
+
+=item B<isplanet>
+
+Returns true if the given object is a planet.
+
+  $isplanet = $Cal->isplanet( "source_name" );
+
+=cut
+
+sub isplanet {
+  my $self = shift;
+  my $source = uc( shift );
+
+  return 1 if grep /$source/, @PLANETS;
+  return 0;
+}
 
 =head2 Support Methods
 

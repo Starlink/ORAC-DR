@@ -18,9 +18,9 @@ simple rebinning method or the full iterative solution.
 
 For the iterative map-maker a configuration file must be specified. By
 default, the system configuration file is used. However, the user may
-override any parameter by specifying the B<MYCONFIG> parameter and
-listing the name and new value of the parameter. See the documentation
-for MAKEMAP for details on the available parameters.
+override this behaviour by specifying an alternative configuration
+file with the B<CONFIG> parameter. See
+L<_GET_MAKEMAP_CONFIG_|_GET_MAKEMAP_CONFIG_> for further details.
 
 The output file size is kept below 2 GB which in practice corresponds
 to an image with about 60 million pixels (7745 pixels on a side, or
@@ -38,6 +38,11 @@ The following arguments are supported:
 
 =over 4
 
+=item B<CONFIG>
+
+Name of config file to be used. Default is to use one based on the
+value of C<MAKEMAP_CONFIG_TYPE> in the Frame uhdr.
+
 =item B<INFILES>
 
 A switch to determine how many files are given to makemap.  Valid
@@ -50,17 +55,13 @@ current Group object.
 
 Image reconstruction method. May be C<REBIN> to use a simple rebinning
 scheme or C<ITER> to use the iterative map-maker. The default is
-C<REBIN>.
-
-=item B<MYCONFIG>
-
-A flag to denote that the a user-defined config file is to be
-used. Default is 0 (use system config file).
+C<ITER>.
 
 =item B<PIXSIZE>
 
 Size of the output map pixels in arcsec. The default is wavelength
-dependent (6 arcsec at 850 um, 3 arcsec at 450 um).
+dependent and is determined by C<MAKEMAP> (4 arcsec at 850 um, 2 arcsec
+at 450 um).
 
 =item B<SYSTEM>
 
@@ -74,10 +75,6 @@ C<NEAREST> for nearest-neighbour resampling or C<LINEAR> for bi-linear
 resampling.  Default is C<NEAREST>.
 
 =back
-
-In addition, configuration parameters for B<MAKEMAP> may be specified,
-provided the B<MYCONFIG> argument is true. See the B<MAKEMAP>
-documentation for supported parameters.
 
 =head1 EXTERNAL TASKS
 
@@ -157,161 +154,151 @@ if ($Frm->uhdr("DARKONLY")) {
   $Frm->uhdr("NOCALIB",1);
 
 } else {
-# Pixel size for output image
-my $pixsize = get_prim_arg( $_PRIM_ARGS_, "PIXSIZE", $Cal->pixelscale);
+  # Pixel size for output image
+  my $pixsize = get_prim_arg( $_PRIM_ARGS_, "PIXSIZE", undef);
 
-# Output coordinate system - default is TRACKING
-my $system = get_prim_arg( $_PRIM_ARGS_, "SYSTEM", "TRACKING");
+  # Output coordinate system - default is TRACKING
+  my $system = get_prim_arg( $_PRIM_ARGS_, "SYSTEM", "TRACKING");
 
-# Pixel-spreading scheme
-my $spread = lc(get_prim_arg( $_PRIM_ARGS_, "SPREAD", "nearest"));
+  # Pixel-spreading scheme
+  my $spread = lc(get_prim_arg( $_PRIM_ARGS_, "SPREAD", "nearest"));
 
-# Reset to "nearest" if an unsupported scheme is given
-if ( ($spread ne "nearest") && ($spread ne "linear") ) {
-  orac_warn "Unsupported pixel-spreading scheme, $spread: using NEAREST\n";
-  $spread = "nearest";
-}
-
-# Method for reconstructing map
-my $method = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "rebin"));
-my $iterate = 0;
-# Minimum match on method
-if ( $method =~ /^iter/ ) {
-  $method = "iterate";
-  $iterate = 1;
-} elsif ( $method =~ /^reb/ ) {
-  $method = "rebin";
-} else {
-  orac_warn "Unrecognized MAKEMAP METHOD, $method: assuming REBIN\n";
-  $method = "rebin";
-}
-
-# How many files are we making a map with?
-my $infiles = get_prim_arg($_PRIM_ARGS_, "INFILES", "FRAME");
-
-my @infiles;
-if ( $infiles eq "FRAME" ) {
-  @infiles = $Frm->files;
-
-} elsif ( $infiles eq "OBS" ) {
-  # Create a sub-group for the current observation only
-  my $subGrp = $Grp->subgrp(OBSNUM => $Frm->hdr("OBSNUM"));
-  foreach my $frmobj ( $subGrp->members ) {
-    push (@infiles, $frmobj->files);
+  # Reset to "nearest" if an unsupported scheme is given
+  if ( ($spread ne "nearest") && ($spread ne "linear") ) {
+    orac_warn "Unsupported pixel-spreading scheme, $spread: using NEAREST\n";
+    $spread = "nearest";
   }
-} elsif ( $infiles eq "ALL" ) {
-  foreach my $frmobj ( $Grp->members ) {
-    push (@infiles, $frmobj->files);
+
+  # Method for reconstructing map
+  my $method = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "iter"));
+  my $iterate = 0;
+  # Minimum match on method
+  if ( $method =~ /^iter/ ) {
+    $method = "iterate";
+    $iterate = 1;
+  } elsif ( $method =~ /^reb/ ) {
+    $method = "rebin";
+  } else {
+    orac_warn "Unrecognized MAKEMAP METHOD, $method: assuming REBIN\n";
+    $method = "rebin";
   }
-}
 
-# Write list of filenames to a temp file
-my $inlist = write_file_list( @infiles );
+  # How many files are we making a map with?
+  my $infiles = get_prim_arg($_PRIM_ARGS_, "INFILES", "FRAME");
 
-# Set output filename
-my ($in, $out) = $Frm->inout('_fmos');
-$out = $Frm->rewrite_outfile_subarray( $out );
+  my @infiles;
+  if ( $infiles eq "FRAME" ) {
+    @infiles = $Frm->files;
 
-# Maximum map-size - set to 2 GB as a default, increase later if the
-# iterative map-maker is being used and processing is done in memory.
-# Makemap uses maxmem to denote the maximum amount of memory available
-# to process the data, not necessarily the size of the output
-# map. This primitive uses it to limit the output file size. The
-# difference between the two usages amounts to about a factor of 2.
-my $maxmem = 4096;
+  } elsif ( $infiles eq "OBS" ) {
+    # Create a sub-group for the current observation only
+    my $subGrp = $Grp->subgrp(OBSNUM => $Frm->hdr("OBSNUM"));
+    foreach my $frmobj ( $subGrp->members ) {
+      push (@infiles, $frmobj->files) if ($frmobj->isgood);
+    }
+  } elsif ( $infiles eq "ALL" ) {
+    foreach my $frmobj ( $Grp->members ) {
+      push (@infiles, $frmobj->files) if ($frmobj->isgood);
+    }
+  }
 
-my $tiledims = int(sqrt(MAXPIX));
+  # Quit processing if there is no data to make a map
+  orac_term "No good data for ".($Frm->hdr('OBJECT')).
+    " from obs ".($Frm->hdr('OBSNUM'))." with which to make a map\n"
+      unless (@infiles);
 
-# Makemap argument list
-my $args = "in=^$inlist out=$out pixsize=$pixsize spread=$spread "
-          ."system=$system method=$method maxmem=$maxmem tiledims=$tiledims";
+  # Write list of filenames to a temp file
+  my $inlist = write_file_list( @infiles );
 
-my $config;
-if ( $iterate ) {
-  # Obtain a suitable config file
-  my $myconfig = get_prim_arg( $_PRIM_ARGS_, "MYCONFIG",  0 );
-  # A new config file might not always be necessary, but should
-  # internal consistency checks fail, a modified version will have to
-  # be written even if MYCONFIG is 0. Therefore pass in a suitable
-  # ORAC::TempFile object.
-  $config = new ORAC::TempFile;
+  # Set output filename
+  my ($in, $out) = $Frm->inout('_fmos');
+  $out = $Frm->rewrite_outfile_subarray( $out );
 
-  _GET_MAKEMAP_CONFIG_ ARGS=$_PRIM_ARGS_ CONFIG=$config
-  $args .= " config=^".$_GET_MAKEMAP_CONFIG_{CONFIG};
-}
+  # Now retrieve bad bolometer masks if present and set BPM parameter
+  my @bbms;
+  foreach my $subarray ( $Frm->subarrays ) {
+    $Frm->uhdr("SUBARRAY",$subarray);
+    push(@bbms, $Cal->mask) if ( defined $Cal->mask );
+  }
 
-# Call makemap - really must have some sort of feedback to user
-orac_print "Calling makemap using $method method\n";
-# First time round, determine number of pixels in the output map by
-# setting out=! Use method=rebin to avoid needing to specify any
-# further unecessary parameters.
-orac_print "Checking output map size... ";
-my $mapszargs = "in=^$inlist out=! pixsize=$pixsize method=rebin maxmem=$maxmem";
-$Mon{smurf_mon}->obeyw("makemap","$mapszargs");
-my ($ORAC_STATUS, @lbound) = $Mon{smurf_mon}->get("makemap","lbound");
-($ORAC_STATUS, my @ubound) = $Mon{smurf_mon}->get("makemap","ubound");
+  my $bbm ="!";
+  my $bbmfiles;
+  if ( @bbms ) {
+    # Note bbm must be different from bbmfiles - simply overwriting the
+    # return value from write_file_list will run the desctructor and
+    # unlink the temp file
+    $bbmfiles = write_file_list( @bbms );
+    $bbm = "^" . $bbmfiles;
+  }
 
-my $xsize = $ubound[0] - $lbound[0] + 1;
-my $ysize = $ubound[1] - $lbound[1] + 1;
-my $outpix = $xsize*$ysize;
-if ( $outpix > MAXPIX ) {
-  orac_print "Old image dimensions are $xsize x $ysize\n";
-  my $scalefactor = sqrt( MAXPIX/$outpix );
-  my $newxsize = int($xsize * $scalefactor);
-  my $newysize = int($newxsize * $ysize / $xsize);
-  my $dx = int($xsize * ( 1.0 - $scalefactor ) / 2.0);
-  my $dy = int($ysize * ( 1.0 - $scalefactor ) / 2.0);
-  # Reduce the bounds equally.
-  $lbound[0] += $dx;
-  $ubound[0] -= $dx;
-  $lbound[1] += $dy;
-  $ubound[1] -= $dy;
-  $scalefactor = sprintf "%5.3f", $scalefactor;
-  $scalefactor *= (100*$scalefactor);
-  orac_print "\n";
-  orac_warn "Size will exceed 2 GB, reducing to include central $scalefactor % of mapped area\n";
-  orac_print "New image dimensions are $newxsize x $newysize\n";
-  # Append the new bounds to the list of arguments
-  $args .= " lbnd=[$lbound[0],$lbound[1]] ubnd=[$ubound[0],$ubound[1]]";
-} else {
-  orac_print "Size within limits, no need to tile.\n";
-}
-# Now create output map using the new bounds if necessary
-orac_print "Making map: this... may... take... a... while...\n";
-my $SMURF_STATUS = $Mon{smurf_mon}->obeyw("makemap","$args");
+  # This sets the upper limit on the output map size - MAXPIX should be
+  # small enough to keep the map size below 2 GB
+  my $tiledims = int(sqrt(MAXPIX));
 
-# Delete temporary config file generated by this primitive if present
-undef $config if ($config);
+  # Makemap argument list
+  my $args = "in=^$inlist out=$out spread=$spread bpm=$bbm "
+    ."system=$system method=$method tiledims=$tiledims";
 
-# Check for SMF__NOMEM return status
-if ( $SMURF_STATUS == 235176770 ) {
-  # Since makemap failed mark this frame as BAD so it's not included
-  # in further processing. Throw an error to skip the rest of the recipe.
-  $Frm->isgood(0);
-  orac_throw "Output image will exceed maximum size $maxmem MB - will not continue\n";
-} elsif ( $SMURF_STATUS == ORAC__OK ) {
+  $args .= " pixsize=$pixsize" if (defined $pixsize);
 
-  # Now, is there any analysis of the model component files that could
-  # be useful?
+  # Add CROTA=0 and ALIGNSYS=true for AzEl maps
+  $args .= " crota=0 alignsys=true" if ( uc($system) eq "AZEL");
 
-  # Register the new file name
-  $Frm->files( $out );
+  my $config;
+  if ( $iterate ) {
+    # Get name of optional user-specified config file
+    my $config = get_prim_arg( $_PRIM_ARGS_, "CONFIG", undef );
 
-  # Set Frame EXP_TIME and WEIGHTS flags
-  $Frm->uhdr("EXP_TIME",1);
-  $Frm->uhdr("WEIGHTS",1);
-  # And of course sky subtraction and extinction correction have been
-  # applied, though there really isn't much point to setting these
-  # other than a desire for consistency.
-  $Frm->uhdr("SKY_SUBTRACTION",1);
-  $Frm->uhdr("EXTINCTION",1);
+    _GET_MAKEMAP_CONFIG_ CONFIG=$config
+      $args .= " config=^".$_GET_MAKEMAP_CONFIG_{CONFIGFILE};
+  }
 
-  orac_print "Thank you for waiting; image $out created\n";
-} else {
-  # If makemap failed for any other reason, mark this frame as
-  # BAD. Throw an error to skip the rest of the recipe.
-  $Frm->isgood(0);
-  orac_term "Makemap failed: data from this Frame will be ignored\n";
-}
+  # Call makemap - really must have some sort of feedback to user
+  orac_print "Calling makemap using $method method\n";
+
+  unless ( $Frm->uhdr("QUICKLOOK") ) {
+    # First time round, determine number of pixels in the output map
+    _CHECK_MAP_BOUNDS_ IN=$inlist TASK=MAKEMAP
+    if ( $_CHECK_MAP_BOUNDS_{NEWBOUNDS} == 1 ) {
+      my @lbound = @{ $_CHECK_MAP_BOUNDS_{LBOUND} };
+      my @ubound = @{ $_CHECK_MAP_BOUNDS_{UBOUND} };
+      # Append the new bounds to the list of arguments
+      $args .= " lbnd=[".join(",",@lbound)."] ubnd=[".join(",",@ubound)."]";
+    }
+  }
+  # Now create output map using the new bounds if necessary
+  orac_print "Making map: this... may... take... a... while...\n";
+  my $SMURF_STATUS = $Mon{smurf_mon}->obeyw("makemap","$args");
+
+  # Check for SMF__NOMEM return status
+  if ( $SMURF_STATUS == 235176770 ) {
+    # Since makemap failed mark this frame as BAD so it's not included
+    # in further processing. Throw an error to skip the rest of the recipe.
+    $Frm->isgood(0);
+    orac_throw "Output image will exceed maximum size 2 GB - will not continue\n";
+  } elsif ( $SMURF_STATUS == ORAC__OK ) {
+
+    # Now, is there any analysis of the model component files that could
+    # be useful?
+
+    # Register the new file name
+    $Frm->files( $out );
+
+    # Set Frame EXP_TIME and WEIGHTS flags
+    $Frm->uhdr("EXP_TIME",1);
+    $Frm->uhdr("WEIGHTS",1);
+    # And of course sky subtraction and extinction correction have been
+    # applied, though there really isn't much point to setting these
+    # other than a desire for consistency.
+    $Frm->uhdr("SKY_SUBTRACTION",1);
+    $Frm->uhdr("EXTINCTION",1);
+
+    orac_print "Thank you for waiting; image $out created\n";
+  } else {
+    # If makemap failed for any other reason, mark this frame as
+    # BAD. Throw an error to skip the rest of the recipe.
+    $Frm->isgood(0);
+    orac_term "Makemap failed: data from this Frame will be ignored\n";
+  }
 
 }

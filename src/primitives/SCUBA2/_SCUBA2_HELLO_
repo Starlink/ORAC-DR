@@ -75,11 +75,16 @@ if ((defined $Frm->hdr("SHUTTER")) && ($Frm->hdr("SHUTTER") == 0.0)) {
 
   # Mark as bad for all observations where the shutter will be open at
   # some point because we don't want to try and mosaic darks with
-  # images. Darks and Flatfields must allow dark frames through.
+  # images. Noise and Flatfields must allow dark frames through.
   unless ( $Frm->uhdr("ORAC_OBSERVATION_MODE") =~ /flatfield/i ||
        $Frm->uhdr("ORAC_OBSERVATION_MODE") =~ /noise/i ) {
     $Frm->isgood(0);
   }
+} elsif ( defined $Frm->hdr("SEQ_TYPE")
+          && $Frm->hdr("SEQ_TYPE") ne $Frm->hdr("OBS_TYPE") ) {
+  # For now flag this as a dark to hide it
+  $Frm->uhdr("DARKONLY", 1);
+  $Frm->isgood(0);
 }
 
 # Print welcome message
@@ -114,3 +119,26 @@ $Frm->uhdr("OBSEND", $obsend);
 if ($Frm->hdr("SIMULATE")) {
   orac_warn(" *** This observation is simulated data! ***\n");
 }
+
+# and if we set the frame bad by this point we simply terminate
+if ( ! $Frm->isgood && ! $Frm->uhdr("OBSEND") ) {
+  orac_print("Frame not useful so terminating recipe\n");
+  return ORAC__TERM;
+}
+
+# Define the default makemap config file
+$Frm->uhdr("MAKEMAP_CONFIG_TYPE", "normal");
+
+# Use the faint config file for SCIENCE obs that are not
+# calibrators
+if ( lc($Frm->hdr("OBS_TYPE")) eq "science" ) {
+  $Frm->uhdr("MAKEMAP_CONFIG_TYPE", "faint")
+    unless ( $Cal->iscalsource( $Frm->hdr("OBJECT") ) );
+}
+
+# Check the length of the sequence - define the observation as very
+# short if less than 10 s. Note that this only works properly for the
+# QL right now.
+$Frm->uhdr("MAKEMAP_CONFIG_TYPE", "veryshort")
+  if ( $Frm->hdr("STEPTIME") * ($Frm->hdrval("SEQEND",-1) -
+				$Frm->hdrval("SEQSTART",0)) <= 10.0 );

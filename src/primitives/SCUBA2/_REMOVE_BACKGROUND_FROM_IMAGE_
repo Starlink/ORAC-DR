@@ -1,0 +1,237 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_REMOVE_BACKGROUND_FROM_IMAGE_ -  fit and remove a background from an image
+
+=head1 SYNOPSIS
+
+ _REMOVE_BACKGROUND_FROM_IMAGE_
+
+ _REMOVE_BACKGROUND_FROM_IMAGE_ METHOD=BACKGROUND BOX=15
+
+ _REMOVE_BACKGROUND_FROM_IMAGE_ METHOD=BACKGROUND MASK=1 RADIUS=25
+
+ _REMOVE_BACKGROUND_FROM_IMAGE_ METHOD=PLANE
+
+=head1 DESCRIPTION
+
+This primitive fits and subtracts a background from an image. The user
+may choose the type of fit with the B<METHOD> parameter. Four methods
+are supported:
+
+=over 4
+
+=item * find and remove a general background of arbitrary shape (using
+CUPID C<FINDBACK>);
+
+=item * fit and remove a polynomial surface after masking out an
+aperture centred on the source (using KAPPA C<FITSURFACE> and
+C<MAKESURFACE>.
+
+=item * fit and remove a 2-D plane;
+
+=item * subtract a simple mean level.
+
+=back
+
+It is assumed that this is amounts to removing the bulk atmospheric
+contribution from the data, with the result that the Frame has the
+uhdr entry C<SKY_SUBTRACTION> set to 1 on success. It will not work on
+raw time series data.
+
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<BOX>
+
+Size of box in pixels to use when estimating the background. Only
+accessed if B<METHOD> is C<BACKGROUND>. Default is 15.
+
+=item B<FORCE>
+
+A flag to override the sky subtraction uhdr entry. Default is 0 (do
+not override).
+
+=item B<MASK>
+
+A flag to denote whether to mask the source and estimate a background
+from the masked image. Default is 0 (do not mask).
+
+=item B<METHOD>
+
+Method to use for background estimate. May be C<BACKGROUND>, C<DC> or
+C<PLANE>. Default is C<BACKGROUND>.
+
+=item B<RADIUS>
+
+The radius of a circular region in arcsec used to define the mask. Only
+accessed if B<MASK> is true. Default is 30 arcsec.
+
+=item B<VERBOSE>
+
+Flag to denote whether to print extra messages. Default is 1 (yes).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item CUPID:
+
+FINDBACK
+
+=item KAPPA:
+
+FITSURFACE, MAKESURFACE, SUB
+
+=item ORAC-DR PRIMITIVES:
+
+_MASK_IMAGE_, _REMOVE_DC_SKY_, _REMOVE_PLANE_FROM_IMAGE_
+
+=back
+
+=head1 OUTPUT DATA
+
+Sets the C<SKY_SUBTRACTION> flag in the Frame uhdr.
+
+=head1 OUTPUT FILES
+
+Creates output files with the suffix C<_sky> or C<_back>. The latter
+suffix is used if the sky subtraction uhdr flag has already been
+set. The Frame is updated with the sky-subtracted files.
+
+=head1 NOTES
+
+Only works on Frames. Does not work on time-series (3-d) data.
+
+No action is taken if the C<SKY_SUBTRACTION> flag is already set in
+the Frame uhdr unless the user supplies the B<FORCE> parameter.
+
+If B<MASK> is true, the image is masked using the default behaviour
+for L<_MASK_IMAGE_|_MASK_IMAGE_>.
+
+=head1 AUTHOR
+
+Andy Gibb  E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+my $force = get_prim_arg( $_PRIM_ARGS_, "FORCE", 0 );
+
+if ( $force || !$Frm->uhdr("SKY_SUBTRACTION") ) {
+
+  # Should I be verbose (default to yes)
+  my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1 );
+
+  # Method of background removal
+  my $bgmethod = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "background"));
+
+  # Fall back on the default if not recognized
+  if ( $bgmethod !~ /^[back|plan|dc]/ ) {
+    orac_warn "Unrecognized background-removal option, $bgmethod: using default (background)\n";
+    $bgmethod = "background";
+  }
+
+  if ( $bgmethod eq "background" ) {
+    # Fit and remove a background
+    my $nfiles = $Frm->nfiles;
+    my $images = ( $nfiles > 1 ) ? "images" : "image";
+    orac_print "Fitting and removing background from $nfiles $images..."
+      if $verbose;
+
+    # Use a different suffix if this is a background removal rather
+    # than a simple sky subtraction
+    my $suffix = ( $Frm->uhdr("SKY_SUBTRACTION") ) ? "_back" : "_sky";
+
+    # Mask parameter
+    my $mask = get_prim_arg( $_PRIM_ARGS_, "MASK", 0 );
+
+    # Size of region to mask out or use for smoothing
+    my $box = get_prim_arg( $_PRIM_ARGS_, "BOX", 15 );
+    my @out;
+
+    if ( $mask ) {
+      # Mask out source before estimating background
+      my $radius = get_prim_arg( $_PRIM_ARGS_, "RADIUS", 30.0 );
+      # Override radius with recipe parameter if given
+      $radius = $Frm->uhdr("RECPAR_APERTURE_RADIUS")
+	if ( defined $Frm->uhdr("RECPAR_APERTURE_RADIUS") );
+
+      # Temporary files for masking/fitting background
+      my $masked = new ORAC::TempFile;
+      my $maskfile = $masked->file;
+      my $tmp = new ORAC::TempFile;
+      my $tmpfile = $tmp->file;
+
+      orac_print " masking..." if $verbose;
+
+      # Fit surface and subtract from input image
+      foreach my $i ( 1 .. $nfiles ) {
+	my ($in, $out) = $Frm->inout( $suffix, $i);
+	# Mask image using default position
+	_MASK_IMAGE_ IMAGE=$in MASKED=$maskfile RADIUS=$radius
+
+	# Fit and create a background surface
+	$Mon{kappa_mon}->obeyw("fitsurface","ndf=$maskfile accept");
+	$Mon{kappa_mon}->obeyw("makesurface","in=$maskfile out=$tmpfile accept");
+	# Subtract surface from original image
+	$Mon{kappa_mon}->obeyw("sub","in1=$in in2=$tmpfile out=$out");
+	push(@out, $out);
+      }
+      orac_print " fitting..." if $verbose;
+    } else {
+      # Fit and remove background from each file
+      foreach my $i ( 1 .. $nfiles ) {
+	my ($in, $out) = $Frm->inout( $suffix, $i);
+	my $args = "in=$in out=$out box=$box sub=true accept";
+	$Mon{cupid_mon}->obeyw("findback","$args");
+	push(@out, $out);
+      }
+    }
+
+    # Store output files
+    $Frm->files(@out);
+    orac_print " done\n" if $verbose;
+
+    # Set SKY_SUBTRACTION flag
+    $Frm->uhdr("SKY_SUBTRACTION", 1);
+    # Need to add log file creation here too
+  } elsif ( $bgmethod eq "plane" ) {
+    # Use existing primitive for fitting and removing a 2-D plane
+    _REMOVE_PLANE_FROM_IMAGE_
+  } elsif ( $bgmethod eq "dc") {
+    # DC sky removal
+    _REMOVE_DC_SKY_ METHOD=MEAN VERBOSE=0
+  }
+
+} else {
+  orac_warn "Sky subtraction already carried out on this Frame\n";
+}

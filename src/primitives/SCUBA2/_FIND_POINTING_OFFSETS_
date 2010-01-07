@@ -43,8 +43,8 @@ results of the flux and noise calculations. Default is true.
 =item B<METHOD>
 
 Method to calculate the source position. Supported values are
-C<CENTROID> and C<FIT>. The latter calls the _FIND_BEAM_SIZE_
-primitive. The default is C<CENTROID>.
+C<CENTROID> and C<FIT>. The latter fits a 2-D Gaussian. The default is
+C<CENTROID>.
 
 =item B<VERBOSE>
 
@@ -65,14 +65,15 @@ NDFCOPY, WCSATTRIB
 
 =item ORAC-DR PRIMITIVES
 
-_ASSESS_IMAGE_, _CENTROID_IMAGE_, _FIND_BEAM_SIZE_,
+_ASSESS_IMAGE_, _CENTROID_IMAGE_, _FIT_BEAM_,
 _GET_LOG_PARAMETERS_, _WRITE_FLAG_FILE_
 
 =back
 
 =head1 NOTES
 
-Methods other than C<CENTROID> are not supported yet.
+Note that offsets are calculated using both methods, but only those
+for the chosen B<METHOD> are returned in the primitive hash.
 
 The primitive proceeds only once an observation has ended and thus
 uses the current Group file.
@@ -194,7 +195,7 @@ my $verbose = get_prim_arg( $_PRIM_ARGS_, "VERBOSE", 1);
 
 # Which method is being requested for calculating the offsets? Default
 # is to use KAPPA centroid
-my $offmethod = get_prim_arg( $_PRIM_ARGS_, "METHOD", "centroid");
+my $offmethod = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "centroid"));
 
 # Check that we have a pointing observation
 # Other checks: should be a standard source
@@ -202,7 +203,11 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing") {
 
   # Do we have a completed observation? Check for OBSEND = T in the
   # current Frame uhdr.
-  if ( $Frm->uhdr("OBSEND") ) {
+  my $proceed = $Frm->uhdr("OBSEND");
+
+  $proceed = 1 if (defined $Frm->uhdr("QUICKLOOK"));
+
+  if ( $proceed ) {
 
     # Pointing should be done at the end of an observation so always use
     # the Group file
@@ -222,23 +227,18 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing") {
     $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in out=$incopyfile");
     $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$incopyfile mode=mset setting='skyrefis=origin,alignoffset=1,system(1)=AZEL'");
 
-    # Write .ok flag file in output directory - the POINTING_FOCUS task
-    # can pick up from here.
-    _WRITE_FLAG_FILE_ PREFIX=s
-
     # ##############################################################
     # Now we proceed with our own derivation of the pointing offsets
     # ##############################################################
-    # Placeholder - print warning message if an unsupported method is given
-    if ( $offmethod ne "centroid") {
-      # METHOD = FIT
-      orac_warn "METHOD=$offmethod is not supported - falling back on CENTROID\n";
-      $offmethod = "centroid";
-    }
 
     # See if the image has a suitable point source
     _ASSESS_IMAGE_ IMAGE=$incopyfile VERBOSE=0
     if ( $_ASSESS_IMAGE_{POINT} == 1 ) {
+      # AzEl offsets for centroid and beamfit
+      my ($cendaz, $cendel, $beamdaz, $beamdel);
+      my @fit;
+      use JCMT::Pointing;
+
       # Find source position offsets using the temporary copy of the Grp image
       _CENTROID_IMAGE_ IMAGE=$incopyfile
 
@@ -247,45 +247,71 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing") {
       # and check number of elements
       my @results = @{ $_CENTROID_IMAGE_{RESULTS} };
       if ( $#results > 0 ) {
-	my ($daz, $del);
 	# dAz and dEl are currently in degrees so convert to arcsec
-	$daz = sprintf "%5.2f", 3600.0*$results[0];
-	$del = sprintf "%5.2f", 3600.0*$results[1];
+	$cendaz = sprintf "%5.2f", 3600.0*$results[0];
+	$cendel = sprintf "%5.2f", 3600.0*$results[1];
+	orac_print ("Pointing offsets are (dAz, dEl) = ($cendaz, $cendel) arcsec (centroid)\n", "green");
 
-	# Delete the temporary file
-	undef $incopy;
+	push(@fit, JCMT::Pointing::Fit->new ( label => "centroid",
+					      offset => Astro::Coords::Offset->new( $cendaz, $cendel, system => "AZEL" ) ));
 
-	# Write info to log file if requested
-	if ( $uselog ) {
-	  my $time = gmtime();
-	  my $pointinglog = new ORAC::LogFile("log.pointing");
-	  $pointinglog->header("# Pointing log file - created on $time UT",
-			       "#\n# UT                HST   Obs Source       Mode           Filter El CSO    Tau   Seeing  dAz    dEl",
-			       "#-----------------------------------------------------------------------------------------------------"
-	    );
-
-	  # Get basic logging parameters from Group file
-	  _GET_LOG_PARAMETERS_ GROUP=1
-          my ( $uttime, $hst, $run, $src, $mode, $filter, $el, $cso, $tau, $see )
-	    = @{ $_GET_LOG_PARAMETERS_{PARAMS} };
-
-	  # ObsNum, source, UT, filter, DAz, DEl, Seeing, tau225
-	  $pointinglog->addentry("$uttime $hst $run $src $mode $filter    $el $cso $tau  $see   $daz  $del");
-	} else {
-	  # If we are not logging these data to a file, store the offsets in the
-	  # primitive hash
-	  $_FIND_POINTING_OFFSETS_{DAZ} = $daz;
-	  $_FIND_POINTING_OFFSETS_{DEL} = $del;
-	}
-
-	orac_print ("Pointing offsets are (dAz, dEl) = ($daz, $del) arcsec\n", "green");
       } else {
 	orac_warn "Unable to calculate pointing offsets - could not determine centroid\n";
-      } # If results returned from _CENTROID_IMAGE_
+      }
+
+      _FIT_BEAM_ IMAGE=$incopyfile VERBOSE=0 BOX=25
+      if ( $_FIT_BEAM_{FIT} == 1 ) {
+	@results = @{ $_FIT_BEAM_{POSITION} };
+	# dAz and dEl are currently in degrees so convert to arcsec
+	$beamdaz = sprintf "%5.2f", 3600.0*$results[0];
+	$beamdel = sprintf "%5.2f", 3600.0*$results[1];
+	push(@fit, JCMT::Pointing::Fit->new ( label => "beamfit",
+					      offset => Astro::Coords::Offset->new( $beamdaz, $beamdel, system => "AZEL" ) ));
+	orac_print ("Pointing offsets are (dAz, dEl) = ($beamdaz, $beamdel) arcsec (beamfit)\n", "green");
+
+      } else {
+	orac_warn "Unable to calculate pointing offsets - could not fit a 2-D gaussian\n";
+      }
+
+      # Write fit parameters to data file
+      if ( @fit ) {
+	JCMT::Pointing->write_fit_to_datafile( $in, @fit);
+      } else {
+	$uselog = 0;
+	orac_warn "Unable to determine source offsets\n";
+      }
+
+      # Delete the temporary file
+      undef $incopy;
+
+      # Write info to log file if requested
+      if ( $uselog ) {
+	my $time = gmtime();
+	my $pointinglog = new ORAC::LogFile("log.pointing");
+	$pointinglog->header("# Pointing log file - created on $time UT",
+			     "#\n# UT                HST   Obs Source       Mode           Filter El CSO    Tau   Seeing  dAz    dEl    Method",
+			     "#-----------------------------------------------------------------------------------------------------"
+			    );
+
+	# Get basic logging parameters from Group file
+	_GET_LOG_PARAMETERS_ GROUP=1
+        my ( $uttime, $hst, $run, $src, $mode, $filter, $el, $cso, $tau, $see )
+	  = @{ $_GET_LOG_PARAMETERS_{PARAMS} };
+
+	# ObsNum, source, UT, filter, DAz, DEl, Seeing, tau225
+	$pointinglog->addentry("$uttime $hst $run $src $mode $filter    $el $cso $tau  $see   $cendaz  $cendel centroid");
+	$pointinglog->addentry("$uttime $hst $run $src $mode $filter    $el $cso $tau  $see   $beamdaz  $beamdel beamfit");
+      }
+
     } else {
       orac_warn "Unable to locate a point source to determine pointing offsets\n";
     } # If image OK
-  } # If OBSEND
+
+    # Write .ok flag file in output directory - the POINTING_FOCUS task
+    # can pick up from here.
+    _WRITE_FLAG_FILE_ PREFIX=s
+
+  } # If OBSEND/proceed
 } else {
   orac_warn "Data are not from a POINTING observation\n";
 }

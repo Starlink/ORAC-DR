@@ -77,6 +77,10 @@ my %FCFS = ('850' => [             # Assumed to be in date order
                   ],
         );
 
+# These NEPs are the specifications in the dark which the arrays are
+# expected to meet
+my %NEP = ( '850' => 7.0e-17, '450' => 2.1e-16 );
+
 # Should probably put calibrator flux information in a different
 # file
 
@@ -85,25 +89,21 @@ my %FCFS = ('850' => [             # Assumed to be in date order
 
 my %PHOTFLUXES = (
                'HLTAU' => {
-                           '850' => 2.32,
+                           '850' => 2.36,
                            '450' => 10.4,
                           },
                'CRL618' => {
-                            '850' => 4.57,
-                            '450' => 11.9,
+                            '850' => 4.7,
+                            '450' => 11.8,
                            },
                'CRL2688' => {
-                             '850' => 5.88,
-                             '450' => 24.8,
+                             '850' => 6.4,
+                             '450' => 29.7,
                             },
                '16293-2422' => {
-                                '850' => 16.3,
-                                '450' => 78.1,
+                                '850' => 22.9,
+                                '450' => 169.6,
                                },
-               'OH231.8' => {
-                             '850' => 2.52,
-                             '450' => 10.53,
-                            }
               );
 
 
@@ -206,7 +206,7 @@ sub fwhm {
 
   if ( $fwhm == 0 ) {
     my $thingref = $self->thingone;
-    $fwhm = ( $thingref->{FILTER}  =~ /^85/ ) ? 15.0 : 8.0;
+    $fwhm = ( $thingref->{FILTER}  =~ /^85/ ) ? 14.0 : 7.5;
   }
   return $fwhm;
 }
@@ -263,6 +263,21 @@ sub beampar {
 
   return $self->{Beam};
 
+}
+
+=item B<nep>
+
+Method to return the NEP spec for the current wavelength
+
+=cut
+
+sub nep {
+
+  my $self = shift;
+  my $filter = $self->thingone->{FILTER};
+  my $nepkey = ( $filter =~ /^85/ ) ? "850" : "450";
+
+  return $NEP{$nepkey};
 }
 
 =item B<refimage>
@@ -481,6 +496,61 @@ sub store_beam {
   my $self = shift;
   my $arr = shift;
   my @beamparameters = @_;
+
+}
+
+=item B<makemap_config>
+
+Return the full path to a default makemap config file. Options to
+return particular default configurations may be passed in as a
+hash. Valid keys are C<config_type>, C<filter> and C<ql>.
+
+  my $config_file = $Cal->makemap_config;
+  my $config_file = $Cal->makemap_config( filter => "850", ql => 1 );
+
+Note that if the C<ql> parameter is given, the C<filter> parameter
+must also be present to return the correct config file name.
+
+The C<config_type> is usually stored as a uhdr entry for the current
+Frame object.
+
+=cut
+
+sub makemap_config {
+
+  my $self = shift;
+
+  my $configfile = "dimmconfig";
+  my @basedir = ($ENV{'STARLINK_DIR'}, "/share/smurf");
+
+  my %args = @_;
+  if ( %args ) {
+
+    # Append labels in the following order: config_type, filter, ql.
+    if ( defined $args{config_type} ) {
+      $configfile .= "_".$args{config_type}
+        unless ( $args{config_type} eq "normal" );
+    }
+
+    if ( defined $args{filter} ) {
+      # Note different base dir
+      @basedir = ($ENV{'ORAC_DATA_CAL'});
+      $configfile .= ( $args{filter} =~ /850/ ? "_850" : "_450");
+    }
+
+    # QL is wavelength dependent so the filter argument must have been
+    # given
+    my $ql = (defined $args{ql}) ? $args{ql} : 0;
+    if ($ql) {
+      if ( defined $args{filter} ) {
+	$configfile .= "_ql";
+      }
+    }
+  }
+
+  $configfile .= ".lis";
+
+  return File::Spec->catfile( @basedir, $configfile );
 
 }
 

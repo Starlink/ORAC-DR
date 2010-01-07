@@ -325,7 +325,7 @@ if ($calib && $dofit) {
     if ( defined $xy[0] && defined $xy[1] ) {
     orac_print "Deriving the beam in the $fitcosys coordinate system using $method\n";
 
-    my (@amp, @majfwhm, @minfwhm, $axisr, @orient, $totalflux, @posn, %badbeam);
+    my (@amp, @majfwhm, @minfwhm, $axisr, @orient, @totalflux, @posn, $goodbeam);
     # Now fit the source using PSF or BEAMFIT
     if ( $usepsf ) {
       # Use PSF
@@ -340,39 +340,38 @@ if ($calib && $dofit) {
 
       # Fit the source with a PSF
       _FIT_PSF_ IMAGE=$in COFILE=$cofile->file GAUSSIAN=$gaussian
-      # Retrieve parameters
-      $amp[0] = $_FIT_PSF_{AMPLITUDE};
-      $minfwhm[0] = $_FIT_PSF_{FWHM};
-      $axisr = $_FIT_PSF_{AXISR};
-      $orient[0] = $_FIT_PSF_{ORIENT};
-      $totalflux = $_FIT_PSF_{TOTALFLUX};
-
-      # Calculate FWHM for major axis
-      $majfwhm[0] = $minfwhm[0] * $axisr;
-
-      # Set unused `error' array elements to 0
-      $amp[1] = 0.0;
-      $majfwhm[1] = 0.0;
-      $minfwhm[1] = 0.0;
-      $orient[1] = 0.0;
-
+      # Check if psf succeeded
+      if ( $_FIT_PSF_{FIT} == 1 ) {
+	# Retrieve parameters - set error array elements to 0
+	@amp = ( $_FIT_PSF_{AMPLITUDE}, 0.0 );
+	$axisr = $_FIT_PSF_{AXISR};
+	@minfwhm = ( $_FIT_PSF_{FWHM}, 0.0 );
+	@majfwhm = ( $minfwhm[0] * $axisr, 0.0 );
+	@orient = ( $_FIT_PSF_{ORIENT}, 0.0 );
+	@totalflux = ( $_FIT_PSF_{TOTALFLUX}, 0.0 );
+      }
+      $goodbeam = $_FIT_PSF_{FIT};
     } else {
       # Use BEAMFIT
       _FIT_BEAM_ IMAGE=$in XYPOS=\@xy
-
-      @amp = @{ $_FIT_BEAM_{AMPLITUDE} };
-      $axisr = $_FIT_BEAM_{AXISR};
-      @majfwhm = @{ $_FIT_BEAM_{MAJFWHM} };
-      @minfwhm = @{ $_FIT_BEAM_{MINFWHM} };
-      @orient = @{ $_FIT_BEAM_{ORIENT} };
-      @posn = @{ $_FIT_BEAM_{POSITION} };
-      $totalflux = $_FIT_BEAM_{TOTALFUX};
-
+      # Check if beamfit succeeded
+      if ( $_FIT_BEAM_{FIT} == 1 ) {
+	@amp = @{ $_FIT_BEAM_{AMPLITUDE} };
+	$axisr = $_FIT_BEAM_{AXISR};
+	@majfwhm = @{ $_FIT_BEAM_{MAJFWHM} };
+	@minfwhm = @{ $_FIT_BEAM_{MINFWHM} };
+	@orient = @{ $_FIT_BEAM_{ORIENT} };
+	@posn = @{ $_FIT_BEAM_{POSITION} };
+	@totalflux = @{ $_FIT_BEAM_{TOTALFLUX} };
+      }
+      $goodbeam = $_FIT_BEAM_{FIT};
     }
 
-    # Check whether the fit was successful
-    _ASSESS_BEAM_FIT_ AMP=\@amp MAJOR=\@majfwhm MINOR=\@minfwhm AXISR=$axisr
-    my $goodbeam = $_ASSESS_BEAM_FIT_{BEAM};
+    # If the fit was successful, check the quality of the fit
+    if ( $goodbeam ) {
+      _ASSESS_BEAM_FIT_ AMP=\@amp MAJOR=\@majfwhm MINOR=\@minfwhm AXISR=$axisr
+      $goodbeam = $_ASSESS_BEAM_FIT_{BEAM};
+    }
 
     my ($beama, $beamb, $pa, $errfrac);
     # If the fit was good, proceed with estimate of error beam
@@ -381,7 +380,7 @@ if ($calib && $dofit) {
       # amplitude will be that of the first useable source in the
       # image. In practice, there is likely to be only one source in the
       # image so this will be the amplitude we want.
-      my $Pmain = $totalflux;
+      my $Pmain = $totalflux[0];
 
       # Error in total power - assume errors add in quadrature
       my $dPmain = $Pmain * sqrt( $amp[1]*$amp[1]/($amp[0]*$amp[0]) +
