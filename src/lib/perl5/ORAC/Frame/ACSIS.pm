@@ -268,8 +268,10 @@ sub findgroup {
 
   # Read extra information required for group disambiguation
   my $restfreq;
-  if( defined( $self->hdr( "FRQSIGLO" ) ) &&
-      defined( $self->hdr( "FRQSIGHI" ) ) ) {
+  if( defined( $self->hdr( "RESTFREQ" ) ) ) {
+    $restfreq = sprintf( "%.2f", $self->hdr( "RESTFREQ" ) );
+  } elsif( defined( $self->hdr( "FRQSIGLO" ) ) &&
+           defined( $self->hdr( "FRQSIGHI" ) ) ) {
     $restfreq = sprintf( "%.2f", ( $self->hdr( "FRQSIGLO" ) +
                                    $self->hdr( "FRQSIGHI" ) ) /
                          2 );
