@@ -315,9 +315,16 @@ sub orac_chdir_output_dir {
     if ( ! defined( $nfs_check ) || $nfs_check ) {
       my $nfs = ORAC::Inst::SetupEnv::is_nfs_disk( $ENV{ORAC_DATA_OUT});
       if ($nfs) {
-        orac_err( "ORAC_DATA_OUT appears to be on a disk mounted from $nfs.\n" );
-        orac_err( "Please use a local disk for data processing.\n" );
-        orac_exit_normally();
+        if (exists $ENV{ORAC_NFS_OK} && $ENV{ORAC_NFS_OK}) {
+          orac_warn( "ORAC_DATA_OUT appears to be on a disk mounted from $nfs.\n" );
+          orac_warn( "Continuing to run reduction based on environment variable override.\n");
+        } else {
+          orac_err( "ORAC_DATA_OUT appears to be on a disk mounted from $nfs.\n" );
+          orac_err( "In many cases the performance degradation on a remote disk is too high.\n");
+          orac_err( "Please use a local disk for data processing.\n" );
+          orac_err( "If you know you have a high performance NFS system set the ORAC_NFS_OK environment variable to 1\n");
+          orac_exit_normally();
+        }
       }
     }
 
