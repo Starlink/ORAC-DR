@@ -87,6 +87,10 @@ my $radius = ( defined $Frm->uhdr("RECPAR_APERTURE_RADIUS") ) ?
   $Frm->uhdr("RECPAR_APERTURE_RADIUS") : 30.0;
 $Frm->uhdr("APERTURE_RADIUS", $radius);
 
+# Get verbose flag
+my $verbose = ( defined $Frm->uhdr("RECPAR_VERBOSE") ) ?
+  $Frm->uhdr("RECPAR_VERBOSE") : 0;
+
 # Coefficients for calculating NEFD based on that in CfP - the
 # relation appears to be a quadratic
 my ( $amult, $bmult, $const, $off );
@@ -114,7 +118,8 @@ $Frm = $Frm->new;
 my %sources;
 # Calculate the mean noise and exposure time within an aperture
 # centred on the source
-orac_print "Calculating noise and exposure time...";
+orac_print "Calculating noise and exposure time... ";
+orac_print "\n" if $verbose;
 foreach my $i (1 .. $nfiles) {
 
   my $file = $inFrm->file($i);
@@ -122,17 +127,32 @@ foreach my $i (1 .. $nfiles) {
 
   $Frm->readhdr;
   my $source = $Frm->hdr("OBJECT");
-  unless ( $Cal->iscalsource($source) ) {
-    orac_print "\n";
-    orac_warn "Skipping non-calibrator, $source\n";
-    next;
-  }
   my %current_source;
-  $current_source{source} = $source;
-
-  # Get actual flux density of source
-  $current_source{source_flux} = $Cal->fluxcal( $current_source{source},
-						$Frm->uhdr("ORAC_FILTER"), 0 );
+  my $wavelen = ( $Frm->hdr("FILTER") =~ /^850/ ) ? "850" : "450";
+  # Get the source flux if a known calibrator
+  if ( $Cal->iscalsource($source) ) {
+    $current_source{source} = $source;
+    # Get actual flux density of source
+    $current_source{source_flux} = $Cal->fluxcal( $current_source{source},
+						  $Frm->uhdr("ORAC_FILTER"),
+						  0 );
+  } else {
+    # If not a calibrator, check if the user has supplied a flux
+    # density via a recipe parameter. Note this must be accessed from
+    # the original Frame object.
+    my $thisflux = "RECPAR_FLUX_" . $wavelen;
+    if ( defined $inFrm->uhdr($thisflux) ) {
+      $current_source{source} = $source;
+      $current_source{source_flux} = $inFrm->uhdr($thisflux);
+    } else {
+      # Otherwise skip this source - warn the user
+      orac_print "\n";
+      orac_warn "Skipping $source - no flux given at $wavelen um\n";
+      next;
+    }
+  }
+  $current_source{wavelen} = $wavelen;
+orac_print "Processing $source: flux = $current_source{source_flux} Jy at $wavelen um..." if $verbose;
 
   # Use CSO tau conversions but pass in the WVM tau
   my $tau = 0.5 * ($Frm->hdr("WVMTAUST") + $Frm->hdr("WVMTAUEN"));
