@@ -69,33 +69,41 @@ USA.
 
 orac_print ("\nCalling _CALC_FLUX_FCF_NEFD_: calculate fluxes, FCFs, NEFDs etc\n", "yellow");
 
-
-# Now loop over the files and calculate the various desired quantities
-orac_print "Calculating fluxes, NEFDs, FCFs...";
-my @files = $Frm->raw;
-
+# Retrieve the source info
 my %sources = %{ $Frm->uhdr("SOURCES") };
 
-my $radius = $Frm->uhdr("APERTURE_RADIUS");
-foreach my $i ( 1 .. @files ) {
+if ( %sources ) {
+  orac_print "Calculating fluxes, NEFDs, FCFs...";
+  my $radius = $Frm->uhdr("APERTURE_RADIUS");
 
-  my $file = $files[$i-1];
-  next unless (defined $sources{$file});
+  # Now loop over the files and calculate the various desired quantities
+  my @files = $Frm->raw;
 
-  my %current_source = %{ $sources{$file} };
+  foreach my $i ( 1 .. @files ) {
 
-  _FIND_INTEGRATED_INTENSITY_ IMAGE=$file RADIUS=$radius MASK=0
+    my $file = $files[$i-1];
+    next unless (defined $sources{$file});
 
-  $current_source{flux_ap} = $_FIND_INTEGRATED_INTENSITY_{SUM};
+    my %current_source = %{ $sources{$file} };
 
-  # Calculate various things
-  $current_source{fcf_ap} = $current_source{source_flux} / $current_source{flux_ap} * $current_source{beam_area};
-  $current_source{noise_ap} = $current_source{noise} * $current_source{fcf_ap} * $current_source{pixscale} * 2.0 / $Frm->uhdr("FWHM");
-  $current_source{nefd} = 1000.0 * $current_source{noise_ap} * sqrt($current_source{texp});
-  $current_source{nefd_zen} = $current_source{nefd} / exp( $current_source{tau} * ($current_source{airmass} - 1) );
+    _FIND_INTEGRATED_INTENSITY_ IMAGE=$file RADIUS=$radius MASK=0
 
-  $sources{$file} = \%current_source;
+    $current_source{flux_ap} = $_FIND_INTEGRATED_INTENSITY_{SUM};
+
+    # Calculate various things
+    $current_source{fcf_ap} = $current_source{source_flux} / $current_source{flux_ap} * $current_source{beam_area};
+
+    $current_source{noise_ap} = $current_source{noise} * $current_source{fcf_ap} * $current_source{pixscale} * 2.0 / $Frm->uhdr("FWHM");
+
+    $current_source{nefd} = 1000.0 * $current_source{noise_ap} * sqrt($current_source{texp});
+
+    $current_source{nefd_zen} = $current_source{nefd} / exp( $current_source{tau} * ($current_source{airmass} - 1) );
+
+    $sources{$file} = \%current_source;
+  }
+  orac_print " done\n";
+
+  $Frm->uhdr("SOURCES",\%sources);
+} else {
+  orac_warn "No sources to process\n";
 }
-orac_print " done\n";
-
-$Frm->uhdr("SOURCES",\%sources);
