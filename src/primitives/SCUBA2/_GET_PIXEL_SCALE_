@@ -150,16 +150,12 @@ my $wantmap = get_prim_arg($_PRIM_ARGS_, "WANTMAP", 0);
 # Are we being asked to derive it ourselves? Default is no.
 my $derive = get_prim_arg($_PRIM_ARGS_, "DERIVE", 0);
 
-# The WANTMAP option is incompatible with DERIVE=0 so set to false and
-# issue a warning if necessary
-if ( $derive == 0 ) {
-  if ( $wantmap && $verbose ) {
-    orac_warn "Unable to return mapping with DERIVE=0";
-    $wantmap = 0;
-  }
+# DERIVE must be true if WANTMAP is specified
+if ($wantmap) {
+  $derive = 1;
 }
 
-# initialise the results array
+# Initialise the results array
 $_GET_PIXEL_SCALE_{RESULTS} = [];
 
 my $ORAC_STATUS;
@@ -172,8 +168,29 @@ if ( $derive ) {
   # Check the desired output frame - default is SKY
   my $outdomain = "SKY";
 
+  # Get the image properties
+  _GET_DIMENSIONS_ FILE=$in
+  my @dims = @{ $_GET_DIMENSIONS_{DIMS} };
+
+  my ($skyimage, $skyimagefile);
+  my $infile = $in;
+
+  # If there are more than 2 dimensions, copy out the sky image
+  if ( @dims > 2 ) {
+    $skyimage = new ORAC::TempFile;
+    $skyimagefile = $skyimage->file;
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$in(,,1) trim trimwcs out=$skyimagefile");
+    $infile = $skyimagefile;
+  }
+
+  # Get PIXEL bounds for image
+  my $lboundref = $_GET_DIMENSIONS_{LBOUND};
+  my ($xmin, $ymin) = ($lboundref->[0], $lboundref->[1]);
+  my $uboundref = $_GET_DIMENSIONS_{UBOUND};
+  my ($xmax, $ymax) = ($uboundref->[0], $uboundref->[1]);
+
   # Create FrameSet from the WCS info in the input file
-  my $frameset = $Frm->read_wcs( $in );
+  my $frameset = $Frm->read_wcs( $infile );
 
   # Frame numbers corresponding to the given in/out domain names
   my $indom;
@@ -199,11 +216,6 @@ if ( $derive ) {
 
   # Retrieve mapping between PIXEL and SKY domains
   $mapping = $frameset->GetMapping( $indom, $outdom );
-
-  # Get PIXEL bounds for image
-  $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$in");
-  ($ORAC_STATUS, my $xmin, my $ymin) = $Mon{ndfpack_mon}->get("ndftrace","lbound");
-  ($ORAC_STATUS, my $xmax, my $ymax) = $Mon{ndfpack_mon}->get("ndftrace","ubound");
 
   # Loop over 5 positions to calculate X and Y scale and calculate average
   my (@xpixels, @ypixels);
@@ -264,7 +276,7 @@ if ( $derive ) {
   $in_unit = "arcsec";
 }
 
-# now convert to correct output unit
+# Now convert to correct output units
 $avxscale = Astro::Coords::Angle->new( $avxscale, units => $in_unit)->in_format( $units );
 $avyscale = Astro::Coords::Angle->new( $avyscale, units => $in_unit)->in_format( $units );
 
