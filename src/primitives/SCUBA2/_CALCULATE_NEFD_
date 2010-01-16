@@ -17,8 +17,9 @@ The NEFD is calculated in one of two ways. One method is suitable for
 use with NOISE observations and scales the noise equivalent power
 (NEP) by the flux conversion factor (FCF) and corrects for atmospheric
 attenuation. The other method, suitable for use with image data,
-estimates the noise in the image (from the variance) and multiplies by
-the square-root of the integration time.
+creates an NEFD image by combining the variance and exposure time
+data. The statistics of this image are calculated and the chosen
+estimator returned as the representative NEFD.
 
 The units of NEFD are mJy sqrt(s). The integration time is derived from
 the C<EXP_TIME> extension in the image.
@@ -35,7 +36,7 @@ The following arguments are supported:
 
 =item B<ESTIMATOR>
 
-Preferred estimator for integration time or NEP. Valid options are
+Preferred estimator for NEFD or NEP. Valid options are
 C<MEAN>, C<MEDIAN> or C<MODE>. Default is C<MEDIAN>.
 
 =item B<GROUP>
@@ -92,7 +93,7 @@ warning is issued in this case.
 =back
 
 This primitive currently gives erroneous results in offline mode for
-deriving the NEFD from noise data.
+deriving the NEFD from NOISE observations.
 
 =head1 OUTPUT DATA
 
@@ -261,42 +262,30 @@ if ($usenoise) {
   # This primitive must be run after files have been combined into a
   # mosaic
   if ( $Obj->nfiles == 1 ) {
-    $nefdmethod = ($groupflag) ? "GROUP" : "FRAME";
+    my $frmgrp = ($groupflag) ? "Group" : "Frame";
+    $nefdmethod = uc($frmgrp);
 
     # Retrieve current file associated with Frame or Group
     my $datafile = $Obj->file;
 
-    use JCMT::MapArea;
-    my $astregion = &JCMT::MapArea::region( header => $Obj->hdr );
-    $Obj->uhdr("MAP_ASTREGION",$astregion);
+    # Create temp file for NEFD image
+    my $nefdfile = new ORAC::TempFile;
+    my $nefdimage = $nefdfile->file;
 
-    my $maskeddata = new ORAC::TempFile;
-    my $maskeddatafile = $maskeddata->file;
-    _MASK_AST_REGION_ IN=$datafile OUT=$maskeddatafile GROUP=$groupflag
+    # Create NEFD image = sigma * sqrt(t_exp)
+    my $exp = "SQRT(VA*IB)";
+    my $exptime = $datafile . ".MORE.SMURF.EXP_TIME";
+    my $args = "exp=$exp VA=$datafile IB=$exptime out=$nefdimage";
+    $Mon{kappa_mon}->obeyw("maths","$args");
 
-    # Obtain the median error of current image
-    _FIND_VARIANCE_ IMAGE=$maskeddatafile VERBOSE=0 ESTIMATOR=$estimator
-    my $noise = $_FIND_VARIANCE_{RESULT};
+    # Obtain NEFD estimate from NEFD image
+    _FIND_IMAGE_STATISTICS_ IMAGE=$nefdimage VERBOSE=0 HISTAT=1
+    $nefd = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$estimator};
 
-    my $frmgrp = ($groupflag) ? "Group" : "Frame";
-    if (defined $noise && $noise > 0) {
-      # Obtain exposure time
-      $maskeddatafile .= ".MORE.SMURF.EXP_TIME";
-      _FIND_IMAGE_STATISTICS_ IMAGE=$maskeddatafile VERBOSE=0
-      my $texp = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$estimator};
-      if ($verbose) {
-	my $pnoise = sprintf "%4.2f", $noise;
-	my $ptexp = sprintf "%4.2f", $texp;
-	orac_print "$estimator noise = $pnoise mJy/beam, "
-	  ."$estimator integration time = $ptexp s\n";
-      }
-
-      # Calculate NEFD
-      $nefd = $noise * sqrt( $texp );
-
+    if ( $nefd ) {
       my $pnefd = sprintf "%6.2f", $nefd;
       orac_print ("Calculated NEFD = $pnefd mJy/beam s**0.5 from $frmgrp image $datafile\n",
-		  "green");
+		  "green") if $verbose;
 
     } else {
       orac_warn "Unable to derive NEFD using current $frmgrp image\n";
