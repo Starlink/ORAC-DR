@@ -1,0 +1,134 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_MOSAIC_IMAGES_ - combine SCUBA-2 images taking NDF components into account
+
+=head1 SYNOPSIS
+
+_MOSAIC_IMAGES__
+
+=head1 DESCRIPTION
+
+This PICARD primitive is designed to combine multiple SCUBA-2 images,
+taking into account the existence of the EXP_TIME and WEIGHTS NDF
+components.
+
+The mosaicking step can be performed by KAPPA/wcsmosaic or
+CCDPACK/makemos (not yet implemented).
+
+All the input images must be of the same source.
+
+=head1 ARGUMENTS
+
+This primitive supports the following arguments:
+
+=over 4
+
+=item B<METHOD>
+
+Pixel-spreading scheme. Default is C<NEAREST> for nearest-neighhour.
+
+=item B<TASK>
+
+Task to perform the mosaicking step. May be C<wcsmosaic> or C<makemos>.
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA
+
+WCSMOSAIC
+
+=item ORAC-DR primitives:
+
+SCUBA2: _ADD_IMAGES_
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+Creates a single output file with the suffix C<_mos>
+
+=head1 NOTES
+
+Only KAPPA/wcsmosaic supported at the moment.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2010 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+orac_print ("\nCalling _MOSAIC_IMAGES_: combine SCUBA-2 images\n", "yellow");
+
+# First thing is to check the data are for the same source
+unless ( defined $Frm->hdr("OBJECT") ) {
+  orac_throw "Input images must all be of same source\n";
+}
+
+# Obtain mosaicking task - set wcsmos flag
+my $task = lc(get_prim_arg($_PRIM_ARGS_, "TASK", "wcsmosaic"));
+my $wcsmos = ( $task =~ /wcsmos/ ) ? 1 : 0;
+
+# Pixel-spreading scheme for wcsalign/wcsmosaic
+my $method = lc(get_prim_arg( $_PRIM_ARGS_, "METHOD", "nearest"));
+
+my $verbose = ( defined $Frm->uhdr("RECPAR_VERBOSE") ) ?
+  $Frm->uhdr("RECPAR_VERBOSE") : 0;
+
+# Collate images
+my @infiles;
+my $refimage;
+if ( $wcsmos ) {
+  @infiles = $Frm->files;
+  $refimage = $infiles[0];
+} else {
+  # wcsalign images...
+}
+
+my $inlist = write_file_list( @infiles );
+
+# Combine images
+my $out = $Frm->inout("_mos");
+if ( $wcsmos ) {
+  my $wlim = 0.2;
+  my $weighting = "variance=true genvar=false";
+  my $bounds = "lbnd=! ubnd=!";
+  my $args = "ref=$refimage method=$method wlim=$wlim out=$out "
+    ."in=^$inlist $weighting $bounds";
+  $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
+}
+
+# Add up the EXP_TIME and WEIGHTS components
+$Frm->uhdr("EXP_TIME",1);
+$Frm->uhdr("WEIGHTS",1);
+_ADD_IMAGES_ INLIST=\@infiles OUT=$out COMPS=EXP_TIME,WEIGHTS
+orac_print "\n";
