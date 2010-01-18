@@ -65,14 +65,14 @@ my %FCFS = ('850' => [             # Assumed to be in date order
                    {
                     START => 20060101, # Beginning of SCUBA-2 history
                     ARCSEC=> 2.0,
-                    BEAM  => 650,
+                    BEAM  => 750,
                    }
                   ],
          '450' => [
                    {
                     START => 20060101, # Beginning of SCUBA-2 history
                     ARCSEC => 6.0,
-                    BEAM   => 1100,
+                    BEAM   => 250,
                    }
                   ],
         );
