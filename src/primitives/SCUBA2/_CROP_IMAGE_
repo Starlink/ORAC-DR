@@ -117,6 +117,20 @@ my $height = get_prim_arg($_PRIM_ARGS_, "HEIGHT", undef);
 $hdr->{"MAP_WDTH"} = $width if (defined $width);
 $hdr->{"MAP_HGHT"} = $height if (defined $height);
 
+# Check the AlignSystem WCS attribute and set it the same as the
+# tracking system if necessary
+$Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$infile mode=get name=alignsystem(1)");
+my ($ORAC_STATUS, $alignsys) = $Mon{ndfpack_mon}->get("wcsattrib","value");
+
+my %TRACK2AST = ( 'J2000' => 'FK5',
+                  'B1950' => 'FK4',
+                  'APP' => 'GAPPT',
+                  'GALACTIC' => 'GALACTIC' );
+my $tracksys = $TRACK2AST{ uc( $Frm->hdr("TRACKSYS") ) };
+if ( $alignsys ne $tracksys ) {
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$infile mode=set name=alignsystem(1) newval=$tracksys");
+}
+
 # Create an AST region with the given map parameters
 use JCMT::MapArea;
 my $astregion = &JCMT::MapArea::region( header => $hdr );
@@ -125,3 +139,7 @@ $Frm->uhdr("MAP_ASTREGION",$astregion);
 # Trim the image
 _MASK_AST_REGION_ IN=$infile OUT=$outfile GROUP=0
 
+# Restore AlignSystem to same as on entry
+if ( $alignsys ne $tracksys ) {
+  $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$infile mode=set name=alignsystem(1) newval=$alignsys");
+}
