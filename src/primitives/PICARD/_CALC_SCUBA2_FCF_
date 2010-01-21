@@ -96,20 +96,36 @@ if ( $Frm->uhdr("DATA_UNITS") eq "pW") {
     $Frm->files($files[$i-1]);
     $Frm->readhdr;
     my $object = $Frm->hdr("OBJECT");
-    # Set this translated header
+    # Set the OBJECT translated header
     $Frm->uhdr("ORAC_OBJECT", $object);
 
     # Make sure the OBSEND uhdr comes through or else
     # _FIND_CALIBRATION_MAP_ won't run.
     $Frm->uhdr( "OBSEND", $inFrm->uhdr( "OBSEND" ) );
 
+    # Set a flag to denote whether a flux can be determined for the
+    # current wavelength
+    my $fluxexists = 0;
     if ( $Cal->iscalsource($object) ) {
+      $fluxexists = 1;
+    } else {
+      my $long = ( $Frm->hdr("FILTER") =~ /850/ ) ? 1 : 0;
+      if ( $long && defined $inFrm->uhdr("RECPAR_FLUX_850") ) {
+	$Frm->uhdr("RECPAR_FLUX_850", $inFrm->uhdr("RECPAR_FLUX_850"));
+	$fluxexists = 1;
+      } elsif ( !$long && defined $inFrm->uhdr("RECPAR_FLUX_450") ) {
+	$Frm->uhdr("RECPAR_FLUX_450", $inFrm->uhdr("RECPAR_FLUX_450"));
+	$fluxexists = 1;
+      }
+    }
+
+    if ( $fluxexists ) {
       orac_print "\nCalculating FCF for $files[$i-1] ($object)\n";
       # Set store=0 because we don't want to try and store the FCF in the
       # calibration system
       _FIND_CALIBRATION_MAP_ STORE=0 GROUP=0
     } else {
-      orac_print "\nSkipping $files[$i-1] ($object): not a calibrator\n";
+      orac_print "\nSkipping $files[$i-1] ($object): no way to determine flux\n";
     }
   }
   # Restore the Frame to its input state
