@@ -117,8 +117,29 @@ $obsend = 1 if ( defined $Frm->uhdr("QUICKLOOK") );
 # Do nothing if there is no data to analyze
 $obsend = 0 if $Frm->uhdr("DARKONLY");
 
-# Check that we are a calibrator (regardless of filter)
-if ($Cal->iscalsource($Obj->uhdr("ORAC_OBJECT")) && $obsend ) {
+# Check the observation has ended so an FCF can be calculated
+if ( $obsend ) {
+  # Precalculate filter
+  my $filter = $Obj->uhdr("ORAC_FILTER");
+
+  # Retrieve source name
+  my $src = $Obj->uhdr("ORAC_OBJECT");
+
+  my $flux;
+  # If the source is not a calibrator, look for an appropriate flux
+  # specified in recipe parameters. The flux will be calculated later
+  # for known calibrator sources.
+  if (!$Cal->iscalsource($src)) {
+    if ( $filter =~ /850/ ) {
+      $flux = $Frm->uhdr("RECPAR_FLUX_850");
+    } else {
+      $flux = $Frm->uhdr("RECPAR_FLUX_450");
+    }
+    if ( !defined $flux ) {
+      orac_warn "Unable to calculate an FCF for non-calibrator source, $src: no flux specified for filter $filter\n";
+      return ORAC__OK;
+    }
+  }
 
   my $in = $Obj->file;
 
@@ -133,15 +154,13 @@ if ($Cal->iscalsource($Obj->uhdr("ORAC_OBJECT")) && $obsend ) {
   # an FCF
   my $posn = $_FIND_MAP_PEAK_{POSITION};
   if (@$posn) {
-    # Find the integrated intensity - no need to write a logfile
-    _FIND_INTEGRATED_INTENSITY_  LOGFILE=0 VERBOSE=0 IMAGE=$in XYPOS=$posn
+    # Find the integrated intensity within a 1-arcmin diameter
+    # aperture - no need to write a logfile
+    _FIND_INTEGRATED_INTENSITY_ VERBOSE=0 IMAGE=$in XYPOS=$posn RADIUS=30
 
     # Retrieve the results
     my %results = ( BEAM => $_FIND_MAP_PEAK_{PEAK},
 		    ARCSEC => $_FIND_INTEGRATED_INTENSITY_{TOTALFLUX} );
-
-    # Precalculate filter
-    my $filter = $Obj->uhdr("ORAC_FILTER");
 
     # Loop over the different type of results
     foreach my $type (keys %results) {
@@ -176,7 +195,9 @@ if ($Cal->iscalsource($Obj->uhdr("ORAC_OBJECT")) && $obsend ) {
       }
 
       # Now get the flux for this filter
-      my $flux = $Cal->fluxcal($Obj->uhdr("ORAC_OBJECT"), $filter, $ismap);
+      unless ( defined $flux ) {
+	$flux = $Cal->fluxcal($src, $filter, $ismap);
+      }
 
       # If we have a flux, store the FCF in the calibration system
       if (defined $flux) {
@@ -207,6 +228,8 @@ if ($Cal->iscalsource($Obj->uhdr("ORAC_OBJECT")) && $obsend ) {
 	# a requirement
 	_ADD_FCF_LOG_ENTRY_ FILTER=$filter FCF=$fcf UNITS=$type GROUP=$group
 
+      } else {
+	orac_warn "Unable to calculate a flux for source $src\n";
       }
 
     }
