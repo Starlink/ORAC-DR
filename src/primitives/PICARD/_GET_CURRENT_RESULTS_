@@ -1,0 +1,160 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_GET_CURRENT_RESULTS_ - return a hash reference with stored results
+
+=head1 SYNOPSIS
+
+_GET_CURRENT_RESULTS_
+
+=head1 DESCRIPTION
+
+This PICARD primitive returns a hash reference containing details of
+the current file, such as name, source and wavelength. Existing values
+are not overwritten.
+
+The results in question are a set of user-defined values which the
+user wishes to store and write to a custom log file on completion of
+the recipe.
+
+=head1 ARGUMENTS
+
+This primitive supports the following arguments:
+
+=over 4
+
+=item B<CURRENT>
+
+An array index specifying the current set of results to obtain. No
+default.
+
+=item B<PICARD_RESULTS>
+
+An array reference containing the existing results. No default but
+does not need to be defined on entry.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+No external tasks are used.
+
+=head1 NOTES
+
+The header values are retrieved assuming that a single value is
+present (i.e. no subheaders).
+
+=head1 OUTPUT DATA
+
+The primitive hash %_GET_CURRENT_RESULTS_ has a single key called
+C<RESULTS> on completion. The value is the hash reference with the
+current results. The current results hash contains the following keys:
+
+=over 4
+
+=item * airmass
+
+Mean airmass for current file.
+
+=item * file
+
+Name of current file.
+
+=item * obsnum
+
+Observation number if defined.
+
+=item * source
+
+Source name.
+
+=item * tau
+
+Mean optical depth at 225 GHz for current file.
+
+=item * wavelen
+
+Wavelength (either 850 or 450).
+
+=item * wvm
+
+Mean WVM tau for current file.
+
+=back
+
+=head1 OUTPUT FILES
+
+None
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2010 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+
+my $current = get_prim_arg($_PRIM_ARGS_, "CURRENT", undef);
+my $picard_results = get_prim_arg($_PRIM_ARGS_, "PICARD_RESULTS", undef);
+
+if ( defined $current ) {
+
+  # Retrieve current results if they exist
+  my $current_results = $picard_results->[$current]
+    if (defined $picard_results->[$current]);
+
+  # Filename
+  $current_results->{file} = $Frm->file
+    unless (defined $current_results->{file});
+
+  # Source
+  $current_results->{source} = $Frm->hdr("OBJECT")
+    unless (defined $current_results->{source});
+
+  # Obsnum
+  $current_results->{obsnum} = $Frm->hdr("OBSNUM")
+    unless (defined $current_results->{obsnum});
+
+  # Wavelength
+  $current_results->{wavelen} = ( $Frm->hdr("FILTER") =~ /^850/ ) ? "850" : "450"
+    unless (defined $current_results->{wavelen});
+
+  # Optical depth
+  use JCMT::Tau;
+  unless ( defined $current_results->{tau} ) {
+    my $tau = 0.5 * ($Frm->hdr("WVMTAUST") + $Frm->hdr("WVMTAUEN"));
+    $current_results->{wvm} = $tau;
+    ($current_results->{tau}, my $status) = get_tau( $Frm->hdr("FILTER"),
+						     "CSO", $tau);
+  }
+
+  # Airmass
+  unless ( defined $current_results->{airmass} ) {
+    $current_results->{airmass} = 0.5 * ( $Frm->hdr("AMSTART") +
+					  $Frm->hdr("AMEND"))
+  }
+
+  $_GET_CURRENT_RESULTS_{RESULTS} = $current_results;
+} else {
+  orac_warn "_GET_CURRENT_RESULTS_ must have a current index\n"
+}
