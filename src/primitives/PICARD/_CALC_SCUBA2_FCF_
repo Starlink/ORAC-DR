@@ -25,7 +25,8 @@ The following external task is used:
 
 =item ORAC-DR primitives:
 
-SCUBA2: _FIND_CALIBRATION_MAP_
+SCUBA2: _FIND_CALIBRATION_MAP_;
+PICARD: _GET_CURRENT_RESULTS_
 
 =back
 
@@ -44,7 +45,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2009 University of British Columbia. All Rights
+Copyright (C) 2009-2010 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -76,9 +77,21 @@ $Cal = orac_calib_override( "ORAC::Calib::SCUBA2" );
 $Cal->thingone($thing1);
 $Cal->thingtwo($thing2);
 
+# Are results to be written to a logfile? Override with recipe
+# parameter
+my $logfile = get_prim_arg($_PRIM_ARGS_, "LOGFILE", 0);
+$logfile = $Frm->uhdr("RECPAR_LOGFILE")
+  if (defined $Frm->uhdr("RECPAR_LOGFILE"));
+
 # Check the units - we can ONLY derive an FCF for uncalibrated data,
 # ie pW
 if ( $Frm->uhdr("DATA_UNITS") eq "pW") {
+
+  # Retrieve existing results if present
+  my @picard_results;
+  if (defined $Frm->uhdr("PICARD_RESULTS")) {
+    @picard_results = @{ $Frm->uhdr("PICARD_RESULTS") };
+  }
 
   # Now, _FIND_CALIBRATION_MAP_ only operates on the current Frame or
   # Group file, so we need to trick it. Loop over all the files in the
@@ -124,12 +137,26 @@ if ( $Frm->uhdr("DATA_UNITS") eq "pW") {
       # Set store=0 because we don't want to try and store the FCF in the
       # calibration system
       _FIND_CALIBRATION_MAP_ STORE=0 GROUP=0
+
+      # Obtain basic results and define current results hash
+      _GET_CURRENT_RESULTS_ CURRENT=$i-1 PICARD_RESULTS=\@picard_results
+      my %current_results = %{ $_GET_CURRENT_RESULTS_{RESULTS} };
+      my $fcfs = $_FIND_CALIBRATION_MAP_{FCF};
+      if ( defined $fcfs ) {
+	$current_results{fcf} = $fcfs->{BEAM};
+      }
+      $picard_results[$i-1] = \%current_results;
     } else {
       orac_print "\nSkipping $files[$i-1] ($object): no way to determine flux\n";
     }
   }
   # Restore the Frame to its input state
   $Frm = $inFrm;
+
+  # Store the results hash in the Frame uhdr
+  if ( $logfile ) {
+      $Frm->uhdr("PICARD_RESULTS", \@picard_results);
+  }
 
 } else {
   orac_warn "Unable to calculate an FCF: data are already calibrated (in "
