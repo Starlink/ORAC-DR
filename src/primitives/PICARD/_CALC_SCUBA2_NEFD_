@@ -85,6 +85,29 @@ $Cal->thingtwo($thing2);
 # Tell the user what's going on
 orac_print ("\nCalling _CALC_SCUBA2_NEFD_: calculate NEFD for calibrated SCUBA-2 image data\n", "yellow");
 
+# Are results to be written to a logfile? Override with recipe parameter.
+my $logfile = get_prim_arg($_PRIM_ARGS_, "LOGFILE", 0);
+$logfile = $Frm->uhdr("RECPAR_LOGFILE")
+  if (defined $Frm->uhdr("RECPAR_LOGFILE"));
+# If the logfile parameter is true, then we want _CALCULATE_NEFD_ to
+# return the derived NEFD and so we must tell it that no log file is
+# needed.
+my $nefdlog = ($logfile) ? 0 : 1;
+
+# Should the raw/original input files be used?
+my $raw = get_prim_arg($_PRIM_ARGS_, "RAW", 0);
+
+# Use the original files if necessary
+if ( $raw ) {
+  $Frm->files( $Frm->raw );
+}
+
+# Retrieve existing results if present
+my @picard_results;
+if (defined $Frm->uhdr("PICARD_RESULTS")) {
+  @picard_results = @{ $Frm->uhdr("PICARD_RESULTS") };
+}
+
 # Calibrate the data if necessary - use the default calibration of
 # `per beam'
 _CALIBRATE_DATA_
@@ -94,7 +117,7 @@ _CALIBRATE_DATA_
 # the Frame, then we take a copy of the Frame before creating a new
 # template SCUBA2 Frame object.  Then loop over all the files in the
 # Frame, read the header from each and store as the Frame file. Now
-# we can derive the FCF.
+# we can derive the NEFD.
 
 # Retrieve info about files in Frame
 my $nfiles = $Frm->nfiles;
@@ -111,12 +134,30 @@ foreach my $i ( 1 .. $nfiles ) {
   $Frm->files($files[$i-1]);
   $Frm->readhdr;
 
+  # Inform user of progress. If the data are from a single
+  # observation, print that number
   my $object = $Frm->hdr("OBJECT");
-  # If the data are from a single observation, print that number
   my $obs = $Frm->hdr("OBSNUM");
   my $extra = ( defined $obs ) ? ", obs $obs" : "";
   orac_print "\nCalculating NEFD for $files[$i-1] (".$object.$extra.")\n";
-  _CALCULATE_NEFD_ GROUP=0 VERBOSE=1 ESTIMATOR=MODE KEEP_NEFD=1
+
+  _CALCULATE_NEFD_ GROUP=0 VERBOSE=1 ESTIMATOR=MODE KEEP_NEFD=1 LOGFILE=$nefdlog
+
+
+  # Obtain basic results and define current results hash
+  _GET_CURRENT_RESULTS_ CURRENT=$i-1 PICARD_RESULTS=\@picard_results
+  my %current_results = %{ $_GET_CURRENT_RESULTS_{RESULTS} };
+
+  # Store NEFD in current hash
+  $current_results{nefd} = $_CALCULATE_NEFD_{NEFD};
+
+  # Store the current results
+  $picard_results[$i-1] = \%current_results;
 }
 # Since no new files were created, restore the original Frame object
 $Frm = $inFrm;
+
+# Store the results hash in the Frame uhdr
+if ( $logfile ) {
+  $Frm->uhdr("PICARD_RESULTS", \@picard_results);
+}
