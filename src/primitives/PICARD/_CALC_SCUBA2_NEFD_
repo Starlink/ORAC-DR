@@ -2,7 +2,7 @@
 
 =head1 NAME
 
-_CALC_SCUBA2_NEFD_ - derive FCFs from input images of SCUBA-2 calibration sources
+_CALC_SCUBA2_NEFD_ - derive NEFDs from input images of SCUBA-2 sources
 
 =head1 SYNOPSIS
 
@@ -12,12 +12,23 @@ _CALC_SCUBA2_NEFD_
 
 This PICARD primitive is designed to calculate noise equivalent flux
 densities (NEFDs) from images of SCUBA-2 sources. The data are
-calibrated if necessary using the default conversion factors in the
-pipeline.
+calibrated if necessary either using the default conversion factors in
+the pipeline or FCFs derived in a previous primitive (if stored as
+C<PICARD_RESULTS> data).
 
 =head1 ARGUMENTS
 
-This primitive has no arguments.
+This primitive has one argument:
+
+=over 4
+
+=item B<LOGFILE>
+
+A flag to denote whether to store information in the C<PICARD_RESULTS>
+hash for later writing to a logfile. Overridden by the presence of the
+C<RECPAR_LOGFILE> recipe parameter. Default is 0.
+
+=back
 
 =head1 EXTERNAL TASKS
 
@@ -97,6 +108,10 @@ my $nefdlog = ($logfile) ? 0 : 1;
 # Should the raw/original input files be used?
 my $raw = get_prim_arg($_PRIM_ARGS_, "RAW", 0);
 
+# Should the data be calibrated using derived or standard FCFs?
+my $usefcf = (defined $Frm->uhdr("RECPAR_USEFCF"))
+  ? $Frm->uhdr("RECPAR_USEFCF") : 0;
+
 # Use the original files if necessary
 if ( $raw ) {
   $Frm->files( $Frm->raw );
@@ -110,7 +125,9 @@ if (defined $Frm->uhdr("PICARD_RESULTS")) {
 
 # Calibrate the data if necessary - use the default calibration of
 # `per beam'
-_CALIBRATE_DATA_
+unless ( @picard_results && $usefcf ) {
+  _CALIBRATE_DATA_
+}
 
 # Now, _CALCULATE_NEFD_ only operates on the current Frame or Group
 # file, so we need to trick it. First we store the list of files in
@@ -122,6 +139,8 @@ _CALIBRATE_DATA_
 # Retrieve info about files in Frame
 my $nfiles = $Frm->nfiles;
 my @files = $Frm->files;
+# List of calibrated files if done below
+my @out;
 # Make a copy to restore later
 my $inFrm = $Frm;
 
@@ -134,6 +153,20 @@ foreach my $i ( 1 .. $nfiles ) {
   $Frm->files($files[$i-1]);
   $Frm->readhdr;
 
+  # Obtain basic results and define current results hash
+  _GET_CURRENT_RESULTS_ CURRENT=$i-1 PICARD_RESULTS=\@picard_results
+  my %current_results = %{ $_GET_CURRENT_RESULTS_{RESULTS} };
+
+  if ( @picard_results && $usefcf ) {
+    my $out = $Frm->inout("_cal");
+    # Calibrate data
+    my $fcf = 1000.0 * $current_results{fcf_equivbeam};
+    my $args = "in=".($Frm->file)." out=$out scalar=$fcf";
+    $Mon{kappa_mon}->obeyw("cmult","$args");
+    $Frm->files($out);
+    push(@out, $out);
+  }
+
   # Inform user of progress. If the data are from a single
   # observation, print that number
   my $object = $Frm->hdr("OBJECT");
@@ -143,11 +176,6 @@ foreach my $i ( 1 .. $nfiles ) {
 
   _CALCULATE_NEFD_ GROUP=0 VERBOSE=1 ESTIMATOR=MODE KEEP_NEFD=1 LOGFILE=$nefdlog
 
-
-  # Obtain basic results and define current results hash
-  _GET_CURRENT_RESULTS_ CURRENT=$i-1 PICARD_RESULTS=\@picard_results
-  my %current_results = %{ $_GET_CURRENT_RESULTS_{RESULTS} };
-
   # Store NEFD in current hash
   $current_results{nefd} = $_CALCULATE_NEFD_{NEFD};
 
@@ -156,6 +184,9 @@ foreach my $i ( 1 .. $nfiles ) {
 }
 # Since no new files were created, restore the original Frame object
 $Frm = $inFrm;
+
+# Store calibrated output files if created
+$Frm->files(@out) if @out;
 
 # Store the results hash in the Frame uhdr
 if ( $logfile ) {
