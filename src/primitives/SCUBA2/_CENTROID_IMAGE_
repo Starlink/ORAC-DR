@@ -10,10 +10,19 @@ _CENTROID_IMAGE_ BOX=30
 
 =head1 DESCRIPTION
 
-Find the centroid of emission in the specified image. Assumes that the
-centroid is near the origin in axis coordinates, and that there is
-only one source in the image. Complex source structure will likely
-cause this primitive to return no result.
+Find the centroid of emission in the specified image. The user may
+specify the image directly, or set a flag to use either the current
+Frame or Group image. The centroid algorithm requires a search box and
+an initial guess at the centroid position. The initial position is
+usually the value of the SkyRef WCS attribute, though the user can
+override this behaviour and force the primitive to determine the
+position of maximum brightness itself (within the region bounded by
+the MAP_WDTH and MAP_HGHT FITS headers).
+
+The user may request that the centroid position is calculated as
+offsets in the chosen coordinate system. By default, the position will
+be returned in the current system. All WCS attributes are returned to
+their entry values on exit.
 
 Returns C<undef> if the centroid could not be determined.
 
@@ -47,6 +56,13 @@ C<Origin>, if it is not already set. The default value of 0 (false)
 will leave this attribute unchanged (thus if the file is already in an
 offset frame, the answer will still be returned in offset
 coordinates).
+
+=item B<SKYREF>
+
+Flag to denote whether to use the SkyRef attribute to define the
+initial centroid position. If false, the position of the brightest
+signal is determined and used. The SkyRef position is always used for
+calibrators. Default is 1 (yes).
 
 =item B<SYSTEM>
 
@@ -83,10 +99,6 @@ The Frame object is not updated.
 If an image is already in an offset coordinate frame, the B<OFFSET>
 parameter should be set to 0. The primitive does not check for
 consistency between the user input and the data.
-
-This primitive assumes that the peak value in the map is the value of
-the pixel at the centroid position. The presence of spikes will cause
-the wrong position to be returned.
 
 =head1 OUTPUT DATA
 
@@ -157,6 +169,10 @@ unless ( defined $in ) {
   }
 }
 
+# Does the user want to force the use of the SkyRef attribute for the
+# initial guess?
+my $useskyref = get_prim_arg( $_PRIM_ARGS_, "SKYREF", 1 );
+
 # Box is now specified in arcsec! Convert to an odd integer number of
 # pixels. Note this is the length of the side of the box.
 my $boxarcsec = get_prim_arg($_PRIM_ARGS_, "BOX", 60);
@@ -213,9 +229,10 @@ if ( $numgood >= $minpix ) {
       orac_print "Centroid will be determined in offset coordinates\n" if ($verbose);
     } else {
       # If we don't want offset, retrieve the formatted WCS position
-      # of the peak. If we have a calibrator, use the SkyRef. For
-      # other sources, find the peak position.
-      if ( $Cal->iscalsource($Frm->hdr('OBJECT'))) {
+      # of the peak. If we have a calibrator or if the user has
+      # specified the SKYREF parameter, use the SkyRef. For other
+      # sources, find the peak position.
+      if ( $Cal->iscalsource($Frm->hdr('OBJECT')) || $useskyref ) {
         $Mon{ndfpack_mon}->obeyw("wcsattrib","ndf=$in mode=get name=skyref");
         ($ORAC_STATUS, $initpos) = $Mon{ndfpack_mon}->get("wcsattrib","value");
       } else {
