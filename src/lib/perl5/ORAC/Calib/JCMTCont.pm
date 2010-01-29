@@ -578,7 +578,7 @@ sub tau {
   my ($tau, $status);
 
   # Now query tausys
-  my $sys = $self->tausys;
+  my $sys = uc($self->tausys);
 
   # Check to see whether the value is already cached.
   my $oractime = $self->thing->{'ORACTIME'};
