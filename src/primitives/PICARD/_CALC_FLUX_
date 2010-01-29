@@ -1,0 +1,113 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CALC_FLUX_ - calculate the flux of a source
+
+=head1 SYNOPSIS
+
+_CALC_FLUX_
+
+=head1 DESCRIPTION
+
+This PICARD primitive is designed to calculate fluxes by aperture
+photometry from images of SCUBA-2 sources. Results are stored in the
+C<PICARD_RESULTS> data.
+
+=head1 ARGUMENTS
+
+This primitive has the following arguments:
+
+=over 4
+
+=item B<RADIUS>
+
+Radius of the aperture used to calculate the statistics. Default is 30
+arcsec, though overridden by the C<APERTURE_RADIUS> recipe parameter.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external task is used:
+
+=over 4
+
+=item ORAC-DR primitives:
+
+SCUBA2: _CALC_IMAGE_NOISE_, _FIND_INTEGRATED_INTENSITY_
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+None.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2009-2010 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+orac_print ("\nCalling _CALC_FLUX_: calculate source fluxes by aperture photometry\n", "yellow");
+
+# Radius of aperture in arcsec
+my $radius = get_prim_arg($_PRIM_ARGS_, "RADIUS", 30);
+$radius = $Frm->uhdr("RECPAR_APERTURE_RADIUS")
+  if (defined $Frm->uhdr("RECPAR_APERTURE_RADIUS"));
+
+# Retrieve existing results if present
+my @picard_results;
+if (defined $Frm->uhdr("PICARD_RESULTS")) {
+  @picard_results = @{ $Frm->uhdr("PICARD_RESULTS") };
+}
+
+foreach my $i ( 1 .. $Frm->nfiles ) {
+
+  # Obtain basic results and define current results hash
+  _GET_CURRENT_RESULTS_ CURRENT=$i-1 PICARD_RESULTS=\@picard_results
+  my %current_results = %{ $_GET_CURRENT_RESULTS_{RESULTS} };
+
+  # Retrieve background-subtracted file to analyze
+  my $infile = $Frm->file($i);
+
+  # Calculate total flux within the aperture
+  orac_print "Calculating source flux for $current_results{source} ($current_results{file})...";
+  _FIND_INTEGRATED_INTENSITY_ IMAGE=$infile RADIUS=$radius MASK=0
+  $current_results{flux_ap} = $_FIND_INTEGRATED_INTENSITY_{TOTALFLUX};
+
+  # Calculate image noise
+  orac_print " and image noise...";
+  _CALC_IMAGE_NOISE_ IMAGE=$infile RADIUS=$radius METHOD=MINIMUM LOGFILE=0
+  $current_results{imnoise} = $_CALC_IMAGE_NOISE_{SIGMA};
+
+  # Store the current results
+  $picard_results[$i-1] = \%current_results;
+  orac_print " done\n";
+}
+
+$Frm->uhdr("PICARD_RESULTS", \@picard_results);
