@@ -1200,6 +1200,7 @@ Display keywords:
   COMP       - Component to display (Data (default), Variance or Error)
   ERRBAR     - Plot error bars or not (if variance information is
                present)
+  YLOG       - Plot Y-axis on a logarithmic scale
 
 Default is to autoscale. Note that the X/Y cuts are converted
 to a 1-D slice before displaying by averaging over the section.
@@ -1287,13 +1288,11 @@ sub graph {
     }
   }
 
-  my $errbar = " ";
+  my $errbar = "errbar=false";
   if (exists $options{ERRBAR}) {
     if ($options{ERRBAR}) {
        $errbar = "errbar=true shape=bars freq=1 style='Colour(ErrBars)=red'";
     }
-  } else {
-    orac_warn "ERRBAR option not specified. Assuming FALSE.\n";
   }
 
   my $lmode = " ";
@@ -1309,6 +1308,10 @@ sub graph {
     $args .= " COMP=$options{COMP}";
   }
 
+  # Logarithmic y axis
+  if (exists $options{YLOG} && defined $options{YLOG}) {
+    $args .= " ymap=log" if ($options{YLOG});
+  }
 
   # Run linplot
   orac_print "LINPLOT ndf=$file device=$device $args reset\n","cyan" if $DEBUG;
