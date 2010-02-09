@@ -1,0 +1,177 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CALCULATE_AVERAGE_POWERSPECTRUM_ - calculate the average power spectrum for all bolometers in each subarray
+
+=head1 SYNOPSIS
+
+_CALCULATE_AVERAGE_POWERSPECTRUM_
+
+=head1 DESCRIPTION
+
+This primitive calculates and displays the average power spectrum for
+each raw data file in the current Frame object. The raw data undergo
+basic processing to add padding and remove DC steps before calculating
+the power spectrum.
+
+This primitive is designed to be called as part of the QL or SUMMIT
+pipelines, so the Frame object should contain no more than four files
+(one for each subarray).
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=item B<FLAT>
+
+Flag to specify whether data should be flatfielded. Default is 0 (no).
+
+=item B<KEEP>
+
+Flag to denote whether to keep power spectra files on disk on
+exit. Default is 0 (no).
+
+=item B<THRESH>
+
+Threshold (in standard deviations) for defining good bolometers
+to include in the average power spectrum. Default is 3.
+
+=item B<VERBOSE>
+
+Flag to denote whether to display extra information. Default is 0
+(no).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA:
+
+NDFCOPY, SETTITLE
+
+=item SMURF:
+
+SC2CLEAN, SC2CONCAT, SC2FFT
+
+=back
+
+=head1 OUTPUT DATA
+
+The power spectra files are pushed onto the intermediates array of the
+current Frame object so they can be deleted on exit.
+
+=head1 OUTPUT FILES
+
+An average power-spectrum file is created for each subarray with the
+suffix C<_avpspec>
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2010 University of British Columbia. All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Sigma-clipping threshold for good bolometers in the average power
+# spectrum
+my $thresh = get_prim_arg($_PRIM_ARGS_, "THRESH", 3.0);
+
+# Should the data be flatfielded before processing? Default to no.
+my $flat = get_prim_arg($_PRIM_ARGS_, "FLAT", 0);
+
+# Does the user want the files to remain on disk?
+my $keep_avpspec = get_prim_arg($_PRIM_ARGS_, "KEEP", 0);
+
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
+
+# Parameters for sc2concat
+my $doflat = ($flat) ? "flat" : "noflat";
+# Calculate length of file and set padding accordingly for short
+# observations. All files should be from the same observation so there
+# should not be any subheaders.
+my $obslength = $Frm->hdr("SEQEND") - $Frm->hdr("SEQSTART") + 1;
+my $padding = ($obslength < 10000) ? int ($obslength / 10) : 1000;
+
+# Parameters for sc2clean
+my $dcbox = 50;
+my $dcthresh = 250;
+my $apod = $padding;
+
+my $spectrum = ($Frm->nfiles == 1) ? "spectrum" : "spectra";
+orac_print "Calculating average power $spectrum..." if ($verbose);
+
+my @avpspec;
+foreach my $i (1 .. $Frm->nfiles) {
+
+  # Add padding
+  my ($in, $out) = $Frm->inout("_avpspec", $i);
+  my $concat = new ORAC::TempFile;
+  my $concatfile = $concat->file;
+  my $args = "in=$in out=$concatfile padstart=$padding padend=$padding $doflat";
+  $Mon{smurf_mon}->obeyw("sc2concat","$args");
+
+  # Do some basic cleaning
+  my $clean = new ORAC::TempFile;
+  my $cleanfile = $clean->file;
+  $args = "in=$concatfile out=$cleanfile dcbox=$dcbox dcthresh=$dcthresh order=0 apod=$apod fillgaps";
+  $Mon{smurf_mon}->obeyw("sc2clean","$args");
+
+  # Calculate average power spectrum
+  my $avpspec = new ORAC::TempFile;
+  my $avpspecfile = $avpspec->file;
+  $args = "in=$cleanfile out=$avpspecfile avpspec avpspecthresh=$thresh";
+  $Mon{smurf_mon}->obeyw("sc2fft","$args");
+  my ($ORAC_STATUS, $ngood) = $Mon{smurf_mon}->get("sc2fft","ngood");
+
+  # Copy out first axis from this 4-d file for linplot
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$avpspecfile(,0,0,1) out=$out");
+
+  # Set a suitable title
+  my $title = "'Ave power spec for $in ($ngood bolos)'";
+  $Mon{ndfpack_mon}->obeyw("settitle","ndf=$out title=$title");
+
+  push(@avpspec, $out);
+}
+orac_print " done" if ($verbose);
+
+# We don't want to store these power spectra as the current files in
+# the Frame as they may complicate matters downstream, so use a
+# temporary Frame object for display purposes.
+my $dispFrm = $Frm->new;
+$dispFrm->files(@avpspec);
+# Display power spectrum
+if (defined $Display) {
+  orac_print ". Displaying $spectrum.\n" if ($verbose);
+  $Display->display_data($dispFrm);
+} else {
+  orac_print "\n" if ($verbose);
+}
+undef $dispFrm;
+
+# Store the power spectra in the intermediates array so they can be
+# tidied up later, unless the user wishes to keep them on disk.
+$Frm->push_intermediates(@avpspec) unless ($keep_avpspec);
