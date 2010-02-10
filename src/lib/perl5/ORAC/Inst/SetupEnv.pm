@@ -835,7 +835,7 @@ sub _mkdir {
   my $nfs = is_nfs_disk( $updir );
   if (!$nfs) {
     mkdir $path
-      or croak "Unable to create directory $path";
+      or croak "Unable to create directory $path ($!)";
 
     print STDERR "**** Created data directory '$path' ****\n";
 
