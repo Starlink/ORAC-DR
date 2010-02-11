@@ -126,8 +126,8 @@ sub display_tools {
 Set (or retrieve) the name of the file containing the display device
 definition. Only used when usenbs() is false.
 
-  $file = $Display->file;
-  $Display->file("new_file");
+  $file = $Display->filename;
+  $Display->filename("new_file");
 
 =cut
 
