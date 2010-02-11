@@ -23,6 +23,12 @@ pipelines, so the Frame object should contain no more than four files
 
 The following arguments are supported:
 
+=item B<DISPLAY>
+
+Flag to denote whether the spectra are to be displayed. Default is 1
+(yes). Note that if there are more than four files in the Frame, only
+the first four will be displayed.
+
 =item B<FLAT>
 
 Flag to specify whether data should be flatfielded. Default is 0 (no).
@@ -63,7 +69,8 @@ SC2CLEAN, SC2CONCAT, SC2FFT
 =head1 OUTPUT DATA
 
 The power spectra files are pushed onto the intermediates array of the
-current Frame object so they can be deleted on exit.
+current Frame object so they can be deleted on exit, unless the user
+has set the B<KEEP> parameter to true.
 
 =head1 OUTPUT FILES
 
@@ -96,82 +103,96 @@ USA.
 
 =cut
 
-# Sigma-clipping threshold for good bolometers in the average power
-# spectrum
-my $thresh = get_prim_arg($_PRIM_ARGS_, "THRESH", 3.0);
+# Skip darks in the case of science data
+unless ( $Frm->uhdr("DARKONLY") ) {
 
-# Should the data be flatfielded before processing? Default to no.
-my $flat = get_prim_arg($_PRIM_ARGS_, "FLAT", 0);
+  # Sigma-clipping threshold for good bolometers in the average power
+  # spectrum
+  my $thresh = get_prim_arg($_PRIM_ARGS_, "THRESH", 3.0);
 
-# Does the user want the files to remain on disk?
-my $keep_avpspec = get_prim_arg($_PRIM_ARGS_, "KEEP", 0);
+  # Should the data be flatfielded before processing? Default to no.
+  my $flat = get_prim_arg($_PRIM_ARGS_, "FLAT", 0);
 
-my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
+  # Does the user want the files to remain on disk?
+  my $keep_avpspec = get_prim_arg($_PRIM_ARGS_, "KEEP", 0);
 
-# Parameters for sc2concat
-my $doflat = ($flat) ? "flat" : "noflat";
-# Calculate length of file and set padding accordingly for short
-# observations. All files should be from the same observation so there
-# should not be any subheaders.
-my $obslength = $Frm->hdr("SEQEND") - $Frm->hdr("SEQSTART") + 1;
-my $padding = ($obslength < 10000) ? int ($obslength / 10) : 1000;
+  # Are the files to be displayed or just processed?
+  my $display_spectra = get_prim_arg($_PRIM_ARGS_, "DISPLAY", 1);
 
-# Parameters for sc2clean
-my $dcbox = 50;
-my $dcthresh = 250;
-my $apod = $padding;
+  my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
 
-my $spectrum = ($Frm->nfiles == 1) ? "spectrum" : "spectra";
-orac_print "Calculating average power $spectrum..." if ($verbose);
+  # Parameters for sc2concat
+  my $doflat = ($flat) ? "flat" : "noflat";
+  # Calculate length of file and set padding accordingly for short
+  # observations. All files should be from the same observation so there
+  # should not be any subheaders.
+  my $obslength = $Frm->hdr("SEQEND") - $Frm->hdr("SEQSTART") + 1;
+  my $padding = ($obslength < 10000) ? int ($obslength / 10) : 1000;
 
-my @avpspec;
-foreach my $i (1 .. $Frm->nfiles) {
+  # Parameters for sc2clean
+  my $dcbox = 50;
+  my $dcthresh = 250;
+  my $apod = $padding;
 
-  # Add padding
-  my ($in, $out) = $Frm->inout("_avpspec", $i);
-  my $concat = new ORAC::TempFile;
-  my $concatfile = $concat->file;
-  my $args = "in=$in out=$concatfile padstart=$padding padend=$padding $doflat";
-  $Mon{smurf_mon}->obeyw("sc2concat","$args");
+  my $spectrum = ($Frm->nfiles == 1) ? "spectrum" : "spectra";
+  orac_print "Calculating average power $spectrum..." if ($verbose);
 
-  # Do some basic cleaning
-  my $clean = new ORAC::TempFile;
-  my $cleanfile = $clean->file;
-  $args = "in=$concatfile out=$cleanfile dcbox=$dcbox dcthresh=$dcthresh order=0 apod=$apod fillgaps";
-  $Mon{smurf_mon}->obeyw("sc2clean","$args");
+  orac_warn "Too many files to display - only the first 4 will be shown\n"
+    if ($Frm->nfiles > 4 && $verbose && $display_spectra);
 
-  # Calculate average power spectrum
-  my $avpspec = new ORAC::TempFile;
-  my $avpspecfile = $avpspec->file;
-  $args = "in=$cleanfile out=$avpspecfile avpspec avpspecthresh=$thresh";
-  $Mon{smurf_mon}->obeyw("sc2fft","$args");
-  my ($ORAC_STATUS, $ngood) = $Mon{smurf_mon}->get("sc2fft","ngood");
+  my @avpspec;
+  foreach my $i (1 .. $Frm->nfiles) {
 
-  # Copy out first axis from this 4-d file for linplot
-  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$avpspecfile(,0,0,1) out=$out");
+    # Add padding
+    my ($in, $out) = $Frm->inout("_avpspec", $i);
+    my $concat = new ORAC::TempFile;
+    my $concatfile = $concat->file;
+    my $args = "in=$in out=$concatfile padstart=$padding padend=$padding $doflat";
+    $Mon{smurf_mon}->obeyw("sc2concat","$args");
 
-  # Set a suitable title
-  my $title = "'Ave power spec for $in ($ngood bolos)'";
-  $Mon{ndfpack_mon}->obeyw("settitle","ndf=$out title=$title");
+    # Do some basic cleaning
+    my $clean = new ORAC::TempFile;
+    my $cleanfile = $clean->file;
+    $args = "in=$concatfile out=$cleanfile dcbox=$dcbox dcthresh=$dcthresh order=0 apod=$apod fillgaps";
+    $Mon{smurf_mon}->obeyw("sc2clean","$args");
 
-  push(@avpspec, $out);
+    # Calculate average power spectrum
+    my $avpspec = new ORAC::TempFile;
+    my $avpspecfile = $avpspec->file;
+    $args = "in=$cleanfile out=$avpspecfile avpspec avpspecthresh=$thresh";
+    $Mon{smurf_mon}->obeyw("sc2fft","$args");
+    my ($ORAC_STATUS, $ngood) = $Mon{smurf_mon}->get("sc2fft","ngood");
+
+    # Copy out first axis from this 4-d file for linplot
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$avpspecfile(,0,0,1) out=$out");
+
+    # Set a suitable title
+    my $title = "'Ave power spec for $in ($ngood bolos)'";
+    $Mon{ndfpack_mon}->obeyw("settitle","ndf=$out title=$title");
+
+    push(@avpspec, $out);
+  }
+  orac_print " done" if ($verbose);
+
+  if ( $display_spectra ) {
+    # We don't want to store these power spectra as the current files in
+    # the Frame as they may complicate matters downstream, so use a
+    # temporary Frame object for display purposes.
+    my $dispFrm = $Frm->new;
+    $dispFrm->files(@avpspec);
+    # Display power spectrum
+    if (defined $Display) {
+      orac_print ". Displaying $spectrum.\n" if ($verbose);
+      $Display->display_data($dispFrm);
+    } else {
+      orac_print "\n" if ($verbose);
+    }
+    undef $dispFrm;
+  } else {
+    orac_print "\n" if ($verbose);
+  }
+
+  # Store the power spectra in the intermediates array so they can be
+  # tidied up later, unless the user wishes to keep them on disk.
+  $Frm->push_intermediates(@avpspec) unless ($keep_avpspec);
 }
-orac_print " done" if ($verbose);
-
-# We don't want to store these power spectra as the current files in
-# the Frame as they may complicate matters downstream, so use a
-# temporary Frame object for display purposes.
-my $dispFrm = $Frm->new;
-$dispFrm->files(@avpspec);
-# Display power spectrum
-if (defined $Display) {
-  orac_print ". Displaying $spectrum.\n" if ($verbose);
-  $Display->display_data($dispFrm);
-} else {
-  orac_print "\n" if ($verbose);
-}
-undef $dispFrm;
-
-# Store the power spectra in the intermediates array so they can be
-# tidied up later, unless the user wishes to keep them on disk.
-$Frm->push_intermediates(@avpspec) unless ($keep_avpspec);
