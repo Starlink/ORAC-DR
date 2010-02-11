@@ -474,9 +474,9 @@ sub beam {
   # Default beam sizes
   my @defaultbeam;
   if ($arr =~ /^850/ || $arr =~ /^L/) {
-    @defaultbeam = (15.0, 15.0, 0.0); # 850 um
+    @defaultbeam = (14.0, 14.0, 0.0); # 850 um
   } else {
-    @defaultbeam = (8.0, 8.0, 0.0); # 450 um
+    @defaultbeam = (7.5, 7.5, 0.0); # 450 um
   }
   my @beam = @defaultbeam;
   return @beam;
