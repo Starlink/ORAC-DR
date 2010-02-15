@@ -45,6 +45,12 @@ The following arguments are supported:
 Flag to specify whether or not to determine the centroid
 position. Default is 0 (do not determine centroid).
 
+=item B<ESTIMATOR>
+
+Preferred estimator for variance. Valid options are C<MEAN>, C<MEDIAN>
+or C<MODE>. Choosing C<MODE> overrides B<HISTAT> since STATS cannot
+derive a mode. Default is C<MEDIAN>.
+
 =item B<GROUP>
 
 Flag to denote whether to use the current Group file. Default is 0
@@ -169,19 +175,16 @@ my $image = get_prim_arg($_PRIM_ARGS_, "IMAGE", $Obj->file );
 my $size = get_prim_arg($_PRIM_ARGS_, "SIZE", 30.0);
 $size .= "s";
 
+# Estimator - default is MEDIAN
+my $estimator = uc(get_prim_arg( $_PRIM_ARGS_, "ESTIMATOR", "MEDIAN" ));
+# Check we were given something sensible
+unless ( $estimator eq "MEDIAN" || $estimator eq "MEAN" || $estimator eq "MODE" ) {
+  orac_warn "_ASSESS_IMAGE_: Unrecognized estimator, $estimator: using MEDIAN\n";
+  $estimator = "MEDIAN";
+}
+
 # Print lots of info? Default to yes.
 my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 1);
-
-# Obtain noise/sigma from variance in given image
-_FIND_IMAGE_STATISTICS_ IMAGE=$image COMP=ERR VERBOSE=0
-my $sigma = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEAN};
-
-# Check sigma was defined
-unless ( $sigma ) {
-  # Use simple alternative method
-  _FIND_IMAGE_STATISTICS_ IMAGE=$image HISTAT=0 VERBOSE=0
-  $sigma = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
-}
 
 # Define a region according to SIZE
 my $args = "ndf=$image mode=get name=system(1)";
@@ -197,8 +200,22 @@ if ( $system eq "AZEL" || $system eq "GALACTIC" ) {
 }
 
 my $region = "$image($ndfsection)";
+
 # Find statistics on the centre region
-_FIND_IMAGE_STATISTICS_ IMAGE=$region VERBOSE=0
+my $histat = ($estimator eq "MODE") ? 1 : 0;
+
+# Obtain noise/sigma from variance in given image
+_FIND_IMAGE_STATISTICS_ IMAGE=$region COMP=ERR VERBOSE=0
+my $sigma = $_FIND_IMAGE_STATISTICS_{RESULTS}->{$estimator};
+
+# Check sigma was defined
+unless ( $sigma ) {
+  # Use simple alternative method, unlikely to be remotely accurate...
+  _FIND_IMAGE_STATISTICS_ IMAGE=$image HISTAT=0 VERBOSE=0
+  $sigma = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
+}
+
+_FIND_IMAGE_STATISTICS_ IMAGE=$region VERBOSE=0 HISTAT=0
 my %results = %{ $_FIND_IMAGE_STATISTICS_{RESULTS} };
 my $max = $results{MAX};
 my $peak_sn = $max / $sigma;
