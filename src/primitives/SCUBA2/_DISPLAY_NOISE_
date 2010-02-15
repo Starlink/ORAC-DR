@@ -122,14 +122,6 @@ for my $i ( 1 .. $Frm->nfiles ) {
   my $window = $i - 1;
   my $subarray = $Frm->hdrval("SUBARRAY",$window);
 
-  # Set the titles of the current and previous images to something meaningful
-  my $args = "ndf=$noisefile title='Noise map for $subarray'";
-  $Mon{ndfpack_mon}->obeyw("settitle","$args");
-
-  # Set coordinate frame to PIXEL
-  $args = "ndf=$noisefile frame=pixel";
-  $Mon{ndfpack_mon}->obeyw("wcsframe","$args");
-
   # Find unclipped statistics for reporting
   _FIND_IMAGE_STATISTICS_ IMAGE=$noisefile HISTAT=0 COMP=$comp VERBOSE=0
   my $min = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MIN};
@@ -144,42 +136,56 @@ for my $i ( 1 .. $Frm->nfiles ) {
 
   my $numgood = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
 
-  orac_print "Noise statistics for subarray $subarray ($numgood bolometers):\n", "green";
-  orac_print " Mean   = $mean $units\n", "green";
-  orac_print " Median = $median $units\n", "green";
-  orac_print " Sigma  = $sigma $units\n\n", "green";
+  # Check that we have good bolometers
+  if ( $numgood > 0 ) {
 
-  # Find sigma-clipped statistics for reporting if requested
-  my ($cmean, $cmedian, $csigma) = ("", "", "");
-  if ( $clip ne "" ) {
-    _FIND_IMAGE_STATISTICS_ IMAGE=$noisefile HISTAT=0 COMP=$comp VERBOSE=0 CLIP=$clip
+    orac_print "Noise statistics for subarray $subarray ($numgood bolometers):\n", "green";
+    orac_print " Mean   = $mean $units\n", "green";
+    orac_print " Median = $median $units\n", "green";
+    orac_print " Sigma  = $sigma $units\n\n", "green";
 
-    $min = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MIN};
-    $max = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
+    # Set the title of the noise image to something meaningful
+    my $args = "ndf=$noisefile title='Noise map for $subarray'";
+    $Mon{ndfpack_mon}->obeyw("settitle","$args");
 
-    $cmean = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEAN};
-    $cmedian = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
-    $csigma = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
+    # Set coordinate frame to PIXEL
+    $args = "ndf=$noisefile frame=pixel";
+    $Mon{ndfpack_mon}->obeyw("wcsframe","$args");
 
-    $zmin = max($cmean - 5*$csigma, $min-0.2*$min);
-    $zmax = $cmean + 5*$csigma;
-    my $numdiff = $numgood - $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
+    # Find sigma-clipped statistics for reporting if requested
+    my ($cmean, $cmedian, $csigma) = ("", "", "");
+    if ( $clip ne "" ) {
+      _FIND_IMAGE_STATISTICS_ IMAGE=$noisefile HISTAT=0 COMP=$comp VERBOSE=0 CLIP=$clip
 
-    orac_print "Sigma-clipped at $clip sigma (drops $numdiff bolometers):\n",
-               "green";
-    orac_print " Mean   = $cmean $units\n", "green";
-    orac_print " Median = $cmedian $units\n", "green";
-    orac_print " Sigma  = $csigma $units\n\n", "green";
-  }
+      $min = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MIN};
+      $max = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
 
-  my %options = ( WINDOW => $window, ZMIN => $zmin, ZMAX => $zmax,
-		  ZAUTOSCALE => 0, TITLE => "Noise histogram ($units)" );
+      $cmean = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEAN};
+      $cmedian = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
+      $csigma = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
 
-  $Display->display_data($Frm, \%options, -1);
+      $zmin = max($cmean - 5*$csigma, $min-0.2*$min);
+      $zmax = $cmean + 5*$csigma;
+      my $numdiff = $numgood - $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
 
-  if ($uselog) {
-    my @params = ($subarray, $median, $mean, $sigma);
-    _ADD_BOLONOISE_LOG_ENTRY_ PARAMS=\@params
+      orac_print "Sigma-clipped at $clip sigma (drops $numdiff bolometers):\n",
+	"green";
+      orac_print " Mean   = $cmean $units\n", "green";
+      orac_print " Median = $cmedian $units\n", "green";
+      orac_print " Sigma  = $csigma $units\n\n", "green";
+    }
+
+    my %options = ( WINDOW => $window, ZMIN => $zmin, ZMAX => $zmax,
+		    ZAUTOSCALE => 0, TITLE => "Noise histogram ($units)" );
+
+    $Display->display_data($Frm, \%options, -1);
+
+    if ($uselog) {
+      my @params = ($subarray, $median, $mean, $sigma);
+      _ADD_BOLONOISE_LOG_ENTRY_ PARAMS=\@params
+    }
+  } else {
+    orac_warn "Skipping display of $noisefile - no good bolometers\n";
   }
 
 }
