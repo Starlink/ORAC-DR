@@ -10,12 +10,12 @@ _FIND_BEAM_SIZE_ GAUSSIAN=1 METHOD=PSF
 
 =head1 DESCRIPTION
 
-This primitive carries out a fit to a calibrator to determine the beam
-size and position angle using one of two available methods. The
-reported values are the full-width-at-half-maximum (FWHM) along the
-major and minor axes, and the beam position angle on the sky at the
-time of obseration. The fit is performed in the SKY domain so the FWHM
-is returned in arcsec.
+This primitive carries out a fit to a calibrator (or pointing target)
+to determine the beam size and position angle using one of two
+available methods. The reported values are the
+full-width-at-half-maximum (FWHM) along the major and minor axes, and
+the beam position angle on the sky at the time of obseration. The fit
+is performed in the SKY domain so the FWHM is returned in arcsec.
 
 The default is to allow the current fitting routine to determine the
 shape of the beam. A flag may be specified to force the return of the
@@ -89,7 +89,7 @@ BEAMFIT, WCSATTRIB
 
 =item ORAC-DR PRIMITIVES:
 
-_CENTROID_IMAGE_, _FIT_PSF_, _FIND_INTEGRATED_INTENSITY_,
+_CENTROID_IMAGE_, _FIT_BEAM_, _FIT_PSF_, _FIND_INTEGRATED_INTENSITY_,
 _GET_LOG_PARAMETERS_
 
 =back
@@ -102,6 +102,10 @@ well-known to do much more.
 
 Using coordinate frames other than AzEl will cause the beam to appear
 to rotate during the course of an observation.
+
+Not all pointing targets are point-like so results from these objects
+should be assessed in light of what is known about the extent of the
+emission associated with these sources.
 
 =head1 OUTPUT DATA
 
@@ -252,6 +256,10 @@ $dofit = 0 unless ( -e "$in.sdf" );
 # Do we have a calibrator?
 my $calib = $Cal->iscalsource($Frm->hdr('OBJECT')) ;
 
+# If this is a pointing obs, assume that the source is compact enough
+# to attempt a fit to the beam
+$calib = 1 if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing");
+
 # Proceed with finding the beam size if the source is a calibrator and
 # the DOFIT flag is true
 if ($calib && $dofit) {
@@ -317,7 +325,7 @@ if ($calib && $dofit) {
   _ASSESS_IMAGE_ IMAGE=$in VERBOSE=0
   if ( $_ASSESS_IMAGE_{POINT} == 1 ) {
     # Find the centroid of the source
-    _CENTROID_IMAGE_ IMAGE=$in OFFSET=$offset SYSTEM=$fitcosys
+    _CENTROID_IMAGE_ IMAGE=$in OFFSET=$offset SYSTEM=$fitcosys BOX=20
     my @xy = (defined $_CENTROID_IMAGE_{RESULTS}->[0] &&
 	      defined $_CENTROID_IMAGE_{RESULTS}->[1]) ?
 	      @{ $_CENTROID_IMAGE_{RESULTS} } : ();
@@ -334,7 +342,7 @@ if ($calib && $dofit) {
       my $gaussian = get_prim_arg($_PRIM_ARGS_, "GAUSSIAN", 0);
 
       # Fit the source with a PSF
-      _FIT_PSF_ IMAGE=$in XYPOS=\@xy GAUSSIAN=$gaussian
+      _FIT_PSF_ IMAGE=$in XYPOS=\@xy GAUSSIAN=$gaussian BOX=9
       # Check if psf succeeded
       if ( $_FIT_PSF_{FIT} == 1 ) {
 	# Retrieve parameters - set error array elements to 0
@@ -348,7 +356,7 @@ if ($calib && $dofit) {
       $goodbeam = $_FIT_PSF_{FIT};
     } else {
       # Use BEAMFIT
-      _FIT_BEAM_ IMAGE=$in XYPOS=\@xy
+      _FIT_BEAM_ IMAGE=$in XYPOS=\@xy BOX=9
       # Check if beamfit succeeded
       if ( $_FIT_BEAM_{FIT} == 1 ) {
 	@amp = @{ $_FIT_BEAM_{AMPLITUDE} };
