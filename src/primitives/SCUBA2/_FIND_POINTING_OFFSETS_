@@ -235,20 +235,23 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing") {
     # ##############################################################
 
     # See if the image has a suitable point source
-    _ASSESS_IMAGE_ IMAGE=$incopyfile VERBOSE=0 SNTHRESH=7
+    _ASSESS_IMAGE_ IMAGE=$incopyfile VERBOSE=0
     if ( $_ASSESS_IMAGE_{POINT} == 1 ) {
       # AzEl offsets for centroid and beamfit
       my ($cendaz, $cendel, $beamdaz, $beamdel);
       my @fit;
       use JCMT::Pointing;
 
-      # Find source position offsets using the temporary copy of the Grp image
-      _CENTROID_IMAGE_ IMAGE=$incopyfile
+      # Find source position offsets using the temporary copy of the
+      # Grp image. Use a small box as we know the point source should
+      # be close to (0,0).
+      _CENTROID_IMAGE_ IMAGE=$incopyfile BOX=20
 
       # Returned value from _CENTROID_IMAGE_ is an empty array ref if
       # there was a problem determining the centroid, so de-reference
       # and check number of elements
-      my @results = @{ $_CENTROID_IMAGE_{RESULTS} };
+      my @results = @{ $_CENTROID_IMAGE_{RESULTS} }
+	if (defined $_CENTROID_IMAGE_{RESULTS});
       if ( $#results > 0 ) {
 	# dAz and dEl are currently in degrees so convert to arcsec
 	$cendaz = sprintf "%5.2f", $results[0];
@@ -262,13 +265,16 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing") {
 	orac_warn "Unable to calculate pointing offsets - could not determine centroid\n";
       }
 
+      # Use a fairly small search area for fitting the beam now that
+      # we use the centroid as the initial position and the images are
+      # cropped to omit junk at the edges.
       if ( $cendaz && $cendel ) {
 	my $xypos = [$cendaz,$cendel];
-	_FIT_BEAM_ IMAGE=$incopyfile VERBOSE=0 BOX=25 XYPOS=$xypos
+	_FIT_BEAM_ IMAGE=$incopyfile VERBOSE=0 BOX=9 XYPOS=$xypos
       } else {
 	$cendaz = "*****";
 	$cendel = "*****";
-	_FIT_BEAM_ IMAGE=$incopyfile VERBOSE=0 BOX=25
+	_FIT_BEAM_ IMAGE=$incopyfile VERBOSE=0 BOX=9
       }
       if ( $_FIT_BEAM_{FIT} == 1 ) {
 	@results = @{ $_FIT_BEAM_{POSITION} };
@@ -279,6 +285,8 @@ if ($Frm->uhdr("ORAC_OBSERVATION_TYPE") eq "pointing") {
 	orac_print ("Pointing offsets are (dAz, dEl) = ($beamdaz, $beamdel) arcsec (beamfit)\n", "green");
 
       } else {
+	$beamdaz = "*****";
+	$beamdel = "*****";
 	orac_warn "Unable to calculate pointing offsets - could not fit a 2-D gaussian\n";
       }
 
