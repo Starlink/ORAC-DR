@@ -145,26 +145,35 @@ unless ( $Frm->uhdr("DARKONLY") ) {
 
     # Add padding
     my ($in, $out) = $Frm->inout("_avpspec", $i);
-    my $concat = new ORAC::TempFile;
-    my $concatfile = $concat->file;
-    my $args = "in=$in out=$concatfile padstart=$padding padend=$padding $doflat";
+    my $temp1 = new ORAC::TempFile;
+    my $tempfile1 = $temp1->file;
+    my $args = "in=$in out=$tempfile1 padstart=$padding padend=$padding $doflat";
     $Mon{smurf_mon}->obeyw("sc2concat","$args");
 
     # Do some basic cleaning
-    my $clean = new ORAC::TempFile;
-    my $cleanfile = $clean->file;
-    $args = "in=$concatfile out=$cleanfile dcbox=$dcbox dcthresh=$dcthresh order=0 apod=$apod fillgaps";
+    my $temp2 = new ORAC::TempFile;
+    my $tempfile2 = $temp2->file;
+    $args = "in=$tempfile1 out=$tempfile2 dcbox=$dcbox dcthresh=$dcthresh order=0 apod=$apod fillgaps";
     $Mon{smurf_mon}->obeyw("sc2clean","$args");
 
-    # Calculate average power spectrum
-    my $avpspec = new ORAC::TempFile;
-    my $avpspecfile = $avpspec->file;
-    $args = "in=$cleanfile out=$avpspecfile avpspec avpspecthresh=$thresh";
+    # Calculate average power spectrum - reuse tempfile1 for output file
+    $args = "in=$tempfile2 out=$tempfile1 avpspec avpspecthresh=$thresh";
     $Mon{smurf_mon}->obeyw("sc2fft","$args");
     my ($ORAC_STATUS, $ngood) = $Mon{smurf_mon}->get("sc2fft","ngood");
 
-    # Copy out first axis from this 4-d file for linplot
-    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$avpspecfile(,0,0,1) out=$out");
+    # Threshold the spectrum at 1e7 for display purposes
+    $Mon{kappa_mon}->obeyw("stats","ndf=$tempfile1");
+    ($ORAC_STATUS, my $max) = $Mon{kappa_mon}->get("stats","maximum");
+    if ( $max > 1.0e7 ) {
+      # Can reuse tempfile2 here
+      my $args = "in=$tempfile1 out=$tempfile2 thrlo=0 newlo=0 thrhi=1.0e7 newhi=1.0e7";
+      $Mon{kappa_mon}->obeyw("thresh","$args");
+      # Copy out first axis from this 4-d file for linplot
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tempfile2(,0,0,1) trim trimwcs out=$out");
+    } else {
+      # Copy out first axis from this 4-d file for linplot
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tempfile1(,0,0,1) trim trimwcs out=$out");
+    }
 
     # Set a suitable title
     my $title = "'Ave power spec for $in ($ngood bolos)'";
