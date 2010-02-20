@@ -1,0 +1,263 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_APPLY_MATCHED_FILTER_ - apply a simple matched filter to detect point sources
+
+=head1 SYNOPSIS
+
+ _APPLY_MATCHED_FILTER_
+
+=head1 DESCRIPTION
+
+This primitive applies a matched filter to the supplied input NDF by
+smoothing it using either a supplied PSF image or an automatically
+generated Gaussian PSF. Each output pixel value is given by:
+
+                      sum( (psf_i/input_variance_i)*input_data_i )
+      output_data  =  ---------------------------------------
+                      sum( psf_i**2/input_variance_i )
+
+where the sum is over all input pixels that contribute to the output
+pixel. The variances stored with the resulting image are given by:
+
+                        input_variance
+      output_variance = ---------------
+                        sum( psf_i**2 )
+
+
+The input file must contain a variance, though no check is made for
+its existence.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<GROUP>
+
+Flag to denote whether to use the current Group or Frame file. Default
+is 0 (use the current Frame).
+
+=item B<IN>
+
+Name of input image. Use file determined by the B<GROUP> parameter
+above if not specified.
+
+=item B<PSF>
+
+Name of file containing the PSF to use. Default is to create a
+Gaussian PSF with a FWHM equal to the Airy disk radius. This file has
+suffix C<_psf> and will be left on disk on completion of the
+primitive.
+
+=item B<OUT>
+
+Name of output image. Default is to use the C<inout> method to create
+an output file with the suffix C<_mf>.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA
+
+CDIV, CHPIX, CMULT, CONVOLVE, CREFRAME, DIV, GAUSMOOTH, MATHS, MULT,
+SETVAR
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+If left to use defaults, creates a file with the suffix C<_mf> and
+C<_psf>. Otherwise creates the output file specified by the B<OUT>
+parameter.
+
+=head1 NOTES
+
+The user-supplied PSF image must satisfy the following criteria:
+
+=over 4
+
+=item *
+
+The centre of the supplied PSF is assumed to be at pixel (0,0).
+
+=item *
+
+The PSF must not contain any bad values.
+
+=item *
+
+The PSF should be normalised to a peak value of unity.
+
+=item *
+
+The PSF must contain floating point values.
+
+=back
+
+Implementation based on the C<matched-filter> C-shell script by David
+Berry E<lt>d.berry@jach.hawaii.edu<gt>.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2010 University of British Columbia. All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Is in the input file from the current Frame or Group?
+my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+my $Obj = ($group) ? $Grp : $Frm;
+
+# Obtain input image - default to current file in given object
+my $in = get_prim_arg($_PRIM_ARGS_, "IN", $Obj->file);
+
+# Obtain output image - use object inout method if not specified
+my $out = get_prim_arg($_PRIM_ARGS_, "OUT", undef);
+if (!$out) {
+  $out = $Obj->inout("_mf");
+}
+
+# Obtain optional PSF image
+my $psf = get_prim_arg($_PRIM_ARGS_, "PSF", undef);
+
+# Create some re-useable temporary files
+my $temp1 = new ORAC::TempFile;
+my $tempfile1 = $temp1->file;
+my $temp2 = new ORAC::TempFile;
+my $tempfile2 = $temp2->file;
+my $temp3 = new ORAC::TempFile;
+my $tempfile3 = $temp3->file;
+# Arguments string for Kappa commands
+my $args;
+
+# If no psf has been specified, check recipe parameter for name of
+# suitable image in current working dir Generate a
+# PSF image
+if (!$psf) {
+  # Has the user specified a recipe parameter with the name of the PSF
+  # image?
+  if (defined $Frm->uhdr("RECPAR_PSF_MATCHFILTER")) {
+    use File::Spec;
+    use Cwd;
+    my $cwd = getcwd();
+    $psf = File::Spec->catfile($cwd, $Frm->uhdr("RECPAR_PSF_MATCHFILTER"));
+  } else {
+    # Create a Gaussian PSF image with FWHM equal to Airy disk
+    # radius. For the JCMT this is the default FWHM stored in the
+    # calibration system.
+    my $airy_radius = $Cal->fwhm;
+
+    # Get average pixel scale for input image
+    _GET_PIXEL_SCALE_ IMAGE=$in VERBOSE=0
+    my $pixscale = 0.5 * ($_GET_PIXEL_SCALE_{RESULTS}->[0] +
+			  $_GET_PIXEL_SCALE_{RESULTS}->[1]);
+
+    # FWHM in pixels
+    my $airy_pix = $airy_radius / $pixscale;
+    my $npix = 2*$airy_pix;
+
+    # Create a flat image with value zero with bounds (-npix:npix,-npix:npix)
+    $args = "lbound=[-$npix,-$npix] ubound=[$npix,$npix] mode=fl mean=0 out=$tempfile1";
+    $Mon{kappa_mon}->obeyw("creframe","$args");
+
+    # Set the central pixel to a value of 1.0
+    $args = "in=$tempfile1 out=$tempfile2 section='0,0' newval=1";
+    $Mon{kappa_mon}->obeyw("chpix","$args");
+
+    # Smooth this spike using a Gaussian kernel of FWHM equal to the
+    # Airy radius. This produces a Gaussian PSF image. NOTE, the FWHM
+    # is the Airy radius, not the diameter as might be expected. In
+    # practice it seems like the FWHM of the point sources in a
+    # SCUBA-2 map is much closer to the Airy radius than the Airy
+    # diameter.
+    $args = "in=$tempfile2 fwhm=$airy_pix out=$tempfile3";
+    $Mon{kappa_mon}->obeyw("gausmooth","$args");
+
+    # Use inout method to define a suitable PSF file name
+    $psf = $Obj->inout("_psf");
+
+    # Normalise the PSF to a peak value of 1.0
+    _FIND_IMAGE_STATISTICS_ IMAGE=$tempfile3 VERBOSE=0
+    my $peak = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
+    $Mon{kappa_mon}->obeyw("cdiv","in=$tempfile3 scalar=$peak out=$psf");
+  }
+}
+
+# Create image A. First step - calculate ratio of data to variance for
+# the input image.
+$args = "exp=ia/va ia=$in out=$tempfile1";
+$Mon{kappa_mon}->obeyw("maths","$args");
+
+# Smooth this using the supplied psf.
+$args = "in=$tempfile1 out=$tempfile2 psf=$psf xcentre=0 ycentre=0";
+$Mon{kappa_mon}->obeyw("convolve","$args");
+
+# The kappa:convolve command normalises the output NDF by dividing the
+# data values by the total data sum in the PSF. We do not want this
+# normalisation, so we now scale the output image created above by the
+# total data sum in the PSF.
+_FIND_IMAGE_STATISTICS_ IMAGE=$psf VERBOSE=0
+my $psfsum = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SUM};
+my $tempa = new ORAC::TempFile;
+my $tempfilea = $tempa->file;
+$args = "in=$tempfile2 out=$tempfilea scalar=$psfsum";
+$Mon{kappa_mon}->obeyw("cmult","$args");
+
+# Now go on to create image B. Get the reciprocal of the variances from
+# the input image.
+$args = "exp=1/va va=$in out=$tempfile1";
+$Mon{kappa_mon}->obeyw("maths","$args");
+
+# Get the square of the PSF
+$Mon{kappa_mon}->obeyw("mult","in1=$psf in2=$psf out=$tempfile3");
+
+# Smooth the reciprocal of the variancess using the squared psf.
+$args = "in=$tempfile1 out=$tempfile2 psf=$tempfile3 xcentre=0 ycentre=0";
+$Mon{kappa_mon}->obeyw("convolve","$args");
+
+# Undo the normalisation produced by kappa:convolve.
+_FIND_IMAGE_STATISTICS_ IMAGE=$tempfile3
+my $psfsum2 = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SUM};
+my $tempb = new ORAC::TempFile;
+my $tempfileb = $tempb->file;
+$args = "in=$tempfile2 out=$tempfileb scalar=$psfsum2";
+$Mon{kappa_mon}->obeyw("cmult","$args");
+
+# The output image is the ratio of a and b
+$Mon{kappa_mon}->obeyw("div","in1=$tempfilea in2=$tempfileb out=$out");
+
+# The variance in the output image should be:
+# (input_var)/(data sum in squared PSF)
+$args = "exp=va/pa va=$in pa=$psfsum2 out=$tempfile1";
+$Mon{kappa_mon}->obeyw("maths","$args");
+$Mon{ndfpack_mon}->obeyw("setvar","ndf=$out from=$tempfile1 comp=data");
