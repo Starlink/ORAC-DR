@@ -29,6 +29,11 @@ pixel. The variances stored with the resulting image are given by:
 The input file must contain a variance, though no check is made for
 its existence.
 
+If the user does not specify a PSF image then a image containing a
+unit-height Gaussian PSF with a FWHM equal to the Airy disk radius is
+created. This file has suffix C<_psf> and will be left on disk on
+completion of the primitive.
+
 =head1 ARGUMENTS
 
 The following arguments are supported:
@@ -47,10 +52,9 @@ above if not specified.
 
 =item B<PSF>
 
-Name of file containing the PSF to use. Default is to create a
-Gaussian PSF with a FWHM equal to the Airy disk radius. This file has
-suffix C<_psf> and will be left on disk on completion of the
-primitive.
+Name of file containing the PSF to use. May also be specified using
+the C<PSF_MATCHFILTER> recipe parameter. If not specified by either
+method, a PSF image will be created.
 
 =item B<OUT>
 
@@ -134,7 +138,7 @@ USA.
 
 =cut
 
-# Is in the input file from the current Frame or Group?
+# Is the input file from the current Frame or Group?
 my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
 my $Obj = ($group) ? $Grp : $Frm;
 
@@ -157,8 +161,6 @@ my $temp2 = new ORAC::TempFile;
 my $tempfile2 = $temp2->file;
 my $temp3 = new ORAC::TempFile;
 my $tempfile3 = $temp3->file;
-# Arguments string for Kappa commands
-my $args;
 
 # If no psf has been specified, check recipe parameter for name of
 # suitable image in current working dir Generate a
@@ -167,55 +169,32 @@ if (!$psf) {
   # Has the user specified a recipe parameter with the name of the PSF
   # image?
   if (defined $Frm->uhdr("RECPAR_PSF_MATCHFILTER")) {
+    my $psfname = $Frm->uhdr("RECPAR_PSF_MATCHFILTER");
     use File::Spec;
-    use Cwd;
-    my $cwd = getcwd();
-    $psf = File::Spec->catfile($cwd, $Frm->uhdr("RECPAR_PSF_MATCHFILTER"));
-  } else {
-    # Create a Gaussian PSF image with FWHM equal to Airy disk
-    # radius. For the JCMT this is the default FWHM stored in the
-    # calibration system.
-    my $airy_radius = $Cal->fwhm;
+    my $cwd = $ENV{ORAC_DATA_OUT};
+    my $psffile = File::Spec->catfile($cwd, $psfname);
+    if ( -e $psffile ) {
+      # Check that the pixel scales are consistent?
+      $psf = $psffile;
+    } else {
+      orac_warn "PSF file, $psffile, does not exist: creating one\n";
+    }
+  }
 
-    # Get average pixel scale for input image
-    _GET_PIXEL_SCALE_ IMAGE=$in VERBOSE=0
-    my $pixscale = 0.5 * ($_GET_PIXEL_SCALE_{RESULTS}->[0] +
-			  $_GET_PIXEL_SCALE_{RESULTS}->[1]);
-
-    # FWHM in pixels
-    my $airy_pix = $airy_radius / $pixscale;
-    my $npix = 2*$airy_pix;
-
-    # Create a flat image with value zero with bounds (-npix:npix,-npix:npix)
-    $args = "lbound=[-$npix,-$npix] ubound=[$npix,$npix] mode=fl mean=0 out=$tempfile1";
-    $Mon{kappa_mon}->obeyw("creframe","$args");
-
-    # Set the central pixel to a value of 1.0
-    $args = "in=$tempfile1 out=$tempfile2 section='0,0' newval=1";
-    $Mon{kappa_mon}->obeyw("chpix","$args");
-
-    # Smooth this spike using a Gaussian kernel of FWHM equal to the
-    # Airy radius. This produces a Gaussian PSF image. NOTE, the FWHM
-    # is the Airy radius, not the diameter as might be expected. In
-    # practice it seems like the FWHM of the point sources in a
-    # SCUBA-2 map is much closer to the Airy radius than the Airy
-    # diameter.
-    $args = "in=$tempfile2 fwhm=$airy_pix out=$tempfile3";
-    $Mon{kappa_mon}->obeyw("gausmooth","$args");
-
+  # If no PSF file exists by this point, create one ourselves
+  if (!$psf) {
     # Use inout method to define a suitable PSF file name
     $psf = $Obj->inout("_psf");
+    _CREATE_PSF_IMAGE_ IN=$in PSF=$psf
 
-    # Normalise the PSF to a peak value of 1.0
-    _FIND_IMAGE_STATISTICS_ IMAGE=$tempfile3 VERBOSE=0
-    my $peak = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
-    $Mon{kappa_mon}->obeyw("cdiv","in=$tempfile3 scalar=$peak out=$psf");
+    # Abort with an error if no psf image could be created
+    orac_term "Unable to create a PSF image" unless $psf;
   }
 }
 
 # Create image A. First step - calculate ratio of data to variance for
 # the input image.
-$args = "exp=ia/va ia=$in out=$tempfile1";
+my $args = "exp=ia/va ia=$in out=$tempfile1";
 $Mon{kappa_mon}->obeyw("maths","$args");
 
 # Smooth this using the supplied psf.
