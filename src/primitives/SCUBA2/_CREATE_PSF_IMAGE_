@@ -1,0 +1,140 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_CREATE_PSF_IMAGE_ - create a suitable PSF image for a matched filter
+
+=head1 SYNOPSIS
+
+ _CREATE_PSF_IMAGE_
+
+=head1 DESCRIPTION
+
+This primitive creates a PSF image
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<GROUP>
+
+Flag to denote whether to create the PSF file name based on the Group
+or Frame file.Default is 0 (use the Frame). Only accessed if B<PSF> is
+not specified.
+
+=item B<IN>
+
+Name of input image for which to derive pixel scale. No default.
+
+=item B<PIXSIZE>
+
+Pixel scale in arcsec. Only accessed if B<IN> is not specified. No
+default.
+
+=item B<PSF>
+
+Name of output PSF image. Default is to create a psf file name using
+the C<inout> method of the Frame or Group depending on the value of
+the B<GROUP> parameter above.
+
+=item B<RADIUS>
+
+Radius (HWHM) of PSF. Default is to use the appropriate FWHM.
+
+=back
+
+=head1 NOTES
+
+The current recipe will terminate with an error if any of the required
+arguments are missing.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2010 University of British Columbia. All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Input file - only used for getting pixel scale
+my $in = get_prim_arg($_PRIM_ARGS_, "IN", undef);
+
+# Name of PSF image to create
+my $psf = get_prim_arg($_PRIM_ARGS_, "PSF", undef);
+# Is the psf file name to be derived from the current Frame or Group?
+if (!$psf) {
+  my $group = get_prim_arg($_PRIM_ARGS_, "GROUP", 0);
+  my $Obj = ($group) ? $Grp : $Frm;
+  $psf = $Obj->inout("_psf");
+}
+
+my $pixscale;
+if ( !defined $in ) {
+  $pixscale = get_prim_arg($_PRIM_ARGS_, "PIXSIZE", undef);
+  orac_term "Must supply pixel scale if no input image given\n";
+} else {
+  # Get average pixel scale for input image
+  _GET_PIXEL_SCALE_ IMAGE=$in VERBOSE=0
+  $pixscale = 0.5 * ($_GET_PIXEL_SCALE_{RESULTS}->[0] +
+		     $_GET_PIXEL_SCALE_{RESULTS}->[1]);
+}
+
+# Create a Gaussian PSF image with FWHM equal to Airy disk
+# radius. For the JCMT this is the default FWHM stored in the
+# calibration system.
+my $airy_radius = get_prim_arg($_PRIM_ARGS_, "RADIUS", $Cal->fwhm);
+
+# FWHM in pixels
+my $airy_pix = $airy_radius / $pixscale;
+my $npix = 2*$airy_pix;
+
+# Reuseable temp files
+my $temp1 = new ORAC::TempFile;
+my $tempfile1 = $temp1->file;
+my $temp2 = new ORAC::TempFile;
+my $tempfile2 = $temp2->file;
+
+# Create a flat image with value zero with bounds (-npix:npix,-npix:npix)
+my $args = "lbound=[-$npix,-$npix] ubound=[$npix,$npix] mode=fl mean=0 out=$tempfile1";
+$Mon{kappa_mon}->obeyw("creframe","$args");
+
+# Set the central pixel to a value of 1.0
+$args = "in=$tempfile1 out=$tempfile2 section='0,0' newval=1";
+$Mon{kappa_mon}->obeyw("chpix","$args");
+
+# Smooth this spike using a Gaussian kernel of FWHM equal to the
+# Airy radius. This produces a Gaussian PSF image. NOTE, the FWHM
+# is the Airy radius, not the diameter as might be expected. In
+# practice it seems like the FWHM of the point sources in a
+# SCUBA-2 map is much closer to the Airy radius than the Airy
+# diameter.
+$args = "in=$tempfile2 fwhm=$airy_pix out=$tempfile1";
+$Mon{kappa_mon}->obeyw("gausmooth","$args");
+
+# Use inout method to define a suitable PSF file name
+my $psfname = get_prim_arg($_PRIM_ARGS_, "PSF", undef);
+
+# Normalise the PSF to a peak value of 1.0
+_FIND_IMAGE_STATISTICS_ IMAGE=$tempfile1 VERBOSE=0
+my $peak = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
+$Mon{kappa_mon}->obeyw("cdiv","in=$tempfile1 scalar=$peak out=$psf");
+
