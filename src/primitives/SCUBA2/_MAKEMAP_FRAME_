@@ -124,8 +124,9 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008-2009 University of British Columbia and the
-Particle Physics and Astronomy Research Council. All Rights Reserved.
+Copyright (C) 2008-2010 University of British Columbia.
+Copyright (C) 2008 the Particle Physics and Astronomy Research
+Council. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -188,8 +189,8 @@ if ($Frm->uhdr("DARKONLY")) {
 
   my @infiles;
   if ( $infiles eq "FRAME" ) {
+    # Use all files in current Frame
     @infiles = $Frm->files;
-
   } elsif ( $infiles eq "OBS" ) {
     # Create a sub-group for the current observation only
     my $subGrp = $Grp->subgrp(OBSNUM => $Frm->hdr("OBSNUM"));
@@ -197,6 +198,7 @@ if ($Frm->uhdr("DARKONLY")) {
       push (@infiles, $frmobj->files) if ($frmobj->isgood);
     }
   } elsif ( $infiles eq "ALL" ) {
+    # Use ALL data from all members of Group
     foreach my $frmobj ( $Grp->members ) {
       push (@infiles, $frmobj->files) if ($frmobj->isgood);
     }
@@ -256,6 +258,8 @@ if ($Frm->uhdr("DARKONLY")) {
   orac_print "Making map: this... may... take... a... while...\n";
   my $SMURF_STATUS = $Mon{smurf_mon}->obeyw("makemap","$args");
 
+  my $fault_msg = "If this failure is not associated with a bad observation please file a fault\n";
+
   # Check for SMF__NOMEM return status
   if ( $SMURF_STATUS == 235176770 ) {
     # Since makemap failed mark this frame as BAD so it's not included
@@ -264,7 +268,9 @@ if ($Frm->uhdr("DARKONLY")) {
     orac_throw "Output image will exceed maximum size 2 GB - will not continue\n";
   } elsif ( $SMURF_STATUS == ORAC__OK ) {
 
-    # Check that an output file was actually created
+    # Check that an output file was actually created - in some
+    # instances bad data can be dealt with by makemap which then exits
+    # with good status and no output file.
     my $fullout = File::Spec->catfile($ENV{ORAC_DATA_OUT}, $out);
     $fullout .= ".sdf" unless ($fullout =~ /.sdf$/);# hack...
     if ( -e $fullout ) {
@@ -285,16 +291,17 @@ if ($Frm->uhdr("DARKONLY")) {
 
       orac_print "Thank you for waiting; image $out created\n";
     } else {
-      # If makemap failed for any other reason, mark this frame as
-      # BAD. Throw an error to skip the rest of the recipe.
+      # Mark this frame as BAD and throw an error to skip the rest of
+      # the recipe. The only reason we would be here is that the data
+      # are bad/corrupt.
       $Frm->isgood(0);
-      orac_term "Makemap completed with good status, but no output file was created: data from this Frame will be ignored\n";
+      orac_term "Makemap failed to create an output file (corrupt data): data from this Frame will be ignored.\n\n$fault_msg";
     }
   } else {
     # If makemap failed for any other reason, mark this frame as
     # BAD. Throw an error to skip the rest of the recipe.
     $Frm->isgood(0);
-    orac_term "Makemap failed: data from this Frame will be ignored\n";
+    orac_term "Makemap failed: data from this Frame will be ignored\n$fault_msg";
   }
 
 }
