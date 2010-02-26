@@ -10,21 +10,24 @@ _SUMMIT_STEER_
 
 =head1 DESCRIPTION
 
-This primitive tells the pipeline to ignore SCAN data which will not
-be processed into an image. Once a new Group image has been created,
-all subsequent Frames are marked as not good so the pipeline does not
-attempt to mosaic processed and unprocessed data. A flag is set so
-that the ignored data are not calibrated.
+This primitive checks and sets a number of uhdr entries which dictate
+the processing of data in the Summit pipeline.
+
+If the percentage completion criteria are satisfied and a new Group
+image has been created, no further processing will take place; the
+recipe simply exits.
 
 This primitive should ONLY be called in summit recipes (denoted by
 the C<_SUMMIT> suffix).
 
 =head1 OUTPUT DATA
 
-The current Frame is set to bad.
+The Frame has a new uhdr entry called C<TCS_INDEX> which stores the
+final TCS index entry for data in the current Frame.
 
-The uhdr entry C<NOCALIB> is set to 1 to ensure the pipeline will not
-attempt to calibrated the data.
+The Group uhdr has the entry C<LAST_INDEX> set to 1 if it a) does not
+exist or b) exists but is less than the current TCS index indicating a
+new observation has started.
 
 =head1 AUTHOR
 
@@ -32,7 +35,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2009 University of British Columbia.  All Rights
+Copyright (C) 2009-2010 University of British Columbia.  All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -52,27 +55,26 @@ USA.
 
 =cut
 
-# Ignore new data if a new Group image was created from SCAN data
-if ( $Grp->uhdr("NEWIMAGE") &&
-     $Frm->uhdr("ORAC_OBSERVATION_MODE") =~ /scan/i ) {
-  $Frm->isgood(0);
-
-  # Set the NOCALIB flag so data won't be calibrated
-  $Frm->uhdr("NOCALIB",1);
+# Ignore new data if a new Group image was created from SCAN data -
+# easiest option is just to terminate the recipe
+if ( $Grp->uhdr("NEWIMAGE") && $Grp->uhdr("OBSCOMP")) {
+  orac_term "Percentage completion criteria satisifed - skipping remaining data\n";
 }
 
-# Store current TCS_INDEX
-$Frm->uhdr("TCS_INDEX", $Frm->jcmtstate("TCS_INDEX", "end") );
+# Store current TCS_INDEX - this will be VAL__BADI for dark data but
+# this shouldn't affect any of the decision making below.
+$Frm->uhdr("TCS_INDEX", $Frm->jcmtstate("TCS_INDEX", "end"));
 
 # Check and set the LAST_INDEX flag
 if ( defined $Grp->uhdr("LAST_INDEX") ) {
   # If it exists already check if a new observation has started and
   # reset it to the current value. A new obs has started if the
-  # LAST_INDEX and TCS_INDEX are different and the TCS_INDEX is 1.
+  # TCS_INDEX is now less than the LAST_INDEX. Note that this will not
+  # store a new value of LAST_INDEX if it is already 1, but if that's
+  # the case then it won't matter.
   $Grp->uhdr("LAST_INDEX",1)
-    if ( ($Frm->uhdr("TCS_INDEX") == 1) &&
-	 ($Frm->uhdr("TCS_INDEX") != $Grp->uhdr("LAST_INDEX")) );
+    if ( $Frm->uhdr("TCS_INDEX") < $Grp->uhdr("LAST_INDEX"));
 } else {
-  # No pre-existing value so store the current TCS_INDEX
-  $Grp->uhdr("LAST_INDEX", $Frm->uhdr("TCS_INDEX") );
+  # No pre-existing value so set it to 1
+  $Grp->uhdr("LAST_INDEX", 1);
 }
