@@ -386,7 +386,7 @@ sub _open_gaia_socket {
 sub _launch_new_gaia {
 
   orac_print "Launching a new GAIA process\n";
-  my $status = system "$ENV{GAIA_DIR}/gaia.sh -show_hdu_chooser 0 &";
+  my $status = system "$ENV{GAIA_DIR}/gaia.sh -developer 1 -show_hdu_chooser 0 &";
 
   if ($status == 0) {
     $status = ORAC__OK;
