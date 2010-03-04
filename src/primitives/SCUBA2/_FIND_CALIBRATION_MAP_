@@ -144,18 +144,34 @@ my $store = get_prim_arg($_PRIM_ARGS_, "STORE", 1);
 
 my $Obj = ( $group ? $Grp : $Frm );
 
-# Retrieve the obsend parameter - normally this primitive only
-# proceeds at the end of an observation
-my $obsend = $Frm->uhdr("OBSEND");
+# For Frame objects, the decision of whether to proceed with an FCF
+# calculation depends on the pipeline flavour. For Group objects, it
+# should be safe to proceed if a Group image exists. Otherwise default
+# to a no-op.
+my $proceed = ($group && $Grp->file_exists) ? 1 : 0;
 
-# Always estimate an FCF in the QL pipeline
-$obsend = 1 if ( defined $Frm->uhdr("QUICKLOOK") );
+# The following checks are only done for Frame objects
+unless ( $group ) {
+  # Retrieve the obsend parameter - normally this primitive only
+  # proceeds at the end of an observation, or at the very least once a
+  # single image has been created
+  $proceed = $Obj->uhdr("OBSEND");
 
-# Do nothing if there is no data to analyze
-$obsend = 0 if $Frm->uhdr("DARKONLY");
+  # Always estimate an FCF in the QL pipeline
+  $proceed = 1 if ( defined $Obj->uhdr("QUICKLOOK") );
 
-# Check the observation has ended so an FCF can be calculated
-if ( $obsend ) {
+  # Do nothing if the Frame contains multiple files and this is the
+  # SUMMIT pipeline - this means the Frame contains raw data which
+  # should not be used for calibration. Otherwise continue with FCF
+  # estimate.
+  $proceed = ($Obj->uhdr("SUMMIT") && ($Obj->nfiles > 1)) ? 0 : 1;
+
+  # Do nothing if there is no data to analyze
+  $proceed = 0 if $Obj->uhdr("DARKONLY");
+}
+
+# Proceed with FCF calculation if it's OK to do so
+if ( $proceed ) {
   # Precalculate filter
   my $filter = $Obj->uhdr("ORAC_FILTER");
 
