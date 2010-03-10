@@ -1,0 +1,163 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_MAKE_MOSAIC_GROUP_BATCH_ - Create group mosaic in batch mode
+
+=head1 SYNOPSIS
+
+_MAKE_MOSAIC_GROUP_BATCH_
+
+_MAKE_MOSAIC_GROUP_BATCH_ METHOD=NEAREST
+
+=head1 DESCRIPTION
+
+This primitive creates a new Group mosaic from existing Frame
+files. It is designed to be used in batch mode only.
+
+The primitive waits until all Frames have been processed and creates a
+Group file by combining images from all Frames marked as good. The
+images are combined with KAPPA wcsmosaic using variance weighting (so
+input images must have variances). It is assumed that the images were
+created in the desired output coordinate system, so the first image in
+the list is used as the reference.
+
+A warning is issued if the Group contains no good Frames.
+
+=head1 ARGUMENTS
+
+The following arguments are supported:
+
+=over 4
+
+=item B<METHOD>
+
+The method to be used for resampling the images. Default value is
+C<nearest>.
+
+=item B<VERBOSE>
+
+Flag to denote whether to display extra information. Default is 0
+(no).
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item KAPPA
+
+NDFCOPY, WCSMOSAIC
+
+=item ORAC-DR PRIMITIVES
+
+_ADD_IMAGES_, _CHECK_IMAGE_SIZE_
+
+=back
+
+=head1 NOTES
+
+It is assumed that all of the input images are aligned to the same
+coordinate frame.
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+Creates a single output Group image with a suffix of C<_mos>.
+
+=head1 AUTHORS
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>,
+
+=head1 COPYRIGHT
+
+Copyright (C) 2010 University of British Columbia.  All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Should I be verbose (default to no)
+my $verbose = get_prim_arg($_PRIM_ARGS_, "VERBOSE", 0);
+
+# Image combination method. Default to nearest neighbour
+my $method = get_prim_arg($_PRIM_ARGS_, "METHOD", "nearest");
+
+if ( $Grp->lastmember($Frm) ) {
+
+  # Select all good Frame files
+  my @frmfiles;
+  foreach my $frm ($Grp->members) {
+    push (@frmfiles, $frm->file);
+  }
+
+  my $nfiles = scalar(@frmfiles);
+
+  if ( $nfiles > 0 ) {
+
+    orac_print "Mosaicking Group file with WCSMOSAIC: "
+      .( ($nfiles == 1) ? "using $nfiles file" : "combining $nfiles files")."... ";
+
+    my $out = $Grp->inout("_mos");
+
+    # With only a single file, just ndfcopy the input file to the
+    # output., otherwise combine with wcsmosaic
+    if ( $nfiles == 1 ) {
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$frmfiles[0] out=$out");
+
+    } elsif ( $nfiles > 1 ) {
+      my $moslist = write_file_list(@frmfiles);
+      my @bounds;
+      # Check image is not too large
+      my $bounds = "lbnd=! ubnd=!";
+      _CHECK_MAP_BOUNDS_ IN=$moslist TASK=WCSMOSAIC
+      if ( $_CHECK_MAP_BOUNDS_{NEWBOUNDS} == 1 ) {
+	my @lbound = @{ $_CHECK_MAP_BOUNDS_{LBOUND} };
+	my @ubound = @{ $_CHECK_MAP_BOUNDS_{UBOUND} };
+	# Only store the X, Y bounds for later use
+	push (@bounds, @lbound[0..1]);
+	push (@bounds, @ubound[0..1]);
+	$bounds = "lbnd=[".join(",",@lbound)."] ubnd=[".join(",",@ubound)."]";
+      }
+
+      # Keep things simple - use first image as reference. Set genvar
+      # to null to ensure some sort of variance is generated even if
+      # one of the input files has no variance.
+      my $args = "in=^$moslist genvar=! variance $bounds method=$method"
+	." out=$out ref=!";
+      $Mon{kappa_mon}->obeyw("wcsmosaic","$args");
+
+      my $newbounds = ( scalar(@bounds) == 4 ) ? \@bounds : undef;
+      _ADD_IMAGES_ INLIST=\@frmfiles OUT=$out COMPS=EXP_TIME,WEIGHTS BOUNDS=$newbounds
+    }
+    $Grp->file($out);
+    orac_print " done.\n";
+  } else {
+    # Error or warning?
+    orac_warn "All Frames in Group marked as bad - no Group file created\n";
+  }
+
+} else {
+  orac_print "Delaying creation of Group image until last Frame is processed\n"
+    if $verbose;
+}
