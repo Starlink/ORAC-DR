@@ -1,0 +1,214 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_ADD_LOG_ENTRY_ - write a log entry to disk
+
+=head1 SYNOPSIS
+
+ _ADD_LOG_ENTRY_ LOGFILE=focus PARAMS=\@paramlist ENTRIES=\@entrylist
+
+=head1 DESCRIPTION
+
+Write a single log entry containing the results
+
+=head1 ARGUMENTS
+
+=over 4
+
+=item B<ENTRIES>
+
+An array reference containing the values to be written to the log
+file. No default.
+
+=item B<GROUP>
+
+Flag to denote whether the Group file or Frame file has been
+used. Default is 0 (use the Frame file).
+
+=item B<LOGFILE>
+
+The type of log file to write. The primitive knows about several types
+of log file and will write a custom header accordingly. No default.
+
+=item B<PARAMS>
+
+An array reference containing the parameter names for the values
+written to the log file. There should be one for every entry. No
+default.
+
+=item B<PARLIST>
+
+A string to denote how much standard information to write to the log
+file. May be C<FULL> or C<BRIEF>. Default is C<FULL>. See the entry on
+log file format below.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item ORAC-DR PRIMITIVES:
+
+_GET_LOG_PARAMETERS_
+
+=back
+
+=head1 NOTES
+
+The primitives knows about log files for FCFs, NEFDs, NEPs, pointing
+and focus offsets, bolometer noise, DC sky values and image noise. For
+each of these, a custom summary phrase is defined. Otherwise a generic
+title will be used.
+
+=head1 OUTPUT FILES
+
+The results are written to a log file prefixed by C<log> with the same
+extension as given in the B<LOGFILE> parameter.
+
+=head1 LOGFILE FORMAT
+
+The logfile has the following columns:
+
+=over 4
+
+=item UT
+
+The UT date in C<YYYYMMDD.frac> format.
+
+=item HST
+
+The time of the observation in Hawaii.
+
+=item Obs
+
+The observation number.
+
+=item Source
+
+The source name. (B<PARLIST> = FULL only)
+
+=item Mode
+
+The observing mode. (B<PARLIST> = FULL only)
+
+=item Filter
+
+The specific filter associated with the FCF result. (B<PARLIST> =
+FULL only)
+
+=item Elevation
+
+The elevation of the observation. (B<PARLIST> = FULL only)
+
+=item CSO
+
+Equivalent CSO tau derived from the tau used to reduce
+the observation. (B<PARLIST> = FULL only)
+
+=item Tau
+
+The tau value used for the reduction. (B<PARLIST> = FULL only)
+
+=item Other
+
+The remaining entries are dictated by the type of log file being
+written.
+
+=back
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+Copyright (C) 2010 the University of British Columbia
+All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Type of logfile to write
+my $logfile = get_prim_arg($_PRIM_ARGS_, "LOGFILE", undef);
+
+if ( !defined $logfile ) {
+  orac_warn "No log file type specified - skipping log file entry\n";
+  return ORAC__OK;
+}
+
+# Entries and corresponding names
+my $entries = get_prim_arg($_PRIM_ARGS_, "ENTRIES", undef);
+my $params  = get_prim_arg($_PRIM_ARGS_, "PARAMS", undef);
+
+my (@entries, @params);
+if ( $entries && $params ) {
+  # These arrays should be the same size
+  @entries = @{ $entries };
+  @params = @{ $params };
+} else {
+  orac_warn "No log file entries specified - skipping log file entry\n";
+  return ORAC__OK;
+}
+
+# Log titles for known file types
+my %logtitles = ( nefd => "Noise Equivalent Flux Density",
+		  nep => "Noise Equivalent Power",
+		  fcf => "Flux conversion factor",
+		  noise => "Noise properties",
+		  sky => "Sky properties",
+		  flatfield => "Responsivity properties",
+		  bolonoise => "Bolometer noise properties",
+		  focus => "Focus",
+		  pointing => "Pointing",
+		  beam => "Beam"
+		);
+my $logtitle = (exists $logtitles{$logfile} ) ? ($logtitles{$logfile})." log file" : "Log file";
+
+# List of log parameters to return - full or brief
+my $paramlist = uc(get_prim_arg( $_PRIM_ARGS_, "PARLIST", "FULL"));
+
+# Use group file to get logging parameters?
+my $usegroup = get_prim_arg( $_PRIM_ARGS_, "GROUP", 0);
+
+# Write header to logfile
+my $time = gmtime();
+
+# Entry names - define base list and add given names
+my $entry_names = ($paramlist eq "BRIEF") ? "UT   HST  Obs  " :
+  "UT   HST  Obs  Source  Mode  Filter  El  CSO  Tau  Seeing  ";
+
+$entry_names .= join("  ",@params);
+
+# Create the log file object - define the actual name to use
+$logfile = "log." . $logfile;
+my $log = new ORAC::LogFile($logfile);
+$log->header("# $logtitle - created on $time UT",
+	     "#\n# $entry_names",
+	     "#------------------------------------------------------------------------------------------",
+	    );
+
+# Obtain common parameters from headers
+_GET_LOG_PARAMETERS_ GROUP=$usegroup PARLIST=$paramlist
+my $base_entry = join("  ", @{ $_GET_LOG_PARAMETERS_{PARAMS} });
+
+# Create list of values to write in log file
+my $logentry = join("  ",@entries);
+
+# Add the entry
+$log->addentry("$base_entry  $logentry");
