@@ -271,17 +271,21 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
     $title = "'Foc".$title." $axis=$focposn mm / Obs $obs'";
 
     # Create single image for the current focus plane
-    # strip frequency axis for now
-    if ( @focfiles == 1 ) {
+    if ( @focfiles > 1 ) {
       my $tmpfile = ORAC::TempFile->new( OPEN => 0, SUFFIX => ".sdf" );
       my $moslist = write_file_list( @focfiles );
       my $mosargs = "in=^".$moslist." out=$tmpfile method=median ref=! logto=neither nousevar nogenvar title=$title";
       $Mon{ccdpack_reg}->obeyw("makemos","$mosargs");
-      $Mon{ndfpack_mon}->obeyw("ndfcopy", "in=$tmpfile out=$planeimage trim trimwcs" );
-    } else {
-      my $cpargs = "in=".$focfiles[0]." out=$planeimage title=$title";
-      $Mon{ndfpack_mon}->obeyw("ndfcopy","$cpargs trim trimwcs");
     }
+    my $crop = new ORAC::TempFile;
+    my $cropimage = $crop->file;
+    my $focfile = "$focfiles[0]";
+    _CROP_IMAGE_ HEIGHT=90 WIDTH=90 IMAGE=$focfile OUT=$cropimage
+
+    # Strip frequency axis so we can add an SMU axis later
+    my $cpargs = "in=$cropimage out=$planeimage title=$title";
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","$cpargs trim=true trimwcs=true");
+
     # Store output file in current subgrp
     $subgrp->files( $planeimage );
 
@@ -303,6 +307,12 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
 
     # Store image name in array for pasting into the cube
     push ( @planes, $planeimage );
+
+    # Set the format to display arcsec offsets
+    my $newformat = "s.0";
+    my $args = "ndf=$planeimage mode=mset setting='Format(1)=$newformat,Format(2)=$newformat'";
+    $Mon{ndfpack_mon}->obeyw("wcsattrib","$args");
+
   }
 
   $Grp->files(@planes);
@@ -362,9 +372,12 @@ if ( $focusobs && $Frm->uhdr("OBSEND") && !$Grp->uhdr("FOCUS_CUBE") ) {
   _CENTROID_IMAGE_ IMAGE=$midfile
   my @xypos = ( $_CENTROID_IMAGE_{RESULTS}->[0],
 		$_CENTROID_IMAGE_{RESULTS}->[1]);
-  # Now slide all the images so that the source lies at 0,0
+  # Now slide all the images so that the source lies at 0,0 in the
+  # mid-focus position image. Note that due to off-axis aberrations,
+  # the source may still shift from 0,0 away from the in-focus SMU
+  # position.
   if ( defined $xypos[0] && defined $xypos[1] ) {
-    _FIT_BEAM_ IMAGE=$midfile XYPOS=\@xypos BOX=25 VERBOSE=1
+    _FIT_BEAM_ IMAGE=$midfile XYPOS=\@xypos BOX=15 VERBOSE=1
     my @newpos = (0, 0);
     if ( $_FIT_BEAM_{FIT} == 1 ) {
       @newpos = ($_FIT_BEAM_{POSITION}->[0], $_FIT_BEAM_{POSITION}->[1]);
