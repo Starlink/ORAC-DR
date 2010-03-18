@@ -370,15 +370,17 @@ sub allmembers {
 
 Removes all frames from the group. Can be used to reduce the memory
 footprint of the pipeline when a recipe is designed such that it never
-needs to go back to the original members.
+needs to go back to the original members. An optional argument may be
+given to indicate that the last Frame object should be retained.
 
   $Grp->purge_members;
+
+  $Grp->purge_members(1);
 
 =cut
 
 sub purge_members {
   my $self = shift;
-  #  @{$self->{AllMembers}} = ();
   # Allows last Frame to be kept
   my $keeplast = 0;
   if ( @_ ) {
