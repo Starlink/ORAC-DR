@@ -544,18 +544,25 @@ sub flag_from_bits {
 
   croak "flag_from_bits returns more than one flag file name and does not support scalar context (For debugging reasons)" unless wantarray;
 
-  # pad with leading zeroes
-  my $padnum = $self->_padnum( $obsnum );
+  # Read the flag file names from the .meta file if it exists
+  my $meta_file = $self->meta_file($prefix, $obsnum);
+  if ( $meta_file ) {
+    use ORAC::General qw/ read_file_list /;
+    return read_file_list( $meta_file );
+  } else {
+    # pad with leading zeroes
+    my $padnum = $self->_padnum( $obsnum );
 
-  # get prefix
-  my $fixed = $self->rawfixedpart();
+    # get prefix
+    my $fixed = $self->rawfixedpart();
 
-  my @flags = map {
-    $fixed . $_ . $prefix . "_$padnum" . ".ok"
-  } ( $self->_dacodes );
+    my @flags = map {
+      $fixed . $_ . $prefix . "_$padnum" . ".ok"
+      } ( $self->_dacodes );
 
-  # SCUBA naming
-  return @flags;
+    # SCUBA naming
+    return @flags;
+  }
 }
 
 =item B<findgroup>
@@ -605,6 +612,46 @@ sub findrecipe {
   $self->recipe($recipe);
 
   return $recipe;
+}
+
+=item B<meta_file>
+
+Search for and return the full path to the meta file associated with
+the given observation. The meta file is written by the SCUBA-2 data
+acquisition system and contains the name of the flag files (.ok) in
+use. The naming convention is "sw_YYYYMMDD_NNNNN.meta", where "w" is
+the wavelength signifier ('8' for 850 or '4' for 450).
+
+Takes two mandatory arguments which are the file prefix (usually the
+UT date) and the observation number. Returns undef if no such file
+exists.
+
+  my $meta_file = $self->meta_file( $prefix, $obsnum );
+
+=cut
+
+sub meta_file {
+  my $self = shift;
+
+  my $prefix = shift;
+  my $obsnum = shift;
+
+  # pad with leading zeroes
+  my $padnum = $self->_padnum( $obsnum );
+
+  # get prefix
+  my $fixed = $self->rawfixedpart();
+
+  my $mfile = $fixed . "_" . $prefix . "_$padnum" . ".meta";
+
+  use File::Spec;
+  my $meta_file = File::Spec->catdir($ENV{ORAC_DATA_IN}, $mfile);
+  # Return full path to the .meta file
+  if ( -e $meta_file ) {
+    return $meta_file;
+  } else {
+    return undef;
+  }
 }
 
 =item B<numsubarrays>
