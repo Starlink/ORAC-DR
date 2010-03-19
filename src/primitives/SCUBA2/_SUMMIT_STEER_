@@ -27,7 +27,12 @@ final TCS index entry for data in the current Frame.
 
 The Group uhdr has the entry C<LAST_INDEX> set to 1 if it a) does not
 exist or b) exists but is less than the current TCS index indicating a
-new observation has started.
+new observation has started. (This flag is later updated with the
+value of the current Frame C<TCS_INDEX> when data are processed into a
+map.)
+
+If a new observation corresponding to an existing Group has started,
+the C<NEWIMAGE>, C<OBSCOMP> and C<SCANCOMP> flags are reset to 0.
 
 =head1 AUTHOR
 
@@ -55,12 +60,6 @@ USA.
 
 =cut
 
-# Ignore new data if a new Group image was created from SCAN data -
-# easiest option is just to terminate the recipe
-if ( $Grp->uhdr("NEWIMAGE") && $Grp->uhdr("OBSCOMP")) {
-  orac_term "Percentage completion criteria satisifed - skipping remaining data\n";
-}
-
 # Store current TCS_INDEX - this will be VAL__BADI for dark data but
 # this shouldn't affect any of the decision making below.
 $Frm->uhdr("TCS_INDEX", $Frm->jcmtstate("TCS_INDEX", "end"));
@@ -72,9 +71,24 @@ if ( defined $Grp->uhdr("LAST_INDEX") ) {
   # TCS_INDEX is now less than the LAST_INDEX. Note that this will not
   # store a new value of LAST_INDEX if it is already 1, but if that's
   # the case then it won't matter.
-  $Grp->uhdr("LAST_INDEX",1)
-    if ( $Frm->uhdr("TCS_INDEX") < $Grp->uhdr("LAST_INDEX"));
+  if ( $Frm->uhdr("TCS_INDEX") < $Grp->uhdr("LAST_INDEX")) {
+    $Grp->uhdr("LAST_INDEX",1);
+    # Reset percentage and scan-pattern completion and new image flags
+    # so we process data from a new observation
+    $Grp->uhdr("OBSCOMP",0);
+    $Grp->uhdr("SCANCOMP",0);
+    $Grp->uhdr("NEWIMAGE",0);
+  }
 } else {
   # No pre-existing value so set it to 1
   $Grp->uhdr("LAST_INDEX", 1);
+}
+
+# Now that we've checked for a new observation, ignore new data if a
+# new Group image was created from SCAN data using the
+# percentage-completion criterion - easiest option is just to
+# terminate the recipe
+if ( $Grp->uhdr("NEWIMAGE") && $Grp->uhdr("OBSCOMP") ) {
+  orac_warn "Percentage completion criteria satisifed - skipping remaining data\n";
+  return ORAC__TERM;
 }
