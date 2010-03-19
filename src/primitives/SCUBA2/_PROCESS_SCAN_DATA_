@@ -126,28 +126,33 @@ if ( $Frm->uhdr("DARKONLY") ) {
     # Determine the new_index flag which indicates the scan pattern
     # has been completed at least once since the last time this
     # primitive was called.
-    my $new_index;
-    if ( $Frm->uhdr("TCS_INDEX") > $Grp->uhdr("LAST_INDEX") ) {
-      $new_index = 1;
-      # Unset the MAPMADE flag because we have enough data to make a
-      # new map
-      $Grp->uhdr("MAPMADE",0);
-    } else {
-      $new_index = 0;
-    }
+    my $scancomp = 0;
     my $obscomp = 0;
-    # Only take notice of the completion parameter for observations
-    # which consist of a single pass of the scan pattern.
-    unless ( $new_index ) {
-      $obscomp = 1 if ($Frm->uhdr("PERCENT_CMP") > $completion );
-      $Grp->uhdr("OBSCOMP",$obscomp);
+    if ( $Frm->uhdr("TCS_INDEX") > $Grp->uhdr("LAST_INDEX") ) {
+      $scancomp = 1;
+      # Ensure the NEWIMAGE flag is not set as we now have enough data
+      # to make a new map
+      $Frm->uhdr("NEWIMAGE",0);
+      $Grp->uhdr("SCANCOMP",$scancomp);
+    } else {
+      # Disable checking of percentage-completion parameter if a map
+      # has been made as a result of the scan pattern being completed
+      unless ($Grp->uhdr("SCANCOMP")) {
+	$scancomp = 0;
+	# Only take notice of the completion parameter for observations
+	# which consist of a single pass of the scan pattern.
+	if ($Frm->uhdr("PERCENT_CMP") > $completion ) {
+	  $obscomp = 1;
+	}
+      }
     }
+    $Grp->uhdr("OBSCOMP",$obscomp);
 
     # Time to make a new map...
-    if ( $obscomp || $new_index ) {
-      unless ( $Grp->uhdr("MAPMADE") ) {
+    if ( $obscomp || $scancomp ) {
+      unless ( $Frm->uhdr("NEWIMAGE") ) {
 	my $infiles;
-	if ( $new_index ) {
+	if ( $scancomp ) {
 	  # Pass in the new data to makemap
 	  orac_print "Scan pattern completed - making image\n", "green";
 	  # Mark the current Frame as `new' so it will be processed
@@ -164,22 +169,21 @@ if ( $Frm->uhdr("DARKONLY") ) {
 	_FLATFIELD_
 	_MAKEMAP_FRAME_ METHOD=ITER INFILES=$infiles
 
-	# Mark as good on exit
-	$Frm->isgood(1);
-
 	# Now that data have been processed, set the LAST_INDEX flag
 	# to the current TCS_INDEX
 	$Grp->uhdr("LAST_INDEX", $Frm->uhdr("TCS_INDEX"));
 
-	# Unset the NOCALIB flag now we have a map
-	$Frm->uhdr("NOCALIB",0);
-	# Set the OBSEND flag so that a new Group file can be created -
-	# assuming that the WAIT flag is being used for
-	# _MAKE_MOSAIC_GROUP_
-	$Frm->uhdr("OBSEND",1);
-	# Set a Group flag to denote a new Group image will have been
-	# made by the next time this primitive is called
-	$Grp->uhdr("MAPMADE",1);
+	# Set other flags whch control downstream processing if a map
+	# was made
+	if ( $Frm->uhdr("NEWIMAGE") ) {
+	  # UNSET the NOCALIB flag now we have a map so data will be
+	  # calibrated
+	  $Frm->uhdr("NOCALIB",0);
+	  # Set the OBSEND flag so that a new Group file can be created -
+	  # assuming that the WAIT flag is being used for
+	  # _MAKE_MOSAIC_GROUP_
+	  $Frm->uhdr("OBSEND",1);
+	}
       }
     } else {
       # If there is insufficient data to pass to makemap, do something
@@ -195,7 +199,7 @@ if ( $Frm->uhdr("DARKONLY") ) {
 
       # Unset the MAPMADE flag as no new Group image should be created
       # this time through the recipe
-      $Grp->uhdr("MAPMADE",0);
+      $Frm->uhdr("NEWIMAGE",0);
     }
 
   } elsif ( $method =~ /^re/ ) {
@@ -209,8 +213,8 @@ if ( $Frm->uhdr("DARKONLY") ) {
     # Create image with current data
     _MAKEMAP_FRAME_ METHOD=REBIN
 
-      # Make sure the NOCALIB flag is UNset
-      $Frm->uhdr("NOCALIB",0);
+    # Make sure the NOCALIB flag is UNset
+    $Frm->uhdr("NOCALIB",0);
 
   } elsif ( $method =~ /^q/ ) {
     # #### QUICKLOOK ####
