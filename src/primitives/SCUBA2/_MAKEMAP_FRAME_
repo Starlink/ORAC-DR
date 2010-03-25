@@ -185,6 +185,8 @@ if ($Frm->uhdr("DARKONLY")) {
     $method = "rebin";
   }
 
+  my $obsnum = $Frm->hdr("OBSNUM");
+
   # How many files are we making a map with?
   my $infiles = get_prim_arg($_PRIM_ARGS_, "INFILES", "FRAME");
 
@@ -194,23 +196,22 @@ if ($Frm->uhdr("DARKONLY")) {
     @infiles = $Frm->files;
   } elsif ( $infiles eq "OBS" ) {
     # Create a sub-group for the current observation only
-    my $subGrp = $Grp->subgrp(OBSNUM => $Frm->hdr("OBSNUM"));
+    my $subGrp = $Grp->subgrp(OBSNUM => $obsnum);
     foreach my $frmobj ( $subGrp->members ) {
-      push (@infiles, $frmobj->files) if ($frmobj->isgood);
-      # Return isgood to conventional value of 1
+      # Only add data from frames which do not contain images
+      push (@infiles, $frmobj->files)
+	if ($frmobj->isgood && !$frmobj->uhdr("NEWIMAGE"));
       # Don't need this frame any more so mark as bad
       $frmobj->isgood(0);
     }
   } elsif ( $infiles eq "NEW" ) {
     # Use all new data in current observation which was taken since
     # last map was made
-    my $subGrp = $Grp->subgrp(OBSNUM => $Frm->hdr("OBSNUM"));
+    my $subGrp = $Grp->subgrp(OBSNUM => $obsnum);
     foreach my $frmobj ( $subGrp->members ) {
-#    foreach my $frmobj ( $Grp->members ) {
       # `New' data are marked with isgood = -1
       if ($frmobj->isgood == -1) {
         push (@infiles, $frmobj->files);
-        # Return isgood to conventional value of 1
 	# Don't need this frame any more so mark as bad
         $frmobj->isgood(0);
       }
@@ -223,8 +224,8 @@ if ($Frm->uhdr("DARKONLY")) {
   }
 
   # Quit processing if there is no data to make a map
-  orac_term "No good data for ".($Frm->hdr('OBJECT')).
-    " from obs ".($Frm->hdr('OBSNUM'))." with which to make a map\n"
+  my $object = $Frm->hdr('OBJECT');
+  orac_term "No good data for $object from obs $obsnum with which to make a map\n"
       unless (@infiles);
 
   # Write list of filenames to a temp file
@@ -297,6 +298,10 @@ if ($Frm->uhdr("DARKONLY")) {
 
       # Register the new file name
       $Frm->files( $out );
+
+      # Set the title to include the source name and observation number
+      my $title = "'$object / obs $obsnum'";
+      $Mon{ndfpack_mon}->obeyw("settitle","ndf=$out title=$title");
 
       # Set Frame EXP_TIME and WEIGHTS flags
       $Frm->uhdr("EXP_TIME",1);
