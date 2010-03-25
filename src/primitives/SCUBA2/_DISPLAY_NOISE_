@@ -16,24 +16,14 @@ turn, each in a separate Kapview window. An image is displayed on the
 left side and a histogram on the right. The statistics (mean, median
 and sigma) are reported.
 
-If the C<CLIP> argument is given, the noise statistics are
-re-calculated using sigma-clipping and reported in addition to the
-unclipped values.
-
-The scale for the display is set by the clipped values if appropriate
-in case of significant outliers.
+The scale for the display (both the image and the histogram) is set by
+the median noise value multiplied by the C<THRESH> parameter.
 
 =head1 ARGUMENTS
 
 This primitive supports the following arguments:
 
 =over 4
-
-=item B<CLIP>
-
-Number of standard deviations at which to clip the data before
-displaying the data on a histogram. The default (undef) is no
-clipping.
 
 =item B<COMP>
 
@@ -43,6 +33,10 @@ is C<DATA>.
 =item B<LOGFILE>
 
 Flag to denote whether or not to write a log file. Default is 1 (yes).
+
+=item B<THRESH>
+
+Upper limit for display in units of the median noise. Default is 4.
 
 =back
 
@@ -58,7 +52,7 @@ SETTITLE, WCSFRAME
 
 =item ORAC-DR PRIMITIVES:
 
-_ADD_BOLONOISE_LOG_ENTRY_, _FIND_IMAGE_STATISTICS_
+_ADD_LOG_ENTRY_, _FIND_IMAGE_STATISTICS_
 
 =back
 
@@ -68,7 +62,51 @@ None.
 
 =head1 OUTPUT FILES
 
-None.
+Log file, C<log.bolonoise>
+
+=head1 LOGFILE FORMAT
+
+The log file C<log.bolonoise> contains the following entries:
+
+=over 4
+
+=item UT
+
+The UT date in C<YYYYMMDD.frac> format.
+
+=item HST
+
+The time of the observation in Hawaii.
+
+=item Obs
+
+The observation number.
+
+=item Subarray
+
+The relevant subarray name.
+
+=item Median
+
+Median noise in pA Hz**-0.5.
+
+=item Mean
+
+Mean noise in pA Hz**-0.5.
+
+=item Mode
+
+Mode noise value in pA Hz**-0.5.
+
+=item Nbol
+
+Number of bolometers used in noise calculation.
+
+=item NEP_eff
+
+Effective NEP in W Hz**-0.5
+
+=back
 
 =head1 AUTHOR
 
@@ -76,8 +114,8 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2009 the University of British Columbia.  All Rights
-Reserved.
+Copyright (C) 2009-2010 the University of British Columbia.  All
+Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -104,13 +142,17 @@ $comp = "data" unless ( $comp =~ /^err/ );
 # Write out a log file?
 my $uselog = get_prim_arg($_PRIM_ARGS_, "LOGFILE", 1);
 
-# Retrieve CLIP parameter for calculating sigma-clipped statistics
-my $clip = get_prim_arg( $_PRIM_ARGS_, "CLIP", "" );
+# Threshold for displaying noise data - limit to 10 otherwise what's
+# the point?
+my $thr = get_prim_arg( $_PRIM_ARGS_, "THRESH", 4 );
+$thr = 10 if ($thr > 10);
 
 # Set the units - they should be the same for all files...
 my $file = $Frm->file;
 $Mon{ndfpack_mon}->obeyw("ndftrace","ndf=$file");
 my ($ORAC_STATUS, $units) = $Mon{ndfpack_mon}->get("ndftrace","units");
+my $nepunits = $units;
+$nepunits =~ s/pA/W/;
 
 # Loop over each file in the current Frame
 for my $i ( 1 .. $Frm->nfiles ) {
@@ -122,21 +164,28 @@ for my $i ( 1 .. $Frm->nfiles ) {
   my $window = $i - 1;
   my $subarray = $Frm->hdrval("SUBARRAY",$window);
 
-  # Find unclipped statistics for reporting
-  _FIND_IMAGE_STATISTICS_ IMAGE=$noisefile HISTAT=0 COMP=$comp VERBOSE=0
+  # Find statistics for reporting
+  _FIND_IMAGE_STATISTICS_ IMAGE=$noisefile HISTAT=1 COMP=$comp VERBOSE=0
   my $min = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MIN};
   my $max = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
 
   my $mean = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEAN};
   my $median = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
-  my $sigma = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
+  my $mode = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MODE};
 
-  my $zmin = max($mean - 5*$sigma, $min-0.2*$min);
-  my $zmax = $mean + 5*$sigma;
+  my $zmin = 0.0;
+  my $zmax = $thr * $median;
 
   my $numgood = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
 
-  # REPORT MODE AS WELL?
+  # Threshold the data at ZMAX and determine how many bolometers lie
+  # above that cut
+  my $thresh = new ORAC::TempFile;
+  my $threshfile = $thresh->file;
+  my $thrargs = "in=$noisefile out=$threshfile thrhi=$zmax newhi=bad thrlo=0 newlo=0";
+  $Mon{kappa_mon}->obeyw("thresh","$thrargs");
+  _FIND_IMAGE_STATISTICS_ IMAGE=$threshfile HISTAT=1 COMP=$comp VERBOSE=0
+  my $nthrgood = $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
 
   # Check that we have good bolometers
   if ( $numgood > 0 ) {
@@ -144,7 +193,7 @@ for my $i ( 1 .. $Frm->nfiles ) {
     orac_print "Noise statistics for subarray $subarray ($numgood bolometers):\n", "green";
     orac_print " Median  = $median $units\n", "green";
     orac_print " Mean    = $mean $units\n", "green";
-    orac_print " Sigma   = $sigma $units\n", "green";
+    orac_print " Mode    = $mode $units\n", "green";
 
     # Calculate effective NEP for this image
     my $nepfile = $noisefile . ".more.smurf.nep";
@@ -152,58 +201,34 @@ for my $i ( 1 .. $Frm->nfiles ) {
     my $effnep = $_CALCULATE_EFFECTIVE_NEP_{EFFNEP};
     if ( $effnep ) {
       $effnep = sprintf "%5.3e", $effnep;
-      orac_print " NEP_eff = $effnep  W Hz**-0.5\n\n", "green";
+      orac_print " NEP_eff = $effnep  $nepunits\n", "green";
+    } else {
+      $effnep = "*****";
     }
 
+    $zmax = sprintf "%5.3e", $zmax;
+    my $threshpc = sprintf "%2.0f", 100.0 * $nthrgood / $numgood;
+    orac_print "Display shows $nthrgood bolometers ($threshpc %) below $zmax $units ($thr*median)\n\n", "green";
+
     # Set the title of the noise image to something meaningful
-    my $args = "ndf=$noisefile title='Noise map for $subarray'";
+    my $obs = $Frm->hdr("OBSNUM");
+    my $args = "ndf=$noisefile title='Noise map for $subarray / Obs $obs'";
     $Mon{ndfpack_mon}->obeyw("settitle","$args");
 
     # Set coordinate frame to PIXEL
     $args = "ndf=$noisefile frame=pixel";
     $Mon{ndfpack_mon}->obeyw("wcsframe","$args");
 
-    # Find sigma-clipped statistics for reporting if requested
-    my ($cmean, $cmedian, $csigma) = ("", "", "");
-    if ( $clip ne "" ) {
-      _FIND_IMAGE_STATISTICS_ IMAGE=$noisefile HISTAT=0 COMP=$comp VERBOSE=0 CLIP=$clip
-
-      $min = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MIN};
-      $max = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
-
-      $cmean = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEAN};
-      $cmedian = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{MEDIAN};
-      $csigma = sprintf "%5.3e", $_FIND_IMAGE_STATISTICS_{RESULTS}->{SIGMA};
-
-      $zmin = max($cmean - 5*$csigma, $min-0.2*$min);
-      $zmax = $cmean + 5*$csigma;
-      my $numdiff = $numgood - $_FIND_IMAGE_STATISTICS_{RESULTS}->{NUMGOOD};
-
-      orac_print "Sigma-clipped at $clip sigma (drops $numdiff bolometers):\n",
-	"green";
-      orac_print " Mean    = $cmean $units\n", "green";
-      orac_print " Median  = $cmedian $units\n", "green";
-      orac_print " Sigma   = $csigma $units\n\n", "green";
-    }
-
-    my %options = ( WINDOW => $window, ZMIN => $zmin, ZMAX => $zmax,
+    my %options = ( WINDOW => $window, ZMIN => 0, ZMAX => $zmax,
 		    ZAUTOSCALE => 0, TITLE => "Noise histogram ($units)" );
 
     $Display->display_data($Frm, \%options, -1);
 
     if ($uselog) {
       my $logtype = "bolonoise";
-      my @names = ("Subarray", "Median", "Mean", "Sigma");
-      my @values = ($subarray, $median, $mean, $sigma);
+      my @names = ("Subarray", "Median", "Mean", "Mode", "Nbol", "NEP_eff");
+      my @values = ($subarray, $median, $mean, $mode, $numgood, $effnep);
       _ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names PARLIST=BRIEF
-      # Write an NEP logfile as well
-      if ($effnep) {
-	$logtype = "nep";
-	@names = ("Subarray", "NEP_eff");
-	@values = ($subarray, $effnep);
-	_ADD_LOG_ENTRY_ LOGFILE=$logtype ENTRIES=\@values PARAMS=\@names PARLIST=BRIEF
-      }
-
     }
   } else {
     orac_warn "Skipping display of $noisefile - no good bolometers\n";
