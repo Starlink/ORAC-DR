@@ -30,7 +30,7 @@ use Carp;
 use warnings;
 use strict;
 
-use base qw/ORAC::Calib::ImagingSpec/;
+use base qw/ORAC::Calib::ImagSpec/;
 
 use vars qw/$VERSION/;
 $VERSION = '1.0';
@@ -73,7 +73,7 @@ the presence of a grism.
 
 sub is_spectroscopy_mode {
   my $self = shift;
-  return ( $self->thing->{FILTER3}) =~ /[Gg]rism/ )
+  return ( $self->thing->{FILTER3} =~ /[Gg]rism/ )
 }
 
 =back
