@@ -91,7 +91,7 @@ set pkgvers = `${ORAC_DIR}/etc/oracdr_version.sh`
 if (-e $STARPERL ) then
 
   # pass through command line arguements
-  set args = ($argv[1-])
+  set args = $*
   set oracdr_args = ""
   if ( $#args > 0  ) then
     while ( $#args > 0 )
