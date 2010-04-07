@@ -265,8 +265,11 @@ sub readhdr {
 
     # to merge or not to merge
     if ($domerge) {
-      # Now merge into the first (order not important)
-      my @hdrs = values %hdrs;
+      # Now merge into the first - note that the order is important
+      # here as subheaders need to be linked to file order for later
+      # retrieval so create the @hdrs array by hand rather than simply
+      # grabbing the values of the %hdrs hash.
+      my @hdrs = map { $hdrs{$_} } @ndfs;
       $hdr = shift(@hdrs);
       if (@hdrs) {
         my ($merged, @different) = $hdr->merge_primary( {merge_unique=>1}, @hdrs);
