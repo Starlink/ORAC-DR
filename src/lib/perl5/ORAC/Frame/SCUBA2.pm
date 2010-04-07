@@ -614,6 +614,40 @@ sub findrecipe {
   return $recipe;
 }
 
+=item B<get_files_by_subarray>
+
+Return a hash with subarray names as keys and values containing a list
+(array reference) of the associated file names.
+
+  my %subarrayfiles = $Frm->get_files_by_subarray;
+
+=cut
+
+sub get_files_by_subarray {
+  my $self = shift;
+
+  my @subarrays = $self->subarrays;
+
+  # Return a hash indexed by subarray name containing an array of
+  # filenames for that subarray
+  my %subarrayfiles;
+  if ( @subarrays == 1 ) {
+    $subarrayfiles{$subarrays[0]} = \@{$self->files};
+  } else {
+    my @subhdrs = @{ $self->hdr->{'SUBHEADERS'} };
+    foreach my $subarray (@subarrays) {
+      my @subfiles;
+      for my $i (1 .. $self->nfiles) {
+	push(@subfiles, $self->file($i))
+	  if ($subhdrs[$i-1]->{'SUBARRAY'} eq $subarray);
+      }
+      $subarrayfiles{$subarray} = \@subfiles;
+    }
+  }
+  return %subarrayfiles;
+}
+
+
 =item B<meta_file>
 
 Search for and return the full path to the meta file associated with
@@ -783,7 +817,6 @@ Works on the current frame only.
 =cut
 
 sub subarray {
-
   my $self = shift;
 
   # Check - if there are sub-headers then we need to delve further
@@ -870,8 +903,6 @@ sub subarrays {
   return @subarrays;
 }
 
-
-
 =item B<filter_darks>
 
 Standard image-based DREAM and STARE processing has no need for dark
@@ -909,7 +940,6 @@ sub filter_darks {
 
   return;
 }
-
 
 =back
 
