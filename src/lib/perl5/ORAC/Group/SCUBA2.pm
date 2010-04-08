@@ -149,6 +149,57 @@ sub memberhdrvals {
   return @output;
 }
 
+=item sort_by_subarray
+
+Create new Frame objects that contain only the files associated with a
+single subarray. On exit the Group members method will only return
+those frame objects (between and 1 and 4 Frames). All the original
+Frame objects are marked bad.
+
+  $Grp->sort_by_subarray;
+
+This method should only be used in cases where processing by subarray
+is required (e.g. flatfield and noise observations).
+
+=cut
+
+sub sort_by_subarray {
+  my $self = shift;
+
+  # Sort data files by subarray
+  my %rawdata;
+  foreach my $frmobj ( $self->members ) {
+    # Re-read the header to get the subheaders in place - takes time
+    # with lots of files but unavoidable
+    $frmobj->readhdr;
+    # Sort files by subarray
+    my %files = $frmobj->get_files_by_subarray;
+    foreach my $subarray ( keys %files ) {
+      if ( defined $rawdata{$subarray}) {
+	my @data = @{ $rawdata{$subarray} };
+	push(@data, @{ $files{$subarray} });
+	$rawdata{$subarray} = \@data;
+      } else {
+	$rawdata{$subarray} = $files{$subarray};
+      }
+    }
+    # Mark frame as bad so it's not retrieved by the Grp->members
+    # method
+    $frmobj->isgood(0);
+  }
+
+  # Now we have a list of files for each subarray, create new Frame
+  # objects and store those in the Group
+  my $templatefrm = $self->frame(0);
+  foreach my $subarray ( sort keys %rawdata ) {
+    my $newFrm = $templatefrm->new($rawdata{$subarray}->[0]);
+    $newFrm->files(@{ $rawdata{$subarray} });
+    $self->push($newFrm);
+  }
+
+  return;
+}
+
 =back
 
 =head1 DISPLAY COMPATIBILITY
