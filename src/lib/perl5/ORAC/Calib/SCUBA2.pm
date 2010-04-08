@@ -503,13 +503,15 @@ sub store_beam {
 
 Return the full path to a default makemap config file. Options to
 return particular default configurations may be passed in as a
-hash. Valid keys are C<config_type>, C<filter> and C<ql>.
+hash. Valid keys are C<config_type> and C<pipeline>. The config type
+must be one of the supported values (see the contents of
+$STARLINK_DIR/share/smurf for available options). If given, the
+pipeline argument must be either C<ql> or C<summit> and causes this
+method to look in the directory defined by the environment variable
+ORAC_DATA_CAL.
 
   my $config_file = $Cal->makemap_config;
-  my $config_file = $Cal->makemap_config( filter => "850", ql => 1 );
-
-Note that if the C<ql> parameter is given, the C<filter> parameter
-must also be present to return the correct config file name.
+  my $config_file = $Cal->makemap_config( pipeline => "ql" );
 
 The C<config_type> is usually stored as a uhdr entry for the current
 Frame object.
@@ -517,7 +519,6 @@ Frame object.
 =cut
 
 sub makemap_config {
-
   my $self = shift;
 
   my $configfile = "dimmconfig";
@@ -526,32 +527,24 @@ sub makemap_config {
   my %args = @_;
   if ( %args ) {
 
-    # Append labels in the following order: config_type, filter, ql.
+    # Append labels in the following order: config_type and pipeline.
     if ( defined $args{config_type} ) {
       $configfile .= "_".$args{config_type}
         unless ( $args{config_type} eq "normal" );
     }
 
-    if ( defined $args{filter} ) {
+    # Check for SUMMIT or QL pipeline
+    my $pipeline = (defined $args{pipeline}) ? lc($args{pipeline}) : "";
+    if ($pipeline eq "ql" || $pipeline eq "summit") {
       # Note different base dir
       @basedir = ($ENV{'ORAC_DATA_CAL'});
-      $configfile .= ( $args{filter} =~ /850/ ? "_850" : "_450");
-    }
-
-    # QL is wavelength dependent so the filter argument must have been
-    # given
-    my $ql = (defined $args{ql}) ? $args{ql} : 0;
-    if ($ql) {
-      if ( defined $args{filter} ) {
-	$configfile .= "_ql";
-      }
+      $configfile .= "_".$pipeline;
     }
   }
 
   $configfile .= ".lis";
 
   return File::Spec->catfile( @basedir, $configfile );
-
 }
 
 =back
