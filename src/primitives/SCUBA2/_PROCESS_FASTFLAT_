@@ -1,0 +1,163 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_PROCESS_FASTFLAT_ - Calculate and analyze fast-ramp flatfield measurements
+
+=head1 SYNOPSIS
+
+_PROCESS_FASTFLAT_
+
+=head1 DESCRIPTION
+
+Calculate and analyze a flatfield solution from fast-ramp flatfield
+data. The fast-ramp data are stored in a new Group (which temporarily
+overrides the global $Grp variable) and processed as a normal
+flatfield observation. The results are compared with the current
+(dedicated) flatfield solution for the first ramp, while the last ramp
+is then compared with the first.
+
+This primitive is essentially a self-contained version of the
+REDUCE_FLATFIELD recipe designed to deal with fast-ramp flatfield
+measurements.
+
+=head1 ARGUMENTS
+
+This primitive has no arguments.
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used:
+
+=over 4
+
+=item ORAC-DR PRIMITIVES
+
+_ANALYZE_FLATFIELD, _CALCULATE_FLATFIELD_, _COPY_RAW_DATA_,
+_DELETE_TEMP_FILES_
+
+=back
+
+=head1 NOTES
+
+Assumes that there are only two fastflat measurements during an
+observation, one near the beginning and one at the end.
+
+=head1 OUTPUT DATA
+
+If flatfield solutions were calculated, the primitive hash
+%_PROCESS_FASTFLAT_ contains an entry with the key C<FLATS> which is a
+reference to an array of the raw files containing fast-ramp data.
+
+The Group contains a new uhdr entry called C<FASTFLATSOL>, a hash
+reference with the fast-ramp flatfield solutions indexed by subarray.
+
+=head1 OUTPUT FILES
+
+On completion of the observation, the results of the final fast-ramp
+are left on disk, stored in files with suffix C<_flat>, one for each
+subarray.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2010 University of British Columbia.  All Rights
+Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+my @flats;
+
+# Pick out the files which have a sequence type of FASTFLAT
+for my $i (1..$Frm->nfiles) {
+  if ($Frm->hdrval("SEQ_TYPE",$i-1) =~ /FASTFLAT/i ) {
+    push(@flats, $Frm->file($i));
+  }
+}
+
+# Retrieve OBSEND from the hdr
+my $obsend_on_entry = $Frm->hdrval("OBSEND",-1);
+
+# Hash for fastflat files to be stored, indexed by subarray
+my %store;
+
+# Now process those files identified
+if (@flats) {
+  my %previous = %{$Grp->uhdr("FASTFLATSOL")}
+    if defined $Grp->uhdr("FASTFLATSOL");
+
+  # Create a temporary override of Frm to allow primitives to work
+  my $Frm = $Frm->new(\@flats);
+
+  # Copy the raw files so they persist during successive passes
+  # through the recipe
+  _COPY_RAW_DATA_
+
+  # Retrieve current Group uhdr
+  my $uhdr = $Grp->uhdr;
+  # Create a temporary override for Grp
+  my $Grp = $Grp->new("fastflat");
+  $Grp->allmembers($Frm);
+  $Grp->uhdr(%{$uhdr});
+
+  # Set a FASTFLAT header
+  $Grp->uhdr("FASTFLAT",1);
+  # Set the Frame uhdr obsend flag to force flatfield analysis
+  $Frm->uhdr("OBSEND",1);
+  # Store (copied) raw file names for later retrieval when making a map
+  $_PROCESS_FASTFLAT_{FLATS} = [$Frm->files];
+
+  # Calculate the flatfield solution
+  _CALCULATE_FLATFIELD_
+
+  # Determine which files to keep on completion
+  my $keep;
+  if ( $obsend_on_entry ) {
+    # End of observation so only keep _flat
+    $keep = "_flat";
+
+    # Now we're done with the fastflats, add them to the intermediates
+    # array so they can be tidied up.
+    $Frm->push_intermediates(values %previous);
+  } else {
+    # First time processing fast-ramps so keep the raw data too
+    $keep = "_flat,_raw";
+
+    # Each Frame will only contain 1 file, the flatfield solution. Take
+    # a copy so it's not overwritten by the second fastflat.
+    foreach my $tmpfrm ($Grp->members) {
+      my $fastflat = $tmpfrm->inout("_fastflat");
+      my $args = "in=".($tmpfrm->file)." out=$fastflat";
+      $Mon{ndfpack_mon}->obeyw("ndfcopy","$args");
+      $store{$tmpfrm->hdr("SUBARRAY")} = $fastflat;
+    }
+  }
+
+  # Analyze and display the results
+  _ANALYZE_FLATFIELD_
+
+  # Tidy up
+  _DELETE_TEMP_FILES_ KEEP=$keep
+  _DELETE_TEMP_FILES_GROUP_ KEEP=$keep
+}
+
+# Store the fastflats for retrieval the next time through the recipe
+$Grp->uhdr("FASTFLATSOL",\%store) if (%store);
