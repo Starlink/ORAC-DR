@@ -6,17 +6,20 @@ _CREATE_BAD_BOLO_MASK_ - Create a bad bolometer mask
 
 =head1 SYNOPSIS
 
- _CREATE_BAD_BOLO_MASK_ MASKVAL=10.0
+ _CREATE_BAD_BOLO_MASK_ BEST_PERCENT=75
 
 =head1 DESCRIPTION
 
-This primitive creates a bad bolometer mask based on the relative
-power at two frequencies, one which samples the white-noise region of
-the spectrum and the other which samples the low (1/f) region. This
-ratio image was calculated previously in
-L<_CALCULATE_NOISE_|_CALCULATE_NOISE_>. Out-of-spec bolometers are
-defined as those having more power at low frequencies (hence less
-stable) and will be set to a C<BAD> value in the output mask.
+This primitive creates a bad bolometer mask based on the distribution
+of Noise Equivalent Power values. The C<bad> bolometers may be defined
+as those which do not meet the (dark) specifications (though see the
+B<RELAX> argument below), or as a percentage of the total (see the
+B<BEST_PERCENT> argument below).
+
+The best 50 % of bolometers will be used by default (corresponding to
+a median cutoff - note that twice the median often corresponds to a
+cutoff of about 80 %). No mask is created if both arguments are less
+than zero.
 
 =head1 ARGUMENTS
 
@@ -24,12 +27,20 @@ The following arguments are supported:
 
 =over 4
 
+=item B<BEST_PERCENT>
+
+The number of bolometers expressed as a percentage of the total which
+should be used to create the mask. Default is 50 (equivalent of using
+the median). Will be ignored if less than zero (causing B<RELAX> to be
+used instead).
+
 =item B<RELAX>
 
 A factor by which the NEP criteria can be relaxed to include
 out-of-spec bolometers. A special value of 0 may be given which skips
 the creation of a bad-bolo mask (i.e. continue to use all working
-bolometers). Default is 1 (no relaxation).
+bolometers). Default is 1 (no relaxation). Will be ignored if less
+than zero.
 
 =item B<VERBOSE>
 
@@ -46,13 +57,30 @@ The following external tasks are used:
 
 =item KAPPA:
 
-STATS, THRESH
+HISTAT, STATS, THRESH
 
 =back
 
 =head1 OUTPUT DATA
 
-None.
+The output bad bolometer masks contain three new FITS headers:
+
+=over 4
+
+=item MASK_NEP
+
+NEP value used to define mask
+
+=item NBOLFLAT
+
+Number of bolometers in NEP image (i.e. number of bolometers with
+valid flatfield solutions)
+
+=item NBOLMASK
+
+Number of bolometers in the mask
+
+=back
 
 =head1 OUTPUT FILES
 
@@ -65,7 +93,7 @@ Andy Gibb E<lt>agg@astro.ubc.caE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2008-2009 University of British Columbia. All Rights
+Copyright (C) 2008-2010 University of British Columbia. All Rights
 Reserved.
 
 This program is free software; you can redistribute it and/or modify
@@ -94,20 +122,38 @@ if ( $Frm->uhdr("NOISE") ) {
   # Are the NEP criteria being relaxed?
   my $relax = get_prim_arg( $_PRIM_ARGS_, "RELAX", "1.0" );
 
-  # Only proceed if relax is non-zero
-  if ( $relax > 0 ) {
+  # Alternatively, use the best N % of bolometers
+  my $best_pc = get_prim_arg( $_PRIM_ARGS_, "BEST_PERCENT", 50);
+
+  my $nep_spec;
+  my $proceed = 0;
+  my $usebest = 0;
+  if ( $best_pc > 0 ) {
+
+    # Override with recipe parameter if it exists
+    $best_pc = $Frm->uhdr("RECPAR_BESTBOL_PERCENT")
+      if (defined $Frm->uhdr("RECPAR_BESTBOL_PERCENT"));
+
+    $proceed = 1;
+    $usebest = 1;
+    # Announce our presence to the world
+    orac_print "Deriving a bad bolometer mask using best $best_pc % of bolometers" if ($verbose);
+  } elsif ( $relax > 0 ) {
+    $proceed = 1;
     # Catch numbers which look like sqrt(2)
     $relax = sqrt(2) if ($relax =~ /^1.4/);
 
     # Define NEP spec for defining the mask
-    my $nep_spec = $relax * $Cal->nep;
+    $nep_spec = $relax * $Cal->nep;
 
     # Announce our presence to the world
     if ($verbose) {
       my $factor = ($relax > 1) ? "with NEP criteria relaxed by ".(sprintf "%3.1f", $relax) : "";
       orac_print "Deriving a bad bolometer mask $factor\n";
     }
+  }
 
+  if ( $proceed ) {
     # Loop over the files in the Frame - there should be no more than
     # 4 files (future check), corresponding to each of the four
     # subarrays at the current wavelength.
@@ -115,6 +161,15 @@ if ( $Frm->uhdr("NOISE") ) {
 
       # NEP file
       my $nepfile = $Frm->file( $i ).".MORE.SMURF.NEP";
+
+      # Calculate the NEP value corresponding to the best percentage
+      # specified - this is the nep_spec
+      if ( $usebest ) {
+	my $args = "ndf=$nepfile percentiles=$best_pc";
+	$Mon{kappa_mon}->obeyw("histat","$args");
+	(my $ORAC_STATUS, $nep_spec) = $Mon{kappa_mon}->get("histat","perval");
+	orac_print " with NEP < ". (sprintf "%5.3e", $nep_spec). "\n" if ($verbose);
+      }
 
       # Threshold to set out-of-range values to bad
       my $thresh = new ORAC::TempFile;
@@ -137,6 +192,19 @@ if ( $Frm->uhdr("NOISE") ) {
       } else {
 	orac_print "Bad bolometer mask $mask created from $ngood bolometers\n"
 	  if ($verbose);
+
+	# Write some helpful FITS keywords:
+	# 1) The NEP spec used to create the mask - MASK_NEP
+	$args = "ndf=$mask edit=write keyword=MASK_NEP value=$nep_spec mode=interface comment='[W Hz**-0.5] NEP value used to define mask' position=!";
+	$Mon{ndfpack_mon}->obeyw("fitsmod","$args");
+	# 2) Number of bolometers in mask - NBOLMASK
+	$args = "ndf=$mask edit=write keyword=NBOLMASK value=$ngood mode=interface comment='Number of bolometers in mask' position=!";
+	$Mon{ndfpack_mon}->obeyw("fitsmod","$args");
+	# 3) Number of good bolometers from flatfield - NBOLFLAT
+	$Mon{kappa_mon}->obeyw("stats","ndf=$nepfile");
+	($ORAC_STATUS, my $nbol) = $Mon{kappa_mon}->get("stats","numgood");
+	$args = "ndf=$mask edit=write keyword=NBOLFLAT value=$nbol mode=interface comment='Number of valid bolometers from flatfield' position=!";
+	$Mon{ndfpack_mon}->obeyw("fitsmod","$args");
 
 	# Register with the Calibration system - note that cal system must
 	# deal with the different subarrays. The easiest way is to add a
