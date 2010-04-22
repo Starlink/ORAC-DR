@@ -28,6 +28,11 @@ not specified.
 
 Name of input image for which to derive pixel scale. No default.
 
+=item B<NORM>
+
+Type of normalization to carry out. If C<peak> then PSF is normalized
+to a peak of 1; if C<sum> the PSF is normalized to a sum of 1.
+
 =item B<PIXSIZE>
 
 Pixel scale in arcsec. Only accessed if B<IN> is not specified. No
@@ -49,6 +54,9 @@ Radius (HWHM) of PSF. Default is to use the appropriate FWHM.
 
 The current recipe will terminate with an error if any of the required
 arguments are missing.
+
+Based on code written for the SMURF C-shell script C<match-filter> by
+David Berry E<lt>d.berry@jach.hawaii.edu<gt>.
 
 =head1 AUTHOR
 
@@ -78,6 +86,13 @@ USA.
 # Input file - only used for getting pixel scale
 my $in = get_prim_arg($_PRIM_ARGS_, "IN", undef);
 
+# PSF normalization parameter - default to peak
+my $norm = get_prim_arg($_PRIM_ARGS_, "NORM", "peak");
+# Override with recipe parameter
+if (defined $Frm->uhdr("RECPAR_PSF_NORM")) {
+  $norm = $Frm->uhdr("RECPAR_PSF_NORM");
+}
+
 # Name of PSF image to create
 my $psf = get_prim_arg($_PRIM_ARGS_, "PSF", undef);
 # Is the psf file name to be derived from the current Frame or Group?
@@ -87,15 +102,17 @@ if (!$psf) {
   $psf = $Obj->inout("_psf");
 }
 
-my $pixscale;
-if ( !defined $in ) {
-  $pixscale = get_prim_arg($_PRIM_ARGS_, "PIXSIZE", undef);
-  orac_term "Must supply pixel scale if no input image given\n";
-} else {
-  # Get average pixel scale for input image
-  _GET_PIXEL_SCALE_ IMAGE=$in VERBOSE=0
-  $pixscale = 0.5 * ($_GET_PIXEL_SCALE_{RESULTS}->[0] +
-		     $_GET_PIXEL_SCALE_{RESULTS}->[1]);
+my $pixscale = get_prim_arg($_PRIM_ARGS_, "PIXSIZE", undef);
+if ( !defined $pixscale ) {
+  # If pixscale is not defined, use the input image if given, else
+  # abort with an error
+  if ($in) {
+    _GET_PIXEL_SCALE_ IMAGE=$in VERBOSE=0
+    $pixscale = 0.5 * ($_GET_PIXEL_SCALE_{RESULTS}->[0] +
+		       $_GET_PIXEL_SCALE_{RESULTS}->[1]);
+  } else {
+    orac_term "Must supply pixel scale if no input image given\n";
+  }
 }
 
 # Create a Gaussian PSF image with FWHM equal to Airy disk
@@ -121,20 +138,25 @@ $Mon{kappa_mon}->obeyw("creframe","$args");
 $args = "in=$tempfile1 out=$tempfile2 section='0,0' newval=1";
 $Mon{kappa_mon}->obeyw("chpix","$args");
 
-# Smooth this spike using a Gaussian kernel of FWHM equal to the
-# Airy radius. This produces a Gaussian PSF image. NOTE, the FWHM
-# is the Airy radius, not the diameter as might be expected. In
-# practice it seems like the FWHM of the point sources in a
-# SCUBA-2 map is much closer to the Airy radius than the Airy
-# diameter.
+# Smooth this spike using a Gaussian kernel of FWHM equal to the Airy
+# radius. This produces a Gaussian PSF image. NOTE, the FWHM is the
+# Airy radius, not the diameter as might be expected. In practice it
+# seems like the FWHM of the point sources in a SCUBA-2 map is much
+# closer to the Airy radius than the Airy diameter. Gausmooth
+# preserves total data sum, so the output PSF image will have a total
+# data sum of unity.
 $args = "in=$tempfile2 fwhm=$airy_pix out=$tempfile1";
 $Mon{kappa_mon}->obeyw("gausmooth","$args");
 
 # Use inout method to define a suitable PSF file name
 my $psfname = get_prim_arg($_PRIM_ARGS_, "PSF", undef);
 
-# Normalise the PSF to a peak value of 1.0
-_FIND_IMAGE_STATISTICS_ IMAGE=$tempfile1 VERBOSE=0
-my $peak = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
-$Mon{kappa_mon}->obeyw("cdiv","in=$tempfile1 scalar=$peak out=$psf");
-
+# Normalise the PSF to a peak value of 1.0 if requested
+if ($norm eq "peak") {
+  _FIND_IMAGE_STATISTICS_ IMAGE=$tempfile1 VERBOSE=0
+  my $peak = $_FIND_IMAGE_STATISTICS_{RESULTS}->{MAX};
+  $Mon{kappa_mon}->obeyw("cdiv","in=$tempfile1 scalar=$peak out=$psf");
+} else {
+  # Otherwise just copy input to output
+  $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tempfile1 out=$psf");
+}
