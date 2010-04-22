@@ -1,0 +1,142 @@
+# -*-cperl-*-
+
+=head1 NAME
+
+_DISPLAY_AVERAGE_NOISE_ - Calculate and display the average bolometer noise
+
+=head1 SYNOPSIS
+
+_DISPLAY_AVERAGE_NOISE_
+
+=head1 DESCRIPTION
+
+This primitive calculates the mean bolometer noise data for each
+subarray using the individual noise images. The individual noise and
+NEP images are stacked to form a cube which is collapsed to derive the
+mean image. The mean noise/NEP images are stored in the current Frame
+and displayed. The primitive only executes once an observation has
+ended.
+
+This primitive is designed to be called from the live pipelines
+running at the telescope where data are analyzed as they are taken. It
+should not be used offline because all the data for an observation are
+processed together and there is no need to calculate C<average>
+results.
+
+=head1 ARGUMENTS
+
+This primitive supports the following argument:
+
+=over 4
+
+=item B<COMP>
+
+Component to display. Supported values are C<DATA> and C<ERR>. Default
+is C<DATA>.
+
+=back
+
+=head1 EXTERNAL TASKS
+
+The following external tasks are used by this primitive:
+
+=over 4
+
+=item KAPPA:
+
+COLLAPSE
+
+=item SMURF
+
+STACKFRAMES
+
+=item ORAC-DR PRIMITIVES:
+
+_DISPLAY_NOISE_
+
+=back
+
+=head1 OUTPUT DATA
+
+None.
+
+=head1 OUTPUT FILES
+
+The mean noise image per subarray is created with suffix C<_noi>. The
+subscan number is stripped to differentiate it from the individual
+noise files.
+
+=head1 AUTHOR
+
+Andy Gibb E<lt>agg@astro.ubc.caE<gt>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2010 the University of British Columbia.  All
+Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307,
+USA.
+
+=cut
+
+# Only proceed if the observation has ended
+if ( $Frm->uhdr("OBSEND")) {
+  # Which component is being displayed?
+  my $comp = lc(get_prim_arg( $_PRIM_ARGS_, "COMP", "data" ));
+  # Reset comp if we get something we don't recognize
+  $comp = ( $comp =~ /^err/ ) ? "err" : "data";
+
+  # Tell users what's happening
+  orac_print "Calculating average noise properties from existing noise images\n";
+
+  # Need to sort Group and create new members containing files for the
+  # same subarray so we can use the subgrps method
+  $Grp->sort_by_subarray;
+  my @avnoise;
+  # Now the Group contains only Frames sorted by subarray, so loop
+  # over the (good) members
+  foreach my $Frmobj ( $Grp->members ) {
+    # Stack the noise images
+    my $stack = new ORAC::TempFile;
+    my $stackfile = $stack->file;
+    my $in = write_file_list( $Frmobj->files );
+    $Mon{smurf_mon}->obeyw("stackframes","in=^$in out=$stackfile sort=true");
+
+    my $out = $Frmobj->inout( "_noi" );
+    $out = $Frmobj->strip_subscan( $out );
+    $Mon{kappa_mon}->obeyw("collapse","in=$stackfile out=$out axis=MJD estimator=mean");
+
+    # Now stack the NEP images
+    my @nep = map { $_.".more.smurf.nep" } $Frmobj->files;
+    $in = write_file_list( @nep );
+    $Mon{smurf_mon}->obeyw("stackframes","in=^$in out=$stackfile sort=true");
+    my $tmp = new ORAC::TempFile;
+    my $tmpout = $tmp->file;
+    $Mon{kappa_mon}->obeyw("collapse","in=$stackfile out=$tmpout axis=MJD estimator=mean");
+
+    # Copy the average NEP image to the average noise image
+    my $nepout = $out . ".more.smurf.nep";
+    $Mon{ndfpack_mon}->obeyw("ndfcopy","in=$tmpout out=$nepout");
+
+    push(@avnoise, $out);
+  }
+
+  # Store the averaged noise images in the current Frame
+  $Frm->files(@avnoise);
+
+  # Display noise
+  _DISPLAY_NOISE_ LOGFILE=0 COMP=$comp
+}
