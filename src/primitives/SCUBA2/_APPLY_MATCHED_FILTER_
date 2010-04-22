@@ -56,10 +56,21 @@ Name of file containing the PSF to use. May also be specified using
 the C<PSF_MATCHFILTER> recipe parameter. If not specified by either
 method, a PSF image will be created.
 
+=item B<NORM>
+
+Type of normalization to carry out on the PSF. If C<peak> then PSF is
+normalized to a peak of 1; if C<sum> the PSF is normalized to a sum of
+1. Default is C<peak>. Only accessed when creating a PSF image.
+
 =item B<OUT>
 
 Name of output image. Default is to use the C<inout> method to create
 an output file with the suffix C<_mf>.
+
+=item B<SMOOTH>
+
+Full-width at half-maximum in arcsec of Gaussian used to smooth input
+image and PSF. Default is twice the beamsize at the current wavelength.
 
 =back
 
@@ -110,8 +121,8 @@ The PSF must contain floating point values.
 
 =back
 
-Implementation based on the C<matched-filter> C-shell script by David
-Berry E<lt>d.berry@jach.hawaii.edu<gt>.
+Implementation based on the SMURF C<match-filter> C-shell script by
+David Berry E<lt>d.berry@jach.hawaii.edu<gt>.
 
 =head1 AUTHOR
 
@@ -161,6 +172,18 @@ my $temp2 = new ORAC::TempFile;
 my $tempfile2 = $temp2->file;
 my $temp3 = new ORAC::TempFile;
 my $tempfile3 = $temp3->file;
+my $temp4 = new ORAC::TempFile;
+my $tempfile4 = $temp4->file;
+# Non-reuseable temporary files
+my $temp_in = new ORAC::TempFile;
+my $tempfile_in = $temp_in->file;
+my $temp_psf = new ORAC::TempFile;
+my $tempfile_psf = $temp_psf->file;
+
+# Retrieve the pixel scale for later use
+_GET_PIXEL_SCALE_ IMAGE=$in VERBOSE=0
+my $pixscale = 0.5 * ($_GET_PIXEL_SCALE_{RESULTS}->[0] +
+		      $_GET_PIXEL_SCALE_{RESULTS}->[1]);
 
 # If no psf has been specified, check recipe parameter for name of
 # suitable image in current working dir Generate a
@@ -183,17 +206,34 @@ if (!$psf) {
 
   # If no PSF file exists by this point, create one ourselves
   if (!$psf) {
+    # Obtain normalization option to obtain a PSF normalized to unit
+    # peak or unit sum. Default to peak (if not recognized).
+    my $norm = get_prim_arg($_PRIM_ARGS_, "NORM", "peak");
+    $norm = "peak" unless ($norm eq "peak" || $norm eq "sum");
+
     # Use inout method to define a suitable PSF file name
     $psf = $Obj->inout("_psf");
-    _CREATE_PSF_IMAGE_ IN=$in PSF=$psf
+    _CREATE_PSF_IMAGE_ PSF=$psf PIXSIZE=$pixscale NORM=$norm
 
     # Abort with an error if no psf image could be created
     orac_term "Unable to create a PSF image" unless $psf;
   }
 }
 
-# Create image A. First step - calculate ratio of data to variance for
-# the input image.
+# Smooth input image and PSF by gaussian with given FWHM and subtract
+# from each. The default size is twice the (default) FWHM of the PSF.
+my $smooth_fwhm = get_prim_arg($_PRIM_ARGS_, "SMOOTH", 2*$Cal->fwhm);
+my $smooth_pix = $smooth_fwhm / $pixscale;
+$Mon{kappa_mon}->obeyw("gausmooth","in=$in out=$tempfile1 fwhm=$smooth_pix");
+$Mon{kappa_mon}->obeyw("sub","in1=$in in2=$tempfile1 out=$tempfile_in");
+$Mon{kappa_mon}->obeyw("gausmooth","in=$psf out=$tempfile2 fwhm=$smooth_pix");
+$Mon{kappa_mon}->obeyw("sub","in1=$psf in2=$tempfile2 out=$tempfile_psf");
+# Redefine the input and PSF filenames for subsequent use
+$in = $tempfile_in;
+$psf = $tempfile_psf;
+
+# Create image A = numerator in expression in POD. First step -
+# calculate ratio of data to variance for the input image.
 my $args = "exp=ia/va ia=$in out=$tempfile1";
 $Mon{kappa_mon}->obeyw("maths","$args");
 
@@ -212,8 +252,8 @@ my $tempfilea = $tempa->file;
 $args = "in=$tempfile2 out=$tempfilea scalar=$psfsum";
 $Mon{kappa_mon}->obeyw("cmult","$args");
 
-# Now go on to create image B. Get the reciprocal of the variances from
-# the input image.
+# Now go on to create image B, the denominator. Get the reciprocal of
+# the variances from the input image.
 $args = "exp=1/va va=$in out=$tempfile1";
 $Mon{kappa_mon}->obeyw("maths","$args");
 
@@ -221,7 +261,7 @@ $Mon{kappa_mon}->obeyw("maths","$args");
 $Mon{kappa_mon}->obeyw("mult","in1=$psf in2=$psf out=$tempfile3");
 
 # Smooth the reciprocal of the variancess using the squared psf.
-$args = "in=$tempfile1 out=$tempfile2 psf=$tempfile3 xcentre=0 ycentre=0";
+$args = "in=$tempfile1 out=$tempfile4 psf=$tempfile3 xcentre=0 ycentre=0";
 $Mon{kappa_mon}->obeyw("convolve","$args");
 
 # Undo the normalisation produced by kappa:convolve.
@@ -229,7 +269,7 @@ _FIND_IMAGE_STATISTICS_ IMAGE=$tempfile3
 my $psfsum2 = $_FIND_IMAGE_STATISTICS_{RESULTS}->{SUM};
 my $tempb = new ORAC::TempFile;
 my $tempfileb = $tempb->file;
-$args = "in=$tempfile2 out=$tempfileb scalar=$psfsum2";
+$args = "in=$tempfile4 out=$tempfileb scalar=$psfsum2";
 $Mon{kappa_mon}->obeyw("cmult","$args");
 
 # The output image is the ratio of a and b
